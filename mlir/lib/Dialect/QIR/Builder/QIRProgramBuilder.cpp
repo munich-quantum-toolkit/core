@@ -255,10 +255,10 @@ QIRProgramBuilder& QIRProgramBuilder::x(const Value qubit) {
 QIRProgramBuilder& QIRProgramBuilder::rx(std::variant<double, Value> theta,
                                          const Value qubit) {
   // Save current insertion point
-  const OpBuilder::InsertionGuard insertGuard(builder);
+  const OpBuilder::InsertionGuard entryGuard(builder);
 
-  // Insert in body block (before branch)
-  builder.setInsertionPoint(bodyBlock->getTerminator());
+  // Insert constants in entry block
+  builder.setInsertionPointToEnd(entryBlock);
 
   Value thetaOperand;
   if (std::holds_alternative<double>(theta)) {
@@ -270,6 +270,12 @@ QIRProgramBuilder& QIRProgramBuilder::rx(std::variant<double, Value> theta,
   } else {
     thetaOperand = std::get<Value>(theta);
   }
+
+  // Save current insertion point
+  const OpBuilder::InsertionGuard bodyGuard(builder);
+
+  // Insert in body block (before branch)
+  builder.setInsertionPoint(bodyBlock->getTerminator());
 
   // Create rx call
   const auto qirSignature = LLVM::LLVMFunctionType::get(
@@ -287,10 +293,10 @@ QIRProgramBuilder& QIRProgramBuilder::u2(std::variant<double, Value> phi,
                                          std::variant<double, Value> lambda,
                                          const Value qubit) {
   // Save current insertion point
-  const OpBuilder::InsertionGuard insertGuard(builder);
+  const OpBuilder::InsertionGuard entryGuard(builder);
 
-  // Insert in body block (before branch)
-  builder.setInsertionPoint(bodyBlock->getTerminator());
+  // Insert constants in entry block
+  builder.setInsertionPointToEnd(entryBlock);
 
   Value phiOperand;
   if (std::holds_alternative<double>(phi)) {
@@ -300,7 +306,6 @@ QIRProgramBuilder& QIRProgramBuilder::u2(std::variant<double, Value> phi,
                      .getResult();
   } else {
     phiOperand = std::get<Value>(phi);
-    ;
   }
 
   Value lambdaOperand;
@@ -312,8 +317,13 @@ QIRProgramBuilder& QIRProgramBuilder::u2(std::variant<double, Value> phi,
             .getResult();
   } else {
     lambdaOperand = std::get<Value>(lambda);
-    ;
   }
+
+  // Save current insertion point
+  const OpBuilder::InsertionGuard bodyGuard(builder);
+
+  // Insert in body block (before branch)
+  builder.setInsertionPoint(bodyBlock->getTerminator());
 
   // Create u2 call
   const auto qirSignature = LLVM::LLVMFunctionType::get(
