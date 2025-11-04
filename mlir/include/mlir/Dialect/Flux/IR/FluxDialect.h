@@ -19,6 +19,7 @@
 #include <mlir/Interfaces/SideEffectInterfaces.h>
 #include <optional>
 #include <string>
+#include <variant>
 
 // Suppress warnings about ambiguous reversed operators in MLIR
 // (see https://github.com/llvm/llvm-project/issues/45853)
