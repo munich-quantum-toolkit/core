@@ -171,6 +171,29 @@ void RXOp::build(OpBuilder& builder, OperationState& state, Value qubitIn,
         thetaAttr, thetaOperand);
 }
 
+OpFoldResult RXOp::fold(FoldAdaptor adaptor) {
+  const auto& theta = getParameter(0);
+
+  if (theta.isStatic()) {
+    return nullptr;
+  }
+
+  auto constantOp = theta.getValueOperand().getDefiningOp<arith::ConstantOp>();
+  if (!constantOp) {
+    return nullptr;
+  }
+
+  const auto& thetaAttr = llvm::dyn_cast<FloatAttr>(constantOp.getValue());
+  if (!thetaAttr) {
+    return nullptr;
+  }
+
+  getOperation()->setAttr("theta", thetaAttr);
+  getOperation()->eraseOperand(1);
+
+  return nullptr;
+}
+
 LogicalResult RXOp::verify() {
   if (getTheta().has_value() == (getThetaDyn() != nullptr)) {
     return emitOpError("must specify exactly one of static or dynamic theta");
@@ -488,32 +511,6 @@ struct MergeSubsequentRX final : OpRewritePattern<RXOp> {
   }
 };
 
-struct ConstantFoldingRX final : OpRewritePattern<RXOp> {
-  using OpRewritePattern::OpRewritePattern;
-
-  LogicalResult matchAndRewrite(RXOp rxOp,
-                                PatternRewriter& rewriter) const override {
-    if (!rxOp.getThetaDyn()) {
-      return failure();
-    }
-
-    auto constantOp = rxOp.getThetaDyn().getDefiningOp<arith::ConstantOp>();
-    if (!constantOp) {
-      return failure();
-    }
-
-    const auto& thetaAttr = llvm::dyn_cast<FloatAttr>(constantOp.getValue());
-    if (!thetaAttr) {
-      return failure();
-    }
-
-    rxOp.setThetaAttr(thetaAttr);
-    rxOp->eraseOperand(1);
-
-    return success();
-  }
-};
-
 } // namespace
 
 void DeallocOp::getCanonicalizationPatterns(RewritePatternSet& results,
@@ -533,5 +530,5 @@ void XOp::getCanonicalizationPatterns(RewritePatternSet& results,
 
 void RXOp::getCanonicalizationPatterns(RewritePatternSet& results,
                                        MLIRContext* context) {
-  results.add<MergeSubsequentRX, ConstantFoldingRX>(context);
+  results.add<MergeSubsequentRX>(context);
 }

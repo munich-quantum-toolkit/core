@@ -326,6 +326,7 @@ def RXOp : FluxOp<"rx", traits = [UnitaryOpInterface, OneTarget, OneParameter]> 
     ];
 
     let hasCanonicalizer = 1;
+    let hasFolder = 1;
     let hasVerifier = 1;
 }
 
