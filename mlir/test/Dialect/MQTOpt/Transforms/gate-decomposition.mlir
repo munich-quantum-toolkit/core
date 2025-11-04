@@ -224,3 +224,39 @@ module {
     return
   }
 }
+
+module {
+  // CHECK-LABEL: func.func @testComplexSeries
+  func.func @testComplexSeries() {
+    // CHECK: %[[Q0_0:.*]] = mqtopt.allocQubit
+    // CHECK: %[[Q1_0:.*]] = mqtopt.allocQubit
+    // CHECK: %[[Q2_0:.*]] = mqtopt.allocQubit
+
+    // CHECK-NOT: mqtopt.gphase(%[[ANY:.*]])
+
+    // CHECK: mqtopt.deallocQubit %[[Q0_5]]
+    // CHECK: mqtopt.deallocQubit %[[Q1_4]]
+    // CHECK: mqtopt.deallocQubit %[[Q2_1]]
+
+    %cst0 = arith.constant 2.5 : f64
+    %cst1 = arith.constant 1.2 : f64
+
+    %q0_0 = mqtopt.allocQubit
+    %q1_0 = mqtopt.allocQubit
+    %q2_0 = mqtopt.allocQubit
+
+    %q0_1 = mqtopt.h() %q0_0: !mqtopt.Qubit
+    %q1_1, %q0_2 = mqtopt.x() %q1_0 ctrl %q0_1: !mqtopt.Qubit ctrl !mqtopt.Qubit
+    %q0_3, %q1_2 = mqtopt.rzz(%cst0) %q0_2, %q1_1: !mqtopt.Qubit, !mqtopt.Qubit
+    %q1_3 = mqtopt.ry(%cst1) %q1_2: !mqtopt.Qubit
+    %q0_4 = mqtopt.rx(%cst1) %q0_3: !mqtopt.Qubit
+    %q0_5, %q1_4 = mqtopt.x() %q0_4 ctrl %q1_3: !mqtopt.Qubit ctrl !mqtopt.Qubit
+    %q0_6 = mqtopt.rz(%cst0) %q0_5: !mqtopt.Qubit
+
+    mqtopt.deallocQubit %q0_6
+    mqtopt.deallocQubit %q1_4
+    mqtopt.deallocQubit %q2_0
+
+    return
+  }
+}
