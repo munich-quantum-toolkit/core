@@ -29,6 +29,7 @@
 #include <mlir/IR/Types.h>
 #include <mlir/IR/Value.h>
 #include <mlir/Support/LogicalResult.h>
+#include <variant>
 
 using namespace mlir;
 using namespace mlir::flux;
