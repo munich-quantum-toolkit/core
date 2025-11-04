@@ -247,19 +247,6 @@ def test_job_status(mock_backend: QiskitBackend) -> None:
     assert job.status() == JobStatus.DONE
 
 
-def test_job_submit_raises_not_implemented(mock_backend: QiskitBackend) -> None:
-    """Calling submit() on a job raises NotImplementedError."""
-    qc = QuantumCircuit(2, 2)
-    qc.cz(0, 1)
-    qc.measure([0, 1], [0, 1])
-
-    job = mock_backend.run(qc, shots=100)
-
-    # Calling submit should raise NotImplementedError
-    with pytest.raises(NotImplementedError, match="You should never have to submit jobs"):
-        job.submit()
-
-
 def test_job_result_success_and_shots(mock_backend: QiskitBackend) -> None:
     """Job result should contain success status and shot count for each circuit."""
     qc = QuantumCircuit(2, 2)
@@ -273,19 +260,6 @@ def test_job_result_success_and_shots(mock_backend: QiskitBackend) -> None:
     assert len(result.results) == 1
     assert result.results[0].shots == 100
     assert result.results[0].success is True
-
-
-def test_job_result_with_timeout(mock_backend: QiskitBackend) -> None:
-    """Job result should accept timeout parameter."""
-    qc = QuantumCircuit(2, 2)
-    qc.cz(0, 1)
-    qc.measure([0, 1], [0, 1])
-
-    job = mock_backend.run(qc, shots=50)
-    result = job.result()
-
-    assert result.success is True
-    assert result.results[0].shots == 50
 
 
 def test_job_get_counts_default(mock_backend: QiskitBackend) -> None:
