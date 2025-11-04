@@ -160,6 +160,40 @@ def UnitaryInterface : OpInterface<"UnitaryInterface"> {
                 return $_op.getParams();
             }]>,
         InterfaceMethod<
+            /*desc=*/        "Get the corresponding input qubit for a given output qubit.",
+            /*returnType=*/  "mlir::Value",
+            /*methodName=*/  "getCorrespondingInput",
+            /*args=*/        (ins "mlir::Value":$outQubit),
+            /*methodBody=*/  [{}],
+            /*defaultImpl=*/ [{
+                auto op = $_op;
+
+                auto inQubits = op.getAllInQubits();
+                auto outQubits = op.getAllOutQubits();
+
+                auto it = llvm::find(outQubits, outQubit);
+                assert(it != outQubits.end() && "output qubit not found in operation");
+                size_t index = std::distance(outQubits.begin(), it);
+                return inQubits[index];
+            }]>,
+        InterfaceMethod<
+            /*desc=*/        "Get the corresponding output qubit for a given input qubit.",
+            /*returnType=*/  "mlir::Value",
+            /*methodName=*/  "getCorrespondingOutput",
+            /*args=*/        (ins "mlir::Value":$inQubit),
+            /*methodBody=*/  [{}],
+            /*defaultImpl=*/ [{
+                auto op = $_op;
+
+                auto inQubits = op.getAllInQubits();
+                auto outQubits = op.getAllOutQubits();
+
+                auto it = llvm::find(inQubits, inQubit);
+                assert(it != inQubits.end() && "input qubit not found in operation");
+                size_t index = std::distance(inQubits.begin(), it);
+                return outQubits[index];
+            }]>,
+        InterfaceMethod<
             /*desc=*/        "Returns the name of the gate.",
             /*returnType=*/  "llvm::StringRef",
             /*methodName=*/  "getIdentifier",
