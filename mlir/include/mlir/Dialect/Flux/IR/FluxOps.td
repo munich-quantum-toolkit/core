@@ -422,7 +422,13 @@ def CtrlOp : FluxOp<"ctrl", traits = [UnitaryOpInterface, AttrSizedOperandSegmen
     let arguments = (ins Variadic<QubitType>:$controls_in, Variadic<QubitType>:$targets_in);
     let results = (outs Variadic<QubitType>:$controls_out, Variadic<QubitType>:$targets_out);
     let regions = (region SizedRegion<1>:$body);
-    let assemblyFormat = "`(` $controls_in `_` $targets_in `)` $body attr-dict `:` type($controls_in) `_` type($targets_in) `->` type($controls_out) `_` type($targets_out)";
+    let assemblyFormat = [{
+        `(` `{` $controls_in `}` `,` `{` $targets_in `}` `)`
+        $body attr-dict `:`
+        `{` type($controls_in) `}` `,` `{` type($targets_in) `}`
+        `->`
+        `{` type($controls_out) `}` `,` `{` type($targets_out) `}`
+    }];
 
     let extraClassDeclaration = [{
         UnitaryOpInterface getBodyUnitary();
