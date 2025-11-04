@@ -558,6 +558,9 @@ struct MergeSubsequentRX final : OpRewritePattern<RXOp> {
   }
 };
 
+/**
+ * @brief Merge nested control modifiers into a single one.
+ */
 struct MergeNestedCtrl final : OpRewritePattern<CtrlOp> {
   using OpRewritePattern::OpRewritePattern;
 
@@ -597,6 +600,27 @@ struct MergeNestedCtrl final : OpRewritePattern<CtrlOp> {
   }
 };
 
+/**
+ * @brief Remove control modifiers without controls.
+ */
+struct RemoveTrivialCtrl final : OpRewritePattern<CtrlOp> {
+  using OpRewritePattern::OpRewritePattern;
+
+  LogicalResult matchAndRewrite(CtrlOp ctrlOp,
+                                PatternRewriter& rewriter) const override {
+    if (ctrlOp.getNumControls() != 0) {
+      return failure();
+    }
+
+    auto bodyUnitary = ctrlOp.getBodyUnitary();
+
+    bodyUnitary->moveBefore(ctrlOp);
+    rewriter.replaceOp(ctrlOp, bodyUnitary->getResults());
+
+    return success();
+  }
+};
+
 } // namespace
 
 void DeallocOp::getCanonicalizationPatterns(RewritePatternSet& results,
@@ -621,5 +645,5 @@ void RXOp::getCanonicalizationPatterns(RewritePatternSet& results,
 
 void CtrlOp::getCanonicalizationPatterns(RewritePatternSet& results,
                                          MLIRContext* context) {
-  results.add<MergeNestedCtrl>(context);
+  results.add<MergeNestedCtrl, RemoveTrivialCtrl>(context);
 }
