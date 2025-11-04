@@ -9,6 +9,7 @@ mystnb:
 # Qiskit Backend Integration
 
 The {py:mod}`mqt.core.qdmi.qiskit` module provides a Qiskit {py:class}`~qiskit.providers.BackendV2`-compatible interface to QDMI devices via FoMaC.
+This integration allows you to execute Qiskit circuits on QDMI-compliant quantum devices using a familiar Qiskit workflow.
 
 ## Installation
 
@@ -39,11 +40,12 @@ $ uv pip install "mqt-core[qiskit]"
 ## Quickstart
 
 ```{code-cell} ipython3
-from mqt.core.qdmi.qiskit import QiskitBackend
+from mqt.core.qdmi.qiskit import QDMIProvider
 from qiskit import QuantumCircuit
 
-# Create a backend (uses the FoMaC device at index 0, i.e., MQT NA Default QDMI Device)
-backend = QiskitBackend(device_index=0)
+# Create a provider and get a backend
+provider = QDMIProvider()
+backend = provider.get_backend("MQT NA Default QDMI Device")
 
 # Create a simple circuit
 qc = QuantumCircuit(2)
@@ -59,118 +61,248 @@ counts = result.get_counts()
 print(f"Results: {counts}")
 ```
 
-## Device Capabilities
+## Provider and Device Discovery
 
-The backend automatically introspects the FoMaC device and builds a Qiskit {py:class}`~qiskit.transpiler.Target` object:
+### Using the Provider
+
+The {py:class}`~mqt.core.qdmi.qiskit.QDMIProvider` discovers QDMI devices available through the FoMaC layer.
+Backends should always be obtained through the provider rather than instantiated directly.
 
 ```{code-cell} ipython3
-# Access device properties
+from mqt.core.qdmi.qiskit import QDMIProvider
+
+# Create a provider
+provider = QDMIProvider()
+
+# List all available backends
+backends = provider.backends()
+for backend in backends:
+    print(f"{backend.name}: {backend.target.num_qubits} qubits")
+```
+
+### Getting a Specific Backend
+
+```{code-cell} ipython3
+# Get a backend by name
+backend = provider.get_backend("MQT NA Default QDMI Device")
+print(f"Backend: {backend.name}")
+print(f"Qubits: {backend.target.num_qubits}")
+```
+
+### Filtering Backends
+
+```python
+# Filter backends by name substring
+filtered_qdmi = provider.backends(
+    name="QDMI"
+)  # Matches all backends with "QDMI" in name
+filtered_na = provider.backends(name="NA")  # Matches "MQT NA Default QDMI Device"
+
+# Filter by full name also works
+exact = provider.backends(name="MQT NA Default QDMI Device")
+```
+
+## Device Capabilities and Target
+
+The backend automatically introspects the FoMaC (QDMI) device and constructs a Qiskit {py:class}`~qiskit.transpiler.Target`
+object describing device capabilities.
+
+```{code-cell} ipython3
+# Access device properties via the Target
 print(f"Number of qubits: {backend.target.num_qubits}")
 print(f"Supported operations: {backend.target.operation_names}")
-print(f"Capabilities hash: {backend.capabilities_hash}")
+
+# Check coupling map (if device has limited connectivity)
+coupling_map = backend.target.build_coupling_map()
+if coupling_map:
+    print(f"Coupling map: {coupling_map}")
+```
+
+The backend maps QDMI device operations to corresponding Qiskit gates, including:
+
+- **Single-qubit gates**: `x`, `y`, `z`, `h`, `s`, `t`, `sx`, `id`
+- **Parametric gates**: `rx`, `ry`, `rz`, `p`, `u`, `u2`, `u3`
+- **Two-qubit gates**: `cx`, `cy`, `cz`, `ch`, `swap`, `iswap`, `dcx`, `ecr`
+- **Parametric two-qubit gates**: `rxx`, `ryy`, `rzz`, `rzx`, `xx_plus_yy`, `xx_minus_yy`
+- **Measurement**: `measure`
+
+## Circuit Execution
+
+### Basic Execution
+
+```{code-cell} ipython3
+from qiskit import QuantumCircuit
+
+# Create a circuit
+qc = QuantumCircuit(2)
+qc.h(0)
+qc.cx(0, 1)
+qc.measure_all()
+
+# Run on the backend
+job = backend.run(qc, shots=500)
+result = job.result()
+counts = result.get_counts()
+
+print(f"Counts: {counts}")
+print(f"Total shots: {sum(counts.values())}")
+```
+
+### Execution Options
+
+The backend supports various execution options:
+
+```python
+# Specify number of shots
+job = backend.run(circuit, shots=2048)
+
+# Change program format (default is QASM3)
+from mqt.core import fomac
+
+job = backend.run(circuit, shots=1024, program_format=fomac.ProgramFormat.QASM2)
+```
+
+### Circuit Requirements
+
+Circuits must meet the following requirements before execution:
+
+1. **All parameters must be bound**: Circuits with unbound parameters raise {py:class}`~mqt.core.qdmi.qiskit.CircuitValidationError`
+2. **Only supported operations**: Operations not supported by the device raise {py:class}`~mqt.core.qdmi.qiskit.UnsupportedOperationError`
+3. **Valid shots value**: Must be a non-negative integer
+
+```python
+from qiskit.circuit import Parameter
+
+# This will raise CircuitValidationError
+theta = Parameter("theta")
+qc = QuantumCircuit(1)
+qc.ry(theta, 0)
+# job = backend.run(qc)  # Error: unbound parameter
+
+# Bind parameters first
+qc_bound = qc.assign_parameters({theta: 1.5708})
+job = backend.run(qc_bound, shots=100)  # Success
+```
+
+## Job Handling
+
+### Job Status
+
+The {py:class}`~mqt.core.qdmi.qiskit.QiskitJob` wraps a FoMaC (QDMI) job and provides status tracking:
+
+```python
+from qiskit.providers import JobStatus
+
+job = backend.run(circuit, shots=1024)
+
+# Check job status
+status = job.status()
+print(f"Job status: {status}")
+
+# Job status mapping:
+# CREATED → INITIALIZING
+# QUEUED/SUBMITTED → QUEUED
+# RUNNING → RUNNING
+# DONE → DONE
+# CANCELED → CANCELLED
+# FAILED → ERROR
+```
+
+### Retrieving Results
+
+Results are lazily fetched when you call `result()`:
+
+```python
+# Run the circuit
+job = backend.run(circuit, shots=1024)
+
+# Get results (waits for completion if needed)
+result = job.result()
+
+# Access measurement counts
+counts = result.get_counts()
+
+# Access result metadata
+exp_result = result.results[0]
+print(f"Circuit name: {exp_result.header['name']}")
+print(f"Shots: {exp_result.shots}")
+print(f"Success: {exp_result.success}")
 ```
 
 ## Multi-Circuit Execution
 
-Execute multiple circuits in a single job:
+The backend processes circuits individually.
+To execute multiple circuits, submit them sequentially:
 
-```{code-cell} ipython3
-# Create multiple circuits for batch execution
-qc1 = QuantumCircuit(2, 2)
-qc1.ry(1.5708, 0)  # π/2 rotation
-qc1.cz(0, 1)
-qc1.measure([0, 1], [0, 1])
+```python
+circuits = [circuit1, circuit2, circuit3]
+results = []
 
-qc2 = QuantumCircuit(2, 2)
-qc2.ry(3.1416, 0)  # π rotation
-qc2.cz(0, 1)
-qc2.measure([0, 1], [0, 1])
+for circuit in circuits:
+    job = backend.run(circuit, shots=1000)
+    result = job.result()
+    results.append(result)
 
-qc3 = QuantumCircuit(2, 2)
-qc3.ry(1.5708, 0)  # π/2 rotation
-qc3.ry(1.5708, 1)  # π/2 rotation
-qc3.measure([0, 1], [0, 1])
-
-circuits = [qc1, qc2, qc3]
-job = backend.run(circuits, shots=2000)
-result = job.result()
-
-# Access results for each circuit
-for idx, circuit in enumerate(circuits):
-    counts = result.get_counts(idx)
-    print(f"Circuit {idx}: {counts}")
+# Process results
+for idx, result in enumerate(results):
+    counts = result.get_counts()
+    print(f"Circuit {idx} results: {counts}")
 ```
 
-## Extending the Backend
+## Error Handling
 
-### Custom Operation Translators
-
-Register custom gate translators for device-specific operations:
+The module provides specific exceptions for different error conditions:
 
 ```python
 from mqt.core.qdmi.qiskit import (
-    register_operation_translator,
-    InstructionContext,
-    ProgramInstruction,
+    CircuitValidationError,
+    UnsupportedOperationError,
+    JobSubmissionError,
+    TranslationError,
 )
 
-
-def custom_gate_translator(ctx: InstructionContext) -> list[ProgramInstruction]:
-    """Translate a custom gate."""
-    return [
-        ProgramInstruction(
-            name="my_gate",
-            qubits=ctx.qubits,
-            params=ctx.params,
-        )
-    ]
-
-
-register_operation_translator("my_gate", custom_gate_translator)
+try:
+    job = backend.run(circuit, shots=1024)
+    result = job.result()
+except CircuitValidationError as e:
+    # Invalid circuit (unbound parameters, invalid shots, etc.)
+    print(f"Circuit validation failed: {e}")
+except UnsupportedOperationError as e:
+    # Circuit contains operations not supported by device
+    print(f"Unsupported operation: {e}")
+except JobSubmissionError as e:
+    # Failed to submit job to device
+    print(f"Job submission failed: {e}")
+except TranslationError as e:
+    # Failed to convert circuit to QASM
+    print(f"Translation error: {e}")
 ```
 
-### Subclassing for Vendor Integration
+## Implementation Details
 
-For vendor-specific needs, subclass {py:class}`~mqt.core.qdmi.qiskit.QiskitBackend` and override the `_submit_to_device()` method:
+### Circuit Conversion
 
-```python
-from mqt.core.qdmi.qiskit import QiskitBackend
-from qiskit import qasm3
+When you run a circuit, the backend:
 
-# from your_vendor_sdk import ProgramFormat  # replace with actual import
+1. Validates the circuit (checks for unbound parameters, supported operations, valid options)
+2. Converts the circuit to QASM (QASM3 by default, QASM2 optionally)
+3. Submits the QASM program to the FoMaC (QDMI) device via `device.submit_job()`
+4. Returns a {py:class}`~mqt.core.qdmi.qiskit.QiskitJob` wrapping the FoMaC (QDMI) job
 
+### Device Introspection
 
-class VendorBackend(QiskitBackend):
-    """Backend that executes on real QDMI hardware."""
+The backend builds its {py:class}`~qiskit.transpiler.Target` by:
 
-    def _submit_to_device(self, circuit, shots):
-        # Serialize circuit using Qiskit
-        qasm3_str = qasm3.dumps(circuit)
+1. Querying the FoMaC (QDMI) device for available operations
+2. Mapping each operation to the corresponding Qiskit gate
+3. Determining qubit connectivity from the device's coupling map
+4. Including operation properties (duration, fidelity) if available
 
-        # Submit to vendor's QDMI device
-        job = self._device.submit_job(
-            program=qasm3_str, program_format=ProgramFormat.QASM3, num_shots=shots
-        )
+## API Reference
 
-        # Wait for completion and return results
-        job.wait()
-        return {
-            "counts": job.get_counts(),
-            "shots": shots,
-            "success": True,
-        }
-```
+For complete API documentation, see:
 
-## Current Implementation
-
-The base {py:class}`~mqt.core.qdmi.qiskit.QiskitBackend` is a **generic hardware-agnostic framework** designed for extension:
-
-- Returns deterministic zero-state counts for demonstration
-- Provides complete capability introspection and circuit validation
-- Supports 40+ common quantum gates (see full API documentation)
-- Offers overriding `_submit_to_device()` in a vendor-specific way
-
-:::{note}
-This design keeps MQT Core vendor-neutral while providing a complete integration framework.
-For complete API documentation, see {py:class}`~mqt.core.qdmi.qiskit.QiskitBackend`.
-:::
+- {py:class}`~mqt.core.qdmi.qiskit.QDMIProvider` - Device provider interface
+- {py:class}`~mqt.core.qdmi.qiskit.QiskitBackend` - BackendV2 implementation
+- {py:class}`~mqt.core.qdmi.qiskit.QiskitJob` - Job wrapper and result handling
+- {py:mod}`~mqt.core.qdmi.qiskit.exceptions` - Exception types
