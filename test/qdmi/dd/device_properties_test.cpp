@@ -30,10 +30,10 @@ querySites(MQT_DDSIM_QDMI_Device_Session session) {
                 session, QDMI_DEVICE_PROPERTY_SITES, 0, nullptr, &size),
             QDMI_SUCCESS);
   std::vector<MQT_DDSIM_QDMI_Site> sites(size / sizeof(MQT_DDSIM_QDMI_Site));
-  EXPECT_EQ(
-      MQT_DDSIM_QDMI_device_session_query_device_property(
-          session, QDMI_DEVICE_PROPERTY_SITES, size, sites.data(), nullptr),
-      QDMI_SUCCESS);
+  EXPECT_EQ(MQT_DDSIM_QDMI_device_session_query_device_property(
+                session, QDMI_DEVICE_PROPERTY_SITES, size,
+                static_cast<void*>(sites.data()), nullptr),
+            QDMI_SUCCESS);
   return sites;
 }
 
@@ -45,10 +45,10 @@ queryOperations(MQT_DDSIM_QDMI_Device_Session session) {
             QDMI_SUCCESS);
   std::vector<MQT_DDSIM_QDMI_Operation> ops(size /
                                             sizeof(MQT_DDSIM_QDMI_Operation));
-  EXPECT_EQ(
-      MQT_DDSIM_QDMI_device_session_query_device_property(
-          session, QDMI_DEVICE_PROPERTY_OPERATIONS, size, ops.data(), nullptr),
-      QDMI_SUCCESS);
+  EXPECT_EQ(MQT_DDSIM_QDMI_device_session_query_device_property(
+                session, QDMI_DEVICE_PROPERTY_OPERATIONS, size,
+                static_cast<void*>(ops.data()), nullptr),
+            QDMI_SUCCESS);
   return ops;
 }
 
@@ -143,10 +143,10 @@ TEST(DeviceProperties, UnitsAndScales) {
 TEST(DeviceProperties, SitesAndOperationsLists) {
   const qdmi_test::SessionGuard s{};
 
-  auto sites = querySites(s.session);
+  const auto sites = querySites(s.session);
   EXPECT_FALSE(sites.empty());
 
-  auto ops = queryOperations(s.session);
+  const auto ops = queryOperations(s.session);
   EXPECT_FALSE(ops.empty());
 }
 
@@ -160,71 +160,51 @@ TEST(DeviceProperties, QubitsNumAvailable) {
   EXPECT_GT(nq, 0U);
 }
 
-TEST(DeviceProperties, InvalidAndCustomProperties) {
+TEST(SiteProperties, IndexAvailable) {
   const qdmi_test::SessionGuard s{};
-  EXPECT_EQ(MQT_DDSIM_QDMI_device_session_query_device_property(
-                nullptr, QDMI_DEVICE_PROPERTY_NAME, 0, nullptr, nullptr),
-            QDMI_ERROR_INVALIDARGUMENT);
-  EXPECT_EQ(MQT_DDSIM_QDMI_device_session_query_device_property(
-                s.session, QDMI_DEVICE_PROPERTY_MAX, 0, nullptr, nullptr),
-            QDMI_ERROR_INVALIDARGUMENT);
-  // Custom properties not supported
-  EXPECT_EQ(MQT_DDSIM_QDMI_device_session_query_device_property(
-                s.session, QDMI_DEVICE_PROPERTY_CUSTOM1, 0, nullptr, nullptr),
-            QDMI_ERROR_NOTSUPPORTED);
-}
-
-TEST(SiteProperties, BasicAndCustom) {
-  const qdmi_test::SessionGuard s{};
-  const auto sites = querySites(s.session);
-  const auto site = sites.front();
-
-  size_t idx = 0;
-  EXPECT_EQ(MQT_DDSIM_QDMI_device_session_query_site_property(
-                s.session, site, QDMI_SITE_PROPERTY_INDEX, sizeof(size_t), &idx,
-                nullptr),
-            QDMI_SUCCESS);
-
-  EXPECT_EQ(
-      MQT_DDSIM_QDMI_device_session_query_site_property(
-          s.session, site, QDMI_SITE_PROPERTY_CUSTOM1, 0, nullptr, nullptr),
-      QDMI_ERROR_NOTSUPPORTED);
+  for (const auto sites = querySites(s.session); const auto site : sites) {
+    size_t idx = 0;
+    EXPECT_EQ(MQT_DDSIM_QDMI_device_session_query_site_property(
+                  s.session, site, QDMI_SITE_PROPERTY_INDEX, sizeof(size_t),
+                  &idx, nullptr),
+              QDMI_SUCCESS);
+    EXPECT_LT(idx, sites.size());
+  }
 }
 
 TEST(OperationProperties, BasicQueries) {
   const qdmi_test::SessionGuard s{};
-  const auto ops = queryOperations(s.session);
-  const auto op = ops.front();
+  for (const auto ops = queryOperations(s.session); const auto op : ops) {
+    size_t nameSize = 0;
+    ASSERT_EQ(MQT_DDSIM_QDMI_device_session_query_operation_property(
+                  s.session, op, 0, nullptr, 0, nullptr,
+                  QDMI_OPERATION_PROPERTY_NAME, 0, nullptr, &nameSize),
+              QDMI_SUCCESS);
+    std::string name(nameSize > 0 ? nameSize - 1 : 0, '\0');
+    ASSERT_EQ(MQT_DDSIM_QDMI_device_session_query_operation_property(
+                  s.session, op, 0, nullptr, 0, nullptr,
+                  QDMI_OPERATION_PROPERTY_NAME, nameSize, name.data(), nullptr),
+              QDMI_SUCCESS);
 
-  size_t nameSize = 0;
-  ASSERT_EQ(MQT_DDSIM_QDMI_device_session_query_operation_property(
-                s.session, op, 0, nullptr, 0, nullptr,
-                QDMI_OPERATION_PROPERTY_NAME, 0, nullptr, &nameSize),
-            QDMI_SUCCESS);
-  std::string name(nameSize > 0 ? nameSize - 1 : 0, '\0');
-  ASSERT_EQ(MQT_DDSIM_QDMI_device_session_query_operation_property(
-                s.session, op, 0, nullptr, 0, nullptr,
-                QDMI_OPERATION_PROPERTY_NAME, nameSize, name.data(), nullptr),
-            QDMI_SUCCESS);
+    auto fidelity = 0.0;
+    ASSERT_EQ(MQT_DDSIM_QDMI_device_session_query_operation_property(
+                  s.session, op, 0, nullptr, 0, nullptr,
+                  QDMI_OPERATION_PROPERTY_FIDELITY, sizeof(double), &fidelity,
+                  nullptr),
+              QDMI_SUCCESS);
+    EXPECT_EQ(fidelity, 1.0);
 
-  double fidelity = 0.0;
-  ASSERT_EQ(MQT_DDSIM_QDMI_device_session_query_operation_property(
-                s.session, op, 0, nullptr, 0, nullptr,
-                QDMI_OPERATION_PROPERTY_FIDELITY, sizeof(double), &fidelity,
-                nullptr),
-            QDMI_SUCCESS);
-  EXPECT_EQ(fidelity, 1.0);
+    size_t nparams = 0;
+    ASSERT_EQ(MQT_DDSIM_QDMI_device_session_query_operation_property(
+                  s.session, op, 0, nullptr, 0, nullptr,
+                  QDMI_OPERATION_PROPERTY_PARAMETERSNUM, sizeof(size_t),
+                  &nparams, nullptr),
+              QDMI_SUCCESS);
+    EXPECT_GE(nparams, 0U);
 
-  size_t nparams = 0;
-  ASSERT_EQ(MQT_DDSIM_QDMI_device_session_query_operation_property(
-                s.session, op, 0, nullptr, 0, nullptr,
-                QDMI_OPERATION_PROPERTY_PARAMETERSNUM, sizeof(size_t), &nparams,
-                nullptr),
-            QDMI_SUCCESS);
-  EXPECT_GE(nparams, 0U);
-
-  auto rc = MQT_DDSIM_QDMI_device_session_query_operation_property(
-      s.session, op, 0, nullptr, 0, nullptr, QDMI_OPERATION_PROPERTY_QUBITSNUM,
-      0, nullptr, nullptr);
-  EXPECT_THAT(rc, AnyOf(QDMI_SUCCESS, QDMI_ERROR_NOTSUPPORTED));
+    const auto rc = MQT_DDSIM_QDMI_device_session_query_operation_property(
+        s.session, op, 0, nullptr, 0, nullptr,
+        QDMI_OPERATION_PROPERTY_QUBITSNUM, 0, nullptr, nullptr);
+    EXPECT_THAT(rc, AnyOf(QDMI_SUCCESS, QDMI_ERROR_NOTSUPPORTED));
+  }
 }

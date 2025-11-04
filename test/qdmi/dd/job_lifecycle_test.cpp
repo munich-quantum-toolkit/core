@@ -41,11 +41,6 @@ TEST(JobLifecycle, SubmitAndWaitStatevector) {
   ASSERT_EQ(qdmi_test::submitAndWait(j.job, 0), QDMI_SUCCESS);
 }
 
-TEST(JobLifecycle, SubmitInvalidArgumentNull) {
-  EXPECT_EQ(MQT_DDSIM_QDMI_device_job_submit(nullptr),
-            QDMI_ERROR_INVALIDARGUMENT);
-}
-
 TEST(JobLifecycle, WaitInvalidBeforeSubmitAndIdempotentAfterDone) {
   const qdmi_test::SessionGuard s{};
   const qdmi_test::JobGuard j{s.session};

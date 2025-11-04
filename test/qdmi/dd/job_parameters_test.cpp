@@ -96,30 +96,6 @@ TEST(JobParameters, ProgramFormatSupport) {
   // Invalid enum
   EXPECT_EQ(MQT_DDSIM_QDMI_device_job_set_parameter(
                 j.job, QDMI_DEVICE_JOB_PARAMETER_PROGRAMFORMAT,
-                sizeof(QDMI_Program_Format), (const void*)nullptr),
+                sizeof(QDMI_Program_Format), nullptr),
             QDMI_SUCCESS); // size==0 or null is accepted as no-op in API here
-
-  // MAX → INVALIDARGUMENT
-  constexpr QDMI_Program_Format maxFmt = QDMI_PROGRAM_FORMAT_MAX;
-  EXPECT_EQ(MQT_DDSIM_QDMI_device_job_set_parameter(
-                j.job, QDMI_DEVICE_JOB_PARAMETER_PROGRAMFORMAT,
-                sizeof(QDMI_Program_Format), &maxFmt),
-            QDMI_ERROR_INVALIDARGUMENT);
-}
-
-TEST(JobParameters, InvalidAndCustomParameters) {
-  const qdmi_test::SessionGuard s{};
-  const qdmi_test::JobGuard j{s.session};
-  EXPECT_EQ(MQT_DDSIM_QDMI_device_job_set_parameter(
-                nullptr, QDMI_DEVICE_JOB_PARAMETER_MAX, 0, nullptr),
-            QDMI_ERROR_INVALIDARGUMENT);
-
-  EXPECT_EQ(MQT_DDSIM_QDMI_device_job_set_parameter(
-                j.job, QDMI_DEVICE_JOB_PARAMETER_MAX, 0, nullptr),
-            QDMI_ERROR_INVALIDARGUMENT);
-
-  // Custom params not supported
-  EXPECT_EQ(MQT_DDSIM_QDMI_device_job_set_parameter(
-                j.job, QDMI_DEVICE_JOB_PARAMETER_CUSTOM1, 0, nullptr),
-            QDMI_ERROR_NOTSUPPORTED);
 }

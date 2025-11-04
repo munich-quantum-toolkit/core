@@ -30,7 +30,7 @@ QDMI_Device_Status queryStatus(MQT_DDSIM_QDMI_Device_Session session) {
 } // namespace
 
 TEST(DeviceStatus, TransitionsBusyThenIdleAfterJob) {
-  qdmi_test::SessionGuard s{};
+  const qdmi_test::SessionGuard s{};
 
   // Initial status can be OFFLINE depending on implementation; do not assert
   // it. Submit a job to force BUSY then completion to IDLE.

@@ -302,7 +302,12 @@ auto MQT_DDSIM_QDMI_Device_Session_impl_d::setParameter(
     const QDMI_Device_Session_Parameter param, const size_t size,
     const void* value) const -> QDMI_STATUS {
   if ((value != nullptr && size == 0) ||
-      param >= QDMI_DEVICE_SESSION_PARAMETER_MAX) {
+      (param >= QDMI_DEVICE_SESSION_PARAMETER_MAX &&
+       param != QDMI_DEVICE_SESSION_PARAMETER_CUSTOM1 &&
+       param != QDMI_DEVICE_SESSION_PARAMETER_CUSTOM2 &&
+       param != QDMI_DEVICE_SESSION_PARAMETER_CUSTOM3 &&
+       param != QDMI_DEVICE_SESSION_PARAMETER_CUSTOM4 &&
+       param != QDMI_DEVICE_SESSION_PARAMETER_CUSTOM5)) {
     return QDMI_ERROR_INVALIDARGUMENT;
   }
   if (status_ != Status::ALLOCATED) {
@@ -431,6 +436,7 @@ auto MQT_DDSIM_QDMI_Device_Job_impl_d::setParameter(
           format != QDMI_PROGRAM_FORMAT_QASM3) {
         return QDMI_ERROR_NOTSUPPORTED;
       }
+      format_ = format;
     }
     return QDMI_SUCCESS;
   case QDMI_DEVICE_JOB_PARAMETER_PROGRAM:

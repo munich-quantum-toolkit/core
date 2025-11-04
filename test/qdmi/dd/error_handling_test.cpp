@@ -18,6 +18,8 @@
 #include <gtest/gtest.h>
 
 TEST(ErrorHandling, NullptrArguments) {
+  EXPECT_EQ(MQT_DDSIM_QDMI_device_session_alloc(nullptr),
+            QDMI_ERROR_INVALIDARGUMENT);
   EXPECT_EQ(MQT_DDSIM_QDMI_device_session_query_device_property(
                 nullptr, QDMI_DEVICE_PROPERTY_NAME, 0, nullptr, nullptr),
             QDMI_ERROR_INVALIDARGUMENT);
@@ -68,23 +70,41 @@ TEST(ErrorHandling, GetResultsBeforeDone) {
   ASSERT_EQ(MQT_DDSIM_QDMI_device_job_wait(j.job, 0), QDMI_SUCCESS);
 }
 
-TEST(ErrorHandling, CustomAndMaxEnums) {
+TEST(ErrorHandling, MaxEnums) {
   const qdmi_test::SessionGuard s{};
   const qdmi_test::JobGuard j{s.session};
-  // Device property MAX invalid
+
+  MQT_DDSIM_QDMI_Device_Session session = nullptr;
+  EXPECT_EQ(MQT_DDSIM_QDMI_device_session_alloc(&session), QDMI_SUCCESS);
+  EXPECT_EQ(MQT_DDSIM_QDMI_device_session_set_parameter(
+                session, QDMI_DEVICE_SESSION_PARAMETER_MAX, 0, nullptr),
+            QDMI_ERROR_INVALIDARGUMENT);
+  MQT_DDSIM_QDMI_device_session_free(session);
+
   EXPECT_EQ(MQT_DDSIM_QDMI_device_session_query_device_property(
                 s.session, QDMI_DEVICE_PROPERTY_MAX, 0, nullptr, nullptr),
             QDMI_ERROR_INVALIDARGUMENT);
-  // Device custom not supported
-  EXPECT_EQ(MQT_DDSIM_QDMI_device_session_query_device_property(
-                s.session, QDMI_DEVICE_PROPERTY_CUSTOM1, 0, nullptr, nullptr),
-            QDMI_ERROR_NOTSUPPORTED);
+  EXPECT_EQ(
+      MQT_DDSIM_QDMI_device_session_query_site_property(
+          s.session, nullptr, QDMI_SITE_PROPERTY_MAX, 0, nullptr, nullptr),
+      QDMI_ERROR_INVALIDARGUMENT);
+  EXPECT_EQ(MQT_DDSIM_QDMI_device_session_query_operation_property(
+                s.session, nullptr, 0, nullptr, 0, nullptr,
+                QDMI_OPERATION_PROPERTY_MAX, 0, nullptr, nullptr),
+            QDMI_ERROR_INVALIDARGUMENT);
 
-  // Job property MAX invalid
+  EXPECT_EQ(MQT_DDSIM_QDMI_device_job_set_parameter(
+                j.job, QDMI_DEVICE_JOB_PARAMETER_MAX, 0, nullptr),
+            QDMI_ERROR_INVALIDARGUMENT);
   EXPECT_EQ(MQT_DDSIM_QDMI_device_job_query_property(
                 j.job, QDMI_DEVICE_JOB_PROPERTY_MAX, 0, nullptr, nullptr),
             QDMI_ERROR_INVALIDARGUMENT);
-  // Job result MAX invalid
+  constexpr QDMI_Program_Format maxFmt = QDMI_PROGRAM_FORMAT_MAX;
+  EXPECT_EQ(MQT_DDSIM_QDMI_device_job_set_parameter(
+                j.job, QDMI_DEVICE_JOB_PARAMETER_PROGRAMFORMAT,
+                sizeof(QDMI_Program_Format), &maxFmt),
+            QDMI_ERROR_INVALIDARGUMENT);
+
   ASSERT_EQ(qdmi_test::setProgram(j.job, QDMI_PROGRAM_FORMAT_QASM3,
                                   qdmi_test::QASM3_Bell_Sampling),
             QDMI_SUCCESS);
@@ -93,9 +113,83 @@ TEST(ErrorHandling, CustomAndMaxEnums) {
   EXPECT_EQ(MQT_DDSIM_QDMI_device_job_get_results(j.job, QDMI_JOB_RESULT_MAX, 0,
                                                   nullptr, nullptr),
             QDMI_ERROR_INVALIDARGUMENT);
-  // Custom results not supported
+}
+
+TEST(ErrorHandling, CustomEnums) {
+  const qdmi_test::SessionGuard s{};
+  const qdmi_test::JobGuard j{s.session};
+
+  MQT_DDSIM_QDMI_Device_Session session = nullptr;
+  EXPECT_EQ(MQT_DDSIM_QDMI_device_session_alloc(&session), QDMI_SUCCESS);
+  EXPECT_EQ(MQT_DDSIM_QDMI_device_session_set_parameter(
+                session, QDMI_DEVICE_SESSION_PARAMETER_CUSTOM1, 0, nullptr),
+            QDMI_ERROR_NOTSUPPORTED);
+  EXPECT_EQ(MQT_DDSIM_QDMI_device_session_set_parameter(
+                session, QDMI_DEVICE_SESSION_PARAMETER_CUSTOM2, 0, nullptr),
+            QDMI_ERROR_NOTSUPPORTED);
+  EXPECT_EQ(MQT_DDSIM_QDMI_device_session_set_parameter(
+                session, QDMI_DEVICE_SESSION_PARAMETER_CUSTOM3, 0, nullptr),
+            QDMI_ERROR_NOTSUPPORTED);
+  EXPECT_EQ(MQT_DDSIM_QDMI_device_session_set_parameter(
+                session, QDMI_DEVICE_SESSION_PARAMETER_CUSTOM4, 0, nullptr),
+            QDMI_ERROR_NOTSUPPORTED);
+  EXPECT_EQ(MQT_DDSIM_QDMI_device_session_set_parameter(
+                session, QDMI_DEVICE_SESSION_PARAMETER_CUSTOM5, 0, nullptr),
+            QDMI_ERROR_NOTSUPPORTED);
+  MQT_DDSIM_QDMI_device_session_free(session);
+
+  EXPECT_EQ(MQT_DDSIM_QDMI_device_session_query_device_property(
+                s.session, QDMI_DEVICE_PROPERTY_CUSTOM1, 0, nullptr, nullptr),
+            QDMI_ERROR_NOTSUPPORTED);
+  EXPECT_EQ(MQT_DDSIM_QDMI_device_session_query_device_property(
+                s.session, QDMI_DEVICE_PROPERTY_CUSTOM2, 0, nullptr, nullptr),
+            QDMI_ERROR_NOTSUPPORTED);
+  EXPECT_EQ(MQT_DDSIM_QDMI_device_session_query_device_property(
+                s.session, QDMI_DEVICE_PROPERTY_CUSTOM3, 0, nullptr, nullptr),
+            QDMI_ERROR_NOTSUPPORTED);
+  EXPECT_EQ(MQT_DDSIM_QDMI_device_session_query_device_property(
+                s.session, QDMI_DEVICE_PROPERTY_CUSTOM4, 0, nullptr, nullptr),
+            QDMI_ERROR_NOTSUPPORTED);
+  EXPECT_EQ(MQT_DDSIM_QDMI_device_session_query_device_property(
+                s.session, QDMI_DEVICE_PROPERTY_CUSTOM5, 0, nullptr, nullptr),
+            QDMI_ERROR_NOTSUPPORTED);
+
+  EXPECT_EQ(MQT_DDSIM_QDMI_device_job_set_parameter(
+                j.job, QDMI_DEVICE_JOB_PARAMETER_CUSTOM1, 0, nullptr),
+            QDMI_ERROR_NOTSUPPORTED);
+  EXPECT_EQ(MQT_DDSIM_QDMI_device_job_set_parameter(
+                j.job, QDMI_DEVICE_JOB_PARAMETER_CUSTOM2, 0, nullptr),
+            QDMI_ERROR_NOTSUPPORTED);
+  EXPECT_EQ(MQT_DDSIM_QDMI_device_job_set_parameter(
+                j.job, QDMI_DEVICE_JOB_PARAMETER_CUSTOM3, 0, nullptr),
+            QDMI_ERROR_NOTSUPPORTED);
+  EXPECT_EQ(MQT_DDSIM_QDMI_device_job_set_parameter(
+                j.job, QDMI_DEVICE_JOB_PARAMETER_CUSTOM4, 0, nullptr),
+            QDMI_ERROR_NOTSUPPORTED);
+  EXPECT_EQ(MQT_DDSIM_QDMI_device_job_set_parameter(
+                j.job, QDMI_DEVICE_JOB_PARAMETER_CUSTOM5, 0, nullptr),
+            QDMI_ERROR_NOTSUPPORTED);
+
+  ASSERT_EQ(qdmi_test::setProgram(j.job, QDMI_PROGRAM_FORMAT_QASM3,
+                                  qdmi_test::QASM3_Bell_Sampling),
+            QDMI_SUCCESS);
+  ASSERT_EQ(qdmi_test::setShots(j.job, 16), QDMI_SUCCESS);
+  ASSERT_EQ(qdmi_test::submitAndWait(j.job, 0), QDMI_SUCCESS);
+
   EXPECT_EQ(MQT_DDSIM_QDMI_device_job_get_results(
                 j.job, QDMI_JOB_RESULT_CUSTOM1, 0, nullptr, nullptr),
+            QDMI_ERROR_NOTSUPPORTED);
+  EXPECT_EQ(MQT_DDSIM_QDMI_device_job_get_results(
+                j.job, QDMI_JOB_RESULT_CUSTOM2, 0, nullptr, nullptr),
+            QDMI_ERROR_NOTSUPPORTED);
+  EXPECT_EQ(MQT_DDSIM_QDMI_device_job_get_results(
+                j.job, QDMI_JOB_RESULT_CUSTOM3, 0, nullptr, nullptr),
+            QDMI_ERROR_NOTSUPPORTED);
+  EXPECT_EQ(MQT_DDSIM_QDMI_device_job_get_results(
+                j.job, QDMI_JOB_RESULT_CUSTOM4, 0, nullptr, nullptr),
+            QDMI_ERROR_NOTSUPPORTED);
+  EXPECT_EQ(MQT_DDSIM_QDMI_device_job_get_results(
+                j.job, QDMI_JOB_RESULT_CUSTOM5, 0, nullptr, nullptr),
             QDMI_ERROR_NOTSUPPORTED);
 }
 
