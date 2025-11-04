@@ -14,12 +14,17 @@
 #include "mlir/Dialect/MQTOpt/Transforms/Transpilation/Common.h"
 #include "mlir/Dialect/MQTOpt/Transforms/Transpilation/Layout.h"
 
+#include "llvm/ADT/STLExtras.h"
+#include "llvm/Support/ErrorHandling.h"
+
+#include <array>
 #include <llvm/ADT/TypeSwitch.h>
 #include <llvm/Support/Debug.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
 #include <mlir/IR/Operation.h>
 #include <mlir/IR/Value.h>
 #include <mlir/Support/LLVM.h>
+#include <optional>
 
 #define DEBUG_TYPE "route-sc"
 
@@ -28,13 +33,13 @@ namespace mqt::ir::opt {
 /**
  * @brief A vector of gates.
  */
-using Layer = mlir::SmallVector<QubitIndexPair>;
+using Layer = SmallVector<QubitIndexPair>;
 
 /**
  * @brief A vector of layers.
  * [0]=current, [1]=lookahead (optional), >=2 future layers
  */
-using Layers = mlir::SmallVector<Layer>;
+using Layers = SmallVector<Layer>;
 
 /**
  * @brief A scheduler divides the circuit into routable sections.
@@ -42,7 +47,7 @@ using Layers = mlir::SmallVector<Layer>;
 struct SchedulerBase {
   virtual ~SchedulerBase() = default;
   [[nodiscard]] virtual Layers schedule(UnitaryInterface op,
-                                        const Layout& layout) const = 0;
+                                        Layout layout) const = 0;
 };
 
 /**
@@ -50,105 +55,134 @@ struct SchedulerBase {
  */
 struct SequentialOpScheduler final : SchedulerBase {
   [[nodiscard]] Layers schedule(UnitaryInterface op,
-                                const Layout& layout) const override {
+                                Layout layout) const override {
     const auto [in0, in1] = getIns(op);
     return {{{layout.lookupProgramIndex(in0), layout.lookupProgramIndex(in1)}}};
   }
 };
 
 /**
- * @brief A crawl scheduler "crawls" the DAG for all gates that can be executed
- * in parallel, i.e., they act on different qubits.
+ * @brief A parallel scheduler collects 1 + nlookahead layers of parallelly
+ * executable gates.
  */
 struct ParallelOpScheduler final : SchedulerBase {
   explicit ParallelOpScheduler(const std::size_t nlookahead)
-      : nlookahead_(nlookahead) {}
+      : nlayers_(1 + nlookahead) {}
 
   [[nodiscard]] Layers schedule(UnitaryInterface op,
-                                const Layout& layout) const override {
-    Layout layoutCopy(layout);
-    Layers layers(1 + nlookahead_);
+                                Layout layout) const override {
+    Layers layers;
+    layers.reserve(nlayers_);
 
-    const auto* region = op->getParentRegion();
-    const auto qubits = layoutCopy.getHardwareQubits();
-    const auto nqubits = qubits.size();
+    /// Worklist of active qubits.
+    SmallVector<Value> wl;
+    SmallVector<Value> nextWl;
+    wl.reserve(layout.getHardwareQubits().size());
+    nextWl.reserve(layout.getHardwareQubits().size());
 
-    for (Layer& layer : layers) {
-      mlir::DenseSet<mlir::Operation*> seenTwoQubit;
-      mlir::SmallVector<UnitaryInterface> readyTwoQubit;
+    // Initialize worklist.
+    llvm::copy_if(layout.getHardwareQubits(), std::back_inserter(wl),
+                  [](Value q) { return !q.use_empty(); });
 
-      /// The maximum amount of two-qubit gates in a layer is nqubits / 2.
-      /// Assuming sparsity we half this value: nqubits / (2 * 2)
-      seenTwoQubit.reserve(nqubits / 4);
-      readyTwoQubit.reserve(nqubits / 4);
+    /// Set of two-qubit gates seen at least once.
+    llvm::SmallDenseSet<Operation*, 32> openTwoQubit;
 
-      for (const mlir::Value q : qubits) {
-        bool stop = false;
-        mlir::Value prev = q;
-        mlir::Value head = q;
+    /// Vector of two-qubit gates seen twice.
+    SmallVector<UnitaryInterface, 32> readyTwoQubit;
 
-        while (!head.use_empty() && !stop) {
-          mlir::Operation* user = getUserInRegion(head, region);
-          if (user == nullptr) {
+    Region* region = op->getParentRegion();
+
+    while (!wl.empty() && layers.size() < nlayers_) {
+      for (const Value q : wl) {
+        const auto opt = advanceToTwoQubitGate(q, region, layout);
+        if (!opt) {
+          continue;
+        }
+
+        const auto& [qNext, gate] = opt.value();
+
+        if (q != qNext) {
+          layout.remapQubitValue(q, qNext);
+        }
+
+        if (!openTwoQubit.insert(gate).second) {
+          readyTwoQubit.push_back(gate);
+          openTwoQubit.erase(gate);
+          continue;
+        }
+      }
+
+      if (readyTwoQubit.empty()) {
+        break;
+      }
+
+      nextWl.clear();
+      layers.emplace_back();
+      layers.back().reserve(readyTwoQubit.size());
+
+      /// At this point all qubit values are remapped to the input of a
+      /// two-qubit gate: "value.user == two-qubit-gate".
+      ///
+      /// We release the ready two-qubit gates by forwarding their inputs
+      /// to their outputs. Then, we advance to the end of its two-qubit block.
+      /// Intuitively, whenever a gate in readyTwoQubit is routed, all one and
+      /// two-qubit gates acting on the same qubits are executable as well.
+
+      for (const auto& op : readyTwoQubit) {
+        /// Release.
+        const ValuePair ins = getIns(op);
+        const ValuePair outs = getOuts(op);
+        layers.back().emplace_back(layout.lookupProgramIndex(ins.first),
+                                   layout.lookupProgramIndex(ins.second));
+        layout.remapQubitValue(ins.first, outs.first);
+        layout.remapQubitValue(ins.second, outs.second);
+
+        /// Advance two-qubit block.
+        std::array<UnitaryInterface, 2> gates;
+        std::array<Value, 2> heads{outs.first, outs.second};
+
+        while (true) {
+          bool stop = false;
+          for (const auto [i, q] : llvm::enumerate(heads)) {
+            const auto opt = advanceToTwoQubitGate(q, region, layout);
+            if (!opt) {
+              heads[i] = nullptr;
+              stop = true;
+              break;
+            }
+
+            const auto& [qNext, gate] = opt.value();
+
+            if (q != qNext) {
+              layout.remapQubitValue(q, qNext);
+            }
+
+            heads[i] = qNext;
+            gates[i] = gate;
+          }
+
+          if (stop || gates[0] != gates[1]) {
             break;
           }
 
-          mlir::TypeSwitch<mlir::Operation*, void>(user)
-              .Case<mlir::scf::ForOp>([&](mlir::scf::ForOp op) {
-                /// This assumes that the first n results are the hardw. qubits.
-                head = op->getResult(layoutCopy.lookupHardwareIndex(head));
-              })
-              .Case<mlir::scf::IfOp>([&](mlir::scf::IfOp op) {
-                /// This assumes that the first n results are the hardw. qubits.
-                head = op->getResult(layoutCopy.lookupHardwareIndex(head));
-              })
-              .Case<ResetOp>([&](ResetOp op) { head = op.getOutQubit(); })
-              .Case<MeasureOp>([&](MeasureOp op) { head = op.getOutQubit(); })
-              .Case<BarrierOp>([&](BarrierOp op) {
-                for (const auto [in, out] :
-                     llvm::zip_equal(op.getInQubits(), op.getOutQubits())) {
-                  if (in == head) {
-                    head = out;
-                    break;
-                  }
-                }
-                return;
-              })
-              .Case<UnitaryInterface>([&](UnitaryInterface op) {
-                if (mlir::isa<GPhaseOp>(op)) {
-                  stop = true;
-                  return;
-                }
+          const ValuePair ins = getIns(gates[0]);
+          const ValuePair outs = getOuts(gates[0]);
+          layout.remapQubitValue(ins.first, outs.first);
+          layout.remapQubitValue(ins.second, outs.second);
+          heads = {outs.first, outs.second};
+        }
 
-                /// Insert two-qubit gates into seen-set.
-                /// If this is the second encounter, the gate is ready.
-                if (isTwoQubitGate(op)) {
-                  if (!seenTwoQubit.insert(op.getOperation()).second) {
-                    readyTwoQubit.emplace_back(op);
-                  }
-                  stop = true;
-                  return;
-                }
-
-                head = op.getOutQubits().front();
-              })
-              .Default([&](mlir::Operation*) { stop = true; });
-
-          if (prev != head) {
-            layoutCopy.remapQubitValue(prev, head);
-            prev = head;
+        /// Initialize next worklist.
+        for (const auto q : heads) {
+          if (q != nullptr && !q.use_empty()) {
+            nextWl.push_back(q);
           }
         }
       }
 
-      for (const UnitaryInterface op : readyTwoQubit) {
-        const auto [in0, in1] = getIns(op);
-        const auto [out0, out1] = getOuts(op);
-        layer.emplace_back(layoutCopy.lookupProgramIndex(in0),
-                           layoutCopy.lookupProgramIndex(in1));
-        layoutCopy.remapQubitValue(in0, out0);
-        layoutCopy.remapQubitValue(in1, out1);
-      }
+      /// Prepare for next iteration.
+      readyTwoQubit.clear();
+      wl = std::move(nextWl);
     }
 
     LLVM_DEBUG({
@@ -166,16 +200,77 @@ struct ParallelOpScheduler final : SchedulerBase {
   }
 
 private:
-  static mlir::Operation* getUserInRegion(const mlir::Value v,
-                                          const mlir::Region* region) {
-    for (mlir::Operation* user : v.getUsers()) {
-      if (user->getParentRegion() == region) {
-        return user;
+  /**
+   * @returns Next two-qubit gate on qubit wire, or std::nullopt if none exists.
+   */
+  static std::optional<std::pair<Value, UnitaryInterface>>
+  advanceToTwoQubitGate(const Value q, Region* region, const Layout& layout) {
+    Value head = q;
+    while (true) {
+      if (head.use_empty()) { // No two-qubit gate found.
+        return std::nullopt;
+      }
+
+      Operation* user = getUserInRegion(head, region);
+      if (user == nullptr) { // No two-qubit gate found.
+        return std::nullopt;
+      }
+
+      bool endOfRegion = false;
+      std::optional<UnitaryInterface> twoQubitOp;
+
+      TypeSwitch<Operation*>(user)
+          /// MQT
+          /// BarrierOp is a UnitaryInterface, however, requires special care.
+          .Case<BarrierOp>([&](BarrierOp op) {
+            for (const auto [in, out] :
+                 llvm::zip_equal(op.getInQubits(), op.getOutQubits())) {
+              if (in == head) {
+                head = out;
+                return;
+              }
+            }
+            llvm_unreachable("head must be in barrier");
+          })
+          .Case<UnitaryInterface>([&](UnitaryInterface op) {
+            if (isTwoQubitGate(op)) {
+              twoQubitOp = op;
+              return; // Found a two-qubit gate, stop advancing head.
+            }
+            // Otherwise, advance head.
+            head = op.getOutQubits().front();
+          })
+          .Case<ResetOp>([&](ResetOp op) { head = op.getOutQubit(); })
+          .Case<MeasureOp>([&](MeasureOp op) { head = op.getOutQubit(); })
+          /// SCF
+          /// The scf funcs assume that the first n results are the hw qubits.
+          .Case<scf::ForOp>([&](scf::ForOp op) {
+            head = op->getResult(layout.lookupHardwareIndex(q));
+          })
+          .Case<scf::IfOp>([&](scf::IfOp op) {
+            head = op->getResult(layout.lookupHardwareIndex(q));
+          })
+          .Case<scf::YieldOp>([&](scf::YieldOp) { endOfRegion = true; })
+          .Default([&]([[maybe_unused]] Operation* op) {
+            LLVM_DEBUG({
+              llvm::dbgs() << "unknown operation in def-use chain: ";
+              op->dump();
+            });
+            llvm_unreachable("unknown operation in def-use chain");
+          });
+
+      if (twoQubitOp) { // Two-qubit gate found.
+        return std::make_pair(head, *twoQubitOp);
+      }
+
+      if (endOfRegion) {
+        return std::nullopt;
       }
     }
-    return nullptr;
+
+    return std::nullopt;
   }
 
-  std::size_t nlookahead_ = 1;
+  std::size_t nlayers_;
 };
 } // namespace mqt::ir::opt

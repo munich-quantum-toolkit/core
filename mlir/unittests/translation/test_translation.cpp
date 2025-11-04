@@ -446,6 +446,12 @@ INSTANTIATE_TEST_SUITE_P(
                         .build = [](QuantumComputation& qc) { qc.p(0.1, 0); },
                         .checkStringOperation =
                             getCheckStringOperationParams("p", {0.1}, {0})},
+        TestCaseUnitary{
+            .name = "R",
+            .numQubits = 1,
+            .build = [](QuantumComputation& qc) { qc.r(0.1, 0.2, 0); },
+            .checkStringOperation =
+                getCheckStringOperationParams("r", {0.1, 0.2}, {0})},
         TestCaseUnitary{.name = "RX",
                         .numQubits = 1,
                         .build = [](QuantumComputation& qc) { qc.rx(0.1, 0); },
