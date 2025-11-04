@@ -154,6 +154,21 @@ DenseElementsAttr RXOp::tryGetStaticMatrix() {
   return DenseElementsAttr::get(type, getMatrixRX(theta));
 }
 
+void RXOp::build(OpBuilder& builder, OperationState& state, Value qubitIn,
+                 std::variant<double, FloatAttr, Value> theta) {
+  FloatAttr thetaAttr = nullptr;
+  Value thetaOperand = nullptr;
+  if (std::holds_alternative<double>(theta)) {
+    thetaAttr = builder.getF64FloatAttr(std::get<double>(theta));
+  } else if (std::holds_alternative<FloatAttr>(theta)) {
+    thetaAttr = std::get<FloatAttr>(theta);
+  } else {
+    thetaOperand = std::get<Value>(theta);
+  }
+  build(builder, state, QubitType::get(builder.getContext()), qubitIn,
+        thetaAttr, thetaOperand);
+}
+
 LogicalResult RXOp::verify() {
   if (getTheta().has_value() == (getThetaDyn() != nullptr)) {
     return emitOpError("must specify exactly one of static or dynamic theta");
@@ -187,6 +202,33 @@ DenseElementsAttr U2Op::tryGetStaticMatrix() {
   const auto& phi = getPhi().value().convertToDouble();
   const auto& lambda = getLambda().value().convertToDouble();
   return DenseElementsAttr::get(type, getMatrixU2(phi, lambda));
+}
+
+void U2Op::build(OpBuilder& builder, OperationState& state, Value qubitIn,
+                 std::variant<double, FloatAttr, Value> phi,
+                 std::variant<double, FloatAttr, Value> lambda) {
+  FloatAttr phiAttr = nullptr;
+  Value phiOperand = nullptr;
+  if (std::holds_alternative<double>(phi)) {
+    phiAttr = builder.getF64FloatAttr(std::get<double>(phi));
+  } else if (std::holds_alternative<FloatAttr>(phi)) {
+    phiAttr = std::get<FloatAttr>(phi);
+  } else {
+    phiOperand = std::get<Value>(phi);
+  }
+
+  FloatAttr lambdaAttr = nullptr;
+  Value lambdaOperand = nullptr;
+  if (std::holds_alternative<double>(lambda)) {
+    lambdaAttr = builder.getF64FloatAttr(std::get<double>(lambda));
+  } else if (std::holds_alternative<FloatAttr>(lambda)) {
+    lambdaAttr = std::get<FloatAttr>(lambda);
+  } else {
+    lambdaOperand = std::get<Value>(lambda);
+  }
+
+  build(builder, state, QubitType::get(builder.getContext()), qubitIn, phiAttr,
+        phiOperand, lambdaAttr, lambdaOperand);
 }
 
 LogicalResult U2Op::verify() {

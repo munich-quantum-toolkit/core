@@ -259,7 +259,8 @@ public:
    * quartz.rx(1.0) %q : !quartz.qubit
    * ```
    */
-  QuartzProgramBuilder& rx(std::variant<double, Value> theta, Value qubit);
+  QuartzProgramBuilder& rx(std::variant<double, FloatAttr, Value> theta,
+                           Value qubit);
 
   /**
    * @brief Apply a U2 gate to a qubit
@@ -277,8 +278,9 @@ public:
    * quartz.u2(1.0, 0.5) %q : !quartz.qubit
    * ```
    */
-  QuartzProgramBuilder& u2(std::variant<double, Value> phi,
-                           std::variant<double, Value> lambda, Value qubit);
+  QuartzProgramBuilder& u2(std::variant<double, FloatAttr, Value> phi,
+                           std::variant<double, FloatAttr, Value> lambda,
+                           Value qubit);
 
   /**
    * @brief Apply a SWAP gate to two qubits

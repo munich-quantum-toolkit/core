@@ -335,16 +335,7 @@ def RXOp : QuartzOp<"rx", traits = [UnitaryOpInterface, OneTarget, OneParameter]
     }];
 
     let builders = [
-        OpBuilder<(ins "Value":$qubit, "double":$theta_double), [{
-            auto theta_attr = FloatAttr::get(Float64Type::get($_builder.getContext()), theta_double);
-            build($_builder, $_state, qubit, theta_attr, nullptr);
-        }]>,
-        OpBuilder<(ins "Value":$qubit, "FloatAttr":$theta_attr), [{
-            build($_builder, $_state, qubit, theta_attr, nullptr);
-        }]>,
-        OpBuilder<(ins "Value":$qubit, "Value":$theta_operand), [{
-            build($_builder, $_state, qubit, nullptr, theta_operand);
-        }]>,
+        OpBuilder<(ins "Value":$qubit_in, "std::variant<double, FloatAttr, Value>":$theta)>
     ];
 
     let hasVerifier = 1;
@@ -377,39 +368,7 @@ def U2Op : QuartzOp<"u2", traits = [UnitaryOpInterface, OneTarget, TwoParameter,
     }];
 
     let builders = [
-        OpBuilder<(ins "Value":$qubit, "double":$phi_double, "double":$lambda_double), [{
-            auto phi_attr = FloatAttr::get(Float64Type::get($_builder.getContext()), phi_double);
-            auto lambda_attr = FloatAttr::get(Float64Type::get($_builder.getContext()), lambda_double);
-            build($_builder, $_state, qubit, phi_attr, nullptr, lambda_attr, nullptr);
-        }]>,
-        OpBuilder<(ins "Value":$qubit, "double":$phi_double, "FloatAttr":$lambda_attr), [{
-            auto phi_attr = FloatAttr::get(Float64Type::get($_builder.getContext()), phi_double);
-            build($_builder, $_state, qubit, phi_attr, nullptr, lambda_attr, nullptr);
-        }]>,
-        OpBuilder<(ins "Value":$qubit, "double":$phi_double, "Value":$lambda_operand), [{
-            auto phi_attr = FloatAttr::get(Float64Type::get($_builder.getContext()), phi_double);
-            build($_builder, $_state, qubit, phi_attr, nullptr, nullptr, lambda_operand);
-        }]>,
-        OpBuilder<(ins "Value":$qubit, "FloatAttr":$phi_attr, "double":$lambda_double), [{
-            auto lambda_attr = FloatAttr::get(Float64Type::get($_builder.getContext()), lambda_double);
-            build($_builder, $_state, qubit, phi_attr, nullptr, lambda_attr, nullptr);
-        }]>,
-        OpBuilder<(ins "Value":$qubit, "FloatAttr":$phi_attr, "FloatAttr":$lambda_attr), [{
-            build($_builder, $_state, qubit, phi_attr, nullptr, lambda_attr, nullptr);
-        }]>,
-        OpBuilder<(ins "Value":$qubit, "FloatAttr":$phi_attr, "Value":$lambda_operand), [{
-            build($_builder, $_state, qubit, phi_attr, nullptr, nullptr, lambda_operand);
-        }]>,
-        OpBuilder<(ins "Value":$qubit, "Value":$phi_operand, "double":$lambda_double), [{
-            auto lambda_attr = FloatAttr::get(Float64Type::get($_builder.getContext()), lambda_double);
-            build($_builder, $_state, qubit, nullptr, phi_operand, lambda_attr, nullptr);
-        }]>,
-        OpBuilder<(ins "Value":$qubit, "Value":$phi_operand, "FloatAttr":$lambda_attr), [{
-            build($_builder, $_state, qubit, nullptr, phi_operand, lambda_attr, nullptr);
-        }]>,
-        OpBuilder<(ins "Value":$qubit, "Value":$phi_operand, "Value":$lambda_operand), [{
-            build($_builder, $_state, qubit, nullptr, phi_operand, nullptr, lambda_operand);
-        }]>,
+        OpBuilder<(ins "Value":$qubit_in, "std::variant<double, FloatAttr, Value>":$phi, "std::variant<double, FloatAttr, Value>":$lambda)>
     ];
 
     let hasVerifier = 1;
