@@ -412,30 +412,32 @@ auto FoMaC::Device::submitJob(const std::string& program,
                               double timeout) const -> Job {
   QDMI_Job job = nullptr;
   throwIfError(QDMI_device_create_job(device_, &job), "Creating job");
+  Job jobWrapper{job}; // RAII wrapper to prevent leaks in case of exceptions
 
   // Set program format
-  throwIfError(QDMI_job_set_parameter(job, QDMI_JOB_PARAMETER_PROGRAMFORMAT,
+  throwIfError(QDMI_job_set_parameter(jobWrapper,
+                                      QDMI_JOB_PARAMETER_PROGRAMFORMAT,
                                       sizeof(format), &format),
                "Setting program format");
 
   // Set program
-  throwIfError(QDMI_job_set_parameter(job, QDMI_JOB_PARAMETER_PROGRAM,
+  throwIfError(QDMI_job_set_parameter(jobWrapper, QDMI_JOB_PARAMETER_PROGRAM,
                                       program.size(), program.c_str()),
                "Setting program");
 
   // Set number of shots
-  throwIfError(QDMI_job_set_parameter(job, QDMI_JOB_PARAMETER_SHOTSNUM,
+  throwIfError(QDMI_job_set_parameter(jobWrapper, QDMI_JOB_PARAMETER_SHOTSNUM,
                                       sizeof(numShots), &numShots),
                "Setting number of shots");
 
   // Submit the job
-  throwIfError(QDMI_job_submit(job), "Submitting job");
+  throwIfError(QDMI_job_submit(jobWrapper), "Submitting job");
 
   // Wait for the job to finish
   const auto timeoutSeconds = static_cast<size_t>(timeout);
-  throwIfError(QDMI_job_wait(job, timeoutSeconds), "Waiting for job");
+  throwIfError(QDMI_job_wait(jobWrapper, timeoutSeconds), "Waiting for job");
 
-  return Job{job};
+  return jobWrapper;
 }
 
 auto FoMaC::Job::check() const -> QDMI_Job_Status {
