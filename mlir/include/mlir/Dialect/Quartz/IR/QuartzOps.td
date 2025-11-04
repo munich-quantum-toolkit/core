@@ -241,30 +241,10 @@ def OneTarget : TargetArityTrait<1> {
             }
             llvm::report_fatal_error("Operation has one input qubit");
         }
-
-        Value getTarget(size_t i) {
-            return getQubit(i);
-        }
     }];
 }
 
-def TwoTarget : TargetArityTrait<2> {
-    let extraConcreteClassDeclaration = [{
-        Value getQubit(size_t i) {
-            if (i == 0) {
-                return getQubit0();
-            }
-            if (i == 1) {
-                return getQubit1();
-            }
-            llvm::report_fatal_error("Operation has two input qubits");
-        }
-
-        Value getTarget(size_t i) {
-            return getQubit(i);
-        }
-    }];
-}
+def TwoTarget : TargetArityTrait<2>;
 
 class ParameterArityTrait<int n> : ParamNativeOpTrait<"ParameterArityTrait", !cast<string>(n)> {
     let cppNamespace = "::mlir::utils";

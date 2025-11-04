@@ -63,6 +63,18 @@ public:
     size_t getNumPosControls() { return 0; }
     size_t getNumNegControls() { return 0; }
 
+    Value getInputQubit(size_t i) {
+      return this->getOperation()->getOperand(i);
+    }
+
+    Value getOutputQubit(size_t i) {
+      return this->getOperation()->getResult(i);
+    }
+
+    Value getInputTarget(size_t i) { return getInputQubit(i); }
+
+    Value getOutputTarget(size_t i) { return getOutputQubit(i); }
+
     Value getInputPosControl(size_t i) {
       llvm::report_fatal_error("Operation does not have controls");
     }
@@ -77,6 +89,50 @@ public:
 
     Value getOutputNegControl(size_t i) {
       llvm::report_fatal_error("Operation does not have controls");
+    }
+
+    Value getInputForOutput(Value output) {
+      switch (n) {
+      case 1:
+        if (output == this->getOperation()->getResult(0)) {
+          return this->getOperation()->getOperand(0);
+        }
+        llvm::report_fatal_error(
+            "Given qubit is not an output of the operation");
+      case 2:
+        if (output == this->getOperation()->getResult(0)) {
+          return this->getOperation()->getOperand(0);
+        }
+        if (output == this->getOperation()->getResult(1)) {
+          return this->getOperation()->getOperand(1);
+        }
+        llvm::report_fatal_error(
+            "Given qubit is not an output of the operation");
+      default:
+        llvm::report_fatal_error("Unsupported number of qubits");
+      }
+    }
+
+    Value getOutputForInput(Value input) {
+      switch (n) {
+      case 1:
+        if (input == this->getOperation()->getOperand(0)) {
+          return this->getOperation()->getResult(0);
+        }
+        llvm::report_fatal_error(
+            "Given qubit is not an input of the operation");
+      case 2:
+        if (input == this->getOperation()->getOperand(0)) {
+          return this->getOperation()->getResult(0);
+        }
+        if (input == this->getOperation()->getOperand(1)) {
+          return this->getOperation()->getResult(1);
+        }
+        llvm::report_fatal_error(
+            "Given qubit is not an input of the operation");
+      default:
+        llvm::report_fatal_error("Unsupported number of qubits");
+      }
     }
   };
 };

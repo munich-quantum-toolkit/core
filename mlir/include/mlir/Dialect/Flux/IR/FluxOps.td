@@ -245,96 +245,9 @@ class TargetArityTrait<int n> : ParamNativeOpTrait<"TargetArityTrait", !cast<str
     let cppNamespace = "::mlir::flux";
 }
 
-def OneTarget : TargetArityTrait<1> {
-    let extraConcreteClassDeclaration = [{
-        Value getInputQubit(size_t i) {
-            if (i == 0) {
-                return getQubitIn();
-            }
-            llvm::report_fatal_error("Operation has one input qubit");
-        }
+def OneTarget : TargetArityTrait<1>;
 
-        Value getOutputQubit(size_t i) {
-            if (i == 0) {
-                return getQubitOut();
-            }
-            llvm::report_fatal_error("Operation has one output qubit");
-        }
-
-        Value getInputTarget(size_t i) {
-            return getInputQubit(i);
-        }
-
-        Value getOutputTarget(size_t i) {
-            return getOutputQubit(i);
-        }
-
-        Value getInputForOutput(Value output) {
-            if (output == getQubitOut()) {
-                return getQubitIn();
-            }
-            llvm::report_fatal_error("Given qubit is not an output of the operation");
-        }
-
-        Value getOutputForInput(Value input) {
-            if (input == getQubitIn()) {
-                return getQubitOut();
-            }
-            llvm::report_fatal_error("Given qubit is not an input of the operation");
-        }
-    }];
-}
-
-def TwoTarget : TargetArityTrait<2> {
-    let extraConcreteClassDeclaration = [{
-        Value getInputQubit(size_t i) {
-            if (i == 0) {
-                return getQubit0In();
-            }
-            if (i == 1) {
-                return getQubit1In();
-            }
-        }
-
-        Value getOutputQubit(size_t i) {
-            if (i == 0) {
-                return getQubit0Out();
-            }
-            if (i == 1) {
-                return getQubit1Out();
-            }
-            llvm::report_fatal_error("Operation has two output qubits");
-        }
-
-        Value getInputTarget(size_t i) {
-            return getInputQubit(i);
-        }
-
-        Value getOutputTarget(size_t i) {
-            return getOutputQubit(i);
-        }
-
-        Value getInputForOutput(Value output) {
-            if (output == getQubit0Out()) {
-                return getQubit0In();
-            }
-            if (output == getQubit1Out()) {
-                return getQubit1In();
-            }
-            llvm::report_fatal_error("Given qubit is not an output of the operation");
-        }
-
-        Value getOutputForInput(Value input) {
-            if (input == getQubit0In()) {
-                return getQubit0Out();
-            }
-            if (input == getQubit1In()) {
-                return getQubit1Out();
-            }
-            llvm::report_fatal_error("Given qubit is not an input of the operation");
-        }
-    }];
-}
+def TwoTarget : TargetArityTrait<2>;
 
 class ParameterArityTrait<int n> : ParamNativeOpTrait<"ParameterArityTrait", !cast<string>(n)> {
     let cppNamespace = "::mlir::utils";

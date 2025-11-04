@@ -63,6 +63,10 @@ public:
     size_t getNumPosControls() { return 0; }
     size_t getNumNegControls() { return 0; }
 
+    Value getQubit(size_t i) { return this->getOperation()->getOperand(i); }
+
+    Value getTarget(size_t i) { return this->getOperation()->getOperand(i); }
+
     Value getPosControl(size_t i) {
       llvm::report_fatal_error("Operation does not have controls");
     }
