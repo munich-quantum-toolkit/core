@@ -42,9 +42,9 @@ __all__ = ["QiskitBackend"]
 class QiskitBackend(BackendV2):  # type: ignore[misc]
     """A Qiskit BackendV2 adapter for QDMI devices via FoMaC.
 
-    This backend provides OpenQASM-based program submission to QDMI devices.
-    It automatically introspects device capabilities and constructs a Target
-    object with supported operations.
+    This backend provides program submission to QDMI devices.
+    It automatically introspects device capabilities and constructs a
+    :class:`~qiskit.transpiler.Target` object with supported operations.
 
     Backends should be obtained through :class:`~mqt.core.qdmi.qiskit.QDMIProvider`
     rather than instantiated directly.
@@ -324,7 +324,7 @@ class QiskitBackend(BackendV2):  # type: ignore[misc]
 
     @staticmethod
     def _convert_circuit(circuit: QuantumCircuit, program_format: fomac.ProgramFormat) -> str:
-        """Convert a quantum circuit to the specified program format.
+        """Convert a :class:`~qiskit.circuit.QuantumCircuit` to the specified program format.
 
         Args:
             circuit: The quantum circuit to convert.
@@ -358,7 +358,7 @@ class QiskitBackend(BackendV2):  # type: ignore[misc]
             raise TranslationError(msg) from exc
 
     def run(self, run_input: QuantumCircuit, **options: Any) -> QiskitJob:  # noqa: ANN401
-        """Execute a circuit on the backend.
+        """Execute a :class:`~qiskit.circuit.QuantumCircuit` on the backend.
 
         Args:
             run_input: Circuit to execute.
