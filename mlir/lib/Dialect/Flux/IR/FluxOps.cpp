@@ -21,6 +21,8 @@
 // IWYU pragma: end_keep
 
 #include <cstddef>
+#include <llvm/ADT/STLExtras.h>
+#include <llvm/ADT/SmallVector.h>
 #include <llvm/Support/Casting.h>
 #include <llvm/Support/ErrorHandling.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
@@ -570,7 +572,7 @@ struct MergeNestedCtrl final : OpRewritePattern<CtrlOp> {
     }
 
     // Merge controls
-    SmallVector<Value> newControls;
+    llvm::SmallVector<Value> newControls;
     newControls.append(ctrlOp.getControlsIn().begin(),
                        ctrlOp.getControlsIn().end());
     for (auto control : bodyCtrlOp.getControlsIn()) {
