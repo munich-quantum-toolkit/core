@@ -431,6 +431,7 @@ struct RemoveSubsequentX final : OpRewritePattern<XOp> {
     // Remove both XOps
     rewriter.replaceOp(prevOp, prevOp.getQubitIn());
     rewriter.replaceOp(xOp, xOp.getQubitIn());
+
     return success();
   }
 };
@@ -469,8 +470,8 @@ struct MergeSubsequentRX final : OpRewritePattern<RXOp> {
           rxOp.getLoc(), rewriter.getF64FloatAttr(prevTheta.getValueDouble()));
       auto newTheta = rewriter.create<arith::AddFOp>(
           rxOp.getLoc(), theta.getValueOperand(), constantOp.getResult());
-      rewriter.replaceOpWithNewOp<RXOp>(rxOp, rxOp.getQubitIn(),
-                                        newTheta.getResult());
+      rxOp.removeThetaAttr();
+      rxOp->setOperand(1, newTheta.getResult());
     } else if (theta.isDynamic() && prevTheta.isDynamic()) {
       auto newTheta = rewriter.create<arith::AddFOp>(
           rxOp.getLoc(), theta.getValueOperand(), prevTheta.getValueOperand());
@@ -505,7 +506,8 @@ struct ConstantFoldingRX final : OpRewritePattern<RXOp> {
       return failure();
     }
 
-    rewriter.replaceOpWithNewOp<RXOp>(rxOp, rxOp.getQubitIn(), thetaAttr);
+    rxOp.setThetaAttr(thetaAttr);
+    rxOp->eraseOperand(1);
 
     return success();
   }
