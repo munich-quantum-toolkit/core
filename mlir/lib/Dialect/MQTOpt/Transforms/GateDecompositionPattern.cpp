@@ -618,14 +618,29 @@ struct GateDecompositionPattern final
     if (gate.type == qc::SX) {
       return {qfp{0.5, 0.5}, qfp{0.5, -0.5}, qfp{0.5, -0.5}, qfp{0.5, 0.5}};
     }
+    if (gate.type == qc::RX) {
+      return rx_matrix(gate.parameter[0]);
+    }
+    if (gate.type == qc::RY) {
+      return ry_matrix(gate.parameter[0]);
+    }
     if (gate.type == qc::RZ) {
       return rz_matrix(gate.parameter[0]);
     }
     if (gate.type == qc::X) {
       return {0, 1, 1, 0};
     }
+    if (gate.type == qc::I) {
+      return identityGate;
+    }
+    if (gate.type == qc::H) {
+      static constexpr fp SQRT2_2 = static_cast<fp>(
+          0.707106781186547524400844362104849039284835937688474036588L);
+      return {SQRT2_2, SQRT2_2, SQRT2_2, -SQRT2_2};
+    }
     throw std::invalid_argument{
-        "unsupported gate type for single qubit matrix"};
+        "unsupported gate type for single qubit matrix (" +
+        qc::toString(gate.type) + ")"};
   }
 
   static matrix4x4 getTwoQubitMatrix(const QubitGateSequence::Gate& gate) {
@@ -654,12 +669,18 @@ struct GateDecompositionPattern final
         }
       }
       if (gate.type == qc::RZ) {
+        throw std::invalid_argument{"RZ for two-qubit gate matrix"};
         // TODO: check qubit order
         return rzzMatrix(gate.parameter[0]);
       }
       if (gate.type == qc::RX) {
+        throw std::invalid_argument{"RX for two-qubit gate matrix"};
         // TODO: check qubit order
         return rxxMatrix(gate.parameter[0]);
+      }
+      if (gate.type == qc::RZZ) {
+        // TODO: check qubit order
+        return rzzMatrix(gate.parameter[0]);
       }
       throw std::invalid_argument{
           "unsupported gate type for two qubit matrix "};
@@ -1123,7 +1144,7 @@ struct GateDecompositionPattern final
               angles_from_unitary(general.K2l, EulerBasis::ZYZ);
           auto [k2rtheta, k2rphi, k2rlambda, k2rphase] =
               angles_from_unitary(general.K2r, EulerBasis::ZYZ);
-          TwoQubitWeylDecomposition{
+          return TwoQubitWeylDecomposition{
               qc::PI_4,
               qc::PI_4,
               c,
