@@ -521,6 +521,25 @@ struct ConvertQuartzSWAPOp final : StatefulOpConversionPattern<quartz::SWAPOp> {
   }
 };
 
+/**
+ * @brief Converts quartz.ctrl to flux.ctrl
+ *
+ * @details
+ * Example:
+ * ```mlir
+ * quartz.ctrl(%q0) {
+ *   quartz.x %q1
+ *   quartz.yield
+ * }
+ * ```
+ * is converted to
+ * ```mlir
+ * %controls_out, %targets_out = flux.ctrl({%q0_in}, {%q1_in}) {
+ *   %q1_res = flux.x %q1_in : !flux.qubit -> !flux.qubit
+ *   flux.yield %q1_res
+ * } : {!flux.qubit}, {!flux.qubit} -> {!flux.qubit}, {!flux.qubit}
+ * ```
+ */
 struct ConvertQuartzCtrlOp final : StatefulOpConversionPattern<quartz::CtrlOp> {
   using StatefulOpConversionPattern::StatefulOpConversionPattern;
 
@@ -571,6 +590,19 @@ struct ConvertQuartzCtrlOp final : StatefulOpConversionPattern<quartz::CtrlOp> {
   }
 };
 
+/**
+ * @brief Converts quartz.yield to flux.yield
+ *
+ * @details
+ * Example:
+ * ```mlir
+ * quartz.yield
+ * ```
+ * is converted to
+ * ```mlir
+ * flux.yield %targets
+ * ```
+ */
 struct ConvertQuartzYieldOp final
     : StatefulOpConversionPattern<quartz::YieldOp> {
   using StatefulOpConversionPattern::StatefulOpConversionPattern;

@@ -368,6 +368,25 @@ struct ConvertFluxSWAPOp final : OpConversionPattern<flux::SWAPOp> {
   }
 };
 
+/**
+ * @brief Converts quartz.ctrl to flux.ctrl
+ *
+ * @details
+ * Example:
+ * ```mlir
+ * %controls_out, %targets_out = flux.ctrl({%q0_in}, {%q1_in}) {
+ *   %q1_res = flux.x %q1_in : !flux.qubit -> !flux.qubit
+ *   flux.yield %q1_res
+ * } : {!flux.qubit}, {!flux.qubit} -> {!flux.qubit}, {!flux.qubit}
+ * ```
+ * is converted to
+ * ```mlir
+ * quartz.ctrl(%q0) {
+ *   quartz.x %q1
+ *   quartz.yield
+ * }
+ * ```
+ */
 struct ConvertFluxCtrlOp final : OpConversionPattern<flux::CtrlOp> {
   using OpConversionPattern::OpConversionPattern;
 
@@ -399,6 +418,19 @@ struct ConvertFluxCtrlOp final : OpConversionPattern<flux::CtrlOp> {
   }
 };
 
+/**
+ * @brief Converts flux.yield to quartz.yield
+ *
+ * @details
+ * Example:
+ * ```mlir
+ * flux.yield %targets
+ * ```
+ * is converted to
+ * ```mlir
+ * quartz.yield
+ * ```
+ */
 struct ConvertFluxYieldOp final : OpConversionPattern<flux::YieldOp> {
   using OpConversionPattern::OpConversionPattern;
 
