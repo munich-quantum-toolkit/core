@@ -641,6 +641,45 @@ TEST_F(DDSIMQDMIJobSpecificationTest, GetResultsCornerCases) {
             QDMI_ERROR_NOTSUPPORTED);
 }
 
+TEST_F(DDSIMQDMIJobSpecificationTest, ProgramFormatSupport) {
+  EXPECT_EQ(MQT_DDSIM_QDMI_device_job_set_parameter(
+                job, QDMI_DEVICE_JOB_PARAMETER_PROGRAMFORMAT, 0, nullptr),
+            QDMI_SUCCESS);
+  constexpr QDMI_Program_Format format = QDMI_PROGRAM_FORMAT_MAX;
+  EXPECT_EQ(MQT_DDSIM_QDMI_device_job_set_parameter(
+                job, QDMI_DEVICE_JOB_PARAMETER_PROGRAMFORMAT,
+                sizeof(QDMI_Program_Format), &format),
+            QDMI_ERROR_INVALIDARGUMENT);
+
+  constexpr std::array supportedFormats = {QDMI_PROGRAM_FORMAT_QASM2,
+                                           QDMI_PROGRAM_FORMAT_QASM3};
+
+  for (const auto& supportedFormat : supportedFormats) {
+    ASSERT_EQ(MQT_DDSIM_QDMI_device_job_set_parameter(
+                  job, QDMI_DEVICE_JOB_PARAMETER_PROGRAMFORMAT,
+                  sizeof(QDMI_Program_Format), &supportedFormat),
+              QDMI_SUCCESS);
+  }
+  constexpr std::array unsupportedFormats = {
+      QDMI_PROGRAM_FORMAT_QIRBASESTRING,
+      QDMI_PROGRAM_FORMAT_QIRBASEMODULE,
+      QDMI_PROGRAM_FORMAT_QIRADAPTIVESTRING,
+      QDMI_PROGRAM_FORMAT_QIRADAPTIVEMODULE,
+      QDMI_PROGRAM_FORMAT_CALIBRATION,
+      QDMI_PROGRAM_FORMAT_CUSTOM1,
+      QDMI_PROGRAM_FORMAT_CUSTOM2,
+      QDMI_PROGRAM_FORMAT_CUSTOM3,
+      QDMI_PROGRAM_FORMAT_CUSTOM4,
+      QDMI_PROGRAM_FORMAT_CUSTOM5};
+
+  for (const auto& unsupportedFormat : unsupportedFormats) {
+    EXPECT_EQ(MQT_DDSIM_QDMI_device_job_set_parameter(
+                  job, QDMI_DEVICE_JOB_PARAMETER_PROGRAMFORMAT,
+                  sizeof(QDMI_Program_Format), &unsupportedFormat),
+              QDMI_ERROR_NOTSUPPORTED);
+  }
+}
+
 TEST_F(DDSIMQDMIJobSpecificationTest, GetHistogramKeysBufferTooSmall) {
   constexpr size_t shots = 1024U;
   ASSERT_EQ(
