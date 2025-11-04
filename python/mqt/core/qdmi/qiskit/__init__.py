@@ -6,16 +6,11 @@
 #
 # Licensed under the MIT License
 
-"""QDMI Qiskit optional integration.
-
-Exposes lightweight dependency guards and (in later phases) backend related
-APIs for interacting with QDMI devices through Qiskit's BackendV2 interface.
-"""
+"""QDMI Qiskit optional integration."""
 
 from __future__ import annotations
 
-from importlib import import_module
-from typing import TYPE_CHECKING, Final
+from mqt.core._compat.optional import OptionalDependencyTester  # noqa: PLC2701
 
 # Conditional backend import (optional dependency)
 try:
@@ -35,10 +30,8 @@ from .exceptions import (
     UnsupportedOperationError,
 )
 
-if TYPE_CHECKING:  # pragma: no cover
-    from types import ModuleType
-
 __all__ = [
+    "HAS_QISKIT",
     "CircuitValidationError",
     "JobSubmissionError",
     "QDMIQiskitError",
@@ -46,8 +39,6 @@ __all__ = [
     "TranslationError",
     "UnsupportedFormatError",
     "UnsupportedOperationError",
-    "is_available",
-    "require_qiskit",
 ]
 if _BACKEND_AVAILABLE:
     __all__ += [
@@ -60,37 +51,15 @@ class QiskitNotAvailableError(ImportError):
     """Raised when Qiskit functionality is accessed without the optional dependency."""
 
 
-_QISKIT_MODULE_NAME: Final = "qiskit"
-
-
-def is_available() -> bool:
-    """Return True if the optional Qiskit dependency is installed."""
-    try:  # pragma: no cover - trivial success path
-        import_module(_QISKIT_MODULE_NAME)
-    except ImportError:
-        return False
-    else:
-        return True
-
-
-def require_qiskit() -> ModuleType:
-    """Ensure Qiskit is available and return the imported top-level module.
-
-    Returns:
-        The imported ``qiskit`` module.
-
-    Raises:
-        QiskitNotAvailableError: If Qiskit is not installed.
-    """
-    try:
-        return import_module(_QISKIT_MODULE_NAME)
-    except ImportError as err:
-        msg = "Qiskit is not installed. Install with 'pip install mqt-core[qiskit]'"
-        raise QiskitNotAvailableError(msg) from err
+# Optional dependency tester for Qiskit
+HAS_QISKIT = OptionalDependencyTester(
+    "qiskit",
+    install_msg="Install with 'pip install mqt-core[qiskit]'",
+)
 
 
 def __getattr__(name: str) -> object:  # pragma: no cover - dynamic fallback
-    """Dynamic attribute guard for optional backend symbol.
+    """Dynamic attribute guard for optional backend symbols.
 
     Raises:
         QiskitNotAvailableError: If backend requested when qiskit missing.
