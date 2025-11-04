@@ -589,7 +589,6 @@ struct MergeNestedCtrl final : OpRewritePattern<CtrlOp> {
                                newCtrlOp.getBody().end());
 
     // Replace CtrlOps
-    rewriter.eraseOp(bodyCtrlOp);
     rewriter.replaceOp(ctrlOp, newCtrlOp.getResults());
 
     return success();
