@@ -10,17 +10,6 @@
 
 #pragma once
 
-#include "mlir/Dialect/Utils/ParameterDescriptor.h"
-
-#include <mlir/Bytecode/BytecodeOpInterface.h>
-#include <mlir/Dialect/Arith/IR/Arith.h>
-#include <mlir/IR/Value.h>
-#include <mlir/IR/ValueRange.h>
-#include <mlir/Interfaces/SideEffectInterfaces.h>
-#include <optional>
-#include <string>
-#include <variant>
-
 // Suppress warnings about ambiguous reversed operators in MLIR
 // (see https://github.com/llvm/llvm-project/issues/45853)
 #if defined(__clang__)
@@ -31,6 +20,17 @@
 #if defined(__clang__)
 #pragma clang diagnostic pop
 #endif
+
+#include "mlir/Dialect/Utils/ParameterDescriptor.h"
+
+#include <mlir/Bytecode/BytecodeOpInterface.h>
+#include <mlir/Dialect/Arith/IR/Arith.h>
+#include <mlir/IR/Value.h>
+#include <mlir/IR/ValueRange.h>
+#include <mlir/Interfaces/SideEffectInterfaces.h>
+#include <optional>
+#include <string>
+#include <variant>
 
 #define DIALECT_NAME_FLUX "flux"
 
