@@ -309,7 +309,7 @@ TEST(AodOperation, Qasm) {
   qubitToReg.try_emplace(1, qreg, qreg.toString(1));
   move.dumpOpenQASM(ss, qubitToReg, {}, 0, false);
 
-  EXPECT_EQ(ss.str(), "aod_move (0, 0, 1; 1, 1, 3;) q[0], q[1];\n");
+  EXPECT_EQ(ss.str(), "aod_move (0, 0, 1; 1, 1, 3) q[0], q[1];\n");
 }
 
 TEST(AodOperation, Constructors) {
