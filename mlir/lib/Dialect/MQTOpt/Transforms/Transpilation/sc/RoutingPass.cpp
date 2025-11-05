@@ -142,12 +142,12 @@ public:
    * @brief Insert SWAPs such that the gates provided by the scheduler are
    * executable.
    */
-  void map(UnitaryInterface op, const Architecture& arch, Layout& layout,
-           SmallVector<QubitIndexPair>& history, PatternRewriter& rewriter) {
+  [[nodiscard]] RouterResult map(UnitaryInterface op, const Architecture& arch,
+                                 Layout& layout, PatternRewriter& rewriter) {
     const auto layers = scheduler_->schedule(op, layout);
     const auto swaps = router_->route(layers, layout, arch);
     insert(swaps, op->getLoc(), layout, rewriter);
-    history.append(swaps.begin(), swaps.end());
+    return swaps;
   }
 
   /**
@@ -240,8 +240,6 @@ private:
    * @returns reference to mapper object.
    */
   [[nodiscard]] Mapper& mapper() const { return *mapper_; }
-
-  SmallVector<Operation*> ops_;
 
   LayoutStack<Layout> stack_{};
   LayoutStack<SmallVector<QubitIndexPair>> historyStack_{};
@@ -365,6 +363,7 @@ WalkResult RoutingDriver::handleQubit(QubitOp op) {
  */
 WalkResult RoutingDriver::handleUnitary(UnitaryInterface op,
                                         PatternRewriter& rewriter) {
+  LLVM_DEBUG(llvm::dbgs() << "handleUnitary: gate=" << op->getName() << '\n');
   const std::vector<Value> inQubits = op.getAllInQubits();
   const std::vector<Value> outQubits = op.getAllOutQubits();
   const std::size_t nacts = inQubits.size();
@@ -392,8 +391,11 @@ WalkResult RoutingDriver::handleUnitary(UnitaryInterface op,
     return WalkResult::advance();
   }
 
+  /// Not-executable two-qubit: Map first then forward.
   if (!Mapper::isExecutable(op, arch(), stack().top())) {
-    mapper().map(op, arch(), stack().top(), historyStack().top(), rewriter);
+    LLVM_DEBUG(llvm::dbgs() << "\tnot executable\n");
+    const auto swaps = mapper().map(op, arch(), stack().top(), rewriter);
+    historyStack().top().append(swaps.begin(), swaps.end());
   }
 
   const auto [execIn0, execIn1] = getIns(op);
@@ -459,51 +461,39 @@ WalkResult RoutingDriver::handleMeasure(MeasureOp op) {
  * maintain.
  */
 LogicalResult RoutingDriver::route(ModuleOp module) {
+  PatternRewriter rewriter(module->getContext());
   for (const auto func : module.getOps<func::FuncOp>()) {
     if (!isEntryPoint(func)) {
       continue; // Ignore non entry_point functions for now.
     }
-    func->walk<WalkOrder::PreOrder>([&](Operation* op) { ops_.push_back(op); });
-  }
 
-  PatternRewriter rewriter(module->getContext());
-
-  for (Operation* curr : ops_) {
-    if (curr == nullptr) {
-      continue; // Skip erased ops.
-    }
-
-    const OpBuilder::InsertionGuard guard(rewriter);
-    rewriter.setInsertionPoint(curr);
-
-    /// TypeSwitch performs sequential dyn_cast checks.
-    /// Hence, always put most frequent ops first.
-
-    const auto res =
-        TypeSwitch<Operation*, WalkResult>(curr)
-            /// mqtopt Dialect
-            .Case<UnitaryInterface>([&](UnitaryInterface op) {
-              return handleUnitary(op, rewriter);
-            })
-            .Case<QubitOp>([&](QubitOp op) { return handleQubit(op); })
-            .Case<ResetOp>([&](ResetOp op) { return handleReset(op); })
-            .Case<MeasureOp>([&](MeasureOp op) { return handleMeasure(op); })
-            /// built-in Dialect
-            .Case<ModuleOp>([&]([[maybe_unused]] ModuleOp op) {
-              return WalkResult::advance();
-            })
-            /// func Dialect
-            .Case<func::FuncOp>([&](func::FuncOp op) { return handleFunc(op); })
-            .Case<func::ReturnOp>([&]([[maybe_unused]] func::ReturnOp op) {
-              return handleReturn(op);
-            })
-            /// scf Dialect
-            .Case<scf::ForOp>([&](scf::ForOp op) { return handleFor(op); })
-            .Case<scf::IfOp>([&](scf::IfOp op) { return handleIf(op); })
-            .Case<scf::YieldOp>(
-                [&](scf::YieldOp op) { return handleYield(op, rewriter); })
-            /// Skip the rest.
-            .Default([](auto) { return WalkResult::skip(); });
+    const auto res = func->walk<WalkOrder::PreOrder>([&](Operation* curr) {
+      const OpBuilder::InsertionGuard guard(rewriter);
+      rewriter.setInsertionPoint(curr);
+      return TypeSwitch<Operation*, WalkResult>(curr)
+          /// mqtopt Dialect
+          .Case<UnitaryInterface>(
+              [&](UnitaryInterface op) { return handleUnitary(op, rewriter); })
+          .Case<QubitOp>([&](QubitOp op) { return handleQubit(op); })
+          .Case<ResetOp>([&](ResetOp op) { return handleReset(op); })
+          .Case<MeasureOp>([&](MeasureOp op) { return handleMeasure(op); })
+          /// built-in Dialect
+          .Case<ModuleOp>([&]([[maybe_unused]] ModuleOp op) {
+            return WalkResult::advance();
+          })
+          /// func Dialect
+          .Case<func::FuncOp>([&](func::FuncOp op) { return handleFunc(op); })
+          .Case<func::ReturnOp>([&]([[maybe_unused]] func::ReturnOp op) {
+            return handleReturn(op);
+          })
+          /// scf Dialect
+          .Case<scf::ForOp>([&](scf::ForOp op) { return handleFor(op); })
+          .Case<scf::IfOp>([&](scf::IfOp op) { return handleIf(op); })
+          .Case<scf::YieldOp>(
+              [&](scf::YieldOp op) { return handleYield(op, rewriter); })
+          /// Skip the rest.
+          .Default([](auto) { return WalkResult::skip(); });
+    });
 
     if (res.wasInterrupted()) {
       return failure();
@@ -536,7 +526,6 @@ struct RoutingPassSC final : impl::RoutingPassSCBase<RoutingPassSC> {
     }
 
     RoutingDriver driver(mapper, arch);
-
     if (failed(driver.route(getOperation()))) {
       signalPassFailure();
     }
