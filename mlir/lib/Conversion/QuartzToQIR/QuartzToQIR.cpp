@@ -530,7 +530,7 @@ struct ConvertQuartzCtrlQIR final : StatefulOpConversionPattern<CtrlOp> {
   using StatefulOpConversionPattern::StatefulOpConversionPattern;
 
   LogicalResult
-  matchAndRewrite(CtrlOp op, OpAdaptor adaptor,
+  matchAndRewrite(CtrlOp op, OpAdaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
     rewriter.inlineBlockBefore(&op.getRegion().front(), op->getBlock(),
                                op->getIterator());
@@ -546,7 +546,7 @@ struct ConvertQuartzYieldQIR final : StatefulOpConversionPattern<YieldOp> {
   using StatefulOpConversionPattern::StatefulOpConversionPattern;
 
   LogicalResult
-  matchAndRewrite(YieldOp op, OpAdaptor adaptor,
+  matchAndRewrite(YieldOp op, OpAdaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
     rewriter.eraseOp(op);
     return success();
