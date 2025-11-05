@@ -10,9 +10,12 @@
 
 #include "helpers/test_utils.hpp"
 
+#include "mqt_ddsim_qdmi/device.h"
+
 #include <cassert>
 #include <cstring>
 #include <gtest/gtest.h>
+#include <qdmi/constants.h>
 #include <sstream>
 
 namespace qdmi_test {

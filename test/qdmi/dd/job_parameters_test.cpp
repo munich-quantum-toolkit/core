@@ -13,11 +13,13 @@
  */
 #include "helpers/circuits.hpp"
 #include "helpers/test_utils.hpp"
+#include "mqt_ddsim_qdmi/device.h"
 
 #include <cstddef>
 #include <cstring>
 #include <gmock/gmock-matchers.h>
 #include <gtest/gtest.h>
+#include <qdmi/constants.h>
 
 TEST(JobParameters, SetAndQueryBasics) {
   const qdmi_test::SessionGuard s{};

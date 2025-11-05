@@ -13,10 +13,12 @@
  */
 #include "helpers/circuits.hpp"
 #include "helpers/test_utils.hpp"
+#include "mqt_ddsim_qdmi/device.h"
 
 #include <cstddef>
 #include <gmock/gmock-matchers.h>
 #include <gtest/gtest.h>
+#include <qdmi/constants.h>
 
 TEST(ErrorHandling, NullptrArguments) {
   EXPECT_EQ(MQT_DDSIM_QDMI_device_session_alloc(nullptr),

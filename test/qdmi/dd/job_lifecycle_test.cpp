@@ -13,11 +13,13 @@
  */
 #include "helpers/circuits.hpp"
 #include "helpers/test_utils.hpp"
+#include "mqt_ddsim_qdmi/device.h"
 
 #include <atomic>
 #include <cstddef>
 #include <gmock/gmock-matchers.h>
 #include <gtest/gtest.h>
+#include <qdmi/constants.h>
 #include <thread>
 
 using testing::AnyOf;

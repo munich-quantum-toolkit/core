@@ -12,10 +12,12 @@
  * DDSIM QDMI Device - Device, Site, and Operation Properties
  */
 #include "helpers/test_utils.hpp"
+#include "mqt_ddsim_qdmi/device.h"
 
 #include <cstddef>
 #include <gmock/gmock-matchers.h>
 #include <gtest/gtest.h>
+#include <qdmi/constants.h>
 #include <stdexcept>
 #include <string>
 #include <vector>

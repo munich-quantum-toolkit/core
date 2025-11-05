@@ -13,10 +13,12 @@
  */
 #include "helpers/circuits.hpp"
 #include "helpers/test_utils.hpp"
+#include "mqt_ddsim_qdmi/device.h"
 
 #include <complex>
 #include <cstddef>
 #include <gtest/gtest.h>
+#include <qdmi/constants.h>
 #include <string>
 #include <vector>
 
