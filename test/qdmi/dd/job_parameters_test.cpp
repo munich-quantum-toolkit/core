@@ -19,6 +19,7 @@
 #include <cstring>
 #include <gtest/gtest.h>
 #include <qdmi/constants.h>
+#include <string>
 
 TEST(JobParameters, SetAndQueryBasics) {
   const qdmi_test::SessionGuard s{};
