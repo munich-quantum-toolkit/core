@@ -36,9 +36,15 @@ constexpr std::size_t IF_PARENT_DEPTH = 2UL;
 using QubitIndex = uint32_t;
 
 /**
+ * @brief A pair of SSA Values.
+ */
+using ValuePair = std::pair<mlir::Value, mlir::Value>;
+
+/**
  * @brief Represents a pair of qubit indices.
  */
 using QubitIndexPair = std::pair<QubitIndex, QubitIndex>;
+
 /**
  * @brief Return true if the function contains "entry_point" in the passthrough
  * attribute.
@@ -50,19 +56,28 @@ using QubitIndexPair = std::pair<QubitIndex, QubitIndex>;
  * @param u A unitary.
  * @returns True iff the qubit gate acts on two qubits.
  */
-[[nodiscard]] bool isTwoQubitGate(UnitaryInterface u);
+[[nodiscard]] bool isTwoQubitGate(UnitaryInterface op);
 
 /**
  * @brief Return input qubit pair for a two-qubit unitary.
- * @param u A two-qubit unitary.
+ * @param op A two-qubit unitary.
  * @return Pair of SSA values consisting of the first and second in-qubits.
  */
-[[nodiscard]] std::pair<mlir::Value, mlir::Value> getIns(UnitaryInterface op);
+[[nodiscard]] ValuePair getIns(UnitaryInterface op);
 
 /**
  * @brief Return output qubit pair for a two-qubit unitary.
- * @param u A two-qubit unitary.
+ * @param op A two-qubit unitary.
  * @return Pair of SSA values consisting of the first and second out-qubits.
  */
-[[nodiscard]] std::pair<mlir::Value, mlir::Value> getOuts(UnitaryInterface op);
+[[nodiscard]] ValuePair getOuts(UnitaryInterface op);
+
+/**
+ * @brief Return the first user of a value in a given region.
+ * @param v The value.
+ * @param region The targeted region.
+ * @return A pointer to the user, or nullptr if non exists.
+ */
+[[nodiscard]] mlir::Operation* getUserInRegion(mlir::Value v,
+                                               mlir::Region* region);
 } // namespace mqt::ir::opt

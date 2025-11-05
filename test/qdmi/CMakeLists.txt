@@ -6,6 +6,8 @@
 #
 # Licensed under the MIT License
 
+add_subdirectory(dd)
+
 set(TARGET_NAME mqt-core-qdmi-driver-test)
 
 if(TARGET MQT::CoreQDMIDriver)

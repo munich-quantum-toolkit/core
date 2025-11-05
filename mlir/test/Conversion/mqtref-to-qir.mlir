@@ -457,6 +457,7 @@ module {
         // CHECK: llvm.call @__quantum__qis__rx__body(%[[q_0]], %[[c_0]]) : (!llvm.ptr, f64) -> ()
         // CHECK: llvm.call @__quantum__qis__ry__body(%[[q_0]], %[[c_0]]) : (!llvm.ptr, f64) -> ()
         // CHECK: llvm.call @__quantum__qis__rz__body(%[[q_0]], %[[c_0]]) : (!llvm.ptr, f64) -> ()
+        // CHECK: llvm.call @__quantum__qis__r__body(%[[q_0:.*]], %[[c_0]], %[[c_1]]) : (!llvm.ptr, f64, f64) -> ()
 
         %c0 = arith.constant 3.000000e-01 : f64
         %c1 = arith.constant 1.000000e-01 : f64
@@ -468,6 +469,7 @@ module {
         mqtref.rx(%c0) %q0
         mqtref.ry(%c0) %q0
         mqtref.rz(%c0) %q0
+        mqtref.r(%c0, %c1) %q0
         return
     }
 }
@@ -486,6 +488,7 @@ module {
         // CHECK: llvm.call @__quantum__qis__rx__body(%[[q_0]], %[[c_0]]) : (!llvm.ptr, f64) -> ()
         // CHECK: llvm.call @__quantum__qis__ry__body(%[[q_0]], %[[c_0]]) : (!llvm.ptr, f64) -> ()
         // CHECK: llvm.call @__quantum__qis__rz__body(%[[q_0]], %[[c_0]]) : (!llvm.ptr, f64) -> ()
+        // CHECK: llvm.call @__quantum__qis__r__body(%[[q_0:.*]], %[[c_0]], %[[c_1]]) : (!llvm.ptr, f64, f64) -> ()
 
         %c0 = arith.constant 3.000000e-01 : f64
         %c1 = arith.constant 1.000000e-01 : f64
@@ -497,6 +500,7 @@ module {
         mqtref.rx(%c0) %q0
         mqtref.ry(%c0) %q0
         mqtref.rz(%c0) %q0
+        mqtref.r(%c0, %c1) %q0
         return
     }
 }

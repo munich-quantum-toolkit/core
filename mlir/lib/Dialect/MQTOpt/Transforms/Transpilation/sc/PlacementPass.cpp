@@ -17,7 +17,6 @@
 
 #include <algorithm>
 #include <cassert>
-#include <chrono>
 #include <cstddef>
 #include <deque>
 #include <llvm/ADT/STLExtras.h>
@@ -31,6 +30,7 @@
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/BuiltinAttributes.h>
 #include <mlir/IR/BuiltinOps.h>
+#include <mlir/IR/Diagnostics.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/PatternMatch.h>
 #include <mlir/IR/Types.h>
@@ -378,8 +378,22 @@ LogicalResult run(ModuleOp module, MLIRContext* mlirCtx,
     const OpBuilder::InsertionGuard guard(rewriter);
     rewriter.setInsertionPoint(curr);
 
+    /// TypeSwitch performs sequential dyn_cast checks.
+    /// Hence, always put most frequent ops first.
+
     const auto res =
         TypeSwitch<Operation*, WalkResult>(curr)
+            /// mqtopt Dialect
+            .Case<UnitaryInterface>(
+                [&](UnitaryInterface op) { return handleUnitary(op, ctx); })
+            .Case<AllocQubitOp>(
+                [&](AllocQubitOp op) { return handleAlloc(op, ctx, rewriter); })
+            .Case<DeallocQubitOp>([&](DeallocQubitOp op) {
+              return handleDealloc(op, ctx, rewriter);
+            })
+            .Case<ResetOp>([&](ResetOp op) { return handleReset(op, ctx); })
+            .Case<MeasureOp>(
+                [&](MeasureOp op) { return handleMeasure(op, ctx); })
             /// built-in Dialect
             .Case<ModuleOp>(
                 [&](ModuleOp /* op */) { return WalkResult::advance(); })
@@ -395,17 +409,6 @@ LogicalResult run(ModuleOp module, MLIRContext* mlirCtx,
                 [&](scf::IfOp op) { return handleIf(op, ctx, rewriter); })
             .Case<scf::YieldOp>(
                 [&](scf::YieldOp op) { return handleYield(op, ctx, rewriter); })
-            /// mqtopt Dialect
-            .Case<AllocQubitOp>(
-                [&](AllocQubitOp op) { return handleAlloc(op, ctx, rewriter); })
-            .Case<DeallocQubitOp>([&](DeallocQubitOp op) {
-              return handleDealloc(op, ctx, rewriter);
-            })
-            .Case<ResetOp>([&](ResetOp op) { return handleReset(op, ctx); })
-            .Case<MeasureOp>(
-                [&](MeasureOp op) { return handleMeasure(op, ctx); })
-            .Case<UnitaryInterface>(
-                [&](UnitaryInterface op) { return handleUnitary(op, ctx); })
             /// Skip the rest.
             .Default([](auto) { return WalkResult::skip(); });
 
@@ -425,17 +428,25 @@ struct PlacementPassSC final : impl::PlacementPassSCBase<PlacementPassSC> {
   using PlacementPassSCBase::PlacementPassSCBase;
 
   void runOnOperation() override {
-    const auto arch = getArchitecture(ArchitectureName::MQTTest);
+    if (preflight().failed()) {
+      signalPassFailure();
+      return;
+    }
+
+    const auto arch = getArchitecture(archName);
+    if (!arch) {
+      emitError(UnknownLoc::get(&getContext()))
+          << "unsupported architecture '" << archName << "'";
+      signalPassFailure();
+      return;
+    }
+
     const auto placer = getPlacer(*arch);
 
-    const auto start = std::chrono::steady_clock::now();
     if (PlacementContext ctx(*arch, *placer);
         failed(run(getOperation(), &getContext(), ctx))) {
       signalPassFailure();
     }
-    const auto end = std::chrono::steady_clock::now();
-    tms = std::chrono::duration_cast<std::chrono::milliseconds>(end - start)
-              .count();
   }
 
 private:
@@ -449,13 +460,22 @@ private:
       std::random_device rd;
       const std::size_t seed = rd();
       LLVM_DEBUG({
-        llvm::dbgs() << "getPlacer: random placement with seed = " << seed
+        llvm::dbgs() << "getPlacer: random placement with seed =" << seed
                      << '\n';
       });
       return std::make_unique<RandomPlacer>(arch.nqubits(),
                                             std::mt19937_64(seed));
     }
     llvm_unreachable("Unknown strategy");
+  }
+
+  LogicalResult preflight() {
+    if (archName.empty()) {
+      return emitError(UnknownLoc::get(&getContext()),
+                       "required option 'arch' not provided");
+    }
+
+    return success();
   }
 };
 } // namespace

@@ -9,12 +9,19 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 
 ## [Unreleased]
 
+## [3.3.2] - 2025-11-04
+
 ### Added
 
-- ✨ Add A\*-search-based routing algorithm to MLIR transpilation routines ([#1237]) ([**@MatthiasReumann**])
+- ✨ Add DD-based simulator QDMI device ([#1287]) ([**@burgholzer**])
+- ✨ A `--reuse-qubits` pass implementing an advanced form of qubit reuse to reduce the qubit count of quantum circuits ([#1108]) ([**@DRovara**])
+- ✨ A `--lift-measurements` pass that attempts to move measurements up as much as possible, used for instance to enable better qubit reuse ([#1108]) ([**@DRovara**])
+- ✨ Add native support for `R(theta, phi)` gate ([#1283]) ([**@burgholzer**])
+- ✨ Add A\*-search-based routing algorithm to MLIR transpilation routines ([#1237], [#1271], [#1279]) ([**@MatthiasReumann**])
 
 ### Fixed
 
+- 🐛 Fix edge-case in validation of `NAComputation` ([#1276]) ([**@ystade**])
 - 🐛 Allow integer QASM version declarations ([#1269]) ([**@denialhaag**])
 
 ## [3.3.1] - 2025-10-14
@@ -206,7 +213,8 @@ _📚 Refer to the [GitHub Release Notes](https://github.com/munich-quantum-tool
 
 <!-- Version links -->
 
-[unreleased]: https://github.com/munich-quantum-toolkit/core/compare/v3.3.1...HEAD
+[unreleased]: https://github.com/munich-quantum-toolkit/core/compare/v3.3.2...HEAD
+[3.3.2]: https://github.com/munich-quantum-toolkit/core/releases/tag/v3.3.2
 [3.3.1]: https://github.com/munich-quantum-toolkit/core/releases/tag/v3.3.1
 [3.3.0]: https://github.com/munich-quantum-toolkit/core/releases/tag/v3.3.0
 [3.2.1]: https://github.com/munich-quantum-toolkit/core/releases/tag/v3.2.1
@@ -219,11 +227,16 @@ _📚 Refer to the [GitHub Release Notes](https://github.com/munich-quantum-tool
 
 <!-- PR links -->
 
-[#1237]: https://github.com/munich-quantum-toolkit/core/pull/1237
+[#1287]: https://github.com/munich-quantum-toolkit/core/pull/1287
+[#1283]: https://github.com/munich-quantum-toolkit/core/pull/1283
+[#1279]: https://github.com/munich-quantum-toolkit/core/pull/1279
+[#1276]: https://github.com/munich-quantum-toolkit/core/pull/1276
+[#1271]: https://github.com/munich-quantum-toolkit/core/pull/1271
 [#1269]: https://github.com/munich-quantum-toolkit/core/pull/1269
 [#1263]: https://github.com/munich-quantum-toolkit/core/pull/1263
 [#1247]: https://github.com/munich-quantum-toolkit/core/pull/1247
 [#1246]: https://github.com/munich-quantum-toolkit/core/pull/1246
+[#1237]: https://github.com/munich-quantum-toolkit/core/pull/1237
 [#1236]: https://github.com/munich-quantum-toolkit/core/pull/1236
 [#1235]: https://github.com/munich-quantum-toolkit/core/pull/1235
 [#1232]: https://github.com/munich-quantum-toolkit/core/pull/1232
@@ -231,8 +244,8 @@ _📚 Refer to the [GitHub Release Notes](https://github.com/munich-quantum-tool
 [#1223]: https://github.com/munich-quantum-toolkit/core/pull/1223
 [#1211]: https://github.com/munich-quantum-toolkit/core/pull/1211
 [#1210]: https://github.com/munich-quantum-toolkit/core/pull/1210
-[#1207]: https://github.com/munich-quantum-toolkit/core/pull/1207
 [#1209]: https://github.com/munich-quantum-toolkit/core/pull/1209
+[#1207]: https://github.com/munich-quantum-toolkit/core/pull/1207
 [#1186]: https://github.com/munich-quantum-toolkit/core/pull/1186
 [#1181]: https://github.com/munich-quantum-toolkit/core/pull/1181
 [#1180]: https://github.com/munich-quantum-toolkit/core/pull/1180
@@ -246,6 +259,7 @@ _📚 Refer to the [GitHub Release Notes](https://github.com/munich-quantum-tool
 [#1139]: https://github.com/munich-quantum-toolkit/core/pull/1139
 [#1117]: https://github.com/munich-quantum-toolkit/core/pull/1117
 [#1116]: https://github.com/munich-quantum-toolkit/core/pull/1116
+[#1108]: https://github.com/munich-quantum-toolkit/core/pull/1108
 [#1106]: https://github.com/munich-quantum-toolkit/core/pull/1106
 [#1100]: https://github.com/munich-quantum-toolkit/core/pull/1100
 [#1099]: https://github.com/munich-quantum-toolkit/core/pull/1099
