@@ -13,10 +13,15 @@
 #include "mqt_ddsim_qdmi/device.h"
 
 #include <cassert>
+#include <complex>
 #include <cstring>
 #include <gtest/gtest.h>
 #include <qdmi/constants.h>
 #include <sstream>
+#include <string>
+#include <string_view>
+#include <utility>
+#include <vector>
 
 namespace qdmi_test {
 

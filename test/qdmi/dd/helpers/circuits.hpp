@@ -12,7 +12,7 @@
 
 namespace qdmi_test {
 
-inline constexpr const char* QASM3_Bell_Sampling = R"(
+inline constexpr auto QASM3_BELL_SAMPLING = R"(
 OPENQASM 3;
 include "stdgates.inc";
 qubit[2] q;
@@ -22,7 +22,7 @@ cx q[0], q[1];
 c = measure q;
 )";
 
-inline constexpr const char* QASM3_Bell_State = R"(
+inline constexpr auto QASM3_BELL_STATE = R"(
 OPENQASM 3;
 include "stdgates.inc";
 qubit[2] q;
@@ -34,7 +34,7 @@ inline constexpr const char* MALFORMED_PROGRAM = "Definitely not OpenQASM";
 
 // A slightly heavier 5-qubit sampling circuit to prolong runtime slightly while
 // remaining fast
-inline constexpr const char* QASM3_Heavy_Sampling5 = R"(
+inline constexpr auto QASM3_HEAVY_SAMPLING5 = R"(
 OPENQASM 3;
 include "stdgates.inc";
 qubit[5] q;

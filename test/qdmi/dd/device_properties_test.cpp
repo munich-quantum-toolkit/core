@@ -18,7 +18,6 @@
 #include <gmock/gmock-matchers.h>
 #include <gtest/gtest.h>
 #include <qdmi/constants.h>
-#include <stdexcept>
 #include <string>
 #include <vector>
 

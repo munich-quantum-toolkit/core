@@ -15,8 +15,6 @@
 #include "helpers/test_utils.hpp"
 #include "mqt_ddsim_qdmi/device.h"
 
-#include <cstddef>
-#include <gmock/gmock-matchers.h>
 #include <gtest/gtest.h>
 #include <qdmi/constants.h>
 
@@ -67,7 +65,7 @@ TEST(ErrorHandling, GetResultsBeforeDone) {
   const qdmi_test::SessionGuard s{};
   const qdmi_test::JobGuard j{s.session};
   ASSERT_EQ(qdmi_test::setProgram(j.job, QDMI_PROGRAM_FORMAT_QASM3,
-                                  qdmi_test::QASM3_Bell_Sampling),
+                                  qdmi_test::QASM3_BELL_SAMPLING),
             QDMI_SUCCESS);
   ASSERT_EQ(qdmi_test::setShots(j.job, 64), QDMI_SUCCESS);
   // Before submit → invalid
@@ -119,7 +117,7 @@ TEST(ErrorHandling, MaxEnums) {
             QDMI_ERROR_INVALIDARGUMENT);
 
   ASSERT_EQ(qdmi_test::setProgram(j.job, QDMI_PROGRAM_FORMAT_QASM3,
-                                  qdmi_test::QASM3_Bell_Sampling),
+                                  qdmi_test::QASM3_BELL_SAMPLING),
             QDMI_SUCCESS);
   ASSERT_EQ(qdmi_test::setShots(j.job, 16), QDMI_SUCCESS);
   ASSERT_EQ(qdmi_test::submitAndWait(j.job, 0), QDMI_SUCCESS);
@@ -230,7 +228,7 @@ TEST(ErrorHandling, CustomEnums) {
             QDMI_ERROR_NOTSUPPORTED);
 
   ASSERT_EQ(qdmi_test::setProgram(j.job, QDMI_PROGRAM_FORMAT_QASM3,
-                                  qdmi_test::QASM3_Bell_Sampling),
+                                  qdmi_test::QASM3_BELL_SAMPLING),
             QDMI_SUCCESS);
   ASSERT_EQ(qdmi_test::setShots(j.job, 16), QDMI_SUCCESS);
   ASSERT_EQ(qdmi_test::submitAndWait(j.job, 0), QDMI_SUCCESS);

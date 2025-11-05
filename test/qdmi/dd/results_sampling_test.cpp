@@ -18,14 +18,13 @@
 #include <cstddef>
 #include <gtest/gtest.h>
 #include <qdmi/constants.h>
-#include <string>
 #include <vector>
 
 TEST(ResultsSampling, HistogramKeysAndValuesSumToShots) {
   const qdmi_test::SessionGuard s{};
   const qdmi_test::JobGuard j{s.session};
   ASSERT_EQ(qdmi_test::setProgram(j.job, QDMI_PROGRAM_FORMAT_QASM3,
-                                  qdmi_test::QASM3_Bell_Sampling),
+                                  qdmi_test::QASM3_BELL_SAMPLING),
             QDMI_SUCCESS);
   constexpr size_t shots = 1024;
   ASSERT_EQ(qdmi_test::setShots(j.job, shots), QDMI_SUCCESS);
@@ -44,7 +43,7 @@ TEST(ResultsSampling, BufferTooSmallErrors) {
   const qdmi_test::SessionGuard s{};
   const qdmi_test::JobGuard j{s.session};
   ASSERT_EQ(qdmi_test::setProgram(j.job, QDMI_PROGRAM_FORMAT_QASM3,
-                                  qdmi_test::QASM3_Bell_Sampling),
+                                  qdmi_test::QASM3_BELL_SAMPLING),
             QDMI_SUCCESS);
   ASSERT_EQ(qdmi_test::setShots(j.job, 512), QDMI_SUCCESS);
   ASSERT_EQ(qdmi_test::submitAndWait(j.job, 0), QDMI_SUCCESS);
@@ -73,7 +72,7 @@ TEST(ResultsSampling, StateAndProbRequestsAreInvalidWhenShotsPositive) {
   const qdmi_test::SessionGuard s{};
   const qdmi_test::JobGuard j{s.session};
   ASSERT_EQ(qdmi_test::setProgram(j.job, QDMI_PROGRAM_FORMAT_QASM3,
-                                  qdmi_test::QASM3_Bell_Sampling),
+                                  qdmi_test::QASM3_BELL_SAMPLING),
             QDMI_SUCCESS);
   ASSERT_EQ(qdmi_test::setShots(j.job, 32), QDMI_SUCCESS);
   ASSERT_EQ(qdmi_test::submitAndWait(j.job, 0), QDMI_SUCCESS);

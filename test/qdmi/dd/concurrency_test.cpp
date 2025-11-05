@@ -27,7 +27,7 @@ TEST(Concurrency, ConcurrentStatevectorReads) {
   const qdmi_test::SessionGuard s{};
   qdmi_test::JobGuard j{s.session};
   ASSERT_EQ(qdmi_test::setProgram(j.job, QDMI_PROGRAM_FORMAT_QASM3,
-                                  qdmi_test::QASM3_Bell_State),
+                                  qdmi_test::QASM3_BELL_STATE),
             QDMI_SUCCESS);
   ASSERT_EQ(qdmi_test::setShots(j.job, 0), QDMI_SUCCESS);
   ASSERT_EQ(qdmi_test::submitAndWait(j.job, 0), QDMI_SUCCESS);
@@ -58,7 +58,7 @@ TEST(Concurrency, ConcurrentHistogramReads) {
   const qdmi_test::SessionGuard s{};
   const qdmi_test::JobGuard j{s.session};
   ASSERT_EQ(qdmi_test::setProgram(j.job, QDMI_PROGRAM_FORMAT_QASM3,
-                                  qdmi_test::QASM3_Bell_Sampling),
+                                  qdmi_test::QASM3_BELL_SAMPLING),
             QDMI_SUCCESS);
   ASSERT_EQ(qdmi_test::setShots(j.job, 1024), QDMI_SUCCESS);
   ASSERT_EQ(qdmi_test::submitAndWait(j.job, 0), QDMI_SUCCESS);
@@ -97,7 +97,7 @@ TEST(Concurrency, ConcurrentCheckDuringRun) {
   const qdmi_test::SessionGuard s{};
   const qdmi_test::JobGuard j{s.session};
   ASSERT_EQ(qdmi_test::setProgram(j.job, QDMI_PROGRAM_FORMAT_QASM3,
-                                  qdmi_test::QASM3_Bell_Sampling),
+                                  qdmi_test::QASM3_BELL_SAMPLING),
             QDMI_SUCCESS);
   constexpr size_t shots = 4096;
   ASSERT_EQ(qdmi_test::setShots(j.job, shots), QDMI_SUCCESS);

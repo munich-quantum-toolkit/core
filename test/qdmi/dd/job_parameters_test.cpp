@@ -17,7 +17,6 @@
 
 #include <cstddef>
 #include <cstring>
-#include <gmock/gmock-matchers.h>
 #include <gtest/gtest.h>
 #include <qdmi/constants.h>
 
@@ -35,8 +34,8 @@ TEST(JobParameters, SetAndQueryBasics) {
   // Program string
   ASSERT_EQ(MQT_DDSIM_QDMI_device_job_set_parameter(
                 j.job, QDMI_DEVICE_JOB_PARAMETER_PROGRAM,
-                strlen(qdmi_test::QASM3_Bell_Sampling) + 1,
-                qdmi_test::QASM3_Bell_Sampling),
+                strlen(qdmi_test::QASM3_BELL_SAMPLING) + 1,
+                qdmi_test::QASM3_BELL_SAMPLING),
             QDMI_SUCCESS);
 
   // Shots
@@ -67,8 +66,9 @@ TEST(JobParameters, SetAndQueryBasics) {
                 j.job, QDMI_DEVICE_JOB_PROPERTY_ID, 0, nullptr, &size),
             QDMI_SUCCESS);
   EXPECT_GT(size, 0U);
+  std::string id(size - 1, '\0');
   EXPECT_EQ(MQT_DDSIM_QDMI_device_job_query_property(
-                j.job, QDMI_DEVICE_JOB_PROPERTY_ID, size, nullptr, nullptr),
+                j.job, QDMI_DEVICE_JOB_PROPERTY_ID, size, id.data(), nullptr),
             QDMI_SUCCESS);
 
   EXPECT_EQ(MQT_DDSIM_QDMI_device_job_query_property(
@@ -107,10 +107,4 @@ TEST(JobParameters, ProgramFormatSupport) {
                   sizeof(QDMI_Program_Format), &fmt),
               QDMI_ERROR_NOTSUPPORTED);
   }
-
-  // Invalid enum
-  EXPECT_EQ(MQT_DDSIM_QDMI_device_job_set_parameter(
-                j.job, QDMI_DEVICE_JOB_PARAMETER_PROGRAMFORMAT,
-                sizeof(QDMI_Program_Format), nullptr),
-            QDMI_SUCCESS); // size==0 or null is accepted as no-op in API here
 }

@@ -38,7 +38,7 @@ TEST(DeviceStatus, TransitionsBusyThenIdleAfterJob) {
   // it. Submit a job to force BUSY then completion to IDLE.
   const qdmi_test::JobGuard j{s.session};
   ASSERT_EQ(qdmi_test::setProgram(j.job, QDMI_PROGRAM_FORMAT_QASM3,
-                                  qdmi_test::QASM3_Bell_Sampling),
+                                  qdmi_test::QASM3_BELL_SAMPLING),
             QDMI_SUCCESS);
   ASSERT_EQ(qdmi_test::setShots(j.job, 4096), QDMI_SUCCESS);
   ASSERT_EQ(MQT_DDSIM_QDMI_device_job_submit(j.job), QDMI_SUCCESS);
@@ -71,10 +71,10 @@ TEST(DeviceStatus, MultipleConcurrentJobsKeepBusyUntilLastFinishes) {
   const qdmi_test::JobGuard j1{s.session};
   const qdmi_test::JobGuard j2{s.session};
   ASSERT_EQ(qdmi_test::setProgram(j1.job, QDMI_PROGRAM_FORMAT_QASM3,
-                                  qdmi_test::QASM3_Bell_Sampling),
+                                  qdmi_test::QASM3_BELL_SAMPLING),
             QDMI_SUCCESS);
   ASSERT_EQ(qdmi_test::setProgram(j2.job, QDMI_PROGRAM_FORMAT_QASM3,
-                                  qdmi_test::QASM3_Heavy_Sampling5),
+                                  qdmi_test::QASM3_HEAVY_SAMPLING5),
             QDMI_SUCCESS);
   ASSERT_EQ(qdmi_test::setShots(j1.job, 1024), QDMI_SUCCESS);
   ASSERT_EQ(qdmi_test::setShots(j2.job, 16384), QDMI_SUCCESS);
