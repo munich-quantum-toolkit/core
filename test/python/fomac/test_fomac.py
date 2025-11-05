@@ -54,6 +54,20 @@ def device_and_operation(request: pytest.FixtureRequest) -> tuple[Device, Device
     return device, operation
 
 
+@pytest.fixture
+def ddsim_device() -> Device:
+    """Fixture to provide the DDSIM device for job submission testing.
+
+    Returns:
+        Device: The MQT Core DDSIM QDMI Device.
+    """
+    device_list = list(devices())
+    for dev in device_list:
+        if dev.name() == "MQT Core DDSIM QDMI Device":
+            return dev
+    pytest.skip("DDSIM device not found - job submission tests require DDSIM device")
+
+
 def test_device_name(device: Device) -> None:
     """Test that the device name is a non-empty string."""
     name = device.name()
@@ -372,7 +386,7 @@ def test_operation_mean_shuttling_speed(device_and_operation: tuple[Device, Devi
         assert mss > 0
 
 
-def test_device_submit_job_returns_valid_job(device: Device) -> None:
+def test_device_submit_job_returns_valid_job(ddsim_device: Device) -> None:
     """Test that submit_job creates a Job object with valid properties."""
     from mqt.core.fomac import Job, ProgramFormat
 
@@ -386,7 +400,7 @@ cx q[0], q[1];
 c = measure q;
 """
 
-    job = device.submit_job(qasm3_program, ProgramFormat.QASM3, num_shots=100)
+    job = ddsim_device.submit_job(qasm3_program, ProgramFormat.QASM3, num_shots=100)
     assert isinstance(job, Job)
 
     # Job should have a non-empty ID
@@ -396,7 +410,7 @@ c = measure q;
     assert job.num_shots == 100
 
 
-def test_device_submit_job_preserves_num_shots(device: Device) -> None:
+def test_device_submit_job_preserves_num_shots(ddsim_device: Device) -> None:
     """Test that different shot counts are correctly preserved."""
     from mqt.core.fomac import ProgramFormat
 
@@ -408,9 +422,9 @@ c[0] = measure q[0];
 """
 
     # Submit jobs with different shot counts
-    job1 = device.submit_job(qasm3_program, ProgramFormat.QASM3, num_shots=10)
-    job2 = device.submit_job(qasm3_program, ProgramFormat.QASM3, num_shots=100)
-    job3 = device.submit_job(qasm3_program, ProgramFormat.QASM3, num_shots=1000)
+    job1 = ddsim_device.submit_job(qasm3_program, ProgramFormat.QASM3, num_shots=10)
+    job2 = ddsim_device.submit_job(qasm3_program, ProgramFormat.QASM3, num_shots=100)
+    job3 = ddsim_device.submit_job(qasm3_program, ProgramFormat.QASM3, num_shots=1000)
 
     assert job1.num_shots == 10
     assert job2.num_shots == 100
@@ -418,7 +432,7 @@ c[0] = measure q[0];
 
 
 @pytest.fixture
-def submitted_job(device: Device) -> Job:
+def submitted_job(ddsim_device: Device) -> Job:
     """Fixture that provides a submitted job for testing.
 
     Returns:
@@ -432,10 +446,10 @@ qubit[1] q;
 bit[1] c;
 c[0] = measure q[0];
 """
-    return device.submit_job(qasm3_program, ProgramFormat.QASM3, num_shots=10)
+    return ddsim_device.submit_job(qasm3_program, ProgramFormat.QASM3, num_shots=10)
 
 
-def test_job_ids_are_unique(device: Device) -> None:
+def test_job_ids_are_unique(ddsim_device: Device) -> None:
     """Test that different jobs have unique IDs."""
     from mqt.core.fomac import ProgramFormat
 
@@ -446,8 +460,8 @@ bit[1] c;
 c[0] = measure q[0];
 """
 
-    job1 = device.submit_job(qasm3_program, ProgramFormat.QASM3, num_shots=10)
-    job2 = device.submit_job(qasm3_program, ProgramFormat.QASM3, num_shots=10)
+    job1 = ddsim_device.submit_job(qasm3_program, ProgramFormat.QASM3, num_shots=10)
+    job2 = ddsim_device.submit_job(qasm3_program, ProgramFormat.QASM3, num_shots=10)
 
     assert job1.id != job2.id
 
