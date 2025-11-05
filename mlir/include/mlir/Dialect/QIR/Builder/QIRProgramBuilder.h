@@ -244,6 +244,24 @@ public:
   QIRProgramBuilder& x(const Value qubit);
 
   /**
+   * @brief Apply the CX gate
+   *
+   * @param control Control qubit
+   * @param qubit Target qubit
+   * @return Reference to this builder for method chaining
+   *
+   * @par Example:
+   * ```c++
+   * builder.cx(control, target);
+   * ```
+   * ```mlir
+   * llvm.call @__quantum__qis__cx__body(%control, %target) : (!llvm.ptr,
+   * !llvm.ptr) -> ()
+   * ```
+   */
+  QIRProgramBuilder& cx(const Value control, const Value target);
+
+  /**
    * @brief Apply the RX gate to a qubit
    *
    * @param theta Rotation angle

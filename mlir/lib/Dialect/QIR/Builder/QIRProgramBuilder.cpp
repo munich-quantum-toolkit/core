@@ -252,6 +252,26 @@ QIRProgramBuilder& QIRProgramBuilder::x(const Value qubit) {
   return *this;
 }
 
+QIRProgramBuilder& QIRProgramBuilder::cx(const Value control,
+                                         const Value qubit) {
+  // Save current insertion point
+  const OpBuilder::InsertionGuard insertGuard(builder);
+
+  // Insert in body block (before branch)
+  builder.setInsertionPoint(bodyBlock->getTerminator());
+
+  // Create cx call
+  const auto qirSignature = LLVM::LLVMFunctionType::get(
+      LLVM::LLVMVoidType::get(builder.getContext()),
+      {LLVM::LLVMPointerType::get(builder.getContext()),
+       LLVM::LLVMPointerType::get(builder.getContext())});
+  auto fnDecl =
+      getOrCreateFunctionDeclaration(builder, module, QIR_CX, qirSignature);
+  builder.create<LLVM::CallOp>(loc, fnDecl, ValueRange{control, qubit});
+
+  return *this;
+}
+
 QIRProgramBuilder& QIRProgramBuilder::rx(std::variant<double, Value> theta,
                                          const Value qubit) {
   // Save current insertion point

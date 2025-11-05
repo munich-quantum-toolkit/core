@@ -27,6 +27,7 @@ static constexpr auto QIR_ARRAY_RECORD_OUTPUT =
     "__quantum__rt__array_record_output";
 static constexpr auto QIR_RESET = "__quantum__qis__reset__body";
 static constexpr auto QIR_X = "__quantum__qis__x__body";
+static constexpr auto QIR_CX = "__quantum__qis__cx__body";
 static constexpr auto QIR_RX = "__quantum__qis__rx__body";
 static constexpr auto QIR_U2 = "__quantum__qis__u2__body";
 static constexpr auto QIR_SWAP = "__quantum__qis__swap__body";

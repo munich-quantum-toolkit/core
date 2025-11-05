@@ -525,6 +525,34 @@ struct ConvertQuartzU2QIR final : StatefulOpConversionPattern<U2Op> {
   }
 };
 
+/// TODO: After inlining, replace function call with controlled call
+struct ConvertQuartzCtrlQIR final : StatefulOpConversionPattern<CtrlOp> {
+  using StatefulOpConversionPattern::StatefulOpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(CtrlOp op, OpAdaptor adaptor,
+                  ConversionPatternRewriter& rewriter) const override {
+    rewriter.inlineBlockBefore(&op.getRegion().front(), op->getBlock(),
+                               op->getIterator());
+    rewriter.eraseOp(op);
+    return success();
+  }
+};
+
+/**
+ * @brief Erases quartz.yield operation
+ */
+struct ConvertQuartzYieldQIR final : StatefulOpConversionPattern<YieldOp> {
+  using StatefulOpConversionPattern::StatefulOpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(YieldOp op, OpAdaptor adaptor,
+                  ConversionPatternRewriter& rewriter) const override {
+    rewriter.eraseOp(op);
+    return success();
+  }
+};
+
 /**
  * @brief Converts quartz.swap operation to QIR SWAP
  *
@@ -890,6 +918,8 @@ struct QuartzToQIR final : impl::QuartzToQIRBase<QuartzToQIR> {
       quartzPatterns.add<ConvertQuartzRXQIR>(typeConverter, ctx, &state);
       quartzPatterns.add<ConvertQuartzU2QIR>(typeConverter, ctx, &state);
       quartzPatterns.add<ConvertQuartzSWAPQIR>(typeConverter, ctx, &state);
+      quartzPatterns.add<ConvertQuartzCtrlQIR>(typeConverter, ctx, &state);
+      quartzPatterns.add<ConvertQuartzYieldQIR>(typeConverter, ctx, &state);
 
       // Gate operations will be added here as the dialect expands
 

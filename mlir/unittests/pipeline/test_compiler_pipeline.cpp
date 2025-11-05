@@ -916,6 +916,63 @@ TEST_F(CompilerPipelineTest, X) {
   });
 }
 
+TEST_F(CompilerPipelineTest, CX) {
+  qc::QuantumComputation qc;
+  qc.addQubitRegister(2, "q");
+  qc.cx(0, 1);
+
+  const auto module = importQuantumCircuit(qc);
+  ASSERT_TRUE(module);
+  ASSERT_TRUE(runPipeline(module.get()).succeeded());
+
+  const auto quartzInit = buildQuartzIR([](quartz::QuartzProgramBuilder& b) {
+    auto reg = b.allocQubitRegister(2, "q");
+    auto q0 = reg[0];
+    auto q1 = reg[1];
+    b.ctrl(q0, [&](auto& b) { b.x(q1); });
+  });
+  const auto fluxInit = buildFluxIR([](flux::FluxProgramBuilder& b) {
+    auto reg = b.allocQubitRegister(2, "q");
+    auto q0 = reg[0];
+    auto q1 = reg[1];
+    b.ctrl({q0}, {q1}, [&](auto& b) {
+      auto q1res = b.x(q1);
+      return SmallVector<Value>{q1res};
+    });
+  });
+  const auto fluxOpt = buildFluxIR([](flux::FluxProgramBuilder& b) {
+    auto reg = b.allocQubitRegister(2, "q");
+    auto q0 = reg[0];
+    auto q1 = reg[1];
+    b.ctrl({q0}, {q1}, [&](auto& b) {
+      auto q1res = b.x(q1);
+      return SmallVector<Value>{q1res};
+    });
+  });
+  const auto quartzOpt = buildQuartzIR([](quartz::QuartzProgramBuilder& b) {
+    auto reg = b.allocQubitRegister(2, "q");
+    auto q0 = reg[0];
+    auto q1 = reg[1];
+    b.ctrl(q0, [&](auto& b) { b.x(q1); });
+  });
+  const auto qirOpt = buildQIR([](qir::QIRProgramBuilder& b) {
+    auto reg = b.allocQubitRegister(2);
+    auto q0 = reg[0];
+    /// TODO: Replace uncomment this when CX can be converted to QIR
+    // auto q1 = reg[1];
+    // b.cx(q0, q1);
+    b.x(q0);
+  });
+
+  verifyAllStages({
+      .quartzImport = quartzInit.get(),
+      .fluxConversion = fluxInit.get(),
+      .optimization = fluxOpt.get(),
+      .quartzConversion = quartzOpt.get(),
+      .qirConversion = qirOpt.get(),
+  });
+}
+
 TEST_F(CompilerPipelineTest, RX) {
   qc::QuantumComputation qc;
   qc.addQubitRegister(1, "q");
@@ -1249,11 +1306,11 @@ TEST_F(SimpleConversionTest, CX) {
 
   const auto fluxExpected = buildFluxIR([](flux::FluxProgramBuilder& b) {
     auto reg = b.allocQubitRegister(2, "q");
-    auto q0a = reg[0];
-    auto q1a = reg[1];
-    b.ctrl({q0a}, {q1a}, [&](auto& b) {
-      auto q1b = b.x(q1a);
-      return SmallVector<Value>{q1b};
+    auto q0 = reg[0];
+    auto q1 = reg[1];
+    b.ctrl({q0}, {q1}, [&](auto& b) {
+      auto q1res = b.x(q1);
+      return SmallVector<Value>{q1res};
     });
   });
 
@@ -1272,27 +1329,27 @@ TEST_F(SimpleConversionTest, CX) {
 TEST_F(SimpleConversionTest, CXMergeNested) {
   const auto fluxInit = buildFluxIR([](flux::FluxProgramBuilder& b) {
     auto reg = b.allocQubitRegister(3, "q");
-    auto q0a = reg[0];
-    auto q1a = reg[1];
-    auto q2a = reg[2];
-    b.ctrl({q0a}, {q1a, q2a}, [&](auto& b) {
-      auto q12b = b.ctrl({q1a}, {q2a}, [&](auto& b) {
-        auto q2b = b.x(q2a);
-        return SmallVector<Value>{q2b};
+    auto q0 = reg[0];
+    auto q1 = reg[1];
+    auto q2 = reg[2];
+    b.ctrl({q0}, {q1, q2}, [&](auto& b) {
+      auto q12res = b.ctrl({q1}, {q2}, [&](auto& b) {
+        auto q2res = b.x(q2);
+        return SmallVector<Value>{q2res};
       });
-      return SmallVector<Value>{q12b.first[0], q12b.second[0]};
+      return SmallVector<Value>{q12res.first[0], q12res.second[0]};
     });
   });
   const auto fluxInitIR = captureIR(fluxInit.get());
 
   const auto fluxOpt = buildFluxIR([](flux::FluxProgramBuilder& b) {
     auto reg = b.allocQubitRegister(3, "q");
-    auto q0a = reg[0];
-    auto q1a = reg[1];
-    auto q2a = reg[2];
-    b.ctrl({q0a, q1a}, {q2a}, [&](auto& b) {
-      auto q2b = b.x(q2a);
-      return SmallVector<Value>{q2b};
+    auto q0 = reg[0];
+    auto q1 = reg[1];
+    auto q2 = reg[2];
+    b.ctrl({q0, q1}, {q2}, [&](auto& b) {
+      auto q2res = b.x(q2);
+      return SmallVector<Value>{q2res};
     });
   });
 
@@ -1302,10 +1359,10 @@ TEST_F(SimpleConversionTest, CXMergeNested) {
 TEST_F(SimpleConversionTest, CXRemoveTrivial) {
   const auto fluxInit = buildFluxIR([](flux::FluxProgramBuilder& b) {
     auto reg = b.allocQubitRegister(1, "q");
-    auto q0a = reg[0];
-    b.ctrl({}, {q0a}, [&](auto& b) {
-      auto q0b = b.x(q0a);
-      return SmallVector<Value>{q0b};
+    auto q0 = reg[0];
+    b.ctrl({}, {q0}, [&](auto& b) {
+      auto q0res = b.x(q0);
+      return SmallVector<Value>{q0res};
     });
   });
   const auto fluxInitIR = captureIR(fluxInit.get());
