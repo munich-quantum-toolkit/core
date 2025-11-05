@@ -9,6 +9,8 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 
 ## [Unreleased]
 
+## [3.3.2] - 2025-11-04
+
 ### Added
 
 - ✨ Add DD-based simulator QDMI device ([#1287]) ([**@burgholzer**])
@@ -211,7 +213,8 @@ _📚 Refer to the [GitHub Release Notes](https://github.com/munich-quantum-tool
 
 <!-- Version links -->
 
-[unreleased]: https://github.com/munich-quantum-toolkit/core/compare/v3.3.1...HEAD
+[unreleased]: https://github.com/munich-quantum-toolkit/core/compare/v3.3.2...HEAD
+[3.3.2]: https://github.com/munich-quantum-toolkit/core/releases/tag/v3.3.2
 [3.3.1]: https://github.com/munich-quantum-toolkit/core/releases/tag/v3.3.1
 [3.3.0]: https://github.com/munich-quantum-toolkit/core/releases/tag/v3.3.0
 [3.2.1]: https://github.com/munich-quantum-toolkit/core/releases/tag/v3.2.1
