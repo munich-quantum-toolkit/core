@@ -120,6 +120,11 @@ void FluxProgramBuilder::validateQubitValue(const Value qubit) const {
 
 void FluxProgramBuilder::updateQubitTracking(const Value inputQubit,
                                              const Value outputQubit) {
+  if (inRegion > 0) {
+    // Do not update tracking within regions
+    return;
+  }
+
   // Validate the input qubit
   validateQubitValue(inputQubit);
 
@@ -178,9 +183,7 @@ Value FluxProgramBuilder::x(Value qubit) {
   const auto& qubitOut = xOp.getQubitOut();
 
   // Update tracking
-  if (inRegion == 0) {
-    updateQubitTracking(qubit, qubitOut);
-  }
+  updateQubitTracking(qubit, qubitOut);
 
   return qubitOut;
 }
@@ -242,13 +245,11 @@ std::pair<SmallVector<Value>, SmallVector<Value>> FluxProgramBuilder::ctrl(
   const auto& targetsOut = ctrlOp.getTargetsOut();
 
   // Update tracking
-  if (inRegion == 0) {
-    for (const auto& [control, controlOut] : llvm::zip(controls, controlsOut)) {
-      updateQubitTracking(control, controlOut);
-    }
-    for (const auto& [target, targetOut] : llvm::zip(targets, targetsOut)) {
-      updateQubitTracking(target, targetOut);
-    }
+  for (const auto& [control, controlOut] : llvm::zip(controls, controlsOut)) {
+    updateQubitTracking(control, controlOut);
+  }
+  for (const auto& [target, targetOut] : llvm::zip(targets, targetsOut)) {
+    updateQubitTracking(target, targetOut);
   }
 
   return {controlsOut, targetsOut};
