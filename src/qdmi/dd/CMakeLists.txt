@@ -48,13 +48,6 @@ if(NOT TARGET ${TARGET_NAME})
   # libraries
   set_target_properties(${TARGET_NAME} PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
-  # Set versioning information
-  set_target_properties(
-    ${TARGET_NAME}
-    PROPERTIES VERSION ${PROJECT_VERSION}
-               SOVERSION ${PROJECT_VERSION_MAJOR}.${PROJECT_VERSION_MINOR}
-               EXPORT_NAME CoreQDMI_DDSIM_Device)
-
   # Add to list of MQT Core targets
   set(MQT_CORE_TARGETS
       ${MQT_CORE_TARGETS} ${TARGET_NAME}
