@@ -220,47 +220,120 @@ void addResetOp(QuartzProgramBuilder& builder, const qc::Operation& operation,
   }
 }
 
-// Temporary implementation of XOp translation
+/**
+ * @brief Extracts positive control qubits from an operation
+ *
+ * @details
+ * Iterates through the controls of the given operation and collects
+ * the qubit values corresponding to positive controls.
+ *
+ * @param operation The operation containing controls
+ * @param qubits Flat vector of qubit values indexed by physical qubit index
+ * @return Vector of qubit values corresponding to positive controls
+ */
+llvm::SmallVector<Value>
+getPosControls(const qc::Operation& operation,
+               const llvm::SmallVector<Value>& qubits) {
+  llvm::SmallVector<Value> controls;
+  for (const auto& [control, type] : operation.getControls()) {
+    if (type == qc::Control::Type::Neg) {
+      continue;
+    }
+    controls.push_back(qubits[control]);
+  }
+  return controls;
+}
+
+/**
+ * @brief Adds X operations
+ *
+ * @details
+ * Translates X operations from the QuantumComputation to quartz.x operations.
+ *
+ * @param builder The QuartzProgramBuilder used to create operations
+ * @param operation The X operation to translate
+ * @param qubits Flat vector of qubit values indexed by physical qubit index
+ */
 void addXOp(QuartzProgramBuilder& builder, const qc::Operation& operation,
             const llvm::SmallVector<Value>& qubits) {
   const auto& target = qubits[operation.getTargets()[0]];
-  if (operation.getControls().empty()) {
+  const auto& posControls = getPosControls(operation, qubits);
+  if (posControls.empty()) {
     builder.x(target);
   } else {
-    llvm::SmallVector<Value> controls;
-    for (const auto& [control, type] : operation.getControls()) {
-      if (type == qc::Control::Type::Neg) {
-        continue;
-      }
-      controls.push_back(qubits[control]);
-    }
-    builder.ctrl(controls, [&](auto& builder) { builder.x(target); });
+    builder.ctrl(posControls, [&](auto& builder) { builder.x(target); });
   }
 }
 
-// Temporary implementation of RXOp translation
+/**
+ * @brief Adds RX operations
+ *
+ * @details
+ * Translates RX operations from the QuantumComputation to quartz.rx operations.
+ *
+ * @param builder The QuartzProgramBuilder used to create operations
+ * @param operation The RX operation to translate
+ * @param qubits Flat vector of qubit values indexed by physical qubit index
+ */
 void addRXOp(QuartzProgramBuilder& builder, const qc::Operation& operation,
              const llvm::SmallVector<Value>& qubits) {
   const auto& theta = operation.getParameter()[0];
-  const auto& qubit = qubits[operation.getTargets()[0]];
-  builder.rx(theta, qubit);
+  const auto& target = qubits[operation.getTargets()[0]];
+  const auto& posControls = getPosControls(operation, qubits);
+  if (posControls.empty()) {
+    builder.rx(theta, target);
+  } else {
+    builder.ctrl(posControls,
+                 [&](auto& builder) { builder.rx(theta, target); });
+  }
 }
 
-// Temporary implementation of U2Op translation
+/**
+ * @brief Adds U2 operations
+ *
+ * @details
+ * Translates U2 operations from the QuantumComputation to quartz.u2 operations.
+ *
+ * @param builder The QuartzProgramBuilder used to create operations
+ * @param operation The U2 operation to translate
+ * @param qubits Flat vector of qubit values indexed by physical qubit index
+ */
 void addU2Op(QuartzProgramBuilder& builder, const qc::Operation& operation,
              const llvm::SmallVector<Value>& qubits) {
   const auto& phi = operation.getParameter()[0];
   const auto& lambda = operation.getParameter()[1];
-  const auto& qubit = qubits[operation.getTargets()[0]];
-  builder.u2(phi, lambda, qubit);
+  const auto& target = qubits[operation.getTargets()[0]];
+  const auto& posControls = getPosControls(operation, qubits);
+  if (posControls.empty()) {
+    builder.u2(phi, lambda, target);
+  } else {
+    builder.ctrl(posControls,
+                 [&](auto& builder) { builder.u2(phi, lambda, target); });
+  }
 }
 
-// Temporary implementation of SWAPOp translation
+/**
+ * @brief Adds SWAP operations
+ *
+ * @details
+ * Translates SWAP operations from the QuantumComputation to quartz.swap
+ * operations.
+ *
+ * @param builder The QuartzProgramBuilder used to create operations
+ * @param operation The SWAP operation to translate
+ * @param qubits Flat vector of qubit values indexed by physical qubit index
+ */
 void addSWAPOp(QuartzProgramBuilder& builder, const qc::Operation& operation,
                const llvm::SmallVector<Value>& qubits) {
-  const auto& qubit0 = qubits[operation.getTargets()[0]];
-  const auto& qubit1 = qubits[operation.getTargets()[1]];
-  builder.swap(qubit0, qubit1);
+  const auto& target0 = qubits[operation.getTargets()[0]];
+  const auto& target1 = qubits[operation.getTargets()[1]];
+  const auto& posControls = getPosControls(operation, qubits);
+  if (posControls.empty()) {
+    builder.swap(target0, target1);
+  } else {
+    builder.ctrl(posControls,
+                 [&](auto& builder) { builder.swap(target0, target1); });
+  }
 }
 
 /**
