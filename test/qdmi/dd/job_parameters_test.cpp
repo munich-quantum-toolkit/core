@@ -62,6 +62,18 @@ TEST(JobParameters, SetAndQueryBasics) {
                 &shotsOut, nullptr),
             QDMI_SUCCESS);
   EXPECT_EQ(shotsOut, shots);
+
+  EXPECT_EQ(MQT_DDSIM_QDMI_device_job_query_property(
+                j.job, QDMI_DEVICE_JOB_PROPERTY_ID, 0, nullptr, &size),
+            QDMI_SUCCESS);
+  EXPECT_GT(size, 0U);
+  EXPECT_EQ(MQT_DDSIM_QDMI_device_job_query_property(
+                j.job, QDMI_DEVICE_JOB_PROPERTY_ID, size, nullptr, nullptr),
+            QDMI_SUCCESS);
+
+  EXPECT_EQ(MQT_DDSIM_QDMI_device_job_query_property(
+                j.job, QDMI_DEVICE_JOB_PROPERTY_PROGRAM, 0, nullptr, &size),
+            QDMI_ERROR_NOTSUPPORTED);
 }
 
 TEST(JobParameters, ProgramFormatSupport) {

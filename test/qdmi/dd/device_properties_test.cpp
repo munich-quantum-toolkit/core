@@ -150,6 +150,7 @@ TEST(SiteProperties, IndexAvailable) {
 
 TEST(OperationProperties, BasicQueries) {
   const qdmi_test::SessionGuard s{};
+  const auto sites = qdmi_test::querySites(s.session);
   for (const auto ops = qdmi_test::queryOperations(s.session);
        auto* const op : ops) {
     size_t nameSize = 0;
@@ -183,5 +184,38 @@ TEST(OperationProperties, BasicQueries) {
         s.session, op, 0, nullptr, 0, nullptr,
         QDMI_OPERATION_PROPERTY_QUBITSNUM, 0, nullptr, nullptr);
     EXPECT_THAT(rc, AnyOf(QDMI_SUCCESS, QDMI_ERROR_NOTSUPPORTED));
+    if (rc == QDMI_SUCCESS) {
+      size_t nqubits = 0;
+      ASSERT_EQ(MQT_DDSIM_QDMI_device_session_query_operation_property(
+                    s.session, op, 0, nullptr, 0, nullptr,
+                    QDMI_OPERATION_PROPERTY_QUBITSNUM, sizeof(size_t), &nqubits,
+                    nullptr),
+                QDMI_SUCCESS);
+      EXPECT_GE(nqubits, 0U);
+
+      if (nqubits > 0) {
+        // get as many sites as needed
+        std::vector<MQT_DDSIM_QDMI_Site> opSites{nqubits};
+        for (size_t i = 0; i < nqubits; ++i) {
+          opSites[i] = sites[i];
+        }
+
+        // query the fidelity with those sites
+        ASSERT_EQ(MQT_DDSIM_QDMI_device_session_query_operation_property(
+                      s.session, op, nqubits, opSites.data(), 0, nullptr,
+                      QDMI_OPERATION_PROPERTY_FIDELITY, sizeof(double),
+                      &fidelity, nullptr),
+                  QDMI_SUCCESS);
+        EXPECT_EQ(fidelity, 1.0);
+
+        // remove one site and query again, which should be invalid
+        opSites.pop_back();
+        EXPECT_EQ(MQT_DDSIM_QDMI_device_session_query_operation_property(
+                      s.session, op, opSites.size(), opSites.data(), 0, nullptr,
+                      QDMI_OPERATION_PROPERTY_FIDELITY, sizeof(double),
+                      &fidelity, nullptr),
+                  QDMI_ERROR_INVALIDARGUMENT);
+      }
+    }
   }
 }
