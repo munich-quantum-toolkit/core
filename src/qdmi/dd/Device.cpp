@@ -215,6 +215,7 @@ auto Device::sessionAlloc(MQT_DDSIM_QDMI_Device_Session* session)
     return QDMI_ERROR_INVALIDARGUMENT;
   }
   auto uniqueSession = std::make_unique<MQT_DDSIM_QDMI_Device_Session_impl_d>();
+  const std::scoped_lock<std::mutex> lock(sessionsMutex_);
   const auto& it =
       sessions_.emplace(uniqueSession.get(), std::move(uniqueSession)).first;
   // get the key, i.e., the raw pointer to the session from the map iterator
@@ -223,6 +224,7 @@ auto Device::sessionAlloc(MQT_DDSIM_QDMI_Device_Session* session)
 }
 auto Device::sessionFree(MQT_DDSIM_QDMI_Device_Session session) -> void {
   if (session != nullptr) {
+    const std::scoped_lock<std::mutex> lock(sessionsMutex_);
     if (const auto& it = sessions_.find(session); it != sessions_.end()) {
       sessions_.erase(it);
     }
@@ -274,7 +276,10 @@ auto Device::queryProperty(const QDMI_Device_Property prop, const size_t size,
   return QDMI_ERROR_NOTSUPPORTED;
 }
 
-auto Device::generateUniqueID() -> int { return dis_(rng_); }
+auto Device::generateUniqueID() -> int {
+  const std::scoped_lock<std::mutex> lock(sessionsMutex_);
+  return dis_(rng_);
+}
 auto Device::setStatus(const QDMI_Device_Status status) -> void {
   status_.store(status);
 }
@@ -325,12 +330,14 @@ auto MQT_DDSIM_QDMI_Device_Session_impl_d::createDeviceJob(
     return QDMI_ERROR_BADSTATE;
   }
   auto uniqueJob = std::make_unique<MQT_DDSIM_QDMI_Device_Job_impl_d>(this);
+  const std::scoped_lock<std::mutex> lock(jobsMutex_);
   *job = jobs_.emplace(uniqueJob.get(), std::move(uniqueJob)).first->first;
   return QDMI_SUCCESS;
 }
 auto MQT_DDSIM_QDMI_Device_Session_impl_d::freeDeviceJob(
     MQT_DDSIM_QDMI_Device_Job job) -> void {
   if (job != nullptr) {
+    const std::scoped_lock<std::mutex> lock(jobsMutex_);
     jobs_.erase(job);
   }
 }
@@ -478,7 +485,7 @@ auto MQT_DDSIM_QDMI_Device_Job_impl_d::queryProperty(
 }
 auto MQT_DDSIM_QDMI_Device_Job_impl_d::submit() -> QDMI_STATUS {
   if (status_.load() != QDMI_JOB_STATUS_CREATED) {
-    return QDMI_ERROR_INVALIDARGUMENT;
+    return QDMI_ERROR_BADSTATE;
   }
   status_.store(QDMI_JOB_STATUS_SUBMITTED);
   if (numShots_ > 0) {

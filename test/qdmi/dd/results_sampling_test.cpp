@@ -14,6 +14,7 @@
 #include "helpers/circuits.hpp"
 #include "helpers/test_utils.hpp"
 
+#include <cstddef>
 #include <gtest/gtest.h>
 #include <string>
 #include <vector>
@@ -30,7 +31,11 @@ TEST(ResultsSampling, HistogramKeysAndValuesSumToShots) {
 
   auto [keys, vals] = qdmi_test::getHistogram(j.job);
   ASSERT_EQ(keys.size(), vals.size());
-  ASSERT_EQ(qdmi_test::sum(vals), shots);
+  auto sum = 0U;
+  for (const auto& v : vals) {
+    sum += v;
+  }
+  EXPECT_EQ(sum, shots);
 }
 
 TEST(ResultsSampling, BufferTooSmallErrors) {

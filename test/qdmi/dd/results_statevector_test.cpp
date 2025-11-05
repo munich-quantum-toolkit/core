@@ -15,6 +15,7 @@
 #include "helpers/test_utils.hpp"
 
 #include <complex>
+#include <cstddef>
 #include <gtest/gtest.h>
 #include <string>
 #include <vector>
@@ -30,7 +31,11 @@ TEST(ResultsStatevector, DenseNormalizedAndBufferTooSmall) {
 
   auto vec = qdmi_test::getDenseState(j.job);
   ASSERT_FALSE(vec.empty());
-  EXPECT_NEAR(qdmi_test::norm2(vec), 1.0, 1e-6);
+  auto norm = 0.0;
+  for (const auto& v : vec) {
+    norm += std::norm(v);
+  }
+  EXPECT_NEAR(norm, 1.0, 1e-6);
 
   const size_t sz =
       qdmi_test::querySize(j.job, QDMI_JOB_RESULT_STATEVECTOR_DENSE);
@@ -54,7 +59,11 @@ TEST(ResultsStatevector, SparseNormalizedAndBufferTooSmall) {
 
   auto [keys, vals] = qdmi_test::getSparseState(j.job);
   ASSERT_EQ(keys.size(), vals.size());
-  EXPECT_NEAR(qdmi_test::norm2(vals), 1.0, 1e-6);
+  auto norm = 0.0;
+  for (const auto& v : vals) {
+    norm += std::norm(v);
+  }
+  EXPECT_NEAR(norm, 1.0, 1e-6);
 
   const size_t ksz =
       qdmi_test::querySize(j.job, QDMI_JOB_RESULT_STATEVECTOR_SPARSE_KEYS);

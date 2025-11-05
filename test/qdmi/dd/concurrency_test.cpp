@@ -15,6 +15,7 @@
 #include "helpers/test_utils.hpp"
 
 #include <atomic>
+#include <cstddef>
 #include <gtest/gtest.h>
 #include <string>
 #include <thread>

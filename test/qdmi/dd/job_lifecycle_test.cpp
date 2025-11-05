@@ -15,6 +15,7 @@
 #include "helpers/test_utils.hpp"
 
 #include <atomic>
+#include <cstddef>
 #include <gmock/gmock-matchers.h>
 #include <gtest/gtest.h>
 #include <thread>

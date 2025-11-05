@@ -13,6 +13,7 @@
  */
 #include "helpers/test_utils.hpp"
 
+#include <cstddef>
 #include <gmock/gmock-matchers.h>
 #include <gtest/gtest.h>
 #include <stdexcept>
@@ -20,39 +21,6 @@
 #include <vector>
 
 using testing::AnyOf;
-
-namespace {
-
-std::vector<MQT_DDSIM_QDMI_Site>
-querySites(MQT_DDSIM_QDMI_Device_Session session) {
-  size_t size = 0;
-  EXPECT_EQ(MQT_DDSIM_QDMI_device_session_query_device_property(
-                session, QDMI_DEVICE_PROPERTY_SITES, 0, nullptr, &size),
-            QDMI_SUCCESS);
-  std::vector<MQT_DDSIM_QDMI_Site> sites(size / sizeof(MQT_DDSIM_QDMI_Site));
-  EXPECT_EQ(MQT_DDSIM_QDMI_device_session_query_device_property(
-                session, QDMI_DEVICE_PROPERTY_SITES, size,
-                static_cast<void*>(sites.data()), nullptr),
-            QDMI_SUCCESS);
-  return sites;
-}
-
-std::vector<MQT_DDSIM_QDMI_Operation>
-queryOperations(MQT_DDSIM_QDMI_Device_Session session) {
-  size_t size = 0;
-  EXPECT_EQ(MQT_DDSIM_QDMI_device_session_query_device_property(
-                session, QDMI_DEVICE_PROPERTY_OPERATIONS, 0, nullptr, &size),
-            QDMI_SUCCESS);
-  std::vector<MQT_DDSIM_QDMI_Operation> ops(size /
-                                            sizeof(MQT_DDSIM_QDMI_Operation));
-  EXPECT_EQ(MQT_DDSIM_QDMI_device_session_query_device_property(
-                session, QDMI_DEVICE_PROPERTY_OPERATIONS, size,
-                static_cast<void*>(ops.data()), nullptr),
-            QDMI_SUCCESS);
-  return ops;
-}
-
-} // namespace
 
 TEST(DeviceProperties, BasicStringsAndSizes) {
   const qdmi_test::SessionGuard s{};
@@ -143,10 +111,10 @@ TEST(DeviceProperties, UnitsAndScales) {
 TEST(DeviceProperties, SitesAndOperationsLists) {
   const qdmi_test::SessionGuard s{};
 
-  const auto sites = querySites(s.session);
+  const auto sites = qdmi_test::querySites(s.session);
   EXPECT_FALSE(sites.empty());
 
-  const auto ops = queryOperations(s.session);
+  const auto ops = qdmi_test::queryOperations(s.session);
   EXPECT_FALSE(ops.empty());
 }
 
@@ -162,19 +130,26 @@ TEST(DeviceProperties, QubitsNumAvailable) {
 
 TEST(SiteProperties, IndexAvailable) {
   const qdmi_test::SessionGuard s{};
-  for (const auto sites = querySites(s.session); const auto site : sites) {
+  for (const auto sites = qdmi_test::querySites(s.session);
+       auto* const site : sites) {
     size_t idx = 0;
     EXPECT_EQ(MQT_DDSIM_QDMI_device_session_query_site_property(
                   s.session, site, QDMI_SITE_PROPERTY_INDEX, sizeof(size_t),
                   &idx, nullptr),
               QDMI_SUCCESS);
     EXPECT_LT(idx, sites.size());
+    // Expect the name property to not be supported
+    EXPECT_EQ(
+        MQT_DDSIM_QDMI_device_session_query_site_property(
+            s.session, site, QDMI_SITE_PROPERTY_NAME, 0, nullptr, nullptr),
+        QDMI_ERROR_NOTSUPPORTED);
   }
 }
 
 TEST(OperationProperties, BasicQueries) {
   const qdmi_test::SessionGuard s{};
-  for (const auto ops = queryOperations(s.session); const auto op : ops) {
+  for (const auto ops = qdmi_test::queryOperations(s.session);
+       auto* const op : ops) {
     size_t nameSize = 0;
     ASSERT_EQ(MQT_DDSIM_QDMI_device_session_query_operation_property(
                   s.session, op, 0, nullptr, 0, nullptr,

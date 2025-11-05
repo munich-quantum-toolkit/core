@@ -29,7 +29,11 @@ TEST(ResultsProbabilities, DenseSumToOneAndBufferTooSmall) {
 
   auto probs = qdmi_test::getDenseProbabilities(j.job);
   ASSERT_FALSE(probs.empty());
-  EXPECT_NEAR(qdmi_test::sum(probs), 1.0, 1e-6);
+  auto sum = 0.0;
+  for (const auto& v : probs) {
+    sum += v;
+  }
+  EXPECT_NEAR(sum, 1.0, 1e-6);
 
   const size_t sz =
       qdmi_test::querySize(j.job, QDMI_JOB_RESULT_PROBABILITIES_DENSE);
@@ -53,7 +57,11 @@ TEST(ResultsProbabilities, SparseSumToOneAndBufferTooSmall) {
 
   auto [keys, vals] = qdmi_test::getSparseProbabilities(j.job);
   ASSERT_EQ(keys.size(), vals.size());
-  EXPECT_NEAR(qdmi_test::sum(vals), 1.0, 1e-6);
+  auto sum = 0.0;
+  for (const auto& v : vals) {
+    sum += v;
+  }
+  EXPECT_NEAR(sum, 1.0, 1e-6);
 
   const size_t ksz =
       qdmi_test::querySize(j.job, QDMI_JOB_RESULT_PROBABILITIES_SPARSE_KEYS);

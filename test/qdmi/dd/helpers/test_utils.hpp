@@ -41,6 +41,12 @@ struct JobGuard {
   JobGuard& operator=(const JobGuard&) = delete;
 };
 
+// Convenience queries
+std::vector<MQT_DDSIM_QDMI_Site>
+querySites(MQT_DDSIM_QDMI_Device_Session session);
+std::vector<MQT_DDSIM_QDMI_Operation>
+queryOperations(MQT_DDSIM_QDMI_Device_Session session);
+
 // Convenience setters
 int setProgram(MQT_DDSIM_QDMI_Device_Job job, QDMI_Program_Format fmt,
                std::string_view program);
@@ -60,10 +66,5 @@ getSparseProbabilities(MQT_DDSIM_QDMI_Device_Job job);
 
 // Small helpers
 std::vector<std::string> splitCSV(const std::string& csv);
-
-double sum(const std::vector<double>& v);
-size_t sum(const std::vector<size_t>& v);
-
-double norm2(const std::vector<std::complex<double>>& v);
 
 } // namespace qdmi_test

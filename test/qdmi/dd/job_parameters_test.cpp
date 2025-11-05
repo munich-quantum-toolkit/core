@@ -14,6 +14,7 @@
 #include "helpers/circuits.hpp"
 #include "helpers/test_utils.hpp"
 
+#include <cstddef>
 #include <cstring>
 #include <gmock/gmock-matchers.h>
 #include <gtest/gtest.h>
