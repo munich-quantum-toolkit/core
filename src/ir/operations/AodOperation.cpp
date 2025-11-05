@@ -135,41 +135,29 @@ void AodOperation::dumpOpenQASM(
     std::ostream& of, const qc::QubitIndexToRegisterMap& qubitMap,
     [[maybe_unused]] const qc::BitIndexToRegisterMap& bitMap,
     const size_t indent, bool /*openQASM3*/) const {
-  std::ostringstream oss;
-  oss << std::setprecision(std::numeric_limits<qc::fp>::digits10);
+  of << std::setprecision(std::numeric_limits<qc::fp>::digits10);
+  of << std::string(indent * OUTPUT_INDENT_SIZE, ' ') << name << " (";
 
-  // Add indentation and operation name
-  oss << std::string(indent * OUTPUT_INDENT_SIZE, ' ') << name;
-
-  // Write AOD operations
-  oss << " (";
+  // Write AOD operations with separator logic
+  bool first = true;
   for (const auto& op : operations) {
-    oss << op.toQASMString();
+    if (!first) {
+      of << "; ";
+    }
+    first = false;
+    of << static_cast<std::size_t>(op.dir) << ", " << op.start << ", "
+       << op.end;
   }
+  of << ")";
 
-  // Remove the last "; " if present
-  std::string content = oss.str();
-  const std::string semicolon = "; ";
-  if (content.size() >= semicolon.size() && content.ends_with(semicolon)) {
-    content.erase(content.size() - semicolon.size());
-  }
-
-  content += ")";
-
-  // Write qubit start
+  // Write qubits with separator logic
   for (const auto& qubit : targets) {
-    content += " " + qubitMap.at(qubit).second + ",";
+    of << " " << qubitMap.at(qubit).second;
+    if (&qubit != &targets.back()) {
+      of << ",";
+    }
   }
-
-  // Remove the last comma if present
-  if (!content.empty() && content.back() == ',') {
-    content.pop_back();
-  }
-
-  content += ";\n";
-
-  // Write final content to the provided ostream
-  of << content;
+  of << ";\n";
 }
 
 void AodOperation::invert() {
