@@ -10,11 +10,16 @@
 
 #include "mlir/Dialect/MQTOpt/Transforms/Transpilation/Common.h"
 
+#include "mlir/Dialect/MQTOpt/IR/MQTOptDialect.h"
+
+#include <cassert>
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/StringRef.h>
 #include <llvm/Support/Casting.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/IR/BuiltinAttributes.h>
+#include <mlir/IR/Value.h>
+#include <utility>
 
 namespace mqt::ir::opt {
 namespace {
@@ -40,5 +45,50 @@ bool isEntryPoint(mlir::func::FuncOp op) {
     return isa<mlir::StringAttr>(attr) &&
            cast<mlir::StringAttr>(attr) == ENTRY_POINT_ATTR;
   });
+}
+
+bool isTwoQubitGate(UnitaryInterface op) {
+  return (op.getInQubits().size() + op.getPosCtrlInQubits().size() +
+          op.getNegCtrlInQubits().size()) == 2;
+}
+
+[[nodiscard]] ValuePair getIns(UnitaryInterface op) {
+  assert(isTwoQubitGate(op));
+  const auto target = op.getInQubits();
+  const auto targetSize = target.size();
+
+  if (targetSize == 2) {
+    return {target[0], target[1]};
+  }
+
+  const auto posCtrl = op.getPosCtrlInQubits();
+  return (posCtrl.size() == 1)
+             ? std::pair{target[0], posCtrl[0]}
+             : std::pair{target[0], op.getNegCtrlInQubits()[0]};
+}
+
+[[nodiscard]] ValuePair getOuts(UnitaryInterface op) {
+  assert(isTwoQubitGate(op));
+  const auto target = op.getOutQubits();
+  const auto targetSize = target.size();
+
+  if (targetSize == 2) {
+    return {target[0], target[1]};
+  }
+
+  const auto posCtrl = op.getPosCtrlOutQubits();
+  return (posCtrl.size() == 1)
+             ? std::pair{target[0], posCtrl[0]}
+             : std::pair{target[0], op.getNegCtrlOutQubits()[0]};
+}
+
+[[nodiscard]] mlir::Operation* getUserInRegion(mlir::Value v,
+                                               mlir::Region* region) {
+  for (mlir::Operation* user : v.getUsers()) {
+    if (user->getParentRegion() == region) {
+      return user;
+    }
+  }
+  return nullptr;
 }
 } // namespace mqt::ir::opt

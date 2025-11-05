@@ -378,6 +378,7 @@ module {
         // CHECK: mqtref.u(%[[P0]], %[[P0]], %[[P0]]) %[[Q0:.*]]
         // CHECK: mqtref.u2(%[[P0]], %[[P0]] static [] mask [false, false]) %[[Q0]]
         // CHECK: mqtref.p(%[[P0]]) %[[Q0]]
+        // CHECK: mqtref.r(%[[P0]], %[[P0]] static [] mask [false, false]) %[[Q0]]
         // CHECK: mqtref.rx(%[[P0]]) %[[Q0]]
         // CHECK: mqtref.ry(%[[P0]]) %[[Q0]]
         // CHECK: mqtref.rz(%[[P0]]) %[[Q0]]
@@ -390,6 +391,7 @@ module {
         mqtref.u(%p0, %p0, %p0) %q0
         mqtref.u2(%p0, %p0 static [] mask [false, false]) %q0
         mqtref.p(%p0) %q0
+        mqtref.r(%p0, %p0 static [] mask [false, false]) %q0
         mqtref.rx(%p0) %q0
         mqtref.ry(%p0) %q0
         mqtref.rz(%p0) %q0
@@ -408,6 +410,7 @@ module {
         // CHECK: mqtref.u(%[[P0]], %[[P0]], %[[P0]]) %[[Q0:.*]]
         // CHECK: mqtref.u2(%[[P0]], %[[P0]] static [] mask [false, false]) %[[Q0]]
         // CHECK: mqtref.p(%[[P0]]) %[[Q0]]
+        // CHECK: mqtref.r(%[[P0]], %[[P0]] static [] mask [false, false]) %[[Q0]]
         // CHECK: mqtref.rx(%[[P0]]) %[[Q0]]
         // CHECK: mqtref.ry(%[[P0]]) %[[Q0]]
         // CHECK: mqtref.rz(%[[P0]]) %[[Q0]]
@@ -418,6 +421,7 @@ module {
         mqtref.u(%p0, %p0, %p0) %q0
         mqtref.u2(%p0, %p0 static [] mask [false, false]) %q0
         mqtref.p(%p0) %q0
+        mqtref.r(%p0, %p0 static [] mask [false, false]) %q0
         mqtref.rx(%p0) %q0
         mqtref.ry(%p0) %q0
         mqtref.rz(%p0) %q0
@@ -435,6 +439,7 @@ module {
         // CHECK: mqtref.u(%[[P0]], %[[P0]], %[[P0]]) %[[Q0:.*]] ctrl %[[Q1:.*]]
         // CHECK: mqtref.u2(%[[P0]], %[[P0]]) %[[Q0]] ctrl %[[Q1]]
         // CHECK: mqtref.p(%[[P0]]) %[[Q0]] ctrl %[[Q1]]
+        // CHECK: mqtref.r(%[[P0]], %[[P0]]) %[[Q0]] ctrl %[[Q1]]
         // CHECK: mqtref.rx(%[[P0]]) %[[Q0]] ctrl %[[Q1]]
         // CHECK: mqtref.ry(%[[P0]]) %[[Q0]] ctrl %[[Q1]]
         // CHECK: mqtref.rz(%[[P0]]) %[[Q0]] ctrl %[[Q1]]
@@ -449,6 +454,7 @@ module {
         mqtref.u(%p0, %p0, %p0) %q0 ctrl %q1
         mqtref.u2(%p0, %p0) %q0 ctrl %q1
         mqtref.p(%p0) %q0 ctrl %q1
+        mqtref.r(%p0, %p0) %q0 ctrl %q1
         mqtref.rx(%p0) %q0 ctrl %q1
         mqtref.ry(%p0) %q0 ctrl %q1
         mqtref.rz(%p0) %q0 ctrl %q1
@@ -467,6 +473,7 @@ module {
         // CHECK: mqtref.u(%[[P0]], %[[P0]], %[[P0]]) %[[Q0:.*]] ctrl %[[Q1:.*]]
         // CHECK: mqtref.u2(%[[P0]], %[[P0]]) %[[Q0]] ctrl %[[Q1]]
         // CHECK: mqtref.p(%[[P0]]) %[[Q0]] ctrl %[[Q1]]
+        // CHECK: mqtref.r(%[[P0]], %[[P0]]) %[[Q0]] ctrl %[[Q1]]
         // CHECK: mqtref.rx(%[[P0]]) %[[Q0]] ctrl %[[Q1]]
         // CHECK: mqtref.ry(%[[P0]]) %[[Q0]] ctrl %[[Q1]]
         // CHECK: mqtref.rz(%[[P0]]) %[[Q0]] ctrl %[[Q1]]
@@ -478,6 +485,7 @@ module {
         mqtref.u(%p0, %p0, %p0) %q0 ctrl %q1
         mqtref.u2(%p0, %p0) %q0 ctrl %q1
         mqtref.p(%p0) %q0 ctrl %q1
+        mqtref.r(%p0, %p0) %q0 ctrl %q1
         mqtref.rx(%p0) %q0 ctrl %q1
         mqtref.ry(%p0) %q0 ctrl %q1
         mqtref.rz(%p0) %q0 ctrl %q1

@@ -109,6 +109,7 @@ MatrixDD getStandardOperationDD(const qc::StandardOperation& op, Package& dd,
   case qc::RX:
   case qc::RY:
   case qc::RZ:
+  case qc::R:
   case qc::P:
   case qc::XXminusYY:
   case qc::XXplusYY:

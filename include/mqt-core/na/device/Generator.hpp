@@ -14,6 +14,7 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <istream>
 // NOLINTNEXTLINE(misc-include-cleaner)
 #include <nlohmann/json.hpp>
@@ -21,7 +22,6 @@
 #include <sstream>
 #include <stdexcept>
 #include <string>
-#include <utility>
 #include <vector>
 
 namespace na {
@@ -412,36 +412,36 @@ auto writeHeader(const Device& device, std::ostream& os) -> void;
 auto writeHeader(const Device& device, const std::string& path) -> void;
 
 /**
- * @brief Solves a 2D linear equation system.
- * @details The equation has the following form:
- * @code
- * x1 * i + x2 * j = x0
- * y1 * i + y2 * j = y0
- * @endcode
- * The free variables are i and j.
- * @param x1 Coefficient for x in the first equation.
- * @param x2 Coefficient for y in the first equation.
- * @param y1 Coefficient for x in the second equation.
- * @param y2 Coefficient for y in the second equation.
- * @param x0 Right-hand side of the first equation.
- * @param y0 Right-hand side of the second equation.
- * @returns A pair containing the solution (x, y).
- * @throws std::runtime_error if the system has no unique solution (determinant
- * is zero).
+ * @brief Information about a regular site in a lattice.
+ * @details This struct encapsulates all relevant information about a site
+ * for use in the forEachRegularSites callback.
  */
-template <typename T>
-[[nodiscard]] auto solve2DLinearEquation(const T x1, const T x2, const T y1,
-                                         const T y2, const T x0, const T y0)
-    -> std::pair<double, double> {
-  // Calculate the determinant
-  const auto det = static_cast<double>((x1 * y2) - (x2 * y1));
-  if (det == 0) {
-    throw std::runtime_error("The system of equations has no unique solution.");
-  }
-  // Calculate the solution
-  const auto detX = static_cast<double>((x0 * y2) - (x2 * y0));
-  const auto detY = static_cast<double>((x1 * y0) - (x0 * y1));
-  return {detX / det, detY / det};
-}
+struct SiteInfo {
+  /// @brief The unique identifier of the site.
+  uint64_t id;
+  /// @brief The x-coordinate of the site.
+  int64_t x;
+  /// @brief The y-coordinate of the site.
+  int64_t y;
+  /// @brief The identifier of the lattice (module) the site belongs to.
+  uint64_t moduleId;
+  /// @brief The identifier of the sublattice (submodule) the site belongs to.
+  uint64_t subModuleId;
+};
+
+/**
+ * @brief Iterates over all regular sites created by the given lattices and
+ * calls the given function for each site.
+ * @param lattices is the list of lattices to iterate over.
+ * @param f is the function to call for each regular site, receiving a SiteInfo
+ * struct containing all site information.
+ * @param startId is the starting identifier for the sites. Default is 0.
+ * @throws std::runtime_error if lattice vectors are degenerate (i.e., the
+ * determinant of the lattice vector matrix is near zero, causing the system
+ * of equations to have no unique solution).
+ */
+auto forEachRegularSites(const std::vector<Device::Lattice>& lattices,
+                         const std::function<void(const SiteInfo&)>& f,
+                         size_t startId = 0) -> void;
 
 } // namespace na

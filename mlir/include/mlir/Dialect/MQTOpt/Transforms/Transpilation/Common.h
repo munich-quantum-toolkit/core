@@ -10,10 +10,14 @@
 
 #pragma once
 
+#include "mlir/Dialect/MQTOpt/IR/MQTOptDialect.h"
+
 #include <cstddef>
 #include <llvm/ADT/StringRef.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/IR/BuiltinAttributes.h>
+#include <mlir/IR/Value.h>
+#include <utility>
 
 namespace mqt::ir::opt {
 /**
@@ -27,13 +31,53 @@ constexpr std::size_t FOR_PARENT_DEPTH = 1UL;
 constexpr std::size_t IF_PARENT_DEPTH = 2UL;
 
 /**
- * @brief The datatype for qubit indices. For now, 64bit.
+ * @brief Type alias for qubit indices.
  */
-using QubitIndex = std::size_t;
+using QubitIndex = uint32_t;
+
+/**
+ * @brief A pair of SSA Values.
+ */
+using ValuePair = std::pair<mlir::Value, mlir::Value>;
+
+/**
+ * @brief Represents a pair of qubit indices.
+ */
+using QubitIndexPair = std::pair<QubitIndex, QubitIndex>;
 
 /**
  * @brief Return true if the function contains "entry_point" in the passthrough
  * attribute.
  */
-bool isEntryPoint(mlir::func::FuncOp op);
+[[nodiscard]] bool isEntryPoint(mlir::func::FuncOp op);
+
+/**
+ * @brief Check if a unitary acts on two qubits.
+ * @param u A unitary.
+ * @returns True iff the qubit gate acts on two qubits.
+ */
+[[nodiscard]] bool isTwoQubitGate(UnitaryInterface op);
+
+/**
+ * @brief Return input qubit pair for a two-qubit unitary.
+ * @param op A two-qubit unitary.
+ * @return Pair of SSA values consisting of the first and second in-qubits.
+ */
+[[nodiscard]] ValuePair getIns(UnitaryInterface op);
+
+/**
+ * @brief Return output qubit pair for a two-qubit unitary.
+ * @param op A two-qubit unitary.
+ * @return Pair of SSA values consisting of the first and second out-qubits.
+ */
+[[nodiscard]] ValuePair getOuts(UnitaryInterface op);
+
+/**
+ * @brief Return the first user of a value in a given region.
+ * @param v The value.
+ * @param region The targeted region.
+ * @return A pointer to the user, or nullptr if non exists.
+ */
+[[nodiscard]] mlir::Operation* getUserInRegion(mlir::Value v,
+                                               mlir::Region* region);
 } // namespace mqt::ir::opt

@@ -19,14 +19,18 @@
 #include <cstddef>
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/TypeSwitch.h>
+#include <memory>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
+#include <mlir/IR/Builders.h>
 #include <mlir/IR/BuiltinAttributes.h>
 #include <mlir/IR/BuiltinOps.h>
+#include <mlir/IR/Diagnostics.h>
 #include <mlir/IR/Value.h>
 #include <mlir/IR/Visitors.h>
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/WalkResult.h>
+#include <utility>
 #include <vector>
 
 #define DEBUG_TYPE "routing-verification-sc"
@@ -43,10 +47,11 @@ using namespace mlir;
  * @brief The necessary datastructures for verification.
  */
 struct VerificationContext {
-  explicit VerificationContext(Architecture& arch) : arch(&arch) {}
+  explicit VerificationContext(std::unique_ptr<Architecture> arch)
+      : arch(std::move(arch)) {}
 
-  Architecture* arch;
-  LayoutStack<Layout<QubitIndex>> stack{};
+  std::unique_ptr<Architecture> arch;
+  LayoutStack<Layout> stack{};
 };
 
 /**
@@ -103,9 +108,9 @@ WalkResult handleIf(scf::IfOp op, VerificationContext& ctx) {
 
   /// Forward results for all hardware qubits.
   const auto results = op->getResults().take_front(ctx.arch->nqubits());
-  Layout<QubitIndex>& stateBeforeIf = ctx.stack.getItemAtDepth(IF_PARENT_DEPTH);
+  Layout& stateBeforeIf = ctx.stack.getItemAtDepth(IF_PARENT_DEPTH);
   for (const auto [hardwareIdx, res] : llvm::enumerate(results)) {
-    const Value q = stateBeforeIf.lookupHardware(hardwareIdx);
+    const Value q = stateBeforeIf.lookupHardwareValue(hardwareIdx);
     stateBeforeIf.remapQubitValue(q, res);
   }
 
@@ -117,8 +122,11 @@ WalkResult handleIf(scf::IfOp op, VerificationContext& ctx) {
  */
 WalkResult handleYield(scf::YieldOp op, VerificationContext& ctx) {
   if (isa<scf::ForOp>(op->getParentOp()) || isa<scf::IfOp>(op->getParentOp())) {
-    if (ctx.stack.size() < 2) {
-      return op->emitOpError() << "expected at least two elements on stack.";
+    assert(ctx.stack.size() >= 2 && "expected at least two elements on stack.");
+
+    if (!llvm::equal(ctx.stack.top().getCurrentLayout(),
+                     ctx.stack.getItemAtDepth(1).getCurrentLayout())) {
+      return op.emitOpError() << "layouts must match after restoration";
     }
 
     ctx.stack.pop();
@@ -151,6 +159,13 @@ WalkResult handleUnitary(UnitaryInterface op, VerificationContext& ctx) {
     return WalkResult::advance();
   }
 
+  if (isa<BarrierOp>(op)) {
+    for (const auto [in, out] : llvm::zip(inQubits, outQubits)) {
+      ctx.stack.top().remapQubitValue(in, out);
+    }
+    return WalkResult::advance();
+  }
+
   if (nacts > 2) {
     return op->emitOpError() << "acts on more than two qubits";
   }
@@ -158,7 +173,7 @@ WalkResult handleUnitary(UnitaryInterface op, VerificationContext& ctx) {
   const Value in0 = inQubits[0];
   const Value out0 = outQubits[0];
 
-  Layout<QubitIndex>& state = ctx.stack.top();
+  Layout& state = ctx.stack.top();
 
   if (nacts == 1) {
     state.remapQubitValue(in0, out0);
@@ -168,13 +183,17 @@ WalkResult handleUnitary(UnitaryInterface op, VerificationContext& ctx) {
   const Value in1 = inQubits[1];
   const Value out1 = outQubits[1];
 
-  const QubitIndex idx0 = state.lookupHardware(in0);
-  const QubitIndex idx1 = state.lookupHardware(in1);
+  const auto idx0 = state.lookupHardwareIndex(in0);
+  const auto idx1 = state.lookupHardwareIndex(in1);
 
   if (!ctx.arch->areAdjacent(idx0, idx1)) {
     return op->emitOpError() << "(" << idx0 << "," << idx1 << ")"
                              << " is not executable on target architecture '"
                              << ctx.arch->name() << "'";
+  }
+
+  if (isa<SWAPOp>(op)) {
+    state.swap(in0, in1);
   }
 
   state.remapQubitValue(in0, out0);
@@ -205,10 +224,24 @@ WalkResult handleMeasure(MeasureOp op, VerificationContext& ctx) {
  */
 struct RoutingVerificationPassSC final
     : impl::RoutingVerificationSCPassBase<RoutingVerificationPassSC> {
-  void runOnOperation() override {
-    const auto arch = getArchitecture(ArchitectureName::MQTTest);
-    VerificationContext ctx(*arch);
+  using RoutingVerificationSCPassBase<
+      RoutingVerificationPassSC>::RoutingVerificationSCPassBase;
 
+  void runOnOperation() override {
+    if (preflight().failed()) {
+      signalPassFailure();
+      return;
+    }
+
+    auto arch = getArchitecture(archName);
+    if (!arch) {
+      emitError(UnknownLoc::get(&getContext()))
+          << "unsupported architecture '" << archName << "'";
+      signalPassFailure();
+      return;
+    }
+
+    VerificationContext ctx(std::move(arch));
     const auto res =
         getOperation()->walk<WalkOrder::PreOrder>([&](Operation* op) {
           return TypeSwitch<Operation*, WalkResult>(op)
@@ -245,6 +278,16 @@ struct RoutingVerificationPassSC final
     if (res.wasInterrupted()) {
       signalPassFailure();
     }
+  }
+
+private:
+  LogicalResult preflight() {
+    if (archName.empty()) {
+      return emitError(UnknownLoc::get(&getContext()),
+                       "required option 'arch' not provided");
+    }
+
+    return success();
   }
 };
 } // namespace

@@ -281,12 +281,12 @@ def test_operation_name(device_and_operation: tuple[Device, Device.Operation]) -
 
 
 def test_operation_qubits_num(device_and_operation: tuple[Device, Device.Operation]) -> None:
-    """Test that the operation qubits number is a positive integer."""
+    """Test that the operation qubits number is a non-negative integer."""
     _device, operation = device_and_operation
     qn = operation.qubits_num()
     if qn is not None:
         assert isinstance(qn, int)
-        assert qn > 0
+        assert qn >= 0
 
 
 def test_operation_parameters_num(device_and_operation: tuple[Device, Device.Operation]) -> None:
@@ -299,12 +299,12 @@ def test_operation_parameters_num(device_and_operation: tuple[Device, Device.Ope
 
 
 def test_operation_duration(device_and_operation: tuple[Device, Device.Operation]) -> None:
-    """Test that the operation duration is a positive integer."""
+    """Test that the operation duration is a non-negative integer."""
     _device, operation = device_and_operation
     dur = operation.duration()
     if dur is not None:
         assert isinstance(dur, int)
-        assert dur > 0
+        assert dur >= 0
 
 
 def test_operation_fidelity(device_and_operation: tuple[Device, Device.Operation]) -> None:

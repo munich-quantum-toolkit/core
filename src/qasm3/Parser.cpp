@@ -112,10 +112,21 @@ Parser::Parser(std::istream& is, const bool implicitlyIncludeStdgates) {
 
 std::shared_ptr<VersionDeclaration> Parser::parseVersionDeclaration() {
   auto const tBegin = expect(Token::Kind::OpenQasm);
-  Token const versionToken = expect(Token::Kind::FloatLiteral);
+
+  double versionValue = 0.0;
+  if (current().kind == Token::Kind::FloatLiteral) {
+    Token const versionToken = expect(Token::Kind::FloatLiteral);
+    versionValue = versionToken.valReal;
+  } else if (current().kind == Token::Kind::IntegerLiteral) {
+    Token const versionToken = expect(Token::Kind::IntegerLiteral);
+    versionValue = static_cast<double>(versionToken.val);
+  } else {
+    error(current(), "Version declaration must be a float or integer literal.");
+  }
+
   auto const tEnd = expect(Token::Kind::Semicolon);
   return std::make_shared<VersionDeclaration>(makeDebugInfo(tBegin, tEnd),
-                                              versionToken.valReal);
+                                              versionValue);
 }
 
 std::vector<std::shared_ptr<Statement>> Parser::parseProgram() {

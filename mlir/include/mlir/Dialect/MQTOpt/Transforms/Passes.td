@@ -91,6 +91,23 @@ def QuantumSinkPass : Pass<"quantum-sink", "mlir::ModuleOp"> {
   }];
 }
 
+def LiftMeasurementsPass : Pass<"lift-measurements", "mlir::ModuleOp"> {
+  let dependentDialects = [ "mlir::arith::ArithDialect", "mlir::scf::SCFDialect", "mqt::ir::opt::MQTOptDialect" ];
+  let summary = "This pass attempts to lift measurements as much as possible by replacing quantum operations with classical operations where possible.";
+  let description = [{
+    This pass consists of several patterns that attempt to push different structures of quantum gates below measurements.
+  }];
+}
+
+def ReuseQubitsPass : Pass<"reuse-qubits", "mlir::ModuleOp"> {
+  let dependentDialects = [ "mlir::scf::SCFDialect", "mqt::ir::opt::MQTOptDialect" ];
+  let summary = "Reduce the number of required qubits by reusing existing ones that are no longer used.";
+  let description = [{
+    This pass performs qubit reuse, searching for qubits that are first referenced after the final reference to a different qubit.
+    In these cases, rather than using a new qubit, the old qubit can be reset and reused.
+  }];
+}
+
 //===----------------------------------------------------------------------===//
 // Transpilation Passes For Superconducting Devices
 //===----------------------------------------------------------------------===//
@@ -101,7 +118,9 @@ def PlacementPassSC : Pass<"placement-sc", "mlir::ModuleOp"> {
     Option<"strategy", "strategy", "PlacementStrategy", "PlacementStrategy::Random",
            "The initial placement strategy to use.", [{llvm::cl::values(
              clEnumValN(PlacementStrategy::Random, "random", "Random placement"),
-             clEnumValN(PlacementStrategy::Identity, "identity", "Identity placement"))}]>
+             clEnumValN(PlacementStrategy::Identity, "identity", "Identity placement"))}]>,
+    Option<"archName", "arch", "std::string", "",
+           "The name of the targeted architecture.">,
   ];
 }
 
@@ -110,6 +129,23 @@ def RoutingPassSC : Pass<"route-sc", "mlir::ModuleOp"> {
   let description = [{
     This pass inserts SWAP operations to ensure two-qubit gates are executable on a given target architecture.
   }];
+  let options = [
+    Option<"method", "method", "RoutingMethod", "RoutingMethod::AStar",
+           "The routing method to use.", [{llvm::cl::values(
+             clEnumValN(RoutingMethod::Naive, "naive", "Swap along shortest paths"),
+             clEnumValN(RoutingMethod::AStar, "astar", "A*-search-based routing algorithm"))}]>,
+    Option<"archName", "arch", "std::string", "",
+           "The name of the targeted architecture.">,
+    Option<"nlookahead", "nlookahead", "std::size_t", "1",
+           "astar option: Number of lookahead steps (heuristic horizon)">,
+    Option<"alpha", "alpha", "float", "1.0F",
+           "astar option: The alpha factor in the cost function">,
+    Option<"lambda", "lambda", "float", "0.5F",
+           "astar option: The lambda factor in the cost function">
+  ];
+  let statistics = [
+    Statistic<"numSwaps", "num-additional-swaps", "The number of additional SWAPs">
+  ];
 }
 
 def RoutingVerificationSCPass : Pass<"verify-routing-sc", "mlir::ModuleOp"> {
@@ -117,6 +153,10 @@ def RoutingVerificationSCPass : Pass<"verify-routing-sc", "mlir::ModuleOp"> {
   let description = [{
     This pass ensures that all two-qubit gates are executable on the target's architecture.
   }];
+  let options = [
+    Option<"archName", "arch", "std::string", "",
+           "The name of the targeted architecture.">
+  ];
 }
 
 #endif // MQTO_PASSES

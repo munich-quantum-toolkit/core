@@ -30,6 +30,7 @@
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/BuiltinAttributes.h>
 #include <mlir/IR/BuiltinOps.h>
+#include <mlir/IR/Diagnostics.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/PatternMatch.h>
 #include <mlir/IR/Types.h>
@@ -116,7 +117,7 @@ struct PlacementContext {
   Architecture* arch;
   InitialPlacer* placer;
   HardwareIndexPool pool;
-  LayoutStack<Layout<QubitIndex>> stack{};
+  LayoutStack<Layout> stack{};
 };
 
 /**
@@ -251,11 +252,11 @@ WalkResult handleIf(scf::IfOp op, PlacementContext& ctx,
   ctx.stack.duplicateTop(); // Then
 
   /// Forward results for all hardware qubits.
-  Layout<QubitIndex>& stateBeforeIf = ctx.stack.getItemAtDepth(IF_PARENT_DEPTH);
+  Layout& layoutBeforeIf = ctx.stack.getItemAtDepth(IF_PARENT_DEPTH);
   for (std::size_t i = 0; i < qubits.size(); ++i) {
-    const Value in = stateBeforeIf.getHardwareQubits()[i];
+    const Value in = layoutBeforeIf.getHardwareQubits()[i];
     const Value out = ifOp->getResult(i);
-    stateBeforeIf.remapQubitValue(in, out);
+    layoutBeforeIf.remapQubitValue(in, out);
   }
 
   return WalkResult::advance();
@@ -297,7 +298,7 @@ WalkResult handleAlloc(AllocQubitOp op, PlacementContext& ctx,
 
   LLVM_DEBUG({ llvm::dbgs() << "handleAlloc: index= " << index << '\n'; });
 
-  const Value q = ctx.stack.top().lookupHardware(index);
+  const Value q = ctx.stack.top().lookupHardwareValue(index);
 
   /// Newly allocated?
   const Operation* defOp = q.getDefiningOp();
@@ -320,7 +321,7 @@ WalkResult handleAlloc(AllocQubitOp op, PlacementContext& ctx,
  */
 WalkResult handleDealloc(DeallocQubitOp op, PlacementContext& ctx,
                          PatternRewriter& rewriter) {
-  const std::size_t index = ctx.stack.top().lookupHardware(op.getQubit());
+  const std::size_t index = ctx.stack.top().lookupHardwareIndex(op.getQubit());
   ctx.pool.push_back(index);
   rewriter.eraseOp(op);
   return WalkResult::advance();
@@ -377,8 +378,22 @@ LogicalResult run(ModuleOp module, MLIRContext* mlirCtx,
     const OpBuilder::InsertionGuard guard(rewriter);
     rewriter.setInsertionPoint(curr);
 
+    /// TypeSwitch performs sequential dyn_cast checks.
+    /// Hence, always put most frequent ops first.
+
     const auto res =
         TypeSwitch<Operation*, WalkResult>(curr)
+            /// mqtopt Dialect
+            .Case<UnitaryInterface>(
+                [&](UnitaryInterface op) { return handleUnitary(op, ctx); })
+            .Case<AllocQubitOp>(
+                [&](AllocQubitOp op) { return handleAlloc(op, ctx, rewriter); })
+            .Case<DeallocQubitOp>([&](DeallocQubitOp op) {
+              return handleDealloc(op, ctx, rewriter);
+            })
+            .Case<ResetOp>([&](ResetOp op) { return handleReset(op, ctx); })
+            .Case<MeasureOp>(
+                [&](MeasureOp op) { return handleMeasure(op, ctx); })
             /// built-in Dialect
             .Case<ModuleOp>(
                 [&](ModuleOp /* op */) { return WalkResult::advance(); })
@@ -394,17 +409,6 @@ LogicalResult run(ModuleOp module, MLIRContext* mlirCtx,
                 [&](scf::IfOp op) { return handleIf(op, ctx, rewriter); })
             .Case<scf::YieldOp>(
                 [&](scf::YieldOp op) { return handleYield(op, ctx, rewriter); })
-            /// mqtopt Dialect
-            .Case<AllocQubitOp>(
-                [&](AllocQubitOp op) { return handleAlloc(op, ctx, rewriter); })
-            .Case<DeallocQubitOp>([&](DeallocQubitOp op) {
-              return handleDealloc(op, ctx, rewriter);
-            })
-            .Case<ResetOp>([&](ResetOp op) { return handleReset(op, ctx); })
-            .Case<MeasureOp>(
-                [&](MeasureOp op) { return handleMeasure(op, ctx); })
-            .Case<UnitaryInterface>(
-                [&](UnitaryInterface op) { return handleUnitary(op, ctx); })
             /// Skip the rest.
             .Default([](auto) { return WalkResult::skip(); });
 
@@ -424,7 +428,19 @@ struct PlacementPassSC final : impl::PlacementPassSCBase<PlacementPassSC> {
   using PlacementPassSCBase::PlacementPassSCBase;
 
   void runOnOperation() override {
-    const auto arch = getArchitecture(ArchitectureName::MQTTest);
+    if (preflight().failed()) {
+      signalPassFailure();
+      return;
+    }
+
+    const auto arch = getArchitecture(archName);
+    if (!arch) {
+      emitError(UnknownLoc::get(&getContext()))
+          << "unsupported architecture '" << archName << "'";
+      signalPassFailure();
+      return;
+    }
+
     const auto placer = getPlacer(*arch);
 
     if (PlacementContext ctx(*arch, *placer);
@@ -444,13 +460,22 @@ private:
       std::random_device rd;
       const std::size_t seed = rd();
       LLVM_DEBUG({
-        llvm::dbgs() << "getPlacer: random placement with seed = " << seed
+        llvm::dbgs() << "getPlacer: random placement with seed =" << seed
                      << '\n';
       });
       return std::make_unique<RandomPlacer>(arch.nqubits(),
                                             std::mt19937_64(seed));
     }
     llvm_unreachable("Unknown strategy");
+  }
+
+  LogicalResult preflight() {
+    if (archName.empty()) {
+      return emitError(UnknownLoc::get(&getContext()),
+                       "required option 'arch' not provided");
+    }
+
+    return success();
   }
 };
 } // namespace

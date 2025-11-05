@@ -10,10 +10,15 @@
 
 #pragma once
 
-#include "ir/QuantumComputation.hpp"
+#include "mlir/Dialect/MQTOpt/IR/MQTOptDialect.h"
 
 #include <cstdint>
+#include <mlir/Dialect/SCF/IR/SCF.h>
 #include <mlir/Pass/Pass.h>
+
+namespace qc {
+class QuantumComputation;
+}
 
 namespace mlir {
 
@@ -24,6 +29,7 @@ class RewritePatternSet;
 namespace mqt::ir::opt {
 
 enum class PlacementStrategy : std::uint8_t { Random, Identity };
+enum class RoutingMethod : std::uint8_t { Naive, AStar };
 
 #define GEN_PASS_DECL
 #include "mlir/Dialect/MQTOpt/Transforms/Passes.h.inc" // IWYU pragma: export
@@ -34,6 +40,14 @@ void populateSwapReconstructionAndElisionPatterns(
     mlir::RewritePatternSet& patterns);
 void populateQuantumSinkShiftPatterns(mlir::RewritePatternSet& patterns);
 void populateQuantumSinkPushPatterns(mlir::RewritePatternSet& patterns);
+void populateLiftMeasurementsAboveControlsPatterns(
+    mlir::RewritePatternSet& patterns);
+void populateReplaceBasisStateControlsWithIfPatterns(
+    mlir::RewritePatternSet& patterns);
+void populateLiftMeasurementsAboveGatesPatterns(
+    mlir::RewritePatternSet& patterns);
+void populateDeadGateEliminationPatterns(mlir::RewritePatternSet& patterns);
+void populateReuseQubitsPatterns(mlir::RewritePatternSet& patterns);
 void populateToQuantumComputationPatterns(mlir::RewritePatternSet& patterns,
                                           qc::QuantumComputation& circuit);
 void populateFromQuantumComputationPatterns(mlir::RewritePatternSet& patterns,
