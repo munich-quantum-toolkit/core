@@ -10,7 +10,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 import pytest
 from qiskit import QuantumCircuit
@@ -22,6 +22,8 @@ from mqt.core.qdmi.qiskit import (
 )
 
 if TYPE_CHECKING:
+    from test.python.qdmi.qiskit.conftest import MockQDMIDevice
+
     from mqt.core.qdmi.qiskit import QiskitBackend
 
 pytestmark = [
@@ -286,7 +288,7 @@ def test_job_submit_raises_error(mock_backend: QiskitBackend) -> None:
 
 
 def test_backend_warns_on_unmappable_operation(
-    monkeypatch: pytest.MonkeyPatch, mock_qdmi_device_factory: type[Any]
+    monkeypatch: pytest.MonkeyPatch, mock_qdmi_device_factory: type[MockQDMIDevice]
 ) -> None:
     """Backend should warn when device operation cannot be mapped to a Qiskit gate."""
     import warnings
@@ -301,7 +303,7 @@ def test_backend_warns_on_unmappable_operation(
     )
 
     # Monkeypatch fomac.devices to return mock device
-    def mock_devices() -> list[Any]:
+    def mock_devices() -> list[MockQDMIDevice]:
         return [mock_device]
 
     monkeypatch.setattr(fomac, "devices", mock_devices)
@@ -323,7 +325,7 @@ def test_backend_warns_on_unmappable_operation(
 
 
 def test_backend_warns_on_missing_measurement_operation(
-    monkeypatch: pytest.MonkeyPatch, mock_qdmi_device_factory: type[Any]
+    monkeypatch: pytest.MonkeyPatch, mock_qdmi_device_factory: type[MockQDMIDevice]
 ) -> None:
     """Backend should warn when device does not define a measurement operation."""
     import warnings
@@ -338,7 +340,7 @@ def test_backend_warns_on_missing_measurement_operation(
     )
 
     # Monkeypatch fomac.devices to return mock device
-    def mock_devices() -> list[Any]:
+    def mock_devices() -> list[MockQDMIDevice]:
         return [mock_device]
 
     monkeypatch.setattr(fomac, "devices", mock_devices)
