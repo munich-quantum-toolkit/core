@@ -20,7 +20,6 @@
 #include <cstddef>
 #include <cstdint>
 #include <iomanip>
-#include <ios>
 #include <limits>
 #include <ostream>
 #include <sstream>
@@ -151,9 +150,7 @@ void AodOperation::dumpOpenQASM(
   // Remove the last "; " if present
   std::string content = oss.str();
   const std::string semicolon = "; ";
-  if (content.size() >= semicolon.size() &&
-      content.compare(content.size() - semicolon.size(), semicolon.size(),
-                      semicolon) == 0) {
+  if (content.size() >= semicolon.size() && content.ends_with(semicolon)) {
     content.erase(content.size() - semicolon.size());
   }
 
