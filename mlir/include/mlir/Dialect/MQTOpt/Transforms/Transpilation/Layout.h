@@ -122,8 +122,7 @@ private:
 
 /**
  * @brief Enhanced layout that extends ThinLayout with Value tracking
- * capabilities. This is the recommended replacement for the original Layout
- * class.
+ * capabilities.
  */
 class [[nodiscard]] Layout : public ThinLayout {
 public:

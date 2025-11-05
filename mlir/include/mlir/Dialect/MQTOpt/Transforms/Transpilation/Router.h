@@ -18,6 +18,7 @@
 #include <algorithm>
 #include <mlir/Support/LLVM.h>
 #include <queue>
+#include <span>
 #include <stdexcept>
 #include <utility>
 #include <vector>
@@ -35,7 +36,8 @@ of gates.
 */
 struct RouterBase {
   virtual ~RouterBase() = default;
-  [[nodiscard]] virtual RouterResult route(const Layers&, const ThinLayout&,
+  [[nodiscard]] virtual RouterResult route(std::span<const ScheduledLayer>,
+                                           const ThinLayout&,
                                            const Architecture&) const = 0;
 };
 
@@ -43,17 +45,17 @@ struct RouterBase {
  * @brief Use shortest path swapping to make one gate executable.
  */
 struct NaiveRouter final : RouterBase {
-  [[nodiscard]] RouterResult route(const Layers& layers,
+  [[nodiscard]] RouterResult route(std::span<const ScheduledLayer> layers,
                                    const ThinLayout& layout,
                                    const Architecture& arch) const override {
-    if (layers.size() != 1 || layers.front().size() != 1) {
+    if (layers.size() != 1 || layers.front().gates.size() != 1) {
       throw std::invalid_argument(
           "NaiveRouter expects exactly one layer with one gate");
     }
 
     /// This assumes an avg. of 16 SWAPs per gate.
     SmallVector<QubitIndexPair, 16> swaps;
-    for (const auto [prog0, prog1] : layers.front()) {
+    for (const auto [prog0, prog1] : layers.front().gates) {
       const auto [hw0, hw1] = layout.getHardwareIndices(prog0, prog1);
       const auto path = arch.shortestPathBetween(hw0, hw1);
       for (std::size_t i = 0; i < path.size() - 2; ++i) {
@@ -106,8 +108,9 @@ private:
      * @brief Construct a non-root node from its parent node. Apply the given
      * swap to the layout of the parent node and evaluate the cost.
      */
-    Node(const Node& parent, QubitIndexPair swap, const Layers& layers,
-         const Architecture& arch, const HeuristicWeights& weights)
+    Node(const Node& parent, QubitIndexPair swap,
+         std::span<const ScheduledLayer> layers, const Architecture& arch,
+         const HeuristicWeights& weights)
         : sequence(parent.sequence), layout(parent.layout), f(0) {
       /// Apply node-specific swap to given layout.
       layout.swap(layout.getProgramIndex(swap.first),
@@ -158,11 +161,12 @@ private:
      * its hardware qubits. Intuitively, this is the number of SWAPs that a
      * naive router would insert to route the layers.
      */
-    [[nodiscard]] float h(const Layers& layers, const Architecture& arch,
+    [[nodiscard]] float h(std::span<const ScheduledLayer> layers,
+                          const Architecture& arch,
                           const HeuristicWeights& weights) const {
       float nn{0};
       for (const auto [i, layer] : llvm::enumerate(layers)) {
-        for (const auto [prog0, prog1] : layer) {
+        for (const auto [prog0, prog1] : layer.gates) {
           const auto [hw0, hw1] = layout.getHardwareIndices(prog0, prog1);
           const std::size_t dist = arch.distanceBetween(hw0, hw1);
           const std::size_t nswaps = dist < 2 ? 0 : dist - 2;
@@ -176,13 +180,13 @@ private:
   using MinQueue = std::priority_queue<Node, std::vector<Node>, std::greater<>>;
 
 public:
-  [[nodiscard]] RouterResult route(const Layers& layers,
+  [[nodiscard]] RouterResult route(std::span<const ScheduledLayer> layers,
                                    const ThinLayout& layout,
                                    const Architecture& arch) const override {
     Node root(layout);
 
     /// Early exit. No SWAPs required:
-    if (root.isGoal(layers.front(), arch)) {
+    if (root.isGoal(layers.front().gates, arch)) {
       return {};
     }
 
@@ -198,7 +202,7 @@ public:
       Node curr = frontier.top();
       frontier.pop();
 
-      if (curr.isGoal(layers.front(), arch)) {
+      if (curr.isGoal(layers.front().gates, arch)) {
         return curr.sequence;
       }
 
@@ -223,10 +227,11 @@ private:
   /**
    * @brief Expand frontier with all neighbouring SWAPs in the current front.
    */
-  void expand(MinQueue& frontier, const Node& parent, const Layers& layers,
+  void expand(MinQueue& frontier, const Node& parent,
+              std::span<const ScheduledLayer> layers,
               const Architecture& arch) const {
     llvm::SmallDenseSet<QubitIndexPair, 64> swaps{};
-    for (const QubitIndexPair gate : layers.front()) {
+    for (const QubitIndexPair gate : layers.front().gates) {
       for (const auto prog : {gate.first, gate.second}) {
         const auto hw0 = parent.layout.getHardwareIndex(prog);
         for (const auto hw1 : arch.neighboursOf(hw0)) {

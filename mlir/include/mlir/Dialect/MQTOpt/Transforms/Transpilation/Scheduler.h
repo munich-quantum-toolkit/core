@@ -13,11 +13,13 @@
 #include "mlir/Dialect/MQTOpt/IR/MQTOptDialect.h"
 #include "mlir/Dialect/MQTOpt/Transforms/Transpilation/Common.h"
 #include "mlir/Dialect/MQTOpt/Transforms/Transpilation/Layout.h"
+#include "mlir/IR/PatternMatch.h"
 
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/Support/ErrorHandling.h"
 
 #include <array>
+#include <iterator>
 #include <llvm/ADT/TypeSwitch.h>
 #include <llvm/Support/Debug.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
@@ -25,6 +27,7 @@
 #include <mlir/IR/Value.h>
 #include <mlir/Support/LLVM.h>
 #include <optional>
+#include <span>
 
 #define DEBUG_TYPE "route-sc"
 
@@ -272,5 +275,261 @@ private:
   }
 
   std::size_t nlayers_;
+};
+
+struct ScheduledLayer {
+  Operation* anchor;
+  SmallVector<QubitIndexPair> gates;
+};
+
+using ScheduledLayers = SmallVector<ScheduledLayer, 0>;
+
+struct SlidingWindow {
+  SlidingWindow(std::span<const ScheduledLayer> schedule,
+                const std::size_t nlookahead)
+      : schedule_(schedule), nlookahead_(nlookahead) {}
+
+  [[nodiscard]] std::span<const ScheduledLayer> current() const {
+    const std::size_t nlayers = schedule_.size();
+    return schedule_.subspan(offset_, offset_ + nlookahead_ <= nlayers
+                                          ? nlookahead_
+                                          : nlayers - offset_);
+  }
+
+  void advance() { ++offset_; }
+
+private:
+  std::span<const ScheduledLayer> schedule_;
+  std::size_t nlookahead_;
+  std::size_t offset_{};
+};
+
+struct ParallelOpFullScheduler {
+  [[nodiscard]] static ScheduledLayers schedule(Region& region, Layout layout,
+                                                PatternRewriter& rewriter) {
+    ScheduledLayers layers;
+
+    /// Worklist of active qubits.
+    SmallVector<Value> wl;
+    SmallVector<Value> nextWl;
+    wl.reserve(layout.getHardwareQubits().size());
+    nextWl.reserve(layout.getHardwareQubits().size());
+
+    // Initialize worklist.
+    llvm::copy_if(layout.getHardwareQubits(), std::back_inserter(wl),
+                  [](Value q) { return !q.use_empty(); });
+
+    /// Set of two-qubit gates seen at least once.
+    llvm::SmallDenseSet<Operation*, 32> openTwoQubit;
+
+    /// Vector of two-qubit gates seen twice.
+    SmallVector<UnitaryInterface, 32> readyTwoQubit;
+
+    SmallVector<Operation*> order;
+    order.reserve(std::distance(region.begin(), region.end()));
+
+    while (!wl.empty()) {
+      for (const Value q : wl) {
+        const auto opt = advanceToTwoQubitGate(q, region, layout, order);
+        if (!opt) {
+          continue;
+        }
+
+        const auto& [qNext, gate] = opt.value();
+
+        if (q != qNext) {
+          layout.remapQubitValue(q, qNext);
+        }
+
+        if (!openTwoQubit.insert(gate).second) {
+          readyTwoQubit.push_back(gate);
+          openTwoQubit.erase(gate);
+          continue;
+        }
+      }
+
+      if (readyTwoQubit.empty()) {
+        break;
+      }
+
+      nextWl.clear();
+
+      /// At this point all qubit values are remapped to the input of a
+      /// two-qubit gate: "value.user == two-qubit-gate".
+      ///
+      /// We release the ready two-qubit gates by forwarding their inputs
+      /// to their outputs. Then, we advance to the end of its two-qubit block.
+      /// Intuitively, whenever a gate in readyTwoQubit is routed, all one and
+      /// two-qubit gates acting on the same qubits are executable as well.
+
+      /// Can use front() as anchor because of reordering.
+      ScheduledLayer layer{.anchor = readyTwoQubit.front(), .gates = {}};
+      layer.gates.reserve(readyTwoQubit.size());
+
+      for (const auto& readyOp : readyTwoQubit) {
+        order.push_back(readyOp);
+
+        /// Release.
+        const ValuePair ins = getIns(readyOp);
+        const ValuePair outs = getOuts(readyOp);
+        layer.gates.emplace_back(layout.lookupProgramIndex(ins.first),
+                                 layout.lookupProgramIndex(ins.second));
+
+        layout.remapQubitValue(ins.first, outs.first);
+        layout.remapQubitValue(ins.second, outs.second);
+
+        /// Advance two-qubit block.
+        std::array<UnitaryInterface, 2> gates;
+        std::array<Value, 2> heads{outs.first, outs.second};
+
+        while (true) {
+          bool stop = false;
+          for (const auto [i, q] : llvm::enumerate(heads)) {
+            const auto opt = advanceToTwoQubitGate(q, region, layout, order);
+            if (!opt) {
+              heads[i] = nullptr;
+              stop = true;
+              break;
+            }
+
+            const auto& [qNext, gate] = opt.value();
+
+            if (q != qNext) {
+              layout.remapQubitValue(q, qNext);
+            }
+
+            heads[i] = qNext;
+            gates[i] = gate;
+          }
+
+          if (stop || gates[0] != gates[1]) {
+            break;
+          }
+
+          order.push_back(gates[0]);
+
+          const ValuePair ins = getIns(gates[0]);
+          const ValuePair outs = getOuts(gates[0]);
+          layout.remapQubitValue(ins.first, outs.first);
+          layout.remapQubitValue(ins.second, outs.second);
+          heads = {outs.first, outs.second};
+        }
+
+        /// Initialize next worklist.
+        for (const auto q : heads) {
+          if (q != nullptr && !q.use_empty()) {
+            nextWl.push_back(q);
+          }
+        }
+      }
+
+      layers.emplace_back(layer);
+
+      /// Prepare for next iteration.
+      readyTwoQubit.clear();
+      wl = std::move(nextWl);
+    }
+
+    LLVM_DEBUG({
+      llvm::dbgs() << "schedule: order=\n";
+      for (Operation* op : order) {
+        llvm::dbgs() << op->getLoc() << '\n';
+      }
+    });
+
+    /// Impose strict def-use chain ordering.
+    for (std::size_t i = 0; i < order.size() - 1; ++i) {
+      rewriter.moveOpAfter(order[i + 1], order[i]);
+    }
+
+    LLVM_DEBUG({
+      llvm::dbgs() << "schedule: layers=\n";
+      for (const auto [i, layer] : llvm::enumerate(layers)) {
+        llvm::dbgs() << '\t' << i << "= ";
+        for (const auto [prog0, prog1] : layer.gates) {
+          llvm::dbgs() << "(" << prog0 << "," << prog1 << "), ";
+        }
+        llvm::dbgs() << "\tanchor= " << layer.anchor->getLoc();
+        llvm::dbgs() << '\n';
+      }
+    });
+
+    return layers;
+  }
+
+private:
+  /**
+   * @returns Next two-qubit gate on qubit wire, or std::nullopt if none exists.
+   */
+  static std::optional<std::pair<
+      Value, UnitaryInterface>> // TODO: Instead of value use vector of values.
+  advanceToTwoQubitGate(const Value q, Region& region, const Layout& layout,
+                        SmallVector<Operation*>& order) {
+    Value head = q;
+    while (true) {
+      if (head.use_empty()) { // No two-qubit gate found.
+        return std::nullopt;
+      }
+
+      Operation* user = getUserInRegion(head, &region);
+      if (user == nullptr) { // No two-qubit gate found.
+        return std::nullopt;
+      }
+
+      bool endOfRegion = false;
+      std::optional<UnitaryInterface> twoQubitOp;
+
+      TypeSwitch<Operation*>(user)
+          /// MQT
+          /// BarrierOp is a UnitaryInterface, however, requires special care.
+          .Case<BarrierOp>([&](BarrierOp op) {
+            for (const auto [in, out] :
+                 llvm::zip_equal(op.getInQubits(), op.getOutQubits())) {
+              if (in == head) {
+                head = out;
+                return;
+              }
+            }
+            llvm_unreachable("head must be in barrier");
+          })
+          .Case<UnitaryInterface>([&](UnitaryInterface op) {
+            if (isTwoQubitGate(op)) {
+              twoQubitOp = op;
+              return; // Found a two-qubit gate, stop advancing head.
+            }
+            // Otherwise, advance head.
+            head = op.getOutQubits().front();
+            order.push_back(op);
+          })
+          .Case<ResetOp>([&](ResetOp op) { head = op.getOutQubit(); })
+          .Case<MeasureOp>([&](MeasureOp op) { head = op.getOutQubit(); })
+          /// SCF
+          /// The scf funcs assume that the first n results are the hw qubits.
+          .Case<scf::ForOp>([&](scf::ForOp op) {
+            head = op->getResult(layout.lookupHardwareIndex(q));
+          })
+          .Case<scf::IfOp>([&](scf::IfOp op) {
+            head = op->getResult(layout.lookupHardwareIndex(q));
+          })
+          .Case<scf::YieldOp>([&](scf::YieldOp) { endOfRegion = true; })
+          .Default([&]([[maybe_unused]] Operation* op) {
+            LLVM_DEBUG({
+              llvm::dbgs() << "unknown operation in def-use chain: ";
+              op->dump();
+            });
+            llvm_unreachable("unknown operation in def-use chain");
+          });
+
+      if (twoQubitOp) { // Two-qubit gate found.
+        return std::make_pair(head, *twoQubitOp);
+      }
+
+      if (endOfRegion) {
+        return std::nullopt;
+      }
+    }
+
+    return std::nullopt;
+  }
 };
 } // namespace mqt::ir::opt
