@@ -13,6 +13,7 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 
 ### Added
 
+- ✨ Add DD-based simulator QDMI device ([#1287]) ([**@burgholzer**])
 - ✨ A `--reuse-qubits` pass implementing an advanced form of qubit reuse to reduce the qubit count of quantum circuits ([#1108]) ([**@DRovara**])
 - ✨ A `--lift-measurements` pass that attempts to move measurements up as much as possible, used for instance to enable better qubit reuse ([#1108]) ([**@DRovara**])
 - ✨ Add native support for `R(theta, phi)` gate ([#1283]) ([**@burgholzer**])
@@ -226,6 +227,7 @@ _📚 Refer to the [GitHub Release Notes](https://github.com/munich-quantum-tool
 
 <!-- PR links -->
 
+[#1287]: https://github.com/munich-quantum-toolkit/core/pull/1287
 [#1283]: https://github.com/munich-quantum-toolkit/core/pull/1283
 [#1279]: https://github.com/munich-quantum-toolkit/core/pull/1279
 [#1276]: https://github.com/munich-quantum-toolkit/core/pull/1276
