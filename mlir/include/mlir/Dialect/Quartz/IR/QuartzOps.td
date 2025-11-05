@@ -422,6 +422,8 @@ def CtrlOp : QuartzOp<"ctrl", traits = [UnitaryOpInterface]> {
         static DenseElementsAttr tryGetStaticMatrix();
         static StringRef getBaseSymbol() { return "ctrl"; }
     }];
+
+    let hasVerifier = 1;
 }
 
 #endif // QUARTZ_OPS

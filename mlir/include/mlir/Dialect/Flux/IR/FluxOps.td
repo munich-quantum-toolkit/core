@@ -465,6 +465,7 @@ def CtrlOp : FluxOp<"ctrl", traits = [UnitaryOpInterface, AttrSizedOperandSegmen
     ];
 
     let hasCanonicalizer = 1;
+    let hasVerifier = 1;
 }
 
 #endif // FluxOPS

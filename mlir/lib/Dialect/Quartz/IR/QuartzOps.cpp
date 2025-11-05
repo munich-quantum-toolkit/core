@@ -317,3 +317,18 @@ ParameterDescriptor CtrlOp::getParameter(size_t i) {
 DenseElementsAttr CtrlOp::tryGetStaticMatrix() {
   llvm::report_fatal_error("Not implemented yet"); // TODO
 }
+
+LogicalResult CtrlOp::verify() {
+  if (getBody().front().getOperations().size() != 2) {
+    return emitOpError("body region must have exactly two operations");
+  }
+  if (!llvm::isa<UnitaryOpInterface>(getBody().front().front())) {
+    return emitOpError(
+        "first operation in body region must be a unitary operation");
+  }
+  if (!llvm::isa<YieldOp>(getBody().front().back())) {
+    return emitOpError(
+        "second operation in body region must be a yield operation");
+  }
+  return success();
+}
