@@ -68,9 +68,9 @@ HANDLE_OP_TYPE(37, Move, 0, "move")
 HANDLE_OP_TYPE(38, Bridge, 0, "bridge")
 HANDLE_OP_TYPE(39, AodActivate, 0, "aod_activate")
 HANDLE_OP_TYPE(40, AodDeactivate, 0, "aod_deactivate")
-HANDLE_OP_TYPE(41, AodMove, 0, "aod_move")
+HANDLE_OP_TYPE(42, AodMove, 0, "aod_move")
 
-LAST_OP_TYPE(42)
+LAST_OP_TYPE(43)
 
 
 #undef OpTypeInv
