@@ -26,6 +26,7 @@ Checks: |
   performance-*,
   -performance-no-int-to-ptr,
   portability-*,
+  -portability-avoid-pragma-once,
   readability-*,
   -readability-identifier-length,
   -readability-magic-numbers,
