@@ -160,6 +160,13 @@ template <typename Node> struct CachedEdge {
   }
 };
 
+// Deduction guide for constructor: CachedEdge(Node*, const ComplexValue&)
+template <class Node>
+CachedEdge(Node*, const ComplexValue&) -> CachedEdge<Node>;
+
+// Deduction guide for constructor: CachedEdge(Node*, const Complex&)
+template <class Node> CachedEdge(Node*, const Complex&) -> CachedEdge<Node>;
+
 } // namespace dd
 
 template <class Node> struct std::hash<dd::CachedEdge<Node>> {

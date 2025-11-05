@@ -252,6 +252,7 @@ public:
               const Controls& controls, const Qubit target);
 
   DECLARE_SINGLE_TARGET_TWO_PARAMETER_OPERATION(u2, phi, lambda)
+  DECLARE_SINGLE_TARGET_TWO_PARAMETER_OPERATION(r, theta, phi)
 
 #undef DECLARE_SINGLE_TARGET_TWO_PARAMETER_OPERATION
 

@@ -120,9 +120,8 @@ std::shared_ptr<Constant> ConstEvalValue::toExpr() const {
     return std::make_shared<Constant>(Constant(std::get<1>(value)));
   case ConstBool:
     return std::make_shared<Constant>(Constant(std::get<2>(value)));
-  default:
-    qc::unreachable();
   }
+  qc::unreachable();
 }
 
 bool ConstEvalValue::operator==(const ConstEvalValue& rhs) const {

@@ -27,7 +27,7 @@ These classes together with their methods are then exposed to Python, see {py:cl
 The following example shows how to get a device from the QDMI driver and access its name.
 
 ```{code-cell} ipython3
-from mqt.core.qdmi.fomac import devices
+from mqt.core.fomac import devices
 
 # get a list of all available devices
 available_devices = devices()

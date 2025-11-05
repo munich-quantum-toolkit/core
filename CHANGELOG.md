@@ -9,12 +9,43 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 
 ## [Unreleased]
 
+## [3.3.2] - 2025-11-04
+
 ### Added
 
-- ✨ Add MQTRef-QIR conversions ([#1091]) ([**@li-mingbao**])
+- ✨ A `--reuse-qubits` pass implementing an advanced form of qubit reuse to reduce the qubit count of quantum circuits ([#1108]) ([**@DRovara**])
+- ✨ A `--lift-measurements` pass that attempts to move measurements up as much as possible, used for instance to enable better qubit reuse ([#1108]) ([**@DRovara**])
+- ✨ Add native support for `R(theta, phi)` gate ([#1283]) ([**@burgholzer**])
+- ✨ Add A\*-search-based routing algorithm to MLIR transpilation routines ([#1237], [#1271], [#1279]) ([**@MatthiasReumann**])
+
+### Fixed
+
+- 🐛 Fix edge-case in validation of `NAComputation` ([#1276]) ([**@ystade**])
+- 🐛 Allow integer QASM version declarations ([#1269]) ([**@denialhaag**])
+
+## [3.3.1] - 2025-10-14
+
+### Fixed
+
+- 🐛 Ensure `spdlog` dependency can be found from `mqt-core` install ([#1263]) ([**@burgholzer**])
+
+## [3.3.0] - 2025-10-13
+
+_If you are upgrading: please see [`UPGRADING.md`](UPGRADING.md#330)._
+
+### Added
+
+- 👷 Enable testing on Python 3.14 ([#1246]) ([**@denialhaag**])
+- ✨ Add dedicated `PlacementPass` to MLIR transpilation routines ([#1232]) ([**@MatthiasReumann**])
+- ✨ Add an NA-specific FoMaC implementation ([#1223], [#1236]) ([**@ystade**], [**@burgholzer**])
+- ✨ Enable import of BarrierOp into MQTRef ([#1224]) ([**@denialhaag**])
+- ✨ Add naive quantum program routing MLIR pass ([#1148]) ([**@MatthiasReumann**])
+- ✨ Add QIR runtime using DD-based simulation ([#1210]) ([**@ystade**], [**@burgholzer**])
+- ✨ Add SWAP reconstruction patterns to the newly-named `SwapReconstructionAndElision` MLIR pass ([#1207]) ([**@taminob**], [**@burgholzer**])
+- ✨ Add two-way conversions between MQTRef and QIR ([#1091]) ([**@li-mingbao**])
 - 🚸 Define custom assembly formats for MLIR operations ([#1209]) ([**@denialhaag**])
 - ✨ Add support for translating `IfElseOperation`s to the `MQTRef` MLIR dialect ([#1164]) ([**@denialhaag**], [**@burgholzer**])
-- ✨ Add MQT's implementation of a generic FoMaC with Python bindings ([#1150], [#1186]) ([**@ystade**])
+- ✨ Add MQT's implementation of a generic FoMaC with Python bindings ([#1150], [#1186], [#1223]) ([**@ystade**])
 - ✨ Add new MLIR pass `ElidePermutations` for SWAP gate elimination ([#1151]) ([**@taminob**])
 - ✨ Add new pattern to MLIR pass `GateElimination` for identity gate removal ([#1140]) ([**@taminob**])
 - ✨ Add Clifford block collection pass to `CircuitOptimizer` module ([#885]) ([**jannikpflieger**], [**@burgholzer**])
@@ -30,6 +61,8 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 
 ### Changed
 
+- ♻️ Replace custom `AllocOp`, `DeallocOp`, `ExtractOp`, and `InsertOp` with MLIR-native `memref` operations ([#1211]) ([**@denialhaag**])
+- 🚚 Rename MLIR pass `ElidePermutations` to `SwapReconstructionAndElision` ([#1207]) ([**@taminob**])
 - ⬆️ Require LLVM 21 for building the MLIR library ([#1180]) ([**@denialhaag**])
 - ⬆️ Update to version 21 of `clang-tidy` ([#1180]) ([**@denialhaag**])
 - 🚚 Rename MLIR pass `CancelConsecutiveInverses` to `GateElimination` ([#1140]) ([**@taminob**])
@@ -44,11 +77,12 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 ### Removed
 
 - 🔥 Drop support for Python 3.9 ([#1181]) ([**@denialhaag**])
-- 🔥 Stop testing on `x86` macOS and shipping wheels for Intel-based Macs ([#1165]) ([**@burgholzer**])
 - 🔥 Remove `ClassicControlledOperation` from C++ library and Python package ([#1117]) ([**@denialhaag**])
 
 ### Fixed
 
+- 🐛 Fix CMake installation to make `find_package(mqt-core CONFIG)` succeed ([#1247]) ([**@burgholzer**], [**@denialhaag**])
+- 🏁 Fix stack overflows in OpenQASM layout parsing on Windows for large circuits ([#1235]) ([**@burgholzer**])
 - ✨ Add missing `StandardOperation` conversions in MLIR roundtrip pass ([#1071]) ([**@BertiFlorea**], [**@denialhaag**])
 
 ## [3.2.1] - 2025-08-01
@@ -178,7 +212,10 @@ _📚 Refer to the [GitHub Release Notes](https://github.com/munich-quantum-tool
 
 <!-- Version links -->
 
-[unreleased]: https://github.com/munich-quantum-toolkit/core/compare/v3.2.1...HEAD
+[unreleased]: https://github.com/munich-quantum-toolkit/core/compare/v3.3.2...HEAD
+[3.3.2]: https://github.com/munich-quantum-toolkit/core/releases/tag/v3.3.2
+[3.3.1]: https://github.com/munich-quantum-toolkit/core/releases/tag/v3.3.1
+[3.3.0]: https://github.com/munich-quantum-toolkit/core/releases/tag/v3.3.0
 [3.2.1]: https://github.com/munich-quantum-toolkit/core/releases/tag/v3.2.1
 [3.2.0]: https://github.com/munich-quantum-toolkit/core/releases/tag/v3.2.0
 [3.1.0]: https://github.com/munich-quantum-toolkit/core/releases/tag/v3.1.0
@@ -189,7 +226,24 @@ _📚 Refer to the [GitHub Release Notes](https://github.com/munich-quantum-tool
 
 <!-- PR links -->
 
+[#1283]: https://github.com/munich-quantum-toolkit/core/pull/1283
+[#1279]: https://github.com/munich-quantum-toolkit/core/pull/1279
+[#1276]: https://github.com/munich-quantum-toolkit/core/pull/1276
+[#1271]: https://github.com/munich-quantum-toolkit/core/pull/1271
+[#1269]: https://github.com/munich-quantum-toolkit/core/pull/1269
+[#1263]: https://github.com/munich-quantum-toolkit/core/pull/1263
+[#1247]: https://github.com/munich-quantum-toolkit/core/pull/1247
+[#1246]: https://github.com/munich-quantum-toolkit/core/pull/1246
+[#1237]: https://github.com/munich-quantum-toolkit/core/pull/1237
+[#1236]: https://github.com/munich-quantum-toolkit/core/pull/1236
+[#1235]: https://github.com/munich-quantum-toolkit/core/pull/1235
+[#1232]: https://github.com/munich-quantum-toolkit/core/pull/1232
+[#1224]: https://github.com/munich-quantum-toolkit/core/pull/1224
+[#1223]: https://github.com/munich-quantum-toolkit/core/pull/1223
+[#1211]: https://github.com/munich-quantum-toolkit/core/pull/1211
+[#1210]: https://github.com/munich-quantum-toolkit/core/pull/1210
 [#1209]: https://github.com/munich-quantum-toolkit/core/pull/1209
+[#1207]: https://github.com/munich-quantum-toolkit/core/pull/1207
 [#1186]: https://github.com/munich-quantum-toolkit/core/pull/1186
 [#1181]: https://github.com/munich-quantum-toolkit/core/pull/1181
 [#1180]: https://github.com/munich-quantum-toolkit/core/pull/1180
@@ -197,11 +251,13 @@ _📚 Refer to the [GitHub Release Notes](https://github.com/munich-quantum-tool
 [#1164]: https://github.com/munich-quantum-toolkit/core/pull/1164
 [#1157]: https://github.com/munich-quantum-toolkit/core/pull/1157
 [#1151]: https://github.com/munich-quantum-toolkit/core/pull/1151
+[#1148]: https://github.com/munich-quantum-toolkit/core/pull/1148
 [#1147]: https://github.com/munich-quantum-toolkit/core/pull/1147
 [#1140]: https://github.com/munich-quantum-toolkit/core/pull/1140
 [#1139]: https://github.com/munich-quantum-toolkit/core/pull/1139
 [#1117]: https://github.com/munich-quantum-toolkit/core/pull/1117
 [#1116]: https://github.com/munich-quantum-toolkit/core/pull/1116
+[#1108]: https://github.com/munich-quantum-toolkit/core/pull/1108
 [#1106]: https://github.com/munich-quantum-toolkit/core/pull/1106
 [#1100]: https://github.com/munich-quantum-toolkit/core/pull/1100
 [#1099]: https://github.com/munich-quantum-toolkit/core/pull/1099

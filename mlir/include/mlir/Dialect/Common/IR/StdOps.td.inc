@@ -6,8 +6,10 @@
 //
 // Licensed under the MIT License
 
-#ifndef @DIALECT_NAME@_STD_OPS
-#define @DIALECT_NAME@_STD_OPS
+#ifndef @DIALECT_NAME_UPPER@_STD_OPS
+#define @DIALECT_NAME_UPPER@_STD_OPS
+
+include "mlir/Dialect/@DIALECT_NAME@/IR/@DIALECT_NAME@Ops.td"
 
 def GPhaseOp : UnitaryOp<"gphase", [NoTarget, OneParameter]> {
     let summary = "GPhase operation";
@@ -176,6 +178,16 @@ def SXdgOp : UnitaryOp<"sxdg", [OneTarget, NoParameter]> {
     }];
 }
 
+def ROp : UnitaryOp<"r", [OneTarget, TwoParameters]> {
+  let summary = "R operation";
+
+  let description = [{
+      This class represents a R gate. It takes a qubit and a variadic
+      list of positive/negative controls as an input. Additionally, it accepts
+      two parameters indicating the degree of the rotation angles.
+  }];
+}
+
 def RXOp : UnitaryOp<"rx", [OneTarget, OneParameter]> {
     let summary = "RX operation";
 
@@ -329,4 +341,4 @@ def XXplusYYOp : UnitaryOp<"xx_plus_yy", [TwoTarget, TwoParameters]> {
     }];
 }
 
-#endif // @DIALECT_NAME@_STD_OPS
+#endif // @DIALECT_NAME_UPPER@_STD_OPS

@@ -124,6 +124,8 @@ TEST_F(ZXFunctionalityTest, complexCircuit) {
      << "rzx(pi/4) q[0], q[1];"
      << "ecr q[0], q[1];"
      << "dcx q[0], q[1];"
+     << "r(pi/8, pi/4) q[2];"
+     << "r(-pi/8, pi/4) q[2];"
      << "dcx q[1], q[0];"
      << "ecr q[0], q[1];"
      << "rzx(-pi/4) q[0], q[1];"
@@ -271,7 +273,7 @@ TEST_F(ZXFunctionalityTest, InitialLayout) {
 
 TEST_F(ZXFunctionalityTest, FromSymbolic) {
   const sym::Variable x{"x"};
-  const sym::Term xTerm{x, 1.0};
+  const sym::Term<double> xTerm{x, 1.0};
   qc = qc::QuantumComputation{1};
   qc.rz(qc::Symbolic(xTerm), 0);
   qc.rz(-qc::Symbolic(xTerm), 0);

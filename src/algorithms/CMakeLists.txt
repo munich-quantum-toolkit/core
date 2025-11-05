@@ -26,14 +26,7 @@ if(NOT TARGET ${MQT_CORE_TARGET_NAME}-algorithms)
   target_link_libraries(
     ${MQT_CORE_TARGET_NAME}-algorithms
     PUBLIC MQT::CoreIR
-    PRIVATE MQT::CoreCircuitOptimizer MQT::ProjectOptions MQT::ProjectWarnings)
-
-  # set versioning information
-  set_target_properties(
-    ${MQT_CORE_TARGET_NAME}-algorithms
-    PROPERTIES VERSION ${PROJECT_VERSION}
-               SOVERSION ${PROJECT_VERSION_MAJOR}.${PROJECT_VERSION_MINOR}
-               EXPORT_NAME CoreAlgorithms)
+    PRIVATE MQT::CoreCircuitOptimizer)
 
   # generate export header
   include(GenerateExportHeader)

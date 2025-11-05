@@ -407,7 +407,7 @@ auto MQT_NA_QDMI_Operation_impl_d::sortSites() -> void {
             std::vector<std::pair<MQT_NA_QDMI_Site, MQT_NA_QDMI_Site>>&>(
             supportedSites_),
         [](auto& p) {
-          if (p.first < p.second) {
+          if (p.first > p.second) {
             std::swap(p.first, p.second);
           }
         });
@@ -495,7 +495,7 @@ auto MQT_NA_QDMI_Operation_impl_d::queryProperty(
     return QDMI_ERROR_INVALIDARGUMENT;
   }
   if (sites != nullptr) {
-    // If numQubits_ == 1 or isZoned_ = true
+    // If numQubits_ == 1 or isZoned_ == true
     if (numSites == 1) {
       // If the (single) site is not supported, return with an error
       if (!std::ranges::binary_search(supportedSites_, *sites)) {

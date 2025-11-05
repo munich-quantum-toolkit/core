@@ -12,8 +12,9 @@
 module {
     // CHECK-LABEL: llvm.func @testConvertAllocRegister()
     llvm.func @testConvertAllocRegister() attributes {passthrough = ["entry_point", ["output_labeling_schema", "schema_id"], ["qir_profiles", "base_profile"], ["required_num_qubits", "2"], ["required_num_results", "0"], ["qir_major_version", "1"], ["qir_minor_version", "0"], ["dynamic_qubit_management", "true"], ["dynamic_result_management", "false"]]}  {
-        // CHECK: %[[size:.*]] = llvm.mlir.constant(14 : i64) : i64
-        // CHECK: %[[r_0:.*]] = "mqtref.allocQubitRegister"(%[[size]]) : (i64) -> !mqtref.QubitRegister
+        // CHECK: %[[Int:.*]] = llvm.mlir.constant(14 : i64) : i64
+        // CHECK: %[[Idx:.*]] = arith.index_cast %[[Int]] : i64 to index
+        // CHECK: %[[r_0:.*]] = memref.alloc(%[[Idx]]) : memref<?x!mqtref.Qubit>
 
         %0 = llvm.mlir.zero : !llvm.ptr
         %c0 = llvm.mlir.constant(14 : i64) : i64
@@ -37,9 +38,10 @@ module {
 module {
     // CHECK-LABEL: llvm.func @testConvertDeallocRegister()
     llvm.func @testConvertDeallocRegister() attributes {passthrough = ["entry_point", ["output_labeling_schema", "schema_id"], ["qir_profiles", "base_profile"], ["required_num_qubits", "2"], ["required_num_results", "0"], ["qir_major_version", "1"], ["qir_minor_version", "0"], ["dynamic_qubit_management", "true"], ["dynamic_result_management", "false"]]}  {
-        // CHECK: %[[size:.*]] = llvm.mlir.constant(14 : i64) : i64
-        // CHECK: %[[r_0:.*]] = "mqtref.allocQubitRegister"(%[[size]]) : (i64) -> !mqtref.QubitRegister
-        // CHECK: "mqtref.deallocQubitRegister"(%[[r_0]])
+        // CHECK: %[[Int:.*]] = llvm.mlir.constant(14 : i64) : i64
+        // CHECK: %[[Idx:.*]] = arith.index_cast %[[Int]] : i64 to index
+        // CHECK: %[[r_0:.*]] = memref.alloc(%[[Idx]]) : memref<?x!mqtref.Qubit>
+        // CHECK: memref.dealloc %[[r_0:.*]] : memref<?x!mqtref.Qubit>
 
         %0 = llvm.mlir.zero : !llvm.ptr
         %c0 = llvm.mlir.constant(14 : i64) : i64
@@ -64,10 +66,12 @@ module {
 module {
     // CHECK-LABEL: llvm.func @testConvertExtractFromRegister()
     llvm.func @testConvertExtractFromRegister() attributes {passthrough = ["entry_point", ["output_labeling_schema", "schema_id"], ["qir_profiles", "base_profile"], ["required_num_qubits", "2"], ["required_num_results", "0"], ["qir_major_version", "1"], ["qir_minor_version", "0"], ["dynamic_qubit_management", "true"], ["dynamic_result_management", "false"]]}  {
-        // CHECK: %[[size:.*]] = llvm.mlir.constant(1 : i64) : i64
-        // CHECK: %[[index:.*]] = llvm.mlir.constant(0 : i64) : i64
-        // CHECK: %[[r_0:.*]] = "mqtref.allocQubitRegister"(%[[size]]) : (i64) -> !mqtref.QubitRegister
-        // CHECK: %[[q_0:.*]] = "mqtref.extractQubit"(%[[r_0]], %[[index]]) : (!mqtref.QubitRegister, i64) -> !mqtref.Qubit
+        // CHECK: %[[Int1:.*]] = llvm.mlir.constant(1 : i64) : i64
+        // CHECK: %[[Int0:.*]] = llvm.mlir.constant(0 : i64) : i64
+        // CHECK: %[[Idx1:.*]] = arith.index_cast %[[Int1]] : i64 to index
+        // CHECK: %[[r_0:.*]] = memref.alloc(%[[Idx1]]) : memref<?x!mqtref.Qubit>
+        // CHECK: %[[Idx0:.*]] = arith.index_cast %[[Int0]] : i64 to index
+        // CHECK: %[[q_0:.*]] = memref.load %[[r_0]][%[[Idx0]]] : memref<?x!mqtref.Qubit>
 
         %0 = llvm.mlir.zero : !llvm.ptr
         %c0 = llvm.mlir.constant(1 : i64) : i64
@@ -568,6 +572,7 @@ module {
         // CHECK: mqtref.rx(%[[c_0]]) %[[q_0]]
         // CHECK: mqtref.ry(%[[c_0]]) %[[q_0]]
         // CHECK: mqtref.rz(%[[c_0]]) %[[q_0]]
+        // CHECK: mqtref.r(%[[c_0]], %[[c_1]]) %[[q_0]]
 
         %0 = llvm.mlir.zero : !llvm.ptr
         %c2 = llvm.mlir.constant(1.000000e-01 : f64) : f64
@@ -584,6 +589,7 @@ module {
         llvm.call @__quantum__qis__rx__body(%q0, %c2) : (!llvm.ptr, f64) -> ()
         llvm.call @__quantum__qis__ry__body(%q0, %c2) : (!llvm.ptr, f64) -> ()
         llvm.call @__quantum__qis__rz__body(%q0, %c2) : (!llvm.ptr, f64) -> ()
+        llvm.call @__quantum__qis__r__body(%q0, %c2, %c3) : (!llvm.ptr, f64, f64) -> ()
         llvm.br ^bb2
       ^bb2:
         llvm.call @__quantum__rt__qubit_release(%q0) : (!llvm.ptr) -> ()
@@ -598,6 +604,7 @@ module {
     llvm.func @__quantum__qis__rx__body(!llvm.ptr, f64)
     llvm.func @__quantum__qis__ry__body(!llvm.ptr, f64)
     llvm.func @__quantum__qis__rz__body(!llvm.ptr, f64)
+    llvm.func @__quantum__qis__r__body(!llvm.ptr, f64, f64)
     llvm.func @__quantum__rt__initialize(!llvm.ptr)
     llvm.func @__quantum__rt__qubit_allocate() -> !llvm.ptr
     llvm.func @__quantum__rt__qubit_release(!llvm.ptr) -> ()
@@ -619,6 +626,7 @@ module {
         // CHECK: mqtref.rx(%[[c_0]]) %[[q_0]]
         // CHECK: mqtref.ry(%[[c_0]]) %[[q_0]]
         // CHECK: mqtref.rz(%[[c_0]]) %[[q_0]]
+        // CHECK: mqtref.r(%[[c_0]], %[[c_1]]) %[[q_0]]
 
         %0 = llvm.mlir.zero : !llvm.ptr
         %c2 = llvm.mlir.constant(1.000000e-01 : f64) : f64
@@ -634,6 +642,7 @@ module {
         llvm.call @__quantum__qis__rx__body(%0, %c2) : (!llvm.ptr, f64) -> ()
         llvm.call @__quantum__qis__ry__body(%0, %c2) : (!llvm.ptr, f64) -> ()
         llvm.call @__quantum__qis__rz__body(%0, %c2) : (!llvm.ptr, f64) -> ()
+        llvm.call @__quantum__qis__r__body(%0, %c2, %c3) : (!llvm.ptr, f64, f64) -> ()
 
         llvm.br ^bb2
       ^bb2:
@@ -648,6 +657,7 @@ module {
     llvm.func @__quantum__qis__rx__body(!llvm.ptr, f64)
     llvm.func @__quantum__qis__ry__body(!llvm.ptr, f64)
     llvm.func @__quantum__qis__rz__body(!llvm.ptr, f64)
+    llvm.func @__quantum__qis__r__body(!llvm.ptr, f64, f64)
     llvm.func @__quantum__rt__initialize(!llvm.ptr)
 }
 

@@ -15,7 +15,6 @@
 #include "mlir/Dialect/MQTOpt/IR/MQTOptDialect.h"          // IWYU pragma: keep
 #include "mlir/Dialect/MQTOpt/Transforms/Passes.h"         // IWYU pragma: keep
 #include "mlir/Dialect/MQTRef/IR/MQTRefDialect.h"          // IWYU pragma: keep
-#include "mlir/Dialect/MQTRef/Transforms/Passes.h"         // IWYU pragma: keep
 
 // Suppress warnings about implicit captures of `this` in lambdas
 #ifdef __clang__
@@ -36,7 +35,6 @@
 int main(const int argc, char** argv) {
   mlir::registerAllPasses();
   mqt::ir::opt::registerMQTOptPasses();
-  mqt::ir::ref::registerMQTRefPasses();
   mqt::ir::registerMQTRefToMQTOptPasses();
   mqt::ir::registerMQTOptToMQTRefPasses();
   mqt::ir::registerQIRToMQTRefPasses();

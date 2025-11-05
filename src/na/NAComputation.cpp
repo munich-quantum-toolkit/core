@@ -19,6 +19,7 @@
 #include "na/operations/StoreOp.hpp"
 
 #include <algorithm>
+#include <cassert>
 #include <cstddef>
 #include <map>
 #include <sstream>
@@ -125,87 +126,116 @@ auto NAComputation::validate() const -> std::pair<bool, std::string> {
       //===----------------------------------------------------------------===//
       if (shuttlingOp.hasTargetLocations()) {
         const auto& targetLocations = shuttlingOp.getTargetLocations();
+        // 1) Guard: one-to-one mapping between atoms and targets
+        if (opAtoms.size() != targetLocations.size()) {
+          ss << "Error in op number " << counter
+             << " (atoms/targets size mismatch)\n";
+          return {false, ss.str()};
+        }
+        // 2) Precompute end map and detect duplicates once
+        std::unordered_set<const Atom*> seen;
+        seen.reserve(opAtoms.size());
+        std::unordered_map<const Atom*, Location> endOf;
+        endOf.reserve(opAtoms.size());
         for (std::size_t i = 0; i < opAtoms.size(); ++i) {
-          const auto* a = opAtoms[i];
-          for (std::size_t j = i + 1; j < opAtoms.size(); ++j) {
-            const auto* b = opAtoms[j];
-            if (a == b) {
-              ss << "Error in op number " << counter
-                 << " (two atoms identical)\n";
-              return {false, ss.str()};
-            }
-            const auto& s1 = currentLocations[a];
-            const auto& s2 = currentLocations[b];
-            const auto& e1 = targetLocations[i];
-            const auto& e2 = targetLocations[j];
-            if (e1 == e2) {
-              ss << "Error in op number " << counter
-                 << " (two end points identical)\n";
-              return {false, ss.str()};
-            }
-            // Exp.:
-            //  o -----> o
-            //  o --> o
-            if (s1.x == s2.x && e1.x != e2.x) {
-              ss << "Error in op number " << counter
-                 << " (columns not preserved)\n";
-              return {false, ss.str()};
-            }
-            // Exp.:
-            // o   o
-            // |   |
-            // v   |
-            // o   v
-            //     o
-            if (s1.y == s2.y && e1.y != e2.y) {
-              ss << "Error in op number " << counter
-                 << " (rows not preserved)\n";
-              return {false, ss.str()};
-            }
-            // Exp.:
-            // o -------> o
-            //    o--> o
-            if (s1.x < s2.x && e1.x >= e2.x) {
-              ss << "Error in op number " << counter
-                 << " (column order not preserved)\n";
-              return {false, ss.str()};
-            }
-            // Exp.:
-            // o
-            // |  o
-            // |  |
-            // |  v
-            // v  o
-            // o
-            if (s1.y < s2.y && e1.y >= e2.y) {
-              ss << "Error in op number " << counter
-                 << " (row order not preserved)\n";
-              return {false, ss.str()};
-            }
-            // Exp.:
-            //    o--> o
-            // o -------> o
-            if (s1.x > s2.x && e1.x <= e2.x) {
-              ss << "Error in op number " << counter
-                 << " (column order not preserved)\n";
-              return {false, ss.str()};
-            }
-            // Exp.:
-            //   o
-            // o |
-            // | |
-            // v |
-            // o v
-            //   o
-            if (s1.y > s2.y && e1.y <= e2.y) {
-              ss << "Error in op number " << counter
-                 << " (row order not preserved)\n";
-              return {false, ss.str()};
+          const auto* b = opAtoms.at(i);
+          if (!seen.emplace(b).second) {
+            ss << "Error in op number " << counter
+               << " (two atoms identical)\n";
+            return {false, ss.str()};
+          }
+          endOf.emplace(b, targetLocations.at(i));
+        }
+        std::unordered_map<const Atom*, size_t> opAtomToIndex;
+        opAtomToIndex.reserve(opAtoms.size());
+        for (std::size_t i = 0; i < opAtoms.size(); ++i) {
+          opAtomToIndex.emplace(opAtoms[i], i);
+        }
+        // 3) Validate against all loaded atoms, including non-moving ones
+        for (const auto& atom : atoms_) {
+          if (const auto* a = atom.get(); currentlyShuttling.contains(a)) {
+            const auto& s1 = currentLocations.at(a);
+            const auto it1 = endOf.find(a);
+            const Location& e1 = (it1 != endOf.end()) ? it1->second : s1;
+            const auto it2 = opAtomToIndex.find(a);
+            for (std::size_t i = it2 == opAtomToIndex.end() ? 0
+                                                            : it2->second + 1;
+                 i < opAtoms.size(); ++i) {
+              const auto* b = opAtoms.at(i);
+              assert(a != b);
+              const auto& s2 = currentLocations.at(b);
+              const Location& e2 = targetLocations.at(i);
+
+              if (e1 == e2) {
+                ss << "Error in op number " << counter
+                   << " (two end points identical)\n";
+                return {false, ss.str()};
+              }
+              // Exp.:
+              //  o -----> o
+              //  o --> o
+              if (s1.x == s2.x && e1.x != e2.x) {
+                ss << "Error in op number " << counter
+                   << " (columns not preserved)\n";
+                return {false, ss.str()};
+              }
+              // Exp.:
+              // o   o
+              // |   |
+              // v   |
+              // o   v
+              //     o
+              if (s1.y == s2.y && e1.y != e2.y) {
+                ss << "Error in op number " << counter
+                   << " (rows not preserved)\n";
+                return {false, ss.str()};
+              }
+              // Exp.:
+              // o -------> o
+              //    o--> o
+              if (s1.x < s2.x && e1.x >= e2.x) {
+                ss << "Error in op number " << counter
+                   << " (column order not preserved)\n";
+                return {false, ss.str()};
+              }
+              // Exp.:
+              // o
+              // |  o
+              // |  |
+              // |  v
+              // v  o
+              // o
+              if (s1.y < s2.y && e1.y >= e2.y) {
+                ss << "Error in op number " << counter
+                   << " (row order not preserved)\n";
+                return {false, ss.str()};
+              }
+              // Exp.:
+              //    o--> o
+              // o -------> o
+              if (s1.x > s2.x && e1.x <= e2.x) {
+                ss << "Error in op number " << counter
+                   << " (column order not preserved)\n";
+                return {false, ss.str()};
+              }
+              // Exp.:
+              //   o
+              // o |
+              // | |
+              // v |
+              // o v
+              //   o
+              if (s1.y > s2.y && e1.y <= e2.y) {
+                ss << "Error in op number " << counter
+                   << " (row order not preserved)\n";
+                return {false, ss.str()};
+              }
             }
           }
         }
+        // 4) Update current locations
         for (std::size_t i = 0; i < opAtoms.size(); ++i) {
-          currentLocations[opAtoms[i]] = targetLocations[i];
+          currentLocations.at(opAtoms.at(i)) = targetLocations.at(i);
         }
       }
       if (shuttlingOp.is<StoreOp>()) {

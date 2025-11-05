@@ -41,6 +41,9 @@ function(add_mqt_python_binding package_name target_name)
   # add project libraries to the link libraries
   list(APPEND ARG_LINK_LIBS MQT::ProjectOptions MQT::ProjectWarnings)
 
+  # Set c++ standard
+  target_compile_features(${target_name} PRIVATE cxx_std_20)
+
   # link the required libraries
   target_link_libraries(${target_name} PRIVATE ${ARG_LINK_LIBS})
 

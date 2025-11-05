@@ -31,6 +31,7 @@ MQT Core is an open-source C++20 and Python library for quantum computing that f
 - Fully fledged intermediate representation (IR) for quantum computations.
 - A state-of-the-art decision diagram (DD) package for quantum computing.
 - A dedicated ZX-diagram package for working with the ZX-calculus.
+- A QIR runtime based on the decision diagram package.
 
 If you have any questions, feel free to create a [discussion](https://github.com/munich-quantum-toolkit/core/discussions) or an [issue](https://github.com/munich-quantum-toolkit/core/issues) on [GitHub](https://github.com/munich-quantum-toolkit/core).
 

@@ -1,5 +1,5 @@
 ---
-hide-toc: true
+tocdepth: 3
 ---
 
 # MQTRef Dialect
@@ -9,23 +9,10 @@ hide-toc: true
 :end-before: "## Operations"
 ```
 
-```{contents}
-:depth: 1
-:local:
-:backlinks:
-:class: this-will-duplicate-information-and-it-is-still-useful-here
-```
-
 ## Operations
 
 ```{include} Dialects/MLIRMQTRefDialect.md
 :start-after: "## Operations"
-```
-
-## Passes
-
-```{include} Passes/MLIRMQTRefPasses.md
-
 ```
 
 ## Interfaces

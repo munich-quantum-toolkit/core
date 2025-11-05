@@ -23,17 +23,7 @@ if(NOT TARGET ${MQT_CORE_TARGET_NAME}-dd)
                                       FILES ${DD_HEADERS})
 
   # add link libraries
-  target_link_libraries(
-    ${MQT_CORE_TARGET_NAME}-dd
-    PUBLIC MQT::CoreIR nlohmann_json::nlohmann_json
-    PRIVATE MQT::ProjectOptions MQT::ProjectWarnings)
-
-  # set versioning information
-  set_target_properties(
-    mqt-core-dd
-    PROPERTIES VERSION ${PROJECT_VERSION}
-               SOVERSION ${PROJECT_VERSION_MAJOR}.${PROJECT_VERSION_MINOR}
-               EXPORT_NAME CoreDD)
+  target_link_libraries(${MQT_CORE_TARGET_NAME}-dd PUBLIC MQT::CoreIR nlohmann_json::nlohmann_json)
 
   # generate export header
   include(GenerateExportHeader)
