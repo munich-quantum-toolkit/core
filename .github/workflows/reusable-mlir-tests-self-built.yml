@@ -17,10 +17,6 @@ jobs:
         os: [ubuntu-24.04, ubuntu-24.04-arm, macos-15-intel, macos-15]
         llvm-version: [21]
         coverage: [false]
-        include:
-          - os: ubuntu-24.04
-            llvm-version: 21
-            coverage: true
     env:
       CMAKE_BUILD_PARALLEL_LEVEL: 4
       CTEST_PARALLEL_LEVEL: 4
