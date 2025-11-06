@@ -111,10 +111,14 @@ jobs:
 
       # Test
       - name: Run lit tests
-        run: cmake --build build --config ${{ matrix.coverage && 'Debug' || 'Release' }} --target mqt-core-mlir-lit-test
+        run: |
+          for i in {1..10}; do
+            echo "=== Lit Test Run $i ==="
+            cmake --build build --config ${{ matrix.coverage && 'Debug' || 'Release' }} --target mqt-core-mlir-lit-test
+          done
 
       - name: Run unit tests
-        run: ctest -C ${{ matrix.coverage && 'Debug' || 'Release' }} --output-on-failure --test-dir build/mlir --repeat until-pass:3 --timeout 600
+        run: ctest -C ${{ matrix.coverage && 'Debug' || 'Release' }} --output-on-failure --test-dir build/mlir --repeat 50 --timeout 600
 
       # Coverage
       - name: Generate coverage data as JSON (gcovr)
