@@ -15,9 +15,7 @@
 
 #include <array>
 #include <cstddef>
-#include <functional>
 #include <llvm/ADT/STLExtras.h>
-#include <map>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/Operation.h>
 #include <mlir/IR/PatternMatch.h>
@@ -70,7 +68,7 @@ struct GateDecompositionPattern final
       llvm::errs() << "NO SEQUENCE GENERATED!\n";
       return mlir::failure();
     }
-    if (sequence->gates.size() >= series.complexity) {
+    if (sequence->complexity() >= series.complexity) {
       // TODO: add more sophisticated metric to determine complexity of
       // series/sequence
       llvm::errs() << "SEQUENCE LONGER THAN INPUT!\n";
@@ -247,6 +245,13 @@ struct GateDecompositionPattern final
       llvm::SmallVector<std::uint8_t, 2> qubit_id = {0};
     };
     std::vector<Gate> gates;
+    std::size_t complexity() {
+      std::size_t c{};
+      for (auto&& gate : gates) {
+        c += gate.qubit_id.size();
+      }
+      return c;
+    }
     fp globalPhase;
   };
   using OneQubitGateSequence = QubitGateSequence;
@@ -401,7 +406,7 @@ struct GateDecompositionPattern final
     auto [U, S] = self_adjoint_evd(A);
 
     // TODO: not in original code
-    if (helpers::determinant(U) + 1.0 < 1e-5) {
+    if (std::abs(helpers::determinant(U) + 1.0) < 1e-5) {
       std::cerr << "CORRECTION!\n";
       // if determinant of eigenvector matrix is -1.0, multiply first
       // eigenvector by -1.0
@@ -515,8 +520,12 @@ struct GateDecompositionPattern final
   }
 
   static matrix2x2 rz_matrix(fp theta) {
-    auto ilam2 = qfp(0., 0.5 * theta);
-    return {std::exp(-ilam2), C_ZERO, C_ZERO, std::exp(ilam2)};
+    return {qfp{std::cos(theta / 2.), -std::sin(theta / 2.)},
+            0,
+            0,
+            {std::cos(theta / 2.), std::sin(theta / 2.)}};
+    // auto ilam2 = qfp(0., 0.5 * theta);
+    // return {std::exp(-ilam2), C_ZERO, C_ZERO, std::exp(ilam2)};
   }
 
   static matrix4x4 rxxMatrix(const fp theta) {
@@ -1284,6 +1293,7 @@ struct GateDecompositionPattern final
 
   struct TwoQubitBasisDecomposer {
     qc::OpType gate;
+    std::array<std::size_t, 2> gate_qubit_ids;
     llvm::SmallVector<fp, 3> gate_params;
     fp basis_fidelity;
     EulerBasis euler_basis;
@@ -1313,6 +1323,7 @@ struct GateDecompositionPattern final
   public:
     static TwoQubitBasisDecomposer new_inner(
         qc::OpType gate = qc::X, // CX
+        std::array<std::size_t, 2> gate_qubit_ids = {1, 0},
         const llvm::SmallVector<fp, 3>& gate_params = {},
         // matrix4x4 gate_matrix = {1, 0, 0, 0, 0, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0,
         matrix4x4 gate_matrix = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1, 0, 0, 1,
@@ -1449,6 +1460,7 @@ struct GateDecompositionPattern final
 
       return TwoQubitBasisDecomposer{
           gate,
+          gate_qubit_ids,
           gate_params,
           basis_fidelity,
           euler_basis,
