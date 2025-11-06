@@ -240,6 +240,7 @@ module {
 
     %cst0 = arith.constant 2.5 : f64
     %cst1 = arith.constant 1.2 : f64
+    %cst2 = arith.constant 0.5 : f64
 
     %q0_0 = mqtopt.allocQubit
     %q1_0 = mqtopt.allocQubit
@@ -251,10 +252,19 @@ module {
     %q1_3 = mqtopt.ry(%cst1) %q1_2: !mqtopt.Qubit
     %q0_4 = mqtopt.rx(%cst1) %q0_3: !mqtopt.Qubit
     %q0_5, %q1_4 = mqtopt.x() %q0_4 ctrl %q1_3: !mqtopt.Qubit ctrl !mqtopt.Qubit
-    %q0_6 = mqtopt.rz(%cst0) %q0_5: !mqtopt.Qubit
+    %q0_6 = mqtopt.rz(%cst2) %q0_5: !mqtopt.Qubit
+    // make series longer to enforce decomposition
+    %q0_7 = mqtopt.i() %q0_6: !mqtopt.Qubit
+    %q0_8 = mqtopt.i() %q0_7: !mqtopt.Qubit
+    %q0_9 = mqtopt.i() %q0_8: !mqtopt.Qubit
+    %q1_5 = mqtopt.i() %q1_4: !mqtopt.Qubit
+    %q1_6 = mqtopt.i() %q1_5: !mqtopt.Qubit
+    %q1_7 = mqtopt.i() %q1_6: !mqtopt.Qubit
+    %q1_8 = mqtopt.i() %q1_7: !mqtopt.Qubit
+    %q1_9 = mqtopt.i() %q1_8: !mqtopt.Qubit
 
-    mqtopt.deallocQubit %q0_6
-    mqtopt.deallocQubit %q1_4
+    mqtopt.deallocQubit %q0_9
+    mqtopt.deallocQubit %q1_9
     mqtopt.deallocQubit %q2_0
 
     return
