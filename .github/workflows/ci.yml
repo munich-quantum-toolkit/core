@@ -239,10 +239,16 @@ jobs:
       runs-on: ${{ matrix.runs-on }}
 
   mlir-tests:
-    name: 🐉 Test
+    name: 🐉 Test (vendored)
     needs: change-detection
     if: fromJSON(needs.change-detection.outputs.run-mlir)
     uses: ./.github/workflows/reusable-mlir-tests.yml
+
+  mlir-tests-self-built:
+    name: 🐉 Test (self-built)
+    needs: change-detection
+    if: fromJSON(needs.change-detection.outputs.run-mlir)
+    uses: ./.github/workflows/reusable-mlir-tests-self-built.yml
 
   # this job does nothing and is only used for branch protection
   required-checks-pass:

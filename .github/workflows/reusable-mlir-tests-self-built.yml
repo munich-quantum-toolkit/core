@@ -1,4 +1,4 @@
-name: 🐉 • Tests (vendored)
+name: 🐉 • Tests (self-built)
 on:
   workflow_call:
 
@@ -14,15 +14,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os:
-          [
-            ubuntu-24.04,
-            ubuntu-24.04-arm,
-            macos-15-intel,
-            macos-15,
-            windows-2025,
-            windows-11-arm,
-          ]
+        os: [ubuntu-24.04, ubuntu-24.04-arm, macos-15-intel, macos-15]
         llvm-version: [21]
         coverage: [false]
         include:
@@ -40,20 +32,23 @@ jobs:
           fetch-depth: 0
 
       # OS-specific toolchain setup
-      - name: Setup LLVM/MLIR (Linux/macOS)
-        if: runner.os != 'Windows'
-        run: bash .github/scripts/setup-mlir.sh ${{ matrix.llvm-version }}
-
-      - name: Restore LLVM/MLIR cache (Windows)
-        if: runner.os == 'Windows'
+      - name: Restore LLVM/MLIR cache
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         id: mlir-cache
         with:
           path: llvm-install
           key: ${{ matrix.os }}-llvm-${{ matrix.llvm-version }}
 
+      - name: Setup LLVM/MLIR (Linux)
+        if: runner.os == 'Linux'
+        run: bash .github/scripts/build-and-setup-mlir-linux.sh -t ${{ matrix.llvm-version }}.1.5
+
+      - name: Setup LLVM/MLIR (macOS)
+        if: runner.os == 'macOS'
+        run: bash .github/scripts/build-and-setup-mlir-mac.sh -t ${{ matrix.llvm-version }}.1.5
+
       - name: Setup LLVM/MLIR (Windows)
-        if: runner.os == 'Windows'
+        if: runner.os == 'Linux'
         shell: pwsh
         run: |
           & "${{ github.workspace }}\.github\scripts\setup-mlir.ps1" -MajorVersion ${{ matrix.llvm-version }} -InstallPrefix "${{ github.workspace }}\llvm-install"
