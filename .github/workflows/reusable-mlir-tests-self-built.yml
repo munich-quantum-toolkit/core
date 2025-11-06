@@ -106,7 +106,7 @@ jobs:
           done
 
       - name: Run unit tests
-        run: ctest -C ${{ matrix.coverage && 'Debug' || 'Release' }} --output-on-failure --test-dir build/mlir --repeat 50 --timeout 600
+        run: ctest -C ${{ matrix.coverage && 'Debug' || 'Release' }} --output-on-failure --test-dir build/mlir --repeat until-fail:50 --timeout 600
 
       # Coverage
       - name: Generate coverage data as JSON (gcovr)
