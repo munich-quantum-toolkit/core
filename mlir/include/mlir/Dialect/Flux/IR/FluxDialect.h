@@ -21,8 +21,6 @@
 #pragma clang diagnostic pop
 #endif
 
-#include "mlir/Dialect/Utils/ParameterDescriptor.h"
-
 #include <mlir/Bytecode/BytecodeOpInterface.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/IR/Value.h>
@@ -53,113 +51,106 @@
 
 namespace mlir::flux {
 
-template <size_t n> class TargetArityTrait {
+/**
+ * @brief Trait for operations with a fixed number of target qubits and
+ * parameters
+ * @details This trait indicates that an operation has a fixed number of target
+ * qubits and parameters, specified by the template parameters T and P. This is
+ * helpful for defining operations with known arities, allowing for static
+ * verification and code generation optimizations.
+ * @tparam T The target arity.
+ * @tparam P The parameter arity.
+ */
+template <size_t T, size_t P> class TargetAndParameterArityTrait {
 public:
   template <typename ConcreteType>
   class Impl : public OpTrait::TraitBase<ConcreteType, Impl> {
   public:
-    size_t getNumQubits() { return n; }
-    size_t getNumTargets() { return n; }
-    size_t getNumControls() { return 0; }
-    size_t getNumPosControls() { return 0; }
-    size_t getNumNegControls() { return 0; }
+    static size_t getNumQubits() { return T; }
+    static size_t getNumTargets() { return T; }
+    static size_t getNumControls() { return 0; }
+    static size_t getNumPosControls() { return 0; }
+    static size_t getNumNegControls() { return 0; }
 
     Value getInputQubit(size_t i) {
+      if constexpr (T == 0) {
+        llvm::reportFatalUsageError("Operation does not have qubits");
+      }
       return this->getOperation()->getOperand(i);
     }
-
     Value getOutputQubit(size_t i) {
+      if constexpr (T == 0) {
+        llvm::reportFatalUsageError("Operation does not have qubits");
+      }
       return this->getOperation()->getResult(i);
     }
 
-    Value getInputTarget(size_t i) { return getInputQubit(i); }
+    Value getInputTarget(const size_t i) { return getInputQubit(i); }
+    Value getOutputTarget(const size_t i) { return getOutputQubit(i); }
 
-    Value getOutputTarget(size_t i) { return getOutputQubit(i); }
-
-    Value getInputPosControl(size_t i) {
-      llvm::report_fatal_error("Operation does not have controls");
+    static Value getInputPosControl([[maybe_unused]] size_t i) {
+      llvm::reportFatalUsageError("Operation does not have controls");
+    }
+    static Value getOutputPosControl([[maybe_unused]] size_t i) {
+      llvm::reportFatalUsageError("Operation does not have controls");
+    }
+    static Value getInputNegControl([[maybe_unused]] size_t i) {
+      llvm::reportFatalUsageError("Operation does not have controls");
     }
 
-    Value getOutputPosControl(size_t i) {
-      llvm::report_fatal_error("Operation does not have controls");
+    static Value getOutputNegControl([[maybe_unused]] size_t i) {
+      llvm::reportFatalUsageError("Operation does not have controls");
     }
 
-    Value getInputNegControl(size_t i) {
-      llvm::report_fatal_error("Operation does not have controls");
+    static size_t getNumParams() { return P; }
+
+    Value getParameter(const size_t i) {
+      if (i >= P) {
+        llvm::reportFatalUsageError("Parameter index out of bounds");
+      }
+      return this->getOperation()->getOperand(T + i);
     }
 
-    Value getOutputNegControl(size_t i) {
-      llvm::report_fatal_error("Operation does not have controls");
+    [[nodiscard]] static FloatAttr getStaticParameter(const Value param) {
+      auto constantOp = param.getDefiningOp<arith::ConstantOp>();
+      if (!constantOp) {
+        return nullptr;
+      }
+      return dyn_cast<FloatAttr>(constantOp.getValue());
+    }
+
+    bool hasStaticUnitary() {
+      if constexpr (P == 0) {
+        return true;
+      }
+      const auto& op = this->getOperation();
+      for (size_t i = 0; i < P; ++i) {
+        if (!getStaticParameter(op->getOperand(T + i))) {
+          return false;
+        }
+      }
+      return true;
     }
 
     Value getInputForOutput(Value output) {
-      switch (n) {
-      case 1:
-        if (output == this->getOperation()->getResult(0)) {
-          return this->getOperation()->getOperand(0);
+      const auto& op = this->getOperation();
+      for (size_t i = 0; i < T; ++i) {
+        if (output == op->getResult(i)) {
+          return op->getOperand(i);
         }
-        llvm::report_fatal_error(
-            "Given qubit is not an output of the operation");
-      case 2:
-        if (output == this->getOperation()->getResult(0)) {
-          return this->getOperation()->getOperand(0);
-        }
-        if (output == this->getOperation()->getResult(1)) {
-          return this->getOperation()->getOperand(1);
-        }
-        llvm::report_fatal_error(
-            "Given qubit is not an output of the operation");
-      default:
-        llvm::report_fatal_error("Unsupported number of qubits");
       }
+      llvm::reportFatalUsageError(
+          "Given qubit is not an output of the operation");
     }
-
     Value getOutputForInput(Value input) {
-      switch (n) {
-      case 1:
-        if (input == this->getOperation()->getOperand(0)) {
-          return this->getOperation()->getResult(0);
+      const auto& op = this->getOperation();
+      for (size_t i = 0; i < T; ++i) {
+        if (input == op->getOperand(i)) {
+          return op->getResult(i);
         }
-        llvm::report_fatal_error(
-            "Given qubit is not an input of the operation");
-      case 2:
-        if (input == this->getOperation()->getOperand(0)) {
-          return this->getOperation()->getResult(0);
-        }
-        if (input == this->getOperation()->getOperand(1)) {
-          return this->getOperation()->getResult(1);
-        }
-        llvm::report_fatal_error(
-            "Given qubit is not an input of the operation");
-      default:
-        llvm::report_fatal_error("Unsupported number of qubits");
       }
-    }
-  };
-};
-
-/**
- * @brief Replace an operand parameter with an attribute
- *
- * @details
- * This function tries replace an operand parameter of with an attribute,
- * if the operand is defined by a constant operation.
- * The function is called by the foldTrait method of the ParameterArityTrait.
- *
- * @param op The operation to fold
- */
-LogicalResult foldParameterArityTrait(Operation* op);
-
-template <size_t n> class ParameterArityTrait {
-public:
-  template <typename ConcreteType>
-  class Impl : public OpTrait::TraitBase<ConcreteType, Impl> {
-  public:
-    size_t getNumParams() { return n; }
-
-    static LogicalResult foldTrait(Operation* op, ArrayRef<Attribute> operands,
-                                   SmallVectorImpl<OpFoldResult>& results) {
-      return foldParameterArityTrait(op);
+      llvm::reportFatalUsageError(
+          "Given qubit is not an input of the operation");
     }
   };
 };

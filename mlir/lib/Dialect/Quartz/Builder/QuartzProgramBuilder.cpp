@@ -74,11 +74,11 @@ Value QuartzProgramBuilder::staticQubit(const int64_t index) {
   return staticOp.getQubit();
 }
 
-llvm::SmallVector<Value>
+SmallVector<Value>
 QuartzProgramBuilder::allocQubitRegister(const int64_t size,
                                          const StringRef name) {
   // Allocate a sequence of qubits with register metadata
-  llvm::SmallVector<Value> qubits;
+  SmallVector<Value> qubits;
   qubits.reserve(size);
 
   auto nameAttr = builder.getStringAttr(name);
@@ -133,15 +133,15 @@ QuartzProgramBuilder& QuartzProgramBuilder::x(Value qubit) {
 }
 
 QuartzProgramBuilder&
-QuartzProgramBuilder::rx(std::variant<double, FloatAttr, Value> theta,
+QuartzProgramBuilder::rx(const std::variant<double, Value>& theta,
                          Value qubit) {
   builder.create<RXOp>(loc, qubit, theta);
   return *this;
 }
 
 QuartzProgramBuilder&
-QuartzProgramBuilder::u2(std::variant<double, FloatAttr, Value> phi,
-                         std::variant<double, FloatAttr, Value> lambda,
+QuartzProgramBuilder::u2(const std::variant<double, Value>& phi,
+                         const std::variant<double, Value>& lambda,
                          Value qubit) {
   builder.create<U2Op>(loc, qubit, phi, lambda);
   return *this;
@@ -180,9 +180,7 @@ QuartzProgramBuilder& QuartzProgramBuilder::dealloc(Value qubit) {
   if (!allocatedQubits.erase(qubit)) {
     // Qubit was not found in the set - either never allocated or already
     // deallocated
-    llvm::errs() << "Error: Attempting to deallocate a qubit that was not "
-                    "allocated or has already been deallocated\n";
-    llvm::report_fatal_error(
+    llvm::reportFatalUsageError(
         "Double deallocation or invalid qubit deallocation");
   }
 

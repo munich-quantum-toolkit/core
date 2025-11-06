@@ -259,7 +259,7 @@ public:
    * quartz.rx(1.0) %q : !quartz.qubit
    * ```
    */
-  QuartzProgramBuilder& rx(std::variant<double, FloatAttr, Value> theta,
+  QuartzProgramBuilder& rx(const std::variant<double, Value>& theta,
                            Value qubit);
 
   /**
@@ -278,8 +278,8 @@ public:
    * quartz.u2(1.0, 0.5) %q : !quartz.qubit
    * ```
    */
-  QuartzProgramBuilder& u2(std::variant<double, FloatAttr, Value> phi,
-                           std::variant<double, FloatAttr, Value> lambda,
+  QuartzProgramBuilder& u2(const std::variant<double, Value>& phi,
+                           const std::variant<double, Value>& lambda,
                            Value qubit);
 
   /**

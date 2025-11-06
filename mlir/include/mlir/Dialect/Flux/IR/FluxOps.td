@@ -241,43 +241,21 @@ def ResetOp : FluxOp<"reset", [Idempotent, SameOperandsAndResultType]> {
 // Traits
 //===----------------------------------------------------------------------===//
 
-class TargetArityTrait<int n> : ParamNativeOpTrait<"TargetArityTrait", !cast<string>(n)> {
+class TargetAndParameterArityTrait<int T, int P>
+        : ParamNativeOpTrait<"TargetAndParameterArityTrait", !strconcat(!cast<string>(T), ",", !cast<string>(P))> {
     let cppNamespace = "::mlir::flux";
 }
 
-def OneTarget : TargetArityTrait<1>;
-
-def TwoTarget : TargetArityTrait<2>;
-
-class ParameterArityTrait<int n> : ParamNativeOpTrait<"ParameterArityTrait", !cast<string>(n)> {
-    let cppNamespace = "::mlir::flux";
-}
-
-def ZeroParameter : ParameterArityTrait<0> {
-    let extraConcreteClassDeclaration = [{
-        ::mlir::utils::ParameterDescriptor getParameter(size_t i) {
-            llvm::report_fatal_error("Operation does not have parameters");
-        }
-
-        bool hasStaticUnitary() { return true; }
-
-        void replaceOperandWithAttr(size_t i, FloatAttr attr) {
-            llvm::report_fatal_error("Operation does not have parameters");
-        }
-    }];
-}
-
-def OneParameter : ParameterArityTrait<1>;
-
-def TwoParameter : ParameterArityTrait<2>;
-
-def ThreeParameter : ParameterArityTrait<3>;
+def OneTargetZeroParameter : TargetAndParameterArityTrait<1, 0>;
+def OneTargetOneParameter : TargetAndParameterArityTrait<1, 1>;
+def OneTargetTwoParameter : TargetAndParameterArityTrait<1, 2>;
+def TwoTargetZeroParameter : TargetAndParameterArityTrait<2, 0>;
 
 //===----------------------------------------------------------------------===//
 // Unitary Operations
 //===----------------------------------------------------------------------===//
 
-def XOp : FluxOp<"x", traits = [UnitaryOpInterface, OneTarget, ZeroParameter]> {
+def XOp : FluxOp<"x", traits = [UnitaryOpInterface, OneTargetZeroParameter]> {
     let summary = "Apply an X gate to a qubit";
     let description = [{
         Applies an X gate to a qubit and returns the transformed qubit.
@@ -288,7 +266,7 @@ def XOp : FluxOp<"x", traits = [UnitaryOpInterface, OneTarget, ZeroParameter]> {
         ```
     }];
 
-    let arguments = (ins QubitType:$qubit_in);
+    let arguments = (ins Arg<QubitType, "the target qubit", [MemRead]>:$qubit_in);
     let results = (outs QubitType:$qubit_out);
     let assemblyFormat = "$qubit_in attr-dict `:` type($qubit_in) `->` type($qubit_out)";
 
@@ -300,11 +278,10 @@ def XOp : FluxOp<"x", traits = [UnitaryOpInterface, OneTarget, ZeroParameter]> {
     let hasCanonicalizer = 1;
 }
 
-def RXOp : FluxOp<"rx", traits = [UnitaryOpInterface, OneTarget, OneParameter]> {
+def RXOp : FluxOp<"rx", traits = [UnitaryOpInterface, OneTargetOneParameter]> {
     let summary = "Apply an RX gate to a qubit";
     let description = [{
         Applies an RX gate to a qubit and returns the transformed qubit.
-        The angle theta can be provided as a static attribute or as a dynamic operand.
 
         Example:
         ```mlir
@@ -312,33 +289,27 @@ def RXOp : FluxOp<"rx", traits = [UnitaryOpInterface, OneTarget, OneParameter]> 
         ```
     }];
 
-    let arguments = (ins QubitType:$qubit_in,
-                     OptionalAttr<F64Attr>:$theta,
-                     Optional<F64>:$theta_dyn);
+    let arguments = (ins Arg<QubitType, "the target qubit", [MemRead]>:$qubit_in,
+                     Arg<F64, "the rotation angle theta in radians", [MemRead]>:$theta);
     let results = (outs QubitType:$qubit_out);
-    let assemblyFormat = "`(` ($theta^)? (`` $theta_dyn^)? `)` $qubit_in attr-dict `:` type($qubit_in) `->` type($qubit_out)";
+    let assemblyFormat = "`(` $theta `)` $qubit_in attr-dict `:` type($qubit_in) `->` type($qubit_out)";
 
     let extraClassDeclaration = [{
-        ::mlir::utils::ParameterDescriptor getParameter(size_t i);
-        void replaceOperandWithAttr(size_t i, FloatAttr attr);
-        bool hasStaticUnitary();
         DenseElementsAttr tryGetStaticMatrix();
         static StringRef getBaseSymbol() { return "rx"; }
     }];
 
     let builders = [
-        OpBuilder<(ins "Value":$qubit_in, "std::variant<double, FloatAttr, Value>":$theta)>
+        OpBuilder<(ins "Value":$qubit_in, "const std::variant<double, Value>&":$theta)>
     ];
 
     let hasCanonicalizer = 1;
-    let hasVerifier = 1;
 }
 
-def U2Op : FluxOp<"u2", traits = [UnitaryOpInterface, OneTarget, TwoParameter, AttrSizedOperandSegments]> {
+def U2Op : FluxOp<"u2", traits = [UnitaryOpInterface, OneTargetTwoParameter]> {
     let summary = "Apply a U2 gate to a qubit";
     let description = [{
         Applies a U2 gate to a qubit and returns the transformed qubit.
-        The angles phi and lambda can be provided as static attributes or as dynamic operands.
 
         Example:
         ```mlir
@@ -346,30 +317,23 @@ def U2Op : FluxOp<"u2", traits = [UnitaryOpInterface, OneTarget, TwoParameter, A
         ```
     }];
 
-    let arguments = (ins QubitType:$qubit_in,
-                     OptionalAttr<F64Attr>:$phi,
-                     Optional<F64>:$phi_dyn,
-                     OptionalAttr<F64Attr>:$lambda,
-                     Optional<F64>:$lambda_dyn);
+    let arguments = (ins Arg<QubitType, "the target qubit", [MemRead]>:$qubit_in,
+                     Arg<F64, "the rotation angle phi in radians", [MemRead]>:$phi,
+                     Arg<F64, "the rotation angle lambda in radians", [MemRead]>:$lambda);
     let results = (outs QubitType:$qubit_out);
-    let assemblyFormat = "`(` ($phi^)? (`` $phi_dyn^)? `,` ($lambda^)? ($lambda_dyn^)? `)` $qubit_in attr-dict `:` type($qubit_in) `->` type($qubit_out)";
+    let assemblyFormat = "`(` $phi `,` $lambda `)` $qubit_in attr-dict `:` type($qubit_in) `->` type($qubit_out)";
 
     let extraClassDeclaration = [{
-        ::mlir::utils::ParameterDescriptor getParameter(size_t i);
-        void replaceOperandWithAttr(size_t i, FloatAttr attr);
-        bool hasStaticUnitary();
         DenseElementsAttr tryGetStaticMatrix();
         static StringRef getBaseSymbol() { return "u2"; }
     }];
 
     let builders = [
-        OpBuilder<(ins "Value":$qubit_in, "std::variant<double, FloatAttr, Value>":$phi, "std::variant<double, FloatAttr, Value>":$lambda)>
+        OpBuilder<(ins "Value":$qubit_in, "const std::variant<double, Value>&":$phi, "const std::variant<double, Value>&":$lambda)>
     ];
-
-    let hasVerifier = 1;
 }
 
-def SWAPOp : FluxOp<"swap", traits = [UnitaryOpInterface, TwoTarget, ZeroParameter]> {
+def SWAPOp : FluxOp<"swap", traits = [UnitaryOpInterface, TwoTargetZeroParameter]> {
     let summary = "Apply a SWAP gate to two qubits";
     let description = [{
         Applies a SWAP gate to two qubits and returns the transformed qubits.
@@ -380,9 +344,10 @@ def SWAPOp : FluxOp<"swap", traits = [UnitaryOpInterface, TwoTarget, ZeroParamet
         ```
     }];
 
-    let arguments = (ins QubitType:$qubit0_in, QubitType:$qubit1_in);
+    let arguments = (ins Arg<QubitType, "the first target qubit", [MemRead]>:$qubit0_in,
+                     Arg<QubitType, "the second target qubit", [MemRead]>:$qubit1_in);
     let results = (outs QubitType:$qubit0_out, QubitType:$qubit1_out);
-    let assemblyFormat = "$qubit0_in `,` $qubit1_in attr-dict `:` type($qubit0_in) `,` type($qubit1_in) `->` type($qubit0_out) `,` type($qubit1_out)";
+    let assemblyFormat = "$qubit0_in $qubit1_in attr-dict `:` type($qubit0_in) `,` type($qubit1_in) `->` type($qubit0_out) `,` type($qubit1_out)";
 
     let extraClassDeclaration = [{
         DenseElementsAttr tryGetStaticMatrix();
@@ -448,8 +413,7 @@ def CtrlOp : FluxOp<"ctrl", traits = [UnitaryOpInterface, AttrSizedOperandSegmen
         Value getInputForOutput(Value output);
         Value getOutputForInput(Value input);
         size_t getNumParams();
-        ::mlir::utils::ParameterDescriptor getParameter(size_t i);
-        void replaceOperandWithAttr(size_t i, FloatAttr attr);
+        Value getParameter(size_t i);
         bool hasStaticUnitary();
         static DenseElementsAttr tryGetStaticMatrix();
         static StringRef getBaseSymbol() { return "ctrl"; }

@@ -21,9 +21,9 @@
 #pragma clang diagnostic pop
 #endif
 
-#include "mlir/Dialect/Utils/ParameterDescriptor.h"
-
 #include <mlir/Bytecode/BytecodeOpInterface.h>
+#include <mlir/Dialect/Arith/IR/Arith.h>
+#include <mlir/Dialect/LLVMIR/LLVMOps.h.inc>
 #include <mlir/IR/Value.h>
 #include <mlir/IR/ValueRange.h>
 #include <mlir/Interfaces/SideEffectInterfaces.h>
@@ -52,37 +52,77 @@
 
 namespace mlir::quartz {
 
-template <size_t n> class TargetArityTrait {
+/**
+ * @brief Trait for operations with a fixed number of target qubits and
+ * parameters
+ * @details This trait indicates that an operation has a fixed number of target
+ * qubits and parameters, specified by the template parameters T and P. This is
+ * helpful for defining operations with known arities, allowing for static
+ * verification and code generation optimizations.
+ * @tparam T The target arity.
+ * @tparam P The parameter arity.
+ */
+template <size_t T, size_t P> class TargetAndParameterArityTrait {
 public:
   template <typename ConcreteType>
   class Impl : public OpTrait::TraitBase<ConcreteType, Impl> {
   public:
-    size_t getNumQubits() { return n; }
-    size_t getNumTargets() { return n; }
-    size_t getNumControls() { return 0; }
-    size_t getNumPosControls() { return 0; }
-    size_t getNumNegControls() { return 0; }
+    static size_t getNumQubits() { return T; }
+    static size_t getNumTargets() { return T; }
+    static size_t getNumControls() { return 0; }
+    static size_t getNumPosControls() { return 0; }
+    static size_t getNumNegControls() { return 0; }
 
-    Value getQubit(size_t i) { return this->getOperation()->getOperand(i); }
-
-    Value getTarget(size_t i) { return this->getOperation()->getOperand(i); }
-
-    Value getPosControl(size_t i) {
-      llvm::report_fatal_error("Operation does not have controls");
+    Value getQubit(size_t i) {
+      if constexpr (T == 0) {
+        llvm::reportFatalUsageError("Operation does not have qubits");
+      }
+      return this->getOperation()->getOperand(i);
+    }
+    Value getTarget(size_t i) {
+      if constexpr (T == 0) {
+        llvm::reportFatalUsageError("Operation does not have targets");
+      }
+      return this->getOperation()->getOperand(i);
     }
 
-    Value getNegControl(size_t i) {
-      llvm::report_fatal_error("Operation does not have controls");
+    static Value getPosControl([[maybe_unused]] size_t i) {
+      llvm::reportFatalUsageError("Operation does not have controls");
     }
-  };
-};
 
-template <size_t n> class ParameterArityTrait {
-public:
-  template <typename ConcreteType>
-  class Impl : public OpTrait::TraitBase<ConcreteType, Impl> {
-  public:
-    size_t getNumParams() { return n; }
+    static Value getNegControl([[maybe_unused]] size_t i) {
+      llvm::reportFatalUsageError("Operation does not have controls");
+    }
+
+    static size_t getNumParams() { return P; }
+
+    Value getParameter(const size_t i) {
+      if (i >= P) {
+        llvm::reportFatalUsageError("Parameter index out of bounds");
+      }
+      return this->getOperation()->getOperand(T + i);
+    }
+
+    [[nodiscard]] static FloatAttr getStaticParameter(const Value param) {
+      auto constantOp = param.getDefiningOp<arith::ConstantOp>();
+      if (!constantOp) {
+        return nullptr;
+      }
+      return dyn_cast<FloatAttr>(constantOp.getValue());
+    }
+
+    bool hasStaticUnitary() {
+      if constexpr (P == 0) {
+        return true;
+      }
+      const auto& op = this->getOperation();
+      for (size_t i = 0; i < P; ++i) {
+        if (!getStaticParameter(op->getOperand(T + i))) {
+          return false;
+        }
+      }
+      return true;
+    }
   };
 };
 

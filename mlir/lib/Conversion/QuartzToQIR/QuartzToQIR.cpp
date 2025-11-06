@@ -238,7 +238,7 @@ struct ConvertQuartzStaticQIR final : StatefulOpConversionPattern<StaticOp> {
   matchAndRewrite(StaticOp op, OpAdaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
     auto* ctx = getContext();
-    const auto index = op.getIndex();
+    const auto index = static_cast<int64_t>(op.getIndex());
 
     // Get or create a pointer to the qubit
     if (getState().ptrMap.contains(index)) {
@@ -256,7 +256,7 @@ struct ConvertQuartzStaticQIR final : StatefulOpConversionPattern<StaticOp> {
     }
 
     // Track maximum qubit index
-    if (index >= getState().numQubits) {
+    if (std::cmp_greater_equal(index, getState().numQubits)) {
       getState().numQubits = index + 1;
     }
 
@@ -454,18 +454,9 @@ struct ConvertQuartzRXQIR final : StatefulOpConversionPattern<RXOp> {
     const auto fnDecl =
         getOrCreateFunctionDeclaration(rewriter, op, QIR_RX, qirSignature);
 
-    Value thetaDyn;
-    if (op.getTheta().has_value()) {
-      const auto& theta = op.getThetaAttr();
-      auto constantOp = rewriter.create<LLVM::ConstantOp>(op.getLoc(), theta);
-      thetaDyn = constantOp.getResult();
-    } else {
-      thetaDyn = op.getThetaDyn();
-    }
-
     // Replace with call to RX
     rewriter.replaceOpWithNewOp<LLVM::CallOp>(
-        op, fnDecl, ValueRange{adaptor.getQubit(), thetaDyn});
+        op, fnDecl, ValueRange{adaptor.getQubitIn(), op.getTheta()});
     return success();
   }
 };
@@ -500,27 +491,10 @@ struct ConvertQuartzU2QIR final : StatefulOpConversionPattern<U2Op> {
     const auto fnDecl =
         getOrCreateFunctionDeclaration(rewriter, op, QIR_U2, qirSignature);
 
-    Value phiDyn;
-    if (op.getPhi().has_value()) {
-      const auto& phi = op.getPhiAttr();
-      auto constantOp = rewriter.create<LLVM::ConstantOp>(op.getLoc(), phi);
-      phiDyn = constantOp.getResult();
-    } else {
-      phiDyn = op.getPhiDyn();
-    }
-
-    Value lambdaDyn;
-    if (op.getLambda().has_value()) {
-      const auto& lambda = op.getLambdaAttr();
-      auto constantOp = rewriter.create<LLVM::ConstantOp>(op.getLoc(), lambda);
-      lambdaDyn = constantOp.getResult();
-    } else {
-      lambdaDyn = op.getLambdaDyn();
-    }
-
     // Replace with call to U2
     rewriter.replaceOpWithNewOp<LLVM::CallOp>(
-        op, fnDecl, ValueRange{adaptor.getQubit(), phiDyn, lambdaDyn});
+        op, fnDecl,
+        ValueRange{adaptor.getQubitIn(), op.getPhi(), op.getLambda()});
     return success();
   }
 };

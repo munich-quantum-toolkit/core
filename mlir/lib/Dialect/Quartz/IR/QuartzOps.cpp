@@ -10,7 +10,6 @@
 
 #include "mlir/Dialect/Quartz/IR/QuartzDialect.h" // IWYU pragma: associated
 #include "mlir/Dialect/Utils/MatrixUtils.h"
-#include "mlir/Dialect/Utils/ParameterDescriptor.h"
 
 // The following headers are needed for some template instantiations.
 // IWYU pragma: begin_keep
@@ -132,111 +131,68 @@ DenseElementsAttr XOp::tryGetStaticMatrix() {
 }
 
 // RXOp
-
-ParameterDescriptor RXOp::getParameter(size_t i) {
-  if (i == 0) {
-    return {getThetaAttr(), getThetaDyn()};
-  }
-  llvm::report_fatal_error("RXOp has one parameter");
-}
-
-bool RXOp::hasStaticUnitary() { return getParameter(0).isStatic(); }
-
 DenseElementsAttr RXOp::tryGetStaticMatrix() {
-  if (!hasStaticUnitary()) {
+  const auto& theta = getStaticParameter(getTheta());
+  if (!theta) {
     return nullptr;
   }
+  const auto thetaValue = theta.getValueAsDouble();
   auto* ctx = getContext();
   const auto& complexType = ComplexType::get(Float64Type::get(ctx));
   const auto& type = RankedTensorType::get({2, 2}, complexType);
-  const auto& theta = getTheta().value().convertToDouble();
-  return DenseElementsAttr::get(type, getMatrixRX(theta));
+  return DenseElementsAttr::get(type, getMatrixRX(thetaValue));
 }
 
-void RXOp::build(OpBuilder& builder, OperationState& state, Value qubitIn,
-                 std::variant<double, FloatAttr, Value> theta) {
-  FloatAttr thetaAttr = nullptr;
+void RXOp::build(OpBuilder& odsBuilder, OperationState& odsState,
+                 const Value qubit_in,
+                 const std::variant<double, Value>& theta) {
   Value thetaOperand = nullptr;
   if (std::holds_alternative<double>(theta)) {
-    thetaAttr = builder.getF64FloatAttr(std::get<double>(theta));
-  } else if (std::holds_alternative<FloatAttr>(theta)) {
-    thetaAttr = std::get<FloatAttr>(theta);
+    thetaOperand = odsBuilder.create<arith::ConstantOp>(
+        odsState.location, odsBuilder.getF64FloatAttr(std::get<double>(theta)));
   } else {
     thetaOperand = std::get<Value>(theta);
   }
-  build(builder, state, qubitIn, thetaAttr, thetaOperand);
-}
-
-LogicalResult RXOp::verify() {
-  if (getTheta().has_value() == (getThetaDyn() != nullptr)) {
-    return emitOpError("must specify exactly one of static or dynamic theta");
-  }
-  return success();
+  build(odsBuilder, odsState, qubit_in, thetaOperand);
 }
 
 // U2Op
 
-ParameterDescriptor U2Op::getParameter(size_t i) {
-  if (i == 0) {
-    return {getPhiAttr(), getPhiDyn()};
-  }
-  if (i == 1) {
-    return {getLambdaAttr(), getLambdaDyn()};
-  }
-  llvm::report_fatal_error("U2Op has two parameters");
-}
-
-bool U2Op::hasStaticUnitary() {
-  return (getParameter(0).isStatic() && getParameter(1).isStatic());
-}
-
 DenseElementsAttr U2Op::tryGetStaticMatrix() {
-  if (!hasStaticUnitary()) {
+  const auto phi = getStaticParameter(getPhi());
+  const auto lambda = getStaticParameter(getLambda());
+  if (!phi || !lambda) {
     return nullptr;
   }
+  const auto phiValue = phi.getValueAsDouble();
+  const auto lambdaValue = lambda.getValueAsDouble();
   auto* ctx = getContext();
   const auto& complexType = ComplexType::get(Float64Type::get(ctx));
   const auto& type = RankedTensorType::get({2, 2}, complexType);
-  const auto& phi = getPhi().value().convertToDouble();
-  const auto& lambda = getLambda().value().convertToDouble();
-  return DenseElementsAttr::get(type, getMatrixU2(phi, lambda));
+  return DenseElementsAttr::get(type, getMatrixU2(phiValue, lambdaValue));
 }
 
-void U2Op::build(OpBuilder& builder, OperationState& state, Value qubitIn,
-                 std::variant<double, FloatAttr, Value> phi,
-                 std::variant<double, FloatAttr, Value> lambda) {
-  FloatAttr phiAttr = nullptr;
+void U2Op::build(OpBuilder& odsBuilder, OperationState& odsState,
+                 const Value qubit_in, const std::variant<double, Value>& phi,
+                 const std::variant<double, Value>& lambda) {
   Value phiOperand = nullptr;
   if (std::holds_alternative<double>(phi)) {
-    phiAttr = builder.getF64FloatAttr(std::get<double>(phi));
-  } else if (std::holds_alternative<FloatAttr>(phi)) {
-    phiAttr = std::get<FloatAttr>(phi);
+    phiOperand = odsBuilder.create<arith::ConstantOp>(
+        odsState.location, odsBuilder.getF64FloatAttr(std::get<double>(phi)));
   } else {
     phiOperand = std::get<Value>(phi);
   }
 
-  FloatAttr lambdaAttr = nullptr;
   Value lambdaOperand = nullptr;
   if (std::holds_alternative<double>(lambda)) {
-    lambdaAttr = builder.getF64FloatAttr(std::get<double>(lambda));
-  } else if (std::holds_alternative<FloatAttr>(lambda)) {
-    lambdaAttr = std::get<FloatAttr>(lambda);
+    lambdaOperand = odsBuilder.create<arith::ConstantOp>(
+        odsState.location,
+        odsBuilder.getF64FloatAttr(std::get<double>(lambda)));
   } else {
     lambdaOperand = std::get<Value>(lambda);
   }
 
-  build(builder, state, qubitIn, phiAttr, phiOperand, lambdaAttr,
-        lambdaOperand);
-}
-
-LogicalResult U2Op::verify() {
-  if (getPhi().has_value() == (getPhiDyn() != nullptr)) {
-    return emitOpError("must specify exactly one of static or dynamic phi");
-  }
-  if (getLambda().has_value() == (getLambdaDyn() != nullptr)) {
-    return emitOpError("must specify exactly one of static or dynamic lambda");
-  }
-  return success();
+  build(odsBuilder, odsState, qubit_in, phiOperand, lambdaOperand);
 }
 
 // SWAPOp
@@ -284,7 +240,7 @@ Value CtrlOp::getQubit(size_t i) {
   if (getNumTargets() + getNumPosControls() <= i && i < getNumQubits()) {
     return getNegControl(i - getNumTargets() - getNumPosControls());
   }
-  llvm::report_fatal_error("Invalid qubit index");
+  llvm::reportFatalUsageError("Invalid qubit index");
 }
 
 Value CtrlOp::getTarget(size_t i) {
@@ -309,13 +265,13 @@ bool CtrlOp::hasStaticUnitary() {
   return unitaryOp.hasStaticUnitary();
 }
 
-ParameterDescriptor CtrlOp::getParameter(size_t i) {
+Value CtrlOp::getParameter(size_t i) {
   auto unitaryOp = getBodyUnitary();
   return unitaryOp.getParameter(i);
 }
 
 DenseElementsAttr CtrlOp::tryGetStaticMatrix() {
-  llvm::report_fatal_error("Not implemented yet"); // TODO
+  llvm::reportFatalUsageError("Not implemented yet"); // TODO
 }
 
 LogicalResult CtrlOp::verify() {

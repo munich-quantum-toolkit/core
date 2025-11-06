@@ -79,10 +79,10 @@ Value FluxProgramBuilder::staticQubit(const int64_t index) {
   return qubit;
 }
 
-llvm::SmallVector<Value>
+SmallVector<Value>
 FluxProgramBuilder::allocQubitRegister(const int64_t size,
                                        const StringRef name) {
-  llvm::SmallVector<Value> qubits;
+  SmallVector<Value> qubits;
   qubits.reserve(static_cast<size_t>(size));
 
   auto nameAttr = builder.getStringAttr(name);
@@ -113,7 +113,7 @@ void FluxProgramBuilder::validateQubitValue(const Value qubit) const {
     llvm::errs() << "Error: Attempting to use an invalid qubit SSA value. "
                  << "The value may have been consumed by a previous operation "
                  << "or was never created through this builder.\n";
-    llvm::report_fatal_error(
+    llvm::reportFatalUsageError(
         "Invalid qubit value used (either consumed or not tracked)");
   }
 }
@@ -188,7 +188,7 @@ Value FluxProgramBuilder::x(Value qubit) {
   return qubitOut;
 }
 
-Value FluxProgramBuilder::rx(std::variant<double, FloatAttr, Value> theta,
+Value FluxProgramBuilder::rx(const std::variant<double, Value>& theta,
                              Value qubit) {
   auto rxOp = builder.create<RXOp>(loc, qubit, theta);
   const auto& qubitOut = rxOp.getQubitOut();
@@ -199,8 +199,8 @@ Value FluxProgramBuilder::rx(std::variant<double, FloatAttr, Value> theta,
   return qubitOut;
 }
 
-Value FluxProgramBuilder::u2(std::variant<double, FloatAttr, Value> phi,
-                             std::variant<double, FloatAttr, Value> lambda,
+Value FluxProgramBuilder::u2(const std::variant<double, Value>& phi,
+                             const std::variant<double, Value>& lambda,
                              Value qubit) {
   auto u2Op = builder.create<U2Op>(loc, qubit, phi, lambda);
   const auto& qubitOut = u2Op.getQubitOut();
@@ -245,10 +245,10 @@ std::pair<SmallVector<Value>, SmallVector<Value>> FluxProgramBuilder::ctrl(
   const auto& targetsOut = ctrlOp.getTargetsOut();
 
   // Update tracking
-  for (const auto& [control, controlOut] : llvm::zip(controls, controlsOut)) {
+  for (const auto& [control, controlOut] : zip(controls, controlsOut)) {
     updateQubitTracking(control, controlOut);
   }
-  for (const auto& [target, targetOut] : llvm::zip(targets, targetsOut)) {
+  for (const auto& [target, targetOut] : zip(targets, targetsOut)) {
     updateQubitTracking(target, targetOut);
   }
 

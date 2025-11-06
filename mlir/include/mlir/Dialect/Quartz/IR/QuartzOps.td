@@ -229,48 +229,21 @@ def ResetOp : QuartzOp<"reset"> {
 // Traits
 //===----------------------------------------------------------------------===//
 
-class TargetArityTrait<int n> : ParamNativeOpTrait<"TargetArityTrait", !cast<string>(n)> {
+class TargetAndParameterArityTrait<int T, int P>
+        : ParamNativeOpTrait<"TargetAndParameterArityTrait", !strconcat(!cast<string>(T), ",", !cast<string>(P))> {
     let cppNamespace = "::mlir::quartz";
 }
 
-def OneTarget : TargetArityTrait<1> {
-    let extraConcreteClassDeclaration = [{
-        Value getQubit(size_t i) {
-            if (i == 0) {
-                return getQubit();
-            }
-            llvm::report_fatal_error("Operation has one input qubit");
-        }
-    }];
-}
-
-def TwoTarget : TargetArityTrait<2>;
-
-class ParameterArityTrait<int n> : ParamNativeOpTrait<"ParameterArityTrait", !cast<string>(n)> {
-    let cppNamespace = "::mlir::quartz";
-}
-
-def ZeroParameter : ParameterArityTrait<0> {
-    let extraConcreteClassDeclaration = [{
-        ::mlir::utils::ParameterDescriptor getParameter(size_t i) {
-            llvm::report_fatal_error("Operation does not have parameters");
-        }
-
-        bool hasStaticUnitary() { return true; }
-    }];
-}
-
-def OneParameter : ParameterArityTrait<1>;
-
-def TwoParameter : ParameterArityTrait<2>;
-
-def ThreeParameter : ParameterArityTrait<2>;
+def OneTargetZeroParameter : TargetAndParameterArityTrait<1, 0>;
+def OneTargetOneParameter : TargetAndParameterArityTrait<1, 1>;
+def OneTargetTwoParameter : TargetAndParameterArityTrait<1, 2>;
+def TwoTargetZeroParameter : TargetAndParameterArityTrait<2, 0>;
 
 //===----------------------------------------------------------------------===//
 // Unitary Operations
 //===----------------------------------------------------------------------===//
 
-def XOp : QuartzOp<"x", traits = [UnitaryOpInterface, OneTarget, ZeroParameter]> {
+def XOp : QuartzOp<"x", traits = [UnitaryOpInterface, OneTargetZeroParameter]> {
     let summary = "Apply an X gate to a qubit";
     let description = [{
         Applies an X gate to a qubit, modifying it in place.
@@ -281,8 +254,8 @@ def XOp : QuartzOp<"x", traits = [UnitaryOpInterface, OneTarget, ZeroParameter]>
         ```
     }];
 
-    let arguments = (ins QubitType:$qubit);
-    let assemblyFormat = "$qubit attr-dict";
+    let arguments = (ins Arg<QubitType, "the target qubit", [MemRead, MemWrite]>:$qubit_in);
+    let assemblyFormat = "$qubit_in attr-dict";
 
     let extraClassDeclaration = [{
         DenseElementsAttr tryGetStaticMatrix();
@@ -290,11 +263,10 @@ def XOp : QuartzOp<"x", traits = [UnitaryOpInterface, OneTarget, ZeroParameter]>
     }];
 }
 
-def RXOp : QuartzOp<"rx", traits = [UnitaryOpInterface, OneTarget, OneParameter]> {
+def RXOp : QuartzOp<"rx", traits = [UnitaryOpInterface, OneTargetOneParameter]> {
     let summary = "Apply an RX gate to a qubit";
     let description = [{
         Applies an RX gate to a qubit, modifying it in place.
-        The angle theta can be provided as a static attribute or as a dynamic operand.
 
         Example:
         ```mlir
@@ -302,30 +274,24 @@ def RXOp : QuartzOp<"rx", traits = [UnitaryOpInterface, OneTarget, OneParameter]
         ```
     }];
 
-    let arguments = (ins QubitType:$qubit,
-                     OptionalAttr<F64Attr>:$theta,
-                     Optional<F64>:$theta_dyn);
-    let assemblyFormat = "`(` ($theta^)? (`` $theta_dyn^)? `)` $qubit attr-dict";
+    let arguments = (ins Arg<QubitType, "the target qubit", [MemRead, MemWrite]>:$qubit_in,
+                     Arg<F64, "the rotation angle theta in radians", [MemRead]>:$theta);
+    let assemblyFormat = "`(` $theta `)` $qubit_in attr-dict";
 
     let extraClassDeclaration = [{
-        ::mlir::utils::ParameterDescriptor getParameter(size_t i);
-        bool hasStaticUnitary();
         DenseElementsAttr tryGetStaticMatrix();
         static StringRef getBaseSymbol() { return "rx"; }
     }];
 
     let builders = [
-        OpBuilder<(ins "Value":$qubit_in, "std::variant<double, FloatAttr, Value>":$theta)>
+        OpBuilder<(ins "Value":$qubit_in, "const std::variant<double, Value>&":$theta)>
     ];
-
-    let hasVerifier = 1;
 }
 
-def U2Op : QuartzOp<"u2", traits = [UnitaryOpInterface, OneTarget, TwoParameter, AttrSizedOperandSegments]> {
+def U2Op : QuartzOp<"u2", traits = [UnitaryOpInterface, OneTargetTwoParameter]> {
     let summary = "Apply a U2 gate to a qubit";
     let description = [{
         Applies a U2 gate to a qubit, modifying it in place.
-        The angles phi and lambda can be provided as static attributes or as dynamic operands.
 
         Example:
         ```mlir
@@ -333,28 +299,21 @@ def U2Op : QuartzOp<"u2", traits = [UnitaryOpInterface, OneTarget, TwoParameter,
         ```
     }];
 
-    let arguments = (ins QubitType:$qubit,
-                     OptionalAttr<F64Attr>:$phi,
-                     Optional<F64>:$phi_dyn,
-                     OptionalAttr<F64Attr>:$lambda,
-                     Optional<F64>:$lambda_dyn);
-    let assemblyFormat = "`(` ($phi^)? (`` $phi_dyn^)? `,` ($lambda^)? ($lambda_dyn^)? `)` $qubit attr-dict";
-
+    let arguments = (ins Arg<QubitType, "the target qubit", [MemRead, MemWrite]>:$qubit_in,
+                     Arg<F64, "the rotation angle phi in radians", [MemRead]>:$phi,
+                     Arg<F64, "the rotation angle lambda in radians", [MemRead]>:$lambda);
+    let assemblyFormat = "`(` $phi `,` $lambda `)` $qubit_in attr-dict";
     let extraClassDeclaration = [{
-        ::mlir::utils::ParameterDescriptor getParameter(size_t i);
-        bool hasStaticUnitary();
         DenseElementsAttr tryGetStaticMatrix();
         static StringRef getBaseSymbol() { return "u2"; }
     }];
 
     let builders = [
-        OpBuilder<(ins "Value":$qubit_in, "std::variant<double, FloatAttr, Value>":$phi, "std::variant<double, FloatAttr, Value>":$lambda)>
+        OpBuilder<(ins "Value":$qubit_in, "const std::variant<double, Value>&":$phi, "const std::variant<double, Value>&":$lambda)>
     ];
-
-    let hasVerifier = 1;
 }
 
-def SWAPOp : QuartzOp<"swap", traits = [UnitaryOpInterface, TwoTarget, ZeroParameter]> {
+def SWAPOp : QuartzOp<"swap", traits = [UnitaryOpInterface, TwoTargetZeroParameter]> {
     let summary = "Apply a SWAP gate to two qubits";
     let description = [{
         Applies a SWAP gate to two qubits, modifying them in place.
@@ -365,8 +324,9 @@ def SWAPOp : QuartzOp<"swap", traits = [UnitaryOpInterface, TwoTarget, ZeroParam
         ```
     }];
 
-    let arguments = (ins QubitType:$qubit0, QubitType:$qubit1);
-    let assemblyFormat = "$qubit0 `,` $qubit1 attr-dict";
+    let arguments = (ins Arg<QubitType, "the first target qubit", [MemRead, MemWrite]>:$qubit0,
+                     Arg<QubitType, "the second target qubit", [MemRead, MemWrite]>:$qubit1);
+    let assemblyFormat = "$qubit0 $qubit1 attr-dict";
 
     let extraClassDeclaration = [{
         DenseElementsAttr tryGetStaticMatrix();
@@ -417,7 +377,7 @@ def CtrlOp : QuartzOp<"ctrl", traits = [UnitaryOpInterface]> {
         Value getPosControl(size_t i);
         Value getNegControl(size_t i);
         size_t getNumParams();
-        ::mlir::utils::ParameterDescriptor getParameter(size_t i);
+        Value getParameter(size_t i);
         bool hasStaticUnitary();
         static DenseElementsAttr tryGetStaticMatrix();
         static StringRef getBaseSymbol() { return "ctrl"; }

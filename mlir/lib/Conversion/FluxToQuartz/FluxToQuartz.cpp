@@ -285,11 +285,8 @@ struct ConvertFluxRXOp final : OpConversionPattern<flux::RXOp> {
     // OpAdaptor provides the already type-converted input qubit
     const auto& quartzQubit = adaptor.getQubitIn();
 
-    const auto& theta = op.getThetaAttr();
-    const auto& thetaDyn = op.getThetaDyn();
-
     // Create quartz.rx (in-place operation, no result)
-    rewriter.create<quartz::RXOp>(op.getLoc(), quartzQubit, theta, thetaDyn);
+    rewriter.create<quartz::RXOp>(op.getLoc(), quartzQubit, adaptor.getTheta());
 
     // Replace the output qubit with the same quartz reference
     rewriter.replaceOp(op, quartzQubit);
@@ -319,15 +316,9 @@ struct ConvertFluxU2Op final : OpConversionPattern<flux::U2Op> {
     // OpAdaptor provides the already type-converted input qubit
     const auto& quartzQubit = adaptor.getQubitIn();
 
-    const auto& phi = op.getPhiAttr();
-    const auto& phiDyn = op.getPhiDyn();
-
-    const auto& lambda = op.getLambdaAttr();
-    const auto& lambdaDyn = op.getLambdaDyn();
-
     // Create quartz.u2 (in-place operation, no result)
-    rewriter.create<quartz::U2Op>(op.getLoc(), quartzQubit, phi, phiDyn, lambda,
-                                  lambdaDyn);
+    rewriter.create<quartz::U2Op>(op.getLoc(), quartzQubit, adaptor.getPhi(),
+                                  adaptor.getLambda());
 
     // Replace the output qubit with the same quartz reference
     rewriter.replaceOp(op, quartzQubit);

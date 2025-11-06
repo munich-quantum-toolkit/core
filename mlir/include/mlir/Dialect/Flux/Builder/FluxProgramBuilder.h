@@ -279,7 +279,7 @@ public:
    * %q_out = flux.rx(1.0) %q_in : !flux.qubit -> !flux.qubit
    * ```
    */
-  Value rx(std::variant<double, FloatAttr, Value> theta, Value qubit);
+  Value rx(const std::variant<double, Value>& theta, Value qubit);
 
   /**
    * @brief Apply a U2 gate to a qubit
@@ -301,8 +301,8 @@ public:
    * %q_out = flux.u2(1.0, 0.5) %q_in : !flux.qubit -> !flux.qubit
    * ```
    */
-  Value u2(std::variant<double, FloatAttr, Value> phi,
-           std::variant<double, FloatAttr, Value> lambda, Value qubit);
+  Value u2(const std::variant<double, Value>& phi,
+           const std::variant<double, Value>& lambda, Value qubit);
 
   /**
    * @brief Apply a SWAP gate to two qubits
