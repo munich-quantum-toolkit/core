@@ -49,7 +49,7 @@ jobs:
 
       - name: Setup LLVM/MLIR (Linux)
         if: runner.os == 'Linux'
-        run: bash .github/scripts/setup-mlir-linux.sh -t ${{ matrix.llvm-version }}.1.5
+        run: bash .github/scripts/build-and-setup-mlir-linux.sh -t ${{ matrix.llvm-version }}.1.5
 
       - name: Setup LLVM/MLIR (macOS)
         if: runner.os == 'macOS'
