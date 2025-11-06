@@ -40,6 +40,10 @@ struct GateDecompositionPattern final
                   mlir::PatternRewriter& rewriter) const override {
     auto series = TwoQubitSeries::getTwoQubitSeries(op);
     llvm::errs() << "SERIES SIZE: " << series.gates.size() << '\n';
+    for (auto&& gate : series.gates) {
+      std::cerr << gate.op->getName().stripDialect().str() << ", ";
+    }
+    std::cerr << '\n';
 
     if (series.gates.size() < 3) {
       // too short
@@ -53,13 +57,16 @@ struct GateDecompositionPattern final
 
     matrix4x4 unitaryMatrix =
         helpers::kroneckerProduct(identityGate, identityGate);
+    int i{};
     for (auto&& gate : series.gates) {
       auto gateMatrix =
           getTwoQubitMatrix({.type = helpers::getQcType(gate.op),
                              .parameter = helpers::getParameters(gate.op),
                              .qubit_id = gate.qubitIds});
       unitaryMatrix = helpers::multiply(gateMatrix, unitaryMatrix);
+      helpers::print(gateMatrix, "GATE MATRIX " + std::to_string(i++), true);
     }
+    helpers::print(unitaryMatrix, "UNITARY MATRIX", true);
 
     auto decomposer = TwoQubitBasisDecomposer::new_inner();
     auto sequence = decomposer.twoQubitDecompose(
@@ -71,7 +78,8 @@ struct GateDecompositionPattern final
     if (sequence->complexity() >= series.complexity) {
       // TODO: add more sophisticated metric to determine complexity of
       // series/sequence
-      llvm::errs() << "SEQUENCE LONGER THAN INPUT!\n";
+      llvm::errs() << "SEQUENCE LONGER THAN INPUT (" << sequence->gates.size()
+                   << ")\n";
       return mlir::failure();
     }
 
@@ -721,28 +729,18 @@ struct GateDecompositionPattern final
       using helpers::transpose;
       auto& u = unitary_matrix;
       auto det_u = determinant(u);
+      std::cerr << "DET_U: " << det_u << '\n';
       auto det_pow = std::pow(det_u, static_cast<fp>(-0.25));
       llvm::transform(u, u.begin(), [&](auto&& x) { return x * det_pow; });
-      llvm::errs() << "===== U =====\n";
-      helpers::print(u);
+      helpers::print(u, "U", true);
       auto global_phase = std::arg(det_u) / 4.;
       auto u_p = magic_basis_transform(u, MagicBasisTransform::OutOf);
-      llvm::errs() << "===== U_P =====\n";
-      helpers::print(u_p);
+      helpers::print(u_p, "U_P", true);
       auto m2 = dot(transpose(u_p), u_p);
       auto default_euler_basis = EulerBasis::ZYZ;
-      llvm::errs() << "===== M2 =====\n";
-      helpers::print(m2);
+      helpers::print(m2, "M2", true);
 
-      // arma::Mat<qfp> U(4, 4);
-      // for (int i = 0; i < 4; ++i) {
-      // for (int j = 0; j < 4; ++j) {
-      // U.at(j, i) = u_p[j * 4 + i];
-      // }
-      // }
-      // auto x = U.st() * U;
-      // std::cerr << "ARMA\n" << U.t() << "\n\n" << U << "\n\n" << x <<
-      // std::endl;
+      std::cerr << "DET_U after division: " << determinant(u) << '\n';
 
       // M2 is a symmetric complex matrix. We need to decompose it as M2 = P D
       // P^T where P ∈ SO(4), D is diagonal with unit-magnitude elements.
@@ -789,8 +787,8 @@ struct GateDecompositionPattern final
                         [](auto&& x) { return qfp(x, 0.0); });
         auto d_inner = diagonal(dot(dot(transpose(p_inner), m2), p_inner));
 
-        helpers::print(d_inner, "D_INNER");
-        helpers::print(p_inner, "P_INNER");
+        helpers::print(d_inner, "D_INNER", true);
+        helpers::print(p_inner, "P_INNER", true);
         matrix4x4 diag_d{}; // zero initialization
         diag_d[0 * 4 + 0] = d_inner[0];
         diag_d[1 * 4 + 1] = d_inner[1];
