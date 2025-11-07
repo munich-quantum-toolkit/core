@@ -1,4 +1,4 @@
-name: 🐉 • Tests (vendored)
+name: 🐉 • Tests (pre-built)
 on:
   workflow_call:
 
@@ -108,11 +108,16 @@ jobs:
 
       # Test
       - name: Run lit tests
+        if: runner.os != 'Windows'
         run: |
           for i in {1..10}; do
             echo "=== Lit Test Run $i ==="
             cmake --build build --config ${{ matrix.coverage && 'Debug' || 'Release' }} --target mqt-core-mlir-lit-test
           done
+
+      - name: Run lit tests (Windows)
+        if: runner.os == 'Windows'
+        run: cmake --build build --config ${{ matrix.coverage && 'Debug' || 'Release' }} --target mqt-core-mlir-lit-test
 
       - name: Run unit tests
         run: ctest -C ${{ matrix.coverage && 'Debug' || 'Release' }} --output-on-failure --test-dir build/mlir --repeat until-fail:50 --timeout 600
