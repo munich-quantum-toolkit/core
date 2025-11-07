@@ -239,7 +239,7 @@ jobs:
       runs-on: ${{ matrix.runs-on }}
 
   mlir-tests:
-    name: 🐉 Test (vendored)
+    name: 🐉 Test (pre-built)
     needs: change-detection
     if: fromJSON(needs.change-detection.outputs.run-mlir)
     uses: ./.github/workflows/reusable-mlir-tests.yml
