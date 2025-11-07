@@ -103,8 +103,7 @@ LLVM::LLVMFuncOp getOrCreateFunctionDeclaration(OpBuilder& builder,
     fnDecl = builder.create<LLVM::LLVMFuncOp>(op->getLoc(), fnName, fnType);
 
     // Add irreversible attribute to irreversible quantum operations
-    if (fnName == QIR_MEASURE || fnName == QIR_QUBIT_RELEASE ||
-        fnName == QIR_RESET) {
+    if (fnName == QIR_MEASURE || fnName == QIR_RESET) {
       fnDecl->setAttr("passthrough", builder.getStrArrayAttr({"irreversible"}));
     }
   }

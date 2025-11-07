@@ -91,58 +91,60 @@ void QIRProgramBuilder::initialize() {
   builder.setInsertionPointToStart(bodyBlock);
 }
 
-Value QIRProgramBuilder::allocQubit() {
-  // Create function signature: () -> ptr
-  const auto qirSignature = LLVM::LLVMFunctionType::get(
-      LLVM::LLVMPointerType::get(builder.getContext()), {});
-
-  auto fnDecl = getOrCreateFunctionDeclaration(
-      builder, module, QIR_QUBIT_ALLOCATE, qirSignature);
-
-  // Call qubit_allocate
-  auto callOp = builder.create<LLVM::CallOp>(loc, fnDecl, ValueRange{});
-  const auto qubit = callOp.getResult();
-
-  // Track for automatic deallocation
-  allocatedQubits.insert(qubit);
-
-  // Update counts
-  metadata_.numQubits++;
-  metadata_.useDynamicQubit = true;
-
-  return qubit;
-}
-
 Value QIRProgramBuilder::staticQubit(const int64_t index) {
   // Check cache
-  if (staticQubitCache.contains(index)) {
-    return staticQubitCache.at(index);
+  Value val{};
+  if (const auto it = ptrCache.find(index); it != ptrCache.end()) {
+    val = it->second;
+  } else {
+    val = createPointerFromIndex(builder, loc, index);
+    // Cache for reuse
+    ptrCache[index] = val;
   }
-
-  // Use common utility function to create pointer from index
-  const auto qubit = createPointerFromIndex(builder, loc, index);
-
-  // Cache for reuse
-  staticQubitCache[index] = qubit;
 
   // Update qubit count
   if (std::cmp_greater_equal(index, metadata_.numQubits)) {
     metadata_.numQubits = static_cast<size_t>(index) + 1;
   }
 
-  return qubit;
+  return val;
 }
 
-llvm::SmallVector<Value>
-QIRProgramBuilder::allocQubitRegister(const int64_t size) {
-  llvm::SmallVector<Value> qubits;
+SmallVector<Value> QIRProgramBuilder::allocQubitRegister(const int64_t size) {
+  SmallVector<Value> qubits;
   qubits.reserve(size);
 
   for (int64_t i = 0; i < size; ++i) {
-    qubits.push_back(allocQubit());
+    qubits.push_back(staticQubit(static_cast<int64_t>(metadata_.numQubits)));
   }
 
   return qubits;
+}
+
+QIRProgramBuilder::ClassicalRegister&
+QIRProgramBuilder::allocClassicalBitRegister(const int64_t size,
+                                             StringRef name) {
+  // Save current insertion point
+  const OpBuilder::InsertionGuard insertGuard(builder);
+
+  // Insert in measurements block (before branch)
+  builder.setInsertionPoint(measurementsBlock->getTerminator());
+
+  const auto numResults = static_cast<int64_t>(metadata_.numResults);
+  auto& reg = allocatedClassicalRegisters.emplace_back(name, size);
+  for (int64_t i = 0; i < size; ++i) {
+    Value val{};
+    if (const auto it = ptrCache.find(numResults + i); it != ptrCache.end()) {
+      val = it->second;
+    } else {
+      val = createPointerFromIndex(builder, loc, numResults + i);
+      // Cache for reuse
+      ptrCache[numResults + i] = val;
+    }
+    registerResultMap.insert({{name, i}, val});
+  }
+  metadata_.numResults += size;
+  return reg;
 }
 
 Value QIRProgramBuilder::measure(const Value qubit, const int64_t resultIndex) {
@@ -152,20 +154,28 @@ Value QIRProgramBuilder::measure(const Value qubit, const int64_t resultIndex) {
   // Insert in measurements block (before branch)
   builder.setInsertionPoint(measurementsBlock->getTerminator());
 
-  auto ptrType = LLVM::LLVMPointerType::get(builder.getContext());
+  const auto key = std::make_pair("c", resultIndex);
+  if (const auto it = registerResultMap.find(key);
+      it != registerResultMap.end()) {
+    return it->second;
+  }
 
-  // Get or create result pointer (separate from qubit pointers)
-  Value resultValue = nullptr;
-  if (resultPointerCache.contains(resultIndex)) {
-    resultValue = resultPointerCache.at(resultIndex);
+  Value resultValue{};
+  if (const auto it = ptrCache.find(resultIndex); it != ptrCache.end()) {
+    resultValue = it->second;
   } else {
     resultValue = createPointerFromIndex(builder, loc, resultIndex);
-    resultPointerCache[resultIndex] = resultValue;
-    registerResultMap.insert({{"c", resultIndex}, resultValue});
-    metadata_.numResults++;
+    ptrCache[resultIndex] = resultValue;
+    registerResultMap.insert({key, resultValue});
+  }
+
+  // Update result count
+  if (std::cmp_greater_equal(resultIndex, metadata_.numResults)) {
+    metadata_.numResults = static_cast<size_t>(resultIndex) + 1;
   }
 
   // Create mz call
+  auto ptrType = LLVM::LLVMPointerType::get(builder.getContext());
   const auto mzSignature = LLVM::LLVMFunctionType::get(
       LLVM::LLVMVoidType::get(builder.getContext()), {ptrType, ptrType});
   auto mzDecl =
@@ -176,33 +186,22 @@ Value QIRProgramBuilder::measure(const Value qubit, const int64_t resultIndex) {
 }
 
 QIRProgramBuilder& QIRProgramBuilder::measure(const Value qubit,
-                                              const StringRef registerName,
-                                              const int64_t registerIndex) {
+                                              const Bit& bit) {
   // Save current insertion point
   const OpBuilder::InsertionGuard insertGuard(builder);
 
   // Insert in measurements block (before branch)
   builder.setInsertionPoint(measurementsBlock->getTerminator());
 
-  auto ptrType = LLVM::LLVMPointerType::get(builder.getContext());
-
   // Check if we already have a result pointer for this register slot
+  const auto& registerName = bit.registerName;
+  const auto registerIndex = bit.registerIndex;
   const auto key = std::make_pair(registerName, registerIndex);
-
-  Value resultValue = nullptr;
-  if (const auto it = registerResultMap.find(key);
-      it != registerResultMap.end()) {
-    resultValue = it->second;
-  } else {
-    resultValue = createPointerFromIndex(
-        builder, loc, static_cast<int64_t>(metadata_.numResults));
-    // Cache for reuse
-    resultPointerCache[metadata_.numResults] = resultValue;
-    registerResultMap.insert({key, resultValue});
-    metadata_.numResults++;
-  }
+  assert(registerResultMap.contains(key));
+  const auto resultValue = registerResultMap.at(key);
 
   // Create mz call
+  auto ptrType = LLVM::LLVMPointerType::get(builder.getContext());
   const auto mzSignature = LLVM::LLVMFunctionType::get(
       LLVM::LLVMVoidType::get(builder.getContext()), {ptrType, ptrType});
   auto mzDecl =
@@ -272,8 +271,9 @@ QIRProgramBuilder& QIRProgramBuilder::cx(const Value control,
   return *this;
 }
 
-QIRProgramBuilder& QIRProgramBuilder::rx(std::variant<double, Value> theta,
-                                         const Value qubit) {
+QIRProgramBuilder&
+QIRProgramBuilder::rx(const std::variant<double, Value>& theta,
+                      const Value qubit) {
   // Save current insertion point
   const OpBuilder::InsertionGuard entryGuard(builder);
 
@@ -309,9 +309,10 @@ QIRProgramBuilder& QIRProgramBuilder::rx(std::variant<double, Value> theta,
   return *this;
 }
 
-QIRProgramBuilder& QIRProgramBuilder::u2(std::variant<double, Value> phi,
-                                         std::variant<double, Value> lambda,
-                                         const Value qubit) {
+QIRProgramBuilder&
+QIRProgramBuilder::u2(const std::variant<double, Value>& phi,
+                      const std::variant<double, Value>& lambda,
+                      const Value qubit) {
   // Save current insertion point
   const OpBuilder::InsertionGuard entryGuard(builder);
 
@@ -380,30 +381,6 @@ QIRProgramBuilder& QIRProgramBuilder::swap(const Value qubit0,
 }
 
 //===----------------------------------------------------------------------===//
-// Deallocation
-//===----------------------------------------------------------------------===//
-
-QIRProgramBuilder& QIRProgramBuilder::dealloc(const Value qubit) {
-  allocatedQubits.erase(qubit);
-
-  // Save current insertion point
-  const OpBuilder::InsertionGuard insertGuard(builder);
-
-  // Insert in measurements block (before branch)
-  builder.setInsertionPoint(measurementsBlock->getTerminator());
-
-  // Create release call
-  const auto qirSignature = LLVM::LLVMFunctionType::get(
-      LLVM::LLVMVoidType::get(builder.getContext()),
-      LLVM::LLVMPointerType::get(builder.getContext()));
-  auto fnDecl = getOrCreateFunctionDeclaration(builder, module,
-                                               QIR_QUBIT_RELEASE, qirSignature);
-  builder.create<LLVM::CallOp>(loc, fnDecl, ValueRange{qubit});
-
-  return *this;
-}
-
-//===----------------------------------------------------------------------===//
 // Finalization
 //===----------------------------------------------------------------------===//
 
@@ -421,21 +398,20 @@ void QIRProgramBuilder::generateOutputRecording() {
   auto ptrType = LLVM::LLVMPointerType::get(builder.getContext());
 
   // Group measurements by register
-  llvm::StringMap<llvm::SmallVector<std::pair<int64_t, Value>>> registerGroups;
+  llvm::StringMap<SmallVector<std::pair<int64_t, Value>>> registerGroups;
   for (const auto& [key, resultPtr] : registerResultMap) {
     const auto& [regName, regIdx] = key;
     registerGroups[regName].emplace_back(regIdx, resultPtr);
   }
 
   // Sort registers by name for deterministic output
-  llvm::SmallVector<
-      std::pair<llvm::StringRef, llvm::SmallVector<std::pair<int64_t, Value>>>>
+  SmallVector<std::pair<StringRef, SmallVector<std::pair<int64_t, Value>>>>
       sortedRegisters;
   for (auto& [name, measurements] : registerGroups) {
     sortedRegisters.emplace_back(name, std::move(measurements));
   }
-  llvm::sort(sortedRegisters,
-             [](const auto& a, const auto& b) { return a.first < b.first; });
+  sort(sortedRegisters,
+       [](const auto& a, const auto& b) { return a.first < b.first; });
 
   // Create array_record_output call
   const auto arrayRecordSig =
@@ -453,8 +429,8 @@ void QIRProgramBuilder::generateOutputRecording() {
   // Generate output recording for each register
   for (auto& [registerName, measurements] : sortedRegisters) {
     // Sort measurements by register index
-    llvm::sort(measurements,
-               [](const auto& a, const auto& b) { return a.first < b.first; });
+    sort(measurements,
+         [](const auto& a, const auto& b) { return a.first < b.first; });
 
     const auto arraySize = measurements.size();
     auto arrayLabelOp = createResultLabel(builder, module, registerName);
@@ -479,11 +455,6 @@ void QIRProgramBuilder::generateOutputRecording() {
 }
 
 OwningOpRef<ModuleOp> QIRProgramBuilder::finalize() {
-  for (const Value qubit : allocatedQubits) {
-    dealloc(qubit);
-  }
-  allocatedQubits.clear();
-
   // Generate output recording in the output block
   generateOutputRecording();
 

@@ -69,11 +69,11 @@ namespace {
  * - Sequence of measurements for output recording
  */
 struct LoweringState : QIRMetadata {
-  /// Map from qubit index to pointer value for reuse
-  DenseMap<int64_t, Value> ptrMap;
+  /// Map from register name to register start index
+  DenseMap<StringRef, int64_t> registerStartIndexMap;
 
-  /// Map from classical result index to pointer value for reuse
-  DenseMap<int64_t, Value> resultPtrMap;
+  /// Map from index to pointer value for reuse
+  DenseMap<int64_t, Value> ptrMap;
 
   /// Map from (register_name, register_index) to result pointer
   /// This allows caching result pointers for measurements with register info
@@ -128,14 +128,15 @@ struct QuartzToQIRTypeConverter final : LLVMTypeConverter {
 namespace {
 
 /**
- * @brief Converts quartz.alloc operation to QIR qubit_allocate
+ * @brief Converts quartz.alloc operation to static QIR qubit allocations
  *
  * @details
- * Converts dynamic qubit allocation to a call to the QIR
- * __quantum__rt__qubit_allocate function.
+ * QIR 2.0 does not support dynamic qubit allocation. Therefore, quartz.alloc
+ * operations are converted to static qubit references using inttoptr with a
+ * constant index.
  *
- * Register metadata (register_name, register_size, register_index) is ignored
- * during QIR conversion as it is used for analysis and readability only.
+ * Register metadata (register_name, register_size, register_index) is used to
+ * provide a reasonable guess for a static qubit index that is still free.
  *
  * @par Example:
  * ```mlir
@@ -143,7 +144,8 @@ namespace {
  * ```
  * becomes:
  * ```mlir
- * %q = llvm.call @__quantum__rt__qubit_allocate() : () -> !llvm.ptr
+ * %c0 = llvm.mlir.constant(0 : i64) : i64
+ * %q0 = llvm.inttoptr %c0 : i64 to !llvm.ptr
  * ```
  */
 struct ConvertQuartzAllocQIR final : StatefulOpConversionPattern<AllocOp> {
@@ -152,34 +154,68 @@ struct ConvertQuartzAllocQIR final : StatefulOpConversionPattern<AllocOp> {
   LogicalResult
   matchAndRewrite(AllocOp op, OpAdaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
-    auto* ctx = getContext();
+    auto& state = getState();
+    const auto numQubits = static_cast<int64_t>(state.numQubits);
+    auto& ptrMap = state.ptrMap;
+    auto& registerMap = state.registerStartIndexMap;
 
-    // Create QIR function signature: () -> ptr
-    const auto qirSignature =
-        LLVM::LLVMFunctionType::get(LLVM::LLVMPointerType::get(ctx), {});
+    // Get or create pointer value
+    if (op.getRegisterName() && op.getRegisterSize() && op.getRegisterIndex()) {
+      const auto registerName = op.getRegisterName().value();
+      const auto registerSize =
+          static_cast<int64_t>(op.getRegisterSize().value());
+      const auto registerIndex =
+          static_cast<int64_t>(op.getRegisterIndex().value());
 
-    // Get or create function declaration
-    const auto fnDecl = getOrCreateFunctionDeclaration(
-        rewriter, op, QIR_QUBIT_ALLOCATE, qirSignature);
+      if (const auto it = registerMap.find(registerName);
+          it != registerMap.end()) {
+        // register is already tracked, the corresponding ptr was already
+        // created
+        const auto globalIndex = it->second + registerIndex;
+        assert(ptrMap.contains(globalIndex));
+        rewriter.replaceOp(op, ptrMap.at(globalIndex));
+        return success();
+      }
 
-    // Replace with call to qubit_allocate
-    rewriter.replaceOpWithNewOp<LLVM::CallOp>(op, fnDecl, ValueRange{});
-
-    // Track qubit count and mark as using dynamic allocation
-    getState().numQubits++;
-    getState().useDynamicQubit = true;
-
+      // Allocate the entire register as static qubits
+      registerMap[registerName] = numQubits;
+      SmallVector<Value> resultValues;
+      resultValues.reserve(registerSize);
+      for (int64_t i = 0; i < registerSize; ++i) {
+        Value val{};
+        if (const auto it = ptrMap.find(numQubits + i); it != ptrMap.end()) {
+          val = it->second;
+        } else {
+          val = createPointerFromIndex(rewriter, op.getLoc(), numQubits + i);
+          ptrMap[numQubits + i] = val;
+        }
+        resultValues.push_back(val);
+      }
+      state.numQubits += registerSize;
+      rewriter.replaceOp(op, resultValues[registerIndex]);
+      return success();
+    }
+    // no register info, check if ptr has already been allocated (as a Result)
+    Value val{};
+    if (const auto it = ptrMap.find(numQubits); it != ptrMap.end()) {
+      val = it->second;
+    } else {
+      val = createPointerFromIndex(rewriter, op.getLoc(), numQubits);
+      ptrMap[numQubits] = val;
+    }
+    rewriter.replaceOp(op, val);
+    state.numQubits++;
     return success();
   }
 };
 
 /**
- * @brief Converts quartz.dealloc operation to QIR qubit_release
+ * @brief Erases quartz.dealloc operations
  *
  * @details
- * Converts dynamic qubit deallocation to a call to the QIR
- * __quantum__rt__qubit_release function, which releases a dynamically
- * allocated qubit.
+ * Since QIR 2.0 does not support dynamic qubit allocation, dynamic allocations
+ * are converted to static allocations. Therefore, deallocation operations
+ * become no-ops and are simply removed from the IR.
  *
  * @par Example:
  * ```mlir
@@ -187,28 +223,16 @@ struct ConvertQuartzAllocQIR final : StatefulOpConversionPattern<AllocOp> {
  * ```
  * becomes:
  * ```mlir
- * llvm.call @__quantum__rt__qubit_release(%q) : (!llvm.ptr) -> ()
+ * // (removed)
  * ```
  */
 struct ConvertQuartzDeallocQIR final : OpConversionPattern<DeallocOp> {
   using OpConversionPattern::OpConversionPattern;
 
   LogicalResult
-  matchAndRewrite(DeallocOp op, OpAdaptor adaptor,
+  matchAndRewrite(DeallocOp op, OpAdaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
-    auto* ctx = getContext();
-
-    // Create QIR function signature: (ptr) -> void
-    const auto qirSignature = LLVM::LLVMFunctionType::get(
-        LLVM::LLVMVoidType::get(ctx), LLVM::LLVMPointerType::get(ctx));
-
-    // Get or create function declaration
-    const auto fnDecl = getOrCreateFunctionDeclaration(
-        rewriter, op, QIR_QUBIT_RELEASE, qirSignature);
-
-    // Replace with call to qubit_release
-    rewriter.replaceOpWithNewOp<LLVM::CallOp>(op, fnDecl,
-                                              adaptor.getOperands());
+    rewriter.eraseOp(op);
     return success();
   }
 };
@@ -237,27 +261,23 @@ struct ConvertQuartzStaticQIR final : StatefulOpConversionPattern<StaticOp> {
   LogicalResult
   matchAndRewrite(StaticOp op, OpAdaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
-    auto* ctx = getContext();
     const auto index = static_cast<int64_t>(op.getIndex());
-
+    auto& state = getState();
     // Get or create a pointer to the qubit
-    if (getState().ptrMap.contains(index)) {
+    Value val{};
+    if (const auto it = state.ptrMap.find(index); it != state.ptrMap.end()) {
       // Reuse existing pointer
-      rewriter.replaceOp(op, getState().ptrMap.at(index));
+      val = it->second;
     } else {
-      // Create constant and inttoptr operations
-      const auto constantOp = rewriter.create<LLVM::ConstantOp>(
-          op.getLoc(), rewriter.getI64IntegerAttr(index));
-      const auto intToPtrOp = rewriter.replaceOpWithNewOp<LLVM::IntToPtrOp>(
-          op, LLVM::LLVMPointerType::get(ctx), constantOp->getResult(0));
-
-      // Cache for reuse
-      getState().ptrMap.try_emplace(index, intToPtrOp->getResult(0));
+      // Create and cache for reuse
+      val = createPointerFromIndex(rewriter, op.getLoc(), index);
+      state.ptrMap.try_emplace(index, val);
     }
+    rewriter.replaceOp(op, val);
 
     // Track maximum qubit index
-    if (std::cmp_greater_equal(index, getState().numQubits)) {
-      getState().numQubits = index + 1;
+    if (std::cmp_greater_equal(index, state.numQubits)) {
+      state.numQubits = index + 1;
     }
 
     return success();
@@ -299,42 +319,46 @@ struct ConvertQuartzMeasureQIR final : StatefulOpConversionPattern<MeasureOp> {
     const auto ptrType = LLVM::LLVMPointerType::get(ctx);
     auto& state = getState();
     const auto numResults = static_cast<int64_t>(state.numResults);
-    auto& resultPtrMap = state.resultPtrMap;
+    auto& ptrMap = state.ptrMap;
     auto& registerResultMap = state.registerResultMap;
 
     // Get or create result pointer value
     Value resultValue;
     if (op.getRegisterName() && op.getRegisterSize() && op.getRegisterIndex()) {
       const auto registerName = op.getRegisterName().value();
-      const auto registerIndex = op.getRegisterIndex().value();
+      const auto registerSize =
+          static_cast<int64_t>(op.getRegisterSize().value());
+      const auto registerIndex =
+          static_cast<int64_t>(op.getRegisterIndex().value());
       const auto key = std::make_pair(registerName, registerIndex);
 
       if (const auto it = registerResultMap.find(key);
           it != registerResultMap.end()) {
         resultValue = it->second;
       } else {
-        const auto constantOp = rewriter.create<LLVM::ConstantOp>(
-            op.getLoc(),
-            rewriter.getI64IntegerAttr(
-                static_cast<int64_t>(numResults))); // Sequential result index
-        resultValue = rewriter
-                          .create<LLVM::IntToPtrOp>(op.getLoc(), ptrType,
-                                                    constantOp->getResult(0))
-                          .getResult();
-        resultPtrMap[numResults] = resultValue;
-        registerResultMap.insert({key, resultValue});
-        state.numResults++;
+        // Allocate the entire register as static results
+        for (int64_t i = 0; i < registerSize; ++i) {
+          Value val{};
+          if (const auto it2 = ptrMap.find(numResults + i);
+              it2 != ptrMap.end()) {
+            val = it2->second;
+          } else {
+            val = createPointerFromIndex(rewriter, op.getLoc(), numResults + i);
+            ptrMap[numResults + i] = val;
+          }
+          registerResultMap.try_emplace({registerName, i}, val);
+        }
+        state.numResults += registerSize;
+        resultValue = registerResultMap.at(key);
       }
     } else {
-      // No register info - assign sequential result pointer
-      const auto constantOp = rewriter.create<LLVM::ConstantOp>(
-          op.getLoc(),
-          rewriter.getI64IntegerAttr(numResults)); // Sequential result index
-      resultValue = rewriter
-                        .create<LLVM::IntToPtrOp>(op.getLoc(), ptrType,
-                                                  constantOp->getResult(0))
-                        .getResult();
-      resultPtrMap[numResults] = resultValue;
+      // no register info, check if ptr has already been allocated (as a Qubit)
+      if (const auto it = ptrMap.find(numResults); it != ptrMap.end()) {
+        resultValue = it->second;
+      } else {
+        resultValue = createPointerFromIndex(rewriter, op.getLoc(), numResults);
+        ptrMap[numResults] = resultValue;
+      }
       registerResultMap.insert({{"c", numResults}, resultValue});
       state.numResults++;
     }
@@ -344,10 +368,8 @@ struct ConvertQuartzMeasureQIR final : StatefulOpConversionPattern<MeasureOp> {
         LLVM::LLVMVoidType::get(ctx), {ptrType, ptrType});
     const auto mzDecl =
         getOrCreateFunctionDeclaration(rewriter, op, QIR_MEASURE, mzSignature);
-    rewriter.create<LLVM::CallOp>(op.getLoc(), mzDecl,
-                                  ValueRange{adaptor.getQubit(), resultValue});
-
-    rewriter.eraseOp(op);
+    rewriter.replaceOpWithNewOp<LLVM::CallOp>(
+        op, mzDecl, ValueRange{adaptor.getQubit(), resultValue});
 
     return success();
   }

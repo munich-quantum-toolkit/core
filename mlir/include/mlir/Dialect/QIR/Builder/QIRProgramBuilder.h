@@ -87,20 +87,6 @@ public:
   //===--------------------------------------------------------------------===//
 
   /**
-   * @brief Allocate a single qubit dynamically
-   * @return An LLVM pointer representing the qubit
-   *
-   * @par Example:
-   * ```c++
-   * auto q = builder.allocQubit();
-   * ```
-   * ```mlir
-   * %q = llvm.call @__quantum__rt__qubit_allocate() : () -> !llvm.ptr
-   * ```
-   */
-  Value allocQubit();
-
-  /**
    * @brief Get a static qubit by index
    * @param index The qubit index (must be non-negative)
    * @return An LLVM pointer representing the qubit
@@ -117,7 +103,7 @@ public:
   Value staticQubit(int64_t index);
 
   /**
-   * @brief Allocate a qubit register dynamically
+   * @brief Allocate an array of (static) qubits
    * @param size Number of qubits (must be positive)
    * @return Vector of LLVM pointers representing the qubits
    *
@@ -126,12 +112,63 @@ public:
    * auto q = builder.allocQubitRegister(3);
    * ```
    * ```mlir
-   * %q0 = llvm.call @__quantum__rt__qubit_allocate() : () -> !llvm.ptr
-   * %q1 = llvm.call @__quantum__rt__qubit_allocate() : () -> !llvm.ptr
-   * %q2 = llvm.call @__quantum__rt__qubit_allocate() : () -> !llvm.ptr
+   * %c0 = llvm.mlir.constant(0 : i64) : i64
+   * %q0 = llvm.inttoptr %c0 : i64 to !llvm.ptr
+   * %c1 = llvm.mlir.constant(1 : i64) : i64
+   * %q1 = llvm.inttoptr %c1 : i64 to !llvm.ptr
+   * %c2 = llvm.mlir.constant(2 : i64) : i64
+   * %q2 = llvm.inttoptr %c2 : i64 to !llvm.ptr
    * ```
    */
   SmallVector<Value> allocQubitRegister(int64_t size);
+
+  /**
+   * @brief A small structure representing a single classical bit within a
+   * classical register.
+   */
+  struct Bit {
+    /// Name of the register containing this bit
+    StringRef registerName;
+    /// Size of the register containing this bit
+    int64_t registerSize{};
+    /// Index of this bit within the register
+    int64_t registerIndex{};
+  };
+
+  /**
+   * @brief A small structure representing a classical bit register.
+   */
+  struct ClassicalRegister {
+    /// Name of the classical register
+    StringRef name;
+    /// Size of the classical register
+    int64_t size;
+
+    /**
+     * @brief Access a specific bit in the classical register
+     * @param index The index of the bit to access (must be less than size)
+     * @return A Bit structure representing the specified bit
+     */
+    Bit operator[](const int64_t index) const {
+      assert(index < size);
+      return {
+          .registerName = name, .registerSize = size, .registerIndex = index};
+    }
+  };
+
+  /**
+   * @brief Allocate a classical bit register
+   * @param size Number of bits
+   * @param name Register name (default: "c")
+   * @return A reference to a ClassicalRegister structure
+   *
+   * @par Example:
+   * ```c++
+   * auto& c = builder.allocClassicalBitRegister(3, "c");
+   * ```
+   */
+  ClassicalRegister& allocClassicalBitRegister(int64_t size,
+                                               StringRef name = "c");
 
   //===--------------------------------------------------------------------===//
   // Measurement and Reset
@@ -177,14 +214,14 @@ public:
    * 2. __quantum__rt__result_record_output for each measurement in the register
    *
    * @param qubit The qubit to measure
-   * @param registerName The name of the classical register (e.g., "c")
-   * @param registerIndex The index within the register for this measurement
+   * @param bit The classical bit to store the result
    * @return Reference to this builder for method chaining
    *
    * @par Example:
    * ```c++
-   * builder.measure(q0, "c", 0);
-   * builder.measure(q1, "c", 1);
+   * auto& c = builder.allocClassicalBitRegister(2, "c");
+   * builder.measure(q0, c[0]);
+   * builder.measure(q1, c[1]);
    * ```
    * ```mlir
    * // In measurements block:
@@ -201,8 +238,7 @@ public:
    * llvm.call @__quantum__rt__result_record_output(ptr %r1, ptr @2)
    * ```
    */
-  QIRProgramBuilder& measure(Value qubit, StringRef registerName,
-                             int64_t registerIndex);
+  QIRProgramBuilder& measure(Value qubit, const Bit& bit);
 
   /**
    * @brief Reset a qubit to |0⟩ state
@@ -241,13 +277,13 @@ public:
    * llvm.call @__quantum__qis__x__body(%q) : (!llvm.ptr) -> ()
    * ```
    */
-  QIRProgramBuilder& x(const Value qubit);
+  QIRProgramBuilder& x(Value qubit);
 
   /**
    * @brief Apply the CX gate
    *
    * @param control Control qubit
-   * @param qubit Target qubit
+   * @param target Target qubit
    * @return Reference to this builder for method chaining
    *
    * @par Example:
@@ -259,7 +295,7 @@ public:
    * !llvm.ptr) -> ()
    * ```
    */
-  QIRProgramBuilder& cx(const Value control, const Value target);
+  QIRProgramBuilder& cx(Value control, Value target);
 
   /**
    * @brief Apply the RX gate to a qubit
@@ -276,7 +312,7 @@ public:
    * llvm.call @__quantum__qis__rx__body(%q, %c) : (!llvm.ptr, f64) -> ()
    * ```
    */
-  QIRProgramBuilder& rx(std::variant<double, Value> theta, const Value qubit);
+  QIRProgramBuilder& rx(const std::variant<double, Value>& theta, Value qubit);
 
   /**
    * @brief Apply the U2 gate to a qubit
@@ -295,8 +331,8 @@ public:
    * -> ()
    * ```
    */
-  QIRProgramBuilder& u2(std::variant<double, Value> phi,
-                        std::variant<double, Value> lambda, const Value qubit);
+  QIRProgramBuilder& u2(const std::variant<double, Value>& phi,
+                        const std::variant<double, Value>& lambda, Value qubit);
 
   /**
    * @brief Apply the SWAP gate to two qubits
@@ -314,31 +350,7 @@ public:
    * ()
    * ```
    */
-  QIRProgramBuilder& swap(const Value qubit0, const Value qubit1);
-
-  //===--------------------------------------------------------------------===//
-  // Deallocation
-  //===--------------------------------------------------------------------===//
-
-  /**
-   * @brief Explicitly deallocate a qubit
-   *
-   * @details
-   * Deallocates a qubit using __quantum__rt__qubit_release. Optional -
-   * finalize() automatically deallocates all remaining allocated qubits.
-   *
-   * @param qubit The qubit to deallocate
-   * @return Reference to this builder for method chaining
-   *
-   * @par Example:
-   * ```c++
-   * builder.dealloc(q);
-   * ```
-   * ```mlir
-   * llvm.call @__quantum__rt__qubit_release(%q) : (!llvm.ptr) -> ()
-   * ```
-   */
-  QIRProgramBuilder& dealloc(Value qubit);
+  QIRProgramBuilder& swap(Value qubit0, Value qubit1);
 
   //===--------------------------------------------------------------------===//
   // Finalization
@@ -363,6 +375,9 @@ public:
   Location loc;
 
 private:
+  /// Track allocated classical Registers
+  SmallVector<ClassicalRegister> allocatedClassicalRegisters;
+
   LLVM::LLVMFuncOp mainFunc;
 
   /// Entry block: constants and initialization
@@ -377,14 +392,8 @@ private:
   /// Exit code constant (created in entry block, used in output block)
   LLVM::ConstantOp exitCode;
 
-  /// Track allocated qubits for automatic deallocation
-  DenseSet<Value> allocatedQubits;
-
-  /// Cache static qubit pointers for reuse
-  DenseMap<int64_t, Value> staticQubitCache;
-
-  /// Cache result pointers for reuse (separate from qubits)
-  DenseMap<int64_t, Value> resultPointerCache;
+  /// Cache static pointers for reuse
+  DenseMap<int64_t, Value> ptrCache;
 
   /// Map from (register_name, register_index) to result pointer
   DenseMap<std::pair<StringRef, int64_t>, Value> registerResultMap;

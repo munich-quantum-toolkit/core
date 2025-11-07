@@ -1099,7 +1099,8 @@ TEST_F(CompilerPipelineTest, SingleMeasurementToSingleBit) {
 
   const auto qirExpected = buildQIR([](qir::QIRProgramBuilder& b) {
     auto q = b.allocQubitRegister(1);
-    b.measure(q[0], 0);
+    const auto& c = b.allocClassicalBitRegister(1);
+    b.measure(q[0], c[0]);
   });
 
   verifyAllStages({
@@ -1139,8 +1140,9 @@ TEST_F(CompilerPipelineTest, RepeatedMeasurementToSameBit) {
 
   const auto qirExpected = buildQIR([](qir::QIRProgramBuilder& b) {
     auto q = b.allocQubitRegister(1);
-    b.measure(q[0], 0);
-    b.measure(q[0], 0);
+    const auto& c = b.allocClassicalBitRegister(1);
+    b.measure(q[0], c[0]);
+    b.measure(q[0], c[0]);
   });
 
   verifyAllStages({
@@ -1184,9 +1186,10 @@ TEST_F(CompilerPipelineTest, RepeatedMeasurementOnSeparateBits) {
 
   const auto qirExpected = buildQIR([](qir::QIRProgramBuilder& b) {
     auto q = b.allocQubitRegister(1);
-    b.measure(q[0], 0);
-    b.measure(q[0], 1);
-    b.measure(q[0], 2);
+    const auto& c = b.allocClassicalBitRegister(3);
+    b.measure(q[0], c[0]);
+    b.measure(q[0], c[1]);
+    b.measure(q[0], c[2]);
   });
 
   verifyAllStages({
@@ -1230,8 +1233,10 @@ TEST_F(CompilerPipelineTest, MultipleClassicalRegistersAndMeasurements) {
 
   const auto qirExpected = buildQIR([](qir::QIRProgramBuilder& b) {
     auto q = b.allocQubitRegister(2);
-    b.measure(q[0], "c1", 0);
-    b.measure(q[1], "c2", 0);
+    const auto& creg1 = b.allocClassicalBitRegister(1, "c1");
+    const auto& creg2 = b.allocClassicalBitRegister(1, "c2");
+    b.measure(q[0], creg1[0]);
+    b.measure(q[1], creg2[0]);
   });
 
   verifyAllStages({
@@ -1338,11 +1343,10 @@ TEST_F(CompilerPipelineTest, CX) {
   });
   const auto qirOpt = buildQIR([](qir::QIRProgramBuilder& b) {
     auto reg = b.allocQubitRegister(2);
-    auto q0 = reg[0];
     /// TODO: Replace uncomment this when CX can be converted to QIR
     // auto q1 = reg[1];
     // b.cx(q0, q1);
-    b.x(q0);
+    b.x(reg[1]);
   });
 
   verifyAllStages({
