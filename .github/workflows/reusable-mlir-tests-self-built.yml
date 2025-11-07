@@ -44,7 +44,7 @@ jobs:
         if: runner.os == 'macOS'
         uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6.0.0
         with:
-          name: macos-15-archive
+          artifact-ids: 4503321073
           path: llvm_build
           repository: burgholzer/portable-mlir-toolchain
           run-id: 19173559613
