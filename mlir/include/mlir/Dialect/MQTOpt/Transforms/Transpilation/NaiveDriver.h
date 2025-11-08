@@ -14,7 +14,7 @@
 #include "mlir/Dialect/MQTOpt/Transforms/Transpilation/Architecture.h"
 #include "mlir/Dialect/MQTOpt/Transforms/Transpilation/Common.h"
 #include "mlir/Dialect/MQTOpt/Transforms/Transpilation/Layout.h"
-#include "mlir/Dialect/MQTOpt/Transforms/Transpilation/MapperBase.h"
+#include "mlir/Dialect/MQTOpt/Transforms/Transpilation/RoutingDriverBase.h"
 
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/ADT/TypeSwitch.h>
@@ -33,12 +33,14 @@ namespace mqt::ir::opt {
 
 using namespace mlir;
 
-struct NaiveMapper final : MapperBase {
-  using MapperBase::MapperBase;
+class NaiveDriver final : public RoutingDriverBase {
   using SWAPHistory = SmallVector<QubitIndexPair>;
 
-  LogicalResult rewrite(func::FuncOp func,
-                        PatternRewriter& rewriter) const override {
+public:
+  using RoutingDriverBase::RoutingDriverBase;
+
+private:
+  LogicalResult rewrite(func::FuncOp func, PatternRewriter& rewriter) override {
     LLVM_DEBUG(llvm::dbgs() << "handleFunc: " << func.getSymName() << '\n');
 
     if (!isEntryPoint(func)) {
@@ -97,7 +99,6 @@ struct NaiveMapper final : MapperBase {
     return success();
   }
 
-private:
   /**
    * @brief Copy the layout and recursively map the loop body.
    */
@@ -164,15 +165,16 @@ private:
    * a 'for' of 'if' region always requires 2 * #(SWAPs required for region)
    * additional SWAPS.
    */
-  WalkResult handleYield(scf::YieldOp op, Layout& layout, SWAPHistory& history,
-                         PatternRewriter& rewriter) const {
+  static WalkResult handleYield(scf::YieldOp op, Layout& layout,
+                                SWAPHistory& history,
+                                PatternRewriter& rewriter) {
     if (!isa<scf::ForOp>(op->getParentOp()) &&
         !isa<scf::IfOp>(op->getParentOp())) {
       return WalkResult::skip();
     }
 
     /// Uncompute SWAPs.
-    NaiveMapper::insertSWAPs(llvm::to_vector(llvm::reverse(history)), layout,
+    NaiveDriver::insertSWAPs(llvm::to_vector(llvm::reverse(history)), layout,
                              op.getLoc(), rewriter);
 
     return WalkResult::advance();
@@ -184,7 +186,7 @@ private:
    *
    * Thanks to the placement pass, we can apply the identity layout here.
    */
-  WalkResult handleQubit(QubitOp op, Layout& layout) const {
+  static WalkResult handleQubit(QubitOp op, Layout& layout) {
     const std::size_t index = op.getIndex();
     layout.add(index, index, op.getQubit());
     return WalkResult::advance();
@@ -254,7 +256,7 @@ private:
   /**
    * @brief Update layout.
    */
-  WalkResult handleReset(ResetOp op, Layout& layout) const {
+  static WalkResult handleReset(ResetOp op, Layout& layout) {
     layout.remapQubitValue(op.getInQubit(), op.getOutQubit());
     return WalkResult::advance();
   }
@@ -262,7 +264,7 @@ private:
   /**
    * @brief Update layout.
    */
-  WalkResult handleMeasure(MeasureOp op, Layout& layout) const {
+  static WalkResult handleMeasure(MeasureOp op, Layout& layout) {
     layout.remapQubitValue(op.getInQubit(), op.getOutQubit());
     return WalkResult::advance();
   }
@@ -287,7 +289,7 @@ private:
     history.append(swaps);
 
     /// Insert SWAPs.
-    MapperBase::insertSWAPs(swaps, layout, op.getLoc(), rewriter);
+    RoutingDriverBase::insertSWAPs(swaps, layout, op.getLoc(), rewriter);
   }
 };
 } // namespace mqt::ir::opt

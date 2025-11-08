@@ -98,17 +98,17 @@ inline void replaceAllUsesInRegionAndChildrenExcept(Value oldValue,
   });
 }
 
-class MapperBase {
+class RoutingDriverBase {
 public:
-  explicit MapperBase(std::unique_ptr<Architecture> arch)
+  explicit RoutingDriverBase(std::unique_ptr<Architecture> arch)
       : arch(std::move(arch)) {}
 
-  virtual ~MapperBase() = default;
+  virtual ~RoutingDriverBase() = default;
 
-  [[nodiscard]] virtual LogicalResult
-  rewrite(func::FuncOp func, PatternRewriter& rewriter) const = 0;
+  [[nodiscard]] virtual LogicalResult rewrite(func::FuncOp func,
+                                              PatternRewriter& rewriter) = 0;
 
-  [[nodiscard]] LogicalResult rewrite(ModuleOp module) const {
+  [[nodiscard]] LogicalResult rewrite(ModuleOp module) {
     PatternRewriter rewriter(module->getContext());
     for (auto func : module.getOps<func::FuncOp>()) {
       if (rewrite(func, rewriter).failed()) {
