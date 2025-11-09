@@ -37,18 +37,20 @@ using namespace mlir;
 struct Layer {
   /// The program indices of the two-qubit gates within this layer.
   SmallVector<QubitIndexPair> twoQubitIndices;
-
-  /// Operations that can be executed before the two-qubit gates.
+  /// One-qubit ops. Scheduled before the two-qubit ops.
   SmallVector<Operation*> ops;
-  /// The two-qubit gates.
+  /// Two-qubit ops. Schedule before the two-qubit block ops.
   SmallVector<Operation*> twoQubitOps;
-  /// Operations that will be executable whenever all gates in the layer are
-  /// executable.
+  /// One and two-qubit ops released by the scheduling of the two-qubit ops.
+  /// Scheduled before any barrierLikeOp.
   SmallVector<Operation*> blockOps;
+  /// The op scheduled last in the layer.
+  /// This is an extra pointer to deal with barriers, if's, and for's.
+  SmallVector<Operation*, 1> last;
 
   /// @returns the scheduled operations in the layer.
   [[nodiscard]] auto getOps() {
-    return concat<Operation*>(ops, twoQubitOps, blockOps);
+    return concat<Operation*>(ops, twoQubitOps, blockOps, last);
   }
 };
 
@@ -58,7 +60,7 @@ class Scheduler {
   /// The region where the schedule ops reside.
   Region* region;
   /// Counts the amount of occurrences for a given op.
-  /// Currently only used for two-qubit unitaries and scf ops.
+  /// Currently used for all (>=2)-qubit ops.
   DenseMap<Operation*, std::size_t> occurrences;
 
 public:
@@ -158,7 +160,7 @@ private:
                llvm::zip_equal(barrier.getInQubits(), barrier.getOutQubits())) {
             layout.remapQubitValue(in, out);
           }
-          next.layer.blockOps.push_back(barrier);
+          next.layer.last.push_back(barrier);
         }
         continue;
       }
@@ -202,7 +204,7 @@ private:
             layout.remapQubitValue(in, out);
             next.qubits.push_back(out);
           }
-          next.layer.blockOps.push_back(loop);
+          next.layer.last.push_back(loop);
         }
         continue;
       }
@@ -214,77 +216,19 @@ private:
             layout.remapQubitValue(in, out);
             next.qubits.push_back(out);
           }
-          next.layer.blockOps.push_back(cond);
+          next.layer.last.push_back(cond);
         }
+        continue;
       }
 
       if (auto yield = dyn_cast<scf::YieldOp>(res.op)) {
         if (++occurrences[yield] == yield.getResults().size()) {
-          next.layer.blockOps.push_back(yield);
+          next.layer.last.push_back(yield);
         }
       }
     }
 
     return next;
-  }
-
-  /**
-   * @returns todo
-   */
-  AdvanceResult advanceOneQubitOnWire(const Value q) {
-    AdvanceResult res;
-    res.q = q;
-
-    while (true) {
-      if (res.q.use_empty()) {
-        break;
-      }
-
-      Operation* user = getUserInRegion(res.q, region);
-      if (user == nullptr) {
-        /// Must be a branching op:
-        user = res.q.getUsers().begin()->getParentOp();
-        assert(isa<RegionBranchOpInterface>(user));
-      }
-
-      TypeSwitch<Operation*>(user)
-          /// MQT
-          .Case<BarrierOp>([&](BarrierOp op) { res.op = op; })
-          .Case<UnitaryInterface>([&](UnitaryInterface op) {
-            if (isTwoQubitGate(op)) {
-              res.op = op;
-              return; // Found a two-qubit gate, stop advancing head.
-            }
-            // Otherwise, advance head.
-            res.q = op.getOutQubits().front();
-            res.ops.push_back(user); /// Only add one-qubit gates.
-          })
-          .Case<ResetOp>([&](ResetOp op) {
-            res.q = op.getOutQubit();
-            res.ops.push_back(user);
-          })
-          .Case<MeasureOp>([&](MeasureOp op) {
-            res.q = op.getOutQubit();
-            res.ops.push_back(user);
-          })
-          /// SCF
-          .Case<RegionBranchOpInterface>(
-              [&](RegionBranchOpInterface op) { res.op = op; })
-          .Case<scf::YieldOp>([&](scf::YieldOp op) { res.op = op; })
-          .Default([&]([[maybe_unused]] Operation* op) {
-            LLVM_DEBUG({
-              llvm::dbgs() << "unknown operation in def-use chain: ";
-              op->dump();
-            });
-            llvm_unreachable("unknown operation in def-use chain");
-          });
-
-      if (res.op != nullptr) {
-        break;
-      }
-    }
-
-    return res;
   }
 
   /**
@@ -332,15 +276,74 @@ private:
 
     return blockResult;
   }
+
+  /**
+   * @returns todo
+   */
+  AdvanceResult advanceOneQubitOnWire(const Value q) {
+    AdvanceResult res;
+    res.q = q;
+
+    while (true) {
+      if (res.q.use_empty()) {
+        break;
+      }
+
+      Operation* user = getUserInRegion(res.q, region);
+      if (user == nullptr) {
+        /// Must be a branching op:
+        user = res.q.getUsers().begin()->getParentOp();
+        assert(isa<scf::IfOp>(user));
+      }
+
+      TypeSwitch<Operation*>(user)
+          /// MQT
+          .Case<BarrierOp>([&](BarrierOp op) { res.op = op; })
+          .Case<UnitaryInterface>([&](UnitaryInterface op) {
+            if (isTwoQubitGate(op)) {
+              res.op = op;
+              return; // Found a two-qubit gate, stop advancing head.
+            }
+            // Otherwise, advance head.
+            res.q = op.getOutQubits().front();
+            res.ops.push_back(user); /// Only add one-qubit gates.
+          })
+          .Case<ResetOp>([&](ResetOp op) {
+            res.q = op.getOutQubit();
+            res.ops.push_back(user);
+          })
+          .Case<MeasureOp>([&](MeasureOp op) {
+            res.q = op.getOutQubit();
+            res.ops.push_back(user);
+          })
+          /// SCF
+          .Case<RegionBranchOpInterface>(
+              [&](RegionBranchOpInterface op) { res.op = op; })
+          .Case<scf::YieldOp>([&](scf::YieldOp op) { res.op = op; })
+          .Default([&]([[maybe_unused]] Operation* op) {
+            LLVM_DEBUG({
+              llvm::dbgs() << "unknown operation in def-use chain: ";
+              op->dump();
+            });
+            llvm_unreachable("unknown operation in def-use chain");
+          });
+
+      if (res.op != nullptr) {
+        break;
+      }
+    }
+
+    return res;
+  }
 };
 
 class AStarDriver final : public RoutingDriverBase {
   using SWAPHistory = SmallVector<QubitIndexPair>;
 
 public:
-  AStarDriver(std::unique_ptr<Architecture> arch,
-              const HeuristicWeights& weights, std::size_t nlookahead)
-      : RoutingDriverBase(std::move(arch)), router_(weights),
+  AStarDriver(const HeuristicWeights& weights, std::size_t nlookahead,
+              std::unique_ptr<Architecture> arch, const Statistics& stats)
+      : RoutingDriverBase(std::move(arch), stats), router_(weights),
         nlookahead_(nlookahead) {}
 
 private:
@@ -502,14 +505,13 @@ private:
    * a 'for' of 'if' region always requires 2 * #(SWAPs required for region)
    * additional SWAPS.
    */
-  static WalkResult handleYield(scf::YieldOp op, Layout& layout,
-                                SWAPHistory& history,
-                                PatternRewriter& rewriter) {
+  WalkResult handleYield(scf::YieldOp op, Layout& layout, SWAPHistory& history,
+                         PatternRewriter& rewriter) const {
     LLVM_DEBUG(llvm::dbgs() << "handleYield\n");
 
     /// Uncompute SWAPs.
-    RoutingDriverBase::insertSWAPs(llvm::to_vector(llvm::reverse(history)),
-                                   layout, op.getLoc(), rewriter);
+    this->insertSWAPs(llvm::to_vector(llvm::reverse(history)), layout,
+                      op.getLoc(), rewriter);
 
     return WalkResult::advance();
   }

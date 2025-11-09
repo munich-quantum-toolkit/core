@@ -16,6 +16,7 @@
 #include "mlir/Dialect/MQTOpt/Transforms/Transpilation/Layout.h"
 
 #include <llvm/ADT/SmallVector.h>
+#include <llvm/ADT/Statistic.h>
 #include <llvm/ADT/TypeSwitch.h>
 #include <llvm/Support/Debug.h>
 #include <llvm/Support/Format.h>
@@ -98,10 +99,15 @@ inline void replaceAllUsesInRegionAndChildrenExcept(Value oldValue,
   });
 }
 
+struct Statistics {
+  llvm::Statistic* numSwaps;
+};
+
 class RoutingDriverBase {
 public:
-  explicit RoutingDriverBase(std::unique_ptr<Architecture> arch)
-      : arch(std::move(arch)) {}
+  explicit RoutingDriverBase(std::unique_ptr<Architecture> arch,
+                             const Statistics& stats)
+      : arch(std::move(arch)), stats(stats) {}
 
   virtual ~RoutingDriverBase() = default;
 
@@ -123,8 +129,8 @@ protected:
    * @brief Insert SWAPs at the rewriter's insertion point and update the
    * layout.
    */
-  static void insertSWAPs(ArrayRef<QubitIndexPair> swaps, Layout& layout,
-                          Location anchor, PatternRewriter& rewriter) {
+  void insertSWAPs(ArrayRef<QubitIndexPair> swaps, Layout& layout,
+                   Location anchor, PatternRewriter& rewriter) const {
     for (const auto [hw0, hw1] : swaps) {
       const Value in0 = layout.lookupHardwareValue(hw0);
       const Value in1 = layout.lookupHardwareValue(hw1);
@@ -150,6 +156,8 @@ protected:
       layout.remapQubitValue(in0, out0);
       layout.remapQubitValue(in1, out1);
     }
+
+    (*stats.numSwaps) += swaps.size();
   }
 
   /**
@@ -162,5 +170,7 @@ protected:
   }
 
   std::unique_ptr<Architecture> arch;
+
+  Statistics stats;
 };
 } // namespace mqt::ir::opt

@@ -165,17 +165,11 @@ private:
    * a 'for' of 'if' region always requires 2 * #(SWAPs required for region)
    * additional SWAPS.
    */
-  static WalkResult handleYield(scf::YieldOp op, Layout& layout,
-                                SWAPHistory& history,
-                                PatternRewriter& rewriter) {
-    if (!isa<scf::ForOp>(op->getParentOp()) &&
-        !isa<scf::IfOp>(op->getParentOp())) {
-      return WalkResult::skip();
-    }
-
+  WalkResult handleYield(scf::YieldOp op, Layout& layout, SWAPHistory& history,
+                         PatternRewriter& rewriter) const {
     /// Uncompute SWAPs.
-    RoutingDriverBase::insertSWAPs(llvm::to_vector(llvm::reverse(history)),
-                                   layout, op.getLoc(), rewriter);
+    this->insertSWAPs(llvm::to_vector(llvm::reverse(history)), layout,
+                      op.getLoc(), rewriter);
 
     return WalkResult::advance();
   }

@@ -81,16 +81,18 @@ struct RoutingPassSC final : impl::RoutingPassSCBase<RoutingPassSC> {
 private:
   [[nodiscard]] std::unique_ptr<RoutingDriverBase>
   getMapper(std::unique_ptr<Architecture> arch) {
+    Statistics stats{.numSwaps = &numSwaps};
+
     switch (static_cast<RoutingMethod>(method)) {
     case RoutingMethod::Naive: {
       LLVM_DEBUG({ llvm::dbgs() << "getMapper: method=naive\n"; });
-      return std::make_unique<NaiveDriver>(std::move(arch));
+      return std::make_unique<NaiveDriver>(std::move(arch), stats);
     }
     case RoutingMethod::AStar: {
       LLVM_DEBUG({ llvm::dbgs() << "getRouter: method=astar\n"; });
       const HeuristicWeights weights(alpha, lambda, nlookahead);
-      return std::make_unique<AStarDriver>(std::move(arch), weights,
-                                           nlookahead);
+      return std::make_unique<AStarDriver>(weights, nlookahead, std::move(arch),
+                                           stats);
     }
     }
 
