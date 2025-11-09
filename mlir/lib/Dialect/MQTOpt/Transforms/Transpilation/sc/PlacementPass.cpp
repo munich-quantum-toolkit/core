@@ -464,7 +464,7 @@ private:
                      << '\n';
       });
       return std::make_unique<RandomPlacer>(arch.nqubits(),
-                                            std::mt19937_64(1492999563));
+                                            std::mt19937_64(seed));
     }
     llvm_unreachable("Unknown strategy");
   }

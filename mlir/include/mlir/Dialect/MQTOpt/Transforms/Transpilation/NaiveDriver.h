@@ -174,8 +174,8 @@ private:
     }
 
     /// Uncompute SWAPs.
-    NaiveDriver::insertSWAPs(llvm::to_vector(llvm::reverse(history)), layout,
-                             op.getLoc(), rewriter);
+    RoutingDriverBase::insertSWAPs(llvm::to_vector(llvm::reverse(history)),
+                                   layout, op.getLoc(), rewriter);
 
     return WalkResult::advance();
   }
