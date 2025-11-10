@@ -511,7 +511,7 @@ auto FoMaC::Device::initOperationsFromDevice() -> bool {
           allSites.push_back(site1);
           allSites.push_back(site2);
         }
-        const auto region = calculateExtentFromSites(allSites);
+        const auto pairRegion = calculateExtentFromSites(allSites);
 
         const auto& ir = op.getInteractionRadius();
         if (!ir.has_value()) {
@@ -525,7 +525,7 @@ auto FoMaC::Device::initOperationsFromDevice() -> bool {
         }
         localMultiQubitOperations.emplace_back(
             LocalMultiQubitOperation{{.name = name,
-                                      .region = region,
+                                      .region = pairRegion,
                                       .duration = *d,
                                       .fidelity = *f,
                                       .numParameters = op.getParametersNum()},

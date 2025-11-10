@@ -22,7 +22,9 @@
 #include <cstdint>
 #include <cstring>
 #include <memory>
+#include <type_traits>
 #include <utility>
+#include <variant>
 #include <vector>
 
 // NOLINTBEGIN(bugprone-macro-parentheses)
@@ -549,12 +551,14 @@ auto MQT_NA_QDMI_Operation_impl_d::queryProperty(
                 return QDMI_ERROR_INVALIDARGUMENT;
               }
               // Copy pairs as flat array for C API
+              // NOLINTBEGIN(cppcoreguidelines-pro-bounds-pointer-arithmetic)
               auto* siteArray = static_cast<MQT_NA_QDMI_Site*>(value);
               size_t idx = 0;
               for (const auto& [site1, site2] : storedSites) {
                 siteArray[idx++] = site1;
                 siteArray[idx++] = site2;
               }
+              // NOLINTEND(cppcoreguidelines-pro-bounds-pointer-arithmetic)
             }
             if (sizeRet != nullptr) {
               *sizeRet = storedSites.size() * 2 * sizeof(MQT_NA_QDMI_Site);
