@@ -219,3 +219,31 @@ def test_operations(device_tuple: tuple[Device, Mapping[str, Any]]) -> None:
                     device_dict["localMultiQubitOperations"][0]["region"]["size"]["width"],
                     device_dict["localMultiQubitOperations"][0]["region"]["size"]["height"],
                 )
+
+
+def test_qubits_zones_separation(device_tuple: tuple[Device, Mapping[str, Any]]) -> None:
+    """Test that qubits and zones are properly separated."""
+    device, device_dict = device_tuple
+
+    all_sites = list(device.sites())
+    qubits = list(device.qubits())
+    zones = list(device.zones())
+
+    assert len(all_sites) == len(qubits) + len(zones)
+
+    assert len(qubits) == device.qubits_num()
+    assert len(qubits) == device_dict["numQubits"]
+
+    for qubit in qubits:
+        assert not qubit.is_zone()
+        assert qubit.module_index() is not None
+        assert qubit.submodule_index() is not None
+
+    for zone in zones:
+        assert zone.is_zone()
+        assert zone.x_extent() is not None
+        assert zone.y_extent() is not None
+
+    qubit_indices = {q.index() for q in qubits}
+    zone_indices = {z.index() for z in zones}
+    assert len(qubit_indices & zone_indices) == 0

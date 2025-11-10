@@ -116,10 +116,11 @@ auto FoMaC::Device::initDurationUnitFromDevice() -> bool {
   return true;
 }
 auto FoMaC::Device::initDecoherenceTimesFromDevice() -> bool {
-  // find first non-zone site as reference
-  auto regularSites = getSites() | std::views::filter([](const auto& site) {
-                        return !site.isZone().value_or(false);
-                      });
+  const auto regularSites = getQubits();
+  if (regularSites.empty()) {
+    SPDLOG_INFO("Device has no regular qubit sites with decoherence data");
+    return false;
+  }
   uint64_t sumT1 = 0;
   uint64_t sumT2 = 0;
   for (const auto& site : regularSites) {
@@ -136,26 +137,15 @@ auto FoMaC::Device::initDecoherenceTimesFromDevice() -> bool {
     sumT1 += *t1;
     sumT2 += *t2;
   }
-  const auto count = static_cast<uint64_t>(std::ranges::distance(regularSites));
-  if (count == 0) {
-    SPDLOG_INFO("Device has no regular sites with decoherence data");
-    return false;
-  }
+  const auto count = regularSites.size();
   decoherenceTimes.t1 = sumT1 / count;
   decoherenceTimes.t2 = sumT2 / count;
   return true;
 }
 auto FoMaC::Device::initTrapsfromDevice() -> bool {
   traps.clear();
-  const auto& sites = getSites();
-  if (sites.empty()) {
-    SPDLOG_INFO("Device returned no sites");
-    return false;
-  }
-  auto regularSites = sites | std::views::filter([](const Site& site) -> bool {
-                        return !site.isZone().value_or(false);
-                      });
-  if (std::ranges::distance(regularSites) == 0) {
+  const auto regularSites = getQubits();
+  if (regularSites.empty()) {
     SPDLOG_INFO("Device has no regular sites");
     return false;
   }

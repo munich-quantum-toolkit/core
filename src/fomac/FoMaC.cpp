@@ -380,6 +380,24 @@ auto FoMaC::Device::getSites() const -> std::vector<Site> {
                          });
   return sites;
 }
+auto FoMaC::Device::getQubits() const -> std::vector<Site> {
+  const auto& allSites = getSites();
+  std::vector<Site> qubits;
+  qubits.reserve(allSites.size());
+  std::ranges::copy_if(allSites, std::back_inserter(qubits), [](const Site& s) {
+    return !s.isZone().value_or(false);
+  });
+  return qubits;
+}
+auto FoMaC::Device::getZones() const -> std::vector<Site> {
+  const auto& allSites = getSites();
+  std::vector<Site> zones;
+  zones.reserve(allSites.size());
+  std::ranges::copy_if(allSites, std::back_inserter(zones), [](const Site& s) {
+    return s.isZone().value_or(false);
+  });
+  return zones;
+}
 auto FoMaC::Device::getOperations() const -> std::vector<Operation> {
   const auto& qdmiOperations = queryProperty<std::vector<QDMI_Operation>>(
       QDMI_DEVICE_PROPERTY_OPERATIONS);

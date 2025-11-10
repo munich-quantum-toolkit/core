@@ -103,7 +103,11 @@ class Device:
     def qubits_num(self) -> int:
         """Returns the number of qubits available on the device."""
     def sites(self) -> Iterable[Site]:
-        """Returns the list of sites available on the device."""
+        """Returns the list of all sites (zones and qubits) available on the device."""
+    def qubits(self) -> Iterable[Site]:
+        """Returns the list of qubit sites (non-zone sites) available on the device."""
+    def zones(self) -> Iterable[Site]:
+        """Returns the list of zone sites available on the device."""
     def operations(self) -> Iterable[Operation]:
         """Returns the list of operations supported by the device."""
     def coupling_map(self) -> Iterable[tuple[Site, Site]] | None:

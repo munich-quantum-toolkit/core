@@ -527,6 +527,23 @@ public:
     [[nodiscard]] auto getQubitsNum() const -> size_t;
     /// @see QDMI_DEVICE_PROPERTY_SITES
     [[nodiscard]] auto getSites() const -> std::vector<Site>;
+    /**
+     * @brief Get only qubit sites (non-zone sites).
+     * @details Returns sites where isZone() is false. These represent actual
+     * physical qubit locations on the device lattice.
+     * @return Vector of qubit sites (filtered from all sites)
+     * @see QDMI_DEVICE_PROPERTY_SITES
+     */
+    [[nodiscard]] auto getQubits() const -> std::vector<Site>;
+    /**
+     * @brief Get only zone sites.
+     * @details Returns sites where isZone() is true. These represent
+     * operational regions where global operations are performed, not individual
+     * qubit locations.
+     * @return Vector of zone sites (filtered from all sites)
+     * @see QDMI_DEVICE_PROPERTY_SITES
+     */
+    [[nodiscard]] auto getZones() const -> std::vector<Site>;
     /// @see QDMI_DEVICE_PROPERTY_OPERATIONS
     [[nodiscard]] auto getOperations() const -> std::vector<Operation>;
     /// @see QDMI_DEVICE_PROPERTY_COUPLINGMAP

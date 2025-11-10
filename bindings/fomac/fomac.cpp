@@ -116,7 +116,11 @@ PYBIND11_MODULE(MQT_CORE_MODULE_NAME, m, py::mod_gil_not_used()) {
   device.def("status", &fomac::FoMaC::Device::getStatus);
   device.def("library_version", &fomac::FoMaC::Device::getLibraryVersion);
   device.def("qubits_num", &fomac::FoMaC::Device::getQubitsNum);
-  device.def("sites", &fomac::FoMaC::Device::getSites);
+  device.def("sites", &fomac::FoMaC::Device::getSites,
+             "Get all sites (zones and qubits)");
+  device.def("qubits", &fomac::FoMaC::Device::getQubits,
+             "Get only qubit sites (non-zone sites)");
+  device.def("zones", &fomac::FoMaC::Device::getZones, "Get only zone sites");
   device.def("operations", &fomac::FoMaC::Device::getOperations);
   device.def("coupling_map", &fomac::FoMaC::Device::getCouplingMap);
   device.def("needs_calibration", &fomac::FoMaC::Device::getNeedsCalibration);
