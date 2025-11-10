@@ -21,6 +21,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <functional>
 #include <memory>
 #include <type_traits>
 #include <utility>
@@ -402,9 +403,11 @@ auto MQT_NA_QDMI_Operation_impl_d::sortSites() -> void {
         } else if constexpr (std::is_same_v<
                                  T, std::vector<std::pair<MQT_NA_QDMI_Site,
                                                           MQT_NA_QDMI_Site>>>) {
-          // Two-qubit: ensure each pair is ordered, then sort pairs
+          // Two-qubit: normalize each pair (first < second)
+          // Use std::less for proper total order (pointer comparison with
+          // operator> invokes undefined behavior)
           std::ranges::for_each(sites, [](auto& p) {
-            if (p.first > p.second) {
+            if (std::less<>{}(p.second, p.first)) {
               std::swap(p.first, p.second);
             }
           });
