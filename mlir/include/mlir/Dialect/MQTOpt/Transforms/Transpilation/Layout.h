@@ -247,8 +247,6 @@ private:
   struct QubitInfo {
     QubitIndex prog;
     QubitIndex hw;
-
-    QubitInfo(QubitIndex p, QubitIndex h) : prog(p), hw(h) {}
   };
 
   /**
