@@ -151,11 +151,13 @@ void AodOperation::dumpOpenQASM(
   of << ")";
 
   // Write qubits with separator logic
+  bool firstQubit = true;
   for (const auto& qubit : targets) {
-    of << " " << qubitMap.at(qubit).second;
-    if (&qubit != &targets.back()) {
+    if (!firstQubit) {
       of << ",";
     }
+    firstQubit = false;
+    of << " " << qubitMap.at(qubit).second;
   }
   of << ";\n";
 }
