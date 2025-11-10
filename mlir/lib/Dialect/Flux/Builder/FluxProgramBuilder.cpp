@@ -187,8 +187,8 @@ std::pair<Value, Value> FluxProgramBuilder::cx(Value control, Value target) {
   const auto [controlsOut, targetsOut] =
       ctrl({control}, {target},
            [&](OpBuilder& b, const ValueRange targets) -> ValueRange {
-             auto x = b.create<XOp>(loc, targets[0]);
-             return {x.getQubitOut()};
+             const auto x = b.create<XOp>(loc, targets[0]);
+             return x->getResults();
            });
   return {controlsOut[0], targetsOut[0]};
 }
@@ -198,8 +198,8 @@ std::pair<ValueRange, Value> FluxProgramBuilder::mcx(const ValueRange controls,
   const auto [controlsOut, targetsOut] =
       ctrl(controls, {target},
            [&](OpBuilder& b, const ValueRange targets) -> ValueRange {
-             auto x = b.create<XOp>(loc, targets[0]);
-             return {x.getQubitOut()};
+             const auto x = b.create<XOp>(loc, targets[0]);
+             return x->getResults();
            });
   return {controlsOut, targetsOut[0]};
 }
@@ -221,8 +221,8 @@ FluxProgramBuilder::crx(const std::variant<double, Value>& theta, Value control,
   const auto [controlsOut, targetsOut] =
       ctrl({control}, {target},
            [&](OpBuilder& b, const ValueRange targets) -> ValueRange {
-             auto rx = b.create<RXOp>(loc, targets[0], theta);
-             return {rx.getQubitOut()};
+             const auto rx = b.create<RXOp>(loc, targets[0], theta);
+             return rx->getResults();
            });
   return {controlsOut[0], targetsOut[0]};
 }
@@ -233,8 +233,8 @@ FluxProgramBuilder::mcrx(const std::variant<double, Value>& theta,
   const auto [controlsOut, targetsOut] =
       ctrl(controls, {target},
            [&](OpBuilder& b, const ValueRange targets) -> ValueRange {
-             auto rx = b.create<RXOp>(loc, targets[0], theta);
-             return {rx.getQubitOut()};
+             const auto rx = b.create<RXOp>(loc, targets[0], theta);
+             return rx->getResults();
            });
   return {controlsOut, targetsOut[0]};
 }
@@ -258,8 +258,8 @@ FluxProgramBuilder::cu2(const std::variant<double, Value>& phi,
   const auto [controlsOut, targetsOut] =
       ctrl({control}, {target},
            [&](OpBuilder& b, const ValueRange targets) -> ValueRange {
-             auto u2 = b.create<U2Op>(loc, targets[0], phi, lambda);
-             return {u2.getQubitOut()};
+             const auto u2 = b.create<U2Op>(loc, targets[0], phi, lambda);
+             return u2->getResults();
            });
   return {controlsOut[0], targetsOut[0]};
 }
@@ -271,8 +271,8 @@ FluxProgramBuilder::mcu2(const std::variant<double, Value>& phi,
   const auto [controlsOut, targetsOut] =
       ctrl(controls, {target},
            [&](OpBuilder& b, const ValueRange targets) -> ValueRange {
-             auto u2 = b.create<U2Op>(loc, targets[0], phi, lambda);
-             return {u2.getQubitOut()};
+             const auto u2 = b.create<U2Op>(loc, targets[0], phi, lambda);
+             return u2->getResults();
            });
   return {controlsOut, targetsOut[0]};
 }
@@ -294,8 +294,20 @@ FluxProgramBuilder::cswap(Value control, Value qubit0, Value qubit1) {
   const auto [controlsOut, targetsOut] =
       ctrl({control}, {qubit0, qubit1},
            [&](OpBuilder& b, const ValueRange targets) -> ValueRange {
-             auto swap = b.create<SWAPOp>(loc, targets[0], targets[1]);
-             return {swap.getQubit0Out(), swap.getQubit1Out()};
+             const auto swap = b.create<SWAPOp>(loc, targets[0], targets[1]);
+             return swap->getResults();
+           });
+  return {controlsOut[0], {targetsOut[0], targetsOut[1]}};
+}
+
+std::pair<ValueRange, std::pair<Value, Value>>
+FluxProgramBuilder::mcswap(const ValueRange controls, Value qubit0,
+                           Value qubit1) {
+  const auto [controlsOut, targetsOut] =
+      ctrl(controls, {qubit0, qubit1},
+           [&](OpBuilder& b, const ValueRange targets) -> ValueRange {
+             const auto swap = b.create<SWAPOp>(loc, targets[0], targets[1]);
+             return swap->getResults();
            });
   return {controlsOut[0], {targetsOut[0], targetsOut[1]}};
 }
