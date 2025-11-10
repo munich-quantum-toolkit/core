@@ -46,6 +46,7 @@ jobs:
         with:
           artifact-ids: 4503321073
           path: llvm_build
+          github-token: ${{ secrets.GITHUB_TOKEN }}
           repository: burgholzer/portable-mlir-toolchain
           run-id: 19173559613
 
