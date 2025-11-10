@@ -14,7 +14,7 @@ auto self_adjoint_evd(rmatrix4x4 A) {
     }
   }
   std::cerr << "=EigIN==\n" << a << "\n========\n" << std::endl;
-  s.computeDirect(a);
+  s.compute(a); // TODO: computeDirect is faster
   auto vecs = s.eigenvectors();
   auto vals = s.eigenvalues();
   rmatrix4x4 rvecs;
