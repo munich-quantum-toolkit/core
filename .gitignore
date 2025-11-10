@@ -137,7 +137,8 @@ python/**/_version.py
 _skbuild/
 
 # Any build dirs
-**/build/
+test/**/build/
+plugins/**/build/
 
 # Common editor files
 *~
