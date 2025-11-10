@@ -13,6 +13,10 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 
 - ✨ Add support for bridge gates for the neutral atom hybrid mapper ([#1293]) ([**@lsschmid**])
 
+### Fixed
+
+- 🐛 Revert change to `opTypeFromString()` signature made in [#1283] ([#1300]) ([**@denialhaag**])
+
 ## [3.3.2] - 2025-11-04
 
 ### Added
@@ -231,6 +235,7 @@ _📚 Refer to the [GitHub Release Notes](https://github.com/munich-quantum-tool
 
 <!-- PR links -->
 
+[#1300]: https://github.com/munich-quantum-toolkit/core/pull/1300
 [#1293]: https://github.com/munich-quantum-toolkit/core/pull/1293
 [#1287]: https://github.com/munich-quantum-toolkit/core/pull/1287
 [#1283]: https://github.com/munich-quantum-toolkit/core/pull/1283
