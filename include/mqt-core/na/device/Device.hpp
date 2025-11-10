@@ -331,9 +331,7 @@ private:
    */
   using SitesStorage =
       std::variant<std::vector<MQT_NA_QDMI_Site>,
-                   std::vector<std::pair<MQT_NA_QDMI_Site, MQT_NA_QDMI_Site>>
-
-                   >;
+                   std::vector<std::pair<MQT_NA_QDMI_Site, MQT_NA_QDMI_Site>>>;
 
   /// The operation's supported sites
   SitesStorage supportedSites_;
