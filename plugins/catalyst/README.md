@@ -149,18 +149,17 @@ device = configure_device_for_mqt(device)
 
 ## System Requirements
 
-Building MQT Core requires a C++ compiler with support for C++20 and CMake 3.24 or newer.
+Building the MQT Core MLIR Catalyst Plugin requires a C++ compiler with support for C++20 and CMake 3.24 or newer.
 Building (and running) is continuously tested under Linux and macOS using the [latest available system versions for GitHub Actions](https://github.com/actions/runner-images).
-The MQT Core Catalyst MLIR Plugin is compatible with Python version 3.11 and newer.
+The MQT Core MLIR Catalyst Plugin is compatible with Python version 3.11 and newer.
 
-MQT Core relies on some external dependencies:
+The MQT Core MLIR Catalyst Plugin relies on some external dependencies:
 
-- [llvm/llvm-project](https://github.com/llvm/llvm-project): A toolkit for the construction of highly optimized compilers, optimizers, and run-time environments.
-- [PennyLaneAI/catalyst](https://github.com/PennyLaneAI/catalyst): A package that enables just-in-time (JIT) compilation of hybrid quantum-classical programs implemented with PennyLane.
+- [llvm/llvm-project](https://github.com/llvm/llvm-project): A toolkit for the construction of highly optimized compilers, optimizers, and run-time environments (specific revision: `f8cb7987c64dcffb72414a40560055cb717dbf74`).
+- [PennyLaneAI/catalyst](https://github.com/PennyLaneAI/catalyst): A package that enables just-in-time (JIT) compilation of hybrid quantum-classical programs implemented with PennyLane (version > 0.12.0).
+- [MQT Core](https://github.com/munich-quantum-toolkit/core): Provides the MQTOpt MLIR dialect and supporting infrastructure.
 
-Note, both dependencies are currently restricted to a specific version.
-
-CMake will automatically look for installed versions of these libraries. If it does not find them, they will be fetched automatically at configure time via the [FetchContent](https://cmake.org/cmake/help/latest/module/FetchContent.html) module (check out the documentation for more information on how to customize this behavior).
+Note, both LLVM/MLIR and Catalyst are currently restricted to specific versions. You must build LLVM/MLIR locally from the exact revision specified above and configure CMake to use it (see installation instructions).
 
 ## Cite This
 
