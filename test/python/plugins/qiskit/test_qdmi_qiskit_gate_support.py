@@ -16,7 +16,7 @@ import pytest
 from qiskit import QuantumCircuit
 
 if TYPE_CHECKING:
-    from mqt.core.qdmi.qiskit import QiskitBackend
+    from mqt.core.plugins.qiskit import QiskitBackend
 
 pytestmark = [
     pytest.mark.filterwarnings("ignore:.*Device operation.*cannot be mapped to a Qiskit gate.*:UserWarning"),

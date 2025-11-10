@@ -8,7 +8,7 @@ mystnb:
 
 # Qiskit Backend Integration
 
-The {py:mod}`mqt.core.qdmi.qiskit` module provides a Qiskit {py:class}`~qiskit.providers.BackendV2`-compatible interface to QDMI devices via FoMaC.
+The {py:mod}`mqt.core.plugins.qiskit` module provides a Qiskit {py:class}`~qiskit.providers.BackendV2`-compatible interface to QDMI devices via FoMaC.
 This integration allows you to execute Qiskit circuits on QDMI-compliant quantum devices using a familiar Qiskit workflow.
 
 ## Installation
@@ -40,7 +40,7 @@ $ uv pip install "mqt-core[qiskit]"
 ## Quickstart
 
 ```{code-cell} ipython3
-from mqt.core.qdmi.qiskit import QDMIProvider
+from mqt.core.plugins.qiskit import QDMIProvider
 from qiskit import QuantumCircuit
 
 # Create a provider and get a backend
@@ -65,11 +65,11 @@ print(f"Results: {counts}")
 
 ### Using the Provider
 
-The {py:class}`~mqt.core.qdmi.qiskit.QDMIProvider` discovers QDMI devices available through the FoMaC layer.
+The {py:class}`~mqt.core.plugins.qiskit.QDMIProvider` discovers QDMI devices available through the FoMaC layer.
 Backends should always be obtained through the provider rather than instantiated directly.
 
 ```{code-cell} ipython3
-from mqt.core.qdmi.qiskit import QDMIProvider
+from mqt.core.plugins.qiskit import QDMIProvider
 
 # Create a provider
 provider = QDMIProvider()
@@ -166,8 +166,8 @@ job = backend.run(circuit, shots=1024, program_format=fomac.ProgramFormat.QASM2)
 
 Circuits must meet the following requirements before execution:
 
-1. **All parameters must be bound**: Circuits with unbound parameters raise {py:class}`~mqt.core.qdmi.qiskit.CircuitValidationError`
-2. **Only supported operations**: Operations not supported by the device raise {py:class}`~mqt.core.qdmi.qiskit.UnsupportedOperationError`
+1. **All parameters must be bound**: Circuits with unbound parameters raise {py:class}`~mqt.core.plugins.qiskit.CircuitValidationError`
+2. **Only supported operations**: Operations not supported by the device raise {py:class}`~mqt.core.plugins.qiskit.UnsupportedOperationError`
 3. **Valid shots value**: Must be a non-negative integer
 
 ```python
@@ -188,7 +188,7 @@ job = backend.run(qc_bound, shots=100)  # Success
 
 ### Job Status
 
-The {py:class}`~mqt.core.qdmi.qiskit.QiskitJob` wraps a FoMaC (QDMI) job and provides status tracking:
+The {py:class}`~mqt.core.plugins.qiskit.QiskitJob` wraps a FoMaC (QDMI) job and provides status tracking:
 
 ```python
 from qiskit.providers import JobStatus
@@ -254,7 +254,7 @@ for idx, result in enumerate(results):
 The module provides specific exceptions for different error conditions:
 
 ```python
-from mqt.core.qdmi.qiskit import (
+from mqt.core.plugins.qiskit import (
     CircuitValidationError,
     UnsupportedOperationError,
     JobSubmissionError,
@@ -287,7 +287,7 @@ When you run a circuit, the backend:
 1. Validates the circuit (checks for unbound parameters, supported operations, valid options)
 2. Converts the circuit to QASM (QASM3 by default, QASM2 optionally)
 3. Submits the QASM program to the FoMaC (QDMI) device via `device.submit_job()`
-4. Returns a {py:class}`~mqt.core.qdmi.qiskit.QiskitJob` wrapping the FoMaC (QDMI) job
+4. Returns a {py:class}`~mqt.core.plugins.qiskit.QiskitJob` wrapping the FoMaC (QDMI) job
 
 ### Device Introspection
 
@@ -302,7 +302,7 @@ The backend builds its {py:class}`~qiskit.transpiler.Target` by:
 
 For complete API documentation, see:
 
-- {py:class}`~mqt.core.qdmi.qiskit.QDMIProvider` - Device provider interface
-- {py:class}`~mqt.core.qdmi.qiskit.QiskitBackend` - BackendV2 implementation
-- {py:class}`~mqt.core.qdmi.qiskit.QiskitJob` - Job wrapper and result handling
-- {py:mod}`~mqt.core.qdmi.qiskit.exceptions` - Exception types
+- {py:class}`~mqt.core.plugins.qiskit.QDMIProvider` - Device provider interface
+- {py:class}`~mqt.core.plugins.qiskit.QiskitBackend` - BackendV2 implementation
+- {py:class}`~mqt.core.plugins.qiskit.QiskitJob` - Job wrapper and result handling
+- {py:mod}`~mqt.core.plugins.qiskit.exceptions` - Exception types

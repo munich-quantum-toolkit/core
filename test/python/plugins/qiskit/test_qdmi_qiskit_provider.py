@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import pytest
 
-from mqt.core.qdmi.qiskit import QDMIProvider
+from mqt.core.plugins.qiskit import QDMIProvider
 
 pytestmark = [
     pytest.mark.filterwarnings("ignore:.*Device operation.*cannot be mapped to a Qiskit gate.*:UserWarning"),

@@ -15,12 +15,12 @@ from typing import TYPE_CHECKING
 import pytest
 
 from mqt.core import fomac
-from mqt.core.qdmi.qiskit import QDMIProvider
+from mqt.core.plugins.qiskit import QDMIProvider
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
-    from mqt.core.qdmi.qiskit import QiskitBackend
+    from mqt.core.plugins.qiskit import QiskitBackend
 
 
 class MockQDMIDevice:

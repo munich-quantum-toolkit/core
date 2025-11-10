@@ -10,10 +10,43 @@
 
 from __future__ import annotations
 
-from .mqt_to_qiskit import mqt_to_qiskit
-from .qiskit_to_mqt import qiskit_to_mqt
+from mqt.core._compat import OptionalDependencyTester  # noqa: PLC2701
+
+# Optional dependency tester for Qiskit
+HAS_QISKIT = OptionalDependencyTester(
+    "qiskit",
+    install_msg="Install with 'pip install mqt-core[qiskit]'",
+)
+
+if HAS_QISKIT:
+    from .backend import QiskitBackend
+    from .exceptions import (
+        CircuitValidationError,
+        JobSubmissionError,
+        QDMIQiskitError,
+        TranslationError,
+        UnsupportedFormatError,
+        UnsupportedOperationError,
+    )
+    from .mqt_to_qiskit import mqt_to_qiskit
+    from .provider import QDMIProvider
+    from .qiskit_to_mqt import qiskit_to_mqt
+
 
 __all__ = [
-    "mqt_to_qiskit",
-    "qiskit_to_mqt",
+    "HAS_QISKIT",
 ]
+
+if HAS_QISKIT:
+    __all__ += [
+        "CircuitValidationError",
+        "JobSubmissionError",
+        "QDMIProvider",
+        "QDMIQiskitError",
+        "QiskitBackend",
+        "TranslationError",
+        "UnsupportedFormatError",
+        "UnsupportedOperationError",
+        "mqt_to_qiskit",
+        "qiskit_to_mqt",
+    ]

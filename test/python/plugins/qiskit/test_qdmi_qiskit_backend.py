@@ -16,15 +16,15 @@ import pytest
 from qiskit import QuantumCircuit
 from qiskit.circuit import Parameter
 
-from mqt.core.qdmi.qiskit import (
+from mqt.core.plugins.qiskit import (
     CircuitValidationError,
     UnsupportedOperationError,
 )
 
 if TYPE_CHECKING:
-    from test.python.qdmi.qiskit.conftest import MockQDMIDevice
+    from test.python.plugins.qiskit.conftest import MockQDMIDevice
 
-    from mqt.core.qdmi.qiskit import QiskitBackend
+    from mqt.core.plugins.qiskit import QiskitBackend
 
 pytestmark = [
     pytest.mark.filterwarnings("ignore:.*Device operation.*cannot be mapped to a Qiskit gate.*:UserWarning"),
@@ -66,7 +66,7 @@ def test_unsupported_operation(mock_backend: QiskitBackend) -> None:
 
 def test_backend_via_provider() -> None:
     """Backend can be obtained through provider."""
-    from mqt.core.qdmi.qiskit import QDMIProvider
+    from mqt.core.plugins.qiskit import QDMIProvider
 
     provider = QDMIProvider()
     backend = provider.get_backend("MQT NA Default QDMI Device")
@@ -76,7 +76,7 @@ def test_backend_via_provider() -> None:
 
 def test_provider_get_backend_by_name() -> None:
     """Provider can get backend by name."""
-    from mqt.core.qdmi.qiskit import QDMIProvider
+    from mqt.core.plugins.qiskit import QDMIProvider
 
     provider = QDMIProvider()
     backend = provider.get_backend("MQT NA Default QDMI Device")
@@ -85,7 +85,7 @@ def test_provider_get_backend_by_name() -> None:
 
 def test_provider_backends_list() -> None:
     """Provider can list all backends."""
-    from mqt.core.qdmi.qiskit import QDMIProvider
+    from mqt.core.plugins.qiskit import QDMIProvider
 
     provider = QDMIProvider()
     backends = provider.backends()
@@ -311,7 +311,7 @@ def test_backend_warns_on_unmappable_operation(
     # Creating backend should trigger warning about unmappable operation
     with warnings.catch_warnings(record=True) as w:
         warnings.simplefilter("always")
-        from mqt.core.qdmi.qiskit import QDMIProvider
+        from mqt.core.plugins.qiskit import QDMIProvider
 
         provider = QDMIProvider()
         provider.get_backend("Test Device")
@@ -348,7 +348,7 @@ def test_backend_warns_on_missing_measurement_operation(
     # Creating backend should trigger warning about missing measurement operation
     with warnings.catch_warnings(record=True) as w:
         warnings.simplefilter("always")
-        from mqt.core.qdmi.qiskit import QDMIProvider
+        from mqt.core.plugins.qiskit import QDMIProvider
 
         provider = QDMIProvider()
         provider.get_backend("Test Device")

@@ -129,22 +129,24 @@ class QiskitBackend(BackendV2):  # type: ignore[misc]
 
         target = Target(description=f"QDMI device: {self._device.name()}")
 
-        # Deduplicate operations by name (device may return duplicates)
-        seen_operations: set[str] = set()
+        # Deduplicate operations by Qiskit gate name (not device operation name)
+        # Multiple device operations may map to the same Qiskit gate
+        seen_gate_names: set[str] = set()
 
         # Add operations from device
         for op in self._device.operations():
             op_name = op.name()
 
-            # Skip if we've already processed this operation name
-            if op_name in seen_operations:
-                continue
-            seen_operations.add(op_name)
-
             # Handle the measurement operation
             if op_name == "measure":
-                qargs = self._get_operation_qargs(op)
-                target.add_instruction(Measure(), dict.fromkeys(qargs))
+                if "measure" not in seen_gate_names:
+                    seen_gate_names.add("measure")
+                    qargs = self._get_operation_qargs(op)
+                    # If qargs is [None], pass {None: None} to indicate global availability
+                    if qargs == [None]:  # type: ignore[comparison-overlap]
+                        target.add_instruction(Measure(), {None: None})
+                    else:
+                        target.add_instruction(Measure(), dict.fromkeys(qargs))
                 continue
 
             # Map known operations to Qiskit gates
@@ -156,6 +158,12 @@ class QiskitBackend(BackendV2):  # type: ignore[misc]
                     stacklevel=2,
                 )
                 continue
+
+            # Skip if we've already added this Qiskit gate to the target
+            gate_name = gate.name
+            if gate_name in seen_gate_names:
+                continue
+            seen_gate_names.add(gate_name)
 
             # Determine which qubits this operation applies to
             qargs = self._get_operation_qargs(op)
@@ -172,10 +180,15 @@ class QiskitBackend(BackendV2):  # type: ignore[misc]
                 )
 
             # Add to target
-            target.add_instruction(gate, dict.fromkeys(qargs, props))
+            # If qargs is [None], it means the operation is available on all qubits
+            # In this case, pass {None: props} to indicate global availability
+            if qargs == [None]:  # type: ignore[comparison-overlap]
+                target.add_instruction(gate, {None: props})
+            else:
+                target.add_instruction(gate, dict.fromkeys(qargs, props))
 
         # Check if the measurement operation is defined
-        if "measure" not in seen_operations:
+        if "measure" not in seen_gate_names:
             warnings.warn(
                 "Device does not define a measurement operation. This may limit practical usage.",
                 UserWarning,
@@ -265,62 +278,73 @@ class QiskitBackend(BackendV2):  # type: ignore[misc]
         num_qubits = self._device.qubits_num()
 
         site_list = op.sites()
-        is_zoned = op.is_zoned()
 
-        # If operation is zoned or has no site list, generate all possible combinations
-        if site_list is None or is_zoned:
-            # Generate all possible qubit combinations
-            if qubits_num == 1:
-                return [(i,) for i in range(num_qubits)]
-            if qubits_num == 2:
-                # Use coupling map if available
-                coupling_map = self._device.coupling_map()
-                if coupling_map:
-                    # Remap coupling map to qubit indices
-                    remapped_coupling: list[tuple[int, ...]] = []
-                    for pair in coupling_map:
-                        idx0, idx1 = pair[0].index(), pair[1].index()
-                        if idx0 in self._site_index_to_qubit_index and idx1 in self._site_index_to_qubit_index:
-                            remapped_coupling.append((
-                                self._site_index_to_qubit_index[idx0],
-                                self._site_index_to_qubit_index[idx1],
-                            ))
-                    if remapped_coupling:
-                        return remapped_coupling
-                # Otherwise all pairs
-                return [(i, j) for i in range(num_qubits) for j in range(i + 1, num_qubits)]
+        # If operation has an explicit site list, use it
+        if site_list is not None:
+            # Extract and remap site indices to qubit indices
+            raw_indices = [s.index() for s in site_list]
 
-            # Multi-qubit operations (3 or more qubits) - generate all combinations
-            return list(combinations(range(num_qubits), qubits_num))
-
-        # Extract and remap site indices to qubit indices
-        raw_indices = [s.index() for s in site_list]
-
-        # Filter out zone sites and remap to qubit indices
-        remapped_indices: list[int] = [
-            self._site_index_to_qubit_index[idx] for idx in raw_indices if idx in self._site_index_to_qubit_index
-        ]
-
-        # For single-qubit operations, use flat list
-        if qubits_num == 1:
-            return [(idx,) for idx in sorted(set(remapped_indices))]
-
-        # For multi-qubit operations, the flat list represents consecutive pairs
-        # due to reinterpret_cast from vector<pair<Site, Site>> to vector<Site>
-        # Group consecutive elements into tuples of size qubits_num
-        if len(remapped_indices) % qubits_num == 0:
-            site_tuples: list[tuple[int, ...]] = [
-                tuple(remapped_indices[i : i + qubits_num]) for i in range(0, len(remapped_indices), qubits_num)
+            # Filter out zone sites and remap to qubit indices
+            remapped_indices: list[int] = [
+                self._site_index_to_qubit_index[idx] for idx in raw_indices if idx in self._site_index_to_qubit_index
             ]
-            return site_tuples
 
-        # Fallback: if not evenly divisible, something is wrong
-        msg = (
-            f"Multi-qubit operation '{op.name()}' (qubits_num={qubits_num}) "
-            f"has improperly structured sites (expected {len(remapped_indices)} to be divisible by {qubits_num}). "
-            "This indicates a device capability specification error."
-        )
-        raise ValueError(msg)
+            # For single-qubit operations, use flat list
+            if qubits_num == 1:
+                return [(idx,) for idx in sorted(set(remapped_indices))]
+
+            # For multi-qubit operations, the flat list represents consecutive pairs
+            # due to reinterpret_cast from vector<pair<Site, Site>> to vector<Site>
+            # Group consecutive elements into tuples of size qubits_num
+            if len(remapped_indices) % qubits_num == 0:
+                site_tuples: list[tuple[int, ...]] = [
+                    tuple(remapped_indices[i : i + qubits_num]) for i in range(0, len(remapped_indices), qubits_num)
+                ]
+                return site_tuples
+
+            # Fallback: if not evenly divisible, something is wrong
+            msg = (
+                f"Multi-qubit operation '{op.name()}' (qubits_num={qubits_num}) "
+                f"has improperly structured sites (expected {len(remapped_indices)} to be divisible by {qubits_num}). "
+                "This indicates a device capability specification error."
+            )
+            raise ValueError(msg)
+
+        # Operation is zoned or has no explicit site list - generate combinations
+
+        # Single-qubit operations: all qubits
+        if qubits_num == 1:
+            return [(i,) for i in range(num_qubits)]
+
+        # For multi-qubit operations, check if device is too large to enumerate all combinations
+        # For very large devices (e.g., simulators), return None to indicate global availability
+        max_qubits_for_all_combinations = 1000
+        if num_qubits > max_qubits_for_all_combinations:
+            # Return None to indicate operation is available on all qubits
+            # This will be handled by _build_target() as {None: None}
+            return [None]  # type: ignore[list-item]
+
+        # Two-qubit operations: use coupling map if available, otherwise all pairs
+        if qubits_num == 2:
+            coupling_map = self._device.coupling_map()
+            if coupling_map:
+                # Remap coupling map to qubit indices
+                remapped_coupling: list[tuple[int, ...]] = []
+                for pair in coupling_map:
+                    idx0, idx1 = pair[0].index(), pair[1].index()
+                    if idx0 in self._site_index_to_qubit_index and idx1 in self._site_index_to_qubit_index:
+                        remapped_coupling.append((
+                            self._site_index_to_qubit_index[idx0],
+                            self._site_index_to_qubit_index[idx1],
+                        ))
+                if remapped_coupling:
+                    return remapped_coupling
+
+            # No coupling map - generate all pairs
+            return [(i, j) for i in range(num_qubits) for j in range(i + 1, num_qubits)]
+
+        # Multi-qubit operations (3 or more qubits) - generate all combinations
+        return list(combinations(range(num_qubits), qubits_num))
 
     @staticmethod
     def _convert_circuit(circuit: QuantumCircuit, program_format: fomac.ProgramFormat) -> str:
