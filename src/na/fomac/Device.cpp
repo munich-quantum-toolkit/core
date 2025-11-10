@@ -509,6 +509,20 @@ auto FoMaC::Device::initOperationsFromDevice() -> bool {
              .fidelity = *f,
              .numParameters = op.getParametersNum()}});
       } else if (*nq == 2) {
+        const auto& sitePairsOpt = op.getSitePairs();
+        if (!sitePairsOpt.has_value() || sitePairsOpt->empty()) {
+          SPDLOG_INFO("Two-qubit operation missing site pairs");
+          return false;
+        }
+
+        std::vector<fomac::FoMaC::Device::Site> allSites;
+        allSites.reserve(sitePairsOpt->size() * 2);
+        for (const auto& [site1, site2] : *sitePairsOpt) {
+          allSites.push_back(site1);
+          allSites.push_back(site2);
+        }
+        const auto region = calculateExtentFromSites(allSites);
+
         const auto& ir = op.getInteractionRadius();
         if (!ir.has_value()) {
           SPDLOG_INFO("Two-qubit Operation missing interaction radius");

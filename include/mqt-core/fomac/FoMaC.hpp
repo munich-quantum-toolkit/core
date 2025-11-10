@@ -430,6 +430,21 @@ public:
       [[nodiscard]] auto getSites(const std::vector<Site>& sites = {},
                                   const std::vector<double>& params = {}) const
           -> std::optional<std::vector<Site>>;
+      /**
+       * @brief Get valid site pairs for two-qubit operations.
+       * @details Returns the site combinations as pairs, preserving the tuple
+       * structure as specified by QDMI. This method should be used for local
+       * two-qubit operations to get the valid site combinations.
+       * @param sites Optional sites for query.
+       * @param params Optional parameters for query.
+       * @return Optional vector of site pairs if this is a 2-qubit operation,
+       * std::nullopt otherwise.
+       * @see QDMI_OPERATION_PROPERTY_SITES
+       */
+      [[nodiscard]] auto
+      getSitePairs(const std::vector<Site>& sites = {},
+                   const std::vector<double>& params = {}) const
+          -> std::optional<std::vector<std::pair<Site, Site>>>;
       /// @see QDMI_OPERATION_PROPERTY_MEANSHUTTLINGSPEED
       [[nodiscard]] auto
       getMeanShuttlingSpeed(const std::vector<Site>& sites = {},

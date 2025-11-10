@@ -81,6 +81,10 @@ class Device:
             self, sites: Iterable[Device.Site] = ..., params: Iterable[float] = ...
         ) -> Iterable[Device.Site] | None:
             """Returns the list of sites the operation can be performed on."""
+        def site_pairs(
+            self, sites: Iterable[Device.Site] = ..., params: Iterable[float] = ...
+        ) -> Iterable[tuple[Device.Site, Device.Site]] | None:
+            """Returns the list of site pairs the 2-qubit operation can be performed on."""
         def mean_shuttling_speed(self, sites: Iterable[Device.Site] = ..., params: Iterable[float] = ...) -> int | None:
             """Returns the mean shuttling speed of the operation."""
         def __eq__(self, other: object) -> bool:

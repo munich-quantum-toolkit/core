@@ -197,9 +197,22 @@ def test_operations(device_tuple: tuple[Device, Mapping[str, Any]]) -> None:
                 )
                 assert operation.blocking_radius() == device_dict["localMultiQubitOperations"][0]["blockingRadius"]
                 assert operation.qubits_num() == device_dict["localMultiQubitOperations"][0]["numQubits"]
+
+                site_pairs = operation.site_pairs()
+                assert site_pairs is not None
+                site_pairs_list = list(site_pairs)
+                assert len(site_pairs_list) > 0
+
+                for pair in site_pairs_list:
+                    assert len(pair) == 2
+                    site1, site2 = pair
+                    assert site1.index() >= 0
+                    assert site2.index() >= 0
+
                 sites = operation.sites()
                 assert sites is not None
                 sites = list(sites)
+                assert len(sites) == len(site_pairs_list) * 2
                 assert calculate_extent_from_sites(sites) == (
                     device_dict["localMultiQubitOperations"][0]["region"]["origin"]["x"],
                     device_dict["localMultiQubitOperations"][0]["region"]["origin"]["y"],
