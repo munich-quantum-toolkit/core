@@ -120,6 +120,8 @@ struct GateDecompositionPattern final
       bool isFirstQubitOngoing = result.outQubits[0] != mlir::Value{};
       bool isSecondQubitOngoing = result.outQubits[1] != mlir::Value{};
       while (isFirstQubitOngoing || isSecondQubitOngoing) {
+        // TODO: can cause issues; instead: per iteration, collect all
+        // single-qubit operations, then take one two-qubit operation; repeat
         if (result.outQubits[0]) {
           assert(result.outQubits[0].hasOneUse());
           isFirstQubitOngoing =
@@ -1321,10 +1323,11 @@ struct GateDecompositionPattern final
   public:
     static TwoQubitBasisDecomposer new_inner(
         qc::OpType gate = qc::X, // CX
-        std::array<std::size_t, 2> gate_qubit_ids = {1, 0},
+        std::array<std::size_t, 2> gate_qubit_ids = {0, 1},
         const llvm::SmallVector<fp, 3>& gate_params = {},
-        // matrix4x4 gate_matrix = {1, 0, 0, 0, 0, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0,
-        matrix4x4 gate_matrix = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1, 0, 0, 1,
+        matrix4x4 gate_matrix = {1, 0, 0, 0, 0, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0,
+                                 // matrix4x4 gate_matrix = {1, 0, 0, 0, 0, 1,
+                                 // 0, 0, 0, 0, 0, 1, 0, 0, 1,
                                  0}, // CX matrix
         fp basis_fidelity = 1.0, EulerBasis euler_basis = EulerBasis::ZYZ,
         std::optional<bool> pulse_optimize = std::nullopt) {
