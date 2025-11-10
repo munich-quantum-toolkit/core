@@ -52,15 +52,9 @@ jobs:
       - name: Setup LLVM/MLIR (macOS)
         if: runner.os == 'macOS'
         run: |
-          # Download and extract artifact
-          cd llvm_build
-
-          # Install zstd if needed
-          brew install zstd
-
           # Extract archive
-          zstd -d toolchain.tar.zst --output-dir-flat .
-          tar xf toolchain.tar
+          zstd -d llvm-mlir_21.1.5_macos_arm64_AArch64_opt.tar.zst --output-dir-flat .
+          tar xf llvm-mlir_21.1.5_macos_arm64_AArch64_opt.tar
 
           # Set environment variable for subsequent steps
           echo "LLVM_DIR=$PWD/lib/cmake/llvm" >> $GITHUB_ENV
