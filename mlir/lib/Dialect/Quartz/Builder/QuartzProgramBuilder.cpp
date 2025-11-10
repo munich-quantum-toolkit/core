@@ -132,10 +132,35 @@ QuartzProgramBuilder& QuartzProgramBuilder::x(Value qubit) {
   return *this;
 }
 
+QuartzProgramBuilder& QuartzProgramBuilder::cx(Value control, Value target) {
+  return mcx({control}, target);
+}
+
+QuartzProgramBuilder& QuartzProgramBuilder::mcx(ValueRange controls,
+                                                Value target) {
+  builder.create<CtrlOp>(loc, controls,
+                         [&](OpBuilder& b) { b.create<XOp>(loc, target); });
+  return *this;
+}
+
 QuartzProgramBuilder&
 QuartzProgramBuilder::rx(const std::variant<double, Value>& theta,
                          Value qubit) {
   builder.create<RXOp>(loc, qubit, theta);
+  return *this;
+}
+
+QuartzProgramBuilder&
+QuartzProgramBuilder::crx(const std::variant<double, Value>& theta,
+                          Value control, const Value target) {
+  return mcrx(theta, {control}, target);
+}
+
+QuartzProgramBuilder&
+QuartzProgramBuilder::mcrx(const std::variant<double, Value>& theta,
+                           ValueRange controls, Value target) {
+  builder.create<CtrlOp>(
+      loc, controls, [&](OpBuilder& b) { b.create<RXOp>(loc, target, theta); });
   return *this;
 }
 
@@ -147,8 +172,39 @@ QuartzProgramBuilder::u2(const std::variant<double, Value>& phi,
   return *this;
 }
 
+QuartzProgramBuilder&
+QuartzProgramBuilder::cu2(const std::variant<double, Value>& phi,
+                          const std::variant<double, Value>& lambda,
+                          Value control, const Value target) {
+  return mcu2(phi, lambda, {control}, target);
+}
+
+QuartzProgramBuilder&
+QuartzProgramBuilder::mcu2(const std::variant<double, Value>& phi,
+                           const std::variant<double, Value>& lambda,
+                           ValueRange controls, Value target) {
+  builder.create<CtrlOp>(loc, controls, [&](OpBuilder& b) {
+    b.create<U2Op>(loc, target, phi, lambda);
+  });
+  return *this;
+}
+
 QuartzProgramBuilder& QuartzProgramBuilder::swap(Value qubit0, Value qubit1) {
   builder.create<SWAPOp>(loc, qubit0, qubit1);
+  return *this;
+}
+
+QuartzProgramBuilder& QuartzProgramBuilder::cswap(Value control,
+                                                  const Value qubit0,
+                                                  const Value qubit1) {
+  return mcswap({control}, qubit0, qubit1);
+}
+
+QuartzProgramBuilder& QuartzProgramBuilder::mcswap(ValueRange controls,
+                                                   Value qubit0, Value qubit1) {
+  builder.create<CtrlOp>(loc, controls, [&](OpBuilder& b) {
+    b.create<SWAPOp>(loc, qubit0, qubit1);
+  });
   return *this;
 }
 
@@ -156,18 +212,10 @@ QuartzProgramBuilder& QuartzProgramBuilder::swap(Value qubit0, Value qubit1) {
 // Modifiers
 //===----------------------------------------------------------------------===//
 
-QuartzProgramBuilder& QuartzProgramBuilder::ctrl(
-    ValueRange controls,
-    const std::function<void(QuartzProgramBuilder&)>& body) {
-  auto ctrlOp = builder.create<CtrlOp>(loc, controls);
-
-  const mlir::OpBuilder::InsertionGuard guard(builder);
-  builder.setInsertionPointToStart(&ctrlOp.getBody().emplaceBlock());
-
-  body(*this);
-
-  builder.create<YieldOp>(loc);
-
+QuartzProgramBuilder&
+QuartzProgramBuilder::ctrl(ValueRange controls,
+                           const std::function<void(OpBuilder&)>& body) {
+  builder.create<CtrlOp>(loc, controls, body);
   return *this;
 }
 

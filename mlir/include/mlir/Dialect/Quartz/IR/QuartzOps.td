@@ -347,26 +347,37 @@ def YieldOp : QuartzOp<"yield", traits = [Terminator]> {
     let assemblyFormat = "attr-dict";
 }
 
-def CtrlOp : QuartzOp<"ctrl", traits = [UnitaryOpInterface]> {
-    let summary = "Apply a controlled operation";
+def CtrlOp : QuartzOp<"ctrl",
+            traits = [
+                UnitaryOpInterface,
+                SingleBlockImplicitTerminator<"::mlir::quartz::YieldOp">
+            ]> {
+    let summary = "Add control qubits to a unitary operation";
     let description = [{
-        Modifier to make an operation controlled by one or more control qubits.
+        A modifier operation that adds control qubits to the unitary operation
+        defined in its body region. The controlled operation applies the
+        underlying unitary only when all control qubits are in the |1⟩ state.
+        The control qubits are not modified by this operation.
 
         Example:
         ```mlir
         quartz.ctrl(%q0) {
-          quartz.x %q1
-          quartz.yield
+          quartz.x %q1 : !quartz.qubit
         }
         ```
     }];
 
-    let arguments = (ins Variadic<QubitType>:$controls);
+    let arguments = (ins Arg<Variadic<QubitType>, "the control qubits", [MemRead,MemWrite]>:$controls);
     let regions = (region SizedRegion<1>:$body);
     let assemblyFormat = "`(` $controls `)` $body attr-dict";
 
+    let builders = [
+        OpBuilder<(ins "ValueRange":$controls, "UnitaryOpInterface":$bodyUnitary)>,
+        OpBuilder<(ins "ValueRange":$controls, "const std::function<void(OpBuilder &)>&":$bodyBuilder)>
+    ];
+
     let extraClassDeclaration = [{
-        UnitaryOpInterface getBodyUnitary();
+        [[nodiscard]] UnitaryOpInterface getBodyUnitary();
         size_t getNumQubits();
         size_t getNumTargets();
         size_t getNumControls();
@@ -383,6 +394,7 @@ def CtrlOp : QuartzOp<"ctrl", traits = [UnitaryOpInterface]> {
         static StringRef getBaseSymbol() { return "ctrl"; }
     }];
 
+    let hasCanonicalizer = 1;
     let hasVerifier = 1;
 }
 

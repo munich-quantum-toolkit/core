@@ -332,22 +332,17 @@ struct ConvertQuartzResetOp final
   matchAndRewrite(quartz::ResetOp op, OpAdaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
 
-    // Prepare result type
-    const auto& qubitType = flux::QubitType::get(rewriter.getContext());
-
+    // Track the Quartz qubit being reset
     const auto& quartzQubit = op.getQubit();
 
     // Get the latest Flux qubit value from the state map
     const auto& fluxQubit = getState().qubitMap[quartzQubit];
 
     // Create flux.reset (consumes input, produces output)
-    auto fluxOp =
-        rewriter.create<flux::ResetOp>(op.getLoc(), qubitType, fluxQubit);
-
-    auto outFluxQubit = fluxOp.getQubitOut();
+    auto fluxOp = rewriter.create<flux::ResetOp>(op.getLoc(), fluxQubit);
 
     // Update mapping: the Quartz qubit now corresponds to the reset output
-    getState().qubitMap[quartzQubit] = outFluxQubit;
+    getState().qubitMap[quartzQubit] = fluxOp.getQubitOut();
 
     // Erase the old (it has no results to replace)
     rewriter.eraseOp(op);
@@ -559,54 +554,53 @@ struct ConvertQuartzSWAPOp final : StatefulOpConversionPattern<quartz::SWAPOp> {
  * ```
  * is converted to
  * ```mlir
- * %controls_out, %targets_out = flux.ctrl({%q0_in}, {%q1_in}) {
+ * %controls_out, %targets_out = flux.ctrl(%q0_in) %q1_in {
  *   %q1_res = flux.x %q1_in : !flux.qubit -> !flux.qubit
  *   flux.yield %q1_res
- * } : {!flux.qubit}, {!flux.qubit} -> {!flux.qubit}, {!flux.qubit}
+ * } : !flux.qubit, !flux.qubit -> !flux.qubit, !flux.qubit
  * ```
  */
 struct ConvertQuartzCtrlOp final : StatefulOpConversionPattern<quartz::CtrlOp> {
   using StatefulOpConversionPattern::StatefulOpConversionPattern;
 
   LogicalResult
-  matchAndRewrite(quartz::CtrlOp op, OpAdaptor /*adaptor*/,
+  matchAndRewrite(quartz::CtrlOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
+    auto& [qubitMap] = getState();
     // Get Flux controls from state map
     const auto& quartzControls = op.getControls();
     SmallVector<Value> fluxControls;
     fluxControls.reserve(quartzControls.size());
     for (const auto& quartzControl : quartzControls) {
-      fluxControls.push_back(getState().qubitMap[quartzControl]);
+      fluxControls.push_back(qubitMap[quartzControl]);
     }
 
     // Get Flux targets from state map
+    const auto numTargets = op.getNumTargets();
     SmallVector<Value> fluxTargets;
-    fluxTargets.reserve(op.getNumTargets());
-    for (size_t i = 0; i < op.getNumTargets(); ++i) {
-      const auto& quartzTarget = op.getTarget(i);
-      fluxTargets.push_back(getState().qubitMap[quartzTarget]);
+    fluxTargets.reserve(numTargets);
+    for (size_t i = 0; i < numTargets; ++i) {
+      fluxTargets.push_back(qubitMap[op.getTarget(i)]);
     }
 
     // Create flux.ctrl
+    /// TODO this does not work yet.
     auto fluxOp =
-        rewriter.create<flux::CtrlOp>(op.getLoc(), fluxControls, fluxTargets);
-
-    // Clone the body region from Quartz to Flux
-    IRMapping regionMap;
-    for (size_t i = 0; i < op.getNumTargets(); ++i) {
-      regionMap.map(op.getTarget(i), fluxTargets[i]);
-    }
-    rewriter.cloneRegionBefore(op.getBody(), fluxOp.getBody(),
-                               fluxOp.getBody().end(), regionMap);
+        rewriter.create<flux::CtrlOp>(op.getLoc(), fluxControls, fluxTargets,
+                                      llvm::dyn_cast<flux::UnitaryOpInterface>(
+                                          &adaptor.getBody().front().front()));
 
     // Update state map
-    for (size_t i = 0; i < op.getNumPosControls(); ++i) {
+    const auto numPosControls = op.getNumPosControls();
+    const auto controlsOut = fluxOp.getControlsOut();
+    for (size_t i = 0; i < numPosControls; ++i) {
       const auto& quartzControl = quartzControls[i];
-      getState().qubitMap[quartzControl] = fluxOp.getControlsOut()[i];
+      qubitMap[quartzControl] = controlsOut[i];
     }
-    for (size_t i = 0; i < op.getNumTargets(); ++i) {
+    const auto targetsOut = fluxOp.getTargetsOut();
+    for (size_t i = 0; i < numTargets; ++i) {
       const auto& quartzTarget = op.getTarget(i);
-      getState().qubitMap[quartzTarget] = fluxOp.getTargetsOut()[i];
+      qubitMap[quartzTarget] = targetsOut[i];
     }
 
     rewriter.eraseOp(op);

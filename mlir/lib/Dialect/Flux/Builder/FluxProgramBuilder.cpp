@@ -120,11 +120,6 @@ void FluxProgramBuilder::validateQubitValue(const Value qubit) const {
 
 void FluxProgramBuilder::updateQubitTracking(const Value inputQubit,
                                              const Value outputQubit) {
-  if (inRegion > 0) {
-    // Do not update tracking within regions
-    return;
-  }
-
   // Validate the input qubit
   validateQubitValue(inputQubit);
 
@@ -188,6 +183,27 @@ Value FluxProgramBuilder::x(Value qubit) {
   return qubitOut;
 }
 
+std::pair<Value, Value> FluxProgramBuilder::cx(Value control, Value target) {
+  const auto [controlsOut, targetsOut] =
+      ctrl({control}, {target},
+           [&](OpBuilder& b, const ValueRange targets) -> ValueRange {
+             auto x = b.create<XOp>(loc, targets[0]);
+             return {x.getQubitOut()};
+           });
+  return {controlsOut[0], targetsOut[0]};
+}
+
+std::pair<ValueRange, Value> FluxProgramBuilder::mcx(const ValueRange controls,
+                                                     Value target) {
+  const auto [controlsOut, targetsOut] =
+      ctrl(controls, {target},
+           [&](OpBuilder& b, const ValueRange targets) -> ValueRange {
+             auto x = b.create<XOp>(loc, targets[0]);
+             return {x.getQubitOut()};
+           });
+  return {controlsOut, targetsOut[0]};
+}
+
 Value FluxProgramBuilder::rx(const std::variant<double, Value>& theta,
                              Value qubit) {
   auto rxOp = builder.create<RXOp>(loc, qubit, theta);
@@ -197,6 +213,30 @@ Value FluxProgramBuilder::rx(const std::variant<double, Value>& theta,
   updateQubitTracking(qubit, qubitOut);
 
   return qubitOut;
+}
+
+std::pair<Value, Value>
+FluxProgramBuilder::crx(const std::variant<double, Value>& theta, Value control,
+                        const Value target) {
+  const auto [controlsOut, targetsOut] =
+      ctrl({control}, {target},
+           [&](OpBuilder& b, const ValueRange targets) -> ValueRange {
+             auto rx = b.create<RXOp>(loc, targets[0], theta);
+             return {rx.getQubitOut()};
+           });
+  return {controlsOut[0], targetsOut[0]};
+}
+
+std::pair<ValueRange, Value>
+FluxProgramBuilder::mcrx(const std::variant<double, Value>& theta,
+                         const ValueRange controls, Value target) {
+  const auto [controlsOut, targetsOut] =
+      ctrl(controls, {target},
+           [&](OpBuilder& b, const ValueRange targets) -> ValueRange {
+             auto rx = b.create<RXOp>(loc, targets[0], theta);
+             return {rx.getQubitOut()};
+           });
+  return {controlsOut, targetsOut[0]};
 }
 
 Value FluxProgramBuilder::u2(const std::variant<double, Value>& phi,
@@ -211,6 +251,32 @@ Value FluxProgramBuilder::u2(const std::variant<double, Value>& phi,
   return qubitOut;
 }
 
+std::pair<Value, Value>
+FluxProgramBuilder::cu2(const std::variant<double, Value>& phi,
+                        const std::variant<double, Value>& lambda,
+                        Value control, const Value target) {
+  const auto [controlsOut, targetsOut] =
+      ctrl({control}, {target},
+           [&](OpBuilder& b, const ValueRange targets) -> ValueRange {
+             auto u2 = b.create<U2Op>(loc, targets[0], phi, lambda);
+             return {u2.getQubitOut()};
+           });
+  return {controlsOut[0], targetsOut[0]};
+}
+
+std::pair<ValueRange, Value>
+FluxProgramBuilder::mcu2(const std::variant<double, Value>& phi,
+                         const std::variant<double, Value>& lambda,
+                         const ValueRange controls, Value target) {
+  const auto [controlsOut, targetsOut] =
+      ctrl(controls, {target},
+           [&](OpBuilder& b, const ValueRange targets) -> ValueRange {
+             auto u2 = b.create<U2Op>(loc, targets[0], phi, lambda);
+             return {u2.getQubitOut()};
+           });
+  return {controlsOut, targetsOut[0]};
+}
+
 std::pair<Value, Value> FluxProgramBuilder::swap(Value qubit0, Value qubit1) {
   auto swapOp = builder.create<SWAPOp>(loc, qubit0, qubit1);
   const auto& qubit0Out = swapOp.getQubit0Out();
@@ -223,32 +289,33 @@ std::pair<Value, Value> FluxProgramBuilder::swap(Value qubit0, Value qubit1) {
   return {qubit0Out, qubit1Out};
 }
 
+std::pair<Value, std::pair<Value, Value>>
+FluxProgramBuilder::cswap(Value control, Value qubit0, Value qubit1) {
+  const auto [controlsOut, targetsOut] =
+      ctrl({control}, {qubit0, qubit1},
+           [&](OpBuilder& b, const ValueRange targets) -> ValueRange {
+             auto swap = b.create<SWAPOp>(loc, targets[0], targets[1]);
+             return {swap.getQubit0Out(), swap.getQubit1Out()};
+           });
+  return {controlsOut[0], {targetsOut[0], targetsOut[1]}};
+}
+
 //===----------------------------------------------------------------------===//
 // Modifiers
 //===----------------------------------------------------------------------===//
 
-std::pair<SmallVector<Value>, SmallVector<Value>> FluxProgramBuilder::ctrl(
-    SmallVector<Value> controls, SmallVector<Value> targets,
-    const std::function<SmallVector<Value>(FluxProgramBuilder&)>& body) {
-  auto ctrlOp = builder.create<CtrlOp>(loc, controls, targets);
-
-  const mlir::OpBuilder::InsertionGuard guard(builder);
-  builder.setInsertionPointToStart(&ctrlOp.getBody().emplaceBlock());
-
-  inRegion++;
-  auto targetsYield = body(*this);
-  inRegion--;
-
-  builder.create<YieldOp>(loc, targetsYield);
-
-  const auto& controlsOut = ctrlOp.getControlsOut();
-  const auto& targetsOut = ctrlOp.getTargetsOut();
+std::pair<ValueRange, ValueRange> FluxProgramBuilder::ctrl(
+    const ValueRange controls, const ValueRange targets,
+    const std::function<ValueRange(OpBuilder&, ValueRange)>& body) {
+  auto ctrlOp = builder.create<CtrlOp>(loc, controls, targets, body);
 
   // Update tracking
-  for (const auto& [control, controlOut] : zip(controls, controlsOut)) {
+  const auto& controlsOut = ctrlOp.getControlsOut();
+  for (const auto& [control, controlOut] : llvm::zip(controls, controlsOut)) {
     updateQubitTracking(control, controlOut);
   }
-  for (const auto& [target, targetOut] : zip(targets, targetsOut)) {
+  const auto& targetsOut = ctrlOp.getTargetsOut();
+  for (const auto& [target, targetOut] : llvm::zip(targets, targetsOut)) {
     updateQubitTracking(target, targetOut);
   }
 

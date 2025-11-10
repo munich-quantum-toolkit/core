@@ -46,7 +46,7 @@ namespace mlir::quartz {
  * auto module = builder.finalize();
  * ```
  */
-class QuartzProgramBuilder {
+class QuartzProgramBuilder { /// TODO: Consider inheriting from OpBuilder
 public:
   /**
    * @brief Construct a new QuartzProgramBuilder
@@ -225,13 +225,13 @@ public:
   QuartzProgramBuilder& reset(Value qubit);
 
   //===--------------------------------------------------------------------===//
-  // Unitry Operations
+  // Unitary Operations
   //===--------------------------------------------------------------------===//
 
   /**
    * @brief Apply an X gate to a qubit
    *
-   * @param qubit Input qubit
+   * @param qubit Target qubit
    * @return Reference to this builder for method chaining
    *
    * @par Example:
@@ -245,10 +245,48 @@ public:
   QuartzProgramBuilder& x(Value qubit);
 
   /**
+   * @brief Apply a CX gate
+   *
+   * @param control Control qubit
+   * @param target Target qubit
+   * @return Reference to this builder for method chaining
+   *
+   * @par Example:
+   * ```c++
+   * builder.cx(q0, q1);
+   * ```
+   * ```mlir
+   * quartz.ctrl(%q0) {
+   *   quartz.x %q1 : !quartz.qubit
+   * }
+   * ```
+   */
+  QuartzProgramBuilder& cx(Value control, Value target);
+
+  /**
+   * @brief Apply a multi-controlled X gate
+   *
+   * @param controls Control qubits
+   * @param target Target qubit
+   * @return Reference to this builder for method chaining
+   *
+   * @par Example:
+   * ```c++
+   * builder.mcx({q0, q1}, q2);
+   * ```
+   * ```mlir
+   * quartz.ctrl(%q0, %q1) {
+   *   quartz.x %q2 : !quartz.qubit
+   * }
+   * ```
+   */
+  QuartzProgramBuilder& mcx(ValueRange controls, Value target);
+
+  /**
    * @brief Apply an RX gate to a qubit
    *
-   * @param theta Rotation angle
-   * @param qubit Input qubit
+   * @param theta Rotation angle in radians
+   * @param qubit Target qubit
    * @return Reference to this builder for method chaining
    *
    * @par Example:
@@ -263,11 +301,51 @@ public:
                            Value qubit);
 
   /**
+   * @brief Apply a CRX gate
+   *
+   * @param theta Rotation angle in radians
+   * @param control Control qubit
+   * @param target Target qubit
+   * @return Reference to this builder for method chaining
+   * @par Example:
+   * ```c++
+   * builder.crx(1.0, q0, q1);
+   * ```
+   * ```mlir
+   * quartz.ctrl(%q0) {
+   *   quartz.rx(1.0) %q1 : !quartz.qubit
+   * }
+   * ```
+   */
+  QuartzProgramBuilder& crx(const std::variant<double, Value>& theta,
+                            Value control, Value target);
+
+  /**
+   * @brief Apply a multi-controlled RX gate
+   *
+   * @param theta Rotation angle in radians
+   * @param controls Control qubits
+   * @param target Target qubit
+   * @return Reference to this builder for method chaining
+   * @par Example:
+   * ```c++
+   * builder.mcrx(1.0, {q0, q1}, q2);
+   * ```
+   * ```mlir
+   * quartz.ctrl(%q0, %q1) {
+   *   quartz.rx(1.0) %q2 : !quartz.qubit
+   * }
+   * ```
+   */
+  QuartzProgramBuilder& mcrx(const std::variant<double, Value>& theta,
+                             ValueRange controls, Value target);
+
+  /**
    * @brief Apply a U2 gate to a qubit
    *
-   * @param phi Rotation angle
-   * @param lambda Rotation angle
-   * @param qubit Input qubit
+   * @param phi Rotation angle in radians
+   * @param lambda Rotation angle in radians
+   * @param qubit Target qubit
    * @return Reference to this builder for method chaining
    *
    * @par Example:
@@ -283,10 +361,54 @@ public:
                            Value qubit);
 
   /**
+   * @brief Apply a controlled U2 gate
+   *
+   * @param phi Rotation angle in radians
+   * @param lambda Rotation angle in radians
+   * @param control Control qubit
+   * @param target Target qubit
+   * @return Reference to this builder for method chaining
+   * @par Example:
+   * ```c++
+   * builder.cu2(1.0, 0.5, q0, q1);
+   * ```
+   * ```mlir
+   * quartz.ctrl(%q0) {
+   *   quartz.u2(1.0, 0.5) %q1 : !quartz.qubit
+   * }
+   * ```
+   */
+  QuartzProgramBuilder& cu2(const std::variant<double, Value>& phi,
+                            const std::variant<double, Value>& lambda,
+                            Value control, Value target);
+
+  /**
+   * @brief Apply a multi-controlled U2 gate
+   *
+   * @param phi Rotation angle in radians
+   * @param lambda Rotation angle in radians
+   * @param controls Control qubits
+   * @param target Target qubit
+   * @return Reference to this builder for method chaining
+   * @par Example:
+   * ```c++
+   * builder.mcu2(1.0, 0.5, {q0, q1}, q2);
+   * ```
+   * ```mlir
+   * quartz.ctrl(%q0, %q1) {
+   *   quartz.u2(1.0, 0.5) %q2 : !quartz.qubit
+   * }
+   * ```
+   */
+  QuartzProgramBuilder& mcu2(const std::variant<double, Value>& phi,
+                             const std::variant<double, Value>& lambda,
+                             ValueRange controls, Value target);
+
+  /**
    * @brief Apply a SWAP gate to two qubits
    *
-   * @param qubit0 Input qubit
-   * @param qubit1 Input qubit
+   * @param qubit0 First target qubit
+   * @param qubit1 Second target qubit
    * @return Reference to this builder for method chaining
    *
    * @par Example:
@@ -298,6 +420,44 @@ public:
    * ```
    */
   QuartzProgramBuilder& swap(Value qubit0, Value qubit1);
+
+  /**
+   * @brief Apply a controlled SWAP gate
+   *
+   * @param control Control qubit
+   * @param qubit0 First target qubit
+   * @param qubit1 Second target qubit
+   * @return Reference to this builder for method chaining
+   * @par Example:
+   * ```c++
+   * builder.cswap(q0, q1, q2);
+   * ```
+   * ```mlir
+   * quartz.ctrl(%q0) {
+   *   quartz.swap %q1, %q2 : !quartz.qubit, !quartz.qubit
+   * }
+   * ```
+   */
+  QuartzProgramBuilder& cswap(Value control, Value qubit0, Value qubit1);
+
+  /**
+   * @brief Apply a multi-controlled SWAP gate
+   *
+   * @param controls Control qubits
+   * @param qubit0 First target qubit
+   * @param qubit1 Second target qubit
+   * @return Reference to this builder for method chaining
+   * @par Example:
+   * ```c++
+   * builder.mcswap({q0, q1}, q2, q3);
+   * ```
+   * ```mlir
+   * quartz.ctrl(%q0, %q1) {
+   *   quartz.swap %q2, %q3 : !quartz.qubit, !quartz.qubit
+   * }
+   * ```
+   */
+  QuartzProgramBuilder& mcswap(ValueRange controls, Value qubit0, Value qubit1);
 
   //===--------------------------------------------------------------------===//
   // Modifiers
@@ -316,14 +476,12 @@ public:
    * ```
    * ```mlir
    * quartz.ctrl(%q0) {
-   *   quartz.x %q1
-   *   quartz.yield
+   *   quartz.x %q1 : !quartz.qubit
    * }
    * ```
    */
-  QuartzProgramBuilder&
-  ctrl(ValueRange controls,
-       const std::function<void(QuartzProgramBuilder&)>& body);
+  QuartzProgramBuilder& ctrl(ValueRange controls,
+                             const std::function<void(OpBuilder&)>& body);
 
   //===--------------------------------------------------------------------===//
   // Deallocation

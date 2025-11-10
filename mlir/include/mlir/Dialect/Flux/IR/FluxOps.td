@@ -369,30 +369,43 @@ def YieldOp : FluxOp<"yield", traits = [Terminator]> {
     let assemblyFormat = "$targets attr-dict";
 }
 
-def CtrlOp : FluxOp<"ctrl", traits = [UnitaryOpInterface, AttrSizedOperandSegments, AttrSizedResultSegments]> {
-    let summary = "Apply a controlled operation";
+def CtrlOp : FluxOp<"ctrl", traits =
+            [
+                UnitaryOpInterface,
+                AttrSizedOperandSegments,
+                AttrSizedResultSegments,
+                SameOperandsAndResultType,
+                SameOperandsAndResultShape,
+                SingleBlock
+            ]> {
+    let summary = "Add control qubits to a unitary operation";
     let description = [{
-        Modifier to make an operation controlled by one or more control qubits.
-        The transformed qubits are returned.
+        A modifier operation that adds control qubits to the unitary operation
+        defined in its body region. The controlled operation applies the
+        underlying unitary only when all control qubits are in the |1⟩ state.
+        The operation takes a variadic number of control and target qubits as
+        inputs and produces corresponding output qubits. Control qubits are not
+        modified by the operation and simply pass through to the outputs.
 
         Example:
         ```mlir
-        %controls_out, %targets_out = flux.ctrl({%q0_in}, {%q1_in}) {
-          %q1_res = flux.x %q1_in : !flux.qubit -> !flux.qubit
-          flux.yield %q1_res
-        } : {!flux.qubit}, {!flux.qubit} -> {!flux.qubit}, {!flux.qubit}
+        %ctrl_q_out, %tgt_q_out = flux.ctrl(%ctrl_q_in) %tgt_q_in {
+            %tgt_q_out = flux.h %tgt_q_in : !flux.qubit -> !flux.qubit
+            flux.yield %tgt_q_out : !flux.qubit
+        } : (!flux.qubit, !flux.qubit) -> (!flux.qubit, !flux.qubit)
         ```
     }];
 
-    let arguments = (ins Variadic<QubitType>:$controls_in, Variadic<QubitType>:$targets_in);
+    let arguments = (ins Arg<Variadic<QubitType>, "the control qubits", [MemRead]>:$controls_in,
+                     Arg<Variadic<QubitType>, "the target qubits", [MemRead]>:$targets_in);
     let results = (outs Variadic<QubitType>:$controls_out, Variadic<QubitType>:$targets_out);
     let regions = (region SizedRegion<1>:$body);
     let assemblyFormat = [{
-        `(` `{` $controls_in `}` `,` `{` $targets_in `}` `)`
+        `(` $controls_in `)` $targets_in
         $body attr-dict `:`
-        `{` type($controls_in) `}` `,` `{` type($targets_in) `}`
+        type($controls_in) `,` type($targets_in)
         `->`
-        `{` type($controls_out) `}` `,` `{` type($targets_out) `}`
+        type($controls_out) `,` type($targets_out)
     }];
 
     let extraClassDeclaration = [{
@@ -420,12 +433,8 @@ def CtrlOp : FluxOp<"ctrl", traits = [UnitaryOpInterface, AttrSizedOperandSegmen
     }];
 
     let builders = [
-        OpBuilder<(ins "ValueRange":$controls_in, "ValueRange":$targets_in), [{
-            auto qubit_type = QubitType::get($_builder.getContext());
-            SmallVector<Type> control_types(controls_in.size(), qubit_type);
-            SmallVector<Type> target_types(targets_in.size(), qubit_type);
-            build($_builder, $_state, TypeRange(control_types), TypeRange(target_types), controls_in, targets_in);
-        }]>,
+        OpBuilder<(ins "ValueRange":$controls, "ValueRange":$targets, "UnitaryOpInterface":$bodyUnitary)>,
+        OpBuilder<(ins "ValueRange":$controls, "ValueRange":$targets, "const std::function<ValueRange(OpBuilder &, ValueRange)>&":$bodyBuilder)>
     ];
 
     let hasCanonicalizer = 1;

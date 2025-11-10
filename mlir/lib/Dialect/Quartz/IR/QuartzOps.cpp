@@ -23,6 +23,7 @@
 #include <llvm/Support/ErrorHandling.h>
 #include <mlir/IR/BuiltinTypes.h>
 #include <mlir/IR/OperationSupport.h>
+#include <mlir/IR/PatternMatch.h>
 #include <mlir/IR/Types.h>
 #include <mlir/IR/Value.h>
 #include <mlir/Support/LogicalResult.h>
@@ -43,11 +44,13 @@ void QuartzDialect::initialize() {
   addTypes<
 #define GET_TYPEDEF_LIST
 #include "mlir/Dialect/Quartz/IR/QuartzOpsTypes.cpp.inc"
+
       >();
 
   addOperations<
 #define GET_OP_LIST
 #include "mlir/Dialect/Quartz/IR/QuartzOps.cpp.inc"
+
       >();
 }
 
@@ -144,7 +147,7 @@ DenseElementsAttr RXOp::tryGetStaticMatrix() {
 }
 
 void RXOp::build(OpBuilder& odsBuilder, OperationState& odsState,
-                 const Value qubit_in,
+                 const Value qubit_in, // NOLINT(*-identifier-naming)
                  const std::variant<double, Value>& theta) {
   Value thetaOperand = nullptr;
   if (std::holds_alternative<double>(theta)) {
@@ -173,7 +176,8 @@ DenseElementsAttr U2Op::tryGetStaticMatrix() {
 }
 
 void U2Op::build(OpBuilder& odsBuilder, OperationState& odsState,
-                 const Value qubit_in, const std::variant<double, Value>& phi,
+                 const Value qubit_in, // NOLINT(*-identifier-naming)
+                 const std::variant<double, Value>& phi,
                  const std::variant<double, Value>& lambda) {
   Value phiOperand = nullptr;
   if (std::holds_alternative<double>(phi)) {
@@ -208,16 +212,38 @@ DenseElementsAttr SWAPOp::tryGetStaticMatrix() {
 // Modifiers
 //===----------------------------------------------------------------------===//
 
+void CtrlOp::build(OpBuilder& odsBuilder, OperationState& odsState,
+                   const ValueRange controls, UnitaryOpInterface bodyUnitary) {
+  const OpBuilder::InsertionGuard guard(odsBuilder);
+  odsState.addOperands(controls);
+  auto* region = odsState.addRegion();
+  auto& block = region->emplaceBlock();
+
+  // Move the unitary op into the block
+  odsBuilder.setInsertionPointToStart(&block);
+  odsBuilder.clone(*bodyUnitary.getOperation());
+  odsBuilder.create<YieldOp>(odsState.location);
+}
+
+void CtrlOp::build(OpBuilder& odsBuilder, OperationState& odsState,
+                   const ValueRange controls,
+                   const std::function<void(OpBuilder&)>& bodyBuilder) {
+  const OpBuilder::InsertionGuard guard(odsBuilder);
+  odsState.addOperands(controls);
+  auto* region = odsState.addRegion();
+  auto& block = region->emplaceBlock();
+  odsBuilder.setInsertionPointToStart(&block);
+  bodyBuilder(odsBuilder);
+  odsBuilder.create<YieldOp>(odsState.location);
+}
+
 UnitaryOpInterface CtrlOp::getBodyUnitary() {
   return llvm::dyn_cast<UnitaryOpInterface>(&getBody().front().front());
 }
 
 size_t CtrlOp::getNumQubits() { return getNumTargets() + getNumControls(); }
 
-size_t CtrlOp::getNumTargets() {
-  auto unitaryOp = getBodyUnitary();
-  return unitaryOp.getNumTargets();
-}
+size_t CtrlOp::getNumTargets() { return getBodyUnitary().getNumTargets(); }
 
 size_t CtrlOp::getNumControls() {
   return getNumPosControls() + getNumNegControls();
@@ -226,48 +252,36 @@ size_t CtrlOp::getNumControls() {
 size_t CtrlOp::getNumPosControls() { return getControls().size(); }
 
 size_t CtrlOp::getNumNegControls() {
-  auto unitaryOp = getBodyUnitary();
-  return unitaryOp.getNumNegControls();
+  return getBodyUnitary().getNumNegControls();
 }
 
-Value CtrlOp::getQubit(size_t i) {
-  if (i < getNumTargets()) {
-    return getTarget(i);
+Value CtrlOp::getQubit(const size_t i) {
+  const auto numPosControls = getNumPosControls();
+  if (i < numPosControls) {
+    return getControls()[i];
   }
-  if (getNumTargets() <= i && i < getNumPosControls()) {
-    return getPosControl(i - getNumTargets());
-  }
-  if (getNumTargets() + getNumPosControls() <= i && i < getNumQubits()) {
-    return getNegControl(i - getNumTargets() - getNumPosControls());
+  if (numPosControls <= i && i < getNumQubits()) {
+    return getBodyUnitary().getQubit(i - numPosControls);
   }
   llvm::reportFatalUsageError("Invalid qubit index");
 }
 
-Value CtrlOp::getTarget(size_t i) {
-  auto unitaryOp = getBodyUnitary();
-  return unitaryOp.getTarget(i);
+Value CtrlOp::getTarget(const size_t i) {
+  return getBodyUnitary().getTarget(i);
 }
 
-Value CtrlOp::getPosControl(size_t i) { return getControls()[i]; }
+Value CtrlOp::getPosControl(const size_t i) { return getControls()[i]; }
 
-Value CtrlOp::getNegControl(size_t i) {
-  auto unitaryOp = getBodyUnitary();
-  return unitaryOp.getNegControl(i);
+Value CtrlOp::getNegControl(const size_t i) {
+  return getBodyUnitary().getNegControl(i);
 }
 
-size_t CtrlOp::getNumParams() {
-  auto unitaryOp = getBodyUnitary();
-  return unitaryOp.getNumParams();
-}
+size_t CtrlOp::getNumParams() { return getBodyUnitary().getNumParams(); }
 
-bool CtrlOp::hasStaticUnitary() {
-  auto unitaryOp = getBodyUnitary();
-  return unitaryOp.hasStaticUnitary();
-}
+bool CtrlOp::hasStaticUnitary() { return getBodyUnitary().hasStaticUnitary(); }
 
-Value CtrlOp::getParameter(size_t i) {
-  auto unitaryOp = getBodyUnitary();
-  return unitaryOp.getParameter(i);
+Value CtrlOp::getParameter(const size_t i) {
+  return getBodyUnitary().getParameter(i);
 }
 
 DenseElementsAttr CtrlOp::tryGetStaticMatrix() {
@@ -275,16 +289,76 @@ DenseElementsAttr CtrlOp::tryGetStaticMatrix() {
 }
 
 LogicalResult CtrlOp::verify() {
-  if (getBody().front().getOperations().size() != 2) {
+  auto& block = getBody().front();
+  if (block.getOperations().size() != 2) {
     return emitOpError("body region must have exactly two operations");
   }
-  if (!llvm::isa<UnitaryOpInterface>(getBody().front().front())) {
+  if (!llvm::isa<UnitaryOpInterface>(block.front())) {
     return emitOpError(
         "first operation in body region must be a unitary operation");
   }
-  if (!llvm::isa<YieldOp>(getBody().front().back())) {
+  if (!llvm::isa<YieldOp>(block.back())) {
     return emitOpError(
         "second operation in body region must be a yield operation");
   }
+  SmallPtrSet<Value, 4> uniqueQubits;
+  for (const auto& control : getControls()) {
+    if (!uniqueQubits.insert(control).second) {
+      return emitOpError("duplicate control qubit found");
+    }
+  }
+  auto bodyUnitary = getBodyUnitary();
+  const auto numQubits = bodyUnitary.getNumQubits();
+  for (size_t i = 0; i < numQubits; i++) {
+    if (!uniqueQubits.insert(bodyUnitary.getQubit(i)).second) {
+      return emitOpError("duplicate qubit found");
+    }
+  }
   return success();
+}
+
+/**
+ * @brief A rewrite pattern for merging nested control modifiers.
+ */
+struct MergeNestedCtrl final : OpRewritePattern<CtrlOp> {
+  using OpRewritePattern::OpRewritePattern;
+  LogicalResult matchAndRewrite(CtrlOp ctrlOp,
+                                PatternRewriter& rewriter) const override {
+    auto bodyUnitary = ctrlOp.getBodyUnitary();
+    auto bodyCtrlOp = llvm::dyn_cast<CtrlOp>(bodyUnitary.getOperation());
+    if (!bodyCtrlOp) {
+      return failure();
+    }
+
+    SmallVector<Value> newControls(ctrlOp.getControls());
+    for (const auto control : bodyCtrlOp.getControls()) {
+      newControls.push_back(control);
+    }
+
+    rewriter.replaceOpWithNewOp<CtrlOp>(ctrlOp, newControls,
+                                        bodyCtrlOp.getBodyUnitary());
+    rewriter.eraseOp(bodyCtrlOp);
+
+    return success();
+  }
+};
+
+/**
+ * @brief A rewrite pattern for removing control modifiers without controls.
+ */
+struct RemoveTrivialCtrl final : OpRewritePattern<CtrlOp> {
+  using OpRewritePattern::OpRewritePattern;
+  LogicalResult matchAndRewrite(CtrlOp ctrlOp,
+                                PatternRewriter& rewriter) const override {
+    if (ctrlOp.getNumControls() > 0) {
+      return failure();
+    }
+    rewriter.replaceOp(ctrlOp, ctrlOp.getBodyUnitary());
+    return success();
+  }
+};
+
+void CtrlOp::getCanonicalizationPatterns(RewritePatternSet& results,
+                                         MLIRContext* context) {
+  results.add<MergeNestedCtrl, RemoveTrivialCtrl>(context);
 }

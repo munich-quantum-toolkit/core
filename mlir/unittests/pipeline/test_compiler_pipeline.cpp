@@ -1311,35 +1311,17 @@ TEST_F(CompilerPipelineTest, CX) {
   ASSERT_TRUE(module);
   ASSERT_TRUE(runPipeline(module.get()).succeeded());
 
-  const auto quartzInit = buildQuartzIR([](quartz::QuartzProgramBuilder& b) {
+  const auto quartz = buildQuartzIR([](quartz::QuartzProgramBuilder& b) {
     auto reg = b.allocQubitRegister(2, "q");
-    auto q0 = reg[0];
-    auto q1 = reg[1];
-    b.ctrl(q0, [&](auto& b) { b.x(q1); });
+    const auto q0 = reg[0];
+    const auto q1 = reg[1];
+    b.cx(q0, q1);
   });
-  const auto fluxInit = buildFluxIR([](flux::FluxProgramBuilder& b) {
+  const auto flux = buildFluxIR([](flux::FluxProgramBuilder& b) {
     auto reg = b.allocQubitRegister(2, "q");
-    auto q0 = reg[0];
-    auto q1 = reg[1];
-    b.ctrl({q0}, {q1}, [&](auto& b) {
-      auto q1res = b.x(q1);
-      return SmallVector<Value>{q1res};
-    });
-  });
-  const auto fluxOpt = buildFluxIR([](flux::FluxProgramBuilder& b) {
-    auto reg = b.allocQubitRegister(2, "q");
-    auto q0 = reg[0];
-    auto q1 = reg[1];
-    b.ctrl({q0}, {q1}, [&](auto& b) {
-      auto q1res = b.x(q1);
-      return SmallVector<Value>{q1res};
-    });
-  });
-  const auto quartzOpt = buildQuartzIR([](quartz::QuartzProgramBuilder& b) {
-    auto reg = b.allocQubitRegister(2, "q");
-    auto q0 = reg[0];
-    auto q1 = reg[1];
-    b.ctrl(q0, [&](auto& b) { b.x(q1); });
+    const auto q0 = reg[0];
+    const auto q1 = reg[1];
+    b.cx(q0, q1);
   });
   const auto qirOpt = buildQIR([](qir::QIRProgramBuilder& b) {
     auto reg = b.allocQubitRegister(2);
@@ -1350,10 +1332,10 @@ TEST_F(CompilerPipelineTest, CX) {
   });
 
   verifyAllStages({
-      .quartzImport = quartzInit.get(),
-      .fluxConversion = fluxInit.get(),
-      .optimization = fluxOpt.get(),
-      .quartzConversion = quartzOpt.get(),
+      .quartzImport = quartz.get(),
+      .fluxConversion = flux.get(),
+      .optimization = flux.get(),
+      .quartzConversion = quartz.get(),
       .qirConversion = qirOpt.get(),
   });
 }
@@ -1401,6 +1383,44 @@ TEST_F(CompilerPipelineTest, RX) {
       .optimization = fluxOpt.get(),
       .quartzConversion = quartzOpt.get(),
       .qirConversion = qirOpt.get(),
+  });
+}
+
+TEST_F(CompilerPipelineTest, CRX) {
+  qc::QuantumComputation qc;
+  qc.addQubitRegister(2, "q");
+  qc.crx(1.0, 0, 1);
+
+  const auto module = importQuantumCircuit(qc);
+  ASSERT_TRUE(module);
+  ASSERT_TRUE(runPipeline(module.get()).succeeded());
+
+  const auto quartz = buildQuartzIR([](quartz::QuartzProgramBuilder& b) {
+    auto reg = b.allocQubitRegister(2, "q");
+    const auto q0 = reg[0];
+    const auto q1 = reg[1];
+    b.crx(1.0, q0, q1);
+  });
+  const auto flux = buildFluxIR([](flux::FluxProgramBuilder& b) {
+    auto reg = b.allocQubitRegister(2, "q");
+    const auto q0 = reg[0];
+    const auto q1 = reg[1];
+    b.crx(1.0, q0, q1);
+  });
+
+  // const auto qirOpt = buildQIR([](qir::QIRProgramBuilder& b) {
+  // auto reg = b.allocQubitRegister(2);
+  // const auto q0 = reg[0];
+  // const auto q1 = reg[1];
+  // b.rx(1.0, q0);
+  // });
+
+  verifyAllStages({
+      .quartzImport = quartz.get(),
+      .fluxConversion = flux.get(),
+      .optimization = flux.get(),
+      .quartzConversion = quartz.get(),
+      .qirConversion = nullptr,
   });
 }
 
@@ -1466,299 +1486,6 @@ TEST_F(CompilerPipelineTest, SWAP) {
       .quartzConversion = quartzExpected.get(),
       .qirConversion = qirExpected.get(),
   });
-}
-
-// ##################################################
-// # Temporary Simple Conversion Tests
-// ##################################################
-
-class SimpleConversionTest : public testing::Test {
-protected:
-  std::unique_ptr<MLIRContext> context;
-
-  void SetUp() override {
-    // Register all dialects needed for the full compilation pipeline
-    DialectRegistry registry;
-    registry
-        .insert<quartz::QuartzDialect, flux::FluxDialect, arith::ArithDialect,
-                cf::ControlFlowDialect, func::FuncDialect,
-                memref::MemRefDialect, scf::SCFDialect, LLVM::LLVMDialect>();
-
-    context = std::make_unique<MLIRContext>();
-    context->appendDialectRegistry(registry);
-    context->loadAllAvailableDialects();
-  }
-
-  /**
-   * @brief Run canonicalization
-   */
-  static void runCanonicalizationPasses(ModuleOp module) {
-    PassManager pm(module.getContext());
-    pm.addPass(createCanonicalizerPass());
-    pm.addPass(createCSEPass());
-    if (pm.run(module).failed()) {
-      llvm::errs() << "Failed to run canonicalization passes\n";
-    }
-  }
-
-  /**
-   * @brief Build expected Quartz IR programmatically and run canonicalization
-   */
-  [[nodiscard]] OwningOpRef<ModuleOp> buildQuartzIR(
-      const std::function<void(quartz::QuartzProgramBuilder&)>& buildFunc)
-      const {
-    quartz::QuartzProgramBuilder builder(context.get());
-    builder.initialize();
-    buildFunc(builder);
-    auto module = builder.finalize();
-    runCanonicalizationPasses(module.get());
-    return module;
-  }
-
-  /**
-   * @brief Build expected Flux IR programmatically and run canonicalization
-   */
-  [[nodiscard]] OwningOpRef<ModuleOp> buildFluxIR(
-      const std::function<void(flux::FluxProgramBuilder&)>& buildFunc) const {
-    flux::FluxProgramBuilder builder(context.get());
-    builder.initialize();
-    buildFunc(builder);
-    auto module = builder.finalize();
-    runCanonicalizationPasses(module.get());
-    return module;
-  }
-
-  /**
-   * @brief Build expected QIR programmatically and run canonicalization
-   */
-  [[nodiscard]] OwningOpRef<ModuleOp> buildQIR(
-      const std::function<void(qir::QIRProgramBuilder&)>& buildFunc) const {
-    qir::QIRProgramBuilder builder(context.get());
-    builder.initialize();
-    buildFunc(builder);
-    auto module = builder.finalize();
-    runCanonicalizationPasses(module.get());
-    return module;
-  }
-
-  static std::string captureIR(ModuleOp module) {
-    std::string result;
-    llvm::raw_string_ostream os(result);
-    module.print(os);
-    os.flush();
-    return result;
-  }
-};
-
-TEST_F(SimpleConversionTest, RXQuartzToFlux) {
-  auto module = buildQuartzIR([](quartz::QuartzProgramBuilder& b) {
-    auto thetaAttr = b.builder.getF64FloatAttr(1.0);
-    auto thetaOperand = b.builder.create<arith::ConstantOp>(b.loc, thetaAttr);
-    auto q = b.allocQubitRegister(1, "q");
-    b.rx(thetaOperand, q[0]);
-  });
-
-  PassManager pm(module.get().getContext());
-  pm.addPass(createQuartzToFlux());
-  pm.addPass(createCanonicalizerPass());
-  pm.addPass(createRemoveDeadValuesPass());
-  ASSERT_TRUE(pm.run(module.get()).succeeded());
-
-  const auto fluxResult = captureIR(module.get());
-  const auto fluxExpected = buildFluxIR([](flux::FluxProgramBuilder& b) {
-    auto q = b.allocQubitRegister(1, "q");
-    b.rx(1.0, q[0]);
-  });
-
-  EXPECT_TRUE(verify("Quartz to Flux", fluxResult, fluxExpected.get()));
-}
-
-TEST_F(SimpleConversionTest, RXQuartzToQIR) {
-  auto module = buildQuartzIR([](quartz::QuartzProgramBuilder& b) {
-    auto thetaAttr = b.builder.getF64FloatAttr(1.0);
-    auto thetaOperand = b.builder.create<arith::ConstantOp>(b.loc, thetaAttr);
-    auto q = b.allocQubitRegister(1, "q");
-    b.rx(thetaOperand, q[0]);
-  });
-
-  PassManager pm(module.get().getContext());
-  pm.addPass(createQuartzToQIR());
-  pm.addPass(createCanonicalizerPass());
-  pm.addPass(createRemoveDeadValuesPass());
-  ASSERT_TRUE(pm.run(module.get()).succeeded());
-
-  // const auto qirResult = captureIR(module.get());
-  // const auto qirExpected = buildQIR([](qir::QIRProgramBuilder& b) {
-  //   auto thetaAttr = b.builder.getF64FloatAttr(1.0);
-  //   auto thetaOperand = b.builder.create<LLVM::ConstantOp>(b.loc, thetaAttr);
-  //   auto q = b.allocQubitRegister(1);
-  //   b.rx(thetaOperand, q[0]);
-  // });
-
-  // EXPECT_TRUE(verify("Quartz to QIR", qirResult, qirExpected.get()));
-}
-
-TEST_F(SimpleConversionTest, RXSimplifyAttrValue) {
-  const auto fluxInit = buildFluxIR([](flux::FluxProgramBuilder& b) {
-    auto thetaAttr = b.builder.getF64FloatAttr(1.0);
-    auto thetaOperand = b.builder.create<arith::ConstantOp>(b.loc, thetaAttr);
-    auto reg = b.allocQubitRegister(1, "q");
-    auto q0 = reg[0];
-    auto q1 = b.rx(0.5, q0);
-    b.rx(thetaOperand, q1);
-  });
-  const auto fluxInitIR = captureIR(fluxInit.get());
-
-  const auto fluxOpt = buildFluxIR([](flux::FluxProgramBuilder& b) {
-    auto reg = b.allocQubitRegister(1, "q");
-    auto q0 = reg[0];
-    b.rx(1.5, q0);
-  });
-
-  EXPECT_TRUE(verify("Flux Canonicalization", fluxInitIR, fluxOpt.get()));
-}
-
-TEST_F(SimpleConversionTest, RXSimplifyValueAttr) {
-  const auto fluxInit = buildFluxIR([](flux::FluxProgramBuilder& b) {
-    auto thetaAttr = b.builder.getF64FloatAttr(1.0);
-    auto thetaOperand = b.builder.create<arith::ConstantOp>(b.loc, thetaAttr);
-    auto reg = b.allocQubitRegister(1, "q");
-    auto q0 = reg[0];
-    auto q1 = b.rx(thetaOperand, q0);
-    b.rx(0.5, q1);
-  });
-  const auto fluxInitIR = captureIR(fluxInit.get());
-
-  const auto fluxOpt = buildFluxIR([](flux::FluxProgramBuilder& b) {
-    auto reg = b.allocQubitRegister(1, "q");
-    auto q0 = reg[0];
-    b.rx(1.5, q0);
-  });
-
-  EXPECT_TRUE(verify("Flux Canonicalization", fluxInitIR, fluxOpt.get()));
-}
-
-TEST_F(SimpleConversionTest, RXSimplifyValueValue) {
-  const auto fluxInit = buildFluxIR([](flux::FluxProgramBuilder& b) {
-    auto thetaAttr10 = b.builder.getF64FloatAttr(1.0);
-    auto thetaOperand10 =
-        b.builder.create<arith::ConstantOp>(b.loc, thetaAttr10);
-    auto thetaAttr05 = b.builder.getF64FloatAttr(0.5);
-    auto thetaOperand05 =
-        b.builder.create<arith::ConstantOp>(b.loc, thetaAttr05);
-    auto reg = b.allocQubitRegister(1, "q");
-    auto q0 = reg[0];
-    auto q1 = b.rx(thetaOperand10, q0);
-    b.rx(thetaOperand05, q1);
-  });
-  const auto fluxInitIR = captureIR(fluxInit.get());
-
-  const auto fluxOpt = buildFluxIR([](flux::FluxProgramBuilder& b) {
-    auto reg = b.allocQubitRegister(1, "q");
-    auto q0 = reg[0];
-    b.rx(1.5, q0);
-  });
-
-  EXPECT_TRUE(verify("Flux Canonicalization", fluxInitIR, fluxOpt.get()));
-}
-
-TEST_F(SimpleConversionTest, CX) {
-  qc::QuantumComputation qc;
-  qc.addQubitRegister(2, "q");
-  qc.cx(0, 1);
-
-  const auto module = translateQuantumComputationToQuartz(context.get(), qc);
-  ASSERT_TRUE(module);
-  runCanonicalizationPasses(module.get());
-  const auto quartzIRInit = captureIR(module.get());
-
-  const auto quartzExpected =
-      buildQuartzIR([](quartz::QuartzProgramBuilder& b) {
-        auto reg = b.allocQubitRegister(2, "q");
-        auto q0 = reg[0];
-        auto q1 = reg[1];
-        b.ctrl(q0, [&](auto& b) { b.x(q1); });
-      });
-
-  EXPECT_TRUE(verify("Translation", quartzIRInit, quartzExpected.get()));
-
-  PassManager pm(module.get().getContext());
-  pm.addPass(createQuartzToFlux());
-  pm.addPass(createCanonicalizerPass());
-  pm.addPass(createRemoveDeadValuesPass());
-  ASSERT_TRUE(pm.run(module.get()).succeeded());
-  const auto fluxIR = captureIR(module.get());
-
-  const auto fluxExpected = buildFluxIR([](flux::FluxProgramBuilder& b) {
-    auto reg = b.allocQubitRegister(2, "q");
-    auto q0 = reg[0];
-    auto q1 = reg[1];
-    b.ctrl({q0}, {q1}, [&](auto& b) {
-      auto q1res = b.x(q1);
-      return SmallVector<Value>{q1res};
-    });
-  });
-
-  EXPECT_TRUE(verify("Quartz to Flux", fluxIR, fluxExpected.get()));
-
-  pm.clear();
-  pm.addPass(createFluxToQuartz());
-  pm.addPass(createCanonicalizerPass());
-  pm.addPass(createRemoveDeadValuesPass());
-  ASSERT_TRUE(pm.run(module.get()).succeeded());
-  const auto quartzIRConv = captureIR(module.get());
-
-  EXPECT_TRUE(verify("Flux to Quartz", quartzIRConv, quartzExpected.get()));
-}
-
-TEST_F(SimpleConversionTest, CXMergeNested) {
-  const auto fluxInit = buildFluxIR([](flux::FluxProgramBuilder& b) {
-    auto reg = b.allocQubitRegister(3, "q");
-    auto q0 = reg[0];
-    auto q1 = reg[1];
-    auto q2 = reg[2];
-    b.ctrl({q0}, {q1, q2}, [&](auto& b) {
-      auto q12res = b.ctrl({q1}, {q2}, [&](auto& b) {
-        auto q2res = b.x(q2);
-        return SmallVector<Value>{q2res};
-      });
-      return SmallVector<Value>{q12res.first[0], q12res.second[0]};
-    });
-  });
-  const auto fluxInitIR = captureIR(fluxInit.get());
-
-  const auto fluxOpt = buildFluxIR([](flux::FluxProgramBuilder& b) {
-    auto reg = b.allocQubitRegister(3, "q");
-    auto q0 = reg[0];
-    auto q1 = reg[1];
-    auto q2 = reg[2];
-    b.ctrl({q0, q1}, {q2}, [&](auto& b) {
-      auto q2res = b.x(q2);
-      return SmallVector<Value>{q2res};
-    });
-  });
-
-  EXPECT_TRUE(verify("Flux Canonicalization", fluxInitIR, fluxOpt.get()));
-}
-
-TEST_F(SimpleConversionTest, CXRemoveTrivial) {
-  const auto fluxInit = buildFluxIR([](flux::FluxProgramBuilder& b) {
-    auto reg = b.allocQubitRegister(1, "q");
-    auto q0 = reg[0];
-    b.ctrl({}, {q0}, [&](auto& b) {
-      auto q0res = b.x(q0);
-      return SmallVector<Value>{q0res};
-    });
-  });
-  const auto fluxInitIR = captureIR(fluxInit.get());
-
-  const auto fluxOpt = buildFluxIR([](flux::FluxProgramBuilder& b) {
-    auto reg = b.allocQubitRegister(1, "q");
-    auto q0a = reg[0];
-    b.x(q0a);
-  });
-
-  EXPECT_TRUE(verify("Flux Canonicalization", fluxInitIR, fluxOpt.get()));
 }
 
 } // namespace

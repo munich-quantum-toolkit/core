@@ -261,13 +261,52 @@ public:
   Value x(Value qubit);
 
   /**
+   * @brief Apply a CX gate
+   *
+   * @param control Input control qubit (must be valid/unconsumed)
+   * @param target Input target qubit (must be valid/unconsumed)
+   * @return Pair of (output_control_qubit, output_target_qubit)
+   * @par Example:
+   * ```c++
+   * {q0_out, q1_out} = builder.cx(q0_in, q1_in);
+   * ```
+   * ```mlir
+   * %q0_out, %q1_out = flux.ctrl(%q0_in) %q1_in {
+   *   %q1_res = flux.x %q1_in : !flux.qubit -> !flux.qubit
+   *   flux.yield %q1_res
+   * } : !flux.qubit, !flux.qubit -> !flux.qubit, !flux.qubit
+   * ```
+   */
+  std::pair<Value, Value> cx(Value control, Value target);
+
+  /**
+   * @brief Apply a multi-controlled X gate
+   *
+   * @param controls Input control qubits (must be valid/unconsumed)
+   * @param target Input target qubit (must be valid/unconsumed)
+   * @return Pair of (output_control_qubits, output_target_qubit)
+   * @par Example:
+   * ```c++
+   * {controls_out, target_out} = builder.mcx({q0_in, q1_in}, q2_in);
+   * ```
+   * ```mlir
+   * %controls_out, %target_out = flux.ctrl(%q0_in, %q1_in) %q2_in {
+   *   %q2_res = flux.x %q2_in : !flux.qubit -> !flux.qubit
+   *   flux.yield %q2_res
+   * } : !flux.qubit, !flux.qubit, !flux.qubit -> !flux.qubit, !flux.qubit,
+   * !flux.qubit
+   * ```
+   */
+  std::pair<ValueRange, Value> mcx(ValueRange controls, Value target);
+
+  /**
    * @brief Apply an RX gate to a qubit
    *
    * @details
    * Consumes the input qubit and produces a new output qubit SSA value.
    * The input is validated and the tracking is updated.
    *
-   * @param theta Rotation angle
+   * @param theta Rotation angle in radians
    * @param qubit Input qubit (must be valid/unconsumed)
    * @return Output qubit
    *
@@ -282,14 +321,57 @@ public:
   Value rx(const std::variant<double, Value>& theta, Value qubit);
 
   /**
+   * @brief Apply a controlled RX gate
+   *
+   * @param theta Rotation angle in radians
+   * @param control Input control qubit (must be valid/unconsumed)
+   * @param target Input target qubit (must be valid/unconsumed)
+   * @return Pair of (output_control_qubit, output_target_qubit)
+   * @par Example:
+   * ```c++
+   * {q0_out, q1_out} = builder.crx(1.0, q0_in, q1_in);
+   * ```
+   * ```mlir
+   * %q0_out, %q1_out = flux.ctrl(%q0_in) %q1_in {
+   *   %q1_res = flux.rx(1.0) %q1_in : !flux.qubit -> !flux.qubit
+   *   flux.yield %q1_res
+   * } : !flux.qubit, !flux.qubit -> !flux.qubit, !flux.qubit
+   * ```
+   */
+  std::pair<Value, Value> crx(const std::variant<double, Value>& theta,
+                              Value control, Value target);
+
+  /**
+   * @brief Apply a multi-controlled RX gate
+   *
+   * @param theta Rotation angle in radians
+   * @param controls Input control qubits (must be valid/unconsumed)
+   * @param target Input target qubit (must be valid/unconsumed)
+   * @return Pair of (output_control_qubits, output_target_qubit)
+   * @par Example:
+   * ```c++
+   * {controls_out, target_out} = builder.mcrx(1.0, {q0_in, q1_in}, q2_in);
+   * ```
+   * ```mlir
+   * %controls_out, %target_out = flux.ctrl(%q0_in, %q1_in) %q2_in {
+   *   %q2_res = flux.rx(1.0) %q2_in : !flux.qubit -> !flux.qubit
+   *   flux.yield %q2_res
+   * } : !flux.qubit, !flux.qubit, !flux.qubit -> !flux.qubit, !flux.qubit,
+   * !flux.qubit
+   * ```
+   */
+  std::pair<ValueRange, Value> mcrx(const std::variant<double, Value>& theta,
+                                    ValueRange controls, Value target);
+
+  /**
    * @brief Apply a U2 gate to a qubit
    *
    * @details
    * Consumes the input qubit and produces a new output qubit SSA value.
    * The input is validated and the tracking is updated.
    *
-   * @param phi Rotation angle
-   * @param lambda Rotation angle
+   * @param phi Rotation angle in radians
+   * @param lambda Rotation angle in radians
    * @param qubit Input qubit (must be valid/unconsumed)
    * @return Output qubit
    *
@@ -305,14 +387,61 @@ public:
            const std::variant<double, Value>& lambda, Value qubit);
 
   /**
+   * @brief Apply a controlled U2 gate
+   *
+   * @param phi Rotation angle in radians
+   * @param lambda Rotation angle in radians
+   * @param control Input control qubit (must be valid/unconsumed)
+   * @param target Input target qubit (must be valid/unconsumed)
+   * @return Pair of (output_control_qubit, output_target_qubit)
+   * @par Example:
+   * ```c++
+   * {q0_out, q1_out} = builder.cu2(1.0, 0.5, q0_in, q1_in);
+   * ```
+   * ```mlir
+   * %q0_out, %q1_out = flux.ctrl(%q0_in) %q1_in {
+   *   %q1_res = flux.u2(1.0, 0.5) %q1_in : !flux.qubit -> !flux.qubit
+   *   flux.yield %q1_res
+   * } : !flux.qubit, !flux.qubit -> !flux.qubit, !flux.qubit
+   * ```
+   */
+  std::pair<Value, Value> cu2(const std::variant<double, Value>& phi,
+                              const std::variant<double, Value>& lambda,
+                              Value control, Value target);
+
+  /**
+   * @brief Apply a multi-controlled U2 gate
+   *
+   * @param phi Rotation angle in radians
+   * @param lambda Rotation angle in radians
+   * @param controls Input control qubits (must be valid/unconsumed)
+   * @param target Input target qubit (must be valid/unconsumed)
+   * @return Pair of (output_control_qubits, output_target_qubit)
+   * @par Example:
+   * ```c++
+   * {controls_out, target_out} = builder.mcu2(1.0, 0.5, {q0_in, q1_in}, q2_in);
+   * ```
+   * ```mlir
+   * %controls_out, %target_out = flux.ctrl(%q0_in, %q1_in) %q2_in {
+   *   %q2_res = flux.u2(1.0, 0.5) %q2_in : !flux.qubit -> !flux.qubit
+   *   flux.yield %q2_res
+   * } : !flux.qubit, !flux.qubit, !flux.qubit -> !flux.qubit, !flux.qubit,
+   * !flux.qubit
+   * ```
+   */
+  std::pair<ValueRange, Value> mcu2(const std::variant<double, Value>& phi,
+                                    const std::variant<double, Value>& lambda,
+                                    ValueRange controls, Value target);
+
+  /**
    * @brief Apply a SWAP gate to two qubits
    *
    * @details
    * Consumes the input qubits and produces new output qubit SSA values.
    * The inputs are validated and the tracking is updated.
    *
-   * @param qubit0 Input qubit (must be valid/unconsumed)
-   * @param qubit1 Input qubit (must be valid/unconsumed)
+   * @param qubit0 First input qubit (must be valid/unconsumed)
+   * @param qubit1 Second input qubit (must be valid/unconsumed)
    * @return Output qubits
    *
    * @par Example:
@@ -325,6 +454,50 @@ public:
    * ```
    */
   std::pair<Value, Value> swap(Value qubit0, Value qubit1);
+
+  /**
+   * @brief Apply a controlled SWAP gate
+   * @param control Input control qubit (must be valid/unconsumed)
+   * @param qubit0 First target qubit (must be valid/unconsumed)
+   * @param qubit1 Second target qubit (must be valid/unconsumed)
+   * @return Pair of (output_control_qubit, (output_qubit0, output_qubit1))
+   * @par Example:
+   * ```c++
+   * {q0_out, {q1_out, q2_out}} = builder.cswap(q0_in, q1_in, q2_in);
+   * ```
+   * ```mlir
+   * %q0_out, %q1_out, %q2_out = flux.ctrl(%q0_in) %q1_in, %q2_in {
+   *   %q1_res, %q2_res = flux.swap %q1_in, %q2_in : !flux.qubit,
+   * !flux.qubit -> !flux.qubit, !flux.qubit
+   *   flux.yield %q1_res, %q2_res
+   * } : !flux.qubit, !flux.qubit, !flux.qubit -> !flux.qubit, !flux.qubit,
+   * !flux.qubit
+   * ```
+   */
+  std::pair<Value, std::pair<Value, Value>> cswap(Value control, Value qubit0,
+                                                  Value qubit1);
+
+  /**
+   * @brief Apply a multi-controlled SWAP gate
+   * @param controls Input control qubits (must be valid/unconsumed)
+   * @param qubit0 First target qubit (must be valid/unconsumed)
+   * @param qubit1 Second target qubit (must be valid/unconsumed)
+   * @return Pair of (output_control_qubits, (output_qubit0, output_qubit1))
+   * @par Example:
+   * ```c++
+   * {controls_out, {q1_out, q2_out}} = builder.mcswap({q0_in, q1_in}, q2_in,
+   * q3_in);
+   * ```
+   * ```mlir
+   * %controls_out, %q2_out, %q3_out = flux.ctrl(%q0_in, %q1_in) %q2_in, %q3_in
+   * { %q2_res, %q3_res = flux.swap %q2_in, %q3_in : !flux.qubit, !flux.qubit ->
+   * !flux.qubit, !flux.qubit flux.yield %q2_res, %q3_res } : !flux.qubit,
+   * !flux.qubit, !flux.qubit, !flux.qubit -> !flux.qubit, !flux.qubit,
+   * !flux.qubit, !flux.qubit
+   * ```
+   */
+  std::pair<ValueRange, std::pair<Value, Value>>
+  mcswap(ValueRange controls, Value qubit0, Value qubit1);
 
   //===--------------------------------------------------------------------===//
   // Modifiers
@@ -342,19 +515,19 @@ public:
    * ```c++
    * controls_out, targets_out = builder.ctrl(q0_in, q1_in, [&](auto& b) {
    *   auto q1_res = b.x(q1_in);
-   *   return SmallVector<Value>{q1_res};
+   *   return {q1_res};
    * });
    * ```
    * ```mlir
-   * %controls_out, %targets_out = flux.ctrl({%q0_in}, {%q1_in}) {
+   * %controls_out, %targets_out = flux.ctrl(%q0_in) %q1_in {
    *   %q1_res = flux.x %q1_in : !flux.qubit -> !flux.qubit
    *   flux.yield %q1_res
-   * } : {!flux.qubit}, {!flux.qubit} -> {!flux.qubit}, {!flux.qubit}
+   * } : !flux.qubit, !flux.qubit -> !flux.qubit, !flux.qubit
    * ```
    */
-  std::pair<SmallVector<Value>, SmallVector<Value>>
-  ctrl(SmallVector<Value> controls, SmallVector<Value> targets,
-       const std::function<SmallVector<Value>(FluxProgramBuilder&)>& body);
+  std::pair<ValueRange, ValueRange>
+  ctrl(ValueRange controls, ValueRange targets,
+       const std::function<ValueRange(OpBuilder&, ValueRange)>& body);
 
   //===--------------------------------------------------------------------===//
   // Deallocation
@@ -402,8 +575,6 @@ public:
   Location loc;
 
 private:
-  int inRegion = 0;
-
   //===--------------------------------------------------------------------===//
   // Linear Type Tracking Helpers
   //===--------------------------------------------------------------------===//
