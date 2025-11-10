@@ -44,6 +44,10 @@ struct GateDecompositionPattern final
       std::cerr << gate.op->getName().stripDialect().str() << ", ";
     }
     std::cerr << '\n';
+    static int a{};
+    if (a++ > 0) {
+      return mlir::failure();
+    }
 
     if (series.gates.size() < 3) {
       // too short
@@ -815,14 +819,14 @@ struct GateDecompositionPattern final
       std::array<fp, d.size()> d_real;
       llvm::transform(d, d_real.begin(),
                       [](auto&& x) { return -std::arg(x) / 2.0; });
-      helpers::print(d_real, "D_REAL");
+      helpers::print(d_real, "D_REAL", true);
       d_real[3] = -d_real[0] - d_real[1] - d_real[2];
       std::array<fp, 3> cs;
       for (std::size_t i = 0; i < cs.size(); ++i) {
         assert(i < d_real.size());
         cs[i] = remEuclid((d_real[i] + d_real[3]) / 2.0, qc::TAU);
       }
-      helpers::print(cs, "CS");
+      helpers::print(cs, "CS", true);
       decltype(cs) cstemp;
       llvm::transform(cs, cstemp.begin(), [](auto&& x) {
         auto tmp = remEuclid(x, qc::PI_2);
@@ -833,15 +837,14 @@ struct GateDecompositionPattern final
                     // order in eigen decomposition algorithm?
       llvm::stable_sort(order,
                         [&](auto a, auto b) { return cstemp[a] < cstemp[b]; });
-      helpers::print(order, "ORDER (1)");
       std::tie(order[0], order[1], order[2]) =
           std::tuple{order[1], order[2], order[0]};
-      helpers::print(order, "ORDER (2)");
+      helpers::print(order, "ORDER", true);
       std::tie(cs[0], cs[1], cs[2]) =
           std::tuple{cs[order[0]], cs[order[1]], cs[order[2]]};
       std::tie(d_real[0], d_real[1], d_real[2]) =
           std::tuple{d_real[order[0]], d_real[order[1]], d_real[order[2]]};
-      helpers::print(d_real, "D_REAL (sorted)");
+      helpers::print(d_real, "D_REAL (sorted)", true);
 
       // swap columns of p according to order
       constexpr auto P_ROW_LENGTH = 4;
@@ -867,7 +870,7 @@ struct GateDecompositionPattern final
       temp[2 * 4 + 2] = std::exp(IM * d_real[2]);
       temp[3 * 4 + 3] = std::exp(IM * d_real[3]);
       helpers::print(temp, "TEMP");
-      helpers::print(p, "P");
+      helpers::print(p, "P", true);
       auto k1 = magic_basis_transform(dot(dot(u_p, p), temp),
                                       MagicBasisTransform::Into);
       auto k2 = magic_basis_transform(transpose(p), MagicBasisTransform::Into);
