@@ -149,8 +149,9 @@ device = configure_device_for_mqt(device)
 
 ## System Requirements
 
-Building (and running) is continuously tested under Linux, macOS, and Windows using the [latest available system versions for GitHub Actions](https://github.com/actions/runner-images).
-However, the implementation should be compatible with any current C++ compiler supporting C++20 and a minimum CMake version of 3.24.
+Building MQT Core requires a C++ compiler with support for C++20 and CMake 3.24 or newer.
+Building (and running) is continuously tested under Linux and macOS using the [latest available system versions for GitHub Actions](https://github.com/actions/runner-images).
+The MQT Core Catalyst MLIR Plugin is compatible with Python version 3.11 and newer.
 
 MQT Core relies on some external dependencies:
 
