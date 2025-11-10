@@ -115,6 +115,16 @@ jobs:
         working-directory: plugins/catalyst
         run: |
           BUILD_DIR=$(find build -type d -name Release | head -n1)
+          if [ -z "$BUILD_DIR" ]; then
+            BUILD_DIR="build"
+          fi
+          
+          # Verify lit is installed, install if missing
+          if ! command -v lit &> /dev/null; then
+            echo "lit not found, installing..."
+            python -m pip install lit
+          fi
+          
           cmake -S . \
             -B "$BUILD_DIR" \
             -DLLVM_EXTERNAL_LIT=$(which lit) \
@@ -126,6 +136,9 @@ jobs:
         working-directory: plugins/catalyst
         run: |
           BUILD_DIR=$(find build -type d -name Release | head -n1)
+          if [ -z "$BUILD_DIR" ]; then
+            BUILD_DIR="build"
+          fi
 
           # Check if compilation database exists
           if [ ! -f "$BUILD_DIR/compile_commands.json" ]; then
@@ -163,6 +176,9 @@ jobs:
         working-directory: plugins/catalyst
         run: |
           BUILD_DIR=$(find build -type d -name Release | head -n1)
+          if [ -z "$BUILD_DIR" ]; then
+            BUILD_DIR="build"
+          fi
           ninja -C "$BUILD_DIR" check-mqt-core-catalyst-plugin
 
       # Run the plugin Python tests
