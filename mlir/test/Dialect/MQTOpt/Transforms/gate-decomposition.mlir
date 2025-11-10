@@ -270,3 +270,50 @@ module {
     return
   }
 }
+
+module {
+  // CHECK-LABEL: func.func @testCNotOtherDirection
+  func.func @testCNotOtherDirection() {
+    // CHECK: %[[Q0_0:.*]] = mqtopt.allocQubit
+    // CHECK: %[[Q1_0:.*]] = mqtopt.allocQubit
+    // CHECK: %[[Q2_0:.*]] = mqtopt.allocQubit
+
+    // CHECK-NOT: mqtopt.gphase(%[[ANY:.*]])
+
+    // CHECK: mqtopt.deallocQubit %[[Q0_5]]
+    // CHECK: mqtopt.deallocQubit %[[Q1_4]]
+    // CHECK: mqtopt.deallocQubit %[[Q2_1]]
+
+    %cst0 = arith.constant 2.5 : f64
+    %cst1 = arith.constant 1.2 : f64
+    %cst2 = arith.constant 0.5 : f64
+
+    %q0_0 = mqtopt.allocQubit
+    %q1_0 = mqtopt.allocQubit
+    %q2_0 = mqtopt.allocQubit
+
+    %q0_1 = mqtopt.i() %q0_0: !mqtopt.Qubit
+    %q1_1 = mqtopt.i() %q1_0: !mqtopt.Qubit
+    %q0_2 = mqtopt.i() %q0_1: !mqtopt.Qubit
+    %q0_3, %q1_2 = mqtopt.x() %q0_2 ctrl %q1_1: !mqtopt.Qubit ctrl !mqtopt.Qubit
+    %q1_3 = mqtopt.i() %q1_2: !mqtopt.Qubit
+    %q0_4 = mqtopt.i() %q0_3: !mqtopt.Qubit
+    %q1_4 = mqtopt.i() %q1_3: !mqtopt.Qubit
+    %q0_5 = mqtopt.i() %q0_4: !mqtopt.Qubit
+    %q0_6 = mqtopt.i() %q0_5: !mqtopt.Qubit
+    %q0_7 = mqtopt.i() %q0_6: !mqtopt.Qubit
+    %q0_8 = mqtopt.i() %q0_7: !mqtopt.Qubit
+    %q0_9 = mqtopt.i() %q0_8: !mqtopt.Qubit
+    %q1_5 = mqtopt.i() %q1_4: !mqtopt.Qubit
+    %q1_6 = mqtopt.i() %q1_5: !mqtopt.Qubit
+    %q1_7 = mqtopt.i() %q1_6: !mqtopt.Qubit
+    %q1_8 = mqtopt.i() %q1_7: !mqtopt.Qubit
+    %q1_9 = mqtopt.i() %q1_8: !mqtopt.Qubit
+
+    mqtopt.deallocQubit %q0_9
+    mqtopt.deallocQubit %q1_9
+    mqtopt.deallocQubit %q2_0
+
+    return
+  }
+}
