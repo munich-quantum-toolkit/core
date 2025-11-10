@@ -166,7 +166,18 @@ Note, both LLVM/MLIR and Catalyst are currently restricted to specific versions.
 If you want to cite MQT Core's MLIR Plugin, please use the following BibTeX entry:
 
 ```bibtex
-TODO
+@inproceedings{Hopf_2026,
+author = {Hopf, Patrick and Ochoa, Erick and Stade, Yannick and Rovara, Damian and Quetschlich, Nils and Florea, Ioan Albert and Izaac, Josh and Wille, Robert and Burgholzer, Lukas},
+title = {Integrating Quantum Software Tools with(in) {MLIR}},
+year = {2026},
+publisher = {Association for Computing Machinery},
+address = {New York, NY, USA},
+url = {https://doi.org/10.1145/3773656.3773658},
+doi = {10.1145/3773656.3773658},
+booktitle = {Proceedings of the International Conference on High Performance Computing in Asia-Pacific Region},
+keywords = {quantum software development, quantum compilation, intermediate representation, MLIR},
+series = {HPCASIA '26}
+}
 ```
 
 ---
