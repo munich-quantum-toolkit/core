@@ -20,7 +20,6 @@
 #include <cstddef>
 #include <cstdint>
 #include <iomanip>
-#include <ios>
 #include <limits>
 #include <ostream>
 #include <sstream>
@@ -42,6 +41,7 @@ std::string SingleOperation::toQASMString() const {
   ss << static_cast<std::size_t>(dir) << ", " << start << ", " << end << "; ";
   return ss.str();
 }
+
 std::vector<Dimension>
 AodOperation::convertToDimension(const std::vector<uint32_t>& dirs) {
   std::vector<Dimension> dirsEnum(dirs.size());
@@ -102,6 +102,7 @@ std::vector<qc::fp> AodOperation::getEnds(const Dimension dir) const {
   }
   return ends;
 }
+
 std::vector<qc::fp> AodOperation::getStarts(const Dimension dir) const {
   std::vector<qc::fp> starts;
   for (const auto& op : operations) {
@@ -111,6 +112,7 @@ std::vector<qc::fp> AodOperation::getStarts(const Dimension dir) const {
   }
   return starts;
 }
+
 qc::fp AodOperation::getMaxDistance(const Dimension dir) const {
   const auto distances = getDistances(dir);
   if (distances.empty()) {
@@ -118,6 +120,7 @@ qc::fp AodOperation::getMaxDistance(const Dimension dir) const {
   }
   return *std::ranges::max_element(distances);
 }
+
 std::vector<qc::fp> AodOperation::getDistances(const Dimension dir) const {
   std::vector<qc::fp> params;
   for (const auto& op : operations) {
@@ -127,26 +130,35 @@ std::vector<qc::fp> AodOperation::getDistances(const Dimension dir) const {
   }
   return params;
 }
+
 void AodOperation::dumpOpenQASM(
     std::ostream& of, const qc::QubitIndexToRegisterMap& qubitMap,
     [[maybe_unused]] const qc::BitIndexToRegisterMap& bitMap,
     const size_t indent, bool /*openQASM3*/) const {
   of << std::setprecision(std::numeric_limits<qc::fp>::digits10);
-  of << std::string(indent * OUTPUT_INDENT_SIZE, ' ');
-  of << name;
-  // write AOD operations
-  of << " (";
+  of << std::string(indent * OUTPUT_INDENT_SIZE, ' ') << name << " (";
+
+  // Write AOD operations with separator logic
+  bool first = true;
   for (const auto& op : operations) {
-    of << op.toQASMString();
+    if (!first) {
+      of << "; ";
+    }
+    first = false;
+    of << static_cast<std::size_t>(op.dir) << ", " << op.start << ", "
+       << op.end;
   }
-  // remove last semicolon
-  of.seekp(-1, std::ios_base::end);
   of << ")";
-  // write qubit start
+
+  // Write qubits with separator logic
+  bool firstQubit = true;
   for (const auto& qubit : targets) {
-    of << " " << qubitMap.at(qubit).second << ",";
+    if (!firstQubit) {
+      of << ",";
+    }
+    firstQubit = false;
+    of << " " << qubitMap.at(qubit).second;
   }
-  of.seekp(-1, std::ios_base::end);
   of << ";\n";
 }
 
@@ -161,5 +173,4 @@ void AodOperation::invert() {
     type = qc::OpType::AodActivate;
   }
 }
-
 } // namespace na

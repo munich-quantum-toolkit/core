@@ -9,6 +9,10 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 
 ## [Unreleased]
 
+### Added
+
+- ✨ Add support for bridge gates for the neutral atom hybrid mapper ([#1293]) ([**@lsschmid**])
+
 ### Changed
 
 - ♻️ Preserve Tuple Structure and Improve Site Type Clarity of the MQT NA Default QDMI Device ([#1299]) ([**@marcelwa**])
@@ -232,6 +236,7 @@ _📚 Refer to the [GitHub Release Notes](https://github.com/munich-quantum-tool
 <!-- PR links -->
 
 [#1299]: https://github.com/munich-quantum-toolkit/core/pull/1299
+[#1293]: https://github.com/munich-quantum-toolkit/core/pull/1293
 [#1287]: https://github.com/munich-quantum-toolkit/core/pull/1287
 [#1283]: https://github.com/munich-quantum-toolkit/core/pull/1283
 [#1279]: https://github.com/munich-quantum-toolkit/core/pull/1279
@@ -356,6 +361,7 @@ _📚 Refer to the [GitHub Release Notes](https://github.com/munich-quantum-tool
 [**@lavanya-m-k**]: https://github.com/lavanya-m-k
 [**@taminob**]: https://github.com/taminob
 [**@jannikpflieger**]: https://github.com/jannikpflieger
+[**@lsschmid**]: https://github.com/lsschmid
 [**@marcelwa**]: https://github.com/marcelwa
 
 <!-- General links -->
