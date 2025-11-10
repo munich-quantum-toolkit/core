@@ -1243,7 +1243,6 @@ struct GateDecompositionPattern final
     QubitGateSequence::Gate basis_gate;
     fp basis_fidelity;
     EulerBasis euler_basis;
-    std::optional<bool> pulse_optimize;
     TwoQubitWeylDecomposition basis_decomposer;
     bool super_controlled;
     matrix2x2 u0l;
@@ -1271,8 +1270,7 @@ struct GateDecompositionPattern final
     new_inner(OneQubitGateSequence::Gate basis_gate = {.type = qc::X,
                                                        .parameter = {},
                                                        .qubit_id = {0, 1}},
-              fp basis_fidelity = 1.0, EulerBasis euler_basis = EulerBasis::ZYZ,
-              std::optional<bool> pulse_optimize = std::nullopt) {
+              fp basis_fidelity = 1.0, EulerBasis euler_basis = EulerBasis::ZYZ) {
       auto relative_eq = [](auto&& lhs, auto&& rhs, auto&& epsilon,
                             auto&& max_relative) {
         // Handle same infinities
@@ -1394,7 +1392,6 @@ struct GateDecompositionPattern final
           basis_gate,
           basis_fidelity,
           euler_basis,
-          pulse_optimize,
           basis_decomposer,
           super_controlled,
           u0l,
@@ -1469,12 +1466,6 @@ struct GateDecompositionPattern final
       std::cerr << "\nDecomposition:\n";
       for (auto x : decomposition) {
         helpers::print(x, "", true);
-      }
-      if (pulse_optimize.value_or(true)) {
-        if (auto result = pulse_optimal_chooser(best_nbasis, decomposition,
-                                                target_decomposed)) {
-          return result;
-        }
       }
       std::vector<EulerBasis>
           target_1q_basis_list; // TODO: simplify because list only has one
@@ -1573,241 +1564,6 @@ struct GateDecompositionPattern final
       };
     }
 
-    std::optional<TwoQubitGateSequence>
-    pulse_optimal_chooser(std::uint8_t best_nbasis,
-                          std::vector<matrix2x2> decomposition,
-                          const TwoQubitWeylDecomposition& target_decomposed) {
-      if (pulse_optimize.has_value() &&
-          (best_nbasis == 0 || best_nbasis == 1 || best_nbasis > 3)) {
-        return std::nullopt;
-      }
-      if (euler_basis != EulerBasis::ZSX && euler_basis != EulerBasis::ZSXX) {
-        if (pulse_optimize.has_value()) {
-          throw std::runtime_error{
-              "'pulse_optimize' currently only works with ZSX basis"};
-        }
-        return std::nullopt;
-      }
-
-      if (basis_gate.type != qc::X ||
-          basis_gate.qubit_id.size() != 2) { // != CX
-        if (pulse_optimize.has_value()) {
-          throw std::runtime_error{"pulse_optimizer currently only works "
-                                   "with CNOT entangling gate"};
-        }
-        return std::nullopt;
-      }
-      std::optional<TwoQubitGateSequence> result;
-      if (best_nbasis == 3) {
-        result =
-            get_sx_vz_3cx_efficient_euler(decomposition, target_decomposed);
-      } else if (best_nbasis == 2) {
-        result =
-            get_sx_vz_2cx_efficient_euler(decomposition, target_decomposed);
-      }
-      if (pulse_optimize.has_value() && !result.has_value()) {
-        throw std::runtime_error{
-            "Failed to compute requested pulse optimal decomposition"};
-      }
-      return result;
-    }
-
-    ///
-    /// Decomposition of SU(4) gate for device with SX, virtual RZ, and CNOT
-    /// gates assuming two CNOT gates are needed.
-    ///
-    /// This first decomposes each unitary from the KAK decomposition into ZXZ
-    /// on the source qubit of the CNOTs and XZX on the targets in order to
-    /// commute operators to beginning and end of decomposition. The beginning
-    /// and ending single qubit gates are then collapsed and re-decomposed
-    /// with the single qubit decomposer. This last step could be avoided if
-    /// performance is a concern.
-    TwoQubitGateSequence get_sx_vz_2cx_efficient_euler(
-        const std::vector<matrix2x2>& decomposition,
-        const TwoQubitWeylDecomposition& target_decomposed) {
-      TwoQubitGateSequence gates{.globalPhase = target_decomposed.global_phase};
-      gates.globalPhase -= 2. * basis_decomposer.global_phase;
-
-      auto get_euler_angles = [&](std::size_t startIndex, EulerBasis basis) {
-        std::vector<std::array<fp, 3>> result;
-        for (std::size_t i = startIndex; i < decomposition.size(); i += 2) {
-          auto euler_angles = angles_from_unitary(decomposition[i], basis);
-          gates.globalPhase += euler_angles[3];
-          result.push_back({euler_angles[2], euler_angles[0], euler_angles[1]});
-        }
-        return result;
-      };
-
-      auto euler_q0 = get_euler_angles(0, EulerBasis::ZXZ);
-      auto euler_q1 = get_euler_angles(1, EulerBasis::XZX);
-
-      matrix2x2 euler_matrix_q0 =
-          rx_matrix(euler_q0[0][1]) * rz_matrix(euler_q0[0][0]);
-      euler_matrix_q0 = rz_matrix(euler_q0[0][2] + euler_q0[1][0] + qc::PI_2) *
-                        euler_matrix_q0;
-      append_1q_sequence(gates, euler_matrix_q0, 0);
-      matrix2x2 euler_matrix_q1 =
-          rz_matrix(euler_q1[0][1]) * rx_matrix(euler_q1[0][0]);
-      euler_matrix_q1 =
-          rx_matrix(euler_q1[0][2] + euler_q1[1][0]) * euler_matrix_q1;
-      append_1q_sequence(gates, euler_matrix_q1, 1);
-      gates.gates.push_back(
-          {.type = qc::X, .qubit_id = {0, 1}}); // TODO: mark CX somehow?
-      gates.gates.push_back({.type = qc::SX, .qubit_id = {0}});
-      gates.gates.push_back({.type = qc::RZ,
-                             .parameter = {euler_q0[1][1] - qc::PI},
-                             .qubit_id = {0}});
-      gates.gates.push_back({.type = qc::SX, .qubit_id = {0}});
-      gates.gates.push_back(
-          {.type = qc::RZ, .parameter = {euler_q1[1][1]}, .qubit_id = {1}});
-      gates.globalPhase += qc::PI_2;
-      gates.gates.push_back(
-          {.type = qc::X, .qubit_id = {0, 1}}); // TODO: mark CX somehow?
-      euler_matrix_q0 = rx_matrix(euler_q0[2][1]) *
-                        rz_matrix(euler_q0[1][2] + euler_q0[2][0] + qc::PI_2);
-      euler_matrix_q0 = rz_matrix(euler_q0[2][2]) * euler_matrix_q0;
-      append_1q_sequence(gates, euler_matrix_q0, 0);
-      euler_matrix_q1 = rz_matrix(euler_q1[2][1]) *
-                        rx_matrix(euler_q1[1][2] + euler_q1[2][0]);
-      euler_matrix_q1 = rx_matrix(euler_q1[2][2]) * euler_matrix_q1;
-      append_1q_sequence(gates, euler_matrix_q1, 1);
-      return gates;
-    }
-
-    /// Decomposition of SU(4) gate for device with SX, virtual RZ, and CNOT
-    /// gates assuming three CNOT gates are needed.
-    ///
-    /// This first decomposes each unitary from the KAK decomposition into ZXZ
-    /// on the source qubit of the CNOTs and XZX on the targets in order
-    /// commute operators to beginning and end of decomposition. Inserting
-    /// Hadamards reverses the direction of the CNOTs and transforms a
-    /// variable Rx -> variable virtual Rz. The beginning and ending single
-    /// qubit gates are then collapsed and re-decomposed with the single qubit
-    /// decomposer. This last step could be avoided if performance is a
-    /// concern.
-    std::optional<TwoQubitGateSequence> get_sx_vz_3cx_efficient_euler(
-        const std::vector<matrix2x2>& decomposition,
-        const TwoQubitWeylDecomposition& target_decomposed) {
-      TwoQubitGateSequence gates{.globalPhase = target_decomposed.global_phase};
-      gates.globalPhase -= 3. * basis_decomposer.global_phase;
-      gates.globalPhase = remEuclid(gates.globalPhase, qc::TAU);
-      auto atol = 1e-10; // absolute tolerance for floats
-                         // Decompose source unitaries to zxz
-
-      auto get_euler_angles = [&](std::size_t startIndex, EulerBasis basis) {
-        std::vector<std::array<fp, 3>> result;
-        for (std::size_t i = startIndex; i < decomposition.size(); i += 2) {
-          auto euler_angles = angles_from_unitary(decomposition[i], basis);
-          gates.globalPhase += euler_angles[3];
-          result.push_back({euler_angles[2], euler_angles[0], euler_angles[1]});
-        }
-        return result;
-      };
-
-      auto euler_q0 = get_euler_angles(0, EulerBasis::ZXZ);
-      // Decompose target unitaries to xzx
-      auto euler_q1 = get_euler_angles(1, EulerBasis::XZX);
-
-      auto x12 = euler_q0[1][2] + euler_q0[2][0];
-      auto x12_is_non_zero = std::abs(x12) < atol;
-      auto x12_is_old_mult = std::abs(std::cos(x12) - 1.0) < atol;
-      auto x12_phase = 0.;
-      auto x12_is_pi_mult = std::abs(std::sin(x12)) < atol;
-      if (x12_is_pi_mult) {
-        x12_phase = qc::PI * std::cos(x12);
-      }
-      auto x02_add = x12 - euler_q0[1][0];
-      auto x12_is_half_pi = std::abs(x12 - qc::PI_2) < atol;
-
-      matrix2x2 euler_matrix_q0 =
-          rx_matrix(euler_q0[0][1]) * rz_matrix(euler_q0[0][0]);
-      if (x12_is_non_zero && x12_is_pi_mult) {
-        euler_matrix_q0 = rz_matrix(euler_q0[0][2] - x02_add) * euler_matrix_q0;
-      } else {
-        euler_matrix_q0 =
-            rz_matrix(euler_q0[0][2] + euler_q0[1][0]) * euler_matrix_q0;
-      }
-      euler_matrix_q0 = hGate * euler_matrix_q0;
-      append_1q_sequence(gates, euler_matrix_q0, 0);
-
-      auto rx_0 = rx_matrix(euler_q1[0][0]);
-      auto rz = rz_matrix(euler_q1[0][1]);
-      auto rx_1 = rx_matrix(euler_q1[0][2] + euler_q1[1][0]);
-      matrix2x2 euler_matrix_q1 = rz * rx_0;
-      euler_matrix_q1 = rx_1 * euler_matrix_q1;
-      euler_matrix_q1 = hGate * euler_matrix_q1;
-      append_1q_sequence(gates, euler_matrix_q1, 1);
-
-      gates.gates.push_back({.type = qc::X, .qubit_id = {1, 0}});
-
-      if (x12_is_pi_mult) {
-        // even or odd multiple
-        if (x12_is_non_zero) {
-          gates.globalPhase += x12_phase;
-        }
-        if (x12_is_non_zero && x12_is_old_mult) {
-          gates.gates.push_back({.type = qc::RZ,
-                                 .parameter = {-euler_q0[1][1]},
-                                 .qubit_id = {0}});
-        } else {
-          gates.gates.push_back(
-              {.type = qc::RZ, .parameter = {euler_q0[1][1]}, .qubit_id = {0}});
-          gates.globalPhase += qc::PI;
-        }
-      }
-      if (x12_is_half_pi) {
-        gates.gates.push_back({.type = qc::SX, .qubit_id = {0}});
-        gates.globalPhase -= qc::PI_4;
-      } else if (x12_is_non_zero && !x12_is_pi_mult) {
-        if (!pulse_optimize.has_value()) {
-          append_1q_sequence(gates, rx_matrix(x12), 0);
-        } else {
-          return std::nullopt;
-        }
-      }
-      if (std::abs(euler_q1[1][1] - qc::PI_2) < atol) {
-        gates.gates.push_back({.type = qc::SX, .qubit_id = {1}});
-        gates.globalPhase -= qc::PI_4;
-      } else if (!pulse_optimize.has_value()) {
-        append_1q_sequence(gates, rx_matrix(euler_q1[1][1]), 1);
-      } else {
-        return std::nullopt;
-      }
-      gates.gates.push_back({.type = qc::RZ,
-                             .parameter = {euler_q1[1][2] + euler_q1[2][0]},
-                             .qubit_id = {1}});
-      gates.gates.push_back({.type = qc::X, .qubit_id = {1, 0}});
-      gates.gates.push_back(
-          {.type = qc::RZ, .parameter = {euler_q1[2][1]}, .qubit_id = {0}});
-      if (std::abs(euler_q1[2][1] - qc::PI_2) < atol) {
-        gates.gates.push_back({.type = qc::SX, .qubit_id = {1}});
-        gates.globalPhase -= qc::PI_4;
-      } else if (!pulse_optimize.has_value()) {
-        append_1q_sequence(gates, rx_matrix(euler_q1[2][1]), 1);
-      } else {
-        return std::nullopt;
-      }
-      gates.gates.push_back({.type = qc::X, .qubit_id = {1, 0}});
-      matrix2x2 eulerMatrix =
-          rz_matrix(euler_q0[2][2] + euler_q0[3][0]) * hGate;
-      eulerMatrix = rx_matrix(euler_q0[3][1]) * eulerMatrix;
-      eulerMatrix = rz_matrix(euler_q0[3][2]) * eulerMatrix;
-      append_1q_sequence(gates, eulerMatrix, 0);
-
-      eulerMatrix = rx_matrix(euler_q1[2][2] + euler_q1[3][0]) * hGate;
-      eulerMatrix = rz_matrix(euler_q1[3][1]) * eulerMatrix;
-      eulerMatrix = rx_matrix(euler_q1[3][2]) * eulerMatrix;
-      append_1q_sequence(gates, eulerMatrix, 1);
-
-      auto out_unitary = compute_unitary(gates, gates.globalPhase);
-      // TODO: fix the sign problem to avoid correction here
-      if (std::abs(target_decomposed.unitary_matrix(0, 0) -
-                   (-out_unitary(0, 0))) < atol) {
-        gates.globalPhase += qc::PI;
-      }
-      return gates;
-    }
-
     matrix4x4 compute_unitary(const TwoQubitGateSequence& sequence,
                               fp global_phase) {
       auto phase = std::exp(std::complex<fp>{0, global_phase});
@@ -1820,20 +1576,6 @@ struct GateDecompositionPattern final
         matrix = gate_matrix * matrix;
       }
       return matrix;
-    }
-
-    void append_1q_sequence(TwoQubitGateSequence& twoQubitSequence,
-                            matrix2x2 unitary, std::size_t qubit) {
-      std::vector<EulerBasis> target_1q_basis_list;
-      target_1q_basis_list.push_back(euler_basis);
-      auto sequence = unitary_to_gate_sequence_inner(
-          unitary, target_1q_basis_list, qubit, {}, true, std::nullopt);
-      twoQubitSequence.globalPhase += sequence.globalPhase;
-      for (auto&& gate : sequence.gates) {
-        twoQubitSequence.gates.push_back({.type = gate.type,
-                                          .parameter = gate.parameter,
-                                          .qubit_id = {qubit}});
-      }
     }
 
     [[nodiscard]] std::array<qfp, 4>
