@@ -170,6 +170,7 @@ jobs:
       - name: Setup LLVM/MLIR (windows-11-arm)
         if: ${{ matrix.os == 'windows-11-arm' }}
         run: |
+          vcpkg install libxml2
           choco install -y zstandard
 
           cd llvm-project
