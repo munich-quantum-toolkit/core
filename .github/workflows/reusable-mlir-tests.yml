@@ -191,16 +191,8 @@ jobs:
         with:
           python-version: 3.13
           activate-environment: true
-          enable-cache: true
-          cache-dependency-glob: |
-            !llvm-project/**
-            **/*requirements*.txt
-            **/*requirements*.in
-            **/*constraints*.txt
-            **/*constraints*.in
-            **/pyproject.toml
-            **/uv.lock
-            **/*.py.lock
+          enable-cache: false
+          restore-cache: false
           save-cache: ${{ github.ref == 'refs/heads/main' }}
 
       - name: Install Ninja
