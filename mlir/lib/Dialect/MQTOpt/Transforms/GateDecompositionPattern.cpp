@@ -702,6 +702,11 @@ struct GateDecompositionPattern final
     fp b;
     fp c;
     fp globalPhase;
+    /**
+     * - k2r - X - k1r -
+     *         X
+     * - k2l - X - k1l -
+     */
     matrix2x2 k1l;
     matrix2x2 k2l;
     matrix2x2 k1r;
@@ -830,8 +835,10 @@ struct GateDecompositionPattern final
       temp = temp.exp();
       helpers::print(temp, "TEMP");
       helpers::print(p, "P", true);
+      // https://threeplusone.com/pubs/on_gates.pdf
+      // uP = V, m2 = V^T*V, temp = D, p = Q1
       auto k1 = magicBasisTransform(uP * p * temp, MagicBasisTransform::Into);
-      auto k2 = magicBasisTransform(p.transpose(), MagicBasisTransform::Into);
+      auto k2 = magicBasisTransform(p.transpose().conjugate(), MagicBasisTransform::Into);
 
       auto [K1l, K1r, phase_l] = decomposeTwoQubitProductGate(k1);
       auto [K2l, K2r, phase_r] = decomposeTwoQubitProductGate(k2);
