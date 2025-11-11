@@ -46,7 +46,7 @@ namespace mlir::quartz {
  * auto module = builder.finalize();
  * ```
  */
-class QuartzProgramBuilder { /// TODO: Consider inheriting from OpBuilder
+class QuartzProgramBuilder final : public OpBuilder {
 public:
   /**
    * @brief Construct a new QuartzProgramBuilder
@@ -524,11 +524,11 @@ public:
    */
   OwningOpRef<ModuleOp> finalize();
 
-  OpBuilder builder;
-  ModuleOp module;
-  Location loc;
-
 private:
+  MLIRContext* ctx{};
+  Location loc;
+  ModuleOp module;
+
   /// Track allocated qubits for automatic deallocation
   llvm::DenseSet<Value> allocatedQubits;
 

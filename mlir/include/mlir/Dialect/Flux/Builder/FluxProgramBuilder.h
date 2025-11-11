@@ -54,7 +54,7 @@ namespace mlir::flux {
  * auto module = builder.finalize();
  * ```
  */
-class FluxProgramBuilder {
+class FluxProgramBuilder final : public OpBuilder {
 public:
   /**
    * @brief Construct a new FluxProgramBuilder
@@ -570,11 +570,11 @@ public:
    */
   OwningOpRef<ModuleOp> finalize();
 
-  OpBuilder builder;
-  ModuleOp module;
-  Location loc;
-
 private:
+  MLIRContext* ctx{};
+  Location loc;
+  ModuleOp module;
+
   //===--------------------------------------------------------------------===//
   // Linear Type Tracking Helpers
   //===--------------------------------------------------------------------===//

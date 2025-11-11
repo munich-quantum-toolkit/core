@@ -33,33 +33,31 @@
 namespace mlir::flux {
 
 FluxProgramBuilder::FluxProgramBuilder(MLIRContext* context)
-    : builder(context),
-      module(builder.create<ModuleOp>(UnknownLoc::get(context))),
-      loc(UnknownLoc::get(context)) {}
+    : OpBuilder(context), ctx(context), loc(getUnknownLoc()),
+      module(create<ModuleOp>(loc)) {}
 
 void FluxProgramBuilder::initialize() {
   // Ensure the Flux dialect is loaded
-  builder.getContext()->loadDialect<FluxDialect>();
+  ctx->loadDialect<FluxDialect>();
 
   // Set insertion point to the module body
-  builder.setInsertionPointToStart(module.getBody());
+  setInsertionPointToStart(module.getBody());
 
   // Create main function as entry point
-  auto funcType = builder.getFunctionType({}, {builder.getI64Type()});
-  auto mainFunc = builder.create<func::FuncOp>(loc, "main", funcType);
+  auto funcType = getFunctionType({}, {getI64Type()});
+  auto mainFunc = create<func::FuncOp>(loc, "main", funcType);
 
   // Add entry_point attribute to identify the main function
-  auto entryPointAttr = StringAttr::get(builder.getContext(), "entry_point");
-  mainFunc->setAttr("passthrough",
-                    ArrayAttr::get(builder.getContext(), {entryPointAttr}));
+  auto entryPointAttr = getStringAttr("entry_point");
+  mainFunc->setAttr("passthrough", getArrayAttr({entryPointAttr}));
 
   // Create entry block and set insertion point
   auto& entryBlock = mainFunc.getBody().emplaceBlock();
-  builder.setInsertionPointToStart(&entryBlock);
+  setInsertionPointToStart(&entryBlock);
 }
 
 Value FluxProgramBuilder::allocQubit() {
-  auto allocOp = builder.create<AllocOp>(loc);
+  auto allocOp = create<AllocOp>(loc);
   const auto qubit = allocOp.getResult();
 
   // Track the allocated qubit as valid
@@ -69,8 +67,8 @@ Value FluxProgramBuilder::allocQubit() {
 }
 
 Value FluxProgramBuilder::staticQubit(const int64_t index) {
-  auto indexAttr = builder.getI64IntegerAttr(index);
-  auto staticOp = builder.create<StaticOp>(loc, indexAttr);
+  auto indexAttr = getI64IntegerAttr(index);
+  auto staticOp = create<StaticOp>(loc, indexAttr);
   const auto qubit = staticOp.getQubit();
 
   // Track the static qubit as valid
@@ -85,12 +83,12 @@ FluxProgramBuilder::allocQubitRegister(const int64_t size,
   SmallVector<Value> qubits;
   qubits.reserve(static_cast<size_t>(size));
 
-  auto nameAttr = builder.getStringAttr(name);
-  auto sizeAttr = builder.getI64IntegerAttr(size);
+  auto nameAttr = getStringAttr(name);
+  auto sizeAttr = getI64IntegerAttr(size);
 
   for (int64_t i = 0; i < size; ++i) {
-    auto indexAttr = builder.getI64IntegerAttr(i);
-    auto allocOp = builder.create<AllocOp>(loc, nameAttr, sizeAttr, indexAttr);
+    auto indexAttr = getI64IntegerAttr(i);
+    auto allocOp = create<AllocOp>(loc, nameAttr, sizeAttr, indexAttr);
     const auto& qubit = qubits.emplace_back(allocOp.getResult());
     // Track the allocated qubit as valid
     validQubits.insert(qubit);
@@ -112,7 +110,7 @@ void FluxProgramBuilder::validateQubitValue(const Value qubit) const {
   if (!validQubits.contains(qubit)) {
     llvm::errs() << "Error: Attempting to use an invalid qubit SSA value. "
                  << "The value may have been consumed by a previous operation "
-                 << "or was never created through this builder.\n";
+                 << "or was never created through this \n";
     llvm::reportFatalUsageError(
         "Invalid qubit value used (either consumed or not tracked)");
   }
@@ -135,7 +133,7 @@ void FluxProgramBuilder::updateQubitTracking(const Value inputQubit,
 //===----------------------------------------------------------------------===//
 
 std::pair<Value, Value> FluxProgramBuilder::measure(Value qubit) {
-  auto measureOp = builder.create<MeasureOp>(loc, qubit);
+  auto measureOp = create<MeasureOp>(loc, qubit);
   auto qubitOut = measureOp.getQubitOut();
   auto result = measureOp.getResult();
 
@@ -146,11 +144,10 @@ std::pair<Value, Value> FluxProgramBuilder::measure(Value qubit) {
 }
 
 Value FluxProgramBuilder::measure(Value qubit, const Bit& bit) {
-  auto nameAttr = builder.getStringAttr(bit.registerName);
-  auto sizeAttr = builder.getI64IntegerAttr(bit.registerSize);
-  auto indexAttr = builder.getI64IntegerAttr(bit.registerIndex);
-  auto measureOp =
-      builder.create<MeasureOp>(loc, qubit, nameAttr, sizeAttr, indexAttr);
+  auto nameAttr = getStringAttr(bit.registerName);
+  auto sizeAttr = getI64IntegerAttr(bit.registerSize);
+  auto indexAttr = getI64IntegerAttr(bit.registerIndex);
+  auto measureOp = create<MeasureOp>(loc, qubit, nameAttr, sizeAttr, indexAttr);
   const auto qubitOut = measureOp.getQubitOut();
 
   // Update tracking
@@ -160,7 +157,7 @@ Value FluxProgramBuilder::measure(Value qubit, const Bit& bit) {
 }
 
 Value FluxProgramBuilder::reset(Value qubit) {
-  auto resetOp = builder.create<ResetOp>(loc, qubit);
+  auto resetOp = create<ResetOp>(loc, qubit);
   const auto qubitOut = resetOp.getQubitOut();
 
   // Update tracking
@@ -174,7 +171,7 @@ Value FluxProgramBuilder::reset(Value qubit) {
 //===----------------------------------------------------------------------===//
 
 Value FluxProgramBuilder::x(Value qubit) {
-  auto xOp = builder.create<XOp>(loc, qubit);
+  auto xOp = create<XOp>(loc, qubit);
   const auto& qubitOut = xOp.getQubitOut();
 
   // Update tracking
@@ -207,7 +204,7 @@ std::pair<ValueRange, Value> FluxProgramBuilder::mcx(const ValueRange controls,
 
 Value FluxProgramBuilder::rx(const std::variant<double, Value>& theta,
                              Value qubit) {
-  auto rxOp = builder.create<RXOp>(loc, qubit, theta);
+  auto rxOp = create<RXOp>(loc, qubit, theta);
   const auto& qubitOut = rxOp.getQubitOut();
 
   // Update tracking
@@ -243,7 +240,7 @@ FluxProgramBuilder::mcrx(const std::variant<double, Value>& theta,
 Value FluxProgramBuilder::u2(const std::variant<double, Value>& phi,
                              const std::variant<double, Value>& lambda,
                              Value qubit) {
-  auto u2Op = builder.create<U2Op>(loc, qubit, phi, lambda);
+  auto u2Op = create<U2Op>(loc, qubit, phi, lambda);
   const auto& qubitOut = u2Op.getQubitOut();
 
   // Update tracking
@@ -279,7 +276,7 @@ FluxProgramBuilder::mcu2(const std::variant<double, Value>& phi,
 }
 
 std::pair<Value, Value> FluxProgramBuilder::swap(Value qubit0, Value qubit1) {
-  auto swapOp = builder.create<SWAPOp>(loc, qubit0, qubit1);
+  auto swapOp = create<SWAPOp>(loc, qubit0, qubit1);
   const auto& qubit0Out = swapOp.getQubit0Out();
   const auto& qubit1Out = swapOp.getQubit1Out();
 
@@ -320,7 +317,7 @@ FluxProgramBuilder::mcswap(const ValueRange controls, Value qubit0,
 std::pair<ValueRange, ValueRange> FluxProgramBuilder::ctrl(
     const ValueRange controls, const ValueRange targets,
     const std::function<ValueRange(OpBuilder&, ValueRange)>& body) {
-  auto ctrlOp = builder.create<CtrlOp>(loc, controls, targets, body);
+  auto ctrlOp = create<CtrlOp>(loc, controls, targets, body);
 
   // Update tracking
   const auto& controlsOut = ctrlOp.getControlsOut();
@@ -343,7 +340,7 @@ FluxProgramBuilder& FluxProgramBuilder::dealloc(Value qubit) {
   validateQubitValue(qubit);
   validQubits.erase(qubit);
 
-  builder.create<DeallocOp>(loc, qubit);
+  create<DeallocOp>(loc, qubit);
 
   return *this;
 }
@@ -355,17 +352,16 @@ FluxProgramBuilder& FluxProgramBuilder::dealloc(Value qubit) {
 OwningOpRef<ModuleOp> FluxProgramBuilder::finalize() {
   // Automatically deallocate all remaining valid qubits
   for (const auto qubit : validQubits) {
-    builder.create<DeallocOp>(loc, qubit);
+    create<DeallocOp>(loc, qubit);
   }
 
   validQubits.clear();
 
   // Create constant 0 for successful exit code
-  auto exitCode =
-      builder.create<arith::ConstantOp>(loc, builder.getI64IntegerAttr(0));
+  auto exitCode = create<arith::ConstantOp>(loc, getI64IntegerAttr(0));
 
   // Add return statement with exit code 0 to the main function
-  builder.create<func::ReturnOp>(loc, ValueRange{exitCode});
+  create<func::ReturnOp>(loc, ValueRange{exitCode});
 
   return module;
 }

@@ -31,34 +31,32 @@
 namespace mlir::quartz {
 
 QuartzProgramBuilder::QuartzProgramBuilder(MLIRContext* context)
-    : builder(context),
-      module(builder.create<ModuleOp>(UnknownLoc::get(context))),
-      loc(UnknownLoc::get(context)) {}
+    : OpBuilder(context), ctx(context), loc(getUnknownLoc()),
+      module(create<ModuleOp>(loc)) {}
 
 void QuartzProgramBuilder::initialize() {
   // Ensure the Quartz dialect is loaded
-  builder.getContext()->loadDialect<QuartzDialect>();
+  ctx->loadDialect<QuartzDialect>();
 
   // Set insertion point to the module body
-  builder.setInsertionPointToStart(module.getBody());
+  setInsertionPointToStart(module.getBody());
 
   // Create main function as entry point
-  auto funcType = builder.getFunctionType({}, {builder.getI64Type()});
-  auto mainFunc = builder.create<func::FuncOp>(loc, "main", funcType);
+  auto funcType = getFunctionType({}, {getI64Type()});
+  auto mainFunc = create<func::FuncOp>(loc, "main", funcType);
 
   // Add entry_point attribute to identify the main function
-  auto entryPointAttr = StringAttr::get(builder.getContext(), "entry_point");
-  mainFunc->setAttr("passthrough",
-                    ArrayAttr::get(builder.getContext(), {entryPointAttr}));
+  auto entryPointAttr = getStringAttr("entry_point");
+  mainFunc->setAttr("passthrough", getArrayAttr({entryPointAttr}));
 
   // Create entry block and set insertion point
   auto& entryBlock = mainFunc.getBody().emplaceBlock();
-  builder.setInsertionPointToStart(&entryBlock);
+  setInsertionPointToStart(&entryBlock);
 }
 
 Value QuartzProgramBuilder::allocQubit() {
   // Create the AllocOp without register metadata
-  auto allocOp = builder.create<AllocOp>(loc);
+  auto allocOp = create<AllocOp>(loc);
   const auto qubit = allocOp.getResult();
 
   // Track the allocated qubit for automatic deallocation
@@ -69,8 +67,8 @@ Value QuartzProgramBuilder::allocQubit() {
 
 Value QuartzProgramBuilder::staticQubit(const int64_t index) {
   // Create the StaticOp with the given index
-  auto indexAttr = builder.getI64IntegerAttr(index);
-  auto staticOp = builder.create<StaticOp>(loc, indexAttr);
+  auto indexAttr = getI64IntegerAttr(index);
+  auto staticOp = create<StaticOp>(loc, indexAttr);
   return staticOp.getQubit();
 }
 
@@ -81,12 +79,12 @@ QuartzProgramBuilder::allocQubitRegister(const int64_t size,
   SmallVector<Value> qubits;
   qubits.reserve(size);
 
-  auto nameAttr = builder.getStringAttr(name);
-  auto sizeAttr = builder.getI64IntegerAttr(size);
+  auto nameAttr = getStringAttr(name);
+  auto sizeAttr = getI64IntegerAttr(size);
 
   for (int64_t i = 0; i < size; ++i) {
-    auto indexAttr = builder.getI64IntegerAttr(i);
-    auto allocOp = builder.create<AllocOp>(loc, nameAttr, sizeAttr, indexAttr);
+    auto indexAttr = getI64IntegerAttr(i);
+    auto allocOp = create<AllocOp>(loc, nameAttr, sizeAttr, indexAttr);
     const auto& qubit = qubits.emplace_back(allocOp.getResult());
     // Track the allocated qubit for automatic deallocation
     allocatedQubits.insert(qubit);
@@ -105,21 +103,21 @@ QuartzProgramBuilder::allocClassicalBitRegister(int64_t size, StringRef name) {
 //===----------------------------------------------------------------------===//
 
 Value QuartzProgramBuilder::measure(Value qubit) {
-  auto measureOp = builder.create<MeasureOp>(loc, qubit);
+  auto measureOp = create<MeasureOp>(loc, qubit);
   return measureOp.getResult();
 }
 
 QuartzProgramBuilder& QuartzProgramBuilder::measure(Value qubit,
                                                     const Bit& bit) {
-  auto nameAttr = builder.getStringAttr(bit.registerName);
-  auto sizeAttr = builder.getI64IntegerAttr(bit.registerSize);
-  auto indexAttr = builder.getI64IntegerAttr(bit.registerIndex);
-  builder.create<MeasureOp>(loc, qubit, nameAttr, sizeAttr, indexAttr);
+  auto nameAttr = getStringAttr(bit.registerName);
+  auto sizeAttr = getI64IntegerAttr(bit.registerSize);
+  auto indexAttr = getI64IntegerAttr(bit.registerIndex);
+  create<MeasureOp>(loc, qubit, nameAttr, sizeAttr, indexAttr);
   return *this;
 }
 
 QuartzProgramBuilder& QuartzProgramBuilder::reset(Value qubit) {
-  builder.create<ResetOp>(loc, qubit);
+  create<ResetOp>(loc, qubit);
   return *this;
 }
 
@@ -128,7 +126,7 @@ QuartzProgramBuilder& QuartzProgramBuilder::reset(Value qubit) {
 //===----------------------------------------------------------------------===//
 
 QuartzProgramBuilder& QuartzProgramBuilder::x(Value qubit) {
-  builder.create<XOp>(loc, qubit);
+  create<XOp>(loc, qubit);
   return *this;
 }
 
@@ -138,15 +136,15 @@ QuartzProgramBuilder& QuartzProgramBuilder::cx(Value control, Value target) {
 
 QuartzProgramBuilder& QuartzProgramBuilder::mcx(ValueRange controls,
                                                 Value target) {
-  builder.create<CtrlOp>(loc, controls,
-                         [&](OpBuilder& b) { b.create<XOp>(loc, target); });
+  create<CtrlOp>(loc, controls,
+                 [&](OpBuilder& b) { b.create<XOp>(loc, target); });
   return *this;
 }
 
 QuartzProgramBuilder&
 QuartzProgramBuilder::rx(const std::variant<double, Value>& theta,
                          Value qubit) {
-  builder.create<RXOp>(loc, qubit, theta);
+  create<RXOp>(loc, qubit, theta);
   return *this;
 }
 
@@ -159,8 +157,8 @@ QuartzProgramBuilder::crx(const std::variant<double, Value>& theta,
 QuartzProgramBuilder&
 QuartzProgramBuilder::mcrx(const std::variant<double, Value>& theta,
                            ValueRange controls, Value target) {
-  builder.create<CtrlOp>(
-      loc, controls, [&](OpBuilder& b) { b.create<RXOp>(loc, target, theta); });
+  create<CtrlOp>(loc, controls,
+                 [&](OpBuilder& b) { b.create<RXOp>(loc, target, theta); });
   return *this;
 }
 
@@ -168,7 +166,7 @@ QuartzProgramBuilder&
 QuartzProgramBuilder::u2(const std::variant<double, Value>& phi,
                          const std::variant<double, Value>& lambda,
                          Value qubit) {
-  builder.create<U2Op>(loc, qubit, phi, lambda);
+  create<U2Op>(loc, qubit, phi, lambda);
   return *this;
 }
 
@@ -183,14 +181,14 @@ QuartzProgramBuilder&
 QuartzProgramBuilder::mcu2(const std::variant<double, Value>& phi,
                            const std::variant<double, Value>& lambda,
                            ValueRange controls, Value target) {
-  builder.create<CtrlOp>(loc, controls, [&](OpBuilder& b) {
+  create<CtrlOp>(loc, controls, [&](OpBuilder& b) {
     b.create<U2Op>(loc, target, phi, lambda);
   });
   return *this;
 }
 
 QuartzProgramBuilder& QuartzProgramBuilder::swap(Value qubit0, Value qubit1) {
-  builder.create<SWAPOp>(loc, qubit0, qubit1);
+  create<SWAPOp>(loc, qubit0, qubit1);
   return *this;
 }
 
@@ -202,9 +200,8 @@ QuartzProgramBuilder& QuartzProgramBuilder::cswap(Value control,
 
 QuartzProgramBuilder& QuartzProgramBuilder::mcswap(ValueRange controls,
                                                    Value qubit0, Value qubit1) {
-  builder.create<CtrlOp>(loc, controls, [&](OpBuilder& b) {
-    b.create<SWAPOp>(loc, qubit0, qubit1);
-  });
+  create<CtrlOp>(loc, controls,
+                 [&](OpBuilder& b) { b.create<SWAPOp>(loc, qubit0, qubit1); });
   return *this;
 }
 
@@ -215,7 +212,7 @@ QuartzProgramBuilder& QuartzProgramBuilder::mcswap(ValueRange controls,
 QuartzProgramBuilder&
 QuartzProgramBuilder::ctrl(ValueRange controls,
                            const std::function<void(OpBuilder&)>& body) {
-  builder.create<CtrlOp>(loc, controls, body);
+  create<CtrlOp>(loc, controls, body);
   return *this;
 }
 
@@ -233,7 +230,7 @@ QuartzProgramBuilder& QuartzProgramBuilder::dealloc(Value qubit) {
   }
 
   // Create the DeallocOp
-  builder.create<DeallocOp>(loc, qubit);
+  create<DeallocOp>(loc, qubit);
 
   return *this;
 }
@@ -245,18 +242,17 @@ QuartzProgramBuilder& QuartzProgramBuilder::dealloc(Value qubit) {
 OwningOpRef<ModuleOp> QuartzProgramBuilder::finalize() {
   // Automatically deallocate all remaining allocated qubits
   for (const Value qubit : allocatedQubits) {
-    builder.create<DeallocOp>(loc, qubit);
+    create<DeallocOp>(loc, qubit);
   }
 
   // Clear the tracking set
   allocatedQubits.clear();
 
   // Create constant 0 for successful exit code
-  auto exitCode =
-      builder.create<arith::ConstantOp>(loc, builder.getI64IntegerAttr(0));
+  auto exitCode = create<arith::ConstantOp>(loc, getI64IntegerAttr(0));
 
   // Add return statement with exit code 0 to the main function
-  builder.create<func::ReturnOp>(loc, ValueRange{exitCode});
+  create<func::ReturnOp>(loc, ValueRange{exitCode});
 
   // Transfer ownership to the caller
   return module;
