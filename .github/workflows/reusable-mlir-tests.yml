@@ -61,6 +61,7 @@ jobs:
 
           # Set environment variable for subsequent steps
           echo "LLVM_DIR=$PWD/lib/cmake/llvm" >> $GITHUB_ENV
+          echo "MLIR_DIR=$PWD/lib/cmake/mlir" >> $GITHUB_ENV
           echo "PATH=$PWD/bin:$PATH" >> $GITHUB_ENV
 
       - name: Download archives (macos-15-intel)
@@ -84,6 +85,7 @@ jobs:
 
           # Set environment variable for subsequent steps
           echo "LLVM_DIR=$PWD/lib/cmake/llvm" >> $GITHUB_ENV
+          echo "MLIR_DIR=$PWD/lib/cmake/mlir" >> $GITHUB_ENV
           echo "PATH=$PWD/bin:$PATH" >> $GITHUB_ENV
 
       - name: Download archives (ubuntu-24.04)
@@ -112,6 +114,8 @@ jobs:
 
           # Set environment variable for subsequent steps
           echo "LLVM_DIR=$PWD/lib/cmake/llvm" >> $GITHUB_ENV
+          echo "MLIR_DIR=$PWD/lib/cmake/mlir" >> $GITHUB_ENV
+          echo "LLVM_COV=$PWD/bin/llvm-cov" >> $GITHUB_ENV
           echo "PATH=$PWD/bin:$PATH" >> $GITHUB_ENV
 
       - name: Download archives (ubuntu-24.04-arm)
@@ -135,6 +139,7 @@ jobs:
 
           # Set environment variable for subsequent steps
           echo "LLVM_DIR=$PWD/lib/cmake/llvm" >> $GITHUB_ENV
+          echo "MLIR_DIR=$PWD/lib/cmake/mlir" >> $GITHUB_ENV
           echo "PATH=$PWD/bin:$PATH" >> $GITHUB_ENV
 
       - name: Download archives (windows-2025)
@@ -250,7 +255,7 @@ jobs:
         if: matrix.coverage
         run: |
           uvx gcovr \
-             --gcov-executable "/usr/lib/llvm-${{ matrix.llvm-version }}/bin/llvm-cov gcov" \
+             --gcov-executable "$LLVM_COV gcov" \
              --exclude build \
              --exclude-unreachable-branches \
              --exclude-noncode-lines \
