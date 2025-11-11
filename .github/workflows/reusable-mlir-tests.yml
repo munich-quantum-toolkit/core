@@ -132,7 +132,7 @@ jobs:
       - name: Setup LLVM/MLIR (windows-2025)
         if: ${{ matrix.os == 'windows-2025' }}
         run: |
-          choco install zstd -y
+          choco install -y zstandard
 
           # Extract archive
           zstd -d llvm-mlir_21.1.5_windows_x86_64_X86_opt.tar.zst --output-dir-flat .
@@ -154,7 +154,7 @@ jobs:
       - name: Setup LLVM/MLIR (windows-11-arm)
         if: ${{ matrix.os == 'windows-11-arm' }}
         run: |
-          choco install zstd -y
+          choco install -y zstandard
 
           # Extract archive
           zstd -d llvm-mlir_21.1.5_windows_x86_64_X86_opt.tar.zst --output-dir-flat .
