@@ -347,7 +347,7 @@ def SWAPOp : FluxOp<"swap", traits = [UnitaryOpInterface, TwoTargetZeroParameter
     let arguments = (ins Arg<QubitType, "the first target qubit", [MemRead]>:$qubit0_in,
                      Arg<QubitType, "the second target qubit", [MemRead]>:$qubit1_in);
     let results = (outs QubitType:$qubit0_out, QubitType:$qubit1_out);
-    let assemblyFormat = "$qubit0_in $qubit1_in attr-dict `:` type($qubit0_in) `,` type($qubit1_in) `->` type($qubit0_out) `,` type($qubit1_out)";
+    let assemblyFormat = "$qubit0_in `,` $qubit1_in attr-dict `:` type($qubit0_in) `,` type($qubit1_in) `->` type($qubit0_out) `,` type($qubit1_out)";
 
     let extraClassDeclaration = [{
         DenseElementsAttr tryGetStaticMatrix();
@@ -392,7 +392,7 @@ def CtrlOp : FluxOp<"ctrl", traits =
         %ctrl_q_out, %tgt_q_out = flux.ctrl(%ctrl_q_in) %tgt_q_in {
             %tgt_q_out = flux.h %tgt_q_in : !flux.qubit -> !flux.qubit
             flux.yield %tgt_q_out : !flux.qubit
-        } : (!flux.qubit, !flux.qubit) -> (!flux.qubit, !flux.qubit)
+        } : ({!flux.qubit}, {!flux.qubit}) -> ({!flux.qubit}, {!flux.qubit})
         ```
     }];
 
@@ -403,9 +403,9 @@ def CtrlOp : FluxOp<"ctrl", traits =
     let assemblyFormat = [{
         `(` $controls_in `)` $targets_in
         $body attr-dict `:`
-        type($controls_in) `,` type($targets_in)
+        `(` `{` type($controls_in) `}` `,` `{` type($targets_in) `}` `)`
         `->`
-        type($controls_out) `,` type($targets_out)
+        `(` `{` type($controls_out) `}` `,` `{` type($targets_out) `}` `)`
     }];
 
     let extraClassDeclaration = [{
@@ -433,6 +433,9 @@ def CtrlOp : FluxOp<"ctrl", traits =
     }];
 
     let builders = [
+        OpBuilder<(ins "ValueRange":$controls, "ValueRange":$targets), [{
+           build($_builder, $_state, controls.getTypes(), targets.getTypes(), controls, targets);
+        }]>,
         OpBuilder<(ins "ValueRange":$controls, "ValueRange":$targets, "UnitaryOpInterface":$bodyUnitary)>,
         OpBuilder<(ins "ValueRange":$controls, "ValueRange":$targets, "const std::function<ValueRange(OpBuilder &, ValueRange)>&":$bodyBuilder)>
     ];

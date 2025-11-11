@@ -153,6 +153,7 @@ struct ConvertQuartzAllocOp final
   LogicalResult
   matchAndRewrite(quartz::AllocOp op, OpAdaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
+    auto& [qubitMap] = getState();
     const auto& quartzQubit = op.getResult();
 
     // Create the flux.alloc operation with preserved register metadata
@@ -164,7 +165,7 @@ struct ConvertQuartzAllocOp final
 
     // Establish initial mapping: this Quartz qubit reference now corresponds
     // to this Flux SSA value
-    getState().qubitMap.try_emplace(quartzQubit, fluxQubit);
+    qubitMap.try_emplace(quartzQubit, fluxQubit);
 
     return success();
   }
@@ -192,16 +193,17 @@ struct ConvertQuartzDeallocOp final
   LogicalResult
   matchAndRewrite(quartz::DeallocOp op, OpAdaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
+    auto& [qubitMap] = getState();
     const auto& quartzQubit = op.getQubit();
 
     // Look up the latest Flux value for this Quartz qubit
-    const auto& fluxQubit = getState().qubitMap[quartzQubit];
+    const auto& fluxQubit = qubitMap[quartzQubit];
 
     // Create the dealloc operation
     rewriter.replaceOpWithNewOp<flux::DeallocOp>(op, fluxQubit);
 
     // Remove from state as qubit is no longer in use
-    getState().qubitMap.erase(quartzQubit);
+    qubitMap.erase(quartzQubit);
 
     return success();
   }
@@ -229,19 +231,17 @@ struct ConvertQuartzStaticOp final
   LogicalResult
   matchAndRewrite(quartz::StaticOp op, OpAdaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
-    // Prepare result type
-    const auto& qubitType = flux::QubitType::get(rewriter.getContext());
+    auto& [qubitMap] = getState();
+    const auto& quartzQubit = op.getQubit();
 
     // Create new flux.static operation with the same index
-    auto fluxOp =
-        rewriter.create<flux::StaticOp>(op.getLoc(), qubitType, op.getIndex());
+    auto fluxOp = rewriter.create<flux::StaticOp>(op.getLoc(), op.getIndex());
 
-    // Collect Quartz and Flux SSA values
-    const auto& quartzQubit = op.getQubit();
+    // Collect Flux qubit SSA value
     const auto& fluxQubit = fluxOp.getQubit();
 
     // Establish mapping from Quartz reference to Flux value
-    getState().qubitMap[quartzQubit] = fluxQubit;
+    qubitMap[quartzQubit] = fluxQubit;
 
     // Replace the old operation result with the new result
     rewriter.replaceOp(op, fluxQubit);
@@ -280,11 +280,11 @@ struct ConvertQuartzMeasureOp final
   LogicalResult
   matchAndRewrite(quartz::MeasureOp op, OpAdaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
-
+    auto& [qubitMap] = getState();
     const auto& quartzQubit = op.getQubit();
 
     // Get the latest Flux qubit value from the state map
-    const auto& fluxQubit = getState().qubitMap[quartzQubit];
+    const auto& fluxQubit = qubitMap[quartzQubit];
 
     // Create flux.measure (returns both output qubit and bit result)
     auto fluxOp = rewriter.create<flux::MeasureOp>(
@@ -295,7 +295,7 @@ struct ConvertQuartzMeasureOp final
     const auto newBit = fluxOp.getResult();
 
     // Update mapping: the Quartz qubit now corresponds to the output qubit
-    getState().qubitMap[quartzQubit] = outFluxQubit;
+    qubitMap[quartzQubit] = outFluxQubit;
 
     // Replace the Quartz operation's bit result with the Flux bit result
     rewriter.replaceOp(op, newBit);
@@ -331,18 +331,18 @@ struct ConvertQuartzResetOp final
   LogicalResult
   matchAndRewrite(quartz::ResetOp op, OpAdaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
-
+    auto& [qubitMap] = getState();
     // Track the Quartz qubit being reset
     const auto& quartzQubit = op.getQubit();
 
     // Get the latest Flux qubit value from the state map
-    const auto& fluxQubit = getState().qubitMap[quartzQubit];
+    const auto& fluxQubit = qubitMap[quartzQubit];
 
     // Create flux.reset (consumes input, produces output)
     auto fluxOp = rewriter.create<flux::ResetOp>(op.getLoc(), fluxQubit);
 
     // Update mapping: the Quartz qubit now corresponds to the reset output
-    getState().qubitMap[quartzQubit] = fluxOp.getQubitOut();
+    qubitMap[quartzQubit] = fluxOp.getQubitOut();
 
     // Erase the old (it has no results to replace)
     rewriter.eraseOp(op);
@@ -369,17 +369,16 @@ struct ConvertQuartzXOp final : StatefulOpConversionPattern<quartz::XOp> {
   LogicalResult
   matchAndRewrite(quartz::XOp op, OpAdaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
+    auto& [qubitMap] = getState();
     const auto inRegion = llvm::isa<flux::CtrlOp>(op->getParentOp());
 
     // Get the latest Flux qubit
-    Value quartzQubit = nullptr;
+    const auto quartzQubit = op->getOperand(0);
     Value fluxQubit = nullptr;
     if (inRegion) {
-      quartzQubit = op->getOperand(0);
       fluxQubit = rewriter.getRemappedValue(quartzQubit);
     } else {
-      quartzQubit = op.getQubitIn();
-      fluxQubit = getState().qubitMap[quartzQubit];
+      fluxQubit = qubitMap[quartzQubit];
     }
 
     // Create flux.x (consumes input, produces output)
@@ -387,7 +386,7 @@ struct ConvertQuartzXOp final : StatefulOpConversionPattern<quartz::XOp> {
 
     // Update state map
     if (!inRegion) {
-      getState().qubitMap[quartzQubit] = fluxOp.getQubitOut();
+      qubitMap[quartzQubit] = fluxOp.getQubitOut();
     }
 
     rewriter.eraseOp(op);
@@ -413,17 +412,16 @@ struct ConvertQuartzRXOp final : StatefulOpConversionPattern<quartz::RXOp> {
   LogicalResult
   matchAndRewrite(quartz::RXOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
+    auto& [qubitMap] = getState();
     const auto inRegion = llvm::isa<flux::CtrlOp>(op->getParentOp());
 
     // Get the latest Flux qubit
-    Value quartzQubit = nullptr;
+    const auto quartzQubit = op->getOperand(0);
     Value fluxQubit = nullptr;
     if (inRegion) {
-      quartzQubit = op->getOperand(0);
       fluxQubit = rewriter.getRemappedValue(quartzQubit);
     } else {
-      quartzQubit = op.getQubitIn();
-      fluxQubit = getState().qubitMap[quartzQubit];
+      fluxQubit = qubitMap[quartzQubit];
     }
 
     // Create flux.rx (consumes input, produces output)
@@ -432,7 +430,7 @@ struct ConvertQuartzRXOp final : StatefulOpConversionPattern<quartz::RXOp> {
 
     // Update state map
     if (!inRegion) {
-      getState().qubitMap[quartzQubit] = fluxOp.getQubitOut();
+      qubitMap[quartzQubit] = fluxOp.getQubitOut();
     }
 
     rewriter.eraseOp(op);
@@ -459,17 +457,16 @@ struct ConvertQuartzU2Op final : StatefulOpConversionPattern<quartz::U2Op> {
   LogicalResult
   matchAndRewrite(quartz::U2Op op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
+    auto& [qubitMap] = getState();
     const auto inRegion = llvm::isa<flux::CtrlOp>(op->getParentOp());
 
     // Get the latest Flux qubit
-    Value quartzQubit = nullptr;
+    const auto quartzQubit = op->getOperand(0);
     Value fluxQubit = nullptr;
     if (inRegion) {
-      quartzQubit = op->getOperand(0);
       fluxQubit = rewriter.getRemappedValue(quartzQubit);
     } else {
-      quartzQubit = op.getQubitIn();
-      fluxQubit = getState().qubitMap[quartzQubit];
+      fluxQubit = qubitMap[quartzQubit];
     }
 
     // Create flux.u2 (consumes input, produces output)
@@ -478,7 +475,7 @@ struct ConvertQuartzU2Op final : StatefulOpConversionPattern<quartz::U2Op> {
 
     // Update state map
     if (!inRegion) {
-      getState().qubitMap[quartzQubit] = fluxOp.getQubitOut();
+      qubitMap[quartzQubit] = fluxOp.getQubitOut();
     }
 
     rewriter.eraseOp(op);
@@ -506,23 +503,20 @@ struct ConvertQuartzSWAPOp final : StatefulOpConversionPattern<quartz::SWAPOp> {
   LogicalResult
   matchAndRewrite(quartz::SWAPOp op, OpAdaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
+    auto& [qubitMap] = getState();
     const auto inRegion = llvm::isa<flux::CtrlOp>(op->getParentOp());
 
     // Get the latest Flux qubit
-    Value quartzQubit0 = nullptr;
-    Value quartzQubit1 = nullptr;
+    const auto quartzQubit0 = op->getOperand(0);
+    const auto quartzQubit1 = op->getOperand(1);
     Value fluxQubit0 = nullptr;
     Value fluxQubit1 = nullptr;
     if (inRegion) {
-      quartzQubit0 = op->getOperand(0);
-      quartzQubit1 = op->getOperand(1);
       fluxQubit0 = rewriter.getRemappedValue(quartzQubit0);
       fluxQubit1 = rewriter.getRemappedValue(quartzQubit1);
     } else {
-      quartzQubit0 = op.getQubit0();
-      quartzQubit1 = op.getQubit1();
-      fluxQubit0 = getState().qubitMap[quartzQubit0];
-      fluxQubit1 = getState().qubitMap[quartzQubit1];
+      fluxQubit0 = qubitMap[quartzQubit0];
+      fluxQubit1 = qubitMap[quartzQubit1];
     }
 
     // Create flux.swap (consumes input, produces output)
@@ -531,8 +525,8 @@ struct ConvertQuartzSWAPOp final : StatefulOpConversionPattern<quartz::SWAPOp> {
 
     // Update state map
     if (!inRegion) {
-      getState().qubitMap[quartzQubit0] = fluxOp.getQubit0Out();
-      getState().qubitMap[quartzQubit1] = fluxOp.getQubit1Out();
+      qubitMap[quartzQubit0] = fluxOp.getQubit0Out();
+      qubitMap[quartzQubit1] = fluxOp.getQubit1Out();
     }
 
     rewriter.eraseOp(op);
@@ -564,7 +558,7 @@ struct ConvertQuartzCtrlOp final : StatefulOpConversionPattern<quartz::CtrlOp> {
   using StatefulOpConversionPattern::StatefulOpConversionPattern;
 
   LogicalResult
-  matchAndRewrite(quartz::CtrlOp op, OpAdaptor adaptor,
+  matchAndRewrite(quartz::CtrlOp op, OpAdaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
     auto& [qubitMap] = getState();
     // Get Flux controls from state map
@@ -575,27 +569,26 @@ struct ConvertQuartzCtrlOp final : StatefulOpConversionPattern<quartz::CtrlOp> {
       fluxControls.push_back(qubitMap[quartzControl]);
     }
 
-    // Get Flux targets from state map
+    // Get Flux targets from state map and build mapping for region
+    IRMapping regionMap;
     const auto numTargets = op.getNumTargets();
     SmallVector<Value> fluxTargets;
     fluxTargets.reserve(numTargets);
     for (size_t i = 0; i < numTargets; ++i) {
-      fluxTargets.push_back(qubitMap[op.getTarget(i)]);
+      const auto& quartzTarget = op.getTarget(i);
+      const auto& fluxTarget = qubitMap[quartzTarget];
+      fluxTargets.push_back(fluxTarget);
+      regionMap.map(quartzTarget, fluxTarget);
     }
 
     // Create flux.ctrl
-    /// TODO this does not work yet.
     auto fluxOp =
-        rewriter.create<flux::CtrlOp>(op.getLoc(), fluxControls, fluxTargets,
-                                      llvm::dyn_cast<flux::UnitaryOpInterface>(
-                                          &adaptor.getBody().front().front()));
+        rewriter.create<flux::CtrlOp>(op.getLoc(), fluxControls, fluxTargets);
 
     // Update state map
-    const auto numPosControls = op.getNumPosControls();
-    const auto controlsOut = fluxOp.getControlsOut();
-    for (size_t i = 0; i < numPosControls; ++i) {
-      const auto& quartzControl = quartzControls[i];
-      qubitMap[quartzControl] = controlsOut[i];
+    for (const auto& [quartzControl, fluxControl] :
+         llvm::zip(quartzControls, fluxOp.getControlsOut())) {
+      qubitMap[quartzControl] = fluxControl;
     }
     const auto targetsOut = fluxOp.getTargetsOut();
     for (size_t i = 0; i < numTargets; ++i) {
@@ -603,8 +596,12 @@ struct ConvertQuartzCtrlOp final : StatefulOpConversionPattern<quartz::CtrlOp> {
       qubitMap[quartzTarget] = targetsOut[i];
     }
 
-    rewriter.eraseOp(op);
+    // clone region
+    auto& dstRegion = fluxOp.getBody();
+    rewriter.cloneRegionBefore(op.getBody(), dstRegion, dstRegion.end(),
+                               regionMap);
 
+    rewriter.eraseOp(op);
     return success();
   }
 };
@@ -630,19 +627,9 @@ struct ConvertQuartzYieldOp final
   matchAndRewrite(quartz::YieldOp op, OpAdaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
     auto ctrlOp = dyn_cast<flux::CtrlOp>(op->getParentOp());
-    auto unitaryOp = ctrlOp.getBodyUnitary();
-
-    SmallVector<Value> targets;
-    targets.reserve(unitaryOp.getNumTargets());
-    for (size_t i = 0; i < unitaryOp.getNumTargets(); ++i) {
-      const auto& yield =
-          rewriter.getRemappedValue(unitaryOp.getOutputTarget(i));
-      targets.push_back(yield);
-    }
-
-    // Create quartz.yield
-    rewriter.replaceOpWithNewOp<flux::YieldOp>(op, targets);
-
+    assert(ctrlOp != nullptr);
+    rewriter.replaceOpWithNewOp<flux::YieldOp>(
+        op, ctrlOp.getBodyUnitary()->getResults());
     return success();
   }
 };
@@ -685,17 +672,11 @@ struct QuartzToFlux final : impl::QuartzToFluxBase<QuartzToFlux> {
     target.addLegalDialect<FluxDialect>();
 
     // Register operation conversion patterns with state tracking
-    patterns.add<ConvertQuartzAllocOp>(typeConverter, context, &state);
-    patterns.add<ConvertQuartzDeallocOp>(typeConverter, context, &state);
-    patterns.add<ConvertQuartzStaticOp>(typeConverter, context, &state);
-    patterns.add<ConvertQuartzMeasureOp>(typeConverter, context, &state);
-    patterns.add<ConvertQuartzResetOp>(typeConverter, context, &state);
-    patterns.add<ConvertQuartzXOp>(typeConverter, context, &state);
-    patterns.add<ConvertQuartzRXOp>(typeConverter, context, &state);
-    patterns.add<ConvertQuartzU2Op>(typeConverter, context, &state);
-    patterns.add<ConvertQuartzSWAPOp>(typeConverter, context, &state);
-    patterns.add<ConvertQuartzCtrlOp>(typeConverter, context, &state);
-    patterns.add<ConvertQuartzYieldOp>(typeConverter, context, &state);
+    patterns.add<ConvertQuartzAllocOp, ConvertQuartzDeallocOp,
+                 ConvertQuartzStaticOp, ConvertQuartzMeasureOp,
+                 ConvertQuartzResetOp, ConvertQuartzXOp, ConvertQuartzRXOp,
+                 ConvertQuartzU2Op, ConvertQuartzSWAPOp, ConvertQuartzCtrlOp,
+                 ConvertQuartzYieldOp>(typeConverter, context, &state);
 
     // Conversion of quartz types in func.func signatures
     // Note: This currently has limitations with signature changes

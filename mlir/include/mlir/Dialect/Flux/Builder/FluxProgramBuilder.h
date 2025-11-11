@@ -274,7 +274,7 @@ public:
    * %q0_out, %q1_out = flux.ctrl(%q0_in) %q1_in {
    *   %q1_res = flux.x %q1_in : !flux.qubit -> !flux.qubit
    *   flux.yield %q1_res
-   * } : !flux.qubit, !flux.qubit -> !flux.qubit, !flux.qubit
+   * } : ({!flux.qubit}, {!flux.qubit}) -> ({!flux.qubit}, {!flux.qubit})
    * ```
    */
   std::pair<Value, Value> cx(Value control, Value target);
@@ -293,8 +293,8 @@ public:
    * %controls_out, %target_out = flux.ctrl(%q0_in, %q1_in) %q2_in {
    *   %q2_res = flux.x %q2_in : !flux.qubit -> !flux.qubit
    *   flux.yield %q2_res
-   * } : !flux.qubit, !flux.qubit, !flux.qubit -> !flux.qubit, !flux.qubit,
-   * !flux.qubit
+   * } : ({!flux.qubit, !flux.qubit}, {!flux.qubit}) -> ({!flux.qubit,
+   * !flux.qubit}, {!flux.qubit})
    * ```
    */
   std::pair<ValueRange, Value> mcx(ValueRange controls, Value target);
@@ -335,7 +335,7 @@ public:
    * %q0_out, %q1_out = flux.ctrl(%q0_in) %q1_in {
    *   %q1_res = flux.rx(1.0) %q1_in : !flux.qubit -> !flux.qubit
    *   flux.yield %q1_res
-   * } : !flux.qubit, !flux.qubit -> !flux.qubit, !flux.qubit
+   * } : ({!flux.qubit}, {!flux.qubit}) -> ({!flux.qubit}, {!flux.qubit})
    * ```
    */
   std::pair<Value, Value> crx(const std::variant<double, Value>& theta,
@@ -356,8 +356,8 @@ public:
    * %controls_out, %target_out = flux.ctrl(%q0_in, %q1_in) %q2_in {
    *   %q2_res = flux.rx(1.0) %q2_in : !flux.qubit -> !flux.qubit
    *   flux.yield %q2_res
-   * } : !flux.qubit, !flux.qubit, !flux.qubit -> !flux.qubit, !flux.qubit,
-   * !flux.qubit
+   * } : ({!flux.qubit, !flux.qubit}, {!flux.qubit}) -> ({!flux.qubit,
+   * !flux.qubit}, {!flux.qubit})
    * ```
    */
   std::pair<ValueRange, Value> mcrx(const std::variant<double, Value>& theta,
@@ -402,7 +402,7 @@ public:
    * %q0_out, %q1_out = flux.ctrl(%q0_in) %q1_in {
    *   %q1_res = flux.u2(1.0, 0.5) %q1_in : !flux.qubit -> !flux.qubit
    *   flux.yield %q1_res
-   * } : !flux.qubit, !flux.qubit -> !flux.qubit, !flux.qubit
+   * } : ({!flux.qubit}, {!flux.qubit}) -> ({!flux.qubit}, {!flux.qubit})
    * ```
    */
   std::pair<Value, Value> cu2(const std::variant<double, Value>& phi,
@@ -425,8 +425,8 @@ public:
    * %controls_out, %target_out = flux.ctrl(%q0_in, %q1_in) %q2_in {
    *   %q2_res = flux.u2(1.0, 0.5) %q2_in : !flux.qubit -> !flux.qubit
    *   flux.yield %q2_res
-   * } : !flux.qubit, !flux.qubit, !flux.qubit -> !flux.qubit, !flux.qubit,
-   * !flux.qubit
+   * } : ({!flux.qubit, !flux.qubit}, {!flux.qubit}) -> ({!flux.qubit,
+   * !flux.qubit}, {!flux.qubit})
    * ```
    */
   std::pair<ValueRange, Value> mcu2(const std::variant<double, Value>& phi,
@@ -491,9 +491,9 @@ public:
    * ```mlir
    * %controls_out, %q2_out, %q3_out = flux.ctrl(%q0_in, %q1_in) %q2_in, %q3_in
    * { %q2_res, %q3_res = flux.swap %q2_in, %q3_in : !flux.qubit, !flux.qubit ->
-   * !flux.qubit, !flux.qubit flux.yield %q2_res, %q3_res } : !flux.qubit,
-   * !flux.qubit, !flux.qubit, !flux.qubit -> !flux.qubit, !flux.qubit,
-   * !flux.qubit, !flux.qubit
+   * !flux.qubit, !flux.qubit flux.yield %q2_res, %q3_res
+   * } : ({!flux.qubit, !flux.qubit}, {!flux.qubit, !flux.qubit}) ->
+   * ({!flux.qubit, !flux.qubit}, {!flux.qubit, !flux.qubit})
    * ```
    */
   std::pair<ValueRange, std::pair<Value, Value>>
@@ -522,7 +522,7 @@ public:
    * %controls_out, %targets_out = flux.ctrl(%q0_in) %q1_in {
    *   %q1_res = flux.x %q1_in : !flux.qubit -> !flux.qubit
    *   flux.yield %q1_res
-   * } : !flux.qubit, !flux.qubit -> !flux.qubit, !flux.qubit
+   * } : ({!flux.qubit}, {!flux.qubit}) -> ({!flux.qubit}, {!flux.qubit})
    * ```
    */
   std::pair<ValueRange, ValueRange>

@@ -1340,6 +1340,43 @@ TEST_F(CompilerPipelineTest, CX) {
   });
 }
 
+TEST_F(CompilerPipelineTest, CX3) {
+  qc::QuantumComputation qc;
+  qc.addQubitRegister(2, "q");
+  qc.cx(0, 1);
+  qc.cx(1, 0);
+  qc.cx(0, 1);
+
+  const auto module = importQuantumCircuit(qc);
+  ASSERT_TRUE(module);
+  ASSERT_TRUE(runPipeline(module.get()).succeeded());
+
+  const auto quartz = buildQuartzIR([](quartz::QuartzProgramBuilder& b) {
+    auto reg = b.allocQubitRegister(2, "q");
+    const auto q0 = reg[0];
+    const auto q1 = reg[1];
+    b.cx(q0, q1);
+    b.cx(q1, q0);
+    b.cx(q0, q1);
+  });
+  const auto flux = buildFluxIR([](flux::FluxProgramBuilder& b) {
+    auto reg = b.allocQubitRegister(2, "q");
+    auto q0 = reg[0];
+    auto q1 = reg[1];
+    std::tie(q0, q1) = b.cx(q0, q1);
+    std::tie(q1, q0) = b.cx(q1, q0);
+    std::tie(q0, q1) = b.cx(q0, q1);
+  });
+
+  verifyAllStages({
+      .quartzImport = quartz.get(),
+      .fluxConversion = flux.get(),
+      .optimization = flux.get(),
+      .quartzConversion = quartz.get(),
+      .qirConversion = nullptr,
+  });
+}
+
 TEST_F(CompilerPipelineTest, RX) {
   qc::QuantumComputation qc;
   qc.addQubitRegister(1, "q");
@@ -1485,6 +1522,38 @@ TEST_F(CompilerPipelineTest, SWAP) {
       .optimization = fluxExpected.get(),
       .quartzConversion = quartzExpected.get(),
       .qirConversion = qirExpected.get(),
+  });
+}
+
+TEST_F(CompilerPipelineTest, CSWAP) {
+  qc::QuantumComputation qc;
+  qc.addQubitRegister(3, "q");
+  qc.cswap(0, 1, 2);
+
+  const auto module = importQuantumCircuit(qc);
+  ASSERT_TRUE(module);
+  ASSERT_TRUE(runPipeline(module.get()).succeeded());
+
+  const auto quartzExpected =
+      buildQuartzIR([](quartz::QuartzProgramBuilder& b) {
+        auto q = b.allocQubitRegister(3, "q");
+        b.cswap(q[0], q[1], q[2]);
+      });
+  const auto fluxExpected = buildFluxIR([](flux::FluxProgramBuilder& b) {
+    auto q = b.allocQubitRegister(3, "q");
+    b.cswap(q[0], q[1], q[2]);
+  });
+  // const auto qirExpected = buildQIR([](qir::QIRProgramBuilder& b) {
+  // auto q = b.allocQubitRegister(3);
+  // b.swap(q[0], q[1]);
+  // });
+
+  verifyAllStages({
+      .quartzImport = quartzExpected.get(),
+      .fluxConversion = fluxExpected.get(),
+      .optimization = fluxExpected.get(),
+      .quartzConversion = quartzExpected.get(),
+      .qirConversion = nullptr,
   });
 }
 

@@ -183,9 +183,10 @@ Value FluxProgramBuilder::x(Value qubit) {
   return qubitOut;
 }
 
-std::pair<Value, Value> FluxProgramBuilder::cx(Value control, Value target) {
+std::pair<Value, Value> FluxProgramBuilder::cx(const Value control,
+                                               const Value target) {
   const auto [controlsOut, targetsOut] =
-      ctrl({control}, {target},
+      ctrl(control, target,
            [&](OpBuilder& b, const ValueRange targets) -> ValueRange {
              const auto x = b.create<XOp>(loc, targets[0]);
              return x->getResults();
@@ -194,9 +195,9 @@ std::pair<Value, Value> FluxProgramBuilder::cx(Value control, Value target) {
 }
 
 std::pair<ValueRange, Value> FluxProgramBuilder::mcx(const ValueRange controls,
-                                                     Value target) {
+                                                     const Value target) {
   const auto [controlsOut, targetsOut] =
-      ctrl(controls, {target},
+      ctrl(controls, target,
            [&](OpBuilder& b, const ValueRange targets) -> ValueRange {
              const auto x = b.create<XOp>(loc, targets[0]);
              return x->getResults();
@@ -216,10 +217,10 @@ Value FluxProgramBuilder::rx(const std::variant<double, Value>& theta,
 }
 
 std::pair<Value, Value>
-FluxProgramBuilder::crx(const std::variant<double, Value>& theta, Value control,
-                        const Value target) {
+FluxProgramBuilder::crx(const std::variant<double, Value>& theta,
+                        const Value control, const Value target) {
   const auto [controlsOut, targetsOut] =
-      ctrl({control}, {target},
+      ctrl(control, target,
            [&](OpBuilder& b, const ValueRange targets) -> ValueRange {
              const auto rx = b.create<RXOp>(loc, targets[0], theta);
              return rx->getResults();
@@ -229,9 +230,9 @@ FluxProgramBuilder::crx(const std::variant<double, Value>& theta, Value control,
 
 std::pair<ValueRange, Value>
 FluxProgramBuilder::mcrx(const std::variant<double, Value>& theta,
-                         const ValueRange controls, Value target) {
+                         const ValueRange controls, const Value target) {
   const auto [controlsOut, targetsOut] =
-      ctrl(controls, {target},
+      ctrl(controls, target,
            [&](OpBuilder& b, const ValueRange targets) -> ValueRange {
              const auto rx = b.create<RXOp>(loc, targets[0], theta);
              return rx->getResults();
@@ -254,9 +255,9 @@ Value FluxProgramBuilder::u2(const std::variant<double, Value>& phi,
 std::pair<Value, Value>
 FluxProgramBuilder::cu2(const std::variant<double, Value>& phi,
                         const std::variant<double, Value>& lambda,
-                        Value control, const Value target) {
+                        const Value control, const Value target) {
   const auto [controlsOut, targetsOut] =
-      ctrl({control}, {target},
+      ctrl(control, target,
            [&](OpBuilder& b, const ValueRange targets) -> ValueRange {
              const auto u2 = b.create<U2Op>(loc, targets[0], phi, lambda);
              return u2->getResults();
@@ -267,9 +268,9 @@ FluxProgramBuilder::cu2(const std::variant<double, Value>& phi,
 std::pair<ValueRange, Value>
 FluxProgramBuilder::mcu2(const std::variant<double, Value>& phi,
                          const std::variant<double, Value>& lambda,
-                         const ValueRange controls, Value target) {
+                         const ValueRange controls, const Value target) {
   const auto [controlsOut, targetsOut] =
-      ctrl(controls, {target},
+      ctrl(controls, target,
            [&](OpBuilder& b, const ValueRange targets) -> ValueRange {
              const auto u2 = b.create<U2Op>(loc, targets[0], phi, lambda);
              return u2->getResults();
@@ -290,9 +291,9 @@ std::pair<Value, Value> FluxProgramBuilder::swap(Value qubit0, Value qubit1) {
 }
 
 std::pair<Value, std::pair<Value, Value>>
-FluxProgramBuilder::cswap(Value control, Value qubit0, Value qubit1) {
+FluxProgramBuilder::cswap(const Value control, Value qubit0, Value qubit1) {
   const auto [controlsOut, targetsOut] =
-      ctrl({control}, {qubit0, qubit1},
+      ctrl(control, {qubit0, qubit1},
            [&](OpBuilder& b, const ValueRange targets) -> ValueRange {
              const auto swap = b.create<SWAPOp>(loc, targets[0], targets[1]);
              return swap->getResults();

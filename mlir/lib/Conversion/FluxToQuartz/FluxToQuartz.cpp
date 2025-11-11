@@ -353,7 +353,7 @@ struct ConvertFluxSWAPOp final : OpConversionPattern<flux::SWAPOp> {
     rewriter.create<quartz::SWAPOp>(op.getLoc(), quartzQubit0, quartzQubit1);
 
     // Replace the output qubit with the same quartz references
-    rewriter.replaceOp(op, {quartzQubit0, quartzQubit1});
+    rewriter.replaceOp(op, adaptor.getOperands());
 
     return success();
   }
@@ -368,7 +368,7 @@ struct ConvertFluxSWAPOp final : OpConversionPattern<flux::SWAPOp> {
  * %controls_out, %targets_out = flux.ctrl({%q0_in}, {%q1_in}) {
  *   %q1_res = flux.x %q1_in : !flux.qubit -> !flux.qubit
  *   flux.yield %q1_res
- * } : {!flux.qubit}, {!flux.qubit} -> {!flux.qubit}, {!flux.qubit}
+ * } : ({!flux.qubit}, {!flux.qubit}) -> ({!flux.qubit}, {!flux.qubit})
  * ```
  * is converted to
  * ```mlir
@@ -387,9 +387,6 @@ struct ConvertFluxCtrlOp final : OpConversionPattern<flux::CtrlOp> {
     // Get Quartz controls
     const auto& quartzControls = adaptor.getControlsIn();
 
-    // Get Quartz targets
-    const auto& quartzTargets = adaptor.getTargetsIn();
-
     // Create quartz.ctrl operation
     auto fluxOp = rewriter.create<quartz::CtrlOp>(op.getLoc(), quartzControls);
 
@@ -397,13 +394,8 @@ struct ConvertFluxCtrlOp final : OpConversionPattern<flux::CtrlOp> {
     rewriter.cloneRegionBefore(op.getBody(), fluxOp.getBody(),
                                fluxOp.getBody().end());
 
-    SmallVector<Value> quartzQubits;
-    quartzQubits.reserve(quartzControls.size() + quartzTargets.size());
-    quartzQubits.append(quartzControls.begin(), quartzControls.end());
-    quartzQubits.append(quartzTargets.begin(), quartzTargets.end());
-
     // Replace the output qubits with the same quartz references
-    rewriter.replaceOp(op, quartzQubits);
+    rewriter.replaceOp(op, adaptor.getOperands());
 
     return success();
   }
@@ -477,17 +469,10 @@ struct FluxToQuartz final : impl::FluxToQuartzBase<FluxToQuartz> {
 
     // Register operation conversion patterns
     // Note: No state tracking needed - OpAdaptors handle type conversion
-    patterns.add<ConvertFluxAllocOp>(typeConverter, context);
-    patterns.add<ConvertFluxDeallocOp>(typeConverter, context);
-    patterns.add<ConvertFluxStaticOp>(typeConverter, context);
-    patterns.add<ConvertFluxMeasureOp>(typeConverter, context);
-    patterns.add<ConvertFluxResetOp>(typeConverter, context);
-    patterns.add<ConvertFluxXOp>(typeConverter, context);
-    patterns.add<ConvertFluxRXOp>(typeConverter, context);
-    patterns.add<ConvertFluxU2Op>(typeConverter, context);
-    patterns.add<ConvertFluxSWAPOp>(typeConverter, context);
-    patterns.add<ConvertFluxCtrlOp>(typeConverter, context);
-    patterns.add<ConvertFluxYieldOp>(typeConverter, context);
+    patterns.add<ConvertFluxAllocOp, ConvertFluxDeallocOp, ConvertFluxStaticOp,
+                 ConvertFluxMeasureOp, ConvertFluxResetOp, ConvertFluxXOp,
+                 ConvertFluxRXOp, ConvertFluxU2Op, ConvertFluxSWAPOp,
+                 ConvertFluxCtrlOp, ConvertFluxYieldOp>(typeConverter, context);
 
     // Conversion of flux types in func.func signatures
     // Note: This currently has limitations with signature changes
