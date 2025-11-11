@@ -18,7 +18,7 @@
 #include <algorithm>
 #include <eigen3/Eigen/Core>
 #include <eigen3/Eigen/Eigenvalues>
-#include <eigen3/unsupported/Eigen/KroneckerProduct>
+#include <eigen3/unsupported/Eigen/KroneckerProduct> // TODO: unstable
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/IR/Operation.h>
 
