@@ -1,4 +1,4 @@
-name: 🐉 • Tests (pre-built)
+name: 🐉 • Tests
 on:
   workflow_call:
 
@@ -39,24 +39,84 @@ jobs:
         with:
           fetch-depth: 0
 
-      # OS-specific toolchain setup
-      - name: Setup LLVM/MLIR (Linux/macOS)
-        if: runner.os != 'Windows'
-        run: bash .github/scripts/setup-mlir.sh ${{ matrix.llvm-version }}
-
-      - name: Restore LLVM/MLIR cache (Windows)
-        if: runner.os == 'Windows'
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
-        id: mlir-cache
+      - name: Download archives
+        uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6.0.0
         with:
-          path: llvm-install
-          key: ${{ matrix.os }}-llvm-${{ matrix.llvm-version }}
+          artifact-ids: 4503321073
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: burgholzer/portable-mlir-toolchain
+          run-id: 19238113653
 
-      - name: Setup LLVM/MLIR (Windows)
-        if: runner.os == 'Windows'
-        shell: pwsh
+      # OS-specific toolchain setup
+      - name: Setup LLVM/MLIR (macos-15)
+        if: ${{ matrix.os }} == 'macos-15'
         run: |
-          & "${{ github.workspace }}\.github\scripts\setup-mlir.ps1" -MajorVersion ${{ matrix.llvm-version }} -InstallPrefix "${{ github.workspace }}\llvm-install"
+          # Extract archive
+          zstd -d llvm-mlir_21.1.5_macos_arm64_AArch64_opt.tar.zst --output-dir-flat .
+          tar xf llvm-mlir_21.1.5_macos_arm64_AArch64_opt.tar
+
+          # Set environment variable for subsequent steps
+          echo "LLVM_DIR=$PWD/lib/cmake/llvm" >> $GITHUB_ENV
+          echo "PATH=$PWD/bin:$PATH" >> $GITHUB_ENV
+
+      - name: Setup LLVM/MLIR (macos-15-intel)
+        if: ${{ matrix.os }} == 'macos-15-intel'
+        run: |
+          # Extract archive
+          zstd -d llvm-mlir_21.1.5_macos_x86_64_X86_opt.tar.zst --output-dir-flat .
+          tar xf llvm-mlir_21.1.5_macos_x86_64_X86_opt.tar
+
+          # Set environment variable for subsequent steps
+          echo "LLVM_DIR=$PWD/lib/cmake/llvm" >> $GITHUB_ENV
+          echo "PATH=$PWD/bin:$PATH" >> $GITHUB_ENV
+
+      - name: Setup LLVM/MLIR (ubuntu-24.04)
+        if: ${{ matrix.os }} == 'ubuntu-24.04'
+        run: |
+          # Extract archive
+          zstd -d llvm-mlir_llvmorg-21.1.5_linux_x86_64_X86_opt.tar.zst --output-dir-flat .
+          tar xf llvm-mlir_llvmorg-21.1.5_linux_x86_64_X86_opt.tar
+
+          # Set environment variable for subsequent steps
+          echo "LLVM_DIR=$PWD/lib/cmake/llvm" >> $GITHUB_ENV
+          echo "PATH=$PWD/bin:$PATH" >> $GITHUB_ENV
+
+      - name: Setup LLVM/MLIR (ubuntu-24.04-arm)
+        if: ${{ matrix.os }} == 'ubuntu-24.04-arm'
+        run: |
+          # Extract archive
+          zstd -d llvm-mlir_llvmorg-21.1.5_linux_aarch64_AArch64_opt.tar.zst --output-dir-flat .
+          tar xf llvm-mlir_llvmorg-21.1.5_linux_aarch64_AArch64_opt.tar
+
+          # Set environment variable for subsequent steps
+          echo "LLVM_DIR=$PWD/lib/cmake/llvm" >> $GITHUB_ENV
+          echo "PATH=$PWD/bin:$PATH" >> $GITHUB_ENV
+
+      - name: Setup LLVM/MLIR (windows-2025)
+        if: ${{ matrix.os }} == 'windows-2025'
+        run: |
+          choco install zstd -y
+
+          # Extract archive
+          zstd -d llvm-mlir_21.1.5_windows_x86_64_X86_opt.tar.zst --output-dir-flat .
+          tar xf llvm-mlir_21.1.5_windows_x86_64_X86_opt.tar
+
+          # Set environment variable for subsequent steps
+          echo "LLVM_DIR=${{ github.workspace }}\lib\cmake\llvm" >> $GITHUB_ENV
+          echo "PATH=${{ github.workspace }}\bin;$PATH" >> $GITHUB_ENV
+
+      - name: Setup LLVM/MLIR (windows-11-arm)
+        if: ${{ matrix.os }} == 'windows-11-arm'
+        run: |
+          choco install zstd -y
+
+          # Extract archive
+          zstd -d llvm-mlir_21.1.5_windows_x86_64_X86_opt.tar.zst --output-dir-flat .
+          tar xf llvm-mlir_21.1.5_windows_x86_64_X86_opt.tar
+
+          # Set environment variable for subsequent steps
+          echo "LLVM_DIR=${{ github.workspace }}\lib\cmake\llvm" >> $GITHUB_ENV
+          echo "PATH=${{ github.workspace }}\bin;$PATH" >> $GITHUB_ENV
 
       # Build acceleration and Python tooling
       - name: Set up mold as linker (Linux)
