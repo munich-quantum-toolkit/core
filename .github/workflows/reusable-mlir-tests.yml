@@ -219,8 +219,8 @@ jobs:
           cmake -S . -B build `
             -DCMAKE_BUILD_TYPE=${{ matrix.coverage && 'Debug' || 'Release' }} `
             -DBUILD_MQT_CORE_MLIR=ON `
-            -DLLVM_DIR="${{ github.workspace }}\llvm-install\lib\cmake\llvm" `
-            -DMLIR_DIR="${{ github.workspace }}\llvm-install\lib\cmake\mlir" `
+            -DLLVM_DIR=$LLVM_DIR `
+            -DMLIR_DIR=$MLIR_DIR `
             -DLLVM_EXTERNAL_LIT=${{ github.workspace }}\.venv\Scripts\lit.exe `
             ${{ matrix.coverage && '-DENABLE_COVERAGE=ON' || '' }}
 
