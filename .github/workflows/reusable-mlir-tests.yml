@@ -256,6 +256,7 @@ jobs:
           uvx gcovr \
               --gcov-executable "llvm-cov gcov" \
               --exclude llvm-project \
+              --gcov-exclude-directory llvm-project \
               --exclude build \
               --exclude-unreachable-branches \
               --exclude-noncode-lines \
