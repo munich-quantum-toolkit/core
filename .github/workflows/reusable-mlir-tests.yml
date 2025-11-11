@@ -255,15 +255,16 @@ jobs:
         if: matrix.coverage
         run: |
           uvx gcovr \
-             --gcov-executable "$LLVM_COV gcov" \
-             --exclude build \
-             --exclude-unreachable-branches \
-             --exclude-noncode-lines \
-             --exclude-throw-branches \
-             --print-summary \
-             --keep \
-             --json \
-             -o coverage-llvm-${{ matrix.llvm-version }}.json
+              --root . \
+              --gcov-executable "$LLVM_COV gcov" \
+              --exclude build \
+              --exclude-unreachable-branches \
+              --exclude-noncode-lines \
+              --exclude-throw-branches \
+              --print-summary \
+              --keep \
+              --json \
+              -o coverage-llvm-${{ matrix.llvm-version }}.json
 
       - name: Upload coverage to Codecov
         if: matrix.coverage
