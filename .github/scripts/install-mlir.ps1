@@ -1,8 +1,4 @@
 # Usage: & install-mlir.ps1 -tag <tag> -installation_dir <installation directory>
-
-$ErrorActionPreference = "Stop"
-
-# Parse arguments
 param(
     [Parameter(Mandatory=$true)]
     [string]$tag,
@@ -10,7 +6,9 @@ param(
     [string]$install_prefix
 )
 
-# Change to target directory
+$ErrorActionPreference = "Stop"
+
+# Change to installation directory
 Set-Location -Path $install_prefix
 
 # Detect architecture
