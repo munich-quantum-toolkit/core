@@ -45,6 +45,7 @@ jobs:
         uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6.0.0
         with:
           artifact-ids: 4523730758
+          path: llvm-project
           github-token: ${{ secrets.GITHUB_TOKEN }}
           repository: burgholzer/portable-mlir-toolchain
           run-id: 19238113674
@@ -52,6 +53,8 @@ jobs:
       - name: Setup LLVM/MLIR (macos-15)
         if: ${{ matrix.os == 'macos-15' }}
         run: |
+          cd llvm-project
+
           # Extract archive
           zstd -d llvm-mlir_21.1.5_macos_arm64_AArch64_opt.tar.zst --output-dir-flat .
           tar xf llvm-mlir_21.1.5_macos_arm64_AArch64_opt.tar
@@ -65,6 +68,7 @@ jobs:
         uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6.0.0
         with:
           artifact-ids: 4524467391
+          path: llvm-project
           github-token: ${{ secrets.GITHUB_TOKEN }}
           repository: burgholzer/portable-mlir-toolchain
           run-id: 19238113674
@@ -72,6 +76,8 @@ jobs:
       - name: Setup LLVM/MLIR (macos-15-intel)
         if: ${{ matrix.os == 'macos-15-intel' }}
         run: |
+          cd llvm-project
+
           # Extract archive
           zstd -d llvm-mlir_21.1.5_macos_x86_64_X86_opt.tar.zst --output-dir-flat .
           tar xf llvm-mlir_21.1.5_macos_x86_64_X86_opt.tar
@@ -85,6 +91,7 @@ jobs:
         uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6.0.0
         with:
           artifact-ids: 4522900817
+          path: llvm-project
           github-token: ${{ secrets.GITHUB_TOKEN }}
           repository: burgholzer/portable-mlir-toolchain
           run-id: 19238113653
@@ -92,6 +99,8 @@ jobs:
       - name: Setup LLVM/MLIR (ubuntu-24.04)
         if: ${{ matrix.os == 'ubuntu-24.04' }}
         run: |
+          cd llvm-project
+
           # Extract archive
           zstd -d llvm-mlir_llvmorg-21.1.5_linux_x86_64_X86_opt.tar.zst --output-dir-flat .
           tar xf llvm-mlir_llvmorg-21.1.5_linux_x86_64_X86_opt.tar
@@ -105,6 +114,7 @@ jobs:
         uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6.0.0
         with:
           artifact-ids: 4522477446
+          path: llvm-project
           github-token: ${{ secrets.GITHUB_TOKEN }}
           repository: burgholzer/portable-mlir-toolchain
           run-id: 19238113653
@@ -112,6 +122,8 @@ jobs:
       - name: Setup LLVM/MLIR (ubuntu-24.04-arm)
         if: ${{ matrix.os == 'ubuntu-24.04-arm' }}
         run: |
+          cd llvm-project
+
           # Extract archive
           zstd -d llvm-mlir_llvmorg-21.1.5_linux_aarch64_AArch64_opt.tar.zst --output-dir-flat .
           tar xf llvm-mlir_llvmorg-21.1.5_linux_aarch64_AArch64_opt.tar
@@ -125,6 +137,7 @@ jobs:
         uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6.0.0
         with:
           artifact-ids: 4523623862
+          path: llvm-project
           github-token: ${{ secrets.GITHUB_TOKEN }}
           repository: burgholzer/portable-mlir-toolchain
           run-id: 19238113657
@@ -133,6 +146,8 @@ jobs:
         if: ${{ matrix.os == 'windows-2025' }}
         run: |
           choco install -y zstandard
+
+          cd llvm-project
 
           # Extract archive
           zstd -d llvm-mlir_21.1.5_windows_x86_64_X86_opt.tar.zst --output-dir-flat .
@@ -147,6 +162,7 @@ jobs:
         uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6.0.0
         with:
           artifact-ids: 4523008960
+          path: llvm-project
           github-token: ${{ secrets.GITHUB_TOKEN }}
           repository: burgholzer/portable-mlir-toolchain
           run-id: 19238113657
@@ -155,6 +171,8 @@ jobs:
         if: ${{ matrix.os == 'windows-11-arm' }}
         run: |
           choco install -y zstandard
+
+          cd llvm-project
 
           # Extract archive
           zstd -d llvm-mlir_21.1.5_windows_x86_64_X86_opt.tar.zst --output-dir-flat .
