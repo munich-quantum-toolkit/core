@@ -54,9 +54,9 @@ jobs:
           bash ${{ github.workspace }}/.github/scripts/install-mlir.sh -t test-release -p $PWD/llvm-project
 
           # Set environment variable for subsequent steps
-          echo "LLVM_DIR=$PWD/lib/cmake/llvm" >> $GITHUB_ENV
-          echo "MLIR_DIR=$PWD/lib/cmake/mlir" >> $GITHUB_ENV
-          echo "PATH=$PWD/bin:$PATH" >> $GITHUB_ENV
+          echo "LLVM_DIR=$PWD/llvm-project/lib/cmake/llvm" >> $GITHUB_ENV
+          echo "MLIR_DIR=$PWD/llvm-project/lib/cmake/mlir" >> $GITHUB_ENV
+          echo "PATH=$PWD/llvm-project/bin:$PATH" >> $GITHUB_ENV
 
       - name: Setup LLVM/MLIR (Windows)
         if: runner.os == 'Windows'
@@ -68,9 +68,9 @@ jobs:
           & ${{ github.workspace }}\.github\scripts\install-mlir.ps1 -tag test-release -install_prefix $PWD\llvm-project
 
           # Set environment variable for subsequent steps
-          echo "LLVM_DIR=$PWD/lib/cmake/llvm" | Out-File -FilePath $env:GITHUB_ENV -Append
-          echo "MLIR_DIR=$PWD/lib/cmake/mlir" | Out-File -FilePath $env:GITHUB_ENV -Append
-          echo "$PWD/bin" | Out-File -FilePath $env:GITHUB_PATH -Append
+          echo "LLVM_DIR=$PWD/llvm-project/lib/cmake/llvm" | Out-File -FilePath $env:GITHUB_ENV -Append
+          echo "MLIR_DIR=$PWD/llvm-project/lib/cmake/mlir" | Out-File -FilePath $env:GITHUB_ENV -Append
+          echo "$PWD/llvm-project/bin" | Out-File -FilePath $env:GITHUB_PATH -Append
 
       # Build acceleration and Python tooling
       - name: Set up mold as linker (Linux)
