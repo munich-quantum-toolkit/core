@@ -39,15 +39,16 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Download archives
+      # OS-specific toolchain setup
+      - name: Download archives (macos-15)
+        if: ${{ matrix.os == 'macos-15' }}
         uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6.0.0
         with:
-          artifact-ids: 4503321073
+          artifact-ids: 4523730758
           github-token: ${{ secrets.GITHUB_TOKEN }}
           repository: burgholzer/portable-mlir-toolchain
-          run-id: 19238113653
+          run-id: 19238113674
 
-      # OS-specific toolchain setup
       - name: Setup LLVM/MLIR (macos-15)
         if: ${{ matrix.os }} == 'macos-15'
         run: |
@@ -58,6 +59,15 @@ jobs:
           # Set environment variable for subsequent steps
           echo "LLVM_DIR=$PWD/lib/cmake/llvm" >> $GITHUB_ENV
           echo "PATH=$PWD/bin:$PATH" >> $GITHUB_ENV
+
+      - name: Download archives (macos-15-intel)
+        if: ${{ matrix.os == 'macos-15-intel' }}
+        uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6.0.0
+        with:
+          artifact-ids: 4524467391
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: burgholzer/portable-mlir-toolchain
+          run-id: 19238113674
 
       - name: Setup LLVM/MLIR (macos-15-intel)
         if: ${{ matrix.os }} == 'macos-15-intel'
@@ -70,6 +80,15 @@ jobs:
           echo "LLVM_DIR=$PWD/lib/cmake/llvm" >> $GITHUB_ENV
           echo "PATH=$PWD/bin:$PATH" >> $GITHUB_ENV
 
+      - name: Download archives (ubuntu-24.04)
+        if: ${{ matrix.os == 'ubuntu-24.04' }}
+        uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6.0.0
+        with:
+          artifact-ids: 4522900817
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: burgholzer/portable-mlir-toolchain
+          run-id: 19238113653
+
       - name: Setup LLVM/MLIR (ubuntu-24.04)
         if: ${{ matrix.os }} == 'ubuntu-24.04'
         run: |
@@ -81,6 +100,15 @@ jobs:
           echo "LLVM_DIR=$PWD/lib/cmake/llvm" >> $GITHUB_ENV
           echo "PATH=$PWD/bin:$PATH" >> $GITHUB_ENV
 
+      - name: Download archives (ubuntu-24.04-arm)
+        if: ${{ matrix.os == 'ubuntu-24.04-arm' }}
+        uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6.0.0
+        with:
+          artifact-ids: 4522477446
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: burgholzer/portable-mlir-toolchain
+          run-id: 19238113653
+
       - name: Setup LLVM/MLIR (ubuntu-24.04-arm)
         if: ${{ matrix.os }} == 'ubuntu-24.04-arm'
         run: |
@@ -91,6 +119,15 @@ jobs:
           # Set environment variable for subsequent steps
           echo "LLVM_DIR=$PWD/lib/cmake/llvm" >> $GITHUB_ENV
           echo "PATH=$PWD/bin:$PATH" >> $GITHUB_ENV
+
+      - name: Download archives (windows-2025)
+        if: ${{ matrix.os == 'windows-2025' }}
+        uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6.0.0
+        with:
+          artifact-ids: 4523623862
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: burgholzer/portable-mlir-toolchain
+          run-id: 19238113657
 
       - name: Setup LLVM/MLIR (windows-2025)
         if: ${{ matrix.os }} == 'windows-2025'
@@ -104,6 +141,15 @@ jobs:
           # Set environment variable for subsequent steps
           echo "LLVM_DIR=${{ github.workspace }}\lib\cmake\llvm" >> $GITHUB_ENV
           echo "PATH=${{ github.workspace }}\bin;$PATH" >> $GITHUB_ENV
+
+      - name: Download archives (windows-11-arm)
+        if: ${{ matrix.os == 'windows-11-arm' }}
+        uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6.0.0
+        with:
+          artifact-ids: 4523008960
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: burgholzer/portable-mlir-toolchain
+          run-id: 19238113657
 
       - name: Setup LLVM/MLIR (windows-11-arm)
         if: ${{ matrix.os }} == 'windows-11-arm'
