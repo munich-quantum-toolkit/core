@@ -257,6 +257,34 @@ TEST(StandardOperation, Move) {
   const qc::StandardOperation moveOp({0, 1}, qc::OpType::Move);
   EXPECT_EQ(moveOp.getTargets().size(), 2);
   EXPECT_EQ(moveOp.getNqubits(), 2);
+
+  // QASM dump verification
+  std::stringstream ss;
+  qc::QuantumRegister qreg(0, 2, "q");
+  qc::QubitIndexToRegisterMap qubitToReg{};
+  qubitToReg.try_emplace(0, qreg, qreg.toString(0));
+  qubitToReg.try_emplace(1, qreg, qreg.toString(1));
+  moveOp.dumpOpenQASM(ss, qubitToReg, {}, 0, false);
+  EXPECT_EQ(ss.str(), "move q[0], q[1];\n");
+}
+
+TEST(StandardOperation, Bridge) {
+  const qc::StandardOperation bridgeOp({0, 1, 2}, qc::OpType::Bridge);
+  EXPECT_EQ(bridgeOp.getTargets().size(), 3);
+  EXPECT_EQ(bridgeOp.getNqubits(), 3);
+
+  // QASM dump verification
+  std::stringstream ss;
+  qc::QuantumRegister qreg(0, 3, "q");
+  qc::QubitIndexToRegisterMap qubitToReg{};
+  qubitToReg.try_emplace(0, qreg, qreg.toString(0));
+  qubitToReg.try_emplace(1, qreg, qreg.toString(1));
+  qubitToReg.try_emplace(2, qreg, qreg.toString(2));
+  bridgeOp.dumpOpenQASM(ss, qubitToReg, {}, 0, false);
+  EXPECT_EQ(ss.str(), "bridge q[0], q[1], q[2];\n");
+
+  qc::QuantumComputation qc(3);
+  EXPECT_NO_THROW(qc.bridge({0, 1, 2}));
 }
 
 TEST(AodOperation, Activate) {
@@ -309,7 +337,7 @@ TEST(AodOperation, Qasm) {
   qubitToReg.try_emplace(1, qreg, qreg.toString(1));
   move.dumpOpenQASM(ss, qubitToReg, {}, 0, false);
 
-  EXPECT_EQ(ss.str(), "aod_move (0, 0, 1; 1, 1, 3;) q[0], q[1];\n");
+  EXPECT_EQ(ss.str(), "aod_move (0, 0, 1; 1, 1, 3) q[0], q[1];\n");
 }
 
 TEST(AodOperation, Constructors) {
