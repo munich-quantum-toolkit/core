@@ -1,11 +1,22 @@
+# Usage: & install-mlir.ps1 -tag <tag> -installation_dir <installation directory>
+
 $ErrorActionPreference = "Stop"
+
+# Parse arguments
+param(
+    [Parameter(Mandatory=$true)]
+    [string]$tag,
+    [Parameter(Mandatory=$true)]
+    [string]$install_prefix
+)
+
+# Change to target directory
+Set-Location -Path $install_prefix
 
 # Detect architecture
 $arch = [System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture
 
-# Set asset name and URL
-$tag = "test-release"
-
+# Set asset name
 switch ($arch) {
     x64 {
         $asset_name = "windows-2022-archive.zip"
@@ -18,11 +29,12 @@ switch ($arch) {
     }
 }
 
-$release_url = "https://github.com/burgholzer/portable-mlir-toolchain/releases/download/$tag/$asset_name"
+# Set asset URL
+$asset_url = "https://github.com/burgholzer/portable-mlir-toolchain/releases/download/$tag/$asset_name"
 
 # Download asset
-Write-Host "Downloading $asset_name from $release_url..."
-Invoke-WebRequest -Uri $release_url -OutFile $asset_name
+Write-Host "Downloading $asset_name from $asset_url..."
+Invoke-WebRequest -Uri $asset_url -OutFile $asset_name
 
 # Unzip asset
 Write-Host "Unzipping $asset_name..."
@@ -52,4 +64,9 @@ Write-Host "Extracting $archive_name..."
 & zstd -d $archive_path --output-dir-flat .
 & tar -xf ($archive_path -replace '.zst$', '')
 
-Write-Host "Done. Archive extracted."
+# Output instructions
+Write-Host "MLIR toolchain has been installed"
+Write-Host "Run the following commands to set up your environment:"
+Write-Host "  \$env:LLVM_DIR = \"$PWD\lib\cmake\llvm\""
+Write-Host "  \$env:MLIR_DIR = \"$PWD\lib\cmake\mlir\""
+Write-Host "  \$env:PATH = \"$PWD\bin;\" + \$env:PATH"

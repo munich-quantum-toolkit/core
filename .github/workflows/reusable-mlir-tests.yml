@@ -52,7 +52,7 @@ jobs:
           mkdir llvm-project
           cd llvm-project
 
-          bash ${{ github.workspace }}/.github/scripts/install-mlir.sh
+          bash ${{ github.workspace }}/.github/scripts/install-mlir.sh -t test-release -p llvm-project
 
           # Set environment variable for subsequent steps
           echo "LLVM_DIR=$PWD/lib/cmake/llvm" >> $GITHUB_ENV
@@ -65,9 +65,8 @@ jobs:
           choco install -y zstandard
 
           mkdir llvm-project
-          cd llvm-project
 
-          & ${{ github.workspace }}\.github\scripts\install-mlir.ps1
+          & ${{ github.workspace }}\.github\scripts\install-mlir.ps1 -tag test-release -install_prefix llvm-project
 
           # Set environment variable for subsequent steps
           echo "LLVM_DIR=$PWD/lib/cmake/llvm" | Out-File -FilePath $env:GITHUB_ENV -Append

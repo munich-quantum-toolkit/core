@@ -1,6 +1,36 @@
 #!/bin/bash
 
+# Usage: ./install-mlir.sh -t <tag> -p <installation directory>
+
 set -euo pipefail
+
+# Parse arguments
+while getopts "t:p:*" opt; do
+  case $opt in
+    t) TAG="$OPTARG"
+    ;;
+    p) INSTALL_PREFIX="$OPTARG"
+    ;;
+    *) echo "Invalid option -$OPTARG" >&2
+    exit 1
+    ;;
+  esac
+done
+
+if [ -z "$TAG" ]; then
+  echo "Error: Tag (-t) is required"
+  echo "Usage: $0 -t <tag> -p <installation directory>"
+  exit 1
+fi
+
+if [ -z "${INSTALL_PREFIX:-}" ]; then
+  echo "Error: Installation directory (-p) is required"
+  echo "Usage: $0 -t <tag> -p <installation directory>"
+  exit 1
+fi
+
+# Change to installation directory
+cd "$INSTALL_PREFIX"
 
 # Detect platform and architecture
 OS=$(uname -s | tr '[:upper:]' '[:lower:]')
@@ -18,9 +48,7 @@ case "$ARCH" in
   *) echo "Unsupported architecture: $ARCH" >&2; exit 1 ;;
 esac
 
-# Set asset name and URL
-TAG="test-release"
-
+# Set asset name
 if [[ "$PLATFORM" == "linux" && "$ARCH_SUFFIX" == "x86_64" ]]; then
   ASSET_NAME="ubuntu-24.04-archive.zip"
 elif [[ "$PLATFORM" == "linux" && "$ARCH_SUFFIX" == "arm64" ]]; then
@@ -34,11 +62,12 @@ else
   exit 1
 fi
 
-RELEASE_URL="https://github.com/burgholzer/portable-mlir-toolchain/releases/download/${TAG}/${ASSET_NAME}"
+# Set asset URL
+ASSET_URL="https://github.com/burgholzer/portable-mlir-toolchain/releases/download/${TAG}/${ASSET_NAME}"
 
 # Download asset
-echo "Downloading $ASSET_NAME from $RELEASE_URL..."
-curl -L -o "$ASSET_NAME" "$RELEASE_URL"
+echo "Downloading $ASSET_NAME from $ASSET_URL..."
+curl -L -o "$ASSET_NAME" "$ASSET_URL"
 
 # Unzip asset
 echo "Unzipping $ASSET_NAME..."
@@ -62,4 +91,9 @@ echo "Extracting $ARCHIVE_PATH..."
 zstd -d "$ARCHIVE_PATH" --output-dir-flat .
 tar -xf "${ARCHIVE_PATH%.zst}"
 
-echo "Done. Archive extracted."
+# Output instructions
+echo "MLIR toolchain has been installed"
+echo "Run the following commands to set up your environment:"
+echo "  export LLVM_DIR=$PWD/lib/cmake/llvm"
+echo "  export MLIR_DIR=$PWD/lib/cmake/mlir"
+echo "  export PATH=$PWD/bin:\$PATH"
