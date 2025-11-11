@@ -278,10 +278,8 @@ private:
     for (std::size_t i = 0; i < path.size() - 2; ++i) {
       swaps.emplace_back(path[i], path[i + 1]);
     }
-
     /// Append SWAPs to history.
     history.append(swaps);
-
     /// Insert SWAPs.
     RoutingDriverBase::insertSWAPs(swaps, layout, op.getLoc(), rewriter);
   }

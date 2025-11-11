@@ -18,6 +18,7 @@
 #include "mlir/Dialect/MQTOpt/Transforms/Transpilation/RoutingDriverBase.h"
 #include "mlir/Interfaces/ControlFlowInterfaces.h"
 
+#include <cstddef>
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/iterator_range.h>
 #include <llvm/Support/Debug.h>
@@ -36,32 +37,49 @@ using namespace mlir;
 
 struct Layer {
   /// The program indices of the two-qubit gates within this layer.
-  SmallVector<QubitIndexPair> twoQubitIndices;
-  /// One-qubit ops. Scheduled before the two-qubit ops.
-  SmallVector<Operation*> ops;
-  /// Two-qubit ops. Schedule before the two-qubit block ops.
-  SmallVector<Operation*> twoQubitOps;
-  /// One and two-qubit ops released by the scheduling of the two-qubit ops.
-  /// Scheduled before any barrierLikeOp.
-  SmallVector<Operation*> blockOps;
-  /// The op scheduled last in the layer.
-  /// This is an extra pointer to deal with barriers, if's, and for's.
-  SmallVector<Operation*, 1> last;
-
-  /// @returns the scheduled operations in the layer.
-  [[nodiscard]] auto getOps() {
-    return concat<Operation*>(ops, twoQubitOps, blockOps, last);
-  }
+  SmallVector<QubitIndexPair, 16> gates;
+  /// The first two-qubit op in the layer.
+  /// Used as front-anchor to trigger the routing.
+  Operation* front{};
+  //// @returns true iff the layer contains gates.
+  [[nodiscard]] bool empty() const { return gates.empty(); }
 };
 
-using Schedule = SmallVector<Layer, 0>;
+struct Schedule {
+  /// A vector of layers.
+  SmallVector<Layer, 0> layers;
+  /// The scheduled ops.
+  SmallVector<Operation*> ops;
+};
+
+class SlidingWindow {
+public:
+  explicit SlidingWindow(ArrayRef<Layer> layers, const std::size_t nlookahead)
+      : layers(layers), nlookahead(nlookahead) {}
+
+  /// @returns the current window of layers.
+  [[nodiscard]] ArrayRef<Layer> getCurrent() const {
+    if (layers.empty()) {
+      return {};
+    }
+
+    const auto remaining = layers.size() - offset;
+    const auto count = std::min(1 + nlookahead, remaining);
+    return layers.slice(offset, count);
+  }
+
+  /// Advance to the next window.
+  void advance() { ++offset; }
+
+private:
+  ArrayRef<Layer> layers;
+  std::size_t nlookahead;
+  std::size_t offset{};
+};
 
 class Scheduler {
   /// The region where the schedule ops reside.
   Region* region;
-  /// Counts the amount of occurrences for a given op.
-  /// Currently used for all (>=2)-qubit ops.
-  DenseMap<Operation*, std::size_t> occurrences;
 
 public:
   explicit Scheduler(Region* region) : region(region) {}
@@ -69,24 +87,32 @@ public:
   /**
    * @brief Starting from the given layout, schedule all operations and divide
    * the circuit into parallelly executable layers.
+   *
+   * It schedules `scf.for` and `scf.if` operations (`RegionBranchOpInterface`)
+   * but does not recursively schedule the operation within these ops.
+   *
    * @returns the schedule.
    */
   [[nodiscard]] Schedule schedule(Layout layout) {
-    occurrences.clear();
-
+    SyncMap syncMap;
     Schedule schedule;
-    SmallVector<Value> qubits(layout.getHardwareQubits()); // worklist.
+    SmallVector<Value> qubits(layout.getHardwareQubits());
+
     while (!qubits.empty()) {
-      const auto res = getNextLayer(qubits, layout);
-      schedule.emplace_back(res.layer);
-      qubits = res.qubits;
+      Layer layer;
+      qubits = advanceQubits(qubits, layer, layout, syncMap, schedule.ops);
+
+      /// Only add non-empty layers to the schedule.
+      if (!layer.empty()) {
+        schedule.layers.emplace_back(layer);
+      }
     }
 
     LLVM_DEBUG({
       llvm::dbgs() << "schedule: layers=\n";
-      for (const auto [i, layer] : llvm::enumerate(schedule)) {
+      for (const auto [i, layer] : llvm::enumerate(schedule.layers)) {
         llvm::dbgs() << '\t' << i << "= ";
-        for (const auto [prog0, prog1] : layer.twoQubitIndices) {
+        for (const auto [prog0, prog1] : layer.gates) {
           llvm::dbgs() << "(" << prog0 << "," << prog1 << "), ";
         }
         llvm::dbgs() << '\n';
@@ -97,135 +123,119 @@ public:
   }
 
 private:
-  struct NextLayerResult {
-    /// The next layer.
-    Layer layer;
-    /// The updated worklist of qubits for the next iteration.
-    SmallVector<Value> qubits;
+  class SyncMap {
+    /// Counts the amount of occurrences for a given op.
+    DenseMap<Operation*, std::size_t> occurrences;
+    /// The operations (value) that depend on the release of another operation
+    /// (key). This is used to advance passed `mqtopt.barrier`, `scf.for`, and
+    /// `scf.if` ops, which, from a routing perspective, act like identities.
+    DenseMap<Operation*, SmallVector<Operation*>> pending;
+
+  public:
+    /// Increase the occurrence count of the given op and return true iff the
+    /// operation can be scheduled. An operation can be scheduled whenever we've
+    /// seen it as many times as it has inputs.
+    bool sync(Operation* op) {
+      return ++occurrences[op] == op->getNumResults();
+    }
+    /// Returns a reference to the vector of pending operations for a given op.
+    SmallVector<Operation*>& getPending(Operation* op) { return pending[op]; }
   };
 
-  struct AdvanceResult {
+  struct OneQubitAdvanceResult {
     /// The advanced qubit value on the wire.
-    Value q = nullptr;
-    /// The (>=2)-qubit op which has q as argument.
-    Operation* op = nullptr;
-    /// All one-qubit ops visited until the (>=2)-qubit op.
-    SmallVector<Operation*> ops;
-    /// @returns true iff the advancement found a (>=2)-qubit op.
-    explicit operator bool() const { return op != nullptr; }
+    Value q;
+    /// The two-qubit unitary which has q as argument.
+    Operation* op{};
   };
 
-  struct BlockAdvanceResult {
-    /// The final qubit values in the two-qubit block.
-    ValuePair outs;
-    /// All operations visited in the two-qubit block.
-    SmallVector<Operation*> ops;
-  };
-
-  /**
-   * @returns todo
-   */
-  [[nodiscard]] NextLayerResult getNextLayer(ArrayRef<const Value> qubits,
-                                             Layout& layout) {
-    NextLayerResult next;
-    next.qubits.reserve(qubits.size());
+  SmallVector<Value> advanceQubits(ArrayRef<Value> qubits, Layer& layer,
+                                   Layout& layout, SyncMap& syncMap,
+                                   SmallVector<Operation*>& chain) {
+    SmallVector<Value> next;
 
     for (const Value q : qubits) {
       if (q.use_empty()) {
         continue;
       }
 
-      const auto res = advanceOneQubitOnWire(q);
+      const auto res = advanceQubit(q, chain);
 
-      /// Append one-qubit op chain to layer.
-      next.layer.ops.append(res.ops);
-
-      /// If no (>=2)-qubit op has been found continue.
-      if (!res) {
+      /// Continue, if no (>=2)-qubit op has been found.
+      if (res.op == nullptr) {
         continue;
       }
 
-      /// Otherwise map the current to the advanced qubit value.
+      /// Otherwise, map the current to the advanced qubit value.
       if (q != res.q) {
         layout.remapQubitValue(q, res.q);
       }
 
-      /// Handle the found (>=2)-qubit op based on its type:
+      /// Handle the found (>=2)-qubit op based on its type.
+      TypeSwitch<Operation*>(res.op)
+          /// MQT
+          .Case<BarrierOp>([&](BarrierOp op) {
+            for (const auto [in, out] :
+                 llvm::zip_equal(op.getInQubits(), op.getOutQubits())) {
+              if (in == res.q) {
+                layout.remapQubitValue(res.q, out);
+                next.append(advanceQubits(ArrayRef(Value(out)), layer, layout,
+                                          syncMap, syncMap.getPending(op)));
+                return;
+              }
+            }
 
-      if (auto barrier = dyn_cast<BarrierOp>(res.op)) {
-        /// Once we've seen all inputs of the barrier, we can release and
-        /// forwards its qubit values.
-        if (++occurrences[barrier] == barrier->getNumResults()) {
-          for (const auto [in, out] :
-               llvm::zip_equal(barrier.getInQubits(), barrier.getOutQubits())) {
-            layout.remapQubitValue(in, out);
-          }
-          next.layer.last.push_back(barrier);
-        }
-        continue;
-      }
+            if (syncMap.sync(op)) {
+              chain.push_back(op);
+              chain.append(syncMap.getPending(op));
+            }
+          })
+          .Case<UnitaryInterface>([&](UnitaryInterface op) {
+            if (syncMap.sync(op)) {
+              /// Add two-qubit op to schedule.
+              chain.push_back(op);
 
-      if (auto u = dyn_cast<UnitaryInterface>(res.op)) {
-        if (++occurrences[u] == 2) {
-          const auto ins = getIns(u);
-          const auto outs = getOuts(u);
+              /// Setup front anchor.
+              if (layer.front == nullptr) {
+                layer.front = op;
+              }
 
-          next.layer.twoQubitOps.emplace_back(u);
-          next.layer.twoQubitIndices.emplace_back(
-              layout.lookupProgramIndex(ins.first),
-              layout.lookupProgramIndex(ins.second));
+              /// Remap values.
+              const auto ins = getIns(op);
+              const auto outs = getOuts(op);
 
-          layout.remapQubitValue(ins.first, outs.first);
-          layout.remapQubitValue(ins.second, outs.second);
+              layout.remapQubitValue(ins.first, outs.first);
+              layout.remapQubitValue(ins.second, outs.second);
 
-          next.qubits.push_back(outs.first);
-          next.qubits.push_back(outs.second);
+              /// Add gate indices to the current layer.
+              layer.gates.emplace_back(layout.lookupProgramIndex(outs.first),
+                                       layout.lookupProgramIndex(outs.second));
 
-          // const auto blockResult = skipTwoQubitBlock(outs, layout);
-          // next.layer.blockOps.append(blockResult.ops);
+              next.push_back(outs.first);
+              next.push_back(outs.second);
+            }
+          })
+          /// SCF
+          .Case<RegionBranchOpInterface>([&](RegionBranchOpInterface op) {
+            /// Probably have to remap the layout here.
+            const Value out = op->getResult(layout.lookupHardwareIndex(res.q));
+            layout.remapQubitValue(res.q, out);
+            next.append(advanceQubits(ArrayRef(out), layer, layout, syncMap,
+                                      syncMap.getPending(op)));
 
-          // if (blockResult.outs.first != nullptr &&
-          //     !blockResult.outs.first.use_empty()) {
-          //   next.qubits.push_back(blockResult.outs.first);
-          // }
-
-          // if (blockResult.outs.second != nullptr &&
-          //     !blockResult.outs.second.use_empty()) {
-          //   next.qubits.push_back(blockResult.outs.second);
-          // }
-        }
-        continue;
-      }
-
-      if (auto loop = dyn_cast<scf::ForOp>(res.op)) {
-        if (++occurrences[loop] == loop->getNumResults()) {
-          for (const auto [in, out] :
-               llvm::zip_equal(loop.getInitArgs(), loop.getResults())) {
-            layout.remapQubitValue(in, out);
-            next.qubits.push_back(out);
-          }
-          next.layer.last.push_back(loop);
-        }
-        continue;
-      }
-
-      if (auto cond = dyn_cast<scf::IfOp>(res.op)) {
-        if (++occurrences[cond] == cond->getNumResults()) {
-          for (const auto [in, out] :
-               llvm::zip_equal(layout.getHardwareQubits(), cond.getResults())) {
-            layout.remapQubitValue(in, out);
-            next.qubits.push_back(out);
-          }
-          next.layer.last.push_back(cond);
-        }
-        continue;
-      }
-
-      if (auto yield = dyn_cast<scf::YieldOp>(res.op)) {
-        if (++occurrences[yield] == yield.getResults().size()) {
-          next.layer.last.push_back(yield);
-        }
-      }
+            if (syncMap.sync(op)) {
+              chain.push_back(op);
+              chain.append(syncMap.getPending(op));
+            }
+          })
+          .Case<scf::YieldOp>([&](scf::YieldOp op) { /* nothing to do. */ })
+          .Default([&]([[maybe_unused]] Operation* op) {
+            LLVM_DEBUG({
+              llvm::dbgs() << "unknown operation in def-use chain: ";
+              op->dump();
+            });
+            llvm_unreachable("unknown operation in def-use chain");
+          });
     }
 
     return next;
@@ -234,54 +244,8 @@ private:
   /**
    * @returns todo
    */
-  BlockAdvanceResult skipTwoQubitBlock(const ValuePair outs, Layout& layout) {
-    BlockAdvanceResult blockResult;
-
-    std::array<UnitaryInterface, 2> gates;
-    std::array<Value, 2> heads{outs.first, outs.second};
-
-    while (true) {
-      bool stop = false;
-      for (const auto [i, q] : llvm::enumerate(heads)) {
-        const auto res = advanceOneQubitOnWire(q);
-        blockResult.ops.append(res.ops);
-        if (!res) {
-          heads[i] = nullptr;
-          stop = true;
-          break;
-        }
-
-        if (q != res.q) {
-          layout.remapQubitValue(q, res.q);
-        }
-
-        heads[i] = res.q;
-        gates[i] = dyn_cast<UnitaryInterface>(res.op);
-      }
-
-      if (stop || gates[0] != gates[1]) {
-        break;
-      }
-
-      blockResult.ops.push_back(gates[0]);
-
-      const ValuePair ins = getIns(gates[0]);
-      const ValuePair outs = getOuts(gates[0]);
-      layout.remapQubitValue(ins.first, outs.first);
-      layout.remapQubitValue(ins.second, outs.second);
-      heads = {outs.first, outs.second};
-    }
-
-    blockResult.outs = std::make_pair(heads[0], heads[1]);
-
-    return blockResult;
-  }
-
-  /**
-   * @returns todo
-   */
-  AdvanceResult advanceOneQubitOnWire(const Value q) {
-    AdvanceResult res;
+  OneQubitAdvanceResult advanceQubit(Value q, SmallVector<Operation*>& chain) {
+    OneQubitAdvanceResult res;
     res.q = q;
 
     while (true) {
@@ -298,23 +262,22 @@ private:
 
       TypeSwitch<Operation*>(user)
           /// MQT
-          .Case<BarrierOp>([&](BarrierOp op) { res.op = op; })
           .Case<UnitaryInterface>([&](UnitaryInterface op) {
-            if (isTwoQubitGate(op)) {
+            if (op->getNumResults() > 1) {
               res.op = op;
-              return; // Found a two-qubit gate, stop advancing head.
+              return;
             }
-            // Otherwise, advance head.
+
             res.q = op.getOutQubits().front();
-            res.ops.push_back(user); /// Only add one-qubit gates.
+            chain.push_back(user);
           })
           .Case<ResetOp>([&](ResetOp op) {
             res.q = op.getOutQubit();
-            res.ops.push_back(user);
+            chain.push_back(user);
           })
           .Case<MeasureOp>([&](MeasureOp op) {
             res.q = op.getOutQubit();
-            res.ops.push_back(user);
+            chain.push_back(user);
           })
           /// SCF
           .Case<RegionBranchOpInterface>(
@@ -371,63 +334,50 @@ private:
 
   LogicalResult rewrite(Region& region, Layout& layout, SWAPHistory& history,
                         PatternRewriter& rewriter) const {
-
-    /// Generate schedule for region.
-
+    /// Generate schedule.
     Scheduler scheduler(&region);
     Schedule schedule = scheduler.schedule(layout);
 
     /// Iterate over schedule in sliding windows of size 1 + nlookahead.
+    SlidingWindow window(schedule.layers, nlookahead_);
 
     Operation* prev{};
+    for (Operation* curr : schedule.ops) {
 
-    for (Schedule::iterator it = schedule.begin(); it != schedule.end(); ++it) {
-      const Schedule::iterator end =
-          std::min(it + 1 + nlookahead_, schedule.end());
-      const auto window = llvm::make_range(it, end);
-      const auto ops = window.begin()->getOps();
-
-      for (Operation* curr : ops) {
-
-        /// Impose a strict ordering of the operations. Note that
-        /// we reorder the operation before we insert any swaps.
-
-        if (prev != nullptr && prev != curr && curr->isBeforeInBlock(prev)) {
-          rewriter.moveOpAfter(curr, prev);
-        }
-
-        const OpBuilder::InsertionGuard guard(rewriter);
-        rewriter.setInsertionPoint(curr);
-
-        const auto res =
-            TypeSwitch<Operation*, WalkResult>(curr)
-                /// mqtopt Dialect
-                .Case<UnitaryInterface>([&](UnitaryInterface op) {
-                  return handleUnitary(op, layout, window, history, rewriter);
-                })
-                .Case<ResetOp>(
-                    [&](ResetOp op) { return handleReset(op, layout); })
-                .Case<MeasureOp>(
-                    [&](MeasureOp op) { return handleMeasure(op, layout); })
-                /// scf Dialect
-                .Case<scf::ForOp>([&](scf::ForOp op) {
-                  return handleFor(op, layout, rewriter);
-                })
-                .Case<scf::IfOp>([&](scf::IfOp op) {
-                  return handleIf(op, layout, rewriter);
-                })
-                .Case<scf::YieldOp>([&](scf::YieldOp op) {
-                  return handleYield(op, layout, history, rewriter);
-                })
-                /// Skip the rest.
-                .Default([](auto) { return WalkResult::skip(); });
-
-        if (res.wasInterrupted()) {
-          return failure();
-        }
-
-        prev = curr;
+      if (prev != nullptr && prev != curr) {
+        rewriter.moveOpAfter(curr, prev);
       }
+
+      const OpBuilder::InsertionGuard guard(rewriter);
+      rewriter.setInsertionPoint(curr);
+
+      const auto res =
+          TypeSwitch<Operation*, WalkResult>(curr)
+              /// mqtopt Dialect
+              .Case<UnitaryInterface>([&](UnitaryInterface op) {
+                return handleUnitary(op, layout, window, history, rewriter);
+              })
+              .Case<ResetOp>(
+                  [&](ResetOp op) { return handleReset(op, layout); })
+              .Case<MeasureOp>(
+                  [&](MeasureOp op) { return handleMeasure(op, layout); })
+              /// scf Dialect
+              .Case<scf::ForOp>([&](scf::ForOp op) {
+                return handleFor(op, layout, rewriter);
+              })
+              .Case<scf::IfOp>(
+                  [&](scf::IfOp op) { return handleIf(op, layout, rewriter); })
+              .Case<scf::YieldOp>([&](scf::YieldOp op) {
+                return handleYield(op, layout, history, rewriter);
+              })
+              /// Skip the rest.
+              .Default([](auto) { return WalkResult::skip(); });
+
+      if (res.wasInterrupted()) {
+        return failure();
+      }
+
+      prev = curr;
     }
 
     return success();
@@ -510,8 +460,8 @@ private:
     LLVM_DEBUG(llvm::dbgs() << "handleYield\n");
 
     /// Uncompute SWAPs.
-    this->insertSWAPs(llvm::to_vector(llvm::reverse(history)), layout,
-                      op.getLoc(), rewriter);
+    this->insertSWAPs(to_vector(llvm::reverse(history)), layout, op.getLoc(),
+                      rewriter);
 
     return WalkResult::advance();
   }
@@ -521,8 +471,7 @@ private:
    * architecture by inserting SWAPs.
    */
   WalkResult handleUnitary(UnitaryInterface op, Layout& layout,
-                           const ArrayRef<const Layer> window,
-                           SWAPHistory& history,
+                           SlidingWindow& window, SWAPHistory& history,
                            PatternRewriter& rewriter) const {
     LLVM_DEBUG(llvm::dbgs()
                << "handleUnitary: gate= " << op->getName() << '\n');
@@ -530,14 +479,12 @@ private:
     /// If this is the first two-qubit op in the layer, route the layer
     /// and remap afterwards.
 
-    if (!window.front().twoQubitOps.empty() &&
-        op.getOperation() == window.front().twoQubitOps.front()) {
-      const auto layers = to_vector(map_range(window, [](const Layer& layer) {
-        return ArrayRef(layer.twoQubitIndices);
-      }));
-      const auto swaps = router_.route(layers, layout, *arch);
-      insertSWAPs(swaps, layout, op->getLoc(), rewriter);
-      history.append(swaps);
+    const auto curr = window.getCurrent();
+
+    /// Current op is front-anchor: route.
+    if (!curr.empty() && op == curr.front().front) {
+      route(curr, layout, op.getLoc(), history, rewriter);
+      window.advance();
     }
 
     for (const auto [in, out] :
@@ -569,6 +516,25 @@ private:
   static WalkResult handleMeasure(MeasureOp op, Layout& layout) {
     layout.remapQubitValue(op.getInQubit(), op.getOutQubit());
     return WalkResult::advance();
+  }
+
+  /**
+   * @brief Use A*-search to make the gates in the front layer (layers.front())
+   * executable.
+   */
+  void route(const ArrayRef<Layer> layers, Layout& layout, Location location,
+             SWAPHistory& history, PatternRewriter& rewriter) const {
+    /// Find SWAPs.
+    SmallVector<ArrayRef<QubitIndexPair>> layerIndices;
+    layerIndices.reserve(layers.size());
+    for (const auto& layer : layers) {
+      layerIndices.push_back(layer.gates);
+    }
+    const auto swaps = router_.route(layerIndices, layout, *arch);
+    /// Append SWAPs to history.
+    history.append(swaps);
+    /// Insert SWAPs.
+    RoutingDriverBase::insertSWAPs(swaps, layout, location, rewriter);
   }
 
   AStarHeuristicRouter router_;

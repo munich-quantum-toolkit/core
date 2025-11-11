@@ -14,8 +14,6 @@
 #include "mlir/Dialect/MQTOpt/Transforms/Transpilation/Common.h"
 #include "mlir/Dialect/MQTOpt/Transforms/Transpilation/Layout.h"
 
-#include "llvm/ADT/ArrayRef.h"
-
 #include <algorithm>
 #include <mlir/Support/LLVM.h>
 #include <queue>
@@ -142,7 +140,8 @@ private:
   using MinQueue = std::priority_queue<Node, std::vector<Node>, std::greater<>>;
 
 public:
-  [[nodiscard]] RouterResult route(Layers layers, const ThinLayout& layout,
+  [[nodiscard]] RouterResult route(const Layers layers,
+                                   const ThinLayout& layout,
                                    const Architecture& arch) const {
     Node root(layout);
 
