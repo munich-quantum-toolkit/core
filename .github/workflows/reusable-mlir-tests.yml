@@ -50,7 +50,7 @@ jobs:
           run-id: 19238113674
 
       - name: Setup LLVM/MLIR (macos-15)
-        if: ${{ matrix.os }} == 'macos-15'
+        if: ${{ matrix.os == 'macos-15' }}
         run: |
           # Extract archive
           zstd -d llvm-mlir_21.1.5_macos_arm64_AArch64_opt.tar.zst --output-dir-flat .
@@ -70,7 +70,7 @@ jobs:
           run-id: 19238113674
 
       - name: Setup LLVM/MLIR (macos-15-intel)
-        if: ${{ matrix.os }} == 'macos-15-intel'
+        if: ${{ matrix.os == 'macos-15-intel' }}
         run: |
           # Extract archive
           zstd -d llvm-mlir_21.1.5_macos_x86_64_X86_opt.tar.zst --output-dir-flat .
@@ -90,7 +90,7 @@ jobs:
           run-id: 19238113653
 
       - name: Setup LLVM/MLIR (ubuntu-24.04)
-        if: ${{ matrix.os }} == 'ubuntu-24.04'
+        if: ${{ matrix.os == 'ubuntu-24.04' }}
         run: |
           # Extract archive
           zstd -d llvm-mlir_llvmorg-21.1.5_linux_x86_64_X86_opt.tar.zst --output-dir-flat .
@@ -110,7 +110,7 @@ jobs:
           run-id: 19238113653
 
       - name: Setup LLVM/MLIR (ubuntu-24.04-arm)
-        if: ${{ matrix.os }} == 'ubuntu-24.04-arm'
+        if: ${{ matrix.os == 'ubuntu-24.04-arm' }}
         run: |
           # Extract archive
           zstd -d llvm-mlir_llvmorg-21.1.5_linux_aarch64_AArch64_opt.tar.zst --output-dir-flat .
@@ -130,7 +130,7 @@ jobs:
           run-id: 19238113657
 
       - name: Setup LLVM/MLIR (windows-2025)
-        if: ${{ matrix.os }} == 'windows-2025'
+        if: ${{ matrix.os == 'windows-2025' }}
         run: |
           choco install zstd -y
 
@@ -152,7 +152,7 @@ jobs:
           run-id: 19238113657
 
       - name: Setup LLVM/MLIR (windows-11-arm)
-        if: ${{ matrix.os }} == 'windows-11-arm'
+        if: ${{ matrix.os == 'windows-11-arm' }}
         run: |
           choco install zstd -y
 
