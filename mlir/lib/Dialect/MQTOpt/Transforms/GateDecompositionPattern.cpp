@@ -13,10 +13,10 @@
 #include "mlir/Dialect/MQTOpt/Transforms/Passes.h"
 
 #include <array>
+#include <cmath>
 #include <cstddef>
 #include <eigen3/unsupported/Eigen/MatrixFunctions>
 #include <llvm/ADT/STLExtras.h>
-#include <cmath>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/Operation.h>
 #include <mlir/IR/PatternMatch.h>
@@ -281,6 +281,8 @@ struct GateDecompositionPattern final
     rewriter.setInsertionPointAfter(lastSeriesOp);
 
     if (sequence.globalPhase != 0.0) {
+      // TODO: use POp instead and apply negative globalPhase after insertion of
+      // new gates to "undo" the phase shift
       createOneParameterGate<GPhaseOp>(rewriter, location, sequence.globalPhase,
                                        {});
     }
@@ -387,6 +389,8 @@ struct GateDecompositionPattern final
   };
 
   static constexpr auto SQRT2 = std::numbers::sqrt2_v<fp>;
+  static constexpr auto FRAC1_SQRT2 =
+      static_cast<fp>(0.707106781186547524400844362104849039);
   static const matrix2x2 IDENTITY_GATE;
   static const matrix2x2 H_GATE;
 
@@ -410,15 +414,14 @@ struct GateDecompositionPattern final
   }
 
   // https://docs.rs/faer/latest/faer/mat/generic/struct.Mat.html#method.self_adjoint_eigen
-  static std::pair<rmatrix4x4, rdiagonal4x4>
-  selfAdjointEigenLower(rmatrix4x4 a) {
+  template <typename T> static auto selfAdjointEigenLower(T&& a) {
     // rdiagonal4x4 S;
     // auto U = self_adjoint_evd(A, S);
 
     // rmatrix4x4 U;
     // jacobi_eigen_decomposition(A, U, S);
 
-    auto [U, S] = helpers::selfAdjointEvd(a);
+    auto [U, S] = helpers::selfAdjointEvd(std::forward<T>(a));
 
     // TODO: not in original code
     if (std::abs(U.determinant() + 1.0) < 1e-5) {
@@ -483,6 +486,10 @@ struct GateDecompositionPattern final
         {C_ZERO, C_ZERO, IM, C_M_ONE},
         {C_ONE, M_IM, C_ZERO, C_ZERO},
     };
+    const matrix4x4 b = FRAC1_SQRT2 * matrix4x4{{C_ONE, C_ZERO, C_ZERO, IM},
+                                                {C_ZERO, IM, C_ONE, C_ZERO},
+                                                {C_ZERO, IM, -C_ONE, C_ZERO},
+                                                {C_ONE, C_ZERO, C_ZERO, -IM}};
 
     const matrix4x4 bNonNormalizedDagger{
         {qfp(0.5, 0.), C_ZERO, C_ZERO, qfp(0.5, 0.)},
@@ -490,11 +497,14 @@ struct GateDecompositionPattern final
         {C_ZERO, qfp(0., -0.5), qfp(0., -0.5), C_ZERO},
         {C_ZERO, qfp(0.5, 0.), qfp(-0.5, 0.), C_ZERO},
     };
+    const matrix4x4 bDagger = b.conjugate().transpose();
     helpers::print(unitary, "UNITARY in MAGIC BASIS TRANSFORM");
     if (direction == MagicBasisTransform::OutOf) {
+      // return bDagger * unitary * b; // TODO: same result?
       return bNonNormalizedDagger * unitary * bNonNormalized;
     }
     if (direction == MagicBasisTransform::Into) {
+      // return b * unitary * bDagger;
       return bNonNormalized * unitary * bNonNormalizedDagger;
     }
     throw std::logic_error{"Unknown MagicBasisTransform direction!"};
@@ -1300,11 +1310,9 @@ struct GateDecompositionPattern final
         }
         return absDiff <= absLhs * maxRelative;
       };
-      constexpr auto frac1Sqrt2 =
-          static_cast<fp>(0.707106781186547524400844362104849039);
       const auto k12RArr = matrix2x2{
-          {qfp(0., frac1Sqrt2), qfp(frac1Sqrt2, 0.)},
-          {qfp(-frac1Sqrt2, 0.), qfp(0., -frac1Sqrt2)},
+          {qfp(0., FRAC1_SQRT2), qfp(FRAC1_SQRT2, 0.)},
+          {qfp(-FRAC1_SQRT2, 0.), qfp(0., -FRAC1_SQRT2)},
       };
       const auto k12LArr = matrix2x2{
           {qfp(0.5, 0.5), qfp(0.5, 0.5)},
@@ -1327,14 +1335,14 @@ struct GateDecompositionPattern final
           {temp * (M_IM * std::exp(qfp(0., -b))), temp * std::exp(qfp(0., -b))},
           {temp * (M_IM * std::exp(qfp(0., b))),
            temp * -(std::exp(qfp(0., b)))}};
-      auto k11r = matrix2x2{{frac1Sqrt2 * std::exp((IM * qfp(0., -b))),
-                             frac1Sqrt2 * -std::exp(qfp(0., -b))},
-                            {frac1Sqrt2 * std::exp(qfp(0., b)),
-                             frac1Sqrt2 * (M_IM * std::exp(qfp(0., b)))}};
-      auto k32lK21l = matrix2x2{{frac1Sqrt2 * std::cos(qfp(1., (2. * b))),
-                                 frac1Sqrt2 * (IM * std::sin((2. * b)))},
-                                {frac1Sqrt2 * (IM * std::sin(2. * b)),
-                                 frac1Sqrt2 * qfp(1., -std::cos(2. * b))}};
+      auto k11r = matrix2x2{{FRAC1_SQRT2 * std::exp((IM * qfp(0., -b))),
+                             FRAC1_SQRT2 * -std::exp(qfp(0., -b))},
+                            {FRAC1_SQRT2 * std::exp(qfp(0., b)),
+                             FRAC1_SQRT2 * (M_IM * std::exp(qfp(0., b)))}};
+      auto k32lK21l = matrix2x2{{FRAC1_SQRT2 * std::cos(qfp(1., (2. * b))),
+                                 FRAC1_SQRT2 * (IM * std::sin((2. * b)))},
+                                {FRAC1_SQRT2 * (IM * std::sin(2. * b)),
+                                 FRAC1_SQRT2 * qfp(1., -std::cos(2. * b))}};
       temp = qfp(0.5, 0.5);
       auto k21r = matrix2x2{
           {temp * (M_IM * std::exp(qfp(0., -2. * b))),
@@ -1343,15 +1351,15 @@ struct GateDecompositionPattern final
            temp * std::exp(qfp(0., 2. * b))},
       };
       const auto k22LArr = matrix2x2{
-          {qfp(frac1Sqrt2, 0.), qfp(-frac1Sqrt2, 0.)},
-          {qfp(frac1Sqrt2, 0.), qfp(frac1Sqrt2, 0.)},
+          {qfp(FRAC1_SQRT2, 0.), qfp(-FRAC1_SQRT2, 0.)},
+          {qfp(FRAC1_SQRT2, 0.), qfp(FRAC1_SQRT2, 0.)},
       };
       const auto k22RArr = matrix2x2{{C_ZERO, C_ONE}, {C_M_ONE, C_ZERO}};
       auto k31l = matrix2x2{
-          {frac1Sqrt2 * std::exp(qfp(0., -b)),
-           frac1Sqrt2 * std::exp(qfp(0., -b))},
-          {frac1Sqrt2 * -std::exp(qfp(0., b)),
-           frac1Sqrt2 * std::exp(qfp(0., b))},
+          {FRAC1_SQRT2 * std::exp(qfp(0., -b)),
+           FRAC1_SQRT2 * std::exp(qfp(0., -b))},
+          {FRAC1_SQRT2 * -std::exp(qfp(0., b)),
+           FRAC1_SQRT2 * std::exp(qfp(0., b))},
       };
       auto k31r = matrix2x2{
           {IM * std::exp(qfp(0., b)), C_ZERO},

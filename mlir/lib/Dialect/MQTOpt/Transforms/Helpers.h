@@ -219,8 +219,9 @@ inline Eigen::Matrix4<T> kroneckerProduct(const Eigen::Matrix2<T>& lhs,
   return result;
 }
 
-inline auto selfAdjointEvd(rmatrix4x4 a) {
-  Eigen::SelfAdjointEigenSolver<rmatrix4x4> s;
+template<typename T, int N, int M>
+inline auto selfAdjointEvd(Eigen::Matrix<T, N, M> a) {
+  Eigen::SelfAdjointEigenSolver<decltype(a)> s;
   std::cerr << "=EigIN==\n" << a << "\n========\n" << '\n';
   s.compute(a); // TODO: computeDirect is faster
   auto vecs = s.eigenvectors().eval();
