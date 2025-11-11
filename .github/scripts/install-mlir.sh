@@ -30,7 +30,7 @@ if [ -z "${INSTALL_PREFIX:-}" ]; then
 fi
 
 # Change to installation directory
-cd "$INSTALL_PREFIX"
+pushd $INSTALL_PREFIX > /dev/null
 
 # Detect platform and architecture
 OS=$(uname -s | tr '[:upper:]' '[:lower:]')
@@ -90,6 +90,9 @@ fi
 echo "Extracting $ARCHIVE_PATH..."
 zstd -d "$ARCHIVE_PATH" --output-dir-flat .
 tar -xf "${ARCHIVE_PATH%.zst}"
+
+# Return to original directory
+popd > /dev/null
 
 # Output instructions
 echo "MLIR toolchain has been installed"

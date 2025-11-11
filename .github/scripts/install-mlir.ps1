@@ -9,7 +9,7 @@ param(
 $ErrorActionPreference = "Stop"
 
 # Change to installation directory
-Set-Location -Path $install_prefix
+pushd $install_prefix > $null
 
 # Detect architecture
 $arch = [System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture
@@ -62,9 +62,12 @@ Write-Host "Extracting $archive_name..."
 & zstd -d $archive_path --output-dir-flat .
 & tar -xf ($archive_path -replace '.zst$', '')
 
+# Return to original directory
+popd > $null
+
 # Output instructions
 Write-Host "MLIR toolchain has been installed"
 Write-Host "Run the following commands to set up your environment:"
 Write-Host "  `$env:LLVM_DIR = '$(Get-Location -PSProvider FileSystem | Select-Object -ExpandProperty Path)\lib\cmake\llvm'"
 Write-Host "  `$env:MLIR_DIR = '$(Get-Location -PSProvider FileSystem | Select-Object -ExpandProperty Path)\lib\cmake\mlir'"
-Write-Host "  `$env:Path = '$(Get-Location -PSProvider FileSystem | Select-Object -ExpandProperty Path)\bin;$env:Path'"
+Write-Host "  `$env:Path = '$(Get-Location -PSProvider FileSystem | Select-Object -ExpandProperty Path)\bin;`$env:Path'"
