@@ -8,12 +8,10 @@ $tag = "test-release"
 
 switch ($arch) {
     x64 {
-        $asset_name = "windows-2025-archive.zip"
-        $archive_name = "llvm-mlir_21.1.5_windows_x86_64_X86_opt.tar.zst"
+        $asset_name = "windows-2022-archive.zip"
     }
     arm64 {
         $asset_name = "windows-11-arm-archive.zip"
-        $archive_name = "llvm-mlir_21.1.5_windows_arm64_AArch64_opt.tar.zst"
     }
     default {
         Write-Error "Unsupported architecture: $arch"; exit 1
@@ -30,6 +28,13 @@ Invoke-WebRequest -Uri $release_url -OutFile $asset_name
 Write-Host "Unzipping $asset_name..."
 Expand-Archive -Path $asset_name -DestinationPath . -Force
 
+# Find archive after unzip
+$archive_path = Get-ChildItem -Recurse -File -Filter "*.tar.zst" | Select-Object -First 1
+if (-not $archive_path) {
+    Write-Error "No archive found after unzip of $asset_name."
+    exit 1
+}
+
 # Check for zstd
 if (-not (Get-Command zstd -ErrorAction SilentlyContinue)) {
     Write-Error "zstd not found. Please install zstd (e.g., via Chocolatey: choco install zstd)."
@@ -44,7 +49,7 @@ if (-not (Get-Command tar -ErrorAction SilentlyContinue)) {
 
 # Unpack archive
 Write-Host "Extracting $archive_name..."
-& zstd -d $archive_name --output-dir-flat .
-& tar -xf ($archive_name -replace '.zst$', '')
+& zstd -d $archive_path --output-dir-flat .
+& tar -xf ($archive_path -replace '.zst$', '')
 
 Write-Host "Done. Archive extracted."
