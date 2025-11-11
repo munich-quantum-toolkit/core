@@ -154,8 +154,9 @@ jobs:
           tar xf llvm-mlir_21.1.5_windows_x86_64_X86_opt.tar
 
           # Set environment variable for subsequent steps
-          echo "LLVM_DIR=${{ github.workspace }}\lib\cmake\llvm" >> $GITHUB_ENV
-          echo "PATH=${{ github.workspace }}\bin;$PATH" >> $GITHUB_ENV
+          echo "LLVM_DIR=$PWD/lib/cmake/llvm" >> $GITHUB_ENV
+          echo "MLIR_DIR=$PWD/lib/cmake/mlir" >> $GITHUB_ENV
+          echo "PATH=$PWD/bin:$PATH" >> $GITHUB_ENV
 
       - name: Download archives (windows-11-arm)
         if: ${{ matrix.os == 'windows-11-arm' }}
@@ -180,8 +181,9 @@ jobs:
           tar xf llvm-mlir_21.1.5_windows_x86_64_X86_opt.tar
 
           # Set environment variable for subsequent steps
-          echo "LLVM_DIR=${{ github.workspace }}\lib\cmake\llvm" >> $GITHUB_ENV
-          echo "PATH=${{ github.workspace }}\bin;$PATH" >> $GITHUB_ENV
+          echo "LLVM_DIR=$PWD/lib/cmake/llvm" >> $GITHUB_ENV
+          echo "MLIR_DIR=$PWD/lib/cmake/mlir" >> $GITHUB_ENV
+          echo "PATH=$PWD/bin:$PATH" >> $GITHUB_ENV
 
       # Build acceleration and Python tooling
       - name: Set up mold as linker (Linux)
