@@ -10,15 +10,15 @@
 
 #pragma once
 
-#include "dd/GateMatrixDefinitions.hpp"
-#include "dd/Package.hpp"
-#include "ir/Definitions.hpp"
 #include "mlir/Dialect/MQTOpt/IR/MQTOptDialect.h"
+#include "ir/operations/OpType.hpp"
 
 #include <algorithm>
 #include <eigen3/Eigen/Core>
 #include <eigen3/Eigen/Eigenvalues>
 #include <eigen3/unsupported/Eigen/KroneckerProduct> // TODO: unstable
+#include <iomanip> // TODO: remove
+#include <iostream> // TODO: remove
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/IR/Operation.h>
 
@@ -42,19 +42,20 @@ constexpr qfp M_IM{0., -1.};
 
 namespace mqt::ir::opt::helpers {
 
-void print(std::size_t x) { std::cerr << x; }
-void print(fp x) { std::cerr << x; }
+inline void print(std::size_t x) { std::cerr << x; }
+inline void print(fp x) { std::cerr << x; }
 
-void print(qfp x) {
+inline void print(qfp x) {
   std::cerr << std::setprecision(17) << x.real() << 'i' << x.imag();
 }
 
 // TODO: remove
 template <typename T, int N, int M>
-void print(Eigen::Matrix<T, N, M> matrix, std::string s = "",
+void print(Eigen::Matrix<T, N, M> matrix, const std::string& s = "",
            bool force = false) {
-  if (!force)
+  if (!force) {
     return;
+}
   if (!s.empty()) {
     llvm::errs() << "=== " << s << " ===\n";
   }
@@ -69,9 +70,10 @@ void print(Eigen::Matrix<T, N, M> matrix, std::string s = "",
 }
 
 template <typename T>
-void print(T&& matrix, std::string s = "", bool force = false) {
-  if (!force)
+void print(T matrix, const std::string& s = "", bool force = false) {
+  if (!force) {
     return;
+}
   if (!s.empty()) {
     llvm::errs() << "=== " << s << " ===\n";
   }
@@ -217,14 +219,14 @@ inline Eigen::Matrix4<T> kroneckerProduct(const Eigen::Matrix2<T>& lhs,
   return result;
 }
 
-auto self_adjoint_evd(rmatrix4x4 A) {
+inline auto selfAdjointEvd(rmatrix4x4 a) {
   Eigen::SelfAdjointEigenSolver<rmatrix4x4> s;
-  std::cerr << "=EigIN==\n" << A << "\n========\n" << std::endl;
-  s.compute(A); // TODO: computeDirect is faster
+  std::cerr << "=EigIN==\n" << a << "\n========\n" << '\n';
+  s.compute(a); // TODO: computeDirect is faster
   auto vecs = s.eigenvectors().eval();
   auto vals = s.eigenvalues();
-  std::cerr << "=Eigen==\n" << vecs << "\n========\n" << std::endl;
-  std::cerr << "=Eigen==\n" << vals << "\n========\n" << std::endl;
+  std::cerr << "=Eigen==\n" << vecs << "\n========\n" << '\n';
+  std::cerr << "=Eigen==\n" << vals << "\n========\n" << '\n';
   return std::make_pair(vecs, vals);
 }
 
