@@ -422,9 +422,7 @@ struct GateDecompositionPattern final
       std::cerr << "CORRECTION!\n";
       // if determinant of eigenvector matrix is -1.0, multiply first
       // eigenvector by -1.0
-      for (int i = 0; i < 4; ++i) {
-        U(i, 0) *= -1.0;
-      }
+      U.col(0) *= -1.0;
     }
 
     return std::make_pair(U, S);
@@ -926,19 +924,19 @@ struct GateDecompositionPattern final
       auto specialization =
           _specialization.value_or(get_default_specialzation());
       TwoQubitWeylDecomposition general{
-          a,
-          b,
-          c,
-          global_phase,
-          K1l,
-          K2l,
-          K1r,
-          K2r,
-          Specialization::General,
-          default_euler_basis,
-          fidelity,
-          -1.0,
-          unitary_matrix,
+          .a=a,
+          .b=b,
+          .c=c,
+          .global_phase=global_phase,
+          .K1l=K1l,
+          .K2l=K2l,
+          .K1r=K1r,
+          .K2r=K2r,
+          .specialization=Specialization::General,
+          .default_euler_basis=default_euler_basis,
+          .requested_fidelity=fidelity,
+          .calculated_fidelity=-1.0,
+          .unitary_matrix=unitary_matrix,
       };
       auto get_specialized_decomposition = [&]() {
         // :math:`U \sim U_d(0,0,0) \sim Id`
@@ -948,19 +946,19 @@ struct GateDecompositionPattern final
         // :math:`K2_l = Id` , :math:`K2_r = Id`.
         if (specialization == Specialization::IdEquiv) {
           return TwoQubitWeylDecomposition{
-              0.,
-              0.,
-              0.,
-              general.global_phase,
-              general.K1l * general.K2l,
-              identityGate,
-              general.K1r * general.K2r,
-              identityGate,
-              specialization,
-              general.default_euler_basis,
-              general.requested_fidelity,
-              general.calculated_fidelity,
-              general.unitary_matrix,
+              .a=0.,
+              .b=0.,
+              .c=0.,
+              .global_phase=general.global_phase,
+              .K1l=general.K1l * general.K2l,
+              .K2l=identityGate,
+              .K1r=general.K1r * general.K2r,
+              .K2r=identityGate,
+              .specialization=specialization,
+              .default_euler_basis=general.default_euler_basis,
+              .requested_fidelity=general.requested_fidelity,
+              .calculated_fidelity=general.calculated_fidelity,
+              .unitary_matrix=general.unitary_matrix,
           };
         }
         // :math:`U \sim U_d(\pi/4, \pi/4, \pi/4) \sim U(\pi/4, \pi/4,
@@ -972,36 +970,36 @@ struct GateDecompositionPattern final
         if (specialization == Specialization::SWAPEquiv) {
           if (c > 0.) {
             return TwoQubitWeylDecomposition{
-                qc::PI_4,
-                qc::PI_4,
-                qc::PI_4,
-                general.global_phase,
-                general.K1l * general.K2r,
-                identityGate,
-                general.K1r * general.K2l,
-                identityGate,
-                specialization,
-                general.default_euler_basis,
-                general.requested_fidelity,
-                general.calculated_fidelity,
-                general.unitary_matrix,
+                .a=qc::PI_4,
+                .b=qc::PI_4,
+                .c=qc::PI_4,
+                .global_phase=general.global_phase,
+                .K1l=general.K1l * general.K2r,
+                .K2l=identityGate,
+                .K1r=general.K1r * general.K2l,
+                .K2r=identityGate,
+                .specialization=specialization,
+                .default_euler_basis=general.default_euler_basis,
+                .requested_fidelity=general.requested_fidelity,
+                .calculated_fidelity=general.calculated_fidelity,
+                .unitary_matrix=general.unitary_matrix,
             };
           } else {
             flipped_from_original = true;
             return TwoQubitWeylDecomposition{
-                qc::PI_4,
-                qc::PI_4,
-                qc::PI_4,
-                global_phase + qc::PI_2,
-                general.K1l * IPZ * general.K2r,
-                identityGate,
-                general.K1r * IPZ * general.K2l,
-                identityGate,
-                specialization,
-                general.default_euler_basis,
-                general.requested_fidelity,
-                general.calculated_fidelity,
-                general.unitary_matrix,
+                .a=qc::PI_4,
+                .b=qc::PI_4,
+                .c=qc::PI_4,
+                .global_phase=global_phase + qc::PI_2,
+                .K1l=general.K1l * IPZ * general.K2r,
+                .K2l=identityGate,
+                .K1r=general.K1r * IPZ * general.K2l,
+                .K2r=identityGate,
+                .specialization=specialization,
+                .default_euler_basis=general.default_euler_basis,
+                .requested_fidelity=general.requested_fidelity,
+                .calculated_fidelity=general.calculated_fidelity,
+                .unitary_matrix=general.unitary_matrix,
             };
           }
         }
@@ -1016,19 +1014,19 @@ struct GateDecompositionPattern final
           auto k2l_dag = general.K2l.transpose().conjugate();
 
           return TwoQubitWeylDecomposition{
-              closest,
-              closest,
-              closest,
-              general.global_phase,
-              general.K1l * general.K2l,
-              identityGate,
-              general.K1r * general.K2l,
-              k2l_dag * general.K2r,
-              specialization,
-              general.default_euler_basis,
-              general.requested_fidelity,
-              general.calculated_fidelity,
-              general.unitary_matrix,
+              .a=closest,
+              .b=closest,
+              .c=closest,
+              .global_phase=general.global_phase,
+              .K1l=general.K1l * general.K2l,
+              .K2l=identityGate,
+              .K1r=general.K1r * general.K2l,
+              .K2r=k2l_dag * general.K2r,
+              .specialization=specialization,
+              .default_euler_basis=general.default_euler_basis,
+              .requested_fidelity=general.requested_fidelity,
+              .calculated_fidelity=general.calculated_fidelity,
+              .unitary_matrix=general.unitary_matrix,
           };
         }
         // :math:`U \sim U_d(\alpha\pi/4, \alpha\pi/4, -\alpha\pi/4) \sim
@@ -1046,19 +1044,19 @@ struct GateDecompositionPattern final
           auto k2l_dag = general.K2l.transpose().conjugate();
 
           return TwoQubitWeylDecomposition{
-              closest,
-              closest,
-              -closest,
-              general.global_phase,
-              general.K1l * general.K2l,
-              identityGate,
-              general.K1r * IPZ * general.K2l * IPZ,
-              IPZ * k2l_dag * IPZ * general.K2r,
-              specialization,
-              general.default_euler_basis,
-              general.requested_fidelity,
-              general.calculated_fidelity,
-              general.unitary_matrix,
+              .a=closest,
+              .b=closest,
+              .c=-closest,
+              .global_phase=general.global_phase,
+              .K1l=general.K1l * general.K2l,
+              .K2l=identityGate,
+              .K1r=general.K1r * IPZ * general.K2l * IPZ,
+              .K2r=IPZ * k2l_dag * IPZ * general.K2r,
+              .specialization=specialization,
+              .default_euler_basis=general.default_euler_basis,
+              .requested_fidelity=general.requested_fidelity,
+              .calculated_fidelity=general.calculated_fidelity,
+              .unitary_matrix=general.unitary_matrix,
           };
         }
         // :math:`U \sim U_d(\alpha, 0, 0) \sim \text{Ctrl-U}`
@@ -1074,19 +1072,19 @@ struct GateDecompositionPattern final
           auto [k2rtheta, k2rphi, k2rlambda, k2rphase] =
               angles_from_unitary(general.K2r, euler_basis);
           return TwoQubitWeylDecomposition{
-              a,
-              0.,
-              0.,
-              global_phase + k2lphase + k2rphase,
-              general.K1l * rx_matrix(k2lphi),
-              ry_matrix(k2ltheta) * rx_matrix(k2llambda),
-              general.K1r * rx_matrix(k2rphi),
-              ry_matrix(k2rtheta) * rx_matrix(k2rlambda),
-              specialization,
-              euler_basis,
-              general.requested_fidelity,
-              general.calculated_fidelity,
-              general.unitary_matrix,
+              .a=a,
+              .b=0.,
+              .c=0.,
+              .global_phase=global_phase + k2lphase + k2rphase,
+              .K1l=general.K1l * rx_matrix(k2lphi),
+              .K2l=ry_matrix(k2ltheta) * rx_matrix(k2llambda),
+              .K1r=general.K1r * rx_matrix(k2rphi),
+              .K2r=ry_matrix(k2rtheta) * rx_matrix(k2rlambda),
+              .specialization=specialization,
+              .default_euler_basis=euler_basis,
+              .requested_fidelity=general.requested_fidelity,
+              .calculated_fidelity=general.calculated_fidelity,
+              .unitary_matrix=general.unitary_matrix,
           };
         }
         // :math:`U \sim U_d(\pi/4, \pi/4, \alpha) \sim \text{SWAP} \cdot
@@ -1102,19 +1100,19 @@ struct GateDecompositionPattern final
           auto [k2rtheta, k2rphi, k2rlambda, k2rphase] =
               angles_from_unitary(general.K2r, EulerBasis::ZYZ);
           return TwoQubitWeylDecomposition{
-              qc::PI_4,
-              qc::PI_4,
-              c,
-              global_phase + k2lphase + k2rphase,
-              general.K1l * rz_matrix(k2rphi),
-              ry_matrix(k2ltheta) * rz_matrix(k2llambda),
-              general.K1r * rz_matrix(k2lphi),
-              ry_matrix(k2rtheta) * rz_matrix(k2rlambda),
-              specialization,
-              general.default_euler_basis,
-              general.requested_fidelity,
-              general.calculated_fidelity,
-              general.unitary_matrix,
+              .a=qc::PI_4,
+              .b=qc::PI_4,
+              .c=c,
+              .global_phase=global_phase + k2lphase + k2rphase,
+              .K1l=general.K1l * rz_matrix(k2rphi),
+              .K2l=ry_matrix(k2ltheta) * rz_matrix(k2llambda),
+              .K1r=general.K1r * rz_matrix(k2lphi),
+              .K2r=ry_matrix(k2rtheta) * rz_matrix(k2rlambda),
+              .specialization=specialization,
+              .default_euler_basis=general.default_euler_basis,
+              .requested_fidelity=general.requested_fidelity,
+              .calculated_fidelity=general.calculated_fidelity,
+              .unitary_matrix=general.unitary_matrix,
           };
         }
         // :math:`U \sim U_d(\alpha, \alpha, \beta), \alpha \geq |\beta|`
@@ -1126,19 +1124,19 @@ struct GateDecompositionPattern final
           auto [k2ltheta, k2lphi, k2llambda, k2lphase] =
               angles_from_unitary(general.K2l, EulerBasis::ZYZ);
           return TwoQubitWeylDecomposition{
-              (a + b) / 2.,
-              (a + b) / 2.,
-              c,
-              global_phase + k2lphase,
-              general.K1l * rz_matrix(k2lphi),
-              ry_matrix(k2ltheta) * rz_matrix(k2llambda),
-              general.K1r * rz_matrix(k2lphi),
-              rz_matrix(-k2lphi) * general.K2r,
-              specialization,
-              general.default_euler_basis,
-              general.requested_fidelity,
-              general.calculated_fidelity,
-              general.unitary_matrix,
+              .a=(a + b) / 2.,
+              .b=(a + b) / 2.,
+              .c=c,
+              .global_phase=global_phase + k2lphase,
+              .K1l=general.K1l * rz_matrix(k2lphi),
+              .K2l=ry_matrix(k2ltheta) * rz_matrix(k2llambda),
+              .K1r=general.K1r * rz_matrix(k2lphi),
+              .K2r=rz_matrix(-k2lphi) * general.K2r,
+              .specialization=specialization,
+              .default_euler_basis=general.default_euler_basis,
+              .requested_fidelity=general.requested_fidelity,
+              .calculated_fidelity=general.calculated_fidelity,
+              .unitary_matrix=general.unitary_matrix,
           };
         }
         // :math:`U \sim U_d(\alpha, \beta, -\beta), \alpha \geq \beta \geq 0`
@@ -1151,19 +1149,19 @@ struct GateDecompositionPattern final
           auto [k2ltheta, k2lphi, k2llambda, k2lphase] =
               angles_from_unitary(general.K2l, euler_basis);
           return TwoQubitWeylDecomposition{
-              a,
-              (b + c) / 2.,
-              (b + c) / 2.,
-              global_phase + k2lphase,
-              general.K1l * rx_matrix(k2lphi),
-              ry_matrix(k2ltheta) * rx_matrix(k2llambda),
-              general.K1r * rx_matrix(k2lphi),
-              rx_matrix(-k2lphi) * general.K2r,
-              specialization,
-              euler_basis,
-              general.requested_fidelity,
-              general.calculated_fidelity,
-              general.unitary_matrix,
+              .a=a,
+              .b=(b + c) / 2.,
+              .c=(b + c) / 2.,
+              .global_phase=global_phase + k2lphase,
+              .K1l=general.K1l * rx_matrix(k2lphi),
+              .K2l=ry_matrix(k2ltheta) * rx_matrix(k2llambda),
+              .K1r=general.K1r * rx_matrix(k2lphi),
+              .K2r=rx_matrix(-k2lphi) * general.K2r,
+              .specialization=specialization,
+              .default_euler_basis=euler_basis,
+              .requested_fidelity=general.requested_fidelity,
+              .calculated_fidelity=general.calculated_fidelity,
+              .unitary_matrix=general.unitary_matrix,
           };
         }
         // :math:`U \sim U_d(\alpha, \beta, -\beta), \alpha \geq \beta \geq 0`
@@ -1176,19 +1174,19 @@ struct GateDecompositionPattern final
           auto [k2ltheta, k2lphi, k2llambda, k2lphase] =
               angles_from_unitary(general.K2l, euler_basis);
           return TwoQubitWeylDecomposition{
-              a,
-              (b - c) / 2.,
-              -((b - c) / 2.),
-              global_phase + k2lphase,
-              general.K1l * rx_matrix(k2lphi),
-              ry_matrix(k2ltheta) * rx_matrix(k2llambda),
-              general.K1r * IPZ * rx_matrix(k2lphi) * IPZ,
-              IPZ * rx_matrix(-k2lphi) * IPZ * general.K2r,
-              specialization,
-              euler_basis,
-              general.requested_fidelity,
-              general.calculated_fidelity,
-              general.unitary_matrix,
+              .a=a,
+              .b=(b - c) / 2.,
+              .c=-((b - c) / 2.),
+              .global_phase=global_phase + k2lphase,
+              .K1l=general.K1l * rx_matrix(k2lphi),
+              .K2l=ry_matrix(k2ltheta) * rx_matrix(k2llambda),
+              .K1r=general.K1r * IPZ * rx_matrix(k2lphi) * IPZ,
+              .K2r=IPZ * rx_matrix(-k2lphi) * IPZ * general.K2r,
+              .specialization=specialization,
+              .default_euler_basis=euler_basis,
+              .requested_fidelity=general.requested_fidelity,
+              .calculated_fidelity=general.calculated_fidelity,
+              .unitary_matrix=general.unitary_matrix,
           };
         }
         // U has no special symmetry.
@@ -1389,30 +1387,30 @@ struct GateDecompositionPattern final
       auto q2r = k2rd * K12R_ARR;
 
       return TwoQubitBasisDecomposer{
-          basis_gate,
-          basis_fidelity,
-          euler_basis,
-          basis_decomposer,
-          super_controlled,
-          u0l,
-          u0r,
-          u1l,
-          u1ra,
-          u1rb,
-          u2la,
-          u2lb,
-          u2ra,
-          u2rb,
-          u3l,
-          u3r,
-          q0l,
-          q0r,
-          q1la,
-          q1lb,
-          q1ra,
-          q1rb,
-          q2l,
-          q2r,
+          .basis_gate=basis_gate,
+          .basis_fidelity=basis_fidelity,
+          .euler_basis=euler_basis,
+          .basis_decomposer=basis_decomposer,
+          .super_controlled=super_controlled,
+          .u0l=u0l,
+          .u0r=u0r,
+          .u1l=u1l,
+          .u1ra=u1ra,
+          .u1rb=u1rb,
+          .u2la=u2la,
+          .u2lb=u2lb,
+          .u2ra=u2ra,
+          .u2rb=u2rb,
+          .u3l=u3l,
+          .u3r=u3r,
+          .q0l=q0l,
+          .q0r=q0r,
+          .q1la=q1la,
+          .q1lb=q1lb,
+          .q1ra=q1ra,
+          .q1rb=q1rb,
+          .q2l=q2l,
+          .q2r=q2r,
       };
     }
 
