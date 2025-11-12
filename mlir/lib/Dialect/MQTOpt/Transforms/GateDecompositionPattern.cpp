@@ -12,6 +12,7 @@
 #include "mlir/Dialect/MQTOpt/IR/MQTOptDialect.h"
 #include "mlir/Dialect/MQTOpt/Transforms/Passes.h"
 
+#include <algorithm>
 #include <array>
 #include <cmath>
 #include <cstddef>
@@ -792,53 +793,91 @@ struct GateDecompositionPattern final
         throw std::runtime_error{
             "TwoQubitWeylDecomposition: failed to diagonalize M2."};
       }
-      rdiagonal4x4 dReal = -1.0 * d.cwiseArg() / 2.0;
-      helpers::print(dReal, "D_REAL", true);
-      dReal(3) = -dReal(0) - dReal(1) - dReal(2);
-      std::array<fp, 3> cs{};
-      for (int i = 0; i < static_cast<int>(cs.size()); ++i) {
-        assert(i < dReal.size());
-        cs[i] = remEuclid((dReal(i) + dReal(3)) / 2.0, qc::TAU);
-      }
-      helpers::print(cs, "CS", true);
-      decltype(cs) cstemp;
-      llvm::transform(cs, cstemp.begin(), [](auto&& x) {
-        auto tmp = remEuclid(x, qc::PI_2);
-        return std::min(tmp, qc::PI_2 - tmp);
-      });
-      std::array<int, cstemp.size()> order{
-          2, 1, 0}; // TODO: needs to be adjusted depending on eigenvector
-                    // order in eigen decomposition algorithm?
-      llvm::stable_sort(order,
-                        [&](auto a, auto b) { return cstemp[a] < cstemp[b]; });
-      std::tie(order[0], order[1], order[2]) =
-          std::tuple{order[1], order[2], order[0]};
-      std::tie(cs[0], cs[1], cs[2]) =
-          std::tuple{cs[order[0]], cs[order[1]], cs[order[2]]};
-      std::tie(dReal(0), dReal(1), dReal(2)) =
-          std::tuple{dReal(order[0]), dReal(order[1]), dReal(order[2])};
-      helpers::print(dReal, "D_REAL (sorted)", true);
+      // check that p is in SO(4)
+      assert((p.transpose() * p).isIdentity());
+      assert(std::abs(p.determinant() - 1.0) < 1e-13);
+      // make sure de4terminant of sqrt(eigenvalues) is 1.0
+      assert(std::abs(matrix4x4{d.asDiagonal()}.determinant() - 1.0) < 1e-13);
 
-      // swap columns of p according to order
-      auto pOrig = p;
-      for (int i = 0; i < static_cast<int>(order.size()); ++i) {
-        p.col(i) = pOrig.col(order[i]);
+      // see https://github.com/mpham26uchicago/laughing-umbrella/blob/main/background/Full%20Two%20Qubit%20KAK%20Implementation.ipynb, Step 7
+      Eigen::Matrix<fp, 3, 3> coefficientMatrix {{1, 1, 1}, {-1, 1, -1}, {1, -1, -1}};
+      auto theta_vec = d.cwiseArg().head(3);
+      Eigen::Vector<fp, 3> tmp = coefficientMatrix.inverse() * theta_vec;
+      Eigen::Vector<fp, 3> cs{ 2.0 * tmp(0), -2.0 * tmp(1), 2.0 * tmp(2) };
+      // bring cs into weyl chamber
+      cs /= qc::PI;
+      cs -= cs.unaryExpr([](auto&& x) { return std::floor(x); });
+      std::ranges::sort(cs, std::greater<>());
+      if (cs[0] + cs[1] >= 1.0) {
+        cs = decltype(cs){ 1 - cs[0], cs[1], 0.0 };
+      std::ranges::sort(cs, std::greater<>());
       }
+      if (cs[0] > 0.5 && std::abs(cs[2]) < 1e-13) {
+        cs = decltype(cs) { 1 - cs[0], cs[1], 0.0 };
+      }
+      cs *= qc::PI;
+
+      // rdiagonal4x4 dReal = d.cwiseArg() / 2.0;
+      // helpers::print(dReal, "D_REAL", true);
+      // dReal(3) = -dReal(0) - dReal(1) - dReal(2);
+      // std::array<fp, 3> cs{};
+      // for (int i = 0; i < static_cast<int>(cs.size()); ++i) {
+      //   assert(i < dReal.size());
+      //   cs[i] = remEuclid((dReal(i) + dReal(3)) / 2.0, qc::TAU);
+      // }
+      // helpers::print(cs, "CS", true);
+
+      // decltype(cs) cstemp;
+      // llvm::transform(cs, cstemp.begin(), [](auto&& x) {
+      //   auto tmp = remEuclid(x, qc::PI_2);
+      //   return std::min(tmp, qc::PI_2 - tmp);
+      // });
+      // std::array<int, cstemp.size()> order{
+      //     2, 1, 0}; // TODO: needs to be adjusted depending on eigenvector
+      //               // order in eigen decomposition algorithm?
+      // llvm::stable_sort(order,
+      //                   [&](auto a, auto b) { return cstemp[a] < cstemp[b]; });
+      // std::tie(order[0], order[1], order[2]) =
+      //     std::tuple{order[1], order[2], order[0]};
+      // std::tie(cs[0], cs[1], cs[2]) =
+      //     std::tuple{cs[order[0]], cs[order[1]], cs[order[2]]};
+      // std::tie(dReal(0), dReal(1), dReal(2)) =
+      //     std::tuple{dReal(order[0]), dReal(order[1]), dReal(order[2])};
+      // helpers::print(dReal, "D_REAL (sorted)", true);
+
+      // // swap columns of p according to order
+      // auto pOrig = p;
+      // for (int i = 0; i < static_cast<int>(order.size()); ++i) {
+      //   p.col(i) = pOrig.col(order[i]);
+      // }
+
+      // std::tie(p, d) = selfAdjointEigenLower(m2);
+
+      // dReal = -1.0 * d.cwiseArg() / 2.0;
+      // helpers::print(dReal, "D_REAL", true);
+      // dReal(3) = -dReal(0) - dReal(1) - dReal(2);
+      // for (int i = 0; i < static_cast<int>(cs.size()); ++i) {
+      //   assert(i < dReal.size());
+      //   cs[i] = remEuclid((dReal(i) + dReal(3)) / 2.0, qc::TAU);
+      // }
+      // matrix4x4 temp = d.asDiagonal();
 
       if (p.determinant().real() < 0.0) {
+        std::cerr << "SECOND CORRECTION?\n";
         auto lastColumnIndex = p.cols() - 1;
-        p.col(lastColumnIndex) = -p.col(lastColumnIndex);
+        p.col(lastColumnIndex) *= -1.0;
       }
 
-      matrix4x4 temp = dReal.asDiagonal();
-      temp *= IM;
-      temp = temp.exp();
+      matrix4x4 temp = d.asDiagonal();
+      // temp *= IM;
+      // temp = temp.exp();
       helpers::print(temp, "TEMP");
       helpers::print(p, "P", true);
       // https://threeplusone.com/pubs/on_gates.pdf
       // uP = V, m2 = V^T*V, temp = D, p = Q1
       auto k1 = magicBasisTransform(uP * p * temp, MagicBasisTransform::Into);
-      auto k2 = magicBasisTransform(p.transpose().conjugate(), MagicBasisTransform::Into);
+      auto k2 = magicBasisTransform(p.transpose().conjugate(),
+                                    MagicBasisTransform::Into);
 
       auto [K1l, K1r, phase_l] = decomposeTwoQubitProductGate(k1);
       auto [K2l, K2r, phase_r] = decomposeTwoQubitProductGate(k2);
