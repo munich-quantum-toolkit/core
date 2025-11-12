@@ -107,16 +107,26 @@ def PlacementPassSC : Pass<"placement-sc", "mlir::ModuleOp"> {
   ];
 }
 
-def RoutingPassSC : Pass<"route-sc", "mlir::ModuleOp"> {
+def NaiveRoutingPassSC : Pass<"route-naive-sc", "mlir::ModuleOp"> {
   let summary = "This pass ensures that a program meets the connectivity constraints of a given architecture.";
   let description = [{
     This pass inserts SWAP operations to ensure two-qubit gates are executable on a given target architecture.
   }];
   let options = [
-    Option<"method", "method", "RoutingMethod", "RoutingMethod::AStar",
-           "The routing method to use.", [{llvm::cl::values(
-             clEnumValN(RoutingMethod::Naive, "naive", "Swap along shortest paths"),
-             clEnumValN(RoutingMethod::AStar, "astar", "A*-search-based routing algorithm"))}]>,
+    Option<"archName", "arch", "std::string", "",
+           "The name of the targeted architecture.">,
+  ];
+  let statistics = [
+    Statistic<"numSwaps", "num-additional-swaps", "The number of additional SWAPs">
+  ];
+}
+
+def AStarRoutingPassSC : Pass<"route-astar-sc", "mlir::ModuleOp"> {
+  let summary = "This pass ensures that a program meets the connectivity constraints of a given architecture.";
+  let description = [{
+    This pass inserts SWAP operations to ensure two-qubit gates are executable on a given target architecture.
+  }];
+  let options = [
     Option<"archName", "arch", "std::string", "",
            "The name of the targeted architecture.">,
     Option<"nlookahead", "nlookahead", "std::size_t", "1",

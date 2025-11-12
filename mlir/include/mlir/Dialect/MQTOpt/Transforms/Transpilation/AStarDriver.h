@@ -17,8 +17,6 @@
 #include "mlir/Dialect/MQTOpt/Transforms/Transpilation/Common.h"
 #include "mlir/Dialect/MQTOpt/Transforms/Transpilation/Layout.h"
 #include "mlir/Dialect/MQTOpt/Transforms/Transpilation/RoutingDriverBase.h"
-#include "mlir/IR/Dominance.h"
-#include "mlir/Interfaces/ControlFlowInterfaces.h"
 
 #include "llvm/Support/ErrorHandling.h"
 
@@ -30,6 +28,7 @@
 #include <llvm/Support/Debug.h>
 #include <memory>
 #include <mlir/Dialect/SCF/IR/SCF.h>
+#include <mlir/IR/Dominance.h>
 #include <mlir/IR/Operation.h>
 #include <mlir/IR/PatternMatch.h>
 #include <mlir/Support/LLVM.h>
@@ -174,9 +173,9 @@ private:
                         PatternRewriter& rewriter) const {
     /// Find layers.
     LayerVec layers = schedule(layout);
-    /// Route the layers. Might break SSA Dominance.
+    /// Route the layers. Might break SSA dominance.
     route(layout, layers, rewriter);
-    /// Repair any SSA Dominance Issues.
+    /// Repair any SSA dominance issues.
     for (Block& block : region.getBlocks()) {
       sortTopologically(&block);
     }
@@ -190,7 +189,7 @@ private:
     for (LayerVec::iterator it = layers.begin(); it != end; ++it) {
       LayerVec::iterator lookaheadIt = std::min(end, it + 1 + nlookahead_);
 
-      auto& front = *it; /// == window.front()
+      auto& front = *it; // == window.front()
       auto window = llvm::make_range(it, lookaheadIt);
       auto windowLayerGates = to_vector(llvm::map_range(
           window, [](const Layer& layer) { return ArrayRef(layer.gates); }));

@@ -80,4 +80,35 @@ using QubitIndexPair = std::pair<QubitIndex, QubitIndex>;
  */
 [[nodiscard]] mlir::Operation* getUserInRegion(mlir::Value v,
                                                mlir::Region* region);
+
+/**
+ * @brief Create and return SWAPOp for two qubits.
+ *
+ * Expects the rewriter to be set to the correct position.
+ *
+ * @param location The Location to attach to the created op.
+ * @param in0 First input qubit SSA value.
+ * @param in1 Second input qubit SSA value.
+ * @param rewriter A PatternRewriter.
+ * @return The created SWAPOp.
+ */
+[[nodiscard]] SWAPOp createSwap(mlir::Location location, mlir::Value in0,
+                                mlir::Value in1,
+                                mlir::PatternRewriter& rewriter);
+
+/**
+ * @brief Replace all uses of a value within a region and its nested regions,
+ * except for a specific operation.
+ *
+ * @param oldValue The value to replace.
+ * @param newValue The new value to use.
+ * @param region The region in which to perform replacements.
+ * @param exceptOp Operation to exclude from replacements.
+ * @param rewriter The pattern rewriter.
+ */
+void replaceAllUsesInRegionAndChildrenExcept(mlir::Value oldValue,
+                                             mlir::Value newValue,
+                                             mlir::Region* region,
+                                             mlir::Operation* exceptOp,
+                                             mlir::PatternRewriter& rewriter);
 } // namespace mqt::ir::opt
