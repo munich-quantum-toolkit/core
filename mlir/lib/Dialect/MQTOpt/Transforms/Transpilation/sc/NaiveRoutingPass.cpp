@@ -39,7 +39,7 @@
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/WalkResult.h>
 
-#define DEBUG_TYPE "route-sc"
+#define DEBUG_TYPE "route-naive-sc"
 
 namespace mqt::ir::opt {
 
@@ -372,6 +372,7 @@ LogicalResult processFunction(func::FuncOp func, RoutingContext& ctx) {
  *
  * @param module The module to route.
  * @param arch The targeted architecture.
+ * @param stats The composite statistics datastructure.
  */
 LogicalResult route(ModuleOp module, std::unique_ptr<Architecture> arch,
                     Statistics& stats) {
