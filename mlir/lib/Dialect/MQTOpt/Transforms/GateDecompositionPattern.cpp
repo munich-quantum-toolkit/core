@@ -426,11 +426,14 @@ struct GateDecompositionPattern final
     auto [U, S] = helpers::selfAdjointEvd(std::forward<T>(a));
 
     // TODO: not in original code
-    if (std::abs(U.determinant() + 1.0) < 1e-5) {
+    if (std::real(U.determinant()) < 0.0) {
       std::cerr << "CORRECTION!\n";
       // if determinant of eigenvector matrix is -1.0, multiply first
       // eigenvector by -1.0
       U.col(0) *= -1.0;
+      // U.col(U.cols() - 1) *= -1.0;
+      // U *= -1.0;
+      // U += std::remove_cvref_t<T>::Constant(0.0); // ensure no -0.0 exists
     }
 
     return std::make_pair(U, S);
@@ -479,13 +482,14 @@ struct GateDecompositionPattern final
     matrix2x2 r{{specialUnitary(0, 0), specialUnitary(0, 1)},
                 {specialUnitary(1, 0), specialUnitary(1, 1)}};
     auto detR = r.determinant();
+    std::cerr << "DET_R: " << detR << '\n';
     if (std::abs(detR) < 0.1) {
       // third quadrant
       r = matrix2x2{{specialUnitary(2, 0), specialUnitary(2, 1)},
                     {specialUnitary(3, 0), specialUnitary(3, 1)}};
       detR = r.determinant();
+    std::cerr << "DET_R CORRECTION: " << detR << '\n';
     }
-    std::cerr << "DET_R: " << detR << '\n';
     if (std::abs(detR) < 0.1) {
       throw std::runtime_error{
           "decompose_two_qubit_product_gate: unable to decompose: det_r < 0.1"};
@@ -729,6 +733,9 @@ struct GateDecompositionPattern final
         // TODO: check qubit order
         return rzzMatrix(gate.parameter[0]);
       }
+      if (gate.type == qc::I) {
+        return kroneckerProduct(IDENTITY_GATE, IDENTITY_GATE);
+      }
       throw std::invalid_argument{
           "unsupported gate type for two qubit matrix "};
     }
@@ -821,7 +828,11 @@ struct GateDecompositionPattern final
         helpers::print(compare, "COMPARE");
         found = (compare - m2).cwiseAbs().cwiseLessOrEqual(1.0e-13).all();
         if (found) {
+          // p are the eigenvectors which are decomposed into the
+          // single-qubit gates surrounding the canonical gate
           p = pInner;
+          // d is the sqrt of the eigenvalues that are used to determine the
+          // weyl coordinates and thus the parameters of the canonical gate
           d = dInner;
           break;
         }
@@ -832,8 +843,7 @@ struct GateDecompositionPattern final
       }
       // check that p is in SO(4)
       assert((p.transpose() * p).isIdentity());
-      assert(std::abs(p.determinant() - 1.0) < 1e-13);
-      // make sure de4terminant of sqrt(eigenvalues) is 1.0
+      // make sure determinant of sqrt(eigenvalues) is 1.0
       assert(std::abs(matrix4x4{d.asDiagonal()}.determinant() - 1.0) < 1e-13);
 
       // see
@@ -906,18 +916,21 @@ struct GateDecompositionPattern final
       }
       dReal *= qc::PI;
       cs *= qc::PI;
+      assert(std::abs(p.determinant() - 1.0) < 1e-13);
 
       matrix4x4 temp = dReal.asDiagonal();
       temp *= IM;
       temp = temp.exp();
-      helpers::print(temp, "TEMP");
+      helpers::print(temp, "TEMP", true);
       helpers::print(p, "P", true);
       // https://threeplusone.com/pubs/on_gates.pdf
       // uP = V, m2 = V^T*V, temp = D, p = Q1
       matrix4x4 k1 = uP * p * temp;
+      helpers::print(k1, "K1 (1)", true);
       assert((k1.transpose() * k1).isIdentity()); // k1 must be orthogonal
       k1 = magicBasisTransform(k1, MagicBasisTransform::Into);
       matrix4x4 k2 = p.transpose().conjugate();
+      helpers::print(k2, "K2 (1)", true);
       assert((k2.transpose() * k2).isIdentity()); // k2 must be orthogonal
       k2 = magicBasisTransform(k2, MagicBasisTransform::Into);
 
