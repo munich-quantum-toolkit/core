@@ -50,6 +50,7 @@ jobs:
         if: runner.os == 'Linux' || runner.os == 'macOS'
         run: |
           INSTALL_PREFIX=$PWD/llvm-project
+          mkdir -p $INSTALL_PREFIX
 
           bash ${{ github.workspace }}/.github/scripts/install-mlir.sh -t test-release -p $INSTALL_PREFIX
 
@@ -65,7 +66,8 @@ jobs:
       - name: Setup LLVM/MLIR (Windows)
         if: runner.os == 'Windows'
         run: |
-          $INSTALL_PREFIX=$PWD/llvm-project
+          $INSTALL_PREFIX=$PWD\llvm-project
+          mkdir $INSTALL_PREFIX
 
           pwsh ${{ github.workspace }}\.github\scripts\install-mlir.ps1 -tag test-release -install_prefix $INSTALL_PREFIX
 
