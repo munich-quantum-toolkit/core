@@ -852,7 +852,7 @@ struct GateDecompositionPattern final
       rdiagonal4x4 dReal = -1.0 * d.cwiseArg() / 2.0;
       helpers::print(dReal, "D_REAL", true);
       dReal(3) = -dReal(0) - dReal(1) - dReal(2);
-      Eigen::Vector<fp, 4> cs{};
+      Eigen::Vector<fp, 3> cs{};
       for (int i = 0; i < static_cast<int>(cs.size()); ++i) {
         assert(i < dReal.size());
         cs[i] = remEuclid((dReal(i) + dReal(3)) / 2.0, qc::TAU);
@@ -865,7 +865,7 @@ struct GateDecompositionPattern final
         return std::min(tmp, qc::PI_2 - tmp);
       });
       std::array<int, cstemp.size()> order{
-          0, 1, 2, 3}; // TODO: needs to be adjusted depending on eigenvector
+          0, 1, 2}; // TODO: needs to be adjusted depending on eigenvector
                     // order in eigen decomposition algorithm?
       llvm::stable_sort(order,
                         [&](auto a, auto b) { return cstemp[a] < cstemp[b]; });
@@ -876,12 +876,12 @@ struct GateDecompositionPattern final
       //   tmp2 = std::min(tmp2, qc::PI_2 - tmp2);
       //   return tmp1 < tmp2;
       // });
-      std::tie(order[0], order[1], order[2], order[3]) =
-          std::tuple{order[3], order[1], order[2], order[0]};
-      std::tie(cs[0], cs[1], cs[2], cs[3]) =
-          std::tuple{cs[order[0]], cs[order[1]], cs[order[2]], cs[order[3]]};
-      std::tie(dReal(0), dReal(1), dReal(2), dReal(3)) =
-          std::tuple{dReal(order[0]), dReal(order[1]), dReal(order[2]), dReal(order[3])};
+      std::tie(order[0], order[1], order[2]) =
+          std::tuple{order[1], order[2], order[0]};
+      std::tie(cs[0], cs[1], cs[2]) =
+          std::tuple{cs[order[0]], cs[order[1]], cs[order[2]]};
+      std::tie(dReal(0), dReal(1), dReal(2)) =
+          std::tuple{dReal(order[0]), dReal(order[1]), dReal(order[2])};
       helpers::print(dReal, "D_REAL (sorted)", true);
 
       // swap columns of p according to order
@@ -898,7 +898,6 @@ struct GateDecompositionPattern final
                 // p = -1.0 * p;
       // p += matrix4x4::Constant(0.0); // ensure no -0.0 exists
       }
-      assert(std::abs(p.determinant() - 1.0) < 1e-13);
 
       matrix4x4 temp = dReal.asDiagonal();
       temp *= IM;
@@ -907,6 +906,7 @@ struct GateDecompositionPattern final
       // temp += matrix4x4::Constant(0.0);
       helpers::print(temp, "TEMP", true);
       helpers::print(p, "P", true);
+      assert(std::abs(p.determinant() - 1.0) < 1e-13);
       // https://threeplusone.com/pubs/on_gates.pdf
       // uP = V, m2 = V^T*V, temp = D, p = Q1
       matrix4x4 k1 = uP * p * temp;
@@ -975,7 +975,7 @@ struct GateDecompositionPattern final
         globalPhase -= qc::PI_2;
       }
       helpers::print(cs, "CS (2)", true);
-      auto [a, b, c] = std::tie(cs[2], cs[1], cs[3]);
+      auto [a, b, c] = std::tie(cs[1], cs[0], cs[2]);
       auto isClose = [&](fp ap, fp bp, fp cp) -> bool {
         auto da = a - ap;
         auto db = b - bp;
