@@ -849,78 +849,62 @@ struct GateDecompositionPattern final
       // see
       // https://github.com/mpham26uchicago/laughing-umbrella/blob/main/background/Full%20Two%20Qubit%20KAK%20Implementation.ipynb,
       // Step 7
-      // rdiagonal4x4 dReal = -1.0 * d.cwiseArg() / 2.0;
-      // helpers::print(dReal, "D_REAL", true);
-      // dReal(3) = -dReal(0) - dReal(1) - dReal(2);
-      // Eigen::Vector<fp, 3> cs{};
-      // for (int i = 0; i < static_cast<int>(cs.size()); ++i) {
-      //   assert(i < dReal.size());
-      //   cs[i] = remEuclid((dReal(i) + dReal(3)) / 2.0, qc::TAU);
-      // }
-      // helpers::print(cs, "CS", true);
+      rdiagonal4x4 dReal = -1.0 * d.cwiseArg() / 2.0;
+      helpers::print(dReal, "D_REAL", true);
+      dReal(3) = -dReal(0) - dReal(1) - dReal(2);
+      Eigen::Vector<fp, 4> cs{};
+      for (int i = 0; i < static_cast<int>(cs.size()); ++i) {
+        assert(i < dReal.size());
+        cs[i] = remEuclid((dReal(i) + dReal(3)) / 2.0, qc::TAU);
+      }
+      helpers::print(cs, "CS (1)", true);
 
-      // decltype(cs) cstemp;
-      // llvm::transform(cs, cstemp.begin(), [](auto&& x) {
-      //   auto tmp = remEuclid(x, qc::PI_2);
-      //   return std::min(tmp, qc::PI_2 - tmp);
+      decltype(cs) cstemp;
+      llvm::transform(cs, cstemp.begin(), [](auto&& x) {
+        auto tmp = remEuclid(x, qc::PI_2);
+        return std::min(tmp, qc::PI_2 - tmp);
+      });
+      std::array<int, cstemp.size()> order{
+          0, 1, 2, 3}; // TODO: needs to be adjusted depending on eigenvector
+                    // order in eigen decomposition algorithm?
+      llvm::stable_sort(order,
+                        [&](auto a, auto b) { return cstemp[a] < cstemp[b]; });
+      // llvm::stable_sort(order, [&](fp a, fp b) {
+      //   auto tmp1 = remEuclid(cs[a], qc::PI_2);
+      //   tmp1 = std::min(tmp1, qc::PI_2 - tmp1);
+      //   auto tmp2 = remEuclid(cs[b], qc::PI_2);
+      //   tmp2 = std::min(tmp2, qc::PI_2 - tmp2);
+      //   return tmp1 < tmp2;
       // });
-      // std::array<int, cstemp.size()> order{
-      //     2, 1, 0}; // TODO: needs to be adjusted depending on eigenvector
-      //               // order in eigen decomposition algorithm?
-      // llvm::stable_sort(order,
-      //                   [&](auto a, auto b) { return cstemp[a] < cstemp[b]; });
-      // std::tie(order[0], order[1], order[2]) =
-      //     std::tuple{order[1], order[2], order[0]};
-      // std::tie(cs[0], cs[1], cs[2]) =
-      //     std::tuple{cs[order[0]], cs[order[1]], cs[order[2]]};
-      // std::tie(dReal(0), dReal(1), dReal(2)) =
-      //     std::tuple{dReal(order[0]), dReal(order[1]), dReal(order[2])};
-      // helpers::print(dReal, "D_REAL (sorted)", true);
+      std::tie(order[0], order[1], order[2], order[3]) =
+          std::tuple{order[3], order[1], order[2], order[0]};
+      std::tie(cs[0], cs[1], cs[2], cs[3]) =
+          std::tuple{cs[order[0]], cs[order[1]], cs[order[2]], cs[order[3]]};
+      std::tie(dReal(0), dReal(1), dReal(2), dReal(3)) =
+          std::tuple{dReal(order[0]), dReal(order[1]), dReal(order[2]), dReal(order[3])};
+      helpers::print(dReal, "D_REAL (sorted)", true);
 
-      // // swap columns of p according to order
-      // auto pOrig = p;
-      // for (int i = 0; i < static_cast<int>(order.size()); ++i) {
-      //   p.col(i) = pOrig.col(order[i]);
-      // }
+      // swap columns of p according to order
+      matrix4x4 pOrig = p;
+      for (int i = 0; i < static_cast<int>(order.size()); ++i) {
+        p.col(i) = pOrig.col(order[i]);
+      }
 
-      // if (p.determinant().real() < 0.0) {
-      //   std::cerr << "SECOND CORRECTION?\n";
-      //   auto lastColumnIndex = p.cols() - 1;
-      //   p.col(lastColumnIndex) *= -1.0;
-      // }
-
-      // https://weylchamber.readthedocs.io/en/latest/_modules/weylchamber/coordinates.html#c1c2c3
-      Eigen::Vector<fp, 3> cs;
-      Eigen::Vector<fp, 4> dReal = d.cwiseArg() / qc::PI;
-      for (auto& x : dReal) {
-        if (x <= -0.5) {
-          x += 2.0;
-        }
+      if (p.determinant().real() < 0.0) {
+        std::cerr << "SECOND CORRECTION?\n";
+        auto lastColumnIndex = p.cols() - 1;
+        p.col(lastColumnIndex) *= -1.0;
+      } else {
+                // p = -1.0 * p;
+      // p += matrix4x4::Constant(0.0); // ensure no -0.0 exists
       }
-      dReal /= 2.0;
-      llvm::stable_sort(dReal, std::greater<>());
-      int n = std::round(dReal.sum());
-      for (int i = 0; i < n; ++i) {
-        dReal[i] -= 1.0;
-      }
-      decltype(dReal) origDReal = dReal;
-      for (int i = 0; i < dReal.size(); ++i) {
-        // roll(-n)
-        dReal[i] = origDReal[i >= n ? i - n : dReal.size() - (i - n)];
-      }
-      Eigen::Matrix<fp, 3, 3> M {{1, 1, 0}, {1, 0, 1}, {0, 1, 1}};
-      cs = M * dReal.head(3);
-      if (cs[2] < 0.0) {
-        cs[0] = 1.0 - cs[0];
-        cs[2] *= -1.0;
-      }
-      dReal *= qc::PI;
-      cs *= qc::PI;
       assert(std::abs(p.determinant() - 1.0) < 1e-13);
 
       matrix4x4 temp = dReal.asDiagonal();
       temp *= IM;
       temp = temp.exp();
+      // temp = temp.conjugate();
+      // temp += matrix4x4::Constant(0.0);
       helpers::print(temp, "TEMP", true);
       helpers::print(p, "P", true);
       // https://threeplusone.com/pubs/on_gates.pdf
@@ -990,7 +974,8 @@ struct GateDecompositionPattern final
         K1r = K1r * IPZ;
         globalPhase -= qc::PI_2;
       }
-      auto [a, b, c] = std::tie(cs[1], cs[0], cs[2]);
+      helpers::print(cs, "CS (2)", true);
+      auto [a, b, c] = std::tie(cs[2], cs[1], cs[3]);
       auto isClose = [&](fp ap, fp bp, fp cp) -> bool {
         auto da = a - ap;
         auto db = b - bp;
