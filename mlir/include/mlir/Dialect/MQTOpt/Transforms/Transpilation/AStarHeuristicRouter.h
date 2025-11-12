@@ -140,8 +140,7 @@ private:
   using MinQueue = std::priority_queue<Node, std::vector<Node>, std::greater<>>;
 
 public:
-  [[nodiscard]] RouterResult route(const Layers layers,
-                                   const ThinLayout& layout,
+  [[nodiscard]] RouterResult route(Layers layers, const ThinLayout& layout,
                                    const Architecture& arch) const {
     Node root(layout);
 
