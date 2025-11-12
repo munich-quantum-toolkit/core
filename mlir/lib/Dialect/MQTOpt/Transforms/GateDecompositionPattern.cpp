@@ -799,28 +799,13 @@ struct GateDecompositionPattern final
       // make sure de4terminant of sqrt(eigenvalues) is 1.0
       assert(std::abs(matrix4x4{d.asDiagonal()}.determinant() - 1.0) < 1e-13);
 
-      // see https://github.com/mpham26uchicago/laughing-umbrella/blob/main/background/Full%20Two%20Qubit%20KAK%20Implementation.ipynb, Step 7
-      Eigen::Matrix<fp, 3, 3> coefficientMatrix {{1, 1, 1}, {-1, 1, -1}, {1, -1, -1}};
-      auto theta_vec = d.cwiseArg().head(3);
-      Eigen::Vector<fp, 3> tmp = coefficientMatrix.inverse() * theta_vec;
-      Eigen::Vector<fp, 3> cs{ 2.0 * tmp(0), -2.0 * tmp(1), 2.0 * tmp(2) };
-      // bring cs into weyl chamber
-      cs /= qc::PI;
-      cs -= cs.unaryExpr([](auto&& x) { return std::floor(x); });
-      std::ranges::sort(cs, std::greater<>());
-      if (cs[0] + cs[1] >= 1.0) {
-        cs = decltype(cs){ 1 - cs[0], cs[1], 0.0 };
-      std::ranges::sort(cs, std::greater<>());
-      }
-      if (cs[0] > 0.5 && std::abs(cs[2]) < 1e-13) {
-        cs = decltype(cs) { 1 - cs[0], cs[1], 0.0 };
-      }
-      cs *= qc::PI;
-
-      // rdiagonal4x4 dReal = d.cwiseArg() / 2.0;
+      // see
+      // https://github.com/mpham26uchicago/laughing-umbrella/blob/main/background/Full%20Two%20Qubit%20KAK%20Implementation.ipynb,
+      // Step 7
+      // rdiagonal4x4 dReal = -1.0 * d.cwiseArg() / 2.0;
       // helpers::print(dReal, "D_REAL", true);
       // dReal(3) = -dReal(0) - dReal(1) - dReal(2);
-      // std::array<fp, 3> cs{};
+      // Eigen::Vector<fp, 3> cs{};
       // for (int i = 0; i < static_cast<int>(cs.size()); ++i) {
       //   assert(i < dReal.size());
       //   cs[i] = remEuclid((dReal(i) + dReal(3)) / 2.0, qc::TAU);
@@ -851,33 +836,53 @@ struct GateDecompositionPattern final
       //   p.col(i) = pOrig.col(order[i]);
       // }
 
-      // std::tie(p, d) = selfAdjointEigenLower(m2);
-
-      // dReal = -1.0 * d.cwiseArg() / 2.0;
-      // helpers::print(dReal, "D_REAL", true);
-      // dReal(3) = -dReal(0) - dReal(1) - dReal(2);
-      // for (int i = 0; i < static_cast<int>(cs.size()); ++i) {
-      //   assert(i < dReal.size());
-      //   cs[i] = remEuclid((dReal(i) + dReal(3)) / 2.0, qc::TAU);
+      // if (p.determinant().real() < 0.0) {
+      //   std::cerr << "SECOND CORRECTION?\n";
+      //   auto lastColumnIndex = p.cols() - 1;
+      //   p.col(lastColumnIndex) *= -1.0;
       // }
-      // matrix4x4 temp = d.asDiagonal();
 
-      if (p.determinant().real() < 0.0) {
-        std::cerr << "SECOND CORRECTION?\n";
-        auto lastColumnIndex = p.cols() - 1;
-        p.col(lastColumnIndex) *= -1.0;
+      // https://weylchamber.readthedocs.io/en/latest/_modules/weylchamber/coordinates.html#c1c2c3
+      Eigen::Vector<fp, 3> cs;
+      Eigen::Vector<fp, 4> dReal = d.cwiseArg() / qc::PI;
+      for (auto& x : dReal) {
+        if (x <= -0.5) {
+          x += 2.0;
+        }
       }
+      dReal /= 2.0;
+      llvm::stable_sort(dReal, std::greater<>());
+      int n = std::round(dReal.sum());
+      for (int i = 0; i < n; ++i) {
+        dReal[i] -= 1.0;
+      }
+      decltype(dReal) origDReal = dReal;
+      for (int i = 0; i < dReal.size(); ++i) {
+        // roll(-n)
+        dReal[i] = origDReal[i >= n ? i - n : dReal.size() - (i - n)];
+      }
+      Eigen::Matrix<fp, 3, 3> M {{1, 1, 0}, {1, 0, 1}, {0, 1, 1}};
+      cs = M * dReal.head(3);
+      if (cs[2] < 0.0) {
+        cs[0] = 1.0 - cs[0];
+        cs[2] *= -1.0;
+      }
+      dReal *= qc::PI;
+      cs *= qc::PI;
 
-      matrix4x4 temp = d.asDiagonal();
-      // temp *= IM;
-      // temp = temp.exp();
+      matrix4x4 temp = dReal.asDiagonal();
+      temp *= IM;
+      temp = temp.exp();
       helpers::print(temp, "TEMP");
       helpers::print(p, "P", true);
       // https://threeplusone.com/pubs/on_gates.pdf
       // uP = V, m2 = V^T*V, temp = D, p = Q1
-      auto k1 = magicBasisTransform(uP * p * temp, MagicBasisTransform::Into);
-      auto k2 = magicBasisTransform(p.transpose().conjugate(),
-                                    MagicBasisTransform::Into);
+      matrix4x4 k1 = uP * p * temp;
+      assert((k1.transpose() * k1).isIdentity()); // k1 must be orthogonal
+      k1 = magicBasisTransform(k1, MagicBasisTransform::Into);
+      matrix4x4 k2 = p.transpose().conjugate();
+      assert((k2.transpose() * k2).isIdentity()); // k2 must be orthogonal
+      k2 = magicBasisTransform(k2, MagicBasisTransform::Into);
 
       auto [K1l, K1r, phase_l] = decomposeTwoQubitProductGate(k1);
       auto [K2l, K2r, phase_r] = decomposeTwoQubitProductGate(k2);
