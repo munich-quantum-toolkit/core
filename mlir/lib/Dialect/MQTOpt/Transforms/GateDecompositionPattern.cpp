@@ -17,6 +17,7 @@
 #include <cmath>
 #include <cstddef>
 #include <eigen3/unsupported/Eigen/MatrixFunctions>
+#include <eigen3/unsupported/Eigen/CXX11/Tensor>
 #include <llvm/ADT/STLExtras.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/Operation.h>
@@ -437,7 +438,43 @@ struct GateDecompositionPattern final
 
   static std::tuple<matrix2x2, matrix2x2, fp>
   decomposeTwoQubitProductGate(matrix4x4 specialUnitary) {
+    // see pennylane math.decomposition.su2su2_to_tensor_products
+    // or "7.1 Kronecker decomposition" in on_gates.pdf
     helpers::print(specialUnitary, "SPECIAL_UNITARY");
+
+    // Step 1: Reshape and permute C like in Python
+    // C (4x4) is considered as (2,2,2,2) tensor, transpose(0,2,1,3)
+    matrix4x4 C;
+
+    // Perform the same rearrangement as Python's transpose(0,2,1,3)
+    // This swaps certain 2x2 blocks in C_in.
+    // The pattern is determined by the tensor index mapping.
+    for (int i = 0; i < 2; ++i)
+        for (int j = 0; j < 2; ++j)
+            for (int k = 0; k < 2; ++k)
+                for (int l = 0; l < 2; ++l) {
+                    int row_in = 2 * i + k;
+                    int col_in = 2 * j + l;
+                    int row_out = 2 * i + j;
+                    int col_out = 2 * k + l;
+                    C(row_out, col_out) = specialUnitary(row_in, col_in);
+                }
+
+    // Step 2: SVD
+    Eigen::JacobiSVD<matrix4x4> svd(C, Eigen::ComputeFullU | Eigen::ComputeFullV);
+    Eigen::Vector4d singularValues = svd.singularValues();
+    matrix4x4 U = svd.matrixU();
+    matrix4x4 V = svd.matrixV();
+
+    // Step 3: Extract first singular component
+    double s = std::sqrt(singularValues(0));
+
+    matrix2x2 A = s * U.col(0).reshaped(2, 2);
+    matrix2x2 B = s * V.col(0).reshaped(2, 2).transpose(); // vh[0, :] in numpy == V^T.row(0)
+
+    // return {A, B, s};
+
+
     // first quadrant
     matrix2x2 r{{specialUnitary(0, 0), specialUnitary(0, 1)},
                 {specialUnitary(1, 0), specialUnitary(1, 1)}};
