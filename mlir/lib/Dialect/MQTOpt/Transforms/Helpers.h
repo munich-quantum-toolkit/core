@@ -59,13 +59,7 @@ void print(Eigen::Matrix<T, N, M> matrix, const std::string& s = "",
   if (!s.empty()) {
     llvm::errs() << "=== " << s << " ===\n";
   }
-  for (int i = 0; i < matrix.cols(); ++i) {
-    for (int j = 0; j < matrix.rows(); ++j) {
-      print(matrix(j, i));
-      std::cerr << ' ';
-    }
-    llvm::errs() << '\n';
-  }
+  std::cerr << matrix;
   llvm::errs() << '\n';
 }
 
