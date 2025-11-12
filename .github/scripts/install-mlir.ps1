@@ -1,4 +1,4 @@
-# Usage: & install-mlir.ps1 -tag <tag> -installation_dir <installation directory>
+# Usage: install-mlir.ps1 -tag <tag> -install_prefix <installation directory>
 param(
     [Parameter(Mandatory=$true)]
     [string]$tag,

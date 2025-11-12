@@ -49,28 +49,30 @@ jobs:
       - name: Setup LLVM/MLIR (Linux and macOS)
         if: runner.os == 'Linux' || runner.os == 'macOS'
         run: |
-          mkdir llvm-project
+          INSTALL_PREFIX=$PWD/llvm-project
 
-          bash ${{ github.workspace }}/.github/scripts/install-mlir.sh -t test-release -p $PWD/llvm-project
+          bash ${{ github.workspace }}/.github/scripts/install-mlir.sh -t test-release -p $INSTALL_PREFIX
 
           # Set environment variable for subsequent steps
-          echo "LLVM_DIR=$PWD/llvm-project/lib/cmake/llvm" >> $GITHUB_ENV
-          echo "MLIR_DIR=$PWD/llvm-project/lib/cmake/mlir" >> $GITHUB_ENV
-          echo "PATH=$PWD/llvm-project/bin:$PATH" >> $GITHUB_ENV
+          echo "LLVM_DIR=$INSTALL_PREFIX/lib/cmake/llvm" >> $GITHUB_ENV
+          echo "MLIR_DIR=$INSTALL_PREFIX/lib/cmake/mlir" >> $GITHUB_ENV
+          echo "PATH=$INSTALL_PREFIX/bin:$PATH" >> $GITHUB_ENV
+
+      - name: Install zstandard (Windows)
+        if: runner.os == 'Windows'
+        run: choco install -y zstandard
 
       - name: Setup LLVM/MLIR (Windows)
         if: runner.os == 'Windows'
         run: |
-          choco install -y zstandard
+          $INSTALL_PREFIX=$PWD/llvm-project
 
-          mkdir llvm-project
-
-          & ${{ github.workspace }}\.github\scripts\install-mlir.ps1 -tag test-release -install_prefix $PWD\llvm-project
+          pwsh ${{ github.workspace }}\.github\scripts\install-mlir.ps1 -tag test-release -install_prefix $INSTALL_PREFIX
 
           # Set environment variable for subsequent steps
-          echo "LLVM_DIR=$PWD/llvm-project/lib/cmake/llvm" | Out-File -FilePath $env:GITHUB_ENV -Append
-          echo "MLIR_DIR=$PWD/llvm-project/lib/cmake/mlir" | Out-File -FilePath $env:GITHUB_ENV -Append
-          echo "$PWD/llvm-project/bin" | Out-File -FilePath $env:GITHUB_PATH -Append
+          echo "LLVM_DIR=$INSTALL_PREFIX/lib/cmake/llvm" | Out-File -FilePath $env:GITHUB_ENV -Append
+          echo "MLIR_DIR=$INSTALL_PREFIX/lib/cmake/mlir" | Out-File -FilePath $env:GITHUB_ENV -Append
+          echo "$INSTALL_PREFIX/bin" | Out-File -FilePath $env:GITHUB_PATH -Append
 
       # Build acceleration and Python tooling
       - name: Set up mold as linker (Linux)
