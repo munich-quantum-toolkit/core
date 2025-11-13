@@ -319,7 +319,7 @@ struct GateDecompositionPattern final
       auto gateMatrix = getTwoQubitMatrix(gate);
       unitaryMatrix = gateMatrix * unitaryMatrix;
 
-      std::cerr << qc::toString(gate.type) << ", ";
+      std::cerr << qc::toString(gate.type) << "(" << (gate.parameter.empty() ? -1000.0 : gate.parameter[0]) << ")" << ", ";
       if (gate.type == qc::X) {
         mlir::SmallVector<mlir::Value, 1> inCtrlQubits;
         if (gate.qubitId.size() > 1) {
@@ -921,6 +921,7 @@ struct GateDecompositionPattern final
 
       auto [cs, permutation, signs] = constrain_to_weyl(q);
       cs *= -qc::PI_2;
+      matrix4x4 p2 = p;
 
       q = q.cwiseProduct(signs);
       auto origQ = q;
@@ -929,11 +930,63 @@ struct GateDecompositionPattern final
       assert(permutation.size() == p.cols());
       for (std::size_t i = 0; i < permutation.size(); ++i) {
         q[i] = origQ[permutation[i]];
-        p.col(i) = origP.row(permutation[i]);
+        p2.col(i) = origP.row(permutation[i]);
       }
       // p.transposeInPlace();
       matrix4x4 temp = q.asDiagonal();
       temp = temp.conjugate();
+
+      // see
+      // https://github.com/mpham26uchicago/laughing-umbrella/blob/main/background/Full%20Two%20Qubit%20KAK%20Implementation.ipynb,
+      // Step 7
+      rdiagonal4x4 dReal = -1.0 * d.cwiseArg() / 2.0;
+      helpers::print(dReal, "D_REAL", true);
+      dReal(3) = -dReal(0) - dReal(1) - dReal(2);
+      for (int i = 0; i < static_cast<int>(cs.size()); ++i) {
+        assert(i < dReal.size());
+        cs[i] = remEuclid((dReal(i) + dReal(3)) / 2.0, qc::TAU);
+      }
+      helpers::print(cs, "CS (1)", true);
+
+      decltype(cs) cstemp;
+      llvm::transform(cs, cstemp.begin(), [](auto&& x) {
+        auto tmp = remEuclid(x, qc::PI_2);
+        return std::min(tmp, qc::PI_2 - tmp);
+      });
+      std::array<int, cstemp.size()> order{
+          0, 1, 2}; // TODO: needs to be adjusted depending on eigenvector
+                    // order in eigen decomposition algorithm?
+      llvm::stable_sort(order,
+                        [&](auto a, auto b) { return cstemp[a] < cstemp[b]; });
+      // llvm::stable_sort(order, [&](fp a, fp b) {
+      //   auto tmp1 = remEuclid(cs[a], qc::PI_2);
+      //   tmp1 = std::min(tmp1, qc::PI_2 - tmp1);
+      //   auto tmp2 = remEuclid(cs[b], qc::PI_2);
+      //   tmp2 = std::min(tmp2, qc::PI_2 - tmp2);
+      //   return tmp1 < tmp2;
+      // });
+      std::tie(order[0], order[1], order[2]) =
+          std::tuple{order[1], order[2], order[0]};
+      std::tie(cs[0], cs[1], cs[2]) =
+          std::tuple{cs[order[0]], cs[order[1]], cs[order[2]]};
+      std::tie(dReal(0), dReal(1), dReal(2)) =
+          std::tuple{dReal(order[0]), dReal(order[1]), dReal(order[2])};
+      helpers::print(dReal, "D_REAL (sorted)", true);
+
+      // swap columns of p according to order
+      matrix4x4 pOrig = p;
+      for (int i = 0; i < static_cast<int>(order.size()); ++i) {
+        p.col(i) = pOrig.col(order[i]);
+      }
+            if (p.determinant().real() < 0.0) {
+        std::cerr << "SECOND CORRECTION?\n";
+        auto lastColumnIndex = p.cols() - 1;
+        p.col(lastColumnIndex) *= -1.0;
+      }
+
+      temp = dReal.asDiagonal();
+      temp *= IM;
+      temp = temp.exp();
 
       // temp = temp.conjugate();
       // temp += matrix4x4::Constant(0.0);
@@ -968,6 +1021,59 @@ struct GateDecompositionPattern final
       auto [K2l, K2r, phase_r] = decomposeTwoQubitProductGate(k2);
       globalPhase += phase_l + phase_r;
 
+      // Flip into Weyl chamber
+      if (cs[0] > qc::PI_2) {
+        cs[0] -= 3.0 * qc::PI_2;
+        K1l = K1l * IPY;
+        K1r = K1r * IPY;
+        globalPhase += qc::PI_2;
+      }
+      if (cs[1] > qc::PI_2) {
+        cs[1] -= 3.0 * qc::PI_2;
+        K1l = K1l * IPX;
+        K1r = K1r * IPX;
+        globalPhase += qc::PI_2;
+      }
+      auto conjs = 0;
+      if (cs[0] > qc::PI_4) {
+        cs[0] = qc::PI_2 - cs[0];
+        K1l = K1l * IPY;
+        K2r = IPY * K2r;
+        conjs += 1;
+        globalPhase -= qc::PI_2;
+      }
+      if (cs[1] > qc::PI_4) {
+        cs[1] = qc::PI_2 - cs[1];
+        K1l = K1l * IPX;
+        K2r = IPX * K2r;
+        conjs += 1;
+        globalPhase += qc::PI_2;
+        if (conjs == 1) {
+          globalPhase -= qc::PI;
+        }
+      }
+      if (cs[2] > qc::PI_2) {
+        cs[2] -= 3.0 * qc::PI_2;
+        K1l = K1l * IPZ;
+        K1r = K1r * IPZ;
+        globalPhase += qc::PI_2;
+        if (conjs == 1) {
+          globalPhase -= qc::PI;
+        }
+      }
+      if (conjs == 1) {
+        cs[2] = qc::PI_2 - cs[2];
+        K1l = K1l * IPZ;
+        K2r = IPZ * K2r;
+        globalPhase += qc::PI_2;
+      }
+      if (cs[2] > qc::PI_4) {
+        cs[2] -= qc::PI_2;
+        K1l = K1l * IPZ;
+        K1r = K1r * IPZ;
+        globalPhase -= qc::PI_2;
+      }
+
       helpers::print(K1l, "K1l (1)", true);
       helpers::print(K2l, "K2l (1)", true);
       helpers::print(K1r, "K1r (1)", true);
@@ -978,7 +1084,7 @@ struct GateDecompositionPattern final
       helpers::print(K2l, "K2l (2)", true);
       helpers::print(K1r, "K1r (2)", true);
       helpers::print(K2r, "K2r (2)", true);
-      auto [a, b, c] = std::tie(cs[0], cs[1], cs[2]);
+      auto [a, b, c] = std::tie(cs[1], cs[0], cs[2]);
       auto getCanonicalMatrix = [](fp a, fp b, fp c) -> matrix4x4 {
         auto xx = getTwoQubitMatrix({
             .type = qc::RXX,
