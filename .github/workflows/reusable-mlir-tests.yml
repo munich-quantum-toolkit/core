@@ -50,7 +50,7 @@ jobs:
       - name: Setup LLVM/MLIR (Linux and macOS)
         if: runner.os == 'Linux' || runner.os == 'macOS'
         run: |
-          INSTALL_PREFIX=$PWD/llvm-project
+          INSTALL_PREFIX=$HOME/llvm-project
           mkdir -p $INSTALL_PREFIX
 
           bash ${{ github.workspace }}/.github/scripts/install-mlir.sh -t ${{ env.TOOLCHAIN_TAG }} -p $INSTALL_PREFIX
@@ -67,7 +67,7 @@ jobs:
       - name: Setup LLVM/MLIR (Windows)
         if: runner.os == 'Windows'
         run: |
-          $INSTALL_PREFIX = Join-Path $PWD "llvm-project"
+          $INSTALL_PREFIX = Join-Path $HOME "llvm-project"
           mkdir $INSTALL_PREFIX
 
           pwsh ${{ github.workspace }}\.github\scripts\install-mlir.ps1 -tag ${{ env.TOOLCHAIN_TAG }} -install_prefix $INSTALL_PREFIX
@@ -139,8 +139,6 @@ jobs:
         run: |
           uvx gcovr \
               --gcov-executable "llvm-cov gcov" \
-              --exclude llvm-project \
-              --gcov-exclude-directory llvm-project \
               --exclude build \
               --exclude-unreachable-branches \
               --exclude-noncode-lines \
