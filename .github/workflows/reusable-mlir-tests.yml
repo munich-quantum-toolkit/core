@@ -82,6 +82,7 @@ jobs:
         uses: rui314/setup-mold@725a8794d15fc7563f59595bd9556495c0564878 # v1
 
       - name: Install the latest version of uv
+        id: setup-uv
         uses: astral-sh/setup-uv@85856786d1ce8acfbcc2f13a5f3fbd6b938f9f41 # v7.1.2
         with:
           python-version: 3.13
@@ -89,6 +90,9 @@ jobs:
           enable-cache: false
           restore-cache: false
           save-cache: ${{ github.ref == 'refs/heads/main' }}
+
+      - name: Echo uv-path
+        run: echo ${{ steps.setup-uv.outputs.uv-path }}
 
       - name: Install Ninja
         run: uv tool install ninja
