@@ -47,10 +47,6 @@ jobs:
           sudo rm -rf /opt/ghc
           sudo rm -rf "$AGENT_TOOLSDIRECTORY"
 
-      - name: Install zstandard (Windows)
-        if: runner.os == 'Windows'
-        run: choco install -y zstandard
-
       - name: Setup LLVM/MLIR
         uses: burgholzer/portable-mlir-toolchain@add-setup
         with:
