@@ -15,7 +15,7 @@ pushd $install_prefix > $null
 $arch = [System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture
 
 # Determine download URL
-$release_url = "https://api.github.com/repos/burgholzer/portable-mlir-toolchain/releases/tags/test-release-3"
+$release_url = "https://api.github.com/repos/burgholzer/portable-mlir-toolchain/releases/tags/$tag"
 $release_json = Invoke-RestMethod -Uri $release_url -Headers @{"Accept"="application/vnd.github+json"; "X-GitHub-Api-Version"="2022-11-28"}
 
 $assets_url = $release_json.assets_url
