@@ -55,7 +55,7 @@ RELEASE_JSON=$(curl -L \
                     -H "X-GitHub-Api-Version: 2022-11-28" \
                     "$RELEASE_URL")
 
-ASSETS_URL=$(echo "$RELEASE_JSON" | jq -r '.["assets_url"]')
+ASSETS_URL=$(echo "$RELEASE_JSON" | jq -r '.assets_url')
 ASSETS_JSON=$(curl -L \
                    -H "Accept: application/vnd.github+json" \
                    -H "X-GitHub-Api-Version: 2022-11-28" \
