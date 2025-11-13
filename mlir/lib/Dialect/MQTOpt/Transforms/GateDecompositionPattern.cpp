@@ -16,8 +16,8 @@
 #include <array>
 #include <cmath>
 #include <cstddef>
-#include <eigen3/unsupported/Eigen/MatrixFunctions>
 #include <eigen3/unsupported/Eigen/CXX11/Tensor>
+#include <eigen3/unsupported/Eigen/MatrixFunctions>
 #include <llvm/ADT/STLExtras.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/Operation.h>
@@ -846,62 +846,109 @@ struct GateDecompositionPattern final
       // make sure determinant of sqrt(eigenvalues) is 1.0
       assert(std::abs(matrix4x4{d.asDiagonal()}.determinant() - 1.0) < 1e-13);
 
-      // see
-      // https://github.com/mpham26uchicago/laughing-umbrella/blob/main/background/Full%20Two%20Qubit%20KAK%20Implementation.ipynb,
-      // Step 7
-      rdiagonal4x4 dReal = -1.0 * d.cwiseArg() / 2.0;
-      helpers::print(dReal, "D_REAL", true);
-      dReal(3) = -dReal(0) - dReal(1) - dReal(2);
-      Eigen::Vector<fp, 3> cs{};
-      for (int i = 0; i < static_cast<int>(cs.size()); ++i) {
-        assert(i < dReal.size());
-        cs[i] = remEuclid((dReal(i) + dReal(3)) / 2.0, qc::TAU);
+      diagonal4x4 q = d.cwiseSqrt();
+      auto det_q = q.prod();
+      if (det_q.real() < 0.0) {
+        q[0] *= -1.0;
       }
-      helpers::print(cs, "CS (1)", true);
+      // constrain to weyl
+      auto constrain_to_weyl = [](diagonal4x4 q) {
+        auto in_weyl = [](fp tx, fp ty, fp tz) {
+          return (0.5 >= tx && tx >= ty && ty >= tz && tz >= 0) ||
+                 (0.5 >= (1 - tx) && (1 - tx) >= ty && ty >= tz && tz > 0);
+        };
+        auto lambdas_to_coords = [](diagonal4x4 lambdas) {
+          // [2, eq.11], but using [1]s coordinates.
+          constexpr fp TOLERANCE = 1e-13;
 
-      decltype(cs) cstemp;
-      llvm::transform(cs, cstemp.begin(), [](auto&& x) {
-        auto tmp = remEuclid(x, qc::PI_2);
-        return std::min(tmp, qc::PI_2 - tmp);
-      });
-      std::array<int, cstemp.size()> order{
-          0, 1, 2}; // TODO: needs to be adjusted depending on eigenvector
-                    // order in eigen decomposition algorithm?
-      llvm::stable_sort(order,
-                        [&](auto a, auto b) { return cstemp[a] < cstemp[b]; });
-      // llvm::stable_sort(order, [&](fp a, fp b) {
-      //   auto tmp1 = remEuclid(cs[a], qc::PI_2);
-      //   tmp1 = std::min(tmp1, qc::PI_2 - tmp1);
-      //   auto tmp2 = remEuclid(cs[b], qc::PI_2);
-      //   tmp2 = std::min(tmp2, qc::PI_2 - tmp2);
-      //   return tmp1 < tmp2;
-      // });
-      std::tie(order[0], order[1], order[2]) =
-          std::tuple{order[1], order[2], order[0]};
-      std::tie(cs[0], cs[1], cs[2]) =
-          std::tuple{cs[order[0]], cs[order[1]], cs[order[2]]};
-      std::tie(dReal(0), dReal(1), dReal(2)) =
-          std::tuple{dReal(order[0]), dReal(order[1]), dReal(order[2])};
-      helpers::print(dReal, "D_REAL (sorted)", true);
+          auto [l1, l2, _, l4] =
+              std::array{lambdas[0], lambdas[1], lambdas[2], lambdas[3]};
+          auto c1 = std::real(IM * std::log(l1 * l2));
+          auto c2 = std::real(IM * std::log(l2 * l4));
+          auto c3 = std::real(IM * std::log(l1 * l4));
+          Eigen::Vector<fp, 3> coords{c1, c2, c3};
+          coords /= qc::PI;
 
-      // swap columns of p according to order
-      matrix4x4 pOrig = p;
-      for (int i = 0; i < static_cast<int>(order.size()); ++i) {
-        p.col(i) = pOrig.col(order[i]);
+          // if coords[i] == 1, then coords[i] = -1, else coords[i] = coords[i]
+          coords = (coords - decltype(coords)::Ones())
+                       .cwiseAbs()
+                       .cwiseLess(TOLERANCE)
+                       .select(-decltype(coords)::Ones(), coords)
+                       .eval();
+          if (coords.cwiseLess(0.0).all()) {
+            coords += decltype(coords)::Ones();
+          }
+
+          // If we're close to the boundary, floating point errors can conspire
+          // to make it seem that we're never on the inside
+          // Fix: If near boundary, reset to boundary
+
+          // Left
+          if (std::abs(coords[0] - coords[1]) < TOLERANCE) {
+            coords[1] = coords[0];
+          }
+
+          // Front
+          if (std::abs(coords[1] - coords[2]) < TOLERANCE) {
+            coords[2] = coords[1];
+          }
+
+          // Right
+          if (std::abs(coords[0] - coords[1] - 1.0 / 2.0) < TOLERANCE) {
+            coords[1] = coords[0] - 1.0 / 2.0;
+          }
+
+          // Base
+          coords =
+              (coords.array() < 0).select(decltype(coords)::Zero(), coords);
+
+          return coords;
+        };
+
+        auto permutation = std::array{0, 1, 2, 3};
+        while (true) {
+          for (auto signs :
+               std::array<Eigen::Vector<qfp, 4>, 4>{{{1, 1, 1, 1},
+                                                     {1, 1, -1, -1},
+                                                     {-1, 1, -1, 1},
+                                                     {1, -1, -1, 1}}}) {
+            decltype(q) signed_lambdas = q.cwiseProduct(signs);
+            // reorder according to permutation
+            decltype(signed_lambdas) lambdas_perm;
+            for (std::size_t i = 0; i < permutation.size(); ++i) {
+              lambdas_perm[i] = signed_lambdas[permutation[i]];
+            }
+
+            auto coords = lambdas_to_coords(lambdas_perm);
+
+            if (in_weyl(coords[0], coords[1], coords[2])) {
+              return std::make_tuple(coords, permutation, signs);
+            }
+          }
+          if (!std::ranges::next_permutation(permutation).found) {
+            throw std::runtime_error{
+                "Unable to find permutation to calculate Weyl coordinates!"};
+          }
+        }
+      };
+
+      auto [cs, permutation, signs] = constrain_to_weyl(q);
+
+      q = q.cwiseProduct(signs);
+      auto origQ = q;
+      matrix4x4 origP = signs.asDiagonal() * p.transpose();
+      assert(permutation.size() == q.size());
+      assert(permutation.size() == p.cols());
+      for (std::size_t i = 0; i < permutation.size(); ++i) {
+        q[i] = origQ[permutation[i]];
+        p.row(i) = origP.row(permutation[i]);
       }
+      p.transposeInPlace();
+      matrix4x4 temp = q.asDiagonal();
+      temp = temp.conjugate();
 
-      if (p.determinant().real() < 0.0) {
-        std::cerr << "SECOND CORRECTION?\n";
-        auto lastColumnIndex = p.cols() - 1;
-        p.col(lastColumnIndex) *= -1.0;
-      } else {
-                // p = -1.0 * p;
-      // p += matrix4x4::Constant(0.0); // ensure no -0.0 exists
-      }
 
-      matrix4x4 temp = dReal.asDiagonal();
-      temp *= IM;
-      temp = temp.exp();
+
       // temp = temp.conjugate();
       // temp += matrix4x4::Constant(0.0);
       helpers::print(temp, "TEMP", true);
@@ -912,10 +959,12 @@ struct GateDecompositionPattern final
       matrix4x4 k1 = uP * p * temp;
       helpers::print(k1, "K1 (1)", true);
       assert((k1.transpose() * k1).isIdentity()); // k1 must be orthogonal
+      assert(k1.determinant().real() > 0.0);
       k1 = magicBasisTransform(k1, MagicBasisTransform::Into);
       matrix4x4 k2 = p.transpose().conjugate();
       helpers::print(k2, "K2 (1)", true);
       assert((k2.transpose() * k2).isIdentity()); // k2 must be orthogonal
+      assert(k2.determinant().real() > 0.0);
       k2 = magicBasisTransform(k2, MagicBasisTransform::Into);
 
       auto [K1l, K1r, phase_l] = decomposeTwoQubitProductGate(k1);
