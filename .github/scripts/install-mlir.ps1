@@ -25,10 +25,10 @@ $download_urls = $assets_json | ForEach-Object { $_.browser_download_url }
 
 switch ($arch) {
     x64 {
-        $download_url = $download_urls | Where-Object { $_ -match '.*_windows_.*_X86.tar.zst' }
+        $download_url = $download_urls | Where-Object { $_ -match '.*_windows_.*_X86\.tar\.zst' }
     }
     arm64 {
-        $download_url = $download_urls | Where-Object { $_ -match '.*_windows_.*_AArch64.tar.zst' }
+        $download_url = $download_urls | Where-Object { $_ -match '.*_windows_.*_AArch64\.tar\.zst' }
     }
     default {
         Write-Error "Unsupported architecture: $arch"; exit 1
