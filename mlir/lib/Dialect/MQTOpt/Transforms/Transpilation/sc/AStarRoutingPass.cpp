@@ -87,10 +87,19 @@ struct RoutingContext {
 };
 
 struct Layer {
-  /// @brief All unitary ops contained in this layer.
+  /// @brief All ops contained in this layer.
   SmallVector<Operation*, 0> ops;
   /// @brief The program indices of the gates in this layer.
   SmallVector<QubitIndexPair> gates;
+  /// @brief The first op in ops in textual IR order.
+  Operation* anchor{};
+  /// @brief Add op to ops and reset anchor if necessary.
+  void addOp(Operation* op) {
+    ops.emplace_back(op);
+    if (anchor == nullptr || op->isBeforeInBlock(anchor)) {
+      anchor = op;
+    }
+  }
 };
 
 /// @brief A vector of layers.
@@ -186,7 +195,7 @@ collectLayerAndAdvance(ArrayRef<WireIterator> wires, Layout& schedulingLayout,
         }
 
         if (const auto iterators = sync.visit(barrier, ++it)) {
-          layer.ops.push_back(barrier);
+          layer.addOp(barrier);
           next.append(iterators.value());
         }
 
@@ -196,7 +205,7 @@ collectLayerAndAdvance(ArrayRef<WireIterator> wires, Layout& schedulingLayout,
       if (auto u = dyn_cast<UnitaryInterface>(op)) {
         if (!isTwoQubitGate(u)) {
           /// Add unitary to layer operations.
-          layer.ops.push_back(op);
+          layer.addOp(op);
 
           /// Forward scheduling layout.
           schedulingLayout.remapQubitValue(u.getInQubits().front(),
@@ -220,7 +229,7 @@ collectLayerAndAdvance(ArrayRef<WireIterator> wires, Layout& schedulingLayout,
           next.append(iterators.value());
 
           /// Only add ready two-qubit gates to the layer.
-          layer.ops.push_back(u);
+          layer.addOp(u);
           layer.gates.emplace_back(
               schedulingLayout.lookupProgramIndex(ins.first),
               schedulingLayout.lookupProgramIndex(ins.second));
@@ -243,7 +252,7 @@ collectLayerAndAdvance(ArrayRef<WireIterator> wires, Layout& schedulingLayout,
         }
 
         if (const auto iterators = sync.visit(branch, ++it)) {
-          layer.ops.push_back(branch);
+          layer.addOp(branch);
           next.append(iterators.value());
         }
 
@@ -253,7 +262,7 @@ collectLayerAndAdvance(ArrayRef<WireIterator> wires, Layout& schedulingLayout,
       /// Anything else is either a measure or reset op.
       assert(isa<MeasureOp>(op) ||
              isa<ResetOp>(op) && "expect measure or reset");
-      layer.ops.push_back(op);
+      layer.addOp(op);
       ++it;
     }
   }
@@ -289,7 +298,7 @@ LayerVec schedule(const Layout& layout) {
       for (const auto [prog0, prog1] : layer.gates) {
         llvm::dbgs() << "(" << prog0 << "," << prog1 << "), ";
       }
-      llvm::dbgs() << '\n';
+      llvm::dbgs() << " anchor= " << layer.anchor->getLoc() << '\n';
     }
   });
 
@@ -308,24 +317,15 @@ void routeEachLayer(LayerVec& layers, const Layout& layout,
     auto windowLayerGates = to_vector(llvm::map_range(
         window, [](const Layer& layer) { return ArrayRef(layer.gates); }));
 
-    Operation* anchor{}; /// First op in textual IR order.
-    for (Operation* op : front.ops) {
-      if (anchor == nullptr || op->isBeforeInBlock(anchor)) {
-        anchor = op;
-      }
-    }
-
-    assert(anchor != nullptr && "expected to find anchor");
-    llvm::dbgs() << "schedule: anchor= " << *anchor << '\n';
-
     const auto swaps =
         ctx.router.route(windowLayerGates, routingLayout, *ctx.arch);
     /// history.append(swaps);
 
-    ctx.rewriter.setInsertionPoint(anchor);
-    insertSWAPs(anchor->getLoc(), swaps, routingLayout, ctx.rewriter);
+    ctx.rewriter.setInsertionPoint(front.anchor);
+    insertSWAPs(front.anchor->getLoc(), swaps, routingLayout, ctx.rewriter);
 
     for (Operation* op : front.ops) {
+      /// Handle unitaries incl. barriers.
       if (auto u = dyn_cast<UnitaryInterface>(op)) {
         for (const auto& [in, out] :
              llvm::zip_equal(u.getAllInQubits(), u.getAllOutQubits())) {
