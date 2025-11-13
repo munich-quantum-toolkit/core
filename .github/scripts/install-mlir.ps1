@@ -14,34 +14,35 @@ pushd $install_prefix > $null
 # Detect architecture
 $arch = [System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture
 
-# Set asset name
+# Determine download URL
+$release_url = "https://api.github.com/repos/burgholzer/portable-mlir-toolchain/releases/tags/test-release-3"
+$release_json = Invoke-RestMethod -Uri $release_url -Headers @{"Accept"="application/vnd.github+json"; "X-GitHub-Api-Version"="2022-11-28"}
+
+$assets_url = $release_json.assets_url
+$assets_json = Invoke-RestMethod -Uri $assets_url -Headers @{"Accept"="application/vnd.github+json"; "X-GitHub-Api-Version"="2022-11-28"}
+
+$download_urls = $assets_json | ForEach-Object { $_.browser_download_url }
+
 switch ($arch) {
     x64 {
-        $asset_name = "windows-2022-archive.zip"
+        $download_url = $download_urls | Where-Object { $_ -match '.*_windows_.*_X86.tar.zst' }
     }
     arm64 {
-        $asset_name = "windows-11-arm-archive.zip"
+        $download_url = $download_urls | Where-Object { $_ -match '.*_windows_.*_AArch64.tar.zst' }
     }
     default {
         Write-Error "Unsupported architecture: $arch"; exit 1
     }
 }
 
-# Set asset URL
-$asset_url = "https://github.com/burgholzer/portable-mlir-toolchain/releases/download/$tag/$asset_name"
-
 # Download asset
-Write-Host "Downloading $asset_name from $asset_url..."
-Invoke-WebRequest -Uri $asset_url -OutFile $asset_name
+Write-Host "Downloading asset from $download_url ..."
+Invoke-WebRequest -Uri $download_url
 
-# Unzip asset
-Write-Host "Unzipping $asset_name..."
-Expand-Archive -Path $asset_name -DestinationPath . -Force
-
-# Find archive after unzip
+# Find archive
 $archive_path = Get-ChildItem -Recurse -File -Filter "*.tar.zst" | Select-Object -First 1
 if (-not $archive_path) {
-    Write-Error "No archive found after unzip of $asset_name."
+    Write-Error "No archive found after download of $download_url."
     exit 1
 }
 

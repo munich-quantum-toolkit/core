@@ -33,6 +33,7 @@ jobs:
       CMAKE_BUILD_PARALLEL_LEVEL: 4
       CTEST_PARALLEL_LEVEL: 4
       FORCE_COLOR: 3
+      TOOLCHAIN_TAG: test-release-4
     steps:
       - name: Checkout
         uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5
@@ -52,7 +53,7 @@ jobs:
           INSTALL_PREFIX=$PWD/llvm-project
           mkdir -p $INSTALL_PREFIX
 
-          bash ${{ github.workspace }}/.github/scripts/install-mlir.sh -t test-release -p $INSTALL_PREFIX
+          bash ${{ github.workspace }}/.github/scripts/install-mlir.sh -t ${{ env.TOOLCHAIN_TAG }} -p $INSTALL_PREFIX
 
           # Set environment variable for subsequent steps
           echo "LLVM_DIR=$INSTALL_PREFIX/lib/cmake/llvm" >> $GITHUB_ENV
@@ -69,7 +70,7 @@ jobs:
           $INSTALL_PREFIX = Join-Path $PWD "llvm-project"
           mkdir $INSTALL_PREFIX
 
-          pwsh ${{ github.workspace }}\.github\scripts\install-mlir.ps1 -tag test-release -install_prefix $INSTALL_PREFIX
+          pwsh ${{ github.workspace }}\.github\scripts\install-mlir.ps1 -tag ${{ env.TOOLCHAIN_TAG }} -install_prefix $INSTALL_PREFIX
 
           # Set environment variable for subsequent steps
           echo "LLVM_DIR=$INSTALL_PREFIX/lib/cmake/llvm" | Out-File -FilePath $env:GITHUB_ENV -Append

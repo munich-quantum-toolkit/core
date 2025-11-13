@@ -48,35 +48,42 @@ case "$ARCH" in
   *) echo "Unsupported architecture: $ARCH" >&2; exit 1 ;;
 esac
 
-# Set asset name
+# Determine download URL
+RELEASE_URL="https://api.github.com/repos/burgholzer/portable-mlir-toolchain/releases/tags/${TAG}"
+RELEASE_JSON=$(curl -L \
+                    -H "Accept: application/vnd.github+json" \
+                    -H "X-GitHub-Api-Version: 2022-11-28" \
+                    "$RELEASE_URL")
+
+ASSETS_URL=$(echo "$RELEASE_JSON" | jq -r '.["assets_url"]')
+ASSETS_JSON=$(curl -L \
+                   -H "Accept: application/vnd.github+json" \
+                   -H "X-GitHub-Api-Version: 2022-11-28" \
+                   "$ASSETS_URL")
+
+DOWNLOAD_URLS=$(echo "$ASSETS_JSON" | jq -r '.[].browser_download_url')
+
 if [[ "$PLATFORM" == "linux" && "$ARCH_SUFFIX" == "x86_64" ]]; then
-  ASSET_NAME="ubuntu-24.04-archive.zip"
+  DOWNLOAD_URL=$(echo "$DOWNLOAD_URLS" | grep '.*_linux_.*_X86.tar.zst')
 elif [[ "$PLATFORM" == "linux" && "$ARCH_SUFFIX" == "arm64" ]]; then
-  ASSET_NAME="ubuntu-24.04-arm-archive.zip"
+  DOWNLOAD_URL=$(echo "$DOWNLOAD_URLS" | grep '.*_linux_.*_AArch64.tar.zst')
 elif [[ "$PLATFORM" == "macos" && "$ARCH_SUFFIX" == "x86_64" ]]; then
-  ASSET_NAME="macos-15-intel-archive.zip"
+  DOWNLOAD_URL=$(echo "$DOWNLOAD_URLS" | grep '.*_macos_.*_X86.tar.zst')
 elif [[ "$PLATFORM" == "macos" && "$ARCH_SUFFIX" == "arm64" ]]; then
-  ASSET_NAME="macos-15-archive.zip"
+  DOWNLOAD_URL=$(echo "$DOWNLOAD_URLS" | grep '.*_macos_.*_AArch64.tar.zst')
 else
   echo "Unsupported platform/architecture combination: ${PLATFORM}/${ARCH_SUFFIX}" >&2
   exit 1
 fi
 
-# Set asset URL
-ASSET_URL="https://github.com/burgholzer/portable-mlir-toolchain/releases/download/${TAG}/${ASSET_NAME}"
-
 # Download asset
-echo "Downloading $ASSET_NAME from $ASSET_URL..."
-curl -L -o "$ASSET_NAME" "$ASSET_URL"
+echo "Downloading asset from $DOWNLOAD_URL..."
+curl -L "$DOWNLOAD_URL"
 
-# Unzip asset
-echo "Unzipping $ASSET_NAME..."
-unzip -q "$ASSET_NAME"
-
-# Find archive after unzip
+# Find archive
 ARCHIVE_PATH=$(find . -name "*.tar.zst" -print -quit)
 if [[ -z "$ARCHIVE_PATH" ]]; then
-  echo "No archive found after unzip of $ASSET_NAME." >&2
+  echo "No archive found after download of $DOWNLOAD_URL." >&2
   exit 1
 fi
 
