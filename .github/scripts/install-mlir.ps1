@@ -37,14 +37,7 @@ switch ($arch) {
 
 # Download asset
 Write-Host "Downloading asset from $download_url ..."
-Invoke-WebRequest -Uri $download_url
-
-# Find archive
-$archive_path = Get-ChildItem -Recurse -File -Filter "*.tar.zst" | Select-Object -First 1
-if (-not $archive_path) {
-    Write-Error "No archive found after download of $download_url."
-    exit 1
-}
+Invoke-WebRequest -Uri $download_url -OutFile "asset.tar.zst"
 
 # Check for zstd
 if (-not (Get-Command zstd -ErrorAction SilentlyContinue)) {
@@ -59,9 +52,9 @@ if (-not (Get-Command tar -ErrorAction SilentlyContinue)) {
 }
 
 # Unpack archive
-Write-Host "Extracting $archive_name..."
-& zstd -d $archive_path --output-dir-flat .
-& tar -xf ($archive_path -replace '.zst$', '')
+Write-Host "Extracting archive..."
+& zstd -d "asset.tar.zst" --output-dir-flat .
+& tar -xf "asset.tar"
 
 # Return to original directory
 popd > $null

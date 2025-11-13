@@ -78,14 +78,7 @@ fi
 
 # Download asset
 echo "Downloading asset from $DOWNLOAD_URL..."
-curl -L "$DOWNLOAD_URL"
-
-# Find archive
-ARCHIVE_PATH=$(find . -name "*.tar.zst" -print -quit)
-if [[ -z "$ARCHIVE_PATH" ]]; then
-  echo "No archive found after download of $DOWNLOAD_URL." >&2
-  exit 1
-fi
+curl -L -o "asset.tar.zst" "$DOWNLOAD_URL"
 
 # Check for zstd
 if ! command -v zstd >/dev/null 2>&1; then
@@ -94,9 +87,9 @@ if ! command -v zstd >/dev/null 2>&1; then
 fi
 
 # Unpack archive
-echo "Extracting $ARCHIVE_PATH..."
-zstd -d "$ARCHIVE_PATH" --output-dir-flat .
-tar -xf "${ARCHIVE_PATH%.zst}"
+echo "Extracting archive..."
+zstd -d "asset.tar.zst" --output-dir-flat .
+tar -xf "asset.tar"
 
 # Return to original directory
 popd > /dev/null
