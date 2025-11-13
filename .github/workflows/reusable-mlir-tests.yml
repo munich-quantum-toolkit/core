@@ -53,7 +53,7 @@ jobs:
           INSTALL_PREFIX=$HOME/llvm-project
           mkdir -p $INSTALL_PREFIX
 
-          bash ${{ github.workspace }}/.github/scripts/install-mlir.sh -t ${{ env.TOOLCHAIN_TAG }} -p $INSTALL_PREFIX -t ${{ secrets.GITHUB_TOKEN }}
+          bash ${{ github.workspace }}/.github/scripts/install-mlir.sh -t ${{ env.TOOLCHAIN_TAG }} -p $INSTALL_PREFIX -a ${{ secrets.GITHUB_TOKEN }}
 
           # Set environment variable for subsequent steps
           echo "LLVM_DIR=$INSTALL_PREFIX/lib/cmake/llvm" >> $GITHUB_ENV
