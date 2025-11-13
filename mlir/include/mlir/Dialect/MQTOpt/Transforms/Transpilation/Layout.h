@@ -105,6 +105,13 @@ public:
     std::swap(hardwareToProgram_[hw0], hardwareToProgram_[hw1]);
   }
 
+  /**
+   * @returns the number of qubits handled by the layout.
+   */
+  [[nodiscard]] std::size_t getNumQubits() const {
+    return programToHardware_.size();
+  }
+
 protected:
   /**
    * @brief Maps a program qubit index to its hardware index.

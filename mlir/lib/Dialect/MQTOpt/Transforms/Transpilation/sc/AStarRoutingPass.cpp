@@ -8,12 +8,14 @@
  * Licensed under the MIT License
  */
 
+#include "mlir/Dialect/MQTOpt/IR/MQTOptDialect.h"
 #include "mlir/Dialect/MQTOpt/Transforms/Passes.h"
 #include "mlir/Dialect/MQTOpt/Transforms/Transpilation/AStarHeuristicRouter.h"
 #include "mlir/Dialect/MQTOpt/Transforms/Transpilation/Architecture.h"
 #include "mlir/Dialect/MQTOpt/Transforms/Transpilation/Common.h"
 #include "mlir/Dialect/MQTOpt/Transforms/Transpilation/Layout.h"
 #include "mlir/Dialect/MQTOpt/Transforms/Transpilation/WireIterator.h"
+#include "mlir/Interfaces/ControlFlowInterfaces.h"
 
 #include <cassert>
 #include <cstddef>
@@ -41,6 +43,8 @@
 #include <mlir/Rewrite/PatternApplicator.h>
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/WalkResult.h>
+#include <optional>
+#include <utility>
 
 #define DEBUG_TYPE "route-astar-sc"
 
@@ -51,9 +55,6 @@ namespace mqt::ir::opt {
 
 namespace {
 using namespace mlir;
-
-/// @brief Hold and release map.
-using HoldMap = DenseMap<Operation*, WireIterator>;
 
 /// @brief A vector of SWAP gate indices.
 using SWAPHistory = SmallVector<QubitIndexPair>;
@@ -95,6 +96,37 @@ struct Layer {
 /// @brief A vector of layers.
 using LayerVec = SmallVector<Layer>;
 
+/// @brief Map to handle multi-qubit gates when traversing the def-use chain.
+class SynchronizationMap {
+  DenseMap<Operation*, SmallVector<WireIterator, 0>> onHold;
+  DenseMap<Operation*, std::size_t> refCount;
+
+public:
+  /// @returns true iff. the operation is contained in the map.
+  bool contains(Operation* op) { return onHold.contains(op); }
+  /// @brief Add op with respective iterator and ref count to map.
+  void add(Operation* op, WireIterator it, const std::size_t cnt) {
+    onHold.try_emplace(op, SmallVector<WireIterator>{it});
+    /// Decrease the cnt by one because the op was visited when adding.
+    refCount.try_emplace(op, cnt - 1);
+  }
+
+  std::optional<SmallVector<WireIterator, 0>> visit(Operation* op,
+                                                    WireIterator it) {
+    assert(refCount.contains(op) && "expected sync map to contain op");
+
+    /// Add iterator for later release.
+    onHold[op].push_back(it);
+
+    /// Release iterators whenever the ref count reaches zero.
+    if (--refCount[op] == 0) {
+      return onHold[op];
+    }
+
+    return std::nullopt;
+  }
+};
+
 /**
  * @brief Insert SWAP ops at the rewriter's insertion point.
  *
@@ -134,7 +166,7 @@ void insertSWAPs(Location location, ArrayRef<QubitIndexPair> swaps,
 
 std::pair<Layer, SmallVector<WireIterator>>
 collectLayerAndAdvance(ArrayRef<WireIterator> wires, Layout& schedulingLayout,
-                       DenseMap<Operation*, WireIterator>& onHold) {
+                       SynchronizationMap& sync) {
   /// The collected layer.
   Layer layer;
   /// A vector of iterators for the next iteration.
@@ -145,45 +177,84 @@ collectLayerAndAdvance(ArrayRef<WireIterator> wires, Layout& schedulingLayout,
     while (it != WireIterator()) {
       Operation* op = *it;
 
-      if (!isa<UnitaryInterface>(op)) {
-        layer.ops.push_back(op);
-        ++it;
-        continue;
+      /// A barrier may be a UnitaryInterface, but also requires
+      /// synchronization.
+      if (auto barrier = dyn_cast<BarrierOp>(op)) {
+        if (!sync.contains(barrier)) {
+          sync.add(barrier, ++it, barrier.getInQubits().size());
+          break;
+        }
+
+        if (const auto iterators = sync.visit(barrier, ++it)) {
+          layer.ops.push_back(barrier);
+          next.append(iterators.value());
+        }
+
+        break;
       }
 
-      auto u = cast<UnitaryInterface>(op);
-      if (!isTwoQubitGate(u)) {
-        /// Add unitary to layer operations.
-        layer.ops.push_back(op);
-        /// Forward scheduling layout.
-        schedulingLayout.remapQubitValue(u.getInQubits().front(),
-                                         u.getOutQubits().front());
-        ++it;
-        continue;
+      if (auto u = dyn_cast<UnitaryInterface>(op)) {
+        if (!isTwoQubitGate(u)) {
+          /// Add unitary to layer operations.
+          layer.ops.push_back(op);
+
+          /// Forward scheduling layout.
+          schedulingLayout.remapQubitValue(u.getInQubits().front(),
+                                           u.getOutQubits().front());
+          ++it;
+          continue;
+        }
+
+        if (!sync.contains(u)) {
+          /// Add the next iterator after the two-qubit
+          /// gate for a later release.
+          sync.add(u, ++it, 2);
+          break;
+        }
+
+        if (const auto iterators = sync.visit(u, ++it)) {
+          const auto ins = getIns(u);
+          const auto outs = getOuts(u);
+
+          /// Release iterators for next iteration.
+          next.append(iterators.value());
+
+          /// Only add ready two-qubit gates to the layer.
+          layer.ops.push_back(u);
+          layer.gates.emplace_back(
+              schedulingLayout.lookupProgramIndex(ins.first),
+              schedulingLayout.lookupProgramIndex(ins.second));
+
+          /// Forward scheduling layout.
+          schedulingLayout.remapQubitValue(ins.first, outs.first);
+          schedulingLayout.remapQubitValue(ins.second, outs.second);
+        }
+
+        break;
       }
 
-      if (onHold.contains(u)) {
-        const auto ins = getIns(u);
-        const auto outs = getOuts(u);
+      /// RegionBranchOpInterface = scf.for, scf.if, ...
+      if (auto branch = dyn_cast<RegionBranchOpInterface>(op)) {
+        if (!sync.contains(branch)) {
+          /// This assumes that branching ops always take and return all
+          /// hardware qubits.
+          sync.add(branch, ++it, schedulingLayout.getNumQubits());
+          break;
+        }
 
-        /// Release iterators for next iteration.
-        next.push_back(onHold.lookup(u));
-        next.push_back(++it);
-        /// Only add ready two-qubit gates to the layer.
-        layer.ops.push_back(op);
-        layer.gates.emplace_back(
-            schedulingLayout.lookupProgramIndex(ins.first),
-            schedulingLayout.lookupProgramIndex(ins.second));
-        /// Forward scheduling layout.
-        schedulingLayout.remapQubitValue(ins.first, outs.first);
-        schedulingLayout.remapQubitValue(ins.second, outs.second);
-      } else {
-        /// Emplace the next iterator after the two-qubit
-        /// gate for a later release.
-        onHold.try_emplace(u, ++it);
+        if (const auto iterators = sync.visit(branch, ++it)) {
+          layer.ops.push_back(branch);
+          next.append(iterators.value());
+        }
+
+        break;
       }
 
-      break;
+      /// Anything else is either a measure or reset op.
+      assert(isa<MeasureOp>(op) ||
+             isa<ResetOp>(op) && "expect measure or reset");
+      layer.ops.push_back(op);
+      ++it;
     }
   }
 
@@ -192,14 +263,14 @@ collectLayerAndAdvance(ArrayRef<WireIterator> wires, Layout& schedulingLayout,
 
 LayerVec schedule(const Layout& layout) {
   LayerVec layers;
-  HoldMap onHold;
+  SynchronizationMap sync;
   Layout schedulingLayout(layout);
   SmallVector<WireIterator> wires(llvm::map_range(
       layout.getHardwareQubits(), [](Value q) { return WireIterator(q); }));
 
   do {
     const auto [layer, next] =
-        collectLayerAndAdvance(wires, schedulingLayout, onHold);
+        collectLayerAndAdvance(wires, schedulingLayout, sync);
 
     /// Early exit if there are no more gates to route.
     if (layer.gates.empty()) {
@@ -225,7 +296,8 @@ LayerVec schedule(const Layout& layout) {
   return layers;
 }
 
-void route(const Layout& layout, LayerVec& layers, RoutingContext& ctx) {
+void routeEachLayer(LayerVec& layers, const Layout& layout,
+                    RoutingContext& ctx) {
   Layout routingLayout(layout);
   LayerVec::iterator end = layers.end();
   for (LayerVec::iterator it = layers.begin(); it != end; ++it) {
@@ -266,11 +338,12 @@ void route(const Layout& layout, LayerVec& layers, RoutingContext& ctx) {
   }
 }
 
-LogicalResult rewrite(Region& region, Layout& layout, RoutingContext& ctx) {
+LogicalResult processRegion(Region& region, Layout& layout,
+                            RoutingContext& ctx) {
   /// Find layers.
   LayerVec layers = schedule(layout);
-  /// Route the layers. Might break SSA dominance.
-  route(layout, layers, ctx);
+  /// Route each of the layers. Might violate SSA dominance.
+  routeEachLayer(layers, layout, ctx);
   /// Repair any SSA dominance issues.
   for (Block& block : region.getBlocks()) {
     sortTopologically(&block);
@@ -286,9 +359,7 @@ LogicalResult processFunction(func::FuncOp func, RoutingContext& ctx) {
     return success(); // Ignore non entry_point functions for now.
   }
 
-  /// Find all static qubits and initialize layout.
-  /// In a circuit diagram this corresponds to finding the very
-  /// start of each circuit wire.
+  /// Find all hardware (static) qubits and initialize layout.
 
   Layout layout(ctx.arch->nqubits());
   for_each(func.getOps<QubitOp>(), [&](QubitOp op) {
@@ -296,7 +367,7 @@ LogicalResult processFunction(func::FuncOp func, RoutingContext& ctx) {
     layout.add(index, index, op.getQubit());
   });
 
-  return rewrite(func.getBody(), layout, ctx);
+  return processRegion(func.getBody(), layout, ctx);
 }
 
 /**
