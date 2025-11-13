@@ -86,8 +86,7 @@ jobs:
         with:
           python-version: 3.13
           activate-environment: true
-          enable-cache: false
-          restore-cache: false
+          enable-cache: true
           save-cache: ${{ github.ref == 'refs/heads/main' }}
 
       - name: Install Ninja
