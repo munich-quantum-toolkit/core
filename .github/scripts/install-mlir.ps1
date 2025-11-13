@@ -3,7 +3,8 @@ param(
     [Parameter(Mandatory=$true)]
     [string]$tag,
     [Parameter(Mandatory=$true)]
-    [string]$install_prefix
+    [string]$install_prefix,
+    [string]$token
 )
 
 $ErrorActionPreference = "Stop"
@@ -15,11 +16,19 @@ pushd $install_prefix > $null
 $arch = [System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture
 
 # Determine download URL
+$headers = @{
+    "Accept" = "application/vnd.github+json"
+    "X-GitHub-Api-Version" = "2022-11-28"
+}
+if ($token) {
+    $headers["Authorization"] = "Bearer $token"
+}
+
 $release_url = "https://api.github.com/repos/burgholzer/portable-mlir-toolchain/releases/tags/$tag"
-$release_json = Invoke-RestMethod -Uri $release_url -Headers @{"Accept"="application/vnd.github+json"; "X-GitHub-Api-Version"="2022-11-28"}
+$release_json = Invoke-RestMethod -Uri $release_url -Headers $headers
 
 $assets_url = $release_json.assets_url
-$assets_json = Invoke-RestMethod -Uri $assets_url -Headers @{"Accept"="application/vnd.github+json"; "X-GitHub-Api-Version"="2022-11-28"}
+$assets_json = Invoke-RestMethod -Uri $assets_url -Headers $headers
 
 $download_urls = $assets_json | ForEach-Object { $_.browser_download_url }
 

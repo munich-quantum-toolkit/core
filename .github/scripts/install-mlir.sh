@@ -1,15 +1,17 @@
 #!/bin/bash
 
-# Usage: ./install-mlir.sh -t <tag> -p <installation directory>
+# Usage: ./install-mlir.sh -t <tag> -p <installation directory> [-a <GitHub token>]
 
 set -euo pipefail
 
 # Parse arguments
-while getopts "t:p:*" opt; do
+while getopts "t:p:a:" opt; do
   case $opt in
     t) TAG="$OPTARG"
     ;;
     p) INSTALL_PREFIX="$OPTARG"
+    ;;
+    a) GITHUB_TOKEN="$OPTARG"
     ;;
     *) echo "Invalid option -$OPTARG" >&2
     exit 1
@@ -52,12 +54,14 @@ esac
 RELEASE_URL="https://api.github.com/repos/burgholzer/portable-mlir-toolchain/releases/tags/${TAG}"
 RELEASE_JSON=$(curl -L \
                     -H "Accept: application/vnd.github+json" \
+                    ${GITHUB_TOKEN:+-H "Authorization: Bearer $GITHUB_TOKEN"} \
                     -H "X-GitHub-Api-Version: 2022-11-28" \
                     "$RELEASE_URL")
 
 ASSETS_URL=$(echo "$RELEASE_JSON" | jq -r '.assets_url')
 ASSETS_JSON=$(curl -L \
                    -H "Accept: application/vnd.github+json" \
+                   ${GITHUB_TOKEN:+-H "Authorization: Bearer $GITHUB_TOKEN"} \
                    -H "X-GitHub-Api-Version: 2022-11-28" \
                    "$ASSETS_URL")
 
