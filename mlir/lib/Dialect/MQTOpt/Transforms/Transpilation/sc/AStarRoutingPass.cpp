@@ -69,7 +69,9 @@ struct Statistics {
 struct Params {
   /// @brief The amount of lookahead layers.
   std::size_t nlookahead;
+  /// @brief The alpha factor in the heuristic function.
   float alpha;
+  /// @brief The lambda decay factor in the heuristic function.
   float lambda;
 };
 
@@ -186,6 +188,11 @@ void insertSWAPs(Location location, ArrayRef<QubitIndexPair> swaps,
   }
 }
 
+/**
+ * @brief Advance each wire until (>=2)-qubit gates are found, collect the
+ * indices of the respective two-qubit gates, and prepare iterators for next
+ * iteration.
+ */
 std::pair<Layer, SmallVector<WireIterator>>
 collectLayerAndAdvance(ArrayRef<WireIterator> wires, Layout& layout,
                        SynchronizationMap& sync) {
@@ -262,7 +269,6 @@ collectLayerAndAdvance(ArrayRef<WireIterator> wires, Layout& layout,
       }
 
       if (auto op = dyn_cast<RegionBranchOpInterface>(curr)) {
-
         if (!sync.contains(op)) {
           /// This assumes that branch ops always returns all hardware qubits.
           sync.add(op, ++it, layout.getNumQubits());
@@ -307,9 +313,6 @@ collectLayerAndAdvance(ArrayRef<WireIterator> wires, Layout& layout,
 /**
  * @brief Given a layout, divide the circuit into layers and schedule the ops in
  * their respective layer.
- *
- * @param layout A copy of the current layout.
- * @returns a vector of layers.
  */
 LayerVec schedule(Layout layout, Region& region) {
   LayerVec layers;
@@ -372,7 +375,7 @@ WalkResult handle(scf::ForOp op, Layout& layout, RoutingContext& ctx) {
 }
 
 /**
- * @brief Copy the layout for each branch and recursively map the branches.
+ * @brief Copy the layout for each branch and recursively process the branches.
  */
 WalkResult handle(scf::IfOp op, Layout& layout, RoutingContext& ctx) {
   /// Recursively handle each branch region.
@@ -436,10 +439,6 @@ WalkResult handle(UnitaryInterface op, Layout& layout,
 /**
  * @brief Route each layer by iterating a sliding window of (1 + nlookahead)
  * layers.
- *
- * @param layers The layers.
- * @param layout A copy of the current layout.
- * @param ctx The routing context.
  */
 LogicalResult routeEachLayer(const LayerVec& layers, Layout layout,
                              SmallVector<QubitIndexPair>& history,
@@ -505,6 +504,12 @@ LogicalResult routeEachLayer(const LayerVec& layers, Layout layout,
   return success();
 }
 
+/**
+ * @brief Schedule and route the given region.
+ *
+ * Since this might break SSA Dominance, sort the blocks in the given region
+ * topologically.
+ */
 LogicalResult processRegion(Region& region, Layout& layout,
                             SmallVector<QubitIndexPair>& history,
                             RoutingContext& ctx) {
@@ -523,32 +528,9 @@ LogicalResult processRegion(Region& region, Layout& layout,
   return success();
 }
 
-LogicalResult processFunction(func::FuncOp func, RoutingContext& ctx) {
-  LLVM_DEBUG(llvm::dbgs() << "handleFunc: " << func.getSymName() << '\n');
-
-  if (!isEntryPoint(func)) {
-    LLVM_DEBUG(llvm::dbgs() << "\tskip non entry\n");
-    return success(); // Ignore non entry_point functions for now.
-  }
-
-  /// Find all hardware (static) qubits and initialize layout.
-
-  Layout layout(ctx.arch->nqubits());
-  for_each(func.getOps<QubitOp>(), [&](QubitOp op) {
-    const std::size_t index = op.getIndex();
-    layout.add(index, index, op.getQubit());
-  });
-
-  SmallVector<QubitIndexPair> history;
-  return processRegion(func.getBody(), layout, history, ctx);
-}
-
 /**
  * @brief Route the given module for the targeted architecture using A*-search.
- *
- * @param module The module to route.
- * @param arch The targeted architecture.
- * @param stats The composite statistics datastructure.
+ * Processes each entry_point function separately.
  */
 LogicalResult route(ModuleOp module, std::unique_ptr<Architecture> arch,
                     Params& params, Statistics& stats) {
@@ -560,16 +542,33 @@ LogicalResult route(ModuleOp module, std::unique_ptr<Architecture> arch,
                      .router = AStarHeuristicRouter(weights),
                      .nlookahead = params.nlookahead};
   for (auto func : module.getOps<func::FuncOp>()) {
-    if (processFunction(func, ctx).failed()) {
-      return failure();
+    LLVM_DEBUG(llvm::dbgs() << "handleFunc: " << func.getSymName() << '\n');
+
+    if (!isEntryPoint(func)) {
+      LLVM_DEBUG(llvm::dbgs() << "\tskip non entry\n");
+      return success(); // Ignore non entry_point functions for now.
+    }
+
+    /// Find all hardware (static) qubits and initialize layout.
+    Layout layout(ctx.arch->nqubits());
+    for_each(func.getOps<QubitOp>(), [&](QubitOp op) {
+      const std::size_t index = op.getIndex();
+      layout.add(index, index, op.getQubit());
+    });
+
+    SmallVector<QubitIndexPair> history;
+    const auto res = processRegion(func.getBody(), layout, history, ctx);
+    if (res.failed()) {
+      return res;
     }
   }
   return success();
 }
 
 /**
- * @brief This pass ensures that the connectivity constraints of the target
- * architecture are met.
+ * @brief Routes the program by dividing the circuit into layers of parallel
+ * two-qubit gates and iteratively searches and inserts SWAPs for each layer
+ * using A*-search.
  */
 struct AStarRoutingPassSC final
     : impl::AStarRoutingPassSCBase<AStarRoutingPassSC> {

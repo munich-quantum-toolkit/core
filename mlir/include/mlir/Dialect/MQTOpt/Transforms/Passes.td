@@ -96,7 +96,7 @@ def QuantumSinkPass : Pass<"quantum-sink", "mlir::ModuleOp"> {
 //===----------------------------------------------------------------------===//
 
 def PlacementPassSC : Pass<"placement-sc", "mlir::ModuleOp"> {
-  let summary = "This pass maps dynamic qubits to static qubits on superconducting quantum devices using initial placement strategies.";
+  let summary = "This pass maps program qubits to hardware qubits on superconducting quantum devices using initial placement strategies.";
   let options = [
     Option<"strategy", "strategy", "PlacementStrategy", "PlacementStrategy::Random",
            "The initial placement strategy to use.", [{llvm::cl::values(
@@ -108,9 +108,9 @@ def PlacementPassSC : Pass<"placement-sc", "mlir::ModuleOp"> {
 }
 
 def NaiveRoutingPassSC : Pass<"route-naive-sc", "mlir::ModuleOp"> {
-  let summary = "This pass ensures that a program meets the connectivity constraints of a given architecture.";
+  let summary = "This pass ensures that all two-qubit gates are executable on the target architecture.";
   let description = [{
-    This pass inserts SWAP operations to ensure two-qubit gates are executable on a given target architecture.
+    Simple pre-order traversal of the IR that routes any non-executable gates by inserting SWAPs along the shortest path.
   }];
   let options = [
     Option<"archName", "arch", "std::string", "",
@@ -122,9 +122,10 @@ def NaiveRoutingPassSC : Pass<"route-naive-sc", "mlir::ModuleOp"> {
 }
 
 def AStarRoutingPassSC : Pass<"route-astar-sc", "mlir::ModuleOp"> {
-  let summary = "This pass ensures that a program meets the connectivity constraints of a given architecture.";
+  let summary = "This pass ensures that all two-qubit gates are executable on the target architecture.";
   let description = [{
-    This pass inserts SWAP operations to ensure two-qubit gates are executable on a given target architecture.
+    Routes the program by dividing the circuit into layers of parallel two-qubit gates and iteratively searches and
+    inserts SWAPs for each layer using A*-search.
   }];
   let options = [
     Option<"archName", "arch", "std::string", "",
@@ -142,7 +143,7 @@ def AStarRoutingPassSC : Pass<"route-astar-sc", "mlir::ModuleOp"> {
 }
 
 def RoutingVerificationSCPass : Pass<"verify-routing-sc", "mlir::ModuleOp"> {
-  let summary = "This pass verifies that a program meets the connectivity constraints of a given architecture.";
+  let summary = "This pass verifies that all two-qubit gates are executable on the target architecture.";
   let description = [{
     This pass ensures that all two-qubit gates are executable on the target's architecture.
   }];

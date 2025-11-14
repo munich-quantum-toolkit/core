@@ -219,8 +219,8 @@ WalkResult handleMeasure(MeasureOp op, VerificationContext& ctx) {
 }
 
 /**
- * @brief This pass verifies that the constraints of a target architecture are
- * met.
+ * @brief This pass verifies that all two-qubit gates are executable on the
+ * target architecture.
  */
 struct RoutingVerificationPassSC final
     : impl::RoutingVerificationSCPassBase<RoutingVerificationPassSC> {

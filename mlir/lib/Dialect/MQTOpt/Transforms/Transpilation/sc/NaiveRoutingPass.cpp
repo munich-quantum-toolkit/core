@@ -124,6 +124,33 @@ void insertSWAPs(Location location, ArrayRef<QubitIndexPair> swaps,
 }
 
 /**
+ * @brief Use shortest path swapping to make the given unitary executable.
+ * @details Optimized for an avg. SWAP count of 16.
+ */
+void findAndInsertSWAPs(UnitaryInterface op, Layout& layout,
+                        SmallVector<QubitIndexPair>& history,
+                        RoutingContext& ctx) {
+  /// Find SWAPs.
+  SmallVector<QubitIndexPair, 16> swaps;
+  const auto ins = getIns(op);
+  const auto hw0 = layout.lookupHardwareIndex(ins.first);
+  const auto hw1 = layout.lookupHardwareIndex(ins.second);
+  const auto path = ctx.arch->shortestPathBetween(hw0, hw1);
+  for (std::size_t i = 0; i < path.size() - 2; ++i) {
+    swaps.emplace_back(path[i], path[i + 1]);
+  }
+
+  /// Append SWAPs to history.
+  history.append(swaps);
+
+  /// Insert SWAPs.
+  insertSWAPs(op.getLoc(), swaps, layout, ctx.rewriter);
+
+  /// Count SWAPs.
+  *(ctx.stats.numSwaps) += swaps.size();
+}
+
+/**
  * @brief Copy the layout and recursively process the loop body.
  */
 WalkResult handle(scf::ForOp op, Layout& layout, RoutingContext& ctx) {
@@ -202,33 +229,6 @@ WalkResult handle(QubitOp op, Layout& layout) {
 }
 
 /**
- * @brief Use shortest path swapping to make the given unitary executable.
- * @details Optimized for an avg. SWAP count of 16.
- */
-void findAndInsertSWAPs(UnitaryInterface op, Layout& layout,
-                        SmallVector<QubitIndexPair>& history,
-                        RoutingContext& ctx) {
-  /// Find SWAPs.
-  SmallVector<QubitIndexPair, 16> swaps;
-  const auto ins = getIns(op);
-  const auto hw0 = layout.lookupHardwareIndex(ins.first);
-  const auto hw1 = layout.lookupHardwareIndex(ins.second);
-  const auto path = ctx.arch->shortestPathBetween(hw0, hw1);
-  for (std::size_t i = 0; i < path.size() - 2; ++i) {
-    swaps.emplace_back(path[i], path[i + 1]);
-  }
-
-  /// Append SWAPs to history.
-  history.append(swaps);
-
-  /// Insert SWAPs.
-  insertSWAPs(op.getLoc(), swaps, layout, ctx.rewriter);
-
-  /// Count SWAPs.
-  *(ctx.stats.numSwaps) += swaps.size();
-}
-
-/**
  * @brief Ensures the executability of two-qubit gates on the given target
  * architecture by inserting SWAPs.
  */
@@ -288,6 +288,10 @@ WalkResult handle(UnitaryInterface op, Layout& layout,
   return WalkResult::advance();
 }
 
+/**
+ * @brief Traverse the given region pre-order and insert SWAPs for any
+ * non-executable gate.
+ */
 LogicalResult processRegion(Region& region, Layout& layout,
                             SmallVector<QubitIndexPair>& history,
                             RoutingContext& ctx) {
@@ -337,25 +341,9 @@ LogicalResult processRegion(Region& region, Layout& layout,
   return success();
 }
 
-LogicalResult processFunction(func::FuncOp func, RoutingContext& ctx) {
-  LLVM_DEBUG(llvm::dbgs() << "handleFunc: " << func.getSymName() << '\n');
-
-  if (!isEntryPoint(func)) {
-    LLVM_DEBUG(llvm::dbgs() << "\tskip non entry\n");
-    return success(); // Ignore non entry_point functions for now.
-  }
-
-  Layout layout(ctx.arch->nqubits());
-  SmallVector<QubitIndexPair> history;
-  return processRegion(func.getBody(), layout, history, ctx);
-}
-
 /**
  * @brief Naively route the given module for the targeted architecture.
- *
- * @param module The module to route.
- * @param arch The targeted architecture.
- * @param stats The composite statistics datastructure.
+ * Processes each entry_point function separately.
  */
 LogicalResult route(ModuleOp module, std::unique_ptr<Architecture> arch,
                     Statistics& stats) {
@@ -363,16 +351,26 @@ LogicalResult route(ModuleOp module, std::unique_ptr<Architecture> arch,
                      .stats = stats,
                      .rewriter = PatternRewriter(module->getContext())};
   for (auto func : module.getOps<func::FuncOp>()) {
-    if (processFunction(func, ctx).failed()) {
-      return failure();
+    LLVM_DEBUG(llvm::dbgs() << "handleFunc: " << func.getSymName() << '\n');
+
+    if (!isEntryPoint(func)) {
+      LLVM_DEBUG(llvm::dbgs() << "\tskip non entry\n");
+      return success(); // Ignore non entry_point functions for now.
+    }
+
+    Layout layout(ctx.arch->nqubits());
+    SmallVector<QubitIndexPair> history;
+    const auto res = processRegion(func.getBody(), layout, history, ctx);
+    if (res.failed()) {
+      return res;
     }
   }
   return success();
 }
 
 /**
- * @brief This pass ensures that the connectivity constraints of the target
- * architecture are met.
+ * @brief Simple pre-order traversal of the IR that routes any non-executable
+ * gates by inserting SWAPs along the shortest path.
  */
 struct NaiveRoutingPassSC final
     : impl::NaiveRoutingPassSCBase<NaiveRoutingPassSC> {
