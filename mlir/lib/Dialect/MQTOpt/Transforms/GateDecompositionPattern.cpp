@@ -323,7 +323,27 @@ struct GateDecompositionPattern final
 
     std::cerr << "SERIES: ";
     for (auto&& gate : series.gates) {
-      std::cerr << gate.op->getName().stripDialect().str() << ", ";
+      auto name = gate.op->getName().stripDialect().str();
+      if (name == "x" && gate.qubitIds.size() == 2) {
+        // controls come first
+        std::cerr << std::format("cx() q[{}], q[{}];", gate.qubitIds[0],
+                                 gate.qubitIds[1]);
+      } else if (name == "i") {
+      } else if (gate.op.getParams().empty()) {
+        std::cerr << std::format(
+            "{}() q[{}] {};", name, gate.qubitIds[0],
+            (gate.qubitIds.size() > 1
+                 ? (", q[" + std::to_string(gate.qubitIds[1]) + "]")
+                 : std::string{}));
+      } else {
+        auto parameter = helpers::getParameters(gate.op)[0];
+        std::cerr << std::format(
+            "{}({:.5}*pi) q[{}] {};", name, parameter / qc::PI,
+            gate.qubitIds[0],
+            (gate.qubitIds.size() > 1
+                 ? (", q[" + std::to_string(gate.qubitIds[1]) + "]")
+                 : std::string{}));
+      }
     }
     std::cerr << '\n';
     std::cerr << "GATE SEQUENCE!: \n";
@@ -334,8 +354,9 @@ struct GateDecompositionPattern final
       unitaryMatrix = gateMatrix * unitaryMatrix;
 
       if (gate.type == qc::X && gate.qubitId.size() == 2) {
-        std::cerr << std::format("cx() q[{}], q[{}];", gate.qubitId[1],
-                                 gate.qubitId[0]);
+        // controls come first
+        std::cerr << std::format("cx() q[{}], q[{}];", gate.qubitId[0],
+                                 gate.qubitId[1]);
       } else if (gate.parameter.empty()) {
         std::cerr << std::format(
             "{}() q[{}] {};", qc::toString(gate.type), gate.qubitId[0],
