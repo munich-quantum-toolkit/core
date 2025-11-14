@@ -312,21 +312,39 @@ struct GateDecompositionPattern final
       std::cerr << gate.op->getName().stripDialect().str() << ", ";
     }
     std::cerr << '\n';
-    std::cerr << "GATE SEQUENCE!: " << std::flush;
+    std::cerr << "GATE SEQUENCE!: \n";
     matrix4x4 unitaryMatrix =
         helpers::kroneckerProduct(IDENTITY_GATE, IDENTITY_GATE);
     for (auto&& gate : sequence.gates) {
       auto gateMatrix = getTwoQubitMatrix(gate);
       unitaryMatrix = gateMatrix * unitaryMatrix;
 
-      std::cerr << qc::toString(gate.type) << "(" << (gate.parameter.empty() ? -1000.0 : gate.parameter[0]) << ")" << ", ";
+      if (gate.type == qc::X && gate.qubitId.size() == 2) {
+        std::cerr << std::format("cx() q[{}], q[{}];", gate.qubitId[1],
+                                 gate.qubitId[0]);
+      } else if (gate.parameter.empty()) {
+        std::cerr << std::format(
+            "{}() q[{}] {};", qc::toString(gate.type), gate.qubitId[0],
+            (gate.qubitId.size() > 1
+                 ? (", q[" + std::to_string(gate.qubitId[1]) + "]")
+                 : std::string{}));
+      } else {
+        std::cerr << std::format(
+            "{}({:.5}*pi) q[{}] {};", qc::toString(gate.type),
+            gate.parameter[0] / qc::PI, gate.qubitId[0],
+            (gate.qubitId.size() > 1
+                 ? (", q[" + std::to_string(gate.qubitId[1]) + "]")
+                 : std::string{}));
+      }
+      std::cerr << '\n';
       if (gate.type == qc::X) {
         mlir::SmallVector<mlir::Value, 1> inCtrlQubits;
         if (gate.qubitId.size() > 1) {
           inCtrlQubits.push_back(inQubits[gate.qubitId[1]]);
         }
-        auto newGate = createGate<XOp>(rewriter, location, {inQubits[0]},
-                                       inCtrlQubits, gate.parameter);
+        auto newGate =
+            createGate<XOp>(rewriter, location, {inQubits[gate.qubitId[0]]},
+                            inCtrlQubits, gate.parameter);
         updateInQubits(gate, newGate);
       } else if (gate.type == qc::RX) {
         mlir::SmallVector<mlir::Value, 2> qubits;
@@ -358,7 +376,8 @@ struct GateDecompositionPattern final
     }
     std::cerr << '\n';
     helpers::print(series.getUnitaryMatrix(), "ORIGINAL UNITARY", true);
-    helpers::print(unitaryMatrix, "RESULT UNITARY MATRIX", true);
+    helpers::print((unitaryMatrix * std::exp(IM * sequence.globalPhase)).eval(),
+                   "RESULT UNITARY MATRIX", true);
 
     rewriter.replaceAllUsesWith(series.outQubits, inQubits);
     for (auto&& gate : llvm::reverse(series.gates)) {
