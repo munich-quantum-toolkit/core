@@ -11,7 +11,7 @@
 // RUN: quantum-opt %s -split-input-file --pass-pipeline="builtin.module(canonicalize, placement-sc{strategy=identity arch=MQTTest}, route-naive-sc{arch=MQTTest},verify-routing-sc{arch=MQTTest})" -verify-diagnostics | FileCheck %s
 // RUN: quantum-opt %s -split-input-file --pass-pipeline="builtin.module(canonicalize, placement-sc{strategy=identity arch=MQTTest}, route-astar-sc{arch=MQTTest},verify-routing-sc{arch=MQTTest})" -verify-diagnostics | FileCheck %s
 // RUN: quantum-opt %s -split-input-file --pass-pipeline="builtin.module(canonicalize, placement-sc{strategy=identity arch=IBMFalcon}, route-naive-sc{arch=IBMFalcon},verify-routing-sc{arch=IBMFalcon})" -verify-diagnostics | FileCheck %s
-// RUN: quantum-opt %s -split-input-file --pass-pipeline="builtin.module(canonicalize, placement-sc{strategy=identity arch=IBMFalcon}, route-astar-sc{astar arch=IBMFalcon},verify-routing-sc{arch=IBMFalcon})" -verify-diagnostics | FileCheck %s
+// RUN: quantum-opt %s -split-input-file --pass-pipeline="builtin.module(canonicalize, placement-sc{strategy=identity arch=IBMFalcon}, route-astar-sc{arch=IBMFalcon},verify-routing-sc{arch=IBMFalcon})" -verify-diagnostics | FileCheck %s
 
 module {
     // CHECK-LABEL: func.func @entrySABRE
@@ -223,7 +223,9 @@ module {
             scf.yield %q0_3, %q1_2 : !mqtopt.Qubit, !mqtopt.Qubit
         }
 
-        mqtopt.deallocQubit %q0_3
+        %q0_4 = mqtopt.x() %q0_3 : !mqtopt.Qubit
+
+        mqtopt.deallocQubit %q0_4
         mqtopt.deallocQubit %q1_2
 
         return

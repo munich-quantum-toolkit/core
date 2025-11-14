@@ -269,6 +269,40 @@ private:
    */
   SmallVector<Value> qubits_;
 };
+
+/**
+ * @brief Remap all input to output qubits for the given unitary op.
+ *
+ * @param op The unitary op.
+ * @param layout The current layout.
+ */
+inline void remap(UnitaryInterface op, Layout& layout) {
+  for (const auto& [in, out] :
+       llvm::zip_equal(op.getAllInQubits(), op.getAllOutQubits())) {
+    layout.remapQubitValue(in, out);
+  }
+}
+
+/**
+ * @brief Remap input to output qubit for the given reset op.
+ *
+ * @param op The reset op.
+ * @param layout The current layout.
+ */
+inline void remap(ResetOp op, Layout& layout) {
+  layout.remapQubitValue(op.getInQubit(), op.getOutQubit());
+}
+
+/**
+ * @brief Remap input to output qubit for the given measure op.
+ *
+ * @param op The measure op.
+ * @param layout The current layout.
+ */
+inline void remap(MeasureOp op, Layout& layout) {
+  layout.remapQubitValue(op.getInQubit(), op.getOutQubit());
+}
+
 } // namespace mqt::ir::opt
 
 namespace llvm {

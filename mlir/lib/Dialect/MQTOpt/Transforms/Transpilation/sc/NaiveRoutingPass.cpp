@@ -64,6 +64,10 @@ struct RoutingContext {
   PatternRewriter rewriter;
 };
 
+LogicalResult processRegion(Region& region, Layout& layout,
+                            SmallVector<QubitIndexPair>& history,
+                            RoutingContext& ctx);
+
 /**
  * @brief Insert SWAP ops at the rewriter's insertion point.
  *
@@ -116,14 +120,10 @@ void insertSWAPs(Location location, ArrayRef<QubitIndexPair> swaps,
                           layout.lookupHardwareIndex(ins.second));
 }
 
-LogicalResult processRegion(Region& region, Layout& layout,
-                            SmallVector<QubitIndexPair>& history,
-                            RoutingContext& ctx);
-
 /**
- * @brief Copy the layout and recursively map the loop body.
+ * @brief Copy the layout and recursively process the loop body.
  */
-WalkResult handleFor(scf::ForOp op, Layout& layout, RoutingContext& ctx) {
+WalkResult handle(scf::ForOp op, Layout& layout, RoutingContext& ctx) {
   /// Copy layout.
   Layout forLayout(layout);
 
@@ -144,7 +144,7 @@ WalkResult handleFor(scf::ForOp op, Layout& layout, RoutingContext& ctx) {
 /**
  * @brief Copy the layout for each branch and recursively map the branches.
  */
-WalkResult handleIf(scf::IfOp op, Layout& layout, RoutingContext& ctx) {
+WalkResult handle(scf::IfOp op, Layout& layout, RoutingContext& ctx) {
   /// Recursively handle each branch region.
   Layout ifLayout(layout);
   SmallVector<QubitIndexPair> ifHistory;
@@ -164,9 +164,8 @@ WalkResult handleIf(scf::IfOp op, Layout& layout, RoutingContext& ctx) {
 
   /// Forward out-of-if values.
   const auto results = op->getResults().take_front(ctx.arch->nqubits());
-  for (const auto [hw, res] : llvm::enumerate(results)) {
-    const Value q = layout.lookupHardwareValue(hw);
-    layout.remapQubitValue(q, res);
+  for (const auto [in, out] : llvm::zip(layout.getHardwareQubits(), results)) {
+    layout.remapQubitValue(in, out);
   }
 
   return WalkResult::advance();
@@ -175,17 +174,10 @@ WalkResult handleIf(scf::IfOp op, Layout& layout, RoutingContext& ctx) {
 /**
  * @brief Indicates the end of a region defined by a scf op.
  *
- * Restores layout by uncomputation and replaces (invalid) yield.
- *
- * Using uncompute has the advantages of (1) being intuitive and
- * (2) preserving the optimality of the original SWAP sequence.
- * Essentially the better the routing algorithm the better the
- * uncompute. Moreover, this has the nice property that routing
- * a 'for' of 'if' region always requires 2 * #(SWAPs required for region)
- * additional SWAPS.
+ * Restores layout by uncomputation.
  */
-WalkResult handleYield(scf::YieldOp op, Layout& layout,
-                       ArrayRef<QubitIndexPair> history, RoutingContext& ctx) {
+WalkResult handle(scf::YieldOp op, Layout& layout,
+                  ArrayRef<QubitIndexPair> history, RoutingContext& ctx) {
   /// Uncompute SWAPs.
   insertSWAPs(op.getLoc(), llvm::to_vector(llvm::reverse(history)), layout,
               ctx.rewriter);
@@ -200,7 +192,7 @@ WalkResult handleYield(scf::YieldOp op, Layout& layout,
  *
  * Thanks to the placement pass, we can apply the identity layout here.
  */
-WalkResult handleQubit(QubitOp op, Layout& layout) {
+WalkResult handle(QubitOp op, Layout& layout) {
   const std::size_t index = op.getIndex();
   layout.add(index, index, op.getQubit());
   return WalkResult::advance();
@@ -237,9 +229,8 @@ void findAndInsertSWAPs(UnitaryInterface op, Layout& layout,
  * @brief Ensures the executability of two-qubit gates on the given target
  * architecture by inserting SWAPs.
  */
-WalkResult handleUnitary(UnitaryInterface op, Layout& layout,
-                         SmallVector<QubitIndexPair>& history,
-                         RoutingContext& ctx) {
+WalkResult handle(UnitaryInterface op, Layout& layout,
+                  SmallVector<QubitIndexPair>& history, RoutingContext& ctx) {
   const std::vector<Value> inQubits = op.getAllInQubits();
   const std::vector<Value> outQubits = op.getAllOutQubits();
   const std::size_t nacts = inQubits.size();
@@ -294,22 +285,6 @@ WalkResult handleUnitary(UnitaryInterface op, Layout& layout,
   return WalkResult::advance();
 }
 
-/**
- * @brief Update layout.
- */
-WalkResult handleReset(ResetOp op, Layout& layout) {
-  layout.remapQubitValue(op.getInQubit(), op.getOutQubit());
-  return WalkResult::advance();
-}
-
-/**
- * @brief Update layout.
- */
-WalkResult handleMeasure(MeasureOp op, Layout& layout) {
-  layout.remapQubitValue(op.getInQubit(), op.getOutQubit());
-  return WalkResult::advance();
-}
-
 LogicalResult processRegion(Region& region, Layout& layout,
                             SmallVector<QubitIndexPair>& history,
                             RoutingContext& ctx) {
@@ -321,12 +296,17 @@ LogicalResult processRegion(Region& region, Layout& layout,
         TypeSwitch<Operation*, WalkResult>(&curr)
             /// mqtopt Dialect
             .Case<UnitaryInterface>([&](UnitaryInterface op) {
-              return handleUnitary(op, layout, history, ctx);
+              return handle(op, layout, history, ctx);
             })
-            .Case<QubitOp>([&](QubitOp op) { return handleQubit(op, layout); })
-            .Case<ResetOp>([&](ResetOp op) { return handleReset(op, layout); })
-            .Case<MeasureOp>(
-                [&](MeasureOp op) { return handleMeasure(op, layout); })
+            .Case<QubitOp>([&](QubitOp op) { return handle(op, layout); })
+            .Case<ResetOp>([&](ResetOp op) {
+              remap(op, layout);
+              return WalkResult::advance();
+            })
+            .Case<MeasureOp>([&](MeasureOp op) {
+              remap(op, layout);
+              return WalkResult::advance();
+            })
             /// built-in Dialect
             .Case<ModuleOp>([&]([[maybe_unused]] ModuleOp op) {
               return WalkResult::advance();
@@ -337,11 +317,11 @@ LogicalResult processRegion(Region& region, Layout& layout,
             })
             /// scf Dialect
             .Case<scf::ForOp>(
-                [&](scf::ForOp op) { return handleFor(op, layout, ctx); })
+                [&](scf::ForOp op) { return handle(op, layout, ctx); })
             .Case<scf::IfOp>(
-                [&](scf::IfOp op) { return handleIf(op, layout, ctx); })
+                [&](scf::IfOp op) { return handle(op, layout, ctx); })
             .Case<scf::YieldOp>([&](scf::YieldOp op) {
-              return handleYield(op, layout, history, ctx);
+              return handle(op, layout, history, ctx);
             })
             /// Skip the rest.
             .Default([](auto) { return WalkResult::skip(); });

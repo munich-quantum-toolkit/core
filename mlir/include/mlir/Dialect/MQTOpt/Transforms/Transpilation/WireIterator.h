@@ -15,19 +15,32 @@
 #include <cstddef>
 #include <iterator>
 #include <llvm/ADT/TypeSwitch.h>
+#include <llvm/Support/ErrorHandling.h>
+#include <mlir/Analysis/SliceAnalysis.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
 #include <mlir/IR/Operation.h>
 #include <mlir/IR/Value.h>
+#include <mlir/Support/LLVM.h>
+#include <stdexcept>
 
 namespace mqt::ir::opt {
 using namespace mlir;
 
+/**
+ * @brief A non-recursive input_iterator traversing the def-use chain of a
+ * single qubit (on a wire).
+ *
+ * It does not visit nested regions (nested ops).
+ */
 class WireIterator {
 public:
   using difference_type = std::ptrdiff_t;
   using value_type = Operation*;
 
-  explicit WireIterator(Value q = nullptr) : q(q) { setNextOp(); }
+  explicit WireIterator(Value q = nullptr, Region* region = nullptr)
+      : q(q), region(region) {
+    setNextOp();
+  }
 
   Operation* operator*() const { return currOp; }
 
@@ -45,13 +58,15 @@ private:
     if (q == nullptr) {
       return;
     }
+
     if (q.use_empty()) {
       q = nullptr;
       currOp = nullptr;
       return;
     }
 
-    currOp = getUserInRegion(q, q.getParentRegion());
+    currOp =
+        getUserInRegion(q, region != nullptr ? region : q.getParentRegion());
     if (currOp == nullptr) {
       /// Must be a branching op:
       currOp = q.getUsers().begin()->getParentOp();
@@ -61,7 +76,6 @@ private:
 
   void setNextQubit() {
     TypeSwitch<Operation*>(currOp)
-        /// MQT
         .Case<UnitaryInterface>([&](UnitaryInterface op) {
           for (const auto& [in, out] :
                llvm::zip_equal(op.getAllInQubits(), op.getAllOutQubits())) {
@@ -75,7 +89,6 @@ private:
         })
         .Case<ResetOp>([&](ResetOp op) { q = op.getOutQubit(); })
         .Case<MeasureOp>([&](MeasureOp op) { q = op.getOutQubit(); })
-        /// SCF
         .Case<scf::ForOp>([&](scf::ForOp op) {
           for (const auto& [in, out] :
                llvm::zip_equal(op.getInitArgs(), op.getResults())) {
@@ -87,17 +100,50 @@ private:
 
           llvm_unreachable("unknown qubit value in def-use chain");
         })
+        .Case<scf::IfOp>([&](scf::IfOp op) {
+          /// Find yielded value by using a recursive WireIterator for the THEN
+          /// region.
+          WireIterator itThen(q, &op.getThenRegion());
+          for (; itThen != WireIterator(); ++itThen) {
+            if (scf::YieldOp yield = dyn_cast<scf::YieldOp>(*itThen)) {
+              for (const auto [yielded, res] :
+                   llvm::zip(yield.getResults(), op->getResults())) {
+                if (itThen.q == yielded) {
+                  q = res;
+                  return;
+                }
+              }
+            }
+          }
+
+          /// Otherwise it must be in the ELSE region.
+          WireIterator itElse(q, &op.getElseRegion());
+          for (; itElse != WireIterator(); ++itElse) {
+            if (scf::YieldOp yield = dyn_cast<scf::YieldOp>(*itElse)) {
+              for (const auto [yielded, res] :
+                   llvm::zip(yield.getResults(), op->getResults())) {
+                if (itElse.q == yielded) {
+                  q = res;
+                  return;
+                }
+              }
+            }
+          }
+
+          llvm_unreachable("must find yielded value.");
+        })
         .Case<scf::YieldOp>([&](scf::YieldOp) {
           /// End of region. Invalidate iterator.
           q = nullptr;
           currOp = nullptr;
         })
-        .Default([&]([[maybe_unused]] Operation* op) {
-          llvm_unreachable("unknown operation in def-use chain");
+        .Default([&](Operation*) {
+          throw std::runtime_error("unhandled / invalid op in def-use chain");
         });
   }
 
   Value q;
+  Region* region;
   Operation* currOp{};
 };
 
