@@ -27,10 +27,20 @@ namespace mqt::ir::opt {
 using namespace mlir;
 
 /**
- * @brief A non-recursive input_iterator traversing the def-use chain of a
- * single qubit (on a wire).
+ * @brief A non-recursive input_iterator traversing the def-use chain of a qubit
+ * wire.
  *
- * It does not visit nested regions (nested ops).
+ * The iterator follows the flow of a qubit through a sequence of quantum
+ * operations in a given region. It respects the semantics of the respective
+ * quantum operation including control flow constructs (scf::ForOp and
+ * scf::IfOp).
+ *
+ * It does not visit operations within nested regions. These include the loop
+ * body of the scf::ForOp and the THEN and ELSE branches of the scf::IfOp. From
+ * the iterator's perspective these act like regular gates. As a consequence,
+ * an input qubit is mapped to the respective output qubit. For example, finding
+ * which result of an scf::IfOp corresponds to a qubit passed into one of its
+ * regions.
  */
 class WireIterator {
 public:
@@ -51,6 +61,7 @@ public:
   }
 
   void operator++(int) { ++*this; }
+
   bool operator==(const WireIterator& other) const { return other.q == q; }
 
 private:
