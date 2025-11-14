@@ -100,23 +100,8 @@ struct GateDecompositionPattern final
     [[nodiscard]] static TwoQubitSeries getTwoQubitSeries(UnitaryInterface op) {
       TwoQubitSeries result(op);
 
-      auto findNextInSeries = [&](mlir::Operation* user) {
-        auto userUnitary = mlir::dyn_cast<UnitaryInterface>(user);
-        if (!userUnitary) {
-          return false;
-        }
-
-        if (helpers::isSingleQubitOperation(userUnitary)) {
-          return result.appendSingleQubitGate(userUnitary);
-        }
-        if (helpers::isTwoQubitOperation(userUnitary)) {
-          return result.appendTwoQubitGate(userUnitary);
-        }
-        return false;
-      };
-
-      auto getUser =
-          [](mlir::Value qubit, auto&& filter) -> std::optional<UnitaryInterface> {
+      auto getUser = [](mlir::Value qubit,
+                        auto&& filter) -> std::optional<UnitaryInterface> {
         if (qubit) {
           assert(qubit.hasOneUse());
           auto user =
@@ -130,18 +115,20 @@ struct GateDecompositionPattern final
 
       bool foundGate = true;
       while (foundGate) {
+        foundGate = false;
         // collect all available single-qubit operations
         for (std::size_t i = 0; i < result.outQubits.size(); ++i) {
-          while (auto user = getUser(result.outQubits[i], &helpers::isSingleQubitOperation)) {
-            result.appendSingleQubitGate(*user);
-            foundGate = true;
+          while (auto user = getUser(result.outQubits[i],
+                                     &helpers::isSingleQubitOperation)) {
+            foundGate = result.appendSingleQubitGate(*user);
+            assert(foundGate); // appending a single-qubit gate should not fail
           }
         }
 
         for (std::size_t i = 0; i < result.outQubits.size(); ++i) {
-          while (auto user = getUser(result.outQubits[i], &helpers::isTwoQubitOperation)) {
-            result.appendTwoQubitGate(*user);
-            foundGate = true;
+          if (auto user =
+                  getUser(result.outQubits[i], &helpers::isTwoQubitOperation)) {
+            foundGate = result.appendTwoQubitGate(*user);
           }
         }
       }
