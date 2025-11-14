@@ -115,20 +115,34 @@ struct GateDecompositionPattern final
         return false;
       };
 
-      bool isFirstQubitOngoing = result.outQubits[0] != mlir::Value{};
-      bool isSecondQubitOngoing = result.outQubits[1] != mlir::Value{};
-      while (isFirstQubitOngoing || isSecondQubitOngoing) {
-        // TODO: can cause issues; instead: per iteration, collect all
-        // single-qubit operations, then take one two-qubit operation; repeat
-        if (result.outQubits[0]) {
-          assert(result.outQubits[0].hasOneUse());
-          isFirstQubitOngoing =
-              findNextInSeries(*result.outQubits[0].getUsers().begin());
+      auto getUser =
+          [](mlir::Value qubit, auto&& filter) -> std::optional<UnitaryInterface> {
+        if (qubit) {
+          assert(qubit.hasOneUse());
+          auto user =
+              mlir::dyn_cast<UnitaryInterface>(*qubit.getUsers().begin());
+          if (user && filter(user)) {
+            return user;
+          }
         }
-        if (result.outQubits[1]) {
-          assert(result.outQubits[1].hasOneUse());
-          isSecondQubitOngoing =
-              findNextInSeries(*result.outQubits[1].getUsers().begin());
+        return std::nullopt;
+      };
+
+      bool foundGate = true;
+      while (foundGate) {
+        // collect all available single-qubit operations
+        for (std::size_t i = 0; i < result.outQubits.size(); ++i) {
+          while (auto user = getUser(result.outQubits[i], &helpers::isSingleQubitOperation)) {
+            result.appendSingleQubitGate(*user);
+            foundGate = true;
+          }
+        }
+
+        for (std::size_t i = 0; i < result.outQubits.size(); ++i) {
+          while (auto user = getUser(result.outQubits[i], &helpers::isTwoQubitOperation)) {
+            result.appendTwoQubitGate(*user);
+            foundGate = true;
+          }
         }
       }
       return result;
