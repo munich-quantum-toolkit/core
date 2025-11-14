@@ -433,8 +433,7 @@ struct GateDecompositionPattern final
 
   // Wrap angle into interval [-π,π). If within atol of the endpoint, clamp
   // to -π
-  static fp mod2pi(fp angle,
-                   fp angleZeroEpsilon = std::numeric_limits<fp>::epsilon()) {
+  static fp mod2pi(fp angle, fp angleZeroEpsilon = 1e-13) {
     // remEuclid() isn't exactly the same as Python's % operator, but
     // because the RHS here is a constant and positive it is effectively
     // equivalent for this case
@@ -708,21 +707,21 @@ struct GateDecompositionPattern final
     }
     if (gate.qubitId.size() == 1) {
       if (gate.qubitId[0] == 0) {
-        return kroneckerProduct(IDENTITY_GATE, getSingleQubitMatrix(gate));
+        return kroneckerProduct(getSingleQubitMatrix(gate), IDENTITY_GATE);
       }
       if (gate.qubitId[0] == 1) {
-        return kroneckerProduct(getSingleQubitMatrix(gate), IDENTITY_GATE);
+        return kroneckerProduct(IDENTITY_GATE, getSingleQubitMatrix(gate));
       }
       throw std::logic_error{"Invalid qubit ID in getTwoQubitMatrix"};
     }
     if (gate.qubitId.size() == 2) {
       if (gate.type == qc::X) {
         // controlled X (CX)
-        if (gate.qubitId == llvm::SmallVector<std::size_t, 2>{1, 0}) {
+        if (gate.qubitId == llvm::SmallVector<std::size_t, 2>{0, 1}) {
           return matrix4x4{
               {1, 0, 0, 0}, {0, 1, 0, 0}, {0, 0, 0, 1}, {0, 0, 1, 0}};
         }
-        if (gate.qubitId == llvm::SmallVector<std::size_t, 2>{0, 1}) {
+        if (gate.qubitId == llvm::SmallVector<std::size_t, 2>{1, 0}) {
           return matrix4x4{
               {1, 0, 0, 0}, {0, 0, 0, 1}, {0, 0, 1, 0}, {0, 1, 0, 0}};
         }
@@ -771,7 +770,7 @@ struct GateDecompositionPattern final
     static TwoQubitWeylDecomposition
     newInner(matrix4x4 unitaryMatrix, std::optional<fp> fidelity,
              std::optional<Specialization> specialization) {
-      auto& u = unitaryMatrix;
+      auto u = unitaryMatrix;
       auto detU = u.determinant();
       std::cerr << "DET_U: " << detU << '\n';
       auto detPow = std::pow(detU, static_cast<fp>(-0.25));
@@ -815,8 +814,8 @@ struct GateDecompositionPattern final
         // using the same rng values rules out possible RNG differences
         // as the root cause of a test failure
         if (i == 0) {
+          randA = 1.2602066112249388;
           randB = 0.22317849046722027;
-          randA = 1.0 - randB;
         } else {
           randA = dist(state);
           randB = dist(state);
@@ -997,7 +996,7 @@ struct GateDecompositionPattern final
       for (int i = 0; i < static_cast<int>(order.size()); ++i) {
         p.col(i) = pOrig.col(order[i]);
       }
-            if (p.determinant().real() < 0.0) {
+      if (p.determinant().real() < 0.0) {
         std::cerr << "SECOND CORRECTION?\n";
         auto lastColumnIndex = p.cols() - 1;
         p.col(lastColumnIndex) *= -1.0;
@@ -1038,6 +1037,8 @@ struct GateDecompositionPattern final
 
       auto [K1l, K1r, phase_l] = decomposeTwoQubitProductGate(k1);
       auto [K2l, K2r, phase_r] = decomposeTwoQubitProductGate(k2);
+      assert(helpers::kroneckerProduct(K1l, K1r).isApprox(k1, 1e-9));
+      assert(helpers::kroneckerProduct(K2l, K2r).isApprox(k2, 1e-9));
       globalPhase += phase_l + phase_r;
 
       // Flip into Weyl chamber
@@ -1122,15 +1123,24 @@ struct GateDecompositionPattern final
         });
         return zz * yy * xx;
       };
-      helpers::print(getCanonicalMatrix(a * 2.0, b * 2.0, c * 2.0),
+      helpers::print(getCanonicalMatrix(a * -2.0, b * -2.0, c * -2.0),
                      "SANITY CHECK (2.1)", true);
-      helpers::print(
-          magicBasisTransform(temp.conjugate(), MagicBasisTransform::Into),
-          "SANITY CHECK (2.2)", true);
-      // assert(getCanonicalMatrix(a * -2.0, b * -2.0, c * -2.0)
-      //            .isApprox(magicBasisTransform(temp.conjugate(),
-      //                                          MagicBasisTransform::Into),
-      //                      1e-8));
+      helpers::print(helpers::kroneckerProduct(K1l, K1r), "SANITY CHECK (2.2)",
+                     true);
+      helpers::print(helpers::kroneckerProduct(K2l, K2r), "SANITY CHECK (2.3)",
+                     true);
+      helpers::print((helpers::kroneckerProduct(K1l, K1r) *
+                      getCanonicalMatrix(a * -2.0, b * -2.0, c * -2.0) *
+                      helpers::kroneckerProduct(K2l, K2r) *
+                      std::exp(IM * globalPhase))
+                         .eval(),
+                     "SANITY CHECK (2.x)", true);
+      std::cerr << "gphase: " << globalPhase << ", phase_l: " << phase_l
+                << ", phase_r: " << phase_r << '\n';
+      assert((helpers::kroneckerProduct(K1l, K1r) *
+              getCanonicalMatrix(a * -2.0, b * -2.0, c * -2.0) *
+              helpers::kroneckerProduct(K2l, K2r) * std::exp(IM * globalPhase))
+                 .isApprox(unitaryMatrix, 1e-8));
       auto isClose = [&](fp ap, fp bp, fp cp) -> bool {
         auto da = a - ap;
         auto db = b - bp;
@@ -1563,10 +1573,8 @@ struct GateDecompositionPattern final
       auto basisDecomposer = TwoQubitWeylDecomposition::newInner(
           getTwoQubitMatrix(basisGate), DEFAULT_FIDELITY, std::nullopt);
       auto superControlled =
-          relativeEq(basisDecomposer.a, qc::PI_4,
-                     std::numeric_limits<fp>::epsilon(), 1e-09) &&
-          relativeEq(basisDecomposer.c, 0.0, std::numeric_limits<fp>::epsilon(),
-                     1e-09);
+          relativeEq(basisDecomposer.a, qc::PI_4, 1e-13, 1e-09) &&
+          relativeEq(basisDecomposer.c, 0.0, 1e-13, 1e-09);
 
       // Create some useful matrices U1, U2, U3 are equivalent to the basis,
       // expand as Ui = Ki1.Ubasis.Ki2
