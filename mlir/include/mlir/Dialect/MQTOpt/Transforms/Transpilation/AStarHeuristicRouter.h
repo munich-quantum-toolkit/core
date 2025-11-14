@@ -52,7 +52,6 @@ struct AStarHeuristicRouter final {
       : weights_(std::move(weights)) {}
 
 private:
-  using ClosedMap = DenseMap<ThinLayout, std::size_t>;
   using Layer = ArrayRef<QubitIndexPair>;
   using Layers = ArrayRef<Layer>;
 
@@ -153,9 +152,6 @@ public:
     MinQueue frontier{};
     frontier.emplace(root);
 
-    /// Initialize visited map.
-    ClosedMap visited;
-
     /// Iterative searching and expanding.
     while (!frontier.empty()) {
       Node curr = frontier.top();
@@ -163,16 +159,6 @@ public:
 
       if (curr.isGoal(layers.front(), arch)) {
         return curr.sequence;
-      }
-
-      /// Don't revisit layouts that were discovered with a lower depth.
-      const auto [it, inserted] =
-          visited.try_emplace(curr.layout, curr.depth());
-      if (!inserted) {
-        if (it->second <= curr.depth()) {
-          continue;
-        }
-        it->second = curr.sequence.size();
       }
 
       /// Expand frontier with all neighbouring SWAPs in the current front.
