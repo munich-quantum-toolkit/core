@@ -16,23 +16,25 @@
 #include "mlir/Dialect/MQTOpt/Transforms/Transpilation/Layout.h"
 #include "mlir/Dialect/MQTOpt/Transforms/Transpilation/WireIterator.h"
 
+#include <algorithm>
 #include <cassert>
 #include <cstddef>
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/ADT/Statistic.h>
 #include <llvm/ADT/TypeSwitch.h>
+#include <llvm/ADT/iterator_range.h>
 #include <llvm/Support/Debug.h>
 #include <llvm/Support/ErrorHandling.h>
 #include <llvm/Support/Format.h>
 #include <llvm/Support/LogicalResult.h>
+#include <memory>
 #include <mlir/Analysis/TopologicalSortUtils.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/BuiltinAttributes.h>
 #include <mlir/IR/BuiltinOps.h>
-#include <mlir/IR/BuiltinTypes.h>
 #include <mlir/IR/Diagnostics.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/Operation.h>
@@ -441,10 +443,13 @@ WalkResult handle(UnitaryInterface op, Layout& layout,
 LogicalResult routeEachLayer(const LayerVec& layers, Layout layout,
                              SmallVector<QubitIndexPair>& history,
                              RoutingContext& ctx) {
+  const auto nhorizion = static_cast<std::ptrdiff_t>(1 + ctx.nlookahead);
+
   LayerVec::const_iterator end = layers.end();
-  for (LayerVec::const_iterator it = layers.begin(); it != end; ++it) {
+  LayerVec::const_iterator it = layers.begin();
+  for (; it != end; std::advance(it, 1)) {
     LayerVec::const_iterator lookaheadIt =
-        std::min(end, it + 1 + ctx.nlookahead);
+        std::min(end, std::next(it, nhorizion));
 
     const auto& front = *it; // == window.front()
 
@@ -467,8 +472,8 @@ LogicalResult routeEachLayer(const LayerVec& layers, Layout layout,
       *(ctx.stats.numSwaps) += swaps.size();
     }
 
-    for (Operation* curr : front.ops) {
-      const auto res = TypeSwitch<Operation*, WalkResult>(curr)
+    for (const Operation* curr : front.ops) {
+      const auto res = TypeSwitch<const Operation*, WalkResult>(curr)
                            .Case<UnitaryInterface>([&](UnitaryInterface op) {
                              return handle(op, layout, history);
                            })
