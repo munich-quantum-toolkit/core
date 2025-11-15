@@ -48,10 +48,6 @@ struct GateDecompositionPattern final
       std::cerr << gate.op->getName().stripDialect().str() << ", ";
     }
     std::cerr << '\n';
-    static int a{};
-    if (a++ > 0) {
-      return mlir::failure();
-    }
 
     if (series.gates.size() < 3) {
       // too short
@@ -215,13 +211,13 @@ struct GateDecompositionPattern final
         // controls of a gate should come first, but are last in the qubit order
         gates.push_back(
             {.op = nextGate, .qubitIds = {secondQubitId, firstQubitId}});
-      *firstQubitIt = nextGate->getResult(1);
-      *secondQubitIt = nextGate->getResult(0);
+        *firstQubitIt = nextGate->getResult(1);
+        *secondQubitIt = nextGate->getResult(0);
       } else {
         gates.push_back(
             {.op = nextGate, .qubitIds = {firstQubitId, secondQubitId}});
-      *firstQubitIt = nextGate->getResult(0);
-      *secondQubitIt = nextGate->getResult(1);
+        *firstQubitIt = nextGate->getResult(0);
+        *secondQubitIt = nextGate->getResult(1);
       }
       complexity += 2;
       return true;
@@ -1529,6 +1525,22 @@ struct GateDecompositionPattern final
         }
       }
       specialized.globalPhase += std::arg(tr);
+
+      helpers::print(
+          (helpers::kroneckerProduct(specialized.k1l, specialized.k1r) *
+           getCanonicalMatrix(specialized.a * -2.0, specialized.b * -2.0,
+                              specialized.c * -2.0) *
+           helpers::kroneckerProduct(specialized.k2l, specialized.k2r) *
+           std::exp(IM * specialized.globalPhase))
+              .eval(),
+          "SANITY CHECK (3)", true);
+      assert((helpers::kroneckerProduct(specialized.k1l, specialized.k1r) *
+              getCanonicalMatrix(specialized.a * -2.0, specialized.b * -2.0,
+                                 specialized.c * -2.0) *
+              helpers::kroneckerProduct(specialized.k2l, specialized.k2r) *
+              std::exp(IM * specialized.globalPhase))
+                 .isApprox(unitaryMatrix, 1e-8));
+
       return specialized;
     }
   };
@@ -1734,6 +1746,7 @@ struct GateDecompositionPattern final
         }
         return minIndex;
       };
+      // number of basis gates that need to be inserted
       auto bestNbasis = numBasisUses.value_or(getDefaultNbasis());
       auto chooseDecomposition = [&]() {
         if (bestNbasis == 0) {
@@ -1789,11 +1802,12 @@ struct GateDecompositionPattern final
             gates.gates.push_back({.type = gate.type,
                                    .parameter = gate.parameter,
                                    .qubitId = {qubitId}});
-            gates.globalPhase += eulerDecomp->globalPhase;
           }
+          gates.globalPhase += eulerDecomp->globalPhase;
         }
       };
 
+      // TODO: check if this actually uses the correct qubitIds
       for (std::size_t i = 0; i < bestNbasis; ++i) {
         addEulerDecomposition(2 * i, basisGate.qubitId[0]);
         addEulerDecomposition((2 * i) + 1, basisGate.qubitId[1]);
