@@ -102,7 +102,7 @@ inline std::ostream& operator<<(std::ostream& out, const OpType opType) {
   return out << toString(opType);
 }
 
-[[nodiscard]] OpType opTypeFromString(std::string_view opType);
+[[nodiscard]] OpType opTypeFromString(const std::string& opType);
 
 inline std::istream& operator>>(std::istream& in, OpType& opType) {
   std::string opTypeStr;
