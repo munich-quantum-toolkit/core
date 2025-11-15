@@ -33,30 +33,24 @@ jobs:
       CMAKE_BUILD_PARALLEL_LEVEL: 4
       CTEST_PARALLEL_LEVEL: 4
       FORCE_COLOR: 3
+      TOOLCHAIN_TAG: test-release-5
     steps:
       - name: Checkout
         uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5
         with:
           fetch-depth: 0
 
-      # OS-specific toolchain setup
-      - name: Setup LLVM/MLIR (Linux/macOS)
-        if: runner.os != 'Windows'
-        run: bash .github/scripts/setup-mlir.sh ${{ matrix.llvm-version }}
-
-      - name: Restore LLVM/MLIR cache (Windows)
-        if: runner.os == 'Windows'
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
-        id: mlir-cache
-        with:
-          path: llvm-install
-          key: ${{ matrix.os }}-llvm-${{ matrix.llvm-version }}
-
-      - name: Setup LLVM/MLIR (Windows)
-        if: runner.os == 'Windows'
-        shell: pwsh
+      - name: Free up some space (ubuntu-24.04)
+        if: ${{ matrix.os == 'ubuntu-24.04' }}
         run: |
-          & "${{ github.workspace }}\.github\scripts\setup-mlir.ps1" -MajorVersion ${{ matrix.llvm-version }} -InstallPrefix "${{ github.workspace }}\llvm-install"
+          sudo rm -rf /usr/share/dotnet
+          sudo rm -rf /opt/ghc
+          sudo rm -rf "$AGENT_TOOLSDIRECTORY"
+
+      - name: Setup LLVM/MLIR
+        uses: burgholzer/portable-mlir-toolchain@add-setup
+        with:
+          tag: ${{ env.TOOLCHAIN_TAG }}
 
       # Build acceleration and Python tooling
       - name: Set up mold as linker (Linux)
@@ -94,8 +88,8 @@ jobs:
           cmake -S . -B build `
             -DCMAKE_BUILD_TYPE=${{ matrix.coverage && 'Debug' || 'Release' }} `
             -DBUILD_MQT_CORE_MLIR=ON `
-            -DLLVM_DIR="${{ github.workspace }}\llvm-install\lib\cmake\llvm" `
-            -DMLIR_DIR="${{ github.workspace }}\llvm-install\lib\cmake\mlir" `
+            -DLLVM_DIR=$env:LLVM_DIR `
+            -DMLIR_DIR=$env:MLIR_DIR `
             -DLLVM_EXTERNAL_LIT=${{ github.workspace }}\.venv\Scripts\lit.exe `
             ${{ matrix.coverage && '-DENABLE_COVERAGE=ON' || '' }}
 
@@ -118,15 +112,15 @@ jobs:
         if: matrix.coverage
         run: |
           uvx gcovr \
-             --gcov-executable "/usr/lib/llvm-${{ matrix.llvm-version }}/bin/llvm-cov gcov" \
-             --exclude build \
-             --exclude-unreachable-branches \
-             --exclude-noncode-lines \
-             --exclude-throw-branches \
-             --print-summary \
-             --keep \
-             --json \
-             -o coverage-llvm-${{ matrix.llvm-version }}.json
+              --gcov-executable "llvm-cov gcov" \
+              --exclude build \
+              --exclude-unreachable-branches \
+              --exclude-noncode-lines \
+              --exclude-throw-branches \
+              --print-summary \
+              --keep \
+              --json \
+              -o coverage-llvm-${{ matrix.llvm-version }}.json
 
       - name: Upload coverage to Codecov
         if: matrix.coverage
