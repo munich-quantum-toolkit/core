@@ -188,6 +188,61 @@ void insertSWAPs(Location location, ArrayRef<QubitIndexPair> swaps,
   }
 }
 
+SmallVector<WireIterator, 2>
+advanceUntilEndOfTwoQubitBlock(ArrayRef<WireIterator> wires, Layout& layout,
+                               Layer& layer) {
+  assert(wires.size() == 2 && "expected two wires");
+
+  WireIterator it0 = wires[0];
+  WireIterator it1 = wires[1];
+  WireIterator end;
+  while (it0 != end && it1 != end) {
+    Operation* op0 = *it0;
+    if (!isa<UnitaryInterface>(op0) || isa<BarrierOp>(op0)) {
+      break;
+    }
+
+    Operation* op1 = *it1;
+    if (!isa<UnitaryInterface>(op1) || isa<BarrierOp>(op1)) {
+      break;
+    }
+
+    UnitaryInterface u0 = cast<UnitaryInterface>(op0);
+
+    /// Advance for single qubit gate on wire 0.
+    if (!isTwoQubitGate(u0)) {
+      layer.addOp(u0);   // Add 1Q-op to layer operations.
+      remap(u0, layout); // Remap scheduling layout.
+      ++it0;
+      continue;
+    }
+
+    UnitaryInterface u1 = cast<UnitaryInterface>(op1);
+
+    /// Advance for single qubit gate on wire 1.
+    if (!isTwoQubitGate(u1)) {
+      layer.addOp(u1);   // Add 1Q-op to layer operations.
+      remap(u1, layout); // Remap scheduling layout.
+      ++it1;
+      continue;
+    }
+
+    /// Stop if the wires reach different two qubit gates.
+    if (op0 != op1) {
+      break;
+    }
+
+    /// Remap and advance if u0 == u1.
+    layer.addOp(u1);
+    remap(u1, layout);
+
+    ++it0;
+    ++it1;
+  }
+
+  return {it0, it1};
+}
+
 /**
  * @brief Advance each wire until (>=2)-qubit gates are found, collect the
  * indices of the respective two-qubit gates, and prepare iterators for next
@@ -248,7 +303,8 @@ collectLayerAndAdvance(ArrayRef<WireIterator> wires, Layout& layout,
           remap(op, layout); // Remap scheduling layout.
 
           /// Release iterators for next iteration.
-          next.append(iterators.value());
+          next.append(
+              advanceUntilEndOfTwoQubitBlock(iterators.value(), layout, layer));
         }
 
         break;
@@ -521,9 +577,9 @@ LogicalResult processRegion(Region& region, Layout& layout,
   }
 
   /// Repair any SSA dominance issues.
-  for (Block& block : region.getBlocks()) {
-    sortTopologically(&block);
-  }
+  // for (Block& block : region.getBlocks()) {
+  //   sortTopologically(&block);
+  // }
 
   return success();
 }
@@ -551,9 +607,12 @@ LogicalResult route(ModuleOp module, std::unique_ptr<Architecture> arch,
 
     /// Find all hardware (static) qubits and initialize layout.
     Layout layout(ctx.arch->nqubits());
+    SmallVector<Wire> circuit;
+    circuit.reserve(ctx.arch->nqubits());
     for_each(func.getOps<QubitOp>(), [&](QubitOp op) {
       const std::size_t index = op.getIndex();
       layout.add(index, index, op.getQubit());
+      circuit.emplace_back(op.getQubit(), op.getQubit());
     });
 
     SmallVector<QubitIndexPair> history;
