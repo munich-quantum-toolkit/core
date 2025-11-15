@@ -16,6 +16,7 @@
 #include <cstdint>
 #include <iostream>
 #include <iterator>
+#include <map>
 #include <optional>
 #include <qdmi/client.h>
 #include <ranges>
@@ -192,6 +193,39 @@ class FoMaC {
   };
 
 public:
+  /**
+   * @brief Class representing a submitted job.
+   * @details This class provides methods to query job status and retrieve
+   * results.
+   * @see QDMI_Job
+   */
+  class Job {
+    QDMI_Job job_;
+
+  public:
+    /**
+     * @brief Constructs a Job object from a QDMI_Job handle.
+     * @param job The QDMI_Job handle to wrap.
+     */
+    explicit Job(QDMI_Job job) : job_(job) {}
+    /// @returns the underlying QDMI_Job object.
+    [[nodiscard]] auto getQDMIJob() const -> QDMI_Job { return job_; }
+    // NOLINTNEXTLINE(google-explicit-constructor)
+    operator QDMI_Job() const { return job_; }
+    /// @QDMI_job_check
+    [[nodiscard]] auto check() const -> QDMI_Job_Status;
+    /// @see QDMI_job_wait
+    auto wait() const -> void;
+    /// @see QDMI_job_cancel
+    auto cancel() const -> void;
+    /// Get the job ID
+    [[nodiscard]] auto getId() const -> std::string;
+    /// Get the number of shots
+    [[nodiscard]] auto getNumShots() const -> size_t;
+    /// Get the measurement counts
+    [[nodiscard]] auto getCounts() const -> std::map<std::string, size_t>;
+  };
+
   /**
    * @brief Class representing a quantum device.
    * @details This class provides methods to query properties of the device,
@@ -529,6 +563,10 @@ public:
     [[nodiscard]] auto getDurationScaleFactor() const -> std::optional<double>;
     /// @see QDMI_DEVICE_PROPERTY_MINATOMDISTANCE
     [[nodiscard]] auto getMinAtomDistance() const -> std::optional<uint64_t>;
+    /// @see QDMI_job_submit
+    [[nodiscard]] auto submitJob(const std::string& program,
+                                 QDMI_Program_Format format, size_t numShots,
+                                 double timeout = 60.0) const -> Job;
   };
 
 private:
