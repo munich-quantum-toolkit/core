@@ -438,8 +438,8 @@ public:
        * supported site pairs.
        * @param sites is an optional vector of sites for the query.
        * @param params is an optional vector of parameters for the query.
-       * @return Optional vector of site pairs if this is a local 2-qubit operation,
-       * std::nullopt otherwise.
+       * @return Optional vector of site pairs if this is a local 2-qubit
+       * operation, std::nullopt otherwise.
        * @see QDMI_OPERATION_PROPERTY_SITES
        */
       [[nodiscard]] auto
@@ -530,17 +530,18 @@ public:
     [[nodiscard]] auto getSites() const -> std::vector<Site>;
     /**
      * @brief Get only qubit sites (non-zone sites).
-     * @details Filters all sites and only returns regular sites, i.e., where `isZone()` yields
-     * `false`. These represent actual potential physical qubit locations on the device lattice.
+     * @details Filters all sites and only returns regular sites, i.e., where
+     * `isZone()` yields `false`. These represent actual potential physical
+     * qubit locations on the device lattice.
      * @returns vector of regular sites
      * @see QDMI_DEVICE_PROPERTY_SITES
      */
     [[nodiscard]] auto getQubits() const -> std::vector<Site>;
     /**
      * @brief Get only zone sites.
-     * @details Filters all sites and only returns zone sites, i.e., where `isZone()` yields `true`. 
-     * These represent a zone, i.e., an extent where zoned operations can be performed, not individual
-     * qubit locations.
+     * @details Filters all sites and only returns zone sites, i.e., where
+     * `isZone()` yields `true`. These represent a zone, i.e., an extent where
+     * zoned operations can be performed, not individual qubit locations.
      * @returns a vector of zone sites
      * @see QDMI_DEVICE_PROPERTY_SITES
      */
