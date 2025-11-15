@@ -118,7 +118,7 @@ auto FoMaC::Device::initDurationUnitFromDevice() -> bool {
 auto FoMaC::Device::initDecoherenceTimesFromDevice() -> bool {
   const auto regularSites = getQubits();
   if (regularSites.empty()) {
-    SPDLOG_INFO("Device has no regular qubit sites with decoherence data");
+    SPDLOG_INFO("Device has no regular sites with decoherence data");
     return false;
   }
   uint64_t sumT1 = 0;

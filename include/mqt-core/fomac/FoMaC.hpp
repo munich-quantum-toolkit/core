@@ -432,12 +432,13 @@ public:
           -> std::optional<std::vector<Site>>;
       /**
        * @brief Get valid site pairs for two-qubit operations.
-       * @details Returns the site combinations as pairs, preserving the tuple
-       * structure as specified by QDMI. This method should be used for local
-       * two-qubit operations to get the valid site combinations.
-       * @param sites Optional sites for query.
-       * @param params Optional parameters for query.
-       * @return Optional vector of site pairs if this is a 2-qubit operation,
+       * @details For local 2-qubit operations, this function interprets the
+       * returned list of sites by QDMI as site pairs according to the QDMI
+       * specification. Hence, this function facilitates easier iteration over
+       * supported site pairs.
+       * @param sites is an optional vector of sites for the query.
+       * @param params is an optional vector of parameters for the query.
+       * @return Optional vector of site pairs if this is a local 2-qubit operation,
        * std::nullopt otherwise.
        * @see QDMI_OPERATION_PROPERTY_SITES
        */
@@ -529,18 +530,18 @@ public:
     [[nodiscard]] auto getSites() const -> std::vector<Site>;
     /**
      * @brief Get only qubit sites (non-zone sites).
-     * @details Returns sites where isZone() is false. These represent actual
-     * physical qubit locations on the device lattice.
-     * @return Vector of qubit sites (filtered from all sites)
+     * @details Filters all sites and only returns regular sites, i.e., where `isZone()` yields
+     * `false`. These represent actual potential physical qubit locations on the device lattice.
+     * @returns vector of regular sites
      * @see QDMI_DEVICE_PROPERTY_SITES
      */
     [[nodiscard]] auto getQubits() const -> std::vector<Site>;
     /**
      * @brief Get only zone sites.
-     * @details Returns sites where isZone() is true. These represent
-     * operational regions where global operations are performed, not individual
+     * @details Filters all sites and only returns zone sites, i.e., where `isZone()` yields `true`. 
+     * These represent a zone, i.e., an extent where zoned operations can be performed, not individual
      * qubit locations.
-     * @return Vector of zone sites (filtered from all sites)
+     * @returns a vector of zone sites
      * @see QDMI_DEVICE_PROPERTY_SITES
      */
     [[nodiscard]] auto getZones() const -> std::vector<Site>;

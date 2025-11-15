@@ -84,7 +84,7 @@ class Device:
         def site_pairs(
             self, sites: Iterable[Device.Site] = ..., params: Iterable[float] = ...
         ) -> Iterable[tuple[Device.Site, Device.Site]] | None:
-            """Returns the list of site pairs the 2-qubit operation can be performed on."""
+            """Returns the list of site pairs the local 2-qubit operation can be performed on."""
         def mean_shuttling_speed(self, sites: Iterable[Device.Site] = ..., params: Iterable[float] = ...) -> int | None:
             """Returns the mean shuttling speed of the operation."""
         def __eq__(self, other: object) -> bool:
@@ -103,11 +103,11 @@ class Device:
     def qubits_num(self) -> int:
         """Returns the number of qubits available on the device."""
     def sites(self) -> Iterable[Site]:
-        """Returns the list of all sites (zones and qubits) available on the device."""
+        """Returns the list of all sites (zone and regular sites) available on the device."""
     def qubits(self) -> Iterable[Site]:
-        """Returns the list of qubit sites (non-zone sites) available on the device."""
+        """Returns the list of regular sites (without all zone sites) available on the device."""
     def zones(self) -> Iterable[Site]:
-        """Returns the list of zone sites available on the device."""
+        """Returns the list of zone sites (without regular sites) available on the device."""
     def operations(self) -> Iterable[Operation]:
         """Returns the list of operations supported by the device."""
     def coupling_map(self) -> Iterable[tuple[Site, Site]] | None:

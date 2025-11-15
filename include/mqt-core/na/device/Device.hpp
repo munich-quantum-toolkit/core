@@ -320,13 +320,13 @@ private:
   std::optional<double> idlingFidelity_ = std::nullopt;
 
   /**
-   * @brief Storage for supported sites with different structures.
-   * @details Uses std::variant to preserve the tuple structure of operation
+   * @brief Storage for individual sites and site pairs.
+   * @details Uses std::variant to preserve the tuple structure of the operation
    * sites:
-   * - Single-qubit operations: vector<Site>
-   * - Two-qubit operations: vector<pair<Site, Site>>
-   * This maintains type safety and QDMI specification compliance which states
-   * that operation sites should be "a list of tuples" for multi-qubit
+   * - Single-qubit and zoned operations: vector<Site>
+   * - Local two-qubit operations: vector<pair<Site, Site>>
+   * This maintains type safety and QDMI specification compliance, which states
+   * that operation sites should be "a list of tuples" for local multi-qubit
    * operations.
    */
   using SitesStorage =
