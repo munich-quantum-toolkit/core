@@ -430,6 +430,22 @@ public:
       [[nodiscard]] auto getSites(const std::vector<Site>& sites = {},
                                   const std::vector<double>& params = {}) const
           -> std::optional<std::vector<Site>>;
+      /**
+       * @brief Get valid site pairs for two-qubit operations.
+       * @details For local 2-qubit operations, this function interprets the
+       * returned list of sites by QDMI as site pairs according to the QDMI
+       * specification. Hence, this function facilitates easier iteration over
+       * supported site pairs.
+       * @param sites is an optional vector of sites for the query.
+       * @param params is an optional vector of parameters for the query.
+       * @return Optional vector of site pairs if this is a local 2-qubit
+       * operation, std::nullopt otherwise.
+       * @see QDMI_OPERATION_PROPERTY_SITES
+       */
+      [[nodiscard]] auto
+      getSitePairs(const std::vector<Site>& sites = {},
+                   const std::vector<double>& params = {}) const
+          -> std::optional<std::vector<std::pair<Site, Site>>>;
       /// @see QDMI_OPERATION_PROPERTY_MEANSHUTTLINGSPEED
       [[nodiscard]] auto
       getMeanShuttlingSpeed(const std::vector<Site>& sites = {},
@@ -512,6 +528,24 @@ public:
     [[nodiscard]] auto getQubitsNum() const -> size_t;
     /// @see QDMI_DEVICE_PROPERTY_SITES
     [[nodiscard]] auto getSites() const -> std::vector<Site>;
+    /**
+     * @brief Get only qubit sites (non-zone sites).
+     * @details Filters all sites and only returns regular sites, i.e., where
+     * `isZone()` yields `false`. These represent actual potential physical
+     * qubit locations on the device lattice.
+     * @returns vector of regular sites
+     * @see QDMI_DEVICE_PROPERTY_SITES
+     */
+    [[nodiscard]] auto getQubits() const -> std::vector<Site>;
+    /**
+     * @brief Get only zone sites.
+     * @details Filters all sites and only returns zone sites, i.e., where
+     * `isZone()` yields `true`. These represent a zone, i.e., an extent where
+     * zoned operations can be performed, not individual qubit locations.
+     * @returns a vector of zone sites
+     * @see QDMI_DEVICE_PROPERTY_SITES
+     */
+    [[nodiscard]] auto getZones() const -> std::vector<Site>;
     /// @see QDMI_DEVICE_PROPERTY_OPERATIONS
     [[nodiscard]] auto getOperations() const -> std::vector<Operation>;
     /// @see QDMI_DEVICE_PROPERTY_COUPLINGMAP
