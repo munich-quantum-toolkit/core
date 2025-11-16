@@ -58,7 +58,7 @@ struct GateDecompositionPattern final
       llvm::SmallVector<std::size_t, 2> qubitId = {0};
     };
     std::vector<Gate> gates;
-    std::size_t complexity() {
+    [[nodiscard]] std::size_t complexity() const {
       std::size_t c{};
       for (auto&& gate : gates) {
         c += getComplexity(gate.type, gate.qubitId.size());
@@ -691,7 +691,7 @@ protected:
   }
 
   static std::array<fp, 4> paramsXyxInner(const matrix2x2& matrix) {
-    auto matZyz = matrix2x2{
+    matrix2x2 matZyz{
         {static_cast<fp>(0.5) *
              (matrix(0, 0) + matrix(0, 1) + matrix(1, 0) + matrix(1, 1)),
          static_cast<fp>(0.5) *
@@ -1625,11 +1625,11 @@ protected:
         }
         return absDiff <= absLhs * maxRelative;
       };
-      const auto k12RArr = matrix2x2{
+      const matrix2x2 k12RArr{
           {qfp(0., FRAC1_SQRT2), qfp(FRAC1_SQRT2, 0.)},
           {qfp(-FRAC1_SQRT2, 0.), qfp(0., -FRAC1_SQRT2)},
       };
-      const auto k12LArr = matrix2x2{
+      const matrix2x2 k12LArr{
           {qfp(0.5, 0.5), qfp(0.5, 0.5)},
           {qfp(-0.5, 0.5), qfp(0.5, -0.5)},
       };
@@ -1644,42 +1644,41 @@ protected:
       // expand as Ui = Ki1.Ubasis.Ki2
       auto b = basisDecomposer.b;
       auto temp = qfp(0.5, -0.5);
-      auto k11l = matrix2x2{
+      matrix2x2 k11l{
           {temp * (M_IM * std::exp(qfp(0., -b))), temp * std::exp(qfp(0., -b))},
-          {temp * (M_IM * std::exp(qfp(0., b))),
-           temp * -(std::exp(qfp(0., b)))}};
-      auto k11r = matrix2x2{{FRAC1_SQRT2 * std::exp((IM * qfp(0., -b))),
-                             FRAC1_SQRT2 * -std::exp(qfp(0., -b))},
-                            {FRAC1_SQRT2 * std::exp(qfp(0., b)),
-                             FRAC1_SQRT2 * (M_IM * std::exp(qfp(0., b)))}};
-      auto k32lK21l = matrix2x2{{FRAC1_SQRT2 * std::cos(qfp(1., (2. * b))),
-                                 FRAC1_SQRT2 * (IM * std::sin((2. * b)))},
-                                {FRAC1_SQRT2 * (IM * std::sin(2. * b)),
-                                 FRAC1_SQRT2 * qfp(1., -std::cos(2. * b))}};
+          {temp * (M_IM * std::exp(qfp(0., b))), temp * -std::exp(qfp(0., b))}};
+      matrix2x2 k11r{{FRAC1_SQRT2 * std::exp((IM * qfp(0., -b))),
+                      FRAC1_SQRT2 * -std::exp(qfp(0., -b))},
+                     {FRAC1_SQRT2 * std::exp(qfp(0., b)),
+                      FRAC1_SQRT2 * (M_IM * std::exp(qfp(0., b)))}};
+      matrix2x2 k32lK21l{{FRAC1_SQRT2 * std::cos(qfp(1., (2. * b))),
+                          FRAC1_SQRT2 * (IM * std::sin((2. * b)))},
+                         {FRAC1_SQRT2 * (IM * std::sin(2. * b)),
+                          FRAC1_SQRT2 * qfp(1., -std::cos(2. * b))}};
       temp = qfp(0.5, 0.5);
-      auto k21r = matrix2x2{
+      matrix2x2 k21r{
           {temp * (M_IM * std::exp(qfp(0., -2. * b))),
            temp * std::exp(qfp(0., -2. * b))},
           {temp * (IM * std::exp(qfp(0., 2. * b))),
            temp * std::exp(qfp(0., 2. * b))},
       };
-      const auto k22LArr = matrix2x2{
+      const matrix2x2 k22LArr{
           {qfp(FRAC1_SQRT2, 0.), qfp(-FRAC1_SQRT2, 0.)},
           {qfp(FRAC1_SQRT2, 0.), qfp(FRAC1_SQRT2, 0.)},
       };
-      const auto k22RArr = matrix2x2{{C_ZERO, C_ONE}, {C_M_ONE, C_ZERO}};
-      auto k31l = matrix2x2{
+      const matrix2x2 k22RArr{{C_ZERO, C_ONE}, {C_M_ONE, C_ZERO}};
+      matrix2x2 k31l{
           {FRAC1_SQRT2 * std::exp(qfp(0., -b)),
            FRAC1_SQRT2 * std::exp(qfp(0., -b))},
           {FRAC1_SQRT2 * -std::exp(qfp(0., b)),
            FRAC1_SQRT2 * std::exp(qfp(0., b))},
       };
-      auto k31r = matrix2x2{
+      matrix2x2 k31r{
           {IM * std::exp(qfp(0., b)), C_ZERO},
           {C_ZERO, M_IM * std::exp(qfp(0., -b))},
       };
       temp = qfp(0.5, 0.5);
-      auto k32r = matrix2x2{
+      matrix2x2 k32r{
           {temp * std::exp(qfp(0., b)), temp * -std::exp(qfp(0., -b))},
           {temp * (M_IM * std::exp(qfp(0., b))),
            temp * (M_IM * std::exp(qfp(0., -b)))},
@@ -1743,7 +1742,7 @@ protected:
     std::optional<TwoQubitGateSequence>
     twoQubitDecompose(const matrix4x4& unitaryMatrix,
                       std::optional<fp> basisFidelity, bool approximate,
-                      std::optional<std::uint8_t> numBasisUses) {
+                      std::optional<std::uint8_t> numBasisGateUses) {
       auto getBasisFidelity = [&]() {
         if (approximate) {
           return basisFidelity.value_or(this->basisFidelity);
@@ -1767,7 +1766,7 @@ protected:
         return minIndex;
       };
       // number of basis gates that need to be inserted
-      auto bestNbasis = numBasisUses.value_or(getDefaultNbasis());
+      auto bestNbasis = numBasisGateUses.value_or(getDefaultNbasis());
       auto chooseDecomposition = [&]() {
         if (bestNbasis == 0) {
           return decomp0Inner(targetDecomposed);
