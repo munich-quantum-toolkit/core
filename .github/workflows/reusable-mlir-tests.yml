@@ -50,7 +50,7 @@ jobs:
       - name: Setup LLVM/MLIR
         uses: burgholzer/portable-mlir-toolchain@add-setup
         with:
-          tag: ${{ env.TOOLCHAIN_TAG }}
+          tag: test-release-6
 
       # Build acceleration and Python tooling
       - name: Set up mold as linker (Linux)
