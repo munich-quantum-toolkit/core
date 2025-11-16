@@ -111,10 +111,16 @@ struct Layer {
 /// @brief A vector of layers.
 using LayerVec = SmallVector<Layer>;
 
+struct Wire {
+  Wire(WireIterator it, QubitIndex index) : it(it), index(index) {}
+  WireIterator it;
+  QubitIndex index;
+};
+
 /// @brief Map to handle multi-qubit gates when traversing the def-use chain.
 class SynchronizationMap {
   /// @brief Maps operations to to-be-released iterators.
-  DenseMap<Operation*, SmallVector<WireIterator, 0>> onHold;
+  DenseMap<Operation*, SmallVector<Wire, 0>> onHold;
 
   /// @brief Maps operations to ref counts. An op can be released whenever the
   /// count reaches zero.
@@ -124,20 +130,19 @@ public:
   /// @returns true iff. the operation is contained in the map.
   bool contains(Operation* op) { return onHold.contains(op); }
 
-  /// @brief Add op with respective iterator and ref count to map.
-  void add(Operation* op, WireIterator it, const std::size_t cnt) {
-    onHold.try_emplace(op, SmallVector<WireIterator>{it});
+  /// @brief Add op with respective wire and ref count to map.
+  void add(Operation* op, Wire wire, const std::size_t cnt) {
+    onHold.try_emplace(op, SmallVector<Wire>{wire});
     /// Decrease the cnt by one because the op was visited when adding.
     refCount.try_emplace(op, cnt - 1);
   }
 
   /// @brief Decrement ref count of op and potentially release its iterators.
-  std::optional<SmallVector<WireIterator, 0>> visit(Operation* op,
-                                                    WireIterator it) {
+  std::optional<SmallVector<Wire, 0>> visit(Operation* op, Wire wire) {
     assert(refCount.contains(op) && "expected sync map to contain op");
 
     /// Add iterator for later release.
-    onHold[op].push_back(it);
+    onHold[op].push_back(wire);
 
     /// Release iterators whenever the ref count reaches zero.
     if (--refCount[op] == 0) {
@@ -193,14 +198,13 @@ void insertSWAPs(Location location, ArrayRef<QubitIndexPair> swaps,
 // Scheduling
 //===----------------------------------------------------------------------===//
 
-SmallVector<WireIterator, 2>
-advanceUntilEndOfTwoQubitBlock(ArrayRef<WireIterator> wires, Layout& layout,
-                               Layer& layer) {
+SmallVector<Wire, 2> advanceUntilEndOfTwoQubitBlock(ArrayRef<Wire> wires,
+                                                    Layer& layer) {
   assert(wires.size() == 2 && "expected two wires");
 
-  WireIterator it0 = wires[0];
-  WireIterator it1 = wires[1];
   WireIterator end;
+  auto [it0, index0] = wires[0];
+  auto [it1, index1] = wires[1];
   while (it0 != end && it1 != end) {
     Operation* op0 = *it0;
     if (!isa<UnitaryInterface>(op0) || isa<BarrierOp>(op0)) {
@@ -216,8 +220,7 @@ advanceUntilEndOfTwoQubitBlock(ArrayRef<WireIterator> wires, Layout& layout,
 
     /// Advance for single qubit gate on wire 0.
     if (!isTwoQubitGate(u0)) {
-      layer.addOp(u0);   // Add 1Q-op to layer operations.
-      remap(u0, layout); // Remap scheduling layout.
+      layer.addOp(u0); // Add 1Q-op to layer operations.
       ++it0;
       continue;
     }
@@ -226,8 +229,7 @@ advanceUntilEndOfTwoQubitBlock(ArrayRef<WireIterator> wires, Layout& layout,
 
     /// Advance for single qubit gate on wire 1.
     if (!isTwoQubitGate(u1)) {
-      layer.addOp(u1);   // Add 1Q-op to layer operations.
-      remap(u1, layout); // Remap scheduling layout.
+      layer.addOp(u1); // Add 1Q-op to layer operations.
       ++it1;
       continue;
     }
@@ -239,13 +241,12 @@ advanceUntilEndOfTwoQubitBlock(ArrayRef<WireIterator> wires, Layout& layout,
 
     /// Remap and advance if u0 == u1.
     layer.addOp(u1);
-    remap(u1, layout);
 
     ++it0;
     ++it1;
   }
 
-  return {it0, it1};
+  return {Wire(it0, index0), Wire(it1, index1)};
 }
 
 /**
@@ -253,16 +254,16 @@ advanceUntilEndOfTwoQubitBlock(ArrayRef<WireIterator> wires, Layout& layout,
  * indices of the respective two-qubit gates, and prepare iterators for next
  * iteration.
  */
-std::pair<Layer, SmallVector<WireIterator>>
-collectLayerAndAdvance(ArrayRef<WireIterator> wires, Layout& layout,
-                       SynchronizationMap& sync) {
+std::pair<Layer, SmallVector<Wire>>
+collectLayerAndAdvance(ArrayRef<Wire> wires, SynchronizationMap& sync,
+                       const std::size_t nqubits) {
   /// The collected layer.
   Layer layer;
   /// A vector of iterators for the next iteration.
-  SmallVector<WireIterator> next;
+  SmallVector<Wire> next;
   next.reserve(wires.size());
 
-  for (WireIterator it : wires) {
+  for (auto [it, index] : wires) {
     while (it != WireIterator()) {
       Operation* curr = *it;
 
@@ -270,14 +271,13 @@ collectLayerAndAdvance(ArrayRef<WireIterator> wires, Layout& layout,
       /// synchronization.
       if (auto op = dyn_cast<BarrierOp>(curr)) {
         if (!sync.contains(op)) {
-          sync.add(op, ++it, op.getInQubits().size());
+          sync.add(op, Wire(++it, index), op.getInQubits().size());
           break;
         }
 
-        if (const auto iterators = sync.visit(op, ++it)) {
+        if (const auto iterators = sync.visit(op, Wire(++it, index))) {
           layer.addOp(op);
           next.append(iterators.value());
-          remap(op, layout); // Remap values on release.
         }
 
         break;
@@ -286,7 +286,6 @@ collectLayerAndAdvance(ArrayRef<WireIterator> wires, Layout& layout,
       if (auto op = dyn_cast<UnitaryInterface>(curr)) {
         if (!isTwoQubitGate(op)) {
           layer.addOp(curr); // Add 1Q-op to layer operations.
-          remap(op, layout); // Remap scheduling layout.
           ++it;
           continue;
         }
@@ -294,36 +293,30 @@ collectLayerAndAdvance(ArrayRef<WireIterator> wires, Layout& layout,
         if (!sync.contains(op)) {
           /// Add the next iterator after the two-qubit
           /// gate for a later release.
-          sync.add(op, ++it, 2);
+          sync.add(op, Wire(++it, index), 2);
           break;
         }
 
-        if (const auto iterators = sync.visit(op, ++it)) {
-          const auto ins = getIns(op);
-
+        if (const auto iterators = sync.visit(op, Wire(++it, index))) {
           /// Only add ready two-qubit gates to the layer.
           layer.addOp(op);
-          layer.gates.emplace_back(layout.lookupProgramIndex(ins.first),
-                                   layout.lookupProgramIndex(ins.second));
-          remap(op, layout); // Remap scheduling layout.
+          layer.gates.emplace_back((*iterators)[0].index,
+                                   (*iterators)[1].index);
 
           /// Release iterators for next iteration.
-          next.append(
-              advanceUntilEndOfTwoQubitBlock(iterators.value(), layout, layer));
+          next.append(advanceUntilEndOfTwoQubitBlock(iterators.value(), layer));
         }
 
         break;
       }
 
       if (auto op = dyn_cast<ResetOp>(curr)) {
-        remap(op, layout);
         layer.addOp(curr);
         ++it;
         continue;
       }
 
       if (auto op = dyn_cast<MeasureOp>(curr)) {
-        remap(op, layout);
         layer.addOp(curr);
         ++it;
         continue;
@@ -332,18 +325,12 @@ collectLayerAndAdvance(ArrayRef<WireIterator> wires, Layout& layout,
       if (auto op = dyn_cast<RegionBranchOpInterface>(curr)) {
         if (!sync.contains(op)) {
           /// This assumes that branch ops always returns all hardware qubits.
-          sync.add(op, ++it, layout.getNumQubits());
+          sync.add(op, Wire(++it, index), nqubits);
           break;
         }
 
-        if (const auto iterators = sync.visit(op, ++it)) {
+        if (const auto iterators = sync.visit(op, Wire(++it, index))) {
           layer.addOp(op);
-
-          /// Remap values on release.
-          for (const auto& [in, out] :
-               llvm::zip_equal(layout.getHardwareQubits(), op->getResults())) {
-            layout.remapQubitValue(in, out);
-          }
           next.append(iterators.value());
         }
         break;
@@ -352,11 +339,11 @@ collectLayerAndAdvance(ArrayRef<WireIterator> wires, Layout& layout,
       if (auto yield = dyn_cast<scf::YieldOp>(curr)) {
         if (!sync.contains(yield)) {
           /// This assumes that yield always returns all hardware qubits.
-          sync.add(yield, ++it, layout.getNumQubits());
+          sync.add(yield, Wire(++it, index), nqubits);
           break;
         }
 
-        if (const auto iterators = sync.visit(yield, ++it)) {
+        if (const auto iterators = sync.visit(yield, Wire(++it, index))) {
           layer.addOp(yield);
         }
 
@@ -375,15 +362,18 @@ collectLayerAndAdvance(ArrayRef<WireIterator> wires, Layout& layout,
  * @brief Given a layout, divide the circuit into layers and schedule the ops in
  * their respective layer.
  */
-LayerVec schedule(Layout layout, Region& region) {
+LayerVec schedule(const Layout& layout, Region& region) {
   LayerVec layers;
   SynchronizationMap sync;
-  SmallVector<WireIterator> wires(
-      llvm::map_range(layout.getHardwareQubits(),
-                      [&](Value q) { return WireIterator(q, &region); }));
+  SmallVector<Wire> wires;
+  wires.reserve(layout.getNumQubits());
+  for (auto [hw, q] : llvm::enumerate(layout.getHardwareQubits())) {
+    wires.emplace_back(WireIterator(q, &region), layout.getProgramIndex(hw));
+  }
 
   do {
-    const auto [layer, next] = collectLayerAndAdvance(wires, layout, sync);
+    const auto [layer, next] =
+        collectLayerAndAdvance(wires, sync, layout.getNumQubits());
     if (layer.ops.empty()) {
       break;
     }
@@ -630,7 +620,6 @@ LogicalResult routeEachLayer(const LayerVec& layers, Layout layout,
 LogicalResult processRegion(Region& region, Layout& layout,
                             SmallVector<QubitIndexPair>& history,
                             RoutingContext& ctx) {
-  schedule(layout, region);
   /// Find and route each of the layers. Might violate SSA dominance.
   const auto res =
       routeEachLayer(schedule(layout, region), layout, history, ctx);
