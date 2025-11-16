@@ -27,6 +27,7 @@
 #include <mlir/Support/LogicalResult.h>
 #include <numbers>
 #include <string>
+#include <utility>
 
 namespace mqt::ir::opt {
 
@@ -35,9 +36,46 @@ namespace mqt::ir::opt {
  */
 struct GateDecompositionPattern final
     : mlir::OpInterfaceRewritePattern<UnitaryInterface> {
+  enum class EulerBasis : std::uint8_t {
+    U3 = 0,
+    U321 = 1,
+    U = 2,
+    PSX = 3,
+    U1X = 4,
+    RR = 5,
+    ZYZ = 6,
+    ZXZ = 7,
+    XZX = 8,
+    XYX = 9,
+    ZSXX = 10,
+    ZSX = 11,
+  };
 
-  explicit GateDecompositionPattern(mlir::MLIRContext* context)
-      : OpInterfaceRewritePattern(context) {}
+  struct QubitGateSequence {
+    struct Gate {
+      qc::OpType type{qc::I};
+      llvm::SmallVector<fp, 3> parameter;
+      llvm::SmallVector<std::size_t, 2> qubitId = {0};
+    };
+    std::vector<Gate> gates;
+    std::size_t complexity() {
+      std::size_t c{};
+      for (auto&& gate : gates) {
+        c += getComplexity(gate.type, gate.qubitId.size());
+      }
+      return c;
+    }
+    fp globalPhase{};
+  };
+  using OneQubitGateSequence = QubitGateSequence;
+  using TwoQubitGateSequence = QubitGateSequence;
+
+  explicit GateDecompositionPattern(mlir::MLIRContext* context,
+                                    QubitGateSequence::Gate basisGate,
+                                    EulerBasis eulerBasis)
+      : OpInterfaceRewritePattern(context),
+        decomposerBasisGate{std::move(basisGate)},
+        decomposerEulerBasis{eulerBasis} {}
 
   mlir::LogicalResult
   matchAndRewrite(UnitaryInterface op,
@@ -62,7 +100,8 @@ struct GateDecompositionPattern final
     matrix4x4 unitaryMatrix = series.getUnitaryMatrix();
     helpers::print(unitaryMatrix, "UNITARY MATRIX", true);
 
-    auto decomposer = TwoQubitBasisDecomposer::newInner();
+    auto decomposer = TwoQubitBasisDecomposer::newInner(
+        decomposerBasisGate, DEFAULT_FIDELITY, decomposerEulerBasis);
     auto sequence = decomposer.twoQubitDecompose(
         unitaryMatrix, DEFAULT_FIDELITY, true, std::nullopt);
     if (!sequence) {
@@ -80,6 +119,16 @@ struct GateDecompositionPattern final
     applySeries(rewriter, series, *sequence);
 
     return mlir::success();
+  }
+
+protected:
+  [[nodiscard]] static std::size_t getComplexity(qc::OpType /*type*/,
+                                                 std::size_t numOfQubits) {
+    if (numOfQubits > 1) {
+      constexpr std::size_t multiQubitFactor = 10;
+      return (numOfQubits - 1) * multiQubitFactor;
+    }
+    return 1;
   }
 
   struct TwoQubitSeries {
@@ -128,6 +177,7 @@ struct GateDecompositionPattern final
           }
         }
       }
+      // TODO: need to search and apply for global phase?
       return result;
     }
 
@@ -152,17 +202,22 @@ struct GateDecompositionPattern final
         inQubits = {in[0], mlir::Value{}};
         outQubits = {out[0], mlir::Value{}};
         gates.push_back({.op = initialOperation, .qubitIds = {0}});
-        complexity += 1;
       } else if (helpers::isTwoQubitOperation(initialOperation)) {
         inQubits = {in[0], in[1]};
         outQubits = {out[0], out[1]};
-        gates.push_back({.op = initialOperation, .qubitIds = {0, 1}});
-        complexity += 2;
+        if (initialOperation.isControlled()) {
+          gates.push_back({.op = initialOperation, .qubitIds = {1, 0}});
+        } else {
+          gates.push_back({.op = initialOperation, .qubitIds = {0, 1}});
+        }
       }
+      complexity +=
+          getComplexity(helpers::getQcType(initialOperation), in.size());
     }
 
     /**
      * @return true if series continues, otherwise false
+     *         (will always return true)
      */
     bool appendSingleQubitGate(UnitaryInterface nextGate) {
       auto operand = nextGate.getAllInQubits()[0];
@@ -175,7 +230,7 @@ struct GateDecompositionPattern final
       *it = nextGate->getResult(0);
 
       gates.push_back({.op = nextGate, .qubitIds = {qubitId}});
-      complexity += 1;
+      complexity += getComplexity(helpers::getQcType(nextGate), 1);
       return true;
     }
 
@@ -206,20 +261,18 @@ struct GateDecompositionPattern final
       std::size_t firstQubitId = std::distance(outQubits.begin(), firstQubitIt);
       std::size_t secondQubitId =
           std::distance(outQubits.begin(), secondQubitIt);
+      *firstQubitIt = nextGate->getResult(0);
+      *secondQubitIt = nextGate->getResult(1);
 
       if (nextGate.isControlled()) {
         // controls of a gate should come first, but are last in the qubit order
         gates.push_back(
             {.op = nextGate, .qubitIds = {secondQubitId, firstQubitId}});
-        *firstQubitIt = nextGate->getResult(1);
-        *secondQubitIt = nextGate->getResult(0);
       } else {
         gates.push_back(
             {.op = nextGate, .qubitIds = {firstQubitId, secondQubitId}});
-        *firstQubitIt = nextGate->getResult(0);
-        *secondQubitIt = nextGate->getResult(1);
       }
-      complexity += 2;
+      complexity += getComplexity(helpers::getQcType(nextGate), 2);
       return true;
     }
   };
@@ -263,25 +316,6 @@ struct GateDecompositionPattern final
         mlir::DenseF64ArrayAttr{}, mlir::DenseBoolArrayAttr{}, parameterValues,
         inQubits, ctrlQubits, mlir::ValueRange{});
   }
-
-  struct QubitGateSequence {
-    struct Gate {
-      qc::OpType type{qc::I};
-      llvm::SmallVector<fp, 3> parameter;
-      llvm::SmallVector<std::size_t, 2> qubitId = {0};
-    };
-    std::vector<Gate> gates;
-    std::size_t complexity() {
-      std::size_t c{};
-      for (auto&& gate : gates) {
-        c += gate.qubitId.size();
-      }
-      return c;
-    }
-    fp globalPhase{};
-  };
-  using OneQubitGateSequence = QubitGateSequence;
-  using TwoQubitGateSequence = QubitGateSequence;
 
   static void applySeries(mlir::PatternRewriter& rewriter,
                           TwoQubitSeries& series,
@@ -431,21 +465,6 @@ struct GateDecompositionPattern final
   enum class MagicBasisTransform : std::uint8_t {
     Into,
     OutOf,
-  };
-
-  enum class EulerBasis : std::uint8_t {
-    U3 = 0,
-    U321 = 1,
-    U = 2,
-    PSX = 3,
-    U1X = 4,
-    RR = 5,
-    ZYZ = 6,
-    ZXZ = 7,
-    XZX = 8,
-    XYX = 9,
-    ZSXX = 10,
-    ZSX = 11,
   };
 
   static constexpr auto SQRT2 = std::numbers::sqrt2_v<fp>;
@@ -1578,7 +1597,8 @@ struct GateDecompositionPattern final
     newInner(const OneQubitGateSequence::Gate& basisGate = {.type = qc::X,
                                                             .parameter = {},
                                                             .qubitId = {0, 1}},
-             fp basisFidelity = 1.0, EulerBasis eulerBasis = EulerBasis::ZYZ) {
+             fp basisFidelity = DEFAULT_FIDELITY,
+             EulerBasis eulerBasis = EulerBasis::ZYZ) {
       auto relativeEq = [](auto&& lhs, auto&& rhs, auto&& epsilon,
                            auto&& maxRelative) {
         // Handle same infinities
@@ -1809,14 +1829,14 @@ struct GateDecompositionPattern final
 
       // TODO: check if this actually uses the correct qubitIds
       for (std::size_t i = 0; i < bestNbasis; ++i) {
-        addEulerDecomposition(2 * i, basisGate.qubitId[0]);
-        addEulerDecomposition((2 * i) + 1, basisGate.qubitId[1]);
+        addEulerDecomposition(2 * i, 0);
+        addEulerDecomposition((2 * i) + 1, 1);
 
         gates.gates.push_back(basisGate);
       }
 
-      addEulerDecomposition(2UL * bestNbasis, basisGate.qubitId[0]);
-      addEulerDecomposition((2UL * bestNbasis) + 1, basisGate.qubitId[1]);
+      addEulerDecomposition(2UL * bestNbasis, 0);
+      addEulerDecomposition((2UL * bestNbasis) + 1, 1);
 
       // large global phases can be generated by the decomposition, thus limit
       // it to [-2*pi, +2*pi)
@@ -2012,7 +2032,11 @@ struct GateDecompositionPattern final
       }
       return {gates, globalPhase};
     }
-  }; // namespace mqt::ir::opt
+  };
+
+private:
+  QubitGateSequence::Gate decomposerBasisGate;
+  EulerBasis decomposerEulerBasis;
 };
 
 const matrix2x2 GateDecompositionPattern::IDENTITY_GATE = matrix2x2::Identity();
@@ -2028,7 +2052,16 @@ const matrix2x2 GateDecompositionPattern::IPX{{C_ZERO, IM}, {IM, C_ZERO}};
  * decomposition.
  */
 void populateGateDecompositionPatterns(mlir::RewritePatternSet& patterns) {
-  patterns.add<GateDecompositionPattern>(patterns.getContext());
+  patterns.add<GateDecompositionPattern>(
+      patterns.getContext(),
+      GateDecompositionPattern::QubitGateSequence::Gate{
+          .type = qc::X, .parameter = {}, .qubitId = {1, 0}},
+      GateDecompositionPattern::EulerBasis::ZYZ);
+  patterns.add<GateDecompositionPattern>(
+      patterns.getContext(),
+      GateDecompositionPattern::QubitGateSequence::Gate{
+          .type = qc::X, .parameter = {}, .qubitId = {0, 1}},
+      GateDecompositionPattern::EulerBasis::ZYZ);
 }
 
 } // namespace mqt::ir::opt
