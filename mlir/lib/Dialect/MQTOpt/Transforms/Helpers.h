@@ -10,15 +10,15 @@
 
 #pragma once
 
-#include "mlir/Dialect/MQTOpt/IR/MQTOptDialect.h"
 #include "ir/operations/OpType.hpp"
+#include "mlir/Dialect/MQTOpt/IR/MQTOptDialect.h"
 
 #include <algorithm>
 #include <eigen3/Eigen/Core>
 #include <eigen3/Eigen/Eigenvalues>
 #include <eigen3/unsupported/Eigen/KroneckerProduct> // TODO: unstable
-#include <iomanip> // TODO: remove
-#include <iostream> // TODO: remove
+#include <iomanip>                                   // TODO: remove
+#include <iostream>                                  // TODO: remove
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/IR/Operation.h>
 
@@ -55,7 +55,7 @@ void print(Eigen::Matrix<T, N, M> matrix, const std::string& s = "",
            bool force = false) {
   if (!force) {
     return;
-}
+  }
   if (!s.empty()) {
     llvm::errs() << "=== " << s << " ===\n";
   }
@@ -67,7 +67,7 @@ template <typename T>
 void print(T matrix, const std::string& s = "", bool force = false) {
   if (!force) {
     return;
-}
+  }
   if (!s.empty()) {
     llvm::errs() << "=== " << s << " ===\n";
   }
@@ -213,7 +213,7 @@ inline Eigen::Matrix4<T> kroneckerProduct(const Eigen::Matrix2<T>& lhs,
   return result;
 }
 
-template<typename T, int N, int M>
+template <typename T, int N, int M>
 inline auto selfAdjointEvd(Eigen::Matrix<T, N, M> a) {
   Eigen::SelfAdjointEigenSolver<decltype(a)> s;
   std::cerr << "=EigIN==\n" << a << "\n========\n" << '\n';
@@ -223,6 +223,13 @@ inline auto selfAdjointEvd(Eigen::Matrix<T, N, M> a) {
   std::cerr << "=Eigen==\n" << vecs << "\n========\n" << '\n';
   std::cerr << "=Eigen==\n" << vals << "\n========\n" << '\n';
   return std::make_pair(vecs, vals);
+}
+
+template <typename T, int N, int M>
+[[nodiscard]] static bool
+isUnitaryMatrix(const Eigen::Matrix<T, N, M>& matrix) {
+  return (matrix.transpose().conjugate() * matrix)
+      .isApprox(Eigen::Matrix<T, N, M>::Identity(), 1e-9);
 }
 
 } // namespace mqt::ir::opt::helpers

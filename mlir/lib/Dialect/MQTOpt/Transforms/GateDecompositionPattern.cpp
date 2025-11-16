@@ -66,6 +66,18 @@ struct GateDecompositionPattern final
       return c;
     }
     fp globalPhase{};
+
+    [[nodiscard]] matrix4x4 getUnitaryMatrix() const {
+      matrix4x4 unitaryMatrix =
+          helpers::kroneckerProduct(IDENTITY_GATE, IDENTITY_GATE);
+      for (auto&& gate : gates) {
+        auto gateMatrix = getTwoQubitMatrix(gate);
+        unitaryMatrix = gateMatrix * unitaryMatrix;
+      }
+      unitaryMatrix *= std::exp(IM * globalPhase);
+      assert(helpers::isUnitaryMatrix(unitaryMatrix));
+      return unitaryMatrix;
+    }
   };
   using OneQubitGateSequence = QubitGateSequence;
   using TwoQubitGateSequence = QubitGateSequence;
@@ -191,6 +203,7 @@ protected:
                                .qubitId = gate.qubitIds});
         unitaryMatrix = gateMatrix * unitaryMatrix;
       }
+      assert(helpers::isUnitaryMatrix(unitaryMatrix));
       return unitaryMatrix;
     }
 
@@ -440,6 +453,7 @@ protected:
     helpers::print(series.getUnitaryMatrix(), "ORIGINAL UNITARY", true);
     helpers::print((unitaryMatrix * std::exp(IM * sequence.globalPhase)).eval(),
                    "RESULT UNITARY MATRIX", true);
+    assert((unitaryMatrix * std::exp(IM * sequence.globalPhase)).isApprox(series.getUnitaryMatrix(), 1e-9));
 
     rewriter.replaceAllUsesWith(series.outQubits, inQubits);
     for (auto&& gate : llvm::reverse(series.gates)) {
@@ -1797,6 +1811,7 @@ protected:
       llvm::SmallVector<std::optional<TwoQubitGateSequence>, 8>
           eulerDecompositions;
       for (auto&& decomp : decomposition) {
+        assert(helpers::isUnitaryMatrix(decomp));
         auto eulerDecomp = unitaryToGateSequenceInner(
             decomp, target1qBasisList, 0, {}, true, std::nullopt);
         eulerDecompositions.push_back(eulerDecomp);
@@ -1891,19 +1906,6 @@ protected:
       };
     }
 
-    static matrix4x4 computeUnitary(const TwoQubitGateSequence& sequence,
-                                    fp globalPhase) {
-      auto phase = std::exp(std::complex<fp>{0, globalPhase});
-      matrix4x4 matrix{};
-      matrix.diagonal().setConstant(phase);
-
-      for (auto&& gate : sequence.gates) {
-        matrix4x4 gateMatrix = getTwoQubitMatrix(gate);
-        matrix = gateMatrix * matrix;
-      }
-      return matrix;
-    }
-
     [[nodiscard]] std::array<qfp, 4>
     traces(TwoQubitWeylDecomposition target) const {
       return {
@@ -1955,13 +1957,18 @@ protected:
                        // independence
         bool simplify, std::optional<fp> atol) {
       auto calculateError = [](const OneQubitGateSequence& sequence) -> fp {
-        return static_cast<fp>(sequence.gates.size());
+        return static_cast<fp>(sequence.complexity());
       };
 
       auto minError = std::numeric_limits<fp>::max();
       OneQubitGateSequence bestCircuit;
       for (auto targetBasis : targetBasisList) {
         auto circuit = generateCircuit(targetBasis, unitaryMat, simplify, atol);
+        helpers::print(circuit.getUnitaryMatrix(), "SANITY CHECK (4.1)", true);
+        helpers::print(helpers::kroneckerProduct(IDENTITY_GATE, unitaryMat),
+                       "SANITY CHECK (4.2)", true);
+        assert(circuit.getUnitaryMatrix().isApprox(
+            helpers::kroneckerProduct(IDENTITY_GATE, unitaryMat), 1e-9));
         auto error = calculateError(circuit);
         if (error < minError) {
           bestCircuit = circuit;
