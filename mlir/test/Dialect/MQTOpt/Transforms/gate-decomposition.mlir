@@ -226,8 +226,8 @@ module {
 }
 
 module {
-  // CHECK-LABEL: func.func @testComplexSeries
-  func.func @testComplexSeries() {
+  // CHECK-LABEL: func.func @testTwoBasisGateDecomposition
+  func.func @testTwoBasisGateDecomposition() {
     // CHECK: %[[Q0_0:.*]] = mqtopt.allocQubit
     // CHECK: %[[Q1_0:.*]] = mqtopt.allocQubit
     // CHECK: %[[Q2_0:.*]] = mqtopt.allocQubit
@@ -246,8 +246,9 @@ module {
     %q1_0 = mqtopt.allocQubit
     %q2_0 = mqtopt.allocQubit
 
-    %q0_1 = mqtopt.h() %q0_0: !mqtopt.Qubit
-    %q1_1, %q0_2 = mqtopt.x() %q1_0 ctrl %q0_1: !mqtopt.Qubit ctrl !mqtopt.Qubit
+    %q0_x, %q1_x = mqtopt.i() %q0_0 ctrl %q1_0: !mqtopt.Qubit ctrl !mqtopt.Qubit
+    %q0_1 = mqtopt.h() %q0_x: !mqtopt.Qubit
+    %q1_1, %q0_2 = mqtopt.x() %q1_x ctrl %q0_1: !mqtopt.Qubit ctrl !mqtopt.Qubit
     %q0_3, %q1_2 = mqtopt.rzz(%cst0) %q0_2, %q1_1: !mqtopt.Qubit, !mqtopt.Qubit
     %q1_3 = mqtopt.ry(%cst1) %q1_2: !mqtopt.Qubit
     %q0_4 = mqtopt.rx(%cst1) %q0_3: !mqtopt.Qubit
@@ -293,17 +294,17 @@ module {
     %q2_0 = mqtopt.allocQubit
 
     %q0_1 = mqtopt.i() %q0_0: !mqtopt.Qubit
-    %q1_1 = mqtopt.i() %q1_0: !mqtopt.Qubit
     %q0_2 = mqtopt.i() %q0_1: !mqtopt.Qubit
-    %q0_3, %q1_2 = mqtopt.x() %q0_2 ctrl %q1_1: !mqtopt.Qubit ctrl !mqtopt.Qubit
-    %q1_3 = mqtopt.i() %q1_2: !mqtopt.Qubit
+    %q0_3, %q1_1 = mqtopt.x() %q0_2 ctrl %q1_0: !mqtopt.Qubit ctrl !mqtopt.Qubit
     %q0_4 = mqtopt.i() %q0_3: !mqtopt.Qubit
-    %q1_4 = mqtopt.i() %q1_3: !mqtopt.Qubit
     %q0_5 = mqtopt.i() %q0_4: !mqtopt.Qubit
     %q0_6 = mqtopt.i() %q0_5: !mqtopt.Qubit
     %q0_7 = mqtopt.i() %q0_6: !mqtopt.Qubit
     %q0_8 = mqtopt.i() %q0_7: !mqtopt.Qubit
     %q0_9 = mqtopt.i() %q0_8: !mqtopt.Qubit
+    %q1_2 = mqtopt.i() %q1_1: !mqtopt.Qubit
+    %q1_3 = mqtopt.i() %q1_2: !mqtopt.Qubit
+    %q1_4 = mqtopt.i() %q1_3: !mqtopt.Qubit
     %q1_5 = mqtopt.i() %q1_4: !mqtopt.Qubit
     %q1_6 = mqtopt.i() %q1_5: !mqtopt.Qubit
     %q1_7 = mqtopt.i() %q1_6: !mqtopt.Qubit
@@ -317,3 +318,81 @@ module {
     return
   }
 }
+
+// -----
+// This test checks if two single-qubit series (connected by an identity) remain separate without the insertion of a basis gate.
+
+module {
+  // CHECK-LABEL: func.func @testSingleQubitSeries
+  func.func @testSingleQubitSeries() {
+    // CHECK: %[[Q0_0:.*]] = mqtopt.allocQubit
+    // CHECK: %[[Q1_0:.*]] = mqtopt.allocQubit
+
+    // CHECK: %[[Q0_1:.*]], %[[Q1_1:.*]] = mqtopt.x() %[[Q0_0]] ctrl %[[Q1_0]]
+
+    // CHECK: mqtopt.deallocQubit %[[Q0_1]]
+    // CHECK: mqtopt.deallocQubit %[[Q1_1]]
+
+    %cst0 = arith.constant 2.5 : f64
+    %cst1 = arith.constant 1.2 : f64
+
+    %q0_0 = mqtopt.allocQubit
+    %q1_0 = mqtopt.allocQubit
+
+    %q0_1, %q1_1 = mqtopt.i() %q0_0 ctrl %q1_0: !mqtopt.Qubit ctrl !mqtopt.Qubit
+    %q0_2 = mqtopt.ry(%cst0) %q0_1: !mqtopt.Qubit
+    %q1_2 = mqtopt.rx(%cst1) %q1_1: !mqtopt.Qubit
+    %q1_3 = mqtopt.rx(%cst1) %q1_2: !mqtopt.Qubit
+
+    mqtopt.deallocQubit %q0_2
+    mqtopt.deallocQubit %q1_3
+
+    return
+  }
+}
+
+// -----
+// This test checks if two single-qubit series (connected by an identity) remain separate without the insertion of a basis gate.
+
+module {
+  // CHECK-LABEL: func.func @testThreeBasisGateDecomposition
+  func.func @testThreeBasisGateDecomposition() {
+    // CHECK: %[[Q0_0:.*]] = mqtopt.allocQubit
+    // CHECK: %[[Q1_0:.*]] = mqtopt.allocQubit
+    // CHECK: %[[Q2_0:.*]] = mqtopt.allocQubit
+
+    // CHECK-NOT: mqtopt.gphase(%[[ANY:.*]])
+
+    // CHECK: mqtopt.deallocQubit %[[Q0_5]]
+    // CHECK: mqtopt.deallocQubit %[[Q1_4]]
+    // CHECK: mqtopt.deallocQubit %[[Q2_1]]
+
+    %cst0 = arith.constant 2.5 : f64
+    %cst1 = arith.constant 1.2 : f64
+    %cst2 = arith.constant 0.5 : f64
+
+    %q0_0 = mqtopt.allocQubit
+    %q1_0 = mqtopt.allocQubit
+    %q2_0 = mqtopt.allocQubit
+
+    %q0_x, %q1_x = mqtopt.i() %q0_0 ctrl %q1_0: !mqtopt.Qubit ctrl !mqtopt.Qubit
+    %q0_1 = mqtopt.h() %q0_x: !mqtopt.Qubit
+    %q1_1, %q0_2 = mqtopt.x() %q1_x ctrl %q0_1: !mqtopt.Qubit ctrl !mqtopt.Qubit
+    %q0_3, %q1_2 = mqtopt.rzz(%cst0) %q0_2, %q1_1: !mqtopt.Qubit, !mqtopt.Qubit
+    %q1_3 = mqtopt.ry(%cst1) %q1_2: !mqtopt.Qubit
+    %q0_4 = mqtopt.rx(%cst1) %q0_3: !mqtopt.Qubit
+    %q0_5, %q1_4 = mqtopt.x() %q0_4 ctrl %q1_3: !mqtopt.Qubit ctrl !mqtopt.Qubit
+    %q0_6 = mqtopt.rz(%cst2) %q0_5: !mqtopt.Qubit
+    %q0_7, %q1_5 = mqtopt.rxx(%cst0) %q0_6, %q1_4: !mqtopt.Qubit, !mqtopt.Qubit
+    %q0_8, %q1_6 = mqtopt.ryy(%cst2) %q0_7, %q1_5: !mqtopt.Qubit, !mqtopt.Qubit
+    // make series longer to enforce decomposition
+    %q0_9, %q1_7 = mqtopt.i() %q0_8 ctrl %q1_6: !mqtopt.Qubit ctrl !mqtopt.Qubit
+
+    mqtopt.deallocQubit %q0_9
+    mqtopt.deallocQubit %q1_7
+    mqtopt.deallocQubit %q2_0
+
+    return
+  }
+}
+
