@@ -140,7 +140,7 @@ private:
 public:
   [[nodiscard]] std::optional<SmallVector<QubitIndexPair, 64>>
   route(Layers layers, const ThinLayout& layout, const Architecture& arch,
-        std::size_t maxIterations = 20001UL) {
+        std::size_t maxIterations = 5001UL) {
     Node root(layout);
 
     /// Early exit. No SWAPs required:

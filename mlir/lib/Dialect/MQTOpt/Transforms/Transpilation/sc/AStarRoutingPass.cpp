@@ -92,7 +92,7 @@ struct RoutingContext {
 
 struct Layer {
   /// @brief All ops contained in this layer.
-  SmallVector<Operation*, 0> ops;
+  SmallVector<Operation*, 64> ops;
   /// @brief The program indices of the gates in this layer.
   SmallVector<QubitIndexPair> gates;
   /// @brief The first op in ops in textual IR order.
@@ -109,7 +109,7 @@ struct Layer {
 };
 
 /// @brief A vector of layers.
-using LayerVec = SmallVector<Layer>;
+using LayerVec = SmallVector<Layer, 0>;
 
 struct Wire {
   Wire(WireIterator it, QubitIndex index) : it(it), index(index) {}
@@ -128,7 +128,7 @@ class SynchronizationMap {
 
 public:
   /// @returns true iff. the operation is contained in the map.
-  bool contains(Operation* op) { return onHold.contains(op); }
+  bool contains(Operation* op) const { return onHold.contains(op); }
 
   /// @brief Add op with respective wire and ref count to map.
   void add(Operation* op, Wire wire, const std::size_t cnt) {
@@ -265,93 +265,97 @@ collectLayerAndAdvance(ArrayRef<Wire> wires, SynchronizationMap& sync,
 
   for (auto [it, index] : wires) {
     while (it != WireIterator()) {
-      Operation* curr = *it;
+      const bool stop =
+          TypeSwitch<Operation*, bool>(*it)
+              .Case<BarrierOp>([&](BarrierOp op) {
+                /// A barrier may be a UnitaryInterface, but also requires
+                /// synchronization.
+                if (!sync.contains(op)) {
+                  sync.add(op, Wire(++it, index), op.getInQubits().size());
+                  return true;
+                }
 
-      /// A barrier may be a UnitaryInterface, but also requires
-      /// synchronization.
-      if (auto op = dyn_cast<BarrierOp>(curr)) {
-        if (!sync.contains(op)) {
-          sync.add(op, Wire(++it, index), op.getInQubits().size());
-          break;
-        }
+                if (const auto iterators = sync.visit(op, Wire(++it, index))) {
+                  layer.addOp(op);
+                  next.append(std::make_move_iterator(iterators->begin()),
+                              std::make_move_iterator(iterators->end()));
+                }
+                return true;
+              })
+              .Case<UnitaryInterface>([&](UnitaryInterface op) {
+                if (!isTwoQubitGate(op)) {
+                  layer.addOp(op); // Add 1Q-op to layer operations.
+                  ++it;
+                  return false;
+                }
 
-        if (const auto iterators = sync.visit(op, Wire(++it, index))) {
-          layer.addOp(op);
-          next.append(iterators.value());
-        }
+                if (!sync.contains(op)) {
+                  /// Add the next iterator after the two-qubit
+                  /// gate for a later release.
+                  sync.add(op, Wire(++it, index), 2);
+                  return true;
+                }
 
+                if (const auto iterators = sync.visit(op, Wire(++it, index))) {
+                  /// Only add ready two-qubit gates to the layer.
+                  layer.addOp(op);
+                  layer.gates.emplace_back((*iterators)[0].index,
+                                           (*iterators)[1].index);
+
+                  /// Release iterators for next iteration.
+                  next.append(
+                      advanceUntilEndOfTwoQubitBlock(iterators.value(), layer));
+                }
+                return true;
+              })
+              .Case<ResetOp>([&](ResetOp op) {
+                layer.addOp(op);
+                ++it;
+                return false;
+              })
+              .Case<MeasureOp>([&](MeasureOp op) {
+                layer.addOp(op);
+                ++it;
+                return false;
+              })
+              .Case<RegionBranchOpInterface>([&](RegionBranchOpInterface op) {
+                if (!sync.contains(op)) {
+                  /// This assumes that branch ops always returns all hardware
+                  /// qubits.
+                  sync.add(op, Wire(++it, index), nqubits);
+                  return true;
+                }
+
+                if (const auto iterators = sync.visit(op, Wire(++it, index))) {
+                  layer.addOp(op);
+                  next.append(std::make_move_iterator(iterators->begin()),
+                              std::make_move_iterator(iterators->end()));
+                }
+                return true;
+              })
+              .Case<scf::YieldOp>([&](scf::YieldOp yield) {
+                if (!sync.contains(yield)) {
+                  /// This assumes that yield always returns all hardware
+                  /// qubits.
+                  sync.add(yield, Wire(++it, index), nqubits);
+                  return true;
+                }
+
+                if (const auto iterators =
+                        sync.visit(yield, Wire(++it, index))) {
+                  layer.addOp(yield);
+                }
+
+                return true;
+              })
+              .Default([](auto) {
+                llvm_unreachable("unhandled operation");
+                return true;
+              });
+
+      if (stop) {
         break;
       }
-
-      if (auto op = dyn_cast<UnitaryInterface>(curr)) {
-        if (!isTwoQubitGate(op)) {
-          layer.addOp(curr); // Add 1Q-op to layer operations.
-          ++it;
-          continue;
-        }
-
-        if (!sync.contains(op)) {
-          /// Add the next iterator after the two-qubit
-          /// gate for a later release.
-          sync.add(op, Wire(++it, index), 2);
-          break;
-        }
-
-        if (const auto iterators = sync.visit(op, Wire(++it, index))) {
-          /// Only add ready two-qubit gates to the layer.
-          layer.addOp(op);
-          layer.gates.emplace_back((*iterators)[0].index,
-                                   (*iterators)[1].index);
-
-          /// Release iterators for next iteration.
-          next.append(advanceUntilEndOfTwoQubitBlock(iterators.value(), layer));
-        }
-
-        break;
-      }
-
-      if (auto op = dyn_cast<ResetOp>(curr)) {
-        layer.addOp(curr);
-        ++it;
-        continue;
-      }
-
-      if (auto op = dyn_cast<MeasureOp>(curr)) {
-        layer.addOp(curr);
-        ++it;
-        continue;
-      }
-
-      if (auto op = dyn_cast<RegionBranchOpInterface>(curr)) {
-        if (!sync.contains(op)) {
-          /// This assumes that branch ops always returns all hardware qubits.
-          sync.add(op, Wire(++it, index), nqubits);
-          break;
-        }
-
-        if (const auto iterators = sync.visit(op, Wire(++it, index))) {
-          layer.addOp(op);
-          next.append(iterators.value());
-        }
-        break;
-      }
-
-      if (auto yield = dyn_cast<scf::YieldOp>(curr)) {
-        if (!sync.contains(yield)) {
-          /// This assumes that yield always returns all hardware qubits.
-          sync.add(yield, Wire(++it, index), nqubits);
-          break;
-        }
-
-        if (const auto iterators = sync.visit(yield, Wire(++it, index))) {
-          layer.addOp(yield);
-        }
-
-        break;
-      }
-
-      /// Anything else is a bug in the program.
-      assert(false && "unhandled operation");
     }
   }
 
@@ -371,7 +375,7 @@ LayerVec schedule(const Layout& layout, Region& region) {
     wires.emplace_back(WireIterator(q, &region), layout.getProgramIndex(hw));
   }
 
-  do {
+  while (!wires.empty()) {
     const auto [layer, next] =
         collectLayerAndAdvance(wires, sync, layout.getNumQubits());
     if (layer.ops.empty()) {
@@ -379,7 +383,7 @@ LayerVec schedule(const Layout& layout, Region& region) {
     }
     layers.emplace_back(layer);
     wires = next;
-  } while (!wires.empty());
+  };
 
   LLVM_DEBUG({
     llvm::dbgs() << "schedule: layers=\n";
@@ -620,6 +624,7 @@ LogicalResult routeEachLayer(const LayerVec& layers, Layout layout,
 LogicalResult processRegion(Region& region, Layout& layout,
                             SmallVector<QubitIndexPair>& history,
                             RoutingContext& ctx) {
+  std::ignore = schedule(layout, region);
   /// Find and route each of the layers. Might violate SSA dominance.
   const auto res =
       routeEachLayer(schedule(layout, region), layout, history, ctx);
@@ -628,9 +633,9 @@ LogicalResult processRegion(Region& region, Layout& layout,
   }
 
   /// Repair any SSA dominance issues.
-  for (Block& block : region.getBlocks()) {
-    sortTopologically(&block);
-  }
+  // for (Block& block : region.getBlocks()) {
+  //   sortTopologically(&block);
+  // }
 
   return success();
 }
