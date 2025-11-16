@@ -20,6 +20,7 @@
 #include <cassert>
 #include <cstddef>
 #include <iterator>
+#include <limits>
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/ADT/Statistic.h>
@@ -187,6 +188,10 @@ void insertSWAPs(Location location, ArrayRef<QubitIndexPair> swaps,
     layout.remapQubitValue(in1, out1);
   }
 }
+
+//===----------------------------------------------------------------------===//
+// Scheduling
+//===----------------------------------------------------------------------===//
 
 SmallVector<WireIterator, 2>
 advanceUntilEndOfTwoQubitBlock(ArrayRef<WireIterator> wires, Layout& layout,
@@ -409,6 +414,10 @@ LayerVec schedule(Layout layout, Region& region) {
   return layers;
 }
 
+//===----------------------------------------------------------------------===//
+// Routing
+//===----------------------------------------------------------------------===//
+
 /**
  * @brief Copy the layout and recursively process the loop body.
  */
@@ -493,6 +502,65 @@ WalkResult handle(UnitaryInterface op, Layout& layout,
 }
 
 /**
+ * @brief Find and insert SWAPs using A*-search.
+ *
+ * If A*-search fails use the LightSABRE fallback mechanism: Search
+ * the the gate which acts on the qubit index pair with the minimum distance in
+ * the coupling graph of the targeted architecture. Route this gate naively,
+ * remove it from the front layer, and restart the A*-search.
+ */
+void findAndInsertSWAPs(ArrayRef<ArrayRef<QubitIndexPair>> layers,
+                        Location location, Layout& layout,
+                        SmallVector<QubitIndexPair>& history,
+                        RoutingContext& ctx) {
+  /// Mutable copy of the front layer.
+  SmallVector<QubitIndexPair> workingFront(layers.front());
+
+  SmallVector<ArrayRef<QubitIndexPair>> workingLayers;
+  workingLayers.reserve(layers.size());
+  workingLayers.push_back(workingFront); // Non-owning view of workingFront.
+  for (auto layer : layers.drop_front()) {
+    workingLayers.push_back(layer);
+  }
+
+  while (!workingFront.empty()) {
+    if (const auto swaps = ctx.router.route(workingLayers, layout, *ctx.arch)) {
+      history.append(*swaps);
+      insertSWAPs(location, *swaps, layout, ctx.rewriter);
+      *(ctx.stats.numSwaps) += swaps->size();
+      return;
+    }
+
+    QubitIndexPair bestGate;
+    std::size_t bestIdx = 0;
+    std::size_t minDist = std::numeric_limits<std::size_t>::max();
+    for (const auto [i, gate] : llvm::enumerate(workingFront)) {
+      const auto hw0 = layout.getHardwareIndex(gate.first);
+      const auto hw1 = layout.getHardwareIndex(gate.second);
+      const auto dist = ctx.arch->distanceBetween(hw0, hw1);
+      if (dist < minDist) {
+        bestIdx = i;
+        minDist = dist;
+        bestGate = std::make_pair(hw0, hw1);
+      }
+    }
+
+    workingFront.erase(workingFront.begin() + static_cast<ptrdiff_t>(bestIdx));
+
+    SmallVector<QubitIndexPair, 16> swaps;
+    const auto path =
+        ctx.arch->shortestPathBetween(bestGate.first, bestGate.second);
+    for (std::size_t i = 0; i < path.size() - 2; ++i) {
+      swaps.emplace_back(path[i], path[i + 1]);
+    }
+
+    history.append(swaps);
+    insertSWAPs(location, swaps, layout, ctx.rewriter);
+    *(ctx.stats.numSwaps) += swaps.size();
+  }
+}
+
+/**
  * @brief Route each layer by iterating a sliding window of (1 + nlookahead)
  * layers.
  */
@@ -516,16 +584,9 @@ LogicalResult routeEachLayer(const LayerVec& layers, Layout layout,
       const auto window = llvm::make_range(it, lookaheadIt);
       const auto windowLayerGates = to_vector(llvm::map_range(
           window, [](const Layer& layer) { return ArrayRef(layer.gates); }));
-      const auto swaps = ctx.router.route(windowLayerGates, layout, *ctx.arch);
 
-      /// Append SWAPs to history.
-      history.append(swaps);
-
-      /// Insert SWAPs.
-      insertSWAPs(front.anchor->getLoc(), swaps, layout, ctx.rewriter);
-
-      /// Count SWAPs.
-      *(ctx.stats.numSwaps) += swaps.size();
+      findAndInsertSWAPs(windowLayerGates, front.anchor->getLoc(), layout,
+                         history, ctx);
     }
 
     for (const Operation* curr : front.ops) {
@@ -569,6 +630,7 @@ LogicalResult routeEachLayer(const LayerVec& layers, Layout layout,
 LogicalResult processRegion(Region& region, Layout& layout,
                             SmallVector<QubitIndexPair>& history,
                             RoutingContext& ctx) {
+  schedule(layout, region);
   /// Find and route each of the layers. Might violate SSA dominance.
   const auto res =
       routeEachLayer(schedule(layout, region), layout, history, ctx);
@@ -577,9 +639,9 @@ LogicalResult processRegion(Region& region, Layout& layout,
   }
 
   /// Repair any SSA dominance issues.
-  // for (Block& block : region.getBlocks()) {
-  //   sortTopologically(&block);
-  // }
+  for (Block& block : region.getBlocks()) {
+    sortTopologically(&block);
+  }
 
   return success();
 }
@@ -607,12 +669,9 @@ LogicalResult route(ModuleOp module, std::unique_ptr<Architecture> arch,
 
     /// Find all hardware (static) qubits and initialize layout.
     Layout layout(ctx.arch->nqubits());
-    SmallVector<Wire> circuit;
-    circuit.reserve(ctx.arch->nqubits());
     for_each(func.getOps<QubitOp>(), [&](QubitOp op) {
       const std::size_t index = op.getIndex();
       layout.add(index, index, op.getQubit());
-      circuit.emplace_back(op.getQubit(), op.getQubit());
     });
 
     SmallVector<QubitIndexPair> history;

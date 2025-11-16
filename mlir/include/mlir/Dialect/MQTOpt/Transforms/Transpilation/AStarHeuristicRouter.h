@@ -14,18 +14,17 @@
 #include "mlir/Dialect/MQTOpt/Transforms/Transpilation/Common.h"
 #include "mlir/Dialect/MQTOpt/Transforms/Transpilation/Layout.h"
 
+#include "llvm/Support/Debug.h"
+
 #include <algorithm>
 #include <mlir/Support/LLVM.h>
+#include <optional>
 #include <queue>
+#include <stdexcept>
 #include <utility>
 #include <vector>
 
 namespace mqt::ir::opt {
-
-/**
- * @brief A vector of SWAPs.
- */
-using RouterResult = SmallVector<QubitIndexPair>;
 
 /**
  * @brief Specifies the weights for different terms in the cost function f.
@@ -56,7 +55,7 @@ private:
   using Layers = ArrayRef<Layer>;
 
   struct Node {
-    SmallVector<QubitIndexPair> sequence;
+    SmallVector<QubitIndexPair, 64> sequence;
     ThinLayout layout;
     float f;
 
@@ -139,8 +138,9 @@ private:
   using MinQueue = std::priority_queue<Node, std::vector<Node>, std::greater<>>;
 
 public:
-  [[nodiscard]] RouterResult route(Layers layers, const ThinLayout& layout,
-                                   const Architecture& arch) const {
+  [[nodiscard]] std::optional<SmallVector<QubitIndexPair, 64>>
+  route(Layers layers, const ThinLayout& layout, const Architecture& arch,
+        std::size_t maxIterations = 20001UL) {
     Node root(layout);
 
     /// Early exit. No SWAPs required:
@@ -153,7 +153,7 @@ public:
     frontier.emplace(root);
 
     /// Iterative searching and expanding.
-    while (!frontier.empty()) {
+    while (!frontier.empty() && maxIterations > 0) {
       Node curr = frontier.top();
       frontier.pop();
 
@@ -163,9 +163,10 @@ public:
 
       /// Expand frontier with all neighbouring SWAPs in the current front.
       expand(frontier, curr, layers, arch);
+      maxIterations--;
     }
 
-    return {};
+    return std::nullopt;
   }
 
 private:
@@ -173,15 +174,15 @@ private:
    * @brief Expand frontier with all neighbouring SWAPs in the current front.
    */
   void expand(MinQueue& frontier, const Node& parent, Layers layers,
-              const Architecture& arch) const {
-    llvm::SmallDenseSet<QubitIndexPair, 64> swaps{};
+              const Architecture& arch) {
+    expansionSet.clear();
     for (const QubitIndexPair gate : layers.front()) {
       for (const auto prog : {gate.first, gate.second}) {
         const auto hw0 = parent.layout.getHardwareIndex(prog);
         for (const auto hw1 : arch.neighboursOf(hw0)) {
           /// Ensure consistent hashing/comparison.
           const QubitIndexPair swap = std::minmax(hw0, hw1);
-          if (!swaps.insert(swap).second) {
+          if (!expansionSet.insert(swap).second) {
             continue;
           }
 
@@ -191,6 +192,7 @@ private:
     }
   }
 
+  llvm::SmallDenseSet<QubitIndexPair, 64> expansionSet{};
   HeuristicWeights weights_;
 };
 } // namespace mqt::ir::opt
