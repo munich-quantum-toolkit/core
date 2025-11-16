@@ -1661,12 +1661,12 @@ protected:
       matrix2x2 k11l{
           {temp * (M_IM * std::exp(qfp(0., -b))), temp * std::exp(qfp(0., -b))},
           {temp * (M_IM * std::exp(qfp(0., b))), temp * -std::exp(qfp(0., b))}};
-      matrix2x2 k11r{{FRAC1_SQRT2 * std::exp((IM * qfp(0., -b))),
+      matrix2x2 k11r{{FRAC1_SQRT2 * (IM * std::exp(qfp(0., -b))),
                       FRAC1_SQRT2 * -std::exp(qfp(0., -b))},
                      {FRAC1_SQRT2 * std::exp(qfp(0., b)),
                       FRAC1_SQRT2 * (M_IM * std::exp(qfp(0., b)))}};
-      matrix2x2 k32lK21l{{FRAC1_SQRT2 * std::cos(qfp(1., (2. * b))),
-                          FRAC1_SQRT2 * (IM * std::sin((2. * b)))},
+      matrix2x2 k32lK21l{{FRAC1_SQRT2 * qfp(1., std::cos(2. * b)),
+                          FRAC1_SQRT2 * (IM * std::sin(2. * b))},
                          {FRAC1_SQRT2 * (IM * std::sin(2. * b)),
                           FRAC1_SQRT2 * qfp(1., -std::cos(2. * b))}};
       temp = qfp(0.5, 0.5);
