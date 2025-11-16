@@ -39,13 +39,6 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Free up some space (ubuntu-24.04)
-        if: ${{ matrix.os == 'ubuntu-24.04' }}
-        run: |
-          sudo rm -rf /usr/share/dotnet
-          sudo rm -rf /opt/ghc
-          sudo rm -rf "$AGENT_TOOLSDIRECTORY"
-
       - name: Setup LLVM/MLIR
         uses: burgholzer/portable-mlir-toolchain@add-setup
         with:
