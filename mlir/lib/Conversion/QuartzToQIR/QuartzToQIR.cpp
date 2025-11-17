@@ -76,6 +76,9 @@ struct LoweringState : QIRMetadata {
   /// Map from index to pointer value for reuse
   DenseMap<int64_t, Value> ptrMap;
 
+  /// Map from Quartz qubit value to pointer value
+  DenseMap<Value, Value> qubitMap;
+
   /// Map from (register_name, register_index) to result pointer
   /// This allows caching result pointers for measurements with register info
   DenseMap<std::pair<StringRef, int64_t>, Value> registerResultMap;
@@ -158,6 +161,7 @@ struct ConvertQuartzAllocQIR final : StatefulOpConversionPattern<AllocOp> {
     auto& state = getState();
     const auto numQubits = static_cast<int64_t>(state.numQubits);
     auto& ptrMap = state.ptrMap;
+    auto& qubitMap = state.qubitMap;
     auto& registerMap = state.registerStartIndexMap;
 
     // Get or create pointer value
@@ -170,18 +174,19 @@ struct ConvertQuartzAllocQIR final : StatefulOpConversionPattern<AllocOp> {
 
       if (const auto it = registerMap.find(registerName);
           it != registerMap.end()) {
-        // register is already tracked, the corresponding ptr was already
-        // created
+        // Register is already tracked
+        // The pointer was created by the step below
         const auto globalIndex = it->second + registerIndex;
         assert(ptrMap.contains(globalIndex));
+        qubitMap[op.getResult()] = ptrMap.at(globalIndex);
         rewriter.replaceOp(op, ptrMap.at(globalIndex));
         return success();
       }
 
       // Allocate the entire register as static qubits
       registerMap[registerName] = numQubits;
-      SmallVector<Value> resultValues;
-      resultValues.reserve(registerSize);
+      SmallVector<Value> pointers;
+      pointers.reserve(registerSize);
       for (int64_t i = 0; i < registerSize; ++i) {
         Value val{};
         if (const auto it = ptrMap.find(numQubits + i); it != ptrMap.end()) {
@@ -190,12 +195,14 @@ struct ConvertQuartzAllocQIR final : StatefulOpConversionPattern<AllocOp> {
           val = createPointerFromIndex(rewriter, op.getLoc(), numQubits + i);
           ptrMap[numQubits + i] = val;
         }
-        resultValues.push_back(val);
+        pointers.push_back(val);
       }
+      qubitMap[op.getResult()] = ptrMap.at(numQubits + registerIndex);
+      rewriter.replaceOp(op, pointers[registerIndex]);
       state.numQubits += registerSize;
-      rewriter.replaceOp(op, resultValues[registerIndex]);
       return success();
     }
+
     // no register info, check if ptr has already been allocated (as a Result)
     Value val{};
     if (const auto it = ptrMap.find(numQubits); it != ptrMap.end()) {
@@ -204,6 +211,7 @@ struct ConvertQuartzAllocQIR final : StatefulOpConversionPattern<AllocOp> {
       val = createPointerFromIndex(rewriter, op.getLoc(), numQubits);
       ptrMap[numQubits] = val;
     }
+    qubitMap[op.getResult()] = val;
     rewriter.replaceOp(op, val);
     state.numQubits++;
     return success();
@@ -274,6 +282,7 @@ struct ConvertQuartzStaticQIR final : StatefulOpConversionPattern<StaticOp> {
       val = createPointerFromIndex(rewriter, op.getLoc(), index);
       state.ptrMap.try_emplace(index, val);
     }
+    state.qubitMap[op.getResult()] = val;
     rewriter.replaceOp(op, val);
 
     // Track maximum qubit index
@@ -340,9 +349,8 @@ struct ConvertQuartzMeasureQIR final : StatefulOpConversionPattern<MeasureOp> {
         // Allocate the entire register as static results
         for (int64_t i = 0; i < registerSize; ++i) {
           Value val{};
-          if (const auto it2 = ptrMap.find(numResults + i);
-              it2 != ptrMap.end()) {
-            val = it2->second;
+          if (const auto it = ptrMap.find(numResults + i); it != ptrMap.end()) {
+            val = it->second;
           } else {
             val = createPointerFromIndex(rewriter, op.getLoc(), numResults + i);
             ptrMap[numResults + i] = val;
@@ -433,18 +441,61 @@ struct ConvertQuartzXQIR final : StatefulOpConversionPattern<XOp> {
   matchAndRewrite(XOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
     auto* ctx = getContext();
+    auto& state = getState();
 
-    // Create QIR function signature: (ptr) -> void
-    const auto qirSignature = LLVM::LLVMFunctionType::get(
-        LLVM::LLVMVoidType::get(ctx), LLVM::LLVMPointerType::get(ctx));
+    // Determine whether the operation is controlled
+    CtrlOp posCtrlOp = nullptr;
+    if (op->getNextNode() && op->getNextNode()->getNextNode()) {
+      posCtrlOp = llvm::dyn_cast<CtrlOp>(op->getNextNode()->getNextNode());
+    }
+
+    // Define function name
+    StringRef functionName;
+    if (posCtrlOp) {
+      if (posCtrlOp.getNumPosControls() == 1) {
+        functionName = QIR_CX;
+      } else if (posCtrlOp.getNumPosControls() == 2) {
+        functionName = QIR_CCX;
+      } else if (posCtrlOp.getNumPosControls() == 3) {
+        functionName = QIR_CCCX;
+      } else {
+        return failure();
+      }
+    } else {
+      functionName = QIR_X;
+    }
+
+    // Define function argument types
+    SmallVector<Type> argumentTypes;
+    argumentTypes.reserve((posCtrlOp ? posCtrlOp.getNumPosControls() : 0) + 1);
+    // Add control pointers
+    if (posCtrlOp) {
+      for (size_t i = 0; i < posCtrlOp.getNumPosControls(); ++i) {
+        argumentTypes.push_back(LLVM::LLVMPointerType::get(ctx));
+      }
+    }
+    // Add target pointer
+    argumentTypes.push_back(LLVM::LLVMPointerType::get(ctx));
+
+    // Create function signature
+    const auto functionSignature = LLVM::LLVMFunctionType::get(
+        LLVM::LLVMVoidType::get(ctx), argumentTypes);
 
     // Get or create function declaration
-    const auto fnDecl =
-        getOrCreateFunctionDeclaration(rewriter, op, QIR_X, qirSignature);
+    const auto fnDecl = getOrCreateFunctionDeclaration(
+        rewriter, op, functionName, functionSignature);
 
-    // Replace with call to X
-    rewriter.replaceOpWithNewOp<LLVM::CallOp>(op, fnDecl,
-                                              adaptor.getOperands());
+    SmallVector<Value> operands;
+    operands.reserve(argumentTypes.size());
+    if (posCtrlOp) {
+      for (size_t i = 0; i < posCtrlOp.getNumPosControls(); ++i) {
+        operands.push_back(state.qubitMap.at(posCtrlOp.getPosControl(i)));
+      }
+    }
+    operands.append(adaptor.getOperands().begin(), adaptor.getOperands().end());
+
+    // Replace operation with CallOp
+    rewriter.replaceOpWithNewOp<LLVM::CallOp>(op, fnDecl, operands);
     return success();
   }
 };

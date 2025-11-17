@@ -1326,10 +1326,9 @@ TEST_F(CompilerPipelineTest, CX) {
   });
   const auto qirOpt = buildQIR([](qir::QIRProgramBuilder& b) {
     auto reg = b.allocQubitRegister(2);
-    /// TODO: Replace uncomment this when CX can be converted to QIR
-    // auto q1 = reg[1];
-    // b.cx(q0, q1);
-    b.x(reg[1]);
+    const auto q0 = reg[0];
+    const auto q1 = reg[1];
+    b.cx(q0, q1);
   });
 
   verifyAllStages({
