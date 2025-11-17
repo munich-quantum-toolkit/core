@@ -228,8 +228,7 @@ inline auto selfAdjointEvd(Eigen::Matrix<T, N, M> a) {
 template <typename T, int N, int M>
 [[nodiscard]] static bool
 isUnitaryMatrix(const Eigen::Matrix<T, N, M>& matrix) {
-  return (matrix.transpose().conjugate() * matrix)
-      .isApprox(Eigen::Matrix<T, N, M>::Identity(), 1e-9);
+  return (matrix.transpose().conjugate() * matrix).isIdentity();
 }
 
 } // namespace mqt::ir::opt::helpers
