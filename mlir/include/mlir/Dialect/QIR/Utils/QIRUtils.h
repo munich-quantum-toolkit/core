@@ -29,8 +29,17 @@ static constexpr auto QIR_CX = "__quantum__qis__cx__body";
 static constexpr auto QIR_CCX = "__quantum__qis__ccx__body";
 static constexpr auto QIR_CCCX = "__quantum__qis__cccx__body";
 static constexpr auto QIR_RX = "__quantum__qis__rx__body";
+static constexpr auto QIR_CRX = "__quantum__qis__crx__body";
+static constexpr auto QIR_CCRX = "__quantum__qis__ccrx__body";
+static constexpr auto QIR_CCCRX = "__quantum__qis__cccrx__body";
 static constexpr auto QIR_U2 = "__quantum__qis__u2__body";
+static constexpr auto QIR_CU2 = "__quantum__qis__cu2__body";
+static constexpr auto QIR_CCU2 = "__quantum__qis__ccu2__body";
+static constexpr auto QIR_CCCU2 = "__quantum__qis__cccu2__body";
 static constexpr auto QIR_SWAP = "__quantum__qis__swap__body";
+static constexpr auto QIR_CSWAP = "__quantum__qis__cswap__body";
+static constexpr auto QIR_CCSWAP = "__quantum__qis__ccswap__body";
+static constexpr auto QIR_CCCSWAP = "__quantum__qis__cccswap__body";
 
 /**
  * @brief State object for tracking QIR metadata during conversion

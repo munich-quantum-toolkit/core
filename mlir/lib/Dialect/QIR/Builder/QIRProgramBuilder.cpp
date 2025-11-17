@@ -254,7 +254,7 @@ QIRProgramBuilder& QIRProgramBuilder::x(const Value qubit) {
 }
 
 QIRProgramBuilder& QIRProgramBuilder::cx(const Value control,
-                                         const Value qubit) {
+                                         const Value target) {
   // Save current insertion point
   const OpBuilder::InsertionGuard insertGuard(builder);
 
@@ -268,7 +268,7 @@ QIRProgramBuilder& QIRProgramBuilder::cx(const Value control,
        LLVM::LLVMPointerType::get(builder.getContext())});
   auto fnDecl =
       getOrCreateFunctionDeclaration(builder, module, QIR_CX, qirSignature);
-  builder.create<LLVM::CallOp>(loc, fnDecl, ValueRange{control, qubit});
+  builder.create<LLVM::CallOp>(loc, fnDecl, ValueRange{control, target});
 
   return *this;
 }
@@ -307,6 +307,46 @@ QIRProgramBuilder::rx(const std::variant<double, Value>& theta,
   auto fnDecl =
       getOrCreateFunctionDeclaration(builder, module, QIR_RX, qirSignature);
   builder.create<LLVM::CallOp>(loc, fnDecl, ValueRange{qubit, thetaOperand});
+
+  return *this;
+}
+
+QIRProgramBuilder&
+QIRProgramBuilder::crx(const std::variant<double, Value>& theta,
+                       const Value control, const Value target) {
+  // Save current insertion point
+  const OpBuilder::InsertionGuard entryGuard(builder);
+
+  // Insert constants in entry block
+  builder.setInsertionPointToEnd(entryBlock);
+
+  Value thetaOperand;
+  if (std::holds_alternative<double>(theta)) {
+    thetaOperand =
+        builder
+            .create<LLVM::ConstantOp>(
+                loc, builder.getF64FloatAttr(std::get<double>(theta)))
+            .getResult();
+  } else {
+    thetaOperand = std::get<Value>(theta);
+  }
+
+  // Save current insertion point
+  const OpBuilder::InsertionGuard bodyGuard(builder);
+
+  // Insert in body block (before branch)
+  builder.setInsertionPoint(bodyBlock->getTerminator());
+
+  // Create crx call
+  const auto qirSignature = LLVM::LLVMFunctionType::get(
+      LLVM::LLVMVoidType::get(builder.getContext()),
+      {LLVM::LLVMPointerType::get(builder.getContext()),
+       LLVM::LLVMPointerType::get(builder.getContext()),
+       Float64Type::get(builder.getContext())});
+  auto fnDecl =
+      getOrCreateFunctionDeclaration(builder, module, QIR_CRX, qirSignature);
+  builder.create<LLVM::CallOp>(loc, fnDecl,
+                               ValueRange{control, target, thetaOperand});
 
   return *this;
 }
@@ -362,6 +402,58 @@ QIRProgramBuilder::u2(const std::variant<double, Value>& phi,
   return *this;
 }
 
+QIRProgramBuilder&
+QIRProgramBuilder::cu2(const std::variant<double, Value>& phi,
+                       const std::variant<double, Value>& lambda,
+                       const Value control, const Value target) {
+  // Save current insertion point
+  const OpBuilder::InsertionGuard entryGuard(builder);
+
+  // Insert constants in entry block
+  builder.setInsertionPointToEnd(entryBlock);
+
+  Value phiOperand;
+  if (std::holds_alternative<double>(phi)) {
+    phiOperand = builder
+                     .create<LLVM::ConstantOp>(
+                         loc, builder.getF64FloatAttr(std::get<double>(phi)))
+                     .getResult();
+  } else {
+    phiOperand = std::get<Value>(phi);
+  }
+
+  Value lambdaOperand;
+  if (std::holds_alternative<double>(lambda)) {
+    lambdaOperand =
+        builder
+            .create<LLVM::ConstantOp>(
+                loc, builder.getF64FloatAttr(std::get<double>(lambda)))
+            .getResult();
+  } else {
+    lambdaOperand = std::get<Value>(lambda);
+  }
+
+  // Save current insertion point
+  const OpBuilder::InsertionGuard bodyGuard(builder);
+
+  // Insert in body block (before branch)
+  builder.setInsertionPoint(bodyBlock->getTerminator());
+
+  // Create cu2 call
+  const auto qirSignature = LLVM::LLVMFunctionType::get(
+      LLVM::LLVMVoidType::get(builder.getContext()),
+      {LLVM::LLVMPointerType::get(builder.getContext()),
+       LLVM::LLVMPointerType::get(builder.getContext()),
+       Float64Type::get(builder.getContext()),
+       Float64Type::get(builder.getContext())});
+  auto fnDecl =
+      getOrCreateFunctionDeclaration(builder, module, QIR_CU2, qirSignature);
+  builder.create<LLVM::CallOp>(
+      loc, fnDecl, ValueRange{control, target, phiOperand, lambdaOperand});
+
+  return *this;
+}
+
 QIRProgramBuilder& QIRProgramBuilder::swap(const Value qubit0,
                                            const Value qubit1) {
   // Save current insertion point
@@ -378,6 +470,29 @@ QIRProgramBuilder& QIRProgramBuilder::swap(const Value qubit0,
   auto fnDecl =
       getOrCreateFunctionDeclaration(builder, module, QIR_SWAP, qirSignature);
   builder.create<LLVM::CallOp>(loc, fnDecl, ValueRange{qubit0, qubit1});
+
+  return *this;
+}
+
+QIRProgramBuilder& QIRProgramBuilder::cswap(const Value control,
+                                            const Value target0,
+                                            const Value target1) {
+  // Save current insertion point
+  const OpBuilder::InsertionGuard insertGuard(builder);
+
+  // Insert in body block (before branch)
+  builder.setInsertionPoint(bodyBlock->getTerminator());
+
+  // Create cswap call
+  const auto qirSignature = LLVM::LLVMFunctionType::get(
+      LLVM::LLVMVoidType::get(builder.getContext()),
+      {LLVM::LLVMPointerType::get(builder.getContext()),
+       LLVM::LLVMPointerType::get(builder.getContext()),
+       LLVM::LLVMPointerType::get(builder.getContext())});
+  auto fnDecl =
+      getOrCreateFunctionDeclaration(builder, module, QIR_CSWAP, qirSignature);
+  builder.create<LLVM::CallOp>(loc, fnDecl,
+                               ValueRange{control, target0, target1});
 
   return *this;
 }

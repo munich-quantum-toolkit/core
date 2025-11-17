@@ -271,7 +271,7 @@ public:
    *
    * @par Example:
    * ```c++
-   * builder.x(q);
+   * builder.x(qubit);
    * ```
    * ```mlir
    * llvm.call @__quantum__qis__x__body(%q) : (!llvm.ptr) -> ()
@@ -291,8 +291,7 @@ public:
    * builder.cx(control, target);
    * ```
    * ```mlir
-   * llvm.call @__quantum__qis__cx__body(%control, %target) : (!llvm.ptr,
-   * !llvm.ptr) -> ()
+   * llvm.call @__quantum__qis__cx__body(%c, %t) : (!llvm.ptr, !llvm.ptr) -> ()
    * ```
    */
   QIRProgramBuilder& cx(Value control, Value target);
@@ -306,13 +305,33 @@ public:
    *
    * @par Example:
    * ```c++
-   * builder.rx(1.0, q);
+   * builder.rx(theta, qubit);
    * ```
    * ```mlir
-   * llvm.call @__quantum__qis__rx__body(%q, %c) : (!llvm.ptr, f64) -> ()
+   * llvm.call @__quantum__qis__rx__body(%q, %theta) : (!llvm.ptr, f64) -> ()
    * ```
    */
   QIRProgramBuilder& rx(const std::variant<double, Value>& theta, Value qubit);
+
+  /**
+   * @brief Apply the CRX
+   *
+   * @param theta Rotation angle
+   * @param control Control qubit
+   * @param target Target qubit
+   * @return Reference to this builder for method chaining
+   *
+   * @par Example:
+   * ```c++
+   * builder.crx(theta, control, target);
+   * ```
+   * ```mlir
+   * llvm.call @__quantum__qis__crx__body(%c, %t, %theta) : (!llvm.ptr,
+   * !llvm.ptr, f64) -> ()
+   * ```
+   */
+  QIRProgramBuilder& crx(const std::variant<double, Value>& theta,
+                         Value control, Value target);
 
   /**
    * @brief Apply the U2 gate to a qubit
@@ -324,15 +343,37 @@ public:
    *
    * @par Example:
    * ```c++
-   * builder.u2(1.0, 0.5, q);
+   * builder.u2(phi, lambda, qubit);
    * ```
    * ```mlir
-   * llvm.call @__quantum__qis__u2__body(%q, %c1, %c2) : (!llvm.ptr, f64, f64)
-   * -> ()
+   * llvm.call @__quantum__qis__u2__body(%q, %phi, %lambda) : (!llvm.ptr, f64,
+   * f64) -> ()
    * ```
    */
   QIRProgramBuilder& u2(const std::variant<double, Value>& phi,
                         const std::variant<double, Value>& lambda, Value qubit);
+
+  /**
+   * @brief Apply the CU2 gate
+   *
+   * @param phi Rotation angle
+   * @param lambda Rotation angle
+   * @param control Control qubit
+   * @param target Target qubit
+   * @return Reference to this builder for method chaining
+   *
+   * @par Example:
+   * ```c++
+   * builder.cu2(phi, lambda, control, target);
+   * ```
+   * ```mlir
+   * llvm.call @__quantum__qis__cu2__body(%c, %t, %phi, %lambda) : (!llvm.ptr,
+   * !llvm.ptr, f64, f64) -> ()
+   * ```
+   */
+  QIRProgramBuilder& cu2(const std::variant<double, Value>& phi,
+                         const std::variant<double, Value>& lambda,
+                         Value control, Value target);
 
   /**
    * @brief Apply the SWAP gate to two qubits
@@ -343,7 +384,7 @@ public:
    *
    * @par Example:
    * ```c++
-   * builder.swap(q0, q1);
+   * builder.swap(qubit0, qubit1);
    * ```
    * ```mlir
    * llvm.call @__quantum__qis__swap__body(%q0, %q1) : (!llvm.ptr, !llvm.ptr) ->
@@ -351,6 +392,26 @@ public:
    * ```
    */
   QIRProgramBuilder& swap(Value qubit0, Value qubit1);
+
+  /**
+   * @brief Apply the CSWAP gate
+   *
+   * @param control Control qubit
+   * @param target1 Target qubit
+   * @param target2 Target qubit
+   * @return Reference to this builder for method chaining
+   *
+   * @par Example:
+   * ```c++
+   * builder.cswap(control, target1, target2);
+   * ```
+   * ```mlir
+   * llvm.call @__quantum__qis__cswap__body(%c, %t0, %t1) : (!llvm.ptr,
+   * !llvm.ptr, !llvm.ptr) ->
+   * ()
+   * ```
+   */
+  QIRProgramBuilder& cswap(Value control, Value target0, Value target1);
 
   //===--------------------------------------------------------------------===//
   // Finalization
