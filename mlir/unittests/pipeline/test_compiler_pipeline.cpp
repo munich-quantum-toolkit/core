@@ -330,13 +330,7 @@ bool areIndependentGroupsEquivalent(ArrayRef<Operation*> lhsOps,
     return false;
   }
 
-  std::vector<Operation*> keys;
-  keys.reserve(lhsFrequencyMap.size());
-  for (const auto& pair : lhsFrequencyMap) {
-    keys.push_back(pair.first);
-  }
-  for (auto* lhsOp : keys) {
-    const auto lhsCount = lhsFrequencyMap.find(lhsOp)->second;
+  for (const auto& [lhsOp, lhsCount] : lhsFrequencyMap) {
     auto it = rhsFrequencyMap.find(lhsOp);
     if (it == rhsFrequencyMap.end() || it->second != lhsCount) {
       return false;
