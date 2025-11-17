@@ -39,7 +39,7 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Setup LLVM/MLIR
+      - name: Setup MLIR
         uses: burgholzer/portable-mlir-toolchain@add-setup
         with:
           tag: test-release-7
