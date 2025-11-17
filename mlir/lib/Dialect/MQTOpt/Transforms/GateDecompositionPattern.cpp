@@ -63,9 +63,17 @@ struct GateDecompositionPattern final
       for (auto&& gate : gates) {
         c += getComplexity(gate.type, gate.qubitId.size());
       }
+      if (hasGlobalPhase()) {
+        // need to add two phase gates if a global phase needs to be applied
+        c += 2 * getComplexity(qc::P, 1);
+      }
       return c;
     }
+
     fp globalPhase{};
+    [[nodiscard]] bool hasGlobalPhase() const {
+      return std::abs(globalPhase) > std::numeric_limits<fp>::epsilon();
+    }
 
     [[nodiscard]] matrix4x4 getUnitaryMatrix() const {
       matrix4x4 unitaryMatrix =
@@ -120,7 +128,9 @@ struct GateDecompositionPattern final
       llvm::errs() << "NO SEQUENCE GENERATED!\n";
       return mlir::failure();
     }
-    if (sequence->complexity() >= series.complexity) {
+    // only accept new sequence if it shortens existing series by more than two
+    // gates; this prevents an oscillation with phase gates
+    if (sequence->complexity() >= series.complexity + 2) {
       // TODO: add more sophisticated metric to determine complexity of
       // series/sequence
       llvm::errs() << "SEQUENCE LONGER THAN INPUT (" << sequence->gates.size()
@@ -232,7 +242,8 @@ protected:
           getComplexity(helpers::getQcType(initialOperation), in.size());
 
       // TODO: necessary when using non-global phase gates?
-      for (auto&& globalPhaseOp : initialOperation->getBlock()->getOps<GPhaseOp>()) {
+      for (auto&& globalPhaseOp :
+           initialOperation->getBlock()->getOps<GPhaseOp>()) {
         globalPhase += helpers::getParameters(globalPhaseOp)[0];
       }
     }
@@ -346,28 +357,30 @@ protected:
     auto location = lastSeriesOp->getLoc();
     rewriter.setInsertionPointAfter(lastSeriesOp);
 
-    if (sequence.globalPhase != 0.0) {
-      // TODO: use POp instead and apply negative globalPhase after insertion of
-      // new gates to "undo" the phase shift
-      createOneParameterGate<GPhaseOp>(rewriter, location, sequence.globalPhase,
-                                       {});
-    }
-
     auto inQubits = series.inQubits;
     auto updateInQubits =
-        [&inQubits](const TwoQubitGateSequence::Gate& gateDescription,
+        [&inQubits](const llvm::SmallVector<std::size_t, 2>& qubitIds,
                     auto&& newGate) {
           // TODO: need to handle controls differently?
           auto results = newGate.getAllOutQubits();
-          if (gateDescription.qubitId.size() == 2) {
-            inQubits[gateDescription.qubitId[0]] = results[0];
-            inQubits[gateDescription.qubitId[1]] = results[1];
-          } else if (gateDescription.qubitId.size() == 1) {
-            inQubits[gateDescription.qubitId[0]] = results[0];
+          if (qubitIds.size() == 2) {
+            inQubits[qubitIds[0]] = results[0];
+            inQubits[qubitIds[1]] = results[1];
+          } else if (qubitIds.size() == 1) {
+            inQubits[qubitIds[0]] = results[0];
           } else {
             throw std::logic_error{"Invalid number of qubit IDs!"};
           }
         };
+
+    if (sequence.hasGlobalPhase()) {
+      auto newGate = createOneParameterGate<POp>(
+          rewriter, location, sequence.globalPhase, {inQubits[0]});
+      updateInQubits({0}, newGate);
+      newGate = createOneParameterGate<POp>(
+          rewriter, location, sequence.globalPhase, {inQubits[1]});
+      updateInQubits({1}, newGate);
+    }
 
     std::cerr << "SERIES: ";
     for (auto&& gate : series.gates) {
@@ -429,7 +442,7 @@ protected:
         auto newGate =
             createGate<XOp>(rewriter, location, {inQubits[gate.qubitId[1]]},
                             inCtrlQubits, gate.parameter);
-        updateInQubits(gate, newGate);
+        updateInQubits(gate.qubitId, newGate);
       } else if (gate.type == qc::RX) {
         mlir::SmallVector<mlir::Value, 2> qubits;
         for (auto&& x : gate.qubitId) {
@@ -437,7 +450,7 @@ protected:
         }
         auto newGate =
             createGate<RXOp>(rewriter, location, qubits, {}, gate.parameter);
-        updateInQubits(gate, newGate);
+        updateInQubits(gate.qubitId, newGate);
       } else if (gate.type == qc::RY) {
         mlir::SmallVector<mlir::Value, 2> qubits;
         for (auto&& x : gate.qubitId) {
@@ -445,7 +458,7 @@ protected:
         }
         auto newGate =
             createGate<RYOp>(rewriter, location, qubits, {}, gate.parameter);
-        updateInQubits(gate, newGate);
+        updateInQubits(gate.qubitId, newGate);
       } else if (gate.type == qc::RZ) {
         mlir::SmallVector<mlir::Value, 2> qubits;
         for (auto&& x : gate.qubitId) {
@@ -453,7 +466,7 @@ protected:
         }
         auto newGate =
             createGate<RZOp>(rewriter, location, qubits, {}, gate.parameter);
-        updateInQubits(gate, newGate);
+        updateInQubits(gate.qubitId, newGate);
       } else {
         throw std::runtime_error{"Unknown gate type!"};
       }
@@ -683,6 +696,10 @@ protected:
                      {C_ZERO, C_ZERO, C_ZERO, {cosTheta, -sinTheta}}};
   }
 
+  static matrix2x2 pMatrix(const fp lambda) {
+    return matrix2x2{{1, 0}, {0, {std::cos(lambda), std::sin(lambda)}}};
+  }
+
   static std::array<fp, 4> anglesFromUnitary(const matrix2x2& matrix,
                                              EulerBasis basis) {
     if (basis == EulerBasis::XYX) {
@@ -759,6 +776,9 @@ protected:
     }
     if (gate.type == qc::I) {
       return IDENTITY_GATE;
+    }
+    if (gate.type == qc::P) {
+      return pMatrix(gate.parameter[0]);
     }
     if (gate.type == qc::H) {
       static constexpr fp SQRT2_2 = static_cast<fp>(
