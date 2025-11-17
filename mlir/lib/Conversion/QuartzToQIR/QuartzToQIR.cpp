@@ -374,14 +374,16 @@ struct ConvertQuartzMeasureQIR final : StatefulOpConversionPattern<MeasureOp> {
       state.numResults++;
     }
 
-    // Create mz (measure) call: mz(qubit, result)
-    const auto mzSignature = LLVM::LLVMFunctionType::get(
+    // Declare QIR function
+    const auto fnSignature = LLVM::LLVMFunctionType::get(
         LLVM::LLVMVoidType::get(ctx), {ptrType, ptrType});
-    const auto mzDecl =
-        getOrCreateFunctionDeclaration(rewriter, op, QIR_MEASURE, mzSignature);
-    rewriter.replaceOpWithNewOp<LLVM::CallOp>(
-        op, mzDecl, ValueRange{adaptor.getQubit(), resultValue});
+    const auto fnDecl =
+        getOrCreateFunctionDeclaration(rewriter, op, QIR_MEASURE, fnSignature);
 
+    // Create CallOp and replace quartz.measure with result pointer
+    rewriter.create<LLVM::CallOp>(op.getLoc(), fnDecl,
+                                  ValueRange{adaptor.getQubit(), resultValue});
+    rewriter.replaceOp(op, resultValue);
     return success();
   }
 };
