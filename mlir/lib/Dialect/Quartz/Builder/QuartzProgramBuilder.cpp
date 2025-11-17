@@ -16,7 +16,6 @@
 #include <functional>
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/Support/ErrorHandling.h>
-#include <llvm/Support/raw_ostream.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/MemRef/IR/MemRef.h>
@@ -72,11 +71,11 @@ Value QuartzProgramBuilder::staticQubit(const int64_t index) {
   return staticOp.getQubit();
 }
 
-SmallVector<Value>
+llvm::SmallVector<Value>
 QuartzProgramBuilder::allocQubitRegister(const int64_t size,
                                          const StringRef name) {
   // Allocate a sequence of qubits with register metadata
-  SmallVector<Value> qubits;
+  llvm::SmallVector<Value> qubits;
   qubits.reserve(size);
 
   auto nameAttr = getStringAttr(name);

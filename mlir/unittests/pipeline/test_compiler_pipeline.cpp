@@ -10,9 +10,6 @@
 
 #include "ir/QuantumComputation.hpp"
 #include "mlir/Compiler/CompilerPipeline.h"
-#include "mlir/Conversion/FluxToQuartz/FluxToQuartz.h"
-#include "mlir/Conversion/QuartzToFlux/QuartzToFlux.h"
-#include "mlir/Conversion/QuartzToQIR/QuartzToQIR.h"
 #include "mlir/Dialect/Flux/Builder/FluxProgramBuilder.h"
 #include "mlir/Dialect/Flux/IR/FluxDialect.h"
 #include "mlir/Dialect/QIR/Builder/QIRProgramBuilder.h"
@@ -22,11 +19,15 @@
 #include "mlir/Support/PrettyPrinting.h"
 
 #include <algorithm>
+#include <cstddef>
 #include <functional>
 #include <gtest/gtest.h>
 #include <llvm/ADT/DenseMap.h>
 #include <llvm/ADT/DenseSet.h>
+#include <llvm/ADT/Hashing.h>
+#include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/SmallVector.h>
+#include <llvm/Support/Casting.h>
 #include <llvm/Support/raw_ostream.h>
 #include <memory>
 #include <mlir/Dialect/Arith/IR/Arith.h>
@@ -38,6 +39,7 @@
 #include <mlir/IR/Block.h>
 #include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/MLIRContext.h>
+#include <mlir/IR/OpDefinition.h>
 #include <mlir/IR/Operation.h>
 #include <mlir/IR/OperationSupport.h>
 #include <mlir/IR/OwningOpRef.h>
@@ -45,11 +47,14 @@
 #include <mlir/Interfaces/SideEffectInterfaces.h>
 #include <mlir/Parser/Parser.h>
 #include <mlir/Pass/PassManager.h>
+#include <mlir/Support/LLVM.h>
 #include <mlir/Support/LogicalResult.h>
 #include <mlir/Transforms/Passes.h>
 #include <sstream>
 #include <string>
 #include <unordered_map>
+#include <utility>
+#include <vector>
 
 namespace {
 
@@ -102,21 +107,16 @@ struct OperationStructuralEquality {
     // Check operand types (not values)
     auto lhsOperandTypes = lhs->getOperandTypes();
     auto rhsOperandTypes = rhs->getOperandTypes();
-    if (!std::equal(lhsOperandTypes.begin(), lhsOperandTypes.end(),
-                    rhsOperandTypes.begin(), rhsOperandTypes.end())) {
-      return false;
-    }
+    return llvm::equal(lhsOperandTypes, rhsOperandTypes);
 
     // Note: Attributes are intentionally not checked here to allow relaxed
     // comparison. Attributes like function names, parameter names, etc. may
     // differ while operations are still structurally equivalent.
-
-    return true;
   }
 };
 
 /// Map to track value equivalence between two modules.
-using ValueEquivalenceMap = DenseMap<Value, Value>;
+using ValueEquivalenceMap = llvm::DenseMap<Value, Value>;
 
 /// Compare two operations for structural equivalence.
 /// Updates valueMap to track corresponding SSA values.
@@ -199,7 +199,7 @@ bool hasOrderingConstraints(Operation* op) {
 
   // Check for memory effects that enforce ordering
   if (auto memInterface = dyn_cast<MemoryEffectOpInterface>(op)) {
-    SmallVector<MemoryEffects::EffectInstance> effects;
+    llvm::SmallVector<MemoryEffects::EffectInstance> effects;
     memInterface.getEffects(effects);
 
     bool hasNonAllocFreeEffects = false;
@@ -222,14 +222,14 @@ bool hasOrderingConstraints(Operation* op) {
 
 /// Build a dependence graph for operations.
 /// Returns a map from each operation to the set of operations it depends on.
-DenseMap<Operation*, DenseSet<Operation*>>
+llvm::DenseMap<Operation*, llvm::DenseSet<Operation*>>
 buildDependenceGraph(ArrayRef<Operation*> ops) {
-  DenseMap<Operation*, DenseSet<Operation*>> dependsOn;
-  DenseMap<Value, Operation*> valueProducers;
+  llvm::DenseMap<Operation*, llvm::DenseSet<Operation*>> dependsOn;
+  llvm::DenseMap<Value, Operation*> valueProducers;
 
   // Build value-to-producer map and dependence relationships
   for (Operation* op : ops) {
-    dependsOn[op] = DenseSet<Operation*>();
+    dependsOn[op] = llvm::DenseSet<Operation*>();
 
     // This operation depends on the producers of its operands
     for (Value operand : op->getOperands()) {
@@ -249,16 +249,16 @@ buildDependenceGraph(ArrayRef<Operation*> ops) {
 
 /// Partition operations into groups that can be compared as multisets.
 /// Operations in the same group are independent and can be reordered.
-std::vector<SmallVector<Operation*>>
+std::vector<llvm::SmallVector<Operation*>>
 partitionIndependentGroups(ArrayRef<Operation*> ops) {
-  std::vector<SmallVector<Operation*>> groups;
+  std::vector<llvm::SmallVector<Operation*>> groups;
   if (ops.empty()) {
     return groups;
   }
 
   auto dependsOn = buildDependenceGraph(ops);
-  DenseSet<Operation*> processed;
-  SmallVector<Operation*> currentGroup;
+  llvm::DenseSet<Operation*> processed;
+  llvm::SmallVector<Operation*> currentGroup;
 
   for (Operation* op : ops) {
     bool dependsOnCurrent = false;
@@ -356,8 +356,8 @@ bool areBlocksEquivalent(Block& lhs, Block& rhs,
   }
 
   // Collect all operations
-  SmallVector<Operation*> lhsOps;
-  SmallVector<Operation*> rhsOps;
+  llvm::SmallVector<Operation*> lhsOps;
+  llvm::SmallVector<Operation*> rhsOps;
 
   for (Operation& op : lhs) {
     lhsOps.push_back(&op);
@@ -394,7 +394,7 @@ bool areBlocksEquivalent(Block& lhs, Block& rhs,
     // by trying all permutations (for small groups) or use a greedy approach
 
     // Use a simple greedy matching
-    DenseSet<Operation*> matchedRhs;
+    llvm::DenseSet<Operation*> matchedRhs;
     for (Operation* lhsOp : lhsGroup) {
       bool matched = false;
       for (Operation* rhsOp : rhsGroup) {

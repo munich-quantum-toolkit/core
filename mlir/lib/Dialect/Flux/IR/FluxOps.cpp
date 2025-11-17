@@ -20,7 +20,9 @@
 // IWYU pragma: end_keep
 
 #include <cstddef>
+#include <functional>
 #include <llvm/ADT/STLExtras.h>
+#include <llvm/ADT/SmallPtrSet.h>
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/Support/Casting.h>
 #include <llvm/Support/ErrorHandling.h>
@@ -360,7 +362,7 @@ LogicalResult CtrlOp::verify() {
            << block.back().getNumOperands();
   }
 
-  SmallPtrSet<Value, 4> uniqueQubitsIn;
+  llvm::SmallPtrSet<Value, 4> uniqueQubitsIn;
   for (const auto& control : getControlsIn()) {
     if (!uniqueQubitsIn.insert(control).second) {
       return emitOpError("duplicate control qubit found");

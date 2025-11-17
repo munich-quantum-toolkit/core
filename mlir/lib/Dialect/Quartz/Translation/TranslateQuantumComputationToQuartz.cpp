@@ -45,12 +45,12 @@ namespace {
  */
 struct QregInfo {
   const qc::QuantumRegister* qregPtr;
-  SmallVector<Value> qubits;
+  llvm::SmallVector<Value> qubits;
 };
 
 using BitMemInfo = std::pair<QuartzProgramBuilder::ClassicalRegister*,
                              std::size_t>; // (register ref, localIdx)
-using BitIndexVec = SmallVector<BitMemInfo>;
+using BitIndexVec = llvm::SmallVector<BitMemInfo>;
 
 /**
  * @brief Allocates quantum registers using the QuartzProgramBuilder
@@ -65,11 +65,11 @@ using BitIndexVec = SmallVector<BitMemInfo>;
  * @param quantumComputation The quantum computation to translate
  * @return Vector containing information about all quantum registers
  */
-SmallVector<QregInfo>
+llvm::SmallVector<QregInfo>
 allocateQregs(QuartzProgramBuilder& builder,
               const qc::QuantumComputation& quantumComputation) {
   // Build list of pointers for sorting
-  SmallVector<const qc::QuantumRegister*> qregPtrs;
+  llvm::SmallVector<const qc::QuantumRegister*> qregPtrs;
   qregPtrs.reserve(quantumComputation.getQuantumRegisters().size() +
                    quantumComputation.getAncillaRegisters().size());
   for (const auto& qreg :
@@ -88,7 +88,7 @@ allocateQregs(QuartzProgramBuilder& builder,
       });
 
   // Allocate quantum registers using the builder
-  SmallVector<QregInfo> qregs;
+  llvm::SmallVector<QregInfo> qregs;
   for (const auto* qregPtr : qregPtrs) {
     auto qubits =
         builder.allocQubitRegister(qregPtr->getSize(), qregPtr->getName());
@@ -110,10 +110,10 @@ allocateQregs(QuartzProgramBuilder& builder,
  * @param qregs Vector containing information about all quantum registers
  * @return Flat vector of qubit values indexed by physical qubit index
  */
-SmallVector<Value>
+llvm::SmallVector<Value>
 buildQubitMap(const qc::QuantumComputation& quantumComputation,
-              const SmallVector<QregInfo>& qregs) {
-  SmallVector<Value> flatQubits;
+              const llvm::SmallVector<QregInfo>& qregs) {
+  llvm::SmallVector<Value> flatQubits;
   const auto maxPhys = quantumComputation.getHighestPhysicalQubitIndex();
   flatQubits.resize(static_cast<size_t>(maxPhys) + 1);
 
@@ -143,7 +143,7 @@ BitIndexVec
 allocateClassicalRegisters(QuartzProgramBuilder& builder,
                            const qc::QuantumComputation& quantumComputation) {
   // Build list of pointers for sorting
-  SmallVector<const qc::ClassicalRegister*> cregPtrs;
+  llvm::SmallVector<const qc::ClassicalRegister*> cregPtrs;
   cregPtrs.reserve(quantumComputation.getClassicalRegisters().size());
   for (const auto& reg :
        quantumComputation.getClassicalRegisters() | std::views::values) {
@@ -184,7 +184,8 @@ allocateClassicalRegisters(QuartzProgramBuilder& builder,
  * @param bitMap Mapping from global bit index to (register, local_index)
  */
 void addMeasureOp(QuartzProgramBuilder& builder, const qc::Operation& operation,
-                  const SmallVector<Value>& qubits, const BitIndexVec& bitMap) {
+                  const llvm::SmallVector<Value>& qubits,
+                  const BitIndexVec& bitMap) {
   const auto& measureOp =
       dynamic_cast<const qc::NonUnitaryOperation&>(operation);
   const auto& targets = measureOp.getTargets();
@@ -212,7 +213,7 @@ void addMeasureOp(QuartzProgramBuilder& builder, const qc::Operation& operation,
  * @param qubits Flat vector of qubit values indexed by physical qubit index
  */
 void addResetOp(QuartzProgramBuilder& builder, const qc::Operation& operation,
-                const SmallVector<Value>& qubits) {
+                const llvm::SmallVector<Value>& qubits) {
   for (const auto& target : operation.getTargets()) {
     const Value qubit = qubits[target];
     builder.reset(qubit);
@@ -230,9 +231,10 @@ void addResetOp(QuartzProgramBuilder& builder, const qc::Operation& operation,
  * @param qubits Flat vector of qubit values indexed by physical qubit index
  * @return Vector of qubit values corresponding to positive controls
  */
-SmallVector<Value> getPosControls(const qc::Operation& operation,
-                                  const SmallVector<Value>& qubits) {
-  SmallVector<Value> controls;
+llvm::SmallVector<Value>
+getPosControls(const qc::Operation& operation,
+               const llvm::SmallVector<Value>& qubits) {
+  llvm::SmallVector<Value> controls;
   for (const auto& [control, type] : operation.getControls()) {
     if (type == qc::Control::Type::Neg) {
       continue;
@@ -253,7 +255,7 @@ SmallVector<Value> getPosControls(const qc::Operation& operation,
  * @param qubits Flat vector of qubit values indexed by physical qubit index
  */
 void addXOp(QuartzProgramBuilder& builder, const qc::Operation& operation,
-            const SmallVector<Value>& qubits) {
+            const llvm::SmallVector<Value>& qubits) {
   const auto& target = qubits[operation.getTargets()[0]];
   if (const auto& posControls = getPosControls(operation, qubits);
       posControls.empty()) {
@@ -274,7 +276,7 @@ void addXOp(QuartzProgramBuilder& builder, const qc::Operation& operation,
  * @param qubits Flat vector of qubit values indexed by physical qubit index
  */
 void addRXOp(QuartzProgramBuilder& builder, const qc::Operation& operation,
-             const SmallVector<Value>& qubits) {
+             const llvm::SmallVector<Value>& qubits) {
   const auto& theta = operation.getParameter()[0];
   const auto& target = qubits[operation.getTargets()[0]];
   if (const auto& posControls = getPosControls(operation, qubits);
@@ -296,7 +298,7 @@ void addRXOp(QuartzProgramBuilder& builder, const qc::Operation& operation,
  * @param qubits Flat vector of qubit values indexed by physical qubit index
  */
 void addU2Op(QuartzProgramBuilder& builder, const qc::Operation& operation,
-             const SmallVector<Value>& qubits) {
+             const llvm::SmallVector<Value>& qubits) {
   const auto& phi = operation.getParameter()[0];
   const auto& lambda = operation.getParameter()[1];
   const auto& target = qubits[operation.getTargets()[0]];
@@ -320,7 +322,7 @@ void addU2Op(QuartzProgramBuilder& builder, const qc::Operation& operation,
  * @param qubits Flat vector of qubit values indexed by physical qubit index
  */
 void addSWAPOp(QuartzProgramBuilder& builder, const qc::Operation& operation,
-               const SmallVector<Value>& qubits) {
+               const llvm::SmallVector<Value>& qubits) {
   const auto& target0 = qubits[operation.getTargets()[0]];
   const auto& target1 = qubits[operation.getTargets()[1]];
   if (const auto& posControls = getPosControls(operation, qubits);
@@ -352,7 +354,7 @@ void addSWAPOp(QuartzProgramBuilder& builder, const qc::Operation& operation,
 LogicalResult
 translateOperations(QuartzProgramBuilder& builder,
                     const qc::QuantumComputation& quantumComputation,
-                    const SmallVector<Value>& qubits,
+                    const llvm::SmallVector<Value>& qubits,
                     const BitIndexVec& bitMap) {
   for (const auto& operation : quantumComputation) {
     switch (operation->getType()) {

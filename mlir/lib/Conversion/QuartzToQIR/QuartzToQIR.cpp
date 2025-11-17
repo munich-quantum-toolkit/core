@@ -13,6 +13,7 @@
 #include "mlir/Dialect/QIR/Utils/QIRUtils.h"
 #include "mlir/Dialect/Quartz/IR/QuartzDialect.h"
 
+#include <cassert>
 #include <cstdint>
 #include <iterator>
 #include <llvm/ADT/STLExtras.h>

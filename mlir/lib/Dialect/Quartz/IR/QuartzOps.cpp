@@ -19,9 +19,14 @@
 // IWYU pragma: end_keep
 
 #include <cstddef>
+#include <functional>
+#include <llvm/ADT/SmallPtrSet.h>
+#include <llvm/ADT/SmallVector.h>
 #include <llvm/Support/Casting.h>
 #include <llvm/Support/ErrorHandling.h>
+#include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/IR/BuiltinTypes.h>
+#include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OperationSupport.h>
 #include <mlir/IR/PatternMatch.h>
 #include <mlir/IR/Types.h>
@@ -301,7 +306,7 @@ LogicalResult CtrlOp::verify() {
     return emitOpError(
         "second operation in body region must be a yield operation");
   }
-  SmallPtrSet<Value, 4> uniqueQubits;
+  llvm::SmallPtrSet<Value, 4> uniqueQubits;
   for (const auto& control : getControls()) {
     if (!uniqueQubits.insert(control).second) {
       return emitOpError("duplicate control qubit found");
@@ -330,7 +335,7 @@ struct MergeNestedCtrl final : OpRewritePattern<CtrlOp> {
       return failure();
     }
 
-    SmallVector<Value> newControls(ctrlOp.getControls());
+    llvm::SmallVector<Value> newControls(ctrlOp.getControls());
     for (const auto control : bodyCtrlOp.getControls()) {
       newControls.push_back(control);
     }
