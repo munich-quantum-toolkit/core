@@ -113,9 +113,9 @@ struct GateDecompositionPattern final
     helpers::print(unitaryMatrix, "UNITARY MATRIX", true);
 
     auto decomposer = TwoQubitBasisDecomposer::newInner(
-        decomposerBasisGate, DEFAULT_FIDELITY, decomposerEulerBasis);
+        decomposerBasisGate, 1.0, decomposerEulerBasis);
     auto sequence = decomposer.twoQubitDecompose(
-        unitaryMatrix, DEFAULT_FIDELITY, true, std::nullopt);
+        unitaryMatrix, DEFAULT_FIDELITY, false, std::nullopt);
     if (!sequence) {
       llvm::errs() << "NO SEQUENCE GENERATED!\n";
       return mlir::failure();
@@ -134,6 +134,7 @@ struct GateDecompositionPattern final
   }
 
 protected:
+  static constexpr fp SANITY_CHECK_PRECISION = 1e-12;
   [[nodiscard]] static std::size_t getComplexity(qc::OpType /*type*/,
                                                  std::size_t numOfQubits) {
     if (numOfQubits > 1) {
@@ -377,15 +378,15 @@ protected:
       } else {
         auto parameter = helpers::getParameters(gate.op)[0];
         std::cerr << std::format(
-            "{}({:.5}*pi) q[{}] {};", name, parameter / qc::PI,
-            gate.qubitIds[0],
+            "{}({}*pi) q[{}] {};", name, parameter / qc::PI, gate.qubitIds[0],
             (gate.qubitIds.size() > 1
                  ? (", q[" + std::to_string(gate.qubitIds[1]) + "]")
                  : std::string{}));
       }
     }
     std::cerr << '\n';
-    std::cerr << "GATE SEQUENCE!: \n";
+    std::cerr << "GATE SEQUENCE!: gphase(" << sequence.globalPhase / qc::PI
+              << "*pi); \n";
     matrix4x4 unitaryMatrix =
         helpers::kroneckerProduct(IDENTITY_GATE, IDENTITY_GATE);
     for (auto&& gate : sequence.gates) {
@@ -404,7 +405,7 @@ protected:
                  : std::string{}));
       } else {
         std::cerr << std::format(
-            "{}({:.5}*pi) q[{}] {};", qc::toString(gate.type),
+            "{}({}*pi) q[{}] {};", qc::toString(gate.type),
             gate.parameter[0] / qc::PI, gate.qubitId[0],
             (gate.qubitId.size() > 1
                  ? (", q[" + std::to_string(gate.qubitId[1]) + "]")
@@ -453,7 +454,8 @@ protected:
     helpers::print(series.getUnitaryMatrix(), "ORIGINAL UNITARY", true);
     helpers::print((unitaryMatrix * std::exp(IM * sequence.globalPhase)).eval(),
                    "RESULT UNITARY MATRIX", true);
-    assert((unitaryMatrix * std::exp(IM * sequence.globalPhase)).isApprox(series.getUnitaryMatrix(), 1e-9));
+    assert((unitaryMatrix * std::exp(IM * sequence.globalPhase))
+               .isApprox(series.getUnitaryMatrix(), SANITY_CHECK_PRECISION));
 
     rewriter.replaceAllUsesWith(series.outQubits, inQubits);
     for (auto&& gate : llvm::reverse(series.gates)) {
@@ -908,9 +910,10 @@ protected:
             "TwoQubitWeylDecomposition: failed to diagonalize M2."};
       }
       // check that p is in SO(4)
-      assert((p.transpose() * p).isIdentity());
+      assert((p.transpose() * p).isIdentity(SANITY_CHECK_PRECISION));
       // make sure determinant of sqrt(eigenvalues) is 1.0
-      assert(std::abs(matrix4x4{d.asDiagonal()}.determinant() - 1.0) < 1e-13);
+      assert(std::abs(matrix4x4{d.asDiagonal()}.determinant() - 1.0) <
+             SANITY_CHECK_PRECISION);
 
       diagonal4x4 q = d.cwiseSqrt();
       auto det_q = q.prod();
@@ -1071,7 +1074,7 @@ protected:
       // temp += matrix4x4::Constant(0.0);
       helpers::print(temp, "TEMP", true);
       helpers::print(p, "P", true);
-      assert(std::abs(p.determinant() - 1.0) < 1e-13);
+      assert(std::abs(p.determinant() - 1.0) < SANITY_CHECK_PRECISION);
       // https://threeplusone.com/pubs/on_gates.pdf
       // uP = V, m2 = V^T*V, temp = D, p = Q1
       matrix4x4 k1 = uP * p * temp;
@@ -1094,12 +1097,14 @@ protected:
       assert((k1 *
               magicBasisTransform(temp.conjugate(), MagicBasisTransform::Into) *
               k2)
-                 .isApprox(u, 1e-8));
+                 .isApprox(u, SANITY_CHECK_PRECISION));
 
       auto [K1l, K1r, phase_l] = decomposeTwoQubitProductGate(k1);
       auto [K2l, K2r, phase_r] = decomposeTwoQubitProductGate(k2);
-      assert(helpers::kroneckerProduct(K1l, K1r).isApprox(k1, 1e-9));
-      assert(helpers::kroneckerProduct(K2l, K2r).isApprox(k2, 1e-9));
+      assert(helpers::kroneckerProduct(K1l, K1r).isApprox(
+          k1, SANITY_CHECK_PRECISION));
+      assert(helpers::kroneckerProduct(K2l, K2r).isApprox(
+          k2, SANITY_CHECK_PRECISION));
       globalPhase += phase_l + phase_r;
 
       // Flip into Weyl chamber
@@ -1201,7 +1206,7 @@ protected:
       assert((helpers::kroneckerProduct(K1l, K1r) *
               getCanonicalMatrix(a * -2.0, b * -2.0, c * -2.0) *
               helpers::kroneckerProduct(K2l, K2r) * std::exp(IM * globalPhase))
-                 .isApprox(unitaryMatrix, 1e-8));
+                 .isApprox(unitaryMatrix, SANITY_CHECK_PRECISION));
       auto isClose = [&](fp ap, fp bp, fp cp) -> bool {
         auto da = a - ap;
         auto db = b - bp;
@@ -1572,7 +1577,7 @@ protected:
                                  specialized.c * -2.0) *
               helpers::kroneckerProduct(specialized.k2l, specialized.k2r) *
               std::exp(IM * specialized.globalPhase))
-                 .isApprox(unitaryMatrix, 1e-8));
+                 .isApprox(unitaryMatrix, SANITY_CHECK_PRECISION));
 
       return specialized;
     }
@@ -1649,7 +1654,7 @@ protected:
       };
 
       auto basisDecomposer = TwoQubitWeylDecomposition::newInner(
-          getTwoQubitMatrix(basisGate), DEFAULT_FIDELITY, std::nullopt);
+          getTwoQubitMatrix(basisGate), basisFidelity, std::nullopt);
       auto superControlled =
           relativeEq(basisDecomposer.a, qc::PI_4, 1e-13, 1e-09) &&
           relativeEq(basisDecomposer.c, 0.0, 1e-13, 1e-09);
@@ -1765,7 +1770,7 @@ protected:
       };
       fp actualBasisFidelity = getBasisFidelity();
       auto targetDecomposed = TwoQubitWeylDecomposition::newInner(
-          unitaryMatrix, DEFAULT_FIDELITY, std::nullopt);
+          unitaryMatrix, actualBasisFidelity, std::nullopt);
       auto traces = this->traces(targetDecomposed);
       auto getDefaultNbasis = [&]() {
         auto minValue = std::numeric_limits<fp>::min();
@@ -1813,7 +1818,7 @@ protected:
       for (auto&& decomp : decomposition) {
         assert(helpers::isUnitaryMatrix(decomp));
         auto eulerDecomp = unitaryToGateSequenceInner(
-            decomp, target1qBasisList, 0, {}, true, std::nullopt);
+            decomp, target1qBasisList, 0, {}, true, 1.0 - actualBasisFidelity);
         eulerDecompositions.push_back(eulerDecomp);
       }
       TwoQubitGateSequence gates{.globalPhase = targetDecomposed.globalPhase};
@@ -1968,7 +1973,8 @@ protected:
         helpers::print(helpers::kroneckerProduct(IDENTITY_GATE, unitaryMat),
                        "SANITY CHECK (4.2)", true);
         assert(circuit.getUnitaryMatrix().isApprox(
-            helpers::kroneckerProduct(IDENTITY_GATE, unitaryMat), 1e-9));
+            helpers::kroneckerProduct(IDENTITY_GATE, unitaryMat),
+            SANITY_CHECK_PRECISION));
         auto error = calculateError(circuit);
         if (error < minError) {
           bestCircuit = circuit;
@@ -2004,7 +2010,7 @@ protected:
       fp globalPhase = phase - ((phi + lambda) / 2.);
 
       std::vector<OneQubitGateSequence::Gate> gates;
-      if (std::abs(theta) < angleZeroEpsilon) {
+      if (std::abs(theta) <= angleZeroEpsilon) {
         lambda += phi;
         lambda = mod2pi(lambda);
         if (std::abs(lambda) > angleZeroEpsilon) {
@@ -2014,13 +2020,13 @@ protected:
         return {gates, globalPhase};
       }
 
-      if (std::abs(theta - qc::PI) < angleZeroEpsilon) {
+      if (std::abs(theta - qc::PI) <= angleZeroEpsilon) {
         globalPhase += phi;
         lambda -= phi;
         phi = 0.0;
       }
-      if (std::abs(mod2pi(lambda + qc::PI)) < angleZeroEpsilon ||
-          std::abs(mod2pi(phi + qc::PI)) < angleZeroEpsilon) {
+      if (std::abs(mod2pi(lambda + qc::PI)) <= angleZeroEpsilon ||
+          std::abs(mod2pi(phi + qc::PI)) <= angleZeroEpsilon) {
         lambda += qc::PI;
         theta = -theta;
         phi += qc::PI;
