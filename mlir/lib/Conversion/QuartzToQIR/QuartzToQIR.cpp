@@ -14,11 +14,13 @@
 #include "mlir/Dialect/Quartz/IR/QuartzDialect.h"
 
 #include <cassert>
+#include <cstddef>
 #include <cstdint>
 #include <iterator>
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/ADT/StringMap.h>
+#include <llvm/Support/Casting.h>
 #include <mlir/Conversion/ArithToLLVM/ArithToLLVM.h>
 #include <mlir/Conversion/ControlFlowToLLVM/ControlFlowToLLVM.h>
 #include <mlir/Conversion/FuncToLLVM/ConvertFuncToLLVM.h>
@@ -445,7 +447,8 @@ struct ConvertQuartzXQIR final : StatefulOpConversionPattern<XOp> {
 
     // Determine whether the operation is controlled
     CtrlOp posCtrlOp = nullptr;
-    if (op->getNextNode() && op->getNextNode()->getNextNode()) {
+    if ((op->getNextNode() != nullptr) &&
+        (op->getNextNode()->getNextNode() != nullptr)) {
       posCtrlOp = llvm::dyn_cast<CtrlOp>(op->getNextNode()->getNextNode());
     }
 
@@ -522,7 +525,8 @@ struct ConvertQuartzRXQIR final : StatefulOpConversionPattern<RXOp> {
 
     // Determine whether the operation is controlled
     CtrlOp posCtrlOp = nullptr;
-    if (op->getNextNode() && op->getNextNode()->getNextNode()) {
+    if ((op->getNextNode() != nullptr) &&
+        (op->getNextNode()->getNextNode() != nullptr)) {
       posCtrlOp = llvm::dyn_cast<CtrlOp>(op->getNextNode()->getNextNode());
     }
 
@@ -602,7 +606,8 @@ struct ConvertQuartzU2QIR final : StatefulOpConversionPattern<U2Op> {
 
     // Determine whether the operation is controlled
     CtrlOp posCtrlOp = nullptr;
-    if (op->getNextNode() && op->getNextNode()->getNextNode()) {
+    if ((op->getNextNode() != nullptr) &&
+        (op->getNextNode()->getNextNode() != nullptr)) {
       posCtrlOp = llvm::dyn_cast<CtrlOp>(op->getNextNode()->getNextNode());
     }
 
@@ -684,7 +689,8 @@ struct ConvertQuartzSWAPQIR final : StatefulOpConversionPattern<SWAPOp> {
 
     // Determine whether the operation is controlled
     CtrlOp posCtrlOp = nullptr;
-    if (op->getNextNode() && op->getNextNode()->getNextNode()) {
+    if ((op->getNextNode() != nullptr) &&
+        (op->getNextNode()->getNextNode() != nullptr)) {
       posCtrlOp = llvm::dyn_cast<CtrlOp>(op->getNextNode()->getNextNode());
     }
 

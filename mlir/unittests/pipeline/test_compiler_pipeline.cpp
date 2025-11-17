@@ -27,6 +27,7 @@
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/Support/Casting.h>
+#include <llvm/Support/HashBuilder.h>
 #include <llvm/Support/raw_ostream.h>
 #include <memory>
 #include <mlir/Dialect/Arith/IR/Arith.h>
@@ -186,7 +187,7 @@ bool areRegionsEquivalent(Region& lhs, Region& rhs,
 
 /// Check if an operation has memory effects or control flow side effects
 /// that would prevent reordering.
-const bool hasOrderingConstraints(Operation* op) {
+bool hasOrderingConstraints(Operation* op) {
   // Terminators must maintain their position
   if (op->hasTrait<OpTrait::IsTerminator>()) {
     return true;
@@ -273,7 +274,7 @@ partitionIndependentGroups(ArrayRef<Operation*> ops) {
     }
 
     // Check if this operation has ordering constraints
-    bool hasConstraints = hasOrderingConstraints(op);
+    const auto hasConstraints = hasOrderingConstraints(op);
 
     // If it depends on current group or has ordering constraints,
     // finalize the current group and start a new one
