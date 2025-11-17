@@ -412,15 +412,13 @@ struct ConvertQuartzResetQIR final : OpConversionPattern<ResetOp> {
                   ConversionPatternRewriter& rewriter) const override {
     auto* ctx = getContext();
 
-    // Create QIR function signature: (ptr) -> void
-    const auto qirSignature = LLVM::LLVMFunctionType::get(
+    // Declare QIR function
+    const auto fnSignature = LLVM::LLVMFunctionType::get(
         LLVM::LLVMVoidType::get(ctx), LLVM::LLVMPointerType::get(ctx));
-
-    // Get or create function declaration
     const auto fnDecl =
-        getOrCreateFunctionDeclaration(rewriter, op, QIR_RESET, qirSignature);
+        getOrCreateFunctionDeclaration(rewriter, op, QIR_RESET, fnSignature);
 
-    // Replace with call to reset
+    // Replace operation with CallOp
     rewriter.replaceOpWithNewOp<LLVM::CallOp>(op, fnDecl,
                                               adaptor.getOperands());
     return success();
@@ -455,40 +453,39 @@ struct ConvertQuartzXQIR final : StatefulOpConversionPattern<XOp> {
     }
 
     // Define function name
-    StringRef functionName;
+    StringRef fnName;
     if (posCtrlOp) {
       if (posCtrlOp.getNumPosControls() == 1) {
-        functionName = QIR_CX;
+        fnName = QIR_CX;
       } else if (posCtrlOp.getNumPosControls() == 2) {
-        functionName = QIR_CCX;
+        fnName = QIR_CCX;
       } else if (posCtrlOp.getNumPosControls() == 3) {
-        functionName = QIR_CCCX;
+        fnName = QIR_CCCX;
       } else {
         return failure();
       }
     } else {
-      functionName = QIR_X;
+      fnName = QIR_X;
     }
 
     // Define function argument types
     SmallVector<Type> argumentTypes;
     argumentTypes.reserve((posCtrlOp ? posCtrlOp.getNumPosControls() : 0) + 1);
+    const auto ptrType = LLVM::LLVMPointerType::get(ctx);
     // Add control pointers
     if (posCtrlOp) {
       for (size_t i = 0; i < posCtrlOp.getNumPosControls(); ++i) {
-        argumentTypes.push_back(LLVM::LLVMPointerType::get(ctx));
+        argumentTypes.push_back(ptrType);
       }
     }
     // Add target pointer
-    argumentTypes.push_back(LLVM::LLVMPointerType::get(ctx));
-
-    // Create function signature
-    const auto functionSignature = LLVM::LLVMFunctionType::get(
+    argumentTypes.push_back(ptrType);
+    const auto fnSignature = LLVM::LLVMFunctionType::get(
         LLVM::LLVMVoidType::get(ctx), argumentTypes);
 
-    // Get or create function declaration
-    const auto fnDecl = getOrCreateFunctionDeclaration(
-        rewriter, op, functionName, functionSignature);
+    // Declare QIR function
+    const auto fnDecl =
+        getOrCreateFunctionDeclaration(rewriter, op, fnName, fnSignature);
 
     SmallVector<Value> operands;
     operands.reserve(argumentTypes.size());
@@ -533,42 +530,42 @@ struct ConvertQuartzRXQIR final : StatefulOpConversionPattern<RXOp> {
     }
 
     // Define function name
-    StringRef functionName;
+    StringRef fnName;
     if (posCtrlOp) {
       if (posCtrlOp.getNumPosControls() == 1) {
-        functionName = QIR_CRX;
+        fnName = QIR_CRX;
       } else if (posCtrlOp.getNumPosControls() == 2) {
-        functionName = QIR_CCRX;
+        fnName = QIR_CCRX;
       } else if (posCtrlOp.getNumPosControls() == 3) {
-        functionName = QIR_CCCRX;
+        fnName = QIR_CCCRX;
       } else {
         return failure();
       }
     } else {
-      functionName = QIR_RX;
+      fnName = QIR_RX;
     }
 
     // Define function argument types
     SmallVector<Type> argumentTypes;
     argumentTypes.reserve((posCtrlOp ? posCtrlOp.getNumPosControls() : 0) + 2);
+    const auto ptrType = LLVM::LLVMPointerType::get(ctx);
     // Add control pointers
     if (posCtrlOp) {
       for (size_t i = 0; i < posCtrlOp.getNumPosControls(); ++i) {
-        argumentTypes.push_back(LLVM::LLVMPointerType::get(ctx));
+        argumentTypes.push_back(ptrType);
       }
     }
     // Add target pointer
-    argumentTypes.push_back(LLVM::LLVMPointerType::get(ctx));
+    argumentTypes.push_back(ptrType);
     // Add theta
     argumentTypes.push_back(Float64Type::get(ctx));
 
-    // Create function signature
-    const auto functionSignature = LLVM::LLVMFunctionType::get(
+    const auto fnSignature = LLVM::LLVMFunctionType::get(
         LLVM::LLVMVoidType::get(ctx), argumentTypes);
 
-    // Get or create function declaration
-    const auto fnDecl = getOrCreateFunctionDeclaration(
-        rewriter, op, functionName, functionSignature);
+    // Declare QIR function
+    const auto fnDecl =
+        getOrCreateFunctionDeclaration(rewriter, op, fnName, fnSignature);
 
     SmallVector<Value> operands;
     operands.reserve(argumentTypes.size());
@@ -614,44 +611,44 @@ struct ConvertQuartzU2QIR final : StatefulOpConversionPattern<U2Op> {
     }
 
     // Define function name
-    StringRef functionName;
+    StringRef fnName;
     if (posCtrlOp) {
       if (posCtrlOp.getNumPosControls() == 1) {
-        functionName = QIR_CU2;
+        fnName = QIR_CU2;
       } else if (posCtrlOp.getNumPosControls() == 2) {
-        functionName = QIR_CCU2;
+        fnName = QIR_CCU2;
       } else if (posCtrlOp.getNumPosControls() == 3) {
-        functionName = QIR_CCCU2;
+        fnName = QIR_CCCU2;
       } else {
         return failure();
       }
     } else {
-      functionName = QIR_U2;
+      fnName = QIR_U2;
     }
 
     // Define function argument types
     SmallVector<Type> argumentTypes;
     argumentTypes.reserve((posCtrlOp ? posCtrlOp.getNumPosControls() : 0) + 3);
+    const auto ptrType = LLVM::LLVMPointerType::get(ctx);
     // Add control pointers
     if (posCtrlOp) {
       for (size_t i = 0; i < posCtrlOp.getNumPosControls(); ++i) {
-        argumentTypes.push_back(LLVM::LLVMPointerType::get(ctx));
+        argumentTypes.push_back(ptrType);
       }
     }
     // Add target pointer
-    argumentTypes.push_back(LLVM::LLVMPointerType::get(ctx));
+    argumentTypes.push_back(ptrType);
     // Add phi
     argumentTypes.push_back(Float64Type::get(ctx));
     // Add lambda
     argumentTypes.push_back(Float64Type::get(ctx));
 
-    // Create function signature
-    const auto functionSignature = LLVM::LLVMFunctionType::get(
+    const auto fnSignature = LLVM::LLVMFunctionType::get(
         LLVM::LLVMVoidType::get(ctx), argumentTypes);
 
-    // Get or create function declaration
-    const auto fnDecl = getOrCreateFunctionDeclaration(
-        rewriter, op, functionName, functionSignature);
+    // Declare QIR function
+    const auto fnDecl =
+        getOrCreateFunctionDeclaration(rewriter, op, fnName, fnSignature);
 
     SmallVector<Value> operands;
     operands.reserve(argumentTypes.size());
@@ -697,41 +694,41 @@ struct ConvertQuartzSWAPQIR final : StatefulOpConversionPattern<SWAPOp> {
     }
 
     // Define function name
-    StringRef functionName;
+    StringRef fnName;
     if (posCtrlOp) {
       if (posCtrlOp.getNumPosControls() == 1) {
-        functionName = QIR_CSWAP;
+        fnName = QIR_CSWAP;
       } else if (posCtrlOp.getNumPosControls() == 2) {
-        functionName = QIR_CCSWAP;
+        fnName = QIR_CCSWAP;
       } else if (posCtrlOp.getNumPosControls() == 3) {
-        functionName = QIR_CCCSWAP;
+        fnName = QIR_CCCSWAP;
       } else {
         return failure();
       }
     } else {
-      functionName = QIR_SWAP;
+      fnName = QIR_SWAP;
     }
 
     // Define function argument types
     SmallVector<Type> argumentTypes;
     argumentTypes.reserve((posCtrlOp ? posCtrlOp.getNumPosControls() : 0) + 2);
+    const auto ptrType = LLVM::LLVMPointerType::get(ctx);
     // Add control pointers
     if (posCtrlOp) {
       for (size_t i = 0; i < posCtrlOp.getNumPosControls(); ++i) {
-        argumentTypes.push_back(LLVM::LLVMPointerType::get(ctx));
+        argumentTypes.push_back(ptrType);
       }
     }
     // Add target pointers
-    argumentTypes.push_back(LLVM::LLVMPointerType::get(ctx));
-    argumentTypes.push_back(LLVM::LLVMPointerType::get(ctx));
+    argumentTypes.push_back(ptrType);
+    argumentTypes.push_back(ptrType);
 
-    // Create function signature
-    const auto functionSignature = LLVM::LLVMFunctionType::get(
+    const auto fnSignature = LLVM::LLVMFunctionType::get(
         LLVM::LLVMVoidType::get(ctx), argumentTypes);
 
-    // Get or create function declaration
-    const auto fnDecl = getOrCreateFunctionDeclaration(
-        rewriter, op, functionName, functionSignature);
+    // Declare QIR function
+    const auto fnDecl =
+        getOrCreateFunctionDeclaration(rewriter, op, fnName, fnSignature);
 
     SmallVector<Value> operands;
     operands.reserve(argumentTypes.size());
