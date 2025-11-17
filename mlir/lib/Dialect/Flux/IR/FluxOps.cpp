@@ -22,7 +22,6 @@
 #include <cstddef>
 #include <functional>
 #include <llvm/ADT/STLExtras.h>
-#include <llvm/ADT/SmallPtrSet.h>
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/Support/Casting.h>
 #include <llvm/Support/ErrorHandling.h>
@@ -32,6 +31,7 @@
 #include <mlir/IR/OperationSupport.h>
 #include <mlir/IR/Types.h>
 #include <mlir/IR/Value.h>
+#include <mlir/Support/LLVM.h>
 #include <mlir/Support/LogicalResult.h>
 #include <variant>
 
@@ -362,7 +362,7 @@ LogicalResult CtrlOp::verify() {
            << block.back().getNumOperands();
   }
 
-  llvm::SmallPtrSet<Value, 4> uniqueQubitsIn;
+  SmallPtrSet<Value, 4> uniqueQubitsIn;
   for (const auto& control : getControlsIn()) {
     if (!uniqueQubitsIn.insert(control).second) {
       return emitOpError("duplicate control qubit found");

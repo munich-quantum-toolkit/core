@@ -18,7 +18,6 @@
 #include "mlir/Dialect/Quartz/Translation/TranslateQuantumComputationToQuartz.h"
 #include "mlir/Support/PrettyPrinting.h"
 
-#include <algorithm>
 #include <cstddef>
 #include <functional>
 #include <gtest/gtest.h>
@@ -44,6 +43,7 @@
 #include <mlir/IR/OperationSupport.h>
 #include <mlir/IR/OwningOpRef.h>
 #include <mlir/IR/Region.h>
+#include <mlir/IR/SymbolTable.h>
 #include <mlir/Interfaces/SideEffectInterfaces.h>
 #include <mlir/Parser/Parser.h>
 #include <mlir/Pass/PassManager.h>
@@ -52,6 +52,7 @@
 #include <mlir/Transforms/Passes.h>
 #include <sstream>
 #include <string>
+#include <tuple>
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -185,7 +186,7 @@ bool areRegionsEquivalent(Region& lhs, Region& rhs,
 
 /// Check if an operation has memory effects or control flow side effects
 /// that would prevent reordering.
-bool hasOrderingConstraints(Operation* op) {
+const bool hasOrderingConstraints(Operation* op) {
   // Terminators must maintain their position
   if (op->hasTrait<OpTrait::IsTerminator>()) {
     return true;
@@ -193,19 +194,19 @@ bool hasOrderingConstraints(Operation* op) {
 
   // Symbol-defining operations (like function declarations) can be reordered
   if (op->hasTrait<OpTrait::SymbolTable>() ||
-      isa<LLVM::LLVMFuncOp, func::FuncOp>(op)) {
+      llvm::isa<LLVM::LLVMFuncOp, func::FuncOp>(op)) {
     return false;
   }
 
   // Check for memory effects that enforce ordering
-  if (auto memInterface = dyn_cast<MemoryEffectOpInterface>(op)) {
+  if (auto memInterface = llvm::dyn_cast<MemoryEffectOpInterface>(op)) {
     llvm::SmallVector<MemoryEffects::EffectInstance> effects;
     memInterface.getEffects(effects);
 
     bool hasNonAllocFreeEffects = false;
     for (const auto& effect : effects) {
       // Allow operations with no effects or pure allocation/free effects
-      if (!isa<MemoryEffects::Allocate, MemoryEffects::Free>(
+      if (!llvm::isa<MemoryEffects::Allocate, MemoryEffects::Free>(
               effect.getEffect())) {
         hasNonAllocFreeEffects = true;
         break;
@@ -232,14 +233,14 @@ buildDependenceGraph(ArrayRef<Operation*> ops) {
     dependsOn[op] = llvm::DenseSet<Operation*>();
 
     // This operation depends on the producers of its operands
-    for (Value operand : op->getOperands()) {
+    for (const auto operand : op->getOperands()) {
       if (auto it = valueProducers.find(operand); it != valueProducers.end()) {
         dependsOn[op].insert(it->second);
       }
     }
 
     // Register this operation as the producer of its results
-    for (Value result : op->getResults()) {
+    for (const Value result : op->getResults()) {
       valueProducers[result] = op;
     }
   }
@@ -257,14 +258,14 @@ partitionIndependentGroups(ArrayRef<Operation*> ops) {
   }
 
   auto dependsOn = buildDependenceGraph(ops);
-  llvm::DenseSet<Operation*> processed;
+  const llvm::DenseSet<Operation*> processed;
   llvm::SmallVector<Operation*> currentGroup;
 
-  for (Operation* op : ops) {
+  for (auto* op : ops) {
     bool dependsOnCurrent = false;
 
     // Check if this operation depends on any operation in the current group
-    for (Operation* groupOp : currentGroup) {
+    for (const auto* groupOp : currentGroup) {
       if (dependsOn[op].contains(groupOp)) {
         dependsOnCurrent = true;
         break;
@@ -279,7 +280,7 @@ partitionIndependentGroups(ArrayRef<Operation*> ops) {
     if (dependsOnCurrent || (hasConstraints && !currentGroup.empty())) {
       if (!currentGroup.empty()) {
         groups.push_back(std::move(currentGroup));
-        currentGroup.clear();
+        currentGroup = {};
       }
     }
 
@@ -288,7 +289,7 @@ partitionIndependentGroups(ArrayRef<Operation*> ops) {
     // If this operation has ordering constraints, finalize the group
     if (hasConstraints) {
       groups.push_back(std::move(currentGroup));
-      currentGroup.clear();
+      currentGroup = {};
     }
   }
 
@@ -315,11 +316,11 @@ bool areIndependentGroupsEquivalent(ArrayRef<Operation*> lhsOps,
                      OperationStructuralEquality>
       rhsFrequencyMap;
 
-  for (Operation* op : lhsOps) {
+  for (auto* op : lhsOps) {
     lhsFrequencyMap[op]++;
   }
 
-  for (Operation* op : rhsOps) {
+  for (auto* op : rhsOps) {
     rhsFrequencyMap[op]++;
   }
 
