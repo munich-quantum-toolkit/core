@@ -6,7 +6,7 @@ jobs:
   mlir:
     name: >-
       ${{ contains(matrix.os, 'ubuntu') && '🐧' || contains(matrix.os, 'windows') && '🏁' || '🍎' }}
-      ${{ matrix.coverage && 'Coverage' || matrix.os }} with LLVM@${{ matrix.llvm-version }}
+      ${{ matrix.coverage && 'Coverage' || matrix.os }}
     runs-on: ${{ matrix.os }}
     permissions:
       contents: read
@@ -23,11 +23,9 @@ jobs:
             windows-2025,
             windows-11-arm,
           ]
-        llvm-version: [21]
         coverage: [false]
         include:
           - os: ubuntu-24.04
-            llvm-version: 21
             coverage: true
     env:
       CMAKE_BUILD_PARALLEL_LEVEL: 4
@@ -42,7 +40,7 @@ jobs:
       - name: Setup MLIR
         uses: burgholzer/portable-mlir-toolchain@add-setup
         with:
-          tag: test-release-7
+          tag: test-release-8
 
       # Build acceleration and Python tooling
       - name: Set up mold as linker (Linux)
@@ -112,14 +110,14 @@ jobs:
               --print-summary \
               --keep \
               --json \
-              -o coverage-llvm-${{ matrix.llvm-version }}.json
+              -o mlir-coverage.json
 
       - name: Upload coverage to Codecov
         if: matrix.coverage
         uses: codecov/codecov-action@5a1091511ad55cbe89839c7260b706298ca349f7 # v5.5.1
         with:
           flags: mlir
-          name: mlir-coverage-llvm-${{ matrix.llvm-version }}
+          name: mlir-coverage
           fail_ci_if_error: true
           use_oidc: true
-          files: coverage-llvm-${{ matrix.llvm-version }}.json
+          files: mlir-coverage.json
