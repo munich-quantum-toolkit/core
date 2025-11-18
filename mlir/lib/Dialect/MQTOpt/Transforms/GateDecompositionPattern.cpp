@@ -90,12 +90,13 @@ struct GateDecompositionPattern final
   using OneQubitGateSequence = QubitGateSequence;
   using TwoQubitGateSequence = QubitGateSequence;
 
-  explicit GateDecompositionPattern(mlir::MLIRContext* context,
-                                    QubitGateSequence::Gate basisGate,
-                                    EulerBasis eulerBasis)
+  explicit GateDecompositionPattern(
+      mlir::MLIRContext* context,
+      llvm::SmallVector<QubitGateSequence::Gate> basisGate,
+      llvm::SmallVector<EulerBasis> eulerBasis)
       : OpInterfaceRewritePattern(context),
         decomposerBasisGate{std::move(basisGate)},
-        decomposerEulerBasis{eulerBasis} {}
+        decomposerEulerBasis{std::move(eulerBasis)} {}
 
   mlir::LogicalResult
   matchAndRewrite(UnitaryInterface op,
@@ -121,7 +122,7 @@ struct GateDecompositionPattern final
     helpers::print(unitaryMatrix, "UNITARY MATRIX", true);
 
     auto decomposer = TwoQubitBasisDecomposer::newInner(
-        decomposerBasisGate, 1.0, decomposerEulerBasis);
+        decomposerBasisGate[0], 1.0, decomposerEulerBasis[0]);
     auto sequence = decomposer.twoQubitDecompose(
         unitaryMatrix, DEFAULT_FIDELITY, false, std::nullopt);
     if (!sequence) {
@@ -373,8 +374,8 @@ protected:
       auto name = gate.op->getName().stripDialect().str();
       if (name == "x" && gate.qubitIds.size() == 2) {
         // controls come first
-        std::cerr << std::format("cx() q[{}], q[{}];", gate.qubitIds[0],
-                                 gate.qubitIds[1]);
+        std::cerr << std::format("cx() q[{}], q[{}];", gate.qubitIds[1],
+                                 gate.qubitIds[0]);
       } else if (name == "i") {
       } else if (gate.op.getParams().empty()) {
         std::cerr << std::format(
@@ -929,112 +930,10 @@ protected:
       assert(std::abs(matrix4x4{d.asDiagonal()}.determinant() - 1.0) <
              SANITY_CHECK_PRECISION);
 
-      diagonal4x4 q = d.cwiseSqrt();
-      auto det_q = q.prod();
-      if (det_q.real() < 0.0) {
-        q[0] *= -1.0;
-      }
-      // constrain to weyl
-      auto constrain_to_weyl = [](diagonal4x4 q) {
-        auto in_weyl = [](fp tx, fp ty, fp tz) {
-          return (0.5 >= tx && tx >= ty && ty >= tz && tz >= 0) ||
-                 (0.5 >= (1 - tx) && (1 - tx) >= ty && ty >= tz && tz > 0);
-        };
-        auto lambdas_to_coords = [](diagonal4x4 lambdas) {
-          // [2, eq.11], but using [1]s coordinates.
-          constexpr fp TOLERANCE = 1e-13;
-
-          auto [l1, l2, _, l4] =
-              std::array{lambdas[0], lambdas[1], lambdas[2], lambdas[3]};
-          auto c1 = std::real(IM * std::log(l1 * l2));
-          auto c2 = std::real(IM * std::log(l2 * l4));
-          auto c3 = std::real(IM * std::log(l1 * l4));
-          Eigen::Vector<fp, 3> coords{c1, c2, c3};
-          coords /= qc::PI;
-
-          // if coords[i] == 1, then coords[i] = -1, else coords[i] = coords[i]
-          coords = (coords - decltype(coords)::Ones())
-                       .cwiseAbs()
-                       .cwiseLess(TOLERANCE)
-                       .select(-decltype(coords)::Ones(), coords)
-                       .eval();
-          if (coords.cwiseLess(0.0).all()) {
-            coords += decltype(coords)::Ones();
-          }
-
-          // If we're close to the boundary, floating point errors can conspire
-          // to make it seem that we're never on the inside
-          // Fix: If near boundary, reset to boundary
-
-          // Left
-          if (std::abs(coords[0] - coords[1]) < TOLERANCE) {
-            coords[1] = coords[0];
-          }
-
-          // Front
-          if (std::abs(coords[1] - coords[2]) < TOLERANCE) {
-            coords[2] = coords[1];
-          }
-
-          // Right
-          if (std::abs(coords[0] - coords[1] - 1.0 / 2.0) < TOLERANCE) {
-            coords[1] = coords[0] - 1.0 / 2.0;
-          }
-
-          // Base
-          coords =
-              (coords.array() < 0).select(decltype(coords)::Zero(), coords);
-
-          return coords;
-        };
-
-        auto permutation = std::array{0, 1, 2, 3};
-        while (true) {
-          for (auto signs :
-               std::array<Eigen::Vector<qfp, 4>, 4>{{{1, 1, 1, 1},
-                                                     {1, 1, -1, -1},
-                                                     {-1, 1, -1, 1},
-                                                     {1, -1, -1, 1}}}) {
-            decltype(q) signed_lambdas = q.cwiseProduct(signs);
-            // reorder according to permutation
-            decltype(signed_lambdas) lambdas_perm;
-            for (std::size_t i = 0; i < permutation.size(); ++i) {
-              lambdas_perm[i] = signed_lambdas[permutation[i]];
-            }
-
-            auto coords = lambdas_to_coords(lambdas_perm);
-
-            if (in_weyl(coords[0], coords[1], coords[2])) {
-              return std::make_tuple(coords, permutation, signs);
-            }
-          }
-          if (!std::ranges::next_permutation(permutation).found) {
-            throw std::runtime_error{
-                "Unable to find permutation to calculate Weyl coordinates!"};
-          }
-        }
-      };
-
-      auto [cs, permutation, signs] = constrain_to_weyl(q);
-      cs *= -qc::PI_2;
-      matrix4x4 p2 = p;
-
-      q = q.cwiseProduct(signs);
-      auto origQ = q;
-      matrix4x4 origP = signs.asDiagonal() * p.transpose();
-      assert(permutation.size() == q.size());
-      assert(permutation.size() == p.cols());
-      for (std::size_t i = 0; i < permutation.size(); ++i) {
-        q[i] = origQ[permutation[i]];
-        p2.col(i) = origP.row(permutation[i]);
-      }
-      // p.transposeInPlace();
-      matrix4x4 temp = q.asDiagonal();
-      temp = temp.conjugate();
-
       // see
       // https://github.com/mpham26uchicago/laughing-umbrella/blob/main/background/Full%20Two%20Qubit%20KAK%20Implementation.ipynb,
       // Step 7
+      Eigen::Vector<fp, 3> cs;
       rdiagonal4x4 dReal = -1.0 * d.cwiseArg() / 2.0;
       helpers::print(dReal, "D_REAL", true);
       dReal(3) = -dReal(0) - dReal(1) - dReal(2);
@@ -1080,7 +979,7 @@ protected:
         p.col(lastColumnIndex) *= -1.0;
       }
 
-      temp = dReal.asDiagonal();
+      matrix4x4 temp = dReal.asDiagonal();
       temp *= IM;
       temp = temp.exp();
 
@@ -2062,8 +1961,8 @@ protected:
   };
 
 private:
-  QubitGateSequence::Gate decomposerBasisGate;
-  EulerBasis decomposerEulerBasis;
+  llvm::SmallVector<QubitGateSequence::Gate> decomposerBasisGate;
+  llvm::SmallVector<EulerBasis> decomposerEulerBasis;
 };
 
 const matrix2x2 GateDecompositionPattern::IDENTITY_GATE = matrix2x2::Identity();
@@ -2079,16 +1978,13 @@ const matrix2x2 GateDecompositionPattern::IPX{{C_ZERO, IM}, {IM, C_ZERO}};
  * decomposition.
  */
 void populateGateDecompositionPatterns(mlir::RewritePatternSet& patterns) {
-  patterns.add<GateDecompositionPattern>(
-      patterns.getContext(),
-      GateDecompositionPattern::QubitGateSequence::Gate{
-          .type = qc::X, .parameter = {}, .qubitId = {1, 0}},
-      GateDecompositionPattern::EulerBasis::ZYZ);
-  patterns.add<GateDecompositionPattern>(
-      patterns.getContext(),
-      GateDecompositionPattern::QubitGateSequence::Gate{
-          .type = qc::X, .parameter = {}, .qubitId = {0, 1}},
-      GateDecompositionPattern::EulerBasis::ZYZ);
+  llvm::SmallVector<GateDecompositionPattern::QubitGateSequence::Gate> basisGates;
+  llvm::SmallVector<GateDecompositionPattern::EulerBasis> eulerBases;
+  basisGates.push_back({.type = qc::X, .parameter = {}, .qubitId = {0, 1}});
+  basisGates.push_back({.type = qc::X, .parameter = {}, .qubitId = {1, 0}});
+  eulerBases.push_back(GateDecompositionPattern::EulerBasis::ZYZ);
+  patterns.add<GateDecompositionPattern>(patterns.getContext(), basisGates,
+                                         eulerBases);
 }
 
 } // namespace mqt::ir::opt
