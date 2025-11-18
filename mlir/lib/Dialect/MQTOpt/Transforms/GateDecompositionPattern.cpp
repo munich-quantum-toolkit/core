@@ -130,7 +130,7 @@ struct GateDecompositionPattern final
     }
     // only accept new sequence if it shortens existing series by more than two
     // gates; this prevents an oscillation with phase gates
-    if (sequence->complexity() >= series.complexity + 2) {
+    if (sequence->complexity() + 2 >= series.complexity) {
       // TODO: add more sophisticated metric to determine complexity of
       // series/sequence
       llvm::errs() << "SEQUENCE LONGER THAN INPUT (" << sequence->gates.size()
@@ -232,11 +232,7 @@ protected:
       } else if (helpers::isTwoQubitOperation(initialOperation)) {
         inQubits = {in[0], in[1]};
         outQubits = {out[0], out[1]};
-        if (initialOperation.isControlled()) {
-          gates.push_back({.op = initialOperation, .qubitIds = {1, 0}});
-        } else {
-          gates.push_back({.op = initialOperation, .qubitIds = {0, 1}});
-        }
+        gates.push_back({.op = initialOperation, .qubitIds = {0, 1}});
       }
       complexity +=
           getComplexity(helpers::getQcType(initialOperation), in.size());
@@ -297,14 +293,8 @@ protected:
       *firstQubitIt = nextGate->getResult(0);
       *secondQubitIt = nextGate->getResult(1);
 
-      if (nextGate.isControlled()) {
-        // controls of a gate should come first, but are last in the qubit order
-        gates.push_back(
-            {.op = nextGate, .qubitIds = {secondQubitId, firstQubitId}});
-      } else {
-        gates.push_back(
-            {.op = nextGate, .qubitIds = {firstQubitId, secondQubitId}});
-      }
+      gates.push_back(
+          {.op = nextGate, .qubitIds = {firstQubitId, secondQubitId}});
       complexity += getComplexity(helpers::getQcType(nextGate), 2);
       return true;
     }
@@ -374,12 +364,8 @@ protected:
         };
 
     if (sequence.hasGlobalPhase()) {
-      auto newGate = createOneParameterGate<POp>(
-          rewriter, location, sequence.globalPhase, {inQubits[0]});
-      updateInQubits({0}, newGate);
-      newGate = createOneParameterGate<POp>(
-          rewriter, location, sequence.globalPhase, {inQubits[1]});
-      updateInQubits({1}, newGate);
+      createOneParameterGate<GPhaseOp>(rewriter, location, sequence.globalPhase,
+                                       {});
     }
 
     std::cerr << "SERIES: ";
@@ -416,8 +402,8 @@ protected:
 
       if (gate.type == qc::X && gate.qubitId.size() == 2) {
         // controls come first
-        std::cerr << std::format("cx() q[{}], q[{}];", gate.qubitId[0],
-                                 gate.qubitId[1]);
+        std::cerr << std::format("cx() q[{}], q[{}];", gate.qubitId[1],
+                                 gate.qubitId[0]);
       } else if (gate.parameter.empty()) {
         std::cerr << std::format(
             "{}() q[{}] {};", qc::toString(gate.type), gate.qubitId[0],
@@ -437,10 +423,10 @@ protected:
         mlir::SmallVector<mlir::Value, 1> inCtrlQubits;
         if (gate.qubitId.size() > 1) {
           // controls come first
-          inCtrlQubits.push_back(inQubits[gate.qubitId[0]]);
+          inCtrlQubits.push_back(inQubits[gate.qubitId[1]]);
         }
         auto newGate =
-            createGate<XOp>(rewriter, location, {inQubits[gate.qubitId[1]]},
+            createGate<XOp>(rewriter, location, {inQubits[gate.qubitId[0]]},
                             inCtrlQubits, gate.parameter);
         updateInQubits(gate.qubitId, newGate);
       } else if (gate.type == qc::RX) {
@@ -808,11 +794,11 @@ protected:
     if (gate.qubitId.size() == 2) {
       if (gate.type == qc::X) {
         // controlled X (CX)
-        if (gate.qubitId == llvm::SmallVector<std::size_t, 2>{1, 0}) {
+        if (gate.qubitId == llvm::SmallVector<std::size_t, 2>{0, 1}) {
           return matrix4x4{
               {1, 0, 0, 0}, {0, 1, 0, 0}, {0, 0, 0, 1}, {0, 0, 1, 0}};
         }
-        if (gate.qubitId == llvm::SmallVector<std::size_t, 2>{0, 1}) {
+        if (gate.qubitId == llvm::SmallVector<std::size_t, 2>{1, 0}) {
           return matrix4x4{
               {1, 0, 0, 0}, {0, 0, 0, 1}, {0, 0, 1, 0}, {0, 1, 0, 0}};
         }
