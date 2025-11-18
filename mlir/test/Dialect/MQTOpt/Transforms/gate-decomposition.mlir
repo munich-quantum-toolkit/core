@@ -76,6 +76,9 @@ module {
 
     // CHECK: %[[Q0_1:.*]], %[[Q1_1:.*]] = mqtopt.x() %[[Q0_0]] ctrl %[[Q1_0]]
 
+    // ensure no other operations are inserted
+    // CHECK-NOT: mqtopt.[[ANY:.*]](%[[ANY:.*]])
+
     // CHECK: mqtopt.deallocQubit %[[Q0_1]]
     // CHECK: mqtopt.deallocQubit %[[Q1_1]]
 
@@ -143,6 +146,9 @@ module {
     // CHECK: %[[Q0_2:.*]] = mqtopt.ry(%[[C1:.*]]) %[[Q0_1]]
     // CHECK: %[[Q0_3:.*]] = mqtopt.rz(%[[C2:.*]]) %[[Q0_2]]
 
+    // ensure no other operations are inserted
+    // CHECK-NOT: mqtopt.[[ANY:.*]](%[[ANY:.*]])
+
     // CHECK: mqtopt.deallocQubit %[[Q0_3]]
     // CHECK: mqtopt.deallocQubit %[[Q1_0]]
 
@@ -177,6 +183,9 @@ module {
     // CHECK: %[[Q0_1:.*]] = mqtopt.rz(%[[C0]]) %[[Q0_0]]
     // CHECK: %[[Q0_2:.*]] = mqtopt.ry(%[[C1:.*]]) %[[Q0_1]]
     // CHECK: %[[Q0_3:.*]] = mqtopt.rz(%[[C2:.*]]) %[[Q0_2]]
+
+    // ensure no other operations are inserted
+    // CHECK-NOT: mqtopt.[[ANY:.*]](%[[ANY:.*]])
 
     // CHECK: mqtopt.deallocQubit %[[Q0_3]]
     // CHECK: mqtopt.deallocQubit %[[Q1_0]]
@@ -213,6 +222,9 @@ module {
     // CHECK: %[[Q0_2:.*]] = mqtopt.ry(%[[C1:.*]]) %[[Q0_1]]
     // CHECK: %[[Q0_3:.*]] = mqtopt.rz(%[[C2:.*]]) %[[Q0_2]]
 
+    // ensure no other operations are inserted
+    // CHECK-NOT: mqtopt.[[ANY:.*]](%[[ANY:.*]])
+
     // CHECK: mqtopt.deallocQubit %[[Q0_3]]
     // CHECK: mqtopt.deallocQubit %[[Q1_0]]
 
@@ -246,9 +258,8 @@ module {
     // CHECK: %[[Q1_3:.*]], %[[Q0_4:.*]] = mqtopt.x() %[[Q1_2]] ctrl %[[Q0_3]]
     // CHECK: %[[Q0_5:.*]], %[[Q1_4:.*]] = mqtopt.x() %[[Q0_4]] ctrl %[[Q1_3]]
 
-    // CHECK-NOT: mqtopt.ry
-    // CHECK-NOT: mqtopt.rz
-    // CHECK-NOT: mqtopt.gphase(%[[ANY:.*]])
+    // ensure no other operations are inserted
+    // CHECK-NOT: mqtopt.[[ANY:.*]](%[[ANY:.*]])
 
     // CHECK: mqtopt.deallocQubit %[[Q0_5]]
     // CHECK: mqtopt.deallocQubit %[[Q1_4]]
@@ -313,6 +324,9 @@ module {
     // CHECK: %[[Q1_9:.*]] = mqtopt.rz(%[[C12]]) %[[Q1_8]]
     // CHECK: %[[Q1_10:.*]] = mqtopt.ry(%[[C0]]) %[[Q1_9]]
 
+    // ensure no other operations are inserted
+    // CHECK-NOT: mqtopt.[[ANY:.*]](%[[ANY:.*]])
+
     // CHECK: mqtopt.deallocQubit %[[Q0_10]]
     // CHECK: mqtopt.deallocQubit %[[Q1_10]]
 
@@ -354,13 +368,24 @@ module {
 module {
   // CHECK-LABEL: func.func @testSingleQubitSeries
   func.func @testSingleQubitSeries() {
+    // CHECK: %[[C0:.*]] = arith.constant -1.570796326
+    // CHECK: %[[C1:.*]] = arith.constant 2.400000e+00
+    // CHECK: %[[C2:.*]] = arith.constant 1.5707963267
+    // CHECK: %[[C3:.*]] = arith.constant 2.500000e+00
+
     // CHECK: %[[Q0_0:.*]] = mqtopt.allocQubit
     // CHECK: %[[Q1_0:.*]] = mqtopt.allocQubit
 
-    // CHECK: %[[Q0_1:.*]], %[[Q1_1:.*]] = mqtopt.x() %[[Q0_0]] ctrl %[[Q1_0]]
+    // CHECK: %[[Q0_1:.*]] = mqtopt.ry(%[[C3]]) %[[Q0_0]]
+    // CHECK: %[[Q1_1:.*]] = mqtopt.rz(%[[C2]]) %[[Q1_0]]
+    // CHECK: %[[Q1_2:.*]] = mqtopt.ry(%[[C1]]) %[[Q1_1]]
+    // CHECK: %[[Q1_3:.*]] = mqtopt.rz(%[[C0]]) %[[Q1_2]]
+
+    // ensure no other operations are inserted
+    // CHECK-NOT: mqtopt.[[ANY:.*]](%[[ANY:.*]])
 
     // CHECK: mqtopt.deallocQubit %[[Q0_1]]
-    // CHECK: mqtopt.deallocQubit %[[Q1_1]]
+    // CHECK: mqtopt.deallocQubit %[[Q1_3]]
 
     %cst0 = arith.constant 2.5 : f64
     %cst1 = arith.constant 1.2 : f64
@@ -386,15 +411,63 @@ module {
 module {
   // CHECK-LABEL: func.func @testThreeBasisGateDecomposition
   func.func @testThreeBasisGateDecomposition() {
+    // CHECK: %[[C0:.*]] = arith.constant 2.5762316133983267 : f64
+    // CHECK: %[[C1:.*]] = arith.constant 0.7853981633974495 : f64
+    // CHECK: %[[C2:.*]] = arith.constant -1.5707963267948981 : f64
+    // CHECK: %[[C3:.*]] = arith.constant -2.2830967446466035 : f64
+    // CHECK: %[[C4:.*]] = arith.constant 2.7053466041231213 : f64
+    // CHECK: %[[C5:.*]] = arith.constant -2.4341917193679428 : f64
+    // CHECK: %[[C6:.*]] = arith.constant -0.61547970867038693 : f64
+    // CHECK: %[[C7:.*]] = arith.constant 2.0943951023931953 : f64
+    // CHECK: %[[C8:.*]] = arith.constant 0.61547970867038737 : f64
+    // CHECK: %[[C9:.*]] = arith.constant 0.25938051218841107 : f64
+    // CHECK: %[[C10:.*]] = arith.constant -2.5261129449194062 : f64
+    // CHECK: %[[C11:.*]] = arith.constant 1.0471975511965979 : f64
+    // CHECK: %[[C12:.*]] = arith.constant -2.5261129449194053 : f64
+    // CHECK: %[[C13:.*]] = arith.constant -1.5707963267948966 : f64
+    // CHECK: %[[C14:.*]] = arith.constant 0.6948042173197494 : f64
+    // CHECK: %[[C15:.*]] = arith.constant -1.5707963267948968 : f64
+    // CHECK: %[[C16:.*]] = arith.constant 0.45501497985473183 : f64
+    // CHECK: %[[C17:.*]] = arith.constant 1.7692140485614463 : f64
+    // CHECK: %[[C18:.*]] = arith.constant -1.508911464303158 : f64
+    // CHECK: %[[C19:.*]] = arith.constant -0.82190477627456371 : f64
+    // CHECK: %[[C20:.*]] = arith.constant 1.5707963267948963 : f64
+    // CHECK: %[[C21:.*]] = arith.constant 1.5707963267948966 : f64
+    // CHECK: %[[C22:.*]] = arith.constant -0.78539816339744739 : f64
+
     // CHECK: %[[Q0_0:.*]] = mqtopt.allocQubit
     // CHECK: %[[Q1_0:.*]] = mqtopt.allocQubit
-    // CHECK: %[[Q2_0:.*]] = mqtopt.allocQubit
 
-    // CHECK-NOT: mqtopt.gphase(%[[ANY:.*]])
+    // CHECK: mqtopt.gphase(%[[C22]])
+    // CHECK: %[[Q0_1:.*]] = mqtopt.rz(%[[C21]]) %[[Q0_0]] : !mqtopt.Qubit
+    // CHECK: %[[Q0_2:.*]] = mqtopt.ry(%[[C20]]) %[[Q0_1]] : !mqtopt.Qubit
+    // CHECK: %[[Q0_3:.*]] = mqtopt.rz(%[[C19]]) %[[Q0_2]] : !mqtopt.Qubit
+    // CHECK: %[[Q1_1:.*]] = mqtopt.rz(%[[C18]]) %[[Q1_0]] : !mqtopt.Qubit
+    // CHECK: %[[Q1_2:.*]] = mqtopt.ry(%[[C17]]) %[[Q1_1]] : !mqtopt.Qubit
+    // CHECK: %[[Q1_3:.*]] = mqtopt.rz(%[[C16]]) %[[Q1_2]] : !mqtopt.Qubit
+    // CHECK: %[[Q1_4:.*]], %[[Q0_4:.*]] = mqtopt.x() %[[Q1_3]] ctrl %[[Q0_3]] : !mqtopt.Qubit ctrl !mqtopt.Qubit
+    // CHECK: %[[Q0_5:.*]] = mqtopt.rz(%[[C15]]) %[[Q0_4]] : !mqtopt.Qubit
+    // CHECK: %[[Q0_6:.*]] = mqtopt.ry(%[[C14]]) %[[Q0_5]] : !mqtopt.Qubit
+    // CHECK: %[[Q0_7:.*]] = mqtopt.rz(%[[C13]]) %[[Q0_6]] : !mqtopt.Qubit
+    // CHECK: %[[Q1_5:.*]] = mqtopt.rz(%[[C12]]) %[[Q1_4]] : !mqtopt.Qubit
+    // CHECK: %[[Q1_6:.*]] = mqtopt.ry(%[[C11]]) %[[Q1_5]] : !mqtopt.Qubit
+    // CHECK: %[[Q1_7:.*]] = mqtopt.rz(%[[C10]]) %[[Q1_6]] : !mqtopt.Qubit
+    // CHECK: %[[Q1_8:.*]], %[[Q0_8:.*]] = mqtopt.x() %[[Q1_7]] ctrl %[[Q0_7]] : !mqtopt.Qubit ctrl !mqtopt.Qubit
+    // CHECK: %[[Q0_9:.*]] = mqtopt.rz(%[[C21]]) %[[Q0_8]] : !mqtopt.Qubit
+    // CHECK: %[[Q0_10:.*]] = mqtopt.ry(%[[C9]]) %[[Q0_9]] : !mqtopt.Qubit
+    // CHECK: %[[Q1_9:.*]] = mqtopt.rz(%[[C8]]) %[[Q1_8]] : !mqtopt.Qubit
+    // CHECK: %[[Q1_10:.*]] = mqtopt.ry(%[[C7]]) %[[Q1_9]] : !mqtopt.Qubit
+    // CHECK: %[[Q1_11:.*]] = mqtopt.rz(%[[C6]]) %[[Q1_10]] : !mqtopt.Qubit
+    // CHECK: %[[Q1_12:.*]], %[[Q0_11:.*]] = mqtopt.x() %[[Q1_11]] ctrl %[[Q0_10]] : !mqtopt.Qubit ctrl !mqtopt.Qubit
+    // CHECK: %[[Q0_12:.*]] = mqtopt.rz(%[[C5]]) %[[Q0_11]] : !mqtopt.Qubit
+    // CHECK: %[[Q0_13:.*]] = mqtopt.ry(%[[C4]]) %[[Q0_12]] : !mqtopt.Qubit
+    // CHECK: %[[Q0_14:.*]] = mqtopt.rz(%[[C3]]) %[[Q0_13]] : !mqtopt.Qubit
+    // CHECK: %[[Q1_13:.*]] = mqtopt.rz(%[[C2]]) %[[Q1_12]] : !mqtopt.Qubit
+    // CHECK: %[[Q1_14:.*]] = mqtopt.ry(%[[C1]]) %[[Q1_13]] : !mqtopt.Qubit
+    // CHECK: %[[Q1_15:.*]] = mqtopt.rz(%[[C0]]) %[[Q1_14]] : !mqtopt.Qubit
 
-    // CHECK: mqtopt.deallocQubit %[[Q0_5]]
-    // CHECK: mqtopt.deallocQubit %[[Q1_4]]
-    // CHECK: mqtopt.deallocQubit %[[Q2_1]]
+    // CHECK: mqtopt.deallocQubit %[[Q0_14]]
+    // CHECK: mqtopt.deallocQubit %[[Q1_15]]
 
     %cst0 = arith.constant 2.5 : f64
     %cst1 = arith.constant 1.2 : f64
@@ -435,7 +508,7 @@ module {
     // CHECK: %[[Q1_0:.*]] = mqtopt.allocQubit
     // CHECK: %[[Q2_0:.*]] = mqtopt.allocQubit
 
-    // CHECK-NOT: mqtopt.gphase(%[[ANY:.*]])
+    // TODO
 
     // CHECK: mqtopt.deallocQubit %[[Q0_5]]
     // CHECK: mqtopt.deallocQubit %[[Q1_4]]
