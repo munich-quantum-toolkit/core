@@ -274,7 +274,8 @@ Value CtrlOp::getParameter(const size_t i) {
 }
 
 DenseElementsAttr CtrlOp::tryGetStaticMatrix() {
-  return getMatrixCtrl(getContext(), getBodyUnitary().tryGetStaticMatrix());
+  return getMatrixCtrl(getContext(), getNumPosControls(),
+                       getBodyUnitary().tryGetStaticMatrix());
 }
 
 LogicalResult CtrlOp::verify() {

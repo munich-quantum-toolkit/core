@@ -55,6 +55,7 @@ inline DenseElementsAttr getMatrixSWAP(MLIRContext* ctx) {
 }
 
 inline DenseElementsAttr getMatrixCtrl(mlir::MLIRContext* ctx,
+                                       int64_t numControls,
                                        mlir::DenseElementsAttr target) {
   // Get dimensions of target matrix
   const auto& targetType = llvm::dyn_cast<RankedTensorType>(target.getType());
@@ -68,7 +69,7 @@ inline DenseElementsAttr getMatrixCtrl(mlir::MLIRContext* ctx,
   const auto& targetMatrix = target.getValues<std::complex<double>>();
 
   // Define dimensions and type of output matrix
-  const auto dim = 2 * targetDim;
+  const auto dim = static_cast<int64_t>(std::pow(2, numControls) * targetDim);
   const auto& complexType = ComplexType::get(Float64Type::get(ctx));
   const auto& type = RankedTensorType::get({dim, dim}, complexType);
 
@@ -79,11 +80,11 @@ inline DenseElementsAttr getMatrixCtrl(mlir::MLIRContext* ctx,
   // Fill output matrix
   for (int64_t i = 0; i < dim; ++i) {
     for (int64_t j = 0; j < dim; ++j) {
-      if (i < targetDim && j < targetDim) {
+      if (i < (dim - targetDim) && j < (dim - targetDim)) {
         matrix.push_back((i == j) ? 1.0 : 0.0);
-      } else if (i >= targetDim && j >= targetDim) {
-        matrix.push_back(
-            targetMatrix[(i - targetDim) * targetDim + (j - targetDim)]);
+      } else if (i >= (dim - targetDim) && j >= (dim - targetDim)) {
+        matrix.push_back(targetMatrix[(i - (dim - targetDim)) * targetDim +
+                                      (j - (dim - targetDim))]);
       } else {
         matrix.push_back(0.0);
       }

@@ -323,7 +323,8 @@ Value CtrlOp::getParameter(const size_t i) {
 }
 
 DenseElementsAttr CtrlOp::tryGetStaticMatrix() {
-  return getMatrixCtrl(getContext(), getBodyUnitary().tryGetStaticMatrix());
+  return getMatrixCtrl(getContext(), getNumPosControls(),
+                       getBodyUnitary().tryGetStaticMatrix());
 }
 
 LogicalResult CtrlOp::verify() {
@@ -339,7 +340,7 @@ LogicalResult CtrlOp::verify() {
     return emitOpError(
         "second operation in body region must be a yield operation");
   }
-  // the yield operation must yield as many values as there are targets
+  // The yield operation must yield as many values as there are targets
   if (block.back().getNumOperands() != getNumTargets()) {
     return emitOpError("yield operation must yield ")
            << getNumTargets() << " values, but found "
