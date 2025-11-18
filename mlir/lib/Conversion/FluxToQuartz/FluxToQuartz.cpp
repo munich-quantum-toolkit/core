@@ -390,9 +390,9 @@ struct ConvertFluxCtrlOp final : OpConversionPattern<flux::CtrlOp> {
     // Create quartz.ctrl operation
     auto fluxOp = rewriter.create<quartz::CtrlOp>(op.getLoc(), quartzControls);
 
-    // Clone the body region from Flux to Quartz
-    rewriter.cloneRegionBefore(op.getBody(), fluxOp.getBody(),
-                               fluxOp.getBody().end());
+    // Clone body region from Flux to Quartz
+    auto& dstRegion = fluxOp.getBody();
+    rewriter.cloneRegionBefore(op.getBody(), dstRegion, dstRegion.end());
 
     // Replace the output qubits with the same quartz references
     rewriter.replaceOp(op, adaptor.getOperands());

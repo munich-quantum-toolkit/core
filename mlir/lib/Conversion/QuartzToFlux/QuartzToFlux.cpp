@@ -598,7 +598,7 @@ struct ConvertQuartzCtrlOp final : StatefulOpConversionPattern<quartz::CtrlOp> {
       qubitMap[quartzTarget] = targetsOut[i];
     }
 
-    // clone region
+    // Clone body region from Quartz to Flux
     auto& dstRegion = fluxOp.getBody();
     rewriter.cloneRegionBefore(op.getBody(), dstRegion, dstRegion.end(),
                                regionMap);
