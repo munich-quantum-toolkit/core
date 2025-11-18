@@ -96,7 +96,12 @@ struct GateDecompositionPattern final
       llvm::SmallVector<EulerBasis> eulerBasis)
       : OpInterfaceRewritePattern(context),
         decomposerBasisGate{std::move(basisGate)},
-        decomposerEulerBasis{std::move(eulerBasis)} {}
+        decomposerEulerBases{std::move(eulerBasis)} {
+    for (auto&& basisGate : decomposerBasisGate) {
+      basisDecomposers.push_back(
+          TwoQubitBasisDecomposer::newInner(basisGate, DEFAULT_FIDELITY));
+    }
+  }
 
   mlir::LogicalResult
   matchAndRewrite(UnitaryInterface op,
@@ -121,25 +126,38 @@ struct GateDecompositionPattern final
     matrix4x4 unitaryMatrix = series.getUnitaryMatrix();
     helpers::print(unitaryMatrix, "UNITARY MATRIX", true);
 
-    auto decomposer = TwoQubitBasisDecomposer::newInner(
-        decomposerBasisGate[0], 1.0, decomposerEulerBasis[0]);
-    auto sequence = decomposer.twoQubitDecompose(
-        unitaryMatrix, DEFAULT_FIDELITY, false, std::nullopt);
-    if (!sequence) {
+    auto targetDecomposition = TwoQubitWeylDecomposition::newInner(
+        unitaryMatrix, DEFAULT_FIDELITY, std::nullopt);
+
+    std::optional<TwoQubitGateSequence> bestSequence;
+    for (const auto& decomposer : basisDecomposers) {
+      auto sequence = decomposer.twoQubitDecompose(
+          targetDecomposition, decomposerEulerBases, DEFAULT_FIDELITY, false,
+          std::nullopt);
+      if (sequence) {
+        if (!bestSequence ||
+            sequence->complexity() < bestSequence->complexity()) {
+          bestSequence = sequence;
+        }
+      }
+    }
+    if (!bestSequence) {
       llvm::errs() << "NO SEQUENCE GENERATED!\n";
       return mlir::failure();
     }
     // only accept new sequence if it shortens existing series by more than two
     // gates; this prevents an oscillation with phase gates
-    if (sequence->complexity() + 2 >= series.complexity) {
+    if (bestSequence->complexity() + 2 >= series.complexity) {
       // TODO: add more sophisticated metric to determine complexity of
       // series/sequence
-      llvm::errs() << "SEQUENCE LONGER THAN INPUT (" << sequence->gates.size()
+      llvm::errs() << "SEQUENCE LONGER THAN INPUT ("
+                   << bestSequence->gates.size() << "; "
+                   << bestSequence->complexity() << " vs " << series.complexity
                    << ")\n";
       return mlir::failure();
     }
 
-    applySeries(rewriter, series, *sequence);
+    applySeries(rewriter, series, *bestSequence);
 
     return mlir::success();
   }
@@ -826,24 +844,25 @@ protected:
   }
 
   struct TwoQubitWeylDecomposition {
-    fp a;
-    fp b;
-    fp c;
-    fp globalPhase;
+    // a, b, c are the parameters of the canonical gate (CAN)
+    fp a;           // rotation of RXX gate in CAN
+    fp b;           // rotation of RYY gate in CAN
+    fp c;           // rotation of RZZ gate in CAN
+    fp globalPhase; // global phase adjustment
     /**
      * q1 - k2r - C - k1r -
      *            A
      * q0 - k2l - N - k1l -
      */
-    matrix2x2 k1l;
-    matrix2x2 k2l;
-    matrix2x2 k1r;
-    matrix2x2 k2r;
-    Specialization specialization;
-    EulerBasis defaultEulerBasis;
-    std::optional<fp> requestedFidelity;
-    fp calculatedFidelity;
-    matrix4x4 unitaryMatrix;
+    matrix2x2 k1l;                 // "left" qubit after canonical gate
+    matrix2x2 k2l;                 // "left" qubit before canonical gate
+    matrix2x2 k1r;                 // "right" qubit after canonical gate
+    matrix2x2 k2r;                 // "right" qubit before canonical gate
+    Specialization specialization; // detected symmetries in the matrix
+    EulerBasis defaultEulerBasis; // recommended euler basis for k1l/k2l/k1r/k2r
+    std::optional<fp> requestedFidelity; // desired fidelity
+    fp calculatedFidelity;               // actual fidelity of decomposition
+    matrix4x4 unitaryMatrix; // original matrix for this decomposition
 
     static TwoQubitWeylDecomposition
     newInner(matrix4x4 unitaryMatrix, std::optional<fp> fidelity,
@@ -1496,12 +1515,11 @@ protected:
     }
   };
 
-  static constexpr auto DEFAULT_FIDELITY = 1.0 - 1.0e-9;
+  static constexpr auto DEFAULT_FIDELITY = 1.0 - 1e-15;
 
   struct TwoQubitBasisDecomposer {
     QubitGateSequence::Gate basisGate;
     fp basisFidelity;
-    EulerBasis eulerBasis;
     TwoQubitWeylDecomposition basisDecomposer;
     bool superControlled;
     matrix2x2 u0l;
@@ -1529,8 +1547,7 @@ protected:
     newInner(const OneQubitGateSequence::Gate& basisGate = {.type = qc::X,
                                                             .parameter = {},
                                                             .qubitId = {0, 1}},
-             fp basisFidelity = DEFAULT_FIDELITY,
-             EulerBasis eulerBasis = EulerBasis::ZYZ) {
+             fp basisFidelity = DEFAULT_FIDELITY) {
       auto relativeEq = [](auto&& lhs, auto&& rhs, auto&& epsilon,
                            auto&& maxRelative) {
         // Handle same infinities
@@ -1646,7 +1663,6 @@ protected:
       return TwoQubitBasisDecomposer{
           .basisGate = basisGate,
           .basisFidelity = basisFidelity,
-          .eulerBasis = eulerBasis,
           .basisDecomposer = basisDecomposer,
           .superControlled = superControlled,
           .u0l = u0l,
@@ -1671,10 +1687,11 @@ protected:
       };
     }
 
-    std::optional<TwoQubitGateSequence>
-    twoQubitDecompose(const matrix4x4& unitaryMatrix,
-                      std::optional<fp> basisFidelity, bool approximate,
-                      std::optional<std::uint8_t> numBasisGateUses) {
+    [[nodiscard]] std::optional<TwoQubitGateSequence> twoQubitDecompose(
+        const TwoQubitWeylDecomposition& targetDecomposition,
+        const llvm::SmallVector<EulerBasis>& target1qEulerBasisList,
+        std::optional<fp> basisFidelity, bool approximate,
+        std::optional<std::uint8_t> numBasisGateUses) const {
       auto getBasisFidelity = [&]() {
         if (approximate) {
           return basisFidelity.value_or(this->basisFidelity);
@@ -1682,9 +1699,7 @@ protected:
         return static_cast<fp>(1.0);
       };
       fp actualBasisFidelity = getBasisFidelity();
-      auto targetDecomposed = TwoQubitWeylDecomposition::newInner(
-          unitaryMatrix, actualBasisFidelity, std::nullopt);
-      auto traces = this->traces(targetDecomposed);
+      auto traces = this->traces(targetDecomposition);
       auto getDefaultNbasis = [&]() {
         auto minValue = std::numeric_limits<fp>::min();
         auto minIndex = -1;
@@ -1701,16 +1716,16 @@ protected:
       auto bestNbasis = numBasisGateUses.value_or(getDefaultNbasis());
       auto chooseDecomposition = [&]() {
         if (bestNbasis == 0) {
-          return decomp0Inner(targetDecomposed);
+          return decomp0Inner(targetDecomposition);
         }
         if (bestNbasis == 1) {
-          return decomp1Inner(targetDecomposed);
+          return decomp1Inner(targetDecomposition);
         }
         if (bestNbasis == 2) {
-          return decomp2SupercontrolledInner(targetDecomposed);
+          return decomp2SupercontrolledInner(targetDecomposition);
         }
         if (bestNbasis == 3) {
-          return decomp3SupercontrolledInner(targetDecomposed);
+          return decomp3SupercontrolledInner(targetDecomposition);
         }
         throw std::logic_error{"Invalid basis to use"};
       };
@@ -1723,18 +1738,17 @@ protected:
       for (auto x : decomposition) {
         helpers::print(x, "", true);
       }
-      std::vector<EulerBasis> target1qBasisList; // TODO: simplify because list
-                                                 // only has one element?
-      target1qBasisList.push_back(eulerBasis);
       llvm::SmallVector<std::optional<TwoQubitGateSequence>, 8>
           eulerDecompositions;
       for (auto&& decomp : decomposition) {
         assert(helpers::isUnitaryMatrix(decomp));
-        auto eulerDecomp = unitaryToGateSequenceInner(
-            decomp, target1qBasisList, 0, {}, true, 1.0 - actualBasisFidelity);
+        auto eulerDecomp =
+            unitaryToGateSequenceInner(decomp, target1qEulerBasisList, 0, {},
+                                       true, 1.0 - actualBasisFidelity);
         eulerDecompositions.push_back(eulerDecomp);
       }
-      TwoQubitGateSequence gates{.globalPhase = targetDecomposed.globalPhase};
+      TwoQubitGateSequence gates{.globalPhase =
+                                     targetDecomposition.globalPhase};
       // Worst case length is 5x 1q gates for each 1q decomposition + 1x 2q
       // gate We might overallocate a bit if the euler basis is different but
       // the worst case is just 16 extra elements with just a String and 2
@@ -1869,7 +1883,8 @@ protected:
     }
 
     static OneQubitGateSequence unitaryToGateSequenceInner(
-        matrix2x2 unitaryMat, const std::vector<EulerBasis>& targetBasisList,
+        matrix2x2 unitaryMat,
+        const llvm::SmallVector<EulerBasis>& targetBasisList,
         std::size_t /*qubit*/,
         const std::vector<std::unordered_map<std::string, fp>>&
         /*error_map*/, // TODO: remove error_map+qubit for platform
@@ -1962,7 +1977,8 @@ protected:
 
 private:
   llvm::SmallVector<QubitGateSequence::Gate> decomposerBasisGate;
-  llvm::SmallVector<EulerBasis> decomposerEulerBasis;
+  llvm::SmallVector<TwoQubitBasisDecomposer, 0> basisDecomposers;
+  llvm::SmallVector<EulerBasis> decomposerEulerBases;
 };
 
 const matrix2x2 GateDecompositionPattern::IDENTITY_GATE = matrix2x2::Identity();
@@ -1978,7 +1994,8 @@ const matrix2x2 GateDecompositionPattern::IPX{{C_ZERO, IM}, {IM, C_ZERO}};
  * decomposition.
  */
 void populateGateDecompositionPatterns(mlir::RewritePatternSet& patterns) {
-  llvm::SmallVector<GateDecompositionPattern::QubitGateSequence::Gate> basisGates;
+  llvm::SmallVector<GateDecompositionPattern::QubitGateSequence::Gate>
+      basisGates;
   llvm::SmallVector<GateDecompositionPattern::EulerBasis> eulerBases;
   basisGates.push_back({.type = qc::X, .parameter = {}, .qubitId = {0, 1}});
   basisGates.push_back({.type = qc::X, .parameter = {}, .qubitId = {1, 0}});
