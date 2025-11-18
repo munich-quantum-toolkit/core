@@ -380,14 +380,14 @@ auto FoMaC::Device::getSites() const -> std::vector<Site> {
                          });
   return sites;
 }
-auto FoMaC::Device::getQubits() const -> std::vector<Site> {
+auto FoMaC::Device::getRegularSites() const -> std::vector<Site> {
   const auto& allSites = getSites();
-  std::vector<Site> qubits;
-  qubits.reserve(allSites.size());
-  std::ranges::copy_if(allSites, std::back_inserter(qubits), [](const Site& s) {
-    return !s.isZone().value_or(false);
-  });
-  return qubits;
+  std::vector<Site> regularSites;
+  regularSites.reserve(allSites.size());
+  std::ranges::copy_if(
+      allSites, std::back_inserter(regularSites),
+      [](const Site& s) { return !s.isZone().value_or(false); });
+  return regularSites;
 }
 auto FoMaC::Device::getZones() const -> std::vector<Site> {
   const auto& allSites = getSites();

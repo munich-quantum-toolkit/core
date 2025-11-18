@@ -536,7 +536,7 @@ public:
      * @returns vector of regular sites
      * @see QDMI_DEVICE_PROPERTY_SITES
      */
-    [[nodiscard]] auto getQubits() const -> std::vector<Site>;
+    [[nodiscard]] auto getRegularSites() const -> std::vector<Site>;
     /**
      * @brief Get only zone sites.
      * @details Filters all sites and only returns zone sites, i.e., where

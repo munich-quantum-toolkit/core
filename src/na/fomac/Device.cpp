@@ -116,7 +116,7 @@ auto FoMaC::Device::initDurationUnitFromDevice() -> bool {
   return true;
 }
 auto FoMaC::Device::initDecoherenceTimesFromDevice() -> bool {
-  const auto regularSites = getQubits();
+  const auto regularSites = getRegularSites();
   if (regularSites.empty()) {
     SPDLOG_INFO("Device has no regular sites with decoherence data");
     return false;
@@ -144,7 +144,7 @@ auto FoMaC::Device::initDecoherenceTimesFromDevice() -> bool {
 }
 auto FoMaC::Device::initTrapsfromDevice() -> bool {
   traps.clear();
-  const auto regularSites = getQubits();
+  const auto regularSites = getRegularSites();
   if (regularSites.empty()) {
     SPDLOG_INFO("Device has no regular sites");
     return false;

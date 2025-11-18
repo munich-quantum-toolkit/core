@@ -104,8 +104,8 @@ class Device:
         """Returns the number of qubits available on the device."""
     def sites(self) -> Iterable[Site]:
         """Returns the list of all sites (zone and regular sites) available on the device."""
-    def qubits(self) -> Iterable[Site]:
-        """Returns the list of regular sites (without all zone sites) available on the device."""
+    def regular_sites(self) -> Iterable[Site]:
+        """Returns the list of regular sites (without zone sites) available on the device."""
     def zones(self) -> Iterable[Site]:
         """Returns the list of zone sites (without regular sites) available on the device."""
     def operations(self) -> Iterable[Operation]:

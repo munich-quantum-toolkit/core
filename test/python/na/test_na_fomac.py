@@ -222,11 +222,11 @@ def test_operations(device_tuple: tuple[Device, Mapping[str, Any]]) -> None:
 
 
 def test_qubits_zones_separation(device_tuple: tuple[Device, Mapping[str, Any]]) -> None:
-    """Test that qubits and zones are properly separated."""
+    """Test that regular sites (qubits) and zones are properly separated."""
     device, device_dict = device_tuple
 
     all_sites = list(device.sites())
-    qubits = list(device.qubits())
+    qubits = list(device.regular_sites())
     zones = list(device.zones())
 
     assert len(all_sites) == len(qubits) + len(zones)
