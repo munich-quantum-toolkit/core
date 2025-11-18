@@ -8,6 +8,7 @@
  * Licensed under the MIT License
  */
 
+#include "Helpers.h"
 #include "ir/Definitions.hpp"
 #include "ir/QuantumComputation.hpp"
 #include "ir/operations/Control.hpp"
@@ -210,7 +211,9 @@ struct ToQuantumComputationPattern final
             findQubitIndex(val, currentQubitVariables));
       }
       // Get the qubit index of the target qubit (if already collected).
+      if (!in.empty()) {
       targetIndex[0] = findQubitIndex(in[0], currentQubitVariables);
+      }
       if (in.size() > 1) {
         targetIndex[1] = findQubitIndex(in[1], currentQubitVariables);
       }
@@ -231,7 +234,9 @@ struct ToQuantumComputationPattern final
       currentQubitVariables[negCtrlInsIndices[i]] =
           outs[i + 1 + posCtrlInsIndices.size()];
     }
-    currentQubitVariables[targetIndex[0]] = outs[0];
+    if (!op.getOutQubits().empty()) {
+      currentQubitVariables[targetIndex[0]] = outs[0];
+    }
     if (op.getOutQubits().size() > 1) {
       currentQubitVariables[targetIndex[1]] = outs[1];
     }
@@ -253,6 +258,8 @@ struct ToQuantumComputationPattern final
         parameters.emplace_back(param);
       }
     }
+    auto x = helpers::getParameters(op);
+    parameters.insert(parameters.end(), x.begin(), x.end());
 
     if (op.getOutQubits().size() > 1) {
       circuit.emplace_back<qc::StandardOperation>(
@@ -379,7 +386,7 @@ struct ToQuantumComputationPattern final
 
     std::string regName;
     llvm::raw_string_ostream os(regName);
-    op.getResult().print(os);
+    os << "q";
 
     circuit.addQubitRegister(numQubits, regName);
     circuit.addClassicalRegister(numQubits);
