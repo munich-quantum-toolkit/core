@@ -12,37 +12,86 @@
 
 #include <cmath>
 #include <complex>
-#include <llvm/ADT/ArrayRef.h>
 
 using namespace std::complex_literals;
 
 namespace mlir::utils {
 
-inline llvm::ArrayRef<std::complex<double>> getMatrixX() {
-  return {0.0, 1.0,  // row 0
-          1.0, 0.0}; // row 1
+inline DenseElementsAttr getMatrixX(MLIRContext* ctx) {
+  const auto& complexType = ComplexType::get(Float64Type::get(ctx));
+  const auto& type = RankedTensorType::get({2, 2}, complexType);
+  const auto& matrix = {0.0 + 0i, 1.0 + 0i,  // row 0
+                        1.0 + 0i, 0.0 + 0i}; // row 1
+  return DenseElementsAttr::get(type, matrix);
 }
 
-inline llvm::ArrayRef<std::complex<double>> getMatrixRX(double theta) {
-  const std::complex<double> m0(std::cos(theta / 2), 0);
-  const std::complex<double> m1(0, -std::sin(theta / 2));
-  return {m0, m1, m1, m0};
+inline DenseElementsAttr getMatrixRX(MLIRContext* ctx, double theta) {
+  const auto& complexType = ComplexType::get(Float64Type::get(ctx));
+  const auto& type = RankedTensorType::get({2, 2}, complexType);
+  const std::complex<double> m0 = std::cos(theta / 2) + 0i;
+  const std::complex<double> m1 = -1i * std::sin(theta / 2);
+  return DenseElementsAttr::get(type, {m0, m1, m1, m0});
 }
 
-inline llvm::ArrayRef<std::complex<double>> getMatrixU2(double phi,
-                                                        double lambda) {
-  const std::complex<double> m00(1.0 / std::sqrt(2), 0.0);
+inline DenseElementsAttr getMatrixU2(MLIRContext* ctx, double phi,
+                                     double lambda) {
+  const auto& complexType = ComplexType::get(Float64Type::get(ctx));
+  const auto& type = RankedTensorType::get({2, 2}, complexType);
+  const std::complex<double> m00 = 1.0 / std::sqrt(2) + 0i;
   const std::complex<double> m01 = -std::exp(1i * lambda) / std::sqrt(2);
   const std::complex<double> m10 = std::exp(1i * phi) / std::sqrt(2);
   const std::complex<double> m11 = std::exp(1i * (phi + lambda)) / std::sqrt(2);
-  return {m00, m01, m10, m11};
+  return DenseElementsAttr::get(type, {m00, m01, m10, m11});
 }
 
-inline llvm::ArrayRef<std::complex<double>> getMatrixSWAP() {
-  return {1.0, 0.0, 0.0, 0.0,  // row 0
-          0.0, 0.0, 1.0, 0.0,  // row 1
-          0.0, 1.0, 0.0, 0.0,  // row 2
-          0.0, 0.0, 0.0, 1.0}; // row 3
+inline DenseElementsAttr getMatrixSWAP(MLIRContext* ctx) {
+  const auto& complexType = ComplexType::get(Float64Type::get(ctx));
+  const auto& type = RankedTensorType::get({4, 4}, complexType);
+  const auto matrix = {1.0 + 0i, 0.0 + 0i, 0.0 + 0i, 0.0 + 0i,  // row 0
+                       0.0 + 0i, 0.0 + 0i, 1.0 + 0i, 0.0 + 0i,  // row 1
+                       0.0 + 0i, 1.0 + 0i, 0.0 + 0i, 0.0 + 0i,  // row 2
+                       0.0 + 0i, 0.0 + 0i, 0.0 + 0i, 1.0 + 0i}; // row 3
+  return DenseElementsAttr::get(type, matrix);
+}
+
+inline DenseElementsAttr getMatrixCtrl(mlir::MLIRContext* ctx,
+                                       mlir::DenseElementsAttr target) {
+  // Get dimensions of target matrix
+  const auto& targetType = llvm::dyn_cast<RankedTensorType>(target.getType());
+  if (!targetType || targetType.getRank() != 2 ||
+      targetType.getDimSize(0) != targetType.getDimSize(1)) {
+    llvm::report_fatal_error("Invalid target matrix");
+  }
+  const auto targetDim = targetType.getDimSize(0);
+
+  // Get values of target matrix
+  const auto& targetMatrix = target.getValues<std::complex<double>>();
+
+  // Define dimensions and type of output matrix
+  const auto dim = 2 * targetDim;
+  const auto& complexType = ComplexType::get(Float64Type::get(ctx));
+  const auto& type = RankedTensorType::get({dim, dim}, complexType);
+
+  // Allocate output matrix
+  std::vector<std::complex<double>> matrix;
+  matrix.reserve(dim * dim);
+
+  // Fill output matrix
+  for (int64_t i = 0; i < dim; ++i) {
+    for (int64_t j = 0; j < dim; ++j) {
+      if (i < targetDim && j < targetDim) {
+        matrix.push_back((i == j) ? 1.0 : 0.0);
+      } else if (i >= targetDim && j >= targetDim) {
+        matrix.push_back(
+            targetMatrix[(i - targetDim) * targetDim + (j - targetDim)]);
+      } else {
+        matrix.push_back(0.0);
+      }
+    }
+  }
+
+  ArrayRef<std::complex<double>> matrixRef(matrix);
+  return DenseElementsAttr::get(type, matrixRef);
 }
 
 } // namespace mlir::utils

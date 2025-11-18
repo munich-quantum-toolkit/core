@@ -130,12 +130,7 @@ LogicalResult MeasureOp::verify() {
 
 // XOp
 
-DenseElementsAttr XOp::tryGetStaticMatrix() {
-  auto* ctx = getContext();
-  const auto& complexType = ComplexType::get(Float64Type::get(ctx));
-  const auto& type = RankedTensorType::get({2, 2}, complexType);
-  return DenseElementsAttr::get(type, getMatrixX());
-}
+DenseElementsAttr XOp::tryGetStaticMatrix() { return getMatrixX(getContext()); }
 
 // RXOp
 
@@ -145,10 +140,7 @@ DenseElementsAttr RXOp::tryGetStaticMatrix() {
     return nullptr;
   }
   const auto thetaValue = theta.getValueAsDouble();
-  auto* ctx = getContext();
-  const auto& complexType = ComplexType::get(Float64Type::get(ctx));
-  const auto& type = RankedTensorType::get({2, 2}, complexType);
-  return DenseElementsAttr::get(type, getMatrixRX(thetaValue));
+  return getMatrixRX(getContext(), thetaValue);
 }
 
 void RXOp::build(OpBuilder& odsBuilder, OperationState& odsState,
@@ -174,10 +166,7 @@ DenseElementsAttr U2Op::tryGetStaticMatrix() {
   }
   const auto phiValue = phi.getValueAsDouble();
   const auto lambdaValue = lambda.getValueAsDouble();
-  auto* ctx = getContext();
-  const auto& complexType = ComplexType::get(Float64Type::get(ctx));
-  const auto& type = RankedTensorType::get({2, 2}, complexType);
-  return DenseElementsAttr::get(type, getMatrixU2(phiValue, lambdaValue));
+  return getMatrixU2(getContext(), phiValue, lambdaValue);
 }
 
 void U2Op::build(OpBuilder& odsBuilder, OperationState& odsState,
@@ -207,10 +196,7 @@ void U2Op::build(OpBuilder& odsBuilder, OperationState& odsState,
 // SWAPOp
 
 DenseElementsAttr SWAPOp::tryGetStaticMatrix() {
-  auto* ctx = getContext();
-  const auto& complexType = ComplexType::get(Float64Type::get(ctx));
-  const auto& type = RankedTensorType::get({4, 4}, complexType);
-  return DenseElementsAttr::get(type, getMatrixSWAP());
+  return getMatrixSWAP(getContext());
 }
 
 //===----------------------------------------------------------------------===//
@@ -339,7 +325,7 @@ Value CtrlOp::getParameter(const size_t i) {
 }
 
 DenseElementsAttr CtrlOp::tryGetStaticMatrix() {
-  llvm::reportFatalUsageError("Not implemented yet"); // TODO
+  return getMatrixCtrl(getContext(), getBodyUnitary().tryGetStaticMatrix());
 }
 
 LogicalResult CtrlOp::verify() {

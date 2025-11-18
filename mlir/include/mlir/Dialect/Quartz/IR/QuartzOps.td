@@ -390,7 +390,7 @@ def CtrlOp : QuartzOp<"ctrl",
         size_t getNumParams();
         Value getParameter(size_t i);
         bool hasStaticUnitary();
-        static DenseElementsAttr tryGetStaticMatrix();
+        DenseElementsAttr tryGetStaticMatrix();
         static StringRef getBaseSymbol() { return "ctrl"; }
     }];
 

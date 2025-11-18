@@ -128,7 +128,7 @@ def UnitaryOpInterface : OpInterface<"UnitaryOpInterface"> {
         InterfaceMethod<
             "Attempts to extract the static unitary matrix. "
             "Returns std::nullopt if the operation is symbolic or dynamic.",
-            "std::optional<DenseElementsAttr>", "tryGetStaticMatrix", (ins)
+            "DenseElementsAttr", "tryGetStaticMatrix", (ins)
         >,
 
         // Identification
