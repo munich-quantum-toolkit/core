@@ -44,11 +44,14 @@ using namespace mlir;
  */
 class WireIterator {
 public:
+  static constexpr WireIterator end() { return {}; }
+
   using difference_type = std::ptrdiff_t;
   using value_type = Operation*;
 
-  explicit WireIterator(Value q = nullptr, Region* region = nullptr)
-      : q(q), region(region) {
+  constexpr WireIterator() : q(nullptr), region(nullptr) {}
+
+  explicit WireIterator(Value q, Region* region) : q(q), region(region) {
     setNextOp();
   }
 

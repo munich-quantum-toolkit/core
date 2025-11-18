@@ -13,22 +13,20 @@
 #include "mlir/Dialect/MQTOpt/Transforms/Transpilation/Architecture.h"
 #include "mlir/Dialect/MQTOpt/Transforms/Transpilation/Common.h"
 #include "mlir/Dialect/MQTOpt/Transforms/Transpilation/Layout.h"
-
-#include "llvm/Support/Debug.h"
+#include "mlir/Dialect/MQTOpt/Transforms/Transpilation/Schedule.h"
 
 #include <algorithm>
 #include <mlir/Support/LLVM.h>
 #include <optional>
 #include <queue>
-#include <stdexcept>
 #include <utility>
 #include <vector>
 
 namespace mqt::ir::opt {
 
-/**
- * @brief Specifies the weights for different terms in the cost function f.
- */
+using namespace mlir;
+
+/// @brief Specifies the weights for different terms in the cost function f.
 struct HeuristicWeights {
   float alpha;
   SmallVector<float> lambdas;
@@ -43,17 +41,11 @@ struct HeuristicWeights {
   }
 };
 
-/**
- * @brief Use A*-search to make all gates executable.
- */
 struct AStarHeuristicRouter final {
   explicit AStarHeuristicRouter(HeuristicWeights weights)
       : weights_(std::move(weights)) {}
 
 private:
-  using Layer = ArrayRef<QubitIndexPair>;
-  using Layers = ArrayRef<Layer>;
-
   struct Node {
     SmallVector<QubitIndexPair, 64> sequence;
     ThinLayout layout;
@@ -69,8 +61,9 @@ private:
      * @brief Construct a non-root node from its parent node. Apply the given
      * swap to the layout of the parent node and evaluate the cost.
      */
-    Node(const Node& parent, QubitIndexPair swap, Layers layers,
-         const Architecture& arch, const HeuristicWeights& weights)
+    Node(const Node& parent, QubitIndexPair swap,
+         ArrayRef<Schedule::GateLayer> window, const Architecture& arch,
+         const HeuristicWeights& weights)
         : sequence(parent.sequence), layout(parent.layout), f(0) {
       /// Apply node-specific swap to given layout.
       layout.swap(layout.getProgramIndex(swap.first),
@@ -80,14 +73,15 @@ private:
       sequence.push_back(swap);
 
       /// Evaluate cost function.
-      f = g(weights) + h(layers, arch, weights); // NOLINT
+      f = g(weights) + h(window, arch, weights); // NOLINT
     }
 
     /**
      * @brief Return true if the current sequence of SWAPs makes all gates
      * executable.
      */
-    [[nodiscard]] bool isGoal(Layer layer, const Architecture& arch) const {
+    [[nodiscard]] bool isGoal(const Schedule::GateLayer& layer,
+                              const Architecture& arch) const {
       return std::ranges::all_of(layer, [&](const QubitIndexPair gate) {
         return arch.areAdjacent(layout.getHardwareIndex(gate.first),
                                 layout.getHardwareIndex(gate.second));
@@ -120,10 +114,11 @@ private:
      * its hardware qubits. Intuitively, this is the number of SWAPs that a
      * naive router would insert to route the layers.
      */
-    [[nodiscard]] float h(Layers layers, const Architecture& arch,
+    [[nodiscard]] float h(ArrayRef<Schedule::GateLayer> window,
+                          const Architecture& arch,
                           const HeuristicWeights& weights) const {
       float nn{0};
-      for (const auto [i, layer] : llvm::enumerate(layers)) {
+      for (const auto [i, layer] : llvm::enumerate(window)) {
         for (const auto [prog0, prog1] : layer) {
           const auto [hw0, hw1] = layout.getHardwareIndices(prog0, prog1);
           const std::size_t dist = arch.distanceBetween(hw0, hw1);
@@ -139,13 +134,13 @@ private:
 
 public:
   [[nodiscard]] std::optional<SmallVector<QubitIndexPair, 64>>
-  route(Layers layers, const ThinLayout& layout, const Architecture& arch,
-        std::size_t maxIterations = 5001UL) {
+  route(ArrayRef<Schedule::GateLayer> window, const ThinLayout& layout,
+        const Architecture& arch) {
     Node root(layout);
 
     /// Early exit. No SWAPs required:
-    if (root.isGoal(layers.front(), arch)) {
-      return {};
+    if (root.isGoal(window.front(), arch)) {
+      return SmallVector<QubitIndexPair, 64>{};
     }
 
     /// Initialize queue.
@@ -153,17 +148,16 @@ public:
     frontier.emplace(root);
 
     /// Iterative searching and expanding.
-    while (!frontier.empty() && maxIterations > 0) {
+    while (!frontier.empty()) {
       Node curr = frontier.top();
       frontier.pop();
 
-      if (curr.isGoal(layers.front(), arch)) {
+      if (curr.isGoal(window.front(), arch)) {
         return curr.sequence;
       }
 
       /// Expand frontier with all neighbouring SWAPs in the current front.
-      expand(frontier, curr, layers, arch);
-      maxIterations--;
+      expand(frontier, curr, window, arch);
     }
 
     return std::nullopt;
@@ -173,10 +167,10 @@ private:
   /**
    * @brief Expand frontier with all neighbouring SWAPs in the current front.
    */
-  void expand(MinQueue& frontier, const Node& parent, Layers layers,
-              const Architecture& arch) {
-    expansionSet.clear();
-    for (const QubitIndexPair gate : layers.front()) {
+  void expand(MinQueue& frontier, const Node& parent,
+              ArrayRef<Schedule::GateLayer> window, const Architecture& arch) {
+    llvm::SmallDenseSet<QubitIndexPair, 64> expansionSet{};
+    for (const QubitIndexPair gate : window.front()) {
       for (const auto prog : {gate.first, gate.second}) {
         const auto hw0 = parent.layout.getHardwareIndex(prog);
         for (const auto hw1 : arch.neighboursOf(hw0)) {
@@ -186,13 +180,13 @@ private:
             continue;
           }
 
-          frontier.emplace(parent, swap, layers, arch, weights_);
+          frontier.emplace(parent, swap, window, arch, weights_);
         }
       }
     }
   }
 
-  llvm::SmallDenseSet<QubitIndexPair, 64> expansionSet{};
   HeuristicWeights weights_;
 };
+
 } // namespace mqt::ir::opt

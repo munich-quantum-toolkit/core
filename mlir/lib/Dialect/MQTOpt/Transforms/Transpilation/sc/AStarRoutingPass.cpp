@@ -10,16 +10,14 @@
 
 #include "mlir/Dialect/MQTOpt/IR/MQTOptDialect.h"
 #include "mlir/Dialect/MQTOpt/Transforms/Passes.h"
-#include "mlir/Dialect/MQTOpt/Transforms/Transpilation/AStarHeuristicRouter.h"
 #include "mlir/Dialect/MQTOpt/Transforms/Transpilation/Architecture.h"
 #include "mlir/Dialect/MQTOpt/Transforms/Transpilation/Common.h"
 #include "mlir/Dialect/MQTOpt/Transforms/Transpilation/Layout.h"
-#include "mlir/Dialect/MQTOpt/Transforms/Transpilation/WireIterator.h"
+#include "mlir/Dialect/MQTOpt/Transforms/Transpilation/Router.h"
+#include "mlir/Dialect/MQTOpt/Transforms/Transpilation/Schedule.h"
 
-#include <algorithm>
 #include <cassert>
 #include <cstddef>
-#include <iterator>
 #include <limits>
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/SmallVector.h>
@@ -48,7 +46,6 @@
 #include <mlir/Rewrite/PatternApplicator.h>
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/WalkResult.h>
-#include <optional>
 #include <utility>
 
 #define DEBUG_TYPE "route-astar-sc"
@@ -90,69 +87,6 @@ struct RoutingContext {
   std::size_t nlookahead;
 };
 
-struct Layer {
-  /// @brief All ops contained in this layer.
-  SmallVector<Operation*, 64> ops;
-  /// @brief The program indices of the gates in this layer.
-  SmallVector<QubitIndexPair> gates;
-  /// @brief The first op in ops in textual IR order.
-  Operation* anchor{};
-  /// @brief Add op to ops and reset anchor if necessary.
-  void addOp(Operation* op) {
-    ops.emplace_back(op);
-    if (anchor == nullptr || op->isBeforeInBlock(anchor)) {
-      anchor = op;
-    }
-  }
-  /// @returns true iff the layer contains gates to route.
-  [[nodiscard]] bool hasRoutableGates() const { return !gates.empty(); }
-};
-
-/// @brief A vector of layers.
-using LayerVec = SmallVector<Layer, 0>;
-
-struct Wire {
-  Wire(WireIterator it, QubitIndex index) : it(it), index(index) {}
-  WireIterator it;
-  QubitIndex index;
-};
-
-/// @brief Map to handle multi-qubit gates when traversing the def-use chain.
-class SynchronizationMap {
-  /// @brief Maps operations to to-be-released iterators.
-  DenseMap<Operation*, SmallVector<Wire, 0>> onHold;
-
-  /// @brief Maps operations to ref counts. An op can be released whenever the
-  /// count reaches zero.
-  DenseMap<Operation*, std::size_t> refCount;
-
-public:
-  /// @returns true iff. the operation is contained in the map.
-  bool contains(Operation* op) const { return onHold.contains(op); }
-
-  /// @brief Add op with respective wire and ref count to map.
-  void add(Operation* op, Wire wire, const std::size_t cnt) {
-    onHold.try_emplace(op, SmallVector<Wire>{wire});
-    /// Decrease the cnt by one because the op was visited when adding.
-    refCount.try_emplace(op, cnt - 1);
-  }
-
-  /// @brief Decrement ref count of op and potentially release its iterators.
-  std::optional<SmallVector<Wire, 0>> visit(Operation* op, Wire wire) {
-    assert(refCount.contains(op) && "expected sync map to contain op");
-
-    /// Add iterator for later release.
-    onHold[op].push_back(wire);
-
-    /// Release iterators whenever the ref count reaches zero.
-    if (--refCount[op] == 0) {
-      return onHold[op];
-    }
-
-    return std::nullopt;
-  }
-};
-
 LogicalResult processRegion(Region& region, Layout& layout,
                             SmallVector<QubitIndexPair>& history,
                             RoutingContext& ctx);
@@ -175,8 +109,8 @@ void insertSWAPs(Location location, ArrayRef<QubitIndexPair> swaps,
 
     LLVM_DEBUG({
       llvm::dbgs() << llvm::format(
-          "route: swap= p%d:h%d, p%d:h%d <- p%d:h%d, p%d:h%d\n", prog1, hw0,
-          prog0, hw1, prog0, hw0, prog1, hw1);
+          "insertSWAPs: swap= p%d:h%d, p%d:h%d <- p%d:h%d, p%d:h%d\n", prog1,
+          hw0, prog0, hw1, prog0, hw0, prog1, hw1);
     });
 
     auto swap = createSwap(location, in0, in1, rewriter);
@@ -193,224 +127,6 @@ void insertSWAPs(Location location, ArrayRef<QubitIndexPair> swaps,
     layout.remapQubitValue(in1, out1);
   }
 }
-
-//===----------------------------------------------------------------------===//
-// Scheduling
-//===----------------------------------------------------------------------===//
-
-SmallVector<Wire, 2> advanceUntilEndOfTwoQubitBlock(ArrayRef<Wire> wires,
-                                                    Layer& layer) {
-  assert(wires.size() == 2 && "expected two wires");
-
-  WireIterator end;
-  auto [it0, index0] = wires[0];
-  auto [it1, index1] = wires[1];
-  while (it0 != end && it1 != end) {
-    Operation* op0 = *it0;
-    if (!isa<UnitaryInterface>(op0) || isa<BarrierOp>(op0)) {
-      break;
-    }
-
-    Operation* op1 = *it1;
-    if (!isa<UnitaryInterface>(op1) || isa<BarrierOp>(op1)) {
-      break;
-    }
-
-    UnitaryInterface u0 = cast<UnitaryInterface>(op0);
-
-    /// Advance for single qubit gate on wire 0.
-    if (!isTwoQubitGate(u0)) {
-      layer.addOp(u0); // Add 1Q-op to layer operations.
-      ++it0;
-      continue;
-    }
-
-    UnitaryInterface u1 = cast<UnitaryInterface>(op1);
-
-    /// Advance for single qubit gate on wire 1.
-    if (!isTwoQubitGate(u1)) {
-      layer.addOp(u1); // Add 1Q-op to layer operations.
-      ++it1;
-      continue;
-    }
-
-    /// Stop if the wires reach different two qubit gates.
-    if (op0 != op1) {
-      break;
-    }
-
-    /// Remap and advance if u0 == u1.
-    layer.addOp(u1);
-
-    ++it0;
-    ++it1;
-  }
-
-  return {Wire(it0, index0), Wire(it1, index1)};
-}
-
-/**
- * @brief Advance each wire until (>=2)-qubit gates are found, collect the
- * indices of the respective two-qubit gates, and prepare iterators for next
- * iteration.
- */
-std::pair<Layer, SmallVector<Wire>>
-collectLayerAndAdvance(ArrayRef<Wire> wires, SynchronizationMap& sync,
-                       const std::size_t nqubits) {
-  /// The collected layer.
-  Layer layer;
-  /// A vector of iterators for the next iteration.
-  SmallVector<Wire> next;
-  next.reserve(wires.size());
-
-  for (auto [it, index] : wires) {
-    while (it != WireIterator()) {
-      const bool stop =
-          TypeSwitch<Operation*, bool>(*it)
-              .Case<BarrierOp>([&](BarrierOp op) {
-                /// A barrier may be a UnitaryInterface, but also requires
-                /// synchronization.
-                if (!sync.contains(op)) {
-                  sync.add(op, Wire(++it, index), op.getInQubits().size());
-                  return true;
-                }
-
-                if (const auto iterators = sync.visit(op, Wire(++it, index))) {
-                  layer.addOp(op);
-                  next.append(std::make_move_iterator(iterators->begin()),
-                              std::make_move_iterator(iterators->end()));
-                }
-                return true;
-              })
-              .Case<UnitaryInterface>([&](UnitaryInterface op) {
-                if (!isTwoQubitGate(op)) {
-                  layer.addOp(op); // Add 1Q-op to layer operations.
-                  ++it;
-                  return false;
-                }
-
-                if (!sync.contains(op)) {
-                  /// Add the next iterator after the two-qubit
-                  /// gate for a later release.
-                  sync.add(op, Wire(++it, index), 2);
-                  return true;
-                }
-
-                if (const auto iterators = sync.visit(op, Wire(++it, index))) {
-                  /// Only add ready two-qubit gates to the layer.
-                  layer.addOp(op);
-                  layer.gates.emplace_back((*iterators)[0].index,
-                                           (*iterators)[1].index);
-
-                  /// Release iterators for next iteration.
-                  next.append(
-                      advanceUntilEndOfTwoQubitBlock(iterators.value(), layer));
-                }
-                return true;
-              })
-              .Case<ResetOp>([&](ResetOp op) {
-                layer.addOp(op);
-                ++it;
-                return false;
-              })
-              .Case<MeasureOp>([&](MeasureOp op) {
-                layer.addOp(op);
-                ++it;
-                return false;
-              })
-              .Case<RegionBranchOpInterface>([&](RegionBranchOpInterface op) {
-                if (!sync.contains(op)) {
-                  /// This assumes that branch ops always returns all hardware
-                  /// qubits.
-                  sync.add(op, Wire(++it, index), nqubits);
-                  return true;
-                }
-
-                if (const auto iterators = sync.visit(op, Wire(++it, index))) {
-                  layer.addOp(op);
-                  next.append(std::make_move_iterator(iterators->begin()),
-                              std::make_move_iterator(iterators->end()));
-                }
-                return true;
-              })
-              .Case<scf::YieldOp>([&](scf::YieldOp yield) {
-                if (!sync.contains(yield)) {
-                  /// This assumes that yield always returns all hardware
-                  /// qubits.
-                  sync.add(yield, Wire(++it, index), nqubits);
-                  return true;
-                }
-
-                if (const auto iterators =
-                        sync.visit(yield, Wire(++it, index))) {
-                  layer.addOp(yield);
-                }
-
-                return true;
-              })
-              .Default([](auto) {
-                llvm_unreachable("unhandled operation");
-                return true;
-              });
-
-      if (stop) {
-        break;
-      }
-    }
-  }
-
-  return {layer, next};
-}
-
-/**
- * @brief Given a layout, divide the circuit into layers and schedule the ops in
- * their respective layer.
- */
-LayerVec schedule(const Layout& layout, Region& region) {
-  LayerVec layers;
-  SynchronizationMap sync;
-  SmallVector<Wire> wires;
-  wires.reserve(layout.getNumQubits());
-  for (auto [hw, q] : llvm::enumerate(layout.getHardwareQubits())) {
-    wires.emplace_back(WireIterator(q, &region), layout.getProgramIndex(hw));
-  }
-
-  while (!wires.empty()) {
-    const auto [layer, next] =
-        collectLayerAndAdvance(wires, sync, layout.getNumQubits());
-    if (layer.ops.empty()) {
-      break;
-    }
-    layers.emplace_back(layer);
-    wires = next;
-  };
-
-  LLVM_DEBUG({
-    llvm::dbgs() << "schedule: layers=\n";
-    for (const auto [i, layer] : llvm::enumerate(layers)) {
-      llvm::dbgs() << '\t' << i << ": ";
-      llvm::dbgs() << "#ops= " << layer.ops.size() << ", ";
-      llvm::dbgs() << "gates= ";
-      if (layer.hasRoutableGates()) {
-        for (const auto [prog0, prog1] : layer.gates) {
-          llvm::dbgs() << "(" << prog0 << "," << prog1 << "), ";
-        }
-      } else {
-        llvm::dbgs() << "(), ";
-      }
-      if (layer.anchor) {
-        llvm::dbgs() << "anchor= " << layer.anchor->getLoc() << ", ";
-      }
-      llvm::dbgs() << '\n';
-    }
-  });
-
-  return layers;
-}
-
-//===----------------------------------------------------------------------===//
-// Routing
-//===----------------------------------------------------------------------===//
 
 /**
  * @brief Copy the layout and recursively process the loop body.
@@ -497,95 +213,51 @@ WalkResult handle(UnitaryInterface op, Layout& layout,
 
 /**
  * @brief Find and insert SWAPs using A*-search.
- *
- * If A*-search fails use the LightSABRE fallback mechanism: Search
- * the the gate which acts on the qubit index pair with the minimum distance in
- * the coupling graph of the targeted architecture. Route this gate naively,
- * remove it from the front layer, and restart the A*-search.
  */
-void findAndInsertSWAPs(ArrayRef<ArrayRef<QubitIndexPair>> layers,
-                        Location location, Layout& layout,
+void findAndInsertSWAPs(MutableArrayRef<Schedule::GateLayer> window,
+                        Operation* anchor, Layout& layout,
                         SmallVector<QubitIndexPair>& history,
                         RoutingContext& ctx) {
-  /// Mutable copy of the front layer.
-  SmallVector<QubitIndexPair> workingFront(layers.front());
+  ctx.rewriter.setInsertionPoint(anchor);
 
-  SmallVector<ArrayRef<QubitIndexPair>> workingLayers;
-  workingLayers.reserve(layers.size());
-  workingLayers.push_back(workingFront); // Non-owning view of workingFront.
-  for (auto layer : layers.drop_front()) {
-    workingLayers.push_back(layer);
-  }
-
-  while (!workingFront.empty()) {
-    if (const auto swaps = ctx.router.route(workingLayers, layout, *ctx.arch)) {
+  if (const auto swaps = ctx.router.route(window, layout, *ctx.arch)) {
+    if (!swaps->empty()) {
       history.append(*swaps);
-      insertSWAPs(location, *swaps, layout, ctx.rewriter);
+      insertSWAPs(anchor->getLoc(), *swaps, layout, ctx.rewriter);
       *(ctx.stats.numSwaps) += swaps->size();
-      return;
     }
-
-    QubitIndexPair bestGate;
-    std::size_t bestIdx = 0;
-    std::size_t minDist = std::numeric_limits<std::size_t>::max();
-    for (const auto [i, gate] : llvm::enumerate(workingFront)) {
-      const auto hw0 = layout.getHardwareIndex(gate.first);
-      const auto hw1 = layout.getHardwareIndex(gate.second);
-      const auto dist = ctx.arch->distanceBetween(hw0, hw1);
-      if (dist < minDist) {
-        bestIdx = i;
-        minDist = dist;
-        bestGate = std::make_pair(hw0, hw1);
-      }
-    }
-
-    workingFront.erase(workingFront.begin() + static_cast<ptrdiff_t>(bestIdx));
-
-    SmallVector<QubitIndexPair, 16> swaps;
-    const auto path =
-        ctx.arch->shortestPathBetween(bestGate.first, bestGate.second);
-    for (std::size_t i = 0; i < path.size() - 2; ++i) {
-      swaps.emplace_back(path[i], path[i + 1]);
-    }
-
-    history.append(swaps);
-    insertSWAPs(location, swaps, layout, ctx.rewriter);
-    *(ctx.stats.numSwaps) += swaps.size();
+    return;
   }
+
+  throw std::runtime_error("A* router failed to find a valid SWAP sequence");
 }
 
 /**
- * @brief Route each layer by iterating a sliding window of (1 + nlookahead)
- * layers.
+ * @brief Schedule and route the given region.
+ *
+ * Since this might break SSA Dominance, sort the blocks in the given region
+ * topologically.
  */
-LogicalResult routeEachLayer(const LayerVec& layers, Layout layout,
-                             SmallVector<QubitIndexPair>& history,
-                             RoutingContext& ctx) {
-  const auto nhorizion = static_cast<std::ptrdiff_t>(1 + ctx.nlookahead);
+LogicalResult processRegion(Region& region, Layout& layout,
+                            SmallVector<QubitIndexPair>& history,
+                            RoutingContext& ctx) {
+  /// Find and route each of the layers. Might violate SSA dominance.
+  auto schedule = getSchedule(layout, region);
 
-  LayerVec::const_iterator end = layers.end();
-  LayerVec::const_iterator it = layers.begin();
-  for (; it != end; std::advance(it, 1)) {
-    LayerVec::const_iterator lookaheadIt =
-        std::min(end, std::next(it, nhorizion));
+  for (std::size_t i = 0; i < schedule.gateLayers.size(); ++i) {
+    auto window = schedule.getWindow(i, ctx.nlookahead);
+    auto opLayer = schedule.opLayers[i];
 
-    const auto& front = *it; // == window.front()
+    findAndInsertSWAPs(window, opLayer.anchor, layout, history, ctx);
 
-    if (front.hasRoutableGates()) {
-      ctx.rewriter.setInsertionPoint(front.anchor);
-
-      /// Find SWAPs for front layer with nlookahead layers.
-      const auto window = llvm::make_range(it, lookaheadIt);
-      const auto windowLayerGates = to_vector(llvm::map_range(
-          window, [](const Layer& layer) { return ArrayRef(layer.gates); }));
-
-      findAndInsertSWAPs(windowLayerGates, front.anchor->getLoc(), layout,
-                         history, ctx);
-    }
-
-    for (const Operation* curr : front.ops) {
-      const auto res = TypeSwitch<const Operation*, WalkResult>(curr)
+    for (Operation* curr : opLayer.ops) {
+      ctx.rewriter.setInsertionPoint(curr);
+      const auto res = TypeSwitch<Operation*, WalkResult>(curr)
                            .Case<UnitaryInterface>([&](UnitaryInterface op) {
+                             if (i + 1 < schedule.gateLayers.size()) {
+                               ctx.rewriter.moveOpBefore(
+                                   op, schedule.opLayers[i + 1].anchor);
+                             }
                              return handle(op, layout, history);
                            })
                            .Case<ResetOp>([&](ResetOp op) {
@@ -611,31 +283,6 @@ LogicalResult routeEachLayer(const LayerVec& layers, Layout layout,
       }
     }
   }
-
-  return success();
-}
-
-/**
- * @brief Schedule and route the given region.
- *
- * Since this might break SSA Dominance, sort the blocks in the given region
- * topologically.
- */
-LogicalResult processRegion(Region& region, Layout& layout,
-                            SmallVector<QubitIndexPair>& history,
-                            RoutingContext& ctx) {
-  std::ignore = schedule(layout, region);
-  /// Find and route each of the layers. Might violate SSA dominance.
-  const auto res =
-      routeEachLayer(schedule(layout, region), layout, history, ctx);
-  if (res.failed()) {
-    return res;
-  }
-
-  /// Repair any SSA dominance issues.
-  // for (Block& block : region.getBlocks()) {
-  //   sortTopologically(&block);
-  // }
 
   return success();
 }
