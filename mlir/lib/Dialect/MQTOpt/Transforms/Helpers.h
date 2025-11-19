@@ -216,12 +216,9 @@ inline Eigen::Matrix4<T> kroneckerProduct(const Eigen::Matrix2<T>& lhs,
 template <typename T, int N, int M>
 inline auto selfAdjointEvd(Eigen::Matrix<T, N, M> a) {
   Eigen::SelfAdjointEigenSolver<decltype(a)> s;
-  std::cerr << "=EigIN==\n" << a << "\n========\n" << '\n';
   s.compute(a); // TODO: computeDirect is faster
   auto vecs = s.eigenvectors().eval();
   auto vals = s.eigenvalues();
-  std::cerr << "=Eigen==\n" << vecs << "\n========\n" << '\n';
-  std::cerr << "=Eigen==\n" << vals << "\n========\n" << '\n';
   return std::make_pair(vecs, vals);
 }
 
