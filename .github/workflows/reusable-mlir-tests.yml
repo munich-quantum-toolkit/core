@@ -37,8 +37,8 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Setup MLIR
-        uses: burgholzer/portable-mlir-toolchain@add-setup
+      - name: Set up MLIR
+        uses: munich-quantum-software/setup-mlir@add-setup
         with:
           tag: test-release-8
 
