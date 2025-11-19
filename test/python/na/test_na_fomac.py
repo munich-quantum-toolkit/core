@@ -203,9 +203,7 @@ def test_operations(device_tuple: tuple[Device, Mapping[str, Any]]) -> None:
                 site_pairs_list = list(site_pairs)
                 assert len(site_pairs_list) > 0
 
-                for pair in site_pairs_list:
-                    assert len(pair) == 2
-                    site1, site2 = pair
+                for site1, site2 in site_pairs_list:
                     assert site1.index() >= 0
                     assert site2.index() >= 0
 
