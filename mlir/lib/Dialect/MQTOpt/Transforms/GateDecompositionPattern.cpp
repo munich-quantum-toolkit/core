@@ -1557,6 +1557,7 @@ protected:
   };
 
   static constexpr auto DEFAULT_FIDELITY = 1.0 - 1e-15;
+  static constexpr auto DEFAULT_ATOL = 1e-12;
 
   struct TwoQubitBasisDecomposer {
     QubitGateSequence::Gate basisGate;
@@ -1783,9 +1784,8 @@ protected:
           eulerDecompositions;
       for (auto&& decomp : decomposition) {
         assert(helpers::isUnitaryMatrix(decomp));
-        auto eulerDecomp =
-            unitaryToGateSequenceInner(decomp, target1qEulerBasisList, 0, {},
-                                       true, 1.0 - actualBasisFidelity);
+        auto eulerDecomp = unitaryToGateSequenceInner(
+            decomp, target1qEulerBasisList, 0, {}, true, std::nullopt);
         eulerDecompositions.push_back(eulerDecomp);
       }
       TwoQubitGateSequence gates{.globalPhase =
@@ -1972,7 +1972,7 @@ protected:
     calculateRotationGates(fp theta, fp phi, fp lambda, fp phase,
                            qc::OpType kGate, qc::OpType aGate, bool simplify,
                            std::optional<fp> atol) {
-      fp angleZeroEpsilon = atol.value_or(1e-12);
+      fp angleZeroEpsilon = atol.value_or(DEFAULT_ATOL);
       if (!simplify) {
         angleZeroEpsilon = -1.0;
       }
