@@ -100,7 +100,7 @@ struct GateDecompositionPattern final
         decomposerEulerBases{std::move(eulerBasis)} {
     for (auto&& basisGate : decomposerBasisGate) {
       basisDecomposers.push_back(
-          TwoQubitBasisDecomposer::newInner(basisGate, DEFAULT_FIDELITY));
+          TwoQubitBasisDecomposer::create(basisGate, DEFAULT_FIDELITY));
     }
   }
 
@@ -124,9 +124,9 @@ struct GateDecompositionPattern final
     }
 
     matrix4x4 unitaryMatrix = series.getUnitaryMatrix();
-    helpers::print(unitaryMatrix, "UNITARY MATRIX", true);
+    helpers::print(unitaryMatrix, "UNITARY MATRIX");
 
-    auto targetDecomposition = TwoQubitWeylDecomposition::newInner(
+    auto targetDecomposition = TwoQubitWeylDecomposition::create(
         unitaryMatrix, DEFAULT_FIDELITY, std::nullopt);
 
     std::optional<TwoQubitGateSequence> bestSequence;
@@ -518,9 +518,9 @@ protected:
       }
     }
     std::cerr << '\n';
-    helpers::print(series.getUnitaryMatrix(), "ORIGINAL UNITARY", true);
+    helpers::print(series.getUnitaryMatrix(), "ORIGINAL UNITARY");
     helpers::print((unitaryMatrix * std::exp(IM * sequence.globalPhase)).eval(),
-                   "RESULT UNITARY MATRIX", true);
+                   "RESULT UNITARY MATRIX");
     assert((unitaryMatrix * std::exp(IM * sequence.globalPhase))
                .isApprox(series.getUnitaryMatrix(), SANITY_CHECK_PRECISION));
 
@@ -609,13 +609,11 @@ protected:
     matrix2x2 r{{specialUnitary(0, 0), specialUnitary(0, 1)},
                 {specialUnitary(1, 0), specialUnitary(1, 1)}};
     auto detR = r.determinant();
-    std::cerr << "DET_R: " << detR << '\n';
     if (std::abs(detR) < 0.1) {
       // third quadrant
       r = matrix2x2{{specialUnitary(2, 0), specialUnitary(2, 1)},
                     {specialUnitary(3, 0), specialUnitary(3, 1)}};
       detR = r.determinant();
-      std::cerr << "DET_R CORRECTION: " << detR << '\n';
     }
     if (std::abs(detR) < 0.1) {
       throw std::runtime_error{
@@ -906,22 +904,19 @@ protected:
     matrix4x4 unitaryMatrix; // original matrix for this decomposition
 
     static TwoQubitWeylDecomposition
-    newInner(matrix4x4 unitaryMatrix, std::optional<fp> fidelity,
-             std::optional<Specialization> specialization) {
+    create(matrix4x4 unitaryMatrix, std::optional<fp> fidelity,
+           std::optional<Specialization> specialization) {
       auto u = unitaryMatrix;
       auto detU = u.determinant();
-      std::cerr << "DET_U: " << detU << '\n';
       auto detPow = std::pow(detU, static_cast<fp>(-0.25));
       u *= detPow;
-      helpers::print(u, "U", true);
+      helpers::print(u, "U");
       auto globalPhase = std::arg(detU) / 4.;
       auto uP = magicBasisTransform(u, MagicBasisTransform::OutOf);
-      helpers::print(uP, "U_P", true);
+      helpers::print(uP, "U_P");
       matrix4x4 m2 = uP.transpose() * uP;
       auto defaultEulerBasis = EulerBasis::ZYZ;
-      helpers::print(m2, "M2", true);
-
-      std::cerr << "DET_U after division: " << u.determinant() << '\n';
+      helpers::print(m2, "M2");
 
       // M2 is a symmetric complex matrix. We need to decompose it as M2 = P D
       // P^T where P ∈ SO(4), D is diagonal with unit-magnitude elements.
@@ -963,8 +958,8 @@ protected:
         matrix4x4 pInner = pInnerReal;
         diagonal4x4 dInner = (pInner.transpose() * m2 * pInner).diagonal();
 
-        helpers::print(dInner, "D_INNER", true);
-        helpers::print(pInner, "P_INNER", true);
+        helpers::print(dInner, "D_INNER");
+        helpers::print(pInner, "P_INNER");
         matrix4x4 diagD = dInner.asDiagonal();
 
         matrix4x4 compare = pInner * diagD * pInner.transpose();
@@ -995,13 +990,13 @@ protected:
       // Step 7
       Eigen::Vector<fp, 3> cs;
       rdiagonal4x4 dReal = -1.0 * d.cwiseArg() / 2.0;
-      helpers::print(dReal, "D_REAL", true);
+      helpers::print(dReal, "D_REAL");
       dReal(3) = -dReal(0) - dReal(1) - dReal(2);
       for (int i = 0; i < static_cast<int>(cs.size()); ++i) {
         assert(i < dReal.size());
         cs[i] = remEuclid((dReal(i) + dReal(3)) / 2.0, qc::TAU);
       }
-      helpers::print(cs, "CS (1)", true);
+      helpers::print(cs, "CS (1)");
 
       decltype(cs) cstemp;
       llvm::transform(cs, cstemp.begin(), [](auto&& x) {
@@ -1026,7 +1021,7 @@ protected:
           std::tuple{cs[order[0]], cs[order[1]], cs[order[2]]};
       std::tie(dReal(0), dReal(1), dReal(2)) =
           std::tuple{dReal(order[0]), dReal(order[1]), dReal(order[2])};
-      helpers::print(dReal, "D_REAL (sorted)", true);
+      helpers::print(dReal, "D_REAL (sorted)");
 
       // swap columns of p according to order
       matrix4x4 pOrig = p;
@@ -1045,18 +1040,18 @@ protected:
 
       // temp = temp.conjugate();
       // temp += matrix4x4::Constant(0.0);
-      helpers::print(temp, "TEMP", true);
-      helpers::print(p, "P", true);
+      helpers::print(temp, "TEMP");
+      helpers::print(p, "P");
       assert(std::abs(p.determinant() - 1.0) < SANITY_CHECK_PRECISION);
       // https://threeplusone.com/pubs/on_gates.pdf
       // uP = V, m2 = V^T*V, temp = D, p = Q1
       matrix4x4 k1 = uP * p * temp;
-      helpers::print(k1, "K1 (1)", true);
+      helpers::print(k1, "K1 (1)");
       assert((k1.transpose() * k1).isIdentity()); // k1 must be orthogonal
       assert(k1.determinant().real() > 0.0);
       k1 = magicBasisTransform(k1, MagicBasisTransform::Into);
       matrix4x4 k2 = p.transpose().conjugate();
-      helpers::print(k2, "K2 (1)", true);
+      helpers::print(k2, "K2 (1)");
       assert((k2.transpose() * k2).isIdentity()); // k2 must be orthogonal
       assert(k2.determinant().real() > 0.0);
       k2 = magicBasisTransform(k2, MagicBasisTransform::Into);
@@ -1066,7 +1061,7 @@ protected:
            magicBasisTransform(temp.conjugate(), MagicBasisTransform::Into) *
            k2)
               .eval(),
-          "SANITY CHECK (1)", true);
+          "SANITY CHECK (1)");
       assert((k1 *
               magicBasisTransform(temp.conjugate(), MagicBasisTransform::Into) *
               k2)
@@ -1133,16 +1128,16 @@ protected:
         globalPhase -= qc::PI_2;
       }
 
-      helpers::print(K1l, "K1l (1)", true);
-      helpers::print(K2l, "K2l (1)", true);
-      helpers::print(K1r, "K1r (1)", true);
-      helpers::print(K2r, "K2r (1)", true);
+      helpers::print(K1l, "K1l (1)");
+      helpers::print(K2l, "K2l (1)");
+      helpers::print(K1r, "K1r (1)");
+      helpers::print(K2r, "K2r (1)");
 
-      helpers::print(cs, "CS (2)", true);
-      helpers::print(K1l, "K1l (2)", true);
-      helpers::print(K2l, "K2l (2)", true);
-      helpers::print(K1r, "K1r (2)", true);
-      helpers::print(K2r, "K2r (2)", true);
+      helpers::print(cs, "CS (2)");
+      helpers::print(K1l, "K1l (2)");
+      helpers::print(K2l, "K2l (2)");
+      helpers::print(K1r, "K1r (2)");
+      helpers::print(K2r, "K2r (2)");
       auto [a, b, c] = std::tie(cs[1], cs[0], cs[2]);
       auto getCanonicalMatrix = [](fp a, fp b, fp c) -> matrix4x4 {
         auto xx = getTwoQubitMatrix({
@@ -1163,19 +1158,15 @@ protected:
         return zz * yy * xx;
       };
       helpers::print(getCanonicalMatrix(a * -2.0, b * -2.0, c * -2.0),
-                     "SANITY CHECK (2.1)", true);
-      helpers::print(helpers::kroneckerProduct(K1l, K1r), "SANITY CHECK (2.2)",
-                     true);
-      helpers::print(helpers::kroneckerProduct(K2l, K2r), "SANITY CHECK (2.3)",
-                     true);
+                     "SANITY CHECK (2.1)");
+      helpers::print(helpers::kroneckerProduct(K1l, K1r), "SANITY CHECK (2.2)");
+      helpers::print(helpers::kroneckerProduct(K2l, K2r), "SANITY CHECK (2.3)");
       helpers::print((helpers::kroneckerProduct(K1l, K1r) *
                       getCanonicalMatrix(a * -2.0, b * -2.0, c * -2.0) *
                       helpers::kroneckerProduct(K2l, K2r) *
                       std::exp(IM * globalPhase))
                          .eval(),
-                     "SANITY CHECK (2.x)", true);
-      std::cerr << "gphase: " << globalPhase << ", phase_l: " << phase_l
-                << ", phase_r: " << phase_r << '\n';
+                     "SANITY CHECK (2.x)");
       assert((helpers::kroneckerProduct(K1l, K1r) *
               getCanonicalMatrix(a * -2.0, b * -2.0, c * -2.0) *
               helpers::kroneckerProduct(K2l, K2r) * std::exp(IM * globalPhase))
@@ -1544,7 +1535,7 @@ protected:
            helpers::kroneckerProduct(specialized.k2l, specialized.k2r) *
            std::exp(IM * specialized.globalPhase))
               .eval(),
-          "SANITY CHECK (3)", true);
+          "SANITY CHECK (3)");
       assert((helpers::kroneckerProduct(specialized.k1l, specialized.k1r) *
               getCanonicalMatrix(specialized.a * -2.0, specialized.b * -2.0,
                                  specialized.c * -2.0) *
@@ -1586,10 +1577,10 @@ protected:
 
   public:
     static TwoQubitBasisDecomposer
-    newInner(const OneQubitGateSequence::Gate& basisGate = {.type = qc::X,
-                                                            .parameter = {},
-                                                            .qubitId = {0, 1}},
-             fp basisFidelity = DEFAULT_FIDELITY) {
+    create(const OneQubitGateSequence::Gate& basisGate = {.type = qc::X,
+                                                          .parameter = {},
+                                                          .qubitId = {0, 1}},
+           fp basisFidelity = DEFAULT_FIDELITY) {
       auto relativeEq = [](auto&& lhs, auto&& rhs, auto&& epsilon,
                            auto&& maxRelative) {
         // Handle same infinities
@@ -1625,7 +1616,7 @@ protected:
           {qfp(-0.5, 0.5), qfp(0.5, -0.5)},
       };
 
-      auto basisDecomposer = TwoQubitWeylDecomposition::newInner(
+      auto basisDecomposer = TwoQubitWeylDecomposition::create(
           getTwoQubitMatrix(basisGate), basisFidelity, std::nullopt);
       auto superControlled =
           relativeEq(basisDecomposer.a, qc::PI_4, 1e-13, 1e-09) &&
@@ -1729,11 +1720,11 @@ protected:
       };
     }
 
-    [[nodiscard]] std::optional<TwoQubitGateSequence> twoQubitDecompose(
-        const TwoQubitWeylDecomposition& targetDecomposition,
-        const llvm::SmallVector<EulerBasis>& target1qEulerBasisList,
-        std::optional<fp> basisFidelity, bool approximate,
-        std::optional<std::uint8_t> numBasisGateUses) const {
+    [[nodiscard]] std::optional<TwoQubitGateSequence>
+    twoQubitDecompose(const TwoQubitWeylDecomposition& targetDecomposition,
+                      const llvm::SmallVector<EulerBasis>& target1qEulerBases,
+                      std::optional<fp> basisFidelity, bool approximate,
+                      std::optional<std::uint8_t> numBasisGateUses) const {
       auto getBasisFidelity = [&]() {
         if (approximate) {
           return basisFidelity.value_or(this->basisFidelity);
@@ -1746,6 +1737,8 @@ protected:
         auto minValue = std::numeric_limits<fp>::min();
         auto minIndex = -1;
         for (int i = 0; i < static_cast<int>(traces.size()); ++i) {
+          // lower fidelity means it becomes easier to choose a lower number of
+          // basis gates
           auto value = traceToFid(traces[i]) * std::pow(actualBasisFidelity, i);
           if (value > minValue) {
             minIndex = i;
@@ -1758,34 +1751,26 @@ protected:
       auto bestNbasis = numBasisGateUses.value_or(getDefaultNbasis());
       auto chooseDecomposition = [&]() {
         if (bestNbasis == 0) {
-          return decomp0Inner(targetDecomposition);
+          return decomp0(targetDecomposition);
         }
         if (bestNbasis == 1) {
-          return decomp1Inner(targetDecomposition);
+          return decomp1(targetDecomposition);
         }
         if (bestNbasis == 2) {
-          return decomp2SupercontrolledInner(targetDecomposition);
+          return decomp2Supercontrolled(targetDecomposition);
         }
         if (bestNbasis == 3) {
-          return decomp3SupercontrolledInner(targetDecomposition);
+          return decomp3Supercontrolled(targetDecomposition);
         }
         throw std::logic_error{"Invalid basis to use"};
       };
       auto decomposition = chooseDecomposition();
-      std::cerr << "NBasis: " << static_cast<int>(bestNbasis)
-                << "; basis_fid: " << actualBasisFidelity
-                << "; Traces: " << traces[0] << ", " << traces[1] << ", "
-                << traces[2] << ", " << traces[3];
-      std::cerr << "\nDecompositions:\n";
-      for (auto x : decomposition) {
-        helpers::print(x, "", true);
-      }
       llvm::SmallVector<std::optional<TwoQubitGateSequence>, 8>
           eulerDecompositions;
       for (auto&& decomp : decomposition) {
         assert(helpers::isUnitaryMatrix(decomp));
         auto eulerDecomp = unitaryToGateSequenceInner(
-            decomp, target1qEulerBasisList, 0, {}, true, std::nullopt);
+            decomp, target1qEulerBases, 0, {}, true, std::nullopt);
         eulerDecompositions.push_back(eulerDecomp);
       }
       TwoQubitGateSequence gates{.globalPhase =
@@ -1814,7 +1799,6 @@ protected:
         }
       };
 
-      // TODO: check if this actually uses the correct qubitIds
       for (std::size_t i = 0; i < bestNbasis; ++i) {
         addEulerDecomposition(2 * i, 0);
         addEulerDecomposition((2 * i) + 1, 1);
@@ -1834,16 +1818,43 @@ protected:
     }
 
   private:
+    /**
+     * Calculate decompositions when no basis gate is required.
+     *
+     * Decompose target :math:`\sim U_d(x, y, z)` with :math:`0` uses of the
+     * basis gate. Result :math:`U_r` has trace:
+     *
+     * .. math::
+     *
+     *     \Big\vert\text{Tr}(U_r\cdot U_\text{target}^{\dag})\Big\vert =
+     *     4\Big\vert (\cos(x)\cos(y)\cos(z)+ j \sin(x)\sin(y)\sin(z)\Big\vert
+     *
+     * which is optimal for all targets and bases
+     */
     [[nodiscard]] static std::vector<matrix2x2>
-    decomp0Inner(const TwoQubitWeylDecomposition& target) {
+    decomp0(const TwoQubitWeylDecomposition& target) {
       return {
           target.k1r * target.k2r,
           target.k1l * target.k2l,
       };
     }
 
+    /**
+     * Calculate decompositions when one basis gate is required.
+     *
+     * Decompose target :math:`\sim U_d(x, y, z)` with :math:`1` use of the
+     * basis gate math:`\sim U_d(a, b, c)`. Result :math:`U_r` has trace:
+     *
+     * .. math::
+     *
+     *     \Big\vert\text{Tr}(U_r \cdot U_\text{target}^{\dag})\Big\vert =
+     *     4\Big\vert \cos(x-a)\cos(y-b)\cos(z-c) + j
+     *     \sin(x-a)\sin(y-b)\sin(z-c)\Big\vert
+     *
+     * which is optimal for all targets and bases with ``z==0`` or ``c==0``.
+     */
     [[nodiscard]] std::vector<matrix2x2>
-    decomp1Inner(const TwoQubitWeylDecomposition& target) const {
+    decomp1(const TwoQubitWeylDecomposition& target) const {
       // FIXME: fix for z!=0 and c!=0 using closest reflection (not always in
       // the Weyl chamber)
       return {
@@ -1854,8 +1865,31 @@ protected:
       };
     }
 
+    /**
+     * Calculate decompositions when two basis gates are required.
+     *
+     * Decompose target :math:`\sim U_d(x, y, z)` with :math:`2` uses of the
+     * basis gate.
+     *
+     * For supercontrolled basis :math:`\sim U_d(\pi/4, b, 0)`, all b, result
+     * :math:`U_r` has trace
+     *
+     * .. math::
+     *
+     *     \Big\vert\text{Tr}(U_r \cdot U_\text{target}^\dag) \Big\vert =
+     * 4\cos(z)
+     *
+     * which is the optimal approximation for basis of CNOT-class :math:`\sim
+     * U_d(\pi/4, 0, 0)` or DCNOT-class :math:`\sim U_d(\pi/4, \pi/4, 0)` and
+     * any target. It may be sub-optimal for :math:`b \neq 0` (i.e. there exists
+     * an exact decomposition for any target using
+     * :math:`B \sim U_d(\pi/4, \pi/8, 0)`, but it may not be this
+     * decomposition). This is an exact decomposition for supercontrolled basis
+     * and target :math:`\sim U_d(x, y, 0)`. No guarantees for
+     * non-supercontrolled basis.
+     */
     [[nodiscard]] std::vector<matrix2x2>
-    decomp2SupercontrolledInner(const TwoQubitWeylDecomposition& target) const {
+    decomp2Supercontrolled(const TwoQubitWeylDecomposition& target) const {
       return {
           q2r * target.k2r,
           q2l * target.k2l,
@@ -1866,8 +1900,17 @@ protected:
       };
     }
 
+    /**
+     * Calculate decompositions when three basis gates are required.
+     *
+     * Decompose target with :math:`3` uses of the basis.
+     *
+     * This is an exact decomposition for supercontrolled basis
+     * :math:`\sim U_d(\pi/4, b, 0)`, all b, and any target. No guarantees for
+     * non-supercontrolled basis.
+     */
     [[nodiscard]] std::vector<matrix2x2>
-    decomp3SupercontrolledInner(const TwoQubitWeylDecomposition& target) const {
+    decomp3Supercontrolled(const TwoQubitWeylDecomposition& target) const {
       return {
           u3r * target.k2r,
           u3l * target.k2l,
@@ -1880,6 +1923,12 @@ protected:
       };
     }
 
+    /**
+     * Calculate traces for a combination of the parameters of the canonical
+     * gates of the target and basis decompositions.
+     * This can be used to determine the smallest number of basis gates that are
+     * necessary to construct an equivalent to the canonical gate.
+     */
     [[nodiscard]] std::array<qfp, 4>
     traces(TwoQubitWeylDecomposition target) const {
       return {
@@ -1939,9 +1988,9 @@ protected:
       OneQubitGateSequence bestCircuit;
       for (auto targetBasis : targetBasisList) {
         auto circuit = generateCircuit(targetBasis, unitaryMat, simplify, atol);
-        helpers::print(circuit.getUnitaryMatrix(), "SANITY CHECK (4.1)", true);
+        helpers::print(circuit.getUnitaryMatrix(), "SANITY CHECK (4.1)");
         helpers::print(helpers::kroneckerProduct(IDENTITY_GATE, unitaryMat),
-                       "SANITY CHECK (4.2)", true);
+                       "SANITY CHECK (4.2)");
         assert(circuit.getUnitaryMatrix().isApprox(
             helpers::kroneckerProduct(IDENTITY_GATE, unitaryMat),
             SANITY_CHECK_PRECISION));
