@@ -12,6 +12,8 @@
 
 #include "mlir/Dialect/MQTOpt/Transforms/Transpilation/Common.h"
 
+#include "llvm/ADT/STLExtras.h"
+
 #include <cstddef>
 #include <iterator>
 #include <llvm/ADT/TypeSwitch.h>
@@ -91,8 +93,13 @@ private:
   void setNextQubit() {
     TypeSwitch<Operation*>(currOp)
         .Case<UnitaryInterface>([&](UnitaryInterface op) {
-          for (const auto& [in, out] :
-               llvm::zip_equal(op.getAllInQubits(), op.getAllOutQubits())) {
+          const auto inRng =
+              llvm::concat<Value>(op.getInQubits(), op.getPosCtrlInQubits(),
+                                  op.getNegCtrlInQubits());
+          const auto outRng =
+              llvm::concat<Value>(op.getOutQubits(), op.getPosCtrlOutQubits(),
+                                  op.getNegCtrlOutQubits());
+          for (const auto& [in, out] : llvm::zip_equal(inRng, outRng)) {
             if (q == in) {
               q = out;
               return;

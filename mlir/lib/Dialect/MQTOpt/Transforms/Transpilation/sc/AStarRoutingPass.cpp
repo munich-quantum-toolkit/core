@@ -14,11 +14,10 @@
 #include "mlir/Dialect/MQTOpt/Transforms/Transpilation/Common.h"
 #include "mlir/Dialect/MQTOpt/Transforms/Transpilation/Layout.h"
 #include "mlir/Dialect/MQTOpt/Transforms/Transpilation/Router.h"
-#include "mlir/Dialect/MQTOpt/Transforms/Transpilation/Schedule.h"
+#include "mlir/Dialect/MQTOpt/Transforms/Transpilation/Unit.h"
 
 #include <cassert>
 #include <cstddef>
-#include <limits>
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/ADT/Statistic.h>
@@ -46,6 +45,7 @@
 #include <mlir/Rewrite/PatternApplicator.h>
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/WalkResult.h>
+#include <queue>
 #include <utility>
 
 #define DEBUG_TYPE "route-astar-sc"
@@ -87,200 +87,22 @@ struct RoutingContext {
   std::size_t nlookahead;
 };
 
-LogicalResult processRegion(Region& region, Layout& layout,
-                            SmallVector<QubitIndexPair>& history,
-                            RoutingContext& ctx);
+LogicalResult processFunction(func::FuncOp func, RoutingContext& ctx) {
+  /// Collect entry layout.
+  Layout layout(ctx.arch->nqubits());
+  for_each(func.getOps<QubitOp>(), [&](QubitOp op) {
+    layout.add(op.getIndex(), op.getIndex(), op.getQubit());
+  });
 
-/**
- * @brief Insert SWAP ops at the rewriter's insertion point.
- *
- * @param location The location of the inserted SWAP ops.
- * @param swaps The hardware indices of the SWAPs.
- * @param layout The current layout.
- * @param rewriter The pattern rewriter.
- */
-void insertSWAPs(Location location, ArrayRef<QubitIndexPair> swaps,
-                 Layout& layout, PatternRewriter& rewriter) {
-  for (const auto [hw0, hw1] : swaps) {
-    const Value in0 = layout.lookupHardwareValue(hw0);
-    const Value in1 = layout.lookupHardwareValue(hw1);
-    [[maybe_unused]] const auto [prog0, prog1] =
-        layout.getProgramIndices(hw0, hw1);
+  std::queue<Unit> units;
+  units.emplace(std::move(layout), &func.getBody());
 
-    LLVM_DEBUG({
-      llvm::dbgs() << llvm::format(
-          "insertSWAPs: swap= p%d:h%d, p%d:h%d <- p%d:h%d, p%d:h%d\n", prog1,
-          hw0, prog0, hw1, prog0, hw0, prog1, hw1);
-    });
-
-    auto swap = createSwap(location, in0, in1, rewriter);
-    const auto [out0, out1] = getOuts(swap);
-
-    rewriter.setInsertionPointAfter(swap);
-    replaceAllUsesInRegionAndChildrenExcept(in0, out1, swap->getParentRegion(),
-                                            swap, rewriter);
-    replaceAllUsesInRegionAndChildrenExcept(in1, out0, swap->getParentRegion(),
-                                            swap, rewriter);
-
-    layout.swap(in0, in1);
-    layout.remapQubitValue(in0, out0);
-    layout.remapQubitValue(in1, out1);
-  }
-}
-
-/**
- * @brief Copy the layout and recursively process the loop body.
- */
-WalkResult handle(scf::ForOp op, Layout& layout, RoutingContext& ctx) {
-  /// Copy layout.
-  Layout forLayout(layout);
-
-  /// Forward out-of-loop and in-loop values.
-  const auto initArgs = op.getInitArgs().take_front(ctx.arch->nqubits());
-  const auto results = op.getResults().take_front(ctx.arch->nqubits());
-  const auto iterArgs = op.getRegionIterArgs().take_front(ctx.arch->nqubits());
-  for (const auto [arg, res, iter] : llvm::zip(initArgs, results, iterArgs)) {
-    layout.remapQubitValue(arg, res);
-    forLayout.remapQubitValue(arg, iter);
-  }
-
-  /// Recursively handle loop region.
-  SmallVector<QubitIndexPair> history;
-  return processRegion(op.getRegion(), forLayout, history, ctx);
-}
-
-/**
- * @brief Copy the layout for each branch and recursively process the branches.
- */
-WalkResult handle(scf::IfOp op, Layout& layout, RoutingContext& ctx) {
-  /// Recursively handle each branch region.
-  Layout ifLayout(layout);
-  SmallVector<QubitIndexPair> ifHistory;
-
-  const auto ifRes =
-      processRegion(op.getThenRegion(), ifLayout, ifHistory, ctx);
-  if (ifRes.failed()) {
-    return ifRes;
-  }
-
-  Layout elseLayout(layout);
-  SmallVector<QubitIndexPair> elseHistory;
-  const auto elseRes =
-      processRegion(op.getElseRegion(), elseLayout, elseHistory, ctx);
-  if (elseRes.failed()) {
-    return elseRes;
-  }
-
-  /// Forward out-of-if values.
-  const auto results = op->getResults().take_front(ctx.arch->nqubits());
-  for (const auto [in, out] : llvm::zip(layout.getHardwareQubits(), results)) {
-    layout.remapQubitValue(in, out);
-  }
-
-  return WalkResult::advance();
-}
-
-/**
- * @brief Indicates the end of a region defined by a scf op.
- *
- * Restores layout by uncomputation.
- */
-WalkResult handle(scf::YieldOp op, Layout& layout,
-                  ArrayRef<QubitIndexPair> history, RoutingContext& ctx) {
-  /// Uncompute SWAPs.
-  insertSWAPs(op.getLoc(), llvm::to_vector(llvm::reverse(history)), layout,
-              ctx.rewriter);
-  /// Count SWAPs.
-  *(ctx.stats.numSwaps) += history.size();
-  return WalkResult::advance();
-}
-
-/**
- * @brief Remap all input to output qubits for the given unitary op. SWAP
- * indices if the unitary is a SWAP.
- */
-WalkResult handle(UnitaryInterface op, Layout& layout,
-                  SmallVector<QubitIndexPair>& history) {
-  remap(op, layout);
-  if (isa<SWAPOp>(op)) {
-    const auto outs = getOuts(op);
-    layout.swap(outs.first, outs.second);
-    history.push_back({layout.lookupHardwareIndex(outs.first),
-                       layout.lookupHardwareIndex(outs.second)});
-  }
-  return WalkResult::advance();
-}
-
-/**
- * @brief Find and insert SWAPs using A*-search.
- */
-void findAndInsertSWAPs(MutableArrayRef<Schedule::GateLayer> window,
-                        Operation* anchor, Layout& layout,
-                        SmallVector<QubitIndexPair>& history,
-                        RoutingContext& ctx) {
-  ctx.rewriter.setInsertionPoint(anchor);
-
-  if (const auto swaps = ctx.router.route(window, layout, *ctx.arch)) {
-    if (!swaps->empty()) {
-      history.append(*swaps);
-      insertSWAPs(anchor->getLoc(), *swaps, layout, ctx.rewriter);
-      *(ctx.stats.numSwaps) += swaps->size();
-    }
-    return;
-  }
-
-  throw std::runtime_error("A* router failed to find a valid SWAP sequence");
-}
-
-/**
- * @brief Schedule and route the given region.
- *
- * Since this might break SSA Dominance, sort the blocks in the given region
- * topologically.
- */
-LogicalResult processRegion(Region& region, Layout& layout,
-                            SmallVector<QubitIndexPair>& history,
-                            RoutingContext& ctx) {
-  /// Find and route each of the layers. Might violate SSA dominance.
-  auto schedule = getSchedule(layout, region);
-
-  for (std::size_t i = 0; i < schedule.gateLayers.size(); ++i) {
-    auto window = schedule.getWindow(i, ctx.nlookahead);
-    auto opLayer = schedule.opLayers[i];
-
-    findAndInsertSWAPs(window, opLayer.anchor, layout, history, ctx);
-
-    for (Operation* curr : opLayer.ops) {
-      ctx.rewriter.setInsertionPoint(curr);
-      const auto res = TypeSwitch<Operation*, WalkResult>(curr)
-                           .Case<UnitaryInterface>([&](UnitaryInterface op) {
-                             if (i + 1 < schedule.gateLayers.size()) {
-                               ctx.rewriter.moveOpBefore(
-                                   op, schedule.opLayers[i + 1].anchor);
-                             }
-                             return handle(op, layout, history);
-                           })
-                           .Case<ResetOp>([&](ResetOp op) {
-                             remap(op, layout);
-                             return WalkResult::advance();
-                           })
-                           .Case<MeasureOp>([&](MeasureOp op) {
-                             remap(op, layout);
-                             return WalkResult::advance();
-                           })
-                           .Case<scf::ForOp>([&](scf::ForOp op) {
-                             return handle(op, layout, ctx);
-                           })
-                           .Case<scf::IfOp>([&](scf::IfOp op) {
-                             return handle(op, layout, ctx);
-                           })
-                           .Case<scf::YieldOp>([&](scf::YieldOp op) {
-                             return handle(op, layout, history, ctx);
-                           })
-                           .Default([](auto) { return WalkResult::skip(); });
-      if (res.wasInterrupted()) {
-        return failure();
-      }
+  for (; !units.empty(); units.pop()) {
+    Unit& unit = units.front();
+    unit.schedule();
+    unit.route(ctx.router, ctx.nlookahead, *ctx.arch, ctx.rewriter);
+    for (auto next : unit.advance()) {
+      units.emplace(next);
     }
   }
 
@@ -300,6 +122,7 @@ LogicalResult route(ModuleOp module, std::unique_ptr<Architecture> arch,
                      .rewriter = PatternRewriter(module->getContext()),
                      .router = AStarHeuristicRouter(weights),
                      .nlookahead = params.nlookahead};
+
   for (auto func : module.getOps<func::FuncOp>()) {
     LLVM_DEBUG(llvm::dbgs() << "handleFunc: " << func.getSymName() << '\n');
 
@@ -308,19 +131,11 @@ LogicalResult route(ModuleOp module, std::unique_ptr<Architecture> arch,
       return success(); // Ignore non entry_point functions for now.
     }
 
-    /// Find all hardware (static) qubits and initialize layout.
-    Layout layout(ctx.arch->nqubits());
-    for_each(func.getOps<QubitOp>(), [&](QubitOp op) {
-      const std::size_t index = op.getIndex();
-      layout.add(index, index, op.getQubit());
-    });
-
-    SmallVector<QubitIndexPair> history;
-    const auto res = processRegion(func.getBody(), layout, history, ctx);
-    if (res.failed()) {
-      return res;
+    if (failed(processFunction(func, ctx))) {
+      return failure();
     }
   }
+
   return success();
 }
 
