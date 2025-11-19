@@ -59,6 +59,7 @@ struct GateDecompositionPattern final
     };
     std::vector<Gate> gates;
     [[nodiscard]] std::size_t complexity() const {
+      // TODO: caching mechanism
       std::size_t c{};
       for (auto&& gate : gates) {
         c += getComplexity(gate.type, gate.qubitId.size());
@@ -117,8 +118,7 @@ struct GateDecompositionPattern final
       // too short
       return mlir::failure();
     }
-    if (llvm::is_contained(series.inQubits, mlir::Value{}) ||
-        llvm::is_contained(series.outQubits, mlir::Value{})) {
+    if (series.isSingleQubitSeries()) {
       // only a single-qubit series
       return mlir::failure();
     }
@@ -224,7 +224,7 @@ protected:
       return result;
     }
 
-    matrix4x4 getUnitaryMatrix() {
+    [[nodiscard]] matrix4x4 getUnitaryMatrix() const {
       matrix4x4 unitaryMatrix =
           helpers::kroneckerProduct(IDENTITY_GATE, IDENTITY_GATE);
       for (auto&& gate : gates) {
@@ -238,6 +238,11 @@ protected:
 
       assert(helpers::isUnitaryMatrix(unitaryMatrix));
       return unitaryMatrix;
+    }
+
+    [[nodiscard]] bool isSingleQubitSeries() const {
+      return llvm::is_contained(inQubits, mlir::Value{}) ||
+             llvm::is_contained(outQubits, mlir::Value{});
     }
 
   private:
@@ -298,13 +303,25 @@ protected:
         if (it == outQubits.end()) {
           return false;
         }
+        // iterator in the operation input of "old" qubit that already has
+        // previous single-qubit gates in this series
         auto it2 = llvm::find(opInQubits, firstQubitIt != outQubits.end()
                                               ? *firstQubitIt
                                               : *secondQubitIt);
-        inQubits[std::distance(outQubits.begin(), it)] =
-            opInQubits[1 - std::distance(opInQubits.begin(), it2)];
+        // new qubit ID based on position in outQubits
+        auto newInQubitId = std::distance(outQubits.begin(), it);
+        // position in operation input; since there are only two qubits, it must
+        // be the "not old" one
+        auto newOpInQubitId = 1 - std::distance(opInQubits.begin(), it2);
+
+        // update inQubit and update dangling iterator, then proceed as usual
+        inQubits[newInQubitId] = opInQubits[newOpInQubitId];
         firstQubitIt = (firstQubitIt != outQubits.end()) ? firstQubitIt : it;
         secondQubitIt = (secondQubitIt != outQubits.end()) ? secondQubitIt : it;
+
+        // before proceeding as usual, see if backtracking on the "new" qubit is
+        // possible to collect other single-qubit operations
+        backtrackSingleQubitSeries(newInQubitId);
       }
       std::size_t firstQubitId = std::distance(outQubits.begin(), firstQubitIt);
       std::size_t secondQubitId =
@@ -316,6 +333,30 @@ protected:
           {.op = nextGate, .qubitIds = {firstQubitId, secondQubitId}});
       complexity += getComplexity(helpers::getQcType(nextGate), 2);
       return true;
+    }
+
+    /**
+     * Traverse single-qubit series back from a given qubit.
+     * This is used when a series starts with single-qubit gates and then
+     * encounters a two-qubit gate. The second qubit involved in the two-qubit
+     * gate could have previous single-qubit operations that can be incorporated
+     * in the series.
+     */
+    void backtrackSingleQubitSeries(std::size_t qubitId) {
+      auto prependSingleQubitGate = [&](UnitaryInterface op) {
+        inQubits[qubitId] = op.getAllInQubits()[0];
+        gates.insert(gates.begin(), {.op = op, .qubitIds = {qubitId}});
+        // outQubits do not need to be updated because the final out qubit is
+        // already fixed
+      };
+      while (auto* op = inQubits[qubitId].getDefiningOp()) {
+        auto unitaryOp = mlir::dyn_cast<UnitaryInterface>(op);
+        if (unitaryOp && helpers::isSingleQubitOperation(unitaryOp)) {
+          prependSingleQubitGate(unitaryOp);
+        } else {
+          break;
+        }
+      }
     }
   };
 
