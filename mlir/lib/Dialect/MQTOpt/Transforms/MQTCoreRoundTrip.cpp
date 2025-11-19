@@ -33,15 +33,12 @@ struct MQTCoreRoundTrip final : impl::MQTCoreRoundTripBase<MQTCoreRoundTrip> {
     // Define the set of patterns to use.
     mlir::RewritePatternSet patterns(ctx);
     populateToQuantumComputationPatterns(patterns, circuit);
-    // populateFromQuantumComputationPatterns(patterns, circuit);
+    populateFromQuantumComputationPatterns(patterns, circuit);
 
     // Apply patterns in an iterative and greedy manner.
     if (mlir::failed(mlir::applyPatternsGreedily(op, std::move(patterns)))) {
       signalPassFailure();
     }
-    std::cerr << "======================\n";
-      circuit.dumpOpenQASM(std::cerr, false);
-    std::cerr << "======================\n";
   }
 };
 
