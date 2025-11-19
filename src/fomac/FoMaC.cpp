@@ -323,8 +323,9 @@ auto FoMaC::Device::Operation::getSitePairs(
     const std::vector<Site>& sites, const std::vector<double>& params) const
     -> std::optional<std::vector<std::pair<Site, Site>>> {
   const auto qubitsNum = getQubitsNum(sites, params);
-  if (!qubitsNum.has_value() || *qubitsNum != 2) {
-    return std::nullopt; // Not a 2-qubit operation
+  if (!qubitsNum.has_value() || *qubitsNum != 2 ||
+      isZoned(sites, params).value_or(false)) {
+    return std::nullopt; // Not a 2-qubit operation or operation is zoned
   }
 
   const auto& qdmiSites = queryProperty<std::optional<std::vector<QDMI_Site>>>(
