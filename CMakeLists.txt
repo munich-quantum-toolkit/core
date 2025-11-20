@@ -24,24 +24,6 @@ include(PackageAddTest)
 include(Cache)
 include(AddMQTCoreLibrary)
 
-# include(FetchContent)
-# FetchContent_Declare(
-#   armadillo
-#   GIT_REPOSITORY https://gitlab.com/conradsnicta/armadillo-code.git
-#   GIT_TAG 15.0.1
-# )
-# FetchContent_MakeAvailable(armadillo)
-find_package(Armadillo 15 REQUIRED)
-if(Armadillo_FOUND AND NOT TARGET Armadillo::Armadillo)
-  add_library(Armadillo::Armadillo INTERFACE IMPORTED)
-  set_target_properties(
-    Armadillo::Armadillo
-    PROPERTIES
-      INTERFACE_LINK_LIBRARIES "${ARMADILLO_LIBRARIES}"
-      INTERFACE_INCLUDE_DIRECTORIES "${ARMADILLO_INCLUDE_DIRS}"
-  )
-endif()
-
 option(BUILD_MQT_CORE_BINDINGS "Build the MQT Core Python bindings" OFF)
 if(BUILD_MQT_CORE_BINDINGS)
   # ensure that the BINDINGS option is set
