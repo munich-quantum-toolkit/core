@@ -337,6 +337,168 @@ public:
   QuartzProgramBuilder& mcx(ValueRange controls, Value target);
 
   /**
+   * @brief Apply a Y gate to a qubit
+   *
+   * @param qubit Target qubit
+   * @return Reference to this builder for method chaining
+   *
+   * @par Example:
+   * ```c++
+   * builder.y(q);
+   * ```
+   * ```mlir
+   * quartz.y %q : !quartz.qubit
+   * ```
+   */
+  QuartzProgramBuilder& y(Value qubit);
+
+  /**
+   * @brief Apply a controlled Y gate
+   *
+   * @param control Control qubit
+   * @param target Target qubit
+   * @return Reference to this builder for method chaining
+   *
+   * @par Example:
+   * ```c++
+   * builder.cy(q0, q1);
+   * ```
+   * ```mlir
+   * quartz.ctrl(%q0) {
+   *   quartz.y %q1 : !quartz.qubit
+   * }
+   * ```
+   */
+  QuartzProgramBuilder& cy(Value control, Value target);
+
+  /**
+   * @brief Apply a multi-controlled Y gate
+   *
+   * @param controls Control qubits
+   * @param target Target qubit
+   * @return Reference to this builder for method chaining
+   *
+   * @par Example:
+   * ```c++
+   * builder.mcy({q0, q1}, q2);
+   * ```
+   * ```mlir
+   * quartz.ctrl(%q0, %q1) {
+   *   quartz.y %q2 : !quartz.qubit
+   * }
+   * ```
+   */
+  QuartzProgramBuilder& mcy(ValueRange controls, Value target);
+
+  /**
+   * @brief Apply a Z gate to a qubit
+   *
+   * @param qubit Target qubit
+   * @return Reference to this builder for method chaining
+   *
+   * @par Example:
+   * ```c++
+   * builder.z(q);
+   * ```
+   * ```mlir
+   * quartz.z %q : !quartz.qubit
+   * ```
+   */
+  QuartzProgramBuilder& z(Value qubit);
+
+  /**
+   * @brief Apply a controlled Z gate
+   *
+   * @param control Control qubit
+   * @param target Target qubit
+   * @return Reference to this builder for method chaining
+   *
+   * @par Example:
+   * ```c++
+   * builder.cz(q0, q1);
+   * ```
+   * ```mlir
+   * quartz.ctrl(%q0) {
+   *   quartz.z %q1 : !quartz.qubit
+   * }
+   * ```
+   */
+  QuartzProgramBuilder& cz(Value control, Value target);
+
+  /**
+   * @brief Apply a multi-controlled Z gate
+   *
+   * @param controls Control qubits
+   * @param target Target qubit
+   * @return Reference to this builder for method chaining
+   *
+   * @par Example:
+   * ```c++
+   * builder.mcz({q0, q1}, q2);
+   * ```
+   * ```mlir
+   * quartz.ctrl(%q0, %q1) {
+   *   quartz.z %q2 : !quartz.qubit
+   * }
+   * ```
+   */
+  QuartzProgramBuilder& mcz(ValueRange controls, Value target);
+
+  /**
+   * @brief Apply an H gate to a qubit
+   *
+   * @param qubit Target qubit
+   * @return Reference to this builder for method chaining
+   *
+   * @par Example:
+   * ```c++
+   * builder.h(q);
+   * ```
+   * ```mlir
+   * quartz.h %q : !quartz.qubit
+   * ```
+   */
+  QuartzProgramBuilder& h(Value qubit);
+
+  /**
+   * @brief Apply a controlled H gate
+   *
+   * @param control Control qubit
+   * @param target Target qubit
+   * @return Reference to this builder for method chaining
+   *
+   * @par Example:
+   * ```c++
+   * builder.ch(q0, q1);
+   * ```
+   * ```mlir
+   * quartz.ctrl(%q0) {
+   *   quartz.h %q1 : !quartz.qubit
+   * }
+   * ```
+   */
+  QuartzProgramBuilder& ch(Value control, Value target);
+
+  /**
+   * @brief Apply a multi-controlled H gate
+   *
+   * @param controls Control qubits
+   * @param target Target qubit
+   * @return Reference to this builder for method chaining
+   *
+   * @par Example:
+   * ```c++
+   * builder.mch({q0, q1}, q2);
+   * ```
+   * ```mlir
+   * quartz.ctrl(%q0, %q1) {
+   *   quartz.h %q2 : !quartz.qubit
+   * }
+   * ```
+   */
+  QuartzProgramBuilder& mch(ValueRange controls, Value target);
+
+  /**
    * @brief Apply an S gate to a qubit
    *
    * @param qubit Target qubit
@@ -443,6 +605,222 @@ public:
    * ```
    */
   QuartzProgramBuilder& mcsdg(ValueRange controls, Value target);
+
+  /**
+   * @brief Apply a T gate to a qubit
+   *
+   * @param qubit Target qubit
+   * @return Reference to this builder for method chaining
+   *
+   * @par Example:
+   * ```c++
+   * builder.t(q);
+   * ```
+   * ```mlir
+   * quartz.t %q : !quartz.qubit
+   * ```
+   */
+  QuartzProgramBuilder& t(Value qubit);
+
+  /**
+   * @brief Apply a controlled T gate
+   *
+   * @param control Control qubit
+   * @param target Target qubit
+   * @return Reference to this builder for method chaining
+   *
+   * @par Example:
+   * ```c++
+   * builder.ct(q0, q1);
+   * ```
+   * ```mlir
+   * quartz.ctrl(%q0) {
+   *   quartz.t %q1 : !quartz.qubit
+   * }
+   * ```
+   */
+  QuartzProgramBuilder& ct(Value control, Value target);
+
+  /**
+   * @brief Apply a multi-controlled T gate
+   *
+   * @param controls Control qubits
+   * @param target Target qubit
+   * @return Reference to this builder for method chaining
+   *
+   * @par Example:
+   * ```c++
+   * builder.mct({q0, q1}, q2);
+   * ```
+   * ```mlir
+   * quartz.ctrl(%q0, %q1) {
+   *   quartz.t %q2 : !quartz.qubit
+   * }
+   * ```
+   */
+  QuartzProgramBuilder& mct(ValueRange controls, Value target);
+
+  /**
+   * @brief Apply a Tdg gate to a qubit
+   *
+   * @param qubit Target qubit
+   * @return Reference to this builder for method chaining
+   *
+   * @par Example:
+   * ```c++
+   * builder.tdg(q);
+   * ```
+   * ```mlir
+   * quartz.tdg %q : !quartz.qubit
+   * ```
+   */
+  QuartzProgramBuilder& tdg(Value qubit);
+
+  /**
+   * @brief Apply a controlled Tdg gate
+   *
+   * @param control Control qubit
+   * @param target Target qubit
+   * @return Reference to this builder for method chaining
+   *
+   * @par Example:
+   * ```c++
+   * builder.ctdg(q0, q1);
+   * ```
+   * ```mlir
+   * quartz.ctrl(%q0) {
+   *   quartz.tdg %q1 : !quartz.qubit
+   * }
+   * ```
+   */
+  QuartzProgramBuilder& ctdg(Value control, Value target);
+
+  /**
+   * @brief Apply a multi-controlled Tdg gate
+   *
+   * @param controls Control qubits
+   * @param target Target qubit
+   * @return Reference to this builder for method chaining
+   *
+   * @par Example:
+   * ```c++
+   * builder.mctdg({q0, q1}, q2);
+   * ```
+   * ```mlir
+   * quartz.ctrl(%q0, %q1) {
+   *   quartz.tdg %q2 : !quartz.qubit
+   * }
+   * ```
+   */
+  QuartzProgramBuilder& mctdg(ValueRange controls, Value target);
+
+  /**
+   * @brief Apply an SX gate to a qubit
+   *
+   * @param qubit Target qubit
+   * @return Reference to this builder for method chaining
+   *
+   * @par Example:
+   * ```c++
+   * builder.sx(q);
+   * ```
+   * ```mlir
+   * quartz.sx %q : !quartz.qubit
+   * ```
+   */
+  QuartzProgramBuilder& sx(Value qubit);
+
+  /**
+   * @brief Apply a controlled SX gate
+   *
+   * @param control Control qubit
+   * @param target Target qubit
+   * @return Reference to this builder for method chaining
+   *
+   * @par Example:
+   * ```c++
+   * builder.csx(q0, q1);
+   * ```
+   * ```mlir
+   * quartz.ctrl(%q0) {
+   *   quartz.sx %q1 : !quartz.qubit
+   * }
+   * ```
+   */
+  QuartzProgramBuilder& csx(Value control, Value target);
+
+  /**
+   * @brief Apply a multi-controlled SX gate
+   *
+   * @param controls Control qubits
+   * @param target Target qubit
+   * @return Reference to this builder for method chaining
+   *
+   * @par Example:
+   * ```c++
+   * builder.mcsx({q0, q1}, q2);
+   * ```
+   * ```mlir
+   * quartz.ctrl(%q0, %q1) {
+   *   quartz.sx %q2 : !quartz.qubit
+   * }
+   * ```
+   */
+  QuartzProgramBuilder& mcsx(ValueRange controls, Value target);
+
+  /**
+   * @brief Apply an SXdg gate to a qubit
+   *
+   * @param qubit Target qubit
+   * @return Reference to this builder for method chaining
+   *
+   * @par Example:
+   * ```c++
+   * builder.sxdg(q);
+   * ```
+   * ```mlir
+   * quartz.sxdg %q : !quartz.qubit
+   * ```
+   */
+  QuartzProgramBuilder& sxdg(Value qubit);
+
+  /**
+   * @brief Apply a controlled SXdg gate
+   *
+   * @param control Control qubit
+   * @param target Target qubit
+   * @return Reference to this builder for method chaining
+   *
+   * @par Example:
+   * ```c++
+   * builder.csxdg(q0, q1);
+   * ```
+   * ```mlir
+   * quartz.ctrl(%q0) {
+   *   quartz.sxdg %q1 : !quartz.qubit
+   * }
+   * ```
+   */
+  QuartzProgramBuilder& csxdg(Value control, Value target);
+
+  /**
+   * @brief Apply a multi-controlled SXdg gate
+   *
+   * @param controls Control qubits
+   * @param target Target qubit
+   * @return Reference to this builder for method chaining
+   *
+   * @par Example:
+   * ```c++
+   * builder.mcsxdg({q0, q1}, q2);
+   * ```
+   * ```mlir
+   * quartz.ctrl(%q0, %q1) {
+   *   quartz.sxdg %q2 : !quartz.qubit
+   * }
+   * ```
+   */
+  QuartzProgramBuilder& mcsxdg(ValueRange controls, Value target);
 
   /**
    * @brief Apply an RX gate to a qubit

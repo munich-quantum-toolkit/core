@@ -298,6 +298,45 @@ QIRProgramBuilder& QIRProgramBuilder::cx(const Value control,
   return *this;
 }
 
+// YOp
+
+QIRProgramBuilder& QIRProgramBuilder::y(const Value qubit) {
+  createOneTargetZeroParameter(qubit, QIR_Y);
+  return *this;
+}
+
+QIRProgramBuilder& QIRProgramBuilder::cy(const Value control,
+                                         const Value target) {
+  createControlledOneTargetZeroParameter(control, target, QIR_CY);
+  return *this;
+}
+
+// ZOp
+
+QIRProgramBuilder& QIRProgramBuilder::z(const Value qubit) {
+  createOneTargetZeroParameter(qubit, QIR_Z);
+  return *this;
+}
+
+QIRProgramBuilder& QIRProgramBuilder::cz(const Value control,
+                                         const Value target) {
+  createControlledOneTargetZeroParameter(control, target, QIR_CZ);
+  return *this;
+}
+
+// HOp
+
+QIRProgramBuilder& QIRProgramBuilder::h(const Value qubit) {
+  createOneTargetZeroParameter(qubit, QIR_H);
+  return *this;
+}
+
+QIRProgramBuilder& QIRProgramBuilder::ch(const Value control,
+                                         const Value target) {
+  createControlledOneTargetZeroParameter(control, target, QIR_CH);
+  return *this;
+}
+
 // SOp
 
 QIRProgramBuilder& QIRProgramBuilder::s(const Value qubit) {
@@ -321,6 +360,58 @@ QIRProgramBuilder& QIRProgramBuilder::sdg(const Value qubit) {
 QIRProgramBuilder& QIRProgramBuilder::csdg(const Value control,
                                            const Value target) {
   createControlledOneTargetZeroParameter(control, target, QIR_CSDG);
+  return *this;
+}
+
+// TOp
+
+QIRProgramBuilder& QIRProgramBuilder::t(const Value qubit) {
+  createOneTargetZeroParameter(qubit, QIR_T);
+  return *this;
+}
+
+QIRProgramBuilder& QIRProgramBuilder::ct(const Value control,
+                                         const Value target) {
+  createControlledOneTargetZeroParameter(control, target, QIR_CT);
+  return *this;
+}
+
+// TdgOp
+
+QIRProgramBuilder& QIRProgramBuilder::tdg(const Value qubit) {
+  createOneTargetZeroParameter(qubit, QIR_TDG);
+  return *this;
+}
+
+QIRProgramBuilder& QIRProgramBuilder::ctdg(const Value control,
+                                           const Value target) {
+  createControlledOneTargetZeroParameter(control, target, QIR_CTDG);
+  return *this;
+}
+
+// SXOp
+
+QIRProgramBuilder& QIRProgramBuilder::sx(const Value qubit) {
+  createOneTargetZeroParameter(qubit, QIR_SX);
+  return *this;
+}
+
+QIRProgramBuilder& QIRProgramBuilder::csx(const Value control,
+                                          const Value target) {
+  createControlledOneTargetZeroParameter(control, target, QIR_CSX);
+  return *this;
+}
+
+// SXdgOp
+
+QIRProgramBuilder& QIRProgramBuilder::sxdg(const Value qubit) {
+  createOneTargetZeroParameter(qubit, QIR_SXDG);
+  return *this;
+}
+
+QIRProgramBuilder& QIRProgramBuilder::csxdg(const Value control,
+                                            const Value target) {
+  createControlledOneTargetZeroParameter(control, target, QIR_CSXDG);
   return *this;
 }
 

@@ -136,6 +136,18 @@ DenseElementsAttr IdOp::tryGetStaticMatrix() {
 
 DenseElementsAttr XOp::tryGetStaticMatrix() { return getMatrixX(getContext()); }
 
+// YOp
+
+DenseElementsAttr YOp::tryGetStaticMatrix() { return getMatrixY(getContext()); }
+
+// ZOp
+
+DenseElementsAttr ZOp::tryGetStaticMatrix() { return getMatrixZ(getContext()); }
+
+// HOp
+
+DenseElementsAttr HOp::tryGetStaticMatrix() { return getMatrixH(getContext()); }
+
 // SOp
 
 DenseElementsAttr SOp::tryGetStaticMatrix() { return getMatrixS(getContext()); }
@@ -144,6 +156,28 @@ DenseElementsAttr SOp::tryGetStaticMatrix() { return getMatrixS(getContext()); }
 
 DenseElementsAttr SdgOp::tryGetStaticMatrix() {
   return getMatrixSdg(getContext());
+}
+
+// TOp
+
+DenseElementsAttr TOp::tryGetStaticMatrix() { return getMatrixT(getContext()); }
+
+// TdgOp
+
+DenseElementsAttr TdgOp::tryGetStaticMatrix() {
+  return getMatrixTdg(getContext());
+}
+
+// SXOp
+
+DenseElementsAttr SXOp::tryGetStaticMatrix() {
+  return getMatrixSX(getContext());
+}
+
+// SXdgOp
+
+DenseElementsAttr SXdgOp::tryGetStaticMatrix() {
+  return getMatrixSXdg(getContext());
 }
 
 // RXOp
@@ -474,6 +508,72 @@ struct RemoveSubsequentX final : OpRewritePattern<XOp> {
 };
 
 /**
+ * @brief Remove subsequent Y operations on the same qubit.
+ */
+struct RemoveSubsequentY final : OpRewritePattern<YOp> {
+  using OpRewritePattern::OpRewritePattern;
+
+  LogicalResult matchAndRewrite(YOp yOp,
+                                PatternRewriter& rewriter) const override {
+    // Check if the predecessor is a YOp
+    auto prevOp = yOp.getQubitIn().getDefiningOp<YOp>();
+    if (!prevOp) {
+      return failure();
+    }
+
+    // Remove both YOps
+    rewriter.replaceOp(prevOp, prevOp.getQubitIn());
+    rewriter.replaceOp(yOp, yOp.getQubitIn());
+
+    return success();
+  }
+};
+
+/**
+ * @brief Remove subsequent Z operations on the same qubit.
+ */
+struct RemoveSubsequentZ final : OpRewritePattern<ZOp> {
+  using OpRewritePattern::OpRewritePattern;
+
+  LogicalResult matchAndRewrite(ZOp zOp,
+                                PatternRewriter& rewriter) const override {
+    // Check if the predecessor is a ZOp
+    auto prevOp = zOp.getQubitIn().getDefiningOp<ZOp>();
+    if (!prevOp) {
+      return failure();
+    }
+
+    // Remove both ZOps
+    rewriter.replaceOp(prevOp, prevOp.getQubitIn());
+    rewriter.replaceOp(zOp, zOp.getQubitIn());
+
+    return success();
+  }
+};
+
+/**
+ * @brief Remove subsequent H operations on the same qubit.
+ */
+struct RemoveSubsequentH final : OpRewritePattern<HOp> {
+  using OpRewritePattern::OpRewritePattern;
+
+  LogicalResult matchAndRewrite(HOp hOp,
+                                PatternRewriter& rewriter) const override {
+    // Check if the predecessor is an HOp
+    auto prevOp = hOp.getQubitIn().getDefiningOp<HOp>();
+    if (!prevOp) {
+      return failure();
+    }
+
+    // Remove both HOps
+    rewriter.replaceOp(prevOp, prevOp.getQubitIn());
+    rewriter.replaceOp(hOp, hOp.getQubitIn());
+
+    return success();
+  }
+};
+
+/**
  * @brief Remove S operations that immediately follow Sdg operations.
  */
 struct RemoveSAfterSdg final : OpRewritePattern<SOp> {
@@ -512,6 +612,94 @@ struct RemoveSdgAfterS final : OpRewritePattern<SdgOp> {
     // Remove both S and Sdg Ops
     rewriter.replaceOp(prevOp, prevOp.getQubitIn());
     rewriter.replaceOp(sdgOp, sdgOp.getQubitIn());
+
+    return success();
+  }
+};
+
+/**
+ * @brief Remove T operations that immediately follow Tdg operations.
+ */
+struct RemoveTAfterTdg final : OpRewritePattern<TOp> {
+  using OpRewritePattern::OpRewritePattern;
+
+  LogicalResult matchAndRewrite(TOp tOp,
+                                PatternRewriter& rewriter) const override {
+    // Check if the predecessor is a TdgOp
+    auto prevOp = tOp.getQubitIn().getDefiningOp<TdgOp>();
+    if (!prevOp) {
+      return failure();
+    }
+
+    // Remove both Tdg and T Ops
+    rewriter.replaceOp(prevOp, prevOp.getQubitIn());
+    rewriter.replaceOp(tOp, tOp.getQubitIn());
+
+    return success();
+  }
+};
+
+/**
+ * @brief Remove Tdg operations that immediately follow T operations.
+ */
+struct RemoveTdgAfterT final : OpRewritePattern<TdgOp> {
+  using OpRewritePattern::OpRewritePattern;
+
+  LogicalResult matchAndRewrite(TdgOp tdgOp,
+                                PatternRewriter& rewriter) const override {
+    // Check if the predecessor is a TOp
+    auto prevOp = tdgOp.getQubitIn().getDefiningOp<TOp>();
+    if (!prevOp) {
+      return failure();
+    }
+
+    // Remove both T and Tdg Ops
+    rewriter.replaceOp(prevOp, prevOp.getQubitIn());
+    rewriter.replaceOp(tdgOp, tdgOp.getQubitIn());
+
+    return success();
+  }
+};
+
+/**
+ * @brief Remove SX operations that immediately follow SXdg operations.
+ */
+struct RemoveSXAfterSXdg final : OpRewritePattern<SXOp> {
+  using OpRewritePattern::OpRewritePattern;
+
+  LogicalResult matchAndRewrite(SXOp sxOp,
+                                PatternRewriter& rewriter) const override {
+    // Check if the predecessor is an SXdgOp
+    auto prevOp = sxOp.getQubitIn().getDefiningOp<SXdgOp>();
+    if (!prevOp) {
+      return failure();
+    }
+
+    // Remove both SXdg and SX Ops
+    rewriter.replaceOp(prevOp, prevOp.getQubitIn());
+    rewriter.replaceOp(sxOp, sxOp.getQubitIn());
+
+    return success();
+  }
+};
+
+/**
+ * @brief Remove SXdg operations that immediately follow SX operations.
+ */
+struct RemoveSXdgAfterSX final : OpRewritePattern<SXdgOp> {
+  using OpRewritePattern::OpRewritePattern;
+
+  LogicalResult matchAndRewrite(SXdgOp sxdgOp,
+                                PatternRewriter& rewriter) const override {
+    // Check if the predecessor is an SXOp
+    auto prevOp = sxdgOp.getQubitIn().getDefiningOp<SXOp>();
+    if (!prevOp) {
+      return failure();
+    }
+
+    // Remove both SX and SXdg Ops
+    rewriter.replaceOp(prevOp, prevOp.getQubitIn());
+    rewriter.replaceOp(sxdgOp, sxdgOp.getQubitIn());
 
     return success();
   }
@@ -634,6 +822,21 @@ void XOp::getCanonicalizationPatterns(RewritePatternSet& results,
   results.add<RemoveSubsequentX>(context);
 }
 
+void YOp::getCanonicalizationPatterns(RewritePatternSet& results,
+                                      MLIRContext* context) {
+  results.add<RemoveSubsequentY>(context);
+}
+
+void ZOp::getCanonicalizationPatterns(RewritePatternSet& results,
+                                      MLIRContext* context) {
+  results.add<RemoveSubsequentZ>(context);
+}
+
+void HOp::getCanonicalizationPatterns(RewritePatternSet& results,
+                                      MLIRContext* context) {
+  results.add<RemoveSubsequentH>(context);
+}
+
 void SOp::getCanonicalizationPatterns(RewritePatternSet& results,
                                       MLIRContext* context) {
   results.add<RemoveSAfterSdg>(context);
@@ -642,6 +845,26 @@ void SOp::getCanonicalizationPatterns(RewritePatternSet& results,
 void SdgOp::getCanonicalizationPatterns(RewritePatternSet& results,
                                         MLIRContext* context) {
   results.add<RemoveSdgAfterS>(context);
+}
+
+void TOp::getCanonicalizationPatterns(RewritePatternSet& results,
+                                      MLIRContext* context) {
+  results.add<RemoveTAfterTdg>(context);
+}
+
+void TdgOp::getCanonicalizationPatterns(RewritePatternSet& results,
+                                        MLIRContext* context) {
+  results.add<RemoveTdgAfterT>(context);
+}
+
+void SXOp::getCanonicalizationPatterns(RewritePatternSet& results,
+                                       MLIRContext* context) {
+  results.add<RemoveSXAfterSXdg>(context);
+}
+
+void SXdgOp::getCanonicalizationPatterns(RewritePatternSet& results,
+                                         MLIRContext* context) {
+  results.add<RemoveSXdgAfterSX>(context);
 }
 
 void RXOp::getCanonicalizationPatterns(RewritePatternSet& results,

@@ -137,6 +137,18 @@ DenseElementsAttr IdOp::tryGetStaticMatrix() {
 
 DenseElementsAttr XOp::tryGetStaticMatrix() { return getMatrixX(getContext()); }
 
+// YOp
+
+DenseElementsAttr YOp::tryGetStaticMatrix() { return getMatrixY(getContext()); }
+
+// ZOp
+
+DenseElementsAttr ZOp::tryGetStaticMatrix() { return getMatrixZ(getContext()); }
+
+// HOp
+
+DenseElementsAttr HOp::tryGetStaticMatrix() { return getMatrixH(getContext()); }
+
 // SOp
 
 DenseElementsAttr SOp::tryGetStaticMatrix() { return getMatrixS(getContext()); }
@@ -145,6 +157,28 @@ DenseElementsAttr SOp::tryGetStaticMatrix() { return getMatrixS(getContext()); }
 
 DenseElementsAttr SdgOp::tryGetStaticMatrix() {
   return getMatrixSdg(getContext());
+}
+
+// TOp
+
+DenseElementsAttr TOp::tryGetStaticMatrix() { return getMatrixT(getContext()); }
+
+// TdgOp
+
+DenseElementsAttr TdgOp::tryGetStaticMatrix() {
+  return getMatrixTdg(getContext());
+}
+
+// SXOp
+
+DenseElementsAttr SXOp::tryGetStaticMatrix() {
+  return getMatrixSX(getContext());
+}
+
+// SXdgOp
+
+DenseElementsAttr SXdgOp::tryGetStaticMatrix() {
+  return getMatrixSXdg(getContext());
 }
 
 // RXOp

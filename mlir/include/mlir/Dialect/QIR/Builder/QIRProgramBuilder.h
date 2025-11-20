@@ -330,6 +330,105 @@ public:
   QIRProgramBuilder& cx(Value control, Value target);
 
   /**
+   * @brief Apply a Y gate to a qubit
+   *
+   * @param qubit Input qubit
+   * @return Reference to this builder for method chaining
+   *
+   * @par Example:
+   * ```c++
+   * builder.y(qubit);
+   * ```
+   * ```mlir
+   * llvm.call @__quantum__qis__y__body(%q) : (!llvm.ptr) -> ()
+   * ```
+   */
+  QIRProgramBuilder& y(Value qubit);
+
+  /**
+   * @brief Apply a controlled Y gate
+   *
+   * @param control Control qubit
+   * @param target Target qubit
+   * @return Reference to this builder for method chaining
+   *
+   * @par Example:
+   * ```c++
+   * builder.cy(control, target);
+   * ```
+   * ```mlir
+   * llvm.call @__quantum__qis__cy__body(%c, %t) : (!llvm.ptr, !llvm.ptr) -> ()
+   * ```
+   */
+  QIRProgramBuilder& cy(Value control, Value target);
+
+  /**
+   * @brief Apply a Z gate to a qubit
+   *
+   * @param qubit Input qubit
+   * @return Reference to this builder for method chaining
+   *
+   * @par Example:
+   * ```c++
+   * builder.z(qubit);
+   * ```
+   * ```mlir
+   * llvm.call @__quantum__qis__z__body(%q) : (!llvm.ptr) -> ()
+   * ```
+   */
+  QIRProgramBuilder& z(Value qubit);
+
+  /**
+   * @brief Apply a controlled Z gate
+   *
+   * @param control Control qubit
+   * @param target Target qubit
+   * @return Reference to this builder for method chaining
+   *
+   * @par Example:
+   * ```c++
+   * builder.cz(control, target);
+   * ```
+   * ```mlir
+   * llvm.call @__quantum__qis__cz__body(%c, %t) : (!llvm.ptr, !llvm.ptr) -> ()
+   * ```
+   */
+  QIRProgramBuilder& cz(Value control, Value target);
+
+  /**
+   * @brief Apply an H gate to a qubit
+   *
+   * @param qubit Input qubit
+   * @return Reference to this builder for method chaining
+   *
+   * @par Example:
+   * ```c++
+   * builder.h(qubit);
+   * ```
+   * ```mlir
+   * llvm.call @__quantum__qis__h__body(%q) : (!llvm.ptr) -> ()
+   * ```
+   */
+  QIRProgramBuilder& h(Value qubit);
+
+  /**
+   * @brief Apply a controlled H gate
+   *
+   * @param control Control qubit
+   * @param target Target qubit
+   * @return Reference to this builder for method chaining
+   *
+   * @par Example:
+   * ```c++
+   * builder.ch(control, target);
+   * ```
+   * ```mlir
+   * llvm.call @__quantum__qis__ch__body(%c, %t) : (!llvm.ptr, !llvm.ptr) -> ()
+   * ```
+   */
+  QIRProgramBuilder& ch(Value control, Value target);
+
+  /**
    * @brief Apply an S gate to a qubit
    *
    * @param qubit Target qubit
@@ -395,6 +494,140 @@ public:
    * ```
    */
   QIRProgramBuilder& csdg(Value control, Value target);
+
+  /**
+   * @brief Apply a T gate to a qubit
+   *
+   * @param qubit Input qubit
+   * @return Reference to this builder for method chaining
+   *
+   * @par Example:
+   * ```c++
+   * builder.t(qubit);
+   * ```
+   * ```mlir
+   * llvm.call @__quantum__qis__t__body(%q) : (!llvm.ptr) -> ()
+   * ```
+   */
+  QIRProgramBuilder& t(Value qubit);
+
+  /**
+   * @brief Apply a controlled T gate
+   *
+   * @param control Control qubit
+   * @param target Target qubit
+   * @return Reference to this builder for method chaining
+   *
+   * @par Example:
+   * ```c++
+   * builder.ct(control, target);
+   * ```
+   * ```mlir
+   * llvm.call @__quantum__qis__ct__body(%c, %t) : (!llvm.ptr, !llvm.ptr) -> ()
+   * ```
+   */
+  QIRProgramBuilder& ct(Value control, Value target);
+
+  /**
+   * @brief Apply a Tdg gate to a qubit
+   *
+   * @param qubit Input qubit
+   * @return Reference to this builder for method chaining
+   *
+   * @par Example:
+   * ```c++
+   * builder.tdg(qubit);
+   * ```
+   * ```mlir
+   * llvm.call @__quantum__qis__tdg__body(%q) : (!llvm.ptr) -> ()
+   * ```
+   */
+  QIRProgramBuilder& tdg(Value qubit);
+
+  /**
+   * @brief Apply a controlled Tdg gate
+   *
+   * @param control Control qubit
+   * @param target Target qubit
+   * @return Reference to this builder for method chaining
+   *
+   * @par Example:
+   * ```c++
+   * builder.ctdg(control, target);
+   * ```
+   * ```mlir
+   * llvm.call @__quantum__qis__ctdg__body(%c, %t) : (!llvm.ptr, !llvm.ptr) ->
+   * ()
+   * ```
+   */
+  QIRProgramBuilder& ctdg(Value control, Value target);
+
+  /**
+   * @brief Apply an SX gate to a qubit
+   *
+   * @param qubit Input qubit
+   * @return Reference to this builder for method chaining
+   *
+   * @par Example:
+   * ```c++
+   * builder.sx(qubit);
+   * ```
+   * ```mlir
+   * llvm.call @__quantum__qis__sx__body(%q) : (!llvm.ptr) -> ()
+   * ```
+   */
+  QIRProgramBuilder& sx(Value qubit);
+
+  /**
+   * @brief Apply a controlled SX gate
+   *
+   * @param control Control qubit
+   * @param target Target qubit
+   * @return Reference to this builder for method chaining
+   *
+   * @par Example:
+   * ```c++
+   * builder.csx(control, target);
+   * ```
+   * ```mlir
+   * llvm.call @__quantum__qis__csx__body(%c, %t) : (!llvm.ptr, !llvm.ptr) -> ()
+   * ```
+   */
+  QIRProgramBuilder& csx(Value control, Value target);
+
+  /**
+   * @brief Apply an SXdg gate to a qubit
+   *
+   * @param qubit Input qubit
+   * @return Reference to this builder for method chaining
+   *
+   * @par Example:
+   * ```c++
+   * builder.sxdg(qubit);
+   * ```
+   * ```mlir
+   * llvm.call @__quantum__qis__sxdg__body(%q) : (!llvm.ptr) -> ()
+   * ```
+   */
+  QIRProgramBuilder& sxdg(Value qubit);
+
+  /**
+   * @brief Apply a controlled SXdg gate
+   *
+   * @param control Control qubit
+   * @param target Target qubit
+   * @return Reference to this builder for method chaining
+   *
+   * @par Example:
+   * ```c++
+   * builder.csxdg(control, target);
+   * ```
+   * ```mlir
+   * llvm.call @__quantum__qis__csxdg__body(%c, %t) : (!llvm.ptr, !llvm.ptr) ->
+   * ()
+   * ```
+   */
+  QIRProgramBuilder& csxdg(Value control, Value target);
 
   /**
    * @brief Apply an RX gate to a qubit

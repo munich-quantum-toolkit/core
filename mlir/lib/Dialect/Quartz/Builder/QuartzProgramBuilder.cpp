@@ -160,6 +160,60 @@ QuartzProgramBuilder& QuartzProgramBuilder::mcx(ValueRange controls,
   return *this;
 }
 
+// YOp
+
+QuartzProgramBuilder& QuartzProgramBuilder::y(Value qubit) {
+  create<YOp>(loc, qubit);
+  return *this;
+}
+
+QuartzProgramBuilder& QuartzProgramBuilder::cy(Value control, Value target) {
+  return mcy({control}, target);
+}
+
+QuartzProgramBuilder& QuartzProgramBuilder::mcy(ValueRange controls,
+                                                Value target) {
+  create<CtrlOp>(loc, controls,
+                 [&](OpBuilder& b) { b.create<YOp>(loc, target); });
+  return *this;
+}
+
+// ZOp
+
+QuartzProgramBuilder& QuartzProgramBuilder::z(Value qubit) {
+  create<ZOp>(loc, qubit);
+  return *this;
+}
+
+QuartzProgramBuilder& QuartzProgramBuilder::cz(Value control, Value target) {
+  return mcz({control}, target);
+}
+
+QuartzProgramBuilder& QuartzProgramBuilder::mcz(ValueRange controls,
+                                                Value target) {
+  create<CtrlOp>(loc, controls,
+                 [&](OpBuilder& b) { b.create<ZOp>(loc, target); });
+  return *this;
+}
+
+// HOp
+
+QuartzProgramBuilder& QuartzProgramBuilder::h(Value qubit) {
+  create<HOp>(loc, qubit);
+  return *this;
+}
+
+QuartzProgramBuilder& QuartzProgramBuilder::ch(Value control, Value target) {
+  return mch({control}, target);
+}
+
+QuartzProgramBuilder& QuartzProgramBuilder::mch(ValueRange controls,
+                                                Value target) {
+  create<CtrlOp>(loc, controls,
+                 [&](OpBuilder& b) { b.create<HOp>(loc, target); });
+  return *this;
+}
+
 // SOp
 
 QuartzProgramBuilder& QuartzProgramBuilder::s(Value qubit) {
@@ -193,6 +247,78 @@ QuartzProgramBuilder& QuartzProgramBuilder::mcsdg(ValueRange controls,
                                                   Value target) {
   create<CtrlOp>(loc, controls,
                  [&](OpBuilder& b) { b.create<SdgOp>(loc, target); });
+  return *this;
+}
+
+// TOp
+
+QuartzProgramBuilder& QuartzProgramBuilder::t(Value qubit) {
+  create<TOp>(loc, qubit);
+  return *this;
+}
+
+QuartzProgramBuilder& QuartzProgramBuilder::ct(Value control, Value target) {
+  return mct({control}, target);
+}
+
+QuartzProgramBuilder& QuartzProgramBuilder::mct(ValueRange controls,
+                                                Value target) {
+  create<CtrlOp>(loc, controls,
+                 [&](OpBuilder& b) { b.create<TOp>(loc, target); });
+  return *this;
+}
+
+// TdgOp
+
+QuartzProgramBuilder& QuartzProgramBuilder::tdg(Value qubit) {
+  create<TdgOp>(loc, qubit);
+  return *this;
+}
+
+QuartzProgramBuilder& QuartzProgramBuilder::ctdg(Value control, Value target) {
+  return mctdg({control}, target);
+}
+
+QuartzProgramBuilder& QuartzProgramBuilder::mctdg(ValueRange controls,
+                                                  Value target) {
+  create<CtrlOp>(loc, controls,
+                 [&](OpBuilder& b) { b.create<TdgOp>(loc, target); });
+  return *this;
+}
+
+// SXOp
+
+QuartzProgramBuilder& QuartzProgramBuilder::sx(Value qubit) {
+  create<SXOp>(loc, qubit);
+  return *this;
+}
+
+QuartzProgramBuilder& QuartzProgramBuilder::csx(Value control, Value target) {
+  return mcsx({control}, target);
+}
+
+QuartzProgramBuilder& QuartzProgramBuilder::mcsx(ValueRange controls,
+                                                 Value target) {
+  create<CtrlOp>(loc, controls,
+                 [&](OpBuilder& b) { b.create<SXOp>(loc, target); });
+  return *this;
+}
+
+// SXdgOp
+
+QuartzProgramBuilder& QuartzProgramBuilder::sxdg(Value qubit) {
+  create<SXdgOp>(loc, qubit);
+  return *this;
+}
+
+QuartzProgramBuilder& QuartzProgramBuilder::csxdg(Value control, Value target) {
+  return mcsxdg({control}, target);
+}
+
+QuartzProgramBuilder& QuartzProgramBuilder::mcsxdg(ValueRange controls,
+                                                   Value target) {
+  create<CtrlOp>(loc, controls,
+                 [&](OpBuilder& b) { b.create<SXdgOp>(loc, target); });
   return *this;
 }
 

@@ -287,6 +287,69 @@ void addXOp(QuartzProgramBuilder& builder, const qc::Operation& operation,
 }
 
 /**
+ * @brief Adds a Y operation
+ *
+ * @details
+ * Translates Y operations from the QuantumComputation to quartz.y operations.
+ *
+ * @param builder The QuartzProgramBuilder used to create operations
+ * @param operation The Y operation to translate
+ * @param qubits Flat vector of qubit values indexed by physical qubit index
+ */
+void addYOp(QuartzProgramBuilder& builder, const qc::Operation& operation,
+            const llvm::SmallVector<Value>& qubits) {
+  const auto& target = qubits[operation.getTargets()[0]];
+  if (const auto& posControls = getPosControls(operation, qubits);
+      posControls.empty()) {
+    builder.y(target);
+  } else {
+    builder.mcy(posControls, target);
+  }
+}
+
+/**
+ * @brief Adds a Z operation
+ *
+ * @details
+ * Translates Z operations from the QuantumComputation to quartz.z operations.
+ *
+ * @param builder The QuartzProgramBuilder used to create operations
+ * @param operation The Z operation to translate
+ * @param qubits Flat vector of qubit values indexed by physical qubit index
+ */
+void addZOp(QuartzProgramBuilder& builder, const qc::Operation& operation,
+            const llvm::SmallVector<Value>& qubits) {
+  const auto& target = qubits[operation.getTargets()[0]];
+  if (const auto& posControls = getPosControls(operation, qubits);
+      posControls.empty()) {
+    builder.z(target);
+  } else {
+    builder.mcz(posControls, target);
+  }
+}
+
+/**
+ * @brief Adds an H operation
+ *
+ * @details
+ * Translates H operations from the QuantumComputation to quartz.h operations.
+ *
+ * @param builder The QuartzProgramBuilder used to create operations
+ * @param operation The H operation to translate
+ * @param qubits Flat vector of qubit values indexed by physical qubit index
+ */
+void addHOp(QuartzProgramBuilder& builder, const qc::Operation& operation,
+            const llvm::SmallVector<Value>& qubits) {
+  const auto& target = qubits[operation.getTargets()[0]];
+  if (const auto& posControls = getPosControls(operation, qubits);
+      posControls.empty()) {
+    builder.h(target);
+  } else {
+    builder.mch(posControls, target);
+  }
+}
+
+/**
  * @brief Adds an S operation
  *
  * @details
@@ -326,6 +389,92 @@ void addSdgOp(QuartzProgramBuilder& builder, const qc::Operation& operation,
     builder.sdg(target);
   } else {
     builder.mcsdg(posControls, target);
+  }
+}
+
+/**
+ * @brief Adds a T operation
+ *
+ * @details
+ * Translates T operations from the QuantumComputation to quartz.t operations.
+ *
+ * @param builder The QuartzProgramBuilder used to create operations
+ * @param operation The T operation to translate
+ * @param qubits Flat vector of qubit values indexed by physical qubit index
+ */
+void addTOp(QuartzProgramBuilder& builder, const qc::Operation& operation,
+            const llvm::SmallVector<Value>& qubits) {
+  const auto& target = qubits[operation.getTargets()[0]];
+  if (const auto& posControls = getPosControls(operation, qubits);
+      posControls.empty()) {
+    builder.t(target);
+  } else {
+    builder.mct(posControls, target);
+  }
+}
+
+/**
+ * @brief Adds a Tdg operation
+ *
+ * @details
+ * Translates Tdg operations from the QuantumComputation to quartz.tdg
+ * operations.
+ *
+ * @param builder The QuartzProgramBuilder used to create operations
+ * @param operation The Tdg operation to translate
+ * @param qubits Flat vector of qubit values indexed by physical qubit index
+ */
+void addTdgOp(QuartzProgramBuilder& builder, const qc::Operation& operation,
+              const llvm::SmallVector<Value>& qubits) {
+  const auto& target = qubits[operation.getTargets()[0]];
+  if (const auto& posControls = getPosControls(operation, qubits);
+      posControls.empty()) {
+    builder.tdg(target);
+  } else {
+    builder.mctdg(posControls, target);
+  }
+}
+
+/**
+ * @brief Adds an SX operation
+ *
+ * @details
+ * Translates SX operations from the QuantumComputation to quartz.sx operations.
+ *
+ * @param builder The QuartzProgramBuilder used to create operations
+ * @param operation The SX operation to translate
+ * @param qubits Flat vector of qubit values indexed by physical qubit index
+ */
+void addSXOp(QuartzProgramBuilder& builder, const qc::Operation& operation,
+             const llvm::SmallVector<Value>& qubits) {
+  const auto& target = qubits[operation.getTargets()[0]];
+  if (const auto& posControls = getPosControls(operation, qubits);
+      posControls.empty()) {
+    builder.sx(target);
+  } else {
+    builder.mcsx(posControls, target);
+  }
+}
+
+/**
+ * @brief Adds an SXdg operation
+ *
+ * @details
+ * Translates SXdg operations from the QuantumComputation to quartz.sxdg
+ * operations.
+ *
+ * @param builder The QuartzProgramBuilder used to create operations
+ * @param operation The SXdg operation to translate
+ * @param qubits Flat vector of qubit values indexed by physical qubit index
+ */
+void addSXdgOp(QuartzProgramBuilder& builder, const qc::Operation& operation,
+               const llvm::SmallVector<Value>& qubits) {
+  const auto& target = qubits[operation.getTargets()[0]];
+  if (const auto& posControls = getPosControls(operation, qubits);
+      posControls.empty()) {
+    builder.sxdg(target);
+  } else {
+    builder.mcsxdg(posControls, target);
   }
 }
 
@@ -434,11 +583,32 @@ translateOperations(QuartzProgramBuilder& builder,
     case qc::OpType::X:
       addXOp(builder, *operation, qubits);
       break;
+    case qc::OpType::Y:
+      addYOp(builder, *operation, qubits);
+      break;
+    case qc::OpType::Z:
+      addZOp(builder, *operation, qubits);
+      break;
+    case qc::OpType::H:
+      addHOp(builder, *operation, qubits);
+      break;
     case qc::OpType::S:
       addSOp(builder, *operation, qubits);
       break;
     case qc::OpType::Sdg:
       addSdgOp(builder, *operation, qubits);
+      break;
+    case qc::OpType::T:
+      addTOp(builder, *operation, qubits);
+      break;
+    case qc::OpType::Tdg:
+      addTdgOp(builder, *operation, qubits);
+      break;
+    case qc::OpType::SX:
+      addSXOp(builder, *operation, qubits);
+      break;
+    case qc::OpType::SXdg:
+      addSXdgOp(builder, *operation, qubits);
       break;
     case qc::OpType::RX:
       addRXOp(builder, *operation, qubits);
