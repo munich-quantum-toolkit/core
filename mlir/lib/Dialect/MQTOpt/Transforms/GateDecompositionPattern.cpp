@@ -557,9 +557,6 @@ protected:
       }
     }
     std::cerr << '\n';
-    helpers::print(series.getUnitaryMatrix(), "ORIGINAL UNITARY");
-    helpers::print((unitaryMatrix * std::exp(IM * sequence.globalPhase)).eval(),
-                   "RESULT UNITARY MATRIX");
     assert((unitaryMatrix * std::exp(IM * sequence.globalPhase))
                .isApprox(series.getUnitaryMatrix(), SANITY_CHECK_PRECISION));
 
@@ -1075,12 +1072,6 @@ protected:
       assert(k2.determinant().real() > 0.0);
       k2 = magicBasisTransform(k2, MagicBasisTransform::Into);
 
-      helpers::print(
-          (k1 *
-           magicBasisTransform(temp.conjugate(), MagicBasisTransform::Into) *
-           k2)
-              .eval(),
-          "SANITY CHECK (1)");
       assert((k1 *
               magicBasisTransform(temp.conjugate(), MagicBasisTransform::Into) *
               k2)
@@ -1166,16 +1157,6 @@ protected:
         });
         return zz * yy * xx;
       };
-      helpers::print(getCanonicalMatrix(a * -2.0, b * -2.0, c * -2.0),
-                     "SANITY CHECK (2.1)");
-      helpers::print(helpers::kroneckerProduct(K1l, K1r), "SANITY CHECK (2.2)");
-      helpers::print(helpers::kroneckerProduct(K2l, K2r), "SANITY CHECK (2.3)");
-      helpers::print((helpers::kroneckerProduct(K1l, K1r) *
-                      getCanonicalMatrix(a * -2.0, b * -2.0, c * -2.0) *
-                      helpers::kroneckerProduct(K2l, K2r) *
-                      std::exp(IM * globalPhase))
-                         .eval(),
-                     "SANITY CHECK (2.x)");
       assert((helpers::kroneckerProduct(K1l, K1r) *
               getCanonicalMatrix(a * -2.0, b * -2.0, c * -2.0) *
               helpers::kroneckerProduct(K2l, K2r) * std::exp(IM * globalPhase))
@@ -1537,14 +1518,6 @@ protected:
       }
       specialized.globalPhase += std::arg(tr);
 
-      helpers::print(
-          (helpers::kroneckerProduct(specialized.k1l, specialized.k1r) *
-           getCanonicalMatrix(specialized.a * -2.0, specialized.b * -2.0,
-                              specialized.c * -2.0) *
-           helpers::kroneckerProduct(specialized.k2l, specialized.k2r) *
-           std::exp(IM * specialized.globalPhase))
-              .eval(),
-          "SANITY CHECK (3)");
       assert((helpers::kroneckerProduct(specialized.k1l, specialized.k1r) *
               getCanonicalMatrix(specialized.a * -2.0, specialized.b * -2.0,
                                  specialized.c * -2.0) *
@@ -2017,9 +1990,6 @@ protected:
       OneQubitGateSequence bestCircuit;
       for (auto targetBasis : targetBasisList) {
         auto circuit = generateCircuit(targetBasis, unitaryMat, simplify, atol);
-        helpers::print(circuit.getUnitaryMatrix(), "SANITY CHECK (4.1)");
-        helpers::print(helpers::kroneckerProduct(IDENTITY_GATE, unitaryMat),
-                       "SANITY CHECK (4.2)");
         assert(circuit.getUnitaryMatrix().isApprox(
             helpers::kroneckerProduct(IDENTITY_GATE, unitaryMat),
             SANITY_CHECK_PRECISION));
