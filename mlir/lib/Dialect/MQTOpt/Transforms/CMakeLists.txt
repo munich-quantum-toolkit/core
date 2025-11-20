@@ -7,7 +7,7 @@
 # Licensed under the MIT License
 
 get_property(dialect_libs GLOBAL PROPERTY MLIR_DIALECT_LIBS)
-set(LIBRARIES ${dialect_libs} MQT::CoreIR)
+set(LIBRARIES ${dialect_libs} MQT::CoreIR Eigen3::Eigen)
 add_compile_options(-fexceptions)
 
 file(GLOB_RECURSE TRANSFORMS_SOURCES *.cpp)
