@@ -10,27 +10,25 @@
 
 #pragma once
 
+#include "ir/Definitions.hpp"
 #include "ir/operations/OpType.hpp"
 #include "mlir/Dialect/MQTOpt/IR/MQTOptDialect.h"
 
-#include <algorithm>
 #include <Eigen/Core>
 #include <Eigen/Eigenvalues>
-#include <unsupported/Eigen/KroneckerProduct> // TODO: unstable
-#include <iomanip>                                   // TODO: remove
-#include <iostream>                                  // TODO: remove
+#include <algorithm>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/IR/Operation.h>
+#include <unsupported/Eigen/KroneckerProduct> // TODO: unstable
 
 namespace mqt::ir::opt {
-using fp = double;
+using fp = qc::fp;
 using qfp = std::complex<fp>;
 using matrix2x2 = Eigen::Matrix2<qfp>;
 using matrix4x4 = Eigen::Matrix4<qfp>;
 using rmatrix4x4 = Eigen::Matrix4<fp>;
 using diagonal4x4 = Eigen::Vector<qfp, 4>;
 using rdiagonal4x4 = Eigen::Vector<fp, 4>;
-;
 
 constexpr qfp C_ZERO{0., 0.};
 constexpr qfp C_ONE{1., 0.};
@@ -41,43 +39,6 @@ constexpr qfp M_IM{0., -1.};
 } // namespace mqt::ir::opt
 
 namespace mqt::ir::opt::helpers {
-
-inline void print(std::size_t x) { std::cerr << x; }
-inline void print(fp x) { std::cerr << x; }
-
-inline void print(qfp x) {
-  std::cerr << std::setprecision(17) << x.real() << 'i' << x.imag();
-}
-
-// TODO: remove
-template <typename T, int N, int M>
-void print(Eigen::Matrix<T, N, M> matrix, const std::string& s = "",
-           bool force = false) {
-  if (!force) {
-    return;
-  }
-  if (!s.empty()) {
-    llvm::errs() << "=== " << s << " ===\n";
-  }
-  std::cerr << matrix;
-  llvm::errs() << '\n';
-}
-
-template <typename T>
-void print(T matrix, const std::string& s = "", bool force = false) {
-  if (!force) {
-    return;
-  }
-  if (!s.empty()) {
-    llvm::errs() << "=== " << s << " ===\n";
-  }
-
-  for (auto&& a : matrix) {
-    print(a);
-    std::cerr << ' ';
-  }
-  llvm::errs() << '\n';
-}
 
 std::optional<fp> mlirValueToFp(mlir::Value value);
 
