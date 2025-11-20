@@ -276,7 +276,6 @@ private:
 
     /// Find input from output qubit.
     /// If there is no input qubit, hold.
-
     TypeSwitch<Operation*>(currOp)
         .Case<UnitaryInterface>(
             [&](UnitaryInterface op) { q = findInput(op, q); })
