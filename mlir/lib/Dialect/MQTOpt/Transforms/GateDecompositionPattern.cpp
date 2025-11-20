@@ -9,6 +9,7 @@
  */
 
 #include "Helpers.h"
+#include "ir/Definitions.hpp"
 #include "mlir/Dialect/MQTOpt/IR/MQTOptDialect.h"
 #include "mlir/Dialect/MQTOpt/Transforms/Passes.h"
 
@@ -32,7 +33,9 @@
 namespace mqt::ir::opt {
 
 /**
- * @brief This pattern attempts to cancel consecutive self-inverse operations.
+ * @brief This pattern attempts to collect as many operations as possible into a
+ *        4x4 unitary matrix and then decompose it into rotation and given basis
+ *        gates.
  */
 struct GateDecompositionPattern final
     : mlir::OpInterfaceRewritePattern<UnitaryInterface> {
@@ -70,7 +73,13 @@ struct GateDecompositionPattern final
      */
     std::vector<Gate> gates;
 
+    /**
+     * Global phase adjustment required for the sequence.
+     */
     fp globalPhase{};
+    /**
+     * @return true if the global phase adjustment is not zero.
+     */
     [[nodiscard]] bool hasGlobalPhase() const {
       return std::abs(globalPhase) > DEFAULT_ATOL;
     }
@@ -106,7 +115,14 @@ struct GateDecompositionPattern final
       return unitaryMatrix;
     }
   };
+  /**
+   * Helper type to show that a gate sequence is supposed to only contain
+   * single-qubit gates.
+   */
   using OneQubitGateSequence = QubitGateSequence;
+  /**
+   * Helper type to show that the gate sequence may contain two-qubit gates.
+   */
   using TwoQubitGateSequence = QubitGateSequence;
 
   /**
@@ -1518,7 +1534,15 @@ protected:
     }
   };
 
+  /**
+   * Factor by which two matrices are considered to be the same when simplifying
+   * during a decomposition.
+   */
   static constexpr auto DEFAULT_FIDELITY = 1.0 - 1e-15;
+  /**
+   * Largest number that will be assumed as zero for the euler decompositions
+   * and the global phase.
+   */
   static constexpr auto DEFAULT_ATOL = 1e-12;
 
   /**
@@ -1922,7 +1946,7 @@ protected:
      * necessary to construct an equivalent to the canonical gate.
      */
     [[nodiscard]] std::array<qfp, 4>
-    traces(TwoQubitWeylDecomposition target) const {
+    traces(const TwoQubitWeylDecomposition& target) const {
       return {
           static_cast<fp>(4.) *
               qfp(std::cos(target.a) * std::cos(target.b) * std::cos(target.c),
@@ -1938,10 +1962,13 @@ protected:
       };
     }
 
-    static OneQubitGateSequence generateCircuit(EulerBasis targetBasis,
-                                                const matrix2x2& unitaryMatrix,
-                                                bool simplify,
-                                                std::optional<fp> atol) {
+    /**
+     * Perform single-qubit decomposition of a 2x2 unitary matrix based on a
+     * given euler basis.
+     */
+    [[nodiscard]] static OneQubitGateSequence
+    generateCircuit(EulerBasis targetBasis, const matrix2x2& unitaryMatrix,
+                    bool simplify, std::optional<fp> atol) {
       auto [theta, phi, lambda, phase] =
           anglesFromUnitary(unitaryMatrix, targetBasis);
 
@@ -1964,12 +1991,16 @@ protected:
       }
     }
 
-    static OneQubitGateSequence unitaryToGateSequenceInner(
-        matrix2x2 unitaryMat,
+    /**
+     * Decompose a single-qubit unitary matrix into a single-qubit gate
+     * sequence. Multiple euler bases may be specified and the one with the
+     * least complexity will be chosen.
+     */
+    [[nodiscard]] static OneQubitGateSequence unitaryToGateSequenceInner(
+        const matrix2x2& unitaryMat,
         const llvm::SmallVector<EulerBasis>& targetBasisList, QubitId /*qubit*/,
         const std::vector<std::unordered_map<std::string, fp>>&
-        /*error_map*/, // TODO: remove error_map+qubit for platform
-                       // independence
+        /*error_map*/, // per qubit a mapping of operation name to error value
         bool simplify, std::optional<fp> atol) {
       auto calculateError = [](const OneQubitGateSequence& sequence) -> fp {
         return static_cast<fp>(sequence.complexity());
