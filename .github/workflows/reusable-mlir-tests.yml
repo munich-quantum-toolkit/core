@@ -103,8 +103,11 @@ jobs:
       - name: Build MLIR lit target
         run: cmake --build build --config ${{ matrix.coverage && 'Debug' || 'Release' }} --target mqt-core-mlir-lit-test-build-only
 
-      - name: Build MLIR unittests
+      - name: Build MLIR translation unittests
         run: cmake --build build --config ${{ matrix.coverage && 'Debug' || 'Release' }} --target mqt-core-mlir-translation-test
+
+      - name: Build MLIR wireiterator unittests
+        run: cmake --build build --config ${{ matrix.coverage && 'Debug' || 'Release' }} --target mqt-core-mlir-wireiterator-test
 
       # Test
       - name: Run lit tests

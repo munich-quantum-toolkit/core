@@ -6,7 +6,7 @@
 #
 # Licensed under the MIT License
 
-set(testname "mqt-core-mlir-wireiterator-tests")
+set(testname "mqt-core-mlir-wireiterator-test")
 file(GLOB_RECURSE WIREITERATOR_TEST_SOURCES *.cpp)
 get_property(dialect_libs GLOBAL PROPERTY MLIR_DIALECT_LIBS)
 
