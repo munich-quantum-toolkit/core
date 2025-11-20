@@ -44,6 +44,132 @@ using namespace mlir;
  * regions.
  */
 class WireIterator {
+  /// @returns a view of all input qubits.
+  [[nodiscard]] static auto getAllInQubits(UnitaryInterface op) {
+    return llvm::concat<Value>(op.getInQubits(), op.getPosCtrlInQubits(),
+                               op.getNegCtrlInQubits());
+  }
+
+  /// @returns a view of all output qubits.
+  [[nodiscard]] static auto getAllOutQubits(UnitaryInterface op) {
+    return llvm::concat<Value>(op.getOutQubits(), op.getPosCtrlOutQubits(),
+                               op.getNegCtrlOutQubits());
+  }
+
+  /**
+   * @brief Find corresponding output from input value for a unitary (Forward).
+   *
+   * @note That we don't use the interface method here because
+   * it creates temporary std::vectors instead of using views.
+   */
+  [[nodiscard]] static Value findOutput(UnitaryInterface op, Value in) {
+    const auto ins = getAllInQubits(op);
+    const auto it = llvm::find(ins, in);
+    assert(it != ins.end() && "input qubit not found in operation");
+    const auto index = std::distance(ins.begin(), it);
+    return *(std::next(getAllOutQubits(op).begin(), index));
+  }
+
+  /**
+   * @brief Find corresponding input from output value for a unitary (Backward).
+   *
+   * @note That we don't use the interface method here because
+   * it creates temporary std::vectors instead of using views.
+   */
+  [[nodiscard]] static Value findInput(UnitaryInterface op, Value out) {
+    const auto outs = getAllOutQubits(op);
+    const auto it = llvm::find(outs, out);
+    assert(it != outs.end() && "output qubit not found in operation");
+    const auto index = std::distance(outs.begin(), it);
+    return *(std::next(getAllInQubits(op).begin(), index));
+  }
+
+  /**
+   * @brief Find corresponding result from init argument value (Forward).
+   */
+  [[nodiscard]] static Value findResult(scf::ForOp op, Value initArg) {
+    const auto initArgs = op.getInitArgs();
+    const auto it = llvm::find(initArgs, initArg);
+    assert(it != initArgs.end() && "init arg qubit not found in operation");
+    const auto index = std::distance(initArgs.begin(), it);
+    return op->getResult(index);
+  }
+
+  /**
+   * @brief Find corresponding init argument from result value (Backward).
+   */
+  [[nodiscard]] static Value findInitArg(scf::ForOp op, Value res) {
+    return op.getInitArgs()[cast<OpResult>(res).getResultNumber()];
+  }
+
+  /**
+   * @brief Find corresponding result value from input qubit value (Forward).
+   *
+   * @details Recursively traverses the IR "downwards" until the respective
+   * yield is found. Assumes that each branch takes and returns the same
+   * (possibly modified) qubits. Hence, we can just traverse the then-branch.
+   */
+  [[nodiscard]] static Value findResult(scf::IfOp op, Value q) {
+    WireIterator it(q, &op.getThenRegion());
+
+    /// Assumptions:
+    ///     First, there must be a yield.
+    ///     Second, yield is a sentinel.
+    /// Then: Advance until the yield before the sentinel.
+
+    it = std::prev(std::ranges::next(it, std::default_sentinel));
+    assert(isa<scf::YieldOp>(*it) && "expected yield op");
+    auto yield = cast<scf::YieldOp>(*it);
+
+    /// Get the corresponding result.
+
+    const auto results = yield.getResults();
+    const auto yieldIt = llvm::find(results, it.q);
+    assert(yieldIt != results.end() && "yielded qubit not found in operation");
+    const auto index = std::distance(results.begin(), yieldIt);
+    return op->getResult(index);
+  }
+
+  /**
+   * @brief Find first out-of-region value for result value (Backward).
+   *
+   * @details Recursively traverses the IR "upwards" until a out-of-region value
+   * is found. If the Operation* of the iterator doesn't change the def-use
+   * starts in the branch.
+   */
+  [[nodiscard]] static Value findValue(scf::IfOp op, Value q) {
+    auto yield = llvm::cast<scf::YieldOp>(op.thenBlock()->getTerminator());
+    Value v = yield.getResults()[cast<OpResult>(q).getResultNumber()];
+    assert(v != nullptr && "expected yielded value");
+
+    Operation* prev{};
+    WireIterator it(v, &op.getThenRegion());
+    while (*it != prev && it.q.getParentRegion() != op->getParentRegion()) {
+      --it;
+      prev = *it;
+    }
+    return it.q;
+  }
+
+  /**
+   * @brief Return the first user of a value in a given region.
+   * @param v The value.
+   * @param region The targeted region.
+   * @return A pointer to the user, or nullptr if non exists.
+   */
+  [[nodiscard]] static Operation* getUserInRegion(Value v, Region* region) {
+    if (v.hasOneUse()) {
+      return *(v.getUsers().begin());
+    }
+
+    for (Operation* user : v.getUsers()) {
+      if (user->getParentRegion() == region) {
+        return user;
+      }
+    }
+    return nullptr;
+  }
+
 public:
   using iterator_category = std::bidirectional_iterator_tag;
   using difference_type = std::ptrdiff_t;
@@ -100,73 +226,17 @@ private:
     /// If there is no output qubit, set `sentinel` to true.
     if (q.getDefiningOp() != currOp) {
       TypeSwitch<Operation*>(currOp)
-          .Case<UnitaryInterface>([&](UnitaryInterface op) {
-            const auto inRng =
-                llvm::concat<Value>(op.getInQubits(), op.getPosCtrlInQubits(),
-                                    op.getNegCtrlInQubits());
-            const auto outRng =
-                llvm::concat<Value>(op.getOutQubits(), op.getPosCtrlOutQubits(),
-                                    op.getNegCtrlOutQubits());
-            for (const auto& [in, out] : llvm::zip_equal(inRng, outRng)) {
-              if (q == in) {
-                q = out;
-                return;
-              }
-            }
-
-            llvm_unreachable("unknown qubit value in def-use chain");
-          })
+          .Case<UnitaryInterface>(
+              [&](UnitaryInterface op) { q = findOutput(op, q); })
           .Case<AllocQubitOp>([&](AllocQubitOp op) { q = op.getQubit(); })
           .Case<ResetOp>([&](ResetOp op) { q = op.getOutQubit(); })
           .Case<MeasureOp>([&](MeasureOp op) { q = op.getOutQubit(); })
-          .Case<DeallocQubitOp>([&](DeallocQubitOp) { sentinel = true; })
-          .Case<scf::ForOp>([&](scf::ForOp op) {
-            for (const auto& [in, out] :
-                 llvm::zip_equal(op.getInitArgs(), op.getResults())) {
-              if (q == in) {
-                q = out;
-                return;
-              }
-            }
-
-            llvm_unreachable("unknown qubit value in def-use chain");
-          })
-          .Case<scf::IfOp>([&](scf::IfOp op) {
-            /// Find yielded value by using a recursive WireIterator for the
-            /// THEN region.
-            WireIterator itThen(q, &op.getThenRegion());
-            for (; itThen != std::default_sentinel; ++itThen) {
-              if (scf::YieldOp yield = dyn_cast<scf::YieldOp>(*itThen)) {
-                for (const auto [yielded, res] :
-                     llvm::zip(yield.getResults(), op->getResults())) {
-                  if (itThen.q == yielded) {
-                    q = res;
-                    return;
-                  }
-                }
-              }
-            }
-
-            /// Otherwise it must be in the ELSE region.
-            WireIterator itElse(q, &op.getElseRegion());
-            for (; itElse != std::default_sentinel; ++itElse) {
-              if (scf::YieldOp yield = dyn_cast<scf::YieldOp>(*itElse)) {
-                for (const auto [yielded, res] :
-                     llvm::zip(yield.getResults(), op->getResults())) {
-                  if (itElse.q == yielded) {
-                    q = res;
-                    return;
-                  }
-                }
-              }
-            }
-
-            llvm_unreachable("unknown qubit value in def-use chain for if");
-          })
-          .Case<scf::YieldOp>([&](scf::YieldOp) { sentinel = true; })
+          .Case<scf::ForOp>([&](scf::ForOp op) { q = findResult(op, q); })
+          .Case<scf::IfOp>([&](scf::IfOp op) { q = findResult(op, q); })
+          .Case<DeallocQubitOp, scf::YieldOp>([&](auto) { sentinel = true; })
           .Default([&](Operation* op) {
-            llvm::report_fatal_error("unknown op in def-use chain: " +
-                                     op->getName().getStringRef());
+            report_fatal_error("unknown op in def-use chain: " +
+                               op->getName().getStringRef());
           });
     }
 
@@ -206,48 +276,18 @@ private:
 
     /// Find input from output qubit.
     /// If there is no input qubit, hold.
-    TypeSwitch<Operation*>(currOp)
-        .Case<UnitaryInterface>([&](UnitaryInterface op) {
-          const auto inRng =
-              llvm::concat<Value>(op.getInQubits(), op.getPosCtrlInQubits(),
-                                  op.getNegCtrlInQubits());
-          const auto outRng =
-              llvm::concat<Value>(op.getOutQubits(), op.getPosCtrlOutQubits(),
-                                  op.getNegCtrlOutQubits());
-          for (const auto& [in, out] : llvm::zip_equal(inRng, outRng)) {
-            if (q == out) {
-              q = in;
-              return;
-            }
-          }
 
-          llvm_unreachable("unknown qubit value in def-use chain");
-        })
+    TypeSwitch<Operation*>(currOp)
+        .Case<UnitaryInterface>(
+            [&](UnitaryInterface op) { q = findInput(op, q); })
         .Case<ResetOp, MeasureOp>([&](auto op) { q = op.getInQubit(); })
         .Case<DeallocQubitOp>([&](DeallocQubitOp op) { q = op.getQubit(); })
-        .Case<scf::ForOp>([&](scf::ForOp op) {
-          q = op.getInitArgs()[cast<OpResult>(q).getResultNumber()];
-        })
-        .Case<scf::IfOp>([&](scf::IfOp op) {
-          Region* thenRegion = &op.getThenRegion();
-          Operation* term = thenRegion->front().getTerminator();
-          scf::YieldOp yield = cast<scf::YieldOp>(term);
-          Value yielded =
-              yield.getResults()[cast<OpResult>(q).getResultNumber()];
-
-          assert(yielded != nullptr);
-
-          WireIterator thenIt(yielded, thenRegion);
-          while (thenIt.q.getParentRegion() != getRegion()) {
-            --thenIt;
-          }
-
-          q = thenIt.q;
-        })
-        .Case<AllocQubitOp, QubitOp>([&](auto) { /* no-op */ })
+        .Case<scf::ForOp>([&](scf::ForOp op) { q = findInitArg(op, q); })
+        .Case<scf::IfOp>([&](scf::IfOp op) { q = findValue(op, q); })
+        .Case<AllocQubitOp, QubitOp>([&](auto) { /* hold (no-op) */ })
         .Default([&](Operation* op) {
-          llvm::report_fatal_error("unknown op in def-use chain: " +
-                                   op->getName().getStringRef());
+          report_fatal_error("unknown op in def-use chain: " +
+                             op->getName().getStringRef());
         });
   }
 
@@ -257,21 +297,6 @@ private:
    */
   [[nodiscard]] Region* getRegion() {
     return region != nullptr ? region : q.getParentRegion();
-  }
-
-  /**
-   * @brief Return the first user of a value in a given region.
-   * @param v The value.
-   * @param region The targeted region.
-   * @return A pointer to the user, or nullptr if non exists.
-   */
-  [[nodiscard]] static Operation* getUserInRegion(Value v, Region* region) {
-    for (Operation* user : v.getUsers()) {
-      if (user->getParentRegion() == region) {
-        return user;
-      }
-    }
-    return nullptr;
   }
 
   Operation* currOp{};
