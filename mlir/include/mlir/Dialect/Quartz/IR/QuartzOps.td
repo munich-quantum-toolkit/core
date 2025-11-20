@@ -243,6 +243,26 @@ def TwoTargetZeroParameter : TargetAndParameterArityTrait<2, 0>;
 // Unitary Operations
 //===----------------------------------------------------------------------===//
 
+def IdOp : QuartzOp<"id", traits = [UnitaryOpInterface, OneTargetZeroParameter]> {
+    let summary = "Apply an Id gate to a qubit";
+    let description = [{
+        Applies an Id gate to a qubit, modifying it in place.
+
+        Example:
+        ```mlir
+        quartz.id %q : !quartz.qubit
+        ```
+    }];
+
+    let arguments = (ins Arg<QubitType, "the target qubit", [MemRead, MemWrite]>:$qubit_in);
+    let assemblyFormat = "$qubit_in attr-dict";
+
+    let extraClassDeclaration = [{
+        DenseElementsAttr tryGetStaticMatrix();
+        static StringRef getBaseSymbol() { return "id"; }
+    }];
+}
+
 def XOp : QuartzOp<"x", traits = [UnitaryOpInterface, OneTargetZeroParameter]> {
     let summary = "Apply an X gate to a qubit";
     let description = [{

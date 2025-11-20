@@ -127,6 +127,12 @@ LogicalResult MeasureOp::verify() {
 // Unitary Operations
 //===----------------------------------------------------------------------===//
 
+// IdOp
+
+DenseElementsAttr IdOp::tryGetStaticMatrix() {
+  return getMatrixId(getContext());
+}
+
 // XOp
 
 DenseElementsAttr XOp::tryGetStaticMatrix() { return getMatrixX(getContext()); }

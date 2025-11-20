@@ -255,6 +255,29 @@ def TwoTargetZeroParameter : TargetAndParameterArityTrait<2, 0>;
 // Unitary Operations
 //===----------------------------------------------------------------------===//
 
+def IdOp : FluxOp<"id", traits = [UnitaryOpInterface, OneTargetZeroParameter]> {
+    let summary = "Apply an Id gate to a qubit";
+    let description = [{
+        Applies an Id gate to a qubit and returns the transformed qubit.
+
+        Example:
+        ```mlir
+        %q_out = flux.id %q_in : !flux.qubit -> !flux.qubit
+        ```
+    }];
+
+    let arguments = (ins Arg<QubitType, "the target qubit", [MemRead]>:$qubit_in);
+    let results = (outs QubitType:$qubit_out);
+    let assemblyFormat = "$qubit_in attr-dict `:` type($qubit_in) `->` type($qubit_out)";
+
+    let extraClassDeclaration = [{
+        DenseElementsAttr tryGetStaticMatrix();
+        static StringRef getBaseSymbol() { return "id"; }
+    }];
+
+    let hasCanonicalizer = 1;
+}
+
 def XOp : FluxOp<"x", traits = [UnitaryOpInterface, OneTargetZeroParameter]> {
     let summary = "Apply an X gate to a qubit";
     let description = [{

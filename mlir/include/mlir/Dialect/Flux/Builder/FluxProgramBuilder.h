@@ -241,6 +241,67 @@ public:
   //===--------------------------------------------------------------------===//
 
   /**
+   * @brief Apply an Id gate to a qubit
+   *
+   * @details
+   * Consumes the input qubit and produces a new output qubit SSA value.
+   * The input is validated and the tracking is updated.
+   *
+   * @param qubit Input qubit (must be valid/unconsumed)
+   * @return Output qubit
+   *
+   * @par Example:
+   * ```c++
+   * q_out = builder.id(q_in);
+   * ```
+   * ```mlir
+   * %q_out = flux.id %q_in : !flux.qubit -> !flux.qubit
+   * ```
+   */
+  Value id(Value qubit);
+
+  /**
+   * @brief Apply a controlled Id gate
+   *
+   * @param control Input control qubit (must be valid/unconsumed)
+   * @param target Input target qubit (must be valid/unconsumed)
+   * @return Pair of (output_control_qubit, output_target_qubit)
+   *
+   * @par Example:
+   * ```c++
+   * {q0_out, q1_out} = builder.cid(q0_in, q1_in);
+   * ```
+   * ```mlir
+   * %q0_out, %q1_out = flux.ctrl(%q0_in) %q1_in {
+   *   %q1_res = flux.id %q1_in : !flux.qubit -> !flux.qubit
+   *   flux.yield %q1_res
+   * } : ({!flux.qubit}, {!flux.qubit}) -> ({!flux.qubit}, {!flux.qubit})
+   * ```
+   */
+  std::pair<Value, Value> cid(Value control, Value target);
+
+  /**
+   * @brief Apply a multi-controlled Id gate
+   *
+   * @param controls Input control qubits (must be valid/unconsumed)
+   * @param target Input target qubit (must be valid/unconsumed)
+   * @return Pair of (output_control_qubits, output_target_qubit)
+   *
+   * @par Example:
+   * ```c++
+   * {controls_out, target_out} = builder.mcid({q0_in, q1_in}, q2_in);
+   * ```
+   * ```mlir
+   * %controls_out, %target_out = flux.ctrl(%q0_in, %q1_in) %q2_in {
+   *   %q2_res = flux.id %q2_in : !flux.qubit -> !flux.qubit
+   *   flux.yield %q2_res
+   * } : ({!flux.qubit, !flux.qubit}, {!flux.qubit}) -> ({!flux.qubit,
+   * !flux.qubit}, {!flux.qubit})
+   * ```
+   */
+  std::pair<ValueRange, Value> mcid(ValueRange controls, Value target);
+
+  /**
    * @brief Apply an X gate to a qubit
    *
    * @details

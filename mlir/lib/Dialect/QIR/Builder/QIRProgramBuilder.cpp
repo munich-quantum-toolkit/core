@@ -272,6 +272,19 @@ void QIRProgramBuilder::createControlledOneTargetZeroParameter(
   builder.create<LLVM::CallOp>(loc, fnDecl, ValueRange{control, target});
 }
 
+// IdOp
+
+QIRProgramBuilder& QIRProgramBuilder::id(const Value qubit) {
+  createOneTargetZeroParameter(qubit, QIR_ID);
+  return *this;
+}
+
+QIRProgramBuilder& QIRProgramBuilder::cid(const Value control,
+                                          const Value target) {
+  createControlledOneTargetZeroParameter(control, target, QIR_CID);
+  return *this;
+}
+
 // XOp
 
 QIRProgramBuilder& QIRProgramBuilder::x(const Value qubit) {

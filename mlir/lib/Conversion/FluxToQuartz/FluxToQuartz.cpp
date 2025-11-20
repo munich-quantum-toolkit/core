@@ -269,6 +269,28 @@ struct ConvertFluxResetOp final : OpConversionPattern<flux::ResetOp> {
 };
 
 /**
+ * @brief Converts flux.id to quartz.id
+ *
+ * @par Example:
+ * ```mlir
+ * %q_out = flux.id %q_in : !flux.qubit -> !flux.qubit
+ * ```
+ * is converted to
+ * ```mlir
+ * quartz.id %q : !quartz.qubit
+ * ```
+ */
+struct ConvertFluxIdOp final : OpConversionPattern<flux::IdOp> {
+  using OpConversionPattern::OpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(flux::IdOp op, OpAdaptor adaptor,
+                  ConversionPatternRewriter& rewriter) const override {
+    return convertOneTargetZeroParameter<quartz::IdOp>(op, adaptor, rewriter);
+  }
+};
+
+/**
  * @brief Converts flux.x to quartz.x
  *
  * @par Example:
@@ -538,12 +560,11 @@ struct FluxToQuartz final : impl::FluxToQuartzBase<FluxToQuartz> {
 
     // Register operation conversion patterns
     // Note: No state tracking needed - OpAdaptors handle type conversion
-    patterns
-        .add<ConvertFluxAllocOp, ConvertFluxDeallocOp, ConvertFluxStaticOp,
-             ConvertFluxMeasureOp, ConvertFluxResetOp, ConvertFluxXOp,
-             ConvertFluxSOp, ConvertFluxSdgOp, ConvertFluxRXOp, ConvertFluxU2Op,
-             ConvertFluxSWAPOp, ConvertFluxCtrlOp, ConvertFluxYieldOp>(
-            typeConverter, context);
+    patterns.add<ConvertFluxAllocOp, ConvertFluxDeallocOp, ConvertFluxStaticOp,
+                 ConvertFluxMeasureOp, ConvertFluxResetOp, ConvertFluxIdOp,
+                 ConvertFluxXOp, ConvertFluxSOp, ConvertFluxSdgOp,
+                 ConvertFluxRXOp, ConvertFluxU2Op, ConvertFluxSWAPOp,
+                 ConvertFluxCtrlOp, ConvertFluxYieldOp>(typeConverter, context);
 
     // Conversion of flux types in func.func signatures
     // Note: This currently has limitations with signature changes

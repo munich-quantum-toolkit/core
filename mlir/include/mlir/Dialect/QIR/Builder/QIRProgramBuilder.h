@@ -264,6 +264,39 @@ public:
   //===--------------------------------------------------------------------===//
 
   /**
+   * @brief Apply an Id gate to a qubit
+   *
+   * @param qubit Input qubit
+   * @return Reference to this builder for method chaining
+   *
+   * @par Example:
+   * ```c++
+   * builder.id(qubit);
+   * ```
+   * ```mlir
+   * llvm.call @__quantum__qis__i__body(%q) : (!llvm.ptr) -> ()
+   * ```
+   */
+  QIRProgramBuilder& id(Value qubit);
+
+  /**
+   * @brief Apply a controlled Id gate
+   *
+   * @param control Control qubit
+   * @param target Target qubit
+   * @return Reference to this builder for method chaining
+   *
+   * @par Example:
+   * ```c++
+   * builder.cid(control, target);
+   * ```
+   * ```mlir
+   * llvm.call @__quantum__qis__ci__body(%c, %t) : (!llvm.ptr, !llvm.ptr) -> ()
+   * ```
+   */
+  QIRProgramBuilder& cid(Value control, Value target);
+
+  /**
    * @brief Apply an X gate to a qubit
    *
    * @param qubit Input qubit

@@ -478,6 +478,53 @@ struct ConvertQuartzResetQIR final : OpConversionPattern<ResetOp> {
 };
 
 /**
+ * @brief Converts quartz.id operation to QIR i
+ *
+ * @par Example:
+ * ```mlir
+ * quartz.id %q : !quartz.qubit
+ * ```
+ * is converted to
+ * ```mlir
+ * llvm.call @__quantum__qis__i__body(%q) : (!llvm.ptr) -> ()
+ * ```
+ */
+struct ConvertQuartzIdQIR final : StatefulOpConversionPattern<IdOp> {
+  using StatefulOpConversionPattern::StatefulOpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(IdOp op, OpAdaptor adaptor,
+                  ConversionPatternRewriter& rewriter) const override {
+    auto& state = getState();
+
+    // Query state for modifier information
+    const auto inCtrlOp = state.inCtrlOp;
+    const auto& posCtrls = state.posCtrls;
+    const auto numCtrls = posCtrls.size();
+
+    // Define function name
+    StringRef fnName;
+    if (inCtrlOp) {
+      if (numCtrls == 1) {
+        fnName = QIR_CID;
+        ;
+      } else if (numCtrls == 2) {
+        fnName = QIR_CCID;
+      } else if (numCtrls == 3) {
+        fnName = QIR_CCCID;
+      } else {
+        return failure();
+      }
+    } else {
+      fnName = QIR_ID;
+    }
+
+    return convertOneTargetZeroParameter(op, adaptor, rewriter, getContext(),
+                                         state, fnName);
+  }
+};
+
+/**
  * @brief Converts quartz.x operation to QIR x
  *
  * @par Example:
@@ -1217,6 +1264,7 @@ struct QuartzToQIR final : impl::QuartzToQIRBase<QuartzToQIR> {
       quartzPatterns.add<ConvertQuartzStaticQIR>(typeConverter, ctx, &state);
       quartzPatterns.add<ConvertQuartzMeasureQIR>(typeConverter, ctx, &state);
       quartzPatterns.add<ConvertQuartzResetQIR>(typeConverter, ctx);
+      quartzPatterns.add<ConvertQuartzIdQIR>(typeConverter, ctx, &state);
       quartzPatterns.add<ConvertQuartzXQIR>(typeConverter, ctx, &state);
       quartzPatterns.add<ConvertQuartzSQIR>(typeConverter, ctx, &state);
       quartzPatterns.add<ConvertQuartzSdgQIR>(typeConverter, ctx, &state);

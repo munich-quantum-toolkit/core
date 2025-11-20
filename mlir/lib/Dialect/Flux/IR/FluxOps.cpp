@@ -126,6 +126,12 @@ LogicalResult MeasureOp::verify() {
 // Unitary Operations
 //===----------------------------------------------------------------------===//
 
+// IdOp
+
+DenseElementsAttr IdOp::tryGetStaticMatrix() {
+  return getMatrixId(getContext());
+}
+
 // XOp
 
 DenseElementsAttr XOp::tryGetStaticMatrix() { return getMatrixX(getContext()); }
@@ -433,6 +439,19 @@ struct RemoveResetAfterAlloc final : OpRewritePattern<ResetOp> {
 };
 
 /**
+ * @brief Remove identity operations.
+ */
+struct RemoveId final : OpRewritePattern<IdOp> {
+  using OpRewritePattern::OpRewritePattern;
+
+  LogicalResult matchAndRewrite(IdOp idOp,
+                                PatternRewriter& rewriter) const override {
+    rewriter.replaceOp(idOp, idOp.getQubitIn());
+    return success();
+  }
+};
+
+/**
  * @brief Remove subsequent X operations on the same qubit.
  */
 struct RemoveSubsequentX final : OpRewritePattern<XOp> {
@@ -570,6 +589,29 @@ struct RemoveTrivialCtrl final : OpRewritePattern<CtrlOp> {
   }
 };
 
+struct CtrlInlineId final : OpRewritePattern<CtrlOp> {
+  using OpRewritePattern::OpRewritePattern;
+
+  LogicalResult matchAndRewrite(CtrlOp ctrlOp,
+                                PatternRewriter& rewriter) const override {
+    if (!llvm::isa<IdOp>(ctrlOp.getBodyUnitary().getOperation())) {
+      return failure();
+    }
+
+    auto idOp =
+        rewriter.create<IdOp>(ctrlOp.getLoc(), ctrlOp.getTargetsIn().front());
+
+    SmallVector<Value> newOperands;
+    newOperands.reserve(ctrlOp.getNumControls() + 1);
+    newOperands.append(ctrlOp.getControlsIn().begin(),
+                       ctrlOp.getControlsIn().end());
+    newOperands.push_back(idOp.getQubitOut());
+    rewriter.replaceOp(ctrlOp, newOperands);
+
+    return success();
+  }
+};
+
 } // namespace
 
 void DeallocOp::getCanonicalizationPatterns(RewritePatternSet& results,
@@ -580,6 +622,11 @@ void DeallocOp::getCanonicalizationPatterns(RewritePatternSet& results,
 void ResetOp::getCanonicalizationPatterns(RewritePatternSet& results,
                                           MLIRContext* context) {
   results.add<RemoveResetAfterAlloc>(context);
+}
+
+void IdOp::getCanonicalizationPatterns(RewritePatternSet& results,
+                                       MLIRContext* context) {
+  results.add<RemoveId>(context);
 }
 
 void XOp::getCanonicalizationPatterns(RewritePatternSet& results,
@@ -604,5 +651,5 @@ void RXOp::getCanonicalizationPatterns(RewritePatternSet& results,
 
 void CtrlOp::getCanonicalizationPatterns(RewritePatternSet& results,
                                          MLIRContext* context) {
-  results.add<MergeNestedCtrl, RemoveTrivialCtrl>(context);
+  results.add<MergeNestedCtrl, RemoveTrivialCtrl, CtrlInlineId>(context);
 }

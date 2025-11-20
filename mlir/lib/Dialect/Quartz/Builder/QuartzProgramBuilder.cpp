@@ -124,6 +124,24 @@ QuartzProgramBuilder& QuartzProgramBuilder::reset(Value qubit) {
 // Unitary Operations
 //===----------------------------------------------------------------------===//
 
+// IdOp
+
+QuartzProgramBuilder& QuartzProgramBuilder::id(Value qubit) {
+  create<IdOp>(loc, qubit);
+  return *this;
+}
+
+QuartzProgramBuilder& QuartzProgramBuilder::cid(Value control, Value target) {
+  return mcid({control}, target);
+}
+
+QuartzProgramBuilder& QuartzProgramBuilder::mcid(ValueRange controls,
+                                                 Value target) {
+  create<CtrlOp>(loc, controls,
+                 [&](OpBuilder& b) { b.create<IdOp>(loc, target); });
+  return *this;
+}
+
 // XOp
 
 QuartzProgramBuilder& QuartzProgramBuilder::x(Value qubit) {

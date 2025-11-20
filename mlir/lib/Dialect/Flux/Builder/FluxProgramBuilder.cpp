@@ -206,6 +206,22 @@ FluxProgramBuilder::createMultiControlledOneTargetZeroParameter(
   return {controlsOut, targetsOut[0]};
 }
 
+// IdOp
+
+Value FluxProgramBuilder::id(Value qubit) {
+  return createOneTargetZeroParameter<IdOp>(qubit);
+}
+
+std::pair<Value, Value> FluxProgramBuilder::cid(const Value control,
+                                                const Value target) {
+  return createControlledOneTargetZeroParameter<IdOp>(control, target);
+}
+
+std::pair<ValueRange, Value> FluxProgramBuilder::mcid(const ValueRange controls,
+                                                      const Value target) {
+  return createMultiControlledOneTargetZeroParameter<IdOp>(controls, target);
+}
+
 // XOp
 
 Value FluxProgramBuilder::x(Value qubit) {

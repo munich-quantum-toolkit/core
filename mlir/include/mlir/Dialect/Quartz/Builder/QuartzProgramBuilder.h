@@ -229,6 +229,60 @@ public:
   //===--------------------------------------------------------------------===//
 
   /**
+   * @brief Apply an Id gate to a qubit
+   *
+   * @param qubit Target qubit
+   * @return Reference to this builder for method chaining
+   *
+   * @par Example:
+   * ```c++
+   * builder.id(q);
+   * ```
+   * ```mlir
+   * quartz.id %q : !quartz.qubit
+   * ```
+   */
+  QuartzProgramBuilder& id(Value qubit);
+
+  /**
+   * @brief Apply a controlled Id gate
+   *
+   * @param control Control qubit
+   * @param target Target qubit
+   * @return Reference to this builder for method chaining
+   *
+   * @par Example:
+   * ```c++
+   * builder.cid(q0, q1);
+   * ```
+   * ```mlir
+   * quartz.ctrl(%q0) {
+   *   quartz.id %q1 : !quartz.qubit
+   * }
+   * ```
+   */
+  QuartzProgramBuilder& cid(Value control, Value target);
+
+  /**
+   * @brief Apply a multi-controlled Id gate
+   *
+   * @param controls Control qubits
+   * @param target Target qubit
+   * @return Reference to this builder for method chaining
+   *
+   * @par Example:
+   * ```c++
+   * builder.mcid({q0, q1}, q2);
+   * ```
+   * ```mlir
+   * quartz.ctrl(%q0, %q1) {
+   *   quartz.id %q2 : !quartz.qubit
+   * }
+   * ```
+   */
+  QuartzProgramBuilder& mcid(ValueRange controls, Value target);
+
+  /**
    * @brief Apply an X gate to a qubit
    *
    * @param qubit Target qubit

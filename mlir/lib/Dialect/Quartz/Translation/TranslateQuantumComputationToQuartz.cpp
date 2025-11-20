@@ -245,7 +245,28 @@ getPosControls(const qc::Operation& operation,
 }
 
 /**
- * @brief Adds X operations
+ * @brief Adds an Id operation
+ *
+ * @details
+ * Translates Id operations from the QuantumComputation to quartz.id operations.
+ *
+ * @param builder The QuartzProgramBuilder used to create operations
+ * @param operation The Id operation to translate
+ * @param qubits Flat vector of qubit values indexed by physical qubit index
+ */
+void addIdOp(QuartzProgramBuilder& builder, const qc::Operation& operation,
+             const llvm::SmallVector<Value>& qubits) {
+  const auto& target = qubits[operation.getTargets()[0]];
+  if (const auto& posControls = getPosControls(operation, qubits);
+      posControls.empty()) {
+    builder.id(target);
+  } else {
+    builder.mcid(posControls, target);
+  }
+}
+
+/**
+ * @brief Adds an X operation
  *
  * @details
  * Translates X operations from the QuantumComputation to quartz.x operations.
@@ -266,7 +287,7 @@ void addXOp(QuartzProgramBuilder& builder, const qc::Operation& operation,
 }
 
 /**
- * @brief Adds S operations
+ * @brief Adds an S operation
  *
  * @details
  * Translates S operations from the QuantumComputation to quartz.s operations.
@@ -287,7 +308,7 @@ void addSOp(QuartzProgramBuilder& builder, const qc::Operation& operation,
 }
 
 /**
- * @brief Adds Sdg operations
+ * @brief Adds an Sdg operation
  *
  * @details
  * Translates Sdg operations from the QuantumComputation to quartz.sdg
@@ -309,7 +330,7 @@ void addSdgOp(QuartzProgramBuilder& builder, const qc::Operation& operation,
 }
 
 /**
- * @brief Adds RX operations
+ * @brief Adds an RX operation
  *
  * @details
  * Translates RX operations from the QuantumComputation to quartz.rx operations.
@@ -331,7 +352,7 @@ void addRXOp(QuartzProgramBuilder& builder, const qc::Operation& operation,
 }
 
 /**
- * @brief Adds U2 operations
+ * @brief Adds a U2 operation
  *
  * @details
  * Translates U2 operations from the QuantumComputation to quartz.u2 operations.
@@ -354,7 +375,7 @@ void addU2Op(QuartzProgramBuilder& builder, const qc::Operation& operation,
 }
 
 /**
- * @brief Adds SWAP operations
+ * @brief Adds a SWAP operation
  *
  * @details
  * Translates SWAP operations from the QuantumComputation to quartz.swap
@@ -406,6 +427,9 @@ translateOperations(QuartzProgramBuilder& builder,
       break;
     case qc::OpType::Reset:
       addResetOp(builder, *operation, qubits);
+      break;
+    case qc::OpType::I:
+      addIdOp(builder, *operation, qubits);
       break;
     case qc::OpType::X:
       addXOp(builder, *operation, qubits);

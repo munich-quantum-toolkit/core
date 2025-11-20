@@ -17,6 +17,14 @@ using namespace std::complex_literals;
 
 namespace mlir::utils {
 
+inline DenseElementsAttr getMatrixId(MLIRContext* ctx) {
+  const auto& complexType = ComplexType::get(Float64Type::get(ctx));
+  const auto& type = RankedTensorType::get({2, 2}, complexType);
+  const auto& matrix = {1.0 + 0i, 0.0 + 0i,  // row 0
+                        0.0 + 0i, 1.0 + 0i}; // row 1
+  return DenseElementsAttr::get(type, matrix);
+}
+
 inline DenseElementsAttr getMatrixX(MLIRContext* ctx) {
   const auto& complexType = ComplexType::get(Float64Type::get(ctx));
   const auto& type = RankedTensorType::get({2, 2}, complexType);
