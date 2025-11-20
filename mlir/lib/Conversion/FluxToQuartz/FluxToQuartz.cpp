@@ -236,13 +236,13 @@ struct ConvertFluxResetOp final : OpConversionPattern<flux::ResetOp> {
 /**
  * @brief Converts flux.x to quartz.x
  *
- * @details
- * Example transformation:
+ * @par Example:
  * ```mlir
  * %q_out = flux.x %q_in : !flux.qubit -> !flux.qubit
- * // becomes:
+ * ```
+ * is converted to
+ * ```mlir
  * quartz.x %q : !quartz.qubit
- * // %q_out uses are replaced with %q
  * ```
  */
 struct ConvertFluxXOp final : OpConversionPattern<flux::XOp> {
@@ -265,15 +265,77 @@ struct ConvertFluxXOp final : OpConversionPattern<flux::XOp> {
 };
 
 /**
+ * @brief Converts flux.s to quartz.s
+ *
+ * @par Example:
+ * ```mlir
+ * %q_out = flux.s %q_in : !flux.qubit -> !flux.qubit
+ * ```
+ * is converted to
+ * ```mlir
+ * quartz.s %q : !quartz.qubit
+ * ```
+ */
+struct ConvertFluxSOp final : OpConversionPattern<flux::SOp> {
+  using OpConversionPattern::OpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(flux::SOp op, OpAdaptor adaptor,
+                  ConversionPatternRewriter& rewriter) const override {
+    // OpAdaptor provides the already type-converted input qubit
+    const auto& quartzQubit = adaptor.getQubitIn();
+
+    // Create quartz.s (in-place operation, no result)
+    rewriter.create<quartz::SOp>(op.getLoc(), quartzQubit);
+
+    // Replace the output qubit with the same quartz reference
+    rewriter.replaceOp(op, quartzQubit);
+
+    return success();
+  }
+};
+
+/**
+ * @brief Converts flux.sdg to quartz.sdg
+ *
+ * @par Example:
+ * ```mlir
+ * %q_out = flux.sdg %q_in : !flux.qubit -> !flux.qubit
+ * ```
+ * is converted to
+ * ```mlir
+ * quartz.sdg %q : !quartz.qubit
+ * ```
+ */
+struct ConvertFluxSdgOp final : OpConversionPattern<flux::SdgOp> {
+  using OpConversionPattern::OpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(flux::SdgOp op, OpAdaptor adaptor,
+                  ConversionPatternRewriter& rewriter) const override {
+    // OpAdaptor provides the already type-converted input qubit
+    const auto& quartzQubit = adaptor.getQubitIn();
+
+    // Create quartz.sdg (in-place operation, no result)
+    rewriter.create<quartz::SdgOp>(op.getLoc(), quartzQubit);
+
+    // Replace the output qubit with the same quartz reference
+    rewriter.replaceOp(op, quartzQubit);
+
+    return success();
+  }
+};
+
+/**
  * @brief Converts flux.rx to quartz.rx
  *
- * @details
- * Example transformation:
+ * @par Example:
  * ```mlir
  * %q_out = flux.rx(%theta) %q_in : !flux.qubit -> !flux.qubit
- * // becomes:
+ * ```
+ * is converted to
+ * ```mlir
  * quartz.rx(%theta) %q : !quartz.qubit
- * // %q_out uses are replaced with %q
  * ```
  */
 struct ConvertFluxRXOp final : OpConversionPattern<flux::RXOp> {
@@ -298,13 +360,13 @@ struct ConvertFluxRXOp final : OpConversionPattern<flux::RXOp> {
 /**
  * @brief Converts flux.u2 to quartz.u2
  *
- * @details
- * Example transformation:
+ * @par Example:
  * ```mlir
  * %q_out = flux.u2(%phi, %lambda) %q_in : !flux.qubit -> !flux.qubit
- * // becomes:
+ * ```
+ * is converted to
+ * ```mlir
  * quartz.u2(%phi, %lambda) %q : !quartz.qubit
- * // %q_out uses are replaced with %q
  * ```
  */
 struct ConvertFluxU2Op final : OpConversionPattern<flux::U2Op> {
@@ -330,13 +392,14 @@ struct ConvertFluxU2Op final : OpConversionPattern<flux::U2Op> {
 /**
  * @brief Converts flux.swap to quartz.swap
  *
- * @details
- * Example transformation:
+ * @par Example:
  * ```mlir
- * %q0_out, %q1_out = flux.swap %q0_in, %q1_in : !flux.qubit, !flux.qubit
- * // becomes:
+ * %q0_out, %q1_out = flux.swap %q0_in, %q1_in : !flux.qubit, !flux.qubit ->
+ * !flux.qubit, !flux.qubit
+ * ```
+ * is converted to
+ * ```mlir
  * quartz.swap %q0, %q1 : !quartz.qubit, !quartz.qubit
- * // {%q0_out, %q1_out} uses are replaced with {%q0, %q1}
  * ```
  */
 struct ConvertFluxSWAPOp final : OpConversionPattern<flux::SWAPOp> {
@@ -362,8 +425,7 @@ struct ConvertFluxSWAPOp final : OpConversionPattern<flux::SWAPOp> {
 /**
  * @brief Converts quartz.ctrl to flux.ctrl
  *
- * @details
- * Example:
+ * @par Example:
  * ```mlir
  * %controls_out, %targets_out = flux.ctrl({%q0_in}, {%q1_in}) {
  *   %q1_res = flux.x %q1_in : !flux.qubit -> !flux.qubit
@@ -404,8 +466,7 @@ struct ConvertFluxCtrlOp final : OpConversionPattern<flux::CtrlOp> {
 /**
  * @brief Converts flux.yield to quartz.yield
  *
- * @details
- * Example:
+ * @par Example:
  * ```mlir
  * flux.yield %targets
  * ```
@@ -469,10 +530,12 @@ struct FluxToQuartz final : impl::FluxToQuartzBase<FluxToQuartz> {
 
     // Register operation conversion patterns
     // Note: No state tracking needed - OpAdaptors handle type conversion
-    patterns.add<ConvertFluxAllocOp, ConvertFluxDeallocOp, ConvertFluxStaticOp,
-                 ConvertFluxMeasureOp, ConvertFluxResetOp, ConvertFluxXOp,
-                 ConvertFluxRXOp, ConvertFluxU2Op, ConvertFluxSWAPOp,
-                 ConvertFluxCtrlOp, ConvertFluxYieldOp>(typeConverter, context);
+    patterns
+        .add<ConvertFluxAllocOp, ConvertFluxDeallocOp, ConvertFluxStaticOp,
+             ConvertFluxMeasureOp, ConvertFluxResetOp, ConvertFluxXOp,
+             ConvertFluxSOp, ConvertFluxSdgOp, ConvertFluxRXOp, ConvertFluxU2Op,
+             ConvertFluxSWAPOp, ConvertFluxCtrlOp, ConvertFluxYieldOp>(
+            typeConverter, context);
 
     // Conversion of flux types in func.func signatures
     // Note: This currently has limitations with signature changes

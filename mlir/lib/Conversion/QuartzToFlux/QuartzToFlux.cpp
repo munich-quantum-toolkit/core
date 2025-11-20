@@ -356,13 +356,13 @@ struct ConvertQuartzResetOp final
 /**
  * @brief Converts quartz.x to flux.x
  *
- * @details
- * Example transformation:
+ * @par Example:
  * ```mlir
  * quartz.x %q : !quartz.qubit
- * // becomes (where %q maps to %q_in):
+ * ```
+ * is converted to
+ * ```mlir
  * %q_out = flux.x %q_in : !flux.qubit -> !flux.qubit
- * // state updated: %q now maps to %q_out
  * ```
  */
 struct ConvertQuartzXOp final : StatefulOpConversionPattern<quartz::XOp> {
@@ -398,15 +398,104 @@ struct ConvertQuartzXOp final : StatefulOpConversionPattern<quartz::XOp> {
 };
 
 /**
+ * @brief Converts quartz.s to flux.s
+ *
+ * @par Example:
+ * ```mlir
+ * quartz.s %q : !quartz.qubit
+ * ```
+ * is converted to
+ * ```mlir
+ * %q_out = flux.s %q_in : !flux.qubit -> !flux.qubit
+ * ```
+ */
+struct ConvertQuartzSOp final : StatefulOpConversionPattern<quartz::SOp> {
+  using StatefulOpConversionPattern::StatefulOpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(quartz::SOp op, OpAdaptor /*adaptor*/,
+                  ConversionPatternRewriter& rewriter) const override {
+    auto& [qubitMap] = getState();
+    const auto inRegion = llvm::isa<flux::CtrlOp>(op->getParentOp());
+
+    // Get the latest Flux qubit
+    const auto quartzQubit = op->getOperand(0);
+    Value fluxQubit = nullptr;
+    if (inRegion) {
+      fluxQubit = rewriter.getRemappedValue(quartzQubit);
+    } else {
+      fluxQubit = qubitMap[quartzQubit];
+    }
+
+    // Create flux.s (consumes input, produces output)
+    auto fluxOp = rewriter.create<flux::SOp>(op.getLoc(), fluxQubit);
+
+    // Update state map
+    if (!inRegion) {
+      qubitMap[quartzQubit] = fluxOp.getQubitOut();
+    }
+
+    rewriter.eraseOp(op);
+
+    return success();
+  }
+};
+
+/**
+ * @brief Converts quartz.sdg to flux.sdg
+ *
+ * @par Example:
+ * ```mlir
+ * quartz.sdg %q : !quartz.qubit
+ * ```
+ * is converted to
+ * ```mlir
+ * %q_out = flux.sdg %q_in : !flux.qubit -> !flux.qubit
+ * ```
+ */
+struct ConvertQuartzSdgOp final : StatefulOpConversionPattern<quartz::SdgOp> {
+  using StatefulOpConversionPattern::StatefulOpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(quartz::SdgOp op, OpAdaptor /*adaptor*/,
+                  ConversionPatternRewriter& rewriter) const override {
+    auto& [qubitMap] = getState();
+    const auto inRegion = llvm::isa<flux::CtrlOp>(op->getParentOp());
+
+    // Get the latest Flux qubit
+    const auto quartzQubit = op->getOperand(0);
+    Value fluxQubit = nullptr;
+    if (inRegion) {
+      fluxQubit = rewriter.getRemappedValue(quartzQubit);
+    } else {
+      fluxQubit = qubitMap[quartzQubit];
+    }
+
+    // Create flux.sdg (consumes input, produces output)
+    auto fluxOp = rewriter.create<flux::SdgOp>(op.getLoc(), fluxQubit);
+
+    // Update state map
+    if (!inRegion) {
+      qubitMap[quartzQubit] = fluxOp.getQubitOut();
+    }
+
+    rewriter.eraseOp(op);
+
+    return success();
+  }
+};
+
+/**
  * @brief Converts quartz.rx to flux.rx
  *
- * @details
- * Example transformation:
+ * @par Example:
  * ```mlir
  * quartz.rx(%theta) %q : !quartz.qubit
- * // becomes (where %q maps to %q_in):
+ * ```
+ * is converted to
+ * ```mlir
  * %q_out = flux.rx(%theta) %q_in : !flux.qubit -> !flux.qubit
- * // state updated: %q now maps to %q_out
+ * ```
  */
 struct ConvertQuartzRXOp final : StatefulOpConversionPattern<quartz::RXOp> {
   using StatefulOpConversionPattern::StatefulOpConversionPattern;
@@ -444,13 +533,13 @@ struct ConvertQuartzRXOp final : StatefulOpConversionPattern<quartz::RXOp> {
 /**
  * @brief Converts quartz.u2 to flux.u2
  *
- * @details
- * Example transformation:
+ * @par Example:
  * ```mlir
  * quartz.u2(%phi, %lambda) %q : !quartz.qubit
- * // becomes (where %q maps to %q_in):
+ * ```
+ * is converted to
+ * ```mlir
  * %q_out = flux.u2(%phi, %lambda) %q_in : !flux.qubit -> !flux.qubit
- * // state updated: %q now maps to %q_out
  * ```
  */
 struct ConvertQuartzU2Op final : StatefulOpConversionPattern<quartz::U2Op> {
@@ -489,14 +578,14 @@ struct ConvertQuartzU2Op final : StatefulOpConversionPattern<quartz::U2Op> {
 /**
  * @brief Converts quartz.swap to flux.swap
  *
- * @details
- * Example transformation:
+ * @par Example:
  * ```mlir
  * quartz.swap %q0, %q1 : !quartz.qubit, !quartz.qubit
- * // becomes (where {%q0, %q1} map to {%q0_in, %q1_in}):
+ * ```
+ * is converted to
+ * ```mlir
  * %q0_out, %q1_out = flux.swap %q0_in, %q1_in : !flux.qubit, !flux.qubit ->
  * !flux.qubit, !flux.qubit
- * // state updated: {%q0, %q1} now map to {%q0_out, %q1_out}
  * ```
  */
 struct ConvertQuartzSWAPOp final : StatefulOpConversionPattern<quartz::SWAPOp> {
@@ -540,8 +629,7 @@ struct ConvertQuartzSWAPOp final : StatefulOpConversionPattern<quartz::SWAPOp> {
 /**
  * @brief Converts quartz.ctrl to flux.ctrl
  *
- * @details
- * Example:
+ * @par Example:
  * ```mlir
  * quartz.ctrl(%q0) {
  *   quartz.x %q1
@@ -611,8 +699,7 @@ struct ConvertQuartzCtrlOp final : StatefulOpConversionPattern<quartz::CtrlOp> {
 /**
  * @brief Converts quartz.yield to flux.yield
  *
- * @details
- * Example:
+ * @par Example:
  * ```mlir
  * quartz.yield
  * ```
@@ -674,11 +761,13 @@ struct QuartzToFlux final : impl::QuartzToFluxBase<QuartzToFlux> {
     target.addLegalDialect<FluxDialect>();
 
     // Register operation conversion patterns with state tracking
-    patterns.add<ConvertQuartzAllocOp, ConvertQuartzDeallocOp,
-                 ConvertQuartzStaticOp, ConvertQuartzMeasureOp,
-                 ConvertQuartzResetOp, ConvertQuartzXOp, ConvertQuartzRXOp,
-                 ConvertQuartzU2Op, ConvertQuartzSWAPOp, ConvertQuartzCtrlOp,
-                 ConvertQuartzYieldOp>(typeConverter, context, &state);
+    patterns
+        .add<ConvertQuartzAllocOp, ConvertQuartzDeallocOp,
+             ConvertQuartzStaticOp, ConvertQuartzMeasureOp,
+             ConvertQuartzResetOp, ConvertQuartzXOp, ConvertQuartzSOp,
+             ConvertQuartzSdgOp, ConvertQuartzRXOp, ConvertQuartzU2Op,
+             ConvertQuartzSWAPOp, ConvertQuartzCtrlOp, ConvertQuartzYieldOp>(
+            typeConverter, context, &state);
 
     // Conversion of quartz types in func.func signatures
     // Note: This currently has limitations with signature changes

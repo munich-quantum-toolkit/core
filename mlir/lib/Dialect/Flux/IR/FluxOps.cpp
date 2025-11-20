@@ -130,6 +130,16 @@ LogicalResult MeasureOp::verify() {
 
 DenseElementsAttr XOp::tryGetStaticMatrix() { return getMatrixX(getContext()); }
 
+// SOp
+
+DenseElementsAttr SOp::tryGetStaticMatrix() { return getMatrixS(getContext()); }
+
+// SdgOp
+
+DenseElementsAttr SdgOp::tryGetStaticMatrix() {
+  return getMatrixSdg(getContext());
+}
+
 // RXOp
 
 DenseElementsAttr RXOp::tryGetStaticMatrix() {
@@ -445,6 +455,50 @@ struct RemoveSubsequentX final : OpRewritePattern<XOp> {
 };
 
 /**
+ * @brief Remove S operations that immediately follow Sdg operations.
+ */
+struct RemoveSAfterSdg final : OpRewritePattern<SOp> {
+  using OpRewritePattern::OpRewritePattern;
+
+  LogicalResult matchAndRewrite(SOp sOp,
+                                PatternRewriter& rewriter) const override {
+    // Check if the predecessor is an SdgOp
+    auto prevOp = sOp.getQubitIn().getDefiningOp<SdgOp>();
+    if (!prevOp) {
+      return failure();
+    }
+
+    // Remove both Sdg and S Ops
+    rewriter.replaceOp(prevOp, prevOp.getQubitIn());
+    rewriter.replaceOp(sOp, sOp.getQubitIn());
+
+    return success();
+  }
+};
+
+/**
+ * @brief Remove Sdg operations that immediately follow S operations.
+ */
+struct RemoveSdgAfterS final : OpRewritePattern<SdgOp> {
+  using OpRewritePattern::OpRewritePattern;
+
+  LogicalResult matchAndRewrite(SdgOp sdgOp,
+                                PatternRewriter& rewriter) const override {
+    // Check if the predecessor is an SOp
+    auto prevOp = sdgOp.getQubitIn().getDefiningOp<SOp>();
+    if (!prevOp) {
+      return failure();
+    }
+
+    // Remove both S and Sdg Ops
+    rewriter.replaceOp(prevOp, prevOp.getQubitIn());
+    rewriter.replaceOp(sdgOp, sdgOp.getQubitIn());
+
+    return success();
+  }
+};
+
+/**
  * @brief Merge subsequent RX operations on the same qubit by adding their
  * angles.
  */
@@ -531,6 +585,16 @@ void ResetOp::getCanonicalizationPatterns(RewritePatternSet& results,
 void XOp::getCanonicalizationPatterns(RewritePatternSet& results,
                                       MLIRContext* context) {
   results.add<RemoveSubsequentX>(context);
+}
+
+void SOp::getCanonicalizationPatterns(RewritePatternSet& results,
+                                      MLIRContext* context) {
+  results.add<RemoveSAfterSdg>(context);
+}
+
+void SdgOp::getCanonicalizationPatterns(RewritePatternSet& results,
+                                        MLIRContext* context) {
+  results.add<RemoveSdgAfterS>(context);
 }
 
 void RXOp::getCanonicalizationPatterns(RewritePatternSet& results,

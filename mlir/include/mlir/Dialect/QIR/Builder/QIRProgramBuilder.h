@@ -264,7 +264,7 @@ public:
   //===--------------------------------------------------------------------===//
 
   /**
-   * @brief Apply the X gate to a qubit
+   * @brief Apply an X gate to a qubit
    *
    * @param qubit Input qubit
    * @return Reference to this builder for method chaining
@@ -280,7 +280,7 @@ public:
   QIRProgramBuilder& x(Value qubit);
 
   /**
-   * @brief Apply the CX gate
+   * @brief Apply a controlled X gate
    *
    * @param control Control qubit
    * @param target Target qubit
@@ -297,7 +297,74 @@ public:
   QIRProgramBuilder& cx(Value control, Value target);
 
   /**
-   * @brief Apply the RX gate to a qubit
+   * @brief Apply an S gate to a qubit
+   *
+   * @param qubit Target qubit
+   * @return Reference to this builder for method chaining
+   *
+   * @par Example:
+   * ```c++
+   * builder.s(q);
+   * ```
+   * ```mlir
+   * llvm.call @__quantum__qis__s__body(%q) : (!llvm.ptr) -> ()
+   * ```
+   */
+  QIRProgramBuilder& s(Value qubit);
+
+  /**
+   * @brief Apply a controlled S gate
+   *
+   * @param control Control qubit
+   * @param target Target qubit
+   * @return Reference to this builder for method chaining
+   *
+   * @par Example:
+   * ```c++
+   * builder.cs(q0, q1);
+   * ```
+   * ```mlir
+   * llvm.call @__quantum__qis__cs__body(%c, %t) : (!llvm.ptr, !llvm.ptr) -> ()
+   * ```
+   */
+  QIRProgramBuilder& cs(Value control, Value target);
+
+  /**
+   * @brief Apply an Sdg gate to a qubit
+   *
+   * @param qubit Target qubit
+   * @return Reference to this builder for method chaining
+   *
+   * @par Example:
+   * ```c++
+   * builder.sdg(q);
+   * ```
+   * ```mlir
+   * llvm.call @__quantum__qis__sdg__body(%q) : (!llvm.ptr) -> ()
+   * ```
+   */
+  QIRProgramBuilder& sdg(Value qubit);
+
+  /**
+   * @brief Apply a controlled Sdg gate
+   *
+   * @param control Control qubit
+   * @param target Target qubit
+   * @return Reference to this builder for method chaining
+   *
+   * @par Example:
+   * ```c++
+   * builder.csdg(q0, q1);
+   * ```
+   * ```mlir
+   * llvm.call @__quantum__qis__csdg__body(%c, %t) : (!llvm.ptr, !llvm.ptr) ->
+   * ()
+   * ```
+   */
+  QIRProgramBuilder& csdg(Value control, Value target);
+
+  /**
+   * @brief Apply an RX gate to a qubit
    *
    * @param theta Rotation angle
    * @param qubit Input qubit
@@ -314,7 +381,7 @@ public:
   QIRProgramBuilder& rx(const std::variant<double, Value>& theta, Value qubit);
 
   /**
-   * @brief Apply the CRX
+   * @brief Apply a controlled RX gate
    *
    * @param theta Rotation angle
    * @param control Control qubit
@@ -334,7 +401,7 @@ public:
                          Value control, Value target);
 
   /**
-   * @brief Apply the U2 gate to a qubit
+   * @brief Apply a U2 gate to a qubit
    *
    * @param phi Rotation angle
    * @param lambda Rotation angle
@@ -354,7 +421,7 @@ public:
                         const std::variant<double, Value>& lambda, Value qubit);
 
   /**
-   * @brief Apply the CU2 gate
+   * @brief Apply a controlled U2 gate
    *
    * @param phi Rotation angle
    * @param lambda Rotation angle
@@ -376,7 +443,7 @@ public:
                          Value control, Value target);
 
   /**
-   * @brief Apply the SWAP gate to two qubits
+   * @brief Apply a SWAP gate to two qubits
    *
    * @param qubit0 Input qubit
    * @param qubit1 Input qubit
@@ -394,7 +461,7 @@ public:
   QIRProgramBuilder& swap(Value qubit0, Value qubit1);
 
   /**
-   * @brief Apply the CSWAP gate
+   * @brief Apply a controlled SWAP gate
    *
    * @param control Control qubit
    * @param target1 Target qubit

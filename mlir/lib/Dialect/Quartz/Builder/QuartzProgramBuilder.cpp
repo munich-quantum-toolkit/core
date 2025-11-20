@@ -124,6 +124,8 @@ QuartzProgramBuilder& QuartzProgramBuilder::reset(Value qubit) {
 // Unitary Operations
 //===----------------------------------------------------------------------===//
 
+// XOp
+
 QuartzProgramBuilder& QuartzProgramBuilder::x(Value qubit) {
   create<XOp>(loc, qubit);
   return *this;
@@ -139,6 +141,44 @@ QuartzProgramBuilder& QuartzProgramBuilder::mcx(ValueRange controls,
                  [&](OpBuilder& b) { b.create<XOp>(loc, target); });
   return *this;
 }
+
+// SOp
+
+QuartzProgramBuilder& QuartzProgramBuilder::s(Value qubit) {
+  create<SOp>(loc, qubit);
+  return *this;
+}
+
+QuartzProgramBuilder& QuartzProgramBuilder::cs(Value control, Value target) {
+  return mcs({control}, target);
+}
+
+QuartzProgramBuilder& QuartzProgramBuilder::mcs(ValueRange controls,
+                                                Value target) {
+  create<CtrlOp>(loc, controls,
+                 [&](OpBuilder& b) { b.create<SOp>(loc, target); });
+  return *this;
+}
+
+// SdgOp
+
+QuartzProgramBuilder& QuartzProgramBuilder::sdg(Value qubit) {
+  create<SdgOp>(loc, qubit);
+  return *this;
+}
+
+QuartzProgramBuilder& QuartzProgramBuilder::csdg(Value control, Value target) {
+  return mcsdg({control}, target);
+}
+
+QuartzProgramBuilder& QuartzProgramBuilder::mcsdg(ValueRange controls,
+                                                  Value target) {
+  create<CtrlOp>(loc, controls,
+                 [&](OpBuilder& b) { b.create<SdgOp>(loc, target); });
+  return *this;
+}
+
+// RXOp
 
 QuartzProgramBuilder&
 QuartzProgramBuilder::rx(const std::variant<double, Value>& theta,
@@ -160,6 +200,8 @@ QuartzProgramBuilder::mcrx(const std::variant<double, Value>& theta,
                  [&](OpBuilder& b) { b.create<RXOp>(loc, target, theta); });
   return *this;
 }
+
+// U2Op
 
 QuartzProgramBuilder&
 QuartzProgramBuilder::u2(const std::variant<double, Value>& phi,
@@ -185,6 +227,8 @@ QuartzProgramBuilder::mcu2(const std::variant<double, Value>& phi,
   });
   return *this;
 }
+
+// SWAPOp
 
 QuartzProgramBuilder& QuartzProgramBuilder::swap(Value qubit0, Value qubit1) {
   create<SWAPOp>(loc, qubit0, qubit1);

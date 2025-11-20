@@ -423,11 +423,12 @@ struct ConvertQuartzResetQIR final : OpConversionPattern<ResetOp> {
 /**
  * @brief Converts quartz.x operation to QIR x
  *
- * @details
- * Example transformation:
+ * @par Example:
  * ```mlir
  * quartz.x %q : !quartz.qubit
- * // becomes:
+ * ```
+ * is converted to
+ * ```mlir
  * llvm.call @__quantum__qis__x__body(%q) : (!llvm.ptr) -> ()
  * ```
  */
@@ -479,7 +480,159 @@ struct ConvertQuartzXQIR final : StatefulOpConversionPattern<XOp> {
         getOrCreateFunctionDeclaration(rewriter, op, fnName, fnSignature);
 
     SmallVector<Value> operands;
-    operands.reserve(numCtrls + 2);
+    operands.reserve(numCtrls + 1);
+    operands.append(posCtrls.begin(), posCtrls.end());
+    operands.append(adaptor.getOperands().begin(), adaptor.getOperands().end());
+
+    // Clean up modifier information
+    if (inCtrlOp) {
+      state.inCtrlOp = false;
+      state.posCtrls.clear();
+    }
+
+    // Replace operation with CallOp
+    rewriter.replaceOpWithNewOp<LLVM::CallOp>(op, fnDecl, operands);
+    return success();
+  }
+};
+
+/**
+ * @brief Converts quartz.s operation to QIR S
+ *
+ * @par Example:
+ * ```mlir
+ * quartz.s %q : !quartz.qubit
+ * ```
+ * is converted to
+ * ```mlir
+ * llvm.call @__quantum__qis__s__body(%q) : (!llvm.ptr) -> ()
+ * ```
+ */
+struct ConvertQuartzSQIR final : StatefulOpConversionPattern<SOp> {
+  using StatefulOpConversionPattern::StatefulOpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(SOp op, OpAdaptor adaptor,
+                  ConversionPatternRewriter& rewriter) const override {
+    auto* ctx = getContext();
+    auto& state = getState();
+
+    // Query state for modifier information
+    const auto inCtrlOp = state.inCtrlOp;
+    const auto& posCtrls = state.posCtrls;
+    const auto numCtrls = posCtrls.size();
+
+    // Define function name
+    StringRef fnName;
+    if (inCtrlOp) {
+      if (numCtrls == 1) {
+        fnName = QIR_CS;
+      } else if (numCtrls == 2) {
+        fnName = QIR_CCS;
+      } else if (numCtrls == 3) {
+        fnName = QIR_CCCS;
+      } else {
+        return failure();
+      }
+    } else {
+      fnName = QIR_S;
+    }
+
+    // Define function argument types
+    SmallVector<Type> argumentTypes;
+    argumentTypes.reserve(numCtrls + 1);
+    const auto ptrType = LLVM::LLVMPointerType::get(ctx);
+    // Add control pointers
+    for (size_t i = 0; i < numCtrls; ++i) {
+      argumentTypes.push_back(ptrType);
+    }
+    // Add target pointer
+    argumentTypes.push_back(ptrType);
+    const auto fnSignature = LLVM::LLVMFunctionType::get(
+        LLVM::LLVMVoidType::get(ctx), argumentTypes);
+
+    // Declare QIR function
+    const auto fnDecl =
+        getOrCreateFunctionDeclaration(rewriter, op, fnName, fnSignature);
+
+    SmallVector<Value> operands;
+    operands.reserve(numCtrls + 1);
+    operands.append(posCtrls.begin(), posCtrls.end());
+    operands.append(adaptor.getOperands().begin(), adaptor.getOperands().end());
+
+    // Clean up modifier information
+    if (inCtrlOp) {
+      state.inCtrlOp = false;
+      state.posCtrls.clear();
+    }
+
+    // Replace operation with CallOp
+    rewriter.replaceOpWithNewOp<LLVM::CallOp>(op, fnDecl, operands);
+    return success();
+  }
+};
+
+/**
+ * @brief Converts quartz.sdg operation to QIR Sdg
+ *
+ * @par Example:
+ * ```mlir
+ * quartz.sdg %q : !quartz.qubit
+ * ```
+ * is converted to
+ * ```mlir
+ * llvm.call @__quantum__qis__sdg__body(%q) : (!llvm.ptr) -> ()
+ * ```
+ */
+struct ConvertQuartzSdgQIR final : StatefulOpConversionPattern<SdgOp> {
+  using StatefulOpConversionPattern::StatefulOpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(SdgOp op, OpAdaptor adaptor,
+                  ConversionPatternRewriter& rewriter) const override {
+    auto* ctx = getContext();
+    auto& state = getState();
+
+    // Query state for modifier information
+    const auto inCtrlOp = state.inCtrlOp;
+    const auto& posCtrls = state.posCtrls;
+    const auto numCtrls = posCtrls.size();
+
+    // Define function name
+    StringRef fnName;
+    if (inCtrlOp) {
+      if (numCtrls == 1) {
+        fnName = QIR_CSDG;
+      } else if (numCtrls == 2) {
+        fnName = QIR_CCSDG;
+      } else if (numCtrls == 3) {
+        fnName = QIR_CCCSDG;
+      } else {
+        return failure();
+      }
+    } else {
+      fnName = QIR_SDG;
+    }
+
+    // Define function argument types
+    SmallVector<Type> argumentTypes;
+    argumentTypes.reserve(numCtrls + 1);
+    const auto ptrType = LLVM::LLVMPointerType::get(ctx);
+    // Add control pointers
+    for (size_t i = 0; i < numCtrls; ++i) {
+      argumentTypes.push_back(ptrType);
+    }
+    // Add target pointer
+    argumentTypes.push_back(ptrType);
+    const auto fnSignature = LLVM::LLVMFunctionType::get(
+        LLVM::LLVMVoidType::get(ctx), argumentTypes);
+
+    // Declare QIR function
+    const auto fnDecl =
+        getOrCreateFunctionDeclaration(rewriter, op, fnName, fnSignature);
+
+    SmallVector<Value> operands;
+    operands.reserve(numCtrls + 1);
     operands.append(posCtrls.begin(), posCtrls.end());
     operands.append(adaptor.getOperands().begin(), adaptor.getOperands().end());
 
@@ -498,11 +651,12 @@ struct ConvertQuartzXQIR final : StatefulOpConversionPattern<XOp> {
 /**
  * @brief Converts quartz.rx operation to QIR RX
  *
- * @details
- * Example transformation:
+ * @par Example:
  * ```mlir
- * quartz.rx %q(%theta) : !quartz.qubit
- * // becomes:
+ * quartz.rx(%theta) %q : !quartz.qubit
+ * ```
+ * is converted to
+ * ```mlir
  * llvm.call @__quantum__qis__rx__body(%q, %theta) : (!llvm.ptr, f64) -> ()
  * ```
  */
@@ -576,11 +730,12 @@ struct ConvertQuartzRXQIR final : StatefulOpConversionPattern<RXOp> {
 /**
  * @brief Converts quartz.u2 operation to QIR U2
  *
- * @details
- * Example transformation:
+ * @par Example:
  * ```mlir
- * quartz.u2 %q(%phi, %lambda) : !quartz.qubit
- * // becomes:
+ * quartz.u2(%phi, %lambda) %q : !quartz.qubit
+ * ```
+ * is converted to
+ * ```mlir
  * llvm.call @__quantum__qis__u2__body(%q, %phi, %lambda) : (!llvm.ptr, f64,
  * f64) -> ()
  * ```
@@ -657,11 +812,12 @@ struct ConvertQuartzU2QIR final : StatefulOpConversionPattern<U2Op> {
 /**
  * @brief Converts quartz.swap operation to QIR SWAP
  *
- * @details
- * Example transformation:
+ * @par Example:
  * ```mlir
  * quartz.swap %q1, %q2 : !quartz.qubit, !quartz.qubit
- * // becomes:
+ * ```
+ * is converted to
+ * ```mlir
  * llvm.call @__quantum__qis__swap__body(%q1, %q2) : (!llvm.ptr, !llvm.ptr) ->
  * ()
  * ```
@@ -1095,6 +1251,8 @@ struct QuartzToQIR final : impl::QuartzToQIRBase<QuartzToQIR> {
       quartzPatterns.add<ConvertQuartzMeasureQIR>(typeConverter, ctx, &state);
       quartzPatterns.add<ConvertQuartzResetQIR>(typeConverter, ctx);
       quartzPatterns.add<ConvertQuartzXQIR>(typeConverter, ctx, &state);
+      quartzPatterns.add<ConvertQuartzSQIR>(typeConverter, ctx, &state);
+      quartzPatterns.add<ConvertQuartzSdgQIR>(typeConverter, ctx, &state);
       quartzPatterns.add<ConvertQuartzRXQIR>(typeConverter, ctx, &state);
       quartzPatterns.add<ConvertQuartzU2QIR>(typeConverter, ctx, &state);
       quartzPatterns.add<ConvertQuartzSWAPQIR>(typeConverter, ctx, &state);

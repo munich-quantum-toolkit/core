@@ -278,6 +278,52 @@ def XOp : FluxOp<"x", traits = [UnitaryOpInterface, OneTargetZeroParameter]> {
     let hasCanonicalizer = 1;
 }
 
+def SOp : FluxOp<"s", traits = [UnitaryOpInterface, OneTargetZeroParameter]> {
+    let summary = "Apply an S gate to a qubit";
+    let description = [{
+        Applies an S gate to a qubit and returns the transformed qubit.
+
+        Example:
+        ```mlir
+        %q_out = flux.s %q_in : !flux.qubit -> !flux.qubit
+        ```
+    }];
+
+    let arguments = (ins Arg<QubitType, "the target qubit", [MemRead]>:$qubit_in);
+    let results = (outs QubitType:$qubit_out);
+    let assemblyFormat = "$qubit_in attr-dict `:` type($qubit_in) `->` type($qubit_out)";
+
+    let extraClassDeclaration = [{
+        DenseElementsAttr tryGetStaticMatrix();
+        static StringRef getBaseSymbol() { return "s"; }
+    }];
+
+    let hasCanonicalizer = 1;
+}
+
+def SdgOp : FluxOp<"sdg", traits = [UnitaryOpInterface, OneTargetZeroParameter]> {
+    let summary = "Apply an Sdg gate to a qubit";
+    let description = [{
+        Applies an Sdg gate to a qubit and returns the transformed qubit.
+
+        Example:
+        ```mlir
+        %q_out = flux.sdg %q_in : !flux.qubit -> !flux.qubit
+        ```
+    }];
+
+    let arguments = (ins Arg<QubitType, "the target qubit", [MemRead]>:$qubit_in);
+    let results = (outs QubitType:$qubit_out);
+    let assemblyFormat = "$qubit_in attr-dict `:` type($qubit_in) `->` type($qubit_out)";
+
+    let extraClassDeclaration = [{
+        DenseElementsAttr tryGetStaticMatrix();
+        static StringRef getBaseSymbol() { return "sdg"; }
+    }];
+
+    let hasCanonicalizer = 1;
+}
+
 def RXOp : FluxOp<"rx", traits = [UnitaryOpInterface, OneTargetOneParameter]> {
     let summary = "Apply an RX gate to a qubit";
     let description = [{

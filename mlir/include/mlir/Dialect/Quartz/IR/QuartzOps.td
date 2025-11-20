@@ -263,6 +263,46 @@ def XOp : QuartzOp<"x", traits = [UnitaryOpInterface, OneTargetZeroParameter]> {
     }];
 }
 
+def SOp : QuartzOp<"s", traits = [UnitaryOpInterface, OneTargetZeroParameter]> {
+    let summary = "Apply an S gate to a qubit";
+    let description = [{
+        Applies an S gate to a qubit, modifying it in place.
+
+        Example:
+        ```mlir
+        quartz.s %q : !flux.qubit
+        ```
+    }];
+
+    let arguments = (ins Arg<QubitType, "the target qubit", [MemRead, MemWrite]>:$qubit_in);
+    let assemblyFormat = "$qubit_in attr-dict";
+
+    let extraClassDeclaration = [{
+        DenseElementsAttr tryGetStaticMatrix();
+        static StringRef getBaseSymbol() { return "s"; }
+    }];
+}
+
+def SdgOp : QuartzOp<"sdg", traits = [UnitaryOpInterface, OneTargetZeroParameter]> {
+    let summary = "Apply an Sdg gate to a qubit";
+    let description = [{
+        Applies an Sdg gate to a qubit, modifying it in place.
+
+        Example:
+        ```mlir
+        quartz.sdg %q : !flux.qubit
+        ```
+    }];
+
+    let arguments = (ins Arg<QubitType, "the target qubit", [MemRead, MemWrite]>:$qubit_in);
+    let assemblyFormat = "$qubit_in attr-dict";
+
+    let extraClassDeclaration = [{
+        DenseElementsAttr tryGetStaticMatrix();
+        static StringRef getBaseSymbol() { return "sdg"; }
+    }];
+}
+
 def RXOp : QuartzOp<"rx", traits = [UnitaryOpInterface, OneTargetOneParameter]> {
     let summary = "Apply an RX gate to a qubit";
     let description = [{

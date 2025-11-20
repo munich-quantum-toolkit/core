@@ -131,6 +131,16 @@ LogicalResult MeasureOp::verify() {
 
 DenseElementsAttr XOp::tryGetStaticMatrix() { return getMatrixX(getContext()); }
 
+// SOp
+
+DenseElementsAttr SOp::tryGetStaticMatrix() { return getMatrixS(getContext()); }
+
+// SdgOp
+
+DenseElementsAttr SdgOp::tryGetStaticMatrix() {
+  return getMatrixSdg(getContext());
+}
+
 // RXOp
 DenseElementsAttr RXOp::tryGetStaticMatrix() {
   const auto& theta = getStaticParameter(getTheta());

@@ -261,11 +261,12 @@ public:
   Value x(Value qubit);
 
   /**
-   * @brief Apply a CX gate
+   * @brief Apply a controlled X gate
    *
    * @param control Input control qubit (must be valid/unconsumed)
    * @param target Input target qubit (must be valid/unconsumed)
    * @return Pair of (output_control_qubit, output_target_qubit)
+   *
    * @par Example:
    * ```c++
    * {q0_out, q1_out} = builder.cx(q0_in, q1_in);
@@ -285,6 +286,7 @@ public:
    * @param controls Input control qubits (must be valid/unconsumed)
    * @param target Input target qubit (must be valid/unconsumed)
    * @return Pair of (output_control_qubits, output_target_qubit)
+   *
    * @par Example:
    * ```c++
    * {controls_out, target_out} = builder.mcx({q0_in, q1_in}, q2_in);
@@ -298,6 +300,128 @@ public:
    * ```
    */
   std::pair<ValueRange, Value> mcx(ValueRange controls, Value target);
+
+  /**
+   * @brief Apply an S gate to a qubit
+   *
+   * @details
+   * Consumes the input qubit and produces a new output qubit SSA value.
+   * The input is validated and the tracking is updated.
+   *
+   * @param qubit Input qubit (must be valid/unconsumed)
+   * @return Output qubit
+   *
+   * @par Example:
+   * ```c++
+   * q_out = builder.s(q_in);
+   * ```
+   * ```mlir
+   * %q_out = flux.s %q_in : !flux.qubit -> !flux.qubit
+   * ```
+   */
+  Value s(Value qubit);
+
+  /**
+   * @brief Apply a controlled S gate
+   *
+   * @param control Input control qubit (must be valid/unconsumed)
+   * @param target Input target qubit (must be valid/unconsumed)
+   * @return Pair of (output_control_qubit, output_target_qubit)
+   *
+   * @par Example:
+   * ```c++
+   * {q0_out, q1_out} = builder.cs(q0_in, q1_in);
+   * ```
+   * ```mlir
+   * %q0_out, %q1_out = flux.ctrl(%q0_in) %q1_in {
+   *   %q1_res = flux.s %q1_in : !flux.qubit -> !flux.qubit
+   *   flux.yield %q1_res
+   * } : ({!flux.qubit}, {!flux.qubit}) -> ({!flux.qubit}, {!flux.qubit})
+   * ```
+   */
+  std::pair<Value, Value> cs(Value control, Value target);
+
+  /**
+   * @brief Apply a multi-controlled S gate
+   *
+   * @param controls Input control qubits (must be valid/unconsumed)
+   * @param target Input target qubit (must be valid/unconsumed)
+   * @return Pair of (output_control_qubits, output_target_qubit)
+   *
+   * @par Example:
+   * ```c++
+   * {controls_out, target_out} = builder.mcs({q0_in, q1_in}, q2_in);
+   * ```
+   * ```mlir
+   * %controls_out, %target_out = flux.ctrl(%q0_in, %q1_in) %q2_in {
+   *   %q2_res = flux.s %q2_in : !flux.qubit -> !flux.qubit
+   *   flux.yield %q2_res
+   * } : ({!flux.qubit, !flux.qubit}, {!flux.qubit}) -> ({!flux.qubit,
+   * !flux.qubit}, {!flux.qubit})
+   * ```
+   */
+  std::pair<ValueRange, Value> mcs(ValueRange controls, Value target);
+
+  /**
+   * @brief Apply an Sdg gate to a qubit
+   *
+   * @details
+   * Consumes the input qubit and produces a new output qubit SSA value.
+   * The input is validated and the tracking is updated.
+   *
+   * @param qubit Input qubit (must be valid/unconsumed)
+   * @return Output qubit
+   *
+   * @par Example:
+   * ```c++
+   * q_out = builder.sdg(q_in);
+   * ```
+   * ```mlir
+   * %q_out = flux.sdg %q_in : !flux.qubit -> !flux.qubit
+   * ```
+   */
+  Value sdg(Value qubit);
+
+  /**
+   * @brief Apply a controlled Sdg gate
+   *
+   * @param control Input control qubit (must be valid/unconsumed)
+   * @param target Input target qubit (must be valid/unconsumed)
+   * @return Pair of (output_control_qubit, output_target_qubit)
+   *
+   * @par Example:
+   * ```c++
+   * {q0_out, q1_out} = builder.csdg(q0_in, q1_in);
+   * ```
+   * ```mlir
+   * %q0_out, %q1_out = flux.ctrl(%q0_in) %q1_in {
+   *   %q1_res = flux.sdg %q1_in : !flux.qubit -> !flux.qubit
+   *   flux.yield %q1_res
+   * } : ({!flux.qubit}, {!flux.qubit}) -> ({!flux.qubit}, {!flux.qubit})
+   * ```
+   */
+  std::pair<Value, Value> csdg(Value control, Value target);
+
+  /**
+   * @brief Apply a multi-controlled Sdg gate
+   *
+   * @param controls Input control qubits (must be valid/unconsumed)
+   * @param target Input target qubit (must be valid/unconsumed)
+   * @return Pair of (output_control_qubits, output_target_qubit)
+   *
+   * @par Example:
+   * ```c++
+   * {controls_out, target_out} = builder.mcsdg({q0_in, q1_in}, q2_in);
+   * ```
+   * ```mlir
+   * %controls_out, %target_out = flux.ctrl(%q0_in, %q1_in) %q2_in {
+   *   %q2_res = flux.sdg %q2_in : !flux.qubit -> !flux.qubit
+   *   flux.yield %q2_res
+   * } : ({!flux.qubit, !flux.qubit}, {!flux.qubit}) -> ({!flux.qubit,
+   * !flux.qubit}, {!flux.qubit})
+   * ```
+   */
+  std::pair<ValueRange, Value> mcsdg(ValueRange controls, Value target);
 
   /**
    * @brief Apply an RX gate to a qubit
@@ -327,6 +451,7 @@ public:
    * @param control Input control qubit (must be valid/unconsumed)
    * @param target Input target qubit (must be valid/unconsumed)
    * @return Pair of (output_control_qubit, output_target_qubit)
+   *
    * @par Example:
    * ```c++
    * {q0_out, q1_out} = builder.crx(1.0, q0_in, q1_in);
@@ -348,6 +473,7 @@ public:
    * @param controls Input control qubits (must be valid/unconsumed)
    * @param target Input target qubit (must be valid/unconsumed)
    * @return Pair of (output_control_qubits, output_target_qubit)
+   *
    * @par Example:
    * ```c++
    * {controls_out, target_out} = builder.mcrx(1.0, {q0_in, q1_in}, q2_in);
@@ -394,6 +520,7 @@ public:
    * @param control Input control qubit (must be valid/unconsumed)
    * @param target Input target qubit (must be valid/unconsumed)
    * @return Pair of (output_control_qubit, output_target_qubit)
+   *
    * @par Example:
    * ```c++
    * {q0_out, q1_out} = builder.cu2(1.0, 0.5, q0_in, q1_in);
@@ -417,6 +544,7 @@ public:
    * @param controls Input control qubits (must be valid/unconsumed)
    * @param target Input target qubit (must be valid/unconsumed)
    * @return Pair of (output_control_qubits, output_target_qubit)
+   *
    * @par Example:
    * ```c++
    * {controls_out, target_out} = builder.mcu2(1.0, 0.5, {q0_in, q1_in}, q2_in);
@@ -461,6 +589,7 @@ public:
    * @param qubit0 First target qubit (must be valid/unconsumed)
    * @param qubit1 Second target qubit (must be valid/unconsumed)
    * @return Pair of (output_control_qubit, (output_qubit0, output_qubit1))
+   *
    * @par Example:
    * ```c++
    * {q0_out, {q1_out, q2_out}} = builder.cswap(q0_in, q1_in, q2_in);
@@ -483,6 +612,7 @@ public:
    * @param qubit0 First target qubit (must be valid/unconsumed)
    * @param qubit1 Second target qubit (must be valid/unconsumed)
    * @return Pair of (output_control_qubits, (output_qubit0, output_qubit1))
+   *
    * @par Example:
    * ```c++
    * {controls_out, {q1_out, q2_out}} = builder.mcswap({q0_in, q1_in}, q2_in,

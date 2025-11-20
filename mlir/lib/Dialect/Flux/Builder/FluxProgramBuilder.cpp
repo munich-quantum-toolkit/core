@@ -170,13 +170,12 @@ Value FluxProgramBuilder::reset(Value qubit) {
 // Unitary Operations
 //===----------------------------------------------------------------------===//
 
+// XOp
+
 Value FluxProgramBuilder::x(Value qubit) {
   auto xOp = create<XOp>(loc, qubit);
   const auto& qubitOut = xOp.getQubitOut();
-
-  // Update tracking
   updateQubitTracking(qubit, qubitOut);
-
   return qubitOut;
 }
 
@@ -202,14 +201,75 @@ std::pair<ValueRange, Value> FluxProgramBuilder::mcx(const ValueRange controls,
   return {controlsOut, targetsOut[0]};
 }
 
+// SOp
+
+Value FluxProgramBuilder::s(Value qubit) {
+  auto sOp = create<SOp>(loc, qubit);
+  const auto& qubitOut = sOp.getQubitOut();
+  updateQubitTracking(qubit, qubitOut);
+  return qubitOut;
+}
+
+std::pair<Value, Value> FluxProgramBuilder::cs(const Value control,
+                                               const Value target) {
+  const auto [controlsOut, targetsOut] =
+      ctrl(control, target,
+           [&](OpBuilder& b, const ValueRange targets) -> ValueRange {
+             const auto s = b.create<SOp>(loc, targets[0]);
+             return s->getResults();
+           });
+  return {controlsOut[0], targetsOut[0]};
+}
+
+std::pair<ValueRange, Value> FluxProgramBuilder::mcs(const ValueRange controls,
+                                                     const Value target) {
+  const auto [controlsOut, targetsOut] =
+      ctrl(controls, target,
+           [&](OpBuilder& b, const ValueRange targets) -> ValueRange {
+             const auto s = b.create<SOp>(loc, targets[0]);
+             return s->getResults();
+           });
+  return {controlsOut, targetsOut[0]};
+}
+
+// SdgOp
+
+Value FluxProgramBuilder::sdg(Value qubit) {
+  auto sdgOp = create<SdgOp>(loc, qubit);
+  const auto& qubitOut = sdgOp.getQubitOut();
+  updateQubitTracking(qubit, qubitOut);
+  return qubitOut;
+}
+
+std::pair<Value, Value> FluxProgramBuilder::csdg(const Value control,
+                                                 const Value target) {
+  const auto [controlsOut, targetsOut] =
+      ctrl(control, target,
+           [&](OpBuilder& b, const ValueRange targets) -> ValueRange {
+             const auto sdg = b.create<SdgOp>(loc, targets[0]);
+             return sdg->getResults();
+           });
+  return {controlsOut[0], targetsOut[0]};
+}
+
+std::pair<ValueRange, Value>
+FluxProgramBuilder::mcsdg(const ValueRange controls, const Value target) {
+  const auto [controlsOut, targetsOut] =
+      ctrl(controls, target,
+           [&](OpBuilder& b, const ValueRange targets) -> ValueRange {
+             const auto sdg = b.create<SdgOp>(loc, targets[0]);
+             return sdg->getResults();
+           });
+  return {controlsOut, targetsOut[0]};
+}
+
+// RXOp
+
 Value FluxProgramBuilder::rx(const std::variant<double, Value>& theta,
                              Value qubit) {
   auto rxOp = create<RXOp>(loc, qubit, theta);
   const auto& qubitOut = rxOp.getQubitOut();
-
-  // Update tracking
   updateQubitTracking(qubit, qubitOut);
-
   return qubitOut;
 }
 
@@ -237,15 +297,14 @@ FluxProgramBuilder::mcrx(const std::variant<double, Value>& theta,
   return {controlsOut, targetsOut[0]};
 }
 
+// U2Op
+
 Value FluxProgramBuilder::u2(const std::variant<double, Value>& phi,
                              const std::variant<double, Value>& lambda,
                              Value qubit) {
   auto u2Op = create<U2Op>(loc, qubit, phi, lambda);
   const auto& qubitOut = u2Op.getQubitOut();
-
-  // Update tracking
   updateQubitTracking(qubit, qubitOut);
-
   return qubitOut;
 }
 
@@ -275,15 +334,14 @@ FluxProgramBuilder::mcu2(const std::variant<double, Value>& phi,
   return {controlsOut, targetsOut[0]};
 }
 
+// SWAPOp
+
 std::pair<Value, Value> FluxProgramBuilder::swap(Value qubit0, Value qubit1) {
   auto swapOp = create<SWAPOp>(loc, qubit0, qubit1);
   const auto& qubit0Out = swapOp.getQubit0Out();
   const auto& qubit1Out = swapOp.getQubit1Out();
-
-  // Update tracking
   updateQubitTracking(qubit0, qubit0Out);
   updateQubitTracking(qubit1, qubit1Out);
-
   return {qubit0Out, qubit1Out};
 }
 
