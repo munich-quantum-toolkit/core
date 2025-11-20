@@ -620,17 +620,6 @@ protected:
 
     auto [U, S] = helpers::selfAdjointEvd(std::forward<T>(a));
 
-    // TODO: not in original code
-    if (std::real(U.determinant()) < 0.0) {
-      std::cerr << "CORRECTION!\n";
-      // if determinant of eigenvector matrix is -1.0, multiply first
-      // eigenvector by -1.0
-      U.col(0) *= -1.0;
-      // U.col(U.cols() - 1) *= -1.0;
-      // U *= -1.0;
-      // U += std::remove_cvref_t<T>::Constant(0.0); // ensure no -0.0 exists
-    }
-
     return std::make_pair(U, S);
   }
 
