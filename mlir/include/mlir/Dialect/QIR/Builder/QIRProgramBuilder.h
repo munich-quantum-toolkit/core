@@ -530,6 +530,26 @@ private:
   QIRMetadata metadata_;
 
   /**
+   * @brief Helper to create a one-target, zero-parameter QIR operation
+   *
+   * @param qubit Input qubit
+   * @param fnName Name of the QIR function to call
+   */
+  void createOneTargetZeroParameter(const Value qubit, StringRef fnName);
+
+  /**
+   * @brief Helper to create a controlled one-target, zero-parameter QIR
+   * operation
+   *
+   * @param control Input control qubit
+   * @param target Input target qubit
+   * @param fnName Name of the QIR function to call
+   */
+  void createControlledOneTargetZeroParameter(const Value control,
+                                              const Value target,
+                                              StringRef fnName);
+
+  /**
    * @brief Generate array-based output recording in the output block
    *
    * @details

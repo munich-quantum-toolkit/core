@@ -170,97 +170,88 @@ Value FluxProgramBuilder::reset(Value qubit) {
 // Unitary Operations
 //===----------------------------------------------------------------------===//
 
-// XOp
+// Helper methods
 
-Value FluxProgramBuilder::x(Value qubit) {
-  auto xOp = create<XOp>(loc, qubit);
-  const auto& qubitOut = xOp.getQubitOut();
+template <typename OpType>
+Value FluxProgramBuilder::createOneTargetZeroParameter(Value qubit) {
+  auto op = create<OpType>(loc, qubit);
+  const auto& qubitOut = op.getQubitOut();
   updateQubitTracking(qubit, qubitOut);
   return qubitOut;
 }
 
-std::pair<Value, Value> FluxProgramBuilder::cx(const Value control,
-                                               const Value target) {
+template <typename OpType>
+std::pair<Value, Value>
+FluxProgramBuilder::createControlledOneTargetZeroParameter(Value control,
+                                                           Value target) {
   const auto [controlsOut, targetsOut] =
       ctrl(control, target,
            [&](OpBuilder& b, const ValueRange targets) -> ValueRange {
-             const auto x = b.create<XOp>(loc, targets[0]);
-             return x->getResults();
+             const auto op = b.create<OpType>(loc, targets[0]);
+             return op->getResults();
            });
   return {controlsOut[0], targetsOut[0]};
 }
 
-std::pair<ValueRange, Value> FluxProgramBuilder::mcx(const ValueRange controls,
-                                                     const Value target) {
+template <typename OpType>
+std::pair<ValueRange, Value>
+FluxProgramBuilder::createMultiControlledOneTargetZeroParameter(
+    ValueRange controls, Value target) {
   const auto [controlsOut, targetsOut] =
       ctrl(controls, target,
            [&](OpBuilder& b, const ValueRange targets) -> ValueRange {
-             const auto x = b.create<XOp>(loc, targets[0]);
-             return x->getResults();
+             const auto op = b.create<OpType>(loc, targets[0]);
+             return op->getResults();
            });
   return {controlsOut, targetsOut[0]};
+}
+
+// XOp
+
+Value FluxProgramBuilder::x(Value qubit) {
+  return createOneTargetZeroParameter<XOp>(qubit);
+}
+
+std::pair<Value, Value> FluxProgramBuilder::cx(const Value control,
+                                               const Value target) {
+  return createControlledOneTargetZeroParameter<XOp>(control, target);
+}
+
+std::pair<ValueRange, Value> FluxProgramBuilder::mcx(const ValueRange controls,
+                                                     const Value target) {
+  return createMultiControlledOneTargetZeroParameter<XOp>(controls, target);
 }
 
 // SOp
 
 Value FluxProgramBuilder::s(Value qubit) {
-  auto sOp = create<SOp>(loc, qubit);
-  const auto& qubitOut = sOp.getQubitOut();
-  updateQubitTracking(qubit, qubitOut);
-  return qubitOut;
+  return createOneTargetZeroParameter<SOp>(qubit);
 }
 
 std::pair<Value, Value> FluxProgramBuilder::cs(const Value control,
                                                const Value target) {
-  const auto [controlsOut, targetsOut] =
-      ctrl(control, target,
-           [&](OpBuilder& b, const ValueRange targets) -> ValueRange {
-             const auto s = b.create<SOp>(loc, targets[0]);
-             return s->getResults();
-           });
-  return {controlsOut[0], targetsOut[0]};
+  return createControlledOneTargetZeroParameter<SOp>(control, target);
 }
 
 std::pair<ValueRange, Value> FluxProgramBuilder::mcs(const ValueRange controls,
                                                      const Value target) {
-  const auto [controlsOut, targetsOut] =
-      ctrl(controls, target,
-           [&](OpBuilder& b, const ValueRange targets) -> ValueRange {
-             const auto s = b.create<SOp>(loc, targets[0]);
-             return s->getResults();
-           });
-  return {controlsOut, targetsOut[0]};
+  return createMultiControlledOneTargetZeroParameter<SOp>(controls, target);
 }
 
 // SdgOp
 
 Value FluxProgramBuilder::sdg(Value qubit) {
-  auto sdgOp = create<SdgOp>(loc, qubit);
-  const auto& qubitOut = sdgOp.getQubitOut();
-  updateQubitTracking(qubit, qubitOut);
-  return qubitOut;
+  return createOneTargetZeroParameter<SdgOp>(qubit);
 }
 
 std::pair<Value, Value> FluxProgramBuilder::csdg(const Value control,
                                                  const Value target) {
-  const auto [controlsOut, targetsOut] =
-      ctrl(control, target,
-           [&](OpBuilder& b, const ValueRange targets) -> ValueRange {
-             const auto sdg = b.create<SdgOp>(loc, targets[0]);
-             return sdg->getResults();
-           });
-  return {controlsOut[0], targetsOut[0]};
+  return createControlledOneTargetZeroParameter<SdgOp>(control, target);
 }
 
 std::pair<ValueRange, Value>
 FluxProgramBuilder::mcsdg(const ValueRange controls, const Value target) {
-  const auto [controlsOut, targetsOut] =
-      ctrl(controls, target,
-           [&](OpBuilder& b, const ValueRange targets) -> ValueRange {
-             const auto sdg = b.create<SdgOp>(loc, targets[0]);
-             return sdg->getResults();
-           });
-  return {controlsOut, targetsOut[0]};
+  return createMultiControlledOneTargetZeroParameter<SdgOp>(controls, target);
 }
 
 // RXOp

@@ -705,6 +705,42 @@ private:
   Location loc;
   ModuleOp module;
 
+  /**
+   * @brief Helper to create a one-target, zero-parameter Flux operation
+   *
+   * @tparam OpType The operation type of the Flux operation
+   * @param qubit Input qubit
+   * @return Output qubit
+   */
+  template <typename OpType> Value createOneTargetZeroParameter(Value qubit);
+
+  /**
+   * @brief Helper to create a controlled one-target, zero-parameter Flux
+   * operation
+   *
+   * @tparam OpType The operation type of the Flux operation
+   * @param control Input control qubit
+   * @param target Input target qubit
+   * @return Pair of (output_control_qubit, output_target_qubit)
+   */
+  template <typename OpType>
+  std::pair<Value, Value> createControlledOneTargetZeroParameter(Value control,
+                                                                 Value target);
+
+  /**
+   * @brief Helper to create a multi-controlled one-target, zero-parameter Flux
+   * operation
+   *
+   * @tparam OpType The operation type of the Flux operation
+   * @param controls Input control qubits
+   * @param target Input target qubit
+   * @return Pair of (output_control_qubits, output_target_qubit)
+   */
+  template <typename OpType>
+  std::pair<ValueRange, Value>
+  createMultiControlledOneTargetZeroParameter(ValueRange controls,
+                                              Value target);
+
   //===--------------------------------------------------------------------===//
   // Linear Type Tracking Helpers
   //===--------------------------------------------------------------------===//
