@@ -86,7 +86,7 @@ struct GateDecompositionPattern final
       }
       if (hasGlobalPhase()) {
         // need to add a global phase gate if a global phase needs to be applied
-        c += getComplexity(qc::GPhase, 1);
+        c += getComplexity(qc::GPhase, 0);
       }
       return c;
     }
@@ -186,11 +186,14 @@ struct GateDecompositionPattern final
 
 protected:
   static constexpr fp SANITY_CHECK_PRECISION = 1e-12;
-  [[nodiscard]] static std::size_t getComplexity(qc::OpType /*type*/,
+  [[nodiscard]] static std::size_t getComplexity(qc::OpType type,
                                                  std::size_t numOfQubits) {
     if (numOfQubits > 1) {
       constexpr std::size_t multiQubitFactor = 10;
       return (numOfQubits - 1) * multiQubitFactor;
+    }
+    if (type == qc::GPhase) {
+      return 2;
     }
     return 1;
   }
