@@ -643,7 +643,6 @@ protected:
     // or "7.1 Kronecker decomposition" in on_gates.pdf
     // or quantumflow.kronecker_decomposition
 
-    helpers::print(specialUnitary, "SPECIAL_UNITARY");
     // first quadrant
     matrix2x2 r{{specialUnitary(0, 0), specialUnitary(0, 1)},
                 {specialUnitary(1, 0), specialUnitary(1, 1)}};
@@ -659,14 +658,11 @@ protected:
           "decompose_two_qubit_product_gate: unable to decompose: det_r < 0.1"};
     }
     r /= std::sqrt(detR);
-    helpers::print(r, "R");
     // transpose with complex conjugate of each element
     matrix2x2 rTConj = r.transpose().conjugate();
 
     auto temp = helpers::kroneckerProduct(IDENTITY_GATE, rTConj);
-    helpers::print(temp, "TEMP (decompose_two_qubit_product_gate, 1)");
     temp = specialUnitary * temp;
-    helpers::print(temp, "TEMP (decompose_two_qubit_product_gate, 2)");
 
     // [[a, b, c, d],
     //  [e, f, g, h], => [[a, c],
@@ -692,10 +688,6 @@ protected:
         {C_ZERO, C_ZERO, IM, C_M_ONE},
         {C_ONE, M_IM, C_ZERO, C_ZERO},
     };
-    const matrix4x4 b = FRAC1_SQRT2 * matrix4x4{{C_ONE, C_ZERO, C_ZERO, IM},
-                                                {C_ZERO, IM, C_ONE, C_ZERO},
-                                                {C_ZERO, IM, -C_ONE, C_ZERO},
-                                                {C_ONE, C_ZERO, C_ZERO, -IM}};
 
     const matrix4x4 bNonNormalizedDagger{
         {qfp(0.5, 0.), C_ZERO, C_ZERO, qfp(0.5, 0.)},
@@ -703,20 +695,16 @@ protected:
         {C_ZERO, qfp(0., -0.5), qfp(0., -0.5), C_ZERO},
         {C_ZERO, qfp(0.5, 0.), qfp(-0.5, 0.), C_ZERO},
     };
-    const matrix4x4 bDagger = b.conjugate().transpose();
-    helpers::print(unitary, "UNITARY in MAGIC BASIS TRANSFORM");
     if (direction == MagicBasisTransform::OutOf) {
-      // return bDagger * unitary * b; // TODO: same result?
       return bNonNormalizedDagger * unitary * bNonNormalized;
     }
     if (direction == MagicBasisTransform::Into) {
-      // return b * unitary * bDagger;
       return bNonNormalized * unitary * bNonNormalizedDagger;
     }
     throw std::logic_error{"Unknown MagicBasisTransform direction!"};
   }
 
-  static fp traceToFid(const qfp& x) {
+  static fp traceToFidelity(const qfp& x) {
     auto xAbs = std::abs(x);
     return (4.0 + xAbs * xAbs) / 20.0;
   }
@@ -745,8 +733,6 @@ protected:
   static matrix2x2 rzMatrix(fp theta) {
     return matrix2x2{{qfp{std::cos(theta / 2.), -std::sin(theta / 2.)}, 0},
                      {0, qfp{std::cos(theta / 2.), std::sin(theta / 2.)}}};
-    // auto ilam2 = qfp(0., 0.5 * theta);
-    // return {std::exp(-ilam2), C_ZERO, C_ZERO, std::exp(ilam2)};
   }
 
   static matrix4x4 rxxMatrix(const fp theta) {
@@ -766,7 +752,7 @@ protected:
     return matrix4x4{{{cosTheta, 0, 0, {0., sinTheta}},
                       {0, cosTheta, {0., -sinTheta}, 0},
                       {0, {0., -sinTheta}, cosTheta, 0},
-                      {std::complex{0., sinTheta}, 0, 0, cosTheta}}};
+                      {{0., sinTheta}, 0, 0, cosTheta}}};
   }
 
   static matrix4x4 rzzMatrix(const fp theta) {
@@ -901,15 +887,15 @@ protected:
         }
       }
       if (gate.type == qc::RXX) {
-        // TODO: check qubit order
+        // TODO: check qubit order?
         return rxxMatrix(gate.parameter[0]);
       }
       if (gate.type == qc::RYY) {
-        // TODO: check qubit order
+        // TODO: check qubit order?
         return ryyMatrix(gate.parameter[0]);
       }
       if (gate.type == qc::RZZ) {
-        // TODO: check qubit order
+        // TODO: check qubit order?
         return rzzMatrix(gate.parameter[0]);
       }
       if (gate.type == qc::I) {
@@ -921,6 +907,13 @@ protected:
     throw std::logic_error{"Invalid number of qubit IDs in compute_unitary"};
   }
 
+  /**
+   * Weyl decomposition of a 2-qubit unitary matrix (4x4).
+   * The result consists of four 2x2 1-qubit matrices (k1l, k2l, k1r, k2r) and
+   * three parameters for a canonical gate (a, b, c). The matrices can then be
+   * decomposed using a single-qubit decomposition into e.g. rotation gates and
+   * the canonical gate is RXX(-2 * a), RYY(-2 * b), RZZ (-2 * c).
+   */
   struct TwoQubitWeylDecomposition {
     // a, b, c are the parameters of the canonical gate (CAN)
     fp a;           // rotation of RXX gate in CAN
@@ -960,13 +953,10 @@ protected:
       auto detU = u.determinant();
       auto detPow = std::pow(detU, static_cast<fp>(-0.25));
       u *= detPow;
-      helpers::print(u, "U");
       auto globalPhase = std::arg(detU) / 4.;
       auto uP = magicBasisTransform(u, MagicBasisTransform::OutOf);
-      helpers::print(uP, "U_P");
       matrix4x4 m2 = uP.transpose() * uP;
       auto defaultEulerBasis = EulerBasis::ZYZ;
-      helpers::print(m2, "M2");
 
       // M2 is a symmetric complex matrix. We need to decompose it as M2 = P D
       // P^T where P ∈ SO(4), D is diagonal with unit-magnitude elements.
@@ -1008,12 +998,9 @@ protected:
         matrix4x4 pInner = pInnerReal;
         diagonal4x4 dInner = (pInner.transpose() * m2 * pInner).diagonal();
 
-        helpers::print(dInner, "D_INNER");
-        helpers::print(pInner, "P_INNER");
         matrix4x4 diagD = dInner.asDiagonal();
 
         matrix4x4 compare = pInner * diagD * pInner.transpose();
-        helpers::print(compare, "COMPARE");
         found = compare.isApprox(m2, 1e-13);
         if (found) {
           // p are the eigenvectors which are decomposed into the
@@ -1040,13 +1027,11 @@ protected:
       // Step 7
       Eigen::Vector<fp, 3> cs;
       rdiagonal4x4 dReal = -1.0 * d.cwiseArg() / 2.0;
-      helpers::print(dReal, "D_REAL");
       dReal(3) = -dReal(0) - dReal(1) - dReal(2);
       for (int i = 0; i < static_cast<int>(cs.size()); ++i) {
         assert(i < dReal.size());
         cs[i] = remEuclid((dReal(i) + dReal(3)) / 2.0, qc::TAU);
       }
-      helpers::print(cs, "CS (1)");
 
       decltype(cs) cstemp;
       llvm::transform(cs, cstemp.begin(), [](auto&& x) {
@@ -1058,20 +1043,12 @@ protected:
                     // order in eigen decomposition algorithm?
       llvm::stable_sort(order,
                         [&](auto a, auto b) { return cstemp[a] < cstemp[b]; });
-      // llvm::stable_sort(order, [&](fp a, fp b) {
-      //   auto tmp1 = remEuclid(cs[a], qc::PI_2);
-      //   tmp1 = std::min(tmp1, qc::PI_2 - tmp1);
-      //   auto tmp2 = remEuclid(cs[b], qc::PI_2);
-      //   tmp2 = std::min(tmp2, qc::PI_2 - tmp2);
-      //   return tmp1 < tmp2;
-      // });
       std::tie(order[0], order[1], order[2]) =
           std::tuple{order[1], order[2], order[0]};
       std::tie(cs[0], cs[1], cs[2]) =
           std::tuple{cs[order[0]], cs[order[1]], cs[order[2]]};
       std::tie(dReal(0), dReal(1), dReal(2)) =
           std::tuple{dReal(order[0]), dReal(order[1]), dReal(order[2])};
-      helpers::print(dReal, "D_REAL (sorted)");
 
       // swap columns of p according to order
       matrix4x4 pOrig = p;
@@ -1079,7 +1056,6 @@ protected:
         p.col(i) = pOrig.col(order[i]);
       }
       if (p.determinant().real() < 0.0) {
-        std::cerr << "SECOND CORRECTION?\n";
         auto lastColumnIndex = p.cols() - 1;
         p.col(lastColumnIndex) *= -1.0;
       }
@@ -1088,20 +1064,13 @@ protected:
       temp *= IM;
       temp = temp.exp();
 
-      // temp = temp.conjugate();
-      // temp += matrix4x4::Constant(0.0);
-      helpers::print(temp, "TEMP");
-      helpers::print(p, "P");
       assert(std::abs(p.determinant() - 1.0) < SANITY_CHECK_PRECISION);
-      // https://threeplusone.com/pubs/on_gates.pdf
-      // uP = V, m2 = V^T*V, temp = D, p = Q1
+
       matrix4x4 k1 = uP * p * temp;
-      helpers::print(k1, "K1 (1)");
       assert((k1.transpose() * k1).isIdentity()); // k1 must be orthogonal
       assert(k1.determinant().real() > 0.0);
       k1 = magicBasisTransform(k1, MagicBasisTransform::Into);
       matrix4x4 k2 = p.transpose().conjugate();
-      helpers::print(k2, "K2 (1)");
       assert((k2.transpose() * k2).isIdentity()); // k2 must be orthogonal
       assert(k2.determinant().real() > 0.0);
       k2 = magicBasisTransform(k2, MagicBasisTransform::Into);
@@ -1178,16 +1147,6 @@ protected:
         globalPhase -= qc::PI_2;
       }
 
-      helpers::print(K1l, "K1l (1)");
-      helpers::print(K2l, "K2l (1)");
-      helpers::print(K1r, "K1r (1)");
-      helpers::print(K2r, "K2r (1)");
-
-      helpers::print(cs, "CS (2)");
-      helpers::print(K1l, "K1l (2)");
-      helpers::print(K2l, "K2l (2)");
-      helpers::print(K1r, "K1r (2)");
-      helpers::print(K2r, "K2r (2)");
       auto [a, b, c] = std::tie(cs[1], cs[0], cs[2]);
       auto getCanonicalMatrix = [](fp a, fp b, fp c) -> matrix4x4 {
         auto xx = getTwoQubitMatrix({
@@ -1229,7 +1188,7 @@ protected:
                   qfp(std::cos(da) * std::cos(db) * std::cos(dc),
                       std::sin(da) * std::sin(db) * std::sin(dc));
         if (fidelity) {
-          return traceToFid(tr) >= *fidelity;
+          return traceToFidelity(tr) >= *fidelity;
         }
         return false;
       };
@@ -1566,7 +1525,7 @@ protected:
                    std::sin(da) * std::sin(db) * std::sin(dc));
       };
       auto tr = getTr();
-      specialized.calculatedFidelity = traceToFid(tr);
+      specialized.calculatedFidelity = traceToFidelity(tr);
       if (specialized.requestedFidelity) {
         if (specialized.calculatedFidelity + 1.0e-13 <
             *specialized.requestedFidelity) {
@@ -1809,7 +1768,8 @@ protected:
         for (int i = 0; i < static_cast<int>(traces.size()); ++i) {
           // lower fidelity means it becomes easier to choose a lower number of
           // basis gates
-          auto value = traceToFid(traces[i]) * std::pow(actualBasisFidelity, i);
+          auto value =
+              traceToFidelity(traces[i]) * std::pow(actualBasisFidelity, i);
           if (value > minValue) {
             minIndex = i;
             minValue = value;
