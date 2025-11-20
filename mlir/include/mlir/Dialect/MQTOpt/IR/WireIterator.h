@@ -53,7 +53,11 @@ public:
   explicit WireIterator(Value q, Region* region)
       : currOp(q.getDefiningOp()), q(q), region(region) {}
 
-  Operation* operator*() const { return currOp; }
+  Operation* operator*() const {
+    assert(!sentinel && "Dereferencing sentinel iterator");
+    assert(currOp && "Dereferencing null operation");
+    return currOp;
+  }
 
   WireIterator& operator++() {
     advanceForward();
@@ -201,6 +205,7 @@ private:
       return;
     }
 
+    /// Get the operation that produces the qubit value.
     currOp = q.getDefiningOp();
 
     /// Find input from output qubit.
@@ -222,8 +227,7 @@ private:
 
           llvm_unreachable("unknown qubit value in def-use chain");
         })
-        .Case<ResetOp>([&](ResetOp op) { q = op.getInQubit(); })
-        .Case<MeasureOp>([&](MeasureOp op) { q = op.getInQubit(); })
+        .Case<ResetOp, MeasureOp>([&](auto op) { q = op.getInQubit(); })
         .Case<DeallocQubitOp>([&](DeallocQubitOp op) { q = op.getQubit(); })
         .Case<scf::ForOp>([&](scf::ForOp op) {
           q = op.getInitArgs()[cast<OpResult>(q).getResultNumber()];
@@ -244,8 +248,7 @@ private:
 
           q = thenIt.q;
         })
-        .Case<QubitOp>([&](QubitOp) { /* no-op */ })
-        .Case<AllocQubitOp>([&](AllocQubitOp) { /* no-op */ })
+        .Case<AllocQubitOp, QubitOp>([&](auto) { /* no-op */ })
         .Default([&](Operation* op) {
           llvm::report_fatal_error("unknown op in def-use chain: " +
                                    op->getName().getStringRef());
