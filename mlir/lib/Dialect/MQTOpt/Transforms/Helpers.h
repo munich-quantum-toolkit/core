@@ -14,9 +14,9 @@
 #include "mlir/Dialect/MQTOpt/IR/MQTOptDialect.h"
 
 #include <algorithm>
-#include <eigen3/Eigen/Core>
-#include <eigen3/Eigen/Eigenvalues>
-#include <eigen3/unsupported/Eigen/KroneckerProduct> // TODO: unstable
+#include <Eigen/Core>
+#include <Eigen/Eigenvalues>
+#include <unsupported/Eigen/KroneckerProduct> // TODO: unstable
 #include <iomanip>                                   // TODO: remove
 #include <iostream>                                  // TODO: remove
 #include <mlir/Dialect/Arith/IR/Arith.h>
@@ -207,10 +207,7 @@ getParameters(UnitaryInterface op) {
 template <typename T>
 inline Eigen::Matrix4<T> kroneckerProduct(const Eigen::Matrix2<T>& lhs,
                                           const Eigen::Matrix2<T>& rhs) {
-  Eigen::Matrix4<T> result;
-  Eigen::KroneckerProduct kroneckerProduct{lhs, rhs};
-  kroneckerProduct.evalTo(result);
-  return result;
+  return Eigen::kroneckerProduct(lhs, rhs);
 }
 
 template <typename T, int N, int M>
