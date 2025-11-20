@@ -16,8 +16,7 @@
 #include <array>
 #include <cmath>
 #include <cstddef>
-#include <eigen3/unsupported/Eigen/CXX11/Tensor>
-#include <eigen3/unsupported/Eigen/MatrixFunctions>
+#include <format>
 #include <llvm/ADT/STLExtras.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/Operation.h>
@@ -27,6 +26,7 @@
 #include <mlir/Support/LogicalResult.h>
 #include <numbers>
 #include <string>
+#include <unsupported/Eigen/MatrixFunctions>
 #include <utility>
 
 namespace mqt::ir::opt {
@@ -1024,7 +1024,7 @@ protected:
         auto tmp = remEuclid(x, qc::PI_2);
         return std::min(tmp, qc::PI_2 - tmp);
       });
-      std::array<int, cstemp.size()> order{
+      std::array<int, 3> order{
           0, 1, 2}; // TODO: needs to be adjusted depending on eigenvector
                     // order in eigen decomposition algorithm?
       llvm::stable_sort(order,
