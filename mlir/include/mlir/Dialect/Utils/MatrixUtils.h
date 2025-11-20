@@ -12,10 +12,11 @@
 
 #include <cmath>
 #include <complex>
-
-using namespace std::complex_literals;
+#include <numbers>
 
 namespace mlir::utils {
+
+using namespace std::complex_literals;
 
 inline DenseElementsAttr getMatrixId(MLIRContext* ctx) {
   const auto& complexType = ComplexType::get(Float64Type::get(ctx));
@@ -78,7 +79,7 @@ inline DenseElementsAttr getMatrixT(MLIRContext* ctx) {
   const auto& type = RankedTensorType::get({2, 2}, complexType);
   const std::complex<double> m00 = 1.0 + 0i;
   const std::complex<double> m01 = 0.0 + 0i;
-  const std::complex<double> m11 = std::exp(1i * M_PI / 4.0);
+  const std::complex<double> m11 = std::exp(1i * std::numbers::pi / 4.0);
   return DenseElementsAttr::get(type, {m00, m01, m01, m11});
 }
 
@@ -87,7 +88,7 @@ inline DenseElementsAttr getMatrixTdg(MLIRContext* ctx) {
   const auto& type = RankedTensorType::get({2, 2}, complexType);
   const std::complex<double> m00 = 1.0 + 0i;
   const std::complex<double> m01 = 0.0 + 0i;
-  const std::complex<double> m11 = std::exp(-1i * M_PI / 4.0);
+  const std::complex<double> m11 = std::exp(-1i * std::numbers::pi / 4.0);
   return DenseElementsAttr::get(type, {m00, m01, m01, m11});
 }
 
