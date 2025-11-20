@@ -257,4 +257,12 @@ TEST_F(WireIteratorTest, TestForwardAndBackward) {
   }
 
   ASSERT_EQ(it, std::default_sentinel);
+
+  it = std::prev(it); // Back to last non-sentinel item.
+
+  for (; it != begin; --it) {
+    llvm::dbgs() << **it << '\n'; /// Keep for debugging purposes.
+  }
+
+  ASSERT_EQ(it, begin);
 }
