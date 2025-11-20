@@ -28,9 +28,8 @@ include(FetchContent)
 FetchContent_Declare(
   Eigen
   GIT_REPOSITORY https://gitlab.com/libeigen/eigen.git
-  GIT_TAG        3.4.1
-  GIT_SHALLOW    TRUE
-)
+  GIT_TAG 3.4.1
+  GIT_SHALLOW TRUE)
 FetchContent_MakeAvailable(Eigen)
 
 option(BUILD_MQT_CORE_BINDINGS "Build the MQT Core Python bindings" OFF)
