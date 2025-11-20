@@ -81,7 +81,7 @@ struct LoweringState : QIRMetadata {
   /// This allows caching result pointers for measurements with register info
   DenseMap<std::pair<StringRef, int64_t>, Value> registerResultMap;
 
-  /// Test
+  /// Modifier information
   bool inCtrlOp = false;
   SmallVector<Value> posCtrls;
 };
@@ -111,6 +111,63 @@ public:
 private:
   LoweringState* state_;
 };
+
+/**
+ * @brief Converts one-target, zero-parameter Quartz operations to QIR calls
+ *
+ * @tparam QuartzOpType The operation type of the Quartz operation
+ * @tparam QuartzOpAdaptorType The OpAdaptor type of the Quartz operation
+ * @param op The Quartz operation instance to convert
+ * @param adaptor The OpAdaptor of the Quartz operation
+ * @param rewriter The pattern rewriter
+ * @param ctx The MLIR context
+ * @param state The lowering state
+ * @param fnName The name of the QIR function to call
+ * @return LogicalResult Success or failure of the conversion
+ */
+template <typename QuartzOpType, typename QuartzOpAdaptorType>
+LogicalResult
+convertOneTargetZeroParameter(QuartzOpType& op, QuartzOpAdaptorType& adaptor,
+                              ConversionPatternRewriter& rewriter,
+                              MLIRContext* ctx, LoweringState& state,
+                              StringRef fnName) {
+  // Query state for modifier information
+  const auto inCtrlOp = state.inCtrlOp;
+  const auto& posCtrls = state.posCtrls;
+  const auto numCtrls = posCtrls.size();
+
+  // Define function argument types
+  SmallVector<Type> argumentTypes;
+  argumentTypes.reserve(numCtrls + 1);
+  const auto ptrType = LLVM::LLVMPointerType::get(ctx);
+  // Add control pointers
+  for (size_t i = 0; i < numCtrls; ++i) {
+    argumentTypes.push_back(ptrType);
+  }
+  // Add target pointer
+  argumentTypes.push_back(ptrType);
+  const auto fnSignature =
+      LLVM::LLVMFunctionType::get(LLVM::LLVMVoidType::get(ctx), argumentTypes);
+
+  // Declare QIR function
+  const auto fnDecl =
+      getOrCreateFunctionDeclaration(rewriter, op, fnName, fnSignature);
+
+  SmallVector<Value> operands;
+  operands.reserve(numCtrls + 1);
+  operands.append(posCtrls.begin(), posCtrls.end());
+  operands.append(adaptor.getOperands().begin(), adaptor.getOperands().end());
+
+  // Clean up modifier information
+  if (inCtrlOp) {
+    state.inCtrlOp = false;
+    state.posCtrls.clear();
+  }
+
+  // Replace operation with CallOp
+  rewriter.replaceOpWithNewOp<LLVM::CallOp>(op, fnDecl, operands);
+  return success();
+}
 
 } // namespace
 
@@ -438,7 +495,6 @@ struct ConvertQuartzXQIR final : StatefulOpConversionPattern<XOp> {
   LogicalResult
   matchAndRewrite(XOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
-    auto* ctx = getContext();
     auto& state = getState();
 
     // Query state for modifier information
@@ -462,37 +518,8 @@ struct ConvertQuartzXQIR final : StatefulOpConversionPattern<XOp> {
       fnName = QIR_X;
     }
 
-    // Define function argument types
-    SmallVector<Type> argumentTypes;
-    argumentTypes.reserve(numCtrls + 1);
-    const auto ptrType = LLVM::LLVMPointerType::get(ctx);
-    // Add control pointers
-    for (size_t i = 0; i < numCtrls; ++i) {
-      argumentTypes.push_back(ptrType);
-    }
-    // Add target pointer
-    argumentTypes.push_back(ptrType);
-    const auto fnSignature = LLVM::LLVMFunctionType::get(
-        LLVM::LLVMVoidType::get(ctx), argumentTypes);
-
-    // Declare QIR function
-    const auto fnDecl =
-        getOrCreateFunctionDeclaration(rewriter, op, fnName, fnSignature);
-
-    SmallVector<Value> operands;
-    operands.reserve(numCtrls + 1);
-    operands.append(posCtrls.begin(), posCtrls.end());
-    operands.append(adaptor.getOperands().begin(), adaptor.getOperands().end());
-
-    // Clean up modifier information
-    if (inCtrlOp) {
-      state.inCtrlOp = false;
-      state.posCtrls.clear();
-    }
-
-    // Replace operation with CallOp
-    rewriter.replaceOpWithNewOp<LLVM::CallOp>(op, fnDecl, operands);
-    return success();
+    return convertOneTargetZeroParameter(op, adaptor, rewriter, getContext(),
+                                         state, fnName);
   }
 };
 
@@ -514,7 +541,6 @@ struct ConvertQuartzSQIR final : StatefulOpConversionPattern<SOp> {
   LogicalResult
   matchAndRewrite(SOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
-    auto* ctx = getContext();
     auto& state = getState();
 
     // Query state for modifier information
@@ -538,37 +564,8 @@ struct ConvertQuartzSQIR final : StatefulOpConversionPattern<SOp> {
       fnName = QIR_S;
     }
 
-    // Define function argument types
-    SmallVector<Type> argumentTypes;
-    argumentTypes.reserve(numCtrls + 1);
-    const auto ptrType = LLVM::LLVMPointerType::get(ctx);
-    // Add control pointers
-    for (size_t i = 0; i < numCtrls; ++i) {
-      argumentTypes.push_back(ptrType);
-    }
-    // Add target pointer
-    argumentTypes.push_back(ptrType);
-    const auto fnSignature = LLVM::LLVMFunctionType::get(
-        LLVM::LLVMVoidType::get(ctx), argumentTypes);
-
-    // Declare QIR function
-    const auto fnDecl =
-        getOrCreateFunctionDeclaration(rewriter, op, fnName, fnSignature);
-
-    SmallVector<Value> operands;
-    operands.reserve(numCtrls + 1);
-    operands.append(posCtrls.begin(), posCtrls.end());
-    operands.append(adaptor.getOperands().begin(), adaptor.getOperands().end());
-
-    // Clean up modifier information
-    if (inCtrlOp) {
-      state.inCtrlOp = false;
-      state.posCtrls.clear();
-    }
-
-    // Replace operation with CallOp
-    rewriter.replaceOpWithNewOp<LLVM::CallOp>(op, fnDecl, operands);
-    return success();
+    return convertOneTargetZeroParameter(op, adaptor, rewriter, getContext(),
+                                         state, fnName);
   }
 };
 
@@ -590,7 +587,6 @@ struct ConvertQuartzSdgQIR final : StatefulOpConversionPattern<SdgOp> {
   LogicalResult
   matchAndRewrite(SdgOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
-    auto* ctx = getContext();
     auto& state = getState();
 
     // Query state for modifier information
@@ -614,37 +610,8 @@ struct ConvertQuartzSdgQIR final : StatefulOpConversionPattern<SdgOp> {
       fnName = QIR_SDG;
     }
 
-    // Define function argument types
-    SmallVector<Type> argumentTypes;
-    argumentTypes.reserve(numCtrls + 1);
-    const auto ptrType = LLVM::LLVMPointerType::get(ctx);
-    // Add control pointers
-    for (size_t i = 0; i < numCtrls; ++i) {
-      argumentTypes.push_back(ptrType);
-    }
-    // Add target pointer
-    argumentTypes.push_back(ptrType);
-    const auto fnSignature = LLVM::LLVMFunctionType::get(
-        LLVM::LLVMVoidType::get(ctx), argumentTypes);
-
-    // Declare QIR function
-    const auto fnDecl =
-        getOrCreateFunctionDeclaration(rewriter, op, fnName, fnSignature);
-
-    SmallVector<Value> operands;
-    operands.reserve(numCtrls + 1);
-    operands.append(posCtrls.begin(), posCtrls.end());
-    operands.append(adaptor.getOperands().begin(), adaptor.getOperands().end());
-
-    // Clean up modifier information
-    if (inCtrlOp) {
-      state.inCtrlOp = false;
-      state.posCtrls.clear();
-    }
-
-    // Replace operation with CallOp
-    rewriter.replaceOpWithNewOp<LLVM::CallOp>(op, fnDecl, operands);
-    return success();
+    return convertOneTargetZeroParameter(op, adaptor, rewriter, getContext(),
+                                         state, fnName);
   }
 };
 

@@ -25,12 +25,47 @@
 #include <mlir/Transforms/DialectConversion.h>
 #include <utility>
 
+namespace {}
+
 namespace mlir {
 using namespace flux;
 using namespace quartz;
 
 #define GEN_PASS_DEF_FLUXTOQUARTZ
 #include "mlir/Conversion/FluxToQuartz/FluxToQuartz.h.inc"
+
+namespace {
+
+/**
+ * @brief Converts one-target, zero-parameter Flux operations to Quartz
+ * operations
+ *
+ * @tparam QuartzOpType The operation type of the Quartz operation
+ * @tparam FluxOpType The operation type of the Flux operation
+ * @param FluxOpAdaptorType The OpAdaptor type of the Flux operation
+ * @param op The Flux operation instance to convert
+ * @param adaptor The OpAdaptor of the Flux operation
+ * @param rewriter The pattern rewriter
+ * @return LogicalResult Success or failure of the conversion
+ */
+template <typename QuartzOpType, typename FluxOpType,
+          typename FluxOpAdaptorType>
+LogicalResult
+convertOneTargetZeroParameter(FluxOpType& op, FluxOpAdaptorType& adaptor,
+                              ConversionPatternRewriter& rewriter) {
+  // OpAdaptor provides the already type-converted input qubit
+  const auto& quartzQubit = adaptor.getQubitIn();
+
+  // Create the Quartz operation (in-place, no result)
+  rewriter.create<QuartzOpType>(op.getLoc(), quartzQubit);
+
+  // Replace the output qubit with the same Quartz reference
+  rewriter.replaceOp(op, quartzQubit);
+
+  return success();
+}
+
+} // namespace
 
 /**
  * @brief Type converter for Flux-to-Quartz conversion
@@ -251,16 +286,7 @@ struct ConvertFluxXOp final : OpConversionPattern<flux::XOp> {
   LogicalResult
   matchAndRewrite(flux::XOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
-    // OpAdaptor provides the already type-converted input qubit
-    const auto& quartzQubit = adaptor.getQubitIn();
-
-    // Create quartz.x (in-place operation, no result)
-    rewriter.create<quartz::XOp>(op.getLoc(), quartzQubit);
-
-    // Replace the output qubit with the same quartz reference
-    rewriter.replaceOp(op, quartzQubit);
-
-    return success();
+    return convertOneTargetZeroParameter<quartz::XOp>(op, adaptor, rewriter);
   }
 };
 
@@ -282,16 +308,7 @@ struct ConvertFluxSOp final : OpConversionPattern<flux::SOp> {
   LogicalResult
   matchAndRewrite(flux::SOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
-    // OpAdaptor provides the already type-converted input qubit
-    const auto& quartzQubit = adaptor.getQubitIn();
-
-    // Create quartz.s (in-place operation, no result)
-    rewriter.create<quartz::SOp>(op.getLoc(), quartzQubit);
-
-    // Replace the output qubit with the same quartz reference
-    rewriter.replaceOp(op, quartzQubit);
-
-    return success();
+    return convertOneTargetZeroParameter<quartz::SOp>(op, adaptor, rewriter);
   }
 };
 
@@ -313,16 +330,7 @@ struct ConvertFluxSdgOp final : OpConversionPattern<flux::SdgOp> {
   LogicalResult
   matchAndRewrite(flux::SdgOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
-    // OpAdaptor provides the already type-converted input qubit
-    const auto& quartzQubit = adaptor.getQubitIn();
-
-    // Create quartz.sdg (in-place operation, no result)
-    rewriter.create<quartz::SdgOp>(op.getLoc(), quartzQubit);
-
-    // Replace the output qubit with the same quartz reference
-    rewriter.replaceOp(op, quartzQubit);
-
-    return success();
+    return convertOneTargetZeroParameter<quartz::SdgOp>(op, adaptor, rewriter);
   }
 };
 

@@ -104,6 +104,46 @@ private:
   LoweringState* state_;
 };
 
+/**
+ * @brief Converts one-target, zero-parameter Quartz operations to Flux
+ * operations
+ *
+ * @tparam FluxOpType The operation type of the Flux operation
+ * @tparam QuartzOpType The operation type of the Quartz operation
+ * @param op The Quartz operation instance to convert
+ * @param rewriter The pattern rewriter
+ * @param state The lowering state
+ * @return LogicalResult Success or failure of the conversion
+ */
+template <typename FluxOpType, typename QuartzOpType>
+LogicalResult convertOneTargetZeroParameter(QuartzOpType& op,
+                                            ConversionPatternRewriter& rewriter,
+                                            LoweringState& state) {
+  auto& [qubitMap] = state;
+  const auto inRegion = llvm::isa<flux::CtrlOp>(op->getParentOp());
+
+  // Get the atest Flux qubit
+  const auto quartzQubit = op->getOperand(0);
+  Value fluxQubit = nullptr;
+  if (inRegion) {
+    fluxQubit = rewriter.getRemappedValue(quartzQubit);
+  } else {
+    fluxQubit = qubitMap[quartzQubit];
+  }
+
+  // Create the Flux operation (consumes input, produces output)
+  auto fluxOp = rewriter.create<FluxOpType>(op.getLoc(), fluxQubit);
+
+  // Update the state map
+  if (!inRegion) {
+    qubitMap[quartzQubit] = fluxOp.getQubitOut();
+  }
+
+  rewriter.eraseOp(op);
+
+  return success();
+}
+
 } // namespace
 
 /**
@@ -371,29 +411,7 @@ struct ConvertQuartzXOp final : StatefulOpConversionPattern<quartz::XOp> {
   LogicalResult
   matchAndRewrite(quartz::XOp op, OpAdaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
-    auto& [qubitMap] = getState();
-    const auto inRegion = llvm::isa<flux::CtrlOp>(op->getParentOp());
-
-    // Get the latest Flux qubit
-    const auto quartzQubit = op->getOperand(0);
-    Value fluxQubit = nullptr;
-    if (inRegion) {
-      fluxQubit = rewriter.getRemappedValue(quartzQubit);
-    } else {
-      fluxQubit = qubitMap[quartzQubit];
-    }
-
-    // Create flux.x (consumes input, produces output)
-    auto fluxOp = rewriter.create<flux::XOp>(op.getLoc(), fluxQubit);
-
-    // Update state map
-    if (!inRegion) {
-      qubitMap[quartzQubit] = fluxOp.getQubitOut();
-    }
-
-    rewriter.eraseOp(op);
-
-    return success();
+    return convertOneTargetZeroParameter<flux::XOp>(op, rewriter, getState());
   }
 };
 
@@ -415,29 +433,7 @@ struct ConvertQuartzSOp final : StatefulOpConversionPattern<quartz::SOp> {
   LogicalResult
   matchAndRewrite(quartz::SOp op, OpAdaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
-    auto& [qubitMap] = getState();
-    const auto inRegion = llvm::isa<flux::CtrlOp>(op->getParentOp());
-
-    // Get the latest Flux qubit
-    const auto quartzQubit = op->getOperand(0);
-    Value fluxQubit = nullptr;
-    if (inRegion) {
-      fluxQubit = rewriter.getRemappedValue(quartzQubit);
-    } else {
-      fluxQubit = qubitMap[quartzQubit];
-    }
-
-    // Create flux.s (consumes input, produces output)
-    auto fluxOp = rewriter.create<flux::SOp>(op.getLoc(), fluxQubit);
-
-    // Update state map
-    if (!inRegion) {
-      qubitMap[quartzQubit] = fluxOp.getQubitOut();
-    }
-
-    rewriter.eraseOp(op);
-
-    return success();
+    return convertOneTargetZeroParameter<flux::SOp>(op, rewriter, getState());
   }
 };
 
@@ -459,29 +455,7 @@ struct ConvertQuartzSdgOp final : StatefulOpConversionPattern<quartz::SdgOp> {
   LogicalResult
   matchAndRewrite(quartz::SdgOp op, OpAdaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
-    auto& [qubitMap] = getState();
-    const auto inRegion = llvm::isa<flux::CtrlOp>(op->getParentOp());
-
-    // Get the latest Flux qubit
-    const auto quartzQubit = op->getOperand(0);
-    Value fluxQubit = nullptr;
-    if (inRegion) {
-      fluxQubit = rewriter.getRemappedValue(quartzQubit);
-    } else {
-      fluxQubit = qubitMap[quartzQubit];
-    }
-
-    // Create flux.sdg (consumes input, produces output)
-    auto fluxOp = rewriter.create<flux::SdgOp>(op.getLoc(), fluxQubit);
-
-    // Update state map
-    if (!inRegion) {
-      qubitMap[quartzQubit] = fluxOp.getQubitOut();
-    }
-
-    rewriter.eraseOp(op);
-
-    return success();
+    return convertOneTargetZeroParameter<flux::SdgOp>(op, rewriter, getState());
   }
 };
 
