@@ -106,7 +106,7 @@ class WireIterator {
    * @brief Find corresponding result value from input qubit value (Forward).
    *
    * @details Recursively traverses the IR "downwards" until the respective
-   * yield is found. Assumes that each branch takes and returns the same
+   * yield is found. Requires that each branch takes and returns the same
    * (possibly modified) qubits. Hence, we can just traverse the then-branch.
    */
   [[nodiscard]] static Value findResult(scf::IfOp op, Value q) {
@@ -131,11 +131,13 @@ class WireIterator {
   }
 
   /**
-   * @brief Find first out-of-region value for result value (Backward).
+   * @brief Find the first value outside the branch region for a given result
+   * value (Backward).
    *
-   * @details Recursively traverses the IR "upwards" until a out-of-region value
-   * is found. If the Operation* of the iterator doesn't change the def-use
-   * starts in the branch.
+   * @details Recursively traverses the IR "upwards" until a value outside the
+   * branch region is found. If the iterator's operation does not change during
+   * backward traversal, it indicates that the def-use chain starts within the
+   * branch region and does not extend into the parent region.
    */
   [[nodiscard]] static Value findValue(scf::IfOp op, Value q) {
     auto yield = llvm::cast<scf::YieldOp>(op.thenBlock()->getTerminator());
@@ -155,7 +157,7 @@ class WireIterator {
    * @brief Return the first user of a value in a given region.
    * @param v The value.
    * @param region The targeted region.
-   * @return A pointer to the user, or nullptr if non exists.
+   * @return A pointer to the user, or nullptr if none exists.
    */
   [[nodiscard]] static Operation* getUserInRegion(Value v, Region* region) {
     if (v.hasOneUse()) {
@@ -179,7 +181,7 @@ public:
   explicit WireIterator(Value q, Region* region)
       : currOp(q.getDefiningOp()), q(q), region(region) {}
 
-  Operation* operator*() const {
+  [[nodiscard]] Operation* operator*() const {
     assert(!sentinel && "Dereferencing sentinel iterator");
     assert(currOp && "Dereferencing null operation");
     return currOp;
@@ -208,7 +210,7 @@ public:
   }
 
   bool operator==(const WireIterator& other) const {
-    return other.q == q && other.currOp == currOp;
+    return other.q == q && other.currOp == currOp && other.sentinel == sentinel;
   }
 
   bool operator==([[maybe_unused]] std::default_sentinel_t s) const {

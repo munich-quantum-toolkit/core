@@ -18,6 +18,7 @@
 #include <llvm/Support/Debug.h>
 #include <llvm/Support/raw_ostream.h>
 #include <memory>
+#include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Index/IR/IndexDialect.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
 #include <mlir/IR/BuiltinOps.h>
@@ -92,20 +93,19 @@ protected:
     DialectRegistry registry;
     registry.insert<MQTOptDialect>();
     registry.insert<scf::SCFDialect>();
+    registry.insert<arith::ArithDialect>();
     registry.insert<index::IndexDialect>();
 
     context = std::make_unique<MLIRContext>();
     context->appendDialectRegistry(registry);
     context->loadAllAvailableDialects();
   }
-
-  void TearDown() override {}
 };
 
 TEST_F(WireIteratorTest, TestForward) {
 
   ///
-  /// Tests the forward iteration.
+  /// Test the forward iteration.
   ///
 
   auto module = getModule(*context);
@@ -154,7 +154,7 @@ TEST_F(WireIteratorTest, TestForward) {
 TEST_F(WireIteratorTest, TestBackward) {
 
   ///
-  /// Tests the backward iteration.
+  /// Test the backward iteration.
   ///
 
   auto module = getModule(*context);
@@ -217,7 +217,7 @@ TEST_F(WireIteratorTest, TestBackward) {
 TEST_F(WireIteratorTest, TestForwardAndBackward) {
 
   ///
-  /// Tests the forward as well as the backward iteration.
+  /// Test the forward as well as the backward iteration.
   ///
 
   auto module = getModule(*context);
