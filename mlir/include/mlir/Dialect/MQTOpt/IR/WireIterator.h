@@ -160,10 +160,6 @@ class WireIterator {
    * @return A pointer to the user, or nullptr if none exists.
    */
   [[nodiscard]] static Operation* getUserInRegion(Value v, Region* region) {
-    if (v.hasOneUse()) {
-      return *(v.getUsers().begin());
-    }
-
     for (Operation* user : v.getUsers()) {
       if (user->getParentRegion() == region) {
         return user;
