@@ -51,31 +51,49 @@ struct GateDecompositionPattern final
     ZSX = 11,
   };
 
+  using QubitId = std::size_t;
+  /**
+   * Gate sequence of single-qubit and/or two-qubit gates.
+   */
   struct QubitGateSequence {
+    /**
+     * Gate description which should be able to represent every possible
+     * one-qubit or two-qubit operation.
+     */
     struct Gate {
       qc::OpType type{qc::I};
       llvm::SmallVector<fp, 3> parameter;
-      llvm::SmallVector<std::size_t, 2> qubitId = {0};
+      llvm::SmallVector<QubitId, 2> qubitId = {0};
     };
+    /**
+     * Container sorting the gate sequence in order.
+     */
     std::vector<Gate> gates;
+
+    fp globalPhase{};
+    [[nodiscard]] bool hasGlobalPhase() const {
+      return std::abs(globalPhase) > DEFAULT_ATOL;
+    }
+
+    /**
+     * Calculate complexity of sequence according to getComplexity().
+     */
     [[nodiscard]] std::size_t complexity() const {
-      // TODO: caching mechanism
+      // TODO: caching mechanism?
       std::size_t c{};
       for (auto&& gate : gates) {
         c += getComplexity(gate.type, gate.qubitId.size());
       }
       if (hasGlobalPhase()) {
-        // need to add two phase gates if a global phase needs to be applied
-        c += 2 * getComplexity(qc::P, 1);
+        // need to add a global phase gate if a global phase needs to be applied
+        c += getComplexity(qc::GPhase, 1);
       }
       return c;
     }
 
-    fp globalPhase{};
-    [[nodiscard]] bool hasGlobalPhase() const {
-      return std::abs(globalPhase) > std::numeric_limits<fp>::epsilon();
-    }
-
+    /**
+     * Calculate overall unitary matrix of the sequence.
+     */
     [[nodiscard]] matrix4x4 getUnitaryMatrix() const {
       matrix4x4 unitaryMatrix =
           helpers::kroneckerProduct(IDENTITY_GATE, IDENTITY_GATE);
@@ -91,6 +109,11 @@ struct GateDecompositionPattern final
   using OneQubitGateSequence = QubitGateSequence;
   using TwoQubitGateSequence = QubitGateSequence;
 
+  /**
+   * Initialize pattern with a set of basis gates and euler bases.
+   * The best combination of (basis gate, euler basis) will be evaluated for
+   * each decomposition.
+   */
   explicit GateDecompositionPattern(
       mlir::MLIRContext* context,
       llvm::SmallVector<QubitGateSequence::Gate> basisGate,
@@ -119,13 +142,12 @@ struct GateDecompositionPattern final
       return mlir::failure();
     }
     if (series.isSingleQubitSeries()) {
-      // only a single-qubit series
+      // only a single-qubit series;
+      // single-qubit euler decomposition is more efficient
       return mlir::failure();
     }
 
     matrix4x4 unitaryMatrix = series.getUnitaryMatrix();
-    helpers::print(unitaryMatrix, "UNITARY MATRIX");
-
     auto targetDecomposition = TwoQubitWeylDecomposition::create(
         unitaryMatrix, DEFAULT_FIDELITY, std::nullopt);
 
@@ -174,14 +196,29 @@ protected:
   }
 
   struct TwoQubitSeries {
+    /**
+     * Complexity of series using getComplexity() for each gate.
+     */
     std::size_t complexity{0};
+    /**
+     * Qubits that are the input for the series.
+     * First qubit will always be set, second qubit may be equal to
+     * mlir::Value{} if the series consists of only single-qubit gates.
+     *
+     * All
+     */
     std::array<mlir::Value, 2> inQubits;
+    /**
+     * Qubits that are the input for the series.
+     * First qubit will always be set, second qubit may be equal to
+     * mlir::Value{} if the series consists of only single-qubit gates.
+     */
     std::array<mlir::Value, 2> outQubits;
     fp globalPhase{};
 
     struct Gate {
       UnitaryInterface op;
-      llvm::SmallVector<std::size_t, 2> qubitIds;
+      llvm::SmallVector<QubitId, 2> qubitIds;
     };
     llvm::SmallVector<Gate, 8> gates;
 
@@ -261,7 +298,7 @@ protected:
       complexity +=
           getComplexity(helpers::getQcType(initialOperation), in.size());
 
-      // TODO: necessary when using non-global phase gates?
+      // TODO: necessary?
       for (auto&& globalPhaseOp :
            initialOperation->getBlock()->getOps<GPhaseOp>()) {
         globalPhase += helpers::getParameters(globalPhaseOp)[0];
@@ -279,7 +316,7 @@ protected:
         throw std::logic_error{"Operand of single-qubit op and user of "
                                "qubit is not in current outQubits"};
       }
-      std::size_t qubitId = std::distance(outQubits.begin(), it);
+      QubitId qubitId = std::distance(outQubits.begin(), it);
       *it = nextGate->getResult(0);
 
       gates.push_back({.op = nextGate, .qubitIds = {qubitId}});
@@ -309,10 +346,10 @@ protected:
                                               ? *firstQubitIt
                                               : *secondQubitIt);
         // new qubit ID based on position in outQubits
-        auto newInQubitId = std::distance(outQubits.begin(), it);
+        QubitId newInQubitId = std::distance(outQubits.begin(), it);
         // position in operation input; since there are only two qubits, it must
         // be the "not old" one
-        auto newOpInQubitId = 1 - std::distance(opInQubits.begin(), it2);
+        QubitId newOpInQubitId = 1 - std::distance(opInQubits.begin(), it2);
 
         // update inQubit and update dangling iterator, then proceed as usual
         inQubits[newInQubitId] = opInQubits[newOpInQubitId];
@@ -323,9 +360,8 @@ protected:
         // possible to collect other single-qubit operations
         backtrackSingleQubitSeries(newInQubitId);
       }
-      std::size_t firstQubitId = std::distance(outQubits.begin(), firstQubitIt);
-      std::size_t secondQubitId =
-          std::distance(outQubits.begin(), secondQubitIt);
+      QubitId firstQubitId = std::distance(outQubits.begin(), firstQubitIt);
+      QubitId secondQubitId = std::distance(outQubits.begin(), secondQubitIt);
       *firstQubitIt = nextGate->getResult(0);
       *secondQubitIt = nextGate->getResult(1);
 
@@ -342,7 +378,7 @@ protected:
      * gate could have previous single-qubit operations that can be incorporated
      * in the series.
      */
-    void backtrackSingleQubitSeries(std::size_t qubitId) {
+    void backtrackSingleQubitSeries(QubitId qubitId) {
       auto prependSingleQubitGate = [&](UnitaryInterface op) {
         inQubits[qubitId] = op.getAllInQubits()[0];
         gates.insert(gates.begin(), {.op = op, .qubitIds = {qubitId}});
@@ -409,7 +445,7 @@ protected:
 
     auto inQubits = series.inQubits;
     auto updateInQubits =
-        [&inQubits](const llvm::SmallVector<std::size_t, 2>& qubitIds,
+        [&inQubits](const llvm::SmallVector<QubitId, 2>& qubitIds,
                     auto&& newGate) {
           // TODO: need to handle controls differently?
           auto results = newGate.getAllOutQubits();
@@ -852,11 +888,11 @@ protected:
     if (gate.qubitId.size() == 2) {
       if (gate.type == qc::X) {
         // controlled X (CX)
-        if (gate.qubitId == llvm::SmallVector<std::size_t, 2>{0, 1}) {
+        if (gate.qubitId == llvm::SmallVector<QubitId, 2>{0, 1}) {
           return matrix4x4{
               {1, 0, 0, 0}, {0, 1, 0, 0}, {0, 0, 0, 1}, {0, 0, 1, 0}};
         }
-        if (gate.qubitId == llvm::SmallVector<std::size_t, 2>{1, 0}) {
+        if (gate.qubitId == llvm::SmallVector<QubitId, 2>{1, 0}) {
           return matrix4x4{
               {1, 0, 0, 0}, {0, 0, 0, 1}, {0, 0, 1, 0}, {0, 1, 0, 0}};
         }
@@ -903,6 +939,17 @@ protected:
     fp calculatedFidelity;               // actual fidelity of decomposition
     matrix4x4 unitaryMatrix; // original matrix for this decomposition
 
+    /**
+     * Create Weyl decomposition.
+     *
+     * @param unitaryMatrix Matrix of the two-qubit operation/series to be
+     *                      decomposed.
+     * @param fidelity Tolerance to assume a specialization which is used to
+     *                 reduce the number of parameters required by the canonical
+     *                 gate and thus potentially decreasing the number of basis
+     *                 gates.
+     * @param specialization Force the use this specialization.
+     */
     static TwoQubitWeylDecomposition
     create(matrix4x4 unitaryMatrix, std::optional<fp> fidelity,
            std::optional<Specialization> specialization) {
@@ -1550,6 +1597,10 @@ protected:
   static constexpr auto DEFAULT_FIDELITY = 1.0 - 1e-15;
   static constexpr auto DEFAULT_ATOL = 1e-12;
 
+  /**
+   * Decomposer that must be initialized with a two-qubit basis gate that will
+   * be used to generate a circuit equivalent to a canonical gate (RXX+RYY+RZZ).
+   */
   struct TwoQubitBasisDecomposer {
     QubitGateSequence::Gate basisGate;
     fp basisFidelity;
@@ -1720,6 +1771,22 @@ protected:
       };
     }
 
+    /**
+     * Perform decomposition using the basis gate of this decomposer.
+     *
+     * @param targetDecomposition Prepared Weyl decomposition of unitary matrix
+     *                            to be decomposed.
+     * @param target1qEulerBases List of euler bases that should be tried out to
+     *                           find the best one for each euler decomposition.
+     *                           All bases will be mixed to get the best overall
+     *                           result.
+     * @param basisFidelity Fidelity for lowering the number of basis gates
+     *                      required
+     * @param approximate If true, use basisFidelity or, if std::nullopt, use
+     *                    basisFidelity of this decomposer. If false, fidelity
+     *                    of 1.0 will be assumed.
+     * @param numBasisGateUses Force use of given number of basis gates.
+     */
     [[nodiscard]] std::optional<TwoQubitGateSequence>
     twoQubitDecompose(const TwoQubitWeylDecomposition& targetDecomposition,
                       const llvm::SmallVector<EulerBasis>& target1qEulerBases,
@@ -1788,7 +1855,7 @@ protected:
         gates.globalPhase += qc::PI;
       }
 
-      auto addEulerDecomposition = [&](std::size_t index, std::size_t qubitId) {
+      auto addEulerDecomposition = [&](std::size_t index, QubitId qubitId) {
         if (auto&& eulerDecomp = eulerDecompositions[index]) {
           for (auto&& gate : eulerDecomp->gates) {
             gates.gates.push_back({.type = gate.type,
@@ -1974,8 +2041,7 @@ protected:
 
     static OneQubitGateSequence unitaryToGateSequenceInner(
         matrix2x2 unitaryMat,
-        const llvm::SmallVector<EulerBasis>& targetBasisList,
-        std::size_t /*qubit*/,
+        const llvm::SmallVector<EulerBasis>& targetBasisList, QubitId /*qubit*/,
         const std::vector<std::unordered_map<std::string, fp>>&
         /*error_map*/, // TODO: remove error_map+qubit for platform
                        // independence
