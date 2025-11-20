@@ -81,13 +81,9 @@ public:
     return tmp;
   }
 
-  /// --- Iterator-To-Iterator Equality ---
-
   bool operator==(const WireIterator& other) const {
     return other.q == q && other.currOp == currOp;
   }
-
-  /// --- Iterator-To-Sentinel Equality ---
 
   bool operator==([[maybe_unused]] std::default_sentinel_t s) const {
     return sentinel;

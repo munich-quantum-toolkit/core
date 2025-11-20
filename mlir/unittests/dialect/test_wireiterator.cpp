@@ -12,17 +12,15 @@
 #include "mlir/Dialect/MQTOpt/IR/WireIterator.h"
 
 #include <gtest/gtest.h>
+#include <iterator>
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/ADT/iterator_range.h>
 #include <llvm/Support/Debug.h>
 #include <llvm/Support/raw_ostream.h>
 #include <memory>
 #include <mlir/Dialect/Arith/IR/Arith.h>
-#include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/Index/IR/IndexDialect.h>
-#include <mlir/Dialect/MemRef/IR/MemRef.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
-#include <mlir/IR/Block.h>
 #include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/Operation.h>
@@ -167,7 +165,7 @@ TEST_F(WireIteratorTest, TestBackward) {
   auto alloc = allocVec[1];
   auto q = alloc.getQubit();
   WireIterator it(q, q.getParentRegion());
-  WireIterator begin(it);
+  const WireIterator begin(it);
 
   ASSERT_EQ(it, begin);
 
@@ -227,7 +225,7 @@ TEST_F(WireIteratorTest, TestForwardAndBackward) {
   auto alloc = *(module->getOps<AllocQubitOp>().begin());
   auto q = alloc.getQubit();
   WireIterator it(q, q.getParentRegion());
-  WireIterator begin(it);
+  const WireIterator begin(it);
 
   checkOperationEqual(*it, "%0 = mqtopt.allocQubit");
 
