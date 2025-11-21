@@ -8,61 +8,22 @@
  * Licensed under the MIT License
  */
 
-#include "mlir/Dialect/MQTOpt/Transforms/Transpilation/Unit.h"
+#include "mlir/Dialect/MQTOpt/Transforms/Transpilation/LayeredUnit.h"
 
 #include "mlir/Dialect/MQTOpt/Transforms/Transpilation/Common.h"
-#include "mlir/Dialect/MQTOpt/Transforms/Transpilation/Router.h"
-#include "mlir/Dialect/SCF/IR/SCF.h"
-#include "mlir/IR/PatternMatch.h"
-
-#include "llvm/ADT/SmallVector.h"
-#include "llvm/Support/ErrorHandling.h"
+#include "mlir/Dialect/MQTOpt/Transforms/Transpilation/Layout.h"
 
 #include <cstddef>
+#include <llvm/ADT/SmallVector.h>
 #include <llvm/Support/Compiler.h>
+#include <llvm/Support/ErrorHandling.h>
 #include <llvm/Support/Format.h>
 #include <llvm/Support/raw_ostream.h>
+#include <mlir/Dialect/SCF/IR/SCF.h>
 #include <mlir/Support/LLVM.h>
 
 namespace mqt::ir::opt {
 namespace {
-
-/**
- * @brief Insert SWAP ops at the rewriter's insertion point.
- *
- * @param location The location of the inserted SWAP ops.
- * @param swaps The hardware indices of the SWAPs.
- * @param layout The current layout.
- * @param rewriter The pattern rewriter.
- */
-void insertSWAPs(Location location, ArrayRef<QubitIndexPair> swaps,
-                 Layout& layout, PatternRewriter& rewriter) {
-  for (const auto [hw0, hw1] : swaps) {
-    const Value in0 = layout.lookupHardwareValue(hw0);
-    const Value in1 = layout.lookupHardwareValue(hw1);
-    [[maybe_unused]] const auto [prog0, prog1] =
-        layout.getProgramIndices(hw0, hw1);
-
-    LLVM_DEBUG({
-      llvm::dbgs() << llvm::format(
-          "insertSWAPs: swap= p%d:h%d, p%d:h%d <- p%d:h%d, p%d:h%d\n", prog1,
-          hw0, prog0, hw1, prog0, hw0, prog1, hw1);
-    });
-
-    auto swap = createSwap(location, in0, in1, rewriter);
-    const auto [out0, out1] = getOuts(swap);
-
-    rewriter.setInsertionPointAfter(swap);
-    replaceAllUsesInRegionAndChildrenExcept(in0, out1, swap->getParentRegion(),
-                                            swap, rewriter);
-    replaceAllUsesInRegionAndChildrenExcept(in1, out0, swap->getParentRegion(),
-                                            swap, rewriter);
-
-    layout.swap(in0, in1);
-    layout.remapQubitValue(in0, out0);
-    layout.remapQubitValue(in1, out1);
-  }
-}
 
 /// @brief Map to handle multi-qubit gates when traversing the def-use chain.
 class SynchronizationMap {
@@ -151,15 +112,57 @@ SmallVector<Wire, 2> skipTwoQubitBlock(ArrayRef<Wire> wires, OpLayer& opLayer) {
 }
 } // namespace
 
-MutableArrayRef<GateLayer>
-Schedule::window(const std::size_t start, const std::size_t nlookahead) const {
-  const size_t sz = gateLayers.size();
-  const size_t len = std::min(1 + nlookahead, sz - start);
-  return MutableArrayRef<GateLayer>(gateLayers).slice(start, len);
+SmallVector<LayeredUnit, 3> LayeredUnit::next() {
+  if (divider_ == nullptr) {
+    return {};
+  }
+
+  SmallVector<LayeredUnit, 3> units;
+  TypeSwitch<Operation*>(divider_)
+      .Case<scf::ForOp>([&](scf::ForOp op) {
+        /// Copy layout.
+        Layout forLayout(layout_);
+
+        /// Forward out-of-loop and in-loop values.
+        const auto nqubits = layout_.getNumQubits();
+        const auto initArgs = op.getInitArgs().take_front(nqubits);
+        const auto results = op.getResults().take_front(nqubits);
+        const auto iterArgs = op.getRegionIterArgs().take_front(nqubits);
+        for (const auto [arg, res, iter] :
+             llvm::zip(initArgs, results, iterArgs)) {
+          layout_.remapQubitValue(arg, res);
+          forLayout.remapQubitValue(arg, iter);
+        }
+
+        units.emplace_back(std::move(layout_), region_, restore_);
+        units.emplace_back(std::move(forLayout), &op.getRegion(), true);
+      })
+      .Case<scf::IfOp>([&](scf::IfOp op) {
+        units.emplace_back(layout_, &op.getThenRegion(), true);
+        units.emplace_back(layout_, &op.getElseRegion(), true);
+
+        /// Forward results.
+        const auto results =
+            op->getResults().take_front(layout_.getNumQubits());
+        for (const auto [in, out] :
+             llvm::zip(layout_.getHardwareQubits(), results)) {
+          layout_.remapQubitValue(in, out);
+        }
+
+        units.emplace_back(layout_, region_, restore_);
+      })
+      .Default(
+          [](auto) { throw std::runtime_error("invalid 'next' operation"); });
+
+  return units;
+}
+
+SlidingWindow LayeredUnit::slidingWindow(std::size_t nlookahead) const {
+  return SlidingWindow(gateLayers, opLayers, nlookahead);
 }
 
 #ifndef NDEBUG
-LLVM_DUMP_METHOD void Schedule::dump(llvm::raw_ostream& os) const {
+LLVM_DUMP_METHOD void LayeredUnit::dump(llvm::raw_ostream& os) const {
   os << "schedule: gate layers=\n";
   for (const auto [i, layer] : llvm::enumerate(gateLayers)) {
     os << '\t' << i << ": ";
@@ -183,13 +186,13 @@ LLVM_DUMP_METHOD void Schedule::dump(llvm::raw_ostream& os) const {
     }
     os << '\n';
   }
-  if (next != nullptr) {
-    os << "schedule: followUp= " << next->getLoc() << '\n';
+  if (divider_ != nullptr) {
+    os << "schedule: followUp= " << divider_->getLoc() << '\n';
   }
 }
 #endif
 
-void Unit::schedule() {
+void LayeredUnit::init(const Layout& layout, Region* region) {
   SynchronizationMap sync;
 
   SmallVector<Wire, 0> curr;
@@ -280,7 +283,7 @@ void Unit::schedule() {
 
                   if (const auto iterators =
                           sync.visit(op, Wire(++it, index))) {
-                    s.next = op;
+                    divider_ = op;
                   }
                   return true;
                 })
@@ -294,7 +297,7 @@ void Unit::schedule() {
         }
       }
 
-      if (s.next != nullptr) {
+      if (divider_ != nullptr) {
         break;
       }
     }
@@ -304,127 +307,28 @@ void Unit::schedule() {
 
     if (gateLayer.empty()) {
       if (!opLayer.empty()) {
-        if (s.opLayers.empty()) {
-          s.gateLayers.emplace_back();
-          s.opLayers.emplace_back();
+        if (opLayers.empty()) {
+          gateLayers.emplace_back();
+          opLayers.emplace_back();
         }
-        s.opLayers.back().ops.append(opLayer.ops);
-        if (s.opLayers.back().anchor == nullptr) {
-          s.opLayers.back().anchor = opLayer.anchor;
+        opLayers.back().ops.append(opLayer.ops);
+        if (opLayers.back().anchor == nullptr) {
+          opLayers.back().anchor = opLayer.anchor;
         }
       }
 
     } else if (!opLayer.empty()) {
-      s.gateLayers.emplace_back(gateLayer);
-      s.opLayers.emplace_back(opLayer);
+      gateLayers.emplace_back(gateLayer);
+      opLayers.emplace_back(opLayer);
     }
 
     /// Prepare next iteration or stop.
     curr.swap(next);
     next.clear();
 
-    if (curr.empty() || s.next != nullptr) {
+    if (curr.empty() || divider_ != nullptr) {
       break;
     }
   };
-
-  LLVM_DEBUG(s.dump());
 }
-
-void Unit::route(const AStarHeuristicRouter& router, std::size_t nlookahead,
-                 const Architecture& arch, PatternRewriter& rewriter) {
-  SmallVector<QubitIndexPair> history;
-  for (std::size_t i = 0; i < s.gateLayers.size(); ++i) {
-    const auto opLayer = s.opLayers[i];
-
-    rewriter.setInsertionPoint(opLayer.anchor);
-    const auto swaps = router.route(s.window(i, nlookahead), layout, arch);
-    if (!swaps) {
-      throw std::runtime_error("A* failed to find a valid SWAP sequence");
-    }
-
-    if (!swaps->empty()) {
-      history.append(*swaps);
-      insertSWAPs(opLayer.anchor->getLoc(), *swaps, layout, rewriter);
-      /// *(ctx.stats.numSwaps) += swaps->size();
-    }
-
-    for (Operation* curr : opLayer.ops) {
-      rewriter.setInsertionPoint(curr);
-
-      /// Re-order to fix any SSA Dominance issues.
-      if (i + 1 < s.gateLayers.size()) {
-        rewriter.moveOpBefore(curr, s.opLayers[i + 1].anchor);
-      }
-
-      TypeSwitch<Operation*>(curr)
-          .Case<UnitaryInterface>([&](UnitaryInterface op) {
-            if (isa<SWAPOp>(op)) {
-              const auto ins = getIns(op);
-              layout.swap(ins.first, ins.second);
-              history.push_back({layout.lookupHardwareIndex(ins.first),
-                                 layout.lookupHardwareIndex(ins.second)});
-            }
-            remap(op, layout);
-          })
-          .Case<ResetOp>([&](ResetOp op) { remap(op, layout); })
-          .Case<MeasureOp>([&](MeasureOp op) { remap(op, layout); })
-          .Case<scf::YieldOp>([&](scf::YieldOp op) {
-            if (restore) {
-              rewriter.setInsertionPointAfter(op->getPrevNode());
-              insertSWAPs(op.getLoc(), llvm::to_vector(llvm::reverse(history)),
-                          layout, rewriter);
-            }
-          })
-          .Default(
-              [](auto) { llvm_unreachable("unhandled 'curr' operation"); });
-    }
-  }
-}
-
-SmallVector<Unit, 3> Unit::advance() {
-  if (s.next == nullptr) {
-    return {};
-  }
-
-  SmallVector<Unit, 3> next;
-
-  TypeSwitch<Operation*>(s.next)
-      .Case<scf::ForOp>([&](scf::ForOp op) {
-        /// Copy layout.
-        Layout forLayout(layout);
-
-        /// Forward out-of-loop and in-loop values.
-        const auto nqubits = layout.getNumQubits();
-        const auto initArgs = op.getInitArgs().take_front(nqubits);
-        const auto results = op.getResults().take_front(nqubits);
-        const auto iterArgs = op.getRegionIterArgs().take_front(nqubits);
-        for (const auto [arg, res, iter] :
-             llvm::zip(initArgs, results, iterArgs)) {
-          layout.remapQubitValue(arg, res);
-          forLayout.remapQubitValue(arg, iter);
-        }
-
-        next.emplace_back(std::move(layout), region, restore);
-        next.emplace_back(std::move(forLayout), &op.getRegion(), true);
-      })
-      .Case<scf::IfOp>([&](scf::IfOp op) {
-        next.emplace_back(layout, &op.getThenRegion(), true);
-        next.emplace_back(layout, &op.getElseRegion(), true);
-
-        /// Forward results.
-        const auto results = op->getResults().take_front(layout.getNumQubits());
-        for (const auto [in, out] :
-             llvm::zip(layout.getHardwareQubits(), results)) {
-          layout.remapQubitValue(in, out);
-        }
-
-        next.emplace_back(layout, region, restore);
-      })
-      .Default(
-          [](auto) { throw std::runtime_error("invalid 'next' operation"); });
-
-  return next;
-}
-
 } // namespace mqt::ir::opt

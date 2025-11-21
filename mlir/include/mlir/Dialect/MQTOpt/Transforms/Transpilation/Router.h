@@ -12,6 +12,7 @@
 
 #include "mlir/Dialect/MQTOpt/Transforms/Transpilation/Architecture.h"
 #include "mlir/Dialect/MQTOpt/Transforms/Transpilation/Common.h"
+#include "mlir/Dialect/MQTOpt/Transforms/Transpilation/LayeredUnit.h"
 #include "mlir/Dialect/MQTOpt/Transforms/Transpilation/Layout.h"
 
 #include <algorithm>
@@ -24,9 +25,6 @@
 namespace mqt::ir::opt {
 
 using namespace mlir;
-
-using GateLayer = SmallVector<QubitIndexPair>;
-using GateLayers = SmallVector<GateLayer>;
 
 /// @brief Specifies the weights for different terms in the cost function f.
 struct HeuristicWeights {

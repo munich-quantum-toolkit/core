@@ -12,9 +12,8 @@
 #include "mlir/Dialect/MQTOpt/Transforms/Passes.h"
 #include "mlir/Dialect/MQTOpt/Transforms/Transpilation/Architecture.h"
 #include "mlir/Dialect/MQTOpt/Transforms/Transpilation/Common.h"
-#include "mlir/Dialect/MQTOpt/Transforms/Transpilation/Layout.h"
+#include "mlir/Dialect/MQTOpt/Transforms/Transpilation/LayeredUnit.h"
 #include "mlir/Dialect/MQTOpt/Transforms/Transpilation/Router.h"
-#include "mlir/Dialect/MQTOpt/Transforms/Transpilation/Unit.h"
 
 #include <cassert>
 #include <cstddef>
@@ -46,7 +45,6 @@
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/WalkResult.h>
 #include <queue>
-#include <utility>
 
 #define DEBUG_TYPE "route-astar-sc"
 
@@ -58,85 +56,41 @@ namespace mqt::ir::opt {
 namespace {
 using namespace mlir;
 
-/// @brief A composite datastructure for LLVM Statistics.
-struct Statistics {
-  llvm::Statistic* numSwaps;
-};
-
-/// @brief A composite datastructure for pass parameters.
-struct Params {
-  /// @brief The amount of lookahead layers.
-  std::size_t nlookahead;
-  /// @brief The alpha factor in the heuristic function.
-  float alpha;
-  /// @brief The lambda decay factor in the heuristic function.
-  float lambda;
-};
-
-/// @brief Commonly passed parameters for the routing functions.
-struct RoutingContext {
-  /// @brief The targeted architecture.
-  std::unique_ptr<Architecture> arch;
-  /// @brief LLVM/MLIR statistics.
-  Statistics stats;
-  /// @brief A pattern rewriter.
-  PatternRewriter rewriter;
-  /// @brief The A*-search based router.
-  AStarHeuristicRouter router;
-  /// @brief The amount of lookahead layers.
-  std::size_t nlookahead;
-};
-
-LogicalResult processFunction(func::FuncOp func, RoutingContext& ctx) {
-  /// Collect entry layout.
-  Layout layout(ctx.arch->nqubits());
-  for_each(func.getOps<QubitOp>(), [&](QubitOp op) {
-    layout.add(op.getIndex(), op.getIndex(), op.getQubit());
-  });
-
-  std::queue<Unit> units;
-  units.emplace(std::move(layout), &func.getBody());
-
-  for (; !units.empty(); units.pop()) {
-    Unit& unit = units.front();
-    unit.schedule();
-    unit.route(ctx.router, ctx.nlookahead, *ctx.arch, ctx.rewriter);
-    for (auto next : unit.advance()) {
-      units.emplace(next);
-    }
-  }
-
-  return success();
-}
-
 /**
- * @brief Route the given module for the targeted architecture using A*-search.
- * Processes each entry_point function separately.
+ * @brief Insert SWAP ops at the rewriter's insertion point.
+ *
+ * @param location The location of the inserted SWAP ops.
+ * @param swaps The hardware indices of the SWAPs.
+ * @param layout The current layout.
+ * @param rewriter The pattern rewriter.
  */
-LogicalResult route(ModuleOp module, std::unique_ptr<Architecture> arch,
-                    Params& params, Statistics& stats) {
-  const HeuristicWeights weights(params.alpha, params.lambda,
-                                 params.nlookahead);
-  RoutingContext ctx{.arch = std::move(arch),
-                     .stats = stats,
-                     .rewriter = PatternRewriter(module->getContext()),
-                     .router = AStarHeuristicRouter(weights),
-                     .nlookahead = params.nlookahead};
+void insertSWAPs(Location location, ArrayRef<QubitIndexPair> swaps,
+                 Layout& layout, PatternRewriter& rewriter) {
+  for (const auto [hw0, hw1] : swaps) {
+    const Value in0 = layout.lookupHardwareValue(hw0);
+    const Value in1 = layout.lookupHardwareValue(hw1);
+    [[maybe_unused]] const auto [prog0, prog1] =
+        layout.getProgramIndices(hw0, hw1);
 
-  for (auto func : module.getOps<func::FuncOp>()) {
-    LLVM_DEBUG(llvm::dbgs() << "handleFunc: " << func.getSymName() << '\n');
+    LLVM_DEBUG({
+      llvm::dbgs() << llvm::format(
+          "route: swap= p%d:h%d, p%d:h%d <- p%d:h%d, p%d:h%d\n", prog1, hw0,
+          prog0, hw1, prog0, hw0, prog1, hw1);
+    });
 
-    if (!isEntryPoint(func)) {
-      LLVM_DEBUG(llvm::dbgs() << "\tskip non entry\n");
-      return success(); // Ignore non entry_point functions for now.
-    }
+    auto swap = createSwap(location, in0, in1, rewriter);
+    const auto [out0, out1] = getOuts(swap);
 
-    if (failed(processFunction(func, ctx))) {
-      return failure();
-    }
+    rewriter.setInsertionPointAfter(swap);
+    replaceAllUsesInRegionAndChildrenExcept(in0, out1, swap->getParentRegion(),
+                                            swap, rewriter);
+    replaceAllUsesInRegionAndChildrenExcept(in1, out0, swap->getParentRegion(),
+                                            swap, rewriter);
+
+    layout.swap(in0, in1);
+    layout.remapQubitValue(in0, out0);
+    layout.remapQubitValue(in1, out1);
   }
-
-  return success();
 }
 
 /**
@@ -149,31 +103,119 @@ struct AStarRoutingPassSC final
   using AStarRoutingPassSCBase<AStarRoutingPassSC>::AStarRoutingPassSCBase;
 
   void runOnOperation() override {
-    if (preflight().failed()) {
+    if (failed(preflight())) {
       signalPassFailure();
       return;
     }
 
-    auto arch = getArchitecture(archName);
-    if (!arch) {
-      emitError(UnknownLoc::get(&getContext()))
-          << "unsupported architecture '" << archName << "'";
+    if (failed(route())) {
       signalPassFailure();
       return;
-    }
-
-    Statistics stats{.numSwaps = &numSwaps};
-    Params params{.nlookahead = nlookahead, .alpha = alpha, .lambda = lambda};
-    if (route(getOperation(), std::move(arch), params, stats).failed()) {
-      signalPassFailure();
     };
   }
 
 private:
+  /**
+   * @brief Route the given module for the targeted architecture using
+   * A*-search. Processes each entry_point function separately.
+   */
+  LogicalResult route() {
+    ModuleOp module(getOperation());
+    PatternRewriter rewriter(module->getContext());
+    AStarHeuristicRouter router(HeuristicWeights(alpha, lambda, nlookahead));
+    std::unique_ptr<Architecture> arch(getArchitecture(archName));
+
+    if (!arch) {
+      Location location = UnknownLoc::get(&getContext());
+      emitError(location) << "unsupported architecture '" << archName << "'";
+      return failure();
+    }
+
+    for (auto func : module.getOps<func::FuncOp>()) {
+      LLVM_DEBUG(llvm::dbgs() << "handleFunc: " << func.getSymName() << '\n');
+
+      if (!isEntryPoint(func)) {
+        LLVM_DEBUG(llvm::dbgs() << "\tskip non entry\n");
+        return success(); // Ignore non entry_point functions for now.
+      }
+
+      /// Iteratively process each unit in the function.
+      std::queue<LayeredUnit> units;
+      units.emplace(LayeredUnit::fromEntryPointFunction(func, arch->nqubits()));
+      for (; !units.empty(); units.pop()) {
+        LayeredUnit& unit = units.front();
+
+        SmallVector<QubitIndexPair> history;
+        for (const auto window : unit.slidingWindow(nlookahead)) {
+          Operation* anchor = window.opLayer->anchor;
+          ArrayRef<GateLayer> layers = window.gateLayers;
+          ArrayRef<Operation*> ops = window.opLayer->ops;
+
+          /// Find and insert SWAPs.
+          rewriter.setInsertionPoint(anchor);
+          const auto swaps = router.route(layers, unit.layout(), *arch);
+          if (!swaps) {
+            Location loc = UnknownLoc::get(&getContext());
+            return emitError(loc, "A* failed to find a valid SWAP sequence");
+          }
+
+          if (!swaps->empty()) {
+            history.append(*swaps);
+            insertSWAPs(anchor->getLoc(), *swaps, unit.layout(), rewriter);
+            numSwaps += swaps->size();
+          }
+
+          /// Process all operations contained in the layer.
+          for (Operation* curr : ops) {
+            rewriter.setInsertionPoint(curr);
+
+            /// Re-order to fix any SSA Dominance issues.
+            if (window.nextAnchor != nullptr) {
+              rewriter.moveOpBefore(curr, window.nextAnchor);
+            }
+
+            /// Forward layout.
+            TypeSwitch<Operation*>(curr)
+                .Case<UnitaryInterface>([&](UnitaryInterface op) {
+                  if (isa<SWAPOp>(op)) {
+                    const auto ins = getIns(op);
+                    unit.layout().swap(ins.first, ins.second);
+                    history.push_back(
+                        {unit.layout().lookupHardwareIndex(ins.first),
+                         unit.layout().lookupHardwareIndex(ins.second)});
+                  }
+                  remap(op, unit.layout());
+                })
+                .Case<ResetOp>([&](ResetOp op) { remap(op, unit.layout()); })
+                .Case<MeasureOp>(
+                    [&](MeasureOp op) { remap(op, unit.layout()); })
+                .Case<scf::YieldOp>([&](scf::YieldOp op) {
+                  if (unit.restore()) {
+                    rewriter.setInsertionPointAfter(op->getPrevNode());
+                    insertSWAPs(op.getLoc(),
+                                llvm::to_vector(llvm::reverse(history)),
+                                unit.layout(), rewriter);
+                  }
+                })
+                .Default([](auto) {
+                  llvm_unreachable("unhandled 'curr' operation");
+                });
+          }
+        }
+
+        for (auto next : unit.next()) {
+          units.emplace(next);
+        }
+      }
+    }
+
+    return success();
+  }
+
   LogicalResult preflight() {
     if (archName.empty()) {
-      return emitError(UnknownLoc::get(&getContext()),
-                       "required option 'arch' not provided");
+      Location loc = UnknownLoc::get(&getContext());
+      return emitError(loc, "required option 'arch' not provided");
     }
 
     return success();
