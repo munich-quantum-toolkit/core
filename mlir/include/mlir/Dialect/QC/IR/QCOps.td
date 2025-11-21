@@ -973,4 +973,48 @@ def CtrlOp : QCOp<"ctrl",
     let hasVerifier = 1;
 }
 
+def InvOp : QCOp<"inv",
+            traits = [
+                UnitaryOpInterface,
+                SingleBlockImplicitTerminator<"::mlir::qc::YieldOp">,
+                RecursiveMemoryEffects
+            ]> {
+    let summary = "Invert a unitary operation";
+    let description = [{
+        A modifier operation that inverts the unitary operation defined in its body
+        region.
+
+        Example:
+        ```mlir
+        qc.inv {
+          qc.s %q0 : !qc.qubit
+        }
+        ```
+    }];
+
+    let regions = (region SizedRegion<1>:$body);
+    let assemblyFormat = "$body attr-dict";
+
+    let extraClassDeclaration = [{
+        [[nodiscard]] UnitaryOpInterface getBodyUnitary();
+        size_t getNumQubits();
+        size_t getNumTargets();
+        size_t getNumControls();
+        Value getQubit(size_t i);
+        Value getTarget(size_t i);
+        Value getControl(size_t i);
+        size_t getNumParams();
+        Value getParameter(size_t i);
+        static StringRef getBaseSymbol() { return "inv"; }
+    }];
+
+    let builders = [
+        OpBuilder<(ins "UnitaryOpInterface":$bodyUnitary)>,
+        OpBuilder<(ins "const std::function<void(OpBuilder &)>&":$bodyBuilder)>
+    ];
+
+    let hasCanonicalizer = 1;
+    let hasVerifier = 1;
+}
+
 #endif // QC_OPS
