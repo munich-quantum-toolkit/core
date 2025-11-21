@@ -119,15 +119,15 @@ inline std::optional<fp> mlirValueToFp(mlir::Value value) {
     return result;
   }
   if (auto result = performMlirFloatBinaryOp<mlir::arith::MulFOp>(
-          value, [](fp a, fp b) { return a + b; })) {
+          value, [](fp a, fp b) { return a * b; })) {
     return result;
   }
   if (auto result = performMlirFloatBinaryOp<mlir::arith::DivFOp>(
-          value, [](fp a, fp b) { return a + b; })) {
+          value, [](fp a, fp b) { return a / b; })) {
     return result;
   }
   if (auto result = performMlirFloatBinaryOp<mlir::arith::SubFOp>(
-          value, [](fp a, fp b) { return a + b; })) {
+          value, [](fp a, fp b) { return a - b; })) {
     return result;
   }
   return std::nullopt;
@@ -168,8 +168,8 @@ getParameters(UnitaryInterface op) {
   auto inQubitSize =
       inQubits.size() + inPosCtrlQubits.size() + inNegCtrlQubits.size();
   auto&& outQubits = op.getOutQubits();
-  auto&& outPosCtrlQubits = op.getPosCtrlInQubits();
-  auto&& outNegCtrlQubits = op.getNegCtrlInQubits();
+  auto&& outPosCtrlQubits = op.getPosCtrlOutQubits();
+  auto&& outNegCtrlQubits = op.getNegCtrlOutQubits();
   auto outQubitSize =
       outQubits.size() + outPosCtrlQubits.size() + outNegCtrlQubits.size();
   const bool isTwoQubitOp = inQubitSize == 2 && outQubitSize == 2;
