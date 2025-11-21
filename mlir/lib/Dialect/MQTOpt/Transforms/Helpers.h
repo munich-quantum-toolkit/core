@@ -14,21 +14,32 @@
 #include "ir/operations/OpType.hpp"
 #include "mlir/Dialect/MQTOpt/IR/MQTOptDialect.h"
 
-#include <Eigen/Core>
-#include <Eigen/Eigenvalues>
+#include <Eigen/Core>        // NOLINT(misc-include-cleaner)
+#include <Eigen/Eigenvalues> // NOLINT(misc-include-cleaner)
 #include <algorithm>
+#include <cmath>
+#include <complex>
+#include <llvm/ADT/SmallVector.h>
+#include <llvm/Support/Casting.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
+#include <mlir/IR/BuiltinAttributes.h>
 #include <mlir/IR/Operation.h>
-#include <unsupported/Eigen/KroneckerProduct> // TODO: unstable
+#include <mlir/IR/Value.h>
+#include <optional>
+#include <stdexcept>
+#include <string>
+#include <unsupported/Eigen/KroneckerProduct> // TODO: unstable, NOLINT(misc-include-cleaner)
 
 namespace mqt::ir::opt {
 using fp = qc::fp;
 using qfp = std::complex<fp>;
+// NOLINTBEGIN(misc-include-cleaner)
 using matrix2x2 = Eigen::Matrix2<qfp>;
 using matrix4x4 = Eigen::Matrix4<qfp>;
 using rmatrix4x4 = Eigen::Matrix4<fp>;
 using diagonal4x4 = Eigen::Vector<qfp, 4>;
 using rdiagonal4x4 = Eigen::Vector<fp, 4>;
+// NOLINTEND(misc-include-cleaner)
 
 constexpr qfp C_ZERO{0., 0.};
 constexpr qfp C_ONE{1., 0.};
@@ -145,7 +156,7 @@ getParameters(UnitaryInterface op) {
 [[nodiscard]] inline bool isSingleQubitOperation(UnitaryInterface op) {
   auto&& inQubits = op.getInQubits();
   auto&& outQubits = op.getOutQubits();
-  bool isSingleQubitOp =
+  const bool isSingleQubitOp =
       inQubits.size() == 1 && outQubits.size() == 1 && !op.isControlled();
   return isSingleQubitOp;
 }
@@ -161,10 +172,11 @@ getParameters(UnitaryInterface op) {
   auto&& outNegCtrlQubits = op.getNegCtrlInQubits();
   auto outQubitSize =
       outQubits.size() + outPosCtrlQubits.size() + outNegCtrlQubits.size();
-  bool isTwoQubitOp = inQubitSize == 2 && outQubitSize == 2;
+  const bool isTwoQubitOp = inQubitSize == 2 && outQubitSize == 2;
   return isTwoQubitOp;
 }
 
+// NOLINTBEGIN(misc-include-cleaner)
 template <typename T>
 inline Eigen::Matrix4<T> kroneckerProduct(const Eigen::Matrix2<T>& lhs,
                                           const Eigen::Matrix2<T>& rhs) {
@@ -185,5 +197,6 @@ template <typename T, int N, int M>
 isUnitaryMatrix(const Eigen::Matrix<T, N, M>& matrix) {
   return (matrix.transpose().conjugate() * matrix).isIdentity();
 }
+// NOLINTEND(misc-include-cleaner)
 
 } // namespace mqt::ir::opt::helpers
