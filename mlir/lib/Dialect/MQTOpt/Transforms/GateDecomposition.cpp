@@ -21,7 +21,9 @@ namespace mqt::ir::opt {
 #include "mlir/Dialect/MQTOpt/Transforms/Passes.h.inc"
 
 /**
- * @brief This pass attempts to cancel consecutive self-inverse operations.
+ * @brief This pass attempts to collect as many operations as possible into a
+ *        4x4 unitary matrix and then decompose it into 1q rotations and 2q
+ *        basis gates.
  */
 struct GateDecomposition final
     : impl::GateDecompositionBase<GateDecomposition> {
