@@ -17,7 +17,6 @@
 #include <array>
 #include <cmath>
 #include <cstddef>
-#include <format>
 #include <llvm/ADT/STLExtras.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/Operation.h>
@@ -26,6 +25,7 @@
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/LogicalResult.h>
 #include <numbers>
+#include <random>
 #include <string>
 #include <unsupported/Eigen/MatrixFunctions>
 #include <utility>
@@ -149,11 +149,6 @@ struct GateDecompositionPattern final
   matchAndRewrite(UnitaryInterface op,
                   mlir::PatternRewriter& rewriter) const override {
     auto series = TwoQubitSeries::getTwoQubitSeries(op);
-    llvm::errs() << "SERIES SIZE: " << series.gates.size() << '\n';
-    for (auto&& gate : series.gates) {
-      std::cerr << gate.op->getName().stripDialect().str() << ", ";
-    }
-    std::cerr << '\n';
 
     if (series.gates.size() < 3) {
       // too short
@@ -182,16 +177,11 @@ struct GateDecompositionPattern final
       }
     }
     if (!bestSequence) {
-      llvm::errs() << "NO SEQUENCE GENERATED!\n";
       return mlir::failure();
     }
     // only accept new sequence if it shortens existing series by more than two
     // gates; this prevents an oscillation with phase gates
     if (bestSequence->complexity() + 2 >= series.complexity) {
-      llvm::errs() << "SEQUENCE LONGER THAN INPUT ("
-                   << bestSequence->gates.size() << "; "
-                   << bestSequence->complexity() << " vs " << series.complexity
-                   << ")\n";
       return mlir::failure();
     }
 
@@ -483,57 +473,13 @@ protected:
                                        {});
     }
 
-    std::cerr << "SERIES: ";
-    for (auto&& gate : series.gates) {
-      auto name = gate.op->getName().stripDialect().str();
-      if (name == "x" && gate.qubitIds.size() == 2) {
-        // controls come first
-        std::cerr << std::format("cx() q[{}], q[{}];", gate.qubitIds[1],
-                                 gate.qubitIds[0]);
-      } else if (name == "i") {
-      } else if (gate.op.getParams().empty()) {
-        std::cerr << std::format(
-            "{}() q[{}] {};", name, gate.qubitIds[0],
-            (gate.qubitIds.size() > 1
-                 ? (", q[" + std::to_string(gate.qubitIds[1]) + "]")
-                 : std::string{}));
-      } else {
-        auto parameter = helpers::getParameters(gate.op)[0];
-        std::cerr << std::format(
-            "{}({}*pi) q[{}] {};", name, parameter / qc::PI, gate.qubitIds[0],
-            (gate.qubitIds.size() > 1
-                 ? (", q[" + std::to_string(gate.qubitIds[1]) + "]")
-                 : std::string{}));
-      }
-    }
-    std::cerr << '\n';
-    std::cerr << "GATE SEQUENCE!: gphase(" << sequence.globalPhase / qc::PI
-              << "*pi); \n";
     matrix4x4 unitaryMatrix =
         helpers::kroneckerProduct(IDENTITY_GATE, IDENTITY_GATE);
     for (auto&& gate : sequence.gates) {
       auto gateMatrix = getTwoQubitMatrix(gate);
       unitaryMatrix = gateMatrix * unitaryMatrix;
 
-      if (gate.type == qc::X && gate.qubitId.size() == 2) {
-        // controls come first
-        std::cerr << std::format("cx() q[{}], q[{}];", gate.qubitId[1],
-                                 gate.qubitId[0]);
-      } else if (gate.parameter.empty()) {
-        std::cerr << std::format(
-            "{}() q[{}] {};", qc::toString(gate.type), gate.qubitId[0],
-            (gate.qubitId.size() > 1
-                 ? (", q[" + std::to_string(gate.qubitId[1]) + "]")
-                 : std::string{}));
-      } else {
-        std::cerr << std::format(
-            "{}({}*pi) q[{}] {};", qc::toString(gate.type),
-            gate.parameter[0] / qc::PI, gate.qubitId[0],
-            (gate.qubitId.size() > 1
-                 ? (", q[" + std::to_string(gate.qubitId[1]) + "]")
-                 : std::string{}));
-      }
-      std::cerr << '\n';
+      // TODO: need to add each basis gate we want to use
       if (gate.type == qc::X) {
         mlir::SmallVector<mlir::Value, 1> inCtrlQubits;
         if (gate.qubitId.size() > 1) {
@@ -572,7 +518,6 @@ protected:
         throw std::runtime_error{"Unknown gate type!"};
       }
     }
-    std::cerr << '\n';
     assert((unitaryMatrix * std::exp(IM * sequence.globalPhase))
                .isApprox(series.getUnitaryMatrix(), SANITY_CHECK_PRECISION));
 
@@ -1769,8 +1714,10 @@ protected:
             decomp, target1qEulerBases, 0, {}, true, std::nullopt);
         eulerDecompositions.push_back(eulerDecomp);
       }
-      TwoQubitGateSequence gates{.globalPhase =
-                                     targetDecomposition.globalPhase};
+      TwoQubitGateSequence gates{
+          .gates = {},
+          .globalPhase = targetDecomposition.globalPhase,
+      };
       // Worst case length is 5x 1q gates for each 1q decomposition + 1x 2q
       // gate We might overallocate a bit if the euler basis is different but
       // the worst case is just 16 extra elements with just a String and 2
