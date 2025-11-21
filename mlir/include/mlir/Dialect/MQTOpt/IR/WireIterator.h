@@ -25,7 +25,6 @@
 #include <mlir/Support/LLVM.h>
 
 namespace mqt::ir::opt {
-using namespace mlir;
 
 /**
  * @brief A non-recursive bidirectional_iterator traversing the def-use chain of
@@ -46,14 +45,14 @@ using namespace mlir;
 class WireIterator {
   /// @returns a view of all input qubits.
   [[nodiscard]] static auto getAllInQubits(UnitaryInterface op) {
-    return llvm::concat<Value>(op.getInQubits(), op.getPosCtrlInQubits(),
-                               op.getNegCtrlInQubits());
+    return llvm::concat<mlir::Value>(op.getInQubits(), op.getPosCtrlInQubits(),
+                                     op.getNegCtrlInQubits());
   }
 
   /// @returns a view of all output qubits.
   [[nodiscard]] static auto getAllOutQubits(UnitaryInterface op) {
-    return llvm::concat<Value>(op.getOutQubits(), op.getPosCtrlOutQubits(),
-                               op.getNegCtrlOutQubits());
+    return llvm::concat<mlir::Value>(
+        op.getOutQubits(), op.getPosCtrlOutQubits(), op.getNegCtrlOutQubits());
   }
 
   /**
@@ -62,12 +61,14 @@ class WireIterator {
    * @note That we don't use the interface method here because
    * it creates temporary std::vectors instead of using views.
    */
-  [[nodiscard]] static Value findOutput(UnitaryInterface op, Value in) {
+  [[nodiscard]] static mlir::Value findOutput(UnitaryInterface op,
+                                              mlir::Value in) {
     const auto ins = getAllInQubits(op);
+    const auto outs = getAllOutQubits(op);
     const auto it = llvm::find(ins, in);
     assert(it != ins.end() && "input qubit not found in operation");
     const auto index = std::distance(ins.begin(), it);
-    return *(std::next(getAllOutQubits(op).begin(), index));
+    return *(std::next(outs.begin(), index));
   }
 
   /**
@@ -76,18 +77,21 @@ class WireIterator {
    * @note That we don't use the interface method here because
    * it creates temporary std::vectors instead of using views.
    */
-  [[nodiscard]] static Value findInput(UnitaryInterface op, Value out) {
+  [[nodiscard]] static mlir::Value findInput(UnitaryInterface op,
+                                             mlir::Value out) {
+    const auto ins = getAllInQubits(op);
     const auto outs = getAllOutQubits(op);
     const auto it = llvm::find(outs, out);
     assert(it != outs.end() && "output qubit not found in operation");
     const auto index = std::distance(outs.begin(), it);
-    return *(std::next(getAllInQubits(op).begin(), index));
+    return *(std::next(ins.begin(), index));
   }
 
   /**
    * @brief Find corresponding result from init argument value (Forward).
    */
-  [[nodiscard]] static Value findResult(scf::ForOp op, Value initArg) {
+  [[nodiscard]] static mlir::Value findResult(mlir::scf::ForOp op,
+                                              mlir::Value initArg) {
     const auto initArgs = op.getInitArgs();
     const auto it = llvm::find(initArgs, initArg);
     assert(it != initArgs.end() && "init arg qubit not found in operation");
@@ -98,8 +102,9 @@ class WireIterator {
   /**
    * @brief Find corresponding init argument from result value (Backward).
    */
-  [[nodiscard]] static Value findInitArg(scf::ForOp op, Value res) {
-    return op.getInitArgs()[cast<OpResult>(res).getResultNumber()];
+  [[nodiscard]] static mlir::Value findInitArg(mlir::scf::ForOp op,
+                                               mlir::Value res) {
+    return op.getInitArgs()[cast<mlir::OpResult>(res).getResultNumber()];
   }
 
   /**
@@ -109,7 +114,8 @@ class WireIterator {
    * yield is found. Requires that each branch takes and returns the same
    * (possibly modified) qubits. Hence, we can just traverse the then-branch.
    */
-  [[nodiscard]] static Value findResult(scf::IfOp op, Value q) {
+  [[nodiscard]] static mlir::Value findResult(mlir::scf::IfOp op,
+                                              mlir::Value q) {
     WireIterator it(q, &op.getThenRegion());
 
     /// Assumptions:
@@ -118,8 +124,8 @@ class WireIterator {
     /// Then: Advance until the yield before the sentinel.
 
     it = std::prev(std::ranges::next(it, std::default_sentinel));
-    assert(isa<scf::YieldOp>(*it) && "expected yield op");
-    auto yield = cast<scf::YieldOp>(*it);
+    assert(isa<mlir::scf::YieldOp>(*it) && "expected yield op");
+    auto yield = cast<mlir::scf::YieldOp>(*it);
 
     /// Get the corresponding result.
 
@@ -139,12 +145,15 @@ class WireIterator {
    * backward traversal, it indicates that the def-use chain starts within the
    * branch region and does not extend into the parent region.
    */
-  [[nodiscard]] static Value findValue(scf::IfOp op, Value q) {
-    auto yield = llvm::cast<scf::YieldOp>(op.thenBlock()->getTerminator());
-    Value v = yield.getResults()[cast<OpResult>(q).getResultNumber()];
+  [[nodiscard]] static mlir::Value findValue(mlir::scf::IfOp op,
+                                             mlir::Value q) {
+    const auto num = cast<mlir::OpResult>(q).getResultNumber();
+    mlir::Operation* term = op.thenBlock()->getTerminator();
+    mlir::scf::YieldOp yield = llvm::cast<mlir::scf::YieldOp>(term);
+    mlir::Value v = yield.getResults()[num];
     assert(v != nullptr && "expected yielded value");
 
-    Operation* prev{};
+    mlir::Operation* prev{};
     WireIterator it(v, &op.getThenRegion());
     while (*it != prev && it.q.getParentRegion() != op->getParentRegion()) {
       --it;
@@ -159,8 +168,9 @@ class WireIterator {
    * @param region The targeted region.
    * @return A pointer to the user, or nullptr if none exists.
    */
-  [[nodiscard]] static Operation* getUserInRegion(Value v, Region* region) {
-    for (Operation* user : v.getUsers()) {
+  [[nodiscard]] static mlir::Operation* getUserInRegion(mlir::Value v,
+                                                        mlir::Region* region) {
+    for (mlir::Operation* user : v.getUsers()) {
       if (user->getParentRegion() == region) {
         return user;
       }
@@ -171,17 +181,19 @@ class WireIterator {
 public:
   using iterator_category = std::bidirectional_iterator_tag;
   using difference_type = std::ptrdiff_t;
-  using value_type = Operation*;
+  using value_type = mlir::Operation*;
 
   explicit WireIterator() = default;
-  explicit WireIterator(Value q, Region* region)
+  explicit WireIterator(mlir::Value q, mlir::Region* region)
       : currOp(q.getDefiningOp()), q(q), region(region) {}
 
-  [[nodiscard]] Operation* operator*() const {
+  [[nodiscard]] mlir::Operation* operator*() const {
     assert(!sentinel && "Dereferencing sentinel iterator");
     assert(currOp && "Dereferencing null operation");
     return currOp;
   }
+
+  [[nodiscard]] mlir::Value value() const { return q; }
 
   WireIterator& operator++() {
     advanceForward();
@@ -223,16 +235,19 @@ private:
     /// Find output from input qubit.
     /// If there is no output qubit, set `sentinel` to true.
     if (q.getDefiningOp() != currOp) {
-      TypeSwitch<Operation*>(currOp)
+      mlir::TypeSwitch<mlir::Operation*>(currOp)
           .Case<UnitaryInterface>(
               [&](UnitaryInterface op) { q = findOutput(op, q); })
           .Case<AllocQubitOp>([&](AllocQubitOp op) { q = op.getQubit(); })
           .Case<ResetOp>([&](ResetOp op) { q = op.getOutQubit(); })
           .Case<MeasureOp>([&](MeasureOp op) { q = op.getOutQubit(); })
-          .Case<scf::ForOp>([&](scf::ForOp op) { q = findResult(op, q); })
-          .Case<scf::IfOp>([&](scf::IfOp op) { q = findResult(op, q); })
-          .Case<DeallocQubitOp, scf::YieldOp>([&](auto) { sentinel = true; })
-          .Default([&](Operation* op) {
+          .Case<mlir::scf::ForOp>(
+              [&](mlir::scf::ForOp op) { q = findResult(op, q); })
+          .Case<mlir::scf::IfOp>(
+              [&](mlir::scf::IfOp op) { q = findResult(op, q); })
+          .Case<DeallocQubitOp, mlir::scf::YieldOp>(
+              [&](auto) { sentinel = true; })
+          .Default([&](mlir::Operation* op) {
             report_fatal_error("unknown op in def-use chain: " +
                                op->getName().getStringRef());
           });
@@ -257,7 +272,7 @@ private:
       currOp = q.getUsers().begin()->getParentOp();
       /// For now, just check if it's a scf::IfOp.
       /// Theoretically this could also be an scf::scf.index_switch, etc.
-      assert(isa<scf::IfOp>(currOp));
+      assert(isa<mlir::scf::IfOp>(currOp));
     }
   }
 
@@ -274,15 +289,17 @@ private:
 
     /// Find input from output qubit.
     /// If there is no input qubit, hold.
-    TypeSwitch<Operation*>(currOp)
+    mlir::TypeSwitch<mlir::Operation*>(currOp)
         .Case<UnitaryInterface>(
             [&](UnitaryInterface op) { q = findInput(op, q); })
         .Case<ResetOp, MeasureOp>([&](auto op) { q = op.getInQubit(); })
         .Case<DeallocQubitOp>([&](DeallocQubitOp op) { q = op.getQubit(); })
-        .Case<scf::ForOp>([&](scf::ForOp op) { q = findInitArg(op, q); })
-        .Case<scf::IfOp>([&](scf::IfOp op) { q = findValue(op, q); })
+        .Case<mlir::scf::ForOp>(
+            [&](mlir::scf::ForOp op) { q = findInitArg(op, q); })
+        .Case<mlir::scf::IfOp>(
+            [&](mlir::scf::IfOp op) { q = findValue(op, q); })
         .Case<AllocQubitOp, QubitOp>([&](auto) { /* hold (no-op) */ })
-        .Default([&](Operation* op) {
+        .Default([&](mlir::Operation* op) {
           report_fatal_error("unknown op in def-use chain: " +
                              op->getName().getStringRef());
         });
@@ -292,13 +309,13 @@ private:
    * @brief Return the active region this iterator uses.
    * @return A pointer to the region.
    */
-  [[nodiscard]] Region* getRegion() {
+  [[nodiscard]] mlir::Region* getRegion() {
     return region != nullptr ? region : q.getParentRegion();
   }
 
-  Operation* currOp{};
-  Value q;
-  Region* region{};
+  mlir::Operation* currOp{};
+  mlir::Value q;
+  mlir::Region* region{};
   bool sentinel{false};
 };
 
