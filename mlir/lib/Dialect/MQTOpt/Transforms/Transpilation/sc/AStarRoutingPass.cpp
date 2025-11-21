@@ -142,7 +142,7 @@ private:
       for (; !units.empty(); units.pop()) {
         LayeredUnit& unit = units.front();
 
-        unit.dump();
+        LLVM_DEBUG(unit.dump());
 
         SmallVector<QubitIndexPair> history;
         for (const auto window : unit.slidingWindow(nlookahead)) {
