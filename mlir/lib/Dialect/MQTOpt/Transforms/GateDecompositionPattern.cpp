@@ -10,6 +10,7 @@
 
 #include "Helpers.h"
 #include "ir/Definitions.hpp"
+#include "ir/operations/OpType.hpp"
 #include "mlir/Dialect/MQTOpt/IR/MQTOptDialect.h"
 #include "mlir/Dialect/MQTOpt/Transforms/Passes.h"
 
@@ -17,6 +18,7 @@
 #include <array>
 #include <cmath>
 #include <cstddef>
+#include <cstdint>
 #include <llvm/ADT/STLExtras.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/Operation.h>
@@ -27,7 +29,7 @@
 #include <numbers>
 #include <random>
 #include <string>
-#include <unsupported/Eigen/MatrixFunctions>
+#include <unsupported/Eigen/MatrixFunctions> // NOLINT(misc-include-cleaner)
 #include <utility>
 
 namespace mqt::ir::opt {
@@ -71,7 +73,7 @@ struct GateDecompositionPattern final
     /**
      * Container sorting the gate sequence in order.
      */
-    std::vector<Gate> gates;
+    llvm::SmallVector<Gate, 8> gates;
 
     /**
      * Global phase adjustment required for the sequence.
@@ -1777,7 +1779,7 @@ protected:
      *
      * which is optimal for all targets and bases
      */
-    [[nodiscard]] static std::vector<matrix2x2>
+    [[nodiscard]] static llvm::SmallVector<matrix2x2>
     decomp0(const TwoQubitWeylDecomposition& target) {
       return {
           target.k1r * target.k2r,
@@ -1799,7 +1801,7 @@ protected:
      *
      * which is optimal for all targets and bases with ``z==0`` or ``c==0``.
      */
-    [[nodiscard]] std::vector<matrix2x2>
+    [[nodiscard]] llvm::SmallVector<matrix2x2>
     decomp1(const TwoQubitWeylDecomposition& target) const {
       // FIXME: fix for z!=0 and c!=0 using closest reflection (not always in
       // the Weyl chamber)
@@ -1834,7 +1836,7 @@ protected:
      * and target :math:`\sim U_d(x, y, 0)`. No guarantees for
      * non-supercontrolled basis.
      */
-    [[nodiscard]] std::vector<matrix2x2>
+    [[nodiscard]] llvm::SmallVector<matrix2x2>
     decomp2Supercontrolled(const TwoQubitWeylDecomposition& target) const {
       return {
           q2r * target.k2r,
@@ -1855,7 +1857,7 @@ protected:
      * :math:`\sim U_d(\pi/4, b, 0)`, all b, and any target. No guarantees for
      * non-supercontrolled basis.
      */
-    [[nodiscard]] std::vector<matrix2x2>
+    [[nodiscard]] llvm::SmallVector<matrix2x2>
     decomp3Supercontrolled(const TwoQubitWeylDecomposition& target) const {
       return {
           u3r * target.k2r,
@@ -1975,21 +1977,22 @@ protected:
         angleZeroEpsilon = -1.0;
       }
 
-      fp globalPhase = phase - ((phi + lambda) / 2.);
-
-      std::vector<OneQubitGateSequence::Gate> gates;
+      OneQubitGateSequence sequence{
+          .gates = {},
+          .globalPhase = phase - ((phi + lambda) / 2.),
+      };
       if (std::abs(theta) <= angleZeroEpsilon) {
         lambda += phi;
         lambda = mod2pi(lambda);
         if (std::abs(lambda) > angleZeroEpsilon) {
-          gates.push_back({kGate, {lambda}});
-          globalPhase += lambda / 2.0;
+          sequence.gates.push_back({.type = kGate, .parameter = {lambda}});
+          sequence.globalPhase += lambda / 2.0;
         }
-        return {gates, globalPhase};
+        return sequence;
       }
 
       if (std::abs(theta - qc::PI) <= angleZeroEpsilon) {
-        globalPhase += phi;
+        sequence.globalPhase += phi;
         lambda -= phi;
         phi = 0.0;
       }
@@ -2001,16 +2004,16 @@ protected:
       }
       lambda = mod2pi(lambda);
       if (std::abs(lambda) > angleZeroEpsilon) {
-        globalPhase += lambda / 2.0;
-        gates.push_back({kGate, {lambda}});
+        sequence.globalPhase += lambda / 2.0;
+        sequence.gates.push_back({.type = kGate, .parameter = {lambda}});
       }
-      gates.push_back({aGate, {theta}});
+      sequence.gates.push_back({.type = aGate, .parameter = {theta}});
       phi = mod2pi(phi);
       if (std::abs(phi) > angleZeroEpsilon) {
-        globalPhase += phi / 2.0;
-        gates.push_back({kGate, {phi}});
+        sequence.globalPhase += phi / 2.0;
+        sequence.gates.push_back({.type = kGate, .parameter = {phi}});
       }
-      return {gates, globalPhase};
+      return sequence;
     }
   };
 
