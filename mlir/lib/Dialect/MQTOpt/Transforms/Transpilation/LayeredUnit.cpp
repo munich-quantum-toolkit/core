@@ -13,6 +13,7 @@
 #include "mlir/Dialect/MQTOpt/IR/MQTOptDialect.h"
 #include "mlir/Dialect/MQTOpt/Transforms/Transpilation/Common.h"
 #include "mlir/Dialect/MQTOpt/Transforms/Transpilation/Layout.h"
+#include "mlir/Dialect/MQTOpt/Transforms/Transpilation/Unit.h"
 #include "mlir/Dialect/MQTOpt/Transforms/Transpilation/WireIterator.h"
 
 #include <cassert>

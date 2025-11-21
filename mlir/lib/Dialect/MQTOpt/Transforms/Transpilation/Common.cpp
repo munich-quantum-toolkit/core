@@ -14,8 +14,6 @@
 
 #include <cassert>
 #include <llvm/ADT/STLExtras.h>
-#include <llvm/ADT/StringRef.h>
-#include <llvm/Support/Casting.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/IR/BuiltinAttributes.h>
 #include <mlir/IR/PatternMatch.h>

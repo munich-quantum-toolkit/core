@@ -26,7 +26,6 @@
 #include <iterator>
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/TypeSwitch.h>
-#include <llvm/Support/Casting.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
 #include <mlir/IR/Operation.h>
 #include <mlir/IR/Region.h>
