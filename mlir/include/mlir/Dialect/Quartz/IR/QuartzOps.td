@@ -946,4 +946,52 @@ def CtrlOp : QuartzOp<"ctrl",
     let hasVerifier = 1;
 }
 
+def InvOp : QuartzOp<"inv",
+            traits = [
+                UnitaryOpInterface,
+                SingleBlockImplicitTerminator<"::mlir::quartz::YieldOp">
+            ]> {
+    let summary = "Invert a unitary operation";
+    let description = [{
+        A modifier operation that inverts the unitary operation defined in its body
+        region.
+
+        Example:
+        ```mlir
+        quartz.inv {
+          quartz.s %q0 : !quartz.qubit
+        }
+        ```
+    }];
+
+    let regions = (region SizedRegion<1>:$body);
+    let assemblyFormat = "$body attr-dict";
+
+    let builders = [
+        OpBuilder<(ins "UnitaryOpInterface":$bodyUnitary)>,
+        OpBuilder<(ins "const std::function<void(OpBuilder &)>&":$bodyBuilder)>
+    ];
+
+    let extraClassDeclaration = [{
+        [[nodiscard]] UnitaryOpInterface getBodyUnitary();
+        size_t getNumQubits();
+        size_t getNumTargets();
+        size_t getNumControls();
+        size_t getNumPosControls();
+        size_t getNumNegControls();
+        Value getQubit(size_t i);
+        Value getTarget(size_t i);
+        Value getPosControl(size_t i);
+        Value getNegControl(size_t i);
+        size_t getNumParams();
+        Value getParameter(size_t i);
+        bool hasStaticUnitary();
+        DenseElementsAttr tryGetStaticMatrix();
+        static StringRef getBaseSymbol() { return "inv"; }
+    }];
+
+    let hasCanonicalizer = 1;
+    let hasVerifier = 1;
+}
+
 #endif // QUARTZ_OPS
