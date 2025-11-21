@@ -14,22 +14,29 @@
 #include "mlir/Dialect/MQTOpt/IR/MQTOptDialect.h"
 #include "mlir/Dialect/MQTOpt/Transforms/Passes.h"
 
+#include <Eigen/Core> // NOLINT(misc-include-cleaner)
 #include <algorithm>
 #include <array>
+#include <cassert>
 #include <cmath>
+#include <complex>
 #include <cstddef>
 #include <cstdint>
+#include <iterator>
 #include <llvm/ADT/STLExtras.h>
+#include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/Operation.h>
 #include <mlir/IR/PatternMatch.h>
+#include <mlir/IR/Value.h>
 #include <mlir/IR/ValueRange.h>
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/LogicalResult.h>
 #include <numbers>
+#include <optional>
 #include <random>
-#include <string>
-#include <unsupported/Eigen/MatrixFunctions> // NOLINT(misc-include-cleaner)
+#include <tuple>
+#include <unsupported/Eigen/MatrixFunctions> // TODO: unstable, NOLINT(misc-include-cleaner)
 #include <utility>
 
 namespace mqt::ir::opt {
@@ -162,8 +169,8 @@ struct GateDecompositionPattern final
       return mlir::failure();
     }
 
-    matrix4x4 unitaryMatrix = series.getUnitaryMatrix();
-    auto targetDecomposition =
+    const matrix4x4 unitaryMatrix = series.getUnitaryMatrix();
+    const auto targetDecomposition =
         TwoQubitWeylDecomposition::create(unitaryMatrix, DEFAULT_FIDELITY);
 
     std::optional<TwoQubitGateSequence> bestSequence;
@@ -357,10 +364,11 @@ protected:
                                               ? *firstQubitIt
                                               : *secondQubitIt);
         // new qubit ID based on position in outQubits
-        QubitId newInQubitId = std::distance(outQubits.begin(), it);
+        const QubitId newInQubitId = std::distance(outQubits.begin(), it);
         // position in operation input; since there are only two qubits, it must
         // be the "not old" one
-        QubitId newOpInQubitId = 1 - std::distance(opInQubits.begin(), it2);
+        const QubitId newOpInQubitId =
+            1 - std::distance(opInQubits.begin(), it2);
 
         // update inQubit and update dangling iterator, then proceed as usual
         inQubits[newInQubitId] = opInQubits[newOpInQubitId];
@@ -371,8 +379,10 @@ protected:
         // possible to collect other single-qubit operations
         backtrackSingleQubitSeries(newInQubitId);
       }
-      QubitId firstQubitId = std::distance(outQubits.begin(), firstQubitIt);
-      QubitId secondQubitId = std::distance(outQubits.begin(), secondQubitIt);
+      const QubitId firstQubitId =
+          std::distance(outQubits.begin(), firstQubitIt);
+      const QubitId secondQubitId =
+          std::distance(outQubits.begin(), secondQubitIt);
       *firstQubitIt = nextGate->getResult(0);
       *secondQubitIt = nextGate->getResult(1);
 
@@ -609,7 +619,7 @@ protected:
     }
     r /= std::sqrt(detR);
     // transpose with complex conjugate of each element
-    matrix2x2 rTConj = r.transpose().conjugate();
+    const matrix2x2 rTConj = r.transpose().conjugate();
 
     auto temp = helpers::kroneckerProduct(IDENTITY_GATE, rTConj);
     temp = specialUnitary * temp;
@@ -734,24 +744,24 @@ protected:
   }
 
   static std::array<fp, 4> paramsZyzInner(const matrix2x2& matrix) {
-    auto detArg = std::arg(matrix.determinant());
-    auto phase = 0.5 * detArg;
-    auto theta =
+    const auto detArg = std::arg(matrix.determinant());
+    const auto phase = 0.5 * detArg;
+    const auto theta =
         2. * std::atan2(std::abs(matrix(1, 0)), std::abs(matrix(0, 0)));
-    auto ang1 = std::arg(matrix(1, 1));
-    auto ang2 = std::arg(matrix(1, 0));
-    auto phi = ang1 + ang2 - detArg;
-    auto lam = ang1 - ang2;
+    const auto ang1 = std::arg(matrix(1, 1));
+    const auto ang2 = std::arg(matrix(1, 0));
+    const auto phi = ang1 + ang2 - detArg;
+    const auto lam = ang1 - ang2;
     return {theta, phi, lam, phase};
   }
 
   static std::array<fp, 4> paramsZxzInner(const matrix2x2& matrix) {
-    auto [theta, phi, lam, phase] = paramsZyzInner(matrix);
+    const auto [theta, phi, lam, phase] = paramsZyzInner(matrix);
     return {theta, phi + (qc::PI / 2.), lam - (qc::PI / 2.), phase};
   }
 
   static std::array<fp, 4> paramsXyxInner(const matrix2x2& matrix) {
-    matrix2x2 matZyz{
+    const matrix2x2 matZyz{
         {static_cast<fp>(0.5) *
              (matrix(0, 0) + matrix(0, 1) + matrix(1, 0) + matrix(1, 1)),
          static_cast<fp>(0.5) *
@@ -906,7 +916,7 @@ protected:
       u *= detPow;
       auto globalPhase = std::arg(detU) / 4.;
       auto uP = magicBasisTransform(u, MagicBasisTransform::OutOf);
-      matrix4x4 m2 = uP.transpose() * uP;
+      const matrix4x4 m2 = uP.transpose() * uP;
       auto defaultEulerBasis = EulerBasis::ZYZ;
 
       // diagonalization yields eigenvectors (p) and eigenvalues (d);
@@ -943,7 +953,7 @@ protected:
 
       // update columns of p according to order
       matrix4x4 pOrig = p;
-      for (int i = 0; i < static_cast<int>(order.size()); ++i) {
+      for (int i = 0; std::cmp_less(i, order.size()); ++i) {
         p.col(i) = pOrig.col(order[i]);
       }
       // apply correction for determinant if necessary
@@ -1173,14 +1183,14 @@ protected:
           randA = dist(state);
           randB = dist(state);
         }
-        rmatrix4x4 m2Real = randA * m.real() + randB * m.imag();
-        rmatrix4x4 pInnerReal = selfAdjointEigenLower(m2Real).first;
-        matrix4x4 p = pInnerReal;
-        diagonal4x4 d = (p.transpose() * m * p).diagonal();
+        const rmatrix4x4 m2Real = randA * m.real() + randB * m.imag();
+        const rmatrix4x4 pReal = selfAdjointEigenLower(m2Real).first;
+        const matrix4x4 p = pReal;
+        const diagonal4x4 d = (p.transpose() * m * p).diagonal();
 
-        matrix4x4 diagD = d.asDiagonal();
+        const matrix4x4 diagD = d.asDiagonal();
 
-        matrix4x4 compare = p * diagD * p.transpose();
+        const matrix4x4 compare = p * diagD * p.transpose();
         if (compare.isApprox(m, precision)) {
           // p are the eigenvectors which are decomposed into the
           // single-qubit gates surrounding the canonical gate
@@ -1542,9 +1552,9 @@ protected:
           {qfp(-0.5, 0.5), qfp(0.5, -0.5)},
       };
 
-      auto basisDecomposer = TwoQubitWeylDecomposition::create(
+      const auto basisDecomposer = TwoQubitWeylDecomposition::create(
           getTwoQubitMatrix(basisGate), basisFidelity);
-      auto superControlled =
+      const auto superControlled =
           relativeEq(basisDecomposer.a, qc::PI_4, 1e-13, 1e-09) &&
           relativeEq(basisDecomposer.c, 0.0, 1e-13, 1e-09);
 
@@ -1552,72 +1562,72 @@ protected:
       // expand as Ui = Ki1.Ubasis.Ki2
       auto b = basisDecomposer.b;
       auto temp = qfp(0.5, -0.5);
-      matrix2x2 k11l{
+      const matrix2x2 k11l{
           {temp * (M_IM * std::exp(qfp(0., -b))), temp * std::exp(qfp(0., -b))},
           {temp * (M_IM * std::exp(qfp(0., b))), temp * -std::exp(qfp(0., b))}};
-      matrix2x2 k11r{{FRAC1_SQRT2 * (IM * std::exp(qfp(0., -b))),
-                      FRAC1_SQRT2 * -std::exp(qfp(0., -b))},
-                     {FRAC1_SQRT2 * std::exp(qfp(0., b)),
-                      FRAC1_SQRT2 * (M_IM * std::exp(qfp(0., b)))}};
-      matrix2x2 k32lK21l{{FRAC1_SQRT2 * qfp(1., std::cos(2. * b)),
-                          FRAC1_SQRT2 * (IM * std::sin(2. * b))},
-                         {FRAC1_SQRT2 * (IM * std::sin(2. * b)),
-                          FRAC1_SQRT2 * qfp(1., -std::cos(2. * b))}};
+      const matrix2x2 k11r{{FRAC1_SQRT2 * (IM * std::exp(qfp(0., -b))),
+                            FRAC1_SQRT2 * -std::exp(qfp(0., -b))},
+                           {FRAC1_SQRT2 * std::exp(qfp(0., b)),
+                            FRAC1_SQRT2 * (M_IM * std::exp(qfp(0., b)))}};
+      const matrix2x2 k32lK21l{{FRAC1_SQRT2 * qfp(1., std::cos(2. * b)),
+                                FRAC1_SQRT2 * (IM * std::sin(2. * b))},
+                               {FRAC1_SQRT2 * (IM * std::sin(2. * b)),
+                                FRAC1_SQRT2 * qfp(1., -std::cos(2. * b))}};
       temp = qfp(0.5, 0.5);
-      matrix2x2 k21r{
+      const matrix2x2 k21r{
           {temp * (M_IM * std::exp(qfp(0., -2. * b))),
            temp * std::exp(qfp(0., -2. * b))},
           {temp * (IM * std::exp(qfp(0., 2. * b))),
            temp * std::exp(qfp(0., 2. * b))},
       };
-      const matrix2x2 k22LArr{
+      const matrix2x2 k22l{
           {qfp(FRAC1_SQRT2, 0.), qfp(-FRAC1_SQRT2, 0.)},
           {qfp(FRAC1_SQRT2, 0.), qfp(FRAC1_SQRT2, 0.)},
       };
-      const matrix2x2 k22RArr{{C_ZERO, C_ONE}, {C_M_ONE, C_ZERO}};
-      matrix2x2 k31l{
+      const matrix2x2 k22r{{C_ZERO, C_ONE}, {C_M_ONE, C_ZERO}};
+      const matrix2x2 k31l{
           {FRAC1_SQRT2 * std::exp(qfp(0., -b)),
            FRAC1_SQRT2 * std::exp(qfp(0., -b))},
           {FRAC1_SQRT2 * -std::exp(qfp(0., b)),
            FRAC1_SQRT2 * std::exp(qfp(0., b))},
       };
-      matrix2x2 k31r{
+      const matrix2x2 k31r{
           {IM * std::exp(qfp(0., b)), C_ZERO},
           {C_ZERO, M_IM * std::exp(qfp(0., -b))},
       };
       temp = qfp(0.5, 0.5);
-      matrix2x2 k32r{
+      const matrix2x2 k32r{
           {temp * std::exp(qfp(0., b)), temp * -std::exp(qfp(0., -b))},
           {temp * (M_IM * std::exp(qfp(0., b))),
            temp * (M_IM * std::exp(qfp(0., -b)))},
       };
-      auto k1ld = basisDecomposer.k1l.transpose().conjugate();
-      auto k1rd = basisDecomposer.k1r.transpose().conjugate();
-      auto k2ld = basisDecomposer.k2l.transpose().conjugate();
-      auto k2rd = basisDecomposer.k2r.transpose().conjugate();
+      auto k1lDagger = basisDecomposer.k1l.transpose().conjugate();
+      auto k1rDagger = basisDecomposer.k1r.transpose().conjugate();
+      auto k2lDagger = basisDecomposer.k2l.transpose().conjugate();
+      auto k2rDagger = basisDecomposer.k2r.transpose().conjugate();
       // Pre-build the fixed parts of the matrices used in 3-part
       // decomposition
-      auto u0l = k31l * k1ld;
-      auto u0r = k31r * k1rd;
-      auto u1l = k2ld * k32lK21l * k1ld;
-      auto u1ra = k2rd * k32r;
-      auto u1rb = k21r * k1rd;
-      auto u2la = k2ld * k22LArr;
-      auto u2lb = k11l * k1ld;
-      auto u2ra = k2rd * k22RArr;
-      auto u2rb = k11r * k1rd;
-      auto u3l = k2ld * k12LArr;
-      auto u3r = k2rd * k12RArr;
+      auto u0l = k31l * k1lDagger;
+      auto u0r = k31r * k1rDagger;
+      auto u1l = k2lDagger * k32lK21l * k1lDagger;
+      auto u1ra = k2rDagger * k32r;
+      auto u1rb = k21r * k1rDagger;
+      auto u2la = k2lDagger * k22l;
+      auto u2lb = k11l * k1lDagger;
+      auto u2ra = k2rDagger * k22r;
+      auto u2rb = k11r * k1rDagger;
+      auto u3l = k2lDagger * k12LArr;
+      auto u3r = k2rDagger * k12RArr;
       // Pre-build the fixed parts of the matrices used in the 2-part
       // decomposition
-      auto q0l = k12LArr.transpose().conjugate() * k1ld;
-      auto q0r = k12RArr.transpose().conjugate() * IPZ * k1rd;
-      auto q1la = k2ld * k11l.transpose().conjugate();
-      auto q1lb = k11l * k1ld;
-      auto q1ra = k2rd * IPZ * k11r.transpose().conjugate();
-      auto q1rb = k11r * k1rd;
-      auto q2l = k2ld * k12LArr;
-      auto q2r = k2rd * k12RArr;
+      auto q0l = k12LArr.transpose().conjugate() * k1lDagger;
+      auto q0r = k12RArr.transpose().conjugate() * IPZ * k1rDagger;
+      auto q1la = k2lDagger * k11l.transpose().conjugate();
+      auto q1lb = k11l * k1lDagger;
+      auto q1ra = k2rDagger * IPZ * k11r.transpose().conjugate();
+      auto q1rb = k11r * k1rDagger;
+      auto q2l = k2lDagger * k12LArr;
+      auto q2r = k2rDagger * k12RArr;
 
       return TwoQubitBasisDecomposer{
           .basisGate = basisGate,
@@ -1678,7 +1688,7 @@ protected:
       auto getDefaultNbasis = [&]() {
         auto minValue = std::numeric_limits<fp>::min();
         auto minIndex = -1;
-        for (int i = 0; i < static_cast<int>(traces.size()); ++i) {
+        for (int i = 0; std::cmp_less(i, traces.size()); ++i) {
           // lower fidelity means it becomes easier to choose a lower number of
           // basis gates
           auto value =
@@ -1713,7 +1723,7 @@ protected:
       for (auto&& decomp : decomposition) {
         assert(helpers::isUnitaryMatrix(decomp));
         auto eulerDecomp = unitaryToGateSequenceInner(
-            decomp, target1qEulerBases, 0, {}, true, std::nullopt);
+            decomp, target1qEulerBases, 0, true, std::nullopt);
         eulerDecompositions.push_back(eulerDecomp);
       }
       TwoQubitGateSequence gates{
@@ -1931,8 +1941,8 @@ protected:
     [[nodiscard]] static OneQubitGateSequence unitaryToGateSequenceInner(
         const matrix2x2& unitaryMat,
         const llvm::SmallVector<EulerBasis>& targetBasisList, QubitId /*qubit*/,
-        const std::vector<std::unordered_map<std::string, fp>>&
-        /*error_map*/, // per qubit a mapping of operation name to error value
+        // TODO: add error map here: per qubit a mapping of operation to error
+        // value for better calculateError()
         bool simplify, std::optional<fp> atol) {
       auto calculateError = [](const OneQubitGateSequence& sequence) -> fp {
         return static_cast<fp>(sequence.complexity());
