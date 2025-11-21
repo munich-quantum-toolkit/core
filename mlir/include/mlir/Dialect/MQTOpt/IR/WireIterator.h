@@ -193,7 +193,7 @@ public:
     return currOp;
   }
 
-  [[nodiscard]] mlir::Value value() const { return q; }
+  [[nodiscard]] mlir::Value qubit() const { return q; }
 
   WireIterator& operator++() {
     advanceForward();
