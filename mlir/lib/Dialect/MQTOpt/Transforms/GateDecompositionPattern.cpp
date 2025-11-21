@@ -23,6 +23,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <iterator>
+#include <limits>
 #include <llvm/ADT/STLExtras.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/IR/MLIRContext.h>
@@ -926,6 +927,7 @@ protected:
       // TODO: it may be possible to lower the precision
       auto [p, d] = diagonalizeComplexSymmetric(m2, 1e-13);
 
+      // NOLINTNEXTLINE(misc-include-cleaner)
       Eigen::Vector<fp, 3> cs; // weyl coordinates
       rdiagonal4x4 dReal = -1.0 * d.cwiseArg() / 2.0;
       dReal(3) = -dReal(0) - dReal(1) - dReal(2);
