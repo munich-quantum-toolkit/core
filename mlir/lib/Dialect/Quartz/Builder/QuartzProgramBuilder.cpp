@@ -387,6 +387,12 @@ QuartzProgramBuilder::ctrl(ValueRange controls,
   return *this;
 }
 
+QuartzProgramBuilder&
+QuartzProgramBuilder::inv(const std::function<void(OpBuilder&)>& body) {
+  create<InvOp>(loc, body);
+  return *this;
+}
+
 //===----------------------------------------------------------------------===//
 // Deallocation
 //===----------------------------------------------------------------------===//
