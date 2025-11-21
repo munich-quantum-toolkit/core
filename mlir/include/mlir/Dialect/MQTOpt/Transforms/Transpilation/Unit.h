@@ -16,6 +16,7 @@
 
 namespace mqt::ir::opt {
 
+/// @brief An Unit divides a quantum-classical program into routable sections.
 class Unit {
 public:
   Unit(Layout layout, mlir::Region* region, bool restore = false)

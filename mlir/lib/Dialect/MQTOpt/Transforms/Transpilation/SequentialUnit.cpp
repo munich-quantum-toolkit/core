@@ -20,12 +20,20 @@
 
 #include "mlir/Dialect/MQTOpt/Transforms/Transpilation/SequentialUnit.h"
 
+#include "mlir/Dialect/MQTOpt/Transforms/Transpilation/Layout.h"
 #include "mlir/Dialect/MQTOpt/Transforms/Transpilation/Unit.h"
 
+#include <iterator>
+#include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/TypeSwitch.h>
+#include <llvm/Support/Casting.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
+#include <mlir/IR/Operation.h>
+#include <mlir/IR/Region.h>
 #include <mlir/Interfaces/ControlFlowInterfaces.h>
 #include <mlir/Support/LLVM.h>
+#include <stdexcept>
+#include <utility>
 
 namespace mqt::ir::opt {
 
@@ -36,7 +44,7 @@ SequentialUnit::SequentialUnit(Layout layout, mlir::Region* region,
   mlir::Region::OpIterator it = start_;
   for (; it != end_; ++it) {
     mlir::Operation* op = &*it;
-    if (isa<mlir::RegionBranchOpInterface>(op)) {
+    if (mlir::isa<mlir::RegionBranchOpInterface>(op)) {
       divider_ = op;
       break;
     }

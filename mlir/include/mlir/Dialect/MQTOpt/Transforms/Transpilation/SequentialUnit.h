@@ -19,6 +19,8 @@
 #include <mlir/Support/LLVM.h>
 
 namespace mqt::ir::opt {
+
+/// @brief A SequentialUnit traverses a program sequentially.
 class SequentialUnit : public Unit {
 public:
   static SequentialUnit fromEntryPointFunction(mlir::func::FuncOp func,

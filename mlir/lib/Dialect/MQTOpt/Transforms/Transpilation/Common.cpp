@@ -29,12 +29,12 @@ namespace {
 /**
  * @brief A function attribute that specifies an (QIR) entry point function.
  */
-constexpr llvm::StringLiteral ENTRY_POINT_ATTR{"entry_point"};
+constexpr mlir::StringLiteral ENTRY_POINT_ATTR{"entry_point"};
 
 /**
  * @brief Attribute to forward function-level attributes to LLVM IR.
  */
-constexpr llvm::StringLiteral PASSTHROUGH_ATTR{"passthrough"};
+constexpr mlir::StringLiteral PASSTHROUGH_ATTR{"passthrough"};
 } // namespace
 
 bool isEntryPoint(mlir::func::FuncOp op) {
@@ -45,8 +45,8 @@ bool isEntryPoint(mlir::func::FuncOp op) {
   }
 
   return llvm::any_of(passthroughAttr, [](const mlir::Attribute attr) {
-    return isa<mlir::StringAttr>(attr) &&
-           cast<mlir::StringAttr>(attr) == ENTRY_POINT_ATTR;
+    return mlir::isa<mlir::StringAttr>(attr) &&
+           mlir::cast<mlir::StringAttr>(attr) == ENTRY_POINT_ATTR;
   });
 }
 

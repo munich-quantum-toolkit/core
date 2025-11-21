@@ -25,7 +25,6 @@ namespace mqt::ir::opt {
 
 struct Wire {
   Wire(const WireIterator& it, QubitIndex index) : it(it), index(index) {}
-
   WireIterator it;
   QubitIndex index;
 };
@@ -114,6 +113,7 @@ private:
   std::size_t nlookahead;
 };
 
+/// @brief A LayeredUnit traverses a program layer-by-layer.
 class LayeredUnit : public Unit {
 public:
   static LayeredUnit fromEntryPointFunction(mlir::func::FuncOp func,
@@ -125,10 +125,7 @@ public:
     return {std::move(layout), &func.getBody()};
   }
 
-  LayeredUnit(Layout layout, Region* region, bool restore = false)
-      : Unit(std::move(layout), region, restore) {
-    init(layout_, region);
-  }
+  LayeredUnit(Layout layout, Region* region, bool restore = false);
 
   [[nodiscard]] SmallVector<LayeredUnit, 3> next();
   [[nodiscard]] SlidingWindow slidingWindow(std::size_t nlookahead) const;
@@ -138,9 +135,6 @@ public:
 #endif
 
 private:
-  /// @brief Compute (schedule) the layers of the unit.
-  void init(const Layout& layout, Region* region);
-
   SmallVector<GateLayer> gateLayers;
   SmallVector<OpLayer, 0> opLayers;
 };

@@ -17,7 +17,6 @@
 #include "mlir/Dialect/MQTOpt/Transforms/Transpilation/SequentialUnit.h"
 
 #include <cassert>
-#include <cstddef>
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/ADT/Statistic.h>
@@ -41,6 +40,7 @@
 #include <mlir/Rewrite/PatternApplicator.h>
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/WalkResult.h>
+#include <queue>
 #include <utility>
 
 #define DEBUG_TYPE "route-naive-sc"
@@ -56,13 +56,13 @@ using namespace mlir;
 /**
  * @brief Insert SWAP ops at the rewriter's insertion point.
  *
- * @param location The location of the inserted SWAP ops.
+ * @param loc The location of the inserted SWAP ops.
  * @param swaps The hardware indices of the SWAPs.
  * @param layout The current layout.
  * @param rewriter The pattern rewriter.
  */
-void insertSWAPs(Location location, ArrayRef<QubitIndexPair> swaps,
-                 Layout& layout, PatternRewriter& rewriter) {
+void insertSWAPs(Location loc, ArrayRef<QubitIndexPair> swaps, Layout& layout,
+                 PatternRewriter& rewriter) {
   for (const auto [hw0, hw1] : swaps) {
     const Value in0 = layout.lookupHardwareValue(hw0);
     const Value in1 = layout.lookupHardwareValue(hw1);
@@ -75,7 +75,7 @@ void insertSWAPs(Location location, ArrayRef<QubitIndexPair> swaps,
           prog0, hw1, prog0, hw0, prog1, hw1);
     });
 
-    auto swap = createSwap(location, in0, in1, rewriter);
+    auto swap = createSwap(loc, in0, in1, rewriter);
     const auto [out0, out1] = getOuts(swap);
 
     rewriter.setInsertionPointAfter(swap);
@@ -134,8 +134,8 @@ private:
     std::unique_ptr<Architecture> arch(getArchitecture(archName));
 
     if (!arch) {
-      Location location = UnknownLoc::get(&getContext());
-      emitError(location) << "unsupported architecture '" << archName << "'";
+      const Location loc = UnknownLoc::get(&getContext());
+      emitError(loc) << "unsupported architecture '" << archName << "'";
       return failure();
     }
 
@@ -198,7 +198,7 @@ private:
               });
         }
 
-        for (auto next : unit.next()) {
+        for (const auto& next : unit.next()) {
           units.emplace(next);
         }
       }

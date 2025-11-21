@@ -177,9 +177,7 @@ public:
   }
 
 private:
-  /**
-   * @brief Expand frontier with all neighbouring SWAPs in the current front.
-   */
+  /// @brief Expand frontier with all neighbouring SWAPs in the current front.
   void expand(MinQueue& frontier, const Node& parent,
               ArrayRef<GateLayer> window, const Architecture& arch) const {
     llvm::SmallDenseSet<QubitIndexPair, 64> expansionSet{};

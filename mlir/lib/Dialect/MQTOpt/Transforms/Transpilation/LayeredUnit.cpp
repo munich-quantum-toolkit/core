@@ -10,30 +10,32 @@
 
 #include "mlir/Dialect/MQTOpt/Transforms/Transpilation/LayeredUnit.h"
 
+#include "mlir/Dialect/MQTOpt/IR/MQTOptDialect.h"
 #include "mlir/Dialect/MQTOpt/Transforms/Transpilation/Common.h"
 #include "mlir/Dialect/MQTOpt/Transforms/Transpilation/Layout.h"
+#include "mlir/Dialect/MQTOpt/Transforms/Transpilation/WireIterator.h"
 
+#include <cassert>
 #include <cstddef>
+#include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/Support/Compiler.h>
 #include <llvm/Support/ErrorHandling.h>
-#include <llvm/Support/Format.h>
 #include <llvm/Support/raw_ostream.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
+#include <mlir/IR/Operation.h>
+#include <mlir/IR/Region.h>
+#include <mlir/Interfaces/ControlFlowInterfaces.h>
 #include <mlir/Support/LLVM.h>
+#include <optional>
+#include <stdexcept>
+#include <utility>
 
 namespace mqt::ir::opt {
 namespace {
 
 /// @brief Map to handle multi-qubit gates when traversing the def-use chain.
 class SynchronizationMap {
-  /// @brief Maps operations to to-be-released iterators.
-  DenseMap<Operation*, SmallVector<Wire, 0>> onHold;
-
-  /// @brief Maps operations to ref counts. An op can be released whenever the
-  /// count reaches zero.
-  DenseMap<Operation*, std::size_t> refCount;
-
 public:
   /// @returns true iff. the operation is contained in the map.
   bool contains(Operation* op) const { return onHold.contains(op); }
@@ -59,12 +61,18 @@ public:
 
     return std::nullopt;
   }
+
+private:
+  /// @brief Maps operations to to-be-released iterators.
+  DenseMap<Operation*, SmallVector<Wire, 0>> onHold;
+  /// @brief Maps operations to ref counts.
+  DenseMap<Operation*, std::size_t> refCount;
 };
 
 SmallVector<Wire, 2> skipTwoQubitBlock(ArrayRef<Wire> wires, OpLayer& opLayer) {
   assert(wires.size() == 2 && "expected two wires");
 
-  WireIterator end;
+  const WireIterator end;
   auto [it0, index0] = wires[0];
   auto [it1, index1] = wires[1];
   while (it0 != end && it1 != end) {
@@ -78,7 +86,7 @@ SmallVector<Wire, 2> skipTwoQubitBlock(ArrayRef<Wire> wires, OpLayer& opLayer) {
       break;
     }
 
-    UnitaryInterface u0 = cast<UnitaryInterface>(op0);
+    const UnitaryInterface u0 = cast<UnitaryInterface>(op0);
 
     /// Advance for single qubit gate on wire 0.
     if (!isTwoQubitGate(u0)) {
@@ -87,7 +95,7 @@ SmallVector<Wire, 2> skipTwoQubitBlock(ArrayRef<Wire> wires, OpLayer& opLayer) {
       continue;
     }
 
-    UnitaryInterface u1 = cast<UnitaryInterface>(op1);
+    const UnitaryInterface u1 = cast<UnitaryInterface>(op1);
 
     /// Advance for single qubit gate on wire 1.
     if (!isTwoQubitGate(u1)) {
@@ -111,6 +119,147 @@ SmallVector<Wire, 2> skipTwoQubitBlock(ArrayRef<Wire> wires, OpLayer& opLayer) {
   return {Wire(it0, index0), Wire(it1, index1)};
 }
 } // namespace
+
+LayeredUnit::LayeredUnit(Layout layout, Region* region, bool restore)
+    : Unit(std::move(layout), region, restore) {
+  SynchronizationMap sync;
+
+  SmallVector<Wire, 0> curr;
+  SmallVector<Wire, 0> next;
+  curr.reserve(layout_.getNumQubits());
+  next.reserve(layout_.getNumQubits());
+
+  for (const auto q : layout_.getHardwareQubits()) {
+    curr.emplace_back(WireIterator(q, region_), layout_.lookupProgramIndex(q));
+  }
+
+  while (true) {
+
+    /// Advance each wire until (>=2)-qubit gates are found, collect the indices
+    /// of the respective two-qubit gates, and prepare iterators for next
+    /// iteration.
+
+    GateLayer gateLayer;
+    OpLayer opLayer;
+
+    bool haltOnWire{};
+
+    for (auto [it, index] : curr) {
+      while (it != WireIterator::end()) {
+        haltOnWire =
+            TypeSwitch<Operation*, bool>(*it)
+                .Case<UnitaryInterface>([&](UnitaryInterface op) {
+                  const auto nins = op.getInQubits().size() +
+                                    op.getPosCtrlInQubits().size() +
+                                    op.getNegCtrlInQubits().size();
+
+                  /// Skip over one-qubit gates. Note: Might be a BarrierOp.
+                  if (nins == 1) {
+                    opLayer.addOp(op);
+                    ++it;
+                    return false;
+                  }
+
+                  /// Otherwise, add it to the sync map.
+                  if (!sync.contains(op)) {
+                    sync.add(op, Wire(++it, index), nins);
+                    return true;
+                  }
+
+                  if (const auto iterators =
+                          sync.visit(op, Wire(++it, index))) {
+                    opLayer.addOp(op);
+
+                    if (!isa<BarrierOp>(op)) { // Is ready two-qubit unitary?
+                      gateLayer.emplace_back((*iterators)[0].index,
+                                             (*iterators)[1].index);
+                      next.append(skipTwoQubitBlock(*iterators, opLayer));
+                    } else {
+                      next.append(*iterators);
+                    }
+                  }
+
+                  return true;
+                })
+                .Case<ResetOp>([&](ResetOp op) {
+                  opLayer.addOp(op);
+                  ++it;
+                  return false;
+                })
+                .Case<MeasureOp>([&](MeasureOp op) {
+                  opLayer.addOp(op);
+                  ++it;
+                  return false;
+                })
+                .Case<scf::YieldOp>([&](scf::YieldOp yield) {
+                  if (!sync.contains(yield)) {
+                    sync.add(yield, Wire(++it, index), layout_.getNumQubits());
+                    return true;
+                  }
+
+                  if (const auto iterators =
+                          sync.visit(yield, Wire(++it, index))) {
+                    opLayer.addOp(yield);
+                  }
+
+                  return true;
+                })
+                .Case<RegionBranchOpInterface>([&](RegionBranchOpInterface op) {
+                  if (!sync.contains(op)) {
+                    sync.add(op, Wire(++it, index), layout_.getNumQubits());
+                    return true;
+                  }
+
+                  if (const auto iterators =
+                          sync.visit(op, Wire(++it, index))) {
+                    divider_ = op;
+                  }
+                  return true;
+                })
+                .Default([](auto) {
+                  llvm_unreachable("unhandled operation");
+                  return true;
+                });
+
+        if (haltOnWire) {
+          break;
+        }
+      }
+
+      if (divider_ != nullptr) {
+        break;
+      }
+    }
+
+    /// If there is no gates to route, merge the last layer with this one and
+    /// keep the anchor the same. Otherwise, add the layer.
+
+    if (gateLayer.empty()) {
+      if (!opLayer.empty()) {
+        if (opLayers.empty()) {
+          gateLayers.emplace_back();
+          opLayers.emplace_back();
+        }
+        opLayers.back().ops.append(opLayer.ops);
+        if (opLayers.back().anchor == nullptr) {
+          opLayers.back().anchor = opLayer.anchor;
+        }
+      }
+
+    } else if (!opLayer.empty()) {
+      gateLayers.emplace_back(gateLayer);
+      opLayers.emplace_back(opLayer);
+    }
+
+    /// Prepare next iteration or stop.
+    curr.swap(next);
+    next.clear();
+
+    if (curr.empty() || divider_ != nullptr) {
+      break;
+    }
+  };
+}
 
 SmallVector<LayeredUnit, 3> LayeredUnit::next() {
   if (divider_ == nullptr) {
@@ -191,144 +340,4 @@ LLVM_DUMP_METHOD void LayeredUnit::dump(llvm::raw_ostream& os) const {
   }
 }
 #endif
-
-void LayeredUnit::init(const Layout& layout, Region* region) {
-  SynchronizationMap sync;
-
-  SmallVector<Wire, 0> curr;
-  SmallVector<Wire, 0> next;
-  curr.reserve(layout.getNumQubits());
-  next.reserve(layout.getNumQubits());
-
-  for (const auto q : layout.getHardwareQubits()) {
-    curr.emplace_back(WireIterator(q, region), layout.lookupProgramIndex(q));
-  }
-
-  while (true) {
-
-    /// Advance each wire until (>=2)-qubit gates are found, collect the indices
-    /// of the respective two-qubit gates, and prepare iterators for next
-    /// iteration.
-
-    GateLayer gateLayer;
-    OpLayer opLayer;
-
-    bool haltOnWire{};
-
-    for (auto [it, index] : curr) {
-      while (it != WireIterator::end()) {
-        haltOnWire =
-            TypeSwitch<Operation*, bool>(*it)
-                .Case<UnitaryInterface>([&](UnitaryInterface op) {
-                  const auto nins = op.getInQubits().size() +
-                                    op.getPosCtrlInQubits().size() +
-                                    op.getNegCtrlInQubits().size();
-
-                  /// Skip over one-qubit gates. Note: Might be a BarrierOp.
-                  if (nins == 1) {
-                    opLayer.addOp(op);
-                    ++it;
-                    return false;
-                  }
-
-                  /// Otherwise, add it to the sync map.
-                  if (!sync.contains(op)) {
-                    sync.add(op, Wire(++it, index), nins);
-                    return true;
-                  }
-
-                  if (const auto iterators =
-                          sync.visit(op, Wire(++it, index))) {
-                    opLayer.addOp(op);
-
-                    if (!isa<BarrierOp>(op)) { // Is ready two-qubit unitary?
-                      gateLayer.emplace_back((*iterators)[0].index,
-                                             (*iterators)[1].index);
-                      next.append(skipTwoQubitBlock(*iterators, opLayer));
-                    } else {
-                      next.append(*iterators);
-                    }
-                  }
-
-                  return true;
-                })
-                .Case<ResetOp>([&](ResetOp op) {
-                  opLayer.addOp(op);
-                  ++it;
-                  return false;
-                })
-                .Case<MeasureOp>([&](MeasureOp op) {
-                  opLayer.addOp(op);
-                  ++it;
-                  return false;
-                })
-                .Case<scf::YieldOp>([&](scf::YieldOp yield) {
-                  if (!sync.contains(yield)) {
-                    sync.add(yield, Wire(++it, index), layout.getNumQubits());
-                    return true;
-                  }
-
-                  if (const auto iterators =
-                          sync.visit(yield, Wire(++it, index))) {
-                    opLayer.addOp(yield);
-                  }
-
-                  return true;
-                })
-                .Case<RegionBranchOpInterface>([&](RegionBranchOpInterface op) {
-                  if (!sync.contains(op)) {
-                    sync.add(op, Wire(++it, index), layout.getNumQubits());
-                    return true;
-                  }
-
-                  if (const auto iterators =
-                          sync.visit(op, Wire(++it, index))) {
-                    divider_ = op;
-                  }
-                  return true;
-                })
-                .Default([](auto) {
-                  llvm_unreachable("unhandled operation");
-                  return true;
-                });
-
-        if (haltOnWire) {
-          break;
-        }
-      }
-
-      if (divider_ != nullptr) {
-        break;
-      }
-    }
-
-    /// If there is no gates to route, merge the last layer with this one and
-    /// keep the anchor the same. Otherwise, add the layer.
-
-    if (gateLayer.empty()) {
-      if (!opLayer.empty()) {
-        if (opLayers.empty()) {
-          gateLayers.emplace_back();
-          opLayers.emplace_back();
-        }
-        opLayers.back().ops.append(opLayer.ops);
-        if (opLayers.back().anchor == nullptr) {
-          opLayers.back().anchor = opLayer.anchor;
-        }
-      }
-
-    } else if (!opLayer.empty()) {
-      gateLayers.emplace_back(gateLayer);
-      opLayers.emplace_back(opLayer);
-    }
-
-    /// Prepare next iteration or stop.
-    curr.swap(next);
-    next.clear();
-
-    if (curr.empty() || divider_ != nullptr) {
-      break;
-    }
-  };
-}
 } // namespace mqt::ir::opt
