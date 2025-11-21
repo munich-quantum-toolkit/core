@@ -24,7 +24,21 @@
 
 namespace mqt::ir::opt {
 
-using namespace mlir;
+class NaiveRouter {
+public:
+  [[nodiscard]] static SmallVector<QubitIndexPair, 64>
+  route(QubitIndexPair gate, const ThinLayout& layout,
+        const Architecture& arch) {
+    SmallVector<QubitIndexPair, 64> swaps;
+    const auto hw0 = layout.getHardwareIndex(gate.first);
+    const auto hw1 = layout.getHardwareIndex(gate.second);
+    const auto path = arch.shortestPathBetween(hw0, hw1);
+    for (std::size_t i = 0; i < path.size() - 2; ++i) {
+      swaps.emplace_back(path[i], path[i + 1]);
+    }
+    return swaps;
+  }
+};
 
 /// @brief Specifies the weights for different terms in the cost function f.
 struct HeuristicWeights {
@@ -41,7 +55,8 @@ struct HeuristicWeights {
   }
 };
 
-struct AStarHeuristicRouter final {
+class AStarHeuristicRouter {
+public:
   explicit AStarHeuristicRouter(HeuristicWeights weights)
       : weights_(std::move(weights)) {}
 

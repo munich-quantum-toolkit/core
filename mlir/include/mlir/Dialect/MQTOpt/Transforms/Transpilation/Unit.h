@@ -14,8 +14,6 @@
 
 #include <utility>
 
-#define DEBUG_TYPE "route-astar-sc"
-
 namespace mqt::ir::opt {
 
 class Unit {

@@ -21,8 +21,6 @@
 #include <llvm/Support/Debug.h>
 #include <mlir/Support/LLVM.h>
 
-#define DEBUG_TYPE "route-astar-sc"
-
 namespace mqt::ir::opt {
 
 struct Wire {
@@ -133,11 +131,9 @@ public:
   }
 
   [[nodiscard]] SmallVector<LayeredUnit, 3> next();
-
   [[nodiscard]] SlidingWindow slidingWindow(std::size_t nlookahead) const;
 
 #ifndef NDEBUG
-  /// @brief Debug dump of the layered unit.
   LLVM_DUMP_METHOD void dump(llvm::raw_ostream& os = llvm::dbgs()) const;
 #endif
 
@@ -145,10 +141,7 @@ private:
   /// @brief Compute (schedule) the layers of the unit.
   void init(const Layout& layout, Region* region);
 
-  /// @brief Layers of program indices of the two-qubit gates.
   SmallVector<GateLayer> gateLayers;
-
-  /// @brief Layers of the ops inside it.
   SmallVector<OpLayer, 0> opLayers;
 };
 } // namespace mqt::ir::opt
