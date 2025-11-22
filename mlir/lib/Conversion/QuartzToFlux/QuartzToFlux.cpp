@@ -15,9 +15,9 @@
 
 #include <cassert>
 #include <cstddef>
+#include <cstdint>
 #include <llvm/ADT/DenseMap.h>
 #include <llvm/ADT/STLExtras.h>
-#include <llvm/Support/Casting.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/Func/Transforms/FuncConversions.h>
 #include <mlir/IR/MLIRContext.h>
@@ -143,7 +143,7 @@ LogicalResult convertOneTargetZeroParameter(QuartzOpType& op,
     qubitMap[quartzQubit] = fluxOp.getQubitOut();
   } else {
     state.targetsIn.erase(inCtrlOp);
-    SmallVector<Value> targetsOut({fluxOp.getQubitOut()});
+    const SmallVector<Value> targetsOut({fluxOp.getQubitOut()});
     state.targetsOut.try_emplace(inCtrlOp, targetsOut);
   }
 
@@ -683,7 +683,7 @@ struct ConvertQuartzRXOp final : StatefulOpConversionPattern<quartz::RXOp> {
       qubitMap[quartzQubit] = fluxOp.getQubitOut();
     } else {
       state.targetsIn.erase(inCtrlOp);
-      SmallVector<Value> targetsOut({fluxOp.getQubitOut()});
+      const SmallVector<Value> targetsOut({fluxOp.getQubitOut()});
       state.targetsOut.try_emplace(inCtrlOp, targetsOut);
     }
 
@@ -733,7 +733,7 @@ struct ConvertQuartzU2Op final : StatefulOpConversionPattern<quartz::U2Op> {
       qubitMap[quartzQubit] = fluxOp.getQubitOut();
     } else {
       state.targetsIn.erase(inCtrlOp);
-      SmallVector<Value> targetsOut({fluxOp.getQubitOut()});
+      const SmallVector<Value> targetsOut({fluxOp.getQubitOut()});
       state.targetsOut.try_emplace(inCtrlOp, targetsOut);
     }
 
@@ -790,7 +790,7 @@ struct ConvertQuartzSWAPOp final : StatefulOpConversionPattern<quartz::SWAPOp> {
       qubitMap[quartzQubit1] = fluxOp.getQubit1Out();
     } else {
       state.targetsIn.erase(inCtrlOp);
-      SmallVector<Value> targetsOut(
+      const SmallVector<Value> targetsOut(
           {fluxOp.getQubit0Out(), fluxOp.getQubit1Out()});
       state.targetsOut.try_emplace(inCtrlOp, targetsOut);
     }

@@ -138,7 +138,7 @@ inline DenseElementsAttr getMatrixSWAP(MLIRContext* ctx) {
 }
 
 inline DenseElementsAttr getMatrixCtrl(mlir::MLIRContext* ctx,
-                                       int64_t numControls,
+                                       size_t numControls,
                                        mlir::DenseElementsAttr target) {
   // Get dimensions of target matrix
   const auto& targetType = llvm::dyn_cast<RankedTensorType>(target.getType());

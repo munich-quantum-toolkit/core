@@ -135,7 +135,7 @@ convertOneTargetZeroParameter(QuartzOpType& op, QuartzOpAdaptorType& adaptor,
   const auto inCtrlOp = state.inCtrlOp;
   const SmallVector<Value> posCtrls =
       inCtrlOp != 0 ? state.posCtrls[inCtrlOp] : SmallVector<Value>{};
-  const int64_t numCtrls = posCtrls.size();
+  const size_t numCtrls = posCtrls.size();
 
   // Define function argument types
   SmallVector<Type> argumentTypes;
@@ -547,8 +547,7 @@ struct ConvertQuartzXQIR final : StatefulOpConversionPattern<XOp> {
 
     // Query state for modifier information
     const auto inCtrlOp = state.inCtrlOp;
-    const int64_t numCtrls =
-        inCtrlOp != 0 ? state.posCtrls[inCtrlOp].size() : 0;
+    const size_t numCtrls = inCtrlOp != 0 ? state.posCtrls[inCtrlOp].size() : 0;
 
     // Define function name
     StringRef fnName;
@@ -593,8 +592,7 @@ struct ConvertQuartzYQIR final : StatefulOpConversionPattern<YOp> {
 
     // Query state for modifier information
     const auto inCtrlOp = state.inCtrlOp;
-    const int64_t numCtrls =
-        inCtrlOp != 0 ? state.posCtrls[inCtrlOp].size() : 0;
+    const size_t numCtrls = inCtrlOp != 0 ? state.posCtrls[inCtrlOp].size() : 0;
 
     // Define function name
     StringRef fnName;
@@ -639,8 +637,7 @@ struct ConvertQuartzZQIR final : StatefulOpConversionPattern<ZOp> {
 
     // Query state for modifier information
     const auto inCtrlOp = state.inCtrlOp;
-    const int64_t numCtrls =
-        inCtrlOp != 0 ? state.posCtrls[inCtrlOp].size() : 0;
+    const size_t numCtrls = inCtrlOp != 0 ? state.posCtrls[inCtrlOp].size() : 0;
 
     // Define function name
     StringRef fnName;
@@ -685,8 +682,7 @@ struct ConvertQuartzHQIR final : StatefulOpConversionPattern<HOp> {
 
     // Query state for modifier information
     const auto inCtrlOp = state.inCtrlOp;
-    const int64_t numCtrls =
-        inCtrlOp != 0 ? state.posCtrls[inCtrlOp].size() : 0;
+    const size_t numCtrls = inCtrlOp != 0 ? state.posCtrls[inCtrlOp].size() : 0;
 
     // Define function name
     StringRef fnName;
@@ -731,8 +727,7 @@ struct ConvertQuartzSQIR final : StatefulOpConversionPattern<SOp> {
 
     // Query state for modifier information
     const auto inCtrlOp = state.inCtrlOp;
-    const int64_t numCtrls =
-        inCtrlOp != 0 ? state.posCtrls[inCtrlOp].size() : 0;
+    const size_t numCtrls = inCtrlOp != 0 ? state.posCtrls[inCtrlOp].size() : 0;
 
     // Define function name
     StringRef fnName;
@@ -777,8 +772,7 @@ struct ConvertQuartzSdgQIR final : StatefulOpConversionPattern<SdgOp> {
 
     // Query state for modifier information
     const auto inCtrlOp = state.inCtrlOp;
-    const int64_t numCtrls =
-        inCtrlOp != 0 ? state.posCtrls[inCtrlOp].size() : 0;
+    const size_t numCtrls = inCtrlOp != 0 ? state.posCtrls[inCtrlOp].size() : 0;
 
     // Define function name
     StringRef fnName;
@@ -823,8 +817,7 @@ struct ConvertQuartzTQIR final : StatefulOpConversionPattern<TOp> {
 
     // Query state for modifier information
     const auto inCtrlOp = state.inCtrlOp;
-    const int64_t numCtrls =
-        inCtrlOp != 0 ? state.posCtrls[inCtrlOp].size() : 0;
+    const size_t numCtrls = inCtrlOp != 0 ? state.posCtrls[inCtrlOp].size() : 0;
 
     // Define function name
     StringRef fnName;
@@ -869,8 +862,7 @@ struct ConvertQuartzTdgQIR final : StatefulOpConversionPattern<TdgOp> {
 
     // Query state for modifier information
     const auto inCtrlOp = state.inCtrlOp;
-    const int64_t numCtrls =
-        inCtrlOp != 0 ? state.posCtrls[inCtrlOp].size() : 0;
+    const size_t numCtrls = inCtrlOp != 0 ? state.posCtrls[inCtrlOp].size() : 0;
 
     // Define function name
     StringRef fnName;
@@ -915,8 +907,7 @@ struct ConvertQuartzSXQIR final : StatefulOpConversionPattern<SXOp> {
 
     // Query state for modifier information
     const auto inCtrlOp = state.inCtrlOp;
-    const int64_t numCtrls =
-        inCtrlOp != 0 ? state.posCtrls[inCtrlOp].size() : 0;
+    const size_t numCtrls = inCtrlOp != 0 ? state.posCtrls[inCtrlOp].size() : 0;
 
     // Define function name
     StringRef fnName;
@@ -961,8 +952,7 @@ struct ConvertQuartzSXdgQIR final : StatefulOpConversionPattern<SXdgOp> {
 
     // Query state for modifier information
     const auto inCtrlOp = state.inCtrlOp;
-    const int64_t numCtrls =
-        inCtrlOp != 0 ? state.posCtrls[inCtrlOp].size() : 0;
+    const size_t numCtrls = inCtrlOp != 0 ? state.posCtrls[inCtrlOp].size() : 0;
 
     // Define function name
     StringRef fnName;
