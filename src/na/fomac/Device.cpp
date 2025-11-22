@@ -116,10 +116,11 @@ auto FoMaC::Device::initDurationUnitFromDevice() -> bool {
   return true;
 }
 auto FoMaC::Device::initDecoherenceTimesFromDevice() -> bool {
-  // find first non-zone site as reference
-  auto regularSites = getSites() | std::views::filter([](const auto& site) {
-                        return !site.isZone().value_or(false);
-                      });
+  const auto regularSites = getRegularSites();
+  if (regularSites.empty()) {
+    SPDLOG_INFO("Device has no regular sites with decoherence data");
+    return false;
+  }
   uint64_t sumT1 = 0;
   uint64_t sumT2 = 0;
   for (const auto& site : regularSites) {
@@ -136,26 +137,15 @@ auto FoMaC::Device::initDecoherenceTimesFromDevice() -> bool {
     sumT1 += *t1;
     sumT2 += *t2;
   }
-  const auto count = static_cast<uint64_t>(std::ranges::distance(regularSites));
-  if (count == 0) {
-    SPDLOG_INFO("Device has no regular sites with decoherence data");
-    return false;
-  }
+  const auto count = regularSites.size();
   decoherenceTimes.t1 = sumT1 / count;
   decoherenceTimes.t2 = sumT2 / count;
   return true;
 }
 auto FoMaC::Device::initTrapsfromDevice() -> bool {
   traps.clear();
-  const auto& sites = getSites();
-  if (sites.empty()) {
-    SPDLOG_INFO("Device returned no sites");
-    return false;
-  }
-  auto regularSites = sites | std::views::filter([](const Site& site) -> bool {
-                        return !site.isZone().value_or(false);
-                      });
-  if (std::ranges::distance(regularSites) == 0) {
+  const auto regularSites = getRegularSites();
+  if (regularSites.empty()) {
     SPDLOG_INFO("Device has no regular sites");
     return false;
   }
@@ -509,6 +499,20 @@ auto FoMaC::Device::initOperationsFromDevice() -> bool {
              .fidelity = *f,
              .numParameters = op.getParametersNum()}});
       } else if (*nq == 2) {
+        const auto& sitePairsOpt = op.getSitePairs();
+        if (!sitePairsOpt.has_value() || sitePairsOpt->empty()) {
+          SPDLOG_INFO("Two-qubit operation missing site pairs");
+          return false;
+        }
+
+        std::vector<fomac::FoMaC::Device::Site> allSites;
+        allSites.reserve(sitePairsOpt->size() * 2);
+        for (const auto& [site1, site2] : *sitePairsOpt) {
+          allSites.push_back(site1);
+          allSites.push_back(site2);
+        }
+        const auto pairRegion = calculateExtentFromSites(allSites);
+
         const auto& ir = op.getInteractionRadius();
         if (!ir.has_value()) {
           SPDLOG_INFO("Two-qubit Operation missing interaction radius");
@@ -521,7 +525,7 @@ auto FoMaC::Device::initOperationsFromDevice() -> bool {
         }
         localMultiQubitOperations.emplace_back(
             LocalMultiQubitOperation{{.name = name,
-                                      .region = region,
+                                      .region = pairRegion,
                                       .duration = *d,
                                       .fidelity = *f,
                                       .numParameters = op.getParametersNum()},

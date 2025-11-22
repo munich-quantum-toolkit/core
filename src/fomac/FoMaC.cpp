@@ -319,6 +319,36 @@ auto FoMaC::Device::Operation::getSites(const std::vector<Site>& sites,
                          });
   return returnedSites;
 }
+auto FoMaC::Device::Operation::getSitePairs(
+    const std::vector<Site>& sites, const std::vector<double>& params) const
+    -> std::optional<std::vector<std::pair<Site, Site>>> {
+  const auto qubitsNum = getQubitsNum(sites, params);
+  if (!qubitsNum.has_value() || *qubitsNum != 2 ||
+      isZoned(sites, params).value_or(false)) {
+    return std::nullopt; // Not a 2-qubit operation or operation is zoned
+  }
+
+  const auto& qdmiSites = queryProperty<std::optional<std::vector<QDMI_Site>>>(
+      QDMI_OPERATION_PROPERTY_SITES, sites, params);
+
+  if (!qdmiSites.has_value()) {
+    return std::nullopt;
+  }
+
+  if (qdmiSites->size() % 2 != 0) {
+    return std::nullopt; // Invalid: odd number of sites
+  }
+
+  std::vector<std::pair<Site, Site>> pairs;
+  pairs.reserve(qdmiSites->size() / 2);
+
+  for (size_t i = 0; i < qdmiSites->size(); i += 2) {
+    pairs.emplace_back(Site{Token{}, device_, (*qdmiSites)[i]},
+                       Site{Token{}, device_, (*qdmiSites)[i + 1]});
+  }
+
+  return pairs;
+}
 auto FoMaC::Device::Operation::getMeanShuttlingSpeed(
     const std::vector<Site>& sites, const std::vector<double>& params) const
     -> std::optional<uint64_t> {
@@ -350,6 +380,24 @@ auto FoMaC::Device::getSites() const -> std::vector<Site> {
                            return {Token{}, device, site};
                          });
   return sites;
+}
+auto FoMaC::Device::getRegularSites() const -> std::vector<Site> {
+  const auto& allSites = getSites();
+  std::vector<Site> regularSites;
+  regularSites.reserve(allSites.size());
+  std::ranges::copy_if(
+      allSites, std::back_inserter(regularSites),
+      [](const Site& s) { return !s.isZone().value_or(false); });
+  return regularSites;
+}
+auto FoMaC::Device::getZones() const -> std::vector<Site> {
+  const auto& allSites = getSites();
+  std::vector<Site> zones;
+  zones.reserve(allSites.size());
+  std::ranges::copy_if(allSites, std::back_inserter(zones), [](const Site& s) {
+    return s.isZone().value_or(false);
+  });
+  return zones;
 }
 auto FoMaC::Device::getOperations() const -> std::vector<Operation> {
   const auto& qdmiOperations = queryProperty<std::vector<QDMI_Operation>>(
