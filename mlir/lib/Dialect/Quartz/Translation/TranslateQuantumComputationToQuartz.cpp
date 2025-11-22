@@ -49,7 +49,7 @@ struct QregInfo {
 };
 
 using BitMemInfo = std::pair<QuartzProgramBuilder::ClassicalRegister*,
-                             std::size_t>; // (register ref, localIdx)
+                             size_t>; // (register ref, localIdx)
 using BitIndexVec = llvm::SmallVector<BitMemInfo>;
 
 /**
@@ -90,8 +90,8 @@ allocateQregs(QuartzProgramBuilder& builder,
   // Allocate quantum registers using the builder
   llvm::SmallVector<QregInfo> qregs;
   for (const auto* qregPtr : qregPtrs) {
-    auto qubits =
-        builder.allocQubitRegister(qregPtr->getSize(), qregPtr->getName());
+    auto qubits = builder.allocQubitRegister(
+        static_cast<int64_t>(qregPtr->getSize()), qregPtr->getName());
     qregs.emplace_back(qregPtr, std::move(qubits));
   }
 
@@ -118,7 +118,7 @@ buildQubitMap(const qc::QuantumComputation& quantumComputation,
   flatQubits.resize(static_cast<size_t>(maxPhys) + 1);
 
   for (const auto& qreg : qregs) {
-    for (std::size_t i = 0; i < qreg.qregPtr->getSize(); ++i) {
+    for (size_t i = 0; i < qreg.qregPtr->getSize(); ++i) {
       const auto globalIdx = qreg.qregPtr->getStartIndex() + i;
       flatQubits[globalIdx] = qreg.qubits[i];
     }
@@ -160,10 +160,10 @@ allocateClassicalRegisters(QuartzProgramBuilder& builder,
   BitIndexVec bitMap;
   bitMap.resize(quantumComputation.getNcbits());
   for (const auto* reg : cregPtrs) {
-    auto& mem =
-        builder.allocClassicalBitRegister(reg->getSize(), reg->getName());
-    for (std::size_t i = 0; i < reg->getSize(); ++i) {
-      const auto globalIdx = static_cast<std::size_t>(reg->getStartIndex() + i);
+    auto& mem = builder.allocClassicalBitRegister(
+        static_cast<int64_t>(reg->getSize()), reg->getName());
+    for (size_t i = 0; i < reg->getSize(); ++i) {
+      const auto globalIdx = static_cast<size_t>(reg->getStartIndex() + i);
       bitMap[globalIdx] = {&mem, i};
     }
   }
@@ -191,13 +191,13 @@ void addMeasureOp(QuartzProgramBuilder& builder, const qc::Operation& operation,
   const auto& targets = measureOp.getTargets();
   const auto& classics = measureOp.getClassics();
 
-  for (std::size_t i = 0; i < targets.size(); ++i) {
+  for (size_t i = 0; i < targets.size(); ++i) {
     const auto& qubit = qubits[targets[i]];
-    const auto bitIdx = static_cast<std::size_t>(classics[i]);
+    const auto bitIdx = static_cast<size_t>(classics[i]);
     const auto& [mem, localIdx] = bitMap[bitIdx];
 
     // Use builder's measure method which keeps output record
-    builder.measure(qubit, (*mem)[localIdx]);
+    builder.measure(qubit, (*mem)[static_cast<int64_t>(localIdx)]);
   }
 }
 
