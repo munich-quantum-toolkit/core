@@ -7,3 +7,9 @@
 # Licensed under the MIT License
 
 add_subdirectory(translation)
+add_subdirectory(pipeline)
+
+add_custom_target(mqt-core-mlir-unittests)
+
+add_dependencies(mqt-core-mlir-unittests mqt-core-mlir-translation-test
+                 mqt-core-mlir-compiler-pipeline-test)
