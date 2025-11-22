@@ -330,6 +330,7 @@ bool areIndependentGroupsEquivalent(ArrayRef<Operation*> lhsOps,
     return false;
   }
 
+  // NOLINTNEXTLINE(bugprone-nondeterministic-pointer-iteration-order)
   for (const auto& [lhsOp, lhsCount] : lhsFrequencyMap) {
     auto it = rhsFrequencyMap.find(lhsOp);
     if (it == rhsFrequencyMap.end() || it->second != lhsCount) {
