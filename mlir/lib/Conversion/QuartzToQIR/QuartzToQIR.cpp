@@ -82,8 +82,8 @@ struct LoweringState : QIRMetadata {
   DenseMap<std::pair<StringRef, int64_t>, Value> registerResultMap;
 
   /// Modifier information
-  bool inCtrlOp = false;
-  SmallVector<Value> posCtrls;
+  int64_t inCtrlOp = 0;
+  DenseMap<int64_t, SmallVector<Value>> posCtrls;
 };
 
 /**
@@ -133,8 +133,9 @@ convertOneTargetZeroParameter(QuartzOpType& op, QuartzOpAdaptorType& adaptor,
                               StringRef fnName) {
   // Query state for modifier information
   const auto inCtrlOp = state.inCtrlOp;
-  const auto& posCtrls = state.posCtrls;
-  const auto numCtrls = posCtrls.size();
+  const SmallVector<Value> posCtrls =
+      inCtrlOp != 0 ? state.posCtrls[inCtrlOp] : SmallVector<Value>{};
+  const int64_t numCtrls = posCtrls.size();
 
   // Define function argument types
   SmallVector<Type> argumentTypes;
@@ -159,9 +160,9 @@ convertOneTargetZeroParameter(QuartzOpType& op, QuartzOpAdaptorType& adaptor,
   operands.append(adaptor.getOperands().begin(), adaptor.getOperands().end());
 
   // Clean up modifier information
-  if (inCtrlOp) {
-    state.inCtrlOp = false;
-    state.posCtrls.clear();
+  if (inCtrlOp != 0) {
+    state.posCtrls.erase(inCtrlOp);
+    state.inCtrlOp--;
   }
 
   // Replace operation with CallOp
@@ -504,7 +505,9 @@ struct ConvertQuartzIdQIR final : StatefulOpConversionPattern<IdOp> {
 
     // Define function name
     StringRef fnName;
-    if (inCtrlOp) {
+    if (inCtrlOp == 0) {
+      fnName = QIR_ID;
+    } else {
       if (numCtrls == 1) {
         fnName = QIR_CID;
         ;
@@ -515,8 +518,6 @@ struct ConvertQuartzIdQIR final : StatefulOpConversionPattern<IdOp> {
       } else {
         return failure();
       }
-    } else {
-      fnName = QIR_ID;
     }
 
     return convertOneTargetZeroParameter(op, adaptor, rewriter, getContext(),
@@ -546,12 +547,14 @@ struct ConvertQuartzXQIR final : StatefulOpConversionPattern<XOp> {
 
     // Query state for modifier information
     const auto inCtrlOp = state.inCtrlOp;
-    const auto& posCtrls = state.posCtrls;
-    const auto numCtrls = posCtrls.size();
+    const int64_t numCtrls =
+        inCtrlOp != 0 ? state.posCtrls[inCtrlOp].size() : 0;
 
     // Define function name
     StringRef fnName;
-    if (inCtrlOp) {
+    if (inCtrlOp == 0) {
+      fnName = QIR_X;
+    } else {
       if (numCtrls == 1) {
         fnName = QIR_CX;
       } else if (numCtrls == 2) {
@@ -561,8 +564,6 @@ struct ConvertQuartzXQIR final : StatefulOpConversionPattern<XOp> {
       } else {
         return failure();
       }
-    } else {
-      fnName = QIR_X;
     }
 
     return convertOneTargetZeroParameter(op, adaptor, rewriter, getContext(),
@@ -592,12 +593,14 @@ struct ConvertQuartzYQIR final : StatefulOpConversionPattern<YOp> {
 
     // Query state for modifier information
     const auto inCtrlOp = state.inCtrlOp;
-    const auto& posCtrls = state.posCtrls;
-    const auto numCtrls = posCtrls.size();
+    const int64_t numCtrls =
+        inCtrlOp != 0 ? state.posCtrls[inCtrlOp].size() : 0;
 
     // Define function name
     StringRef fnName;
-    if (inCtrlOp) {
+    if (inCtrlOp == 0) {
+      fnName = QIR_Y;
+    } else {
       if (numCtrls == 1) {
         fnName = QIR_CY;
       } else if (numCtrls == 2) {
@@ -607,8 +610,6 @@ struct ConvertQuartzYQIR final : StatefulOpConversionPattern<YOp> {
       } else {
         return failure();
       }
-    } else {
-      fnName = QIR_Y;
     }
 
     return convertOneTargetZeroParameter(op, adaptor, rewriter, getContext(),
@@ -638,12 +639,14 @@ struct ConvertQuartzZQIR final : StatefulOpConversionPattern<ZOp> {
 
     // Query state for modifier information
     const auto inCtrlOp = state.inCtrlOp;
-    const auto& posCtrls = state.posCtrls;
-    const auto numCtrls = posCtrls.size();
+    const int64_t numCtrls =
+        inCtrlOp != 0 ? state.posCtrls[inCtrlOp].size() : 0;
 
     // Define function name
     StringRef fnName;
-    if (inCtrlOp) {
+    if (inCtrlOp == 0) {
+      fnName = QIR_Z;
+    } else {
       if (numCtrls == 1) {
         fnName = QIR_CZ;
       } else if (numCtrls == 2) {
@@ -653,8 +656,6 @@ struct ConvertQuartzZQIR final : StatefulOpConversionPattern<ZOp> {
       } else {
         return failure();
       }
-    } else {
-      fnName = QIR_Z;
     }
 
     return convertOneTargetZeroParameter(op, adaptor, rewriter, getContext(),
@@ -684,12 +685,14 @@ struct ConvertQuartzHQIR final : StatefulOpConversionPattern<HOp> {
 
     // Query state for modifier information
     const auto inCtrlOp = state.inCtrlOp;
-    const auto& posCtrls = state.posCtrls;
-    const auto numCtrls = posCtrls.size();
+    const int64_t numCtrls =
+        inCtrlOp != 0 ? state.posCtrls[inCtrlOp].size() : 0;
 
     // Define function name
     StringRef fnName;
-    if (inCtrlOp) {
+    if (inCtrlOp == 0) {
+      fnName = QIR_H;
+    } else {
       if (numCtrls == 1) {
         fnName = QIR_CH;
       } else if (numCtrls == 2) {
@@ -699,8 +702,6 @@ struct ConvertQuartzHQIR final : StatefulOpConversionPattern<HOp> {
       } else {
         return failure();
       }
-    } else {
-      fnName = QIR_H;
     }
 
     return convertOneTargetZeroParameter(op, adaptor, rewriter, getContext(),
@@ -730,12 +731,14 @@ struct ConvertQuartzSQIR final : StatefulOpConversionPattern<SOp> {
 
     // Query state for modifier information
     const auto inCtrlOp = state.inCtrlOp;
-    const auto& posCtrls = state.posCtrls;
-    const auto numCtrls = posCtrls.size();
+    const int64_t numCtrls =
+        inCtrlOp != 0 ? state.posCtrls[inCtrlOp].size() : 0;
 
     // Define function name
     StringRef fnName;
-    if (inCtrlOp) {
+    if (inCtrlOp == 0) {
+      fnName = QIR_S;
+    } else {
       if (numCtrls == 1) {
         fnName = QIR_CS;
       } else if (numCtrls == 2) {
@@ -745,8 +748,6 @@ struct ConvertQuartzSQIR final : StatefulOpConversionPattern<SOp> {
       } else {
         return failure();
       }
-    } else {
-      fnName = QIR_S;
     }
 
     return convertOneTargetZeroParameter(op, adaptor, rewriter, getContext(),
@@ -776,12 +777,14 @@ struct ConvertQuartzSdgQIR final : StatefulOpConversionPattern<SdgOp> {
 
     // Query state for modifier information
     const auto inCtrlOp = state.inCtrlOp;
-    const auto& posCtrls = state.posCtrls;
-    const auto numCtrls = posCtrls.size();
+    const int64_t numCtrls =
+        inCtrlOp != 0 ? state.posCtrls[inCtrlOp].size() : 0;
 
     // Define function name
     StringRef fnName;
-    if (inCtrlOp) {
+    if (inCtrlOp == 0) {
+      fnName = QIR_SDG;
+    } else {
       if (numCtrls == 1) {
         fnName = QIR_CSDG;
       } else if (numCtrls == 2) {
@@ -791,8 +794,6 @@ struct ConvertQuartzSdgQIR final : StatefulOpConversionPattern<SdgOp> {
       } else {
         return failure();
       }
-    } else {
-      fnName = QIR_SDG;
     }
 
     return convertOneTargetZeroParameter(op, adaptor, rewriter, getContext(),
@@ -822,12 +823,14 @@ struct ConvertQuartzTQIR final : StatefulOpConversionPattern<TOp> {
 
     // Query state for modifier information
     const auto inCtrlOp = state.inCtrlOp;
-    const auto& posCtrls = state.posCtrls;
-    const auto numCtrls = posCtrls.size();
+    const int64_t numCtrls =
+        inCtrlOp != 0 ? state.posCtrls[inCtrlOp].size() : 0;
 
     // Define function name
     StringRef fnName;
-    if (inCtrlOp) {
+    if (inCtrlOp == 0) {
+      fnName = QIR_T;
+    } else {
       if (numCtrls == 1) {
         fnName = QIR_CT;
       } else if (numCtrls == 2) {
@@ -837,8 +840,6 @@ struct ConvertQuartzTQIR final : StatefulOpConversionPattern<TOp> {
       } else {
         return failure();
       }
-    } else {
-      fnName = QIR_T;
     }
 
     return convertOneTargetZeroParameter(op, adaptor, rewriter, getContext(),
@@ -868,12 +869,14 @@ struct ConvertQuartzTdgQIR final : StatefulOpConversionPattern<TdgOp> {
 
     // Query state for modifier information
     const auto inCtrlOp = state.inCtrlOp;
-    const auto& posCtrls = state.posCtrls;
-    const auto numCtrls = posCtrls.size();
+    const int64_t numCtrls =
+        inCtrlOp != 0 ? state.posCtrls[inCtrlOp].size() : 0;
 
     // Define function name
     StringRef fnName;
-    if (inCtrlOp) {
+    if (inCtrlOp == 0) {
+      fnName = QIR_TDG;
+    } else {
       if (numCtrls == 1) {
         fnName = QIR_CTDG;
       } else if (numCtrls == 2) {
@@ -883,8 +886,6 @@ struct ConvertQuartzTdgQIR final : StatefulOpConversionPattern<TdgOp> {
       } else {
         return failure();
       }
-    } else {
-      fnName = QIR_TDG;
     }
 
     return convertOneTargetZeroParameter(op, adaptor, rewriter, getContext(),
@@ -914,12 +915,14 @@ struct ConvertQuartzSXQIR final : StatefulOpConversionPattern<SXOp> {
 
     // Query state for modifier information
     const auto inCtrlOp = state.inCtrlOp;
-    const auto& posCtrls = state.posCtrls;
-    const auto numCtrls = posCtrls.size();
+    const int64_t numCtrls =
+        inCtrlOp != 0 ? state.posCtrls[inCtrlOp].size() : 0;
 
     // Define function name
     StringRef fnName;
-    if (inCtrlOp) {
+    if (inCtrlOp == 0) {
+      fnName = QIR_SX;
+    } else {
       if (numCtrls == 1) {
         fnName = QIR_CSX;
       } else if (numCtrls == 2) {
@@ -929,8 +932,6 @@ struct ConvertQuartzSXQIR final : StatefulOpConversionPattern<SXOp> {
       } else {
         return failure();
       }
-    } else {
-      fnName = QIR_SX;
     }
 
     return convertOneTargetZeroParameter(op, adaptor, rewriter, getContext(),
@@ -960,12 +961,14 @@ struct ConvertQuartzSXdgQIR final : StatefulOpConversionPattern<SXdgOp> {
 
     // Query state for modifier information
     const auto inCtrlOp = state.inCtrlOp;
-    const auto& posCtrls = state.posCtrls;
-    const auto numCtrls = posCtrls.size();
+    const int64_t numCtrls =
+        inCtrlOp != 0 ? state.posCtrls[inCtrlOp].size() : 0;
 
     // Define function name
     StringRef fnName;
-    if (inCtrlOp) {
+    if (inCtrlOp == 0) {
+      fnName = QIR_SXDG;
+    } else {
       if (numCtrls == 1) {
         fnName = QIR_CSXDG;
       } else if (numCtrls == 2) {
@@ -975,8 +978,6 @@ struct ConvertQuartzSXdgQIR final : StatefulOpConversionPattern<SXdgOp> {
       } else {
         return failure();
       }
-    } else {
-      fnName = QIR_SXDG;
     }
 
     return convertOneTargetZeroParameter(op, adaptor, rewriter, getContext(),
@@ -1006,13 +1007,16 @@ struct ConvertQuartzRXQIR final : StatefulOpConversionPattern<RXOp> {
     auto& state = getState();
 
     // Query state for modifier information
-    const bool inCtrlOp = state.inCtrlOp;
-    const auto& posCtrls = state.posCtrls;
+    const auto inCtrlOp = state.inCtrlOp;
+    const SmallVector<Value> posCtrls =
+        inCtrlOp != 0 ? state.posCtrls[inCtrlOp] : SmallVector<Value>{};
     const auto numCtrls = posCtrls.size();
 
     // Define function name
     StringRef fnName;
-    if (inCtrlOp) {
+    if (inCtrlOp == 0) {
+      fnName = QIR_RX;
+    } else {
       if (numCtrls == 1) {
         fnName = QIR_CRX;
       } else if (numCtrls == 2) {
@@ -1022,8 +1026,6 @@ struct ConvertQuartzRXQIR final : StatefulOpConversionPattern<RXOp> {
       } else {
         return failure();
       }
-    } else {
-      fnName = QIR_RX;
     }
 
     // Define function argument types
@@ -1052,9 +1054,9 @@ struct ConvertQuartzRXQIR final : StatefulOpConversionPattern<RXOp> {
     operands.append(adaptor.getOperands().begin(), adaptor.getOperands().end());
 
     // Clean up modifier information
-    if (inCtrlOp) {
-      state.inCtrlOp = false;
-      state.posCtrls.clear();
+    if (inCtrlOp != 0) {
+      state.posCtrls.erase(inCtrlOp);
+      state.inCtrlOp--;
     }
 
     // Replace operation with CallOp
@@ -1087,12 +1089,15 @@ struct ConvertQuartzU2QIR final : StatefulOpConversionPattern<U2Op> {
 
     // Query state for modifier information
     const auto inCtrlOp = state.inCtrlOp;
-    const auto& posCtrls = state.posCtrls;
+    const SmallVector<Value> posCtrls =
+        inCtrlOp != 0 ? state.posCtrls[inCtrlOp] : SmallVector<Value>{};
     const auto numCtrls = posCtrls.size();
 
     // Define function name
     StringRef fnName;
-    if (inCtrlOp) {
+    if (inCtrlOp == 0) {
+      fnName = QIR_U2;
+    } else {
       if (numCtrls == 1) {
         fnName = QIR_CU2;
       } else if (numCtrls == 2) {
@@ -1102,8 +1107,6 @@ struct ConvertQuartzU2QIR final : StatefulOpConversionPattern<U2Op> {
       } else {
         return failure();
       }
-    } else {
-      fnName = QIR_U2;
     }
 
     // Define function argument types
@@ -1134,9 +1137,9 @@ struct ConvertQuartzU2QIR final : StatefulOpConversionPattern<U2Op> {
     operands.append(adaptor.getOperands().begin(), adaptor.getOperands().end());
 
     // Clean up modifier information
-    if (inCtrlOp) {
-      state.inCtrlOp = false;
-      state.posCtrls.clear();
+    if (inCtrlOp != 0) {
+      state.posCtrls.erase(inCtrlOp);
+      state.inCtrlOp--;
     }
 
     // Replace operation with CallOp
@@ -1169,12 +1172,15 @@ struct ConvertQuartzSWAPQIR final : StatefulOpConversionPattern<SWAPOp> {
 
     // Query state for modifier information
     const auto inCtrlOp = state.inCtrlOp;
-    const auto& posCtrls = state.posCtrls;
+    const SmallVector<Value> posCtrls =
+        inCtrlOp != 0 ? state.posCtrls[inCtrlOp] : SmallVector<Value>{};
     const auto numCtrls = posCtrls.size();
 
     // Define function name
     StringRef fnName;
-    if (inCtrlOp) {
+    if (inCtrlOp == 0) {
+      fnName = QIR_SWAP;
+    } else {
       if (numCtrls == 1) {
         fnName = QIR_CSWAP;
       } else if (numCtrls == 2) {
@@ -1184,8 +1190,6 @@ struct ConvertQuartzSWAPQIR final : StatefulOpConversionPattern<SWAPOp> {
       } else {
         return failure();
       }
-    } else {
-      fnName = QIR_SWAP;
     }
 
     // Define function argument types
@@ -1213,9 +1217,9 @@ struct ConvertQuartzSWAPQIR final : StatefulOpConversionPattern<SWAPOp> {
     operands.append(adaptor.getOperands().begin(), adaptor.getOperands().end());
 
     // Clean up modifier information
-    if (inCtrlOp) {
-      state.inCtrlOp = false;
-      state.posCtrls.clear();
+    if (inCtrlOp != 0) {
+      state.posCtrls.erase(inCtrlOp);
+      state.inCtrlOp--;
     }
 
     // Replace operation with CallOp
@@ -1235,9 +1239,10 @@ struct ConvertQuartzCtrlQIR final : StatefulOpConversionPattern<CtrlOp> {
                   ConversionPatternRewriter& rewriter) const override {
     // Update modifier information
     auto& state = getState();
-    state.inCtrlOp = true;
-    state.posCtrls.append(adaptor.getControls().begin(),
-                          adaptor.getControls().end());
+    state.inCtrlOp++;
+    const SmallVector<Value> posCtrls(adaptor.getControls().begin(),
+                                      adaptor.getControls().end());
+    state.posCtrls[state.inCtrlOp] = posCtrls;
 
     // Inline region and remove operation
     rewriter.inlineBlockBefore(&op.getRegion().front(), op->getBlock(),
@@ -1273,7 +1278,8 @@ struct ConvertQuartzYieldQIR final : StatefulOpConversionPattern<YieldOp> {
  *
  * Conversion stages:
  * 1. Convert func dialect to LLVM
- * 2. Ensure proper block structure for QIR base profile and add initialization
+ * 2. Ensure proper block structure for QIR base profile and add
+ * initialization
  * 3. Convert Quartz operations to QIR calls
  * 4. Set QIR metadata attributes
  * 5. Convert arith and cf dialects to LLVM
@@ -1448,7 +1454,8 @@ struct QuartzToQIR final : impl::QuartzToQIRBase<QuartzToQIR> {
     OpBuilder builder(ctx);
     const auto ptrType = LLVM::LLVMPointerType::get(ctx);
 
-    // Find the output block (4th block: entry, body, measurements, output, end)
+    // Find the output block (4th block: entry, body, measurements, output,
+    // end)
     auto& outputBlock = main.getBlocks().back();
 
     // Insert before the branch to end block
@@ -1532,15 +1539,16 @@ struct QuartzToQIR final : impl::QuartzToQIRBase<QuartzToQIR> {
    * measure, reset) and add output recording to the output block.
    *
    * **Stage 4: QIR attributes**
-   * Add QIR base profile metadata to the main function, including qubit/result
-   * counts and version information.
+   * Add QIR base profile metadata to the main function, including
+   * qubit/result counts and version information.
    *
    * **Stage 5: Standard dialects to LLVM**
    * Convert arith and control flow dialects to LLVM (for index arithmetic and
    * function control flow).
    *
    * **Stage 6: Reconcile casts**
-   * Clean up any unrealized cast operations introduced during type conversion.
+   * Clean up any unrealized cast operations introduced during type
+   * conversion.
    */
   void runOnOperation() override {
     MLIRContext* ctx = &getContext();
