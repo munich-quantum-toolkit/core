@@ -119,6 +119,7 @@ git-only = [
     "docs/*",
     "test/*",
     "mlir/*",
+    "plugins/*",
 ]
 
 [tool.scikit-build.cmake.define]

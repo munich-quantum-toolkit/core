@@ -16,7 +16,9 @@ set(MQT_MLIR_MIN_VERSION
 # MLIR must be installed on the system
 find_package(MLIR REQUIRED CONFIG)
 if(MLIR_VERSION VERSION_LESS MQT_MLIR_MIN_VERSION)
-  message(FATAL_ERROR "MLIR version must be at least ${MQT_MLIR_MIN_VERSION}")
+  message(
+    FATAL_ERROR "MLIR version must be at least ${MQT_MLIR_MIN_VERSION} but found ${MLIR_VERSION}")
+
 endif()
 message(STATUS "Using MLIRConfig.cmake in: ${MLIR_DIR}")
 message(STATUS "Using LLVMConfig.cmake in: ${LLVM_DIR}")
