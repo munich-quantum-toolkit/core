@@ -437,16 +437,16 @@ namespace {
 struct RemoveAllocDeallocPair final : OpRewritePattern<DeallocOp> {
   using OpRewritePattern::OpRewritePattern;
 
-  LogicalResult matchAndRewrite(DeallocOp deallocOp,
+  LogicalResult matchAndRewrite(DeallocOp op,
                                 PatternRewriter& rewriter) const override {
     // Check if the predecessor is an AllocOp
-    auto allocOp = deallocOp.getQubit().getDefiningOp<AllocOp>();
+    auto allocOp = op.getQubit().getDefiningOp<AllocOp>();
     if (!allocOp) {
       return failure();
     }
 
     // Remove the AllocOp and the DeallocOp
-    rewriter.eraseOp(deallocOp);
+    rewriter.eraseOp(op);
     rewriter.eraseOp(allocOp);
     return success();
   }
@@ -458,16 +458,15 @@ struct RemoveAllocDeallocPair final : OpRewritePattern<DeallocOp> {
 struct RemoveResetAfterAlloc final : OpRewritePattern<ResetOp> {
   using OpRewritePattern::OpRewritePattern;
 
-  LogicalResult matchAndRewrite(ResetOp resetOp,
+  LogicalResult matchAndRewrite(ResetOp op,
                                 PatternRewriter& rewriter) const override {
     // Check if the predecessor is an AllocOp
-    if (auto allocOp = resetOp.getQubitIn().getDefiningOp<AllocOp>();
-        !allocOp) {
+    if (auto allocOp = op.getQubitIn().getDefiningOp<AllocOp>(); !allocOp) {
       return failure();
     }
 
     // Remove the ResetOp
-    rewriter.replaceOp(resetOp, resetOp.getQubitIn());
+    rewriter.replaceOp(op, op.getQubitIn());
     return success();
   }
 };
@@ -478,12 +477,36 @@ struct RemoveResetAfterAlloc final : OpRewritePattern<ResetOp> {
 struct RemoveId final : OpRewritePattern<IdOp> {
   using OpRewritePattern::OpRewritePattern;
 
-  LogicalResult matchAndRewrite(IdOp idOp,
+  LogicalResult matchAndRewrite(IdOp op,
                                 PatternRewriter& rewriter) const override {
-    rewriter.replaceOp(idOp, idOp.getQubitIn());
+    rewriter.replaceOp(op, op.getQubitIn());
     return success();
   }
 };
+
+/**
+ * @brief Remove a pair of inverse operations.
+ *
+ * @tparam InverseOpType The type of the inverse operation.
+ * @tparam OpType The type of the operation to be checked.
+ * @param op The operation instance to be checked.
+ * @param rewriter The pattern rewriter.
+ * @return LogicalResult Success or failure of the removal.
+ */
+template <typename InverseOpType, typename OpType>
+LogicalResult removeInversePair(OpType op, PatternRewriter& rewriter) {
+  // Check if the predecessor is the inverse operation
+  auto prevOp = op.getQubitIn().template getDefiningOp<InverseOpType>();
+  if (!prevOp) {
+    return failure();
+  }
+
+  // Remove both XOps
+  rewriter.replaceOp(prevOp, prevOp.getQubitIn());
+  rewriter.replaceOp(op, op.getQubitIn());
+
+  return success();
+}
 
 /**
  * @brief Remove subsequent X operations on the same qubit.
@@ -491,19 +514,9 @@ struct RemoveId final : OpRewritePattern<IdOp> {
 struct RemoveSubsequentX final : OpRewritePattern<XOp> {
   using OpRewritePattern::OpRewritePattern;
 
-  LogicalResult matchAndRewrite(XOp xOp,
+  LogicalResult matchAndRewrite(XOp op,
                                 PatternRewriter& rewriter) const override {
-    // Check if the predecessor is an XOp
-    auto prevOp = xOp.getQubitIn().getDefiningOp<XOp>();
-    if (!prevOp) {
-      return failure();
-    }
-
-    // Remove both XOps
-    rewriter.replaceOp(prevOp, prevOp.getQubitIn());
-    rewriter.replaceOp(xOp, xOp.getQubitIn());
-
-    return success();
+    return removeInversePair<XOp>(op, rewriter);
   }
 };
 
@@ -513,19 +526,9 @@ struct RemoveSubsequentX final : OpRewritePattern<XOp> {
 struct RemoveSubsequentY final : OpRewritePattern<YOp> {
   using OpRewritePattern::OpRewritePattern;
 
-  LogicalResult matchAndRewrite(YOp yOp,
+  LogicalResult matchAndRewrite(YOp op,
                                 PatternRewriter& rewriter) const override {
-    // Check if the predecessor is a YOp
-    auto prevOp = yOp.getQubitIn().getDefiningOp<YOp>();
-    if (!prevOp) {
-      return failure();
-    }
-
-    // Remove both YOps
-    rewriter.replaceOp(prevOp, prevOp.getQubitIn());
-    rewriter.replaceOp(yOp, yOp.getQubitIn());
-
-    return success();
+    return removeInversePair<YOp>(op, rewriter);
   }
 };
 
@@ -535,19 +538,9 @@ struct RemoveSubsequentY final : OpRewritePattern<YOp> {
 struct RemoveSubsequentZ final : OpRewritePattern<ZOp> {
   using OpRewritePattern::OpRewritePattern;
 
-  LogicalResult matchAndRewrite(ZOp zOp,
+  LogicalResult matchAndRewrite(ZOp op,
                                 PatternRewriter& rewriter) const override {
-    // Check if the predecessor is a ZOp
-    auto prevOp = zOp.getQubitIn().getDefiningOp<ZOp>();
-    if (!prevOp) {
-      return failure();
-    }
-
-    // Remove both ZOps
-    rewriter.replaceOp(prevOp, prevOp.getQubitIn());
-    rewriter.replaceOp(zOp, zOp.getQubitIn());
-
-    return success();
+    return removeInversePair<ZOp>(op, rewriter);
   }
 };
 
@@ -557,19 +550,9 @@ struct RemoveSubsequentZ final : OpRewritePattern<ZOp> {
 struct RemoveSubsequentH final : OpRewritePattern<HOp> {
   using OpRewritePattern::OpRewritePattern;
 
-  LogicalResult matchAndRewrite(HOp hOp,
+  LogicalResult matchAndRewrite(HOp op,
                                 PatternRewriter& rewriter) const override {
-    // Check if the predecessor is an HOp
-    auto prevOp = hOp.getQubitIn().getDefiningOp<HOp>();
-    if (!prevOp) {
-      return failure();
-    }
-
-    // Remove both HOps
-    rewriter.replaceOp(prevOp, prevOp.getQubitIn());
-    rewriter.replaceOp(hOp, hOp.getQubitIn());
-
-    return success();
+    return removeInversePair<HOp>(op, rewriter);
   }
 };
 
@@ -579,19 +562,9 @@ struct RemoveSubsequentH final : OpRewritePattern<HOp> {
 struct RemoveSAfterSdg final : OpRewritePattern<SOp> {
   using OpRewritePattern::OpRewritePattern;
 
-  LogicalResult matchAndRewrite(SOp sOp,
+  LogicalResult matchAndRewrite(SOp op,
                                 PatternRewriter& rewriter) const override {
-    // Check if the predecessor is an SdgOp
-    auto prevOp = sOp.getQubitIn().getDefiningOp<SdgOp>();
-    if (!prevOp) {
-      return failure();
-    }
-
-    // Remove both Sdg and S Ops
-    rewriter.replaceOp(prevOp, prevOp.getQubitIn());
-    rewriter.replaceOp(sOp, sOp.getQubitIn());
-
-    return success();
+    return removeInversePair<SdgOp>(op, rewriter);
   }
 };
 
@@ -601,19 +574,9 @@ struct RemoveSAfterSdg final : OpRewritePattern<SOp> {
 struct RemoveSdgAfterS final : OpRewritePattern<SdgOp> {
   using OpRewritePattern::OpRewritePattern;
 
-  LogicalResult matchAndRewrite(SdgOp sdgOp,
+  LogicalResult matchAndRewrite(SdgOp op,
                                 PatternRewriter& rewriter) const override {
-    // Check if the predecessor is an SOp
-    auto prevOp = sdgOp.getQubitIn().getDefiningOp<SOp>();
-    if (!prevOp) {
-      return failure();
-    }
-
-    // Remove both S and Sdg Ops
-    rewriter.replaceOp(prevOp, prevOp.getQubitIn());
-    rewriter.replaceOp(sdgOp, sdgOp.getQubitIn());
-
-    return success();
+    return removeInversePair<SOp>(op, rewriter);
   }
 };
 
@@ -623,19 +586,9 @@ struct RemoveSdgAfterS final : OpRewritePattern<SdgOp> {
 struct RemoveTAfterTdg final : OpRewritePattern<TOp> {
   using OpRewritePattern::OpRewritePattern;
 
-  LogicalResult matchAndRewrite(TOp tOp,
+  LogicalResult matchAndRewrite(TOp op,
                                 PatternRewriter& rewriter) const override {
-    // Check if the predecessor is a TdgOp
-    auto prevOp = tOp.getQubitIn().getDefiningOp<TdgOp>();
-    if (!prevOp) {
-      return failure();
-    }
-
-    // Remove both Tdg and T Ops
-    rewriter.replaceOp(prevOp, prevOp.getQubitIn());
-    rewriter.replaceOp(tOp, tOp.getQubitIn());
-
-    return success();
+    return removeInversePair<TdgOp>(op, rewriter);
   }
 };
 
@@ -645,19 +598,9 @@ struct RemoveTAfterTdg final : OpRewritePattern<TOp> {
 struct RemoveTdgAfterT final : OpRewritePattern<TdgOp> {
   using OpRewritePattern::OpRewritePattern;
 
-  LogicalResult matchAndRewrite(TdgOp tdgOp,
+  LogicalResult matchAndRewrite(TdgOp op,
                                 PatternRewriter& rewriter) const override {
-    // Check if the predecessor is a TOp
-    auto prevOp = tdgOp.getQubitIn().getDefiningOp<TOp>();
-    if (!prevOp) {
-      return failure();
-    }
-
-    // Remove both T and Tdg Ops
-    rewriter.replaceOp(prevOp, prevOp.getQubitIn());
-    rewriter.replaceOp(tdgOp, tdgOp.getQubitIn());
-
-    return success();
+    return removeInversePair<TOp>(op, rewriter);
   }
 };
 
@@ -667,19 +610,9 @@ struct RemoveTdgAfterT final : OpRewritePattern<TdgOp> {
 struct RemoveSXAfterSXdg final : OpRewritePattern<SXOp> {
   using OpRewritePattern::OpRewritePattern;
 
-  LogicalResult matchAndRewrite(SXOp sxOp,
+  LogicalResult matchAndRewrite(SXOp op,
                                 PatternRewriter& rewriter) const override {
-    // Check if the predecessor is an SXdgOp
-    auto prevOp = sxOp.getQubitIn().getDefiningOp<SXdgOp>();
-    if (!prevOp) {
-      return failure();
-    }
-
-    // Remove both SXdg and SX Ops
-    rewriter.replaceOp(prevOp, prevOp.getQubitIn());
-    rewriter.replaceOp(sxOp, sxOp.getQubitIn());
-
-    return success();
+    return removeInversePair<SXdgOp>(op, rewriter);
   }
 };
 
@@ -689,19 +622,9 @@ struct RemoveSXAfterSXdg final : OpRewritePattern<SXOp> {
 struct RemoveSXdgAfterSX final : OpRewritePattern<SXdgOp> {
   using OpRewritePattern::OpRewritePattern;
 
-  LogicalResult matchAndRewrite(SXdgOp sxdgOp,
+  LogicalResult matchAndRewrite(SXdgOp op,
                                 PatternRewriter& rewriter) const override {
-    // Check if the predecessor is an SXOp
-    auto prevOp = sxdgOp.getQubitIn().getDefiningOp<SXOp>();
-    if (!prevOp) {
-      return failure();
-    }
-
-    // Remove both SX and SXdg Ops
-    rewriter.replaceOp(prevOp, prevOp.getQubitIn());
-    rewriter.replaceOp(sxdgOp, sxdgOp.getQubitIn());
-
-    return success();
+    return removeInversePair<SXOp>(op, rewriter);
   }
 };
 
@@ -712,18 +635,18 @@ struct RemoveSXdgAfterSX final : OpRewritePattern<SXdgOp> {
 struct MergeSubsequentRX final : OpRewritePattern<RXOp> {
   using OpRewritePattern::OpRewritePattern;
 
-  LogicalResult matchAndRewrite(RXOp rxOp,
+  LogicalResult matchAndRewrite(RXOp op,
                                 PatternRewriter& rewriter) const override {
     // Check if the predecessor is an RXOp
-    auto prevOp = rxOp.getQubitIn().getDefiningOp<RXOp>();
+    auto prevOp = op.getQubitIn().getDefiningOp<RXOp>();
     if (!prevOp) {
       return failure();
     }
 
     // Compute and set new theta
-    auto newTheta = rewriter.create<arith::AddFOp>(
-        rxOp.getLoc(), rxOp.getTheta(), prevOp.getTheta());
-    rxOp->setOperand(1, newTheta.getResult());
+    auto newTheta = rewriter.create<arith::AddFOp>(op.getLoc(), op.getTheta(),
+                                                   prevOp.getTheta());
+    op->setOperand(1, newTheta.getResult());
 
     // Trivialize previous RXOp
     rewriter.replaceOp(prevOp, prevOp.getQubitIn());
@@ -738,22 +661,21 @@ struct MergeSubsequentRX final : OpRewritePattern<RXOp> {
 struct MergeNestedCtrl final : OpRewritePattern<CtrlOp> {
   using OpRewritePattern::OpRewritePattern;
 
-  LogicalResult matchAndRewrite(CtrlOp ctrlOp,
+  LogicalResult matchAndRewrite(CtrlOp op,
                                 PatternRewriter& rewriter) const override {
-    auto bodyUnitary = ctrlOp.getBodyUnitary();
+    auto bodyUnitary = op.getBodyUnitary();
     auto bodyCtrlOp = llvm::dyn_cast<CtrlOp>(bodyUnitary.getOperation());
     if (!bodyCtrlOp) {
       return failure();
     }
 
     // Merge controls
-    SmallVector<Value> newControls(ctrlOp.getControlsIn());
+    SmallVector<Value> newControls(op.getControlsIn());
     for (const auto control : bodyCtrlOp.getControlsIn()) {
       newControls.push_back(control);
     }
 
-    rewriter.replaceOpWithNewOp<CtrlOp>(ctrlOp, newControls,
-                                        ctrlOp.getTargetsIn(),
+    rewriter.replaceOpWithNewOp<CtrlOp>(op, newControls, op.getTargetsIn(),
                                         bodyCtrlOp.getBodyUnitary());
     rewriter.eraseOp(bodyCtrlOp);
 
@@ -767,34 +689,35 @@ struct MergeNestedCtrl final : OpRewritePattern<CtrlOp> {
 struct RemoveTrivialCtrl final : OpRewritePattern<CtrlOp> {
   using OpRewritePattern::OpRewritePattern;
 
-  LogicalResult matchAndRewrite(CtrlOp ctrlOp,
+  LogicalResult matchAndRewrite(CtrlOp op,
                                 PatternRewriter& rewriter) const override {
-    if (ctrlOp.getNumControls() > 0) {
+    if (op.getNumControls() > 0) {
       return failure();
     }
-    rewriter.replaceOp(ctrlOp, ctrlOp.getBodyUnitary());
+    rewriter.replaceOp(op, op.getBodyUnitary());
     return success();
   }
 };
 
+/**
+ * @brief Inline controlled identity operations.
+ */
 struct CtrlInlineId final : OpRewritePattern<CtrlOp> {
   using OpRewritePattern::OpRewritePattern;
 
-  LogicalResult matchAndRewrite(CtrlOp ctrlOp,
+  LogicalResult matchAndRewrite(CtrlOp op,
                                 PatternRewriter& rewriter) const override {
-    if (!llvm::isa<IdOp>(ctrlOp.getBodyUnitary().getOperation())) {
+    if (!llvm::isa<IdOp>(op.getBodyUnitary().getOperation())) {
       return failure();
     }
 
-    auto idOp =
-        rewriter.create<IdOp>(ctrlOp.getLoc(), ctrlOp.getTargetsIn().front());
+    auto idOp = rewriter.create<IdOp>(op.getLoc(), op.getTargetsIn().front());
 
     SmallVector<Value> newOperands;
-    newOperands.reserve(ctrlOp.getNumControls() + 1);
-    newOperands.append(ctrlOp.getControlsIn().begin(),
-                       ctrlOp.getControlsIn().end());
+    newOperands.reserve(op.getNumControls() + 1);
+    newOperands.append(op.getControlsIn().begin(), op.getControlsIn().end());
     newOperands.push_back(idOp.getQubitOut());
-    rewriter.replaceOp(ctrlOp, newOperands);
+    rewriter.replaceOp(op, newOperands);
 
     return success();
   }
