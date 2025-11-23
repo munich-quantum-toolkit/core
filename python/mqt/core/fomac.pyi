@@ -40,7 +40,7 @@ class Device:
             """Returns the y coordinate of the site."""
         def z_coordinate(self) -> int | None:
             """Returns the z coordinate of the site."""
-        def is_zone(self) -> bool | None:
+        def is_zone(self) -> bool:
             """Returns whether the site is a zone."""
         def x_extent(self) -> int | None:
             """Returns the x extent of the site."""
@@ -75,7 +75,7 @@ class Device:
             """Returns the blocking radius of the operation."""
         def idling_fidelity(self, sites: Iterable[Device.Site] = ..., params: Iterable[float] = ...) -> float | None:
             """Returns the idling fidelity of the operation."""
-        def is_zoned(self, sites: Iterable[Device.Site] = ..., params: Iterable[float] = ...) -> bool | None:
+        def is_zoned(self, sites: Iterable[Device.Site] = ..., params: Iterable[float] = ...) -> bool:
             """Returns whether the operation is zoned."""
         def sites(
             self, sites: Iterable[Device.Site] = ..., params: Iterable[float] = ...

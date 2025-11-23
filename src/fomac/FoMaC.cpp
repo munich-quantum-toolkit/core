@@ -230,8 +230,9 @@ auto FoMaC::Device::Site::getYCoordinate() const -> std::optional<int64_t> {
 auto FoMaC::Device::Site::getZCoordinate() const -> std::optional<int64_t> {
   return queryProperty<std::optional<int64_t>>(QDMI_SITE_PROPERTY_ZCOORDINATE);
 }
-auto FoMaC::Device::Site::isZone() const -> std::optional<bool> {
-  return queryProperty<std::optional<bool>>(QDMI_SITE_PROPERTY_ISZONE);
+auto FoMaC::Device::Site::isZone() const -> bool {
+  return queryProperty<std::optional<bool>>(QDMI_SITE_PROPERTY_ISZONE)
+      .value_or(false);
 }
 auto FoMaC::Device::Site::getXExtent() const -> std::optional<uint64_t> {
   return queryProperty<std::optional<uint64_t>>(QDMI_SITE_PROPERTY_XEXTENT);
@@ -299,9 +300,10 @@ auto FoMaC::Device::Operation::getIdlingFidelity(
 }
 auto FoMaC::Device::Operation::isZoned(const std::vector<Site>& sites,
                                        const std::vector<double>& params) const
-    -> std::optional<bool> {
+    -> bool {
   return queryProperty<std::optional<bool>>(QDMI_OPERATION_PROPERTY_ISZONED,
-                                            sites, params);
+                                            sites, params)
+      .value_or(false);
 }
 auto FoMaC::Device::Operation::getSites(const std::vector<Site>& sites,
                                         const std::vector<double>& params) const
@@ -323,8 +325,7 @@ auto FoMaC::Device::Operation::getSitePairs(
     const std::vector<Site>& sites, const std::vector<double>& params) const
     -> std::optional<std::vector<std::pair<Site, Site>>> {
   const auto qubitsNum = getQubitsNum(sites, params);
-  if (!qubitsNum.has_value() || *qubitsNum != 2 ||
-      isZoned(sites, params).value_or(false)) {
+  if (!qubitsNum.has_value() || *qubitsNum != 2 || isZoned(sites, params)) {
     return std::nullopt; // Not a 2-qubit operation or operation is zoned
   }
 
@@ -385,18 +386,16 @@ auto FoMaC::Device::getRegularSites() const -> std::vector<Site> {
   const auto& allSites = getSites();
   std::vector<Site> regularSites;
   regularSites.reserve(allSites.size());
-  std::ranges::copy_if(
-      allSites, std::back_inserter(regularSites),
-      [](const Site& s) { return !s.isZone().value_or(false); });
+  std::ranges::copy_if(allSites, std::back_inserter(regularSites),
+                       [](const Site& s) { return !s.isZone(); });
   return regularSites;
 }
 auto FoMaC::Device::getZones() const -> std::vector<Site> {
   const auto& allSites = getSites();
   std::vector<Site> zones;
   zones.reserve(allSites.size());
-  std::ranges::copy_if(allSites, std::back_inserter(zones), [](const Site& s) {
-    return s.isZone().value_or(false);
-  });
+  std::ranges::copy_if(allSites, std::back_inserter(zones),
+                       [](const Site& s) { return s.isZone(); });
   return zones;
 }
 auto FoMaC::Device::getOperations() const -> std::vector<Operation> {

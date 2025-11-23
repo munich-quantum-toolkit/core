@@ -280,7 +280,7 @@ public:
       /// @see QDMI_SITE_PROPERTY_ZCOORDINATE
       [[nodiscard]] auto getZCoordinate() const -> std::optional<int64_t>;
       /// @see QDMI_SITE_PROPERTY_ISZONE
-      [[nodiscard]] auto isZone() const -> std::optional<bool>;
+      [[nodiscard]] auto isZone() const -> bool;
       /// @see QDMI_SITE_PROPERTY_XEXTENT
       [[nodiscard]] auto getXExtent() const -> std::optional<uint64_t>;
       /// @see QDMI_SITE_PROPERTY_YEXTENT
@@ -425,7 +425,7 @@ public:
       /// @see QDMI_OPERATION_PROPERTY_ISZONED
       [[nodiscard]] auto isZoned(const std::vector<Site>& sites = {},
                                  const std::vector<double>& params = {}) const
-          -> std::optional<bool>;
+          -> bool;
       /// @see QDMI_OPERATION_PROPERTY_SITES
       [[nodiscard]] auto getSites(const std::vector<Site>& sites = {},
                                   const std::vector<double>& params = {}) const

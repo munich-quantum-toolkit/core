@@ -270,7 +270,7 @@ auto FoMaC::Device::initOperationsFromDevice() -> bool {
   std::map<size_t, std::pair<ShuttlingUnit, std::array<bool, 3>>>
       shuttlingUnitsPerId;
   for (const fomac::FoMaC::Device::Operation& op : getOperations()) {
-    const auto zoned = op.isZoned().value_or(false);
+    const auto zoned = op.isZoned();
     const auto& nq = op.getQubitsNum();
     const auto& name = op.getName();
     const auto& sitesOpt = op.getSites();
@@ -281,7 +281,7 @@ auto FoMaC::Device::initOperationsFromDevice() -> bool {
     if (zoned) {
       if (std::ranges::any_of(
               *sitesOpt, [](const fomac::FoMaC::Device::Site& site) -> bool {
-                return !site.isZone().value_or(false);
+                return !site.isZone();
               })) {
         SPDLOG_INFO("Operation marked as zoned but has non-zone sites");
         return false;
