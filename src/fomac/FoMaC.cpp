@@ -329,7 +329,7 @@ auto FoMaC::Device::Operation::getSitePairs(
     return std::nullopt; // Not a 2-qubit operation or operation is zoned
   }
 
-  const auto sitesOpt = getSites(sites, params);
+  auto sitesOpt = getSites(sites, params);
   if (!sitesOpt.has_value()) {
     return std::nullopt;
   }
