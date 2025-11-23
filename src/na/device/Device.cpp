@@ -23,6 +23,7 @@
 #include <cstring>
 #include <functional>
 #include <memory>
+#include <span>
 #include <type_traits>
 #include <utility>
 #include <variant>
@@ -548,25 +549,15 @@ auto MQT_NA_QDMI_Operation_impl_d::queryProperty(
                                    T,
                                    std::vector<std::pair<MQT_NA_QDMI_Site,
                                                          MQT_NA_QDMI_Site>>>) {
-            // Two-qubit: return as flat array (for C API compatibility)
-            if (value != nullptr) {
-              if (size < storedSites.size() * 2 * sizeof(MQT_NA_QDMI_Site)) {
-                return QDMI_ERROR_INVALIDARGUMENT;
-              }
-              // Copy pairs as flat array for C API
-              // NOLINTBEGIN(cppcoreguidelines-pro-bounds-pointer-arithmetic)
-              auto* siteArray = static_cast<MQT_NA_QDMI_Site*>(value);
-              size_t idx = 0;
-              for (const auto& [site1, site2] : storedSites) {
-                siteArray[idx++] = site1;
-                siteArray[idx++] = site2;
-              }
-              // NOLINTEND(cppcoreguidelines-pro-bounds-pointer-arithmetic)
-            }
-            if (sizeRet != nullptr) {
-              *sizeRet = storedSites.size() * 2 * sizeof(MQT_NA_QDMI_Site);
-            }
-            return QDMI_SUCCESS;
+            // Two-qubit: reinterpret as flat array of sites using std::span
+            // std::pair has standard layout, so the memory layout of
+            // vector<pair<Site, Site>> is equivalent to Site[2*N]
+            const auto flatView = std::span<const MQT_NA_QDMI_Site>(
+                // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+                reinterpret_cast<const MQT_NA_QDMI_Site*>(storedSites.data()),
+                storedSites.size() * 2);
+            ADD_LIST_PROPERTY(QDMI_OPERATION_PROPERTY_SITES, MQT_NA_QDMI_Site,
+                              flatView, prop, size, value, sizeRet)
           }
           // more cases go here if needed in the future
           return QDMI_ERROR_NOTSUPPORTED;
