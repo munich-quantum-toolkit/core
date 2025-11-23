@@ -381,20 +381,18 @@ auto FoMaC::Device::getSites() const -> std::vector<Site> {
   return sites;
 }
 auto FoMaC::Device::getRegularSites() const -> std::vector<Site> {
-  const auto& allSites = getSites();
-  std::vector<Site> regularSites;
-  regularSites.reserve(allSites.size());
-  std::ranges::copy_if(allSites, std::back_inserter(regularSites),
-                       [](const Site& s) { return !s.isZone(); });
-  return regularSites;
+  auto allSites = getSites();
+  const auto newEnd = std::ranges::remove_if(
+      allSites, [](const Site& s) { return s.isZone(); });
+  allSites.erase(newEnd.begin(), allSites.end());
+  return allSites;
 }
 auto FoMaC::Device::getZones() const -> std::vector<Site> {
-  const auto& allSites = getSites();
-  std::vector<Site> zones;
-  zones.reserve(allSites.size());
-  std::ranges::copy_if(allSites, std::back_inserter(zones),
-                       [](const Site& s) { return s.isZone(); });
-  return zones;
+  auto allSites = getSites();
+  const auto newEnd = std::ranges::remove_if(
+      allSites, [](const Site& s) { return !s.isZone(); });
+  allSites.erase(newEnd.begin(), allSites.end());
+  return allSites;
 }
 auto FoMaC::Device::getOperations() const -> std::vector<Operation> {
   const auto& qdmiOperations = queryProperty<std::vector<QDMI_Operation>>(
