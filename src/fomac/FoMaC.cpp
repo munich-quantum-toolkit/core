@@ -329,23 +329,21 @@ auto FoMaC::Device::Operation::getSitePairs(
     return std::nullopt; // Not a 2-qubit operation or operation is zoned
   }
 
-  const auto& qdmiSites = queryProperty<std::optional<std::vector<QDMI_Site>>>(
-      QDMI_OPERATION_PROPERTY_SITES, sites, params);
-
-  if (!qdmiSites.has_value()) {
+  const auto sitesOpt = getSites(sites, params);
+  if (!sitesOpt.has_value()) {
     return std::nullopt;
   }
 
-  if (qdmiSites->size() % 2 != 0) {
+  auto& sitesVec = *sitesOpt;
+  if (sitesVec.size() % 2 != 0) {
     return std::nullopt; // Invalid: odd number of sites
   }
 
   std::vector<std::pair<Site, Site>> pairs;
-  pairs.reserve(qdmiSites->size() / 2);
+  pairs.reserve(sitesVec.size() / 2);
 
-  for (size_t i = 0; i < qdmiSites->size(); i += 2) {
-    pairs.emplace_back(Site{Token{}, device_, (*qdmiSites)[i]},
-                       Site{Token{}, device_, (*qdmiSites)[i + 1]});
+  for (size_t i = 0; i < sitesVec.size(); i += 2) {
+    pairs.emplace_back(std::move(sitesVec[i]), std::move(sitesVec[i + 1]));
   }
 
   return pairs;
