@@ -431,7 +431,8 @@ public:
                                   const std::vector<double>& params = {}) const
           -> std::optional<std::vector<Site>>;
       /**
-       * @brief Get valid site pairs for two-qubit operations.
+       * @brief Returns the list of site pairs the local 2-qubit operation can
+       * be performed on.
        * @details For local 2-qubit operations, this function interprets the
        * returned list of sites by QDMI as site pairs according to the QDMI
        * specification. Hence, this function facilitates easier iteration over
@@ -529,7 +530,8 @@ public:
     /// @see QDMI_DEVICE_PROPERTY_SITES
     [[nodiscard]] auto getSites() const -> std::vector<Site>;
     /**
-     * @brief Get only qubit sites (non-zone sites).
+     * @brief Returns the list of regular sites (without zone sites) available
+     * on the device.
      * @details Filters all sites and only returns regular sites, i.e., where
      * `isZone()` yields `false`. These represent actual potential physical
      * qubit locations on the device lattice.
@@ -538,7 +540,8 @@ public:
      */
     [[nodiscard]] auto getRegularSites() const -> std::vector<Site>;
     /**
-     * @brief Get only zone sites.
+     * @brief Returns the list of zone sites (without regular sites) available
+     * on the device.
      * @details Filters all sites and only returns zone sites, i.e., where
      * `isZone()` yields `true`. These represent a zone, i.e., an extent where
      * zoned operations can be performed, not individual qubit locations.
