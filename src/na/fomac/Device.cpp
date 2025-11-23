@@ -61,6 +61,33 @@ auto calculateExtentFromSites(
                    .height = static_cast<uint64_t>(maxY - minY)}};
 }
 /**
+ * @brief Calculate the rectangular extent covering all given FoMaC site pairs.
+ * @param sitePairs is a vector of FoMaC site pairs
+ * @return the extent covering all sites in the pairs
+ */
+auto calculateExtentFromSites(
+    const std::vector<std::pair<fomac::FoMaC::Device::Site,
+                                fomac::FoMaC::Device::Site>>& sitePairs)
+    -> Device::Region {
+  auto minX = std::numeric_limits<int64_t>::max();
+  auto maxX = std::numeric_limits<int64_t>::min();
+  auto minY = std::numeric_limits<int64_t>::max();
+  auto maxY = std::numeric_limits<int64_t>::min();
+  for (const auto& [site1, site2] : sitePairs) {
+    const auto x1 = *site1.getXCoordinate();
+    const auto y1 = *site1.getYCoordinate();
+    const auto x2 = *site2.getXCoordinate();
+    const auto y2 = *site2.getYCoordinate();
+    minX = std::min({minX, x1, x2});
+    maxX = std::max({maxX, x1, x2});
+    minY = std::min({minY, y1, y2});
+    maxY = std::max({maxY, y1, y2});
+  }
+  return {.origin = {.x = minX, .y = minY},
+          .size = {.width = static_cast<uint64_t>(maxX - minX),
+                   .height = static_cast<uint64_t>(maxY - minY)}};
+}
+/**
  * @brief Device::Vector does not provide a hash function by default, this is
  * the replacement.
  * @param v is the vector to hash
@@ -505,13 +532,7 @@ auto FoMaC::Device::initOperationsFromDevice() -> bool {
           return false;
         }
 
-        std::vector<fomac::FoMaC::Device::Site> allSites;
-        allSites.reserve(sitePairsOpt->size() * 2);
-        for (const auto& [site1, site2] : *sitePairsOpt) {
-          allSites.push_back(site1);
-          allSites.push_back(site2);
-        }
-        const auto pairRegion = calculateExtentFromSites(allSites);
+        const auto pairRegion = calculateExtentFromSites(*sitePairsOpt);
 
         const auto& ir = op.getInteractionRadius();
         if (!ir.has_value()) {
