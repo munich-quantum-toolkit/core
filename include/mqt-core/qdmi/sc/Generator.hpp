@@ -31,8 +31,6 @@ namespace sc {
  * superconducting device configuration. This struct, including all its
  * sub-structs, implements functions to serialize and deserialize to and from
  * JSON using the nlohmann::json library.
- * @note All duration and length values are in multiples of the time unit and
- * the length unit, respectively.
  */
 struct Device {
   /// @brief The name of the device.
@@ -68,7 +66,7 @@ auto writeJSONSchema(const std::string& path) -> void;
  * @brief Parses the device configuration from an input stream.
  * @param is is the input stream containing the JSON representation of the
  * device configuration.
- * @returns The parsed device configuration as a Protobuf message.
+ * @returns The parsed device configuration as a @ref sc::Device object.
  * @throws std::runtime_error if the JSON cannot be parsed.
  */
 [[nodiscard]] auto readJSON(std::istream& is) -> Device;
@@ -76,7 +74,7 @@ auto writeJSONSchema(const std::string& path) -> void;
 /**
  * @brief Parses the device configuration from a JSON file.
  * @param path is the path to the JSON file containing the device configuration.
- * @returns The parsed device configuration as a Protobuf message.
+ * @returns The parsed device configuration as a @ref sc::Device object.
  * @throws std::runtime_error if the JSON file does not exist, or the JSON file
  * cannot be parsed.
  */
@@ -85,7 +83,7 @@ auto writeJSONSchema(const std::string& path) -> void;
 /**
  * @brief Writes a header file with the device configuration to the specified
  * output stream.
- * @param device is the protobuf representation of the device.
+ * @param device is a parsed and in-memory representation of the device.
  * @param os is the output stream to write the header file to.
  * @throws std::runtime_error if the file cannot be opened or written to.
  * @note This implementation only supports multi-qubit gates up to two
@@ -96,7 +94,7 @@ auto writeHeader(const Device& device, std::ostream& os) -> void;
 /**
  * @brief Writes a header file with the device configuration to the specified
  * path.
- * @param device is the protobuf representation of the device.
+ * @param device is a parsed and in-memory representation of the device.
  * @param path is the path to write the header file to.
  * @throws std::runtime_error if the file cannot be opened or written to.
  * @note This implementation only supports multi-qubit gates up to two
