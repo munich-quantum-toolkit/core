@@ -19,7 +19,7 @@ In order to generate benchmark data, MQT Core provides the `mqt-core-dd-eval` CM
 
 +++
 
-After running the target, you will see a `results_<your_argument>.json` file in your build directory that contains all the data collected during the benchmarking process. An exemplary `results_<your_argument>.json` file might look like this:
+After running the target, you will see a `results_<your_argument>.json` file in your build directory that contains all the data collected during the benchmarking process. An exemplary `results_<your_argument>.json` file might look like this (taken from the `eval` directory):
 
 ```{code-cell} ipython3
 import json
@@ -43,8 +43,7 @@ The MQT Core source code contains a script that can be used to compare the resul
 The script is located in `eval/dd_evaluation.py`.
 It uses PEP 723 inline script metadata to specify the script's dependencies.
 
-The comparison can be run from the command line via
-Examples of such runs are shown below.
+The comparison can be run from the command line via:
 
 ```{code-cell} ipython3
 ! ../eval/dd_evaluation.py ../eval/results_baseline.json ../eval/results_feature.json --factor=0.2 --only_changed
@@ -57,3 +56,5 @@ Examples of such runs are shown below.
 ```{code-cell} ipython3
 ! ../eval/dd_evaluation.py ../eval/results_baseline.json ../eval/results_feature.json --dd --algorithm=bv --num_qubits=1024
 ```
+
+This internally runs `uv run --script --quiet` on the respective benchmark script (including automatically installing any missing dependencies).
