@@ -36,27 +36,32 @@
 namespace sc {
 namespace {
 /**
- * @brief Populates all array fields in the device object with default values.
- * @param device is the device object to populate.
- * @note This is a recursive auxiliary function used by @ref writeJSONSchema.
+ * @brief Ensure array fields of a Device contain default entries.
+ *
+ * Ensures arrays that must not be empty have default elements; in particular,
+ * appends a default (empty) coupling to device.couplings.
+ *
+ * @param device Device instance whose array fields will be populated.
  */
 auto populateArrayFields(Device& device) -> void {
   device.couplings.emplace_back();
 }
 
 /**
- * @brief Writes the name from the device object.
- * @param device is the device object containing the name.
- * @param os is the output stream to write the name to.
+ * @brief Writes a C preprocessor macro that initializes a variable with the
+ * device's name.
+ *
+ * The macro emitted is `#define INITIALIZE_NAME(var) var = "<device.name>"`.
  */
 auto writeName(const Device& device, std::ostream& os) -> void {
   os << "#define INITIALIZE_NAME(var) var = \"" << device.name << "\"\n";
 }
 
 /**
- * @brief Writes the qubits number from the device object.
- * @param device is the device object containing the number of qubits.
- * @param os is the output stream to write the qubits number to.
+ * @brief Emits a C macro that initializes the device's qubit count.
+ *
+ * @param device Device whose `numQubits` value will be embedded in the macro.
+ * @param os Output stream to which the macro definition is written.
  */
 auto writeQubitsNum(const Device& device, std::ostream& os) -> void {
   os << "#define INITIALIZE_QUBITSNUM(var) var = " << device.numQubits
@@ -64,9 +69,16 @@ auto writeQubitsNum(const Device& device, std::ostream& os) -> void {
 }
 
 /**
- * @brief Writes the sites from the device object.
- * @param device is the device object containing the number of sites.
- * @param os is the output stream to write the sites to.
+ * @brief Generates a C preprocessor macro that initializes the device's qubit
+ * sites and coupling map.
+ *
+ * Writes a macro `INITIALIZE_SITES(var)` which clears `var`, appends
+ * `numQubits` unique sites (by index), and constructs a `_couplings` vector
+ * reserved to the number of couplings and populated with pairs of site pointers
+ * corresponding to `device.couplings`.
+ *
+ * @param device Device containing `numQubits` and `couplings`.
+ * @param os Output stream to which the macro definition is written.
  */
 auto writeSites(const Device& device, std::ostream& os) -> void {
   os << "#define INITIALIZE_SITES(var) var.clear()";
@@ -87,8 +99,12 @@ auto writeSites(const Device& device, std::ostream& os) -> void {
 }
 
 /**
- * @brief Writes the sites from the device object.
- * @param os is the output stream to write the sites to.
+ * @brief Emits a macro to initialize the device coupling map.
+ *
+ * Writes the C preprocessor macro `INITIALIZE_COUPLINGMAP(var)` which assigns
+ * `var = std::move(_couplings)`.
+ *
+ * @param os Output stream to write the macro definition to.
  */
 auto writeCouplingMap(const Device& /* unused */, std::ostream& os) -> void {
   os << "#define INITIALIZE_COUPLINGMAP(var) var = std::move(_couplings)\n";
@@ -110,6 +126,16 @@ auto writeJSONSchema(std::ostream& os) -> void {
   os << json;
 }
 
+/**
+ * @brief Write a default device JSON schema to the specified file path.
+ *
+ * Opens the file at `path` for writing and writes a JSON template representing
+ * a default Device configuration. The function closes the file on completion.
+ *
+ * @param path Filesystem path where the JSON template will be written.
+ * @throws std::runtime_error If the file at `path` cannot be opened for
+ * writing.
+ */
 auto writeJSONSchema(const std::string& path) -> void {
   // Write to a file
   std::ofstream ofs(path);
@@ -123,6 +149,16 @@ auto writeJSONSchema(const std::string& path) -> void {
   SPDLOG_INFO("JSON template written to {}", path);
 }
 
+/**
+ * @brief Parses a Device configuration from an input stream containing JSON.
+ *
+ * Reads JSON from the provided input stream and converts it into a Device.
+ *
+ * @param is Input stream that supplies the JSON representation of the Device.
+ * @return Device Device constructed from the parsed JSON.
+ * @throws std::runtime_error If JSON parsing fails; the exception message
+ * contains parser error details.
+ */
 [[nodiscard]] auto readJSON(std::istream& is) -> Device {
   // Read the device configuration from the input stream
   nlohmann::json json;
@@ -137,6 +173,15 @@ auto writeJSONSchema(const std::string& path) -> void {
   return json;
 }
 
+/**
+ * @brief Read a Device configuration from a JSON file.
+ *
+ * @param path Filesystem path to the JSON file containing the device
+ * configuration.
+ * @return Device Device parsed from the JSON file.
+ * @throws std::runtime_error If the file cannot be opened or if parsing the
+ * JSON fails.
+ */
 [[nodiscard]] auto readJSON(const std::string& path) -> Device {
   // Read the device configuration from a JSON file
   std::ifstream ifs(path);
@@ -148,6 +193,17 @@ auto writeJSONSchema(const std::string& path) -> void {
   return device;
 }
 
+/**
+ * @brief Writes a C++ header snippet that initializes the provided Device as C
+ * macros.
+ *
+ * Writes macros defining the device name, qubit count, site initializers, and
+ * coupling map to the given output stream; the header begins with a pragma once
+ * guard.
+ *
+ * @param device Device to serialize into header macros.
+ * @param os Output stream to write the header content to.
+ */
 auto writeHeader(const Device& device, std::ostream& os) -> void {
   os << "#pragma once\n\n";
   writeName(device, os);
@@ -156,6 +212,16 @@ auto writeHeader(const Device& device, std::ostream& os) -> void {
   writeCouplingMap(device, os);
 }
 
+/**
+ * @brief Write a C++ header file that defines macros to initialize the given
+ * Device.
+ *
+ * @param device Device to serialize into initialization macros (name, qubit
+ * sites, coupling map).
+ * @param path Filesystem path where the header will be created/overwritten.
+ * @throws std::runtime_error if the file at `path` cannot be opened for
+ * writing.
+ */
 auto writeHeader(const Device& device, const std::string& path) -> void {
   std::ofstream ofs(path);
   if (!ofs.good()) {

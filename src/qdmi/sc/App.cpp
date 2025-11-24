@@ -24,8 +24,9 @@
 
 namespace {
 /**
- * Prints the usage information for the command line tool.
- * @param programName is the name of the program executable.
+ * @brief Writes usage information and available commands and options to stdout.
+ *
+ * @param programName Program executable name inserted into the Usage line.
  */
 auto printUsage(const std::string& programName) -> void {
   std::cout
@@ -111,7 +112,9 @@ auto printGenerateUsage(const std::string& programName) -> void {
 }
 
 /**
- * Prints the version information for the command line tool.
+ * @brief Writes the tool's version string to standard output.
+ *
+ * Prints the program name and the embedded MQT core version to stdout.
  */
 auto printVersion() -> void {
   // NOLINTNEXTLINE(misc-include-cleaner)
@@ -159,11 +162,17 @@ struct GenerateArguments {
 };
 
 /**
- * Parses the command line arguments and returns an Arguments struct.
- * @param args is the vector of command line arguments.
- * @returns the parsed arguments as an Arguments struct and an index indicating
- * the position of the first sub-command argument.
- * @throws std::invalid_argument if the value after an option is missing.
+ * @brief Parse top-level command-line options and locate the chosen
+ * sub-command.
+ *
+ * @param args Vector of command-line tokens (typically argv converted to
+ * std::string), where args[0] is the program name.
+ * @return std::pair<Arguments, size_t> The first element is the parsed
+ * top-level Arguments; the second element is the index in `args` of the
+ * detected sub-command token (the first argument after top-level options). If
+ * no sub-command is present, the returned index will be `args.size() + 1`.
+ * @throws std::invalid_argument If an unknown top-level option or token is
+ * encountered.
  */
 auto parseArguments(const std::vector<std::string>& args)
     -> std::pair<Arguments, size_t> {
@@ -194,11 +203,15 @@ auto parseArguments(const std::vector<std::string>& args)
 }
 
 /**
- * Parses the command line arguments for the schema command and returns a
- * SchemaArguments struct.
- * @param args is the vector of command line arguments.
- * @param i is the index to the first sub-command argument within @p args
- * @return Parsed schema arguments as a SchemaArguments struct.
+ * @brief Parse arguments for the "schema" sub-command.
+ *
+ * Parses options for the schema command and produces a SchemaArguments value
+ * describing whether help was requested and which output file (if any) was set.
+ *
+ * @param args Vector of all command-line arguments.
+ * @param i Index of the first argument belonging to the schema sub-command.
+ * @return SchemaArguments Struct with `help` set if help was requested and
+ *         `outputFile` containing the path provided with `-o|--output`, if any.
  */
 auto parseSchemaArguments(const std::vector<std::string>& args, size_t i)
     -> SchemaArguments {
@@ -220,11 +233,13 @@ auto parseSchemaArguments(const std::vector<std::string>& args, size_t i)
 }
 
 /**
- * Parses the command line arguments for the validate command and returns a
- * ValidateArguments struct.
- * @param args is the vector of command line arguments.
- * @param i is the index to the first sub-command argument within @p args
- * @return Parsed validate arguments as a ValidateArguments struct.
+ * @brief Parses arguments for the "validate" subcommand.
+ *
+ * @param args Vector of command-line arguments.
+ * @param i Index of the first validate subcommand argument within @p args.
+ * @return ValidateArguments Parsed flags and optional JSON input file path:
+ * `help` is set if -h/--help was present, `jsonFile` contains the positional
+ * JSON file if provided.
  */
 auto parseValidateArguments(const std::vector<std::string>& args, size_t i)
     -> ValidateArguments {
@@ -241,11 +256,21 @@ auto parseValidateArguments(const std::vector<std::string>& args, size_t i)
 }
 
 /**
- * Parses the command line arguments for the generate command and returns a
- * GenerateArguments struct.
- * @param args is the vector of command line arguments.
- * @param i is the index to the first sub-command argument within @p args
- * @return Parsed generate arguments as a GenerateArguments struct.
+ * Parse arguments for the "generate" subcommand.
+ *
+ * Recognizes the following arguments:
+ * - `-h`, `--help`: sets the help flag.
+ * - `-o <file>`, `--output <file>`: sets the output header file path.
+ * - `<jsonFile>` (positional): sets the input JSON file; if omitted, input is
+ * read from stdin.
+ *
+ * @param args Vector of command-line arguments.
+ * @param i Index of the first argument belonging to the subcommand within
+ * `args`.
+ * @return GenerateArguments Structure with `help`, optional `outputFile`, and
+ * optional `jsonFile` populated.
+ * @throws std::invalid_argument If an `-o`/`--output` option is provided
+ * without a following value.
  */
 auto parseGenerateArguments(const std::vector<std::string>& args, size_t i)
     -> GenerateArguments {
@@ -306,12 +331,17 @@ auto executeSchemaCommand(const std::string& progName,
 }
 
 /**
- * Executes the validate command, validating a JSON file or JSON string from
- * stdin.
- * @param progName is the name of the program executable.
- * @param argVec is the vector of command line arguments.
- * @param i is the index to the first sub-command argument within @p argVec
- * @return 0 on success, 1 on error.
+ * @brief Run the "validate" subcommand to validate a JSON input.
+ *
+ * Parses validate-specific arguments, prints subcommand usage if the help
+ * flag is set, and validates JSON read from the provided file path or from
+ * standard input.
+ *
+ * @param progName Name of the program executable (used for usage output).
+ * @param argVec Full command-line argument vector.
+ * @param i Index of the first argument belonging to the validate subcommand.
+ * @return int `0` on successful validation or when help was printed, `1` on
+ * error.
  */
 auto executeValidateCommand(const std::string& progName,
                             const std::vector<std::string>& argVec,
@@ -338,12 +368,17 @@ auto executeValidateCommand(const std::string& progName,
 }
 
 /**
- * Executes the generate command, generating a header file from a JSON file or
- * JSON string from stdin.
- * @param progName is the name of the program executable.
- * @param argVec is the vector of command line arguments.
- * @param i is the index to the first sub-command argument within @p argVec
- * @return 0 on success, 1 on error.
+ * @brief Generates a C++ header from a device JSON specification (file or
+ * stdin).
+ *
+ * Parses generate-specific arguments from argVec starting at index i, reads a
+ * sc::Device from the specified JSON file or from stdin, and writes a header to
+ * the specified output file or to stdout.
+ *
+ * @param progName Program executable name (used for usage/help output).
+ * @param argVec Full command-line argument vector.
+ * @param i Index in argVec of the first generate sub-command argument.
+ * @return int 0 on success, 1 on error.
  */
 auto executeGenerateCommand(const std::string& progName,
                             const std::vector<std::string>& argVec,
@@ -386,15 +421,16 @@ auto executeGenerateCommand(const std::string& progName,
 } // namespace
 
 /**
- * @brief Main function that parses command-line-arguments and processes the
- * JSON.
- * @details This function handles the command line arguments, checks for help
- * and version flags, and processes the JSON file or schema file as specified by
- * the user. Either a JSON file or a schema file must be provided. If no output
- * file is specified, the JSON file is parsed but no header file is generated.
+ * @brief Parses command-line arguments, dispatches the selected subcommand
+ * (schema, validate, generate), and performs the requested operation.
  *
- * @param argc is the number of command line arguments.
- * @param argv is the array of command line arguments.
+ * The function handles global flags (help, version), prints usage/version
+ * information when requested, and forwards remaining arguments to the
+ * appropriate subcommand executor which performs IO and error handling.
+ *
+ * @param argc Number of command-line arguments.
+ * @param argv Array of command-line argument strings.
+ * @return int Exit code: `0` on success, `1` on error.
  */
 int main(int argc, char* argv[]) {
   std::vector<std::string> argVec;
