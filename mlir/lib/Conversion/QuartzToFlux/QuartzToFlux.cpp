@@ -702,7 +702,7 @@ struct ConvertQuartzRXOp final : StatefulOpConversionPattern<quartz::RXOp> {
   using StatefulOpConversionPattern::StatefulOpConversionPattern;
 
   LogicalResult
-  matchAndRewrite(quartz::RXOp op, OpAdaptor adaptor,
+  matchAndRewrite(quartz::RXOp op, OpAdaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
     return convertOneTargetOneParameter<flux::RXOp>(op, rewriter, getState());
   }
@@ -724,7 +724,7 @@ struct ConvertQuartzRYOp final : StatefulOpConversionPattern<quartz::RYOp> {
   using StatefulOpConversionPattern::StatefulOpConversionPattern;
 
   LogicalResult
-  matchAndRewrite(quartz::RYOp op, OpAdaptor adaptor,
+  matchAndRewrite(quartz::RYOp op, OpAdaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
     return convertOneTargetOneParameter<flux::RYOp>(op, rewriter, getState());
   }
@@ -746,7 +746,7 @@ struct ConvertQuartzRZOp final : StatefulOpConversionPattern<quartz::RZOp> {
   using StatefulOpConversionPattern::StatefulOpConversionPattern;
 
   LogicalResult
-  matchAndRewrite(quartz::RZOp op, OpAdaptor adaptor,
+  matchAndRewrite(quartz::RZOp op, OpAdaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
     return convertOneTargetOneParameter<flux::RZOp>(op, rewriter, getState());
   }
@@ -768,7 +768,7 @@ struct ConvertQuartzPOp final : StatefulOpConversionPattern<quartz::POp> {
   using StatefulOpConversionPattern::StatefulOpConversionPattern;
 
   LogicalResult
-  matchAndRewrite(quartz::POp op, OpAdaptor adaptor,
+  matchAndRewrite(quartz::POp op, OpAdaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
     return convertOneTargetOneParameter<flux::POp>(op, rewriter, getState());
   }
