@@ -7,7 +7,7 @@
 # Licensed under the MIT License
 
 [build-system]
-requires = ["scikit-build-core>=0.11.1", "setuptools-scm>=8.2", "pybind11>=3.0.0"]
+requires = ["scikit-build-core>=0.11.6", "setuptools-scm>=9.2.2", "pybind11>=3.0.1"]
 build-backend = "scikit_build_core.build"
 
 [project]
@@ -145,15 +145,13 @@ ignore = [
 ]
 
 
-[tool.pytest.ini_options]
-minversion = "7.2"
+[tool.pytest]
+minversion = "9.0"
+strict = true
 addopts = [
   "-ra",
-  "--strict-markers",
-  "--strict-config",
   "--numprocesses=auto", # Automatically use all available CPU cores for parallel testing
 ]
-xfail_strict = true
 filterwarnings = [
   "error",
   'ignore:\s.*Pyarrow.*:DeprecationWarning:',
@@ -205,7 +203,9 @@ ignore_missing_imports = true
 line-length = 120
 namespace-packages = ["mqt"]
 preview = true
+fix = true
 unsafe-fixes = true
+show-fixes = true
 src = ["python"]
 
 [tool.ruff.lint]
@@ -213,11 +213,8 @@ select = ["ALL"]
 ignore = [
     "C90",     # <...> too complex
     "COM812",  # Conflicts with formatter
-    "CPY001",  # Missing copyright notice at top of file
-    "ISC001",  # Conflicts with formatter
     "PLR09",   # Too many <...>
     "PLR2004", # Magic value used in comparison
-    "PLC0415", # Import should be at top of file
     "S101",    # Use of assert detected
     "S404",    # `subprocess` module is possibly insecure
     "TID252"   # Prefer absolute imports over relative imports from parent modules
@@ -247,6 +244,9 @@ known-first-party = ["mqt.core"]
 
 [tool.ruff.lint.pydocstyle]
 convention = "google"
+
+[tool.ruff.format]
+docstring-code-format = true
 
 
 [tool.typos]
@@ -304,37 +304,37 @@ mqt-core = { workspace = true }
 
 [dependency-groups]
 build = [
-  "pybind11>=3.0.0",
-  "scikit-build-core>=0.11.1",
-  "setuptools-scm>=8.2",
+  "pybind11>=3.0.1",
+  "scikit-build-core>=0.11.6",
+  "setuptools-scm>=9.2.2",
 ]
 docs = [
-  "furo>=2024.8.6",
-  "myst-nb>=1.2.0",
-  "setuptools-scm>=8.2",
-  "sphinx-autoapi>=3.6.0",
+  "furo>=2025.09.25",
+  "myst-nb>=1.3.0",
+  "setuptools-scm>=9.2.2",
+  "sphinx-autoapi>=3.6.1",
   "sphinx-copybutton>=0.5.2",
   "sphinx-design>=0.6.1",
-  "sphinxcontrib-bibtex>=2.6.3",
+  "sphinxcontrib-bibtex>=2.6.5",
   "sphinxcontrib-svg2pdfconverter>=1.3.0",
-  "sphinxext-opengraph>=0.10.0",
+  "sphinxext-opengraph>=0.13.0",
   "pandas[output-formatting]>=2.1.2",
   "pandas[output-formatting]>=2.2.3; python_version >= '3.13'",
   "pandas[output-formatting]>=2.3.3; python_version >= '3.14'",
   "qiskit[qasm3-import,visualization]>=1.0.0",
-  "openqasm-pygments>=0.1.2",
+  "openqasm-pygments>=0.2.0",
   "breathe>=4.36.0",
-  "graphviz>=0.20.3",
+  "graphviz>=0.21.0",
   "sphinx>=8.1.3",
   "sphinx>=8.2.3; python_version >= '3.11'",
   "mlir-pygments>=1.0.0",
 ]
 test = [
-  "pytest>=8.3.5",
+  "pytest>=9.0.1",
   "pytest-console-scripts>=1.4.1",
-  "pytest-cov>=6.1.1",
-  "pytest-sugar>=1.0.0",
-  "pytest-xdist>=3.7.0",
+  "pytest-cov>=7.0.0",
+  "pytest-sugar>=1.1.1",
+  "pytest-xdist>=3.8.0",
   "pandas[output-formatting]>=2.1.2",
   "pandas[output-formatting]>=2.2.3; python_version >= '3.13'",
   "pandas[output-formatting]>=2.3.3; python_version >= '3.14'",
@@ -344,6 +344,9 @@ test = [
 ]
 dev = [
   {include-group = "build"},
-  {include-group = "docs"},
   {include-group = "test"},
+  "lit>=18.1.8",
+  "nox>=2025.11.12",
+  "ruff>=0.14.6",
+  "ty>=0.0.1a27",
 ]
