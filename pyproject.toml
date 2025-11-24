@@ -7,7 +7,7 @@
 # Licensed under the MIT License
 
 [build-system]
-requires = ["scikit-build-core>=0.11.1", "setuptools-scm>=8.2", "pybind11>=3.0.0"]
+requires = ["scikit-build-core>=0.11.6", "setuptools-scm>=9.2.2", "pybind11>=3.0.1"]
 build-backend = "scikit_build_core.build"
 
 [project]
@@ -304,14 +304,14 @@ mqt-core = { workspace = true }
 
 [dependency-groups]
 build = [
-  "pybind11>=3.0.0",
-  "scikit-build-core>=0.11.1",
-  "setuptools-scm>=8.2",
+  "pybind11>=3.0.1",
+  "scikit-build-core>=0.11.6",
+  "setuptools-scm>=9.2.2",
 ]
 docs = [
   "furo>=2024.8.6",
   "myst-nb>=1.2.0",
-  "setuptools-scm>=8.2",
+  "setuptools-scm>=9.2.2",
   "sphinx-autoapi>=3.6.0",
   "sphinx-copybutton>=0.5.2",
   "sphinx-design>=0.6.1",
