@@ -423,13 +423,9 @@ public:
                         const std::vector<double>& params = {}) const
           -> std::optional<double>;
       /// @see QDMI_OPERATION_PROPERTY_ISZONED
-      [[nodiscard]] auto isZoned(const std::vector<Site>& sites = {},
-                                 const std::vector<double>& params = {}) const
-          -> bool;
+      [[nodiscard]] auto isZoned() const -> bool;
       /// @see QDMI_OPERATION_PROPERTY_SITES
-      [[nodiscard]] auto getSites(const std::vector<Site>& sites = {},
-                                  const std::vector<double>& params = {}) const
-          -> std::optional<std::vector<Site>>;
+      [[nodiscard]] auto getSites() const -> std::optional<std::vector<Site>>;
       /**
        * @brief Returns the list of site pairs the local 2-qubit operation can
        * be performed on.
@@ -437,15 +433,11 @@ public:
        * returned list of sites by QDMI as site pairs according to the QDMI
        * specification. Hence, this function facilitates easier iteration over
        * supported site pairs.
-       * @param sites is an optional vector of sites for the query.
-       * @param params is an optional vector of parameters for the query.
        * @return Optional vector of site pairs if this is a local 2-qubit
        * operation, std::nullopt otherwise.
        * @see QDMI_OPERATION_PROPERTY_SITES
        */
-      [[nodiscard]] auto
-      getSitePairs(const std::vector<Site>& sites = {},
-                   const std::vector<double>& params = {}) const
+      [[nodiscard]] auto getSitePairs() const
           -> std::optional<std::vector<std::pair<Site, Site>>>;
       /// @see QDMI_OPERATION_PROPERTY_MEANSHUTTLINGSPEED
       [[nodiscard]] auto

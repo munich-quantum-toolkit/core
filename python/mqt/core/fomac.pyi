@@ -75,15 +75,11 @@ class Device:
             """Returns the blocking radius of the operation."""
         def idling_fidelity(self, sites: Iterable[Device.Site] = ..., params: Iterable[float] = ...) -> float | None:
             """Returns the idling fidelity of the operation."""
-        def is_zoned(self, sites: Iterable[Device.Site] = ..., params: Iterable[float] = ...) -> bool:
+        def is_zoned(self) -> bool:
             """Returns whether the operation is zoned."""
-        def sites(
-            self, sites: Iterable[Device.Site] = ..., params: Iterable[float] = ...
-        ) -> Iterable[Device.Site] | None:
+        def sites(self) -> Iterable[Device.Site] | None:
             """Returns the list of sites the operation can be performed on."""
-        def site_pairs(
-            self, sites: Iterable[Device.Site] = ..., params: Iterable[float] = ...
-        ) -> Iterable[tuple[Device.Site, Device.Site]] | None:
+        def site_pairs(self) -> Iterable[tuple[Device.Site, Device.Site]] | None:
             """Returns the list of site pairs the local 2-qubit operation can be performed on."""
         def mean_shuttling_speed(self, sites: Iterable[Device.Site] = ..., params: Iterable[float] = ...) -> int | None:
             """Returns the mean shuttling speed of the operation."""

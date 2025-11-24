@@ -90,15 +90,9 @@ PYBIND11_MODULE(MQT_CORE_MODULE_NAME, m, py::mod_gil_not_used()) {
                 &fomac::FoMaC::Device::Operation::getIdlingFidelity,
                 "sites"_a = std::vector<fomac::FoMaC::Device::Site>{},
                 "params"_a = std::vector<double>{});
-  operation.def("is_zoned", &fomac::FoMaC::Device::Operation::isZoned,
-                "sites"_a = std::vector<fomac::FoMaC::Device::Site>{},
-                "params"_a = std::vector<double>{});
-  operation.def("sites", &fomac::FoMaC::Device::Operation::getSites,
-                "sites"_a = std::vector<fomac::FoMaC::Device::Site>{},
-                "params"_a = std::vector<double>{});
-  operation.def("site_pairs", &fomac::FoMaC::Device::Operation::getSitePairs,
-                "sites"_a = std::vector<fomac::FoMaC::Device::Site>{},
-                "params"_a = std::vector<double>{});
+  operation.def("is_zoned", &fomac::FoMaC::Device::Operation::isZoned);
+  operation.def("sites", &fomac::FoMaC::Device::Operation::getSites);
+  operation.def("site_pairs", &fomac::FoMaC::Device::Operation::getSitePairs);
   operation.def("mean_shuttling_speed",
                 &fomac::FoMaC::Device::Operation::getMeanShuttlingSpeed,
                 "sites"_a = std::vector<fomac::FoMaC::Device::Site>{},
