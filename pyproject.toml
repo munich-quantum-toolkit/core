@@ -296,6 +296,12 @@ reinstall-package = ["mqt-core"]
 [tool.uv.sources]
 mqt-core = { workspace = true }
 
+
+[tool.ty.terminal]
+# Error if ty emits any warning-level diagnostics.
+error-on-warning = true
+
+
 [dependency-groups]
 build = [
   "pybind11>=3.0.1",
