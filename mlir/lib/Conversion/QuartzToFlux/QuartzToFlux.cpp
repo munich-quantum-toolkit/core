@@ -731,6 +731,50 @@ struct ConvertQuartzRYOp final : StatefulOpConversionPattern<quartz::RYOp> {
 };
 
 /**
+ * @brief Converts quartz.rz to flux.rz
+ *
+ * @par Example:
+ * ```mlir
+ * quartz.rz(%theta) %q : !quartz.qubit
+ * ```
+ * is converted to
+ * ```mlir
+ * %q_out = flux.rz(%theta) %q_in : !flux.qubit -> !flux.qubit
+ * ```
+ */
+struct ConvertQuartzRZOp final : StatefulOpConversionPattern<quartz::RZOp> {
+  using StatefulOpConversionPattern::StatefulOpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(quartz::RZOp op, OpAdaptor adaptor,
+                  ConversionPatternRewriter& rewriter) const override {
+    return convertOneTargetOneParameter<flux::RZOp>(op, rewriter, getState());
+  }
+};
+
+/**
+ * @brief Converts quartz.p to flux.p
+ *
+ * @par Example:
+ * ```mlir
+ * quartz.p(%theta) %q : !quartz.qubit
+ * ```
+ * is converted to
+ * ```mlir
+ * %q_out = flux.p(%theta) %q_in : !flux.qubit -> !flux.qubit
+ * ```
+ */
+struct ConvertQuartzPOp final : StatefulOpConversionPattern<quartz::POp> {
+  using StatefulOpConversionPattern::StatefulOpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(quartz::POp op, OpAdaptor adaptor,
+                  ConversionPatternRewriter& rewriter) const override {
+    return convertOneTargetOneParameter<flux::POp>(op, rewriter, getState());
+  }
+};
+
+/**
  * @brief Converts quartz.u2 to flux.u2
  *
  * @par Example:
@@ -979,15 +1023,16 @@ struct QuartzToFlux final : impl::QuartzToFluxBase<QuartzToFlux> {
     target.addLegalDialect<FluxDialect>();
 
     // Register operation conversion patterns with state tracking
-    patterns.add<
-        ConvertQuartzAllocOp, ConvertQuartzDeallocOp, ConvertQuartzStaticOp,
-        ConvertQuartzMeasureOp, ConvertQuartzResetOp, ConvertQuartzIdOp,
-        ConvertQuartzXOp, ConvertQuartzYOp, ConvertQuartzZOp, ConvertQuartzHOp,
-        ConvertQuartzSOp, ConvertQuartzSdgOp, ConvertQuartzTOp,
-        ConvertQuartzTdgOp, ConvertQuartzSXOp, ConvertQuartzSXdgOp,
-        ConvertQuartzRXOp, ConvertQuartzRYOp, ConvertQuartzU2Op,
-        ConvertQuartzSWAPOp, ConvertQuartzCtrlOp, ConvertQuartzYieldOp>(
-        typeConverter, context, &state);
+    patterns.add<ConvertQuartzAllocOp, ConvertQuartzDeallocOp,
+                 ConvertQuartzStaticOp, ConvertQuartzMeasureOp,
+                 ConvertQuartzResetOp, ConvertQuartzIdOp, ConvertQuartzXOp,
+                 ConvertQuartzYOp, ConvertQuartzZOp, ConvertQuartzHOp,
+                 ConvertQuartzSOp, ConvertQuartzSdgOp, ConvertQuartzTOp,
+                 ConvertQuartzTdgOp, ConvertQuartzSXOp, ConvertQuartzSXdgOp,
+                 ConvertQuartzRXOp, ConvertQuartzRYOp, ConvertQuartzRZOp,
+                 ConvertQuartzPOp, ConvertQuartzU2Op, ConvertQuartzSWAPOp,
+                 ConvertQuartzCtrlOp, ConvertQuartzYieldOp>(typeConverter,
+                                                            context, &state);
 
     // Conversion of quartz types in func.func signatures
     // Note: This currently has limitations with signature changes

@@ -513,6 +513,56 @@ def RYOp : QuartzOp<"ry", traits = [UnitaryOpInterface, OneTargetOneParameter]> 
     ];
 }
 
+def RZOp : QuartzOp<"rz", traits = [UnitaryOpInterface, OneTargetOneParameter]> {
+    let summary = "Apply an RZ gate to a qubit";
+    let description = [{
+        Applies an RZ gate to a qubit, modifying it in place.
+
+        Example:
+        ```mlir
+        quartz.rz(%theta) %q : !flux.qubit
+        ```
+    }];
+
+    let arguments = (ins Arg<QubitType, "the target qubit", [MemRead, MemWrite]>:$qubit_in,
+                     Arg<F64, "the rotation angle theta in radians", [MemRead]>:$theta);
+    let assemblyFormat = "`(` $theta `)` $qubit_in attr-dict";
+
+    let extraClassDeclaration = [{
+        DenseElementsAttr tryGetStaticMatrix();
+        static StringRef getBaseSymbol() { return "rz"; }
+    }];
+
+    let builders = [
+        OpBuilder<(ins "Value":$qubit_in, "const std::variant<double, Value>&":$theta)>
+    ];
+}
+
+def POp : QuartzOp<"p", traits = [UnitaryOpInterface, OneTargetOneParameter]> {
+    let summary = "Apply a P gate to a qubit";
+    let description = [{
+        Applies a P gate to a qubit, modifying it in place.
+
+        Example:
+        ```mlir
+        quartz.p(%theta) %q : !flux.qubit
+        ```
+    }];
+
+    let arguments = (ins Arg<QubitType, "the target qubit", [MemRead, MemWrite]>:$qubit_in,
+                     Arg<F64, "the rotation angle theta in radians", [MemRead]>:$theta);
+    let assemblyFormat = "`(` $theta `)` $qubit_in attr-dict";
+
+    let extraClassDeclaration = [{
+        DenseElementsAttr tryGetStaticMatrix();
+        static StringRef getBaseSymbol() { return "p"; }
+    }];
+
+    let builders = [
+        OpBuilder<(ins "Value":$qubit_in, "const std::variant<double, Value>&":$theta)>
+    ];
+}
+
 def U2Op : QuartzOp<"u2", traits = [UnitaryOpInterface, OneTargetTwoParameter]> {
     let summary = "Apply a U2 gate to a qubit";
     let description = [{

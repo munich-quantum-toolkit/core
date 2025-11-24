@@ -522,6 +522,38 @@ QIRProgramBuilder::cry(const std::variant<double, Value>& theta,
   return *this;
 }
 
+// RZOp
+
+QIRProgramBuilder&
+QIRProgramBuilder::rz(const std::variant<double, Value>& theta,
+                      const Value qubit) {
+  createOneTargetOneParameter(theta, qubit, QIR_RZ);
+  return *this;
+}
+
+QIRProgramBuilder&
+QIRProgramBuilder::crz(const std::variant<double, Value>& theta,
+                       const Value control, const Value target) {
+  createControlledOneTargetOneParameter(theta, control, target, QIR_CRZ);
+  return *this;
+}
+
+// POp
+
+QIRProgramBuilder&
+QIRProgramBuilder::p(const std::variant<double, Value>& theta,
+                     const Value qubit) {
+  createOneTargetOneParameter(theta, qubit, QIR_P);
+  return *this;
+}
+
+QIRProgramBuilder&
+QIRProgramBuilder::cp(const std::variant<double, Value>& theta,
+                      const Value control, const Value target) {
+  createControlledOneTargetOneParameter(theta, control, target, QIR_CP);
+  return *this;
+}
+
 // U2Op
 
 QIRProgramBuilder&

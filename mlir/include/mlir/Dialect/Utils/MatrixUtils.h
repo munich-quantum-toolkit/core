@@ -111,17 +111,35 @@ inline DenseElementsAttr getMatrixSXdg(MLIRContext* ctx) {
 inline DenseElementsAttr getMatrixRX(MLIRContext* ctx, double theta) {
   const auto& complexType = ComplexType::get(Float64Type::get(ctx));
   const auto& type = RankedTensorType::get({2, 2}, complexType);
-  const std::complex<double> m00 = std::cos(theta / 2) + 0i;
-  const std::complex<double> m01 = -1i * std::sin(theta / 2);
+  const std::complex<double> m00 = std::cos(theta / 2.0) + 0i;
+  const std::complex<double> m01 = -1i * std::sin(theta / 2.0);
   return DenseElementsAttr::get(type, {m00, m01, m01, m00});
 }
 
 inline DenseElementsAttr getMatrixRY(MLIRContext* ctx, double theta) {
   const auto& complexType = ComplexType::get(Float64Type::get(ctx));
   const auto& type = RankedTensorType::get({2, 2}, complexType);
-  const std::complex<double> m00 = std::cos(theta / 2) + 0i;
-  const std::complex<double> m01 = -std::sin(theta / 2) + 0i;
+  const std::complex<double> m00 = std::cos(theta / 2.0) + 0i;
+  const std::complex<double> m01 = -std::sin(theta / 2.0) + 0i;
   return DenseElementsAttr::get(type, {m00, m01, -m01, m00});
+}
+
+inline DenseElementsAttr getMatrixRZ(MLIRContext* ctx, double theta) {
+  const auto& complexType = ComplexType::get(Float64Type::get(ctx));
+  const auto& type = RankedTensorType::get({2, 2}, complexType);
+  const std::complex<double> m00 = std::exp(-1i * theta / 2.0);
+  const std::complex<double> m01 = 0.0 + 0i;
+  const std::complex<double> m11 = std::exp(1i * theta / 2.0);
+  return DenseElementsAttr::get(type, {m00, m01, m01, m11});
+}
+
+inline DenseElementsAttr getMatrixP(MLIRContext* ctx, double theta) {
+  const auto& complexType = ComplexType::get(Float64Type::get(ctx));
+  const auto& type = RankedTensorType::get({2, 2}, complexType);
+  const std::complex<double> m00 = 1.0 + 0i;
+  const std::complex<double> m01 = 0.0 + 0i;
+  const std::complex<double> m11 = std::exp(1i * theta);
+  return DenseElementsAttr::get(type, {m00, m01, m01, m11});
 }
 
 inline DenseElementsAttr getMatrixU2(MLIRContext* ctx, double phi,

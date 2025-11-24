@@ -942,6 +942,126 @@ public:
                              ValueRange controls, Value target);
 
   /**
+   * @brief Apply an RZ gate to a qubit
+   *
+   * @param theta Rotation angle in radians
+   * @param qubit Target qubit
+   * @return Reference to this builder for method chaining
+   *
+   * @par Example:
+   * ```c++
+   * builder.rz(1.0, q);
+   * ```
+   * ```mlir
+   * quartz.rz(%theta) %q : !quartz.qubit
+   * ```
+   */
+  QuartzProgramBuilder& rz(const std::variant<double, Value>& theta,
+                           Value qubit);
+
+  /**
+   * @brief Apply a CRZ gate
+   *
+   * @param theta Rotation angle in radians
+   * @param control Control qubit
+   * @param target Target qubit
+   * @return Reference to this builder for method chaining
+   *
+   * @par Example:
+   * ```c++
+   * builder.crz(1.0, q0, q1);
+   * ```
+   * ```mlir
+   * quartz.ctrl(%q0) {
+   *   quartz.rz(%theta) %q1 : !quartz.qubit
+   * }
+   * ```
+   */
+  QuartzProgramBuilder& crz(const std::variant<double, Value>& theta,
+                            Value control, Value target);
+
+  /**
+   * @brief Apply a multi-controlled RZ gate
+   *
+   * @param theta Rotation angle in radians
+   * @param controls Control qubits
+   * @param target Target qubit
+   * @return Reference to this builder for method chaining
+   *
+   * @par Example:
+   * ```c++
+   * builder.mcrz(1.0, {q0, q1}, q2);
+   * ```
+   * ```mlir
+   * quartz.ctrl(%q0, %q1) {
+   *   quartz.rz(%theta) %q2 : !quartz.qubit
+   * }
+   * ```
+   */
+  QuartzProgramBuilder& mcrz(const std::variant<double, Value>& theta,
+                             ValueRange controls, Value target);
+
+  /**
+   * @brief Apply a P gate to a qubit
+   *
+   * @param theta Rotation angle in radians
+   * @param qubit Target qubit
+   * @return Reference to this builder for method chaining
+   *
+   * @par Example:
+   * ```c++
+   * builder.p(1.0, q);
+   * ```
+   * ```mlir
+   * quartz.p(%theta) %q : !quartz.qubit
+   * ```
+   */
+  QuartzProgramBuilder& p(const std::variant<double, Value>& theta,
+                          Value qubit);
+
+  /**
+   * @brief Apply a controlled P gate
+   *
+   * @param theta Rotation angle in radians
+   * @param control Control qubit
+   * @param target Target qubit
+   * @return Reference to this builder for method chaining
+   *
+   * @par Example:
+   * ```c++
+   * builder.cp(1.0, q0, q1);
+   * ```
+   * ```mlir
+   * quartz.ctrl(%q0) {
+   *   quartz.p(%theta) %q1 : !quartz.qubit
+   * }
+   * ```
+   */
+  QuartzProgramBuilder& cp(const std::variant<double, Value>& theta,
+                           Value control, Value target);
+
+  /**
+   * @brief Apply a multi-controlled P gate
+   *
+   * @param theta Rotation angle in radians
+   * @param controls Control qubits
+   * @param target Target qubit
+   * @return Reference to this builder for method chaining
+   *
+   * @par Example:
+   * ```c++
+   * builder.mcp(1.0, {q0, q1}, q2);
+   * ```
+   * ```mlir
+   * quartz.ctrl(%q0, %q1) {
+   *   quartz.p(%theta) %q2 : !quartz.qubit
+   * }
+   * ```
+   */
+  QuartzProgramBuilder& mcp(const std::variant<double, Value>& theta,
+                            ValueRange controls, Value target);
+
+  /**
    * @brief Apply a U2 gate to a qubit
    *
    * @param phi Rotation angle in radians

@@ -1126,6 +1126,96 @@ struct ConvertQuartzRYQIR final : StatefulOpConversionPattern<RYOp> {
 };
 
 /**
+ * @brief Converts quartz.rz operation to QIR rz
+ *
+ * @par Example:
+ * ```mlir
+ * quartz.rz(%theta) %q : !quartz.qubit
+ * ```
+ * is converted to
+ * ```mlir
+ * llvm.call @__quantum__qis__rz__body(%q, %theta) : (!llvm.ptr, f64) -> ()
+ * ```
+ */
+struct ConvertQuartzRZQIR final : StatefulOpConversionPattern<RZOp> {
+  using StatefulOpConversionPattern::StatefulOpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(RZOp op, OpAdaptor adaptor,
+                  ConversionPatternRewriter& rewriter) const override {
+    auto& state = getState();
+
+    // Query state for modifier information
+    const auto inCtrlOp = state.inCtrlOp;
+    const size_t numCtrls = inCtrlOp != 0 ? state.posCtrls[inCtrlOp].size() : 0;
+
+    // Define function name
+    StringRef fnName;
+    if (inCtrlOp == 0) {
+      fnName = QIR_RZ;
+    } else {
+      if (numCtrls == 1) {
+        fnName = QIR_CRZ;
+      } else if (numCtrls == 2) {
+        fnName = QIR_CCRZ;
+      } else if (numCtrls == 3) {
+        fnName = QIR_CCCRZ;
+      } else {
+        return failure();
+      }
+    }
+
+    return convertOneTargetOneParameter(op, adaptor, rewriter, getContext(),
+                                        state, fnName);
+  }
+};
+
+/**
+ * @brief Converts quartz.p operation to QIR p
+ *
+ * @par Example:
+ * ```mlir
+ * quartz.p(%lambda) %q : !quartz.qubit
+ * ```
+ * is converted to
+ * ```mlir
+ * llvm.call @__quantum__qis__p__body(%q, %lambda) : (!llvm.ptr, f64) -> ()
+ * ```
+ */
+struct ConvertQuartzPQIR final : StatefulOpConversionPattern<POp> {
+  using StatefulOpConversionPattern::StatefulOpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(POp op, OpAdaptor adaptor,
+                  ConversionPatternRewriter& rewriter) const override {
+    auto& state = getState();
+
+    // Query state for modifier information
+    const auto inCtrlOp = state.inCtrlOp;
+    const size_t numCtrls = inCtrlOp != 0 ? state.posCtrls[inCtrlOp].size() : 0;
+
+    // Define function name
+    StringRef fnName;
+    if (inCtrlOp == 0) {
+      fnName = QIR_P;
+    } else {
+      if (numCtrls == 1) {
+        fnName = QIR_CP;
+      } else if (numCtrls == 2) {
+        fnName = QIR_CCP;
+      } else if (numCtrls == 3) {
+        fnName = QIR_CCCP;
+      } else {
+        return failure();
+      }
+    }
+
+    return convertOneTargetOneParameter(op, adaptor, rewriter, getContext(),
+                                        state, fnName);
+  }
+};
+
+/**
  * @brief Converts quartz.u2 operation to QIR u2
  *
  * @par Example:
@@ -1667,6 +1757,8 @@ struct QuartzToQIR final : impl::QuartzToQIRBase<QuartzToQIR> {
       quartzPatterns.add<ConvertQuartzSXdgQIR>(typeConverter, ctx, &state);
       quartzPatterns.add<ConvertQuartzRXQIR>(typeConverter, ctx, &state);
       quartzPatterns.add<ConvertQuartzRYQIR>(typeConverter, ctx, &state);
+      quartzPatterns.add<ConvertQuartzRZQIR>(typeConverter, ctx, &state);
+      quartzPatterns.add<ConvertQuartzPQIR>(typeConverter, ctx, &state);
       quartzPatterns.add<ConvertQuartzU2QIR>(typeConverter, ctx, &state);
       quartzPatterns.add<ConvertQuartzSWAPQIR>(typeConverter, ctx, &state);
       quartzPatterns.add<ConvertQuartzCtrlQIR>(typeConverter, ctx, &state);

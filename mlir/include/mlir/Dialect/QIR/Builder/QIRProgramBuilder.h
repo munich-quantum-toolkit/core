@@ -667,7 +667,7 @@ public:
                          Value control, Value target);
 
   /**
-   * @brief Apply a RY gate to a qubit
+   * @brief Apply an RY gate to a qubit
    *
    * @param theta Rotation angle
    * @param qubit Input qubit
@@ -703,6 +703,79 @@ public:
   QIRProgramBuilder& cry(const std::variant<double, Value>& theta,
                          Value control, Value target);
 
+  /**
+   * @brief Apply an RZ gate to a qubit
+   *
+   * @param theta Rotation angle
+   * @param qubit Input qubit
+   * @return Reference to this builder for method chaining
+   *
+   * @par Example:
+   * ```c++
+   * builder.rz(theta, qubit);
+   * ```
+   * ```mlir
+   * llvm.call @__quantum__qis__rz__body(%q, %theta) : (!llvm.ptr, f64) -> ()
+   * ```
+   */
+  QIRProgramBuilder& rz(const std::variant<double, Value>& theta, Value qubit);
+
+  /**
+   * @brief Apply a controlled RZ gate
+   *
+   * @param theta Rotation angle
+   * @param control Control qubit
+   * @param target Target qubit
+   * @return Reference to this builder for method chaining
+   *
+   * @par Example:
+   * ```c++
+   * builder.crz(theta, control, target);
+   * ```
+   * ```mlir
+   * llvm.call @__quantum__qis__crz__body(%c, %t, %theta) : (!llvm.ptr,
+   * !llvm.ptr, f64) -> ()
+   * ```
+   */
+  QIRProgramBuilder& crz(const std::variant<double, Value>& theta,
+                         Value control, Value target);
+
+  /**
+   * @brief Apply a P gate to a qubit
+   *
+   * @param theta Rotation angle
+   * @param qubit Input qubit
+   * @return Reference to this builder for method chaining
+   *
+   * @par Example:
+   * ```c++
+   * builder.p(theta, qubit);
+   * ```
+   * ```mlir
+   * llvm.call @__quantum__qis__p__body(%q, %theta) : (!llvm.ptr, f64) -> ()
+   * ```
+   */
+  QIRProgramBuilder& p(const std::variant<double, Value>& theta, Value qubit);
+
+  /**
+   * @brief Apply a controlled P gate
+   *
+   * @param theta Rotation angle
+   * @param control Control qubit
+   * @param target Target qubit
+   * @return Reference to this builder for method chaining
+   *
+   * @par Example:
+   * ```c++
+   * builder.cp(theta, control, target);
+   * ```
+   * ```mlir
+   * llvm.call @__quantum__qis__cp__body(%c, %t, %theta) : (!llvm.ptr,
+   * !llvm.ptr, f64) -> ()
+   * ```
+   */
+  QIRProgramBuilder& cp(const std::variant<double, Value>& theta, Value control,
+                        Value target);
   /**
    * @brief Apply a U2 gate to a qubit
    *

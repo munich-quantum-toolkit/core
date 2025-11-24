@@ -1044,6 +1044,138 @@ public:
                                     ValueRange controls, Value target);
 
   /**
+   * @brief Apply an RZ gate to a qubit
+   *
+   * @details
+   * Consumes the input qubit and produces a new output qubit SSA value.
+   * The input is validated and the tracking is updated.
+   *
+   * @param theta Rotation angle in radians
+   * @param qubit Input qubit (must be valid/unconsumed)
+   * @return Output qubit
+   *
+   * @par Example:
+   * ```c++
+   * q_out = builder.rz(1.0, q_in);
+   * ```
+   * ```mlir
+   * %q_out = flux.rz(%theta) %q_in : !flux.qubit -> !flux.qubit
+   * ```
+   */
+  Value rz(const std::variant<double, Value>& theta, Value qubit);
+
+  /**
+   * @brief Apply a controlled RZ gate
+   *
+   * @param theta Rotation angle in radians
+   * @param control Input control qubit (must be valid/unconsumed)
+   * @param target Input target qubit (must be valid/unconsumed)
+   * @return Pair of (output_control_qubit, output_target_qubit)
+   *
+   * @par Example:
+   * ```c++
+   * {q0_out, q1_out} = builder.crz(1.0, q0_in, q1_in);
+   * ```
+   * ```mlir
+   * %q0_out, %q1_out = flux.ctrl(%q0_in) %q1_in {
+   *   %q1_res = flux.rz(%theta) %q1_in : !flux.qubit -> !flux.qubit
+   *   flux.yield %q1_res
+   * } : ({!flux.qubit}, {!flux.qubit}) -> ({!flux.qubit}, {!flux.qubit})
+   * ```
+   */
+  std::pair<Value, Value> crz(const std::variant<double, Value>& theta,
+                              Value control, Value target);
+
+  /**
+   * @brief Apply a multi-controlled RZ gate
+   *
+   * @param theta Rotation angle in radians
+   * @param controls Input control qubits (must be valid/unconsumed)
+   * @param target Input target qubit (must be valid/unconsumed)
+   * @return Pair of (output_control_qubits, output_target_qubit)
+   *
+   * @par Example:
+   * ```c++
+   * {controls_out, target_out} = builder.mcrz(1.0, {q0_in, q1_in}, q2_in);
+   * ```
+   * ```mlir
+   * %controls_out, %target_out = flux.ctrl(%q0_in, %q1_in) %q2_in {
+   *   %q2_res = flux.rz(%theta) %q2_in : !flux.qubit -> !flux.qubit
+   *   flux.yield %q2_res
+   * } : ({!flux.qubit, !flux.qubit}, {!flux.qubit}) -> ({!flux.qubit,
+   * !flux.qubit}, {!flux.qubit})
+   * ```
+   */
+  std::pair<ValueRange, Value> mcrz(const std::variant<double, Value>& theta,
+                                    ValueRange controls, Value target);
+
+  /**
+   * @brief Apply a P gate to a qubit
+   *
+   * @details
+   * Consumes the input qubit and produces a new output qubit SSA value.
+   * The input is validated and the tracking is updated.
+   *
+   * @param theta Rotation angle in radians
+   * @param qubit Input qubit (must be valid/unconsumed)
+   * @return Output qubit
+   *
+   * @par Example:
+   * ```c++
+   * q_out = builder.p(1.0, q_in);
+   * ```
+   * ```mlir
+   * %q_out = flux.p(%theta) %q_in : !flux.qubit -> !flux.qubit
+   * ```
+   */
+  Value p(const std::variant<double, Value>& theta, Value qubit);
+
+  /**
+   * @brief Apply a controlled P gate
+   *
+   * @param theta Rotation angle in radians
+   * @param control Input control qubit (must be valid/unconsumed)
+   * @param target Input target qubit (must be valid/unconsumed)
+   * @return Pair of (output_control_qubit, output_target_qubit)
+   *
+   * @par Example:
+   * ```c++
+   * {q0_out, q1_out} = builder.cp(1.0, q0_in, q1_in);
+   * ```
+   * ```mlir
+   * %q0_out, %q1_out = flux.ctrl(%q0_in) %q1_in {
+   *   %q1_res = flux.p(%theta) %q1_in : !flux.qubit -> !flux.qubit
+   *   flux.yield %q1_res
+   * } : ({!flux.qubit}, {!flux.qubit}) -> ({!flux.qubit}, {!flux.qubit})
+   * ```
+   */
+  std::pair<Value, Value> cp(const std::variant<double, Value>& theta,
+                             Value control, Value target);
+
+  /**
+   * @brief Apply a multi-controlled P gate
+   *
+   * @param theta Rotation angle in radians
+   * @param controls Input control qubits (must be valid/unconsumed)
+   * @param target Input target qubit (must be valid/unconsumed)
+   * @return Pair of (output_control_qubits, output_target_qubit)
+   *
+   * @par Example:
+   * ```c++
+   * {controls_out, target_out} = builder.mcp(1.0, {q0_in, q1_in}, q2_in);
+   * ```
+   * ```mlir
+   * %controls_out, %target_out = flux.ctrl(%q0_in, %q1_in) %q2_in {
+   *   %q2_res = flux.p(%theta) %q2_in : !flux.qubit -> !flux.qubit
+   *   flux.yield %q2_res
+   * } : ({!flux.qubit, !flux.qubit}, {!flux.qubit}) -> ({!flux.qubit,
+   * !flux.qubit}, {!flux.qubit})
+   * ```
+   */
+  std::pair<ValueRange, Value> mcp(const std::variant<double, Value>& theta,
+                                   ValueRange controls, Value target);
+
+  /**
    * @brief Apply a U2 gate to a qubit
    *
    * @details

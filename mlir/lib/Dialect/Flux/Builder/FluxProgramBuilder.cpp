@@ -460,6 +460,46 @@ FluxProgramBuilder::mcry(const std::variant<double, Value>& theta,
                                                           target);
 }
 
+// RZOp
+
+Value FluxProgramBuilder::rz(const std::variant<double, Value>& theta,
+                             const Value qubit) {
+  return createOneTargetOneParameter<RZOp>(theta, qubit);
+}
+
+std::pair<Value, Value>
+FluxProgramBuilder::crz(const std::variant<double, Value>& theta,
+                        const Value control, const Value target) {
+  return createControlledOneTargetOneParameter<RZOp>(theta, control, target);
+}
+
+std::pair<ValueRange, Value>
+FluxProgramBuilder::mcrz(const std::variant<double, Value>& theta,
+                         const ValueRange controls, const Value target) {
+  return createMultiControlledOneTargetOneParameter<RZOp>(theta, controls,
+                                                          target);
+}
+
+// POp
+
+Value FluxProgramBuilder::p(const std::variant<double, Value>& theta,
+                            const Value qubit) {
+  return createOneTargetOneParameter<POp>(theta, qubit);
+}
+
+std::pair<Value, Value>
+FluxProgramBuilder::cp(const std::variant<double, Value>& theta,
+                       const Value control, const Value target) {
+  return createControlledOneTargetOneParameter<POp>(theta, control, target);
+}
+
+std::pair<ValueRange, Value>
+FluxProgramBuilder::mcp(const std::variant<double, Value>& theta,
+                        const ValueRange controls, const Value target) {
+  return createMultiControlledOneTargetOneParameter<POp>(theta, controls,
+                                                         target);
+}
+
 // U2Op
 
 Value FluxProgramBuilder::u2(const std::variant<double, Value>& phi,
