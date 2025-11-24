@@ -7,6 +7,7 @@
 # Licensed under the MIT License
 
 add_subdirectory(dd)
+add_subdirectory(sc)
 
 set(TARGET_NAME ${MQT_CORE_TARGET_NAME}-qdmi-driver)
 
