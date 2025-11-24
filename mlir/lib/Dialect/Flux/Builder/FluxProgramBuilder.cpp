@@ -171,7 +171,7 @@ Value FluxProgramBuilder::reset(Value qubit) {
 // Unitary Operations
 //===----------------------------------------------------------------------===//
 
-// Helper methods
+// OneTargetZeroParameter helpers
 
 template <typename OpType>
 Value FluxProgramBuilder::createOneTargetZeroParameter(const Value qubit) {
@@ -206,6 +206,8 @@ FluxProgramBuilder::createMultiControlledOneTargetZeroParameter(
            });
   return {controlsOut, targetsOut[0]};
 }
+
+// OneTargetOneParameter helpers
 
 template <typename OpType>
 Value FluxProgramBuilder::createOneTargetOneParameter(
@@ -243,6 +245,8 @@ FluxProgramBuilder::createMultiControlledOneTargetOneParameter(
            });
   return {controlsOut, targetsOut[0]};
 }
+
+// OneTargetTwoParameter helpers
 
 template <typename OpType>
 Value FluxProgramBuilder::createOneTargetTwoParameter(
@@ -284,6 +288,47 @@ FluxProgramBuilder::createMultiControlledOneTargetTwoParameter(
              return op->getResults();
            });
   return {controlsOut, targetsOut[0]};
+}
+
+// TwoTargetZeroParameter helpers
+
+template <typename OpType>
+std::pair<Value, Value>
+FluxProgramBuilder::createTwoTargetZeroParameter(const Value qubit0,
+                                                 const Value qubit1) {
+  auto op = create<OpType>(loc, qubit0, qubit1);
+  const auto& qubit0Out = op.getQubit0Out();
+  const auto& qubit1Out = op.getQubit1Out();
+  updateQubitTracking(qubit0, qubit0Out);
+  updateQubitTracking(qubit1, qubit1Out);
+  return {qubit0Out, qubit1Out};
+}
+
+template <typename OpType>
+std::pair<Value, std::pair<Value, Value>>
+FluxProgramBuilder::createControlledTwoTargetZeroParameter(const Value control,
+                                                           const Value qubit0,
+                                                           const Value qubit1) {
+  const auto [controlsOut, targetsOut] =
+      ctrl(control, {qubit0, qubit1},
+           [&](OpBuilder& b, const ValueRange targets) -> ValueRange {
+             const auto op = b.create<OpType>(loc, targets[0], targets[1]);
+             return op->getResults();
+           });
+  return {controlsOut[0], {targetsOut[0], targetsOut[1]}};
+}
+
+template <typename OpType>
+std::pair<ValueRange, std::pair<Value, Value>>
+FluxProgramBuilder::createMultiControlledTwoTargetZeroParameter(
+    const ValueRange controls, const Value qubit0, const Value qubit1) {
+  const auto [controlsOut, targetsOut] =
+      ctrl(controls, {qubit0, qubit1},
+           [&](OpBuilder& b, const ValueRange targets) -> ValueRange {
+             const auto op = b.create<OpType>(loc, targets[0], targets[1]);
+             return op->getResults();
+           });
+  return {controlsOut, {targetsOut[0], targetsOut[1]}};
 }
 
 // IdOp
@@ -593,35 +638,39 @@ FluxProgramBuilder::mcu2(const std::variant<double, Value>& phi,
 // SWAPOp
 
 std::pair<Value, Value> FluxProgramBuilder::swap(Value qubit0, Value qubit1) {
-  auto swapOp = create<SWAPOp>(loc, qubit0, qubit1);
-  const auto& qubit0Out = swapOp.getQubit0Out();
-  const auto& qubit1Out = swapOp.getQubit1Out();
-  updateQubitTracking(qubit0, qubit0Out);
-  updateQubitTracking(qubit1, qubit1Out);
-  return {qubit0Out, qubit1Out};
+  return createTwoTargetZeroParameter<SWAPOp>(qubit0, qubit1);
 }
 
 std::pair<Value, std::pair<Value, Value>>
 FluxProgramBuilder::cswap(const Value control, Value qubit0, Value qubit1) {
-  const auto [controlsOut, targetsOut] =
-      ctrl(control, {qubit0, qubit1},
-           [&](OpBuilder& b, const ValueRange targets) -> ValueRange {
-             const auto swap = b.create<SWAPOp>(loc, targets[0], targets[1]);
-             return swap->getResults();
-           });
-  return {controlsOut[0], {targetsOut[0], targetsOut[1]}};
+  return createControlledTwoTargetZeroParameter<SWAPOp>(control, qubit0,
+                                                        qubit1);
 }
 
 std::pair<ValueRange, std::pair<Value, Value>>
 FluxProgramBuilder::mcswap(const ValueRange controls, Value qubit0,
                            Value qubit1) {
-  const auto [controlsOut, targetsOut] =
-      ctrl(controls, {qubit0, qubit1},
-           [&](OpBuilder& b, const ValueRange targets) -> ValueRange {
-             const auto swap = b.create<SWAPOp>(loc, targets[0], targets[1]);
-             return swap->getResults();
-           });
-  return {controlsOut[0], {targetsOut[0], targetsOut[1]}};
+  return createMultiControlledTwoTargetZeroParameter<SWAPOp>(controls, qubit0,
+                                                             qubit1);
+}
+
+// iSWAPOp
+
+std::pair<Value, Value> FluxProgramBuilder::iswap(Value qubit0, Value qubit1) {
+  return createTwoTargetZeroParameter<iSWAPOp>(qubit0, qubit1);
+}
+
+std::pair<Value, std::pair<Value, Value>>
+FluxProgramBuilder::ciswap(const Value control, Value qubit0, Value qubit1) {
+  return createControlledTwoTargetZeroParameter<iSWAPOp>(control, qubit0,
+                                                         qubit1);
+}
+
+std::pair<ValueRange, std::pair<Value, Value>>
+FluxProgramBuilder::mciswap(const ValueRange controls, Value qubit0,
+                            Value qubit1) {
+  return createMultiControlledTwoTargetZeroParameter<iSWAPOp>(controls, qubit0,
+                                                              qubit1);
 }
 
 //===----------------------------------------------------------------------===//

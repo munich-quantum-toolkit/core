@@ -96,6 +96,10 @@ static constexpr auto QIR_SWAP = "__quantum__qis__swap__body";
 static constexpr auto QIR_CSWAP = "__quantum__qis__cswap__body";
 static constexpr auto QIR_CCSWAP = "__quantum__qis__ccswap__body";
 static constexpr auto QIR_CCCSWAP = "__quantum__qis__cccswap__body";
+static constexpr auto QIR_ISWAP = "__quantum__qis__iswap__body";
+static constexpr auto QIR_CISWAP = "__quantum__qis__ciswap__body";
+static constexpr auto QIR_CCISWAP = "__quantum__qis__cciswap__body";
+static constexpr auto QIR_CCCISWAP = "__quantum__qis__ccciswap__body";
 
 /**
  * @brief State object for tracking QIR metadata during conversion

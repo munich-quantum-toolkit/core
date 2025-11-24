@@ -634,6 +634,27 @@ def SWAPOp : QuartzOp<"swap", traits = [UnitaryOpInterface, TwoTargetZeroParamet
     }];
 }
 
+def iSWAPOp : QuartzOp<"iswap", traits = [UnitaryOpInterface, TwoTargetZeroParameter]> {
+    let summary = "Apply a iSWAP gate to two qubits";
+    let description = [{
+        Applies a iSWAP gate to two qubits, modifying them in place.
+
+        Example:
+        ```mlir
+        quartz.iswap %q0, %q1 : !flux.qubit, !flux.qubit
+        ```
+    }];
+
+    let arguments = (ins Arg<QubitType, "the first target qubit", [MemRead, MemWrite]>:$qubit0,
+                     Arg<QubitType, "the second target qubit", [MemRead, MemWrite]>:$qubit1);
+    let assemblyFormat = "$qubit0 $qubit1 attr-dict";
+
+    let extraClassDeclaration = [{
+        DenseElementsAttr tryGetStaticMatrix();
+        static StringRef getBaseSymbol() { return "iswap"; }
+    }];
+}
+
 //===----------------------------------------------------------------------===//
 // Modifiers
 //===----------------------------------------------------------------------===//

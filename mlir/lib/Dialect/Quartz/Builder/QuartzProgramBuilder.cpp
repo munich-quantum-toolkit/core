@@ -485,6 +485,26 @@ QuartzProgramBuilder& QuartzProgramBuilder::mcswap(ValueRange controls,
   return *this;
 }
 
+// iSWAPOp
+
+QuartzProgramBuilder& QuartzProgramBuilder::iswap(Value qubit0, Value qubit1) {
+  create<iSWAPOp>(loc, qubit0, qubit1);
+  return *this;
+}
+
+QuartzProgramBuilder& QuartzProgramBuilder::ciswap(Value control,
+                                                   const Value qubit0,
+                                                   const Value qubit1) {
+  return mciswap({control}, qubit0, qubit1);
+}
+
+QuartzProgramBuilder&
+QuartzProgramBuilder::mciswap(ValueRange controls, Value qubit0, Value qubit1) {
+  create<CtrlOp>(loc, controls,
+                 [&](OpBuilder& b) { b.create<iSWAPOp>(loc, qubit0, qubit1); });
+  return *this;
+}
+
 //===----------------------------------------------------------------------===//
 // Modifiers
 //===----------------------------------------------------------------------===//

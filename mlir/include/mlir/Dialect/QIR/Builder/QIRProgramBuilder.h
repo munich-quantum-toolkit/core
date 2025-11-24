@@ -1186,8 +1186,8 @@ public:
   /**
    * @brief Apply a SWAP gate to two qubits
    *
-   * @param qubit0 Input qubit
-   * @param qubit1 Input qubit
+   * @param qubit0 Target qubit
+   * @param qubit1 Target qubit
    * @return Reference to this builder for method chaining
    *
    * @par Example:
@@ -1238,6 +1238,62 @@ public:
    * ```
    */
   QIRProgramBuilder& mcswap(ValueRange controls, Value target0, Value target1);
+
+  /**
+   * @brief Apply an iSWAP gate to two qubits
+   *
+   * @param qubit0 Target qubit
+   * @param qubit1 Target qubit
+   * @return Reference to this builder for method chaining
+   *
+   * @par Example:
+   * ```c++
+   * builder.iswap(qubit0, qubit1);
+   * ```
+   * ```mlir
+   * llvm.call @__quantum__qis__iswap__body(%q0, %q1) : (!llvm.ptr, !llvm.ptr)
+   * -> ()
+   * ```
+   */
+  QIRProgramBuilder& iswap(Value qubit0, Value qubit1);
+
+  /**
+   * @brief Apply a controlled iSWAP gate
+   *
+   * @param control Control qubit
+   * @param target1 Target qubit
+   * @param target2 Target qubit
+   * @return Reference to this builder for method chaining
+   *
+   * @par Example:
+   * ```c++
+   * builder.ciswap(control, target1, target2);
+   * ```
+   * ```mlir
+   * llvm.call @__quantum__qis__ciswap__body(%c, %t0, %t1) : (!llvm.ptr,
+   * !llvm.ptr, !llvm.ptr) -> ()
+   * ```
+   */
+  QIRProgramBuilder& ciswap(Value control, Value target0, Value target1);
+
+  /**
+   * @brief Apply a multi-controlled iSWAP gate
+   *
+   * @param controls Control qubits
+   * @param target1 Target qubit
+   * @param target2 Target qubit
+   * @return Reference to this builder for method chaining
+   *
+   * @par Example:
+   * ```c++
+   * builder.mciswap({control1, control2}, target1, target2);
+   * ```
+   * ```mlir
+   * llvm.call @__quantum__qis__mciswap__body(%c1, %c2, %t0, %t1) : (!llvm.ptr,
+   * !llvm.ptr, !llvm.ptr, !llvm.ptr) -> ()
+   * ```
+   */
+  QIRProgramBuilder& mciswap(ValueRange controls, Value target0, Value target1);
 
   //===--------------------------------------------------------------------===//
   // Finalization
@@ -1323,6 +1379,18 @@ private:
                               const std::variant<double, Value>& parameter2,
                               const ValueRange controls, const Value target,
                               StringRef fnName);
+
+  /**
+   * @brief Helper to create a two-target, zero-parameter QIR operation
+   *
+   * @param controls Control qubits
+   * @param target0 Target qubit
+   * @param target1 Target qubit
+   * @param fnName Name of the QIR function to call
+   */
+  void createTwoTargetZeroParameter(const ValueRange controls,
+                                    const Value target0, const Value target1,
+                                    StringRef fnName);
 
   /**
    * @brief Generate array-based output recording in the output block

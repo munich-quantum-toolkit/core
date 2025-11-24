@@ -179,7 +179,7 @@ LogicalResult convertOneTargetOneParameter(QuartzOpType& op,
 
   // Create the Flux operation (consumes input, produces output)
   auto fluxOp =
-      rewriter.create<FluxOpType>(op.getLoc(), fluxQubit, op.getOperand(1));
+      rewriter.create<FluxOpType>(op.getLoc(), fluxQubit, op->getOperand(1));
 
   // Update the state map
   if (inCtrlOp == 0) {
@@ -187,6 +187,57 @@ LogicalResult convertOneTargetOneParameter(QuartzOpType& op,
   } else {
     state.targetsIn.erase(inCtrlOp);
     const SmallVector<Value> targetsOut({fluxOp.getQubitOut()});
+    state.targetsOut.try_emplace(inCtrlOp, targetsOut);
+  }
+
+  rewriter.eraseOp(op);
+
+  return success();
+}
+
+/**
+ * @brief Converts a two-target, zero-parameter Quartz operation to Flux
+ *
+ * @tparam FluxOpType The operation type of the Flux operation
+ * @tparam QuartzOpType The operation type of the Quartz operation
+ * @param op The Quartz operation instance to convert
+ * @param rewriter The pattern rewriter
+ * @param state The lowering state
+ * @return LogicalResult Success or failure of the conversion
+ */
+template <typename FluxOpType, typename QuartzOpType>
+LogicalResult convertTwoTargetZeroParameter(QuartzOpType& op,
+                                            ConversionPatternRewriter& rewriter,
+                                            LoweringState& state) {
+  auto& qubitMap = state.qubitMap;
+  const auto inCtrlOp = state.inCtrlOp;
+
+  // Get the latest Flux qubits
+  const auto quartzQubit0 = op->getOperand(0);
+  const auto quartzQubit1 = op->getOperand(1);
+  Value fluxQubit0 = nullptr;
+  Value fluxQubit1 = nullptr;
+  if (inCtrlOp == 0) {
+    fluxQubit0 = qubitMap[quartzQubit0];
+    fluxQubit1 = qubitMap[quartzQubit1];
+  } else {
+    const auto& targetsIn = state.targetsIn[inCtrlOp];
+    fluxQubit0 = targetsIn[0];
+    fluxQubit1 = targetsIn[1];
+  }
+
+  // Create the Flux operation (consumes input, produces output)
+  auto fluxOp =
+      rewriter.create<FluxOpType>(op.getLoc(), fluxQubit0, fluxQubit1);
+
+  // Update state map
+  if (inCtrlOp == 0) {
+    qubitMap[quartzQubit0] = fluxOp.getQubit0Out();
+    qubitMap[quartzQubit1] = fluxOp.getQubit1Out();
+  } else {
+    state.targetsIn.erase(inCtrlOp);
+    const SmallVector<Value> targetsOut(
+        {fluxOp.getQubit0Out(), fluxOp.getQubit1Out()});
     state.targetsOut.try_emplace(inCtrlOp, targetsOut);
   }
 
@@ -222,8 +273,8 @@ LogicalResult convertOneTargetTwoParameter(QuartzOpType& op,
   }
 
   // Create the Flux operation (consumes input, produces output)
-  auto fluxOp = rewriter.create<FluxOpType>(op.getLoc(), fluxQubit,
-                                            op.getOperand(1), op.getOperand(2));
+  auto fluxOp = rewriter.create<FluxOpType>(
+      op.getLoc(), fluxQubit, op->getOperand(1), op->getOperand(2));
 
   // Update the state map
   if (inCtrlOp == 0) {
@@ -881,42 +932,33 @@ struct ConvertQuartzSWAPOp final : StatefulOpConversionPattern<quartz::SWAPOp> {
   LogicalResult
   matchAndRewrite(quartz::SWAPOp op, OpAdaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
-    auto& state = getState();
-    auto& qubitMap = state.qubitMap;
-    const auto inCtrlOp = state.inCtrlOp;
+    return convertTwoTargetZeroParameter<flux::SWAPOp>(op, rewriter,
+                                                       getState());
+  }
+};
 
-    // Get the latest Flux qubit
-    const auto quartzQubit0 = op->getOperand(0);
-    const auto quartzQubit1 = op->getOperand(1);
-    Value fluxQubit0 = nullptr;
-    Value fluxQubit1 = nullptr;
-    if (inCtrlOp == 0) {
-      fluxQubit0 = qubitMap[quartzQubit0];
-      fluxQubit1 = qubitMap[quartzQubit1];
-    } else {
-      const auto& targetsIn = state.targetsIn[inCtrlOp];
-      fluxQubit0 = targetsIn[0];
-      fluxQubit1 = targetsIn[1];
-    }
+/**
+ * @brief Converts quartz.iswap to flux.iswap
+ *
+ * @par Example:
+ * ```mlir
+ * quartz.iswap %q0, %q1 : !quartz.qubit, !quartz.qubit
+ * ```
+ * is converted to
+ * ```mlir
+ * %q0_out, %q1_out = flux.iswap %q0_in, %q1_in : !flux.qubit, !flux.qubit ->
+ * !flux.qubit, !flux.qubit
+ * ```
+ */
+struct ConvertQuartziSWAPOp final
+    : StatefulOpConversionPattern<quartz::iSWAPOp> {
+  using StatefulOpConversionPattern::StatefulOpConversionPattern;
 
-    // Create flux.swap (consumes input, produces output)
-    auto fluxOp =
-        rewriter.create<flux::SWAPOp>(op.getLoc(), fluxQubit0, fluxQubit1);
-
-    // Update state map
-    if (inCtrlOp == 0) {
-      qubitMap[quartzQubit0] = fluxOp.getQubit0Out();
-      qubitMap[quartzQubit1] = fluxOp.getQubit1Out();
-    } else {
-      state.targetsIn.erase(inCtrlOp);
-      const SmallVector<Value> targetsOut(
-          {fluxOp.getQubit0Out(), fluxOp.getQubit1Out()});
-      state.targetsOut.try_emplace(inCtrlOp, targetsOut);
-    }
-
-    rewriter.eraseOp(op);
-
-    return success();
+  LogicalResult
+  matchAndRewrite(quartz::iSWAPOp op, OpAdaptor /*adaptor*/,
+                  ConversionPatternRewriter& rewriter) const override {
+    return convertTwoTargetZeroParameter<flux::iSWAPOp>(op, rewriter,
+                                                        getState());
   }
 };
 
@@ -1061,16 +1103,16 @@ struct QuartzToFlux final : impl::QuartzToFluxBase<QuartzToFlux> {
     target.addLegalDialect<FluxDialect>();
 
     // Register operation conversion patterns with state tracking
-    patterns.add<
-        ConvertQuartzAllocOp, ConvertQuartzDeallocOp, ConvertQuartzStaticOp,
-        ConvertQuartzMeasureOp, ConvertQuartzResetOp, ConvertQuartzIdOp,
-        ConvertQuartzXOp, ConvertQuartzYOp, ConvertQuartzZOp, ConvertQuartzHOp,
-        ConvertQuartzSOp, ConvertQuartzSdgOp, ConvertQuartzTOp,
-        ConvertQuartzTdgOp, ConvertQuartzSXOp, ConvertQuartzSXdgOp,
-        ConvertQuartzRXOp, ConvertQuartzRYOp, ConvertQuartzRZOp,
-        ConvertQuartzPOp, ConvertQuartzROp, ConvertQuartzU2Op,
-        ConvertQuartzSWAPOp, ConvertQuartzCtrlOp, ConvertQuartzYieldOp>(
-        typeConverter, context, &state);
+    patterns.add<ConvertQuartzAllocOp, ConvertQuartzDeallocOp,
+                 ConvertQuartzStaticOp, ConvertQuartzMeasureOp,
+                 ConvertQuartzResetOp, ConvertQuartzIdOp, ConvertQuartzXOp,
+                 ConvertQuartzYOp, ConvertQuartzZOp, ConvertQuartzHOp,
+                 ConvertQuartzSOp, ConvertQuartzSdgOp, ConvertQuartzTOp,
+                 ConvertQuartzTdgOp, ConvertQuartzSXOp, ConvertQuartzSXdgOp,
+                 ConvertQuartzRXOp, ConvertQuartzRYOp, ConvertQuartzRZOp,
+                 ConvertQuartzPOp, ConvertQuartzROp, ConvertQuartzU2Op,
+                 ConvertQuartzSWAPOp, ConvertQuartziSWAPOp, ConvertQuartzCtrlOp,
+                 ConvertQuartzYieldOp>(typeConverter, context, &state);
 
     // Conversion of quartz types in func.func signatures
     // Note: This currently has limitations with signature changes

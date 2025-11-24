@@ -591,7 +591,7 @@ void addROp(QuartzProgramBuilder& builder, const qc::Operation& operation,
  * @brief Adds a U2 operation
  *
  * @details
- * Translates U2 operations from the QuantumComputation to quartz.u2 operations.
+ * Translate a U2 operation from the QuantumComputation to quartz.u2.
  *
  * @param builder The QuartzProgramBuilder used to create operations
  * @param operation The U2 operation to translate
@@ -614,8 +614,7 @@ void addU2Op(QuartzProgramBuilder& builder, const qc::Operation& operation,
  * @brief Adds a SWAP operation
  *
  * @details
- * Translates SWAP operations from the QuantumComputation to quartz.swap
- * operations.
+ * Translate a SWAP operation from the QuantumComputation to quartz.swap.
  *
  * @param builder The QuartzProgramBuilder used to create operations
  * @param operation The SWAP operation to translate
@@ -630,6 +629,28 @@ void addSWAPOp(QuartzProgramBuilder& builder, const qc::Operation& operation,
     builder.swap(target0, target1);
   } else {
     builder.mcswap(posControls, target0, target1);
+  }
+}
+
+/**
+ * @brief Adds an iSWAP operation
+ *
+ * @details
+ * Translate an iSWAP operation from the QuantumComputation to quartz.iswap.
+ *
+ * @param builder The QuartzProgramBuilder used to create operations
+ * @param operation The iSWAP operation to translate
+ * @param qubits Flat vector of qubit values indexed by physical qubit index
+ */
+void addiSWAPOp(QuartzProgramBuilder& builder, const qc::Operation& operation,
+                const llvm::SmallVector<Value>& qubits) {
+  const auto& target0 = qubits[operation.getTargets()[0]];
+  const auto& target1 = qubits[operation.getTargets()[1]];
+  if (const auto& posControls = getPosControls(operation, qubits);
+      posControls.empty()) {
+    builder.iswap(target0, target1);
+  } else {
+    builder.mciswap(posControls, target0, target1);
   }
 }
 
@@ -717,6 +738,9 @@ translateOperations(QuartzProgramBuilder& builder,
       break;
     case qc::OpType::SWAP:
       addSWAPOp(builder, *operation, qubits);
+      break;
+    case qc::OpType::iSWAP:
+      addiSWAPOp(builder, *operation, qubits);
       break;
     default:
       // Unsupported operation - skip for now

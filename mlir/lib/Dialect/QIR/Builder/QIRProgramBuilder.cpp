@@ -399,6 +399,45 @@ void QIRProgramBuilder::createOneTargetTwoParameter(
   builder.create<LLVM::CallOp>(loc, fnDecl, operands);
 }
 
+void QIRProgramBuilder::createTwoTargetZeroParameter(const ValueRange controls,
+                                                     const Value target0,
+                                                     const Value target1,
+                                                     StringRef fnName) {
+  // Save current insertion point
+  const OpBuilder::InsertionGuard insertGuard(builder);
+
+  // Insert in body block (before branch)
+  builder.setInsertionPoint(bodyBlock->getTerminator());
+
+  // Define argument types
+  SmallVector<Type> argumentTypes;
+  argumentTypes.reserve(controls.size() + 2);
+  const auto ptrType = LLVM::LLVMPointerType::get(builder.getContext());
+  // Add control pointers
+  for (size_t i = 0; i < controls.size(); ++i) {
+    argumentTypes.push_back(ptrType);
+  }
+  // Add target pointers
+  argumentTypes.push_back(ptrType);
+  argumentTypes.push_back(ptrType);
+
+  // Define function signature
+  const auto fnSignature = LLVM::LLVMFunctionType::get(
+      LLVM::LLVMVoidType::get(builder.getContext()), argumentTypes);
+
+  // Declare QIR function
+  const auto fnDecl =
+      getOrCreateFunctionDeclaration(builder, module, fnName, fnSignature);
+
+  SmallVector<Value> operands;
+  operands.reserve(controls.size() + 2);
+  operands.append(controls.begin(), controls.end());
+  operands.push_back(target0);
+  operands.push_back(target1);
+
+  builder.create<LLVM::CallOp>(loc, fnDecl, operands);
+}
+
 // IdOp
 
 QIRProgramBuilder& QIRProgramBuilder::id(const Value qubit) {
@@ -943,51 +982,66 @@ QIRProgramBuilder::mcu2(const std::variant<double, Value>& phi,
 
 QIRProgramBuilder& QIRProgramBuilder::swap(const Value qubit0,
                                            const Value qubit1) {
-  // Save current insertion point
-  const OpBuilder::InsertionGuard insertGuard(builder);
-
-  // Insert in body block (before branch)
-  builder.setInsertionPoint(bodyBlock->getTerminator());
-
-  // Create swap call
-  const auto qirSignature = LLVM::LLVMFunctionType::get(
-      LLVM::LLVMVoidType::get(builder.getContext()),
-      {LLVM::LLVMPointerType::get(builder.getContext()),
-       LLVM::LLVMPointerType::get(builder.getContext())});
-  auto fnDecl =
-      getOrCreateFunctionDeclaration(builder, module, QIR_SWAP, qirSignature);
-  builder.create<LLVM::CallOp>(loc, fnDecl, ValueRange{qubit0, qubit1});
-
+  createTwoTargetZeroParameter({}, qubit0, qubit1, QIR_SWAP);
   return *this;
 }
 
 QIRProgramBuilder& QIRProgramBuilder::cswap(const Value control,
                                             const Value target0,
                                             const Value target1) {
-  // Save current insertion point
-  const OpBuilder::InsertionGuard insertGuard(builder);
-
-  // Insert in body block (before branch)
-  builder.setInsertionPoint(bodyBlock->getTerminator());
-
-  // Create cswap call
-  const auto qirSignature = LLVM::LLVMFunctionType::get(
-      LLVM::LLVMVoidType::get(builder.getContext()),
-      {LLVM::LLVMPointerType::get(builder.getContext()),
-       LLVM::LLVMPointerType::get(builder.getContext()),
-       LLVM::LLVMPointerType::get(builder.getContext())});
-  auto fnDecl =
-      getOrCreateFunctionDeclaration(builder, module, QIR_CSWAP, qirSignature);
-  builder.create<LLVM::CallOp>(loc, fnDecl,
-                               ValueRange{control, target0, target1});
-
+  createTwoTargetZeroParameter({control}, target0, target1, QIR_CSWAP);
   return *this;
 }
 
 QIRProgramBuilder& QIRProgramBuilder::mcswap(const ValueRange controls,
                                              const Value target0,
                                              const Value target1) {
-  llvm::report_fatal_error("Not implemented yet");
+  StringRef fnName;
+  if (controls.size() == 1) {
+    fnName = QIR_CSWAP;
+  } else if (controls.size() == 2) {
+    fnName = QIR_CCSWAP;
+  } else if (controls.size() == 3) {
+    fnName = QIR_CCCSWAP;
+  } else {
+    llvm::report_fatal_error("Multi-controlled with more than 3 controls are "
+                             "currently not supported");
+  }
+  createTwoTargetZeroParameter(controls, target0, target1, fnName);
+  return *this;
+}
+
+// iSWAPOp
+
+QIRProgramBuilder& QIRProgramBuilder::iswap(const Value qubit0,
+                                            const Value qubit1) {
+  createTwoTargetZeroParameter({}, qubit0, qubit1, QIR_ISWAP);
+  return *this;
+}
+
+QIRProgramBuilder& QIRProgramBuilder::ciswap(const Value control,
+                                             const Value target0,
+                                             const Value target1) {
+  createTwoTargetZeroParameter({control}, target0, target1, QIR_CISWAP);
+  return *this;
+}
+
+QIRProgramBuilder& QIRProgramBuilder::mciswap(const ValueRange controls,
+                                              const Value target0,
+                                              const Value target1) {
+  StringRef fnName;
+  if (controls.size() == 1) {
+    fnName = QIR_CISWAP;
+  } else if (controls.size() == 2) {
+    fnName = QIR_CCISWAP;
+  } else if (controls.size() == 3) {
+    fnName = QIR_CCCISWAP;
+  } else {
+    llvm::report_fatal_error("Multi-controlled with more than 3 controls are "
+                             "currently not supported");
+  }
+  createTwoTargetZeroParameter(controls, target0, target1, fnName);
+  return *this;
 }
 
 //===----------------------------------------------------------------------===//

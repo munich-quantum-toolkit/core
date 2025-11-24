@@ -1193,8 +1193,8 @@ public:
   /**
    * @brief Apply a SWAP gate to two qubits
    *
-   * @param qubit0 First target qubit
-   * @param qubit1 Second target qubit
+   * @param qubit0 Target qubit
+   * @param qubit1 Target qubit
    * @return Reference to this builder for method chaining
    *
    * @par Example:
@@ -1211,8 +1211,8 @@ public:
    * @brief Apply a controlled SWAP gate
    *
    * @param control Control qubit
-   * @param qubit0 First target qubit
-   * @param qubit1 Second target qubit
+   * @param qubit0 Target qubit
+   * @param qubit1 Target qubit
    * @return Reference to this builder for method chaining
    * @par Example:
    * ```c++
@@ -1230,8 +1230,8 @@ public:
    * @brief Apply a multi-controlled SWAP gate
    *
    * @param controls Control qubits
-   * @param qubit0 First target qubit
-   * @param qubit1 Second target qubit
+   * @param qubit0 Target qubit
+   * @param qubit1 Target qubit
    * @return Reference to this builder for method chaining
    * @par Example:
    * ```c++
@@ -1244,6 +1244,61 @@ public:
    * ```
    */
   QuartzProgramBuilder& mcswap(ValueRange controls, Value qubit0, Value qubit1);
+
+  /**
+   * @brief Apply an iSWAP gate to two qubits
+   *
+   * @param qubit0 Target qubit
+   * @param qubit1 Target qubit
+   * @return Reference to this builder for method chaining
+   * @par Example:
+   * ```c++
+   * builder.iswap(q0, q1);
+   * ```
+   * ```mlir
+   * quartz.iswap %q0, %q1 : !quartz.qubit, !quartz.qubit
+   * ```
+   */
+  QuartzProgramBuilder& iswap(Value qubit0, Value qubit1);
+
+  /**
+   * @brief Apply a controlled iSWAP gate
+   *
+   * @param control Control qubit
+   * @param qubit0 Target qubit
+   * @param qubit1 Target qubit
+   * @return Reference to this builder for method chaining
+   * @par Example:
+   * ```c++
+   * builder.ciswap(q0, q1, q2);
+   * ```
+   * ```mlir
+   * quartz.ctrl(%q0) {
+   *   quartz.iswap %q1, %q2 : !quartz.qubit, !quartz.qubit
+   * }
+   * ```
+   */
+  QuartzProgramBuilder& ciswap(Value control, Value qubit0, Value qubit1);
+
+  /**
+   * @brief Apply a multi-controlled iSWAP gate
+   *
+   * @param controls Control qubits
+   * @param qubit0 Target qubit
+   * @param qubit1 Target qubit
+   * @return Reference to this builder for method chaining
+   * @par Example:
+   * ```c++
+   * builder.mciswap({q0, q1}, q2, q3);
+   * ```
+   * ```mlir
+   * quartz.ctrl(%q0, %q1) {
+   *   quartz.iswap %q2, %q3 : !quartz.qubit, !quartz.qubit
+   * }
+   * ```
+   */
+  QuartzProgramBuilder& mciswap(ValueRange controls, Value qubit0,
+                                Value qubit1);
 
   //===--------------------------------------------------------------------===//
   // Modifiers

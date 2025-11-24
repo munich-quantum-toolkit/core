@@ -176,6 +176,16 @@ inline DenseElementsAttr getMatrixSWAP(MLIRContext* ctx) {
   return DenseElementsAttr::get(type, matrix);
 }
 
+inline DenseElementsAttr getMatrixiSWAP(MLIRContext* ctx) {
+  const auto& complexType = ComplexType::get(Float64Type::get(ctx));
+  const auto& type = RankedTensorType::get({4, 4}, complexType);
+  const auto matrix = {1.0 + 0i, 0.0 + 0i, 0.0 + 0i, 0.0 + 0i,  // row 0
+                       0.0 + 0i, 0.0 + 0i, 0.0 + 1i, 0.0 + 0i,  // row 1
+                       0.0 + 0i, 0.0 + 1i, 0.0 + 0i, 0.0 + 0i,  // row 2
+                       0.0 + 0i, 0.0 + 0i, 0.0 + 0i, 1.0 + 0i}; // row 3
+  return DenseElementsAttr::get(type, matrix);
+}
+
 inline DenseElementsAttr getMatrixCtrl(mlir::MLIRContext* ctx,
                                        size_t numControls,
                                        mlir::DenseElementsAttr target) {

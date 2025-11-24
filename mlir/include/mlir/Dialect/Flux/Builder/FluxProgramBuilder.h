@@ -1326,8 +1326,8 @@ public:
    * Consumes the input qubits and produces new output qubit SSA values.
    * The inputs are validated and the tracking is updated.
    *
-   * @param qubit0 First input qubit (must be valid/unconsumed)
-   * @param qubit1 Second input qubit (must be valid/unconsumed)
+   * @param qubit0 Input qubit (must be valid/unconsumed)
+   * @param qubit1 Input qubit (must be valid/unconsumed)
    * @return Output qubits
    *
    * @par Example:
@@ -1344,8 +1344,8 @@ public:
   /**
    * @brief Apply a controlled SWAP gate
    * @param control Input control qubit (must be valid/unconsumed)
-   * @param qubit0 First target qubit (must be valid/unconsumed)
-   * @param qubit1 Second target qubit (must be valid/unconsumed)
+   * @param qubit0 Target qubit (must be valid/unconsumed)
+   * @param qubit1 Target qubit (must be valid/unconsumed)
    * @return Pair of (output_control_qubit, (output_qubit0, output_qubit1))
    *
    * @par Example:
@@ -1367,8 +1367,8 @@ public:
   /**
    * @brief Apply a multi-controlled SWAP gate
    * @param controls Input control qubits (must be valid/unconsumed)
-   * @param qubit0 First target qubit (must be valid/unconsumed)
-   * @param qubit1 Second target qubit (must be valid/unconsumed)
+   * @param qubit0 Target qubit (must be valid/unconsumed)
+   * @param qubit1 Target qubit (must be valid/unconsumed)
    * @return Pair of (output_control_qubits, (output_qubit0, output_qubit1))
    *
    * @par Example:
@@ -1386,6 +1386,75 @@ public:
    */
   std::pair<ValueRange, std::pair<Value, Value>>
   mcswap(ValueRange controls, Value qubit0, Value qubit1);
+
+  /**
+   * @brief Apply an iSWAP gate to two qubits
+   *
+   * @details
+   * Consumes the input qubits and produces new output qubit SSA values.
+   * The inputs are validated and the tracking is updated.
+   *
+   * @param qubit0 Input qubit (must be valid/unconsumed)
+   * @param qubit1 Input qubit (must be valid/unconsumed)
+   * @return Output qubits
+   *
+   * @par Example:
+   * ```c++
+   * {q0_out, q1_out} = builder.iswap(q0_in, q1_in);
+   * ```
+   * ```mlir
+   * %q0_out, %q1_out = flux.iswap %q0_in, %q1_in : !flux.qubit, !flux.qubit
+   * -> !flux.qubit, !flux.qubit
+   * ```
+   */
+  std::pair<Value, Value> iswap(Value qubit0, Value qubit1);
+
+  /**
+   * @brief Apply a controlled iSWAP gate
+   * @param control Input control qubit (must be valid/unconsumed)
+   * @param qubit0 Target qubit (must be valid/unconsumed)
+   * @param qubit1 Target qubit (must be valid/unconsumed)
+   * @return Pair of (output_control_qubit, (output_qubit0, output_qubit1))
+   *
+   * @par Example:
+   * ```c++
+   * {q0_out, {q1_out, q2_out}} = builder.ciswap(q0_in, q1_in, q2_in);
+   * ```
+   * ```mlir
+   * %q0_out, %q1_out, %q2_out = flux.ctrl(%q0_in) %q1_in, %q2_in {
+   *   %q1_res, %q2_res = flux.iswap %q1_in, %q2_in : !flux.qubit,
+   * !flux.qubit -> !flux.qubit, !flux.qubit
+   *   flux.yield %q1_res, %q2_res
+   * } : !flux.qubit, !flux.qubit, !flux.qubit -> !flux.qubit, !flux.qubit,
+   * !flux.qubit
+   * ```
+   */
+  std::pair<Value, std::pair<Value, Value>> ciswap(Value control, Value qubit0,
+                                                   Value qubit1);
+
+  /**
+   * @brief Apply a multi-controlled iSWAP gate
+   *
+   * @param controls Input control qubits (must be valid/unconsumed)
+   * @param qubit0 Target qubit (must be valid/unconsumed)
+   * @param qubit1 Target qubit (must be valid/unconsumed)
+   * @return Pair of (output_control_qubits, (output_qubit0, output_qubit1))
+   *
+   * @par Example:
+   * ```c++
+   * {controls_out, {q1_out, q2_out}} = builder.mciswap({q0_in, q1_in}, q2_in,
+   * q3_in);
+   * ```
+   * ```mlir
+   * %controls_out, %q2_out, %q3_out = flux.ctrl(%q0_in, %q1_in) %q2_in, %q3_in
+   * { %q2_res, %q3_res = flux.iswap %q2_in, %q3_in : !flux.qubit, !flux.qubit
+   * -> !flux.qubit, !flux.qubit flux.yield %q2_res, %q3_res } : ({!flux.qubit,
+   * !flux.qubit}, {!flux.qubit, !flux.qubit}) -> ({!flux.qubit, !flux.qubit},
+   * {!flux.qubit, !flux.qubit})
+   * ```
+   */
+  std::pair<ValueRange, std::pair<Value, Value>>
+  mciswap(ValueRange controls, Value qubit0, Value qubit1);
 
   //===--------------------------------------------------------------------===//
   // Modifiers
@@ -1592,6 +1661,48 @@ private:
       const std::variant<double, Value>& parameter1,
       const std::variant<double, Value>& parameter2, const ValueRange controls,
       const Value target);
+
+  /**
+   * @brief Helper to create a two-target, zero-parameter Flux operation
+   * @tparam OpType The operation type of the Flux operation
+   * @param qubit0 Input qubit
+   * @param qubit1 Input qubit
+   * @return Pair of (output_qubit0, output_qubit1)
+   */
+  template <typename OpType>
+  std::pair<Value, Value> createTwoTargetZeroParameter(const Value qubit0,
+                                                       const Value qubit1);
+
+  /**
+   * @brief Helper to create a controlled two-target, zero-parameter Flux
+   * operation
+   * @tparam OpType The operation type of the Flux operation
+   * @param control Input control qubit
+   * @param qubit0 Input target qubit
+   * @param qubit1 Input target qubit
+   * @return Pair of (output_control_qubit, (output_qubit0, output_qubit1))
+   */
+  template <typename OpType>
+  std::pair<Value, std::pair<Value, Value>>
+  createControlledTwoTargetZeroParameter(const Value control,
+                                         const Value qubit0,
+                                         const Value qubit1);
+
+  /**
+   * @brief Helper to create a multi-controlled two-target, zero-parameter Flux
+   * operation
+   *
+   * @tparam OpType The operation type of the Flux operation
+   * @param controls Input control qubits
+   * @param qubit0 Input target qubit
+   * @param qubit1 Input target qubit
+   * @return Pair of (output_control_qubits, (output_qubit0, output_qubit1))
+   */
+  template <typename OpType>
+  std::pair<ValueRange, std::pair<Value, Value>>
+  createMultiControlledTwoTargetZeroParameter(const ValueRange controls,
+                                              const Value qubit0,
+                                              const Value qubit1);
 
   //===--------------------------------------------------------------------===//
   // Linear Type Tracking Helpers
