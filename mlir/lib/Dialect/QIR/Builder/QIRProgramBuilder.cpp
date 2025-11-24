@@ -245,31 +245,51 @@ void QIRProgramBuilder::createOneTargetZeroParameter(const Value qubit,
   // Insert in body block (before branch)
   builder.setInsertionPoint(bodyBlock->getTerminator());
 
-  // Create call
-  const auto qirSignature = LLVM::LLVMFunctionType::get(
+  // Define function signature
+  const auto fnSignature = LLVM::LLVMFunctionType::get(
       LLVM::LLVMVoidType::get(builder.getContext()),
       LLVM::LLVMPointerType::get(builder.getContext()));
+
+  // Declare QIR function
   auto fnDecl =
-      getOrCreateFunctionDeclaration(builder, module, fnName, qirSignature);
+      getOrCreateFunctionDeclaration(builder, module, fnName, fnSignature);
+
   builder.create<LLVM::CallOp>(loc, fnDecl, ValueRange{qubit});
 }
 
 void QIRProgramBuilder::createControlledOneTargetZeroParameter(
-    const Value control, const Value target, StringRef fnName) {
+    const ValueRange controls, const Value target, StringRef fnName) {
   // Save current insertion point
   const OpBuilder::InsertionGuard insertGuard(builder);
 
   // Insert in body block (before branch)
   builder.setInsertionPoint(bodyBlock->getTerminator());
 
-  // Create call
-  const auto qirSignature = LLVM::LLVMFunctionType::get(
-      LLVM::LLVMVoidType::get(builder.getContext()),
-      {LLVM::LLVMPointerType::get(builder.getContext()),
-       LLVM::LLVMPointerType::get(builder.getContext())});
-  auto fnDecl =
-      getOrCreateFunctionDeclaration(builder, module, fnName, qirSignature);
-  builder.create<LLVM::CallOp>(loc, fnDecl, ValueRange{control, target});
+  // Define argument types
+  SmallVector<Type> argumentTypes;
+  argumentTypes.reserve(controls.size() + 1);
+  const auto ptrType = LLVM::LLVMPointerType::get(builder.getContext());
+  // Add control pointers
+  for (size_t i = 0; i < controls.size(); ++i) {
+    argumentTypes.push_back(ptrType);
+  }
+  // Add target pointer
+  argumentTypes.push_back(ptrType);
+
+  // Define function signature
+  const auto fnSignature = LLVM::LLVMFunctionType::get(
+      LLVM::LLVMVoidType::get(builder.getContext()), argumentTypes);
+
+  // Declare QIR function
+  const auto fnDecl =
+      getOrCreateFunctionDeclaration(builder, module, fnName, fnSignature);
+
+  SmallVector<Value> operands;
+  operands.reserve(controls.size() + 1);
+  operands.append(controls.begin(), controls.end());
+  operands.push_back(target);
+
+  builder.create<LLVM::CallOp>(loc, fnDecl, operands);
 }
 
 void QIRProgramBuilder::createOneTargetOneParameter(
@@ -298,19 +318,22 @@ void QIRProgramBuilder::createOneTargetOneParameter(
   // Insert in body block (before branch)
   builder.setInsertionPoint(bodyBlock->getTerminator());
 
-  // Create call
-  const auto qirSignature = LLVM::LLVMFunctionType::get(
+  // Define function signature
+  const auto fnSignature = LLVM::LLVMFunctionType::get(
       LLVM::LLVMVoidType::get(builder.getContext()),
       {LLVM::LLVMPointerType::get(builder.getContext()),
        Float64Type::get(builder.getContext())});
+
+  // Declare QIR function
   auto fnDecl =
-      getOrCreateFunctionDeclaration(builder, module, fnName, qirSignature);
+      getOrCreateFunctionDeclaration(builder, module, fnName, fnSignature);
+
   builder.create<LLVM::CallOp>(loc, fnDecl,
                                ValueRange{qubit, parameterOperand});
 }
 
 void QIRProgramBuilder::createControlledOneTargetOneParameter(
-    const std::variant<double, Value>& parameter, const Value control,
+    const std::variant<double, Value>& parameter, const ValueRange controls,
     const Value target, StringRef fnName) {
   // Save current insertion point
   const OpBuilder::InsertionGuard entryGuard(builder);
@@ -335,16 +358,34 @@ void QIRProgramBuilder::createControlledOneTargetOneParameter(
   // Insert in body block (before branch)
   builder.setInsertionPoint(bodyBlock->getTerminator());
 
-  // Create call
-  const auto qirSignature = LLVM::LLVMFunctionType::get(
-      LLVM::LLVMVoidType::get(builder.getContext()),
-      {LLVM::LLVMPointerType::get(builder.getContext()),
-       LLVM::LLVMPointerType::get(builder.getContext()),
-       Float64Type::get(builder.getContext())});
+  // Define argument types
+  SmallVector<Type> argumentTypes;
+  argumentTypes.reserve(controls.size() + 2);
+  const auto ptrType = LLVM::LLVMPointerType::get(builder.getContext());
+  // Add control pointers
+  for (size_t i = 0; i < controls.size(); ++i) {
+    argumentTypes.push_back(ptrType);
+  }
+  // Add target pointer
+  argumentTypes.push_back(ptrType);
+  // Add parameter type
+  argumentTypes.push_back(Float64Type::get(builder.getContext()));
+
+  // Define function signature
+  const auto fnSignature = LLVM::LLVMFunctionType::get(
+      LLVM::LLVMVoidType::get(builder.getContext()), argumentTypes);
+
+  // Declare QIR function
   auto fnDecl =
-      getOrCreateFunctionDeclaration(builder, module, fnName, qirSignature);
-  builder.create<LLVM::CallOp>(loc, fnDecl,
-                               ValueRange{control, target, parameterOperand});
+      getOrCreateFunctionDeclaration(builder, module, fnName, fnSignature);
+
+  SmallVector<Value> operands;
+  operands.reserve(controls.size() + 2);
+  operands.append(controls.begin(), controls.end());
+  operands.push_back(target);
+  operands.push_back(parameterOperand);
+
+  builder.create<LLVM::CallOp>(loc, fnDecl, operands);
 }
 
 // IdOp
@@ -356,7 +397,24 @@ QIRProgramBuilder& QIRProgramBuilder::id(const Value qubit) {
 
 QIRProgramBuilder& QIRProgramBuilder::cid(const Value control,
                                           const Value target) {
-  createControlledOneTargetZeroParameter(control, target, QIR_CID);
+  createControlledOneTargetZeroParameter({control}, target, QIR_CID);
+  return *this;
+}
+
+QIRProgramBuilder& QIRProgramBuilder::mcid(const ValueRange controls,
+                                           const Value target) {
+  StringRef fnName;
+  if (controls.size() == 1) {
+    fnName = QIR_CID;
+  } else if (controls.size() == 2) {
+    fnName = QIR_CCID;
+  } else if (controls.size() == 3) {
+    fnName = QIR_CCCID;
+  } else {
+    llvm::report_fatal_error("Multi-controlled with more than 3 controls are "
+                             "currently not supported");
+  }
+  createControlledOneTargetZeroParameter(controls, target, fnName);
   return *this;
 }
 
@@ -369,7 +427,24 @@ QIRProgramBuilder& QIRProgramBuilder::x(const Value qubit) {
 
 QIRProgramBuilder& QIRProgramBuilder::cx(const Value control,
                                          const Value target) {
-  createControlledOneTargetZeroParameter(control, target, QIR_CX);
+  createControlledOneTargetZeroParameter({control}, target, QIR_CX);
+  return *this;
+}
+
+QIRProgramBuilder& QIRProgramBuilder::mcx(const ValueRange controls,
+                                          const Value target) {
+  StringRef fnName;
+  if (controls.size() == 1) {
+    fnName = QIR_CX;
+  } else if (controls.size() == 2) {
+    fnName = QIR_CCX;
+  } else if (controls.size() == 3) {
+    fnName = QIR_CCCX;
+  } else {
+    llvm::report_fatal_error("Multi-controlled with more than 3 controls are "
+                             "currently not supported");
+  }
+  createControlledOneTargetZeroParameter(controls, target, fnName);
   return *this;
 }
 
@@ -382,7 +457,24 @@ QIRProgramBuilder& QIRProgramBuilder::y(const Value qubit) {
 
 QIRProgramBuilder& QIRProgramBuilder::cy(const Value control,
                                          const Value target) {
-  createControlledOneTargetZeroParameter(control, target, QIR_CY);
+  createControlledOneTargetZeroParameter({control}, target, QIR_CY);
+  return *this;
+}
+
+QIRProgramBuilder& QIRProgramBuilder::mcy(const ValueRange controls,
+                                          const Value target) {
+  StringRef fnName;
+  if (controls.size() == 1) {
+    fnName = QIR_CY;
+  } else if (controls.size() == 2) {
+    fnName = QIR_CCY;
+  } else if (controls.size() == 3) {
+    fnName = QIR_CCCY;
+  } else {
+    llvm::report_fatal_error("Multi-controlled with more than 3 controls are "
+                             "currently not supported");
+  }
+  createControlledOneTargetZeroParameter(controls, target, fnName);
   return *this;
 }
 
@@ -395,7 +487,24 @@ QIRProgramBuilder& QIRProgramBuilder::z(const Value qubit) {
 
 QIRProgramBuilder& QIRProgramBuilder::cz(const Value control,
                                          const Value target) {
-  createControlledOneTargetZeroParameter(control, target, QIR_CZ);
+  createControlledOneTargetZeroParameter({control}, target, QIR_CZ);
+  return *this;
+}
+
+QIRProgramBuilder& QIRProgramBuilder::mcz(const ValueRange controls,
+                                          const Value target) {
+  StringRef fnName;
+  if (controls.size() == 1) {
+    fnName = QIR_CZ;
+  } else if (controls.size() == 2) {
+    fnName = QIR_CCZ;
+  } else if (controls.size() == 3) {
+    fnName = QIR_CCCZ;
+  } else {
+    llvm::report_fatal_error("Multi-controlled with more than 3 controls are "
+                             "currently not supported");
+  }
+  createControlledOneTargetZeroParameter(controls, target, fnName);
   return *this;
 }
 
@@ -408,7 +517,24 @@ QIRProgramBuilder& QIRProgramBuilder::h(const Value qubit) {
 
 QIRProgramBuilder& QIRProgramBuilder::ch(const Value control,
                                          const Value target) {
-  createControlledOneTargetZeroParameter(control, target, QIR_CH);
+  createControlledOneTargetZeroParameter({control}, target, QIR_CH);
+  return *this;
+}
+
+QIRProgramBuilder& QIRProgramBuilder::mch(const ValueRange controls,
+                                          const Value target) {
+  StringRef fnName;
+  if (controls.size() == 1) {
+    fnName = QIR_CH;
+  } else if (controls.size() == 2) {
+    fnName = QIR_CCH;
+  } else if (controls.size() == 3) {
+    fnName = QIR_CCCH;
+  } else {
+    llvm::report_fatal_error("Multi-controlled with more than 3 controls are "
+                             "currently not supported");
+  }
+  createControlledOneTargetZeroParameter(controls, target, fnName);
   return *this;
 }
 
@@ -421,7 +547,24 @@ QIRProgramBuilder& QIRProgramBuilder::s(const Value qubit) {
 
 QIRProgramBuilder& QIRProgramBuilder::cs(const Value control,
                                          const Value target) {
-  createControlledOneTargetZeroParameter(control, target, QIR_CS);
+  createControlledOneTargetZeroParameter({control}, target, QIR_CS);
+  return *this;
+}
+
+QIRProgramBuilder& QIRProgramBuilder::mcs(const ValueRange controls,
+                                          const Value target) {
+  StringRef fnName;
+  if (controls.size() == 1) {
+    fnName = QIR_CS;
+  } else if (controls.size() == 2) {
+    fnName = QIR_CCS;
+  } else if (controls.size() == 3) {
+    fnName = QIR_CCCS;
+  } else {
+    llvm::report_fatal_error("Multi-controlled with more than 3 controls are "
+                             "currently not supported");
+  }
+  createControlledOneTargetZeroParameter(controls, target, fnName);
   return *this;
 }
 
@@ -434,7 +577,24 @@ QIRProgramBuilder& QIRProgramBuilder::sdg(const Value qubit) {
 
 QIRProgramBuilder& QIRProgramBuilder::csdg(const Value control,
                                            const Value target) {
-  createControlledOneTargetZeroParameter(control, target, QIR_CSDG);
+  createControlledOneTargetZeroParameter({control}, target, QIR_CSDG);
+  return *this;
+}
+
+QIRProgramBuilder& QIRProgramBuilder::mcsdg(const ValueRange controls,
+                                            const Value target) {
+  StringRef fnName;
+  if (controls.size() == 1) {
+    fnName = QIR_CSDG;
+  } else if (controls.size() == 2) {
+    fnName = QIR_CCSDG;
+  } else if (controls.size() == 3) {
+    fnName = QIR_CCCSDG;
+  } else {
+    llvm::report_fatal_error("Multi-controlled with more than 3 controls are "
+                             "currently not supported");
+  }
+  createControlledOneTargetZeroParameter(controls, target, fnName);
   return *this;
 }
 
@@ -447,7 +607,24 @@ QIRProgramBuilder& QIRProgramBuilder::t(const Value qubit) {
 
 QIRProgramBuilder& QIRProgramBuilder::ct(const Value control,
                                          const Value target) {
-  createControlledOneTargetZeroParameter(control, target, QIR_CT);
+  createControlledOneTargetZeroParameter({control}, target, QIR_CT);
+  return *this;
+}
+
+QIRProgramBuilder& QIRProgramBuilder::mct(const ValueRange controls,
+                                          const Value target) {
+  StringRef fnName;
+  if (controls.size() == 1) {
+    fnName = QIR_CT;
+  } else if (controls.size() == 2) {
+    fnName = QIR_CCT;
+  } else if (controls.size() == 3) {
+    fnName = QIR_CCCT;
+  } else {
+    llvm::report_fatal_error("Multi-controlled with more than 3 controls are "
+                             "currently not supported");
+  }
+  createControlledOneTargetZeroParameter(controls, target, fnName);
   return *this;
 }
 
@@ -464,6 +641,23 @@ QIRProgramBuilder& QIRProgramBuilder::ctdg(const Value control,
   return *this;
 }
 
+QIRProgramBuilder& QIRProgramBuilder::mctdg(const ValueRange controls,
+                                            const Value target) {
+  StringRef fnName;
+  if (controls.size() == 1) {
+    fnName = QIR_CTDG;
+  } else if (controls.size() == 2) {
+    fnName = QIR_CCTDG;
+  } else if (controls.size() == 3) {
+    fnName = QIR_CCCTDG;
+  } else {
+    llvm::report_fatal_error("Multi-controlled with more than 3 controls are "
+                             "currently not supported");
+  }
+  createControlledOneTargetZeroParameter(controls, target, fnName);
+  return *this;
+}
+
 // SXOp
 
 QIRProgramBuilder& QIRProgramBuilder::sx(const Value qubit) {
@@ -473,7 +667,24 @@ QIRProgramBuilder& QIRProgramBuilder::sx(const Value qubit) {
 
 QIRProgramBuilder& QIRProgramBuilder::csx(const Value control,
                                           const Value target) {
-  createControlledOneTargetZeroParameter(control, target, QIR_CSX);
+  createControlledOneTargetZeroParameter({control}, target, QIR_CSX);
+  return *this;
+}
+
+QIRProgramBuilder& QIRProgramBuilder::mcsx(const ValueRange controls,
+                                           const Value target) {
+  StringRef fnName;
+  if (controls.size() == 1) {
+    fnName = QIR_CSX;
+  } else if (controls.size() == 2) {
+    fnName = QIR_CCSX;
+  } else if (controls.size() == 3) {
+    fnName = QIR_CCCSX;
+  } else {
+    llvm::report_fatal_error("Multi-controlled with more than 3 controls are "
+                             "currently not supported");
+  }
+  createControlledOneTargetZeroParameter(controls, target, fnName);
   return *this;
 }
 
@@ -486,7 +697,24 @@ QIRProgramBuilder& QIRProgramBuilder::sxdg(const Value qubit) {
 
 QIRProgramBuilder& QIRProgramBuilder::csxdg(const Value control,
                                             const Value target) {
-  createControlledOneTargetZeroParameter(control, target, QIR_CSXDG);
+  createControlledOneTargetZeroParameter({control}, target, QIR_CSXDG);
+  return *this;
+}
+
+QIRProgramBuilder& QIRProgramBuilder::mcsxdg(const ValueRange controls,
+                                             const Value target) {
+  StringRef fnName;
+  if (controls.size() == 1) {
+    fnName = QIR_CSXDG;
+  } else if (controls.size() == 2) {
+    fnName = QIR_CCSXDG;
+  } else if (controls.size() == 3) {
+    fnName = QIR_CCCSXDG;
+  } else {
+    llvm::report_fatal_error("Multi-controlled with more than 3 controls are "
+                             "currently not supported");
+  }
+  createControlledOneTargetZeroParameter(controls, target, fnName);
   return *this;
 }
 
@@ -502,7 +730,25 @@ QIRProgramBuilder::rx(const std::variant<double, Value>& theta,
 QIRProgramBuilder&
 QIRProgramBuilder::crx(const std::variant<double, Value>& theta,
                        const Value control, const Value target) {
-  createControlledOneTargetOneParameter(theta, control, target, QIR_CRX);
+  createControlledOneTargetOneParameter(theta, {control}, target, QIR_CRX);
+  return *this;
+}
+
+QIRProgramBuilder&
+QIRProgramBuilder::mcrx(const std::variant<double, Value>& theta,
+                        const ValueRange controls, const Value target) {
+  StringRef fnName;
+  if (controls.size() == 1) {
+    fnName = QIR_CRX;
+  } else if (controls.size() == 2) {
+    fnName = QIR_CCRX;
+  } else if (controls.size() == 3) {
+    fnName = QIR_CCCRX;
+  } else {
+    llvm::report_fatal_error("Multi-controlled with more than 3 controls are "
+                             "currently not supported");
+  }
+  createControlledOneTargetOneParameter(theta, controls, target, fnName);
   return *this;
 }
 
@@ -518,7 +764,25 @@ QIRProgramBuilder::ry(const std::variant<double, Value>& theta,
 QIRProgramBuilder&
 QIRProgramBuilder::cry(const std::variant<double, Value>& theta,
                        const Value control, const Value target) {
-  createControlledOneTargetOneParameter(theta, control, target, QIR_CRY);
+  createControlledOneTargetOneParameter(theta, {control}, target, QIR_CRY);
+  return *this;
+}
+
+QIRProgramBuilder&
+QIRProgramBuilder::mcry(const std::variant<double, Value>& theta,
+                        const ValueRange controls, const Value target) {
+  StringRef fnName;
+  if (controls.size() == 1) {
+    fnName = QIR_CRY;
+  } else if (controls.size() == 2) {
+    fnName = QIR_CCRY;
+  } else if (controls.size() == 3) {
+    fnName = QIR_CCCRY;
+  } else {
+    llvm::report_fatal_error("Multi-controlled with more than 3 controls are "
+                             "currently not supported");
+  }
+  createControlledOneTargetOneParameter(theta, controls, target, fnName);
   return *this;
 }
 
@@ -534,7 +798,25 @@ QIRProgramBuilder::rz(const std::variant<double, Value>& theta,
 QIRProgramBuilder&
 QIRProgramBuilder::crz(const std::variant<double, Value>& theta,
                        const Value control, const Value target) {
-  createControlledOneTargetOneParameter(theta, control, target, QIR_CRZ);
+  createControlledOneTargetOneParameter(theta, {control}, target, QIR_CRZ);
+  return *this;
+}
+
+QIRProgramBuilder&
+QIRProgramBuilder::mcrz(const std::variant<double, Value>& theta,
+                        const ValueRange controls, const Value target) {
+  StringRef fnName;
+  if (controls.size() == 1) {
+    fnName = QIR_CRZ;
+  } else if (controls.size() == 2) {
+    fnName = QIR_CCRZ;
+  } else if (controls.size() == 3) {
+    fnName = QIR_CCCRZ;
+  } else {
+    llvm::report_fatal_error("Multi-controlled with more than 3 controls are "
+                             "currently not supported");
+  }
+  createControlledOneTargetOneParameter(theta, controls, target, fnName);
   return *this;
 }
 
@@ -550,7 +832,25 @@ QIRProgramBuilder::p(const std::variant<double, Value>& theta,
 QIRProgramBuilder&
 QIRProgramBuilder::cp(const std::variant<double, Value>& theta,
                       const Value control, const Value target) {
-  createControlledOneTargetOneParameter(theta, control, target, QIR_CP);
+  createControlledOneTargetOneParameter(theta, {control}, target, QIR_CP);
+  return *this;
+}
+
+QIRProgramBuilder&
+QIRProgramBuilder::mcp(const std::variant<double, Value>& theta,
+                       const ValueRange controls, const Value target) {
+  StringRef fnName;
+  if (controls.size() == 1) {
+    fnName = QIR_CP;
+  } else if (controls.size() == 2) {
+    fnName = QIR_CCP;
+  } else if (controls.size() == 3) {
+    fnName = QIR_CCCP;
+  } else {
+    llvm::report_fatal_error("Multi-controlled with more than 3 controls are "
+                             "currently not supported");
+  }
+  createControlledOneTargetOneParameter(theta, controls, target, fnName);
   return *this;
 }
 
@@ -659,6 +959,13 @@ QIRProgramBuilder::cu2(const std::variant<double, Value>& phi,
   return *this;
 }
 
+QIRProgramBuilder&
+QIRProgramBuilder::mcu2(const std::variant<double, Value>& phi,
+                        const std::variant<double, Value>& lambda,
+                        const ValueRange controls, const Value target) {
+  llvm::report_fatal_error("Not implemented yet");
+}
+
 // SWAPOp
 
 QIRProgramBuilder& QIRProgramBuilder::swap(const Value qubit0,
@@ -702,6 +1009,12 @@ QIRProgramBuilder& QIRProgramBuilder::cswap(const Value control,
                                ValueRange{control, target0, target1});
 
   return *this;
+}
+
+QIRProgramBuilder& QIRProgramBuilder::mcswap(const ValueRange controls,
+                                             const Value target0,
+                                             const Value target1) {
+  llvm::report_fatal_error("Not implemented yet");
 }
 
 //===----------------------------------------------------------------------===//

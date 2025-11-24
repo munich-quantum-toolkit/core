@@ -137,7 +137,7 @@ convertOneTargetZeroParameter(QuartzOpType& op, QuartzOpAdaptorType& adaptor,
       inCtrlOp != 0 ? state.posCtrls[inCtrlOp] : SmallVector<Value>{};
   const size_t numCtrls = posCtrls.size();
 
-  // Define function argument types
+  // Define argument types
   SmallVector<Type> argumentTypes;
   argumentTypes.reserve(numCtrls + 1);
   const auto ptrType = LLVM::LLVMPointerType::get(ctx);
@@ -147,6 +147,8 @@ convertOneTargetZeroParameter(QuartzOpType& op, QuartzOpAdaptorType& adaptor,
   }
   // Add target pointer
   argumentTypes.push_back(ptrType);
+
+  // Define function signature
   const auto fnSignature =
       LLVM::LLVMFunctionType::get(LLVM::LLVMVoidType::get(ctx), argumentTypes);
 
@@ -195,7 +197,7 @@ convertOneTargetOneParameter(QuartzOpType& op, QuartzOpAdaptorType& adaptor,
       inCtrlOp != 0 ? state.posCtrls[inCtrlOp] : SmallVector<Value>{};
   const size_t numCtrls = posCtrls.size();
 
-  // Define function argument types
+  // Define argument types
   SmallVector<Type> argumentTypes;
   argumentTypes.reserve(numCtrls + 2);
   const auto ptrType = LLVM::LLVMPointerType::get(ctx);
@@ -207,6 +209,8 @@ convertOneTargetOneParameter(QuartzOpType& op, QuartzOpAdaptorType& adaptor,
   argumentTypes.push_back(ptrType);
   // Add parameter type
   argumentTypes.push_back(Float64Type::get(ctx));
+
+  // Define function signature
   const auto fnSignature =
       LLVM::LLVMFunctionType::get(LLVM::LLVMVoidType::get(ctx), argumentTypes);
 

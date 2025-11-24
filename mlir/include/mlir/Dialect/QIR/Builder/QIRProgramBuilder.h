@@ -297,6 +297,24 @@ public:
   QIRProgramBuilder& cid(Value control, Value target);
 
   /**
+   * @brief Apply a multi-controlled Id gate
+   *
+   * @param controls Control qubits
+   * @param target Target qubit
+   * @return Reference to this builder for method chaining
+   *
+   * @par Example:
+   * ```c++
+   * builder.mcid({control1, control2}, target);
+   * ```
+   * ```mlir
+   * llvm.call @__quantum__qis__cci__body(%c1, %c2, %t) : (!llvm.ptr, !llvm.ptr,
+   * !llvm.ptr) -> ()
+   * ```
+   */
+  QIRProgramBuilder& mcid(ValueRange controls, Value target);
+
+  /**
    * @brief Apply an X gate to a qubit
    *
    * @param qubit Input qubit
@@ -328,6 +346,24 @@ public:
    * ```
    */
   QIRProgramBuilder& cx(Value control, Value target);
+
+  /**
+   * @brief Apply a multi-controlled X gate
+   *
+   * @param controls Control qubits
+   * @param target Target qubit
+   * @return Reference to this builder for method chaining
+   *
+   * @par Example:
+   * ```c++
+   * builder.mcx({control1, control2}, target);
+   * ```
+   * ```mlir
+   * llvm.call @__quantum__qis__ccx__body(%c1, %c2, %t) : (!llvm.ptr, !llvm.ptr,
+   * !llvm.ptr) -> ()
+   * ```
+   */
+  QIRProgramBuilder& mcx(ValueRange controls, Value target);
 
   /**
    * @brief Apply a Y gate to a qubit
@@ -363,6 +399,24 @@ public:
   QIRProgramBuilder& cy(Value control, Value target);
 
   /**
+   * @brief Apply a multi-controlled Y gate
+   *
+   * @param controls Control qubits
+   * @param target Target qubit
+   * @return Reference to this builder for method chaining
+   *
+   * @par Example:
+   * ```c++
+   * builder.mcy({control1, control2}, target);
+   * ```
+   * ```mlir
+   * llvm.call @__quantum__qis__ccy__body(%c1, %c2, %t) : (!llvm.ptr, !llvm.ptr,
+   * !llvm.ptr) -> ()
+   * ```
+   */
+  QIRProgramBuilder& mcy(ValueRange controls, Value target);
+
+  /**
    * @brief Apply a Z gate to a qubit
    *
    * @param qubit Input qubit
@@ -394,6 +448,24 @@ public:
    * ```
    */
   QIRProgramBuilder& cz(Value control, Value target);
+
+  /**
+   * @brief Apply a multi-controlled Z gate
+   *
+   * @param controls Control qubits
+   * @param target Target qubit
+   * @return Reference to this builder for method chaining
+   *
+   * @par Example:
+   * ```c++
+   * builder.mcz({control1, control2}, target);
+   * ```
+   * ```mlir
+   * llvm.call @__quantum__qis__ccz__body(%c1, %c2, %t) : (!llvm.ptr, !llvm.ptr,
+   * !llvm.ptr) -> ()
+   * ```
+   */
+  QIRProgramBuilder& mcz(ValueRange controls, Value target);
 
   /**
    * @brief Apply an H gate to a qubit
@@ -429,6 +501,24 @@ public:
   QIRProgramBuilder& ch(Value control, Value target);
 
   /**
+   * @brief Apply a multi-controlled H gate
+   *
+   * @param controls Control qubits
+   * @param target Target qubit
+   * @return Reference to this builder for method chaining
+   *
+   * @par Example:
+   * ```c++
+   * builder.mch({control1, control2}, target);
+   * ```
+   * ```mlir
+   * llvm.call @__quantum__qis__cch__body(%c1, %c2, %t) : (!llvm.ptr, !llvm.ptr,
+   * !llvm.ptr) -> ()
+   * ```
+   */
+  QIRProgramBuilder& mch(ValueRange controls, Value target);
+
+  /**
    * @brief Apply an S gate to a qubit
    *
    * @param qubit Target qubit
@@ -460,6 +550,24 @@ public:
    * ```
    */
   QIRProgramBuilder& cs(Value control, Value target);
+
+  /**
+   * @brief Apply a multi-controlled S gate
+   *
+   * @param controls Control qubits
+   * @param target Target qubit
+   * @return Reference to this builder for method chaining
+   *
+   * @par Example:
+   * ```c++
+   * builder.mcs({control1, control2}, target);
+   * ```
+   * ```mlir
+   * llvm.call @__quantum__qis__ccs__body(%c1, %c2, %t) : (!llvm.ptr, !llvm.ptr,
+   * !llvm.ptr) -> ()
+   * ```
+   */
+  QIRProgramBuilder& mcs(ValueRange controls, Value target);
 
   /**
    * @brief Apply an Sdg gate to a qubit
@@ -496,6 +604,24 @@ public:
   QIRProgramBuilder& csdg(Value control, Value target);
 
   /**
+   * @brief Apply a multi-controlled Sdg gate
+   *
+   * @param controls Control qubits
+   * @param target Target qubit
+   * @return Reference to this builder for method chaining
+   *
+   * @par Example:
+   * ```c++
+   * builder.mcsdg({control1, control2}, target);
+   * ```
+   * ```mlir
+   * llvm.call @__quantum__qis__ccsdg__body(%c1, %c2, %t) : (!llvm.ptr,
+   * !llvm.ptr, !llvm.ptr) -> ()
+   * ```
+   */
+  QIRProgramBuilder& mcsdg(ValueRange controls, Value target);
+
+  /**
    * @brief Apply a T gate to a qubit
    *
    * @param qubit Input qubit
@@ -527,6 +653,24 @@ public:
    * ```
    */
   QIRProgramBuilder& ct(Value control, Value target);
+
+  /**
+   * @brief Apply a multi-controlled T gate
+   *
+   * @param controls Control qubits
+   * @param target Target qubit
+   * @return Reference to this builder for method chaining
+   *
+   * @par Example:
+   * ```c++
+   * builder.mct({control1, control2}, target);
+   * ```
+   * ```mlir
+   * llvm.call @__quantum__qis__cct__body(%c1, %c2, %t) : (!llvm.ptr, !llvm.ptr,
+   * !llvm.ptr) -> ()
+   * ```
+   */
+  QIRProgramBuilder& mct(ValueRange controls, Value target);
 
   /**
    * @brief Apply a Tdg gate to a qubit
@@ -563,6 +707,24 @@ public:
   QIRProgramBuilder& ctdg(Value control, Value target);
 
   /**
+   * @brief Apply a multi-controlled Tdg gate
+   *
+   * @param controls Control qubits
+   * @param target Target qubit
+   * @return Reference to this builder for method chaining
+   *
+   * @par Example:
+   * ```c++
+   * builder.mctdg({control1, control2}, target);
+   * ```
+   * ```mlir
+   * llvm.call @__quantum__qis__cctdg__body(%c1, %c2, %t) : (!llvm.ptr,
+   * !llvm.ptr, !llvm.ptr) -> ()
+   * ```
+   */
+  QIRProgramBuilder& mctdg(ValueRange controls, Value target);
+
+  /**
    * @brief Apply an SX gate to a qubit
    *
    * @param qubit Input qubit
@@ -594,6 +756,24 @@ public:
    * ```
    */
   QIRProgramBuilder& csx(Value control, Value target);
+
+  /**
+   * @brief Apply a multi-controlled SX gate
+   *
+   * @param controls Control qubits
+   * @param target Target qubit
+   * @return Reference to this builder for method chaining
+   *
+   * @par Example:
+   * ```c++
+   * builder.mcs({control1, control2}, target);
+   * ```
+   * ```mlir
+   * llvm.call @__quantum__qis__ccs__body(%c1, %c2, %t) : (!llvm.ptr, !llvm.ptr,
+   * !llvm.ptr) -> ()
+   * ```
+   */
+  QIRProgramBuilder& mcsx(ValueRange controls, Value target);
 
   /**
    * @brief Apply an SXdg gate to a qubit
@@ -628,6 +808,24 @@ public:
    * ```
    */
   QIRProgramBuilder& csxdg(Value control, Value target);
+
+  /**
+   * @brief Apply a multi-controlled SXdg gate
+   *
+   * @param controls Control qubits
+   * @param target Target qubit
+   * @return Reference to this builder for method chaining
+   *
+   * @par Example:
+   * ```c++
+   * builder.mcsxdg({control1, control2}, target);
+   * ```
+   * ```mlir
+   * llvm.call @__quantum__qis__ccsxdg__body(%c1, %c2, %t) : (!llvm.ptr,
+   * !llvm.ptr, !llvm.ptr) -> ()
+   * ```
+   */
+  QIRProgramBuilder& mcsxdg(ValueRange controls, Value target);
 
   /**
    * @brief Apply an RX gate to a qubit
@@ -667,6 +865,26 @@ public:
                          Value control, Value target);
 
   /**
+   * @brief Apply a multi-controlled RX gate
+   *
+   * @param theta Rotation angle
+   * @param controls Control qubits
+   * @param target Target qubit
+   * @return Reference to this builder for method chaining
+   *
+   * @par Example:
+   * ```c++
+   * builder.mcrx(theta, controls, target);
+   * ```
+   * ```mlir
+   * llvm.call @__quantum__qis__mcrx__body(%c1, %c2, %t, %theta) : (!llvm.ptr,
+   * !llvm.ptr, !llvm.ptr, f64) -> ()
+   * ```
+   */
+  QIRProgramBuilder& mcrx(const std::variant<double, Value>& theta,
+                          ValueRange controls, Value target);
+
+  /**
    * @brief Apply an RY gate to a qubit
    *
    * @param theta Rotation angle
@@ -702,6 +920,26 @@ public:
    */
   QIRProgramBuilder& cry(const std::variant<double, Value>& theta,
                          Value control, Value target);
+
+  /**
+   * @brief Apply a multi-controlled RY gate
+   *
+   * @param theta Rotation angle
+   * @param controls Control qubits
+   * @param target Target qubit
+   * @return Reference to this builder for method chaining
+   *
+   * @par Example:
+   * ```c++
+   * builder.mcry(theta, controls, target);
+   * ```
+   * ```mlir
+   * llvm.call @__quantum__qis__mcry__body(%c1, %c2, %t, %theta) : (!llvm.ptr,
+   * !llvm.ptr, !llvm.ptr, f64) -> ()
+   * ```
+   */
+  QIRProgramBuilder& mcry(const std::variant<double, Value>& theta,
+                          ValueRange controls, Value target);
 
   /**
    * @brief Apply an RZ gate to a qubit
@@ -741,6 +979,26 @@ public:
                          Value control, Value target);
 
   /**
+   * @brief Apply a multi-controlled RZ gate
+   *
+   * @param theta Rotation angle
+   * @param controls Control qubits
+   * @param target Target qubit
+   * @return Reference to this builder for method chaining
+   *
+   * @par Example:
+   * ```c++
+   * builder.mcrz(theta, controls, target);
+   * ```
+   * ```mlir
+   * llvm.call @__quantum__qis__mcrz__body(%c1, %c2, %t, %theta) : (!llvm.ptr,
+   * !llvm.ptr, !llvm.ptr, f64) -> ()
+   * ```
+   */
+  QIRProgramBuilder& mcrz(const std::variant<double, Value>& theta,
+                          ValueRange controls, Value target);
+
+  /**
    * @brief Apply a P gate to a qubit
    *
    * @param theta Rotation angle
@@ -776,6 +1034,27 @@ public:
    */
   QIRProgramBuilder& cp(const std::variant<double, Value>& theta, Value control,
                         Value target);
+
+  /**
+   * @brief Apply a multi-controlled P gate
+   *
+   * @param theta Rotation angle
+   * @param controls Control qubits
+   * @param target Target qubit
+   * @return Reference to this builder for method chaining
+   *
+   * @par Example:
+   * ```c++
+   * builder.mcp(theta, controls, target);
+   * ```
+   * ```mlir
+   * llvm.call @__quantum__qis__mcp__body(%c1, %c2, %t, %theta) : (!llvm.ptr,
+   * !llvm.ptr, !llvm.ptr, f64) -> ()
+   * ```
+   */
+  QIRProgramBuilder& mcp(const std::variant<double, Value>& theta,
+                         ValueRange controls, Value target);
+
   /**
    * @brief Apply a U2 gate to a qubit
    *
@@ -819,6 +1098,28 @@ public:
                          Value control, Value target);
 
   /**
+   * @brief Apply a multi-controlled U2 gate
+   *
+   * @param phi Rotation angle
+   * @param lambda Rotation angle
+   * @param controls Control qubits
+   * @param target Target qubit
+   * @return Reference to this builder for method chaining
+   *
+   * @par Example:
+   * ```c++
+   * builder.mu2(phi, lambda, controls, target);
+   * ```
+   * ```mlir
+   * llvm.call @__quantum__qis__mu2__body(%c1, %c2, %t, %phi, %lambda) :
+   * (!llvm.ptr, !llvm.ptr, !llvm.ptr, f64, f64) -> ()
+   * ```
+   */
+  QIRProgramBuilder& mcu2(const std::variant<double, Value>& phi,
+                          const std::variant<double, Value>& lambda,
+                          ValueRange controls, Value target);
+
+  /**
    * @brief Apply a SWAP gate to two qubits
    *
    * @param qubit0 Input qubit
@@ -850,11 +1151,29 @@ public:
    * ```
    * ```mlir
    * llvm.call @__quantum__qis__cswap__body(%c, %t0, %t1) : (!llvm.ptr,
-   * !llvm.ptr, !llvm.ptr) ->
-   * ()
+   * !llvm.ptr, !llvm.ptr) -> ()
    * ```
    */
   QIRProgramBuilder& cswap(Value control, Value target0, Value target1);
+
+  /**
+   * @brief Apply a multi-controlled SWAP gate
+   *
+   * @param controls Control qubits
+   * @param target1 Target qubit
+   * @param target2 Target qubit
+   * @return Reference to this builder for method chaining
+   *
+   * @par Example:
+   * ```c++
+   * builder.mcswap({control1, control2}, target1, target2);
+   * ```
+   * ```mlir
+   * llvm.call @__quantum__qis__mcswap__body(%c1, %c2, %t0, %t1) : (!llvm.ptr,
+   * !llvm.ptr, !llvm.ptr, !llvm.ptr) -> ()
+   * ```
+   */
+  QIRProgramBuilder& mcswap(ValueRange controls, Value target0, Value target1);
 
   //===--------------------------------------------------------------------===//
   // Finalization
@@ -908,7 +1227,7 @@ private:
   /**
    * @brief Helper to create a one-target, zero-parameter QIR operation
    *
-   * @param qubit Input qubit
+   * @param qubit Target qubit
    * @param fnName Name of the QIR function to call
    */
   void createOneTargetZeroParameter(const Value qubit, StringRef fnName);
@@ -917,11 +1236,11 @@ private:
    * @brief Helper to create a controlled one-target, zero-parameter QIR
    * operation
    *
-   * @param control Input control qubit
-   * @param target Input target qubit
+   * @param controls Control qubits
+   * @param target Target qubit
    * @param fnName Name of the QIR function to call
    */
-  void createControlledOneTargetZeroParameter(const Value control,
+  void createControlledOneTargetZeroParameter(const ValueRange controls,
                                               const Value target,
                                               StringRef fnName);
 
@@ -940,12 +1259,12 @@ private:
    * operation
    *
    * @param parameter Operation parameter
-   * @param control Input control qubit
-   * @param target Input target qubit
+   * @param controls Control qubits
+   * @param target Target qubit
    * @param fnName Name of the QIR function to call
    */
   void createControlledOneTargetOneParameter(
-      const std::variant<double, Value>& parameter, const Value control,
+      const std::variant<double, Value>& parameter, const ValueRange controls,
       const Value target, StringRef fnName);
 
   /**
