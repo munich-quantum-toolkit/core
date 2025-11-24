@@ -8,6 +8,7 @@
  * Licensed under the MIT License
  */
 
+#include "mlir/Dialect/Flux/FluxUtils.h"
 #include "mlir/Dialect/Flux/IR/FluxDialect.h"
 #include "mlir/Dialect/Utils/MatrixUtils.h"
 
@@ -35,21 +36,7 @@ struct MergeSubsequentRX final : OpRewritePattern<RXOp> {
 
   LogicalResult matchAndRewrite(RXOp op,
                                 PatternRewriter& rewriter) const override {
-    // Check if the predecessor is an RXOp
-    auto prevOp = op.getQubitIn().getDefiningOp<RXOp>();
-    if (!prevOp) {
-      return failure();
-    }
-
-    // Compute and set new theta
-    auto newTheta = rewriter.create<arith::AddFOp>(op.getLoc(), op.getTheta(),
-                                                   prevOp.getTheta());
-    op->setOperand(1, newTheta.getResult());
-
-    // Trivialize previous RXOp
-    rewriter.replaceOp(prevOp, prevOp.getQubitIn());
-
-    return success();
+    return mergeOneTargetOneParameter(op, rewriter);
   }
 };
 

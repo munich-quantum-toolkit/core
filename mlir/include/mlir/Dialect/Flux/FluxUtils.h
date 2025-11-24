@@ -8,6 +8,7 @@
  * Licensed under the MIT License
  */
 
+#include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/IR/PatternMatch.h>
 
 namespace mlir::flux {
@@ -17,7 +18,7 @@ namespace mlir::flux {
  *
  * @tparam InverseOpType The type of the inverse operation.
  * @tparam OpType The type of the operation to be checked.
- * @param op The operation instance to be checked.
+ * @param op The operation instance.
  * @param rewriter The pattern rewriter.
  * @return LogicalResult Success or failure of the removal.
  */
@@ -34,6 +35,34 @@ removeInversePairOneTargetZeroParameter(OpType op,
   // Remove both operations
   rewriter.replaceOp(prevOp, prevOp.getQubitIn());
   rewriter.replaceOp(op, op.getQubitIn());
+
+  return success();
+}
+
+/**
+ * @brief Merge two compatible one-target, one-parameter operations
+ *
+ * @tparam OpType The type of the operation to be merged.
+ * @param op The operation instance.
+ * @param rewriter The pattern rewriter.
+ * @return LogicalResult Success or failure of the merge.
+ */
+template <typename OpType>
+inline mlir::LogicalResult
+mergeOneTargetOneParameter(OpType op, mlir::PatternRewriter& rewriter) {
+  // Check if the predecessor is the same operation
+  auto prevOp = op.getQubitIn().template getDefiningOp<OpType>();
+  if (!prevOp) {
+    return failure();
+  }
+
+  // Compute and set new theta
+  auto newParameter = rewriter.create<arith::AddFOp>(
+      op.getLoc(), op.getOperand(1), prevOp.getOperand(1));
+  op->setOperand(1, newParameter.getResult());
+
+  // Trivialize predecessor
+  rewriter.replaceOp(prevOp, prevOp.getQubitIn());
 
   return success();
 }
