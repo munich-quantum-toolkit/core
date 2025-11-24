@@ -89,7 +89,7 @@
   }
 // NOLINTEND(bugprone-macro-parentheses)
 
-namespace qdmi {
+namespace qdmi::sc {
 Device::Device() {
   // NOLINTBEGIN(cppcoreguidelines-prefer-member-initializer)
   INITIALIZE_NAME(name_);
@@ -149,7 +149,7 @@ auto Device::queryProperty(const QDMI_Device_Property prop, const size_t size,
                     operations_, prop, size, value, sizeRet)
   return QDMI_ERROR_NOTSUPPORTED;
 }
-} // namespace qdmi
+} // namespace qdmi::sc
 
 auto MQT_SC_QDMI_Device_Session_impl_d::init() -> int {
   if (status_ != Status::ALLOCATED) {
@@ -195,7 +195,7 @@ auto MQT_SC_QDMI_Device_Session_impl_d::queryDeviceProperty(
   if (status_ != Status::INITIALIZED) {
     return QDMI_ERROR_BADSTATE;
   }
-  return qdmi::Device::get().queryProperty(prop, size, value, sizeRet);
+  return qdmi::sc::Device::get().queryProperty(prop, size, value, sizeRet);
 }
 auto MQT_SC_QDMI_Device_Session_impl_d::querySiteProperty(
     MQT_SC_QDMI_Site site, const QDMI_Site_Property prop, const size_t size,
@@ -303,14 +303,14 @@ auto MQT_SC_QDMI_Operation_impl_d::queryProperty(
 }
 
 int MQT_SC_QDMI_device_initialize() {
-  std::ignore = qdmi::Device::get(); // Ensure the singleton is created
+  std::ignore = qdmi::sc::Device::get(); // Ensure the singleton is created
   return QDMI_SUCCESS;
 }
 
 int MQT_SC_QDMI_device_finalize() { return QDMI_SUCCESS; }
 
 int MQT_SC_QDMI_device_session_alloc(MQT_SC_QDMI_Device_Session* session) {
-  return qdmi::Device::get().sessionAlloc(session);
+  return qdmi::sc::Device::get().sessionAlloc(session);
 }
 
 int MQT_SC_QDMI_device_session_init(MQT_SC_QDMI_Device_Session session) {
@@ -321,7 +321,7 @@ int MQT_SC_QDMI_device_session_init(MQT_SC_QDMI_Device_Session session) {
 }
 
 void MQT_SC_QDMI_device_session_free(MQT_SC_QDMI_Device_Session session) {
-  qdmi::Device::get().sessionFree(session);
+  qdmi::sc::Device::get().sessionFree(session);
 }
 
 int MQT_SC_QDMI_device_session_set_parameter(

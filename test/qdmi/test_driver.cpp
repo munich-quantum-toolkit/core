@@ -48,7 +48,9 @@ protected:
   QDMI_Device device = nullptr;
 #ifndef _WIN32
   static void SetUpTestSuite() {
-    qdmi::Driver::get().addDynamicDeviceLibrary(DYN_DEV_LIB, "MQT_NA_DYN");
+    for (const auto& [lib, prefix] : DYN_DEV_LIBS) {
+      qdmi::Driver::get().addDynamicDeviceLibrary(lib, prefix);
+    }
   }
 #endif // _WIN32
 
@@ -122,8 +124,9 @@ protected:
 
 #ifndef _WIN32
 TEST_P(DriverTest, LoadLibraryTwice) {
-  EXPECT_NO_THROW(
-      qdmi::Driver::get().addDynamicDeviceLibrary(DYN_DEV_LIB, "MQT_NA_DYN"));
+  EXPECT_NO_THROW(for (const auto& [lib, prefix] : DYN_DEV_LIBS) {
+    qdmi::Driver::get().addDynamicDeviceLibrary(lib, prefix);
+  });
 }
 #endif // _WIN32
 

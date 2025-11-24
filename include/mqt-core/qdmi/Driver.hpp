@@ -140,6 +140,7 @@ public:
 // Call the above macro for all static libraries that we want to support.
 DECLARE_STATIC_LIBRARY(MQT_NA)
 DECLARE_STATIC_LIBRARY(MQT_DDSIM)
+DECLARE_STATIC_LIBRARY(MQT_SC)
 
 /**
  * @brief The status of a session.
