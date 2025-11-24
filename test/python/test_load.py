@@ -12,6 +12,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from qiskit import QuantumCircuit
+from qiskit.qasm2 import dumps
+
 from mqt.core import load
 from mqt.core.ir import QuantumComputation
 
@@ -89,9 +92,6 @@ def test_loading_nonexistent_file() -> None:
 
 def test_loading_qiskit_circuit() -> None:
     """Test whether importing a Qiskit circuit works."""
-    from qiskit import QuantumCircuit
-    from qiskit.qasm2 import dumps
-
     qiskit_circuit = QuantumCircuit(2, 2)
     qiskit_circuit.h(0)
     qiskit_circuit.cx(0, 1)

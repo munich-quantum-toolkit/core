@@ -27,6 +27,7 @@ from qiskit.circuit import (
 from qiskit.circuit.classical import expr
 from qiskit.circuit.library import U2Gate, XXMinusYYGate, XXPlusYYGate
 from qiskit.providers.fake_provider import GenericBackendV2
+from qiskit.qasm3 import dumps
 
 from mqt.core.ir.operations import (
     ComparisonKind,
@@ -496,8 +497,6 @@ def test_if_else_operation_register(
     comparison_kind: ComparisonKind,
 ) -> None:
     """Test import of if-else operation on register."""
-    from qiskit.qasm3 import dumps
-
     then_qc = QuantumCircuit(1)
     then_qc.x(0)
 
@@ -538,8 +537,6 @@ def test_if_else_operation_register(
 
 def test_if_else_operation_bit() -> None:
     """Test import of if-else operation."""
-    from qiskit.qasm3 import dumps
-
     then_qc = QuantumCircuit(1)
     then_qc.x(0)
 

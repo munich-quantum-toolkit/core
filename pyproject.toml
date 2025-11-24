@@ -215,11 +215,8 @@ select = ["ALL"]
 ignore = [
     "C90",     # <...> too complex
     "COM812",  # Conflicts with formatter
-    "CPY001",  # Missing copyright notice at top of file
-    "ISC001",  # Conflicts with formatter
     "PLR09",   # Too many <...>
     "PLR2004", # Magic value used in comparison
-    "PLC0415", # Import should be at top of file
     "S101",    # Use of assert detected
     "S404",    # `subprocess` module is possibly insecure
     "TID252"   # Prefer absolute imports over relative imports from parent modules
