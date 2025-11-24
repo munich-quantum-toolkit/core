@@ -98,6 +98,9 @@ def __post_processing(key: str) -> _BenchmarkDict:
         if metrics_divided[0] == "dd":
             result_metrics["component"] = "" if metrics_divided[0] == "dd" else metrics_divided.pop(0)
             result_metrics["metric"] = metrics_divided[-1]
+        else:
+            msg = f"Unsupported benchmark key structure: {key!r}"
+            raise ValueError(msg)
     else:
         separator = "_"
         # if the second-to-last element is not "total" then only the last element is the metric and the rest component
@@ -220,7 +223,7 @@ def __print_results(
 
     if no_split:
         if only_changed:
-            print(df[m1 | m2].sort_values(by=sort_indices).to_markdown(index=False, stralign="right"))
+            df = df[m1 | m2]
         print(df.sort_values(by=sort_indices).to_markdown(index=False, stralign="right"))
         return
 
@@ -307,11 +310,11 @@ def compare(
 def main() -> None:
     """Main function for the command line interface.
 
-    This function is called when running the `mqt-core-compare` CLI command.
+    This function is called when running this file as a script.
 
     .. code-block:: bash
 
-        mqt-core-compare baseline.json feature.json [options]
+        ./dd_evaluation baseline.json feature.json [options]
 
     In addition to the mandatory filepath arguments, it provides the following optional command line options:
 
