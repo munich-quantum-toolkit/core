@@ -61,6 +61,33 @@ auto calculateExtentFromSites(
                    .height = static_cast<uint64_t>(maxY - minY)}};
 }
 /**
+ * @brief Calculate the rectangular extent covering all given FoMaC site pairs.
+ * @param sitePairs is a vector of FoMaC site pairs
+ * @return the extent covering all sites in the pairs
+ */
+auto calculateExtentFromSites(
+    const std::vector<std::pair<fomac::FoMaC::Device::Site,
+                                fomac::FoMaC::Device::Site>>& sitePairs)
+    -> Device::Region {
+  auto minX = std::numeric_limits<int64_t>::max();
+  auto maxX = std::numeric_limits<int64_t>::min();
+  auto minY = std::numeric_limits<int64_t>::max();
+  auto maxY = std::numeric_limits<int64_t>::min();
+  for (const auto& [site1, site2] : sitePairs) {
+    const auto x1 = *site1.getXCoordinate();
+    const auto y1 = *site1.getYCoordinate();
+    const auto x2 = *site2.getXCoordinate();
+    const auto y2 = *site2.getYCoordinate();
+    minX = std::min({minX, x1, x2});
+    maxX = std::max({maxX, x1, x2});
+    minY = std::min({minY, y1, y2});
+    maxY = std::max({maxY, y1, y2});
+  }
+  return {.origin = {.x = minX, .y = minY},
+          .size = {.width = static_cast<uint64_t>(maxX - minX),
+                   .height = static_cast<uint64_t>(maxY - minY)}};
+}
+/**
  * @brief Device::Vector does not provide a hash function by default, this is
  * the replacement.
  * @param v is the vector to hash
@@ -116,10 +143,11 @@ auto FoMaC::Device::initDurationUnitFromDevice() -> bool {
   return true;
 }
 auto FoMaC::Device::initDecoherenceTimesFromDevice() -> bool {
-  // find first non-zone site as reference
-  auto regularSites = getSites() | std::views::filter([](const auto& site) {
-                        return !site.isZone().value_or(false);
-                      });
+  const auto regularSites = getRegularSites();
+  if (regularSites.empty()) {
+    SPDLOG_INFO("Device has no regular sites with decoherence data");
+    return false;
+  }
   uint64_t sumT1 = 0;
   uint64_t sumT2 = 0;
   for (const auto& site : regularSites) {
@@ -136,26 +164,15 @@ auto FoMaC::Device::initDecoherenceTimesFromDevice() -> bool {
     sumT1 += *t1;
     sumT2 += *t2;
   }
-  const auto count = static_cast<uint64_t>(std::ranges::distance(regularSites));
-  if (count == 0) {
-    SPDLOG_INFO("Device has no regular sites with decoherence data");
-    return false;
-  }
+  const auto count = regularSites.size();
   decoherenceTimes.t1 = sumT1 / count;
   decoherenceTimes.t2 = sumT2 / count;
   return true;
 }
 auto FoMaC::Device::initTrapsfromDevice() -> bool {
   traps.clear();
-  const auto& sites = getSites();
-  if (sites.empty()) {
-    SPDLOG_INFO("Device returned no sites");
-    return false;
-  }
-  auto regularSites = sites | std::views::filter([](const Site& site) -> bool {
-                        return !site.isZone().value_or(false);
-                      });
-  if (std::ranges::distance(regularSites) == 0) {
+  const auto regularSites = getRegularSites();
+  if (regularSites.empty()) {
     SPDLOG_INFO("Device has no regular sites");
     return false;
   }
@@ -280,7 +297,7 @@ auto FoMaC::Device::initOperationsFromDevice() -> bool {
   std::map<size_t, std::pair<ShuttlingUnit, std::array<bool, 3>>>
       shuttlingUnitsPerId;
   for (const fomac::FoMaC::Device::Operation& op : getOperations()) {
-    const auto zoned = op.isZoned().value_or(false);
+    const auto zoned = op.isZoned();
     const auto& nq = op.getQubitsNum();
     const auto& name = op.getName();
     const auto& sitesOpt = op.getSites();
@@ -291,7 +308,7 @@ auto FoMaC::Device::initOperationsFromDevice() -> bool {
     if (zoned) {
       if (std::ranges::any_of(
               *sitesOpt, [](const fomac::FoMaC::Device::Site& site) -> bool {
-                return !site.isZone().value_or(false);
+                return !site.isZone();
               })) {
         SPDLOG_INFO("Operation marked as zoned but has non-zone sites");
         return false;
@@ -509,6 +526,14 @@ auto FoMaC::Device::initOperationsFromDevice() -> bool {
              .fidelity = *f,
              .numParameters = op.getParametersNum()}});
       } else if (*nq == 2) {
+        const auto& sitePairsOpt = op.getSitePairs();
+        if (!sitePairsOpt.has_value() || sitePairsOpt->empty()) {
+          SPDLOG_INFO("Two-qubit operation missing site pairs");
+          return false;
+        }
+
+        const auto pairRegion = calculateExtentFromSites(*sitePairsOpt);
+
         const auto& ir = op.getInteractionRadius();
         if (!ir.has_value()) {
           SPDLOG_INFO("Two-qubit Operation missing interaction radius");
@@ -521,7 +546,7 @@ auto FoMaC::Device::initOperationsFromDevice() -> bool {
         }
         localMultiQubitOperations.emplace_back(
             LocalMultiQubitOperation{{.name = name,
-                                      .region = region,
+                                      .region = pairRegion,
                                       .duration = *d,
                                       .fidelity = *f,
                                       .numParameters = op.getParametersNum()},

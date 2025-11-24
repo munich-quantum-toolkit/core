@@ -11,6 +11,7 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 
 ### Changed
 
+- ♻️ Preserve tuple structure and improve site type clarity of the MQT NA Default QDMI Device ([#1299]) ([**@marcelwa**])
 - ♻️ Move DD package evaluation module to standalone script ([#1327]) ([**@burgholzer**])
 
 ### Removed
@@ -249,6 +250,7 @@ _📚 Refer to the [GitHub Release Notes](https://github.com/munich-quantum-tool
 
 [#1327]: https://github.com/munich-quantum-toolkit/core/pull/1327
 [#1300]: https://github.com/munich-quantum-toolkit/core/pull/1300
+[#1299]: https://github.com/munich-quantum-toolkit/core/pull/1299
 [#1293]: https://github.com/munich-quantum-toolkit/core/pull/1293
 [#1287]: https://github.com/munich-quantum-toolkit/core/pull/1287
 [#1283]: https://github.com/munich-quantum-toolkit/core/pull/1283
@@ -375,6 +377,7 @@ _📚 Refer to the [GitHub Release Notes](https://github.com/munich-quantum-tool
 [**@taminob**]: https://github.com/taminob
 [**@jannikpflieger**]: https://github.com/jannikpflieger
 [**@lsschmid**]: https://github.com/lsschmid
+[**@marcelwa**]: https://github.com/marcelwa
 
 <!-- General links -->
 
