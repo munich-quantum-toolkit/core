@@ -14,12 +14,48 @@
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/BuiltinAttributes.h>
+#include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OperationSupport.h>
+#include <mlir/IR/PatternMatch.h>
+#include <mlir/Support/LogicalResult.h>
+#include <numbers>
 #include <variant>
 
 using namespace mlir;
 using namespace mlir::flux;
 using namespace mlir::utils;
+
+namespace {
+
+/**
+ * @brief Remove trivial U2 operations.
+ */
+struct RemoveSubsequentU2 final : OpRewritePattern<U2Op> {
+  using OpRewritePattern::OpRewritePattern;
+
+  LogicalResult matchAndRewrite(U2Op op,
+                                PatternRewriter& rewriter) const override {
+    const auto phi = op.getStaticParameter(op.getPhi());
+    const auto lambda = op.getStaticParameter(op.getLambda());
+    if (!phi || !lambda) {
+      return failure();
+    }
+
+    const auto phiValue = phi.getValueAsDouble();
+    const auto lambdaValue = lambda.getValueAsDouble();
+    if (phiValue != 0.0 || lambdaValue != 0.0) {
+      return failure();
+    }
+
+    auto rxOp = rewriter.create<RYOp>(op.getLoc(), op.getQubitIn(),
+                                      std::numbers::pi / 2.0);
+    rewriter.replaceOp(op, rxOp.getResult());
+
+    return success();
+  }
+};
+
+} // namespace
 
 DenseElementsAttr U2Op::tryGetStaticMatrix() {
   const auto phi = getStaticParameter(getPhi());
@@ -53,4 +89,9 @@ void U2Op::build(OpBuilder& odsBuilder, OperationState& odsState,
   }
 
   build(odsBuilder, odsState, qubitIn, phiOperand, lambdaOperand);
+}
+
+void U2Op::getCanonicalizationPatterns(RewritePatternSet& results,
+                                       MLIRContext* context) {
+  results.add<RemoveSubsequentU2>(context);
 }

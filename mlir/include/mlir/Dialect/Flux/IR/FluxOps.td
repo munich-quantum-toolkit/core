@@ -672,6 +672,8 @@ def U2Op : FluxOp<"u2", traits = [UnitaryOpInterface, OneTargetTwoParameter]> {
     let builders = [
         OpBuilder<(ins "Value":$qubit_in, "const std::variant<double, Value>&":$phi, "const std::variant<double, Value>&":$lambda)>
     ];
+
+    let hasCanonicalizer = 1;
 }
 
 def SWAPOp : FluxOp<"swap", traits = [UnitaryOpInterface, TwoTargetZeroParameter]> {
