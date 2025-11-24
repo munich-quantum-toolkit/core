@@ -24,6 +24,7 @@
 #include <string>
 #include <unordered_map>
 #include <utility>
+#include <variant>
 #include <vector>
 
 namespace qdmi::na {
@@ -317,8 +318,23 @@ private:
   std::optional<uint64_t> meanShuttlingSpeed_ = std::nullopt;
   /// Idling fidelity
   std::optional<double> idlingFidelity_ = std::nullopt;
+
+  /**
+   * @brief Storage for individual sites and site pairs.
+   * @details Uses std::variant to preserve the tuple structure of the operation
+   * sites:
+   * - Single-qubit and zoned operations: vector<Site>
+   * - Local two-qubit operations: vector<pair<Site, Site>>
+   * This maintains type safety and QDMI specification compliance, which states
+   * that operation sites should be "a list of tuples" for local multi-qubit
+   * operations.
+   */
+  using SitesStorage =
+      std::variant<std::vector<MQT_NA_QDMI_Site>,
+                   std::vector<std::pair<MQT_NA_QDMI_Site, MQT_NA_QDMI_Site>>>;
+
   /// The operation's supported sites
-  std::vector<MQT_NA_QDMI_Site> supportedSites_;
+  SitesStorage supportedSites_;
   /// Indicates if this operation is zoned (global)
   bool isZoned_ = false;
 
@@ -336,12 +352,12 @@ private:
   MQT_NA_QDMI_Operation_impl_d(std::string name, size_t numParameters,
                                uint64_t duration, double fidelity,
                                const std::vector<MQT_NA_QDMI_Site>& sites);
-  /// @brief Constructor for the multi-qubit operations.
-  MQT_NA_QDMI_Operation_impl_d(std::string name, size_t numParameters,
-                               size_t numQubits, uint64_t duration,
-                               double fidelity, uint64_t interactionRadius,
-                               uint64_t blockingRadius,
-                               const std::vector<MQT_NA_QDMI_Site>& sites);
+  /// @brief Constructor for the local two-qubit operations.
+  MQT_NA_QDMI_Operation_impl_d(
+      std::string name, size_t numParameters, size_t numQubits,
+      uint64_t duration, double fidelity, uint64_t interactionRadius,
+      uint64_t blockingRadius,
+      const std::vector<std::pair<MQT_NA_QDMI_Site, MQT_NA_QDMI_Site>>& sites);
   /// @brief Constructor for load and store operations.
   MQT_NA_QDMI_Operation_impl_d(std::string name, size_t numParameters,
                                uint64_t duration, double fidelity,

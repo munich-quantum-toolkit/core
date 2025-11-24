@@ -40,7 +40,7 @@ class Device:
             """Returns the y coordinate of the site."""
         def z_coordinate(self) -> int | None:
             """Returns the z coordinate of the site."""
-        def is_zone(self) -> bool | None:
+        def is_zone(self) -> bool:
             """Returns whether the site is a zone."""
         def x_extent(self) -> int | None:
             """Returns the x extent of the site."""
@@ -75,12 +75,12 @@ class Device:
             """Returns the blocking radius of the operation."""
         def idling_fidelity(self, sites: Iterable[Device.Site] = ..., params: Iterable[float] = ...) -> float | None:
             """Returns the idling fidelity of the operation."""
-        def is_zoned(self, sites: Iterable[Device.Site] = ..., params: Iterable[float] = ...) -> bool | None:
+        def is_zoned(self) -> bool:
             """Returns whether the operation is zoned."""
-        def sites(
-            self, sites: Iterable[Device.Site] = ..., params: Iterable[float] = ...
-        ) -> Iterable[Device.Site] | None:
+        def sites(self) -> list[Device.Site] | None:
             """Returns the list of sites the operation can be performed on."""
+        def site_pairs(self) -> list[tuple[Device.Site, Device.Site]] | None:
+            """Returns the list of site pairs the local 2-qubit operation can be performed on."""
         def mean_shuttling_speed(self, sites: Iterable[Device.Site] = ..., params: Iterable[float] = ...) -> int | None:
             """Returns the mean shuttling speed of the operation."""
         def __eq__(self, other: object) -> bool:
@@ -98,11 +98,15 @@ class Device:
         """Returns the version of the library used to define the device."""
     def qubits_num(self) -> int:
         """Returns the number of qubits available on the device."""
-    def sites(self) -> Iterable[Site]:
-        """Returns the list of sites available on the device."""
-    def operations(self) -> Iterable[Operation]:
+    def sites(self) -> list[Site]:
+        """Returns the list of all sites (zone and regular sites) available on the device."""
+    def regular_sites(self) -> list[Site]:
+        """Returns the list of regular sites (without zone sites) available on the device."""
+    def zones(self) -> list[Site]:
+        """Returns the list of zone sites (without regular sites) available on the device."""
+    def operations(self) -> list[Operation]:
         """Returns the list of operations supported by the device."""
-    def coupling_map(self) -> Iterable[tuple[Site, Site]] | None:
+    def coupling_map(self) -> list[tuple[Site, Site]] | None:
         """Returns the coupling map of the device as a list of site pairs."""
     def needs_calibration(self) -> int | None:
         """Returns whether the device needs calibration."""
@@ -121,5 +125,5 @@ class Device:
     def __ne__(self, other: object) -> bool:
         """Checks if two devices are not equal."""
 
-def devices() -> Iterable[Device]:
+def devices() -> list[Device]:
     """Returns a list of available devices."""

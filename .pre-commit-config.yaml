@@ -11,7 +11,7 @@ ci:
   autoupdate_commit_msg: "⬆️🪝 update pre-commit hooks"
   autoupdate_schedule: quarterly
   autofix_commit_msg: "🎨 pre-commit fixes"
-  skip: [mypy]
+  skip: [mypy, ty-check]
 
 repos:
   # Ensure uv lock file is up-to-date
@@ -88,8 +88,18 @@ repos:
         args: []
         additional_dependencies:
           - nox
-          - pandas-stubs
+          - numpy
           - pytest
+
+  # Static type checking using ty
+  - repo: local
+    hooks:
+      - id: ty-check
+        name: ty check
+        entry: uvx ty check .
+        language: system
+        pass_filenames: false
+        always_run: true
 
   # Also run Black on examples in the documentation
   - repo: https://github.com/adamchainz/blacken-docs
