@@ -694,6 +694,8 @@ def SWAPOp : FluxOp<"swap", traits = [UnitaryOpInterface, TwoTargetZeroParameter
         DenseElementsAttr tryGetStaticMatrix();
         static StringRef getBaseSymbol() { return "x"; }
     }];
+
+    let hasCanonicalizer = 1;
 }
 
 def iSWAPOp : FluxOp<"iswap", traits = [UnitaryOpInterface, TwoTargetZeroParameter]> {
