@@ -153,6 +153,19 @@ inline DenseElementsAttr getMatrixU2(MLIRContext* ctx, double phi,
   return DenseElementsAttr::get(type, {m00, m01, m10, m11});
 }
 
+inline DenseElementsAttr getMatrixR(MLIRContext* ctx, double theta,
+                                    double phi) {
+  const auto& complexType = ComplexType::get(Float64Type::get(ctx));
+  const auto& type = RankedTensorType::get({2, 2}, complexType);
+  const std::complex<double> m00 = std::cos(theta / 2.0) + 0i;
+  const std::complex<double> m01 =
+      -1i * std::exp(-1i * phi) * std::sin(theta / 2.0);
+  const std::complex<double> m10 =
+      -1i * std::exp(1i * phi) * std::sin(theta / 2.0);
+  const std::complex<double> m11 = std::cos(theta / 2.0) + 0i;
+  return DenseElementsAttr::get(type, {m00, m01, m10, m11});
+}
+
 inline DenseElementsAttr getMatrixSWAP(MLIRContext* ctx) {
   const auto& complexType = ComplexType::get(Float64Type::get(ctx));
   const auto& type = RankedTensorType::get({4, 4}, complexType);

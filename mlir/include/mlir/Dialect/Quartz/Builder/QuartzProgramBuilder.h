@@ -1062,6 +1062,71 @@ public:
                             ValueRange controls, Value target);
 
   /**
+   * @brief Apply an R gate to a qubit
+   *
+   * @param theta Rotation angle in radians
+   * @param phi Rotation angle in radians
+   * @param qubit Target qubit
+   * @return Reference to this builder for method chaining
+   *
+   * @par Example:
+   * ```c++
+   * builder.r(1.0, 0.5, q);
+   * ```
+   * ```mlir
+   * quartz.r(%theta, %phi) %q : !quartz.qubit
+   * ```
+   */
+  QuartzProgramBuilder& r(const std::variant<double, Value>& theta,
+                          const std::variant<double, Value>& phi, Value qubit);
+
+  /**
+   * @brief Apply a controlled R gate
+   *
+   * @param theta Rotation angle in radians
+   * @param phi Rotation angle in radians
+   * @param control Control qubit
+   * @param target Target qubit
+   * @return Reference to this builder for method chaining
+   *
+   * @par Example:
+   * ```c++
+   * builder.cr(1.0, 0.5, q0, q1);
+   * ```
+   * ```mlir
+   * quartz.ctrl(%q0) {
+   *   quartz.r(%theta, %phi) %q1 : !quartz.qubit
+   * }
+   * ```
+   */
+  QuartzProgramBuilder& cr(const std::variant<double, Value>& theta,
+                           const std::variant<double, Value>& phi,
+                           Value control, Value target);
+
+  /**
+   * @brief Apply a multi-controlled R gate
+   *
+   * @param theta Rotation angle in radians
+   * @param phi Rotation angle in radians
+   * @param controls Control qubits
+   * @param target Target qubit
+   * @return Reference to this builder for method chaining
+   *
+   * @par Example:
+   * ```c++
+   * builder.mcr(1.0, 0.5, {q0, q1}, q2);
+   * ```
+   * ```mlir
+   * quartz.ctrl(%q0, %q1) {
+   *   quartz.r(%theta, %phi) %q2 : !quartz.qubit
+   * }
+   * ```
+   */
+  QuartzProgramBuilder& mcr(const std::variant<double, Value>& theta,
+                            const std::variant<double, Value>& phi,
+                            ValueRange controls, Value target);
+
+  /**
    * @brief Apply a U2 gate to a qubit
    *
    * @param phi Rotation angle in radians

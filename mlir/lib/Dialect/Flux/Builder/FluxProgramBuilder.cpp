@@ -244,6 +244,48 @@ FluxProgramBuilder::createMultiControlledOneTargetOneParameter(
   return {controlsOut, targetsOut[0]};
 }
 
+template <typename OpType>
+Value FluxProgramBuilder::createOneTargetTwoParameter(
+    const std::variant<double, Value>& parameter1,
+    const std::variant<double, Value>& parameter2, const Value qubit) {
+  auto op = create<OpType>(loc, qubit, parameter1, parameter2);
+  const auto& qubitOut = op.getQubitOut();
+  updateQubitTracking(qubit, qubitOut);
+  return qubitOut;
+}
+
+template <typename OpType>
+std::pair<Value, Value>
+FluxProgramBuilder::createControlledOneTargetTwoParameter(
+    const std::variant<double, Value>& parameter1,
+    const std::variant<double, Value>& parameter2, const Value control,
+    const Value target) {
+  const auto [controlsOut, targetsOut] =
+      ctrl(control, target,
+           [&](OpBuilder& b, const ValueRange targets) -> ValueRange {
+             const auto op =
+                 b.create<OpType>(loc, targets[0], parameter1, parameter2);
+             return op->getResults();
+           });
+  return {controlsOut[0], targetsOut[0]};
+}
+
+template <typename OpType>
+std::pair<ValueRange, Value>
+FluxProgramBuilder::createMultiControlledOneTargetTwoParameter(
+    const std::variant<double, Value>& parameter1,
+    const std::variant<double, Value>& parameter2, const ValueRange controls,
+    const Value target) {
+  const auto [controlsOut, targetsOut] =
+      ctrl(controls, target,
+           [&](OpBuilder& b, const ValueRange targets) -> ValueRange {
+             const auto op =
+                 b.create<OpType>(loc, targets[0], parameter1, parameter2);
+             return op->getResults();
+           });
+  return {controlsOut, targetsOut[0]};
+}
+
 // IdOp
 
 Value FluxProgramBuilder::id(const Value qubit) {
@@ -500,41 +542,52 @@ FluxProgramBuilder::mcp(const std::variant<double, Value>& theta,
                                                          target);
 }
 
+// ROp
+
+Value FluxProgramBuilder::r(const std::variant<double, Value>& theta,
+                            const std::variant<double, Value>& phi,
+                            const Value qubit) {
+  return createOneTargetTwoParameter<ROp>(theta, phi, qubit);
+}
+
+std::pair<Value, Value>
+FluxProgramBuilder::cr(const std::variant<double, Value>& theta,
+                       const std::variant<double, Value>& phi,
+                       const Value control, const Value target) {
+  return createControlledOneTargetTwoParameter<ROp>(theta, phi, control,
+                                                    target);
+}
+
+std::pair<ValueRange, Value>
+FluxProgramBuilder::mcr(const std::variant<double, Value>& theta,
+                        const std::variant<double, Value>& phi,
+                        const ValueRange controls, const Value target) {
+  return createMultiControlledOneTargetTwoParameter<ROp>(theta, phi, controls,
+                                                         target);
+}
+
 // U2Op
 
 Value FluxProgramBuilder::u2(const std::variant<double, Value>& phi,
                              const std::variant<double, Value>& lambda,
                              Value qubit) {
-  auto u2Op = create<U2Op>(loc, qubit, phi, lambda);
-  const auto& qubitOut = u2Op.getQubitOut();
-  updateQubitTracking(qubit, qubitOut);
-  return qubitOut;
+  return createOneTargetTwoParameter<U2Op>(phi, lambda, qubit);
 }
 
 std::pair<Value, Value>
 FluxProgramBuilder::cu2(const std::variant<double, Value>& phi,
                         const std::variant<double, Value>& lambda,
                         const Value control, const Value target) {
-  const auto [controlsOut, targetsOut] =
-      ctrl(control, target,
-           [&](OpBuilder& b, const ValueRange targets) -> ValueRange {
-             const auto u2 = b.create<U2Op>(loc, targets[0], phi, lambda);
-             return u2->getResults();
-           });
-  return {controlsOut[0], targetsOut[0]};
+  return createControlledOneTargetTwoParameter<U2Op>(phi, lambda, control,
+                                                     target);
 }
 
 std::pair<ValueRange, Value>
 FluxProgramBuilder::mcu2(const std::variant<double, Value>& phi,
                          const std::variant<double, Value>& lambda,
                          const ValueRange controls, const Value target) {
-  const auto [controlsOut, targetsOut] =
-      ctrl(controls, target,
-           [&](OpBuilder& b, const ValueRange targets) -> ValueRange {
-             const auto u2 = b.create<U2Op>(loc, targets[0], phi, lambda);
-             return u2->getResults();
-           });
-  return {controlsOut, targetsOut[0]};
+  return createMultiControlledOneTargetTwoParameter<U2Op>(phi, lambda, controls,
+                                                          target);
 }
 
 // SWAPOp

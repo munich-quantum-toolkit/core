@@ -92,6 +92,35 @@ convertOneTargetOneParameter(FluxOpType& op, FluxOpAdaptorType& adaptor,
   return success();
 }
 
+/**
+ * @brief Converts a one-target, two-parameter Flux operation to Quartz
+ *
+ * @tparam QuartzOpType The operation type of the Quartz operation
+ * @tparam FluxOpType The operation type of the Flux operation
+ * @param FluxOpAdaptorType The OpAdaptor type of the Flux operation
+ * @param op The Flux operation instance to convert
+ * @param adaptor The OpAdaptor of the Flux operation
+ * @param rewriter The pattern rewriter
+ * @return LogicalResult Success or failure of the conversion
+ */
+template <typename QuartzOpType, typename FluxOpType,
+          typename FluxOpAdaptorType>
+LogicalResult
+convertOneTargetTwoParameter(FluxOpType& op, FluxOpAdaptorType& adaptor,
+                             ConversionPatternRewriter& rewriter) {
+  // OpAdaptor provides the already type-converted input qubit
+  const auto& quartzQubit = adaptor.getQubitIn();
+
+  // Create the Quartz operation (in-place, no result)
+  rewriter.create<QuartzOpType>(op.getLoc(), quartzQubit, op.getOperand(1),
+                                op.getOperand(2));
+
+  // Replace the output qubit with the same Quartz reference
+  rewriter.replaceOp(op, quartzQubit);
+
+  return success();
+}
+
 } // namespace
 
 /**
@@ -626,6 +655,28 @@ struct ConvertFluxPOp final : OpConversionPattern<flux::POp> {
 };
 
 /**
+ * @brief Converts flux.r to quartz.r
+ *
+ * @par Example:
+ * ```mlir
+ * %q_out = flux.r(%theta, %phi) %q_in : !flux.qubit -> !flux.qubit
+ * ```
+ * is converted to
+ * ```mlir
+ * quartz.r(%theta, %phi) %q : !quartz.qubit
+ * ```
+ */
+struct ConvertFluxROp final : OpConversionPattern<flux::ROp> {
+  using OpConversionPattern::OpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(flux::ROp op, OpAdaptor adaptor,
+                  ConversionPatternRewriter& rewriter) const override {
+    return convertOneTargetTwoParameter<quartz::ROp>(op, adaptor, rewriter);
+  }
+};
+
+/**
  * @brief Converts flux.u2 to quartz.u2
  *
  * @par Example:
@@ -798,15 +849,15 @@ struct FluxToQuartz final : impl::FluxToQuartzBase<FluxToQuartz> {
 
     // Register operation conversion patterns
     // Note: No state tracking needed - OpAdaptors handle type conversion
-    patterns
-        .add<ConvertFluxAllocOp, ConvertFluxDeallocOp, ConvertFluxStaticOp,
-             ConvertFluxMeasureOp, ConvertFluxResetOp, ConvertFluxIdOp,
-             ConvertFluxXOp, ConvertFluxYOp, ConvertFluxZOp, ConvertFluxHOp,
-             ConvertFluxSOp, ConvertFluxSdgOp, ConvertFluxTOp, ConvertFluxTdgOp,
-             ConvertFluxSXOp, ConvertFluxSXdgOp, ConvertFluxRXOp,
-             ConvertFluxRYOp, ConvertFluxRZOp, ConvertFluxPOp, ConvertFluxU2Op,
-             ConvertFluxSWAPOp, ConvertFluxCtrlOp, ConvertFluxYieldOp>(
-            typeConverter, context);
+    patterns.add<ConvertFluxAllocOp, ConvertFluxDeallocOp, ConvertFluxStaticOp,
+                 ConvertFluxMeasureOp, ConvertFluxResetOp, ConvertFluxIdOp,
+                 ConvertFluxXOp, ConvertFluxYOp, ConvertFluxZOp, ConvertFluxHOp,
+                 ConvertFluxSOp, ConvertFluxSdgOp, ConvertFluxTOp,
+                 ConvertFluxTdgOp, ConvertFluxSXOp, ConvertFluxSXdgOp,
+                 ConvertFluxRXOp, ConvertFluxRYOp, ConvertFluxRZOp,
+                 ConvertFluxPOp, ConvertFluxROp, ConvertFluxU2Op,
+                 ConvertFluxSWAPOp, ConvertFluxCtrlOp, ConvertFluxYieldOp>(
+        typeConverter, context);
 
     // Conversion of flux types in func.func signatures
     // Note: This currently has limitations with signature changes

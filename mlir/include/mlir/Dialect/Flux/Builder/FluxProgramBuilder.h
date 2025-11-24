@@ -1176,6 +1176,78 @@ public:
                                    ValueRange controls, Value target);
 
   /**
+   * @brief Apply an R gate to a qubit
+   *
+   * @details
+   * Consumes the input qubit and produces a new output qubit SSA value.
+   * The input is validated and the tracking is updated.
+   *
+   * @param theta Rotation angle in radians
+   * @param phi Rotation angle in radians
+   * @param qubit Input qubit (must be valid/unconsumed)
+   * @return Output qubit
+   *
+   * @par Example:
+   * ```c++
+   * q_out = builder.r(1.0, 0.5, q_in);
+   * ```
+   * ```mlir
+   * %q_out = flux.r(%theta, %phi) %q_in : !flux.qubit -> !flux.qubit
+   * ```
+   */
+  Value r(const std::variant<double, Value>& theta,
+          const std::variant<double, Value>& phi, Value qubit);
+
+  /**
+   * @brief Apply a controlled R gate
+   *
+   * @param theta Rotation angle in radians
+   * @param phi Rotation angle in radians
+   * @param control Input control qubit (must be valid/unconsumed)
+   * @param target Input target qubit (must be valid/unconsumed)
+   * @return Pair of (output_control_qubit, output_target_qubit)
+   *
+   * @par Example:
+   * ```c++
+   * {q0_out, q1_out} = builder.cr(1.0, 0.5, q0_in, q1_in);
+   * ```
+   * ```mlir
+   * %q0_out, %q1_out = flux.ctrl(%q0_in) %q1_in {
+   *   %q1_res = flux.r(%theta, %phi) %q1_in : !flux.qubit -> !flux.qubit
+   *   flux.yield %q1_res
+   * } : ({!flux.qubit}, {!flux.qubit}) -> ({!flux.qubit}, {!flux.qubit})
+   * ```
+   */
+  std::pair<Value, Value> cr(const std::variant<double, Value>& theta,
+                             const std::variant<double, Value>& phi,
+                             Value control, Value target);
+
+  /**
+   * @brief Apply a multi-controlled R gate
+   *
+   * @param theta Rotation angle in radians
+   * @param phi Rotation angle in radians
+   * @param controls Input control qubits (must be valid/unconsumed)
+   * @param target Input target qubit (must be valid/unconsumed)
+   * @return Pair of (output_control_qubits, output_target_qubit)
+   *
+   * @par Example:
+   * ```c++
+   * {controls_out, target_out} = builder.mcr(1.0, 0.5, {q0_in, q1_in}, q2_in);
+   * ```
+   * ```mlir
+   * %controls_out, %target_out = flux.ctrl(%q0_in, %q1_in) %q2_in {
+   *   %q2_res = flux.r(%theta, %phi) %q2_in : !flux.qubit -> !flux.qubit
+   *   flux.yield %q2_res
+   * } : ({!flux.qubit, !flux.qubit}, {!flux.qubit}) -> ({!flux.qubit,
+   * !flux.qubit}, {!flux.qubit})
+   * ```
+   */
+  std::pair<ValueRange, Value> mcr(const std::variant<double, Value>& theta,
+                                   const std::variant<double, Value>& phi,
+                                   ValueRange controls, Value target);
+
+  /**
    * @brief Apply a U2 gate to a qubit
    *
    * @details
@@ -1470,6 +1542,55 @@ private:
   template <typename OpType>
   std::pair<ValueRange, Value> createMultiControlledOneTargetOneParameter(
       const std::variant<double, Value>& parameter, const ValueRange controls,
+      const Value target);
+
+  /**
+   * @brief Helper to create a one-target, two-parameter Flux operation
+   *
+   * @tparam OpType The operation type of the Flux operation
+   * @param parameter1 Operation parameter
+   * @param parameter2 Operation parameter
+   * @param qubit Input qubit
+   * @return Output qubit
+   */
+  template <typename OpType>
+  Value
+  createOneTargetTwoParameter(const std::variant<double, Value>& parameter1,
+                              const std::variant<double, Value>& parameter2,
+                              const Value qubit);
+
+  /**
+   * @brief Helper to create a controlled one-target, two-parameter Flux
+   * operation
+   *
+   * @tparam OpType The operation type of the Flux operation
+   * @param parameter1 Operation parameter
+   * @param parameter2 Operation parameter
+   * @param control Input control qubit
+   * @param target Input target qubit
+   * @return Pair of (output_control_qubit, output_target_qubit)
+   */
+  template <typename OpType>
+  std::pair<Value, Value> createControlledOneTargetTwoParameter(
+      const std::variant<double, Value>& parameter1,
+      const std::variant<double, Value>& parameter2, const Value control,
+      const Value target);
+
+  /**
+   * @brief Helper to create a multi-controlled one-target, two-parameter Flux
+   * operation
+   *
+   * @tparam OpType The operation type of the Flux operation
+   * @param parameter1 Operation parameter
+   * @param parameter2 Operation parameter
+   * @param controls Input control qubits
+   * @param target Input target qubit
+   * @return Pair of (output_control_qubits, output_target_qubit)
+   */
+  template <typename OpType>
+  std::pair<ValueRange, Value> createMultiControlledOneTargetTwoParameter(
+      const std::variant<double, Value>& parameter1,
+      const std::variant<double, Value>& parameter2, const ValueRange controls,
       const Value target);
 
   //===--------------------------------------------------------------------===//

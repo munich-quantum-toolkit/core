@@ -2156,6 +2156,100 @@ TEST_F(CompilerPipelineTest, P) {
   });
 }
 
+TEST_F(CompilerPipelineTest, R) {
+  qc::QuantumComputation qc;
+  qc.addQubitRegister(1, "q");
+  qc.r(1.0, 0.5, 0);
+
+  const auto module = importQuantumCircuit(qc);
+  ASSERT_TRUE(module);
+  ASSERT_TRUE(runPipeline(module.get()).succeeded());
+
+  const auto quartz = buildQuartzIR([](quartz::QuartzProgramBuilder& b) {
+    auto reg = b.allocQubitRegister(1, "q");
+    b.r(1.0, 0.5, reg[0]);
+  });
+  const auto flux = buildFluxIR([](flux::FluxProgramBuilder& b) {
+    auto reg = b.allocQubitRegister(1, "q");
+    b.r(1.0, 0.5, reg[0]);
+  });
+  const auto qir = buildQIR([](qir::QIRProgramBuilder& b) {
+    auto reg = b.allocQubitRegister(1);
+    const auto q = reg[0];
+    b.r(1.0, 0.5, q);
+  });
+
+  verifyAllStages({
+      .quartzImport = quartz.get(),
+      .fluxConversion = flux.get(),
+      .optimization = flux.get(),
+      .quartzConversion = quartz.get(),
+      .qirConversion = qir.get(),
+  });
+}
+
+TEST_F(CompilerPipelineTest, CR) {
+  qc::QuantumComputation qc;
+  qc.addQubitRegister(2, "q");
+  qc.cr(1.0, 0.5, 0, 1);
+
+  const auto module = importQuantumCircuit(qc);
+  ASSERT_TRUE(module);
+  ASSERT_TRUE(runPipeline(module.get()).succeeded());
+
+  const auto quartz = buildQuartzIR([](quartz::QuartzProgramBuilder& b) {
+    auto reg = b.allocQubitRegister(2, "q");
+    b.cr(1.0, 0.5, reg[0], reg[1]);
+  });
+  const auto flux = buildFluxIR([](flux::FluxProgramBuilder& b) {
+    auto reg = b.allocQubitRegister(2, "q");
+    b.cr(1.0, 0.5, reg[0], reg[1]);
+  });
+  const auto qir = buildQIR([](qir::QIRProgramBuilder& b) {
+    auto reg = b.allocQubitRegister(2);
+    b.cr(1.0, 0.5, reg[0], reg[1]);
+  });
+
+  verifyAllStages({
+      .quartzImport = quartz.get(),
+      .fluxConversion = flux.get(),
+      .optimization = flux.get(),
+      .quartzConversion = quartz.get(),
+      .qirConversion = qir.get(),
+  });
+}
+
+TEST_F(CompilerPipelineTest, MCR) {
+  qc::QuantumComputation qc;
+  qc.addQubitRegister(3, "q");
+  qc.mcr(1.0, 0.5, {0, 1}, 2);
+
+  const auto module = importQuantumCircuit(qc);
+  ASSERT_TRUE(module);
+  ASSERT_TRUE(runPipeline(module.get()).succeeded());
+
+  const auto quartz = buildQuartzIR([](quartz::QuartzProgramBuilder& b) {
+    auto reg = b.allocQubitRegister(3, "q");
+    b.mcr(1.0, 0.5, {reg[0], reg[1]}, reg[2]);
+  });
+  const auto flux = buildFluxIR([](flux::FluxProgramBuilder& b) {
+    auto reg = b.allocQubitRegister(3, "q");
+    b.mcr(1.0, 0.5, {reg[0], reg[1]}, reg[2]);
+  });
+  const auto qir = buildQIR([](qir::QIRProgramBuilder& b) {
+    auto reg = b.allocQubitRegister(3);
+    b.mcr(1.0, 0.5, {reg[0], reg[1]}, reg[2]);
+  });
+
+  verifyAllStages({
+      .quartzImport = quartz.get(),
+      .fluxConversion = flux.get(),
+      .optimization = flux.get(),
+      .quartzConversion = quartz.get(),
+      .qirConversion = qir.get(),
+  });
+}
+
 TEST_F(CompilerPipelineTest, U2) {
   qc::QuantumComputation qc;
   qc.addQubitRegister(1, "q");
@@ -2177,37 +2271,6 @@ TEST_F(CompilerPipelineTest, U2) {
     auto reg = b.allocQubitRegister(1);
     const auto q = reg[0];
     b.u2(1.0, 0.5, q);
-  });
-
-  verifyAllStages({
-      .quartzImport = quartz.get(),
-      .fluxConversion = flux.get(),
-      .optimization = flux.get(),
-      .quartzConversion = quartz.get(),
-      .qirConversion = qir.get(),
-  });
-}
-
-TEST_F(CompilerPipelineTest, CU2) {
-  qc::QuantumComputation qc;
-  qc.addQubitRegister(2, "q");
-  qc.cu2(1.0, 0.5, 0, 1);
-
-  const auto module = importQuantumCircuit(qc);
-  ASSERT_TRUE(module);
-  ASSERT_TRUE(runPipeline(module.get()).succeeded());
-
-  const auto quartz = buildQuartzIR([](quartz::QuartzProgramBuilder& b) {
-    auto reg = b.allocQubitRegister(2, "q");
-    b.cu2(1.0, 0.5, reg[0], reg[1]);
-  });
-  const auto flux = buildFluxIR([](flux::FluxProgramBuilder& b) {
-    auto reg = b.allocQubitRegister(2, "q");
-    b.cu2(1.0, 0.5, reg[0], reg[1]);
-  });
-  const auto qir = buildQIR([](qir::QIRProgramBuilder& b) {
-    auto reg = b.allocQubitRegister(2);
-    b.cu2(1.0, 0.5, reg[0], reg[1]);
   });
 
   verifyAllStages({

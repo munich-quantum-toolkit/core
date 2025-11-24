@@ -329,6 +329,76 @@ void QIRProgramBuilder::createOneTargetOneParameter(
   builder.create<LLVM::CallOp>(loc, fnDecl, operands);
 }
 
+void QIRProgramBuilder::createOneTargetTwoParameter(
+    const std::variant<double, Value>& parameter1,
+    const std::variant<double, Value>& parameter2, const ValueRange controls,
+    const Value target, StringRef fnName) {
+  // Save current insertion point
+  const OpBuilder::InsertionGuard entryGuard(builder);
+
+  // Insert constants in entry block
+  builder.setInsertionPointToEnd(entryBlock);
+
+  Value parameter1Operand;
+  if (std::holds_alternative<double>(parameter1)) {
+    parameter1Operand =
+        builder
+            .create<LLVM::ConstantOp>(
+                loc, builder.getF64FloatAttr(std::get<double>(parameter1)))
+            .getResult();
+  } else {
+    parameter1Operand = std::get<Value>(parameter1);
+  }
+
+  Value parameter2Operand;
+  if (std::holds_alternative<double>(parameter2)) {
+    parameter2Operand =
+        builder
+            .create<LLVM::ConstantOp>(
+                loc, builder.getF64FloatAttr(std::get<double>(parameter2)))
+            .getResult();
+  } else {
+    parameter2Operand = std::get<Value>(parameter2);
+  }
+
+  // Save current insertion point
+  const OpBuilder::InsertionGuard bodyGuard(builder);
+
+  // Insert in body block (before branch)
+  builder.setInsertionPoint(bodyBlock->getTerminator());
+
+  // Define argument types
+  SmallVector<Type> argumentTypes;
+  argumentTypes.reserve(controls.size() + 3);
+  const auto ptrType = LLVM::LLVMPointerType::get(builder.getContext());
+  // Add control pointers
+  for (size_t i = 0; i < controls.size(); ++i) {
+    argumentTypes.push_back(ptrType);
+  }
+  // Add target pointer
+  argumentTypes.push_back(ptrType);
+  // Add parameter types
+  argumentTypes.push_back(Float64Type::get(builder.getContext()));
+  argumentTypes.push_back(Float64Type::get(builder.getContext()));
+
+  // Define function signature
+  const auto fnSignature = LLVM::LLVMFunctionType::get(
+      LLVM::LLVMVoidType::get(builder.getContext()), argumentTypes);
+
+  // Declare QIR function
+  auto fnDecl =
+      getOrCreateFunctionDeclaration(builder, module, fnName, fnSignature);
+
+  SmallVector<Value> operands;
+  operands.reserve(controls.size() + 3);
+  operands.append(controls.begin(), controls.end());
+  operands.push_back(target);
+  operands.push_back(parameter1Operand);
+  operands.push_back(parameter2Operand);
+
+  builder.create<LLVM::CallOp>(loc, fnDecl, operands);
+}
+
 // IdOp
 
 QIRProgramBuilder& QIRProgramBuilder::id(const Value qubit) {
@@ -795,56 +865,50 @@ QIRProgramBuilder::mcp(const std::variant<double, Value>& theta,
   return *this;
 }
 
+// ROp
+
+QIRProgramBuilder&
+QIRProgramBuilder::r(const std::variant<double, Value>& theta,
+                     const std::variant<double, Value>& phi,
+                     const Value qubit) {
+  createOneTargetTwoParameter(theta, phi, {}, qubit, QIR_R);
+  return *this;
+}
+
+QIRProgramBuilder&
+QIRProgramBuilder::cr(const std::variant<double, Value>& theta,
+                      const std::variant<double, Value>& phi,
+                      const Value control, const Value target) {
+  createOneTargetTwoParameter(theta, phi, {control}, target, QIR_CR);
+  return *this;
+}
+
+QIRProgramBuilder&
+QIRProgramBuilder::mcr(const std::variant<double, Value>& theta,
+                       const std::variant<double, Value>& phi,
+                       const ValueRange controls, const Value target) {
+  StringRef fnName;
+  if (controls.size() == 1) {
+    fnName = QIR_CR;
+  } else if (controls.size() == 2) {
+    fnName = QIR_CCR;
+  } else if (controls.size() == 3) {
+    fnName = QIR_CCCR;
+  } else {
+    llvm::report_fatal_error("Multi-controlled with more than 3 controls are "
+                             "currently not supported");
+  }
+  createOneTargetTwoParameter(theta, phi, controls, target, fnName);
+  return *this;
+}
+
 // U2Op
 
 QIRProgramBuilder&
 QIRProgramBuilder::u2(const std::variant<double, Value>& phi,
                       const std::variant<double, Value>& lambda,
                       const Value qubit) {
-  // Save current insertion point
-  const OpBuilder::InsertionGuard entryGuard(builder);
-
-  // Insert constants in entry block
-  builder.setInsertionPointToEnd(entryBlock);
-
-  Value phiOperand;
-  if (std::holds_alternative<double>(phi)) {
-    phiOperand = builder
-                     .create<LLVM::ConstantOp>(
-                         loc, builder.getF64FloatAttr(std::get<double>(phi)))
-                     .getResult();
-  } else {
-    phiOperand = std::get<Value>(phi);
-  }
-
-  Value lambdaOperand;
-  if (std::holds_alternative<double>(lambda)) {
-    lambdaOperand =
-        builder
-            .create<LLVM::ConstantOp>(
-                loc, builder.getF64FloatAttr(std::get<double>(lambda)))
-            .getResult();
-  } else {
-    lambdaOperand = std::get<Value>(lambda);
-  }
-
-  // Save current insertion point
-  const OpBuilder::InsertionGuard bodyGuard(builder);
-
-  // Insert in body block (before branch)
-  builder.setInsertionPoint(bodyBlock->getTerminator());
-
-  // Create u2 call
-  const auto qirSignature = LLVM::LLVMFunctionType::get(
-      LLVM::LLVMVoidType::get(builder.getContext()),
-      {LLVM::LLVMPointerType::get(builder.getContext()),
-       Float64Type::get(builder.getContext()),
-       Float64Type::get(builder.getContext())});
-  auto fnDecl =
-      getOrCreateFunctionDeclaration(builder, module, QIR_U2, qirSignature);
-  builder.create<LLVM::CallOp>(loc, fnDecl,
-                               ValueRange{qubit, phiOperand, lambdaOperand});
-
+  createOneTargetTwoParameter(phi, lambda, {}, qubit, QIR_U2);
   return *this;
 }
 
@@ -852,51 +916,7 @@ QIRProgramBuilder&
 QIRProgramBuilder::cu2(const std::variant<double, Value>& phi,
                        const std::variant<double, Value>& lambda,
                        const Value control, const Value target) {
-  // Save current insertion point
-  const OpBuilder::InsertionGuard entryGuard(builder);
-
-  // Insert constants in entry block
-  builder.setInsertionPointToEnd(entryBlock);
-
-  Value phiOperand;
-  if (std::holds_alternative<double>(phi)) {
-    phiOperand = builder
-                     .create<LLVM::ConstantOp>(
-                         loc, builder.getF64FloatAttr(std::get<double>(phi)))
-                     .getResult();
-  } else {
-    phiOperand = std::get<Value>(phi);
-  }
-
-  Value lambdaOperand;
-  if (std::holds_alternative<double>(lambda)) {
-    lambdaOperand =
-        builder
-            .create<LLVM::ConstantOp>(
-                loc, builder.getF64FloatAttr(std::get<double>(lambda)))
-            .getResult();
-  } else {
-    lambdaOperand = std::get<Value>(lambda);
-  }
-
-  // Save current insertion point
-  const OpBuilder::InsertionGuard bodyGuard(builder);
-
-  // Insert in body block (before branch)
-  builder.setInsertionPoint(bodyBlock->getTerminator());
-
-  // Create cu2 call
-  const auto qirSignature = LLVM::LLVMFunctionType::get(
-      LLVM::LLVMVoidType::get(builder.getContext()),
-      {LLVM::LLVMPointerType::get(builder.getContext()),
-       LLVM::LLVMPointerType::get(builder.getContext()),
-       Float64Type::get(builder.getContext()),
-       Float64Type::get(builder.getContext())});
-  auto fnDecl =
-      getOrCreateFunctionDeclaration(builder, module, QIR_CU2, qirSignature);
-  builder.create<LLVM::CallOp>(
-      loc, fnDecl, ValueRange{control, target, phiOperand, lambdaOperand});
-
+  createOneTargetTwoParameter(phi, lambda, {control}, target, QIR_CU2);
   return *this;
 }
 
@@ -904,7 +924,19 @@ QIRProgramBuilder&
 QIRProgramBuilder::mcu2(const std::variant<double, Value>& phi,
                         const std::variant<double, Value>& lambda,
                         const ValueRange controls, const Value target) {
-  llvm::report_fatal_error("Not implemented yet");
+  StringRef fnName;
+  if (controls.size() == 1) {
+    fnName = QIR_CU2;
+  } else if (controls.size() == 2) {
+    fnName = QIR_CCU2;
+  } else if (controls.size() == 3) {
+    fnName = QIR_CCCU2;
+  } else {
+    llvm::report_fatal_error("Multi-controlled with more than 3 controls are "
+                             "currently not supported");
+  }
+  createOneTargetTwoParameter(phi, lambda, controls, target, fnName);
+  return *this;
 }
 
 // SWAPOp

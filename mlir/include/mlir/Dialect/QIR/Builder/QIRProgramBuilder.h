@@ -1056,6 +1056,70 @@ public:
                          ValueRange controls, Value target);
 
   /**
+   * @brief Apply an R gate to a qubit
+   *
+   * @param theta Rotation angle
+   * @param phi Rotation angle
+   * @param qubit Input qubit
+   * @return Reference to this builder for method chaining
+   *
+   * @par Example:
+   * ```c++
+   * builder.r(theta, phi, qubit);
+   * ```
+   * ```mlir
+   * llvm.call @__quantum__qis__r__body(%q, %theta, %phi) : (!llvm.ptr, f64,
+   * f64) -> ()
+   * ```
+   */
+  QIRProgramBuilder& r(const std::variant<double, Value>& theta,
+                       const std::variant<double, Value>& phi, Value qubit);
+
+  /**
+   * @brief Apply a controlled R gate
+   *
+   * @param theta Rotation angle
+   * @param phi Rotation angle
+   * @param control Control qubit
+   * @param target Target qubit
+   * @return Reference to this builder for method chaining
+   *
+   * @par Example:
+   * ```c++
+   * builder.cr(theta, phi, control, target);
+   * ```
+   * ```mlir
+   * llvm.call @__quantum__qis__cr__body(%c, %t, %theta, %phi) : (!llvm.ptr,
+   * !llvm.ptr, f64, f64) -> ()
+   * ```
+   */
+  QIRProgramBuilder& cr(const std::variant<double, Value>& theta,
+                        const std::variant<double, Value>& phi, Value control,
+                        Value target);
+
+  /**
+   * @brief Apply a multi-controlled R gate
+   *
+   * @param theta Rotation angle
+   * @param phi Rotation angle
+   * @param controls Control qubits
+   * @param target Target qubit
+   * @return Reference to this builder for method chaining
+   *
+   * @par Example:
+   * ```c++
+   * builder.mcr(theta, phi, controls, target);
+   * ```
+   * ```mlir
+   * llvm.call @__quantum__qis__mcr__body(%c1, %c2, %t, %theta, %phi) :
+   * (!llvm.ptr, !llvm.ptr, !llvm.ptr, f64, f64) -> ()
+   * ```
+   */
+  QIRProgramBuilder& mcr(const std::variant<double, Value>& theta,
+                         const std::variant<double, Value>& phi,
+                         ValueRange controls, Value target);
+
+  /**
    * @brief Apply a U2 gate to a qubit
    *
    * @param phi Rotation angle
@@ -1244,6 +1308,21 @@ private:
   void createOneTargetOneParameter(const std::variant<double, Value>& parameter,
                                    const ValueRange controls,
                                    const Value target, StringRef fnName);
+
+  /**
+   * @brief Helper to create a one-target, two-parameter QIR operation
+   *
+   * @param parameter1 Operation parameter
+   * @param parameter2 Operation parameter
+   * @param controls Control qubits
+   * @param target Target qubit
+   * @param fnName Name of the QIR function to call
+   */
+  void
+  createOneTargetTwoParameter(const std::variant<double, Value>& parameter1,
+                              const std::variant<double, Value>& parameter2,
+                              const ValueRange controls, const Value target,
+                              StringRef fnName);
 
   /**
    * @brief Generate array-based output recording in the output block

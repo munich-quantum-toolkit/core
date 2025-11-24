@@ -565,6 +565,29 @@ void addPOp(QuartzProgramBuilder& builder, const qc::Operation& operation,
 }
 
 /**
+ * @brief Adds an R operation
+ *
+ * @details
+ * Translates an R operation from the QuantumComputation to quartz.r.
+ *
+ * @param builder The QuartzProgramBuilder used to create operations
+ * @param operation The R operation to translate
+ * @param qubits Flat vector of qubit values indexed by physical qubit index
+ */
+void addROp(QuartzProgramBuilder& builder, const qc::Operation& operation,
+            const llvm::SmallVector<Value>& qubits) {
+  const auto& theta = operation.getParameter()[0];
+  const auto& phi = operation.getParameter()[1];
+  const auto& target = qubits[operation.getTargets()[0]];
+  if (const auto& posControls = getPosControls(operation, qubits);
+      posControls.empty()) {
+    builder.r(theta, phi, target);
+  } else {
+    builder.mcr(theta, phi, posControls, target);
+  }
+}
+
+/**
  * @brief Adds a U2 operation
  *
  * @details
@@ -685,6 +708,9 @@ translateOperations(QuartzProgramBuilder& builder,
       break;
     case qc::OpType::P:
       addPOp(builder, *operation, qubits);
+      break;
+    case qc::OpType::R:
+      addROp(builder, *operation, qubits);
       break;
     case qc::OpType::U2:
       addU2Op(builder, *operation, qubits);

@@ -413,6 +413,31 @@ QuartzProgramBuilder::mcp(const std::variant<double, Value>& theta,
   return *this;
 }
 
+// ROp
+
+QuartzProgramBuilder&
+QuartzProgramBuilder::r(const std::variant<double, Value>& theta,
+                        const std::variant<double, Value>& phi, Value qubit) {
+  create<ROp>(loc, qubit, theta, phi);
+  return *this;
+}
+
+QuartzProgramBuilder&
+QuartzProgramBuilder::cr(const std::variant<double, Value>& theta,
+                         const std::variant<double, Value>& phi, Value control,
+                         Value target) {
+  return mcr(theta, phi, {control}, target);
+}
+
+QuartzProgramBuilder&
+QuartzProgramBuilder::mcr(const std::variant<double, Value>& theta,
+                          const std::variant<double, Value>& phi,
+                          ValueRange controls, Value target) {
+  create<CtrlOp>(loc, controls,
+                 [&](OpBuilder& b) { b.create<ROp>(loc, target, theta, phi); });
+  return *this;
+}
+
 // U2Op
 
 QuartzProgramBuilder&

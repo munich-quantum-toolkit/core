@@ -563,6 +563,31 @@ def POp : QuartzOp<"p", traits = [UnitaryOpInterface, OneTargetOneParameter]> {
     ];
 }
 
+def ROp : QuartzOp<"r", traits = [UnitaryOpInterface, OneTargetTwoParameter]> {
+    let summary = "Apply an R gate to a qubit";
+    let description = [{
+        Applies an R gate to a qubit, modifying it in place.
+
+        Example:
+        ```mlir
+        quartz.r(%theta, %phi) %q : !flux.qubit
+        ```
+    }];
+
+    let arguments = (ins Arg<QubitType, "the target qubit", [MemRead, MemWrite]>:$qubit_in,
+                     Arg<F64, "the rotation angle theta in radians", [MemRead]>:$theta,
+                     Arg<F64, "the rotation angle phi in radians", [MemRead]>:$phi);
+    let assemblyFormat = "`(` $theta `,` $phi `)` $qubit_in attr-dict";
+    let extraClassDeclaration = [{
+        DenseElementsAttr tryGetStaticMatrix();
+        static StringRef getBaseSymbol() { return "r"; }
+    }];
+
+    let builders = [
+        OpBuilder<(ins "Value":$qubit_in, "const std::variant<double, Value>&":$theta, "const std::variant<double, Value>&":$phi)>
+    ];
+}
+
 def U2Op : QuartzOp<"u2", traits = [UnitaryOpInterface, OneTargetTwoParameter]> {
     let summary = "Apply a U2 gate to a qubit";
     let description = [{
