@@ -343,7 +343,7 @@ auto FoMaC::Device::Operation::getSitePairs(
   pairs.reserve(sitesVec.size() / 2);
 
   for (size_t i = 0; i < sitesVec.size(); i += 2) {
-    pairs.emplace_back(std::move(sitesVec[i]), std::move(sitesVec[i + 1]));
+    pairs.emplace_back(sitesVec[i], sitesVec[i + 1]);
   }
 
   return pairs;
