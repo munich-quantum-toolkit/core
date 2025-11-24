@@ -6,11 +6,13 @@
 #
 # Licensed under the MIT License
 
+file(GLOB_RECURSE MODIFIERS "${CMAKE_CURRENT_SOURCE_DIR}/Modifiers/*.cpp")
 file(GLOB_RECURSE STANDARD_GATES "${CMAKE_CURRENT_SOURCE_DIR}/StandardGates/*.cpp")
 
 add_mlir_dialect_library(
   MLIRFluxDialect
   FluxOps.cpp
+  ${MODIFIERS}
   ${STANDARD_GATES}
   ADDITIONAL_HEADER_DIRS
   ${PROJECT_SOURCE_DIR}/mlir/include/mlir/Dialect/Flux
