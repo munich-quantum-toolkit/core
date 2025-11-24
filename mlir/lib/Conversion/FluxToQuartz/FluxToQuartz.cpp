@@ -799,6 +799,44 @@ struct ConvertFluxCtrlOp final : OpConversionPattern<flux::CtrlOp> {
 };
 
 /**
+ * @brief Converts flux.inv to quartz.inv
+ *
+ * @par Example:
+ * ```mlir
+ * %targets_out = flux.inv %targets_in {
+ *   %targets_res = flux.s %targets_in : !flux.qubit -> !flux.qubit
+ *   flux.yield %targets_res
+ * } : {!flux.qubit} -> {!flux.qubit}
+ * ```
+ * is converted to
+ * ```mlir
+ * quartz.inv {
+ *   quartz.s %q0 : !quartz.qubit
+ *   quartz.yield
+ * }
+ * ```
+ */
+struct ConvertFluxInvOp final : OpConversionPattern<flux::InvOp> {
+  using OpConversionPattern::OpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(flux::InvOp op, OpAdaptor adaptor,
+                  ConversionPatternRewriter& rewriter) const override {
+    // Create quartz.inv operation
+    auto quartzOp = rewriter.create<quartz::InvOp>(op.getLoc());
+
+    // Clone body region from Flux to Quartz
+    auto& dstRegion = quartzOp.getBody();
+    rewriter.cloneRegionBefore(op.getBody(), dstRegion, dstRegion.end());
+
+    // Replace the output qubits with the same Quartz references
+    rewriter.replaceOp(op, adaptor.getOperands());
+
+    return success();
+  }
+};
+
+/**
  * @brief Converts flux.yield to quartz.yield
  *
  * @par Example:
@@ -865,19 +903,18 @@ struct FluxToQuartz final : impl::FluxToQuartzBase<FluxToQuartz> {
 
     // Register operation conversion patterns
     // Note: No state tracking needed - OpAdaptors handle type conversion
-    patterns
-        .add<ConvertFluxAllocOp, ConvertFluxDeallocOp, ConvertFluxStaticOp,
-             ConvertFluxMeasureOp, ConvertFluxResetOp, ConvertFluxGPhaseOp,
-             ConvertFluxIdOp, ConvertFluxXOp, ConvertFluxYOp, ConvertFluxZOp,
-             ConvertFluxHOp, ConvertFluxSOp, ConvertFluxSdgOp, ConvertFluxTOp,
-             ConvertFluxTdgOp, ConvertFluxSXOp, ConvertFluxSXdgOp,
-             ConvertFluxRXOp, ConvertFluxRYOp, ConvertFluxRZOp, ConvertFluxPOp,
-             ConvertFluxROp, ConvertFluxU2Op, ConvertFluxUOp, ConvertFluxSWAPOp,
-             ConvertFluxiSWAPOp, ConvertFluxDCXOp, ConvertFluxECROp,
-             ConvertFluxRXXOp, ConvertFluxRYYOp, ConvertFluxRZXOp,
-             ConvertFluxRZZOp, ConvertFluxXXPlusYYOp, ConvertFluxXXMinusYYOp,
-             ConvertFluxBarrierOp, ConvertFluxCtrlOp, ConvertFluxYieldOp>(
-            typeConverter, context);
+    patterns.add<
+        ConvertFluxAllocOp, ConvertFluxDeallocOp, ConvertFluxStaticOp,
+        ConvertFluxMeasureOp, ConvertFluxResetOp, ConvertFluxGPhaseOp,
+        ConvertFluxIdOp, ConvertFluxXOp, ConvertFluxYOp, ConvertFluxZOp,
+        ConvertFluxHOp, ConvertFluxSOp, ConvertFluxSdgOp, ConvertFluxTOp,
+        ConvertFluxTdgOp, ConvertFluxSXOp, ConvertFluxSXdgOp, ConvertFluxRXOp,
+        ConvertFluxRYOp, ConvertFluxRZOp, ConvertFluxPOp, ConvertFluxROp,
+        ConvertFluxU2Op, ConvertFluxUOp, ConvertFluxSWAPOp, ConvertFluxiSWAPOp,
+        ConvertFluxDCXOp, ConvertFluxECROp, ConvertFluxRXXOp, ConvertFluxRYYOp,
+        ConvertFluxRZXOp, ConvertFluxRZZOp, ConvertFluxXXPlusYYOp,
+        ConvertFluxXXMinusYYOp, ConvertFluxBarrierOp, ConvertFluxCtrlOp,
+        ConvertFluxInvOp, ConvertFluxYieldOp>(typeConverter, context);
 
     // Conversion of flux types in func.func signatures
     // Note: This currently has limitations with signature changes
