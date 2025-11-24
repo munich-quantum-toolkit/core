@@ -549,6 +549,12 @@ auto MQT_NA_QDMI_Operation_impl_d::queryProperty(
                                    T,
                                    std::vector<std::pair<MQT_NA_QDMI_Site,
                                                          MQT_NA_QDMI_Site>>>) {
+            // Ensure std::pair has standard layout and expected size
+            static_assert(std::is_standard_layout_v<
+                          std::pair<MQT_NA_QDMI_Site, MQT_NA_QDMI_Site>>);
+            static_assert(
+                sizeof(std::pair<MQT_NA_QDMI_Site, MQT_NA_QDMI_Site>) ==
+                2 * sizeof(MQT_NA_QDMI_Site));
             // Two-qubit: reinterpret as flat array of sites using std::span
             // std::pair has standard layout, so the memory layout of
             // vector<pair<Site, Site>> is equivalent to Site[2*N]
