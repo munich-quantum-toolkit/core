@@ -9,6 +9,15 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 
 ## [Unreleased]
 
+### Changed
+
+- ♻️ Move DD package evaluation module to standalone script ([#1327]) ([**@burgholzer**])
+
+### Removed
+
+- 🔥 Remove the `evaluation` extra from the MQT Core Python package ([#1327]) ([**@burgholzer**])
+- 🔥 Remove the `mqt-core-dd-compare` entry point from the MQT Core Python package ([#1327]) ([**@burgholzer**])
+
 ## [3.3.3] - 2025-11-10
 
 ### Added
@@ -238,6 +247,7 @@ _📚 Refer to the [GitHub Release Notes](https://github.com/munich-quantum-tool
 
 <!-- PR links -->
 
+[#1327]: https://github.com/munich-quantum-toolkit/core/pull/1327
 [#1300]: https://github.com/munich-quantum-toolkit/core/pull/1300
 [#1293]: https://github.com/munich-quantum-toolkit/core/pull/1293
 [#1287]: https://github.com/munich-quantum-toolkit/core/pull/1287
