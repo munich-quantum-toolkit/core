@@ -174,7 +174,7 @@ Value FluxProgramBuilder::reset(Value qubit) {
 // Helper methods
 
 template <typename OpType>
-Value FluxProgramBuilder::createOneTargetZeroParameter(Value qubit) {
+Value FluxProgramBuilder::createOneTargetZeroParameter(const Value qubit) {
   auto op = create<OpType>(loc, qubit);
   const auto& qubitOut = op.getQubitOut();
   updateQubitTracking(qubit, qubitOut);
@@ -183,8 +183,8 @@ Value FluxProgramBuilder::createOneTargetZeroParameter(Value qubit) {
 
 template <typename OpType>
 std::pair<Value, Value>
-FluxProgramBuilder::createControlledOneTargetZeroParameter(Value control,
-                                                           Value target) {
+FluxProgramBuilder::createControlledOneTargetZeroParameter(const Value control,
+                                                           const Value target) {
   const auto [controlsOut, targetsOut] =
       ctrl(control, target,
            [&](OpBuilder& b, const ValueRange targets) -> ValueRange {
@@ -197,7 +197,7 @@ FluxProgramBuilder::createControlledOneTargetZeroParameter(Value control,
 template <typename OpType>
 std::pair<ValueRange, Value>
 FluxProgramBuilder::createMultiControlledOneTargetZeroParameter(
-    ValueRange controls, Value target) {
+    const ValueRange controls, const Value target) {
   const auto [controlsOut, targetsOut] =
       ctrl(controls, target,
            [&](OpBuilder& b, const ValueRange targets) -> ValueRange {
@@ -207,9 +207,46 @@ FluxProgramBuilder::createMultiControlledOneTargetZeroParameter(
   return {controlsOut, targetsOut[0]};
 }
 
+template <typename OpType>
+Value FluxProgramBuilder::createOneTargetOneParameter(
+    const std::variant<double, Value>& parameter, const Value qubit) {
+  auto op = create<OpType>(loc, qubit, parameter);
+  const auto& qubitOut = op.getQubitOut();
+  updateQubitTracking(qubit, qubitOut);
+  return qubitOut;
+}
+
+template <typename OpType>
+std::pair<Value, Value>
+FluxProgramBuilder::createControlledOneTargetOneParameter(
+    const std::variant<double, Value>& parameter, const Value control,
+    const Value target) {
+  const auto [controlsOut, targetsOut] =
+      ctrl(control, target,
+           [&](OpBuilder& b, const ValueRange targets) -> ValueRange {
+             const auto op = b.create<OpType>(loc, targets[0], parameter);
+             return op->getResults();
+           });
+  return {controlsOut[0], targetsOut[0]};
+}
+
+template <typename OpType>
+std::pair<ValueRange, Value>
+FluxProgramBuilder::createMultiControlledOneTargetOneParameter(
+    const std::variant<double, Value>& parameter, const ValueRange controls,
+    const Value target) {
+  const auto [controlsOut, targetsOut] =
+      ctrl(controls, target,
+           [&](OpBuilder& b, const ValueRange targets) -> ValueRange {
+             const auto op = b.create<OpType>(loc, targets[0], parameter);
+             return op->getResults();
+           });
+  return {controlsOut, targetsOut[0]};
+}
+
 // IdOp
 
-Value FluxProgramBuilder::id(Value qubit) {
+Value FluxProgramBuilder::id(const Value qubit) {
   return createOneTargetZeroParameter<IdOp>(qubit);
 }
 
@@ -225,7 +262,7 @@ std::pair<ValueRange, Value> FluxProgramBuilder::mcid(const ValueRange controls,
 
 // XOp
 
-Value FluxProgramBuilder::x(Value qubit) {
+Value FluxProgramBuilder::x(const Value qubit) {
   return createOneTargetZeroParameter<XOp>(qubit);
 }
 
@@ -241,7 +278,7 @@ std::pair<ValueRange, Value> FluxProgramBuilder::mcx(const ValueRange controls,
 
 // YOp
 
-Value FluxProgramBuilder::y(Value qubit) {
+Value FluxProgramBuilder::y(const Value qubit) {
   return createOneTargetZeroParameter<YOp>(qubit);
 }
 
@@ -257,7 +294,7 @@ std::pair<ValueRange, Value> FluxProgramBuilder::mcy(const ValueRange controls,
 
 // ZOp
 
-Value FluxProgramBuilder::z(Value qubit) {
+Value FluxProgramBuilder::z(const Value qubit) {
   return createOneTargetZeroParameter<ZOp>(qubit);
 }
 
@@ -273,7 +310,7 @@ std::pair<ValueRange, Value> FluxProgramBuilder::mcz(const ValueRange controls,
 
 // HOp
 
-Value FluxProgramBuilder::h(Value qubit) {
+Value FluxProgramBuilder::h(const Value qubit) {
   return createOneTargetZeroParameter<HOp>(qubit);
 }
 
@@ -289,7 +326,7 @@ std::pair<ValueRange, Value> FluxProgramBuilder::mch(const ValueRange controls,
 
 // SOp
 
-Value FluxProgramBuilder::s(Value qubit) {
+Value FluxProgramBuilder::s(const Value qubit) {
   return createOneTargetZeroParameter<SOp>(qubit);
 }
 
@@ -305,7 +342,7 @@ std::pair<ValueRange, Value> FluxProgramBuilder::mcs(const ValueRange controls,
 
 // SdgOp
 
-Value FluxProgramBuilder::sdg(Value qubit) {
+Value FluxProgramBuilder::sdg(const Value qubit) {
   return createOneTargetZeroParameter<SdgOp>(qubit);
 }
 
@@ -321,7 +358,7 @@ FluxProgramBuilder::mcsdg(const ValueRange controls, const Value target) {
 
 // TOp
 
-Value FluxProgramBuilder::t(Value qubit) {
+Value FluxProgramBuilder::t(const Value qubit) {
   return createOneTargetZeroParameter<TOp>(qubit);
 }
 
@@ -337,7 +374,7 @@ std::pair<ValueRange, Value> FluxProgramBuilder::mct(const ValueRange controls,
 
 // TdgOp
 
-Value FluxProgramBuilder::tdg(Value qubit) {
+Value FluxProgramBuilder::tdg(const Value qubit) {
   return createOneTargetZeroParameter<TdgOp>(qubit);
 }
 
@@ -353,7 +390,7 @@ FluxProgramBuilder::mctdg(const ValueRange controls, const Value target) {
 
 // SXOp
 
-Value FluxProgramBuilder::sx(Value qubit) {
+Value FluxProgramBuilder::sx(const Value qubit) {
   return createOneTargetZeroParameter<SXOp>(qubit);
 }
 
@@ -369,7 +406,7 @@ std::pair<ValueRange, Value> FluxProgramBuilder::mcsx(const ValueRange controls,
 
 // SXdgOp
 
-Value FluxProgramBuilder::sxdg(Value qubit) {
+Value FluxProgramBuilder::sxdg(const Value qubit) {
   return createOneTargetZeroParameter<SXdgOp>(qubit);
 }
 
@@ -386,35 +423,41 @@ FluxProgramBuilder::mcsxdg(const ValueRange controls, const Value target) {
 // RXOp
 
 Value FluxProgramBuilder::rx(const std::variant<double, Value>& theta,
-                             Value qubit) {
-  auto rxOp = create<RXOp>(loc, qubit, theta);
-  const auto& qubitOut = rxOp.getQubitOut();
-  updateQubitTracking(qubit, qubitOut);
-  return qubitOut;
+                             const Value qubit) {
+  return createOneTargetOneParameter<RXOp>(theta, qubit);
 }
 
 std::pair<Value, Value>
 FluxProgramBuilder::crx(const std::variant<double, Value>& theta,
                         const Value control, const Value target) {
-  const auto [controlsOut, targetsOut] =
-      ctrl(control, target,
-           [&](OpBuilder& b, const ValueRange targets) -> ValueRange {
-             const auto rx = b.create<RXOp>(loc, targets[0], theta);
-             return rx->getResults();
-           });
-  return {controlsOut[0], targetsOut[0]};
+  return createControlledOneTargetOneParameter<RXOp>(theta, control, target);
 }
 
 std::pair<ValueRange, Value>
 FluxProgramBuilder::mcrx(const std::variant<double, Value>& theta,
                          const ValueRange controls, const Value target) {
-  const auto [controlsOut, targetsOut] =
-      ctrl(controls, target,
-           [&](OpBuilder& b, const ValueRange targets) -> ValueRange {
-             const auto rx = b.create<RXOp>(loc, targets[0], theta);
-             return rx->getResults();
-           });
-  return {controlsOut, targetsOut[0]};
+  return createMultiControlledOneTargetOneParameter<RXOp>(theta, controls,
+                                                          target);
+}
+
+// RYOp
+
+Value FluxProgramBuilder::ry(const std::variant<double, Value>& theta,
+                             const Value qubit) {
+  return createOneTargetOneParameter<RYOp>(theta, qubit);
+}
+
+std::pair<Value, Value>
+FluxProgramBuilder::cry(const std::variant<double, Value>& theta,
+                        const Value control, const Value target) {
+  return createControlledOneTargetOneParameter<RYOp>(theta, control, target);
+}
+
+std::pair<ValueRange, Value>
+FluxProgramBuilder::mcry(const std::variant<double, Value>& theta,
+                         const ValueRange controls, const Value target) {
+  return createMultiControlledOneTargetOneParameter<RYOp>(theta, controls,
+                                                          target);
 }
 
 // U2Op

@@ -1962,6 +1962,50 @@ TEST_F(CompilerPipelineTest, CRX) {
   });
 }
 
+TEST_F(CompilerPipelineTest, RY) {
+  qc::QuantumComputation qc;
+  qc.addQubitRegister(1, "q");
+  qc.ry(1.0, 0);
+  qc.ry(0.5, 0);
+
+  const auto module = importQuantumCircuit(qc);
+  ASSERT_TRUE(module);
+  ASSERT_TRUE(runPipeline(module.get()).succeeded());
+
+  const auto quartzInit = buildQuartzIR([](quartz::QuartzProgramBuilder& b) {
+    auto reg = b.allocQubitRegister(1, "q");
+    const auto q = reg[0];
+    b.ry(1.0, q);
+    b.ry(0.5, q);
+  });
+  const auto fluxInit = buildFluxIR([](flux::FluxProgramBuilder& b) {
+    auto reg = b.allocQubitRegister(1, "q");
+    auto q = reg[0];
+    q = b.ry(1.0, q);
+    b.ry(0.5, q);
+  });
+  const auto fluxOpt = buildFluxIR([](flux::FluxProgramBuilder& b) {
+    auto reg = b.allocQubitRegister(1, "q");
+    b.ry(1.5, reg[0]);
+  });
+  const auto quartzOpt = buildQuartzIR([](quartz::QuartzProgramBuilder& b) {
+    auto reg = b.allocQubitRegister(1, "q");
+    b.ry(1.5, reg[0]);
+  });
+  const auto qirOpt = buildQIR([](qir::QIRProgramBuilder& b) {
+    auto reg = b.allocQubitRegister(1);
+    b.ry(1.5, reg[0]);
+  });
+
+  verifyAllStages({
+      .quartzImport = quartzInit.get(),
+      .fluxConversion = fluxInit.get(),
+      .optimization = fluxOpt.get(),
+      .quartzConversion = quartzOpt.get(),
+      .qirConversion = qirOpt.get(),
+  });
+}
+
 TEST_F(CompilerPipelineTest, U2) {
   qc::QuantumComputation qc;
   qc.addQubitRegister(1, "q");

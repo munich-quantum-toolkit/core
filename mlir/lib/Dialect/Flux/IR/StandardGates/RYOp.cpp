@@ -27,16 +27,16 @@ using namespace mlir::utils;
 namespace {
 
 /**
- * @brief Merge subsequent RX operations on the same qubit by adding their
+ * @brief Merge subsequent RY operations on the same qubit by adding their
  * angles.
  */
-struct MergeSubsequentRX final : OpRewritePattern<RXOp> {
+struct MergeSubsequentRY final : OpRewritePattern<RYOp> {
   using OpRewritePattern::OpRewritePattern;
 
-  LogicalResult matchAndRewrite(RXOp op,
+  LogicalResult matchAndRewrite(RYOp op,
                                 PatternRewriter& rewriter) const override {
-    // Check if the predecessor is an RXOp
-    auto prevOp = op.getQubitIn().getDefiningOp<RXOp>();
+    // Check if the predecessor is an RYOp
+    auto prevOp = op.getQubitIn().getDefiningOp<RYOp>();
     if (!prevOp) {
       return failure();
     }
@@ -46,7 +46,7 @@ struct MergeSubsequentRX final : OpRewritePattern<RXOp> {
                                                    prevOp.getTheta());
     op->setOperand(1, newTheta.getResult());
 
-    // Trivialize previous RXOp
+    // Trivialize previous RYOp
     rewriter.replaceOp(prevOp, prevOp.getQubitIn());
 
     return success();
@@ -55,16 +55,16 @@ struct MergeSubsequentRX final : OpRewritePattern<RXOp> {
 
 } // namespace
 
-DenseElementsAttr RXOp::tryGetStaticMatrix() {
+DenseElementsAttr RYOp::tryGetStaticMatrix() {
   const auto& theta = getStaticParameter(getTheta());
   if (!theta) {
     return nullptr;
   }
   const auto thetaValue = theta.getValueAsDouble();
-  return getMatrixRX(getContext(), thetaValue);
+  return getMatrixRY(getContext(), thetaValue);
 }
 
-void RXOp::build(OpBuilder& odsBuilder, OperationState& odsState,
+void RYOp::build(OpBuilder& odsBuilder, OperationState& odsState,
                  const Value qubitIn,
                  const std::variant<double, Value>& theta) {
   Value thetaOperand = nullptr;
@@ -77,7 +77,7 @@ void RXOp::build(OpBuilder& odsBuilder, OperationState& odsState,
   build(odsBuilder, odsState, qubitIn, thetaOperand);
 }
 
-void RXOp::getCanonicalizationPatterns(RewritePatternSet& results,
+void RYOp::getCanonicalizationPatterns(RewritePatternSet& results,
                                        MLIRContext* context) {
-  results.add<MergeSubsequentRX>(context);
+  results.add<MergeSubsequentRY>(context);
 }

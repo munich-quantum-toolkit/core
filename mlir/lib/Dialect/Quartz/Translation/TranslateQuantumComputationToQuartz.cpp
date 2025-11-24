@@ -502,6 +502,28 @@ void addRXOp(QuartzProgramBuilder& builder, const qc::Operation& operation,
 }
 
 /**
+ * @brief Adds an RY operation
+ *
+ * @details
+ * Translates RY operations from the QuantumComputation to quartz.ry operations.
+ *
+ * @param builder The QuartzProgramBuilder used to create operations
+ * @param operation The RY operation to translate
+ * @param qubits Flat vector of qubit values indexed by physical qubit index
+ */
+void addRYOp(QuartzProgramBuilder& builder, const qc::Operation& operation,
+             const llvm::SmallVector<Value>& qubits) {
+  const auto& theta = operation.getParameter()[0];
+  const auto& target = qubits[operation.getTargets()[0]];
+  if (const auto& posControls = getPosControls(operation, qubits);
+      posControls.empty()) {
+    builder.ry(theta, target);
+  } else {
+    builder.mcry(theta, posControls, target);
+  }
+}
+
+/**
  * @brief Adds a U2 operation
  *
  * @details
@@ -613,6 +635,9 @@ translateOperations(QuartzProgramBuilder& builder,
       break;
     case qc::OpType::RX:
       addRXOp(builder, *operation, qubits);
+      break;
+    case qc::OpType::RY:
+      addRYOp(builder, *operation, qubits);
       break;
     case qc::OpType::U2:
       addU2Op(builder, *operation, qubits);

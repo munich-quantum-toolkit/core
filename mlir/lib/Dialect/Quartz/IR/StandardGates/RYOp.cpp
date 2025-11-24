@@ -21,16 +21,16 @@ using namespace mlir;
 using namespace mlir::quartz;
 using namespace mlir::utils;
 
-DenseElementsAttr RXOp::tryGetStaticMatrix() {
+DenseElementsAttr RYOp::tryGetStaticMatrix() {
   const auto& theta = getStaticParameter(getTheta());
   if (!theta) {
     return nullptr;
   }
   const auto thetaValue = theta.getValueAsDouble();
-  return getMatrixRX(getContext(), thetaValue);
+  return getMatrixRY(getContext(), thetaValue);
 }
 
-void RXOp::build(OpBuilder& odsBuilder, OperationState& odsState,
+void RYOp::build(OpBuilder& odsBuilder, OperationState& odsState,
                  const Value qubitIn,
                  const std::variant<double, Value>& theta) {
   Value thetaOperand = nullptr;

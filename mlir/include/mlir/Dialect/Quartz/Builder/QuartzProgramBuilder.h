@@ -834,7 +834,7 @@ public:
    * builder.rx(1.0, q);
    * ```
    * ```mlir
-   * quartz.rx(1.0) %q : !quartz.qubit
+   * quartz.rx(%theta) %q : !quartz.qubit
    * ```
    */
   QuartzProgramBuilder& rx(const std::variant<double, Value>& theta,
@@ -847,13 +847,14 @@ public:
    * @param control Control qubit
    * @param target Target qubit
    * @return Reference to this builder for method chaining
+   *
    * @par Example:
    * ```c++
    * builder.crx(1.0, q0, q1);
    * ```
    * ```mlir
    * quartz.ctrl(%q0) {
-   *   quartz.rx(1.0) %q1 : !quartz.qubit
+   *   quartz.rx(%theta) %q1 : !quartz.qubit
    * }
    * ```
    */
@@ -873,11 +874,71 @@ public:
    * ```
    * ```mlir
    * quartz.ctrl(%q0, %q1) {
-   *   quartz.rx(1.0) %q2 : !quartz.qubit
+   *   quartz.rx(%theta) %q2 : !quartz.qubit
    * }
    * ```
    */
   QuartzProgramBuilder& mcrx(const std::variant<double, Value>& theta,
+                             ValueRange controls, Value target);
+
+  /**
+   * @brief Apply an RY gate to a qubit
+   *
+   * @param theta Rotation angle in radians
+   * @param qubit Target qubit
+   * @return Reference to this builder for method chaining
+   *
+   * @par Example:
+   * ```c++
+   * builder.ry(1.0, q);
+   * ```
+   * ```mlir
+   * quartz.ry(%theta) %q : !quartz.qubit
+   * ```
+   */
+  QuartzProgramBuilder& ry(const std::variant<double, Value>& theta,
+                           Value qubit);
+
+  /**
+   * @brief Apply a CRY gate
+   *
+   * @param theta Rotation angle in radians
+   * @param control Control qubit
+   * @param target Target qubit
+   * @return Reference to this builder for method chaining
+   *
+   * @par Example:
+   * ```c++
+   * builder.cry(1.0, q0, q1);
+   * ```
+   * ```mlir
+   * quartz.ctrl(%q0) {
+   *   quartz.ry(%theta) %q1 : !quartz.qubit
+   * }
+   * ```
+   */
+  QuartzProgramBuilder& cry(const std::variant<double, Value>& theta,
+                            Value control, Value target);
+
+  /**
+   * @brief Apply a multi-controlled RY gate
+   *
+   * @param theta Rotation angle in radians
+   * @param controls Control qubits
+   * @param target Target qubit
+   * @return Reference to this builder for method chaining
+   *
+   * @par Example:
+   * ```c++
+   * builder.mcry(1.0, {q0, q1}, q2);
+   * ```
+   * ```mlir
+   * quartz.ctrl(%q0, %q1) {
+   *   quartz.ry(%theta) %q2 : !quartz.qubit
+   * }
+   * ```
+   */
+  QuartzProgramBuilder& mcry(const std::variant<double, Value>& theta,
                              ValueRange controls, Value target);
 
   /**
@@ -893,7 +954,7 @@ public:
    * builder.u2(1.0, 0.5, q);
    * ```
    * ```mlir
-   * quartz.u2(1.0, 0.5) %q : !quartz.qubit
+   * quartz.u2(%phi, %lambda) %q : !quartz.qubit
    * ```
    */
   QuartzProgramBuilder& u2(const std::variant<double, Value>& phi,
@@ -914,7 +975,7 @@ public:
    * ```
    * ```mlir
    * quartz.ctrl(%q0) {
-   *   quartz.u2(1.0, 0.5) %q1 : !quartz.qubit
+   *   quartz.u2(%phi, %lambda) %q1 : !quartz.qubit
    * }
    * ```
    */
@@ -936,7 +997,7 @@ public:
    * ```
    * ```mlir
    * quartz.ctrl(%q0, %q1) {
-   *   quartz.u2(1.0, 0.5) %q2 : !quartz.qubit
+   *   quartz.u2(%phi, %lambda) %q2 : !quartz.qubit
    * }
    * ```
    */

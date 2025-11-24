@@ -345,6 +345,29 @@ QuartzProgramBuilder::mcrx(const std::variant<double, Value>& theta,
   return *this;
 }
 
+// RYOp
+
+QuartzProgramBuilder&
+QuartzProgramBuilder::ry(const std::variant<double, Value>& theta,
+                         Value qubit) {
+  create<RYOp>(loc, qubit, theta);
+  return *this;
+}
+
+QuartzProgramBuilder&
+QuartzProgramBuilder::cry(const std::variant<double, Value>& theta,
+                          Value control, const Value target) {
+  return mcry(theta, {control}, target);
+}
+
+QuartzProgramBuilder&
+QuartzProgramBuilder::mcry(const std::variant<double, Value>& theta,
+                           ValueRange controls, Value target) {
+  create<CtrlOp>(loc, controls,
+                 [&](OpBuilder& b) { b.create<RYOp>(loc, target, theta); });
+  return *this;
+}
+
 // U2Op
 
 QuartzProgramBuilder&

@@ -536,6 +536,34 @@ def RXOp : FluxOp<"rx", traits = [UnitaryOpInterface, OneTargetOneParameter]> {
     let hasCanonicalizer = 1;
 }
 
+def RYOp : FluxOp<"ry", traits = [UnitaryOpInterface, OneTargetOneParameter]> {
+    let summary = "Apply an RY gate to a qubit";
+    let description = [{
+        Applies an RY gate to a qubit and returns the transformed qubit.
+
+        Example:
+        ```mlir
+        %q_out = flux.ry(%theta) %q_in : !flux.qubit -> !flux.qubit
+        ```
+    }];
+
+    let arguments = (ins Arg<QubitType, "the target qubit", [MemRead]>:$qubit_in,
+                     Arg<F64, "the rotation angle theta in radians", [MemRead]>:$theta);
+    let results = (outs QubitType:$qubit_out);
+    let assemblyFormat = "`(` $theta `)` $qubit_in attr-dict `:` type($qubit_in) `->` type($qubit_out)";
+
+    let extraClassDeclaration = [{
+        DenseElementsAttr tryGetStaticMatrix();
+        static StringRef getBaseSymbol() { return "ry"; }
+    }];
+
+    let builders = [
+        OpBuilder<(ins "Value":$qubit_in, "const std::variant<double, Value>&":$theta)>
+    ];
+
+    let hasCanonicalizer = 1;
+}
+
 def U2Op : FluxOp<"u2", traits = [UnitaryOpInterface, OneTargetTwoParameter]> {
     let summary = "Apply a U2 gate to a qubit";
     let description = [{

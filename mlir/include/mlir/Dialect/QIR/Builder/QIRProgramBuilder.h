@@ -667,6 +667,43 @@ public:
                          Value control, Value target);
 
   /**
+   * @brief Apply a RY gate to a qubit
+   *
+   * @param theta Rotation angle
+   * @param qubit Input qubit
+   * @return Reference to this builder for method chaining
+   *
+   * @par Example:
+   * ```c++
+   * builder.ry(theta, qubit);
+   * ```
+   * ```mlir
+   * llvm.call @__quantum__qis__ry__body(%q, %theta) : (!llvm.ptr, f64) -> ()
+   * ```
+   */
+  QIRProgramBuilder& ry(const std::variant<double, Value>& theta, Value qubit);
+
+  /**
+   * @brief Apply a controlled RY gate
+   *
+   * @param theta Rotation angle
+   * @param control Control qubit
+   * @param target Target qubit
+   * @return Reference to this builder for method chaining
+   *
+   * @par Example:
+   * ```c++
+   * builder.cry(theta, control, target);
+   * ```
+   * ```mlir
+   * llvm.call @__quantum__qis__cry__body(%c, %t, %theta) : (!llvm.ptr,
+   * !llvm.ptr, f64) -> ()
+   * ```
+   */
+  QIRProgramBuilder& cry(const std::variant<double, Value>& theta,
+                         Value control, Value target);
+
+  /**
    * @brief Apply a U2 gate to a qubit
    *
    * @param phi Rotation angle
@@ -814,6 +851,29 @@ private:
   void createControlledOneTargetZeroParameter(const Value control,
                                               const Value target,
                                               StringRef fnName);
+
+  /**
+   * @brief Helper to create a one-target, one-parameter QIR operation
+   *
+   * @param parameter Operation parameter
+   * @param qubit Input qubit
+   * @param fnName Name of the QIR function to call
+   */
+  void createOneTargetOneParameter(const std::variant<double, Value>& parameter,
+                                   const Value qubit, StringRef fnName);
+
+  /**
+   * @brief Helper to create a controlled one-target, one-parameter QIR
+   * operation
+   *
+   * @param parameter Operation parameter
+   * @param control Input control qubit
+   * @param target Input target qubit
+   * @param fnName Name of the QIR function to call
+   */
+  void createControlledOneTargetOneParameter(
+      const std::variant<double, Value>& parameter, const Value control,
+      const Value target, StringRef fnName);
 
   /**
    * @brief Generate array-based output recording in the output block

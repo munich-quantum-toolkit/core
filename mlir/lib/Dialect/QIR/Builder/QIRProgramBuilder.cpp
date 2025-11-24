@@ -272,6 +272,81 @@ void QIRProgramBuilder::createControlledOneTargetZeroParameter(
   builder.create<LLVM::CallOp>(loc, fnDecl, ValueRange{control, target});
 }
 
+void QIRProgramBuilder::createOneTargetOneParameter(
+    const std::variant<double, Value>& parameter, const Value qubit,
+    StringRef fnName) {
+  // Save current insertion point
+  const OpBuilder::InsertionGuard entryGuard(builder);
+
+  // Insert constants in entry block
+  builder.setInsertionPointToEnd(entryBlock);
+
+  Value parameterOperand;
+  if (std::holds_alternative<double>(parameter)) {
+    parameterOperand =
+        builder
+            .create<LLVM::ConstantOp>(
+                loc, builder.getF64FloatAttr(std::get<double>(parameter)))
+            .getResult();
+  } else {
+    parameterOperand = std::get<Value>(parameter);
+  }
+
+  // Save current insertion point
+  const OpBuilder::InsertionGuard bodyGuard(builder);
+
+  // Insert in body block (before branch)
+  builder.setInsertionPoint(bodyBlock->getTerminator());
+
+  // Create call
+  const auto qirSignature = LLVM::LLVMFunctionType::get(
+      LLVM::LLVMVoidType::get(builder.getContext()),
+      {LLVM::LLVMPointerType::get(builder.getContext()),
+       Float64Type::get(builder.getContext())});
+  auto fnDecl =
+      getOrCreateFunctionDeclaration(builder, module, fnName, qirSignature);
+  builder.create<LLVM::CallOp>(loc, fnDecl,
+                               ValueRange{qubit, parameterOperand});
+}
+
+void QIRProgramBuilder::createControlledOneTargetOneParameter(
+    const std::variant<double, Value>& parameter, const Value control,
+    const Value target, StringRef fnName) {
+  // Save current insertion point
+  const OpBuilder::InsertionGuard entryGuard(builder);
+
+  // Insert constants in entry block
+  builder.setInsertionPointToEnd(entryBlock);
+
+  Value parameterOperand;
+  if (std::holds_alternative<double>(parameter)) {
+    parameterOperand =
+        builder
+            .create<LLVM::ConstantOp>(
+                loc, builder.getF64FloatAttr(std::get<double>(parameter)))
+            .getResult();
+  } else {
+    parameterOperand = std::get<Value>(parameter);
+  }
+
+  // Save current insertion point
+  const OpBuilder::InsertionGuard bodyGuard(builder);
+
+  // Insert in body block (before branch)
+  builder.setInsertionPoint(bodyBlock->getTerminator());
+
+  // Create call
+  const auto qirSignature = LLVM::LLVMFunctionType::get(
+      LLVM::LLVMVoidType::get(builder.getContext()),
+      {LLVM::LLVMPointerType::get(builder.getContext()),
+       LLVM::LLVMPointerType::get(builder.getContext()),
+       Float64Type::get(builder.getContext())});
+  auto fnDecl =
+      getOrCreateFunctionDeclaration(builder, module, fnName, qirSignature);
+  builder.create<LLVM::CallOp>(loc, fnDecl,
+                               ValueRange{control, target, parameterOperand});
+}
+
 // IdOp
 
 QIRProgramBuilder& QIRProgramBuilder::id(const Value qubit) {
@@ -420,78 +495,30 @@ QIRProgramBuilder& QIRProgramBuilder::csxdg(const Value control,
 QIRProgramBuilder&
 QIRProgramBuilder::rx(const std::variant<double, Value>& theta,
                       const Value qubit) {
-  // Save current insertion point
-  const OpBuilder::InsertionGuard entryGuard(builder);
-
-  // Insert constants in entry block
-  builder.setInsertionPointToEnd(entryBlock);
-
-  Value thetaOperand;
-  if (std::holds_alternative<double>(theta)) {
-    thetaOperand =
-        builder
-            .create<LLVM::ConstantOp>(
-                loc, builder.getF64FloatAttr(std::get<double>(theta)))
-            .getResult();
-  } else {
-    thetaOperand = std::get<Value>(theta);
-  }
-
-  // Save current insertion point
-  const OpBuilder::InsertionGuard bodyGuard(builder);
-
-  // Insert in body block (before branch)
-  builder.setInsertionPoint(bodyBlock->getTerminator());
-
-  // Create rx call
-  const auto qirSignature = LLVM::LLVMFunctionType::get(
-      LLVM::LLVMVoidType::get(builder.getContext()),
-      {LLVM::LLVMPointerType::get(builder.getContext()),
-       Float64Type::get(builder.getContext())});
-  auto fnDecl =
-      getOrCreateFunctionDeclaration(builder, module, QIR_RX, qirSignature);
-  builder.create<LLVM::CallOp>(loc, fnDecl, ValueRange{qubit, thetaOperand});
-
+  createOneTargetOneParameter(theta, qubit, QIR_RX);
   return *this;
 }
 
 QIRProgramBuilder&
 QIRProgramBuilder::crx(const std::variant<double, Value>& theta,
                        const Value control, const Value target) {
-  // Save current insertion point
-  const OpBuilder::InsertionGuard entryGuard(builder);
+  createControlledOneTargetOneParameter(theta, control, target, QIR_CRX);
+  return *this;
+}
 
-  // Insert constants in entry block
-  builder.setInsertionPointToEnd(entryBlock);
+// RYOp
 
-  Value thetaOperand;
-  if (std::holds_alternative<double>(theta)) {
-    thetaOperand =
-        builder
-            .create<LLVM::ConstantOp>(
-                loc, builder.getF64FloatAttr(std::get<double>(theta)))
-            .getResult();
-  } else {
-    thetaOperand = std::get<Value>(theta);
-  }
+QIRProgramBuilder&
+QIRProgramBuilder::ry(const std::variant<double, Value>& theta,
+                      const Value qubit) {
+  createOneTargetOneParameter(theta, qubit, QIR_RY);
+  return *this;
+}
 
-  // Save current insertion point
-  const OpBuilder::InsertionGuard bodyGuard(builder);
-
-  // Insert in body block (before branch)
-  builder.setInsertionPoint(bodyBlock->getTerminator());
-
-  // Create crx call
-  const auto qirSignature = LLVM::LLVMFunctionType::get(
-      LLVM::LLVMVoidType::get(builder.getContext()),
-      {LLVM::LLVMPointerType::get(builder.getContext()),
-       LLVM::LLVMPointerType::get(builder.getContext()),
-       Float64Type::get(builder.getContext())});
-  auto fnDecl =
-      getOrCreateFunctionDeclaration(builder, module, QIR_CRX, qirSignature);
-  builder.create<LLVM::CallOp>(loc, fnDecl,
-                               ValueRange{control, target, thetaOperand});
-
+QIRProgramBuilder&
+QIRProgramBuilder::cry(const std::variant<double, Value>& theta,
+                       const Value control, const Value target) {
+  createControlledOneTargetOneParameter(theta, control, target, QIR_CRY);
   return *this;
 }
 
