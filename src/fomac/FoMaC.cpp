@@ -335,8 +335,8 @@ auto FoMaC::Device::Operation::getSitePairs(
   }
 
   auto& sitesVec = *sitesOpt;
-  if (sitesVec.size() % 2 != 0) {
-    return std::nullopt; // Invalid: odd number of sites
+  if (sitesVec.empty() || sitesVec.size() % 2 != 0) {
+    return std::nullopt; // Invalid: no sites or odd number of sites
   }
 
   std::vector<std::pair<Site, Site>> pairs;
@@ -384,14 +384,14 @@ auto FoMaC::Device::getRegularSites() const -> std::vector<Site> {
   auto allSites = getSites();
   const auto newEnd = std::ranges::remove_if(
       allSites, [](const Site& s) { return s.isZone(); });
-  allSites.erase(newEnd.begin(), allSites.end());
+  allSites.erase(newEnd.begin(), newEnd.end());
   return allSites;
 }
 auto FoMaC::Device::getZones() const -> std::vector<Site> {
   auto allSites = getSites();
   const auto newEnd = std::ranges::remove_if(
       allSites, [](const Site& s) { return !s.isZone(); });
-  allSites.erase(newEnd.begin(), allSites.end());
+  allSites.erase(newEnd.begin(), newEnd.end());
   return allSites;
 }
 auto FoMaC::Device::getOperations() const -> std::vector<Operation> {

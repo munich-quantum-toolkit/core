@@ -400,7 +400,7 @@ auto MQT_NA_QDMI_Operation_impl_d::sortSites() -> void {
         using T = std::decay_t<decltype(sites)>;
         if constexpr (std::is_same_v<T, std::vector<MQT_NA_QDMI_Site>>) {
           // Single-qubit: sort flat list by pointer address
-          std::ranges::sort(sites);
+          std::ranges::sort(sites, std::less<MQT_NA_QDMI_Site>{});
         } else if constexpr (std::is_same_v<
                                  T, std::vector<std::pair<MQT_NA_QDMI_Site,
                                                           MQT_NA_QDMI_Site>>>) {
@@ -408,7 +408,7 @@ auto MQT_NA_QDMI_Operation_impl_d::sortSites() -> void {
           // Use std::less for proper total order (pointer comparison with
           // operator> invokes undefined behavior)
           std::ranges::for_each(sites, [](auto& p) {
-            if (std::less<>{}(p.second, p.first)) {
+            if (std::less<MQT_NA_QDMI_Site>{}(p.second, p.first)) {
               std::swap(p.first, p.second);
             }
           });
@@ -501,7 +501,8 @@ auto MQT_NA_QDMI_Operation_impl_d::queryProperty(
           [sites](const auto& storedSites) -> bool {
             using T = std::decay_t<decltype(storedSites)>;
             if constexpr (std::is_same_v<T, std::vector<MQT_NA_QDMI_Site>>) {
-              return std::ranges::binary_search(storedSites, *sites);
+              return std::ranges::binary_search(storedSites, *sites,
+                                                std::less<MQT_NA_QDMI_Site>{});
             }
             return false; // Wrong variant type
           },
@@ -511,7 +512,7 @@ auto MQT_NA_QDMI_Operation_impl_d::queryProperty(
       }
     } else if (numSites == 2) {
       // NOLINTBEGIN(cppcoreguidelines-pro-bounds-pointer-arithmetic)
-      const std::pair needle = sites[0] < sites[1]
+      const std::pair needle = std::less<MQT_NA_QDMI_Site>{}(sites[0], sites[1])
                                    ? std::make_pair(sites[0], sites[1])
                                    : std::make_pair(sites[1], sites[0]);
       // NOLINTEND(cppcoreguidelines-pro-bounds-pointer-arithmetic)
