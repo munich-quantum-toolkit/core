@@ -145,15 +145,13 @@ ignore = [
 ]
 
 
-[tool.pytest.ini_options]
-minversion = "7.2"
+[tool.pytest]
+minversion = "9.0"
+strict = true
 addopts = [
   "-ra",
-  "--strict-markers",
-  "--strict-config",
   "--numprocesses=auto", # Automatically use all available CPU cores for parallel testing
 ]
-xfail_strict = true
 filterwarnings = [
   "error",
   'ignore:\s.*Pyarrow.*:DeprecationWarning:',
@@ -332,11 +330,11 @@ docs = [
   "mlir-pygments>=1.0.0",
 ]
 test = [
-  "pytest>=8.3.5",
+  "pytest>=9.0.1",
   "pytest-console-scripts>=1.4.1",
-  "pytest-cov>=6.1.1",
-  "pytest-sugar>=1.0.0",
-  "pytest-xdist>=3.7.0",
+  "pytest-cov>=7.0.0",
+  "pytest-sugar>=1.1.1",
+  "pytest-xdist>=3.8.0",
   "pandas[output-formatting]>=2.1.2",
   "pandas[output-formatting]>=2.2.3; python_version >= '3.13'",
   "pandas[output-formatting]>=2.3.3; python_version >= '3.14'",
