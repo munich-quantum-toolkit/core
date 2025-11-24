@@ -18,7 +18,6 @@ from __future__ import annotations
 from pathlib import Path
 
 import lit.formats
-from lit.llvm import llvm_config
 
 # Use `lit_config` to access `config` from lit.site.cfg.py
 config = globals().get("config")
@@ -41,4 +40,4 @@ config.test_exec_root = Path(config.mqt_core_mlir_test_dir)
 multi_config_path = Path(config.mqt_core_mlir_tools_dir) / config.cmake_build_type
 tool_dirs = [config.llvm_tools_dir, config.mqt_core_mlir_tools_dir, str(multi_config_path)]
 tools = ["not", "FileCheck", "quantum-opt"]
-llvm_config.add_tool_substitutions(tools, tool_dirs)
+config.add_tool_substitutions(tools, tool_dirs)

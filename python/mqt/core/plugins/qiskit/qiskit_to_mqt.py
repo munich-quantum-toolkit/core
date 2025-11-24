@@ -318,7 +318,7 @@ def _emplace_operation(
         return _add_two_target_operation(qc, OpType.xx_plus_yy, qargs, params, qubit_map)
 
     if name == "if_else":
-        return _add_if_else_operation(qc, instr, qargs, cargs, qubit_map, clbit_map, cregs)
+        return _add_if_else_operation(qc, cast("IfElseOp", instr), qargs, cargs, qubit_map, clbit_map, cregs)
 
     msg = f"Unsupported gate {name}"  # pragma: no cover
     raise NotImplementedError(msg)
@@ -499,6 +499,7 @@ def _add_if_else_operation(
 
 
 def _import_layouts(qc: QuantumComputation, circ: QuantumCircuit) -> None:
+    assert circ.layout is not None
     qc.initial_layout.clear()
     initial_index_layout = circ.layout.initial_index_layout()
     for virtual, physical in enumerate(initial_index_layout):

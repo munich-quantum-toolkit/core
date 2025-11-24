@@ -780,6 +780,7 @@ def test_final_layout_with_permutation(backend: GenericBackendV2) -> None:
     qc_transpiled = transpile(qc, backend, initial_layout=initial_layout, seed_transpiler=seed)
     print(qc_transpiled)
 
+    assert qc_transpiled.layout is not None
     final_index_layout = qc_transpiled.layout.final_index_layout()
     mqt_qc = qiskit_to_mqt(qc_transpiled)
     print(mqt_qc)
@@ -813,6 +814,7 @@ def test_final_layout_with_permutation_ancilla_in_front_and_back(backend: Generi
     qc_transpiled = transpile(qc, backend, initial_layout=initial_layout, seed_transpiler=seed)
     print(qc_transpiled)
 
+    assert qc_transpiled.layout is not None
     routing_permutation = qc_transpiled.layout.routing_permutation()
     mqt_qc = qiskit_to_mqt(qc_transpiled)
     print(mqt_qc)
