@@ -294,9 +294,9 @@ auto executeSchemaCommand(const std::string& progName,
   // generate the JSON schema and write it to the output file or stdout
   try {
     if (schemaArgs.outputFile.has_value()) {
-      qdmi::sc::writeJSONSchema(schemaArgs.outputFile.value());
+      sc::writeJSONSchema(schemaArgs.outputFile.value());
     } else {
-      qdmi::sc::writeJSONSchema(std::cout);
+      sc::writeJSONSchema(std::cout);
     }
   } catch (const std::exception& e) {
     SPDLOG_ERROR("Error generating JSON schema: {}", e.what());
@@ -326,9 +326,9 @@ auto executeValidateCommand(const std::string& progName,
   // validate the JSON file or the JSON string from stdin
   try {
     if (validateArgs.jsonFile.has_value()) {
-      std::ignore = qdmi::sc::readJSON(validateArgs.jsonFile.value());
+      std::ignore = sc::readJSON(validateArgs.jsonFile.value());
     } else {
-      std::ignore = qdmi::sc::readJSON(std::cin);
+      std::ignore = sc::readJSON(std::cin);
     }
   } catch (const std::exception& e) {
     SPDLOG_ERROR("Error validating JSON: {}", e.what());
@@ -364,18 +364,18 @@ auto executeGenerateCommand(const std::string& progName,
   }
   // generate the header file from the JSON specification
   try {
-    qdmi::sc::Device device;
+    sc::Device device;
     // read the JSON file or the JSON string from stdin
     if (generateArgs.jsonFile.has_value()) {
-      device = qdmi::sc::readJSON(generateArgs.jsonFile.value());
+      device = sc::readJSON(generateArgs.jsonFile.value());
     } else {
-      device = qdmi::sc::readJSON(std::cin);
+      device = sc::readJSON(std::cin);
     }
     // write the header file to the output file or stdout
     if (generateArgs.outputFile.has_value()) {
-      qdmi::sc::writeHeader(device, generateArgs.outputFile.value());
+      sc::writeHeader(device, generateArgs.outputFile.value());
     } else {
-      qdmi::sc::writeHeader(device, std::cout);
+      sc::writeHeader(device, std::cout);
     }
   } catch (const std::exception& e) {
     SPDLOG_ERROR("Error generating header file: {}", e.what());

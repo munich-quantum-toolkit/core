@@ -18,7 +18,7 @@
 #include <stdexcept>
 #include <utility>
 
-namespace qdmi::sc {
+namespace sc {
 namespace {
 // clang-tidy wants to include the forward header, but we have the full
 // NOLINTNEXTLINE(misc-include-cleaner)
@@ -41,7 +41,7 @@ auto testPopulation(const nlohmann::json& json) -> void {
 }
 } // namespace
 
-TEST(GeneratorTest, WriteJSONSchema) {
+TEST(ScGeneratorTest, WriteJSONSchema) {
   std::ostringstream os;
   EXPECT_NO_THROW(writeJSONSchema(os));
   // clang-tidy wants to include the forward header, but we have the full
@@ -53,4 +53,4 @@ TEST(GeneratorTest, WriteJSONSchema) {
   testPopulation(json);
 }
 
-} // namespace qdmi::sc
+} // namespace sc

@@ -24,7 +24,7 @@
 #include <string>
 #include <vector>
 
-namespace qdmi::sc {
+namespace sc {
 /**
  * @brief Represents a superconducting device configuration.
  * @details This struct defines the schema for the JSON representation of a
@@ -103,4 +103,4 @@ auto writeHeader(const Device& device, std::ostream& os) -> void;
  * qubits.
  */
 auto writeHeader(const Device& device, const std::string& path) -> void;
-} // namespace qdmi::sc
+} // namespace sc

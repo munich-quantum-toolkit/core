@@ -33,7 +33,7 @@
 #include <utility>
 #include <vector>
 
-namespace qdmi::sc {
+namespace sc {
 namespace {
 /**
  * @brief Populates all array fields in the device object with default values.
@@ -167,4 +167,4 @@ auto writeHeader(const Device& device, const std::string& path) -> void {
   ofs.close();
   SPDLOG_INFO("Header file written to {}", path);
 }
-} // namespace qdmi::sc
+} // namespace sc
