@@ -88,7 +88,7 @@ repos:
         args: []
         additional_dependencies:
           - nox
-          - pandas-stubs
+          - numpy
           - pytest
 
   # Also run Black on examples in the documentation
