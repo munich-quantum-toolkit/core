@@ -49,7 +49,7 @@ namespace {
 }
 } // namespace
 
-class QDMISpecificationTest : public ::testing::Test {
+class ScQDMISpecificationTest : public ::testing::Test {
 protected:
   MQT_SC_QDMI_Device_Session session = nullptr;
 
@@ -76,12 +76,12 @@ protected:
   }
 };
 
-class QDMIJobSpecificationTest : public QDMISpecificationTest {
+class ScQDMIJobSpecificationTest : public ScQDMISpecificationTest {
 protected:
   MQT_SC_QDMI_Device_Job job = nullptr;
 
   void SetUp() override {
-    QDMISpecificationTest::SetUp();
+    ScQDMISpecificationTest::SetUp();
     ASSERT_EQ(MQT_SC_QDMI_device_session_create_device_job(session, &job),
               QDMI_SUCCESS)
         << "Failed to create a device job.";
@@ -92,22 +92,22 @@ protected:
       MQT_SC_QDMI_device_job_free(job);
       job = nullptr;
     }
-    QDMISpecificationTest::TearDown();
+    ScQDMISpecificationTest::TearDown();
   }
 };
 
-TEST_F(QDMISpecificationTest, SessionAlloc) {
+TEST_F(ScQDMISpecificationTest, SessionAlloc) {
   EXPECT_EQ(MQT_SC_QDMI_device_session_alloc(nullptr),
             QDMI_ERROR_INVALIDARGUMENT);
 }
 
-TEST_F(QDMISpecificationTest, SessionInit) {
+TEST_F(ScQDMISpecificationTest, SessionInit) {
   EXPECT_EQ(MQT_SC_QDMI_device_session_init(session), QDMI_ERROR_BADSTATE);
   EXPECT_EQ(MQT_SC_QDMI_device_session_init(nullptr),
             QDMI_ERROR_INVALIDARGUMENT);
 }
 
-TEST_F(QDMISpecificationTest, SessionSetParameter) {
+TEST_F(ScQDMISpecificationTest, SessionSetParameter) {
   MQT_SC_QDMI_Device_Session uninitializedSession = nullptr;
   ASSERT_EQ(MQT_SC_QDMI_device_session_alloc(&uninitializedSession),
             QDMI_SUCCESS);
@@ -125,7 +125,7 @@ TEST_F(QDMISpecificationTest, SessionSetParameter) {
             QDMI_ERROR_INVALIDARGUMENT);
 }
 
-TEST_F(QDMISpecificationTest, JobCreate) {
+TEST_F(ScQDMISpecificationTest, JobCreate) {
   MQT_SC_QDMI_Device_Session uninitializedSession = nullptr;
   MQT_SC_QDMI_Device_Job job = nullptr;
   ASSERT_EQ(MQT_SC_QDMI_device_session_alloc(&uninitializedSession),
@@ -142,13 +142,13 @@ TEST_F(QDMISpecificationTest, JobCreate) {
   MQT_SC_QDMI_device_job_free(job);
 }
 
-TEST_F(QDMISpecificationTest, JobSetParameter) {
+TEST_F(ScQDMISpecificationTest, JobSetParameter) {
   EXPECT_EQ(MQT_SC_QDMI_device_job_set_parameter(
                 nullptr, QDMI_DEVICE_JOB_PARAMETER_MAX, 0, nullptr),
             QDMI_ERROR_INVALIDARGUMENT);
 }
 
-TEST_F(QDMIJobSpecificationTest, JobSetParameter) {
+TEST_F(ScQDMIJobSpecificationTest, JobSetParameter) {
   QDMI_Program_Format value = QDMI_PROGRAM_FORMAT_QASM2;
   EXPECT_THAT(MQT_SC_QDMI_device_job_set_parameter(
                   job, QDMI_DEVICE_JOB_PARAMETER_PROGRAMFORMAT,
@@ -159,13 +159,13 @@ TEST_F(QDMIJobSpecificationTest, JobSetParameter) {
             QDMI_ERROR_INVALIDARGUMENT);
 }
 
-TEST_F(QDMISpecificationTest, JobQueryProperty) {
+TEST_F(ScQDMISpecificationTest, JobQueryProperty) {
   EXPECT_EQ(MQT_SC_QDMI_device_job_query_property(
                 nullptr, QDMI_DEVICE_JOB_PROPERTY_MAX, 0, nullptr, nullptr),
             QDMI_ERROR_INVALIDARGUMENT);
 }
 
-TEST_F(QDMIJobSpecificationTest, JobQueryProperty) {
+TEST_F(ScQDMIJobSpecificationTest, JobQueryProperty) {
   EXPECT_THAT(MQT_SC_QDMI_device_job_query_property(
                   job, QDMI_DEVICE_JOB_PROPERTY_ID, 0, nullptr, nullptr),
               testing::AnyOf(QDMI_SUCCESS, QDMI_ERROR_NOTSUPPORTED));
@@ -174,7 +174,7 @@ TEST_F(QDMIJobSpecificationTest, JobQueryProperty) {
             QDMI_ERROR_INVALIDARGUMENT);
 }
 
-TEST_F(QDMIJobSpecificationTest, QueryJobId) {
+TEST_F(ScQDMIJobSpecificationTest, QueryJobId) {
   size_t size = 0;
   const auto status = MQT_SC_QDMI_device_job_query_property(
       job, QDMI_DEVICE_JOB_PROPERTY_ID, 0, nullptr, &size);
@@ -189,54 +189,54 @@ TEST_F(QDMIJobSpecificationTest, QueryJobId) {
               testing::AnyOf(QDMI_SUCCESS, QDMI_ERROR_NOTSUPPORTED));
 }
 
-TEST_F(QDMISpecificationTest, JobSubmit) {
+TEST_F(ScQDMISpecificationTest, JobSubmit) {
   EXPECT_EQ(MQT_SC_QDMI_device_job_submit(nullptr), QDMI_ERROR_INVALIDARGUMENT);
 }
 
-TEST_F(QDMIJobSpecificationTest, JobSubmit) {
+TEST_F(ScQDMIJobSpecificationTest, JobSubmit) {
   const auto status = MQT_SC_QDMI_device_job_submit(job);
   ASSERT_THAT(status, testing::AnyOf(QDMI_SUCCESS, QDMI_ERROR_NOTSUPPORTED));
 }
 
-TEST_F(QDMISpecificationTest, JobCancel) {
+TEST_F(ScQDMISpecificationTest, JobCancel) {
   EXPECT_EQ(MQT_SC_QDMI_device_job_cancel(nullptr), QDMI_ERROR_INVALIDARGUMENT);
 }
 
-TEST_F(QDMIJobSpecificationTest, JobCancel) {
+TEST_F(ScQDMIJobSpecificationTest, JobCancel) {
   const auto status = MQT_SC_QDMI_device_job_cancel(job);
   ASSERT_THAT(status, testing::AnyOf(QDMI_SUCCESS, QDMI_ERROR_INVALIDARGUMENT,
                                      QDMI_ERROR_NOTSUPPORTED));
 }
 
-TEST_F(QDMISpecificationTest, JobCheck) {
+TEST_F(ScQDMISpecificationTest, JobCheck) {
   EXPECT_EQ(MQT_SC_QDMI_device_job_check(nullptr, nullptr),
             QDMI_ERROR_INVALIDARGUMENT);
 }
 
-TEST_F(QDMIJobSpecificationTest, JobCheck) {
+TEST_F(ScQDMIJobSpecificationTest, JobCheck) {
   QDMI_Job_Status jobStatus = QDMI_JOB_STATUS_RUNNING;
   const auto status = MQT_SC_QDMI_device_job_check(job, &jobStatus);
   ASSERT_THAT(status, testing::AnyOf(QDMI_SUCCESS, QDMI_ERROR_NOTSUPPORTED));
 }
 
-TEST_F(QDMISpecificationTest, JobWait) {
+TEST_F(ScQDMISpecificationTest, JobWait) {
   EXPECT_EQ(MQT_SC_QDMI_device_job_wait(nullptr, 0),
             QDMI_ERROR_INVALIDARGUMENT);
 }
 
-TEST_F(QDMIJobSpecificationTest, JobWait) {
+TEST_F(ScQDMIJobSpecificationTest, JobWait) {
   const auto status = MQT_SC_QDMI_device_job_wait(job, 1);
   ASSERT_THAT(status, testing::AnyOf(QDMI_SUCCESS, QDMI_ERROR_NOTSUPPORTED,
                                      QDMI_ERROR_TIMEOUT));
 }
 
-TEST_F(QDMISpecificationTest, JobGetResults) {
+TEST_F(ScQDMISpecificationTest, JobGetResults) {
   EXPECT_EQ(MQT_SC_QDMI_device_job_get_results(nullptr, QDMI_JOB_RESULT_MAX, 0,
                                                nullptr, nullptr),
             QDMI_ERROR_INVALIDARGUMENT);
 }
 
-TEST_F(QDMIJobSpecificationTest, JobGetResults) {
+TEST_F(ScQDMIJobSpecificationTest, JobGetResults) {
   EXPECT_THAT(MQT_SC_QDMI_device_job_get_results(job, QDMI_JOB_RESULT_SHOTS, 0,
                                                  nullptr, nullptr),
               testing::AnyOf(QDMI_SUCCESS, QDMI_ERROR_NOTSUPPORTED));
@@ -245,7 +245,7 @@ TEST_F(QDMIJobSpecificationTest, JobGetResults) {
             QDMI_ERROR_INVALIDARGUMENT);
 }
 
-TEST_F(QDMISpecificationTest, QueryDeviceProperty) {
+TEST_F(ScQDMISpecificationTest, QueryDeviceProperty) {
   MQT_SC_QDMI_Device_Session uninitializedSession = nullptr;
   ASSERT_EQ(MQT_SC_QDMI_device_session_alloc(&uninitializedSession),
             QDMI_SUCCESS);
@@ -265,7 +265,7 @@ TEST_F(QDMISpecificationTest, QueryDeviceProperty) {
       testing::AnyOf(QDMI_SUCCESS, QDMI_ERROR_NOTSUPPORTED));
 }
 
-TEST_F(QDMISpecificationTest, QuerySiteProperty) {
+TEST_F(ScQDMISpecificationTest, QuerySiteProperty) {
   MQT_SC_QDMI_Site site = querySites(session).front();
   EXPECT_EQ(
       MQT_SC_QDMI_device_session_query_site_property(
@@ -282,7 +282,7 @@ TEST_F(QDMISpecificationTest, QuerySiteProperty) {
               testing::AnyOf(QDMI_SUCCESS, QDMI_ERROR_NOTSUPPORTED));
 }
 
-TEST_F(QDMISpecificationTest, QueryDeviceName) {
+TEST_F(ScQDMISpecificationTest, QueryDeviceName) {
   size_t size = 0;
   ASSERT_EQ(MQT_SC_QDMI_device_session_query_device_property(
                 session, QDMI_DEVICE_PROPERTY_NAME, 0, nullptr, &size),
@@ -297,7 +297,7 @@ TEST_F(QDMISpecificationTest, QueryDeviceName) {
   EXPECT_FALSE(value.empty()) << "Devices must provide a name";
 }
 
-TEST_F(QDMISpecificationTest, QueryDeviceVersion) {
+TEST_F(ScQDMISpecificationTest, QueryDeviceVersion) {
   size_t size = 0;
   ASSERT_EQ(MQT_SC_QDMI_device_session_query_device_property(
                 session, QDMI_DEVICE_PROPERTY_VERSION, 0, nullptr, &size),
@@ -312,7 +312,7 @@ TEST_F(QDMISpecificationTest, QueryDeviceVersion) {
   EXPECT_FALSE(value.empty()) << "Devices must provide a version";
 }
 
-TEST_F(QDMISpecificationTest, QueryDeviceLibraryVersion) {
+TEST_F(ScQDMISpecificationTest, QueryDeviceLibraryVersion) {
   size_t size = 0;
   ASSERT_EQ(
       MQT_SC_QDMI_device_session_query_device_property(
@@ -328,7 +328,7 @@ TEST_F(QDMISpecificationTest, QueryDeviceLibraryVersion) {
   EXPECT_FALSE(value.empty()) << "Devices must provide a library version";
 }
 
-TEST_F(QDMISpecificationTest, QuerySiteIndex) {
+TEST_F(ScQDMISpecificationTest, QuerySiteIndex) {
   size_t id = 0;
   EXPECT_NO_THROW(for (auto* site : querySites(session)) {
     EXPECT_EQ(MQT_SC_QDMI_device_session_query_site_property(
@@ -339,7 +339,7 @@ TEST_F(QDMISpecificationTest, QuerySiteIndex) {
   }) << "Devices must provide a list of sites";
 }
 
-TEST_F(QDMISpecificationTest, QueryDeviceQubitNum) {
+TEST_F(ScQDMISpecificationTest, QueryDeviceQubitNum) {
   size_t numQubits = 0;
   EXPECT_EQ(MQT_SC_QDMI_device_session_query_device_property(
                 session, QDMI_DEVICE_PROPERTY_QUBITSNUM, sizeof(size_t),
