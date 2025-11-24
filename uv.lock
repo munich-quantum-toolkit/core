@@ -1594,11 +1594,11 @@ dev = [
 ]
 docs = [
     { name = "breathe", specifier = ">=4.36.0" },
-    { name = "furo", specifier = ">=2024.8.6" },
-    { name = "graphviz", specifier = ">=0.20.3" },
+    { name = "furo", specifier = ">=2025.9.25" },
+    { name = "graphviz", specifier = ">=0.21.0" },
     { name = "mlir-pygments", specifier = ">=1.0.0" },
-    { name = "myst-nb", specifier = ">=1.2.0" },
-    { name = "openqasm-pygments", specifier = ">=0.1.2" },
+    { name = "myst-nb", specifier = ">=1.3.0" },
+    { name = "openqasm-pygments", specifier = ">=0.2.0" },
     { name = "pandas", extras = ["output-formatting"], specifier = ">=2.1.2" },
     { name = "pandas", extras = ["output-formatting"], marker = "python_full_version >= '3.13'", specifier = ">=2.2.3" },
     { name = "pandas", extras = ["output-formatting"], marker = "python_full_version >= '3.14'", specifier = ">=2.3.3" },
@@ -1606,12 +1606,12 @@ docs = [
     { name = "setuptools-scm", specifier = ">=9.2.2" },
     { name = "sphinx", specifier = ">=8.1.3" },
     { name = "sphinx", marker = "python_full_version >= '3.11'", specifier = ">=8.2.3" },
-    { name = "sphinx-autoapi", specifier = ">=3.6.0" },
+    { name = "sphinx-autoapi", specifier = ">=3.6.1" },
     { name = "sphinx-copybutton", specifier = ">=0.5.2" },
     { name = "sphinx-design", specifier = ">=0.6.1" },
-    { name = "sphinxcontrib-bibtex", specifier = ">=2.6.3" },
+    { name = "sphinxcontrib-bibtex", specifier = ">=2.6.5" },
     { name = "sphinxcontrib-svg2pdfconverter", specifier = ">=1.3.0" },
-    { name = "sphinxext-opengraph", specifier = ">=0.10.0" },
+    { name = "sphinxext-opengraph", specifier = ">=0.13.0" },
 ]
 test = [
     { name = "numpy", marker = "python_full_version >= '3.13'", specifier = ">=2.1" },
