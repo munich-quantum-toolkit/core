@@ -18,16 +18,7 @@
 #include <mlir/IR/DialectImplementation.h>
 // IWYU pragma: end_keep
 
-#include <cstddef>
-#include <functional>
-#include <llvm/ADT/SmallPtrSet.h>
-#include <llvm/ADT/SmallVector.h>
-#include <llvm/Support/Casting.h>
-#include <llvm/Support/ErrorHandling.h>
 #include <mlir/IR/MLIRContext.h>
-#include <mlir/IR/OperationSupport.h>
-#include <mlir/IR/PatternMatch.h>
-#include <mlir/IR/Value.h>
 #include <mlir/Support/LogicalResult.h>
 
 using namespace mlir;

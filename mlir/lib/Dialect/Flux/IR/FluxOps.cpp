@@ -9,7 +9,6 @@
  */
 
 #include "mlir/Dialect/Flux/IR/FluxDialect.h" // IWYU pragma: associated
-#include "mlir/Dialect/Utils/MatrixUtils.h"
 
 // The following headers are needed for some template instantiations.
 // IWYU pragma: begin_keep
@@ -19,12 +18,6 @@
 #include <mlir/IR/PatternMatch.h>
 // IWYU pragma: end_keep
 
-#include <cstddef>
-#include <functional>
-#include <llvm/ADT/STLExtras.h>
-#include <llvm/ADT/SmallVector.h>
-#include <llvm/Support/Casting.h>
-#include <llvm/Support/ErrorHandling.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OperationSupport.h>
 #include <mlir/IR/Value.h>
@@ -33,7 +26,6 @@
 
 using namespace mlir;
 using namespace mlir::flux;
-using namespace mlir::utils;
 
 //===----------------------------------------------------------------------===//
 // Dialect

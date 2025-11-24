@@ -885,7 +885,7 @@ struct ConvertQuartzROp final : StatefulOpConversionPattern<quartz::ROp> {
   using StatefulOpConversionPattern::StatefulOpConversionPattern;
 
   LogicalResult
-  matchAndRewrite(quartz::ROp op, OpAdaptor adaptor,
+  matchAndRewrite(quartz::ROp op, OpAdaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
     return convertOneTargetTwoParameter<flux::ROp>(op, rewriter, getState());
   }
@@ -907,7 +907,7 @@ struct ConvertQuartzU2Op final : StatefulOpConversionPattern<quartz::U2Op> {
   using StatefulOpConversionPattern::StatefulOpConversionPattern;
 
   LogicalResult
-  matchAndRewrite(quartz::U2Op op, OpAdaptor adaptor,
+  matchAndRewrite(quartz::U2Op op, OpAdaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
     return convertOneTargetTwoParameter<flux::U2Op>(op, rewriter, getState());
   }
