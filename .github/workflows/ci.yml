@@ -211,6 +211,8 @@ jobs:
     needs: change-detection
     if: fromJSON(needs.change-detection.outputs.run-python-tests)
     uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-python-linter.yml@4845865ca25c2da3374981f47ae9ed9607a30e1c # v1.17.1
+    with:
+      enable-ty: true
 
   build-sdist:
     name: 🚀 CD
