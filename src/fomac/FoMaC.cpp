@@ -388,11 +388,12 @@ auto FoMaC::Device::getRegularSites() const -> std::vector<Site> {
   return allSites;
 }
 auto FoMaC::Device::getZones() const -> std::vector<Site> {
-  auto allSites = getSites();
-  const auto newEnd = std::ranges::remove_if(
-      allSites, [](const Site& s) { return !s.isZone(); });
-  allSites.erase(newEnd.begin(), newEnd.end());
-  return allSites;
+  const auto& allSites = getSites();
+  std::vector<Site> zones;
+  zones.reserve(3); // Reserve space for a typical max number of zones
+  std::ranges::copy_if(allSites, std::back_inserter(zones),
+                       [](const Site& s) { return s.isZone(); });
+  return zones;
 }
 auto FoMaC::Device::getOperations() const -> std::vector<Operation> {
   const auto& qdmiOperations = queryProperty<std::vector<QDMI_Operation>>(
