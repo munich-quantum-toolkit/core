@@ -721,6 +721,44 @@ struct ConvertFluxCtrlOp final : OpConversionPattern<flux::CtrlOp> {
 };
 
 /**
+ * @brief Converts flux.inv to quartz.inv
+ *
+ * @par Example:
+ * ```mlir
+ * %targets_out = flux.inv %targets_in {
+ *   %targets_res = flux.s %targets_in : !flux.qubit -> !flux.qubit
+ *   flux.yield %targets_res
+ * } : {!flux.qubit} -> {!flux.qubit}
+ * ```
+ * is converted to
+ * ```mlir
+ * quartz.inv {
+ *   quartz.s %q0 : !quartz.qubit
+ *   quartz.yield
+ * }
+ * ```
+ */
+struct ConvertFluxInvOp final : OpConversionPattern<flux::InvOp> {
+  using OpConversionPattern::OpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(flux::InvOp op, OpAdaptor adaptor,
+                  ConversionPatternRewriter& rewriter) const override {
+    // Create quartz.inv operation
+    auto fluxOp = rewriter.create<quartz::InvOp>(op.getLoc());
+
+    // Clone body region from Flux to Quartz
+    auto& dstRegion = fluxOp.getBody();
+    rewriter.cloneRegionBefore(op.getBody(), dstRegion, dstRegion.end());
+
+    // Replace the output qubits with the same quartz references
+    rewriter.replaceOp(op, adaptor.getOperands());
+
+    return success();
+  }
+};
+
+/**
  * @brief Converts flux.yield to quartz.yield
  *
  * @par Example:
@@ -797,7 +835,8 @@ struct FluxToQuartz final : impl::FluxToQuartzBase<FluxToQuartz> {
         ConvertFluxUOp, ConvertFluxSWAPOp, ConvertFluxiSWAPOp, ConvertFluxDCXOp,
         ConvertFluxECROp, ConvertFluxRXXOp, ConvertFluxRYYOp, ConvertFluxRZXOp,
         ConvertFluxRZZOp, ConvertFluxXXPlusYYOp, ConvertFluxXXMinusYYOp,
-        ConvertFluxCtrlOp, ConvertFluxYieldOp>(typeConverter, context);
+        ConvertFluxCtrlOp, ConvertFluxInvOp, ConvertFluxYieldOp>(typeConverter,
+                                                                 context);
 
     // Conversion of flux types in func.func signatures
     // Note: This currently has limitations with signature changes
