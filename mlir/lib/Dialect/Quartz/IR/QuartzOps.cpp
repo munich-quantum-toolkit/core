@@ -9,7 +9,6 @@
  */
 
 #include "mlir/Dialect/Quartz/IR/QuartzDialect.h" // IWYU pragma: associated
-#include "mlir/Dialect/Utils/MatrixUtils.h"
 
 // The following headers are needed for some template instantiations.
 // IWYU pragma: begin_keep
@@ -23,7 +22,6 @@
 
 using namespace mlir;
 using namespace mlir::quartz;
-using namespace mlir::utils;
 
 //===----------------------------------------------------------------------===//
 // Dialect

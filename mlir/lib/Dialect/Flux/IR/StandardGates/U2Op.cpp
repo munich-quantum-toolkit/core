@@ -28,15 +28,15 @@ using namespace mlir::utils;
 namespace {
 
 /**
- * @brief Remove trivial U2 operations.
+ * @brief Replace trivial U2 operations with RY operations.
  */
-struct RemoveSubsequentU2 final : OpRewritePattern<U2Op> {
+struct ReplaceTrivialU2 final : OpRewritePattern<U2Op> {
   using OpRewritePattern::OpRewritePattern;
 
   LogicalResult matchAndRewrite(U2Op op,
                                 PatternRewriter& rewriter) const override {
-    const auto phi = op.getStaticParameter(op.getPhi());
-    const auto lambda = op.getStaticParameter(op.getLambda());
+    const auto phi = U2Op::getStaticParameter(op.getPhi());
+    const auto lambda = U2Op::getStaticParameter(op.getLambda());
     if (!phi || !lambda) {
       return failure();
     }
@@ -93,5 +93,5 @@ void U2Op::build(OpBuilder& odsBuilder, OperationState& odsState,
 
 void U2Op::getCanonicalizationPatterns(RewritePatternSet& results,
                                        MLIRContext* context) {
-  results.add<RemoveSubsequentU2>(context);
+  results.add<ReplaceTrivialU2>(context);
 }
