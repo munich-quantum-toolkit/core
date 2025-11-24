@@ -205,7 +205,9 @@ ignore_missing_imports = true
 line-length = 120
 namespace-packages = ["mqt"]
 preview = true
+fix = true
 unsafe-fixes = true
+show-fixes = true
 src = ["python"]
 
 [tool.ruff.lint]

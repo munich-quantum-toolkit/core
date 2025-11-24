@@ -69,7 +69,6 @@ repos:
     rev: v0.14.6
     hooks:
       - id: ruff-check
-        args: ["--fix", "--show-fixes"]
       - id: ruff-format
 
   # Static type checking using mypy
