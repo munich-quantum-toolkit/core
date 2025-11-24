@@ -247,6 +247,9 @@ known-first-party = ["mqt.core"]
 [tool.ruff.lint.pydocstyle]
 convention = "google"
 
+[tool.ruff.format]
+docstring-code-format = true
+
 
 [tool.typos]
 default.extend-ignore-re = [
