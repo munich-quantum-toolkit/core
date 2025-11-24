@@ -11,6 +11,8 @@
 #include "mlir/Dialect/Quartz/IR/QuartzDialect.h"
 #include "mlir/Dialect/Utils/MatrixUtils.h"
 
+#include <mlir/IR/BuiltinAttributes.h>
+
 using namespace mlir;
 using namespace mlir::quartz;
 using namespace mlir::utils;

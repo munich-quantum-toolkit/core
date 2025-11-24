@@ -11,6 +11,8 @@
 #include "mlir/Dialect/Flux/IR/FluxDialect.h"
 #include "mlir/Dialect/Utils/MatrixUtils.h"
 
+#include <mlir/IR/BuiltinAttributes.h>
+
 using namespace mlir;
 using namespace mlir::flux;
 using namespace mlir::utils;
