@@ -596,6 +596,22 @@ std::pair<ValueRange, ValueRange> QCOProgramBuilder::ctrl(
   return {controlsOut, targetsOut};
 }
 
+ValueRange QCOProgramBuilder::inv(
+    ValueRange targets,
+    const std::function<ValueRange(OpBuilder&, ValueRange)>& body) {
+  checkFinalized();
+
+  auto invOp = InvOp::create(*this, loc, targets, body);
+
+  // Update tracking
+  const auto& targetsOut = invOp.getTargetsOut();
+  for (const auto& [target, targetOut] : llvm::zip(targets, targetsOut)) {
+    updateQubitTracking(target, targetOut);
+  }
+
+  return targetsOut;
+}
+
 //===----------------------------------------------------------------------===//
 // Deallocation
 //===----------------------------------------------------------------------===//

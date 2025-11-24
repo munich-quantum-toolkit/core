@@ -1106,4 +1106,68 @@ def CtrlOp : QCOOp<"ctrl", traits =
     let hasVerifier = 1;
 }
 
+def InvOp : QCOOp<"inv", traits =
+            [
+                UnitaryOpInterface,
+                SameOperandsAndResultType,
+                SameOperandsAndResultShape,
+                SingleBlock,
+                RecursiveMemoryEffects
+            ]> {
+    let summary = "Invert a unitary operation";
+    let description = [{
+        A modifier operation that inverts the unitary operation defined in its body
+        region. The operation takes a variadic number of target qubits as inputs and
+        produces corresponding output qubits.
+
+        Example:
+        ```mlir
+        %targets_out = qco.inv %targets_in {
+            %targets_res = qco.s %targets_in : !qco.qubit -> !qco.qubit
+            qco.yield %targets_res : !qco.qubit
+        } : {!qco.qubit} -> {!qco.qubit}
+        ```
+    }];
+
+    let arguments = (ins Arg<Variadic<QubitType>, "the target qubits", [MemRead]>:$targets_in);
+    let results = (outs Variadic<QubitType>:$targets_out);
+    let regions = (region SizedRegion<1>:$body);
+    let assemblyFormat = [{
+        $targets_in
+        $body attr-dict `:`
+        `{` type($targets_in) `}`
+        `->`
+        `{` type($targets_out) `}`
+    }];
+
+    let extraClassDeclaration = [{
+        UnitaryOpInterface getBodyUnitary();
+        size_t getNumQubits();
+        size_t getNumTargets();
+        size_t getNumControls();
+        Value getInputQubit(size_t i);
+        Value getOutputQubit(size_t i);
+        Value getInputTarget(size_t i);
+        Value getOutputTarget(size_t i);
+        Value getInputControl(size_t i);
+        Value getOutputControl(size_t i);
+        Value getInputForOutput(Value output);
+        Value getOutputForInput(Value input);
+        size_t getNumParams();
+        Value getParameter(size_t i);
+        static StringRef getBaseSymbol() { return "inv"; }
+    }];
+
+    let builders = [
+        OpBuilder<(ins "ValueRange":$targets), [{
+           build($_builder, $_state, targets.getTypes(), targets);
+        }]>,
+        OpBuilder<(ins "ValueRange":$targets, "UnitaryOpInterface":$bodyUnitary)>,
+        OpBuilder<(ins "ValueRange":$targets, "const std::function<ValueRange(OpBuilder &, ValueRange)>&":$bodyBuilder)>
+    ];
+
+    let hasCanonicalizer = 1;
+    let hasVerifier = 1;
+}
+
 #endif // QCOOPS
