@@ -54,7 +54,11 @@ public:
   Device(const Device&) = delete;
   Device& operator=(const Device&) = delete;
 
-  /// @returns the singleton instance of the Device class.
+  /**
+   * @brief Accesses the singleton Device instance.
+   *
+   * @return Device& Reference to the singleton Device instance.
+   */
   [[nodiscard]] static Device& get() {
     static Device instance;
     return instance;
@@ -162,7 +166,12 @@ private:
   MQT_SC_QDMI_Device_Session_impl_d* session_;
 
 public:
-  /// @brief Constructor for the MQT_SC_QDMI_Device_Job_impl_d.
+  /**
+   * @brief Initializes a device job implementation bound to the given session.
+   *
+   * @param session Pointer to the owning MQT_SC_QDMI_Device_Session_impl_d. The
+   * session must remain valid for the job's lifetime.
+   */
   explicit MQT_SC_QDMI_Device_Job_impl_d(
       MQT_SC_QDMI_Device_Session_impl_d* session)
       : session_(session) {}
@@ -231,7 +240,11 @@ struct MQT_SC_QDMI_Site_impl_d {
 private:
   uint64_t id_ = 0; ///< Unique identifier of the site
 
-  /// @brief Constructor for regular sites.
+  /**
+   * @brief Initializes a site implementation with the given unique identifier.
+   *
+   * @param id Unique identifier for the site.
+   */
   MQT_SC_QDMI_Site_impl_d(uint64_t id) : id_(id) {}
 
 public:
