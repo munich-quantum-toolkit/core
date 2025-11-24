@@ -305,6 +305,7 @@ error-on-warning = true
 exclude = [
     "docs/**",
     "eval/**",
+    "mlir/**",
 ]
 
 
