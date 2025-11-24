@@ -21,6 +21,7 @@
 #include <sstream>
 #include <string>
 #include <unordered_set>
+#include <utility>
 #include <vector>
 
 namespace testing {
@@ -48,9 +49,9 @@ protected:
   QDMI_Device device = nullptr;
 #ifndef _WIN32
   static void SetUpTestSuite() {
-    for (const auto& [lib, prefix] : DYN_DEV_LIBS) {
+    EXPECT_NO_THROW(for (const auto& [lib, prefix] : DYN_DEV_LIBS) {
       qdmi::Driver::get().addDynamicDeviceLibrary(lib, prefix);
-    }
+    });
   }
 #endif // _WIN32
 

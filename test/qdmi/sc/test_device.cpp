@@ -9,7 +9,6 @@
  */
 
 #include "mqt_sc_qdmi/device.h"
-#include "qdmi/sc/Generator.hpp"
 
 #include <algorithm>
 #include <cstddef>
@@ -140,6 +139,7 @@ TEST_F(ScQDMISpecificationTest, JobCreate) {
   EXPECT_THAT(MQT_SC_QDMI_device_session_create_device_job(session, &job),
               testing::AnyOf(QDMI_SUCCESS, QDMI_ERROR_NOTSUPPORTED));
   MQT_SC_QDMI_device_job_free(job);
+  MQT_SC_QDMI_device_session_free(uninitializedSession);
 }
 
 TEST_F(ScQDMISpecificationTest, JobSetParameter) {
@@ -259,10 +259,9 @@ TEST_F(ScQDMISpecificationTest, QueryDeviceProperty) {
   EXPECT_EQ(MQT_SC_QDMI_device_session_query_device_property(
                 session, QDMI_DEVICE_PROPERTY_MAX, 0, nullptr, nullptr),
             QDMI_ERROR_INVALIDARGUMENT);
-  EXPECT_THAT(
-      MQT_SC_QDMI_device_session_query_device_property(
-          session, QDMI_DEVICE_PROPERTY_COUPLINGMAP, 0, nullptr, nullptr),
-      testing::AnyOf(QDMI_SUCCESS, QDMI_ERROR_NOTSUPPORTED));
+  EXPECT_EQ(MQT_SC_QDMI_device_session_query_device_property(
+                session, QDMI_DEVICE_PROPERTY_COUPLINGMAP, 0, nullptr, nullptr),
+            QDMI_SUCCESS);
 }
 
 TEST_F(ScQDMISpecificationTest, QuerySiteProperty) {

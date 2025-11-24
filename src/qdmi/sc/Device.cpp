@@ -17,7 +17,6 @@
 #include "mqt_sc_qdmi/device.h"
 #include "qdmi/sc/DeviceMemberInitializers.hpp"
 
-#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
@@ -45,9 +44,10 @@
 
 #ifdef _WIN32
 #define STRNCPY(dest, src, size)                                               \
-  strncpy_s(static_cast<char*>(dest), size, src, size);
+  strncpy_s(static_cast<char*>(dest), size, src, (size) - 1);
 #else
-#define STRNCPY(dest, src, size) strncpy(static_cast<char*>(dest), src, size);
+#define STRNCPY(dest, src, size)                                               \
+  strncpy(static_cast<char*>(dest), src, (size) - 1);
 #endif
 
 #define ADD_STRING_PROPERTY(prop_name, prop_value, prop, size, value,          \
@@ -176,7 +176,7 @@ auto MQT_SC_QDMI_Device_Session_impl_d::createDeviceJob(
   if (job == nullptr) {
     return QDMI_ERROR_INVALIDARGUMENT;
   }
-  if (status_ == Status::ALLOCATED) {
+  if (status_ != Status::INITIALIZED) {
     return QDMI_ERROR_BADSTATE;
   }
   auto uniqueJob = std::make_unique<MQT_SC_QDMI_Device_Job_impl_d>(this);
@@ -286,9 +286,10 @@ auto MQT_SC_QDMI_Site_impl_d::queryProperty(const QDMI_Site_Property prop,
 }
 auto MQT_SC_QDMI_Operation_impl_d::makeUnique()
     -> std::unique_ptr<MQT_SC_QDMI_Operation_impl_d> {
-  MQT_SC_QDMI_Operation_impl_d op{};
-  return std::make_unique<MQT_SC_QDMI_Operation_impl_d>(std::move(op));
+  const MQT_SC_QDMI_Operation_impl_d op{};
+  return std::make_unique<MQT_SC_QDMI_Operation_impl_d>(op);
 }
+// NOLINTNEXTLINE(readability-convert-member-functions-to-static)
 auto MQT_SC_QDMI_Operation_impl_d::queryProperty(
     const size_t numSites, const MQT_SC_QDMI_Site* sites,
     const size_t numParams, const double* params,

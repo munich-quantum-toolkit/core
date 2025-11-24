@@ -96,7 +96,7 @@ auto printGenerateUsage(const std::string& programName) -> void {
                "\n"
                "Usage: "
             << programName
-            << " generate [options] <json_file>\n"
+            << " generate [options] [<json_file>]\n"
                "\n"
                "Arguments:\n"
                "  json_file       the path to the JSON file to generate the\n"

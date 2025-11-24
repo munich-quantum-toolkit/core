@@ -9,8 +9,8 @@
  */
 
 /**
- * @file This file is a thin wrapper around MQT's Neutral Atom QDMI Device with
- * another prefix.
+ * @file This file is a thin wrapper around MQT's Superconducting QDMI Device
+ * with another prefix.
  */
 
 #include "mqt_sc_dyn_qdmi/device.h"
@@ -121,7 +121,7 @@ int MQT_SC_DYN_QDMI_device_session_query_device_property(
       if (size < 27) {
         return QDMI_ERROR_INVALIDARGUMENT;
       }
-      strncpy(static_cast<char*>(value), "MQT NA Dynamic QDMI Device", size);
+      strncpy(static_cast<char*>(value), "MQT SC Dynamic QDMI Device", size);
       // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
       static_cast<char*>(value)[size - 1] = '\0';
     }

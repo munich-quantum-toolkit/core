@@ -9,28 +9,22 @@
  */
 
 /** @file
- * @brief The MQT QDMI device generator for neutral atom devices.
+ * @brief The MQT QDMI device generator for superconducting devices.
  */
 
 #include "qdmi/sc/Generator.hpp"
 
-#include <algorithm>
 #include <cassert>
 #include <cmath>
-#include <cstddef>
 #include <cstdint>
 #include <fstream>
-#include <functional>
 #include <istream>
 #include <nlohmann/json.hpp>
 #include <ostream>
-#include <ranges>
 #include <spdlog/spdlog.h>
 #include <sstream>
 #include <stdexcept>
 #include <string>
-#include <tuple>
-#include <utility>
 #include <vector>
 
 namespace sc {
