@@ -324,17 +324,17 @@ auto FoMaC::Device::Operation::getSites(const std::vector<Site>& sites,
 auto FoMaC::Device::Operation::getSitePairs(
     const std::vector<Site>& sites, const std::vector<double>& params) const
     -> std::optional<std::vector<std::pair<Site, Site>>> {
-  const auto qubitsNum = getQubitsNum(sites, params);
-  if (!qubitsNum.has_value() || *qubitsNum != 2 || isZoned(sites, params)) {
+  if (const auto qubitsNum = getQubitsNum(sites, params);
+      !qubitsNum.has_value() || *qubitsNum != 2 || isZoned(sites, params)) {
     return std::nullopt; // Not a 2-qubit operation or operation is zoned
   }
 
-  auto sitesOpt = getSites(sites, params);
+  const auto sitesOpt = getSites(sites, params);
   if (!sitesOpt.has_value()) {
     return std::nullopt;
   }
 
-  auto& sitesVec = *sitesOpt;
+  const auto& sitesVec = *sitesOpt;
   if (sitesVec.empty() || sitesVec.size() % 2 != 0) {
     return std::nullopt; // Invalid: no sites or odd number of sites
   }
