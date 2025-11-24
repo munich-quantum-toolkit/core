@@ -917,7 +917,7 @@ public:
    *
    * @param targets Target qubits
    * @param body Function that builds the body containing the target operation
-   * @return Reference to this builder for method chaining
+   * @return Output qubits
    *
    * @par Example:
    * ```c++

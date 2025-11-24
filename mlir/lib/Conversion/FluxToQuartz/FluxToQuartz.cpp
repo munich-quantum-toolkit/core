@@ -745,10 +745,10 @@ struct ConvertFluxInvOp final : OpConversionPattern<flux::InvOp> {
   matchAndRewrite(flux::InvOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
     // Create quartz.inv operation
-    auto fluxOp = rewriter.create<quartz::InvOp>(op.getLoc());
+    auto quartzOp = rewriter.create<quartz::InvOp>(op.getLoc());
 
     // Clone body region from Flux to Quartz
-    auto& dstRegion = fluxOp.getBody();
+    auto& dstRegion = quartzOp.getBody();
     rewriter.cloneRegionBefore(op.getBody(), dstRegion, dstRegion.end());
 
     // Replace the output qubits with the same quartz references

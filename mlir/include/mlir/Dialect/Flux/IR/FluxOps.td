@@ -1060,8 +1060,8 @@ def InvOp : FluxOp<"inv", traits =
     let summary = "Invert a unitary operation";
     let description = [{
         A modifier operation that inverts the unitary operation defined in its body
-        region. The operation takes a variadic number of control and target qubits as
-        inputs and produces corresponding output qubits.
+        region. The operation takes a variadic number of target qubits as inputs and
+        produces corresponding output qubits.
 
         Example:
         ```mlir
