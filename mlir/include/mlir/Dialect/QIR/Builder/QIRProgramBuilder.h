@@ -1227,45 +1227,23 @@ private:
   /**
    * @brief Helper to create a one-target, zero-parameter QIR operation
    *
-   * @param qubit Target qubit
-   * @param fnName Name of the QIR function to call
-   */
-  void createOneTargetZeroParameter(const Value qubit, StringRef fnName);
-
-  /**
-   * @brief Helper to create a controlled one-target, zero-parameter QIR
-   * operation
-   *
    * @param controls Control qubits
    * @param target Target qubit
    * @param fnName Name of the QIR function to call
    */
-  void createControlledOneTargetZeroParameter(const ValueRange controls,
-                                              const Value target,
-                                              StringRef fnName);
-
+  void createOneTargetZeroParameter(const ValueRange controls,
+                                    const Value target, StringRef fnName);
   /**
    * @brief Helper to create a one-target, one-parameter QIR operation
    *
    * @param parameter Operation parameter
-   * @param qubit Input qubit
-   * @param fnName Name of the QIR function to call
-   */
-  void createOneTargetOneParameter(const std::variant<double, Value>& parameter,
-                                   const Value qubit, StringRef fnName);
-
-  /**
-   * @brief Helper to create a controlled one-target, one-parameter QIR
-   * operation
-   *
-   * @param parameter Operation parameter
    * @param controls Control qubits
    * @param target Target qubit
    * @param fnName Name of the QIR function to call
    */
-  void createControlledOneTargetOneParameter(
-      const std::variant<double, Value>& parameter, const ValueRange controls,
-      const Value target, StringRef fnName);
+  void createOneTargetOneParameter(const std::variant<double, Value>& parameter,
+                                   const ValueRange controls,
+                                   const Value target, StringRef fnName);
 
   /**
    * @brief Generate array-based output recording in the output block
