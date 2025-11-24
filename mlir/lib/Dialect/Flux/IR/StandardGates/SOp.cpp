@@ -32,7 +32,7 @@ struct RemoveSAfterSdg final : OpRewritePattern<SOp> {
 
   LogicalResult matchAndRewrite(SOp op,
                                 PatternRewriter& rewriter) const override {
-    return removeInversePair<SdgOp>(op, rewriter);
+    return removeInversePairOneTargetZeroParameter<SdgOp>(op, rewriter);
   }
 };
 

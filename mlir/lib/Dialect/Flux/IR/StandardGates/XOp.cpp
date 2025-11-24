@@ -32,7 +32,7 @@ struct RemoveSubsequentX final : OpRewritePattern<XOp> {
 
   LogicalResult matchAndRewrite(XOp op,
                                 PatternRewriter& rewriter) const override {
-    return removeInversePair<XOp>(op, rewriter);
+    return removeInversePairOneTargetZeroParameter<XOp>(op, rewriter);
   }
 };
 

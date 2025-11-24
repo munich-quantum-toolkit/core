@@ -13,7 +13,7 @@
 namespace mlir::flux {
 
 /**
- * @brief Remove a pair of inverse operations.
+ * @brief Remove a pair of inverse one-target, zero-parameter operations
  *
  * @tparam InverseOpType The type of the inverse operation.
  * @tparam OpType The type of the operation to be checked.
@@ -22,8 +22,9 @@ namespace mlir::flux {
  * @return LogicalResult Success or failure of the removal.
  */
 template <typename InverseOpType, typename OpType>
-inline mlir::LogicalResult removeInversePair(OpType op,
-                                             mlir::PatternRewriter& rewriter) {
+inline mlir::LogicalResult
+removeInversePairOneTargetZeroParameter(OpType op,
+                                        mlir::PatternRewriter& rewriter) {
   // Check if the predecessor is the inverse operation
   auto prevOp = op.getQubitIn().template getDefiningOp<InverseOpType>();
   if (!prevOp) {

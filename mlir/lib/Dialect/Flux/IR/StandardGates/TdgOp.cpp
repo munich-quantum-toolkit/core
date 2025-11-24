@@ -32,7 +32,7 @@ struct RemoveTdgAfterT final : OpRewritePattern<TdgOp> {
 
   LogicalResult matchAndRewrite(TdgOp op,
                                 PatternRewriter& rewriter) const override {
-    return removeInversePair<TOp>(op, rewriter);
+    return removeInversePairOneTargetZeroParameter<TOp>(op, rewriter);
   }
 };
 

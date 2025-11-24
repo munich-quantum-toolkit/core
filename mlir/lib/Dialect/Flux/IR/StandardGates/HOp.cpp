@@ -32,7 +32,7 @@ struct RemoveSubsequentH final : OpRewritePattern<HOp> {
 
   LogicalResult matchAndRewrite(HOp op,
                                 PatternRewriter& rewriter) const override {
-    return removeInversePair<HOp>(op, rewriter);
+    return removeInversePairOneTargetZeroParameter<HOp>(op, rewriter);
   }
 };
 

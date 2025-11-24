@@ -32,7 +32,7 @@ struct RemoveSubsequentZ final : OpRewritePattern<ZOp> {
 
   LogicalResult matchAndRewrite(ZOp op,
                                 PatternRewriter& rewriter) const override {
-    return removeInversePair<ZOp>(op, rewriter);
+    return removeInversePairOneTargetZeroParameter<ZOp>(op, rewriter);
   }
 };
 

@@ -32,7 +32,7 @@ struct RemoveSXdgAfterSX final : OpRewritePattern<SXdgOp> {
 
   LogicalResult matchAndRewrite(SXdgOp op,
                                 PatternRewriter& rewriter) const override {
-    return removeInversePair<SXOp>(op, rewriter);
+    return removeInversePairOneTargetZeroParameter<SXOp>(op, rewriter);
   }
 };
 
