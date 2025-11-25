@@ -14,11 +14,16 @@ Provides a Qiskit BackendV2-compatible interface to QDMI devices via FoMaC.
 from __future__ import annotations
 
 import warnings
+from itertools import combinations
 from typing import TYPE_CHECKING, Any
 
+import qiskit.circuit.library as qcl
+from qiskit import qasm2, qasm3
 from qiskit.circuit import Measure, Parameter
 from qiskit.providers import BackendV2, Options
-from qiskit.transpiler import Target
+from qiskit.transpiler import InstructionProperties, Target
+
+from mqt.core import fomac
 
 from .exceptions import (
     CircuitValidationError,
@@ -34,7 +39,6 @@ if TYPE_CHECKING:
 
     from qiskit.circuit import Instruction, QuantumCircuit
 
-    from mqt.core import fomac
 
 __all__ = ["QiskitBackend"]
 
@@ -115,8 +119,6 @@ class QiskitBackend(BackendV2):  # type: ignore[misc]
         Returns:
             Default Options with shots=1024 and program_format=QASM3.
         """
-        from mqt.core import fomac
-
         return Options(shots=1024, program_format=fomac.ProgramFormat.QASM3)
 
     def _build_target(self) -> Target:
@@ -125,8 +127,6 @@ class QiskitBackend(BackendV2):  # type: ignore[misc]
         Returns:
             Target object with device operations and properties.
         """
-        from qiskit.transpiler import InstructionProperties
-
         target = Target(description=f"QDMI device: {self._device.name()}")
 
         # Deduplicate operations by Qiskit gate name (not device operation name)
@@ -207,8 +207,6 @@ class QiskitBackend(BackendV2):  # type: ignore[misc]
         Returns:
             Qiskit gate instance or None if not mappable.
         """
-        import qiskit.circuit.library as qcl
-
         # Map known operations to Qiskit gates
         gate_map: dict[str, Instruction] = {
             # Single-qubit Pauli gates
@@ -271,8 +269,6 @@ class QiskitBackend(BackendV2):  # type: ignore[misc]
         Raises:
             ValueError: If multi-qubit operation sites are improperly structured.
         """
-        from itertools import combinations
-
         qubits_num = op.qubits_num()
         qubits_num = qubits_num if qubits_num is not None else 1
         num_qubits = self._device.qubits_num()
@@ -361,8 +357,6 @@ class QiskitBackend(BackendV2):  # type: ignore[misc]
             UnsupportedFormatError: If the program format is not supported.
             TranslationError: If conversion fails.
         """
-        from mqt.core import fomac
-
         # Check for supported formats first
         if program_format not in {fomac.ProgramFormat.QASM2, fomac.ProgramFormat.QASM3}:
             msg = f"Unsupported program format: {program_format}"
@@ -370,11 +364,8 @@ class QiskitBackend(BackendV2):  # type: ignore[misc]
 
         try:
             if program_format == fomac.ProgramFormat.QASM2:
-                from qiskit import qasm2
-
                 return str(qasm2.dumps(circuit))
             # Must be QASM3 at this point
-            from qiskit import qasm3
 
             return str(qasm3.dumps(circuit))
         except Exception as exc:

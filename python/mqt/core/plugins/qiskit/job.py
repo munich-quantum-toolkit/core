@@ -51,7 +51,7 @@ class QiskitJob(JobV1):  # type: ignore[misc]
             circuit_name: The name of the circuit the job is associated with.
         """
         super().__init__(backend=backend, job_id=job.id)
-        self._backend = backend
+        self._backend: QiskitBackend = backend
         self._job = job
         self._circuit_name = circuit_name
         self._counts: dict[str, int] | None = None

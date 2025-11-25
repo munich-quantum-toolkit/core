@@ -10,6 +10,9 @@
 
 from __future__ import annotations
 
+import re
+import secrets
+import string
 from typing import TYPE_CHECKING
 
 import pytest
@@ -106,9 +109,6 @@ class MockQDMIDevice:
 
         def __init__(self, num_clbits: int, shots: int) -> None:
             """Initialize mock job with number of classical bits and shots."""
-            import secrets
-            import string
-
             self._num_clbits = num_clbits
             self._shots = shots
             alphabet = string.ascii_lowercase + string.digits
@@ -140,8 +140,6 @@ class MockQDMIDevice:
                 Dictionary mapping measurement outcomes to counts.
             """
             if self._counts is None:
-                import secrets
-
                 # Generate random counts with uniform distribution
                 num_outcomes = 2**self._num_clbits
                 outcomes = [format(i, f"0{self._num_clbits}b") for i in range(num_outcomes)]
@@ -223,7 +221,6 @@ class MockQDMIDevice:
             A mock job with simulated results.
         """
         # Parse the program to determine the number of classical bits
-        import re
 
         # Look for "creg <name>[<size>];" pattern in QASM2
         match = re.search(r"creg\s+\w+\[(\d+)]", program)
@@ -276,8 +273,6 @@ class MockQDMIDeviceWrapper:
         Returns:
             A mock job with simulated results.
         """
-        import re
-
         # Parse the program to determine the number of classical bits
         match = re.search(r"creg\s+\w+\[(\d+)]", program)
         if match:

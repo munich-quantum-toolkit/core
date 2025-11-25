@@ -10,14 +10,11 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, cast
+from typing import cast
 
 import pytest
 
-from mqt.core.fomac import Device, devices
-
-if TYPE_CHECKING:
-    from mqt.core.fomac import Job
+from mqt.core.fomac import Device, Job, JobStatus, ProgramFormat, devices
 
 
 @pytest.fixture(params=devices())
@@ -55,7 +52,7 @@ def device_and_operation(request: pytest.FixtureRequest) -> tuple[Device, Device
 
 
 @pytest.fixture
-def ddsim_device() -> Device:
+def ddsim_device() -> Device | None:
     """Fixture to provide the DDSIM device for job submission testing.
 
     Returns:
@@ -237,8 +234,7 @@ def test_site_is_zone(device_and_site: tuple[Device, Device.Site]) -> None:
     """Test that the site is_zone is a boolean."""
     _device, site = device_and_site
     iz = site.is_zone()
-    if iz is not None:
-        assert isinstance(iz, bool)
+    assert isinstance(iz, bool)
 
 
 def test_site_x_extent(device_and_site: tuple[Device, Device.Site]) -> None:
@@ -361,8 +357,7 @@ def test_operation_is_zoned(device_and_operation: tuple[Device, Device.Operation
     """Test that the operation is_zoned is a boolean."""
     _device, operation = device_and_operation
     iz = operation.is_zoned()
-    if iz is not None:
-        assert isinstance(iz, bool)
+    assert isinstance(iz, bool)
 
 
 def test_operation_sites(device_and_operation: tuple[Device, Device.Operation]) -> None:
@@ -388,8 +383,6 @@ def test_operation_mean_shuttling_speed(device_and_operation: tuple[Device, Devi
 
 def test_device_submit_job_returns_valid_job(ddsim_device: Device) -> None:
     """Test that submit_job creates a Job object with valid properties."""
-    from mqt.core.fomac import Job, ProgramFormat
-
     qasm3_program = """
 OPENQASM 3.0;
 include "stdgates.inc";
@@ -412,8 +405,6 @@ c = measure q;
 
 def test_device_submit_job_preserves_num_shots(ddsim_device: Device) -> None:
     """Test that different shot counts are correctly preserved."""
-    from mqt.core.fomac import ProgramFormat
-
     qasm3_program = """
 OPENQASM 3.0;
 qubit[1] q;
@@ -438,8 +429,6 @@ def submitted_job(ddsim_device: Device) -> Job:
     Returns:
         A submitted job with 10 shots.
     """
-    from mqt.core.fomac import ProgramFormat
-
     qasm3_program = """
 OPENQASM 3.0;
 qubit[1] q;
@@ -451,8 +440,6 @@ c[0] = measure q[0];
 
 def test_job_ids_are_unique(ddsim_device: Device) -> None:
     """Test that different jobs have unique IDs."""
-    from mqt.core.fomac import ProgramFormat
-
     qasm3_program = """
 OPENQASM 3.0;
 qubit[1] q;
@@ -468,8 +455,6 @@ c[0] = measure q[0];
 
 def test_job_status_progresses(submitted_job: Job) -> None:
     """Test that job status progresses to completion."""
-    from mqt.core.fomac import JobStatus
-
     initial_status = submitted_job.check()
     assert isinstance(initial_status, JobStatus)
 

@@ -10,14 +10,18 @@
 
 from __future__ import annotations
 
+import warnings
 from typing import TYPE_CHECKING
 
 import pytest
 from qiskit import QuantumCircuit
 from qiskit.circuit import Parameter
+from qiskit.providers import JobStatus
 
+from mqt.core import fomac
 from mqt.core.plugins.qiskit import (
     CircuitValidationError,
+    QDMIProvider,
     UnsupportedOperationError,
 )
 
@@ -66,8 +70,6 @@ def test_unsupported_operation(mock_backend: QiskitBackend) -> None:
 
 def test_backend_via_provider() -> None:
     """Backend can be obtained through provider."""
-    from mqt.core.plugins.qiskit import QDMIProvider
-
     provider = QDMIProvider()
     backend = provider.get_backend("MQT NA Default QDMI Device")
     assert backend.target.num_qubits > 0
@@ -76,8 +78,6 @@ def test_backend_via_provider() -> None:
 
 def test_provider_get_backend_by_name() -> None:
     """Provider can get backend by name."""
-    from mqt.core.plugins.qiskit import QDMIProvider
-
     provider = QDMIProvider()
     backend = provider.get_backend("MQT NA Default QDMI Device")
     assert backend.name == "MQT NA Default QDMI Device"
@@ -85,8 +85,6 @@ def test_provider_get_backend_by_name() -> None:
 
 def test_provider_backends_list() -> None:
     """Provider can list all backends."""
-    from mqt.core.plugins.qiskit import QDMIProvider
-
     provider = QDMIProvider()
     backends = provider.backends()
     assert len(backends) > 0
@@ -212,6 +210,7 @@ def test_backend_named_circuit_results_queryable_by_name(mock_backend: QiskitBac
     result = job.result()
 
     # Circuit name should be preserved in metadata
+    assert result.results is not None
     assert result.results[0].header["name"] == "my_circuit"
 
     # Should be able to query results by circuit name
@@ -229,6 +228,7 @@ def test_backend_unnamed_circuit_results_queryable_by_generated_name(mock_backen
     result = job.result()
 
     # Should have a generated name
+    assert result.results is not None
     assert "name" in result.results[0].header
     circuit_name = result.results[0].header["name"]
 
@@ -239,8 +239,6 @@ def test_backend_unnamed_circuit_results_queryable_by_generated_name(mock_backen
 
 def test_job_status(mock_backend: QiskitBackend) -> None:
     """Job should be in DONE status after backend.run() completes."""
-    from qiskit.providers import JobStatus
-
     qc = QuantumCircuit(2, 2)
     qc.cz(0, 1)
     qc.measure([0, 1], [0, 1])
@@ -259,6 +257,7 @@ def test_job_result_success_and_shots(mock_backend: QiskitBackend) -> None:
     result = job.result()
 
     assert result.success is True
+    assert result.results is not None
     assert len(result.results) == 1
     assert result.results[0].shots == 100
     assert result.results[0].success is True
@@ -291,10 +290,6 @@ def test_backend_warns_on_unmappable_operation(
     monkeypatch: pytest.MonkeyPatch, mock_qdmi_device_factory: type[MockQDMIDevice]
 ) -> None:
     """Backend should warn when device operation cannot be mapped to a Qiskit gate."""
-    import warnings
-
-    from mqt.core import fomac
-
     # Create mock device with an unmappable operation
     mock_device = mock_qdmi_device_factory(
         name="Test Device",
@@ -311,7 +306,6 @@ def test_backend_warns_on_unmappable_operation(
     # Creating backend should trigger warning about unmappable operation
     with warnings.catch_warnings(record=True) as w:
         warnings.simplefilter("always")
-        from mqt.core.plugins.qiskit import QDMIProvider
 
         provider = QDMIProvider()
         provider.get_backend("Test Device")
@@ -328,10 +322,6 @@ def test_backend_warns_on_missing_measurement_operation(
     monkeypatch: pytest.MonkeyPatch, mock_qdmi_device_factory: type[MockQDMIDevice]
 ) -> None:
     """Backend should warn when device does not define a measurement operation."""
-    import warnings
-
-    from mqt.core import fomac
-
     # Create mock device without measure operation
     mock_device = mock_qdmi_device_factory(
         name="Test Device",
@@ -348,7 +338,6 @@ def test_backend_warns_on_missing_measurement_operation(
     # Creating backend should trigger warning about missing measurement operation
     with warnings.catch_warnings(record=True) as w:
         warnings.simplefilter("always")
-        from mqt.core.plugins.qiskit import QDMIProvider
 
         provider = QDMIProvider()
         provider.get_backend("Test Device")

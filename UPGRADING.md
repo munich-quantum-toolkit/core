@@ -4,6 +4,13 @@ This document describes breaking changes and how to upgrade. For a complete list
 
 ## [Unreleased]
 
+### DD Package evaluation
+
+This release moves the DD Package evaluation functionality from within the `mqt.core` package to a dedicated script in the `eval` directory.
+In the process, the `mqt-core-dd-compare` entry point as well as the `evaluation` extra have been removed.
+The `eval/dd_evaluation.py` script acts as a drop-in replacement for the previous CLI entry point.
+Since the `eval` directory is not part of the Python package, this functionality is only available via source installations or by cloning the repository.
+
 ## [3.3.0]
 
 The shared library ABI version (`SOVERSION`) is increased from `3.2` to `3.3`.

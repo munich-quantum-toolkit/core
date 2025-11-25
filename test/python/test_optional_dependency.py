@@ -10,6 +10,9 @@
 
 from __future__ import annotations
 
+import sys
+import warnings
+
 import pytest
 
 from mqt.core._compat import OptionalDependencyTester  # noqa: PLC2701
@@ -62,8 +65,6 @@ def test_require_module_available() -> None:
     """Test require_module returns the imported module."""
     tester = OptionalDependencyTester("sys")
     module = tester.require_module("test this")
-
-    import sys
 
     assert module is sys
 
@@ -164,8 +165,6 @@ def test_warn_on_fail() -> None:
 
 def test_no_warn_by_default() -> None:
     """Test that warnings are not emitted by default."""
-    import warnings
-
     tester = OptionalDependencyTester("this_module_does_not_exist_xyz123")
 
     # Should not emit warnings

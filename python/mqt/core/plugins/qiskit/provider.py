@@ -14,12 +14,9 @@ devices through Qiskit's BackendV2 interface.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
-
 from mqt.core import fomac
 
-if TYPE_CHECKING:
-    from .backend import QiskitBackend
+from .backend import QiskitBackend
 
 __all__ = ["QDMIProvider"]
 
@@ -68,8 +65,6 @@ class QDMIProvider:
             >>> backends = provider.backends(name="NA")  # matches "MQT NA Default QDMI Device"
             >>> backends = provider.backends(name="QDMI")  # matches all devices with "QDMI" in name
         """
-        from .backend import QiskitBackend
-
         # Get all devices from FoMaC
         devices = list(fomac.devices())
 

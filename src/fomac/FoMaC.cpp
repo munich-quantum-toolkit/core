@@ -231,8 +231,9 @@ auto FoMaC::Device::Site::getYCoordinate() const -> std::optional<int64_t> {
 auto FoMaC::Device::Site::getZCoordinate() const -> std::optional<int64_t> {
   return queryProperty<std::optional<int64_t>>(QDMI_SITE_PROPERTY_ZCOORDINATE);
 }
-auto FoMaC::Device::Site::isZone() const -> std::optional<bool> {
-  return queryProperty<std::optional<bool>>(QDMI_SITE_PROPERTY_ISZONE);
+auto FoMaC::Device::Site::isZone() const -> bool {
+  return queryProperty<std::optional<bool>>(QDMI_SITE_PROPERTY_ISZONE)
+      .value_or(false);
 }
 auto FoMaC::Device::Site::getXExtent() const -> std::optional<uint64_t> {
   return queryProperty<std::optional<uint64_t>>(QDMI_SITE_PROPERTY_XEXTENT);
@@ -298,17 +299,15 @@ auto FoMaC::Device::Operation::getIdlingFidelity(
   return queryProperty<std::optional<double>>(
       QDMI_OPERATION_PROPERTY_IDLINGFIDELITY, sites, params);
 }
-auto FoMaC::Device::Operation::isZoned(const std::vector<Site>& sites,
-                                       const std::vector<double>& params) const
-    -> std::optional<bool> {
-  return queryProperty<std::optional<bool>>(QDMI_OPERATION_PROPERTY_ISZONED,
-                                            sites, params);
+auto FoMaC::Device::Operation::isZoned() const -> bool {
+  return queryProperty<std::optional<bool>>(QDMI_OPERATION_PROPERTY_ISZONED, {},
+                                            {})
+      .value_or(false);
 }
-auto FoMaC::Device::Operation::getSites(const std::vector<Site>& sites,
-                                        const std::vector<double>& params) const
+auto FoMaC::Device::Operation::getSites() const
     -> std::optional<std::vector<Site>> {
   const auto& qdmiSites = queryProperty<std::optional<std::vector<QDMI_Site>>>(
-      QDMI_OPERATION_PROPERTY_SITES, sites, params);
+      QDMI_OPERATION_PROPERTY_SITES, {}, {});
   if (!qdmiSites.has_value()) {
     return std::nullopt;
   }
@@ -319,6 +318,32 @@ auto FoMaC::Device::Operation::getSites(const std::vector<Site>& sites,
                            return {Token{}, device, site};
                          });
   return returnedSites;
+}
+auto FoMaC::Device::Operation::getSitePairs() const
+    -> std::optional<std::vector<std::pair<Site, Site>>> {
+  if (const auto qubitsNum = getQubitsNum({}, {});
+      !qubitsNum.has_value() || *qubitsNum != 2 || isZoned()) {
+    return std::nullopt; // Not a 2-qubit operation or operation is zoned
+  }
+
+  const auto sitesOpt = getSites();
+  if (!sitesOpt.has_value()) {
+    return std::nullopt;
+  }
+
+  const auto& sitesVec = *sitesOpt;
+  if (sitesVec.empty() || sitesVec.size() % 2 != 0) {
+    return std::nullopt; // Invalid: no sites or odd number of sites
+  }
+
+  std::vector<std::pair<Site, Site>> pairs;
+  pairs.reserve(sitesVec.size() / 2);
+
+  for (size_t i = 0; i < sitesVec.size(); i += 2) {
+    pairs.emplace_back(sitesVec[i], sitesVec[i + 1]);
+  }
+
+  return pairs;
 }
 auto FoMaC::Device::Operation::getMeanShuttlingSpeed(
     const std::vector<Site>& sites, const std::vector<double>& params) const
@@ -351,6 +376,21 @@ auto FoMaC::Device::getSites() const -> std::vector<Site> {
                            return {Token{}, device, site};
                          });
   return sites;
+}
+auto FoMaC::Device::getRegularSites() const -> std::vector<Site> {
+  auto allSites = getSites();
+  const auto newEnd = std::ranges::remove_if(
+      allSites, [](const Site& s) { return s.isZone(); });
+  allSites.erase(newEnd.begin(), newEnd.end());
+  return allSites;
+}
+auto FoMaC::Device::getZones() const -> std::vector<Site> {
+  const auto& allSites = getSites();
+  std::vector<Site> zones;
+  zones.reserve(3); // Reserve space for a typical max number of zones
+  std::ranges::copy_if(allSites, std::back_inserter(zones),
+                       [](const Site& s) { return s.isZone(); });
+  return zones;
 }
 auto FoMaC::Device::getOperations() const -> std::vector<Operation> {
   const auto& qdmiOperations = queryProperty<std::vector<QDMI_Operation>>(

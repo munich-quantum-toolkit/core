@@ -10,7 +10,9 @@
 
 from __future__ import annotations
 
+from math import comb
 from typing import TYPE_CHECKING
+from unittest.mock import MagicMock
 
 import pytest
 from qiskit import QuantumCircuit
@@ -52,8 +54,6 @@ def test_backend_target_includes_measure(mock_backend: QiskitBackend) -> None:
 
 def test_get_operation_qargs_single_qubit(mock_backend: QiskitBackend) -> None:
     """Test _get_operation_qargs for single-qubit operations."""
-    from unittest.mock import MagicMock
-
     # Create a mock FoMaC operation for single qubit
     mock_op = MagicMock()
     mock_op.name.return_value = "test_op"
@@ -77,8 +77,6 @@ def test_get_operation_qargs_two_qubit_with_coupling_map_fallback(mock_backend: 
     When an operation has sites=None, it should fall back to using the device's
     full coupling map (all physical connections).
     """
-    from unittest.mock import MagicMock
-
     # If device has coupling map, it should use it as fallback when sites=None
     device_coupling_map = mock_backend._device.coupling_map()  # noqa: SLF001
     if device_coupling_map:
@@ -155,8 +153,6 @@ def test_get_operation_qargs_multi_qubit_generates_all_combinations(mock_backend
     contiguous qubits (e.g., for a 3-qubit operation on a 5-qubit device, it should
     generate all C(5,3) = 10 combinations, not just (0,1,2)).
     """
-    from math import comb
-    from unittest.mock import MagicMock
 
     def create_mock_operation(name: str, num_qubits: int) -> MagicMock:
         """Helper to create a mock operation with specified qubit count.

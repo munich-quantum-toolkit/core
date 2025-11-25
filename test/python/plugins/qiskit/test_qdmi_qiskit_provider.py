@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import pytest
 
+from mqt.core import fomac
 from mqt.core.plugins.qiskit import QDMIProvider
 
 pytestmark = [
@@ -75,7 +76,6 @@ def test_provider_get_backend_nonexistent() -> None:
 
 def test_provider_get_backend_no_devices(monkeypatch: pytest.MonkeyPatch) -> None:
     """Provider raises ValueError when no devices available."""
-    from mqt.core import fomac
 
     # Monkeypatch to return empty device list
     def mock_devices() -> list[object]:

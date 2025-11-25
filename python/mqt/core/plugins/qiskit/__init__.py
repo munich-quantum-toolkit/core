@@ -10,6 +10,8 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 from mqt.core._compat import OptionalDependencyTester  # noqa: PLC2701
 
 # Optional dependency tester for Qiskit
@@ -18,7 +20,7 @@ HAS_QISKIT = OptionalDependencyTester(
     install_msg="Install with 'pip install mqt-core[qiskit]'",
 )
 
-if HAS_QISKIT:
+if TYPE_CHECKING or HAS_QISKIT:
     from .backend import QiskitBackend
     from .exceptions import (
         CircuitValidationError,
@@ -37,7 +39,7 @@ __all__ = [
     "HAS_QISKIT",
 ]
 
-if HAS_QISKIT:
+if TYPE_CHECKING or HAS_QISKIT:
     __all__ += [
         "CircuitValidationError",
         "JobSubmissionError",
