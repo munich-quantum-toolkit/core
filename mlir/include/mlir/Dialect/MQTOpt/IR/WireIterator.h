@@ -155,11 +155,18 @@ class WireIterator {
 
     mlir::Operation* prev{};
     WireIterator it(v, &op.getThenRegion());
-    while (*it != prev && it.q.getParentRegion() != op->getParentRegion()) {
-      --it;
+    while (it.qubit().getParentRegion() != op->getParentRegion()) {
+      /// Since the definingOp of q might be a nullptr (BlockArgument), don't
+      /// immediately dereference the iterator here.
+      mlir::Operation* curr = it.qubit().getDefiningOp();
+      if (curr == prev || curr == nullptr) {
+        break;
+      }
       prev = *it;
+      --it;
     }
-    return it.q;
+
+    return it.qubit();
   }
 
   /**
@@ -286,6 +293,11 @@ private:
 
     /// Get the operation that produces the qubit value.
     currOp = q.getDefiningOp();
+
+    /// If q is a BlockArgument (no defining op), hold.
+    if (currOp == nullptr) {
+      return;
+    }
 
     /// Find input from output qubit.
     /// If there is no input qubit, hold.
