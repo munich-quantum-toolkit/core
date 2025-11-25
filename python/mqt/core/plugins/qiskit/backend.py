@@ -79,8 +79,8 @@ class QiskitBackend(BackendV2):  # type: ignore[misc]
         self._provider = provider
 
         # Filter non-zone sites for qubit indexing
-        all_sites = sorted(self._device.sites(), key=lambda x: x.index())
-        self._non_zone_sites = [s for s in all_sites if not s.is_zone()]
+        # Note: regular_sites() returns only the sites that are not zones (qubits)
+        self._non_zone_sites = sorted(self._device.regular_sites(), key=lambda x: x.index())
         self._site_index_to_qubit_index = {s.index(): i for i, s in enumerate(self._non_zone_sites)}
 
         # Initialize parent with device name and provider
@@ -265,46 +265,41 @@ class QiskitBackend(BackendV2):  # type: ignore[misc]
 
         Returns:
             Sequence of qubit index tuples this operation can act on.
-
-        Raises:
-            ValueError: If multi-qubit operation sites are improperly structured.
         """
         qubits_num = op.qubits_num()
         qubits_num = qubits_num if qubits_num is not None else 1
         num_qubits = self._device.qubits_num()
 
-        site_list = op.sites()
+        # Check for explicit sites
+        if qubits_num == 1:
+            site_list = op.sites()
+            if site_list is not None:
+                # Extract and remap site indices to qubit indices
+                raw_indices = [s.index() for s in site_list]
 
-        # If operation has an explicit site list, use it
-        if site_list is not None:
-            # Extract and remap site indices to qubit indices
-            raw_indices = [s.index() for s in site_list]
+                # Filter out zone sites and remap to qubit indices
+                remapped_indices: list[int] = [
+                    self._site_index_to_qubit_index[idx]
+                    for idx in raw_indices
+                    if idx in self._site_index_to_qubit_index
+                ]
 
-            # Filter out zone sites and remap to qubit indices
-            remapped_indices: list[int] = [
-                self._site_index_to_qubit_index[idx] for idx in raw_indices if idx in self._site_index_to_qubit_index
-            ]
-
-            # For single-qubit operations, use flat list
-            if qubits_num == 1:
                 return [(idx,) for idx in sorted(set(remapped_indices))]
 
-            # For multi-qubit operations, the flat list represents consecutive pairs
-            # due to reinterpret_cast from vector<pair<Site, Site>> to vector<Site>
-            # Group consecutive elements into tuples of size qubits_num
-            if len(remapped_indices) % qubits_num == 0:
-                site_tuples: list[tuple[int, ...]] = [
-                    tuple(remapped_indices[i : i + qubits_num]) for i in range(0, len(remapped_indices), qubits_num)
-                ]
+        elif qubits_num == 2:
+            # For two-qubit operations, use site_pairs()
+            # This returns a list of pairs (Site, Site)
+            site_pairs = op.site_pairs()
+            if site_pairs is not None:
+                site_tuples: list[tuple[int, ...]] = []
+                for s1, s2 in site_pairs:
+                    idx1, idx2 = s1.index(), s2.index()
+                    if idx1 in self._site_index_to_qubit_index and idx2 in self._site_index_to_qubit_index:
+                        site_tuples.append((
+                            self._site_index_to_qubit_index[idx1],
+                            self._site_index_to_qubit_index[idx2],
+                        ))
                 return site_tuples
-
-            # Fallback: if not evenly divisible, something is wrong
-            msg = (
-                f"Multi-qubit operation '{op.name()}' (qubits_num={qubits_num}) "
-                f"has improperly structured sites (expected {len(remapped_indices)} to be divisible by {qubits_num}). "
-                "This indicates a device capability specification error."
-            )
-            raise ValueError(msg)
 
         # Operation is zoned or has no explicit site list - generate combinations
 

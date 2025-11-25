@@ -100,6 +100,11 @@ class MockQDMIDevice:
             return
 
         @staticmethod
+        def site_pairs() -> None:
+            """Return site pairs for operation (always None for mock)."""
+            return
+
+        @staticmethod
         def is_zoned() -> bool:
             """Return whether operation is zoned (always False for mock)."""
             return False
@@ -200,6 +205,15 @@ class MockQDMIDevice:
     def sites(self) -> list[MockSite]:
         """Return list of device sites."""
         return self._sites
+
+    def regular_sites(self) -> list[MockSite]:
+        """Return list of regular sites (qubits)."""
+        return self._sites
+
+    @staticmethod
+    def zones() -> list[MockSite]:
+        """Return list of zones."""
+        return []
 
     def operations(self) -> list[MockOperation]:
         """Return list of device operations."""
