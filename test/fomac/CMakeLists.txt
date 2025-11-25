@@ -8,6 +8,6 @@
 
 set(TARGET_NAME mqt-core-fomac-test)
 
-if(TARGET MQT::CoreQDMIFoMaC)
-  package_add_test(${TARGET_NAME} MQT::CoreQDMIFoMaC test_fomac.cpp)
+if(TARGET MQT::CoreFoMaC)
+  package_add_test(${TARGET_NAME} MQT::CoreFoMaC test_fomac.cpp)
 endif()
