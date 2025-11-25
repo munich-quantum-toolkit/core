@@ -1500,31 +1500,7 @@ protected:
    * Decomposer that must be initialized with a two-qubit basis gate that will
    * be used to generate a circuit equivalent to a canonical gate (RXX+RYY+RZZ).
    */
-  struct TwoQubitBasisDecomposer {
-    QubitGateSequence::Gate basisGate;
-    fp basisFidelity;
-    TwoQubitWeylDecomposition basisDecomposer;
-    bool superControlled;
-    matrix2x2 u0l;
-    matrix2x2 u0r;
-    matrix2x2 u1l;
-    matrix2x2 u1ra;
-    matrix2x2 u1rb;
-    matrix2x2 u2la;
-    matrix2x2 u2lb;
-    matrix2x2 u2ra;
-    matrix2x2 u2rb;
-    matrix2x2 u3l;
-    matrix2x2 u3r;
-    matrix2x2 q0l;
-    matrix2x2 q0r;
-    matrix2x2 q1la;
-    matrix2x2 q1lb;
-    matrix2x2 q1ra;
-    matrix2x2 q1rb;
-    matrix2x2 q2l;
-    matrix2x2 q2r;
-
+  class TwoQubitBasisDecomposer {
   public:
     /**
      * Create decomposer that allows two-qubit decompositions based on the
@@ -1577,7 +1553,7 @@ protected:
 
       const auto basisDecomposer = TwoQubitWeylDecomposition::create(
           getTwoQubitMatrix(basisGate), basisFidelity);
-      const auto superControlled =
+      const auto isSuperControlled =
           relativeEq(basisDecomposer.a, qc::PI_4, 1e-13, 1e-09) &&
           relativeEq(basisDecomposer.c, 0.0, 1e-13, 1e-09);
 
@@ -1653,29 +1629,29 @@ protected:
       auto q2r = k2rDagger * k12RArr;
 
       return TwoQubitBasisDecomposer{
-          .basisGate = basisGate,
-          .basisFidelity = basisFidelity,
-          .basisDecomposer = basisDecomposer,
-          .superControlled = superControlled,
-          .u0l = u0l,
-          .u0r = u0r,
-          .u1l = u1l,
-          .u1ra = u1ra,
-          .u1rb = u1rb,
-          .u2la = u2la,
-          .u2lb = u2lb,
-          .u2ra = u2ra,
-          .u2rb = u2rb,
-          .u3l = u3l,
-          .u3r = u3r,
-          .q0l = q0l,
-          .q0r = q0r,
-          .q1la = q1la,
-          .q1lb = q1lb,
-          .q1ra = q1ra,
-          .q1rb = q1rb,
-          .q2l = q2l,
-          .q2r = q2r,
+          basisGate,
+          basisFidelity,
+          basisDecomposer,
+          isSuperControlled,
+          u0l,
+          u0r,
+          u1l,
+          u1ra,
+          u1rb,
+          u2la,
+          u2lb,
+          u2ra,
+          u2rb,
+          u3l,
+          u3r,
+          q0l,
+          q0r,
+          q1la,
+          q1lb,
+          q1ra,
+          q1rb,
+          q2l,
+          q2r,
       };
     }
 
@@ -1798,7 +1774,29 @@ protected:
       return gates;
     }
 
-  private:
+  protected:
+    /**
+     * Constructs decomposer instance.
+     */
+    TwoQubitBasisDecomposer(QubitGateSequence::Gate basisGate, fp basisFidelity,
+                            TwoQubitWeylDecomposition basisDecomposer,
+                            bool isSuperControlled, matrix2x2 u0l,
+                            matrix2x2 u0r, matrix2x2 u1l, matrix2x2 u1ra,
+                            matrix2x2 u1rb, matrix2x2 u2la, matrix2x2 u2lb,
+                            matrix2x2 u2ra, matrix2x2 u2rb, matrix2x2 u3l,
+                            matrix2x2 u3r, matrix2x2 q0l, matrix2x2 q0r,
+                            matrix2x2 q1la, matrix2x2 q1lb, matrix2x2 q1ra,
+                            matrix2x2 q1rb, matrix2x2 q2l, matrix2x2 q2r)
+        : basisGate{std::move(basisGate)}, basisFidelity{basisFidelity},
+          basisDecomposer{std::move(basisDecomposer)},
+          isSuperControlled{isSuperControlled}, u0l{std::move(u0l)},
+          u0r{std::move(u0r)}, u1l{std::move(u1l)}, u1ra{std::move(u1ra)},
+          u1rb{std::move(u1rb)}, u2la{std::move(u2la)}, u2lb{std::move(u2lb)},
+          u2ra{std::move(u2ra)}, u2rb{std::move(u2rb)}, u3l{std::move(u3l)},
+          u3r{std::move(u3r)}, q0l{std::move(q0l)}, q0r{std::move(q0r)},
+          q1la{std::move(q1la)}, q1lb{std::move(q1lb)}, q1ra{std::move(q1ra)},
+          q1rb{std::move(q1rb)}, q2l{std::move(q2l)}, q2r{std::move(q2r)} {}
+
     /**
      * Calculate decompositions when no basis gate is required.
      *
@@ -1986,68 +1984,101 @@ protected:
       return bestCircuit;
     }
 
-    // TODO: copied+adapted from single-qubit decomposition
-    /**
-     * @note Adapted from circuit_kak() in the IBM Qiskit framework.
-     *       (C) Copyright IBM 2022
-     *
-     *       This code is licensed under the Apache License, Version 2.0. You
-     * may obtain a copy of this license in the LICENSE.txt file in the root
-     *       directory of this source tree or at
-     *       http://www.apache.org/licenses/LICENSE-2.0.
-     *
-     *       Any modifications or derivative works of this code must retain
-     * this copyright notice, and modified files need to carry a notice
-     *       indicating that they have been altered from the originals.
-     */
-    [[nodiscard]] static OneQubitGateSequence
-    calculateRotationGates(fp theta, fp phi, fp lambda, fp phase,
-                           qc::OpType kGate, qc::OpType aGate, bool simplify,
-                           std::optional<fp> atol) {
-      fp angleZeroEpsilon = atol.value_or(DEFAULT_ATOL);
-      if (!simplify) {
-        angleZeroEpsilon = -1.0;
-      }
+  private:
+    // basis gate of this decomposer instance
+    QubitGateSequence::Gate basisGate;
+    // fidelity with which the basis gate decomposition has been calculated
+    fp basisFidelity;
+    // cached decomposition for basis gate
+    TwoQubitWeylDecomposition basisDecomposer;
+    // true if basis gate is super-controlled
+    bool isSuperControlled;
 
-      OneQubitGateSequence sequence{
-          .gates = {},
-          .globalPhase = phase - ((phi + lambda) / 2.),
-      };
-      if (std::abs(theta) <= angleZeroEpsilon) {
-        lambda += phi;
-        lambda = mod2pi(lambda);
-        if (std::abs(lambda) > angleZeroEpsilon) {
-          sequence.gates.push_back({.type = kGate, .parameter = {lambda}});
-          sequence.globalPhase += lambda / 2.0;
-        }
-        return sequence;
-      }
+    // pre-built components for decomposition with 3 basis gates
+    matrix2x2 u0l;
+    matrix2x2 u0r;
+    matrix2x2 u1l;
+    matrix2x2 u1ra;
+    matrix2x2 u1rb;
+    matrix2x2 u2la;
+    matrix2x2 u2lb;
+    matrix2x2 u2ra;
+    matrix2x2 u2rb;
+    matrix2x2 u3l;
+    matrix2x2 u3r;
 
-      if (std::abs(theta - qc::PI) <= angleZeroEpsilon) {
-        sequence.globalPhase += phi;
-        lambda -= phi;
-        phi = 0.0;
-      }
-      if (std::abs(mod2pi(lambda + qc::PI)) <= angleZeroEpsilon ||
-          std::abs(mod2pi(phi + qc::PI)) <= angleZeroEpsilon) {
-        lambda += qc::PI;
-        theta = -theta;
-        phi += qc::PI;
-      }
+    // pre-built components for decomposition with 2 basis gates
+    matrix2x2 q0l;
+    matrix2x2 q0r;
+    matrix2x2 q1la;
+    matrix2x2 q1lb;
+    matrix2x2 q1ra;
+    matrix2x2 q1rb;
+    matrix2x2 q2l;
+    matrix2x2 q2r;
+  };
+
+  // TODO: copied+adapted from single-qubit decomposition
+  /**
+   * @note Adapted from circuit_kak() in the IBM Qiskit framework.
+   *       (C) Copyright IBM 2022
+   *
+   *       This code is licensed under the Apache License, Version 2.0. You
+   * may obtain a copy of this license in the LICENSE.txt file in the root
+   *       directory of this source tree or at
+   *       http://www.apache.org/licenses/LICENSE-2.0.
+   *
+   *       Any modifications or derivative works of this code must retain
+   * this copyright notice, and modified files need to carry a notice
+   *       indicating that they have been altered from the originals.
+   */
+  [[nodiscard]] static OneQubitGateSequence
+  calculateRotationGates(fp theta, fp phi, fp lambda, fp phase,
+                         qc::OpType kGate, qc::OpType aGate, bool simplify,
+                         std::optional<fp> atol) {
+    fp angleZeroEpsilon = atol.value_or(DEFAULT_ATOL);
+    if (!simplify) {
+      angleZeroEpsilon = -1.0;
+    }
+
+    OneQubitGateSequence sequence{
+        .gates = {},
+        .globalPhase = phase - ((phi + lambda) / 2.),
+    };
+    if (std::abs(theta) <= angleZeroEpsilon) {
+      lambda += phi;
       lambda = mod2pi(lambda);
       if (std::abs(lambda) > angleZeroEpsilon) {
-        sequence.globalPhase += lambda / 2.0;
         sequence.gates.push_back({.type = kGate, .parameter = {lambda}});
-      }
-      sequence.gates.push_back({.type = aGate, .parameter = {theta}});
-      phi = mod2pi(phi);
-      if (std::abs(phi) > angleZeroEpsilon) {
-        sequence.globalPhase += phi / 2.0;
-        sequence.gates.push_back({.type = kGate, .parameter = {phi}});
+        sequence.globalPhase += lambda / 2.0;
       }
       return sequence;
     }
-  };
+
+    if (std::abs(theta - qc::PI) <= angleZeroEpsilon) {
+      sequence.globalPhase += phi;
+      lambda -= phi;
+      phi = 0.0;
+    }
+    if (std::abs(mod2pi(lambda + qc::PI)) <= angleZeroEpsilon ||
+        std::abs(mod2pi(phi + qc::PI)) <= angleZeroEpsilon) {
+      lambda += qc::PI;
+      theta = -theta;
+      phi += qc::PI;
+    }
+    lambda = mod2pi(lambda);
+    if (std::abs(lambda) > angleZeroEpsilon) {
+      sequence.globalPhase += lambda / 2.0;
+      sequence.gates.push_back({.type = kGate, .parameter = {lambda}});
+    }
+    sequence.gates.push_back({.type = aGate, .parameter = {theta}});
+    phi = mod2pi(phi);
+    if (std::abs(phi) > angleZeroEpsilon) {
+      sequence.globalPhase += phi / 2.0;
+      sequence.gates.push_back({.type = kGate, .parameter = {phi}});
+    }
+    return sequence;
+  }
 
 private:
   llvm::SmallVector<QubitGateSequence::Gate> decomposerBasisGate;
