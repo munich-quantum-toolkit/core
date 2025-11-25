@@ -908,11 +908,18 @@ protected:
       auto u = unitaryMatrix;
       auto detU = u.determinant();
       auto detPow = std::pow(detU, static_cast<fp>(-0.25));
-      u *= detPow;
+      u *= detPow; // remove global phase from unitary matrix
       auto globalPhase = std::arg(detU) / 4.;
+
+      // this should have normalized determinant of u, so that u ∈ SU(4)
+      assert(std::abs(u.determinant() - 1.0) < SANITY_CHECK_PRECISION);
+
+      // transform unitary matrix to magic basis; this enables two properties:
+      // 1. if uP ∈ SO(4), V = A ⊗ B (SO(4) → SU(2) ⊗ SU(2))
+      // 2. magic basis diagonalizes canonical gate, allowing calculation of
+      //    canonical gate parameters later on
       auto uP = magicBasisTransform(u, MagicBasisTransform::OutOf);
       const matrix4x4 m2 = uP.transpose() * uP;
-      auto defaultEulerBasis = EulerBasis::ZYZ;
 
       // diagonalization yields eigenvectors (p) and eigenvalues (d);
       // p is used to calculate K1/K2 (and thus the single-qubit gates
@@ -921,8 +928,9 @@ protected:
       // TODO: it may be possible to lower the precision
       auto [p, d] = diagonalizeComplexSymmetric(m2, 1e-13);
 
+      // extract Weyl coordinates from eigenvalues, map to [0, 2*pi)
       // NOLINTNEXTLINE(misc-include-cleaner)
-      Eigen::Vector<fp, 3> cs; // weyl coordinates
+      Eigen::Vector<fp, 3> cs;
       rdiagonal4x4 dReal = -1.0 * d.cwiseArg() / 2.0;
       dReal(3) = -dReal(0) - dReal(1) - dReal(2);
       for (int i = 0; i < static_cast<int>(cs.size()); ++i) {
@@ -947,7 +955,8 @@ protected:
       std::tie(dReal(0), dReal(1), dReal(2)) =
           std::tuple{dReal(order[0]), dReal(order[1]), dReal(order[2])};
 
-      // update columns of p according to order
+      // update eigenvectors (columns of p) according to new order of
+      // weyl coordinates
       matrix4x4 pOrig = p;
       for (int i = 0; std::cmp_less(i, order.size()); ++i) {
         p.col(i) = pOrig.col(order[i]);
@@ -959,33 +968,41 @@ protected:
       }
       assert(std::abs(p.determinant() - 1.0) < SANITY_CHECK_PRECISION);
 
+      // re-create complex eigenvalue matrix; this matrix contains the
+      // parameters of the canonical gate which is later used in the
+      // verification
       matrix4x4 temp = dReal.asDiagonal();
       temp *= IM;
       temp = temp.exp();
 
+      // combined matrix k1 of 1q gates after canonical gate
       matrix4x4 k1 = uP * p * temp;
       assert((k1.transpose() * k1).isIdentity()); // k1 must be orthogonal
       assert(k1.determinant().real() > 0.0);
       k1 = magicBasisTransform(k1, MagicBasisTransform::Into);
+
+      // combined matrix k2 of 1q gates before canonical gate
       matrix4x4 k2 = p.transpose().conjugate();
       assert((k2.transpose() * k2).isIdentity()); // k2 must be orthogonal
       assert(k2.determinant().real() > 0.0);
       k2 = magicBasisTransform(k2, MagicBasisTransform::Into);
 
-      // ensure k1 and k2 are correct
+      // ensure k1 and k2 are correct (when combined with the canonical gate
+      // parameters in-between, they are equivalent to u)
       assert((k1 *
               magicBasisTransform(temp.conjugate(), MagicBasisTransform::Into) *
               k2)
                  .isApprox(u, SANITY_CHECK_PRECISION));
 
-      // calculate k1 = K1l⊗ K1r
+      // calculate k1 = K1l ⊗ K1r
       auto [K1l, K1r, phase_l] = decomposeTwoQubitProductGate(k1);
-      // decompose k2 = K2l⊗ K2r
+      // decompose k2 = K2l ⊗ K2r
       auto [K2l, K2r, phase_r] = decomposeTwoQubitProductGate(k2);
       assert(helpers::kroneckerProduct(K1l, K1r).isApprox(
           k1, SANITY_CHECK_PRECISION));
       assert(helpers::kroneckerProduct(K2l, K2r).isApprox(
           k2, SANITY_CHECK_PRECISION));
+      // accumulate global phase
       globalPhase += phase_l + phase_r;
 
       // Flip into Weyl chamber
@@ -1041,6 +1058,7 @@ protected:
         globalPhase -= qc::PI_2;
       }
 
+      // bind weyl coordinates as parameters of canonical gate
       auto [a, b, c] = std::tie(cs[1], cs[0], cs[2]);
       // make sure decomposition is equal to input
       assert((helpers::kroneckerProduct(K1l, K1r) *
@@ -1058,8 +1076,9 @@ protected:
           .k1r = K1r,
           .k2r = K2r,
           .specialization = Specialization::General,
-          .defaultEulerBasis = defaultEulerBasis,
+          .defaultEulerBasis = EulerBasis::ZYZ,
           .requestedFidelity = fidelity,
+          // will be calculated if a specialization is used, set to -1 for now
           .calculatedFidelity = -1.0,
           .unitaryMatrix = unitaryMatrix,
       };
@@ -1085,6 +1104,8 @@ protected:
                qfp(std::cos(da) * std::cos(db) * std::cos(dc),
                    std::sin(da) * std::sin(db) * std::sin(dc));
       };
+      // use trace to calculate fidelity of applied specialization and
+      // adjust global phase
       auto trace = getTrace();
       decomposition.calculatedFidelity = traceToFidelity(trace);
       // final check if specialization is close enough to the original matrix to
@@ -1194,7 +1215,7 @@ protected:
           // weyl coordinates and thus the parameters of the canonical gate
           // check that p is in SO(4)
           assert((p.transpose() * p).isIdentity(SANITY_CHECK_PRECISION));
-          // make sure determinant of sqrt(eigenvalues) is 1.0
+          // make sure determinant of eigenvalues is 1.0
           assert(std::abs(matrix4x4{d.asDiagonal()}.determinant() - 1.0) <
                  SANITY_CHECK_PRECISION);
           return std::make_pair(p, d);
