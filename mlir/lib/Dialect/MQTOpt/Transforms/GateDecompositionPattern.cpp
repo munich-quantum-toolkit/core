@@ -316,12 +316,6 @@ protected:
       }
       complexity +=
           getComplexity(helpers::getQcType(initialOperation), in.size());
-
-      // TODO: necessary?
-      for (auto&& globalPhaseOp :
-           initialOperation->getBlock()->getOps<GPhaseOp>()) {
-        globalPhase += helpers::getParameters(globalPhaseOp)[0];
-      }
     }
 
     /**
