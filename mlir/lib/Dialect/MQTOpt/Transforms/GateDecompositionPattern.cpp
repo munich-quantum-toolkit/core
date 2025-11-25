@@ -1272,10 +1272,11 @@ protected:
       specialization = newSpecialization;
 
       if (newSpecialization == Specialization::IdEquiv) {
-        // :math:`U \sim U_d(0,0,0) \sim Id`
+        // :math:`U \sim U_d(0,0,0)`
+        // Thus, :math:`\sim Id`
         //
-        // This gate binds 0 parameters, we make it canonical by
-        // setting
+        // This gate binds 0 parameters, we make it canonical by setting:
+        //
         // :math:`K2_l = Id` , :math:`K2_r = Id`.
         a = 0.;
         b = 0.;
@@ -1286,11 +1287,11 @@ protected:
         k1r = k1r * k2r;
         k2r = IDENTITY_GATE;
       } else if (newSpecialization == Specialization::SWAPEquiv) {
-        // :math:`U \sim U_d(\pi/4, \pi/4, \pi/4) \sim U(\pi/4, \pi/4,
-        // -\pi/4) \sim \text{SWAP}`
+        // :math:`U \sim U_d(\pi/4, \pi/4, \pi/4) \sim U(\pi/4, \pi/4, -\pi/4)`
+        // Thus, :math:`U \sim \text{SWAP}`
         //
-        // This gate binds 0 parameters, we make it canonical by
-        // setting
+        // This gate binds 0 parameters, we make it canonical by setting:
+        //
         // :math:`K2_l = Id` , :math:`K2_r = Id`.
         a = qc::PI_4;
         b = qc::PI_4;
@@ -1311,8 +1312,8 @@ protected:
           k2r = IDENTITY_GATE;
         }
       } else if (newSpecialization == Specialization::PartialSWAPEquiv) {
-        // :math:`U \sim U_d(\alpha\pi/4, \alpha\pi/4, \alpha\pi/4) \sim
-        // \text{SWAP}^\alpha`
+        // :math:`U \sim U_d(\alpha\pi/4, \alpha\pi/4, \alpha\pi/4)`
+        // Thus, :math:`U \sim \text{SWAP}^\alpha`
         //
         // This gate binds 3 parameters, we make it canonical by setting:
         //
@@ -1329,12 +1330,11 @@ protected:
         k2r = k2lDagger * k2r;
         k2l = IDENTITY_GATE;
       } else if (newSpecialization == Specialization::PartialSWAPFlipEquiv) {
-        // :math:`U \sim U_d(\alpha\pi/4, \alpha\pi/4, -\alpha\pi/4) \sim
-        // \text{SWAP}^\alpha`
+        // :math:`U \sim U_d(\alpha\pi/4, \alpha\pi/4, -\alpha\pi/4)`
+        // Thus, :math:`U \sim \text{SWAP}^\alpha`
         //
-        // (a non-equivalent root of SWAP from the
-        // TwoQubitWeylPartialSWAPEquiv similar to how :math:`x = (\pm
-        // \sqrt(x))^2`)
+        // (a non-equivalent root of SWAP from the TwoQubitWeylPartialSWAPEquiv
+        // similar to how :math:`x = (\pm \sqrt(x))^2`)
         //
         // This gate binds 3 parameters, we make it canonical by setting:
         //
@@ -1351,12 +1351,13 @@ protected:
         k2r = IPZ * k2lDagger * IPZ * k2r;
         k2l = IDENTITY_GATE;
       } else if (newSpecialization == Specialization::ControlledEquiv) {
-        // :math:`U \sim U_d(\alpha, 0, 0) \sim \text{Ctrl-U}`
+        // :math:`U \sim U_d(\alpha, 0, 0)`
+        // Thus, :math:`U \sim \text{Ctrl-U}`
         //
         // This gate binds 4 parameters, we make it canonical by setting:
         //
-        //      :math:`K2_l = Ry(\theta_l) Rx(\lambda_l)` ,
-        //      :math:`K2_r = Ry(\theta_r) Rx(\lambda_r)` .
+        // :math:`K2_l = Ry(\theta_l) Rx(\lambda_l)`
+        // :math:`K2_r = Ry(\theta_r) Rx(\lambda_r)`
         auto eulerBasis = EulerBasis::XYX;
         auto [k2ltheta, k2lphi, k2llambda, k2lphase] =
             anglesFromUnitary(k2l, eulerBasis);
@@ -1373,13 +1374,13 @@ protected:
         k2r = ryMatrix(k2rtheta) * rxMatrix(k2rlambda);
         defaultEulerBasis = eulerBasis;
       } else if (newSpecialization == Specialization::MirrorControlledEquiv) {
-        // :math:`U \sim U_d(\pi/4, \pi/4, \alpha) \sim \text{SWAP} \cdot
-        // \text{Ctrl-U}`
+        // :math:`U \sim U_d(\pi/4, \pi/4, \alpha)`
+        // Thus, :math:`U \sim \text{SWAP} \cdot \text{Ctrl-U}`
         //
         // This gate binds 4 parameters, we make it canonical by setting:
         //
-        // :math:`K2_l = Ry(\theta_l)\cdot Rz(\lambda_l)` , :math:`K2_r =
-        // Ry(\theta_r)\cdot Rz(\lambda_r)`
+        // :math:`K2_l = Ry(\theta_l)\cdot Rz(\lambda_l)`
+        // :math:`K2_r = Ry(\theta_r)\cdot Rz(\lambda_r)`
         auto [k2ltheta, k2lphi, k2llambda, k2lphase] =
             anglesFromUnitary(k2l, EulerBasis::ZYZ);
         auto [k2rtheta, k2rphi, k2rlambda, k2rphase] =
@@ -1775,7 +1776,7 @@ protected:
     /**
      * Calculate decompositions when no basis gate is required.
      *
-     * Decompose target :math:`\sim U_d(x, y, z)` with :math:`0` uses of the
+     * Decompose target :math:`\sim U_d(x, y, z)` with 0 uses of the
      * basis gate. Result :math:`U_r` has trace:
      *
      * .. math::
@@ -1796,7 +1797,7 @@ protected:
     /**
      * Calculate decompositions when one basis gate is required.
      *
-     * Decompose target :math:`\sim U_d(x, y, z)` with :math:`1` use of the
+     * Decompose target :math:`\sim U_d(x, y, z)` with 1 use of the
      * basis gate math:`\sim U_d(a, b, c)`. Result :math:`U_r` has trace:
      *
      * .. math::
@@ -1822,7 +1823,7 @@ protected:
     /**
      * Calculate decompositions when two basis gates are required.
      *
-     * Decompose target :math:`\sim U_d(x, y, z)` with :math:`2` uses of the
+     * Decompose target :math:`\sim U_d(x, y, z)` with 2 uses of the
      * basis gate.
      *
      * For supercontrolled basis :math:`\sim U_d(\pi/4, b, 0)`, all b, result
@@ -1833,11 +1834,11 @@ protected:
      *     \Big\vert\text{Tr}(U_r \cdot U_\text{target}^\dag) \Big\vert =
      * 4\cos(z)
      *
-     * which is the optimal approximation for basis of CNOT-class :math:`\sim
-     * U_d(\pi/4, 0, 0)` or DCNOT-class :math:`\sim U_d(\pi/4, \pi/4, 0)` and
-     * any target. It may be sub-optimal for :math:`b \neq 0` (i.e. there exists
-     * an exact decomposition for any target using
-     * :math:`B \sim U_d(\pi/4, \pi/8, 0)`, but it may not be this
+     * which is the optimal approximation for basis of CNOT-class
+     * :math:`\sim U_d(\pi/4, 0, 0)` or DCNOT-class
+     * :math:`\sim U_d(\pi/4, \pi/4, 0)` and any target. It may be sub-optimal
+     * for :math:`b \neq 0` (i.e. there exists an exact decomposition for any
+     * target using :math:`B \sim U_d(\pi/4, \pi/8, 0)`, but it may not be this
      * decomposition). This is an exact decomposition for supercontrolled basis
      * and target :math:`\sim U_d(x, y, 0)`. No guarantees for
      * non-supercontrolled basis.
@@ -1857,7 +1858,7 @@ protected:
     /**
      * Calculate decompositions when three basis gates are required.
      *
-     * Decompose target with :math:`3` uses of the basis.
+     * Decompose target with 3 uses of the basis.
      *
      * This is an exact decomposition for supercontrolled basis
      * :math:`\sim U_d(\pi/4, b, 0)`, all b, and any target. No guarantees for
