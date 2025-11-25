@@ -1167,8 +1167,8 @@ protected:
       for (int i = 0; i < 100; ++i) {
         fp randA{};
         fp randB{};
-        // For debugging the algorithm use the same RNG values from the
-        // previous Python implementation for the first random trial.
+        // For debugging the algorithm use the same RNG values as the
+        // Qiskit implementation for the first random trial.
         // In most cases this loop only executes a single iteration and
         // using the same rng values rules out possible RNG differences
         // as the root cause of a test failure
@@ -1810,8 +1810,7 @@ protected:
      */
     [[nodiscard]] llvm::SmallVector<matrix2x2>
     decomp1(const TwoQubitWeylDecomposition& target) const {
-      // FIXME: fix for z!=0 and c!=0 using closest reflection (not always in
-      // the Weyl chamber)
+      // may not work for z != 0 and c != 0 (not always in Weyl chamber)
       return {
           basisDecomposer.k2r.transpose().conjugate() * target.k2r,
           basisDecomposer.k2l.transpose().conjugate() * target.k2l,
