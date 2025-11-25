@@ -9,6 +9,10 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 
 ## [Unreleased]
 
+### Added
+
+- ✨ Add WireIterator ([#1310]) ([**@MatthiasReumann**])
+
 ### Changed
 
 - ♻️ Preserve tuple structure and improve site type clarity of the MQT NA Default QDMI Device ([#1299]) ([**@marcelwa**])
@@ -249,6 +253,7 @@ _📚 Refer to the [GitHub Release Notes](https://github.com/munich-quantum-tool
 <!-- PR links -->
 
 [#1327]: https://github.com/munich-quantum-toolkit/core/pull/1327
+[#1310]: https://github.com/munich-quantum-toolkit/core/pull/1310
 [#1300]: https://github.com/munich-quantum-toolkit/core/pull/1300
 [#1299]: https://github.com/munich-quantum-toolkit/core/pull/1299
 [#1293]: https://github.com/munich-quantum-toolkit/core/pull/1293
