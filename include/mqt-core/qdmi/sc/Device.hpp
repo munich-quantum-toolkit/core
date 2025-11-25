@@ -49,9 +49,9 @@ class Device final {
   Device();
 
 public:
-  // Default move constructor and move assignment operator.
-  Device(Device&&) = default;
-  Device& operator=(Device&&) = default;
+  // Delete move constructor and move assignment operator.
+  Device(Device&&) = delete;
+  Device& operator=(Device&&) = delete;
   // Delete copy constructor and assignment operator to enforce singleton.
   Device(const Device&) = delete;
   Device& operator=(const Device&) = delete;

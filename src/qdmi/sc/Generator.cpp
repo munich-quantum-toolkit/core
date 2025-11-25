@@ -98,6 +98,10 @@ auto writeSites(const Device& device, std::ostream& os) -> void {
  * Writes the C preprocessor macro `INITIALIZE_COUPLINGMAP(var)` which assigns
  * `var = std::move(_couplings)`.
  *
+ * @note This macro depends on the `_couplings` variable created by
+ *       the INITIALIZE_SITES macro from writeSites(). The macro
+ *       INITIALIZE_SITES must be invoked before INITIALIZE_COUPLINGMAP.
+ *
  * @param os Output stream to write the macro definition to.
  */
 auto writeCouplingMap(const Device& /* unused */, std::ostream& os) -> void {

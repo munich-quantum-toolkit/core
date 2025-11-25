@@ -187,13 +187,15 @@ auto parseArguments(const std::vector<std::string>& args)
       arguments.version = true;
     } else if (arg == "schema") {
       arguments.command = Command::Schema;
-      break; // No more arguments for schema command
+      break; // Stop top-level parsing; remaining args handled by schema parser
     } else if (arg == "validate") {
       arguments.command = Command::Validate;
-      break; // No more arguments for validate command
+      // Stop top-level parsing; remaining args handled by validate parser
+      break;
     } else if (arg == "generate") {
       arguments.command = Command::Generate;
-      break; // No more arguments for generate command
+      // Stop top-level parsing; remaining args handled by generate parser
+      break;
     } else {
       throw std::invalid_argument("Unknown argument: " + arg);
     }
@@ -240,6 +242,7 @@ auto parseSchemaArguments(const std::vector<std::string>& args, size_t i)
  * @return ValidateArguments Parsed flags and optional JSON input file path:
  * `help` is set if -h/--help was present, `jsonFile` contains the positional
  * JSON file if provided.
+ * @throws std::invalid_argument if multiple JSON files are specified.
  */
 auto parseValidateArguments(const std::vector<std::string>& args, size_t i)
     -> ValidateArguments {
@@ -248,6 +251,9 @@ auto parseValidateArguments(const std::vector<std::string>& args, size_t i)
     if (const std::string& arg = args.at(i); arg == "-h" || arg == "--help") {
       validateArgs.help = true;
     } else {
+      if (validateArgs.jsonFile.has_value()) {
+        throw std::invalid_argument("Multiple JSON files specified");
+      }
       validateArgs.jsonFile = arg;
     }
     ++i;
@@ -271,6 +277,7 @@ auto parseValidateArguments(const std::vector<std::string>& args, size_t i)
  * optional `jsonFile` populated.
  * @throws std::invalid_argument If an `-o`/`--output` option is provided
  * without a following value.
+ * @throws std::invalid_argument if multiple JSON files are specified.
  */
 auto parseGenerateArguments(const std::vector<std::string>& args, size_t i)
     -> GenerateArguments {
@@ -284,6 +291,9 @@ auto parseGenerateArguments(const std::vector<std::string>& args, size_t i)
       }
       generateArgs.outputFile = args.at(i);
     } else {
+      if (generateArgs.jsonFile.has_value()) {
+        throw std::invalid_argument("Multiple JSON files specified");
+      }
       generateArgs.jsonFile = arg;
     }
     ++i;
