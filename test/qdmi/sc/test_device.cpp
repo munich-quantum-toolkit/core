@@ -122,6 +122,7 @@ TEST_F(ScQDMISpecificationTest, SessionSetParameter) {
   EXPECT_EQ(MQT_SC_QDMI_device_session_set_parameter(
                 session, QDMI_DEVICE_SESSION_PARAMETER_MAX, 0, nullptr),
             QDMI_ERROR_INVALIDARGUMENT);
+  MQT_SC_QDMI_device_session_free(uninitializedSession);
 }
 
 TEST_F(ScQDMISpecificationTest, JobCreate) {
@@ -262,6 +263,7 @@ TEST_F(ScQDMISpecificationTest, QueryDeviceProperty) {
   EXPECT_EQ(MQT_SC_QDMI_device_session_query_device_property(
                 session, QDMI_DEVICE_PROPERTY_COUPLINGMAP, 0, nullptr, nullptr),
             QDMI_SUCCESS);
+  MQT_SC_QDMI_device_session_free(uninitializedSession);
 }
 
 TEST_F(ScQDMISpecificationTest, QuerySiteProperty) {
