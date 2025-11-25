@@ -371,7 +371,7 @@ module {
     // CHECK: %[[C16:.*]] = arith.constant -0.03425899788
     // CHECK: %[[C17:.*]] = arith.constant -1.57079632679
     // CHECK: %[[C18:.*]] = arith.constant -2.39270110306
-    // CHECK: %[[C19:.*]] = arith.constant -0.78539816339
+    // CHECK: %[[C19:.*]] = arith.constant 5.497787143782
 
     // CHECK: %[[Q0_0:.*]] = mqtopt.allocQubit
     // CHECK: %[[Q1_0:.*]] = mqtopt.allocQubit
@@ -494,7 +494,7 @@ module {
     // CHECK: %[[C4:.*]] = arith.constant -1.5707963
     // CHECK: %[[C5:.*]] = arith.constant -1.5707963
     // CHECK: %[[C6:.*]] = arith.constant 2.35619449
-    // CHECK: %[[C7:.*]] = arith.constant -3.1415926
+    // CHECK: %[[C7:.*]] = arith.constant 3.1415926
 
     // CHECK: %[[Q0_0:.*]] = mqtopt.allocQubit
     // CHECK: %[[Q1_0:.*]] = mqtopt.allocQubit
