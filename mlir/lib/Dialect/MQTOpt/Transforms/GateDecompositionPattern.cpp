@@ -1089,20 +1089,12 @@ protected:
 
       auto getTrace = [&]() {
         if (flippedFromOriginal) {
-          auto [da, db, dc] = std::array{
-              qc::PI_2 - a - decomposition.a,
-              b - decomposition.b,
-              -c - decomposition.c,
-          };
-          return static_cast<fp>(4.) *
-                 qfp(std::cos(da) * std::cos(db) * std::cos(dc),
-                     std::sin(da) * std::sin(db) * std::sin(dc));
+          return TwoQubitWeylDecomposition::getTrace(
+              qc::PI_2 - a, b, -c, decomposition.a, decomposition.b,
+              decomposition.c);
         }
-        auto [da, db, dc] = std::array{a - decomposition.a, b - decomposition.b,
-                                       c - decomposition.c};
-        return static_cast<fp>(4.) *
-               qfp(std::cos(da) * std::cos(db) * std::cos(dc),
-                   std::sin(da) * std::sin(db) * std::sin(dc));
+        return TwoQubitWeylDecomposition::getTrace(
+            a, b, c, decomposition.a, decomposition.b, decomposition.c);
       };
       // use trace to calculate fidelity of applied specialization and
       // adjust global phase
@@ -1225,14 +1217,27 @@ protected:
           "TwoQubitWeylDecomposition: failed to diagonalize M2."};
     }
 
+    /**
+     * Calculate trace of two sets of parameters for the canonical gate.
+     * The trace has been defined in: https://arxiv.org/abs/1811.12926
+     */
+    [[nodiscard]] static qfp getTrace(fp a, fp b, fp c, fp ap, fp bp, fp cp) {
+      auto da = a - ap;
+      auto db = b - bp;
+      auto dc = c - cp;
+      return static_cast<fp>(4.) *
+             qfp(std::cos(da) * std::cos(db) * std::cos(dc),
+                 std::sin(da) * std::sin(db) * std::sin(dc));
+    }
+
+    /**
+     * Choose the best specialization for the for the canonical gate.
+     * This will use the requestedFidelity to determine if a specialization is
+     * close enough to the actual canonical gate matrix.
+     */
     [[nodiscard]] Specialization bestSpecialization() const {
       auto isClose = [this](fp ap, fp bp, fp cp) -> bool {
-        auto da = a - ap;
-        auto db = b - bp;
-        auto dc = c - cp;
-        auto tr = static_cast<fp>(4.) *
-                  qfp(std::cos(da) * std::cos(db) * std::cos(dc),
-                      std::sin(da) * std::sin(db) * std::sin(dc));
+        auto tr = getTrace(a, b, c, ap, bp, cp);
         if (requestedFidelity) {
           return traceToFidelity(tr) >= *requestedFidelity;
         }
