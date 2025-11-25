@@ -16,6 +16,8 @@
 
 #include "mqt_sc_qdmi/device.h"
 
+#include <cstddef>
+#include <cstdint>
 #include <memory>
 #include <string>
 #include <unordered_map>
@@ -65,7 +67,7 @@ public:
   }
 
   /// @brief Destructor for the Device class.
-  ~Device() = default;
+  ~Device();
 
   /**
    * @brief Allocates a new device session.
@@ -117,7 +119,7 @@ public:
    * @see MQT_SC_QDMI_device_session_set_parameter
    */
   auto setParameter(QDMI_Device_Session_Parameter param, size_t size,
-                    const void* value) const -> int;
+                    const void* value) -> int;
 
   /**
    * @brief Create a new device job.
@@ -189,46 +191,46 @@ public:
    * @brief Sets a parameter for the job.
    * @see MQT_SC_QDMI_device_job_set_parameter
    */
-  static auto setParameter(QDMI_Device_Job_Parameter param, size_t size,
-                           const void* value) -> int;
+  auto setParameter(QDMI_Device_Job_Parameter param, size_t size,
+                    const void* value) -> int;
 
   /**
    * @brief Queries a property of the job.
    * @see MQT_SC_QDMI_device_job_query_property
    */
-  static auto queryProperty(QDMI_Device_Job_Property prop, size_t size,
-                            void* value, size_t* sizeRet) -> int;
+  auto queryProperty(QDMI_Device_Job_Property prop, size_t size, void* value,
+                     size_t* sizeRet) -> int;
 
   /**
    * @brief Submits the job to the device.
    * @see MQT_SC_QDMI_device_job_submit
    */
-  static auto submit() -> int;
+  auto submit() -> int;
 
   /**
    * @brief Cancels the job.
    * @see MQT_SC_QDMI_device_job_cancel
    */
-  static auto cancel() -> int;
+  auto cancel() -> int;
 
   /**
    * @brief Checks the status of the job.
    * @see MQT_SC_QDMI_device_job_check
    */
-  static auto check(QDMI_Job_Status* status) -> int;
+  auto check(QDMI_Job_Status* status) -> int;
 
   /**
    * @brief Waits for the job to complete but at most for the specified timeout.
    * @see MQT_SC_QDMI_device_job_wait
    */
-  static auto wait(size_t timeout) -> int;
+  auto wait(size_t timeout) -> int;
 
   /**
    * @brief Gets the results of the job.
    * @see MQT_SC_QDMI_device_job_get_results
    */
-  static auto getResults(QDMI_Job_Result result, size_t size, void* data,
-                         [[maybe_unused]] size_t* sizeRet) -> int;
+  auto getResults(QDMI_Job_Result result, size_t size, void* data,
+                  [[maybe_unused]] size_t* sizeRet) -> int;
 };
 
 /**
@@ -245,7 +247,7 @@ private:
    *
    * @param id Unique identifier for the site.
    */
-  MQT_SC_QDMI_Site_impl_d(uint64_t id) : id_(id) {}
+  explicit MQT_SC_QDMI_Site_impl_d(uint64_t id) : id_(id) {}
 
 public:
   /// @brief Factory function for regular sites.

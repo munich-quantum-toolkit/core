@@ -99,6 +99,7 @@ Device::Device() {
   INITIALIZE_SITES(sites_);
   INITIALIZE_COUPLINGMAP(couplingMap_);
 }
+Device::~Device() = default;
 auto Device::sessionAlloc(MQT_SC_QDMI_Device_Session* session) -> int {
   if (session == nullptr) {
     return QDMI_ERROR_INVALIDARGUMENT;
@@ -159,8 +160,8 @@ auto MQT_SC_QDMI_Device_Session_impl_d::init() -> int {
   return QDMI_SUCCESS;
 }
 auto MQT_SC_QDMI_Device_Session_impl_d::setParameter(
-    QDMI_Device_Session_Parameter param, const size_t size,
-    const void* value) const -> int {
+    QDMI_Device_Session_Parameter param, const size_t size, const void* value)
+    -> int {
   if ((value != nullptr && size == 0) ||
       param >= QDMI_DEVICE_SESSION_PARAMETER_MAX) {
     return QDMI_ERROR_INVALIDARGUMENT;
