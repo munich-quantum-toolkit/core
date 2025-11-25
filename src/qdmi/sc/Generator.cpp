@@ -182,7 +182,7 @@ auto writeJSONSchema(const std::string& path) -> void {
   if (!ifs.good()) {
     throw std::runtime_error("Failed to open JSON file: " + std::string(path));
   }
-  const auto& device = readJSON(ifs);
+  auto device = readJSON(ifs);
   ifs.close();
   return device;
 }

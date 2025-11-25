@@ -234,7 +234,7 @@ public:
 };
 
 /**
- * @brief Implementation of the MQT_SC_QDMI_Device_Site structure.
+ * @brief Implementation of the MQT_SC_QDMI_Site structure.
  */
 struct MQT_SC_QDMI_Site_impl_d {
   friend MQT_SC_QDMI_Operation_impl_d;
@@ -262,7 +262,7 @@ public:
 };
 
 /**
- * @brief Implementation of the MQT_SC_QDMI_Device_Operation structure.
+ * @brief Implementation of the MQT_SC_QDMI_Operation structure.
  */
 struct MQT_SC_QDMI_Operation_impl_d {
 private:
