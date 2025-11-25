@@ -282,8 +282,45 @@ TEST_P(OperationTest, Sites) {
   EXPECT_NO_THROW(std::ignore = operation.getSites());
 }
 
+TEST_P(OperationTest, SitePairs) {
+  const auto sitePairs = operation.getSitePairs();
+  const auto qubitsNum = operation.getQubitsNum();
+  const auto isZonedOp = operation.isZoned();
+
+  if (!qubitsNum.has_value() || *qubitsNum != 2 || isZonedOp) {
+    EXPECT_FALSE(sitePairs.has_value());
+  } else {
+    const auto sites = operation.getSites();
+    if (!sites.has_value() || sites->empty() || sites->size() % 2 != 0) {
+      EXPECT_FALSE(sitePairs.has_value());
+    } else {
+      EXPECT_TRUE(sitePairs.has_value());
+      if (sitePairs.has_value()) {
+        EXPECT_EQ(sitePairs->size(), sites->size() / 2);
+      }
+    }
+  }
+}
+
 TEST_P(OperationTest, MeanShuttlingSpeed) {
   EXPECT_NO_THROW(std::ignore = operation.getMeanShuttlingSpeed());
+}
+
+TEST_P(DeviceTest, RegularSitesAndZones) {
+  const auto allSites = device.getSites();
+  const auto regularSites = device.getRegularSites();
+  const auto zones = device.getZones();
+
+  EXPECT_FALSE(allSites.empty());
+  EXPECT_EQ(regularSites.size() + zones.size(), allSites.size());
+
+  for (const auto& site : regularSites) {
+    EXPECT_FALSE(site.isZone());
+  }
+
+  for (const auto& site : zones) {
+    EXPECT_TRUE(site.isZone());
+  }
 }
 
 INSTANTIATE_TEST_SUITE_P(

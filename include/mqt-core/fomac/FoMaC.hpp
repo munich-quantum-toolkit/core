@@ -280,7 +280,7 @@ public:
       /// @see QDMI_SITE_PROPERTY_ZCOORDINATE
       [[nodiscard]] auto getZCoordinate() const -> std::optional<int64_t>;
       /// @see QDMI_SITE_PROPERTY_ISZONE
-      [[nodiscard]] auto isZone() const -> std::optional<bool>;
+      [[nodiscard]] auto isZone() const -> bool;
       /// @see QDMI_SITE_PROPERTY_XEXTENT
       [[nodiscard]] auto getXExtent() const -> std::optional<uint64_t>;
       /// @see QDMI_SITE_PROPERTY_YEXTENT
@@ -423,13 +423,22 @@ public:
                         const std::vector<double>& params = {}) const
           -> std::optional<double>;
       /// @see QDMI_OPERATION_PROPERTY_ISZONED
-      [[nodiscard]] auto isZoned(const std::vector<Site>& sites = {},
-                                 const std::vector<double>& params = {}) const
-          -> std::optional<bool>;
+      [[nodiscard]] auto isZoned() const -> bool;
       /// @see QDMI_OPERATION_PROPERTY_SITES
-      [[nodiscard]] auto getSites(const std::vector<Site>& sites = {},
-                                  const std::vector<double>& params = {}) const
-          -> std::optional<std::vector<Site>>;
+      [[nodiscard]] auto getSites() const -> std::optional<std::vector<Site>>;
+      /**
+       * @brief Returns the list of site pairs the local 2-qubit operation can
+       * be performed on.
+       * @details For local 2-qubit operations, this function interprets the
+       * returned list of sites by QDMI as site pairs according to the QDMI
+       * specification. Hence, this function facilitates easier iteration over
+       * supported site pairs.
+       * @return Optional vector of site pairs if this is a local 2-qubit
+       * operation, std::nullopt otherwise.
+       * @see QDMI_OPERATION_PROPERTY_SITES
+       */
+      [[nodiscard]] auto getSitePairs() const
+          -> std::optional<std::vector<std::pair<Site, Site>>>;
       /// @see QDMI_OPERATION_PROPERTY_MEANSHUTTLINGSPEED
       [[nodiscard]] auto
       getMeanShuttlingSpeed(const std::vector<Site>& sites = {},
@@ -512,6 +521,26 @@ public:
     [[nodiscard]] auto getQubitsNum() const -> size_t;
     /// @see QDMI_DEVICE_PROPERTY_SITES
     [[nodiscard]] auto getSites() const -> std::vector<Site>;
+    /**
+     * @brief Returns the list of regular sites (without zone sites) available
+     * on the device.
+     * @details Filters all sites and only returns regular sites, i.e., where
+     * `isZone()` yields `false`. These represent actual potential physical
+     * qubit locations on the device lattice.
+     * @returns vector of regular sites
+     * @see QDMI_DEVICE_PROPERTY_SITES
+     */
+    [[nodiscard]] auto getRegularSites() const -> std::vector<Site>;
+    /**
+     * @brief Returns the list of zone sites (without regular sites) available
+     * on the device.
+     * @details Filters all sites and only returns zone sites, i.e., where
+     * `isZone()` yields `true`. These represent a zone, i.e., an extent where
+     * zoned operations can be performed, not individual qubit locations.
+     * @returns a vector of zone sites
+     * @see QDMI_DEVICE_PROPERTY_SITES
+     */
+    [[nodiscard]] auto getZones() const -> std::vector<Site>;
     /// @see QDMI_DEVICE_PROPERTY_OPERATIONS
     [[nodiscard]] auto getOperations() const -> std::vector<Operation>;
     /// @see QDMI_DEVICE_PROPERTY_COUPLINGMAP

@@ -90,12 +90,9 @@ PYBIND11_MODULE(MQT_CORE_MODULE_NAME, m, py::mod_gil_not_used()) {
                 &fomac::FoMaC::Device::Operation::getIdlingFidelity,
                 "sites"_a = std::vector<fomac::FoMaC::Device::Site>{},
                 "params"_a = std::vector<double>{});
-  operation.def("is_zoned", &fomac::FoMaC::Device::Operation::isZoned,
-                "sites"_a = std::vector<fomac::FoMaC::Device::Site>{},
-                "params"_a = std::vector<double>{});
-  operation.def("sites", &fomac::FoMaC::Device::Operation::getSites,
-                "sites"_a = std::vector<fomac::FoMaC::Device::Site>{},
-                "params"_a = std::vector<double>{});
+  operation.def("is_zoned", &fomac::FoMaC::Device::Operation::isZoned);
+  operation.def("sites", &fomac::FoMaC::Device::Operation::getSites);
+  operation.def("site_pairs", &fomac::FoMaC::Device::Operation::getSitePairs);
   operation.def("mean_shuttling_speed",
                 &fomac::FoMaC::Device::Operation::getMeanShuttlingSpeed,
                 "sites"_a = std::vector<fomac::FoMaC::Device::Site>{},
@@ -112,6 +109,8 @@ PYBIND11_MODULE(MQT_CORE_MODULE_NAME, m, py::mod_gil_not_used()) {
   device.def("library_version", &fomac::FoMaC::Device::getLibraryVersion);
   device.def("qubits_num", &fomac::FoMaC::Device::getQubitsNum);
   device.def("sites", &fomac::FoMaC::Device::getSites);
+  device.def("regular_sites", &fomac::FoMaC::Device::getRegularSites);
+  device.def("zones", &fomac::FoMaC::Device::getZones);
   device.def("operations", &fomac::FoMaC::Device::getOperations);
   device.def("coupling_map", &fomac::FoMaC::Device::getCouplingMap);
   device.def("needs_calibration", &fomac::FoMaC::Device::getNeedsCalibration);
