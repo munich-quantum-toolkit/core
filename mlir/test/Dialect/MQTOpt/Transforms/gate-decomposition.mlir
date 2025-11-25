@@ -134,8 +134,8 @@ module {
 module {
   // CHECK-LABEL: func.func @testSeriesOneQubitOpInbetween
   func.func @testSeriesOneQubitOpInbetween() {
-    // CHECK-DAG: %[[C0:.*]] = arith.constant 3.14159
-    // CHECK-DAG: %[[C1:.*]] = arith.constant 1.5707
+    // CHECK: %[[C0:.*]] = arith.constant 3.14159
+    // CHECK: %[[C1:.*]] = arith.constant 1.5707
 
     // CHECK: %[[Q0_0:.*]] = mqtopt.allocQubit
     // CHECK: %[[Q1_0:.*]] = mqtopt.allocQubit
@@ -169,8 +169,8 @@ module {
 module {
   // CHECK-LABEL: func.func @testSeriesStartingOneQubitOp
   func.func @testSeriesStartingOneQubitOp() {
-    // CHECK-DAG: %[[C0:.*]] = arith.constant 3.14159
-    // CHECK-DAG: %[[C1:.*]] = arith.constant 1.5707
+    // CHECK: %[[C0:.*]] = arith.constant 3.14159
+    // CHECK: %[[C1:.*]] = arith.constant 1.5707
 
     // CHECK: %[[Q0_0:.*]] = mqtopt.allocQubit
     // CHECK: %[[Q1_0:.*]] = mqtopt.allocQubit
@@ -204,8 +204,8 @@ module {
 module {
   // CHECK-LABEL: func.func @testSeriesEndingOneQubitOp
   func.func @testSeriesEndingOneQubitOp() {
-    // CHECK-DAG: %[[C0:.*]] = arith.constant 3.14159
-    // CHECK-DAG: %[[C1:.*]] = arith.constant 1.5707
+    // CHECK: %[[C0:.*]] = arith.constant 3.14159
+    // CHECK: %[[C1:.*]] = arith.constant 1.5707
 
     // CHECK: %[[Q0_0:.*]] = mqtopt.allocQubit
     // CHECK: %[[Q1_0:.*]] = mqtopt.allocQubit
@@ -280,18 +280,18 @@ module {
 module {
   // CHECK-LABEL: func.func @testTwoBasisGateDecomposition
   func.func @testTwoBasisGateDecomposition() {
-    // CHECK-DAG: %[[C0:.*]] = arith.constant -1.5707963267
-    // CHECK-DAG: %[[C1:.*]] = arith.constant -3.141592653
-    // CHECK-DAG: %[[C2:.*]] = arith.constant 1.2502369157
-    // CHECK-DAG: %[[C3:.*]] = arith.constant 1.8299117708
-    // CHECK-DAG: %[[C4:.*]] = arith.constant 2.8733113535
-    // CHECK-DAG: %[[C5:.*]] = arith.constant 3.0097427712
-    // CHECK-DAG: %[[C6:.*]] = arith.constant 0.2614370492
-    // CHECK-DAG: %[[C7:.*]] = arith.constant -0.131849882
-    // CHECK-DAG: %[[C8:.*]] = arith.constant 2.500000e+00
-    // CHECK-DAG: %[[C9:.*]] = arith.constant -1.570796326
-    // CHECK-DAG: %[[C10:.*]] = arith.constant 1.570796326
-    // CHECK-DAG: %[[C11:.*]] = arith.constant 0.785398163
+    // CHECK: %[[C0:.*]] = arith.constant -1.5707963267
+    // CHECK: %[[C1:.*]] = arith.constant -3.141592653
+    // CHECK: %[[C2:.*]] = arith.constant 1.2502369157
+    // CHECK: %[[C3:.*]] = arith.constant 1.8299117708
+    // CHECK: %[[C4:.*]] = arith.constant 2.8733113535
+    // CHECK: %[[C5:.*]] = arith.constant 3.0097427712
+    // CHECK: %[[C6:.*]] = arith.constant 0.2614370492
+    // CHECK: %[[C7:.*]] = arith.constant -0.131849882
+    // CHECK: %[[C8:.*]] = arith.constant 2.500000e+00
+    // CHECK: %[[C9:.*]] = arith.constant -1.570796326
+    // CHECK: %[[C10:.*]] = arith.constant 1.570796326
+    // CHECK: %[[C11:.*]] = arith.constant 0.785398163
 
     // CHECK: %[[Q0_0:.*]] = mqtopt.allocQubit
     // CHECK: %[[Q1_0:.*]] = mqtopt.allocQubit
@@ -352,26 +352,26 @@ module {
 module {
   // CHECK-LABEL: func.func @testThreeBasisGateDecomposition
   func.func @testThreeBasisGateDecomposition() {
-    // CHECK-DAG: %[[C0:.*]] = arith.constant 1.00543528660
-    // CHECK-DAG: %[[C1:.*]] = arith.constant -2.3561944901
-    // CHECK-DAG: %[[C2:.*]] = arith.constant 0.85849590894
-    // CHECK-DAG: %[[C3:.*]] = arith.constant 0.43624604946
-    // CHECK-DAG: %[[C4:.*]] = arith.constant 2.43419171936
-    // CHECK-DAG: %[[C5:.*]] = arith.constant -0.6154797086
-    // CHECK-DAG: %[[C6:.*]] = arith.constant 1.04719755119
-    // CHECK-DAG: %[[C7:.*]] = arith.constant 2.52611294491
-    // CHECK-DAG: %[[C8:.*]] = arith.constant -0.2593805121
-    // CHECK-DAG: %[[C9:.*]] = arith.constant 1.57079632679
-    // CHECK-DAG: %[[C10:.*]] = arith.constant -2.52611294491
-    // CHECK-DAG: %[[C11:.*]] = arith.constant 2.094395102393
-    // CHECK-DAG: %[[C12:.*]] = arith.constant -0.61547970867
-    // CHECK-DAG: %[[C13:.*]] = arith.constant 0.694804217319
-    // CHECK-DAG: %[[C14:.*]] = arith.constant 0.220207934068
-    // CHECK-DAG: %[[C15:.*]] = arith.constant 1.125358392049
-    // CHECK-DAG: %[[C16:.*]] = arith.constant -0.03425899788
-    // CHECK-DAG: %[[C17:.*]] = arith.constant -1.57079632679
-    // CHECK-DAG: %[[C18:.*]] = arith.constant -2.39270110306
-    // CHECK-DAG: %[[C19:.*]] = arith.constant -0.78539816339
+    // CHECK: %[[C0:.*]] = arith.constant 1.00543528660
+    // CHECK: %[[C1:.*]] = arith.constant -2.3561944901
+    // CHECK: %[[C2:.*]] = arith.constant 0.85849590894
+    // CHECK: %[[C3:.*]] = arith.constant 0.43624604946
+    // CHECK: %[[C4:.*]] = arith.constant 2.43419171936
+    // CHECK: %[[C5:.*]] = arith.constant -0.6154797086
+    // CHECK: %[[C6:.*]] = arith.constant 1.04719755119
+    // CHECK: %[[C7:.*]] = arith.constant 2.52611294491
+    // CHECK: %[[C8:.*]] = arith.constant -0.2593805121
+    // CHECK: %[[C9:.*]] = arith.constant 1.57079632679
+    // CHECK: %[[C10:.*]] = arith.constant -2.52611294491
+    // CHECK: %[[C11:.*]] = arith.constant 2.094395102393
+    // CHECK: %[[C12:.*]] = arith.constant -0.61547970867
+    // CHECK: %[[C13:.*]] = arith.constant 0.694804217319
+    // CHECK: %[[C14:.*]] = arith.constant 0.220207934068
+    // CHECK: %[[C15:.*]] = arith.constant 1.125358392049
+    // CHECK: %[[C16:.*]] = arith.constant -0.03425899788
+    // CHECK: %[[C17:.*]] = arith.constant -1.57079632679
+    // CHECK: %[[C18:.*]] = arith.constant -2.39270110306
+    // CHECK: %[[C19:.*]] = arith.constant -0.78539816339
 
     // CHECK: %[[Q0_0:.*]] = mqtopt.allocQubit
     // CHECK: %[[Q1_0:.*]] = mqtopt.allocQubit
@@ -448,8 +448,8 @@ module {
 module {
   // CHECK-LABEL: func.func @testSingleQubitSeries
   func.func @testSingleQubitSeries() {
-    // CHECK-DAG: %[[C0:.*]] = arith.constant 2.400000
-    // CHECK-DAG: %[[C1:.*]] = arith.constant 2.500000
+    // CHECK: %[[C0:.*]] = arith.constant 2.400000
+    // CHECK: %[[C1:.*]] = arith.constant 2.500000
 
     // CHECK: %[[Q0_0:.*]] = mqtopt.allocQubit
     // CHECK: %[[Q1_0:.*]] = mqtopt.allocQubit
@@ -487,14 +487,14 @@ module {
 module {
   // CHECK-LABEL: func.func @testSeriesSingleQubitBacktracking
   func.func @testSeriesSingleQubitBacktracking() {
-    // CHECK-DAG: %[[C0:.*]] = arith.constant -2.4269908
-    // CHECK-DAG: %[[C1:.*]] = arith.constant 3.14159265
-    // CHECK-DAG: %[[C2:.*]] = arith.constant 0.85619449
-    // CHECK-DAG: %[[C3:.*]] = arith.constant -2.3561944
-    // CHECK-DAG: %[[C4:.*]] = arith.constant -1.5707963
-    // CHECK-DAG: %[[C5:.*]] = arith.constant -1.5707963
-    // CHECK-DAG: %[[C6:.*]] = arith.constant 2.35619449
-    // CHECK-DAG: %[[C7:.*]] = arith.constant -3.1415926
+    // CHECK: %[[C0:.*]] = arith.constant -2.4269908
+    // CHECK: %[[C1:.*]] = arith.constant 3.14159265
+    // CHECK: %[[C2:.*]] = arith.constant 0.85619449
+    // CHECK: %[[C3:.*]] = arith.constant -2.3561944
+    // CHECK: %[[C4:.*]] = arith.constant -1.5707963
+    // CHECK: %[[C5:.*]] = arith.constant -1.5707963
+    // CHECK: %[[C6:.*]] = arith.constant 2.35619449
+    // CHECK: %[[C7:.*]] = arith.constant -3.1415926
 
     // CHECK: %[[Q0_0:.*]] = mqtopt.allocQubit
     // CHECK: %[[Q1_0:.*]] = mqtopt.allocQubit
