@@ -26,6 +26,28 @@ if TYPE_CHECKING:
     from mqt.core.plugins.qiskit import QiskitBackend
 
 
+def _parse_num_clbits_from_qasm(program: str) -> int:
+    """Parse the number of classical bits from a QASM program.
+
+    Args:
+        program: The QASM program string (QASM2 or QASM3 format).
+
+    Returns:
+        The number of classical bits declared in the program, or 2 as default.
+    """
+    # Look for "creg <name>[<size>];" pattern in QASM2
+    match = re.search(r"creg\s+\w+\[(\d+)]", program)
+    if match:
+        return int(match.group(1))
+
+    # Look for "bit[<size>] <name>;" pattern in QASM3
+    match = re.search(r"bit\[(\d+)]", program)
+    if match:
+        return int(match.group(1))
+
+    raise ValueError("Could not parse number of classical bits from QASM program.")
+
+
 class MockQDMIDevice:
     """Mock QDMI device for testing with configurable properties and job execution.
 
@@ -234,17 +256,7 @@ class MockQDMIDevice:
         Returns:
             A mock job with simulated results.
         """
-        # Parse the program to determine the number of classical bits
-
-        # Look for "creg <name>[<size>];" pattern in QASM2
-        match = re.search(r"creg\s+\w+\[(\d+)]", program)
-        if match:
-            num_clbits = int(match.group(1))
-        else:
-            # Look for "bit[<size>] <name>;" pattern in QASM3
-            match = re.search(r"bit\[(\d+)]", program)
-            num_clbits = int(match.group(1)) if match else 2
-
+        num_clbits = _parse_num_clbits_from_qasm(program)
         return self.MockJob(num_clbits=num_clbits, shots=num_shots)
 
 
@@ -287,14 +299,7 @@ class MockQDMIDeviceWrapper:
         Returns:
             A mock job with simulated results.
         """
-        # Parse the program to determine the number of classical bits
-        match = re.search(r"creg\s+\w+\[(\d+)]", program)
-        if match:
-            num_clbits = int(match.group(1))
-        else:
-            match = re.search(r"bit\[(\d+)]", program)
-            num_clbits = int(match.group(1)) if match else 2
-
+        num_clbits = _parse_num_clbits_from_qasm(program)
         return MockQDMIDevice.MockJob(num_clbits=num_clbits, shots=num_shots)
 
 
