@@ -211,7 +211,10 @@ def test_backend_named_circuit_results_queryable_by_name(mock_backend: QiskitBac
 
     # Circuit name should be preserved in metadata
     assert result.results is not None
-    assert result.results[0].header["name"] == "my_circuit"
+    header = result.results[0].header
+    # Support both dict-style (pre-Qiskit 2.0) and object-style (post-Qiskit 2.0) access
+    circuit_name = header["name"] if isinstance(header, dict) else header.name
+    assert circuit_name == "my_circuit"
 
     # Should be able to query results by circuit name
     counts = result.get_counts("my_circuit")
@@ -229,8 +232,14 @@ def test_backend_unnamed_circuit_results_queryable_by_generated_name(mock_backen
 
     # Should have a generated name
     assert result.results is not None
-    assert "name" in result.results[0].header
-    circuit_name = result.results[0].header["name"]
+    header = result.results[0].header
+    # Support both dict-style (pre-Qiskit 2.0) and object-style (post-Qiskit 2.0) access
+    if isinstance(header, dict):
+        assert "name" in header
+        circuit_name = header["name"]
+    else:
+        assert hasattr(header, "name")
+        circuit_name = header.name
 
     # Should be able to query results by the generated name
     counts = result.get_counts(circuit_name)
