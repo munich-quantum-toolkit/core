@@ -33,7 +33,7 @@ module {
     // CHECK: %[[SW:.*]]:2 = mqtopt.swap(static [] mask []) %[[Q0]], %[[Q1]] : !mqtopt.Qubit, !mqtopt.Qubit
     // CHECK: %[[IS:.*]]:2 = mqtopt.iswap(static [] mask []) %[[SW]]#0, %[[SW]]#1 : !mqtopt.Qubit, !mqtopt.Qubit
     // CHECK: %[[ISD:.*]]:2 = mqtopt.iswapdg(static [] mask []) %[[IS]]#0, %[[IS]]#1 : !mqtopt.Qubit, !mqtopt.Qubit
-    // CHECK: %[[ECR:.*]]:2 = mqtopt.ecr(static [] mask []) %[[Q0]], %[[Q1]] : !mqtopt.Qubit, !mqtopt.Qubit
+    // CHECK: %[[ECR:.*]]:2 = mqtopt.ecr(static [] mask []) %[[ISD]]#0, %[[ISD]]#1 : !mqtopt.Qubit, !mqtopt.Qubit
 
     // --- Controlled entangling gates -----------------------------------------------------------
     // CHECK: %[[CSW_T:.*]]:2, %[[CSW_C:.*]] = mqtopt.swap(static [] mask []) %[[ECR]]#0, %[[ECR]]#1 ctrl %[[Q2]] : !mqtopt.Qubit, !mqtopt.Qubit ctrl !mqtopt.Qubit

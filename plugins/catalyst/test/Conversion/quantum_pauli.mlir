@@ -39,10 +39,10 @@ module {
 
     // --- Controlled Pauli gates ----------------------------------------------------------------
     // CHECK: %[[TRUE:.*]] = arith.constant true
-    // CHECK: %[[T1:.*]], %[[C1:.*]] = mqtopt.x(static [] mask []) %[[I1]] ctrl %[[Q1]] : !mqtopt.Qubit ctrl !mqtopt.Qubit
-    // CHECK: %[[T2:.*]], %[[C2:.*]] = mqtopt.y(static [] mask []) %[[T1]] ctrl %[[C1]] : !mqtopt.Qubit ctrl !mqtopt.Qubit
-    // CHECK: %[[T3:.*]], %[[C3:.*]] = mqtopt.z(static [] mask []) %[[T2]] ctrl %[[C2]] : !mqtopt.Qubit ctrl !mqtopt.Qubit
-    // CHECK: %[[T4:.*]], %[[C4:.*]] = mqtopt.i(static [] mask []) %[[T3]] ctrl %[[C3]] : !mqtopt.Qubit ctrl !mqtopt.Qubit
+    // CHECK: %[[T1:.*]], %[[C1_:.*]] = mqtopt.x(static [] mask []) %[[I1]] ctrl %[[Q1]] : !mqtopt.Qubit ctrl !mqtopt.Qubit
+    // CHECK: %[[T2:.*]], %[[C2_:.*]] = mqtopt.y(static [] mask []) %[[T1]] ctrl %[[C1_]] : !mqtopt.Qubit ctrl !mqtopt.Qubit
+    // CHECK: %[[T3:.*]], %[[C3_:.*]] = mqtopt.z(static [] mask []) %[[T2]] ctrl %[[C2_]] : !mqtopt.Qubit ctrl !mqtopt.Qubit
+    // CHECK: %[[T4:.*]], %[[C4_:.*]] = mqtopt.i(static [] mask []) %[[T3]] ctrl %[[C3_]] : !mqtopt.Qubit ctrl !mqtopt.Qubit
 
     // --- Two-qubit controlled gates ------------------------------------------------------------
     // CHECK: %[[T5:.*]], %[[C5:.*]] = mqtopt.x(static [] mask []) %[[C4]] ctrl %[[T4]] : !mqtopt.Qubit ctrl !mqtopt.Qubit
@@ -57,14 +57,14 @@ module {
     // CHECK: %[[T12:.*]], %[[C12:.*]]:3 = mqtopt.x(static [] mask []) %[[C11]]#1 ctrl %[[Q3]], %[[T11]], %[[C11]]#0 : !mqtopt.Qubit ctrl !mqtopt.Qubit, !mqtopt.Qubit, !mqtopt.Qubit
 
     // Release qubits
-    // CHECK: %[[C3:.*]] = arith.constant 3 : index
-    // CHECK: memref.store %[[C12]]#2, %[[ALLOC]][%[[C3]]] : memref<4x!mqtopt.Qubit>
-    // CHECK: %[[C2:.*]] = arith.constant 2 : index
-    // CHECK: memref.store %[[C12]]#1, %[[ALLOC]][%[[C2]]] : memref<4x!mqtopt.Qubit>
-    // CHECK: %[[C1:.*]] = arith.constant 1 : index
-    // CHECK: memref.store %[[C12]]#0, %[[ALLOC]][%[[C1]]] : memref<4x!mqtopt.Qubit>
-    // CHECK: %[[C0:.*]] = arith.constant 0 : index
-    // CHECK: memref.store %[[T12]], %[[ALLOC]][%[[C0]]] : memref<4x!mqtopt.Qubit>
+    // CHECK: %[[C_3:.*]] = arith.constant 3 : index
+    // CHECK: memref.store %[[C12]]#2, %[[ALLOC]][%[[C_3]]] : memref<4x!mqtopt.Qubit>
+    // CHECK: %[[C_2:.*]] = arith.constant 2 : index
+    // CHECK: memref.store %[[C12]]#1, %[[ALLOC]][%[[C_2]]] : memref<4x!mqtopt.Qubit>
+    // CHECK: %[[C_1:.*]] = arith.constant 1 : index
+    // CHECK: memref.store %[[C12]]#0, %[[ALLOC]][%[[C_1]]] : memref<4x!mqtopt.Qubit>
+    // CHECK: %[[C_0:.*]] = arith.constant 0 : index
+    // CHECK: memref.store %[[T12]], %[[ALLOC]][%[[C_0]]] : memref<4x!mqtopt.Qubit>
     // CHECK: memref.dealloc %[[ALLOC]] : memref<4x!mqtopt.Qubit>
 
     // Prepare qubits

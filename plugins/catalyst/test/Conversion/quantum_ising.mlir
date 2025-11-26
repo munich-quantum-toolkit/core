@@ -38,8 +38,8 @@ module {
     // CHECK: %[[ZZ:.*]]:2 = mqtopt.rzz(%cst static [] mask [false]) %[[YY]]#0, %[[YY]]#1 : !mqtopt.Qubit, !mqtopt.Qubit
 
     // --- Controlled -----------------------------------------------------------------------------
-    // CHECK: %[[PI:.*]] = arith.constant 3.1415926535897931 : f64
-    // CHECK: %[[CXY_T:.*]]:2, %[[CXY_C:.*]] = mqtopt.xx_plus_yy(%cst, %[[PI:.*]] static [] mask [false, false]) %[[ZZ]]#0, %[[ZZ]]#1 ctrl %[[Q2]] : !mqtopt.Qubit, !mqtopt.Qubit ctrl !mqtopt.Qubit
+    // CHECK: %[[PI2:.*]] = arith.constant 3.1415926535897931 : f64
+    // CHECK: %[[CXY_T:.*]]:2, %[[CXY_C:.*]] = mqtopt.xx_plus_yy(%cst, %[[PI2:.*]] static [] mask [false, false]) %[[ZZ]]#0, %[[ZZ]]#1 ctrl %[[Q2]] : !mqtopt.Qubit, !mqtopt.Qubit ctrl !mqtopt.Qubit
     // CHECK: %[[CXX_T:.*]]:2, %[[CXX_C:.*]] = mqtopt.rxx(%cst static [] mask [false]) %[[CXY_T]]#0, %[[CXY_T]]#1 ctrl %[[CXY_C]] : !mqtopt.Qubit, !mqtopt.Qubit ctrl !mqtopt.Qubit
     // CHECK: %[[CYY_T:.*]]:2, %[[CYY_C:.*]] = mqtopt.ryy(%cst static [] mask [false]) %[[CXX_T]]#0, %[[CXX_T]]#1 ctrl %[[CXX_C]] : !mqtopt.Qubit, !mqtopt.Qubit ctrl !mqtopt.Qubit
     // CHECK: %[[CZZ_T:.*]]:2, %[[CZZ_C:.*]] = mqtopt.rzz(%cst static [] mask [false]) %[[CYY_T]]#0, %[[CYY_T]]#1 ctrl %[[CYY_C]] : !mqtopt.Qubit, !mqtopt.Qubit ctrl !mqtopt.Qubit

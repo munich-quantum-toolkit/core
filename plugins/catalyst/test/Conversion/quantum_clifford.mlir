@@ -53,9 +53,9 @@ module {
     // CHECK: memref.dealloc %[[ALLOC]] : memref<2x!mqtopt.Qubit>
 
     // Prepare qubits
-    %qreg = quantum.alloc( 2) : !quantum.reg
-    %q0 = quantum.extract %qreg[ 0] : !quantum.reg -> !quantum.bit
-    %q1 = quantum.extract %qreg[ 1] : !quantum.reg -> !quantum.bit
+    %qreg = quantum.alloc(2) : !quantum.reg
+    %q0 = quantum.extract %qreg[0] : !quantum.reg -> !quantum.bit
+    %q1 = quantum.extract %qreg[1] : !quantum.reg -> !quantum.bit
 
     // Non-controlled Clifford+T gates
     %q0_h = quantum.custom "Hadamard"() %q0 : !quantum.bit
@@ -77,8 +77,8 @@ module {
     %q0_ctdg, %q1_ctdg = quantum.custom "T"() %q0_ct {adjoint} ctrls(%q1_ct) ctrlvals(%true) : !quantum.bit ctrls !quantum.bit
 
     // Release qubits
-    %qreg1 = quantum.insert %qreg[ 0], %q0_ctdg : !quantum.reg, !quantum.bit
-    %qreg2 = quantum.insert %qreg1[ 1], %q1_ctdg : !quantum.reg, !quantum.bit
+    %qreg1 = quantum.insert %qreg[0], %q0_ctdg : !quantum.reg, !quantum.bit
+    %qreg2 = quantum.insert %qreg1[1], %q1_ctdg : !quantum.reg, !quantum.bit
     quantum.dealloc %qreg2 : !quantum.reg
     return
   }
