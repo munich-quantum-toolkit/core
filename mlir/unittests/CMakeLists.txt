@@ -6,6 +6,7 @@
 #
 # Licensed under the MIT License
 
+add_subdirectory(decomposition)
 add_subdirectory(dialect)
 add_subdirectory(pipeline)
 add_subdirectory(translation)
