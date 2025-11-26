@@ -237,7 +237,7 @@ public:
     [[nodiscard]] auto getQDMIJob() const -> QDMI_Job { return job_; }
     // NOLINTNEXTLINE(google-explicit-constructor)
     operator QDMI_Job() const { return job_; }
-    /// @QDMI_job_check
+    /// @see QDMI_job_check
     [[nodiscard]] auto check() const -> QDMI_Job_Status;
     /// @see QDMI_job_wait
     auto wait() const -> void;
