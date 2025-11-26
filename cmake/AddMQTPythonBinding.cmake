@@ -15,7 +15,7 @@ function(add_mqt_python_binding package_name target_name)
   pybind11_add_module(
     # name of the extension
     ${target_name}
-    # Pprefer thin LTO if available
+    # prefer thin LTO if available
     THIN_LTO
     # optimize the bindings for size
     OPT_SIZE

@@ -27,6 +27,7 @@ from qiskit.circuit import (
 from qiskit.circuit.classical import expr
 from qiskit.circuit.library import U2Gate, XXMinusYYGate, XXPlusYYGate
 from qiskit.providers.fake_provider import GenericBackendV2
+from qiskit.qasm3 import dumps
 
 from mqt.core.ir.operations import (
     ComparisonKind,
@@ -378,6 +379,7 @@ def test_operations() -> None:
     qc.sx(0)
     qc.csx(0, 1)
     qc.sxdg(0)
+    qc.r(0.5, 0.5, 0)
     qc.rx(0.5, 0)
     qc.crx(0.5, 0, 1)
     qc.ry(0.5, 0)
@@ -495,8 +497,6 @@ def test_if_else_operation_register(
     comparison_kind: ComparisonKind,
 ) -> None:
     """Test import of if-else operation on register."""
-    from qiskit.qasm3 import dumps
-
     then_qc = QuantumCircuit(1)
     then_qc.x(0)
 
@@ -537,8 +537,6 @@ def test_if_else_operation_register(
 
 def test_if_else_operation_bit() -> None:
     """Test import of if-else operation."""
-    from qiskit.qasm3 import dumps
-
     then_qc = QuantumCircuit(1)
     then_qc.x(0)
 
@@ -782,6 +780,7 @@ def test_final_layout_with_permutation(backend: GenericBackendV2) -> None:
     qc_transpiled = transpile(qc, backend, initial_layout=initial_layout, seed_transpiler=seed)
     print(qc_transpiled)
 
+    assert qc_transpiled.layout is not None
     final_index_layout = qc_transpiled.layout.final_index_layout()
     mqt_qc = qiskit_to_mqt(qc_transpiled)
     print(mqt_qc)
@@ -815,6 +814,7 @@ def test_final_layout_with_permutation_ancilla_in_front_and_back(backend: Generi
     qc_transpiled = transpile(qc, backend, initial_layout=initial_layout, seed_transpiler=seed)
     print(qc_transpiled)
 
+    assert qc_transpiled.layout is not None
     routing_permutation = qc_transpiled.layout.routing_permutation()
     mqt_qc = qiskit_to_mqt(qc_transpiled)
     print(mqt_qc)

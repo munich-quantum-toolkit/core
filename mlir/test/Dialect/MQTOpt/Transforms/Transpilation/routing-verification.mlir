@@ -6,7 +6,7 @@
 //
 // Licensed under the MIT License
 
-// RUN: quantum-opt %s -split-input-file --verify-routing-sc -verify-diagnostics
+// RUN: quantum-opt %s -split-input-file --verify-routing-sc="arch=MQTTest" -verify-diagnostics
 
 module {
     func.func @tooManyQubits() attributes {passthrough = ["entry_point"]} {

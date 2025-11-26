@@ -419,6 +419,7 @@ void SymbolicOperation::invert() {
   case RX:
   case RY:
   case RZ:
+  case R:
   case RXX:
   case RYY:
   case RZZ:

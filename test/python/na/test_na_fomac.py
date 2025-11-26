@@ -197,12 +197,51 @@ def test_operations(device_tuple: tuple[Device, Mapping[str, Any]]) -> None:
                 )
                 assert operation.blocking_radius() == device_dict["localMultiQubitOperations"][0]["blockingRadius"]
                 assert operation.qubits_num() == device_dict["localMultiQubitOperations"][0]["numQubits"]
+
+                site_pairs = operation.site_pairs()
+                assert site_pairs is not None
+                site_pairs_list = list(site_pairs)
+                assert len(site_pairs_list) > 0
+
+                for site1, site2 in site_pairs_list:
+                    assert site1.index() >= 0
+                    assert site2.index() >= 0
+
                 sites = operation.sites()
                 assert sites is not None
                 sites = list(sites)
+                assert len(sites) == len(site_pairs_list) * 2
                 assert calculate_extent_from_sites(sites) == (
                     device_dict["localMultiQubitOperations"][0]["region"]["origin"]["x"],
                     device_dict["localMultiQubitOperations"][0]["region"]["origin"]["y"],
                     device_dict["localMultiQubitOperations"][0]["region"]["size"]["width"],
                     device_dict["localMultiQubitOperations"][0]["region"]["size"]["height"],
                 )
+
+
+def test_qubits_zones_separation(device_tuple: tuple[Device, Mapping[str, Any]]) -> None:
+    """Test that regular sites (qubits) and zones are properly separated."""
+    device, device_dict = device_tuple
+
+    all_sites = list(device.sites())
+    qubits = list(device.regular_sites())
+    zones = list(device.zones())
+
+    assert len(all_sites) == len(qubits) + len(zones)
+
+    assert len(qubits) == device.qubits_num()
+    assert len(qubits) == device_dict["numQubits"]
+
+    for qubit in qubits:
+        assert not qubit.is_zone()
+        assert qubit.module_index() is not None
+        assert qubit.submodule_index() is not None
+
+    for zone in zones:
+        assert zone.is_zone()
+        assert zone.x_extent() is not None
+        assert zone.y_extent() is not None
+
+    qubit_indices = {q.index() for q in qubits}
+    zone_indices = {z.index() for z in zones}
+    assert len(qubit_indices & zone_indices) == 0

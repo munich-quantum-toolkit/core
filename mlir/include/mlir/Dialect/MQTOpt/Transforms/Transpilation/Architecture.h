@@ -16,6 +16,7 @@
 #include <cstdint>
 #include <llvm/ADT/DenseSet.h>
 #include <llvm/ADT/SmallVector.h>
+#include <llvm/ADT/StringRef.h>
 #include <memory>
 #include <string>
 #include <string_view>
@@ -23,25 +24,22 @@
 namespace mqt::ir::opt {
 
 /**
- * @brief Enumerates the available target architectures.
- */
-enum class ArchitectureName : std::uint8_t { MQTTest };
-
-/**
  * @brief A quantum accelerator's architecture.
  * @details Computes all-shortest paths at construction.
  */
 class Architecture {
 public:
-  using CouplingMap = llvm::DenseSet<std::pair<QubitIndex, QubitIndex>>;
+  using CouplingSet = mlir::DenseSet<std::pair<QubitIndex, QubitIndex>>;
+  using NeighbourVector = mlir::SmallVector<mlir::SmallVector<QubitIndex, 4>>;
 
   explicit Architecture(std::string name, std::size_t nqubits,
-                        CouplingMap couplingMap)
+                        CouplingSet couplingSet)
       : name_(std::move(name)), nqubits_(nqubits),
-        couplingMap_(std::move(couplingMap)),
+        couplingSet_(std::move(couplingSet)), neighbours_(nqubits),
         dist_(nqubits, llvm::SmallVector<std::size_t>(nqubits, UINT64_MAX)),
         prev_(nqubits, llvm::SmallVector<std::size_t>(nqubits, UINT64_MAX)) {
     floydWarshallWithPathReconstruction();
+    collectNeighbours();
   }
 
   /**
@@ -58,7 +56,7 @@ public:
    * @brief Return true if @p u and @p v are adjacent.
    */
   [[nodiscard]] bool areAdjacent(QubitIndex u, QubitIndex v) const {
-    return couplingMap_.contains({u, v});
+    return couplingSet_.contains({u, v});
   }
 
   /**
@@ -76,7 +74,8 @@ public:
   /**
    * @brief Collect all neighbours of @p u.
    */
-  [[nodiscard]] llvm::SmallVector<QubitIndex> neighboursOf(QubitIndex u) const;
+  [[nodiscard]] llvm::SmallVector<QubitIndex, 4>
+  neighboursOf(QubitIndex u) const;
 
 private:
   using Matrix = llvm::SmallVector<llvm::SmallVector<std::size_t>>;
@@ -89,9 +88,16 @@ private:
    */
   void floydWarshallWithPathReconstruction();
 
+  /**
+   * @brief Collect the neighbours of all qubits.
+   * @details Has a time complexity of O(nqubits)
+   */
+  void collectNeighbours();
+
   std::string name_;
   std::size_t nqubits_;
-  CouplingMap couplingMap_;
+  CouplingSet couplingSet_;
+  NeighbourVector neighbours_;
 
   Matrix dist_;
   Matrix prev_;
@@ -100,6 +106,6 @@ private:
 /**
  * @brief Get architecture by its name.
  */
-std::unique_ptr<Architecture> getArchitecture(const ArchitectureName& name);
+std::unique_ptr<Architecture> getArchitecture(llvm::StringRef name);
 
 }; // namespace mqt::ir::opt

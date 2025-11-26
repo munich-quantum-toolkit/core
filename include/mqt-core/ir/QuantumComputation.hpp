@@ -252,6 +252,7 @@ public:
               const Controls& controls, const Qubit target);
 
   DECLARE_SINGLE_TARGET_TWO_PARAMETER_OPERATION(u2, phi, lambda)
+  DECLARE_SINGLE_TARGET_TWO_PARAMETER_OPERATION(r, theta, phi)
 
 #undef DECLARE_SINGLE_TARGET_TWO_PARAMETER_OPERATION
 
@@ -326,6 +327,8 @@ public:
    * is true. Otherwise, qubit q is measured into classical bit q.
    */
   void measureAll(bool addBits = true);
+
+  void bridge(const Targets& targets);
 
   void reset(Qubit target);
   void reset(const Targets& targets);

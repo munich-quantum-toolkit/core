@@ -421,6 +421,9 @@ void StandardOperation::dumpGateType(
   case RZ:
     op << "rz(" << parameter[0] << ")";
     break;
+  case R:
+    op << "r(" << parameter[0] << "," << parameter[1] << ")";
+    break;
   case DCX:
     op << "dcx";
     break;
@@ -453,6 +456,9 @@ void StandardOperation::dumpGateType(
     break;
   case iSWAPdg:
     op << "iswapdg";
+    break;
+  case Bridge:
+    op << "bridge";
     break;
   case Move:
     op << "move";
@@ -597,6 +603,7 @@ void StandardOperation::invert() {
   case RX:
   case RY:
   case RZ:
+  case R:
   case RXX:
   case RYY:
   case RZZ:

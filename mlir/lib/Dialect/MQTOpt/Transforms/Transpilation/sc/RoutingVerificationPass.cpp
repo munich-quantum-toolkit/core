@@ -19,14 +19,18 @@
 #include <cstddef>
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/TypeSwitch.h>
+#include <memory>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
+#include <mlir/IR/Builders.h>
 #include <mlir/IR/BuiltinAttributes.h>
 #include <mlir/IR/BuiltinOps.h>
+#include <mlir/IR/Diagnostics.h>
 #include <mlir/IR/Value.h>
 #include <mlir/IR/Visitors.h>
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/WalkResult.h>
+#include <utility>
 #include <vector>
 
 #define DEBUG_TYPE "routing-verification-sc"
@@ -43,9 +47,10 @@ using namespace mlir;
  * @brief The necessary datastructures for verification.
  */
 struct VerificationContext {
-  explicit VerificationContext(Architecture& arch) : arch(&arch) {}
+  explicit VerificationContext(std::unique_ptr<Architecture> arch)
+      : arch(std::move(arch)) {}
 
-  Architecture* arch;
+  std::unique_ptr<Architecture> arch;
   LayoutStack<Layout> stack{};
 };
 
@@ -219,10 +224,24 @@ WalkResult handleMeasure(MeasureOp op, VerificationContext& ctx) {
  */
 struct RoutingVerificationPassSC final
     : impl::RoutingVerificationSCPassBase<RoutingVerificationPassSC> {
-  void runOnOperation() override {
-    const auto arch = getArchitecture(ArchitectureName::MQTTest);
-    VerificationContext ctx(*arch);
+  using RoutingVerificationSCPassBase<
+      RoutingVerificationPassSC>::RoutingVerificationSCPassBase;
 
+  void runOnOperation() override {
+    if (preflight().failed()) {
+      signalPassFailure();
+      return;
+    }
+
+    auto arch = getArchitecture(archName);
+    if (!arch) {
+      emitError(UnknownLoc::get(&getContext()))
+          << "unsupported architecture '" << archName << "'";
+      signalPassFailure();
+      return;
+    }
+
+    VerificationContext ctx(std::move(arch));
     const auto res =
         getOperation()->walk<WalkOrder::PreOrder>([&](Operation* op) {
           return TypeSwitch<Operation*, WalkResult>(op)
@@ -259,6 +278,16 @@ struct RoutingVerificationPassSC final
     if (res.wasInterrupted()) {
       signalPassFailure();
     }
+  }
+
+private:
+  LogicalResult preflight() {
+    if (archName.empty()) {
+      return emitError(UnknownLoc::get(&getContext()),
+                       "required option 'arch' not provided");
+    }
+
+    return success();
   }
 };
 } // namespace
