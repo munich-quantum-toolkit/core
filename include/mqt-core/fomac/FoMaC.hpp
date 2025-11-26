@@ -208,6 +208,31 @@ public:
      * @param job The QDMI_Job handle to wrap.
      */
     explicit Job(QDMI_Job job) : job_(job) {}
+    /**
+     * @brief Destructor that releases the underlying QDMI_Job resource.
+     */
+    ~Job() {
+      if (job_ != nullptr) {
+        QDMI_job_free(job_);
+      }
+    }
+    // Delete copy constructor and copy assignment operator to prevent
+    // pointer duplication and double-free
+    Job(const Job&) = delete;
+    Job& operator=(const Job&) = delete;
+    // Default move constructor and move assignment operator to allow
+    // safe ownership transfer
+    Job(Job&& other) noexcept : job_(other.job_) { other.job_ = nullptr; }
+    Job& operator=(Job&& other) noexcept {
+      if (this != &other) {
+        if (job_ != nullptr) {
+          QDMI_job_free(job_);
+        }
+        job_ = other.job_;
+        other.job_ = nullptr;
+      }
+      return *this;
+    }
     /// @returns the underlying QDMI_Job object.
     [[nodiscard]] auto getQDMIJob() const -> QDMI_Job { return job_; }
     // NOLINTNEXTLINE(google-explicit-constructor)
