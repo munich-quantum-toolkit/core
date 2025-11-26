@@ -157,7 +157,7 @@ PYBIND11_MODULE(MQT_CORE_MODULE_NAME, m, py::mod_gil_not_used()) {
              &fomac::FoMaC::Device::getDurationScaleFactor);
   device.def("min_atom_distance", &fomac::FoMaC::Device::getMinAtomDistance);
   device.def("submit_job", &fomac::FoMaC::Device::submitJob, "program"_a,
-             "program_format"_a, "num_shots"_a, "timeout"_a = 60.0);
+             "program_format"_a, "num_shots"_a, "timeout"_a = 60);
   device.def("__repr__", [](const fomac::FoMaC::Device& dev) {
     return "<Device name=\"" + dev.getName() + "\">";
   });

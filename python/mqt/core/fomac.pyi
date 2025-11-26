@@ -162,7 +162,7 @@ class Device:
         """Returns the scale factor for duration used by the device."""
     def min_atom_distance(self) -> int | None:
         """Returns the minimum atom distance on the device."""
-    def submit_job(self, program: str, program_format: ProgramFormat, num_shots: int, timeout: float = 60.0) -> Job:
+    def submit_job(self, program: str, program_format: ProgramFormat, num_shots: int, timeout: int = 60) -> Job:
         """Submits a job to the device."""
     def __eq__(self, other: object) -> bool:
         """Checks if two devices are equal."""

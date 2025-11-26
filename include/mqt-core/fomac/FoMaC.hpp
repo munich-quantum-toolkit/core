@@ -595,7 +595,7 @@ public:
     /// @see QDMI_job_submit
     [[nodiscard]] auto submitJob(const std::string& program,
                                  QDMI_Program_Format format, size_t numShots,
-                                 double timeout = 60.0) const -> Job;
+                                 size_t timeout = 60) const -> Job;
   };
 
 private:
