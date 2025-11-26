@@ -1868,6 +1868,12 @@ protected:
      */
     [[nodiscard]] llvm::SmallVector<matrix2x2>
     decomp2Supercontrolled(const TwoQubitWeylDecomposition& target) const {
+      if (!isSuperControlled) {
+        // TODO: make fatal error? check in constructor?
+        llvm::errs()
+            << "Basis gate of TwoQubitBasisDecomposer is not super-controlled "
+               "- no guarantee for exact decomposition with two basis gates\n";
+      }
       return {
           q2r * target.k2r,
           q2l * target.k2l,
@@ -1889,6 +1895,12 @@ protected:
      */
     [[nodiscard]] llvm::SmallVector<matrix2x2>
     decomp3Supercontrolled(const TwoQubitWeylDecomposition& target) const {
+      if (!isSuperControlled) {
+        llvm::errs()
+            << "Basis gate of TwoQubitBasisDecomposer is not super-controlled "
+               "- no guarantee for exact decomposition with "
+               "three basis gates\n";
+      }
       return {
           u3r * target.k2r,
           u3l * target.k2l,
