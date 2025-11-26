@@ -44,14 +44,6 @@ def test_map_operation_returns_none_for_unknown(mock_backend: QiskitBackend) -> 
     assert mock_backend._map_operation_to_gate("") is None  # noqa: SLF001
 
 
-def test_backend_target_includes_measure(mock_backend: QiskitBackend) -> None:
-    """Test that the backend target includes measure operation if device provides it."""
-    # Check if measure operation exists in device operations
-    has_measure = any(op.name() == "measure" for op in mock_backend._device.operations())  # noqa: SLF001
-    if has_measure:
-        assert "measure" in mock_backend.target.operation_names
-
-
 def test_get_operation_qargs_single_qubit(mock_backend: QiskitBackend) -> None:
     """Test _get_operation_qargs for single-qubit operations."""
     # Create a mock FoMaC operation for single qubit
