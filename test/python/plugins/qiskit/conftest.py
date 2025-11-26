@@ -33,7 +33,7 @@ def _parse_num_clbits_from_qasm(program: str) -> int:
         program: The QASM program string (QASM2 or QASM3 format).
 
     Returns:
-        The number of classical bits declared in the program, or 2 as default.
+        The number of classical bits declared in the program.
 
     Raises:
         ValueError: If the number of classical bits cannot be determined.
