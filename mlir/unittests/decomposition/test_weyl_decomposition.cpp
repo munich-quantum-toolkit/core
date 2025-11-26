@@ -8,9 +8,18 @@
  * Licensed under the MIT License
  */
 
+#include "ir/operations/OpType.hpp"
+#include "mlir/Dialect/MQTOpt/Transforms/Decomposition/Helpers.h"
+#include "mlir/Dialect/MQTOpt/Transforms/Decomposition/UnitaryMatrices.h"
 #include "mlir/Dialect/MQTOpt/Transforms/Decomposition/WeylDecomposition.h"
 
+#include <Eigen/QR>
+#include <cassert>
+#include <chrono>
+#include <cmath>
+#include <cstdlib>
 #include <gtest/gtest.h>
+#include <iostream>
 
 using namespace mqt::ir::opt;
 using namespace mqt::ir::opt::decomposition;
@@ -23,12 +32,20 @@ namespace {
     std::srand(123456UL);
     return true;
   }();
-  matrix4x4 randomMatrix = matrix4x4::Random();
+  const matrix4x4 randomMatrix = matrix4x4::Random();
   Eigen::HouseholderQR<matrix4x4> qr{};
   qr.compute(randomMatrix);
-  matrix4x4 unitaryMatrix = qr.householderQ();
+  const matrix4x4 unitaryMatrix = qr.householderQ();
   assert(helpers::isUnitaryMatrix(unitaryMatrix));
   return unitaryMatrix;
+}
+
+[[nodiscard]] matrix4x4 canonicalGate(fp a, fp b, fp c) {
+  TwoQubitWeylDecomposition tmp{};
+  tmp.a = a;
+  tmp.b = b;
+  tmp.c = c;
+  return tmp.getCanonicalMatrix();
 }
 } // namespace
 
@@ -110,10 +127,10 @@ INSTANTIATE_TEST_CASE_P(
     TwoQubitMatrices, WeylDecompositionTest,
     ::testing::Values(
         rzzMatrix(2.0), ryyMatrix(1.0) * rzzMatrix(3.0) * rxxMatrix(2.0),
-        TwoQubitWeylDecomposition{1.5, -0.2, 0.0}.getCanonicalMatrix() *
+        canonicalGate(1.5, -0.2, 0.0) *
             helpers::kroneckerProduct(rxMatrix(1.0), IDENTITY_GATE),
         helpers::kroneckerProduct(rxMatrix(1.0), ryMatrix(1.0)) *
-            TwoQubitWeylDecomposition{1.1, 0.2, 3.0}.getCanonicalMatrix() *
+            canonicalGate(1.1, 0.2, 3.0) *
             helpers::kroneckerProduct(rxMatrix(1.0), IDENTITY_GATE),
         helpers::kroneckerProduct(H_GATE, IPZ) *
             getTwoQubitMatrix({.type = qc::X, .qubitId = {0, 1}}) *
