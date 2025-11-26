@@ -26,14 +26,12 @@ def configure_device_for_mqt(device: qml.devices.Device) -> qml.devices.Device:
     This function modifies device capabilities to prevent Catalyst from decomposing
     controlled gates (like qml.ctrl(PauliX)) into quantum.unitary operations with
     explicit matrix parameters. Instead, gates remain as quantum.custom operations
-    (like "CNOT") that can be losslessly converted by the MQT plugin.
+    (like "CNOT") that can be converted by the MQT plugin.
 
     The modification uses several techniques:
     1. Removes QubitUnitary from device.operations (prevents matrix decomposition path)
-    2. Marks gates as controllable=True (prevents qml.ctrl() from triggering decomposition)
-    3. Marks gates as invertible=True (prevents qml.adjoint() from triggering decomposition)
-    4. Clears _to_matrix_ops (avoids Catalyst validation requiring QubitUnitary support)
-    5. Uses qjit_capabilities hook (injects modified capabilities before QJITDevice init)
+    2. Clears _to_matrix_ops (avoids Catalyst validation requiring QubitUnitary support)
+    3. Uses qjit_capabilities hook (injects modified capabilities before QJITDevice init)
 
     Args:
         device: A PennyLane device instance to configure.
