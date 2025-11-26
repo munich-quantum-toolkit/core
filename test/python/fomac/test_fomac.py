@@ -56,7 +56,7 @@ def ddsim_device() -> Device | None:
     """Fixture to provide the DDSIM device for job submission testing.
 
     Returns:
-        Device: The MQT Core DDSIM QDMI Device.
+        The MQT Core DDSIM QDMI Device if it can be found.
     """
     device_list = list(devices())
     for dev in device_list:
