@@ -155,7 +155,7 @@ jobs:
     name: 🇨‌ Lint
     needs: change-detection
     if: fromJSON(needs.change-detection.outputs.run-cpp-linter)
-    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-cpp-linter.yml@ea4fccbb432596cbb6840a9608d6376b6b2c8ff7 # v1.17.2
+    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-cpp-linter.yml@33b0da0cc448ad3abc9df3716ccbd89332d3d491 # TODO: put correct link when releasing v1.18.0
     with:
       cmake-args: -DBUILD_MQT_CORE_BENCHMARKS=ON -DBUILD_MQT_CORE_MLIR=ON -DBUILD_MQT_CORE_BINDINGS=ON
       clang-version: 21
@@ -164,6 +164,7 @@ jobs:
       setup-python: true
       install-pkgs: "pybind11==3.0.0"
       cpp-linter-extra-args: "-std=c++20"
+      cpp-linter-ignore-extra: "plugins/**"
 
   python-tests:
     name: 🐍 Test

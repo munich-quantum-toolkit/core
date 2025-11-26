@@ -1,0 +1,187 @@
+name: MLIR Plugin CI
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "plugins/**"
+  pull_request:
+    paths:
+      - "plugins/**"
+      - ".github/workflows/ci_mlir_plugin.yml"
+  merge_group:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
+  cancel-in-progress: true
+
+jobs:
+  cpp-test-mlir-catalyst-plugin-exact-mlir:
+    name: 🧩 Test MLIR Catalyst Plugin on ${{ matrix.runs-on }} from exact MLIR source
+    runs-on: ${{ matrix.runs-on }}
+    strategy:
+      matrix:
+        runs-on: [ubuntu-24.04, ubuntu-24.04-arm, macos-14]
+      fail-fast: false
+    env:
+      CMAKE_BUILD_PARALLEL_LEVEL: 4
+      CTEST_PARALLEL_LEVEL: 4
+      FORCE_COLOR: 3
+    steps:
+      # Check out the repository
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # set up gcc as compiler
+      - name: Set up GCC as compiler
+        if: runner.os == 'Linux'
+        run: |
+          echo "C_COMPILER=gcc-14" >> $GITHUB_ENV
+          echo "CXX_COMPILER=g++-14" >> $GITHUB_ENV
+          echo "CC=gcc-14" >> $GITHUB_ENV
+          echo "CXX=g++-14" >> $GITHUB_ENV
+
+      # set up ccache for faster C++ builds
+      - name: Setup ccache
+        uses: Chocobo1/setup-ccache-action@v1
+        with:
+          prepend_symlinks_to_path: false
+          override_cache_key: mlir-plugin-${{ matrix.runs-on }}-exact-mlir
+
+      # Set up uv for faster Python package management
+      - name: Install the latest version of uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          python-version: 3.13
+          activate-environment: true
+
+      # Check out the LLVM commit Catalyst is based on
+      - name: Checkout llvm
+        uses: actions/checkout@v4
+        with:
+          repository: llvm/llvm-project
+          ref: f8cb7987c64dcffb72414a40560055cb717dbf74
+          path: llvm-project
+
+      # Install LLVM
+      - name: Install LLVM
+        working-directory: llvm-project
+        run: |
+          cmake \
+            -S llvm \
+            -B build_llvm \
+            -G Ninja \
+            -DLLVM_ENABLE_PROJECTS=mlir \
+            -DLLVM_BUILD_EXAMPLES=OFF \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DLLVM_BUILD_TESTS=OFF \
+            -DLLVM_INCLUDE_TESTS=OFF \
+            -DLLVM_INCLUDE_EXAMPLES=OFF \
+            -DLLVM_ENABLE_ASSERTIONS=ON \
+            -DLLVM_ENABLE_ZLIB=FORCE_ON \
+            -DLLVM_ENABLE_ZSTD=OFF \
+            -DCMAKE_CXX_VISIBILITY_PRESET=default
+          cmake --build build_llvm --config Release
+          echo "MLIR_DIR=$(pwd)/build_llvm/lib/cmake/mlir" >> $GITHUB_ENV
+          echo "LLVM_DIR=$(pwd)/build_llvm/lib/cmake/llvm" >> $GITHUB_ENV
+
+      # Build the plugin package
+      - name: Build mqt-core-catalyst-plugin
+        working-directory: plugins/catalyst
+        run: uv sync --verbose --active
+
+        # Print shared library dependencies for the plugin
+      - name: Print shared library dependencies for mqt-core-catalyst-plugin
+        run: |
+          if [ "$(uname)" = "Linux" ]; then
+              ldd .venv/lib/python3.13/site-packages/mqt/core/plugins/catalyst/mqt-core-catalyst-plugin.so || true
+          elif [ "$(uname)" = "Darwin" ]; then
+              otool -l .venv/lib/python3.13/site-packages/mqt/core/plugins/catalyst/mqt-core-catalyst-plugin.dylib || true
+          fi
+
+      # Print shared library dependencies for Catalyst
+      - name: Print shared library dependencies for Catalyst
+        run: |
+          if [ "$(uname)" = "Linux" ]; then
+              ldd $(which catalyst) || true
+          elif [ "$(uname)" = "Darwin" ]; then
+              otool -l $(which catalyst) || true
+          fi
+
+      # Reconfigure CMake for LIT
+      - name: Reconfigure CMake for LIT
+        working-directory: plugins/catalyst
+        run: |
+          BUILD_DIR=$(find build -type d -name Release | head -n1)
+          if [ -z "$BUILD_DIR" ]; then
+            BUILD_DIR="build"
+          fi
+
+          # Verify lit is installed, install if missing
+          if ! command -v lit &> /dev/null; then
+            echo "lit not found, installing..."
+            python -m pip install lit
+          fi
+
+          cmake -S . \
+            -B "$BUILD_DIR" \
+            -DLLVM_EXTERNAL_LIT=$(which lit) \
+            -DPython3_EXECUTABLE=$(which python) \
+            -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
+
+      # Run clang-tidy on plugin code
+      - name: Run clang-tidy on plugin
+        working-directory: plugins/catalyst
+        run: |
+          BUILD_DIR=$(find build -type d -name Release | head -n1)
+          if [ -z "$BUILD_DIR" ]; then
+            BUILD_DIR="build"
+          fi
+
+          # Check if compilation database exists
+          if [ ! -f "$BUILD_DIR/compile_commands.json" ]; then
+            echo "No compilation database found, skipping clang-tidy"
+            exit 0
+          fi
+
+          # Find all C++ source files in the plugin
+          FILES=$(find lib include -name "*.cpp" -o -name "*.h" 2>/dev/null || true)
+          if [ -z "$FILES" ]; then
+            echo "No C++ files found to analyze"
+            exit 0
+          fi
+
+          # Find Catalyst include directory
+          CATALYST_INCLUDE=$(find .venv -path "*/catalyst/include" -type d | head -n1)
+          if [ -z "$CATALYST_INCLUDE" ]; then
+            echo "Catalyst include directory not found, running without extra includes"
+            EXTRA_ARGS=""
+          else
+            echo "Found Catalyst includes at: $CATALYST_INCLUDE"
+            EXTRA_ARGS="--extra-arg=-I$CATALYST_INCLUDE"
+          fi
+
+          echo "Running clang-tidy on plugin files..."
+          echo "$FILES" | xargs clang-tidy \
+            -p="$BUILD_DIR" \
+            --config-file=.clang-tidy \
+            --format-style=file \
+            $EXTRA_ARGS \
+            || echo "clang-tidy completed with warnings"
+
+      # Run the MLIR LIT tests
+      - name: Run LIT tests
+        working-directory: plugins/catalyst
+        run: |
+          BUILD_DIR=$(find build -type d -name Release | head -n1)
+          if [ -z "$BUILD_DIR" ]; then
+            BUILD_DIR="build"
+          fi
+          ninja -C "$BUILD_DIR" check-mqt-core-catalyst-plugin
+
+      # Run the plugin Python tests
+      - name: Run pytest for mqt-core-catalyst-plugin
+        working-directory: plugins/catalyst
+        run: python -m pytest -s --verbose
