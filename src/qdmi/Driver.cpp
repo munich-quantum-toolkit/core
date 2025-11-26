@@ -359,6 +359,8 @@ auto Driver::addDynamicDeviceLibrary(const std::string& libName,
       // false.
       return false;
     }
+    // Re-throw other exception
+    throw;
   }
   return true;
 }

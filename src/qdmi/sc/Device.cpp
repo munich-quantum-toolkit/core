@@ -99,7 +99,10 @@ Device::Device() {
   INITIALIZE_SITES(sites_);
   INITIALIZE_COUPLINGMAP(couplingMap_);
 }
-Device::~Device() = default;
+Device::~Device() {
+  // Explicitly clear sessions before destruction to avoid spurious segfaults
+  sessions_.clear();
+}
 auto Device::sessionAlloc(MQT_SC_QDMI_Device_Session* session) -> int {
   if (session == nullptr) {
     return QDMI_ERROR_INVALIDARGUMENT;

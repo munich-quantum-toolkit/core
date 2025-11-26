@@ -49,7 +49,7 @@ protected:
   QDMI_Device device = nullptr;
 #ifndef _WIN32
   static void SetUpTestSuite() {
-    EXPECT_NO_THROW(for (const auto& [lib, prefix] : DYN_DEV_LIBS) {
+    ASSERT_NO_THROW(for (const auto& [lib, prefix] : DYN_DEV_LIBS) {
       qdmi::Driver::get().addDynamicDeviceLibrary(lib, prefix);
     });
   }
@@ -124,9 +124,10 @@ protected:
 };
 
 #ifndef _WIN32
-TEST_P(DriverTest, LoadLibraryTwice) {
+TEST(DriverTest, LoadLibraryTwice) {
   EXPECT_NO_THROW(for (const auto& [lib, prefix] : DYN_DEV_LIBS) {
     qdmi::Driver::get().addDynamicDeviceLibrary(lib, prefix);
+    EXPECT_FALSE(qdmi::Driver::get().addDynamicDeviceLibrary(lib, prefix));
   });
 }
 #endif // _WIN32
@@ -505,10 +506,14 @@ TEST_P(DriverTest, QueryNeedsCalibration) {
   EXPECT_THAT(needsCalibration, testing::AnyOf(0, 1));
 }
 #ifdef _WIN32
-const std::array<std::string, 1> DEVICES{"MQT NA Default QDMI Device"};
+const std::array<std::string, 3> DEVICES{"MQT NA Default QDMI Device",
+                                         "MQT Core DDSIM QDMI Device",
+                                         "MQT SC Default QDMI Device"};
 #else
-const std::array<std::string, 2> DEVICES{"MQT NA Default QDMI Device",
-                                         "MQT NA Dynamic QDMI Device"};
+const std::array<std::string, 5> DEVICES{
+    "MQT NA Default QDMI Device", "MQT NA Dynamic QDMI Device",
+    "MQT Core DDSIM QDMI Device", "MQT SC Default QDMI Device",
+    "MQT SC Dynamic QDMI Device"};
 #endif
 // Instantiate the test suite with different parameters
 INSTANTIATE_TEST_SUITE_P(
