@@ -31,6 +31,7 @@
 #include <mlir/IR/ValueRange.h>
 #include <mlir/Support/LogicalResult.h>
 #include <mlir/Transforms/DialectConversion.h>
+#include <numbers>
 
 namespace mqt::ir::conversions {
 
@@ -277,7 +278,21 @@ struct ConvertQuantumGlobalPhase final
     SmallVector<Value> inNegCtrlQubitsVec;
 
     for (size_t i = 0; i < inCtrlQubits.size(); ++i) {
-      if (inCtrlValues[i]) {
+      bool isPosCtrl = false;
+      if (auto constOp = inCtrlValues[i].getDefiningOp<arith::ConstantOp>()) {
+        if (auto boolAttr = dyn_cast<BoolAttr>(constOp.getValue())) {
+          isPosCtrl = boolAttr.getValue();
+        } else if (auto intAttr = dyn_cast<IntegerAttr>(constOp.getValue())) {
+          isPosCtrl = (intAttr.getInt() != 0);
+        } else {
+          return op.emitError(
+              "Control value must be a boolean or integer constant");
+        }
+      } else {
+        return op.emitError("Dynamic control values are not supported");
+      }
+
+      if (isPosCtrl) {
         inPosCtrlQubitsVec.emplace_back(inCtrlQubits[i]);
       } else {
         inNegCtrlQubitsVec.emplace_back(inCtrlQubits[i]);
@@ -343,7 +358,21 @@ struct ConvertQuantumCustomOp final
     SmallVector<Value> inNegCtrlQubitsVec;
 
     for (size_t i = 0; i < inCtrlQubits.size(); ++i) {
-      if (inCtrlValues[i]) {
+      bool isPosCtrl = false;
+      if (auto constOp = inCtrlValues[i].getDefiningOp<arith::ConstantOp>()) {
+        if (auto boolAttr = dyn_cast<BoolAttr>(constOp.getValue())) {
+          isPosCtrl = boolAttr.getValue();
+        } else if (auto intAttr = dyn_cast<IntegerAttr>(constOp.getValue())) {
+          isPosCtrl = (intAttr.getInt() != 0);
+        } else {
+          return op.emitError(
+              "Control value must be a boolean or integer constant");
+        }
+      } else {
+        return op.emitError("Dynamic control values are not supported");
+      }
+
+      if (isPosCtrl) {
         inPosCtrlQubitsVec.emplace_back(inCtrlQubits[i]);
       } else {
         inNegCtrlQubitsVec.emplace_back(inCtrlQubits[i]);
@@ -377,11 +406,14 @@ struct ConvertQuantumCustomOp final
       paramsMaskVec.emplace_back(isStatic);
 
       if (isStatic) {
-        assert(staticParamsAttr && "Missing static_params for static mask");
+        if (!staticParamsAttr) {
+          return op.emitError("Missing static_params for static mask");
+        }
         staticParamsVec.emplace_back(staticParamsAttr[staticIdx++]);
       } else {
-        assert(dynamicIdx < paramsValues.size() &&
-               "Too few dynamic parameters");
+        if (dynamicIdx >= paramsValues.size()) {
+          return op.emitError("Too few dynamic parameters");
+        }
         finalParamValues.emplace_back(paramsValues[dynamicIdx++]);
       }
     }
@@ -481,7 +513,7 @@ struct ConvertQuantumCustomOp final
       // second parameter
       SmallVector<Value> isingxyParams(finalParamValues.begin(),
                                        finalParamValues.end());
-      auto piAttr = rewriter.getF64FloatAttr(3.141592653589793);
+      auto piAttr = rewriter.getF64FloatAttr(std::numbers::pi);
       isingxyParams.push_back(
           rewriter.create<ConstantOp>(op.getLoc(), piAttr).getResult());
 
@@ -554,8 +586,7 @@ struct ConvertQuantumCustomOp final
           finalParamValues, ValueRange{inQubits[1], inQubits[2]},
           inPosCtrlQubitsVec, inNegCtrlQubitsVec);
     } else {
-      llvm::errs() << "Unsupported gate: " << gateName << "\n";
-      return failure();
+      return op.emitError("Unsupported gate: ") << gateName;
     }
 
 #undef CREATE_GATE_OP
