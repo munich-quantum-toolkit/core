@@ -34,6 +34,9 @@ def _parse_num_clbits_from_qasm(program: str) -> int:
 
     Returns:
         The number of classical bits declared in the program, or 2 as default.
+
+    Raises:
+        ValueError: If the number of classical bits cannot be determined.
     """
     # Look for "creg <name>[<size>];" pattern in QASM2
     match = re.search(r"creg\s+\w+\[(\d+)]", program)
@@ -45,7 +48,8 @@ def _parse_num_clbits_from_qasm(program: str) -> int:
     if match:
         return int(match.group(1))
 
-    raise ValueError("Could not parse number of classical bits from QASM program.")
+    msg = "Could not parse number of classical bits from QASM program."
+    raise ValueError(msg)
 
 
 class MockQDMIDevice:
