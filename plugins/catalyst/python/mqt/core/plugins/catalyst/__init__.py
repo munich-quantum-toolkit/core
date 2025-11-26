@@ -26,7 +26,10 @@ def get_catalyst_plugin_abs_path() -> Path:
     Raises:
         FileNotFoundError: If the plugin library is not found.
     """
-    ext = {"Darwin": ".dylib", "Linux": ".so", "Windows": ".dll"}.get(platform.system(), ".so")
+    ext = {"Darwin": ".dylib", "Linux": ".so", "Windows": ".dll"}.get(platform.system())
+    if ext is None:
+        msg = f"Unsupported platform: {platform.system()}"
+        raise RuntimeError(msg)
 
     # 0. Allow override via env variable
     from os import getenv
@@ -41,7 +44,7 @@ def get_catalyst_plugin_abs_path() -> Path:
 
     # First check in the package resources
     for file in resources.files("mqt.core.plugins.catalyst").iterdir():
-        if "mqt-core-catalyst-plugin" in file.name:
+        if file.name.startswith("mqt-core-catalyst-plugin") and file.name.endswith(ext):
             return Path(str(file)).resolve()
 
     # Then check in site-packages
@@ -51,7 +54,7 @@ def get_catalyst_plugin_abs_path() -> Path:
         site_path = Path(site_dir) / "mqt/core/plugins/catalyst"
         if site_path.exists():
             for file in site_path.iterdir():
-                if "mqt-core-catalyst-plugin" in file.name:
+                if file.name.startswith("mqt-core-catalyst-plugin") and file.name.endswith(ext):
                     return file.resolve()
 
     msg = f"Could not locate catalyst plugin library with extension {ext}"
