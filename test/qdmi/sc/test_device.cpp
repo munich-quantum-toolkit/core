@@ -10,9 +10,7 @@
 
 #include "mqt_sc_qdmi/device.h"
 
-#include <algorithm>
 #include <cstddef>
-#include <cstdint>
 #include <fstream>
 #include <functional>
 #include <gmock/gmock-matchers.h>

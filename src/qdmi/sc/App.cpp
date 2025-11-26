@@ -356,9 +356,17 @@ auto executeSchemaCommand(const std::string& progName,
 auto executeValidateCommand(const std::string& progName,
                             const std::vector<std::string>& argVec,
                             const size_t i) -> int {
+  ValidateArguments validateArgs;
   // parse the rest of the command line arguments for the validate command
-  const ValidateArguments validateArgs = parseValidateArguments(argVec, i);
-  //
+  try {
+    validateArgs = parseValidateArguments(argVec, i);
+  } catch (const std::exception& e) {
+    SPDLOG_ERROR("Error parsing validate arguments: {}", e.what());
+    printValidateUsage(progName);
+    return 1;
+  }
+
+  // if the help flag is set, print the validate usage information and exit
   if (validateArgs.help) {
     printValidateUsage(progName);
     return 0;
