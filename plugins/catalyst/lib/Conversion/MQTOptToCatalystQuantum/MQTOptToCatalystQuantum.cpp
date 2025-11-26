@@ -145,22 +145,21 @@ struct ConvertMQTOptAlloc final : OpConversionPattern<memref::AllocOp> {
 
     // Get the size from memref type or dynamic operands
     Value size = nullptr;
+    mlir::IntegerAttr nqubitsAttr = nullptr;
 
     // Check if this is a statically shaped memref
     if (memrefType.hasStaticShape() && memrefType.getNumElements() >= 0) {
-      // For static memref like memref<2x!mqtopt.Qubit>, create constant size
-      auto numQubits = memrefType.getNumElements();
-      auto sizeAttr = rewriter.getI64IntegerAttr(numQubits);
-      size = rewriter.create<arith::ConstantOp>(op.getLoc(), sizeAttr);
+      // For static memref: use attribute (no operand)
+      nqubitsAttr = rewriter.getI64IntegerAttr(memrefType.getNumElements());
     } else {
-      // For dynamic memref, get size from dynamic operands
+      // For dynamic memref: use operand (no attribute)
       auto dynamicOperands = adaptor.getDynamicSizes();
       size = dynamicOperands.empty() ? nullptr : dynamicOperands[0];
     }
 
     // Replace with quantum alloc operation
-    rewriter.replaceOpWithNewOp<catalyst::quantum::AllocOp>(op, resultType,
-                                                            size, nullptr);
+    rewriter.replaceOpWithNewOp<catalyst::quantum::AllocOp>(
+        op.getLoc(), resultType, size, nqubitsAttr);
 
     return success();
   }
@@ -545,42 +544,25 @@ struct ConvertMQTOptSimpleGate<opt::RZXOp> final
   using OpConversionPattern::OpConversionPattern;
 
   LogicalResult
-  matchAndRewrite(opt::RZXOp op, opt::RZXOp::Adaptor adaptor,
-                  ConversionPatternRewriter& rewriter) const override {
-    // Extract operands and control information using helper function
-    auto extracted = extractOperands(adaptor, rewriter, op.getLoc());
-
-    // RZX(q0, q1; θ) = H(q1) · RZZ(q0, q1; θ) · H(q1)
-    // H gates can stay uncontrolled, as they cancel if control on RZZ is not
-    // active
-
-    // H on q1
-    auto h1 = rewriter.create<catalyst::quantum::CustomOp>(
-        op.getLoc(),
-        /*gate=*/"Hadamard",
-        /*in_qubits=*/ValueRange{extracted.inQubits[1]},
-        /*in_ctrl_qubits=*/extracted.ctrlInfo.ctrlQubits,
-        /*in_ctrl_values=*/extracted.ctrlInfo.ctrlValues,
-        /*params=*/ValueRange{},
-        /*adjoint=*/false);
-
-    // RZZ on (q0, q1')
-    auto rzz = rewriter.create<catalyst::quantum::CustomOp>(
-        op.getLoc(),
-        /*gate=*/"IsingZZ",
-        /*in_qubits=*/ValueRange{extracted.inQubits[0], h1.getOutQubits()[0]},
-        /*in_ctrl_qubits=*/h1.getOutCtrlQubits(),
-        /*in_ctrl_values=*/extracted.ctrlInfo.ctrlValues,
-        /*params=*/adaptor.getParams()[0],
-        /*adjoint=*/false);
-
+  // RZZ on (q0, q1')
+  if (adaptor.getParams().empty()) {
+    return op.emitError("RZZ expects one parameter");
+  }
+  auto rzz = rewriter.create<catalyst::quantum::CustomOp>(
+      op.getLoc(),
+      /*gate=*/"IsingZZ",
+      /*in_qubits=*/ValueRange{extracted.inQubits[0], h1.getOutQubits()[0]},
+      /*in_ctrl_qubits=*/h1.getOutCtrlQubits(),
+      /*in_ctrl_values=*/extracted.ctrlInfo.ctrlValues,
+      /*params=*/adaptor.getParams()[0],
+      /*adjoint=*/false);
     // H on q1''
     auto h2 = rewriter.create<catalyst::quantum::CustomOp>(
         op.getLoc(),
         /*gate=*/"Hadamard",
         /*in_qubits=*/ValueRange{rzz.getOutQubits()[1]},
-        /*in_ctrl_qubits=*/rzz.getOutCtrlQubits(),
-        /*in_ctrl_values=*/extracted.ctrlInfo.ctrlValues,
+        /*in_ctrl_qubits=*/ValueRange{},
+        /*in_ctrl_values=*/ValueRange{},
         /*params=*/ValueRange{},
         /*adjoint=*/false);
 
@@ -588,8 +570,8 @@ struct ConvertMQTOptSimpleGate<opt::RZXOp> final
     SmallVector<Value> finalResults;
     finalResults.push_back(rzz.getOutQubits()[0]); // target0 final
     finalResults.push_back(h2.getOutQubits()[0]);  // target1 final
-    finalResults.append(h2.getOutCtrlQubits().begin(),
-                        h2.getOutCtrlQubits().end()); // controls
+    finalResults.append(rzz.getOutCtrlQubits().begin(),
+                        rzz.getOutCtrlQubits().end()); // controls
 
     rewriter.replaceOp(op, finalResults);
     return success();
@@ -610,6 +592,9 @@ struct ConvertMQTOptSimpleGate<opt::GPhaseOp> final
         extractControlInfo(adaptor.getPosCtrlInQubits(),
                            adaptor.getNegCtrlInQubits(), rewriter, op.getLoc());
     const auto params = adaptor.getParams();
+    if (params.empty()) {
+      return op.emitError("GlobalPhaseOp requires exactly one parameter");
+    }
 
     // Create output types for GlobalPhaseOp (control qubits only)
     const Type qubitType =
@@ -1033,6 +1018,13 @@ StringRef ConvertMQTOptSimpleGate<opt::SOp>::getGateName(
   return "S";
 }
 
+// -- SXOp (Sqrt X)
+template <>
+StringRef ConvertMQTOptSimpleGate<opt::SXOp>::getGateName(
+    [[maybe_unused]] std::size_t numControls) {
+  return "SX";
+}
+
 // -- TOP (T)
 template <>
 StringRef ConvertMQTOptSimpleGate<opt::TOp>::getGateName(
@@ -1057,6 +1049,7 @@ StringRef ConvertMQTOptSimpleGate<opt::SWAPOp>::getGateName(
   if (numControls == 1) {
     return "CSWAP";
   }
+  // Unsupported: will be caught in matchAndRewrite
   return "";
 }
 
@@ -1077,6 +1070,7 @@ ConvertMQTOptSimpleGate<opt::RXOp>::getGateName(const std::size_t numControls) {
   if (numControls == 1) {
     return "CRX";
   }
+  // Unsupported: will be caught in matchAndRewrite
   return "";
 }
 
@@ -1090,6 +1084,7 @@ ConvertMQTOptSimpleGate<opt::RYOp>::getGateName(const std::size_t numControls) {
   if (numControls == 1) {
     return "CRY";
   }
+  // Unsupported: will be caught in matchAndRewrite
   return "";
 }
 
@@ -1103,6 +1098,7 @@ ConvertMQTOptSimpleGate<opt::RZOp>::getGateName(const std::size_t numControls) {
   if (numControls == 1) {
     return "CRZ";
   }
+  // Unsupported: will be caught in matchAndRewrite
   return "";
 }
 
@@ -1116,6 +1112,7 @@ ConvertMQTOptSimpleGate<opt::POp>::getGateName(const std::size_t numControls) {
   if (numControls == 1) {
     return "ControlledPhaseShift";
   }
+  // Unsupported: will be caught in matchAndRewrite
   return "";
 }
 
@@ -1191,7 +1188,7 @@ struct ConvertMQTOptSimpleGate<opt::XXminusYYOp> final
     // Pre-conjugation X on qubit 0 (respect original control semantics).
     auto xPre = rewriter.create<catalyst::quantum::CustomOp>(
         op.getLoc(),
-        /*gate=*/"X",
+        /*gate=*/"PauliX",
         /*in_qubits=*/ValueRange{extracted.inQubits[0]},
         /*in_ctrl_qubits=*/extracted.ctrlInfo.ctrlQubits,
         /*in_ctrl_values=*/extracted.ctrlInfo.ctrlValues,
@@ -1234,7 +1231,7 @@ struct ConvertMQTOptSimpleGate<opt::XXminusYYOp> final
     // Post-conjugation X on qubit 0 to undo the pre X.
     auto xPost = rewriter.create<catalyst::quantum::CustomOp>(
         op.getLoc(),
-        /*gate=*/"X",
+        /*gate=*/"PauliX",
         /*in_qubits=*/ValueRange{isingxy.getOutQubits()[0]},
         /*in_ctrl_qubits=*/rz2.getOutCtrlQubits(),
         /*in_ctrl_values=*/extracted.ctrlInfo.ctrlValues,
@@ -1436,7 +1433,8 @@ struct MQTOptToCatalystQuantum final
     patterns.add<ConvertMQTOptSimpleGate<opt::PeresdgOp>>(typeConverter,
                                                           context);
 
-    patterns.add<ConvertMQTOptAdjointGate<opt::SXOp>>(typeConverter, context);
+    patterns.add<ConvertMQTOptSimpleGate<opt::SXOp>>(typeConverter, context);
+    patterns.add<ConvertMQTOptAdjointGate<opt::SXdgOp>>(typeConverter, context);
     patterns.add<ConvertMQTOptAdjointGate<opt::SdgOp>>(typeConverter, context);
     patterns.add<ConvertMQTOptAdjointGate<opt::TdgOp>>(typeConverter, context);
     patterns.add<ConvertMQTOptAdjointGate<opt::iSWAPdgOp>>(typeConverter,
