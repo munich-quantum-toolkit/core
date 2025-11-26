@@ -71,9 +71,9 @@ struct TwoQubitWeylDecomposition {
   };
 
   // a, b, c are the parameters of the canonical gate (CAN)
-  fp a;           // rotation of RXX gate in CAN
-  fp b;           // rotation of RYY gate in CAN
-  fp c;           // rotation of RZZ gate in CAN
+  fp a;           // rotation of RXX gate in CAN (must be taken times -2.0)
+  fp b;           // rotation of RYY gate in CAN (must be taken times -2.0)
+  fp c;           // rotation of RZZ gate in CAN (must be taken times -2.0)
   fp globalPhase; // global phase adjustment
   /**
    * q1 - k2r - C - k1r -
@@ -101,7 +101,6 @@ struct TwoQubitWeylDecomposition {
    *                 reduce the number of parameters required by the canonical
    *                 gate and thus potentially decreasing the number of basis
    *                 gates.
-   * @param specialization Force the use this specialization.
    */
   static TwoQubitWeylDecomposition create(const matrix4x4& unitaryMatrix,
                                           std::optional<fp> fidelity) {
@@ -260,11 +259,6 @@ struct TwoQubitWeylDecomposition {
 
     // bind weyl coordinates as parameters of canonical gate
     auto [a, b, c] = std::tie(cs[1], cs[0], cs[2]);
-    // make sure decomposition is equal to input
-    assert((helpers::kroneckerProduct(K1l, K1r) *
-            getCanonicalMatrix(a * -2.0, b * -2.0, c * -2.0) *
-            helpers::kroneckerProduct(K2l, K2r) * std::exp(IM * globalPhase))
-               .isApprox(unitaryMatrix, SANITY_CHECK_PRECISION));
 
     TwoQubitWeylDecomposition decomposition{
         .a = a,
@@ -282,6 +276,11 @@ struct TwoQubitWeylDecomposition {
         .calculatedFidelity = -1.0,
         .unitaryMatrix = unitaryMatrix,
     };
+    // make sure decomposition is equal to input
+    assert((helpers::kroneckerProduct(K1l, K1r) *
+            decomposition.getCanonicalMatrix() *
+            helpers::kroneckerProduct(K2l, K2r) * std::exp(IM * globalPhase))
+               .isApprox(unitaryMatrix, SANITY_CHECK_PRECISION));
 
     // determine actual specialization of canonical gate so that the 1q
     // matrices can potentially be simplified
@@ -315,8 +314,7 @@ struct TwoQubitWeylDecomposition {
 
     // final check if decomposition is still valid after specialization
     assert((helpers::kroneckerProduct(decomposition.k1l, decomposition.k1r) *
-            getCanonicalMatrix(decomposition.a * -2.0, decomposition.b * -2.0,
-                               decomposition.c * -2.0) *
+            decomposition.getCanonicalMatrix() *
             helpers::kroneckerProduct(decomposition.k2l, decomposition.k2r) *
             std::exp(IM * decomposition.globalPhase))
                .isApprox(unitaryMatrix, SANITY_CHECK_PRECISION));
@@ -327,20 +325,20 @@ struct TwoQubitWeylDecomposition {
   /**
    * Calculate matrix of canonical gate based on its parameters a, b, c.
    */
-  static matrix4x4 getCanonicalMatrix(fp a, fp b, fp c) {
+  [[nodiscard]] matrix4x4 getCanonicalMatrix() const {
     auto xx = getTwoQubitMatrix({
         .type = qc::RXX,
-        .parameter = {a},
+        .parameter = {-2.0 * a},
         .qubitId = {0, 1},
     });
     auto yy = getTwoQubitMatrix({
         .type = qc::RYY,
-        .parameter = {b},
+        .parameter = {-2.0 * b},
         .qubitId = {0, 1},
     });
     auto zz = getTwoQubitMatrix({
         .type = qc::RZZ,
-        .parameter = {c},
+        .parameter = {-2.0 * c},
         .qubitId = {0, 1},
     });
     return zz * yy * xx;
