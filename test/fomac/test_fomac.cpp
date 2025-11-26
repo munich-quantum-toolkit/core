@@ -449,6 +449,42 @@ TEST_F(JobTest, MultipleGetCountsCalls) {
   EXPECT_EQ(counts1, counts2);
 }
 
+TEST_F(JobTest, CancelJob) {
+  const std::string qasm3Program = R"(
+OPENQASM 3.0;
+qubit[1] q;
+bit[1] c;
+c[0] = measure q[0];
+)";
+  const auto jobToCancel =
+      device.submitJob(qasm3Program, QDMI_PROGRAM_FORMAT_QASM3, 10);
+
+  // Fast-executing jobs (like the DD simulator) may complete before
+  // cancel is called, which should throw an exception.
+  // Both outcomes are valid based on timing.
+  try {
+    jobToCancel.cancel();
+    // If cancel succeeded, the job should be in CANCELED state
+    const auto status = jobToCancel.check();
+    EXPECT_EQ(status, QDMI_JOB_STATUS_CANCELED);
+  } catch (const std::invalid_argument&) {
+    // If cancel threw an exception, the job should already be done
+    const auto status = jobToCancel.check();
+    EXPECT_TRUE(status == QDMI_JOB_STATUS_DONE ||
+                status == QDMI_JOB_STATUS_FAILED);
+  }
+}
+
+TEST_F(JobTest, CancelCompletedJobThrows) {
+  job.wait();
+
+  const auto statusBefore = job.check();
+  EXPECT_TRUE(statusBefore == QDMI_JOB_STATUS_DONE ||
+              statusBefore == QDMI_JOB_STATUS_FAILED);
+
+  EXPECT_THROW(job.cancel(), std::invalid_argument);
+}
+
 INSTANTIATE_TEST_SUITE_P(
     // Custom instantiation name
     DeviceTest,
