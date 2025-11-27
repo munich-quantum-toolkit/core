@@ -68,7 +68,8 @@ inline matrix4x4 rzzMatrix(const fp theta) {
 inline matrix2x2 pMatrix(const fp lambda) {
   return matrix2x2{{1, 0}, {0, {std::cos(lambda), std::sin(lambda)}}};
 }
-inline constexpr auto SQRT2 = std::numbers::sqrt2_v<fp>;
+inline constexpr auto SQRT2 =
+    static_cast<fp>(1.414213562373095048801688724209698079L);
 inline constexpr auto FRAC1_SQRT2 = static_cast<fp>(
     0.707106781186547524400844362104849039284835937688474036588L);
 const matrix2x2 IDENTITY_GATE = matrix2x2::Identity();
