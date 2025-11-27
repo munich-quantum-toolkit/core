@@ -18,7 +18,7 @@
 #include "WeylDecomposition.h"
 #include "ir/Definitions.hpp"
 
-#include <Eigen/Core> // NOLINT(misc-include-cleaner)
+#include <Eigen/Core>
 #include <array>
 #include <cassert>
 #include <cmath>
@@ -36,7 +36,6 @@
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/LogicalResult.h>
 #include <optional>
-#include <unsupported/Eigen/MatrixFunctions> // TODO: unstable, NOLINT(misc-include-cleaner)
 #include <utility>
 
 namespace mqt::ir::opt::decomposition {

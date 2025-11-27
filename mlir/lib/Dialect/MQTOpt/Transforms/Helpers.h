@@ -14,8 +14,8 @@
 #include "ir/operations/OpType.hpp"
 #include "mlir/Dialect/MQTOpt/IR/MQTOptDialect.h"
 
-#include <Eigen/Core>        // NOLINT(misc-include-cleaner)
-#include <Eigen/Eigenvalues> // NOLINT(misc-include-cleaner)
+#include <Eigen/Core>
+#include <Eigen/Eigenvalues>
 #include <algorithm>
 #include <cmath>
 #include <complex>
@@ -28,7 +28,7 @@
 #include <optional>
 #include <stdexcept>
 #include <string>
-#include <unsupported/Eigen/KroneckerProduct> // TODO: unstable, NOLINT(misc-include-cleaner)
+#include <unsupported/Eigen/KroneckerProduct> // TODO: unstable
 
 namespace mqt::ir::opt {
 using fp = qc::fp;

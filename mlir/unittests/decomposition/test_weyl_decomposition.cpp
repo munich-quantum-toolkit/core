@@ -33,7 +33,7 @@ namespace {
     return true;
   }();
   const matrix4x4 randomMatrix = matrix4x4::Random();
-  Eigen::HouseholderQR<matrix4x4> qr{};
+  Eigen::HouseholderQR<matrix4x4> qr{}; // NOLINT(misc-include-cleaner)
   qr.compute(randomMatrix);
   const matrix4x4 unitaryMatrix = qr.householderQ();
   assert(helpers::isUnitaryMatrix(unitaryMatrix));
@@ -133,5 +133,6 @@ INSTANTIATE_TEST_CASE_P(
             canonicalGate(1.1, 0.2, 3.0) *
             helpers::kroneckerProduct(rxMatrix(1.0), IDENTITY_GATE),
         helpers::kroneckerProduct(H_GATE, IPZ) *
-            getTwoQubitMatrix({.type = qc::X, .qubitId = {0, 1}}) *
+            getTwoQubitMatrix(
+                {.type = qc::X, .parameter = {}, .qubitId = {0, 1}}) *
             helpers::kroneckerProduct(IPX, IPY)));
