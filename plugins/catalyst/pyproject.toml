@@ -78,7 +78,7 @@ dev = [
 ]
 
 [project.entry-points."catalyst.passes_resolution"]
-"mqt.passes" = "mqt.core.plugins.catalyst:name2pass"
+"mqt.passes" = "mqt.core.plugins.catalyst"
 
 [project.urls]
 Homepage = "https://github.com/munich-quantum-toolkit/core"
@@ -249,3 +249,7 @@ convention = "google"
 
 [tool.ruff.lint.per-file-ignores]
 "test/python/**" = ["T20", "INP001"]
+
+cmake.verbose = true
+logging.level = "INFO"
+editable.mode = "inplace"

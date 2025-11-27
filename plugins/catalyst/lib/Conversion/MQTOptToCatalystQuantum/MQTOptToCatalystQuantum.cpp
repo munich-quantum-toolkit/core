@@ -158,8 +158,8 @@ struct ConvertMQTOptAlloc final : OpConversionPattern<memref::AllocOp> {
     }
 
     // Replace with quantum alloc operation
-    rewriter.replaceOpWithNewOp<catalyst::quantum::AllocOp>(
-        op.getLoc(), resultType, size, nqubitsAttr);
+    rewriter.replaceOpWithNewOp<catalyst::quantum::AllocOp>(op, resultType,
+                                                            size, nqubitsAttr);
 
     return success();
   }
@@ -544,18 +544,37 @@ struct ConvertMQTOptSimpleGate<opt::RZXOp> final
   using OpConversionPattern::OpConversionPattern;
 
   LogicalResult
-  // RZZ on (q0, q1')
-  if (adaptor.getParams().empty()) {
-    return op.emitError("RZZ expects one parameter");
-  }
-  auto rzz = rewriter.create<catalyst::quantum::CustomOp>(
-      op.getLoc(),
-      /*gate=*/"IsingZZ",
-      /*in_qubits=*/ValueRange{extracted.inQubits[0], h1.getOutQubits()[0]},
-      /*in_ctrl_qubits=*/h1.getOutCtrlQubits(),
-      /*in_ctrl_values=*/extracted.ctrlInfo.ctrlValues,
-      /*params=*/adaptor.getParams()[0],
-      /*adjoint=*/false);
+  matchAndRewrite(opt::RZXOp op, opt::RZXOp::Adaptor adaptor,
+                  ConversionPatternRewriter& rewriter) const override {
+    // Extract operands and control information using helper function
+    auto extracted = extractOperands(adaptor, rewriter, op.getLoc());
+
+    // RZX(q0, q1; θ) = H(q1) · RZZ(q0, q1; θ) · H(q1)
+    // H gates stay uncontrolled; they cancel if control on RZZ is not active
+
+    // H on q1
+    auto h1 = rewriter.create<catalyst::quantum::CustomOp>(
+        op.getLoc(),
+        /*gate=*/"Hadamard",
+        /*in_qubits=*/ValueRange{extracted.inQubits[1]},
+        /*in_ctrl_qubits=*/ValueRange{},
+        /*in_ctrl_values=*/ValueRange{},
+        /*params=*/ValueRange{},
+        /*adjoint=*/false);
+
+    // RZZ on (q0, q1')
+    if (adaptor.getParams().empty()) {
+      return op.emitError("RZX expects one parameter");
+    }
+    auto rzz = rewriter.create<catalyst::quantum::CustomOp>(
+        op.getLoc(),
+        /*gate=*/"IsingZZ",
+        /*in_qubits=*/ValueRange{extracted.inQubits[0], h1.getOutQubits()[0]},
+        /*in_ctrl_qubits=*/extracted.ctrlInfo.ctrlQubits,
+        /*in_ctrl_values=*/extracted.ctrlInfo.ctrlValues,
+        /*params=*/adaptor.getParams(),
+        /*adjoint=*/false);
+
     // H on q1''
     auto h2 = rewriter.create<catalyst::quantum::CustomOp>(
         op.getLoc(),
