@@ -6,7 +6,7 @@ jobs:
   mlir:
     name: >-
       ${{ contains(matrix.os, 'ubuntu') && '🐧' || contains(matrix.os, 'windows') && '🏁' || '🍎' }}
-      ${{ matrix.coverage && 'Coverage' || matrix.os }} with LLVM@${{ matrix.llvm-version }}
+      ${{ matrix.coverage && 'Coverage' || matrix.os }}
     runs-on: ${{ matrix.os }}
     permissions:
       contents: read
@@ -23,11 +23,9 @@ jobs:
             windows-2025,
             windows-11-arm,
           ]
-        llvm-version: [21]
         coverage: [false]
         include:
           - os: ubuntu-24.04
-            llvm-version: 21
             coverage: true
     env:
       CMAKE_BUILD_PARALLEL_LEVEL: 4
@@ -39,24 +37,10 @@ jobs:
         with:
           fetch-depth: 0
 
-      # OS-specific toolchain setup
-      - name: Setup LLVM/MLIR (Linux/macOS)
-        if: runner.os != 'Windows'
-        run: bash .github/scripts/setup-mlir.sh ${{ matrix.llvm-version }}
-
-      - name: Restore LLVM/MLIR cache (Windows)
-        if: runner.os == 'Windows'
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
-        id: mlir-cache
+      - name: Set up MLIR
+        uses: munich-quantum-software/setup-mlir@2f40b6e56a9bda0f539d7a251dfc6de2dbfeeb14 # 2025.11.25
         with:
-          path: llvm-install
-          key: ${{ matrix.os }}-llvm-${{ matrix.llvm-version }}
-
-      - name: Setup LLVM/MLIR (Windows)
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          & "${{ github.workspace }}\.github\scripts\setup-mlir.ps1" -MajorVersion ${{ matrix.llvm-version }} -InstallPrefix "${{ github.workspace }}\llvm-install"
+          tag: 2025.11.25
 
       # Build acceleration and Python tooling
       - name: Set up mold as linker (Linux)
@@ -83,8 +67,6 @@ jobs:
           cmake -G Ninja -S . -B build \
             -DCMAKE_BUILD_TYPE=${{ matrix.coverage && 'Debug' || 'Release' }} \
             -DBUILD_MQT_CORE_MLIR=ON \
-            -DLLVM_DIR=$LLVM_DIR \
-            -DMLIR_DIR=$MLIR_DIR \
             -DLLVM_EXTERNAL_LIT=$(which lit) \
             ${{ matrix.coverage && '-DENABLE_COVERAGE=ON' || '' }}
 
@@ -94,8 +76,6 @@ jobs:
           cmake -S . -B build `
             -DCMAKE_BUILD_TYPE=${{ matrix.coverage && 'Debug' || 'Release' }} `
             -DBUILD_MQT_CORE_MLIR=ON `
-            -DLLVM_DIR="${{ github.workspace }}\llvm-install\lib\cmake\llvm" `
-            -DMLIR_DIR="${{ github.workspace }}\llvm-install\lib\cmake\mlir" `
             -DLLVM_EXTERNAL_LIT=${{ github.workspace }}\.venv\Scripts\lit.exe `
             ${{ matrix.coverage && '-DENABLE_COVERAGE=ON' || '' }}
 
@@ -121,22 +101,22 @@ jobs:
         if: matrix.coverage
         run: |
           uvx gcovr \
-             --gcov-executable "/usr/lib/llvm-${{ matrix.llvm-version }}/bin/llvm-cov gcov" \
-             --exclude build \
-             --exclude-unreachable-branches \
-             --exclude-noncode-lines \
-             --exclude-throw-branches \
-             --print-summary \
-             --keep \
-             --json \
-             -o coverage-llvm-${{ matrix.llvm-version }}.json
+              --gcov-executable "llvm-cov gcov" \
+              --exclude build \
+              --exclude-unreachable-branches \
+              --exclude-noncode-lines \
+              --exclude-throw-branches \
+              --print-summary \
+              --keep \
+              --json \
+              -o mlir-coverage.json
 
       - name: Upload coverage to Codecov
         if: matrix.coverage
         uses: codecov/codecov-action@5a1091511ad55cbe89839c7260b706298ca349f7 # v5.5.1
         with:
           flags: mlir
-          name: mlir-coverage-llvm-${{ matrix.llvm-version }}
+          name: mlir-coverage
           fail_ci_if_error: true
           use_oidc: true
-          files: coverage-llvm-${{ matrix.llvm-version }}.json
+          files: mlir-coverage.json
