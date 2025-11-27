@@ -190,7 +190,7 @@ public:
    */
   ~QDMI_Device_impl_d() {
     jobs_.clear();
-    if (library_ && deviceSession_) {
+    if (library_ && deviceSession_ != nullptr) {
       library_->device_session_free(deviceSession_);
     }
   }
