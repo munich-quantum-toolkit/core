@@ -23,6 +23,7 @@
 #include <cstring>
 #include <functional>
 #include <memory>
+#include <mutex>
 #include <span>
 #include <type_traits>
 #include <utility>
@@ -95,6 +96,8 @@
 
 namespace qdmi {
 Device* Device::instance = nullptr;
+std::mutex Device::mtx;
+
 Device::Device() {
   // NOLINTBEGIN(cppcoreguidelines-prefer-member-initializer)
   INITIALIZE_NAME(name_);

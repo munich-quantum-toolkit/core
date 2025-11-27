@@ -20,6 +20,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <mutex>
 #include <optional>
 #include <string>
 #include <unordered_map>
@@ -71,6 +72,8 @@ class Device final {
 
   /// @brief The singleton instance.
   static Device* instance;
+  /// @brief Mutex for thread-safe singleton access.
+  static std::mutex mtx;
 
 public:
   // Default move constructor and move assignment operator.
@@ -88,6 +91,7 @@ public:
    * @details Must be called before `get()`.
    */
   static void initialize() {
+    const std::lock_guard lock(mtx);
     if (instance == nullptr) {
       // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
       instance = new Device();
@@ -100,6 +104,7 @@ public:
    * `initialize()` call.
    */
   static void finalize() {
+    const std::lock_guard lock(mtx);
     // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
     delete instance;
     instance = nullptr;
@@ -107,6 +112,7 @@ public:
 
   /// @returns the singleton instance of the Device class.
   [[nodiscard]] static auto get() -> Device& {
+    const std::lock_guard lock(mtx);
     assert(instance != nullptr &&
            "Device not initialized. Call `initialize()` first.");
     return *instance;

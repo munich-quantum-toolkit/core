@@ -207,6 +207,8 @@ namespace qdmi::dd {
 
 Device* Device::instance = nullptr;
 
+std::mutex Device::mtx;
+
 Device::Device()
     : name_("MQT Core DDSIM QDMI Device"),
       qubitsNum_(std::numeric_limits<::dd::Qubit>::max()) {}
