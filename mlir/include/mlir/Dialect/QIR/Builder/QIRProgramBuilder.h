@@ -263,1037 +263,271 @@ public:
   // Unitary Operations
   //===--------------------------------------------------------------------===//
 
-  /**
-   * @brief Apply an Id gate to a qubit
-   *
-   * @param qubit Input qubit
-   * @return Reference to this builder for method chaining
-   *
-   * @par Example:
-   * ```c++
-   * builder.id(qubit);
-   * ```
-   * ```mlir
-   * llvm.call @__quantum__qis__i__body(%q) : (!llvm.ptr) -> ()
-   * ```
-   */
-  QIRProgramBuilder& id(Value qubit);
+  // OneTargetZeroParameter
 
-  /**
-   * @brief Apply a controlled Id gate
-   *
-   * @param control Control qubit
-   * @param target Target qubit
-   * @return Reference to this builder for method chaining
-   *
-   * @par Example:
-   * ```c++
-   * builder.cid(control, target);
-   * ```
-   * ```mlir
-   * llvm.call @__quantum__qis__ci__body(%c, %t) : (!llvm.ptr, !llvm.ptr) -> ()
-   * ```
-   */
-  QIRProgramBuilder& cid(Value control, Value target);
+#define DECLARE_ONE_TARGET_ZERO_PARAMETER(OP_NAME, QIR_NAME)                   \
+  /**                                                                          \
+   * @brief Apply a QIR QIR_NAME operation                                     \
+   *                                                                           \
+   * @param qubit Target qubit                                                 \
+   * @return Reference to this builder for method chaining                     \
+   *                                                                           \
+   * @par Example:                                                             \
+   * ```c++                                                                    \
+   * builder.OP_NAME(q);                                                       \
+   * ```                                                                       \
+   * ```mlir                                                                   \
+   * llvm.call @__quantum__qis__##QIR_NAME##__body(%q) : (!llvm.ptr) -> ()     \
+   * ```                                                                       \
+   */                                                                          \
+  QIRProgramBuilder& OP_NAME(Value qubit);                                     \
+  /**                                                                          \
+   * @brief Apply a controlled QIR_NAME operation                              \
+   *                                                                           \
+   * @param control Control qubit                                              \
+   * @param target Target qubit                                                \
+   * @return Reference to this builder for method chaining                     \
+   *                                                                           \
+   * @par Example:                                                             \
+   * ```c++                                                                    \
+   * builder.c##OP_NAME(q0, q1);                                               \
+   * ```                                                                       \
+   * ```mlir                                                                   \
+   * llvm.call @__quantum__qis__c##QIR_NAME##__body(%q0, %q1) : (!llvm.ptr,    \
+   * !llvm.ptr) -> ()                                                          \
+   * ```                                                                       \
+   */                                                                          \
+  QIRProgramBuilder& c##OP_NAME(Value control, Value target);                  \
+  /**                                                                          \
+   * @brief Apply a multi-controlled QIR_NAME operation                        \
+   *                                                                           \
+   * @param controls Control qubits                                            \
+   * @param target Target qubit                                                \
+   * @return Reference to this builder for method chaining                     \
+   *                                                                           \
+   * @par Example:                                                             \
+   * ```c++                                                                    \
+   * builder.mc##OP_NAME({q0, q1}, q2);                                        \
+   * ```                                                                       \
+   * ```mlir                                                                   \
+   * llvm.call @__quantum__qis__cc##QIR_NAME##__body(%q0, %q1, %q2) :          \
+   * (!llvm.ptr, !llvm.ptr, !llvm.ptr) -> ()                                   \
+   * ```                                                                       \
+   */                                                                          \
+  QIRProgramBuilder& mc##OP_NAME(ValueRange controls, Value target);
 
-  /**
-   * @brief Apply a multi-controlled Id gate
-   *
-   * @param controls Control qubits
-   * @param target Target qubit
-   * @return Reference to this builder for method chaining
-   *
-   * @par Example:
-   * ```c++
-   * builder.mcid({control1, control2}, target);
-   * ```
-   * ```mlir
-   * llvm.call @__quantum__qis__cci__body(%c1, %c2, %t) : (!llvm.ptr, !llvm.ptr,
-   * !llvm.ptr) -> ()
-   * ```
-   */
-  QIRProgramBuilder& mcid(ValueRange controls, Value target);
+  DECLARE_ONE_TARGET_ZERO_PARAMETER(id, i)
+  DECLARE_ONE_TARGET_ZERO_PARAMETER(x, x)
+  DECLARE_ONE_TARGET_ZERO_PARAMETER(y, y)
+  DECLARE_ONE_TARGET_ZERO_PARAMETER(z, z)
+  DECLARE_ONE_TARGET_ZERO_PARAMETER(h, h)
+  DECLARE_ONE_TARGET_ZERO_PARAMETER(s, s)
+  DECLARE_ONE_TARGET_ZERO_PARAMETER(sdg, sdg)
+  DECLARE_ONE_TARGET_ZERO_PARAMETER(t, t)
+  DECLARE_ONE_TARGET_ZERO_PARAMETER(tdg, tdg)
+  DECLARE_ONE_TARGET_ZERO_PARAMETER(sx, sx)
+  DECLARE_ONE_TARGET_ZERO_PARAMETER(sxdg, sxdg)
 
-  /**
-   * @brief Apply an X gate to a qubit
-   *
-   * @param qubit Input qubit
-   * @return Reference to this builder for method chaining
-   *
-   * @par Example:
-   * ```c++
-   * builder.x(qubit);
-   * ```
-   * ```mlir
-   * llvm.call @__quantum__qis__x__body(%q) : (!llvm.ptr) -> ()
-   * ```
-   */
-  QIRProgramBuilder& x(Value qubit);
+#undef DECLARE_ONE_TARGET_ZERO_PARAMETER
 
-  /**
-   * @brief Apply a controlled X gate
-   *
-   * @param control Control qubit
-   * @param target Target qubit
-   * @return Reference to this builder for method chaining
-   *
-   * @par Example:
-   * ```c++
-   * builder.cx(control, target);
-   * ```
-   * ```mlir
-   * llvm.call @__quantum__qis__cx__body(%c, %t) : (!llvm.ptr, !llvm.ptr) -> ()
-   * ```
-   */
-  QIRProgramBuilder& cx(Value control, Value target);
+  // OneTargetOneParameter
 
-  /**
-   * @brief Apply a multi-controlled X gate
-   *
-   * @param controls Control qubits
-   * @param target Target qubit
-   * @return Reference to this builder for method chaining
-   *
-   * @par Example:
-   * ```c++
-   * builder.mcx({control1, control2}, target);
-   * ```
-   * ```mlir
-   * llvm.call @__quantum__qis__ccx__body(%c1, %c2, %t) : (!llvm.ptr, !llvm.ptr,
-   * !llvm.ptr) -> ()
-   * ```
-   */
-  QIRProgramBuilder& mcx(ValueRange controls, Value target);
+#define DECLARE_ONE_TARGET_ONE_PARAMETER(OP_NAME, QIR_NAME, PARAM)             \
+  /**                                                                          \
+   * @brief Apply a QIR QIR_NAME operation                                     \
+   *                                                                           \
+   * @param PARAM Rotation angle in radians                                    \
+   * @param qubit Target qubit                                                 \
+   * @return Reference to this builder for method chaining                     \
+   *                                                                           \
+   * @par Example:                                                             \
+   * ```c++                                                                    \
+   * builder.OP_NAME(PARAM, q);                                                \
+   * ```                                                                       \
+   * ```mlir                                                                   \
+   * llvm.call @__quantum__qis__##QIR_NAME##__body(%q, %PARAM) : (!llvm.ptr,   \
+   * f64) -> ()                                                                \
+   * ```                                                                       \
+   */                                                                          \
+  QIRProgramBuilder& OP_NAME(const std::variant<double, Value>&(PARAM),        \
+                             Value qubit);                                     \
+  /**                                                                          \
+   * @brief Apply a controlled QIR_NAME operation                              \
+   *                                                                           \
+   * @param PARAM Rotation angle in radians                                    \
+   * @param control Control qubit                                              \
+   * @param target Target qubit                                                \
+   * @return Reference to this builder for method chaining                     \
+   *                                                                           \
+   * @par Example:                                                             \
+   * ```c++                                                                    \
+   * builder.c##OP_NAME(PARAM, q0, q1);                                        \
+   * ```                                                                       \
+   * ```mlir                                                                   \
+   * llvm.call @__quantum__qis__c##QIR_NAME##__body(%q0, %q1, %PARAM) :        \
+   * (!llvm.ptr, !llvm.ptr, f64) -> ()                                         \
+   * ```                                                                       \
+   */                                                                          \
+  QIRProgramBuilder& c##OP_NAME(const std::variant<double, Value>&(PARAM),     \
+                                Value control, Value target);                  \
+  /**                                                                          \
+   * @brief Apply a multi-controlled QIR_NAME operation                        \
+   *                                                                           \
+   * @param PARAM Rotation angle in radians                                    \
+   * @param controls Control qubits                                            \
+   * @param target Target qubit                                                \
+   * @return Reference to this builder for method chaining                     \
+   *                                                                           \
+   * @par Example:                                                             \
+   * ```c++                                                                    \
+   * builder.mc##OP_NAME(PARAM, {q0, q1}, q2);                                 \
+   * ```                                                                       \
+   * ```mlir                                                                   \
+   * llvm.call @__quantum__qis__cc##QIR_NAME##__body(%q0, %q1, %q2, %PARAM) :  \
+   * (!llvm.ptr, !llvm.ptr, !llvm.ptr, f64) -> ()                              \
+   * ```                                                                       \
+   */                                                                          \
+  QIRProgramBuilder& mc##OP_NAME(const std::variant<double, Value>&(PARAM),    \
+                                 ValueRange controls, Value target);
 
-  /**
-   * @brief Apply a Y gate to a qubit
-   *
-   * @param qubit Input qubit
-   * @return Reference to this builder for method chaining
-   *
-   * @par Example:
-   * ```c++
-   * builder.y(qubit);
-   * ```
-   * ```mlir
-   * llvm.call @__quantum__qis__y__body(%q) : (!llvm.ptr) -> ()
-   * ```
-   */
-  QIRProgramBuilder& y(Value qubit);
+  DECLARE_ONE_TARGET_ONE_PARAMETER(rx, rx, theta)
+  DECLARE_ONE_TARGET_ONE_PARAMETER(ry, ry, theta)
+  DECLARE_ONE_TARGET_ONE_PARAMETER(rz, rz, theta)
+  DECLARE_ONE_TARGET_ONE_PARAMETER(p, p, theta)
 
-  /**
-   * @brief Apply a controlled Y gate
-   *
-   * @param control Control qubit
-   * @param target Target qubit
-   * @return Reference to this builder for method chaining
-   *
-   * @par Example:
-   * ```c++
-   * builder.cy(control, target);
-   * ```
-   * ```mlir
-   * llvm.call @__quantum__qis__cy__body(%c, %t) : (!llvm.ptr, !llvm.ptr) -> ()
-   * ```
-   */
-  QIRProgramBuilder& cy(Value control, Value target);
+#undef DECLARE_ONE_TARGET_ONE_PARAMETER
 
-  /**
-   * @brief Apply a multi-controlled Y gate
-   *
-   * @param controls Control qubits
-   * @param target Target qubit
-   * @return Reference to this builder for method chaining
-   *
-   * @par Example:
-   * ```c++
-   * builder.mcy({control1, control2}, target);
-   * ```
-   * ```mlir
-   * llvm.call @__quantum__qis__ccy__body(%c1, %c2, %t) : (!llvm.ptr, !llvm.ptr,
-   * !llvm.ptr) -> ()
-   * ```
-   */
-  QIRProgramBuilder& mcy(ValueRange controls, Value target);
+  // OneTargetTwoParameter
 
-  /**
-   * @brief Apply a Z gate to a qubit
-   *
-   * @param qubit Input qubit
-   * @return Reference to this builder for method chaining
-   *
-   * @par Example:
-   * ```c++
-   * builder.z(qubit);
-   * ```
-   * ```mlir
-   * llvm.call @__quantum__qis__z__body(%q) : (!llvm.ptr) -> ()
-   * ```
-   */
-  QIRProgramBuilder& z(Value qubit);
+#define DECLARE_ONE_TARGET_TWO_PARAMETER(OP_NAME, QIR_NAME, PARAM1, PARAM2)    \
+  /**                                                                          \
+   * @brief Apply a QIR QIR_NAME operation                                     \
+   *                                                                           \
+   * @param PARAM1 Rotation angle in radians                                   \
+   * @param PARAM2 Rotation angle in radians                                   \
+   * @param qubit Target qubit                                                 \
+   * @return Reference to this builder for method chaining                     \
+   *                                                                           \
+   * @par Example:                                                             \
+   * ```c++                                                                    \
+   * builder.OP_NAME(PARAM1, PARAM2, q);                                       \
+   * ```                                                                       \
+   * ```mlir                                                                   \
+   * llvm.call @__quantum__qis__##QIR_NAME##__body(%q, %PARAM1, %PARAM2) :     \
+   * (!llvm.ptr, f64, f64) -> ()                                               \
+   * ```                                                                       \
+   */                                                                          \
+  QIRProgramBuilder& OP_NAME(const std::variant<double, Value>&(PARAM1),       \
+                             const std::variant<double, Value>&(PARAM2),       \
+                             Value qubit);                                     \
+  /**                                                                          \
+   * @brief Apply a controlled QIR_NAME operation                              \
+   *                                                                           \
+   * @param PARAM1 Rotation angle in radians                                   \
+   * @param PARAM2 Rotation angle in radians                                   \
+   * @param control Control qubit                                              \
+   * @param target Target qubit                                                \
+   * @return Reference to this builder for method chaining                     \
+   *                                                                           \
+   * @par Example:                                                             \
+   * ```c++                                                                    \
+   * builder.c##OP_NAME(PARAM1, PARAM2, q0, q1);                               \
+   * ```                                                                       \
+   * ```mlir                                                                   \
+   * llvm.call @__quantum__qis__c##QIR_NAME##__body(%q0, %q1, %PARAM1,         \
+   * %PARAM2) : (!llvm.ptr, !llvm.ptr, f64, f64) -> ()                         \
+   * ```                                                                       \
+   */                                                                          \
+  QIRProgramBuilder& c##OP_NAME(const std::variant<double, Value>&(PARAM1),    \
+                                const std::variant<double, Value>&(PARAM2),    \
+                                Value control, Value target);                  \
+  /**                                                                          \
+   * @brief Apply a multi-controlled QIR_NAME operation                        \
+   *                                                                           \
+   * @param PARAM1 Rotation angle in radians                                   \
+   * @param PARAM2 Rotation angle in radians                                   \
+   * @param controls Control qubits                                            \
+   * @param target Target qubit                                                \
+   * @return Reference to this builder for method chaining                     \
+   *                                                                           \
+   * @par Example:                                                             \
+   * ```c++                                                                    \
+   * builder.mc##OP_NAME(PARAM1, PARAM2, {q0, q1}, q2);                        \
+   * ```                                                                       \
+   * ```mlir                                                                   \
+   * llvm.call @__quantum__qis__cc##QIR_NAME##__body(%q0, %q1, %q2, %PARAM1,   \
+   * %PARAM2) : (!llvm.ptr, !llvm.ptr, !llvm.ptr, f64, f64) -> ()              \
+   * ```                                                                       \
+   */                                                                          \
+  QIRProgramBuilder& mc##OP_NAME(const std::variant<double, Value>&(PARAM1),   \
+                                 const std::variant<double, Value>&(PARAM2),   \
+                                 ValueRange controls, Value target);
 
-  /**
-   * @brief Apply a controlled Z gate
-   *
-   * @param control Control qubit
-   * @param target Target qubit
-   * @return Reference to this builder for method chaining
-   *
-   * @par Example:
-   * ```c++
-   * builder.cz(control, target);
-   * ```
-   * ```mlir
-   * llvm.call @__quantum__qis__cz__body(%c, %t) : (!llvm.ptr, !llvm.ptr) -> ()
-   * ```
-   */
-  QIRProgramBuilder& cz(Value control, Value target);
+  DECLARE_ONE_TARGET_TWO_PARAMETER(r, r, theta, phi)
+  DECLARE_ONE_TARGET_TWO_PARAMETER(u2, u2, phi, lambda)
 
-  /**
-   * @brief Apply a multi-controlled Z gate
-   *
-   * @param controls Control qubits
-   * @param target Target qubit
-   * @return Reference to this builder for method chaining
-   *
-   * @par Example:
-   * ```c++
-   * builder.mcz({control1, control2}, target);
-   * ```
-   * ```mlir
-   * llvm.call @__quantum__qis__ccz__body(%c1, %c2, %t) : (!llvm.ptr, !llvm.ptr,
-   * !llvm.ptr) -> ()
-   * ```
-   */
-  QIRProgramBuilder& mcz(ValueRange controls, Value target);
+#undef DECLARE_ONE_TARGET_TWO_PARAMETER
 
-  /**
-   * @brief Apply an H gate to a qubit
-   *
-   * @param qubit Input qubit
-   * @return Reference to this builder for method chaining
-   *
-   * @par Example:
-   * ```c++
-   * builder.h(qubit);
-   * ```
-   * ```mlir
-   * llvm.call @__quantum__qis__h__body(%q) : (!llvm.ptr) -> ()
-   * ```
-   */
-  QIRProgramBuilder& h(Value qubit);
+  // TwoTargetZeroParameter
 
-  /**
-   * @brief Apply a controlled H gate
-   *
-   * @param control Control qubit
-   * @param target Target qubit
-   * @return Reference to this builder for method chaining
-   *
-   * @par Example:
-   * ```c++
-   * builder.ch(control, target);
-   * ```
-   * ```mlir
-   * llvm.call @__quantum__qis__ch__body(%c, %t) : (!llvm.ptr, !llvm.ptr) -> ()
-   * ```
-   */
-  QIRProgramBuilder& ch(Value control, Value target);
+#define DECLARE_TWO_TARGET_ZERO_PARAMETER(OP_NAME, QIR_NAME)                   \
+  /**                                                                          \
+   * @brief Apply a QIR QIR_NAME operation                                     \
+   *                                                                           \
+   * @param qubit0 Target qubit                                                \
+   * @param qubit1 Target qubit                                                \
+   * @return Reference to this builder for method chaining                     \
+   *                                                                           \
+   * @par Example:                                                             \
+   * ```c++                                                                    \
+   * builder.OP_NAME(q0, q1);                                                  \
+   * ```                                                                       \
+   * ```mlir                                                                   \
+   * llvm.call @__quantum__qis__##QIR_NAME##__body(%q0, %q1) : (!llvm.ptr,     \
+   * !llvm.ptr) -> ()                                                          \
+   * ```                                                                       \
+   */                                                                          \
+  QIRProgramBuilder& OP_NAME(Value qubit0, Value qubit1);                      \
+  /**                                                                          \
+   * @brief Apply a controlled QIR_NAME operation                              \
+   *                                                                           \
+   * @param control Control qubit                                              \
+   * @param target Target qubit                                                \
+   * @return Reference to this builder for method chaining                     \
+   *                                                                           \
+   * @par Example:                                                             \
+   * ```c++                                                                    \
+   * builder.c##OP_NAME(q0, q1);                                               \
+   * ```                                                                       \
+   * ```mlir                                                                   \
+   * llvm.call @__quantum__qis__c##QIR_NAME##__body(%q0, %q1) : (!llvm.ptr,    \
+   * !llvm.ptr) -> ()                                                          \
+   * ```                                                                       \
+   */                                                                          \
+  QIRProgramBuilder& c##OP_NAME(Value control, Value qubit0, Value qubit1);    \
+  /**                                                                          \
+   * @brief Apply a multi-controlled QIR_NAME operation                        \
+   *                                                                           \
+   * @param controls Control qubits                                            \
+   * @param target Target qubit                                                \
+   * @return Reference to this builder for method chaining                     \
+   *                                                                           \
+   * @par Example:                                                             \
+   * ```c++                                                                    \
+   * builder.mc##OP_NAME({q0, q1}, q2);                                        \
+   * ```                                                                       \
+   * ```mlir                                                                   \
+   * llvm.call @__quantum__qis__cc##QIR_NAME##__body(%q0, %q1, %q2) :          \
+   * (!llvm.ptr, !llvm.ptr, !llvm.ptr) -> ()                                   \
+   * ```                                                                       \
+   */                                                                          \
+  QIRProgramBuilder& mc##OP_NAME(ValueRange controls, Value qubit0,            \
+                                 Value qubit1);
 
-  /**
-   * @brief Apply a multi-controlled H gate
-   *
-   * @param controls Control qubits
-   * @param target Target qubit
-   * @return Reference to this builder for method chaining
-   *
-   * @par Example:
-   * ```c++
-   * builder.mch({control1, control2}, target);
-   * ```
-   * ```mlir
-   * llvm.call @__quantum__qis__cch__body(%c1, %c2, %t) : (!llvm.ptr, !llvm.ptr,
-   * !llvm.ptr) -> ()
-   * ```
-   */
-  QIRProgramBuilder& mch(ValueRange controls, Value target);
+  DECLARE_TWO_TARGET_ZERO_PARAMETER(swap, swap)
+  DECLARE_TWO_TARGET_ZERO_PARAMETER(iswap, iswap)
 
-  /**
-   * @brief Apply an S gate to a qubit
-   *
-   * @param qubit Target qubit
-   * @return Reference to this builder for method chaining
-   *
-   * @par Example:
-   * ```c++
-   * builder.s(q);
-   * ```
-   * ```mlir
-   * llvm.call @__quantum__qis__s__body(%q) : (!llvm.ptr) -> ()
-   * ```
-   */
-  QIRProgramBuilder& s(Value qubit);
-
-  /**
-   * @brief Apply a controlled S gate
-   *
-   * @param control Control qubit
-   * @param target Target qubit
-   * @return Reference to this builder for method chaining
-   *
-   * @par Example:
-   * ```c++
-   * builder.cs(q0, q1);
-   * ```
-   * ```mlir
-   * llvm.call @__quantum__qis__cs__body(%c, %t) : (!llvm.ptr, !llvm.ptr) -> ()
-   * ```
-   */
-  QIRProgramBuilder& cs(Value control, Value target);
-
-  /**
-   * @brief Apply a multi-controlled S gate
-   *
-   * @param controls Control qubits
-   * @param target Target qubit
-   * @return Reference to this builder for method chaining
-   *
-   * @par Example:
-   * ```c++
-   * builder.mcs({control1, control2}, target);
-   * ```
-   * ```mlir
-   * llvm.call @__quantum__qis__ccs__body(%c1, %c2, %t) : (!llvm.ptr, !llvm.ptr,
-   * !llvm.ptr) -> ()
-   * ```
-   */
-  QIRProgramBuilder& mcs(ValueRange controls, Value target);
-
-  /**
-   * @brief Apply an Sdg gate to a qubit
-   *
-   * @param qubit Target qubit
-   * @return Reference to this builder for method chaining
-   *
-   * @par Example:
-   * ```c++
-   * builder.sdg(q);
-   * ```
-   * ```mlir
-   * llvm.call @__quantum__qis__sdg__body(%q) : (!llvm.ptr) -> ()
-   * ```
-   */
-  QIRProgramBuilder& sdg(Value qubit);
-
-  /**
-   * @brief Apply a controlled Sdg gate
-   *
-   * @param control Control qubit
-   * @param target Target qubit
-   * @return Reference to this builder for method chaining
-   *
-   * @par Example:
-   * ```c++
-   * builder.csdg(q0, q1);
-   * ```
-   * ```mlir
-   * llvm.call @__quantum__qis__csdg__body(%c, %t) : (!llvm.ptr, !llvm.ptr) ->
-   * ()
-   * ```
-   */
-  QIRProgramBuilder& csdg(Value control, Value target);
-
-  /**
-   * @brief Apply a multi-controlled Sdg gate
-   *
-   * @param controls Control qubits
-   * @param target Target qubit
-   * @return Reference to this builder for method chaining
-   *
-   * @par Example:
-   * ```c++
-   * builder.mcsdg({control1, control2}, target);
-   * ```
-   * ```mlir
-   * llvm.call @__quantum__qis__ccsdg__body(%c1, %c2, %t) : (!llvm.ptr,
-   * !llvm.ptr, !llvm.ptr) -> ()
-   * ```
-   */
-  QIRProgramBuilder& mcsdg(ValueRange controls, Value target);
-
-  /**
-   * @brief Apply a T gate to a qubit
-   *
-   * @param qubit Input qubit
-   * @return Reference to this builder for method chaining
-   *
-   * @par Example:
-   * ```c++
-   * builder.t(qubit);
-   * ```
-   * ```mlir
-   * llvm.call @__quantum__qis__t__body(%q) : (!llvm.ptr) -> ()
-   * ```
-   */
-  QIRProgramBuilder& t(Value qubit);
-
-  /**
-   * @brief Apply a controlled T gate
-   *
-   * @param control Control qubit
-   * @param target Target qubit
-   * @return Reference to this builder for method chaining
-   *
-   * @par Example:
-   * ```c++
-   * builder.ct(control, target);
-   * ```
-   * ```mlir
-   * llvm.call @__quantum__qis__ct__body(%c, %t) : (!llvm.ptr, !llvm.ptr) -> ()
-   * ```
-   */
-  QIRProgramBuilder& ct(Value control, Value target);
-
-  /**
-   * @brief Apply a multi-controlled T gate
-   *
-   * @param controls Control qubits
-   * @param target Target qubit
-   * @return Reference to this builder for method chaining
-   *
-   * @par Example:
-   * ```c++
-   * builder.mct({control1, control2}, target);
-   * ```
-   * ```mlir
-   * llvm.call @__quantum__qis__cct__body(%c1, %c2, %t) : (!llvm.ptr, !llvm.ptr,
-   * !llvm.ptr) -> ()
-   * ```
-   */
-  QIRProgramBuilder& mct(ValueRange controls, Value target);
-
-  /**
-   * @brief Apply a Tdg gate to a qubit
-   *
-   * @param qubit Input qubit
-   * @return Reference to this builder for method chaining
-   *
-   * @par Example:
-   * ```c++
-   * builder.tdg(qubit);
-   * ```
-   * ```mlir
-   * llvm.call @__quantum__qis__tdg__body(%q) : (!llvm.ptr) -> ()
-   * ```
-   */
-  QIRProgramBuilder& tdg(Value qubit);
-
-  /**
-   * @brief Apply a controlled Tdg gate
-   *
-   * @param control Control qubit
-   * @param target Target qubit
-   * @return Reference to this builder for method chaining
-   *
-   * @par Example:
-   * ```c++
-   * builder.ctdg(control, target);
-   * ```
-   * ```mlir
-   * llvm.call @__quantum__qis__ctdg__body(%c, %t) : (!llvm.ptr, !llvm.ptr) ->
-   * ()
-   * ```
-   */
-  QIRProgramBuilder& ctdg(Value control, Value target);
-
-  /**
-   * @brief Apply a multi-controlled Tdg gate
-   *
-   * @param controls Control qubits
-   * @param target Target qubit
-   * @return Reference to this builder for method chaining
-   *
-   * @par Example:
-   * ```c++
-   * builder.mctdg({control1, control2}, target);
-   * ```
-   * ```mlir
-   * llvm.call @__quantum__qis__cctdg__body(%c1, %c2, %t) : (!llvm.ptr,
-   * !llvm.ptr, !llvm.ptr) -> ()
-   * ```
-   */
-  QIRProgramBuilder& mctdg(ValueRange controls, Value target);
-
-  /**
-   * @brief Apply an SX gate to a qubit
-   *
-   * @param qubit Input qubit
-   * @return Reference to this builder for method chaining
-   *
-   * @par Example:
-   * ```c++
-   * builder.sx(qubit);
-   * ```
-   * ```mlir
-   * llvm.call @__quantum__qis__sx__body(%q) : (!llvm.ptr) -> ()
-   * ```
-   */
-  QIRProgramBuilder& sx(Value qubit);
-
-  /**
-   * @brief Apply a controlled SX gate
-   *
-   * @param control Control qubit
-   * @param target Target qubit
-   * @return Reference to this builder for method chaining
-   *
-   * @par Example:
-   * ```c++
-   * builder.csx(control, target);
-   * ```
-   * ```mlir
-   * llvm.call @__quantum__qis__csx__body(%c, %t) : (!llvm.ptr, !llvm.ptr) -> ()
-   * ```
-   */
-  QIRProgramBuilder& csx(Value control, Value target);
-
-  /**
-   * @brief Apply a multi-controlled SX gate
-   *
-   * @param controls Control qubits
-   * @param target Target qubit
-   * @return Reference to this builder for method chaining
-   *
-   * @par Example:
-   * ```c++
-   * builder.mcs({control1, control2}, target);
-   * ```
-   * ```mlir
-   * llvm.call @__quantum__qis__ccs__body(%c1, %c2, %t) : (!llvm.ptr, !llvm.ptr,
-   * !llvm.ptr) -> ()
-   * ```
-   */
-  QIRProgramBuilder& mcsx(ValueRange controls, Value target);
-
-  /**
-   * @brief Apply an SXdg gate to a qubit
-   *
-   * @param qubit Input qubit
-   * @return Reference to this builder for method chaining
-   *
-   * @par Example:
-   * ```c++
-   * builder.sxdg(qubit);
-   * ```
-   * ```mlir
-   * llvm.call @__quantum__qis__sxdg__body(%q) : (!llvm.ptr) -> ()
-   * ```
-   */
-  QIRProgramBuilder& sxdg(Value qubit);
-
-  /**
-   * @brief Apply a controlled SXdg gate
-   *
-   * @param control Control qubit
-   * @param target Target qubit
-   * @return Reference to this builder for method chaining
-   *
-   * @par Example:
-   * ```c++
-   * builder.csxdg(control, target);
-   * ```
-   * ```mlir
-   * llvm.call @__quantum__qis__csxdg__body(%c, %t) : (!llvm.ptr, !llvm.ptr) ->
-   * ()
-   * ```
-   */
-  QIRProgramBuilder& csxdg(Value control, Value target);
-
-  /**
-   * @brief Apply a multi-controlled SXdg gate
-   *
-   * @param controls Control qubits
-   * @param target Target qubit
-   * @return Reference to this builder for method chaining
-   *
-   * @par Example:
-   * ```c++
-   * builder.mcsxdg({control1, control2}, target);
-   * ```
-   * ```mlir
-   * llvm.call @__quantum__qis__ccsxdg__body(%c1, %c2, %t) : (!llvm.ptr,
-   * !llvm.ptr, !llvm.ptr) -> ()
-   * ```
-   */
-  QIRProgramBuilder& mcsxdg(ValueRange controls, Value target);
-
-  /**
-   * @brief Apply an RX gate to a qubit
-   *
-   * @param theta Rotation angle
-   * @param qubit Input qubit
-   * @return Reference to this builder for method chaining
-   *
-   * @par Example:
-   * ```c++
-   * builder.rx(theta, qubit);
-   * ```
-   * ```mlir
-   * llvm.call @__quantum__qis__rx__body(%q, %theta) : (!llvm.ptr, f64) -> ()
-   * ```
-   */
-  QIRProgramBuilder& rx(const std::variant<double, Value>& theta, Value qubit);
-
-  /**
-   * @brief Apply a controlled RX gate
-   *
-   * @param theta Rotation angle
-   * @param control Control qubit
-   * @param target Target qubit
-   * @return Reference to this builder for method chaining
-   *
-   * @par Example:
-   * ```c++
-   * builder.crx(theta, control, target);
-   * ```
-   * ```mlir
-   * llvm.call @__quantum__qis__crx__body(%c, %t, %theta) : (!llvm.ptr,
-   * !llvm.ptr, f64) -> ()
-   * ```
-   */
-  QIRProgramBuilder& crx(const std::variant<double, Value>& theta,
-                         Value control, Value target);
-
-  /**
-   * @brief Apply a multi-controlled RX gate
-   *
-   * @param theta Rotation angle
-   * @param controls Control qubits
-   * @param target Target qubit
-   * @return Reference to this builder for method chaining
-   *
-   * @par Example:
-   * ```c++
-   * builder.mcrx(theta, controls, target);
-   * ```
-   * ```mlir
-   * llvm.call @__quantum__qis__mcrx__body(%c1, %c2, %t, %theta) : (!llvm.ptr,
-   * !llvm.ptr, !llvm.ptr, f64) -> ()
-   * ```
-   */
-  QIRProgramBuilder& mcrx(const std::variant<double, Value>& theta,
-                          ValueRange controls, Value target);
-
-  /**
-   * @brief Apply an RY gate to a qubit
-   *
-   * @param theta Rotation angle
-   * @param qubit Input qubit
-   * @return Reference to this builder for method chaining
-   *
-   * @par Example:
-   * ```c++
-   * builder.ry(theta, qubit);
-   * ```
-   * ```mlir
-   * llvm.call @__quantum__qis__ry__body(%q, %theta) : (!llvm.ptr, f64) -> ()
-   * ```
-   */
-  QIRProgramBuilder& ry(const std::variant<double, Value>& theta, Value qubit);
-
-  /**
-   * @brief Apply a controlled RY gate
-   *
-   * @param theta Rotation angle
-   * @param control Control qubit
-   * @param target Target qubit
-   * @return Reference to this builder for method chaining
-   *
-   * @par Example:
-   * ```c++
-   * builder.cry(theta, control, target);
-   * ```
-   * ```mlir
-   * llvm.call @__quantum__qis__cry__body(%c, %t, %theta) : (!llvm.ptr,
-   * !llvm.ptr, f64) -> ()
-   * ```
-   */
-  QIRProgramBuilder& cry(const std::variant<double, Value>& theta,
-                         Value control, Value target);
-
-  /**
-   * @brief Apply a multi-controlled RY gate
-   *
-   * @param theta Rotation angle
-   * @param controls Control qubits
-   * @param target Target qubit
-   * @return Reference to this builder for method chaining
-   *
-   * @par Example:
-   * ```c++
-   * builder.mcry(theta, controls, target);
-   * ```
-   * ```mlir
-   * llvm.call @__quantum__qis__mcry__body(%c1, %c2, %t, %theta) : (!llvm.ptr,
-   * !llvm.ptr, !llvm.ptr, f64) -> ()
-   * ```
-   */
-  QIRProgramBuilder& mcry(const std::variant<double, Value>& theta,
-                          ValueRange controls, Value target);
-
-  /**
-   * @brief Apply an RZ gate to a qubit
-   *
-   * @param theta Rotation angle
-   * @param qubit Input qubit
-   * @return Reference to this builder for method chaining
-   *
-   * @par Example:
-   * ```c++
-   * builder.rz(theta, qubit);
-   * ```
-   * ```mlir
-   * llvm.call @__quantum__qis__rz__body(%q, %theta) : (!llvm.ptr, f64) -> ()
-   * ```
-   */
-  QIRProgramBuilder& rz(const std::variant<double, Value>& theta, Value qubit);
-
-  /**
-   * @brief Apply a controlled RZ gate
-   *
-   * @param theta Rotation angle
-   * @param control Control qubit
-   * @param target Target qubit
-   * @return Reference to this builder for method chaining
-   *
-   * @par Example:
-   * ```c++
-   * builder.crz(theta, control, target);
-   * ```
-   * ```mlir
-   * llvm.call @__quantum__qis__crz__body(%c, %t, %theta) : (!llvm.ptr,
-   * !llvm.ptr, f64) -> ()
-   * ```
-   */
-  QIRProgramBuilder& crz(const std::variant<double, Value>& theta,
-                         Value control, Value target);
-
-  /**
-   * @brief Apply a multi-controlled RZ gate
-   *
-   * @param theta Rotation angle
-   * @param controls Control qubits
-   * @param target Target qubit
-   * @return Reference to this builder for method chaining
-   *
-   * @par Example:
-   * ```c++
-   * builder.mcrz(theta, controls, target);
-   * ```
-   * ```mlir
-   * llvm.call @__quantum__qis__mcrz__body(%c1, %c2, %t, %theta) : (!llvm.ptr,
-   * !llvm.ptr, !llvm.ptr, f64) -> ()
-   * ```
-   */
-  QIRProgramBuilder& mcrz(const std::variant<double, Value>& theta,
-                          ValueRange controls, Value target);
-
-  /**
-   * @brief Apply a P gate to a qubit
-   *
-   * @param theta Rotation angle
-   * @param qubit Input qubit
-   * @return Reference to this builder for method chaining
-   *
-   * @par Example:
-   * ```c++
-   * builder.p(theta, qubit);
-   * ```
-   * ```mlir
-   * llvm.call @__quantum__qis__p__body(%q, %theta) : (!llvm.ptr, f64) -> ()
-   * ```
-   */
-  QIRProgramBuilder& p(const std::variant<double, Value>& theta, Value qubit);
-
-  /**
-   * @brief Apply a controlled P gate
-   *
-   * @param theta Rotation angle
-   * @param control Control qubit
-   * @param target Target qubit
-   * @return Reference to this builder for method chaining
-   *
-   * @par Example:
-   * ```c++
-   * builder.cp(theta, control, target);
-   * ```
-   * ```mlir
-   * llvm.call @__quantum__qis__cp__body(%c, %t, %theta) : (!llvm.ptr,
-   * !llvm.ptr, f64) -> ()
-   * ```
-   */
-  QIRProgramBuilder& cp(const std::variant<double, Value>& theta, Value control,
-                        Value target);
-
-  /**
-   * @brief Apply a multi-controlled P gate
-   *
-   * @param theta Rotation angle
-   * @param controls Control qubits
-   * @param target Target qubit
-   * @return Reference to this builder for method chaining
-   *
-   * @par Example:
-   * ```c++
-   * builder.mcp(theta, controls, target);
-   * ```
-   * ```mlir
-   * llvm.call @__quantum__qis__mcp__body(%c1, %c2, %t, %theta) : (!llvm.ptr,
-   * !llvm.ptr, !llvm.ptr, f64) -> ()
-   * ```
-   */
-  QIRProgramBuilder& mcp(const std::variant<double, Value>& theta,
-                         ValueRange controls, Value target);
-
-  /**
-   * @brief Apply an R gate to a qubit
-   *
-   * @param theta Rotation angle
-   * @param phi Rotation angle
-   * @param qubit Input qubit
-   * @return Reference to this builder for method chaining
-   *
-   * @par Example:
-   * ```c++
-   * builder.r(theta, phi, qubit);
-   * ```
-   * ```mlir
-   * llvm.call @__quantum__qis__r__body(%q, %theta, %phi) : (!llvm.ptr, f64,
-   * f64) -> ()
-   * ```
-   */
-  QIRProgramBuilder& r(const std::variant<double, Value>& theta,
-                       const std::variant<double, Value>& phi, Value qubit);
-
-  /**
-   * @brief Apply a controlled R gate
-   *
-   * @param theta Rotation angle
-   * @param phi Rotation angle
-   * @param control Control qubit
-   * @param target Target qubit
-   * @return Reference to this builder for method chaining
-   *
-   * @par Example:
-   * ```c++
-   * builder.cr(theta, phi, control, target);
-   * ```
-   * ```mlir
-   * llvm.call @__quantum__qis__cr__body(%c, %t, %theta, %phi) : (!llvm.ptr,
-   * !llvm.ptr, f64, f64) -> ()
-   * ```
-   */
-  QIRProgramBuilder& cr(const std::variant<double, Value>& theta,
-                        const std::variant<double, Value>& phi, Value control,
-                        Value target);
-
-  /**
-   * @brief Apply a multi-controlled R gate
-   *
-   * @param theta Rotation angle
-   * @param phi Rotation angle
-   * @param controls Control qubits
-   * @param target Target qubit
-   * @return Reference to this builder for method chaining
-   *
-   * @par Example:
-   * ```c++
-   * builder.mcr(theta, phi, controls, target);
-   * ```
-   * ```mlir
-   * llvm.call @__quantum__qis__mcr__body(%c1, %c2, %t, %theta, %phi) :
-   * (!llvm.ptr, !llvm.ptr, !llvm.ptr, f64, f64) -> ()
-   * ```
-   */
-  QIRProgramBuilder& mcr(const std::variant<double, Value>& theta,
-                         const std::variant<double, Value>& phi,
-                         ValueRange controls, Value target);
-
-  /**
-   * @brief Apply a U2 gate to a qubit
-   *
-   * @param phi Rotation angle
-   * @param lambda Rotation angle
-   * @param qubit Input qubit
-   * @return Reference to this builder for method chaining
-   *
-   * @par Example:
-   * ```c++
-   * builder.u2(phi, lambda, qubit);
-   * ```
-   * ```mlir
-   * llvm.call @__quantum__qis__u2__body(%q, %phi, %lambda) : (!llvm.ptr, f64,
-   * f64) -> ()
-   * ```
-   */
-  QIRProgramBuilder& u2(const std::variant<double, Value>& phi,
-                        const std::variant<double, Value>& lambda, Value qubit);
-
-  /**
-   * @brief Apply a controlled U2 gate
-   *
-   * @param phi Rotation angle
-   * @param lambda Rotation angle
-   * @param control Control qubit
-   * @param target Target qubit
-   * @return Reference to this builder for method chaining
-   *
-   * @par Example:
-   * ```c++
-   * builder.cu2(phi, lambda, control, target);
-   * ```
-   * ```mlir
-   * llvm.call @__quantum__qis__cu2__body(%c, %t, %phi, %lambda) : (!llvm.ptr,
-   * !llvm.ptr, f64, f64) -> ()
-   * ```
-   */
-  QIRProgramBuilder& cu2(const std::variant<double, Value>& phi,
-                         const std::variant<double, Value>& lambda,
-                         Value control, Value target);
-
-  /**
-   * @brief Apply a multi-controlled U2 gate
-   *
-   * @param phi Rotation angle
-   * @param lambda Rotation angle
-   * @param controls Control qubits
-   * @param target Target qubit
-   * @return Reference to this builder for method chaining
-   *
-   * @par Example:
-   * ```c++
-   * builder.mu2(phi, lambda, controls, target);
-   * ```
-   * ```mlir
-   * llvm.call @__quantum__qis__mu2__body(%c1, %c2, %t, %phi, %lambda) :
-   * (!llvm.ptr, !llvm.ptr, !llvm.ptr, f64, f64) -> ()
-   * ```
-   */
-  QIRProgramBuilder& mcu2(const std::variant<double, Value>& phi,
-                          const std::variant<double, Value>& lambda,
-                          ValueRange controls, Value target);
-
-  /**
-   * @brief Apply a SWAP gate to two qubits
-   *
-   * @param qubit0 Target qubit
-   * @param qubit1 Target qubit
-   * @return Reference to this builder for method chaining
-   *
-   * @par Example:
-   * ```c++
-   * builder.swap(qubit0, qubit1);
-   * ```
-   * ```mlir
-   * llvm.call @__quantum__qis__swap__body(%q0, %q1) : (!llvm.ptr, !llvm.ptr) ->
-   * ()
-   * ```
-   */
-  QIRProgramBuilder& swap(Value qubit0, Value qubit1);
-
-  /**
-   * @brief Apply a controlled SWAP gate
-   *
-   * @param control Control qubit
-   * @param target1 Target qubit
-   * @param target2 Target qubit
-   * @return Reference to this builder for method chaining
-   *
-   * @par Example:
-   * ```c++
-   * builder.cswap(control, target1, target2);
-   * ```
-   * ```mlir
-   * llvm.call @__quantum__qis__cswap__body(%c, %t0, %t1) : (!llvm.ptr,
-   * !llvm.ptr, !llvm.ptr) -> ()
-   * ```
-   */
-  QIRProgramBuilder& cswap(Value control, Value target0, Value target1);
-
-  /**
-   * @brief Apply a multi-controlled SWAP gate
-   *
-   * @param controls Control qubits
-   * @param target1 Target qubit
-   * @param target2 Target qubit
-   * @return Reference to this builder for method chaining
-   *
-   * @par Example:
-   * ```c++
-   * builder.mcswap({control1, control2}, target1, target2);
-   * ```
-   * ```mlir
-   * llvm.call @__quantum__qis__mcswap__body(%c1, %c2, %t0, %t1) : (!llvm.ptr,
-   * !llvm.ptr, !llvm.ptr, !llvm.ptr) -> ()
-   * ```
-   */
-  QIRProgramBuilder& mcswap(ValueRange controls, Value target0, Value target1);
-
-  /**
-   * @brief Apply an iSWAP gate to two qubits
-   *
-   * @param qubit0 Target qubit
-   * @param qubit1 Target qubit
-   * @return Reference to this builder for method chaining
-   *
-   * @par Example:
-   * ```c++
-   * builder.iswap(qubit0, qubit1);
-   * ```
-   * ```mlir
-   * llvm.call @__quantum__qis__iswap__body(%q0, %q1) : (!llvm.ptr, !llvm.ptr)
-   * -> ()
-   * ```
-   */
-  QIRProgramBuilder& iswap(Value qubit0, Value qubit1);
-
-  /**
-   * @brief Apply a controlled iSWAP gate
-   *
-   * @param control Control qubit
-   * @param target1 Target qubit
-   * @param target2 Target qubit
-   * @return Reference to this builder for method chaining
-   *
-   * @par Example:
-   * ```c++
-   * builder.ciswap(control, target1, target2);
-   * ```
-   * ```mlir
-   * llvm.call @__quantum__qis__ciswap__body(%c, %t0, %t1) : (!llvm.ptr,
-   * !llvm.ptr, !llvm.ptr) -> ()
-   * ```
-   */
-  QIRProgramBuilder& ciswap(Value control, Value target0, Value target1);
-
-  /**
-   * @brief Apply a multi-controlled iSWAP gate
-   *
-   * @param controls Control qubits
-   * @param target1 Target qubit
-   * @param target2 Target qubit
-   * @return Reference to this builder for method chaining
-   *
-   * @par Example:
-   * ```c++
-   * builder.mciswap({control1, control2}, target1, target2);
-   * ```
-   * ```mlir
-   * llvm.call @__quantum__qis__mciswap__body(%c1, %c2, %t0, %t1) : (!llvm.ptr,
-   * !llvm.ptr, !llvm.ptr, !llvm.ptr) -> ()
-   * ```
-   */
-  QIRProgramBuilder& mciswap(ValueRange controls, Value target0, Value target1);
+#undef DECLARE_TWO_TARGET_ZERO_PARAMETER
 
   //===--------------------------------------------------------------------===//
   // Finalization

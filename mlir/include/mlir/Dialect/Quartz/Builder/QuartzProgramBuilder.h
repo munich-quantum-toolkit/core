@@ -228,1077 +228,271 @@ public:
   // Unitary Operations
   //===--------------------------------------------------------------------===//
 
-  /**
-   * @brief Apply an Id gate to a qubit
-   *
-   * @param qubit Target qubit
-   * @return Reference to this builder for method chaining
-   *
-   * @par Example:
-   * ```c++
-   * builder.id(q);
-   * ```
-   * ```mlir
-   * quartz.id %q : !quartz.qubit
-   * ```
-   */
-  QuartzProgramBuilder& id(Value qubit);
+  // OneTargetZeroParameter
 
-  /**
-   * @brief Apply a controlled Id gate
-   *
-   * @param control Control qubit
-   * @param target Target qubit
-   * @return Reference to this builder for method chaining
-   *
-   * @par Example:
-   * ```c++
-   * builder.cid(q0, q1);
-   * ```
-   * ```mlir
-   * quartz.ctrl(%q0) {
-   *   quartz.id %q1 : !quartz.qubit
-   * }
-   * ```
-   */
-  QuartzProgramBuilder& cid(Value control, Value target);
+#define DECLARE_ONE_TARGET_ZERO_PARAMETER(OP_CLASS, OP_NAME)                   \
+  /**                                                                          \
+   * @brief Apply a OP_CLASS                                                   \
+   *                                                                           \
+   * @param qubit Target qubit                                                 \
+   * @return Reference to this builder for method chaining                     \
+   *                                                                           \
+   * @par Example:                                                             \
+   * ```c++                                                                    \
+   * builder.OP_NAME(q);                                                       \
+   * ```                                                                       \
+   * ```mlir                                                                   \
+   * quartz.OP_NAME %q : !quartz.qubit                                         \
+   * ```                                                                       \
+   */                                                                          \
+  QuartzProgramBuilder& OP_NAME(Value qubit);                                  \
+  /**                                                                          \
+   * @brief Apply a controlled OP_CLASS                                        \
+   *                                                                           \
+   * @param control Control qubit                                              \
+   * @param target Target qubit                                                \
+   * @return Reference to this builder for method  chaining                    \
+   *                                                                           \
+   * @par Example:                                                             \
+   * ```c++                                                                    \
+   * builder.c##OP_NAME(q0, q1);                                               \
+   * ```                                                                       \
+   * ```mlir                                                                   \
+   * quartz.ctrl(%q0) {                                                        \
+   *   quartz.OP_NAME %q1 : !quartz.qubit                                      \
+   * }                                                                         \
+   */                                                                          \
+  QuartzProgramBuilder& c##OP_NAME(Value control, Value target);               \
+  /**                                                                          \
+   * @brief Apply a multi-controlled OP_CLASS                                  \
+   *                                                                           \
+   * @param controls Control qubits                                            \
+   * @param target Target qubit                                                \
+   * @return Reference to this builder for method chaining                     \
+   *                                                                           \
+   * @par Example:                                                             \
+   * ```c++                                                                    \
+   * builder.mc##OP_NAME({q0, q1}, q2);                                        \
+   * ```                                                                       \
+   * ```mlir                                                                   \
+   * quartz.ctrl(%q0, %q1) {                                                   \
+   *   quartz.OP_NAME %q2 : !quartz.qubit                                      \
+   * }                                                                         \
+   */                                                                          \
+  QuartzProgramBuilder& mc##OP_NAME(ValueRange controls, Value target);
 
-  /**
-   * @brief Apply a multi-controlled Id gate
-   *
-   * @param controls Control qubits
-   * @param target Target qubit
-   * @return Reference to this builder for method chaining
-   *
-   * @par Example:
-   * ```c++
-   * builder.mcid({q0, q1}, q2);
-   * ```
-   * ```mlir
-   * quartz.ctrl(%q0, %q1) {
-   *   quartz.id %q2 : !quartz.qubit
-   * }
-   * ```
-   */
-  QuartzProgramBuilder& mcid(ValueRange controls, Value target);
+  DECLARE_ONE_TARGET_ZERO_PARAMETER(IdOp, id)
+  DECLARE_ONE_TARGET_ZERO_PARAMETER(XOp, x)
+  DECLARE_ONE_TARGET_ZERO_PARAMETER(YOp, y)
+  DECLARE_ONE_TARGET_ZERO_PARAMETER(ZOp, z)
+  DECLARE_ONE_TARGET_ZERO_PARAMETER(HOp, h)
+  DECLARE_ONE_TARGET_ZERO_PARAMETER(SOp, s)
+  DECLARE_ONE_TARGET_ZERO_PARAMETER(SdgOp, sdg)
+  DECLARE_ONE_TARGET_ZERO_PARAMETER(TOp, t)
+  DECLARE_ONE_TARGET_ZERO_PARAMETER(TdgOp, tdg)
+  DECLARE_ONE_TARGET_ZERO_PARAMETER(SXOp, sx)
+  DECLARE_ONE_TARGET_ZERO_PARAMETER(SXdgOp, sxdg)
 
-  /**
-   * @brief Apply an X gate to a qubit
-   *
-   * @param qubit Target qubit
-   * @return Reference to this builder for method chaining
-   *
-   * @par Example:
-   * ```c++
-   * builder.x(q);
-   * ```
-   * ```mlir
-   * quartz.x %q : !quartz.qubit
-   * ```
-   */
-  QuartzProgramBuilder& x(Value qubit);
+#undef DECLARE_ONE_TARGET_ZERO_PARAMETER
 
-  /**
-   * @brief Apply a controlled X gate
-   *
-   * @param control Control qubit
-   * @param target Target qubit
-   * @return Reference to this builder for method chaining
-   *
-   * @par Example:
-   * ```c++
-   * builder.cx(q0, q1);
-   * ```
-   * ```mlir
-   * quartz.ctrl(%q0) {
-   *   quartz.x %q1 : !quartz.qubit
-   * }
-   * ```
-   */
-  QuartzProgramBuilder& cx(Value control, Value target);
+  // OneTargetOneParameter
 
-  /**
-   * @brief Apply a multi-controlled X gate
-   *
-   * @param controls Control qubits
-   * @param target Target qubit
-   * @return Reference to this builder for method chaining
-   *
-   * @par Example:
-   * ```c++
-   * builder.mcx({q0, q1}, q2);
-   * ```
-   * ```mlir
-   * quartz.ctrl(%q0, %q1) {
-   *   quartz.x %q2 : !quartz.qubit
-   * }
-   * ```
-   */
-  QuartzProgramBuilder& mcx(ValueRange controls, Value target);
+#define DECLARE_ONE_TARGET_ONE_PARAMETER(OP_CLASS, OP_NAME, PARAM)             \
+  /**                                                                          \
+   * @brief Apply a OP_CLASS                                                   \
+   *                                                                           \
+   * @param PARAM Rotation angle in radians                                    \
+   * @param qubit Target qubit                                                 \
+   * @return Reference to this builder for method chaining                     \
+   *                                                                           \
+   * @par Example:                                                             \
+   * ```c++                                                                    \
+   * builder.OP_NAME(PARAM, q);                                                \
+   * ```                                                                       \
+   * ```mlir                                                                   \
+   * quartz.OP_NAME(%PARAM) %q : !quartz.qubit                                 \
+   * ```                                                                       \
+   */                                                                          \
+  QuartzProgramBuilder& OP_NAME(const std::variant<double, Value>&(PARAM),     \
+                                Value qubit);                                  \
+  /**                                                                          \
+   * @brief Apply a controlled OP_CLASS                                        \
+   *                                                                           \
+   * @param PARAM Rotation angle in radians                                    \
+   * @param control Control qubit                                              \
+   * @param target Target qubit                                                \
+   * @return Reference to this builder for method chaining                     \
+   *                                                                           \
+   * @par Example:                                                             \
+   * ```c++                                                                    \
+   * builder.c##OP_NAME(PARAM, q0, q1);                                        \
+   * ```                                                                       \
+   * ```mlir                                                                   \
+   * quartz.ctrl(%q0) {                                                        \
+   *   quartz.OP_NAME(%PARAM) %q1 : !quartz.qubit                              \
+   * }                                                                         \
+   */                                                                          \
+  QuartzProgramBuilder& c##OP_NAME(const std::variant<double, Value>&(PARAM),  \
+                                   Value control, Value target);               \
+  /**                                                                          \
+   * @brief Apply a multi-controlled OP_CLASS                                  \
+   *                                                                           \
+   * @param PARAM Rotation angle in radians                                    \
+   * @param controls Control qubits                                            \
+   * @param target Target qubit                                                \
+   * @return Reference to this builder for method chaining                     \
+   *                                                                           \
+   * @par Example:                                                             \
+   * ```c++                                                                    \
+   * builder.mc##OP_NAME(PARAM, {q0, q1}, q2);                                 \
+   * ```                                                                       \
+   * ```mlir                                                                   \
+   * quartz.ctrl(%q0, %q1) {                                                   \
+   *   quartz.OP_NAME(%PARAM) %q2 : !quartz.qubit                              \
+   * }                                                                         \
+   */                                                                          \
+  QuartzProgramBuilder& mc##OP_NAME(const std::variant<double, Value>&(PARAM), \
+                                    ValueRange controls, Value target);
 
-  /**
-   * @brief Apply a Y gate to a qubit
-   *
-   * @param qubit Target qubit
-   * @return Reference to this builder for method chaining
-   *
-   * @par Example:
-   * ```c++
-   * builder.y(q);
-   * ```
-   * ```mlir
-   * quartz.y %q : !quartz.qubit
-   * ```
-   */
-  QuartzProgramBuilder& y(Value qubit);
+  DECLARE_ONE_TARGET_ONE_PARAMETER(RzOp, rz, theta)
+  DECLARE_ONE_TARGET_ONE_PARAMETER(RxOp, rx, theta)
+  DECLARE_ONE_TARGET_ONE_PARAMETER(RyOp, ry, theta)
+  DECLARE_ONE_TARGET_ONE_PARAMETER(POp, p, theta)
 
-  /**
-   * @brief Apply a controlled Y gate
-   *
-   * @param control Control qubit
-   * @param target Target qubit
-   * @return Reference to this builder for method chaining
-   *
-   * @par Example:
-   * ```c++
-   * builder.cy(q0, q1);
-   * ```
-   * ```mlir
-   * quartz.ctrl(%q0) {
-   *   quartz.y %q1 : !quartz.qubit
-   * }
-   * ```
-   */
-  QuartzProgramBuilder& cy(Value control, Value target);
+#undef DECLARE_ONE_TARGET_ONE_PARAMETER
 
-  /**
-   * @brief Apply a multi-controlled Y gate
-   *
-   * @param controls Control qubits
-   * @param target Target qubit
-   * @return Reference to this builder for method chaining
-   *
-   * @par Example:
-   * ```c++
-   * builder.mcy({q0, q1}, q2);
-   * ```
-   * ```mlir
-   * quartz.ctrl(%q0, %q1) {
-   *   quartz.y %q2 : !quartz.qubit
-   * }
-   * ```
-   */
-  QuartzProgramBuilder& mcy(ValueRange controls, Value target);
+  // OneTargetTwoParameter
 
-  /**
-   * @brief Apply a Z gate to a qubit
-   *
-   * @param qubit Target qubit
-   * @return Reference to this builder for method chaining
-   *
-   * @par Example:
-   * ```c++
-   * builder.z(q);
-   * ```
-   * ```mlir
-   * quartz.z %q : !quartz.qubit
-   * ```
-   */
-  QuartzProgramBuilder& z(Value qubit);
+#define DECLARE_ONE_TARGET_TWO_PARAMETER(OP_CLASS, OP_NAME, PARAM1, PARAM2)    \
+  /**                                                                          \
+   * @brief Apply a OP_CLASS                                                   \
+   *                                                                           \
+   * @param PARAM1 Rotation angle in radians                                   \
+   * @param PARAM2 Rotation angle in radians                                   \
+   * @param qubit Target qubit                                                 \
+   * @return Reference to this builder for method chaining                     \
+   *                                                                           \
+   * @par Example:                                                             \
+   * ```c++                                                                    \
+   * builder.OP_NAME(PARAM1, PARAM2, q);                                       \
+   * ```                                                                       \
+   * ```mlir                                                                   \
+   * quartz.OP_NAME(%PARAM1, %PARAM2) %q : !quartz.qubit                       \
+   * ```                                                                       \
+   */                                                                          \
+  QuartzProgramBuilder& OP_NAME(const std::variant<double, Value>&(PARAM1),    \
+                                const std::variant<double, Value>&(PARAM2),    \
+                                Value qubit);                                  \
+  /**                                                                          \
+   * @brief Apply a controlled OP_CLASS                                        \
+   *                                                                           \
+   * @param PARAM1 Rotation angle in radians                                   \
+   * @param PARAM2 Rotation angle in radians                                   \
+   * @param control Control qubit                                              \
+   * @param target Target qubit                                                \
+   * @return Reference to this builder for method chaining                     \
+   *                                                                           \
+   * @par Example:                                                             \
+   * ```c++                                                                    \
+   * builder.c##OP_NAME(PARAM1, PARAM2, q0, q1);                               \
+   * ```                                                                       \
+   * ```mlir                                                                   \
+   * quartz.ctrl(%q0) {                                                        \
+   *   quartz.OP_NAME(%PARAM1, %PARAM2) %q1 : !quartz.qubit                    \
+   * }                                                                         \
+   */                                                                          \
+  QuartzProgramBuilder& c##OP_NAME(const std::variant<double, Value>&(PARAM1), \
+                                   const std::variant<double, Value>&(PARAM2), \
+                                   Value control, Value target);               \
+  /**                                                                          \
+   * @brief Apply a multi-controlled OP_CLASS                                  \
+   *                                                                           \
+   * @param PARAM1 Rotation angle in radians                                   \
+   * @param PARAM2 Rotation angle in radians                                   \
+   * @param controls Control qubits                                            \
+   * @param target Target qubit                                                \
+   * @return Reference to this builder for method chaining                     \
+   *                                                                           \
+   * @par Example:                                                             \
+   * ```c++                                                                    \
+   * builder.mc##OP_NAME(PARAM1, PARAM2, {q0, q1}, q2);                        \
+   * ```                                                                       \
+   * ```mlir                                                                   \
+   * quartz.ctrl(%q0, %q1) {                                                   \
+   *   quartz.OP_NAME(%PARAM1, %PARAM2) %q2 : !quartz.qubit                    \
+   * }                                                                         \
+   */                                                                          \
+  QuartzProgramBuilder& mc##OP_NAME(                                           \
+      const std::variant<double, Value>&(PARAM1),                              \
+      const std::variant<double, Value>&(PARAM2), ValueRange controls,         \
+      Value target);
 
-  /**
-   * @brief Apply a controlled Z gate
-   *
-   * @param control Control qubit
-   * @param target Target qubit
-   * @return Reference to this builder for method chaining
-   *
-   * @par Example:
-   * ```c++
-   * builder.cz(q0, q1);
-   * ```
-   * ```mlir
-   * quartz.ctrl(%q0) {
-   *   quartz.z %q1 : !quartz.qubit
-   * }
-   * ```
-   */
-  QuartzProgramBuilder& cz(Value control, Value target);
+  DECLARE_ONE_TARGET_TWO_PARAMETER(ROp, r, theta, phi)
+  DECLARE_ONE_TARGET_TWO_PARAMETER(U2Op, u2, phi, lambda)
 
-  /**
-   * @brief Apply a multi-controlled Z gate
-   *
-   * @param controls Control qubits
-   * @param target Target qubit
-   * @return Reference to this builder for method chaining
-   *
-   * @par Example:
-   * ```c++
-   * builder.mcz({q0, q1}, q2);
-   * ```
-   * ```mlir
-   * quartz.ctrl(%q0, %q1) {
-   *   quartz.z %q2 : !quartz.qubit
-   * }
-   * ```
-   */
-  QuartzProgramBuilder& mcz(ValueRange controls, Value target);
+#undef DECLARE_ONE_TARGET_TWO_PARAMETER
 
-  /**
-   * @brief Apply an H gate to a qubit
-   *
-   * @param qubit Target qubit
-   * @return Reference to this builder for method chaining
-   *
-   * @par Example:
-   * ```c++
-   * builder.h(q);
-   * ```
-   * ```mlir
-   * quartz.h %q : !quartz.qubit
-   * ```
-   */
-  QuartzProgramBuilder& h(Value qubit);
+  // TwoTargetZeroParameter
 
-  /**
-   * @brief Apply a controlled H gate
-   *
-   * @param control Control qubit
-   * @param target Target qubit
-   * @return Reference to this builder for method chaining
-   *
-   * @par Example:
-   * ```c++
-   * builder.ch(q0, q1);
-   * ```
-   * ```mlir
-   * quartz.ctrl(%q0) {
-   *   quartz.h %q1 : !quartz.qubit
-   * }
-   * ```
-   */
-  QuartzProgramBuilder& ch(Value control, Value target);
+#define DECLARE_TWO_TARGET_ZERO_PARAMETER(OP_CLASS, OP_NAME)                   \
+  /**                                                                          \
+   * @brief Apply a OP_CLASS                                                   \
+   *                                                                           \
+   * @param qubit0 Target qubit                                                \
+   * @param qubit1 Target qubit                                                \
+   * @return Reference to this builder for method chaining                     \
+   *                                                                           \
+   * @par Example:                                                             \
+   * ```c++                                                                    \
+   * builder.OP_NAME(q0, q1);                                                  \
+   * ```                                                                       \
+   * ```mlir                                                                   \
+   * quartz.OP_NAME %q0, %q1 : !quartz.qubit, !quartz.qubit                    \
+   * ```                                                                       \
+   */                                                                          \
+  QuartzProgramBuilder& OP_NAME(Value qubit0, Value qubit1);                   \
+  /**                                                                          \
+   * @brief Apply a controlled OP_CLASS                                        \
+   *                                                                           \
+   * @param control Control qubit                                              \
+   * @param qubit0 Target qubit                                                \
+   * @param qubit1 Target qubit                                                \
+   * @return Reference to this builder for method chaining                     \
+   *                                                                           \
+   * @par Example:                                                             \
+   * ```c++                                                                    \
+   * builder.c##OP_NAME(q0, q1, q2);                                           \
+   * ```                                                                       \
+   * ```mlir                                                                   \
+   * quartz.ctrl(%q0) {                                                        \
+   *   quartz.OP_NAME %q1, %q2 : !quartz.qubit, !quartz.qubit                  \
+   * }                                                                         \
+   */                                                                          \
+  QuartzProgramBuilder& c##OP_NAME(Value control, Value qubit0, Value qubit1); \
+  /**                                                                          \
+   * @brief Apply a multi-controlled OP_CLASS                                  \
+   *                                                                           \
+   * @param controls Control qubits                                            \
+   * @param qubit0 Target qubit                                                \
+   * @param qubit1 Target qubit                                                \
+   * @return Reference to this builder for method chaining                     \
+   *                                                                           \
+   * @par Example:                                                             \
+   * ```c++                                                                    \
+   * builder.mc##OP_NAME({q0, q1}, q2, q3);                                    \
+   * ```                                                                       \
+   * ```mlir                                                                   \
+   * quartz.ctrl(%q0, %q1) {                                                   \
+   *   quartz.OP_NAME %q2, %q3 : !quartz.qubit, !quartz.qubit                  \
+   * }                                                                         \
+   */                                                                          \
+  QuartzProgramBuilder& mc##OP_NAME(ValueRange controls, Value qubit0,         \
+                                    Value qubit1);
 
-  /**
-   * @brief Apply a multi-controlled H gate
-   *
-   * @param controls Control qubits
-   * @param target Target qubit
-   * @return Reference to this builder for method chaining
-   *
-   * @par Example:
-   * ```c++
-   * builder.mch({q0, q1}, q2);
-   * ```
-   * ```mlir
-   * quartz.ctrl(%q0, %q1) {
-   *   quartz.h %q2 : !quartz.qubit
-   * }
-   * ```
-   */
-  QuartzProgramBuilder& mch(ValueRange controls, Value target);
+  DECLARE_TWO_TARGET_ZERO_PARAMETER(SWAPOp, swap)
+  DECLARE_TWO_TARGET_ZERO_PARAMETER(iSWAPOp, iswap)
 
-  /**
-   * @brief Apply an S gate to a qubit
-   *
-   * @param qubit Target qubit
-   * @return Reference to this builder for method chaining
-   *
-   * @par Example:
-   * ```c++
-   * builder.s(q);
-   * ```
-   * ```mlir
-   * quartz.s %q : !quartz.qubit
-   * ```
-   */
-  QuartzProgramBuilder& s(Value qubit);
-
-  /**
-   * @brief Apply a controlled S gate
-   *
-   * @param control Control qubit
-   * @param target Target qubit
-   * @return Reference to this builder for method chaining
-   *
-   * @par Example:
-   * ```c++
-   * builder.cs(q0, q1);
-   * ```
-   * ```mlir
-   * quartz.ctrl(%q0) {
-   *   quartz.s %q1 : !quartz.qubit
-   * }
-   * ```
-   */
-  QuartzProgramBuilder& cs(Value control, Value target);
-
-  /**
-   * @brief Apply a multi-controlled S gate
-   *
-   * @param controls Control qubits
-   * @param target Target qubit
-   * @return Reference to this builder for method chaining
-   *
-   * @par Example:
-   * ```c++
-   * builder.mcs({q0, q1}, q2);
-   * ```
-   * ```mlir
-   * quartz.ctrl(%q0, %q1) {
-   *   quartz.s %q2 : !quartz.qubit
-   * }
-   * ```
-   */
-  QuartzProgramBuilder& mcs(ValueRange controls, Value target);
-
-  /**
-   * @brief Apply an Sdg gate to a qubit
-   *
-   * @param qubit Target qubit
-   * @return Reference to this builder for method chaining
-   *
-   * @par Example:
-   * ```c++
-   * builder.sdg(q);
-   * ```
-   * ```mlir
-   * quartz.sdg %q : !quartz.qubit
-   * ```
-   */
-  QuartzProgramBuilder& sdg(Value qubit);
-
-  /**
-   * @brief Apply a controlled Sdg gate
-   *
-   * @param control Control qubit
-   * @param target Target qubit
-   * @return Reference to this builder for method chaining
-   *
-   * @par Example:
-   * ```c++
-   * builder.csdg(q0, q1);
-   * ```
-   * ```mlir
-   * quartz.ctrl(%q0) {
-   *   quartz.sdg %q1 : !quartz.qubit
-   * }
-   * ```
-   */
-  QuartzProgramBuilder& csdg(Value control, Value target);
-
-  /**
-   * @brief Apply a multi-controlled Sdg gate
-   *
-   * @param controls Control qubits
-   * @param target Target qubit
-   * @return Reference to this builder for method chaining
-   *
-   * @par Example:
-   * ```c++
-   * builder.mcsdg({q0, q1}, q2);
-   * ```
-   * ```mlir
-   * quartz.ctrl(%q0, %q1) {
-   *   quartz.sdg %q2 : !quartz.qubit
-   * }
-   * ```
-   */
-  QuartzProgramBuilder& mcsdg(ValueRange controls, Value target);
-
-  /**
-   * @brief Apply a T gate to a qubit
-   *
-   * @param qubit Target qubit
-   * @return Reference to this builder for method chaining
-   *
-   * @par Example:
-   * ```c++
-   * builder.t(q);
-   * ```
-   * ```mlir
-   * quartz.t %q : !quartz.qubit
-   * ```
-   */
-  QuartzProgramBuilder& t(Value qubit);
-
-  /**
-   * @brief Apply a controlled T gate
-   *
-   * @param control Control qubit
-   * @param target Target qubit
-   * @return Reference to this builder for method chaining
-   *
-   * @par Example:
-   * ```c++
-   * builder.ct(q0, q1);
-   * ```
-   * ```mlir
-   * quartz.ctrl(%q0) {
-   *   quartz.t %q1 : !quartz.qubit
-   * }
-   * ```
-   */
-  QuartzProgramBuilder& ct(Value control, Value target);
-
-  /**
-   * @brief Apply a multi-controlled T gate
-   *
-   * @param controls Control qubits
-   * @param target Target qubit
-   * @return Reference to this builder for method chaining
-   *
-   * @par Example:
-   * ```c++
-   * builder.mct({q0, q1}, q2);
-   * ```
-   * ```mlir
-   * quartz.ctrl(%q0, %q1) {
-   *   quartz.t %q2 : !quartz.qubit
-   * }
-   * ```
-   */
-  QuartzProgramBuilder& mct(ValueRange controls, Value target);
-
-  /**
-   * @brief Apply a Tdg gate to a qubit
-   *
-   * @param qubit Target qubit
-   * @return Reference to this builder for method chaining
-   *
-   * @par Example:
-   * ```c++
-   * builder.tdg(q);
-   * ```
-   * ```mlir
-   * quartz.tdg %q : !quartz.qubit
-   * ```
-   */
-  QuartzProgramBuilder& tdg(Value qubit);
-
-  /**
-   * @brief Apply a controlled Tdg gate
-   *
-   * @param control Control qubit
-   * @param target Target qubit
-   * @return Reference to this builder for method chaining
-   *
-   * @par Example:
-   * ```c++
-   * builder.ctdg(q0, q1);
-   * ```
-   * ```mlir
-   * quartz.ctrl(%q0) {
-   *   quartz.tdg %q1 : !quartz.qubit
-   * }
-   * ```
-   */
-  QuartzProgramBuilder& ctdg(Value control, Value target);
-
-  /**
-   * @brief Apply a multi-controlled Tdg gate
-   *
-   * @param controls Control qubits
-   * @param target Target qubit
-   * @return Reference to this builder for method chaining
-   *
-   * @par Example:
-   * ```c++
-   * builder.mctdg({q0, q1}, q2);
-   * ```
-   * ```mlir
-   * quartz.ctrl(%q0, %q1) {
-   *   quartz.tdg %q2 : !quartz.qubit
-   * }
-   * ```
-   */
-  QuartzProgramBuilder& mctdg(ValueRange controls, Value target);
-
-  /**
-   * @brief Apply an SX gate to a qubit
-   *
-   * @param qubit Target qubit
-   * @return Reference to this builder for method chaining
-   *
-   * @par Example:
-   * ```c++
-   * builder.sx(q);
-   * ```
-   * ```mlir
-   * quartz.sx %q : !quartz.qubit
-   * ```
-   */
-  QuartzProgramBuilder& sx(Value qubit);
-
-  /**
-   * @brief Apply a controlled SX gate
-   *
-   * @param control Control qubit
-   * @param target Target qubit
-   * @return Reference to this builder for method chaining
-   *
-   * @par Example:
-   * ```c++
-   * builder.csx(q0, q1);
-   * ```
-   * ```mlir
-   * quartz.ctrl(%q0) {
-   *   quartz.sx %q1 : !quartz.qubit
-   * }
-   * ```
-   */
-  QuartzProgramBuilder& csx(Value control, Value target);
-
-  /**
-   * @brief Apply a multi-controlled SX gate
-   *
-   * @param controls Control qubits
-   * @param target Target qubit
-   * @return Reference to this builder for method chaining
-   *
-   * @par Example:
-   * ```c++
-   * builder.mcsx({q0, q1}, q2);
-   * ```
-   * ```mlir
-   * quartz.ctrl(%q0, %q1) {
-   *   quartz.sx %q2 : !quartz.qubit
-   * }
-   * ```
-   */
-  QuartzProgramBuilder& mcsx(ValueRange controls, Value target);
-
-  /**
-   * @brief Apply an SXdg gate to a qubit
-   *
-   * @param qubit Target qubit
-   * @return Reference to this builder for method chaining
-   *
-   * @par Example:
-   * ```c++
-   * builder.sxdg(q);
-   * ```
-   * ```mlir
-   * quartz.sxdg %q : !quartz.qubit
-   * ```
-   */
-  QuartzProgramBuilder& sxdg(Value qubit);
-
-  /**
-   * @brief Apply a controlled SXdg gate
-   *
-   * @param control Control qubit
-   * @param target Target qubit
-   * @return Reference to this builder for method chaining
-   *
-   * @par Example:
-   * ```c++
-   * builder.csxdg(q0, q1);
-   * ```
-   * ```mlir
-   * quartz.ctrl(%q0) {
-   *   quartz.sxdg %q1 : !quartz.qubit
-   * }
-   * ```
-   */
-  QuartzProgramBuilder& csxdg(Value control, Value target);
-
-  /**
-   * @brief Apply a multi-controlled SXdg gate
-   *
-   * @param controls Control qubits
-   * @param target Target qubit
-   * @return Reference to this builder for method chaining
-   *
-   * @par Example:
-   * ```c++
-   * builder.mcsxdg({q0, q1}, q2);
-   * ```
-   * ```mlir
-   * quartz.ctrl(%q0, %q1) {
-   *   quartz.sxdg %q2 : !quartz.qubit
-   * }
-   * ```
-   */
-  QuartzProgramBuilder& mcsxdg(ValueRange controls, Value target);
-
-  /**
-   * @brief Apply an RX gate to a qubit
-   *
-   * @param theta Rotation angle in radians
-   * @param qubit Target qubit
-   * @return Reference to this builder for method chaining
-   *
-   * @par Example:
-   * ```c++
-   * builder.rx(1.0, q);
-   * ```
-   * ```mlir
-   * quartz.rx(%theta) %q : !quartz.qubit
-   * ```
-   */
-  QuartzProgramBuilder& rx(const std::variant<double, Value>& theta,
-                           Value qubit);
-
-  /**
-   * @brief Apply a CRX gate
-   *
-   * @param theta Rotation angle in radians
-   * @param control Control qubit
-   * @param target Target qubit
-   * @return Reference to this builder for method chaining
-   *
-   * @par Example:
-   * ```c++
-   * builder.crx(1.0, q0, q1);
-   * ```
-   * ```mlir
-   * quartz.ctrl(%q0) {
-   *   quartz.rx(%theta) %q1 : !quartz.qubit
-   * }
-   * ```
-   */
-  QuartzProgramBuilder& crx(const std::variant<double, Value>& theta,
-                            Value control, Value target);
-
-  /**
-   * @brief Apply a multi-controlled RX gate
-   *
-   * @param theta Rotation angle in radians
-   * @param controls Control qubits
-   * @param target Target qubit
-   * @return Reference to this builder for method chaining
-   * @par Example:
-   * ```c++
-   * builder.mcrx(1.0, {q0, q1}, q2);
-   * ```
-   * ```mlir
-   * quartz.ctrl(%q0, %q1) {
-   *   quartz.rx(%theta) %q2 : !quartz.qubit
-   * }
-   * ```
-   */
-  QuartzProgramBuilder& mcrx(const std::variant<double, Value>& theta,
-                             ValueRange controls, Value target);
-
-  /**
-   * @brief Apply an RY gate to a qubit
-   *
-   * @param theta Rotation angle in radians
-   * @param qubit Target qubit
-   * @return Reference to this builder for method chaining
-   *
-   * @par Example:
-   * ```c++
-   * builder.ry(1.0, q);
-   * ```
-   * ```mlir
-   * quartz.ry(%theta) %q : !quartz.qubit
-   * ```
-   */
-  QuartzProgramBuilder& ry(const std::variant<double, Value>& theta,
-                           Value qubit);
-
-  /**
-   * @brief Apply a CRY gate
-   *
-   * @param theta Rotation angle in radians
-   * @param control Control qubit
-   * @param target Target qubit
-   * @return Reference to this builder for method chaining
-   *
-   * @par Example:
-   * ```c++
-   * builder.cry(1.0, q0, q1);
-   * ```
-   * ```mlir
-   * quartz.ctrl(%q0) {
-   *   quartz.ry(%theta) %q1 : !quartz.qubit
-   * }
-   * ```
-   */
-  QuartzProgramBuilder& cry(const std::variant<double, Value>& theta,
-                            Value control, Value target);
-
-  /**
-   * @brief Apply a multi-controlled RY gate
-   *
-   * @param theta Rotation angle in radians
-   * @param controls Control qubits
-   * @param target Target qubit
-   * @return Reference to this builder for method chaining
-   *
-   * @par Example:
-   * ```c++
-   * builder.mcry(1.0, {q0, q1}, q2);
-   * ```
-   * ```mlir
-   * quartz.ctrl(%q0, %q1) {
-   *   quartz.ry(%theta) %q2 : !quartz.qubit
-   * }
-   * ```
-   */
-  QuartzProgramBuilder& mcry(const std::variant<double, Value>& theta,
-                             ValueRange controls, Value target);
-
-  /**
-   * @brief Apply an RZ gate to a qubit
-   *
-   * @param theta Rotation angle in radians
-   * @param qubit Target qubit
-   * @return Reference to this builder for method chaining
-   *
-   * @par Example:
-   * ```c++
-   * builder.rz(1.0, q);
-   * ```
-   * ```mlir
-   * quartz.rz(%theta) %q : !quartz.qubit
-   * ```
-   */
-  QuartzProgramBuilder& rz(const std::variant<double, Value>& theta,
-                           Value qubit);
-
-  /**
-   * @brief Apply a CRZ gate
-   *
-   * @param theta Rotation angle in radians
-   * @param control Control qubit
-   * @param target Target qubit
-   * @return Reference to this builder for method chaining
-   *
-   * @par Example:
-   * ```c++
-   * builder.crz(1.0, q0, q1);
-   * ```
-   * ```mlir
-   * quartz.ctrl(%q0) {
-   *   quartz.rz(%theta) %q1 : !quartz.qubit
-   * }
-   * ```
-   */
-  QuartzProgramBuilder& crz(const std::variant<double, Value>& theta,
-                            Value control, Value target);
-
-  /**
-   * @brief Apply a multi-controlled RZ gate
-   *
-   * @param theta Rotation angle in radians
-   * @param controls Control qubits
-   * @param target Target qubit
-   * @return Reference to this builder for method chaining
-   *
-   * @par Example:
-   * ```c++
-   * builder.mcrz(1.0, {q0, q1}, q2);
-   * ```
-   * ```mlir
-   * quartz.ctrl(%q0, %q1) {
-   *   quartz.rz(%theta) %q2 : !quartz.qubit
-   * }
-   * ```
-   */
-  QuartzProgramBuilder& mcrz(const std::variant<double, Value>& theta,
-                             ValueRange controls, Value target);
-
-  /**
-   * @brief Apply a P gate to a qubit
-   *
-   * @param theta Rotation angle in radians
-   * @param qubit Target qubit
-   * @return Reference to this builder for method chaining
-   *
-   * @par Example:
-   * ```c++
-   * builder.p(1.0, q);
-   * ```
-   * ```mlir
-   * quartz.p(%theta) %q : !quartz.qubit
-   * ```
-   */
-  QuartzProgramBuilder& p(const std::variant<double, Value>& theta,
-                          Value qubit);
-
-  /**
-   * @brief Apply a controlled P gate
-   *
-   * @param theta Rotation angle in radians
-   * @param control Control qubit
-   * @param target Target qubit
-   * @return Reference to this builder for method chaining
-   *
-   * @par Example:
-   * ```c++
-   * builder.cp(1.0, q0, q1);
-   * ```
-   * ```mlir
-   * quartz.ctrl(%q0) {
-   *   quartz.p(%theta) %q1 : !quartz.qubit
-   * }
-   * ```
-   */
-  QuartzProgramBuilder& cp(const std::variant<double, Value>& theta,
-                           Value control, Value target);
-
-  /**
-   * @brief Apply a multi-controlled P gate
-   *
-   * @param theta Rotation angle in radians
-   * @param controls Control qubits
-   * @param target Target qubit
-   * @return Reference to this builder for method chaining
-   *
-   * @par Example:
-   * ```c++
-   * builder.mcp(1.0, {q0, q1}, q2);
-   * ```
-   * ```mlir
-   * quartz.ctrl(%q0, %q1) {
-   *   quartz.p(%theta) %q2 : !quartz.qubit
-   * }
-   * ```
-   */
-  QuartzProgramBuilder& mcp(const std::variant<double, Value>& theta,
-                            ValueRange controls, Value target);
-
-  /**
-   * @brief Apply an R gate to a qubit
-   *
-   * @param theta Rotation angle in radians
-   * @param phi Rotation angle in radians
-   * @param qubit Target qubit
-   * @return Reference to this builder for method chaining
-   *
-   * @par Example:
-   * ```c++
-   * builder.r(1.0, 0.5, q);
-   * ```
-   * ```mlir
-   * quartz.r(%theta, %phi) %q : !quartz.qubit
-   * ```
-   */
-  QuartzProgramBuilder& r(const std::variant<double, Value>& theta,
-                          const std::variant<double, Value>& phi, Value qubit);
-
-  /**
-   * @brief Apply a controlled R gate
-   *
-   * @param theta Rotation angle in radians
-   * @param phi Rotation angle in radians
-   * @param control Control qubit
-   * @param target Target qubit
-   * @return Reference to this builder for method chaining
-   *
-   * @par Example:
-   * ```c++
-   * builder.cr(1.0, 0.5, q0, q1);
-   * ```
-   * ```mlir
-   * quartz.ctrl(%q0) {
-   *   quartz.r(%theta, %phi) %q1 : !quartz.qubit
-   * }
-   * ```
-   */
-  QuartzProgramBuilder& cr(const std::variant<double, Value>& theta,
-                           const std::variant<double, Value>& phi,
-                           Value control, Value target);
-
-  /**
-   * @brief Apply a multi-controlled R gate
-   *
-   * @param theta Rotation angle in radians
-   * @param phi Rotation angle in radians
-   * @param controls Control qubits
-   * @param target Target qubit
-   * @return Reference to this builder for method chaining
-   *
-   * @par Example:
-   * ```c++
-   * builder.mcr(1.0, 0.5, {q0, q1}, q2);
-   * ```
-   * ```mlir
-   * quartz.ctrl(%q0, %q1) {
-   *   quartz.r(%theta, %phi) %q2 : !quartz.qubit
-   * }
-   * ```
-   */
-  QuartzProgramBuilder& mcr(const std::variant<double, Value>& theta,
-                            const std::variant<double, Value>& phi,
-                            ValueRange controls, Value target);
-
-  /**
-   * @brief Apply a U2 gate to a qubit
-   *
-   * @param phi Rotation angle in radians
-   * @param lambda Rotation angle in radians
-   * @param qubit Target qubit
-   * @return Reference to this builder for method chaining
-   *
-   * @par Example:
-   * ```c++
-   * builder.u2(1.0, 0.5, q);
-   * ```
-   * ```mlir
-   * quartz.u2(%phi, %lambda) %q : !quartz.qubit
-   * ```
-   */
-  QuartzProgramBuilder& u2(const std::variant<double, Value>& phi,
-                           const std::variant<double, Value>& lambda,
-                           Value qubit);
-
-  /**
-   * @brief Apply a controlled U2 gate
-   *
-   * @param phi Rotation angle in radians
-   * @param lambda Rotation angle in radians
-   * @param control Control qubit
-   * @param target Target qubit
-   * @return Reference to this builder for method chaining
-   * @par Example:
-   * ```c++
-   * builder.cu2(1.0, 0.5, q0, q1);
-   * ```
-   * ```mlir
-   * quartz.ctrl(%q0) {
-   *   quartz.u2(%phi, %lambda) %q1 : !quartz.qubit
-   * }
-   * ```
-   */
-  QuartzProgramBuilder& cu2(const std::variant<double, Value>& phi,
-                            const std::variant<double, Value>& lambda,
-                            Value control, Value target);
-
-  /**
-   * @brief Apply a multi-controlled U2 gate
-   *
-   * @param phi Rotation angle in radians
-   * @param lambda Rotation angle in radians
-   * @param controls Control qubits
-   * @param target Target qubit
-   * @return Reference to this builder for method chaining
-   * @par Example:
-   * ```c++
-   * builder.mcu2(1.0, 0.5, {q0, q1}, q2);
-   * ```
-   * ```mlir
-   * quartz.ctrl(%q0, %q1) {
-   *   quartz.u2(%phi, %lambda) %q2 : !quartz.qubit
-   * }
-   * ```
-   */
-  QuartzProgramBuilder& mcu2(const std::variant<double, Value>& phi,
-                             const std::variant<double, Value>& lambda,
-                             ValueRange controls, Value target);
-
-  /**
-   * @brief Apply a SWAP gate to two qubits
-   *
-   * @param qubit0 Target qubit
-   * @param qubit1 Target qubit
-   * @return Reference to this builder for method chaining
-   *
-   * @par Example:
-   * ```c++
-   * builder.swap(q0, q1);
-   * ```
-   * ```mlir
-   * quartz.swap %q0, %q1 : !quartz.qubit, !quartz.qubit
-   * ```
-   */
-  QuartzProgramBuilder& swap(Value qubit0, Value qubit1);
-
-  /**
-   * @brief Apply a controlled SWAP gate
-   *
-   * @param control Control qubit
-   * @param qubit0 Target qubit
-   * @param qubit1 Target qubit
-   * @return Reference to this builder for method chaining
-   * @par Example:
-   * ```c++
-   * builder.cswap(q0, q1, q2);
-   * ```
-   * ```mlir
-   * quartz.ctrl(%q0) {
-   *   quartz.swap %q1, %q2 : !quartz.qubit, !quartz.qubit
-   * }
-   * ```
-   */
-  QuartzProgramBuilder& cswap(Value control, Value qubit0, Value qubit1);
-
-  /**
-   * @brief Apply a multi-controlled SWAP gate
-   *
-   * @param controls Control qubits
-   * @param qubit0 Target qubit
-   * @param qubit1 Target qubit
-   * @return Reference to this builder for method chaining
-   * @par Example:
-   * ```c++
-   * builder.mcswap({q0, q1}, q2, q3);
-   * ```
-   * ```mlir
-   * quartz.ctrl(%q0, %q1) {
-   *   quartz.swap %q2, %q3 : !quartz.qubit, !quartz.qubit
-   * }
-   * ```
-   */
-  QuartzProgramBuilder& mcswap(ValueRange controls, Value qubit0, Value qubit1);
-
-  /**
-   * @brief Apply an iSWAP gate to two qubits
-   *
-   * @param qubit0 Target qubit
-   * @param qubit1 Target qubit
-   * @return Reference to this builder for method chaining
-   * @par Example:
-   * ```c++
-   * builder.iswap(q0, q1);
-   * ```
-   * ```mlir
-   * quartz.iswap %q0, %q1 : !quartz.qubit, !quartz.qubit
-   * ```
-   */
-  QuartzProgramBuilder& iswap(Value qubit0, Value qubit1);
-
-  /**
-   * @brief Apply a controlled iSWAP gate
-   *
-   * @param control Control qubit
-   * @param qubit0 Target qubit
-   * @param qubit1 Target qubit
-   * @return Reference to this builder for method chaining
-   * @par Example:
-   * ```c++
-   * builder.ciswap(q0, q1, q2);
-   * ```
-   * ```mlir
-   * quartz.ctrl(%q0) {
-   *   quartz.iswap %q1, %q2 : !quartz.qubit, !quartz.qubit
-   * }
-   * ```
-   */
-  QuartzProgramBuilder& ciswap(Value control, Value qubit0, Value qubit1);
-
-  /**
-   * @brief Apply a multi-controlled iSWAP gate
-   *
-   * @param controls Control qubits
-   * @param qubit0 Target qubit
-   * @param qubit1 Target qubit
-   * @return Reference to this builder for method chaining
-   * @par Example:
-   * ```c++
-   * builder.mciswap({q0, q1}, q2, q3);
-   * ```
-   * ```mlir
-   * quartz.ctrl(%q0, %q1) {
-   *   quartz.iswap %q2, %q3 : !quartz.qubit, !quartz.qubit
-   * }
-   * ```
-   */
-  QuartzProgramBuilder& mciswap(ValueRange controls, Value qubit0,
-                                Value qubit1);
+#undef DECLARE_TWO_TARGET_ZERO_PARAMETER
 
   //===--------------------------------------------------------------------===//
   // Modifiers
