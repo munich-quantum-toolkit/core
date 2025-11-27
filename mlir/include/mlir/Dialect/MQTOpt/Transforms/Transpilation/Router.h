@@ -134,8 +134,7 @@ private:
       for (const auto [i, layer] : llvm::enumerate(window)) {
         for (const auto [prog0, prog1] : layer) {
           const auto [hw0, hw1] = layout.getHardwareIndices(prog0, prog1);
-          const std::size_t dist = arch.distanceBetween(hw0, hw1);
-          const std::size_t nswaps = dist < 2 ? 0 : dist - 2;
+          const std::size_t nswaps = arch.distanceBetween(hw0, hw1) - 1;
           nn += weights.lambdas[i] * static_cast<float>(nswaps);
         }
       }
@@ -181,6 +180,13 @@ private:
   void expand(MinQueue& frontier, const Node& parent,
               ArrayRef<GateLayer> window, const Architecture& arch) const {
     llvm::SmallDenseSet<QubitIndexPair, 64> expansionSet{};
+
+    /// Currently: Don't revert last SWAP.
+    /// TODO: Idea? Don't revert "front" (independent) SWAPs?
+    if (!parent.sequence.empty()) {
+      expansionSet.insert(parent.sequence.back());
+    }
+
     for (const QubitIndexPair gate : window.front()) {
       for (const auto prog : {gate.first, gate.second}) {
         const auto hw0 = parent.layout.getHardwareIndex(prog);
