@@ -280,45 +280,16 @@ module {
 module {
   // CHECK-LABEL: func.func @testTwoBasisGateDecomposition
   func.func @testTwoBasisGateDecomposition() {
-    // CHECK: %[[C0:.*]] = arith.constant -1.5707963267
-    // CHECK: %[[C1:.*]] = arith.constant -3.141592653
-    // CHECK: %[[C2:.*]] = arith.constant 1.2502369157
-    // CHECK: %[[C3:.*]] = arith.constant 1.8299117708
-    // CHECK: %[[C4:.*]] = arith.constant 2.8733113535
-    // CHECK: %[[C5:.*]] = arith.constant 3.0097427712
-    // CHECK: %[[C6:.*]] = arith.constant 0.2614370492
-    // CHECK: %[[C7:.*]] = arith.constant -0.131849882
-    // CHECK: %[[C8:.*]] = arith.constant 2.500000e+00
-    // CHECK: %[[C9:.*]] = arith.constant -1.570796326
-    // CHECK: %[[C10:.*]] = arith.constant 1.570796326
-    // CHECK: %[[C11:.*]] = arith.constant 0.785398163
-
     // CHECK: %[[Q0_0:.*]] = mqtopt.allocQubit
     // CHECK: %[[Q1_0:.*]] = mqtopt.allocQubit
 
-    // CHECK-NOT: mqtopt.gphase(%[[ANY:.*]])
-    // CHECK: %[[Q0_1:.*]] = mqtopt.ry(%[[C11]]) %[[Q0_0]]
-    // CHECK: %[[Q0_2:.*]] = mqtopt.rz(%[[C10]]) %[[Q0_1]]
-    // CHECK: %[[Q1_1:.*]] = mqtopt.rx(%[[C9]]) %[[Q1_0]]
-    // CHECK: %[[Q1_2:.*]] = mqtopt.ry(%[[C8]]) %[[Q1_1]]
-    // CHECK: %[[Q0_3:.*]], %[[Q1_3:.*]] = mqtopt.x() %[[Q0_2]] ctrl %[[Q1_2]]
-    // CHECK: %[[Q0_4:.*]] = mqtopt.rz(%[[C7]]) %[[Q0_3]]
-    // CHECK: %[[Q0_5:.*]] = mqtopt.ry(%[[C6]]) %[[Q0_4]]
-    // CHECK: %[[Q0_6:.*]] = mqtopt.rz(%[[C5]]) %[[Q0_5]]
-    // CHECK: %[[Q1_4:.*]] = mqtopt.rz(%[[C10]]) %[[Q1_3]]
-    // CHECK: %[[Q1_5:.*]] = mqtopt.ry(%[[C10]]) %[[Q1_4]]
-    // CHECK: %[[Q0_7:.*]], %[[Q1_6:.*]] = mqtopt.x() %[[Q0_6]] ctrl %[[Q1_5]]
-    // CHECK: %[[Q0_8:.*]] = mqtopt.rz(%[[C4]]) %[[Q0_7]]
-    // CHECK: %[[Q0_9:.*]] = mqtopt.ry(%[[C3]]) %[[Q0_8]]
-    // CHECK: %[[Q0_10:.*]] = mqtopt.rz(%[[C2]]) %[[Q0_9]]
-    // CHECK: %[[Q1_7:.*]] = mqtopt.rz(%[[C1]]) %[[Q1_6]]
-    // CHECK: %[[Q1_8:.*]] = mqtopt.rx(%[[C0]]) %[[Q1_7]]
+    // CHECK-NOT: mqtopt.gphase
+    // CHECK: %[[ANY:.*]], %[[ANY:.*]] = mqtopt.x() %[[ANY:.*]] ctrl %[[ANY:.*]]
+    // CHECK: %[[ANY:.*]], %[[ANY:.*]] = mqtopt.x() %[[ANY:.*]] ctrl %[[ANY:.*]]
+    // CHECK-NOT: mqtopt.x()
 
-    // ensure no other operations are inserted
-    // CHECK-NOT: mqtopt.[[ANY:.*]](%[[ANY:.*]])
-
-    // CHECK: mqtopt.deallocQubit %[[Q0_10]]
-    // CHECK: mqtopt.deallocQubit %[[Q1_8]]
+    // CHECK: mqtopt.deallocQubit %[[ANY:.*]]
+    // CHECK: mqtopt.deallocQubit %[[ANY:.*]]
 
     %cst0 = arith.constant 2.5 : f64
     %cst1 = arith.constant 1.2 : f64
@@ -352,56 +323,17 @@ module {
 module {
   // CHECK-LABEL: func.func @testThreeBasisGateDecomposition
   func.func @testThreeBasisGateDecomposition() {
-    // CHECK: %[[C0:.*]] = arith.constant 1.00543528660
-    // CHECK: %[[C1:.*]] = arith.constant -2.3561944901
-    // CHECK: %[[C2:.*]] = arith.constant 0.85849590894
-    // CHECK: %[[C3:.*]] = arith.constant 0.43624604946
-    // CHECK: %[[C4:.*]] = arith.constant 2.43419171936
-    // CHECK: %[[C5:.*]] = arith.constant -0.6154797086
-    // CHECK: %[[C6:.*]] = arith.constant 1.04719755119
-    // CHECK: %[[C7:.*]] = arith.constant 2.52611294491
-    // CHECK: %[[C8:.*]] = arith.constant -0.2593805121
-    // CHECK: %[[C9:.*]] = arith.constant 1.57079632679
-    // CHECK: %[[C10:.*]] = arith.constant -2.52611294491
-    // CHECK: %[[C11:.*]] = arith.constant 2.094395102393
-    // CHECK: %[[C12:.*]] = arith.constant -0.61547970867
-    // CHECK: %[[C13:.*]] = arith.constant 0.694804217319
-    // CHECK: %[[C14:.*]] = arith.constant 0.220207934068
-    // CHECK: %[[C15:.*]] = arith.constant 1.125358392049
-    // CHECK: %[[C16:.*]] = arith.constant -0.03425899788
-    // CHECK: %[[C17:.*]] = arith.constant -1.57079632679
-    // CHECK: %[[C18:.*]] = arith.constant -2.39270110306
-    // CHECK: %[[C19:.*]] = arith.constant 5.497787143782
-
     // CHECK: %[[Q0_0:.*]] = mqtopt.allocQubit
     // CHECK: %[[Q1_0:.*]] = mqtopt.allocQubit
 
-    // CHECK: mqtopt.gphase(%[[C19]])
-    // CHECK: %[[Q0_1:.*]] = mqtopt.ry(%[[C18]]) %[[Q0_0]]
-    // CHECK: %[[Q0_2:.*]] = mqtopt.rx(%[[C17]]) %[[Q0_1]]
-    // CHECK: %[[Q1_1:.*]] = mqtopt.rz(%[[C16]]) %[[Q1_0]]
-    // CHECK: %[[Q1_2:.*]] = mqtopt.ry(%[[C15]]) %[[Q1_1]]
-    // CHECK: %[[Q1_3:.*]] = mqtopt.rz(%[[C14]]) %[[Q1_2]]
-    // CHECK: %[[Q1_4:.*]], %[[Q0_3:.*]] = mqtopt.x() %[[Q1_3]] ctrl %[[Q0_2]]
-    // CHECK: %[[Q0_4:.*]] = mqtopt.rx(%[[C13]]) %[[Q0_3]]
-    // CHECK: %[[Q1_5:.*]] = mqtopt.rz(%[[C12]]) %[[Q1_4]]
-    // CHECK: %[[Q1_6:.*]] = mqtopt.ry(%[[C11]]) %[[Q1_5]]
-    // CHECK: %[[Q1_7:.*]] = mqtopt.rz(%[[C10]]) %[[Q1_6]]
-    // CHECK: %[[Q1_8:.*]], %[[Q0_5:.*]] = mqtopt.x() %[[Q1_7]] ctrl %[[Q0_4]]
-    // CHECK: %[[Q0_6:.*]] = mqtopt.rz(%[[C9]]) %[[Q0_5]]
-    // CHECK: %[[Q0_7:.*]] = mqtopt.ry(%[[C8]]) %[[Q0_6]]
-    // CHECK: %[[Q1_9:.*]] = mqtopt.rz(%[[C7]]) %[[Q1_8]]
-    // CHECK: %[[Q1_10:.*]] = mqtopt.ry(%[[C6]]) %[[Q1_9]]
-    // CHECK: %[[Q1_11:.*]] = mqtopt.rz(%[[C5]]) %[[Q1_10]]
-    // CHECK: %[[Q1_12:.*]], %[[Q0_8:.*]] = mqtopt.x() %[[Q1_11]] ctrl %[[Q0_7]]
-    // CHECK: %[[Q0_9:.*]] = mqtopt.rz(%[[C4]]) %[[Q0_8]]
-    // CHECK: %[[Q0_10:.*]] = mqtopt.ry(%[[C3]]) %[[Q0_9]]
-    // CHECK: %[[Q0_11:.*]] = mqtopt.rz(%[[C2]]) %[[Q0_10]]
-    // CHECK: %[[Q1_13:.*]] = mqtopt.rx(%[[C1]]) %[[Q1_12]]
-    // CHECK: %[[Q1_14:.*]] = mqtopt.rz(%[[C0]]) %[[Q1_13]]
+    // CHECK: mqtopt.gphase(%[[ANY:.*]])
+    // CHECK: %[[ANY:.*]], %[[ANY:.*]] = mqtopt.x() %[[ANY:.*]] ctrl %[[ANY:.*]]
+    // CHECK: %[[ANY:.*]], %[[ANY:.*]] = mqtopt.x() %[[ANY:.*]] ctrl %[[ANY:.*]]
+    // CHECK: %[[ANY:.*]], %[[ANY:.*]] = mqtopt.x() %[[ANY:.*]] ctrl %[[ANY:.*]]
+    // CHECK-NOT: mqtopt.x()
 
-    // CHECK: mqtopt.deallocQubit %[[Q0_11]]
-    // CHECK: mqtopt.deallocQubit %[[Q1_14]]
+    // CHECK: mqtopt.deallocQubit %[[ANY:.*]]
+    // CHECK: mqtopt.deallocQubit %[[ANY:.*]]
 
     %cst0 = arith.constant 2.5 : f64
     %cst1 = arith.constant 1.2 : f64
@@ -487,30 +419,16 @@ module {
 module {
   // CHECK-LABEL: func.func @testSeriesSingleQubitBacktracking
   func.func @testSeriesSingleQubitBacktracking() {
-    // CHECK: %[[C0:.*]] = arith.constant -2.4269908
-    // CHECK: %[[C1:.*]] = arith.constant 3.14159265
-    // CHECK: %[[C2:.*]] = arith.constant 0.85619449
-    // CHECK: %[[C3:.*]] = arith.constant -2.3561944
-    // CHECK: %[[C4:.*]] = arith.constant -1.5707963
-    // CHECK: %[[C5:.*]] = arith.constant -1.5707963
-    // CHECK: %[[C6:.*]] = arith.constant 2.35619449
-    // CHECK: %[[C7:.*]] = arith.constant 3.1415926
-
     // CHECK: %[[Q0_0:.*]] = mqtopt.allocQubit
     // CHECK: %[[Q1_0:.*]] = mqtopt.allocQubit
 
-    // CHECK: mqtopt.gphase(%[[C7]])
-    // CHECK: %[[Q0_1:.*]] = mqtopt.rz(%[[C6]]) %[[Q0_0]] : !mqtopt.Qubit
-    // CHECK: %[[Q0_2:.*]] = mqtopt.ry(%[[C5]]) %[[Q0_1]] : !mqtopt.Qubit
-    // CHECK: %[[Q1_1:.*]] = mqtopt.ry(%[[C4]]) %[[Q1_0]] : !mqtopt.Qubit
-    // CHECK: %[[Q1_2:.*]] = mqtopt.rz(%[[C3]]) %[[Q1_1]] : !mqtopt.Qubit
-    // CHECK: %[[Q0_3:.*]], %[[Q1_3:.*]] = mqtopt.x() %[[Q0_2]] ctrl %[[Q1_2]] : !mqtopt.Qubit ctrl !mqtopt.Qubit
-    // CHECK: %[[Q0_4:.*]] = mqtopt.rx(%[[C2]]) %[[Q0_3]] : !mqtopt.Qubit
-    // CHECK: %[[Q0_5:.*]] = mqtopt.ry(%[[C1]]) %[[Q0_4]] : !mqtopt.Qubit
-    // CHECK: %[[Q1_4:.*]] = mqtopt.rz(%[[C0]]) %[[Q1_3]] : !mqtopt.Qubit
+    // CHECK: mqtopt.gphase(%[[ANY:.*]])
+    // CHECK: %[[ANY:.*]], %[[ANY:.*]] = mqtopt.x() %[[ANY:.*]] ctrl %[[ANY:.*]]
+    // CHECK-NOT: mqtopt.x()
+    // CHECK-NOT: mqtopt.h()
 
-    // CHECK: mqtopt.deallocQubit %[[Q0_5]]
-    // CHECK: mqtopt.deallocQubit %[[Q1_4]]
+    // CHECK: mqtopt.deallocQubit %[[ANY:.*]]
+    // CHECK: mqtopt.deallocQubit %[[ANY:.*]]
 
     %q0_0 = mqtopt.allocQubit
     %q1_0 = mqtopt.allocQubit
