@@ -233,7 +233,7 @@ protected:
      */
     bool appendSingleQubitGate(UnitaryInterface nextGate) {
       auto operand = nextGate.getAllInQubits()[0];
-      auto* it = llvm::find(outQubits, operand);
+      auto it = llvm::find(outQubits, operand);
       if (it == outQubits.end()) {
         throw std::logic_error{"Operand of single-qubit op and user of "
                                "qubit is not in current outQubits"};
@@ -253,12 +253,12 @@ protected:
       auto opInQubits = nextGate.getAllInQubits();
       auto&& firstOperand = opInQubits[0];
       auto&& secondOperand = opInQubits[1];
-      auto* firstQubitIt = llvm::find(outQubits, firstOperand);
-      auto* secondQubitIt = llvm::find(outQubits, secondOperand);
+      auto firstQubitIt = llvm::find(outQubits, firstOperand);
+      auto secondQubitIt = llvm::find(outQubits, secondOperand);
       if (firstQubitIt == outQubits.end() || secondQubitIt == outQubits.end()) {
         // another qubit is involved, series is finished (except there only
         // has been one qubit so far)
-        auto* it = llvm::find(outQubits, mlir::Value{});
+        auto it = llvm::find(outQubits, mlir::Value{});
         if (it == outQubits.end()) {
           return false;
         }
