@@ -220,8 +220,7 @@ def test_site_is_zone(device_and_site: tuple[Device, Device.Site]) -> None:
     """Test that the site is_zone is a boolean."""
     _device, site = device_and_site
     iz = site.is_zone()
-    if iz is not None:
-        assert isinstance(iz, bool)
+    assert isinstance(iz, bool)
 
 
 def test_site_x_extent(device_and_site: tuple[Device, Device.Site]) -> None:
@@ -344,8 +343,7 @@ def test_operation_is_zoned(device_and_operation: tuple[Device, Device.Operation
     """Test that the operation is_zoned is a boolean."""
     _device, operation = device_and_operation
     iz = operation.is_zoned()
-    if iz is not None:
-        assert isinstance(iz, bool)
+    assert isinstance(iz, bool)
 
 
 def test_operation_sites(device_and_operation: tuple[Device, Device.Operation]) -> None:

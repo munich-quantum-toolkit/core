@@ -19,7 +19,7 @@ if sys.platform == "win32":
 
     def _dll_patch() -> None:
         """Add the DLL directory to the PATH."""
-        import sysconfig
+        import sysconfig  # noqa: PLC0415 only used in Windows
 
         bin_dir = Path(sysconfig.get_paths()["purelib"]) / "mqt" / "core" / "bin"
         os.add_dll_directory(str(bin_dir))
@@ -69,7 +69,7 @@ def load(input_circuit: QuantumComputation | str | os.PathLike[str] | QuantumCir
         return QuantumComputation.from_qasm(input_str)
 
     # At this point, we know that the input is a Qiskit QuantumCircuit
-    from .plugins.qiskit import qiskit_to_mqt
+    from .plugins.qiskit import qiskit_to_mqt  # noqa: PLC0415 lazy import
 
     return qiskit_to_mqt(input_circuit)
 
