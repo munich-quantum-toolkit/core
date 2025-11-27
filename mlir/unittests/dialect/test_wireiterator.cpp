@@ -13,9 +13,9 @@
 
 #include <gtest/gtest.h>
 #include <iterator>
+#include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/ADT/iterator_range.h>
-#include <llvm/Support/Casting.h>
 #include <llvm/Support/Debug.h>
 #include <llvm/Support/raw_ostream.h>
 #include <memory>
@@ -27,6 +27,7 @@
 #include <mlir/IR/Operation.h>
 #include <mlir/IR/OwningOpRef.h>
 #include <mlir/Parser/Parser.h>
+#include <mlir/Support/LLVM.h>
 #include <string>
 
 using namespace mlir;
@@ -49,8 +50,8 @@ module {
   %out_qubits_4, %pos_ctrl_out_qubits_5 = mqtopt.x() %pos_ctrl_out_qubits ctrl %out_qubits_3 : !mqtopt.Qubit ctrl !mqtopt.Qubit
   %false = arith.constant false
   %2:2 = scf.if %false -> (!mqtopt.Qubit, !mqtopt.Qubit) {
-    %out_qubits_6 = mqtopt.y() %out_qubits_4 : !mqtopt.Qubit
-    scf.yield %out_qubits_6, %pos_ctrl_out_qubits_5 : !mqtopt.Qubit, !mqtopt.Qubit
+    %out_qubits_7 = mqtopt.y() %out_qubits_4 : !mqtopt.Qubit
+    scf.yield %out_qubits_7, %pos_ctrl_out_qubits_5 : !mqtopt.Qubit, !mqtopt.Qubit
   } else {
     scf.yield %out_qubits_4, %pos_ctrl_out_qubits_5 : !mqtopt.Qubit, !mqtopt.Qubit
   }
@@ -58,12 +59,16 @@ module {
   %idx8 = index.constant 8
   %idx1 = index.constant 1
   %3:2 = scf.for %arg0 = %idx0 to %idx8 step %idx1 iter_args(%arg1 = %2#0, %arg2 = %2#1) -> (!mqtopt.Qubit, !mqtopt.Qubit) {
-    %out_qubits_6 = mqtopt.h() %arg1 : !mqtopt.Qubit
-    %out_qubits_7 = mqtopt.h() %arg2 : !mqtopt.Qubit
-    scf.yield %out_qubits_6, %out_qubits_7 : !mqtopt.Qubit, !mqtopt.Qubit
+    %out_qubits_7 = mqtopt.h() %arg1 : !mqtopt.Qubit
+    %out_qubits_8 = mqtopt.h() %arg2 : !mqtopt.Qubit
+    scf.yield %out_qubits_7, %out_qubits_8 : !mqtopt.Qubit, !mqtopt.Qubit
   }
   mqtopt.deallocQubit %3#0
   mqtopt.deallocQubit %3#1
+
+  %4 = mqtopt.qubit 42
+  %5 = mqtopt.reset %4
+  %out_qubits_6 = mqtopt.h() %5 : !mqtopt.Qubit
 }
 )mlir";
   return parseSourceString<ModuleOp>(ir, &ctx);
@@ -299,11 +304,51 @@ TEST_F(WireIteratorTest, TestRecursiveUse) {
 
       rec++;
       checkOperationEqual(*rec,
-                          "%out_qubits_6 = mqtopt.h() %arg1 : !mqtopt.Qubit");
+                          "%out_qubits_7 = mqtopt.h() %arg1 : !mqtopt.Qubit");
 
       rec++;
-      checkOperationEqual(*rec, "scf.yield %out_qubits_6, %out_qubits_7 : "
+      checkOperationEqual(*rec, "scf.yield %out_qubits_7, %out_qubits_8 : "
                                 "!mqtopt.Qubit, !mqtopt.Qubit");
     }
   }
+}
+
+TEST_F(WireIteratorTest, TestStaticQubit) {
+
+  ///
+  /// Test the iteration with a static qubit.
+  ///
+
+  auto module = getModule(*context);
+  auto qubit = *(module->getOps<QubitOp>().begin());
+  auto q = qubit.getQubit();
+  WireIterator it(q, q.getParentRegion());
+  const WireIterator begin(it);
+
+  checkOperationEqual(*it, "%4 = mqtopt.qubit 42");
+
+  ++it;
+  checkOperationEqual(*it, "%5 = mqtopt.reset %4");
+
+  ++it;
+  checkOperationEqual(*it, "%out_qubits_6 = mqtopt.h() %5 : !mqtopt.Qubit");
+
+  ++it;
+  ASSERT_EQ(it, std::default_sentinel);
+
+  --it;
+  checkOperationEqual(*it, "%out_qubits_6 = mqtopt.h() %5 : !mqtopt.Qubit");
+  ASSERT_EQ(it.qubit(), (*it)->getResult(0)); // q = %out_qubits_6
+
+  --it;
+  checkOperationEqual(*it, "%out_qubits_6 = mqtopt.h() %5 : !mqtopt.Qubit");
+  ASSERT_EQ(it.qubit(), (*it)->getOperand(0)); // q = %5
+
+  --it;
+  checkOperationEqual(*it, "%5 = mqtopt.reset %4");
+
+  --it;
+  checkOperationEqual(*it, "%4 = mqtopt.qubit 42");
+
+  ASSERT_EQ(it, begin);
 }
