@@ -25,6 +25,7 @@
 
 #include <algorithm>
 #include <array>
+#include <atomic>
 #include <chrono>
 #include <complex>
 #include <cstddef>
@@ -35,7 +36,6 @@
 #include <iostream>
 #include <limits>
 #include <memory>
-#include <mutex>
 #include <numeric>
 #include <ranges>
 #include <string>
@@ -205,13 +205,37 @@ constexpr auto OPERATION_ADDRESSES = makeOperationAddresses(OPERATIONS);
 
 namespace qdmi::dd {
 
-Device* Device::instance = nullptr;
-
-std::mutex Device::mtx;
+std::atomic<Device*> Device::instance = nullptr;
 
 Device::Device()
     : name_("MQT Core DDSIM QDMI Device"),
       qubitsNum_(std::numeric_limits<::dd::Qubit>::max()) {}
+
+void Device::initialize() {
+  Device* expected = nullptr;
+  // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
+  auto* newInstance = new Device();
+  if (!instance.compare_exchange_strong(expected, newInstance)) {
+    // Another thread won the race, so delete the instance we created.
+    // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
+    delete newInstance;
+  }
+}
+
+void Device::finalize() {
+  // Atomically swap the instance pointer with nullptr and get the old value.
+  const Device* oldInstance = instance.exchange(nullptr);
+  // Delete the old instance if it existed.
+  // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
+  delete oldInstance;
+}
+
+auto Device::get() -> Device& {
+  auto* loadedInstance = instance.load();
+  assert(loadedInstance != nullptr &&
+         "Device not initialized. Call `initialize()` first.");
+  return *loadedInstance;
+}
 
 auto Device::sessionAlloc(MQT_DDSIM_QDMI_Device_Session* session)
     -> QDMI_STATUS {

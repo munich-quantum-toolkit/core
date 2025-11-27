@@ -26,11 +26,9 @@
 #include <limits>
 #include <map>
 #include <memory>
-#include <mutex>
 #include <random>
 #include <string>
 #include <unordered_map>
-#include <vector>
 
 namespace qdmi::dd {
 class Device final {
@@ -66,9 +64,7 @@ class Device final {
   Device();
 
   /// @brief The singleton instance.
-  static Device* instance;
-  /// @brief Mutex for thread-safe singleton access.
-  static std::mutex mtx;
+  static std::atomic<Device*> instance;
 
 public:
   // Default move constructor and move assignment operator.
@@ -85,33 +81,17 @@ public:
    * @brief Initializes the singleton instance.
    * @details Must be called before `get()`.
    */
-  static void initialize() {
-    const std::lock_guard lock(mtx);
-    if (instance == nullptr) {
-      // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
-      instance = new Device();
-    }
-  }
+  static void initialize();
 
   /**
    * @brief Destroys the singleton instance.
    * @details After this call, `get()` must not be called until a new
    * `initialize()` call.
    */
-  static void finalize() {
-    const std::lock_guard lock(mtx);
-    // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
-    delete instance;
-    instance = nullptr;
-  }
+  static void finalize();
 
   /// @returns the singleton instance of the Device class.
-  [[nodiscard]] static auto get() -> Device& {
-    const std::lock_guard lock(mtx);
-    assert(instance != nullptr &&
-           "Device not initialized. Call `initialize()` first.");
-    return *instance;
-  }
+  [[nodiscard]] static auto get() -> Device&;
 
   /**
    * @brief Allocates a new device session.
