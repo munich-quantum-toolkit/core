@@ -94,6 +94,7 @@
 // NOLINTEND(bugprone-macro-parentheses)
 
 namespace qdmi {
+Device* Device::instance = nullptr;
 Device::Device() {
   // NOLINTBEGIN(cppcoreguidelines-prefer-member-initializer)
   INITIALIZE_NAME(name_);
@@ -607,11 +608,14 @@ auto MQT_NA_QDMI_Operation_impl_d::queryProperty(
 }
 
 int MQT_NA_QDMI_device_initialize() {
-  std::ignore = qdmi::Device::get(); // Ensure the singleton is created
+  qdmi::Device::initialize();
   return QDMI_SUCCESS;
 }
 
-int MQT_NA_QDMI_device_finalize() { return QDMI_SUCCESS; }
+int MQT_NA_QDMI_device_finalize() {
+  qdmi::Device::finalize();
+  return QDMI_SUCCESS;
+}
 
 int MQT_NA_QDMI_device_session_alloc(MQT_NA_QDMI_Device_Session* session) {
   return qdmi::Device::get().sessionAlloc(session);
