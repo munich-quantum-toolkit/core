@@ -160,16 +160,17 @@ DEFINE_ONE_TARGET_ZERO_PARAMETER(SXdgOp, sxdg)
 
 #define DEFINE_ONE_TARGET_ONE_PARAMETER(OP_CLASS, OP_NAME, PARAM)              \
   QuartzProgramBuilder& QuartzProgramBuilder::OP_NAME(                         \
-      const std::variant<double, Value>& PARAM, Value qubit) {                 \
+      const std::variant<double, Value>&(PARAM), Value qubit) {                \
     create<OP_CLASS>(loc, qubit, PARAM);                                       \
     return *this;                                                              \
   }                                                                            \
   QuartzProgramBuilder& QuartzProgramBuilder::c##OP_NAME(                      \
-      const std::variant<double, Value>& PARAM, Value control, Value target) { \
+      const std::variant<double, Value>&(PARAM), Value control,                \
+      Value target) {                                                          \
     return mc##OP_NAME(PARAM, {control}, target);                              \
   }                                                                            \
   QuartzProgramBuilder& QuartzProgramBuilder::mc##OP_NAME(                     \
-      const std::variant<double, Value>& PARAM, ValueRange controls,           \
+      const std::variant<double, Value>&(PARAM), ValueRange controls,          \
       Value target) {                                                          \
     create<CtrlOp>(loc, controls, [&](OpBuilder& b) {                          \
       b.create<OP_CLASS>(loc, target, PARAM);                                  \
@@ -188,20 +189,20 @@ DEFINE_ONE_TARGET_ONE_PARAMETER(POp, p, theta)
 
 #define DEFINE_ONE_TARGET_TWO_PARAMETER(OP_CLASS, OP_NAME, PARAM1, PARAM2)     \
   QuartzProgramBuilder& QuartzProgramBuilder::OP_NAME(                         \
-      const std::variant<double, Value>& PARAM1,                               \
-      const std::variant<double, Value>& PARAM2, Value qubit) {                \
+      const std::variant<double, Value>&(PARAM1),                              \
+      const std::variant<double, Value>&(PARAM2), Value qubit) {               \
     create<OP_CLASS>(loc, qubit, PARAM1, PARAM2);                              \
     return *this;                                                              \
   }                                                                            \
   QuartzProgramBuilder& QuartzProgramBuilder::c##OP_NAME(                      \
-      const std::variant<double, Value>& PARAM1,                               \
-      const std::variant<double, Value>& PARAM2, Value control,                \
+      const std::variant<double, Value>&(PARAM1),                              \
+      const std::variant<double, Value>&(PARAM2), Value control,               \
       Value target) {                                                          \
     return mc##OP_NAME(PARAM1, PARAM2, {control}, target);                     \
   }                                                                            \
   QuartzProgramBuilder& QuartzProgramBuilder::mc##OP_NAME(                     \
-      const std::variant<double, Value>& PARAM1,                               \
-      const std::variant<double, Value>& PARAM2, ValueRange controls,          \
+      const std::variant<double, Value>&(PARAM1),                              \
+      const std::variant<double, Value>&(PARAM2), ValueRange controls,         \
       Value target) {                                                          \
     create<CtrlOp>(loc, controls, [&](OpBuilder& b) {                          \
       b.create<OP_CLASS>(loc, target, PARAM1, PARAM2);                         \

@@ -331,347 +331,114 @@ FluxProgramBuilder::createMultiControlledTwoTargetZeroParameter(
   return {controlsOut, {targetsOut[0], targetsOut[1]}};
 }
 
-// IdOp
+// OneTargetZeroParameter
+
+#define DEFINE_ONE_TARGET_ZERO_PARAMETER(OP_CLASS, OP_NAME)                    \
+  Value FluxProgramBuilder::OP_NAME(const Value qubit) {                       \
+    return createOneTargetZeroParameter<OP_CLASS>(qubit);                      \
+  }                                                                            \
+  std::pair<Value, Value> FluxProgramBuilder::c##OP_NAME(const Value control,  \
+                                                         const Value target) { \
+    return createControlledOneTargetZeroParameter<OP_CLASS>(control, target);  \
+  }                                                                            \
+  std::pair<ValueRange, Value> FluxProgramBuilder::mc##OP_NAME(                \
+      const ValueRange controls, const Value target) {                         \
+    return createMultiControlledOneTargetZeroParameter<OP_CLASS>(controls,     \
+                                                                 target);      \
+  }
+
+DEFINE_ONE_TARGET_ZERO_PARAMETER(IdOp, id)
+DEFINE_ONE_TARGET_ZERO_PARAMETER(XOp, x)
+DEFINE_ONE_TARGET_ZERO_PARAMETER(YOp, y)
+DEFINE_ONE_TARGET_ZERO_PARAMETER(ZOp, z)
+DEFINE_ONE_TARGET_ZERO_PARAMETER(HOp, h)
+DEFINE_ONE_TARGET_ZERO_PARAMETER(SOp, s)
+DEFINE_ONE_TARGET_ZERO_PARAMETER(SdgOp, sdg)
+DEFINE_ONE_TARGET_ZERO_PARAMETER(TOp, t)
+DEFINE_ONE_TARGET_ZERO_PARAMETER(TdgOp, tdg)
+DEFINE_ONE_TARGET_ZERO_PARAMETER(SXOp, sx)
+DEFINE_ONE_TARGET_ZERO_PARAMETER(SXdgOp, sxdg)
+
+#undef DEFINE_ONE_TARGET_ZERO_PARAMETER
+
+// OneTargetOneParameter
+
+#define DEFINE_ONE_TARGET_ONE_PARAMETER(OP_CLASS, OP_NAME, PARAM)              \
+  Value FluxProgramBuilder::OP_NAME(const std::variant<double, Value>&(PARAM), \
+                                    const Value qubit) {                       \
+    return createOneTargetOneParameter<OP_CLASS>(PARAM, qubit);                \
+  }                                                                            \
+  std::pair<Value, Value> FluxProgramBuilder::c##OP_NAME(                      \
+      const std::variant<double, Value>&(PARAM), const Value control,          \
+      const Value target) {                                                    \
+    return createControlledOneTargetOneParameter<OP_CLASS>(PARAM, control,     \
+                                                           target);            \
+  }                                                                            \
+  std::pair<ValueRange, Value> FluxProgramBuilder::mc##OP_NAME(                \
+      const std::variant<double, Value>&(PARAM), const ValueRange controls,    \
+      const Value target) {                                                    \
+    return createMultiControlledOneTargetOneParameter<OP_CLASS>(               \
+        PARAM, controls, target);                                              \
+  }
+
+DEFINE_ONE_TARGET_ONE_PARAMETER(RXOp, rx, theta)
+DEFINE_ONE_TARGET_ONE_PARAMETER(RYOp, ry, theta)
+DEFINE_ONE_TARGET_ONE_PARAMETER(RZOp, rz, theta)
+DEFINE_ONE_TARGET_ONE_PARAMETER(POp, p, phi)
+
+#undef DEFINE_ONE_TARGET_ONE_PARAMETER
+
+// OneTargetTwoParameter
+
+#define DEFINE_ONE_TARGET_TWO_PARAMETER(OP_CLASS, OP_NAME, PARAM1, PARAM2)     \
+  Value FluxProgramBuilder::OP_NAME(                                           \
+      const std::variant<double, Value>&(PARAM1),                              \
+      const std::variant<double, Value>&(PARAM2), const Value qubit) {         \
+    return createOneTargetTwoParameter<OP_CLASS>(PARAM1, PARAM2, qubit);       \
+  }                                                                            \
+  std::pair<Value, Value> FluxProgramBuilder::c##OP_NAME(                      \
+      const std::variant<double, Value>&(PARAM1),                              \
+      const std::variant<double, Value>&(PARAM2), const Value control,         \
+      const Value target) {                                                    \
+    return createControlledOneTargetTwoParameter<OP_CLASS>(PARAM1, PARAM2,     \
+                                                           control, target);   \
+  }                                                                            \
+  std::pair<ValueRange, Value> FluxProgramBuilder::mc##OP_NAME(                \
+      const std::variant<double, Value>&(PARAM1),                              \
+      const std::variant<double, Value>&(PARAM2), const ValueRange controls,   \
+      const Value target) {                                                    \
+    return createMultiControlledOneTargetTwoParameter<OP_CLASS>(               \
+        PARAM1, PARAM2, controls, target);                                     \
+  }
+
+DEFINE_ONE_TARGET_TWO_PARAMETER(ROp, r, theta, phi)
+DEFINE_ONE_TARGET_TWO_PARAMETER(U2Op, u2, phi, lambda)
+
+#undef DEFINE_ONE_TARGET_TWO_PARAMETER
+
+// TwoTargetZeroParameter
+
+#define DEFINE_TWO_TARGET_ZERO_PARAMETER(OP_CLASS, OP_NAME)                    \
+  std::pair<Value, Value> FluxProgramBuilder::OP_NAME(Value qubit0,            \
+                                                      Value qubit1) {          \
+    return createTwoTargetZeroParameter<OP_CLASS>(qubit0, qubit1);             \
+  }                                                                            \
+  std::pair<Value, std::pair<Value, Value>> FluxProgramBuilder::c##OP_NAME(    \
+      const Value control, Value qubit0, Value qubit1) {                       \
+    return createControlledTwoTargetZeroParameter<OP_CLASS>(control, qubit0,   \
+                                                            qubit1);           \
+  }                                                                            \
+  std::pair<ValueRange, std::pair<Value, Value>>                               \
+      FluxProgramBuilder::mc##OP_NAME(const ValueRange controls, Value qubit0, \
+                                      Value qubit1) {                          \
+    return createMultiControlledTwoTargetZeroParameter<OP_CLASS>(              \
+        controls, qubit0, qubit1);                                             \
+  }
 
-Value FluxProgramBuilder::id(const Value qubit) {
-  return createOneTargetZeroParameter<IdOp>(qubit);
-}
+DEFINE_TWO_TARGET_ZERO_PARAMETER(SWAPOp, swap)
+DEFINE_TWO_TARGET_ZERO_PARAMETER(iSWAPOp, iswap)
 
-std::pair<Value, Value> FluxProgramBuilder::cid(const Value control,
-                                                const Value target) {
-  return createControlledOneTargetZeroParameter<IdOp>(control, target);
-}
-
-std::pair<ValueRange, Value> FluxProgramBuilder::mcid(const ValueRange controls,
-                                                      const Value target) {
-  return createMultiControlledOneTargetZeroParameter<IdOp>(controls, target);
-}
-
-// XOp
-
-Value FluxProgramBuilder::x(const Value qubit) {
-  return createOneTargetZeroParameter<XOp>(qubit);
-}
-
-std::pair<Value, Value> FluxProgramBuilder::cx(const Value control,
-                                               const Value target) {
-  return createControlledOneTargetZeroParameter<XOp>(control, target);
-}
-
-std::pair<ValueRange, Value> FluxProgramBuilder::mcx(const ValueRange controls,
-                                                     const Value target) {
-  return createMultiControlledOneTargetZeroParameter<XOp>(controls, target);
-}
-
-// YOp
-
-Value FluxProgramBuilder::y(const Value qubit) {
-  return createOneTargetZeroParameter<YOp>(qubit);
-}
-
-std::pair<Value, Value> FluxProgramBuilder::cy(const Value control,
-                                               const Value target) {
-  return createControlledOneTargetZeroParameter<YOp>(control, target);
-}
-
-std::pair<ValueRange, Value> FluxProgramBuilder::mcy(const ValueRange controls,
-                                                     const Value target) {
-  return createMultiControlledOneTargetZeroParameter<YOp>(controls, target);
-}
-
-// ZOp
-
-Value FluxProgramBuilder::z(const Value qubit) {
-  return createOneTargetZeroParameter<ZOp>(qubit);
-}
-
-std::pair<Value, Value> FluxProgramBuilder::cz(const Value control,
-                                               const Value target) {
-  return createControlledOneTargetZeroParameter<ZOp>(control, target);
-}
-
-std::pair<ValueRange, Value> FluxProgramBuilder::mcz(const ValueRange controls,
-                                                     const Value target) {
-  return createMultiControlledOneTargetZeroParameter<ZOp>(controls, target);
-}
-
-// HOp
-
-Value FluxProgramBuilder::h(const Value qubit) {
-  return createOneTargetZeroParameter<HOp>(qubit);
-}
-
-std::pair<Value, Value> FluxProgramBuilder::ch(const Value control,
-                                               const Value target) {
-  return createControlledOneTargetZeroParameter<HOp>(control, target);
-}
-
-std::pair<ValueRange, Value> FluxProgramBuilder::mch(const ValueRange controls,
-                                                     const Value target) {
-  return createMultiControlledOneTargetZeroParameter<HOp>(controls, target);
-}
-
-// SOp
-
-Value FluxProgramBuilder::s(const Value qubit) {
-  return createOneTargetZeroParameter<SOp>(qubit);
-}
-
-std::pair<Value, Value> FluxProgramBuilder::cs(const Value control,
-                                               const Value target) {
-  return createControlledOneTargetZeroParameter<SOp>(control, target);
-}
-
-std::pair<ValueRange, Value> FluxProgramBuilder::mcs(const ValueRange controls,
-                                                     const Value target) {
-  return createMultiControlledOneTargetZeroParameter<SOp>(controls, target);
-}
-
-// SdgOp
-
-Value FluxProgramBuilder::sdg(const Value qubit) {
-  return createOneTargetZeroParameter<SdgOp>(qubit);
-}
-
-std::pair<Value, Value> FluxProgramBuilder::csdg(const Value control,
-                                                 const Value target) {
-  return createControlledOneTargetZeroParameter<SdgOp>(control, target);
-}
-
-std::pair<ValueRange, Value>
-FluxProgramBuilder::mcsdg(const ValueRange controls, const Value target) {
-  return createMultiControlledOneTargetZeroParameter<SdgOp>(controls, target);
-}
-
-// TOp
-
-Value FluxProgramBuilder::t(const Value qubit) {
-  return createOneTargetZeroParameter<TOp>(qubit);
-}
-
-std::pair<Value, Value> FluxProgramBuilder::ct(const Value control,
-                                               const Value target) {
-  return createControlledOneTargetZeroParameter<TOp>(control, target);
-}
-
-std::pair<ValueRange, Value> FluxProgramBuilder::mct(const ValueRange controls,
-                                                     const Value target) {
-  return createMultiControlledOneTargetZeroParameter<TOp>(controls, target);
-}
-
-// TdgOp
-
-Value FluxProgramBuilder::tdg(const Value qubit) {
-  return createOneTargetZeroParameter<TdgOp>(qubit);
-}
-
-std::pair<Value, Value> FluxProgramBuilder::ctdg(const Value control,
-                                                 const Value target) {
-  return createControlledOneTargetZeroParameter<TdgOp>(control, target);
-}
-
-std::pair<ValueRange, Value>
-FluxProgramBuilder::mctdg(const ValueRange controls, const Value target) {
-  return createMultiControlledOneTargetZeroParameter<TdgOp>(controls, target);
-}
-
-// SXOp
-
-Value FluxProgramBuilder::sx(const Value qubit) {
-  return createOneTargetZeroParameter<SXOp>(qubit);
-}
-
-std::pair<Value, Value> FluxProgramBuilder::csx(const Value control,
-                                                const Value target) {
-  return createControlledOneTargetZeroParameter<SXOp>(control, target);
-}
-
-std::pair<ValueRange, Value> FluxProgramBuilder::mcsx(const ValueRange controls,
-                                                      const Value target) {
-  return createMultiControlledOneTargetZeroParameter<SXOp>(controls, target);
-}
-
-// SXdgOp
-
-Value FluxProgramBuilder::sxdg(const Value qubit) {
-  return createOneTargetZeroParameter<SXdgOp>(qubit);
-}
-
-std::pair<Value, Value> FluxProgramBuilder::csxdg(const Value control,
-                                                  const Value target) {
-  return createControlledOneTargetZeroParameter<SXdgOp>(control, target);
-}
-
-std::pair<ValueRange, Value>
-FluxProgramBuilder::mcsxdg(const ValueRange controls, const Value target) {
-  return createMultiControlledOneTargetZeroParameter<SXdgOp>(controls, target);
-}
-
-// RXOp
-
-Value FluxProgramBuilder::rx(const std::variant<double, Value>& theta,
-                             const Value qubit) {
-  return createOneTargetOneParameter<RXOp>(theta, qubit);
-}
-
-std::pair<Value, Value>
-FluxProgramBuilder::crx(const std::variant<double, Value>& theta,
-                        const Value control, const Value target) {
-  return createControlledOneTargetOneParameter<RXOp>(theta, control, target);
-}
-
-std::pair<ValueRange, Value>
-FluxProgramBuilder::mcrx(const std::variant<double, Value>& theta,
-                         const ValueRange controls, const Value target) {
-  return createMultiControlledOneTargetOneParameter<RXOp>(theta, controls,
-                                                          target);
-}
-
-// RYOp
-
-Value FluxProgramBuilder::ry(const std::variant<double, Value>& theta,
-                             const Value qubit) {
-  return createOneTargetOneParameter<RYOp>(theta, qubit);
-}
-
-std::pair<Value, Value>
-FluxProgramBuilder::cry(const std::variant<double, Value>& theta,
-                        const Value control, const Value target) {
-  return createControlledOneTargetOneParameter<RYOp>(theta, control, target);
-}
-
-std::pair<ValueRange, Value>
-FluxProgramBuilder::mcry(const std::variant<double, Value>& theta,
-                         const ValueRange controls, const Value target) {
-  return createMultiControlledOneTargetOneParameter<RYOp>(theta, controls,
-                                                          target);
-}
-
-// RZOp
-
-Value FluxProgramBuilder::rz(const std::variant<double, Value>& theta,
-                             const Value qubit) {
-  return createOneTargetOneParameter<RZOp>(theta, qubit);
-}
-
-std::pair<Value, Value>
-FluxProgramBuilder::crz(const std::variant<double, Value>& theta,
-                        const Value control, const Value target) {
-  return createControlledOneTargetOneParameter<RZOp>(theta, control, target);
-}
-
-std::pair<ValueRange, Value>
-FluxProgramBuilder::mcrz(const std::variant<double, Value>& theta,
-                         const ValueRange controls, const Value target) {
-  return createMultiControlledOneTargetOneParameter<RZOp>(theta, controls,
-                                                          target);
-}
-
-// POp
-
-Value FluxProgramBuilder::p(const std::variant<double, Value>& theta,
-                            const Value qubit) {
-  return createOneTargetOneParameter<POp>(theta, qubit);
-}
-
-std::pair<Value, Value>
-FluxProgramBuilder::cp(const std::variant<double, Value>& theta,
-                       const Value control, const Value target) {
-  return createControlledOneTargetOneParameter<POp>(theta, control, target);
-}
-
-std::pair<ValueRange, Value>
-FluxProgramBuilder::mcp(const std::variant<double, Value>& theta,
-                        const ValueRange controls, const Value target) {
-  return createMultiControlledOneTargetOneParameter<POp>(theta, controls,
-                                                         target);
-}
-
-// ROp
-
-Value FluxProgramBuilder::r(const std::variant<double, Value>& theta,
-                            const std::variant<double, Value>& phi,
-                            const Value qubit) {
-  return createOneTargetTwoParameter<ROp>(theta, phi, qubit);
-}
-
-std::pair<Value, Value>
-FluxProgramBuilder::cr(const std::variant<double, Value>& theta,
-                       const std::variant<double, Value>& phi,
-                       const Value control, const Value target) {
-  return createControlledOneTargetTwoParameter<ROp>(theta, phi, control,
-                                                    target);
-}
-
-std::pair<ValueRange, Value>
-FluxProgramBuilder::mcr(const std::variant<double, Value>& theta,
-                        const std::variant<double, Value>& phi,
-                        const ValueRange controls, const Value target) {
-  return createMultiControlledOneTargetTwoParameter<ROp>(theta, phi, controls,
-                                                         target);
-}
-
-// U2Op
-
-Value FluxProgramBuilder::u2(const std::variant<double, Value>& phi,
-                             const std::variant<double, Value>& lambda,
-                             Value qubit) {
-  return createOneTargetTwoParameter<U2Op>(phi, lambda, qubit);
-}
-
-std::pair<Value, Value>
-FluxProgramBuilder::cu2(const std::variant<double, Value>& phi,
-                        const std::variant<double, Value>& lambda,
-                        const Value control, const Value target) {
-  return createControlledOneTargetTwoParameter<U2Op>(phi, lambda, control,
-                                                     target);
-}
-
-std::pair<ValueRange, Value>
-FluxProgramBuilder::mcu2(const std::variant<double, Value>& phi,
-                         const std::variant<double, Value>& lambda,
-                         const ValueRange controls, const Value target) {
-  return createMultiControlledOneTargetTwoParameter<U2Op>(phi, lambda, controls,
-                                                          target);
-}
-
-// SWAPOp
-
-std::pair<Value, Value> FluxProgramBuilder::swap(Value qubit0, Value qubit1) {
-  return createTwoTargetZeroParameter<SWAPOp>(qubit0, qubit1);
-}
-
-std::pair<Value, std::pair<Value, Value>>
-FluxProgramBuilder::cswap(const Value control, Value qubit0, Value qubit1) {
-  return createControlledTwoTargetZeroParameter<SWAPOp>(control, qubit0,
-                                                        qubit1);
-}
-
-std::pair<ValueRange, std::pair<Value, Value>>
-FluxProgramBuilder::mcswap(const ValueRange controls, Value qubit0,
-                           Value qubit1) {
-  return createMultiControlledTwoTargetZeroParameter<SWAPOp>(controls, qubit0,
-                                                             qubit1);
-}
-
-// iSWAPOp
-
-std::pair<Value, Value> FluxProgramBuilder::iswap(Value qubit0, Value qubit1) {
-  return createTwoTargetZeroParameter<iSWAPOp>(qubit0, qubit1);
-}
-
-std::pair<Value, std::pair<Value, Value>>
-FluxProgramBuilder::ciswap(const Value control, Value qubit0, Value qubit1) {
-  return createControlledTwoTargetZeroParameter<iSWAPOp>(control, qubit0,
-                                                         qubit1);
-}
-
-std::pair<ValueRange, std::pair<Value, Value>>
-FluxProgramBuilder::mciswap(const ValueRange controls, Value qubit0,
-                            Value qubit1) {
-  return createMultiControlledTwoTargetZeroParameter<iSWAPOp>(controls, qubit0,
-                                                              qubit1);
-}
+#undef DEFINE_TWO_TARGET_ZERO_PARAMETER
 
 //===----------------------------------------------------------------------===//
 // Modifiers
