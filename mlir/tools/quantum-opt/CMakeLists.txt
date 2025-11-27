@@ -16,6 +16,8 @@ set(LIBS
     ${transform_libs}
     ${passes_libs}
     MLIROptLib
+    MLIRRegisterAllDialects
+    MLIRRegisterAllPasses
     MLIRMQTOptTransforms
     MQTRefToMQTOpt
     MQTOptToMQTRef
