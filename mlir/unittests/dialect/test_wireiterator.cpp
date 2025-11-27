@@ -15,6 +15,7 @@
 #include <iterator>
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/ADT/iterator_range.h>
+#include <llvm/Support/Casting.h>
 #include <llvm/Support/Debug.h>
 #include <llvm/Support/raw_ostream.h>
 #include <memory>
@@ -265,4 +266,44 @@ TEST_F(WireIteratorTest, TestForwardAndBackward) {
   }
 
   ASSERT_EQ(it, begin);
+}
+
+TEST_F(WireIteratorTest, TestRecursiveUse) {
+
+  ///
+  /// Test the recursive use of the iterator.
+  ///
+
+  auto module = getModule(*context);
+  auto alloc = *(module->getOps<AllocQubitOp>().begin());
+  auto q = alloc.getQubit();
+  WireIterator it(q, q.getParentRegion());
+
+  /// Advance until 'scf.for'.
+  for (; it != std::default_sentinel; ++it) {
+    if (isa<scf::ForOp>(*it)) {
+      break;
+    }
+    llvm::dbgs() << **it << '\n'; /// Keep for debugging purposes.
+  }
+
+  auto loop = cast<scf::ForOp>(*it);
+  for (auto [iter, init] :
+       llvm::zip(loop.getRegionIterArgs(), loop.getInitArgs())) {
+    if (init == it.qubit()) {
+      WireIterator rec(iter, &loop.getRegion());
+      const WireIterator recBegin(rec);
+      rec--;
+
+      ASSERT_EQ(rec, recBegin); // Test blockargument handling.
+
+      rec++;
+      checkOperationEqual(*rec,
+                          "%out_qubits_6 = mqtopt.h() %arg1 : !mqtopt.Qubit");
+
+      rec++;
+      checkOperationEqual(*rec, "scf.yield %out_qubits_6, %out_qubits_7 : "
+                                "!mqtopt.Qubit, !mqtopt.Qubit");
+    }
+  }
 }
