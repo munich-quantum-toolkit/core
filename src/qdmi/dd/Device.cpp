@@ -562,7 +562,7 @@ auto MQT_DDSIM_QDMI_Device_Job_impl_d::wait(const size_t timeout) const
   if (!jobHandle_.valid() ||
       (s != QDMI_JOB_STATUS_SUBMITTED && s != QDMI_JOB_STATUS_QUEUED &&
        s != QDMI_JOB_STATUS_RUNNING)) {
-    return QDMI_ERROR_INVALIDARGUMENT;
+    return QDMI_ERROR_BADSTATE;
   }
 
   if (timeout > 0) {
@@ -736,13 +736,15 @@ auto MQT_DDSIM_QDMI_Device_Job_impl_d::getResults(const QDMI_Job_Result result,
                                                   const size_t size, void* data,
                                                   size_t* sizeRet)
     -> QDMI_STATUS {
-  if (status_.load() != QDMI_JOB_STATUS_DONE ||
-      (data != nullptr && size == 0) ||
+  if ((data != nullptr && size == 0) ||
       (result >= QDMI_JOB_RESULT_MAX && result != QDMI_JOB_RESULT_CUSTOM1 &&
        result != QDMI_JOB_RESULT_CUSTOM2 && result != QDMI_JOB_RESULT_CUSTOM3 &&
        result != QDMI_JOB_RESULT_CUSTOM4 &&
        result != QDMI_JOB_RESULT_CUSTOM5)) {
     return QDMI_ERROR_INVALIDARGUMENT;
+  }
+  if (status_.load() != QDMI_JOB_STATUS_DONE) {
+    return QDMI_ERROR_BADSTATE;
   }
   switch (result) {
   case QDMI_JOB_RESULT_HIST_KEYS:
