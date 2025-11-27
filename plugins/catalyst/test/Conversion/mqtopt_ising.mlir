@@ -24,8 +24,7 @@ module {
     // CHECK: %[[C0:.*]] = arith.constant 0 : index
     // CHECK: %[[C1:.*]] = arith.constant 1 : index
     // CHECK: %[[C2:.*]] = arith.constant 2 : index
-    // CHECK: %[[C3_I64:.*]] = arith.constant 3 : i64
-    // CHECK: %[[QREG:.*]] = quantum.alloc(%[[C3_I64]]) : !quantum.reg
+    // CHECK: %[[QREG:.*]] = quantum.alloc( 3) : !quantum.reg
     // CHECK: %[[IDX0:.*]] = arith.index_cast %[[C0]] : index to i64
     // CHECK: %[[Q0:.*]] = quantum.extract %[[QREG]][%[[IDX0]]] : !quantum.reg -> !quantum.bit
     // CHECK: %[[IDX1:.*]] = arith.index_cast %[[C1]] : index to i64
@@ -39,11 +38,11 @@ module {
     // CHECK: %[[XY_P:.*]]:2 = quantum.custom "IsingXY"(%[[CST]]) %[[Q0]], %[[RZ0]] : !quantum.bit, !quantum.bit
     // CHECK: %[[RZ1:.*]] = quantum.custom "RZ"(%{{.*}}) %[[XY_P]]#1 : !quantum.bit
 
-    // CHECK: %[[X1:.*]] = quantum.custom "X"() %[[XY_P]]#0 : !quantum.bit
+    // CHECK: %[[X1:.*]] = quantum.custom "PauliX"() %[[XY_P]]#0 : !quantum.bit
     // CHECK: %[[RZ2:.*]] = quantum.custom "RZ"(%{{.*}}) %[[RZ1]] : !quantum.bit
     // CHECK: %[[XY_M:.*]]:2 = quantum.custom "IsingXY"(%[[CST]]) %[[X1]], %[[RZ2]] : !quantum.bit, !quantum.bit
     // CHECK: %[[RZ3:.*]] = quantum.custom "RZ"(%{{.*}}) %[[XY_M]]#1 : !quantum.bit
-    // CHECK: %[[X2:.*]] = quantum.custom "X"() %[[XY_M]]#0 : !quantum.bit
+    // CHECK: %[[X2:.*]] = quantum.custom "PauliX"() %[[XY_M]]#0 : !quantum.bit
 
     // CHECK: %[[XX_P:.*]]:2 = quantum.custom "IsingXX"(%[[CST]]) %[[X2]], %[[RZ3]] : !quantum.bit, !quantum.bit
     // CHECK: %[[YY_P:.*]]:2 = quantum.custom "IsingYY"(%[[CST]]) %[[XX_P]]#0, %[[XX_P]]#1 : !quantum.bit, !quantum.bit
@@ -54,28 +53,32 @@ module {
     // CHECK: %[[H2U:.*]] = quantum.custom "Hadamard"() %[[ZZ_P2]]#1 : !quantum.bit
 
     // --- Controlled ---------------------------------------------------------------------
-    // CHECK: %[[RZ2:.*]], %[[CTRL1A:.*]] = quantum.custom "RZ"(%{{.*}}) %[[H2U]] ctrls(%[[Q2]]) ctrlvals(%true{{.*}}) : !quantum.bit ctrls !quantum.bit
-    // CHECK: %[[XY_C:.*]]:2, %[[CTRL1B:.*]] = quantum.custom "IsingXY"(%[[CST]]) %[[ZZ_P2]]#0, %[[RZ2]] ctrls(%[[CTRL1A]]) ctrlvals(%true{{.*}}) : !quantum.bit, !quantum.bit ctrls !quantum.bit
-    // CHECK: %[[RZ3:.*]], %[[CTRL1:.*]] = quantum.custom "RZ"(%{{.*}}) %[[XY_C]]#1 ctrls(%[[CTRL1B]]) ctrlvals(%true{{.*}}) : !quantum.bit ctrls !quantum.bit
+    // CHECK: %[[TRUE:.*]] = arith.constant true
+    // CHECK: %[[RZ2:.*]], %[[CTRL1A:.*]] = quantum.custom "RZ"(%{{.*}}) %[[H2U]] ctrls(%[[Q2]]) ctrlvals(%[[TRUE]]{{.*}}) : !quantum.bit ctrls !quantum.bit
+    // CHECK: %[[XY_C:.*]]:2, %[[CTRL1B:.*]] = quantum.custom "IsingXY"(%[[CST]]) %[[ZZ_P2]]#0, %[[RZ2]] ctrls(%[[CTRL1A]]) ctrlvals(%[[TRUE]]{{.*}}) : !quantum.bit, !quantum.bit ctrls !quantum.bit
+    // CHECK: %[[RZ3:.*]], %[[CTRL1:.*]] = quantum.custom "RZ"(%{{.*}}) %[[XY_C]]#1 ctrls(%[[CTRL1B]]) ctrlvals(%[[TRUE]]{{.*}}) : !quantum.bit ctrls !quantum.bit
 
-    // CHECK: %[[X1C:.*]], %[[CTRL2A:.*]] = quantum.custom "X"() %[[XY_C]]#0 ctrls(%[[CTRL1]]) ctrlvals(%true{{.*}}) : !quantum.bit ctrls !quantum.bit
-    // CHECK: %[[RZ4:.*]], %[[CTRL2B:.*]] = quantum.custom "RZ"(%{{.*}}) %[[RZ3]] ctrls(%[[CTRL2A]]) ctrlvals(%true{{.*}}) : !quantum.bit ctrls !quantum.bit
-    // CHECK: %[[XY_CM:.*]]:2, %[[CTRL2C:.*]] = quantum.custom "IsingXY"(%[[CST]]) %[[X1C]], %[[RZ4]] ctrls(%[[CTRL2B]]) ctrlvals(%true{{.*}}) : !quantum.bit, !quantum.bit ctrls !quantum.bit
-    // CHECK: %[[RZ5:.*]], %[[CTRL2D:.*]] = quantum.custom "RZ"(%{{.*}}) %[[XY_CM]]#1 ctrls(%[[CTRL2C]]) ctrlvals(%true{{.*}}) : !quantum.bit ctrls !quantum.bit
-    // CHECK: %[[X2C:.*]], %[[CTRL2:.*]] = quantum.custom "X"() %[[XY_CM]]#0 ctrls(%[[CTRL2D]]) ctrlvals(%true{{.*}}) : !quantum.bit ctrls !quantum.bit
+    // CHECK: %[[X1C:.*]], %[[CTRL2A:.*]] = quantum.custom "PauliX"() %[[XY_C]]#0 ctrls(%[[CTRL1]]) ctrlvals(%[[TRUE]]{{.*}}) : !quantum.bit ctrls !quantum.bit
+    // CHECK: %[[RZ4:.*]], %[[CTRL2B:.*]] = quantum.custom "RZ"(%{{.*}}) %[[RZ3]] ctrls(%[[CTRL2A]]) ctrlvals(%[[TRUE]]{{.*}}) : !quantum.bit ctrls !quantum.bit
+    // CHECK: %[[XY_CM:.*]]:2, %[[CTRL2C:.*]] = quantum.custom "IsingXY"(%[[CST]]) %[[X1C]], %[[RZ4]] ctrls(%[[CTRL2B]]) ctrlvals(%[[TRUE]]{{.*}}) : !quantum.bit, !quantum.bit ctrls !quantum.bit
+    // CHECK: %[[RZ5:.*]], %[[CTRL2D:.*]] = quantum.custom "RZ"(%{{.*}}) %[[XY_CM]]#1 ctrls(%[[CTRL2C]]) ctrlvals(%[[TRUE]]{{.*}}) : !quantum.bit ctrls !quantum.bit
+    // CHECK: %[[X2C:.*]], %[[CTRL2:.*]] = quantum.custom "PauliX"() %[[XY_CM]]#0 ctrls(%[[CTRL2D]]) ctrlvals(%[[TRUE]]{{.*}}) : !quantum.bit ctrls !quantum.bit
 
-    // CHECK: %[[XX_C:.*]]:2, %[[CTRL3:.*]] = quantum.custom "IsingXX"(%[[CST]]) %[[X2C]], %[[RZ5]] ctrls(%[[CTRL2]]) ctrlvals(%true{{.*}}) : !quantum.bit, !quantum.bit ctrls !quantum.bit
-    // CHECK: %[[YY_C:.*]]:2, %[[CTRL4:.*]] = quantum.custom "IsingYY"(%[[CST]]) %[[XX_C]]#0, %[[XX_C]]#1 ctrls(%[[CTRL3]]) ctrlvals(%true{{.*}}) : !quantum.bit, !quantum.bit ctrls !quantum.bit
-    // CHECK: %[[ZZ_C1:.*]]:2, %[[CTRL5:.*]] = quantum.custom "IsingZZ"(%[[CST]]) %[[YY_C]]#0, %[[YY_C]]#1 ctrls(%[[CTRL4]]) ctrlvals(%true{{.*}}) : !quantum.bit, !quantum.bit ctrls !quantum.bit
+    // CHECK: %[[XX_C:.*]]:2, %[[CTRL3:.*]] = quantum.custom "IsingXX"(%[[CST]]) %[[X2C]], %[[RZ5]] ctrls(%[[CTRL2]]) ctrlvals(%[[TRUE]]{{.*}}) : !quantum.bit, !quantum.bit ctrls !quantum.bit
+    // CHECK: %[[YY_C:.*]]:2, %[[CTRL4:.*]] = quantum.custom "IsingYY"(%[[CST]]) %[[XX_C]]#0, %[[XX_C]]#1 ctrls(%[[CTRL3]]) ctrlvals(%[[TRUE]]{{.*}}) : !quantum.bit, !quantum.bit ctrls !quantum.bit
+    // CHECK: %[[ZZ_C1:.*]]:2, %[[CTRL5:.*]] = quantum.custom "IsingZZ"(%[[CST]]) %[[YY_C]]#0, %[[YY_C]]#1 ctrls(%[[CTRL4]]) ctrlvals(%[[TRUE]]{{.*}}) : !quantum.bit, !quantum.bit ctrls !quantum.bit
 
-    // CHECK: %[[H1C:.*]], %[[CTRL6:.*]] = quantum.custom "Hadamard"() %[[ZZ_C1]]#1 ctrls(%[[CTRL5]]) ctrlvals(%true{{.*}}) : !quantum.bit ctrls !quantum.bit
-    // CHECK: %[[CZZ_P2:.*]]:2, %[[CTRL7:.*]] = quantum.custom "IsingZZ"(%[[CST]]) %[[ZZ_C1]]#0, %[[H1C]] ctrls(%[[CTRL6]]) ctrlvals(%true{{.*}}) : !quantum.bit, !quantum.bit ctrls !quantum.bit
-    // CHECK: %[[H2C:.*]], %[[CTRL8:.*]] = quantum.custom "Hadamard"() %[[CZZ_P2]]#1 ctrls(%[[CTRL7]]) ctrlvals(%true{{.*}}) : !quantum.bit ctrls !quantum.bit
+    // CHECK: %[[H1C:.*]] = quantum.custom "Hadamard"() %[[ZZ_C1]]#1 : !quantum.bit
+    // CHECK: %[[CZZ_P2:.*]]:2, %[[CTRL7:.*]] = quantum.custom "IsingZZ"(%[[CST]]) %[[ZZ_C1]]#0, %[[H1C]] ctrls(%[[CTRL5]]) ctrlvals(%[[TRUE]]{{.*}}) : !quantum.bit, !quantum.bit ctrls !quantum.bit
+    // CHECK: %[[H2C:.*]] = quantum.custom "Hadamard"() %[[CZZ_P2]]#1 : !quantum.bit
 
     // --- Reinsertion ---------------------------------------------------------------------------
-    // CHECK: quantum.insert %[[QREG]][{{.*}}], %[[CZZ_P2]]#0 : !quantum.reg, !quantum.bit
-    // CHECK: quantum.insert %[[QREG]][{{.*}}], %[[H2C]] : !quantum.reg, !quantum.bit
-    // CHECK: quantum.insert %[[QREG]][{{.*}}], %[[CTRL8]] : !quantum.reg, !quantum.bit
+    // CHECK: %[[C0_FINAL:.*]] = arith.index_cast %c0 : index to i64
+    // CHECK: quantum.insert %[[QREG]][%[[C0_FINAL]]], %[[CZZ_P2]]#0 : !quantum.reg, !quantum.bit
+    // CHECK: %[[C1_FINAL:.*]] = arith.index_cast %c1 : index to i64
+    // CHECK: quantum.insert %[[QREG]][%[[C1_FINAL]]], %[[H2C]] : !quantum.reg, !quantum.bit
+    // CHECK: %[[C2_FINAL:.*]] = arith.index_cast %c2 : index to i64
+    // CHECK: quantum.insert %[[QREG]][%[[C2_FINAL]]], %[[CTRL7]] : !quantum.reg, !quantum.bit
     // CHECK: quantum.dealloc %[[QREG]] : !quantum.reg
 
     // Prepare qubits

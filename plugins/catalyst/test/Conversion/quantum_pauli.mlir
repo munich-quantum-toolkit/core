@@ -45,7 +45,7 @@ module {
     // CHECK: %[[T4:.*]], %[[C4_:.*]] = mqtopt.i(static [] mask []) %[[T3]] ctrl %[[C3_]] : !mqtopt.Qubit ctrl !mqtopt.Qubit
 
     // --- Two-qubit controlled gates ------------------------------------------------------------
-    // CHECK: %[[T5:.*]], %[[C5:.*]] = mqtopt.x(static [] mask []) %[[C4]] ctrl %[[T4]] : !mqtopt.Qubit ctrl !mqtopt.Qubit
+    // CHECK: %[[T5:.*]], %[[C5:.*]] = mqtopt.x(static [] mask []) %[[C4_]] ctrl %[[T4]] : !mqtopt.Qubit ctrl !mqtopt.Qubit
     // CHECK: %[[T6:.*]], %[[C6:.*]] = mqtopt.y(static [] mask []) %[[C5]] ctrl %[[T5]] : !mqtopt.Qubit ctrl !mqtopt.Qubit
     // CHECK: %[[T7:.*]], %[[C7:.*]] = mqtopt.z(static [] mask []) %[[C6]] ctrl %[[T6]] : !mqtopt.Qubit ctrl !mqtopt.Qubit
     // CHECK: %[[T8:.*]], %[[C8:.*]]:2 = mqtopt.x(static [] mask []) %[[Q2]] ctrl %[[T7]], %[[C7]] : !mqtopt.Qubit ctrl !mqtopt.Qubit, !mqtopt.Qubit

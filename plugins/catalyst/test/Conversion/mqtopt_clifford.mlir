@@ -24,8 +24,7 @@ module {
     // CHECK: %[[C0:.*]] = arith.constant 0 : index
     // CHECK: %[[C1:.*]] = arith.constant 1 : index
     // CHECK: %[[C2:.*]] = arith.constant 2 : index
-    // CHECK: %[[C3_I64:.*]] = arith.constant 3 : i64
-    // CHECK: %[[QREG:.*]] = quantum.alloc(%[[C3_I64]]) : !quantum.reg
+    // CHECK: %[[QREG:.*]] = quantum.alloc( 3) : !quantum.reg
     // CHECK: %[[IDX0:.*]] = arith.index_cast %[[C0]] : index to i64
     // CHECK: %[[Q0:.*]] = quantum.extract %[[QREG]][%[[IDX0]]] : !quantum.reg -> !quantum.bit
     // CHECK: %[[IDX1:.*]] = arith.index_cast %[[C1]] : index to i64
@@ -63,36 +62,38 @@ module {
     // CHECK: %[[PERESDG_CNOT:.*]]:2 = quantum.custom "CNOT"() %[[PERESDG_X]], %[[PERES_CNOT]]#1 : !quantum.bit, !quantum.bit
 
     // --- Controlled Hadamard -------------------------------------------------------------------
-    // CHECK: %[[CH_T:.*]], %[[CH_C:.*]] = quantum.custom "Hadamard"() %[[PERESDG_CNOT]]#0 ctrls(%[[PERESDG_CNOT]]#1) ctrlvals(%true{{.*}}) : !quantum.bit ctrls !quantum.bit
+    // CHECK: %[[TRUE:.*]] = arith.constant true
+    // CHECK: %[[CH_T:.*]], %[[CH_C:.*]] = quantum.custom "Hadamard"() %[[PERESDG_CNOT]]#0 ctrls(%[[PERESDG_CNOT]]#1) ctrlvals(%[[TRUE]]{{.*}}) : !quantum.bit ctrls !quantum.bit
 
     // --- Controlled V gate decomposition (controlled RZ-RY-RZ sequence) -------------------------------------------------------------------
     // CHECK: %[[CST:.*]] = arith.constant {{.*}} : f64
-    // CHECK: %[[CRZ1_T:.*]], %[[CRZ1_C:.*]] = quantum.custom "RZ"(%[[CST]]) %[[CH_T]] ctrls(%[[CH_C]]) ctrlvals(%true{{.*}}) : !quantum.bit ctrls !quantum.bit
-    // CHECK: %[[CRY1_T:.*]], %[[CRY1_C:.*]] = quantum.custom "RY"(%[[CST]]) %[[CRZ1_T]] ctrls(%[[CRZ1_C]]) ctrlvals(%true{{.*}}) : !quantum.bit ctrls !quantum.bit
-    // CHECK: %[[CRZ2_T:.*]], %[[CRZ2_C:.*]] = quantum.custom "RZ"(%[[CST]]) %[[CRY1_T]] adj ctrls(%[[CRY1_C]]) ctrlvals(%true{{.*}}) : !quantum.bit ctrls !quantum.bit
+    // CHECK: %[[CRZ1_T:.*]], %[[CRZ1_C:.*]] = quantum.custom "RZ"(%[[CST]]) %[[CH_T]] ctrls(%[[CH_C]]) ctrlvals(%[[TRUE]]{{.*}}) : !quantum.bit ctrls !quantum.bit
+    // CHECK: %[[CRY1_T:.*]], %[[CRY1_C:.*]] = quantum.custom "RY"(%[[CST]]) %[[CRZ1_T]] ctrls(%[[CRZ1_C]]) ctrlvals(%[[TRUE]]{{.*}}) : !quantum.bit ctrls !quantum.bit
+    // CHECK: %[[CRZ2_T:.*]], %[[CRZ2_C:.*]] = quantum.custom "RZ"(%[[CST]]) %[[CRY1_T]] adj ctrls(%[[CRY1_C]]) ctrlvals(%[[TRUE]]{{.*}}) : !quantum.bit ctrls !quantum.bit
 
     // --- Controlled Vdg gate decomposition -------------------------------------------------------------------
     // CHECK: %[[NEG_CST:.*]] = arith.constant -{{.*}} : f64
-    // CHECK: %[[CRZ3_T:.*]], %[[CRZ3_C:.*]] = quantum.custom "RZ"(%[[NEG_CST]]) %[[CRZ2_T]] adj ctrls(%[[CRZ2_C]]) ctrlvals(%true{{.*}}) : !quantum.bit ctrls !quantum.bit
-    // CHECK: %[[CRY2_T:.*]], %[[CRY2_C:.*]] = quantum.custom "RY"(%[[NEG_CST]]) %[[CRZ3_T]] ctrls(%[[CRZ3_C]]) ctrlvals(%true{{.*}}) : !quantum.bit ctrls !quantum.bit
-    // CHECK: %[[CRZ4_T:.*]], %[[CRZ4_C:.*]] = quantum.custom "RZ"(%[[NEG_CST]]) %[[CRY2_T]] ctrls(%[[CRY2_C]]) ctrlvals(%true{{.*}}) : !quantum.bit ctrls !quantum.bit
+    // CHECK: %[[CRZ3_T:.*]], %[[CRZ3_C:.*]] = quantum.custom "RZ"(%[[NEG_CST]]) %[[CRZ2_T]] adj ctrls(%[[CRZ2_C]]) ctrlvals(%[[TRUE]]{{.*}}) : !quantum.bit ctrls !quantum.bit
+    // CHECK: %[[CRY2_T:.*]], %[[CRY2_C:.*]] = quantum.custom "RY"(%[[NEG_CST]]) %[[CRZ3_T]] ctrls(%[[CRZ3_C]]) ctrlvals(%[[TRUE]]{{.*}}) : !quantum.bit ctrls !quantum.bit
+    // CHECK: %[[CRZ4_T:.*]], %[[CRZ4_C:.*]] = quantum.custom "RZ"(%[[NEG_CST]]) %[[CRY2_T]] ctrls(%[[CRY2_C]]) ctrlvals(%[[TRUE]]{{.*}}) : !quantum.bit ctrls !quantum.bit
 
     // --- Controlled S and Sdg -------------------------------------------------------------------
-    // CHECK: %[[CS_T:.*]], %[[CS_C:.*]] = quantum.custom "S"() %[[CRZ4_T]] ctrls(%[[CRZ4_C]]) ctrlvals(%true{{.*}}) : !quantum.bit ctrls !quantum.bit
-    // CHECK: %[[CSD_T:.*]], %[[CSD_C:.*]] = quantum.custom "S"() %[[CS_T]] adj ctrls(%[[CS_C]]) ctrlvals(%true{{.*}}) : !quantum.bit ctrls !quantum.bit
+    // CHECK: %[[CS_T:.*]], %[[CS_C:.*]] = quantum.custom "S"() %[[CRZ4_T]] ctrls(%[[CRZ4_C]]) ctrlvals(%[[TRUE]]{{.*}}) : !quantum.bit ctrls !quantum.bit
+    // CHECK: %[[CSD_T:.*]], %[[CSD_C:.*]] = quantum.custom "S"() %[[CS_T]] adj ctrls(%[[CS_C]]) ctrlvals(%[[TRUE]]{{.*}}) : !quantum.bit ctrls !quantum.bit
 
     // --- Controlled Peres gate -------------------------------------------------------------------
-    // CHECK: %[[CPERES_CNOT:.*]]:2, %[[CPERES_CTRL:.*]] = quantum.custom "CNOT"() %[[CSD_T]], %[[CSD_C]] ctrls(%[[Q2]]) ctrlvals(%true{{.*}}) : !quantum.bit, !quantum.bit ctrls !quantum.bit
-    // CHECK: %[[CPERES_X:.*]], %[[CPERES_X_CTRL:.*]] = quantum.custom "PauliX"() %[[CPERES_CNOT]]#0 ctrls(%[[CPERES_CTRL]]) ctrlvals(%true{{.*}}) : !quantum.bit ctrls !quantum.bit
-
+    // CHECK: %[[CPERES_CNOT:.*]]:2, %[[CPERES_CTRL:.*]] = quantum.custom "CNOT"() %[[CSD_T]], %[[CSD_C]] ctrls(%[[Q2]]) ctrlvals(%[[TRUE]]{{.*}}) : !quantum.bit, !quantum.bit ctrls !quantum.bit
+    // CHECK: %[[CPERES_X:.*]], %[[CPERES_X_CTRL:.*]] = quantum.custom "PauliX"() %[[CPERES_CNOT]]#0 ctrls(%[[CPERES_CTRL]]) ctrlvals(%[[TRUE]]{{.*}}) : !quantum.bit ctrls !quantum.bit
     // --- Controlled Peresdg gate -------------------------------------------------------------------
-    // CHECK: %[[CPERESDG_X:.*]], %[[CPERESDG_X_CTRL:.*]] = quantum.custom "PauliX"() %[[CPERES_X]] ctrls(%[[CPERES_X_CTRL]]) ctrlvals(%true{{.*}}) : !quantum.bit ctrls !quantum.bit
-    // CHECK: %[[CPERESDG_CNOT:.*]]:2, %[[CPERESDG_CTRL:.*]] = quantum.custom "CNOT"() %[[CPERESDG_X]], %[[CPERES_CNOT]]#1 ctrls(%[[CPERESDG_X_CTRL]]) ctrlvals(%true{{.*}}) : !quantum.bit, !quantum.bit ctrls !quantum.bit
-
+    // CHECK: %[[CPERESDG_X:.*]], %[[CPERESDG_X_CTRL:.*]] = quantum.custom "PauliX"() %[[CPERES_X]] ctrls(%[[CPERES_X_CTRL]]) ctrlvals(%[[TRUE]]{{.*}}) : !quantum.bit ctrls !quantum.bit
+    // CHECK: %[[CPERESDG_CNOT:.*]]:2, %[[CPERESDG_CTRL:.*]] = quantum.custom "CNOT"() %[[CPERESDG_X]], %[[CPERES_CNOT]]#1 ctrls(%[[CPERESDG_X_CTRL]]) ctrlvals(%[[TRUE]]{{.*}}) : !quantum.bit, !quantum.bit ctrls !quantum.bit
     // --- Reinsertion ---------------------------------------------------------------------------
-    // CHECK: quantum.insert %[[QREG]][{{.*}}], %[[CPERESDG_CNOT]]#0 : !quantum.reg, !quantum.bit
-    // CHECK: quantum.insert %[[QREG]][{{.*}}], %[[CPERESDG_CNOT]]#1 : !quantum.reg, !quantum.bit
-    // CHECK: quantum.insert %[[QREG]][{{.*}}], %[[CPERESDG_CTRL]] : !quantum.reg, !quantum.bit
+    // CHECK: %[[C0_FINAL:.*]] = arith.index_cast %c0 : index to i64
+    // CHECK: quantum.insert %[[QREG]][%[[C0_FINAL]]], %[[CPERESDG_CNOT]]#0 : !quantum.reg, !quantum.bit
+    // CHECK: %[[C1_FINAL:.*]] = arith.index_cast %c1 : index to i64
+    // CHECK: quantum.insert %[[QREG]][%[[C1_FINAL]]], %[[CPERESDG_CNOT]]#1 : !quantum.reg, !quantum.bit
+    // CHECK: %[[C2_FINAL:.*]] = arith.index_cast %c2 : index to i64
+    // CHECK: quantum.insert %[[QREG]][%[[C2_FINAL]]], %[[CPERESDG_CTRL]] : !quantum.reg, !quantum.bit
     // CHECK: quantum.dealloc %[[QREG]] : !quantum.reg
 
     // Prepare qubits

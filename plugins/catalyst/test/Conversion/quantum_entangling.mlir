@@ -60,7 +60,7 @@ module {
     %q0_sw, %q1_sw = quantum.custom "SWAP"() %q0, %q1 : !quantum.bit, !quantum.bit
     %q0_is, %q1_is = quantum.custom "ISWAP"() %q0_sw, %q1_sw : !quantum.bit, !quantum.bit
     %q0_isd, %q1_isd = quantum.custom "ISWAP"() %q0_is, %q1_is adj : !quantum.bit, !quantum.bit
-    %q0_ecr, %q1_ecr = quantum.custom "ECR"() %q0, %q1 : !quantum.bit, !quantum.bit
+    %q0_ecr, %q1_ecr = quantum.custom "ECR"() %q0_isd, %q1_isd : !quantum.bit, !quantum.bit
 
     // Controlled permutation gates
     %true = arith.constant true

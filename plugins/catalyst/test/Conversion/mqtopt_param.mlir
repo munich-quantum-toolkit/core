@@ -21,31 +21,33 @@ module {
   // CHECK-LABEL: func.func @testMQTOptToCatalystQuantumParameterizedGates
   func.func @testMQTOptToCatalystQuantumParameterizedGates() {
     // --- Allocation & extraction ---------------------------------------------------------------
+    // CHECK: %[[THETA:.*]] = arith.constant 3.000000e-01 : f64
     // CHECK: %[[C0:.*]] = arith.constant 0 : index
     // CHECK: %[[C1:.*]] = arith.constant 1 : index
-    // CHECK: %[[C2_I64:.*]] = arith.constant 2 : i64
-    // CHECK: %[[QREG:.*]] = quantum.alloc(%[[C2_I64]]) : !quantum.reg
+    // CHECK: %[[QREG:.*]] = quantum.alloc( 2) : !quantum.reg
     // CHECK: %[[IDX0:.*]] = arith.index_cast %[[C0]] : index to i64
     // CHECK: %[[Q0:.*]] = quantum.extract %[[QREG]][%[[IDX0]]] : !quantum.reg -> !quantum.bit
     // CHECK: %[[IDX1:.*]] = arith.index_cast %[[C1]] : index to i64
     // CHECK: %[[Q1:.*]] = quantum.extract %[[QREG]][%[[IDX1]]] : !quantum.reg -> !quantum.bit
 
     // --- Uncontrolled -------------------------------------------------------------------------
-    // CHECK: %[[RX:.*]] = quantum.custom "RX"(%cst) %[[Q0]] : !quantum.bit
-    // CHECK: %[[RY:.*]] = quantum.custom "RY"(%cst) %[[RX]] : !quantum.bit
-    // CHECK: %[[RZ:.*]] = quantum.custom "RZ"(%cst) %[[RY]] : !quantum.bit
-    // CHECK: %[[PS:.*]] = quantum.custom "PhaseShift"(%cst) %[[RZ]] : !quantum.bit
-    // CHECK: quantum.gphase(%cst) :
+    // CHECK: %[[RX:.*]] = quantum.custom "RX"(%[[THETA]]) %[[Q0]] : !quantum.bit
+    // CHECK: %[[RY:.*]] = quantum.custom "RY"(%[[THETA]]) %[[RX]] : !quantum.bit
+    // CHECK: %[[RZ:.*]] = quantum.custom "RZ"(%[[THETA]]) %[[RY]] : !quantum.bit
+    // CHECK: %[[PS:.*]] = quantum.custom "PhaseShift"(%[[THETA]]) %[[RZ]] : !quantum.bit
+    // CHECK: quantum.gphase(%[[THETA]]) :
 
     // --- Controlled ----------------------------------------------------------------------------
-    // CHECK: %[[CRX_T:.*]], %[[CRX_C:.*]] = quantum.custom "CRX"(%cst) %[[PS]] ctrls(%[[Q1]]) ctrlvals(%true{{.*}}) : !quantum.bit ctrls !quantum.bit
-    // CHECK: %[[CRY_T:.*]], %[[CRY_C:.*]] = quantum.custom "CRY"(%cst) %[[CRX_T]] ctrls(%[[CRX_C]]) ctrlvals(%true{{.*}}) : !quantum.bit ctrls !quantum.bit
-    // CHECK: %[[CRZ_T:.*]], %[[CRZ_C:.*]] = quantum.custom "CRZ"(%cst) %[[CRY_T]] ctrls(%[[CRY_C]]) ctrlvals(%true{{.*}}) : !quantum.bit ctrls !quantum.bit
-    // CHECK: %[[CPS_T:.*]], %[[CPS_C:.*]] = quantum.custom "ControlledPhaseShift"(%cst) %[[CRZ_T]] ctrls(%[[CRZ_C]]) ctrlvals(%true{{.*}}) : !quantum.bit ctrls !quantum.bit
-
+    // CHECK: %[[TRUE:.*]] = arith.constant true
+    // CHECK: %[[CRX_T:.*]], %[[CRX_C:.*]] = quantum.custom "CRX"(%[[THETA]]) %[[PS]] ctrls(%[[Q1]]) ctrlvals(%[[TRUE]]{{.*}}) : !quantum.bit ctrls !quantum.bit
+    // CHECK: %[[CRY_T:.*]], %[[CRY_C:.*]] = quantum.custom "CRY"(%[[THETA]]) %[[CRX_T]] ctrls(%[[CRX_C]]) ctrlvals(%[[TRUE]]{{.*}}) : !quantum.bit ctrls !quantum.bit
+    // CHECK: %[[CRZ_T:.*]], %[[CRZ_C:.*]] = quantum.custom "CRZ"(%[[THETA]]) %[[CRY_T]] ctrls(%[[CRY_C]]) ctrlvals(%[[TRUE]]{{.*}}) : !quantum.bit ctrls !quantum.bit
+    // CHECK: %[[CPS_T:.*]], %[[CPS_C:.*]] = quantum.custom "ControlledPhaseShift"(%[[THETA]]) %[[CRZ_T]] ctrls(%[[CRZ_C]]) ctrlvals(%[[TRUE]]{{.*}}) : !quantum.bit ctrls !quantum.bit
     // --- Reinsertion ---------------------------------------------------------------------------
-    // CHECK: quantum.insert %[[QREG]][{{.*}}], %[[CPS_T]] : !quantum.reg, !quantum.bit
-    // CHECK: quantum.insert %[[QREG]][{{.*}}], %[[CPS_C]] : !quantum.reg, !quantum.bit
+    // CHECK: %[[C0_FINAL:.*]] = arith.index_cast %c0 : index to i64
+    // CHECK: quantum.insert %[[QREG]][%[[C0_FINAL]]], %[[CPS_T]] : !quantum.reg, !quantum.bit
+    // CHECK: %[[C1_FINAL:.*]] = arith.index_cast %c1 : index to i64
+    // CHECK: quantum.insert %[[QREG]][%[[C1_FINAL]]], %[[CPS_C]] : !quantum.reg, !quantum.bit
     // CHECK: quantum.dealloc %[[QREG]] : !quantum.reg
 
     // Prepare qubits
