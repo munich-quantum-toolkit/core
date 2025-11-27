@@ -538,429 +538,146 @@ struct ConvertQuartzResetOp final
   }
 };
 
-/**
- * @brief Converts quartz.id to flux.id
- *
- * @par Example:
- * ```mlir
- * quartz.id %q : !quartz.qubit
- * ```
- * is converted to
- * ```mlir
- * %q_out = flux.id %q_in : !flux.qubit -> !flux.qubit
- * ```
- */
-struct ConvertQuartzIdOp final : StatefulOpConversionPattern<quartz::IdOp> {
-  using StatefulOpConversionPattern::StatefulOpConversionPattern;
+// OneTargetZeroParameter
 
-  LogicalResult
-  matchAndRewrite(quartz::IdOp op, OpAdaptor /*adaptor*/,
-                  ConversionPatternRewriter& rewriter) const override {
-    return convertOneTargetZeroParameter<flux::IdOp>(op, rewriter, getState());
-  }
-};
+#define DEFINE_ONE_TARGET_ZERO_PARAMETER(OP_CLASS, OP_NAME)                    \
+  /**                                                                          \
+   * @brief Converts quartz.OP_NAME to flux.OP_NAME                            \
+   *                                                                           \
+   * @par Example:                                                             \
+   * ```mlir                                                                   \
+   * quartz.OP_NAME %q : !quartz.qubit                                         \
+   * ```                                                                       \
+   * is converted to                                                           \
+   * ```mlir                                                                   \
+   * %q_out = flux.OP_NAME %q_in : !flux.qubit -> !flux.qubit                  \
+   * ```                                                                       \
+   */                                                                          \
+  struct ConvertQuartz##OP_CLASS final                                         \
+      : StatefulOpConversionPattern<quartz::OP_CLASS> {                        \
+    using StatefulOpConversionPattern::StatefulOpConversionPattern;            \
+                                                                               \
+    LogicalResult                                                              \
+    matchAndRewrite(quartz::OP_CLASS op, OpAdaptor /*adaptor*/,                \
+                    ConversionPatternRewriter& rewriter) const override {      \
+      return convertOneTargetZeroParameter<flux::OP_CLASS>(op, rewriter,       \
+                                                           getState());        \
+    }                                                                          \
+  };
 
-/**
- * @brief Converts quartz.x to flux.x
- *
- * @par Example:
- * ```mlir
- * quartz.x %q : !quartz.qubit
- * ```
- * is converted to
- * ```mlir
- * %q_out = flux.x %q_in : !flux.qubit -> !flux.qubit
- * ```
- */
-struct ConvertQuartzXOp final : StatefulOpConversionPattern<quartz::XOp> {
-  using StatefulOpConversionPattern::StatefulOpConversionPattern;
+DEFINE_ONE_TARGET_ZERO_PARAMETER(IdOp, id)
+DEFINE_ONE_TARGET_ZERO_PARAMETER(XOp, x)
+DEFINE_ONE_TARGET_ZERO_PARAMETER(YOp, y)
+DEFINE_ONE_TARGET_ZERO_PARAMETER(ZOp, z)
+DEFINE_ONE_TARGET_ZERO_PARAMETER(HOp, h)
+DEFINE_ONE_TARGET_ZERO_PARAMETER(SOp, s)
+DEFINE_ONE_TARGET_ZERO_PARAMETER(SdgOp, sdg)
+DEFINE_ONE_TARGET_ZERO_PARAMETER(TOp, t)
+DEFINE_ONE_TARGET_ZERO_PARAMETER(TdgOp, tdg)
+DEFINE_ONE_TARGET_ZERO_PARAMETER(SXOp, sx)
+DEFINE_ONE_TARGET_ZERO_PARAMETER(SXdgOp, sxdg)
 
-  LogicalResult
-  matchAndRewrite(quartz::XOp op, OpAdaptor /*adaptor*/,
-                  ConversionPatternRewriter& rewriter) const override {
-    return convertOneTargetZeroParameter<flux::XOp>(op, rewriter, getState());
-  }
-};
+#undef DEFINE_ONE_TARGET_ZERO_PARAMETER
 
-/**
- * @brief Converts quartz.y to flux.y
- *
- * @par Example:
- * ```mlir
- * quartz.y %q : !quartz.qubit
- * ```
- * is converted to
- * ```mlir
- * %q_out = flux.y %q_in : !flux.qubit -> !flux.qubit
- * ```
- */
-struct ConvertQuartzYOp final : StatefulOpConversionPattern<quartz::YOp> {
-  using StatefulOpConversionPattern::StatefulOpConversionPattern;
+// OneTargetOneParameter
 
-  LogicalResult
-  matchAndRewrite(quartz::YOp op, OpAdaptor /*adaptor*/,
-                  ConversionPatternRewriter& rewriter) const override {
-    return convertOneTargetZeroParameter<flux::YOp>(op, rewriter, getState());
-  }
-};
+#define DEFINE_ONE_TARGET_ONE_PARAMETER(OP_CLASS, OP_NAME, PARAM)              \
+  /**                                                                          \
+   * @brief Converts quartz.OP_NAME to flux.OP_NAME                            \
+   *                                                                           \
+   * @par Example:                                                             \
+   * ```mlir                                                                   \
+   * quartz.OP_NAME(%PARAM) %q : !quartz.qubit                                 \
+   * ```                                                                       \
+   * is converted to                                                           \
+   * ```mlir                                                                   \
+   * %q_out = flux.OP_NAME(%PARAM) %q_in : !flux.qubit -> !flux.qubit          \
+   * ```                                                                       \
+   */                                                                          \
+  struct ConvertQuartz##OP_CLASS final                                         \
+      : StatefulOpConversionPattern<quartz::OP_CLASS> {                        \
+    using StatefulOpConversionPattern::StatefulOpConversionPattern;            \
+                                                                               \
+    LogicalResult                                                              \
+    matchAndRewrite(quartz::OP_CLASS op, OpAdaptor /*adaptor*/,                \
+                    ConversionPatternRewriter& rewriter) const override {      \
+      return convertOneTargetOneParameter<flux::OP_CLASS>(op, rewriter,        \
+                                                          getState());         \
+    }                                                                          \
+  };
 
-/**
- * @brief Converts quartz.z to flux.z
- *
- * @par Example:
- * ```mlir
- * quartz.z %q : !quartz.qubit
- * ```
- * is converted to
- * ```mlir
- * %q_out = flux.z %q_in : !flux.qubit -> !flux.qubit
- * ```
- */
-struct ConvertQuartzZOp final : StatefulOpConversionPattern<quartz::ZOp> {
-  using StatefulOpConversionPattern::StatefulOpConversionPattern;
+DEFINE_ONE_TARGET_ONE_PARAMETER(RXOp, rx, theta)
+DEFINE_ONE_TARGET_ONE_PARAMETER(RYOp, ry, theta)
+DEFINE_ONE_TARGET_ONE_PARAMETER(RZOp, rz, theta)
+DEFINE_ONE_TARGET_ONE_PARAMETER(POp, p, theta)
 
-  LogicalResult
-  matchAndRewrite(quartz::ZOp op, OpAdaptor /*adaptor*/,
-                  ConversionPatternRewriter& rewriter) const override {
-    return convertOneTargetZeroParameter<flux::ZOp>(op, rewriter, getState());
-  }
-};
+#undef DEFINE_ONE_TARGET_ONE_PARAMETER
 
-/**
- * @brief Converts quartz.h to flux.h
- *
- * @par Example:
- * ```mlir
- * quartz.h %q : !quartz.qubit
- * ```
- * is converted to
- * ```mlir
- * %q_out = flux.h %q_in : !flux.qubit -> !flux.qubit
- * ```
- */
-struct ConvertQuartzHOp final : StatefulOpConversionPattern<quartz::HOp> {
-  using StatefulOpConversionPattern::StatefulOpConversionPattern;
+// OneTargetTwoParameter
 
-  LogicalResult
-  matchAndRewrite(quartz::HOp op, OpAdaptor /*adaptor*/,
-                  ConversionPatternRewriter& rewriter) const override {
-    return convertOneTargetZeroParameter<flux::HOp>(op, rewriter, getState());
-  }
-};
+#define DEFINE_ONE_TARGET_TWO_PARAMETER(OP_CLASS, OP_NAME, PARAM1, PARAM2)     \
+  /**                                                                          \
+   * @brief Converts quartz.OP_NAME to flux.OP_NAME                            \
+   *                                                                           \
+   * @par Example:                                                             \
+   * ```mlir                                                                   \
+   * quartz.OP_NAME(%PARAM1, %PARAM2) %q : !quartz.qubit                       \
+   * ```                                                                       \
+   * is converted to                                                           \
+   * ```mlir                                                                   \
+   * %q_out = flux.OP_NAME(%PARAM1, %PARAM2) %q_in : !flux.qubit ->            \
+   * !flux.qubit                                                               \
+   * ```                                                                       \
+   */                                                                          \
+  struct ConvertQuartz##OP_CLASS final                                         \
+      : StatefulOpConversionPattern<quartz::OP_CLASS> {                        \
+    using StatefulOpConversionPattern::StatefulOpConversionPattern;            \
+                                                                               \
+    LogicalResult                                                              \
+    matchAndRewrite(quartz::OP_CLASS op, OpAdaptor /*adaptor*/,                \
+                    ConversionPatternRewriter& rewriter) const override {      \
+      return convertOneTargetTwoParameter<flux::OP_CLASS>(op, rewriter,        \
+                                                          getState());         \
+    }                                                                          \
+  };
 
-/**
- * @brief Converts quartz.s to flux.s
- *
- * @par Example:
- * ```mlir
- * quartz.s %q : !quartz.qubit
- * ```
- * is converted to
- * ```mlir
- * %q_out = flux.s %q_in : !flux.qubit -> !flux.qubit
- * ```
- */
-struct ConvertQuartzSOp final : StatefulOpConversionPattern<quartz::SOp> {
-  using StatefulOpConversionPattern::StatefulOpConversionPattern;
+DEFINE_ONE_TARGET_TWO_PARAMETER(ROp, r, theta, phi)
+DEFINE_ONE_TARGET_TWO_PARAMETER(U2Op, u2, phi, lambda)
 
-  LogicalResult
-  matchAndRewrite(quartz::SOp op, OpAdaptor /*adaptor*/,
-                  ConversionPatternRewriter& rewriter) const override {
-    return convertOneTargetZeroParameter<flux::SOp>(op, rewriter, getState());
-  }
-};
+#undef DEFINE_ONE_TARGET_TWO_PARAMETER
 
-/**
- * @brief Converts quartz.sdg to flux.sdg
- *
- * @par Example:
- * ```mlir
- * quartz.sdg %q : !quartz.qubit
- * ```
- * is converted to
- * ```mlir
- * %q_out = flux.sdg %q_in : !flux.qubit -> !flux.qubit
- * ```
- */
-struct ConvertQuartzSdgOp final : StatefulOpConversionPattern<quartz::SdgOp> {
-  using StatefulOpConversionPattern::StatefulOpConversionPattern;
+// TwoTargetZeroParameter
 
-  LogicalResult
-  matchAndRewrite(quartz::SdgOp op, OpAdaptor /*adaptor*/,
-                  ConversionPatternRewriter& rewriter) const override {
-    return convertOneTargetZeroParameter<flux::SdgOp>(op, rewriter, getState());
-  }
-};
+#define DEFINE_TWO_TARGET_ZERO_PARAMETER(OP_CLASS, OP_NAME)                    \
+  /**                                                                          \
+   * @brief Converts quartz.OP_NAME to flux.OP_NAME                            \
+   *                                                                           \
+   * @par Example:                                                             \
+   * ```mlir                                                                   \
+   * quartz.OP_NAME %q0, %q1 : !quartz.qubit, !quartz.qubit                    \
+   * ```                                                                       \
+   * is converted to                                                           \
+   * ```mlir                                                                   \
+   * %q0_out, %q1_out = flux.OP_NAME %q0_in, %q1_in : !flux.qubit, !flux.qubit \
+   * -> !flux.qubit, !flux.qubit                                               \
+   * ```                                                                       \
+   */                                                                          \
+  struct ConvertQuartz##OP_CLASS final                                         \
+      : StatefulOpConversionPattern<quartz::OP_CLASS> {                        \
+    using StatefulOpConversionPattern::StatefulOpConversionPattern;            \
+                                                                               \
+    LogicalResult                                                              \
+    matchAndRewrite(quartz::OP_CLASS op, OpAdaptor /*adaptor*/,                \
+                    ConversionPatternRewriter& rewriter) const override {      \
+      return convertTwoTargetZeroParameter<flux::OP_CLASS>(op, rewriter,       \
+                                                           getState());        \
+    }                                                                          \
+  };
 
-/**
- * @brief Converts quartz.t to flux.t
- *
- * @par Example:
- * ```mlir
- * quartz.t %q : !quartz.qubit
- * ```
- * is converted to
- * ```mlir
- * %q_out = flux.t %q_in : !flux.qubit -> !flux.qubit
- * ```
- */
-struct ConvertQuartzTOp final : StatefulOpConversionPattern<quartz::TOp> {
-  using StatefulOpConversionPattern::StatefulOpConversionPattern;
+DEFINE_TWO_TARGET_ZERO_PARAMETER(SWAPOp, swap)
+DEFINE_TWO_TARGET_ZERO_PARAMETER(iSWAPOp, iswap)
 
-  LogicalResult
-  matchAndRewrite(quartz::TOp op, OpAdaptor /*adaptor*/,
-                  ConversionPatternRewriter& rewriter) const override {
-    return convertOneTargetZeroParameter<flux::TOp>(op, rewriter, getState());
-  }
-};
-
-/**
- * @brief Converts quartz.tdg to flux.tdg
- *
- * @par Example:
- * ```mlir
- * quartz.tdg %q : !quartz.qubit
- * ```
- * is converted to
- * ```mlir
- * %q_out = flux.tdg %q_in : !flux.qubit -> !flux.qubit
- * ```
- */
-struct ConvertQuartzTdgOp final : StatefulOpConversionPattern<quartz::TdgOp> {
-  using StatefulOpConversionPattern::StatefulOpConversionPattern;
-
-  LogicalResult
-  matchAndRewrite(quartz::TdgOp op, OpAdaptor /*adaptor*/,
-                  ConversionPatternRewriter& rewriter) const override {
-    return convertOneTargetZeroParameter<flux::TdgOp>(op, rewriter, getState());
-  }
-};
-
-/**
- * @brief Converts quartz.sx to flux.sx
- *
- * @par Example:
- * ```mlir
- * quartz.sx %q : !quartz.qubit
- * ```
- * is converted to
- * ```mlir
- * %q_out = flux.sx %q_in : !flux.qubit -> !flux.qubit
- * ```
- */
-struct ConvertQuartzSXOp final : StatefulOpConversionPattern<quartz::SXOp> {
-  using StatefulOpConversionPattern::StatefulOpConversionPattern;
-
-  LogicalResult
-  matchAndRewrite(quartz::SXOp op, OpAdaptor /*adaptor*/,
-                  ConversionPatternRewriter& rewriter) const override {
-    return convertOneTargetZeroParameter<flux::SXOp>(op, rewriter, getState());
-  }
-};
-
-/**
- * @brief Converts quartz.sxdg to flux.sxdg
- *
- * @par Example:
- * ```mlir
- * quartz.sxdg %q : !quartz.qubit
- * ```
- * is converted to
- * ```mlir
- * %q_out = flux.sxdg %q_in : !flux.qubit -> !flux.qubit
- * ```
- */
-struct ConvertQuartzSXdgOp final : StatefulOpConversionPattern<quartz::SXdgOp> {
-  using StatefulOpConversionPattern::StatefulOpConversionPattern;
-
-  LogicalResult
-  matchAndRewrite(quartz::SXdgOp op, OpAdaptor /*adaptor*/,
-                  ConversionPatternRewriter& rewriter) const override {
-    return convertOneTargetZeroParameter<flux::SXdgOp>(op, rewriter,
-                                                       getState());
-  }
-};
-
-/**
- * @brief Converts quartz.rx to flux.rx
- *
- * @par Example:
- * ```mlir
- * quartz.rx(%theta) %q : !quartz.qubit
- * ```
- * is converted to
- * ```mlir
- * %q_out = flux.rx(%theta) %q_in : !flux.qubit -> !flux.qubit
- * ```
- */
-struct ConvertQuartzRXOp final : StatefulOpConversionPattern<quartz::RXOp> {
-  using StatefulOpConversionPattern::StatefulOpConversionPattern;
-
-  LogicalResult
-  matchAndRewrite(quartz::RXOp op, OpAdaptor /*adaptor*/,
-                  ConversionPatternRewriter& rewriter) const override {
-    return convertOneTargetOneParameter<flux::RXOp>(op, rewriter, getState());
-  }
-};
-
-/**
- * @brief Converts quartz.ry to flux.ry
- *
- * @par Example:
- * ```mlir
- * quartz.ry(%theta) %q : !quartz.qubit
- * ```
- * is converted to
- * ```mlir
- * %q_out = flux.ry(%theta) %q_in : !flux.qubit -> !flux.qubit
- * ```
- */
-struct ConvertQuartzRYOp final : StatefulOpConversionPattern<quartz::RYOp> {
-  using StatefulOpConversionPattern::StatefulOpConversionPattern;
-
-  LogicalResult
-  matchAndRewrite(quartz::RYOp op, OpAdaptor /*adaptor*/,
-                  ConversionPatternRewriter& rewriter) const override {
-    return convertOneTargetOneParameter<flux::RYOp>(op, rewriter, getState());
-  }
-};
-
-/**
- * @brief Converts quartz.rz to flux.rz
- *
- * @par Example:
- * ```mlir
- * quartz.rz(%theta) %q : !quartz.qubit
- * ```
- * is converted to
- * ```mlir
- * %q_out = flux.rz(%theta) %q_in : !flux.qubit -> !flux.qubit
- * ```
- */
-struct ConvertQuartzRZOp final : StatefulOpConversionPattern<quartz::RZOp> {
-  using StatefulOpConversionPattern::StatefulOpConversionPattern;
-
-  LogicalResult
-  matchAndRewrite(quartz::RZOp op, OpAdaptor /*adaptor*/,
-                  ConversionPatternRewriter& rewriter) const override {
-    return convertOneTargetOneParameter<flux::RZOp>(op, rewriter, getState());
-  }
-};
-
-/**
- * @brief Converts quartz.p to flux.p
- *
- * @par Example:
- * ```mlir
- * quartz.p(%theta) %q : !quartz.qubit
- * ```
- * is converted to
- * ```mlir
- * %q_out = flux.p(%theta) %q_in : !flux.qubit -> !flux.qubit
- * ```
- */
-struct ConvertQuartzPOp final : StatefulOpConversionPattern<quartz::POp> {
-  using StatefulOpConversionPattern::StatefulOpConversionPattern;
-
-  LogicalResult
-  matchAndRewrite(quartz::POp op, OpAdaptor /*adaptor*/,
-                  ConversionPatternRewriter& rewriter) const override {
-    return convertOneTargetOneParameter<flux::POp>(op, rewriter, getState());
-  }
-};
-
-/**
- * @brief Converts quartz.r to flux.r
- *
- * @par Example:
- * ```mlir
- * quartz.r(%theta, %phi) %q : !quartz.qubit
- * ```
- * is converted to
- * ```mlir
- * %q_out = flux.r(%theta, %phi) %q_in : !flux.qubit -> !flux.qubit
- * ```
- */
-struct ConvertQuartzROp final : StatefulOpConversionPattern<quartz::ROp> {
-  using StatefulOpConversionPattern::StatefulOpConversionPattern;
-
-  LogicalResult
-  matchAndRewrite(quartz::ROp op, OpAdaptor /*adaptor*/,
-                  ConversionPatternRewriter& rewriter) const override {
-    return convertOneTargetTwoParameter<flux::ROp>(op, rewriter, getState());
-  }
-};
-
-/**
- * @brief Converts quartz.u2 to flux.u2
- *
- * @par Example:
- * ```mlir
- * quartz.u2(%phi, %lambda) %q : !quartz.qubit
- * ```
- * is converted to
- * ```mlir
- * %q_out = flux.u2(%phi, %lambda) %q_in : !flux.qubit -> !flux.qubit
- * ```
- */
-struct ConvertQuartzU2Op final : StatefulOpConversionPattern<quartz::U2Op> {
-  using StatefulOpConversionPattern::StatefulOpConversionPattern;
-
-  LogicalResult
-  matchAndRewrite(quartz::U2Op op, OpAdaptor /*adaptor*/,
-                  ConversionPatternRewriter& rewriter) const override {
-    return convertOneTargetTwoParameter<flux::U2Op>(op, rewriter, getState());
-  }
-};
-
-/**
- * @brief Converts quartz.swap to flux.swap
- *
- * @par Example:
- * ```mlir
- * quartz.swap %q0, %q1 : !quartz.qubit, !quartz.qubit
- * ```
- * is converted to
- * ```mlir
- * %q0_out, %q1_out = flux.swap %q0_in, %q1_in : !flux.qubit, !flux.qubit ->
- * !flux.qubit, !flux.qubit
- * ```
- */
-struct ConvertQuartzSWAPOp final : StatefulOpConversionPattern<quartz::SWAPOp> {
-  using StatefulOpConversionPattern::StatefulOpConversionPattern;
-
-  LogicalResult
-  matchAndRewrite(quartz::SWAPOp op, OpAdaptor /*adaptor*/,
-                  ConversionPatternRewriter& rewriter) const override {
-    return convertTwoTargetZeroParameter<flux::SWAPOp>(op, rewriter,
-                                                       getState());
-  }
-};
-
-/**
- * @brief Converts quartz.iswap to flux.iswap
- *
- * @par Example:
- * ```mlir
- * quartz.iswap %q0, %q1 : !quartz.qubit, !quartz.qubit
- * ```
- * is converted to
- * ```mlir
- * %q0_out, %q1_out = flux.iswap %q0_in, %q1_in : !flux.qubit, !flux.qubit ->
- * !flux.qubit, !flux.qubit
- * ```
- */
-struct ConvertQuartziSWAPOp final
-    : StatefulOpConversionPattern<quartz::iSWAPOp> {
-  using StatefulOpConversionPattern::StatefulOpConversionPattern;
-
-  LogicalResult
-  matchAndRewrite(quartz::iSWAPOp op, OpAdaptor /*adaptor*/,
-                  ConversionPatternRewriter& rewriter) const override {
-    return convertTwoTargetZeroParameter<flux::iSWAPOp>(op, rewriter,
-                                                        getState());
-  }
-};
+#undef DEFINE_TWO_TARGET_ZERO_PARAMETER
 
 /**
  * @brief Converts quartz.ctrl to flux.ctrl
@@ -1069,20 +786,24 @@ struct ConvertQuartzYieldOp final
  * @brief Pass implementation for Quartz-to-Flux conversion
  *
  * @details
- * This pass converts Quartz dialect operations (reference semantics) to
- * Flux dialect operations (value semantics). The conversion is essential
- * for enabling optimization passes that rely on SSA form and explicit
- * dataflow analysis.
+ * This pass converts Quartz dialect operations (reference
+ * semantics) to Flux dialect operations (value semantics).
+ * The conversion is essential for enabling optimization
+ * passes that rely on SSA form and explicit dataflow
+ * analysis.
  *
  * The pass operates in several phases:
  * 1. Type conversion: !quartz.qubit -> !flux.qubit
- * 2. Operation conversion: Each Quartz op is converted to its Flux equivalent
- * 3. State tracking: A LoweringState maintains qubit value mappings
- * 4. Function/control-flow adaptation: Function signatures and control flow
- *    are updated to use Flux types
+ * 2. Operation conversion: Each Quartz op is converted to
+ * its Flux equivalent
+ * 3. State tracking: A LoweringState maintains qubit value
+ * mappings
+ * 4. Function/control-flow adaptation: Function signatures
+ * and control flow are updated to use Flux types
  *
- * The conversion maintains semantic equivalence while transforming the
- * representation from imperative (mutation-based) to functional (SSA-based).
+ * The conversion maintains semantic equivalence while
+ * transforming the representation from imperative
+ * (mutation-based) to functional (SSA-based).
  */
 struct QuartzToFlux final : impl::QuartzToFluxBase<QuartzToFlux> {
   using QuartzToFluxBase::QuartzToFluxBase;
@@ -1098,11 +819,13 @@ struct QuartzToFlux final : impl::QuartzToFluxBase<QuartzToFlux> {
     RewritePatternSet patterns(context);
     QuartzToFluxTypeConverter typeConverter(context);
 
-    // Configure conversion target: Quartz illegal, Flux legal
+    // Configure conversion target: Quartz illegal, Flux
+    // legal
     target.addIllegalDialect<QuartzDialect>();
     target.addLegalDialect<FluxDialect>();
 
-    // Register operation conversion patterns with state tracking
+    // Register operation conversion patterns with state
+    // tracking
     patterns.add<ConvertQuartzAllocOp, ConvertQuartzDeallocOp,
                  ConvertQuartzStaticOp, ConvertQuartzMeasureOp,
                  ConvertQuartzResetOp, ConvertQuartzIdOp, ConvertQuartzXOp,
@@ -1115,7 +838,8 @@ struct QuartzToFlux final : impl::QuartzToFluxBase<QuartzToFlux> {
                  ConvertQuartzYieldOp>(typeConverter, context, &state);
 
     // Conversion of quartz types in func.func signatures
-    // Note: This currently has limitations with signature changes
+    // Note: This currently has limitations with signature
+    // changes
     populateFunctionOpInterfaceTypeConversionPattern<func::FuncOp>(
         patterns, typeConverter);
     target.addDynamicallyLegalOp<func::FuncOp>([&](func::FuncOp op) {
@@ -1133,7 +857,8 @@ struct QuartzToFlux final : impl::QuartzToFluxBase<QuartzToFlux> {
     target.addDynamicallyLegalOp<func::CallOp>(
         [&](const func::CallOp op) { return typeConverter.isLegal(op); });
 
-    // Conversion of quartz types in control-flow ops (e.g., cf.br, cf.cond_br)
+    // Conversion of quartz types in control-flow ops (e.g.,
+    // cf.br, cf.cond_br)
     populateBranchOpInterfaceTypeConversionPattern(patterns, typeConverter);
 
     // Apply the conversion

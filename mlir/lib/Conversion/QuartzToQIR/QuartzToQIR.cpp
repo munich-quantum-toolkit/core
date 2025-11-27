@@ -666,866 +666,243 @@ struct ConvertQuartzResetQIR final : OpConversionPattern<ResetOp> {
   }
 };
 
-/**
- * @brief Converts quartz.id operation to QIR i
- *
- * @par Example:
- * ```mlir
- * quartz.id %q : !quartz.qubit
- * ```
- * is converted to
- * ```mlir
- * llvm.call @__quantum__qis__i__body(%q) : (!llvm.ptr) -> ()
- * ```
- */
-struct ConvertQuartzIdQIR final : StatefulOpConversionPattern<IdOp> {
-  using StatefulOpConversionPattern::StatefulOpConversionPattern;
-
-  LogicalResult
-  matchAndRewrite(IdOp op, OpAdaptor adaptor,
-                  ConversionPatternRewriter& rewriter) const override {
-    auto& state = getState();
-
-    // Query state for modifier information
-    const auto inCtrlOp = state.inCtrlOp;
-    const auto& posCtrls = state.posCtrls;
-    const auto numCtrls = posCtrls.size();
-
-    // Define function name
-    StringRef fnName;
-    if (inCtrlOp == 0) {
-      fnName = QIR_ID;
-    } else {
-      if (numCtrls == 1) {
-        fnName = QIR_CID;
-        ;
-      } else if (numCtrls == 2) {
-        fnName = QIR_CCID;
-      } else if (numCtrls == 3) {
-        fnName = QIR_CCCID;
-      } else {
-        return failure();
-      }
-    }
-
-    return convertOneTargetZeroParameter(op, adaptor, rewriter, getContext(),
-                                         state, fnName);
-  }
-};
-
-/**
- * @brief Converts quartz.x operation to QIR x
- *
- * @par Example:
- * ```mlir
- * quartz.x %q : !quartz.qubit
- * ```
- * is converted to
- * ```mlir
- * llvm.call @__quantum__qis__x__body(%q) : (!llvm.ptr) -> ()
- * ```
- */
-struct ConvertQuartzXQIR final : StatefulOpConversionPattern<XOp> {
-  using StatefulOpConversionPattern::StatefulOpConversionPattern;
-
-  LogicalResult
-  matchAndRewrite(XOp op, OpAdaptor adaptor,
-                  ConversionPatternRewriter& rewriter) const override {
-    auto& state = getState();
-
-    // Query state for modifier information
-    const auto inCtrlOp = state.inCtrlOp;
-    const size_t numCtrls = inCtrlOp != 0 ? state.posCtrls[inCtrlOp].size() : 0;
-
-    // Define function name
-    StringRef fnName;
-    if (inCtrlOp == 0) {
-      fnName = QIR_X;
-    } else {
-      if (numCtrls == 1) {
-        fnName = QIR_CX;
-      } else if (numCtrls == 2) {
-        fnName = QIR_CCX;
-      } else if (numCtrls == 3) {
-        fnName = QIR_CCCX;
-      } else {
-        return failure();
-      }
-    }
-
-    return convertOneTargetZeroParameter(op, adaptor, rewriter, getContext(),
-                                         state, fnName);
-  }
-};
-
-/**
- * @brief Converts quartz.y operation to QIR y
- *
- * @par Example:
- * ```mlir
- * quartz.y %q : !quartz.qubit
- * ```
- * is converted to
- * ```mlir
- * llvm.call @__quantum__qis__y__body(%q) : (!llvm.ptr) -> ()
- * ```
- */
-struct ConvertQuartzYQIR final : StatefulOpConversionPattern<YOp> {
-  using StatefulOpConversionPattern::StatefulOpConversionPattern;
-
-  LogicalResult
-  matchAndRewrite(YOp op, OpAdaptor adaptor,
-                  ConversionPatternRewriter& rewriter) const override {
-    auto& state = getState();
-
-    // Query state for modifier information
-    const auto inCtrlOp = state.inCtrlOp;
-    const size_t numCtrls = inCtrlOp != 0 ? state.posCtrls[inCtrlOp].size() : 0;
-
-    // Define function name
-    StringRef fnName;
-    if (inCtrlOp == 0) {
-      fnName = QIR_Y;
-    } else {
-      if (numCtrls == 1) {
-        fnName = QIR_CY;
-      } else if (numCtrls == 2) {
-        fnName = QIR_CCY;
-      } else if (numCtrls == 3) {
-        fnName = QIR_CCCY;
-      } else {
-        return failure();
-      }
-    }
-
-    return convertOneTargetZeroParameter(op, adaptor, rewriter, getContext(),
-                                         state, fnName);
-  }
-};
-
-/**
- * @brief Converts quartz.z operation to QIR z
- *
- * @par Example:
- * ```mlir
- * quartz.z %q : !quartz.qubit
- * ```
- * is converted to
- * ```mlir
- * llvm.call @__quantum__qis__z__body(%q) : (!llvm.ptr) -> ()
- * ```
- */
-struct ConvertQuartzZQIR final : StatefulOpConversionPattern<ZOp> {
-  using StatefulOpConversionPattern::StatefulOpConversionPattern;
-
-  LogicalResult
-  matchAndRewrite(ZOp op, OpAdaptor adaptor,
-                  ConversionPatternRewriter& rewriter) const override {
-    auto& state = getState();
-
-    // Query state for modifier information
-    const auto inCtrlOp = state.inCtrlOp;
-    const size_t numCtrls = inCtrlOp != 0 ? state.posCtrls[inCtrlOp].size() : 0;
-
-    // Define function name
-    StringRef fnName;
-    if (inCtrlOp == 0) {
-      fnName = QIR_Z;
-    } else {
-      if (numCtrls == 1) {
-        fnName = QIR_CZ;
-      } else if (numCtrls == 2) {
-        fnName = QIR_CCZ;
-      } else if (numCtrls == 3) {
-        fnName = QIR_CCCZ;
-      } else {
-        return failure();
-      }
-    }
-
-    return convertOneTargetZeroParameter(op, adaptor, rewriter, getContext(),
-                                         state, fnName);
-  }
-};
-
-/**
- * @brief Converts quartz.h operation to QIR h
- *
- * @par Example:
- * ```mlir
- * quartz.h %q : !quartz.qubit
- * ```
- * is converted to
- * ```mlir
- * llvm.call @__quantum__qis__h__body(%q) : (!llvm.ptr) -> ()
- * ```
- */
-struct ConvertQuartzHQIR final : StatefulOpConversionPattern<HOp> {
-  using StatefulOpConversionPattern::StatefulOpConversionPattern;
-
-  LogicalResult
-  matchAndRewrite(HOp op, OpAdaptor adaptor,
-                  ConversionPatternRewriter& rewriter) const override {
-    auto& state = getState();
-
-    // Query state for modifier information
-    const auto inCtrlOp = state.inCtrlOp;
-    const size_t numCtrls = inCtrlOp != 0 ? state.posCtrls[inCtrlOp].size() : 0;
-
-    // Define function name
-    StringRef fnName;
-    if (inCtrlOp == 0) {
-      fnName = QIR_H;
-    } else {
-      if (numCtrls == 1) {
-        fnName = QIR_CH;
-      } else if (numCtrls == 2) {
-        fnName = QIR_CCH;
-      } else if (numCtrls == 3) {
-        fnName = QIR_CCCH;
-      } else {
-        return failure();
-      }
-    }
-
-    return convertOneTargetZeroParameter(op, adaptor, rewriter, getContext(),
-                                         state, fnName);
-  }
-};
-
-/**
- * @brief Converts quartz.s operation to QIR s
- *
- * @par Example:
- * ```mlir
- * quartz.s %q : !quartz.qubit
- * ```
- * is converted to
- * ```mlir
- * llvm.call @__quantum__qis__s__body(%q) : (!llvm.ptr) -> ()
- * ```
- */
-struct ConvertQuartzSQIR final : StatefulOpConversionPattern<SOp> {
-  using StatefulOpConversionPattern::StatefulOpConversionPattern;
-
-  LogicalResult
-  matchAndRewrite(SOp op, OpAdaptor adaptor,
-                  ConversionPatternRewriter& rewriter) const override {
-    auto& state = getState();
-
-    // Query state for modifier information
-    const auto inCtrlOp = state.inCtrlOp;
-    const size_t numCtrls = inCtrlOp != 0 ? state.posCtrls[inCtrlOp].size() : 0;
-
-    // Define function name
-    StringRef fnName;
-    if (inCtrlOp == 0) {
-      fnName = QIR_S;
-    } else {
-      if (numCtrls == 1) {
-        fnName = QIR_CS;
-      } else if (numCtrls == 2) {
-        fnName = QIR_CCS;
-      } else if (numCtrls == 3) {
-        fnName = QIR_CCCS;
-      } else {
-        return failure();
-      }
-    }
-
-    return convertOneTargetZeroParameter(op, adaptor, rewriter, getContext(),
-                                         state, fnName);
-  }
-};
-
-/**
- * @brief Converts quartz.sdg operation to QIR sdg
- *
- * @par Example:
- * ```mlir
- * quartz.sdg %q : !quartz.qubit
- * ```
- * is converted to
- * ```mlir
- * llvm.call @__quantum__qis__sdg__body(%q) : (!llvm.ptr) -> ()
- * ```
- */
-struct ConvertQuartzSdgQIR final : StatefulOpConversionPattern<SdgOp> {
-  using StatefulOpConversionPattern::StatefulOpConversionPattern;
-
-  LogicalResult
-  matchAndRewrite(SdgOp op, OpAdaptor adaptor,
-                  ConversionPatternRewriter& rewriter) const override {
-    auto& state = getState();
-
-    // Query state for modifier information
-    const auto inCtrlOp = state.inCtrlOp;
-    const size_t numCtrls = inCtrlOp != 0 ? state.posCtrls[inCtrlOp].size() : 0;
-
-    // Define function name
-    StringRef fnName;
-    if (inCtrlOp == 0) {
-      fnName = QIR_SDG;
-    } else {
-      if (numCtrls == 1) {
-        fnName = QIR_CSDG;
-      } else if (numCtrls == 2) {
-        fnName = QIR_CCSDG;
-      } else if (numCtrls == 3) {
-        fnName = QIR_CCCSDG;
-      } else {
-        return failure();
-      }
-    }
-
-    return convertOneTargetZeroParameter(op, adaptor, rewriter, getContext(),
-                                         state, fnName);
-  }
-};
-
-/**
- * @brief Converts quartz.t operation to QIR t
- *
- * @par Example:
- * ```mlir
- * quartz.t %q : !quartz.qubit
- * ```
- * is converted to
- * ```mlir
- * llvm.call @__quantum__qis__t__body(%q) : (!llvm.ptr) -> ()
- * ```
- */
-struct ConvertQuartzTQIR final : StatefulOpConversionPattern<TOp> {
-  using StatefulOpConversionPattern::StatefulOpConversionPattern;
-
-  LogicalResult
-  matchAndRewrite(TOp op, OpAdaptor adaptor,
-                  ConversionPatternRewriter& rewriter) const override {
-    auto& state = getState();
-
-    // Query state for modifier information
-    const auto inCtrlOp = state.inCtrlOp;
-    const size_t numCtrls = inCtrlOp != 0 ? state.posCtrls[inCtrlOp].size() : 0;
-
-    // Define function name
-    StringRef fnName;
-    if (inCtrlOp == 0) {
-      fnName = QIR_T;
-    } else {
-      if (numCtrls == 1) {
-        fnName = QIR_CT;
-      } else if (numCtrls == 2) {
-        fnName = QIR_CCT;
-      } else if (numCtrls == 3) {
-        fnName = QIR_CCCT;
-      } else {
-        return failure();
-      }
-    }
-
-    return convertOneTargetZeroParameter(op, adaptor, rewriter, getContext(),
-                                         state, fnName);
-  }
-};
-
-/**
- * @brief Converts quartz.tdg operation to QIR tdg
- *
- * @par Example:
- * ```mlir
- * quartz.tdg %q : !quartz.qubit
- * ```
- * is converted to
- * ```mlir
- * llvm.call @__quantum__qis__tdg__body(%q) : (!llvm.ptr) -> ()
- * ```
- */
-struct ConvertQuartzTdgQIR final : StatefulOpConversionPattern<TdgOp> {
-  using StatefulOpConversionPattern::StatefulOpConversionPattern;
-
-  LogicalResult
-  matchAndRewrite(TdgOp op, OpAdaptor adaptor,
-                  ConversionPatternRewriter& rewriter) const override {
-    auto& state = getState();
-
-    // Query state for modifier information
-    const auto inCtrlOp = state.inCtrlOp;
-    const size_t numCtrls = inCtrlOp != 0 ? state.posCtrls[inCtrlOp].size() : 0;
-
-    // Define function name
-    StringRef fnName;
-    if (inCtrlOp == 0) {
-      fnName = QIR_TDG;
-    } else {
-      if (numCtrls == 1) {
-        fnName = QIR_CTDG;
-      } else if (numCtrls == 2) {
-        fnName = QIR_CCTDG;
-      } else if (numCtrls == 3) {
-        fnName = QIR_CCCTDG;
-      } else {
-        return failure();
-      }
-    }
-
-    return convertOneTargetZeroParameter(op, adaptor, rewriter, getContext(),
-                                         state, fnName);
-  }
-};
-
-/**
- * @brief Converts quartz.sx operation to QIR sx
- *
- * @par Example:
- * ```mlir
- * quartz.sx %q : !quartz.qubit
- * ```
- * is converted to
- * ```mlir
- * llvm.call @__quantum__qis__sx__body(%q) : (!llvm.ptr) -> ()
- * ```
- */
-struct ConvertQuartzSXQIR final : StatefulOpConversionPattern<SXOp> {
-  using StatefulOpConversionPattern::StatefulOpConversionPattern;
-
-  LogicalResult
-  matchAndRewrite(SXOp op, OpAdaptor adaptor,
-                  ConversionPatternRewriter& rewriter) const override {
-    auto& state = getState();
-
-    // Query state for modifier information
-    const auto inCtrlOp = state.inCtrlOp;
-    const size_t numCtrls = inCtrlOp != 0 ? state.posCtrls[inCtrlOp].size() : 0;
-
-    // Define function name
-    StringRef fnName;
-    if (inCtrlOp == 0) {
-      fnName = QIR_SX;
-    } else {
-      if (numCtrls == 1) {
-        fnName = QIR_CSX;
-      } else if (numCtrls == 2) {
-        fnName = QIR_CCSX;
-      } else if (numCtrls == 3) {
-        fnName = QIR_CCCSX;
-      } else {
-        return failure();
-      }
-    }
-
-    return convertOneTargetZeroParameter(op, adaptor, rewriter, getContext(),
-                                         state, fnName);
-  }
-};
-
-/**
- * @brief Converts quartz.sxdg operation to QIR sxdg
- *
- * @par Example:
- * ```mlir
- * quartz.sxdg %q : !quartz.qubit
- * ```
- * is converted to
- * ```mlir
- * llvm.call @__quantum__qis__sxdg__body(%q) : (!llvm.ptr) -> ()
- * ```
- */
-struct ConvertQuartzSXdgQIR final : StatefulOpConversionPattern<SXdgOp> {
-  using StatefulOpConversionPattern::StatefulOpConversionPattern;
-
-  LogicalResult
-  matchAndRewrite(SXdgOp op, OpAdaptor adaptor,
-                  ConversionPatternRewriter& rewriter) const override {
-    auto& state = getState();
-
-    // Query state for modifier information
-    const auto inCtrlOp = state.inCtrlOp;
-    const size_t numCtrls = inCtrlOp != 0 ? state.posCtrls[inCtrlOp].size() : 0;
-
-    // Define function name
-    StringRef fnName;
-    if (inCtrlOp == 0) {
-      fnName = QIR_SXDG;
-    } else {
-      if (numCtrls == 1) {
-        fnName = QIR_CSXDG;
-      } else if (numCtrls == 2) {
-        fnName = QIR_CCSXDG;
-      } else if (numCtrls == 3) {
-        fnName = QIR_CCCSXDG;
-      } else {
-        return failure();
-      }
-    }
-
-    return convertOneTargetZeroParameter(op, adaptor, rewriter, getContext(),
-                                         state, fnName);
-  }
-};
-
-/**
- * @brief Converts quartz.rx operation to QIR rx
- *
- * @par Example:
- * ```mlir
- * quartz.rx(%theta) %q : !quartz.qubit
- * ```
- * is converted to
- * ```mlir
- * llvm.call @__quantum__qis__rx__body(%q, %theta) : (!llvm.ptr, f64) -> ()
- * ```
- */
-struct ConvertQuartzRXQIR final : StatefulOpConversionPattern<RXOp> {
-  using StatefulOpConversionPattern::StatefulOpConversionPattern;
-
-  LogicalResult
-  matchAndRewrite(RXOp op, OpAdaptor adaptor,
-                  ConversionPatternRewriter& rewriter) const override {
-    auto& state = getState();
-
-    // Query state for modifier information
-    const auto inCtrlOp = state.inCtrlOp;
-    const size_t numCtrls = inCtrlOp != 0 ? state.posCtrls[inCtrlOp].size() : 0;
-
-    // Define function name
-    StringRef fnName;
-    if (inCtrlOp == 0) {
-      fnName = QIR_RX;
-    } else {
-      if (numCtrls == 1) {
-        fnName = QIR_CRX;
-      } else if (numCtrls == 2) {
-        fnName = QIR_CCRX;
-      } else if (numCtrls == 3) {
-        fnName = QIR_CCCRX;
-      } else {
-        return failure();
-      }
-    }
-
-    return convertOneTargetOneParameter(op, adaptor, rewriter, getContext(),
-                                        state, fnName);
-  }
-};
-
-/**
- * @brief Converts quartz.ry operation to QIR ry
- *
- * @par Example:
- * ```mlir
- * quartz.ry(%theta) %q : !quartz.qubit
- * ```
- * is converted to
- * ```mlir
- * llvm.call @__quantum__qis__ry__body(%q, %theta) : (!llvm.ptr, f64) -> ()
- * ```
- */
-struct ConvertQuartzRYQIR final : StatefulOpConversionPattern<RYOp> {
-  using StatefulOpConversionPattern::StatefulOpConversionPattern;
-
-  LogicalResult
-  matchAndRewrite(RYOp op, OpAdaptor adaptor,
-                  ConversionPatternRewriter& rewriter) const override {
-    auto& state = getState();
-
-    // Query state for modifier information
-    const auto inCtrlOp = state.inCtrlOp;
-    const size_t numCtrls = inCtrlOp != 0 ? state.posCtrls[inCtrlOp].size() : 0;
-
-    // Define function name
-    StringRef fnName;
-    if (inCtrlOp == 0) {
-      fnName = QIR_RY;
-    } else {
-      if (numCtrls == 1) {
-        fnName = QIR_CRY;
-      } else if (numCtrls == 2) {
-        fnName = QIR_CCRY;
-      } else if (numCtrls == 3) {
-        fnName = QIR_CCCRY;
-      } else {
-        return failure();
-      }
-    }
-
-    return convertOneTargetOneParameter(op, adaptor, rewriter, getContext(),
-                                        state, fnName);
-  }
-};
-
-/**
- * @brief Converts quartz.rz operation to QIR rz
- *
- * @par Example:
- * ```mlir
- * quartz.rz(%theta) %q : !quartz.qubit
- * ```
- * is converted to
- * ```mlir
- * llvm.call @__quantum__qis__rz__body(%q, %theta) : (!llvm.ptr, f64) -> ()
- * ```
- */
-struct ConvertQuartzRZQIR final : StatefulOpConversionPattern<RZOp> {
-  using StatefulOpConversionPattern::StatefulOpConversionPattern;
-
-  LogicalResult
-  matchAndRewrite(RZOp op, OpAdaptor adaptor,
-                  ConversionPatternRewriter& rewriter) const override {
-    auto& state = getState();
-
-    // Query state for modifier information
-    const auto inCtrlOp = state.inCtrlOp;
-    const size_t numCtrls = inCtrlOp != 0 ? state.posCtrls[inCtrlOp].size() : 0;
-
-    // Define function name
-    StringRef fnName;
-    if (inCtrlOp == 0) {
-      fnName = QIR_RZ;
-    } else {
-      if (numCtrls == 1) {
-        fnName = QIR_CRZ;
-      } else if (numCtrls == 2) {
-        fnName = QIR_CCRZ;
-      } else if (numCtrls == 3) {
-        fnName = QIR_CCCRZ;
-      } else {
-        return failure();
-      }
-    }
-
-    return convertOneTargetOneParameter(op, adaptor, rewriter, getContext(),
-                                        state, fnName);
-  }
-};
-
-/**
- * @brief Converts quartz.p operation to QIR p
- *
- * @par Example:
- * ```mlir
- * quartz.p(%lambda) %q : !quartz.qubit
- * ```
- * is converted to
- * ```mlir
- * llvm.call @__quantum__qis__p__body(%q, %lambda) : (!llvm.ptr, f64) -> ()
- * ```
- */
-struct ConvertQuartzPQIR final : StatefulOpConversionPattern<POp> {
-  using StatefulOpConversionPattern::StatefulOpConversionPattern;
-
-  LogicalResult
-  matchAndRewrite(POp op, OpAdaptor adaptor,
-                  ConversionPatternRewriter& rewriter) const override {
-    auto& state = getState();
-
-    // Query state for modifier information
-    const auto inCtrlOp = state.inCtrlOp;
-    const size_t numCtrls = inCtrlOp != 0 ? state.posCtrls[inCtrlOp].size() : 0;
-
-    // Define function name
-    StringRef fnName;
-    if (inCtrlOp == 0) {
-      fnName = QIR_P;
-    } else {
-      if (numCtrls == 1) {
-        fnName = QIR_CP;
-      } else if (numCtrls == 2) {
-        fnName = QIR_CCP;
-      } else if (numCtrls == 3) {
-        fnName = QIR_CCCP;
-      } else {
-        return failure();
-      }
-    }
-
-    return convertOneTargetOneParameter(op, adaptor, rewriter, getContext(),
-                                        state, fnName);
-  }
-};
-
-/**
- * @brief Converts quartz.r operation to QIR r
- *
- * @par Example:
- * ```mlir
- * quartz.r(%theta, %phi) %q : !quartz.qubit
- * ```
- * is converted to
- * ```mlir
- * llvm.call @__quantum__qis__r__body(%q, %theta, %phi) : (!llvm.ptr, f64, f64)
- * -> ()
- * ```
- */
-struct ConvertQuartzRQIR final : StatefulOpConversionPattern<ROp> {
-  using StatefulOpConversionPattern::StatefulOpConversionPattern;
-
-  LogicalResult
-  matchAndRewrite(ROp op, OpAdaptor adaptor,
-                  ConversionPatternRewriter& rewriter) const override {
-    auto& state = getState();
-
-    // Query state for modifier information
-    const auto inCtrlOp = state.inCtrlOp;
-    const size_t numCtrls = inCtrlOp != 0 ? state.posCtrls[inCtrlOp].size() : 0;
-
-    // Define function name
-    StringRef fnName;
-    if (inCtrlOp == 0) {
-      fnName = QIR_R;
-    } else {
-      if (numCtrls == 1) {
-        fnName = QIR_CR;
-      } else if (numCtrls == 2) {
-        fnName = QIR_CCR;
-      } else if (numCtrls == 3) {
-        fnName = QIR_CCCR;
-      } else {
-        return failure();
-      }
-    }
-
-    return convertOneTargetTwoParameter(op, adaptor, rewriter, getContext(),
-                                        state, fnName);
-  }
-};
-
-/**
- * @brief Converts quartz.u2 operation to QIR u2
- *
- * @par Example:
- * ```mlir
- * quartz.u2(%phi, %lambda) %q : !quartz.qubit
- * ```
- * is converted to
- * ```mlir
- * llvm.call @__quantum__qis__u2__body(%q, %phi, %lambda) : (!llvm.ptr, f64,
- * f64) -> ()
- * ```
- */
-struct ConvertQuartzU2QIR final : StatefulOpConversionPattern<U2Op> {
-  using StatefulOpConversionPattern::StatefulOpConversionPattern;
-
-  LogicalResult
-  matchAndRewrite(U2Op op, OpAdaptor adaptor,
-                  ConversionPatternRewriter& rewriter) const override {
-    auto& state = getState();
-
-    // Query state for modifier information
-    const auto inCtrlOp = state.inCtrlOp;
-    const size_t numCtrls = inCtrlOp != 0 ? state.posCtrls[inCtrlOp].size() : 0;
-
-    // Define function name
-    StringRef fnName;
-    if (inCtrlOp == 0) {
-      fnName = QIR_U2;
-    } else {
-      if (numCtrls == 1) {
-        fnName = QIR_CU2;
-      } else if (numCtrls == 2) {
-        fnName = QIR_CCU2;
-      } else if (numCtrls == 3) {
-        fnName = QIR_CCCU2;
-      } else {
-        return failure();
-      }
-    }
-
-    return convertOneTargetTwoParameter(op, adaptor, rewriter, getContext(),
-                                        state, fnName);
-  }
-};
-
-/**
- * @brief Converts quartz.swap operation to QIR swap
- *
- * @par Example:
- * ```mlir
- * quartz.swap %q1, %q2 : !quartz.qubit, !quartz.qubit
- * ```
- * is converted to
- * ```mlir
- * llvm.call @__quantum__qis__swap__body(%q1, %q2) : (!llvm.ptr, !llvm.ptr) ->
- * ()
- * ```
- */
-struct ConvertQuartzSWAPQIR final : StatefulOpConversionPattern<SWAPOp> {
-  using StatefulOpConversionPattern::StatefulOpConversionPattern;
-
-  LogicalResult
-  matchAndRewrite(SWAPOp op, OpAdaptor adaptor,
-                  ConversionPatternRewriter& rewriter) const override {
-    auto& state = getState();
-
-    // Query state for modifier information
-    const auto inCtrlOp = state.inCtrlOp;
-    const size_t numCtrls = inCtrlOp != 0 ? state.posCtrls[inCtrlOp].size() : 0;
-
-    // Define function name
-    StringRef fnName;
-    if (inCtrlOp == 0) {
-      fnName = QIR_SWAP;
-    } else {
-      if (numCtrls == 1) {
-        fnName = QIR_CSWAP;
-      } else if (numCtrls == 2) {
-        fnName = QIR_CCSWAP;
-      } else if (numCtrls == 3) {
-        fnName = QIR_CCCSWAP;
-      } else {
-        return failure();
-      }
-    }
-
-    return convertTwoTargetZeroParameter(op, adaptor, rewriter, getContext(),
-                                         state, fnName);
-  }
-};
-
-/**
- * @brief Converts quartz.iswap operation to QIR iswap
- *
- * @par Example:
- * ```mlir
- * quartz.iswap %q1, %q2 : !quartz.qubit, !quartz.qubit
- * ```
- * is converted to
- * ```mlir
- * llvm.call @__quantum__qis__iswap__body(%q1, %q2) : (!llvm.ptr, !llvm.ptr)
- * -> ()
- * ```
- */
-struct ConvertQuartziSWAPQIR final : StatefulOpConversionPattern<iSWAPOp> {
-  using StatefulOpConversionPattern::StatefulOpConversionPattern;
-
-  LogicalResult
-  matchAndRewrite(iSWAPOp op, OpAdaptor adaptor,
-                  ConversionPatternRewriter& rewriter) const override {
-    auto& state = getState();
-
-    // Query state for modifier information
-    const auto inCtrlOp = state.inCtrlOp;
-    const size_t numCtrls = inCtrlOp != 0 ? state.posCtrls[inCtrlOp].size() : 0;
-
-    // Define function name
-    StringRef fnName;
-    if (inCtrlOp == 0) {
-      fnName = QIR_ISWAP;
-    } else {
-      if (numCtrls == 1) {
-        fnName = QIR_CISWAP;
-      } else if (numCtrls == 2) {
-        fnName = QIR_CCISWAP;
-      } else if (numCtrls == 3) {
-        fnName = QIR_CCCISWAP;
-      } else {
-        return failure();
-      }
-    }
-
-    return convertTwoTargetZeroParameter(op, adaptor, rewriter, getContext(),
-                                         state, fnName);
-  }
-};
+// OneTargetOneParameter
+
+#define DEFINE_ONE_TARGET_ZERO_PARAMETER(OP_CLASS, OP_NAME_SMALL, OP_NAME_BIG, \
+                                         QIR_NAME)                             \
+  /**                                                                          \
+   * @brief Converts quartz.OP_NAME_SMALL operation to QIR QIR_NAME            \
+   *                                                                           \
+   * @par Example:                                                             \
+   * ```mlir                                                                   \
+   * quartz.OP_NAME_SMALL %q : !quartz.qubit                                   \
+   * ```                                                                       \
+   * is converted to                                                           \
+   * ```mlir                                                                   \
+   * llvm.call @__quantum__qis__QIR_NAME__body(%q) : (!llvm.ptr) -> ()         \
+   * ```                                                                       \
+   */                                                                          \
+  struct ConvertQuartz##OP_CLASS##QIR final                                    \
+      : StatefulOpConversionPattern<OP_CLASS> {                                \
+    using StatefulOpConversionPattern::StatefulOpConversionPattern;            \
+                                                                               \
+    LogicalResult                                                              \
+    matchAndRewrite(OP_CLASS op, OpAdaptor adaptor,                            \
+                    ConversionPatternRewriter& rewriter) const override {      \
+      auto& state = getState();                                                \
+                                                                               \
+      /* Query state for modifier information */                               \
+      const auto inCtrlOp = state.inCtrlOp;                                    \
+      const size_t numCtrls =                                                  \
+          inCtrlOp != 0 ? state.posCtrls[inCtrlOp].size() : 0;                 \
+                                                                               \
+      /* Define function name */                                               \
+      StringRef fnName;                                                        \
+      if (inCtrlOp == 0) {                                                     \
+        fnName = QIR_C##OP_NAME_BIG;                                           \
+      } else {                                                                 \
+        if (numCtrls == 1) {                                                   \
+          fnName = QIR_C##OP_NAME_BIG;                                         \
+        } else if (numCtrls == 2) {                                            \
+          fnName = QIR_CC##OP_NAME_BIG;                                        \
+        } else if (numCtrls == 3) {                                            \
+          fnName = QIR_CCC##OP_NAME_BIG;                                       \
+        } else {                                                               \
+          return failure();                                                    \
+        }                                                                      \
+      }                                                                        \
+                                                                               \
+      return convertOneTargetZeroParameter(op, adaptor, rewriter,              \
+                                           getContext(), state, fnName);       \
+    }                                                                          \
+  };
+
+DEFINE_ONE_TARGET_ZERO_PARAMETER(IdOp, id, ID, i)
+DEFINE_ONE_TARGET_ZERO_PARAMETER(XOp, x, X, x)
+DEFINE_ONE_TARGET_ZERO_PARAMETER(YOp, y, Y, y)
+DEFINE_ONE_TARGET_ZERO_PARAMETER(ZOp, z, Z, z)
+DEFINE_ONE_TARGET_ZERO_PARAMETER(HOp, h, H, h)
+DEFINE_ONE_TARGET_ZERO_PARAMETER(SOp, s, S, s)
+DEFINE_ONE_TARGET_ZERO_PARAMETER(SdgOp, sdg, SDG, sdg)
+DEFINE_ONE_TARGET_ZERO_PARAMETER(TOp, t, T, t)
+DEFINE_ONE_TARGET_ZERO_PARAMETER(TdgOp, tdg, TDG, tdg)
+DEFINE_ONE_TARGET_ZERO_PARAMETER(SXOp, sx, SX, sx)
+DEFINE_ONE_TARGET_ZERO_PARAMETER(SXdgOp, sxdg, SXDG, sxdg)
+
+#undef DEFINE_ONE_TARGET_ZERO_PARAMETER
+
+// OneTargetOneParameter
+
+#define DEFINE_ONE_TARGET_ONE_PARAMETER(OP_CLASS, OP_NAME_SMALL, OP_NAME_BIG,  \
+                                        QIR_NAME, PARAM)                       \
+  /**                                                                          \
+   * @brief Converts quartz.OP_NAME_SMALL operation to QIR QIR_NAME            \
+   *                                                                           \
+   * @par Example:                                                             \
+   * ```mlir                                                                   \
+   * quartz.OP_NAME_SMALL(%PARAM) %q : !quartz.qubit                           \
+   * ```                                                                       \
+   * is converted to                                                           \
+   * ```mlir                                                                   \
+   * llvm.call @__quantum__qis__QIR_NAME__body(%q, %PARAM) : (!llvm.ptr, f64)  \
+   * -> ()                                                                     \
+   * ```                                                                       \
+   */                                                                          \
+  struct ConvertQuartz##OP_CLASS##QIR final                                    \
+      : StatefulOpConversionPattern<OP_CLASS> {                                \
+    using StatefulOpConversionPattern::StatefulOpConversionPattern;            \
+                                                                               \
+    LogicalResult                                                              \
+    matchAndRewrite(OP_CLASS op, OpAdaptor adaptor,                            \
+                    ConversionPatternRewriter& rewriter) const override {      \
+      auto& state = getState();                                                \
+                                                                               \
+      /* Query state for modifier information */                               \
+      const auto inCtrlOp = state.inCtrlOp;                                    \
+      const size_t numCtrls =                                                  \
+          inCtrlOp != 0 ? state.posCtrls[inCtrlOp].size() : 0;                 \
+                                                                               \
+      /* Define function name */                                               \
+      StringRef fnName;                                                        \
+      if (inCtrlOp == 0) {                                                     \
+        fnName = QIR_##OP_NAME_BIG;                                            \
+      } else {                                                                 \
+        if (numCtrls == 1) {                                                   \
+          fnName = QIR_C##OP_NAME_BIG;                                         \
+        } else if (numCtrls == 2) {                                            \
+          fnName = QIR_CC##OP_NAME_BIG;                                        \
+        } else if (numCtrls == 3) {                                            \
+          fnName = QIR_CCC##OP_NAME_BIG;                                       \
+        } else {                                                               \
+          return failure();                                                    \
+        }                                                                      \
+      }                                                                        \
+                                                                               \
+      return convertOneTargetOneParameter(op, adaptor, rewriter, getContext(), \
+                                          state, fnName);                      \
+    }                                                                          \
+  };
+
+DEFINE_ONE_TARGET_ONE_PARAMETER(RXOp, rx, RX, rx, theta)
+DEFINE_ONE_TARGET_ONE_PARAMETER(RYOp, ry, RY, ry, theta)
+DEFINE_ONE_TARGET_ONE_PARAMETER(RZOp, rz, RZ, rz, theta)
+DEFINE_ONE_TARGET_ONE_PARAMETER(POp, p, P, p, theta)
+
+#undef DEFINE_ONE_TARGET_ONE_PARAMETER
+
+// OneTargetTwoParameter
+
+#define DEFINE_ONE_TARGET_TWO_PARAMETER(OP_CLASS, OP_NAME_SMALL, OP_NAME_BIG,  \
+                                        QIR_NAME, PARAM1, PARAM2)              \
+  /**                                                                          \
+   * @brief Converts quartz.OP_NAME_SMALL operation to QIR QIR_NAME            \
+   *                                                                           \
+   * @par Example:                                                             \
+   * ```mlir                                                                   \
+   * quartz.OP_NAME_SMALL(%PARAM1, %PARAM2) %q : !quartz.qubit                 \
+   * ```                                                                       \
+   * is converted to                                                           \
+   * ```mlir                                                                   \
+   * llvm.call @__quantum__qis__QIR_NAME__body(%q, %PARAM1, %PARAM2) :         \
+   * (!llvm.ptr, f64, f64) -> ()                                               \
+   * ```                                                                       \
+   */                                                                          \
+  struct ConvertQuartz##OP_CLASS##QIR final                                    \
+      : StatefulOpConversionPattern<OP_CLASS> {                                \
+    using StatefulOpConversionPattern::StatefulOpConversionPattern;            \
+                                                                               \
+    LogicalResult                                                              \
+    matchAndRewrite(OP_CLASS op, OpAdaptor adaptor,                            \
+                    ConversionPatternRewriter& rewriter) const override {      \
+      auto& state = getState();                                                \
+                                                                               \
+      /* Query state for modifier information */                               \
+      const auto inCtrlOp = state.inCtrlOp;                                    \
+      const size_t numCtrls =                                                  \
+          inCtrlOp != 0 ? state.posCtrls[inCtrlOp].size() : 0;                 \
+                                                                               \
+      /* Define function name */                                               \
+      StringRef fnName;                                                        \
+      if (inCtrlOp == 0) {                                                     \
+        fnName = QIR_##OP_NAME_BIG;                                            \
+      } else {                                                                 \
+        if (numCtrls == 1) {                                                   \
+          fnName = QIR_C##OP_NAME_BIG;                                         \
+        } else if (numCtrls == 2) {                                            \
+          fnName = QIR_CC##OP_NAME_BIG;                                        \
+        } else if (numCtrls == 3) {                                            \
+          fnName = QIR_CCC##OP_NAME_BIG;                                       \
+        } else {                                                               \
+          return failure();                                                    \
+        }                                                                      \
+      }                                                                        \
+                                                                               \
+      return convertOneTargetTwoParameter(op, adaptor, rewriter, getContext(), \
+                                          state, fnName);                      \
+    }                                                                          \
+  };
+
+DEFINE_ONE_TARGET_TWO_PARAMETER(ROp, r, R, r, theta, phi)
+DEFINE_ONE_TARGET_TWO_PARAMETER(U2Op, u2, U2, u2, phi, lambda)
+
+#undef DEFINE_ONE_TARGET_TWO_PARAMETER
+
+// TwoTargetZeroParameter
+
+#define DEFINE_TWO_TARGET_ZERO_PARAMETER(OP_CLASS, OP_NAME_SMALL, OP_NAME_BIG, \
+                                         QIR_NAME)                             \
+  /**                                                                          \
+   * @brief Converts quartz.OP_NAME_SMALL operation to QIR QIR_NAME            \
+   *                                                                           \
+   * @par Example:                                                             \
+   * ```mlir                                                                   \
+   * quartz.OP_NAME_SMALL %q1, %q2 : !quartz.qubit, !quartz.qubit              \
+   * ```                                                                       \
+   * is converted to                                                           \
+   * ```mlir                                                                   \
+   * llvm.call @__quantum__qis__QIR_NAME__body(%q1, %q2) : (!llvm.ptr,         \
+   * !llvm.ptr) -> ()                                                          \
+   * ```                                                                       \
+   */                                                                          \
+  struct ConvertQuartz##OP_CLASS##QIR final                                    \
+      : StatefulOpConversionPattern<OP_CLASS> {                                \
+    using StatefulOpConversionPattern::StatefulOpConversionPattern;            \
+                                                                               \
+    LogicalResult                                                              \
+    matchAndRewrite(OP_CLASS op, OpAdaptor adaptor,                            \
+                    ConversionPatternRewriter& rewriter) const override {      \
+      auto& state = getState();                                                \
+                                                                               \
+      /* Query state for modifier information */                               \
+      const auto inCtrlOp = state.inCtrlOp;                                    \
+      const size_t numCtrls =                                                  \
+          inCtrlOp != 0 ? state.posCtrls[inCtrlOp].size() : 0;                 \
+                                                                               \
+      /* Define function name */                                               \
+      StringRef fnName;                                                        \
+      if (inCtrlOp == 0) {                                                     \
+        fnName = QIR_##OP_NAME_BIG;                                            \
+      } else {                                                                 \
+        if (numCtrls == 1) {                                                   \
+          fnName = QIR_C##OP_NAME_BIG;                                         \
+        } else if (numCtrls == 2) {                                            \
+          fnName = QIR_CC##OP_NAME_BIG;                                        \
+        } else if (numCtrls == 3) {                                            \
+          fnName = QIR_CCC##OP_NAME_BIG;                                       \
+        } else {                                                               \
+          return failure();                                                    \
+        }                                                                      \
+      }                                                                        \
+                                                                               \
+      return convertTwoTargetZeroParameter(op, adaptor, rewriter,              \
+                                           getContext(), state, fnName);       \
+    }                                                                          \
+  };
+
+DEFINE_TWO_TARGET_ZERO_PARAMETER(SWAPOp, swap, SWAP, swap)
+DEFINE_TWO_TARGET_ZERO_PARAMETER(iSWAPOp, iswap, ISWAP, iswap)
+
+#undef DEFINE_TWO_TARGET_ZERO_PARAMETER
 
 /**
  * @brief Inlines quartz.ctrl region removes the operation
@@ -1893,28 +1270,27 @@ struct QuartzToQIR final : impl::QuartzToQIRBase<QuartzToQIR> {
       quartzPatterns.add<ConvertQuartzStaticQIR>(typeConverter, ctx, &state);
       quartzPatterns.add<ConvertQuartzMeasureQIR>(typeConverter, ctx, &state);
       quartzPatterns.add<ConvertQuartzResetQIR>(typeConverter, ctx);
-      quartzPatterns.add<ConvertQuartzIdQIR>(typeConverter, ctx, &state);
-      quartzPatterns.add<ConvertQuartzXQIR>(typeConverter, ctx, &state);
-      quartzPatterns.add<ConvertQuartzYQIR>(typeConverter, ctx, &state);
-      quartzPatterns.add<ConvertQuartzZQIR>(typeConverter, ctx, &state);
-      quartzPatterns.add<ConvertQuartzHQIR>(typeConverter, ctx, &state);
-      quartzPatterns.add<ConvertQuartzSQIR>(typeConverter, ctx, &state);
-      quartzPatterns.add<ConvertQuartzSdgQIR>(typeConverter, ctx, &state);
-      quartzPatterns.add<ConvertQuartzTQIR>(typeConverter, ctx, &state);
-      quartzPatterns.add<ConvertQuartzTdgQIR>(typeConverter, ctx, &state);
-      quartzPatterns.add<ConvertQuartzSXQIR>(typeConverter, ctx, &state);
-      quartzPatterns.add<ConvertQuartzSXdgQIR>(typeConverter, ctx, &state);
-      quartzPatterns.add<ConvertQuartzRXQIR>(typeConverter, ctx, &state);
-      quartzPatterns.add<ConvertQuartzRYQIR>(typeConverter, ctx, &state);
-      quartzPatterns.add<ConvertQuartzRZQIR>(typeConverter, ctx, &state);
-      quartzPatterns.add<ConvertQuartzPQIR>(typeConverter, ctx, &state);
-      quartzPatterns.add<ConvertQuartzRQIR>(typeConverter, ctx, &state);
-      quartzPatterns.add<ConvertQuartzU2QIR>(typeConverter, ctx, &state);
-      quartzPatterns.add<ConvertQuartzSWAPQIR>(typeConverter, ctx, &state);
-      quartzPatterns.add<ConvertQuartziSWAPQIR>(typeConverter, ctx, &state);
+      quartzPatterns.add<ConvertQuartzIdOpQIR>(typeConverter, ctx, &state);
+      quartzPatterns.add<ConvertQuartzXOpQIR>(typeConverter, ctx, &state);
+      quartzPatterns.add<ConvertQuartzYOpQIR>(typeConverter, ctx, &state);
+      quartzPatterns.add<ConvertQuartzZOpQIR>(typeConverter, ctx, &state);
+      quartzPatterns.add<ConvertQuartzHOpQIR>(typeConverter, ctx, &state);
+      quartzPatterns.add<ConvertQuartzSOpQIR>(typeConverter, ctx, &state);
+      quartzPatterns.add<ConvertQuartzSdgOpQIR>(typeConverter, ctx, &state);
+      quartzPatterns.add<ConvertQuartzTOpQIR>(typeConverter, ctx, &state);
+      quartzPatterns.add<ConvertQuartzTdgOpQIR>(typeConverter, ctx, &state);
+      quartzPatterns.add<ConvertQuartzSXOpQIR>(typeConverter, ctx, &state);
+      quartzPatterns.add<ConvertQuartzSXdgOpQIR>(typeConverter, ctx, &state);
+      quartzPatterns.add<ConvertQuartzRXOpQIR>(typeConverter, ctx, &state);
+      quartzPatterns.add<ConvertQuartzRYOpQIR>(typeConverter, ctx, &state);
+      quartzPatterns.add<ConvertQuartzRZOpQIR>(typeConverter, ctx, &state);
+      quartzPatterns.add<ConvertQuartzPOpQIR>(typeConverter, ctx, &state);
+      quartzPatterns.add<ConvertQuartzROpQIR>(typeConverter, ctx, &state);
+      quartzPatterns.add<ConvertQuartzU2OpQIR>(typeConverter, ctx, &state);
+      quartzPatterns.add<ConvertQuartzSWAPOpQIR>(typeConverter, ctx, &state);
+      quartzPatterns.add<ConvertQuartziSWAPOpQIR>(typeConverter, ctx, &state);
       quartzPatterns.add<ConvertQuartzCtrlQIR>(typeConverter, ctx, &state);
       quartzPatterns.add<ConvertQuartzYieldQIR>(typeConverter, ctx, &state);
-
       // Gate operations will be added here as the dialect expands
 
       if (applyPartialConversion(moduleOp, target, std::move(quartzPatterns))
