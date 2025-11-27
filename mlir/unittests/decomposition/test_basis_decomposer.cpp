@@ -10,6 +10,7 @@
 
 #include "ir/operations/OpType.hpp"
 #include "mlir/Dialect/MQTOpt/Transforms/Decomposition/BasisDecomposer.h"
+#include "mlir/Dialect/MQTOpt/Transforms/Decomposition/EulerBasis.h"
 #include "mlir/Dialect/MQTOpt/Transforms/Decomposition/Gate.h"
 #include "mlir/Dialect/MQTOpt/Transforms/Decomposition/GateSequence.h"
 #include "mlir/Dialect/MQTOpt/Transforms/Decomposition/Helpers.h"

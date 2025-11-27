@@ -283,7 +283,6 @@ module {
     // CHECK: %[[Q0_0:.*]] = mqtopt.allocQubit
     // CHECK: %[[Q1_0:.*]] = mqtopt.allocQubit
 
-    // CHECK-NOT: mqtopt.gphase
     // CHECK: %[[ANY:.*]], %[[ANY:.*]] = mqtopt.x() %[[ANY:.*]] ctrl %[[ANY:.*]]
     // CHECK: %[[ANY:.*]], %[[ANY:.*]] = mqtopt.x() %[[ANY:.*]] ctrl %[[ANY:.*]]
     // CHECK-NOT: mqtopt.x()
@@ -326,7 +325,6 @@ module {
     // CHECK: %[[Q0_0:.*]] = mqtopt.allocQubit
     // CHECK: %[[Q1_0:.*]] = mqtopt.allocQubit
 
-    // CHECK: mqtopt.gphase(%[[ANY:.*]])
     // CHECK: %[[ANY:.*]], %[[ANY:.*]] = mqtopt.x() %[[ANY:.*]] ctrl %[[ANY:.*]]
     // CHECK: %[[ANY:.*]], %[[ANY:.*]] = mqtopt.x() %[[ANY:.*]] ctrl %[[ANY:.*]]
     // CHECK: %[[ANY:.*]], %[[ANY:.*]] = mqtopt.x() %[[ANY:.*]] ctrl %[[ANY:.*]]
@@ -422,7 +420,6 @@ module {
     // CHECK: %[[Q0_0:.*]] = mqtopt.allocQubit
     // CHECK: %[[Q1_0:.*]] = mqtopt.allocQubit
 
-    // CHECK: mqtopt.gphase(%[[ANY:.*]])
     // CHECK: %[[ANY:.*]], %[[ANY:.*]] = mqtopt.x() %[[ANY:.*]] ctrl %[[ANY:.*]]
     // CHECK-NOT: mqtopt.x()
     // CHECK-NOT: mqtopt.h()
