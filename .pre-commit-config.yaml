@@ -14,20 +14,6 @@ ci:
   skip: [mypy, ty-check]
 
 repos:
-  # Ensure uv lock file is up-to-date
-  - repo: https://github.com/astral-sh/uv-pre-commit
-    rev: 0.9.11
-    hooks:
-      - id: uv-lock
-
-  # Check for merge conflicts
-  - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v6.0.0
-    hooks:
-      - id: check-merge-conflict
-        args: ["--assume-in-merge"]
-        fail_fast: true
-
   # Standard hooks
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v6.0.0
@@ -36,6 +22,7 @@ repos:
         args: ["--maxkb=2048"]
       - id: check-case-conflict
       - id: check-vcs-permalinks
+      - id: check-merge-conflict
       - id: check-symlinks
       - id: check-json
       - id: check-toml
@@ -43,7 +30,6 @@ repos:
       - id: debug-statements
       - id: end-of-file-fixer
       - id: mixed-line-ending
-      - id: requirements-txt-fixer
       - id: trailing-whitespace
 
   # Clean jupyter notebooks
@@ -71,6 +57,12 @@ repos:
       - id: rst-backticks
       - id: rst-directive-colons
       - id: rst-inline-touching-normal
+
+  # Ensure uv lock file is up-to-date
+  - repo: https://github.com/astral-sh/uv-pre-commit
+    rev: 0.9.12
+    hooks:
+      - id: uv-lock
 
   # Python linting using ruff
   - repo: https://github.com/astral-sh/ruff-pre-commit
