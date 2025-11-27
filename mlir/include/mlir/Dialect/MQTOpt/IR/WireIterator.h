@@ -27,19 +27,15 @@
 namespace mqt::ir::opt {
 
 /**
- * @brief A non-recursive bidirectional_iterator traversing the def-use chain of
- * a qubit wire.
+ * @brief A bidirectional_iterator traversing the def-use chain of a qubit wire.
  *
  * The iterator follows the flow of a qubit through a sequence of quantum
  * operations in a given region. It respects the semantics of the respective
  * quantum operation including control flow constructs (scf::ForOp and
  * scf::IfOp).
  *
- * It does not visit operations within nested regions. These include the loop
- * body of the scf::ForOp and the THEN and ELSE branches of the scf::IfOp. From
- * the iterator's perspective these act like regular gates. As a consequence,
- * an input qubit is mapped to the respective output qubit. For example, finding
- * which result of an scf::IfOp corresponds to a qubit passed into one of its
+ * It treats control flow constructs as a single operation that consumes and
+ * yields a corresponding number of qubits, without descending into their nested
  * regions.
  */
 class WireIterator {
