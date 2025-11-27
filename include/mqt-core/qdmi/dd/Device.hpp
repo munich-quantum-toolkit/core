@@ -19,6 +19,7 @@
 #include "mqt_ddsim_qdmi/device.h"
 
 #include <atomic>
+#include <cassert>
 #include <cstddef>
 #include <cstdint>
 #include <future>
@@ -64,6 +65,9 @@ class Device final {
   /// @brief Private constructor to enforce the singleton pattern.
   Device();
 
+  /// @brief The singleton instance.
+  static Device* instance;
+
 public:
   // Default move constructor and move assignment operator.
   Device(Device&&) = delete;
@@ -72,14 +76,37 @@ public:
   Device(const Device&) = delete;
   Device& operator=(const Device&) = delete;
 
-  /// @returns the singleton instance of the Device class.
-  [[nodiscard]] static Device& get() {
-    static Device instance;
-    return instance;
-  }
-
   /// @brief Destructor for the Device class.
   ~Device() = default;
+
+  /**
+   * @brief Initializes the singleton instance.
+   * @details Must be called before `get()`.
+   */
+  static void initialize() {
+    if (instance == nullptr) {
+      // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
+      instance = new Device();
+    }
+  }
+
+  /**
+   * @brief Destroys the singleton instance.
+   * @details After this call, `get()` must not be called until a new
+   * `initialize()` call.
+   */
+  static void finalize() {
+    // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
+    delete instance;
+    instance = nullptr;
+  }
+
+  /// @returns the singleton instance of the Device class.
+  [[nodiscard]] static auto get() -> Device& {
+    assert(instance != nullptr &&
+           "Device not initialized. Call `initialize()` first.");
+    return *instance;
+  }
 
   /**
    * @brief Allocates a new device session.

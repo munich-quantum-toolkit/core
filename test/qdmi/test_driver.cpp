@@ -503,8 +503,9 @@ TEST_P(DriverTest, QueryNeedsCalibration) {
 #ifdef _WIN32
 const std::array<std::string, 1> DEVICES{"MQT NA Default QDMI Device"};
 #else
-const std::array<std::string, 2> DEVICES{"MQT NA Default QDMI Device",
-                                         "MQT NA Dynamic QDMI Device"};
+const std::array<std::string, 3> DEVICES{"MQT NA Default QDMI Device",
+                                         "MQT NA Dynamic QDMI Device",
+                                         "MQT Core DDSIM QDMI Device"};
 #endif
 // Instantiate the test suite with different parameters
 INSTANTIATE_TEST_SUITE_P(

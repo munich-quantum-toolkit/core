@@ -205,6 +205,8 @@ constexpr auto OPERATION_ADDRESSES = makeOperationAddresses(OPERATIONS);
 
 namespace qdmi::dd {
 
+Device* Device::instance = nullptr;
+
 Device::Device()
     : name_("MQT Core DDSIM QDMI Device"),
       qubitsNum_(std::numeric_limits<::dd::Qubit>::max()) {}
@@ -775,11 +777,14 @@ auto MQT_DDSIM_QDMI_Device_Job_impl_d::getResults(const QDMI_Job_Result result,
 // QDMI uses a different naming convention for its C interface functions
 // NOLINTBEGIN(readability-identifier-naming)
 int MQT_DDSIM_QDMI_device_initialize() {
-  std::ignore = qdmi::dd::Device::get(); // Ensure the singleton is created
+  qdmi::dd::Device::initialize();
   return QDMI_SUCCESS;
 }
 
-int MQT_DDSIM_QDMI_device_finalize() { return QDMI_SUCCESS; }
+int MQT_DDSIM_QDMI_device_finalize() {
+  qdmi::dd::Device::finalize();
+  return QDMI_SUCCESS;
+}
 
 int MQT_DDSIM_QDMI_device_session_alloc(
     MQT_DDSIM_QDMI_Device_Session* session) {
