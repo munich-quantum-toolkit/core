@@ -10,13 +10,14 @@
 
 #pragma once
 
+#include "EulerBasis.h"
 #include "Gate.h"
 #include "Helpers.h"
 #include "UnitaryMatrices.h"
 #include "ir/operations/OpType.hpp"
 #include "mlir/Dialect/MQTOpt/Transforms/Decomposition/Helpers.h"
 
-#include <Eigen/Core> // NOLINT(misc-include-cleaner)
+#include <Eigen/Core>
 #include <cassert>
 #include <cmath>
 #include <complex>
@@ -30,7 +31,6 @@
 #include <mlir/IR/ValueRange.h>
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/LogicalResult.h>
-#include <unsupported/Eigen/MatrixFunctions> // TODO: unstable, NOLINT(misc-include-cleaner)
 
 namespace mqt::ir::opt::decomposition {
 /**

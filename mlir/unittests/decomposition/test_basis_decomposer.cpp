@@ -10,8 +10,11 @@
 
 #include "ir/operations/OpType.hpp"
 #include "mlir/Dialect/MQTOpt/Transforms/Decomposition/BasisDecomposer.h"
+#include "mlir/Dialect/MQTOpt/Transforms/Decomposition/Gate.h"
+#include "mlir/Dialect/MQTOpt/Transforms/Decomposition/GateSequence.h"
 #include "mlir/Dialect/MQTOpt/Transforms/Decomposition/Helpers.h"
 #include "mlir/Dialect/MQTOpt/Transforms/Decomposition/UnitaryMatrices.h"
+#include "mlir/Dialect/MQTOpt/Transforms/Decomposition/WeylDecomposition.h"
 
 #include <Eigen/QR>
 #include <cassert>
@@ -20,6 +23,9 @@
 #include <cstdlib>
 #include <gtest/gtest.h>
 #include <iostream>
+#include <llvm/ADT/SmallVector.h>
+#include <optional>
+#include <tuple>
 
 using namespace mqt::ir::opt;
 using namespace mqt::ir::opt::decomposition;
@@ -33,7 +39,7 @@ namespace {
     return true;
   }();
   const matrix4x4 randomMatrix = matrix4x4::Random();
-  Eigen::HouseholderQR<matrix4x4> qr{};
+  Eigen::HouseholderQR<matrix4x4> qr{}; // NOLINT(misc-include-cleaner)
   qr.compute(randomMatrix);
   const matrix4x4 unitaryMatrix = qr.householderQ();
   assert(helpers::isUnitaryMatrix(unitaryMatrix));
@@ -110,15 +116,16 @@ TEST_P(BasisDecomposerTest, TestApproximation) {
 TEST(BasisDecomposerTest, Random) {
   auto stopTime = std::chrono::steady_clock::now() + std::chrono::seconds{10};
   auto iterations = 0;
+
+  const Gate basisGate{.type = qc::X, .parameter = {}, .qubitId = {0, 1}};
+  const llvm::SmallVector<EulerBasis> eulerBases = {EulerBasis::XYX,
+                                                    EulerBasis::ZXZ};
+
   while (std::chrono::steady_clock::now() < stopTime) {
     auto originalMatrix = randomUnitaryMatrix();
 
     auto targetDecomposition =
         TwoQubitWeylDecomposition::create(originalMatrix, 1.0);
-
-    Gate basisGate{.type = qc::X, .qubitId = {0, 1}};
-    llvm::SmallVector<EulerBasis> eulerBases = {EulerBasis::XYX,
-                                                EulerBasis::ZXZ};
     auto decomposer = TwoQubitBasisDecomposer::create(basisGate, 1.0);
     auto decomposedSequence = decomposer.twoQubitDecompose(
         targetDecomposition, eulerBases, 1.0, true, std::nullopt);
@@ -143,8 +150,9 @@ INSTANTIATE_TEST_CASE_P(
     SingleQubitMatrices, BasisDecomposerTest,
     testing::Combine(
         // basis gates
-        testing::Values(Gate{.type = qc::X, .qubitId = {0, 1}},
-                        Gate{.type = qc::X, .qubitId = {1, 0}}),
+        testing::Values(Gate{.type = qc::X, .parameter = {}, .qubitId = {0, 1}},
+                        Gate{
+                            .type = qc::X, .parameter = {}, .qubitId = {1, 0}}),
         // sets of euler bases
         testing::Values(llvm::SmallVector<EulerBasis>{EulerBasis::ZYZ},
                         llvm::SmallVector<EulerBasis>{
@@ -161,8 +169,9 @@ INSTANTIATE_TEST_CASE_P(
     TwoQubitMatrices, BasisDecomposerTest,
     testing::Combine(
         // basis gates
-        testing::Values(Gate{.type = qc::X, .qubitId = {0, 1}},
-                        Gate{.type = qc::X, .qubitId = {1, 0}}),
+        testing::Values(Gate{.type = qc::X, .parameter = {}, .qubitId = {0, 1}},
+                        Gate{
+                            .type = qc::X, .parameter = {}, .qubitId = {1, 0}}),
         // sets of euler bases
         testing::Values(llvm::SmallVector<EulerBasis>{EulerBasis::ZYZ},
                         llvm::SmallVector<EulerBasis>{
@@ -178,5 +187,6 @@ INSTANTIATE_TEST_CASE_P(
                 canonicalGate(1.1, 0.2, 3.0) *
                 helpers::kroneckerProduct(rxMatrix(1.0), IDENTITY_GATE),
             helpers::kroneckerProduct(H_GATE, IPZ) *
-                getTwoQubitMatrix({.type = qc::X, .qubitId = {0, 1}}) *
+                getTwoQubitMatrix(
+                    {.type = qc::X, .parameter = {}, .qubitId = {0, 1}}) *
                 helpers::kroneckerProduct(IPX, IPY))));
