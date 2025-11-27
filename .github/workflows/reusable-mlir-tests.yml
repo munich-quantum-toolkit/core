@@ -38,7 +38,7 @@ jobs:
           fetch-depth: 0
 
       - name: Set up MLIR
-        uses: munich-quantum-software/setup-mlir@2025.11.25
+        uses: munich-quantum-software/setup-mlir@2f40b6e56a9bda0f539d7a251dfc6de2dbfeeb14 # 2025.11.25
         with:
           tag: 2025.11.25
 
