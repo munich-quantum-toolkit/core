@@ -124,386 +124,120 @@ QuartzProgramBuilder& QuartzProgramBuilder::reset(Value qubit) {
 // Unitary Operations
 //===----------------------------------------------------------------------===//
 
-// IdOp
-
-QuartzProgramBuilder& QuartzProgramBuilder::id(Value qubit) {
-  create<IdOp>(loc, qubit);
-  return *this;
-}
-
-QuartzProgramBuilder& QuartzProgramBuilder::cid(Value control, Value target) {
-  return mcid({control}, target);
-}
-
-QuartzProgramBuilder& QuartzProgramBuilder::mcid(ValueRange controls,
-                                                 Value target) {
-  create<CtrlOp>(loc, controls,
-                 [&](OpBuilder& b) { b.create<IdOp>(loc, target); });
-  return *this;
-}
-
-// XOp
-
-QuartzProgramBuilder& QuartzProgramBuilder::x(Value qubit) {
-  create<XOp>(loc, qubit);
-  return *this;
-}
-
-QuartzProgramBuilder& QuartzProgramBuilder::cx(Value control, Value target) {
-  return mcx({control}, target);
-}
-
-QuartzProgramBuilder& QuartzProgramBuilder::mcx(ValueRange controls,
-                                                Value target) {
-  create<CtrlOp>(loc, controls,
-                 [&](OpBuilder& b) { b.create<XOp>(loc, target); });
-  return *this;
-}
-
-// YOp
-
-QuartzProgramBuilder& QuartzProgramBuilder::y(Value qubit) {
-  create<YOp>(loc, qubit);
-  return *this;
-}
-
-QuartzProgramBuilder& QuartzProgramBuilder::cy(Value control, Value target) {
-  return mcy({control}, target);
-}
-
-QuartzProgramBuilder& QuartzProgramBuilder::mcy(ValueRange controls,
-                                                Value target) {
-  create<CtrlOp>(loc, controls,
-                 [&](OpBuilder& b) { b.create<YOp>(loc, target); });
-  return *this;
-}
-
-// ZOp
-
-QuartzProgramBuilder& QuartzProgramBuilder::z(Value qubit) {
-  create<ZOp>(loc, qubit);
-  return *this;
-}
-
-QuartzProgramBuilder& QuartzProgramBuilder::cz(Value control, Value target) {
-  return mcz({control}, target);
-}
-
-QuartzProgramBuilder& QuartzProgramBuilder::mcz(ValueRange controls,
-                                                Value target) {
-  create<CtrlOp>(loc, controls,
-                 [&](OpBuilder& b) { b.create<ZOp>(loc, target); });
-  return *this;
-}
-
-// HOp
-
-QuartzProgramBuilder& QuartzProgramBuilder::h(Value qubit) {
-  create<HOp>(loc, qubit);
-  return *this;
-}
-
-QuartzProgramBuilder& QuartzProgramBuilder::ch(Value control, Value target) {
-  return mch({control}, target);
-}
-
-QuartzProgramBuilder& QuartzProgramBuilder::mch(ValueRange controls,
-                                                Value target) {
-  create<CtrlOp>(loc, controls,
-                 [&](OpBuilder& b) { b.create<HOp>(loc, target); });
-  return *this;
-}
-
-// SOp
-
-QuartzProgramBuilder& QuartzProgramBuilder::s(Value qubit) {
-  create<SOp>(loc, qubit);
-  return *this;
-}
-
-QuartzProgramBuilder& QuartzProgramBuilder::cs(Value control, Value target) {
-  return mcs({control}, target);
-}
-
-QuartzProgramBuilder& QuartzProgramBuilder::mcs(ValueRange controls,
-                                                Value target) {
-  create<CtrlOp>(loc, controls,
-                 [&](OpBuilder& b) { b.create<SOp>(loc, target); });
-  return *this;
-}
-
-// SdgOp
-
-QuartzProgramBuilder& QuartzProgramBuilder::sdg(Value qubit) {
-  create<SdgOp>(loc, qubit);
-  return *this;
-}
-
-QuartzProgramBuilder& QuartzProgramBuilder::csdg(Value control, Value target) {
-  return mcsdg({control}, target);
-}
-
-QuartzProgramBuilder& QuartzProgramBuilder::mcsdg(ValueRange controls,
-                                                  Value target) {
-  create<CtrlOp>(loc, controls,
-                 [&](OpBuilder& b) { b.create<SdgOp>(loc, target); });
-  return *this;
-}
-
-// TOp
-
-QuartzProgramBuilder& QuartzProgramBuilder::t(Value qubit) {
-  create<TOp>(loc, qubit);
-  return *this;
-}
-
-QuartzProgramBuilder& QuartzProgramBuilder::ct(Value control, Value target) {
-  return mct({control}, target);
-}
-
-QuartzProgramBuilder& QuartzProgramBuilder::mct(ValueRange controls,
-                                                Value target) {
-  create<CtrlOp>(loc, controls,
-                 [&](OpBuilder& b) { b.create<TOp>(loc, target); });
-  return *this;
-}
-
-// TdgOp
-
-QuartzProgramBuilder& QuartzProgramBuilder::tdg(Value qubit) {
-  create<TdgOp>(loc, qubit);
-  return *this;
-}
-
-QuartzProgramBuilder& QuartzProgramBuilder::ctdg(Value control, Value target) {
-  return mctdg({control}, target);
-}
-
-QuartzProgramBuilder& QuartzProgramBuilder::mctdg(ValueRange controls,
-                                                  Value target) {
-  create<CtrlOp>(loc, controls,
-                 [&](OpBuilder& b) { b.create<TdgOp>(loc, target); });
-  return *this;
-}
-
-// SXOp
-
-QuartzProgramBuilder& QuartzProgramBuilder::sx(Value qubit) {
-  create<SXOp>(loc, qubit);
-  return *this;
-}
-
-QuartzProgramBuilder& QuartzProgramBuilder::csx(Value control, Value target) {
-  return mcsx({control}, target);
-}
-
-QuartzProgramBuilder& QuartzProgramBuilder::mcsx(ValueRange controls,
-                                                 Value target) {
-  create<CtrlOp>(loc, controls,
-                 [&](OpBuilder& b) { b.create<SXOp>(loc, target); });
-  return *this;
-}
-
-// SXdgOp
-
-QuartzProgramBuilder& QuartzProgramBuilder::sxdg(Value qubit) {
-  create<SXdgOp>(loc, qubit);
-  return *this;
-}
-
-QuartzProgramBuilder& QuartzProgramBuilder::csxdg(Value control, Value target) {
-  return mcsxdg({control}, target);
-}
-
-QuartzProgramBuilder& QuartzProgramBuilder::mcsxdg(ValueRange controls,
-                                                   Value target) {
-  create<CtrlOp>(loc, controls,
-                 [&](OpBuilder& b) { b.create<SXdgOp>(loc, target); });
-  return *this;
-}
-
-// RXOp
-
-QuartzProgramBuilder&
-QuartzProgramBuilder::rx(const std::variant<double, Value>& theta,
-                         Value qubit) {
-  create<RXOp>(loc, qubit, theta);
-  return *this;
-}
-
-QuartzProgramBuilder&
-QuartzProgramBuilder::crx(const std::variant<double, Value>& theta,
-                          Value control, const Value target) {
-  return mcrx(theta, {control}, target);
-}
-
-QuartzProgramBuilder&
-QuartzProgramBuilder::mcrx(const std::variant<double, Value>& theta,
-                           ValueRange controls, Value target) {
-  create<CtrlOp>(loc, controls,
-                 [&](OpBuilder& b) { b.create<RXOp>(loc, target, theta); });
-  return *this;
-}
-
-// RYOp
-
-QuartzProgramBuilder&
-QuartzProgramBuilder::ry(const std::variant<double, Value>& theta,
-                         Value qubit) {
-  create<RYOp>(loc, qubit, theta);
-  return *this;
-}
-
-QuartzProgramBuilder&
-QuartzProgramBuilder::cry(const std::variant<double, Value>& theta,
-                          Value control, const Value target) {
-  return mcry(theta, {control}, target);
-}
-
-QuartzProgramBuilder&
-QuartzProgramBuilder::mcry(const std::variant<double, Value>& theta,
-                           ValueRange controls, Value target) {
-  create<CtrlOp>(loc, controls,
-                 [&](OpBuilder& b) { b.create<RYOp>(loc, target, theta); });
-  return *this;
-}
-
-// RZOp
-
-QuartzProgramBuilder&
-QuartzProgramBuilder::rz(const std::variant<double, Value>& theta,
-                         Value qubit) {
-  create<RZOp>(loc, qubit, theta);
-  return *this;
-}
-
-QuartzProgramBuilder&
-QuartzProgramBuilder::crz(const std::variant<double, Value>& theta,
-                          Value control, const Value target) {
-  return mcrz(theta, {control}, target);
-}
-
-QuartzProgramBuilder&
-QuartzProgramBuilder::mcrz(const std::variant<double, Value>& theta,
-                           ValueRange controls, Value target) {
-  create<CtrlOp>(loc, controls,
-                 [&](OpBuilder& b) { b.create<RZOp>(loc, target, theta); });
-  return *this;
-}
-
-// POp
-
-QuartzProgramBuilder&
-QuartzProgramBuilder::p(const std::variant<double, Value>& theta, Value qubit) {
-  create<POp>(loc, qubit, theta);
-  return *this;
-}
-
-QuartzProgramBuilder&
-QuartzProgramBuilder::cp(const std::variant<double, Value>& theta,
-                         Value control, Value target) {
-  return mcp(theta, {control}, target);
-}
-
-QuartzProgramBuilder&
-QuartzProgramBuilder::mcp(const std::variant<double, Value>& theta,
-                          ValueRange controls, Value target) {
-  create<CtrlOp>(loc, controls,
-                 [&](OpBuilder& b) { b.create<POp>(loc, target, theta); });
-  return *this;
-}
-
-// ROp
-
-QuartzProgramBuilder&
-QuartzProgramBuilder::r(const std::variant<double, Value>& theta,
-                        const std::variant<double, Value>& phi, Value qubit) {
-  create<ROp>(loc, qubit, theta, phi);
-  return *this;
-}
-
-QuartzProgramBuilder&
-QuartzProgramBuilder::cr(const std::variant<double, Value>& theta,
-                         const std::variant<double, Value>& phi, Value control,
-                         Value target) {
-  return mcr(theta, phi, {control}, target);
-}
-
-QuartzProgramBuilder&
-QuartzProgramBuilder::mcr(const std::variant<double, Value>& theta,
-                          const std::variant<double, Value>& phi,
-                          ValueRange controls, Value target) {
-  create<CtrlOp>(loc, controls,
-                 [&](OpBuilder& b) { b.create<ROp>(loc, target, theta, phi); });
-  return *this;
-}
-
-// U2Op
-
-QuartzProgramBuilder&
-QuartzProgramBuilder::u2(const std::variant<double, Value>& phi,
-                         const std::variant<double, Value>& lambda,
-                         Value qubit) {
-  create<U2Op>(loc, qubit, phi, lambda);
-  return *this;
-}
-
-QuartzProgramBuilder&
-QuartzProgramBuilder::cu2(const std::variant<double, Value>& phi,
-                          const std::variant<double, Value>& lambda,
-                          Value control, const Value target) {
-  return mcu2(phi, lambda, {control}, target);
-}
-
-QuartzProgramBuilder&
-QuartzProgramBuilder::mcu2(const std::variant<double, Value>& phi,
-                           const std::variant<double, Value>& lambda,
-                           ValueRange controls, Value target) {
-  create<CtrlOp>(loc, controls, [&](OpBuilder& b) {
-    b.create<U2Op>(loc, target, phi, lambda);
-  });
-  return *this;
-}
-
-// SWAPOp
-
-QuartzProgramBuilder& QuartzProgramBuilder::swap(Value qubit0, Value qubit1) {
-  create<SWAPOp>(loc, qubit0, qubit1);
-  return *this;
-}
-
-QuartzProgramBuilder& QuartzProgramBuilder::cswap(Value control,
-                                                  const Value qubit0,
-                                                  const Value qubit1) {
-  return mcswap({control}, qubit0, qubit1);
-}
-
-QuartzProgramBuilder& QuartzProgramBuilder::mcswap(ValueRange controls,
-                                                   Value qubit0, Value qubit1) {
-  create<CtrlOp>(loc, controls,
-                 [&](OpBuilder& b) { b.create<SWAPOp>(loc, qubit0, qubit1); });
-  return *this;
-}
-
-// iSWAPOp
-
-QuartzProgramBuilder& QuartzProgramBuilder::iswap(Value qubit0, Value qubit1) {
-  create<iSWAPOp>(loc, qubit0, qubit1);
-  return *this;
-}
-
-QuartzProgramBuilder& QuartzProgramBuilder::ciswap(Value control,
-                                                   const Value qubit0,
-                                                   const Value qubit1) {
-  return mciswap({control}, qubit0, qubit1);
-}
-
-QuartzProgramBuilder&
-QuartzProgramBuilder::mciswap(ValueRange controls, Value qubit0, Value qubit1) {
-  create<CtrlOp>(loc, controls,
-                 [&](OpBuilder& b) { b.create<iSWAPOp>(loc, qubit0, qubit1); });
-  return *this;
-}
+// OneTargetZeroParameter
+
+#define DEFINE_ONE_TARGET_ZERO_PARAMETER(OP_CLASS, OP_NAME)                    \
+  QuartzProgramBuilder& QuartzProgramBuilder::OP_NAME(Value qubit) {           \
+    create<OP_CLASS>(loc, qubit);                                              \
+    return *this;                                                              \
+  }                                                                            \
+  QuartzProgramBuilder& QuartzProgramBuilder::c##OP_NAME(Value control,        \
+                                                         Value target) {       \
+    return mc##OP_NAME({control}, target);                                     \
+  }                                                                            \
+  QuartzProgramBuilder& QuartzProgramBuilder::mc##OP_NAME(ValueRange controls, \
+                                                          Value target) {      \
+    create<CtrlOp>(loc, controls,                                              \
+                   [&](OpBuilder& b) { b.create<OP_CLASS>(loc, target); });    \
+    return *this;                                                              \
+  }
+
+DEFINE_ONE_TARGET_ZERO_PARAMETER(IdOp, id)
+DEFINE_ONE_TARGET_ZERO_PARAMETER(XOp, x)
+DEFINE_ONE_TARGET_ZERO_PARAMETER(YOp, y)
+DEFINE_ONE_TARGET_ZERO_PARAMETER(ZOp, z)
+DEFINE_ONE_TARGET_ZERO_PARAMETER(HOp, h)
+DEFINE_ONE_TARGET_ZERO_PARAMETER(SOp, s)
+DEFINE_ONE_TARGET_ZERO_PARAMETER(SdgOp, sdg)
+DEFINE_ONE_TARGET_ZERO_PARAMETER(TOp, t)
+DEFINE_ONE_TARGET_ZERO_PARAMETER(TdgOp, tdg)
+DEFINE_ONE_TARGET_ZERO_PARAMETER(SXOp, sx)
+DEFINE_ONE_TARGET_ZERO_PARAMETER(SXdgOp, sxdg)
+
+#undef DEFINE_ONE_TARGET_ZERO_PARAMETER
+
+// OneTargetOneParameter
+
+#define DEFINE_ONE_TARGET_ONE_PARAMETER(OP_CLASS, OP_NAME, PARAM)              \
+  QuartzProgramBuilder& QuartzProgramBuilder::OP_NAME(                         \
+      const std::variant<double, Value>& PARAM, Value qubit) {                 \
+    create<OP_CLASS>(loc, qubit, PARAM);                                       \
+    return *this;                                                              \
+  }                                                                            \
+  QuartzProgramBuilder& QuartzProgramBuilder::c##OP_NAME(                      \
+      const std::variant<double, Value>& PARAM, Value control, Value target) { \
+    return mc##OP_NAME(PARAM, {control}, target);                              \
+  }                                                                            \
+  QuartzProgramBuilder& QuartzProgramBuilder::mc##OP_NAME(                     \
+      const std::variant<double, Value>& PARAM, ValueRange controls,           \
+      Value target) {                                                          \
+    create<CtrlOp>(loc, controls, [&](OpBuilder& b) {                          \
+      b.create<OP_CLASS>(loc, target, PARAM);                                  \
+    });                                                                        \
+    return *this;                                                              \
+  }
+
+DEFINE_ONE_TARGET_ONE_PARAMETER(RXOp, rx, theta)
+DEFINE_ONE_TARGET_ONE_PARAMETER(RYOp, ry, theta)
+DEFINE_ONE_TARGET_ONE_PARAMETER(RZOp, rz, theta)
+DEFINE_ONE_TARGET_ONE_PARAMETER(POp, p, theta)
+
+#undef DEFINE_ONE_TARGET_ONE_PARAMETER
+
+// OneTargetTwoParameter
+
+#define DEFINE_ONE_TARGET_TWO_PARAMETER(OP_CLASS, OP_NAME, PARAM1, PARAM2)     \
+  QuartzProgramBuilder& QuartzProgramBuilder::OP_NAME(                         \
+      const std::variant<double, Value>& PARAM1,                               \
+      const std::variant<double, Value>& PARAM2, Value qubit) {                \
+    create<OP_CLASS>(loc, qubit, PARAM1, PARAM2);                              \
+    return *this;                                                              \
+  }                                                                            \
+  QuartzProgramBuilder& QuartzProgramBuilder::c##OP_NAME(                      \
+      const std::variant<double, Value>& PARAM1,                               \
+      const std::variant<double, Value>& PARAM2, Value control,                \
+      Value target) {                                                          \
+    return mc##OP_NAME(PARAM1, PARAM2, {control}, target);                     \
+  }                                                                            \
+  QuartzProgramBuilder& QuartzProgramBuilder::mc##OP_NAME(                     \
+      const std::variant<double, Value>& PARAM1,                               \
+      const std::variant<double, Value>& PARAM2, ValueRange controls,          \
+      Value target) {                                                          \
+    create<CtrlOp>(loc, controls, [&](OpBuilder& b) {                          \
+      b.create<OP_CLASS>(loc, target, PARAM1, PARAM2);                         \
+    });                                                                        \
+    return *this;                                                              \
+  }
+
+DEFINE_ONE_TARGET_TWO_PARAMETER(ROp, r, theta, phi)
+DEFINE_ONE_TARGET_TWO_PARAMETER(U2Op, u2, phi, lambda)
+
+#undef DEFINE_ONE_TARGET_TWO_PARAMETER
+
+// TwoTargetZeroParameter
+
+#define DEFINE_TWO_TARGET_ZERO_PARAMETER(OP_CLASS, OP_NAME)                    \
+  QuartzProgramBuilder& QuartzProgramBuilder::OP_NAME(Value qubit0,            \
+                                                      Value qubit1) {          \
+    create<OP_CLASS>(loc, qubit0, qubit1);                                     \
+    return *this;                                                              \
+  }                                                                            \
+  QuartzProgramBuilder& QuartzProgramBuilder::c##OP_NAME(                      \
+      Value control, const Value qubit0, const Value qubit1) {                 \
+    return mc##OP_NAME({control}, qubit0, qubit1);                             \
+  }                                                                            \
+  QuartzProgramBuilder& QuartzProgramBuilder::mc##OP_NAME(                     \
+      ValueRange controls, Value qubit0, Value qubit1) {                       \
+    create<CtrlOp>(loc, controls, [&](OpBuilder& b) {                          \
+      b.create<OP_CLASS>(loc, qubit0, qubit1);                                 \
+    });                                                                        \
+    return *this;                                                              \
+  }
+
+DEFINE_TWO_TARGET_ZERO_PARAMETER(SWAPOp, swap)
+DEFINE_TWO_TARGET_ZERO_PARAMETER(iSWAPOp, iswap)
+
+#undef DEFINE_TWO_TARGET_ZERO_PARAMETER
 
 //===----------------------------------------------------------------------===//
 // Modifiers
