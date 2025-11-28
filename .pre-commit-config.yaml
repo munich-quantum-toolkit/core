@@ -88,10 +88,10 @@ repos:
     hooks:
       - id: ty-check
         name: ty check
-        entry: uv run --only-dev ty check
-        language: system
-        pass_filenames: false
-        always_run: true
+        entry: python -c "import subprocess; import sys; subprocess.run(['uv', 'sync', '--no-install-project']); sys.exit(subprocess.run(['uv', 'run', '--no-sync', 'ty', 'check']).returncode)"
+        language: unsupported
+        require_serial: true
+        types_or: [python, pyi, jupyter]
 
   # Also run Black on examples in the documentation
   - repo: https://github.com/adamchainz/blacken-docs
