@@ -968,21 +968,19 @@ translateOperations(QuartzProgramBuilder& builder,
       break;
     case qc::OpType::RYY:
       addRYYOp(builder, *operation, qubits);
-      ;
       break;
     case qc::OpType::RZX:
       addRZXOp(builder, *operation, qubits);
-      ;
       break;
     case qc::OpType::RZZ:
       addRZZOp(builder, *operation, qubits);
-      ;
       break;
     case qc::OpType::XXplusYY:
       addXXPlusYYOp(builder, *operation, qubits);
       break;
     case qc::OpType::XXminusYY:
       addXXMinusYYOp(builder, *operation, qubits);
+      break;
     default:
       // Unsupported operation - skip for now
       // As the Quartz dialect is expanded, more operations will be supported
