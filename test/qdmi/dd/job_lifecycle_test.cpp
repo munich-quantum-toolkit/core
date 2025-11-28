@@ -45,8 +45,7 @@ TEST(JobLifecycle, WaitInvalidBeforeSubmitAndIdempotentAfterDone) {
   const qdmi_test::SessionGuard s{};
   const qdmi_test::JobGuard j{s.session};
   // wait before submit is invalid
-  EXPECT_EQ(MQT_DDSIM_QDMI_device_job_wait(j.job, 0),
-            QDMI_ERROR_INVALIDARGUMENT);
+  EXPECT_EQ(MQT_DDSIM_QDMI_device_job_wait(j.job, 0), QDMI_ERROR_BADSTATE);
   // now run a quick job
   ASSERT_EQ(qdmi_test::setProgram(j.job, QDMI_PROGRAM_FORMAT_QASM3,
                                   qdmi_test::QASM3_BELL_SAMPLING),
