@@ -88,7 +88,7 @@ repos:
     hooks:
       - id: ty-check
         name: ty check
-        entry: uvx ty==0.0.1a27 check .
+        entry: uv run --only-dev ty check
         language: system
         pass_filenames: false
         always_run: true
