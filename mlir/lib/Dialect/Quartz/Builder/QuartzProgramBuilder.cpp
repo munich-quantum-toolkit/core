@@ -301,6 +301,36 @@ DEFINE_TWO_TARGET_ONE_PARAMETER(RXXOp, rxx, theta)
 
 #undef DEFINE_TWO_TARGET_ONE_PARAMETER
 
+// TwoTargetTwoParameter
+
+#define DEFINE_TWO_TARGET_TWO_PARAMETER(OP_CLASS, OP_NAME, PARAM1, PARAM2)     \
+  QuartzProgramBuilder& QuartzProgramBuilder::OP_NAME(                         \
+      const std::variant<double, Value>&(PARAM1),                              \
+      const std::variant<double, Value>&(PARAM2), Value qubit0,                \
+      Value qubit1) {                                                          \
+    create<OP_CLASS>(loc, qubit0, qubit1, PARAM1, PARAM2);                     \
+    return *this;                                                              \
+  }                                                                            \
+  QuartzProgramBuilder& QuartzProgramBuilder::c##OP_NAME(                      \
+      const std::variant<double, Value>&(PARAM1),                              \
+      const std::variant<double, Value>&(PARAM2), Value control, Value qubit0, \
+      Value qubit1) {                                                          \
+    return mc##OP_NAME(PARAM1, PARAM2, {control}, qubit0, qubit1);             \
+  }                                                                            \
+  QuartzProgramBuilder& QuartzProgramBuilder::mc##OP_NAME(                     \
+      const std::variant<double, Value>&(PARAM1),                              \
+      const std::variant<double, Value>&(PARAM2), ValueRange controls,         \
+      Value qubit0, Value qubit1) {                                            \
+    create<CtrlOp>(loc, controls, [&](OpBuilder& b) {                          \
+      b.create<OP_CLASS>(loc, qubit0, qubit1, PARAM1, PARAM2);                 \
+    });                                                                        \
+    return *this;                                                              \
+  }
+
+DEFINE_TWO_TARGET_TWO_PARAMETER(XXPlusYYOp, xx_plus_yy, theta, beta)
+
+#undef DEFINE_TWO_TARGET_TWO_PARAMETER
+
 //===----------------------------------------------------------------------===//
 // Modifiers
 //===----------------------------------------------------------------------===//

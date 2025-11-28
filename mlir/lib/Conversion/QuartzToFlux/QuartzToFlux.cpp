@@ -387,6 +387,58 @@ LogicalResult convertTwoTargetOneParameter(QuartzOpType& op,
   return success();
 }
 
+/**
+ * @brief Converts a two-target, two-parameter Quartz operation to Flux
+ *
+ * @tparam FluxOpType The operation type of the Flux operation
+ * @tparam QuartzOpType The operation type of the Quartz operation
+ * @param op The Quartz operation instance to convert
+ * @param rewriter The pattern rewriter
+ * @param state The lowering state
+ * @return LogicalResult Success or failure of the conversion
+ */
+template <typename FluxOpType, typename QuartzOpType>
+LogicalResult convertTwoTargetTwoParameter(QuartzOpType& op,
+                                           ConversionPatternRewriter& rewriter,
+                                           LoweringState& state) {
+  auto& qubitMap = state.qubitMap;
+  const auto inCtrlOp = state.inCtrlOp;
+
+  // Get the latest Flux qubits
+  const auto quartzQubit0 = op->getOperand(0);
+  const auto quartzQubit1 = op->getOperand(1);
+  Value fluxQubit0 = nullptr;
+  Value fluxQubit1 = nullptr;
+  if (inCtrlOp == 0) {
+    fluxQubit0 = qubitMap[quartzQubit0];
+    fluxQubit1 = qubitMap[quartzQubit1];
+  } else {
+    const auto& targetsIn = state.targetsIn[inCtrlOp];
+    fluxQubit0 = targetsIn[0];
+    fluxQubit1 = targetsIn[1];
+  }
+
+  // Create the Flux operation (consumes input, produces output)
+  auto fluxOp =
+      rewriter.create<FluxOpType>(op.getLoc(), fluxQubit0, fluxQubit1,
+                                  op->getOperand(2), op->getOperand(3));
+
+  // Update state map
+  if (inCtrlOp == 0) {
+    qubitMap[quartzQubit0] = fluxOp.getQubit0Out();
+    qubitMap[quartzQubit1] = fluxOp.getQubit1Out();
+  } else {
+    state.targetsIn.erase(inCtrlOp);
+    const SmallVector<Value> targetsOut(
+        {fluxOp.getQubit0Out(), fluxOp.getQubit1Out()});
+    state.targetsOut.try_emplace(inCtrlOp, targetsOut);
+  }
+
+  rewriter.eraseOp(op);
+
+  return success();
+}
+
 } // namespace
 
 /**
@@ -843,6 +895,38 @@ DEFINE_TWO_TARGET_ONE_PARAMETER(RXXOp, rxx, theta)
 
 #undef DEFINE_TWO_TARGET_ONE_PARAMETER
 
+// TwoTargetTwoParameter
+
+#define DEFINE_TWO_TARGET_TWO_PARAMETER(OP_CLASS, OP_NAME, PARAM1, PARAM2)     \
+  /**                                                                          \
+   * @brief Converts quartz.OP_NAME to flux.OP_NAME                            \
+   *                                                                           \
+   * @par Example:                                                             \
+   * ```mlir                                                                   \
+   * quartz.OP_NAME(%PARAM1, %PARAM2) %q0, %q1 : !quartz.qubit, !quartz.qubit  \
+   * ```                                                                       \
+   * is converted to                                                           \
+   * ```mlir                                                                   \
+   * %q0_out, %q1_out = flux.OP_NAME(%PARAM1, %PARAM2) %q0_in, %q1_in :        \
+   * !flux.qubit, !flux.qubit -> !flux.qubit, !flux.qubit                      \
+   * ```                                                                       \
+   */                                                                          \
+  struct ConvertQuartz##OP_CLASS final                                         \
+      : StatefulOpConversionPattern<quartz::OP_CLASS> {                        \
+    using StatefulOpConversionPattern::StatefulOpConversionPattern;            \
+                                                                               \
+    LogicalResult                                                              \
+    matchAndRewrite(quartz::OP_CLASS op, OpAdaptor /*adaptor*/,                \
+                    ConversionPatternRewriter& rewriter) const override {      \
+      return convertTwoTargetTwoParameter<flux::OP_CLASS>(op, rewriter,        \
+                                                          getState());         \
+    }                                                                          \
+  };
+
+DEFINE_TWO_TARGET_TWO_PARAMETER(XXPlusYYOp, xx_plus_yy, theta, beta)
+
+#undef DEFINE_TWO_TARGET_TWO_PARAMETER
+
 /**
  * @brief Converts quartz.ctrl to flux.ctrl
  *
@@ -990,18 +1074,18 @@ struct QuartzToFlux final : impl::QuartzToFluxBase<QuartzToFlux> {
 
     // Register operation conversion patterns with state
     // tracking
-    patterns.add<ConvertQuartzAllocOp, ConvertQuartzDeallocOp,
-                 ConvertQuartzStaticOp, ConvertQuartzMeasureOp,
-                 ConvertQuartzResetOp, ConvertQuartzIdOp, ConvertQuartzXOp,
-                 ConvertQuartzYOp, ConvertQuartzZOp, ConvertQuartzHOp,
-                 ConvertQuartzSOp, ConvertQuartzSdgOp, ConvertQuartzTOp,
-                 ConvertQuartzTdgOp, ConvertQuartzSXOp, ConvertQuartzSXdgOp,
-                 ConvertQuartzRXOp, ConvertQuartzRYOp, ConvertQuartzRZOp,
-                 ConvertQuartzPOp, ConvertQuartzROp, ConvertQuartzU2Op,
-                 ConvertQuartzUOp, ConvertQuartzSWAPOp, ConvertQuartziSWAPOp,
-                 ConvertQuartzDCXOp, ConvertQuartzECROp, ConvertQuartzRXXOp,
-                 ConvertQuartzCtrlOp, ConvertQuartzYieldOp>(typeConverter,
-                                                            context, &state);
+    patterns.add<
+        ConvertQuartzAllocOp, ConvertQuartzDeallocOp, ConvertQuartzStaticOp,
+        ConvertQuartzMeasureOp, ConvertQuartzResetOp, ConvertQuartzIdOp,
+        ConvertQuartzXOp, ConvertQuartzYOp, ConvertQuartzZOp, ConvertQuartzHOp,
+        ConvertQuartzSOp, ConvertQuartzSdgOp, ConvertQuartzTOp,
+        ConvertQuartzTdgOp, ConvertQuartzSXOp, ConvertQuartzSXdgOp,
+        ConvertQuartzRXOp, ConvertQuartzRYOp, ConvertQuartzRZOp,
+        ConvertQuartzPOp, ConvertQuartzROp, ConvertQuartzU2Op, ConvertQuartzUOp,
+        ConvertQuartzSWAPOp, ConvertQuartziSWAPOp, ConvertQuartzDCXOp,
+        ConvertQuartzECROp, ConvertQuartzRXXOp, ConvertQuartzXXPlusYYOp,
+        ConvertQuartzCtrlOp, ConvertQuartzYieldOp>(typeConverter, context,
+                                                   &state);
 
     // Conversion of quartz types in func.func signatures
     // Note: This currently has limitations with signature

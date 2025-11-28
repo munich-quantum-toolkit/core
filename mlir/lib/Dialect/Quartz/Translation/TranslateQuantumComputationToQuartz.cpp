@@ -746,6 +746,32 @@ void addRXXOp(QuartzProgramBuilder& builder, const qc::Operation& operation,
 }
 
 /**
+ * @brief Adds an XXPlusYY operation
+ *
+ * @details
+ * Translate an XXPlusYY operation from the QuantumComputation to
+ * quartz.xx_plus_yy.
+ *
+ * @param builder The QuartzProgramBuilder used to create operations
+ * @param operation The XXPlusYY operation to translate
+ * @param qubits Flat vector of qubit values indexed by physical qubit index
+ */
+void addXXPlusYYOp(QuartzProgramBuilder& builder,
+                   const qc::Operation& operation,
+                   const llvm::SmallVector<Value>& qubits) {
+  const auto& theta = operation.getParameter()[0];
+  const auto& beta = operation.getParameter()[1];
+  const auto& target0 = qubits[operation.getTargets()[0]];
+  const auto& target1 = qubits[operation.getTargets()[1]];
+  if (const auto& posControls = getPosControls(operation, qubits);
+      posControls.empty()) {
+    builder.xx_plus_yy(theta, beta, target0, target1);
+  } else {
+    builder.mcxx_plus_yy(theta, beta, posControls, target0, target1);
+  }
+}
+
+/**
  * @brief Translates operations from QuantumComputation to Quartz dialect
  *
  * @details
@@ -844,6 +870,9 @@ translateOperations(QuartzProgramBuilder& builder,
       break;
     case qc::OpType::RXX:
       addRXXOp(builder, *operation, qubits);
+      break;
+    case qc::OpType::XXplusYY:
+      addXXPlusYYOp(builder, *operation, qubits);
       break;
     default:
       // Unsupported operation - skip for now

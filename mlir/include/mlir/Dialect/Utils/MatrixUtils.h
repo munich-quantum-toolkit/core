@@ -225,13 +225,31 @@ inline DenseElementsAttr getMatrixECR(MLIRContext* ctx) {
 inline DenseElementsAttr getMatrixRXX(MLIRContext* ctx, double theta) {
   const auto& complexType = ComplexType::get(Float64Type::get(ctx));
   const auto& type = RankedTensorType::get({4, 4}, complexType);
-  const std::complex<double> z = 0.0 + 0i;
-  const std::complex<double> c = std::cos(theta / 2.0) + 0i;
-  const std::complex<double> s = -1i * std::sin(theta / 2.0);
-  const auto matrix = {c, z, z, s,  // row 0
-                       z, c, s, z,  // row 1
-                       z, s, c, z,  // row 2
-                       s, z, z, c}; // row 3
+  const std::complex<double> m0 = 0.0 + 0i;
+  const std::complex<double> mc = std::cos(theta / 2.0) + 0i;
+  const std::complex<double> ms = -1i * std::sin(theta / 2.0);
+  const auto matrix = {mc, m0, m0, ms,  // row 0
+                       m0, mc, ms, m0,  // row 1
+                       m0, ms, mc, m0,  // row 2
+                       ms, m0, m0, mc}; // row 3
+  return DenseElementsAttr::get(type, matrix);
+}
+
+inline DenseElementsAttr getMatrixXXPlusYY(MLIRContext* ctx, double theta,
+                                           double beta) {
+  const auto& complexType = ComplexType::get(Float64Type::get(ctx));
+  const auto& type = RankedTensorType::get({4, 4}, complexType);
+  const std::complex<double> m0 = 0.0 + 0i;
+  const std::complex<double> m1 = 1.0 + 0i;
+  const std::complex<double> mc = std::cos(theta / 2.0) + 0i;
+  const std::complex<double> msp =
+      -1i * std::sin(theta / 2.0) * std::exp(1i * beta);
+  const std::complex<double> msm =
+      -1i * std::sin(theta / 2.0) * std::exp(-1i * beta);
+  const auto matrix = {m1, m0,  m0,  m0,  // row 0
+                       m0, mc,  msm, m0,  // row 1
+                       m0, msp, mc,  m0,  // row 2
+                       m0, m0,  m0,  m1}; // row 3
   return DenseElementsAttr::get(type, matrix);
 }
 

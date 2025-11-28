@@ -571,7 +571,8 @@ public:
    * @brief Apply a controlled QIR_NAME operation                              \
    *                                                                           \
    * @param control Control qubit                                              \
-   * @param target Target qubit                                                \
+   * @param target0 Target qubit                                               \
+   * @param target1 Target qubit                                               \
    * @return Reference to this builder for method chaining                     \
    *                                                                           \
    * @par Example:                                                             \
@@ -583,12 +584,13 @@ public:
    * !llvm.ptr) -> ()                                                          \
    * ```                                                                       \
    */                                                                          \
-  QIRProgramBuilder& c##OP_NAME(Value control, Value qubit0, Value qubit1);    \
+  QIRProgramBuilder& c##OP_NAME(Value control, Value target0, Value target1);  \
   /**                                                                          \
    * @brief Apply a multi-controlled QIR_NAME operation                        \
    *                                                                           \
    * @param controls Control qubits                                            \
-   * @param target Target qubit                                                \
+   * @param target0 Target qubit                                               \
+   * @param target1 Target qubit                                               \
    * @return Reference to this builder for method chaining                     \
    *                                                                           \
    * @par Example:                                                             \
@@ -600,8 +602,8 @@ public:
    * (!llvm.ptr, !llvm.ptr, !llvm.ptr) -> ()                                   \
    * ```                                                                       \
    */                                                                          \
-  QIRProgramBuilder& mc##OP_NAME(ValueRange controls, Value qubit0,            \
-                                 Value qubit1);
+  QIRProgramBuilder& mc##OP_NAME(ValueRange controls, Value target0,           \
+                                 Value target1);
 
   DECLARE_TWO_TARGET_ZERO_PARAMETER(swap, swap)
   DECLARE_TWO_TARGET_ZERO_PARAMETER(iswap, iswap)
@@ -637,7 +639,8 @@ public:
    *                                                                           \
    * @param PARAM Rotation angle in radians                                    \
    * @param control Control qubit                                              \
-   * @param target Target qubit                                                \
+   * @param target0 Target qubit                                               \
+   * @param target1 Target qubit                                               \
    * @return Reference to this builder for method chaining                     \
    *                                                                           \
    * @par Example:                                                             \
@@ -650,13 +653,14 @@ public:
    * ```                                                                       \
    */                                                                          \
   QIRProgramBuilder& c##OP_NAME(const std::variant<double, Value>&(PARAM),     \
-                                Value control, Value qubit0, Value qubit1);    \
+                                Value control, Value target0, Value target1);  \
   /**                                                                          \
    * @brief Apply a multi-controlled QIR_NAME operation                        \
    *                                                                           \
    * @param PARAM Rotation angle in radians                                    \
    * @param controls Control qubits                                            \
-   * @param target Target qubit                                                \
+   * @param target0 Target qubit                                               \
+   * @param target1 Target qubit                                               \
    * @return Reference to this builder for method chaining                     \
    *                                                                           \
    * @par Example:                                                             \
@@ -665,17 +669,91 @@ public:
    * ```                                                                       \
    * ```mlir                                                                   \
    * llvm.call @__quantum__qis__cc##QIR_NAME##__body(%q0, %q1, %q2, %q3,       \
-   * %PARAM) :                                                                 \
-   * (!llvm.ptr, !llvm.ptr, !llvm.ptr, !llvm.ptr, f64) -> ()                   \
+   * %PARAM) : (!llvm.ptr, !llvm.ptr, !llvm.ptr, !llvm.ptr, f64) -> ()         \
    * ```                                                                       \
    */                                                                          \
   QIRProgramBuilder& mc##OP_NAME(const std::variant<double, Value>&(PARAM),    \
-                                 ValueRange controls, Value qubit0,            \
-                                 Value qubit1);
+                                 ValueRange controls, Value target0,           \
+                                 Value target1);
 
   DECLARE_TWO_TARGET_ONE_PARAMETER(rxx, rxx, theta)
 
 #undef DECLARE_TWO_TARGET_ONE_PARAMETER
+
+  // TwoTargetTwoParameter
+
+#define DECLARE_TWO_TARGET_TWO_PARAMETER(OP_NAME, QIR_NAME, PARAM1, PARAM2)    \
+  /**                                                                          \
+   * @brief Apply a QIR QIR_NAME operation                                     \
+   *                                                                           \
+   * @param PARAM1 Rotation angle in radians                                   \
+   * @param PARAM2 Rotation angle in radians                                   \
+   * @param qubit0 Target qubit                                                \
+   * @param qubit1 Target qubit                                                \
+   * @return Reference to this builder for method chaining                     \
+   *                                                                           \
+   * @par Example:                                                             \
+   * ```c++                                                                    \
+   * builder.OP_NAME(PARAM1, PARAM2, q0, q1);                                  \
+   * ```                                                                       \
+   * ```mlir                                                                   \
+   * llvm.call @__quantum__qis__##QIR_NAME##__body(%q0, %q1, %PARAM1, %PARAM2) \
+   * : (!llvm.ptr, !llvm.ptr, f64, f64) -> ()                                  \
+   * ```                                                                       \
+   */                                                                          \
+  QIRProgramBuilder& OP_NAME(const std::variant<double, Value>&(PARAM1),       \
+                             const std::variant<double, Value>&(PARAM2),       \
+                             Value qubit0, Value qubit1);                      \
+  /**                                                                          \
+   * @brief Apply a controlled QIR_NAME operation                              \
+   *                                                                           \
+   * @param PARAM1 Rotation angle in radians                                   \
+   * @param PARAM2 Rotation angle in radians                                   \
+   * @param control Control qubit                                              \
+   * @param target0 Target qubit                                               \
+   * @param target1 Target qubit                                               \
+   * @return Reference to this builder for method chaining                     \
+   *                                                                           \
+   * @par Example:                                                             \
+   * ```c++                                                                    \
+   * builder.c##OP_NAME(PARAM1, PARAM2, q0, q1, q2);                           \
+   * ```                                                                       \
+   * ```mlir                                                                   \
+   * llvm.call @__quantum__qis__c##QIR_NAME##__body(%q0, %q1, %q2, %PARAM1,    \
+   * %PARAM2) : (!llvm.ptr, !llvm.ptr, !llvm.ptr, f64, f64) -> ()              \
+   * ```                                                                       \
+   */                                                                          \
+  QIRProgramBuilder& c##OP_NAME(const std::variant<double, Value>&(PARAM1),    \
+                                const std::variant<double, Value>&(PARAM2),    \
+                                Value control, Value target0, Value target1);  \
+  /**                                                                          \
+   * @brief Apply a multi-controlled QIR_NAME operation                        \
+   *                                                                           \
+   * @param PARAM1 Rotation angle in radians                                   \
+   * @param PARAM2 Rotation angle in radians                                   \
+   * @param controls Control qubits                                            \
+   * @param target0 Target qubit                                               \
+   * @param target1 Target qubit                                               \
+   * @return Reference to this builder for method chaining                     \
+   *                                                                           \
+   * @par Example:                                                             \
+   * ```c++                                                                    \
+   * builder.mc##OP_NAME(PARAM1, PARAM2, {q0, q1}, q2, q3);                    \
+   * ```                                                                       \
+   * ```mlir                                                                   \
+   * llvm.call @__quantum__qis__cc##QIR_NAME##__body(%q0, %q1, %q2, %q3,       \
+   * %PARAM1, %PARAM2) : (!llvm.ptr, !llvm.ptr, !llvm.ptr, !llvm.ptr, f64,     \
+   * f64) -> ()                                                                \
+   * ```                                                                       \
+   */                                                                          \
+  QIRProgramBuilder& mc##OP_NAME(const std::variant<double, Value>&(PARAM1),   \
+                                 const std::variant<double, Value>&(PARAM2),   \
+                                 ValueRange controls, Value target0,           \
+                                 Value target1);
+
+  DECLARE_TWO_TARGET_TWO_PARAMETER(xx_plus_yy, xx_plus_yy, theta, beta)
+
+#undef DECLARE_TWO_TARGET_TWO_PARAMETER
 
   //===--------------------------------------------------------------------===//
   // Finalization
@@ -804,6 +882,22 @@ private:
                                    const ValueRange controls,
                                    const Value target0, const Value target1,
                                    StringRef fnName);
+
+  /**
+   * @brief Helper to create a two-target, two-parameter QIR operation
+   *
+   * @param parameter1 Operation parameter
+   * @param parameter2 Operation parameter
+   * @param controls Control qubits
+   * @param target0 Target qubit
+   * @param target1 Target qubit
+   * @param fnName Name of the QIR function to call
+   */
+  void
+  createTwoTargetTwoParameter(const std::variant<double, Value>& parameter1,
+                              const std::variant<double, Value>& parameter2,
+                              const ValueRange controls, const Value target0,
+                              const Value target1, StringRef fnName);
 
   /**
    * @brief Generate array-based output recording in the output block

@@ -487,6 +487,71 @@ convertTwoTargetOneParameter(QuartzOpType& op, QuartzOpAdaptorType& adaptor,
   return success();
 }
 
+/**
+ * @brief Converts a two-target, two-parameter Quartz operation to QIR
+ *
+ * @tparam QuartzOpType The operation type of the Quartz operation
+ * @tparam QuartzOpAdaptorType The OpAdaptor type of the Quartz operation
+ * @param op The Quartz operation instance to convert
+ * @param adaptor The OpAdaptor of the Quartz operation
+ * @param rewriter The pattern rewriter
+ * @param ctx The MLIR context
+ * @param state The lowering state
+ * @param fnName The name of the QIR function to call
+ * @return LogicalResult Success or failure of the conversion
+ */
+template <typename QuartzOpType, typename QuartzOpAdaptorType>
+LogicalResult
+convertTwoTargetTwoParameter(QuartzOpType& op, QuartzOpAdaptorType& adaptor,
+                             ConversionPatternRewriter& rewriter,
+                             MLIRContext* ctx, LoweringState& state,
+                             StringRef fnName) {
+  // Query state for modifier information
+  const auto inCtrlOp = state.inCtrlOp;
+  const SmallVector<Value> posCtrls =
+      inCtrlOp != 0 ? state.posCtrls[inCtrlOp] : SmallVector<Value>{};
+  const size_t numCtrls = posCtrls.size();
+
+  // Define argument types
+  SmallVector<Type> argumentTypes;
+  argumentTypes.reserve(numCtrls + 4);
+  const auto ptrType = LLVM::LLVMPointerType::get(ctx);
+  const auto floatType = Float64Type::get(ctx);
+  // Add control pointers
+  for (size_t i = 0; i < numCtrls; ++i) {
+    argumentTypes.push_back(ptrType);
+  }
+  // Add target pointers
+  argumentTypes.push_back(ptrType);
+  argumentTypes.push_back(ptrType);
+  // Add parameter types
+  argumentTypes.push_back(floatType);
+  argumentTypes.push_back(floatType);
+
+  // Define function signature
+  const auto fnSignature =
+      LLVM::LLVMFunctionType::get(LLVM::LLVMVoidType::get(ctx), argumentTypes);
+
+  // Declare QIR function
+  const auto fnDecl =
+      getOrCreateFunctionDeclaration(rewriter, op, fnName, fnSignature);
+
+  SmallVector<Value> operands;
+  operands.reserve(numCtrls + 4);
+  operands.append(posCtrls.begin(), posCtrls.end());
+  operands.append(adaptor.getOperands().begin(), adaptor.getOperands().end());
+
+  // Clean up modifier information
+  if (inCtrlOp != 0) {
+    state.posCtrls.erase(inCtrlOp);
+    state.inCtrlOp--;
+  }
+
+  // Replace operation with CallOp
+  rewriter.replaceOpWithNewOp<LLVM::CallOp>(op, fnDecl, operands);
+  return success();
+}
+
 } // namespace
 
 /**
@@ -797,7 +862,7 @@ struct ConvertQuartzResetQIR final : OpConversionPattern<ResetOp> {
 
 // OneTargetOneParameter
 
-#define DEFINE_ONE_TARGET_ZERO_PARAMETER(OP_CLASS, OP_NAME_SMALL, OP_NAME_BIG, \
+#define DEFINE_ONE_TARGET_ZERO_PARAMETER(OP_CLASS, OP_NAME_BIG, OP_NAME_SMALL, \
                                          QIR_NAME)                             \
   /**                                                                          \
    * @brief Converts quartz.OP_NAME_SMALL operation to QIR QIR_NAME            \
@@ -846,23 +911,23 @@ struct ConvertQuartzResetQIR final : OpConversionPattern<ResetOp> {
     }                                                                          \
   };
 
-DEFINE_ONE_TARGET_ZERO_PARAMETER(IdOp, id, ID, i)
-DEFINE_ONE_TARGET_ZERO_PARAMETER(XOp, x, X, x)
-DEFINE_ONE_TARGET_ZERO_PARAMETER(YOp, y, Y, y)
-DEFINE_ONE_TARGET_ZERO_PARAMETER(ZOp, z, Z, z)
-DEFINE_ONE_TARGET_ZERO_PARAMETER(HOp, h, H, h)
-DEFINE_ONE_TARGET_ZERO_PARAMETER(SOp, s, S, s)
-DEFINE_ONE_TARGET_ZERO_PARAMETER(SdgOp, sdg, SDG, sdg)
-DEFINE_ONE_TARGET_ZERO_PARAMETER(TOp, t, T, t)
-DEFINE_ONE_TARGET_ZERO_PARAMETER(TdgOp, tdg, TDG, tdg)
-DEFINE_ONE_TARGET_ZERO_PARAMETER(SXOp, sx, SX, sx)
-DEFINE_ONE_TARGET_ZERO_PARAMETER(SXdgOp, sxdg, SXDG, sxdg)
+DEFINE_ONE_TARGET_ZERO_PARAMETER(IdOp, ID, id, i)
+DEFINE_ONE_TARGET_ZERO_PARAMETER(XOp, X, x, x)
+DEFINE_ONE_TARGET_ZERO_PARAMETER(YOp, Y, y, y)
+DEFINE_ONE_TARGET_ZERO_PARAMETER(ZOp, Z, z, z)
+DEFINE_ONE_TARGET_ZERO_PARAMETER(HOp, H, h, h)
+DEFINE_ONE_TARGET_ZERO_PARAMETER(SOp, S, s, s)
+DEFINE_ONE_TARGET_ZERO_PARAMETER(SdgOp, SDG, sdg, sdg)
+DEFINE_ONE_TARGET_ZERO_PARAMETER(TOp, T, t, t)
+DEFINE_ONE_TARGET_ZERO_PARAMETER(TdgOp, TDG, tdg, tdg)
+DEFINE_ONE_TARGET_ZERO_PARAMETER(SXOp, SX, sx, sx)
+DEFINE_ONE_TARGET_ZERO_PARAMETER(SXdgOp, SXDG, sxdg, sxdg)
 
 #undef DEFINE_ONE_TARGET_ZERO_PARAMETER
 
 // OneTargetOneParameter
 
-#define DEFINE_ONE_TARGET_ONE_PARAMETER(OP_CLASS, OP_NAME_SMALL, OP_NAME_BIG,  \
+#define DEFINE_ONE_TARGET_ONE_PARAMETER(OP_CLASS, OP_NAME_BIG, OP_NAME_SMALL,  \
                                         QIR_NAME, PARAM)                       \
   /**                                                                          \
    * @brief Converts quartz.OP_NAME_SMALL operation to QIR QIR_NAME            \
@@ -912,16 +977,16 @@ DEFINE_ONE_TARGET_ZERO_PARAMETER(SXdgOp, sxdg, SXDG, sxdg)
     }                                                                          \
   };
 
-DEFINE_ONE_TARGET_ONE_PARAMETER(RXOp, rx, RX, rx, theta)
-DEFINE_ONE_TARGET_ONE_PARAMETER(RYOp, ry, RY, ry, theta)
-DEFINE_ONE_TARGET_ONE_PARAMETER(RZOp, rz, RZ, rz, theta)
-DEFINE_ONE_TARGET_ONE_PARAMETER(POp, p, P, p, theta)
+DEFINE_ONE_TARGET_ONE_PARAMETER(RXOp, RX, rx, rx, theta)
+DEFINE_ONE_TARGET_ONE_PARAMETER(RYOp, RY, ry, ry, theta)
+DEFINE_ONE_TARGET_ONE_PARAMETER(RZOp, RZ, rz, rz, theta)
+DEFINE_ONE_TARGET_ONE_PARAMETER(POp, P, p, p, theta)
 
 #undef DEFINE_ONE_TARGET_ONE_PARAMETER
 
 // OneTargetTwoParameter
 
-#define DEFINE_ONE_TARGET_TWO_PARAMETER(OP_CLASS, OP_NAME_SMALL, OP_NAME_BIG,  \
+#define DEFINE_ONE_TARGET_TWO_PARAMETER(OP_CLASS, OP_NAME_BIG, OP_NAME_SMALL,  \
                                         QIR_NAME, PARAM1, PARAM2)              \
   /**                                                                          \
    * @brief Converts quartz.OP_NAME_SMALL operation to QIR QIR_NAME            \
@@ -971,15 +1036,15 @@ DEFINE_ONE_TARGET_ONE_PARAMETER(POp, p, P, p, theta)
     }                                                                          \
   };
 
-DEFINE_ONE_TARGET_TWO_PARAMETER(ROp, r, R, r, theta, phi)
-DEFINE_ONE_TARGET_TWO_PARAMETER(U2Op, u2, U2, u2, phi, lambda)
+DEFINE_ONE_TARGET_TWO_PARAMETER(ROp, R, r, r, theta, phi)
+DEFINE_ONE_TARGET_TWO_PARAMETER(U2Op, U2, u2, u2, phi, lambda)
 
 #undef DEFINE_ONE_TARGET_TWO_PARAMETER
 
 // OneTargetThreeParameter
 
-#define DEFINE_ONE_TARGET_THREE_PARAMETER(OP_CLASS, OP_NAME_SMALL,             \
-                                          OP_NAME_BIG, QIR_NAME)               \
+#define DEFINE_ONE_TARGET_THREE_PARAMETER(OP_CLASS, OP_NAME_BIG,               \
+                                          OP_NAME_SMALL, QIR_NAME)             \
   /**                                                                          \
    * @brief Converts quartz.OP_NAME_SMALL operation to QIR QIR_NAME            \
    *                                                                           \
@@ -1028,13 +1093,13 @@ DEFINE_ONE_TARGET_TWO_PARAMETER(U2Op, u2, U2, u2, phi, lambda)
     }                                                                          \
   };
 
-DEFINE_ONE_TARGET_THREE_PARAMETER(UOp, u, U, u3)
+DEFINE_ONE_TARGET_THREE_PARAMETER(UOp, U, u, u3)
 
 #undef DEFINE_ONE_TARGET_THREE_PARAMETER
 
 // TwoTargetZeroParameter
 
-#define DEFINE_TWO_TARGET_ZERO_PARAMETER(OP_CLASS, OP_NAME_SMALL, OP_NAME_BIG, \
+#define DEFINE_TWO_TARGET_ZERO_PARAMETER(OP_CLASS, OP_NAME_BIG, OP_NAME_SMALL, \
                                          QIR_NAME)                             \
   /**                                                                          \
    * @brief Converts quartz.OP_NAME_SMALL operation to QIR QIR_NAME            \
@@ -1084,16 +1149,16 @@ DEFINE_ONE_TARGET_THREE_PARAMETER(UOp, u, U, u3)
     }                                                                          \
   };
 
-DEFINE_TWO_TARGET_ZERO_PARAMETER(SWAPOp, swap, SWAP, swap)
-DEFINE_TWO_TARGET_ZERO_PARAMETER(iSWAPOp, iswap, ISWAP, iswap)
-DEFINE_TWO_TARGET_ZERO_PARAMETER(DCXOp, dcx, DCX, dcx)
-DEFINE_TWO_TARGET_ZERO_PARAMETER(ECROp, ecr, ECR, ecr)
+DEFINE_TWO_TARGET_ZERO_PARAMETER(SWAPOp, SWAP, swap, swap)
+DEFINE_TWO_TARGET_ZERO_PARAMETER(iSWAPOp, ISWAP, iswap, iswap)
+DEFINE_TWO_TARGET_ZERO_PARAMETER(DCXOp, DCX, dcx, dcx)
+DEFINE_TWO_TARGET_ZERO_PARAMETER(ECROp, ECR, ecr, ecr)
 
 #undef DEFINE_TWO_TARGET_ZERO_PARAMETER
 
 // TwoTargetOneParameter
 
-#define DEFINE_TWO_TARGET_ONE_PARAMETER(OP_CLASS, OP_NAME_SMALL, OP_NAME_BIG,  \
+#define DEFINE_TWO_TARGET_ONE_PARAMETER(OP_CLASS, OP_NAME_BIG, OP_NAME_SMALL,  \
                                         QIR_NAME, PARAM)                       \
   /**                                                                          \
    * @brief Converts quartz.OP_NAME_SMALL operation to QIR QIR_NAME            \
@@ -1143,9 +1208,67 @@ DEFINE_TWO_TARGET_ZERO_PARAMETER(ECROp, ecr, ECR, ecr)
     }                                                                          \
   };
 
-DEFINE_TWO_TARGET_ONE_PARAMETER(RXXOp, rxx, RXX, rxx, theta)
+DEFINE_TWO_TARGET_ONE_PARAMETER(RXXOp, RXX, rxx, rxx, theta)
 
 #undef DEFINE_TWO_TARGET_ONE_PARAMETER
+
+// TwoTargetTwoParameter
+
+#define DEFINE_TWO_TARGET_TWO_PARAMETER(OP_CLASS, OP_NAME_BIG, OP_NAME_SMALL,  \
+                                        QIR_NAME, PARAM1, PARAM2)              \
+  /**                                                                          \
+   * @brief Converts quartz.OP_NAME_SMALL operation to QIR QIR_NAME            \
+   *                                                                           \
+   * @par Example:                                                             \
+   * ```mlir                                                                   \
+   * quartz.OP_NAME_SMALL(%PARAM1, %PARAM2) %q1, %q2 : !quartz.qubit,          \
+   * !quartz.qubit                                                             \
+   * ```                                                                       \
+   * is converted to                                                           \
+   * ```mlir                                                                   \
+   * llvm.call @__quantum__qis__QIR_NAME__body(%q1, %q2, %PARAM1, %PARAM2) :   \
+   * (!llvm.ptr, !llvm.ptr, f64, f64) -> ()                                    \
+   * ```                                                                       \
+   */                                                                          \
+  struct ConvertQuartz##OP_CLASS##QIR final                                    \
+      : StatefulOpConversionPattern<OP_CLASS> {                                \
+    using StatefulOpConversionPattern::StatefulOpConversionPattern;            \
+                                                                               \
+    LogicalResult                                                              \
+    matchAndRewrite(OP_CLASS op, OpAdaptor adaptor,                            \
+                    ConversionPatternRewriter& rewriter) const override {      \
+      auto& state = getState();                                                \
+                                                                               \
+      /* Query state for modifier information */                               \
+      const auto inCtrlOp = state.inCtrlOp;                                    \
+      const size_t numCtrls =                                                  \
+          inCtrlOp != 0 ? state.posCtrls[inCtrlOp].size() : 0;                 \
+                                                                               \
+      /* Define function name */                                               \
+      StringRef fnName;                                                        \
+      if (inCtrlOp == 0) {                                                     \
+        fnName = QIR_##OP_NAME_BIG;                                            \
+      } else {                                                                 \
+        if (numCtrls == 1) {                                                   \
+          fnName = QIR_C##OP_NAME_BIG;                                         \
+        } else if (numCtrls == 2) {                                            \
+          fnName = QIR_CC##OP_NAME_BIG;                                        \
+        } else if (numCtrls == 3) {                                            \
+          fnName = QIR_CCC##OP_NAME_BIG;                                       \
+        } else {                                                               \
+          return failure();                                                    \
+        }                                                                      \
+      }                                                                        \
+                                                                               \
+      return convertTwoTargetTwoParameter(op, adaptor, rewriter, getContext(), \
+                                          state, fnName);                      \
+    }                                                                          \
+  };
+
+DEFINE_TWO_TARGET_TWO_PARAMETER(XXPlusYYOp, XXPLUSYY, xx_plus_yy, xx_plus_yy,
+                                theta, beta)
+
+#undef DEFINE_TWO_TARGET_TWO_PARAMETER
 
 /**
  * @brief Inlines quartz.ctrl region removes the operation
@@ -1536,6 +1659,8 @@ struct QuartzToQIR final : impl::QuartzToQIRBase<QuartzToQIR> {
       quartzPatterns.add<ConvertQuartzDCXOpQIR>(typeConverter, ctx, &state);
       quartzPatterns.add<ConvertQuartzECROpQIR>(typeConverter, ctx, &state);
       quartzPatterns.add<ConvertQuartzRXXOpQIR>(typeConverter, ctx, &state);
+      quartzPatterns.add<ConvertQuartzXXPlusYYOpQIR>(typeConverter, ctx,
+                                                     &state);
       quartzPatterns.add<ConvertQuartzCtrlQIR>(typeConverter, ctx, &state);
       quartzPatterns.add<ConvertQuartzYieldQIR>(typeConverter, ctx, &state);
       // Gate operations will be added here as the dialect expands
