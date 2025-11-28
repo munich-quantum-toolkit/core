@@ -324,20 +324,19 @@ protected:
   TwoQubitBasisDecomposer(
       Gate basisGate, fp basisFidelity,
       const decomposition::TwoQubitWeylDecomposition& basisDecomposer,
-      bool isSuperControlled, const matrix2x2& u0l, const matrix2x2& u0r, const matrix2x2& u1l,
-      const matrix2x2& u1ra, const matrix2x2& u1rb, const matrix2x2& u2la, const matrix2x2& u2lb,
-      const matrix2x2& u2ra, const matrix2x2& u2rb, const matrix2x2& u3l, const matrix2x2& u3r,
-      const matrix2x2& q0l, const matrix2x2& q0r, const matrix2x2& q1la, const matrix2x2& q1lb,
-      const matrix2x2& q1ra, const matrix2x2& q1rb, const matrix2x2& q2l, const matrix2x2& q2r)
+      bool isSuperControlled, const matrix2x2& u0l, const matrix2x2& u0r,
+      const matrix2x2& u1l, const matrix2x2& u1ra, const matrix2x2& u1rb,
+      const matrix2x2& u2la, const matrix2x2& u2lb, const matrix2x2& u2ra,
+      const matrix2x2& u2rb, const matrix2x2& u3l, const matrix2x2& u3r,
+      const matrix2x2& q0l, const matrix2x2& q0r, const matrix2x2& q1la,
+      const matrix2x2& q1lb, const matrix2x2& q1ra, const matrix2x2& q1rb,
+      const matrix2x2& q2l, const matrix2x2& q2r)
       : basisGate{std::move(basisGate)}, basisFidelity{basisFidelity},
-        basisDecomposer{basisDecomposer},
-        isSuperControlled{isSuperControlled}, u0l{u0l},
-        u0r{u0r}, u1l{u1l}, u1ra{u1ra},
-        u1rb{u1rb}, u2la{u2la}, u2lb{u2lb},
-        u2ra{u2ra}, u2rb{u2rb}, u3l{u3l},
-        u3r{u3r}, q0l{q0l}, q0r{q0r},
-        q1la{q1la}, q1lb{q1lb}, q1ra{q1ra},
-        q1rb{q1rb}, q2l{q2l}, q2r{q2r} {}
+        basisDecomposer{basisDecomposer}, isSuperControlled{isSuperControlled},
+        u0l{u0l}, u0r{u0r}, u1l{u1l}, u1ra{u1ra}, u1rb{u1rb}, u2la{u2la},
+        u2lb{u2lb}, u2ra{u2ra}, u2rb{u2rb}, u3l{u3l}, u3r{u3r}, q0l{q0l},
+        q0r{q0r}, q1la{q1la}, q1lb{q1lb}, q1ra{q1ra}, q1rb{q1rb}, q2l{q2l},
+        q2r{q2r} {}
   // NOLINTEND(modernize-pass-by-value)
 
   /**
