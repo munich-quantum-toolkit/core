@@ -676,6 +676,8 @@ DEFINE_ONE_TARGET_TWO_PARAMETER(U2Op, u2, phi, lambda)
 
 DEFINE_TWO_TARGET_ZERO_PARAMETER(SWAPOp, swap)
 DEFINE_TWO_TARGET_ZERO_PARAMETER(iSWAPOp, iswap)
+DEFINE_TWO_TARGET_ZERO_PARAMETER(DCXOp, dcx)
+DEFINE_TWO_TARGET_ZERO_PARAMETER(ECROp, ecr)
 
 #undef DEFINE_TWO_TARGET_ZERO_PARAMETER
 
@@ -834,8 +836,9 @@ struct QuartzToFlux final : impl::QuartzToFluxBase<QuartzToFlux> {
                  ConvertQuartzTdgOp, ConvertQuartzSXOp, ConvertQuartzSXdgOp,
                  ConvertQuartzRXOp, ConvertQuartzRYOp, ConvertQuartzRZOp,
                  ConvertQuartzPOp, ConvertQuartzROp, ConvertQuartzU2Op,
-                 ConvertQuartzSWAPOp, ConvertQuartziSWAPOp, ConvertQuartzCtrlOp,
-                 ConvertQuartzYieldOp>(typeConverter, context, &state);
+                 ConvertQuartzSWAPOp, ConvertQuartziSWAPOp, ConvertQuartzDCXOp,
+                 ConvertQuartzECROp, ConvertQuartzCtrlOp, ConvertQuartzYieldOp>(
+        typeConverter, context, &state);
 
     // Conversion of quartz types in func.func signatures
     // Note: This currently has limitations with signature

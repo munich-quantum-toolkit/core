@@ -722,6 +722,50 @@ def iSWAPOp : FluxOp<"iswap", traits = [UnitaryOpInterface, TwoTargetZeroParamet
     }];
 }
 
+def DCXOp : FluxOp<"dcx", traits = [UnitaryOpInterface, TwoTargetZeroParameter]> {
+    let summary = "Apply a DCX gate to two qubits";
+    let description = [{
+        Applies a DCX gate to two qubits and returns the transformed qubits.
+
+        Example:
+        ```mlir
+        %q0_out, %q1_out = flux.dcx %q0_in, %q1_in : !flux.qubit, !flux.qubit -> !flux.qubit, !flux.qubit
+        ```
+    }];
+
+    let arguments = (ins Arg<QubitType, "the first target qubit", [MemRead]>:$qubit0_in,
+                     Arg<QubitType, "the second target qubit", [MemRead]>:$qubit1_in);
+    let results = (outs QubitType:$qubit0_out, QubitType:$qubit1_out);
+    let assemblyFormat = "$qubit0_in `,` $qubit1_in attr-dict `:` type($qubit0_in) `,` type($qubit1_in) `->` type($qubit0_out) `,` type($qubit1_out)";
+
+    let extraClassDeclaration = [{
+        DenseElementsAttr tryGetStaticMatrix();
+        static StringRef getBaseSymbol() { return "dcx"; }
+    }];
+}
+
+def ECROp : FluxOp<"ecr", traits = [UnitaryOpInterface, TwoTargetZeroParameter]> {
+    let summary = "Apply an ECR gate to two qubits";
+    let description = [{
+        Applies an ECR gate to two qubits and returns the transformed qubits.
+
+        Example:
+        ```mlir
+        %q0_out, %q1_out = flux.ecr %q0_in, %q1_in : !flux.qubit, !flux.qubit -> !flux.qubit, !flux.qubit
+        ```
+    }];
+
+    let arguments = (ins Arg<QubitType, "the first target qubit", [MemRead]>:$qubit0_in,
+                     Arg<QubitType, "the second target qubit", [MemRead]>:$qubit1_in);
+    let results = (outs QubitType:$qubit0_out, QubitType:$qubit1_out);
+    let assemblyFormat = "$qubit0_in `,` $qubit1_in attr-dict `:` type($qubit0_in) `,` type($qubit1_in) `->` type($qubit0_out) `,` type($qubit1_out)";
+
+    let extraClassDeclaration = [{
+        DenseElementsAttr tryGetStaticMatrix();
+        static StringRef getBaseSymbol() { return "ecr"; }
+    }];
+}
+
 //===----------------------------------------------------------------------===//
 // Modifiers
 //===----------------------------------------------------------------------===//

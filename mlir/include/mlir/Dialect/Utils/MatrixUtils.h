@@ -186,6 +186,29 @@ inline DenseElementsAttr getMatrixiSWAP(MLIRContext* ctx) {
   return DenseElementsAttr::get(type, matrix);
 }
 
+inline DenseElementsAttr getMatrixDCX(MLIRContext* ctx) {
+  const auto& complexType = ComplexType::get(Float64Type::get(ctx));
+  const auto& type = RankedTensorType::get({4, 4}, complexType);
+  const auto matrix = {1.0 + 0i, 0.0 + 0i, 0.0 + 0i, 0.0 + 0i,  // row 0
+                       0.0 + 0i, 0.0 + 0i, 1.0 + 0i, 0.0 + 0i,  // row 1
+                       0.0 + 0i, 0.0 + 0i, 0.0 + 0i, 1.0 + 0i,  // row 2
+                       0.0 + 0i, 1.0 + 0i, 0.0 + 0i, 0.0 + 0i}; // row 3
+  return DenseElementsAttr::get(type, matrix);
+}
+
+inline DenseElementsAttr getMatrixECR(MLIRContext* ctx) {
+  const auto& complexType = ComplexType::get(Float64Type::get(ctx));
+  const auto& type = RankedTensorType::get({4, 4}, complexType);
+  const std::complex<double> m0 = 0.0 + 0i;
+  const std::complex<double> m1 = 1.0 / std::sqrt(2) + 0i;
+  const std::complex<double> mi = 0.0 + 1i / std::sqrt(2);
+  const auto matrix = {m0,  m0,  m1, mi,  // row 0
+                       m0,  m0,  mi, m1,  // row 1
+                       m1,  -mi, m0, m0,  // row 2
+                       -mi, m1,  m0, m0}; // row 3
+  return DenseElementsAttr::get(type, matrix);
+}
+
 inline DenseElementsAttr getMatrixCtrl(mlir::MLIRContext* ctx,
                                        size_t numControls,
                                        mlir::DenseElementsAttr target) {

@@ -476,6 +476,8 @@ DEFINE_ONE_TARGET_TWO_PARAMETER(U2Op, u2, phi, lambda)
 
 DEFINE_TWO_TARGET_ZERO_PARAMETER(SWAPOp, swap)
 DEFINE_TWO_TARGET_ZERO_PARAMETER(iSWAPOp, iswap)
+DEFINE_TWO_TARGET_ZERO_PARAMETER(DCXOp, dcx)
+DEFINE_TWO_TARGET_ZERO_PARAMETER(ECROp, ecr)
 
 #undef DEFINE_TWO_TARGET_ZERO_PARAMETER
 
@@ -587,15 +589,16 @@ struct FluxToQuartz final : impl::FluxToQuartzBase<FluxToQuartz> {
 
     // Register operation conversion patterns
     // Note: No state tracking needed - OpAdaptors handle type conversion
-    patterns
-        .add<ConvertFluxAllocOp, ConvertFluxDeallocOp, ConvertFluxStaticOp,
-             ConvertFluxMeasureOp, ConvertFluxResetOp, ConvertFluxIdOp,
-             ConvertFluxXOp, ConvertFluxYOp, ConvertFluxZOp, ConvertFluxHOp,
-             ConvertFluxSOp, ConvertFluxSdgOp, ConvertFluxTOp, ConvertFluxTdgOp,
-             ConvertFluxSXOp, ConvertFluxSXdgOp, ConvertFluxRXOp,
-             ConvertFluxRYOp, ConvertFluxRZOp, ConvertFluxPOp, ConvertFluxROp,
-             ConvertFluxU2Op, ConvertFluxSWAPOp, ConvertFluxiSWAPOp,
-             ConvertFluxCtrlOp, ConvertFluxYieldOp>(typeConverter, context);
+    patterns.add<ConvertFluxAllocOp, ConvertFluxDeallocOp, ConvertFluxStaticOp,
+                 ConvertFluxMeasureOp, ConvertFluxResetOp, ConvertFluxIdOp,
+                 ConvertFluxXOp, ConvertFluxYOp, ConvertFluxZOp, ConvertFluxHOp,
+                 ConvertFluxSOp, ConvertFluxSdgOp, ConvertFluxTOp,
+                 ConvertFluxTdgOp, ConvertFluxSXOp, ConvertFluxSXdgOp,
+                 ConvertFluxRXOp, ConvertFluxRYOp, ConvertFluxRZOp,
+                 ConvertFluxPOp, ConvertFluxROp, ConvertFluxU2Op,
+                 ConvertFluxSWAPOp, ConvertFluxiSWAPOp, ConvertFluxDCXOp,
+                 ConvertFluxECROp, ConvertFluxCtrlOp, ConvertFluxYieldOp>(
+        typeConverter, context);
 
     // Conversion of flux types in func.func signatures
     // Note: This currently has limitations with signature changes

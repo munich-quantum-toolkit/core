@@ -901,6 +901,8 @@ DEFINE_ONE_TARGET_TWO_PARAMETER(U2Op, u2, U2, u2, phi, lambda)
 
 DEFINE_TWO_TARGET_ZERO_PARAMETER(SWAPOp, swap, SWAP, swap)
 DEFINE_TWO_TARGET_ZERO_PARAMETER(iSWAPOp, iswap, ISWAP, iswap)
+DEFINE_TWO_TARGET_ZERO_PARAMETER(DCXOp, dcx, DCX, dcx)
+DEFINE_TWO_TARGET_ZERO_PARAMETER(ECROp, ecr, ECR, ecr)
 
 #undef DEFINE_TWO_TARGET_ZERO_PARAMETER
 
@@ -1289,6 +1291,8 @@ struct QuartzToQIR final : impl::QuartzToQIRBase<QuartzToQIR> {
       quartzPatterns.add<ConvertQuartzU2OpQIR>(typeConverter, ctx, &state);
       quartzPatterns.add<ConvertQuartzSWAPOpQIR>(typeConverter, ctx, &state);
       quartzPatterns.add<ConvertQuartziSWAPOpQIR>(typeConverter, ctx, &state);
+      quartzPatterns.add<ConvertQuartzDCXOpQIR>(typeConverter, ctx, &state);
+      quartzPatterns.add<ConvertQuartzECROpQIR>(typeConverter, ctx, &state);
       quartzPatterns.add<ConvertQuartzCtrlQIR>(typeConverter, ctx, &state);
       quartzPatterns.add<ConvertQuartzYieldQIR>(typeConverter, ctx, &state);
       // Gate operations will be added here as the dialect expands

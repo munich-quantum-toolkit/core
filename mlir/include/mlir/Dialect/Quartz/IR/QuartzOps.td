@@ -655,6 +655,48 @@ def iSWAPOp : QuartzOp<"iswap", traits = [UnitaryOpInterface, TwoTargetZeroParam
     }];
 }
 
+def DCXOp : QuartzOp<"dcx", traits = [UnitaryOpInterface, TwoTargetZeroParameter]> {
+    let summary = "Apply a DCX gate to two qubits";
+    let description = [{
+        Applies a DCX gate to two qubits, modifying them in place.
+
+        Example:
+        ```mlir
+        quartz.dcx %q0, %q1 : !flux.qubit, !flux.qubit
+        ```
+    }];
+
+    let arguments = (ins Arg<QubitType, "the first target qubit", [MemRead, MemWrite]>:$qubit0,
+                     Arg<QubitType, "the second target qubit", [MemRead, MemWrite]>:$qubit1);
+    let assemblyFormat = "$qubit0 $qubit1 attr-dict";
+
+    let extraClassDeclaration = [{
+        DenseElementsAttr tryGetStaticMatrix();
+        static StringRef getBaseSymbol() { return "dcx"; }
+    }];
+}
+
+def ECROp : QuartzOp<"ecr", traits = [UnitaryOpInterface, TwoTargetZeroParameter]> {
+    let summary = "Apply an ECR gate to two qubits";
+    let description = [{
+        Applies an ECR gate to two qubits, modifying them in place.
+
+        Example:
+        ```mlir
+        quartz.ecr %q0, %q1 : !flux.qubit, !flux.qubit
+        ```
+    }];
+
+    let arguments = (ins Arg<QubitType, "the first target qubit", [MemRead, MemWrite]>:$qubit0,
+                     Arg<QubitType, "the second target qubit", [MemRead, MemWrite]>:$qubit1);
+    let assemblyFormat = "$qubit0 $qubit1 attr-dict";
+
+    let extraClassDeclaration = [{
+        DenseElementsAttr tryGetStaticMatrix();
+        static StringRef getBaseSymbol() { return "ecr"; }
+    }];
+}
+
 //===----------------------------------------------------------------------===//
 // Modifiers
 //===----------------------------------------------------------------------===//

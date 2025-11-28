@@ -655,6 +655,50 @@ void addiSWAPOp(QuartzProgramBuilder& builder, const qc::Operation& operation,
 }
 
 /**
+ * @brief Adds a DCX operation
+ *
+ * @details
+ * Translate a DCX operation from the QuantumComputation to quartz.dcx.
+ *
+ * @param builder The QuartzProgramBuilder used to create operations
+ * @param operation The DCX operation to translate
+ * @param qubits Flat vector of qubit values indexed by physical qubit index
+ */
+void addDCXOp(QuartzProgramBuilder& builder, const qc::Operation& operation,
+              const llvm::SmallVector<Value>& qubits) {
+  const auto& target0 = qubits[operation.getTargets()[0]];
+  const auto& target1 = qubits[operation.getTargets()[1]];
+  if (const auto& posControls = getPosControls(operation, qubits);
+      posControls.empty()) {
+    builder.dcx(target0, target1);
+  } else {
+    builder.mcdcx(posControls, target0, target1);
+  }
+}
+
+/**
+ * @brief Adds an ECR operation
+ *
+ * @details
+ * Translate an ECR operation from the QuantumComputation to quartz.ecr.
+ *
+ * @param builder The QuartzProgramBuilder used to create operations
+ * @param operation The ECR operation to translate
+ * @param qubits Flat vector of qubit values indexed by physical qubit index
+ */
+void addECROp(QuartzProgramBuilder& builder, const qc::Operation& operation,
+              const llvm::SmallVector<Value>& qubits) {
+  const auto& target0 = qubits[operation.getTargets()[0]];
+  const auto& target1 = qubits[operation.getTargets()[1]];
+  if (const auto& posControls = getPosControls(operation, qubits);
+      posControls.empty()) {
+    builder.ecr(target0, target1);
+  } else {
+    builder.mcecr(posControls, target0, target1);
+  }
+}
+
+/**
  * @brief Translates operations from QuantumComputation to Quartz dialect
  *
  * @details
@@ -741,6 +785,12 @@ translateOperations(QuartzProgramBuilder& builder,
       break;
     case qc::OpType::iSWAP:
       addiSWAPOp(builder, *operation, qubits);
+      break;
+    case qc::OpType::DCX:
+      addDCXOp(builder, *operation, qubits);
+      break;
+    case qc::OpType::ECR:
+      addECROp(builder, *operation, qubits);
       break;
     default:
       // Unsupported operation - skip for now
