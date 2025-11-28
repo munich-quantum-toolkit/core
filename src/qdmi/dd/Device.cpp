@@ -25,6 +25,8 @@
 
 #include <algorithm>
 #include <array>
+#include <atomic>
+#include <cassert>
 #include <chrono>
 #include <complex>
 #include <cstddef>
@@ -205,9 +207,38 @@ constexpr auto OPERATION_ADDRESSES = makeOperationAddresses(OPERATIONS);
 
 namespace qdmi::dd {
 
+std::atomic<Device*> Device::instance = nullptr;
+
 Device::Device()
     : name_("MQT Core DDSIM QDMI Device"),
       qubitsNum_(std::numeric_limits<::dd::Qubit>::max()) {}
+
+void Device::initialize() {
+  // NOLINTNEXTLINE(misc-const-correctness)
+  Device* expected = nullptr;
+  // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
+  auto* newInstance = new Device();
+  if (!instance.compare_exchange_strong(expected, newInstance)) {
+    // Another thread won the race, so delete the instance we created.
+    // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
+    delete newInstance;
+  }
+}
+
+void Device::finalize() {
+  // Atomically swap the instance pointer with nullptr and get the old value.
+  const Device* oldInstance = instance.exchange(nullptr);
+  // Delete the old instance if it existed.
+  // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
+  delete oldInstance;
+}
+
+auto Device::get() -> Device& {
+  auto* loadedInstance = instance.load();
+  assert(loadedInstance != nullptr &&
+         "Device not initialized. Call `initialize()` first.");
+  return *loadedInstance;
+}
 
 auto Device::sessionAlloc(MQT_DDSIM_QDMI_Device_Session* session)
     -> QDMI_STATUS {
@@ -560,7 +591,7 @@ auto MQT_DDSIM_QDMI_Device_Job_impl_d::wait(const size_t timeout) const
   if (!jobHandle_.valid() ||
       (s != QDMI_JOB_STATUS_SUBMITTED && s != QDMI_JOB_STATUS_QUEUED &&
        s != QDMI_JOB_STATUS_RUNNING)) {
-    return QDMI_ERROR_INVALIDARGUMENT;
+    return QDMI_ERROR_BADSTATE;
   }
 
   if (timeout > 0) {
@@ -734,13 +765,15 @@ auto MQT_DDSIM_QDMI_Device_Job_impl_d::getResults(const QDMI_Job_Result result,
                                                   const size_t size, void* data,
                                                   size_t* sizeRet)
     -> QDMI_STATUS {
-  if (status_.load() != QDMI_JOB_STATUS_DONE ||
-      (data != nullptr && size == 0) ||
+  if ((data != nullptr && size == 0) ||
       (result >= QDMI_JOB_RESULT_MAX && result != QDMI_JOB_RESULT_CUSTOM1 &&
        result != QDMI_JOB_RESULT_CUSTOM2 && result != QDMI_JOB_RESULT_CUSTOM3 &&
        result != QDMI_JOB_RESULT_CUSTOM4 &&
        result != QDMI_JOB_RESULT_CUSTOM5)) {
     return QDMI_ERROR_INVALIDARGUMENT;
+  }
+  if (status_.load() != QDMI_JOB_STATUS_DONE) {
+    return QDMI_ERROR_BADSTATE;
   }
   switch (result) {
   case QDMI_JOB_RESULT_HIST_KEYS:
@@ -775,11 +808,14 @@ auto MQT_DDSIM_QDMI_Device_Job_impl_d::getResults(const QDMI_Job_Result result,
 // QDMI uses a different naming convention for its C interface functions
 // NOLINTBEGIN(readability-identifier-naming)
 int MQT_DDSIM_QDMI_device_initialize() {
-  std::ignore = qdmi::dd::Device::get(); // Ensure the singleton is created
+  qdmi::dd::Device::initialize();
   return QDMI_SUCCESS;
 }
 
-int MQT_DDSIM_QDMI_device_finalize() { return QDMI_SUCCESS; }
+int MQT_DDSIM_QDMI_device_finalize() {
+  qdmi::dd::Device::finalize();
+  return QDMI_SUCCESS;
+}
 
 int MQT_DDSIM_QDMI_device_session_alloc(
     MQT_DDSIM_QDMI_Device_Session* session) {

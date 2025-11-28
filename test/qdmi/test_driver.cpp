@@ -160,9 +160,9 @@ TEST_P(DriverTest, JobSetParameter) {
 }
 
 TEST_P(DriverJobTest, JobSetParameter) {
-  EXPECT_EQ(QDMI_job_set_parameter(job, QDMI_JOB_PARAMETER_PROGRAM,
-                                   sizeof(QDMI_Program_Format), nullptr),
-            QDMI_ERROR_NOTSUPPORTED);
+  EXPECT_THAT(QDMI_job_set_parameter(job, QDMI_JOB_PARAMETER_PROGRAM,
+                                     sizeof(QDMI_Program_Format), nullptr),
+              testing::AnyOf(QDMI_SUCCESS, QDMI_ERROR_NOTSUPPORTED));
   const QDMI_Program_Format value = QDMI_PROGRAM_FORMAT_QASM2;
   EXPECT_THAT(QDMI_job_set_parameter(job, QDMI_JOB_PARAMETER_PROGRAMFORMAT,
                                      sizeof(QDMI_Program_Format), &value),
@@ -251,7 +251,7 @@ TEST_P(DriverTest, JobWait) {
 TEST_P(DriverJobTest, JobWait) {
   EXPECT_THAT(QDMI_job_wait(job, 1),
               testing::AnyOf(QDMI_SUCCESS, QDMI_ERROR_NOTSUPPORTED,
-                             QDMI_ERROR_TIMEOUT));
+                             QDMI_ERROR_TIMEOUT, QDMI_ERROR_BADSTATE));
 }
 
 TEST_P(DriverTest, JobGetResults) {
@@ -263,7 +263,8 @@ TEST_P(DriverTest, JobGetResults) {
 TEST_P(DriverJobTest, JobGetResults) {
   EXPECT_THAT(
       QDMI_job_get_results(job, QDMI_JOB_RESULT_SHOTS, 0, nullptr, nullptr),
-      testing::AnyOf(QDMI_SUCCESS, QDMI_ERROR_NOTSUPPORTED));
+      testing::AnyOf(QDMI_SUCCESS, QDMI_ERROR_NOTSUPPORTED,
+                     QDMI_ERROR_BADSTATE));
 }
 
 TEST_P(DriverTest, QueryDeviceProperty) {
@@ -503,8 +504,9 @@ TEST_P(DriverTest, QueryNeedsCalibration) {
 #ifdef _WIN32
 const std::array<std::string, 1> DEVICES{"MQT NA Default QDMI Device"};
 #else
-const std::array<std::string, 2> DEVICES{"MQT NA Default QDMI Device",
-                                         "MQT NA Dynamic QDMI Device"};
+const std::array<std::string, 3> DEVICES{"MQT NA Default QDMI Device",
+                                         "MQT NA Dynamic QDMI Device",
+                                         "MQT Core DDSIM QDMI Device"};
 #endif
 // Instantiate the test suite with different parameters
 INSTANTIATE_TEST_SUITE_P(

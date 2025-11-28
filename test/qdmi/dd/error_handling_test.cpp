@@ -18,7 +18,13 @@
 #include <gtest/gtest.h>
 #include <qdmi/constants.h>
 
-TEST(ErrorHandling, NullptrArguments) {
+class ErrorHandling : public ::testing::Test {
+protected:
+  static auto SetUpTestSuite() -> void { MQT_DDSIM_QDMI_device_initialize(); }
+  static auto TearDownTestSuite() -> void { MQT_DDSIM_QDMI_device_finalize(); }
+};
+
+TEST_F(ErrorHandling, NullptrArguments) {
   EXPECT_EQ(MQT_DDSIM_QDMI_device_session_alloc(nullptr),
             QDMI_ERROR_INVALIDARGUMENT);
   EXPECT_EQ(MQT_DDSIM_QDMI_device_session_query_device_property(
@@ -61,7 +67,7 @@ TEST(ErrorHandling, NullptrArguments) {
             QDMI_ERROR_INVALIDARGUMENT);
 }
 
-TEST(ErrorHandling, GetResultsBeforeDone) {
+TEST_F(ErrorHandling, GetResultsBeforeDone) {
   const qdmi_test::SessionGuard s{};
   const qdmi_test::JobGuard j{s.session};
   ASSERT_EQ(qdmi_test::setProgram(j.job, QDMI_PROGRAM_FORMAT_QASM3,
@@ -71,17 +77,17 @@ TEST(ErrorHandling, GetResultsBeforeDone) {
   // Before submit → invalid
   EXPECT_EQ(MQT_DDSIM_QDMI_device_job_get_results(
                 j.job, QDMI_JOB_RESULT_HIST_KEYS, 0, nullptr, nullptr),
-            QDMI_ERROR_INVALIDARGUMENT);
+            QDMI_ERROR_BADSTATE);
   ASSERT_EQ(MQT_DDSIM_QDMI_device_job_submit(j.job), QDMI_SUCCESS);
   // After submit but not necessarily done → still invalid or waits; contract
   // says invalid
   EXPECT_EQ(MQT_DDSIM_QDMI_device_job_get_results(
                 j.job, QDMI_JOB_RESULT_HIST_KEYS, 0, nullptr, nullptr),
-            QDMI_ERROR_INVALIDARGUMENT);
+            QDMI_ERROR_BADSTATE);
   ASSERT_EQ(MQT_DDSIM_QDMI_device_job_wait(j.job, 0), QDMI_SUCCESS);
 }
 
-TEST(ErrorHandling, MaxEnums) {
+TEST_F(ErrorHandling, MaxEnums) {
   const qdmi_test::SessionGuard s{};
   const qdmi_test::JobGuard j{s.session};
 
@@ -126,7 +132,7 @@ TEST(ErrorHandling, MaxEnums) {
             QDMI_ERROR_INVALIDARGUMENT);
 }
 
-TEST(ErrorHandling, CustomEnums) {
+TEST_F(ErrorHandling, CustomEnums) {
   const qdmi_test::SessionGuard s{};
   const qdmi_test::JobGuard j{s.session};
 
@@ -250,7 +256,7 @@ TEST(ErrorHandling, CustomEnums) {
             QDMI_ERROR_NOTSUPPORTED);
 }
 
-TEST(ErrorHandling, BadState) {
+TEST_F(ErrorHandling, BadState) {
   MQT_DDSIM_QDMI_Device_Session session = nullptr;
   EXPECT_EQ(MQT_DDSIM_QDMI_device_session_alloc(&session), QDMI_SUCCESS);
   EXPECT_EQ(MQT_DDSIM_QDMI_device_session_query_device_property(
@@ -278,7 +284,7 @@ TEST(ErrorHandling, BadState) {
   EXPECT_EQ(MQT_DDSIM_QDMI_device_job_submit(j.job), QDMI_ERROR_BADSTATE);
 }
 
-TEST(ErrorHandling, MalformedProgramFailsForBothModes) {
+TEST_F(ErrorHandling, MalformedProgramFailsForBothModes) {
   const qdmi_test::SessionGuard s{};
   // Sampling mode
   {
