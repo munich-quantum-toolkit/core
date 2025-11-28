@@ -290,6 +290,53 @@ FluxProgramBuilder::createMultiControlledOneTargetTwoParameter(
   return {controlsOut, targetsOut[0]};
 }
 
+// OneTargetThreeParameter helpers
+
+template <typename OpType>
+Value FluxProgramBuilder::createOneTargetThreeParameter(
+    const std::variant<double, Value>& parameter1,
+    const std::variant<double, Value>& parameter2,
+    const std::variant<double, Value>& parameter3, const Value qubit) {
+  auto op = create<OpType>(loc, qubit, parameter1, parameter2, parameter3);
+  const auto& qubitOut = op.getQubitOut();
+  updateQubitTracking(qubit, qubitOut);
+  return qubitOut;
+}
+
+template <typename OpType>
+std::pair<Value, Value>
+FluxProgramBuilder::createControlledOneTargetThreeParameter(
+    const std::variant<double, Value>& parameter1,
+    const std::variant<double, Value>& parameter2,
+    const std::variant<double, Value>& parameter3, const Value control,
+    const Value target) {
+  const auto [controlsOut, targetsOut] =
+      ctrl(control, target,
+           [&](OpBuilder& b, const ValueRange targets) -> ValueRange {
+             const auto op = b.create<OpType>(loc, targets[0], parameter1,
+                                              parameter2, parameter3);
+             return op->getResults();
+           });
+  return {controlsOut[0], targetsOut[0]};
+}
+
+template <typename OpType>
+std::pair<ValueRange, Value>
+FluxProgramBuilder::createMultiControlledOneTargetThreeParameter(
+    const std::variant<double, Value>& parameter1,
+    const std::variant<double, Value>& parameter2,
+    const std::variant<double, Value>& parameter3, const ValueRange controls,
+    const Value target) {
+  const auto [controlsOut, targetsOut] =
+      ctrl(controls, target,
+           [&](OpBuilder& b, const ValueRange targets) -> ValueRange {
+             const auto op = b.create<OpType>(loc, targets[0], parameter1,
+                                              parameter2, parameter3);
+             return op->getResults();
+           });
+  return {controlsOut, targetsOut[0]};
+}
+
 // TwoTargetZeroParameter helpers
 
 template <typename OpType>
@@ -415,6 +462,38 @@ DEFINE_ONE_TARGET_TWO_PARAMETER(ROp, r, theta, phi)
 DEFINE_ONE_TARGET_TWO_PARAMETER(U2Op, u2, phi, lambda)
 
 #undef DEFINE_ONE_TARGET_TWO_PARAMETER
+
+// OneTargetThreeParameter
+
+#define DEFINE_ONE_TARGET_THREE_PARAMETER(OP_CLASS, OP_NAME, PARAM1, PARAM2,   \
+                                          PARAM3)                              \
+  Value FluxProgramBuilder::OP_NAME(                                           \
+      const std::variant<double, Value>&(PARAM1),                              \
+      const std::variant<double, Value>&(PARAM2),                              \
+      const std::variant<double, Value>&(PARAM3), const Value qubit) {         \
+    return createOneTargetThreeParameter<OP_CLASS>(PARAM1, PARAM2, PARAM3,     \
+                                                   qubit);                     \
+  }                                                                            \
+  std::pair<Value, Value> FluxProgramBuilder::c##OP_NAME(                      \
+      const std::variant<double, Value>&(PARAM1),                              \
+      const std::variant<double, Value>&(PARAM2),                              \
+      const std::variant<double, Value>&(PARAM3), const Value control,         \
+      const Value target) {                                                    \
+    return createControlledOneTargetThreeParameter<OP_CLASS>(                  \
+        PARAM1, PARAM2, PARAM3, control, target);                              \
+  }                                                                            \
+  std::pair<ValueRange, Value> FluxProgramBuilder::mc##OP_NAME(                \
+      const std::variant<double, Value>&(PARAM1),                              \
+      const std::variant<double, Value>&(PARAM2),                              \
+      const std::variant<double, Value>&(PARAM3), const ValueRange controls,   \
+      const Value target) {                                                    \
+    return createMultiControlledOneTargetThreeParameter<OP_CLASS>(             \
+        PARAM1, PARAM2, PARAM3, controls, target);                             \
+  }
+
+DEFINE_ONE_TARGET_THREE_PARAMETER(UOp, u, theta, phi, lambda)
+
+#undef DEFINE_ONE_TARGET_THREE_PARAMETER
 
 // TwoTargetZeroParameter
 

@@ -215,6 +215,39 @@ DEFINE_ONE_TARGET_TWO_PARAMETER(U2Op, u2, phi, lambda)
 
 #undef DEFINE_ONE_TARGET_TWO_PARAMETER
 
+// OneTargetThreeParameter
+
+#define DEFINE_ONE_TARGET_THREE_PARAMETER(OP_CLASS, OP_NAME, PARAM1, PARAM2,   \
+                                          PARAM3)                              \
+  QuartzProgramBuilder& QuartzProgramBuilder::OP_NAME(                         \
+      const std::variant<double, Value>&(PARAM1),                              \
+      const std::variant<double, Value>&(PARAM2),                              \
+      const std::variant<double, Value>&(PARAM3), Value qubit) {               \
+    create<OP_CLASS>(loc, qubit, PARAM1, PARAM2, PARAM3);                      \
+    return *this;                                                              \
+  }                                                                            \
+  QuartzProgramBuilder& QuartzProgramBuilder::c##OP_NAME(                      \
+      const std::variant<double, Value>&(PARAM1),                              \
+      const std::variant<double, Value>&(PARAM2),                              \
+      const std::variant<double, Value>&(PARAM3), Value control,               \
+      Value target) {                                                          \
+    return mc##OP_NAME(PARAM1, PARAM2, PARAM3, {control}, target);             \
+  }                                                                            \
+  QuartzProgramBuilder& QuartzProgramBuilder::mc##OP_NAME(                     \
+      const std::variant<double, Value>&(PARAM1),                              \
+      const std::variant<double, Value>&(PARAM2),                              \
+      const std::variant<double, Value>&(PARAM3), ValueRange controls,         \
+      Value target) {                                                          \
+    create<CtrlOp>(loc, controls, [&](OpBuilder& b) {                          \
+      b.create<OP_CLASS>(loc, target, PARAM1, PARAM2, PARAM3);                 \
+    });                                                                        \
+    return *this;                                                              \
+  }
+
+DEFINE_ONE_TARGET_THREE_PARAMETER(UOp, u, theta, phi, lambda)
+
+#undef DEFINE_ONE_TARGET_THREE_PARAMETER
+
 // TwoTargetZeroParameter
 
 #define DEFINE_TWO_TARGET_ZERO_PARAMETER(OP_CLASS, OP_NAME)                    \

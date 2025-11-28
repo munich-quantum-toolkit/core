@@ -237,6 +237,7 @@ class TargetAndParameterArityTrait<int T, int P>
 def OneTargetZeroParameter : TargetAndParameterArityTrait<1, 0>;
 def OneTargetOneParameter : TargetAndParameterArityTrait<1, 1>;
 def OneTargetTwoParameter : TargetAndParameterArityTrait<1, 2>;
+def OneTargetThreeParameter : TargetAndParameterArityTrait<1, 3>;
 def TwoTargetZeroParameter : TargetAndParameterArityTrait<2, 0>;
 
 //===----------------------------------------------------------------------===//
@@ -610,6 +611,32 @@ def U2Op : QuartzOp<"u2", traits = [UnitaryOpInterface, OneTargetTwoParameter]> 
 
     let builders = [
         OpBuilder<(ins "Value":$qubit_in, "const std::variant<double, Value>&":$phi, "const std::variant<double, Value>&":$lambda)>
+    ];
+}
+
+def UOp : QuartzOp<"u", traits = [UnitaryOpInterface, OneTargetThreeParameter]> {
+    let summary = "Apply a U gate to a qubit";
+    let description = [{
+        Applies a U gate to a qubit, modifying it in place.
+
+        Example:
+        ```mlir
+        quartz.u(%theta, %phi, %lambda) %q : !flux.qubit
+        ```
+    }];
+
+    let arguments = (ins Arg<QubitType, "the target qubit", [MemRead, MemWrite]>:$qubit_in,
+                     Arg<F64, "the rotation angle theta in radians", [MemRead]>:$theta,
+                     Arg<F64, "the rotation angle phi in radians", [MemRead]>:$phi,
+                     Arg<F64, "the rotation angle lambda in radians", [MemRead]>:$lambda);
+    let assemblyFormat = "`(` $theta `,` $phi `,` $lambda `)` $qubit_in attr-dict";
+    let extraClassDeclaration = [{
+        DenseElementsAttr tryGetStaticMatrix();
+        static StringRef getBaseSymbol() { return "u"; }
+    }];
+
+    let builders = [
+        OpBuilder<(ins "Value":$qubit_in, "const std::variant<double, Value>&":$theta, "const std::variant<double, Value>&":$phi, "const std::variant<double, Value>&":$lambda)>
     ];
 }
 

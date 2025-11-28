@@ -263,6 +263,7 @@ convertOneTargetTwoParameter(QuartzOpType& op, QuartzOpAdaptorType& adaptor,
   SmallVector<Type> argumentTypes;
   argumentTypes.reserve(numCtrls + 3);
   const auto ptrType = LLVM::LLVMPointerType::get(ctx);
+  const auto floatType = Float64Type::get(ctx);
   // Add control pointers
   for (size_t i = 0; i < numCtrls; ++i) {
     argumentTypes.push_back(ptrType);
@@ -270,8 +271,8 @@ convertOneTargetTwoParameter(QuartzOpType& op, QuartzOpAdaptorType& adaptor,
   // Add target pointer
   argumentTypes.push_back(ptrType);
   // Add parameter types
-  argumentTypes.push_back(Float64Type::get(ctx));
-  argumentTypes.push_back(Float64Type::get(ctx));
+  argumentTypes.push_back(floatType);
+  argumentTypes.push_back(floatType);
 
   // Define function signature
   const auto fnSignature =
@@ -283,6 +284,71 @@ convertOneTargetTwoParameter(QuartzOpType& op, QuartzOpAdaptorType& adaptor,
 
   SmallVector<Value> operands;
   operands.reserve(numCtrls + 3);
+  operands.append(posCtrls.begin(), posCtrls.end());
+  operands.append(adaptor.getOperands().begin(), adaptor.getOperands().end());
+
+  // Clean up modifier information
+  if (inCtrlOp != 0) {
+    state.posCtrls.erase(inCtrlOp);
+    state.inCtrlOp--;
+  }
+
+  // Replace operation with CallOp
+  rewriter.replaceOpWithNewOp<LLVM::CallOp>(op, fnDecl, operands);
+  return success();
+}
+
+/**
+ * @brief Converts a one-target, three-parameter Quartz operation to QIR
+ *
+ * @tparam QuartzOpType The operation type of the Quartz operation
+ * @tparam QuartzOpAdaptorType The OpAdaptor type of the Quartz operation
+ * @param op The Quartz operation instance to convert
+ * @param adaptor The OpAdaptor of the Quartz operation
+ * @param rewriter The pattern rewriter
+ * @param ctx The MLIR context
+ * @param state The lowering state
+ * @param fnName The name of the QIR function to call
+ * @return LogicalResult Success or failure of the conversion
+ */
+template <typename QuartzOpType, typename QuartzOpAdaptorType>
+LogicalResult
+convertOneTargetThreeParameter(QuartzOpType& op, QuartzOpAdaptorType& adaptor,
+                               ConversionPatternRewriter& rewriter,
+                               MLIRContext* ctx, LoweringState& state,
+                               StringRef fnName) {
+  // Query state for modifier information
+  const auto inCtrlOp = state.inCtrlOp;
+  const SmallVector<Value> posCtrls =
+      inCtrlOp != 0 ? state.posCtrls[inCtrlOp] : SmallVector<Value>{};
+  const size_t numCtrls = posCtrls.size();
+
+  // Define argument types
+  SmallVector<Type> argumentTypes;
+  argumentTypes.reserve(numCtrls + 4);
+  const auto ptrType = LLVM::LLVMPointerType::get(ctx);
+  const auto floatType = Float64Type::get(ctx);
+  // Add control pointers
+  for (size_t i = 0; i < numCtrls; ++i) {
+    argumentTypes.push_back(ptrType);
+  }
+  // Add target pointer
+  argumentTypes.push_back(ptrType);
+  // Add parameter types
+  argumentTypes.push_back(floatType);
+  argumentTypes.push_back(floatType);
+  argumentTypes.push_back(floatType);
+
+  // Define function signature
+  const auto fnSignature =
+      LLVM::LLVMFunctionType::get(LLVM::LLVMVoidType::get(ctx), argumentTypes);
+
+  // Declare QIR function
+  const auto fnDecl =
+      getOrCreateFunctionDeclaration(rewriter, op, fnName, fnSignature);
+
+  SmallVector<Value> operands;
+  operands.reserve(numCtrls + 4);
   operands.append(posCtrls.begin(), posCtrls.end());
   operands.append(adaptor.getOperands().begin(), adaptor.getOperands().end());
 
@@ -847,6 +913,62 @@ DEFINE_ONE_TARGET_TWO_PARAMETER(U2Op, u2, U2, u2, phi, lambda)
 
 #undef DEFINE_ONE_TARGET_TWO_PARAMETER
 
+// OneTargetThreeParameter
+
+#define DEFINE_ONE_TARGET_THREE_PARAMETER(OP_CLASS, OP_NAME_SMALL,             \
+                                          OP_NAME_BIG, QIR_NAME)               \
+  /**                                                                          \
+   * @brief Converts quartz.OP_NAME_SMALL operation to QIR QIR_NAME            \
+   *                                                                           \
+   * @par Example:                                                             \
+   * ```mlir                                                                   \
+   * quartz.OP_NAME_SMALL(%PARAM1, %PARAM2, %PARAM3) %q : !quartz.qubit        \
+   * ```                                                                       \
+   * is converted to                                                           \
+   * ```mlir                                                                   \
+   * llvm.call @__quantum__qis__QIR_NAME__body(%q, %PARAM1, %PARAM2, %PARAM3)  \
+   * : (!llvm.ptr, f64, f64, f64) -> ()                                        \
+   * ```                                                                       \
+   */                                                                          \
+  struct ConvertQuartz##OP_CLASS##QIR final                                    \
+      : StatefulOpConversionPattern<OP_CLASS> {                                \
+    using StatefulOpConversionPattern::StatefulOpConversionPattern;            \
+                                                                               \
+    LogicalResult                                                              \
+    matchAndRewrite(OP_CLASS op, OpAdaptor adaptor,                            \
+                    ConversionPatternRewriter& rewriter) const override {      \
+      auto& state = getState();                                                \
+                                                                               \
+      /* Query state for modifier information */                               \
+      const auto inCtrlOp = state.inCtrlOp;                                    \
+      const size_t numCtrls =                                                  \
+          inCtrlOp != 0 ? state.posCtrls[inCtrlOp].size() : 0;                 \
+                                                                               \
+      /* Define function name */                                               \
+      StringRef fnName;                                                        \
+      if (inCtrlOp == 0) {                                                     \
+        fnName = QIR_##OP_NAME_BIG;                                            \
+      } else {                                                                 \
+        if (numCtrls == 1) {                                                   \
+          fnName = QIR_C##OP_NAME_BIG;                                         \
+        } else if (numCtrls == 2) {                                            \
+          fnName = QIR_CC##OP_NAME_BIG;                                        \
+        } else if (numCtrls == 3) {                                            \
+          fnName = QIR_CCC##OP_NAME_BIG;                                       \
+        } else {                                                               \
+          return failure();                                                    \
+        }                                                                      \
+      }                                                                        \
+                                                                               \
+      return convertOneTargetThreeParameter<OP_CLASS>(                         \
+          op, adaptor, rewriter, getContext(), state, fnName);                 \
+    }                                                                          \
+  };
+
+DEFINE_ONE_TARGET_THREE_PARAMETER(UOp, u, U, u3)
+
+#undef DEFINE_ONE_TARGET_THREE_PARAMETER
+
 // TwoTargetZeroParameter
 
 #define DEFINE_TWO_TARGET_ZERO_PARAMETER(OP_CLASS, OP_NAME_SMALL, OP_NAME_BIG, \
@@ -1289,6 +1411,7 @@ struct QuartzToQIR final : impl::QuartzToQIRBase<QuartzToQIR> {
       quartzPatterns.add<ConvertQuartzPOpQIR>(typeConverter, ctx, &state);
       quartzPatterns.add<ConvertQuartzROpQIR>(typeConverter, ctx, &state);
       quartzPatterns.add<ConvertQuartzU2OpQIR>(typeConverter, ctx, &state);
+      quartzPatterns.add<ConvertQuartzUOpQIR>(typeConverter, ctx, &state);
       quartzPatterns.add<ConvertQuartzSWAPOpQIR>(typeConverter, ctx, &state);
       quartzPatterns.add<ConvertQuartziSWAPOpQIR>(typeConverter, ctx, &state);
       quartzPatterns.add<ConvertQuartzDCXOpQIR>(typeConverter, ctx, &state);

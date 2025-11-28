@@ -611,6 +611,30 @@ void addU2Op(QuartzProgramBuilder& builder, const qc::Operation& operation,
 }
 
 /**
+ * @brief Adds a U operation
+ *
+ * @details
+ * Translate a U operation from the QuantumComputation to quartz.u.
+ *
+ * @param builder The QuartzProgramBuilder used to create operations
+ * @param operation The U operation to translate
+ * @param qubits Flat vector of qubit values indexed by physical qubit index
+ */
+void addUOp(QuartzProgramBuilder& builder, const qc::Operation& operation,
+            const llvm::SmallVector<Value>& qubits) {
+  const auto& theta = operation.getParameter()[0];
+  const auto& phi = operation.getParameter()[1];
+  const auto& lambda = operation.getParameter()[2];
+  const auto& target = qubits[operation.getTargets()[0]];
+  if (const auto& posControls = getPosControls(operation, qubits);
+      posControls.empty()) {
+    builder.u(theta, phi, lambda, target);
+  } else {
+    builder.mcu(theta, phi, lambda, posControls, target);
+  }
+}
+
+/**
  * @brief Adds a SWAP operation
  *
  * @details
@@ -779,6 +803,9 @@ translateOperations(QuartzProgramBuilder& builder,
       break;
     case qc::OpType::U2:
       addU2Op(builder, *operation, qubits);
+      break;
+    case qc::OpType::U:
+      addUOp(builder, *operation, qubits);
       break;
     case qc::OpType::SWAP:
       addSWAPOp(builder, *operation, qubits);

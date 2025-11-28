@@ -121,6 +121,46 @@ convertOneTargetTwoParameter(FluxOpType& op, FluxOpAdaptorType& adaptor,
   return success();
 }
 
+/**
+ * @brief Converts a two-target, zero-parameter Flux operation to Quartz
+ *
+ * @tparam QuartzOpType The operation type of the Quartz operation
+ * @tparam FluxOpType The operation type of the Flux operation
+ * @param FluxOpAdaptorType The OpAdaptor type of the Flux operation
+ * @param op The Flux operation instance to convert
+ * @param adaptor The OpAdaptor of the Flux operation
+ * @param rewriter The pattern rewriter
+ * @return LogicalResult Success or failure of the conversion
+ */
+template <typename QuartzOpType, typename FluxOpType,
+          typename FluxOpAdaptorType>
+LogicalResult
+convertOneTargetThreeParameter(FluxOpType& op, FluxOpAdaptorType& adaptor,
+                               ConversionPatternRewriter& rewriter) {
+  // OpAdaptor provides the already type-converted input qubit
+  const auto& quartzQubit = adaptor.getQubitIn();
+
+  // Create the Quartz operation (in-place, no result)
+  rewriter.create<QuartzOpType>(op.getLoc(), quartzQubit, op.getOperand(1),
+                                op.getOperand(2), op.getOperand(3));
+
+  // Replace the output qubit with the same Quartz reference
+  rewriter.replaceOp(op, quartzQubit);
+
+  return success();
+}
+
+/**
+ * @brief Converts a two-target, zero-parameter Flux operation to Quartz
+ *
+ * @tparam QuartzOpType The operation type of the Quartz operation
+ * @tparam FluxOpType The operation type of the Flux operation
+ * @param FluxOpAdaptorType The OpAdaptor type of the Flux operation
+ * @param op The Flux operation instance to convert
+ * @param adaptor The OpAdaptor of the Flux operation
+ * @param rewriter The pattern rewriter
+ * @return LogicalResult Success or failure of the conversion
+ */
 template <typename QuartzOpType, typename FluxOpType,
           typename FluxOpAdaptorType>
 LogicalResult
@@ -447,6 +487,38 @@ DEFINE_ONE_TARGET_TWO_PARAMETER(U2Op, u2, phi, lambda)
 
 #undef DEFINE_ONE_TARGET_TWO_PARAMETER
 
+// OneTargetThreeParameter
+
+#define DEFINE_ONE_TARGET_THREE_PARAMETER(OP_CLASS, OP_NAME, PARAM1, PARAM2,   \
+                                          PARAM3)                              \
+  /**                                                                          \
+   * @brief Converts flux.OP_NAME to quartz.OP_NAME                            \
+   *                                                                           \
+   * @par Example:                                                             \
+   * ```mlir                                                                   \
+   * %q_out = flux.OP_NAME(%PARAM1, %PARAM2, %PARAM3) %q_in : !flux.qubit      \
+   * -> !flux.qubit                                                            \
+   * ```                                                                       \
+   * is converted to                                                           \
+   * ```mlir                                                                   \
+   * quartz.OP_NAME(%PARAM1, %PARAM2, %PARAM3) %q : !quartz.qubit              \
+   * ```                                                                       \
+   */                                                                          \
+  struct ConvertFlux##OP_CLASS final : OpConversionPattern<flux::OP_CLASS> {   \
+    using OpConversionPattern::OpConversionPattern;                            \
+                                                                               \
+    LogicalResult                                                              \
+    matchAndRewrite(flux::OP_CLASS op, OpAdaptor adaptor,                      \
+                    ConversionPatternRewriter& rewriter) const override {      \
+      return convertOneTargetThreeParameter<quartz::OP_CLASS>(op, adaptor,     \
+                                                              rewriter);       \
+    }                                                                          \
+  };
+
+DEFINE_ONE_TARGET_THREE_PARAMETER(UOp, u, theta, phi, lambda)
+
+#undef DEFINE_ONE_TARGET_THREE_PARAMETER
+
 // TwoTargetZeroParameter
 
 #define DEFINE_TWO_TARGET_ZERO_PARAMETER(OP_CLASS, OP_NAME)                    \
@@ -589,16 +661,16 @@ struct FluxToQuartz final : impl::FluxToQuartzBase<FluxToQuartz> {
 
     // Register operation conversion patterns
     // Note: No state tracking needed - OpAdaptors handle type conversion
-    patterns.add<ConvertFluxAllocOp, ConvertFluxDeallocOp, ConvertFluxStaticOp,
-                 ConvertFluxMeasureOp, ConvertFluxResetOp, ConvertFluxIdOp,
-                 ConvertFluxXOp, ConvertFluxYOp, ConvertFluxZOp, ConvertFluxHOp,
-                 ConvertFluxSOp, ConvertFluxSdgOp, ConvertFluxTOp,
-                 ConvertFluxTdgOp, ConvertFluxSXOp, ConvertFluxSXdgOp,
-                 ConvertFluxRXOp, ConvertFluxRYOp, ConvertFluxRZOp,
-                 ConvertFluxPOp, ConvertFluxROp, ConvertFluxU2Op,
-                 ConvertFluxSWAPOp, ConvertFluxiSWAPOp, ConvertFluxDCXOp,
-                 ConvertFluxECROp, ConvertFluxCtrlOp, ConvertFluxYieldOp>(
-        typeConverter, context);
+    patterns.add<
+        ConvertFluxAllocOp, ConvertFluxDeallocOp, ConvertFluxStaticOp,
+        ConvertFluxMeasureOp, ConvertFluxResetOp, ConvertFluxIdOp,
+        ConvertFluxXOp, ConvertFluxYOp, ConvertFluxZOp, ConvertFluxHOp,
+        ConvertFluxSOp, ConvertFluxSdgOp, ConvertFluxTOp, ConvertFluxTdgOp,
+        ConvertFluxSXOp, ConvertFluxSXdgOp, ConvertFluxRXOp, ConvertFluxRYOp,
+        ConvertFluxRZOp, ConvertFluxPOp, ConvertFluxROp, ConvertFluxU2Op,
+        ConvertFluxUOp, ConvertFluxSWAPOp, ConvertFluxiSWAPOp, ConvertFluxDCXOp,
+        ConvertFluxECROp, ConvertFluxCtrlOp, ConvertFluxYieldOp>(typeConverter,
+                                                                 context);
 
     // Conversion of flux types in func.func signatures
     // Note: This currently has limitations with signature changes

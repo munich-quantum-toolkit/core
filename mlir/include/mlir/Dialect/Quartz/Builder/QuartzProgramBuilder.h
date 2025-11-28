@@ -432,6 +432,83 @@ public:
 
 #undef DECLARE_ONE_TARGET_TWO_PARAMETER
 
+  // OneTargetThreeParameter
+
+#define DECLARE_ONE_TARGET_THREE_PARAMETER(OP_CLASS, OP_NAME, PARAM1, PARAM2,  \
+                                           PARAM3)                             \
+  /**                                                                          \
+   * @brief Apply a OP_CLASS                                                   \
+   *                                                                           \
+   * @param PARAM1 Rotation angle in radians                                   \
+   * @param PARAM2 Rotation angle in radians                                   \
+   * @param PARAM3 Rotation angle in radians                                   \
+   * @param qubit Target qubit                                                 \
+   * @return Reference to this builder for method chaining                     \
+   *                                                                           \
+   * @par Example:                                                             \
+   * ```c++                                                                    \
+   * builder.OP_NAME(PARAM1, PARAM2, PARAM3, q);                               \
+   * ```                                                                       \
+   * ```mlir                                                                   \
+   * quartz.OP_NAME(%PARAM1, %PARAM2, %PARAM3) %q : !quartz.qubit              \
+   * ```                                                                       \
+   */                                                                          \
+  QuartzProgramBuilder& OP_NAME(const std::variant<double, Value>&(PARAM1),    \
+                                const std::variant<double, Value>&(PARAM2),    \
+                                const std::variant<double, Value>&(PARAM3),    \
+                                Value qubit);                                  \
+  /**                                                                          \
+   * @brief Apply a controlled OP_CLASS                                        \
+   *                                                                           \
+   * @param PARAM1 Rotation angle in radians                                   \
+   * @param PARAM2 Rotation angle in radians                                   \
+   * @param PARAM3 Rotation angle in radians                                   \
+   * @param control Control qubit                                              \
+   * @param target Target qubit                                                \
+   * @return Reference to this builder for method chaining                     \
+   *                                                                           \
+   * @par Example:                                                             \
+   * ```c++                                                                    \
+   * builder.c##OP_NAME(PARAM1, PARAM2, PARAM3, q0, q1);                       \
+   * ```                                                                       \
+   * ```mlir                                                                   \
+   * quartz.ctrl(%q0) {                                                        \
+   *   quartz.OP_NAME(%PARAM1, %PARAM2, %PARAM3) %q1 : !quartz.qubit           \
+   * }                                                                         \
+   */                                                                          \
+  QuartzProgramBuilder& c##OP_NAME(const std::variant<double, Value>&(PARAM1), \
+                                   const std::variant<double, Value>&(PARAM2), \
+                                   const std::variant<double, Value>&(PARAM3), \
+                                   Value control, Value target);               \
+  /**                                                                          \
+   * @brief Apply a multi-controlled OP_CLASS                                  \
+   *                                                                           \
+   * @param PARAM1 Rotation angle in radians                                   \
+   * @param PARAM2 Rotation angle in radians                                   \
+   * @param PARAM3 Rotation angle in radians                                   \
+   * @param controls Control qubits                                            \
+   * @param target Target qubit                                                \
+   * @return Reference to this builder for method chaining                     \
+   *                                                                           \
+   * @par Example:                                                             \
+   * ```c++                                                                    \
+   * builder.mc##OP_NAME(PARAM1, PARAM2, PARAM3, {q0, q1}, q2);                \
+   * ```                                                                       \
+   * ```mlir                                                                   \
+   * quartz.ctrl(%q0, %q1) {                                                   \
+   *   quartz.OP_NAME(%PARAM1, %PARAM2, %PARAM3) %q2 : !quartz.qubit           \
+   * }                                                                         \
+   */                                                                          \
+  QuartzProgramBuilder& mc##OP_NAME(                                           \
+      const std::variant<double, Value>&(PARAM1),                              \
+      const std::variant<double, Value>&(PARAM2),                              \
+      const std::variant<double, Value>&(PARAM3), ValueRange controls,         \
+      Value target);
+
+  DECLARE_ONE_TARGET_THREE_PARAMETER(UOp, u, theta, phi, lambda)
+
+#undef DECLARE_ONE_TARGET_THREE_PARAMETER
+
   // TwoTargetZeroParameter
 
 #define DECLARE_TWO_TARGET_ZERO_PARAMETER(OP_CLASS, OP_NAME)                   \
