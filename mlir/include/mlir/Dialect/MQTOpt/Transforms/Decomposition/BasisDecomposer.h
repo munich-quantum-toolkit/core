@@ -317,26 +317,28 @@ public:
   }
 
 protected:
+  // NOLINTBEGIN(modernize-pass-by-value)
   /**
    * Constructs decomposer instance.
    */
   TwoQubitBasisDecomposer(
       Gate basisGate, fp basisFidelity,
-      decomposition::TwoQubitWeylDecomposition basisDecomposer,
-      bool isSuperControlled, matrix2x2 u0l, matrix2x2 u0r, matrix2x2 u1l,
-      matrix2x2 u1ra, matrix2x2 u1rb, matrix2x2 u2la, matrix2x2 u2lb,
-      matrix2x2 u2ra, matrix2x2 u2rb, matrix2x2 u3l, matrix2x2 u3r,
-      matrix2x2 q0l, matrix2x2 q0r, matrix2x2 q1la, matrix2x2 q1lb,
-      matrix2x2 q1ra, matrix2x2 q1rb, matrix2x2 q2l, matrix2x2 q2r)
+      const decomposition::TwoQubitWeylDecomposition& basisDecomposer,
+      bool isSuperControlled, const matrix2x2& u0l, const matrix2x2& u0r, const matrix2x2& u1l,
+      const matrix2x2& u1ra, const matrix2x2& u1rb, const matrix2x2& u2la, const matrix2x2& u2lb,
+      const matrix2x2& u2ra, const matrix2x2& u2rb, const matrix2x2& u3l, const matrix2x2& u3r,
+      const matrix2x2& q0l, const matrix2x2& q0r, const matrix2x2& q1la, const matrix2x2& q1lb,
+      const matrix2x2& q1ra, const matrix2x2& q1rb, const matrix2x2& q2l, const matrix2x2& q2r)
       : basisGate{std::move(basisGate)}, basisFidelity{basisFidelity},
-        basisDecomposer{std::move(basisDecomposer)},
-        isSuperControlled{isSuperControlled}, u0l{std::move(u0l)},
-        u0r{std::move(u0r)}, u1l{std::move(u1l)}, u1ra{std::move(u1ra)},
-        u1rb{std::move(u1rb)}, u2la{std::move(u2la)}, u2lb{std::move(u2lb)},
-        u2ra{std::move(u2ra)}, u2rb{std::move(u2rb)}, u3l{std::move(u3l)},
-        u3r{std::move(u3r)}, q0l{std::move(q0l)}, q0r{std::move(q0r)},
-        q1la{std::move(q1la)}, q1lb{std::move(q1lb)}, q1ra{std::move(q1ra)},
-        q1rb{std::move(q1rb)}, q2l{std::move(q2l)}, q2r{std::move(q2r)} {}
+        basisDecomposer{basisDecomposer},
+        isSuperControlled{isSuperControlled}, u0l{u0l},
+        u0r{u0r}, u1l{u1l}, u1ra{u1ra},
+        u1rb{u1rb}, u2la{u2la}, u2lb{u2lb},
+        u2ra{u2ra}, u2rb{u2rb}, u3l{u3l},
+        u3r{u3r}, q0l{q0l}, q0r{q0r},
+        q1la{q1la}, q1lb{q1lb}, q1ra{q1ra},
+        q1rb{q1rb}, q2l{q2l}, q2r{q2r} {}
+  // NOLINTEND(modernize-pass-by-value)
 
   /**
    * Calculate decompositions when no basis gate is required.
