@@ -472,7 +472,7 @@ protected:
    *         global phase adjustment
    */
   static std::tuple<matrix2x2, matrix2x2, fp>
-  decomposeTwoQubitProductGate(matrix4x4 specialUnitary) {
+  decomposeTwoQubitProductGate(const matrix4x4& specialUnitary) {
     // for alternative approaches, see
     // pennylane's math.decomposition.su2su2_to_tensor_products
     // or quantumflow.kronecker_decomposition
