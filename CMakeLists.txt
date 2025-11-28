@@ -33,7 +33,7 @@ FetchContent_Declare(
 FetchContent_MakeAvailable(Eigen)
 if(WIN32 AND ${CMAKE_HOST_SYSTEM_PROCESSOR} STREQUAL ARM64)
   message(STATUS "Enabling non-optimal vectorization in Eigen to avoid alignment issues")
-  add_definitions("-DEIGEN_MAX_STATIC_ALIGN_BYTES=0")
+  add_compile_definitions(EIGEN_DONT_ALIGN_STATICALLY)
 endif()
 
 option(BUILD_MQT_CORE_BINDINGS "Build the MQT Core Python bindings" OFF)
