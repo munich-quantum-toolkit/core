@@ -31,12 +31,26 @@ add_llvm_library(
   CatalystQuantumToMQTOpt
   MQTOptToCatalystQuantum)
 
+if(DEFINED PLUGIN_OUTPUT_DIRECTORY)
+  cmake_path(ABSOLUTE_PATH PLUGIN_OUTPUT_DIRECTORY BASE_DIRECTORY "${CMAKE_SOURCE_DIR}" OUTPUT_VARIABLE ABS_PLUGIN_OUTPUT_DIR)
+  set_target_properties(${TARGET_NAME} PROPERTIES
+      LIBRARY_OUTPUT_DIRECTORY "${ABS_PLUGIN_OUTPUT_DIR}"
+      RUNTIME_OUTPUT_DIRECTORY "${ABS_PLUGIN_OUTPUT_DIR}"
+      ARCHIVE_OUTPUT_DIRECTORY "${ABS_PLUGIN_OUTPUT_DIR}"
+  )
+endif()
+
 # set required C++ standard
 target_compile_features(${TARGET_NAME} PUBLIC cxx_std_20)
-target_compile_options(${TARGET_NAME} PUBLIC -fexceptions)
+include(GNUInstallDirs)
+target_compile_options(${TARGET_NAME} PUBLIC $<$<CXX_COMPILER_ID:GNU,Clang,AppleClang>:-fexceptions>
+                                             $<$<CXX_COMPILER_ID:MSVC>:/EHsc>)
 
 # install directive for scikit-build-core
+message(STATUS "Configuring mqt-core-catalyst-plugin CMakeLists.txt")
 install(
-  TARGETS ${TARGET_NAME}
-  DESTINATION .
-  COMPONENT mqt-core-catalyst_Plugin)
+    TARGETS mqt-core-catalyst-plugin
+    LIBRARY DESTINATION "mqt/core/plugins/catalyst"
+    RUNTIME DESTINATION "mqt/core/plugins/catalyst"
+    ARCHIVE DESTINATION "mqt/core/plugins/catalyst"
+)
