@@ -26,6 +26,7 @@
 #include <algorithm>
 #include <array>
 #include <atomic>
+#include <cassert>
 #include <chrono>
 #include <complex>
 #include <cstddef>
@@ -36,6 +37,7 @@
 #include <iostream>
 #include <limits>
 #include <memory>
+#include <mutex>
 #include <numeric>
 #include <ranges>
 #include <string>
@@ -212,6 +214,7 @@ Device::Device()
       qubitsNum_(std::numeric_limits<::dd::Qubit>::max()) {}
 
 void Device::initialize() {
+  // NOLINTNEXTLINE(misc-const-correctness)
   Device* expected = nullptr;
   // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
   auto* newInstance = new Device();

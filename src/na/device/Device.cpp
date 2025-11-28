@@ -112,6 +112,7 @@ Device::Device() {
 }
 
 void Device::initialize() {
+  // NOLINTNEXTLINE(misc-const-correctness)
   Device* expected = nullptr;
   // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
   auto* newInstance = new Device();
