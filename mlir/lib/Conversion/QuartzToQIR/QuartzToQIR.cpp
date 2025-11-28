@@ -1209,6 +1209,9 @@ DEFINE_TWO_TARGET_ZERO_PARAMETER(ECROp, ECR, ecr, ecr)
   };
 
 DEFINE_TWO_TARGET_ONE_PARAMETER(RXXOp, RXX, rxx, rxx, theta)
+DEFINE_TWO_TARGET_ONE_PARAMETER(RYYOp, RYY, ryy, ryy, theta)
+DEFINE_TWO_TARGET_ONE_PARAMETER(RZXOp, RZX, rzx, rzx, theta)
+DEFINE_TWO_TARGET_ONE_PARAMETER(RZZOp, RZZ, rzz, rzz, theta)
 
 #undef DEFINE_TWO_TARGET_ONE_PARAMETER
 
@@ -1659,6 +1662,9 @@ struct QuartzToQIR final : impl::QuartzToQIRBase<QuartzToQIR> {
       quartzPatterns.add<ConvertQuartzDCXOpQIR>(typeConverter, ctx, &state);
       quartzPatterns.add<ConvertQuartzECROpQIR>(typeConverter, ctx, &state);
       quartzPatterns.add<ConvertQuartzRXXOpQIR>(typeConverter, ctx, &state);
+      quartzPatterns.add<ConvertQuartzRYYOpQIR>(typeConverter, ctx, &state);
+      quartzPatterns.add<ConvertQuartzRZXOpQIR>(typeConverter, ctx, &state);
+      quartzPatterns.add<ConvertQuartzRZZOpQIR>(typeConverter, ctx, &state);
       quartzPatterns.add<ConvertQuartzXXPlusYYOpQIR>(typeConverter, ctx,
                                                      &state);
       quartzPatterns.add<ConvertQuartzCtrlQIR>(typeConverter, ctx, &state);

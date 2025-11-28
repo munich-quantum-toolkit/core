@@ -752,6 +752,84 @@ def RXXOp : QuartzOp<"rxx", traits = [UnitaryOpInterface, TwoTargetOneParameter]
     ];
 }
 
+def RYYOp : QuartzOp<"ryy", traits = [UnitaryOpInterface, TwoTargetOneParameter]> {
+    let summary = "Apply an RYY gate to two qubits";
+    let description = [{
+        Applies an RYY gate to two qubits, modifying them in place.
+
+        Example:
+        ```mlir
+        quartz.ryy(%theta) %q0, %q1 : !flux.qubit, !flux.qubit
+        ```
+    }];
+
+    let arguments = (ins Arg<QubitType, "the first target qubit", [MemRead, MemWrite]>:$qubit0_in,
+                     Arg<QubitType, "the second target qubit", [MemRead, MemWrite]>:$qubit1_in,
+                     Arg<F64, "the rotation angle theta in radians", [MemRead]>:$theta);
+    let assemblyFormat = "`(` $theta `)` $qubit0_in `,` $qubit1_in attr-dict";
+
+    let extraClassDeclaration = [{
+        DenseElementsAttr tryGetStaticMatrix();
+        static StringRef getBaseSymbol() { return "ryy"; }
+    }];
+
+    let builders = [
+        OpBuilder<(ins "Value":$qubit0_in, "Value":$qubit1_in, "const std::variant<double, Value>&":$theta)>
+    ];
+}
+
+def RZXOp : QuartzOp<"rzx", traits = [UnitaryOpInterface, TwoTargetOneParameter]> {
+    let summary = "Apply an RZX gate to two qubits";
+    let description = [{
+        Applies an RZX gate to two qubits, modifying them in place.
+
+        Example:
+        ```mlir
+        quartz.rzx(%theta) %q0, %q1 : !flux.qubit, !flux.qubit
+        ```
+    }];
+
+    let arguments = (ins Arg<QubitType, "the first target qubit", [MemRead, MemWrite]>:$qubit0_in,
+                     Arg<QubitType, "the second target qubit", [MemRead, MemWrite]>:$qubit1_in,
+                     Arg<F64, "the rotation angle theta in radians", [MemRead]>:$theta);
+    let assemblyFormat = "`(` $theta `)` $qubit0_in `,` $qubit1_in attr-dict";
+
+    let extraClassDeclaration = [{
+        DenseElementsAttr tryGetStaticMatrix();
+        static StringRef getBaseSymbol() { return "rzx"; }
+    }];
+
+    let builders = [
+        OpBuilder<(ins "Value":$qubit0_in, "Value":$qubit1_in, "const std::variant<double, Value>&":$theta)>
+    ];
+}
+
+def RZZOp : QuartzOp<"rzz", traits = [UnitaryOpInterface, TwoTargetOneParameter]> {
+    let summary = "Apply an RZZ gate to two qubits";
+    let description = [{
+        Applies an RZZ gate to two qubits, modifying them in place.
+
+        Example:
+        ```mlir
+        quartz.rzz(%theta) %q0, %q1 : !flux.qubit, !flux.qubit
+        ```
+    }];
+
+    let arguments = (ins Arg<QubitType, "the first target qubit", [MemRead, MemWrite]>:$qubit0_in,
+                     Arg<QubitType, "the second target qubit", [MemRead, MemWrite]>:$qubit1_in,
+                     Arg<F64, "the rotation angle theta in radians", [MemRead]>:$theta);
+    let assemblyFormat = "`(` $theta `)` $qubit0_in `,` $qubit1_in attr-dict";
+
+    let extraClassDeclaration = [{
+        DenseElementsAttr tryGetStaticMatrix();
+        static StringRef getBaseSymbol() { return "rzz"; }
+    }];
+
+    let builders = [
+        OpBuilder<(ins "Value":$qubit0_in, "Value":$qubit1_in, "const std::variant<double, Value>&":$theta)>
+    ];
+}
+
 def XXPlusYYOp : QuartzOp<"xx_plus_yy", traits = [UnitaryOpInterface, TwoTargetTwoParameter]> {
     let summary = "Apply an XX+YY gate to two qubits";
     let description = [{

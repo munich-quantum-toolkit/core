@@ -641,6 +641,9 @@ DEFINE_TWO_TARGET_ZERO_PARAMETER(ECROp, ecr)
   };
 
 DEFINE_TWO_TARGET_ONE_PARAMETER(RXXOp, rxx, theta)
+DEFINE_TWO_TARGET_ONE_PARAMETER(RYYOp, ryy, theta)
+DEFINE_TWO_TARGET_ONE_PARAMETER(RZXOp, rzx, theta)
+DEFINE_TWO_TARGET_ONE_PARAMETER(RZZOp, rzz, theta)
 
 #undef DEFINE_TWO_TARGET_ONE_PARAMETER
 
@@ -792,6 +795,7 @@ struct FluxToQuartz final : impl::FluxToQuartzBase<FluxToQuartz> {
                  ConvertFluxPOp, ConvertFluxROp, ConvertFluxU2Op,
                  ConvertFluxUOp, ConvertFluxSWAPOp, ConvertFluxiSWAPOp,
                  ConvertFluxDCXOp, ConvertFluxECROp, ConvertFluxRXXOp,
+                 ConvertFluxRYYOp, ConvertFluxRZXOp, ConvertFluxRZZOp,
                  ConvertFluxXXPlusYYOp, ConvertFluxCtrlOp, ConvertFluxYieldOp>(
         typeConverter, context);
 

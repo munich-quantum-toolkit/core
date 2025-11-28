@@ -746,6 +746,75 @@ void addRXXOp(QuartzProgramBuilder& builder, const qc::Operation& operation,
 }
 
 /**
+ * @brief Adds an RYY operation
+ *
+ * @details
+ * Translate an RYY operation from the QuantumComputation to quartz.ryy.
+ *
+ * @param builder The QuartzProgramBuilder used to create operations
+ * @param operation The RYY operation to translate
+ * @param qubits Flat vector of qubit values indexed by physical qubit index
+ */
+void addRYYOp(QuartzProgramBuilder& builder, const qc::Operation& operation,
+              const llvm::SmallVector<Value>& qubits) {
+  const auto& theta = operation.getParameter()[0];
+  const auto& target0 = qubits[operation.getTargets()[0]];
+  const auto& target1 = qubits[operation.getTargets()[1]];
+  if (const auto& posControls = getPosControls(operation, qubits);
+      posControls.empty()) {
+    builder.ryy(theta, target0, target1);
+  } else {
+    builder.mcryy(theta, posControls, target0, target1);
+  }
+}
+
+/**
+ * @brief Adds an RZX operation
+ *
+ * @details
+ * Translate an RZX operation from the QuantumComputation to quartz.rzx.
+ *
+ * @param builder The QuartzProgramBuilder used to create operations
+ * @param operation The RZX operation to translate
+ * @param qubits Flat vector of qubit values indexed by physical qubit index
+ */
+void addRZXOp(QuartzProgramBuilder& builder, const qc::Operation& operation,
+              const llvm::SmallVector<Value>& qubits) {
+  const auto& theta = operation.getParameter()[0];
+  const auto& target0 = qubits[operation.getTargets()[0]];
+  const auto& target1 = qubits[operation.getTargets()[1]];
+  if (const auto& posControls = getPosControls(operation, qubits);
+      posControls.empty()) {
+    builder.rzx(theta, target0, target1);
+  } else {
+    builder.mcrzx(theta, posControls, target0, target1);
+  }
+}
+
+/**
+ * @brief Adds an RZZ operation
+ *
+ * @details
+ * Translate an RZZ operation from the QuantumComputation to quartz.rzz.
+ *
+ * @param builder The QuartzProgramBuilder used to create operations
+ * @param operation The RZZ operation to translate
+ * @param qubits Flat vector of qubit values indexed by physical qubit index
+ */
+void addRZZOp(QuartzProgramBuilder& builder, const qc::Operation& operation,
+              const llvm::SmallVector<Value>& qubits) {
+  const auto& theta = operation.getParameter()[0];
+  const auto& target0 = qubits[operation.getTargets()[0]];
+  const auto& target1 = qubits[operation.getTargets()[1]];
+  if (const auto& posControls = getPosControls(operation, qubits);
+      posControls.empty()) {
+    builder.rzz(theta, target0, target1);
+  } else {
+    builder.mcrzz(theta, posControls, target0, target1);
+  }
+}
+
+/**
  * @brief Adds an XXPlusYY operation
  *
  * @details
@@ -870,6 +939,18 @@ translateOperations(QuartzProgramBuilder& builder,
       break;
     case qc::OpType::RXX:
       addRXXOp(builder, *operation, qubits);
+      break;
+    case qc::OpType::RYY:
+      addRYYOp(builder, *operation, qubits);
+      ;
+      break;
+    case qc::OpType::RZX:
+      addRZXOp(builder, *operation, qubits);
+      ;
+      break;
+    case qc::OpType::RZZ:
+      addRZZOp(builder, *operation, qubits);
+      ;
       break;
     case qc::OpType::XXplusYY:
       addXXPlusYYOp(builder, *operation, qubits);

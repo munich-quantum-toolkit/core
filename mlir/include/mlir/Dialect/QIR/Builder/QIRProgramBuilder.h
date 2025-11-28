@@ -677,6 +677,9 @@ public:
                                  Value target1);
 
   DECLARE_TWO_TARGET_ONE_PARAMETER(rxx, rxx, theta)
+  DECLARE_TWO_TARGET_ONE_PARAMETER(ryy, ryy, theta)
+  DECLARE_TWO_TARGET_ONE_PARAMETER(rzx, rzx, theta)
+  DECLARE_TWO_TARGET_ONE_PARAMETER(rzz, rzz, theta)
 
 #undef DECLARE_TWO_TARGET_ONE_PARAMETER
 

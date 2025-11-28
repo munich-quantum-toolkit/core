@@ -637,6 +637,9 @@ public:
                                     Value qubit1);
 
   DECLARE_TWO_TARGET_ONE_PARAMETER(RXXOp, rxx, theta)
+  DECLARE_TWO_TARGET_ONE_PARAMETER(RYYOp, ryy, theta)
+  DECLARE_TWO_TARGET_ONE_PARAMETER(RZXOp, rzx, theta)
+  DECLARE_TWO_TARGET_ONE_PARAMETER(RZZOp, rzz, theta)
 
 #undef DECLARE_TWO_TARGET_ONE_PARAMETER
 
