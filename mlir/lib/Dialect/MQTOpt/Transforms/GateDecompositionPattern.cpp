@@ -76,26 +76,37 @@ struct GateDecompositionPattern final
       // too short
       return mlir::failure();
     }
+
+    std::optional<decomposition::TwoQubitGateSequence> bestSequence;
+
     if (series.isSingleQubitSeries()) {
       // only a single-qubit series;
       // single-qubit euler decomposition is more efficient
-      return mlir::failure();
-    }
-
-    const matrix4x4 unitaryMatrix = series.getUnitaryMatrix();
-    const auto targetDecomposition =
-        decomposition::TwoQubitWeylDecomposition::create(unitaryMatrix,
-                                                         DEFAULT_FIDELITY);
-
-    std::optional<decomposition::TwoQubitGateSequence> bestSequence;
-    for (const auto& decomposer : basisDecomposers) {
-      auto sequence = decomposer.twoQubitDecompose(
-          targetDecomposition, decomposerEulerBases, DEFAULT_FIDELITY, false,
-          std::nullopt);
-      if (sequence) {
+      const matrix2x2 unitaryMatrix = series.getSingleQubitUnitaryMatrix();
+      for (auto&& eulerBasis : decomposerEulerBases) {
+        auto sequence = decomposition::EulerDecomposition::generateCircuit(
+            eulerBasis, unitaryMatrix, true, std::nullopt);
         if (!bestSequence ||
-            sequence->complexity() < bestSequence->complexity()) {
+            sequence.complexity() < bestSequence->complexity()) {
           bestSequence = sequence;
+        }
+      }
+    } else {
+      // two-qubit series; perform two-qubit basis decomposition
+      const matrix4x4 unitaryMatrix = series.getUnitaryMatrix();
+      const auto targetDecomposition =
+          decomposition::TwoQubitWeylDecomposition::create(unitaryMatrix,
+                                                           DEFAULT_FIDELITY);
+
+      for (const auto& decomposer : basisDecomposers) {
+        auto sequence = decomposer.twoQubitDecompose(
+            targetDecomposition, decomposerEulerBases, DEFAULT_FIDELITY, false,
+            std::nullopt);
+        if (sequence) {
+          if (!bestSequence ||
+              sequence->complexity() < bestSequence->complexity()) {
+            bestSequence = sequence;
+          }
         }
       }
     }
@@ -187,6 +198,21 @@ protected:
         }
       }
       return result;
+    }
+
+    [[nodiscard]] matrix2x2 getSingleQubitUnitaryMatrix() const {
+      auto unitaryMatrix = decomposition::IDENTITY_GATE;
+      for (auto&& gate : gates) {
+        auto gateMatrix = decomposition::getSingleQubitMatrix(
+            {.type = helpers::getQcType(gate.op),
+             .parameter = helpers::getParameters(gate.op),
+             .qubitId = gate.qubitIds});
+        unitaryMatrix = gateMatrix * unitaryMatrix;
+      }
+      unitaryMatrix *= std::exp(IM * globalPhase);
+
+      assert(helpers::isUnitaryMatrix(unitaryMatrix));
+      return unitaryMatrix;
     }
 
     [[nodiscard]] matrix4x4 getUnitaryMatrix() const {
@@ -441,7 +467,11 @@ protected:
     assert((unitaryMatrix * std::exp(IM * sequence.globalPhase))
                .isApprox(series.getUnitaryMatrix(), SANITY_CHECK_PRECISION));
 
-    rewriter.replaceAllUsesWith(series.outQubits, inQubits);
+    if (series.isSingleQubitSeries()) {
+      rewriter.replaceAllUsesWith(series.outQubits[0], inQubits[0]);
+    } else {
+      rewriter.replaceAllUsesWith(series.outQubits, inQubits);
+    }
     for (auto&& gate : llvm::reverse(series.gates)) {
       rewriter.eraseOp(gate.op);
     }
