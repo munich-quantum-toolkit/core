@@ -275,6 +275,32 @@ DEFINE_TWO_TARGET_ZERO_PARAMETER(ECROp, ecr)
 
 #undef DEFINE_TWO_TARGET_ZERO_PARAMETER
 
+// TwoTargetOneParameter
+
+#define DEFINE_TWO_TARGET_ONE_PARAMETER(OP_CLASS, OP_NAME, PARAM)              \
+  QuartzProgramBuilder& QuartzProgramBuilder::OP_NAME(                         \
+      const std::variant<double, Value>&(PARAM), Value qubit0, Value qubit1) { \
+    create<OP_CLASS>(loc, qubit0, qubit1, PARAM);                              \
+    return *this;                                                              \
+  }                                                                            \
+  QuartzProgramBuilder& QuartzProgramBuilder::c##OP_NAME(                      \
+      const std::variant<double, Value>&(PARAM), Value control, Value qubit0,  \
+      Value qubit1) {                                                          \
+    return mc##OP_NAME(PARAM, {control}, qubit0, qubit1);                      \
+  }                                                                            \
+  QuartzProgramBuilder& QuartzProgramBuilder::mc##OP_NAME(                     \
+      const std::variant<double, Value>&(PARAM), ValueRange controls,          \
+      Value qubit0, Value qubit1) {                                            \
+    create<CtrlOp>(loc, controls, [&](OpBuilder& b) {                          \
+      b.create<OP_CLASS>(loc, qubit0, qubit1, PARAM);                          \
+    });                                                                        \
+    return *this;                                                              \
+  }
+
+DEFINE_TWO_TARGET_ONE_PARAMETER(RXXOp, rxx, theta)
+
+#undef DEFINE_TWO_TARGET_ONE_PARAMETER
+
 //===----------------------------------------------------------------------===//
 // Modifiers
 //===----------------------------------------------------------------------===//

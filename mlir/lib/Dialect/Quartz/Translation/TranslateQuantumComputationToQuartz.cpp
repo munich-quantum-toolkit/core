@@ -723,6 +723,29 @@ void addECROp(QuartzProgramBuilder& builder, const qc::Operation& operation,
 }
 
 /**
+ * @brief Adds an RXX operation
+ *
+ * @details
+ * Translate an RXX operation from the QuantumComputation to quartz.rxx.
+ *
+ * @param builder The QuartzProgramBuilder used to create operations
+ * @param operation The RXX operation to translate
+ * @param qubits Flat vector of qubit values indexed by physical qubit index
+ */
+void addRXXOp(QuartzProgramBuilder& builder, const qc::Operation& operation,
+              const llvm::SmallVector<Value>& qubits) {
+  const auto& theta = operation.getParameter()[0];
+  const auto& target0 = qubits[operation.getTargets()[0]];
+  const auto& target1 = qubits[operation.getTargets()[1]];
+  if (const auto& posControls = getPosControls(operation, qubits);
+      posControls.empty()) {
+    builder.rxx(theta, target0, target1);
+  } else {
+    builder.mcrxx(theta, posControls, target0, target1);
+  }
+}
+
+/**
  * @brief Translates operations from QuantumComputation to Quartz dialect
  *
  * @details
@@ -818,6 +841,9 @@ translateOperations(QuartzProgramBuilder& builder,
       break;
     case qc::OpType::ECR:
       addECROp(builder, *operation, qubits);
+      break;
+    case qc::OpType::RXX:
+      addRXXOp(builder, *operation, qubits);
       break;
     default:
       // Unsupported operation - skip for now

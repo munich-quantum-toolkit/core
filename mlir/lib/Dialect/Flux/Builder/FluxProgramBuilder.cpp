@@ -378,6 +378,50 @@ FluxProgramBuilder::createMultiControlledTwoTargetZeroParameter(
   return {controlsOut, {targetsOut[0], targetsOut[1]}};
 }
 
+// TwoTargetOneParameter helpers
+
+template <typename OpType>
+std::pair<Value, Value> FluxProgramBuilder::createTwoTargetOneParameter(
+    const std::variant<double, Value>& parameter, const Value qubit0,
+    const Value qubit1) {
+  auto op = create<OpType>(loc, qubit0, qubit1, parameter);
+  const auto& qubit0Out = op.getQubit0Out();
+  const auto& qubit1Out = op.getQubit1Out();
+  updateQubitTracking(qubit0, qubit0Out);
+  updateQubitTracking(qubit1, qubit1Out);
+  return {qubit0Out, qubit1Out};
+}
+
+template <typename OpType>
+std::pair<Value, std::pair<Value, Value>>
+FluxProgramBuilder::createControlledTwoTargetOneParameter(
+    const std::variant<double, Value>& parameter, const Value control,
+    const Value qubit0, const Value qubit1) {
+  const auto [controlsOut, targetsOut] =
+      ctrl(control, {qubit0, qubit1},
+           [&](OpBuilder& b, const ValueRange targets) -> ValueRange {
+             const auto op =
+                 b.create<OpType>(loc, targets[0], targets[1], parameter);
+             return op->getResults();
+           });
+  return {controlsOut[0], {targetsOut[0], targetsOut[1]}};
+}
+
+template <typename OpType>
+std::pair<ValueRange, std::pair<Value, Value>>
+FluxProgramBuilder::createMultiControlledTwoTargetOneParameter(
+    const std::variant<double, Value>& parameter, const ValueRange controls,
+    const Value qubit0, const Value qubit1) {
+  const auto [controlsOut, targetsOut] =
+      ctrl(controls, {qubit0, qubit1},
+           [&](OpBuilder& b, const ValueRange targets) -> ValueRange {
+             const auto op =
+                 b.create<OpType>(loc, targets[0], targets[1], parameter);
+             return op->getResults();
+           });
+  return {controlsOut, {targetsOut[0], targetsOut[1]}};
+}
+
 // OneTargetZeroParameter
 
 #define DEFINE_ONE_TARGET_ZERO_PARAMETER(OP_CLASS, OP_NAME)                    \
@@ -520,6 +564,31 @@ DEFINE_TWO_TARGET_ZERO_PARAMETER(DCXOp, dcx)
 DEFINE_TWO_TARGET_ZERO_PARAMETER(ECROp, ecr)
 
 #undef DEFINE_TWO_TARGET_ZERO_PARAMETER
+
+// TwoTargetOneParameter
+
+#define DEFINE_TWO_TARGET_ONE_PARAMETER(OP_CLASS, OP_NAME, PARAM)              \
+  std::pair<Value, Value> FluxProgramBuilder::OP_NAME(                         \
+      const std::variant<double, Value>&(PARAM), Value qubit0, Value qubit1) { \
+    return createTwoTargetOneParameter<OP_CLASS>(PARAM, qubit0, qubit1);       \
+  }                                                                            \
+  std::pair<Value, std::pair<Value, Value>> FluxProgramBuilder::c##OP_NAME(    \
+      const std::variant<double, Value>&(PARAM), const Value control,          \
+      Value qubit0, Value qubit1) {                                            \
+    return createControlledTwoTargetOneParameter<OP_CLASS>(PARAM, control,     \
+                                                           qubit0, qubit1);    \
+  }                                                                            \
+  std::pair<ValueRange, std::pair<Value, Value>>                               \
+      FluxProgramBuilder::mc##OP_NAME(                                         \
+          const std::variant<double, Value>&(PARAM),                           \
+          const ValueRange controls, Value qubit0, Value qubit1) {             \
+    return createMultiControlledTwoTargetOneParameter<OP_CLASS>(               \
+        PARAM, controls, qubit0, qubit1);                                      \
+  }
+
+DEFINE_TWO_TARGET_ONE_PARAMETER(RXXOp, rxx, theta)
+
+#undef DEFINE_TWO_TARGET_ONE_PARAMETER
 
 //===----------------------------------------------------------------------===//
 // Modifiers

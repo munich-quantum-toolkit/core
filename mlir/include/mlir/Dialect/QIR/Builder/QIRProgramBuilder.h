@@ -610,6 +610,73 @@ public:
 
 #undef DECLARE_TWO_TARGET_ZERO_PARAMETER
 
+  // TwoTargetOneParameter
+
+#define DECLARE_TWO_TARGET_ONE_PARAMETER(OP_NAME, QIR_NAME, PARAM)             \
+  /**                                                                          \
+   * @brief Apply a QIR QIR_NAME operation                                     \
+   *                                                                           \
+   * @param PARAM Rotation angle in radians                                    \
+   * @param qubit0 Target qubit                                                \
+   * @param qubit1 Target qubit                                                \
+   * @return Reference to this builder for method chaining                     \
+   *                                                                           \
+   * @par Example:                                                             \
+   * ```c++                                                                    \
+   * builder.OP_NAME(PARAM, q0, q1);                                           \
+   * ```                                                                       \
+   * ```mlir                                                                   \
+   * llvm.call @__quantum__qis__##QIR_NAME##__body(%q0, %q1, %PARAM) :         \
+   * (!llvm.ptr, !llvm.ptr, f64) -> ()                                         \
+   * ```                                                                       \
+   */                                                                          \
+  QIRProgramBuilder& OP_NAME(const std::variant<double, Value>&(PARAM),        \
+                             Value qubit0, Value qubit1);                      \
+  /**                                                                          \
+   * @brief Apply a controlled QIR_NAME operation                              \
+   *                                                                           \
+   * @param PARAM Rotation angle in radians                                    \
+   * @param control Control qubit                                              \
+   * @param target Target qubit                                                \
+   * @return Reference to this builder for method chaining                     \
+   *                                                                           \
+   * @par Example:                                                             \
+   * ```c++                                                                    \
+   * builder.c##OP_NAME(PARAM, q0, q1, q2);                                    \
+   * ```                                                                       \
+   * ```mlir                                                                   \
+   * llvm.call @__quantum__qis__c##QIR_NAME##__body(%q0, %q1, %q2, %PARAM) :   \
+   * (!llvm.ptr, !llvm.ptr, !llvm.ptr, f64) -> ()                              \
+   * ```                                                                       \
+   */                                                                          \
+  QIRProgramBuilder& c##OP_NAME(const std::variant<double, Value>&(PARAM),     \
+                                Value control, Value qubit0, Value qubit1);    \
+  /**                                                                          \
+   * @brief Apply a multi-controlled QIR_NAME operation                        \
+   *                                                                           \
+   * @param PARAM Rotation angle in radians                                    \
+   * @param controls Control qubits                                            \
+   * @param target Target qubit                                                \
+   * @return Reference to this builder for method chaining                     \
+   *                                                                           \
+   * @par Example:                                                             \
+   * ```c++                                                                    \
+   * builder.mc##OP_NAME(PARAM, {q0, q1}, q2, q3);                             \
+   * ```                                                                       \
+   * ```mlir                                                                   \
+   * llvm.call @__quantum__qis__cc##QIR_NAME##__body(%q0, %q1, %q2, %q3,       \
+   * %PARAM) :                                                                 \
+   * (!llvm.ptr, !llvm.ptr, !llvm.ptr, !llvm.ptr, f64) -> ()                   \
+   * ```                                                                       \
+   */                                                                          \
+  QIRProgramBuilder& mc##OP_NAME(const std::variant<double, Value>&(PARAM),    \
+                                 ValueRange controls, Value qubit0,            \
+                                 Value qubit1);
+
+  DECLARE_TWO_TARGET_ONE_PARAMETER(rxx, rxx, theta)
+
+#undef DECLARE_TWO_TARGET_ONE_PARAMETER
+
   //===--------------------------------------------------------------------===//
   // Finalization
   //===--------------------------------------------------------------------===//
@@ -723,6 +790,20 @@ private:
   void createTwoTargetZeroParameter(const ValueRange controls,
                                     const Value target0, const Value target1,
                                     StringRef fnName);
+
+  /**
+   * @brief Helper to create a two-target, one-parameter QIR operation
+   *
+   * @param parameter Operation parameter
+   * @param controls Control qubits
+   * @param target0 Target qubit
+   * @param target1 Target qubit
+   * @param fnName Name of the QIR function to call
+   */
+  void createTwoTargetOneParameter(const std::variant<double, Value>& parameter,
+                                   const ValueRange controls,
+                                   const Value target0, const Value target1,
+                                   StringRef fnName);
 
   /**
    * @brief Generate array-based output recording in the output block

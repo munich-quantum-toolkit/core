@@ -687,6 +687,99 @@ public:
 
 #undef DECLARE_TWO_TARGET_ZERO_PARAMETER
 
+  // TwoTargetOneParameter
+
+#define DECLARE_TWO_TARGET_ONE_PARAMETER(OP_CLASS, OP_NAME, PARAM)             \
+  /**                                                                          \
+   * @brief Apply a OP_CLASS                                                   \
+   *                                                                           \
+   * @details                                                                  \
+   * Consumes the input qubits and produces new output qubit SSA values. The   \
+   * inputs are validated and the tracking is updated.                         \
+   *                                                                           \
+   * @param PARAM Rotation angle in radians                                    \
+   * @param qubit0 Input qubit (must be valid/unconsumed)                      \
+   * @param qubit1 Input qubit (must be valid/unconsumed)                      \
+   * @return Output qubits                                                     \
+   *                                                                           \
+   * @par Example:                                                             \
+   * ```c++                                                                    \
+   * {q0_out, q1_out} = builder.OP_NAME(PARAM, q0_in, q1_in);                  \
+   * ```                                                                       \
+   * ```mlir                                                                   \
+   * %q0_out, %q1_out = flux.OP_NAME(%PARAM) %q0_in, %q1_in : !flux.qubit,     \
+   * !flux.qubit                                                               \
+   * -> !flux.qubit, !flux.qubit                                               \
+   * ```                                                                       \
+   */                                                                          \
+  std::pair<Value, Value> OP_NAME(const std::variant<double, Value>& PARAM,    \
+                                  Value qubit0, Value qubit1);                 \
+  /**                                                                          \
+   * @brief Apply a controlled OP_CLASS                                        \
+   *                                                                           \
+   * @details                                                                  \
+   * Consumes the input control and target qubits and produces new output      \
+   * qubit SSA values. The inputs are validated and the tracking is updated.   \
+   *                                                                           \
+   * @param PARAM Rotation angle in radians                                    \
+   * @param control Input control qubit (must be valid/unconsumed)             \
+   * @param qubit0 Target qubit (must be valid/unconsumed)                     \
+   * @param qubit1 Target qubit (must be valid/unconsumed)                     \
+   * @return Pair of (output_control_qubit, (output_qubit0, output_qubit1))    \
+   *                                                                           \
+   * @par Example:                                                             \
+   * ```c++                                                                    \
+   * {q0_out, {q1_out, q2_out}} = builder.c##OP_NAME(PARAM, q0_in, q1_in,      \
+   * q2_in);                                                                   \
+   * ```                                                                       \
+   * ```mlir                                                                   \
+   * %q0_out, %q1_out, %q2_out = flux.ctrl(%q0_in) %q1_in, %q2_in {            \
+   *   %q1_res, %q2_res = flux.OP_NAME(%PARAM) %q1_in, %q2_in : !flux.qubit,   \
+   * !flux.qubit -> !flux.qubit, !flux.qubit                                   \
+   *   flux.yield %q1_res, %q2_res                                             \
+   * } : ({!flux.qubit}, {!flux.qubit, !flux.qubit}) -> ({!flux.qubit},        \
+   * {!flux.qubit, !flux.qubit})                                               \
+   * ```                                                                       \
+   */                                                                          \
+  std::pair<Value, std::pair<Value, Value>> c##OP_NAME(                        \
+      const std::variant<double, Value>& PARAM, Value control, Value qubit0,   \
+      Value qubit1);                                                           \
+  /**                                                                          \
+   * @brief Apply a multi-controlled OP_CLASS                                  \
+   *                                                                           \
+   * @details                                                                  \
+   * Consumes the input control and target qubits and produces new output      \
+   * qubit SSA values. The inputs are validated and the tracking is updated.   \
+   *                                                                           \
+   * @param PARAM Rotation angle in radians                                    \
+   * @param controls Input control qubits (must be valid/unconsumed)           \
+   * @param qubit0 Target qubit (must be valid/unconsumed)                     \
+   * @param qubit1 Target qubit (must be valid/unconsumed)                     \
+   * @return Pair of (output_control_qubits, (output_qubit0, output_qubit1))   \
+   *                                                                           \
+   * @par Example:                                                             \
+   * ```c++                                                                    \
+   * {controls_out, {q1_out, q2_out}} = builder.mc##OP_NAME(PARAM, {q0_in,     \
+   * q1_in}, q2_in, q3_in);                                                    \
+   * ```                                                                       \
+   * ```mlir                                                                   \
+   * %controls_out, %q1_out, %q2_out = flux.ctrl(%q0_in, %q1_in) %q2_in,       \
+   * %q3_in {                                                                  \
+   *   %q2_res, %q3_res = flux.OP_NAME(%PARAM) %q2_in, %q3_in : !flux.qubit,   \
+   * !flux.qubit -> !flux.qubit, !flux.qubit                                   \
+   *   flux.yield %q2_res, %q3_res                                             \
+   * } : ({!flux.qubit, !flux.qubit}, {!flux.qubit, !flux.qubit}) ->           \
+   * ({!flux.qubit, !flux.qubit}, {!flux.qubit, !flux.qubit})                  \
+   * ```                                                                       \
+   */                                                                          \
+  std::pair<ValueRange, std::pair<Value, Value>> mc##OP_NAME(                  \
+      const std::variant<double, Value>& PARAM, ValueRange controls,           \
+      Value qubit0, Value qubit1);
+
+  DECLARE_TWO_TARGET_ONE_PARAMETER(RXXOp, rxx, theta)
+
+#undef DECLARE_TWO_TARGET_ONE_PARAMETER
+
   //===--------------------------------------------------------------------===//
   // Modifiers
   //===--------------------------------------------------------------------===//
@@ -989,6 +1082,54 @@ private:
   createMultiControlledTwoTargetZeroParameter(const ValueRange controls,
                                               const Value qubit0,
                                               const Value qubit1);
+
+  /**
+   * @brief Helper to create a two-target, one-parameter Flux operation
+   *
+   * @tparam OpType The operation type of the Flux operation
+   * @param parameter Operation parameter
+   * @param qubit0 Input qubit
+   * @param qubit1 Input qubit
+   * @return Pair of (output_qubit0, output_qubit1)
+   */
+  template <typename OpType>
+  std::pair<Value, Value>
+  createTwoTargetOneParameter(const std::variant<double, Value>& parameter,
+                              const Value qubit0, const Value qubit1);
+
+  /**
+   * @brief Helper to create a controlled two-target, one-parameter Flux
+   * operation
+   *
+   * @tparam OpType The operation type of the Flux operation
+   * @param parameter Operation parameter
+   * @param control Input control qubit
+   * @param qubit0 Input target qubit
+   * @param qubit1 Input target qubit
+   * @return Pair of (output_control_qubit, (output_qubit0, output_qubit1))
+   */
+  template <typename OpType>
+  std::pair<Value, std::pair<Value, Value>>
+  createControlledTwoTargetOneParameter(
+      const std::variant<double, Value>& parameter, const Value control,
+      const Value qubit0, const Value qubit1);
+
+  /**
+   * @brief Helper to create a multi-controlled two-target, one-parameter Flux
+   * operation
+   *
+   * @tparam OpType The operation type of the Flux operation
+   * @param parameter Operation parameter
+   * @param controls Input control qubits
+   * @param qubit0 Input target qubit
+   * @param qubit1 Input target qubit
+   * @return Pair of (output_control_qubits, (output_qubit0, output_qubit1))
+   */
+  template <typename OpType>
+  std::pair<ValueRange, std::pair<Value, Value>>
+  createMultiControlledTwoTargetOneParameter(
+      const std::variant<double, Value>& parameter, const ValueRange controls,
+      const Value qubit0, const Value qubit1);
 
   //===--------------------------------------------------------------------===//
   // Linear Type Tracking Helpers

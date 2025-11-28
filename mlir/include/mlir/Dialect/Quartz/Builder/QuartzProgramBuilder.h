@@ -573,6 +573,73 @@ public:
 
 #undef DECLARE_TWO_TARGET_ZERO_PARAMETER
 
+  // TwoTargetOneParameter
+
+#define DECLARE_TWO_TARGET_ONE_PARAMETER(OP_CLASS, OP_NAME, PARAM)             \
+  /**                                                                          \
+   * @brief Apply a OP_CLASS                                                   \
+   *                                                                           \
+   * @param PARAM Rotation angle in radians                                    \
+   * @param qubit0 Target qubit                                                \
+   * @param qubit1 Target qubit                                                \
+   * @return Reference to this builder for method chaining                     \
+   *                                                                           \
+   * @par Example:                                                             \
+   * ```c++                                                                    \
+   * builder.OP_NAME(PARAM, q0, q1);                                           \
+   * ```                                                                       \
+   * ```mlir                                                                   \
+   * quartz.OP_NAME(%PARAM) %q0, %q1 : !quartz.qubit, !quartz.qubit            \
+   * ```                                                                       \
+   */                                                                          \
+  QuartzProgramBuilder& OP_NAME(const std::variant<double, Value>&(PARAM),     \
+                                Value qubit0, Value qubit1);                   \
+  /**                                                                          \
+   * @brief Apply a controlled OP_CLASS                                        \
+   *                                                                           \
+   * @param PARAM Rotation angle in radians                                    \
+   * @param control Control qubit                                              \
+   * @param qubit0 Target qubit                                                \
+   * @param qubit1 Target qubit                                                \
+   * @return Reference to this builder for method chaining                     \
+   *                                                                           \
+   * @par Example:                                                             \
+   * ```c++                                                                    \
+   * builder.c##OP_NAME(PARAM, q0, q1, q2);                                    \
+   * ```                                                                       \
+   * ```mlir                                                                   \
+   * quartz.ctrl(%q0) {                                                        \
+   *   quartz.OP_NAME(%PARAM) %q1, %q2 : !quartz.qubit, !quartz.qubit          \
+   * }                                                                         \
+   */                                                                          \
+  QuartzProgramBuilder& c##OP_NAME(const std::variant<double, Value>&(PARAM),  \
+                                   Value control, Value qubit0, Value qubit1); \
+  /**                                                                          \
+   * @brief Apply a multi-controlled OP_CLASS                                  \
+   *                                                                           \
+   * @param PARAM Rotation angle in radians                                    \
+   * @param controls Control qubits                                            \
+   * @param qubit0 Target qubit                                                \
+   * @param qubit1 Target qubit                                                \
+   * @return Reference to this builder for method chaining                     \
+   *                                                                           \
+   * @par Example:                                                             \
+   * ```c++                                                                    \
+   * builder.mc##OP_NAME(PARAM, {q0, q1}, q2, q3);                             \
+   * ```                                                                       \
+   * ```mlir                                                                   \
+   * quartz.ctrl(%q0, %q1) {                                                   \
+   *   quartz.OP_NAME(%PARAM) %q2, %q3 : !quartz.qubit, !quartz.qubit          \
+   * }                                                                         \
+   */                                                                          \
+  QuartzProgramBuilder& mc##OP_NAME(const std::variant<double, Value>&(PARAM), \
+                                    ValueRange controls, Value qubit0,         \
+                                    Value qubit1);
+
+  DECLARE_TWO_TARGET_ONE_PARAMETER(RXXOp, rxx, theta)
+
+#undef DECLARE_TWO_TARGET_ONE_PARAMETER
+
   //===--------------------------------------------------------------------===//
   // Modifiers
   //===--------------------------------------------------------------------===//

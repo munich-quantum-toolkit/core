@@ -222,6 +222,19 @@ inline DenseElementsAttr getMatrixECR(MLIRContext* ctx) {
   return DenseElementsAttr::get(type, matrix);
 }
 
+inline DenseElementsAttr getMatrixRXX(MLIRContext* ctx, double theta) {
+  const auto& complexType = ComplexType::get(Float64Type::get(ctx));
+  const auto& type = RankedTensorType::get({4, 4}, complexType);
+  const std::complex<double> z = 0.0 + 0i;
+  const std::complex<double> c = std::cos(theta / 2.0) + 0i;
+  const std::complex<double> s = -1i * std::sin(theta / 2.0);
+  const auto matrix = {c, z, z, s,  // row 0
+                       z, c, s, z,  // row 1
+                       z, s, c, z,  // row 2
+                       s, z, z, c}; // row 3
+  return DenseElementsAttr::get(type, matrix);
+}
+
 inline DenseElementsAttr getMatrixCtrl(mlir::MLIRContext* ctx,
                                        size_t numControls,
                                        mlir::DenseElementsAttr target) {

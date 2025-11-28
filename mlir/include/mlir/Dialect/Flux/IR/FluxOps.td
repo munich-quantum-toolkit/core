@@ -251,6 +251,7 @@ def OneTargetOneParameter : TargetAndParameterArityTrait<1, 1>;
 def OneTargetTwoParameter : TargetAndParameterArityTrait<1, 2>;
 def OneTargetThreeParameter : TargetAndParameterArityTrait<1, 3>;
 def TwoTargetZeroParameter : TargetAndParameterArityTrait<2, 0>;
+def TwoTargetOneParameter : TargetAndParameterArityTrait<2, 1>;
 
 //===----------------------------------------------------------------------===//
 // Unitary Operations
@@ -793,6 +794,33 @@ def ECROp : FluxOp<"ecr", traits = [UnitaryOpInterface, TwoTargetZeroParameter]>
         DenseElementsAttr tryGetStaticMatrix();
         static StringRef getBaseSymbol() { return "ecr"; }
     }];
+}
+
+def RXXOp : FluxOp<"rxx", traits = [UnitaryOpInterface, TwoTargetOneParameter]> {
+    let summary = "Apply an RXX gate to two qubits";
+    let description = [{
+        Applies an RXX gate to two qubits and returns the transformed qubits.
+
+        Example:
+        ```mlir
+        %q0_out, %q1_out = flux.rxx(%theta) %q0_in, %q1_in : !flux.qubit, !flux.qubit -> !flux.qubit, !flux.qubit
+        ```
+    }];
+
+    let arguments = (ins Arg<QubitType, "the first target qubit", [MemRead]>:$qubit0_in,
+                     Arg<QubitType, "the second target qubit", [MemRead]>:$qubit1_in,
+                     Arg<F64, "the rotation angle theta in radians", [MemRead]>:$theta);
+    let results = (outs QubitType:$qubit0_out, QubitType:$qubit1_out);
+    let assemblyFormat = "`(` $theta `)` $qubit0_in `,` $qubit1_in attr-dict `:` type($qubit0_in) `,` type($qubit1_in) `->` type($qubit0_out) `,` type($qubit1_out)";
+
+    let extraClassDeclaration = [{
+        DenseElementsAttr tryGetStaticMatrix();
+        static StringRef getBaseSymbol() { return "rxx"; }
+    }];
+
+    let builders = [
+        OpBuilder<(ins "Value":$qubit0_in, "Value":$qubit1_in, "const std::variant<double, Value>&":$theta)>
+    ];
 }
 
 //===----------------------------------------------------------------------===//
