@@ -15,6 +15,10 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 - ♻️ Preserve tuple structure and improve site type clarity of the MQT NA Default QDMI Device ([#1299]) ([**@marcelwa**])
 - ♻️ Move DD package evaluation module to standalone script ([#1327]) ([**@burgholzer**])
 
+### Fixed
+
+- 🐛 Fix memory management, i.e, make it explicit, in dynamic QDMI device ([#1336]) ([**@ystade**])
+
 ### Removed
 
 - 🔥 Remove the `evaluation` extra from the MQT Core Python package ([#1327]) ([**@burgholzer**])
@@ -249,6 +253,7 @@ _📚 Refer to the [GitHub Release Notes](https://github.com/munich-quantum-tool
 
 <!-- PR links -->
 
+[#1336]: https://github.com/munich-quantum-toolkit/core/pull/1336
 [#1327]: https://github.com/munich-quantum-toolkit/core/pull/1327
 [#1300]: https://github.com/munich-quantum-toolkit/core/pull/1300
 [#1299]: https://github.com/munich-quantum-toolkit/core/pull/1299
