@@ -31,6 +31,10 @@ FetchContent_Declare(
   GIT_TAG 3.4.1
   GIT_SHALLOW TRUE)
 FetchContent_MakeAvailable(Eigen)
+if(WIN32 AND ${CMAKE_HOST_SYSTEM_PROCESSOR} STREQUAL ARM64)
+  message(STATUS "Enabling non-optimal vectorization in Eigen to avoid alignment issues")
+  add_definitions("-DEIGEN_MAX_STATIC_ALIGN_BYTES=0")
+endif()
 
 option(BUILD_MQT_CORE_BINDINGS "Build the MQT Core Python bindings" OFF)
 if(BUILD_MQT_CORE_BINDINGS)
