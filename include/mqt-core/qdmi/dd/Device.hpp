@@ -19,7 +19,6 @@
 #include "mqt_ddsim_qdmi/device.h"
 
 #include <atomic>
-#include <cassert>
 #include <cstddef>
 #include <cstdint>
 #include <future>
