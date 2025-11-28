@@ -236,62 +236,30 @@ QIRProgramBuilder& QIRProgramBuilder::reset(const Value qubit) {
 // Unitary Operations
 //===----------------------------------------------------------------------===//
 
-// Helper methods
-
-void QIRProgramBuilder::createOneTargetZeroParameter(const ValueRange controls,
-                                                     const Value target,
-                                                     StringRef fnName) {
-  // Save current insertion point
-  const OpBuilder::InsertionGuard insertGuard(builder);
-
-  // Insert in body block (before branch)
-  builder.setInsertionPoint(bodyBlock->getTerminator());
-
-  // Define argument types
-  SmallVector<Type> argumentTypes;
-  argumentTypes.reserve(controls.size() + 1);
-  const auto ptrType = LLVM::LLVMPointerType::get(builder.getContext());
-  // Add control pointers
-  for (size_t i = 0; i < controls.size(); ++i) {
-    argumentTypes.push_back(ptrType);
-  }
-  // Add target pointer
-  argumentTypes.push_back(ptrType);
-
-  // Define function signature
-  const auto fnSignature = LLVM::LLVMFunctionType::get(
-      LLVM::LLVMVoidType::get(builder.getContext()), argumentTypes);
-
-  // Declare QIR function
-  const auto fnDecl =
-      getOrCreateFunctionDeclaration(builder, module, fnName, fnSignature);
-
-  SmallVector<Value> operands;
-  operands.reserve(controls.size() + 1);
-  operands.append(controls.begin(), controls.end());
-  operands.push_back(target);
-
-  builder.create<LLVM::CallOp>(loc, fnDecl, operands);
-}
-
-void QIRProgramBuilder::createOneTargetOneParameter(
-    const std::variant<double, Value>& parameter, const ValueRange controls,
-    const Value target, StringRef fnName) {
+void QIRProgramBuilder::createCallOp(
+    const SmallVector<std::variant<double, Value>>& parameters,
+    const ValueRange controls, const SmallVector<Value>& targets,
+    StringRef fnName) {
   // Save current insertion point
   const OpBuilder::InsertionGuard entryGuard(builder);
 
   // Insert constants in entry block
   builder.setInsertionPointToEnd(entryBlock);
 
-  Value parameterOperand;
-  if (std::holds_alternative<double>(parameter)) {
-    parameterOperand =
-        builder
-            .create<LLVM::ConstantOp>(
-                loc, builder.getF64FloatAttr(std::get<double>(parameter)))
-            .getResult();
-  } else {
-    parameterOperand = std::get<Value>(parameter);
+  SmallVector<Value> parameterOperands;
+  parameterOperands.reserve(parameters.size());
+  for (const auto& parameter : parameters) {
+    Value parameterOperand;
+    if (std::holds_alternative<double>(parameter)) {
+      parameterOperand =
+          builder
+              .create<LLVM::ConstantOp>(
+                  loc, builder.getF64FloatAttr(std::get<double>(parameter)))
+              .getResult();
+    } else {
+      parameterOperand = std::get<Value>(parameter);
+    }
+    parameterOperands.push_back(parameterOperand);
   }
 
   // Save current insertion point
@@ -302,328 +270,7 @@ void QIRProgramBuilder::createOneTargetOneParameter(
 
   // Define argument types
   SmallVector<Type> argumentTypes;
-  argumentTypes.reserve(controls.size() + 2);
-  const auto ptrType = LLVM::LLVMPointerType::get(builder.getContext());
-  // Add control pointers
-  for (size_t i = 0; i < controls.size(); ++i) {
-    argumentTypes.push_back(ptrType);
-  }
-  // Add target pointer
-  argumentTypes.push_back(ptrType);
-  // Add parameter type
-  argumentTypes.push_back(Float64Type::get(builder.getContext()));
-
-  // Define function signature
-  const auto fnSignature = LLVM::LLVMFunctionType::get(
-      LLVM::LLVMVoidType::get(builder.getContext()), argumentTypes);
-
-  // Declare QIR function
-  auto fnDecl =
-      getOrCreateFunctionDeclaration(builder, module, fnName, fnSignature);
-
-  SmallVector<Value> operands;
-  operands.reserve(controls.size() + 2);
-  operands.append(controls.begin(), controls.end());
-  operands.push_back(target);
-  operands.push_back(parameterOperand);
-
-  builder.create<LLVM::CallOp>(loc, fnDecl, operands);
-}
-
-void QIRProgramBuilder::createOneTargetTwoParameter(
-    const std::variant<double, Value>& parameter1,
-    const std::variant<double, Value>& parameter2, const ValueRange controls,
-    const Value target, StringRef fnName) {
-  // Save current insertion point
-  const OpBuilder::InsertionGuard entryGuard(builder);
-
-  // Insert constants in entry block
-  builder.setInsertionPointToEnd(entryBlock);
-
-  Value parameter1Operand;
-  if (std::holds_alternative<double>(parameter1)) {
-    parameter1Operand =
-        builder
-            .create<LLVM::ConstantOp>(
-                loc, builder.getF64FloatAttr(std::get<double>(parameter1)))
-            .getResult();
-  } else {
-    parameter1Operand = std::get<Value>(parameter1);
-  }
-
-  Value parameter2Operand;
-  if (std::holds_alternative<double>(parameter2)) {
-    parameter2Operand =
-        builder
-            .create<LLVM::ConstantOp>(
-                loc, builder.getF64FloatAttr(std::get<double>(parameter2)))
-            .getResult();
-  } else {
-    parameter2Operand = std::get<Value>(parameter2);
-  }
-
-  // Save current insertion point
-  const OpBuilder::InsertionGuard bodyGuard(builder);
-
-  // Insert in body block (before branch)
-  builder.setInsertionPoint(bodyBlock->getTerminator());
-
-  // Define argument types
-  SmallVector<Type> argumentTypes;
-  argumentTypes.reserve(controls.size() + 3);
-  const auto ptrType = LLVM::LLVMPointerType::get(builder.getContext());
-  const auto floatType = Float64Type::get(builder.getContext());
-  // Add control pointers
-  for (size_t i = 0; i < controls.size(); ++i) {
-    argumentTypes.push_back(ptrType);
-  }
-  // Add target pointer
-  argumentTypes.push_back(ptrType);
-  // Add parameter types
-  argumentTypes.push_back(floatType);
-  argumentTypes.push_back(floatType);
-
-  // Define function signature
-  const auto fnSignature = LLVM::LLVMFunctionType::get(
-      LLVM::LLVMVoidType::get(builder.getContext()), argumentTypes);
-
-  // Declare QIR function
-  auto fnDecl =
-      getOrCreateFunctionDeclaration(builder, module, fnName, fnSignature);
-
-  SmallVector<Value> operands;
-  operands.reserve(controls.size() + 3);
-  operands.append(controls.begin(), controls.end());
-  operands.push_back(target);
-  operands.push_back(parameter1Operand);
-  operands.push_back(parameter2Operand);
-
-  builder.create<LLVM::CallOp>(loc, fnDecl, operands);
-}
-
-void QIRProgramBuilder::createOneTargetThreeParameter(
-    const std::variant<double, Value>& parameter1,
-    const std::variant<double, Value>& parameter2,
-    const std::variant<double, Value>& parameter3, const ValueRange controls,
-    const Value target, StringRef fnName) {
-  // Save current insertion point
-  const OpBuilder::InsertionGuard entryGuard(builder);
-
-  // Insert constants in entry block
-  builder.setInsertionPointToEnd(entryBlock);
-
-  Value parameter1Operand;
-  if (std::holds_alternative<double>(parameter1)) {
-    parameter1Operand =
-        builder
-            .create<LLVM::ConstantOp>(
-                loc, builder.getF64FloatAttr(std::get<double>(parameter1)))
-            .getResult();
-  } else {
-    parameter1Operand = std::get<Value>(parameter1);
-  }
-
-  Value parameter2Operand;
-  if (std::holds_alternative<double>(parameter2)) {
-    parameter2Operand =
-        builder
-            .create<LLVM::ConstantOp>(
-                loc, builder.getF64FloatAttr(std::get<double>(parameter2)))
-            .getResult();
-  } else {
-    parameter2Operand = std::get<Value>(parameter2);
-  }
-
-  Value parameter3Operand;
-  if (std::holds_alternative<double>(parameter3)) {
-    parameter3Operand =
-        builder
-            .create<LLVM::ConstantOp>(
-                loc, builder.getF64FloatAttr(std::get<double>(parameter3)))
-            .getResult();
-  } else {
-    parameter3Operand = std::get<Value>(parameter3);
-  }
-
-  // Save current insertion point
-  const OpBuilder::InsertionGuard bodyGuard(builder);
-
-  // Insert in body block (before branch)
-  builder.setInsertionPoint(bodyBlock->getTerminator());
-
-  // Define argument types
-  SmallVector<Type> argumentTypes;
-  argumentTypes.reserve(controls.size() + 4);
-  const auto ptrType = LLVM::LLVMPointerType::get(builder.getContext());
-  const auto floatType = Float64Type::get(builder.getContext());
-  // Add control pointers
-  for (size_t i = 0; i < controls.size(); ++i) {
-    argumentTypes.push_back(ptrType);
-  }
-  // Add target pointer
-  argumentTypes.push_back(ptrType);
-  // Add parameter types
-  argumentTypes.push_back(floatType);
-  argumentTypes.push_back(floatType);
-  argumentTypes.push_back(floatType);
-
-  // Define function signature
-  const auto fnSignature = LLVM::LLVMFunctionType::get(
-      LLVM::LLVMVoidType::get(builder.getContext()), argumentTypes);
-
-  // Declare QIR function
-  auto fnDecl =
-      getOrCreateFunctionDeclaration(builder, module, fnName, fnSignature);
-
-  SmallVector<Value> operands;
-  operands.reserve(controls.size() + 4);
-  operands.append(controls.begin(), controls.end());
-  operands.push_back(target);
-  operands.push_back(parameter1Operand);
-  operands.push_back(parameter2Operand);
-  operands.push_back(parameter3Operand);
-
-  builder.create<LLVM::CallOp>(loc, fnDecl, operands);
-}
-
-void QIRProgramBuilder::createTwoTargetZeroParameter(const ValueRange controls,
-                                                     const Value target0,
-                                                     const Value target1,
-                                                     StringRef fnName) {
-  // Save current insertion point
-  const OpBuilder::InsertionGuard insertGuard(builder);
-
-  // Insert in body block (before branch)
-  builder.setInsertionPoint(bodyBlock->getTerminator());
-
-  // Define argument types
-  SmallVector<Type> argumentTypes;
-  argumentTypes.reserve(controls.size() + 2);
-  const auto ptrType = LLVM::LLVMPointerType::get(builder.getContext());
-  // Add control pointers
-  for (size_t i = 0; i < controls.size(); ++i) {
-    argumentTypes.push_back(ptrType);
-  }
-  // Add target pointers
-  argumentTypes.push_back(ptrType);
-  argumentTypes.push_back(ptrType);
-
-  // Define function signature
-  const auto fnSignature = LLVM::LLVMFunctionType::get(
-      LLVM::LLVMVoidType::get(builder.getContext()), argumentTypes);
-
-  // Declare QIR function
-  const auto fnDecl =
-      getOrCreateFunctionDeclaration(builder, module, fnName, fnSignature);
-
-  SmallVector<Value> operands;
-  operands.reserve(controls.size() + 2);
-  operands.append(controls.begin(), controls.end());
-  operands.push_back(target0);
-  operands.push_back(target1);
-
-  builder.create<LLVM::CallOp>(loc, fnDecl, operands);
-}
-
-void QIRProgramBuilder::createTwoTargetOneParameter(
-    const std::variant<double, Value>& parameter, const ValueRange controls,
-    const Value target0, const Value target1, StringRef fnName) {
-  // Save current insertion point
-  const OpBuilder::InsertionGuard entryGuard(builder);
-
-  // Insert constants in entry block
-  builder.setInsertionPointToEnd(entryBlock);
-
-  Value parameterOperand;
-  if (std::holds_alternative<double>(parameter)) {
-    parameterOperand =
-        builder
-            .create<LLVM::ConstantOp>(
-                loc, builder.getF64FloatAttr(std::get<double>(parameter)))
-            .getResult();
-  } else {
-    parameterOperand = std::get<Value>(parameter);
-  }
-
-  // Save current insertion point
-  const OpBuilder::InsertionGuard bodyGuard(builder);
-
-  // Insert in body block (before branch)
-  builder.setInsertionPoint(bodyBlock->getTerminator());
-
-  // Define argument types
-  SmallVector<Type> argumentTypes;
-  argumentTypes.reserve(controls.size() + 3);
-  const auto ptrType = LLVM::LLVMPointerType::get(builder.getContext());
-  // Add control pointers
-  for (size_t i = 0; i < controls.size(); ++i) {
-    argumentTypes.push_back(ptrType);
-  }
-  // Add target pointers
-  argumentTypes.push_back(ptrType);
-  argumentTypes.push_back(ptrType);
-  // Add parameter type
-  argumentTypes.push_back(Float64Type::get(builder.getContext()));
-
-  // Define function signature
-  const auto fnSignature = LLVM::LLVMFunctionType::get(
-      LLVM::LLVMVoidType::get(builder.getContext()), argumentTypes);
-
-  // Declare QIR function
-  auto fnDecl =
-      getOrCreateFunctionDeclaration(builder, module, fnName, fnSignature);
-
-  SmallVector<Value> operands;
-  operands.reserve(controls.size() + 3);
-  operands.append(controls.begin(), controls.end());
-  operands.push_back(target0);
-  operands.push_back(target1);
-  operands.push_back(parameterOperand);
-
-  builder.create<LLVM::CallOp>(loc, fnDecl, operands);
-}
-
-void QIRProgramBuilder::createTwoTargetTwoParameter(
-    const std::variant<double, Value>& parameter1,
-    const std::variant<double, Value>& parameter2, const ValueRange controls,
-    const Value target0, const Value target1, StringRef fnName) {
-  // Save current insertion point
-  const OpBuilder::InsertionGuard entryGuard(builder);
-
-  // Insert constants in entry block
-  builder.setInsertionPointToEnd(entryBlock);
-
-  Value parameter1Operand;
-  if (std::holds_alternative<double>(parameter1)) {
-    parameter1Operand =
-        builder
-            .create<LLVM::ConstantOp>(
-                loc, builder.getF64FloatAttr(std::get<double>(parameter1)))
-            .getResult();
-  } else {
-    parameter1Operand = std::get<Value>(parameter1);
-  }
-
-  Value parameter2Operand;
-  if (std::holds_alternative<double>(parameter2)) {
-    parameter2Operand =
-        builder
-            .create<LLVM::ConstantOp>(
-                loc, builder.getF64FloatAttr(std::get<double>(parameter2)))
-            .getResult();
-  } else {
-    parameter2Operand = std::get<Value>(parameter2);
-  }
-
-  // Save current insertion point
-  const OpBuilder::InsertionGuard bodyGuard(builder);
-
-  // Insert in body block (before branch)
-  builder.setInsertionPoint(bodyBlock->getTerminator());
-
-  // Define argument types
-  SmallVector<Type> argumentTypes;
-  argumentTypes.reserve(controls.size() + 4);
+  argumentTypes.reserve(parameters.size() + controls.size() + targets.size());
   const auto ptrType = LLVM::LLVMPointerType::get(builder.getContext());
   const auto floatType = Float64Type::get(builder.getContext());
   // Add control pointers
@@ -631,11 +278,13 @@ void QIRProgramBuilder::createTwoTargetTwoParameter(
     argumentTypes.push_back(ptrType);
   }
   // Add target pointers
-  argumentTypes.push_back(ptrType);
-  argumentTypes.push_back(ptrType);
+  for (size_t i = 0; i < targets.size(); ++i) {
+    argumentTypes.push_back(ptrType);
+  }
   // Add parameter types
-  argumentTypes.push_back(floatType);
-  argumentTypes.push_back(floatType);
+  for (size_t i = 0; i < parameters.size(); ++i) {
+    argumentTypes.push_back(floatType);
+  }
 
   // Define function signature
   const auto fnSignature = LLVM::LLVMFunctionType::get(
@@ -646,12 +295,10 @@ void QIRProgramBuilder::createTwoTargetTwoParameter(
       getOrCreateFunctionDeclaration(builder, module, fnName, fnSignature);
 
   SmallVector<Value> operands;
-  operands.reserve(controls.size() + 4);
+  operands.reserve(parameters.size() + controls.size() + targets.size());
   operands.append(controls.begin(), controls.end());
-  operands.push_back(target0);
-  operands.push_back(target1);
-  operands.push_back(parameter1Operand);
-  operands.push_back(parameter2Operand);
+  operands.append(targets.begin(), targets.end());
+  operands.append(parameterOperands.begin(), parameterOperands.end());
 
   builder.create<LLVM::CallOp>(loc, fnDecl, operands);
 }
@@ -660,13 +307,13 @@ void QIRProgramBuilder::createTwoTargetTwoParameter(
 
 #define DEFINE_ONE_TARGET_ZERO_PARAMETER(OP_NAME_BIG, OP_NAME_SMALL)           \
   QIRProgramBuilder& QIRProgramBuilder::OP_NAME_SMALL(const Value qubit) {     \
-    createOneTargetZeroParameter({}, qubit, QIR_##OP_NAME_BIG);                \
+    createCallOp({}, {}, {qubit}, QIR_##OP_NAME_BIG);                          \
     return *this;                                                              \
   }                                                                            \
                                                                                \
   QIRProgramBuilder& QIRProgramBuilder::c##OP_NAME_SMALL(const Value control,  \
                                                          const Value target) { \
-    createOneTargetZeroParameter({control}, target, QIR_C##OP_NAME_BIG);       \
+    createCallOp({}, {control}, {target}, QIR_C##OP_NAME_BIG);                 \
     return *this;                                                              \
   }                                                                            \
                                                                                \
@@ -684,7 +331,7 @@ void QIRProgramBuilder::createTwoTargetTwoParameter(
           "Multi-controlled with more than 3 controls are currently not "      \
           "supported");                                                        \
     }                                                                          \
-    createOneTargetZeroParameter(controls, target, fnName);                    \
+    createCallOp({}, controls, {target}, fnName);                              \
     return *this;                                                              \
   }
 
@@ -707,14 +354,14 @@ DEFINE_ONE_TARGET_ZERO_PARAMETER(SXDG, sxdg)
 #define DEFINE_ONE_TARGET_ONE_PARAMETER(OP_NAME_BIG, OP_NAME_SMALL, PARAM)     \
   QIRProgramBuilder& QIRProgramBuilder::OP_NAME_SMALL(                         \
       const std::variant<double, Value>&(PARAM), const Value qubit) {          \
-    createOneTargetOneParameter(PARAM, {}, qubit, QIR_##OP_NAME_BIG);          \
+    createCallOp({PARAM}, {}, {qubit}, QIR_##OP_NAME_BIG);                     \
     return *this;                                                              \
   }                                                                            \
                                                                                \
   QIRProgramBuilder& QIRProgramBuilder::c##OP_NAME_SMALL(                      \
       const std::variant<double, Value>&(PARAM), const Value control,          \
       const Value target) {                                                    \
-    createOneTargetOneParameter(PARAM, {control}, target, QIR_C##OP_NAME_BIG); \
+    createCallOp({PARAM}, {control}, {target}, QIR_C##OP_NAME_BIG);            \
     return *this;                                                              \
   }                                                                            \
                                                                                \
@@ -733,7 +380,7 @@ DEFINE_ONE_TARGET_ZERO_PARAMETER(SXDG, sxdg)
           "Multi-controlled with more than 3 controls are currently not "      \
           "supported");                                                        \
     }                                                                          \
-    createOneTargetOneParameter(PARAM, controls, target, fnName);              \
+    createCallOp({PARAM}, controls, {target}, fnName);                         \
     return *this;                                                              \
   }
 
@@ -751,7 +398,7 @@ DEFINE_ONE_TARGET_ONE_PARAMETER(P, p, theta)
   QIRProgramBuilder& QIRProgramBuilder::OP_NAME_SMALL(                         \
       const std::variant<double, Value>&(PARAM1),                              \
       const std::variant<double, Value>&(PARAM2), const Value qubit) {         \
-    createOneTargetTwoParameter(PARAM1, PARAM2, {}, qubit, QIR_##OP_NAME_BIG); \
+    createCallOp({PARAM1, PARAM2}, {}, {qubit}, QIR_##OP_NAME_BIG);            \
     return *this;                                                              \
   }                                                                            \
                                                                                \
@@ -759,8 +406,7 @@ DEFINE_ONE_TARGET_ONE_PARAMETER(P, p, theta)
       const std::variant<double, Value>&(PARAM1),                              \
       const std::variant<double, Value>&(PARAM2), const Value control,         \
       const Value target) {                                                    \
-    createOneTargetTwoParameter(PARAM1, PARAM2, {control}, target,             \
-                                QIR_C##OP_NAME_BIG);                           \
+    createCallOp({PARAM1, PARAM2}, {control}, {target}, QIR_C##OP_NAME_BIG);   \
     return *this;                                                              \
   }                                                                            \
                                                                                \
@@ -780,7 +426,7 @@ DEFINE_ONE_TARGET_ONE_PARAMETER(P, p, theta)
           "Multi-controlled with more than 3 controls are currently not "      \
           "supported");                                                        \
     }                                                                          \
-    createOneTargetTwoParameter(PARAM1, PARAM2, controls, target, fnName);     \
+    createCallOp({PARAM1, PARAM2}, controls, {target}, fnName);                \
     return *this;                                                              \
   }
 
@@ -797,8 +443,7 @@ DEFINE_ONE_TARGET_TWO_PARAMETER(U2, u2, phi, lambda)
       const std::variant<double, Value>&(PARAM1),                              \
       const std::variant<double, Value>&(PARAM2),                              \
       const std::variant<double, Value>&(PARAM3), const Value qubit) {         \
-    createOneTargetThreeParameter(PARAM1, PARAM2, PARAM3, {}, qubit,           \
-                                  QIR_##OP_NAME_BIG);                          \
+    createCallOp({PARAM1, PARAM2, PARAM3}, {}, {qubit}, QIR_##OP_NAME_BIG);    \
     return *this;                                                              \
   }                                                                            \
                                                                                \
@@ -807,8 +452,8 @@ DEFINE_ONE_TARGET_TWO_PARAMETER(U2, u2, phi, lambda)
       const std::variant<double, Value>&(PARAM2),                              \
       const std::variant<double, Value>&(PARAM3), const Value control,         \
       const Value target) {                                                    \
-    createOneTargetThreeParameter(PARAM1, PARAM2, PARAM3, {control}, target,   \
-                                  QIR_C##OP_NAME_BIG);                         \
+    createCallOp({PARAM1, PARAM2, PARAM3}, {control}, {target},                \
+                 QIR_C##OP_NAME_BIG);                                          \
     return *this;                                                              \
   }                                                                            \
                                                                                \
@@ -829,8 +474,7 @@ DEFINE_ONE_TARGET_TWO_PARAMETER(U2, u2, phi, lambda)
           "Multi-controlled with more than 3 controls are currently not "      \
           "supported");                                                        \
     }                                                                          \
-    createOneTargetThreeParameter(PARAM1, PARAM2, PARAM3, controls, target,    \
-                                  fnName);                                     \
+    createCallOp({PARAM1, PARAM2, PARAM3}, controls, {target}, fnName);        \
     return *this;                                                              \
   }
 
@@ -843,14 +487,13 @@ DEFINE_ONE_TARGET_THREE_PARAMETER(U, u, theta, phi, lambda)
 #define DEFINE_TWO_TARGET_ZERO_PARAMETER(OP_NAME_BIG, OP_NAME_SMALL)           \
   QIRProgramBuilder& QIRProgramBuilder::OP_NAME_SMALL(const Value target0,     \
                                                       const Value target1) {   \
-    createTwoTargetZeroParameter({}, target0, target1, QIR_##OP_NAME_BIG);     \
+    createCallOp({}, {}, {target0, target1}, QIR_##OP_NAME_BIG);               \
     return *this;                                                              \
   }                                                                            \
                                                                                \
   QIRProgramBuilder& QIRProgramBuilder::c##OP_NAME_SMALL(                      \
       const Value control, const Value target0, const Value target1) {         \
-    createTwoTargetZeroParameter({control}, target0, target1,                  \
-                                 QIR_C##OP_NAME_BIG);                          \
+    createCallOp({}, {control}, {target0, target1}, QIR_C##OP_NAME_BIG);       \
     return *this;                                                              \
   }                                                                            \
                                                                                \
@@ -868,7 +511,7 @@ DEFINE_ONE_TARGET_THREE_PARAMETER(U, u, theta, phi, lambda)
           "Multi-controlled with more than 3 controls are currently not "      \
           "supported");                                                        \
     }                                                                          \
-    createTwoTargetZeroParameter(controls, target0, target1, fnName);          \
+    createCallOp({}, controls, {target0, target1}, fnName);                    \
     return *this;                                                              \
   }
 
@@ -885,16 +528,14 @@ DEFINE_TWO_TARGET_ZERO_PARAMETER(ECR, ecr)
   QIRProgramBuilder& QIRProgramBuilder::OP_NAME_SMALL(                         \
       const std::variant<double, Value>&(PARAM), const Value target0,          \
       const Value target1) {                                                   \
-    createTwoTargetOneParameter(PARAM, {}, target0, target1,                   \
-                                QIR_##OP_NAME_BIG);                            \
+    createCallOp({PARAM}, {}, {target0, target1}, QIR_##OP_NAME_BIG);          \
     return *this;                                                              \
   }                                                                            \
                                                                                \
   QIRProgramBuilder& QIRProgramBuilder::c##OP_NAME_SMALL(                      \
       const std::variant<double, Value>&(PARAM), const Value control,          \
       const Value target0, const Value target1) {                              \
-    createTwoTargetOneParameter(PARAM, {control}, target0, target1,            \
-                                QIR_C##OP_NAME_BIG);                           \
+    createCallOp({PARAM}, {control}, {target0, target1}, QIR_C##OP_NAME_BIG);  \
     return *this;                                                              \
   }                                                                            \
                                                                                \
@@ -913,7 +554,7 @@ DEFINE_TWO_TARGET_ZERO_PARAMETER(ECR, ecr)
           "Multi-controlled with more than 3 controls are currently not "      \
           "supported");                                                        \
     }                                                                          \
-    createTwoTargetOneParameter(PARAM, controls, target0, target1, fnName);    \
+    createCallOp({PARAM}, controls, {target0, target1}, fnName);               \
     return *this;                                                              \
   }
 
@@ -932,8 +573,7 @@ DEFINE_TWO_TARGET_ONE_PARAMETER(RZZ, rzz, theta)
       const std::variant<double, Value>&(PARAM1),                              \
       const std::variant<double, Value>&(PARAM2), const Value target0,         \
       const Value target1) {                                                   \
-    createTwoTargetTwoParameter(PARAM1, PARAM2, {}, target0, target1,          \
-                                QIR_##OP_NAME_BIG);                            \
+    createCallOp({PARAM1, PARAM2}, {}, {target0, target1}, QIR_##OP_NAME_BIG); \
     return *this;                                                              \
   }                                                                            \
                                                                                \
@@ -941,8 +581,8 @@ DEFINE_TWO_TARGET_ONE_PARAMETER(RZZ, rzz, theta)
       const std::variant<double, Value>&(PARAM1),                              \
       const std::variant<double, Value>&(PARAM2), const Value control,         \
       const Value target0, const Value target1) {                              \
-    createTwoTargetTwoParameter(PARAM1, PARAM2, {control}, target0, target1,   \
-                                QIR_C##OP_NAME_BIG);                           \
+    createCallOp({PARAM1, PARAM2}, {control}, {target0, target1},              \
+                 QIR_C##OP_NAME_BIG);                                          \
     return *this;                                                              \
   }                                                                            \
                                                                                \
@@ -962,8 +602,7 @@ DEFINE_TWO_TARGET_ONE_PARAMETER(RZZ, rzz, theta)
           "Multi-controlled with more than 3 controls are currently not "      \
           "supported");                                                        \
     }                                                                          \
-    createTwoTargetTwoParameter(PARAM1, PARAM2, controls, target0, target1,    \
-                                fnName);                                       \
+    createCallOp({PARAM1, PARAM2}, controls, {target0, target1}, fnName);      \
     return *this;                                                              \
   }
 

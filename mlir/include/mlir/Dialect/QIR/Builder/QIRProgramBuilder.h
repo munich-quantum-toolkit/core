@@ -809,99 +809,16 @@ private:
   QIRMetadata metadata_;
 
   /**
-   * @brief Helper to create a one-target, zero-parameter QIR operation
+   * @brief Helper to create a LLVM CallOp
    *
+   * @param parameters Operation parameters
    * @param controls Control qubits
-   * @param target Target qubit
+   * @param targets Target qubits
    * @param fnName Name of the QIR function to call
    */
-  void createOneTargetZeroParameter(const ValueRange controls,
-                                    const Value target, StringRef fnName);
-  /**
-   * @brief Helper to create a one-target, one-parameter QIR operation
-   *
-   * @param parameter Operation parameter
-   * @param controls Control qubits
-   * @param target Target qubit
-   * @param fnName Name of the QIR function to call
-   */
-  void createOneTargetOneParameter(const std::variant<double, Value>& parameter,
-                                   const ValueRange controls,
-                                   const Value target, StringRef fnName);
-
-  /**
-   * @brief Helper to create a one-target, two-parameter QIR operation
-   *
-   * @param parameter1 Operation parameter
-   * @param parameter2 Operation parameter
-   * @param controls Control qubits
-   * @param target Target qubit
-   * @param fnName Name of the QIR function to call
-   */
-  void
-  createOneTargetTwoParameter(const std::variant<double, Value>& parameter1,
-                              const std::variant<double, Value>& parameter2,
-                              const ValueRange controls, const Value target,
-                              StringRef fnName);
-
-  /**
-   * @brief Helper to create a one-target, three-parameter QIR operation
-   *
-   * @param parameter1 Operation parameter
-   * @param parameter2 Operation parameter
-   * @param parameter3 Operation parameter
-   * @param controls Control qubits
-   * @param target Target qubit
-   * @param fnName Name of the QIR function to call
-   */
-  void
-  createOneTargetThreeParameter(const std::variant<double, Value>& parameter1,
-                                const std::variant<double, Value>& parameter2,
-                                const std::variant<double, Value>& parameter3,
-                                const ValueRange controls, const Value target,
-                                StringRef fnName);
-
-  /**
-   * @brief Helper to create a two-target, zero-parameter QIR operation
-   *
-   * @param controls Control qubits
-   * @param target0 Target qubit
-   * @param target1 Target qubit
-   * @param fnName Name of the QIR function to call
-   */
-  void createTwoTargetZeroParameter(const ValueRange controls,
-                                    const Value target0, const Value target1,
-                                    StringRef fnName);
-
-  /**
-   * @brief Helper to create a two-target, one-parameter QIR operation
-   *
-   * @param parameter Operation parameter
-   * @param controls Control qubits
-   * @param target0 Target qubit
-   * @param target1 Target qubit
-   * @param fnName Name of the QIR function to call
-   */
-  void createTwoTargetOneParameter(const std::variant<double, Value>& parameter,
-                                   const ValueRange controls,
-                                   const Value target0, const Value target1,
-                                   StringRef fnName);
-
-  /**
-   * @brief Helper to create a two-target, two-parameter QIR operation
-   *
-   * @param parameter1 Operation parameter
-   * @param parameter2 Operation parameter
-   * @param controls Control qubits
-   * @param target0 Target qubit
-   * @param target1 Target qubit
-   * @param fnName Name of the QIR function to call
-   */
-  void
-  createTwoTargetTwoParameter(const std::variant<double, Value>& parameter1,
-                              const std::variant<double, Value>& parameter2,
-                              const ValueRange controls, const Value target0,
-                              const Value target1, StringRef fnName);
+  void createCallOp(const SmallVector<std::variant<double, Value>>& parameters,
+                    const ValueRange controls,
+                    const SmallVector<Value>& targets, StringRef fnName);
 
   /**
    * @brief Generate array-based output recording in the output block

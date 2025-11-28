@@ -113,7 +113,7 @@ private:
 };
 
 /**
- * @brief Converts a one-target, zero-parameter Quartz operation to QIR
+ * @brief Helper to convert a Quartz operation to a LLVM CallOp
  *
  * @tparam QuartzOpType The operation type of the Quartz operation
  * @tparam QuartzOpAdaptorType The OpAdaptor type of the Quartz operation
@@ -123,14 +123,16 @@ private:
  * @param ctx The MLIR context
  * @param state The lowering state
  * @param fnName The name of the QIR function to call
+ * @param numTargets The number of targets
+ * @param numParams The number of parameters
  * @return LogicalResult Success or failure of the conversion
  */
 template <typename QuartzOpType, typename QuartzOpAdaptorType>
 LogicalResult
-convertOneTargetZeroParameter(QuartzOpType& op, QuartzOpAdaptorType& adaptor,
-                              ConversionPatternRewriter& rewriter,
-                              MLIRContext* ctx, LoweringState& state,
-                              StringRef fnName) {
+convertUnitaryToCallOp(QuartzOpType& op, QuartzOpAdaptorType& adaptor,
+                       ConversionPatternRewriter& rewriter, MLIRContext* ctx,
+                       LoweringState& state, StringRef fnName,
+                       size_t numTargets, size_t numParams) {
   // Query state for modifier information
   const auto inCtrlOp = state.inCtrlOp;
   const SmallVector<Value> posCtrls =
@@ -139,382 +141,7 @@ convertOneTargetZeroParameter(QuartzOpType& op, QuartzOpAdaptorType& adaptor,
 
   // Define argument types
   SmallVector<Type> argumentTypes;
-  argumentTypes.reserve(numCtrls + 1);
-  const auto ptrType = LLVM::LLVMPointerType::get(ctx);
-  // Add control pointers
-  for (size_t i = 0; i < numCtrls; ++i) {
-    argumentTypes.push_back(ptrType);
-  }
-  // Add target pointer
-  argumentTypes.push_back(ptrType);
-
-  // Define function signature
-  const auto fnSignature =
-      LLVM::LLVMFunctionType::get(LLVM::LLVMVoidType::get(ctx), argumentTypes);
-
-  // Declare QIR function
-  const auto fnDecl =
-      getOrCreateFunctionDeclaration(rewriter, op, fnName, fnSignature);
-
-  SmallVector<Value> operands;
-  operands.reserve(numCtrls + 1);
-  operands.append(posCtrls.begin(), posCtrls.end());
-  operands.append(adaptor.getOperands().begin(), adaptor.getOperands().end());
-
-  // Clean up modifier information
-  if (inCtrlOp != 0) {
-    state.posCtrls.erase(inCtrlOp);
-    state.inCtrlOp--;
-  }
-
-  // Replace operation with CallOp
-  rewriter.replaceOpWithNewOp<LLVM::CallOp>(op, fnDecl, operands);
-  return success();
-}
-
-/**
- * @brief Converts a one-target, one-parameter Quartz operation to QIR
- *
- * @tparam QuartzOpType The operation type of the Quartz operation
- * @tparam QuartzOpAdaptorType The OpAdaptor type of the Quartz operation
- * @param op The Quartz operation instance to convert
- * @param adaptor The OpAdaptor of the Quartz operation
- * @param rewriter The pattern rewriter
- * @param ctx The MLIR context
- * @param state The lowering state
- * @param fnName The name of the QIR function to call
- * @return LogicalResult Success or failure of the conversion
- */
-template <typename QuartzOpType, typename QuartzOpAdaptorType>
-LogicalResult
-convertOneTargetOneParameter(QuartzOpType& op, QuartzOpAdaptorType& adaptor,
-                             ConversionPatternRewriter& rewriter,
-                             MLIRContext* ctx, LoweringState& state,
-                             StringRef fnName) {
-  // Query state for modifier information
-  const auto inCtrlOp = state.inCtrlOp;
-  const SmallVector<Value> posCtrls =
-      inCtrlOp != 0 ? state.posCtrls[inCtrlOp] : SmallVector<Value>{};
-  const size_t numCtrls = posCtrls.size();
-
-  // Define argument types
-  SmallVector<Type> argumentTypes;
-  argumentTypes.reserve(numCtrls + 2);
-  const auto ptrType = LLVM::LLVMPointerType::get(ctx);
-  // Add control pointers
-  for (size_t i = 0; i < numCtrls; ++i) {
-    argumentTypes.push_back(ptrType);
-  }
-  // Add target pointer
-  argumentTypes.push_back(ptrType);
-  // Add parameter type
-  argumentTypes.push_back(Float64Type::get(ctx));
-
-  // Define function signature
-  const auto fnSignature =
-      LLVM::LLVMFunctionType::get(LLVM::LLVMVoidType::get(ctx), argumentTypes);
-
-  // Declare QIR function
-  const auto fnDecl =
-      getOrCreateFunctionDeclaration(rewriter, op, fnName, fnSignature);
-
-  SmallVector<Value> operands;
-  operands.reserve(numCtrls + 2);
-  operands.append(posCtrls.begin(), posCtrls.end());
-  operands.append(adaptor.getOperands().begin(), adaptor.getOperands().end());
-
-  // Clean up modifier information
-  if (inCtrlOp != 0) {
-    state.posCtrls.erase(inCtrlOp);
-    state.inCtrlOp--;
-  }
-
-  // Replace operation with CallOp
-  rewriter.replaceOpWithNewOp<LLVM::CallOp>(op, fnDecl, operands);
-  return success();
-}
-
-/**
- * @brief Converts a one-target, two-parameter Quartz operation to QIR
- *
- * @tparam QuartzOpType The operation type of the Quartz operation
- * @tparam QuartzOpAdaptorType The OpAdaptor type of the Quartz operation
- * @param op The Quartz operation instance to convert
- * @param adaptor The OpAdaptor of the Quartz operation
- * @param rewriter The pattern rewriter
- * @param ctx The MLIR context
- * @param state The lowering state
- * @param fnName The name of the QIR function to call
- * @return LogicalResult Success or failure of the conversion
- */
-template <typename QuartzOpType, typename QuartzOpAdaptorType>
-LogicalResult
-convertOneTargetTwoParameter(QuartzOpType& op, QuartzOpAdaptorType& adaptor,
-                             ConversionPatternRewriter& rewriter,
-                             MLIRContext* ctx, LoweringState& state,
-                             StringRef fnName) {
-  // Query state for modifier information
-  const auto inCtrlOp = state.inCtrlOp;
-  const SmallVector<Value> posCtrls =
-      inCtrlOp != 0 ? state.posCtrls[inCtrlOp] : SmallVector<Value>{};
-  const size_t numCtrls = posCtrls.size();
-
-  // Define argument types
-  SmallVector<Type> argumentTypes;
-  argumentTypes.reserve(numCtrls + 3);
-  const auto ptrType = LLVM::LLVMPointerType::get(ctx);
-  const auto floatType = Float64Type::get(ctx);
-  // Add control pointers
-  for (size_t i = 0; i < numCtrls; ++i) {
-    argumentTypes.push_back(ptrType);
-  }
-  // Add target pointer
-  argumentTypes.push_back(ptrType);
-  // Add parameter types
-  argumentTypes.push_back(floatType);
-  argumentTypes.push_back(floatType);
-
-  // Define function signature
-  const auto fnSignature =
-      LLVM::LLVMFunctionType::get(LLVM::LLVMVoidType::get(ctx), argumentTypes);
-
-  // Declare QIR function
-  const auto fnDecl =
-      getOrCreateFunctionDeclaration(rewriter, op, fnName, fnSignature);
-
-  SmallVector<Value> operands;
-  operands.reserve(numCtrls + 3);
-  operands.append(posCtrls.begin(), posCtrls.end());
-  operands.append(adaptor.getOperands().begin(), adaptor.getOperands().end());
-
-  // Clean up modifier information
-  if (inCtrlOp != 0) {
-    state.posCtrls.erase(inCtrlOp);
-    state.inCtrlOp--;
-  }
-
-  // Replace operation with CallOp
-  rewriter.replaceOpWithNewOp<LLVM::CallOp>(op, fnDecl, operands);
-  return success();
-}
-
-/**
- * @brief Converts a one-target, three-parameter Quartz operation to QIR
- *
- * @tparam QuartzOpType The operation type of the Quartz operation
- * @tparam QuartzOpAdaptorType The OpAdaptor type of the Quartz operation
- * @param op The Quartz operation instance to convert
- * @param adaptor The OpAdaptor of the Quartz operation
- * @param rewriter The pattern rewriter
- * @param ctx The MLIR context
- * @param state The lowering state
- * @param fnName The name of the QIR function to call
- * @return LogicalResult Success or failure of the conversion
- */
-template <typename QuartzOpType, typename QuartzOpAdaptorType>
-LogicalResult
-convertOneTargetThreeParameter(QuartzOpType& op, QuartzOpAdaptorType& adaptor,
-                               ConversionPatternRewriter& rewriter,
-                               MLIRContext* ctx, LoweringState& state,
-                               StringRef fnName) {
-  // Query state for modifier information
-  const auto inCtrlOp = state.inCtrlOp;
-  const SmallVector<Value> posCtrls =
-      inCtrlOp != 0 ? state.posCtrls[inCtrlOp] : SmallVector<Value>{};
-  const size_t numCtrls = posCtrls.size();
-
-  // Define argument types
-  SmallVector<Type> argumentTypes;
-  argumentTypes.reserve(numCtrls + 4);
-  const auto ptrType = LLVM::LLVMPointerType::get(ctx);
-  const auto floatType = Float64Type::get(ctx);
-  // Add control pointers
-  for (size_t i = 0; i < numCtrls; ++i) {
-    argumentTypes.push_back(ptrType);
-  }
-  // Add target pointer
-  argumentTypes.push_back(ptrType);
-  // Add parameter types
-  argumentTypes.push_back(floatType);
-  argumentTypes.push_back(floatType);
-  argumentTypes.push_back(floatType);
-
-  // Define function signature
-  const auto fnSignature =
-      LLVM::LLVMFunctionType::get(LLVM::LLVMVoidType::get(ctx), argumentTypes);
-
-  // Declare QIR function
-  const auto fnDecl =
-      getOrCreateFunctionDeclaration(rewriter, op, fnName, fnSignature);
-
-  SmallVector<Value> operands;
-  operands.reserve(numCtrls + 4);
-  operands.append(posCtrls.begin(), posCtrls.end());
-  operands.append(adaptor.getOperands().begin(), adaptor.getOperands().end());
-
-  // Clean up modifier information
-  if (inCtrlOp != 0) {
-    state.posCtrls.erase(inCtrlOp);
-    state.inCtrlOp--;
-  }
-
-  // Replace operation with CallOp
-  rewriter.replaceOpWithNewOp<LLVM::CallOp>(op, fnDecl, operands);
-  return success();
-}
-
-/**
- * @brief Converts a two-target, zero-parameter Quartz operation to QIR
- *
- * @tparam QuartzOpType The operation type of the Quartz operation
- * @tparam QuartzOpAdaptorType The OpAdaptor type of the Quartz operation
- * @param op The Quartz operation instance to convert
- * @param adaptor The OpAdaptor of the Quartz operation
- * @param rewriter The pattern rewriter
- * @param ctx The MLIR context
- * @param state The lowering state
- * @param fnName The name of the QIR function to call
- * @return LogicalResult Success or failure of the conversion
- */
-template <typename QuartzOpType, typename QuartzOpAdaptorType>
-LogicalResult
-convertTwoTargetZeroParameter(QuartzOpType& op, QuartzOpAdaptorType& adaptor,
-                              ConversionPatternRewriter& rewriter,
-                              MLIRContext* ctx, LoweringState& state,
-                              StringRef fnName) {
-  // Query state for modifier information
-  const auto inCtrlOp = state.inCtrlOp;
-  const SmallVector<Value> posCtrls =
-      inCtrlOp != 0 ? state.posCtrls[inCtrlOp] : SmallVector<Value>{};
-  const size_t numCtrls = posCtrls.size();
-
-  // Define argument types
-  SmallVector<Type> argumentTypes;
-  argumentTypes.reserve(numCtrls + 2);
-  const auto ptrType = LLVM::LLVMPointerType::get(ctx);
-  // Add control pointers
-  for (size_t i = 0; i < numCtrls; ++i) {
-    argumentTypes.push_back(ptrType);
-  }
-  // Add target pointers
-  argumentTypes.push_back(ptrType);
-  argumentTypes.push_back(ptrType);
-
-  // Define function signature
-  const auto fnSignature =
-      LLVM::LLVMFunctionType::get(LLVM::LLVMVoidType::get(ctx), argumentTypes);
-
-  // Declare QIR function
-  const auto fnDecl =
-      getOrCreateFunctionDeclaration(rewriter, op, fnName, fnSignature);
-
-  SmallVector<Value> operands;
-  operands.reserve(numCtrls + 2);
-  operands.append(posCtrls.begin(), posCtrls.end());
-  operands.append(adaptor.getOperands().begin(), adaptor.getOperands().end());
-
-  // Clean up modifier information
-  if (inCtrlOp != 0) {
-    state.posCtrls.erase(inCtrlOp);
-    state.inCtrlOp--;
-  }
-
-  // Replace operation with CallOp
-  rewriter.replaceOpWithNewOp<LLVM::CallOp>(op, fnDecl, operands);
-  return success();
-}
-
-/**
- * @brief Converts a two-target, one-parameter Quartz operation to QIR
- *
- * @tparam QuartzOpType The operation type of the Quartz operation
- * @tparam QuartzOpAdaptorType The OpAdaptor type of the Quartz operation
- * @param op The Quartz operation instance to convert
- * @param adaptor The OpAdaptor of the Quartz operation
- * @param rewriter The pattern rewriter
- * @param ctx The MLIR context
- * @param state The lowering state
- * @param fnName The name of the QIR function to call
- * @return LogicalResult Success or failure of the conversion
- */
-template <typename QuartzOpType, typename QuartzOpAdaptorType>
-LogicalResult
-convertTwoTargetOneParameter(QuartzOpType& op, QuartzOpAdaptorType& adaptor,
-                             ConversionPatternRewriter& rewriter,
-                             MLIRContext* ctx, LoweringState& state,
-                             StringRef fnName) {
-  // Query state for modifier information
-  const auto inCtrlOp = state.inCtrlOp;
-  const SmallVector<Value> posCtrls =
-      inCtrlOp != 0 ? state.posCtrls[inCtrlOp] : SmallVector<Value>{};
-  const size_t numCtrls = posCtrls.size();
-
-  // Define argument types
-  SmallVector<Type> argumentTypes;
-  argumentTypes.reserve(numCtrls + 3);
-  const auto ptrType = LLVM::LLVMPointerType::get(ctx);
-  // Add control pointers
-  for (size_t i = 0; i < numCtrls; ++i) {
-    argumentTypes.push_back(ptrType);
-  }
-  // Add target pointers
-  argumentTypes.push_back(ptrType);
-  argumentTypes.push_back(ptrType);
-  // Add parameter type
-  argumentTypes.push_back(Float64Type::get(ctx));
-
-  // Define function signature
-  const auto fnSignature =
-      LLVM::LLVMFunctionType::get(LLVM::LLVMVoidType::get(ctx), argumentTypes);
-
-  // Declare QIR function
-  const auto fnDecl =
-      getOrCreateFunctionDeclaration(rewriter, op, fnName, fnSignature);
-
-  SmallVector<Value> operands;
-  operands.reserve(numCtrls + 3);
-  operands.append(posCtrls.begin(), posCtrls.end());
-  operands.append(adaptor.getOperands().begin(), adaptor.getOperands().end());
-
-  // Clean up modifier information
-  if (inCtrlOp != 0) {
-    state.posCtrls.erase(inCtrlOp);
-    state.inCtrlOp--;
-  }
-
-  // Replace operation with CallOp
-  rewriter.replaceOpWithNewOp<LLVM::CallOp>(op, fnDecl, operands);
-  return success();
-}
-
-/**
- * @brief Converts a two-target, two-parameter Quartz operation to QIR
- *
- * @tparam QuartzOpType The operation type of the Quartz operation
- * @tparam QuartzOpAdaptorType The OpAdaptor type of the Quartz operation
- * @param op The Quartz operation instance to convert
- * @param adaptor The OpAdaptor of the Quartz operation
- * @param rewriter The pattern rewriter
- * @param ctx The MLIR context
- * @param state The lowering state
- * @param fnName The name of the QIR function to call
- * @return LogicalResult Success or failure of the conversion
- */
-template <typename QuartzOpType, typename QuartzOpAdaptorType>
-LogicalResult
-convertTwoTargetTwoParameter(QuartzOpType& op, QuartzOpAdaptorType& adaptor,
-                             ConversionPatternRewriter& rewriter,
-                             MLIRContext* ctx, LoweringState& state,
-                             StringRef fnName) {
-  // Query state for modifier information
-  const auto inCtrlOp = state.inCtrlOp;
-  const SmallVector<Value> posCtrls =
-      inCtrlOp != 0 ? state.posCtrls[inCtrlOp] : SmallVector<Value>{};
-  const size_t numCtrls = posCtrls.size();
-
-  // Define argument types
-  SmallVector<Type> argumentTypes;
-  argumentTypes.reserve(numCtrls + 4);
+  argumentTypes.reserve(numParams + numCtrls + numTargets);
   const auto ptrType = LLVM::LLVMPointerType::get(ctx);
   const auto floatType = Float64Type::get(ctx);
   // Add control pointers
@@ -522,11 +149,13 @@ convertTwoTargetTwoParameter(QuartzOpType& op, QuartzOpAdaptorType& adaptor,
     argumentTypes.push_back(ptrType);
   }
   // Add target pointers
-  argumentTypes.push_back(ptrType);
-  argumentTypes.push_back(ptrType);
+  for (size_t i = 0; i < numTargets; ++i) {
+    argumentTypes.push_back(ptrType);
+  }
   // Add parameter types
-  argumentTypes.push_back(floatType);
-  argumentTypes.push_back(floatType);
+  for (size_t i = 0; i < numParams; ++i) {
+    argumentTypes.push_back(floatType);
+  }
 
   // Define function signature
   const auto fnSignature =
@@ -537,7 +166,7 @@ convertTwoTargetTwoParameter(QuartzOpType& op, QuartzOpAdaptorType& adaptor,
       getOrCreateFunctionDeclaration(rewriter, op, fnName, fnSignature);
 
   SmallVector<Value> operands;
-  operands.reserve(numCtrls + 4);
+  operands.reserve(numParams + numCtrls + numTargets);
   operands.append(posCtrls.begin(), posCtrls.end());
   operands.append(adaptor.getOperands().begin(), adaptor.getOperands().end());
 
@@ -860,7 +489,7 @@ struct ConvertQuartzResetQIR final : OpConversionPattern<ResetOp> {
   }
 };
 
-// OneTargetOneParameter
+// OneTargetZeroParameter
 
 #define DEFINE_ONE_TARGET_ZERO_PARAMETER(OP_CLASS, OP_NAME_BIG, OP_NAME_SMALL, \
                                          QIR_NAME)                             \
@@ -906,8 +535,8 @@ struct ConvertQuartzResetQIR final : OpConversionPattern<ResetOp> {
         }                                                                      \
       }                                                                        \
                                                                                \
-      return convertOneTargetZeroParameter(op, adaptor, rewriter,              \
-                                           getContext(), state, fnName);       \
+      return convertUnitaryToCallOp(op, adaptor, rewriter, getContext(),       \
+                                    state, fnName, 1, 0);                      \
     }                                                                          \
   };
 
@@ -972,8 +601,8 @@ DEFINE_ONE_TARGET_ZERO_PARAMETER(SXdgOp, SXDG, sxdg, sxdg)
         }                                                                      \
       }                                                                        \
                                                                                \
-      return convertOneTargetOneParameter(op, adaptor, rewriter, getContext(), \
-                                          state, fnName);                      \
+      return convertUnitaryToCallOp(op, adaptor, rewriter, getContext(),       \
+                                    state, fnName, 1, 1);                      \
     }                                                                          \
   };
 
@@ -1031,8 +660,8 @@ DEFINE_ONE_TARGET_ONE_PARAMETER(POp, P, p, p, theta)
         }                                                                      \
       }                                                                        \
                                                                                \
-      return convertOneTargetTwoParameter(op, adaptor, rewriter, getContext(), \
-                                          state, fnName);                      \
+      return convertUnitaryToCallOp(op, adaptor, rewriter, getContext(),       \
+                                    state, fnName, 1, 2);                      \
     }                                                                          \
   };
 
@@ -1088,8 +717,8 @@ DEFINE_ONE_TARGET_TWO_PARAMETER(U2Op, U2, u2, u2, phi, lambda)
         }                                                                      \
       }                                                                        \
                                                                                \
-      return convertOneTargetThreeParameter<OP_CLASS>(                         \
-          op, adaptor, rewriter, getContext(), state, fnName);                 \
+      return convertUnitaryToCallOp<OP_CLASS>(                                 \
+          op, adaptor, rewriter, getContext(), state, fnName, 1, 3);           \
     }                                                                          \
   };
 
@@ -1144,8 +773,8 @@ DEFINE_ONE_TARGET_THREE_PARAMETER(UOp, U, u, u3)
         }                                                                      \
       }                                                                        \
                                                                                \
-      return convertTwoTargetZeroParameter(op, adaptor, rewriter,              \
-                                           getContext(), state, fnName);       \
+      return convertUnitaryToCallOp(op, adaptor, rewriter, getContext(),       \
+                                    state, fnName, 2, 0);                      \
     }                                                                          \
   };
 
@@ -1203,8 +832,8 @@ DEFINE_TWO_TARGET_ZERO_PARAMETER(ECROp, ECR, ecr, ecr)
         }                                                                      \
       }                                                                        \
                                                                                \
-      return convertTwoTargetOneParameter(op, adaptor, rewriter, getContext(), \
-                                          state, fnName);                      \
+      return convertUnitaryToCallOp(op, adaptor, rewriter, getContext(),       \
+                                    state, fnName, 2, 1);                      \
     }                                                                          \
   };
 
@@ -1263,8 +892,8 @@ DEFINE_TWO_TARGET_ONE_PARAMETER(RZZOp, RZZ, rzz, rzz, theta)
         }                                                                      \
       }                                                                        \
                                                                                \
-      return convertTwoTargetTwoParameter(op, adaptor, rewriter, getContext(), \
-                                          state, fnName);                      \
+      return convertUnitaryToCallOp(op, adaptor, rewriter, getContext(),       \
+                                    state, fnName, 2, 2);                      \
     }                                                                          \
   };
 
