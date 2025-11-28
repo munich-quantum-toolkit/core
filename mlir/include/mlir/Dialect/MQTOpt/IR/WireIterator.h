@@ -112,7 +112,15 @@ class WireIterator {
    */
   [[nodiscard]] static mlir::Value findResult(mlir::scf::IfOp op,
                                               mlir::Value q) {
-    WireIterator it(q, &op.getThenRegion());
+    /// Use the branch with fewer ops.
+    /// Note: LLVM doesn't guarantee that range_size is in O(1).
+    /// Might effect performance.
+    const auto szThen = llvm::range_size(op.getThenRegion().getOps());
+    const auto szElse = llvm::range_size(op.getElseRegion().getOps());
+    mlir::Region& region =
+        szElse >= szThen ? op.getThenRegion() : op.getElseRegion();
+
+    WireIterator it(q, &region);
 
     /// Assumptions:
     ///     First, there must be a yield.
@@ -274,7 +282,7 @@ private:
       /// Since !q.use_empty: must be a branching op.
       currOp = q.getUsers().begin()->getParentOp();
       /// For now, just check if it's a scf::IfOp.
-      /// Theoretically this could also be an scf::scf.index_switch, etc.
+      /// Theoretically this could also be an scf::IndexSwitch, etc.
       assert(isa<mlir::scf::IfOp>(currOp));
     }
   }
