@@ -15,6 +15,7 @@ __all__ = [
     "JobSubmissionError",
     "QDMIQiskitError",
     "TranslationError",
+    "UnsupportedDeviceError",
     "UnsupportedFormatError",
     "UnsupportedOperationError",
 ]
@@ -22,6 +23,10 @@ __all__ = [
 
 class QDMIQiskitError(RuntimeError):
     """Base class for QDMI Qiskit backend errors."""
+
+
+class UnsupportedDeviceError(QDMIQiskitError):
+    """Raised when a QDMI device cannot be represented in Qiskit's Target model."""
 
 
 class UnsupportedOperationError(QDMIQiskitError):

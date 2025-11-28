@@ -14,6 +14,8 @@ devices through Qiskit's BackendV2 interface.
 
 from __future__ import annotations
 
+import warnings
+
 from mqt.core import fomac
 
 from .backend import QiskitBackend
@@ -72,8 +74,21 @@ class QDMIProvider:
         if name is not None:
             devices = [d for d in devices if name in d.name()]
 
-        # Create backend instances
-        return [QiskitBackend(device=device, provider=self) for device in devices]
+        backends = []
+        for device in devices:
+            zoned_ops = [op.name() for op in device.operations() if op.is_zoned()]
+            if zoned_ops:
+                warnings.warn(
+                    f"Skipping device '{device.name()}': Device contains zoned operations "
+                    f"{zoned_ops} which cannot be represented in Qiskit's Target model.",
+                    UserWarning,
+                    stacklevel=2,
+                )
+                continue
+
+            backends.append(QiskitBackend(device=device, provider=self))
+
+        return backends
 
     def get_backend(self, name: str) -> QiskitBackend:
         """Get a single backend by name.

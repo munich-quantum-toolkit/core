@@ -18,12 +18,10 @@ from typing import TYPE_CHECKING
 import pytest
 
 from mqt.core import fomac
-from mqt.core.plugins.qiskit import QDMIProvider
+from mqt.core.plugins.qiskit import QiskitBackend
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
-
-    from mqt.core.plugins.qiskit import QiskitBackend
 
 
 def _parse_num_clbits_from_qasm(program: str) -> int:
@@ -344,7 +342,7 @@ def mock_qdmi_device() -> MockQDMIDevice:
 
 
 @pytest.fixture
-def mock_backend(mock_qdmi_device: MockQDMIDevice, monkeypatch: pytest.MonkeyPatch) -> QiskitBackend:
+def mock_backend(mock_qdmi_device: MockQDMIDevice) -> QiskitBackend:
     """Fixture providing a QiskitBackend with a generic mock device.
 
     Returns:
@@ -355,13 +353,4 @@ def mock_backend(mock_qdmi_device: MockQDMIDevice, monkeypatch: pytest.MonkeyPat
         specific device characteristics. The mock device supports common gates
         (h, cz, ry, rz, measure) on 5 qubits.
     """
-
-    # Monkeypatch fomac.devices() to return mock device
-    def mock_devices() -> list[MockQDMIDevice]:
-        return [mock_qdmi_device]
-
-    monkeypatch.setattr("mqt.core.fomac.devices", mock_devices)
-
-    # Use provider pattern
-    provider = QDMIProvider()
-    return provider.get_backend("Mock QDMI Device")
+    return QiskitBackend(device=mock_qdmi_device)  # type: ignore[arg-type]

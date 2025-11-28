@@ -21,6 +21,7 @@ pytestmark = [
 ]
 
 
+@pytest.mark.filterwarnings("ignore:Skipping device:UserWarning")
 def test_provider_backends_filter_by_name() -> None:
     """Provider can filter backends by name substring."""
     provider = QDMIProvider()
@@ -37,19 +38,20 @@ def test_provider_backends_filter_by_name() -> None:
     assert any(b.name == backend_name for b in filtered)
 
 
+@pytest.mark.filterwarnings("ignore:Skipping device:UserWarning")
 def test_provider_backends_filter_by_substring() -> None:
     """Provider can filter backends by name substring."""
     provider = QDMIProvider()
 
-    # Filter by "QDMI" substring (should match "MQT NA Default QDMI Device")
+    # Filter by "QDMI" substring (should match "MQT Core DDSIM QDMI Device")
     filtered = provider.backends(name="QDMI")
     assert len(filtered) > 0
     assert all("QDMI" in b.name for b in filtered)
 
-    # Filter by "NA" substring
-    filtered_na = provider.backends(name="NA")
-    assert len(filtered_na) > 0
-    assert all("NA" in b.name for b in filtered_na)
+    # Filter by "DDSIM" substring
+    filtered_ddsim = provider.backends(name="DDSIM")
+    assert len(filtered_ddsim) > 0
+    assert all("DDSIM" in b.name for b in filtered_ddsim)
 
 
 def test_provider_backends_filter_nonexistent_name() -> None:
@@ -62,8 +64,8 @@ def test_provider_backends_filter_nonexistent_name() -> None:
 def test_provider_get_backend_by_name() -> None:
     """Provider can get backend by name."""
     provider = QDMIProvider()
-    backend = provider.get_backend("MQT NA Default QDMI Device")
-    assert backend.name == "MQT NA Default QDMI Device"
+    backend = provider.get_backend("MQT Core DDSIM QDMI Device")
+    assert backend.name == "MQT Core DDSIM QDMI Device"
     assert backend.provider is provider
 
 
@@ -85,7 +87,7 @@ def test_provider_get_backend_no_devices(monkeypatch: pytest.MonkeyPatch) -> Non
 
     provider = QDMIProvider()
     with pytest.raises(ValueError, match="No backend found with name"):
-        provider.get_backend("MQT NA Default QDMI Device")
+        provider.get_backend("MQT Core DDSIM QDMI Device")
 
 
 def test_provider_repr() -> None:
@@ -96,6 +98,7 @@ def test_provider_repr() -> None:
     assert "backends=" in repr_str
 
 
+@pytest.mark.filterwarnings("ignore:Skipping device:UserWarning")
 def test_provider_backends_return_different_instances() -> None:
     """Provider creates new backend instances each time."""
     provider = QDMIProvider()
@@ -110,6 +113,6 @@ def test_provider_backends_return_different_instances() -> None:
 def test_backend_has_provider_reference() -> None:
     """Backend created by provider has reference back to provider."""
     provider = QDMIProvider()
-    backend = provider.get_backend("MQT NA Default QDMI Device")
+    backend = provider.get_backend("MQT Core DDSIM QDMI Device")
 
     assert backend.provider is provider

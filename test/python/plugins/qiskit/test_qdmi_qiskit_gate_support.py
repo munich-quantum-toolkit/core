@@ -10,15 +10,13 @@
 
 from __future__ import annotations
 
-from math import comb
-from typing import TYPE_CHECKING
 from unittest.mock import MagicMock
 
 import pytest
 from qiskit import QuantumCircuit
 
-if TYPE_CHECKING:
-    from mqt.core.plugins.qiskit import QiskitBackend
+from mqt.core.plugins.qiskit import QiskitBackend
+from mqt.core.plugins.qiskit.exceptions import UnsupportedDeviceError, UnsupportedOperationError
 
 pytestmark = [
     pytest.mark.filterwarnings("ignore:.*Device operation.*cannot be mapped to a Qiskit gate.*:UserWarning"),
@@ -45,7 +43,10 @@ def test_map_operation_returns_none_for_unknown(mock_backend: QiskitBackend) -> 
 
 
 def test_get_operation_qargs_single_qubit(mock_backend: QiskitBackend) -> None:
-    """Test _get_operation_qargs for single-qubit operations."""
+    """Test _get_operation_qargs for single-qubit operations without explicit sites.
+
+    Operations without explicit sites should return [None] indicating global availability.
+    """
     # Create a mock FoMaC operation for single qubit
     mock_op = MagicMock()
     mock_op.name.return_value = "test_op"
@@ -53,44 +54,41 @@ def test_get_operation_qargs_single_qubit(mock_backend: QiskitBackend) -> None:
     mock_op.parameters_num.return_value = 0
     mock_op.duration.return_value = None
     mock_op.fidelity.return_value = None
-    mock_op.sites.return_value = None
+    mock_op.sites.return_value = None  # No explicit sites
     mock_op.is_zoned.return_value = False
 
     qargs = mock_backend._get_operation_qargs(mock_op)  # noqa: SLF001
 
-    # Should return all single qubit indices
-    assert len(qargs) == mock_backend._device.qubits_num()  # noqa: SLF001
-    assert all(len(qarg) == 1 for qarg in qargs)
+    assert qargs == [None]
 
 
-def test_get_operation_qargs_two_qubit_with_coupling_map_fallback(mock_backend: QiskitBackend) -> None:
-    """Test _get_operation_qargs for two-qubit operations with coupling map fallback.
+def test_get_operation_qargs_two_qubit_without_coupling_map(mock_backend: QiskitBackend) -> None:
+    """Test _get_operation_qargs for two-qubit operations without coupling map.
 
-    When an operation has sites=None, it should fall back to using the device's
-    full coupling map (all physical connections).
+    When an operation has site_pairs=None and device has no coupling map,
+    it should return [None] indicating global availability (all-to-all).
     """
-    # If device has coupling map, it should use it as fallback when sites=None
+    # The mock device has no coupling map by default
     device_coupling_map = mock_backend._device.coupling_map()  # noqa: SLF001
-    if device_coupling_map:
-        # Create mock operation with no specific sites
-        mock_op = MagicMock()
-        mock_op.name.return_value = "test_2q"
-        mock_op.qubits_num.return_value = 2
-        mock_op.parameters_num.return_value = 0
-        mock_op.duration.return_value = None
-        mock_op.fidelity.return_value = None
-        mock_op.sites.return_value = None  # No specific sites - should use device coupling map
-        mock_op.is_zoned.return_value = False
+    assert device_coupling_map is None
 
-        qargs = mock_backend._get_operation_qargs(mock_op)  # noqa: SLF001
+    # Create mock operation with no specific site pairs
+    mock_op = MagicMock()
+    mock_op.name.return_value = "test_2q"
+    mock_op.qubits_num.return_value = 2
+    mock_op.parameters_num.return_value = 0
+    mock_op.duration.return_value = None
+    mock_op.fidelity.return_value = None
+    mock_op.site_pairs.return_value = None  # No specific sites
+    mock_op.is_zoned.return_value = False
 
-        # Should match the full device coupling map (remapped to logical qubit indices)
-        assert all(len(qarg) == 2 for qarg in qargs)
-        assert len(qargs) > 0
+    qargs = mock_backend._get_operation_qargs(mock_op)  # noqa: SLF001
+
+    assert qargs == [None]
 
 
 def test_get_operation_qargs_with_specific_sites(mock_backend: QiskitBackend) -> None:
-    """Test that backend handles operations with specific sites.
+    """Test that backend handles operations properly in the target.
 
     This is tested through the backend's target construction, which uses
     _get_operation_qargs internally. We verify that the target properly
@@ -99,12 +97,14 @@ def test_get_operation_qargs_with_specific_sites(mock_backend: QiskitBackend) ->
     # Verify that the backend target has operations defined
     assert len(mock_backend.target.operation_names) > 0
 
-    # Verify operations have appropriate qargs
+    # Verify operations are properly represented
+    # Mock device operations have no explicit sites, so they should be globally available
+    # In Qiskit's Target, globally available operations have qargs=None
     for op_name in mock_backend.target.operation_names:
         qargs = mock_backend.target.qargs_for_operation_name(op_name)
-        assert qargs is not None
-        # Each qarg should be a tuple of qubit indices
-        if qargs:
+        # Operations without site constraints should have None qargs (globally available)
+        # Or if they have qargs, they should be valid tuples
+        if qargs is not None:
             for qarg in qargs:
                 assert isinstance(qarg, tuple)
                 assert all(isinstance(idx, int) for idx in qarg)
@@ -137,14 +137,8 @@ def test_get_operation_qargs_two_qubit_operation_with_subset_of_coupling_map(moc
                 assert all(isinstance(idx, int) for idx in qarg)
 
 
-def test_get_operation_qargs_multi_qubit_generates_all_combinations(mock_backend: QiskitBackend) -> None:
-    """Test that multi-qubit operations (3+ qubits) generate all possible combinations.
-
-    This verifies that the fallback for multi-qubit operations properly advertises
-    the full capability by generating all combinations of qubits, not just the first
-    contiguous qubits (e.g., for a 3-qubit operation on a 5-qubit device, it should
-    generate all C(5,3) = 10 combinations, not just (0,1,2)).
-    """
+def test_get_operation_qargs_multi_qubit_raises_error(mock_backend: QiskitBackend) -> None:
+    """Test that multi-qubit operations (3+ qubits) without explicit sites raise an error."""
 
     def create_mock_operation(name: str, num_qubits: int) -> MagicMock:
         """Helper to create a mock operation with specified qubit count.
@@ -158,35 +152,125 @@ def test_get_operation_qargs_multi_qubit_generates_all_combinations(mock_backend
         mock_op.parameters_num.return_value = 0
         mock_op.duration.return_value = None
         mock_op.fidelity.return_value = None
-        mock_op.sites.return_value = None  # No specific sites - should generate all combinations
+        mock_op.sites.return_value = None  # No specific sites
         mock_op.is_zoned.return_value = False
         return mock_op
 
-    num_qubits = mock_backend._device.qubits_num()  # noqa: SLF001
-
-    # Test 3-qubit operation
     mock_op_3q = create_mock_operation("ccx", 3)
-    qargs_3q = mock_backend._get_operation_qargs(mock_op_3q)  # noqa: SLF001
+    with pytest.raises(UnsupportedOperationError, match="Multi-qubit operations \\(3\\+\\)"):
+        mock_backend._get_operation_qargs(mock_op_3q)  # noqa: SLF001
 
-    if num_qubits >= 3:
-        expected_count = comb(num_qubits, 3)
-        assert len(qargs_3q) == expected_count
-        assert all(len(qarg) == 3 for qarg in qargs_3q)
-        assert len(qargs_3q) == len(set(qargs_3q)), "Should have no duplicate combinations"
 
-        # Verify we get different combinations, not just (0,1,2)
-        if num_qubits >= 4:
-            assert (0, 1, 2) in qargs_3q
-            assert (0, 1, 3) in qargs_3q
-            assert (0, 2, 3) in qargs_3q
-            assert (1, 2, 3) in qargs_3q
+def test_misconfigured_device_coupling_map_without_operation_sites() -> None:
+    """Test that device with coupling map but operation without sites raises error."""
 
-    # Test 4-qubit operation if device has enough qubits
-    if num_qubits >= 4:
-        mock_op_4q = create_mock_operation("test_4q", 4)
-        qargs_4q = mock_backend._get_operation_qargs(mock_op_4q)  # noqa: SLF001
+    class MockDeviceWithCouplingMap:
+        """Mock device that has a coupling map."""
 
-        expected_count = comb(num_qubits, 4)
-        assert len(qargs_4q) == expected_count
-        assert all(len(qarg) == 4 for qarg in qargs_4q)
-        assert len(qargs_4q) == len(set(qargs_4q)), "Should have no duplicate combinations"
+        class MockSite:
+            """Mock site."""
+
+            def __init__(self, idx: int) -> None:
+                """Initialize with index."""
+                self._idx = idx
+
+            def index(self) -> int:
+                """Return index."""
+                return self._idx
+
+            @staticmethod
+            def is_zone() -> bool:
+                """Return whether site is a zone.
+
+                Returns:
+                    False, as this is not a zone site.
+                """
+                return False
+
+        def __init__(self) -> None:
+            """Initialize mock device."""
+            self._sites = [self.MockSite(i) for i in range(5)]
+            self._coupling_map = [(self._sites[0], self._sites[1]), (self._sites[1], self._sites[2])]
+
+        @staticmethod
+        def name() -> str:
+            """Return device name."""
+            return "Mock Device With Coupling"
+
+        @staticmethod
+        def qubits_num() -> int:
+            """Return number of qubits."""
+            return 5
+
+        def regular_sites(self) -> list[MockSite]:
+            """Return regular sites."""
+            return self._sites
+
+        @staticmethod
+        def operations() -> list[object]:
+            """Return empty operation list."""
+            return []
+
+        def coupling_map(self) -> list[tuple[MockSite, MockSite]]:
+            """Return coupling map."""
+            return self._coupling_map
+
+    device = MockDeviceWithCouplingMap()
+    backend = QiskitBackend(device=device)  # type: ignore[arg-type]
+
+    mock_op = MagicMock()
+    mock_op.name.return_value = "custom_2q"
+    mock_op.qubits_num.return_value = 2
+    mock_op.site_pairs.return_value = None  # No sites, but device has a coupling map
+    mock_op.is_zoned.return_value = False
+
+    with pytest.raises(UnsupportedOperationError, match="misconfigured device"):
+        backend._get_operation_qargs(mock_op)  # noqa: SLF001
+
+
+def test_zoned_operation_rejected_at_backend_init() -> None:
+    """Test that devices with zoned operations are rejected at backend initialization."""
+
+    class MockZonedDevice:
+        """Mock device with zoned operations."""
+
+        class MockZonedOp:
+            """Mock zoned operation."""
+
+            @staticmethod
+            def name() -> str:
+                """Return operation name."""
+                return "zoned_op"
+
+            @staticmethod
+            def is_zoned() -> bool:
+                """Return True to indicate zoned operation."""
+                return True
+
+        def __init__(self) -> None:
+            """Initialize mock device."""
+            self._ops = [self.MockZonedOp()]
+
+        @staticmethod
+        def name() -> str:
+            """Return device name."""
+            return "Mock Zoned Device"
+
+        def operations(self) -> list[MockZonedOp]:
+            """Return list of operations."""
+            return self._ops
+
+        @staticmethod
+        def qubits_num() -> int:
+            """Return number of qubits."""
+            return 5
+
+        @staticmethod
+        def regular_sites() -> list[object]:
+            """Return regular sites."""
+            return []
+
+    device = MockZonedDevice()
+
+    with pytest.raises(UnsupportedDeviceError, match="zoned operations"):
+        QiskitBackend(device=device)  # type: ignore[arg-type]

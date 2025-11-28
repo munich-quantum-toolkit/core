@@ -71,7 +71,7 @@ def test_unsupported_operation(mock_backend: QiskitBackend) -> None:
 def test_backend_via_provider() -> None:
     """Backend can be obtained through provider."""
     provider = QDMIProvider()
-    backend = provider.get_backend("MQT NA Default QDMI Device")
+    backend = provider.get_backend("MQT Core DDSIM QDMI Device")
     assert backend.target.num_qubits > 0
     assert backend.provider is provider
 
@@ -79,10 +79,11 @@ def test_backend_via_provider() -> None:
 def test_provider_get_backend_by_name() -> None:
     """Provider can get backend by name."""
     provider = QDMIProvider()
-    backend = provider.get_backend("MQT NA Default QDMI Device")
-    assert backend.name == "MQT NA Default QDMI Device"
+    backend = provider.get_backend("MQT Core DDSIM QDMI Device")
+    assert backend.name == "MQT Core DDSIM QDMI Device"
 
 
+@pytest.mark.filterwarnings("ignore:Skipping device:UserWarning")
 def test_provider_backends_list() -> None:
     """Provider can list all backends."""
     provider = QDMIProvider()

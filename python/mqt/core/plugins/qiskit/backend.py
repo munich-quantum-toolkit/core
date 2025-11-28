@@ -14,7 +14,6 @@ Provides a Qiskit BackendV2-compatible interface to QDMI devices via FoMaC.
 from __future__ import annotations
 
 import warnings
-from itertools import combinations
 from typing import TYPE_CHECKING, Any
 
 import qiskit.circuit.library as qcl
@@ -29,14 +28,13 @@ from .exceptions import (
     CircuitValidationError,
     JobSubmissionError,
     TranslationError,
+    UnsupportedDeviceError,
     UnsupportedFormatError,
     UnsupportedOperationError,
 )
 from .job import QiskitJob
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
-
     from qiskit.circuit import Instruction, QuantumCircuit
 
 
@@ -74,12 +72,24 @@ class QiskitBackend(BackendV2):  # type: ignore[misc]
         Args:
             device: FoMaC device instance.
             provider: Provider instance that created this backend.
+
+        Raises:
+            UnsupportedDeviceError: If the device cannot be represented
+                in Qiskit's Target model, e.g., if it is zoned.
         """
         self._device = device
         self._provider = provider
 
+        # Check for zoned operations - these cannot be represented in Qiskit's Target model
+        zoned_ops = [op.name() for op in device.operations() if op.is_zoned()]
+        if zoned_ops:
+            msg = (
+                f"Device '{device.name()}' contains zoned operations {zoned_ops} which cannot be "
+                f"represented in Qiskit's Target model."
+            )
+            raise UnsupportedDeviceError(msg)
+
         # Filter non-zone sites for qubit indexing
-        # Note: regular_sites() returns only the sites that are not zones (qubits)
         self._non_zone_sites = sorted(self._device.regular_sites(), key=lambda x: x.index())
         self._site_index_to_qubit_index = {s.index(): i for i, s in enumerate(self._non_zone_sites)}
 
@@ -127,7 +137,10 @@ class QiskitBackend(BackendV2):  # type: ignore[misc]
         Returns:
             Target object with device operations and properties.
         """
-        target = Target(description=f"QDMI device: {self._device.name()}")
+        target = Target(
+            description=f"QDMI device: {self._device.name()}",
+            num_qubits=self._device.qubits_num(),
+        )
 
         # Deduplicate operations by Qiskit gate name (not device operation name)
         # Multiple device operations may map to the same Qiskit gate
@@ -143,7 +156,7 @@ class QiskitBackend(BackendV2):  # type: ignore[misc]
                     seen_gate_names.add("measure")
                     qargs = self._get_operation_qargs(op)
                     # If qargs is [None], pass {None: None} to indicate global availability
-                    if qargs == [None]:  # type: ignore[comparison-overlap]
+                    if qargs == [None]:
                         target.add_instruction(Measure(), {None: None})
                     else:
                         target.add_instruction(Measure(), dict.fromkeys(qargs))
@@ -182,7 +195,7 @@ class QiskitBackend(BackendV2):  # type: ignore[misc]
             # Add to target
             # If qargs is [None], it means the operation is available on all qubits
             # In this case, pass {None: props} to indicate global availability
-            if qargs == [None]:  # type: ignore[comparison-overlap]
+            if qargs == [None]:
                 target.add_instruction(gate, {None: props})
             else:
                 target.add_instruction(gate, dict.fromkeys(qargs, props))
@@ -257,24 +270,38 @@ class QiskitBackend(BackendV2):  # type: ignore[misc]
 
         return gate_map.get(op_name.lower())
 
-    def _get_operation_qargs(self, op: fomac.Device.Operation) -> Sequence[tuple[int, ...]]:
+    def _get_operation_qargs(self, op: fomac.Device.Operation) -> list[tuple[int, ...]] | list[None]:
         """Get the qubit argument tuples for an operation.
+
+        This method determines which qubit indices an operation can act on by:
+        1. Checking explicit site lists from the operation (sites() for 1-qubit, site_pairs() for 2-qubit)
+        2. For operations without site lists (returns None):
+           - Single-qubit: Available on all individual qubits
+           - Two-qubit with coupling map: Misconfigured device (error)
+           - Two-qubit without coupling map: Available on all qubit pairs (all-to-all)
+           - Multi-qubit (3+): Not supported (error)
 
         Args:
             op: Device operation from FoMaC.
 
         Returns:
             Sequence of qubit index tuples this operation can act on.
+            Returns [None] for globally available operations (will be converted to {None: None} in Target).
+
+        Raises:
+            UnsupportedOperationError: If operation configuration is invalid, device is misconfigured,
+                                        or operation has unsupported qubit count (3+).
         """
         qubits_num = op.qubits_num()
         qubits_num = qubits_num if qubits_num is not None else 1
-        num_qubits = self._device.qubits_num()
+        self._device.qubits_num()
+        coupling_map = self._device.coupling_map()
 
-        # Check for explicit sites
+        # For single-qubit operations, first check for explicit sites
         if qubits_num == 1:
             site_list = op.sites()
             if site_list is not None:
-                # Extract and remap site indices to qubit indices
+                # Operation explicitly defines where it can be executed
                 raw_indices = [s.index() for s in site_list]
 
                 # Filter out zone sites and remap to qubit indices
@@ -286,9 +313,11 @@ class QiskitBackend(BackendV2):  # type: ignore[misc]
 
                 return [(idx,) for idx in sorted(set(remapped_indices))]
 
-        elif qubits_num == 2:
-            # For two-qubit operations, use site_pairs()
-            # This returns a list of pairs (Site, Site)
+            # No explicit sites - operation is globally available on all qubits
+            return [None]
+
+        # For two-qubit operations, first check for explicit site_pairs
+        if qubits_num == 2:
             site_pairs = op.site_pairs()
             if site_pairs is not None:
                 site_tuples: list[tuple[int, ...]] = []
@@ -301,41 +330,28 @@ class QiskitBackend(BackendV2):  # type: ignore[misc]
                         ))
                 return site_tuples
 
-        # Operation is zoned or has no explicit site list - generate combinations
+            # Two-qubit operations without explicit site_pairs
+            # Check device-level coupling map
+            if coupling_map is not None:
+                # Device has coupling map but operation doesn't expose sites
+                msg = (
+                    f"Device provides a coupling map (stating connectivity constraints), "
+                    f"but operation '{op.name()}' does not expose site pairs. This indicates "
+                    f"a misconfigured device. Devices with connectivity constraints must expose "
+                    f"sites for their operations."
+                )
+                raise UnsupportedOperationError(msg)
 
-        # Single-qubit operations: all qubits
-        if qubits_num == 1:
-            return [(i,) for i in range(num_qubits)]
+            # No coupling map and no site pairs - operation is globally available (all-to-all)
+            return [None]
 
-        # For multi-qubit operations, check if device is too large to enumerate all combinations
-        # For very large devices (e.g., simulators), return None to indicate global availability
-        max_qubits_for_all_combinations = 1000
-        if num_qubits > max_qubits_for_all_combinations:
-            # Return None to indicate operation is available on all qubits
-            # This will be handled by _build_target() as {None: None}
-            return [None]  # type: ignore[list-item]
-
-        # Two-qubit operations: use coupling map if available, otherwise all pairs
-        if qubits_num == 2:
-            coupling_map = self._device.coupling_map()
-            if coupling_map:
-                # Remap coupling map to qubit indices
-                remapped_coupling: list[tuple[int, ...]] = []
-                for pair in coupling_map:
-                    idx0, idx1 = pair[0].index(), pair[1].index()
-                    if idx0 in self._site_index_to_qubit_index and idx1 in self._site_index_to_qubit_index:
-                        remapped_coupling.append((
-                            self._site_index_to_qubit_index[idx0],
-                            self._site_index_to_qubit_index[idx1],
-                        ))
-                if remapped_coupling:
-                    return remapped_coupling
-
-            # No coupling map - generate all pairs
-            return [(i, j) for i in range(num_qubits) for j in range(i + 1, num_qubits)]
-
-        # Multi-qubit operations (3 or more qubits) - generate all combinations
-        return list(combinations(range(num_qubits), qubits_num))
+        # Multi-qubit operations (3+) without explicit sites are not supported
+        msg = (
+            f"Operation '{op.name()}' requires {qubits_num} qubits but does not expose "
+            f"explicit sites. Multi-qubit operations (3+) without explicit site lists cannot "
+            f"be represented in Qiskit's Target model."
+        )
+        raise UnsupportedOperationError(msg)
 
     @staticmethod
     def _convert_circuit(circuit: QuantumCircuit, program_format: fomac.ProgramFormat) -> str:
