@@ -249,7 +249,6 @@ private:
       mlir::TypeSwitch<mlir::Operation*>(currOp)
           .Case<UnitaryInterface>(
               [&](UnitaryInterface op) { q = findOutput(op, q); })
-          .Case<AllocQubitOp>([&](AllocQubitOp op) { q = op.getQubit(); })
           .Case<ResetOp>([&](ResetOp op) { q = op.getOutQubit(); })
           .Case<MeasureOp>([&](MeasureOp op) { q = op.getOutQubit(); })
           .Case<mlir::scf::ForOp>(
