@@ -755,6 +755,7 @@ public:
                                  Value target1);
 
   DECLARE_TWO_TARGET_TWO_PARAMETER(xx_plus_yy, xx_plus_yy, theta, beta)
+  DECLARE_TWO_TARGET_TWO_PARAMETER(xx_minus_yy, xx_minus_yy, theta, beta)
 
 #undef DECLARE_TWO_TARGET_TWO_PARAMETER
 

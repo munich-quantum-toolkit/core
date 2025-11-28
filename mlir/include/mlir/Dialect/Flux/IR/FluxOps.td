@@ -933,6 +933,34 @@ def XXPlusYYOp : FluxOp<"xx_plus_yy", traits = [UnitaryOpInterface, TwoTargetTwo
     ];
 }
 
+def XXMinusYYOp : FluxOp<"xx_minus_yy", traits = [UnitaryOpInterface, TwoTargetTwoParameter]> {
+    let summary = "Apply an XX-YY gate to two qubits";
+    let description = [{
+        Applies an XX-YY gate to two qubits and returns the transformed qubits.
+
+        Example:
+        ```mlir
+        %q0_out, %q1_out = flux.xx_minus_yy(%theta, %beta) %q0_in, %q1_in : !flux.qubit, !flux.qubit -> !flux.qubit, !flux.qubit
+        ```
+    }];
+
+    let arguments = (ins Arg<QubitType, "the first target qubit", [MemRead]>:$qubit0_in,
+                     Arg<QubitType, "the second target qubit", [MemRead]>:$qubit1_in,
+                     Arg<F64, "the rotation angle theta in radians", [MemRead]>:$theta,
+                     Arg<F64, "the rotation angle beta in radians", [MemRead]>:$beta);
+    let results = (outs QubitType:$qubit0_out, QubitType:$qubit1_out);
+    let assemblyFormat = "`(` $theta `,` $beta `)` $qubit0_in `,` $qubit1_in attr-dict `:` type($qubit0_in) `,` type($qubit1_in) `->` type($qubit0_out) `,` type($qubit1_out)";
+
+    let extraClassDeclaration = [{
+        DenseElementsAttr tryGetStaticMatrix();
+        static StringRef getBaseSymbol() { return "xx_minus_yy"; }
+    }];
+
+    let builders = [
+        OpBuilder<(ins "Value":$qubit0_in, "Value":$qubit1_in, "const std::variant<double, Value>&":$theta, "const std::variant<double, Value>&":$beta)>
+    ];
+}
+
 //===----------------------------------------------------------------------===//
 // Modifiers
 //===----------------------------------------------------------------------===//

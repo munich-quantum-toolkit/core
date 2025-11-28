@@ -856,6 +856,32 @@ def XXPlusYYOp : QuartzOp<"xx_plus_yy", traits = [UnitaryOpInterface, TwoTargetT
     ];
 }
 
+def XXMinusYYOp : QuartzOp<"xx_minus_yy", traits = [UnitaryOpInterface, TwoTargetTwoParameter]> {
+    let summary = "Apply an XX-YY gate to two qubits";
+    let description = [{
+        Applies an XX-YY gate to two qubits, modifying them in place.
+
+        Example:
+        ```mlir
+        quartz.xx_minus_yy(%theta, %beta) %q0, %q1 : !flux.qubit, !flux.qubit
+        ```
+    }];
+
+    let arguments = (ins Arg<QubitType, "the first target qubit", [MemRead, MemWrite]>:$qubit0_in,
+                     Arg<QubitType, "the second target qubit", [MemRead, MemWrite]>:$qubit1_in,
+                     Arg<F64, "the rotation angle theta in radians", [MemRead]>:$theta,
+                     Arg<F64, "the rotation angle beta in radians", [MemRead]>:$beta);
+    let assemblyFormat = "`(` $theta `,` $beta `)` $qubit0_in `,` $qubit1_in attr-dict";
+    let extraClassDeclaration = [{
+        DenseElementsAttr tryGetStaticMatrix();
+        static StringRef getBaseSymbol() { return "xx_minus_yy"; }
+    }];
+
+    let builders = [
+        OpBuilder<(ins "Value":$qubit0_in, "Value":$qubit1_in, "const std::variant<double, Value>&":$theta, "const std::variant<double, Value>&":$beta)>
+    ];
+}
+
 //===----------------------------------------------------------------------===//
 // Modifiers
 //===----------------------------------------------------------------------===//

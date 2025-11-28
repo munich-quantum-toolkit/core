@@ -265,13 +265,12 @@ inline DenseElementsAttr getMatrixRZZ(MLIRContext* ctx, double theta) {
   const auto& complexType = ComplexType::get(Float64Type::get(ctx));
   const auto& type = RankedTensorType::get({4, 4}, complexType);
   const std::complex<double> m0 = 0.0 + 0i;
-  const std::complex<double> mp =
-      std::exp(1i * theta / 2.0); const std::complex<double> mm =
-          std::exp(-1i * theta / 2.0);
-              const auto matrix = {mm, m0, m0, m0,  // row 0
-                                   m0, mp, m0, m0,  // row 1
-                                   m0, m0, mp, m0,  // row 2
-                                   m0, m0, m0, mm}; // row 3
+  const std::complex<double> mp = std::exp(1i * theta / 2.0);
+  const std::complex<double> mm = std::exp(-1i * theta / 2.0);
+  const auto matrix = {mm, m0, m0, m0,  // row 0
+                       m0, mp, m0, m0,  // row 1
+                       m0, m0, mp, m0,  // row 2
+                       m0, m0, m0, mm}; // row 3
   return DenseElementsAttr::get(type, matrix);
 }
 
@@ -290,6 +289,24 @@ inline DenseElementsAttr getMatrixXXPlusYY(MLIRContext* ctx, double theta,
                        m0, mc,  msm, m0,  // row 1
                        m0, msp, mc,  m0,  // row 2
                        m0, m0,  m0,  m1}; // row 3
+  return DenseElementsAttr::get(type, matrix);
+}
+
+inline DenseElementsAttr getMatrixXXMinusYY(MLIRContext* ctx, double theta,
+                                            double beta) {
+  const auto& complexType = ComplexType::get(Float64Type::get(ctx));
+  const auto& type = RankedTensorType::get({4, 4}, complexType);
+  const std::complex<double> m0 = 0.0 + 0i;
+  const std::complex<double> m1 = 1.0 + 0i;
+  const std::complex<double> mc = std::cos(theta / 2.0) + 0i;
+  const std::complex<double> msp =
+      std::sin(theta / 2.0) * std::exp(-1i * beta) + 0i;
+  const std::complex<double> msm =
+      -std::sin(theta / 2.0) * std::exp(1i * beta) + 0i;
+  const auto matrix = {mc,  m0, m0, msm, // row 0
+                       m0,  m1, m0, m0,  // row 1
+                       m0,  m0, m1, m0,  // row 2
+                       msp, m0, m0, mc}; // row 3
   return DenseElementsAttr::get(type, matrix);
 }
 

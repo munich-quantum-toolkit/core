@@ -878,6 +878,7 @@ public:
       Value qubit0, Value qubit1);
 
   DECLARE_TWO_TARGET_TWO_PARAMETER(XXPlusYYOp, xx_plus_yy, theta, beta)
+  DECLARE_TWO_TARGET_TWO_PARAMETER(XXMinusYYOp, xx_minus_yy, theta, beta)
 
 #undef DECLARE_TWO_TARGET_TWO_PARAMETER
 

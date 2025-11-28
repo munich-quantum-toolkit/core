@@ -927,6 +927,7 @@ DEFINE_TWO_TARGET_ONE_PARAMETER(RZZOp, rzz, theta)
   };
 
 DEFINE_TWO_TARGET_TWO_PARAMETER(XXPlusYYOp, xx_plus_yy, theta, beta)
+DEFINE_TWO_TARGET_TWO_PARAMETER(XXMinusYYOp, xx_minus_yy, theta, beta)
 
 #undef DEFINE_TWO_TARGET_TWO_PARAMETER
 
@@ -1088,8 +1089,8 @@ struct QuartzToFlux final : impl::QuartzToFluxBase<QuartzToFlux> {
         ConvertQuartzSWAPOp, ConvertQuartziSWAPOp, ConvertQuartzDCXOp,
         ConvertQuartzECROp, ConvertQuartzRXXOp, ConvertQuartzRYYOp,
         ConvertQuartzRZXOp, ConvertQuartzRZZOp, ConvertQuartzXXPlusYYOp,
-        ConvertQuartzCtrlOp, ConvertQuartzYieldOp>(typeConverter, context,
-                                                   &state);
+        ConvertQuartzXXMinusYYOp, ConvertQuartzCtrlOp, ConvertQuartzYieldOp>(
+        typeConverter, context, &state);
 
     // Conversion of quartz types in func.func signatures
     // Note: This currently has limitations with signature

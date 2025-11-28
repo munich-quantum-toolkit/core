@@ -1270,6 +1270,8 @@ DEFINE_TWO_TARGET_ONE_PARAMETER(RZZOp, RZZ, rzz, rzz, theta)
 
 DEFINE_TWO_TARGET_TWO_PARAMETER(XXPlusYYOp, XXPLUSYY, xx_plus_yy, xx_plus_yy,
                                 theta, beta)
+DEFINE_TWO_TARGET_TWO_PARAMETER(XXMinusYYOp, XXMINUSYY, xx_minus_yy,
+                                xx_minus_yy, theta, beta)
 
 #undef DEFINE_TWO_TARGET_TWO_PARAMETER
 
@@ -1667,6 +1669,8 @@ struct QuartzToQIR final : impl::QuartzToQIRBase<QuartzToQIR> {
       quartzPatterns.add<ConvertQuartzRZZOpQIR>(typeConverter, ctx, &state);
       quartzPatterns.add<ConvertQuartzXXPlusYYOpQIR>(typeConverter, ctx,
                                                      &state);
+      quartzPatterns.add<ConvertQuartzXXMinusYYOpQIR>(typeConverter, ctx,
+                                                      &state);
       quartzPatterns.add<ConvertQuartzCtrlQIR>(typeConverter, ctx, &state);
       quartzPatterns.add<ConvertQuartzYieldQIR>(typeConverter, ctx, &state);
       // Gate operations will be added here as the dialect expands

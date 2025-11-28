@@ -815,14 +815,14 @@ void addRZZOp(QuartzProgramBuilder& builder, const qc::Operation& operation,
 }
 
 /**
- * @brief Adds an XXPlusYY operation
+ * @brief Adds an XX+YY operation
  *
  * @details
- * Translate an XXPlusYY operation from the QuantumComputation to
+ * Translate an XX+YY operation from the QuantumComputation to
  * quartz.xx_plus_yy.
  *
  * @param builder The QuartzProgramBuilder used to create operations
- * @param operation The XXPlusYY operation to translate
+ * @param operation The XX+YY operation to translate
  * @param qubits Flat vector of qubit values indexed by physical qubit index
  */
 void addXXPlusYYOp(QuartzProgramBuilder& builder,
@@ -837,6 +837,32 @@ void addXXPlusYYOp(QuartzProgramBuilder& builder,
     builder.xx_plus_yy(theta, beta, target0, target1);
   } else {
     builder.mcxx_plus_yy(theta, beta, posControls, target0, target1);
+  }
+}
+
+/**
+ * @brief Adds an XX-YY operation
+ *
+ * @details
+ * Translate an XX-YY operation from the QuantumComputation to
+ * quartz.xx_minus_yy.
+ *
+ * @param builder The QuartzProgramBuilder used to create operations
+ * @param operation The XX-YY operation to translate
+ * @param qubits Flat vector of qubit values indexed by physical qubit index
+ */
+void addXXMinusYYOp(QuartzProgramBuilder& builder,
+                    const qc::Operation& operation,
+                    const llvm::SmallVector<Value>& qubits) {
+  const auto& theta = operation.getParameter()[0];
+  const auto& beta = operation.getParameter()[1];
+  const auto& target0 = qubits[operation.getTargets()[0]];
+  const auto& target1 = qubits[operation.getTargets()[1]];
+  if (const auto& posControls = getPosControls(operation, qubits);
+      posControls.empty()) {
+    builder.xx_minus_yy(theta, beta, target0, target1);
+  } else {
+    builder.mcxx_minus_yy(theta, beta, posControls, target0, target1);
   }
 }
 
@@ -955,6 +981,8 @@ translateOperations(QuartzProgramBuilder& builder,
     case qc::OpType::XXplusYY:
       addXXPlusYYOp(builder, *operation, qubits);
       break;
+    case qc::OpType::XXminusYY:
+      addXXMinusYYOp(builder, *operation, qubits);
     default:
       // Unsupported operation - skip for now
       // As the Quartz dialect is expanded, more operations will be supported
