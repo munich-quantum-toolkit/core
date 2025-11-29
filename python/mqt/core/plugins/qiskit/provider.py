@@ -1,0 +1,122 @@
+# Copyright (c) 2023 - 2025 Chair for Design Automation, TUM
+# Copyright (c) 2025 Munich Quantum Software Company GmbH
+# All rights reserved.
+#
+# SPDX-License-Identifier: MIT
+#
+# Licensed under the MIT License
+
+"""QDMI Provider for Qiskit integration.
+
+This module provides a provider interface for discovering and accessing QDMI
+devices through Qiskit's BackendV2 interface.
+"""
+
+from __future__ import annotations
+
+import warnings
+
+from mqt.core import fomac
+
+from .backend import QiskitBackend
+
+__all__ = ["QDMIProvider"]
+
+
+class QDMIProvider:
+    """Provider for QDMI devices accessed via FoMaC.
+
+    This provider discovers and manages QDMI devices that are available through
+    the FoMaC layer. It provides a Qiskit-idiomatic interface for device
+    discovery and backend instantiation.
+
+    Examples:
+        List all available backends:
+
+        >>> from mqt.core.qdmi.qiskit import QDMIProvider
+        >>> provider = QDMIProvider()
+        >>> backends = provider.backends()
+        >>> for backend in backends:
+        ...     print(f"{backend.name}: {backend.target.num_qubits} qubits")
+
+        Get a specific backend by name:
+
+        >>> backend = provider.get_backend("MQT NA Default QDMI Device")
+    """
+
+    def __init__(self) -> None:
+        """Initialize the QDMI provider."""
+
+    def backends(self, name: str | None = None) -> list[QiskitBackend]:
+        """Return all available backends, optionally filtered by name substring.
+
+        Args:
+            name: If provided, return only backends whose name contains this substring.
+
+        Returns:
+            List of QiskitBackend instances. Empty list if name specified but not found.
+
+        Examples:
+            Get all backends:
+
+            >>> provider = QDMIProvider()
+            >>> all_backends = provider.backends()
+
+            Filter backends by name substring:
+
+            >>> backends = provider.backends(name="NA")  # matches "MQT NA Default QDMI Device"
+            >>> backends = provider.backends(name="QDMI")  # matches all devices with "QDMI" in name
+        """
+        # Get all devices from FoMaC
+        devices = list(fomac.devices())
+
+        # Filter by name substring if specified
+        if name is not None:
+            devices = [d for d in devices if name in d.name()]
+
+        backends = []
+        for device in devices:
+            zoned_ops = [op.name() for op in device.operations() if op.is_zoned()]
+            if zoned_ops:
+                warnings.warn(
+                    f"Skipping device '{device.name()}': Device contains zoned operations "
+                    f"{zoned_ops} which cannot be represented in Qiskit's Target model.",
+                    UserWarning,
+                    stacklevel=2,
+                )
+                continue
+
+            backends.append(QiskitBackend(device=device, provider=self))
+
+        return backends
+
+    def get_backend(self, name: str) -> QiskitBackend:
+        """Get a single backend by name.
+
+        Args:
+            name: Name of the backend to retrieve.
+
+        Returns:
+            QiskitBackend instance.
+
+        Raises:
+            ValueError: If no matching backend found.
+
+        Examples:
+            Get a specific backend:
+
+            >>> provider = QDMIProvider()
+            >>> backend = provider.get_backend("MQT NA Default QDMI Device")
+        """
+        backends = self.backends(name=name)
+
+        if not backends:
+            msg = f"No backend found with name '{name}'"
+            raise ValueError(msg)
+
+        return backends[0]
+
+    def __repr__(self) -> str:
+        """Return string representation of the provider."""
+        num_backends = len(list(fomac.devices()))
+        return f"<QDMIProvider(backends={num_backends})>"

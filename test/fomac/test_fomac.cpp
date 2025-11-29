@@ -11,6 +11,7 @@
 #include "fomac/FoMaC.hpp"
 
 #include <algorithm>
+#include <cstdlib>
 #include <gtest/gtest.h>
 #include <new>
 #include <qdmi/client.h>
@@ -27,6 +28,24 @@ protected:
   DeviceTest() : device(GetParam()) {}
 };
 
+class DDSimulatorDeviceTest : public testing::Test {
+protected:
+  FoMaC::Device device;
+
+  DDSimulatorDeviceTest() : device(getDDSimulatorDevice()) {}
+
+private:
+  static auto getDDSimulatorDevice() -> FoMaC::Device {
+    const auto devices = FoMaC::getDevices();
+    for (const auto& dev : devices) {
+      if (dev.getName() == "MQT Core DDSIM QDMI Device") {
+        return dev;
+      }
+    }
+    throw std::runtime_error("DD simulator device not found");
+  }
+};
+
 class SiteTest : public DeviceTest {
 protected:
   FoMaC::Device::Site site;
@@ -39,6 +58,23 @@ protected:
   FoMaC::Device::Operation operation;
 
   OperationTest() : operation(device.getOperations().front()) {}
+};
+
+class JobTest : public DDSimulatorDeviceTest {
+protected:
+  FoMaC::Job job;
+
+  JobTest() : job(createTestJob()) {}
+
+  FoMaC::Job createTestJob() {
+    const std::string qasm3Program = R"(
+OPENQASM 3.0;
+qubit[1] q;
+bit[1] c;
+c[0] = measure q[0];
+)";
+    return device.submitJob(qasm3Program, QDMI_PROGRAM_FORMAT_QASM3, 10);
+  }
 };
 
 TEST(FoMaCTest, StatusToString) {
@@ -323,6 +359,132 @@ TEST_P(DeviceTest, RegularSitesAndZones) {
   }
 }
 
+TEST_F(DDSimulatorDeviceTest, SubmitJobReturnsValidJob) {
+  const std::string qasm3Program = R"(
+OPENQASM 3.0;
+include "stdgates.inc";
+qubit[2] q;
+bit[2] c;
+h q[0];
+cx q[0], q[1];
+c = measure q;
+)";
+
+  const auto job =
+      device.submitJob(qasm3Program, QDMI_PROGRAM_FORMAT_QASM3, 100);
+
+  EXPECT_FALSE(job.getId().empty());
+  EXPECT_EQ(job.getNumShots(), 100);
+  EXPECT_TRUE(job.check() == QDMI_JOB_STATUS_DONE);
+}
+
+TEST_F(DDSimulatorDeviceTest, SubmitJobPreservesNumShots) {
+  const std::string qasm3Program = R"(
+OPENQASM 3.0;
+qubit[1] q;
+bit[1] c;
+c[0] = measure q[0];
+)";
+
+  const auto job1 =
+      device.submitJob(qasm3Program, QDMI_PROGRAM_FORMAT_QASM3, 10);
+  EXPECT_EQ(job1.getNumShots(), 10);
+
+  const auto job2 =
+      device.submitJob(qasm3Program, QDMI_PROGRAM_FORMAT_QASM3, 100);
+  EXPECT_EQ(job2.getNumShots(), 100);
+
+  const auto job3 =
+      device.submitJob(qasm3Program, QDMI_PROGRAM_FORMAT_QASM3, 1000);
+  EXPECT_EQ(job3.getNumShots(), 1000);
+}
+
+TEST_F(JobTest, IdIsUnique) {
+  const std::string qasm3Program = R"(
+OPENQASM 3.0;
+qubit[1] q;
+bit[1] c;
+c[0] = measure q[0];
+)";
+  const auto job2 =
+      device.submitJob(qasm3Program, QDMI_PROGRAM_FORMAT_QASM3, 10);
+
+  EXPECT_NE(job.getId(), job2.getId());
+}
+
+TEST_F(JobTest, StatusProgresses) {
+  job.wait();
+
+  const auto finalStatus = job.check();
+  EXPECT_TRUE(finalStatus == QDMI_JOB_STATUS_DONE ||
+              finalStatus == QDMI_JOB_STATUS_FAILED);
+}
+
+TEST_F(JobTest, GetCountsReturnsValidHistogram) {
+  job.wait();
+
+  const auto counts = job.getCounts();
+  EXPECT_FALSE(counts.empty());
+
+  // All keys should be valid binary strings of length 1 (single qubit)
+  for (const auto& [key, value] : counts) {
+    EXPECT_EQ(key.length(), 1);
+    EXPECT_TRUE(key == "0" || key == "1");
+    EXPECT_GT(value, 0);
+  }
+
+  size_t totalCounts = 0;
+  for (const auto& [key, value] : counts) {
+    totalCounts += value;
+  }
+  EXPECT_EQ(totalCounts, job.getNumShots());
+}
+
+TEST_F(JobTest, MultipleGetCountsCalls) {
+  job.wait();
+
+  const auto counts1 = job.getCounts();
+  const auto counts2 = job.getCounts();
+
+  EXPECT_EQ(counts1, counts2);
+}
+
+TEST_F(JobTest, CancelJob) {
+  const std::string qasm3Program = R"(
+OPENQASM 3.0;
+qubit[1] q;
+bit[1] c;
+c[0] = measure q[0];
+)";
+  const auto jobToCancel =
+      device.submitJob(qasm3Program, QDMI_PROGRAM_FORMAT_QASM3, 10);
+
+  // Fast-executing jobs (like the DD simulator) may complete before
+  // cancel is called, which should throw an exception.
+  // Both outcomes are valid based on timing.
+  try {
+    jobToCancel.cancel();
+    // If cancel succeeded, the job should be in CANCELED state
+    const auto status = jobToCancel.check();
+    EXPECT_EQ(status, QDMI_JOB_STATUS_CANCELED);
+  } catch (const std::invalid_argument&) {
+    // If cancel threw an exception, the job should already be done
+    const auto status = jobToCancel.check();
+    EXPECT_TRUE(status == QDMI_JOB_STATUS_DONE ||
+                status == QDMI_JOB_STATUS_FAILED);
+  }
+}
+
+TEST_F(JobTest, CancelCompletedJobThrows) {
+  job.wait();
+
+  const auto statusBefore = job.check();
+  EXPECT_TRUE(statusBefore == QDMI_JOB_STATUS_DONE ||
+              statusBefore == QDMI_JOB_STATUS_FAILED);
+
+  EXPECT_THROW(job.cancel(), std::invalid_argument);
+}
+
 INSTANTIATE_TEST_SUITE_P(
     // Custom instantiation name
     DeviceTest,
@@ -364,4 +526,5 @@ INSTANTIATE_TEST_SUITE_P(
       std::ranges::replace(name, ' ', '_');
       return name;
     });
+
 } // namespace fomac
