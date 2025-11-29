@@ -27,7 +27,7 @@
 #include <variant>
 #include <vector>
 
-namespace qdmi {
+namespace qdmi::na {
 class Device final {
   /// @brief Provides access to the device name.
   std::string name_;
@@ -105,7 +105,7 @@ public:
   auto queryProperty(QDMI_Device_Property prop, size_t size, void* value,
                      size_t* sizeRet) -> int;
 };
-} // namespace qdmi
+} // namespace qdmi::na
 
 /**
  * @brief Implementation of the MQT_NA_QDMI_Device_Session structure.
