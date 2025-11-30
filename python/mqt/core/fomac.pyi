@@ -54,8 +54,6 @@ class Job:
         """
     def cancel(self) -> None:
         """Cancels the job."""
-    def supports(self) -> bool:
-        """Checks if the job supports the given result type."""
     def get_shots(self) -> list[str]:
         """Returns the raw shot results from the job."""
     def get_counts(self) -> dict[str, int]:

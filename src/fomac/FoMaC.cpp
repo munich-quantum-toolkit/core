@@ -539,13 +539,7 @@ auto FoMaC::Job::getNumShots() const -> size_t {
   return numShots;
 }
 
-auto FoMaC::Job::supports(const QDMI_Job_Result result) const -> bool {
-  return QDMI_job_get_results(job_, result, 0, nullptr, nullptr) ==
-         QDMI_SUCCESS;
-}
-
 auto FoMaC::Job::getShots() const -> std::vector<std::string> {
-  assert(supports(QDMI_JOB_RESULT_SHOTS) && "Shots result type not supported");
   size_t shotsSize = 0;
   throwIfError(
       QDMI_job_get_results(job_, QDMI_JOB_RESULT_SHOTS, 0, nullptr, &shotsSize),
@@ -577,9 +571,6 @@ auto FoMaC::Job::getShots() const -> std::vector<std::string> {
 }
 
 auto FoMaC::Job::getCounts() const -> std::map<std::string, size_t> {
-  assert(supports(QDMI_JOB_RESULT_HIST_KEYS) &&
-         supports(QDMI_JOB_RESULT_HIST_VALUES) &&
-         "Histogram result type not supported");
   // Get the histogram keys
   size_t keysSize = 0;
   throwIfError(QDMI_job_get_results(job_, QDMI_JOB_RESULT_HIST_KEYS, 0, nullptr,
@@ -632,9 +623,6 @@ auto FoMaC::Job::getCounts() const -> std::map<std::string, size_t> {
 
 auto FoMaC::Job::getDenseStateVector() const
     -> std::vector<std::complex<double>> {
-  assert(supports(QDMI_JOB_RESULT_STATEVECTOR_DENSE) &&
-         "Dense state vector result type not supported");
-
   size_t size = 0;
   throwIfError(QDMI_job_get_results(job_, QDMI_JOB_RESULT_STATEVECTOR_DENSE, 0,
                                     nullptr, &size),
@@ -649,9 +637,6 @@ auto FoMaC::Job::getDenseStateVector() const
 }
 
 auto FoMaC::Job::getDenseProbabilities() const -> std::vector<double> {
-  assert(supports(QDMI_JOB_RESULT_PROBABILITIES_DENSE) &&
-         "Dense probabilities result type not supported");
-
   size_t size = 0;
   throwIfError(QDMI_job_get_results(job_, QDMI_JOB_RESULT_PROBABILITIES_DENSE,
                                     0, nullptr, &size),
@@ -666,10 +651,6 @@ auto FoMaC::Job::getDenseProbabilities() const -> std::vector<double> {
 
 auto FoMaC::Job::getSparseStateVector() const
     -> std::map<std::string, std::complex<double>> {
-  assert(supports(QDMI_JOB_RESULT_STATEVECTOR_SPARSE_KEYS) &&
-         supports(QDMI_JOB_RESULT_STATEVECTOR_SPARSE_VALUES) &&
-         "Sparse state vector result type not supported");
-
   size_t keysSize = 0;
   throwIfError(QDMI_job_get_results(job_,
                                     QDMI_JOB_RESULT_STATEVECTOR_SPARSE_KEYS, 0,
@@ -713,10 +694,6 @@ auto FoMaC::Job::getSparseStateVector() const
 
 auto FoMaC::Job::getSparseProbabilities() const
     -> std::map<std::string, double> {
-  assert(supports(QDMI_JOB_RESULT_PROBABILITIES_SPARSE_KEYS) &&
-         supports(QDMI_JOB_RESULT_PROBABILITIES_SPARSE_VALUES) &&
-         "Sparse probabilities result type not supported");
-
   size_t keysSize = 0;
   throwIfError(QDMI_job_get_results(job_,
                                     QDMI_JOB_RESULT_PROBABILITIES_SPARSE_KEYS,

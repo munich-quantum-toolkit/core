@@ -257,8 +257,6 @@ public:
     [[nodiscard]] auto getProgram() const -> std::string;
     /// Get the number of shots
     [[nodiscard]] auto getNumShots() const -> size_t;
-    /// Whether the @p result type is supported
-    [[nodiscard]] auto supports(QDMI_Job_Result result) const -> bool;
     /**
      * @brief Returns the measurement shots as a vector of bitstrings.
      * @see QDMI_JOB_RESULT_SHOTS

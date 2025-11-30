@@ -32,7 +32,6 @@ PYBIND11_MODULE(MQT_CORE_MODULE_NAME, m, py::mod_gil_not_used()) {
   job.def("check", &fomac::FoMaC::Job::check);
   job.def("wait", &fomac::FoMaC::Job::wait, "timeout"_a = 0);
   job.def("cancel", &fomac::FoMaC::Job::cancel);
-  job.def("supports", &fomac::FoMaC::Job::supports, "type"_a);
   job.def("get_shots", &fomac::FoMaC::Job::getShots);
   job.def("get_counts", &fomac::FoMaC::Job::getCounts);
   job.def("get_dense_statevector", &fomac::FoMaC::Job::getDenseStateVector);

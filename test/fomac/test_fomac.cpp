@@ -507,7 +507,6 @@ TEST_F(JobTest, CancelCompletedJobThrows) {
 
 TEST_F(SimulatorJobTest, getDenseStateVectorReturnsValidState) {
   EXPECT_TRUE(job.wait());
-  ASSERT_TRUE(job.supports(QDMI_JOB_RESULT_STATEVECTOR_DENSE));
 
   const auto stateVector = job.getDenseStateVector();
   EXPECT_EQ(stateVector.size(), 4); // 2 qubits -> 4 amplitudes
@@ -522,7 +521,6 @@ TEST_F(SimulatorJobTest, getDenseStateVectorReturnsValidState) {
 
 TEST_F(SimulatorJobTest, getDenseProbabilitiesReturnsValidProbabilities) {
   EXPECT_TRUE(job.wait());
-  ASSERT_TRUE(job.supports(QDMI_JOB_RESULT_PROBABILITIES_DENSE));
 
   const auto probabilities = job.getDenseProbabilities();
   EXPECT_EQ(probabilities.size(), 4); // 2 qubits -> 4 probabilities
@@ -537,8 +535,6 @@ TEST_F(SimulatorJobTest, getDenseProbabilitiesReturnsValidProbabilities) {
 
 TEST_F(SimulatorJobTest, getSparseStateVectorReturnsValidState) {
   EXPECT_TRUE(job.wait());
-  ASSERT_TRUE(job.supports(QDMI_JOB_RESULT_STATEVECTOR_SPARSE_KEYS));
-  ASSERT_TRUE(job.supports(QDMI_JOB_RESULT_STATEVECTOR_SPARSE_VALUES));
 
   const auto sparseStateVector = job.getSparseStateVector();
   EXPECT_EQ(sparseStateVector.size(),
@@ -556,8 +552,6 @@ TEST_F(SimulatorJobTest, getSparseStateVectorReturnsValidState) {
 
 TEST_F(SimulatorJobTest, getSparseProbabilitiesReturnsValidProbabilities) {
   EXPECT_TRUE(job.wait());
-  ASSERT_TRUE(job.supports(QDMI_JOB_RESULT_PROBABILITIES_SPARSE_KEYS));
-  ASSERT_TRUE(job.supports(QDMI_JOB_RESULT_PROBABILITIES_SPARSE_VALUES));
 
   const auto sparseProbabilities = job.getSparseProbabilities();
   EXPECT_EQ(sparseProbabilities.size(),
