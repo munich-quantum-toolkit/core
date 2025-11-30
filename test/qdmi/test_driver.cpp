@@ -42,7 +42,7 @@ MATCHER_P2(IsBetween, a, b,
 } // namespace
 } // namespace testing
 namespace qc {
-class DriverTest : public testing::TestWithParam<std::string> {
+class DriverTest : public testing::TestWithParam<const char*> {
 protected:
   QDMI_Session session = nullptr;
   QDMI_Device device = nullptr;
@@ -502,11 +502,12 @@ TEST_P(DriverTest, QueryNeedsCalibration) {
   EXPECT_THAT(needsCalibration, testing::AnyOf(0, 1));
 }
 #ifdef _WIN32
-const std::array<std::string, 1> DEVICES{"MQT NA Default QDMI Device"};
+constexpr std::array DEVICES{"MQT NA Default QDMI Device",
+                             "MQT Core DDSIM QDMI Device"};
 #else
-const std::array<std::string, 3> DEVICES{"MQT NA Default QDMI Device",
-                                         "MQT NA Dynamic QDMI Device",
-                                         "MQT Core DDSIM QDMI Device"};
+constexpr std::array DEVICES{"MQT NA Default QDMI Device",
+                             "MQT NA Dynamic QDMI Device",
+                             "MQT Core DDSIM QDMI Device"};
 #endif
 // Instantiate the test suite with different parameters
 INSTANTIATE_TEST_SUITE_P(
@@ -516,7 +517,7 @@ INSTANTIATE_TEST_SUITE_P(
     DriverTest,
     // Parameters to test with
     testing::ValuesIn(DEVICES),
-    [](const testing::TestParamInfo<std::string>& paramInfo) {
+    [](const testing::TestParamInfo<const char*>& paramInfo) {
       std::string name = paramInfo.param;
       // Replace spaces with underscores for valid test names
       std::ranges::replace(name, ' ', '_');
@@ -532,7 +533,7 @@ INSTANTIATE_TEST_SUITE_P(
     DriverJobTest,
     // Parameters to test with
     testing::ValuesIn(DEVICES),
-    [](const testing::TestParamInfo<std::string>& paramInfo) {
+    [](const testing::TestParamInfo<const char*>& paramInfo) {
       std::string name = paramInfo.param;
       // Replace spaces with underscores for valid test names
       std::ranges::replace(name, ' ', '_');
