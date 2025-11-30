@@ -8,18 +8,17 @@
  * Licensed under the MIT License
  */
 
-// These includes must be the first includes for any bindings code
-// clang-format off
 #include "fomac/FoMaC.hpp"
+
 #include <pybind11/cast.h>
-#include <pybind11/operators.h>
-#include <qdmi/client.h>
+#include <pybind11/complex.h>
 #include <pybind11/native_enum.h>
+#include <pybind11/operators.h>
 #include <pybind11/pybind11.h>
-#include <pybind11/stl.h> // NOLINT(misc-include-cleaner)
+#include <pybind11/stl.h>
+#include <qdmi/client.h>
 #include <string>
 #include <vector>
-// clang-format on
 
 namespace mqt {
 
