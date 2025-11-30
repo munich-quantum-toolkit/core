@@ -32,9 +32,21 @@ PYBIND11_MODULE(MQT_CORE_MODULE_NAME, m, py::mod_gil_not_used()) {
   job.def("check", &fomac::FoMaC::Job::check);
   job.def("wait", &fomac::FoMaC::Job::wait);
   job.def("cancel", &fomac::FoMaC::Job::cancel);
+  job.def("supports", &fomac::FoMaC::Job::supports, "type"_a);
+  job.def("get_shots", &fomac::FoMaC::Job::getShots);
   job.def("get_counts", &fomac::FoMaC::Job::getCounts);
+  job.def("get_dense_statevector", &fomac::FoMaC::Job::getDenseStateVector);
+  job.def("get_dense_probabilities", &fomac::FoMaC::Job::getDenseProbabilities);
+  job.def("get_sparse_statevector", &fomac::FoMaC::Job::getSparseStateVector);
+  job.def("get_sparse_probabilities",
+          &fomac::FoMaC::Job::getSparseProbabilities);
   job.def_property_readonly("id", &fomac::FoMaC::Job::getId);
+  job.def_property_readonly("program_format",
+                            &fomac::FoMaC::Job::getProgramFormat);
+  job.def_property_readonly("program", &fomac::FoMaC::Job::getProgram);
   job.def_property_readonly("num_shots", &fomac::FoMaC::Job::getNumShots);
+  job.def(py::self == py::self); // NOLINT(misc-redundant-expression)
+  job.def(py::self != py::self); // NOLINT(misc-redundant-expression)
 
   // JobStatus enum
   py::native_enum<QDMI_Job_Status>(m, "JobStatus", "enum.Enum",

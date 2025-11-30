@@ -11,6 +11,7 @@
 #pragma once
 
 #include <algorithm>
+#include <complex>
 #include <concepts>
 #include <cstddef>
 #include <cstdint>
@@ -245,10 +246,52 @@ public:
     auto cancel() const -> void;
     /// Get the job ID
     [[nodiscard]] auto getId() const -> std::string;
+    /// Get the program format
+    [[nodiscard]] auto getProgramFormat() const -> QDMI_Program_Format;
+    /// Get the program to be executed
+    [[nodiscard]] auto getProgram() const -> std::string;
     /// Get the number of shots
     [[nodiscard]] auto getNumShots() const -> size_t;
-    /// Get the measurement counts
+    /// Whether the @p result type is supported
+    [[nodiscard]] auto supports(QDMI_Job_Result result) const -> bool;
+    /**
+     * @brief Returns the measurement shots as a vector of bitstrings.
+     * @see QDMI_JOB_RESULT_SHOTS
+     */
+    [[nodiscard]] auto getShots() const -> std::vector<std::string>;
+    /**
+     * @brief Returns a map of measurement outcomes to their respective counts.
+     * @see QDMI_JOB_RESULT_HIST_KEYS
+     * @see QDMI_JOB_RESULT_HIST_VALUES
+     */
     [[nodiscard]] auto getCounts() const -> std::map<std::string, size_t>;
+    /**
+     * @brief Returns the dense state vector as a vector of complex numbers.
+     * @see QDMI_JOB_RESULT_STATEVECTOR_DENSE
+     */
+    [[nodiscard]] auto getDenseStateVector() const
+        -> std::vector<std::complex<double>>;
+    /**
+     * @brief Returns the dense probabilities as a vector of doubles.
+     * @see QDMI_JOB_RESULT_PROBABILITIES_DENSE
+     */
+    [[nodiscard]] auto getDenseProbabilities() const -> std::vector<double>;
+    /**
+     * @brief Returns the sparse state vector as a map of bitstrings to complex
+     * amplitudes.
+     * @see QDMI_JOB_RESULT_STATEVECTOR_SPARSE_KEYS
+     * @see QDMI_JOB_RESULT_STATEVECTOR_SPARSE_VALUES
+     */
+    [[nodiscard]] auto getSparseStateVector() const
+        -> std::map<std::string, std::complex<double>>;
+    /**
+     * @brief Returns the sparse probabilities as a map of bitstrings to
+     * probabilities.
+     * @see QDMI_JOB_RESULT_PROBABILITIES_SPARSE_KEYS
+     * @see QDMI_JOB_RESULT_PROBABILITIES_SPARSE_VALUES
+     */
+    [[nodiscard]] auto getSparseProbabilities() const
+        -> std::map<std::string, double>;
   };
 
   /**

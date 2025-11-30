@@ -11,6 +11,7 @@
 #include "fomac/FoMaC.hpp"
 
 #include <algorithm>
+#include <cassert>
 #include <cstddef>
 #include <cstdint>
 #include <iterator>
@@ -501,6 +502,27 @@ auto FoMaC::Job::getId() const -> std::string {
   return id;
 }
 
+auto FoMaC::Job::getProgramFormat() const -> QDMI_Program_Format {
+  QDMI_Program_Format format{};
+  throwIfError(QDMI_job_query_property(job_, QDMI_JOB_PROPERTY_PROGRAMFORMAT,
+                                       sizeof(format), &format, nullptr),
+               "Querying program format");
+  return format;
+}
+
+auto FoMaC::Job::getProgram() const -> std::string {
+  size_t size = 0;
+  throwIfError(QDMI_job_query_property(job_, QDMI_JOB_PROPERTY_PROGRAM, 0,
+                                       nullptr, &size),
+               "Querying program size");
+
+  std::string program(size - 1, '\0');
+  throwIfError(QDMI_job_query_property(job_, QDMI_JOB_PROPERTY_PROGRAM, size,
+                                       program.data(), nullptr),
+               "Querying program");
+  return program;
+}
+
 auto FoMaC::Job::getNumShots() const -> size_t {
   size_t numShots = 0;
   throwIfError(QDMI_job_query_property(job_, QDMI_JOB_PROPERTY_SHOTSNUM,
@@ -509,7 +531,47 @@ auto FoMaC::Job::getNumShots() const -> size_t {
   return numShots;
 }
 
+auto FoMaC::Job::supports(const QDMI_Job_Result result) const -> bool {
+  return QDMI_job_get_results(job_, result, 0, nullptr, nullptr) ==
+         QDMI_SUCCESS;
+}
+
+auto FoMaC::Job::getShots() const -> std::vector<std::string> {
+  assert(supports(QDMI_JOB_RESULT_SHOTS) && "Shots result type not supported");
+  size_t shotsSize = 0;
+  throwIfError(
+      QDMI_job_get_results(job_, QDMI_JOB_RESULT_SHOTS, 0, nullptr, &shotsSize),
+      "Querying shots size");
+
+  if (shotsSize == 0) {
+    return {};
+  }
+
+  std::string shots(shotsSize - 1, '\0');
+  throwIfError(QDMI_job_get_results(job_, QDMI_JOB_RESULT_SHOTS, shotsSize,
+                                    shots.data(), nullptr),
+               "Querying shots");
+
+  // Parse the shots (comma-separated)
+  std::vector<std::string> shotsVec;
+  const auto numShots = getNumShots();
+  shotsVec.reserve(numShots);
+  std::istringstream shotsStream(shots);
+  std::string shot;
+  while (std::getline(shotsStream, shot, ',')) {
+    shotsVec.emplace_back(shot);
+  }
+  if (shotsVec.size() != numShots) {
+    throw std::runtime_error("Number of shots mismatch");
+  }
+
+  return shotsVec;
+}
+
 auto FoMaC::Job::getCounts() const -> std::map<std::string, size_t> {
+  assert(supports(QDMI_JOB_RESULT_HIST_KEYS) &&
+         supports(QDMI_JOB_RESULT_HIST_VALUES) &&
+         "Histogram result type not supported");
   // Get the histogram keys
   size_t keysSize = 0;
   throwIfError(QDMI_job_get_results(job_, QDMI_JOB_RESULT_HIST_KEYS, 0, nullptr,
@@ -558,6 +620,132 @@ auto FoMaC::Job::getCounts() const -> std::map<std::string, size_t> {
   }
 
   return counts;
+}
+
+auto FoMaC::Job::getDenseStateVector() const
+    -> std::vector<std::complex<double>> {
+  assert(supports(QDMI_JOB_RESULT_STATEVECTOR_DENSE) &&
+         "Dense state vector result type not supported");
+
+  size_t size = 0;
+  throwIfError(QDMI_job_get_results(job_, QDMI_JOB_RESULT_STATEVECTOR_DENSE, 0,
+                                    nullptr, &size),
+               "Querying dense state vector size");
+
+  std::vector<std::complex<double>> stateVector(size /
+                                                sizeof(std::complex<double>));
+  throwIfError(QDMI_job_get_results(job_, QDMI_JOB_RESULT_STATEVECTOR_DENSE,
+                                    size, stateVector.data(), nullptr),
+               "Querying dense state vector");
+  return stateVector;
+}
+
+auto FoMaC::Job::getDenseProbabilities() const -> std::vector<double> {
+  assert(supports(QDMI_JOB_RESULT_PROBABILITIES_DENSE) &&
+         "Dense probabilities result type not supported");
+
+  size_t size = 0;
+  throwIfError(QDMI_job_get_results(job_, QDMI_JOB_RESULT_PROBABILITIES_DENSE,
+                                    0, nullptr, &size),
+               "Querying dense probabilities size");
+
+  std::vector<double> probabilities(size / sizeof(double));
+  throwIfError(QDMI_job_get_results(job_, QDMI_JOB_RESULT_PROBABILITIES_DENSE,
+                                    size, probabilities.data(), nullptr),
+               "Querying dense probabilities");
+  return probabilities;
+}
+
+auto FoMaC::Job::getSparseStateVector() const
+    -> std::map<std::string, std::complex<double>> {
+  assert(supports(QDMI_JOB_RESULT_STATEVECTOR_SPARSE_KEYS) &&
+         supports(QDMI_JOB_RESULT_STATEVECTOR_SPARSE_VALUES) &&
+         "Sparse state vector result type not supported");
+
+  size_t keysSize = 0;
+  throwIfError(QDMI_job_get_results(job_,
+                                    QDMI_JOB_RESULT_STATEVECTOR_SPARSE_KEYS, 0,
+                                    nullptr, &keysSize),
+               "Querying sparse state vector keys size");
+
+  if (keysSize == 0) {
+    return {}; // Empty state vector
+  }
+
+  std::string keys(keysSize - 1, '\0');
+  throwIfError(QDMI_job_get_results(job_,
+                                    QDMI_JOB_RESULT_STATEVECTOR_SPARSE_KEYS,
+                                    keysSize, keys.data(), nullptr),
+               "Querying sparse state vector keys");
+
+  size_t valuesSize = 0;
+  throwIfError(QDMI_job_get_results(job_,
+                                    QDMI_JOB_RESULT_STATEVECTOR_SPARSE_VALUES,
+                                    0, nullptr, &valuesSize),
+               "Querying sparse state vector values size");
+
+  std::vector<std::complex<double>> values(valuesSize /
+                                           sizeof(std::complex<double>));
+  throwIfError(QDMI_job_get_results(job_,
+                                    QDMI_JOB_RESULT_STATEVECTOR_SPARSE_VALUES,
+                                    valuesSize, values.data(), nullptr),
+               "Querying sparse state vector values");
+
+  // Parse the keys (comma-separated)
+  std::map<std::string, std::complex<double>> stateVector;
+  std::istringstream keysStream(keys);
+  std::string key;
+  size_t idx = 0;
+  while (std::getline(keysStream, key, ',')) {
+    stateVector[key] = values[idx];
+    ++idx;
+  }
+  return stateVector;
+}
+
+auto FoMaC::Job::getSparseProbabilities() const
+    -> std::map<std::string, double> {
+  assert(supports(QDMI_JOB_RESULT_PROBABILITIES_SPARSE_KEYS) &&
+         supports(QDMI_JOB_RESULT_PROBABILITIES_SPARSE_VALUES) &&
+         "Sparse probabilities result type not supported");
+
+  size_t keysSize = 0;
+  throwIfError(QDMI_job_get_results(job_,
+                                    QDMI_JOB_RESULT_PROBABILITIES_SPARSE_KEYS,
+                                    0, nullptr, &keysSize),
+               "Querying sparse probabilities keys size");
+
+  if (keysSize == 0) {
+    return {}; // Empty probabilities
+  }
+
+  std::string keys(keysSize - 1, '\0');
+  throwIfError(QDMI_job_get_results(job_,
+                                    QDMI_JOB_RESULT_PROBABILITIES_SPARSE_KEYS,
+                                    keysSize, keys.data(), nullptr),
+               "Querying sparse probabilities keys");
+
+  size_t valuesSize = 0;
+  throwIfError(QDMI_job_get_results(job_,
+                                    QDMI_JOB_RESULT_PROBABILITIES_SPARSE_VALUES,
+                                    0, nullptr, &valuesSize),
+               "Querying sparse probabilities values size");
+  std::vector<double> values(valuesSize / sizeof(double));
+  throwIfError(QDMI_job_get_results(job_,
+                                    QDMI_JOB_RESULT_PROBABILITIES_SPARSE_VALUES,
+                                    valuesSize, values.data(), nullptr),
+               "Querying sparse probabilities values");
+
+  // Parse the keys (comma-separated)
+  std::map<std::string, double> probabilities;
+  std::istringstream keysStream(keys);
+  std::string key;
+  size_t idx = 0;
+  while (std::getline(keysStream, key, ',')) {
+    probabilities[key] = values[idx];
+    ++idx;
+  }
+  return probabilities;
 }
 
 FoMaC::FoMaC() {

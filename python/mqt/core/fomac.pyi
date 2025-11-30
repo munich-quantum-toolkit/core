@@ -47,11 +47,33 @@ class Job:
         """Waits for the job to complete."""
     def cancel(self) -> None:
         """Cancels the job."""
+    def supports(self) -> bool:
+        """Checks if the job supports the given result type."""
+    def get_shots(self) -> list[str]:
+        """Returns the raw shot results from the job."""
     def get_counts(self) -> dict[str, int]:
         """Returns the measurement counts from the job."""
+    def get_dense_statevector(self) -> list[complex]:
+        """Returns the dense statevector from the job (typically only available from simulator devices)."""
+    def get_sparse_statevector(self) -> dict[str, complex]:
+        """Returns the sparse statevector from the job (typically only available from simulator devices)."""
+    def get_dense_probabilities(self) -> list[float]:
+        """Returns the dense probabilities from the job (typically only available from simulator devices)."""
+    def get_sparse_probabilities(self) -> dict[str, float]:
+        """Returns the sparse probabilities from the job (typically only available from simulator devices)."""
+    def __eq__(self, other: object) -> bool:
+        """Checks if two jobs are equal."""
+    def __ne__(self, other: object) -> bool:
+        """Checks if two jobs are not equal."""
     @property
     def id(self) -> str:
         """Returns the job ID."""
+    @property
+    def program_format(self) -> ProgramFormat:
+        """Returns the program format used for the job."""
+    @property
+    def program(self) -> str:
+        """Returns the quantum program submitted for the job."""
     @property
     def num_shots(self) -> int:
         """Returns the number of shots for the job."""
