@@ -619,8 +619,8 @@ public:
     [[nodiscard]] auto getMinAtomDistance() const -> std::optional<uint64_t>;
     /// @see QDMI_job_submit
     [[nodiscard]] auto submitJob(const std::string& program,
-                                 QDMI_Program_Format format, size_t numShots,
-                                 size_t timeout = 60) const -> Job;
+                                 QDMI_Program_Format format,
+                                 size_t numShots) const -> Job;
   };
 
 private:

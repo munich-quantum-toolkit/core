@@ -448,8 +448,8 @@ auto FoMaC::Device::getMinAtomDistance() const -> std::optional<uint64_t> {
 }
 
 auto FoMaC::Device::submitJob(const std::string& program,
-                              QDMI_Program_Format format, size_t numShots,
-                              size_t timeout) const -> Job {
+                              const QDMI_Program_Format format,
+                              const size_t numShots) const -> Job {
   QDMI_Job job = nullptr;
   throwIfError(QDMI_device_create_job(device_, &job), "Creating job");
   Job jobWrapper{job}; // RAII wrapper to prevent leaks in case of exceptions
@@ -472,10 +472,6 @@ auto FoMaC::Device::submitJob(const std::string& program,
 
   // Submit the job
   throwIfError(QDMI_job_submit(jobWrapper), "Submitting job");
-
-  // Wait for the job to finish
-  throwIfError(QDMI_job_wait(jobWrapper, timeout), "Waiting for job");
-
   return jobWrapper;
 }
 
