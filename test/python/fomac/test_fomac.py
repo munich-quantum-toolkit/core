@@ -14,7 +14,7 @@ from typing import cast
 
 import pytest
 
-from mqt.core.fomac import Device, Job, JobStatus, ProgramFormat, devices
+from mqt.core.fomac import Device, Job, ProgramFormat, devices
 
 
 @pytest.fixture(params=devices())
@@ -456,14 +456,14 @@ c[0] = measure q[0];
 def test_job_status_progresses(submitted_job: Job) -> None:
     """Test that job status progresses to completion."""
     initial_status = submitted_job.check()
-    assert isinstance(initial_status, JobStatus)
+    assert isinstance(initial_status, Job.Status)
 
     # Wait for completion
     submitted_job.wait()
 
     # After waiting, status should be DONE or FAILED
     final_status = submitted_job.check()
-    assert final_status in {JobStatus.DONE, JobStatus.FAILED}
+    assert final_status in {Job.Status.DONE, Job.Status.FAILED}
 
 
 def test_job_get_counts_returns_valid_histogram(submitted_job: Job) -> None:

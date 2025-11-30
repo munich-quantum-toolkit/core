@@ -49,7 +49,7 @@ PYBIND11_MODULE(MQT_CORE_MODULE_NAME, m, py::mod_gil_not_used()) {
   job.def(py::self != py::self); // NOLINT(misc-redundant-expression)
 
   // JobStatus enum
-  py::native_enum<QDMI_Job_Status>(m, "JobStatus", "enum.Enum",
+  py::native_enum<QDMI_Job_Status>(job, "Status", "enum.Enum",
                                    "Enumeration of job status.")
       .value("CREATED", QDMI_JOB_STATUS_CREATED)
       .value("SUBMITTED", QDMI_JOB_STATUS_SUBMITTED)

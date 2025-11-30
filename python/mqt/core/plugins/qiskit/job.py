@@ -95,13 +95,13 @@ class QiskitJob(JobV1):  # type: ignore[misc]
         qdmi_status = self._job.check()
         # Map QDMI status to Qiskit JobStatus
         status_map = {
-            fomac.JobStatus.DONE: JobStatus.DONE,
-            fomac.JobStatus.RUNNING: JobStatus.RUNNING,
-            fomac.JobStatus.CANCELED: JobStatus.CANCELLED,
-            fomac.JobStatus.SUBMITTED: JobStatus.QUEUED,
-            fomac.JobStatus.QUEUED: JobStatus.QUEUED,
-            fomac.JobStatus.CREATED: JobStatus.INITIALIZING,
-            fomac.JobStatus.FAILED: JobStatus.ERROR,
+            fomac.Job.Status.DONE: JobStatus.DONE,
+            fomac.Job.Status.RUNNING: JobStatus.RUNNING,
+            fomac.Job.Status.CANCELED: JobStatus.CANCELLED,
+            fomac.Job.Status.SUBMITTED: JobStatus.QUEUED,
+            fomac.Job.Status.QUEUED: JobStatus.QUEUED,
+            fomac.Job.Status.CREATED: JobStatus.INITIALIZING,
+            fomac.Job.Status.FAILED: JobStatus.ERROR,
         }
         if qdmi_status in status_map:
             return status_map[qdmi_status]

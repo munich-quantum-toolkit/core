@@ -142,7 +142,7 @@ class MockQDMIDevice:
             self._shots = shots
             alphabet = string.ascii_lowercase + string.digits
             self._id = "mock-job-" + "".join(secrets.choice(alphabet) for _ in range(8))
-            self._status = fomac.JobStatus.DONE
+            self._status = fomac.Job.Status.DONE
             self._counts: dict[str, int] | None = None
 
         @property
@@ -155,7 +155,7 @@ class MockQDMIDevice:
             """Return number of shots."""
             return self._shots
 
-        def check(self) -> fomac.JobStatus:
+        def check(self) -> fomac.Job.Status:
             """Return job status."""
             return self._status
 
