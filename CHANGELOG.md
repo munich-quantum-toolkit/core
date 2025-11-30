@@ -21,7 +21,7 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 
 ### Fixed
 
-- 🐛 Fix memory management, i.e, make it explicit, in dynamic QDMI device ([#1336]) ([**@ystade**])
+- 🐛 Fix memory management in dynamic QDMI device by making it explicit ([#1336]) ([**@ystade**])
 
 ### Removed
 
