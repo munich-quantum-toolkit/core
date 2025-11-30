@@ -12,5 +12,5 @@ add_subdirectory(translation)
 
 add_custom_target(mqt-core-mlir-unittests)
 
-add_dependencies(mqt-core-mlir-unittests mqt-core-mlir-compiler-pipeline-test mqt-core-mlir-translation-test
-                 mqt-core-mlir-wireiterator-test)
+add_dependencies(mqt-core-mlir-unittests mqt-core-mlir-compiler-pipeline-test
+                 mqt-core-mlir-translation-test mqt-core-mlir-wireiterator-test)
