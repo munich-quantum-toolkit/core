@@ -5,11 +5,3 @@
 # SPDX-License-Identifier: MIT
 #
 # Licensed under the MIT License
-
-"""Compatibility utilities."""
-
-from __future__ import annotations
-
-from .optional import OptionalDependencyTester
-
-__all__ = ["OptionalDependencyTester"]

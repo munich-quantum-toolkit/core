@@ -15,21 +15,21 @@ import warnings
 
 import pytest
 
-from mqt.core._compat import OptionalDependencyTester  # noqa: PLC2701
+from mqt.core._compat.optional import OptionalDependencyTester  # noqa: PLC2701
 
 
 def test_available_module() -> None:
     """Test with a module that should be available (sys)."""
     tester = OptionalDependencyTester("sys")
     assert tester
-    assert bool(tester) is True
+    assert bool(tester)
 
 
 def test_unavailable_module() -> None:
     """Test with a module that definitely doesn't exist."""
     tester = OptionalDependencyTester("this_module_does_not_exist_xyz123")
     assert not tester
-    assert bool(tester) is False
+    assert not bool(tester)
 
 
 def test_caching() -> None:
@@ -40,7 +40,7 @@ def test_caching() -> None:
     assert tester
 
     # Cache should be set now
-    assert tester._bool is True  # noqa: SLF001
+    assert tester._bool  # noqa: SLF001
 
     # Second check should use cache
     assert tester

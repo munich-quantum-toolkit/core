@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from mqt.core._compat import OptionalDependencyTester  # noqa: PLC2701
+from ..._compat.optional import OptionalDependencyTester
 
 # Optional dependency tester for Qiskit
 HAS_QISKIT = OptionalDependencyTester(
