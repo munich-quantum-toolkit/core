@@ -311,7 +311,7 @@ class QiskitBackend(BackendV2):  # type: ignore[misc]
                     if idx in self._site_index_to_qubit_index
                 ]
 
-                return [(idx,) for idx in sorted(set(remapped_indices))]
+                return [(idx,) for idx in sorted(set(remapped_indices))]  # type: ignore[return-value]
 
             # No explicit sites - operation is globally available on all qubits
             return [None]
