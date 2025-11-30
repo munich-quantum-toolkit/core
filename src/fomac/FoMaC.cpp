@@ -463,7 +463,7 @@ auto FoMaC::Device::submitJob(const std::string& program,
 
   // Set program
   throwIfError(QDMI_job_set_parameter(jobWrapper, QDMI_JOB_PARAMETER_PROGRAM,
-                                      program.size(), program.c_str()),
+                                      program.size() + 1, program.c_str()),
                "Setting program");
 
   // Set number of shots
