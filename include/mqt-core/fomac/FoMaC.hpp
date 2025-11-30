@@ -235,7 +235,7 @@ public:
     }
     /// @returns the underlying QDMI_Job object.
     [[nodiscard]] auto getQDMIJob() const -> QDMI_Job { return job_; }
-    // NOLINTNEXTLINE(google-explicit-constructor)
+    // NOLINTNEXTLINE(google-explicit-constructor, *-explicit-conversions)
     operator QDMI_Job() const { return job_; }
     /// @see QDMI_job_check
     [[nodiscard]] auto check() const -> QDMI_Job_Status;
