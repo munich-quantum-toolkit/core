@@ -18,30 +18,33 @@ from typing import TYPE_CHECKING, Any
 
 import qiskit.circuit.library as qcl
 from qiskit import qasm2, qasm3
-from qiskit.circuit import Measure, Parameter
+from qiskit.circuit import Parameter
 from qiskit.providers import BackendV2, Options
 from qiskit.transpiler import InstructionProperties, Target
 
-from mqt.core import fomac
-
+from ... import fomac
 from .exceptions import (
     CircuitValidationError,
     JobSubmissionError,
     TranslationError,
-    UnsupportedDeviceError,
     UnsupportedFormatError,
     UnsupportedOperationError,
 )
-from .job import QiskitJob
+from .job import QDMIJob
 
 if TYPE_CHECKING:
     from qiskit.circuit import Instruction, QuantumCircuit
 
+    from .provider import QDMIProvider
 
-__all__ = ["QiskitBackend"]
+__all__ = ["QDMIBackend"]
 
 
-class QiskitBackend(BackendV2):  # type: ignore[misc]
+def __dir__() -> list[str]:
+    return __all__
+
+
+class QDMIBackend(BackendV2):  # type: ignore[misc]
     """A Qiskit BackendV2 adapter for QDMI devices via FoMaC.
 
     This backend provides program submission to QDMI devices.
@@ -58,49 +61,33 @@ class QiskitBackend(BackendV2):  # type: ignore[misc]
     Examples:
         Get a backend through the provider:
 
-        >>> from mqt.core.qdmi.qiskit import QDMIProvider
+        >>> from mqt.core.plugins.qiskit import QDMIProvider
         >>> provider = QDMIProvider()
-        >>> backend = provider.get_backend("MQT NA Default QDMI Device")
+        >>> backend = provider.get_backend("MQT Core DDSIM QDMI Device")
     """
+
+    @staticmethod
+    def is_convertible(device: fomac.Device) -> bool:
+        """Returns whether a device can be represented in Qiskit's Target model."""
+        # Zoned operations cannot easily be represented in Qiskit's Target model
+        return not any(op.is_zoned() for op in device.operations())
 
     # Class-level counter for generating unique circuit names
     _circuit_counter = 0
 
-    def __init__(self, device: fomac.Device, provider: Any | None = None) -> None:  # noqa: ANN401
+    def __init__(self, device: fomac.Device, provider: QDMIProvider | None = None) -> None:
         """Initialize the backend with a FoMaC device.
 
         Args:
             device: FoMaC device instance.
             provider: Provider instance that created this backend.
-
-        Raises:
-            UnsupportedDeviceError: If the device cannot be represented
-                in Qiskit's Target model, e.g., if it is zoned.
         """
+        assert self.is_convertible(device), f"Device '{device.name()}' cannot be represented in Qiskit's Target model"
+        super().__init__(name=device.name(), provider=provider, backend_version=device.version())
         self._device = device
-        self._provider = provider
-
-        # Check for zoned operations - these cannot be represented in Qiskit's Target model
-        zoned_ops = [op.name() for op in device.operations() if op.is_zoned()]
-        if zoned_ops:
-            msg = (
-                f"Device '{device.name()}' contains zoned operations {zoned_ops} which cannot be "
-                f"represented in Qiskit's Target model."
-            )
-            raise UnsupportedDeviceError(msg)
-
-        # Filter non-zone sites for qubit indexing
-        self._non_zone_sites = sorted(self._device.regular_sites(), key=lambda x: x.index())
-        self._site_index_to_qubit_index = {s.index(): i for i, s in enumerate(self._non_zone_sites)}
-
-        # Initialize parent with device name and provider
-        super().__init__(name=self._device.name(), provider=provider)
 
         # Build Target from device
         self._target = self._build_target()
-
-        # Set backend options
-        self._options = self._default_options()
 
     @property
     def target(self) -> Target:
@@ -148,21 +135,8 @@ class QiskitBackend(BackendV2):  # type: ignore[misc]
 
         # Add operations from device
         for op in self._device.operations():
-            op_name = op.name()
-
-            # Handle the measurement operation
-            if op_name == "measure":
-                if "measure" not in seen_gate_names:
-                    seen_gate_names.add("measure")
-                    qargs = self._get_operation_qargs(op)
-                    # If qargs is [None], pass {None: None} to indicate global availability
-                    if qargs == [None]:
-                        target.add_instruction(Measure(), {None: None})
-                    else:
-                        target.add_instruction(Measure(), dict.fromkeys(qargs))
-                continue
-
             # Map known operations to Qiskit gates
+            op_name = op.name()
             gate = self._map_operation_to_gate(op_name)
             if gate is None:
                 warnings.warn(
@@ -181,24 +155,54 @@ class QiskitBackend(BackendV2):  # type: ignore[misc]
             # Determine which qubits this operation applies to
             qargs = self._get_operation_qargs(op)
 
-            # Create instruction properties
-            props = None
-            duration = op.duration()
-            fidelity = op.fidelity()
-            if duration is not None or fidelity is not None:
-                error = 1.0 - fidelity if fidelity is not None else None
-                props = InstructionProperties(
-                    duration=duration,
-                    error=error,
-                )
-
-            # Add to target
             # If qargs is [None], it means the operation is available on all qubits
-            # In this case, pass {None: props} to indicate global availability
             if qargs == [None]:
+                # Create instruction properties
+                props = None
+                duration = op.duration()
+                fidelity = op.fidelity()
+                if duration is not None or fidelity is not None:
+                    error = 1.0 - fidelity if fidelity is not None else None
+                    props = InstructionProperties(
+                        duration=duration,
+                        error=error,
+                    )
                 target.add_instruction(gate, {None: props})
-            else:
-                target.add_instruction(gate, dict.fromkeys(qargs, props))
+                continue
+
+            # Add the operation without properties and populate them iteratively later
+            target.add_instruction(gate, dict.fromkeys(qargs))
+
+            num_qubits = op.qubits_num()
+            if num_qubits == 1:
+                op_sites = op.sites()
+                assert op_sites is not None
+                for qarg, site in zip(qargs, op_sites, strict=True):
+                    duration = op.duration(sites=[site])
+                    fidelity = op.fidelity(sites=[site])
+                    if duration is not None or fidelity is not None:
+                        error = 1.0 - fidelity if fidelity is not None else None
+                        props = InstructionProperties(
+                            duration=duration,
+                            error=error,
+                        )
+                        target.update_instruction_properties(gate_name, qarg, props)
+                continue
+
+            if num_qubits == 2:
+                op_site_pairs = op.site_pairs()
+                assert op_site_pairs is not None
+                for qarg, (site1, site2) in zip(qargs, op_site_pairs, strict=True):
+                    duration = op.duration(sites=[site1, site2])
+                    fidelity = op.fidelity(sites=[site1, site2])
+                    if duration is not None or fidelity is not None:
+                        error = 1.0 - fidelity if fidelity is not None else None
+                        props = InstructionProperties(
+                            duration=duration,
+                            error=error,
+                        )
+                        target.update_instruction_properties(gate_name, qarg, props)
+                continue
 
         # Check if the measurement operation is defined
         if "measure" not in seen_gate_names:
@@ -246,8 +250,8 @@ class QiskitBackend(BackendV2):  # type: ignore[misc]
             "r": qcl.RGate(Parameter("theta"), Parameter("phi")),
             "prx": qcl.RGate(Parameter("theta"), Parameter("phi")),
             # Universal gates (parametric)
-            "u": qcl.U3Gate(Parameter("theta"), Parameter("phi"), Parameter("lambda")),
-            "u3": qcl.U3Gate(Parameter("theta"), Parameter("phi"), Parameter("lambda")),
+            "u": qcl.UGate(Parameter("theta"), Parameter("phi"), Parameter("lambda")),
+            "u3": qcl.UGate(Parameter("theta"), Parameter("phi"), Parameter("lambda")),
             "u2": qcl.U2Gate(Parameter("phi"), Parameter("lambda")),
             # Two-qubit gates
             "cx": qcl.CXGate(),
@@ -255,22 +259,32 @@ class QiskitBackend(BackendV2):  # type: ignore[misc]
             "cy": qcl.CYGate(),
             "cz": qcl.CZGate(),
             "ch": qcl.CHGate(),
+            "cs": qcl.CSGate(),
+            "csdg": qcl.CSdgGate(),
+            "csx": qcl.CSXGate(),
             "swap": qcl.SwapGate(),
             "iswap": qcl.iSwapGate(),
             "dcx": qcl.DCXGate(),
             "ecr": qcl.ECRGate(),
             # Two-qubit gates (parametric)
+            "cp": qcl.CPhaseGate(Parameter("lambda")),
+            "crx": qcl.CRXGate(Parameter("theta")),
+            "cry": qcl.CRYGate(Parameter("theta")),
+            "crz": qcl.CRZGate(Parameter("phi")),
             "rxx": qcl.RXXGate(Parameter("theta")),
             "ryy": qcl.RYYGate(Parameter("theta")),
             "rzz": qcl.RZZGate(Parameter("theta")),
             "rzx": qcl.RZXGate(Parameter("theta")),
             "xx_plus_yy": qcl.XXPlusYYGate(Parameter("theta"), Parameter("beta")),
             "xx_minus_yy": qcl.XXMinusYYGate(Parameter("theta"), Parameter("beta")),
+            # nonunitary operations
+            "reset": qcl.Reset(),
+            "measure": qcl.Measure(),
         }
 
         return gate_map.get(op_name.lower())
 
-    def _get_operation_qargs(self, op: fomac.Device.Operation) -> list[tuple[int, ...]] | list[None]:
+    def _get_operation_qargs(self, op: fomac.Device.Operation) -> list[tuple[int]] | list[tuple[int, int]] | list[None]:
         """Get the qubit argument tuples for an operation.
 
         This method determines which qubit indices an operation can act on by:
@@ -279,7 +293,7 @@ class QiskitBackend(BackendV2):  # type: ignore[misc]
            - Single-qubit: Available on all individual qubits
            - Two-qubit with coupling map: Misconfigured device (error)
            - Two-qubit without coupling map: Available on all qubit pairs (all-to-all)
-           - Multi-qubit (3+): Not supported (error)
+           - Multi-qubit (3+): Assumed to be globally available
 
         Args:
             op: Device operation from FoMaC.
@@ -289,29 +303,16 @@ class QiskitBackend(BackendV2):  # type: ignore[misc]
             Returns [None] for globally available operations (will be converted to {None: None} in Target).
 
         Raises:
-            UnsupportedOperationError: If operation configuration is invalid, device is misconfigured,
-                                        or operation has unsupported qubit count (3+).
+            UnsupportedOperationError: If the device is misconfigured.
         """
         qubits_num = op.qubits_num()
-        qubits_num = qubits_num if qubits_num is not None else 1
-        self._device.qubits_num()
-        coupling_map = self._device.coupling_map()
 
         # For single-qubit operations, first check for explicit sites
         if qubits_num == 1:
             site_list = op.sites()
             if site_list is not None:
                 # Operation explicitly defines where it can be executed
-                raw_indices = [s.index() for s in site_list]
-
-                # Filter out zone sites and remap to qubit indices
-                remapped_indices: list[int] = [
-                    self._site_index_to_qubit_index[idx]
-                    for idx in raw_indices
-                    if idx in self._site_index_to_qubit_index
-                ]
-
-                return [(idx,) for idx in sorted(set(remapped_indices))]  # type: ignore[return-value]
+                return [(s.index(),) for s in site_list]
 
             # No explicit sites - operation is globally available on all qubits
             return [None]
@@ -320,18 +321,11 @@ class QiskitBackend(BackendV2):  # type: ignore[misc]
         if qubits_num == 2:
             site_pairs = op.site_pairs()
             if site_pairs is not None:
-                site_tuples: list[tuple[int, ...]] = []
-                for s1, s2 in site_pairs:
-                    idx1, idx2 = s1.index(), s2.index()
-                    if idx1 in self._site_index_to_qubit_index and idx2 in self._site_index_to_qubit_index:
-                        site_tuples.append((
-                            self._site_index_to_qubit_index[idx1],
-                            self._site_index_to_qubit_index[idx2],
-                        ))
-                return site_tuples
+                return [(s1.index(), s2.index()) for s1, s2 in site_pairs]
 
             # Two-qubit operations without explicit site_pairs
             # Check device-level coupling map
+            coupling_map = self._device.coupling_map()
             if coupling_map is not None:
                 # Device has coupling map but operation doesn't expose sites
                 msg = (
@@ -345,13 +339,8 @@ class QiskitBackend(BackendV2):  # type: ignore[misc]
             # No coupling map and no site pairs - operation is globally available (all-to-all)
             return [None]
 
-        # Multi-qubit operations (3+) without explicit sites are not supported
-        msg = (
-            f"Operation '{op.name()}' requires {qubits_num} qubits but does not expose "
-            f"explicit sites. Multi-qubit operations (3+) without explicit site lists cannot "
-            f"be represented in Qiskit's Target model."
-        )
-        raise UnsupportedOperationError(msg)
+        # Operation has unspecified qubit count or 3+ qubits -> assume it applies to all qubits
+        return [None]
 
     @staticmethod
     def _convert_circuit(circuit: QuantumCircuit, program_format: fomac.ProgramFormat) -> str:
@@ -383,7 +372,7 @@ class QiskitBackend(BackendV2):  # type: ignore[misc]
             msg = f"Failed to convert circuit to {program_format}: {exc}"
             raise TranslationError(msg) from exc
 
-    def run(self, run_input: QuantumCircuit, **options: Any) -> QiskitJob:  # noqa: ANN401
+    def run(self, run_input: QuantumCircuit, **options: Any) -> QDMIJob:  # noqa: ANN401
         """Execute a :class:`~qiskit.circuit.QuantumCircuit` on the backend.
 
         Args:
@@ -398,8 +387,6 @@ class QiskitBackend(BackendV2):  # type: ignore[misc]
             UnsupportedOperationError: If circuit contains unsupported operations.
             JobSubmissionError: If job submission to the device fails.
         """
-        circuit = run_input
-
         # Get shots option
         shots_opt = options.get("shots", self._options.shots)
         try:
@@ -412,8 +399,8 @@ class QiskitBackend(BackendV2):  # type: ignore[misc]
             raise CircuitValidationError(msg)
 
         # Validate circuit has no unbound parameters
-        if circuit.parameters:
-            param_names = ", ".join(sorted(p.name for p in circuit.parameters))
+        if run_input.parameters:
+            param_names = ", ".join(sorted(p.name for p in run_input.parameters))
             msg = f"Circuit contains unbound parameters: {param_names}"
             raise CircuitValidationError(msg)
 
@@ -421,7 +408,7 @@ class QiskitBackend(BackendV2):  # type: ignore[misc]
         allowed_ops = {op.name() for op in self._device.operations()}
         allowed_ops.update({"measure", "barrier"})  # Always allow measure and barrier
 
-        for instruction in circuit.data:
+        for instruction in run_input.data:
             op_name = instruction.operation.name
             if op_name not in allowed_ops:
                 msg = f"Unsupported operation: '{op_name}'"
@@ -431,7 +418,7 @@ class QiskitBackend(BackendV2):  # type: ignore[misc]
         program_format = options.get("program_format", self._options.program_format)
 
         # Convert circuit to specified program format
-        program_str = self._convert_circuit(circuit, program_format)
+        program_str = self._convert_circuit(run_input, program_format)
 
         # Submit job to QDMI device
         try:
@@ -445,8 +432,8 @@ class QiskitBackend(BackendV2):  # type: ignore[misc]
             raise JobSubmissionError(msg) from exc
 
         # Create and return Qiskit job wrapper
-        circuit_name = circuit.name or f"circuit-{QiskitBackend._circuit_counter}"
-        if not circuit.name:
-            QiskitBackend._circuit_counter += 1
+        circuit_name = run_input.name or f"circuit-{QDMIBackend._circuit_counter}"
+        if not run_input.name:
+            QDMIBackend._circuit_counter += 1
 
-        return QiskitJob(backend=self, job=qdmi_job, circuit_name=circuit_name)
+        return QDMIJob(backend=self, job=qdmi_job, circuit_name=circuit_name)

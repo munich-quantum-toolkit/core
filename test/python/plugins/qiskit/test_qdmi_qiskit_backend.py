@@ -6,7 +6,7 @@
 #
 # Licensed under the MIT License
 
-"""Tests for QiskitBackend."""
+"""Tests for QDMIBackend."""
 
 from __future__ import annotations
 
@@ -28,7 +28,7 @@ from mqt.core.plugins.qiskit import (
 if TYPE_CHECKING:
     from test.python.plugins.qiskit.conftest import MockQDMIDevice
 
-    from mqt.core.plugins.qiskit import QiskitBackend
+    from mqt.core.plugins.qiskit import QDMIBackend
 
 pytestmark = [
     pytest.mark.filterwarnings("ignore:.*Device operation.*cannot be mapped to a Qiskit gate.*:UserWarning"),
@@ -36,12 +36,12 @@ pytestmark = [
 ]
 
 
-def test_backend_instantiation(mock_backend: QiskitBackend) -> None:
+def test_backend_instantiation(mock_backend: QDMIBackend) -> None:
     """Backend exposes target qubit count."""
     assert mock_backend.target.num_qubits > 0
 
 
-def test_single_circuit_run_counts(mock_backend: QiskitBackend) -> None:
+def test_single_circuit_run_counts(mock_backend: QDMIBackend) -> None:
     """Running a circuit yields counts with specified shots."""
     qc = QuantumCircuit(2, 2)
     qc.cz(0, 1)
@@ -59,7 +59,7 @@ def test_single_circuit_run_counts(mock_backend: QiskitBackend) -> None:
         assert all(bit in {"0", "1"} for bit in key)
 
 
-def test_unsupported_operation(mock_backend: QiskitBackend) -> None:
+def test_unsupported_operation(mock_backend: QDMIBackend) -> None:
     """Unsupported operation raises UnsupportedOperationError."""
     qc = QuantumCircuit(1, 1)
     qc.x(0)  # 'x' not supported by mock device
@@ -92,17 +92,17 @@ def test_provider_backends_list() -> None:
     assert all(hasattr(b, "target") for b in backends)
 
 
-def test_backend_max_circuits(mock_backend: QiskitBackend) -> None:
+def test_backend_max_circuits(mock_backend: QDMIBackend) -> None:
     """Backend max_circuits should return None (no limit)."""
     assert mock_backend.max_circuits is None
 
 
-def test_backend_options(mock_backend: QiskitBackend) -> None:
+def test_backend_options(mock_backend: QDMIBackend) -> None:
     """Backend options should be accessible."""
     assert mock_backend.options.shots == 1024
 
 
-def test_backend_run_with_shots_option(mock_backend: QiskitBackend) -> None:
+def test_backend_run_with_shots_option(mock_backend: QDMIBackend) -> None:
     """Backend run should accept shots option."""
     qc = QuantumCircuit(2, 2)
     qc.cz(0, 1)
@@ -113,7 +113,7 @@ def test_backend_run_with_shots_option(mock_backend: QiskitBackend) -> None:
     assert sum(result.get_counts().values()) == 500
 
 
-def test_backend_run_with_invalid_shots_type(mock_backend: QiskitBackend) -> None:
+def test_backend_run_with_invalid_shots_type(mock_backend: QDMIBackend) -> None:
     """Backend run should raise CircuitValidationError for invalid shots type."""
     qc = QuantumCircuit(2, 2)
     qc.cz(0, 1)
@@ -123,7 +123,7 @@ def test_backend_run_with_invalid_shots_type(mock_backend: QiskitBackend) -> Non
         mock_backend.run(qc, shots="invalid")
 
 
-def test_backend_run_with_negative_shots(mock_backend: QiskitBackend) -> None:
+def test_backend_run_with_negative_shots(mock_backend: QDMIBackend) -> None:
     """Backend run should raise CircuitValidationError for negative shots."""
     qc = QuantumCircuit(2, 2)
     qc.cz(0, 1)
@@ -133,7 +133,7 @@ def test_backend_run_with_negative_shots(mock_backend: QiskitBackend) -> None:
         mock_backend.run(qc, shots=-100)
 
 
-def test_backend_circuit_with_parameters(mock_backend: QiskitBackend) -> None:
+def test_backend_circuit_with_parameters(mock_backend: QDMIBackend) -> None:
     """Backend should handle parameterized circuits correctly.
 
     Unbound parameters should raise CircuitValidationError, while bound parameters
@@ -156,7 +156,7 @@ def test_backend_circuit_with_parameters(mock_backend: QiskitBackend) -> None:
     assert result.success
 
 
-def test_backend_circuit_with_parameter_expression(mock_backend: QiskitBackend) -> None:
+def test_backend_circuit_with_parameter_expression(mock_backend: QDMIBackend) -> None:
     """Backend should raise CircuitValidationError for unbound parameter expressions."""
     qc = QuantumCircuit(2, 2)
     theta = Parameter("theta")
@@ -168,7 +168,7 @@ def test_backend_circuit_with_parameter_expression(mock_backend: QiskitBackend) 
         mock_backend.run(qc)
 
 
-def test_backend_circuit_with_barrier(mock_backend: QiskitBackend) -> None:
+def test_backend_circuit_with_barrier(mock_backend: QDMIBackend) -> None:
     """Backend should handle circuits with barriers."""
     qc = QuantumCircuit(2, 2)
     qc.cz(0, 1)
@@ -180,7 +180,7 @@ def test_backend_circuit_with_barrier(mock_backend: QiskitBackend) -> None:
     assert result.success
 
 
-def test_backend_circuit_with_single_qubit(mock_backend: QiskitBackend) -> None:
+def test_backend_circuit_with_single_qubit(mock_backend: QDMIBackend) -> None:
     """Backend should handle single-qubit circuits."""
     qc = QuantumCircuit(1, 1)
     qc.ry(1.5708, 0)
@@ -191,7 +191,7 @@ def test_backend_circuit_with_single_qubit(mock_backend: QiskitBackend) -> None:
     assert result.success
 
 
-def test_backend_circuit_with_no_measurements(mock_backend: QiskitBackend) -> None:
+def test_backend_circuit_with_no_measurements(mock_backend: QDMIBackend) -> None:
     """Backend should handle circuits without measurements."""
     qc = QuantumCircuit(2)
     qc.cz(0, 1)
@@ -201,7 +201,7 @@ def test_backend_circuit_with_no_measurements(mock_backend: QiskitBackend) -> No
     assert result.success
 
 
-def test_backend_named_circuit_results_queryable_by_name(mock_backend: QiskitBackend) -> None:
+def test_backend_named_circuit_results_queryable_by_name(mock_backend: QDMIBackend) -> None:
     """Backend should preserve circuit name and allow querying results by name."""
     qc = QuantumCircuit(2, 2, name="my_circuit")
     qc.cz(0, 1)
@@ -222,7 +222,7 @@ def test_backend_named_circuit_results_queryable_by_name(mock_backend: QiskitBac
     assert sum(counts.values()) == 100
 
 
-def test_backend_unnamed_circuit_results_queryable_by_generated_name(mock_backend: QiskitBackend) -> None:
+def test_backend_unnamed_circuit_results_queryable_by_generated_name(mock_backend: QDMIBackend) -> None:
     """Backend should generate a name for unnamed circuits and allow querying results by it."""
     qc = QuantumCircuit(2, 2)
     qc.cz(0, 1)
@@ -247,7 +247,7 @@ def test_backend_unnamed_circuit_results_queryable_by_generated_name(mock_backen
     assert sum(counts.values()) == 100
 
 
-def test_job_status(mock_backend: QiskitBackend) -> None:
+def test_job_status(mock_backend: QDMIBackend) -> None:
     """Job should be in DONE status after backend.run() completes."""
     qc = QuantumCircuit(2, 2)
     qc.cz(0, 1)
@@ -257,7 +257,7 @@ def test_job_status(mock_backend: QiskitBackend) -> None:
     assert job.status() == JobStatus.DONE
 
 
-def test_job_result_success_and_shots(mock_backend: QiskitBackend) -> None:
+def test_job_result_success_and_shots(mock_backend: QDMIBackend) -> None:
     """Job result should contain success status and shot count for each circuit."""
     qc = QuantumCircuit(2, 2)
     qc.cz(0, 1)
@@ -273,7 +273,7 @@ def test_job_result_success_and_shots(mock_backend: QiskitBackend) -> None:
     assert result.results[0].success is True
 
 
-def test_job_get_counts_default(mock_backend: QiskitBackend) -> None:
+def test_job_get_counts_default(mock_backend: QDMIBackend) -> None:
     """result().get_counts() without arguments should return counts for first circuit."""
     qc = QuantumCircuit(2, 2)
     qc.cz(0, 1)
@@ -285,7 +285,7 @@ def test_job_get_counts_default(mock_backend: QiskitBackend) -> None:
     assert sum(counts.values()) == 100
 
 
-def test_job_submit_raises_error(mock_backend: QiskitBackend) -> None:
+def test_job_submit_raises_error(mock_backend: QDMIBackend) -> None:
     """Calling submit() on a job should raise NotImplementedError."""
     qc = QuantumCircuit(2, 2)
     qc.cz(0, 1)

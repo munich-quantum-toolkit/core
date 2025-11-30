@@ -23,12 +23,16 @@ from qiskit.result.models import ExperimentResult
 from mqt.core import fomac
 
 if TYPE_CHECKING:
-    from .backend import QiskitBackend
+    from .backend import QDMIBackend
 
-__all__ = ["QiskitJob"]
+__all__ = ["QDMIJob"]
 
 
-class QiskitJob(JobV1):  # type: ignore[misc]
+def __dir__() -> list[str]:
+    return __all__
+
+
+class QDMIJob(JobV1):  # type: ignore[misc]
     """Qiskit job wrapping a QDMI/FoMaC job.
 
     Args:
@@ -39,7 +43,7 @@ class QiskitJob(JobV1):  # type: ignore[misc]
 
     def __init__(
         self,
-        backend: QiskitBackend,
+        backend: QDMIBackend,
         job: fomac.Job,
         circuit_name: str,
     ) -> None:
@@ -51,7 +55,7 @@ class QiskitJob(JobV1):  # type: ignore[misc]
             circuit_name: The name of the circuit the job is associated with.
         """
         super().__init__(backend=backend, job_id=job.id)
-        self._backend: QiskitBackend = backend
+        self._backend: QDMIBackend = backend
         self._job = job
         self._circuit_name = circuit_name
         self._counts: dict[str, int] | None = None
@@ -111,7 +115,7 @@ class QiskitJob(JobV1):  # type: ignore[misc]
     def submit(self) -> None:
         """This method should not be called.
 
-        QDMI jobs are submitted via :class:`~mqt.core.qdmi.qiskit.QiskitBackend`'s run() method.
+        QDMI jobs are submitted via :meth:`~mqt.core.plugins.qiskit.QDMIBackend.run`.
         """
         msg = (
             "You should never have to submit jobs by calling this method. "

@@ -18,7 +18,7 @@ from typing import TYPE_CHECKING
 import pytest
 
 from mqt.core import fomac
-from mqt.core.plugins.qiskit import QiskitBackend
+from mqt.core.plugins.qiskit import QDMIBackend
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -191,6 +191,7 @@ class MockQDMIDevice:
     def __init__(
         self,
         name: str = "Mock QDMI Device",
+        version: str = "1.0.0",
         num_qubits: int = 5,
         operations: Sequence[str] | None = None,
         coupling_map: Sequence[tuple[int, int]] | None = None,
@@ -199,11 +200,13 @@ class MockQDMIDevice:
 
         Args:
             name: Device name.
+            version: Device version.
             num_qubits: Number of qubits.
             operations: List of operation names. Defaults to common gates.
             coupling_map: Coupling map as list of (control, target) pairs. None means all-to-all.
         """
         self._name = name
+        self._version = version
         self._num_qubits = num_qubits
         self._sites = [self.MockSite(i) for i in range(num_qubits)]
 
@@ -221,6 +224,10 @@ class MockQDMIDevice:
     def name(self) -> str:
         """Return device name."""
         return self._name
+
+    def version(self) -> str:
+        """Return device version."""
+        return self._version
 
     def qubits_num(self) -> int:
         """Return number of qubits."""
@@ -342,15 +349,15 @@ def mock_qdmi_device() -> MockQDMIDevice:
 
 
 @pytest.fixture
-def mock_backend(mock_qdmi_device: MockQDMIDevice) -> QiskitBackend:
+def mock_backend(mock_qdmi_device: MockQDMIDevice) -> QDMIBackend:
     """Fixture providing a QiskitBackend with a generic mock device.
 
     Returns:
-        QiskitBackend instance configured with a mock device.
+        QDMIBackend instance configured with a mock device.
 
     Note:
         This fixture is intended for generic unit tests that don't depend on
         specific device characteristics. The mock device supports common gates
         (h, cz, ry, rz, measure) on 5 qubits.
     """
-    return QiskitBackend(device=mock_qdmi_device)  # type: ignore[arg-type]
+    return QDMIBackend(device=mock_qdmi_device)  # type: ignore[arg-type]

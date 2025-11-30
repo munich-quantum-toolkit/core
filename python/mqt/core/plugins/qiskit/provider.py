@@ -14,13 +14,14 @@ devices through Qiskit's BackendV2 interface.
 
 from __future__ import annotations
 
-import warnings
-
-from mqt.core import fomac
-
-from .backend import QiskitBackend
+from ... import fomac
+from .backend import QDMIBackend
 
 __all__ = ["QDMIProvider"]
+
+
+def __dir__() -> list[str]:
+    return __all__
 
 
 class QDMIProvider:
@@ -33,21 +34,23 @@ class QDMIProvider:
     Examples:
         List all available backends:
 
-        >>> from mqt.core.qdmi.qiskit import QDMIProvider
+        >>> from mqt.core.plugins.qiskit import QDMIProvider
         >>> provider = QDMIProvider()
-        >>> backends = provider.backends()
-        >>> for backend in backends:
+        >>> for backend in provider.backends():
         ...     print(f"{backend.name}: {backend.target.num_qubits} qubits")
 
         Get a specific backend by name:
 
-        >>> backend = provider.get_backend("MQT NA Default QDMI Device")
+        >>> backend = provider.get_backend("MQT Core DDSIM QDMI Device")
     """
 
     def __init__(self) -> None:
         """Initialize the QDMI provider."""
+        self._backends = [
+            QDMIBackend(device=d, provider=self) for d in fomac.devices() if QDMIBackend.is_convertible(d)
+        ]
 
-    def backends(self, name: str | None = None) -> list[QiskitBackend]:
+    def backends(self, name: str | None = None) -> list[QDMIBackend]:
         """Return all available backends, optionally filtered by name substring.
 
         Args:
@@ -64,33 +67,16 @@ class QDMIProvider:
 
             Filter backends by name substring:
 
-            >>> backends = provider.backends(name="NA")  # matches "MQT NA Default QDMI Device"
-            >>> backends = provider.backends(name="QDMI")  # matches all devices with "QDMI" in name
+            >>> na_backends = provider.backends(name="NA")  # matches "MQT NA Default QDMI Device"
+            >>> qdmi_backends = provider.backends(name="QDMI")  # matches all devices with "QDMI" in name
         """
-        # Get all devices from FoMaC
-        devices = list(fomac.devices())
-
         # Filter by name substring if specified
         if name is not None:
-            devices = [d for d in devices if name in d.name()]
+            return [b for b in self._backends if name in b.name]
 
-        backends = []
-        for device in devices:
-            zoned_ops = [op.name() for op in device.operations() if op.is_zoned()]
-            if zoned_ops:
-                warnings.warn(
-                    f"Skipping device '{device.name()}': Device contains zoned operations "
-                    f"{zoned_ops} which cannot be represented in Qiskit's Target model.",
-                    UserWarning,
-                    stacklevel=2,
-                )
-                continue
+        return self._backends
 
-            backends.append(QiskitBackend(device=device, provider=self))
-
-        return backends
-
-    def get_backend(self, name: str) -> QiskitBackend:
+    def get_backend(self, name: str) -> QDMIBackend:
         """Get a single backend by name.
 
         Args:
@@ -106,17 +92,15 @@ class QDMIProvider:
             Get a specific backend:
 
             >>> provider = QDMIProvider()
-            >>> backend = provider.get_backend("MQT NA Default QDMI Device")
+            >>> backend = provider.get_backend("MQT Core DDSIM QDMI Device")
         """
-        backends = self.backends(name=name)
+        for backend in self._backends:
+            if backend.name == name:
+                return backend
 
-        if not backends:
-            msg = f"No backend found with name '{name}'"
-            raise ValueError(msg)
-
-        return backends[0]
+        msg = f"No backend found with name '{name}'"
+        raise ValueError(msg)
 
     def __repr__(self) -> str:
         """Return string representation of the provider."""
-        num_backends = len(list(fomac.devices()))
-        return f"<QDMIProvider(backends={num_backends})>"
+        return f"<QDMIProvider(backends={len(self._backends)})>"

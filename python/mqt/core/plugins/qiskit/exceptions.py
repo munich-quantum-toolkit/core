@@ -8,8 +8,6 @@
 
 """Custom exception types for QDMI Qiskit integration."""
 
-from __future__ import annotations
-
 __all__ = [
     "CircuitValidationError",
     "JobSubmissionError",
@@ -19,6 +17,10 @@ __all__ = [
     "UnsupportedFormatError",
     "UnsupportedOperationError",
 ]
+
+
+def __dir__() -> list[str]:
+    return __all__
 
 
 class QDMIQiskitError(RuntimeError):

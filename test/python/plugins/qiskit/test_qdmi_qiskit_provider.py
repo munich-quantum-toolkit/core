@@ -98,18 +98,6 @@ def test_provider_repr() -> None:
     assert "backends=" in repr_str
 
 
-@pytest.mark.filterwarnings("ignore:Skipping device:UserWarning")
-def test_provider_backends_return_different_instances() -> None:
-    """Provider creates new backend instances each time."""
-    provider = QDMIProvider()
-
-    backends1 = provider.backends()
-    backends2 = provider.backends()
-
-    # Should be different instances
-    assert backends1[0] is not backends2[0]
-
-
 def test_backend_has_provider_reference() -> None:
     """Backend created by provider has reference back to provider."""
     provider = QDMIProvider()

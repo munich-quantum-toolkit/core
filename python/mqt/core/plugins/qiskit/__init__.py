@@ -20,8 +20,12 @@ HAS_QISKIT = OptionalDependencyTester(
     install_msg="Install with 'pip install mqt-core[qiskit]'",
 )
 
+__all__ = [
+    "HAS_QISKIT",
+]
+
 if TYPE_CHECKING or HAS_QISKIT:
-    from .backend import QiskitBackend
+    from .backend import QDMIBackend
     from .exceptions import (
         CircuitValidationError,
         JobSubmissionError,
@@ -30,22 +34,18 @@ if TYPE_CHECKING or HAS_QISKIT:
         UnsupportedFormatError,
         UnsupportedOperationError,
     )
+    from .job import QDMIJob
     from .mqt_to_qiskit import mqt_to_qiskit
     from .provider import QDMIProvider
     from .qiskit_to_mqt import qiskit_to_mqt
 
-
-__all__ = [
-    "HAS_QISKIT",
-]
-
-if TYPE_CHECKING or HAS_QISKIT:
     __all__ += [
         "CircuitValidationError",
         "JobSubmissionError",
+        "QDMIBackend",
+        "QDMIJob",
         "QDMIProvider",
         "QDMIQiskitError",
-        "QiskitBackend",
         "TranslationError",
         "UnsupportedFormatError",
         "UnsupportedOperationError",

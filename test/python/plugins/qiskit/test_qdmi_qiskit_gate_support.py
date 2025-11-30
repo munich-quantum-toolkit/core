@@ -15,8 +15,8 @@ from unittest.mock import MagicMock
 import pytest
 from qiskit import QuantumCircuit
 
-from mqt.core.plugins.qiskit import QiskitBackend
-from mqt.core.plugins.qiskit.exceptions import UnsupportedDeviceError, UnsupportedOperationError
+from mqt.core.plugins.qiskit import QDMIBackend
+from mqt.core.plugins.qiskit.exceptions import UnsupportedOperationError
 
 pytestmark = [
     pytest.mark.filterwarnings("ignore:.*Device operation.*cannot be mapped to a Qiskit gate.*:UserWarning"),
@@ -24,7 +24,7 @@ pytestmark = [
 ]
 
 
-def test_backend_supports_cz_gate(mock_backend: QiskitBackend) -> None:
+def test_backend_supports_cz_gate(mock_backend: QDMIBackend) -> None:
     """Test that the backend can execute CZ gate circuits."""
     qc = QuantumCircuit(2, 2)
     qc.cz(0, 1)
@@ -35,14 +35,14 @@ def test_backend_supports_cz_gate(mock_backend: QiskitBackend) -> None:
     assert sum(counts.values()) == 100
 
 
-def test_map_operation_returns_none_for_unknown(mock_backend: QiskitBackend) -> None:
+def test_map_operation_returns_none_for_unknown(mock_backend: QDMIBackend) -> None:
     """Test that unknown operations return None."""
     assert mock_backend._map_operation_to_gate("unknown_gate") is None  # noqa: SLF001
     assert mock_backend._map_operation_to_gate("custom_op") is None  # noqa: SLF001
     assert mock_backend._map_operation_to_gate("") is None  # noqa: SLF001
 
 
-def test_get_operation_qargs_single_qubit(mock_backend: QiskitBackend) -> None:
+def test_get_operation_qargs_single_qubit(mock_backend: QDMIBackend) -> None:
     """Test _get_operation_qargs for single-qubit operations without explicit sites.
 
     Operations without explicit sites should return [None] indicating global availability.
@@ -62,7 +62,7 @@ def test_get_operation_qargs_single_qubit(mock_backend: QiskitBackend) -> None:
     assert qargs == [None]
 
 
-def test_get_operation_qargs_two_qubit_without_coupling_map(mock_backend: QiskitBackend) -> None:
+def test_get_operation_qargs_two_qubit_without_coupling_map(mock_backend: QDMIBackend) -> None:
     """Test _get_operation_qargs for two-qubit operations without coupling map.
 
     When an operation has site_pairs=None and device has no coupling map,
@@ -87,7 +87,7 @@ def test_get_operation_qargs_two_qubit_without_coupling_map(mock_backend: Qiskit
     assert qargs == [None]
 
 
-def test_get_operation_qargs_with_specific_sites(mock_backend: QiskitBackend) -> None:
+def test_get_operation_qargs_with_specific_sites(mock_backend: QDMIBackend) -> None:
     """Test that backend handles operations properly in the target.
 
     This is tested through the backend's target construction, which uses
@@ -110,7 +110,7 @@ def test_get_operation_qargs_with_specific_sites(mock_backend: QiskitBackend) ->
                 assert all(isinstance(idx, int) for idx in qarg)
 
 
-def test_get_operation_qargs_two_qubit_operation_with_subset_of_coupling_map(mock_backend: QiskitBackend) -> None:
+def test_get_operation_qargs_two_qubit_operation_with_subset_of_coupling_map(mock_backend: QDMIBackend) -> None:
     """Test that two-qubit operations properly reflect their coupling in the target.
 
     This addresses the scenario where a device has a coupling map describing all physical
@@ -135,30 +135,6 @@ def test_get_operation_qargs_two_qubit_operation_with_subset_of_coupling_map(moc
             for qarg in qargs:
                 assert len(qarg) == 2
                 assert all(isinstance(idx, int) for idx in qarg)
-
-
-def test_get_operation_qargs_multi_qubit_raises_error(mock_backend: QiskitBackend) -> None:
-    """Test that multi-qubit operations (3+ qubits) without explicit sites raise an error."""
-
-    def create_mock_operation(name: str, num_qubits: int) -> MagicMock:
-        """Helper to create a mock operation with specified qubit count.
-
-        Returns:
-            Mock operation configured with the given parameters.
-        """
-        mock_op = MagicMock()
-        mock_op.name.return_value = name
-        mock_op.qubits_num.return_value = num_qubits
-        mock_op.parameters_num.return_value = 0
-        mock_op.duration.return_value = None
-        mock_op.fidelity.return_value = None
-        mock_op.sites.return_value = None  # No specific sites
-        mock_op.is_zoned.return_value = False
-        return mock_op
-
-    mock_op_3q = create_mock_operation("ccx", 3)
-    with pytest.raises(UnsupportedOperationError, match="Multi-qubit operations \\(3\\+\\)"):
-        mock_backend._get_operation_qargs(mock_op_3q)  # noqa: SLF001
 
 
 def test_misconfigured_device_coupling_map_without_operation_sites() -> None:
@@ -198,6 +174,11 @@ def test_misconfigured_device_coupling_map_without_operation_sites() -> None:
             return "Mock Device With Coupling"
 
         @staticmethod
+        def version() -> str:
+            """Return device version."""
+            return "1.0.0"
+
+        @staticmethod
         def qubits_num() -> int:
             """Return number of qubits."""
             return 5
@@ -216,7 +197,7 @@ def test_misconfigured_device_coupling_map_without_operation_sites() -> None:
             return self._coupling_map
 
     device = MockDeviceWithCouplingMap()
-    backend = QiskitBackend(device=device)  # type: ignore[arg-type]
+    backend = QDMIBackend(device=device)  # type: ignore[arg-type]
 
     mock_op = MagicMock()
     mock_op.name.return_value = "custom_2q"
@@ -256,6 +237,11 @@ def test_zoned_operation_rejected_at_backend_init() -> None:
             """Return device name."""
             return "Mock Zoned Device"
 
+        @staticmethod
+        def version() -> str:
+            """Return device version."""
+            return "1.0.0"
+
         def operations(self) -> list[MockZonedOp]:
             """Return list of operations."""
             return self._ops
@@ -272,5 +258,5 @@ def test_zoned_operation_rejected_at_backend_init() -> None:
 
     device = MockZonedDevice()
 
-    with pytest.raises(UnsupportedDeviceError, match="zoned operations"):
-        QiskitBackend(device=device)  # type: ignore[arg-type]
+    with pytest.raises(AssertionError, match="cannot be represented in Qiskit's Target model"):
+        QDMIBackend(device=device)  # type: ignore[arg-type]
