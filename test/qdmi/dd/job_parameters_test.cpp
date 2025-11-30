@@ -74,7 +74,14 @@ TEST(JobParameters, SetAndQueryBasics) {
 
   EXPECT_EQ(MQT_DDSIM_QDMI_device_job_query_property(
                 j.job, QDMI_DEVICE_JOB_PROPERTY_PROGRAM, 0, nullptr, &size),
-            QDMI_ERROR_NOTSUPPORTED);
+            QDMI_SUCCESS);
+  EXPECT_EQ(size, strlen(qdmi_test::QASM3_BELL_SAMPLING) + 1);
+  std::string program(size - 1, '\0');
+  EXPECT_EQ(MQT_DDSIM_QDMI_device_job_query_property(
+                j.job, QDMI_DEVICE_JOB_PROPERTY_PROGRAM, size, program.data(),
+                nullptr),
+            QDMI_SUCCESS);
+  EXPECT_EQ(program, qdmi_test::QASM3_BELL_SAMPLING);
 }
 
 TEST(JobParameters, ProgramFormatSupport) {
