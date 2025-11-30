@@ -43,8 +43,15 @@ class Job:
 
     def check(self) -> Job.Status:
         """Returns the current status of the job."""
-    def wait(self) -> None:
-        """Waits for the job to complete."""
+    def wait(self, timeout: int = 0) -> bool:
+        """Waits for the job to complete.
+
+        Args:
+            timeout: The maximum time to wait in seconds. If 0, waits indefinitely.
+
+        Returns:
+            True if the job completed within the timeout, False otherwise.
+        """
     def cancel(self) -> None:
         """Cancels the job."""
     def supports(self) -> bool:

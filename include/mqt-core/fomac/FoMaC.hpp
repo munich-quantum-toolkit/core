@@ -240,8 +240,13 @@ public:
     operator QDMI_Job() const { return job_; }
     /// @see QDMI_job_check
     [[nodiscard]] auto check() const -> QDMI_Job_Status;
-    /// @see QDMI_job_wait
-    auto wait() const -> void;
+    /**
+     * @brief @see QDMI_job_wait
+     * @param timeout The maximum time to wait in seconds. 0 (default) means
+     * wait indefinitely.
+     * @return true if the job completed successfully, false if it timed out
+     */
+    [[nodiscard]] auto wait(size_t timeout = 0) const -> bool;
     /// @see QDMI_job_cancel
     auto cancel() const -> void;
     /// Get the job ID

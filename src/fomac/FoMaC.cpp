@@ -482,8 +482,16 @@ auto FoMaC::Job::check() const -> QDMI_Job_Status {
   return status;
 }
 
-auto FoMaC::Job::wait() const -> void {
-  throwIfError(QDMI_job_wait(job_, 0), "Waiting for job");
+auto FoMaC::Job::wait(const size_t timeout) const -> bool {
+  const auto ret = QDMI_job_wait(job_, timeout);
+  if (ret == QDMI_SUCCESS) {
+    return true;
+  }
+  if (ret == QDMI_ERROR_TIMEOUT) {
+    return false;
+  }
+  throwIfError(ret, "Waiting for job");
+  unreachable();
 }
 
 auto FoMaC::Job::cancel() const -> void {

@@ -30,7 +30,7 @@ PYBIND11_MODULE(MQT_CORE_MODULE_NAME, m, py::mod_gil_not_used()) {
   // Job class
   auto job = py::class_<fomac::FoMaC::Job>(m, "Job");
   job.def("check", &fomac::FoMaC::Job::check);
-  job.def("wait", &fomac::FoMaC::Job::wait);
+  job.def("wait", &fomac::FoMaC::Job::wait, "timeout"_a = 0);
   job.def("cancel", &fomac::FoMaC::Job::cancel);
   job.def("supports", &fomac::FoMaC::Job::supports, "type"_a);
   job.def("get_shots", &fomac::FoMaC::Job::getShots);
