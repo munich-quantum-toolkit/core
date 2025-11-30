@@ -11,11 +11,11 @@
 #include "fomac/FoMaC.hpp"
 
 #include <pybind11/cast.h>
-#include <pybind11/complex.h>
+#include <pybind11/complex.h> // NOLINT(misc-include-cleaner)
 #include <pybind11/native_enum.h>
 #include <pybind11/operators.h>
 #include <pybind11/pybind11.h>
-#include <pybind11/stl.h>
+#include <pybind11/stl.h> // NOLINT(misc-include-cleaner)
 #include <qdmi/client.h>
 #include <string>
 #include <vector>

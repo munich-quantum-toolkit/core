@@ -10,12 +10,14 @@
 
 #include "fomac/FoMaC.hpp"
 
-#include "gmock/gmock-matchers.h"
 #include <algorithm>
 #include <cstdlib>
+#include <gmock/gmock-matchers.h>
 #include <gtest/gtest.h>
 #include <new>
+#include <numbers>
 #include <qdmi/client.h>
+#include <ranges>
 #include <stdexcept>
 #include <string>
 #include <tuple>
