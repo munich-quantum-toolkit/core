@@ -191,7 +191,7 @@ public:
    */
   ~QDMI_Device_impl_d() {
     jobs_.clear();
-    if (deviceSession_ != nullptr) {
+    if (library_ && deviceSession_ != nullptr) {
       library_->device_session_free(deviceSession_);
     }
   }
@@ -378,16 +378,16 @@ class Driver final {
   Driver();
 
   /**
+   * @brief Vector of unique pointers to QDMI_Device_impl_d objects.
+   */
+  std::vector<std::unique_ptr<QDMI_Device_impl_d>> devices_;
+
+  /**
    * @brief Map of sessions to their corresponding unique pointers to
    * QDMI_Session_impl_d objects.
    */
   std::unordered_map<QDMI_Session, std::unique_ptr<QDMI_Session_impl_d>>
       sessions_;
-
-  /**
-   * @brief Vector of unique pointers to QDMI_Device_impl_d objects.
-   */
-  std::vector<std::unique_ptr<QDMI_Device_impl_d>> devices_;
 
 public:
   // Delete copy constructors and assignment operators to prevent copying the
