@@ -122,15 +122,13 @@ struct NaiveRoutingPassSC final
     if (failed(route())) {
       signalPassFailure();
       return;
-    };
+    }
   }
 
 private:
   LogicalResult route() {
     ModuleOp module(getOperation());
     PatternRewriter rewriter(module->getContext());
-    /// AStarHeuristicRouter router(HeuristicWeights(alpha, lambda,
-    /// nlookahead));
     std::unique_ptr<Architecture> arch(getArchitecture(archName));
 
     if (!arch) {
