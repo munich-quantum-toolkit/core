@@ -62,7 +62,8 @@ public:
       WindowView w;
       const auto sz = window->opLayers->size();
       const auto len = std::min(1 + window->nlookahead, sz - pos);
-      w.gateLayers = mlir::ArrayRef<GateLayer>(*window->gateLayers).slice(pos, len);
+      w.gateLayers =
+          mlir::ArrayRef<GateLayer>(*window->gateLayers).slice(pos, len);
       w.opLayer = &(*window->opLayers)[pos];
       if (pos + 1 < window->gateLayers->size()) {
         w.nextAnchor = (*window->opLayers)[pos + 1].anchor;
