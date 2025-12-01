@@ -178,9 +178,8 @@ inline matrix4x4 getTwoQubitMatrix(const Gate& gate) {
     if (gate.type == qc::I) {
       return kroneckerProduct(IDENTITY_GATE, IDENTITY_GATE);
     }
-  throw std::invalid_argument{
-      "unsupported gate type for two qubit matrix (" +
-      qc::toString(gate.type) + ")"};
+    throw std::invalid_argument{"unsupported gate type for two qubit matrix (" +
+                                qc::toString(gate.type) + ")"};
   }
   throw std::logic_error{"Invalid number of qubit IDs in compute_unitary"};
 }
