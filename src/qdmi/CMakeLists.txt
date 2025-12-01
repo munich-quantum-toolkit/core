@@ -6,31 +6,10 @@
 #
 # Licensed under the MIT License
 
-add_subdirectory(dd)
-add_subdirectory(sc)
+add_subdirectory(devices)
+add_subdirectory(driver)
 
-set(TARGET_NAME ${MQT_CORE_TARGET_NAME}-qdmi-driver)
-
-if(NOT TARGET ${TARGET_NAME})
-  # Add driver library
-  add_mqt_core_library(${TARGET_NAME} ALIAS_NAME QDMIDriver)
-
-  # Add sources to target
-  target_sources(${TARGET_NAME} PRIVATE Driver.cpp)
-
-  # Add headers using file sets
-  target_sources(${TARGET_NAME} PUBLIC FILE_SET HEADERS BASE_DIRS ${MQT_CORE_INCLUDE_BUILD_DIR}
-                                       FILES ${MQT_CORE_INCLUDE_BUILD_DIR}/qdmi/Driver.hpp)
-
-  # Add link libraries
-  target_link_libraries(
-    ${TARGET_NAME}
-    PUBLIC qdmi::qdmi
-    PRIVATE MQT::CoreQDMINaDevice MQT::CoreQDMIScDevice MQT::CoreQDMI_DDSIM_Device
-            qdmi::project_warnings)
-
-  # add to list of MQT core targets
-  set(MQT_CORE_TARGETS
-      ${MQT_CORE_TARGETS} ${TARGET_NAME}
-      PARENT_SCOPE)
-endif()
+# add to list of MQT core targets
+set(MQT_CORE_TARGETS
+    ${MQT_CORE_TARGETS}
+    PARENT_SCOPE)

@@ -8,7 +8,7 @@
  * Licensed under the MIT License
  */
 
-#include "qdmi/Driver.hpp"
+#include "qdmi/driver/Driver.hpp"
 
 #include "mqt_ddsim_qdmi/device.h"
 #include "mqt_na_qdmi/device.h"

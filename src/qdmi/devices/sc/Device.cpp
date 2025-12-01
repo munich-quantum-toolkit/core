@@ -12,10 +12,10 @@
  * @brief The MQT QDMI device implementation for superconducting devices.
  */
 
-#include "qdmi/sc/Device.hpp"
+#include "qdmi/devices/sc/Device.hpp"
 
 #include "mqt_sc_qdmi/device.h"
-#include "qdmi/sc/DeviceMemberInitializers.hpp"
+#include "qdmi/devices/sc/DeviceMemberInitializers.hpp"
 
 #include <atomic>
 #include <cassert>
@@ -23,6 +23,7 @@
 #include <cstdint>
 #include <cstring>
 #include <memory>
+#include <stdexcept>
 #include <utility>
 #include <vector>
 
@@ -92,8 +93,6 @@
 // NOLINTEND(bugprone-macro-parentheses)
 
 namespace qdmi::sc {
-std::atomic<Device*> Device::instance = nullptr;
-
 Device::Device() {
   // NOLINTBEGIN(cppcoreguidelines-prefer-member-initializer)
   INITIALIZE_NAME(name_);
@@ -106,30 +105,6 @@ Device::Device() {
 Device::~Device() {
   // Explicitly clear sessions before destruction to avoid spurious segfaults
   sessions_.clear();
-}
-void Device::initialize() {
-  // NOLINTNEXTLINE(misc-const-correctness)
-  Device* expected = nullptr;
-  // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
-  auto* newInstance = new Device();
-  if (!instance.compare_exchange_strong(expected, newInstance)) {
-    // Another thread won the race, so delete the instance we created.
-    // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
-    delete newInstance;
-  }
-}
-void Device::finalize() {
-  // Atomically swap the instance pointer with nullptr and get the old value.
-  const Device* oldInstance = instance.exchange(nullptr);
-  // Delete the old instance if it existed.
-  // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
-  delete oldInstance;
-}
-auto Device::get() -> Device& {
-  auto* loadedInstance = instance.load();
-  assert(loadedInstance != nullptr &&
-         "Device not initialized. Call `initialize()` first.");
-  return *loadedInstance;
 }
 auto Device::sessionAlloc(MQT_SC_QDMI_Device_Session* session) -> int {
   if (session == nullptr) {
@@ -227,7 +202,13 @@ auto MQT_SC_QDMI_Device_Session_impl_d::queryDeviceProperty(
   if (status_ != Status::INITIALIZED) {
     return QDMI_ERROR_BADSTATE;
   }
-  return qdmi::sc::Device::get().queryProperty(prop, size, value, sizeRet);
+  try {
+    // Use the new get() that returns a shared_ptr.
+    return qdmi::sc::Device::get().queryProperty(prop, size, value, sizeRet);
+  } catch (const std::runtime_error&) {
+    // This happens if get() throws because the device is not initialized.
+    return QDMI_ERROR_BADSTATE;
+  }
 }
 auto MQT_SC_QDMI_Device_Session_impl_d::querySiteProperty(
     MQT_SC_QDMI_Site site, const QDMI_Site_Property prop, const size_t size,

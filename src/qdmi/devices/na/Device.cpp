@@ -12,10 +12,10 @@
  * @brief The MQT QDMI device implementation for neutral atom devices.
  */
 
-#include "na/device/Device.hpp"
+#include "qdmi/devices/na/Device.hpp"
 
 #include "mqt_na_qdmi/device.h"
-#include "na/device/DeviceMemberInitializers.hpp"
+#include "qdmi/devices/na/DeviceMemberInitializers.hpp"
 
 #include <algorithm>
 #include <atomic>
@@ -96,8 +96,6 @@
 // NOLINTEND(bugprone-macro-parentheses)
 
 namespace qdmi::na {
-std::atomic<Device*> Device::instance = nullptr;
-
 Device::Device() {
   // NOLINTBEGIN(cppcoreguidelines-prefer-member-initializer)
   INITIALIZE_NAME(name_);
@@ -110,34 +108,6 @@ Device::Device() {
   INITIALIZE_SITES(sites_);
   INITIALIZE_OPERATIONS(operations_);
 }
-
-void Device::initialize() {
-  // NOLINTNEXTLINE(misc-const-correctness)
-  Device* expected = nullptr;
-  // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
-  auto* newInstance = new Device();
-  if (!instance.compare_exchange_strong(expected, newInstance)) {
-    // Another thread won the race, so delete the instance we created.
-    // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
-    delete newInstance;
-  }
-}
-
-void Device::finalize() {
-  // Atomically swap the instance pointer with nullptr and get the old value.
-  const Device* oldInstance = instance.exchange(nullptr);
-  // Delete the old instance if it existed.
-  // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
-  delete oldInstance;
-}
-
-auto Device::get() -> Device& {
-  auto* loadedInstance = instance.load();
-  assert(loadedInstance != nullptr &&
-         "Device not initialized. Call `initialize()` first.");
-  return *loadedInstance;
-}
-
 auto Device::sessionAlloc(MQT_NA_QDMI_Device_Session* session) -> int {
   if (session == nullptr) {
     return QDMI_ERROR_INVALIDARGUMENT;

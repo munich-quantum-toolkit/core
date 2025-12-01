@@ -34,15 +34,20 @@ if(NOT TARGET ${TARGET_NAME})
            ${MQT_CORE_INCLUDE_BUILD_DIR}
            ${CMAKE_CURRENT_BINARY_DIR}/include
            FILES
-           ${MQT_CORE_INCLUDE_BUILD_DIR}/qdmi/dd/Device.hpp
+           ${MQT_CORE_INCLUDE_BUILD_DIR}/qdmi/devices/dd/Device.hpp
            ${QDMI_HDRS})
 
   # Add link libraries
   target_link_libraries(
     ${TARGET_NAME}
     PUBLIC qdmi::qdmi
-    PRIVATE MQT::CoreDD MQT::CoreQASM MQT::CoreCircuitOptimizer MQT::ProjectOptions
-            MQT::ProjectWarnings spdlog::spdlog)
+    PRIVATE MQT::CoreQDMIBaseDevice
+            MQT::CoreDD
+            MQT::CoreQASM
+            MQT::CoreCircuitOptimizer
+            MQT::ProjectOptions
+            MQT::ProjectWarnings
+            spdlog::spdlog)
 
   # Always compile with position independent code such that the library can be used in shared
   # libraries

@@ -15,6 +15,7 @@
  */
 
 #include "mqt_sc_qdmi/device.h"
+#include "qdmi/devices/base/Device.hpp"
 
 #include <atomic>
 #include <cstddef>
@@ -26,7 +27,8 @@
 #include <vector>
 
 namespace qdmi::sc {
-class Device final {
+class Device final : public qdmi::Device<Device> {
+  friend class qdmi::Device<Device>;
   /// @brief Provides access to the device name.
   std::string name_;
 
@@ -50,9 +52,6 @@ class Device final {
   /// @brief Private constructor to enforce the singleton pattern.
   Device();
 
-  /// @brief The singleton instance.
-  static std::atomic<Device*> instance;
-
 public:
   // Delete move constructor and move assignment operator.
   Device(Device&&) = delete;
@@ -62,23 +61,7 @@ public:
   Device& operator=(const Device&) = delete;
 
   /// @brief Destructor for the Device class.
-  ~Device();
-
-  /**
-   * @brief Initializes the singleton instance.
-   * @details Must be called before `get()`.
-   */
-  static void initialize();
-
-  /**
-   * @brief Destroys the singleton instance.
-   * @details After this call, `get()` must not be called until a new
-   * `initialize()` call.
-   */
-  static void finalize();
-
-  /// @returns the singleton instance of the Device class.
-  [[nodiscard]] static auto get() -> Device&;
+  ~Device() override;
 
   /**
    * @brief Allocates a new device session.

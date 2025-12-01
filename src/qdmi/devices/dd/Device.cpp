@@ -12,7 +12,7 @@
  * @brief The MQT QDMI device implementation for its DD-based simulator.
  */
 
-#include "qdmi/dd/Device.hpp"
+#include "qdmi/devices/dd/Device.hpp"
 
 #include "circuit_optimizer/CircuitOptimizer.hpp"
 #include "dd/DDDefinitions.hpp"
@@ -209,39 +209,9 @@ constexpr std::array SUPPORTED_PROGRAM_FORMATS = {QDMI_PROGRAM_FORMAT_QASM2,
 // NOLINTEND(bugprone-macro-parentheses)
 
 namespace qdmi::dd {
-
-std::atomic<Device*> Device::instance = nullptr;
-
 Device::Device()
     : name_("MQT Core DDSIM QDMI Device"),
       qubitsNum_(std::numeric_limits<::dd::Qubit>::max()) {}
-
-void Device::initialize() {
-  // NOLINTNEXTLINE(misc-const-correctness)
-  Device* expected = nullptr;
-  // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
-  auto* newInstance = new Device();
-  if (!instance.compare_exchange_strong(expected, newInstance)) {
-    // Another thread won the race, so delete the instance we created.
-    // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
-    delete newInstance;
-  }
-}
-
-void Device::finalize() {
-  // Atomically swap the instance pointer with nullptr and get the old value.
-  const Device* oldInstance = instance.exchange(nullptr);
-  // Delete the old instance if it existed.
-  // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
-  delete oldInstance;
-}
-
-auto Device::get() -> Device& {
-  auto* loadedInstance = instance.load();
-  assert(loadedInstance != nullptr &&
-         "Device not initialized. Call `initialize()` first.");
-  return *loadedInstance;
-}
 
 auto Device::sessionAlloc(MQT_DDSIM_QDMI_Device_Session* session)
     -> QDMI_STATUS {

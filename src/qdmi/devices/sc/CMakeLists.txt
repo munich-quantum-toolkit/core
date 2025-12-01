@@ -23,8 +23,9 @@ if(NOT TARGET ${TARGET_NAME})
   target_sources(${TARGET_NAME} PRIVATE Generator.cpp)
 
   # add headers using file sets
-  target_sources(${TARGET_NAME} PUBLIC FILE_SET HEADERS BASE_DIRS ${MQT_CORE_INCLUDE_BUILD_DIR}
-                                       FILES ${MQT_CORE_INCLUDE_BUILD_DIR}/qdmi/sc/Generator.hpp)
+  target_sources(
+    ${TARGET_NAME} PUBLIC FILE_SET HEADERS BASE_DIRS ${MQT_CORE_INCLUDE_BUILD_DIR} FILES
+                          ${MQT_CORE_INCLUDE_BUILD_DIR}/qdmi/devices/sc/Generator.hpp)
 
   # Link nlohmann_json, spdlog
   target_link_libraries(
@@ -91,10 +92,10 @@ if(NOT TARGET ${TARGET_NAME})
 
   # Set paths
   set(JSON_FILE ${PROJECT_SOURCE_DIR}/json/sc/device.json)
-  set(DEVICE_HDR ${CMAKE_CURRENT_BINARY_DIR}/include/qdmi/sc/DeviceMemberInitializers.hpp)
+  set(DEVICE_HDR ${CMAKE_CURRENT_BINARY_DIR}/include/qdmi/devices/sc/DeviceMemberInitializers.hpp)
 
   # Create include directory
-  file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/include/qdmi/sc)
+  file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/include/qdmi/devices/sc)
 
   # Generate definitions for device
   add_custom_command(
@@ -125,21 +126,18 @@ if(NOT TARGET ${TARGET_NAME})
            ${CMAKE_CURRENT_BINARY_DIR}/include
            FILES
            ${DEVICE_HDR}
-           ${MQT_CORE_INCLUDE_BUILD_DIR}/qdmi/sc/Device.hpp
+           ${MQT_CORE_INCLUDE_BUILD_DIR}/qdmi/devices/sc/Device.hpp
            ${QDMI_HDRS})
 
   # add link libraries
   target_link_libraries(
     ${TARGET_NAME}
     PUBLIC qdmi::qdmi
-    PRIVATE MQT::ProjectOptions MQT::ProjectWarnings spdlog::spdlog)
+    PRIVATE MQT::CoreQDMIBaseDevice MQT::ProjectOptions MQT::ProjectWarnings spdlog::spdlog)
 
   # Always compile with position independent code such that the library can be used in shared
   # libraries
   set_target_properties(${TARGET_NAME} PROPERTIES POSITION_INDEPENDENT_CODE ON)
-
-  # set c++ standard
-  target_compile_features(${TARGET_NAME} PRIVATE cxx_std_20)
 
   # set versioning information
   set_target_properties(
@@ -185,7 +183,7 @@ if(NOT TARGET ${TARGET_NAME})
                ${CMAKE_CURRENT_BINARY_DIR}/include
                FILES
                ${DEVICE_HDR}
-               ${MQT_CORE_INCLUDE_BUILD_DIR}/qdmi/sc/Device.hpp
+               ${MQT_CORE_INCLUDE_BUILD_DIR}/qdmi/devices/sc/Device.hpp
                ${QDMI_HDRS})
       # add link libraries
       target_link_libraries(

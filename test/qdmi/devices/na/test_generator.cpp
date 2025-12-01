@@ -8,7 +8,7 @@
  * Licensed under the MIT License
  */
 
-#include "na/device/Generator.hpp"
+#include "qdmi/devices/na/Generator.hpp"
 
 #include <gtest/gtest.h>
 #include <sstream>

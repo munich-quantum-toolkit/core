@@ -1,0 +1,45 @@
+# Copyright (c) 2023 - 2025 Chair for Design Automation, TUM
+# Copyright (c) 2025 Munich Quantum Software Company GmbH
+# All rights reserved.
+#
+# SPDX-License-Identifier: MIT
+#
+# Licensed under the MIT License
+
+# Set target name
+set(TARGET_NAME ${MQT_CORE_TARGET_NAME}-qdmi-base-device)
+
+# If the target is not already defined
+if(NOT TARGET ${TARGET_NAME})
+  # Add library
+  add_library(${TARGET_NAME} INTERFACE)
+  add_library(MQT::CoreQDMIBaseDevice ALIAS ${TARGET_NAME})
+
+  # Set versioning information
+  set_target_properties(
+    ${name}
+    PROPERTIES VERSION ${PROJECT_VERSION}
+               SOVERSION ${PROJECT_VERSION_MAJOR}.${PROJECT_VERSION_MINOR}
+               EXPORT_NAME Core${ARG_ALIAS_NAME})
+
+  # add headers using file sets
+  target_sources(
+    ${TARGET_NAME} PUBLIC FILE_SET HEADERS BASE_DIRS ${MQT_CORE_INCLUDE_BUILD_DIR} FILES
+                          ${MQT_CORE_INCLUDE_BUILD_DIR}/qdmi/devices/base/Device.hpp)
+
+  # Always compile with position independent code such that the library can be used in shared
+  # libraries
+  set_target_properties(${TARGET_NAME} PROPERTIES POSITION_INDEPENDENT_CODE ON)
+
+  # set versioning information
+  set_target_properties(
+    ${TARGET_NAME}
+    PROPERTIES VERSION ${PROJECT_VERSION}
+               SOVERSION ${PROJECT_VERSION_MAJOR}.${PROJECT_VERSION_MINOR}
+               EXPORT_NAME CoreQDMIBaseDevice)
+
+  # add to list of MQT core targets
+  set(MQT_CORE_TARGETS
+      ${MQT_CORE_TARGETS} ${TARGET_NAME}
+      PARENT_SCOPE)
+endif()
