@@ -120,15 +120,16 @@ if coupling_map:
 
 The backend maps QDMI device operations to corresponding Qiskit gates, including:
 
-- **Single-qubit gates**: `x`, `y`, `z`, `h`, `s`, `t`, `sx`, `id`
-- **Parametric gates**: `rx`, `ry`, `rz`, `p`, `u`, `u2`, `u3`
-- **Two-qubit gates**: `cx`, `cy`, `cz`, `ch`, `swap`, `iswap`, `dcx`, `ecr`
-- **Parametric two-qubit gates**: `rxx`, `ryy`, `rzz`, `rzx`, `xx_plus_yy`, `xx_minus_yy`
-- **Measurement**: `measure`
+- **Single-qubit Pauli gates**: `x`, `y`, `z`, `id`/`i`
+- **Hadamard**: `h`
+- **Phase gates**: `s`, `sdg`, `t`, `tdg`, `sx`, `sxdg`, `p`, `phase`
+- **Rotation gates (parametric)**: `rx`, `ry`, `rz`, `r`/`prx`
+- **Universal gates (parametric)**: `u`, `u2`, `u3`
+- **Two-qubit gates**: `cx`/`cnot`, `cy`, `cz`, `ch`, `cs`, `csdg`, `csx`, `swap`, `iswap`, `dcx`, `ecr`
+- **Two-qubit parametric gates**: `cp`, `crx`, `cry`, `crz`, `rxx`, `ryy`, `rzz`, `rzx`, `xx_plus_yy`, `xx_minus_yy`
+- **Non-unitary operations**: `reset`, `measure`
 
 ## Circuit Execution
-
-### Basic Execution
 
 ```{code-cell} ipython3
 from qiskit import QuantumCircuit
@@ -147,22 +148,6 @@ counts = result.get_counts()
 print(f"Counts: {counts}")
 print(f"Total shots: {sum(counts.values())}")
 ```
-
-### Execution Options
-
-The backend supports various execution options:
-
-```python
-# Specify number of shots
-job = backend.run(circuit, shots=2048)
-
-# Change program format (default is QASM3)
-from mqt.core import fomac
-
-job = backend.run(circuit, shots=1024, program_format=fomac.ProgramFormat.QASM2)
-```
-
-### Circuit Requirements
 
 Circuits must meet the following requirements before execution:
 
@@ -188,7 +173,7 @@ job = backend.run(qc_bound, shots=100)  # Success
 
 ### Job Status
 
-The {py:class}`~mqt.core.plugins.qiskit.QiskitJob` wraps a FoMaC (QDMI) job and provides status tracking:
+The {py:class}`~mqt.core.plugins.qiskit.QDMIJob` wraps a FoMaC (QDMI) job and provides status tracking:
 
 ```python
 from qiskit.providers import JobStatus
@@ -198,14 +183,6 @@ job = backend.run(circuit, shots=1024)
 # Check job status
 status = job.status()
 print(f"Job status: {status}")
-
-# Job status mapping:
-# CREATED → INITIALIZING
-# QUEUED/SUBMITTED → QUEUED
-# RUNNING → RUNNING
-# DONE → DONE
-# CANCELED → CANCELLED
-# FAILED → ERROR
 ```
 
 ### Retrieving Results
@@ -257,8 +234,10 @@ The module provides specific exceptions for different error conditions:
 from mqt.core.plugins.qiskit import (
     CircuitValidationError,
     UnsupportedOperationError,
+    UnsupportedDeviceError,
     JobSubmissionError,
     TranslationError,
+    UnsupportedFormatError,
 )
 
 try:
@@ -270,12 +249,18 @@ except CircuitValidationError as e:
 except UnsupportedOperationError as e:
     # Circuit contains operations not supported by device
     print(f"Unsupported operation: {e}")
+except UnsupportedDeviceError as e:
+    # Device cannot be represented in Qiskit's Target model
+    print(f"Unsupported device: {e}")
 except JobSubmissionError as e:
     # Failed to submit job to device
     print(f"Job submission failed: {e}")
 except TranslationError as e:
     # Failed to convert circuit to QASM
     print(f"Translation error: {e}")
+except UnsupportedFormatError as e:
+    # No supported program format available
+    print(f"Unsupported format: {e}")
 ```
 
 ## Implementation Details
@@ -287,7 +272,7 @@ When you run a circuit, the backend:
 1. Validates the circuit (checks for unbound parameters, supported operations, valid options)
 2. Converts the circuit to QASM (QASM3 by default, QASM2 optionally)
 3. Submits the QASM program to the FoMaC (QDMI) device via `device.submit_job()`
-4. Returns a {py:class}`~mqt.core.plugins.qiskit.QiskitJob` wrapping the FoMaC (QDMI) job
+4. Returns a {py:class}`~mqt.core.plugins.qiskit.QDMIJob` wrapping the FoMaC (QDMI) job
 
 ### Device Introspection
 
@@ -303,6 +288,6 @@ The backend builds its {py:class}`~qiskit.transpiler.Target` by:
 For complete API documentation, see:
 
 - {py:class}`~mqt.core.plugins.qiskit.QDMIProvider` - Device provider interface
-- {py:class}`~mqt.core.plugins.qiskit.QiskitBackend` - BackendV2 implementation
-- {py:class}`~mqt.core.plugins.qiskit.QiskitJob` - Job wrapper and result handling
+- {py:class}`~mqt.core.plugins.qiskit.QDMIBackend` - BackendV2 implementation
+- {py:class}`~mqt.core.plugins.qiskit.QDMIJob` - Job wrapper and result handling
 - {py:mod}`~mqt.core.plugins.qiskit.exceptions` - Exception types
