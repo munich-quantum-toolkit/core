@@ -203,7 +203,6 @@ private:
         }
 
         for (const auto& next : unit.next()) {
-          llvm::dbgs() << "next!\n";
           units.emplace(next);
         }
       }

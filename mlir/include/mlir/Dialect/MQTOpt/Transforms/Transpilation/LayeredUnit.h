@@ -13,7 +13,6 @@
 #include "mlir/Dialect/MQTOpt/Transforms/Transpilation/Common.h"
 #include "mlir/Dialect/MQTOpt/Transforms/Transpilation/Layout.h"
 #include "mlir/Dialect/MQTOpt/Transforms/Transpilation/Unit.h"
-#include "mlir/Dialect/MQTOpt/Transforms/Transpilation/WireIterator.h"
 
 #include <cstddef>
 #include <iterator>
@@ -23,22 +22,16 @@
 
 namespace mqt::ir::opt {
 
-struct Wire {
-  Wire(const WireIterator& it, QubitIndex index) : it(it), index(index) {}
-  WireIterator it;
-  QubitIndex index;
-};
-
-using GateLayer = SmallVector<QubitIndexPair, 16>;
+using GateLayer = mlir::SmallVector<QubitIndexPair, 16>;
 
 struct OpLayer {
   /// @brief All ops contained inside this layer.
-  SmallVector<Operation*, 64> ops;
+  mlir::SmallVector<mlir::Operation*, 64> ops;
   /// @brief The first op in ops in textual IR order.
-  Operation* anchor{};
+  mlir::Operation* anchor{};
 
   /// @brief Add op to ops and reset anchor if necessary.
-  void addOp(Operation* op) {
+  void addOp(mlir::Operation* op) {
     ops.emplace_back(op);
     if (anchor == nullptr || op->isBeforeInBlock(anchor)) {
       anchor = op;
@@ -49,9 +42,9 @@ struct OpLayer {
 };
 
 struct WindowView {
-  ArrayRef<GateLayer> gateLayers;
+  mlir::ArrayRef<GateLayer> gateLayers;
   const OpLayer* opLayer{};
-  Operation* nextAnchor{};
+  mlir::Operation* nextAnchor{};
 };
 
 class SlidingWindow {
@@ -69,7 +62,7 @@ public:
       WindowView w;
       const auto sz = window->opLayers->size();
       const auto len = std::min(1 + window->nlookahead, sz - pos);
-      w.gateLayers = ArrayRef<GateLayer>(*window->gateLayers).slice(pos, len);
+      w.gateLayers = mlir::ArrayRef<GateLayer>(*window->gateLayers).slice(pos, len);
       w.opLayer = &(*window->opLayers)[pos];
       if (pos + 1 < window->gateLayers->size()) {
         w.nextAnchor = (*window->opLayers)[pos + 1].anchor;
@@ -97,8 +90,8 @@ public:
     std::size_t pos;
   };
 
-  explicit SlidingWindow(const SmallVector<GateLayer>& gateLayers,
-                         const SmallVector<OpLayer, 0>& opLayers,
+  explicit SlidingWindow(const mlir::SmallVector<GateLayer>& gateLayers,
+                         const mlir::SmallVector<OpLayer, 0>& opLayers,
                          const std::size_t nlookahead)
       : gateLayers(&gateLayers), opLayers(&opLayers), nlookahead(nlookahead) {}
 
@@ -108,8 +101,8 @@ public:
   static_assert(std::forward_iterator<Iterator>);
 
 private:
-  const SmallVector<GateLayer>* gateLayers;
-  const SmallVector<OpLayer, 0>* opLayers;
+  const mlir::SmallVector<GateLayer>* gateLayers;
+  const mlir::SmallVector<OpLayer, 0>* opLayers;
   std::size_t nlookahead;
 };
 
@@ -125,9 +118,9 @@ public:
     return {std::move(layout), &func.getBody()};
   }
 
-  LayeredUnit(Layout layout, Region* region, bool restore = false);
+  LayeredUnit(Layout layout, mlir::Region* region, bool restore = false);
 
-  [[nodiscard]] SmallVector<LayeredUnit, 3> next();
+  [[nodiscard]] mlir::SmallVector<LayeredUnit, 3> next();
   [[nodiscard]] SlidingWindow slidingWindow(std::size_t nlookahead) const;
 
 #ifndef NDEBUG
@@ -135,7 +128,7 @@ public:
 #endif
 
 private:
-  SmallVector<GateLayer> gateLayers;
-  SmallVector<OpLayer, 0> opLayers;
+  mlir::SmallVector<GateLayer> gateLayers;
+  mlir::SmallVector<OpLayer, 0> opLayers;
 };
 } // namespace mqt::ir::opt

@@ -11,13 +11,14 @@
 #include "mlir/Dialect/MQTOpt/Transforms/Transpilation/LayeredUnit.h"
 
 #include "mlir/Dialect/MQTOpt/IR/MQTOptDialect.h"
+#include "mlir/Dialect/MQTOpt/IR/WireIterator.h"
 #include "mlir/Dialect/MQTOpt/Transforms/Transpilation/Common.h"
 #include "mlir/Dialect/MQTOpt/Transforms/Transpilation/Layout.h"
 #include "mlir/Dialect/MQTOpt/Transforms/Transpilation/Unit.h"
-#include "mlir/Dialect/MQTOpt/Transforms/Transpilation/WireIterator.h"
 
 #include <cassert>
 #include <cstddef>
+#include <iterator>
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/Support/Compiler.h>
@@ -35,21 +36,29 @@
 namespace mqt::ir::opt {
 namespace {
 
+/// @brief A wire links a WireIterator and a program index.
+struct Wire {
+  Wire(const WireIterator& it, QubitIndex index) : it(it), index(index) {}
+  WireIterator it;
+  QubitIndex index;
+};
+
 /// @brief Map to handle multi-qubit gates when traversing the def-use chain.
 class SynchronizationMap {
 public:
   /// @returns true iff. the operation is contained in the map.
-  bool contains(Operation* op) const { return onHold.contains(op); }
+  bool contains(mlir::Operation* op) const { return onHold.contains(op); }
 
   /// @brief Add op with respective wire and ref count to map.
-  void add(Operation* op, Wire wire, const std::size_t cnt) {
-    onHold.try_emplace(op, SmallVector<Wire>{wire});
+  void add(mlir::Operation* op, Wire wire, const std::size_t cnt) {
+    onHold.try_emplace(op, mlir::SmallVector<Wire>{wire});
     /// Decrease the cnt by one because the op was visited when adding.
     refCount.try_emplace(op, cnt - 1);
   }
 
   /// @brief Decrement ref count of op and potentially release its iterators.
-  std::optional<SmallVector<Wire, 0>> visit(Operation* op, Wire wire) {
+  std::optional<mlir::SmallVector<Wire, 0>> visit(mlir::Operation* op,
+                                                  Wire wire) {
     assert(refCount.contains(op) && "expected sync map to contain op");
 
     /// Add iterator for later release.
@@ -65,24 +74,24 @@ public:
 
 private:
   /// @brief Maps operations to to-be-released iterators.
-  DenseMap<Operation*, SmallVector<Wire, 0>> onHold;
+  mlir::DenseMap<mlir::Operation*, mlir::SmallVector<Wire, 0>> onHold;
   /// @brief Maps operations to ref counts.
-  DenseMap<Operation*, std::size_t> refCount;
+  mlir::DenseMap<mlir::Operation*, std::size_t> refCount;
 };
 
-SmallVector<Wire, 2> skipTwoQubitBlock(ArrayRef<Wire> wires, OpLayer& opLayer) {
+mlir::SmallVector<Wire, 2> skipTwoQubitBlock(mlir::ArrayRef<Wire> wires,
+                                             OpLayer& opLayer) {
   assert(wires.size() == 2 && "expected two wires");
 
-  const WireIterator end;
   auto [it0, index0] = wires[0];
   auto [it1, index1] = wires[1];
-  while (it0 != end && it1 != end) {
-    Operation* op0 = *it0;
+  while (it0 != std::default_sentinel && it1 != std::default_sentinel) {
+    mlir::Operation* op0 = *it0;
     if (!isa<UnitaryInterface>(op0) || isa<BarrierOp>(op0)) {
       break;
     }
 
-    Operation* op1 = *it1;
+    mlir::Operation* op1 = *it1;
     if (!isa<UnitaryInterface>(op1) || isa<BarrierOp>(op1)) {
       break;
     }
@@ -121,17 +130,19 @@ SmallVector<Wire, 2> skipTwoQubitBlock(ArrayRef<Wire> wires, OpLayer& opLayer) {
 }
 } // namespace
 
-LayeredUnit::LayeredUnit(Layout layout, Region* region, bool restore)
+LayeredUnit::LayeredUnit(Layout layout, mlir::Region* region, bool restore)
     : Unit(std::move(layout), region, restore) {
   SynchronizationMap sync;
 
-  SmallVector<Wire, 0> curr;
-  SmallVector<Wire, 0> next;
+  mlir::SmallVector<Wire, 0> curr;
+  mlir::SmallVector<Wire, 0> next;
   curr.reserve(layout_.getNumQubits());
   next.reserve(layout_.getNumQubits());
 
   for (const auto q : layout_.getHardwareQubits()) {
-    curr.emplace_back(WireIterator(q, region_), layout_.lookupProgramIndex(q));
+    /// Increment the iterator here to skip the defining operation.
+    curr.emplace_back(++WireIterator(q, region_),
+                      layout_.lookupProgramIndex(q));
   }
 
   while (true) {
@@ -146,9 +157,9 @@ LayeredUnit::LayeredUnit(Layout layout, Region* region, bool restore)
     bool haltOnWire{};
 
     for (auto [it, index] : curr) {
-      while (it != WireIterator::end()) {
+      while (it != std::default_sentinel) {
         haltOnWire =
-            TypeSwitch<Operation*, bool>(*it)
+            mlir::TypeSwitch<mlir::Operation*, bool>(*it)
                 .Case<UnitaryInterface>([&](UnitaryInterface op) {
                   const auto nins = op.getInQubits().size() +
                                     op.getPosCtrlInQubits().size() +
@@ -182,17 +193,12 @@ LayeredUnit::LayeredUnit(Layout layout, Region* region, bool restore)
 
                   return true;
                 })
-                .Case<ResetOp>([&](ResetOp op) {
+                .Case<ResetOp, MeasureOp>([&](auto op) {
                   opLayer.addOp(op);
                   ++it;
                   return false;
                 })
-                .Case<MeasureOp>([&](MeasureOp op) {
-                  opLayer.addOp(op);
-                  ++it;
-                  return false;
-                })
-                .Case<scf::YieldOp>([&](scf::YieldOp yield) {
+                .Case<mlir::scf::YieldOp>([&](mlir::scf::YieldOp yield) {
                   if (!sync.contains(yield)) {
                     sync.add(yield, Wire(++it, index), layout_.getNumQubits());
                     return true;
@@ -205,18 +211,19 @@ LayeredUnit::LayeredUnit(Layout layout, Region* region, bool restore)
 
                   return true;
                 })
-                .Case<RegionBranchOpInterface>([&](RegionBranchOpInterface op) {
-                  if (!sync.contains(op)) {
-                    sync.add(op, Wire(++it, index), layout_.getNumQubits());
-                    return true;
-                  }
+                .Case<mlir::RegionBranchOpInterface>(
+                    [&](mlir::RegionBranchOpInterface op) {
+                      if (!sync.contains(op)) {
+                        sync.add(op, Wire(++it, index), layout_.getNumQubits());
+                        return true;
+                      }
 
-                  if (const auto iterators =
-                          sync.visit(op, Wire(++it, index))) {
-                    divider_ = op;
-                  }
-                  return true;
-                })
+                      if (const auto iterators =
+                              sync.visit(op, Wire(++it, index))) {
+                        divider_ = op;
+                      }
+                      return true;
+                    })
                 .Default([](auto) {
                   llvm_unreachable("unhandled operation");
                   return true;
@@ -262,14 +269,14 @@ LayeredUnit::LayeredUnit(Layout layout, Region* region, bool restore)
   };
 }
 
-SmallVector<LayeredUnit, 3> LayeredUnit::next() {
+mlir::SmallVector<LayeredUnit, 3> LayeredUnit::next() {
   if (divider_ == nullptr) {
     return {};
   }
 
-  SmallVector<LayeredUnit, 3> units;
-  TypeSwitch<Operation*>(divider_)
-      .Case<scf::ForOp>([&](scf::ForOp op) {
+  mlir::SmallVector<LayeredUnit, 3> units;
+  mlir::TypeSwitch<mlir::Operation*>(divider_)
+      .Case<mlir::scf::ForOp>([&](mlir::scf::ForOp op) {
         /// Copy layout.
         Layout forLayout(layout_);
 
@@ -287,7 +294,7 @@ SmallVector<LayeredUnit, 3> LayeredUnit::next() {
         units.emplace_back(std::move(layout_), region_, restore_);
         units.emplace_back(std::move(forLayout), &op.getRegion(), true);
       })
-      .Case<scf::IfOp>([&](scf::IfOp op) {
+      .Case<mlir::scf::IfOp>([&](mlir::scf::IfOp op) {
         units.emplace_back(layout_, &op.getThenRegion(), true);
         units.emplace_back(layout_, &op.getElseRegion(), true);
 

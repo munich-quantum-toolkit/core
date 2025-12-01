@@ -26,10 +26,10 @@ namespace mqt::ir::opt {
 
 class NaiveRouter {
 public:
-  [[nodiscard]] static SmallVector<QubitIndexPair, 64>
+  [[nodiscard]] static mlir::SmallVector<QubitIndexPair, 64>
   route(QubitIndexPair gate, const ThinLayout& layout,
         const Architecture& arch) {
-    SmallVector<QubitIndexPair, 64> swaps;
+    mlir::SmallVector<QubitIndexPair, 64> swaps;
     const auto hw0 = layout.getHardwareIndex(gate.first);
     const auto hw1 = layout.getHardwareIndex(gate.second);
     const auto path = arch.shortestPathBetween(hw0, hw1);
@@ -43,7 +43,7 @@ public:
 /// @brief Specifies the weights for different terms in the cost function f.
 struct HeuristicWeights {
   float alpha;
-  SmallVector<float> lambdas;
+  mlir::SmallVector<float> lambdas;
 
   HeuristicWeights(const float alpha, const float lambda,
                    const std::size_t nlookahead)
@@ -62,7 +62,7 @@ public:
 
 private:
   struct Node {
-    SmallVector<QubitIndexPair, 64> sequence;
+    mlir::SmallVector<QubitIndexPair, 64> sequence;
     ThinLayout layout;
     float f;
 
@@ -76,7 +76,7 @@ private:
      * @brief Construct a non-root node from its parent node. Apply the given
      * swap to the layout of the parent node and evaluate the cost.
      */
-    Node(const Node& parent, QubitIndexPair swap, ArrayRef<GateLayer> window,
+    Node(const Node& parent, QubitIndexPair swap, mlir::ArrayRef<GateLayer> window,
          const Architecture& arch, const HeuristicWeights& weights)
         : sequence(parent.sequence), layout(parent.layout), f(0) {
       /// Apply node-specific swap to given layout.
@@ -128,7 +128,7 @@ private:
      * its hardware qubits. Intuitively, this is the number of SWAPs that a
      * naive router would insert to route the layers.
      */
-    [[nodiscard]] float h(ArrayRef<GateLayer> window, const Architecture& arch,
+    [[nodiscard]] float h(mlir::ArrayRef<GateLayer> window, const Architecture& arch,
                           const HeuristicWeights& weights) const {
       float nn{0};
       for (const auto [i, layer] : llvm::enumerate(window)) {
@@ -145,14 +145,14 @@ private:
   using MinQueue = std::priority_queue<Node, std::vector<Node>, std::greater<>>;
 
 public:
-  [[nodiscard]] std::optional<SmallVector<QubitIndexPair, 64>>
-  route(ArrayRef<GateLayer> window, const ThinLayout& layout,
+  [[nodiscard]] std::optional<mlir::SmallVector<QubitIndexPair, 64>>
+  route(mlir::ArrayRef<GateLayer> window, const ThinLayout& layout,
         const Architecture& arch) const {
     Node root(layout);
 
     /// Early exit. No SWAPs required:
     if (root.isGoal(window.front(), arch)) {
-      return SmallVector<QubitIndexPair, 64>{};
+      return mlir::SmallVector<QubitIndexPair, 64>{};
     }
 
     /// Initialize queue.
@@ -178,7 +178,7 @@ public:
 private:
   /// @brief Expand frontier with all neighbouring SWAPs in the current front.
   void expand(MinQueue& frontier, const Node& parent,
-              ArrayRef<GateLayer> window, const Architecture& arch) const {
+              mlir::ArrayRef<GateLayer> window, const Architecture& arch) const {
     llvm::SmallDenseSet<QubitIndexPair, 64> expansionSet{};
 
     /// Currently: Don't revert last SWAP.
