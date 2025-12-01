@@ -8,17 +8,22 @@
  * Licensed under the MIT License
  */
 
+#include "mlir/Dialect/MQTOpt/Transforms/Decomposition/EulerBasis.h"
 #include "mlir/Dialect/MQTOpt/Transforms/Decomposition/EulerDecomposition.h"
+#include "mlir/Dialect/MQTOpt/Transforms/Decomposition/GateSequence.h"
 #include "mlir/Dialect/MQTOpt/Transforms/Decomposition/Helpers.h"
 #include "mlir/Dialect/MQTOpt/Transforms/Decomposition/UnitaryMatrices.h"
 
 #include <Eigen/QR>
+#include <array>
 #include <cassert>
 #include <chrono>
 #include <cmath>
 #include <cstdlib>
 #include <gtest/gtest.h>
 #include <iostream>
+#include <optional>
+#include <tuple>
 
 using namespace mqt::ir::opt;
 using namespace mqt::ir::opt::decomposition;
