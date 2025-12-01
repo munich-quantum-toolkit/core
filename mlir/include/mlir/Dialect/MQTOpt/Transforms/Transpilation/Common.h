@@ -16,6 +16,7 @@
 #include <llvm/ADT/StringRef.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/IR/BuiltinAttributes.h>
+#include <mlir/IR/PatternMatch.h>
 #include <mlir/IR/Value.h>
 #include <utility>
 

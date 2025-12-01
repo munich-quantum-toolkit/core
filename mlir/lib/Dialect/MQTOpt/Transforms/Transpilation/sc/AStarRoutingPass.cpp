@@ -107,7 +107,7 @@ struct AStarRoutingPassSC final
     if (failed(route())) {
       signalPassFailure();
       return;
-    };
+    }
   }
 
 private:
@@ -133,7 +133,7 @@ private:
 
       if (!isEntryPoint(func)) {
         LLVM_DEBUG(llvm::dbgs() << "\tskip non entry\n");
-        return success(); // Ignore non entry_point functions for now.
+        continue;
       }
 
       /// Iteratively process each unit in the function.

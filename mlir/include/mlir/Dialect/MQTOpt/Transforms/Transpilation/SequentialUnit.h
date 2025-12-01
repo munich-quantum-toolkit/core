@@ -10,11 +10,13 @@
 
 #pragma once
 
+#include "mlir/Dialect/MQTOpt/IR/MQTOptDialect.h"
 #include "mlir/Dialect/MQTOpt/Transforms/Transpilation/Layout.h"
 #include "mlir/Dialect/MQTOpt/Transforms/Transpilation/Unit.h"
 
 #include <cstddef>
 #include <llvm/ADT/STLExtras.h>
+#include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/IR/Region.h>
 #include <mlir/Support/LLVM.h>
 
