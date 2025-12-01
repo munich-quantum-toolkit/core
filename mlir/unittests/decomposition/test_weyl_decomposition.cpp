@@ -73,6 +73,28 @@ public:
   k2(const TwoQubitWeylDecomposition& decomposition) {
     return helpers::kroneckerProduct(decomposition.k2l, decomposition.k2r);
   }
+
+  [[nodiscard]] static matrix4x4 ud(fp a, fp b, fp c, bool flipped = false) {
+    if (flipped) {
+      c = -c;
+    }
+    return matrix4x4{{std::exp(IM * c) * std::cos(a - b), C_ZERO, C_ZERO,
+                      IM * std::exp(IM * c) * std::sin(a - b)},
+                     {C_ZERO, std::exp(M_IM * c) * std::cos(a + b),
+                      IM * std::exp(M_IM * c) * std::sin(a + b), C_ZERO},
+                     {C_ZERO, IM * std::exp(M_IM * c) * std::sin(a + b),
+                      std::exp(M_IM * c) * std::cos(a + b), C_ZERO},
+                     {IM * std::exp(IM * c) * std::sin(a - b), C_ZERO, C_ZERO,
+                      std::exp(IM * c) * std::cos(a - b)}};
+  }
+
+  [[nodiscard]] static matrix4x4 fSimMatrix(fp theta, fp phi) {
+    auto isin = -IM * std::sin(theta);
+    auto cos = std::cos(theta);
+    auto x = std::exp(-IM * phi);
+    return matrix4x4{
+        {1, 0, 0, 0}, {0, cos, isin, 0}, {0, isin, cos, 0}, {0, 0, 0, x}};
+  }
 };
 
 TEST_P(WeylDecompositionTest, TestExact) {
@@ -136,3 +158,28 @@ INSTANTIATE_TEST_CASE_P(
             getTwoQubitMatrix(
                 {.type = qc::X, .parameter = {}, .qubitId = {0, 1}}) *
             helpers::kroneckerProduct(IPX, IPY)));
+
+INSTANTIATE_TEST_CASE_P(
+    SpecializedMatrices, WeylDecompositionTest,
+    ::testing::Values(
+        // id + controlled + general already covered by other parametrizations
+        // swap equiv
+        getTwoQubitMatrix({.type = qc::X, .parameter = {}, .qubitId = {0, 1}}) *
+            getTwoQubitMatrix(
+                {.type = qc::X, .parameter = {}, .qubitId = {1, 0}}) *
+            getTwoQubitMatrix(
+                {.type = qc::X, .parameter = {}, .qubitId = {0, 1}}),
+        // partial swap equiv
+        WeylDecompositionTest::ud(0.5, 0.5, 0.5, false),
+        // partial swap equiv (flipped)
+        WeylDecompositionTest::ud(0.5, 0.5, 0.5, true),
+        // mirror controlled equiv
+        getTwoQubitMatrix({.type = qc::X, .parameter = {}, .qubitId = {0, 1}}) *
+            getTwoQubitMatrix(
+                {.type = qc::X, .parameter = {}, .qubitId = {1, 0}}),
+        // sim aab equiv
+        WeylDecompositionTest::fSimMatrix(2.6, 5.5),
+        // sim abb equiv
+        WeylDecompositionTest::ud(0.5, 0.1, 0.1),
+        // sim -ab-b equiv
+        WeylDecompositionTest::fSimMatrix(-3.2, -4.5)));
