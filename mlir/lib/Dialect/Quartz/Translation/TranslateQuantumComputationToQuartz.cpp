@@ -245,626 +245,251 @@ getPosControls(const qc::Operation& operation,
   return controls;
 }
 
-/**
- * @brief Adds an Id operation
- *
- * @details
- * Translates an Id operation from the QuantumComputation to quartz.id.
- *
- * @param builder The QuartzProgramBuilder used to create operations
- * @param operation The Id operation to translate
- * @param qubits Flat vector of qubit values indexed by physical qubit index
- */
-void addIdOp(QuartzProgramBuilder& builder, const qc::Operation& operation,
-             const llvm::SmallVector<Value>& qubits) {
-  const auto& target = qubits[operation.getTargets()[0]];
-  if (const auto& posControls = getPosControls(operation, qubits);
-      posControls.empty()) {
-    builder.id(target);
-  } else {
-    builder.mcid(posControls, target);
-  }
-}
+// OneTargetZeroParameter
 
-/**
- * @brief Adds an X operation
- *
- * @details
- * Translates an X operation from the QuantumComputation to quartz.x.
- *
- * @param builder The QuartzProgramBuilder used to create operations
- * @param operation The X operation to translate
- * @param qubits Flat vector of qubit values indexed by physical qubit index
- */
-void addXOp(QuartzProgramBuilder& builder, const qc::Operation& operation,
-            const llvm::SmallVector<Value>& qubits) {
-  const auto& target = qubits[operation.getTargets()[0]];
-  if (const auto& posControls = getPosControls(operation, qubits);
-      posControls.empty()) {
-    builder.x(target);
-  } else {
-    builder.mcx(posControls, target);
+#define DEFINE_ONE_TARGET_ZERO_PARAMETER(OP_QC, OP_QUARTZ)                     \
+  /**                                                                          \
+   * @brief Adds a quartz.OP_QUARTZ operation                                  \
+   *                                                                           \
+   * @details                                                                  \
+   * Translates an OP_QC operation from the QuantumComputation to              \
+   * quartz.OP_QUARTZ.                                                         \
+   *                                                                           \
+   * @param builder The QuartzProgramBuilder used to create operations         \
+   * @param operation The OP_QC operation to translate                         \
+   * @param qubits Flat vector of qubit values indexed by physical qubit index \
+   */                                                                          \
+  void add##OP_QC##Op(QuartzProgramBuilder& builder,                           \
+                      const qc::Operation& operation,                          \
+                      const llvm::SmallVector<Value>& qubits) {                \
+    const auto& target = qubits[operation.getTargets()[0]];                    \
+    if (const auto& posControls = getPosControls(operation, qubits);           \
+        posControls.empty()) {                                                 \
+      builder.OP_QUARTZ(target);                                               \
+    } else {                                                                   \
+      builder.mc##OP_QUARTZ(posControls, target);                              \
+    }                                                                          \
   }
-}
 
-/**
- * @brief Adds a Y operation
- *
- * @details
- * Translates a Y operation from the QuantumComputation to quartz.y.
- *
- * @param builder The QuartzProgramBuilder used to create operations
- * @param operation The Y operation to translate
- * @param qubits Flat vector of qubit values indexed by physical qubit index
- */
-void addYOp(QuartzProgramBuilder& builder, const qc::Operation& operation,
-            const llvm::SmallVector<Value>& qubits) {
-  const auto& target = qubits[operation.getTargets()[0]];
-  if (const auto& posControls = getPosControls(operation, qubits);
-      posControls.empty()) {
-    builder.y(target);
-  } else {
-    builder.mcy(posControls, target);
-  }
-}
+DEFINE_ONE_TARGET_ZERO_PARAMETER(I, id)
+DEFINE_ONE_TARGET_ZERO_PARAMETER(X, x)
+DEFINE_ONE_TARGET_ZERO_PARAMETER(Y, y)
+DEFINE_ONE_TARGET_ZERO_PARAMETER(Z, z)
+DEFINE_ONE_TARGET_ZERO_PARAMETER(H, h)
+DEFINE_ONE_TARGET_ZERO_PARAMETER(S, s)
+DEFINE_ONE_TARGET_ZERO_PARAMETER(Sdg, sdg)
+DEFINE_ONE_TARGET_ZERO_PARAMETER(T, t)
+DEFINE_ONE_TARGET_ZERO_PARAMETER(Tdg, tdg)
+DEFINE_ONE_TARGET_ZERO_PARAMETER(SX, sx)
+DEFINE_ONE_TARGET_ZERO_PARAMETER(SXdg, sxdg)
 
-/**
- * @brief Adds a Z operation
- *
- * @details
- * Translates a Z operation from the QuantumComputation to quartz.z.
- *
- * @param builder The QuartzProgramBuilder used to create operations
- * @param operation The Z operation to translate
- * @param qubits Flat vector of qubit values indexed by physical qubit index
- */
-void addZOp(QuartzProgramBuilder& builder, const qc::Operation& operation,
-            const llvm::SmallVector<Value>& qubits) {
-  const auto& target = qubits[operation.getTargets()[0]];
-  if (const auto& posControls = getPosControls(operation, qubits);
-      posControls.empty()) {
-    builder.z(target);
-  } else {
-    builder.mcz(posControls, target);
-  }
-}
+#undef DEFINE_ONE_TARGET_ZERO_PARAMETER
 
-/**
- * @brief Adds an H operation
- *
- * @details
- * Translates an H operation from the QuantumComputation to quartz.h.
- *
- * @param builder The QuartzProgramBuilder used to create operations
- * @param operation The H operation to translate
- * @param qubits Flat vector of qubit values indexed by physical qubit index
- */
-void addHOp(QuartzProgramBuilder& builder, const qc::Operation& operation,
-            const llvm::SmallVector<Value>& qubits) {
-  const auto& target = qubits[operation.getTargets()[0]];
-  if (const auto& posControls = getPosControls(operation, qubits);
-      posControls.empty()) {
-    builder.h(target);
-  } else {
-    builder.mch(posControls, target);
-  }
-}
+// OneTargetOneParameter
 
-/**
- * @brief Adds an S operation
- *
- * @details
- * Translates an S operation from the QuantumComputation to quartz.s.
- *
- * @param builder The QuartzProgramBuilder used to create operations
- * @param operation The S operation to translate
- * @param qubits Flat vector of qubit values indexed by physical qubit index
- */
-void addSOp(QuartzProgramBuilder& builder, const qc::Operation& operation,
-            const llvm::SmallVector<Value>& qubits) {
-  const auto& target = qubits[operation.getTargets()[0]];
-  if (const auto& posControls = getPosControls(operation, qubits);
-      posControls.empty()) {
-    builder.s(target);
-  } else {
-    builder.mcs(posControls, target);
+#define DEFINE_ONE_TARGET_ONE_PARAMETER(OP_QC, OP_QUARTZ)                      \
+  /**                                                                          \
+   * @brief Adds a quartz.OP_QUARTZ operation                                  \
+   *                                                                           \
+   * @details                                                                  \
+   * Translates an OP_QC operation from the QuantumComputation to              \
+   * quartz.OP_QUARTZ.                                                         \
+   *                                                                           \
+   * @param builder The QuartzProgramBuilder used to create operations         \
+   * @param operation The OP_QC operation to translate                         \
+   * @param qubits Flat vector of qubit values indexed by physical qubit index \
+   */                                                                          \
+  void add##OP_QC##Op(QuartzProgramBuilder& builder,                           \
+                      const qc::Operation& operation,                          \
+                      const llvm::SmallVector<Value>& qubits) {                \
+    const auto& param = operation.getParameter()[0];                           \
+    const auto& target = qubits[operation.getTargets()[0]];                    \
+    if (const auto& posControls = getPosControls(operation, qubits);           \
+        posControls.empty()) {                                                 \
+      builder.OP_QUARTZ(param, target);                                        \
+    } else {                                                                   \
+      builder.mc##OP_QUARTZ(param, posControls, target);                       \
+    }                                                                          \
   }
-}
 
-/**
- * @brief Adds an Sdg operation
- *
- * @details
- * Translates an Sdg operation from the QuantumComputation to quartz.sdg.
- *
- * @param builder The QuartzProgramBuilder used to create operations
- * @param operation The Sdg operation to translate
- * @param qubits Flat vector of qubit values indexed by physical qubit index
- */
-void addSdgOp(QuartzProgramBuilder& builder, const qc::Operation& operation,
-              const llvm::SmallVector<Value>& qubits) {
-  const auto& target = qubits[operation.getTargets()[0]];
-  if (const auto& posControls = getPosControls(operation, qubits);
-      posControls.empty()) {
-    builder.sdg(target);
-  } else {
-    builder.mcsdg(posControls, target);
-  }
-}
+DEFINE_ONE_TARGET_ONE_PARAMETER(RX, rx)
+DEFINE_ONE_TARGET_ONE_PARAMETER(RY, ry)
+DEFINE_ONE_TARGET_ONE_PARAMETER(RZ, rz)
+DEFINE_ONE_TARGET_ONE_PARAMETER(P, p)
 
-/**
- * @brief Adds a T operation
- *
- * @details
- * Translates a T operation from the QuantumComputation to quartz.t.
- *
- * @param builder The QuartzProgramBuilder used to create operations
- * @param operation The T operation to translate
- * @param qubits Flat vector of qubit values indexed by physical qubit index
- */
-void addTOp(QuartzProgramBuilder& builder, const qc::Operation& operation,
-            const llvm::SmallVector<Value>& qubits) {
-  const auto& target = qubits[operation.getTargets()[0]];
-  if (const auto& posControls = getPosControls(operation, qubits);
-      posControls.empty()) {
-    builder.t(target);
-  } else {
-    builder.mct(posControls, target);
-  }
-}
+// OneTargetTwoParameter
 
-/**
- * @brief Adds a Tdg operation
- *
- * @details
- * Translates a Tdg operation from the QuantumComputation to quartz.tdg.
- *
- * @param builder The QuartzProgramBuilder used to create operations
- * @param operation The Tdg operation to translate
- * @param qubits Flat vector of qubit values indexed by physical qubit index
- */
-void addTdgOp(QuartzProgramBuilder& builder, const qc::Operation& operation,
-              const llvm::SmallVector<Value>& qubits) {
-  const auto& target = qubits[operation.getTargets()[0]];
-  if (const auto& posControls = getPosControls(operation, qubits);
-      posControls.empty()) {
-    builder.tdg(target);
-  } else {
-    builder.mctdg(posControls, target);
+#define DEFINE_ONE_TARGET_TWO_PARAMETER(OP_QC, OP_QUARTZ)                      \
+  /**                                                                          \
+   * @brief Adds a quartz.OP_QUARTZ operation                                  \
+   *                                                                           \
+   * @details                                                                  \
+   * Translates an OP_QC operation from the QuantumComputation to              \
+   * quartz.OP_QUARTZ.                                                         \
+   *                                                                           \
+   * @param builder The QuartzProgramBuilder used to create operations         \
+   * @param operation The OP_QC operation to translate                         \
+   * @param qubits Flat vector of qubit values indexed by physical qubit index \
+   */                                                                          \
+  void add##OP_QC##Op(QuartzProgramBuilder& builder,                           \
+                      const qc::Operation& operation,                          \
+                      const llvm::SmallVector<Value>& qubits) {                \
+    const auto& param1 = operation.getParameter()[0];                          \
+    const auto& param2 = operation.getParameter()[1];                          \
+    const auto& target = qubits[operation.getTargets()[0]];                    \
+    if (const auto& posControls = getPosControls(operation, qubits);           \
+        posControls.empty()) {                                                 \
+      builder.OP_QUARTZ(param1, param2, target);                               \
+    } else {                                                                   \
+      builder.mc##OP_QUARTZ(param1, param2, posControls, target);              \
+    }                                                                          \
   }
-}
 
-/**
- * @brief Adds an SX operation
- *
- * @details
- * Translates an SX operation from the QuantumComputation to quartz.sx.
- *
- * @param builder The QuartzProgramBuilder used to create operations
- * @param operation The SX operation to translate
- * @param qubits Flat vector of qubit values indexed by physical qubit index
- */
-void addSXOp(QuartzProgramBuilder& builder, const qc::Operation& operation,
-             const llvm::SmallVector<Value>& qubits) {
-  const auto& target = qubits[operation.getTargets()[0]];
-  if (const auto& posControls = getPosControls(operation, qubits);
-      posControls.empty()) {
-    builder.sx(target);
-  } else {
-    builder.mcsx(posControls, target);
-  }
-}
+DEFINE_ONE_TARGET_TWO_PARAMETER(R, r)
+DEFINE_ONE_TARGET_TWO_PARAMETER(U2, u2)
 
-/**
- * @brief Adds an SXdg operation
- *
- * @details
- * Translates an SXdg operation from the QuantumComputation to quartz.sxdg.
- *
- * @param builder The QuartzProgramBuilder used to create operations
- * @param operation The SXdg operation to translate
- * @param qubits Flat vector of qubit values indexed by physical qubit index
- */
-void addSXdgOp(QuartzProgramBuilder& builder, const qc::Operation& operation,
-               const llvm::SmallVector<Value>& qubits) {
-  const auto& target = qubits[operation.getTargets()[0]];
-  if (const auto& posControls = getPosControls(operation, qubits);
-      posControls.empty()) {
-    builder.sxdg(target);
-  } else {
-    builder.mcsxdg(posControls, target);
-  }
-}
+#undef DEFINE_ONE_TARGET_TWO_PARAMETER
 
-/**
- * @brief Adds an RX operation
- *
- * @details
- * Translates an RX operation from the QuantumComputation to quartz.rx.
- *
- * @param builder The QuartzProgramBuilder used to create operations
- * @param operation The RX operation to translate
- * @param qubits Flat vector of qubit values indexed by physical qubit index
- */
-void addRXOp(QuartzProgramBuilder& builder, const qc::Operation& operation,
-             const llvm::SmallVector<Value>& qubits) {
-  const auto& theta = operation.getParameter()[0];
-  const auto& target = qubits[operation.getTargets()[0]];
-  if (const auto& posControls = getPosControls(operation, qubits);
-      posControls.empty()) {
-    builder.rx(theta, target);
-  } else {
-    builder.mcrx(theta, posControls, target);
-  }
-}
+// OneTargetThreeParameter
 
-/**
- * @brief Adds an RY operation
- *
- * @details
- * Translates an RY operation from the QuantumComputation to quartz.ry.
- *
- * @param builder The QuartzProgramBuilder used to create operations
- * @param operation The RY operation to translate
- * @param qubits Flat vector of qubit values indexed by physical qubit index
- */
-void addRYOp(QuartzProgramBuilder& builder, const qc::Operation& operation,
-             const llvm::SmallVector<Value>& qubits) {
-  const auto& theta = operation.getParameter()[0];
-  const auto& target = qubits[operation.getTargets()[0]];
-  if (const auto& posControls = getPosControls(operation, qubits);
-      posControls.empty()) {
-    builder.ry(theta, target);
-  } else {
-    builder.mcry(theta, posControls, target);
+#define DEFINE_ONE_TARGET_THREE_PARAMETER(OP_QC, OP_QUARTZ)                    \
+  /**                                                                          \
+   * @brief Adds a quartz.OP_QUARTZ operation                                  \
+   *                                                                           \
+   * @details                                                                  \
+   * Translates an OP_QC operation from the QuantumComputation to              \
+   * quartz.OP_QUARTZ.                                                         \
+   *                                                                           \
+   * @param builder The QuartzProgramBuilder used to create operations         \
+   * @param operation The OP_QC operation to translate                         \
+   * @param qubits Flat vector of qubit values indexed by physical qubit index \
+   */                                                                          \
+  void add##OP_QC##Op(QuartzProgramBuilder& builder,                           \
+                      const qc::Operation& operation,                          \
+                      const llvm::SmallVector<Value>& qubits) {                \
+    const auto& param1 = operation.getParameter()[0];                          \
+    const auto& param2 = operation.getParameter()[1];                          \
+    const auto& param3 = operation.getParameter()[2];                          \
+    const auto& target = qubits[operation.getTargets()[0]];                    \
+    if (const auto& posControls = getPosControls(operation, qubits);           \
+        posControls.empty()) {                                                 \
+      builder.OP_QUARTZ(param1, param2, param3, target);                       \
+    } else {                                                                   \
+      builder.mc##OP_QUARTZ(param1, param2, param3, posControls, target);      \
+    }                                                                          \
   }
-}
 
-/**
- * @brief Adds an RZ operation
- *
- * @details
- * Translates an RZ operation from the QuantumComputation to quartz.rz.
- *
- * @param builder The QuartzProgramBuilder used to create operations
- * @param operation The RZ operation to translate
- * @param qubits Flat vector of qubit values indexed by physical qubit index
- */
-void addRZOp(QuartzProgramBuilder& builder, const qc::Operation& operation,
-             const llvm::SmallVector<Value>& qubits) {
-  const auto& theta = operation.getParameter()[0];
-  const auto& target = qubits[operation.getTargets()[0]];
-  if (const auto& posControls = getPosControls(operation, qubits);
-      posControls.empty()) {
-    builder.rz(theta, target);
-  } else {
-    builder.mcrz(theta, posControls, target);
-  }
-}
+DEFINE_ONE_TARGET_THREE_PARAMETER(U, u)
 
-/**
- * @brief Adds a P operation
- *
- * @details
- * Translates a P operation from the QuantumComputation to quartz.p.
- *
- * @param builder The QuartzProgramBuilder used to create operations
- * @param operation The P operation to translate
- * @param qubits Flat vector of qubit values indexed by physical qubit index
- */
-void addPOp(QuartzProgramBuilder& builder, const qc::Operation& operation,
-            const llvm::SmallVector<Value>& qubits) {
-  const auto& theta = operation.getParameter()[0];
-  const auto& target = qubits[operation.getTargets()[0]];
-  if (const auto& posControls = getPosControls(operation, qubits);
-      posControls.empty()) {
-    builder.p(theta, target);
-  } else {
-    builder.mcp(theta, posControls, target);
-  }
-}
+#undef DEFINE_ONE_TARGET_THREE_PARAMETER
 
-/**
- * @brief Adds an R operation
- *
- * @details
- * Translates an R operation from the QuantumComputation to quartz.r.
- *
- * @param builder The QuartzProgramBuilder used to create operations
- * @param operation The R operation to translate
- * @param qubits Flat vector of qubit values indexed by physical qubit index
- */
-void addROp(QuartzProgramBuilder& builder, const qc::Operation& operation,
-            const llvm::SmallVector<Value>& qubits) {
-  const auto& theta = operation.getParameter()[0];
-  const auto& phi = operation.getParameter()[1];
-  const auto& target = qubits[operation.getTargets()[0]];
-  if (const auto& posControls = getPosControls(operation, qubits);
-      posControls.empty()) {
-    builder.r(theta, phi, target);
-  } else {
-    builder.mcr(theta, phi, posControls, target);
-  }
-}
+// TwoTargetZeroParameter
 
-/**
- * @brief Adds a U2 operation
- *
- * @details
- * Translate a U2 operation from the QuantumComputation to quartz.u2.
- *
- * @param builder The QuartzProgramBuilder used to create operations
- * @param operation The U2 operation to translate
- * @param qubits Flat vector of qubit values indexed by physical qubit index
- */
-void addU2Op(QuartzProgramBuilder& builder, const qc::Operation& operation,
-             const llvm::SmallVector<Value>& qubits) {
-  const auto& phi = operation.getParameter()[0];
-  const auto& lambda = operation.getParameter()[1];
-  const auto& target = qubits[operation.getTargets()[0]];
-  if (const auto& posControls = getPosControls(operation, qubits);
-      posControls.empty()) {
-    builder.u2(phi, lambda, target);
-  } else {
-    builder.mcu2(phi, lambda, posControls, target);
+#define DEFINE_TWO_TARGET_ZERO_PARAMETER(OP_QC, OP_QUARTZ)                     \
+  /**                                                                          \
+   * @brief Adds a quartz.OP_QUARTZ operation                                  \
+   *                                                                           \
+   * @details                                                                  \
+   * Translates an OP_QC operation from the QuantumComputation to              \
+   * quartz.OP_QUARTZ.                                                         \
+   *                                                                           \
+   * @param builder The QuartzProgramBuilder used to create operations         \
+   * @param operation The OP_QC operation to translate                         \
+   * @param qubits Flat vector of qubit values indexed by physical qubit index \
+   */                                                                          \
+  void add##OP_QC##Op(QuartzProgramBuilder& builder,                           \
+                      const qc::Operation& operation,                          \
+                      const llvm::SmallVector<Value>& qubits) {                \
+    const auto& target0 = qubits[operation.getTargets()[0]];                   \
+    const auto& target1 = qubits[operation.getTargets()[1]];                   \
+    if (const auto& posControls = getPosControls(operation, qubits);           \
+        posControls.empty()) {                                                 \
+      builder.OP_QUARTZ(target0, target1);                                     \
+    } else {                                                                   \
+      builder.mc##OP_QUARTZ(posControls, target0, target1);                    \
+    }                                                                          \
   }
-}
 
-/**
- * @brief Adds a U operation
- *
- * @details
- * Translate a U operation from the QuantumComputation to quartz.u.
- *
- * @param builder The QuartzProgramBuilder used to create operations
- * @param operation The U operation to translate
- * @param qubits Flat vector of qubit values indexed by physical qubit index
- */
-void addUOp(QuartzProgramBuilder& builder, const qc::Operation& operation,
-            const llvm::SmallVector<Value>& qubits) {
-  const auto& theta = operation.getParameter()[0];
-  const auto& phi = operation.getParameter()[1];
-  const auto& lambda = operation.getParameter()[2];
-  const auto& target = qubits[operation.getTargets()[0]];
-  if (const auto& posControls = getPosControls(operation, qubits);
-      posControls.empty()) {
-    builder.u(theta, phi, lambda, target);
-  } else {
-    builder.mcu(theta, phi, lambda, posControls, target);
-  }
-}
+DEFINE_TWO_TARGET_ZERO_PARAMETER(SWAP, swap)
+DEFINE_TWO_TARGET_ZERO_PARAMETER(iSWAP, iswap)
+DEFINE_TWO_TARGET_ZERO_PARAMETER(DCX, dcx)
+DEFINE_TWO_TARGET_ZERO_PARAMETER(ECR, ecr)
 
-/**
- * @brief Adds a SWAP operation
- *
- * @details
- * Translate a SWAP operation from the QuantumComputation to quartz.swap.
- *
- * @param builder The QuartzProgramBuilder used to create operations
- * @param operation The SWAP operation to translate
- * @param qubits Flat vector of qubit values indexed by physical qubit index
- */
-void addSWAPOp(QuartzProgramBuilder& builder, const qc::Operation& operation,
-               const llvm::SmallVector<Value>& qubits) {
-  const auto& target0 = qubits[operation.getTargets()[0]];
-  const auto& target1 = qubits[operation.getTargets()[1]];
-  if (const auto& posControls = getPosControls(operation, qubits);
-      posControls.empty()) {
-    builder.swap(target0, target1);
-  } else {
-    builder.mcswap(posControls, target0, target1);
-  }
-}
+#undef DEFINE_TWO_TARGET_ZERO_PARAMETER
 
-/**
- * @brief Adds an iSWAP operation
- *
- * @details
- * Translate an iSWAP operation from the QuantumComputation to quartz.iswap.
- *
- * @param builder The QuartzProgramBuilder used to create operations
- * @param operation The iSWAP operation to translate
- * @param qubits Flat vector of qubit values indexed by physical qubit index
- */
-void addiSWAPOp(QuartzProgramBuilder& builder, const qc::Operation& operation,
-                const llvm::SmallVector<Value>& qubits) {
-  const auto& target0 = qubits[operation.getTargets()[0]];
-  const auto& target1 = qubits[operation.getTargets()[1]];
-  if (const auto& posControls = getPosControls(operation, qubits);
-      posControls.empty()) {
-    builder.iswap(target0, target1);
-  } else {
-    builder.mciswap(posControls, target0, target1);
-  }
-}
+// TwoTargetOneParameter
 
-/**
- * @brief Adds a DCX operation
- *
- * @details
- * Translate a DCX operation from the QuantumComputation to quartz.dcx.
- *
- * @param builder The QuartzProgramBuilder used to create operations
- * @param operation The DCX operation to translate
- * @param qubits Flat vector of qubit values indexed by physical qubit index
- */
-void addDCXOp(QuartzProgramBuilder& builder, const qc::Operation& operation,
-              const llvm::SmallVector<Value>& qubits) {
-  const auto& target0 = qubits[operation.getTargets()[0]];
-  const auto& target1 = qubits[operation.getTargets()[1]];
-  if (const auto& posControls = getPosControls(operation, qubits);
-      posControls.empty()) {
-    builder.dcx(target0, target1);
-  } else {
-    builder.mcdcx(posControls, target0, target1);
+#define DEFINE_TWO_TARGET_ONE_PARAMETER(OP_QC, OP_QUARTZ)                      \
+  /**                                                                          \
+   * @brief Adds a quartz.OP_QUARTZ operation                                  \
+   *                                                                           \
+   * @details                                                                  \
+   * Translates an OP_QC operation from the QuantumComputation to              \
+   * quartz.OP_QUARTZ.                                                         \
+   *                                                                           \
+   * @param builder The QuartzProgramBuilder used to create operations         \
+   * @param operation The OP_QC operation to translate                         \
+   * @param qubits Flat vector of qubit values indexed by physical qubit index \
+   */                                                                          \
+  void add##OP_QC##Op(QuartzProgramBuilder& builder,                           \
+                      const qc::Operation& operation,                          \
+                      const llvm::SmallVector<Value>& qubits) {                \
+    const auto& param = operation.getParameter()[0];                           \
+    const auto& target0 = qubits[operation.getTargets()[0]];                   \
+    const auto& target1 = qubits[operation.getTargets()[1]];                   \
+    if (const auto& posControls = getPosControls(operation, qubits);           \
+        posControls.empty()) {                                                 \
+      builder.OP_QUARTZ(param, target0, target1);                              \
+    } else {                                                                   \
+      builder.mc##OP_QUARTZ(param, posControls, target0, target1);             \
+    }                                                                          \
   }
-}
 
-/**
- * @brief Adds an ECR operation
- *
- * @details
- * Translate an ECR operation from the QuantumComputation to quartz.ecr.
- *
- * @param builder The QuartzProgramBuilder used to create operations
- * @param operation The ECR operation to translate
- * @param qubits Flat vector of qubit values indexed by physical qubit index
- */
-void addECROp(QuartzProgramBuilder& builder, const qc::Operation& operation,
-              const llvm::SmallVector<Value>& qubits) {
-  const auto& target0 = qubits[operation.getTargets()[0]];
-  const auto& target1 = qubits[operation.getTargets()[1]];
-  if (const auto& posControls = getPosControls(operation, qubits);
-      posControls.empty()) {
-    builder.ecr(target0, target1);
-  } else {
-    builder.mcecr(posControls, target0, target1);
-  }
-}
+DEFINE_TWO_TARGET_ONE_PARAMETER(RXX, rxx)
+DEFINE_TWO_TARGET_ONE_PARAMETER(RYY, ryy)
+DEFINE_TWO_TARGET_ONE_PARAMETER(RZX, rzx)
+DEFINE_TWO_TARGET_ONE_PARAMETER(RZZ, rzz)
 
-/**
- * @brief Adds an RXX operation
- *
- * @details
- * Translate an RXX operation from the QuantumComputation to quartz.rxx.
- *
- * @param builder The QuartzProgramBuilder used to create operations
- * @param operation The RXX operation to translate
- * @param qubits Flat vector of qubit values indexed by physical qubit index
- */
-void addRXXOp(QuartzProgramBuilder& builder, const qc::Operation& operation,
-              const llvm::SmallVector<Value>& qubits) {
-  const auto& theta = operation.getParameter()[0];
-  const auto& target0 = qubits[operation.getTargets()[0]];
-  const auto& target1 = qubits[operation.getTargets()[1]];
-  if (const auto& posControls = getPosControls(operation, qubits);
-      posControls.empty()) {
-    builder.rxx(theta, target0, target1);
-  } else {
-    builder.mcrxx(theta, posControls, target0, target1);
-  }
-}
+#undef DEFINE_TWO_TARGET_ONE_PARAMETER
 
-/**
- * @brief Adds an RYY operation
- *
- * @details
- * Translate an RYY operation from the QuantumComputation to quartz.ryy.
- *
- * @param builder The QuartzProgramBuilder used to create operations
- * @param operation The RYY operation to translate
- * @param qubits Flat vector of qubit values indexed by physical qubit index
- */
-void addRYYOp(QuartzProgramBuilder& builder, const qc::Operation& operation,
-              const llvm::SmallVector<Value>& qubits) {
-  const auto& theta = operation.getParameter()[0];
-  const auto& target0 = qubits[operation.getTargets()[0]];
-  const auto& target1 = qubits[operation.getTargets()[1]];
-  if (const auto& posControls = getPosControls(operation, qubits);
-      posControls.empty()) {
-    builder.ryy(theta, target0, target1);
-  } else {
-    builder.mcryy(theta, posControls, target0, target1);
-  }
-}
+// TwoTargetTwoParameter
 
-/**
- * @brief Adds an RZX operation
- *
- * @details
- * Translate an RZX operation from the QuantumComputation to quartz.rzx.
- *
- * @param builder The QuartzProgramBuilder used to create operations
- * @param operation The RZX operation to translate
- * @param qubits Flat vector of qubit values indexed by physical qubit index
- */
-void addRZXOp(QuartzProgramBuilder& builder, const qc::Operation& operation,
-              const llvm::SmallVector<Value>& qubits) {
-  const auto& theta = operation.getParameter()[0];
-  const auto& target0 = qubits[operation.getTargets()[0]];
-  const auto& target1 = qubits[operation.getTargets()[1]];
-  if (const auto& posControls = getPosControls(operation, qubits);
-      posControls.empty()) {
-    builder.rzx(theta, target0, target1);
-  } else {
-    builder.mcrzx(theta, posControls, target0, target1);
+#define DEFINE_TWO_TARGET_TWO_PARAMETER(OP_QC, OP_QUARTZ)                      \
+  /**                                                                          \
+   * @brief Adds a quartz.OP_QUARTZ operation                                  \
+   *                                                                           \
+   * @details                                                                  \
+   * Translates an OP_QC operation from the QuantumComputation to              \
+   * quartz.OP_QUARTZ.                                                         \
+   *                                                                           \
+   * @param builder The QuartzProgramBuilder used to create operations         \
+   * @param operation The OP_QC operation to translate                         \
+   * @param qubits Flat vector of qubit values indexed by physical qubit index \
+   */                                                                          \
+  void add##OP_QC##Op(QuartzProgramBuilder& builder,                           \
+                      const qc::Operation& operation,                          \
+                      const llvm::SmallVector<Value>& qubits) {                \
+    const auto& param1 = operation.getParameter()[0];                          \
+    const auto& param2 = operation.getParameter()[1];                          \
+    const auto& target0 = qubits[operation.getTargets()[0]];                   \
+    const auto& target1 = qubits[operation.getTargets()[1]];                   \
+    if (const auto& posControls = getPosControls(operation, qubits);           \
+        posControls.empty()) {                                                 \
+      builder.OP_QUARTZ(param1, param2, target0, target1);                     \
+    } else {                                                                   \
+      builder.mc##OP_QUARTZ(param1, param2, posControls, target0, target1);    \
+    }                                                                          \
   }
-}
 
-/**
- * @brief Adds an RZZ operation
- *
- * @details
- * Translate an RZZ operation from the QuantumComputation to quartz.rzz.
- *
- * @param builder The QuartzProgramBuilder used to create operations
- * @param operation The RZZ operation to translate
- * @param qubits Flat vector of qubit values indexed by physical qubit index
- */
-void addRZZOp(QuartzProgramBuilder& builder, const qc::Operation& operation,
-              const llvm::SmallVector<Value>& qubits) {
-  const auto& theta = operation.getParameter()[0];
-  const auto& target0 = qubits[operation.getTargets()[0]];
-  const auto& target1 = qubits[operation.getTargets()[1]];
-  if (const auto& posControls = getPosControls(operation, qubits);
-      posControls.empty()) {
-    builder.rzz(theta, target0, target1);
-  } else {
-    builder.mcrzz(theta, posControls, target0, target1);
-  }
-}
+DEFINE_TWO_TARGET_TWO_PARAMETER(XXplusYY, xx_plus_yy)
+DEFINE_TWO_TARGET_TWO_PARAMETER(XXminusYY, xx_minus_yy)
 
-/**
- * @brief Adds an XX+YY operation
- *
- * @details
- * Translate an XX+YY operation from the QuantumComputation to
- * quartz.xx_plus_yy.
- *
- * @param builder The QuartzProgramBuilder used to create operations
- * @param operation The XX+YY operation to translate
- * @param qubits Flat vector of qubit values indexed by physical qubit index
- */
-void addXXPlusYYOp(QuartzProgramBuilder& builder,
-                   const qc::Operation& operation,
-                   const llvm::SmallVector<Value>& qubits) {
-  const auto& theta = operation.getParameter()[0];
-  const auto& beta = operation.getParameter()[1];
-  const auto& target0 = qubits[operation.getTargets()[0]];
-  const auto& target1 = qubits[operation.getTargets()[1]];
-  if (const auto& posControls = getPosControls(operation, qubits);
-      posControls.empty()) {
-    builder.xx_plus_yy(theta, beta, target0, target1);
-  } else {
-    builder.mcxx_plus_yy(theta, beta, posControls, target0, target1);
-  }
-}
+#undef DEFINE_TWO_TARGET_TWO_PARAMETER
 
-/**
- * @brief Adds an XX-YY operation
- *
- * @details
- * Translate an XX-YY operation from the QuantumComputation to
- * quartz.xx_minus_yy.
- *
- * @param builder The QuartzProgramBuilder used to create operations
- * @param operation The XX-YY operation to translate
- * @param qubits Flat vector of qubit values indexed by physical qubit index
- */
-void addXXMinusYYOp(QuartzProgramBuilder& builder,
-                    const qc::Operation& operation,
-                    const llvm::SmallVector<Value>& qubits) {
-  const auto& theta = operation.getParameter()[0];
-  const auto& beta = operation.getParameter()[1];
-  const auto& target0 = qubits[operation.getTargets()[0]];
-  const auto& target1 = qubits[operation.getTargets()[1]];
-  if (const auto& posControls = getPosControls(operation, qubits);
-      posControls.empty()) {
-    builder.xx_minus_yy(theta, beta, target0, target1);
-  } else {
-    builder.mcxx_minus_yy(theta, beta, posControls, target0, target1);
-  }
-}
+#define ADD_OP_CASE(OP_QC)                                                     \
+  case qc::OpType::OP_QC:                                                      \
+    add##OP_QC##Op(builder, *operation, qubits);                               \
+    break;
 
 /**
  * @brief Translates operations from QuantumComputation to Quartz dialect
@@ -894,93 +519,35 @@ translateOperations(QuartzProgramBuilder& builder,
     case qc::OpType::Measure:
       addMeasureOp(builder, *operation, qubits, bitMap);
       break;
-    case qc::OpType::Reset:
-      addResetOp(builder, *operation, qubits);
-      break;
-    case qc::OpType::I:
-      addIdOp(builder, *operation, qubits);
-      break;
-    case qc::OpType::X:
-      addXOp(builder, *operation, qubits);
-      break;
-    case qc::OpType::Y:
-      addYOp(builder, *operation, qubits);
-      break;
-    case qc::OpType::Z:
-      addZOp(builder, *operation, qubits);
-      break;
-    case qc::OpType::H:
-      addHOp(builder, *operation, qubits);
-      break;
-    case qc::OpType::S:
-      addSOp(builder, *operation, qubits);
-      break;
-    case qc::OpType::Sdg:
-      addSdgOp(builder, *operation, qubits);
-      break;
-    case qc::OpType::T:
-      addTOp(builder, *operation, qubits);
-      break;
-    case qc::OpType::Tdg:
-      addTdgOp(builder, *operation, qubits);
-      break;
-    case qc::OpType::SX:
-      addSXOp(builder, *operation, qubits);
-      break;
-    case qc::OpType::SXdg:
-      addSXdgOp(builder, *operation, qubits);
-      break;
-    case qc::OpType::RX:
-      addRXOp(builder, *operation, qubits);
-      break;
-    case qc::OpType::RY:
-      addRYOp(builder, *operation, qubits);
-      break;
-    case qc::OpType::RZ:
-      addRZOp(builder, *operation, qubits);
-      break;
-    case qc::OpType::P:
-      addPOp(builder, *operation, qubits);
-      break;
-    case qc::OpType::R:
-      addROp(builder, *operation, qubits);
-      break;
-    case qc::OpType::U2:
-      addU2Op(builder, *operation, qubits);
-      break;
-    case qc::OpType::U:
-      addUOp(builder, *operation, qubits);
-      break;
-    case qc::OpType::SWAP:
-      addSWAPOp(builder, *operation, qubits);
-      break;
-    case qc::OpType::iSWAP:
-      addiSWAPOp(builder, *operation, qubits);
-      break;
-    case qc::OpType::DCX:
-      addDCXOp(builder, *operation, qubits);
-      break;
-    case qc::OpType::ECR:
-      addECROp(builder, *operation, qubits);
-      break;
-    case qc::OpType::RXX:
-      addRXXOp(builder, *operation, qubits);
-      break;
-    case qc::OpType::RYY:
-      addRYYOp(builder, *operation, qubits);
-      break;
-    case qc::OpType::RZX:
-      addRZXOp(builder, *operation, qubits);
-      break;
-    case qc::OpType::RZZ:
-      addRZZOp(builder, *operation, qubits);
-      break;
-    case qc::OpType::XXplusYY:
-      addXXPlusYYOp(builder, *operation, qubits);
-      break;
-    case qc::OpType::XXminusYY:
-      addXXMinusYYOp(builder, *operation, qubits);
-      break;
+      ADD_OP_CASE(Reset)
+      ADD_OP_CASE(I)
+      ADD_OP_CASE(X)
+      ADD_OP_CASE(Y)
+      ADD_OP_CASE(Z)
+      ADD_OP_CASE(H)
+      ADD_OP_CASE(S)
+      ADD_OP_CASE(Sdg)
+      ADD_OP_CASE(T)
+      ADD_OP_CASE(Tdg)
+      ADD_OP_CASE(SX)
+      ADD_OP_CASE(SXdg)
+      ADD_OP_CASE(RX)
+      ADD_OP_CASE(RY)
+      ADD_OP_CASE(RZ)
+      ADD_OP_CASE(P)
+      ADD_OP_CASE(R)
+      ADD_OP_CASE(U2)
+      ADD_OP_CASE(U)
+      ADD_OP_CASE(SWAP)
+      ADD_OP_CASE(iSWAP)
+      ADD_OP_CASE(DCX)
+      ADD_OP_CASE(ECR)
+      ADD_OP_CASE(RXX)
+      ADD_OP_CASE(RYY)
+      ADD_OP_CASE(RZX)
+      ADD_OP_CASE(RZZ)
+      ADD_OP_CASE(XXplusYY)
+      ADD_OP_CASE(XXminusYY)
     default:
       // Unsupported operation - skip for now
       // As the Quartz dialect is expanded, more operations will be supported
@@ -990,6 +557,8 @@ translateOperations(QuartzProgramBuilder& builder,
 
   return success();
 }
+
+#undef ADD_OP_CASE
 
 } // namespace
 
