@@ -13,6 +13,7 @@ Provides a Qiskit BackendV2-compatible interface to QDMI devices via FoMaC.
 
 from __future__ import annotations
 
+import itertools
 import warnings
 from typing import TYPE_CHECKING, Any
 
@@ -76,7 +77,7 @@ class QDMIBackend(BackendV2):  # type: ignore[misc]
         return not any(op.is_zoned() for op in device.operations())
 
     # Class-level counter for generating unique circuit names
-    _circuit_counter = 0
+    _circuit_counter = itertools.count()
 
     def __init__(self, device: fomac.Device, provider: QDMIProvider | None = None) -> None:
         """Initialize the backend with a FoMaC device.
@@ -357,9 +358,7 @@ class QDMIBackend(BackendV2):  # type: ignore[misc]
     ) -> tuple[str, fomac.ProgramFormat]:
         """Convert a :class:`~qiskit.circuit.QuantumCircuit` to one of the supported program formats.
 
-        QPY takes precedence over everything else since it is the native format of Qiskit.
         OpenQASM 3 takes precedence over OpenQASM 2 since it is a superset of the latter.
-        QIR adaptive profile takes precedence over the base profile if supported by the device.
 
         Args:
             circuit: The quantum circuit to convert.
@@ -450,8 +449,6 @@ class QDMIBackend(BackendV2):  # type: ignore[misc]
             raise JobSubmissionError(msg) from exc
 
         # Create and return Qiskit job wrapper
-        circuit_name = run_input.name or f"circuit-{QDMIBackend._circuit_counter}"
-        if not run_input.name:
-            QDMIBackend._circuit_counter += 1
+        circuit_name = run_input.name or f"circuit-{next(QDMIBackend._circuit_counter)}"
 
         return QDMIJob(backend=self, job=qdmi_job, circuit_name=circuit_name)
