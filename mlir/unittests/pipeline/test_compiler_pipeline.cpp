@@ -129,6 +129,28 @@ bool areOperationsEquivalent(Operation* lhs, Operation* rhs,
     return false;
   }
 
+  // Check arith::ConstantOp
+  if (auto lhsConst = llvm::dyn_cast<arith::ConstantOp>(lhs)) {
+    auto rhsConst = llvm::dyn_cast<arith::ConstantOp>(rhs);
+    if (!rhsConst) {
+      return false;
+    }
+    if (lhsConst.getValue() != rhsConst.getValue()) {
+      return false;
+    }
+  }
+
+  // Check LLVM::ConstantOp
+  if (auto lhsConst = llvm::dyn_cast<LLVM::ConstantOp>(lhs)) {
+    auto rhsConst = llvm::dyn_cast<LLVM::ConstantOp>(rhs);
+    if (!rhsConst) {
+      return false;
+    }
+    if (lhsConst.getValue() != rhsConst.getValue()) {
+      return false;
+    }
+  }
+
   // Check number of operands and results
   if (lhs->getNumOperands() != rhs->getNumOperands() ||
       lhs->getNumResults() != rhs->getNumResults() ||
