@@ -32,6 +32,7 @@
 #include <mlir/IR/Visitors.h>
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/WalkResult.h>
+#include <queue>
 #include <utility>
 
 #define DEBUG_TYPE "routing-verification-sc"
