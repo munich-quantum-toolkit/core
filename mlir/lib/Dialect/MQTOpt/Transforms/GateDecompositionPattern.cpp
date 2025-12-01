@@ -148,13 +148,13 @@ protected:
      *
      * All
      */
-    std::array<mlir::Value, 2> inQubits;
+    std::array<mlir::Value, 2> inQubits{};
     /**
      * Qubits that are the input for the series.
      * First qubit will always be set, second qubit may be equal to
      * mlir::Value{} if the series consists of only single-qubit gates.
      */
-    std::array<mlir::Value, 2> outQubits;
+    std::array<mlir::Value, 2> outQubits{};
 
     struct MlirGate {
       UnitaryInterface op;
@@ -163,6 +163,9 @@ protected:
     llvm::SmallVector<MlirGate, 8> gates;
 
     [[nodiscard]] static TwoQubitSeries getTwoQubitSeries(UnitaryInterface op) {
+      if (isBarrier(op)) {
+        return {};
+      }
       TwoQubitSeries result(op);
 
       auto getUser = [](mlir::Value qubit,
@@ -235,12 +238,18 @@ protected:
     }
 
   private:
+    /**
+     * Initialize empty TwoQubitSeries instance.
+     * New operations can *NOT* be added when calling this constructor overload.
+     */
+    TwoQubitSeries() = default;
+    /**
+     * Initialize TwoQubitSeries instance with given first operation.
+     */
     explicit TwoQubitSeries(UnitaryInterface initialOperation) {
       auto&& in = initialOperation.getAllInQubits();
       auto&& out = initialOperation->getResults();
-      if (isBarrier(initialOperation)) {
-        // ignore barrier op as initial operation
-      } else if (helpers::isSingleQubitOperation(initialOperation)) {
+      if (helpers::isSingleQubitOperation(initialOperation)) {
         inQubits = {in[0], mlir::Value{}};
         outQubits = {out[0], mlir::Value{}};
         gates.push_back({.op = initialOperation, .qubitIds = {0}});
