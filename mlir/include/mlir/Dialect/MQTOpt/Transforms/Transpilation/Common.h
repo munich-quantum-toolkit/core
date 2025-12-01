@@ -11,6 +11,9 @@
 #pragma once
 
 #include "mlir/Dialect/MQTOpt/IR/MQTOptDialect.h"
+#include "mlir/Dialect/MQTOpt/Transforms/Transpilation/Architecture.h"
+#include "mlir/Dialect/MQTOpt/Transforms/Transpilation/Layout.h"
+#include "mlir/Dialect/MQTOpt/Transforms/Transpilation/QubitIndex.h"
 
 #include <cstddef>
 #include <llvm/ADT/StringRef.h>
@@ -21,20 +24,6 @@
 #include <utility>
 
 namespace mqt::ir::opt {
-/**
- * @brief 'For' pushes once onto the stack, hence the parent is at depth one.
- */
-constexpr std::size_t FOR_PARENT_DEPTH = 1UL;
-
-/**
- * @brief 'If' pushes twice onto the stack, hence the parent is at depth two.
- */
-constexpr std::size_t IF_PARENT_DEPTH = 2UL;
-
-/**
- * @brief Type alias for qubit indices.
- */
-using QubitIndex = uint32_t;
 
 /**
  * @brief A pair of SSA Values.
@@ -112,4 +101,26 @@ void replaceAllUsesInRegionAndChildrenExcept(mlir::Value oldValue,
                                              mlir::Region* region,
                                              mlir::Operation* exceptOp,
                                              mlir::PatternRewriter& rewriter);
+
+/**
+ * @brief Given a layout, validate if the two-qubit unitary op is executable on
+ * the targeted architecture.
+ *
+ * @param op The two-qubit unitary.
+ * @param layout The current layout.
+ * @param arch The targeted architecture.
+ */
+[[nodiscard]] bool isExecutable(UnitaryInterface op, const Layout& layout,
+                                const Architecture& arch);
+
+/**
+ * @brief Insert SWAP ops at the rewriter's insertion point.
+ *
+ * @param loc The location of the inserted SWAP ops.
+ * @param swaps The hardware indices of the SWAPs.
+ * @param layout The current layout.
+ * @param rewriter The pattern rewriter.
+ */
+void insertSWAPs(mlir::Location loc, mlir::ArrayRef<QubitIndexPair> swaps,
+                 Layout& layout, mlir::PatternRewriter& rewriter);
 } // namespace mqt::ir::opt

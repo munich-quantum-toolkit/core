@@ -10,14 +10,16 @@
 
 #pragma once
 
-#include "mlir/Dialect/MQTOpt/Transforms/Transpilation/Common.h"
+#include "mlir/Dialect/MQTOpt/Transforms/Transpilation/QubitIndex.h"
 
 #include <cstddef>
 #include <cstdint>
+#include <llvm/ADT/DenseMapInfo.h>
 #include <llvm/ADT/DenseSet.h>
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/ADT/StringRef.h>
 #include <memory>
+#include <mlir/Support/LLVM.h>
 #include <string>
 #include <string_view>
 

@@ -53,43 +53,6 @@ namespace {
 using namespace mlir;
 
 /**
- * @brief Insert SWAP ops at the rewriter's insertion point.
- *
- * @param loc The location of the inserted SWAP ops.
- * @param swaps The hardware indices of the SWAPs.
- * @param layout The current layout.
- * @param rewriter The pattern rewriter.
- */
-void insertSWAPs(Location loc, ArrayRef<QubitIndexPair> swaps, Layout& layout,
-                 PatternRewriter& rewriter) {
-  for (const auto [hw0, hw1] : swaps) {
-    const Value in0 = layout.lookupHardwareValue(hw0);
-    const Value in1 = layout.lookupHardwareValue(hw1);
-    [[maybe_unused]] const auto [prog0, prog1] =
-        layout.getProgramIndices(hw0, hw1);
-
-    LLVM_DEBUG({
-      llvm::dbgs() << llvm::format(
-          "route: swap= p%d:h%d, p%d:h%d <- p%d:h%d, p%d:h%d\n", prog1, hw0,
-          prog0, hw1, prog0, hw0, prog1, hw1);
-    });
-
-    auto swap = createSwap(loc, in0, in1, rewriter);
-    const auto [out0, out1] = getOuts(swap);
-
-    rewriter.setInsertionPointAfter(swap);
-    replaceAllUsesInRegionAndChildrenExcept(in0, out1, swap->getParentRegion(),
-                                            swap, rewriter);
-    replaceAllUsesInRegionAndChildrenExcept(in1, out0, swap->getParentRegion(),
-                                            swap, rewriter);
-
-    layout.swap(in0, in1);
-    layout.remapQubitValue(in0, out0);
-    layout.remapQubitValue(in1, out1);
-  }
-}
-
-/**
  * @brief Routes the program by dividing the circuit into layers of parallel
  * two-qubit gates and iteratively searches and inserts SWAPs for each layer
  * using A*-search.

@@ -138,4 +138,40 @@ void replaceAllUsesInRegionAndChildrenExcept(mlir::Value oldValue,
     return false;
   });
 }
+
+[[nodiscard]] bool isExecutable(UnitaryInterface op, const Layout& layout,
+                                const Architecture& arch) {
+  const auto ins = getIns(op);
+  return arch.areAdjacent(layout.lookupHardwareIndex(ins.first),
+                          layout.lookupHardwareIndex(ins.second));
+}
+
+void insertSWAPs(mlir::Location loc, mlir::ArrayRef<QubitIndexPair> swaps,
+                 Layout& layout, mlir::PatternRewriter& rewriter) {
+  for (const auto [hw0, hw1] : swaps) {
+    const mlir::Value in0 = layout.lookupHardwareValue(hw0);
+    const mlir::Value in1 = layout.lookupHardwareValue(hw1);
+    [[maybe_unused]] const auto [prog0, prog1] =
+        layout.getProgramIndices(hw0, hw1);
+
+    // LLVM_DEBUG({
+    //   llvm::dbgs() << llvm::format(
+    //       "route: swap= p%d:h%d, p%d:h%d <- p%d:h%d, p%d:h%d\n", prog1, hw0,
+    //       prog0, hw1, prog0, hw0, prog1, hw1);
+    // });
+
+    auto swap = createSwap(loc, in0, in1, rewriter);
+    const auto [out0, out1] = getOuts(swap);
+
+    rewriter.setInsertionPointAfter(swap);
+    replaceAllUsesInRegionAndChildrenExcept(in0, out1, swap->getParentRegion(),
+                                            swap, rewriter);
+    replaceAllUsesInRegionAndChildrenExcept(in1, out0, swap->getParentRegion(),
+                                            swap, rewriter);
+
+    layout.swap(in0, in1);
+    layout.remapQubitValue(in0, out0);
+    layout.remapQubitValue(in1, out1);
+  }
+}
 } // namespace mqt::ir::opt

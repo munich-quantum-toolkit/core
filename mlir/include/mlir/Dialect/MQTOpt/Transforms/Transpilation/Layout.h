@@ -10,11 +10,12 @@
 
 #pragma once
 
-#include "mlir/Dialect/MQTOpt/Transforms/Transpilation/Common.h"
-#include "mlir/Dialect/SCF/IR/SCF.h"
+#include "mlir/Dialect/MQTOpt/IR/MQTOptDialect.h"
+#include "mlir/Dialect/MQTOpt/Transforms/Transpilation/QubitIndex.h"
 
 #include <llvm/ADT/DenseMapInfo.h>
 #include <llvm/ADT/SmallVector.h>
+#include <mlir/Dialect/SCF/IR/SCF.h>
 #include <mlir/IR/Value.h>
 #include <mlir/Support/LLVM.h>
 #include <utility>

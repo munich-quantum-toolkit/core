@@ -45,21 +45,6 @@ namespace {
 using namespace mlir;
 
 /**
- * @brief Given a layout, validate if the two-qubit unitary op is executable on
- * the targeted architecture.
- *
- * @param op The two-qubit unitary.
- * @param layout The current layout.
- * @param arch The targeted architecture.
- */
-[[nodiscard]] bool isExecutable(UnitaryInterface op, const Layout& layout,
-                                const Architecture& arch) {
-  const auto ins = getIns(op);
-  return arch.areAdjacent(layout.lookupHardwareIndex(ins.first),
-                          layout.lookupHardwareIndex(ins.second));
-}
-
-/**
  * @brief This pass verifies that all two-qubit gates are executable on the
  * target architecture.
  */

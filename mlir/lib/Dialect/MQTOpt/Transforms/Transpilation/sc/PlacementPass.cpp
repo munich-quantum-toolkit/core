@@ -52,6 +52,16 @@ namespace {
 using namespace mlir;
 
 /**
+ * @brief 'For' pushes once onto the stack, hence the parent is at depth one.
+ */
+constexpr std::size_t FOR_PARENT_DEPTH = 1UL;
+
+/**
+ * @brief 'If' pushes twice onto the stack, hence the parent is at depth two.
+ */
+constexpr std::size_t IF_PARENT_DEPTH = 2UL;
+
+/**
  * @brief A queue of hardware indices.
  */
 using HardwareIndexPool = std::deque<QubitIndex>;
