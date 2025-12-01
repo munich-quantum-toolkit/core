@@ -76,8 +76,9 @@ private:
      * @brief Construct a non-root node from its parent node. Apply the given
      * swap to the layout of the parent node and evaluate the cost.
      */
-    Node(const Node& parent, QubitIndexPair swap, mlir::ArrayRef<GateLayer> window,
-         const Architecture& arch, const HeuristicWeights& weights)
+    Node(const Node& parent, QubitIndexPair swap,
+         mlir::ArrayRef<GateLayer> window, const Architecture& arch,
+         const HeuristicWeights& weights)
         : sequence(parent.sequence), layout(parent.layout), f(0) {
       /// Apply node-specific swap to given layout.
       layout.swap(layout.getProgramIndex(swap.first),
@@ -128,7 +129,8 @@ private:
      * its hardware qubits. Intuitively, this is the number of SWAPs that a
      * naive router would insert to route the layers.
      */
-    [[nodiscard]] float h(mlir::ArrayRef<GateLayer> window, const Architecture& arch,
+    [[nodiscard]] float h(mlir::ArrayRef<GateLayer> window,
+                          const Architecture& arch,
                           const HeuristicWeights& weights) const {
       float nn{0};
       for (const auto [i, layer] : llvm::enumerate(window)) {
@@ -178,7 +180,8 @@ public:
 private:
   /// @brief Expand frontier with all neighbouring SWAPs in the current front.
   void expand(MinQueue& frontier, const Node& parent,
-              mlir::ArrayRef<GateLayer> window, const Architecture& arch) const {
+              mlir::ArrayRef<GateLayer> window,
+              const Architecture& arch) const {
     llvm::SmallDenseSet<QubitIndexPair, 64> expansionSet{};
 
     /// Currently: Don't revert last SWAP.
