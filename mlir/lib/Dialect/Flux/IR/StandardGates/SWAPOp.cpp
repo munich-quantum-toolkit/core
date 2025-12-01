@@ -8,6 +8,7 @@
  * Licensed under the MIT License
  */
 
+#include "mlir/Dialect/Flux/FluxUtils.h"
 #include "mlir/Dialect/Flux/IR/FluxDialect.h"
 #include "mlir/Dialect/Utils/MatrixUtils.h"
 
@@ -21,30 +22,21 @@ using namespace mlir;
 using namespace mlir::flux;
 using namespace mlir::utils;
 
+namespace {
+
 /**
- * @brief Remove subsequent SWAP operations on the same qubit.
+ * @brief Remove subsequent SWAP operations on the same qubits.
  */
 struct RemoveSubsequentSWAP final : OpRewritePattern<SWAPOp> {
   using OpRewritePattern::OpRewritePattern;
 
   LogicalResult matchAndRewrite(SWAPOp op,
                                 PatternRewriter& rewriter) const override {
-    // Check if the predecessor is a SWAP operation
-    auto prevOp = op.getQubit0In().getDefiningOp<SWAPOp>();
-    if (!prevOp) {
-      return failure();
-    }
-    if (op.getQubit1In() != prevOp.getQubit1Out()) {
-      return failure();
-    }
-
-    // Remove both SWAP operations
-    rewriter.replaceOp(prevOp, {prevOp.getQubit0In(), prevOp.getQubit1In()});
-    rewriter.replaceOp(op, {op.getQubit0In(), op.getQubit1In()});
-
-    return success();
+    return removeInversePairTwoTargetZeroParameter<SWAPOp>(op, rewriter);
   }
 };
+
+} // namespace
 
 DenseElementsAttr SWAPOp::tryGetStaticMatrix() {
   return getMatrixSWAP(getContext());

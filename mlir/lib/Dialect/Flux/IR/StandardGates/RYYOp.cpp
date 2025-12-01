@@ -17,11 +17,30 @@
 #include <mlir/IR/BuiltinAttributes.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OperationSupport.h>
+#include <mlir/IR/PatternMatch.h>
+#include <mlir/Support/LogicalResult.h>
 #include <variant>
 
 using namespace mlir;
 using namespace mlir::flux;
 using namespace mlir::utils;
+
+namespace {
+
+/**
+ * @brief Merge subsequent RYY operations on the same qubits by adding their
+ * angles.
+ */
+struct MergeSubsequentRYY final : OpRewritePattern<RYYOp> {
+  using OpRewritePattern::OpRewritePattern;
+
+  LogicalResult matchAndRewrite(RYYOp op,
+                                PatternRewriter& rewriter) const override {
+    return mergeTwoTargetOneParameter(op, rewriter);
+  }
+};
+
+} // namespace
 
 DenseElementsAttr RYYOp::tryGetStaticMatrix() {
   const auto& theta = getStaticParameter(getTheta());
@@ -43,4 +62,9 @@ void RYYOp::build(OpBuilder& odsBuilder, OperationState& odsState,
     thetaOperand = std::get<Value>(theta);
   }
   build(odsBuilder, odsState, qubit0In, qubit1In, thetaOperand);
+}
+
+void RYYOp::getCanonicalizationPatterns(RewritePatternSet& results,
+                                        MLIRContext* context) {
+  results.add<MergeSubsequentRYY>(context);
 }

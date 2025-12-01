@@ -17,11 +17,30 @@
 #include <mlir/IR/BuiltinAttributes.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OperationSupport.h>
+#include <mlir/IR/PatternMatch.h>
+#include <mlir/Support/LogicalResult.h>
 #include <variant>
 
 using namespace mlir;
 using namespace mlir::flux;
 using namespace mlir::utils;
+
+namespace {
+
+/**
+ * @brief Merge subsequent RXX operations on the same qubits by adding their
+ * angles.
+ */
+struct MergeSubsequentRXX final : OpRewritePattern<RXXOp> {
+  using OpRewritePattern::OpRewritePattern;
+
+  LogicalResult matchAndRewrite(RXXOp op,
+                                PatternRewriter& rewriter) const override {
+    return mergeTwoTargetOneParameter(op, rewriter);
+  }
+};
+
+} // namespace
 
 DenseElementsAttr RXXOp::tryGetStaticMatrix() {
   const auto& theta = getStaticParameter(getTheta());
@@ -43,4 +62,9 @@ void RXXOp::build(OpBuilder& odsBuilder, OperationState& odsState,
     thetaOperand = std::get<Value>(theta);
   }
   build(odsBuilder, odsState, qubit0In, qubit1In, thetaOperand);
+}
+
+void RXXOp::getCanonicalizationPatterns(RewritePatternSet& results,
+                                        MLIRContext* context) {
+  results.add<MergeSubsequentRXX>(context);
 }

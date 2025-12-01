@@ -795,6 +795,8 @@ def ECROp : FluxOp<"ecr", traits = [UnitaryOpInterface, TwoTargetZeroParameter]>
         DenseElementsAttr tryGetStaticMatrix();
         static StringRef getBaseSymbol() { return "ecr"; }
     }];
+
+    let hasCanonicalizer = 1;
 }
 
 def RXXOp : FluxOp<"rxx", traits = [UnitaryOpInterface, TwoTargetOneParameter]> {
@@ -822,6 +824,8 @@ def RXXOp : FluxOp<"rxx", traits = [UnitaryOpInterface, TwoTargetOneParameter]> 
     let builders = [
         OpBuilder<(ins "Value":$qubit0_in, "Value":$qubit1_in, "const std::variant<double, Value>&":$theta)>
     ];
+
+    let hasCanonicalizer = 1;
 }
 
 def RYYOp : FluxOp<"ryy", traits = [UnitaryOpInterface, TwoTargetOneParameter]> {
@@ -849,6 +853,8 @@ def RYYOp : FluxOp<"ryy", traits = [UnitaryOpInterface, TwoTargetOneParameter]> 
     let builders = [
         OpBuilder<(ins "Value":$qubit0_in, "Value":$qubit1_in, "const std::variant<double, Value>&":$theta)>
     ];
+
+    let hasCanonicalizer = 1;
 }
 
 def RZXOp : FluxOp<"rzx", traits = [UnitaryOpInterface, TwoTargetOneParameter]> {
@@ -876,6 +882,8 @@ def RZXOp : FluxOp<"rzx", traits = [UnitaryOpInterface, TwoTargetOneParameter]> 
     let builders = [
         OpBuilder<(ins "Value":$qubit0_in, "Value":$qubit1_in, "const std::variant<double, Value>&":$theta)>
     ];
+
+    let hasCanonicalizer = 1;
 }
 
 def RZZOp : FluxOp<"rzz", traits = [UnitaryOpInterface, TwoTargetOneParameter]> {
@@ -903,6 +911,8 @@ def RZZOp : FluxOp<"rzz", traits = [UnitaryOpInterface, TwoTargetOneParameter]> 
     let builders = [
         OpBuilder<(ins "Value":$qubit0_in, "Value":$qubit1_in, "const std::variant<double, Value>&":$theta)>
     ];
+
+    let hasCanonicalizer = 1;
 }
 
 def XXPlusYYOp : FluxOp<"xx_plus_yy", traits = [UnitaryOpInterface, TwoTargetTwoParameter]> {

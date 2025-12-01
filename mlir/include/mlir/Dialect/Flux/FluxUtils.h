@@ -40,6 +40,35 @@ removeInversePairOneTargetZeroParameter(OpType op,
 }
 
 /**
+ * @brief Remove a pair of inverse two-target, zero-parameter operations
+ *
+ * @tparam InverseOpType The type of the inverse operation.
+ * @tparam OpType The type of the operation to be checked.
+ * @param op The operation instance.
+ * @param rewriter The pattern rewriter.
+ * @return LogicalResult Success or failure of the removal.
+ */
+template <typename InverseOpType, typename OpType>
+inline mlir::LogicalResult
+removeInversePairTwoTargetZeroParameter(OpType op,
+                                        mlir::PatternRewriter& rewriter) {
+  // Check if the predecessor is the inverse operation
+  auto prevOp = op.getQubit0In().template getDefiningOp<InverseOpType>();
+  if (!prevOp) {
+    return failure();
+  }
+  if (op.getQubit1In() != prevOp.getQubit1Out()) {
+    return failure();
+  }
+
+  // Remove both operations
+  rewriter.replaceOp(prevOp, {prevOp.getQubit0In(), prevOp.getQubit1In()});
+  rewriter.replaceOp(op, {op.getQubit0In(), op.getQubit1In()});
+
+  return success();
+}
+
+/**
  * @brief Merge two compatible one-target, one-parameter operations
  *
  * @tparam OpType The type of the operation to be merged.
@@ -63,6 +92,37 @@ mergeOneTargetOneParameter(OpType op, mlir::PatternRewriter& rewriter) {
 
   // Trivialize predecessor
   rewriter.replaceOp(prevOp, prevOp.getQubitIn());
+
+  return success();
+}
+
+/**
+ * @brief Merge two compatible two-target, one-parameter operations
+ *
+ * @tparam OpType The type of the operation to be merged.
+ * @param op The operation instance.
+ * @param rewriter The pattern rewriter.
+ * @return LogicalResult Success or failure of the merge.
+ */
+template <typename OpType>
+inline mlir::LogicalResult
+mergeTwoTargetOneParameter(OpType op, mlir::PatternRewriter& rewriter) {
+  // Check if the predecessor is the same operation
+  auto prevOp = op.getQubit0In().template getDefiningOp<OpType>();
+  if (!prevOp) {
+    return failure();
+  }
+  if (op.getQubit1In() != prevOp.getQubit1Out()) {
+    return failure();
+  }
+
+  // Compute and set new theta
+  auto newParameter = rewriter.create<arith::AddFOp>(
+      op.getLoc(), op.getOperand(2), prevOp.getOperand(2));
+  op->setOperand(2, newParameter.getResult());
+
+  // Trivialize predecessor
+  rewriter.replaceOp(prevOp, {prevOp.getQubit0In(), prevOp.getQubit1In()});
 
   return success();
 }
