@@ -125,6 +125,13 @@ private:
             history.append(*swaps);
             insertSWAPs(anchor->getLoc(), *swaps, unit.layout(), rewriter);
             numSwaps += swaps->size();
+
+            LLVM_DEBUG({
+              for (const auto [hw0, hw1] : *swaps) {
+                llvm::dbgs()
+                    << llvm::format("route: swap= hw(%d, %d)\n", hw0, hw1);
+              }
+            });
           }
 
           /// Process all operations contained in the layer.

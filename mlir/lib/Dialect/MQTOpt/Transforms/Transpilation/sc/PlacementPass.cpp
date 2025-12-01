@@ -13,6 +13,7 @@
 #include "mlir/Dialect/MQTOpt/Transforms/Transpilation/Architecture.h"
 #include "mlir/Dialect/MQTOpt/Transforms/Transpilation/Common.h"
 #include "mlir/Dialect/MQTOpt/Transforms/Transpilation/Layout.h"
+#include "mlir/Dialect/MQTOpt/Transforms/Transpilation/QubitIndex.h"
 #include "mlir/Dialect/MQTOpt/Transforms/Transpilation/Stack.h"
 
 #include <algorithm>

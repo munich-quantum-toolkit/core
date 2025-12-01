@@ -14,6 +14,7 @@
 #include "mlir/Dialect/MQTOpt/IR/WireIterator.h"
 #include "mlir/Dialect/MQTOpt/Transforms/Transpilation/Common.h"
 #include "mlir/Dialect/MQTOpt/Transforms/Transpilation/Layout.h"
+#include "mlir/Dialect/MQTOpt/Transforms/Transpilation/QubitIndex.h"
 #include "mlir/Dialect/MQTOpt/Transforms/Transpilation/Unit.h"
 
 #include <cassert>

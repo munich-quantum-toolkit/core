@@ -11,6 +11,8 @@
 #include "mlir/Dialect/MQTOpt/Transforms/Transpilation/Common.h"
 
 #include "mlir/Dialect/MQTOpt/IR/MQTOptDialect.h"
+#include "mlir/Dialect/MQTOpt/Transforms/Transpilation/Architecture.h"
+#include "mlir/Dialect/MQTOpt/Transforms/Transpilation/Layout.h"
 
 #include <cassert>
 #include <llvm/ADT/STLExtras.h>
@@ -153,12 +155,6 @@ void insertSWAPs(mlir::Location loc, mlir::ArrayRef<QubitIndexPair> swaps,
     const mlir::Value in1 = layout.lookupHardwareValue(hw1);
     [[maybe_unused]] const auto [prog0, prog1] =
         layout.getProgramIndices(hw0, hw1);
-
-    // LLVM_DEBUG({
-    //   llvm::dbgs() << llvm::format(
-    //       "route: swap= p%d:h%d, p%d:h%d <- p%d:h%d, p%d:h%d\n", prog1, hw0,
-    //       prog0, hw1, prog0, hw0, prog1, hw1);
-    // });
 
     auto swap = createSwap(loc, in0, in1, rewriter);
     const auto [out0, out1] = getOuts(swap);
