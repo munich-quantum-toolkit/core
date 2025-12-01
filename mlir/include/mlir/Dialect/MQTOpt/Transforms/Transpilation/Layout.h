@@ -11,6 +11,7 @@
 #pragma once
 
 #include "mlir/Dialect/MQTOpt/Transforms/Transpilation/Common.h"
+#include "mlir/Dialect/SCF/IR/SCF.h"
 
 #include <llvm/ADT/DenseMapInfo.h>
 #include <llvm/ADT/SmallVector.h>
@@ -302,6 +303,50 @@ inline void remap(ResetOp op, Layout& layout) {
  */
 inline void remap(MeasureOp op, Layout& layout) {
   layout.remapQubitValue(op.getInQubit(), op.getOutQubit());
+}
+
+/**
+ * @brief Remap input qubits to in-loop-body values (iteration args).
+ *
+ * @param op The 'scf.for' op.
+ * @param layout The current layout.
+ */
+inline void remapToLoopBody(mlir::scf::ForOp op, Layout& layout) {
+  const auto nqubits = layout.getNumQubits();
+  const auto args = op.getInitArgs().take_front(nqubits);
+  const auto iterArgs = op.getRegionIterArgs().take_front(nqubits);
+  for (const auto [arg, iter] : llvm::zip(args, iterArgs)) {
+    layout.remapQubitValue(arg, iter);
+  }
+}
+
+/**
+ * @brief Remap input qubits to out-of-loop values (results).
+ *
+ * @param op The 'scf.for' op.
+ * @param layout The current layout.
+ */
+inline void remapToLoopResults(mlir::scf::ForOp op, Layout& layout) {
+  const auto nqubits = layout.getNumQubits();
+  const auto args = op.getInitArgs().take_front(nqubits);
+  const auto results = op.getResults().take_front(nqubits);
+  for (const auto [arg, iter] : llvm::zip(args, results)) {
+    layout.remapQubitValue(arg, iter);
+  }
+}
+
+/**
+ * @brief Remap current qubit values to if results.
+ *
+ * @param op The 'scf.if' op.
+ * @param layout The current layout.
+ */
+inline void remapIfResults(mlir::scf::IfOp op, Layout& layout) {
+  const auto nqubits = layout.getNumQubits();
+  const auto results = op->getResults().take_front(nqubits);
+  for (const auto [in, out] : llvm::zip(layout.getHardwareQubits(), results)) {
+    layout.remapQubitValue(in, out);
+  }
 }
 
 } // namespace mqt::ir::opt

@@ -21,6 +21,7 @@
 #include <iterator>
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/SmallVector.h>
+#include <llvm/Support/Casting.h>
 #include <llvm/Support/Compiler.h>
 #include <llvm/Support/ErrorHandling.h>
 #include <llvm/Support/raw_ostream.h>
@@ -87,12 +88,12 @@ mlir::SmallVector<Wire, 2> skipTwoQubitBlock(mlir::ArrayRef<Wire> wires,
   auto [it1, index1] = wires[1];
   while (it0 != std::default_sentinel && it1 != std::default_sentinel) {
     mlir::Operation* op0 = *it0;
-    if (!isa<UnitaryInterface>(op0) || isa<BarrierOp>(op0)) {
+    if (!mlir::isa<UnitaryInterface>(op0) || mlir::isa<BarrierOp>(op0)) {
       break;
     }
 
     mlir::Operation* op1 = *it1;
-    if (!isa<UnitaryInterface>(op1) || isa<BarrierOp>(op1)) {
+    if (!mlir::isa<UnitaryInterface>(op1) || mlir::isa<BarrierOp>(op1)) {
       break;
     }
 
@@ -182,7 +183,8 @@ LayeredUnit::LayeredUnit(Layout layout, mlir::Region* region, bool restore)
                           sync.visit(op, Wire(++it, index))) {
                     opLayer.addOp(op);
 
-                    if (!isa<BarrierOp>(op)) { // Is ready two-qubit unitary?
+                    // Is ready two-qubit unitary?
+                    if (!mlir::isa<BarrierOp>(op)) {
                       gateLayer.emplace_back((*iterators)[0].index,
                                              (*iterators)[1].index);
                       next.append(skipTwoQubitBlock(*iterators, opLayer));
@@ -277,35 +279,16 @@ mlir::SmallVector<LayeredUnit, 3> LayeredUnit::next() {
   mlir::SmallVector<LayeredUnit, 3> units;
   mlir::TypeSwitch<mlir::Operation*>(divider_)
       .Case<mlir::scf::ForOp>([&](mlir::scf::ForOp op) {
-        /// Copy layout.
-        Layout forLayout(layout_);
-
-        /// Forward out-of-loop and in-loop values.
-        const auto nqubits = layout_.getNumQubits();
-        const auto initArgs = op.getInitArgs().take_front(nqubits);
-        const auto results = op.getResults().take_front(nqubits);
-        const auto iterArgs = op.getRegionIterArgs().take_front(nqubits);
-        for (const auto [arg, res, iter] :
-             llvm::zip(initArgs, results, iterArgs)) {
-          layout_.remapQubitValue(arg, res);
-          forLayout.remapQubitValue(arg, iter);
-        }
-
+        Layout forLayout(layout_); // Copy layout.
+        remapToLoopBody(op, forLayout);
+        remapToLoopResults(op, layout_);
         units.emplace_back(std::move(layout_), region_, restore_);
         units.emplace_back(std::move(forLayout), &op.getRegion(), true);
       })
       .Case<mlir::scf::IfOp>([&](mlir::scf::IfOp op) {
         units.emplace_back(layout_, &op.getThenRegion(), true);
         units.emplace_back(layout_, &op.getElseRegion(), true);
-
-        /// Forward results.
-        const auto results =
-            op->getResults().take_front(layout_.getNumQubits());
-        for (const auto [in, out] :
-             llvm::zip(layout_.getHardwareQubits(), results)) {
-          layout_.remapQubitValue(in, out);
-        }
-
+        remapIfResults(op, layout_);
         units.emplace_back(layout_, region_, restore_);
       })
       .Default(

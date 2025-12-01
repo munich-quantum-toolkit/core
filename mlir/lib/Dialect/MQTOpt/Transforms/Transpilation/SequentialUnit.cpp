@@ -59,20 +59,9 @@ SequentialUnit::SequentialUnit(Layout layout, mlir::Region* region,
   mlir::SmallVector<SequentialUnit, 3> units;
   mlir::TypeSwitch<mlir::Operation*>(divider_)
       .Case<mlir::scf::ForOp>([&](mlir::scf::ForOp op) {
-        /// Copy layout.
-        Layout forLayout(layout_);
-
-        /// Forward out-of-loop and in-loop values.
-        const auto nqubits = layout_.getNumQubits();
-        const auto initArgs = op.getInitArgs().take_front(nqubits);
-        const auto results = op.getResults().take_front(nqubits);
-        const auto iterArgs = op.getRegionIterArgs().take_front(nqubits);
-        for (const auto [arg, res, iter] :
-             llvm::zip(initArgs, results, iterArgs)) {
-          layout_.remapQubitValue(arg, res);
-          forLayout.remapQubitValue(arg, iter);
-        }
-
+        Layout forLayout(layout_); // Copy layout.
+        remapToLoopBody(op, forLayout);
+        remapToLoopResults(op, layout_);
         units.emplace_back(std::move(layout_), region_, std::next(end_),
                            restore_);
         units.emplace_back(std::move(forLayout), &op.getRegion(), true);
@@ -80,15 +69,7 @@ SequentialUnit::SequentialUnit(Layout layout, mlir::Region* region,
       .Case<mlir::scf::IfOp>([&](mlir::scf::IfOp op) {
         units.emplace_back(layout_, &op.getThenRegion(), true);
         units.emplace_back(layout_, &op.getElseRegion(), true);
-
-        /// Forward results.
-        const auto results =
-            op->getResults().take_front(layout_.getNumQubits());
-        for (const auto [in, out] :
-             llvm::zip(layout_.getHardwareQubits(), results)) {
-          layout_.remapQubitValue(in, out);
-        }
-
+        remapIfResults(op, layout_);
         units.emplace_back(std::move(layout_), region_, std::next(end_),
                            restore_);
       })
