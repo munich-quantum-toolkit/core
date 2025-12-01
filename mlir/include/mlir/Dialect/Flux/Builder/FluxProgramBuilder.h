@@ -912,6 +912,30 @@ public:
   ctrl(ValueRange controls, ValueRange targets,
        const std::function<ValueRange(OpBuilder&, ValueRange)>& body);
 
+  /**
+   * @brief Apply an inverse operation
+   *
+   * @param targets Target qubits
+   * @param body Function that builds the body containing the target operation
+   * @return Output qubits
+   *
+   * @par Example:
+   * ```c++
+   * targets_out = builder.inv(targets_in, [&](auto& b) {
+   *   auto targets_res = b.s(targets_in);
+   *   return {targets_res};
+   * });
+   * ```
+   * ```mlir
+   * %targets_out = flux.inv %targets_in {
+   *   %targets_res = flux.s %targets_in : !flux.qubit -> !flux.qubit
+   *   flux.yield %targets_res
+   * } : {!flux.qubit} -> {!flux.qubit}
+   * ```
+   */
+  ValueRange inv(ValueRange targets,
+                 const std::function<ValueRange(OpBuilder&, ValueRange)>& body);
+
   //===--------------------------------------------------------------------===//
   // Deallocation
   //===--------------------------------------------------------------------===//

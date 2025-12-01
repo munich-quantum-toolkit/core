@@ -351,4 +351,36 @@ inline DenseElementsAttr getMatrixCtrl(mlir::MLIRContext* ctx,
   return DenseElementsAttr::get(type, matrixRef);
 }
 
+inline DenseElementsAttr getMatrixAdj(mlir::MLIRContext* ctx,
+                                      mlir::DenseElementsAttr target) {
+  // Get dimensions of target matrix
+  const auto& targetType = llvm::dyn_cast<RankedTensorType>(target.getType());
+  if (!targetType || targetType.getRank() != 2 ||
+      targetType.getDimSize(0) != targetType.getDimSize(1)) {
+    llvm::report_fatal_error("Invalid target matrix");
+  }
+  const auto dim = targetType.getDimSize(0);
+
+  // Get values of target matrix
+  const auto& targetMatrix = target.getValues<std::complex<double>>();
+
+  // Define dimensions and type of output matrix
+  const auto& complexType = ComplexType::get(Float64Type::get(ctx));
+  const auto& type = RankedTensorType::get({dim, dim}, complexType);
+
+  // Allocate output matrix
+  std::vector<std::complex<double>> matrix;
+  matrix.reserve(dim * dim);
+
+  // Fill output matrix
+  for (int64_t i = 0; i < dim; ++i) {
+    for (int64_t j = 0; j < dim; ++j) {
+      matrix.push_back(std::conj(targetMatrix[j * dim + i]));
+    }
+  }
+
+  ArrayRef<std::complex<double>> matrixRef(matrix);
+  return DenseElementsAttr::get(type, matrixRef);
+}
+
 } // namespace mlir::utils

@@ -742,6 +742,25 @@ public:
   QuartzProgramBuilder& ctrl(ValueRange controls,
                              const std::function<void(OpBuilder&)>& body);
 
+  /**
+   * @brief Apply an inverse (i.e., adjoint) operation.
+   *
+   * @param body Function that builds the body containing the operation to
+   * invert
+   * @return QuartzProgramBuilder& Reference to this builder for method chaining
+   *
+   * @par Example:
+   * ```c++
+   * builder.inv([&](auto& b) { b.s(q0); });
+   * ```
+   * ```mlir
+   * quartz.inv {
+   *   quartz.s %q0 : !quartz.qubit
+   * }
+   * ```
+   */
+  QuartzProgramBuilder& inv(const std::function<void(OpBuilder&)>& body);
+
   //===--------------------------------------------------------------------===//
   // Deallocation
   //===--------------------------------------------------------------------===//
