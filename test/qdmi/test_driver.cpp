@@ -43,7 +43,7 @@ MATCHER_P2(IsBetween, a, b,
 } // namespace
 } // namespace testing
 namespace qc {
-class DriverTest : public testing::TestWithParam<const char*> {
+class DriverTest : public testing::TestWithParam<std::string> {
 protected:
   QDMI_Session session = nullptr;
   QDMI_Device device = nullptr;
@@ -524,7 +524,7 @@ INSTANTIATE_TEST_SUITE_P(
     DriverTest,
     // Parameters to test with
     testing::ValuesIn(DEVICES),
-    [](const testing::TestParamInfo<const char*>& paramInfo) {
+    [](const testing::TestParamInfo<std::string>& paramInfo) {
       std::string name = paramInfo.param;
       // Replace spaces with underscores for valid test names
       std::ranges::replace(name, ' ', '_');
@@ -540,7 +540,7 @@ INSTANTIATE_TEST_SUITE_P(
     DriverJobTest,
     // Parameters to test with
     testing::ValuesIn(DEVICES),
-    [](const testing::TestParamInfo<const char*>& paramInfo) {
+    [](const testing::TestParamInfo<std::string>& paramInfo) {
       std::string name = paramInfo.param;
       // Replace spaces with underscores for valid test names
       std::ranges::replace(name, ' ', '_');

@@ -17,6 +17,8 @@
 #include "mqt_sc_qdmi/device.h"
 #include "qdmi/sc/DeviceMemberInitializers.hpp"
 
+#include <atomic>
+#include <cassert>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
@@ -90,6 +92,8 @@
 // NOLINTEND(bugprone-macro-parentheses)
 
 namespace qdmi::sc {
+std::atomic<Device*> Device::instance = nullptr;
+
 Device::Device() {
   // NOLINTBEGIN(cppcoreguidelines-prefer-member-initializer)
   INITIALIZE_NAME(name_);
@@ -102,6 +106,30 @@ Device::Device() {
 Device::~Device() {
   // Explicitly clear sessions before destruction to avoid spurious segfaults
   sessions_.clear();
+}
+void Device::initialize() {
+  // NOLINTNEXTLINE(misc-const-correctness)
+  Device* expected = nullptr;
+  // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
+  auto* newInstance = new Device();
+  if (!instance.compare_exchange_strong(expected, newInstance)) {
+    // Another thread won the race, so delete the instance we created.
+    // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
+    delete newInstance;
+  }
+}
+void Device::finalize() {
+  // Atomically swap the instance pointer with nullptr and get the old value.
+  const Device* oldInstance = instance.exchange(nullptr);
+  // Delete the old instance if it existed.
+  // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
+  delete oldInstance;
+}
+auto Device::get() -> Device& {
+  auto* loadedInstance = instance.load();
+  assert(loadedInstance != nullptr &&
+         "Device not initialized. Call `initialize()` first.");
+  return *loadedInstance;
 }
 auto Device::sessionAlloc(MQT_SC_QDMI_Device_Session* session) -> int {
   if (session == nullptr) {
@@ -308,11 +336,14 @@ auto MQT_SC_QDMI_Operation_impl_d::queryProperty(
 }
 
 int MQT_SC_QDMI_device_initialize() {
-  std::ignore = qdmi::sc::Device::get(); // Ensure the singleton is created
+  qdmi::sc::Device::initialize();
   return QDMI_SUCCESS;
 }
 
-int MQT_SC_QDMI_device_finalize() { return QDMI_SUCCESS; }
+int MQT_SC_QDMI_device_finalize() {
+  qdmi::sc::Device::finalize();
+  return QDMI_SUCCESS;
+}
 
 int MQT_SC_QDMI_device_session_alloc(MQT_SC_QDMI_Device_Session* session) {
   return qdmi::sc::Device::get().sessionAlloc(session);

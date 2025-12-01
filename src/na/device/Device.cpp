@@ -643,7 +643,7 @@ int MQT_NA_QDMI_device_initialize() {
 }
 
 int MQT_NA_QDMI_device_finalize() {
-  qdmi::Device::finalize();
+  qdmi::na::Device::finalize();
   return QDMI_SUCCESS;
 }
 
