@@ -155,7 +155,6 @@ protected:
      * mlir::Value{} if the series consists of only single-qubit gates.
      */
     std::array<mlir::Value, 2> outQubits;
-    fp globalPhase{};
 
     struct MlirGate {
       UnitaryInterface op;
@@ -210,7 +209,6 @@ protected:
              .qubitId = gate.qubitIds});
         unitaryMatrix = gateMatrix * unitaryMatrix;
       }
-      unitaryMatrix *= std::exp(IM * globalPhase);
 
       assert(helpers::isUnitaryMatrix(unitaryMatrix));
       return unitaryMatrix;
@@ -226,7 +224,6 @@ protected:
              .qubitId = gate.qubitIds});
         unitaryMatrix = gateMatrix * unitaryMatrix;
       }
-      unitaryMatrix *= std::exp(IM * globalPhase);
 
       assert(helpers::isUnitaryMatrix(unitaryMatrix));
       return unitaryMatrix;
