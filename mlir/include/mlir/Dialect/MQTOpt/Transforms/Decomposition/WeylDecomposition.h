@@ -65,9 +65,9 @@ struct TwoQubitWeylDecomposition {
 
     // These next 3 gates use the definition of fSim from eq (1) in:
     // https://arxiv.org/pdf/2001.08343.pdf
-    FSimaabEquiv,
-    FSimabbEquiv,
-    FSimabmbEquiv,
+    FSimaabEquiv,  // parameters a=b & a!=c
+    FSimabbEquiv,  // parameters a!=b & b=c
+    FSimabmbEquiv, // parameters a!=b!=c & -b=c
   };
 
   // a, b, c are the parameters of the canonical gate (CAN)
