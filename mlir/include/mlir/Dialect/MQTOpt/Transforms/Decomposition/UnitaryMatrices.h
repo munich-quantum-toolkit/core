@@ -16,6 +16,31 @@
 
 namespace mqt::ir::opt::decomposition {
 
+inline constexpr auto SQRT2 =
+    static_cast<fp>(1.414213562373095048801688724209698079L);
+inline constexpr auto FRAC1_SQRT2 = static_cast<fp>(
+    0.707106781186547524400844362104849039284835937688474036588L);
+
+[[nodiscard]] inline matrix2x2 uMatrix(const fp lambda, const fp phi,
+                                       const fp theta) {
+  return matrix2x2{{{{std::cos(theta / 2.), 0.},
+                     {-std::cos(lambda) * std::sin(theta / 2.),
+                      -std::sin(lambda) * std::sin(theta / 2.)}},
+                    {{std::cos(phi) * std::sin(theta / 2.),
+                      std::sin(phi) * std::sin(theta / 2.)},
+                     {std::cos(lambda + phi) * std::cos(theta / 2.),
+                      std::sin(lambda + phi) * std::cos(theta / 2.)}}}};
+}
+
+[[nodiscard]] inline matrix2x2 u2Matrix(const fp lambda, const fp phi) {
+  return matrix2x2{
+      {FRAC1_SQRT2,
+       {-std::cos(lambda) * FRAC1_SQRT2, -std::sin(lambda) * FRAC1_SQRT2}},
+      {{std::cos(phi) * FRAC1_SQRT2, std::sin(phi) * FRAC1_SQRT2},
+       {std::cos(lambda + phi) * FRAC1_SQRT2,
+        std::sin(lambda + phi) * FRAC1_SQRT2}}};
+}
+
 inline matrix2x2 rxMatrix(fp theta) {
   auto halfTheta = theta / 2.;
   auto cos = qfp(std::cos(halfTheta), 0.);
@@ -68,10 +93,6 @@ inline matrix4x4 rzzMatrix(const fp theta) {
 inline matrix2x2 pMatrix(const fp lambda) {
   return matrix2x2{{1, 0}, {0, {std::cos(lambda), std::sin(lambda)}}};
 }
-inline constexpr auto SQRT2 =
-    static_cast<fp>(1.414213562373095048801688724209698079L);
-inline constexpr auto FRAC1_SQRT2 = static_cast<fp>(
-    0.707106781186547524400844362104849039284835937688474036588L);
 const matrix2x2 IDENTITY_GATE = matrix2x2::Identity();
 const matrix2x2 H_GATE{{1.0 / SQRT2, 1.0 / SQRT2}, {1.0 / SQRT2, -1.0 / SQRT2}};
 const matrix2x2 IPZ{{IM, C_ZERO}, {C_ZERO, M_IM}};
@@ -100,6 +121,12 @@ inline matrix2x2 getSingleQubitMatrix(const Gate& gate) {
   }
   if (gate.type == qc::P) {
     return pMatrix(gate.parameter[0]);
+  }
+  if (gate.type == qc::U) {
+    return uMatrix(gate.parameter[0], gate.parameter[1], gate.parameter[2]);
+  }
+  if (gate.type == qc::U2) {
+    return u2Matrix(gate.parameter[0], gate.parameter[1]);
   }
   if (gate.type == qc::H) {
     return matrix2x2{{FRAC1_SQRT2, FRAC1_SQRT2}, {FRAC1_SQRT2, -FRAC1_SQRT2}};
@@ -151,7 +178,9 @@ inline matrix4x4 getTwoQubitMatrix(const Gate& gate) {
     if (gate.type == qc::I) {
       return kroneckerProduct(IDENTITY_GATE, IDENTITY_GATE);
     }
-    throw std::invalid_argument{"unsupported gate type for two qubit matrix "};
+  throw std::invalid_argument{
+      "unsupported gate type for two qubit matrix (" +
+      qc::toString(gate.type) + ")"};
   }
   throw std::logic_error{"Invalid number of qubit IDs in compute_unitary"};
 }
