@@ -496,5 +496,11 @@ int main(int argc, char* argv[]) {
   case Command::Generate:
     return executeGenerateCommand(args.programName, argVec, i);
   }
-  return 0;
+  // LCOV_EXCL_START
+#ifdef __GNUC__ // GCC, Clang, ICC
+  __builtin_unreachable();
+#elif defined(_MSC_VER) // MSVC
+  __assume(false);
+#endif
+  // LCOV_EXCL_STOP
 }

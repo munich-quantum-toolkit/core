@@ -22,6 +22,7 @@
 #include <memory>
 #include <string>
 #include <unordered_map>
+#include <utility>
 #include <vector>
 
 namespace qdmi::sc {
@@ -96,7 +97,7 @@ public:
    * @see MQT_SC_QDMI_device_session_query_device_property
    */
   auto queryProperty(QDMI_Device_Property prop, size_t size, void* value,
-                     size_t* sizeRet) -> int;
+                     size_t* sizeRet) const -> int;
 };
 } // namespace qdmi::sc
 
