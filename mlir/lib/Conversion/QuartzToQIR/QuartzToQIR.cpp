@@ -513,34 +513,16 @@ struct ConvertQuartzResetQIR final : OpConversionPattern<ResetOp> {
     matchAndRewrite(OP_CLASS op, OpAdaptor adaptor,                            \
                     ConversionPatternRewriter& rewriter) const override {      \
       auto& state = getState();                                                \
-                                                                               \
-      /* Query state for modifier information */                               \
       const auto inCtrlOp = state.inCtrlOp;                                    \
       const size_t numCtrls =                                                  \
           inCtrlOp != 0 ? state.posCtrls[inCtrlOp].size() : 0;                 \
-                                                                               \
-      /* Define function name */                                               \
-      StringRef fnName;                                                        \
-      if (inCtrlOp == 0) {                                                     \
-        fnName = QIR_C##OP_NAME_BIG;                                           \
-      } else {                                                                 \
-        if (numCtrls == 1) {                                                   \
-          fnName = QIR_C##OP_NAME_BIG;                                         \
-        } else if (numCtrls == 2) {                                            \
-          fnName = QIR_CC##OP_NAME_BIG;                                        \
-        } else if (numCtrls == 3) {                                            \
-          fnName = QIR_CCC##OP_NAME_BIG;                                       \
-        } else {                                                               \
-          return failure();                                                    \
-        }                                                                      \
-      }                                                                        \
-                                                                               \
+      const auto fnName = getFnName##OP_NAME_BIG(numCtrls);                    \
       return convertUnitaryToCallOp(op, adaptor, rewriter, getContext(),       \
                                     state, fnName, 1, 0);                      \
     }                                                                          \
   };
 
-DEFINE_ONE_TARGET_ZERO_PARAMETER(IdOp, ID, id, i)
+DEFINE_ONE_TARGET_ZERO_PARAMETER(IdOp, I, id, i)
 DEFINE_ONE_TARGET_ZERO_PARAMETER(XOp, X, x, x)
 DEFINE_ONE_TARGET_ZERO_PARAMETER(YOp, Y, y, y)
 DEFINE_ONE_TARGET_ZERO_PARAMETER(ZOp, Z, z, z)
@@ -579,28 +561,10 @@ DEFINE_ONE_TARGET_ZERO_PARAMETER(SXdgOp, SXDG, sxdg, sxdg)
     matchAndRewrite(OP_CLASS op, OpAdaptor adaptor,                            \
                     ConversionPatternRewriter& rewriter) const override {      \
       auto& state = getState();                                                \
-                                                                               \
-      /* Query state for modifier information */                               \
       const auto inCtrlOp = state.inCtrlOp;                                    \
       const size_t numCtrls =                                                  \
           inCtrlOp != 0 ? state.posCtrls[inCtrlOp].size() : 0;                 \
-                                                                               \
-      /* Define function name */                                               \
-      StringRef fnName;                                                        \
-      if (inCtrlOp == 0) {                                                     \
-        fnName = QIR_##OP_NAME_BIG;                                            \
-      } else {                                                                 \
-        if (numCtrls == 1) {                                                   \
-          fnName = QIR_C##OP_NAME_BIG;                                         \
-        } else if (numCtrls == 2) {                                            \
-          fnName = QIR_CC##OP_NAME_BIG;                                        \
-        } else if (numCtrls == 3) {                                            \
-          fnName = QIR_CCC##OP_NAME_BIG;                                       \
-        } else {                                                               \
-          return failure();                                                    \
-        }                                                                      \
-      }                                                                        \
-                                                                               \
+      const auto fnName = getFnName##OP_NAME_BIG(numCtrls);                    \
       return convertUnitaryToCallOp(op, adaptor, rewriter, getContext(),       \
                                     state, fnName, 1, 1);                      \
     }                                                                          \
@@ -638,28 +602,10 @@ DEFINE_ONE_TARGET_ONE_PARAMETER(POp, P, p, p, theta)
     matchAndRewrite(OP_CLASS op, OpAdaptor adaptor,                            \
                     ConversionPatternRewriter& rewriter) const override {      \
       auto& state = getState();                                                \
-                                                                               \
-      /* Query state for modifier information */                               \
       const auto inCtrlOp = state.inCtrlOp;                                    \
       const size_t numCtrls =                                                  \
           inCtrlOp != 0 ? state.posCtrls[inCtrlOp].size() : 0;                 \
-                                                                               \
-      /* Define function name */                                               \
-      StringRef fnName;                                                        \
-      if (inCtrlOp == 0) {                                                     \
-        fnName = QIR_##OP_NAME_BIG;                                            \
-      } else {                                                                 \
-        if (numCtrls == 1) {                                                   \
-          fnName = QIR_C##OP_NAME_BIG;                                         \
-        } else if (numCtrls == 2) {                                            \
-          fnName = QIR_CC##OP_NAME_BIG;                                        \
-        } else if (numCtrls == 3) {                                            \
-          fnName = QIR_CCC##OP_NAME_BIG;                                       \
-        } else {                                                               \
-          return failure();                                                    \
-        }                                                                      \
-      }                                                                        \
-                                                                               \
+      const auto fnName = getFnName##OP_NAME_BIG(numCtrls);                    \
       return convertUnitaryToCallOp(op, adaptor, rewriter, getContext(),       \
                                     state, fnName, 1, 2);                      \
     }                                                                          \
@@ -695,28 +641,10 @@ DEFINE_ONE_TARGET_TWO_PARAMETER(U2Op, U2, u2, u2, phi, lambda)
     matchAndRewrite(OP_CLASS op, OpAdaptor adaptor,                            \
                     ConversionPatternRewriter& rewriter) const override {      \
       auto& state = getState();                                                \
-                                                                               \
-      /* Query state for modifier information */                               \
       const auto inCtrlOp = state.inCtrlOp;                                    \
       const size_t numCtrls =                                                  \
           inCtrlOp != 0 ? state.posCtrls[inCtrlOp].size() : 0;                 \
-                                                                               \
-      /* Define function name */                                               \
-      StringRef fnName;                                                        \
-      if (inCtrlOp == 0) {                                                     \
-        fnName = QIR_##OP_NAME_BIG;                                            \
-      } else {                                                                 \
-        if (numCtrls == 1) {                                                   \
-          fnName = QIR_C##OP_NAME_BIG;                                         \
-        } else if (numCtrls == 2) {                                            \
-          fnName = QIR_CC##OP_NAME_BIG;                                        \
-        } else if (numCtrls == 3) {                                            \
-          fnName = QIR_CCC##OP_NAME_BIG;                                       \
-        } else {                                                               \
-          return failure();                                                    \
-        }                                                                      \
-      }                                                                        \
-                                                                               \
+      const auto fnName = getFnName##OP_NAME_BIG(numCtrls);                    \
       return convertUnitaryToCallOp<OP_CLASS>(                                 \
           op, adaptor, rewriter, getContext(), state, fnName, 1, 3);           \
     }                                                                          \
@@ -751,28 +679,10 @@ DEFINE_ONE_TARGET_THREE_PARAMETER(UOp, U, u, u3)
     matchAndRewrite(OP_CLASS op, OpAdaptor adaptor,                            \
                     ConversionPatternRewriter& rewriter) const override {      \
       auto& state = getState();                                                \
-                                                                               \
-      /* Query state for modifier information */                               \
       const auto inCtrlOp = state.inCtrlOp;                                    \
       const size_t numCtrls =                                                  \
           inCtrlOp != 0 ? state.posCtrls[inCtrlOp].size() : 0;                 \
-                                                                               \
-      /* Define function name */                                               \
-      StringRef fnName;                                                        \
-      if (inCtrlOp == 0) {                                                     \
-        fnName = QIR_##OP_NAME_BIG;                                            \
-      } else {                                                                 \
-        if (numCtrls == 1) {                                                   \
-          fnName = QIR_C##OP_NAME_BIG;                                         \
-        } else if (numCtrls == 2) {                                            \
-          fnName = QIR_CC##OP_NAME_BIG;                                        \
-        } else if (numCtrls == 3) {                                            \
-          fnName = QIR_CCC##OP_NAME_BIG;                                       \
-        } else {                                                               \
-          return failure();                                                    \
-        }                                                                      \
-      }                                                                        \
-                                                                               \
+      const auto fnName = getFnName##OP_NAME_BIG(numCtrls);                    \
       return convertUnitaryToCallOp(op, adaptor, rewriter, getContext(),       \
                                     state, fnName, 2, 0);                      \
     }                                                                          \
@@ -810,28 +720,10 @@ DEFINE_TWO_TARGET_ZERO_PARAMETER(ECROp, ECR, ecr, ecr)
     matchAndRewrite(OP_CLASS op, OpAdaptor adaptor,                            \
                     ConversionPatternRewriter& rewriter) const override {      \
       auto& state = getState();                                                \
-                                                                               \
-      /* Query state for modifier information */                               \
       const auto inCtrlOp = state.inCtrlOp;                                    \
       const size_t numCtrls =                                                  \
           inCtrlOp != 0 ? state.posCtrls[inCtrlOp].size() : 0;                 \
-                                                                               \
-      /* Define function name */                                               \
-      StringRef fnName;                                                        \
-      if (inCtrlOp == 0) {                                                     \
-        fnName = QIR_##OP_NAME_BIG;                                            \
-      } else {                                                                 \
-        if (numCtrls == 1) {                                                   \
-          fnName = QIR_C##OP_NAME_BIG;                                         \
-        } else if (numCtrls == 2) {                                            \
-          fnName = QIR_CC##OP_NAME_BIG;                                        \
-        } else if (numCtrls == 3) {                                            \
-          fnName = QIR_CCC##OP_NAME_BIG;                                       \
-        } else {                                                               \
-          return failure();                                                    \
-        }                                                                      \
-      }                                                                        \
-                                                                               \
+      const auto fnName = getFnName##OP_NAME_BIG(numCtrls);                    \
       return convertUnitaryToCallOp(op, adaptor, rewriter, getContext(),       \
                                     state, fnName, 2, 1);                      \
     }                                                                          \
@@ -870,28 +762,10 @@ DEFINE_TWO_TARGET_ONE_PARAMETER(RZZOp, RZZ, rzz, rzz, theta)
     matchAndRewrite(OP_CLASS op, OpAdaptor adaptor,                            \
                     ConversionPatternRewriter& rewriter) const override {      \
       auto& state = getState();                                                \
-                                                                               \
-      /* Query state for modifier information */                               \
       const auto inCtrlOp = state.inCtrlOp;                                    \
       const size_t numCtrls =                                                  \
           inCtrlOp != 0 ? state.posCtrls[inCtrlOp].size() : 0;                 \
-                                                                               \
-      /* Define function name */                                               \
-      StringRef fnName;                                                        \
-      if (inCtrlOp == 0) {                                                     \
-        fnName = QIR_##OP_NAME_BIG;                                            \
-      } else {                                                                 \
-        if (numCtrls == 1) {                                                   \
-          fnName = QIR_C##OP_NAME_BIG;                                         \
-        } else if (numCtrls == 2) {                                            \
-          fnName = QIR_CC##OP_NAME_BIG;                                        \
-        } else if (numCtrls == 3) {                                            \
-          fnName = QIR_CCC##OP_NAME_BIG;                                       \
-        } else {                                                               \
-          return failure();                                                    \
-        }                                                                      \
-      }                                                                        \
-                                                                               \
+      const auto fnName = getFnName##OP_NAME_BIG(numCtrls);                    \
       return convertUnitaryToCallOp(op, adaptor, rewriter, getContext(),       \
                                     state, fnName, 2, 2);                      \
     }                                                                          \

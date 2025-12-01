@@ -319,23 +319,12 @@ void QIRProgramBuilder::createCallOp(
                                                                                \
   QIRProgramBuilder& QIRProgramBuilder::mc##OP_NAME_SMALL(                     \
       const ValueRange controls, const Value target) {                         \
-    StringRef fnName;                                                          \
-    if (controls.size() == 1) {                                                \
-      fnName = QIR_C##OP_NAME_BIG;                                             \
-    } else if (controls.size() == 2) {                                         \
-      fnName = QIR_CC##OP_NAME_BIG;                                            \
-    } else if (controls.size() == 3) {                                         \
-      fnName = QIR_CCC##OP_NAME_BIG;                                           \
-    } else {                                                                   \
-      llvm::report_fatal_error(                                                \
-          "Multi-controlled with more than 3 controls are currently not "      \
-          "supported");                                                        \
-    }                                                                          \
-    createCallOp({}, controls, {target}, fnName);                              \
+    createCallOp({}, controls, {target},                                       \
+                 getFnName##OP_NAME_BIG(controls.size()));                     \
     return *this;                                                              \
   }
 
-DEFINE_ONE_TARGET_ZERO_PARAMETER(ID, id)
+DEFINE_ONE_TARGET_ZERO_PARAMETER(I, id)
 DEFINE_ONE_TARGET_ZERO_PARAMETER(X, x)
 DEFINE_ONE_TARGET_ZERO_PARAMETER(Y, y)
 DEFINE_ONE_TARGET_ZERO_PARAMETER(Z, z)
@@ -368,19 +357,8 @@ DEFINE_ONE_TARGET_ZERO_PARAMETER(SXDG, sxdg)
   QIRProgramBuilder& QIRProgramBuilder::mc##OP_NAME_SMALL(                     \
       const std::variant<double, Value>&(PARAM), const ValueRange controls,    \
       const Value target) {                                                    \
-    StringRef fnName;                                                          \
-    if (controls.size() == 1) {                                                \
-      fnName = QIR_C##OP_NAME_BIG;                                             \
-    } else if (controls.size() == 2) {                                         \
-      fnName = QIR_CC##OP_NAME_BIG;                                            \
-    } else if (controls.size() == 3) {                                         \
-      fnName = QIR_CCC##OP_NAME_BIG;                                           \
-    } else {                                                                   \
-      llvm::report_fatal_error(                                                \
-          "Multi-controlled with more than 3 controls are currently not "      \
-          "supported");                                                        \
-    }                                                                          \
-    createCallOp({PARAM}, controls, {target}, fnName);                         \
+    createCallOp({PARAM}, controls, {target},                                  \
+                 getFnName##OP_NAME_BIG(controls.size()));                     \
     return *this;                                                              \
   }
 
@@ -414,19 +392,8 @@ DEFINE_ONE_TARGET_ONE_PARAMETER(P, p, theta)
       const std::variant<double, Value>&(PARAM1),                              \
       const std::variant<double, Value>&(PARAM2), const ValueRange controls,   \
       const Value target) {                                                    \
-    StringRef fnName;                                                          \
-    if (controls.size() == 1) {                                                \
-      fnName = QIR_C##OP_NAME_BIG;                                             \
-    } else if (controls.size() == 2) {                                         \
-      fnName = QIR_CC##OP_NAME_BIG;                                            \
-    } else if (controls.size() == 3) {                                         \
-      fnName = QIR_CCC##OP_NAME_BIG;                                           \
-    } else {                                                                   \
-      llvm::report_fatal_error(                                                \
-          "Multi-controlled with more than 3 controls are currently not "      \
-          "supported");                                                        \
-    }                                                                          \
-    createCallOp({PARAM1, PARAM2}, controls, {target}, fnName);                \
+    createCallOp({PARAM1, PARAM2}, controls, {target},                         \
+                 getFnName##OP_NAME_BIG(controls.size()));                     \
     return *this;                                                              \
   }
 
@@ -462,19 +429,8 @@ DEFINE_ONE_TARGET_TWO_PARAMETER(U2, u2, phi, lambda)
       const std::variant<double, Value>&(PARAM2),                              \
       const std::variant<double, Value>&(PARAM3), const ValueRange controls,   \
       const Value target) {                                                    \
-    StringRef fnName;                                                          \
-    if (controls.size() == 1) {                                                \
-      fnName = QIR_C##OP_NAME_BIG;                                             \
-    } else if (controls.size() == 2) {                                         \
-      fnName = QIR_CC##OP_NAME_BIG;                                            \
-    } else if (controls.size() == 3) {                                         \
-      fnName = QIR_CCC##OP_NAME_BIG;                                           \
-    } else {                                                                   \
-      llvm::report_fatal_error(                                                \
-          "Multi-controlled with more than 3 controls are currently not "      \
-          "supported");                                                        \
-    }                                                                          \
-    createCallOp({PARAM1, PARAM2, PARAM3}, controls, {target}, fnName);        \
+    createCallOp({PARAM1, PARAM2, PARAM3}, controls, {target},                 \
+                 getFnName##OP_NAME_BIG(controls.size()));                     \
     return *this;                                                              \
   }
 
@@ -499,19 +455,8 @@ DEFINE_ONE_TARGET_THREE_PARAMETER(U, u, theta, phi, lambda)
                                                                                \
   QIRProgramBuilder& QIRProgramBuilder::mc##OP_NAME_SMALL(                     \
       const ValueRange controls, const Value target0, const Value target1) {   \
-    StringRef fnName;                                                          \
-    if (controls.size() == 1) {                                                \
-      fnName = QIR_C##OP_NAME_BIG;                                             \
-    } else if (controls.size() == 2) {                                         \
-      fnName = QIR_CC##OP_NAME_BIG;                                            \
-    } else if (controls.size() == 3) {                                         \
-      fnName = QIR_CCC##OP_NAME_BIG;                                           \
-    } else {                                                                   \
-      llvm::report_fatal_error(                                                \
-          "Multi-controlled with more than 3 controls are currently not "      \
-          "supported");                                                        \
-    }                                                                          \
-    createCallOp({}, controls, {target0, target1}, fnName);                    \
+    createCallOp({}, controls, {target0, target1},                             \
+                 getFnName##OP_NAME_BIG(controls.size()));                     \
     return *this;                                                              \
   }
 
@@ -542,19 +487,8 @@ DEFINE_TWO_TARGET_ZERO_PARAMETER(ECR, ecr)
   QIRProgramBuilder& QIRProgramBuilder::mc##OP_NAME_SMALL(                     \
       const std::variant<double, Value>&(PARAM), const ValueRange controls,    \
       const Value target0, const Value target1) {                              \
-    StringRef fnName;                                                          \
-    if (controls.size() == 1) {                                                \
-      fnName = QIR_C##OP_NAME_BIG;                                             \
-    } else if (controls.size() == 2) {                                         \
-      fnName = QIR_CC##OP_NAME_BIG;                                            \
-    } else if (controls.size() == 3) {                                         \
-      fnName = QIR_CCC##OP_NAME_BIG;                                           \
-    } else {                                                                   \
-      llvm::report_fatal_error(                                                \
-          "Multi-controlled with more than 3 controls are currently not "      \
-          "supported");                                                        \
-    }                                                                          \
-    createCallOp({PARAM}, controls, {target0, target1}, fnName);               \
+    createCallOp({PARAM}, controls, {target0, target1},                        \
+                 getFnName##OP_NAME_BIG(controls.size()));                     \
     return *this;                                                              \
   }
 
@@ -590,19 +524,8 @@ DEFINE_TWO_TARGET_ONE_PARAMETER(RZZ, rzz, theta)
       const std::variant<double, Value>&(PARAM1),                              \
       const std::variant<double, Value>&(PARAM2), const ValueRange controls,   \
       const Value target0, const Value target1) {                              \
-    StringRef fnName;                                                          \
-    if (controls.size() == 1) {                                                \
-      fnName = QIR_C##OP_NAME_BIG;                                             \
-    } else if (controls.size() == 2) {                                         \
-      fnName = QIR_CC##OP_NAME_BIG;                                            \
-    } else if (controls.size() == 3) {                                         \
-      fnName = QIR_CCC##OP_NAME_BIG;                                           \
-    } else {                                                                   \
-      llvm::report_fatal_error(                                                \
-          "Multi-controlled with more than 3 controls are currently not "      \
-          "supported");                                                        \
-    }                                                                          \
-    createCallOp({PARAM1, PARAM2}, controls, {target0, target1}, fnName);      \
+    createCallOp({PARAM1, PARAM2}, controls, {target0, target1},               \
+                 getFnName##OP_NAME_BIG(controls.size()));                     \
     return *this;                                                              \
   }
 

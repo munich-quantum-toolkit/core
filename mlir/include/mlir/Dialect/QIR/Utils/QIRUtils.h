@@ -17,125 +17,111 @@
 
 namespace mlir::qir {
 
-// QIR function name constants
+// QIR function names
+
+#define ADD_STANDARD_GATE(NAME_BIG, NAME_SMALL)                                \
+  static constexpr auto QIR_##NAME_BIG =                                       \
+      "__quantum__qis__" #NAME_SMALL "__body";                                 \
+  static constexpr auto QIR_C##NAME_BIG =                                      \
+      "__quantum__qis__c" #NAME_SMALL "__body";                                \
+  static constexpr auto QIR_CC##NAME_BIG =                                     \
+      "__quantum__qis__cc" #NAME_SMALL "__body";                               \
+  static constexpr auto QIR_CCC##NAME_BIG =                                    \
+      "__quantum__qis__ccc" #NAME_SMALL "__body";
+
 static constexpr auto QIR_INITIALIZE = "__quantum__rt__initialize";
 static constexpr auto QIR_MEASURE = "__quantum__qis__mz__body";
 static constexpr auto QIR_RECORD_OUTPUT = "__quantum__rt__result_record_output";
 static constexpr auto QIR_ARRAY_RECORD_OUTPUT =
     "__quantum__rt__array_record_output";
 static constexpr auto QIR_RESET = "__quantum__qis__reset__body";
-static constexpr auto QIR_ID = "__quantum__qis__i__body";
-static constexpr auto QIR_CID = "__quantum__qis__ci__body";
-static constexpr auto QIR_CCID = "__quantum__qis__cci__body";
-static constexpr auto QIR_CCCID = "__quantum__qis__ccci__body";
-static constexpr auto QIR_X = "__quantum__qis__x__body";
-static constexpr auto QIR_CX = "__quantum__qis__cx__body";
-static constexpr auto QIR_CCX = "__quantum__qis__ccx__body";
-static constexpr auto QIR_CCCX = "__quantum__qis__cccx__body";
-static constexpr auto QIR_Y = "__quantum__qis__y__body";
-static constexpr auto QIR_CY = "__quantum__qis__cy__body";
-static constexpr auto QIR_CCY = "__quantum__qis__ccy__body";
-static constexpr auto QIR_CCCY = "__quantum__qis__cccy__body";
-static constexpr auto QIR_Z = "__quantum__qis__z__body";
-static constexpr auto QIR_CZ = "__quantum__qis__cz__body";
-static constexpr auto QIR_CCZ = "__quantum__qis__ccz__body";
-static constexpr auto QIR_CCCZ = "__quantum__qis__cccz__body";
-static constexpr auto QIR_H = "__quantum__qis__h__body";
-static constexpr auto QIR_CH = "__quantum__qis__ch__body";
-static constexpr auto QIR_CCH = "__quantum__qis__cch__body";
-static constexpr auto QIR_CCCH = "__quantum__qis__ccch__body";
-static constexpr auto QIR_S = "__quantum__qis__s__body";
-static constexpr auto QIR_CS = "__quantum__qis__cs__body";
-static constexpr auto QIR_CCS = "__quantum__qis__ccs__body";
-static constexpr auto QIR_CCCS = "__quantum__qis__cccs__body";
-static constexpr auto QIR_SDG = "__quantum__qis__sdg__body";
-static constexpr auto QIR_CSDG = "__quantum__qis__csdg__body";
-static constexpr auto QIR_CCSDG = "__quantum__qis__ccsdg__body";
-static constexpr auto QIR_CCCSDG = "__quantum__qis__cccsdg__body";
-static constexpr auto QIR_T = "__quantum__qis__t__body";
-static constexpr auto QIR_CT = "__quantum__qis__ct__body";
-static constexpr auto QIR_CCT = "__quantum__qis__cct__body";
-static constexpr auto QIR_CCCT = "__quantum__qis__ccct__body";
-static constexpr auto QIR_TDG = "__quantum__qis__tdg__body";
-static constexpr auto QIR_CTDG = "__quantum__qis__ctdg__body";
-static constexpr auto QIR_CCTDG = "__quantum__qis__cctdg__body";
-static constexpr auto QIR_CCCTDG = "__quantum__qis__ccctdg__body";
-static constexpr auto QIR_SX = "__quantum__qis__sx__body";
-static constexpr auto QIR_CSX = "__quantum__qis__csx__body";
-static constexpr auto QIR_CCSX = "__quantum__qis__ccsx__body";
-static constexpr auto QIR_CCCSX = "__quantum__qis__cccsx__body";
-static constexpr auto QIR_SXDG = "__quantum__qis__sxdg__body";
-static constexpr auto QIR_CSXDG = "__quantum__qis__csxdg__body";
-static constexpr auto QIR_CCSXDG = "__quantum__qis__ccsxdg__body";
-static constexpr auto QIR_CCCSXDG = "__quantum__qis__cccsxdg__body";
-static constexpr auto QIR_RX = "__quantum__qis__rx__body";
-static constexpr auto QIR_CRX = "__quantum__qis__crx__body";
-static constexpr auto QIR_CCRX = "__quantum__qis__ccrx__body";
-static constexpr auto QIR_CCCRX = "__quantum__qis__cccrx__body";
-static constexpr auto QIR_RY = "__quantum__qis__ry__body";
-static constexpr auto QIR_CRY = "__quantum__qis__cry__body";
-static constexpr auto QIR_CCRY = "__quantum__qis__ccry__body";
-static constexpr auto QIR_CCCRY = "__quantum__qis__cccry__body";
-static constexpr auto QIR_RZ = "__quantum__qis__rz__body";
-static constexpr auto QIR_CRZ = "__quantum__qis__crz__body";
-static constexpr auto QIR_CCRZ = "__quantum__qis__ccrz__body";
-static constexpr auto QIR_CCCRZ = "__quantum__qis__cccrz__body";
-static constexpr auto QIR_P = "__quantum__qis__p__body";
-static constexpr auto QIR_CP = "__quantum__qis__cp__body";
-static constexpr auto QIR_CCP = "__quantum__qis__ccp__body";
-static constexpr auto QIR_CCCP = "__quantum__qis__cccp__body";
-static constexpr auto QIR_R = "__quantum__qis__r__body";
-static constexpr auto QIR_CR = "__quantum__qis__cr__body";
-static constexpr auto QIR_CCR = "__quantum__qis__ccr__body";
-static constexpr auto QIR_CCCR = "__quantum__qis__cccr__body";
-static constexpr auto QIR_U2 = "__quantum__qis__u2__body";
-static constexpr auto QIR_CU2 = "__quantum__qis__cu2__body";
-static constexpr auto QIR_CCU2 = "__quantum__qis__ccu2__body";
-static constexpr auto QIR_CCCU2 = "__quantum__qis__cccu2__body";
-static constexpr auto QIR_U = "__quantum__qis__u3__body";
-static constexpr auto QIR_CU = "__quantum__qis__cu3__body";
-static constexpr auto QIR_CCU = "__quantum__qis__ccu3__body";
-static constexpr auto QIR_CCCU = "__quantum__qis__cccu3__body";
-static constexpr auto QIR_SWAP = "__quantum__qis__swap__body";
-static constexpr auto QIR_CSWAP = "__quantum__qis__cswap__body";
-static constexpr auto QIR_CCSWAP = "__quantum__qis__ccswap__body";
-static constexpr auto QIR_CCCSWAP = "__quantum__qis__cccswap__body";
-static constexpr auto QIR_ISWAP = "__quantum__qis__iswap__body";
-static constexpr auto QIR_CISWAP = "__quantum__qis__ciswap__body";
-static constexpr auto QIR_CCISWAP = "__quantum__qis__cciswap__body";
-static constexpr auto QIR_CCCISWAP = "__quantum__qis__ccciswap__body";
-static constexpr auto QIR_DCX = "__quantum__qis__dcx__body";
-static constexpr auto QIR_CDCX = "__quantum__qis__cdcx__body";
-static constexpr auto QIR_CCDCX = "__quantum__qis__ccdcx__body";
-static constexpr auto QIR_CCCDCX = "__quantum__qis__cccdcx__body";
-static constexpr auto QIR_ECR = "__quantum__qis__ecr__body";
-static constexpr auto QIR_CECR = "__quantum__qis__cecr__body";
-static constexpr auto QIR_CCECR = "__quantum__qis__ccecr__body";
-static constexpr auto QIR_CCCECR = "__quantum__qis__cccecr__body";
-static constexpr auto QIR_RXX = "__quantum__qis__rxx__body";
-static constexpr auto QIR_CRXX = "__quantum__qis__crxx__body";
-static constexpr auto QIR_CCRXX = "__quantum__qis__ccrxx__body";
-static constexpr auto QIR_CCCRXX = "__quantum__qis__cccrxx__body";
-static constexpr auto QIR_RYY = "__quantum__qis__ryy__body";
-static constexpr auto QIR_CRYY = "__quantum__qis__cryy__body";
-static constexpr auto QIR_CCRYY = "__quantum__qis__ccryy__body";
-static constexpr auto QIR_CCCRYY = "__quantum__qis__cccryy__body";
-static constexpr auto QIR_RZX = "__quantum__qis__rzx__body";
-static constexpr auto QIR_CRZX = "__quantum__qis__crzx__body";
-static constexpr auto QIR_CCRZX = "__quantum__qis__ccrzx__body";
-static constexpr auto QIR_CCCRZX = "__quantum__qis__cccrzx__body";
-static constexpr auto QIR_RZZ = "__quantum__qis__rzz__body";
-static constexpr auto QIR_CRZZ = "__quantum__qis__crzz__body";
-static constexpr auto QIR_CCRZZ = "__quantum__qis__ccrzz__body";
-static constexpr auto QIR_CCCRZZ = "__quantum__qis__cccrzz__body";
-static constexpr auto QIR_XXPLUSYY = "__quantum__qis__xx_plus_yy__body";
-static constexpr auto QIR_CXXPLUSYY = "__quantum__qis__cxx_plus_yy__body";
-static constexpr auto QIR_CCXXPLUSYY = "__quantum__qis__ccxx_plus_yy__body";
-static constexpr auto QIR_CCCXXPLUSYY = "__quantum__qis__cccxx_plus_yy__body";
-static constexpr auto QIR_XXMINUSYY = "__quantum__qis__xx_minus_yy__body";
-static constexpr auto QIR_CXXMINUSYY = "__quantum__qis__cxx_minus_yy__body";
-static constexpr auto QIR_CCXXMINUSYY = "__quantum__qis__ccxx_minus_yy__body";
-static constexpr auto QIR_CCCXXMINUSYY = "__quantum__qis__cccxx_minus_yy__body";
+ADD_STANDARD_GATE(I, i)
+ADD_STANDARD_GATE(X, x)
+ADD_STANDARD_GATE(Y, y)
+ADD_STANDARD_GATE(Z, z)
+ADD_STANDARD_GATE(H, h)
+ADD_STANDARD_GATE(S, s)
+ADD_STANDARD_GATE(SDG, sdg)
+ADD_STANDARD_GATE(T, t)
+ADD_STANDARD_GATE(TDG, tdg)
+ADD_STANDARD_GATE(SX, sx)
+ADD_STANDARD_GATE(SXDG, sxdg)
+ADD_STANDARD_GATE(RX, rx)
+ADD_STANDARD_GATE(RY, ry)
+ADD_STANDARD_GATE(RZ, rz)
+ADD_STANDARD_GATE(P, p)
+ADD_STANDARD_GATE(R, r)
+ADD_STANDARD_GATE(U2, u2)
+ADD_STANDARD_GATE(U, u3)
+ADD_STANDARD_GATE(SWAP, swap)
+ADD_STANDARD_GATE(ISWAP, iswap)
+ADD_STANDARD_GATE(DCX, dcx)
+ADD_STANDARD_GATE(ECR, ecr)
+ADD_STANDARD_GATE(RXX, rxx)
+ADD_STANDARD_GATE(RYY, ryy)
+ADD_STANDARD_GATE(RZX, rzx)
+ADD_STANDARD_GATE(RZZ, rzz)
+ADD_STANDARD_GATE(XXPLUSYY, xx_plus_yy)
+ADD_STANDARD_GATE(XXMINUSYY, xx_minus_yy)
+
+#undef ADD_STANDARD_GATE
+
+// Functions for getting QIR function names
+
+#define DEFINE_GETTER(NAME)                                                    \
+  /**                                                                          \
+   * @brief Gets the QIR function name for NAME                                \
+   *                                                                           \
+   * @param numControls Number of control qubits                               \
+   * @return The QIR function name                                             \
+   */                                                                          \
+  inline StringRef getFnName##NAME(size_t numControls) {                       \
+    switch (numControls) {                                                     \
+    case 0:                                                                    \
+      return QIR_##NAME;                                                       \
+    case 1:                                                                    \
+      return QIR_C##NAME;                                                      \
+    case 2:                                                                    \
+      return QIR_CC##NAME;                                                     \
+    case 3:                                                                    \
+      return QIR_CCC##NAME;                                                    \
+    default:                                                                   \
+      llvm::report_fatal_error(                                                \
+          "Multi-controlled with more than 3 controls are currently not "      \
+          "supported");                                                        \
+    }                                                                          \
+  }
+
+DEFINE_GETTER(I)
+DEFINE_GETTER(X)
+DEFINE_GETTER(Y)
+DEFINE_GETTER(Z)
+DEFINE_GETTER(H)
+DEFINE_GETTER(S)
+DEFINE_GETTER(SDG)
+DEFINE_GETTER(T)
+DEFINE_GETTER(TDG)
+DEFINE_GETTER(SX)
+DEFINE_GETTER(SXDG)
+DEFINE_GETTER(RX)
+DEFINE_GETTER(RY)
+DEFINE_GETTER(RZ)
+DEFINE_GETTER(P)
+DEFINE_GETTER(R)
+DEFINE_GETTER(U2)
+DEFINE_GETTER(U)
+DEFINE_GETTER(SWAP)
+DEFINE_GETTER(ISWAP)
+DEFINE_GETTER(DCX)
+DEFINE_GETTER(ECR)
+DEFINE_GETTER(RXX)
+DEFINE_GETTER(RYY)
+DEFINE_GETTER(RZX)
+DEFINE_GETTER(RZZ)
+DEFINE_GETTER(XXPLUSYY)
+DEFINE_GETTER(XXMINUSYY)
+
+#undef DEFINE_GETTER
 
 /**
  * @brief State object for tracking QIR metadata during conversion
