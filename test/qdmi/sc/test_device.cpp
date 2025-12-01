@@ -11,17 +11,12 @@
 #include "mqt_sc_qdmi/device.h"
 
 #include <cstddef>
-#include <fstream>
-#include <functional>
 #include <gmock/gmock-matchers.h>
 #include <gtest/gtest.h>
 // NOLINTNEXTLINE(misc-include-cleaner)
 #include <nlohmann/json.hpp>
-#include <sstream>
 #include <stdexcept>
 #include <string>
-#include <unordered_set>
-#include <utility>
 #include <vector>
 
 namespace {

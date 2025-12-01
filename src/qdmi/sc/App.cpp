@@ -169,10 +169,9 @@ struct GenerateArguments {
  * std::string), where args[0] is the program name.
  * @return std::pair<Arguments, size_t> The first element is the parsed
  * top-level Arguments; the second element is the index in `args` of the
- * detected sub-command token (the first argument after top-level options). If
- * no sub-command is present, the returned index will be `args.size() + 1`.
- * @throws std::invalid_argument If an unknown top-level option or token is
- * encountered.
+ * first argument belonging to the chosen sub-command (i.e., one past the
+ * sub-command token). If no sub-command is present, the returned index
+ * will be `args.size() + 1`.
  */
 auto parseArguments(const std::vector<std::string>& args)
     -> std::pair<Arguments, size_t> {

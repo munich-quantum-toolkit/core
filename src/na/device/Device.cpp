@@ -688,11 +688,6 @@ int MQT_NA_QDMI_device_job_set_parameter(MQT_NA_QDMI_Device_Job job,
   if (job == nullptr) {
     return QDMI_ERROR_INVALIDARGUMENT;
   }
-  // The called function is only static because jobs are not supported. However,
-  // we keep the function call for a complete implementation of QDMI and silence
-  // the respective warning.
-  //===--------------------------------------------------------------------===//
-  // NOLINTNEXTLINE(readability-static-accessed-through-instance)
   return job->setParameter(param, size, value);
 }
 
@@ -703,11 +698,6 @@ int MQT_NA_QDMI_device_job_query_property(MQT_NA_QDMI_Device_Job job,
   if (job == nullptr) {
     return QDMI_ERROR_INVALIDARGUMENT;
   }
-  // The called function is only static because jobs are not supported. We keep
-  // the function call, however, as it is needed to free the job when the jobs
-  // are supported.
-  //===--------------------------------------------------------------------===//
-  // NOLINTNEXTLINE(readability-static-accessed-through-instance)
   return job->queryProperty(prop, size, value, sizeRet);
 }
 
@@ -715,11 +705,7 @@ int MQT_NA_QDMI_device_job_submit(MQT_NA_QDMI_Device_Job job) {
   if (job == nullptr) {
     return QDMI_ERROR_INVALIDARGUMENT;
   }
-  // The called function is only static because jobs are not supported. We keep
-  // the function call, however, as it is needed to free the job when the jobs
-  // are supported.
-  //===--------------------------------------------------------------------===//
-  // NOLINTNEXTLINE(readability-static-accessed-through-instance)
+
   return job->submit();
 }
 
@@ -727,11 +713,6 @@ int MQT_NA_QDMI_device_job_cancel(MQT_NA_QDMI_Device_Job job) {
   if (job == nullptr) {
     return QDMI_ERROR_INVALIDARGUMENT;
   }
-  // The called function is only static because jobs are not supported. We keep
-  // the function call, however, as it is needed to free the job when the jobs
-  // are supported.
-  //===--------------------------------------------------------------------===//
-  // NOLINTNEXTLINE(readability-static-accessed-through-instance)
   return job->cancel();
 }
 
@@ -740,11 +721,6 @@ int MQT_NA_QDMI_device_job_check(MQT_NA_QDMI_Device_Job job,
   if (job == nullptr) {
     return QDMI_ERROR_INVALIDARGUMENT;
   }
-  // The called function is only static because jobs are not supported. We keep
-  // the function call, however, as it is needed to free the job when the jobs
-  // are supported.
-  //===--------------------------------------------------------------------===//
-  // NOLINTNEXTLINE(readability-static-accessed-through-instance)
   return job->check(status);
 }
 
@@ -753,11 +729,6 @@ int MQT_NA_QDMI_device_job_wait(MQT_NA_QDMI_Device_Job job,
   if (job == nullptr) {
     return QDMI_ERROR_INVALIDARGUMENT;
   }
-  // The called function is only static because jobs are not supported. We keep
-  // the function call, however, as it is needed to free the job when the jobs
-  // are supported.
-  //===--------------------------------------------------------------------===//
-  // NOLINTNEXTLINE(readability-static-accessed-through-instance)
   return job->wait(timeout);
 }
 
@@ -768,11 +739,6 @@ int MQT_NA_QDMI_device_job_get_results(MQT_NA_QDMI_Device_Job job,
   if (job == nullptr) {
     return QDMI_ERROR_INVALIDARGUMENT;
   }
-  // The called function is only static because jobs are not supported. We keep
-  // the function call, however, as it is needed to free the job when the jobs
-  // are supported.
-  //===--------------------------------------------------------------------===//
-  // NOLINTNEXTLINE(readability-static-accessed-through-instance)
   return job->getResults(result, size, data, sizeRet);
 }
 

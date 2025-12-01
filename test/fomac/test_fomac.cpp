@@ -13,6 +13,7 @@
 #include <algorithm>
 #include <gtest/gtest.h>
 #include <new>
+#include <optional>
 #include <qdmi/client.h>
 #include <stdexcept>
 #include <string>
@@ -249,7 +250,7 @@ TEST_P(SiteTest, SubmoduleIndex) {
 }
 
 TEST_P(OperationTest, Name) {
-  EXPECT_NO_THROW(EXPECT_FALSE(operation->getName().empty()););
+  EXPECT_NO_THROW(EXPECT_FALSE(operation->getName().empty()));
 }
 
 TEST_P(OperationTest, QubitsNum) {
