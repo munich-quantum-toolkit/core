@@ -69,6 +69,7 @@ class QDMIJob(JobV1):  # type: ignore[misc]
         status = self._job.check()
         if status not in {fomac.Job.Status.DONE, fomac.Job.Status.FAILED, fomac.Job.Status.CANCELED}:
             self._job.wait()
+            status = self._job.check()
 
         success = status == fomac.Job.Status.DONE
         if self._counts is None and success:
