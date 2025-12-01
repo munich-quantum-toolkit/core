@@ -186,7 +186,6 @@ protected:
           while (auto user = getUser(result.outQubits[i],
                                      &helpers::isSingleQubitOperation)) {
             foundGate = result.appendSingleQubitGate(*user);
-            assert(foundGate); // appending a single-qubit gate should not fail
           }
         }
 
@@ -241,7 +240,9 @@ protected:
     explicit TwoQubitSeries(UnitaryInterface initialOperation) {
       auto&& in = initialOperation.getAllInQubits();
       auto&& out = initialOperation->getResults();
-      if (helpers::isSingleQubitOperation(initialOperation)) {
+      if (isBarrier(initialOperation)) {
+        // ignore barrier op as initial operation
+      } else if (helpers::isSingleQubitOperation(initialOperation)) {
         inQubits = {in[0], mlir::Value{}};
         outQubits = {out[0], mlir::Value{}};
         gates.push_back({.op = initialOperation, .qubitIds = {0}});
@@ -259,6 +260,9 @@ protected:
      *         (will always return true)
      */
     bool appendSingleQubitGate(UnitaryInterface nextGate) {
+      if (isBarrier(nextGate)) {
+        return false;
+      }
       auto operand = nextGate.getAllInQubits()[0];
       // NOLINTNEXTLINE(readability-qualified-auto)
       auto it = llvm::find(outQubits, operand);
@@ -314,6 +318,10 @@ protected:
         // possible to collect other single-qubit operations
         backtrackSingleQubitSeries(newInQubitId);
       }
+      if (isBarrier(nextGate)) {
+        // a barrier operation should not be crossed for a decomposition
+        return false;
+      }
       const QubitId firstQubitId =
           std::distance(outQubits.begin(), firstQubitIt);
       const QubitId secondQubitId =
@@ -343,12 +351,17 @@ protected:
       };
       while (auto* op = inQubits[qubitId].getDefiningOp()) {
         auto unitaryOp = mlir::dyn_cast<UnitaryInterface>(op);
-        if (unitaryOp && helpers::isSingleQubitOperation(unitaryOp)) {
+        if (unitaryOp && helpers::isSingleQubitOperation(unitaryOp) &&
+            !isBarrier(unitaryOp)) {
           prependSingleQubitGate(unitaryOp);
         } else {
           break;
         }
       }
+    }
+
+    [[nodiscard]] static bool isBarrier(UnitaryInterface op) {
+      return llvm::isa_and_nonnull<BarrierOp>(*op);
     }
   };
 
