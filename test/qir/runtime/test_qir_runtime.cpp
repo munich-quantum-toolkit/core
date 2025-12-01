@@ -109,6 +109,18 @@ TEST_F(QIRRuntimeTest, TdgGate) {
   __quantum__qis__tdg__body(q0);
 }
 
+TEST_F(QIRRuntimeTest, RGate) {
+  auto* q0 = reinterpret_cast<Qubit*>(0UL);
+  __quantum__rt__initialize(nullptr);
+  __quantum__qis__r__body(q0, qc::PI_2, 0);
+}
+
+TEST_F(QIRRuntimeTest, PRXGate) {
+  auto* q0 = reinterpret_cast<Qubit*>(0UL);
+  __quantum__rt__initialize(nullptr);
+  __quantum__qis__prx__body(q0, qc::PI_2, 0);
+}
+
 TEST_F(QIRRuntimeTest, RXGate) {
   auto* q0 = reinterpret_cast<Qubit*>(0UL);
   __quantum__rt__initialize(nullptr);

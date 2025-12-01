@@ -9,8 +9,35 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 
 ## [Unreleased]
 
+### Changed
+
+- 👷 Use `munich-quantum-software/setup-mlir` to set up MLIR ([#1294]) ([**@denialhaag**])
+- ♻️ Preserve tuple structure and improve site type clarity of the MQT NA Default QDMI Device ([#1299]) ([**@marcelwa**])
+- ♻️ Move DD package evaluation module to standalone script ([#1327]) ([**@burgholzer**])
+
+### Removed
+
+- 🔥 Remove the `evaluation` extra from the MQT Core Python package ([#1327]) ([**@burgholzer**])
+- 🔥 Remove the `mqt-core-dd-compare` entry point from the MQT Core Python package ([#1327]) ([**@burgholzer**])
+
+## [3.3.3] - 2025-11-10
+
 ### Added
 
+- ✨ Add support for bridge gates for the neutral atom hybrid mapper ([#1293]) ([**@lsschmid**])
+
+### Fixed
+
+- 🐛 Revert change to `opTypeFromString()` signature made in [#1283] ([#1300]) ([**@denialhaag**])
+
+## [3.3.2] - 2025-11-04
+
+### Added
+
+- ✨ Add DD-based simulator QDMI device ([#1287]) ([**@burgholzer**])
+- ✨ A `--reuse-qubits` pass implementing an advanced form of qubit reuse to reduce the qubit count of quantum circuits ([#1108]) ([**@DRovara**])
+- ✨ A `--lift-measurements` pass that attempts to move measurements up as much as possible, used for instance to enable better qubit reuse ([#1108]) ([**@DRovara**])
+- ✨ Add native support for `R(theta, phi)` gate ([#1283]) ([**@burgholzer**])
 - ✨ Add A\*-search-based routing algorithm to MLIR transpilation routines ([#1237], [#1271], [#1279]) ([**@MatthiasReumann**])
 
 ### Fixed
@@ -207,7 +234,9 @@ _📚 Refer to the [GitHub Release Notes](https://github.com/munich-quantum-tool
 
 <!-- Version links -->
 
-[unreleased]: https://github.com/munich-quantum-toolkit/core/compare/v3.3.1...HEAD
+[unreleased]: https://github.com/munich-quantum-toolkit/core/compare/v3.3.3...HEAD
+[3.3.3]: https://github.com/munich-quantum-toolkit/core/releases/tag/v3.3.3
+[3.3.2]: https://github.com/munich-quantum-toolkit/core/releases/tag/v3.3.2
 [3.3.1]: https://github.com/munich-quantum-toolkit/core/releases/tag/v3.3.1
 [3.3.0]: https://github.com/munich-quantum-toolkit/core/releases/tag/v3.3.0
 [3.2.1]: https://github.com/munich-quantum-toolkit/core/releases/tag/v3.2.1
@@ -220,6 +249,13 @@ _📚 Refer to the [GitHub Release Notes](https://github.com/munich-quantum-tool
 
 <!-- PR links -->
 
+[#1327]: https://github.com/munich-quantum-toolkit/core/pull/1327
+[#1300]: https://github.com/munich-quantum-toolkit/core/pull/1300
+[#1299]: https://github.com/munich-quantum-toolkit/core/pull/1299
+[#1294]: https://github.com/munich-quantum-toolkit/core/pull/1294
+[#1293]: https://github.com/munich-quantum-toolkit/core/pull/1293
+[#1287]: https://github.com/munich-quantum-toolkit/core/pull/1287
+[#1283]: https://github.com/munich-quantum-toolkit/core/pull/1283
 [#1279]: https://github.com/munich-quantum-toolkit/core/pull/1279
 [#1276]: https://github.com/munich-quantum-toolkit/core/pull/1276
 [#1271]: https://github.com/munich-quantum-toolkit/core/pull/1271
@@ -250,6 +286,7 @@ _📚 Refer to the [GitHub Release Notes](https://github.com/munich-quantum-tool
 [#1139]: https://github.com/munich-quantum-toolkit/core/pull/1139
 [#1117]: https://github.com/munich-quantum-toolkit/core/pull/1117
 [#1116]: https://github.com/munich-quantum-toolkit/core/pull/1116
+[#1108]: https://github.com/munich-quantum-toolkit/core/pull/1108
 [#1106]: https://github.com/munich-quantum-toolkit/core/pull/1106
 [#1100]: https://github.com/munich-quantum-toolkit/core/pull/1100
 [#1099]: https://github.com/munich-quantum-toolkit/core/pull/1099
@@ -341,6 +378,8 @@ _📚 Refer to the [GitHub Release Notes](https://github.com/munich-quantum-tool
 [**@lavanya-m-k**]: https://github.com/lavanya-m-k
 [**@taminob**]: https://github.com/taminob
 [**@jannikpflieger**]: https://github.com/jannikpflieger
+[**@lsschmid**]: https://github.com/lsschmid
+[**@marcelwa**]: https://github.com/marcelwa
 
 <!-- General links -->
 

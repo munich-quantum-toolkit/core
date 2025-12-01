@@ -10,6 +10,7 @@
 
 #include "qdmi/Driver.hpp"
 
+#include "mqt_ddsim_qdmi/device.h"
 #include "mqt_na_qdmi/device.h"
 
 #include <cassert>
@@ -74,6 +75,7 @@ namespace qdmi {
     }                                                                          \
   }
 DEFINE_STATIC_LIBRARY(MQT_NA)
+DEFINE_STATIC_LIBRARY(MQT_DDSIM)
 
 #ifndef _WIN32
 DynamicDeviceLibrary::DynamicDeviceLibrary(const std::string& libName,
@@ -332,6 +334,8 @@ namespace qdmi {
 Driver::Driver() {
   devices_.emplace_back(std::make_unique<QDMI_Device_impl_d>(
       std::make_unique<MQT_NADeviceLibrary>()));
+  devices_.emplace_back(std::make_unique<QDMI_Device_impl_d>(
+      std::make_unique<MQT_DDSIMDeviceLibrary>()));
 }
 
 Driver::~Driver() {

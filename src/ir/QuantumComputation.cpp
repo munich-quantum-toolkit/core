@@ -1396,6 +1396,7 @@ DEFINE_SINGLE_TARGET_SINGLE_PARAMETER_OPERATION(p, theta)
   }
 
 DEFINE_SINGLE_TARGET_TWO_PARAMETER_OPERATION(u2, phi, lambda)
+DEFINE_SINGLE_TARGET_TWO_PARAMETER_OPERATION(r, theta, phi)
 
 #undef DEFINE_SINGLE_TARGET_TWO_PARAMETER_OPERATION
 
@@ -1563,6 +1564,11 @@ void QuantumComputation::measureAll(const bool addBits) {
     const auto q = static_cast<Qubit>(i - 1);
     measure(q, start + q);
   }
+}
+
+void QuantumComputation::bridge(const Targets& targets) {
+  checkQubitRange(targets);
+  emplace_back<StandardOperation>(targets, Bridge);
 }
 
 void QuantumComputation::reset(const Qubit target) {

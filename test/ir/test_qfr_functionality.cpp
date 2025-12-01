@@ -272,6 +272,9 @@ TEST_F(QFRFunctionality, gateShortCutsAndCloning) {
   qc.sxdg(0);
   qc.csxdg(1, 0);
   qc.mcsxdg({1, 2_nc}, 0);
+  qc.r(PI, PI, 0);
+  qc.cr(PI, PI, 1, 0);
+  qc.mcr(PI, PI, {1, 2_nc}, 0);
   qc.rx(PI, 0);
   qc.crx(PI, 1, 0);
   qc.mcrx(PI, {1, 2_nc}, 0);
@@ -856,6 +859,7 @@ TEST_F(QFRFunctionality, invertStandardOpParamChange) {
   const auto cases = {
       std::tuple{OpType::GPhase, std::vector<fp>{1}, std::vector<fp>{-1}},
       std::tuple{OpType::P, std::vector<fp>{1}, std::vector<fp>{-1}},
+      std::tuple{OpType::R, std::vector<fp>{1, 2}, std::vector<fp>{-1, 2}},
       std::tuple{OpType::RX, std::vector<fp>{1}, std::vector<fp>{-1}},
       std::tuple{OpType::RY, std::vector<fp>{1}, std::vector<fp>{-1}},
       std::tuple{OpType::RZ, std::vector<fp>{1}, std::vector<fp>{-1}},
@@ -909,6 +913,8 @@ TEST_F(QFRFunctionality, invertSymbolicOpParamChange) {
                  std::vector<SymbolOrNumber>{-1.0}},
       std::tuple{OpType::U2, std::vector<SymbolOrNumber>{Symbolic({x}), 1.0},
                  std::vector<SymbolOrNumber>{-1.0 + PI, -Symbolic({x}) - PI}},
+      std::tuple{OpType::R, std::vector<SymbolOrNumber>{Symbolic({x}), 2.0},
+                 std::vector<SymbolOrNumber>{-Symbolic({x}), 2.0}},
       std::tuple{
           OpType::U,
           std::vector<SymbolOrNumber>{Symbolic({x}), 2.0, Symbolic({y})},

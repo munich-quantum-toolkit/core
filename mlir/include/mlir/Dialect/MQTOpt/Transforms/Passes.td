@@ -91,6 +91,23 @@ def QuantumSinkPass : Pass<"quantum-sink", "mlir::ModuleOp"> {
   }];
 }
 
+def LiftMeasurementsPass : Pass<"lift-measurements", "mlir::ModuleOp"> {
+  let dependentDialects = [ "mlir::arith::ArithDialect", "mlir::scf::SCFDialect", "mqt::ir::opt::MQTOptDialect" ];
+  let summary = "This pass attempts to lift measurements as much as possible by replacing quantum operations with classical operations where possible.";
+  let description = [{
+    This pass consists of several patterns that attempt to push different structures of quantum gates below measurements.
+  }];
+}
+
+def ReuseQubitsPass : Pass<"reuse-qubits", "mlir::ModuleOp"> {
+  let dependentDialects = [ "mlir::scf::SCFDialect", "mqt::ir::opt::MQTOptDialect" ];
+  let summary = "Reduce the number of required qubits by reusing existing ones that are no longer used.";
+  let description = [{
+    This pass performs qubit reuse, searching for qubits that are first referenced after the final reference to a different qubit.
+    In these cases, rather than using a new qubit, the old qubit can be reset and reused.
+  }];
+}
+
 //===----------------------------------------------------------------------===//
 // Transpilation Passes For Superconducting Devices
 //===----------------------------------------------------------------------===//

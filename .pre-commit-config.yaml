@@ -11,31 +11,25 @@ ci:
   autoupdate_commit_msg: "⬆️🪝 update pre-commit hooks"
   autoupdate_schedule: quarterly
   autofix_commit_msg: "🎨 pre-commit fixes"
-  skip: [mypy]
+  skip: [mypy, ty-check]
 
 repos:
-  # Check for merge conflicts
-  - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v6.0.0
-    hooks:
-      - id: check-merge-conflict
-        args: ["--assume-in-merge"]
-        fail_fast: true
-
   # Standard hooks
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v6.0.0
     hooks:
       - id: check-added-large-files
+        args: ["--maxkb=2048"]
       - id: check-case-conflict
-      - id: check-docstring-first
+      - id: check-vcs-permalinks
+      - id: check-merge-conflict
       - id: check-symlinks
+      - id: check-json
       - id: check-toml
       - id: check-yaml
       - id: debug-statements
       - id: end-of-file-fixer
       - id: mixed-line-ending
-      - id: requirements-txt-fixer
       - id: trailing-whitespace
 
   # Clean jupyter notebooks
@@ -64,25 +58,40 @@ repos:
       - id: rst-directive-colons
       - id: rst-inline-touching-normal
 
+  # Ensure uv lock file is up-to-date
+  - repo: https://github.com/astral-sh/uv-pre-commit
+    rev: 0.9.13
+    hooks:
+      - id: uv-lock
+
   # Python linting using ruff
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.14.2
+    rev: v0.14.7
     hooks:
       - id: ruff-check
-        args: ["--fix", "--show-fixes"]
       - id: ruff-format
 
   # Static type checking using mypy
   - repo: https://github.com/pre-commit/mirrors-mypy
-    rev: v1.18.2
+    rev: v1.19.0
     hooks:
       - id: mypy
         files: ^(python/mqt|test/python|noxfile.py)
         args: []
         additional_dependencies:
           - nox
-          - pandas-stubs
+          - numpy
           - pytest
+
+  # Static type checking using ty
+  - repo: local
+    hooks:
+      - id: ty-check
+        name: ty check
+        entry: python -c "import subprocess; import sys; subprocess.run(['uv', 'sync', '--no-install-project']); sys.exit(subprocess.run(['uv', 'run', '--no-sync', 'ty', 'check']).returncode)"
+        language: unsupported
+        require_serial: true
+        types_or: [python, pyi, jupyter]
 
   # Also run Black on examples in the documentation
   - repo: https://github.com/adamchainz/blacken-docs
@@ -93,13 +102,13 @@ repos:
 
   # Check for license headers
   - repo: https://github.com/emzeat/mz-lictools
-    rev: v2.8.0
+    rev: v2.9.0
     hooks:
       - id: license-tools
 
   # Clang-format the C++ part of the code base automatically
   - repo: https://github.com/pre-commit/mirrors-clang-format
-    rev: v21.1.2
+    rev: v21.1.6
     hooks:
       - id: clang-format
         types_or: [c++, c, cuda]
@@ -115,14 +124,14 @@ repos:
 
   # Format configuration files with prettier
   - repo: https://github.com/rbubley/mirrors-prettier
-    rev: v3.6.2
+    rev: v3.7.2
     hooks:
       - id: prettier
         types_or: [yaml, markdown, html, css, scss, javascript, json]
 
   # Check for spelling
   - repo: https://github.com/crate-ci/typos
-    rev: v1.38.1
+    rev: v1.40.0
     hooks:
       - id: typos
 
@@ -137,14 +146,14 @@ repos:
 
   # Check best practices for scientific Python code
   - repo: https://github.com/scientific-python/cookie
-    rev: 2025.10.20
+    rev: 2025.11.21
     hooks:
       - id: sp-repo-review
         additional_dependencies: ["repo-review[cli]"]
 
   # Check JSON schemata
   - repo: https://github.com/python-jsonschema/check-jsonschema
-    rev: 0.34.1
+    rev: 0.35.0
     hooks:
       - id: check-dependabot
       - id: check-github-workflows
@@ -152,7 +161,7 @@ repos:
 
   # Check the pyproject.toml file
   - repo: https://github.com/henryiii/validate-pyproject-schema-store
-    rev: 2025.10.25
+    rev: 2025.11.21
     hooks:
       - id: validate-pyproject
 

@@ -10,6 +10,8 @@
 
 #include "ir/operations/OpType.hpp"
 
+#include <algorithm>
+#include <array>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -64,87 +66,106 @@ std::string shortName(const OpType opType) {
     return toString(opType);
   }
 }
-OpType opTypeFromString(const std::string& opType) {
-  static const std::unordered_map<std::string, OpType> OP_NAME_TO_TYPE = {
-      {"none", OpType::None},
-      {"gphase", OpType::GPhase},
-      {"i", OpType::I},
-      {"id", OpType::I},
-      {"h", OpType::H},
-      {"ch", OpType::H},
-      {"x", OpType::X},
-      {"cnot", OpType::X},
-      {"cx", OpType::X},
-      {"mcx", OpType::X},
-      {"y", OpType::Y},
-      {"cy", OpType::Y},
-      {"z", OpType::Z},
-      {"cz", OpType::Z},
-      {"s", OpType::S},
-      {"cs", OpType::S},
-      {"sdg", OpType::Sdg},
-      {"csdg", OpType::Sdg},
-      {"t", OpType::T},
-      {"ct", OpType::T},
-      {"tdg", OpType::Tdg},
-      {"ctdg", OpType::Tdg},
-      {"v", OpType::V},
-      {"vdg", OpType::Vdg},
-      {"u", OpType::U},
-      {"cu", OpType::U},
-      {"u3", OpType::U},
-      {"cu3", OpType::U},
-      {"u2", OpType::U2},
-      {"cu2", OpType::U2},
-      {"p", OpType::P},
-      {"cp", OpType::P},
-      {"mcp", OpType::P},
-      {"phase", OpType::P},
-      {"cphase", OpType::P},
-      {"mcphase", OpType::P},
-      {"u1", OpType::P},
-      {"cu1", OpType::P},
-      {"sx", OpType::SX},
-      {"csx", OpType::SX},
-      {"sxdg", OpType::SXdg},
-      {"csxdg", OpType::SXdg},
-      {"rx", OpType::RX},
-      {"crx", OpType::RX},
-      {"ry", OpType::RY},
-      {"cry", OpType::RY},
-      {"rz", OpType::RZ},
-      {"crz", OpType::RZ},
-      {"swap", OpType::SWAP},
-      {"cswap", OpType::SWAP},
-      {"iswap", OpType::iSWAP},
-      {"iswapdg", OpType::iSWAPdg},
-      {"peres", OpType::Peres},
-      {"peresdg", OpType::Peresdg},
-      {"dcx", OpType::DCX},
-      {"ecr", OpType::ECR},
-      {"rxx", OpType::RXX},
-      {"ryy", OpType::RYY},
-      {"rzz", OpType::RZZ},
-      {"rzx", OpType::RZX},
-      {"xx_minus_yy", OpType::XXminusYY},
-      {"xx_plus_yy", OpType::XXplusYY},
-      {"measure", OpType::Measure},
-      {"reset", OpType::Reset},
-      {"barrier", OpType::Barrier},
-      {"if_else", OpType::IfElse},
-      {"compound", OpType::Compound},
-      {"move", OpType::Move},
-      {"aod_activate", OpType::AodActivate},
-      {"aod_deactivate", OpType::AodDeactivate},
-      {"aod_move", OpType::AodMove},
-  };
 
-  // try to find the operation type in the map of known operation types and
-  // return it if found or throw an exception otherwise.
-  if (const auto it = OP_NAME_TO_TYPE.find(opType);
-      it != OP_NAME_TO_TYPE.end()) {
-    return OP_NAME_TO_TYPE.at(opType);
+namespace {
+struct NameToType {
+  std::string_view name;
+  OpType type;
+};
+
+// Sorted lexicographically by `name`
+constexpr std::array OP_NAME_TO_TYPE{
+    NameToType{.name = "aod_activate", .type = AodActivate},
+    NameToType{.name = "aod_deactivate", .type = AodDeactivate},
+    NameToType{.name = "aod_move", .type = AodMove},
+    NameToType{.name = "barrier", .type = Barrier},
+    NameToType{.name = "ch", .type = H},
+    NameToType{.name = "cnot", .type = X},
+    NameToType{.name = "compound", .type = Compound},
+    NameToType{.name = "cp", .type = P},
+    NameToType{.name = "cphase", .type = P},
+    NameToType{.name = "cr", .type = R},
+    NameToType{.name = "crx", .type = RX},
+    NameToType{.name = "cry", .type = RY},
+    NameToType{.name = "crz", .type = RZ},
+    NameToType{.name = "cs", .type = S},
+    NameToType{.name = "csdg", .type = Sdg},
+    NameToType{.name = "cswap", .type = SWAP},
+    NameToType{.name = "csx", .type = SX},
+    NameToType{.name = "csxdg", .type = SXdg},
+    NameToType{.name = "ct", .type = T},
+    NameToType{.name = "ctdg", .type = Tdg},
+    NameToType{.name = "cu", .type = U},
+    NameToType{.name = "cu1", .type = P},
+    NameToType{.name = "cu2", .type = U2},
+    NameToType{.name = "cu3", .type = U},
+    NameToType{.name = "cx", .type = X},
+    NameToType{.name = "cy", .type = Y},
+    NameToType{.name = "cz", .type = Z},
+    NameToType{.name = "dcx", .type = DCX},
+    NameToType{.name = "ecr", .type = ECR},
+    NameToType{.name = "gphase", .type = GPhase},
+    NameToType{.name = "h", .type = H},
+    NameToType{.name = "i", .type = I},
+    NameToType{.name = "id", .type = I},
+    NameToType{.name = "if_else", .type = IfElse},
+    NameToType{.name = "iswap", .type = iSWAP},
+    NameToType{.name = "iswapdg", .type = iSWAPdg},
+    NameToType{.name = "mcp", .type = P},
+    NameToType{.name = "mcphase", .type = P},
+    NameToType{.name = "mcx", .type = X},
+    NameToType{.name = "measure", .type = Measure},
+    NameToType{.name = "move", .type = Move},
+    NameToType{.name = "none", .type = None},
+    NameToType{.name = "p", .type = P},
+    NameToType{.name = "peres", .type = Peres},
+    NameToType{.name = "peresdg", .type = Peresdg},
+    NameToType{.name = "phase", .type = P},
+    NameToType{.name = "prx", .type = R},
+    NameToType{.name = "r", .type = R},
+    NameToType{.name = "reset", .type = Reset},
+    NameToType{.name = "rx", .type = RX},
+    NameToType{.name = "rxx", .type = RXX},
+    NameToType{.name = "ry", .type = RY},
+    NameToType{.name = "ryy", .type = RYY},
+    NameToType{.name = "rz", .type = RZ},
+    NameToType{.name = "rzx", .type = RZX},
+    NameToType{.name = "rzz", .type = RZZ},
+    NameToType{.name = "s", .type = S},
+    NameToType{.name = "sdg", .type = Sdg},
+    NameToType{.name = "swap", .type = SWAP},
+    NameToType{.name = "sx", .type = SX},
+    NameToType{.name = "sxdg", .type = SXdg},
+    NameToType{.name = "t", .type = T},
+    NameToType{.name = "tdg", .type = Tdg},
+    NameToType{.name = "u", .type = U},
+    NameToType{.name = "u1", .type = P},
+    NameToType{.name = "u2", .type = U2},
+    NameToType{.name = "u3", .type = U},
+    NameToType{.name = "v", .type = V},
+    NameToType{.name = "vdg", .type = Vdg},
+    NameToType{.name = "x", .type = X},
+    NameToType{.name = "xx_minus_yy", .type = XXminusYY},
+    NameToType{.name = "xx_plus_yy", .type = XXplusYY},
+    NameToType{.name = "y", .type = Y},
+    NameToType{.name = "z", .type = Z},
+};
+static_assert(std::ranges::is_sorted(OP_NAME_TO_TYPE.cbegin(),
+                                     OP_NAME_TO_TYPE.cend(),
+                                     [](const auto& lhs, const auto& rhs) {
+                                       return lhs.name < rhs.name;
+                                     }));
+} // namespace
+
+OpType opTypeFromString(const std::string& opType) {
+  // clang-tidy produces a false-positive that produces a Windows compile error
+  // when accepted. NOLINTNEXTLINE(*-qualified-auto)
+  const auto it =
+      std::ranges::lower_bound(OP_NAME_TO_TYPE, opType, {}, &NameToType::name);
+  if (it != OP_NAME_TO_TYPE.end() && it->name == opType) {
+    return it->type;
   }
-  throw std::invalid_argument("Unsupported operation type: " + opType);
+  throw std::invalid_argument("Unsupported operation type: " +
+                              std::string(opType));
 }
 } // namespace qc

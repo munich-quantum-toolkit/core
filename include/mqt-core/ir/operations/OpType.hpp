@@ -14,6 +14,7 @@
 #include <istream>
 #include <ostream>
 #include <string>
+#include <string_view>
 
 namespace qc {
 
@@ -90,6 +91,7 @@ std::string shortName(OpType opType);
   case RX:
   case RY:
   case RZ:
+  case R:
     return true;
   default:
     return false;

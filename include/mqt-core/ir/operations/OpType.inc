@@ -32,8 +32,9 @@ HANDLE_OP_TYPE(14, SXdg, OpTypeInv, "sxdg")
 HANDLE_OP_TYPE(15, RX, OpTypeNone, "rx")
 HANDLE_OP_TYPE(16, RY, OpTypeNone, "ry")
 HANDLE_OP_TYPE(17, RZ, OpTypeDiag, "rz")
+HANDLE_OP_TYPE(41, R, OpTypeNone, "r")
 HANDLE_OP_TYPE(18, SWAP, OpTypeNone, "swap")
-HANDLE_OP_TYPE(19, iSWAP, OpTypeNone,   "iswap")
+HANDLE_OP_TYPE(19, iSWAP, OpTypeNone, "iswap")
 HANDLE_OP_TYPE(19, iSWAPdg, OpTypeInv, "iswapdg")
 HANDLE_OP_TYPE(20, Peres, OpTypeNone, "peres")
 HANDLE_OP_TYPE(20, Peresdg, OpTypeInv, "peresdg")
@@ -64,11 +65,12 @@ HANDLE_OP_TYPE(36, MultiAFalse, 0, "multi_a_false")
 
 // Neutral atom shuttling operations
 HANDLE_OP_TYPE(37, Move, 0, "move")
+HANDLE_OP_TYPE(42, Bridge, 0, "bridge")
 HANDLE_OP_TYPE(38, AodActivate, 0, "aod_activate")
 HANDLE_OP_TYPE(39, AodDeactivate, 0, "aod_deactivate")
 HANDLE_OP_TYPE(40, AodMove, 0, "aod_move")
 
-LAST_OP_TYPE(41)
+LAST_OP_TYPE(43)
 
 
 #undef OpTypeInv
