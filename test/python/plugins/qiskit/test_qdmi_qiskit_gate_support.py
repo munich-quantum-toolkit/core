@@ -16,7 +16,7 @@ import pytest
 from qiskit import QuantumCircuit
 
 from mqt.core.plugins.qiskit import QDMIBackend
-from mqt.core.plugins.qiskit.exceptions import UnsupportedOperationError
+from mqt.core.plugins.qiskit.exceptions import UnsupportedDeviceError, UnsupportedOperationError
 
 pytestmark = [
     pytest.mark.filterwarnings("ignore:.*Device operation.*cannot be mapped to a Qiskit gate.*:UserWarning"),
@@ -258,5 +258,5 @@ def test_zoned_operation_rejected_at_backend_init() -> None:
 
     device = MockZonedDevice()
 
-    with pytest.raises(AssertionError, match="cannot be represented in Qiskit's Target model"):
+    with pytest.raises(UnsupportedDeviceError, match="cannot be represented in Qiskit's Target model"):
         QDMIBackend(device=device)  # type: ignore[arg-type]

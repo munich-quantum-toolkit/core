@@ -27,6 +27,7 @@ from .exceptions import (
     CircuitValidationError,
     JobSubmissionError,
     TranslationError,
+    UnsupportedDeviceError,
     UnsupportedFormatError,
     UnsupportedOperationError,
 )
@@ -81,8 +82,14 @@ class QDMIBackend(BackendV2):  # type: ignore[misc]
         Args:
             device: FoMaC device instance.
             provider: Provider instance that created this backend.
+
+        Raises:
+            UnsupportedDeviceError: If the device cannot be represented in Qiskit's Target model.
         """
-        assert self.is_convertible(device), f"Device '{device.name()}' cannot be represented in Qiskit's Target model"
+        if not self.is_convertible(device):
+            msg = f"Device '{device.name()}' cannot be represented in Qiskit's Target model"
+            raise UnsupportedDeviceError(msg)
+
         super().__init__(name=device.name(), provider=provider, backend_version=device.version())
         self._device = device
 

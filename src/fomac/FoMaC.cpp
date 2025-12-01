@@ -11,7 +11,6 @@
 #include "fomac/FoMaC.hpp"
 
 #include <algorithm>
-#include <cassert>
 #include <complex>
 #include <cstddef>
 #include <cstdint>
@@ -629,6 +628,11 @@ auto FoMaC::Job::getDenseStateVector() const
                                     nullptr, &size),
                "Querying dense state vector size");
 
+  if (size % sizeof(std::complex<double>) != 0) {
+    throw std::runtime_error(
+        "Invalid state vector size: not a multiple of complex<double>");
+  }
+
   std::vector<std::complex<double>> stateVector(size /
                                                 sizeof(std::complex<double>));
   throwIfError(QDMI_job_get_results(job_, QDMI_JOB_RESULT_STATEVECTOR_DENSE,
@@ -642,6 +646,11 @@ auto FoMaC::Job::getDenseProbabilities() const -> std::vector<double> {
   throwIfError(QDMI_job_get_results(job_, QDMI_JOB_RESULT_PROBABILITIES_DENSE,
                                     0, nullptr, &size),
                "Querying dense probabilities size");
+
+  if (size % sizeof(double) != 0) {
+    throw std::runtime_error(
+        "Invalid probabilities size: not a multiple of double");
+  }
 
   std::vector<double> probabilities(size / sizeof(double));
   throwIfError(QDMI_job_get_results(job_, QDMI_JOB_RESULT_PROBABILITIES_DENSE,
@@ -674,6 +683,12 @@ auto FoMaC::Job::getSparseStateVector() const
                                     0, nullptr, &valuesSize),
                "Querying sparse state vector values size");
 
+  if (valuesSize % sizeof(std::complex<double>) != 0) {
+    throw std::runtime_error(
+        "Invalid sparse state vector values size: not a multiple of "
+        "complex<double>");
+  }
+
   std::vector<std::complex<double>> values(valuesSize /
                                            sizeof(std::complex<double>));
   throwIfError(QDMI_job_get_results(job_,
@@ -687,8 +702,15 @@ auto FoMaC::Job::getSparseStateVector() const
   std::string key;
   size_t idx = 0;
   while (std::getline(keysStream, key, ',')) {
+    if (idx >= values.size()) {
+      throw std::runtime_error("Sparse state vector key/value count mismatch");
+    }
     stateVector[key] = values[idx];
     ++idx;
+  }
+
+  if (idx != values.size()) {
+    throw std::runtime_error("Sparse state vector key/value count mismatch");
   }
   return stateVector;
 }
@@ -716,6 +738,12 @@ auto FoMaC::Job::getSparseProbabilities() const
                                     QDMI_JOB_RESULT_PROBABILITIES_SPARSE_VALUES,
                                     0, nullptr, &valuesSize),
                "Querying sparse probabilities values size");
+
+  if (valuesSize % sizeof(double) != 0) {
+    throw std::runtime_error(
+        "Invalid sparse probabilities values size: not a multiple of double");
+  }
+
   std::vector<double> values(valuesSize / sizeof(double));
   throwIfError(QDMI_job_get_results(job_,
                                     QDMI_JOB_RESULT_PROBABILITIES_SPARSE_VALUES,
@@ -728,8 +756,14 @@ auto FoMaC::Job::getSparseProbabilities() const
   std::string key;
   size_t idx = 0;
   while (std::getline(keysStream, key, ',')) {
+    if (idx >= values.size()) {
+      throw std::runtime_error("Sparse probabilities key/value count mismatch");
+    }
     probabilities[key] = values[idx];
     ++idx;
+  }
+  if (idx != values.size()) {
+    throw std::runtime_error("Sparse probabilities key/value count mismatch");
   }
   return probabilities;
 }

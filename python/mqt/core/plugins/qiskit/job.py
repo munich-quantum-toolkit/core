@@ -66,12 +66,16 @@ class QDMIJob(JobV1):  # type: ignore[misc]
         Returns:
             The result of the job.
         """
-        if self._counts is None:
+        status = self._job.check()
+        if status not in {fomac.Job.Status.DONE, fomac.Job.Status.FAILED, fomac.Job.Status.CANCELED}:
             self._job.wait()
+
+        success = status == fomac.Job.Status.DONE
+        if self._counts is None and success:
             self._counts = self._job.get_counts()
 
         exp_result = ExperimentResult.from_dict({
-            "success": True,
+            "success": success,
             "shots": self._job.num_shots,
             "data": {"counts": self._counts, "metadata": {}},
             "header": {"name": self._circuit_name},
@@ -82,7 +86,7 @@ class QDMIJob(JobV1):  # type: ignore[misc]
             backend_version=self._backend.backend_version,
             qobj_id=self.job_id(),
             job_id=self.job_id(),
-            success=True,
+            success=success,
             date=datetime.datetime.now(datetime.timezone.utc).isoformat(),
             results=[exp_result],
         )
