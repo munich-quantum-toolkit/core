@@ -254,6 +254,11 @@ class MockQDMIDevice:
         """Return device coupling map or None if all-to-all."""
         return self._coupling_map
 
+    @staticmethod
+    def supported_program_formats() -> list[fomac.ProgramFormat]:
+        """Return list of supported program formats."""
+        return [fomac.ProgramFormat.QASM2, fomac.ProgramFormat.QASM3]
+
     def submit_job(self, program: str, program_format: fomac.ProgramFormat, num_shots: int) -> MockJob:  # noqa: ARG002
         """Submit a mock job to the device.
 

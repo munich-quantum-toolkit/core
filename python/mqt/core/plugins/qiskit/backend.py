@@ -34,6 +34,8 @@ from .exceptions import (
 from .job import QDMIJob
 
 if TYPE_CHECKING:
+    from collections.abc import Iterable
+
     from qiskit.circuit import Instruction, QuantumCircuit
 
     from .provider import QDMIProvider
@@ -121,9 +123,9 @@ class QDMIBackend(BackendV2):  # type: ignore[misc]
         """Return default backend options.
 
         Returns:
-            Default Options with shots=1024 and program_format=QASM3.
+            Default Options with shots=1024.
         """
-        return Options(shots=1024, program_format=fomac.ProgramFormat.QASM3)
+        return Options(shots=1024)
 
     def _build_target(self) -> Target:
         """Construct a Qiskit Target from device capabilities.
@@ -350,34 +352,46 @@ class QDMIBackend(BackendV2):  # type: ignore[misc]
         return [None]
 
     @staticmethod
-    def _convert_circuit(circuit: QuantumCircuit, program_format: fomac.ProgramFormat) -> str:
-        """Convert a :class:`~qiskit.circuit.QuantumCircuit` to the specified program format.
+    def _convert_circuit(
+        circuit: QuantumCircuit, supported_program_formats: Iterable[fomac.ProgramFormat]
+    ) -> tuple[str, fomac.ProgramFormat]:
+        """Convert a :class:`~qiskit.circuit.QuantumCircuit` to one of the supported program formats.
+
+        QPY takes precedence over everything else since it is the native format of Qiskit.
+        OpenQASM 3 takes precedence over OpenQASM 2 since it is a superset of the latter.
+        QIR adaptive profile takes precedence over the base profile if supported by the device.
 
         Args:
             circuit: The quantum circuit to convert.
-            program_format: The target program format.
+            supported_program_formats: Supported program formats.
 
         Returns:
             String representation of the circuit in the specified format.
 
         Raises:
-            UnsupportedFormatError: If the program format is not supported.
+            UnsupportedFormatError: If no supported program formats are found.
             TranslationError: If conversion fails.
         """
-        # Check for supported formats first
-        if program_format not in {fomac.ProgramFormat.QASM2, fomac.ProgramFormat.QASM3}:
-            msg = f"Unsupported program format: {program_format}"
+        if not supported_program_formats:
+            msg = "No supported program formats found"
             raise UnsupportedFormatError(msg)
 
-        try:
-            if program_format == fomac.ProgramFormat.QASM2:
-                return str(qasm2.dumps(circuit))
-            # Must be QASM3 at this point
+        if fomac.ProgramFormat.QASM3 in supported_program_formats:
+            try:
+                return str(qasm3.dumps(circuit)), fomac.ProgramFormat.QASM3
+            except Exception as exc:
+                msg = f"Failed to convert circuit to QASM3: {exc}"
+                raise TranslationError(msg) from exc
 
-            return str(qasm3.dumps(circuit))
-        except Exception as exc:
-            msg = f"Failed to convert circuit to {program_format}: {exc}"
-            raise TranslationError(msg) from exc
+        if fomac.ProgramFormat.QASM2 in supported_program_formats:
+            try:
+                return str(qasm2.dumps(circuit)), fomac.ProgramFormat.QASM2
+            except Exception as exc:
+                msg = f"Failed to convert circuit to QASM2: {exc}"
+                raise TranslationError(msg) from exc
+
+        msg = f"No conversion from Qiskit to any of the supported program formats: {supported_program_formats}"
+        raise UnsupportedFormatError(msg)
 
     def run(self, run_input: QuantumCircuit, **options: Any) -> QDMIJob:  # noqa: ANN401
         """Execute a :class:`~qiskit.circuit.QuantumCircuit` on the backend.
@@ -421,11 +435,8 @@ class QDMIBackend(BackendV2):  # type: ignore[misc]
                 msg = f"Unsupported operation: '{op_name}'"
                 raise UnsupportedOperationError(msg)
 
-        # Get program format from options
-        program_format = options.get("program_format", self._options.program_format)
-
         # Convert circuit to specified program format
-        program_str = self._convert_circuit(run_input, program_format)
+        program_str, program_format = self._convert_circuit(run_input, self._device.supported_program_formats())
 
         # Submit job to QDMI device
         try:
