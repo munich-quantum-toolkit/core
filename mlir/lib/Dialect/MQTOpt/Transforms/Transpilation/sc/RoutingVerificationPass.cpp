@@ -16,7 +16,6 @@
 #include "mlir/Dialect/MQTOpt/Transforms/Transpilation/SequentialUnit.h"
 
 #include <cassert>
-#include <cstddef>
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/TypeSwitch.h>
 #include <llvm/Support/Debug.h>
