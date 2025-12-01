@@ -941,6 +941,8 @@ def XXPlusYYOp : FluxOp<"xx_plus_yy", traits = [UnitaryOpInterface, TwoTargetTwo
     let builders = [
         OpBuilder<(ins "Value":$qubit0_in, "Value":$qubit1_in, "const std::variant<double, Value>&":$theta, "const std::variant<double, Value>&":$beta)>
     ];
+
+    let hasCanonicalizer = 1;
 }
 
 def XXMinusYYOp : FluxOp<"xx_minus_yy", traits = [UnitaryOpInterface, TwoTargetTwoParameter]> {
@@ -969,6 +971,8 @@ def XXMinusYYOp : FluxOp<"xx_minus_yy", traits = [UnitaryOpInterface, TwoTargetT
     let builders = [
         OpBuilder<(ins "Value":$qubit0_in, "Value":$qubit1_in, "const std::variant<double, Value>&":$theta, "const std::variant<double, Value>&":$beta)>
     ];
+
+    let hasCanonicalizer = 1;
 }
 
 //===----------------------------------------------------------------------===//

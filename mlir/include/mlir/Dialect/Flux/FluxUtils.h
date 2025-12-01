@@ -57,6 +57,8 @@ removeInversePairTwoTargetZeroParameter(OpType op,
   if (!prevOp) {
     return failure();
   }
+
+  // Confirm operations act on same qubits
   if (op.getQubit1In() != prevOp.getQubit1Out()) {
     return failure();
   }
@@ -85,7 +87,7 @@ mergeOneTargetOneParameter(OpType op, mlir::PatternRewriter& rewriter) {
     return failure();
   }
 
-  // Compute and set new theta
+  // Compute and set new angle
   auto newParameter = rewriter.create<arith::AddFOp>(
       op.getLoc(), op.getOperand(1), prevOp.getOperand(1));
   op->setOperand(1, newParameter.getResult());
@@ -112,11 +114,13 @@ mergeTwoTargetOneParameter(OpType op, mlir::PatternRewriter& rewriter) {
   if (!prevOp) {
     return failure();
   }
+
+  // Confirm operations act on same qubits
   if (op.getQubit1In() != prevOp.getQubit1Out()) {
     return failure();
   }
 
-  // Compute and set new theta
+  // Compute and set new angle
   auto newParameter = rewriter.create<arith::AddFOp>(
       op.getLoc(), op.getOperand(2), prevOp.getOperand(2));
   op->setOperand(2, newParameter.getResult());

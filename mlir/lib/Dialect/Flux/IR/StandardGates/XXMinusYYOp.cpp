@@ -8,18 +8,68 @@
  * Licensed under the MIT License
  */
 
+#include "mlir/Dialect/Flux/FluxUtils.h"
 #include "mlir/Dialect/Flux/IR/FluxDialect.h"
 #include "mlir/Dialect/Utils/MatrixUtils.h"
 
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/BuiltinAttributes.h>
+#include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OperationSupport.h>
+#include <mlir/IR/PatternMatch.h>
+#include <mlir/Support/LogicalResult.h>
 #include <variant>
 
 using namespace mlir;
 using namespace mlir::flux;
 using namespace mlir::utils;
+
+namespace {
+
+/**
+ * @brief Merge subsequent XXMinusYY operations on the same qubits by adding
+ * their thetas.
+ */
+struct MergeSubsequentXXMinusYY final : OpRewritePattern<XXMinusYYOp> {
+  using OpRewritePattern::OpRewritePattern;
+
+  LogicalResult matchAndRewrite(XXMinusYYOp op,
+                                PatternRewriter& rewriter) const override {
+    auto prevOp = op.getQubit0In().getDefiningOp<XXMinusYYOp>();
+    if (!prevOp) {
+      return failure();
+    }
+
+    // Confirm operations act on same qubits
+    if (op.getQubit1In() != prevOp.getQubit1Out()) {
+      return failure();
+    }
+
+    // Confirm betas are equal
+    auto beta = XXMinusYYOp::getStaticParameter(op.getBeta());
+    auto prevBeta = XXMinusYYOp::getStaticParameter(prevOp.getBeta());
+    if (beta && prevBeta) {
+      if (beta.getValueAsDouble() != prevBeta.getValueAsDouble()) {
+        return failure();
+      }
+    } else {
+      return failure();
+    }
+
+    // Compute and set new theta
+    auto newParameter = rewriter.create<arith::AddFOp>(
+        op.getLoc(), op.getOperand(2), prevOp.getOperand(2));
+    op->setOperand(2, newParameter.getResult());
+
+    // Trivialize predecessor
+    rewriter.replaceOp(prevOp, {prevOp.getQubit0In(), prevOp.getQubit1In()});
+
+    return success();
+  }
+};
+
+} // namespace
 
 DenseElementsAttr XXMinusYYOp::tryGetStaticMatrix() {
   const auto theta = getStaticParameter(getTheta());
@@ -53,4 +103,9 @@ void XXMinusYYOp::build(OpBuilder& odsBuilder, OperationState& odsState,
   }
 
   build(odsBuilder, odsState, qubit0In, qubit1In, thetaOperand, betaOperand);
+}
+
+void XXMinusYYOp::getCanonicalizationPatterns(RewritePatternSet& results,
+                                              MLIRContext* context) {
+  results.add<MergeSubsequentXXMinusYY>(context);
 }
