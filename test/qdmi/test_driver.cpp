@@ -507,11 +507,11 @@ TEST_P(DriverTest, QueryNeedsCalibration) {
   EXPECT_THAT(needsCalibration, testing::AnyOf(0, 1));
 }
 #ifdef _WIN32
-const std::array<std::string, 3> DEVICES{"MQT NA Default QDMI Device",
+const std::array<const char*, 3> DEVICES{"MQT NA Default QDMI Device",
                                          "MQT Core DDSIM QDMI Device",
                                          "MQT SC Default QDMI Device"};
 #else
-const std::array<std::string, 5> DEVICES{
+const std::array<const char*, 5> DEVICES{
     "MQT NA Default QDMI Device", "MQT NA Dynamic QDMI Device",
     "MQT Core DDSIM QDMI Device", "MQT SC Default QDMI Device",
     "MQT SC Dynamic QDMI Device"};
