@@ -97,6 +97,7 @@
 
 namespace qdmi::na {
 std::atomic<Device*> Device::instance = nullptr;
+
 Device::Device() {
   // NOLINTBEGIN(cppcoreguidelines-prefer-member-initializer)
   INITIALIZE_NAME(name_);
