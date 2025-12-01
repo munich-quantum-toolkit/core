@@ -663,6 +663,9 @@ public:
     [[nodiscard]] auto getDurationScaleFactor() const -> std::optional<double>;
     /// @see QDMI_DEVICE_PROPERTY_MINATOMDISTANCE
     [[nodiscard]] auto getMinAtomDistance() const -> std::optional<uint64_t>;
+    /// @see QDMI_DEVICE_PROPERTY_SUPPORTEDPROGRAMFORMATS
+    [[nodiscard]] auto getSupportedProgramFormats() const
+        -> std::vector<QDMI_Program_Format>;
     /// @see QDMI_job_submit
     [[nodiscard]] auto submitJob(const std::string& program,
                                  QDMI_Program_Format format,

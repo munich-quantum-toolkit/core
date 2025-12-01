@@ -177,6 +177,8 @@ auto toString(QDMI_Device_Property prop) -> std::string {
     return "QDMI_DEVICE_PROPERTY_MINATOMDISTANCE";
   case QDMI_DEVICE_PROPERTY_PULSESUPPORT:
     return "QDMI_DEVICE_PROPERTY_PULSESUPPORT";
+  case QDMI_DEVICE_PROPERTY_SUPPORTEDPROGRAMFORMATS:
+    return "QDMI_DEVICE_PROPERTY_SUPPORTEDPROGRAMFORMATS";
   case QDMI_DEVICE_PROPERTY_MAX:
   case QDMI_DEVICE_PROPERTY_CUSTOM1:
   case QDMI_DEVICE_PROPERTY_CUSTOM2:
@@ -446,6 +448,12 @@ auto FoMaC::Device::getDurationScaleFactor() const -> std::optional<double> {
 auto FoMaC::Device::getMinAtomDistance() const -> std::optional<uint64_t> {
   return queryProperty<std::optional<uint64_t>>(
       QDMI_DEVICE_PROPERTY_MINATOMDISTANCE);
+}
+
+auto FoMaC::Device::getSupportedProgramFormats() const
+    -> std::vector<QDMI_Program_Format> {
+  return queryProperty<std::vector<QDMI_Program_Format>>(
+      QDMI_DEVICE_PROPERTY_SUPPORTEDPROGRAMFORMATS);
 }
 
 auto FoMaC::Device::submitJob(const std::string& program,
