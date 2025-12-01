@@ -36,6 +36,18 @@ struct RemoveSdgAfterS final : OpRewritePattern<SdgOp> {
   }
 };
 
+/**
+ * @brief Merge subsequent Sdg operations on the same qubit into a Z operation.
+ */
+struct MergeSubsequentSdg final : OpRewritePattern<SdgOp> {
+  using OpRewritePattern::OpRewritePattern;
+
+  LogicalResult matchAndRewrite(SdgOp op,
+                                PatternRewriter& rewriter) const override {
+    return mergeOneTargetZeroParameter<ZOp>(op, rewriter);
+  }
+};
+
 } // namespace
 
 DenseElementsAttr SdgOp::tryGetStaticMatrix() {
@@ -44,5 +56,5 @@ DenseElementsAttr SdgOp::tryGetStaticMatrix() {
 
 void SdgOp::getCanonicalizationPatterns(RewritePatternSet& results,
                                         MLIRContext* context) {
-  results.add<RemoveSdgAfterS>(context);
+  results.add<RemoveSdgAfterS, MergeSubsequentSdg>(context);
 }

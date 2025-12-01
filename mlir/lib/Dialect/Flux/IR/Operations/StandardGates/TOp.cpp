@@ -36,11 +36,23 @@ struct RemoveTAfterTdg final : OpRewritePattern<TOp> {
   }
 };
 
+/**
+ * @brief Merge subsequent T operations on the same qubit into an S operation.
+ */
+struct MergeSubsequentT final : OpRewritePattern<TOp> {
+  using OpRewritePattern::OpRewritePattern;
+
+  LogicalResult matchAndRewrite(TOp op,
+                                PatternRewriter& rewriter) const override {
+    return mergeOneTargetZeroParameter<SOp>(op, rewriter);
+  }
+};
+
 } // namespace
 
 DenseElementsAttr TOp::tryGetStaticMatrix() { return getMatrixT(getContext()); }
 
 void TOp::getCanonicalizationPatterns(RewritePatternSet& results,
                                       MLIRContext* context) {
-  results.add<RemoveTAfterTdg>(context);
+  results.add<RemoveTAfterTdg, MergeSubsequentT>(context);
 }

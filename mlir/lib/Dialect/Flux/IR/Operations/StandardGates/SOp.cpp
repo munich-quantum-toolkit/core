@@ -36,11 +36,23 @@ struct RemoveSAfterSdg final : OpRewritePattern<SOp> {
   }
 };
 
+/**
+ * @brief Merge subsequent S operations on the same qubit into a Z operation.
+ */
+struct MergeSubsequentS final : OpRewritePattern<SOp> {
+  using OpRewritePattern::OpRewritePattern;
+
+  LogicalResult matchAndRewrite(SOp op,
+                                PatternRewriter& rewriter) const override {
+    return mergeOneTargetZeroParameter<ZOp>(op, rewriter);
+  }
+};
+
 } // namespace
 
 DenseElementsAttr SOp::tryGetStaticMatrix() { return getMatrixS(getContext()); }
 
 void SOp::getCanonicalizationPatterns(RewritePatternSet& results,
                                       MLIRContext* context) {
-  results.add<RemoveSAfterSdg>(context);
+  results.add<RemoveSAfterSdg, MergeSubsequentS>(context);
 }

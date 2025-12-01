@@ -36,6 +36,19 @@ struct RemoveTdgAfterT final : OpRewritePattern<TdgOp> {
   }
 };
 
+/**
+ * @brief Merge subsequent Tdg operations on the same qubit into an Sdg
+ * operation.
+ */
+struct MergeSubsequentTdg final : OpRewritePattern<TdgOp> {
+  using OpRewritePattern::OpRewritePattern;
+
+  LogicalResult matchAndRewrite(TdgOp op,
+                                PatternRewriter& rewriter) const override {
+    return mergeOneTargetZeroParameter<SdgOp>(op, rewriter);
+  }
+};
+
 } // namespace
 
 DenseElementsAttr TdgOp::tryGetStaticMatrix() {
@@ -44,5 +57,5 @@ DenseElementsAttr TdgOp::tryGetStaticMatrix() {
 
 void TdgOp::getCanonicalizationPatterns(RewritePatternSet& results,
                                         MLIRContext* context) {
-  results.add<RemoveTdgAfterT>(context);
+  results.add<RemoveTdgAfterT, MergeSubsequentTdg>(context);
 }

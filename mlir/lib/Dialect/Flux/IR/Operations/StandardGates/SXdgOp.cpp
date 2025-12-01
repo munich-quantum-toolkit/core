@@ -36,6 +36,19 @@ struct RemoveSXdgAfterSX final : OpRewritePattern<SXdgOp> {
   }
 };
 
+/**
+ * @brief Merge subsequent SXdg operations on the same qubit into an X
+ * operation.
+ */
+struct MergeSubsequentSXdg final : OpRewritePattern<SXdgOp> {
+  using OpRewritePattern::OpRewritePattern;
+
+  LogicalResult matchAndRewrite(SXdgOp op,
+                                PatternRewriter& rewriter) const override {
+    return mergeOneTargetZeroParameter<XOp>(op, rewriter);
+  }
+};
+
 } // namespace
 
 DenseElementsAttr SXdgOp::tryGetStaticMatrix() {
@@ -44,5 +57,5 @@ DenseElementsAttr SXdgOp::tryGetStaticMatrix() {
 
 void SXdgOp::getCanonicalizationPatterns(RewritePatternSet& results,
                                          MLIRContext* context) {
-  results.add<RemoveSXdgAfterSX>(context);
+  results.add<RemoveSXdgAfterSX, MergeSubsequentSXdg>(context);
 }

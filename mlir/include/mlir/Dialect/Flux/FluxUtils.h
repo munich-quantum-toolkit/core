@@ -71,7 +71,42 @@ removeInversePairTwoTargetZeroParameter(OpType op,
 }
 
 /**
+ * @brief Merge two compatible one-target, zero-parameter operations
+ *
+ * @details
+ * The two operations are replaced by a single operation corresponding to their
+ * square.
+ *
+ * @tparam SquareOpType The type of the square operation to be created.
+ * @tparam OpType The type of the operation to be merged.
+ * @param op The operation instance.
+ * @param rewriter The pattern rewriter.
+ * @return LogicalResult Success or failure of the merge.
+ */
+template <typename SquareOpType, typename OpType>
+inline mlir::LogicalResult
+mergeOneTargetZeroParameter(OpType op, mlir::PatternRewriter& rewriter) {
+  // Check if the predecessor is the same operation
+  auto prevOp = op.getQubitIn().template getDefiningOp<OpType>();
+  if (!prevOp) {
+    return failure();
+  }
+
+  // Replace operation with square operation
+  auto squareOp = rewriter.create<SquareOpType>(op.getLoc(), op.getQubitIn());
+  rewriter.replaceOp(op, squareOp.getQubitOut());
+
+  // Trivialize predecessor
+  rewriter.replaceOp(prevOp, prevOp.getQubitIn());
+
+  return success();
+}
+
+/**
  * @brief Merge two compatible one-target, one-parameter operations
+ *
+ * @details
+ * The new parameter is computed as the sum of the two original parameters.
  *
  * @tparam OpType The type of the operation to be merged.
  * @param op The operation instance.
@@ -100,6 +135,9 @@ mergeOneTargetOneParameter(OpType op, mlir::PatternRewriter& rewriter) {
 
 /**
  * @brief Merge two compatible two-target, one-parameter operations
+ *
+ * @details
+ * The new parameter is computed as the sum of the two original parameters.
  *
  * @tparam OpType The type of the operation to be merged.
  * @param op The operation instance.
