@@ -119,11 +119,22 @@ private:
  * @return LogicalResult Success or failure of the conversion
  */
 template <typename FluxOpType, typename QuartzOpType>
-LogicalResult
-convertZeroTargetOneParameter(QuartzOpType& op,
-                              ConversionPatternRewriter& rewriter) {
+LogicalResult convertZeroTargetOneParameter(QuartzOpType& op,
+                                            ConversionPatternRewriter& rewriter,
+                                            LoweringState& state) {
+  const auto inCtrlOp = state.inCtrlOp;
+
   rewriter.create<FluxOpType>(op.getLoc(), op.getOperand());
+
+  // Update the state
+  if (inCtrlOp != 0) {
+    state.targetsIn.erase(inCtrlOp);
+    const SmallVector<Value> targetsOut({});
+    state.targetsOut.try_emplace(inCtrlOp, targetsOut);
+  }
+
   rewriter.eraseOp(op);
+
   return success();
 }
 
@@ -728,7 +739,8 @@ struct ConvertQuartzResetOp final
     LogicalResult                                                              \
     matchAndRewrite(quartz::OP_CLASS op, OpAdaptor /*adaptor*/,                \
                     ConversionPatternRewriter& rewriter) const override {      \
-      return convertZeroTargetOneParameter<flux::OP_CLASS>(op, rewriter);      \
+      return convertZeroTargetOneParameter<flux::OP_CLASS>(op, rewriter,       \
+                                                           getState());        \
     }                                                                          \
   };
 
