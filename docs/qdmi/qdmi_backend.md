@@ -180,7 +180,7 @@ The {py:class}`~mqt.core.plugins.qiskit.QDMIJob` wraps a FoMaC (QDMI) job and pr
 ```python
 from qiskit.providers import JobStatus
 
-job = backend.run(circuit, shots=1024)
+job = backend.run(qc, shots=1024)
 
 # Check job status
 status = job.status()
@@ -193,7 +193,7 @@ Results are lazily fetched when you call `result()`:
 
 ```python
 # Run the circuit
-job = backend.run(circuit, shots=1024)
+job = backend.run(qc, shots=1024)
 
 # Get results (waits for completion if needed)
 result = job.result()
@@ -214,11 +214,11 @@ The backend processes circuits individually.
 To execute multiple circuits, submit them sequentially:
 
 ```python
-circuits = [circuit1, circuit2, circuit3]
+circuits = [qc1, qc2, qc3]
 results = []
 
-for circuit in circuits:
-    job = backend.run(circuit, shots=1000)
+for qc in circuits:
+    job = backend.run(qc, shots=1000)
     result = job.result()
     results.append(result)
 
@@ -289,7 +289,7 @@ The backend builds its {py:class}`~qiskit.transpiler.Target` by:
 
 For complete API documentation, see:
 
-- {py:class}`~mqt.core.plugins.qiskit.QDMIProvider` - Device provider interface
-- {py:class}`~mqt.core.plugins.qiskit.QDMIBackend` - BackendV2 implementation
-- {py:class}`~mqt.core.plugins.qiskit.QDMIJob` - Job wrapper and result handling
-- {py:mod}`~mqt.core.plugins.qiskit.exceptions` - Exception types
+- {py:class}`~mqt.core.plugins.qiskit.QDMIProvider` — Device provider interface
+- {py:class}`~mqt.core.plugins.qiskit.QDMIBackend` — BackendV2 implementation
+- {py:class}`~mqt.core.plugins.qiskit.QDMIJob` — Job wrapper and result handling
+- {py:mod}`~mqt.core.plugins.qiskit.exceptions` — Exception types
