@@ -992,6 +992,53 @@ DEFINE_TWO_TARGET_TWO_PARAMETER(XXMinusYYOp, xx_minus_yy, theta, beta)
 
 #undef DEFINE_TWO_TARGET_TWO_PARAMETER
 
+// BarrierOp
+
+/**
+ * @brief Converts quartz.barrier to flux.barrier
+ *
+ * @par Example:
+ * ```mlir
+ * quartz.barrier %q0, %q1 : !quartz.qubit, !quartz.qubit
+ * ```
+ * is converted to
+ * ```mlir
+ * %q0_out, %q1_out = flux.barrier %q0_in, %q1_in : !quartz.qubit, !quartz.qubit
+ * -> !quartz.qubit, !quartz.qubit
+ * ```
+ */
+struct ConvertQuartzBarrierOp final
+    : StatefulOpConversionPattern<quartz::BarrierOp> {
+  using StatefulOpConversionPattern::StatefulOpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(quartz::BarrierOp op, OpAdaptor /*adaptor*/,
+                  ConversionPatternRewriter& rewriter) const override {
+    auto& state = getState();
+    auto& qubitMap = state.qubitMap;
+
+    // Get Flux qubits from state map
+    const auto& quartzQubits = op.getQubits();
+    SmallVector<Value> fluxQubits;
+    fluxQubits.reserve(quartzQubits.size());
+    for (const auto& quartzQubit : quartzQubits) {
+      fluxQubits.push_back(qubitMap[quartzQubit]);
+    }
+
+    // Create flux.barrier
+    auto fluxOp = rewriter.create<flux::BarrierOp>(op.getLoc(), fluxQubits);
+
+    // Update state map
+    for (const auto& [quartzQubit, fluxQubitOut] :
+         llvm::zip(quartzQubits, fluxOp.getQubitsOut())) {
+      qubitMap[quartzQubit] = fluxQubitOut;
+    }
+
+    rewriter.eraseOp(op);
+    return success();
+  }
+};
+
 /**
  * @brief Converts quartz.ctrl to flux.ctrl
  *
@@ -1151,8 +1198,8 @@ struct QuartzToFlux final : impl::QuartzToFluxBase<QuartzToFlux> {
         ConvertQuartziSWAPOp, ConvertQuartzDCXOp, ConvertQuartzECROp,
         ConvertQuartzRXXOp, ConvertQuartzRYYOp, ConvertQuartzRZXOp,
         ConvertQuartzRZZOp, ConvertQuartzXXPlusYYOp, ConvertQuartzXXMinusYYOp,
-        ConvertQuartzCtrlOp, ConvertQuartzYieldOp>(typeConverter, context,
-                                                   &state);
+        ConvertQuartzBarrierOp, ConvertQuartzCtrlOp, ConvertQuartzYieldOp>(
+        typeConverter, context, &state);
 
     // Conversion of quartz types in func.func signatures
     // Note: This currently has limitations with signature

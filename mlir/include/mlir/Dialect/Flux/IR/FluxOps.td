@@ -1002,6 +1002,49 @@ def XXMinusYYOp : FluxOp<"xx_minus_yy", traits = [UnitaryOpInterface, TwoTargetT
     let hasCanonicalizer = 1;
 }
 
+def BarrierOp : FluxOp<"barrier", traits = [UnitaryOpInterface]> {
+    let summary = "Apply a barrier gate to a set of qubits";
+    let description = [{
+        Applies a barrier gate to a set of qubits and returns the transformed qubits.
+
+        Example:
+        ```mlir
+        %q_out = flux.barrier %q_in : !flux.qubit -> !flux.qubit
+        ```
+    }];
+
+    let arguments = (ins Arg<Variadic<QubitType>, "the target qubits", [MemRead]>:$qubits_in);
+    let results = (outs Variadic<QubitType>:$qubits_out);
+    let assemblyFormat = "$qubits_in attr-dict `:` type($qubits_in) `->` type($qubits_out)";
+
+    let extraClassDeclaration = [{
+        size_t getNumQubits();
+        size_t getNumTargets();
+        size_t getNumControls();
+        size_t getNumPosControls();
+        size_t getNumNegControls();
+        Value getInputQubit(size_t i);
+        Value getOutputQubit(size_t i);
+        Value getInputTarget(size_t i);
+        Value getOutputTarget(size_t i);
+        Value getInputPosControl(size_t i);
+        Value getOutputPosControl(size_t i);
+        Value getInputNegControl(size_t i);
+        Value getOutputNegControl(size_t i);
+        Value getInputForOutput(Value output);
+        Value getOutputForInput(Value input);
+        size_t getNumParams();
+        Value getParameter(size_t i);
+        bool hasStaticUnitary();
+        DenseElementsAttr tryGetStaticMatrix();
+        static StringRef getBaseSymbol() { return "barrier"; }
+    }];
+
+    let builders = [
+        OpBuilder<(ins "ValueRange":$qubits)>
+    ];
+}
+
 //===----------------------------------------------------------------------===//
 // Modifiers
 //===----------------------------------------------------------------------===//

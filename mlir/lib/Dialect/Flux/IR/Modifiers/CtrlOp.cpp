@@ -101,33 +101,6 @@ struct CtrlInlineId final : OpRewritePattern<CtrlOp> {
 
 } // namespace
 
-void CtrlOp::build(OpBuilder& odsBuilder, OperationState& odsState,
-                   const ValueRange controls, const ValueRange targets,
-                   UnitaryOpInterface bodyUnitary) {
-  build(odsBuilder, odsState, controls, targets);
-  auto& block = odsState.regions.front()->emplaceBlock();
-
-  // Move the unitary op into the block
-  const OpBuilder::InsertionGuard guard(odsBuilder);
-  odsBuilder.setInsertionPointToStart(&block);
-  auto* op = odsBuilder.clone(*bodyUnitary.getOperation());
-  odsBuilder.create<YieldOp>(odsState.location, op->getResults());
-}
-
-void CtrlOp::build(
-    OpBuilder& odsBuilder, OperationState& odsState, const ValueRange controls,
-    const ValueRange targets,
-    const std::function<ValueRange(OpBuilder&, ValueRange)>& bodyBuilder) {
-  build(odsBuilder, odsState, controls, targets);
-  auto& block = odsState.regions.front()->emplaceBlock();
-
-  // Move the unitary op into the block
-  const OpBuilder::InsertionGuard guard(odsBuilder);
-  odsBuilder.setInsertionPointToStart(&block);
-  auto targetsOut = bodyBuilder(odsBuilder, targets);
-  odsBuilder.create<YieldOp>(odsState.location, targetsOut);
-}
-
 UnitaryOpInterface CtrlOp::getBodyUnitary() {
   return llvm::dyn_cast<UnitaryOpInterface>(&getBody().front().front());
 }
@@ -227,6 +200,33 @@ DenseElementsAttr CtrlOp::tryGetStaticMatrix() {
                        getBodyUnitary().tryGetStaticMatrix());
 }
 
+void CtrlOp::build(OpBuilder& odsBuilder, OperationState& odsState,
+                   const ValueRange controls, const ValueRange targets,
+                   UnitaryOpInterface bodyUnitary) {
+  build(odsBuilder, odsState, controls, targets);
+  auto& block = odsState.regions.front()->emplaceBlock();
+
+  // Move the unitary op into the block
+  const OpBuilder::InsertionGuard guard(odsBuilder);
+  odsBuilder.setInsertionPointToStart(&block);
+  auto* op = odsBuilder.clone(*bodyUnitary.getOperation());
+  odsBuilder.create<YieldOp>(odsState.location, op->getResults());
+}
+
+void CtrlOp::build(
+    OpBuilder& odsBuilder, OperationState& odsState, const ValueRange controls,
+    const ValueRange targets,
+    const std::function<ValueRange(OpBuilder&, ValueRange)>& bodyBuilder) {
+  build(odsBuilder, odsState, controls, targets);
+  auto& block = odsState.regions.front()->emplaceBlock();
+
+  // Move the unitary op into the block
+  const OpBuilder::InsertionGuard guard(odsBuilder);
+  odsBuilder.setInsertionPointToStart(&block);
+  auto targetsOut = bodyBuilder(odsBuilder, targets);
+  odsBuilder.create<YieldOp>(odsState.location, targetsOut);
+}
+
 LogicalResult CtrlOp::verify() {
   auto& block = getBody().front();
   if (block.getOperations().size() != 2) {
@@ -240,7 +240,6 @@ LogicalResult CtrlOp::verify() {
     return emitOpError(
         "second operation in body region must be a yield operation");
   }
-  // The yield operation must yield as many values as there are targets
   if (block.back().getNumOperands() != getNumTargets()) {
     return emitOpError("yield operation must yield ")
            << getNumTargets() << " values, but found "
@@ -271,6 +270,11 @@ LogicalResult CtrlOp::verify() {
       return emitOpError("duplicate qubit found");
     }
   }
+
+  if (llvm::isa<BarrierOp>(bodyUnitary.getOperation())) {
+    return emitOpError("BarrierOp cannot be controlled");
+  }
+
   return success();
 }
 

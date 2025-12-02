@@ -358,6 +358,13 @@ DEFINE_TWO_TARGET_TWO_PARAMETER(XXMinusYYOp, xx_minus_yy, theta, beta)
 
 #undef DEFINE_TWO_TARGET_TWO_PARAMETER
 
+// BarrierOp
+
+QuartzProgramBuilder& QuartzProgramBuilder::barrier(ValueRange qubits) {
+  create<BarrierOp>(loc, qubits);
+  return *this;
+}
+
 //===----------------------------------------------------------------------===//
 // Modifiers
 //===----------------------------------------------------------------------===//

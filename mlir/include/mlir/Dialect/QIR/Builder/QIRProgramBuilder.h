@@ -816,6 +816,25 @@ public:
   DECLARE_TWO_TARGET_TWO_PARAMETER(xx_plus_yy, xx_plus_yy, theta, beta)
   DECLARE_TWO_TARGET_TWO_PARAMETER(xx_minus_yy, xx_minus_yy, theta, beta)
 
+  // BarrierOp
+
+  /**
+   * @brief Apply a barrier operation
+   *
+   * @param qubits Target qubits
+   * @return Reference to this builder for method chaining
+   *
+   * @par Example:
+   * ```c++
+   * builder.barrier({q0, q1});
+   * ```
+   * ```mlir
+   * llvm.call @__quantum__qis__barrier__body(%q0, %q1) : (!llvm.ptr, !llvm.ptr)
+   * -> ()
+   * ```
+   */
+  QIRProgramBuilder& barrier(ValueRange qubits);
+
 #undef DECLARE_TWO_TARGET_TWO_PARAMETER
 
   //===--------------------------------------------------------------------===//

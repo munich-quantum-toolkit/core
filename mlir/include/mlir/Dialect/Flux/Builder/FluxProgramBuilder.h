@@ -942,6 +942,25 @@ public:
 
 #undef DECLARE_TWO_TARGET_TWO_PARAMETER
 
+  // BarrierOp
+
+  /**
+   * @brief Apply a BarrierOp
+   *
+   * @param qubits Input qubits (must be valid/unconsumed)
+   * @return Output qubits
+   *
+   * @par Example:
+   * ```c++
+   * builder.barrier({q0, q1});
+   * ```
+   * ```mlir
+   * flux.barrier %q0, %q1 : !flux.qubit, !flux.qubit -> !flux.qubit,
+   * !flux.qubit
+   * ```
+   */
+  ValueRange barrier(ValueRange qubits);
+
   //===--------------------------------------------------------------------===//
   // Modifiers
   //===--------------------------------------------------------------------===//

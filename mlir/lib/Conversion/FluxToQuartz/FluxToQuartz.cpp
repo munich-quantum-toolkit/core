@@ -726,6 +726,40 @@ DEFINE_TWO_TARGET_TWO_PARAMETER(XXMinusYYOp, xx_minus_yy, theta, beta)
 
 #undef DEFINE_TWO_TARGET_TWO_PARAMETER
 
+// BarrierOp
+
+/**
+ * @brief Converts flux.barrier to quartz.barrier
+ *
+ * @par Example:
+ * ```mlir
+ * %q0_out, %q1_out = flux.barrier %q0_in, %q1_in : !flux.qubit, !flux.qubit ->
+ * !flux.qubit, !flux.qubit
+ * ```
+ * is converted to
+ * ```mlir
+ * quartz.barrier %q0, %q1 : !quartz.qubit, !quartz.qubit
+ * ```
+ */
+struct ConvertFluxBarrierOp final : OpConversionPattern<flux::BarrierOp> {
+  using OpConversionPattern::OpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(flux::BarrierOp op, OpAdaptor adaptor,
+                  ConversionPatternRewriter& rewriter) const override {
+    // OpAdaptor provides the already type-converted qubits
+    const auto& quartzQubits = adaptor.getQubitsIn();
+
+    // Create quartz.barrier operation
+    rewriter.create<quartz::BarrierOp>(op.getLoc(), quartzQubits);
+
+    // Replace the output qubits with the same quartz references
+    rewriter.replaceOp(op, quartzQubits);
+
+    return success();
+  }
+};
+
 /**
  * @brief Converts quartz.ctrl to flux.ctrl
  *
@@ -760,7 +794,7 @@ struct ConvertFluxCtrlOp final : OpConversionPattern<flux::CtrlOp> {
     auto& dstRegion = fluxOp.getBody();
     rewriter.cloneRegionBefore(op.getBody(), dstRegion, dstRegion.end());
 
-    // Replace the output qubits with the same quartz references
+    // Replace the output qubits with the same Quartz references
     rewriter.replaceOp(op, adaptor.getOperands());
 
     return success();
@@ -845,7 +879,8 @@ struct FluxToQuartz final : impl::FluxToQuartzBase<FluxToQuartz> {
              ConvertFluxiSWAPOp, ConvertFluxDCXOp, ConvertFluxECROp,
              ConvertFluxRXXOp, ConvertFluxRYYOp, ConvertFluxRZXOp,
              ConvertFluxRZZOp, ConvertFluxXXPlusYYOp, ConvertFluxXXMinusYYOp,
-             ConvertFluxCtrlOp, ConvertFluxYieldOp>(typeConverter, context);
+             ConvertFluxBarrierOp, ConvertFluxCtrlOp, ConvertFluxYieldOp>(
+            typeConverter, context);
 
     // Conversion of flux types in func.func signatures
     // Note: This currently has limitations with signature changes

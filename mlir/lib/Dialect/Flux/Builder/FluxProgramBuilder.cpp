@@ -511,6 +511,17 @@ DEFINE_TWO_TARGET_TWO_PARAMETER(XXMinusYYOp, xx_minus_yy, theta, beta)
 
 #undef DEFINE_TWO_TARGET_TWO_PARAMETER
 
+// BarrierOp
+
+ValueRange FluxProgramBuilder::barrier(ValueRange qubits) {
+  auto op = create<BarrierOp>(loc, qubits);
+  const auto& qubitsOut = op.getQubitsOut();
+  for (const auto& [inputQubit, outputQubit] : llvm::zip(qubits, qubitsOut)) {
+    updateQubitTracking(inputQubit, outputQubit);
+  }
+  return qubitsOut;
+}
+
 //===----------------------------------------------------------------------===//
 // Modifiers
 //===----------------------------------------------------------------------===//

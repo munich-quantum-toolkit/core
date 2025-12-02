@@ -909,6 +909,38 @@ def XXMinusYYOp : QuartzOp<"xx_minus_yy", traits = [UnitaryOpInterface, TwoTarge
     ];
 }
 
+def BarrierOp : QuartzOp<"barrier", traits = [UnitaryOpInterface]> {
+    let summary = "Apply a barrier gate to a set of qubits";
+    let description = [{
+        Applies a barrier gate to a set of qubits, modifying them in place.
+
+        Example:
+        ```mlir
+        quartz.barrier %q : !quartz.qubit
+        ```
+    }];
+
+    let arguments = (ins Arg<Variadic<QubitType>, "the target qubits", [MemRead, MemWrite]>:$qubits);
+    let assemblyFormat = "$qubits attr-dict";
+
+    let extraClassDeclaration = [{
+        size_t getNumQubits();
+        size_t getNumTargets();
+        size_t getNumControls();
+        size_t getNumPosControls();
+        size_t getNumNegControls();
+        Value getQubit(size_t i);
+        Value getTarget(size_t i);
+        Value getPosControl(size_t i);
+        Value getNegControl(size_t i);
+        size_t getNumParams();
+        Value getParameter(size_t i);
+        bool hasStaticUnitary();
+        DenseElementsAttr tryGetStaticMatrix();
+        static StringRef getBaseSymbol() { return "barrier"; }
+    }];
+}
+
 //===----------------------------------------------------------------------===//
 // Modifiers
 //===----------------------------------------------------------------------===//
@@ -942,14 +974,9 @@ def CtrlOp : QuartzOp<"ctrl",
         ```
     }];
 
-    let arguments = (ins Arg<Variadic<QubitType>, "the control qubits", [MemRead,MemWrite]>:$controls);
+    let arguments = (ins Arg<Variadic<QubitType>, "the control qubits", [MemRead, MemWrite]>:$controls);
     let regions = (region SizedRegion<1>:$body);
     let assemblyFormat = "`(` $controls `)` $body attr-dict";
-
-    let builders = [
-        OpBuilder<(ins "ValueRange":$controls, "UnitaryOpInterface":$bodyUnitary)>,
-        OpBuilder<(ins "ValueRange":$controls, "const std::function<void(OpBuilder &)>&":$bodyBuilder)>
-    ];
 
     let extraClassDeclaration = [{
         [[nodiscard]] UnitaryOpInterface getBodyUnitary();
@@ -968,6 +995,11 @@ def CtrlOp : QuartzOp<"ctrl",
         DenseElementsAttr tryGetStaticMatrix();
         static StringRef getBaseSymbol() { return "ctrl"; }
     }];
+
+    let builders = [
+        OpBuilder<(ins "ValueRange":$controls, "UnitaryOpInterface":$bodyUnitary)>,
+        OpBuilder<(ins "ValueRange":$controls, "const std::function<void(OpBuilder &)>&":$bodyBuilder)>
+    ];
 
     let hasCanonicalizer = 1;
     let hasVerifier = 1;

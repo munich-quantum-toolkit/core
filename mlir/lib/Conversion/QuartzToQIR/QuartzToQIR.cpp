@@ -815,6 +815,20 @@ DEFINE_TWO_TARGET_TWO_PARAMETER(XXMinusYYOp, XXMINUSYY, xx_minus_yy,
 
 #undef DEFINE_TWO_TARGET_TWO_PARAMETER
 
+// BarrierOp
+
+struct ConvertQuartzBarrierQIR final : StatefulOpConversionPattern<BarrierOp> {
+  using StatefulOpConversionPattern::StatefulOpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(BarrierOp op, OpAdaptor adaptor,
+                  ConversionPatternRewriter& rewriter) const override {
+    return convertUnitaryToCallOp(op, adaptor, rewriter, getContext(),
+                                  getState(), QIR_BARRIER,
+                                  op.getQubits().size(), 0);
+  }
+};
+
 /**
  * @brief Inlines quartz.ctrl region removes the operation
  */
@@ -1212,6 +1226,7 @@ struct QuartzToQIR final : impl::QuartzToQIRBase<QuartzToQIR> {
                                                      &state);
       quartzPatterns.add<ConvertQuartzXXMinusYYOpQIR>(typeConverter, ctx,
                                                       &state);
+      quartzPatterns.add<ConvertQuartzBarrierQIR>(typeConverter, ctx, &state);
       quartzPatterns.add<ConvertQuartzCtrlQIR>(typeConverter, ctx, &state);
       quartzPatterns.add<ConvertQuartzYieldQIR>(typeConverter, ctx, &state);
       // Gate operations will be added here as the dialect expands

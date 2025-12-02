@@ -777,6 +777,24 @@ public:
 
 #undef DECLARE_TWO_TARGET_TWO_PARAMETER
 
+  // BarrierOp
+
+  /**
+   * @brief Apply a BarrierOp
+   *
+   * @param qubits Target qubits
+   * @return Reference to this builder for method chaining
+   *
+   * @par Example:
+   * ```c++
+   * builder.barrier({q0, q1});
+   * ```
+   * ```mlir
+   * quartz.barrier %q0, %q1 : !quartz.qubit, !quartz.qubit
+   * ```
+   */
+  QuartzProgramBuilder& barrier(ValueRange qubits);
+
   //===--------------------------------------------------------------------===//
   // Modifiers
   //===--------------------------------------------------------------------===//

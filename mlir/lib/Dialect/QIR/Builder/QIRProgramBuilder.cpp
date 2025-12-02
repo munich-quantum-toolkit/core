@@ -544,6 +544,13 @@ DEFINE_TWO_TARGET_TWO_PARAMETER(XXMINUSYY, xx_minus_yy, theta, beta)
 
 #undef DEFINE_TWO_TARGET_TWO_PARAMETER
 
+// BarrierOp
+
+QIRProgramBuilder& QIRProgramBuilder::barrier(const ValueRange qubits) {
+  createCallOp({}, {}, qubits, QIR_BARRIER);
+  return *this;
+}
+
 //===----------------------------------------------------------------------===//
 // Finalization
 //===----------------------------------------------------------------------===//

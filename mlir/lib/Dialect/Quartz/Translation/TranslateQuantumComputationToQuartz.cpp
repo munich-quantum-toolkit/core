@@ -486,6 +486,17 @@ DEFINE_TWO_TARGET_TWO_PARAMETER(XXminusYY, xx_minus_yy)
 
 #undef DEFINE_TWO_TARGET_TWO_PARAMETER
 
+// BarrierOp
+
+void addBarrierOp(QuartzProgramBuilder& builder, const qc::Operation& operation,
+                  const llvm::SmallVector<Value>& qubits) {
+  llvm::SmallVector<Value> targets;
+  for (const auto& targetIdx : operation.getTargets()) {
+    targets.push_back(qubits[targetIdx]);
+  }
+  builder.barrier(targets);
+}
+
 #define ADD_OP_CASE(OP_QC)                                                     \
   case qc::OpType::OP_QC:                                                      \
     add##OP_QC##Op(builder, *operation, qubits);                               \
@@ -551,6 +562,7 @@ translateOperations(QuartzProgramBuilder& builder,
       ADD_OP_CASE(RZZ)
       ADD_OP_CASE(XXplusYY)
       ADD_OP_CASE(XXminusYY)
+      ADD_OP_CASE(Barrier)
     default:
       // Unsupported operation - skip for now
       // As the Quartz dialect is expanded, more operations will be supported

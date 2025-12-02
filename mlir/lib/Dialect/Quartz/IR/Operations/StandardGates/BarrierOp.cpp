@@ -1,0 +1,68 @@
+/*
+ * Copyright (c) 2023 - 2025 Chair for Design Automation, TUM
+ * Copyright (c) 2025 Munich Quantum Software Company GmbH
+ * All rights reserved.
+ *
+ * SPDX-License-Identifier: MIT
+ *
+ * Licensed under the MIT License
+ */
+
+#include "mlir/Dialect/Quartz/IR/QuartzDialect.h"
+#include "mlir/Dialect/Utils/MatrixUtils.h"
+
+#include <cstddef>
+#include <functional>
+#include <llvm/ADT/STLExtras.h>
+#include <llvm/Support/Casting.h>
+#include <llvm/Support/ErrorHandling.h>
+#include <mlir/IR/Builders.h>
+#include <mlir/IR/BuiltinAttributes.h>
+#include <mlir/IR/MLIRContext.h>
+#include <mlir/IR/OperationSupport.h>
+#include <mlir/IR/PatternMatch.h>
+#include <mlir/Support/LLVM.h>
+#include <mlir/Support/LogicalResult.h>
+
+using namespace mlir;
+using namespace mlir::quartz;
+using namespace mlir::utils;
+
+size_t BarrierOp::getNumQubits() { return getNumTargets(); }
+
+size_t BarrierOp::getNumTargets() { return getQubits().size(); }
+
+size_t BarrierOp::getNumControls() { return 0; }
+
+size_t BarrierOp::getNumPosControls() { return 0; }
+
+size_t BarrierOp::getNumNegControls() { return 0; }
+
+Value BarrierOp::getQubit(const size_t i) { return getTarget(i); }
+
+Value BarrierOp::getTarget(const size_t i) {
+  if (i < getNumTargets()) {
+    return getQubits()[i];
+  }
+  llvm::reportFatalUsageError("Invalid qubit index");
+}
+
+Value BarrierOp::getPosControl(const size_t i) {
+  llvm::reportFatalUsageError("BarrierOp cannot be controlled");
+}
+
+Value BarrierOp::getNegControl(const size_t i) {
+  llvm::reportFatalUsageError("BarrierOp cannot be controlled");
+}
+
+size_t BarrierOp::getNumParams() { return 0; }
+
+bool BarrierOp::hasStaticUnitary() { return true; }
+
+Value BarrierOp::getParameter(const size_t i) {
+  llvm::reportFatalUsageError("BarrierOp does not have parameters");
+}
+
+DenseElementsAttr BarrierOp::tryGetStaticMatrix() {
+  return getMatrixId(getContext());
+}
