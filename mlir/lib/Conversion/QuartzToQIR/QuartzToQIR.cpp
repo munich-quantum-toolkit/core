@@ -498,7 +498,7 @@ struct ConvertQuartzResetQIR final : OpConversionPattern<ResetOp> {
    *                                                                           \
    * @par Example:                                                             \
    * ```mlir                                                                   \
-   * quartz.OP_NAME_SMALL(%PARAM) : ()                                         \
+   * quartz.OP_NAME_SMALL(%PARAM)                                              \
    * ```                                                                       \
    * is converted to                                                           \
    * ```mlir                                                                   \

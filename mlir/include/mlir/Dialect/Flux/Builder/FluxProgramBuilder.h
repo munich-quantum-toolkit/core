@@ -254,7 +254,7 @@ public:
    * builder.OP_NAME(PARAM);                                                   \
    * ```                                                                       \
    * ```mlir                                                                   \
-   * quartz.OP_NAME(%PARAM) : ()                                               \
+   * flux.OP_NAME(%PARAM)                                                      \
    * ```                                                                       \
    */                                                                          \
   void OP_NAME(const std::variant<double, Value>&(PARAM));                     \
@@ -267,12 +267,13 @@ public:
    *                                                                           \
    * @par Example:                                                             \
    * ```c++                                                                    \
-   * builder.c##OP_NAME(PARAM, control);                                       \
+   * q_out = builder.c##OP_NAME(PARAM, q_in);                                  \
    * ```                                                                       \
    * ```mlir                                                                   \
-   * quartz.ctrl(%control) {                                                   \
-   *   quartz.OP_NAME(%PARAM) : ()                                             \
-   * }                                                                         \
+   * %q_out = flux.ctrl(%q_in) {                                               \
+   *   flux.OP_NAME(%PARAM)                                                    \
+   *   flux.yield                                                              \
+   * } : ({!flux.qubit}, {}) -> ({!flux.qubit}, {})                            \
    */                                                                          \
   Value c##OP_NAME(const std::variant<double, Value>&(PARAM), Value control);  \
   /**                                                                          \
@@ -284,12 +285,13 @@ public:
    *                                                                           \
    * @par Example:                                                             \
    * ```c++                                                                    \
-   * builder.mc##OP_NAME(PARAM, {control1, control2});                         \
+   * {q0_out, q1_out} = builder.mc##OP_NAME(PARAM, {q0_in, q1_in});            \
    * ```                                                                       \
    * ```mlir                                                                   \
-   * quartz.ctrl(%control1, %control2) {                                       \
-   *   quartz.OP_NAME(%PARAM) : ()                                             \
-   * }                                                                         \
+   * %q0_out, %q1_out = flux.ctrl(%q0_in, %q1_in) {                            \
+   *   flux.OP_NAME(%PARAM)                                                    \
+   *   flux.yield                                                              \
+   * } : ({!flux.qubit, !flux.qubit}, {}) -> ({!flux.qubit, !flux.qubit}, {})  \
    */                                                                          \
   ValueRange mc##OP_NAME(const std::variant<double, Value>&(PARAM),            \
                          ValueRange controls);
@@ -610,7 +612,7 @@ public:
    * %q0_out, %q1_out = flux.ctrl(%q0_in) %q1_in {                             \
    *   %q1_res = flux.OP_NAME(%PARAM1, %PARAM2, %PARAM3) %q1_in : !flux.qubit  \
    * -> !flux.qubit                                                            \
-   * flux.yield %q1_res                                                        \
+   *   flux.yield %q1_res                                                      \
    * } : ({!flux.qubit}, {!flux.qubit}) -> ({!flux.qubit}, {!flux.qubit})      \
    * ```                                                                       \
    */                                                                          \
@@ -642,7 +644,7 @@ public:
    * %controls_out, %target_out = flux.ctrl(%q0_in, %q1_in) %q2_in {           \
    *   %q2_res = flux.OP_NAME(%PARAM1, %PARAM2, %PARAM3) %q2_in : !flux.qubit  \
    * -> !flux.qubit                                                            \
-   * flux.yield %q2_res                                                        \
+   *   flux.yield %q2_res                                                      \
    * } : ({!flux.qubit, !flux.qubit}, {!flux.qubit}) -> ({!flux.qubit,         \
    * !flux.qubit}, {!flux.qubit})                                              \
    * ```                                                                       \

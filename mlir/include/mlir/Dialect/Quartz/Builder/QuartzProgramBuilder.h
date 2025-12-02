@@ -242,7 +242,7 @@ public:
    * builder.OP_NAME(PARAM);                                                   \
    * ```                                                                       \
    * ```mlir                                                                   \
-   * quartz.OP_NAME(%PARAM) : ()                                               \
+   * quartz.OP_NAME(%PARAM)                                                    \
    * ```                                                                       \
    */                                                                          \
   QuartzProgramBuilder& OP_NAME(const std::variant<double, Value>&(PARAM));    \
@@ -259,7 +259,7 @@ public:
    * ```                                                                       \
    * ```mlir                                                                   \
    * quartz.ctrl(%q0, %q1) {                                                   \
-   *   quartz.OP_NAME(%PARAM) : ()                                             \
+   *   quartz.OP_NAME(%PARAM)                                                  \
    * }                                                                         \
    */                                                                          \
   QuartzProgramBuilder& c##OP_NAME(const std::variant<double, Value>&(PARAM),  \
@@ -277,7 +277,7 @@ public:
    * ```                                                                       \
    * ```mlir                                                                   \
    * quartz.ctrl(%q0, %q1) {                                                   \
-   *   quartz.OP_NAME(%PARAM) : ()                                             \
+   *   quartz.OP_NAME(%PARAM)                                                  \
    * }                                                                         \
    */                                                                          \
   QuartzProgramBuilder& mc##OP_NAME(const std::variant<double, Value>&(PARAM), \

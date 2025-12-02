@@ -468,11 +468,11 @@ struct ConvertFluxResetOp final : OpConversionPattern<flux::ResetOp> {
    *                                                                           \
    * @par Example:                                                             \
    * ```mlir                                                                   \
-   * flux.OP_NAME(%PARAM) : ()                                                 \
+   * flux.OP_NAME(%PARAM)                                                      \
    * ```                                                                       \
    * is converted to                                                           \
    * ```mlir                                                                   \
-   * quartz.OP_NAME(%PARAM) : ()                                               \
+   * quartz.OP_NAME(%PARAM)                                                    \
    * ```                                                                       \
    */                                                                          \
   struct ConvertFlux##OP_CLASS final : OpConversionPattern<flux::OP_CLASS> {   \

@@ -714,11 +714,11 @@ struct ConvertQuartzResetOp final
    *                                                                           \
    * @par Example:                                                             \
    * ```mlir                                                                   \
-   * quartz.OP_NAME(%PARAM) : ()                                               \
+   * quartz.OP_NAME(%PARAM)                                                    \
    * ```                                                                       \
    * is converted to                                                           \
    * ```mlir                                                                   \
-   * flux.OP_NAME(%PARAM) : ()                                                 \
+   * flux.OP_NAME(%PARAM)                                                      \
    * ```                                                                       \
    */                                                                          \
   struct ConvertQuartz##OP_CLASS final                                         \

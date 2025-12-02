@@ -290,11 +290,11 @@ public:
    *                                                                           \
    * @par Example:                                                             \
    * ```c++                                                                    \
-   * builder.c##OP_NAME(PARAM, {control1, control2});                          \
+   * builder.c##OP_NAME(PARAM, q);                                             \
    * ```                                                                       \
    * ```mlir                                                                   \
-   * llvm.call @__quantum__qis__c##QIR_NAME##__body(%control1, %control2,      \
-   * %PARAM) : (!llvm.ptr, !llvm.ptr, f64) -> ()                               \
+   * llvm.call @__quantum__qis__c##QIR_NAME##__body(%q, %PARAM) : (!llvm.ptr,  \
+   * f64) -> ()                                                                \
    * ```                                                                       \
    */                                                                          \
   QIRProgramBuilder& c##OP_NAME(const std::variant<double, Value>&(PARAM),     \
@@ -308,11 +308,11 @@ public:
    *                                                                           \
    * @par Example:                                                             \
    * ```c++                                                                    \
-   * builder.mc##OP_NAME(PARAM, {control1, control2});                         \
+   * builder.mc##OP_NAME(PARAM, {q0, q1});                                     \
    * ```                                                                       \
    * ```mlir                                                                   \
-   * llvm.call @__quantum__qis__cc##QIR_NAME##__body(%control1, %control2,     \
-   * %PARAM) : (!llvm.ptr, !llvm.ptr, f64) -> ()                               \
+   * llvm.call @__quantum__qis__cc##QIR_NAME##__body(%q0, %q1, %PARAM) :       \
+   * (!llvm.ptr, !llvm.ptr, f64) -> ()                                         \
    * ```                                                                       \
    */                                                                          \
   QIRProgramBuilder& mc##OP_NAME(const std::variant<double, Value>&(PARAM),    \
