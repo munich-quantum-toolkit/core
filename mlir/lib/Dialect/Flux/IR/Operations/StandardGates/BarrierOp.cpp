@@ -12,17 +12,11 @@
 #include "mlir/Dialect/Flux/IR/FluxDialect.h"
 
 #include <cstddef>
-#include <functional>
 #include <llvm/ADT/STLExtras.h>
-#include <llvm/Support/Casting.h>
 #include <llvm/Support/ErrorHandling.h>
 #include <mlir/IR/Builders.h>
-#include <mlir/IR/BuiltinAttributes.h>
-#include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OperationSupport.h>
-#include <mlir/IR/PatternMatch.h>
 #include <mlir/Support/LLVM.h>
-#include <mlir/Support/LogicalResult.h>
 
 using namespace mlir;
 using namespace mlir::flux;
@@ -55,19 +49,19 @@ Value BarrierOp::getOutputTarget(const size_t i) {
   llvm::reportFatalUsageError("Invalid qubit index");
 }
 
-Value BarrierOp::getInputPosControl(const size_t i) {
+Value BarrierOp::getInputPosControl(const size_t /*i*/) {
   llvm::reportFatalUsageError("BarrierOp cannot be controlled");
 }
 
-Value BarrierOp::getOutputPosControl(const size_t i) {
+Value BarrierOp::getOutputPosControl(const size_t /*i*/) {
   llvm::reportFatalUsageError("BarrierOp cannot be controlled");
 }
 
-Value BarrierOp::getInputNegControl(const size_t i) {
+Value BarrierOp::getInputNegControl(const size_t /*i*/) {
   llvm::reportFatalUsageError("BarrierOp cannot be controlled");
 }
 
-Value BarrierOp::getOutputNegControl(const size_t i) {
+Value BarrierOp::getOutputNegControl(const size_t /*i*/) {
   llvm::reportFatalUsageError("BarrierOp cannot be controlled");
 }
 
@@ -91,7 +85,7 @@ Value BarrierOp::getOutputForInput(const Value input) {
 
 size_t BarrierOp::getNumParams() { return 0; }
 
-Value BarrierOp::getParameter(const size_t i) {
+Value BarrierOp::getParameter(const size_t /*i*/) {
   llvm::reportFatalUsageError("BarrierOp has no parameters");
 }
 

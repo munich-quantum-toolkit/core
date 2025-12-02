@@ -991,21 +991,21 @@ def BarrierOp : FluxOp<"barrier", traits = [UnitaryOpInterface]> {
     let extraClassDeclaration = [{
         size_t getNumQubits();
         size_t getNumTargets();
-        size_t getNumControls();
-        size_t getNumPosControls();
-        size_t getNumNegControls();
+        static size_t getNumControls();
+        static size_t getNumPosControls();
+        static size_t getNumNegControls();
         Value getInputQubit(size_t i);
         Value getOutputQubit(size_t i);
         Value getInputTarget(size_t i);
         Value getOutputTarget(size_t i);
-        Value getInputPosControl(size_t i);
-        Value getOutputPosControl(size_t i);
-        Value getInputNegControl(size_t i);
-        Value getOutputNegControl(size_t i);
+        static Value getInputPosControl(size_t i);
+        static Value getOutputPosControl(size_t i);
+        static Value getInputNegControl(size_t i);
+        static Value getOutputNegControl(size_t i);
         Value getInputForOutput(Value output);
         Value getOutputForInput(Value input);
-        size_t getNumParams();
-        Value getParameter(size_t i);
+        static size_t getNumParams();
+        static Value getParameter(size_t i);
         static StringRef getBaseSymbol() { return "barrier"; }
     }];
 
