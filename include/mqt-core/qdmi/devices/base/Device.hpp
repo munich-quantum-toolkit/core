@@ -18,25 +18,35 @@
 #include <atomic>
 #include <cassert>
 
+// Define a macro for hidden visibility, which works on GCC and Clang.
+#if defined(__GNUC__) || defined(__clang__)
+#define MQT_HIDDEN __attribute__((visibility("hidden")))
+#else
+#define MQT_HIDDEN
+#endif
+
 namespace qdmi {
-template <class ConcreteType> class Device {
+template <class ConcreteType> class SingletonDevice {
   /// @brief The singleton instance.
-  inline static std::atomic<ConcreteType*> instance = nullptr;
+  // The MQT_HIDDEN attribute ensures that each module (executable, shared
+  // library) gets its own separate instance of this static member, preventing
+  // them from being merged by the linker.
+  MQT_HIDDEN static std::atomic<ConcreteType*> instance;
 
 protected:
   /// @brief Protected constructor to enforce the singleton pattern.
-  Device() = default;
+  SingletonDevice() = default;
 
 public:
   // Delete move constructor and move assignment operator.
-  Device(Device&&) = delete;
-  Device& operator=(Device&&) = delete;
+  SingletonDevice(SingletonDevice&&) = delete;
+  SingletonDevice& operator=(SingletonDevice&&) = delete;
   // Delete copy constructor and assignment operator to enforce singleton.
-  Device(const Device&) = delete;
-  Device& operator=(const Device&) = delete;
+  SingletonDevice(const SingletonDevice&) = delete;
+  SingletonDevice& operator=(const SingletonDevice&) = delete;
 
-  /// @brief Destructor for the Device class.
-  virtual ~Device() = default;
+  /// @brief Destructor for the SingletonDevice class.
+  virtual ~SingletonDevice() = default;
 
   /**
    * @brief Initializes the singleton instance.
@@ -78,4 +88,9 @@ public:
     return *loadedInstance;
   }
 };
+
+// The MQT_HIDDEN attribute must also be applied to the definition.
+template <class ConcreteType>
+MQT_HIDDEN std::atomic<ConcreteType*> SingletonDevice<ConcreteType>::instance{
+    nullptr};
 } // namespace qdmi

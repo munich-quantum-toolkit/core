@@ -32,8 +32,8 @@
 #include <unordered_map>
 
 namespace qdmi::dd {
-class Device final : public qdmi::Device<Device> {
-  friend class qdmi::Device<Device>;
+class Device final : public SingletonDevice<Device> {
+  friend class SingletonDevice<Device>;
   /// Provides access to the device name.
   std::string name_;
 

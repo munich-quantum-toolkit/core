@@ -16,11 +16,7 @@ if(NOT TARGET ${TARGET_NAME})
   add_library(MQT::CoreQDMIBaseDevice ALIAS ${TARGET_NAME})
 
   # Set versioning information
-  set_target_properties(
-    ${name}
-    PROPERTIES VERSION ${PROJECT_VERSION}
-               SOVERSION ${PROJECT_VERSION_MAJOR}.${PROJECT_VERSION_MINOR}
-               EXPORT_NAME Core${ARG_ALIAS_NAME})
+  set_target_properties(${TARGET_NAME} PROPERTIES EXPORT_NAME Core${ARG_ALIAS_NAME})
 
   # add headers using file sets
   target_sources(
@@ -30,13 +26,6 @@ if(NOT TARGET ${TARGET_NAME})
   # Always compile with position independent code such that the library can be used in shared
   # libraries
   set_target_properties(${TARGET_NAME} PROPERTIES POSITION_INDEPENDENT_CODE ON)
-
-  # set versioning information
-  set_target_properties(
-    ${TARGET_NAME}
-    PROPERTIES VERSION ${PROJECT_VERSION}
-               SOVERSION ${PROJECT_VERSION_MAJOR}.${PROJECT_VERSION_MINOR}
-               EXPORT_NAME CoreQDMIBaseDevice)
 
   # add to list of MQT core targets
   set(MQT_CORE_TARGETS
