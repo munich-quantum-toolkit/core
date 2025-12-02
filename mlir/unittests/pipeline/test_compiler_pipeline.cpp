@@ -3250,4 +3250,43 @@ TEST_F(CompilerPipelineTest, Barrier2) {
   });
 }
 
+TEST_F(CompilerPipelineTest, Bell) {
+  qc::QuantumComputation qc;
+  qc.addQubitRegister(2, "q");
+  qc.h(0);
+  qc.cx(0, 1);
+
+  const auto module = importQuantumCircuit(qc);
+  ASSERT_TRUE(module);
+  ASSERT_TRUE(runPipeline(module.get()).succeeded());
+
+  const auto quartz = buildQuartzIR([](quartz::QuartzProgramBuilder& b) {
+    auto reg = b.allocQubitRegister(2, "q");
+    const auto q0 = reg[0];
+    const auto q1 = reg[1];
+    b.h(q0);
+    b.cx(q0, q1);
+  });
+  const auto flux = buildFluxIR([](flux::FluxProgramBuilder& b) {
+    auto reg = b.allocQubitRegister(2, "q");
+    auto q0 = reg[0];
+    auto q1 = reg[1];
+    q0 = b.h(q0);
+    b.cx(q0, q1);
+  });
+  const auto qir = buildQIR([](qir::QIRProgramBuilder& b) {
+    auto reg = b.allocQubitRegister(2);
+    b.h(reg[0]);
+    b.cx(reg[0], reg[1]);
+  });
+
+  verifyAllStages({
+      .quartzImport = quartz.get(),
+      .fluxConversion = flux.get(),
+      .optimization = flux.get(),
+      .quartzConversion = quartz.get(),
+      .qirConversion = qir.get(),
+  });
+}
+
 } // namespace
