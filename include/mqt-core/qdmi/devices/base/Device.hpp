@@ -51,6 +51,8 @@ template <class ConcreteType> class SingletonDevice {
 protected:
   /// @brief Protected constructor to enforce the singleton pattern.
   SingletonDevice() = default;
+  // Allow std::make_shared to access the protected constructor.
+  friend class std::shared_ptr<ConcreteType>;
 
 public:
   // Delete move constructor and move assignment operator.
@@ -71,7 +73,7 @@ public:
     const std::scoped_lock lock(*getMutexPtr());
     auto* instance = getInstancePtr();
     if (*instance == nullptr) {
-      *instance = std::make_shared<ConcreteType>();
+      *instance = std::shared_ptr<ConcreteType>(new ConcreteType);
     }
   }
 
