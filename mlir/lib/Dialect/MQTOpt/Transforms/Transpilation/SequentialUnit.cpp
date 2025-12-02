@@ -24,7 +24,6 @@
 #include <mlir/IR/Region.h>
 #include <mlir/Interfaces/ControlFlowInterfaces.h>
 #include <mlir/Support/LLVM.h>
-#include <stdexcept>
 #include <utility>
 
 namespace mqt::ir::opt {
@@ -76,8 +75,7 @@ mlir::SmallVector<SequentialUnit, 3> SequentialUnit::next() {
         units.emplace_back(std::move(layout_), region_, std::next(end_),
                            restore_);
       })
-      .Default(
-          [](auto) { throw std::runtime_error("invalid 'next' operation"); });
+      .Default([](auto) { llvm_unreachable("invalid 'next' operation"); });
 
   return units;
 }

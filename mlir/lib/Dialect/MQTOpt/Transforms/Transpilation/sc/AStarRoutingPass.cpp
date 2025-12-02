@@ -168,7 +168,7 @@ private:
                     [&](MeasureOp op) { remap(op, unit.layout()); })
                 .Case<scf::YieldOp>([&](scf::YieldOp op) {
                   if (unit.restore()) {
-                    rewriter.setInsertionPointAfter(op->getPrevNode());
+                    rewriter.setInsertionPoint(op);
                     insertSWAPs(op.getLoc(),
                                 llvm::to_vector(llvm::reverse(history)),
                                 unit.layout(), rewriter);

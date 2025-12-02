@@ -143,6 +143,7 @@ void replaceAllUsesInRegionAndChildrenExcept(mlir::Value oldValue,
 
 [[nodiscard]] bool isExecutable(UnitaryInterface op, const Layout& layout,
                                 const Architecture& arch) {
+  assert(isTwoQubitGate(op));
   const auto ins = getIns(op);
   return arch.areAdjacent(layout.lookupHardwareIndex(ins.first),
                           layout.lookupHardwareIndex(ins.second));

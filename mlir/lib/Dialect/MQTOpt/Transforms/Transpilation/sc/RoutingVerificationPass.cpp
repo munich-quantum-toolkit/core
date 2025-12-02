@@ -68,7 +68,6 @@ struct RoutingVerificationPassSC final
 private:
   LogicalResult verify() {
     ModuleOp module(getOperation());
-    PatternRewriter rewriter(module->getContext());
     std::unique_ptr<Architecture> arch(getArchitecture(archName));
 
     if (!arch) {
@@ -95,8 +94,6 @@ private:
         Layout unmodified(unit.layout());
         SmallVector<QubitIndexPair> history;
         for (Operation& curr : unit) {
-          rewriter.setInsertionPoint(&curr);
-
           const auto res =
               TypeSwitch<Operation*, LogicalResult>(&curr)
                   .Case<UnitaryInterface>([&](UnitaryInterface op)

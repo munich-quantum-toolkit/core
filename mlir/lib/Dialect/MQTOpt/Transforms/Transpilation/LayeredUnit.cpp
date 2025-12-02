@@ -33,7 +33,6 @@
 #include <mlir/Interfaces/ControlFlowInterfaces.h>
 #include <mlir/Support/LLVM.h>
 #include <optional>
-#include <stdexcept>
 #include <utility>
 
 namespace mqt::ir::opt {
@@ -301,8 +300,7 @@ mlir::SmallVector<LayeredUnit, 3> LayeredUnit::next() {
         remapIfResults(op, layout_);
         units.emplace_back(layout_, region_, restore_);
       })
-      .Default(
-          [](auto) { throw std::runtime_error("invalid 'next' operation"); });
+      .Default([](auto) { llvm_unreachable("invalid 'next' operation"); });
 
   return units;
 }
