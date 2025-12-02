@@ -38,7 +38,7 @@
 namespace mqt::ir::opt {
 namespace {
 
-/// @brief A wire links a WireIterator and a program index.
+/// @brief A wire links a WireIterator to a program index.
 struct Wire {
   Wire(const WireIterator& it, QubitIndex index) : it(it), index(index) {}
   WireIterator it;
@@ -82,7 +82,7 @@ private:
 };
 
 mlir::SmallVector<Wire, 2> skipTwoQubitBlock(mlir::ArrayRef<Wire> wires,
-                                             OpLayer& opLayer) {
+                                             Layer& opLayer) {
   assert(wires.size() == 2 && "expected two wires");
 
   auto [it0, index0] = wires[0];
@@ -132,6 +132,15 @@ mlir::SmallVector<Wire, 2> skipTwoQubitBlock(mlir::ArrayRef<Wire> wires,
 }
 } // namespace
 
+LayeredUnit LayeredUnit::fromEntryPointFunction(mlir::func::FuncOp func,
+                                                const std::size_t nqubits) {
+  Layout layout(nqubits);
+  for_each(func.getOps<QubitOp>(), [&](QubitOp op) {
+    layout.add(op.getIndex(), op.getIndex(), op.getQubit());
+  });
+  return {std::move(layout), &func.getBody()};
+}
+
 LayeredUnit::LayeredUnit(Layout layout, mlir::Region* region, bool restore)
     : Unit(std::move(layout), region, restore) {
   SynchronizationMap sync;
@@ -153,8 +162,7 @@ LayeredUnit::LayeredUnit(Layout layout, mlir::Region* region, bool restore)
     /// of the respective two-qubit gates, and prepare iterators for next
     /// iteration.
 
-    GateLayer gateLayer;
-    OpLayer opLayer;
+    Layer layer;
 
     bool haltOnWire{};
 
@@ -169,7 +177,7 @@ LayeredUnit::LayeredUnit(Layout layout, mlir::Region* region, bool restore)
 
                   /// Skip over one-qubit gates. Note: Might be a BarrierOp.
                   if (nins == 1) {
-                    opLayer.addOp(op);
+                    layer.addOp(op);
                     ++it;
                     return false;
                   }
@@ -182,13 +190,13 @@ LayeredUnit::LayeredUnit(Layout layout, mlir::Region* region, bool restore)
 
                   if (const auto iterators =
                           sync.visit(op, Wire(++it, index))) {
-                    opLayer.addOp(op);
+                    layer.addOp(op);
 
                     // Is ready two-qubit unitary?
                     if (!mlir::isa<BarrierOp>(op)) {
-                      gateLayer.emplace_back((*iterators)[0].index,
-                                             (*iterators)[1].index);
-                      next.append(skipTwoQubitBlock(*iterators, opLayer));
+                      layer.twoQubitProgs.emplace_back((*iterators)[0].index,
+                                                       (*iterators)[1].index);
+                      next.append(skipTwoQubitBlock(*iterators, layer));
                     } else {
                       next.append(*iterators);
                     }
@@ -197,7 +205,7 @@ LayeredUnit::LayeredUnit(Layout layout, mlir::Region* region, bool restore)
                   return true;
                 })
                 .Case<ResetOp, MeasureOp>([&](auto op) {
-                  opLayer.addOp(op);
+                  layer.addOp(op);
                   ++it;
                   return false;
                 })
@@ -209,7 +217,7 @@ LayeredUnit::LayeredUnit(Layout layout, mlir::Region* region, bool restore)
 
                   if (const auto iterators =
                           sync.visit(yield, Wire(++it, index))) {
-                    opLayer.addOp(yield);
+                    layer.addOp(yield);
                   }
 
                   return true;
@@ -242,24 +250,24 @@ LayeredUnit::LayeredUnit(Layout layout, mlir::Region* region, bool restore)
       }
     }
 
-    /// If there is no gates to route, merge the last layer with this one and
-    /// keep the anchor the same. Otherwise, add the layer.
+    if (!layer.hasZeroOps()) {
+      if (layer.hasZero2QOps()) {
 
-    if (gateLayer.empty()) {
-      if (!opLayer.empty()) {
-        if (opLayers.empty()) {
-          gateLayers.emplace_back();
-          opLayers.emplace_back();
+        /// If there is no gates to route, merge the last layer
+        /// with this one and keep the anchor the same.
+
+        if (layers_.empty()) {
+          layers_.emplace_back(layer);
+        } else {
+          layers_.back().ops.append(layer.ops);
+          if (layers_.back().anchor == nullptr) {
+            layers_.back().anchor = layer.anchor;
+          }
         }
-        opLayers.back().ops.append(opLayer.ops);
-        if (opLayers.back().anchor == nullptr) {
-          opLayers.back().anchor = opLayer.anchor;
-        }
+      } else {
+        /// Otherwise, add the layer.
+        layers_.emplace_back(layer);
       }
-
-    } else if (!opLayer.empty()) {
-      gateLayers.emplace_back(gateLayer);
-      opLayers.emplace_back(opLayer);
     }
 
     /// Prepare next iteration or stop.
@@ -298,32 +306,23 @@ mlir::SmallVector<LayeredUnit, 3> LayeredUnit::next() {
   return units;
 }
 
-SlidingWindow LayeredUnit::slidingWindow(std::size_t nlookahead) const {
-  return SlidingWindow(gateLayers, opLayers, nlookahead);
-}
-
 #ifndef NDEBUG
 LLVM_DUMP_METHOD void LayeredUnit::dump(llvm::raw_ostream& os) const {
-  os << "schedule: gate layers=\n";
-  for (const auto [i, layer] : llvm::enumerate(gateLayers)) {
-    os << '\t' << i << ": ";
-    os << "gates= ";
-    if (!layer.empty()) {
-      for (const auto [prog0, prog1] : layer) {
-        os << "(" << prog0 << "," << prog1 << "), ";
-      }
-    } else {
-      os << "(), ";
-    }
-    os << '\n';
-  }
-
-  os << "schedule: op layers=\n";
-  for (const auto [i, layer] : llvm::enumerate(opLayers)) {
+  os << "schedule: layers=\n";
+  for (const auto [i, layer] : llvm::enumerate(layers_)) {
     os << '\t' << i << ": ";
     os << "#ops= " << layer.ops.size();
     if (!layer.ops.empty()) {
       os << " anchor= " << layer.anchor->getLoc();
+    }
+    os << '\n';
+    os << "schedule: gates= ";
+    if (!layer.hasZero2QOps()) {
+      for (const auto [prog0, prog1] : layer.twoQubitProgs) {
+        os << "(" << prog0 << "," << prog1 << "), ";
+      }
+    } else {
+      os << "(), ";
     }
     os << '\n';
   }

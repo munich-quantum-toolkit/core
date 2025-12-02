@@ -10,7 +10,6 @@
 
 #pragma once
 
-#include "mlir/Dialect/MQTOpt/IR/MQTOptDialect.h"
 #include "mlir/Dialect/MQTOpt/Transforms/Transpilation/Layout.h"
 #include "mlir/Dialect/MQTOpt/Transforms/Transpilation/Unit.h"
 
@@ -25,14 +24,8 @@ namespace mqt::ir::opt {
 /// @brief A SequentialUnit traverses a program sequentially.
 class SequentialUnit : public Unit {
 public:
-  static SequentialUnit fromEntryPointFunction(mlir::func::FuncOp func,
-                                               const std::size_t nqubits) {
-    Layout layout(nqubits);
-    for_each(func.getOps<QubitOp>(), [&](QubitOp op) {
-      layout.add(op.getIndex(), op.getIndex(), op.getQubit());
-    });
-    return {std::move(layout), &func.getBody()};
-  }
+  [[nodiscard]] static SequentialUnit
+  fromEntryPointFunction(mlir::func::FuncOp func, std::size_t nqubits);
 
   SequentialUnit(Layout layout, mlir::Region* region,
                  mlir::Region::OpIterator start, bool restore = false);

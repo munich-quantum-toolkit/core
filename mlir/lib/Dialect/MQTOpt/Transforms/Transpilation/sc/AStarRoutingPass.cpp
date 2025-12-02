@@ -104,18 +104,23 @@ private:
       units.emplace(LayeredUnit::fromEntryPointFunction(func, arch->nqubits()));
       for (; !units.empty(); units.pop()) {
         LayeredUnit& unit = units.front();
-
         LLVM_DEBUG(unit.dump());
 
         SmallVector<QubitIndexPair> history;
-        for (const auto window : unit.slidingWindow(nlookahead)) {
-          Operation* anchor = window.opLayer->anchor;
-          const ArrayRef<GateLayer> layers = window.gateLayers;
-          const ArrayRef<Operation*> ops = window.opLayer->ops;
+        for (const auto& [i, layer] : llvm::enumerate(unit)) {
+
+          /// Compute sliding window.
+          const auto len = std::min(1 + nlookahead, unit.size() - i);
+          SmallVector<ArrayRef<QubitIndexPair>> window;
+          window.reserve(len);
+          llvm::transform(ArrayRef(unit.begin(), unit.end()).slice(i, len),
+                          std::back_inserter(window), [&](const Layer& l) {
+                            return ArrayRef(l.twoQubitProgs);
+                          });
 
           /// Find and insert SWAPs.
-          rewriter.setInsertionPoint(anchor);
-          const auto swaps = router.route(layers, unit.layout(), *arch);
+          rewriter.setInsertionPoint(layer.anchor);
+          const auto swaps = router.route(window, unit.layout(), *arch);
           if (!swaps) {
             const Location loc = UnknownLoc::get(&getContext());
             return emitError(loc, "A* failed to find a valid SWAP sequence");
@@ -123,7 +128,8 @@ private:
 
           if (!swaps->empty()) {
             history.append(*swaps);
-            insertSWAPs(anchor->getLoc(), *swaps, unit.layout(), rewriter);
+            insertSWAPs(layer.anchor->getLoc(), *swaps, unit.layout(),
+                        rewriter);
             numSwaps += swaps->size();
 
             LLVM_DEBUG({
@@ -135,12 +141,12 @@ private:
           }
 
           /// Process all operations contained in the layer.
-          for (Operation* curr : ops) {
+          for (Operation* curr : layer.ops) {
             rewriter.setInsertionPoint(curr);
 
             /// Re-order to fix any SSA Dominance issues.
-            if (window.nextAnchor != nullptr) {
-              rewriter.moveOpBefore(curr, window.nextAnchor);
+            if (i + 1 < unit.size()) {
+              rewriter.moveOpBefore(curr, unit[i + 1].anchor);
             }
 
             /// Forward layout.

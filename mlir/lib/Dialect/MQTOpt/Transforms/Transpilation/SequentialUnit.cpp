@@ -10,11 +10,13 @@
 
 #include "mlir/Dialect/MQTOpt/Transforms/Transpilation/SequentialUnit.h"
 
+#include "mlir/Dialect/MQTOpt/IR/MQTOptDialect.h"
 #include "mlir/Dialect/MQTOpt/Transforms/Transpilation/Layout.h"
 #include "mlir/Dialect/MQTOpt/Transforms/Transpilation/Unit.h"
 
 #include <iterator>
 #include <llvm/ADT/TypeSwitch.h>
+#include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
 #include <mlir/IR/Operation.h>
 #include <mlir/IR/Region.h>
@@ -24,6 +26,16 @@
 #include <utility>
 
 namespace mqt::ir::opt {
+
+SequentialUnit
+SequentialUnit::fromEntryPointFunction(mlir::func::FuncOp func,
+                                       const std::size_t nqubits) {
+  Layout layout(nqubits);
+  for_each(func.getOps<QubitOp>(), [&](QubitOp op) {
+    layout.add(op.getIndex(), op.getIndex(), op.getQubit());
+  });
+  return {std::move(layout), &func.getBody()};
+}
 
 SequentialUnit::SequentialUnit(Layout layout, mlir::Region* region,
                                mlir::Region::OpIterator start, bool restore)
@@ -40,7 +52,7 @@ SequentialUnit::SequentialUnit(Layout layout, mlir::Region* region,
   end_ = it;
 }
 
-[[nodiscard]] mlir::SmallVector<SequentialUnit, 3> SequentialUnit::next() {
+mlir::SmallVector<SequentialUnit, 3> SequentialUnit::next() {
   if (divider_ == nullptr) {
     return {};
   }
