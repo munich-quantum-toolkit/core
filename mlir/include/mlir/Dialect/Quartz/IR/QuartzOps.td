@@ -680,9 +680,9 @@ def SWAPOp : QuartzOp<"swap", traits = [UnitaryOpInterface, TwoTargetZeroParamet
         ```
     }];
 
-    let arguments = (ins Arg<QubitType, "the first target qubit", [MemRead, MemWrite]>:$qubit0,
-                     Arg<QubitType, "the second target qubit", [MemRead, MemWrite]>:$qubit1);
-    let assemblyFormat = "$qubit0 $qubit1 attr-dict";
+    let arguments = (ins Arg<QubitType, "the first target qubit", [MemRead, MemWrite]>:$qubit0_in,
+                     Arg<QubitType, "the second target qubit", [MemRead, MemWrite]>:$qubit1_in);
+    let assemblyFormat = "$qubit0_in $qubit1_in attr-dict";
 
     let extraClassDeclaration = [{
         DenseElementsAttr tryGetStaticMatrix();
@@ -701,9 +701,9 @@ def iSWAPOp : QuartzOp<"iswap", traits = [UnitaryOpInterface, TwoTargetZeroParam
         ```
     }];
 
-    let arguments = (ins Arg<QubitType, "the first target qubit", [MemRead, MemWrite]>:$qubit0,
-                     Arg<QubitType, "the second target qubit", [MemRead, MemWrite]>:$qubit1);
-    let assemblyFormat = "$qubit0 $qubit1 attr-dict";
+    let arguments = (ins Arg<QubitType, "the first target qubit", [MemRead, MemWrite]>:$qubit0_in,
+                     Arg<QubitType, "the second target qubit", [MemRead, MemWrite]>:$qubit1_in);
+    let assemblyFormat = "$qubit0_in $qubit1_in attr-dict";
 
     let extraClassDeclaration = [{
         DenseElementsAttr tryGetStaticMatrix();
@@ -722,9 +722,9 @@ def DCXOp : QuartzOp<"dcx", traits = [UnitaryOpInterface, TwoTargetZeroParameter
         ```
     }];
 
-    let arguments = (ins Arg<QubitType, "the first target qubit", [MemRead, MemWrite]>:$qubit0,
-                     Arg<QubitType, "the second target qubit", [MemRead, MemWrite]>:$qubit1);
-    let assemblyFormat = "$qubit0 $qubit1 attr-dict";
+    let arguments = (ins Arg<QubitType, "the first target qubit", [MemRead, MemWrite]>:$qubit0_in,
+                     Arg<QubitType, "the second target qubit", [MemRead, MemWrite]>:$qubit1_in);
+    let assemblyFormat = "$qubit0_in $qubit1_in attr-dict";
 
     let extraClassDeclaration = [{
         DenseElementsAttr tryGetStaticMatrix();
@@ -743,9 +743,9 @@ def ECROp : QuartzOp<"ecr", traits = [UnitaryOpInterface, TwoTargetZeroParameter
         ```
     }];
 
-    let arguments = (ins Arg<QubitType, "the first target qubit", [MemRead, MemWrite]>:$qubit0,
-                     Arg<QubitType, "the second target qubit", [MemRead, MemWrite]>:$qubit1);
-    let assemblyFormat = "$qubit0 $qubit1 attr-dict";
+    let arguments = (ins Arg<QubitType, "the first target qubit", [MemRead, MemWrite]>:$qubit0_in,
+                     Arg<QubitType, "the second target qubit", [MemRead, MemWrite]>:$qubit1_in);
+    let assemblyFormat = "$qubit0_in $qubit1_in attr-dict";
 
     let extraClassDeclaration = [{
         DenseElementsAttr tryGetStaticMatrix();
