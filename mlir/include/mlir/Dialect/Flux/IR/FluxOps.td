@@ -259,7 +259,7 @@ def TwoTargetTwoParameter : TargetAndParameterArityTrait<2, 2>;
 // Unitary Operations
 //===----------------------------------------------------------------------===//
 
-def GPhaseOp : FluxOp<"gphase", traits = [UnitaryOpInterface, ZeroTargetOneParameter, MemoryEffects<[MemAlloc]>]> {
+def GPhaseOp : FluxOp<"gphase", traits = [UnitaryOpInterface, ZeroTargetOneParameter, MemoryEffects<[MemWrite]>]> {
     let summary = "Apply a global phase to the state";
     let description = [{
         Applies a global phase to the state.
