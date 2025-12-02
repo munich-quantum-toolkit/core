@@ -130,7 +130,7 @@ public:
    * @see MQT_SC_QDMI_device_session_set_parameter
    */
   auto setParameter(QDMI_Device_Session_Parameter param, size_t size,
-                    const void* value) -> int;
+                    const void* value) const -> int;
 
   /**
    * @brief Create a new device job.

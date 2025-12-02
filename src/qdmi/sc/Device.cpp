@@ -191,8 +191,8 @@ auto MQT_SC_QDMI_Device_Session_impl_d::init() -> int {
   return QDMI_SUCCESS;
 }
 auto MQT_SC_QDMI_Device_Session_impl_d::setParameter(
-    QDMI_Device_Session_Parameter param, const size_t size, const void* value)
-    -> int {
+    QDMI_Device_Session_Parameter param, const size_t size,
+    const void* value) const -> int {
   if ((value != nullptr && size == 0) ||
       param >= QDMI_DEVICE_SESSION_PARAMETER_MAX) {
     return QDMI_ERROR_INVALIDARGUMENT;

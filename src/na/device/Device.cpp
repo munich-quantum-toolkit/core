@@ -273,6 +273,7 @@ auto MQT_NA_QDMI_Device_Session_impl_d::queryOperationProperty(
 auto MQT_NA_QDMI_Device_Job_impl_d::free() -> void {
   session_->freeDeviceJob(this);
 }
+// NOLINTNEXTLINE(readability-convert-member-functions-to-static)
 auto MQT_NA_QDMI_Device_Job_impl_d::setParameter(
     const QDMI_Device_Job_Parameter param, const size_t size, const void* value)
     -> int {
@@ -282,6 +283,7 @@ auto MQT_NA_QDMI_Device_Job_impl_d::setParameter(
   }
   return QDMI_ERROR_NOTSUPPORTED;
 }
+// NOLINTNEXTLINE(readability-convert-member-functions-to-static)
 auto MQT_NA_QDMI_Device_Job_impl_d::queryProperty(
     // NOLINTNEXTLINE(readability-non-const-parameter)
     const QDMI_Device_Job_Property prop, const size_t size, void* value,
@@ -291,23 +293,27 @@ auto MQT_NA_QDMI_Device_Job_impl_d::queryProperty(
   }
   return QDMI_ERROR_NOTSUPPORTED;
 }
+// NOLINTNEXTLINE(readability-convert-member-functions-to-static)
 auto MQT_NA_QDMI_Device_Job_impl_d::submit() -> int {
   return QDMI_ERROR_NOTSUPPORTED;
 }
+// NOLINTNEXTLINE(readability-convert-member-functions-to-static)
 auto MQT_NA_QDMI_Device_Job_impl_d::cancel() -> int {
   return QDMI_ERROR_NOTSUPPORTED;
 }
-// NOLINTNEXTLINE(readability-non-const-parameter)
+// NOLINTNEXTLINE(readability-non-const-parameter,readability-convert-member-functions-to-static)
 auto MQT_NA_QDMI_Device_Job_impl_d::check(QDMI_Job_Status* status) -> int {
   if (status == nullptr) {
     return QDMI_ERROR_INVALIDARGUMENT;
   }
   return QDMI_ERROR_NOTSUPPORTED;
 }
+// NOLINTNEXTLINE(readability-convert-member-functions-to-static)
 auto MQT_NA_QDMI_Device_Job_impl_d::wait([[maybe_unused]] const size_t timeout)
     -> int {
   return QDMI_ERROR_NOTSUPPORTED;
 }
+// NOLINTNEXTLINE(readability-convert-member-functions-to-static)
 auto MQT_NA_QDMI_Device_Job_impl_d::getResults(
     QDMI_Job_Result result,
     // NOLINTNEXTLINE(readability-non-const-parameter)
