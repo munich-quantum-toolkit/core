@@ -169,4 +169,56 @@ mergeTwoTargetOneParameter(OpType op, mlir::PatternRewriter& rewriter) {
   return success();
 }
 
+/**
+ * @brief Remove a trivial one-target, one-parameter operation
+ *
+ * @tparam OpType The type of the operation to be checked.
+ * @param op The operation instance.
+ * @param rewriter The pattern rewriter.
+ * @return LogicalResult Success or failure of the removal.
+ */
+template <typename OpType>
+inline mlir::LogicalResult
+removeTrivialOneTargetOneParameter(OpType op, mlir::PatternRewriter& rewriter) {
+  const auto paramAttr = OpType::getStaticParameter(op.getOperand(1));
+  if (!paramAttr) {
+    return failure();
+  }
+
+  const auto paramValue = paramAttr.getValueAsDouble();
+  if (paramValue != 0.0) {
+    return failure();
+  }
+
+  rewriter.replaceOp(op, op.getQubitIn());
+
+  return success();
+}
+
+/**
+ * @brief Remove a trivial two-target, one-parameter operation
+ *
+ * @tparam OpType The type of the operation to be checked.
+ * @param op The operation instance.
+ * @param rewriter The pattern rewriter.
+ * @return LogicalResult Success or failure of the removal.
+ */
+template <typename OpType>
+inline mlir::LogicalResult
+removeTrivialTwoTargetOneParameter(OpType op, mlir::PatternRewriter& rewriter) {
+  const auto paramAttr = OpType::getStaticParameter(op.getOperand(2));
+  if (!paramAttr) {
+    return failure();
+  }
+
+  const auto paramValue = paramAttr.getValueAsDouble();
+  if (paramValue != 0.0) {
+    return failure();
+  }
+
+  rewriter.replaceOp(op, {op.getQubit0In(), op.getQubit1In()});
+
+  return success();
+}
+
 } // namespace mlir::flux

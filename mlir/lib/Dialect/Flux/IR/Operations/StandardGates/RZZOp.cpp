@@ -40,6 +40,18 @@ struct MergeSubsequentRZZ final : OpRewritePattern<RZZOp> {
   }
 };
 
+/**
+ * @brief Remove trivial RZZ operations.
+ */
+struct RemoveTrivialRZZ final : OpRewritePattern<RZZOp> {
+  using OpRewritePattern::OpRewritePattern;
+
+  LogicalResult matchAndRewrite(RZZOp op,
+                                PatternRewriter& rewriter) const override {
+    return removeTrivialTwoTargetOneParameter(op, rewriter);
+  }
+};
+
 } // namespace
 
 DenseElementsAttr RZZOp::tryGetStaticMatrix() {
@@ -66,5 +78,5 @@ void RZZOp::build(OpBuilder& odsBuilder, OperationState& odsState,
 
 void RZZOp::getCanonicalizationPatterns(RewritePatternSet& results,
                                         MLIRContext* context) {
-  results.add<MergeSubsequentRZZ>(context);
+  results.add<MergeSubsequentRZZ, RemoveTrivialRZZ>(context);
 }

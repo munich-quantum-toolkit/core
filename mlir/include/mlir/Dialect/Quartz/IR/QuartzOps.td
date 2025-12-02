@@ -144,6 +144,8 @@ def DeallocOp : QuartzOp<"dealloc", [MemoryEffects<[MemFree]>]> {
 
     let arguments = (ins QubitType:$qubit);
     let assemblyFormat = "$qubit attr-dict `:` type($qubit)";
+
+    let hasCanonicalizer = 1;
 }
 
 def StaticOp : QuartzOp<"static", [Pure]> {

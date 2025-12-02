@@ -40,6 +40,18 @@ struct MergeSubsequentRXX final : OpRewritePattern<RXXOp> {
   }
 };
 
+/**
+ * @brief Remove trivial RXX operations.
+ */
+struct RemoveTrivialRXX final : OpRewritePattern<RXXOp> {
+  using OpRewritePattern::OpRewritePattern;
+
+  LogicalResult matchAndRewrite(RXXOp op,
+                                PatternRewriter& rewriter) const override {
+    return removeTrivialTwoTargetOneParameter(op, rewriter);
+  }
+};
+
 } // namespace
 
 DenseElementsAttr RXXOp::tryGetStaticMatrix() {
@@ -66,5 +78,5 @@ void RXXOp::build(OpBuilder& odsBuilder, OperationState& odsState,
 
 void RXXOp::getCanonicalizationPatterns(RewritePatternSet& results,
                                         MLIRContext* context) {
-  results.add<MergeSubsequentRXX>(context);
+  results.add<MergeSubsequentRXX, RemoveTrivialRXX>(context);
 }

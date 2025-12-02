@@ -40,6 +40,18 @@ struct MergeSubsequentRY final : OpRewritePattern<RYOp> {
   }
 };
 
+/**
+ * @brief Remove trivial RY operations.
+ */
+struct RemoveTrivialRY final : OpRewritePattern<RYOp> {
+  using OpRewritePattern::OpRewritePattern;
+
+  LogicalResult matchAndRewrite(RYOp op,
+                                PatternRewriter& rewriter) const override {
+    return removeTrivialOneTargetOneParameter(op, rewriter);
+  }
+};
+
 } // namespace
 
 DenseElementsAttr RYOp::tryGetStaticMatrix() {
@@ -66,5 +78,5 @@ void RYOp::build(OpBuilder& odsBuilder, OperationState& odsState,
 
 void RYOp::getCanonicalizationPatterns(RewritePatternSet& results,
                                        MLIRContext* context) {
-  results.add<MergeSubsequentRY>(context);
+  results.add<MergeSubsequentRY, RemoveTrivialRY>(context);
 }
