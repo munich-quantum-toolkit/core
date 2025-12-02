@@ -68,8 +68,6 @@ ADD_STANDARD_GATE(XXMINUSYY, xx_minus_yy)
 
 #undef ADD_STANDARD_GATE
 
-static constexpr auto QIR_BARRIER = "__quantum__qis__barrier__body";
-
 // Functions for getting QIR function names
 
 #define DEFINE_GETTER(NAME)                                                    \

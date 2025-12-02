@@ -817,15 +817,17 @@ DEFINE_TWO_TARGET_TWO_PARAMETER(XXMinusYYOp, XXMINUSYY, xx_minus_yy,
 
 // BarrierOp
 
+/**
+ * @brief Erases quartz.barrier operation, as it is a no-op in QIR
+ */
 struct ConvertQuartzBarrierQIR final : StatefulOpConversionPattern<BarrierOp> {
   using StatefulOpConversionPattern::StatefulOpConversionPattern;
 
   LogicalResult
-  matchAndRewrite(BarrierOp op, OpAdaptor adaptor,
+  matchAndRewrite(BarrierOp op, OpAdaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
-    return convertUnitaryToCallOp(op, adaptor, rewriter, getContext(),
-                                  getState(), QIR_BARRIER,
-                                  op.getQubits().size(), 0);
+    rewriter.eraseOp(op);
+    return success();
   }
 };
 
@@ -885,11 +887,6 @@ struct ConvertQuartzYieldQIR final : StatefulOpConversionPattern<YieldOp> {
  * 4. Set QIR metadata attributes
  * 5. Convert arith and cf dialects to LLVM
  * 6. Reconcile unrealized casts
- *
- * Current scope:
- * - Quartz operations: static, alloc, dealloc, measure, reset
- * - Gate operations will be added as the dialect expands
- * - Supports both static and dynamic qubit management
  */
 struct QuartzToQIR final : impl::QuartzToQIRBase<QuartzToQIR> {
   using QuartzToQIRBase::QuartzToQIRBase;
@@ -1136,8 +1133,8 @@ struct QuartzToQIR final : impl::QuartzToQIRBase<QuartzToQIR> {
    * in the entry block.
    *
    * **Stage 3: Quartz to LLVM**
-   * Convert Quartz dialect operations to QIR calls (static, alloc, dealloc,
-   * measure, reset) and add output recording to the output block.
+   * Convert Quartz dialect operations to QIR calls and add output recording to
+   * the output block.
    *
    * **Stage 4: QIR attributes**
    * Add QIR base profile metadata to the main function, including
@@ -1229,7 +1226,6 @@ struct QuartzToQIR final : impl::QuartzToQIRBase<QuartzToQIR> {
       quartzPatterns.add<ConvertQuartzBarrierQIR>(typeConverter, ctx, &state);
       quartzPatterns.add<ConvertQuartzCtrlQIR>(typeConverter, ctx, &state);
       quartzPatterns.add<ConvertQuartzYieldQIR>(typeConverter, ctx, &state);
-      // Gate operations will be added here as the dialect expands
 
       if (applyPartialConversion(moduleOp, target, std::move(quartzPatterns))
               .failed()) {

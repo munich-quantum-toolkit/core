@@ -1012,6 +1012,8 @@ def BarrierOp : FluxOp<"barrier", traits = [UnitaryOpInterface]> {
     let builders = [
         OpBuilder<(ins "ValueRange":$qubits)>
     ];
+
+    let hasCanonicalizer = 1;
 }
 
 //===----------------------------------------------------------------------===//

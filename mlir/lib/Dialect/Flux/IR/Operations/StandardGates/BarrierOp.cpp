@@ -15,11 +15,65 @@
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/Support/ErrorHandling.h>
 #include <mlir/IR/Builders.h>
+#include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OperationSupport.h>
+#include <mlir/IR/PatternMatch.h>
 #include <mlir/Support/LLVM.h>
+#include <mlir/Support/LogicalResult.h>
 
 using namespace mlir;
 using namespace mlir::flux;
+
+namespace {
+
+/**
+ * @brief Merge subsequent barriers on the same qubits into a single barrier.
+ */
+struct MergeSubsequentBarrier final : OpRewritePattern<BarrierOp> {
+  using OpRewritePattern::OpRewritePattern;
+
+  LogicalResult matchAndRewrite(BarrierOp op,
+                                PatternRewriter& rewriter) const override {
+    const auto& qubitsIn = op.getQubitsIn();
+
+    auto anythingToMerge = false;
+    DenseMap<size_t, Value> newQubitsOutMap;
+
+    SmallVector<Value> newQubitsIn;
+    SmallVector<size_t> indicesToFill;
+
+    for (size_t i = 0; i < qubitsIn.size(); ++i) {
+      if (qubitsIn[i].getDefiningOp<BarrierOp>()) {
+        anythingToMerge = true;
+        newQubitsOutMap[i] = qubitsIn[i];
+      } else {
+        newQubitsIn.push_back(qubitsIn[i]);
+        indicesToFill.push_back(i);
+      }
+    }
+
+    if (!anythingToMerge) {
+      return failure();
+    }
+
+    auto newBarrier = rewriter.create<BarrierOp>(op.getLoc(), newQubitsIn);
+
+    for (size_t i = 0; i < indicesToFill.size(); ++i) {
+      newQubitsOutMap[indicesToFill[i]] = newBarrier.getQubitsOut()[i];
+    }
+
+    SmallVector<Value> newQubitsOut;
+    newQubitsOut.reserve(op.getQubitsIn().size());
+    for (size_t i = 0; i < op.getQubitsIn().size(); ++i) {
+      newQubitsOut.push_back(newQubitsOutMap[i]);
+    }
+
+    rewriter.replaceOp(op, newQubitsOut);
+    return success();
+  }
+};
+
+} // namespace
 
 size_t BarrierOp::getNumQubits() { return getNumTargets(); }
 
@@ -97,4 +151,9 @@ void BarrierOp::build(OpBuilder& odsBuilder, OperationState& odsState,
     resultTypes.push_back(qubit.getType());
   }
   build(odsBuilder, odsState, resultTypes, qubits);
+}
+
+void BarrierOp::getCanonicalizationPatterns(RewritePatternSet& results,
+                                            MLIRContext* context) {
+  results.add<MergeSubsequentBarrier>(context);
 }
