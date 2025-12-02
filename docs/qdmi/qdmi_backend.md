@@ -243,7 +243,7 @@ from mqt.core.plugins.qiskit import (
 )
 
 try:
-    job = backend.run(circuit, shots=1024)
+    job = backend.run(qc, shots=1024)
     result = job.result()
 except CircuitValidationError as e:
     # Invalid circuit (unbound parameters, invalid shots, etc.)
