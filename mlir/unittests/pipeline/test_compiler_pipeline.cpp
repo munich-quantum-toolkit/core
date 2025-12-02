@@ -1277,7 +1277,38 @@ TEST_F(CompilerPipelineTest, MultipleClassicalRegistersAndMeasurements) {
 // # Temporary Unitary Operation Tests
 // ##################################################
 
-TEST_F(CompilerPipelineTest, I) {
+TEST_F(CompilerPipelineTest, GPhase) {
+  qc::QuantumComputation qc;
+  qc.addQubitRegister(1, "q");
+  qc.gphase(1.0);
+
+  const auto module = importQuantumCircuit(qc);
+  ASSERT_TRUE(module);
+  ASSERT_TRUE(runPipeline(module.get()).succeeded());
+
+  const auto quartz = buildQuartzIR([](quartz::QuartzProgramBuilder& b) {
+    auto reg = b.allocQubitRegister(1, "q");
+    b.gphase(1.0);
+  });
+  const auto flux = buildFluxIR([](flux::FluxProgramBuilder& b) {
+    auto reg = b.allocQubitRegister(1, "q");
+    b.gphase(1.0);
+  });
+  const auto qir = buildQIR([](qir::QIRProgramBuilder& b) {
+    auto reg = b.allocQubitRegister(1);
+    b.gphase(1.0);
+  });
+
+  verifyAllStages({
+      .quartzImport = quartz.get(),
+      .fluxConversion = flux.get(),
+      .optimization = flux.get(),
+      .quartzConversion = quartz.get(),
+      .qirConversion = qir.get(),
+  });
+}
+
+TEST_F(CompilerPipelineTest, Id) {
   qc::QuantumComputation qc;
   qc.addQubitRegister(1, "q");
   qc.i(0);
@@ -1304,7 +1335,7 @@ TEST_F(CompilerPipelineTest, I) {
   });
 }
 
-TEST_F(CompilerPipelineTest, CI) {
+TEST_F(CompilerPipelineTest, CId) {
   qc::QuantumComputation qc;
   qc.addQubitRegister(2, "q");
   qc.ci(0, 1);
@@ -2959,7 +2990,7 @@ TEST_F(CompilerPipelineTest, RZZ) {
   });
 }
 
-TEST_F(CompilerPipelineTest, XXPLUSYY) {
+TEST_F(CompilerPipelineTest, XXPlusYY) {
   qc::QuantumComputation qc;
   qc.addQubitRegister(2, "q");
   qc.xx_plus_yy(1.0, 0.5, 0, 1);
@@ -3017,7 +3048,7 @@ TEST_F(CompilerPipelineTest, XXPLUSYY) {
   });
 }
 
-TEST_F(CompilerPipelineTest, CXXPLUSYY) {
+TEST_F(CompilerPipelineTest, CXXPlusYY) {
   qc::QuantumComputation qc;
   qc.addQubitRegister(3, "q");
   qc.cxx_plus_yy(1.0, 0.5, 0, 1, 2);
@@ -3048,7 +3079,7 @@ TEST_F(CompilerPipelineTest, CXXPLUSYY) {
   });
 }
 
-TEST_F(CompilerPipelineTest, MCXXPLUSYY) {
+TEST_F(CompilerPipelineTest, MCXXPlusYY) {
   qc::QuantumComputation qc;
   qc.addQubitRegister(4, "q");
   qc.mcxx_plus_yy(1.0, 0.5, {0, 1}, 2, 3);
@@ -3079,7 +3110,7 @@ TEST_F(CompilerPipelineTest, MCXXPLUSYY) {
   });
 }
 
-TEST_F(CompilerPipelineTest, XXMINUSYY) {
+TEST_F(CompilerPipelineTest, XXMinusYY) {
   qc::QuantumComputation qc;
   qc.addQubitRegister(2, "q");
   qc.xx_minus_yy(1.0, 0.5, 0, 1);

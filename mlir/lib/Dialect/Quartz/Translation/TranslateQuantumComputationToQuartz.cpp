@@ -514,6 +514,9 @@ translateOperations(QuartzProgramBuilder& builder,
                     const qc::QuantumComputation& quantumComputation,
                     const llvm::SmallVector<Value>& qubits,
                     const BitIndexVec& bitMap) {
+  if (quantumComputation.hasGlobalPhase()) {
+    builder.gphase(quantumComputation.getGlobalPhase());
+  }
   for (const auto& operation : quantumComputation) {
     switch (operation->getType()) {
     case qc::OpType::Measure:

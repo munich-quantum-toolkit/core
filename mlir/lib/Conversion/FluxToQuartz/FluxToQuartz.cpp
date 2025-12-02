@@ -37,6 +37,24 @@ using namespace quartz;
 namespace {
 
 /**
+ * @brief Converts a zero-target, one-parameter Flux operation to Quartz
+ *
+ * @tparam QuartzOpType The operation type of the Quartz operation
+ * @tparam FluxOpType The operation type of the Flux operation
+ * @param op The Flux operation instance to convert
+ * @param rewriter The pattern rewriter
+ * @return LogicalResult Success or failure of the conversion
+ */
+template <typename QuartzOpType, typename FluxOpType>
+LogicalResult
+convertZeroTargetOneParameter(FluxOpType& op,
+                              ConversionPatternRewriter& rewriter) {
+  rewriter.create<QuartzOpType>(op.getLoc(), op.getOperand());
+  rewriter.eraseOp(op);
+  return success();
+}
+
+/**
  * @brief Converts a one-target, zero-parameter Flux operation to Quartz
  *
  * @tparam QuartzOpType The operation type of the Quartz operation
@@ -442,6 +460,35 @@ struct ConvertFluxResetOp final : OpConversionPattern<flux::ResetOp> {
   }
 };
 
+// ZeroTargetOneParameter
+
+#define DEFINE_ZERO_TARGET_ONE_PARAMETER(OP_CLASS, OP_NAME, PARAM)             \
+  /**                                                                          \
+   * @brief Converts flux.OP_NAME to quartz.OP_NAME                            \
+   *                                                                           \
+   * @par Example:                                                             \
+   * ```mlir                                                                   \
+   * flux.OP_NAME(%PARAM) : ()                                                 \
+   * ```                                                                       \
+   * is converted to                                                           \
+   * ```mlir                                                                   \
+   * quartz.OP_NAME(%PARAM) : ()                                               \
+   * ```                                                                       \
+   */                                                                          \
+  struct ConvertFlux##OP_CLASS final : OpConversionPattern<flux::OP_CLASS> {   \
+    using OpConversionPattern::OpConversionPattern;                            \
+                                                                               \
+    LogicalResult                                                              \
+    matchAndRewrite(flux::OP_CLASS op, OpAdaptor adaptor,                      \
+                    ConversionPatternRewriter& rewriter) const override {      \
+      return convertZeroTargetOneParameter<quartz::OP_CLASS>(op, rewriter);    \
+    }                                                                          \
+  };
+
+DEFINE_ZERO_TARGET_ONE_PARAMETER(GPhaseOp, gphase, theta)
+
+#undef DEFINE_ZERO_TARGET_ONE_PARAMETER
+
 // OneTargetZeroParameter
 
 #define DEFINE_ONE_TARGET_ZERO_PARAMETER(OP_CLASS, OP_NAME)                    \
@@ -787,17 +834,18 @@ struct FluxToQuartz final : impl::FluxToQuartzBase<FluxToQuartz> {
 
     // Register operation conversion patterns
     // Note: No state tracking needed - OpAdaptors handle type conversion
-    patterns.add<
-        ConvertFluxAllocOp, ConvertFluxDeallocOp, ConvertFluxStaticOp,
-        ConvertFluxMeasureOp, ConvertFluxResetOp, ConvertFluxIdOp,
-        ConvertFluxXOp, ConvertFluxYOp, ConvertFluxZOp, ConvertFluxHOp,
-        ConvertFluxSOp, ConvertFluxSdgOp, ConvertFluxTOp, ConvertFluxTdgOp,
-        ConvertFluxSXOp, ConvertFluxSXdgOp, ConvertFluxRXOp, ConvertFluxRYOp,
-        ConvertFluxRZOp, ConvertFluxPOp, ConvertFluxROp, ConvertFluxU2Op,
-        ConvertFluxUOp, ConvertFluxSWAPOp, ConvertFluxiSWAPOp, ConvertFluxDCXOp,
-        ConvertFluxECROp, ConvertFluxRXXOp, ConvertFluxRYYOp, ConvertFluxRZXOp,
-        ConvertFluxRZZOp, ConvertFluxXXPlusYYOp, ConvertFluxXXMinusYYOp,
-        ConvertFluxCtrlOp, ConvertFluxYieldOp>(typeConverter, context);
+    patterns
+        .add<ConvertFluxAllocOp, ConvertFluxDeallocOp, ConvertFluxStaticOp,
+             ConvertFluxMeasureOp, ConvertFluxResetOp, ConvertFluxGPhaseOp,
+             ConvertFluxIdOp, ConvertFluxXOp, ConvertFluxYOp, ConvertFluxZOp,
+             ConvertFluxHOp, ConvertFluxSOp, ConvertFluxSdgOp, ConvertFluxTOp,
+             ConvertFluxTdgOp, ConvertFluxSXOp, ConvertFluxSXdgOp,
+             ConvertFluxRXOp, ConvertFluxRYOp, ConvertFluxRZOp, ConvertFluxPOp,
+             ConvertFluxROp, ConvertFluxU2Op, ConvertFluxUOp, ConvertFluxSWAPOp,
+             ConvertFluxiSWAPOp, ConvertFluxDCXOp, ConvertFluxECROp,
+             ConvertFluxRXXOp, ConvertFluxRYYOp, ConvertFluxRZXOp,
+             ConvertFluxRZZOp, ConvertFluxXXPlusYYOp, ConvertFluxXXMinusYYOp,
+             ConvertFluxCtrlOp, ConvertFluxYieldOp>(typeConverter, context);
 
     // Conversion of flux types in func.func signatures
     // Note: This currently has limitations with signature changes

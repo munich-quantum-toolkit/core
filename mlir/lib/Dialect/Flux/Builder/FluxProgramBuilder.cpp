@@ -171,6 +171,38 @@ Value FluxProgramBuilder::reset(Value qubit) {
 // Unitary Operations
 //===----------------------------------------------------------------------===//
 
+// ZeroTargetOneParameter
+
+#define DEFINE_ZERO_TARGET_ONE_PARAMETER(OP_CLASS, OP_NAME, PARAM)             \
+  void FluxProgramBuilder::OP_NAME(                                            \
+      const std::variant<double, Value>&(PARAM)) {                             \
+    create<OP_CLASS>(loc, PARAM);                                              \
+  }                                                                            \
+  Value FluxProgramBuilder::c##OP_NAME(                                        \
+      const std::variant<double, Value>&(PARAM), const Value control) {        \
+    const auto [controlsOut, targetsOut] =                                     \
+        ctrl(control, {},                                                      \
+             [&](OpBuilder& b, const ValueRange targets) -> ValueRange {       \
+               b.create<OP_CLASS>(loc, PARAM);                                 \
+               return {};                                                      \
+             });                                                               \
+    return controlsOut[0];                                                     \
+  }                                                                            \
+  ValueRange FluxProgramBuilder::mc##OP_NAME(                                  \
+      const std::variant<double, Value>&(PARAM), const ValueRange controls) {  \
+    const auto [controlsOut, targetsOut] =                                     \
+        ctrl(controls, {},                                                     \
+             [&](OpBuilder& b, const ValueRange targets) -> ValueRange {       \
+               b.create<OP_CLASS>(loc, PARAM);                                 \
+               return {};                                                      \
+             });                                                               \
+    return controlsOut;                                                        \
+  }
+
+DEFINE_ZERO_TARGET_ONE_PARAMETER(GPhaseOp, gphase, theta)
+
+#undef DEFINE_ZERO_TARGET_ONE_PARAMETER
+
 // OneTargetZeroParameter
 
 #define DEFINE_ONE_TARGET_ZERO_PARAMETER(OP_CLASS, OP_NAME)                    \

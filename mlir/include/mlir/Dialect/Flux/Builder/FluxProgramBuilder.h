@@ -240,6 +240,64 @@ public:
   // Unitary Operations
   //===--------------------------------------------------------------------===//
 
+  // ZeroTargetOneParameter
+
+#define DECLARE_ZERO_TARGET_ONE_PARAMETER(OP_CLASS, OP_NAME, PARAM)            \
+  /**                                                                          \
+   * @brief Apply a OP_CLASS                                                   \
+   *                                                                           \
+   * @param PARAM Rotation angle in radians                                    \
+   * @return Reference to this builder for method chaining                     \
+   *                                                                           \
+   * @par Example:                                                             \
+   * ```c++                                                                    \
+   * builder.OP_NAME(PARAM);                                                   \
+   * ```                                                                       \
+   * ```mlir                                                                   \
+   * quartz.OP_NAME(%PARAM) : ()                                               \
+   * ```                                                                       \
+   */                                                                          \
+  void OP_NAME(const std::variant<double, Value>&(PARAM));                     \
+  /**                                                                          \
+   * @brief Apply a controlled OP_CLASS                                        \
+   *                                                                           \
+   * @param PARAM Rotation angle in radians                                    \
+   * @param control Input control qubit                                        \
+   * @return Output control qubit                                              \
+   *                                                                           \
+   * @par Example:                                                             \
+   * ```c++                                                                    \
+   * builder.c##OP_NAME(PARAM, control);                                       \
+   * ```                                                                       \
+   * ```mlir                                                                   \
+   * quartz.ctrl(%control) {                                                   \
+   *   quartz.OP_NAME(%PARAM) : ()                                             \
+   * }                                                                         \
+   */                                                                          \
+  Value c##OP_NAME(const std::variant<double, Value>&(PARAM), Value control);  \
+  /**                                                                          \
+   * @brief Apply a multi-controlled OP_CLASS                                  \
+   *                                                                           \
+   * @param PARAM Rotation angle in radians                                    \
+   * @param controls Control qubits                                            \
+   * @return Output control qubits                                             \
+   *                                                                           \
+   * @par Example:                                                             \
+   * ```c++                                                                    \
+   * builder.mc##OP_NAME(PARAM, {control1, control2});                         \
+   * ```                                                                       \
+   * ```mlir                                                                   \
+   * quartz.ctrl(%control1, %control2) {                                       \
+   *   quartz.OP_NAME(%PARAM) : ()                                             \
+   * }                                                                         \
+   */                                                                          \
+  ValueRange mc##OP_NAME(const std::variant<double, Value>&(PARAM),            \
+                         ValueRange controls);
+
+  DECLARE_ZERO_TARGET_ONE_PARAMETER(GPhaseOp, gphase, theta)
+
+#undef DECLARE_ZERO_TARGET_ONE_PARAMETER
+
   // OneTargetZeroParameter
 
 #define DECLARE_ONE_TARGET_ZERO_PARAMETER(OP_CLASS, OP_NAME)                   \

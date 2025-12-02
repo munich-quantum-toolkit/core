@@ -246,6 +246,7 @@ class TargetAndParameterArityTrait<int T, int P>
     let cppNamespace = "::mlir::flux";
 }
 
+def ZeroTargetOneParameter : TargetAndParameterArityTrait<0, 1>;
 def OneTargetZeroParameter : TargetAndParameterArityTrait<1, 0>;
 def OneTargetOneParameter : TargetAndParameterArityTrait<1, 1>;
 def OneTargetTwoParameter : TargetAndParameterArityTrait<1, 2>;
@@ -257,6 +258,32 @@ def TwoTargetTwoParameter : TargetAndParameterArityTrait<2, 2>;
 //===----------------------------------------------------------------------===//
 // Unitary Operations
 //===----------------------------------------------------------------------===//
+
+def GPhaseOp : FluxOp<"gphase", traits = [UnitaryOpInterface, ZeroTargetOneParameter, MemoryEffects<[MemAlloc]>]> {
+    let summary = "Apply a global phase to the state";
+    let description = [{
+        Applies a global phase to the state.
+
+        Example:
+        ```mlir
+        flux.gphase(%theta) : ()
+        ```
+    }];
+
+    let arguments = (ins Arg<F64, "the rotation angle theta in radians", [MemRead]>:$theta);
+    let assemblyFormat = "$theta attr-dict";
+
+    let extraClassDeclaration = [{
+        DenseElementsAttr tryGetStaticMatrix();
+        static StringRef getBaseSymbol() { return "gphase"; }
+    }];
+
+    let builders = [
+        OpBuilder<(ins "const std::variant<double, Value>&":$theta)>
+    ];
+
+    let hasCanonicalizer = 1;
+}
 
 def IdOp : FluxOp<"id", traits = [UnitaryOpInterface, OneTargetZeroParameter]> {
     let summary = "Apply an Id gate to a qubit";

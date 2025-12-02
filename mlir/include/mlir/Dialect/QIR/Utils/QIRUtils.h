@@ -19,6 +19,13 @@ namespace mlir::qir {
 
 // QIR function names
 
+static constexpr auto QIR_INITIALIZE = "__quantum__rt__initialize";
+static constexpr auto QIR_MEASURE = "__quantum__qis__mz__body";
+static constexpr auto QIR_RECORD_OUTPUT = "__quantum__rt__result_record_output";
+static constexpr auto QIR_ARRAY_RECORD_OUTPUT =
+    "__quantum__rt__array_record_output";
+static constexpr auto QIR_RESET = "__quantum__qis__reset__body";
+
 #define ADD_STANDARD_GATE(NAME_BIG, NAME_SMALL)                                \
   static constexpr auto QIR_##NAME_BIG =                                       \
       "__quantum__qis__" #NAME_SMALL "__body";                                 \
@@ -29,12 +36,7 @@ namespace mlir::qir {
   static constexpr auto QIR_CCC##NAME_BIG =                                    \
       "__quantum__qis__ccc" #NAME_SMALL "__body";
 
-static constexpr auto QIR_INITIALIZE = "__quantum__rt__initialize";
-static constexpr auto QIR_MEASURE = "__quantum__qis__mz__body";
-static constexpr auto QIR_RECORD_OUTPUT = "__quantum__rt__result_record_output";
-static constexpr auto QIR_ARRAY_RECORD_OUTPUT =
-    "__quantum__rt__array_record_output";
-static constexpr auto QIR_RESET = "__quantum__qis__reset__body";
+ADD_STANDARD_GATE(GPHASE, gphase)
 ADD_STANDARD_GATE(I, i)
 ADD_STANDARD_GATE(X, x)
 ADD_STANDARD_GATE(Y, y)
@@ -92,6 +94,7 @@ ADD_STANDARD_GATE(XXMINUSYY, xx_minus_yy)
     }                                                                          \
   }
 
+DEFINE_GETTER(GPHASE)
 DEFINE_GETTER(I)
 DEFINE_GETTER(X)
 DEFINE_GETTER(Y)

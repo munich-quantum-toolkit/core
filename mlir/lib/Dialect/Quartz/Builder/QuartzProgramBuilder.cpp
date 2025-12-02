@@ -124,6 +124,29 @@ QuartzProgramBuilder& QuartzProgramBuilder::reset(Value qubit) {
 // Unitary Operations
 //===----------------------------------------------------------------------===//
 
+// ZeroTargetOneParameter
+
+#define DEFINE_ZERO_TARGET_ONE_PARAMETER(OP_CLASS, OP_NAME, PARAM)             \
+  QuartzProgramBuilder& QuartzProgramBuilder::OP_NAME(                         \
+      const std::variant<double, Value>&(PARAM)) {                             \
+    create<OP_CLASS>(loc, PARAM);                                              \
+    return *this;                                                              \
+  }                                                                            \
+  QuartzProgramBuilder& QuartzProgramBuilder::c##OP_NAME(                      \
+      const std::variant<double, Value>&(PARAM), Value control) {              \
+    return mc##OP_NAME(PARAM, {control});                                      \
+  }                                                                            \
+  QuartzProgramBuilder& QuartzProgramBuilder::mc##OP_NAME(                     \
+      const std::variant<double, Value>&(PARAM), ValueRange controls) {        \
+    create<CtrlOp>(loc, controls,                                              \
+                   [&](OpBuilder& b) { b.create<OP_CLASS>(loc, PARAM); });     \
+    return *this;                                                              \
+  }
+
+DEFINE_ZERO_TARGET_ONE_PARAMETER(GPhaseOp, gphase, theta)
+
+#undef DEFINE_ZERO_TARGET_ONE_PARAMETER
+
 // OneTargetZeroParameter
 
 #define DEFINE_ONE_TARGET_ZERO_PARAMETER(OP_CLASS, OP_NAME)                    \

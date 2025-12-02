@@ -18,6 +18,12 @@ namespace mlir::utils {
 
 using namespace std::complex_literals;
 
+inline DenseElementsAttr getMatrixGPhase(MLIRContext* ctx, double theta) {
+  const auto& complexType = ComplexType::get(Float64Type::get(ctx));
+  const auto& type = RankedTensorType::get({1, 1}, complexType);
+  return DenseElementsAttr::get(type, {std::exp(1i * theta)});
+}
+
 inline DenseElementsAttr getMatrixId(MLIRContext* ctx) {
   const auto& complexType = ComplexType::get(Float64Type::get(ctx));
   const auto& type = RankedTensorType::get({2, 2}, complexType);
