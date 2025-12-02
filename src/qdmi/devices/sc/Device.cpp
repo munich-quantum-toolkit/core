@@ -204,7 +204,7 @@ auto MQT_SC_QDMI_Device_Session_impl_d::queryDeviceProperty(
   }
   try {
     // Use the new get() that returns a shared_ptr.
-    return qdmi::sc::Device::get().queryProperty(prop, size, value, sizeRet);
+    return qdmi::sc::Device::get()->queryProperty(prop, size, value, sizeRet);
   } catch (const std::runtime_error&) {
     // This happens if get() throws because the device is not initialized.
     return QDMI_ERROR_BADSTATE;
@@ -333,7 +333,7 @@ int MQT_SC_QDMI_device_finalize() {
 }
 
 int MQT_SC_QDMI_device_session_alloc(MQT_SC_QDMI_Device_Session* session) {
-  return qdmi::sc::Device::get().sessionAlloc(session);
+  return qdmi::sc::Device::get()->sessionAlloc(session);
 }
 
 int MQT_SC_QDMI_device_session_init(MQT_SC_QDMI_Device_Session session) {
@@ -344,7 +344,7 @@ int MQT_SC_QDMI_device_session_init(MQT_SC_QDMI_Device_Session session) {
 }
 
 void MQT_SC_QDMI_device_session_free(MQT_SC_QDMI_Device_Session session) {
-  qdmi::sc::Device::get().sessionFree(session);
+  qdmi::sc::Device::get()->sessionFree(session);
 }
 
 int MQT_SC_QDMI_device_session_set_parameter(

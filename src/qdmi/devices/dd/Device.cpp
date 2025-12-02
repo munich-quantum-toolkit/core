@@ -354,7 +354,7 @@ auto MQT_DDSIM_QDMI_Device_Session_impl_d::queryDeviceProperty(
   if (status_ != Status::INITIALIZED) {
     return QDMI_ERROR_BADSTATE;
   }
-  return qdmi::dd::Device::get().queryProperty(prop, size, value, sizeRet);
+  return qdmi::dd::Device::get()->queryProperty(prop, size, value, sizeRet);
 }
 auto MQT_DDSIM_QDMI_Device_Session_impl_d::querySiteProperty(
     MQT_DDSIM_QDMI_Site site, const QDMI_Site_Property prop, const size_t size,
@@ -499,7 +499,7 @@ auto MQT_DDSIM_QDMI_Device_Job_impl_d::submit() -> QDMI_STATUS {
   status_.store(QDMI_JOB_STATUS_SUBMITTED);
   if (numShots_ > 0) {
     jobHandle_ = std::async(std::launch::async, [this]() {
-      qdmi::dd::Device::get().increaseRunningJobs();
+      qdmi::dd::Device::get()->increaseRunningJobs();
       status_.store(QDMI_JOB_STATUS_RUNNING);
       try {
         const auto qc = qasm3::Importer::imports(program_);
@@ -509,12 +509,12 @@ auto MQT_DDSIM_QDMI_Device_Job_impl_d::submit() -> QDMI_STATUS {
         status_.store(QDMI_JOB_STATUS_FAILED);
         std::cerr << "Error: " << e.what() << '\n';
       }
-      qdmi::dd::Device::get().decreaseRunningJobs();
+      qdmi::dd::Device::get()->decreaseRunningJobs();
     });
   } else {
     jobHandle_ = std::async(std::launch::async, [this]() {
       try {
-        qdmi::dd::Device::get().increaseRunningJobs();
+        qdmi::dd::Device::get()->increaseRunningJobs();
         status_.store(QDMI_JOB_STATUS_RUNNING);
         auto qc = qasm3::Importer::imports(program_);
         qc::CircuitOptimizer::removeFinalMeasurements(qc);
@@ -526,7 +526,7 @@ auto MQT_DDSIM_QDMI_Device_Job_impl_d::submit() -> QDMI_STATUS {
         status_.store(QDMI_JOB_STATUS_FAILED);
         std::cerr << "Error: " << e.what() << '\n';
       }
-      qdmi::dd::Device::get().decreaseRunningJobs();
+      qdmi::dd::Device::get()->decreaseRunningJobs();
     });
   }
   return QDMI_SUCCESS;
@@ -797,7 +797,7 @@ int MQT_DDSIM_QDMI_device_finalize() {
 
 int MQT_DDSIM_QDMI_device_session_alloc(
     MQT_DDSIM_QDMI_Device_Session* session) {
-  return qdmi::dd::Device::get().sessionAlloc(session);
+  return qdmi::dd::Device::get()->sessionAlloc(session);
 }
 
 int MQT_DDSIM_QDMI_device_session_init(MQT_DDSIM_QDMI_Device_Session session) {
@@ -808,7 +808,7 @@ int MQT_DDSIM_QDMI_device_session_init(MQT_DDSIM_QDMI_Device_Session session) {
 }
 
 void MQT_DDSIM_QDMI_device_session_free(MQT_DDSIM_QDMI_Device_Session session) {
-  qdmi::dd::Device::get().sessionFree(session);
+  qdmi::dd::Device::get()->sessionFree(session);
 }
 
 int MQT_DDSIM_QDMI_device_session_set_parameter(

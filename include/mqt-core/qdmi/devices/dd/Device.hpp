@@ -247,7 +247,7 @@ public:
   /// Constructor for the MQT_DDSIM_QDMI_Device_Job_impl_d.
   explicit MQT_DDSIM_QDMI_Device_Job_impl_d(
       MQT_DDSIM_QDMI_Device_Session_impl_d* session)
-      : session_(session), id_(qdmi::dd::Device::get().generateUniqueID()) {}
+      : session_(session), id_(qdmi::dd::Device::get()->generateUniqueID()) {}
   /**
    * @brief Frees the device job.
    * @note This function just forwards to the session's @ref freeDeviceJob

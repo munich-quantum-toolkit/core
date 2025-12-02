@@ -222,7 +222,7 @@ auto MQT_NA_QDMI_Device_Session_impl_d::queryDeviceProperty(
   if (status_ != Status::INITIALIZED) {
     return QDMI_ERROR_BADSTATE;
   }
-  return qdmi::na::Device::get().queryProperty(prop, size, value, sizeRet);
+  return qdmi::na::Device::get()->queryProperty(prop, size, value, sizeRet);
 }
 auto MQT_NA_QDMI_Device_Session_impl_d::querySiteProperty(
     MQT_NA_QDMI_Site site, const QDMI_Site_Property prop, const size_t size,
@@ -634,7 +634,7 @@ int MQT_NA_QDMI_device_finalize() {
 }
 
 int MQT_NA_QDMI_device_session_alloc(MQT_NA_QDMI_Device_Session* session) {
-  return qdmi::na::Device::get().sessionAlloc(session);
+  return qdmi::na::Device::get()->sessionAlloc(session);
 }
 
 int MQT_NA_QDMI_device_session_init(MQT_NA_QDMI_Device_Session session) {
@@ -645,7 +645,7 @@ int MQT_NA_QDMI_device_session_init(MQT_NA_QDMI_Device_Session session) {
 }
 
 void MQT_NA_QDMI_device_session_free(MQT_NA_QDMI_Device_Session session) {
-  qdmi::na::Device::get().sessionFree(session);
+  qdmi::na::Device::get()->sessionFree(session);
 }
 
 int MQT_NA_QDMI_device_session_set_parameter(
