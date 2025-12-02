@@ -139,16 +139,6 @@ if(NOT TARGET ${TARGET_NAME})
   # libraries
   set_target_properties(${TARGET_NAME} PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
-  # set c++ standard
-  target_compile_features(${TARGET_NAME} PRIVATE cxx_std_20)
-
-  # set versioning information
-  set_target_properties(
-    ${TARGET_NAME}
-    PROPERTIES VERSION ${PROJECT_VERSION}
-               SOVERSION ${PROJECT_VERSION_MAJOR}.${PROJECT_VERSION_MINOR}
-               EXPORT_NAME CoreQDMINaDevice)
-
   # add to list of MQT core targets
   set(MQT_CORE_TARGETS
       ${MQT_CORE_TARGETS} ${TARGET_NAME}
@@ -164,6 +154,53 @@ if(NOT TARGET ${TARGET_NAME})
 
   # Do not build dynamic NA device on Windows because it cannot be used anyways in the current setup
   if(NOT WIN32)
+    set(STAT_TARGET_NAME ${MQT_CORE_TARGET_NAME}-qdmi-na-device-stat)
+    if(NOT TARGET ${STAT_TARGET_NAME})
+      get_target_property(TARGET_TYPE ${TARGET_NAME} TYPE)
+      if(TARGET_TYPE STREQUAL "STATIC_LIBRARY")
+        add_library(${STAT_TARGET_NAME} ALIAS ${TARGET_NAME})
+      else()
+        add_library(${STAT_TARGET_NAME} STATIC)
+        # Set c++ standard
+        target_compile_features(${STAT_TARGET_NAME} PUBLIC cxx_std_20)
+        # Set versioning information
+        set_target_properties(
+          ${STAT_TARGET_NAME}
+          PROPERTIES VERSION ${PROJECT_VERSION}
+                     SOVERSION ${PROJECT_VERSION_MAJOR}.${PROJECT_VERSION_MINOR}
+                     EXPORT_NAME Core${ARG_ALIAS_NAME})
+        # add sources to target
+        target_sources(${STAT_TARGET_NAME} PRIVATE Device.cpp)
+        # add headers using file sets
+        target_sources(
+          ${STAT_TARGET_NAME}
+          PUBLIC FILE_SET
+                 HEADERS
+                 BASE_DIRS
+                 ${MQT_CORE_INCLUDE_BUILD_DIR}
+                 ${CMAKE_CURRENT_BINARY_DIR}/include
+                 FILES
+                 ${DEVICE_HDR}
+                 ${MQT_CORE_INCLUDE_BUILD_DIR}/qdmi/devices/na/Device.hpp
+                 ${QDMI_HDRS})
+        # add link libraries
+        target_link_libraries(
+          ${STAT_TARGET_NAME}
+          PUBLIC qdmi::qdmi
+          PRIVATE MQT::CoreQDMIBaseDevice spdlog::spdlog MQT::ProjectWarnings MQT::ProjectOptions)
+        # Always compile with position independent code such that the library can be used in shared
+        # libraries
+        set_target_properties(${STAT_TARGET_NAME} PROPERTIES POSITION_INDEPENDENT_CODE ON)
+        # add to list of MQT core targets
+        set(MQT_CORE_TARGETS
+            ${MQT_CORE_TARGETS} ${STAT_TARGET_NAME}
+            PARENT_SCOPE)
+        # Make QDMI and MQT Core Version available
+        target_compile_definitions(
+          ${STAT_TARGET_NAME} PRIVATE QDMI_VERSION="${QDMI_VERSION}"
+                                      MQT_CORE_VERSION="${MQT_CORE_VERSION}")
+      endif()
+    endif()
     set(DYN_TARGET_NAME ${MQT_CORE_TARGET_NAME}-qdmi-na-device-dyn)
     if(NOT TARGET ${DYN_TARGET_NAME})
       # Set prefix for QDMI
@@ -192,7 +229,7 @@ if(NOT TARGET ${TARGET_NAME})
       target_link_libraries(
         ${DYN_TARGET_NAME}
         PUBLIC qdmi::qdmi
-        PRIVATE ${TARGET_NAME} MQT::ProjectOptions MQT::ProjectWarnings spdlog::spdlog)
+        PRIVATE ${STAT_TARGET_NAME} MQT::ProjectOptions MQT::ProjectWarnings spdlog::spdlog)
       # set c++ standard
       target_compile_features(${DYN_TARGET_NAME} PRIVATE cxx_std_20)
       # set versioning information
