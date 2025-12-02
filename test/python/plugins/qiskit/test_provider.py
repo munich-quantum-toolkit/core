@@ -30,7 +30,7 @@ def test_provider_backends_filter_by_name() -> None:
     all_backends = provider.backends()
     assert len(all_backends) > 0
 
-    # Filter by full name (should still match)
+    # Filter by full name
     backend_name = all_backends[0].name
     filtered = provider.backends(name=backend_name)
 

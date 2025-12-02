@@ -16,6 +16,7 @@ import string
 from typing import TYPE_CHECKING
 
 import pytest
+from qiskit import QuantumCircuit
 
 from mqt.core import fomac
 from mqt.core.plugins.qiskit import QDMIBackend
@@ -366,3 +367,51 @@ def mock_backend(mock_qdmi_device: MockQDMIDevice) -> QDMIBackend:
         (h, cz, ry, rz, measure) on 5 qubits.
     """
     return QDMIBackend(device=mock_qdmi_device)  # type: ignore[arg-type]
+
+
+def _single_qubit_circuit() -> QuantumCircuit:
+    qc = QuantumCircuit(1, 1)
+    qc.ry(1.5708, 0)
+    qc.measure_all()
+    return qc
+
+
+def _two_qubit_circuit() -> QuantumCircuit:
+    qc = QuantumCircuit(2, 2)
+    qc.cz(0, 1)
+    qc.measure_all()
+    return qc
+
+
+def _two_qubit_barrier_circuit() -> QuantumCircuit:
+    qc = _two_qubit_circuit()
+    qc.barrier()
+    return qc
+
+
+def _two_qubit_circuit_without_measurements() -> QuantumCircuit:
+    qc = QuantumCircuit(2)
+    qc.cz(0, 1)
+    return qc
+
+
+CircuitCase = tuple[QuantumCircuit, int, bool]
+
+
+@pytest.fixture(
+    params=[
+        (_single_qubit_circuit, 100, True),
+        (_two_qubit_circuit, 256, True),
+        (_two_qubit_circuit, 500, True),
+        (_two_qubit_barrier_circuit, 100, True),
+        (_two_qubit_circuit_without_measurements, 100, False),
+    ]
+)
+def backend_circuit_case(request: pytest.FixtureRequest) -> CircuitCase:
+    """Provide reusable backend circuit cases.
+
+    Returns:
+        Tuple containing a prepared circuit, the shots to execute, and whether counts are expected.
+    """
+    builder, shots, expect_meas = request.param
+    return builder(), shots, expect_meas

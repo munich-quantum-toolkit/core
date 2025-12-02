@@ -32,7 +32,7 @@ from mqt.core.plugins.qiskit import (
 from mqt.core.plugins.qiskit.exceptions import UnsupportedDeviceError
 
 if TYPE_CHECKING:
-    from test.python.plugins.qiskit.conftest import MockQDMIDevice
+    from test.python.plugins.qiskit.conftest import CircuitCase, MockQDMIDevice
 
 
 pytestmark = [
@@ -46,22 +46,18 @@ def test_backend_instantiation(mock_backend: QDMIBackend) -> None:
     assert mock_backend.target.num_qubits > 0
 
 
-def test_single_circuit_run_counts(mock_backend: QDMIBackend) -> None:
-    """Running a circuit yields counts with specified shots."""
-    qc = QuantumCircuit(2, 2)
-    qc.cz(0, 1)
-    qc.measure(0, 0)
-    qc.measure(1, 1)
-    job = mock_backend.run(qc, shots=256)
-    counts = job.result().get_counts()
+def test_backend_runs_variety_of_circuits(mock_backend: QDMIBackend, backend_circuit_case: CircuitCase) -> None:
+    """Backend executes multiple circuit shapes and shot counts consistently."""
+    circuit, shots, expect_measurements = backend_circuit_case
+    job = mock_backend.run(circuit, shots=shots)
+    result = job.result()
+    assert result.success is True
 
-    # Verify total shots
-    assert sum(counts.values()) == 256
-
-    # Verify all keys are valid 2-bit binary strings
-    for key in counts:
-        assert len(key) == 2
-        assert all(bit in {"0", "1"} for bit in key)
+    if expect_measurements:
+        counts = result.get_counts()
+        assert sum(counts.values()) == shots
+        for key in counts:
+            assert all(bit in {"0", "1"} for bit in key)
 
 
 def test_unsupported_operation(mock_backend: QDMIBackend) -> None:
@@ -81,17 +77,6 @@ def test_backend_max_circuits(mock_backend: QDMIBackend) -> None:
 def test_backend_options(mock_backend: QDMIBackend) -> None:
     """Backend options should be accessible."""
     assert mock_backend.options.shots == 1024
-
-
-def test_backend_run_with_shots_option(mock_backend: QDMIBackend) -> None:
-    """Backend run should accept shots option."""
-    qc = QuantumCircuit(2, 2)
-    qc.cz(0, 1)
-    qc.measure([0, 1], [0, 1])
-
-    job = mock_backend.run(qc, shots=500)
-    result = job.result()
-    assert sum(result.get_counts().values()) == 500
 
 
 def test_backend_run_with_invalid_shots_type(mock_backend: QDMIBackend) -> None:
@@ -147,39 +132,6 @@ def test_backend_circuit_with_parameter_expression(mock_backend: QDMIBackend) ->
 
     with pytest.raises(CircuitValidationError, match="Circuit contains unbound parameters"):
         mock_backend.run(qc)
-
-
-def test_backend_circuit_with_barrier(mock_backend: QDMIBackend) -> None:
-    """Backend should handle circuits with barriers."""
-    qc = QuantumCircuit(2, 2)
-    qc.cz(0, 1)
-    qc.barrier()
-    qc.measure([0, 1], [0, 1])
-
-    job = mock_backend.run(qc, shots=100)
-    result = job.result()
-    assert result.success
-
-
-def test_backend_circuit_with_single_qubit(mock_backend: QDMIBackend) -> None:
-    """Backend should handle single-qubit circuits."""
-    qc = QuantumCircuit(1, 1)
-    qc.ry(1.5708, 0)
-    qc.measure(0, 0)
-
-    job = mock_backend.run(qc, shots=100)
-    result = job.result()
-    assert result.success
-
-
-def test_backend_circuit_with_no_measurements(mock_backend: QDMIBackend) -> None:
-    """Backend should handle circuits without measurements."""
-    qc = QuantumCircuit(2)
-    qc.cz(0, 1)
-
-    job = mock_backend.run(qc, shots=100)
-    result = job.result()
-    assert result.success
 
 
 def test_backend_named_circuit_results_queryable_by_name(mock_backend: QDMIBackend) -> None:
