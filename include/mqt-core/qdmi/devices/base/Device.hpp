@@ -28,25 +28,9 @@
 
 namespace qdmi {
 template <class ConcreteType> class SingletonDevice {
-  /**
-   * @brief Provides a pointer to the singleton instance.
-   * @return A pointer to the static shared_ptr holding the instance.
-   * @details This uses the "Construct on First Use" idiom.
-   */
-  static auto getInstancePtr() -> std::shared_ptr<ConcreteType>* {
-    MQT_HIDDEN static auto* instance =
-        new std::shared_ptr<ConcreteType>(nullptr);
-    return instance;
-  }
-
-  /**
-   * @brief Get the mutex for this singleton instance.
-   * @return A reference to the mutex.
-   */
-  static auto getMutexPtr() -> std::mutex* {
-    MQT_HIDDEN static auto* instanceMutex = new std::mutex;
-    return instanceMutex;
-  }
+  MQT_HIDDEN inline static auto* instance =
+      new std::shared_ptr<ConcreteType>(nullptr);
+  MQT_HIDDEN inline static auto* mutex = new std::mutex;
 
 protected:
   /// @brief Protected constructor to enforce the singleton pattern.
@@ -70,8 +54,7 @@ public:
    * @details Must be called before `get()`.
    */
   static void initialize() {
-    const std::scoped_lock lock(*getMutexPtr());
-    auto* instance = getInstancePtr();
+    const std::scoped_lock lock(*mutex);
     if (*instance == nullptr) {
       *instance = std::shared_ptr<ConcreteType>(new ConcreteType);
     }
@@ -84,10 +67,10 @@ public:
    * until they go out of scope.
    */
   static void finalize() {
-    const std::scoped_lock lock(*getMutexPtr());
-    *getInstancePtr() = nullptr;
-    delete getInstancePtr();
-    delete getMutexPtr();
+    const std::scoped_lock lock(*mutex);
+    *instance = nullptr;
+    delete instance;
+    delete mutex;
   }
 
   /**
@@ -95,8 +78,7 @@ public:
    * @return A shared pointer to the device instance.
    */
   [[nodiscard]] static auto get() -> std::shared_ptr<ConcreteType> {
-    const std::scoped_lock lock(*getMutexPtr());
-    auto* instance = getInstancePtr();
+    const std::scoped_lock lock(*mutex);
     assert(*instance != nullptr &&
            "Device not initialized. Call `initialize()` first.");
     return *instance;
