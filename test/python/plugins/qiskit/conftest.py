@@ -10,6 +10,7 @@
 
 from __future__ import annotations
 
+import itertools
 import re
 import secrets
 import string
@@ -22,7 +23,7 @@ from mqt.core import fomac
 from mqt.core.plugins.qiskit import QDMIBackend
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
+    from collections.abc import Callable, Sequence
 
 
 def _parse_num_clbits_from_qasm(program: str) -> int:
@@ -77,9 +78,23 @@ class MockQDMIDevice:
     class MockOperation:
         """Mock device operation."""
 
-        def __init__(self, name: str) -> None:
-            """Initialize mock operation with name and infer properties."""
+        def __init__(
+            self,
+            name: str,
+            *,
+            custom_duration: Callable[[list[MockQDMIDevice.MockSite]], float | None] | None = None,
+            custom_fidelity: Callable[[list[MockQDMIDevice.MockSite]], float | None] | None = None,
+            custom_sites: list[MockQDMIDevice.MockSite] | None = None,
+            custom_site_pairs: list[tuple[MockQDMIDevice.MockSite, MockQDMIDevice.MockSite]] | None = None,
+            zoned: bool = False,
+        ) -> None:
+            """Initialize mock operation with name and optional custom behavior."""
             self._name = name
+            self._duration = custom_duration
+            self._fidelity = custom_fidelity
+            self._custom_sites = custom_sites
+            self._custom_site_pairs = custom_site_pairs
+            self._zoned = zoned
             # Determine qubit count and parameters based on operation name
             if name in {"h", "x", "y", "z", "s", "t", "measure", "sx", "id", "i"}:
                 self._qubits = 1
@@ -109,30 +124,29 @@ class MockQDMIDevice:
             """Return number of parameters for operation."""
             return self._params
 
-        @staticmethod
-        def duration() -> None:
-            """Return operation duration (always None for mock)."""
-            return
+        def duration(self, sites: list[MockQDMIDevice.MockSite] | None = None) -> float | None:
+            """Return custom duration if defined for the provided sites."""
+            if self._duration and sites:
+                return self._duration(sites)
+            return None
 
-        @staticmethod
-        def fidelity() -> None:
-            """Return operation fidelity (always None for mock)."""
-            return
+        def fidelity(self, sites: list[MockQDMIDevice.MockSite] | None = None) -> float | None:
+            """Return custom fidelity if defined for the provided sites."""
+            if self._fidelity and sites:
+                return self._fidelity(sites)
+            return None
 
-        @staticmethod
-        def sites() -> None:
-            """Return specific sites for operation (always None for mock)."""
-            return
+        def sites(self) -> list[MockQDMIDevice.MockSite] | None:
+            """Return the list of allowed single-qubit sites, if any."""
+            return self._custom_sites
 
-        @staticmethod
-        def site_pairs() -> None:
-            """Return site pairs for operation (always None for mock)."""
-            return
+        def site_pairs(self) -> list[tuple[MockQDMIDevice.MockSite, MockQDMIDevice.MockSite]] | None:
+            """Return the list of allowed two-qubit site pairs, if any."""
+            return self._custom_site_pairs
 
-        @staticmethod
-        def is_zoned() -> bool:
-            """Return whether operation is zoned (always False for mock)."""
-            return False
+        def is_zoned(self) -> bool:
+            """Return True if the operation is marked as zoned."""
+            return self._zoned
 
     class MockJob:
         """Mock FoMaC job with simulated results."""
@@ -415,3 +429,88 @@ def backend_circuit_case(request: pytest.FixtureRequest) -> CircuitCase:
     """
     builder, shots, expect_meas = request.param
     return builder(), shots, expect_meas
+
+
+def _build_site_specific_operation(
+    mock_cls: type[MockQDMIDevice],
+    name: str,
+    num_qubits: int,
+    sites: list[MockQDMIDevice.MockSite],
+) -> MockQDMIDevice.MockOperation:
+    if num_qubits == 1:
+
+        def single_duration(target_sites: list[MockQDMIDevice.MockSite]) -> float:
+            site = target_sites[0]
+            return 100.0 + site.index() * 10.0
+
+        def single_fidelity(target_sites: list[MockQDMIDevice.MockSite]) -> float:
+            site = target_sites[0]
+            return 0.99 - site.index() * 0.01
+
+        return mock_cls.MockOperation(
+            name,
+            custom_duration=single_duration,
+            custom_fidelity=single_fidelity,
+            custom_sites=sites,
+        )
+
+    def pair_duration(pair: list[MockQDMIDevice.MockSite]) -> float:
+        left, right = pair
+        return 200.0 + left.index() * 10.0 + right.index() * 5.0
+
+    def pair_fidelity(pair: list[MockQDMIDevice.MockSite]) -> float:
+        left, right = pair
+        return 0.98 - (left.index() + right.index()) * 0.005
+
+    site_pairs = list(itertools.pairwise(sites))
+    return mock_cls.MockOperation(
+        name,
+        custom_duration=pair_duration,
+        custom_fidelity=pair_fidelity,
+        custom_site_pairs=site_pairs,
+    )
+
+
+@pytest.fixture
+def site_specific_device(mock_qdmi_device_factory: type[MockQDMIDevice]) -> MockQDMIDevice:
+    """Device with operations carrying site-specific duration/fidelity metadata.
+
+    Returns:
+        Mock device exposing site-specific `h` and `cz` operations.
+    """
+    mock_cls = mock_qdmi_device_factory
+    sites = [mock_cls.MockSite(i) for i in range(3)]
+    operations = [
+        _build_site_specific_operation(mock_cls, "h", 1, sites),
+        _build_site_specific_operation(mock_cls, "cz", 2, sites),
+        mock_cls.MockOperation("measure"),
+    ]
+    device = mock_cls(name="Site-Specific Device", num_qubits=3)
+    device._operations = operations  # noqa: SLF001
+    device._sites = sites  # noqa: SLF001
+    return device
+
+
+@pytest.fixture
+def misconfigured_coupling_device(mock_qdmi_device_factory: type[MockQDMIDevice]) -> MockQDMIDevice:
+    """Device declaring a coupling map but no site pairs for operations.
+
+    Returns:
+        Mock device lacking site-pair metadata for two-qubit ops.
+    """
+    mock_cls = mock_qdmi_device_factory
+    return mock_cls(name="Misconfigured Device", num_qubits=5, operations=[], coupling_map=[(0, 1), (1, 2)])
+
+
+@pytest.fixture
+def zoned_operation_device(mock_qdmi_device_factory: type[MockQDMIDevice]) -> MockQDMIDevice:
+    """Device exposing an operation marked as zoned.
+
+    Returns:
+        Mock device containing a zoned-only operation for validation tests.
+    """
+    mock_cls = mock_qdmi_device_factory
+    zoned_op = mock_cls.MockOperation("zoned_op", zoned=True)
+    device = mock_cls(name="Zoned Device", num_qubits=5)
+    device._operations = [zoned_op]  # noqa: SLF001
+    return device

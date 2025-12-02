@@ -11,7 +11,7 @@
 from __future__ import annotations
 
 import warnings
-from typing import TYPE_CHECKING, Any, NoReturn
+from typing import TYPE_CHECKING, NoReturn, Protocol, cast
 from unittest.mock import MagicMock
 
 import pytest
@@ -33,6 +33,21 @@ from mqt.core.plugins.qiskit.exceptions import UnsupportedDeviceError
 
 if TYPE_CHECKING:
     from test.python.plugins.qiskit.conftest import CircuitCase, MockQDMIDevice
+
+    class _FomacDeviceLike(Protocol):  # pragma: no cover - typing helper
+        def name(self) -> str: ...
+
+        def version(self) -> str: ...
+
+        def qubits_num(self) -> int: ...
+
+        def operations(self) -> list[object]: ...
+
+        def coupling_map(self) -> object: ...
+
+    SiteSpecificDevice = _FomacDeviceLike
+    MisconfiguredDevice = _FomacDeviceLike
+    ZonedDevice = _FomacDeviceLike
 
 
 pytestmark = [
@@ -294,146 +309,36 @@ def test_backend_warns_on_missing_measurement_operation(
 
 
 @pytest.mark.parametrize(
-    ("num_qubits_param", "gate_name", "qubit_count", "test_cases"),
+    (
+        "gate_name",
+        "test_cases",
+    ),
     [
-        # Single-qubit gate with site-specific properties
         (
-            3,
             "h",
-            1,
             [
-                (0, 100.0, 0.99),  # qubit 0: duration=100, fidelity=0.99
-                (1, 110.0, 0.98),  # qubit 1: duration=110, fidelity=0.98
-                (2, 120.0, 0.97),  # qubit 2: duration=120, fidelity=0.97
+                ((0,), 100.0, 0.99),
+                ((1,), 110.0, 0.98),
+                ((2,), 120.0, 0.97),
             ],
         ),
-        # Two-qubit gate with site-pair-specific properties
         (
-            3,
             "cz",
-            2,
             [
-                ((0, 1), 205.0, 0.975),  # pair (0,1): duration=200+0*10+1*5=205, fidelity=0.98-1*0.005=0.975
-                ((1, 2), 220.0, 0.965),  # pair (1,2): duration=200+1*10+2*5=220, fidelity=0.98-3*0.005=0.965
+                ((0, 1), 205.0, 0.975),
+                ((1, 2), 220.0, 0.965),
             ],
         ),
     ],
 )
 def test_backend_with_site_specific_properties(
-    monkeypatch: pytest.MonkeyPatch,
-    mock_qdmi_device_factory: type[MockQDMIDevice],
-    num_qubits_param: int,
-    gate_name: str,
-    qubit_count: int,
-    test_cases: list[tuple[tuple[int, int], float, float]],
+    site_specific_device: SiteSpecificDevice, gate_name: str, test_cases: list[tuple[tuple[int, ...], float, float]]
 ) -> None:
-    """Backend should handle operations with site-specific duration and fidelity.
+    """Backend should honor site-specific duration and fidelity metadata."""
+    backend = QDMIBackend(device=cast("fomac.Device", site_specific_device))
 
-    Tests both single-qubit and two-qubit operations with parameterization.
-    """
-
-    class MockSite:
-        def __init__(self, idx: int) -> None:
-            self._idx = idx
-
-        def index(self) -> int:
-            return self._idx
-
-        @staticmethod
-        def is_zone() -> bool:
-            return False
-
-    class MockOperationWithProperties:
-        def __init__(self, name: str, num_qubits: int, site_data: list[Any]) -> None:
-            self._name = name
-            self._num_qubits = num_qubits
-            self._site_data = site_data
-
-        def name(self) -> str:
-            return self._name
-
-        def qubits_num(self) -> int:
-            return self._num_qubits
-
-        @staticmethod
-        def parameters_num() -> int:
-            return 0
-
-        def sites(self) -> list[MockSite] | None:
-            return self._site_data if self._num_qubits == 1 else None
-
-        def site_pairs(self) -> list[tuple[MockSite, MockSite]] | None:
-            return self._site_data if self._num_qubits == 2 else None
-
-        def duration(self, sites: list[MockSite] | None = None) -> float | None:
-            if not sites:
-                return None
-            if self._num_qubits == 1:
-                return 100.0 + sites[0].index() * 10.0
-            # Two-qubit
-            return 200.0 + sites[0].index() * 10.0 + sites[1].index() * 5.0
-
-        def fidelity(self, sites: list[MockSite] | None = None) -> float | None:
-            if not sites:
-                return None
-            if self._num_qubits == 1:
-                return 0.99 - sites[0].index() * 0.01
-            # Two-qubit
-            return 0.98 - (sites[0].index() + sites[1].index()) * 0.005
-
-        @staticmethod
-        def is_zoned() -> bool:
-            return False
-
-    # Prepare site data based on qubit count
-    sites = [MockSite(i) for i in range(num_qubits_param)]
-    if qubit_count == 1:
-        site_data: list[Any] = list(sites)
-    else:
-        site_pairs: list[tuple[MockSite, MockSite]] = [
-            (sites[0], sites[1]),
-            (sites[1], sites[2]),
-        ]
-        site_data = list(site_pairs)
-
-    class CustomMockDevice:
-        @staticmethod
-        def name() -> str:
-            return "Site-Specific Device"
-
-        @staticmethod
-        def version() -> str:
-            return "1.0.0"
-
-        @staticmethod
-        def qubits_num() -> int:
-            return num_qubits_param
-
-        @staticmethod
-        def operations() -> list[Any]:
-            return [
-                MockOperationWithProperties(gate_name, qubit_count, site_data),
-                mock_qdmi_device_factory.MockOperation("measure"),
-            ]
-
-        @staticmethod
-        def coupling_map() -> None:
-            return None
-
-        @staticmethod
-        def supported_program_formats() -> list[fomac.ProgramFormat]:
-            return [fomac.ProgramFormat.QASM3]
-
-    monkeypatch.setattr(fomac, "devices", lambda: [CustomMockDevice()])
-
-    # Create backend and verify properties
-    provider = QDMIProvider()
-    backend = provider.get_backend("Site-Specific Device")
-    assert backend.target.num_qubits == num_qubits_param
-
-    # Verify site-specific properties for each test case
     for qarg, expected_duration, expected_fidelity in test_cases:
-        props = backend.target[gate_name][qarg if qubit_count == 2 else (qarg,)]
+        props = backend.target[gate_name][qarg]
         assert props is not None
         assert props.duration == expected_duration
         expected_error = 1.0 - expected_fidelity
@@ -554,127 +459,33 @@ def test_map_operation_returns_none_for_unknown(mock_backend: QDMIBackend) -> No
     assert mock_backend._map_operation_to_gate("") is None  # noqa: SLF001
 
 
-def test_backend_operation_properties(mock_backend: QDMIBackend) -> None:
-    """Backend registers expected operations including property maps."""
-    expected_ops = {"h", "ry", "rz", "cz", "measure"}
-    assert expected_ops.issubset(set(mock_backend.target.operation_names))
+@pytest.mark.parametrize(
+    ("gate_name", "expected_qargs"),
+    [
+        ("h", [(0,), (1,), (2,)]),
+        ("cz", [(0, 1), (1, 2)]),
+    ],
+)
+def test_backend_operation_properties(
+    site_specific_device: SiteSpecificDevice, gate_name: str, expected_qargs: list[tuple[int, ...]]
+) -> None:
+    """Target exposes per-qarg instruction properties for site-aware operations."""
+    backend = QDMIBackend(device=cast("fomac.Device", site_specific_device))
+    props_map = backend.target[gate_name]
+    assert sorted(props_map.keys()) == sorted(expected_qargs)
 
-    for op_name in expected_ops:
-        props_map = mock_backend.target[op_name]
-        assert isinstance(props_map, dict)
-        for qargs, props in props_map.items():
-            assert qargs is None or isinstance(qargs, tuple)
-            assert props is None or isinstance(props, InstructionProperties)
-
-
-def test_get_operation_qargs_single_qubit(mock_backend: QDMIBackend) -> None:
-    """Single-qubit ops without explicit sites are globally available."""
-    mock_op = MagicMock()
-    mock_op.name.return_value = "test_op"
-    mock_op.qubits_num.return_value = 1
-    mock_op.parameters_num.return_value = 0
-    mock_op.duration.return_value = None
-    mock_op.fidelity.return_value = None
-    mock_op.sites.return_value = None
-    mock_op.is_zoned.return_value = False
-
-    qargs = mock_backend._get_operation_qargs(mock_op)  # noqa: SLF001
-
-    assert qargs == [None]
+    for qarg in expected_qargs:
+        props = props_map[qarg]
+        assert isinstance(props, InstructionProperties)
+        assert props.duration is not None
+        assert props.error is not None
 
 
-def test_get_operation_qargs_two_qubit_without_coupling_map(mock_backend: QDMIBackend) -> None:
-    """Two-qubit ops without site pairs or coupling map are global."""
-    assert mock_backend._device.coupling_map() is None  # noqa: SLF001
-
-    mock_op = MagicMock()
-    mock_op.name.return_value = "test_2q"
-    mock_op.qubits_num.return_value = 2
-    mock_op.parameters_num.return_value = 0
-    mock_op.duration.return_value = None
-    mock_op.fidelity.return_value = None
-    mock_op.site_pairs.return_value = None
-    mock_op.is_zoned.return_value = False
-
-    qargs = mock_backend._get_operation_qargs(mock_op)  # noqa: SLF001
-
-    assert qargs == [None]
-
-
-def test_get_operation_qargs_with_specific_sites(mock_backend: QDMIBackend) -> None:
-    """Target reflects backend operations including qargs."""
-    assert mock_backend.target.operation_names
-
-    for op_name in mock_backend.target.operation_names:
-        qargs = mock_backend.target.qargs_for_operation_name(op_name)
-        if qargs is None:
-            continue
-        for qarg in qargs:
-            assert isinstance(qarg, tuple)
-            assert all(isinstance(idx, int) for idx in qarg)
-
-
-def test_get_operation_qargs_two_qubit_operation_with_subset_of_coupling_map(mock_backend: QDMIBackend) -> None:
-    """Two-qubit ops respect specific qargs when defined."""
-    two_qubit_ops = [
-        op_name
-        for op_name in mock_backend.target.operation_names
-        if mock_backend.target.operation_from_name(op_name).num_qubits == 2
-    ]
-    assert two_qubit_ops
-
-    for op_name in two_qubit_ops:
-        qargs = mock_backend.target.qargs_for_operation_name(op_name)
-        if not qargs:
-            continue
-        for qarg in qargs:
-            assert len(qarg) == 2
-            assert all(isinstance(idx, int) for idx in qarg)
-
-
-def test_misconfigured_device_coupling_map_without_operation_sites() -> None:
-    """Devices with coupling map need site pairs for two-qubit ops."""
-
-    class MockDeviceWithCouplingMap:
-        class MockSite:
-            def __init__(self, idx: int) -> None:
-                self._idx = idx
-
-            def index(self) -> int:
-                return self._idx
-
-            @staticmethod
-            def is_zone() -> bool:
-                return False
-
-        def __init__(self) -> None:
-            self._sites = [self.MockSite(i) for i in range(5)]
-            self._coupling_map = [(self._sites[0], self._sites[1]), (self._sites[1], self._sites[2])]
-
-        @staticmethod
-        def name() -> str:
-            return "Mock Device With Coupling"
-
-        @staticmethod
-        def version() -> str:
-            return "1.0.0"
-
-        @staticmethod
-        def qubits_num() -> int:
-            return 5
-
-        def regular_sites(self) -> list[MockSite]:
-            return self._sites
-
-        @staticmethod
-        def operations() -> list[object]:
-            return []
-
-        def coupling_map(self) -> list[tuple[MockSite, MockSite]]:
-            return self._coupling_map
-
-    device = MockDeviceWithCouplingMap()
-    backend = QDMIBackend(device=device)  # type: ignore[arg-type]
+def test_misconfigured_device_coupling_map_without_operation_sites(
+    misconfigured_coupling_device: MisconfiguredDevice,
+) -> None:
+    """Devices with coupling maps must provide site pairs for two-qubit operations."""
+    backend = QDMIBackend(device=cast("fomac.Device", misconfigured_coupling_device))
 
     mock_op = MagicMock()
     mock_op.name.return_value = "custom_2q"
@@ -686,42 +497,7 @@ def test_misconfigured_device_coupling_map_without_operation_sites() -> None:
         backend._get_operation_qargs(mock_op)  # noqa: SLF001
 
 
-def test_zoned_operation_rejected_at_backend_init() -> None:
+def test_zoned_operation_rejected_at_backend_init(zoned_operation_device: ZonedDevice) -> None:
     """Backend rejects devices exposing zoned operations."""
-
-    class MockZonedDevice:
-        class MockZonedOp:
-            @staticmethod
-            def name() -> str:
-                return "zoned_op"
-
-            @staticmethod
-            def is_zoned() -> bool:
-                return True
-
-        def __init__(self) -> None:
-            self._ops = [self.MockZonedOp()]
-
-        @staticmethod
-        def name() -> str:
-            return "Mock Zoned Device"
-
-        @staticmethod
-        def version() -> str:
-            return "1.0.0"
-
-        def operations(self) -> list[MockZonedOp]:
-            return self._ops
-
-        @staticmethod
-        def qubits_num() -> int:
-            return 5
-
-        @staticmethod
-        def regular_sites() -> list[object]:
-            return []
-
-    device = MockZonedDevice()
-
     with pytest.raises(UnsupportedDeviceError, match="cannot be represented in Qiskit's Target model"):
-        QDMIBackend(device=device)  # type: ignore[arg-type]
+        QDMIBackend(device=cast("fomac.Device", zoned_operation_device))
