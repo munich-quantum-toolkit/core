@@ -135,7 +135,7 @@ bool areOperationsEquivalent(Operation* lhs, Operation* rhs,
     if (!rhsConst) {
       return false;
     }
-    if (!(lhsConst.getValue() == rhsConst.getValue())) {
+    if (lhsConst.getValue() != rhsConst.getValue()) {
       return false;
     }
   }
