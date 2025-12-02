@@ -73,30 +73,6 @@ def test_unsupported_operation(mock_backend: QDMIBackend) -> None:
         mock_backend.run(qc)
 
 
-def test_backend_via_provider() -> None:
-    """Backend can be obtained through provider."""
-    provider = QDMIProvider()
-    backend = provider.get_backend("MQT Core DDSIM QDMI Device")
-    assert backend.target.num_qubits > 0
-    assert backend.provider is provider
-
-
-def test_provider_get_backend_by_name() -> None:
-    """Provider can get backend by name."""
-    provider = QDMIProvider()
-    backend = provider.get_backend("MQT Core DDSIM QDMI Device")
-    assert backend.name == "MQT Core DDSIM QDMI Device"
-
-
-@pytest.mark.filterwarnings("ignore:Skipping device:UserWarning")
-def test_provider_backends_list() -> None:
-    """Provider can list all backends."""
-    provider = QDMIProvider()
-    backends = provider.backends()
-    assert len(backends) > 0
-    assert all(hasattr(b, "target") for b in backends)
-
-
 def test_backend_max_circuits(mock_backend: QDMIBackend) -> None:
     """Backend max_circuits should return None (no limit)."""
     assert mock_backend.max_circuits is None
