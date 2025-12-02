@@ -11,10 +11,10 @@
 from __future__ import annotations
 
 import warnings
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, NoReturn
 
 import pytest
-from qiskit import QuantumCircuit
+from qiskit import QuantumCircuit, qasm2, qasm3
 from qiskit.circuit import Parameter
 from qiskit.providers import JobStatus
 
@@ -22,6 +22,8 @@ from mqt.core import fomac
 from mqt.core.plugins.qiskit import (
     CircuitValidationError,
     QDMIProvider,
+    TranslationError,
+    UnsupportedFormatError,
     UnsupportedOperationError,
 )
 
@@ -358,3 +360,246 @@ def test_backend_warns_on_missing_measurement_operation(
         assert any("does not define a measurement operation" in msg for msg in warning_messages), (
             f"Expected warning about missing measurement operation, got: {warning_messages}"
         )
+
+
+@pytest.mark.parametrize(
+    ("num_qubits_param", "gate_name", "qubit_count", "test_cases"),
+    [
+        # Single-qubit gate with site-specific properties
+        (
+            3,
+            "h",
+            1,
+            [
+                (0, 100.0, 0.99),  # qubit 0: duration=100, fidelity=0.99
+                (1, 110.0, 0.98),  # qubit 1: duration=110, fidelity=0.98
+                (2, 120.0, 0.97),  # qubit 2: duration=120, fidelity=0.97
+            ],
+        ),
+        # Two-qubit gate with site-pair-specific properties
+        (
+            3,
+            "cz",
+            2,
+            [
+                ((0, 1), 205.0, 0.975),  # pair (0,1): duration=200+0*10+1*5=205, fidelity=0.98-1*0.005=0.975
+                ((1, 2), 220.0, 0.965),  # pair (1,2): duration=200+1*10+2*5=220, fidelity=0.98-3*0.005=0.965
+            ],
+        ),
+    ],
+)
+def test_backend_with_site_specific_properties(
+    monkeypatch: pytest.MonkeyPatch,
+    mock_qdmi_device_factory: type[MockQDMIDevice],
+    num_qubits_param: int,
+    gate_name: str,
+    qubit_count: int,
+    test_cases: list[tuple[tuple[int, int], float, float]],
+) -> None:
+    """Backend should handle operations with site-specific duration and fidelity.
+
+    Tests both single-qubit and two-qubit operations with parameterization.
+    """
+
+    class MockSite:
+        def __init__(self, idx: int) -> None:
+            self._idx = idx
+
+        def index(self) -> int:
+            return self._idx
+
+        @staticmethod
+        def is_zone() -> bool:
+            return False
+
+    class MockOperationWithProperties:
+        def __init__(self, name: str, num_qubits: int, site_data: list[Any]) -> None:
+            self._name = name
+            self._num_qubits = num_qubits
+            self._site_data = site_data
+
+        def name(self) -> str:
+            return self._name
+
+        def qubits_num(self) -> int:
+            return self._num_qubits
+
+        @staticmethod
+        def parameters_num() -> int:
+            return 0
+
+        def sites(self) -> list[MockSite] | None:
+            return self._site_data if self._num_qubits == 1 else None
+
+        def site_pairs(self) -> list[tuple[MockSite, MockSite]] | None:
+            return self._site_data if self._num_qubits == 2 else None
+
+        def duration(self, sites: list[MockSite] | None = None) -> float | None:
+            if not sites:
+                return None
+            if self._num_qubits == 1:
+                return 100.0 + sites[0].index() * 10.0
+            # Two-qubit
+            return 200.0 + sites[0].index() * 10.0 + sites[1].index() * 5.0
+
+        def fidelity(self, sites: list[MockSite] | None = None) -> float | None:
+            if not sites:
+                return None
+            if self._num_qubits == 1:
+                return 0.99 - sites[0].index() * 0.01
+            # Two-qubit
+            return 0.98 - (sites[0].index() + sites[1].index()) * 0.005
+
+        @staticmethod
+        def is_zoned() -> bool:
+            return False
+
+    # Prepare site data based on qubit count
+    sites = [MockSite(i) for i in range(num_qubits_param)]
+    if qubit_count == 1:
+        site_data: list[Any] = list(sites)
+    else:
+        site_pairs: list[tuple[MockSite, MockSite]] = [
+            (sites[0], sites[1]),
+            (sites[1], sites[2]),
+        ]
+        site_data = list(site_pairs)
+
+    class CustomMockDevice:
+        @staticmethod
+        def name() -> str:
+            return "Site-Specific Device"
+
+        @staticmethod
+        def version() -> str:
+            return "1.0.0"
+
+        @staticmethod
+        def qubits_num() -> int:
+            return num_qubits_param
+
+        @staticmethod
+        def operations() -> list[Any]:
+            return [
+                MockOperationWithProperties(gate_name, qubit_count, site_data),
+                mock_qdmi_device_factory.MockOperation("measure"),
+            ]
+
+        @staticmethod
+        def coupling_map() -> None:
+            return None
+
+        @staticmethod
+        def supported_program_formats() -> list[fomac.ProgramFormat]:
+            return [fomac.ProgramFormat.QASM3]
+
+    monkeypatch.setattr(fomac, "devices", lambda: [CustomMockDevice()])
+
+    # Create backend and verify properties
+    provider = QDMIProvider()
+    backend = provider.get_backend("Site-Specific Device")
+    assert backend.target.num_qubits == num_qubits_param
+
+    # Verify site-specific properties for each test case
+    for qarg, expected_duration, expected_fidelity in test_cases:
+        props = backend.target[gate_name][qarg if qubit_count == 2 else (qarg,)]
+        assert props is not None
+        assert props.duration == expected_duration
+        expected_error = 1.0 - expected_fidelity
+        assert abs(props.error - expected_error) < 1e-10
+
+
+def test_backend_qasm_conversion_no_supported_formats(
+    monkeypatch: pytest.MonkeyPatch, mock_qdmi_device_factory: type[MockQDMIDevice]
+) -> None:
+    """Backend should raise UnsupportedFormatError when device has no supported program formats."""
+    # Create mock device with no supported formats
+    device = mock_qdmi_device_factory(
+        name="No Format Device",
+        num_qubits=2,
+        operations=["cz", "measure"],
+    )
+    monkeypatch.setattr(device, "supported_program_formats", list)
+    monkeypatch.setattr(fomac, "devices", lambda: [device])
+
+    # Create backend and try to run a circuit
+    provider = QDMIProvider()
+    backend = provider.get_backend("No Format Device")
+
+    qc = QuantumCircuit(2, 2)
+    qc.cz(0, 1)
+    qc.measure([0, 1], [0, 1])
+
+    with pytest.raises(UnsupportedFormatError, match="No supported program formats found"):
+        backend.run(qc, shots=100)
+
+
+@pytest.mark.parametrize(
+    ("qasm_module_name", "program_format"),
+    [
+        ("qasm3", fomac.ProgramFormat.QASM3),
+        ("qasm2", fomac.ProgramFormat.QASM2),
+    ],
+)
+def test_backend_qasm_conversion_failure(
+    monkeypatch: pytest.MonkeyPatch,
+    mock_qdmi_device_factory: type[MockQDMIDevice],
+    qasm_module_name: str,
+    program_format: fomac.ProgramFormat,
+) -> None:
+    """Backend should raise TranslationError when QASM conversion fails."""
+    qasm_module = qasm3 if qasm_module_name == "qasm3" else qasm2
+
+    # Create a device that only supports the specified format
+    device = mock_qdmi_device_factory(
+        name=f"{qasm_module_name.upper()} Only Device",
+        num_qubits=2,
+        operations=["cz", "measure"],
+    )
+    monkeypatch.setattr(device, "supported_program_formats", lambda: [program_format])
+    monkeypatch.setattr(fomac, "devices", lambda: [device])
+
+    # Create backend
+    provider = QDMIProvider()
+    backend = provider.get_backend(f"{qasm_module_name.upper()} Only Device")
+
+    # Monkeypatch qasm dumps to raise an exception
+    def failing_dumps(circuit: object) -> NoReturn:  # noqa: ARG001
+        msg = f"Simulated {qasm_module_name.upper()} conversion failure"
+        raise ValueError(msg)
+
+    monkeypatch.setattr(qasm_module, "dumps", failing_dumps)
+
+    qc = QuantumCircuit(2, 2)
+    qc.cz(0, 1)
+    qc.measure([0, 1], [0, 1])
+
+    with pytest.raises(TranslationError, match=f"Failed to convert circuit to {qasm_module_name.upper()}"):
+        backend.run(qc, shots=100)
+
+
+def test_backend_unsupported_format_error(
+    monkeypatch: pytest.MonkeyPatch, mock_qdmi_device_factory: type[MockQDMIDevice]
+) -> None:
+    """Backend should raise UnsupportedFormatError when device supports unknown format."""
+    # Create a device that supports a format other than QASM2/QASM3 (QPY)
+    device = mock_qdmi_device_factory(
+        name="Unknown Format Device",
+        num_qubits=2,
+        operations=["cz", "measure"],
+    )
+    monkeypatch.setattr(device, "supported_program_formats", lambda: [fomac.ProgramFormat.QPY])
+    monkeypatch.setattr(fomac, "devices", lambda: [device])
+
+    # Create backend
+    provider = QDMIProvider()
+    backend = provider.get_backend("Unknown Format Device")
+
+    qc = QuantumCircuit(2, 2)
+    qc.cz(0, 1)
+    qc.measure([0, 1], [0, 1])
+
+    with pytest.raises(
+        UnsupportedFormatError, match="No conversion from Qiskit to any of the supported program formats"
+    ):
+        backend.run(qc, shots=100)
