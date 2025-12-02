@@ -147,6 +147,12 @@ class QDMIBackend(BackendV2):  # type: ignore[misc]
         for op in self._device.operations():
             # Map known operations to Qiskit gates
             op_name = op.name()
+
+            # Skip control flow operations that don't belong in the Target
+            # (barrier is handled separately by Qiskit, if_else is a circuit construct)
+            if op_name.lower() in {"barrier", "if_else"}:
+                continue
+
             gate = self._map_operation_to_gate(op_name)
             if gate is None:
                 warnings.warn(
@@ -253,6 +259,7 @@ class QDMIBackend(BackendV2):  # type: ignore[misc]
             "sxdg": qcl.SXdgGate(),
             "p": qcl.PhaseGate(Parameter("lambda")),
             "phase": qcl.PhaseGate(Parameter("lambda")),
+            "gphase": qcl.GlobalPhaseGate(Parameter("theta")),
             # Rotation gates (parametric)
             "rx": qcl.RXGate(Parameter("theta")),
             "ry": qcl.RYGate(Parameter("theta")),
@@ -261,8 +268,9 @@ class QDMIBackend(BackendV2):  # type: ignore[misc]
             "prx": qcl.RGate(Parameter("theta"), Parameter("phi")),
             # Universal gates (parametric)
             "u": qcl.UGate(Parameter("theta"), Parameter("phi"), Parameter("lambda")),
-            "u3": qcl.UGate(Parameter("theta"), Parameter("phi"), Parameter("lambda")),
+            "u1": qcl.U1Gate(Parameter("lambda")),
             "u2": qcl.U2Gate(Parameter("phi"), Parameter("lambda")),
+            "u3": qcl.UGate(Parameter("theta"), Parameter("phi"), Parameter("lambda")),
             # Two-qubit gates
             "cx": qcl.CXGate(),
             "cnot": qcl.CXGate(),
@@ -278,6 +286,8 @@ class QDMIBackend(BackendV2):  # type: ignore[misc]
             "ecr": qcl.ECRGate(),
             # Two-qubit gates (parametric)
             "cp": qcl.CPhaseGate(Parameter("lambda")),
+            "cu1": qcl.CU1Gate(Parameter("lambda")),
+            "cu3": qcl.CU3Gate(Parameter("theta"), Parameter("phi"), Parameter("lambda")),
             "crx": qcl.CRXGate(Parameter("theta")),
             "cry": qcl.CRYGate(Parameter("theta")),
             "crz": qcl.CRZGate(Parameter("phi")),
@@ -287,6 +297,17 @@ class QDMIBackend(BackendV2):  # type: ignore[misc]
             "rzx": qcl.RZXGate(Parameter("theta")),
             "xx_plus_yy": qcl.XXPlusYYGate(Parameter("theta"), Parameter("beta")),
             "xx_minus_yy": qcl.XXMinusYYGate(Parameter("theta"), Parameter("beta")),
+            # Three-qubit gates
+            "ccx": qcl.CCXGate(),
+            "ccz": qcl.CCZGate(),
+            "cswap": qcl.CSwapGate(),
+            # Multi-controlled gates
+            "mcx": qcl.MCXGate(num_ctrl_qubits=2),
+            "mcz": qcl.MCPhaseGate(Parameter("lambda"), num_ctrl_qubits=2),
+            "mcp": qcl.MCPhaseGate(Parameter("lambda"), num_ctrl_qubits=2),
+            "mcrx": qcl.MCXGate(num_ctrl_qubits=2),  # Approximation
+            "mcry": qcl.MCXGate(num_ctrl_qubits=2),  # Approximation
+            "mcrz": qcl.MCXGate(num_ctrl_qubits=2),  # Approximation
             # nonunitary operations
             "reset": qcl.Reset(),
             "measure": qcl.Measure(),

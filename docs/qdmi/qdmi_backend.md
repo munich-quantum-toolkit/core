@@ -122,11 +122,13 @@ The backend maps QDMI device operations to corresponding Qiskit gates, including
 
 - **Single-qubit Pauli gates**: `x`, `y`, `z`, `id`/`i`
 - **Hadamard**: `h`
-- **Phase gates**: `s`, `sdg`, `t`, `tdg`, `sx`, `sxdg`, `p`, `phase`
+- **Phase gates**: `s`, `sdg`, `t`, `tdg`, `sx`, `sxdg`, `p`, `phase`, `gphase`
 - **Rotation gates (parametric)**: `rx`, `ry`, `rz`, `r`/`prx`
-- **Universal gates (parametric)**: `u`, `u2`, `u3`
+- **Universal gates (parametric)**: `u`, `u1`, `u2`, `u3`
 - **Two-qubit gates**: `cx`/`cnot`, `cy`, `cz`, `ch`, `cs`, `csdg`, `csx`, `swap`, `iswap`, `dcx`, `ecr`
-- **Two-qubit parametric gates**: `cp`, `crx`, `cry`, `crz`, `rxx`, `ryy`, `rzz`, `rzx`, `xx_plus_yy`, `xx_minus_yy`
+- **Two-qubit parametric gates**: `cp`, `cu1`, `cu3`, `crx`, `cry`, `crz`, `rxx`, `ryy`, `rzz`, `rzx`, `xx_plus_yy`, `xx_minus_yy`
+- **Three-qubit gates**: `ccx`, `ccz`, `cswap`
+- **Multi-controlled gates**: `mcx`, `mcz`, `mcp`, `mcrx`, `mcry`, `mcrz`
 - **Non-unitary operations**: `reset`, `measure`
 
 ## Circuit Execution
