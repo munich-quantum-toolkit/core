@@ -45,12 +45,12 @@ from qiskit import QuantumCircuit
 
 # Create a provider and get a backend
 provider = QDMIProvider()
-backend = provider.get_backend("MQT NA Default QDMI Device")
+backend = provider.get_backend("MQT Core DDSIM QDMI Device")
 
 # Create a simple circuit
 qc = QuantumCircuit(2)
-qc.ry(1.5708, 0)  # π/2 rotation
-qc.cz(0, 1)
+qc.h(0)
+qc.cx(0, 1)
 qc.measure_all()
 
 # Execute the circuit
@@ -84,7 +84,7 @@ for backend in backends:
 
 ```{code-cell} ipython3
 # Get a backend by name
-backend = provider.get_backend("MQT NA Default QDMI Device")
+backend = provider.get_backend("MQT Core DDSIM QDMI Device")
 print(f"Backend: {backend.name}")
 print(f"Qubits: {backend.target.num_qubits}")
 ```
@@ -96,10 +96,10 @@ print(f"Qubits: {backend.target.num_qubits}")
 filtered_qdmi = provider.backends(
     name="QDMI"
 )  # Matches all backends with "QDMI" in name
-filtered_na = provider.backends(name="NA")  # Matches "MQT NA Default QDMI Device"
+filtered_ddsim = provider.backends(name="DDSIM")  # Matches "MQT Core DDSIM QDMI Device"
 
 # Filter by full name also works
-exact = provider.backends(name="MQT NA Default QDMI Device")
+exact = provider.backends(name="MQT Core DDSIM QDMI Device")
 ```
 
 ## Device Capabilities and Target

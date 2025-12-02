@@ -15,7 +15,7 @@ Users can now execute Qiskit circuits directly on QDMI devices:
 from mqt.core.plugins.qiskit import QDMIProvider
 
 provider = QDMIProvider()
-backend = provider.get_backend("MQT NA Default QDMI Device")
+backend = provider.get_backend("MQT Core DDSIM QDMI Device")
 job = backend.run(circuit, shots=1024)
 result = job.result()
 ```
