@@ -182,7 +182,7 @@ Value FluxProgramBuilder::reset(Value qubit) {
       const std::variant<double, Value>&(PARAM), const Value control) {        \
     const auto [controlsOut, targetsOut] =                                     \
         ctrl(control, {},                                                      \
-             [&](OpBuilder& b, const ValueRange targets) -> ValueRange {       \
+             [&](OpBuilder& b, const ValueRange /*targets*/) -> ValueRange {   \
                b.create<OP_CLASS>(loc, PARAM);                                 \
                return {};                                                      \
              });                                                               \
@@ -192,7 +192,7 @@ Value FluxProgramBuilder::reset(Value qubit) {
       const std::variant<double, Value>&(PARAM), const ValueRange controls) {  \
     const auto [controlsOut, targetsOut] =                                     \
         ctrl(controls, {},                                                     \
-             [&](OpBuilder& b, const ValueRange targets) -> ValueRange {       \
+             [&](OpBuilder& b, const ValueRange /*targets*/) -> ValueRange {   \
                b.create<OP_CLASS>(loc, PARAM);                                 \
                return {};                                                      \
              });                                                               \

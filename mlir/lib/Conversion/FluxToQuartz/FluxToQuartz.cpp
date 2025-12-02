@@ -479,7 +479,7 @@ struct ConvertFluxResetOp final : OpConversionPattern<flux::ResetOp> {
     using OpConversionPattern::OpConversionPattern;                            \
                                                                                \
     LogicalResult                                                              \
-    matchAndRewrite(flux::OP_CLASS op, OpAdaptor adaptor,                      \
+    matchAndRewrite(flux::OP_CLASS op, OpAdaptor /*adaptor*/,                  \
                     ConversionPatternRewriter& rewriter) const override {      \
       return convertZeroTargetOneParameter<quartz::OP_CLASS>(op, rewriter);    \
     }                                                                          \
