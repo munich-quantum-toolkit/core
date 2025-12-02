@@ -8,7 +8,7 @@
  * Licensed under the MIT License
  */
 
-#include "mlir/Dialect/quartz/IR/QuartzDialect.h"
+#include "mlir/Dialect/Quartz/IR/QuartzDialect.h"
 
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OperationSupport.h>
