@@ -119,19 +119,6 @@ public:
       return dyn_cast<FloatAttr>(constantOp.getValue());
     }
 
-    bool hasStaticUnitary() {
-      if constexpr (P == 0) {
-        return true;
-      }
-      const auto& op = this->getOperation();
-      for (size_t i = 0; i < P; ++i) {
-        if (!getStaticParameter(op->getOperand(T + i))) {
-          return false;
-        }
-      }
-      return true;
-    }
-
     Value getInputForOutput(Value output) {
       const auto& op = this->getOperation();
       for (size_t i = 0; i < T; ++i) {

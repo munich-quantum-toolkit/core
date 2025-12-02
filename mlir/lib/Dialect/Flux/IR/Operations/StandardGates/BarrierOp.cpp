@@ -10,7 +10,6 @@
 
 #include "mlir/Dialect/Flux/FluxUtils.h"
 #include "mlir/Dialect/Flux/IR/FluxDialect.h"
-#include "mlir/Dialect/Utils/MatrixUtils.h"
 
 #include <cstddef>
 #include <functional>
@@ -27,7 +26,6 @@
 
 using namespace mlir;
 using namespace mlir::flux;
-using namespace mlir::utils;
 
 size_t BarrierOp::getNumQubits() { return getNumTargets(); }
 
@@ -93,14 +91,8 @@ Value BarrierOp::getOutputForInput(const Value input) {
 
 size_t BarrierOp::getNumParams() { return 0; }
 
-bool BarrierOp::hasStaticUnitary() { return true; }
-
 Value BarrierOp::getParameter(const size_t i) {
   llvm::reportFatalUsageError("BarrierOp has no parameters");
-}
-
-DenseElementsAttr BarrierOp::tryGetStaticMatrix() {
-  return getMatrixId(getContext());
 }
 
 void BarrierOp::build(OpBuilder& odsBuilder, OperationState& odsState,

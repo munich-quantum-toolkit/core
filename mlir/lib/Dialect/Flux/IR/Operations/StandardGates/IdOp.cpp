@@ -9,7 +9,6 @@
  */
 
 #include "mlir/Dialect/Flux/IR/FluxDialect.h"
-#include "mlir/Dialect/Utils/MatrixUtils.h"
 
 #include <mlir/IR/BuiltinAttributes.h>
 #include <mlir/IR/MLIRContext.h>
@@ -19,7 +18,6 @@
 
 using namespace mlir;
 using namespace mlir::flux;
-using namespace mlir::utils;
 
 namespace {
 
@@ -37,10 +35,6 @@ struct RemoveId final : OpRewritePattern<IdOp> {
 };
 
 } // namespace
-
-DenseElementsAttr IdOp::tryGetStaticMatrix() {
-  return getMatrixId(getContext());
-}
 
 void IdOp::getCanonicalizationPatterns(RewritePatternSet& results,
                                        MLIRContext* context) {

@@ -9,7 +9,6 @@
  */
 
 #include "mlir/Dialect/Quartz/IR/QuartzDialect.h"
-#include "mlir/Dialect/Utils/MatrixUtils.h"
 
 #include <cstddef>
 #include <functional>
@@ -26,7 +25,6 @@
 
 using namespace mlir;
 using namespace mlir::quartz;
-using namespace mlir::utils;
 
 size_t BarrierOp::getNumQubits() { return getNumTargets(); }
 
@@ -57,12 +55,6 @@ Value BarrierOp::getNegControl(const size_t i) {
 
 size_t BarrierOp::getNumParams() { return 0; }
 
-bool BarrierOp::hasStaticUnitary() { return true; }
-
 Value BarrierOp::getParameter(const size_t i) {
   llvm::reportFatalUsageError("BarrierOp does not have parameters");
-}
-
-DenseElementsAttr BarrierOp::tryGetStaticMatrix() {
-  return getMatrixId(getContext());
 }

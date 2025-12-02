@@ -9,7 +9,6 @@
  */
 
 #include "mlir/Dialect/Quartz/IR/QuartzDialect.h"
-#include "mlir/Dialect/Utils/MatrixUtils.h"
 
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/IR/Builders.h>
@@ -19,16 +18,6 @@
 
 using namespace mlir;
 using namespace mlir::quartz;
-using namespace mlir::utils;
-
-DenseElementsAttr RZOp::tryGetStaticMatrix() {
-  const auto& theta = getStaticParameter(getTheta());
-  if (!theta) {
-    return nullptr;
-  }
-  const auto thetaValue = theta.getValueAsDouble();
-  return getMatrixRZ(getContext(), thetaValue);
-}
 
 void RZOp::build(OpBuilder& odsBuilder, OperationState& odsState,
                  const Value qubitIn,

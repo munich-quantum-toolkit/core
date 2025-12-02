@@ -9,7 +9,6 @@
  */
 
 #include "mlir/Dialect/Quartz/IR/QuartzDialect.h"
-#include "mlir/Dialect/Utils/MatrixUtils.h"
 
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/IR/Builders.h>
@@ -19,20 +18,6 @@
 
 using namespace mlir;
 using namespace mlir::quartz;
-using namespace mlir::utils;
-
-DenseElementsAttr UOp::tryGetStaticMatrix() {
-  const auto theta = getStaticParameter(getTheta());
-  const auto phi = getStaticParameter(getPhi());
-  const auto lambda = getStaticParameter(getLambda());
-  if (!theta || !phi || !lambda) {
-    return nullptr;
-  }
-  const auto thetaValue = theta.getValueAsDouble();
-  const auto phiValue = phi.getValueAsDouble();
-  const auto lambdaValue = lambda.getValueAsDouble();
-  return getMatrixU(getContext(), thetaValue, phiValue, lambdaValue);
-}
 
 void UOp::build(OpBuilder& odsBuilder, OperationState& odsState,
                 const Value qubitIn, const std::variant<double, Value>& theta,

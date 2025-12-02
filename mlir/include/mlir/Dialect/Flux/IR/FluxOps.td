@@ -274,7 +274,6 @@ def GPhaseOp : FluxOp<"gphase", traits = [UnitaryOpInterface, ZeroTargetOneParam
     let assemblyFormat = "$theta attr-dict";
 
     let extraClassDeclaration = [{
-        DenseElementsAttr tryGetStaticMatrix();
         static StringRef getBaseSymbol() { return "gphase"; }
     }];
 
@@ -301,7 +300,6 @@ def IdOp : FluxOp<"id", traits = [UnitaryOpInterface, OneTargetZeroParameter]> {
     let assemblyFormat = "$qubit_in attr-dict `:` type($qubit_in) `->` type($qubit_out)";
 
     let extraClassDeclaration = [{
-        DenseElementsAttr tryGetStaticMatrix();
         static StringRef getBaseSymbol() { return "id"; }
     }];
 
@@ -324,7 +322,6 @@ def XOp : FluxOp<"x", traits = [UnitaryOpInterface, OneTargetZeroParameter]> {
     let assemblyFormat = "$qubit_in attr-dict `:` type($qubit_in) `->` type($qubit_out)";
 
     let extraClassDeclaration = [{
-        DenseElementsAttr tryGetStaticMatrix();
         static StringRef getBaseSymbol() { return "x"; }
     }];
 
@@ -347,7 +344,6 @@ def YOp : FluxOp<"y", traits = [UnitaryOpInterface, OneTargetZeroParameter]> {
     let assemblyFormat = "$qubit_in attr-dict `:` type($qubit_in) `->` type($qubit_out)";
 
     let extraClassDeclaration = [{
-        DenseElementsAttr tryGetStaticMatrix();
         static StringRef getBaseSymbol() { return "y"; }
     }];
 
@@ -370,7 +366,6 @@ def ZOp : FluxOp<"z", traits = [UnitaryOpInterface, OneTargetZeroParameter]> {
     let assemblyFormat = "$qubit_in attr-dict `:` type($qubit_in) `->` type($qubit_out)";
 
     let extraClassDeclaration = [{
-        DenseElementsAttr tryGetStaticMatrix();
         static StringRef getBaseSymbol() { return "z"; }
     }];
 
@@ -393,7 +388,6 @@ def HOp : FluxOp<"h", traits = [UnitaryOpInterface, OneTargetZeroParameter]> {
     let assemblyFormat = "$qubit_in attr-dict `:` type($qubit_in) `->` type($qubit_out)";
 
     let extraClassDeclaration = [{
-        DenseElementsAttr tryGetStaticMatrix();
         static StringRef getBaseSymbol() { return "h"; }
     }];
 
@@ -416,7 +410,6 @@ def SOp : FluxOp<"s", traits = [UnitaryOpInterface, OneTargetZeroParameter]> {
     let assemblyFormat = "$qubit_in attr-dict `:` type($qubit_in) `->` type($qubit_out)";
 
     let extraClassDeclaration = [{
-        DenseElementsAttr tryGetStaticMatrix();
         static StringRef getBaseSymbol() { return "s"; }
     }];
 
@@ -439,7 +432,6 @@ def SdgOp : FluxOp<"sdg", traits = [UnitaryOpInterface, OneTargetZeroParameter]>
     let assemblyFormat = "$qubit_in attr-dict `:` type($qubit_in) `->` type($qubit_out)";
 
     let extraClassDeclaration = [{
-        DenseElementsAttr tryGetStaticMatrix();
         static StringRef getBaseSymbol() { return "sdg"; }
     }];
 
@@ -462,7 +454,6 @@ def TOp : FluxOp<"t", traits = [UnitaryOpInterface, OneTargetZeroParameter]> {
     let assemblyFormat = "$qubit_in attr-dict `:` type($qubit_in) `->` type($qubit_out)";
 
     let extraClassDeclaration = [{
-        DenseElementsAttr tryGetStaticMatrix();
         static StringRef getBaseSymbol() { return "t"; }
     }];
 
@@ -485,7 +476,6 @@ def TdgOp : FluxOp<"tdg", traits = [UnitaryOpInterface, OneTargetZeroParameter]>
     let assemblyFormat = "$qubit_in attr-dict `:` type($qubit_in) `->` type($qubit_out)";
 
     let extraClassDeclaration = [{
-        DenseElementsAttr tryGetStaticMatrix();
         static StringRef getBaseSymbol() { return "tdg"; }
     }];
 
@@ -508,7 +498,6 @@ def SXOp : FluxOp<"sx", traits = [UnitaryOpInterface, OneTargetZeroParameter]> {
     let assemblyFormat = "$qubit_in attr-dict `:` type($qubit_in) `->` type($qubit_out)";
 
     let extraClassDeclaration = [{
-        DenseElementsAttr tryGetStaticMatrix();
         static StringRef getBaseSymbol() { return "sx"; }
     }];
 
@@ -531,7 +520,6 @@ def SXdgOp : FluxOp<"sxdg", traits = [UnitaryOpInterface, OneTargetZeroParameter
     let assemblyFormat = "$qubit_in attr-dict `:` type($qubit_in) `->` type($qubit_out)";
 
     let extraClassDeclaration = [{
-        DenseElementsAttr tryGetStaticMatrix();
         static StringRef getBaseSymbol() { return "sxdg"; }
     }];
 
@@ -555,7 +543,6 @@ def RXOp : FluxOp<"rx", traits = [UnitaryOpInterface, OneTargetOneParameter]> {
     let assemblyFormat = "`(` $theta `)` $qubit_in attr-dict `:` type($qubit_in) `->` type($qubit_out)";
 
     let extraClassDeclaration = [{
-        DenseElementsAttr tryGetStaticMatrix();
         static StringRef getBaseSymbol() { return "rx"; }
     }];
 
@@ -583,7 +570,6 @@ def RYOp : FluxOp<"ry", traits = [UnitaryOpInterface, OneTargetOneParameter]> {
     let assemblyFormat = "`(` $theta `)` $qubit_in attr-dict `:` type($qubit_in) `->` type($qubit_out)";
 
     let extraClassDeclaration = [{
-        DenseElementsAttr tryGetStaticMatrix();
         static StringRef getBaseSymbol() { return "ry"; }
     }];
 
@@ -611,7 +597,6 @@ def RZOp : FluxOp<"rz", traits = [UnitaryOpInterface, OneTargetOneParameter]> {
     let assemblyFormat = "`(` $theta `)` $qubit_in attr-dict `:` type($qubit_in) `->` type($qubit_out)";
 
     let extraClassDeclaration = [{
-        DenseElementsAttr tryGetStaticMatrix();
         static StringRef getBaseSymbol() { return "rz"; }
     }];
 
@@ -639,7 +624,6 @@ def POp : FluxOp<"p", traits = [UnitaryOpInterface, OneTargetOneParameter]> {
     let assemblyFormat = "`(` $theta `)` $qubit_in attr-dict `:` type($qubit_in) `->` type($qubit_out)";
 
     let extraClassDeclaration = [{
-        DenseElementsAttr tryGetStaticMatrix();
         static StringRef getBaseSymbol() { return "p"; }
     }];
 
@@ -668,7 +652,6 @@ def ROp : FluxOp<"r", traits = [UnitaryOpInterface, OneTargetTwoParameter]> {
     let assemblyFormat = "`(` $theta `,` $phi `)` $qubit_in attr-dict `:` type($qubit_in) `->` type($qubit_out)";
 
     let extraClassDeclaration = [{
-        DenseElementsAttr tryGetStaticMatrix();
         static StringRef getBaseSymbol() { return "r"; }
     }];
 
@@ -695,7 +678,6 @@ def U2Op : FluxOp<"u2", traits = [UnitaryOpInterface, OneTargetTwoParameter]> {
     let assemblyFormat = "`(` $phi `,` $lambda `)` $qubit_in attr-dict `:` type($qubit_in) `->` type($qubit_out)";
 
     let extraClassDeclaration = [{
-        DenseElementsAttr tryGetStaticMatrix();
         static StringRef getBaseSymbol() { return "u2"; }
     }];
 
@@ -725,7 +707,6 @@ def UOp : FluxOp<"u", traits = [UnitaryOpInterface, OneTargetThreeParameter]> {
     let assemblyFormat = "`(` $theta `,` $phi `,` $lambda `)` $qubit_in attr-dict `:` type($qubit_in) `->` type($qubit_out)";
 
     let extraClassDeclaration = [{
-        DenseElementsAttr tryGetStaticMatrix();
         static StringRef getBaseSymbol() { return "u"; }
     }];
 
@@ -751,7 +732,6 @@ def SWAPOp : FluxOp<"swap", traits = [UnitaryOpInterface, TwoTargetZeroParameter
     let assemblyFormat = "$qubit0_in `,` $qubit1_in attr-dict `:` type($qubit0_in) `,` type($qubit1_in) `->` type($qubit0_out) `,` type($qubit1_out)";
 
     let extraClassDeclaration = [{
-        DenseElementsAttr tryGetStaticMatrix();
         static StringRef getBaseSymbol() { return "x"; }
     }];
 
@@ -775,7 +755,6 @@ def iSWAPOp : FluxOp<"iswap", traits = [UnitaryOpInterface, TwoTargetZeroParamet
     let assemblyFormat = "$qubit0_in `,` $qubit1_in attr-dict `:` type($qubit0_in) `,` type($qubit1_in) `->` type($qubit0_out) `,` type($qubit1_out)";
 
     let extraClassDeclaration = [{
-        DenseElementsAttr tryGetStaticMatrix();
         static StringRef getBaseSymbol() { return "iswap"; }
     }];
 }
@@ -797,7 +776,6 @@ def DCXOp : FluxOp<"dcx", traits = [UnitaryOpInterface, TwoTargetZeroParameter]>
     let assemblyFormat = "$qubit0_in `,` $qubit1_in attr-dict `:` type($qubit0_in) `,` type($qubit1_in) `->` type($qubit0_out) `,` type($qubit1_out)";
 
     let extraClassDeclaration = [{
-        DenseElementsAttr tryGetStaticMatrix();
         static StringRef getBaseSymbol() { return "dcx"; }
     }];
 }
@@ -819,7 +797,6 @@ def ECROp : FluxOp<"ecr", traits = [UnitaryOpInterface, TwoTargetZeroParameter]>
     let assemblyFormat = "$qubit0_in `,` $qubit1_in attr-dict `:` type($qubit0_in) `,` type($qubit1_in) `->` type($qubit0_out) `,` type($qubit1_out)";
 
     let extraClassDeclaration = [{
-        DenseElementsAttr tryGetStaticMatrix();
         static StringRef getBaseSymbol() { return "ecr"; }
     }];
 
@@ -844,7 +821,6 @@ def RXXOp : FluxOp<"rxx", traits = [UnitaryOpInterface, TwoTargetOneParameter]> 
     let assemblyFormat = "`(` $theta `)` $qubit0_in `,` $qubit1_in attr-dict `:` type($qubit0_in) `,` type($qubit1_in) `->` type($qubit0_out) `,` type($qubit1_out)";
 
     let extraClassDeclaration = [{
-        DenseElementsAttr tryGetStaticMatrix();
         static StringRef getBaseSymbol() { return "rxx"; }
     }];
 
@@ -873,7 +849,6 @@ def RYYOp : FluxOp<"ryy", traits = [UnitaryOpInterface, TwoTargetOneParameter]> 
     let assemblyFormat = "`(` $theta `)` $qubit0_in `,` $qubit1_in attr-dict `:` type($qubit0_in) `,` type($qubit1_in) `->` type($qubit0_out) `,` type($qubit1_out)";
 
     let extraClassDeclaration = [{
-        DenseElementsAttr tryGetStaticMatrix();
         static StringRef getBaseSymbol() { return "ryy"; }
     }];
 
@@ -902,7 +877,6 @@ def RZXOp : FluxOp<"rzx", traits = [UnitaryOpInterface, TwoTargetOneParameter]> 
     let assemblyFormat = "`(` $theta `)` $qubit0_in `,` $qubit1_in attr-dict `:` type($qubit0_in) `,` type($qubit1_in) `->` type($qubit0_out) `,` type($qubit1_out)";
 
     let extraClassDeclaration = [{
-        DenseElementsAttr tryGetStaticMatrix();
         static StringRef getBaseSymbol() { return "rzx"; }
     }];
 
@@ -931,7 +905,6 @@ def RZZOp : FluxOp<"rzz", traits = [UnitaryOpInterface, TwoTargetOneParameter]> 
     let assemblyFormat = "`(` $theta `)` $qubit0_in `,` $qubit1_in attr-dict `:` type($qubit0_in) `,` type($qubit1_in) `->` type($qubit0_out) `,` type($qubit1_out)";
 
     let extraClassDeclaration = [{
-        DenseElementsAttr tryGetStaticMatrix();
         static StringRef getBaseSymbol() { return "rzz"; }
     }];
 
@@ -961,7 +934,6 @@ def XXPlusYYOp : FluxOp<"xx_plus_yy", traits = [UnitaryOpInterface, TwoTargetTwo
     let assemblyFormat = "`(` $theta `,` $beta `)` $qubit0_in `,` $qubit1_in attr-dict `:` type($qubit0_in) `,` type($qubit1_in) `->` type($qubit0_out) `,` type($qubit1_out)";
 
     let extraClassDeclaration = [{
-        DenseElementsAttr tryGetStaticMatrix();
         static StringRef getBaseSymbol() { return "xx_plus_yy"; }
     }];
 
@@ -991,7 +963,6 @@ def XXMinusYYOp : FluxOp<"xx_minus_yy", traits = [UnitaryOpInterface, TwoTargetT
     let assemblyFormat = "`(` $theta `,` $beta `)` $qubit0_in `,` $qubit1_in attr-dict `:` type($qubit0_in) `,` type($qubit1_in) `->` type($qubit0_out) `,` type($qubit1_out)";
 
     let extraClassDeclaration = [{
-        DenseElementsAttr tryGetStaticMatrix();
         static StringRef getBaseSymbol() { return "xx_minus_yy"; }
     }];
 
@@ -1035,8 +1006,6 @@ def BarrierOp : FluxOp<"barrier", traits = [UnitaryOpInterface]> {
         Value getOutputForInput(Value input);
         size_t getNumParams();
         Value getParameter(size_t i);
-        bool hasStaticUnitary();
-        DenseElementsAttr tryGetStaticMatrix();
         static StringRef getBaseSymbol() { return "barrier"; }
     }];
 
@@ -1117,8 +1086,6 @@ def CtrlOp : FluxOp<"ctrl", traits =
         Value getOutputForInput(Value input);
         size_t getNumParams();
         Value getParameter(size_t i);
-        bool hasStaticUnitary();
-        DenseElementsAttr tryGetStaticMatrix();
         static StringRef getBaseSymbol() { return "ctrl"; }
     }];
 

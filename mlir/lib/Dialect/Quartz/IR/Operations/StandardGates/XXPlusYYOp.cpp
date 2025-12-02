@@ -9,7 +9,6 @@
  */
 
 #include "mlir/Dialect/Quartz/IR/QuartzDialect.h"
-#include "mlir/Dialect/Utils/MatrixUtils.h"
 
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/IR/Builders.h>
@@ -19,18 +18,6 @@
 
 using namespace mlir;
 using namespace mlir::quartz;
-using namespace mlir::utils;
-
-DenseElementsAttr XXPlusYYOp::tryGetStaticMatrix() {
-  const auto theta = getStaticParameter(getTheta());
-  const auto beta = getStaticParameter(getBeta());
-  if (!theta || !beta) {
-    return nullptr;
-  }
-  const auto thetaValue = theta.getValueAsDouble();
-  const auto betaValue = beta.getValueAsDouble();
-  return getMatrixXXPlusYY(getContext(), thetaValue, betaValue);
-}
 
 void XXPlusYYOp::build(OpBuilder& odsBuilder, OperationState& odsState,
                        const Value qubit0In, const Value qubit1In,

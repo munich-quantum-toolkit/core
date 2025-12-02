@@ -10,7 +10,6 @@
 
 #include "mlir/Dialect/Flux/FluxUtils.h"
 #include "mlir/Dialect/Flux/IR/FluxDialect.h"
-#include "mlir/Dialect/Utils/MatrixUtils.h"
 
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/IR/Builders.h>
@@ -23,7 +22,6 @@
 
 using namespace mlir;
 using namespace mlir::flux;
-using namespace mlir::utils;
 
 namespace {
 
@@ -53,15 +51,6 @@ struct RemoveTrivialRZX final : OpRewritePattern<RZXOp> {
 };
 
 } // namespace
-
-DenseElementsAttr RZXOp::tryGetStaticMatrix() {
-  const auto& theta = getStaticParameter(getTheta());
-  if (!theta) {
-    return nullptr;
-  }
-  const auto thetaValue = theta.getValueAsDouble();
-  return getMatrixRZX(getContext(), thetaValue);
-}
 
 void RZXOp::build(OpBuilder& odsBuilder, OperationState& odsState,
                   const Value qubit0In, const Value qubit1In,

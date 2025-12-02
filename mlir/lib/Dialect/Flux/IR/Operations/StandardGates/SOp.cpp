@@ -10,7 +10,6 @@
 
 #include "mlir/Dialect/Flux/FluxUtils.h"
 #include "mlir/Dialect/Flux/IR/FluxDialect.h"
-#include "mlir/Dialect/Utils/MatrixUtils.h"
 
 #include <mlir/IR/BuiltinAttributes.h>
 #include <mlir/IR/MLIRContext.h>
@@ -20,7 +19,6 @@
 
 using namespace mlir;
 using namespace mlir::flux;
-using namespace mlir::utils;
 
 namespace {
 
@@ -49,8 +47,6 @@ struct MergeSubsequentS final : OpRewritePattern<SOp> {
 };
 
 } // namespace
-
-DenseElementsAttr SOp::tryGetStaticMatrix() { return getMatrixS(getContext()); }
 
 void SOp::getCanonicalizationPatterns(RewritePatternSet& results,
                                       MLIRContext* context) {

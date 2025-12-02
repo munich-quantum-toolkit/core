@@ -9,7 +9,6 @@
  */
 
 #include "mlir/Dialect/Flux/IR/FluxDialect.h"
-#include "mlir/Dialect/Utils/MatrixUtils.h"
 
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/IR/Builders.h>
@@ -19,18 +18,6 @@
 
 using namespace mlir;
 using namespace mlir::flux;
-using namespace mlir::utils;
-
-DenseElementsAttr ROp::tryGetStaticMatrix() {
-  const auto theta = getStaticParameter(getTheta());
-  const auto phi = getStaticParameter(getPhi());
-  if (!theta || !phi) {
-    return nullptr;
-  }
-  const auto thetaValue = theta.getValueAsDouble();
-  const auto phiValue = phi.getValueAsDouble();
-  return getMatrixR(getContext(), thetaValue, phiValue);
-}
 
 void ROp::build(OpBuilder& odsBuilder, OperationState& odsState,
                 const Value qubitIn, const std::variant<double, Value>& theta,

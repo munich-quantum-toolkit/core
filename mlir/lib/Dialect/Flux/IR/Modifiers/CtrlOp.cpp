@@ -10,7 +10,6 @@
 
 #include "mlir/Dialect/Flux/FluxUtils.h"
 #include "mlir/Dialect/Flux/IR/FluxDialect.h"
-#include "mlir/Dialect/Utils/MatrixUtils.h"
 
 #include <cstddef>
 #include <functional>
@@ -27,7 +26,6 @@
 
 using namespace mlir;
 using namespace mlir::flux;
-using namespace mlir::utils;
 
 namespace {
 
@@ -189,15 +187,8 @@ Value CtrlOp::getOutputForInput(const Value input) {
 
 size_t CtrlOp::getNumParams() { return getBodyUnitary().getNumParams(); }
 
-bool CtrlOp::hasStaticUnitary() { return getBodyUnitary().hasStaticUnitary(); }
-
 Value CtrlOp::getParameter(const size_t i) {
   return getBodyUnitary().getParameter(i);
-}
-
-DenseElementsAttr CtrlOp::tryGetStaticMatrix() {
-  return getMatrixCtrl(getContext(), getNumPosControls(),
-                       getBodyUnitary().tryGetStaticMatrix());
 }
 
 void CtrlOp::build(OpBuilder& odsBuilder, OperationState& odsState,

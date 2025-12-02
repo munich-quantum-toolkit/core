@@ -118,18 +118,6 @@ def UnitaryOpInterface : OpInterface<"UnitaryOpInterface"> {
             "bool", "isTwoQubit", (ins),
             [{ return getNumQubits(impl, tablegen_opaque_val) == 2; }]
         >,
-        /// TODO: Add more convenience methods as necessary
-
-        // Matrix extraction
-        InterfaceMethod<
-            "Returns true if the operation has a static unitary matrix.",
-            "bool", "hasStaticUnitary", (ins)
-        >,
-        InterfaceMethod<
-            "Attempts to extract the static unitary matrix. "
-            "Returns std::nullopt if the operation is symbolic or dynamic.",
-            "DenseElementsAttr", "tryGetStaticMatrix", (ins)
-        >,
 
         // Identification
         InterfaceMethod<

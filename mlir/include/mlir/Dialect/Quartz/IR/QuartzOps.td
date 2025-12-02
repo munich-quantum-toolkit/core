@@ -264,7 +264,6 @@ def GPhaseOp : QuartzOp<"gphase", traits = [UnitaryOpInterface, ZeroTargetOnePar
     let assemblyFormat = "$theta attr-dict";
 
     let extraClassDeclaration = [{
-        DenseElementsAttr tryGetStaticMatrix();
         static StringRef getBaseSymbol() { return "gphase"; }
     }];
 
@@ -288,7 +287,6 @@ def IdOp : QuartzOp<"id", traits = [UnitaryOpInterface, OneTargetZeroParameter]>
     let assemblyFormat = "$qubit_in attr-dict";
 
     let extraClassDeclaration = [{
-        DenseElementsAttr tryGetStaticMatrix();
         static StringRef getBaseSymbol() { return "id"; }
     }];
 }
@@ -308,7 +306,6 @@ def XOp : QuartzOp<"x", traits = [UnitaryOpInterface, OneTargetZeroParameter]> {
     let assemblyFormat = "$qubit_in attr-dict";
 
     let extraClassDeclaration = [{
-        DenseElementsAttr tryGetStaticMatrix();
         static StringRef getBaseSymbol() { return "x"; }
     }];
 }
@@ -328,7 +325,6 @@ def YOp : QuartzOp<"y", traits = [UnitaryOpInterface, OneTargetZeroParameter]> {
     let assemblyFormat = "$qubit_in attr-dict";
 
     let extraClassDeclaration = [{
-        DenseElementsAttr tryGetStaticMatrix();
         static StringRef getBaseSymbol() { return "y"; }
     }];
 }
@@ -348,7 +344,6 @@ def ZOp : QuartzOp<"z", traits = [UnitaryOpInterface, OneTargetZeroParameter]> {
     let assemblyFormat = "$qubit_in attr-dict";
 
     let extraClassDeclaration = [{
-        DenseElementsAttr tryGetStaticMatrix();
         static StringRef getBaseSymbol() { return "z"; }
     }];
 }
@@ -368,7 +363,6 @@ def HOp : QuartzOp<"h", traits = [UnitaryOpInterface, OneTargetZeroParameter]> {
     let assemblyFormat = "$qubit_in attr-dict";
 
     let extraClassDeclaration = [{
-        DenseElementsAttr tryGetStaticMatrix();
         static StringRef getBaseSymbol() { return "h"; }
     }];
 }
@@ -388,7 +382,6 @@ def SOp : QuartzOp<"s", traits = [UnitaryOpInterface, OneTargetZeroParameter]> {
     let assemblyFormat = "$qubit_in attr-dict";
 
     let extraClassDeclaration = [{
-        DenseElementsAttr tryGetStaticMatrix();
         static StringRef getBaseSymbol() { return "s"; }
     }];
 }
@@ -408,7 +401,6 @@ def SdgOp : QuartzOp<"sdg", traits = [UnitaryOpInterface, OneTargetZeroParameter
     let assemblyFormat = "$qubit_in attr-dict";
 
     let extraClassDeclaration = [{
-        DenseElementsAttr tryGetStaticMatrix();
         static StringRef getBaseSymbol() { return "sdg"; }
     }];
 }
@@ -428,7 +420,6 @@ def TOp : QuartzOp<"t", traits = [UnitaryOpInterface, OneTargetZeroParameter]> {
     let assemblyFormat = "$qubit_in attr-dict";
 
     let extraClassDeclaration = [{
-        DenseElementsAttr tryGetStaticMatrix();
         static StringRef getBaseSymbol() { return "t"; }
     }];
 }
@@ -448,7 +439,6 @@ def TdgOp : QuartzOp<"tdg", traits = [UnitaryOpInterface, OneTargetZeroParameter
     let assemblyFormat = "$qubit_in attr-dict";
 
     let extraClassDeclaration = [{
-        DenseElementsAttr tryGetStaticMatrix();
         static StringRef getBaseSymbol() { return "tdg"; }
     }];
 }
@@ -468,7 +458,6 @@ def SXOp : QuartzOp<"sx", traits = [UnitaryOpInterface, OneTargetZeroParameter]>
     let assemblyFormat = "$qubit_in attr-dict";
 
     let extraClassDeclaration = [{
-        DenseElementsAttr tryGetStaticMatrix();
         static StringRef getBaseSymbol() { return "sx"; }
     }];
 }
@@ -488,7 +477,6 @@ def SXdgOp : QuartzOp<"sxdg", traits = [UnitaryOpInterface, OneTargetZeroParamet
     let assemblyFormat = "$qubit_in attr-dict";
 
     let extraClassDeclaration = [{
-        DenseElementsAttr tryGetStaticMatrix();
         static StringRef getBaseSymbol() { return "sxdg"; }
     }];
 }
@@ -509,7 +497,6 @@ def RXOp : QuartzOp<"rx", traits = [UnitaryOpInterface, OneTargetOneParameter]> 
     let assemblyFormat = "`(` $theta `)` $qubit_in attr-dict";
 
     let extraClassDeclaration = [{
-        DenseElementsAttr tryGetStaticMatrix();
         static StringRef getBaseSymbol() { return "rx"; }
     }];
 
@@ -534,7 +521,6 @@ def RYOp : QuartzOp<"ry", traits = [UnitaryOpInterface, OneTargetOneParameter]> 
     let assemblyFormat = "`(` $theta `)` $qubit_in attr-dict";
 
     let extraClassDeclaration = [{
-        DenseElementsAttr tryGetStaticMatrix();
         static StringRef getBaseSymbol() { return "ry"; }
     }];
 
@@ -559,7 +545,6 @@ def RZOp : QuartzOp<"rz", traits = [UnitaryOpInterface, OneTargetOneParameter]> 
     let assemblyFormat = "`(` $theta `)` $qubit_in attr-dict";
 
     let extraClassDeclaration = [{
-        DenseElementsAttr tryGetStaticMatrix();
         static StringRef getBaseSymbol() { return "rz"; }
     }];
 
@@ -584,7 +569,6 @@ def POp : QuartzOp<"p", traits = [UnitaryOpInterface, OneTargetOneParameter]> {
     let assemblyFormat = "`(` $theta `)` $qubit_in attr-dict";
 
     let extraClassDeclaration = [{
-        DenseElementsAttr tryGetStaticMatrix();
         static StringRef getBaseSymbol() { return "p"; }
     }];
 
@@ -608,8 +592,8 @@ def ROp : QuartzOp<"r", traits = [UnitaryOpInterface, OneTargetTwoParameter]> {
                      Arg<F64, "the rotation angle theta in radians", [MemRead]>:$theta,
                      Arg<F64, "the rotation angle phi in radians", [MemRead]>:$phi);
     let assemblyFormat = "`(` $theta `,` $phi `)` $qubit_in attr-dict";
+
     let extraClassDeclaration = [{
-        DenseElementsAttr tryGetStaticMatrix();
         static StringRef getBaseSymbol() { return "r"; }
     }];
 
@@ -633,8 +617,8 @@ def U2Op : QuartzOp<"u2", traits = [UnitaryOpInterface, OneTargetTwoParameter]> 
                      Arg<F64, "the rotation angle phi in radians", [MemRead]>:$phi,
                      Arg<F64, "the rotation angle lambda in radians", [MemRead]>:$lambda);
     let assemblyFormat = "`(` $phi `,` $lambda `)` $qubit_in attr-dict";
+
     let extraClassDeclaration = [{
-        DenseElementsAttr tryGetStaticMatrix();
         static StringRef getBaseSymbol() { return "u2"; }
     }];
 
@@ -659,8 +643,8 @@ def UOp : QuartzOp<"u", traits = [UnitaryOpInterface, OneTargetThreeParameter]> 
                      Arg<F64, "the rotation angle phi in radians", [MemRead]>:$phi,
                      Arg<F64, "the rotation angle lambda in radians", [MemRead]>:$lambda);
     let assemblyFormat = "`(` $theta `,` $phi `,` $lambda `)` $qubit_in attr-dict";
+
     let extraClassDeclaration = [{
-        DenseElementsAttr tryGetStaticMatrix();
         static StringRef getBaseSymbol() { return "u"; }
     }];
 
@@ -685,7 +669,6 @@ def SWAPOp : QuartzOp<"swap", traits = [UnitaryOpInterface, TwoTargetZeroParamet
     let assemblyFormat = "$qubit0_in $qubit1_in attr-dict";
 
     let extraClassDeclaration = [{
-        DenseElementsAttr tryGetStaticMatrix();
         static StringRef getBaseSymbol() { return "swap"; }
     }];
 }
@@ -706,7 +689,6 @@ def iSWAPOp : QuartzOp<"iswap", traits = [UnitaryOpInterface, TwoTargetZeroParam
     let assemblyFormat = "$qubit0_in $qubit1_in attr-dict";
 
     let extraClassDeclaration = [{
-        DenseElementsAttr tryGetStaticMatrix();
         static StringRef getBaseSymbol() { return "iswap"; }
     }];
 }
@@ -727,7 +709,6 @@ def DCXOp : QuartzOp<"dcx", traits = [UnitaryOpInterface, TwoTargetZeroParameter
     let assemblyFormat = "$qubit0_in $qubit1_in attr-dict";
 
     let extraClassDeclaration = [{
-        DenseElementsAttr tryGetStaticMatrix();
         static StringRef getBaseSymbol() { return "dcx"; }
     }];
 }
@@ -748,7 +729,6 @@ def ECROp : QuartzOp<"ecr", traits = [UnitaryOpInterface, TwoTargetZeroParameter
     let assemblyFormat = "$qubit0_in $qubit1_in attr-dict";
 
     let extraClassDeclaration = [{
-        DenseElementsAttr tryGetStaticMatrix();
         static StringRef getBaseSymbol() { return "ecr"; }
     }];
 }
@@ -770,7 +750,6 @@ def RXXOp : QuartzOp<"rxx", traits = [UnitaryOpInterface, TwoTargetOneParameter]
     let assemblyFormat = "`(` $theta `)` $qubit0_in `,` $qubit1_in attr-dict";
 
     let extraClassDeclaration = [{
-        DenseElementsAttr tryGetStaticMatrix();
         static StringRef getBaseSymbol() { return "rxx"; }
     }];
 
@@ -796,7 +775,6 @@ def RYYOp : QuartzOp<"ryy", traits = [UnitaryOpInterface, TwoTargetOneParameter]
     let assemblyFormat = "`(` $theta `)` $qubit0_in `,` $qubit1_in attr-dict";
 
     let extraClassDeclaration = [{
-        DenseElementsAttr tryGetStaticMatrix();
         static StringRef getBaseSymbol() { return "ryy"; }
     }];
 
@@ -822,7 +800,6 @@ def RZXOp : QuartzOp<"rzx", traits = [UnitaryOpInterface, TwoTargetOneParameter]
     let assemblyFormat = "`(` $theta `)` $qubit0_in `,` $qubit1_in attr-dict";
 
     let extraClassDeclaration = [{
-        DenseElementsAttr tryGetStaticMatrix();
         static StringRef getBaseSymbol() { return "rzx"; }
     }];
 
@@ -848,7 +825,6 @@ def RZZOp : QuartzOp<"rzz", traits = [UnitaryOpInterface, TwoTargetOneParameter]
     let assemblyFormat = "`(` $theta `)` $qubit0_in `,` $qubit1_in attr-dict";
 
     let extraClassDeclaration = [{
-        DenseElementsAttr tryGetStaticMatrix();
         static StringRef getBaseSymbol() { return "rzz"; }
     }];
 
@@ -873,8 +849,8 @@ def XXPlusYYOp : QuartzOp<"xx_plus_yy", traits = [UnitaryOpInterface, TwoTargetT
                      Arg<F64, "the rotation angle theta in radians", [MemRead]>:$theta,
                      Arg<F64, "the rotation angle beta in radians", [MemRead]>:$beta);
     let assemblyFormat = "`(` $theta `,` $beta `)` $qubit0_in `,` $qubit1_in attr-dict";
+
     let extraClassDeclaration = [{
-        DenseElementsAttr tryGetStaticMatrix();
         static StringRef getBaseSymbol() { return "xx_plus_yy"; }
     }];
 
@@ -899,8 +875,8 @@ def XXMinusYYOp : QuartzOp<"xx_minus_yy", traits = [UnitaryOpInterface, TwoTarge
                      Arg<F64, "the rotation angle theta in radians", [MemRead]>:$theta,
                      Arg<F64, "the rotation angle beta in radians", [MemRead]>:$beta);
     let assemblyFormat = "`(` $theta `,` $beta `)` $qubit0_in `,` $qubit1_in attr-dict";
+
     let extraClassDeclaration = [{
-        DenseElementsAttr tryGetStaticMatrix();
         static StringRef getBaseSymbol() { return "xx_minus_yy"; }
     }];
 
@@ -935,8 +911,6 @@ def BarrierOp : QuartzOp<"barrier", traits = [UnitaryOpInterface]> {
         Value getNegControl(size_t i);
         size_t getNumParams();
         Value getParameter(size_t i);
-        bool hasStaticUnitary();
-        DenseElementsAttr tryGetStaticMatrix();
         static StringRef getBaseSymbol() { return "barrier"; }
     }];
 }
@@ -991,8 +965,6 @@ def CtrlOp : QuartzOp<"ctrl",
         Value getNegControl(size_t i);
         size_t getNumParams();
         Value getParameter(size_t i);
-        bool hasStaticUnitary();
-        DenseElementsAttr tryGetStaticMatrix();
         static StringRef getBaseSymbol() { return "ctrl"; }
     }];
 

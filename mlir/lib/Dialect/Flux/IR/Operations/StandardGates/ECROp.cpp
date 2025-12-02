@@ -10,7 +10,6 @@
 
 #include "mlir/Dialect/Flux/FluxUtils.h"
 #include "mlir/Dialect/Flux/IR/FluxDialect.h"
-#include "mlir/Dialect/Utils/MatrixUtils.h"
 
 #include <mlir/IR/BuiltinAttributes.h>
 #include <mlir/IR/MLIRContext.h>
@@ -20,7 +19,6 @@
 
 using namespace mlir;
 using namespace mlir::flux;
-using namespace mlir::utils;
 
 namespace {
 
@@ -35,11 +33,8 @@ struct RemoveSubsequentECR final : OpRewritePattern<ECROp> {
     return removeInversePairTwoTargetZeroParameter<ECROp>(op, rewriter);
   }
 };
-} // namespace
 
-DenseElementsAttr ECROp::tryGetStaticMatrix() {
-  return getMatrixECR(getContext());
-}
+} // namespace
 
 void ECROp::getCanonicalizationPatterns(RewritePatternSet& results,
                                         MLIRContext* context) {
