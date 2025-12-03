@@ -18,11 +18,13 @@
 #include <iostream>
 #include <iterator>
 #include <map>
+#include <mutex>
 #include <optional>
 #include <qdmi/client.h>
 #include <ranges>
 #include <string>
 #include <type_traits>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -141,30 +143,64 @@ concept maybe_optional_value_or_string_or_vector =
     value_or_string_or_vector<remove_optional_t<T>>;
 
 /// @returns the string representation of the given QDMI_STATUS.
-auto toString(QDMI_STATUS result) -> std::string;
+auto toString(const QDMI_STATUS result) -> std::string;
 
 /// @returns the string representation of the given QDMI_Site_Property.
-auto toString(QDMI_Site_Property prop) -> std::string;
+auto toString(const QDMI_Site_Property prop) -> std::string;
 
 /// @returns the string representation of the given QDMI_Operation_Property.
-auto toString(QDMI_Operation_Property prop) -> std::string;
+auto toString(const QDMI_Operation_Property prop) -> std::string;
 
 /// @returns the string representation of the given QDMI_Device_Property.
-auto toString(QDMI_Device_Property prop) -> std::string;
+auto toString(const QDMI_Device_Property prop) -> std::string;
 
 /// @returns the string representation of the given QDMI_Session_Property.
-constexpr auto toString(QDMI_Session_Property prop) -> std::string {
+constexpr auto toString(const QDMI_Session_Property prop) -> std::string {
   if (prop == QDMI_SESSION_PROPERTY_DEVICES) {
     return "QDMI_SESSION_PROPERTY_DEVICES";
   }
   return "QDMI_SESSION_PROPERTY_UNKNOWN";
 }
 
+/**
+ * @brief Session parameters for authentication and configuration.
+ * @details These parameters must be set before the session is initialized
+ * (i.e., before the first call to getDevices()).
+ * @see QDMI_SESSION_PARAMETER_T
+ */
+enum class SessionParameter {
+  /// Authentication token
+  TOKEN = QDMI_SESSION_PARAMETER_TOKEN,
+  /// Path to authentication file
+  AUTHFILE = QDMI_SESSION_PARAMETER_AUTHFILE,
+  /// URL to authentication server
+  AUTHURL = QDMI_SESSION_PARAMETER_AUTHURL,
+  /// Username for authentication
+  USERNAME = QDMI_SESSION_PARAMETER_USERNAME,
+  /// Password for authentication
+  PASSWORD = QDMI_SESSION_PARAMETER_PASSWORD,
+  /// Project ID for session
+  PROJECTID = QDMI_SESSION_PARAMETER_PROJECTID,
+  /// Custom parameter 1 (driver-defined)
+  CUSTOM1 = QDMI_SESSION_PARAMETER_CUSTOM1,
+  /// Custom parameter 2 (driver-defined)
+  CUSTOM2 = QDMI_SESSION_PARAMETER_CUSTOM2,
+  /// Custom parameter 3 (driver-defined)
+  CUSTOM3 = QDMI_SESSION_PARAMETER_CUSTOM3,
+  /// Custom parameter 4 (driver-defined)
+  CUSTOM4 = QDMI_SESSION_PARAMETER_CUSTOM4,
+  /// Custom parameter 5 (driver-defined)
+  CUSTOM5 = QDMI_SESSION_PARAMETER_CUSTOM5
+};
+
+/// @returns the string representation of the given SessionParameter.
+auto toString(const SessionParameter param) -> std::string;
+
 /// Throws an exception corresponding to the given QDMI_STATUS code.
-[[noreturn]] auto throwError(int result, const std::string& msg) -> void;
+[[noreturn]] auto throwError(const int result, const std::string& msg) -> void;
 
 /// Throws an exception if the result indicates an error.
-inline auto throwIfError(int result, const std::string& msg) -> void {
+inline auto throwIfError(const int result, const std::string& msg) -> void {
   switch (result) {
   case QDMI_SUCCESS:
     break;
@@ -180,7 +216,6 @@ inline auto throwIfError(int result, const std::string& msg) -> void {
  * @brief Class representing the FoMaC library.
  * @details This class provides methods to query available devices and
  * manage the QDMI session.
- * @note This class is a singleton.
  * @see QDMI_Session
  */
 class FoMaC {
@@ -674,12 +709,13 @@ public:
 
 private:
   QDMI_Session session_ = nullptr;
+  mutable std::mutex mutex_;
+  bool initialized_ = false;
+  std::unordered_map<SessionParameter, std::string> pendingParameters_;
 
-  FoMaC();
-  static auto get() -> FoMaC& {
-    static FoMaC instance;
-    return instance;
-  }
+  /// @brief Ensures the session is initialized, applying pending parameters
+  auto ensureInitialized() -> void;
+
   template <size_constructible_contiguous_range T>
   [[nodiscard]] auto queryProperty(const QDMI_Session_Property prop) const
       -> T {
@@ -696,14 +732,65 @@ private:
   }
 
 public:
+  /**
+   * @brief Constructs a new FoMaC session.
+   * @details Creates and allocates a new QDMI session. The session is not
+   * initialized until the first call to getDevices() or after setting
+   * authentication parameters.
+   */
+  FoMaC();
+
+  /**
+   * @brief Destructor that releases the QDMI session.
+   */
   virtual ~FoMaC();
-  // Delete copy constructors and assignment operators to prevent copying the
-  // singleton instance.
+
+  // Delete copy constructors and assignment operators
   FoMaC(const FoMaC&) = delete;
   FoMaC& operator=(const FoMaC&) = delete;
-  FoMaC(FoMaC&&) = default;
-  FoMaC& operator=(FoMaC&&) = default;
+
+  // Allow move semantics
+  FoMaC(FoMaC&&) noexcept;
+  FoMaC& operator=(FoMaC&&) noexcept;
+
+  /**
+   * @brief Set a session parameter for authentication.
+   * @details This method must be called before the first call to getDevices().
+   * Once the session is initialized, parameters cannot be changed.
+   * For AUTHFILE parameter, the file path is validated for existence.
+   * For AUTHURL parameter, basic URL format validation is performed.
+   * @param param The parameter to set
+   * @param value The value to set
+   * @throws std::runtime_error if the session is already initialized
+   * @throws std::runtime_error if validation fails (file not found, invalid
+   * URL)
+   * @see QDMI_session_set_parameter
+   */
+  auto setSessionParameter(const SessionParameter param,
+                           const std::string& value) -> void;
+
   /// @see QDMI_SESSION_PROPERTY_DEVICES
-  [[nodiscard]] static auto getDevices() -> std::vector<Device>;
+  [[nodiscard]] auto getDevices() -> std::vector<Device>;
 };
+
+/**
+ * @brief Get devices from a default FoMaC session.
+ * @details This is a convenience function that uses a static default FoMaC
+ * instance. For custom authentication or multiple sessions, create FoMaC
+ * instances directly.
+ * @return Vector of available devices
+ */
+[[nodiscard]] auto getDevices() -> std::vector<FoMaC::Device>;
+
+/**
+ * @brief Set a session parameter on the default FoMaC session.
+ * @details This is a convenience function for the default session.
+ * For multiple sessions, create FoMaC instances directly.
+ * @param param The parameter to set
+ * @param value The value to set
+ * @see FoMaC::setSessionParameter
+ */
+auto setSessionParameter(SessionParameter param, const std::string& value)
+    -> void;
+
 } // namespace fomac

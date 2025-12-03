@@ -577,7 +577,7 @@ FoMaC::Device::Device(const fomac::FoMaC::Device& device)
     : fomac::FoMaC::Device(device) {}
 auto FoMaC::getDevices() -> std::vector<Device> {
   std::vector<Device> devices;
-  for (const auto& d : fomac::FoMaC::getDevices()) {
+  for (const auto& d : fomac::getDevices()) {
     if (auto r = Device::tryCreateFromDevice(d); r.has_value()) {
       devices.emplace_back(r.value());
     }

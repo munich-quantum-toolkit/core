@@ -11,7 +11,9 @@
 #include "fomac/FoMaC.hpp"
 
 #include <algorithm>
+#include <cstdio>
 #include <cstdlib>
+#include <fstream>
 #include <gmock/gmock-matchers.h>
 #include <gtest/gtest.h>
 #include <new>
@@ -53,7 +55,7 @@ protected:
 
 private:
   static auto getDDSimulatorDevice() -> FoMaC::Device {
-    for (const auto& dev : FoMaC::getDevices()) {
+    for (const auto& dev : fomac::getDevices()) {
       if (dev.getName() == "MQT Core DDSIM QDMI Device") {
         return dev;
       }
@@ -596,13 +598,126 @@ TEST_F(SimulatorJobTest, getSparseProbabilitiesReturnsValidProbabilities) {
   EXPECT_NEAR(it11->second, 0.5, 1e-10);
 }
 
+TEST(AuthenticationTest, SessionParameterToString) {
+  EXPECT_EQ(toString(SessionParameter::TOKEN), "TOKEN");
+  EXPECT_EQ(toString(SessionParameter::AUTHFILE), "AUTHFILE");
+  EXPECT_EQ(toString(SessionParameter::AUTHURL), "AUTHURL");
+  EXPECT_EQ(toString(SessionParameter::USERNAME), "USERNAME");
+  EXPECT_EQ(toString(SessionParameter::PASSWORD), "PASSWORD");
+  EXPECT_EQ(toString(SessionParameter::PROJECTID), "PROJECTID");
+  EXPECT_EQ(toString(SessionParameter::CUSTOM1), "CUSTOM1");
+  EXPECT_EQ(toString(SessionParameter::CUSTOM2), "CUSTOM2");
+  EXPECT_EQ(toString(SessionParameter::CUSTOM3), "CUSTOM3");
+  EXPECT_EQ(toString(SessionParameter::CUSTOM4), "CUSTOM4");
+  EXPECT_EQ(toString(SessionParameter::CUSTOM5), "CUSTOM5");
+}
+
+TEST(AuthenticationTest, ValidURLAccepted) {
+  FoMaC session;
+  EXPECT_NO_THROW(session.setSessionParameter(SessionParameter::AUTHURL,
+                                              "https://example.com"));
+  EXPECT_NO_THROW(session.setSessionParameter(
+      SessionParameter::AUTHURL, "http://auth.server.com:8080/api"));
+  EXPECT_NO_THROW(session.setSessionParameter(
+      SessionParameter::AUTHURL, "https://auth.example.com/token?param=value"));
+}
+
+TEST(AuthenticationTest, InvalidURLRejected) {
+  FoMaC session;
+  EXPECT_THROW(
+      session.setSessionParameter(SessionParameter::AUTHURL, "not-a-url"),
+      std::runtime_error);
+  EXPECT_THROW(session.setSessionParameter(SessionParameter::AUTHURL,
+                                           "ftp://invalid.com"),
+               std::runtime_error);
+  EXPECT_THROW(
+      session.setSessionParameter(SessionParameter::AUTHURL, "example.com"),
+      std::runtime_error);
+}
+
+TEST(AuthenticationTest, NonexistentFileRejected) {
+  FoMaC session;
+  EXPECT_THROW(session.setSessionParameter(SessionParameter::AUTHFILE,
+                                           "/nonexistent/path/to/file.txt"),
+               std::runtime_error);
+  EXPECT_THROW(
+      session.setSessionParameter(SessionParameter::AUTHFILE,
+                                  "/tmp/this_file_does_not_exist_12345.txt"),
+      std::runtime_error);
+}
+
+TEST(AuthenticationTest, ExistingFileAccepted) {
+  FoMaC session;
+  // Create a temporary file for testing
+  const char* tmpFile = std::tmpnam(nullptr);
+  {
+    std::ofstream ofs(tmpFile);
+    ofs << "test_token_content";
+  }
+
+  // Existing file should be accepted
+  EXPECT_NO_THROW(
+      session.setSessionParameter(SessionParameter::AUTHFILE, tmpFile));
+
+  // Clean up
+  std::remove(tmpFile);
+}
+
+TEST(AuthenticationTest, TokenParameterAccepted) {
+  FoMaC session;
+  EXPECT_NO_THROW(
+      session.setSessionParameter(SessionParameter::TOKEN, "my_token_123"));
+  EXPECT_NO_THROW(session.setSessionParameter(SessionParameter::TOKEN, ""));
+  EXPECT_NO_THROW(session.setSessionParameter(
+      SessionParameter::TOKEN,
+      "very_long_token_with_special_characters_!@#$%^&*()"));
+}
+
+TEST(AuthenticationTest, UsernameAndPasswordParametersAccepted) {
+  FoMaC session;
+  EXPECT_NO_THROW(
+      session.setSessionParameter(SessionParameter::USERNAME, "user123"));
+  EXPECT_NO_THROW(session.setSessionParameter(SessionParameter::PASSWORD,
+                                              "secure_password"));
+}
+
+TEST(AuthenticationTest, ProjectIDParameterAccepted) {
+  FoMaC session;
+  EXPECT_NO_THROW(session.setSessionParameter(SessionParameter::PROJECTID,
+                                              "project-123-abc"));
+}
+
+TEST(AuthenticationTest, CustomParametersAccepted) {
+  FoMaC session;
+  EXPECT_NO_THROW(
+      session.setSessionParameter(SessionParameter::CUSTOM1, "custom_value_1"));
+  EXPECT_NO_THROW(
+      session.setSessionParameter(SessionParameter::CUSTOM2, "custom_value_2"));
+  EXPECT_NO_THROW(
+      session.setSessionParameter(SessionParameter::CUSTOM3, "custom_value_3"));
+  EXPECT_NO_THROW(
+      session.setSessionParameter(SessionParameter::CUSTOM4, "custom_value_4"));
+  EXPECT_NO_THROW(
+      session.setSessionParameter(SessionParameter::CUSTOM5, "custom_value_5"));
+}
+
+TEST(AuthenticationTest, CannotSetParameterAfterInitialization) {
+  FoMaC session;
+  auto devices = session.getDevices();
+  EXPECT_FALSE(devices.empty());
+
+  // Try to set a parameter - should fail
+  EXPECT_THROW(session.setSessionParameter(SessionParameter::TOKEN, "token"),
+               std::runtime_error);
+}
+
 INSTANTIATE_TEST_SUITE_P(
     // Custom instantiation name
     DeviceTest,
     // Test suite name
     DeviceTest,
     // Parameters to test with
-    testing::ValuesIn(FoMaC::getDevices()),
+    testing::ValuesIn(fomac::getDevices()),
     [](const testing::TestParamInfo<FoMaC::Device>& paramInfo) {
       auto name = paramInfo.param.getName();
       // Replace spaces with underscores for valid test names
@@ -616,7 +731,7 @@ INSTANTIATE_TEST_SUITE_P(
     // Test suite name
     SiteTest,
     // Parameters to test with
-    testing::ValuesIn(FoMaC::getDevices()),
+    testing::ValuesIn(fomac::getDevices()),
     [](const testing::TestParamInfo<FoMaC::Device>& paramInfo) {
       auto name = paramInfo.param.getName();
       // Replace spaces with underscores for valid test names
@@ -630,7 +745,7 @@ INSTANTIATE_TEST_SUITE_P(
     // Test suite name
     OperationTest,
     // Parameters to test with
-    testing::ValuesIn(FoMaC::getDevices()),
+    testing::ValuesIn(fomac::getDevices()),
     [](const testing::TestParamInfo<FoMaC::Device>& paramInfo) {
       auto name = paramInfo.param.getName();
       // Replace spaces with underscores for valid test names

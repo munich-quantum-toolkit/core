@@ -14,10 +14,13 @@
 #include <complex>
 #include <cstddef>
 #include <cstdint>
+#include <filesystem>
 #include <iterator>
 #include <map>
+#include <mutex>
 #include <optional>
 #include <qdmi/client.h>
+#include <regex>
 #include <sstream>
 #include <stdexcept>
 #include <string>
@@ -73,7 +76,36 @@ auto toString(const QDMI_STATUS result) -> std::string {
   }
   unreachable();
 }
-auto toString(QDMI_Site_Property prop) -> std::string {
+
+auto toString(const SessionParameter param) -> std::string {
+  switch (param) {
+  case SessionParameter::TOKEN:
+    return "TOKEN";
+  case SessionParameter::AUTHFILE:
+    return "AUTHFILE";
+  case SessionParameter::AUTHURL:
+    return "AUTHURL";
+  case SessionParameter::USERNAME:
+    return "USERNAME";
+  case SessionParameter::PASSWORD:
+    return "PASSWORD";
+  case SessionParameter::PROJECTID:
+    return "PROJECTID";
+  case SessionParameter::CUSTOM1:
+    return "CUSTOM1";
+  case SessionParameter::CUSTOM2:
+    return "CUSTOM2";
+  case SessionParameter::CUSTOM3:
+    return "CUSTOM3";
+  case SessionParameter::CUSTOM4:
+    return "CUSTOM4";
+  case SessionParameter::CUSTOM5:
+    return "CUSTOM5";
+  }
+  unreachable();
+}
+
+auto toString(const QDMI_Site_Property prop) -> std::string {
   switch (prop) {
   case QDMI_SITE_PROPERTY_INDEX:
     return "QDMI_SITE_PROPERTY_INDEX";
@@ -111,7 +143,7 @@ auto toString(QDMI_Site_Property prop) -> std::string {
   }
   unreachable();
 }
-auto toString(QDMI_Operation_Property prop) -> std::string {
+auto toString(const QDMI_Operation_Property prop) -> std::string {
   switch (prop) {
   case QDMI_OPERATION_PROPERTY_NAME:
     return "QDMI_OPERATION_PROPERTY_NAME";
@@ -145,7 +177,7 @@ auto toString(QDMI_Operation_Property prop) -> std::string {
   }
   unreachable();
 }
-auto toString(QDMI_Device_Property prop) -> std::string {
+auto toString(const QDMI_Device_Property prop) -> std::string {
   switch (prop) {
   case QDMI_DEVICE_PROPERTY_NAME:
     return "QDMI_DEVICE_PROPERTY_NAME";
@@ -189,7 +221,7 @@ auto toString(QDMI_Device_Property prop) -> std::string {
   }
   unreachable();
 }
-auto throwError(int result, const std::string& msg) -> void {
+auto throwError(const int result, const std::string& msg) -> void {
   std::ostringstream ss;
   ss << msg << ": " << toString(static_cast<QDMI_STATUS>(result)) << ".";
   switch (result) {
@@ -778,12 +810,86 @@ auto FoMaC::Job::getSparseProbabilities() const
 
 FoMaC::FoMaC() {
   QDMI_session_alloc(&session_);
-  QDMI_session_init(session_);
+  // Initialization is deferred to ensureInitialized()
 }
-FoMaC::~FoMaC() { QDMI_session_free(session_); }
+
+FoMaC::~FoMaC() {
+  if (session_ != nullptr) {
+    QDMI_session_free(session_);
+  }
+}
+
+FoMaC::FoMaC(FoMaC&& other) noexcept
+    : session_(other.session_), initialized_(other.initialized_),
+      pendingParameters_(std::move(other.pendingParameters_)) {
+  other.session_ = nullptr;
+  other.initialized_ = false;
+}
+
+FoMaC& FoMaC::operator=(FoMaC&& other) noexcept {
+  if (this != &other) {
+    if (session_ != nullptr) {
+      QDMI_session_free(session_);
+    }
+    session_ = other.session_;
+    initialized_ = other.initialized_;
+    pendingParameters_ = std::move(other.pendingParameters_);
+    other.session_ = nullptr;
+    other.initialized_ = false;
+  }
+  return *this;
+}
+
+auto FoMaC::ensureInitialized() -> void {
+  std::lock_guard<std::mutex> lock(mutex_);
+  if (initialized_) {
+    return;
+  }
+
+  // Apply all pending parameters
+  for (const auto& [param, value] : pendingParameters_) {
+    const auto qdmiParam = static_cast<QDMI_Session_Parameter>(param);
+    throwIfError(QDMI_session_set_parameter(session_, qdmiParam,
+                                            value.size() + 1, value.c_str()),
+                 "Setting session parameter " + toString(param));
+  }
+
+  // Initialize the session
+  throwIfError(QDMI_session_init(session_), "Initializing session");
+  initialized_ = true;
+}
+
+auto FoMaC::setSessionParameter(const SessionParameter param,
+                                const std::string& value) -> void {
+  std::lock_guard<std::mutex> lock(mutex_);
+
+  if (initialized_) {
+    throw std::runtime_error(
+        "Cannot set session parameter after session is initialized");
+  }
+
+  // Validate parameters
+  if (param == SessionParameter::AUTHFILE) {
+    if (!std::filesystem::exists(value)) {
+      throw std::runtime_error("Authentication file does not exist: " + value);
+    }
+  } else if (param == SessionParameter::AUTHURL) {
+    // Basic URL validation
+    static const std::regex urlPattern(
+        R"(^https?://[a-zA-Z0-9\-._~:/?#\[\]@!$&'()*+,;=%]+$)");
+    if (!std::regex_match(value, urlPattern)) {
+      throw std::runtime_error("Invalid URL format: " + value);
+    }
+  }
+
+  pendingParameters_[param] = value;
+}
+
 auto FoMaC::getDevices() -> std::vector<Device> {
-  const auto& qdmiDevices = get().queryProperty<std::vector<QDMI_Device>>(
-      QDMI_SESSION_PROPERTY_DEVICES);
+  ensureInitialized();
+
+  const auto& qdmiDevices =
+      queryProperty<std::vector<QDMI_Device>>(QDMI_SESSION_PROPERTY_DEVICES);
   std::vector<Device> devices;
   devices.reserve(qdmiDevices.size());
   std::ranges::transform(
@@ -791,4 +897,22 @@ auto FoMaC::getDevices() -> std::vector<Device> {
       [](const QDMI_Device& dev) -> Device { return {Token{}, dev}; });
   return devices;
 }
+
+// Module-level convenience functions for default session
+namespace {
+auto getDefaultSession() -> FoMaC& {
+  static FoMaC instance;
+  return instance;
+}
+} // namespace
+
+auto getDevices() -> std::vector<FoMaC::Device> {
+  return getDefaultSession().getDevices();
+}
+
+auto setSessionParameter(const SessionParameter param, const std::string& value)
+    -> void {
+  getDefaultSession().setSessionParameter(param, value);
+}
+
 } // namespace fomac
