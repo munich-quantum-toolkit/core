@@ -40,7 +40,7 @@ protected:
   void SetUp() override {
     const auto& sites = device.getSites();
     ASSERT_FALSE(sites.empty());
-    *site = sites.front();
+    site = std::make_unique<FoMaC::Device::Site>(sites.front());
   }
 };
 
@@ -51,7 +51,7 @@ protected:
   void SetUp() override {
     const auto& operations = device.getOperations();
     ASSERT_FALSE(operations.empty());
-    *operation = operations.front();
+    operation = std::make_unique<FoMaC::Device::Operation>(operations.front());
   }
 };
 
