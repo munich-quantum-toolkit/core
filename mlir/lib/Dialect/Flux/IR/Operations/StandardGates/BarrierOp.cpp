@@ -13,6 +13,7 @@
 
 #include <cstddef>
 #include <llvm/ADT/STLExtras.h>
+#include <llvm/Support/Casting.h>
 #include <llvm/Support/ErrorHandling.h>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/MLIRContext.h>
@@ -43,7 +44,8 @@ struct MergeSubsequentBarrier final : OpRewritePattern<BarrierOp> {
     SmallVector<size_t> indicesToFill;
 
     for (size_t i = 0; i < qubitsIn.size(); ++i) {
-      if (qubitsIn[i].getDefiningOp<BarrierOp>()) {
+      if (llvm::isa<BarrierOp>(
+              *op.getOutputForInput(qubitsIn[i]).getUsers().begin())) {
         anythingToMerge = true;
         newQubitsOutMap[i] = qubitsIn[i];
       } else {

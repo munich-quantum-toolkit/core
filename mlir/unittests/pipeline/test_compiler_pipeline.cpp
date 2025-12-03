@@ -3567,13 +3567,13 @@ TEST_F(CompilerPipelineTest, Barrier2) {
   });
   const auto fluxOpt = buildFluxIR([](flux::FluxProgramBuilder& b) {
     auto reg = b.allocQubitRegister(3, "q");
-    b.barrier({reg[0], reg[1]});
-    b.barrier(reg[2]);
+    b.barrier(reg[0]);
+    b.barrier({reg[1], reg[2]});
   });
   const auto quartzOpt = buildQuartzIR([](quartz::QuartzProgramBuilder& b) {
     auto reg = b.allocQubitRegister(3, "q");
-    b.barrier({reg[0], reg[1]});
-    b.barrier(reg[2]);
+    b.barrier(reg[0]);
+    b.barrier({reg[1], reg[2]});
   });
 
   verifyAllStages({
