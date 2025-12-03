@@ -11,8 +11,84 @@ from enum import Enum
 
 __all__ = [
     "Device",
+    "Job",
+    "ProgramFormat",
     "devices",
 ]
+
+class ProgramFormat(Enum):
+    """Enumeration of program formats."""
+
+    QASM2 = ...
+    QASM3 = ...
+    QIR_BASE_STRING = ...
+    QIR_BASE_MODULE = ...
+    QIR_ADAPTIVE_STRING = ...
+    QIR_ADAPTIVE_MODULE = ...
+    CALIBRATION = ...
+    QPY = ...
+    IQM_JSON = ...
+    CUSTOM1 = ...
+    CUSTOM2 = ...
+    CUSTOM3 = ...
+    CUSTOM4 = ...
+    CUSTOM5 = ...
+
+class Job:
+    """A job represents a submitted quantum program execution."""
+
+    class Status(Enum):
+        """Enumeration of job status."""
+
+        CREATED = ...
+        SUBMITTED = ...
+        QUEUED = ...
+        RUNNING = ...
+        DONE = ...
+        CANCELED = ...
+        FAILED = ...
+
+    def check(self) -> Job.Status:
+        """Returns the current status of the job."""
+    def wait(self, timeout: int = 0) -> bool:
+        """Waits for the job to complete.
+
+        Args:
+            timeout: The maximum time to wait in seconds. If 0, waits indefinitely.
+
+        Returns:
+            True if the job completed within the timeout, False otherwise.
+        """
+    def cancel(self) -> None:
+        """Cancels the job."""
+    def get_shots(self) -> list[str]:
+        """Returns the raw shot results from the job."""
+    def get_counts(self) -> dict[str, int]:
+        """Returns the measurement counts from the job."""
+    def get_dense_statevector(self) -> list[complex]:
+        """Returns the dense statevector from the job (typically only available from simulator devices)."""
+    def get_sparse_statevector(self) -> dict[str, complex]:
+        """Returns the sparse statevector from the job (typically only available from simulator devices)."""
+    def get_dense_probabilities(self) -> list[float]:
+        """Returns the dense probabilities from the job (typically only available from simulator devices)."""
+    def get_sparse_probabilities(self) -> dict[str, float]:
+        """Returns the sparse probabilities from the job (typically only available from simulator devices)."""
+    def __eq__(self, other: object) -> bool:
+        """Checks if two jobs are equal."""
+    def __ne__(self, other: object) -> bool:
+        """Checks if two jobs are not equal."""
+    @property
+    def id(self) -> str:
+        """Returns the job ID."""
+    @property
+    def program_format(self) -> ProgramFormat:
+        """Returns the program format used for the job."""
+    @property
+    def program(self) -> str:
+        """Returns the quantum program submitted for the job."""
+    @property
+    def num_shots(self) -> int:
+        """Returns the number of shots for the job."""
 
 class Device:
     """A device represents a quantum device with its properties and capabilities."""
@@ -120,6 +196,10 @@ class Device:
         """Returns the scale factor for duration used by the device."""
     def min_atom_distance(self) -> int | None:
         """Returns the minimum atom distance on the device."""
+    def supported_program_formats(self) -> list[ProgramFormat]:
+        """Returns the list of program formats supported by the device."""
+    def submit_job(self, program: str, program_format: ProgramFormat, num_shots: int) -> Job:
+        """Submits a job to the device."""
     def __eq__(self, other: object) -> bool:
         """Checks if two devices are equal."""
     def __ne__(self, other: object) -> bool:

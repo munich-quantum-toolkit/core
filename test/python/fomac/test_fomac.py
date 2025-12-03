@@ -14,7 +14,7 @@ from typing import cast
 
 import pytest
 
-from mqt.core.fomac import Device, devices
+from mqt.core.fomac import Device, Job, ProgramFormat, devices
 
 
 @pytest.fixture(params=devices())
@@ -22,7 +22,7 @@ def device(request: pytest.FixtureRequest) -> Device:
     """Fixture to provide a device for testing.
 
     Returns:
-        Device: A quantum device instance.
+       A quantum device instance.
     """
     return cast("Device", request.param)
 
@@ -32,11 +32,11 @@ def device_and_site(request: pytest.FixtureRequest) -> tuple[Device, Device.Site
     """Fixture to provide a device for testing.
 
     Returns:
-        tuple[Device, Device.Site]: A tuple containing a quantum device instance and one of its sites.
+       A tuple containing a quantum device instance and one of its sites.
     """
-    device = request.param
-    site = device.sites()[0]
-    return device, site
+    dev = request.param
+    site = dev.sites()[0]
+    return dev, site
 
 
 @pytest.fixture(params=devices())
@@ -44,11 +44,24 @@ def device_and_operation(request: pytest.FixtureRequest) -> tuple[Device, Device
     """Fixture to provide a device for testing.
 
     Returns:
-        tuple[Device, Device.Operation]: A tuple containing a quantum device instance and one of its operations.
+       A tuple containing a quantum device instance and one of its operations.
     """
-    device = request.param
-    operation = device.operations()[0]
-    return device, operation
+    dev = request.param
+    operation = dev.operations()[0]
+    return dev, operation
+
+
+@pytest.fixture
+def ddsim_device() -> Device:
+    """Fixture to provide the DDSIM device for job submission testing.
+
+    Returns:
+        The MQT Core DDSIM QDMI Device if it can be found.
+    """
+    for dev in devices():
+        if dev.name() == "MQT Core DDSIM QDMI Device":
+            return dev
+    pytest.skip("DDSIM device not found - job submission tests require DDSIM device")
 
 
 def test_device_name(device: Device) -> None:
@@ -365,3 +378,203 @@ def test_operation_mean_shuttling_speed(device_and_operation: tuple[Device, Devi
     if mss is not None:
         assert isinstance(mss, int)
         assert mss > 0
+
+
+def test_device_submit_job_returns_valid_job(ddsim_device: Device) -> None:
+    """Test that submit_job creates a Job object with valid properties."""
+    qasm3_program = """
+OPENQASM 3.0;
+include "stdgates.inc";
+qubit[2] q;
+bit[2] c;
+h q[0];
+cx q[0], q[1];
+c = measure q;
+"""
+
+    job = ddsim_device.submit_job(qasm3_program, ProgramFormat.QASM3, num_shots=100)
+
+    # Job should have a non-empty ID
+    assert len(job.id) > 0
+    # The program format should be preserved
+    assert job.program_format == ProgramFormat.QASM3
+    # The program should be preserved
+    assert job.program == qasm3_program
+    # Num shots should match request
+    assert job.num_shots == 100
+
+
+def test_device_submit_job_preserves_num_shots(ddsim_device: Device) -> None:
+    """Test that different shot counts are correctly preserved."""
+    qasm3_program = """
+OPENQASM 3.0;
+qubit[1] q;
+bit[1] c;
+c[0] = measure q[0];
+"""
+
+    # Submit jobs with different shot counts
+    job1 = ddsim_device.submit_job(qasm3_program, ProgramFormat.QASM3, num_shots=10)
+    job2 = ddsim_device.submit_job(qasm3_program, ProgramFormat.QASM3, num_shots=100)
+    job3 = ddsim_device.submit_job(qasm3_program, ProgramFormat.QASM3, num_shots=1000)
+
+    assert job1.num_shots == 10
+    assert job2.num_shots == 100
+    assert job3.num_shots == 1000
+
+
+@pytest.fixture
+def submitted_job(ddsim_device: Device) -> Job:
+    """Fixture that provides a submitted job for testing.
+
+    Returns:
+        A submitted job with 10 shots.
+    """
+    qasm3_program = """
+OPENQASM 3.0;
+qubit[1] q;
+bit[1] c;
+c[0] = measure q[0];
+"""
+    return ddsim_device.submit_job(qasm3_program, ProgramFormat.QASM3, num_shots=10)
+
+
+def test_job_ids_are_unique(ddsim_device: Device) -> None:
+    """Test that different jobs have unique IDs."""
+    qasm3_program = """
+OPENQASM 3.0;
+qubit[1] q;
+bit[1] c;
+c[0] = measure q[0];
+"""
+
+    job1 = ddsim_device.submit_job(qasm3_program, ProgramFormat.QASM3, num_shots=10)
+    job2 = ddsim_device.submit_job(qasm3_program, ProgramFormat.QASM3, num_shots=10)
+
+    assert job1.id != job2.id
+
+
+def test_job_status_progresses(submitted_job: Job) -> None:
+    """Test that job status progresses to completion."""
+    initial_status = submitted_job.check()
+    assert isinstance(initial_status, Job.Status)
+
+    # Wait for completion
+    submitted_job.wait()
+
+    # After waiting, status should be DONE or FAILED
+    final_status = submitted_job.check()
+    assert final_status in {Job.Status.DONE, Job.Status.FAILED}
+
+
+def test_job_get_counts_returns_valid_histogram(submitted_job: Job) -> None:
+    """Test that job get_counts() returns valid measurement results."""
+    # Wait for job to complete
+    submitted_job.wait()
+
+    # Get counts
+    counts = submitted_job.get_counts()
+    assert isinstance(counts, dict)
+    assert len(counts) > 0
+
+    # For a single qubit, all keys should be "0" or "1"
+    for key in counts:
+        assert isinstance(key, str)
+        assert len(key) == 1
+        assert key in {"0", "1"}
+
+    # All values should be positive integers
+    for value in counts.values():
+        assert isinstance(value, int)
+        assert value > 0
+
+    # Verify total counts match num_shots
+    total_counts = sum(counts.values())
+    assert total_counts == submitted_job.num_shots
+
+
+def test_job_get_counts_is_consistent(submitted_job: Job) -> None:
+    """Test that multiple get_counts() calls return consistent results."""
+    # Wait for job to complete
+    submitted_job.wait()
+
+    # Get counts multiple times
+    counts1 = submitted_job.get_counts()
+    counts2 = submitted_job.get_counts()
+
+    # Results should be identical
+    assert counts1 == counts2
+
+
+@pytest.fixture
+def simulator_job(ddsim_device: Device) -> Job:
+    """Fixture that provides a simulator job for testing.
+
+    Returns:
+        A submitted job with 0 shots.
+    """
+    qasm3_program = """
+OPENQASM 3.0;
+qubit[2] q;
+h q[0];
+cx q[0], q[1];
+"""
+    return ddsim_device.submit_job(qasm3_program, ProgramFormat.QASM3, num_shots=0)
+
+
+def test_simulator_job_get_dense_state_vector_returns_valid_state(simulator_job: Job) -> None:
+    """Test that get_dense_statevector() returns the correct Bell state."""
+    simulator_job.wait()
+
+    state_vector = simulator_job.get_dense_statevector()
+    assert len(state_vector) == 4  # 2 qubits -> 4 amplitudes
+
+    # The expected state is (|00> + |11>)/sqrt(2)
+    inv_sqrt2 = 1.0 / (2**0.5)
+    assert abs(state_vector[0]) == pytest.approx(inv_sqrt2)  # |00>
+    assert abs(state_vector[1]) == pytest.approx(0.0)  # |01>
+    assert abs(state_vector[2]) == pytest.approx(0.0)  # |10>
+    assert abs(state_vector[3]) == pytest.approx(inv_sqrt2)  # |11>
+
+
+def test_simulator_job_get_dense_probabilities_returns_valid_probabilities(simulator_job: Job) -> None:
+    """Test that get_dense_probabilities() returns the correct probabilities."""
+    simulator_job.wait()
+
+    probabilities = simulator_job.get_dense_probabilities()
+    assert len(probabilities) == 4  # 2 qubits -> 4 probabilities
+
+    # The expected probabilities are 0.5 for |00> and |11>, and 0 for |01> and |10>
+    assert probabilities[0] == pytest.approx(0.5)  # |00>
+    assert probabilities[1] == pytest.approx(0.0)  # |01>
+    assert probabilities[2] == pytest.approx(0.0)  # |10>
+    assert probabilities[3] == pytest.approx(0.5)  # |11>
+
+
+def test_simulator_job_get_sparse_state_vector_returns_valid_state(simulator_job: Job) -> None:
+    """Test that get_sparse_statevector() returns the correct Bell state."""
+    simulator_job.wait()
+
+    sparse_state_vector = simulator_job.get_sparse_statevector()
+    assert len(sparse_state_vector) == 2  # Only |00> and |11> should be present
+
+    inv_sqrt2 = 1.0 / (2**0.5)
+    assert "00" in sparse_state_vector
+    assert abs(sparse_state_vector["00"]) == pytest.approx(inv_sqrt2)
+
+    assert "11" in sparse_state_vector
+    assert abs(sparse_state_vector["11"]) == pytest.approx(inv_sqrt2)
+
+
+def test_simulator_job_get_sparse_probabilities_returns_valid_probabilities(simulator_job: Job) -> None:
+    """Test that get_sparse_probabilities() returns the correct probabilities."""
+    simulator_job.wait()
+
+    sparse_probabilities = simulator_job.get_sparse_probabilities()
+    assert len(sparse_probabilities) == 2  # Only |00> and |11> should be present
+
+    assert "00" in sparse_probabilities
+    assert sparse_probabilities["00"] == pytest.approx(0.5)
+
+    assert "11" in sparse_probabilities
+    assert sparse_probabilities["11"] == pytest.approx(0.5)

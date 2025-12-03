@@ -88,10 +88,11 @@ repos:
     hooks:
       - id: ty-check
         name: ty check
-        entry: python -c "import subprocess; import sys; subprocess.run(['uv', 'sync', '--no-install-project']); sys.exit(subprocess.run(['uv', 'run', '--no-sync', 'ty', 'check']).returncode)"
+        entry: python -c "import subprocess; import sys; subprocess.run(['uv', 'sync', '--no-install-project', '--inexact']); sys.exit(subprocess.run(['uv', 'run', '--no-sync', 'ty', 'check']).returncode)"
         language: unsupported
         require_serial: true
         types_or: [python, pyi, jupyter]
+        exclude: ^(docs/|mlir/|eval/)
 
   # Also run Black on examples in the documentation
   - repo: https://github.com/adamchainz/blacken-docs
