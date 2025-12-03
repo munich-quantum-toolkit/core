@@ -69,6 +69,31 @@ struct RemoveTrivialCtrl final : OpRewritePattern<CtrlOp> {
   }
 };
 
+/**
+ * @brief Inline controlled GPhase operations.
+ */
+struct CtrlInlineGPhase final : OpRewritePattern<CtrlOp> {
+  using OpRewritePattern::OpRewritePattern;
+
+  LogicalResult matchAndRewrite(CtrlOp op,
+                                PatternRewriter& rewriter) const override {
+    auto gPhaseOp =
+        llvm::dyn_cast<GPhaseOp>(op.getBodyUnitary().getOperation());
+    if (!gPhaseOp) {
+      return failure();
+    }
+
+    for (size_t i = 0; i < op.getNumControls(); ++i) {
+      auto pOp = rewriter.create<POp>(op.getLoc(), op.getPosControl(i),
+                                      gPhaseOp.getTheta());
+    }
+
+    rewriter.eraseOp(op);
+
+    return success();
+  }
+};
+
 } // namespace
 
 UnitaryOpInterface CtrlOp::getBodyUnitary() {
@@ -178,5 +203,5 @@ LogicalResult CtrlOp::verify() {
 
 void CtrlOp::getCanonicalizationPatterns(RewritePatternSet& results,
                                          MLIRContext* context) {
-  results.add<MergeNestedCtrl, RemoveTrivialCtrl>(context);
+  results.add<MergeNestedCtrl, RemoveTrivialCtrl, CtrlInlineGPhase>(context);
 }
