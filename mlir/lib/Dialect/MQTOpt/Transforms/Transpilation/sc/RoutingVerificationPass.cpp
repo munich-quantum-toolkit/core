@@ -92,7 +92,6 @@ private:
         SequentialUnit& unit = units.front();
 
         Layout unmodified(unit.layout());
-        SmallVector<QubitIndexPair> history;
         for (const Operation& curr : unit) {
           const auto res =
               TypeSwitch<const Operation*, LogicalResult>(&curr)
@@ -117,9 +116,6 @@ private:
                     if (isa<SWAPOp>(op)) {
                       const auto ins = getIns(op);
                       unit.layout().swap(ins.first, ins.second);
-                      history.push_back(
-                          {unit.layout().lookupHardwareIndex(ins.first),
-                           unit.layout().lookupHardwareIndex(ins.second)});
                     }
 
                     remap(op, unit.layout());
