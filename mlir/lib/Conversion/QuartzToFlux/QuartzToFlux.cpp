@@ -129,7 +129,7 @@ LogicalResult convertZeroTargetOneParameter(QuartzOpType& op,
   // Update the state
   if (inCtrlOp != 0) {
     state.targetsIn.erase(inCtrlOp);
-    const SmallVector<Value> targetsOut({});
+    const SmallVector<Value> targetsOut;
     state.targetsOut.try_emplace(inCtrlOp, targetsOut);
   }
 
@@ -1054,7 +1054,7 @@ struct ConvertQuartzBarrierOp final
  * %controls_out, %targets_out = flux.ctrl(%q0_in) %q1_in {
  *   %q1_res = flux.x %q1_in : !flux.qubit -> !flux.qubit
  *   flux.yield %q1_res
- * } : !flux.qubit, !flux.qubit -> !flux.qubit, !flux.qubit
+ * } : ({!flux.qubit}, {!flux.qubit}) -> ({!flux.qubit}, {!flux.qubit})
  * ```
  */
 struct ConvertQuartzCtrlOp final : StatefulOpConversionPattern<quartz::CtrlOp> {

@@ -1064,9 +1064,9 @@ def CtrlOp : FluxOp<"ctrl", traits =
     let assemblyFormat = [{
         `(` $controls_in `)` $targets_in
         $body attr-dict `:`
-        `(` `{` type($controls_in) `}` `,` `{` type($targets_in) `}` `)`
+        `(` `{` type($controls_in) `}` ( `,` `{` type($targets_in)^ `}` )? `)`
         `->`
-        `(` `{` type($controls_out) `}` `,` `{` type($targets_out) `}` `)`
+        `(` `{` type($controls_out) `}` ( `,` `{` type($targets_out)^ `}` )? `)`
     }];
 
     let extraClassDeclaration = [{

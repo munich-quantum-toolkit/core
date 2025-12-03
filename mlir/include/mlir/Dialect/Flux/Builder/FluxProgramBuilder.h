@@ -273,7 +273,7 @@ public:
    * %q_out = flux.ctrl(%q_in) {                                               \
    *   flux.OP_NAME(%PARAM)                                                    \
    *   flux.yield                                                              \
-   * } : ({!flux.qubit}, {}) -> ({!flux.qubit}, {})                            \
+   * } : ({!flux.qubit}) -> ({!flux.qubit})                                    \
    */                                                                          \
   Value c##OP_NAME(const std::variant<double, Value>&(PARAM), Value control);  \
   /**                                                                          \
@@ -291,7 +291,7 @@ public:
    * %q0_out, %q1_out = flux.ctrl(%q0_in, %q1_in) {                            \
    *   flux.OP_NAME(%PARAM)                                                    \
    *   flux.yield                                                              \
-   * } : ({!flux.qubit, !flux.qubit}, {}) -> ({!flux.qubit, !flux.qubit}, {})  \
+   * } : ({!flux.qubit, !flux.qubit}) -> ({!flux.qubit, !flux.qubit})          \
    */                                                                          \
   ValueRange mc##OP_NAME(const std::variant<double, Value>&(PARAM),            \
                          ValueRange controls);
