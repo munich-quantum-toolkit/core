@@ -11,11 +11,13 @@
 #pragma once
 
 #include <algorithm>
+#include <complex>
 #include <concepts>
 #include <cstddef>
 #include <cstdint>
 #include <iostream>
 #include <iterator>
+#include <map>
 #include <optional>
 #include <qdmi/client.h>
 #include <ranges>
@@ -192,6 +194,109 @@ class FoMaC {
   };
 
 public:
+  /**
+   * @brief Class representing a submitted job.
+   * @details This class provides methods to query job status and retrieve
+   * results.
+   * @see QDMI_Job
+   */
+  class Job {
+    QDMI_Job job_;
+
+  public:
+    /**
+     * @brief Constructs a Job object from a QDMI_Job handle.
+     * @param job The QDMI_Job handle to wrap.
+     */
+    explicit Job(QDMI_Job job) : job_(job) {}
+    /**
+     * @brief Destructor that releases the underlying QDMI_Job resource.
+     */
+    ~Job() {
+      if (job_ != nullptr) {
+        QDMI_job_free(job_);
+      }
+    }
+    // Delete copy constructor and copy assignment operator to prevent
+    // pointer duplication and double-free
+    Job(const Job&) = delete;
+    Job& operator=(const Job&) = delete;
+    // Default move constructor and move assignment operator to allow
+    // safe ownership transfer
+    Job(Job&& other) noexcept : job_(other.job_) { other.job_ = nullptr; }
+    Job& operator=(Job&& other) noexcept {
+      if (this != &other) {
+        if (job_ != nullptr) {
+          QDMI_job_free(job_);
+        }
+        job_ = other.job_;
+        other.job_ = nullptr;
+      }
+      return *this;
+    }
+    /// @returns the underlying QDMI_Job object.
+    [[nodiscard]] auto getQDMIJob() const -> QDMI_Job { return job_; }
+    // NOLINTNEXTLINE(google-explicit-constructor, *-explicit-conversions)
+    operator QDMI_Job() const { return job_; }
+    /// @see QDMI_job_check
+    [[nodiscard]] auto check() const -> QDMI_Job_Status;
+    /**
+     * @brief @see QDMI_job_wait
+     * @param timeout The maximum time to wait in seconds. 0 (default) means
+     * wait indefinitely.
+     * @return true if the job completed successfully, false if it timed out
+     */
+    [[nodiscard]] auto wait(size_t timeout = 0) const -> bool;
+    /// @see QDMI_job_cancel
+    auto cancel() const -> void;
+    /// Get the job ID
+    [[nodiscard]] auto getId() const -> std::string;
+    /// Get the program format
+    [[nodiscard]] auto getProgramFormat() const -> QDMI_Program_Format;
+    /// Get the program to be executed
+    [[nodiscard]] auto getProgram() const -> std::string;
+    /// Get the number of shots
+    [[nodiscard]] auto getNumShots() const -> size_t;
+    /**
+     * @brief Returns the measurement shots as a vector of bitstrings.
+     * @see QDMI_JOB_RESULT_SHOTS
+     */
+    [[nodiscard]] auto getShots() const -> std::vector<std::string>;
+    /**
+     * @brief Returns a map of measurement outcomes to their respective counts.
+     * @see QDMI_JOB_RESULT_HIST_KEYS
+     * @see QDMI_JOB_RESULT_HIST_VALUES
+     */
+    [[nodiscard]] auto getCounts() const -> std::map<std::string, size_t>;
+    /**
+     * @brief Returns the dense state vector as a vector of complex numbers.
+     * @see QDMI_JOB_RESULT_STATEVECTOR_DENSE
+     */
+    [[nodiscard]] auto getDenseStateVector() const
+        -> std::vector<std::complex<double>>;
+    /**
+     * @brief Returns the dense probabilities as a vector of doubles.
+     * @see QDMI_JOB_RESULT_PROBABILITIES_DENSE
+     */
+    [[nodiscard]] auto getDenseProbabilities() const -> std::vector<double>;
+    /**
+     * @brief Returns the sparse state vector as a map of bitstrings to complex
+     * amplitudes.
+     * @see QDMI_JOB_RESULT_STATEVECTOR_SPARSE_KEYS
+     * @see QDMI_JOB_RESULT_STATEVECTOR_SPARSE_VALUES
+     */
+    [[nodiscard]] auto getSparseStateVector() const
+        -> std::map<std::string, std::complex<double>>;
+    /**
+     * @brief Returns the sparse probabilities as a map of bitstrings to
+     * probabilities.
+     * @see QDMI_JOB_RESULT_PROBABILITIES_SPARSE_KEYS
+     * @see QDMI_JOB_RESULT_PROBABILITIES_SPARSE_VALUES
+     */
+    [[nodiscard]] auto getSparseProbabilities() const
+        -> std::map<std::string, double>;
+  };
+
   /**
    * @brief Class representing a quantum device.
    * @details This class provides methods to query properties of the device,
@@ -558,6 +663,13 @@ public:
     [[nodiscard]] auto getDurationScaleFactor() const -> std::optional<double>;
     /// @see QDMI_DEVICE_PROPERTY_MINATOMDISTANCE
     [[nodiscard]] auto getMinAtomDistance() const -> std::optional<uint64_t>;
+    /// @see QDMI_DEVICE_PROPERTY_SUPPORTEDPROGRAMFORMATS
+    [[nodiscard]] auto getSupportedProgramFormats() const
+        -> std::vector<QDMI_Program_Format>;
+    /// @see QDMI_job_submit
+    [[nodiscard]] auto submitJob(const std::string& program,
+                                 QDMI_Program_Format format,
+                                 size_t numShots) const -> Job;
   };
 
 private:

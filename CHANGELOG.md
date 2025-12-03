@@ -12,12 +12,18 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 ### Added
 
 - ✨ Add bi-directional iterator that traverses the def-use chain of a qubit value ([#1310]) ([**@MatthiasReumann**])
+- ✨ Add `OptionalDependencyTester` to lazily handle optional Python dependencies like Qiskit ([#1243]) ([**@marcelwa**], [**@burgholzer**])
+- ✨ Expose the QDMI job interface through FoMaC ([#1243]) ([**@marcelwa**], [**@burgholzer**])
+- ✨ Add Qiskit backend wrapper with job submission support for QDMI devices through a provider interface ([#1243]) ([**@marcelwa**], [**@burgholzer**])
+- ✨ Support `QDMI_DEVICE_PROPERTY_SUPPORTEDPROGRAMFORMATS` in the NA QDMI Device and the DDSIM QDMI Device ([#1243]) ([**@marcelwa**], [**@burgholzer**])
+- ✨ Support `QDMI_DEVICE_JOB_PROPERTY_PROGRAM` in the NA QDMI Device ([#1243]) ([**@marcelwa**], [**@burgholzer**])
 
 ### Changed
 
 - 👷 Use `munich-quantum-software/setup-mlir` to set up MLIR ([#1294]) ([**@denialhaag**])
 - ♻️ Preserve tuple structure and improve site type clarity of the MQT NA Default QDMI Device ([#1299]) ([**@marcelwa**])
 - ♻️ Move DD package evaluation module to standalone script ([#1327]) ([**@burgholzer**])
+- ⬆️ Bump QDMI version to 1.2.0 ([#1243]) ([**@marcelwa**], [**@burgholzer**])
 
 ### Fixed
 
@@ -273,6 +279,7 @@ _📚 Refer to the [GitHub Release Notes](https://github.com/munich-quantum-tool
 [#1263]: https://github.com/munich-quantum-toolkit/core/pull/1263
 [#1247]: https://github.com/munich-quantum-toolkit/core/pull/1247
 [#1246]: https://github.com/munich-quantum-toolkit/core/pull/1246
+[#1243]: https://github.com/munich-quantum-toolkit/core/pull/1243
 [#1237]: https://github.com/munich-quantum-toolkit/core/pull/1237
 [#1236]: https://github.com/munich-quantum-toolkit/core/pull/1236
 [#1235]: https://github.com/munich-quantum-toolkit/core/pull/1235

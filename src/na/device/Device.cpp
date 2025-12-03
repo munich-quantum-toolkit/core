@@ -195,6 +195,15 @@ auto Device::queryProperty(const QDMI_Device_Property prop, const size_t size,
                     size, value, sizeRet)
   ADD_LIST_PROPERTY(QDMI_DEVICE_PROPERTY_OPERATIONS, MQT_NA_QDMI_Operation,
                     operations_, prop, size, value, sizeRet)
+  if (prop == (QDMI_DEVICE_PROPERTY_SUPPORTEDPROGRAMFORMATS)) {
+    if (value != nullptr && size > 0) {
+      return QDMI_ERROR_INVALIDARGUMENT;
+    }
+    if (sizeRet != nullptr) {
+      *sizeRet = 0;
+    }
+    return QDMI_SUCCESS;
+  }
   return QDMI_ERROR_NOTSUPPORTED;
 }
 } // namespace qdmi::na

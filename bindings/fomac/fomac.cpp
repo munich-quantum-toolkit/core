@@ -8,18 +8,17 @@
  * Licensed under the MIT License
  */
 
-// These includes must be the first includes for any bindings code
-// clang-format off
 #include "fomac/FoMaC.hpp"
+
 #include <pybind11/cast.h>
-#include <pybind11/operators.h>
-#include <qdmi/client.h>
+#include <pybind11/complex.h> // NOLINT(misc-include-cleaner)
 #include <pybind11/native_enum.h>
+#include <pybind11/operators.h>
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h> // NOLINT(misc-include-cleaner)
+#include <qdmi/client.h>
 #include <string>
 #include <vector>
-// clang-format on
 
 namespace mqt {
 
@@ -27,6 +26,59 @@ namespace py = pybind11;
 using namespace py::literals;
 
 PYBIND11_MODULE(MQT_CORE_MODULE_NAME, m, py::mod_gil_not_used()) {
+  // Job class
+  auto job = py::class_<fomac::FoMaC::Job>(m, "Job");
+  job.def("check", &fomac::FoMaC::Job::check);
+  job.def("wait", &fomac::FoMaC::Job::wait, "timeout"_a = 0);
+  job.def("cancel", &fomac::FoMaC::Job::cancel);
+  job.def("get_shots", &fomac::FoMaC::Job::getShots);
+  job.def("get_counts", &fomac::FoMaC::Job::getCounts);
+  job.def("get_dense_statevector", &fomac::FoMaC::Job::getDenseStateVector);
+  job.def("get_dense_probabilities", &fomac::FoMaC::Job::getDenseProbabilities);
+  job.def("get_sparse_statevector", &fomac::FoMaC::Job::getSparseStateVector);
+  job.def("get_sparse_probabilities",
+          &fomac::FoMaC::Job::getSparseProbabilities);
+  job.def_property_readonly("id", &fomac::FoMaC::Job::getId);
+  job.def_property_readonly("program_format",
+                            &fomac::FoMaC::Job::getProgramFormat);
+  job.def_property_readonly("program", &fomac::FoMaC::Job::getProgram);
+  job.def_property_readonly("num_shots", &fomac::FoMaC::Job::getNumShots);
+  job.def(py::self == py::self); // NOLINT(misc-redundant-expression)
+  job.def(py::self != py::self); // NOLINT(misc-redundant-expression)
+
+  // JobStatus enum
+  py::native_enum<QDMI_Job_Status>(job, "Status", "enum.Enum",
+                                   "Enumeration of job status.")
+      .value("CREATED", QDMI_JOB_STATUS_CREATED)
+      .value("SUBMITTED", QDMI_JOB_STATUS_SUBMITTED)
+      .value("QUEUED", QDMI_JOB_STATUS_QUEUED)
+      .value("RUNNING", QDMI_JOB_STATUS_RUNNING)
+      .value("DONE", QDMI_JOB_STATUS_DONE)
+      .value("CANCELED", QDMI_JOB_STATUS_CANCELED)
+      .value("FAILED", QDMI_JOB_STATUS_FAILED)
+      .export_values()
+      .finalize();
+
+  // ProgramFormat enum
+  py::native_enum<QDMI_Program_Format>(m, "ProgramFormat", "enum.Enum",
+                                       "Enumeration of program formats.")
+      .value("QASM2", QDMI_PROGRAM_FORMAT_QASM2)
+      .value("QASM3", QDMI_PROGRAM_FORMAT_QASM3)
+      .value("QIR_BASE_STRING", QDMI_PROGRAM_FORMAT_QIRBASESTRING)
+      .value("QIR_BASE_MODULE", QDMI_PROGRAM_FORMAT_QIRBASEMODULE)
+      .value("QIR_ADAPTIVE_STRING", QDMI_PROGRAM_FORMAT_QIRADAPTIVESTRING)
+      .value("QIR_ADAPTIVE_MODULE", QDMI_PROGRAM_FORMAT_QIRADAPTIVEMODULE)
+      .value("CALIBRATION", QDMI_PROGRAM_FORMAT_CALIBRATION)
+      .value("QPY", QDMI_PROGRAM_FORMAT_QPY)
+      .value("IQM_JSON", QDMI_PROGRAM_FORMAT_IQMJSON)
+      .value("CUSTOM1", QDMI_PROGRAM_FORMAT_CUSTOM1)
+      .value("CUSTOM2", QDMI_PROGRAM_FORMAT_CUSTOM2)
+      .value("CUSTOM3", QDMI_PROGRAM_FORMAT_CUSTOM3)
+      .value("CUSTOM4", QDMI_PROGRAM_FORMAT_CUSTOM4)
+      .value("CUSTOM5", QDMI_PROGRAM_FORMAT_CUSTOM5)
+      .export_values()
+      .finalize();
+
   auto device = py::class_<fomac::FoMaC::Device>(m, "Device");
 
   py::native_enum<QDMI_Device_Status>(device, "Status", "enum.Enum",
@@ -121,6 +173,10 @@ PYBIND11_MODULE(MQT_CORE_MODULE_NAME, m, py::mod_gil_not_used()) {
   device.def("duration_scale_factor",
              &fomac::FoMaC::Device::getDurationScaleFactor);
   device.def("min_atom_distance", &fomac::FoMaC::Device::getMinAtomDistance);
+  device.def("supported_program_formats",
+             &fomac::FoMaC::Device::getSupportedProgramFormats);
+  device.def("submit_job", &fomac::FoMaC::Device::submitJob, "program"_a,
+             "program_format"_a, "num_shots"_a);
   device.def("__repr__", [](const fomac::FoMaC::Device& dev) {
     return "<Device name=\"" + dev.getName() + "\">";
   });
