@@ -658,6 +658,8 @@ def ROp : FluxOp<"r", traits = [UnitaryOpInterface, OneTargetTwoParameter]> {
     let builders = [
         OpBuilder<(ins "Value":$qubit_in, "const std::variant<double, Value>&":$theta, "const std::variant<double, Value>&":$phi)>
     ];
+
+    let hasCanonicalizer = 1;
 }
 
 def U2Op : FluxOp<"u2", traits = [UnitaryOpInterface, OneTargetTwoParameter]> {

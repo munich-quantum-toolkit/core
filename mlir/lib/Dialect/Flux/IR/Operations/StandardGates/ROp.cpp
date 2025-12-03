@@ -13,11 +13,71 @@
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/BuiltinAttributes.h>
+#include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OperationSupport.h>
+#include <mlir/IR/PatternMatch.h>
+#include <mlir/Support/LogicalResult.h>
+#include <numbers>
 #include <variant>
 
 using namespace mlir;
 using namespace mlir::flux;
+
+namespace {
+
+/**
+ * @brief Replace R(theta, 0) with RX(theta).
+ */
+struct ReplaceRWithRX final : OpRewritePattern<ROp> {
+  using OpRewritePattern::OpRewritePattern;
+
+  LogicalResult matchAndRewrite(ROp op,
+                                PatternRewriter& rewriter) const override {
+    const auto phi = ROp::getStaticParameter(op.getPhi());
+    if (!phi) {
+      return failure();
+    }
+
+    const auto phiValue = phi.getValueAsDouble();
+    if (phiValue != 0.0) {
+      return failure();
+    }
+
+    auto rxOp =
+        rewriter.create<RXOp>(op.getLoc(), op.getQubitIn(), op.getTheta());
+    rewriter.replaceOp(op, rxOp.getResult());
+
+    return success();
+  }
+};
+
+/**
+ * @brief Replace R(theta, pi / 2) with RY(theta).
+ */
+struct ReplaceRWithRY final : OpRewritePattern<ROp> {
+  using OpRewritePattern::OpRewritePattern;
+
+  LogicalResult matchAndRewrite(ROp op,
+                                PatternRewriter& rewriter) const override {
+    const auto phi = ROp::getStaticParameter(op.getPhi());
+    if (!phi) {
+      return failure();
+    }
+
+    const auto phiValue = phi.getValueAsDouble();
+    if (phiValue != std::numbers::pi / 2.0) {
+      return failure();
+    }
+
+    auto ryOp =
+        rewriter.create<RYOp>(op.getLoc(), op.getQubitIn(), op.getTheta());
+    rewriter.replaceOp(op, ryOp.getResult());
+
+    return success();
+  }
+};
+
+} // namespace
 
 void ROp::build(OpBuilder& odsBuilder, OperationState& odsState,
                 const Value qubitIn, const std::variant<double, Value>& theta,
@@ -39,4 +99,9 @@ void ROp::build(OpBuilder& odsBuilder, OperationState& odsState,
   }
 
   build(odsBuilder, odsState, qubitIn, thetaOperand, phiOperand);
+}
+
+void ROp::getCanonicalizationPatterns(RewritePatternSet& results,
+                                      MLIRContext* context) {
+  results.add<ReplaceRWithRX, ReplaceRWithRY>(context);
 }
