@@ -14,9 +14,11 @@ import warnings
 from typing import TYPE_CHECKING, NoReturn, Protocol, cast
 from unittest.mock import MagicMock
 
+import numpy as np
 import pytest
 from qiskit import QuantumCircuit, qasm2, qasm3
 from qiskit.circuit import Parameter
+from qiskit.circuit.library import UnitaryGate
 from qiskit.providers import JobStatus
 from qiskit.transpiler.target import InstructionProperties
 
@@ -34,7 +36,7 @@ from mqt.core.plugins.qiskit.exceptions import UnsupportedDeviceError
 if TYPE_CHECKING:
     from test.python.plugins.qiskit.conftest import CircuitCase, MockQDMIDevice
 
-    class _FomacDeviceLike(Protocol):  # pragma: no cover - typing helper
+    class _FomacDeviceLike(Protocol):  # pragma: no cover - typing helper to fix mypy errors
         def name(self) -> str: ...
 
         def version(self) -> str: ...
@@ -56,15 +58,17 @@ pytestmark = [
 ]
 
 
-def test_backend_instantiation(mock_backend: QDMIBackend) -> None:
+def test_backend_instantiation(real_backend: QDMIBackend) -> None:
     """Backend exposes target qubit count."""
-    assert mock_backend.target.num_qubits > 0
+    assert real_backend.target.num_qubits > 0
 
 
-def test_backend_runs_variety_of_circuits(mock_backend: QDMIBackend, backend_circuit_case: CircuitCase) -> None:
+def test_backend_runs_variety_of_circuits(
+    backend_with_mock_jobs: QDMIBackend, backend_circuit_case: CircuitCase
+) -> None:
     """Backend executes multiple circuit shapes and shot counts consistently."""
     circuit, shots, expect_measurements = backend_circuit_case
-    job = mock_backend.run(circuit, shots=shots)
+    job = backend_with_mock_jobs.run(circuit, shots=shots)
     result = job.result()
     assert result.success is True
 
@@ -75,87 +79,93 @@ def test_backend_runs_variety_of_circuits(mock_backend: QDMIBackend, backend_cir
             assert all(bit in {"0", "1"} for bit in key)
 
 
-def test_unsupported_operation(mock_backend: QDMIBackend) -> None:
+def test_unsupported_operation(real_backend: QDMIBackend) -> None:
     """Unsupported operation raises UnsupportedOperationError."""
     qc = QuantumCircuit(1, 1)
-    qc.x(0)  # 'x' not supported by mock device
-    qc.measure(0, 0)
+    # Use a custom gate that won't be in the device's operation set
+    unitary = UnitaryGate(np.array([[1, 0], [0, 1]]), label="custom_unitary")
+    qc.append(unitary, [0])
+    qc.measure_all()
     with pytest.raises(UnsupportedOperationError):
-        mock_backend.run(qc)
+        real_backend.run(qc)
 
 
-def test_backend_max_circuits(mock_backend: QDMIBackend) -> None:
+def test_backend_max_circuits(real_backend: QDMIBackend) -> None:
     """Backend max_circuits should return None (no limit)."""
-    assert mock_backend.max_circuits is None
+    assert real_backend.max_circuits is None
 
 
-def test_backend_options(mock_backend: QDMIBackend) -> None:
+def test_backend_options(real_backend: QDMIBackend) -> None:
     """Backend options should be accessible."""
-    assert mock_backend.options.shots == 1024
+    assert real_backend.options.shots == 1024
 
 
-def test_backend_run_with_invalid_shots_type(mock_backend: QDMIBackend) -> None:
+def test_backend_run_with_invalid_shots_type(backend_with_mock_jobs: QDMIBackend) -> None:
     """Backend run should raise CircuitValidationError for invalid shots type."""
     qc = QuantumCircuit(2, 2)
     qc.cz(0, 1)
-    qc.measure([0, 1], [0, 1])
+    qc.measure_all()
 
     with pytest.raises(CircuitValidationError, match="Invalid 'shots' value"):
-        mock_backend.run(qc, shots="invalid")
+        backend_with_mock_jobs.run(qc, shots="invalid")
 
 
-def test_backend_run_with_negative_shots(mock_backend: QDMIBackend) -> None:
+def test_backend_run_with_negative_shots(real_backend: QDMIBackend) -> None:
     """Backend run should raise CircuitValidationError for negative shots."""
     qc = QuantumCircuit(2, 2)
     qc.cz(0, 1)
-    qc.measure([0, 1], [0, 1])
+    qc.measure_all()
 
     with pytest.raises(CircuitValidationError, match="'shots' must be >= 0"):
-        mock_backend.run(qc, shots=-100)
+        real_backend.run(qc, shots=-100)
 
 
-def test_backend_circuit_with_parameters(mock_backend: QDMIBackend) -> None:
-    """Backend should handle parameterized circuits correctly.
-
-    Unbound parameters should raise CircuitValidationError, while bound parameters
-    should execute successfully.
-    """
+def test_backend_circuit_with_parameters(real_backend: QDMIBackend) -> None:
+    """Backend should reject circuits with unbound parameters."""
     qc = QuantumCircuit(2, 2)
     theta = Parameter("theta")
     qc.ry(theta, 0)
-    qc.measure([0, 1], [0, 1])
+    qc.measure_all()
 
     # Unbound parameters should raise an error
     with pytest.raises(CircuitValidationError, match="Circuit contains unbound parameters"):
-        mock_backend.run(qc)
+        real_backend.run(qc)
+
+
+def test_backend_circuit_with_bound_parameters(backend_with_mock_jobs: QDMIBackend) -> None:
+    """Backend should execute circuits with bound parameters."""
+    qc = QuantumCircuit(2, 2)
+    theta = Parameter("theta")
+    qc.ry(theta, 0)
+    qc.measure_all()
 
     # Bound parameters should work
     qc_bound = qc.assign_parameters({theta: 1.5708})
 
-    job = mock_backend.run(qc_bound, shots=100)
+    job = backend_with_mock_jobs.run(qc_bound, shots=100)
     result = job.result()
     assert result.success
 
 
-def test_backend_circuit_with_parameter_expression(mock_backend: QDMIBackend) -> None:
+def test_backend_circuit_with_parameter_expression(real_backend: QDMIBackend) -> None:
     """Backend should raise CircuitValidationError for unbound parameter expressions."""
     qc = QuantumCircuit(2, 2)
     theta = Parameter("theta")
     phi = Parameter("phi")
     qc.ry(theta + phi, 0)  # Parameter expression
-    qc.measure([0, 1], [0, 1])
+    qc.measure_all()
 
     with pytest.raises(CircuitValidationError, match="Circuit contains unbound parameters"):
-        mock_backend.run(qc)
+        real_backend.run(qc)
 
 
-def test_backend_named_circuit_results_queryable_by_name(mock_backend: QDMIBackend) -> None:
+def test_backend_named_circuit_results_queryable_by_name(backend_with_mock_jobs: QDMIBackend) -> None:
     """Backend should preserve circuit name and allow querying results by name."""
     qc = QuantumCircuit(2, 2, name="my_circuit")
     qc.cz(0, 1)
-    qc.measure([0, 1], [0, 1])
+    qc.measure_all()
 
-    job = mock_backend.run(qc, shots=100)
+    job = backend_with_mock_jobs.run(qc, shots=100)
     result = job.result()
 
     # Circuit name should be preserved in metadata
@@ -170,13 +180,13 @@ def test_backend_named_circuit_results_queryable_by_name(mock_backend: QDMIBacke
     assert sum(counts.values()) == 100
 
 
-def test_backend_unnamed_circuit_results_queryable_by_generated_name(mock_backend: QDMIBackend) -> None:
+def test_backend_unnamed_circuit_results_queryable_by_generated_name(backend_with_mock_jobs: QDMIBackend) -> None:
     """Backend should generate a name for unnamed circuits and allow querying results by it."""
     qc = QuantumCircuit(2, 2)
     qc.cz(0, 1)
-    qc.measure([0, 1], [0, 1])
+    qc.measure_all()
 
-    job = mock_backend.run(qc, shots=100)
+    job = backend_with_mock_jobs.run(qc, shots=100)
     result = job.result()
 
     # Should have a generated name
@@ -195,23 +205,23 @@ def test_backend_unnamed_circuit_results_queryable_by_generated_name(mock_backen
     assert sum(counts.values()) == 100
 
 
-def test_job_status(mock_backend: QDMIBackend) -> None:
+def test_job_status(backend_with_mock_jobs: QDMIBackend) -> None:
     """Job should be in DONE status after backend.run() completes."""
     qc = QuantumCircuit(2, 2)
     qc.cz(0, 1)
-    qc.measure([0, 1], [0, 1])
+    qc.measure_all()
 
-    job = mock_backend.run(qc, shots=100)
+    job = backend_with_mock_jobs.run(qc, shots=100)
     assert job.status() == JobStatus.DONE
 
 
-def test_job_result_success_and_shots(mock_backend: QDMIBackend) -> None:
+def test_job_result_success_and_shots(backend_with_mock_jobs: QDMIBackend) -> None:
     """Job result should contain success status and shot count for each circuit."""
     qc = QuantumCircuit(2, 2)
     qc.cz(0, 1)
-    qc.measure([0, 1], [0, 1])
+    qc.measure_all()
 
-    job = mock_backend.run(qc, shots=100)
+    job = backend_with_mock_jobs.run(qc, shots=100)
     result = job.result()
 
     assert result.success is True
@@ -221,25 +231,25 @@ def test_job_result_success_and_shots(mock_backend: QDMIBackend) -> None:
     assert result.results[0].success is True
 
 
-def test_job_get_counts_default(mock_backend: QDMIBackend) -> None:
+def test_job_get_counts_default(backend_with_mock_jobs: QDMIBackend) -> None:
     """result().get_counts() without arguments should return counts for first circuit."""
     qc = QuantumCircuit(2, 2)
     qc.cz(0, 1)
-    qc.measure([0, 1], [0, 1])
+    qc.measure_all()
 
-    job = mock_backend.run(qc, shots=100)
+    job = backend_with_mock_jobs.run(qc, shots=100)
     counts = job.result().get_counts()
 
     assert sum(counts.values()) == 100
 
 
-def test_job_submit_raises_error(mock_backend: QDMIBackend) -> None:
+def test_job_submit_raises_error(backend_with_mock_jobs: QDMIBackend) -> None:
     """Calling submit() on a job should raise NotImplementedError."""
     qc = QuantumCircuit(2, 2)
     qc.cz(0, 1)
-    qc.measure([0, 1], [0, 1])
+    qc.measure_all()
 
-    job = mock_backend.run(qc, shots=100)
+    job = backend_with_mock_jobs.run(qc, shots=100)
     with pytest.raises(NotImplementedError, match="You should never have to submit jobs"):
         job.submit()
 
@@ -345,29 +355,57 @@ def test_backend_with_site_specific_properties(
         assert abs(props.error - expected_error) < 1e-10
 
 
-def test_backend_qasm_conversion_no_supported_formats(
-    monkeypatch: pytest.MonkeyPatch, mock_qdmi_device_factory: type[MockQDMIDevice]
-) -> None:
-    """Backend should raise UnsupportedFormatError when device has no supported program formats."""
-    # Create mock device with no supported formats
-    device = mock_qdmi_device_factory(
-        name="No Format Device",
-        num_qubits=2,
-        operations=["cz", "measure"],
-    )
-    monkeypatch.setattr(device, "supported_program_formats", list)
-    monkeypatch.setattr(fomac, "devices", lambda: [device])
-
-    # Create backend and try to run a circuit
-    provider = QDMIProvider()
-    backend = provider.get_backend("No Format Device")
-
+def test_backend_qasm_conversion_no_supported_formats() -> None:
+    """Backend should raise UnsupportedFormatError when no supported program formats exist."""
     qc = QuantumCircuit(2, 2)
     qc.cz(0, 1)
-    qc.measure([0, 1], [0, 1])
+    qc.measure_all()
 
     with pytest.raises(UnsupportedFormatError, match="No supported program formats found"):
-        backend.run(qc, shots=100)
+        QDMIBackend._convert_circuit(qc, [])  # noqa: SLF001
+
+
+def test_backend_qasm3_conversion_success() -> None:
+    """Backend should successfully convert circuit to QASM3."""
+    qc = QuantumCircuit(2, 2)
+    qc.h(0)
+    qc.cx(0, 1)
+    qc.measure_all()
+
+    program, fmt = QDMIBackend._convert_circuit(qc, [fomac.ProgramFormat.QASM3])  # noqa: SLF001
+
+    assert fmt == fomac.ProgramFormat.QASM3
+    assert "OPENQASM 3" in program
+    assert "h q[0]" in program
+    assert "cx q[0], q[1]" in program
+
+
+def test_backend_qasm2_conversion_success() -> None:
+    """Backend should successfully convert circuit to QASM2."""
+    qc = QuantumCircuit(2, 2)
+    qc.h(0)
+    qc.cx(0, 1)
+    qc.measure_all()
+
+    program, fmt = QDMIBackend._convert_circuit(qc, [fomac.ProgramFormat.QASM2])  # noqa: SLF001
+
+    assert fmt == fomac.ProgramFormat.QASM2
+    assert "OPENQASM 2" in program
+    assert "h q[0]" in program
+    assert "cx q[0],q[1]" in program
+
+
+def test_backend_qasm3_preferred_over_qasm2() -> None:
+    """Backend should prefer QASM3 over QASM2 when both are available."""
+    qc = QuantumCircuit(2, 2)
+    qc.h(0)
+    qc.measure_all()
+
+    # When both formats are available, QASM3 should be chosen
+    program, fmt = QDMIBackend._convert_circuit(qc, [fomac.ProgramFormat.QASM2, fomac.ProgramFormat.QASM3])  # noqa: SLF001
+
+    assert fmt == fomac.ProgramFormat.QASM3
+    assert "OPENQASM 3" in program
 
 
 @pytest.mark.parametrize(
@@ -379,25 +417,11 @@ def test_backend_qasm_conversion_no_supported_formats(
 )
 def test_backend_qasm_conversion_failure(
     monkeypatch: pytest.MonkeyPatch,
-    mock_qdmi_device_factory: type[MockQDMIDevice],
     qasm_module_name: str,
     program_format: fomac.ProgramFormat,
 ) -> None:
     """Backend should raise TranslationError when QASM conversion fails."""
     qasm_module = qasm3 if qasm_module_name == "qasm3" else qasm2
-
-    # Create a device that only supports the specified format
-    device = mock_qdmi_device_factory(
-        name=f"{qasm_module_name.upper()} Only Device",
-        num_qubits=2,
-        operations=["cz", "measure"],
-    )
-    monkeypatch.setattr(device, "supported_program_formats", lambda: [program_format])
-    monkeypatch.setattr(fomac, "devices", lambda: [device])
-
-    # Create backend
-    provider = QDMIProvider()
-    backend = provider.get_backend(f"{qasm_module_name.upper()} Only Device")
 
     # Monkeypatch qasm dumps to raise an exception
     def failing_dumps(circuit: object) -> NoReturn:  # noqa: ARG001
@@ -408,55 +432,41 @@ def test_backend_qasm_conversion_failure(
 
     qc = QuantumCircuit(2, 2)
     qc.cz(0, 1)
-    qc.measure([0, 1], [0, 1])
+    qc.measure_all()
 
     with pytest.raises(TranslationError, match=f"Failed to convert circuit to {qasm_module_name.upper()}"):
-        backend.run(qc, shots=100)
+        QDMIBackend._convert_circuit(qc, [program_format])  # noqa: SLF001
 
 
-def test_backend_unsupported_format_error(
-    monkeypatch: pytest.MonkeyPatch, mock_qdmi_device_factory: type[MockQDMIDevice]
-) -> None:
-    """Backend should raise UnsupportedFormatError when device supports unknown format."""
-    # Create a device that supports a format other than QASM2/QASM3 (QPY)
-    device = mock_qdmi_device_factory(
-        name="Unknown Format Device",
-        num_qubits=2,
-        operations=["cz", "measure"],
-    )
-    monkeypatch.setattr(device, "supported_program_formats", lambda: [fomac.ProgramFormat.QPY])
-    monkeypatch.setattr(fomac, "devices", lambda: [device])
-
-    # Create backend
-    provider = QDMIProvider()
-    backend = provider.get_backend("Unknown Format Device")
-
+def test_backend_unsupported_format_error() -> None:
+    """Backend should raise UnsupportedFormatError when only unsupported formats available."""
     qc = QuantumCircuit(2, 2)
     qc.cz(0, 1)
-    qc.measure([0, 1], [0, 1])
+    qc.measure_all()
 
+    # Test with QPY format which is not supported for conversion from Qiskit
     with pytest.raises(
         UnsupportedFormatError, match="No conversion from Qiskit to any of the supported program formats"
     ):
-        backend.run(qc, shots=100)
+        QDMIBackend._convert_circuit(qc, [fomac.ProgramFormat.QPY])  # noqa: SLF001
 
 
-def test_backend_supports_cz_gate(mock_backend: QDMIBackend) -> None:
+def test_backend_supports_cz_gate(backend_with_mock_jobs: QDMIBackend) -> None:
     """Backend executes CZ gate circuits and returns counts."""
     qc = QuantumCircuit(2, 2)
     qc.cz(0, 1)
-    qc.measure([0, 1], [0, 1])
+    qc.measure_all()
 
-    job = mock_backend.run(qc, shots=100)
+    job = backend_with_mock_jobs.run(qc, shots=100)
     counts = job.result().get_counts()
     assert sum(counts.values()) == 100
 
 
-def test_map_operation_returns_none_for_unknown(mock_backend: QDMIBackend) -> None:
+def test_map_operation_returns_none_for_unknown() -> None:
     """Unknown FoMaC operations cannot be mapped to Qiskit gates."""
-    assert mock_backend._map_operation_to_gate("unknown_gate") is None  # noqa: SLF001
-    assert mock_backend._map_operation_to_gate("custom_op") is None  # noqa: SLF001
-    assert mock_backend._map_operation_to_gate("") is None  # noqa: SLF001
+    assert QDMIBackend._map_operation_to_gate("unknown_gate") is None  # noqa: SLF001
+    assert QDMIBackend._map_operation_to_gate("custom_op") is None  # noqa: SLF001
+    assert QDMIBackend._map_operation_to_gate("") is None  # noqa: SLF001
 
 
 @pytest.mark.parametrize(

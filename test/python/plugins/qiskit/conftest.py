@@ -289,49 +289,6 @@ class MockQDMIDevice:
         return self.MockJob(num_clbits=num_clbits, shots=num_shots)
 
 
-class MockQDMIDeviceWrapper:
-    """Wrapper that adds mock job execution to any FoMaC device.
-
-    This is useful for wrapping real devices (like the NA device) to provide
-    mock job execution for testing without actual hardware.
-    """
-
-    def __init__(self, device: fomac.Device) -> None:
-        """Initialize the wrapper.
-
-        Args:
-            device: The real FoMaC device to wrap.
-        """
-        self._device = device
-
-    def __getattr__(self, name: str) -> object:
-        """Delegate attribute access to the wrapped device.
-
-        Returns:
-            The attribute value from the wrapped device.
-        """
-        return getattr(self._device, name)
-
-    def submit_job(  # noqa: PLR6301
-        self,
-        program: str,
-        program_format: fomac.ProgramFormat,  # noqa: ARG002
-        num_shots: int,
-    ) -> MockQDMIDevice.MockJob:
-        """Submit a mock job (overrides the real device's submit_job).
-
-        Args:
-            program: The program string to parse for classical bit count.
-            program_format: The program format (unused in mock).
-            num_shots: Number of shots to simulate.
-
-        Returns:
-            A mock job with simulated results.
-        """
-        num_clbits = _parse_num_clbits_from_qasm(program)
-        return MockQDMIDevice.MockJob(num_clbits=num_clbits, shots=num_shots)
-
-
 @pytest.fixture
 def mock_qdmi_device_factory() -> type[MockQDMIDevice]:
     """Factory fixture for creating custom MockQDMIDevice instances.
@@ -352,35 +309,6 @@ def mock_qdmi_device_factory() -> type[MockQDMIDevice]:
             )
     """
     return MockQDMIDevice
-
-
-@pytest.fixture
-def mock_qdmi_device() -> MockQDMIDevice:
-    """Fixture providing a generic mock QDMI device for unit tests.
-
-    Returns:
-        Mock device with 5 qubits and common gates (h, cz, ry, rz, measure).
-
-    Note:
-        This fixture is intended for generic unit tests that don't depend on
-        specific device characteristics.
-    """
-    return MockQDMIDevice()
-
-
-@pytest.fixture
-def mock_backend(mock_qdmi_device: MockQDMIDevice) -> QDMIBackend:
-    """Fixture providing a QiskitBackend with a generic mock device.
-
-    Returns:
-        QDMIBackend instance configured with a mock device.
-
-    Note:
-        This fixture is intended for generic unit tests that don't depend on
-        specific device characteristics. The mock device supports common gates
-        (h, cz, ry, rz, measure) on 5 qubits.
-    """
-    return QDMIBackend(device=mock_qdmi_device)  # type: ignore[arg-type]
 
 
 def _single_qubit_circuit() -> QuantumCircuit:
@@ -514,3 +442,101 @@ def zoned_operation_device(mock_qdmi_device_factory: type[MockQDMIDevice]) -> Mo
     device = mock_cls(name="Zoned Device", num_qubits=5)
     device._operations = [zoned_op]  # noqa: SLF001
     return device
+
+
+@pytest.fixture(scope="module")
+def real_qdmi_devices() -> list[fomac.Device]:
+    """Get all real QDMI devices available.
+
+    Returns:
+        List of all QDMI devices from FoMaC.
+    """
+    return fomac.devices()
+
+
+@pytest.fixture(scope="module")
+def primary_test_device(real_qdmi_devices: list[fomac.Device]) -> fomac.Device:
+    """Get primary device for testing (DDSIM preferred).
+
+    Returns:
+        Primary test device (DDSIM if available, otherwise first device).
+        If no devices are available, the test is skipped.
+    """
+    # Prefer DDSIM for testing
+    for device in real_qdmi_devices:
+        if "DDSIM" in device.name():
+            return device
+
+    # Fallback to first device
+    if real_qdmi_devices:
+        return real_qdmi_devices[0]
+
+    pytest.skip("No QDMI devices available")
+
+
+@pytest.fixture
+def real_backend(primary_test_device: fomac.Device) -> QDMIBackend:
+    """Backend using real device (no mocks).
+
+    This fixture provides a backend instance using a real FoMaC device.
+    Use this for tests that only need device metadata and don't execute circuits.
+
+    Returns:
+        QDMIBackend instance configured with a real device.
+    """
+    return QDMIBackend(device=primary_test_device)
+
+
+class _DeviceWithMockedJobs:
+    """Wrapper for real device that mocks only job execution.
+
+    This wrapper delegates all calls to the real device except submit_job,
+    which returns a mock job instead of executing on real hardware.
+    """
+
+    def __init__(self, device: fomac.Device) -> None:
+        """Initialize wrapper with real device."""
+        self._device = device
+
+    def __getattr__(self, name: str) -> object:
+        """Delegate all attribute access to the real device.
+
+        Returns:
+            Attribute value from the wrapped device.
+        """
+        return getattr(self._device, name)
+
+    def submit_job(  # noqa: PLR6301
+        self,
+        program: str,
+        program_format: fomac.ProgramFormat,  # noqa: ARG002
+        num_shots: int,
+    ) -> MockQDMIDevice.MockJob:
+        """Submit a mock job instead of real execution.
+
+        Returns:
+            Mock job with simulated results.
+        """
+        num_clbits = _parse_num_clbits_from_qasm(program)
+        return MockQDMIDevice.MockJob(num_clbits=num_clbits, shots=num_shots)
+
+
+@pytest.fixture
+def backend_with_mock_jobs(primary_test_device: fomac.Device) -> QDMIBackend:
+    """Backend using real device but with mocked job execution.
+
+    This fixture:
+    - Uses real device for all metadata and capabilities
+    - Only mocks the submit_job() method to avoid actual execution
+    - Generates deterministic mock results based on circuit structure
+
+    Use this for tests that need to execute circuits but don't need real results.
+
+    Args:
+        primary_test_device: The real device to use.
+
+    Returns:
+        QDMIBackend instance with mocked job execution.
+    """
+    wrapped_device = _DeviceWithMockedJobs(primary_test_device)
+    return QDMIBackend(device=wrapped_device)  # type: ignore[arg-type]
