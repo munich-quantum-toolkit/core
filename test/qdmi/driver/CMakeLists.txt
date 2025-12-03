@@ -10,7 +10,6 @@ set(TARGET_NAME mqt-core-qdmi-driver-test)
 
 if(TARGET MQT::CoreQDMIDriver)
   package_add_test(${TARGET_NAME} MQT::CoreQDMIDriver test_driver.cpp)
-  target_link_libraries(${TARGET_NAME} PRIVATE spdlog::spdlog)
   if(NOT WIN32)
     add_dependencies(${TARGET_NAME} MQT::CoreQDMINaDeviceDyn MQT::CoreQDMIScDeviceDyn)
     target_compile_definitions(

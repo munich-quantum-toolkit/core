@@ -17,25 +17,6 @@ project(
 # Add path for custom modules
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 
-# set the logging level
-set(MQT_CORE_LOG_LEVEL
-    DEBUG
-    CACHE
-      STRING
-      "Set the active log level for spdlog (possible values: TRACE, DEBUG, INFO, WARN, ERROR, CRITICAL, OFF)"
-)
-set_property(
-  CACHE MQT_CORE_LOG_LEVEL
-  PROPERTY STRINGS
-           TRACE
-           DEBUG
-           INFO
-           WARN
-           ERROR
-           CRITICAL
-           OFF)
-add_compile_definitions(SPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_${MQT_CORE_LOG_LEVEL})
-
 include(AddMQTPythonBinding)
 include(StandardProjectSettings)
 include(PreventInSourceBuilds)

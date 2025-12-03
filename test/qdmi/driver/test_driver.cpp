@@ -18,7 +18,6 @@
 #include <gtest/gtest.h>
 #include <qdmi/client.h>
 #include <random>
-#include <spdlog/spdlog.h>
 #include <sstream>
 #include <string>
 #include <unordered_set>
@@ -126,30 +125,10 @@ protected:
 
 #ifndef _WIN32
 TEST(DriverTest, LoadLibraryTwice) {
-  // NOLINTNEXTLINE(misc-include-cleaner)
-  spdlog::set_level(spdlog::level::debug);
-  for (const auto& [lib, prefix] : DYN_DEV_LIBS) {
-    // NOLINTNEXTLINE(misc-include-cleaner)
-#if SPDLOG_ACTIVE_LEVEL <= SPDLOG_LEVEL_DEBUG
-    SPDLOG_DEBUG("Attempt to load library: {} with prefix: {}", lib, prefix);
-    bool loaded = false;
-    EXPECT_NO_THROW(
-        loaded = qdmi::Driver::get().addDynamicDeviceLibrary(lib, prefix));
-    if (loaded) {
-      SPDLOG_DEBUG("Library: {} with prefix: {} was already loaded", lib,
-                   prefix);
-    } else {
-      SPDLOG_DEBUG("Library: {} with prefix: {} was successfully loaded", lib,
-                   prefix);
-    }
-    SPDLOG_DEBUG("Attempt to load library: {} with prefix: {} a second time",
-                 lib, prefix);
-#else
-    EXPECT_NO_THROW(qdmi::Driver::get().addDynamicDeviceLibrary(lib, prefix));
-#endif
-    EXPECT_NO_THROW(
-        EXPECT_FALSE(qdmi::Driver::get().addDynamicDeviceLibrary(lib, prefix)));
-  }
+  EXPECT_NO_THROW(for (const auto& [lib, prefix] : DYN_DEV_LIBS) {
+    qdmi::Driver::get().addDynamicDeviceLibrary(lib, prefix);
+    EXPECT_FALSE(qdmi::Driver::get().addDynamicDeviceLibrary(lib, prefix));
+  });
 }
 #endif // _WIN32
 
