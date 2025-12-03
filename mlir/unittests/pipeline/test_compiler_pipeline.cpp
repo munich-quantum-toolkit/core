@@ -1317,25 +1317,74 @@ TEST_F(CompilerPipelineTest, CGPhase) {
 
   ASSERT_TRUE(runPipeline(input.get()).succeeded());
 
-  const auto quartz = buildQuartzIR([](quartz::QuartzProgramBuilder& b) {
+  const auto quartzInit = buildQuartzIR([](quartz::QuartzProgramBuilder& b) {
     auto reg = b.allocQubitRegister(1, "q");
     b.cgphase(1.0, reg[0]);
   });
-  const auto flux = buildFluxIR([](flux::FluxProgramBuilder& b) {
+  const auto fluxInit = buildFluxIR([](flux::FluxProgramBuilder& b) {
     auto reg = b.allocQubitRegister(1, "q");
     b.cgphase(1.0, reg[0]);
   });
-  const auto qir = buildQIR([](qir::QIRProgramBuilder& b) {
+  const auto fluxOpt = buildFluxIR([](flux::FluxProgramBuilder& b) {
+    auto reg = b.allocQubitRegister(1, "q");
+    b.p(1.0, reg[0]);
+  });
+  const auto quartzOpt = buildQuartzIR([](quartz::QuartzProgramBuilder& b) {
+    auto reg = b.allocQubitRegister(1, "q");
+    b.p(1.0, reg[0]);
+  });
+  const auto qirOpt = buildQIR([](qir::QIRProgramBuilder& b) {
     auto reg = b.allocQubitRegister(1);
-    b.cgphase(1.0, reg[0]);
+    b.p(1.0, reg[0]);
   });
 
   verifyAllStages({
-      .quartzImport = quartz.get(),
-      .fluxConversion = flux.get(),
-      .optimization = flux.get(),
-      .quartzConversion = quartz.get(),
-      .qirConversion = qir.get(),
+      .quartzImport = quartzInit.get(),
+      .fluxConversion = fluxInit.get(),
+      .optimization = fluxOpt.get(),
+      .quartzConversion = quartzOpt.get(),
+      .qirConversion = qirOpt.get(),
+  });
+}
+
+TEST_F(CompilerPipelineTest, MCGPhase) {
+  auto input = buildQuartzIR([](quartz::QuartzProgramBuilder& b) {
+    auto reg = b.allocQubitRegister(2, "q");
+    b.mcgphase(1.0, {reg[0], reg[1]});
+  });
+
+  ASSERT_TRUE(runPipeline(input.get()).succeeded());
+
+  const auto quartzInit = buildQuartzIR([](quartz::QuartzProgramBuilder& b) {
+    auto reg = b.allocQubitRegister(2, "q");
+    b.mcgphase(1.0, {reg[0], reg[1]});
+  });
+  const auto fluxInit = buildFluxIR([](flux::FluxProgramBuilder& b) {
+    auto reg = b.allocQubitRegister(2, "q");
+    b.mcgphase(1.0, {reg[0], reg[1]});
+  });
+  const auto fluxOpt = buildFluxIR([](flux::FluxProgramBuilder& b) {
+    auto reg = b.allocQubitRegister(2, "q");
+    b.p(1.0, reg[0]);
+    b.p(1.0, reg[1]);
+  });
+  const auto quartzOpt = buildQuartzIR([](quartz::QuartzProgramBuilder& b) {
+    auto reg = b.allocQubitRegister(2, "q");
+    b.p(1.0, reg[0]);
+    b.p(1.0, reg[1]);
+  });
+  const auto qirOpt = buildQIR([](qir::QIRProgramBuilder& b) {
+    auto reg = b.allocQubitRegister(2);
+    b.p(1.0, reg[0]);
+    b.p(1.0, reg[1]);
+  });
+
+  verifyAllStages({
+      .quartzImport = quartzInit.get(),
+      .fluxConversion = fluxInit.get(),
+      .optimization = fluxOpt.get(),
+      .quartzConversion = quartzOpt.get(),
+      .qirConversion = qirOpt.get(),
   });
 }
 
