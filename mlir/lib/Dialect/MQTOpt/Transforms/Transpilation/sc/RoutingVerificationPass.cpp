@@ -93,9 +93,9 @@ private:
 
         Layout unmodified(unit.layout());
         SmallVector<QubitIndexPair> history;
-        for (Operation& curr : unit) {
+        for (const Operation& curr : unit) {
           const auto res =
-              TypeSwitch<Operation*, LogicalResult>(&curr)
+              TypeSwitch<const Operation*, LogicalResult>(&curr)
                   .Case<UnitaryInterface>([&](UnitaryInterface op)
                                               -> LogicalResult {
                     if (isTwoQubitGate(op)) {

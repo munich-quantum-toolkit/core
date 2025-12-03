@@ -251,22 +251,14 @@ LayeredUnit::LayeredUnit(Layout layout, mlir::Region* region, bool restore)
     }
 
     if (!layer.hasZeroOps()) {
-      if (layer.hasZero2QOps()) {
-
-        /// If there is no gates to route, merge the last layer
-        /// with this one and keep the anchor the same.
-
-        if (layers_.empty()) {
-          layers_.emplace_back(layer);
-        } else {
-          layers_.back().ops.append(layer.ops);
-          if (layers_.back().anchor == nullptr) {
-            layers_.back().anchor = layer.anchor;
-          }
-        }
-      } else {
-        /// Otherwise, add the layer.
+      if (!layer.hasZero2QOps() || layers_.empty()) {
         layers_.emplace_back(layer);
+      } else {
+        /// If there is no gates to route, merge into the previous layer.
+        layers_.back().ops.append(layer.ops);
+        if (layers_.back().anchor == nullptr) {
+          layers_.back().anchor = layer.anchor;
+        }
       }
     }
 
@@ -309,13 +301,13 @@ mlir::SmallVector<LayeredUnit, 3> LayeredUnit::next() {
 LLVM_DUMP_METHOD void LayeredUnit::dump(llvm::raw_ostream& os) const {
   os << "schedule: layers=\n";
   for (const auto [i, layer] : llvm::enumerate(layers_)) {
-    os << '\t' << i << ": ";
-    os << "#ops= " << layer.ops.size();
+    os << '\t' << '[' << i << "]:\n";
+    os << "\t #ops= " << layer.ops.size();
     if (!layer.ops.empty()) {
       os << " anchor= " << layer.anchor->getLoc();
     }
     os << '\n';
-    os << "schedule: gates= ";
+    os << "\t gates= ";
     if (!layer.hasZero2QOps()) {
       for (const auto [prog0, prog1] : layer.twoQubitProgs) {
         os << "(" << prog0 << "," << prog1 << "), ";
