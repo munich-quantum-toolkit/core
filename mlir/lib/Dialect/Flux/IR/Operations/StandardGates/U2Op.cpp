@@ -26,9 +26,65 @@ using namespace mlir::flux;
 namespace {
 
 /**
- * @brief Replace trivial U2 operations with RY operations.
+ * @brief Replace U2(0, pi) with H.
  */
-struct ReplaceTrivialU2 final : OpRewritePattern<U2Op> {
+struct ReplaceU2WithH final : OpRewritePattern<U2Op> {
+  using OpRewritePattern::OpRewritePattern;
+
+  LogicalResult matchAndRewrite(U2Op op,
+                                PatternRewriter& rewriter) const override {
+    const auto phi = U2Op::getStaticParameter(op.getPhi());
+    const auto lambda = U2Op::getStaticParameter(op.getLambda());
+    if (!phi || !lambda) {
+      return failure();
+    }
+
+    const auto phiValue = phi.getValueAsDouble();
+    const auto lambdaValue = lambda.getValueAsDouble();
+    if (phiValue != 0.0 || lambdaValue != std::numbers::pi) {
+      return failure();
+    }
+
+    auto hOp = rewriter.create<HOp>(op.getLoc(), op.getQubitIn());
+    rewriter.replaceOp(op, hOp.getResult());
+
+    return success();
+  }
+};
+
+/**
+ * @brief Replace U2(-pi / 2, pi / 2) with RX(pi / 2).
+ */
+struct ReplaceU2WithRX final : OpRewritePattern<U2Op> {
+  using OpRewritePattern::OpRewritePattern;
+
+  LogicalResult matchAndRewrite(U2Op op,
+                                PatternRewriter& rewriter) const override {
+    const auto phi = U2Op::getStaticParameter(op.getPhi());
+    const auto lambda = U2Op::getStaticParameter(op.getLambda());
+    if (!phi || !lambda) {
+      return failure();
+    }
+
+    const auto phiValue = phi.getValueAsDouble();
+    const auto lambdaValue = lambda.getValueAsDouble();
+    if (phiValue != -std::numbers::pi / 2.0 ||
+        lambdaValue != std::numbers::pi / 2.0) {
+      return failure();
+    }
+
+    auto rxOp = rewriter.create<RXOp>(op.getLoc(), op.getQubitIn(),
+                                      std::numbers::pi / 2.0);
+    rewriter.replaceOp(op, rxOp.getResult());
+
+    return success();
+  }
+};
+
+/**
+ * @brief Replace U2(0, 0) with RY(pi / 2).
+ */
+struct ReplaceU2WithRY final : OpRewritePattern<U2Op> {
   using OpRewritePattern::OpRewritePattern;
 
   LogicalResult matchAndRewrite(U2Op op,
@@ -45,9 +101,9 @@ struct ReplaceTrivialU2 final : OpRewritePattern<U2Op> {
       return failure();
     }
 
-    auto rxOp = rewriter.create<RYOp>(op.getLoc(), op.getQubitIn(),
+    auto ryOp = rewriter.create<RYOp>(op.getLoc(), op.getQubitIn(),
                                       std::numbers::pi / 2.0);
-    rewriter.replaceOp(op, rxOp.getResult());
+    rewriter.replaceOp(op, ryOp.getResult());
 
     return success();
   }
@@ -80,5 +136,5 @@ void U2Op::build(OpBuilder& odsBuilder, OperationState& odsState,
 
 void U2Op::getCanonicalizationPatterns(RewritePatternSet& results,
                                        MLIRContext* context) {
-  results.add<ReplaceTrivialU2>(context);
+  results.add<ReplaceU2WithH, ReplaceU2WithRX, ReplaceU2WithRY>(context);
 }
