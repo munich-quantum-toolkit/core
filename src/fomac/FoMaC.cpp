@@ -861,7 +861,7 @@ auto FoMaC::ensureInitialized() -> void {
 
 auto FoMaC::setSessionParameter(const SessionParameter param,
                                 const std::string& value) -> void {
-  std::lock_guard<std::mutex> lock(mutex_);
+  const std::scoped_lock lock(mutex_);
 
   if (initialized_) {
     throw std::runtime_error(
@@ -875,9 +875,9 @@ auto FoMaC::setSessionParameter(const SessionParameter param,
     }
   } else if (param == SessionParameter::AUTHURL) {
     // Basic URL validation
-    static const std::regex urlPattern(
+    static const std::regex URL_PATTERN(
         R"(^https?://[a-zA-Z0-9\-._~:/?#\[\]@!$&'()*+,;=%]+$)");
-    if (!std::regex_match(value, urlPattern)) {
+    if (!std::regex_match(value, URL_PATTERN)) {
       throw std::runtime_error("Invalid URL format: " + value);
     }
   }
