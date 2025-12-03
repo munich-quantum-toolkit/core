@@ -136,6 +136,7 @@ bool areOperationsEquivalent(Operation* lhs, Operation* rhs,
     if (!rhsConst) {
       return false;
     }
+    // NOLINTNEXTLINE(cppcoreguidelines-slicing)
     if (lhsConst.getValue() != rhsConst.getValue()) {
       return false;
     }
