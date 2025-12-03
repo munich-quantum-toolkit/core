@@ -489,42 +489,34 @@ struct ConvertQuartzResetQIR final : OpConversionPattern<ResetOp> {
   }
 };
 
-// ZeroTargetOneParameter
+// GPhaseOp
 
-#define DEFINE_ZERO_TARGET_ONE_PARAMETER(OP_CLASS, OP_NAME_BIG, OP_NAME_SMALL, \
-                                         QIR_NAME, PARAM)                      \
-  /**                                                                          \
-   * @brief Converts quartz.OP_NAME_SMALL to QIR QIR_NAME                      \
-   *                                                                           \
-   * @par Example:                                                             \
-   * ```mlir                                                                   \
-   * quartz.OP_NAME_SMALL(%PARAM)                                              \
-   * ```                                                                       \
-   * is converted to                                                           \
-   * ```mlir                                                                   \
-   * llvm.call @__quantum__qis__QIR_NAME__body(%PARAM) : (f64) -> ()           \
-   * ```                                                                       \
-   */                                                                          \
-  struct ConvertQuartz##OP_CLASS##QIR final                                    \
-      : StatefulOpConversionPattern<OP_CLASS> {                                \
-    using StatefulOpConversionPattern::StatefulOpConversionPattern;            \
-                                                                               \
-    LogicalResult                                                              \
-    matchAndRewrite(OP_CLASS op, OpAdaptor adaptor,                            \
-                    ConversionPatternRewriter& rewriter) const override {      \
-      auto& state = getState();                                                \
-      const auto inCtrlOp = state.inCtrlOp;                                    \
-      const size_t numCtrls =                                                  \
-          inCtrlOp != 0 ? state.posCtrls[inCtrlOp].size() : 0;                 \
-      const auto fnName = getFnName##OP_NAME_BIG(numCtrls);                    \
-      return convertUnitaryToCallOp(op, adaptor, rewriter, getContext(),       \
-                                    state, fnName, 0, 1);                      \
-    }                                                                          \
-  };
+/**
+ * @brief Converts quartz.gphase to QIR gphase
+ *
+ * @par Example:
+ * ```mlir
+ * quartz.gphase(%theta)
+ * ```
+ * is converted to
+ * ```mlir
+ * llvm.call @__quantum__qis__gphase__body(%theta) : (f64) -> ()
+ * ```
+ */
+struct ConvertQuartzGPhaseOpQIR final : StatefulOpConversionPattern<GPhaseOp> {
+  using StatefulOpConversionPattern::StatefulOpConversionPattern;
 
-DEFINE_ZERO_TARGET_ONE_PARAMETER(GPhaseOp, GPHASE, gphase, gphase, theta)
-
-#undef DEFINE_ZERO_TARGET_ONE_PARAMETER
+  LogicalResult
+  matchAndRewrite(GPhaseOp op, OpAdaptor adaptor,
+                  ConversionPatternRewriter& rewriter) const override {
+    auto& state = getState();
+    if (state.inCtrlOp != 0) {
+      return failure();
+    }
+    return convertUnitaryToCallOp(op, adaptor, rewriter, getContext(), state,
+                                  QIR_GPHASE, 0, 1);
+  }
+};
 
 // OneTargetZeroParameter
 

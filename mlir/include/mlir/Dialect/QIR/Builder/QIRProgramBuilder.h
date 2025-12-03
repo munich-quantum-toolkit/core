@@ -263,64 +263,23 @@ public:
   // Unitary Operations
   //===--------------------------------------------------------------------===//
 
-  // ZeroTargetOneParameter
+  // GPhaseOp
 
-#define DECLARE_ZERO_TARGET_ONE_PARAMETER(OP_NAME, QIR_NAME, PARAM)            \
-  /**                                                                          \
-   * @brief Apply a QIR QIR_NAME operation                                     \
-   *                                                                           \
-   * @param PARAM Rotation angle in radians                                    \
-   * @return Reference to this builder for method chaining                     \
-   *                                                                           \
-   * @par Example:                                                             \
-   * ```c++                                                                    \
-   * builder.OP_NAME(PARAM);                                                   \
-   * ```                                                                       \
-   * ```mlir                                                                   \
-   * llvm.call @__quantum__qis__##QIR_NAME##__body(%PARAM) : (f64) -> ()       \
-   * ```                                                                       \
-   */                                                                          \
-  QIRProgramBuilder& OP_NAME(const std::variant<double, Value>&(PARAM));       \
-  /**                                                                          \
-   * @brief Apply a controlled QIR_NAME operation                              \
-   *                                                                           \
-   * @param PARAM Rotation angle in radians                                    \
-   * @param control Control qubit                                              \
-   * @return Reference to this builder for method chaining                     \
-   *                                                                           \
-   * @par Example:                                                             \
-   * ```c++                                                                    \
-   * builder.c##OP_NAME(PARAM, q);                                             \
-   * ```                                                                       \
-   * ```mlir                                                                   \
-   * llvm.call @__quantum__qis__c##QIR_NAME##__body(%q, %PARAM) : (!llvm.ptr,  \
-   * f64) -> ()                                                                \
-   * ```                                                                       \
-   */                                                                          \
-  QIRProgramBuilder& c##OP_NAME(const std::variant<double, Value>&(PARAM),     \
-                                Value control);                                \
-  /**                                                                          \
-   * @brief Apply a multi-controlled QIR_NAME operation                        \
-   *                                                                           \
-   * @param PARAM Rotation angle in radians                                    \
-   * @param controls Control qubits                                            \
-   * @return Reference to this builder for method chaining                     \
-   *                                                                           \
-   * @par Example:                                                             \
-   * ```c++                                                                    \
-   * builder.mc##OP_NAME(PARAM, {q0, q1});                                     \
-   * ```                                                                       \
-   * ```mlir                                                                   \
-   * llvm.call @__quantum__qis__cc##QIR_NAME##__body(%q0, %q1, %PARAM) :       \
-   * (!llvm.ptr, !llvm.ptr, f64) -> ()                                         \
-   * ```                                                                       \
-   */                                                                          \
-  QIRProgramBuilder& mc##OP_NAME(const std::variant<double, Value>&(PARAM),    \
-                                 ValueRange controls);
-
-  DECLARE_ZERO_TARGET_ONE_PARAMETER(gphase, gphase, theta)
-
-#undef DECLARE_ZERO_TARGET_ONE_PARAMETER
+  /**
+   * @brief Apply a QIR gphase operation
+   *
+   * @param theta Rotation angle in radians
+   * @return Reference to this builder for method chaining
+   *
+   * @par Example:
+   * ```c++
+   * builder.gphase(theta);
+   * ```
+   * ```mlir
+   * llvm.call @__quantum__qis__gphase__body(%theta) : (f64) -> ()
+   * ```
+   */
+  QIRProgramBuilder& gphase(const std::variant<double, Value>& theta);
 
   // OneTargetZeroParameter
 

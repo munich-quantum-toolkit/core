@@ -303,29 +303,13 @@ void QIRProgramBuilder::createCallOp(
   builder.create<LLVM::CallOp>(loc, fnDecl, operands);
 }
 
-// ZeroTargetOneParameter
+// GPhaseOp
 
-#define DEFINE_ZERO_TARGET_ONE_PARAMETER(OP_NAME_BIG, OP_NAME_SMALL, PARAM)    \
-  QIRProgramBuilder& QIRProgramBuilder::OP_NAME_SMALL(                         \
-      const std::variant<double, Value>&(PARAM)) {                             \
-    createCallOp({PARAM}, {}, {}, QIR_##OP_NAME_BIG);                          \
-    return *this;                                                              \
-  }                                                                            \
-  QIRProgramBuilder& QIRProgramBuilder::c##OP_NAME_SMALL(                      \
-      const std::variant<double, Value>&(PARAM), const Value control) {        \
-    createCallOp({PARAM}, {control}, {}, QIR_C##OP_NAME_BIG);                  \
-    return *this;                                                              \
-  }                                                                            \
-  QIRProgramBuilder& QIRProgramBuilder::mc##OP_NAME_SMALL(                     \
-      const std::variant<double, Value>&(PARAM), const ValueRange controls) {  \
-    createCallOp({PARAM}, controls, {},                                        \
-                 getFnName##OP_NAME_BIG(controls.size()));                     \
-    return *this;                                                              \
-  }
-
-DEFINE_ZERO_TARGET_ONE_PARAMETER(GPHASE, gphase, theta)
-
-#undef DEFINE_ZERO_TARGET_ONE_PARAMETER
+QIRProgramBuilder&
+QIRProgramBuilder::gphase(const std::variant<double, Value>& theta) {
+  createCallOp({theta}, {}, {}, QIR_GPHASE);
+  return *this;
+}
 
 // OneTargetZeroParameter
 
