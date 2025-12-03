@@ -262,6 +262,10 @@ TEST_P(DeviceTest, MinAtomDistance) {
   EXPECT_NO_THROW(std::ignore = device.getMinAtomDistance());
 }
 
+TEST_P(DeviceTest, SupportedProgramFormats) {
+  EXPECT_NO_THROW(std::ignore = device.getSupportedProgramFormats());
+}
+
 TEST_P(SiteTest, Index) { EXPECT_NO_THROW(std::ignore = site.getIndex()); }
 
 TEST_P(SiteTest, T1) { EXPECT_NO_THROW(std::ignore = site.getT1()); }
@@ -469,6 +473,30 @@ TEST_F(JobTest, MultipleGetCountsCalls) {
   const auto counts2 = job.getCounts();
 
   EXPECT_EQ(counts1, counts2);
+}
+
+TEST_F(JobTest, GetShotsReturnsValidShots) {
+  EXPECT_TRUE(job.wait());
+
+  // Some devices may not support the SHOTS result type
+  try {
+    const auto shots = job.getShots();
+    EXPECT_FALSE(shots.empty());
+
+    // Each shot should be a valid binary string of length 1 (single qubit)
+    for (const auto& shot : shots) {
+      EXPECT_EQ(shot.length(), 1);
+      EXPECT_TRUE(shot == "0" || shot == "1");
+    }
+
+    // The number of shots should match the expected number
+    EXPECT_EQ(shots.size(), job.getNumShots());
+  } catch (const std::runtime_error& e) {
+    // If the device doesn't support shots, the error message should indicate so
+    const std::string errorMsg(e.what());
+    EXPECT_TRUE(errorMsg.find("Not supported") != std::string::npos ||
+                errorMsg.find("not supported") != std::string::npos);
+  }
 }
 
 TEST_F(JobTest, CancelJob) {
