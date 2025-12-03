@@ -31,7 +31,7 @@ template <class ConcreteType> class SingletonDevice {
   // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
   MQT_HIDDEN inline static std::shared_ptr<ConcreteType>* instance = nullptr;
   // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
-  MQT_HIDDEN inline static auto* mutex = new std::mutex;
+  MQT_HIDDEN inline static std::mutex* mutex = new std::mutex;
 
 protected:
   /// @brief Protected constructor to enforce the singleton pattern.
