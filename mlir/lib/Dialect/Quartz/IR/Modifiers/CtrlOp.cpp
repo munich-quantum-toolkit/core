@@ -84,8 +84,8 @@ struct CtrlInlineGPhase final : OpRewritePattern<CtrlOp> {
     }
 
     for (size_t i = 0; i < op.getNumControls(); ++i) {
-      auto pOp = rewriter.create<POp>(op.getLoc(), op.getPosControl(i),
-                                      gPhaseOp.getTheta());
+      rewriter.create<POp>(op.getLoc(), op.getPosControl(i),
+                           gPhaseOp.getTheta());
     }
 
     rewriter.eraseOp(op);
