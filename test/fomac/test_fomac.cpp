@@ -14,6 +14,7 @@
 #include <cstdlib>
 #include <gmock/gmock-matchers.h>
 #include <gtest/gtest.h>
+#include <memory>
 #include <new>
 #include <numbers>
 #include <optional>
@@ -34,27 +35,23 @@ protected:
 
 class SiteTest : public DeviceTest {
 protected:
-  std::optional<FoMaC::Device::Site> site;
+  std::unique_ptr<FoMaC::Device::Site> site;
 
   void SetUp() override {
     const auto& sites = device.getSites();
-    if (sites.empty()) {
-      GTEST_SKIP();
-    }
-    site = sites.front();
+    ASSERT_FALSE(sites.empty());
+    *site = sites.front();
   }
 };
 
 class OperationTest : public DeviceTest {
 protected:
-  std::optional<FoMaC::Device::Operation> operation;
+  std::unique_ptr<FoMaC::Device::Operation> operation;
 
   void SetUp() override {
     const auto& operations = device.getOperations();
-    if (operations.empty()) {
-      GTEST_SKIP();
-    }
-    operation = operations.front();
+    ASSERT_FALSE(operations.empty());
+    *operation = operations.front();
   }
 };
 
