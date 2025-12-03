@@ -28,8 +28,9 @@
 
 namespace qdmi {
 template <class ConcreteType> class SingletonDevice {
-  MQT_HIDDEN inline static auto* instance =
-      new std::shared_ptr<ConcreteType>(nullptr);
+  // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
+  MQT_HIDDEN inline static std::shared_ptr<ConcreteType>* instance = nullptr;
+  // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
   MQT_HIDDEN inline static auto* mutex = new std::mutex;
 
 protected:
@@ -55,8 +56,9 @@ public:
    */
   static void initialize() {
     const std::scoped_lock lock(*mutex);
-    if (*instance == nullptr) {
-      *instance = std::shared_ptr<ConcreteType>(new ConcreteType);
+    if (instance == nullptr) {
+      // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
+      instance = new std::shared_ptr<ConcreteType>(new ConcreteType);
     }
   }
 
@@ -68,9 +70,17 @@ public:
    */
   static void finalize() {
     const std::scoped_lock lock(*mutex);
-    *instance = nullptr;
-    delete instance;
-    delete mutex;
+    if (instance != nullptr) {
+      // Reset the shared_ptr to release the managed object.
+      *instance = nullptr;
+      // Delete the shared_ptr object itself.
+      // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
+      delete instance;
+      instance = nullptr;
+    }
+    // Do NOT delete the static mutex. The mutex is intentionally leaked to
+    // avoid static deinitialization issues (cf. static deinitialization order
+    // fiasco)
   }
 
   /**

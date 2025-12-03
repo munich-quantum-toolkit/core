@@ -28,7 +28,7 @@
 
 namespace qdmi::sc {
 class Device final : public SingletonDevice<Device> {
-  friend class SingletonDevice<Device>;
+  friend class SingletonDevice;
   /// @brief Provides access to the device name.
   std::string name_;
 
