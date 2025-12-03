@@ -125,10 +125,11 @@ protected:
 
 #ifndef _WIN32
 TEST(DriverTest, LoadLibraryTwice) {
-  EXPECT_NO_THROW(for (const auto& [lib, prefix] : DYN_DEV_LIBS) {
-    qdmi::Driver::get().addDynamicDeviceLibrary(lib, prefix);
-    EXPECT_FALSE(qdmi::Driver::get().addDynamicDeviceLibrary(lib, prefix));
-  });
+  for (const auto& [lib, prefix] : DYN_DEV_LIBS) {
+    EXPECT_NO_THROW(qdmi::Driver::get().addDynamicDeviceLibrary(lib, prefix));
+    EXPECT_NO_THROW(
+        EXPECT_FALSE(qdmi::Driver::get().addDynamicDeviceLibrary(lib, prefix)));
+  }
 }
 #endif // _WIN32
 
