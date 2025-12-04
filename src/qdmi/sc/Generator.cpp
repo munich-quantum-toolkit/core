@@ -93,6 +93,24 @@ auto writeSites(const Device& device, std::ostream& os) -> void {
 }
 
 /**
+ * @brief Writes the operations from the device object.
+ * @param device is the device object containing the operations.
+ * @param os is the output stream to write the operations to.
+ */
+auto writeOperations(const Device& device, std::ostream& os) -> void {
+  os << "#define INITIALIZE_OPERATIONS(var) var.clear()";
+  for (const auto& operation : device.operations) {
+    os << ";\\\n"
+          "  "
+          "var.emplace_back(MQT_SC_QDMI_Operation_impl_d::"
+          "makeUnique(\""
+       << operation.name << "\", " << operation.numParameters << ", "
+       << operation.numQubits << "))";
+  }
+  os << "\n";
+}
+
+/**
  * @brief Emits a macro to initialize the device coupling map.
  *
  * Writes the C preprocessor macro `INITIALIZE_COUPLINGMAP(var)` which assigns
@@ -208,6 +226,7 @@ auto writeHeader(const Device& device, std::ostream& os) -> void {
   writeQubitsNum(device, os);
   writeSites(device, os);
   writeCouplingMap(device, os);
+  writeOperations(device, os);
 }
 
 /**

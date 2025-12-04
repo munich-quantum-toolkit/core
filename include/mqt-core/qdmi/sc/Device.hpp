@@ -20,6 +20,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <string>
 #include <unordered_map>
 #include <utility>
@@ -277,12 +278,20 @@ public:
  */
 struct MQT_SC_QDMI_Operation_impl_d {
 private:
+  std::string name_;     ///< Name of the operation
+  size_t numParameters_; ///< Number of parameters for the operation
+  /**
+   * @brief Number of qubits involved in the operation
+   */
+  std::optional<size_t> numQubits_ = std::nullopt;
   /// @brief Constructor for an empty operation.
-  MQT_SC_QDMI_Operation_impl_d() = default;
+  MQT_SC_QDMI_Operation_impl_d(std::string name, size_t numParameters,
+                               size_t numQubits);
 
 public:
   /// @brief Factory function empty operations.
-  [[nodiscard]] static auto makeUnique()
+  [[nodiscard]] static auto makeUnique(std::string name, size_t numParameters,
+                                       size_t numQubits)
       -> std::unique_ptr<MQT_SC_QDMI_Operation_impl_d>;
 
   /**

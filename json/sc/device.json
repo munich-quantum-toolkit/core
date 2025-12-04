@@ -182,5 +182,9 @@
     [87, 97],
     [88, 98],
     [89, 99]
+  ],
+  "operations": [
+    { "name": "x", "num_qubits": 1 },
+    { "name": "cx", "num_qubits": 2 }
   ]
 }

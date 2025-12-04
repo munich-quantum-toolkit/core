@@ -102,6 +102,7 @@ Device::Device() {
   // NOLINTNEXTLINE(misc-const-correctness)
   INITIALIZE_SITES(sites_);
   INITIALIZE_COUPLINGMAP(couplingMap_);
+  INITIALIZE_OPERATIONS(operations_);
 }
 Device::~Device() {
   // Explicitly clear sessions before destruction to avoid spurious segfaults
@@ -322,21 +323,35 @@ auto MQT_SC_QDMI_Site_impl_d::queryProperty(const QDMI_Site_Property prop,
                             value, sizeRet)
   return QDMI_ERROR_NOTSUPPORTED;
 }
-auto MQT_SC_QDMI_Operation_impl_d::makeUnique()
+MQT_SC_QDMI_Operation_impl_d::MQT_SC_QDMI_Operation_impl_d(
+    std::string name, const size_t numParameters, const size_t numQubits)
+    : name_(std::move(name)), numParameters_(numParameters),
+      numQubits_(numQubits) {}
+auto MQT_SC_QDMI_Operation_impl_d::makeUnique(std::string name,
+                                              const size_t numParameters,
+                                              const size_t numQubits)
     -> std::unique_ptr<MQT_SC_QDMI_Operation_impl_d> {
-  const MQT_SC_QDMI_Operation_impl_d op{};
+  const MQT_SC_QDMI_Operation_impl_d op(std::move(name), numParameters,
+                                        numQubits);
   return std::make_unique<MQT_SC_QDMI_Operation_impl_d>(op);
 }
-// NOLINTNEXTLINE(readability-convert-member-functions-to-static)
 auto MQT_SC_QDMI_Operation_impl_d::queryProperty(
     const size_t numSites, const MQT_SC_QDMI_Site* sites,
     const size_t numParams, const double* params,
     const QDMI_Operation_Property prop, const size_t size, void* value,
-    size_t* /* unused */) const -> int {
+    size_t* sizeRet) const -> int {
   if ((sites != nullptr && numSites == 0) ||
       (params != nullptr && numParams == 0) ||
       (value != nullptr && size == 0) || prop >= QDMI_OPERATION_PROPERTY_MAX) {
     return QDMI_ERROR_INVALIDARGUMENT;
+  }
+  ADD_STRING_PROPERTY(QDMI_OPERATION_PROPERTY_NAME, name_.c_str(), prop, size,
+                      value, sizeRet)
+  ADD_SINGLE_VALUE_PROPERTY(QDMI_OPERATION_PROPERTY_PARAMETERSNUM, size_t,
+                            numParameters_, prop, size, value, sizeRet)
+  if (numQubits_) {
+    ADD_SINGLE_VALUE_PROPERTY(QDMI_OPERATION_PROPERTY_QUBITSNUM, size_t,
+                              *numQubits_, prop, size, value, sizeRet)
   }
   return QDMI_ERROR_NOTSUPPORTED;
 }
