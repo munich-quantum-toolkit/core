@@ -22,7 +22,8 @@ jobs:
     uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-qiskit-upstream-tests.yml@setup-mlir # v1.17.3
     with:
       runs-on: ${{ matrix.runs-on }}
-      setup-z3: true
+      setup-mlir: true
+      setup-mlir-tag: 2025.11.25
 
   create-issue-on-failure:
     name: Create issue on failure
