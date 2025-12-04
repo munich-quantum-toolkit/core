@@ -841,7 +841,7 @@ FoMaC& FoMaC::operator=(FoMaC&& other) noexcept {
 }
 
 auto FoMaC::ensureInitialized() -> void {
-  std::lock_guard<std::mutex> lock(mutex_);
+  const std::scoped_lock<std::mutex> lock(mutex_);
   if (initialized_) {
     return;
   }
@@ -861,7 +861,7 @@ auto FoMaC::ensureInitialized() -> void {
 
 auto FoMaC::setSessionParameter(const SessionParameter param,
                                 const std::string& value) -> void {
-  const std::scoped_lock lock(mutex_);
+  const std::scoped_lock<std::mutex> lock(mutex_);
 
   if (initialized_) {
     throw std::runtime_error(
