@@ -14,11 +14,12 @@
 
 #include <cassert>
 #include <llvm/ADT/STLExtras.h>
-#include <llvm/ADT/StringRef.h>
-#include <llvm/Support/Casting.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/IR/BuiltinAttributes.h>
+#include <mlir/IR/PatternMatch.h>
+#include <mlir/IR/Types.h>
 #include <mlir/IR/Value.h>
+#include <mlir/Support/LLVM.h>
 #include <utility>
 
 namespace mqt::ir::opt {
@@ -26,12 +27,12 @@ namespace {
 /**
  * @brief A function attribute that specifies an (QIR) entry point function.
  */
-constexpr llvm::StringLiteral ENTRY_POINT_ATTR{"entry_point"};
+constexpr mlir::StringLiteral ENTRY_POINT_ATTR{"entry_point"};
 
 /**
  * @brief Attribute to forward function-level attributes to LLVM IR.
  */
-constexpr llvm::StringLiteral PASSTHROUGH_ATTR{"passthrough"};
+constexpr mlir::StringLiteral PASSTHROUGH_ATTR{"passthrough"};
 } // namespace
 
 bool isEntryPoint(mlir::func::FuncOp op) {
@@ -42,8 +43,8 @@ bool isEntryPoint(mlir::func::FuncOp op) {
   }
 
   return llvm::any_of(passthroughAttr, [](const mlir::Attribute attr) {
-    return isa<mlir::StringAttr>(attr) &&
-           cast<mlir::StringAttr>(attr) == ENTRY_POINT_ATTR;
+    return mlir::isa<mlir::StringAttr>(attr) &&
+           mlir::cast<mlir::StringAttr>(attr) == ENTRY_POINT_ATTR;
   });
 }
 
@@ -90,5 +91,51 @@ bool isTwoQubitGate(UnitaryInterface op) {
     }
   }
   return nullptr;
+}
+
+[[nodiscard]] SWAPOp createSwap(mlir::Location location, mlir::Value in0,
+                                mlir::Value in1,
+                                mlir::PatternRewriter& rewriter) {
+  const mlir::SmallVector<mlir::Type> resultTypes{in0.getType(), in1.getType()};
+  const mlir::SmallVector<mlir::Value> inQubits{in0, in1};
+
+  return rewriter.create<SWAPOp>(
+      /* location = */ location,
+      /* out_qubits = */ resultTypes,
+      /* pos_ctrl_out_qubits = */ mlir::TypeRange{},
+      /* neg_ctrl_out_qubits = */ mlir::TypeRange{},
+      /* static_params = */ nullptr,
+      /* params_mask = */ nullptr,
+      /* params = */ mlir::ValueRange{},
+      /* in_qubits = */ inQubits,
+      /* pos_ctrl_in_qubits = */ mlir::ValueRange{},
+      /* neg_ctrl_in_qubits = */ mlir::ValueRange{});
+}
+
+void replaceAllUsesInRegionAndChildrenExcept(mlir::Value oldValue,
+                                             mlir::Value newValue,
+                                             mlir::Region* region,
+                                             mlir::Operation* exceptOp,
+                                             mlir::PatternRewriter& rewriter) {
+  if (oldValue == newValue) {
+    return;
+  }
+
+  rewriter.replaceUsesWithIf(oldValue, newValue, [&](mlir::OpOperand& use) {
+    mlir::Operation* user = use.getOwner();
+    if (user == exceptOp) {
+      return false;
+    }
+
+    // For other blocks, check if in region tree
+    mlir::Region* userRegion = user->getParentRegion();
+    while (userRegion) {
+      if (userRegion == region) {
+        return true;
+      }
+      userRegion = userRegion->getParentRegion();
+    }
+    return false;
+  });
 }
 } // namespace mqt::ir::opt
