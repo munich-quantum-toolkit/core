@@ -168,8 +168,7 @@ private:
                 .Case<scf::YieldOp>([&](scf::YieldOp op) {
                   if (unit.restore()) {
                     rewriter.setInsertionPoint(op);
-                    insertSWAPs(op.getLoc(),
-                                llvm::to_vector(llvm::reverse(history)),
+                    insertSWAPs(op.getLoc(), llvm::reverse(history),
                                 unit.layout(), rewriter);
                   }
                 })

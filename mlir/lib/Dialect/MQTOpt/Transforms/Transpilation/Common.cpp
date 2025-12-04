@@ -148,27 +148,4 @@ void replaceAllUsesInRegionAndChildrenExcept(mlir::Value oldValue,
   return arch.areAdjacent(layout.lookupHardwareIndex(ins.first),
                           layout.lookupHardwareIndex(ins.second));
 }
-
-void insertSWAPs(mlir::Location loc, mlir::ArrayRef<QubitIndexPair> swaps,
-                 Layout& layout, mlir::PatternRewriter& rewriter) {
-  for (const auto [hw0, hw1] : swaps) {
-    const mlir::Value in0 = layout.lookupHardwareValue(hw0);
-    const mlir::Value in1 = layout.lookupHardwareValue(hw1);
-    [[maybe_unused]] const auto [prog0, prog1] =
-        layout.getProgramIndices(hw0, hw1);
-
-    auto swap = createSwap(loc, in0, in1, rewriter);
-    const auto [out0, out1] = getOuts(swap);
-
-    rewriter.setInsertionPointAfter(swap);
-    replaceAllUsesInRegionAndChildrenExcept(in0, out1, swap->getParentRegion(),
-                                            swap, rewriter);
-    replaceAllUsesInRegionAndChildrenExcept(in1, out0, swap->getParentRegion(),
-                                            swap, rewriter);
-
-    layout.swap(in0, in1);
-    layout.remapQubitValue(in0, out0);
-    layout.remapQubitValue(in1, out1);
-  }
-}
 } // namespace mqt::ir::opt

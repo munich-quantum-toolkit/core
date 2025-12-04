@@ -14,12 +14,14 @@
 #include "mlir/Dialect/MQTOpt/Transforms/Transpilation/Architecture.h"
 #include "mlir/Dialect/MQTOpt/Transforms/Transpilation/Layout.h"
 
+#include <concepts>
 #include <cstddef>
 #include <llvm/ADT/StringRef.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/IR/BuiltinAttributes.h>
 #include <mlir/IR/PatternMatch.h>
 #include <mlir/IR/Value.h>
+#include <ranges>
 #include <utility>
 
 namespace mqt::ir::opt {
@@ -116,10 +118,32 @@ void replaceAllUsesInRegionAndChildrenExcept(mlir::Value oldValue,
  * @brief Insert SWAP ops at the rewriter's insertion point.
  *
  * @param loc The location of the inserted SWAP ops.
- * @param swaps The hardware indices of the SWAPs.
+ * @param swaps A range of hardware indices for the SWAPs.
  * @param layout The current layout.
  * @param rewriter The pattern rewriter.
  */
-void insertSWAPs(mlir::Location loc, mlir::ArrayRef<QubitIndexPair> swaps,
-                 Layout& layout, mlir::PatternRewriter& rewriter);
+template <typename Range>
+  requires std::same_as<std::ranges::range_value_t<Range>, QubitIndexPair>
+void insertSWAPs(mlir::Location loc, Range&& swaps, Layout& layout,
+                 mlir::PatternRewriter& rewriter) {
+  for (const auto [hw0, hw1] : std::forward<Range>(swaps)) {
+    const mlir::Value in0 = layout.lookupHardwareValue(hw0);
+    const mlir::Value in1 = layout.lookupHardwareValue(hw1);
+    [[maybe_unused]] const auto [prog0, prog1] =
+        layout.getProgramIndices(hw0, hw1);
+
+    auto swap = createSwap(loc, in0, in1, rewriter);
+    const auto [out0, out1] = getOuts(swap);
+
+    rewriter.setInsertionPointAfter(swap);
+    replaceAllUsesInRegionAndChildrenExcept(in0, out1, swap->getParentRegion(),
+                                            swap, rewriter);
+    replaceAllUsesInRegionAndChildrenExcept(in1, out0, swap->getParentRegion(),
+                                            swap, rewriter);
+
+    layout.swap(in0, in1);
+    layout.remapQubitValue(in0, out0);
+    layout.remapQubitValue(in1, out1);
+  }
+}
 } // namespace mqt::ir::opt
