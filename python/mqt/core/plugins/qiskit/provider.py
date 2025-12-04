@@ -42,11 +42,41 @@ class QDMIProvider:
         Get a specific backend by name:
 
         >>> backend = provider.get_backend("MQT Core DDSIM QDMI Device")
+
+        Create a provider with authentication:
+
+        >>> provider = QDMIProvider(token="my_token")
+        >>> # or with username and password
+        >>> provider = QDMIProvider(username="user", password="pass")
     """
 
-    def __init__(self) -> None:
-        """Initialize the QDMI provider."""
-        session = fomac.Session()
+    def __init__(
+        self,
+        token: str | None = None,
+        auth_file: str | None = None,
+        auth_url: str | None = None,
+        username: str | None = None,
+        password: str | None = None,
+        project_id: str | None = None,
+    ) -> None:
+        """Initialize the QDMI provider.
+
+        Args:
+            token: Authentication token for the session.
+            auth_file: Path to file containing authentication information.
+            auth_url: URL to authentication server.
+            username: Username for authentication.
+            password: Password for authentication.
+            project_id: Project ID for the session.
+        """
+        session = fomac.Session(
+            token=token,
+            auth_file=auth_file,
+            auth_url=auth_url,
+            username=username,
+            password=password,
+            project_id=project_id,
+        )
         self._backends = [
             QDMIBackend(device=d, provider=self) for d in session.get_devices() if QDMIBackend.is_convertible(d)
         ]
