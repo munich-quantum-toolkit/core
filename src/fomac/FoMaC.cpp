@@ -245,101 +245,102 @@ auto throwError(const int result, const std::string& msg) -> void {
                              toString(static_cast<QDMI_STATUS>(result)) + ".");
   }
 }
-auto FoMaC::Device::Site::getIndex() const -> size_t {
+auto Session::Device::Site::getIndex() const -> size_t {
   return queryProperty<size_t>(QDMI_SITE_PROPERTY_INDEX);
 }
-auto FoMaC::Device::Site::getT1() const -> std::optional<uint64_t> {
+auto Session::Device::Site::getT1() const -> std::optional<uint64_t> {
   return queryProperty<std::optional<uint64_t>>(QDMI_SITE_PROPERTY_T1);
 }
-auto FoMaC::Device::Site::getT2() const -> std::optional<uint64_t> {
+auto Session::Device::Site::getT2() const -> std::optional<uint64_t> {
   return queryProperty<std::optional<uint64_t>>(QDMI_SITE_PROPERTY_T2);
 }
-auto FoMaC::Device::Site::getName() const -> std::optional<std::string> {
+auto Session::Device::Site::getName() const -> std::optional<std::string> {
   return queryProperty<std::optional<std::string>>(QDMI_SITE_PROPERTY_NAME);
 }
-auto FoMaC::Device::Site::getXCoordinate() const -> std::optional<int64_t> {
+auto Session::Device::Site::getXCoordinate() const -> std::optional<int64_t> {
   return queryProperty<std::optional<int64_t>>(QDMI_SITE_PROPERTY_XCOORDINATE);
 }
-auto FoMaC::Device::Site::getYCoordinate() const -> std::optional<int64_t> {
+auto Session::Device::Site::getYCoordinate() const -> std::optional<int64_t> {
   return queryProperty<std::optional<int64_t>>(QDMI_SITE_PROPERTY_YCOORDINATE);
 }
-auto FoMaC::Device::Site::getZCoordinate() const -> std::optional<int64_t> {
+auto Session::Device::Site::getZCoordinate() const -> std::optional<int64_t> {
   return queryProperty<std::optional<int64_t>>(QDMI_SITE_PROPERTY_ZCOORDINATE);
 }
-auto FoMaC::Device::Site::isZone() const -> bool {
+auto Session::Device::Site::isZone() const -> bool {
   return queryProperty<std::optional<bool>>(QDMI_SITE_PROPERTY_ISZONE)
       .value_or(false);
 }
-auto FoMaC::Device::Site::getXExtent() const -> std::optional<uint64_t> {
+auto Session::Device::Site::getXExtent() const -> std::optional<uint64_t> {
   return queryProperty<std::optional<uint64_t>>(QDMI_SITE_PROPERTY_XEXTENT);
 }
-auto FoMaC::Device::Site::getYExtent() const -> std::optional<uint64_t> {
+auto Session::Device::Site::getYExtent() const -> std::optional<uint64_t> {
   return queryProperty<std::optional<uint64_t>>(QDMI_SITE_PROPERTY_YEXTENT);
 }
-auto FoMaC::Device::Site::getZExtent() const -> std::optional<uint64_t> {
+auto Session::Device::Site::getZExtent() const -> std::optional<uint64_t> {
   return queryProperty<std::optional<uint64_t>>(QDMI_SITE_PROPERTY_ZEXTENT);
 }
-auto FoMaC::Device::Site::getModuleIndex() const -> std::optional<uint64_t> {
+auto Session::Device::Site::getModuleIndex() const -> std::optional<uint64_t> {
   return queryProperty<std::optional<uint64_t>>(QDMI_SITE_PROPERTY_MODULEINDEX);
 }
-auto FoMaC::Device::Site::getSubmoduleIndex() const -> std::optional<uint64_t> {
+auto Session::Device::Site::getSubmoduleIndex() const
+    -> std::optional<uint64_t> {
   return queryProperty<std::optional<uint64_t>>(
       QDMI_SITE_PROPERTY_SUBMODULEINDEX);
 }
-auto FoMaC::Device::Operation::getName(const std::vector<Site>& sites,
-                                       const std::vector<double>& params) const
+auto Session::Device::Operation::getName(
+    const std::vector<Site>& sites, const std::vector<double>& params) const
     -> std::string {
   return queryProperty<std::string>(QDMI_OPERATION_PROPERTY_NAME, sites,
                                     params);
 }
-auto FoMaC::Device::Operation::getQubitsNum(
+auto Session::Device::Operation::getQubitsNum(
     const std::vector<Site>& sites, const std::vector<double>& params) const
     -> std::optional<size_t> {
   return queryProperty<std::optional<size_t>>(QDMI_OPERATION_PROPERTY_QUBITSNUM,
                                               sites, params);
 }
-auto FoMaC::Device::Operation::getParametersNum(
+auto Session::Device::Operation::getParametersNum(
     const std::vector<Site>& sites, const std::vector<double>& params) const
     -> size_t {
   return queryProperty<size_t>(QDMI_OPERATION_PROPERTY_PARAMETERSNUM, sites,
                                params);
 }
-auto FoMaC::Device::Operation::getDuration(
+auto Session::Device::Operation::getDuration(
     const std::vector<Site>& sites, const std::vector<double>& params) const
     -> std::optional<uint64_t> {
   return queryProperty<std::optional<uint64_t>>(
       QDMI_OPERATION_PROPERTY_DURATION, sites, params);
 }
-auto FoMaC::Device::Operation::getFidelity(
+auto Session::Device::Operation::getFidelity(
     const std::vector<Site>& sites, const std::vector<double>& params) const
     -> std::optional<double> {
   return queryProperty<std::optional<double>>(QDMI_OPERATION_PROPERTY_FIDELITY,
                                               sites, params);
 }
-auto FoMaC::Device::Operation::getInteractionRadius(
+auto Session::Device::Operation::getInteractionRadius(
     const std::vector<Site>& sites, const std::vector<double>& params) const
     -> std::optional<uint64_t> {
   return queryProperty<std::optional<uint64_t>>(
       QDMI_OPERATION_PROPERTY_INTERACTIONRADIUS, sites, params);
 }
-auto FoMaC::Device::Operation::getBlockingRadius(
+auto Session::Device::Operation::getBlockingRadius(
     const std::vector<Site>& sites, const std::vector<double>& params) const
     -> std::optional<uint64_t> {
   return queryProperty<std::optional<uint64_t>>(
       QDMI_OPERATION_PROPERTY_BLOCKINGRADIUS, sites, params);
 }
-auto FoMaC::Device::Operation::getIdlingFidelity(
+auto Session::Device::Operation::getIdlingFidelity(
     const std::vector<Site>& sites, const std::vector<double>& params) const
     -> std::optional<double> {
   return queryProperty<std::optional<double>>(
       QDMI_OPERATION_PROPERTY_IDLINGFIDELITY, sites, params);
 }
-auto FoMaC::Device::Operation::isZoned() const -> bool {
+auto Session::Device::Operation::isZoned() const -> bool {
   return queryProperty<std::optional<bool>>(QDMI_OPERATION_PROPERTY_ISZONED, {},
                                             {})
       .value_or(false);
 }
-auto FoMaC::Device::Operation::getSites() const
+auto Session::Device::Operation::getSites() const
     -> std::optional<std::vector<Site>> {
   const auto& qdmiSites = queryProperty<std::optional<std::vector<QDMI_Site>>>(
       QDMI_OPERATION_PROPERTY_SITES, {}, {});
@@ -354,7 +355,7 @@ auto FoMaC::Device::Operation::getSites() const
                          });
   return returnedSites;
 }
-auto FoMaC::Device::Operation::getSitePairs() const
+auto Session::Device::Operation::getSitePairs() const
     -> std::optional<std::vector<std::pair<Site, Site>>> {
   if (const auto qubitsNum = getQubitsNum({}, {});
       !qubitsNum.has_value() || *qubitsNum != 2 || isZoned()) {
@@ -380,28 +381,28 @@ auto FoMaC::Device::Operation::getSitePairs() const
 
   return pairs;
 }
-auto FoMaC::Device::Operation::getMeanShuttlingSpeed(
+auto Session::Device::Operation::getMeanShuttlingSpeed(
     const std::vector<Site>& sites, const std::vector<double>& params) const
     -> std::optional<uint64_t> {
   return queryProperty<std::optional<uint64_t>>(
       QDMI_OPERATION_PROPERTY_MEANSHUTTLINGSPEED, sites, params);
 }
-auto FoMaC::Device::getName() const -> std::string {
+auto Session::Device::getName() const -> std::string {
   return queryProperty<std::string>(QDMI_DEVICE_PROPERTY_NAME);
 }
-auto FoMaC::Device::getVersion() const -> std::string {
+auto Session::Device::getVersion() const -> std::string {
   return queryProperty<std::string>(QDMI_DEVICE_PROPERTY_VERSION);
 }
-auto FoMaC::Device::getStatus() const -> QDMI_Device_Status {
+auto Session::Device::getStatus() const -> QDMI_Device_Status {
   return queryProperty<QDMI_Device_Status>(QDMI_DEVICE_PROPERTY_STATUS);
 }
-auto FoMaC::Device::getLibraryVersion() const -> std::string {
+auto Session::Device::getLibraryVersion() const -> std::string {
   return queryProperty<std::string>(QDMI_DEVICE_PROPERTY_LIBRARYVERSION);
 }
-auto FoMaC::Device::getQubitsNum() const -> size_t {
+auto Session::Device::getQubitsNum() const -> size_t {
   return queryProperty<size_t>(QDMI_DEVICE_PROPERTY_QUBITSNUM);
 }
-auto FoMaC::Device::getSites() const -> std::vector<Site> {
+auto Session::Device::getSites() const -> std::vector<Site> {
   const auto& qdmiSites =
       queryProperty<std::vector<QDMI_Site>>(QDMI_DEVICE_PROPERTY_SITES);
   std::vector<Site> sites;
@@ -412,14 +413,14 @@ auto FoMaC::Device::getSites() const -> std::vector<Site> {
                          });
   return sites;
 }
-auto FoMaC::Device::getRegularSites() const -> std::vector<Site> {
+auto Session::Device::getRegularSites() const -> std::vector<Site> {
   auto allSites = getSites();
   const auto newEnd = std::ranges::remove_if(
       allSites, [](const Site& s) { return s.isZone(); });
   allSites.erase(newEnd.begin(), newEnd.end());
   return allSites;
 }
-auto FoMaC::Device::getZones() const -> std::vector<Site> {
+auto Session::Device::getZones() const -> std::vector<Site> {
   const auto& allSites = getSites();
   std::vector<Site> zones;
   zones.reserve(3); // Reserve space for a typical max number of zones
@@ -427,7 +428,7 @@ auto FoMaC::Device::getZones() const -> std::vector<Site> {
                        [](const Site& s) { return s.isZone(); });
   return zones;
 }
-auto FoMaC::Device::getOperations() const -> std::vector<Operation> {
+auto Session::Device::getOperations() const -> std::vector<Operation> {
   const auto& qdmiOperations = queryProperty<std::vector<QDMI_Operation>>(
       QDMI_DEVICE_PROPERTY_OPERATIONS);
   std::vector<Operation> operations;
@@ -439,7 +440,7 @@ auto FoMaC::Device::getOperations() const -> std::vector<Operation> {
       });
   return operations;
 }
-auto FoMaC::Device::getCouplingMap() const
+auto Session::Device::getCouplingMap() const
     -> std::optional<std::vector<std::pair<Site, Site>>> {
   const auto& qdmiCouplingMap = queryProperty<
       std::optional<std::vector<std::pair<QDMI_Site, QDMI_Site>>>>(
@@ -457,40 +458,40 @@ auto FoMaC::Device::getCouplingMap() const
                          });
   return couplingMap;
 }
-auto FoMaC::Device::getNeedsCalibration() const -> std::optional<size_t> {
+auto Session::Device::getNeedsCalibration() const -> std::optional<size_t> {
   return queryProperty<std::optional<size_t>>(
       QDMI_DEVICE_PROPERTY_NEEDSCALIBRATION);
 }
-auto FoMaC::Device::getLengthUnit() const -> std::optional<std::string> {
+auto Session::Device::getLengthUnit() const -> std::optional<std::string> {
   return queryProperty<std::optional<std::string>>(
       QDMI_DEVICE_PROPERTY_LENGTHUNIT);
 }
-auto FoMaC::Device::getLengthScaleFactor() const -> std::optional<double> {
+auto Session::Device::getLengthScaleFactor() const -> std::optional<double> {
   return queryProperty<std::optional<double>>(
       QDMI_DEVICE_PROPERTY_LENGTHSCALEFACTOR);
 }
-auto FoMaC::Device::getDurationUnit() const -> std::optional<std::string> {
+auto Session::Device::getDurationUnit() const -> std::optional<std::string> {
   return queryProperty<std::optional<std::string>>(
       QDMI_DEVICE_PROPERTY_DURATIONUNIT);
 }
-auto FoMaC::Device::getDurationScaleFactor() const -> std::optional<double> {
+auto Session::Device::getDurationScaleFactor() const -> std::optional<double> {
   return queryProperty<std::optional<double>>(
       QDMI_DEVICE_PROPERTY_DURATIONSCALEFACTOR);
 }
-auto FoMaC::Device::getMinAtomDistance() const -> std::optional<uint64_t> {
+auto Session::Device::getMinAtomDistance() const -> std::optional<uint64_t> {
   return queryProperty<std::optional<uint64_t>>(
       QDMI_DEVICE_PROPERTY_MINATOMDISTANCE);
 }
 
-auto FoMaC::Device::getSupportedProgramFormats() const
+auto Session::Device::getSupportedProgramFormats() const
     -> std::vector<QDMI_Program_Format> {
   return queryProperty<std::vector<QDMI_Program_Format>>(
       QDMI_DEVICE_PROPERTY_SUPPORTEDPROGRAMFORMATS);
 }
 
-auto FoMaC::Device::submitJob(const std::string& program,
-                              const QDMI_Program_Format format,
-                              const size_t numShots) const -> Job {
+auto Session::Device::submitJob(const std::string& program,
+                                const QDMI_Program_Format format,
+                                const size_t numShots) const -> Job {
   QDMI_Job job = nullptr;
   throwIfError(QDMI_device_create_job(device_, &job), "Creating job");
   Job jobWrapper{job}; // RAII wrapper to prevent leaks in case of exceptions
@@ -516,13 +517,13 @@ auto FoMaC::Device::submitJob(const std::string& program,
   return jobWrapper;
 }
 
-auto FoMaC::Job::check() const -> QDMI_Job_Status {
+auto Session::Job::check() const -> QDMI_Job_Status {
   QDMI_Job_Status status{};
   throwIfError(QDMI_job_check(job_, &status), "Checking job status");
   return status;
 }
 
-auto FoMaC::Job::wait(const size_t timeout) const -> bool {
+auto Session::Job::wait(const size_t timeout) const -> bool {
   const auto ret = QDMI_job_wait(job_, timeout);
   if (ret == QDMI_SUCCESS) {
     return true;
@@ -534,11 +535,11 @@ auto FoMaC::Job::wait(const size_t timeout) const -> bool {
   unreachable();
 }
 
-auto FoMaC::Job::cancel() const -> void {
+auto Session::Job::cancel() const -> void {
   throwIfError(QDMI_job_cancel(job_), "Cancelling job");
 }
 
-auto FoMaC::Job::getId() const -> std::string {
+auto Session::Job::getId() const -> std::string {
   size_t size = 0;
   throwIfError(
       QDMI_job_query_property(job_, QDMI_JOB_PROPERTY_ID, 0, nullptr, &size),
@@ -550,7 +551,7 @@ auto FoMaC::Job::getId() const -> std::string {
   return id;
 }
 
-auto FoMaC::Job::getProgramFormat() const -> QDMI_Program_Format {
+auto Session::Job::getProgramFormat() const -> QDMI_Program_Format {
   QDMI_Program_Format format{};
   throwIfError(QDMI_job_query_property(job_, QDMI_JOB_PROPERTY_PROGRAMFORMAT,
                                        sizeof(format), &format, nullptr),
@@ -558,7 +559,7 @@ auto FoMaC::Job::getProgramFormat() const -> QDMI_Program_Format {
   return format;
 }
 
-auto FoMaC::Job::getProgram() const -> std::string {
+auto Session::Job::getProgram() const -> std::string {
   size_t size = 0;
   throwIfError(QDMI_job_query_property(job_, QDMI_JOB_PROPERTY_PROGRAM, 0,
                                        nullptr, &size),
@@ -571,7 +572,7 @@ auto FoMaC::Job::getProgram() const -> std::string {
   return program;
 }
 
-auto FoMaC::Job::getNumShots() const -> size_t {
+auto Session::Job::getNumShots() const -> size_t {
   size_t numShots = 0;
   throwIfError(QDMI_job_query_property(job_, QDMI_JOB_PROPERTY_SHOTSNUM,
                                        sizeof(numShots), &numShots, nullptr),
@@ -579,7 +580,7 @@ auto FoMaC::Job::getNumShots() const -> size_t {
   return numShots;
 }
 
-auto FoMaC::Job::getShots() const -> std::vector<std::string> {
+auto Session::Job::getShots() const -> std::vector<std::string> {
   size_t shotsSize = 0;
   throwIfError(
       QDMI_job_get_results(job_, QDMI_JOB_RESULT_SHOTS, 0, nullptr, &shotsSize),
@@ -610,7 +611,7 @@ auto FoMaC::Job::getShots() const -> std::vector<std::string> {
   return shotsVec;
 }
 
-auto FoMaC::Job::getCounts() const -> std::map<std::string, size_t> {
+auto Session::Job::getCounts() const -> std::map<std::string, size_t> {
   // Get the histogram keys
   size_t keysSize = 0;
   throwIfError(QDMI_job_get_results(job_, QDMI_JOB_RESULT_HIST_KEYS, 0, nullptr,
@@ -661,7 +662,7 @@ auto FoMaC::Job::getCounts() const -> std::map<std::string, size_t> {
   return counts;
 }
 
-auto FoMaC::Job::getDenseStateVector() const
+auto Session::Job::getDenseStateVector() const
     -> std::vector<std::complex<double>> {
   size_t size = 0;
   throwIfError(QDMI_job_get_results(job_, QDMI_JOB_RESULT_STATEVECTOR_DENSE, 0,
@@ -681,7 +682,7 @@ auto FoMaC::Job::getDenseStateVector() const
   return stateVector;
 }
 
-auto FoMaC::Job::getDenseProbabilities() const -> std::vector<double> {
+auto Session::Job::getDenseProbabilities() const -> std::vector<double> {
   size_t size = 0;
   throwIfError(QDMI_job_get_results(job_, QDMI_JOB_RESULT_PROBABILITIES_DENSE,
                                     0, nullptr, &size),
@@ -699,7 +700,7 @@ auto FoMaC::Job::getDenseProbabilities() const -> std::vector<double> {
   return probabilities;
 }
 
-auto FoMaC::Job::getSparseStateVector() const
+auto Session::Job::getSparseStateVector() const
     -> std::map<std::string, std::complex<double>> {
   size_t keysSize = 0;
   throwIfError(QDMI_job_get_results(job_,
@@ -755,7 +756,7 @@ auto FoMaC::Job::getSparseStateVector() const
   return stateVector;
 }
 
-auto FoMaC::Job::getSparseProbabilities() const
+auto Session::Job::getSparseProbabilities() const
     -> std::map<std::string, double> {
   size_t keysSize = 0;
   throwIfError(QDMI_job_get_results(job_,
@@ -808,12 +809,18 @@ auto FoMaC::Job::getSparseProbabilities() const
   return probabilities;
 }
 
-FoMaC::FoMaC(const SessionConfig& config) {
+Session::Session(const SessionConfig& config) {
   QDMI_session_alloc(&session_);
 
-  // Populate pending parameters from config
+  // Set and validate parameters from config
   if (config.token) {
-    pendingParameters_[QDMI_SESSION_PARAMETER_TOKEN] = *config.token;
+    const auto qdmiParam =
+        static_cast<QDMI_Session_Parameter>(QDMI_SESSION_PARAMETER_TOKEN);
+    throwIfError(QDMI_session_set_parameter(session_, qdmiParam,
+                                            config.token->size() + 1,
+                                            config.token->c_str()),
+                 "Setting session parameter " +
+                     toString(QDMI_SESSION_PARAMETER_TOKEN));
   }
   if (config.authFile) {
     // Validate file existence
@@ -821,7 +828,13 @@ FoMaC::FoMaC(const SessionConfig& config) {
       throw std::runtime_error("Authentication file does not exist: " +
                                *config.authFile);
     }
-    pendingParameters_[QDMI_SESSION_PARAMETER_AUTHFILE] = *config.authFile;
+    const auto qdmiParam =
+        static_cast<QDMI_Session_Parameter>(QDMI_SESSION_PARAMETER_AUTHFILE);
+    throwIfError(QDMI_session_set_parameter(session_, qdmiParam,
+                                            config.authFile->size() + 1,
+                                            config.authFile->c_str()),
+                 "Setting session parameter " +
+                     toString(QDMI_SESSION_PARAMETER_AUTHFILE));
   }
   if (config.authUrl) {
     // Validate URL format
@@ -830,69 +843,68 @@ FoMaC::FoMaC(const SessionConfig& config) {
     if (!std::regex_match(*config.authUrl, URL_PATTERN)) {
       throw std::runtime_error("Invalid URL format: " + *config.authUrl);
     }
-    pendingParameters_[QDMI_SESSION_PARAMETER_AUTHURL] = *config.authUrl;
+    const auto qdmiParam =
+        static_cast<QDMI_Session_Parameter>(QDMI_SESSION_PARAMETER_AUTHURL);
+    throwIfError(QDMI_session_set_parameter(session_, qdmiParam,
+                                            config.authUrl->size() + 1,
+                                            config.authUrl->c_str()),
+                 "Setting session parameter " +
+                     toString(QDMI_SESSION_PARAMETER_AUTHURL));
   }
   if (config.username) {
-    pendingParameters_[QDMI_SESSION_PARAMETER_USERNAME] = *config.username;
+    const auto qdmiParam =
+        static_cast<QDMI_Session_Parameter>(QDMI_SESSION_PARAMETER_USERNAME);
+    throwIfError(QDMI_session_set_parameter(session_, qdmiParam,
+                                            config.username->size() + 1,
+                                            config.username->c_str()),
+                 "Setting session parameter " +
+                     toString(QDMI_SESSION_PARAMETER_USERNAME));
   }
   if (config.password) {
-    pendingParameters_[QDMI_SESSION_PARAMETER_PASSWORD] = *config.password;
+    const auto qdmiParam =
+        static_cast<QDMI_Session_Parameter>(QDMI_SESSION_PARAMETER_PASSWORD);
+    throwIfError(QDMI_session_set_parameter(session_, qdmiParam,
+                                            config.password->size() + 1,
+                                            config.password->c_str()),
+                 "Setting session parameter " +
+                     toString(QDMI_SESSION_PARAMETER_PASSWORD));
   }
   if (config.projectId) {
-    pendingParameters_[QDMI_SESSION_PARAMETER_PROJECTID] = *config.projectId;
+    const auto qdmiParam =
+        static_cast<QDMI_Session_Parameter>(QDMI_SESSION_PARAMETER_PROJECTID);
+    throwIfError(QDMI_session_set_parameter(session_, qdmiParam,
+                                            config.projectId->size() + 1,
+                                            config.projectId->c_str()),
+                 "Setting session parameter " +
+                     toString(QDMI_SESSION_PARAMETER_PROJECTID));
   }
 
-  // Initialization is deferred to ensureInitialized()
+  // Initialize the session
+  throwIfError(QDMI_session_init(session_), "Initializing session");
 }
 
-FoMaC::~FoMaC() {
+Session::~Session() {
   if (session_ != nullptr) {
     QDMI_session_free(session_);
   }
 }
 
-FoMaC::FoMaC(FoMaC&& other) noexcept
-    : session_(other.session_), initialized_(other.initialized_),
-      pendingParameters_(std::move(other.pendingParameters_)) {
+Session::Session(Session&& other) noexcept : session_(other.session_) {
   other.session_ = nullptr;
-  other.initialized_ = false;
 }
 
-FoMaC& FoMaC::operator=(FoMaC&& other) noexcept {
+Session& Session::operator=(Session&& other) noexcept {
   if (this != &other) {
     if (session_ != nullptr) {
       QDMI_session_free(session_);
     }
     session_ = other.session_;
-    initialized_ = other.initialized_;
-    pendingParameters_ = std::move(other.pendingParameters_);
     other.session_ = nullptr;
-    other.initialized_ = false;
   }
   return *this;
 }
 
-auto FoMaC::ensureInitialized() -> void {
-  const std::scoped_lock<std::mutex> lock(mutex_);
-  if (initialized_) {
-    return;
-  }
-
-  // Apply all pending parameters
-  for (const auto& [param, value] : pendingParameters_) {
-    const auto qdmiParam = static_cast<QDMI_Session_Parameter>(param);
-    throwIfError(QDMI_session_set_parameter(session_, qdmiParam,
-                                            value.size() + 1, value.c_str()),
-                 "Setting session parameter " + toString(param));
-  }
-
-  // Initialize the session
-  throwIfError(QDMI_session_init(session_), "Initializing session");
-  initialized_ = true;
-}
-
-auto FoMaC::getDevices() -> std::vector<Device> {
-  ensureInitialized();
+auto Session::getDevices() -> std::vector<Device> {
 
   const auto& qdmiDevices =
       queryProperty<std::vector<QDMI_Device>>(QDMI_SESSION_PROPERTY_DEVICES);

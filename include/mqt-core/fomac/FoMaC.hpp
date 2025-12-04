@@ -185,7 +185,7 @@ inline auto throwIfError(const int result, const std::string& msg) -> void {
  * @brief Configuration structure for session authentication parameters.
  * @details All parameters are optional. Only set the parameters needed for
  * your authentication method. Parameters are validated when the session is
- * initialized.
+ * constructed.
  */
 struct SessionConfig {
   /// Authentication token
@@ -203,15 +203,15 @@ struct SessionConfig {
 };
 
 /**
- * @brief Class representing the FoMaC library.
+ * @brief Class representing the Session library.
  * @details This class provides methods to query available devices and
  * manage the QDMI session.
  * @see QDMI_Session
  */
-class FoMaC {
+class Session {
   /**
    * @brief Private token class.
-   * @details Only the FoMaC class can create instances of this class.
+   * @details Only the Session class can create instances of this class.
    */
   class Token {
   public:
@@ -633,7 +633,7 @@ public:
      * @brief Constructs a Device object from a QDMI_Device handle.
      * @param device The QDMI_Device handle to wrap.
      */
-    Device(FoMaC::Token /* unused */, QDMI_Device device) : device_(device) {}
+    Device(Session::Token /* unused */, QDMI_Device device) : device_(device) {}
     /// @returns the underlying QDMI_Device object.
     [[nodiscard]] auto getQDMIDevice() const -> QDMI_Device { return device_; }
     // NOLINTNEXTLINE(google-explicit-constructor)
@@ -699,12 +699,6 @@ public:
 
 private:
   QDMI_Session session_ = nullptr;
-  mutable std::mutex mutex_;
-  bool initialized_ = false;
-  std::unordered_map<QDMI_SESSION_PARAMETER_T, std::string> pendingParameters_;
-
-  /// @brief Ensures the session is initialized, applying pending parameters
-  auto ensureInitialized() -> void;
 
   template <size_constructible_contiguous_range T>
   [[nodiscard]] auto queryProperty(const QDMI_Session_Property prop) const
@@ -723,26 +717,25 @@ private:
 
 public:
   /**
-   * @brief Constructs a new FoMaC session with optional authentication.
+   * @brief Constructs a new QDMI Session with optional authentication.
    * @param config Optional session configuration containing authentication
    * parameters. If not provided, uses default (no authentication).
-   * @details Creates and allocates a new QDMI session. The session is not
-   * initialized until the first call to getDevices().
+   * @details Creates, allocates, and initializes a new QDMI session.
    */
-  explicit FoMaC(const SessionConfig& config = {});
+  explicit Session(const SessionConfig& config = {});
 
   /**
    * @brief Destructor that releases the QDMI session.
    */
-  virtual ~FoMaC();
+  virtual ~Session();
 
   // Delete copy constructors and assignment operators
-  FoMaC(const FoMaC&) = delete;
-  FoMaC& operator=(const FoMaC&) = delete;
+  Session(const Session&) = delete;
+  Session& operator=(const Session&) = delete;
 
   // Allow move semantics
-  FoMaC(FoMaC&&) noexcept;
-  FoMaC& operator=(FoMaC&&) noexcept;
+  Session(Session&&) noexcept;
+  Session& operator=(Session&&) noexcept;
 
   /// @see QDMI_SESSION_PROPERTY_DEVICES
   [[nodiscard]] auto getDevices() -> std::vector<Device>;
