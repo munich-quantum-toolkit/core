@@ -92,15 +92,9 @@ jobs:
       fail-fast: false
       matrix:
         runs-on:
-          [ubuntu-22.04, ubuntu-24.04, ubuntu-22.04-arm, ubuntu-24.04-arm]
+          [ubuntu-24.04, ubuntu-24.04-arm]
         compiler: [gcc, clang, clang-19, clang-20]
         config: [Release, Debug]
-        exclude:
-          # both combinations do not support C++20 due to the compiler being too old
-          - runs-on: ubuntu-22.04
-            compiler: clang
-          - runs-on: ubuntu-22.04-arm
-            compiler: clang
     uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-cpp-tests-ubuntu.yml@setup-mlir # v1.17.3
     with:
       runs-on: ${{ matrix.runs-on }}
@@ -220,7 +214,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        runs-on: [ubuntu-22.04, ubuntu-22.04-arm, macos-15, windows-2025]
+        runs-on: [macos-15, windows-2025]
     uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-python-tests.yml@setup-mlir # v1.17.3
     with:
       runs-on: ${{ matrix.runs-on }}
