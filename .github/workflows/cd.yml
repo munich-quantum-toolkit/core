@@ -12,7 +12,7 @@ permissions:
 jobs:
   build-sdist:
     name: 🐍 Packaging
-    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-python-packaging-sdist.yml@dbcd4474154dda0794838207274a3bccd4550de0 # v1.17.3
+    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-python-packaging-sdist.yml@setup-mlir # v1.17.3
 
   # Builds wheels on all supported platforms using cibuildwheel.
   # The wheels are uploaded as GitHub artifacts `dev-cibw-*` or `cibw-*`, depending on whether
@@ -31,9 +31,11 @@ jobs:
             windows-2022,
             windows-11-arm,
           ]
-    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-python-packaging-wheel-cibuildwheel.yml@dbcd4474154dda0794838207274a3bccd4550de0 # v1.17.3
+    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-python-packaging-wheel-cibuildwheel.yml@setup-mlir # v1.17.3
     with:
       runs-on: ${{ matrix.runs-on }}
+      setup-mlir: true
+      setup-mlir-tag: 2025.11.25
 
   # Downloads the previously generated artifacts and deploys to PyPI on published releases.
   deploy:
