@@ -116,7 +116,7 @@ jobs:
       runs-on: ${{ matrix.runs-on }}
       compiler: ${{ matrix.compiler }}
       config: ${{ matrix.config }}
-      cmake-args: -DCMAKE_OSX_SYSROOT=/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/ -DMQT_CORE_WITH_GMP=ON 
+      cmake-args: -DCMAKE_OSX_SYSROOT=/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/ -DMQT_CORE_WITH_GMP=ON
 
   # run extensive C++ tests on PRs labeled with the `extensive-cpp-ci` label
   cpp-tests-extensive-windows:
