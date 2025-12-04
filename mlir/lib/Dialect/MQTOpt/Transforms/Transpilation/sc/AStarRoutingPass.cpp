@@ -23,6 +23,7 @@
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/ADT/Statistic.h>
 #include <llvm/ADT/TypeSwitch.h>
+#include <llvm/Support/Casting.h>
 #include <llvm/Support/Debug.h>
 #include <llvm/Support/ErrorHandling.h>
 #include <llvm/Support/Format.h>
@@ -154,12 +155,11 @@ private:
             /// Forward layout.
             TypeSwitch<Operation*>(curr)
                 .Case<UnitaryInterface>([&](UnitaryInterface op) {
-                  if (isa<SWAPOp>(op)) {
-                    const auto ins = getIns(op);
-                    unit.layout().swap(ins.first, ins.second);
-                    history.push_back(
-                        {unit.layout().lookupHardwareIndex(ins.first),
-                         unit.layout().lookupHardwareIndex(ins.second)});
+                  if (auto swap = dyn_cast<SWAPOp>(op.getOperation())) {
+                    const auto in0 = swap.getInQubits()[0];
+                    const auto in1 = swap.getInQubits()[1];
+                    history.push_back({unit.layout().lookupHardwareIndex(in0),
+                                       unit.layout().lookupHardwareIndex(in1)});
                   }
                   unit.layout().remap(op);
                 })

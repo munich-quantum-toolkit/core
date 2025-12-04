@@ -129,21 +129,19 @@ void insertSWAPs(mlir::Location loc, Range&& swaps, Layout& layout,
   for (const auto [hw0, hw1] : std::forward<Range>(swaps)) {
     const mlir::Value in0 = layout.lookupHardwareValue(hw0);
     const mlir::Value in1 = layout.lookupHardwareValue(hw1);
-    [[maybe_unused]] const auto [prog0, prog1] =
-        layout.getProgramIndices(hw0, hw1);
 
     auto swap = createSwap(loc, in0, in1, rewriter);
-    const auto [out0, out1] = getOuts(swap);
 
     rewriter.setInsertionPointAfter(swap);
-    replaceAllUsesInRegionAndChildrenExcept(in0, out1, swap->getParentRegion(),
-                                            swap, rewriter);
-    replaceAllUsesInRegionAndChildrenExcept(in1, out0, swap->getParentRegion(),
-                                            swap, rewriter);
 
-    layout.swap(in0, in1);
-    layout.remapQubitValue(in0, out0);
-    layout.remapQubitValue(in1, out1);
+    mlir::Region* region = swap->getParentRegion();
+    mlir::Value out0 = swap.getOutQubits()[0];
+    mlir::Value out1 = swap.getOutQubits()[1];
+
+    replaceAllUsesInRegionAndChildrenExcept(in0, out1, region, swap, rewriter);
+    replaceAllUsesInRegionAndChildrenExcept(in1, out0, region, swap, rewriter);
+
+    layout.remap(swap);
   }
 }
 } // namespace mqt::ir::opt

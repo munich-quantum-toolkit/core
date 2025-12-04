@@ -15,6 +15,7 @@
 
 #include <llvm/ADT/DenseMapInfo.h>
 #include <llvm/ADT/SmallVector.h>
+#include <llvm/Support/Casting.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
 #include <mlir/IR/Value.h>
 #include <mlir/Support/LLVM.h>
@@ -259,9 +260,15 @@ public:
   /**
    * @brief Remap all input to output qubits for the given unitary op.
    *
+   * If the unitary op is a SWAP, exchange the respective program qubits.
+   *
    * @param op The unitary op.
    */
   void remap(UnitaryInterface op) {
+    if (mlir::isa<SWAPOp>(op)) {
+      swap(op.getInQubits()[0], op.getInQubits()[1]);
+    }
+
     for (const auto& [in, out] :
          llvm::zip_equal(op.getAllInQubits(), op.getAllOutQubits())) {
       remapQubitValue(in, out);

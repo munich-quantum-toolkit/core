@@ -113,11 +113,6 @@ private:
                       }
                     }
 
-                    if (isa<SWAPOp>(op)) {
-                      const auto ins = getIns(op);
-                      unit.layout().swap(ins.first, ins.second);
-                    }
-
                     unit.layout().remap(op);
                     return success();
                   })
