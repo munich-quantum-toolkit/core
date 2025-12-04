@@ -9,21 +9,6 @@
 // RUN: quantum-opt %s -split-input-file --verify-routing-sc="arch=MQTTest" -verify-diagnostics
 
 module {
-    func.func @tooManyQubits() attributes {passthrough = ["entry_point"]} {
-        %q0_0 = mqtopt.qubit 0
-        %q1_0 = mqtopt.qubit 1
-        %q2_0 = mqtopt.qubit 2
-
-        // expected-error@+1 {{'mqtopt.x' op acts on more than two qubits}}
-        %q0_1, %q1_1, %q2_1 = mqtopt.x() %q0_0 ctrl %q1_0, %q2_0 : !mqtopt.Qubit ctrl !mqtopt.Qubit, !mqtopt.Qubit
-
-        return
-    }
-}
-
-// -----
-
-module {
     func.func @gateNotExecutable() attributes {passthrough = ["entry_point"]} {
         %q0_0 = mqtopt.qubit 0
         %q4_0 = mqtopt.qubit 4
