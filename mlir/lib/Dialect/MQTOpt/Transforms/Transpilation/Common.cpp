@@ -11,8 +11,6 @@
 #include "mlir/Dialect/MQTOpt/Transforms/Transpilation/Common.h"
 
 #include "mlir/Dialect/MQTOpt/IR/MQTOptDialect.h"
-#include "mlir/Dialect/MQTOpt/Transforms/Transpilation/Architecture.h"
-#include "mlir/Dialect/MQTOpt/Transforms/Transpilation/Layout.h"
 
 #include <cassert>
 #include <llvm/ADT/STLExtras.h>
@@ -139,13 +137,5 @@ void replaceAllUsesInRegionAndChildrenExcept(mlir::Value oldValue,
     }
     return false;
   });
-}
-
-[[nodiscard]] bool isExecutable(UnitaryInterface op, const Layout& layout,
-                                const Architecture& arch) {
-  assert(isTwoQubitGate(op));
-  const auto ins = getIns(op);
-  return arch.areAdjacent(layout.lookupHardwareIndex(ins.first),
-                          layout.lookupHardwareIndex(ins.second));
 }
 } // namespace mqt::ir::opt

@@ -108,7 +108,7 @@ private:
           TypeSwitch<Operation*>(&curr)
               .Case<UnitaryInterface>([&](UnitaryInterface op) {
                 if (isTwoQubitGate(op)) {
-                  if (!isExecutable(op, unit.layout(), *arch)) {
+                  if (!arch->isExecutable(op, unit.layout())) {
                     const auto ins = getIns(op);
                     const auto gate = std::make_pair(
                         unit.layout().lookupProgramIndex(ins.first),

@@ -18,6 +18,7 @@
 #include <algorithm>
 #include <cassert>
 #include <cstddef>
+#include <cstdint>
 #include <deque>
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/SmallVector.h>
@@ -64,7 +65,7 @@ constexpr std::size_t IF_PARENT_DEPTH = 2UL;
 /**
  * @brief A queue of hardware indices.
  */
-using HardwareIndexPool = std::deque<QubitIndex>;
+using HardwareIndexPool = std::deque<uint32_t>;
 
 /**
  * @brief A base class for all initial placement strategies.
@@ -77,7 +78,7 @@ public:
   InitialPlacer(InitialPlacer&&) noexcept = default;
   InitialPlacer& operator=(InitialPlacer&&) noexcept = default;
   virtual ~InitialPlacer() = default;
-  [[nodiscard]] virtual SmallVector<QubitIndex> operator()() = 0;
+  [[nodiscard]] virtual SmallVector<uint32_t> operator()() = 0;
 };
 
 /**
@@ -87,8 +88,8 @@ class IdentityPlacer final : public InitialPlacer {
 public:
   explicit IdentityPlacer(const std::size_t nqubits) : nqubits_(nqubits) {}
 
-  [[nodiscard]] SmallVector<QubitIndex> operator()() override {
-    SmallVector<QubitIndex> mapping(nqubits_);
+  [[nodiscard]] SmallVector<uint32_t> operator()() override {
+    SmallVector<uint32_t> mapping(nqubits_);
     std::iota(mapping.begin(), mapping.end(), 0);
     return mapping;
   }
@@ -105,8 +106,8 @@ public:
   explicit RandomPlacer(const std::size_t nqubits, const std::mt19937_64& rng)
       : nqubits_(nqubits), rng_(rng) {}
 
-  [[nodiscard]] SmallVector<QubitIndex> operator()() override {
-    SmallVector<QubitIndex> mapping(nqubits_);
+  [[nodiscard]] SmallVector<uint32_t> operator()() override {
+    SmallVector<uint32_t> mapping(nqubits_);
     std::iota(mapping.begin(), mapping.end(), 0);
     std::ranges::shuffle(mapping, rng_);
     return mapping;
@@ -148,7 +149,7 @@ WalkResult handleFunc(func::FuncOp op, PlacementContext& ctx,
 
   /// Create static / hardware qubits for entry_point functions.
   SmallVector<Value> qubits(ctx.arch->nqubits());
-  for (QubitIndex i = 0; i < ctx.arch->nqubits(); ++i) {
+  for (uint32_t i = 0; i < ctx.arch->nqubits(); ++i) {
     auto qubitOp =
         rewriter.create<QubitOp>(rewriter.getInsertionPoint()->getLoc(), i);
     rewriter.setInsertionPointAfter(qubitOp);

@@ -10,6 +10,9 @@
 
 #pragma once
 
+#include "mlir/Dialect/MQTOpt/IR/MQTOptDialect.h"
+#include "mlir/Dialect/MQTOpt/Transforms/Transpilation/Layout.h"
+
 #include <cstddef>
 #include <cstdint>
 #include <llvm/ADT/DenseMapInfo.h>
@@ -25,18 +28,13 @@
 namespace mqt::ir::opt {
 
 /**
- * @brief Type alias for qubit indices.
- */
-using QubitIndex = uint32_t;
-
-/**
  * @brief A quantum accelerator's architecture.
  * @details Computes all-shortest paths at construction.
  */
 class Architecture {
 public:
-  using CouplingSet = mlir::DenseSet<std::pair<QubitIndex, QubitIndex>>;
-  using NeighbourVector = mlir::SmallVector<mlir::SmallVector<QubitIndex, 4>>;
+  using CouplingSet = mlir::DenseSet<std::pair<uint32_t, uint32_t>>;
+  using NeighbourVector = mlir::SmallVector<mlir::SmallVector<uint32_t, 4>>;
 
   explicit Architecture(std::string name, std::size_t nqubits,
                         CouplingSet couplingSet)
@@ -61,7 +59,7 @@ public:
   /**
    * @brief Return true if @p u and @p v are adjacent.
    */
-  [[nodiscard]] bool areAdjacent(QubitIndex u, QubitIndex v) const {
+  [[nodiscard]] bool areAdjacent(uint32_t u, uint32_t v) const {
     return couplingSet_.contains({u, v});
   }
 
@@ -70,25 +68,31 @@ public:
    * @returns The path from the destination (v) to source (u) qubit.
    */
   [[nodiscard]] llvm::SmallVector<std::size_t>
-  shortestPathBetween(QubitIndex u, QubitIndex v) const;
+  shortestPathBetween(uint32_t u, uint32_t v) const;
 
   /**
    * @brief Collect the shortest SWAP sequence to make @p u and @p v adjacent.
    * @returns The SWAP sequence from the destination (v) to source (u) qubit.
    */
-  [[nodiscard]] llvm::SmallVector<std::pair<QubitIndex, QubitIndex>>
-  shortestSWAPsBetween(QubitIndex u, QubitIndex v) const;
+  [[nodiscard]] llvm::SmallVector<std::pair<uint32_t, uint32_t>>
+  shortestSWAPsBetween(uint32_t u, uint32_t v) const;
 
   /**
    * @brief Return the length of the shortest path between @p u and @p v.
    */
-  [[nodiscard]] std::size_t distanceBetween(QubitIndex u, QubitIndex v) const;
+  [[nodiscard]] std::size_t distanceBetween(uint32_t u, uint32_t v) const;
 
   /**
    * @brief Collect all neighbours of @p u.
    */
-  [[nodiscard]] llvm::SmallVector<QubitIndex, 4>
-  neighboursOf(QubitIndex u) const;
+  [[nodiscard]] llvm::SmallVector<uint32_t, 4> neighboursOf(uint32_t u) const;
+
+  /**
+   * @brief Validate if a two-qubit op is executable on the architecture for a
+   * given layout.
+   */
+  [[nodiscard]] bool isExecutable(UnitaryInterface op,
+                                  const Layout& layout) const;
 
 private:
   using Matrix = llvm::SmallVector<llvm::SmallVector<std::size_t>>;

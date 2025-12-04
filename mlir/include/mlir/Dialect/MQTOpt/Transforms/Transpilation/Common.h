@@ -11,11 +11,11 @@
 #pragma once
 
 #include "mlir/Dialect/MQTOpt/IR/MQTOptDialect.h"
-#include "mlir/Dialect/MQTOpt/Transforms/Transpilation/Architecture.h"
 #include "mlir/Dialect/MQTOpt/Transforms/Transpilation/Layout.h"
 
 #include <concepts>
 #include <cstddef>
+#include <cstdint>
 #include <llvm/ADT/StringRef.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/IR/BuiltinAttributes.h>
@@ -34,7 +34,7 @@ using ValuePair = std::pair<mlir::Value, mlir::Value>;
 /**
  * @brief Represents a pair of qubit indices.
  */
-using QubitIndexPair = std::pair<QubitIndex, QubitIndex>;
+using QubitIndexPair = std::pair<uint32_t, uint32_t>;
 
 /**
  * @brief Return true if the function contains "entry_point" in the passthrough
@@ -102,17 +102,6 @@ void replaceAllUsesInRegionAndChildrenExcept(mlir::Value oldValue,
                                              mlir::Region* region,
                                              mlir::Operation* exceptOp,
                                              mlir::PatternRewriter& rewriter);
-
-/**
- * @brief Given a layout, validate if the two-qubit unitary op is executable on
- * the targeted architecture.
- *
- * @param op The two-qubit unitary.
- * @param layout The current layout.
- * @param arch The targeted architecture.
- */
-[[nodiscard]] bool isExecutable(UnitaryInterface op, const Layout& layout,
-                                const Architecture& arch);
 
 /**
  * @brief Insert SWAP ops at the rewriter's insertion point.

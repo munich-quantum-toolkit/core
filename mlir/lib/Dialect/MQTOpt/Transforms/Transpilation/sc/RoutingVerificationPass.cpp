@@ -99,7 +99,7 @@ private:
                                               -> LogicalResult {
                     if (isTwoQubitGate(op)) {
                       /// Verify that the two-qubit gate is executable.
-                      if (!isExecutable(op, unit.layout(), *arch)) {
+                      if (!arch->isExecutable(op, unit.layout())) {
                         const auto ins = getIns(op);
                         const auto hw0 =
                             unit.layout().lookupHardwareIndex(ins.first);

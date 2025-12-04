@@ -12,13 +12,13 @@
 
 #include "mlir/Dialect/MQTOpt/IR/MQTOptDialect.h"
 #include "mlir/Dialect/MQTOpt/IR/WireIterator.h"
-#include "mlir/Dialect/MQTOpt/Transforms/Transpilation/Architecture.h"
 #include "mlir/Dialect/MQTOpt/Transforms/Transpilation/Common.h"
 #include "mlir/Dialect/MQTOpt/Transforms/Transpilation/Layout.h"
 #include "mlir/Dialect/MQTOpt/Transforms/Transpilation/Unit.h"
 
 #include <cassert>
 #include <cstddef>
+#include <cstdint>
 #include <iterator>
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/SmallVector.h>
@@ -40,9 +40,9 @@ namespace {
 
 /// @brief A wire links a WireIterator to a program index.
 struct Wire {
-  Wire(const WireIterator& it, QubitIndex index) : it(it), index(index) {}
+  Wire(const WireIterator& it, uint32_t index) : it(it), index(index) {}
   WireIterator it;
-  QubitIndex index;
+  uint32_t index;
 };
 
 /// @brief Map to handle multi-qubit gates when traversing the def-use chain.
