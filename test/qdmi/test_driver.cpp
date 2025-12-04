@@ -49,8 +49,10 @@ protected:
   QDMI_Device device = nullptr;
 #ifndef _WIN32
   static void SetUpTestSuite() {
-    ASSERT_NO_THROW(for (const auto& [lib, prefix] : DYN_DEV_LIBS) {
-      qdmi::Driver::get().addDynamicDeviceLibrary(lib, prefix);
+    ASSERT_NO_THROW({
+      for (const auto& [lib, prefix] : DYN_DEV_LIBS) {
+        qdmi::Driver::get().addDynamicDeviceLibrary(lib, prefix);
+      }
     });
   }
 #endif // _WIN32
