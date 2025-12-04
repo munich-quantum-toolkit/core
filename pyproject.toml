@@ -128,6 +128,7 @@ git-only = [
 BUILD_MQT_CORE_BINDINGS = "ON"
 BUILD_MQT_CORE_TESTS = "OFF"
 BUILD_MQT_CORE_SHARED_LIBS = "ON"
+BUILD_MQT_CORE_MLIR = "OFF"
 
 [[tool.scikit-build.overrides]]
 if.python-version = ">=3.13"
