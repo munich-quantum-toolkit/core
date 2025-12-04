@@ -454,7 +454,7 @@ TEST_P(OperationTest, IdlingFidelity) {
   }
 }
 
-TEST_P(OperationTest, oned) {
+TEST_P(OperationTest, IsZoned) {
   for (const auto& operation : operations) {
     EXPECT_NO_THROW(std::ignore = operation.isZoned());
   }
