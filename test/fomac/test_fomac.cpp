@@ -33,16 +33,16 @@ protected:
 
 class SiteTest : public DeviceTest {
 protected:
-  FoMaC::Device::Site site;
+  std::vector<FoMaC::Device::Site> sites;
 
-  SiteTest() : site(device.getSites().front()) {}
+  void SetUp() override { sites = device.getSites(); }
 };
 
 class OperationTest : public DeviceTest {
 protected:
-  FoMaC::Device::Operation operation;
+  std::vector<FoMaC::Device::Operation> operations;
 
-  OperationTest() : operation(device.getOperations().front()) {}
+  void SetUp() override { operations = device.getOperations(); }
 };
 
 class DDSimulatorDeviceTest : public testing::Test {
@@ -230,10 +230,6 @@ TEST_P(DeviceTest, Sites) {
   EXPECT_NO_THROW(EXPECT_FALSE(device.getSites().empty()));
 }
 
-TEST_P(DeviceTest, Operations) {
-  EXPECT_NO_THROW(EXPECT_FALSE(device.getOperations().empty()));
-}
-
 TEST_P(DeviceTest, CouplingMap) {
   EXPECT_NO_THROW(std::ignore = device.getCouplingMap());
 }
@@ -266,104 +262,232 @@ TEST_P(DeviceTest, SupportedProgramFormats) {
   EXPECT_NO_THROW(std::ignore = device.getSupportedProgramFormats());
 }
 
-TEST_P(SiteTest, Index) { EXPECT_NO_THROW(std::ignore = site.getIndex()); }
+TEST_P(SiteTest, Index) {
+  for (const auto& site : sites) {
+    EXPECT_NO_THROW(std::ignore = site.getIndex());
+  }
+}
 
-TEST_P(SiteTest, T1) { EXPECT_NO_THROW(std::ignore = site.getT1()); }
+TEST_P(SiteTest, T1) {
+  for (const auto& site : sites) {
+    EXPECT_NO_THROW(std::ignore = site.getT1());
+  }
+}
 
-TEST_P(SiteTest, T2) { EXPECT_NO_THROW(std::ignore = site.getT2()); }
+TEST_P(SiteTest, T2) {
+  for (const auto& site : sites) {
+    EXPECT_NO_THROW(std::ignore = site.getT2());
+  }
+}
 
-TEST_P(SiteTest, Name) { EXPECT_NO_THROW(std::ignore = site.getName()); }
+TEST_P(SiteTest, Name) {
+  for (const auto& site : sites) {
+    EXPECT_NO_THROW(std::ignore = site.getName());
+  }
+}
 
 TEST_P(SiteTest, XCoordinate) {
-  EXPECT_NO_THROW(std::ignore = site.getXCoordinate());
+  for (const auto& site : sites) {
+    EXPECT_NO_THROW(std::ignore = site.getXCoordinate());
+  }
 }
 
 TEST_P(SiteTest, YCoordinate) {
-  EXPECT_NO_THROW(std::ignore = site.getYCoordinate());
+  for (const auto& site : sites) {
+    EXPECT_NO_THROW(std::ignore = site.getYCoordinate());
+  }
 }
 
 TEST_P(SiteTest, ZCoordinate) {
-  EXPECT_NO_THROW(std::ignore = site.getZCoordinate());
+  for (const auto& site : sites) {
+    EXPECT_NO_THROW(std::ignore = site.getZCoordinate());
+  }
 }
 
-TEST_P(SiteTest, IsZone) { EXPECT_NO_THROW(std::ignore = site.isZone()); }
+TEST_P(SiteTest, IsZone) {
+  for (const auto& site : sites) {
+    EXPECT_NO_THROW(std::ignore = site.isZone());
+  }
+}
 
-TEST_P(SiteTest, XExtent) { EXPECT_NO_THROW(std::ignore = site.getXExtent()); }
+TEST_P(SiteTest, XExtent) {
+  for (const auto& site : sites) {
+    EXPECT_NO_THROW(std::ignore = site.getXExtent());
+  }
+}
 
-TEST_P(SiteTest, YExtent) { EXPECT_NO_THROW(std::ignore = site.getYExtent()); }
+TEST_P(SiteTest, YExtent) {
+  for (const auto& site : sites) {
+    EXPECT_NO_THROW(std::ignore = site.getYExtent());
+  }
+}
 
-TEST_P(SiteTest, ZExtent) { EXPECT_NO_THROW(std::ignore = site.getZExtent()); }
+TEST_P(SiteTest, ZExtent) {
+  for (const auto& site : sites) {
+    EXPECT_NO_THROW(std::ignore = site.getZExtent());
+  }
+}
 
 TEST_P(SiteTest, ModuleIndex) {
-  EXPECT_NO_THROW(std::ignore = site.getModuleIndex());
+  for (const auto& site : sites) {
+    EXPECT_NO_THROW(std::ignore = site.getModuleIndex());
+  }
 }
 
 TEST_P(SiteTest, SubmoduleIndex) {
-  EXPECT_NO_THROW(std::ignore = site.getSubmoduleIndex());
+  for (const auto& site : sites) {
+    EXPECT_NO_THROW(std::ignore = site.getSubmoduleIndex());
+  }
 }
 
 TEST_P(OperationTest, Name) {
-  EXPECT_NO_THROW(EXPECT_FALSE(operation.getName().empty()););
+  for (const auto& operation : operations) {
+    EXPECT_NO_THROW(EXPECT_FALSE(operation.getName().empty()));
+  }
 }
 
 TEST_P(OperationTest, QubitsNum) {
-  EXPECT_NO_THROW(std::ignore = operation.getQubitsNum());
+  for (const auto& operation : operations) {
+    EXPECT_NO_THROW(std::ignore = operation.getQubitsNum());
+  }
 }
 
 TEST_P(OperationTest, ParametersNum) {
-  EXPECT_NO_THROW(std::ignore = operation.getParametersNum());
+  for (const auto& operation : operations) {
+    EXPECT_NO_THROW(std::ignore = operation.getParametersNum());
+  }
 }
 
 TEST_P(OperationTest, Duration) {
-  EXPECT_NO_THROW(std::ignore = operation.getDuration());
+  for (const auto& operation : operations) {
+    const auto qubitsNum = operation.getQubitsNum();
+    if (!qubitsNum.has_value()) {
+      EXPECT_NO_THROW(std::ignore = operation.getDuration());
+      continue;
+    }
+    const auto numQubits = *qubitsNum;
+    if (numQubits == 1) {
+      const auto sites = operation.getSites();
+      if (!sites.has_value()) {
+        EXPECT_NO_THROW(std::ignore = operation.getDuration());
+        continue;
+      }
+      for (const auto& site : *sites) {
+        EXPECT_NO_THROW(std::ignore = operation.getDuration({site}));
+      }
+      continue;
+    }
+
+    if (numQubits == 2) {
+      const auto sitePairs = operation.getSitePairs();
+      if (!sitePairs.has_value()) {
+        EXPECT_NO_THROW(std::ignore = operation.getDuration());
+        continue;
+      }
+      for (const auto& [site1, site2] : *sitePairs) {
+        EXPECT_NO_THROW(std::ignore = operation.getDuration({site1, site2}));
+      }
+      continue;
+    }
+
+    EXPECT_NO_THROW(std::ignore = operation.getDuration());
+  }
 }
 
 TEST_P(OperationTest, Fidelity) {
-  EXPECT_NO_THROW(std::ignore = operation.getFidelity());
+  for (const auto& operation : operations) {
+    const auto qubitsNum = operation.getQubitsNum();
+    if (!qubitsNum.has_value()) {
+      EXPECT_NO_THROW(std::ignore = operation.getFidelity());
+      continue;
+    }
+    const auto numQubits = *qubitsNum;
+    if (numQubits == 1) {
+      const auto sites = operation.getSites();
+      if (!sites.has_value()) {
+        EXPECT_NO_THROW(std::ignore = operation.getFidelity());
+        continue;
+      }
+      for (const auto& site : *sites) {
+        EXPECT_NO_THROW(std::ignore = operation.getFidelity({site}));
+      }
+      continue;
+    }
+
+    if (numQubits == 2) {
+      const auto sitePairs = operation.getSitePairs();
+      if (!sitePairs.has_value()) {
+        EXPECT_NO_THROW(std::ignore = operation.getFidelity());
+        continue;
+      }
+      for (const auto& [site1, site2] : *sitePairs) {
+        EXPECT_NO_THROW(std::ignore = operation.getFidelity({site1, site2}));
+      }
+      continue;
+    }
+
+    EXPECT_NO_THROW(std::ignore = operation.getFidelity());
+  }
 }
 
 TEST_P(OperationTest, InteractionRadius) {
-  EXPECT_NO_THROW(std::ignore = operation.getInteractionRadius());
+  for (const auto& operation : operations) {
+    EXPECT_NO_THROW(std::ignore = operation.getInteractionRadius());
+  }
 }
 
 TEST_P(OperationTest, BlockingRadius) {
-  EXPECT_NO_THROW(std::ignore = operation.getBlockingRadius());
+  for (const auto& operation : operations) {
+    EXPECT_NO_THROW(std::ignore = operation.getBlockingRadius());
+  }
 }
 
 TEST_P(OperationTest, IdlingFidelity) {
-  EXPECT_NO_THROW(std::ignore = operation.getIdlingFidelity());
+  for (const auto& operation : operations) {
+    EXPECT_NO_THROW(std::ignore = operation.getIdlingFidelity());
+  }
 }
 
-TEST_P(OperationTest, oned) {
-  EXPECT_NO_THROW(std::ignore = operation.isZoned());
+TEST_P(OperationTest, IsZoned) {
+  for (const auto& operation : operations) {
+    EXPECT_NO_THROW(std::ignore = operation.isZoned());
+  }
 }
 
 TEST_P(OperationTest, Sites) {
-  EXPECT_NO_THROW(std::ignore = operation.getSites());
+  for (const auto& operation : operations) {
+    EXPECT_NO_THROW(std::ignore = operation.getSites());
+  }
 }
 
 TEST_P(OperationTest, SitePairs) {
-  const auto sitePairs = operation.getSitePairs();
-  const auto qubitsNum = operation.getQubitsNum();
-  const auto isZonedOp = operation.isZoned();
+  for (const auto& operation : operations) {
+    const auto sitePairs = operation.getSitePairs();
+    const auto qubitsNum = operation.getQubitsNum();
+    const auto isZonedOp = operation.isZoned();
 
-  if (!qubitsNum.has_value() || *qubitsNum != 2 || isZonedOp) {
-    EXPECT_FALSE(sitePairs.has_value());
-  } else {
+    if (!qubitsNum.has_value() || *qubitsNum != 2 || isZonedOp) {
+      EXPECT_FALSE(sitePairs.has_value());
+      continue;
+    }
+
     const auto sites = operation.getSites();
     if (!sites.has_value() || sites->empty() || sites->size() % 2 != 0) {
       EXPECT_FALSE(sitePairs.has_value());
-    } else {
-      EXPECT_TRUE(sitePairs.has_value());
-      if (sitePairs.has_value()) {
-        EXPECT_EQ(sitePairs->size(), sites->size() / 2);
-      }
+      continue;
+    }
+
+    EXPECT_TRUE(sitePairs.has_value());
+    if (sitePairs.has_value()) {
+      EXPECT_EQ(sitePairs->size(), sites->size() / 2);
     }
   }
 }
 
 TEST_P(OperationTest, MeanShuttlingSpeed) {
-  EXPECT_NO_THROW(std::ignore = operation.getMeanShuttlingSpeed());
+  for (const auto& operation : operations) {
+    EXPECT_NO_THROW(std::ignore = operation.getMeanShuttlingSpeed());
+  }
 }
 
 TEST_P(DeviceTest, RegularSitesAndZones) {

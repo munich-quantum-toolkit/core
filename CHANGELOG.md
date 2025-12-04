@@ -11,6 +11,7 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 
 ### Added
 
+- ✨ Add a new QDMI device that represents a superconducting architecture featuring a coupling map ([#1328]) ([**@ystade**])
 - ✨ Add bi-directional iterator that traverses the def-use chain of a qubit value ([#1310]) ([**@MatthiasReumann**])
 - ✨ Add `OptionalDependencyTester` to lazily handle optional Python dependencies like Qiskit ([#1243]) ([**@marcelwa**], [**@burgholzer**])
 - ✨ Expose the QDMI job interface through FoMaC ([#1243]) ([**@marcelwa**], [**@burgholzer**])
@@ -265,6 +266,7 @@ _📚 Refer to the [GitHub Release Notes](https://github.com/munich-quantum-tool
 <!-- PR links -->
 
 [#1336]: https://github.com/munich-quantum-toolkit/core/pull/1336
+[#1328]: https://github.com/munich-quantum-toolkit/core/pull/1328
 [#1327]: https://github.com/munich-quantum-toolkit/core/pull/1327
 [#1310]: https://github.com/munich-quantum-toolkit/core/pull/1310
 [#1301]: https://github.com/munich-quantum-toolkit/core/pull/1301

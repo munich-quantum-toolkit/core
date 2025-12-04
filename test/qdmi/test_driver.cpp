@@ -21,6 +21,7 @@
 #include <sstream>
 #include <string>
 #include <unordered_set>
+#include <utility>
 #include <vector>
 
 namespace testing {
@@ -48,7 +49,11 @@ protected:
   QDMI_Device device = nullptr;
 #ifndef _WIN32
   static void SetUpTestSuite() {
-    qdmi::Driver::get().addDynamicDeviceLibrary(DYN_DEV_LIB, "MQT_NA_DYN");
+    ASSERT_NO_THROW({
+      for (const auto& [lib, prefix] : DYN_DEV_LIBS) {
+        qdmi::Driver::get().addDynamicDeviceLibrary(lib, prefix);
+      }
+    });
   }
 #endif // _WIN32
 
@@ -121,9 +126,15 @@ protected:
 };
 
 #ifndef _WIN32
-TEST_P(DriverTest, LoadLibraryTwice) {
-  EXPECT_NO_THROW(
-      qdmi::Driver::get().addDynamicDeviceLibrary(DYN_DEV_LIB, "MQT_NA_DYN"));
+TEST(DriverTest, LoadLibraryTwice) {
+  // Verify that attempting to load already-loaded libraries returns false.
+  // Note: SetUpTestSuite may have already loaded these libraries, so the first
+  // call here might also return false. This test validates that duplicate loads
+  // are safely handled and consistently return false (idempotent behavior).
+  EXPECT_NO_THROW(for (const auto& [lib, prefix] : DYN_DEV_LIBS) {
+    qdmi::Driver::get().addDynamicDeviceLibrary(lib, prefix);
+    EXPECT_FALSE(qdmi::Driver::get().addDynamicDeviceLibrary(lib, prefix));
+  });
 }
 #endif // _WIN32
 
@@ -503,11 +514,13 @@ TEST_P(DriverTest, QueryNeedsCalibration) {
 }
 #ifdef _WIN32
 constexpr std::array DEVICES{"MQT NA Default QDMI Device",
-                             "MQT Core DDSIM QDMI Device"};
+                             "MQT Core DDSIM QDMI Device",
+                             "MQT SC Default QDMI Device"};
 #else
-constexpr std::array DEVICES{"MQT NA Default QDMI Device",
-                             "MQT NA Dynamic QDMI Device",
-                             "MQT Core DDSIM QDMI Device"};
+constexpr std::array DEVICES{
+    "MQT NA Default QDMI Device", "MQT NA Dynamic QDMI Device",
+    "MQT Core DDSIM QDMI Device", "MQT SC Default QDMI Device",
+    "MQT SC Dynamic QDMI Device"};
 #endif
 // Instantiate the test suite with different parameters
 INSTANTIATE_TEST_SUITE_P(

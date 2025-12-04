@@ -27,7 +27,7 @@
 // NOLINTEND(misc-include-cleaner)
 #endif // _WIN32
 
-TEST(NaExecutableTest, Version) {
+TEST(ScExecutableTest, Version) {
   // Command to execute
   // NOLINTNEXTLINE(misc-include-cleaner)
   const std::string command = EXECUTABLE_PATH " --version";
@@ -51,11 +51,11 @@ TEST(NaExecutableTest, Version) {
   // Validate the output
   EXPECT_EQ(output.str(),
             // NOLINTNEXTLINE(misc-include-cleaner)
-            "MQT QDMI NA Device Generator (MQT Version " MQT_CORE_VERSION
+            "MQT QDMI SC Device Generator (MQT Version " MQT_CORE_VERSION
             ")\n");
 }
 
-TEST(NaExecutableTest, MissingSubcommand) {
+TEST(ScExecutableTest, MissingSubcommand) {
   // Command to execute
   // NOLINTNEXTLINE(misc-include-cleaner)
   const std::string command = EXECUTABLE_PATH;
@@ -77,7 +77,7 @@ TEST(NaExecutableTest, MissingSubcommand) {
   EXPECT_NE(returnCode, 0);
 }
 
-TEST(NaExecutableTest, UnknownSubcommand) {
+TEST(ScExecutableTest, UnknownSubcommand) {
   // Command to execute
   // NOLINTNEXTLINE(misc-include-cleaner)
   const std::string command = EXECUTABLE_PATH " unknown";
@@ -99,7 +99,7 @@ TEST(NaExecutableTest, UnknownSubcommand) {
   EXPECT_NE(returnCode, 0);
 }
 
-TEST(NaExecutableTest, SchemaUnknownOption) {
+TEST(ScExecutableTest, SchemaUnknownOption) {
   // Command to execute
   // NOLINTNEXTLINE(misc-include-cleaner)
   const std::string command = EXECUTABLE_PATH " schema --unknown-option";
@@ -121,7 +121,7 @@ TEST(NaExecutableTest, SchemaUnknownOption) {
   EXPECT_NE(returnCode, 0);
 }
 
-TEST(NaExecutableTest, SchemaMissingFile) {
+TEST(ScExecutableTest, SchemaMissingFile) {
   // Command to execute
   // NOLINTNEXTLINE(misc-include-cleaner)
   const std::string command = EXECUTABLE_PATH " schema --output";
@@ -143,7 +143,7 @@ TEST(NaExecutableTest, SchemaMissingFile) {
   EXPECT_NE(returnCode, 0);
 }
 
-TEST(NaExecutableTest, ValidateInvalidJson) {
+TEST(ScExecutableTest, ValidateInvalidJson) {
   // Command to execute
   // NOLINTNEXTLINE(misc-include-cleaner)
   const std::string command = EXECUTABLE_PATH " validate";
@@ -158,7 +158,7 @@ TEST(NaExecutableTest, ValidateInvalidJson) {
                            << returnCode;
 }
 
-TEST(NaExecutableTest, GenerateMissingFile) {
+TEST(ScExecutableTest, GenerateMissingFile) {
   // Command to execute
   // NOLINTNEXTLINE(misc-include-cleaner)
   const std::string command = EXECUTABLE_PATH " generate --output";
@@ -180,7 +180,7 @@ TEST(NaExecutableTest, GenerateMissingFile) {
   EXPECT_NE(returnCode, 0);
 }
 
-TEST(NaExecutableTest, Usage) {
+TEST(ScExecutableTest, Usage) {
   // Command to execute
   // NOLINTNEXTLINE(misc-include-cleaner)
   const std::string command = EXECUTABLE_PATH " --help";
@@ -204,7 +204,7 @@ TEST(NaExecutableTest, Usage) {
   EXPECT_FALSE(output.str().empty());
 }
 
-TEST(NaExecutableTest, SchemaUsage) {
+TEST(ScExecutableTest, SchemaUsage) {
   // Command to execute
   // NOLINTNEXTLINE(misc-include-cleaner)
   const std::string command = EXECUTABLE_PATH " schema --help";
@@ -228,7 +228,7 @@ TEST(NaExecutableTest, SchemaUsage) {
   EXPECT_TRUE(output.str().rfind("Generates a JSON schema", 0) == 0);
 }
 
-TEST(NaExecutableTest, ValidateUsage) {
+TEST(ScExecutableTest, ValidateUsage) {
   // Command to execute
   // NOLINTNEXTLINE(misc-include-cleaner)
   const std::string command = EXECUTABLE_PATH " validate --help";
@@ -252,7 +252,7 @@ TEST(NaExecutableTest, ValidateUsage) {
   EXPECT_TRUE(output.str().rfind("Validates", 0) == 0);
 }
 
-TEST(NaExecutableTest, GenerateUsage) {
+TEST(ScExecutableTest, GenerateUsage) {
   // Command to execute
   // NOLINTNEXTLINE(misc-include-cleaner)
   const std::string command = EXECUTABLE_PATH " generate --help";
@@ -276,7 +276,7 @@ TEST(NaExecutableTest, GenerateUsage) {
   EXPECT_TRUE(output.str().rfind("Generates a header file", 0) == 0);
 }
 
-TEST(NaExecutableTest, RoundTrip) {
+TEST(ScExecutableTest, RoundTrip) {
   std::string schema;
   // Capture the output of the schema command
   {
@@ -319,7 +319,7 @@ TEST(NaExecutableTest, RoundTrip) {
   }
 }
 
-TEST(NaExecutableTest, RoundTripFile) {
+TEST(ScExecutableTest, RoundTripFile) {
   // Write schema to a file
   {
     // Command to execute
