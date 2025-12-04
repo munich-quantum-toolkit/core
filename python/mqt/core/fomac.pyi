@@ -38,59 +38,52 @@ class Session:
     """A FoMaC session for managing QDMI devices.
 
     Allows creating isolated sessions with independent authentication settings.
+    All authentication parameters are optional and can be provided as keyword
+    arguments to the constructor.
     """
 
-    class SessionParameter(Enum):
-        """Session parameters for authentication and configuration.
-
-        These parameters must be set before the first call to devices().
-        """
-
-        TOKEN = ...
-        """Authentication token"""
-        AUTHFILE = ...
-        """Path to authentication file"""
-        AUTHURL = ...
-        """URL to authentication server"""
-        USERNAME = ...
-        """Username for authentication"""
-        PASSWORD = ...
-        """Password for authentication"""
-        PROJECTID = ...
-        """Project ID for session"""
-        CUSTOM1 = ...
-        """Custom parameter 1 (driver-defined)"""
-        CUSTOM2 = ...
-        """Custom parameter 2 (driver-defined)"""
-        CUSTOM3 = ...
-        """Custom parameter 3 (driver-defined)"""
-        CUSTOM4 = ...
-        """Custom parameter 4 (driver-defined)"""
-        CUSTOM5 = ...
-        """Custom parameter 5 (driver-defined)"""
-
-    def __init__(self) -> None:
-        """Create a new FoMaC session."""
-
-    def set_parameter(self, param: SessionParameter, value: str) -> None:
-        """Set a session parameter for authentication.
-
-        This method must be called before the first call to get_devices().
-        Once the session is initialized, parameters cannot be changed.
+    def __init__(
+        self,
+        *,
+        token: str | None = None,
+        auth_file: str | None = None,
+        auth_url: str | None = None,
+        username: str | None = None,
+        password: str | None = None,
+        project_id: str | None = None,
+    ) -> None:
+        """Create a new FoMaC session with optional authentication.
 
         Args:
-            param: The session parameter to set
-            value: The parameter value as a string
+            token: Authentication token
+            auth_file: Path to file containing authentication information
+            auth_url: URL to authentication server
+            username: Username for authentication
+            password: Password for authentication
+            project_id: Project ID for session
 
         Raises:
-            RuntimeError: If session is already initialized
-            RuntimeError: If AUTHFILE does not exist
-            RuntimeError: If AUTHURL has invalid format
+            RuntimeError: If auth_file does not exist
+            RuntimeError: If auth_url has invalid format
 
         Example:
-            >>> from mqt.core.fomac import Session, SessionParameter
+            >>> from mqt.core.fomac import Session
+            >>> # Session without authentication
             >>> session = Session()
-            >>> session.set_session_parameter(SessionParameter.TOKEN, "my_token")
+            >>> devices = session.get_devices()
+            >>>
+            >>> # Session with token authentication
+            >>> session = Session(token="my_secret_token")
+            >>> devices = session.get_devices()
+            >>>
+            >>> # Session with file-based authentication
+            >>> session = Session(auth_file="/path/to/auth.json")
+            >>> devices = session.get_devices()
+            >>>
+            >>> # Session with multiple parameters
+            >>> session = Session(
+            ...     auth_url="https://auth.example.com", username="user", password="pass", project_id="project-123"
+            ... )
             >>> devices = session.get_devices()
         """
 

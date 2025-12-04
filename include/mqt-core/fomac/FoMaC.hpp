@@ -182,6 +182,27 @@ inline auto throwIfError(const int result, const std::string& msg) -> void {
 }
 
 /**
+ * @brief Configuration structure for session authentication parameters.
+ * @details All parameters are optional. Only set the parameters needed for
+ * your authentication method. Parameters are validated when the session is
+ * initialized.
+ */
+struct SessionConfig {
+  /// Authentication token
+  std::optional<std::string> token;
+  /// Path to file containing authentication information
+  std::optional<std::string> authFile;
+  /// URL to authentication server
+  std::optional<std::string> authUrl;
+  /// Username for authentication
+  std::optional<std::string> username;
+  /// Password for authentication
+  std::optional<std::string> password;
+  /// Project ID for session
+  std::optional<std::string> projectId;
+};
+
+/**
  * @brief Class representing the FoMaC library.
  * @details This class provides methods to query available devices and
  * manage the QDMI session.
@@ -702,12 +723,13 @@ private:
 
 public:
   /**
-   * @brief Constructs a new FoMaC session.
+   * @brief Constructs a new FoMaC session with optional authentication.
+   * @param config Optional session configuration containing authentication
+   * parameters. If not provided, uses default (no authentication).
    * @details Creates and allocates a new QDMI session. The session is not
-   * initialized until the first call to getDevices() or after setting
-   * authentication parameters.
+   * initialized until the first call to getDevices().
    */
-  FoMaC();
+  explicit FoMaC(const SessionConfig& config = {});
 
   /**
    * @brief Destructor that releases the QDMI session.
@@ -721,22 +743,6 @@ public:
   // Allow move semantics
   FoMaC(FoMaC&&) noexcept;
   FoMaC& operator=(FoMaC&&) noexcept;
-
-  /**
-   * @brief Set a session parameter for authentication.
-   * @details This method must be called before the first call to getDevices().
-   * Once the session is initialized, parameters cannot be changed.
-   * For AUTHFILE parameter, the file path is validated for existence.
-   * For AUTHURL parameter, basic URL format validation is performed.
-   * @param param The parameter to set
-   * @param value The value to set
-   * @throws std::runtime_error if the session is already initialized
-   * @throws std::runtime_error if validation fails (file not found, invalid
-   * URL)
-   * @see QDMI_session_set_parameter
-   */
-  auto setParameter(const QDMI_SESSION_PARAMETER_T param,
-                    const std::string& value) -> void;
 
   /// @see QDMI_SESSION_PROPERTY_DEVICES
   [[nodiscard]] auto getDevices() -> std::vector<Device>;

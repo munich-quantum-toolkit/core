@@ -808,8 +808,40 @@ auto FoMaC::Job::getSparseProbabilities() const
   return probabilities;
 }
 
-FoMaC::FoMaC() {
+FoMaC::FoMaC(const SessionConfig& config) {
   QDMI_session_alloc(&session_);
+
+  // Populate pending parameters from config
+  if (config.token) {
+    pendingParameters_[QDMI_SESSION_PARAMETER_TOKEN] = *config.token;
+  }
+  if (config.authFile) {
+    // Validate file existence
+    if (!std::filesystem::exists(*config.authFile)) {
+      throw std::runtime_error("Authentication file does not exist: " +
+                               *config.authFile);
+    }
+    pendingParameters_[QDMI_SESSION_PARAMETER_AUTHFILE] = *config.authFile;
+  }
+  if (config.authUrl) {
+    // Validate URL format
+    static const std::regex URL_PATTERN(
+        R"(^https?://[a-zA-Z0-9\-._~:/?#\[\]@!$&'()*+,;=%]+$)");
+    if (!std::regex_match(*config.authUrl, URL_PATTERN)) {
+      throw std::runtime_error("Invalid URL format: " + *config.authUrl);
+    }
+    pendingParameters_[QDMI_SESSION_PARAMETER_AUTHURL] = *config.authUrl;
+  }
+  if (config.username) {
+    pendingParameters_[QDMI_SESSION_PARAMETER_USERNAME] = *config.username;
+  }
+  if (config.password) {
+    pendingParameters_[QDMI_SESSION_PARAMETER_PASSWORD] = *config.password;
+  }
+  if (config.projectId) {
+    pendingParameters_[QDMI_SESSION_PARAMETER_PROJECTID] = *config.projectId;
+  }
+
   // Initialization is deferred to ensureInitialized()
 }
 
@@ -857,32 +889,6 @@ auto FoMaC::ensureInitialized() -> void {
   // Initialize the session
   throwIfError(QDMI_session_init(session_), "Initializing session");
   initialized_ = true;
-}
-
-auto FoMaC::setParameter(const QDMI_SESSION_PARAMETER_T param,
-                         const std::string& value) -> void {
-  const std::scoped_lock<std::mutex> lock(mutex_);
-
-  if (initialized_) {
-    throw std::runtime_error(
-        "Cannot set session parameter after session is initialized");
-  }
-
-  // Validate parameters
-  if (param == QDMI_SESSION_PARAMETER_AUTHFILE) {
-    if (!std::filesystem::exists(value)) {
-      throw std::runtime_error("Authentication file does not exist: " + value);
-    }
-  } else if (param == QDMI_SESSION_PARAMETER_AUTHURL) {
-    // Basic URL validation
-    static const std::regex URL_PATTERN(
-        R"(^https?://[a-zA-Z0-9\-._~:/?#\[\]@!$&'()*+,;=%]+$)");
-    if (!std::regex_match(value, URL_PATTERN)) {
-      throw std::runtime_error("Invalid URL format: " + value);
-    }
-  }
-
-  pendingParameters_[param] = value;
 }
 
 auto FoMaC::getDevices() -> std::vector<Device> {
