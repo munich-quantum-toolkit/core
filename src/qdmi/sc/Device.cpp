@@ -24,6 +24,7 @@
 #include <cstdint>
 #include <cstring>
 #include <functional>
+#include <iterator>
 #include <memory>
 #include <span>
 #include <type_traits>
