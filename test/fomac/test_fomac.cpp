@@ -17,7 +17,6 @@
 #include <memory>
 #include <new>
 #include <numbers>
-#include <optional>
 #include <qdmi/client.h>
 #include <ranges>
 #include <stdexcept>
