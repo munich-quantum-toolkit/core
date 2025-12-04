@@ -127,6 +127,10 @@ protected:
 
 #ifndef _WIN32
 TEST(DriverTest, LoadLibraryTwice) {
+  // Verify that attempting to load already-loaded libraries returns false.
+  // Note: SetUpTestSuite may have already loaded these libraries, so the first
+  // call here might also return false. This test validates that duplicate loads
+  // are safely handled and consistently return false (idempotent behavior).
   EXPECT_NO_THROW(for (const auto& [lib, prefix] : DYN_DEV_LIBS) {
     qdmi::Driver::get().addDynamicDeviceLibrary(lib, prefix);
     EXPECT_FALSE(qdmi::Driver::get().addDynamicDeviceLibrary(lib, prefix));
