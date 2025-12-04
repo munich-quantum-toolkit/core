@@ -14,9 +14,6 @@ __all__ = [
     "Job",
     "ProgramFormat",
     "Session",
-    "SessionParameter",
-    "devices",
-    "set_session_parameter",
 ]
 
 class ProgramFormat(Enum):
@@ -37,45 +34,45 @@ class ProgramFormat(Enum):
     CUSTOM4 = ...
     CUSTOM5 = ...
 
-class SessionParameter(Enum):
-    """Session parameters for authentication and configuration.
-
-    These parameters must be set before the first call to devices().
-    """
-
-    TOKEN = ...
-    """Authentication token"""
-    AUTHFILE = ...
-    """Path to authentication file"""
-    AUTHURL = ...
-    """URL to authentication server"""
-    USERNAME = ...
-    """Username for authentication"""
-    PASSWORD = ...
-    """Password for authentication"""
-    PROJECTID = ...
-    """Project ID for session"""
-    CUSTOM1 = ...
-    """Custom parameter 1 (driver-defined)"""
-    CUSTOM2 = ...
-    """Custom parameter 2 (driver-defined)"""
-    CUSTOM3 = ...
-    """Custom parameter 3 (driver-defined)"""
-    CUSTOM4 = ...
-    """Custom parameter 4 (driver-defined)"""
-    CUSTOM5 = ...
-    """Custom parameter 5 (driver-defined)"""
-
 class Session:
     """A FoMaC session for managing QDMI devices.
 
     Allows creating isolated sessions with independent authentication settings.
     """
 
+    class SessionParameter(Enum):
+        """Session parameters for authentication and configuration.
+
+        These parameters must be set before the first call to devices().
+        """
+
+        TOKEN = ...
+        """Authentication token"""
+        AUTHFILE = ...
+        """Path to authentication file"""
+        AUTHURL = ...
+        """URL to authentication server"""
+        USERNAME = ...
+        """Username for authentication"""
+        PASSWORD = ...
+        """Password for authentication"""
+        PROJECTID = ...
+        """Project ID for session"""
+        CUSTOM1 = ...
+        """Custom parameter 1 (driver-defined)"""
+        CUSTOM2 = ...
+        """Custom parameter 2 (driver-defined)"""
+        CUSTOM3 = ...
+        """Custom parameter 3 (driver-defined)"""
+        CUSTOM4 = ...
+        """Custom parameter 4 (driver-defined)"""
+        CUSTOM5 = ...
+        """Custom parameter 5 (driver-defined)"""
+
     def __init__(self) -> None:
         """Create a new FoMaC session."""
 
-    def set_session_parameter(self, param: SessionParameter, value: str) -> None:
+    def set_parameter(self, param: SessionParameter, value: str) -> None:
         """Set a session parameter for authentication.
 
         This method must be called before the first call to get_devices().
@@ -274,40 +271,3 @@ class Device:
         """Checks if two devices are equal."""
     def __ne__(self, other: object) -> bool:
         """Checks if two devices are not equal."""
-
-def set_session_parameter(param: SessionParameter, value: str) -> None:
-    """Set a session parameter for authentication on the default session.
-
-    This function must be called before the first call to devices().
-    Once the session is initialized, parameters cannot be changed.
-
-    For custom sessions or multiple sessions, use the Session class directly.
-
-    Args:
-        param: The session parameter to set
-        value: The parameter value as a string
-
-    Raises:
-        RuntimeError: If session is already initialized
-        RuntimeError: If AUTHFILE does not exist
-        RuntimeError: If AUTHURL has invalid format
-
-    Example:
-        >>> import mqt.core.fomac as fomac
-        >>> fomac.set_session_parameter(fomac.SessionParameter.TOKEN, "my_token")
-        >>> devices = fomac.devices()
-
-        # Or use Session class for isolated sessions:
-        >>> session = fomac.Session()
-        >>> session.set_session_parameter(fomac.SessionParameter.TOKEN, "token")
-        >>> session_devices = session.get_devices()
-    """
-
-def devices() -> list[Device]:
-    """Returns a list of available devices from the default session.
-
-    For custom sessions, create a Session instance and use its get_devices() method.
-
-    Returns:
-        List of available devices
-    """
