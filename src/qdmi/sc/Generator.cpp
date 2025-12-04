@@ -39,6 +39,7 @@ namespace {
  */
 auto populateArrayFields(Device& device) -> void {
   device.couplings.emplace_back();
+  device.operations.emplace_back();
 }
 
 /**
