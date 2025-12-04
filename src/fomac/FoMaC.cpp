@@ -897,22 +897,4 @@ auto FoMaC::getDevices() -> std::vector<Device> {
       [](const QDMI_Device& dev) -> Device { return {Token{}, dev}; });
   return devices;
 }
-
-// Module-level convenience functions for default session
-namespace {
-auto getDefaultSession() -> FoMaC& {
-  static FoMaC instance;
-  return instance;
-}
-} // namespace
-
-auto getDevices() -> std::vector<FoMaC::Device> {
-  return getDefaultSession().getDevices();
-}
-
-auto setParameter(const QDMI_SESSION_PARAMETER_T param,
-                  const std::string& value) -> void {
-  getDefaultSession().setParameter(param, value);
-}
-
 } // namespace fomac

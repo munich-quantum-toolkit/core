@@ -741,25 +741,4 @@ public:
   /// @see QDMI_SESSION_PROPERTY_DEVICES
   [[nodiscard]] auto getDevices() -> std::vector<Device>;
 };
-
-/**
- * @brief Get devices from a default FoMaC session.
- * @details This is a convenience function that uses a static default FoMaC
- * instance. For custom authentication or multiple sessions, create FoMaC
- * instances directly.
- * @return Vector of available devices
- */
-[[nodiscard]] auto getDevices() -> std::vector<FoMaC::Device>;
-
-/**
- * @brief Set a session parameter on the default FoMaC session.
- * @details This is a convenience function for the default session.
- * For multiple sessions, create FoMaC instances directly.
- * @param param The parameter to set
- * @param value The value to set
- * @see FoMaC::setParameter
- */
-auto setParameter(QDMI_SESSION_PARAMETER_T param, const std::string& value)
-    -> void;
-
 } // namespace fomac

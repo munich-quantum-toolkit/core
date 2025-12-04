@@ -32,10 +32,6 @@ PYBIND11_MODULE(MQT_CORE_MODULE_NAME, m, py::mod_gil_not_used()) {
   fomac.def("set_parameter", &fomac::FoMaC::setParameter, "param"_a, "value"_a);
   fomac.def("get_devices", &fomac::FoMaC::getDevices);
 
-  // Module-level convenience functions (use default session)
-  m.def("set_parameter", &fomac::setParameter, "param"_a, "value"_a);
-  m.def("devices", &fomac::getDevices);
-
   // SessionParameter enum
   py::native_enum<QDMI_SESSION_PARAMETER_T>(
       fomac, "SessionParameter", "enum.Enum",
