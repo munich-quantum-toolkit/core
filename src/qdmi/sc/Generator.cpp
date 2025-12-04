@@ -120,7 +120,7 @@ auto writeOperations(const Device& device, std::ostream& os) -> void {
             "var.emplace_back(MQT_SC_QDMI_Operation_impl_d::"
             "makeUniqueTwoQubit(\""
          << operation.name << "\", " << operation.numParameters
-         << ", _couplings))";
+         << ", std::move(_couplings)))";
     } else {
       std::ostringstream ss;
       ss << "Got operation with " << operation.numQubits << " qubits but only "
@@ -144,7 +144,7 @@ auto writeOperations(const Device& device, std::ostream& os) -> void {
  * @param os Output stream to write the macro definition to.
  */
 auto writeCouplingMap(const Device& /* unused */, std::ostream& os) -> void {
-  os << "#define INITIALIZE_COUPLINGMAP(var) var = std::move(_couplings)\n";
+  os << "#define INITIALIZE_COUPLINGMAP(var) var = _couplings\n";
 }
 } // namespace
 
