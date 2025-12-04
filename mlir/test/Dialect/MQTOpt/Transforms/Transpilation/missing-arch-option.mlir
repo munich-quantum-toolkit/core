@@ -9,7 +9,8 @@
 // Instead of applying checks, the routing verifier pass ensures the validity of this program.
 
 // RUN: quantum-opt %s --placement-sc -verify-diagnostics
-// RUN: quantum-opt %s --route-sc -verify-diagnostics
+// RUN: quantum-opt %s --route-naive-sc -verify-diagnostics
+// RUN: quantum-opt %s --route-astar-sc -verify-diagnostics
 // RUN: quantum-opt %s --verify-routing-sc -verify-diagnostics
 
 // expected-error@unknown {{required option 'arch' not provided}}

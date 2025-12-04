@@ -21,6 +21,7 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 ### Changed
 
 - 👷 Update C++ test matrices ([#1359]) ([**@denialhaag**])
+- ♻️ Group circuit operations into scheduling units for MLIR routing ([#1301]) ([**@MatthiasReumann**])
 - 👷 Use `munich-quantum-software/setup-mlir` to set up MLIR ([#1294]) ([**@denialhaag**])
 - ♻️ Preserve tuple structure and improve site type clarity of the MQT NA Default QDMI Device ([#1299]) ([**@marcelwa**])
 - ♻️ Move DD package evaluation module to standalone script ([#1327]) ([**@burgholzer**])
@@ -268,6 +269,7 @@ _📚 Refer to the [GitHub Release Notes](https://github.com/munich-quantum-tool
 [#1336]: https://github.com/munich-quantum-toolkit/core/pull/1336
 [#1327]: https://github.com/munich-quantum-toolkit/core/pull/1327
 [#1310]: https://github.com/munich-quantum-toolkit/core/pull/1310
+[#1301]: https://github.com/munich-quantum-toolkit/core/pull/1301
 [#1300]: https://github.com/munich-quantum-toolkit/core/pull/1300
 [#1299]: https://github.com/munich-quantum-toolkit/core/pull/1299
 [#1294]: https://github.com/munich-quantum-toolkit/core/pull/1294
