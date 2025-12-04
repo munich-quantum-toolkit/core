@@ -102,9 +102,18 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        runs-on: [macos-14, macos-15-intel, macos-15]
+        runs-on: [macos-14, macos-15, macos-15-intel]
         compiler: [clang, clang-20, clang-21, gcc-14, gcc-15]
         config: [Release, Debug]
+        exclude:
+          - runs-on: macos-15
+            compiler: gcc-14
+          - runs-on: macos-15
+            compiler: gcc-15
+          - runs-on: macos-15-intel
+            compiler: gcc-14
+          - runs-on: macos-15-intel
+            compiler: gcc-15
     uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-cpp-tests-macos.yml@fix-macos-clang # v1.17.3
     with:
       runs-on: ${{ matrix.runs-on }}
