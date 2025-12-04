@@ -132,8 +132,8 @@ private:
 
                 if (auto swap = dyn_cast<SWAPOp>(op.getOperation())) {
                   const auto in0 = swap.getInQubits()[0];
-history.emplace_back(unit.layout().lookupHardwareIndex(in0),
-unit.layout().lookupHardwareIndex(in1));
+                  history.emplace_back(unit.layout().lookupHardwareIndex(in0),
+                                       unit.layout().lookupHardwareIndex(in1));
                 }
                 unit.layout().remap(op);
               })
