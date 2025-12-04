@@ -284,7 +284,7 @@ private:
   /**
    * @brief Number of qubits involved in the operation
    */
-  size_t numQubits_ = 1;
+  size_t numQubits_{};
   /**
    * @brief Storage for individual sites and site pairs.
    * @details Uses std::variant to preserve the tuple structure of the operation
