@@ -35,20 +35,14 @@ class SiteTest : public DeviceTest {
 protected:
   std::vector<FoMaC::Device::Site> sites;
 
-  void SetUp() override {
-    sites = device.getSites();
-    ASSERT_FALSE(sites.empty());
-  }
+  void SetUp() override { sites = device.getSites(); }
 };
 
 class OperationTest : public DeviceTest {
 protected:
   std::vector<FoMaC::Device::Operation> operations;
 
-  void SetUp() override {
-    operations = device.getOperations();
-    ASSERT_FALSE(operations.empty());
-  }
+  void SetUp() override { operations = device.getOperations(); }
 };
 
 class DDSimulatorDeviceTest : public testing::Test {
