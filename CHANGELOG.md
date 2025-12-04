@@ -20,7 +20,10 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 
 ### Changed
 
-- 👷 Update C++ test matrices ([#1359]) ([**@denialhaag**])
+- 👷 Stop testing on `ubuntu-22.04` and `ubuntu-22.04-arm` runners ([#1359]) ([**@denialhaag**], [**@burgholzer**])
+- 👷 Stop testing with `clang-19` and start testing with `clang-21` ([#1359]) ([**@denialhaag**], [**@burgholzer**])
+- 👷 Fix macOS tests with Homebrew Clang via new `munich-quantum-toolkit/workflows` version ([#1359]) ([**@denialhaag**], [**@burgholzer**])
+- 👷 Re-enable macOS tests with GCC by disabling module scanning ([#1359]) ([**@denialhaag**], [**@burgholzer**])
 - ♻️ Group circuit operations into scheduling units for MLIR routing ([#1301]) ([**@MatthiasReumann**])
 - 👷 Use `munich-quantum-software/setup-mlir` to set up MLIR ([#1294]) ([**@denialhaag**])
 - ♻️ Preserve tuple structure and improve site type clarity of the MQT NA Default QDMI Device ([#1299]) ([**@marcelwa**])
