@@ -13,8 +13,8 @@
 #include <algorithm>
 #include <cstdio>
 #include <cstdlib>
-#include <cstring>
-#include <fcntl.h>
+#include <filesystem>
+#include <fstream>
 #include <gmock/gmock-matchers.h>
 #include <gtest/gtest.h>
 #include <new>
@@ -24,7 +24,6 @@
 #include <stdexcept>
 #include <string>
 #include <tuple>
-#include <unistd.h>
 #include <vector>
 
 namespace fomac {
@@ -620,7 +619,7 @@ TEST(AuthenticationTest, SessionConstructionWithToken) {
   SessionConfig config1;
   config1.token = "";
   try {
-    Session session(config1);
+    const Session session(config1);
     SUCCEED(); // If we get here, the session was created successfully
   } catch (const std::runtime_error&) {
     // If not supported, that's okay for now
@@ -631,7 +630,7 @@ TEST(AuthenticationTest, SessionConstructionWithToken) {
   SessionConfig config2;
   config2.token = "test_token_123";
   try {
-    Session session(config2);
+    const Session session(config2);
     SUCCEED();
   } catch (const std::runtime_error&) {
     // If not supported, that's okay for now
@@ -642,7 +641,7 @@ TEST(AuthenticationTest, SessionConstructionWithToken) {
   SessionConfig config3;
   config3.token = "very_long_token_with_special_characters_!@#$%^&*()";
   try {
-    Session session(config3);
+    const Session session(config3);
     SUCCEED();
   } catch (const std::runtime_error&) {
     // If not supported, that's okay for now
@@ -655,7 +654,7 @@ TEST(AuthenticationTest, SessionConstructionWithAuthUrl) {
   SessionConfig config1;
   config1.authUrl = "https://example.com";
   try {
-    Session session(config1);
+    const Session session(config1);
     SUCCEED();
   } catch (const std::runtime_error&) {
     // Either not supported or validation failed - both acceptable
@@ -666,7 +665,7 @@ TEST(AuthenticationTest, SessionConstructionWithAuthUrl) {
   SessionConfig config2;
   config2.authUrl = "http://auth.server.com:8080/api";
   try {
-    Session session(config2);
+    const Session session(config2);
     SUCCEED();
   } catch (const std::runtime_error&) {
     SUCCEED();
@@ -676,7 +675,7 @@ TEST(AuthenticationTest, SessionConstructionWithAuthUrl) {
   SessionConfig config3;
   config3.authUrl = "https://auth.example.com/token?param=value";
   try {
-    Session session(config3);
+    const Session session(config3);
     SUCCEED();
   } catch (const std::runtime_error&) {
     SUCCEED();
@@ -685,46 +684,46 @@ TEST(AuthenticationTest, SessionConstructionWithAuthUrl) {
   // Invalid URL - not a URL at all
   SessionConfig config4;
   config4.authUrl = "not-a-url";
-  EXPECT_THROW({ Session session(config4); }, std::runtime_error);
+  EXPECT_THROW({ const Session session(config4); }, std::runtime_error);
 
   // Invalid URL - unsupported protocol
   SessionConfig config5;
   config5.authUrl = "ftp://invalid.com";
-  EXPECT_THROW({ Session session(config5); }, std::runtime_error);
+  EXPECT_THROW({ const Session session(config5); }, std::runtime_error);
 
   // Invalid URL - missing protocol
   SessionConfig config6;
   config6.authUrl = "example.com";
-  EXPECT_THROW({ Session session(config6); }, std::runtime_error);
+  EXPECT_THROW({ const Session session(config6); }, std::runtime_error);
 }
 
 TEST(AuthenticationTest, SessionConstructionWithAuthFile) {
   // Test with non-existent file - should raise error
   SessionConfig config1;
   config1.authFile = "/nonexistent/path/to/file.txt";
-  EXPECT_THROW({ Session session(config1); }, std::runtime_error);
+  EXPECT_THROW({ const Session session(config1); }, std::runtime_error);
 
   // Test with another non-existent file
   SessionConfig config2;
   config2.authFile = "/tmp/this_file_does_not_exist_12345.txt";
-  EXPECT_THROW({ Session session(config2); }, std::runtime_error);
+  EXPECT_THROW({ const Session session(config2); }, std::runtime_error);
 
   // Test with existing file
-  // Create a temporary file
-  char tmpFilename[] = "/tmp/fomac_test_XXXXXX";
-  const int fd = mkstemp(tmpFilename);
-  ASSERT_NE(fd, -1) << "Failed to create temporary file";
+  const auto tempDir = std::filesystem::temp_directory_path();
+  auto tmpPath = tempDir / "fomac_test_auth_XXXXXX.txt";
 
-  // Write some content to the file
-  const char* content = "test_token_content";
-  write(fd, content, strlen(content));
-  close(fd);
+  // Create and write to the temporary file
+  {
+    std::ofstream tmpFile(tmpPath);
+    ASSERT_TRUE(tmpFile.is_open()) << "Failed to create temporary file";
+    tmpFile << "test_token_content";
+  }
 
   // Try to create session with existing file
   SessionConfig config3;
-  config3.authFile = tmpFilename;
+  config3.authFile = tmpPath.string();
   try {
-    Session session(config3);
+    const Session session(config3);
     SUCCEED();
   } catch (const std::runtime_error&) {
     // If not supported, that's okay for now
@@ -732,7 +731,7 @@ TEST(AuthenticationTest, SessionConstructionWithAuthFile) {
   }
 
   // Clean up
-  remove(tmpFilename);
+  std::filesystem::remove(tmpPath);
 }
 
 TEST(AuthenticationTest, SessionConstructionWithUsernamePassword) {
@@ -740,7 +739,7 @@ TEST(AuthenticationTest, SessionConstructionWithUsernamePassword) {
   SessionConfig config1;
   config1.username = "user123";
   try {
-    Session session(config1);
+    const Session session(config1);
     SUCCEED();
   } catch (const std::runtime_error&) {
     SUCCEED();
@@ -750,7 +749,7 @@ TEST(AuthenticationTest, SessionConstructionWithUsernamePassword) {
   SessionConfig config2;
   config2.password = "secure_password";
   try {
-    Session session(config2);
+    const Session session(config2);
     SUCCEED();
   } catch (const std::runtime_error&) {
     SUCCEED();
@@ -761,7 +760,7 @@ TEST(AuthenticationTest, SessionConstructionWithUsernamePassword) {
   config3.username = "user123";
   config3.password = "secure_password";
   try {
-    Session session(config3);
+    const Session session(config3);
     SUCCEED();
   } catch (const std::runtime_error&) {
     SUCCEED();
@@ -772,7 +771,7 @@ TEST(AuthenticationTest, SessionConstructionWithProjectId) {
   SessionConfig config;
   config.projectId = "project-123-abc";
   try {
-    Session session(config);
+    const Session session(config);
     SUCCEED();
   } catch (const std::runtime_error&) {
     // If not supported, that's okay for now
@@ -787,7 +786,7 @@ TEST(AuthenticationTest, SessionConstructionWithMultipleParameters) {
   config.password = "test_pass";
   config.projectId = "test_project";
   try {
-    Session session(config);
+    const Session session(config);
     SUCCEED();
   } catch (const std::runtime_error&) {
     // If not supported, that's okay for now
