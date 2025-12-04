@@ -816,13 +816,11 @@ Session::Session(const SessionConfig& config) {
 
   // Set and validate parameters from config
   if (config.token) {
-    const auto qdmiParam =
-        static_cast<QDMI_Session_Parameter>(QDMI_SESSION_PARAMETER_TOKEN);
+    const auto qdmiParam = QDMI_SESSION_PARAMETER_TOKEN;
     throwIfError(QDMI_session_set_parameter(session_, qdmiParam,
                                             config.token->size() + 1,
                                             config.token->c_str()),
-                 "Setting session parameter " +
-                     toString(QDMI_SESSION_PARAMETER_TOKEN));
+                 "Setting session parameter " + toString(qdmiParam));
   }
   if (config.authFile) {
     // Validate file existence
@@ -830,13 +828,11 @@ Session::Session(const SessionConfig& config) {
       throw std::runtime_error("Authentication file does not exist: " +
                                *config.authFile);
     }
-    const auto qdmiParam =
-        static_cast<QDMI_Session_Parameter>(QDMI_SESSION_PARAMETER_AUTHFILE);
+    const auto qdmiParam = QDMI_SESSION_PARAMETER_AUTHFILE;
     throwIfError(QDMI_session_set_parameter(session_, qdmiParam,
                                             config.authFile->size() + 1,
                                             config.authFile->c_str()),
-                 "Setting session parameter " +
-                     toString(QDMI_SESSION_PARAMETER_AUTHFILE));
+                 "Setting session parameter " + toString(qdmiParam));
   }
   if (config.authUrl) {
     // Validate URL format according to: https://uibakery.io/regex-library/url
@@ -845,40 +841,32 @@ Session::Session(const SessionConfig& config) {
     if (!std::regex_match(*config.authUrl, URL_PATTERN)) {
       throw std::runtime_error("Invalid URL format: " + *config.authUrl);
     }
-    const auto qdmiParam =
-        static_cast<QDMI_Session_Parameter>(QDMI_SESSION_PARAMETER_AUTHURL);
+    const auto qdmiParam = QDMI_SESSION_PARAMETER_AUTHURL;
     throwIfError(QDMI_session_set_parameter(session_, qdmiParam,
                                             config.authUrl->size() + 1,
                                             config.authUrl->c_str()),
-                 "Setting session parameter " +
-                     toString(QDMI_SESSION_PARAMETER_AUTHURL));
+                 "Setting session parameter " + toString(qdmiParam));
   }
   if (config.username) {
-    const auto qdmiParam =
-        static_cast<QDMI_Session_Parameter>(QDMI_SESSION_PARAMETER_USERNAME);
+    const auto qdmiParam = QDMI_SESSION_PARAMETER_USERNAME;
     throwIfError(QDMI_session_set_parameter(session_, qdmiParam,
                                             config.username->size() + 1,
                                             config.username->c_str()),
-                 "Setting session parameter " +
-                     toString(QDMI_SESSION_PARAMETER_USERNAME));
+                 "Setting session parameter " + toString(qdmiParam));
   }
   if (config.password) {
-    const auto qdmiParam =
-        static_cast<QDMI_Session_Parameter>(QDMI_SESSION_PARAMETER_PASSWORD);
+    const auto qdmiParam = QDMI_SESSION_PARAMETER_PASSWORD;
     throwIfError(QDMI_session_set_parameter(session_, qdmiParam,
                                             config.password->size() + 1,
                                             config.password->c_str()),
-                 "Setting session parameter " +
-                     toString(QDMI_SESSION_PARAMETER_PASSWORD));
+                 "Setting session parameter " + toString(qdmiParam));
   }
   if (config.projectId) {
-    const auto qdmiParam =
-        static_cast<QDMI_Session_Parameter>(QDMI_SESSION_PARAMETER_PROJECTID);
+    const auto qdmiParam = QDMI_SESSION_PARAMETER_PROJECTID;
     throwIfError(QDMI_session_set_parameter(session_, qdmiParam,
                                             config.projectId->size() + 1,
                                             config.projectId->c_str()),
-                 "Setting session parameter " +
-                     toString(QDMI_SESSION_PARAMETER_PROJECTID));
+                 "Setting session parameter " + toString(qdmiParam));
   }
 
   // Initialize the session
