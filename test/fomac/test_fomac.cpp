@@ -14,7 +14,6 @@
 #include <cstdlib>
 #include <gmock/gmock-matchers.h>
 #include <gtest/gtest.h>
-#include <memory>
 #include <new>
 #include <numbers>
 #include <qdmi/client.h>
