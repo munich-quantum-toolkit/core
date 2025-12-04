@@ -14,8 +14,6 @@
 
 #include "qdmi/sc/Generator.hpp"
 
-#include <cassert>
-#include <cmath>
 #include <cstdint>
 #include <fstream>
 #include <istream>
@@ -120,7 +118,7 @@ auto writeOperations(const Device& device, std::ostream& os) -> void {
             "var.emplace_back(MQT_SC_QDMI_Operation_impl_d::"
             "makeUniqueTwoQubit(\""
          << operation.name << "\", " << operation.numParameters
-         << ", std::move(_couplings)))";
+         << ", _couplings))";
     } else {
       std::ostringstream ss;
       ss << "Got operation with " << operation.numQubits << " qubits but only "
@@ -135,7 +133,7 @@ auto writeOperations(const Device& device, std::ostream& os) -> void {
  * @brief Emits a macro to initialize the device coupling map.
  *
  * Writes the C preprocessor macro `INITIALIZE_COUPLINGMAP(var)` which assigns
- * `var = std::move(_couplings)`.
+ * `var = _couplings`.
  *
  * @note This macro depends on the `_couplings` variable created by
  *       the INITIALIZE_SITES macro from writeSites(). The macro
