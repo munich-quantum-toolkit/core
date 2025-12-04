@@ -811,7 +811,8 @@ auto Session::Job::getSparseProbabilities() const
 }
 
 Session::Session(const SessionConfig& config) {
-  QDMI_session_alloc(&session_);
+  const auto result = QDMI_session_alloc(&session_);
+  throwIfError(result, "Allocating QDMI session");
 
   // Set and validate parameters from config
   if (config.token) {
