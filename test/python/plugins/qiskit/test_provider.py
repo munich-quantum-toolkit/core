@@ -184,10 +184,10 @@ def test_provider_with_multiple_auth_parameters() -> None:
     # Should not raise an error when creating provider with multiple auth parameters
     # Note: The currently available QDMI devices don't support authentication.
     try:
-        provider = QDMIProvider(  # noqa: S106
-            token="test_token",
+        provider = QDMIProvider(
+            token="test_token",  # noqa: S106
             username="test_user",
-            password="test_pass",
+            password="test_pass",  # noqa: S106
             project_id="test_project",
         )
         assert provider is not None
@@ -212,4 +212,3 @@ def test_provider_default_constructor_unchanged() -> None:
     # Should be able to get a specific backend
     backend = provider.get_backend("MQT Core DDSIM QDMI Device")
     assert backend.name == "MQT Core DDSIM QDMI Device"
-

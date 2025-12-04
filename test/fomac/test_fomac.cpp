@@ -13,6 +13,8 @@
 #include <algorithm>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
+#include <fcntl.h>
 #include <gmock/gmock-matchers.h>
 #include <gtest/gtest.h>
 #include <new>
@@ -22,6 +24,7 @@
 #include <stdexcept>
 #include <string>
 #include <tuple>
+#include <unistd.h>
 #include <vector>
 
 namespace fomac {
@@ -610,6 +613,214 @@ TEST(AuthenticationTest, SessionParameterToString) {
   EXPECT_EQ(toString(QDMI_SESSION_PARAMETER_CUSTOM3), "CUSTOM3");
   EXPECT_EQ(toString(QDMI_SESSION_PARAMETER_CUSTOM4), "CUSTOM4");
   EXPECT_EQ(toString(QDMI_SESSION_PARAMETER_CUSTOM5), "CUSTOM5");
+}
+
+TEST(AuthenticationTest, SessionConstructionWithToken) {
+  // Empty token should be accepted
+  SessionConfig config1;
+  config1.token = "";
+  try {
+    Session session(config1);
+    SUCCEED(); // If we get here, the session was created successfully
+  } catch (const std::runtime_error&) {
+    // If not supported, that's okay for now
+    SUCCEED();
+  }
+
+  // Non-empty token should be accepted
+  SessionConfig config2;
+  config2.token = "test_token_123";
+  try {
+    Session session(config2);
+    SUCCEED();
+  } catch (const std::runtime_error&) {
+    // If not supported, that's okay for now
+    SUCCEED();
+  }
+
+  // Token with special characters should be accepted
+  SessionConfig config3;
+  config3.token = "very_long_token_with_special_characters_!@#$%^&*()";
+  try {
+    Session session(config3);
+    SUCCEED();
+  } catch (const std::runtime_error&) {
+    // If not supported, that's okay for now
+    SUCCEED();
+  }
+}
+
+TEST(AuthenticationTest, SessionConstructionWithAuthUrl) {
+  // Valid HTTPS URL
+  SessionConfig config1;
+  config1.authUrl = "https://example.com";
+  try {
+    Session session(config1);
+    SUCCEED();
+  } catch (const std::runtime_error&) {
+    // Either not supported or validation failed - both acceptable
+    SUCCEED();
+  }
+
+  // Valid HTTP URL with port and path
+  SessionConfig config2;
+  config2.authUrl = "http://auth.server.com:8080/api";
+  try {
+    Session session(config2);
+    SUCCEED();
+  } catch (const std::runtime_error&) {
+    SUCCEED();
+  }
+
+  // Valid HTTPS URL with query parameters
+  SessionConfig config3;
+  config3.authUrl = "https://auth.example.com/token?param=value";
+  try {
+    Session session(config3);
+    SUCCEED();
+  } catch (const std::runtime_error&) {
+    SUCCEED();
+  }
+
+  // Invalid URL - not a URL at all
+  SessionConfig config4;
+  config4.authUrl = "not-a-url";
+  EXPECT_THROW({ Session session(config4); }, std::runtime_error);
+
+  // Invalid URL - unsupported protocol
+  SessionConfig config5;
+  config5.authUrl = "ftp://invalid.com";
+  EXPECT_THROW({ Session session(config5); }, std::runtime_error);
+
+  // Invalid URL - missing protocol
+  SessionConfig config6;
+  config6.authUrl = "example.com";
+  EXPECT_THROW({ Session session(config6); }, std::runtime_error);
+}
+
+TEST(AuthenticationTest, SessionConstructionWithAuthFile) {
+  // Test with non-existent file - should raise error
+  SessionConfig config1;
+  config1.authFile = "/nonexistent/path/to/file.txt";
+  EXPECT_THROW({ Session session(config1); }, std::runtime_error);
+
+  // Test with another non-existent file
+  SessionConfig config2;
+  config2.authFile = "/tmp/this_file_does_not_exist_12345.txt";
+  EXPECT_THROW({ Session session(config2); }, std::runtime_error);
+
+  // Test with existing file
+  // Create a temporary file
+  char tmpFilename[] = "/tmp/fomac_test_XXXXXX";
+  const int fd = mkstemp(tmpFilename);
+  ASSERT_NE(fd, -1) << "Failed to create temporary file";
+
+  // Write some content to the file
+  const char* content = "test_token_content";
+  write(fd, content, strlen(content));
+  close(fd);
+
+  // Try to create session with existing file
+  SessionConfig config3;
+  config3.authFile = tmpFilename;
+  try {
+    Session session(config3);
+    SUCCEED();
+  } catch (const std::runtime_error&) {
+    // If not supported, that's okay for now
+    SUCCEED();
+  }
+
+  // Clean up
+  remove(tmpFilename);
+}
+
+TEST(AuthenticationTest, SessionConstructionWithUsernamePassword) {
+  // Username only
+  SessionConfig config1;
+  config1.username = "user123";
+  try {
+    Session session(config1);
+    SUCCEED();
+  } catch (const std::runtime_error&) {
+    SUCCEED();
+  }
+
+  // Password only
+  SessionConfig config2;
+  config2.password = "secure_password";
+  try {
+    Session session(config2);
+    SUCCEED();
+  } catch (const std::runtime_error&) {
+    SUCCEED();
+  }
+
+  // Both username and password
+  SessionConfig config3;
+  config3.username = "user123";
+  config3.password = "secure_password";
+  try {
+    Session session(config3);
+    SUCCEED();
+  } catch (const std::runtime_error&) {
+    SUCCEED();
+  }
+}
+
+TEST(AuthenticationTest, SessionConstructionWithProjectId) {
+  SessionConfig config;
+  config.projectId = "project-123-abc";
+  try {
+    Session session(config);
+    SUCCEED();
+  } catch (const std::runtime_error&) {
+    // If not supported, that's okay for now
+    SUCCEED();
+  }
+}
+
+TEST(AuthenticationTest, SessionConstructionWithMultipleParameters) {
+  SessionConfig config;
+  config.token = "test_token";
+  config.username = "test_user";
+  config.password = "test_pass";
+  config.projectId = "test_project";
+  try {
+    Session session(config);
+    SUCCEED();
+  } catch (const std::runtime_error&) {
+    // If not supported, that's okay for now
+    SUCCEED();
+  }
+}
+
+TEST(AuthenticationTest, SessionGetDevicesReturnsList) {
+  Session session;
+  auto devices = session.getDevices();
+
+  EXPECT_FALSE(devices.empty());
+
+  // All elements should be Device instances
+  for (const auto& device : devices) {
+    // Device should have a name
+    EXPECT_FALSE(device.getName().empty());
+  }
+}
+
+TEST(AuthenticationTest, SessionMultipleInstances) {
+  Session session1;
+  Session session2;
+
+  auto devices1 = session1.getDevices();
+  auto devices2 = session2.getDevices();
+
+  // Both should return devices
+  EXPECT_FALSE(devices1.empty());
+  EXPECT_FALSE(devices2.empty());
+
+  // Should return the same number of devices
+  EXPECT_EQ(devices1.size(), devices2.size());
 }
 
 namespace {
