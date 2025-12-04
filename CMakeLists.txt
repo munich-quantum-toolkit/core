@@ -93,7 +93,7 @@ endif()
 
 set(MQT_CORE_TARGET_NAME "mqt-core")
 
-option(BUILD_MQT_CORE_MLIR "Build the MLIR submodule of the MQT Core project" OFF)
+option(BUILD_MQT_CORE_MLIR "Build the MLIR submodule of the MQT Core project" ON)
 if(BUILD_MQT_CORE_MLIR)
   include(SetupMLIR)
 endif()
