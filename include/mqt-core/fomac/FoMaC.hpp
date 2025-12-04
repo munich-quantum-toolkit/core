@@ -162,39 +162,8 @@ constexpr auto toString(const QDMI_Session_Property prop) -> std::string {
   return "QDMI_SESSION_PROPERTY_UNKNOWN";
 }
 
-/**
- * @brief Session parameters for authentication and configuration.
- * @details These parameters must be set before the session is initialized
- * (i.e., before the first call to getDevices()).
- * @see QDMI_SESSION_PARAMETER_T
- */
-enum class SessionParameter {
-  /// Authentication token
-  TOKEN = QDMI_SESSION_PARAMETER_TOKEN,
-  /// Path to authentication file
-  AUTHFILE = QDMI_SESSION_PARAMETER_AUTHFILE,
-  /// URL to authentication server
-  AUTHURL = QDMI_SESSION_PARAMETER_AUTHURL,
-  /// Username for authentication
-  USERNAME = QDMI_SESSION_PARAMETER_USERNAME,
-  /// Password for authentication
-  PASSWORD = QDMI_SESSION_PARAMETER_PASSWORD,
-  /// Project ID for session
-  PROJECTID = QDMI_SESSION_PARAMETER_PROJECTID,
-  /// Custom parameter 1 (driver-defined)
-  CUSTOM1 = QDMI_SESSION_PARAMETER_CUSTOM1,
-  /// Custom parameter 2 (driver-defined)
-  CUSTOM2 = QDMI_SESSION_PARAMETER_CUSTOM2,
-  /// Custom parameter 3 (driver-defined)
-  CUSTOM3 = QDMI_SESSION_PARAMETER_CUSTOM3,
-  /// Custom parameter 4 (driver-defined)
-  CUSTOM4 = QDMI_SESSION_PARAMETER_CUSTOM4,
-  /// Custom parameter 5 (driver-defined)
-  CUSTOM5 = QDMI_SESSION_PARAMETER_CUSTOM5
-};
-
-/// @returns the string representation of the given SessionParameter.
-auto toString(const SessionParameter param) -> std::string;
+/// @returns the string representation of the given QDMI_SESSION_PARAMETER_T.
+auto toString(const QDMI_SESSION_PARAMETER_T param) -> std::string;
 
 /// Throws an exception corresponding to the given QDMI_STATUS code.
 [[noreturn]] auto throwError(const int result, const std::string& msg) -> void;
@@ -711,7 +680,7 @@ private:
   QDMI_Session session_ = nullptr;
   mutable std::mutex mutex_;
   bool initialized_ = false;
-  std::unordered_map<SessionParameter, std::string> pendingParameters_;
+  std::unordered_map<QDMI_SESSION_PARAMETER_T, std::string> pendingParameters_;
 
   /// @brief Ensures the session is initialized, applying pending parameters
   auto ensureInitialized() -> void;
@@ -766,7 +735,7 @@ public:
    * URL)
    * @see QDMI_session_set_parameter
    */
-  auto setSessionParameter(const SessionParameter param,
+  auto setSessionParameter(const QDMI_SESSION_PARAMETER_T param,
                            const std::string& value) -> void;
 
   /// @see QDMI_SESSION_PROPERTY_DEVICES
@@ -790,7 +759,7 @@ public:
  * @param value The value to set
  * @see FoMaC::setSessionParameter
  */
-auto setSessionParameter(SessionParameter param, const std::string& value)
-    -> void;
+auto setSessionParameter(QDMI_SESSION_PARAMETER_T param,
+                         const std::string& value) -> void;
 
 } // namespace fomac

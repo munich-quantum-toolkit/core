@@ -26,21 +26,33 @@ namespace py = pybind11;
 using namespace py::literals;
 
 PYBIND11_MODULE(MQT_CORE_MODULE_NAME, m, py::mod_gil_not_used()) {
+  // FoMaC class (exposed as Session in Python)
+  auto fomac = py::class_<fomac::FoMaC>(m, "Session");
+  fomac.def(py::init<>());
+  fomac.def("set_session_parameter", &fomac::FoMaC::setSessionParameter,
+            "param"_a, "value"_a);
+  fomac.def("get_devices", &fomac::FoMaC::getDevices);
+
+  // Module-level convenience functions (use default session)
+  m.def("set_session_parameter", &fomac::setSessionParameter, "param"_a,
+        "value"_a);
+  m.def("devices", &fomac::getDevices);
+
   // SessionParameter enum
-  py::native_enum<fomac::SessionParameter>(
-      m, "SessionParameter", "enum.Enum",
+  py::native_enum<QDMI_SESSION_PARAMETER_T>(
+      fomac, "SessionParameter", "enum.Enum",
       "Session parameters for authentication and configuration.")
-      .value("TOKEN", fomac::SessionParameter::TOKEN)
-      .value("AUTHFILE", fomac::SessionParameter::AUTHFILE)
-      .value("AUTHURL", fomac::SessionParameter::AUTHURL)
-      .value("USERNAME", fomac::SessionParameter::USERNAME)
-      .value("PASSWORD", fomac::SessionParameter::PASSWORD)
-      .value("PROJECTID", fomac::SessionParameter::PROJECTID)
-      .value("CUSTOM1", fomac::SessionParameter::CUSTOM1)
-      .value("CUSTOM2", fomac::SessionParameter::CUSTOM2)
-      .value("CUSTOM3", fomac::SessionParameter::CUSTOM3)
-      .value("CUSTOM4", fomac::SessionParameter::CUSTOM4)
-      .value("CUSTOM5", fomac::SessionParameter::CUSTOM5)
+      .value("TOKEN", QDMI_SESSION_PARAMETER_TOKEN)
+      .value("AUTHFILE", QDMI_SESSION_PARAMETER_AUTHFILE)
+      .value("AUTHURL", QDMI_SESSION_PARAMETER_AUTHURL)
+      .value("USERNAME", QDMI_SESSION_PARAMETER_USERNAME)
+      .value("PASSWORD", QDMI_SESSION_PARAMETER_PASSWORD)
+      .value("PROJECTID", QDMI_SESSION_PARAMETER_PROJECTID)
+      .value("CUSTOM1", QDMI_SESSION_PARAMETER_CUSTOM1)
+      .value("CUSTOM2", QDMI_SESSION_PARAMETER_CUSTOM2)
+      .value("CUSTOM3", QDMI_SESSION_PARAMETER_CUSTOM3)
+      .value("CUSTOM4", QDMI_SESSION_PARAMETER_CUSTOM4)
+      .value("CUSTOM5", QDMI_SESSION_PARAMETER_CUSTOM5)
       .finalize();
 
   // Job class
@@ -199,18 +211,6 @@ PYBIND11_MODULE(MQT_CORE_MODULE_NAME, m, py::mod_gil_not_used()) {
   });
   device.def(py::self == py::self); // NOLINT(misc-redundant-expression)
   device.def(py::self != py::self); // NOLINT(misc-redundant-expression)
-
-  // FoMaC class (exposed as Session in Python)
-  auto fomac = py::class_<fomac::FoMaC>(m, "Session");
-  fomac.def(py::init<>());
-  fomac.def("set_session_parameter", &fomac::FoMaC::setSessionParameter,
-            "param"_a, "value"_a);
-  fomac.def("get_devices", &fomac::FoMaC::getDevices);
-
-  // Module-level convenience functions (use default session)
-  m.def("set_session_parameter", &fomac::setSessionParameter, "param"_a,
-        "value"_a);
-  m.def("devices", &fomac::getDevices);
 }
 
 } // namespace mqt
