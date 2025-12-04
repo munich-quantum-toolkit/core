@@ -17,13 +17,17 @@
 #include "mqt_sc_qdmi/device.h"
 #include "qdmi/sc/DeviceMemberInitializers.hpp"
 
-#include <atomic>
+#include <algorithm>
 #include <cassert>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <functional>
 #include <memory>
+#include <span>
+#include <type_traits>
 #include <utility>
+#include <variant>
 #include <vector>
 
 // NOLINTBEGIN(bugprone-macro-parentheses)
@@ -332,16 +336,56 @@ auto MQT_SC_QDMI_Site_impl_d::queryProperty(const QDMI_Site_Property prop,
                             value, sizeRet)
   return QDMI_ERROR_NOTSUPPORTED;
 }
+auto MQT_SC_QDMI_Operation_impl_d::sortSites() -> void {
+  std::visit(
+      [](auto& sites) {
+        using T = std::decay_t<decltype(sites)>;
+        if constexpr (std::is_same_v<T, std::vector<MQT_SC_QDMI_Site>>) {
+          // Single-qubit: sort flat list by pointer address
+          std::ranges::sort(sites, std::less<MQT_SC_QDMI_Site>{});
+        } else if constexpr (std::is_same_v<
+                                 T, std::vector<std::pair<MQT_SC_QDMI_Site,
+                                                          MQT_SC_QDMI_Site>>>) {
+          // Two-qubit: normalize each pair (first < second)
+          // Use std::less for proper total order (pointer comparison with
+          // operator> invokes undefined behavior)
+          std::ranges::for_each(sites, [](auto& p) {
+            if (std::less<MQT_SC_QDMI_Site>{}(p.second, p.first)) {
+              std::swap(p.first, p.second);
+            }
+          });
+          std::ranges::sort(sites);
+        }
+        // more cases go here if needed in the future
+      },
+      supportedSites_);
+}
 MQT_SC_QDMI_Operation_impl_d::MQT_SC_QDMI_Operation_impl_d(
-    std::string name, const size_t numParameters, const size_t numQubits)
-    : name_(std::move(name)), numParameters_(numParameters),
-      numQubits_(numQubits) {}
-auto MQT_SC_QDMI_Operation_impl_d::makeUnique(std::string name,
-                                              const size_t numParameters,
-                                              const size_t numQubits)
+    std::string name, const size_t numParameters,
+    const std::vector<MQT_SC_QDMI_Site>& sites)
+    : name_(std::move(name)), numParameters_(numParameters), numQubits_(1),
+      supportedSites_(sites) {
+  sortSites();
+}
+MQT_SC_QDMI_Operation_impl_d::MQT_SC_QDMI_Operation_impl_d(
+    std::string name, const size_t numParameters,
+    const std::vector<std::pair<MQT_SC_QDMI_Site, MQT_SC_QDMI_Site>>& sites)
+    : name_(std::move(name)), numParameters_(numParameters), numQubits_(2),
+      supportedSites_(sites) {
+  sortSites();
+}
+auto MQT_SC_QDMI_Operation_impl_d::makeUniqueSingleQubit(
+    std::string name, const size_t numParameters,
+    const std::vector<MQT_SC_QDMI_Site>& sites)
     -> std::unique_ptr<MQT_SC_QDMI_Operation_impl_d> {
-  const MQT_SC_QDMI_Operation_impl_d op(std::move(name), numParameters,
-                                        numQubits);
+  const MQT_SC_QDMI_Operation_impl_d op(std::move(name), numParameters, sites);
+  return std::make_unique<MQT_SC_QDMI_Operation_impl_d>(op);
+}
+auto MQT_SC_QDMI_Operation_impl_d::makeUniqueTwoQubit(
+    std::string name, const size_t numParameters,
+    const std::vector<std::pair<MQT_SC_QDMI_Site, MQT_SC_QDMI_Site>>& sites)
+    -> std::unique_ptr<MQT_SC_QDMI_Operation_impl_d> {
+  const MQT_SC_QDMI_Operation_impl_d op(std::move(name), numParameters, sites);
   return std::make_unique<MQT_SC_QDMI_Operation_impl_d>(op);
 }
 auto MQT_SC_QDMI_Operation_impl_d::queryProperty(
@@ -354,13 +398,84 @@ auto MQT_SC_QDMI_Operation_impl_d::queryProperty(
       (value != nullptr && size == 0) || prop >= QDMI_OPERATION_PROPERTY_MAX) {
     return QDMI_ERROR_INVALIDARGUMENT;
   }
+  if (sites != nullptr) {
+    // If numQubits_ == 1 or isZoned_ == true
+    if (numSites == 1) {
+      // If the (single) site is not supported, return with an error
+      const bool found = std::visit(
+          [sites]<typename S>(const S& storedSites) -> bool {
+            using T = std::decay_t<S>;
+            if constexpr (std::is_same_v<T, std::vector<MQT_SC_QDMI_Site>>) {
+              return std::ranges::binary_search(storedSites, *sites,
+                                                std::less<MQT_SC_QDMI_Site>{});
+            }
+            return false; // Wrong variant type
+          },
+          supportedSites_);
+      if (!found) {
+        return QDMI_ERROR_NOTSUPPORTED;
+      }
+    } else if (numSites == 2) {
+      // NOLINTBEGIN(cppcoreguidelines-pro-bounds-pointer-arithmetic)
+      const std::pair needle = std::less<MQT_SC_QDMI_Site>{}(sites[0], sites[1])
+                                   ? std::make_pair(sites[0], sites[1])
+                                   : std::make_pair(sites[1], sites[0]);
+      // NOLINTEND(cppcoreguidelines-pro-bounds-pointer-arithmetic)
+      // if the pair of sites is not supported, return with an error
+      const bool found = std::visit(
+          [&needle]<typename S>(const S& storedSites) -> bool {
+            using T = std::decay_t<S>;
+            if constexpr (std::is_same_v<
+                              T, std::vector<std::pair<MQT_SC_QDMI_Site,
+                                                       MQT_SC_QDMI_Site>>>) {
+              return std::ranges::binary_search(storedSites, needle);
+            }
+            return false; // Wrong variant type
+          },
+          supportedSites_);
+      if (!found) {
+        return QDMI_ERROR_NOTSUPPORTED;
+      }
+    } // this device does not support operations with more than two qubits
+  }
   ADD_STRING_PROPERTY(QDMI_OPERATION_PROPERTY_NAME, name_.c_str(), prop, size,
                       value, sizeRet)
   ADD_SINGLE_VALUE_PROPERTY(QDMI_OPERATION_PROPERTY_PARAMETERSNUM, size_t,
                             numParameters_, prop, size, value, sizeRet)
-  if (numQubits_) {
-    ADD_SINGLE_VALUE_PROPERTY(QDMI_OPERATION_PROPERTY_QUBITSNUM, size_t,
-                              *numQubits_, prop, size, value, sizeRet)
+  ADD_SINGLE_VALUE_PROPERTY(QDMI_OPERATION_PROPERTY_QUBITSNUM, size_t,
+                            numQubits_, prop, size, value, sizeRet)
+  if (prop == QDMI_OPERATION_PROPERTY_SITES) {
+    return std::visit(
+        [&]<typename S>(const S& storedSites) -> int {
+          using T = std::decay_t<S>;
+          if constexpr (std::is_same_v<T, std::vector<MQT_SC_QDMI_Site>>) {
+            // Single-qubit: return flat array
+            ADD_LIST_PROPERTY(QDMI_OPERATION_PROPERTY_SITES, MQT_SC_QDMI_Site,
+                              storedSites, prop, size, value, sizeRet)
+          } else if constexpr (std::is_same_v<
+                                   T,
+                                   std::vector<std::pair<MQT_SC_QDMI_Site,
+                                                         MQT_SC_QDMI_Site>>>) {
+            // Ensure std::pair has standard layout and expected size
+            static_assert(std::is_standard_layout_v<
+                          std::pair<MQT_SC_QDMI_Site, MQT_SC_QDMI_Site>>);
+            static_assert(
+                sizeof(std::pair<MQT_SC_QDMI_Site, MQT_SC_QDMI_Site>) ==
+                2 * sizeof(MQT_SC_QDMI_Site));
+            // Two-qubit: reinterpret as flat array of sites using std::span
+            // std::pair has standard layout, so the memory layout of
+            // vector<pair<Site, Site>> is equivalent to Site[2*N]
+            const auto flatView = std::span<const MQT_SC_QDMI_Site>(
+                // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+                reinterpret_cast<const MQT_SC_QDMI_Site*>(storedSites.data()),
+                storedSites.size() * 2);
+            ADD_LIST_PROPERTY(QDMI_OPERATION_PROPERTY_SITES, MQT_SC_QDMI_Site,
+                              flatView, prop, size, value, sizeRet)
+          }
+          // more cases go here if needed in the future
+          return QDMI_ERROR_NOTSUPPORTED;
+        },
+        supportedSites_);
   }
   return QDMI_ERROR_NOTSUPPORTED;
 }

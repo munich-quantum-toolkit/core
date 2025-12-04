@@ -24,6 +24,7 @@
 #include <string>
 #include <unordered_map>
 #include <utility>
+#include <variant>
 #include <vector>
 
 namespace qdmi::sc {
@@ -283,15 +284,45 @@ private:
   /**
    * @brief Number of qubits involved in the operation
    */
-  std::optional<size_t> numQubits_ = std::nullopt;
-  /// @brief Constructor for an empty operation.
+  size_t numQubits_ = 1;
+  /**
+   * @brief Storage for individual sites and site pairs.
+   * @details Uses std::variant to preserve the tuple structure of the operation
+   * sites:
+   * - Single-qubit and zoned operations: vector<Site>
+   * - Local two-qubit operations: vector<pair<Site, Site>>
+   * This maintains type safety and QDMI specification compliance, which states
+   * that operation sites should be "a list of tuples" for local multi-qubit
+   * operations.
+   */
+  using SitesStorage =
+      std::variant<std::vector<MQT_SC_QDMI_Site>,
+                   std::vector<std::pair<MQT_SC_QDMI_Site, MQT_SC_QDMI_Site>>>;
+
+  /// The operation's supported sites
+  SitesStorage supportedSites_;
+  /// @brief Constructor for a single-qubit operation.
   MQT_SC_QDMI_Operation_impl_d(std::string name, size_t numParameters,
-                               size_t numQubits);
+                               const std::vector<MQT_SC_QDMI_Site>& sites);
+  /// @brief Constructor for a two-qubit operation.
+  MQT_SC_QDMI_Operation_impl_d(
+      std::string name, size_t numParameters,
+      const std::vector<std::pair<MQT_SC_QDMI_Site, MQT_SC_QDMI_Site>>& sites);
+
+  /// @brief Sort the sites such that the occurrence of a given site can be
+  /// determined in O(log n) time.
+  auto sortSites() -> void;
 
 public:
-  /// @brief Factory function empty operations.
-  [[nodiscard]] static auto makeUnique(std::string name, size_t numParameters,
-                                       size_t numQubits)
+  /// @brief Factory function a single-qubit operation.
+  [[nodiscard]] static auto
+  makeUniqueSingleQubit(std::string name, size_t numParameters,
+                        const std::vector<MQT_SC_QDMI_Site>& sites)
+      -> std::unique_ptr<MQT_SC_QDMI_Operation_impl_d>;
+  /// @brief Factory function a two-qubit operation.
+  [[nodiscard]] static auto makeUniqueTwoQubit(
+      std::string name, size_t numParameters,
+      const std::vector<std::pair<MQT_SC_QDMI_Site, MQT_SC_QDMI_Site>>& sites)
       -> std::unique_ptr<MQT_SC_QDMI_Operation_impl_d>;
 
   /**
