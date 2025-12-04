@@ -10,9 +10,11 @@
 
 #include "mlir/Dialect/MQTOpt/Transforms/Transpilation/Architecture.h"
 
+#include "mlir/Dialect/MQTOpt/IR/MQTOptDialect.h"
 #include "mlir/Dialect/MQTOpt/Transforms/Transpilation/Common.h"
 #include "mlir/Dialect/MQTOpt/Transforms/Transpilation/Layout.h"
 
+#include <cassert>
 #include <cstddef>
 #include <cstdint>
 #include <llvm/ADT/SmallVector.h>
@@ -23,27 +25,6 @@
 #include <utility>
 
 namespace mqt::ir::opt {
-llvm::SmallVector<std::size_t>
-Architecture::shortestPathBetween(uint32_t u, uint32_t v) const {
-  if (u == v) {
-    return {};
-  }
-
-  if (prev_[u][v] == UINT64_MAX) {
-    throw std::domain_error("No path between qubits " + std::to_string(u) +
-                            " and " + std::to_string(v));
-  }
-
-  llvm::SmallVector<std::size_t> path;
-  uint32_t curr = v;
-  path.push_back(curr);
-  while (curr != u) {
-    curr = prev_[u][curr];
-    path.push_back(curr);
-  }
-
-  return path;
-}
 
 llvm::SmallVector<std::pair<uint32_t, uint32_t>>
 Architecture::shortestSWAPsBetween(uint32_t u, uint32_t v) const {

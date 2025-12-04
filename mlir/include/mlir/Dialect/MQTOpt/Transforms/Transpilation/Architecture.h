@@ -64,13 +64,6 @@ public:
   }
 
   /**
-   * @brief Collect the shortest path between @p u and @p v.
-   * @returns The path from the destination (v) to source (u) qubit.
-   */
-  [[nodiscard]] llvm::SmallVector<std::size_t>
-  shortestPathBetween(uint32_t u, uint32_t v) const;
-
-  /**
    * @brief Collect the shortest SWAP sequence to make @p u and @p v adjacent.
    * @returns The SWAP sequence from the destination (v) to source (u) qubit.
    */
