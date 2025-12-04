@@ -143,19 +143,19 @@ concept maybe_optional_value_or_string_or_vector =
     value_or_string_or_vector<remove_optional_t<T>>;
 
 /// @returns the string representation of the given QDMI_STATUS.
-auto toString(const QDMI_STATUS result) -> std::string;
+auto toString(QDMI_STATUS result) -> std::string;
 
 /// @returns the string representation of the given QDMI_Site_Property.
-auto toString(const QDMI_Site_Property prop) -> std::string;
+auto toString(QDMI_Site_Property prop) -> std::string;
 
 /// @returns the string representation of the given QDMI_Operation_Property.
-auto toString(const QDMI_Operation_Property prop) -> std::string;
+auto toString(QDMI_Operation_Property prop) -> std::string;
 
 /// @returns the string representation of the given QDMI_Device_Property.
-auto toString(const QDMI_Device_Property prop) -> std::string;
+auto toString(QDMI_Device_Property prop) -> std::string;
 
 /// @returns the string representation of the given QDMI_Session_Property.
-constexpr auto toString(const QDMI_Session_Property prop) -> std::string {
+constexpr auto toString(QDMI_Session_Property prop) -> std::string {
   if (prop == QDMI_SESSION_PROPERTY_DEVICES) {
     return "QDMI_SESSION_PROPERTY_DEVICES";
   }
@@ -163,13 +163,13 @@ constexpr auto toString(const QDMI_Session_Property prop) -> std::string {
 }
 
 /// @returns the string representation of the given QDMI_SESSION_PARAMETER_T.
-auto toString(const QDMI_SESSION_PARAMETER_T param) -> std::string;
+auto toString(QDMI_SESSION_PARAMETER_T param) -> std::string;
 
 /// Throws an exception corresponding to the given QDMI_STATUS code.
-[[noreturn]] auto throwError(const int result, const std::string& msg) -> void;
+[[noreturn]] auto throwError(int result, const std::string& msg) -> void;
 
 /// Throws an exception if the result indicates an error.
-inline auto throwIfError(const int result, const std::string& msg) -> void {
+inline auto throwIfError(int result, const std::string& msg) -> void {
   switch (result) {
   case QDMI_SUCCESS:
     break;
