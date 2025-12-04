@@ -839,9 +839,9 @@ Session::Session(const SessionConfig& config) {
                      toString(QDMI_SESSION_PARAMETER_AUTHFILE));
   }
   if (config.authUrl) {
-    // Validate URL format
+    // Validate URL format according to: https://uibakery.io/regex-library/url
     static const std::regex URL_PATTERN(
-        R"(^https?://[a-zA-Z0-9\-._~:/?#\[\]@!$&'()*+,;=%]+$)");
+        R"(/^https?:\/\/(?:www\.)?[-a-zA-Z0-9@:%._\+~#=]{1,256}\.[a-zA-Z0-9()]{1,6}\b(?:[-a-zA-Z0-9()@:%_\+.~#?&\/=]*)$/)");
     if (!std::regex_match(*config.authUrl, URL_PATTERN)) {
       throw std::runtime_error("Invalid URL format: " + *config.authUrl);
     }
