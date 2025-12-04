@@ -19,20 +19,23 @@ Other devices can be loaded dynamically at runtime via {cpp:func}`qdmi::Driver::
 
 The QDMI Driver is implemented in C++ and exposed to Python via [pybind11](https://pybind11.readthedocs.io).
 Direct binding of the QDMI Client interface functions is not feasible due to technical limitations.
-Instead, a FoMaC (Figure of Merits and Constraints) library defines wrapper classes ({cpp:class}`~fomac::FoMaC::Device`, {cpp:class}`~fomac::FoMaC::Device::Site`, {cpp:class}`~fomac::FoMaC::Device::Operation`) for the QDMI entities.
-These classes together with their methods are then exposed to Python, see {py:class}`~mqt.core.fomac.Device`, {py:class}`~mqt.core.fomac.Device.Site`, {py:class}`~mqt.core.fomac.Device.Operation`.
+Instead, a FoMaC (Figure of Merits and Constraints) library defines wrapper classes ({cpp:class}`~fomac::Session`, {cpp:class}`~fomac::Session::Device`, {cpp:class}`~fomac::Session::Device::Site`, {cpp:class}`~fomac::Session::Device::Operation`, {cpp:class}`~fomac::Session::Job`) for the QDMI entities.
+These classes together with their methods are then exposed to Python, see {py:class}`~mqt.core.fomac.Session`, {py:class}`~mqt.core.fomac.Device`, {py:class}`~mqt.core.fomac.Device.Site`, {py:class}`~mqt.core.fomac.Device.Operation`, {py:class}`~mqt.core.fomac.Job`.
 
 ## Usage
 
-The following example shows how to get a device from the QDMI driver and access its name.
+The following example shows how to create a session and get devices from the QDMI driver.
 
 ```{code-cell} ipython3
-from mqt.core.fomac import devices
+from mqt.core.fomac import Session
 
-# get a list of all available devices
-available_devices = devices()
+# Create a session to interact with QDMI devices
+session = Session()
 
-# print the name of every device (by default there is only the NA device)
+# Get a list of all available devices
+available_devices = session.get_devices()
+
+# Print the name of every device
 for device in available_devices:
     print(device.name())
 ```
