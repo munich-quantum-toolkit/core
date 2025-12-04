@@ -11,7 +11,7 @@
 #pragma once
 
 #include "mlir/Dialect/MQTOpt/IR/MQTOptDialect.h"
-#include "mlir/Dialect/MQTOpt/Transforms/Transpilation/QubitIndex.h"
+#include "mlir/Dialect/MQTOpt/Transforms/Transpilation/Architecture.h"
 
 #include <llvm/ADT/DenseMapInfo.h>
 #include <llvm/ADT/SmallVector.h>
@@ -256,6 +256,76 @@ public:
     return qubits_;
   }
 
+  /**
+   * @brief Remap all input to output qubits for the given unitary op.
+   *
+   * @param op The unitary op.
+   */
+  void remap(UnitaryInterface op) {
+    for (const auto& [in, out] :
+         llvm::zip_equal(op.getAllInQubits(), op.getAllOutQubits())) {
+      remapQubitValue(in, out);
+    }
+  }
+
+  /**
+   * @brief Remap input to output qubit for the given reset op.
+   *
+   * @param op The reset op.
+   * @param layout The current layout.
+   */
+  void remap(ResetOp op) { remapQubitValue(op.getInQubit(), op.getOutQubit()); }
+
+  /**
+   * @brief Remap input to output qubit for the given measure op.
+   *
+   * @param op The measure op.
+   */
+  void remap(MeasureOp op) {
+    remapQubitValue(op.getInQubit(), op.getOutQubit());
+  }
+
+  /**
+   * @brief Remap input qubits to in-loop-body values (iteration args).
+   *
+   * @param op The 'scf.for' op.
+   */
+  void remapToLoopBody(mlir::scf::ForOp op) {
+    const auto nqubits = getNumQubits();
+    const auto args = op.getInitArgs().take_front(nqubits);
+    const auto iterArgs = op.getRegionIterArgs().take_front(nqubits);
+    for (const auto [arg, iter] : llvm::zip(args, iterArgs)) {
+      remapQubitValue(arg, iter);
+    }
+  }
+
+  /**
+   * @brief Remap input qubits to out-of-loop values (results).
+   *
+   * @param op The 'scf.for' op.
+   */
+  void remapToLoopResults(mlir::scf::ForOp op) {
+    const auto nqubits = getNumQubits();
+    const auto args = op.getInitArgs().take_front(nqubits);
+    const auto results = op.getResults().take_front(nqubits);
+    for (const auto [arg, iter] : llvm::zip(args, results)) {
+      remapQubitValue(arg, iter);
+    }
+  }
+
+  /**
+   * @brief Remap current qubit values to if results.
+   *
+   * @param op The 'scf.if' op.
+   */
+  void remapIfResults(mlir::scf::IfOp op) {
+    const auto nqubits = getNumQubits();
+    const auto results = op->getResults().take_front(nqubits);
+    for (const auto [in, out] : llvm::zip(getHardwareQubits(), results)) {
+      remapQubitValue(in, out);
+    }
+  }
+
 private:
   struct QubitInfo {
     QubitIndex prog;
@@ -272,83 +342,6 @@ private:
    */
   mlir::SmallVector<mlir::Value> qubits_;
 };
-
-/**
- * @brief Remap all input to output qubits for the given unitary op.
- *
- * @param op The unitary op.
- * @param layout The current layout.
- */
-inline void remap(UnitaryInterface op, Layout& layout) {
-  for (const auto& [in, out] :
-       llvm::zip_equal(op.getAllInQubits(), op.getAllOutQubits())) {
-    layout.remapQubitValue(in, out);
-  }
-}
-
-/**
- * @brief Remap input to output qubit for the given reset op.
- *
- * @param op The reset op.
- * @param layout The current layout.
- */
-inline void remap(ResetOp op, Layout& layout) {
-  layout.remapQubitValue(op.getInQubit(), op.getOutQubit());
-}
-
-/**
- * @brief Remap input to output qubit for the given measure op.
- *
- * @param op The measure op.
- * @param layout The current layout.
- */
-inline void remap(MeasureOp op, Layout& layout) {
-  layout.remapQubitValue(op.getInQubit(), op.getOutQubit());
-}
-
-/**
- * @brief Remap input qubits to in-loop-body values (iteration args).
- *
- * @param op The 'scf.for' op.
- * @param layout The current layout.
- */
-inline void remapToLoopBody(mlir::scf::ForOp op, Layout& layout) {
-  const auto nqubits = layout.getNumQubits();
-  const auto args = op.getInitArgs().take_front(nqubits);
-  const auto iterArgs = op.getRegionIterArgs().take_front(nqubits);
-  for (const auto [arg, iter] : llvm::zip(args, iterArgs)) {
-    layout.remapQubitValue(arg, iter);
-  }
-}
-
-/**
- * @brief Remap input qubits to out-of-loop values (results).
- *
- * @param op The 'scf.for' op.
- * @param layout The current layout.
- */
-inline void remapToLoopResults(mlir::scf::ForOp op, Layout& layout) {
-  const auto nqubits = layout.getNumQubits();
-  const auto args = op.getInitArgs().take_front(nqubits);
-  const auto results = op.getResults().take_front(nqubits);
-  for (const auto [arg, iter] : llvm::zip(args, results)) {
-    layout.remapQubitValue(arg, iter);
-  }
-}
-
-/**
- * @brief Remap current qubit values to if results.
- *
- * @param op The 'scf.if' op.
- * @param layout The current layout.
- */
-inline void remapIfResults(mlir::scf::IfOp op, Layout& layout) {
-  const auto nqubits = layout.getNumQubits();
-  const auto results = op->getResults().take_front(nqubits);
-  for (const auto [in, out] : llvm::zip(layout.getHardwareQubits(), results)) {
-    layout.remapQubitValue(in, out);
-  }
-}
 
 } // namespace mqt::ir::opt
 

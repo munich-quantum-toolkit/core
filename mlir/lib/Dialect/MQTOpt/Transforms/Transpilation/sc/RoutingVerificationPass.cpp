@@ -118,15 +118,15 @@ private:
                       unit.layout().swap(ins.first, ins.second);
                     }
 
-                    remap(op, unit.layout());
+                    unit.layout().remap(op);
                     return success();
                   })
                   .Case<ResetOp>([&](ResetOp op) {
-                    remap(op, unit.layout());
+                    unit.layout().remap(op);
                     return success();
                   })
                   .Case<MeasureOp>([&](MeasureOp op) {
-                    remap(op, unit.layout());
+                    unit.layout().remap(op);
                     return success();
                   })
                   .Case<scf::YieldOp>([&](scf::YieldOp op) -> LogicalResult {

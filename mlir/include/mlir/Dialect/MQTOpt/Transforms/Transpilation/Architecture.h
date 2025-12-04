@@ -10,8 +10,6 @@
 
 #pragma once
 
-#include "mlir/Dialect/MQTOpt/Transforms/Transpilation/QubitIndex.h"
-
 #include <cstddef>
 #include <cstdint>
 #include <llvm/ADT/DenseMapInfo.h>
@@ -24,6 +22,11 @@
 #include <string_view>
 
 namespace mqt::ir::opt {
+
+/**
+ * @brief Type alias for qubit indices.
+ */
+using QubitIndex = uint32_t;
 
 /**
  * @brief A quantum accelerator's architecture.

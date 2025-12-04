@@ -63,8 +63,8 @@ mlir::SmallVector<SequentialUnit, 3> SequentialUnit::next() {
   mlir::TypeSwitch<mlir::Operation*>(divider_)
       .Case<mlir::scf::ForOp>([&](mlir::scf::ForOp op) {
         Layout forLayout(layout_); // Copy layout.
-        remapToLoopBody(op, forLayout);
-        remapToLoopResults(op, layout_);
+        forLayout.remapToLoopBody(op);
+        layout_.remapToLoopResults(op);
         units.emplace_back(std::move(layout_), region_, std::next(end_),
                            restore_);
         units.emplace_back(std::move(forLayout), &op.getRegion(), true);
@@ -72,7 +72,7 @@ mlir::SmallVector<SequentialUnit, 3> SequentialUnit::next() {
       .Case<mlir::scf::IfOp>([&](mlir::scf::IfOp op) {
         units.emplace_back(layout_, &op.getThenRegion(), true);
         units.emplace_back(layout_, &op.getElseRegion(), true);
-        remapIfResults(op, layout_);
+        layout_.remapIfResults(op);
         units.emplace_back(std::move(layout_), region_, std::next(end_),
                            restore_);
       })

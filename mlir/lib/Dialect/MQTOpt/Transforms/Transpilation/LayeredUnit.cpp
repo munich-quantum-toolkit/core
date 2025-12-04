@@ -12,9 +12,9 @@
 
 #include "mlir/Dialect/MQTOpt/IR/MQTOptDialect.h"
 #include "mlir/Dialect/MQTOpt/IR/WireIterator.h"
+#include "mlir/Dialect/MQTOpt/Transforms/Transpilation/Architecture.h"
 #include "mlir/Dialect/MQTOpt/Transforms/Transpilation/Common.h"
 #include "mlir/Dialect/MQTOpt/Transforms/Transpilation/Layout.h"
-#include "mlir/Dialect/MQTOpt/Transforms/Transpilation/QubitIndex.h"
 #include "mlir/Dialect/MQTOpt/Transforms/Transpilation/Unit.h"
 
 #include <cassert>
@@ -281,15 +281,15 @@ mlir::SmallVector<LayeredUnit, 3> LayeredUnit::next() {
   mlir::TypeSwitch<mlir::Operation*>(divider_)
       .Case<mlir::scf::ForOp>([&](mlir::scf::ForOp op) {
         Layout forLayout(layout_); // Copy layout.
-        remapToLoopBody(op, forLayout);
-        remapToLoopResults(op, layout_);
+        forLayout.remapToLoopBody(op);
+        layout_.remapToLoopResults(op);
         units.emplace_back(std::move(layout_), region_, restore_);
         units.emplace_back(std::move(forLayout), &op.getRegion(), true);
       })
       .Case<mlir::scf::IfOp>([&](mlir::scf::IfOp op) {
         units.emplace_back(layout_, &op.getThenRegion(), true);
         units.emplace_back(layout_, &op.getElseRegion(), true);
-        remapIfResults(op, layout_);
+        layout_.remapIfResults(op);
         units.emplace_back(layout_, region_, restore_);
       })
       .Default([](auto) { llvm_unreachable("invalid 'next' operation"); });
