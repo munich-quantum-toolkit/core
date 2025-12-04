@@ -367,12 +367,72 @@ TEST_P(OperationTest, ParametersNum) {
 
 TEST_P(OperationTest, Duration) {
   for (const auto& operation : operations) {
+    const auto qubitsNum = operation.getQubitsNum();
+    if (!qubitsNum.has_value()) {
+      EXPECT_NO_THROW(std::ignore = operation.getDuration());
+      continue;
+    }
+    const auto numQubits = *qubitsNum;
+    if (numQubits == 1) {
+      const auto sites = operation.getSites();
+      if (!sites.has_value()) {
+        EXPECT_NO_THROW(std::ignore = operation.getDuration());
+        continue;
+      }
+      for (const auto& site : *sites) {
+        EXPECT_NO_THROW(std::ignore = operation.getDuration({site}));
+      }
+      continue;
+    }
+
+    if (numQubits == 2) {
+      const auto sitePairs = operation.getSitePairs();
+      if (!sitePairs.has_value()) {
+        EXPECT_NO_THROW(std::ignore = operation.getDuration());
+        continue;
+      }
+      for (const auto& [site1, site2] : *sitePairs) {
+        EXPECT_NO_THROW(std::ignore = operation.getDuration({site1, site2}));
+      }
+      continue;
+    }
+
     EXPECT_NO_THROW(std::ignore = operation.getDuration());
   }
 }
 
 TEST_P(OperationTest, Fidelity) {
   for (const auto& operation : operations) {
+    const auto qubitsNum = operation.getQubitsNum();
+    if (!qubitsNum.has_value()) {
+      EXPECT_NO_THROW(std::ignore = operation.getFidelity());
+      continue;
+    }
+    const auto numQubits = *qubitsNum;
+    if (numQubits == 1) {
+      const auto sites = operation.getSites();
+      if (!sites.has_value()) {
+        EXPECT_NO_THROW(std::ignore = operation.getFidelity());
+        continue;
+      }
+      for (const auto& site : *sites) {
+        EXPECT_NO_THROW(std::ignore = operation.getFidelity({site}));
+      }
+      continue;
+    }
+
+    if (numQubits == 2) {
+      const auto sitePairs = operation.getSitePairs();
+      if (!sitePairs.has_value()) {
+        EXPECT_NO_THROW(std::ignore = operation.getFidelity());
+        continue;
+      }
+      for (const auto& [site1, site2] : *sitePairs) {
+        EXPECT_NO_THROW(std::ignore = operation.getFidelity({site1, site2}));
+      }
+      continue;
+    }
+
     EXPECT_NO_THROW(std::ignore = operation.getFidelity());
   }
 }
