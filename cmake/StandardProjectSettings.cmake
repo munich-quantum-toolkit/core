@@ -85,3 +85,9 @@ endif()
 set(CMAKE_WINDOWS_EXPORT_ALL_SYMBOLS
     ON
     CACHE BOOL "Export all symbols on Windows")
+
+# on macOS with GCC, disable scanning for modules
+# https://www.reddit.com/r/cpp_questions/comments/1kwlkom/comment/ni5angh/
+if(CMAKE_SYSTEM_NAME STREQUAL "Darwin" AND CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+  set(CMAKE_CXX_SCAN_FOR_MODULES OFF)
+endif()
