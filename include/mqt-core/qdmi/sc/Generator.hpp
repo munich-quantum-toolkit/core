@@ -61,7 +61,7 @@ public:
 
   // NOLINTNEXTLINE(misc-include-cleaner)
   NLOHMANN_DEFINE_TYPE_INTRUSIVE_WITH_DEFAULT(Device, name, numQubits,
-                                              couplings)
+                                              couplings, operations)
 };
 
 /**
