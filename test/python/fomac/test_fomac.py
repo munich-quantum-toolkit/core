@@ -14,10 +14,20 @@ from typing import cast
 
 import pytest
 
-from mqt.core.fomac import Device, Job, ProgramFormat, devices
+from mqt.core.fomac import Device, Job, ProgramFormat, Session
 
 
-@pytest.fixture(params=devices())
+def _get_devices() -> list[Device]:
+    """Get all available devices from a Session.
+
+    Returns:
+        List of all available QDMI devices.
+    """
+    session = Session()
+    return session.get_devices()
+
+
+@pytest.fixture(params=_get_devices())
 def device(request: pytest.FixtureRequest) -> Device:
     """Fixture to provide a device for testing.
 
@@ -27,7 +37,7 @@ def device(request: pytest.FixtureRequest) -> Device:
     return cast("Device", request.param)
 
 
-@pytest.fixture(params=devices())
+@pytest.fixture(params=_get_devices())
 def device_and_site(request: pytest.FixtureRequest) -> tuple[Device, Device.Site]:
     """Fixture to provide a device for testing.
 
@@ -39,7 +49,7 @@ def device_and_site(request: pytest.FixtureRequest) -> tuple[Device, Device.Site
     return dev, site
 
 
-@pytest.fixture(params=devices())
+@pytest.fixture(params=_get_devices())
 def device_and_operation(request: pytest.FixtureRequest) -> tuple[Device, Device.Operation]:
     """Fixture to provide a device for testing.
 
@@ -58,7 +68,7 @@ def ddsim_device() -> Device:
     Returns:
         The MQT Core DDSIM QDMI Device if it can be found.
     """
-    for dev in devices():
+    for dev in _get_devices():
         if dev.name() == "MQT Core DDSIM QDMI Device":
             return dev
     pytest.skip("DDSIM device not found - job submission tests require DDSIM device")

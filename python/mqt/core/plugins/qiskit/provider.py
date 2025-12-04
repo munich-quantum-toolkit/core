@@ -46,8 +46,9 @@ class QDMIProvider:
 
     def __init__(self) -> None:
         """Initialize the QDMI provider."""
+        session = fomac.Session()
         self._backends = [
-            QDMIBackend(device=d, provider=self) for d in fomac.devices() if QDMIBackend.is_convertible(d)
+            QDMIBackend(device=d, provider=self) for d in session.get_devices() if QDMIBackend.is_convertible(d)
         ]
 
     def backends(self, name: str | None = None) -> list[QDMIBackend]:

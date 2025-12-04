@@ -80,10 +80,10 @@ def test_provider_get_backend_no_devices(monkeypatch: pytest.MonkeyPatch) -> Non
     """Provider raises ValueError when no devices available."""
 
     # Monkeypatch to return empty device list
-    def mock_devices() -> list[object]:
+    def mock_get_devices(_self: object) -> list[object]:
         return []
 
-    monkeypatch.setattr(fomac, "devices", mock_devices)
+    monkeypatch.setattr(fomac.Session, "get_devices", mock_get_devices)
 
     provider = QDMIProvider()
     with pytest.raises(ValueError, match="No backend found with name"):
