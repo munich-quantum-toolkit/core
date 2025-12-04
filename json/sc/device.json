@@ -184,7 +184,7 @@
     [89, 99]
   ],
   "operations": [
-    { "name": "r", "numParameters": 3, "numQubits": 1 },
+    { "name": "r", "numParameters": 2, "numQubits": 1 },
     { "name": "cz", "numParameters": 0, "numQubits": 2 }
   ]
 }
