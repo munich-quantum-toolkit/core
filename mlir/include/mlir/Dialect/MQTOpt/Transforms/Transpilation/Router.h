@@ -26,18 +26,13 @@ namespace mqt::ir::opt {
 
 class NaiveRouter {
 public:
-  [[nodiscard]] static mlir::SmallVector<QubitIndexPair, 64>
+  [[nodiscard]] static mlir::SmallVector<QubitIndexPair>
   route(QubitIndexPair gate, const ThinLayout& layout,
         const Architecture& arch) {
     mlir::SmallVector<QubitIndexPair, 64> swaps;
     const auto hw0 = layout.getHardwareIndex(gate.first);
     const auto hw1 = layout.getHardwareIndex(gate.second);
-    const auto path = arch.shortestPathBetween(hw0, hw1);
-    assert(path.size() >= 2 && "NaiveRouter::route: invalid shortest path");
-    for (std::size_t i = 0; i < path.size() - 2; ++i) {
-      swaps.emplace_back(path[i], path[i + 1]);
-    }
-    return swaps;
+    return arch.shortestSWAPsBetween(hw0, hw1);
   }
 };
 

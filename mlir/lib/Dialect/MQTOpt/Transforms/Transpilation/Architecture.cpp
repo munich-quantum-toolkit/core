@@ -10,8 +10,6 @@
 
 #include "mlir/Dialect/MQTOpt/Transforms/Transpilation/Architecture.h"
 
-#include "mlir/Dialect/MQTOpt/Transforms/Transpilation/Common.h"
-
 #include <cstddef>
 #include <cstdint>
 #include <llvm/ADT/SmallVector.h>
@@ -19,28 +17,56 @@
 #include <memory>
 #include <stdexcept>
 #include <string>
+#include <utility>
 
 namespace mqt::ir::opt {
-[[nodiscard]] llvm::SmallVector<std::size_t>
+llvm::SmallVector<std::size_t>
 Architecture::shortestPathBetween(QubitIndex u, QubitIndex v) const {
-  llvm::SmallVector<std::size_t> path;
+  if (u == v) {
+    return {};
+  }
 
   if (prev_[u][v] == UINT64_MAX) {
     throw std::domain_error("No path between qubits " + std::to_string(u) +
                             " and " + std::to_string(v));
   }
 
-  path.push_back(v);
-  while (u != v) {
-    v = prev_[u][v];
-    path.push_back(v);
+  llvm::SmallVector<std::size_t> path;
+  QubitIndex curr = v;
+  path.push_back(curr);
+  while (curr != u) {
+    curr = prev_[u][curr];
+    path.push_back(curr);
   }
 
   return path;
 }
 
-[[nodiscard]] std::size_t Architecture::distanceBetween(QubitIndex u,
-                                                        QubitIndex v) const {
+llvm::SmallVector<std::pair<QubitIndex, QubitIndex>>
+Architecture::shortestSWAPsBetween(QubitIndex u, QubitIndex v) const {
+  if (u == v) {
+    return {};
+  }
+
+  if (prev_[u][v] == UINT64_MAX) {
+    throw std::domain_error("No path between qubits " + std::to_string(u) +
+                            " and " + std::to_string(v));
+  }
+
+  llvm::SmallVector<std::pair<QubitIndex, QubitIndex>> swaps;
+  QubitIndex curr = v;
+  QubitIndex last = v;
+
+  while (curr != u) {
+    curr = prev_[u][curr];
+    swaps.emplace_back(last, curr);
+    last = curr;
+  }
+
+  return swaps;
+}
+
+std::size_t Architecture::distanceBetween(QubitIndex u, QubitIndex v) const {
   if (dist_[u][v] == UINT64_MAX) {
     throw std::domain_error("No path between qubits " + std::to_string(u) +
                             " and " + std::to_string(v));
@@ -80,7 +106,7 @@ void Architecture::collectNeighbours() {
   }
 }
 
-[[nodiscard]] llvm::SmallVector<QubitIndex, 4>
+llvm::SmallVector<QubitIndex, 4>
 Architecture::neighboursOf(QubitIndex u) const {
   return neighbours_[u];
 }

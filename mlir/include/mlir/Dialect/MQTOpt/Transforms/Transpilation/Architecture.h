@@ -20,6 +20,7 @@
 #include <mlir/Support/LLVM.h>
 #include <string>
 #include <string_view>
+#include <utility>
 
 namespace mqt::ir::opt {
 
@@ -70,6 +71,13 @@ public:
    */
   [[nodiscard]] llvm::SmallVector<std::size_t>
   shortestPathBetween(QubitIndex u, QubitIndex v) const;
+
+  /**
+   * @brief Collect the shortest SWAP sequence to make @p u and @p v adjacent.
+   * @returns The SWAP sequence from the destination (v) to source (u) qubit.
+   */
+  [[nodiscard]] llvm::SmallVector<std::pair<QubitIndex, QubitIndex>>
+  shortestSWAPsBetween(QubitIndex u, QubitIndex v) const;
 
   /**
    * @brief Return the length of the shortest path between @p u and @p v.
