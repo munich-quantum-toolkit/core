@@ -23,6 +23,8 @@ jobs:
     with:
       runs-on: ${{ matrix.runs-on }}
       setup-z3: true
+      setup-mlir: true
+      llvm-version: 21.1.7
 
   create-issue-on-failure:
     name: Create issue on failure

@@ -34,6 +34,8 @@ jobs:
     uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-python-packaging-wheel-cibuildwheel.yml@2acb39781fa6ca7baa10c2a31a508cb0e2292d9e # v1.17.6
     with:
       runs-on: ${{ matrix.runs-on }}
+      setup-mlir: true
+      setup-mlir-tag: 2025.11.25
 
   # Downloads the previously generated artifacts and deploys to PyPI on published releases.
   deploy:
