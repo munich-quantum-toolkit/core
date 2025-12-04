@@ -242,7 +242,12 @@ auto writeJSONSchema(const std::string& path) -> void {
  * @param os Output stream to write the header content to.
  */
 auto writeHeader(const Device& device, std::ostream& os) -> void {
-  os << "#pragma once\n\n";
+  os << "#pragma once\n\n"
+     << "#include <algorithm>\n"
+     << "#include <iterator>\n"
+     << "#include <memory>\n"
+     << "#include <utility>\n"
+     << "#include <vector>\n\n";
   writeName(device, os);
   writeQubitsNum(device, os);
   writeSites(device, os);
