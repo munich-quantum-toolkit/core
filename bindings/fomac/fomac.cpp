@@ -10,6 +10,7 @@
 
 #include "fomac/FoMaC.hpp"
 
+#include <optional>
 #include <pybind11/cast.h>
 #include <pybind11/complex.h> // NOLINT(misc-include-cleaner)
 #include <pybind11/native_enum.h>

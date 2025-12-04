@@ -13,8 +13,6 @@
 #include <algorithm>
 #include <cstdio>
 #include <cstdlib>
-#include <filesystem>
-#include <fstream>
 #include <gmock/gmock-matchers.h>
 #include <gtest/gtest.h>
 #include <new>
@@ -23,7 +21,6 @@
 #include <ranges>
 #include <stdexcept>
 #include <string>
-#include <thread>
 #include <tuple>
 #include <vector>
 
@@ -615,16 +612,13 @@ TEST(AuthenticationTest, SessionParameterToString) {
   EXPECT_EQ(toString(QDMI_SESSION_PARAMETER_CUSTOM5), "CUSTOM5");
 }
 
-// Note: Authentication parameter tests removed because the underlying QDMI
-// library does not currently support these parameters. When support is added,
-// tests should validate that parameters are properly set through SessionConfig
-// in the Session constructor.
-
+namespace {
 // Helper function to get all devices for parameterized tests
 inline auto getDevices() -> std::vector<Session::Device> {
   Session session;
   return session.getDevices();
 }
+} // namespace
 
 INSTANTIATE_TEST_SUITE_P(
     // Custom instantiation name

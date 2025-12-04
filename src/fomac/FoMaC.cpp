@@ -17,7 +17,6 @@
 #include <filesystem>
 #include <iterator>
 #include <map>
-#include <mutex>
 #include <optional>
 #include <qdmi/client.h>
 #include <regex>
@@ -91,6 +90,8 @@ auto toString(const QDMI_SESSION_PARAMETER_T param) -> std::string {
     return "PASSWORD";
   case QDMI_SESSION_PARAMETER_PROJECTID:
     return "PROJECTID";
+  case QDMI_SESSION_PARAMETER_MAX:
+    return "MAX";
   case QDMI_SESSION_PARAMETER_CUSTOM1:
     return "CUSTOM1";
   case QDMI_SESSION_PARAMETER_CUSTOM2:
