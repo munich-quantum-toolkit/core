@@ -29,13 +29,11 @@ PYBIND11_MODULE(MQT_CORE_MODULE_NAME, m, py::mod_gil_not_used()) {
   // FoMaC class (exposed as Session in Python)
   auto fomac = py::class_<fomac::FoMaC>(m, "Session");
   fomac.def(py::init<>());
-  fomac.def("set_session_parameter", &fomac::FoMaC::setSessionParameter,
-            "param"_a, "value"_a);
+  fomac.def("set_parameter", &fomac::FoMaC::setParameter, "param"_a, "value"_a);
   fomac.def("get_devices", &fomac::FoMaC::getDevices);
 
   // Module-level convenience functions (use default session)
-  m.def("set_session_parameter", &fomac::setSessionParameter, "param"_a,
-        "value"_a);
+  m.def("set_parameter", &fomac::setParameter, "param"_a, "value"_a);
   m.def("devices", &fomac::getDevices);
 
   // SessionParameter enum

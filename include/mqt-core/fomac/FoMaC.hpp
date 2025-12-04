@@ -735,8 +735,8 @@ public:
    * URL)
    * @see QDMI_session_set_parameter
    */
-  auto setSessionParameter(const QDMI_SESSION_PARAMETER_T param,
-                           const std::string& value) -> void;
+  auto setParameter(const QDMI_SESSION_PARAMETER_T param,
+                    const std::string& value) -> void;
 
   /// @see QDMI_SESSION_PROPERTY_DEVICES
   [[nodiscard]] auto getDevices() -> std::vector<Device>;
@@ -757,9 +757,9 @@ public:
  * For multiple sessions, create FoMaC instances directly.
  * @param param The parameter to set
  * @param value The value to set
- * @see FoMaC::setSessionParameter
+ * @see FoMaC::setParameter
  */
-auto setSessionParameter(QDMI_SESSION_PARAMETER_T param,
-                         const std::string& value) -> void;
+auto setParameter(QDMI_SESSION_PARAMETER_T param, const std::string& value)
+    -> void;
 
 } // namespace fomac

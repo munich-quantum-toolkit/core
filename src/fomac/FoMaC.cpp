@@ -859,8 +859,8 @@ auto FoMaC::ensureInitialized() -> void {
   initialized_ = true;
 }
 
-auto FoMaC::setSessionParameter(const QDMI_SESSION_PARAMETER_T param,
-                                const std::string& value) -> void {
+auto FoMaC::setParameter(const QDMI_SESSION_PARAMETER_T param,
+                         const std::string& value) -> void {
   const std::scoped_lock<std::mutex> lock(mutex_);
 
   if (initialized_) {
@@ -910,9 +910,9 @@ auto getDevices() -> std::vector<FoMaC::Device> {
   return getDefaultSession().getDevices();
 }
 
-auto setSessionParameter(const QDMI_SESSION_PARAMETER_T param,
-                         const std::string& value) -> void {
-  getDefaultSession().setSessionParameter(param, value);
+auto setParameter(const QDMI_SESSION_PARAMETER_T param,
+                  const std::string& value) -> void {
+  getDefaultSession().setParameter(param, value);
 }
 
 } // namespace fomac

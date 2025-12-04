@@ -616,46 +616,45 @@ TEST(AuthenticationTest, SessionParameterToString) {
 
 TEST(AuthenticationTest, ValidURLAccepted) {
   FoMaC session;
-  EXPECT_NO_THROW(session.setSessionParameter(QDMI_SESSION_PARAMETER_AUTHURL,
-                                              "https://example.com"));
-  EXPECT_NO_THROW(session.setSessionParameter(
-      QDMI_SESSION_PARAMETER_AUTHURL, "http://auth.server.com:8080/api"));
-  EXPECT_NO_THROW(session.setSessionParameter(
-      QDMI_SESSION_PARAMETER_AUTHURL,
-      "https://auth.example.com/token?param=value"));
+  EXPECT_NO_THROW(session.setParameter(QDMI_SESSION_PARAMETER_AUTHURL,
+                                       "https://example.com"));
+  EXPECT_NO_THROW(session.setParameter(QDMI_SESSION_PARAMETER_AUTHURL,
+                                       "http://auth.server.com:8080/api"));
+  EXPECT_NO_THROW(
+      session.setParameter(QDMI_SESSION_PARAMETER_AUTHURL,
+                           "https://auth.example.com/token?param=value"));
 }
 
 TEST(AuthenticationTest, InvalidURLRejected) {
   FoMaC session;
   EXPECT_THROW(
-      session.setSessionParameter(QDMI_SESSION_PARAMETER_AUTHURL, "not-a-url"),
+      session.setParameter(QDMI_SESSION_PARAMETER_AUTHURL, "not-a-url"),
       std::runtime_error);
-  EXPECT_THROW(session.setSessionParameter(QDMI_SESSION_PARAMETER_AUTHURL,
-                                           "ftp://invalid.com"),
-               std::runtime_error);
-  EXPECT_THROW(session.setSessionParameter(QDMI_SESSION_PARAMETER_AUTHURL,
-                                           "example.com"),
-               std::runtime_error);
+  EXPECT_THROW(
+      session.setParameter(QDMI_SESSION_PARAMETER_AUTHURL, "ftp://invalid.com"),
+      std::runtime_error);
+  EXPECT_THROW(
+      session.setParameter(QDMI_SESSION_PARAMETER_AUTHURL, "example.com"),
+      std::runtime_error);
 }
 
 TEST(AuthenticationTest, NonexistentFileRejected) {
   FoMaC session;
-  EXPECT_THROW(session.setSessionParameter(QDMI_SESSION_PARAMETER_AUTHFILE,
-                                           "/nonexistent/path/to/file.txt"),
+  EXPECT_THROW(session.setParameter(QDMI_SESSION_PARAMETER_AUTHFILE,
+                                    "/nonexistent/path/to/file.txt"),
                std::runtime_error);
-  EXPECT_THROW(
-      session.setSessionParameter(QDMI_SESSION_PARAMETER_AUTHFILE,
-                                  "/tmp/this_file_does_not_exist_12345.txt"),
-      std::runtime_error);
+  EXPECT_THROW(session.setParameter(QDMI_SESSION_PARAMETER_AUTHFILE,
+                                    "/tmp/this_file_does_not_exist_12345.txt"),
+               std::runtime_error);
 }
 
 TEST(AuthenticationTest, ExistingFileAccepted) {
   FoMaC session;
   // Create a temporary file for testing
   const auto tmpPath = std::filesystem::temp_directory_path() /
-                       ("test_fomac_auth_" + std::to_string(
-                                                 std::hash<std::thread::id>{}(
-                                                     std::this_thread::get_id())) +
+                       ("test_fomac_auth_" +
+                        std::to_string(std::hash<std::thread::id>{}(
+                            std::this_thread::get_id())) +
                         ".txt");
   {
     std::ofstream ofs(tmpPath);
@@ -663,8 +662,8 @@ TEST(AuthenticationTest, ExistingFileAccepted) {
   }
 
   // Existing file should be accepted
-  EXPECT_NO_THROW(session.setSessionParameter(QDMI_SESSION_PARAMETER_AUTHFILE,
-                                              tmpPath.string()));
+  EXPECT_NO_THROW(
+      session.setParameter(QDMI_SESSION_PARAMETER_AUTHFILE, tmpPath.string()));
 
   // Clean up
   std::filesystem::remove(tmpPath);
@@ -672,11 +671,10 @@ TEST(AuthenticationTest, ExistingFileAccepted) {
 
 TEST(AuthenticationTest, TokenParameterAccepted) {
   FoMaC session;
-  EXPECT_NO_THROW(session.setSessionParameter(QDMI_SESSION_PARAMETER_TOKEN,
-                                              "my_token_123"));
   EXPECT_NO_THROW(
-      session.setSessionParameter(QDMI_SESSION_PARAMETER_TOKEN, ""));
-  EXPECT_NO_THROW(session.setSessionParameter(
+      session.setParameter(QDMI_SESSION_PARAMETER_TOKEN, "my_token_123"));
+  EXPECT_NO_THROW(session.setParameter(QDMI_SESSION_PARAMETER_TOKEN, ""));
+  EXPECT_NO_THROW(session.setParameter(
       QDMI_SESSION_PARAMETER_TOKEN,
       "very_long_token_with_special_characters_!@#$%^&*()"));
 }
@@ -684,29 +682,29 @@ TEST(AuthenticationTest, TokenParameterAccepted) {
 TEST(AuthenticationTest, UsernameAndPasswordParametersAccepted) {
   FoMaC session;
   EXPECT_NO_THROW(
-      session.setSessionParameter(QDMI_SESSION_PARAMETER_USERNAME, "user123"));
-  EXPECT_NO_THROW(session.setSessionParameter(QDMI_SESSION_PARAMETER_PASSWORD,
-                                              "secure_password"));
+      session.setParameter(QDMI_SESSION_PARAMETER_USERNAME, "user123"));
+  EXPECT_NO_THROW(
+      session.setParameter(QDMI_SESSION_PARAMETER_PASSWORD, "secure_password"));
 }
 
 TEST(AuthenticationTest, ProjectIDParameterAccepted) {
   FoMaC session;
-  EXPECT_NO_THROW(session.setSessionParameter(QDMI_SESSION_PARAMETER_PROJECTID,
-                                              "project-123-abc"));
+  EXPECT_NO_THROW(session.setParameter(QDMI_SESSION_PARAMETER_PROJECTID,
+                                       "project-123-abc"));
 }
 
 TEST(AuthenticationTest, CustomParametersAccepted) {
   FoMaC session;
-  EXPECT_NO_THROW(session.setSessionParameter(QDMI_SESSION_PARAMETER_CUSTOM1,
-                                              "custom_value_1"));
-  EXPECT_NO_THROW(session.setSessionParameter(QDMI_SESSION_PARAMETER_CUSTOM2,
-                                              "custom_value_2"));
-  EXPECT_NO_THROW(session.setSessionParameter(QDMI_SESSION_PARAMETER_CUSTOM3,
-                                              "custom_value_3"));
-  EXPECT_NO_THROW(session.setSessionParameter(QDMI_SESSION_PARAMETER_CUSTOM4,
-                                              "custom_value_4"));
-  EXPECT_NO_THROW(session.setSessionParameter(QDMI_SESSION_PARAMETER_CUSTOM5,
-                                              "custom_value_5"));
+  EXPECT_NO_THROW(
+      session.setParameter(QDMI_SESSION_PARAMETER_CUSTOM1, "custom_value_1"));
+  EXPECT_NO_THROW(
+      session.setParameter(QDMI_SESSION_PARAMETER_CUSTOM2, "custom_value_2"));
+  EXPECT_NO_THROW(
+      session.setParameter(QDMI_SESSION_PARAMETER_CUSTOM3, "custom_value_3"));
+  EXPECT_NO_THROW(
+      session.setParameter(QDMI_SESSION_PARAMETER_CUSTOM4, "custom_value_4"));
+  EXPECT_NO_THROW(
+      session.setParameter(QDMI_SESSION_PARAMETER_CUSTOM5, "custom_value_5"));
 }
 
 TEST(AuthenticationTest, CannotSetParameterAfterInitialization) {
@@ -715,9 +713,8 @@ TEST(AuthenticationTest, CannotSetParameterAfterInitialization) {
   EXPECT_FALSE(devices.empty());
 
   // Try to set a parameter - should fail
-  EXPECT_THROW(
-      session.setSessionParameter(QDMI_SESSION_PARAMETER_TOKEN, "token"),
-      std::runtime_error);
+  EXPECT_THROW(session.setParameter(QDMI_SESSION_PARAMETER_TOKEN, "token"),
+               std::runtime_error);
 }
 
 INSTANTIATE_TEST_SUITE_P(
