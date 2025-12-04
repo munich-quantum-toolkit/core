@@ -11,6 +11,7 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 
 ### Added
 
+- ✨ Add authentication support for QDMI sessions with token, username/password, auth file, auth URL, and project ID parameters ([#1355]) ([**@marcelwa**])
 - ✨ Add bi-directional iterator that traverses the def-use chain of a qubit value ([#1310]) ([**@MatthiasReumann**])
 - ✨ Add `OptionalDependencyTester` to lazily handle optional Python dependencies like Qiskit ([#1243]) ([**@marcelwa**], [**@burgholzer**])
 - ✨ Expose the QDMI job interface through FoMaC ([#1243]) ([**@marcelwa**], [**@burgholzer**])
@@ -20,6 +21,7 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 
 ### Changed
 
+- ♻️ Refactor `FoMaC` singleton to instantiable `Session` class with configurable authentication parameters ([#1355]) ([**@marcelwa**])
 - 👷 Use `munich-quantum-software/setup-mlir` to set up MLIR ([#1294]) ([**@denialhaag**])
 - ♻️ Preserve tuple structure and improve site type clarity of the MQT NA Default QDMI Device ([#1299]) ([**@marcelwa**])
 - ♻️ Move DD package evaluation module to standalone script ([#1327]) ([**@burgholzer**])
@@ -263,6 +265,7 @@ _📚 Refer to the [GitHub Release Notes](https://github.com/munich-quantum-tool
 
 <!-- PR links -->
 
+[#1355]: https://github.com/munich-quantum-toolkit/core/pull/1355
 [#1336]: https://github.com/munich-quantum-toolkit/core/pull/1336
 [#1327]: https://github.com/munich-quantum-toolkit/core/pull/1327
 [#1310]: https://github.com/munich-quantum-toolkit/core/pull/1310
