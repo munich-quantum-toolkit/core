@@ -11,9 +11,13 @@
 #include "fomac/FoMaC.hpp"
 
 #include <algorithm>
+#include <cstdlib>
+#include <gmock/gmock-matchers.h>
 #include <gtest/gtest.h>
 #include <new>
+#include <numbers>
 #include <qdmi/client.h>
+#include <ranges>
 #include <stdexcept>
 #include <string>
 #include <tuple>
@@ -39,6 +43,58 @@ protected:
   FoMaC::Device::Operation operation;
 
   OperationTest() : operation(device.getOperations().front()) {}
+};
+
+class DDSimulatorDeviceTest : public testing::Test {
+protected:
+  FoMaC::Device device;
+
+  DDSimulatorDeviceTest() : device(getDDSimulatorDevice()) {}
+
+private:
+  static auto getDDSimulatorDevice() -> FoMaC::Device {
+    for (const auto& dev : FoMaC::getDevices()) {
+      if (dev.getName() == "MQT Core DDSIM QDMI Device") {
+        return dev;
+      }
+    }
+    throw std::runtime_error("DD simulator device not found");
+  }
+};
+
+class JobTest : public DDSimulatorDeviceTest {
+protected:
+  FoMaC::Job job;
+
+  JobTest() : job(createTestJob()) {}
+
+  [[nodiscard]] FoMaC::Job createTestJob() const {
+    const std::string qasm3Program = R"(
+OPENQASM 3.0;
+qubit[1] q;
+bit[1] c;
+h q[0];
+c[0] = measure q[0];
+)";
+    return device.submitJob(qasm3Program, QDMI_PROGRAM_FORMAT_QASM3, 10);
+  }
+};
+
+class SimulatorJobTest : public DDSimulatorDeviceTest {
+protected:
+  FoMaC::Job job;
+
+  SimulatorJobTest() : job(createTestJob()) {}
+
+  [[nodiscard]] FoMaC::Job createTestJob() const {
+    const std::string qasm3Program = R"(
+OPENQASM 3.0;
+qubit[2] q;
+h q[0];
+cx q[0], q[1];
+)";
+    return device.submitJob(qasm3Program, QDMI_PROGRAM_FORMAT_QASM3, 0);
+  }
 };
 
 TEST(FoMaCTest, StatusToString) {
@@ -206,6 +262,10 @@ TEST_P(DeviceTest, MinAtomDistance) {
   EXPECT_NO_THROW(std::ignore = device.getMinAtomDistance());
 }
 
+TEST_P(DeviceTest, SupportedProgramFormats) {
+  EXPECT_NO_THROW(std::ignore = device.getSupportedProgramFormats());
+}
+
 TEST_P(SiteTest, Index) { EXPECT_NO_THROW(std::ignore = site.getIndex()); }
 
 TEST_P(SiteTest, T1) { EXPECT_NO_THROW(std::ignore = site.getT1()); }
@@ -323,6 +383,219 @@ TEST_P(DeviceTest, RegularSitesAndZones) {
   }
 }
 
+TEST_F(DDSimulatorDeviceTest, SubmitJobReturnsValidJob) {
+  const std::string qasm3Program = R"(
+OPENQASM 3.0;
+include "stdgates.inc";
+qubit[2] q;
+bit[2] c;
+h q[0];
+cx q[0], q[1];
+c = measure q;)";
+
+  const auto job =
+      device.submitJob(qasm3Program, QDMI_PROGRAM_FORMAT_QASM3, 100);
+
+  EXPECT_FALSE(job.getId().empty());
+  EXPECT_EQ(job.getProgramFormat(), QDMI_PROGRAM_FORMAT_QASM3);
+  EXPECT_STREQ(job.getProgram().c_str(), qasm3Program.c_str());
+  EXPECT_EQ(job.getNumShots(), 100);
+  EXPECT_TRUE(job.wait());
+  EXPECT_EQ(job.check(), QDMI_JOB_STATUS_DONE);
+}
+
+TEST_F(DDSimulatorDeviceTest, SubmitJobPreservesNumShots) {
+  const std::string qasm3Program = R"(
+OPENQASM 3.0;
+qubit[1] q;
+bit[1] c;
+c[0] = measure q[0];
+)";
+
+  const auto job1 =
+      device.submitJob(qasm3Program, QDMI_PROGRAM_FORMAT_QASM3, 10);
+  EXPECT_EQ(job1.getNumShots(), 10);
+
+  const auto job2 =
+      device.submitJob(qasm3Program, QDMI_PROGRAM_FORMAT_QASM3, 100);
+  EXPECT_EQ(job2.getNumShots(), 100);
+
+  const auto job3 =
+      device.submitJob(qasm3Program, QDMI_PROGRAM_FORMAT_QASM3, 1000);
+  EXPECT_EQ(job3.getNumShots(), 1000);
+}
+
+TEST_F(JobTest, IdIsUnique) {
+  const std::string qasm3Program = R"(
+OPENQASM 3.0;
+qubit[1] q;
+bit[1] c;
+c[0] = measure q[0];
+)";
+  const auto job2 =
+      device.submitJob(qasm3Program, QDMI_PROGRAM_FORMAT_QASM3, 10);
+
+  EXPECT_NE(job.getId(), job2.getId());
+}
+
+TEST_F(JobTest, StatusProgresses) {
+  EXPECT_TRUE(job.wait());
+
+  const auto finalStatus = job.check();
+  EXPECT_THAT(finalStatus,
+              testing::AnyOf(QDMI_JOB_STATUS_DONE, QDMI_JOB_STATUS_FAILED));
+}
+
+TEST_F(JobTest, GetCountsReturnsValidHistogram) {
+  EXPECT_TRUE(job.wait());
+
+  const auto counts = job.getCounts();
+  EXPECT_FALSE(counts.empty());
+
+  // All keys should be valid binary strings of length 1 (single qubit)
+  for (const auto& [key, value] : counts) {
+    EXPECT_EQ(key.length(), 1);
+    EXPECT_TRUE(key == "0" || key == "1");
+    EXPECT_GT(value, 0);
+  }
+
+  size_t totalCounts = 0;
+  for (const auto& value : counts | std::views::values) {
+    totalCounts += value;
+  }
+  EXPECT_EQ(totalCounts, job.getNumShots());
+}
+
+TEST_F(JobTest, MultipleGetCountsCalls) {
+  EXPECT_TRUE(job.wait());
+
+  const auto counts1 = job.getCounts();
+  const auto counts2 = job.getCounts();
+
+  EXPECT_EQ(counts1, counts2);
+}
+
+TEST_F(JobTest, GetShotsReturnsValidShots) {
+  EXPECT_TRUE(job.wait());
+
+  // Some devices may not support the SHOTS result type
+  try {
+    const auto shots = job.getShots();
+    EXPECT_FALSE(shots.empty());
+
+    // Each shot should be a valid binary string of length 1 (single qubit)
+    for (const auto& shot : shots) {
+      EXPECT_EQ(shot.length(), 1);
+      EXPECT_TRUE(shot == "0" || shot == "1");
+    }
+
+    // The number of shots should match the expected number
+    EXPECT_EQ(shots.size(), job.getNumShots());
+  } catch (const std::runtime_error& e) {
+    // If the device doesn't support shots, the error message should indicate so
+    const std::string errorMsg(e.what());
+    EXPECT_TRUE(errorMsg.find("Not supported") != std::string::npos ||
+                errorMsg.find("not supported") != std::string::npos);
+  }
+}
+
+TEST_F(JobTest, CancelJob) {
+  const std::string qasm3Program = R"(
+OPENQASM 3.0;
+qubit[1] q;
+bit[1] c;
+c[0] = measure q[0];
+)";
+  const auto jobToCancel =
+      device.submitJob(qasm3Program, QDMI_PROGRAM_FORMAT_QASM3, 10);
+
+  // Fast-executing jobs (like the DD simulator) may complete before
+  // cancel is called, which should throw an exception.
+  // Both outcomes are valid based on timing.
+  try {
+    jobToCancel.cancel();
+    // If cancel succeeded, the job should be in CANCELED state
+    const auto status = jobToCancel.check();
+    EXPECT_EQ(status, QDMI_JOB_STATUS_CANCELED);
+  } catch (const std::invalid_argument&) {
+    // If cancel threw an exception, the job should already be done
+    const auto status = jobToCancel.check();
+    EXPECT_THAT(status,
+                testing::AnyOf(QDMI_JOB_STATUS_DONE, QDMI_JOB_STATUS_FAILED));
+  }
+}
+
+TEST_F(JobTest, CancelCompletedJobThrows) {
+  EXPECT_TRUE(job.wait());
+
+  const auto statusBefore = job.check();
+  EXPECT_THAT(statusBefore,
+              testing::AnyOf(QDMI_JOB_STATUS_DONE, QDMI_JOB_STATUS_FAILED));
+
+  EXPECT_THROW(job.cancel(), std::invalid_argument);
+}
+
+TEST_F(SimulatorJobTest, getDenseStateVectorReturnsValidState) {
+  EXPECT_TRUE(job.wait());
+
+  const auto stateVector = job.getDenseStateVector();
+  EXPECT_EQ(stateVector.size(), 4); // 2 qubits -> 4 amplitudes
+
+  // The expected state is (|00> + |11>)/sqrt(2)
+  constexpr double invSqrt2 = 1.0 / std::numbers::sqrt2;
+  EXPECT_NEAR(std::abs(stateVector[0]), invSqrt2, 1e-10); // |00>
+  EXPECT_NEAR(std::abs(stateVector[1]), 0.0, 1e-10);      // |01>
+  EXPECT_NEAR(std::abs(stateVector[2]), 0.0, 1e-10);
+  EXPECT_NEAR(std::abs(stateVector[3]), invSqrt2, 1e-10); // |11>
+}
+
+TEST_F(SimulatorJobTest, getDenseProbabilitiesReturnsValidProbabilities) {
+  EXPECT_TRUE(job.wait());
+
+  const auto probabilities = job.getDenseProbabilities();
+  EXPECT_EQ(probabilities.size(), 4); // 2 qubits -> 4 probabilities
+
+  // The expected probabilities are 0.5 for |00> and |11>, and 0 for |01> and
+  // |10>
+  EXPECT_NEAR(probabilities[0], 0.5, 1e-10); // |00>
+  EXPECT_NEAR(probabilities[1], 0.0, 1e-10); // |01>
+  EXPECT_NEAR(probabilities[2], 0.0, 1e-10); // |10>
+  EXPECT_NEAR(probabilities[3], 0.5, 1e-10); // |11>
+}
+
+TEST_F(SimulatorJobTest, getSparseStateVectorReturnsValidState) {
+  EXPECT_TRUE(job.wait());
+
+  const auto sparseStateVector = job.getSparseStateVector();
+  EXPECT_EQ(sparseStateVector.size(),
+            2); // Only |00> and |11> should be present
+
+  constexpr double invSqrt2 = 1.0 / std::numbers::sqrt2;
+  const auto it00 = sparseStateVector.find("00");
+  ASSERT_NE(it00, sparseStateVector.end());
+  EXPECT_NEAR(std::abs(it00->second), invSqrt2, 1e-10);
+
+  const auto it11 = sparseStateVector.find("11");
+  ASSERT_NE(it11, sparseStateVector.end());
+  EXPECT_NEAR(std::abs(it11->second), invSqrt2, 1e-10);
+}
+
+TEST_F(SimulatorJobTest, getSparseProbabilitiesReturnsValidProbabilities) {
+  EXPECT_TRUE(job.wait());
+
+  const auto sparseProbabilities = job.getSparseProbabilities();
+  EXPECT_EQ(sparseProbabilities.size(),
+            2); // Only |00> and |11> should be present
+
+  const auto it00 = sparseProbabilities.find("00");
+  ASSERT_NE(it00, sparseProbabilities.end());
+  EXPECT_NEAR(it00->second, 0.5, 1e-10);
+
+  const auto it11 = sparseProbabilities.find("11");
+  ASSERT_NE(it11, sparseProbabilities.end());
+  EXPECT_NEAR(it11->second, 0.5, 1e-10);
+}
+
 INSTANTIATE_TEST_SUITE_P(
     // Custom instantiation name
     DeviceTest,
@@ -364,4 +637,5 @@ INSTANTIATE_TEST_SUITE_P(
       std::ranges::replace(name, ' ', '_');
       return name;
     });
+
 } // namespace fomac
