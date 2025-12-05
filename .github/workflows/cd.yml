@@ -35,7 +35,7 @@ jobs:
     with:
       runs-on: ${{ matrix.runs-on }}
       setup-mlir: true
-      setup-mlir-tag: 2025.11.25
+      llvm-version: 21.1.7
 
   # Downloads the previously generated artifacts and deploys to PyPI on published releases.
   deploy:
