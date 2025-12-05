@@ -736,7 +736,7 @@ public:
   /**
    * @brief Destructor that releases the QDMI session.
    */
-  virtual ~Session();
+  ~Session();
 
   // Delete copy constructors and assignment operators
   Session(const Session&) = delete;

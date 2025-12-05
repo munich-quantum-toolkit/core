@@ -11,7 +11,6 @@
 #include "fomac/FoMaC.hpp"
 
 #include <algorithm>
-#include <cstdio>
 #include <cstdlib>
 #include <exception>
 #include <filesystem>
@@ -24,6 +23,7 @@
 #include <ranges>
 #include <stdexcept>
 #include <string>
+#include <thread>
 #include <tuple>
 #include <vector>
 
@@ -732,6 +732,7 @@ TEST(AuthenticationTest, SessionParameterToString) {
   EXPECT_EQ(toString(QDMI_SESSION_PARAMETER_USERNAME), "USERNAME");
   EXPECT_EQ(toString(QDMI_SESSION_PARAMETER_PASSWORD), "PASSWORD");
   EXPECT_EQ(toString(QDMI_SESSION_PARAMETER_PROJECTID), "PROJECTID");
+  EXPECT_EQ(toString(QDMI_SESSION_PARAMETER_MAX), "MAX");
   EXPECT_EQ(toString(QDMI_SESSION_PARAMETER_CUSTOM1), "CUSTOM1");
   EXPECT_EQ(toString(QDMI_SESSION_PARAMETER_CUSTOM2), "CUSTOM2");
   EXPECT_EQ(toString(QDMI_SESSION_PARAMETER_CUSTOM3), "CUSTOM3");
@@ -835,7 +836,10 @@ TEST(AuthenticationTest, SessionConstructionWithAuthFile) {
 
   // Test with existing file
   const auto tempDir = std::filesystem::temp_directory_path();
-  auto tmpPath = tempDir / "fomac_test_auth_XXXXXX.txt";
+  auto tmpPath = tempDir / ("fomac_test_auth_" +
+                            std::to_string(std::hash<std::thread::id>{}(
+                                std::this_thread::get_id())) +
+                            ".txt");
 
   // Create and write to the temporary file
   {
@@ -998,7 +1002,7 @@ TEST(AuthenticationTest, SessionConstructionWithCustomParameters) {
 
 namespace {
 // Helper function to get all devices for parameterized tests
-inline auto getDevices() -> std::vector<Session::Device> {
+auto getDevices() -> std::vector<Session::Device> {
   Session session;
   return session.getDevices();
 }
