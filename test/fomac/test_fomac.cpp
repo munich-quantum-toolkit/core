@@ -807,6 +807,36 @@ TEST(AuthenticationTest, SessionConstructionWithAuthUrl) {
     SUCCEED();
   }
 
+  // Valid localhost URL
+  SessionConfig configLocalhost;
+  configLocalhost.authUrl = "http://localhost";
+  try {
+    const Session session(configLocalhost);
+    SUCCEED();
+  } catch (const std::runtime_error&) {
+    SUCCEED();
+  }
+
+  // Valid localhost URL with port
+  SessionConfig configLocalhostPort;
+  configLocalhostPort.authUrl = "http://localhost:8080";
+  try {
+    const Session session(configLocalhostPort);
+    SUCCEED();
+  } catch (const std::runtime_error&) {
+    SUCCEED();
+  }
+
+  // Valid localhost URL with port and path
+  SessionConfig configLocalhostPath;
+  configLocalhostPath.authUrl = "https://localhost:3000/auth/api";
+  try {
+    const Session session(configLocalhostPath);
+    SUCCEED();
+  } catch (const std::runtime_error&) {
+    SUCCEED();
+  }
+
   // Invalid URL - not a URL at all
   SessionConfig config4;
   config4.authUrl = "not-a-url";

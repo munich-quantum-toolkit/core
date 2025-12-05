@@ -657,6 +657,24 @@ def test_session_construction_with_auth_url() -> None:
     except RuntimeError:
         # Either not supported or validation failed - both acceptable
         pass
+    # Valid localhost URL
+    try:
+        session = Session(auth_url="http://localhost")
+        assert session is not None
+    except RuntimeError:
+        pass
+    # Valid localhost URL with port
+    try:
+        session = Session(auth_url="http://localhost:8080")
+        assert session is not None
+    except RuntimeError:
+        pass
+    # Valid localhost URL with port and path
+    try:
+        session = Session(auth_url="https://localhost:3000/auth/api")
+        assert session is not None
+    except RuntimeError:
+        pass
     # Invalid URL - not a URL at all
     with pytest.raises(RuntimeError):
         Session(auth_url="not-a-url")
