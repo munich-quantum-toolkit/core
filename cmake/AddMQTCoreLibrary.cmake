@@ -47,4 +47,7 @@ function(add_mqt_core_library name)
     PROPERTIES VERSION ${PROJECT_VERSION}
                SOVERSION ${PROJECT_VERSION_MAJOR}.${PROJECT_VERSION_MINOR}
                EXPORT_NAME Core${ARG_ALIAS_NAME})
+
+  # Make version available
+  target_compile_definitions(${name} PRIVATE MQT_CORE_VERSION="${MQT_CORE_VERSION}")
 endfunction()
