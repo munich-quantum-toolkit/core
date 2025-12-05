@@ -24,7 +24,10 @@ add_mlir_dialect_library(
   LINK_LIBS
   PUBLIC
   MLIRIR
-  MLIRSideEffectInterfaces)
+  MLIRArithDialect
+  MLIRInferTypeOpInterface
+  MLIRSideEffectInterfaces
+  DISABLE_INSTALL)
 
 # collect header files
 file(GLOB_RECURSE IR_HEADERS_SOURCE "${MQT_MLIR_SOURCE_INCLUDE_DIR}/mlir/Dialect/QCO/IR/*.h")

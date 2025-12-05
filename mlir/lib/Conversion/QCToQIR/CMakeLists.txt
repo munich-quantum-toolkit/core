@@ -14,11 +14,12 @@ add_mlir_library(
   DEPENDS
   QCToQIRIncGen
   LINK_LIBS
-  PUBLIC
   MLIRQIRUtils
   MLIRLLVMDialect
   MLIRQCDialect
   MLIRArithDialect
+  MLIRTransforms
   MLIRFuncDialect
   MLIRFuncToLLVM
-  MLIRReconcileUnrealizedCasts)
+  MLIRReconcileUnrealizedCasts
+  DISABLE_INSTALL)
