@@ -38,9 +38,9 @@ jobs:
           fetch-depth: 0
 
       - name: Set up MLIR
-        uses: munich-quantum-software/setup-mlir@2f40b6e56a9bda0f539d7a251dfc6de2dbfeeb14 # 2025.11.25
+        uses: munich-quantum-software/setup-mlir@6b8d4ef561ca19268764609adf9fa12f53015e1f # 2025.12.05
         with:
-          tag: 2025.11.25
+          llvm-version: 21.1.7
 
       # Build acceleration and Python tooling
       - name: Set up mold as linker (Linux)
