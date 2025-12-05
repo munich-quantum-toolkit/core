@@ -51,6 +51,11 @@ class Session:
         username: str | None = None,
         password: str | None = None,
         project_id: str | None = None,
+        custom1: str | None = None,
+        custom2: str | None = None,
+        custom3: str | None = None,
+        custom4: str | None = None,
+        custom5: str | None = None,
     ) -> None:
         """Create a new FoMaC session with optional authentication.
 
@@ -61,6 +66,11 @@ class Session:
             username: Username for authentication
             password: Password for authentication
             project_id: Project ID for session
+            custom1: Custom configuration parameter 1
+            custom2: Custom configuration parameter 2
+            custom3: Custom configuration parameter 3
+            custom4: Custom configuration parameter 4
+            custom5: Custom configuration parameter 5
 
         Raises:
             RuntimeError: If auth_file does not exist

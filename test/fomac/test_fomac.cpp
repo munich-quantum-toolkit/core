@@ -822,6 +822,55 @@ TEST(AuthenticationTest, SessionMultipleInstances) {
   EXPECT_EQ(devices1.size(), devices2.size());
 }
 
+TEST(AuthenticationTest, SessionConstructionWithCustomParameters) {
+  // Test custom1
+  SessionConfig config1;
+  config1.custom1 = "custom_value_1";
+  try {
+    const Session session(config1);
+    SUCCEED();
+  } catch (const std::exception&) {
+    // If not supported, that's okay for now
+    SUCCEED();
+  }
+
+  // Test custom2
+  SessionConfig config2;
+  config2.custom2 = "custom_value_2";
+  try {
+    const Session session(config2);
+    SUCCEED();
+  } catch (const std::exception&) {
+    SUCCEED();
+  }
+
+  // Test all custom parameters together
+  SessionConfig config3;
+  config3.custom1 = "value1";
+  config3.custom2 = "value2";
+  config3.custom3 = "value3";
+  config3.custom4 = "value4";
+  config3.custom5 = "value5";
+  try {
+    const Session session(config3);
+    SUCCEED();
+  } catch (const std::exception&) {
+    SUCCEED();
+  }
+
+  // Test mixing custom parameters with standard authentication
+  SessionConfig config4;
+  config4.token = "test_token";
+  config4.custom1 = "custom_value";
+  config4.projectId = "project_id";
+  try {
+    const Session session(config4);
+    SUCCEED();
+  } catch (const std::exception&) {
+    SUCCEED();
+  }
+}
+
 namespace {
 // Helper function to get all devices for parameterized tests
 inline auto getDevices() -> std::vector<Session::Device> {

@@ -199,6 +199,16 @@ struct SessionConfig {
   std::optional<std::string> password;
   /// Project ID for session
   std::optional<std::string> projectId;
+  /// Custom configuration parameter 1
+  std::optional<std::string> custom1;
+  /// Custom configuration parameter 2
+  std::optional<std::string> custom2;
+  /// Custom configuration parameter 3
+  std::optional<std::string> custom3;
+  /// Custom configuration parameter 4
+  std::optional<std::string> custom4;
+  /// Custom configuration parameter 5
+  std::optional<std::string> custom5;
 };
 
 /**

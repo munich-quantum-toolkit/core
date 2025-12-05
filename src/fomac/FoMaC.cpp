@@ -868,6 +868,41 @@ Session::Session(const SessionConfig& config) {
                                             config.projectId->c_str()),
                  "Setting session parameter " + toString(qdmiParam));
   }
+  if (config.custom1) {
+    const auto qdmiParam = QDMI_SESSION_PARAMETER_CUSTOM1;
+    throwIfError(QDMI_session_set_parameter(session_, qdmiParam,
+                                            config.custom1->size() + 1,
+                                            config.custom1->c_str()),
+                 "Setting session parameter " + toString(qdmiParam));
+  }
+  if (config.custom2) {
+    const auto qdmiParam = QDMI_SESSION_PARAMETER_CUSTOM2;
+    throwIfError(QDMI_session_set_parameter(session_, qdmiParam,
+                                            config.custom2->size() + 1,
+                                            config.custom2->c_str()),
+                 "Setting session parameter " + toString(qdmiParam));
+  }
+  if (config.custom3) {
+    const auto qdmiParam = QDMI_SESSION_PARAMETER_CUSTOM3;
+    throwIfError(QDMI_session_set_parameter(session_, qdmiParam,
+                                            config.custom3->size() + 1,
+                                            config.custom3->c_str()),
+                 "Setting session parameter " + toString(qdmiParam));
+  }
+  if (config.custom4) {
+    const auto qdmiParam = QDMI_SESSION_PARAMETER_CUSTOM4;
+    throwIfError(QDMI_session_set_parameter(session_, qdmiParam,
+                                            config.custom4->size() + 1,
+                                            config.custom4->c_str()),
+                 "Setting session parameter " + toString(qdmiParam));
+  }
+  if (config.custom5) {
+    const auto qdmiParam = QDMI_SESSION_PARAMETER_CUSTOM5;
+    throwIfError(QDMI_session_set_parameter(session_, qdmiParam,
+                                            config.custom5->size() + 1,
+                                            config.custom5->c_str()),
+                 "Setting session parameter " + toString(qdmiParam));
+  }
 
   // Initialize the session
   throwIfError(QDMI_session_init(session_), "Initializing session");

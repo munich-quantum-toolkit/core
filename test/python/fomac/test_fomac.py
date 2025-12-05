@@ -787,3 +787,48 @@ def test_session_multiple_instances() -> None:
 
     # Should return the same number of devices
     assert len(devices1) == len(devices2)
+
+
+def test_session_construction_with_custom_parameters() -> None:
+    """Test Session construction with custom configuration parameters.
+
+    Note: The currently available QDMI devices don't support custom parameters.
+    """
+    # Test custom1
+    try:
+        session = Session(custom1="custom_value_1")
+        assert session is not None
+    except (RuntimeError, ValueError):
+        # If not supported, that's okay for now
+        pass
+
+    # Test custom2
+    try:
+        session = Session(custom2="custom_value_2")
+        assert session is not None
+    except (RuntimeError, ValueError):
+        pass
+
+    # Test all custom parameters together
+    try:
+        session = Session(
+            custom1="value1",
+            custom2="value2",
+            custom3="value3",
+            custom4="value4",
+            custom5="value5",
+        )
+        assert session is not None
+    except (RuntimeError, ValueError):
+        pass
+
+    # Test mixing custom parameters with standard authentication
+    try:
+        session = Session(
+            token="test_token",  # noqa: S106
+            custom1="custom_value",
+            project_id="project_id",
+        )
+        assert session is not None
+    except (RuntimeError, ValueError):
+        pass

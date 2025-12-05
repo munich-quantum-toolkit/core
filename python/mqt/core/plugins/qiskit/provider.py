@@ -58,6 +58,11 @@ class QDMIProvider:
         username: str | None = None,
         password: str | None = None,
         project_id: str | None = None,
+        custom1: str | None = None,
+        custom2: str | None = None,
+        custom3: str | None = None,
+        custom4: str | None = None,
+        custom5: str | None = None,
     ) -> None:
         """Initialize the QDMI provider.
 
@@ -68,6 +73,11 @@ class QDMIProvider:
             username: Username for authentication.
             password: Password for authentication.
             project_id: Project ID for the session.
+            custom1: Custom configuration parameter 1.
+            custom2: Custom configuration parameter 2.
+            custom3: Custom configuration parameter 3.
+            custom4: Custom configuration parameter 4.
+            custom5: Custom configuration parameter 5.
         """
         session = fomac.Session(
             token=token,
@@ -76,6 +86,11 @@ class QDMIProvider:
             username=username,
             password=password,
             project_id=project_id,
+            custom1=custom1,
+            custom2=custom2,
+            custom3=custom3,
+            custom4=custom4,
+            custom5=custom5,
         )
         self._backends = [
             QDMIBackend(device=d, provider=self) for d in session.get_devices() if QDMIBackend.is_convertible(d)

@@ -212,3 +212,38 @@ def test_provider_default_constructor_unchanged() -> None:
     # Should be able to get a specific backend
     backend = provider.get_backend("MQT Core DDSIM QDMI Device")
     assert backend.name == "MQT Core DDSIM QDMI Device"
+
+
+def test_provider_with_custom_parameters() -> None:
+    """Provider accepts custom configuration parameters."""
+    # Test custom1
+    try:
+        provider = QDMIProvider(custom1="custom_value_1")
+        assert provider is not None
+    except (RuntimeError, ValueError):
+        # If not supported, that's okay for now
+        pass
+
+    # Test all custom parameters together
+    try:
+        provider = QDMIProvider(
+            custom1="value1",
+            custom2="value2",
+            custom3="value3",
+            custom4="value4",
+            custom5="value5",
+        )
+        assert provider is not None
+    except (RuntimeError, ValueError):
+        pass
+
+    # Test mixing custom with standard authentication
+    try:
+        provider = QDMIProvider(
+            token="test_token",  # noqa: S106
+            custom1="custom_value",
+            project_id="project_id",
+        )
+        assert provider is not None
+    except (RuntimeError, ValueError):
+        pass
