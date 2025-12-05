@@ -10,8 +10,11 @@
 
 #include "mlir/Dialect/MQTOpt/Transforms/Transpilation/Architecture.h"
 
+#include "mlir/Dialect/MQTOpt/IR/MQTOptDialect.h"
 #include "mlir/Dialect/MQTOpt/Transforms/Transpilation/Common.h"
+#include "mlir/Dialect/MQTOpt/Transforms/Transpilation/Layout.h"
 
+#include <cassert>
 #include <cstddef>
 #include <cstdint>
 #include <llvm/ADT/SmallVector.h>
@@ -19,28 +22,35 @@
 #include <memory>
 #include <stdexcept>
 #include <string>
+#include <utility>
 
 namespace mqt::ir::opt {
-[[nodiscard]] llvm::SmallVector<std::size_t>
-Architecture::shortestPathBetween(QubitIndex u, QubitIndex v) const {
-  llvm::SmallVector<std::size_t> path;
+
+llvm::SmallVector<std::pair<uint32_t, uint32_t>>
+Architecture::shortestSWAPsBetween(uint32_t u, uint32_t v) const {
+  if (u == v) {
+    return {};
+  }
 
   if (prev_[u][v] == UINT64_MAX) {
     throw std::domain_error("No path between qubits " + std::to_string(u) +
                             " and " + std::to_string(v));
   }
 
-  path.push_back(v);
-  while (u != v) {
-    v = prev_[u][v];
-    path.push_back(v);
+  llvm::SmallVector<std::pair<uint32_t, uint32_t>> swaps;
+  uint32_t curr = v;
+  uint32_t last = v;
+
+  while (curr != u) {
+    curr = prev_[u][curr];
+    swaps.emplace_back(last, curr);
+    last = curr;
   }
 
-  return path;
+  return swaps;
 }
 
-[[nodiscard]] std::size_t Architecture::distanceBetween(QubitIndex u,
-                                                        QubitIndex v) const {
+std::size_t Architecture::distanceBetween(uint32_t u, uint32_t v) const {
   if (dist_[u][v] == UINT64_MAX) {
     throw std::domain_error("No path between qubits " + std::to_string(u) +
                             " and " + std::to_string(v));
@@ -80,9 +90,16 @@ void Architecture::collectNeighbours() {
   }
 }
 
-[[nodiscard]] llvm::SmallVector<QubitIndex, 4>
-Architecture::neighboursOf(QubitIndex u) const {
+llvm::SmallVector<uint32_t, 4> Architecture::neighboursOf(uint32_t u) const {
   return neighbours_[u];
+}
+
+bool Architecture::isExecutable(UnitaryInterface op,
+                                const Layout& layout) const {
+  assert(isTwoQubitGate(op));
+  const auto ins = getIns(op);
+  return areAdjacent(layout.lookupHardwareIndex(ins.first),
+                     layout.lookupHardwareIndex(ins.second));
 }
 
 std::unique_ptr<Architecture> getArchitecture(const llvm::StringRef name) {

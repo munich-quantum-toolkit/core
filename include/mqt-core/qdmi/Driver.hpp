@@ -140,6 +140,7 @@ public:
 // Call the above macro for all static libraries that we want to support.
 DECLARE_STATIC_LIBRARY(MQT_NA)
 DECLARE_STATIC_LIBRARY(MQT_DDSIM)
+DECLARE_STATIC_LIBRARY(MQT_SC)
 
 /**
  * @brief The status of a session.
@@ -407,11 +408,22 @@ public:
 #ifndef _WIN32
   /**
    * @brief Adds a dynamic device library to the driver.
-   * @param libName is the path to the dynamic library to load.
-   * @param prefix is the prefix used for the device interface functions.
-   * @returns `true` if the library was successfully loaded, `false`
-   * if it was already loaded.
+   * @details This function attempts to load a dynamic library containing
+   * QDMI device interface functions. If the library is already loaded, the
+   * function returns `false`. Otherwise, it loads the library, initializes
+   * the device, and adds it to the list of devices.
+   *
+   * @param libName The path to the dynamic library to load.
+   * @param prefix The prefix used for the device interface functions in the
+   * library.
+   * @returns `true` if the library was successfully loaded, `false` if it was
+   * already loaded.
+   *
    * @note This function is only available on non-Windows platforms.
+   *
+   * @throws std::runtime_error If the library fails to load or the device
+   * cannot be initialized.
+   * @throws std::bad_alloc If memory allocation fails during the process.
    */
   auto addDynamicDeviceLibrary(const std::string& libName,
                                const std::string& prefix) -> bool;

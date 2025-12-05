@@ -27,7 +27,7 @@
 #include <variant>
 #include <vector>
 
-namespace qdmi {
+namespace qdmi::na {
 class Device final {
   /// @brief Provides access to the device name.
   std::string name_;
@@ -118,7 +118,7 @@ public:
   auto queryProperty(QDMI_Device_Property prop, size_t size, void* value,
                      size_t* sizeRet) -> int;
 };
-} // namespace qdmi
+} // namespace qdmi::na
 
 /**
  * @brief Implementation of the MQT_NA_QDMI_Device_Session structure.
@@ -216,46 +216,46 @@ public:
    * @brief Sets a parameter for the job.
    * @see MQT_NA_QDMI_device_job_set_parameter
    */
-  static auto setParameter(QDMI_Device_Job_Parameter param, size_t size,
-                           const void* value) -> int;
+  auto setParameter(QDMI_Device_Job_Parameter param, size_t size,
+                    const void* value) -> int;
 
   /**
    * @brief Queries a property of the job.
    * @see MQT_NA_QDMI_device_job_query_property
    */
-  static auto queryProperty(QDMI_Device_Job_Property prop, size_t size,
-                            void* value, size_t* sizeRet) -> int;
+  auto queryProperty(QDMI_Device_Job_Property prop, size_t size, void* value,
+                     size_t* sizeRet) -> int;
 
   /**
    * @brief Submits the job to the device.
    * @see MQT_NA_QDMI_device_job_submit
    */
-  static auto submit() -> int;
+  auto submit() -> int;
 
   /**
    * @brief Cancels the job.
    * @see MQT_NA_QDMI_device_job_cancel
    */
-  static auto cancel() -> int;
+  auto cancel() -> int;
 
   /**
    * @brief Checks the status of the job.
    * @see MQT_NA_QDMI_device_job_check
    */
-  static auto check(QDMI_Job_Status* status) -> int;
+  auto check(QDMI_Job_Status* status) -> int;
 
   /**
    * @brief Waits for the job to complete but at most for the specified timeout.
    * @see MQT_NA_QDMI_device_job_wait
    */
-  static auto wait(size_t timeout) -> int;
+  auto wait(size_t timeout) -> int;
 
   /**
    * @brief Gets the results of the job.
    * @see MQT_NA_QDMI_device_job_get_results
    */
-  static auto getResults(QDMI_Job_Result result, size_t size, void* data,
-                         [[maybe_unused]] size_t* sizeRet) -> int;
+  auto getResults(QDMI_Job_Result result, size_t size, void* data,
+                  [[maybe_unused]] size_t* sizeRet) -> int;
 };
 
 /**
