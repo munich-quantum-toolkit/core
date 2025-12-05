@@ -17,10 +17,10 @@ add_mlir_library(
   MLIRFluxDialect)
 
 # collect header files
-file(GLOB_RECURSE TRANSLATION_HEADERS_SOURCE
+file(GLOB_RECURSE BUILDER_HEADERS_SOURCE
      ${MQT_MLIR_SOURCE_INCLUDE_DIR}/mlir/Dialect/Flux/Builder/*.h)
 
 # add public headers using file sets
 target_sources(
   MLIRFluxProgramBuilder PUBLIC FILE_SET HEADERS BASE_DIRS ${MQT_MLIR_SOURCE_INCLUDE_DIR} FILES
-                                ${TRANSLATION_HEADERS_SOURCE})
+                                ${BUILDER_HEADERS_SOURCE})
