@@ -814,95 +814,44 @@ Session::Session(const SessionConfig& config) {
   const auto result = QDMI_session_alloc(&session_);
   throwIfError(result, "Allocating QDMI session");
 
-  // Set and validate parameters from config
-  if (config.token) {
-    const auto qdmiParam = QDMI_SESSION_PARAMETER_TOKEN;
-    throwIfError(QDMI_session_set_parameter(session_, qdmiParam,
-                                            config.token->size() + 1,
-                                            config.token->c_str()),
-                 "Setting session parameter " + toString(qdmiParam));
-  }
+  // Helper to set session parameters
+  const auto setParameter = [this](const std::optional<std::string>& value,
+                                   QDMI_Session_Parameter param) {
+    if (value) {
+      throwIfError(QDMI_session_set_parameter(
+                       session_, param, value->size() + 1, value->c_str()),
+                   "Setting session parameter " + toString(param));
+    }
+  };
+  // Validate file existence for authFile
   if (config.authFile) {
-    // Validate file existence
     if (!std::filesystem::exists(*config.authFile)) {
       throw std::runtime_error("Authentication file does not exist: " +
                                *config.authFile);
     }
-    const auto qdmiParam = QDMI_SESSION_PARAMETER_AUTHFILE;
-    throwIfError(QDMI_session_set_parameter(session_, qdmiParam,
-                                            config.authFile->size() + 1,
-                                            config.authFile->c_str()),
-                 "Setting session parameter " + toString(qdmiParam));
   }
+  // Validate URL format for authUrl
   if (config.authUrl) {
-    // Validate URL format according to: https://uibakery.io/regex-library/url
+    // Adapted from: https://uibakery.io/regex-library/url
     static const std::regex URL_PATTERN(
         R"(^https?://(?:www\.)?[-a-zA-Z0-9@:%._\+~#=]{1,256}\.[a-zA-Z0-9()]{1,6}\b(?:[-a-zA-Z0-9()@:%_\+.~#?&/=]*)$)");
     if (!std::regex_match(*config.authUrl, URL_PATTERN)) {
       throw std::runtime_error("Invalid URL format: " + *config.authUrl);
     }
-    const auto qdmiParam = QDMI_SESSION_PARAMETER_AUTHURL;
-    throwIfError(QDMI_session_set_parameter(session_, qdmiParam,
-                                            config.authUrl->size() + 1,
-                                            config.authUrl->c_str()),
-                 "Setting session parameter " + toString(qdmiParam));
   }
-  if (config.username) {
-    const auto qdmiParam = QDMI_SESSION_PARAMETER_USERNAME;
-    throwIfError(QDMI_session_set_parameter(session_, qdmiParam,
-                                            config.username->size() + 1,
-                                            config.username->c_str()),
-                 "Setting session parameter " + toString(qdmiParam));
-  }
-  if (config.password) {
-    const auto qdmiParam = QDMI_SESSION_PARAMETER_PASSWORD;
-    throwIfError(QDMI_session_set_parameter(session_, qdmiParam,
-                                            config.password->size() + 1,
-                                            config.password->c_str()),
-                 "Setting session parameter " + toString(qdmiParam));
-  }
-  if (config.projectId) {
-    const auto qdmiParam = QDMI_SESSION_PARAMETER_PROJECTID;
-    throwIfError(QDMI_session_set_parameter(session_, qdmiParam,
-                                            config.projectId->size() + 1,
-                                            config.projectId->c_str()),
-                 "Setting session parameter " + toString(qdmiParam));
-  }
-  if (config.custom1) {
-    const auto qdmiParam = QDMI_SESSION_PARAMETER_CUSTOM1;
-    throwIfError(QDMI_session_set_parameter(session_, qdmiParam,
-                                            config.custom1->size() + 1,
-                                            config.custom1->c_str()),
-                 "Setting session parameter " + toString(qdmiParam));
-  }
-  if (config.custom2) {
-    const auto qdmiParam = QDMI_SESSION_PARAMETER_CUSTOM2;
-    throwIfError(QDMI_session_set_parameter(session_, qdmiParam,
-                                            config.custom2->size() + 1,
-                                            config.custom2->c_str()),
-                 "Setting session parameter " + toString(qdmiParam));
-  }
-  if (config.custom3) {
-    const auto qdmiParam = QDMI_SESSION_PARAMETER_CUSTOM3;
-    throwIfError(QDMI_session_set_parameter(session_, qdmiParam,
-                                            config.custom3->size() + 1,
-                                            config.custom3->c_str()),
-                 "Setting session parameter " + toString(qdmiParam));
-  }
-  if (config.custom4) {
-    const auto qdmiParam = QDMI_SESSION_PARAMETER_CUSTOM4;
-    throwIfError(QDMI_session_set_parameter(session_, qdmiParam,
-                                            config.custom4->size() + 1,
-                                            config.custom4->c_str()),
-                 "Setting session parameter " + toString(qdmiParam));
-  }
-  if (config.custom5) {
-    const auto qdmiParam = QDMI_SESSION_PARAMETER_CUSTOM5;
-    throwIfError(QDMI_session_set_parameter(session_, qdmiParam,
-                                            config.custom5->size() + 1,
-                                            config.custom5->c_str()),
-                 "Setting session parameter " + toString(qdmiParam));
-  }
+
+  // Set session parameters
+  setParameter(config.token, QDMI_SESSION_PARAMETER_TOKEN);
+  setParameter(config.authFile, QDMI_SESSION_PARAMETER_AUTHFILE);
+  setParameter(config.authUrl, QDMI_SESSION_PARAMETER_AUTHURL);
+  setParameter(config.username, QDMI_SESSION_PARAMETER_USERNAME);
+  setParameter(config.password, QDMI_SESSION_PARAMETER_PASSWORD);
+  setParameter(config.projectId, QDMI_SESSION_PARAMETER_PROJECTID);
+  setParameter(config.custom1, QDMI_SESSION_PARAMETER_CUSTOM1);
+  setParameter(config.custom2, QDMI_SESSION_PARAMETER_CUSTOM2);
+  setParameter(config.custom3, QDMI_SESSION_PARAMETER_CUSTOM3);
+  setParameter(config.custom4, QDMI_SESSION_PARAMETER_CUSTOM4);
+  setParameter(config.custom5, QDMI_SESSION_PARAMETER_CUSTOM5);
 
   // Initialize the session
   throwIfError(QDMI_session_init(session_), "Initializing session");
