@@ -814,47 +814,60 @@ Session::Session(const SessionConfig& config) {
   const auto result = QDMI_session_alloc(&session_);
   throwIfError(result, "Allocating QDMI session");
 
+  // Helper to ensure session is freed if an exception is thrown during setup
+  const auto cleanup = [this]() -> void {
+    if (session_ != nullptr) {
+      QDMI_session_free(session_);
+      session_ = nullptr;
+    }
+  };
   // Helper to set session parameters
   const auto setParameter = [this](const std::optional<std::string>& value,
-                                   QDMI_Session_Parameter param) {
+                                   QDMI_Session_Parameter param) -> void {
     if (value) {
       throwIfError(QDMI_session_set_parameter(
                        session_, param, value->size() + 1, value->c_str()),
                    "Setting session parameter " + toString(param));
     }
   };
-  // Validate file existence for authFile
-  if (config.authFile) {
-    if (!std::filesystem::exists(*config.authFile)) {
-      throw std::runtime_error("Authentication file does not exist: " +
-                               *config.authFile);
-    }
-  }
-  // Validate URL format for authUrl
-  if (config.authUrl) {
-    // Adapted from: https://uibakery.io/regex-library/url
-    static const std::regex URL_PATTERN(
-        R"(^https?://(?:www\.)?[-a-zA-Z0-9@:%._\+~#=]{1,256}\.[a-zA-Z0-9()]{1,6}\b(?:[-a-zA-Z0-9()@:%_\+.~#?&/=]*)$)");
-    if (!std::regex_match(*config.authUrl, URL_PATTERN)) {
-      throw std::runtime_error("Invalid URL format: " + *config.authUrl);
-    }
-  }
 
-  // Set session parameters
-  setParameter(config.token, QDMI_SESSION_PARAMETER_TOKEN);
-  setParameter(config.authFile, QDMI_SESSION_PARAMETER_AUTHFILE);
-  setParameter(config.authUrl, QDMI_SESSION_PARAMETER_AUTHURL);
-  setParameter(config.username, QDMI_SESSION_PARAMETER_USERNAME);
-  setParameter(config.password, QDMI_SESSION_PARAMETER_PASSWORD);
-  setParameter(config.projectId, QDMI_SESSION_PARAMETER_PROJECTID);
-  setParameter(config.custom1, QDMI_SESSION_PARAMETER_CUSTOM1);
-  setParameter(config.custom2, QDMI_SESSION_PARAMETER_CUSTOM2);
-  setParameter(config.custom3, QDMI_SESSION_PARAMETER_CUSTOM3);
-  setParameter(config.custom4, QDMI_SESSION_PARAMETER_CUSTOM4);
-  setParameter(config.custom5, QDMI_SESSION_PARAMETER_CUSTOM5);
+  try {
+    // Validate file existence for authFile
+    if (config.authFile) {
+      if (!std::filesystem::exists(*config.authFile)) {
+        throw std::runtime_error("Authentication file does not exist: " +
+                                 *config.authFile);
+      }
+    }
+    // Validate URL format for authUrl
+    if (config.authUrl) {
+      // Adapted from: https://uibakery.io/regex-library/url
+      static const std::regex URL_PATTERN(
+          R"(^https?://(?:www\.)?[-a-zA-Z0-9@:%._\+~#=]{1,256}\.[a-zA-Z0-9()]{1,6}\b(?:[-a-zA-Z0-9()@:%_\+.~#?&/=]*)$)");
+      if (!std::regex_match(*config.authUrl, URL_PATTERN)) {
+        throw std::runtime_error("Invalid URL format: " + *config.authUrl);
+      }
+    }
 
-  // Initialize the session
-  throwIfError(QDMI_session_init(session_), "Initializing session");
+    // Set session parameters
+    setParameter(config.token, QDMI_SESSION_PARAMETER_TOKEN);
+    setParameter(config.authFile, QDMI_SESSION_PARAMETER_AUTHFILE);
+    setParameter(config.authUrl, QDMI_SESSION_PARAMETER_AUTHURL);
+    setParameter(config.username, QDMI_SESSION_PARAMETER_USERNAME);
+    setParameter(config.password, QDMI_SESSION_PARAMETER_PASSWORD);
+    setParameter(config.projectId, QDMI_SESSION_PARAMETER_PROJECTID);
+    setParameter(config.custom1, QDMI_SESSION_PARAMETER_CUSTOM1);
+    setParameter(config.custom2, QDMI_SESSION_PARAMETER_CUSTOM2);
+    setParameter(config.custom3, QDMI_SESSION_PARAMETER_CUSTOM3);
+    setParameter(config.custom4, QDMI_SESSION_PARAMETER_CUSTOM4);
+    setParameter(config.custom5, QDMI_SESSION_PARAMETER_CUSTOM5);
+
+    // Initialize the session
+    throwIfError(QDMI_session_init(session_), "Initializing session");
+  } catch (...) {
+    cleanup();
+    throw;
+  }
 }
 
 Session::~Session() {
