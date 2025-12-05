@@ -42,17 +42,17 @@ PYBIND11_MODULE(MQT_CORE_MODULE_NAME, m, py::mod_gil_not_used()) {
                   const std::optional<std::string>& custom4 = std::nullopt,
                   const std::optional<std::string>& custom5 =
                       std::nullopt) -> fomac::Session {
-        fomac::SessionConfig config{.token = token,
-                                    .authFile = authFile,
-                                    .authUrl = authUrl,
-                                    .username = username,
-                                    .password = password,
-                                    .projectId = projectId,
-                                    .custom1 = custom1,
-                                    .custom2 = custom2,
-                                    .custom3 = custom3,
-                                    .custom4 = custom4,
-                                    .custom5 = custom5};
+        const fomac::SessionConfig config{.token = token,
+                                          .authFile = authFile,
+                                          .authUrl = authUrl,
+                                          .username = username,
+                                          .password = password,
+                                          .projectId = projectId,
+                                          .custom1 = custom1,
+                                          .custom2 = custom2,
+                                          .custom3 = custom3,
+                                          .custom4 = custom4,
+                                          .custom5 = custom5};
         return fomac::Session{config};
       }),
       "token"_a = std::nullopt, "auth_file"_a = std::nullopt,
