@@ -48,6 +48,7 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 
 ### Fixed
 
+- 🔧 Install all available QDMI device targets in Python package builds ([#1403]) ([**@burgholzer**])
 - 🐛 Fix operation validation in Qiskit backend to handle device-specific gate naming conventions ([#1384]) ([**@marcelwa**])
 - 🐛 Fix conditional branch handling when importing MLIR from `QuantumComputation` ([#1378]) ([**@lirem101**])
 - 🐛 Fix custom QDMI property and parameter handling in SC and NA devices ([#1355]) ([**@burgholzer**])
