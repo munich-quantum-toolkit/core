@@ -38,6 +38,18 @@ struct MergeSubsequentP final : OpRewritePattern<POp> {
   }
 };
 
+/**
+ * @brief Remove trivial P operations.
+ */
+struct RemoveTrivialP final : OpRewritePattern<POp> {
+  using OpRewritePattern::OpRewritePattern;
+
+  LogicalResult matchAndRewrite(POp op,
+                                PatternRewriter& rewriter) const override {
+    return removeTrivialOneTargetOneParameter(op, rewriter);
+  }
+};
+
 } // namespace
 
 void POp::build(OpBuilder& odsBuilder, OperationState& odsState,
@@ -54,5 +66,5 @@ void POp::build(OpBuilder& odsBuilder, OperationState& odsState,
 
 void POp::getCanonicalizationPatterns(RewritePatternSet& results,
                                       MLIRContext* context) {
-  results.add<MergeSubsequentP>(context);
+  results.add<MergeSubsequentP, RemoveTrivialP>(context);
 }
