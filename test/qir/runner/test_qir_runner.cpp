@@ -31,7 +31,7 @@ INSTANTIATE_TEST_SUITE_P(
 TEST_P(QIRRunnerTest, QIRFile) {
   const auto& file = GetParam();
   std::ostringstream command;
-  command << "\"" << EXECUTABLE_PATH << "\" \"" << file << "\"";
+  command << EXECUTABLE_PATH << " " << file;
   const auto result = std::system(command.str().c_str());
   EXPECT_EQ(result, 0);
 }
