@@ -6,8 +6,16 @@
 #
 # Licensed under the MIT License
 
-add_mlir_dialect_library(MLIRMQTRef MQTRefOps.cpp DEPENDS MLIRMQTRefOpsIncGen
-                         MLIRMQTRefInterfacesIncGen)
+add_mlir_dialect_library(
+  MLIRMQTRef
+  ${MQT_CORE_MLIR_LIBRARY_TYPE}
+  MQTRefOps.cpp
+  DEPENDS
+  MLIRMQTRefOpsIncGen
+  MLIRMQTRefInterfacesIncGen
+  LINK_LIBS
+  MLIRIR
+  MLIRInferTypeOpInterface)
 
 # collect header files
 file(GLOB_RECURSE IR_HEADERS_SOURCE "${MQT_MLIR_SOURCE_INCLUDE_DIR}/mlir/Dialect/MQTRef/IR/*.h")

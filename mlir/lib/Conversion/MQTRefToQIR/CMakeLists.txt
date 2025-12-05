@@ -8,4 +8,15 @@
 
 file(GLOB CONVERSION_SOURCES *.cpp)
 
-add_mlir_library(MQTRefToQIR ${CONVERSION_SOURCES} DEPENDS MQTRefToQIRIncGen)
+add_mlir_library(
+  MQTRefToQIR
+  ${CONVERSION_SOURCES}
+  DEPENDS
+  MQTRefToQIRIncGen
+  LINK_LIBS
+  MLIRMQTRef
+  MLIRMemRefDialect
+  MLIRTransforms
+  MLIRLLVMDialect
+  MLIRFuncToLLVM
+  MLIRReconcileUnrealizedCasts)
