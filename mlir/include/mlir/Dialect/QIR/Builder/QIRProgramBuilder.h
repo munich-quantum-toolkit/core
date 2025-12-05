@@ -795,11 +795,11 @@ public:
    */
   OwningOpRef<ModuleOp> finalize();
 
+private:
   OpBuilder builder;
   ModuleOp module;
   Location loc;
 
-private:
   /// Track allocated classical Registers
   SmallVector<ClassicalRegister> allocatedClassicalRegisters;
 
