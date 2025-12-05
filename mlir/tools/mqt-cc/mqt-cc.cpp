@@ -21,7 +21,6 @@
 #include <mlir/Dialect/ControlFlow/IR/ControlFlow.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/LLVMIR/LLVMDialect.h>
-#include <mlir/Dialect/MemRef/IR/MemRef.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
 #include <mlir/IR/AsmState.h>
 #include <mlir/IR/MLIRContext.h>
@@ -112,7 +111,6 @@ int main(int argc, char** argv) {
   registry.insert<arith::ArithDialect>();
   registry.insert<cf::ControlFlowDialect>();
   registry.insert<func::FuncDialect>();
-  registry.insert<memref::MemRefDialect>();
   registry.insert<scf::SCFDialect>();
   registry.insert<LLVM::LLVMDialect>();
 

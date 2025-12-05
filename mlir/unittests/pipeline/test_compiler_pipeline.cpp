@@ -34,7 +34,6 @@
 #include <mlir/Dialect/ControlFlow/IR/ControlFlow.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/LLVMIR/LLVMDialect.h>
-#include <mlir/Dialect/MemRef/IR/MemRef.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
 #include <mlir/IR/Block.h>
 #include <mlir/IR/BuiltinOps.h>
@@ -544,10 +543,9 @@ protected:
   void SetUp() override {
     // Register all dialects needed for the full compilation pipeline
     DialectRegistry registry;
-    registry
-        .insert<quartz::QuartzDialect, flux::FluxDialect, arith::ArithDialect,
-                cf::ControlFlowDialect, func::FuncDialect,
-                memref::MemRefDialect, scf::SCFDialect, LLVM::LLVMDialect>();
+    registry.insert<quartz::QuartzDialect, flux::FluxDialect,
+                    arith::ArithDialect, cf::ControlFlowDialect,
+                    func::FuncDialect, scf::SCFDialect, LLVM::LLVMDialect>();
 
     context = std::make_unique<MLIRContext>();
     context->appendDialectRegistry(registry);

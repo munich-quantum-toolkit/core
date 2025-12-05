@@ -14,7 +14,6 @@ add_mlir_library(
   LINK_LIBS
   MLIRArithDialect
   MLIRFuncDialect
-  MLIRMemRefDialect
   MLIRSCFDialect
   MLIRQuartzDialect
   MQT::CoreIR)

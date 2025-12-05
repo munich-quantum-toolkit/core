@@ -44,7 +44,6 @@ def QuartzToQIR : Pass<"quartz-to-qir"> {
 
   // Define dependent dialects
   let dependentDialects = [
-     "mlir::memref::MemRefDialect",
      "mlir::LLVM::LLVMDialect",
      "mlir::QuartzDialect",
   ];

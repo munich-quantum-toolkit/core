@@ -13,7 +13,6 @@ add_mlir_library(
   PUBLIC
   MLIRArithDialect
   MLIRFuncDialect
-  MLIRMemRefDialect
   MLIRSCFDialect
   MLIRFluxDialect)
 
