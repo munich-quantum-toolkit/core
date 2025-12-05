@@ -26,7 +26,7 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 ### Changed
 
 - ⚡ Improve uv build caching by removing unconditional `reinstall-package` and configuring dedicated `cache-keys` ([#1412]) ([**@burgholzer**])
-- 👨‍💻📦 Build `spdlog` as a shared library on project installs ([#1411]) ([**@burgholzer**])
+- 👨‍💻📦 Build `spdlog` and QDMI generators as a shared libraries on project installs ([#1411], [#1403]) ([**@burgholzer**])
 - ♻️🏁 Remove Windows-specific restrictions for dynamic QDMI device library handling ([#1406]) ([**@burgholzer**])
 - ♻️ Migrate Python bindings from `pybind11` to `nanobind` ([#1383]) ([**@denialhaag**], [**@burgholzer**])
 - 📦️ Provide Stable ABI wheels for Python 3.12+ ([#1383]) ([**@burgholzer**], [**@denialhaag**])
@@ -293,6 +293,7 @@ _📚 Refer to the [GitHub Release Notes](https://github.com/munich-quantum-tool
 [#1412]: https://github.com/munich-quantum-toolkit/core/pull/1412
 [#1411]: https://github.com/munich-quantum-toolkit/core/pull/1411
 [#1406]: https://github.com/munich-quantum-toolkit/core/pull/1406
+[#1403]: https://github.com/munich-quantum-toolkit/core/pull/1403
 [#1402]: https://github.com/munich-quantum-toolkit/core/pull/1402
 [#1385]: https://github.com/munich-quantum-toolkit/core/pull/1385
 [#1384]: https://github.com/munich-quantum-toolkit/core/pull/1384
