@@ -29,41 +29,38 @@ using namespace py::literals;
 PYBIND11_MODULE(MQT_CORE_MODULE_NAME, m, py::mod_gil_not_used()) {
   auto session = py::class_<fomac::Session>(m, "Session");
 
-  const fomac::SessionConfig defaultConfig;
   session.def(
-      py::init([](const std::optional<std::string>& token,
-                  const std::optional<std::string>& authFile,
-                  const std::optional<std::string>& authUrl,
-                  const std::optional<std::string>& username,
-                  const std::optional<std::string>& password,
-                  const std::optional<std::string>& projectId,
-                  const std::optional<std::string>& custom1,
-                  const std::optional<std::string>& custom2,
-                  const std::optional<std::string>& custom3,
-                  const std::optional<std::string>& custom4,
-                  const std::optional<std::string>& custom5) -> fomac::Session {
-        fomac::SessionConfig config;
-        config.token = token;
-        config.authFile = authFile;
-        config.authUrl = authUrl;
-        config.username = username;
-        config.password = password;
-        config.projectId = projectId;
-        config.custom1 = custom1;
-        config.custom2 = custom2;
-        config.custom3 = custom3;
-        config.custom4 = custom4;
-        config.custom5 = custom5;
+      py::init([](const std::optional<std::string>& token = std::nullopt,
+                  const std::optional<std::string>& authFile = std::nullopt,
+                  const std::optional<std::string>& authUrl = std::nullopt,
+                  const std::optional<std::string>& username = std::nullopt,
+                  const std::optional<std::string>& password = std::nullopt,
+                  const std::optional<std::string>& projectId = std::nullopt,
+                  const std::optional<std::string>& custom1 = std::nullopt,
+                  const std::optional<std::string>& custom2 = std::nullopt,
+                  const std::optional<std::string>& custom3 = std::nullopt,
+                  const std::optional<std::string>& custom4 = std::nullopt,
+                  const std::optional<std::string>& custom5 =
+                      std::nullopt) -> fomac::Session {
+        fomac::SessionConfig config{.token = token,
+                                    .authFile = authFile,
+                                    .authUrl = authUrl,
+                                    .username = username,
+                                    .password = password,
+                                    .projectId = projectId,
+                                    .custom1 = custom1,
+                                    .custom2 = custom2,
+                                    .custom3 = custom3,
+                                    .custom4 = custom4,
+                                    .custom5 = custom5};
         return fomac::Session{config};
       }),
-      "token"_a = defaultConfig.token, "auth_file"_a = defaultConfig.authFile,
-      "auth_url"_a = defaultConfig.authUrl,
-      "username"_a = defaultConfig.username,
-      "password"_a = defaultConfig.password,
-      "project_id"_a = defaultConfig.projectId,
-      "custom1"_a = defaultConfig.custom1, "custom2"_a = defaultConfig.custom2,
-      "custom3"_a = defaultConfig.custom3, "custom4"_a = defaultConfig.custom4,
-      "custom5"_a = defaultConfig.custom5);
+      "token"_a = std::nullopt, "auth_file"_a = std::nullopt,
+      "auth_url"_a = std::nullopt, "username"_a = std::nullopt,
+      "password"_a = std::nullopt, "project_id"_a = std::nullopt,
+      "custom1"_a = std::nullopt, "custom2"_a = std::nullopt,
+      "custom3"_a = std::nullopt, "custom4"_a = std::nullopt,
+      "custom5"_a = std::nullopt);
 
   session.def("get_devices", &fomac::Session::getDevices);
 
