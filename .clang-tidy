@@ -74,4 +74,4 @@ CheckOptions:
   - key: readability-identifier-naming.VariableCase
     value: camelBack
   - key: misc-include-cleaner.IgnoreHeaders
-    value: pybind11/detail/.*
+    value: "pybind11/detail/.*;Eigen/.*;unsupported/Eigen/.*"

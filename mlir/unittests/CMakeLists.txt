@@ -7,4 +7,5 @@
 # Licensed under the MIT License
 
 add_subdirectory(translation)
+add_subdirectory(decomposition)
 add_subdirectory(dialect)
