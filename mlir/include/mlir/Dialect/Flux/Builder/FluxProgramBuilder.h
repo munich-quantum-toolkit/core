@@ -154,7 +154,7 @@ public:
      * @return A Bit structure representing the specified bit
      */
     Bit operator[](const int64_t index) const {
-      assert(index < size);
+      assert(index < size && "Bit index out of bounds");
       return {
           .registerName = name, .registerSize = size, .registerIndex = index};
     }
