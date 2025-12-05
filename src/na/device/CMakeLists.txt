@@ -13,11 +13,7 @@ set(TARGET_NAME ${MQT_CORE_TARGET_NAME}-qdmi-na-device-gen)
 if(NOT TARGET ${TARGET_NAME})
 
   # Add library for device generation
-  #
-  # Note: We use a static library here to avoid issues with RPATH and finding the executable during
-  # the build process in Python builds
-  add_library(${TARGET_NAME} STATIC)
-  add_library(MQT::CoreQDMINaDeviceGen ALIAS ${TARGET_NAME})
+  add_mqt_core_library(${TARGET_NAME} ALIAS_NAME QDMINaDeviceGen)
 
   # add sources to target
   target_sources(${TARGET_NAME} PRIVATE Generator.cpp)
@@ -30,23 +26,16 @@ if(NOT TARGET ${TARGET_NAME})
   target_link_libraries(
     ${TARGET_NAME}
     PUBLIC nlohmann_json::nlohmann_json
-    PRIVATE spdlog::spdlog MQT::ProjectOptions MQT::ProjectWarnings)
-
-  # set versioning information
-  set_target_properties(
-    ${TARGET_NAME}
-    PROPERTIES VERSION ${PROJECT_VERSION}
-               SOVERSION ${PROJECT_VERSION_MAJOR}.${PROJECT_VERSION_MINOR}
-               EXPORT_NAME CoreNaDeviceGen)
-
-  # set c++ standard
-  target_compile_features(${TARGET_NAME} PRIVATE cxx_std_20)
+    PRIVATE spdlog::spdlog)
 
   # add to list of MQT core targets
   list(APPEND MQT_CORE_TARGETS ${TARGET_NAME})
 
-  # Make version available
-  target_compile_definitions(${TARGET_NAME} PRIVATE MQT_CORE_VERSION="${MQT_CORE_VERSION}")
+  # place the generated library in a predictable location where the executable can find it
+  set_target_properties(
+    ${TARGET_NAME}
+    PROPERTIES LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_LIBDIR}"
+               ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_LIBDIR}")
 endif()
 
 # Set target name
