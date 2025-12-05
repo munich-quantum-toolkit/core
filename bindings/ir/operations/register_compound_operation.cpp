@@ -66,7 +66,7 @@ void registerCompoundOperation(const py::module& m) {
             i = wrap(i, op.size());
             return op.at(static_cast<SizeType>(i)).get();
           },
-          py::return_value_policy::reference_internal, "i"_a)
+          py::return_value_policy::reference_internal, "index"_a)
       .def(
           "__getitem__",
           [](const qc::CompoundOperation& op, const py::slice& slice) {
@@ -84,7 +84,7 @@ void registerCompoundOperation(const py::module& m) {
             }
             return ops;
           },
-          py::return_value_policy::reference_internal, "slice"_a)
+          py::return_value_policy::reference_internal, "index"_a)
       .def(
           "__setitem__",
           [&wrap](qc::CompoundOperation& compOp, DiffType i,
@@ -92,7 +92,7 @@ void registerCompoundOperation(const py::module& m) {
             i = wrap(i, compOp.size());
             compOp[static_cast<SizeType>(i)] = op.clone();
           },
-          "idx"_a, "op"_a)
+          "index"_a, "value"_a)
       .def(
           "__setitem__",
           [](qc::CompoundOperation& compOp, const py::slice& slice,
@@ -114,14 +114,14 @@ void registerCompoundOperation(const py::module& m) {
               start += step;
             }
           },
-          "slice"_a, "ops"_a)
+          "index"_a, "value"_a)
       .def(
           "__delitem__",
           [&wrap](qc::CompoundOperation& compOp, DiffType i) {
             i = wrap(i, compOp.size());
             compOp.erase(compOp.begin() + i);
           },
-          "idx"_a)
+          "index"_a)
       .def(
           "__delitem__",
           [](qc::CompoundOperation& compOp, const py::slice& slice) {
@@ -139,13 +139,13 @@ void registerCompoundOperation(const py::module& m) {
                            static_cast<int64_t>(start + ((i - 1) * step)));
             }
           },
-          "slice"_a)
+          "index"_a)
       .def(
           "append",
           [](qc::CompoundOperation& compOp, const qc::Operation& op) {
             compOp.emplace_back(op.clone());
           },
-          "op"_a)
+          "value"_a)
       .def(
           "insert",
           [](qc::CompoundOperation& compOp, const std::size_t idx,
@@ -153,7 +153,7 @@ void registerCompoundOperation(const py::module& m) {
             compOp.insert(compOp.begin() + static_cast<int64_t>(idx),
                           op.clone());
           },
-          "idx"_a, "op"_a)
+          "index"_a, "value"_a)
       .def("empty", &qc::CompoundOperation::empty)
       .def("clear", &qc::CompoundOperation::clear)
       .def("__repr__", [](const qc::CompoundOperation& op) {
