@@ -73,7 +73,7 @@ void XXPlusYYOp::build(OpBuilder& odsBuilder, OperationState& odsState,
                        const Value qubit0In, const Value qubit1In,
                        const std::variant<double, Value>& theta,
                        const std::variant<double, Value>& beta) {
-  Value thetaOperand = nullptr;
+  Value thetaOperand;
   if (std::holds_alternative<double>(theta)) {
     thetaOperand = odsBuilder.create<arith::ConstantOp>(
         odsState.location, odsBuilder.getF64FloatAttr(std::get<double>(theta)));
@@ -81,7 +81,7 @@ void XXPlusYYOp::build(OpBuilder& odsBuilder, OperationState& odsState,
     thetaOperand = std::get<Value>(theta);
   }
 
-  Value betaOperand = nullptr;
+  Value betaOperand;
   if (std::holds_alternative<double>(beta)) {
     betaOperand = odsBuilder.create<arith::ConstantOp>(
         odsState.location, odsBuilder.getF64FloatAttr(std::get<double>(beta)));

@@ -25,8 +25,6 @@
 #include <mlir/Transforms/DialectConversion.h>
 #include <utility>
 
-namespace {}
-
 namespace mlir {
 using namespace flux;
 using namespace quartz;
@@ -907,7 +905,7 @@ struct FluxToQuartz final : impl::FluxToQuartzBase<FluxToQuartz> {
     if (failed(applyPartialConversion(module, target, std::move(patterns)))) {
       signalPassFailure();
     }
-  };
+  }
 };
 
 } // namespace mlir

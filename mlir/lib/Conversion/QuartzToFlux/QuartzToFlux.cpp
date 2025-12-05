@@ -1229,7 +1229,7 @@ struct QuartzToFlux final : impl::QuartzToFluxBase<QuartzToFlux> {
     if (failed(applyPartialConversion(module, target, std::move(patterns)))) {
       signalPassFailure();
     }
-  };
+  }
 };
 
 } // namespace mlir

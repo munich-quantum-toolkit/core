@@ -55,7 +55,7 @@ struct RemoveTrivialRZ final : OpRewritePattern<RZOp> {
 void RZOp::build(OpBuilder& odsBuilder, OperationState& odsState,
                  const Value qubitIn,
                  const std::variant<double, Value>& theta) {
-  Value thetaOperand = nullptr;
+  Value thetaOperand;
   if (std::holds_alternative<double>(theta)) {
     thetaOperand = odsBuilder.create<arith::ConstantOp>(
         odsState.location, odsBuilder.getF64FloatAttr(std::get<double>(theta)));

@@ -114,7 +114,7 @@ struct ReplaceU2WithRY final : OpRewritePattern<U2Op> {
 void U2Op::build(OpBuilder& odsBuilder, OperationState& odsState,
                  const Value qubitIn, const std::variant<double, Value>& phi,
                  const std::variant<double, Value>& lambda) {
-  Value phiOperand = nullptr;
+  Value phiOperand;
   if (std::holds_alternative<double>(phi)) {
     phiOperand = odsBuilder.create<arith::ConstantOp>(
         odsState.location, odsBuilder.getF64FloatAttr(std::get<double>(phi)));
@@ -122,7 +122,7 @@ void U2Op::build(OpBuilder& odsBuilder, OperationState& odsState,
     phiOperand = std::get<Value>(phi);
   }
 
-  Value lambdaOperand = nullptr;
+  Value lambdaOperand;
   if (std::holds_alternative<double>(lambda)) {
     lambdaOperand = odsBuilder.create<arith::ConstantOp>(
         odsState.location,

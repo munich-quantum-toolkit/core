@@ -23,7 +23,7 @@ void UOp::build(OpBuilder& odsBuilder, OperationState& odsState,
                 const Value qubitIn, const std::variant<double, Value>& theta,
                 const std::variant<double, Value>& phi,
                 const std::variant<double, Value>& lambda) {
-  Value thetaOperand = nullptr;
+  Value thetaOperand;
   if (std::holds_alternative<double>(theta)) {
     thetaOperand = odsBuilder.create<arith::ConstantOp>(
         odsState.location, odsBuilder.getF64FloatAttr(std::get<double>(theta)));
@@ -31,7 +31,7 @@ void UOp::build(OpBuilder& odsBuilder, OperationState& odsState,
     thetaOperand = std::get<Value>(theta);
   }
 
-  Value phiOperand = nullptr;
+  Value phiOperand;
   if (std::holds_alternative<double>(phi)) {
     phiOperand = odsBuilder.create<arith::ConstantOp>(
         odsState.location, odsBuilder.getF64FloatAttr(std::get<double>(phi)));
@@ -39,7 +39,7 @@ void UOp::build(OpBuilder& odsBuilder, OperationState& odsState,
     phiOperand = std::get<Value>(phi);
   }
 
-  Value lambdaOperand = nullptr;
+  Value lambdaOperand;
   if (std::holds_alternative<double>(lambda)) {
     lambdaOperand = odsBuilder.create<arith::ConstantOp>(
         odsState.location,
