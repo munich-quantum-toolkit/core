@@ -132,21 +132,11 @@ if(NOT TARGET ${TARGET_NAME})
   target_link_libraries(
     ${TARGET_NAME}
     PUBLIC qdmi::qdmi
-    PRIVATE MQT::ProjectOptions MQT::ProjectWarnings spdlog::spdlog)
+    PRIVATE spdlog::spdlog)
 
   # Always compile with position independent code such that the library can be used in shared
   # libraries
   set_target_properties(${TARGET_NAME} PROPERTIES POSITION_INDEPENDENT_CODE ON)
-
-  # set c++ standard
-  target_compile_features(${TARGET_NAME} PRIVATE cxx_std_20)
-
-  # set versioning information
-  set_target_properties(
-    ${TARGET_NAME}
-    PROPERTIES VERSION ${PROJECT_VERSION}
-               SOVERSION ${PROJECT_VERSION_MAJOR}.${PROJECT_VERSION_MINOR}
-               EXPORT_NAME CoreQDMIScDevice)
 
   # add to list of MQT core targets
   set(MQT_CORE_TARGETS
@@ -154,8 +144,7 @@ if(NOT TARGET ${TARGET_NAME})
       PARENT_SCOPE)
 
   # Make QDMI and MQT Core Version available
-  target_compile_definitions(${TARGET_NAME} PRIVATE QDMI_VERSION="${QDMI_VERSION}"
-                                                    MQT_CORE_VERSION="${MQT_CORE_VERSION}")
+  target_compile_definitions(${TARGET_NAME} PRIVATE QDMI_VERSION="${QDMI_VERSION}")
 
   # Generate additional alias for the target required for generate_device_defs_executable function
   # in the tests
