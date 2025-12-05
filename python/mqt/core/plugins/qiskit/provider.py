@@ -52,6 +52,7 @@ class QDMIProvider:
 
     def __init__(
         self,
+        *,
         token: str | None = None,
         auth_file: str | None = None,
         auth_url: str | None = None,
