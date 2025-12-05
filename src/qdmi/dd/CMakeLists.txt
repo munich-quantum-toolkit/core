@@ -53,8 +53,7 @@ if(NOT TARGET ${TARGET_NAME})
       PARENT_SCOPE)
 
   # Make QDMI and MQT Core Version available
-  target_compile_definitions(${TARGET_NAME} PRIVATE QDMI_VERSION="${QDMI_VERSION}"
-                                                    MQT_CORE_VERSION="${MQT_CORE_VERSION}")
+  target_compile_definitions(${TARGET_NAME} PRIVATE QDMI_VERSION="${QDMI_VERSION}")
 
   # Generate additional alias for the target required for generate_device_defs_executable function
   # in the tests
