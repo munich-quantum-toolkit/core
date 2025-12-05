@@ -43,7 +43,7 @@ if(NOT TARGET ${TARGET_NAME})
   target_compile_features(${TARGET_NAME} PRIVATE cxx_std_20)
 
   # add to list of MQT core targets
-  set(MQT_CORE_TARGETS ${MQT_CORE_TARGETS} ${TARGET_NAME})
+  list(APPEND MQT_CORE_TARGETS ${TARGET_NAME})
 
   # Make version available
   target_compile_definitions(${TARGET_NAME} PRIVATE MQT_CORE_VERSION="${MQT_CORE_VERSION}")
@@ -139,9 +139,7 @@ if(NOT TARGET ${TARGET_NAME})
   set_target_properties(${TARGET_NAME} PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
   # add to list of MQT core targets
-  set(MQT_CORE_TARGETS
-      ${MQT_CORE_TARGETS} ${TARGET_NAME}
-      PARENT_SCOPE)
+  list(APPEND MQT_CORE_TARGETS ${TARGET_NAME})
 
   # Make QDMI and MQT Core Version available
   target_compile_definitions(${TARGET_NAME} PRIVATE QDMI_VERSION="${QDMI_VERSION}")
@@ -191,6 +189,10 @@ if(NOT TARGET ${TARGET_NAME})
                    SOVERSION ${PROJECT_VERSION_MAJOR}.${PROJECT_VERSION_MINOR}
                    EXPORT_NAME CoreQDMINaDeviceDyn)
       add_library(MQT::CoreQDMINaDeviceDyn ALIAS ${DYN_TARGET_NAME})
+      list(APPEND MQT_CORE_TARGETS ${DYN_TARGET_NAME})
     endif()
   endif()
 endif()
+set(MQT_CORE_TARGETS
+    ${MQT_CORE_TARGETS}
+    PARENT_SCOPE)
