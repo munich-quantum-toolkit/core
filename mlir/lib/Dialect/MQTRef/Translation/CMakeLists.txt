@@ -10,6 +10,7 @@ add_compile_options(-fexceptions)
 
 add_mlir_library(
   MLIRMQTRefTranslation
+  ${MQT_CORE_MLIR_LIBRARY_TYPE}
   ImportQuantumComputation.cpp
   LINK_LIBS
   MLIRArithDialect
