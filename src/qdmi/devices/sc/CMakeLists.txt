@@ -62,7 +62,8 @@ if(NOT TARGET ${TARGET_NAME})
   target_sources(${TARGET_NAME} PRIVATE App.cpp)
 
   # Link Generator library
-  target_link_libraries(${TARGET_NAME} PRIVATE MQT::CoreQDMIScDeviceGen spdlog::spdlog)
+  target_link_libraries(${TARGET_NAME} PRIVATE MQT::CoreQDMIScDeviceGen MQT::ProjectOptions
+                                               MQT::ProjectWarnings spdlog::spdlog)
 
   # set versioning information
   set_target_properties(${TARGET_NAME} PROPERTIES VERSION ${PROJECT_VERSION} EXPORT_NAME
@@ -133,18 +134,11 @@ if(NOT TARGET ${TARGET_NAME})
   target_link_libraries(
     ${TARGET_NAME}
     PUBLIC qdmi::qdmi
-    PRIVATE MQT::CoreQDMIBaseDevice MQT::ProjectOptions MQT::ProjectWarnings spdlog::spdlog)
+    PRIVATE MQT::CoreQDMIBaseDevice spdlog::spdlog)
 
   # Always compile with position independent code such that the library can be used in shared
   # libraries
   set_target_properties(${TARGET_NAME} PROPERTIES POSITION_INDEPENDENT_CODE ON)
-
-  # set versioning information
-  set_target_properties(
-    ${TARGET_NAME}
-    PROPERTIES VERSION ${PROJECT_VERSION}
-               SOVERSION ${PROJECT_VERSION_MAJOR}.${PROJECT_VERSION_MINOR}
-               EXPORT_NAME CoreQDMIScDevice)
 
   # add to list of MQT core targets
   set(MQT_CORE_TARGETS

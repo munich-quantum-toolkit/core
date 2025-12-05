@@ -15,7 +15,6 @@
 #include "qdmi/devices/sc/Generator.hpp"
 
 #include <cassert>
-#include <cmath>
 #include <cstdint>
 #include <fstream>
 #include <istream>
@@ -39,6 +38,7 @@ namespace {
  */
 auto populateArrayFields(Device& device) -> void {
   device.couplings.emplace_back();
+  device.operations.emplace_back();
 }
 
 /**
@@ -81,9 +81,15 @@ auto writeSites(const Device& device, std::ostream& os) -> void {
           "var.emplace_back(MQT_SC_QDMI_Site_impl_d::makeUniqueSite("
        << id << "ULL))";
   }
+  os << ";\\\n  std::vector<MQT_SC_QDMI_Site> _singleQubitSites";
+  os << ";\\\n  _singleQubitSites.reserve(var.size())";
+  os << ";\\\n  std::ranges::transform(var, "
+        "std::back_inserter(_singleQubitSites), [](const "
+        "std::unique_ptr<MQT_SC_QDMI_Site_impl_d>& site) { return site.get(); "
+        "})";
   os << ";\\\n  std::vector<std::pair<MQT_SC_QDMI_Site, MQT_SC_QDMI_Site>> "
-        "_couplings;";
-  os << ";\\\n  _couplings.reserve(" << device.couplings.size() << ");";
+        "_couplings";
+  os << ";\\\n  _couplings.reserve(" << device.couplings.size() << ")";
   for (const auto& [i1, i2] : device.couplings) {
     os << ";\\\n  "
           "_couplings.emplace_back(var.at("
@@ -93,10 +99,42 @@ auto writeSites(const Device& device, std::ostream& os) -> void {
 }
 
 /**
+ * @brief Writes the operations from the device object.
+ * @param device is the device object containing the operations.
+ * @param os is the output stream to write the operations to.
+ */
+auto writeOperations(const Device& device, std::ostream& os) -> void {
+  os << "#define INITIALIZE_OPERATIONS(var) var.clear()";
+  for (const auto& operation : device.operations) {
+    if (operation.numQubits == 1) {
+      os << ";\\\n"
+            "  "
+            "var.emplace_back(MQT_SC_QDMI_Operation_impl_d::"
+            "makeUniqueSingleQubit(\""
+         << operation.name << "\", " << operation.numParameters
+         << ", _singleQubitSites))";
+    } else if (operation.numQubits == 2) {
+      os << ";\\\n"
+            "  "
+            "var.emplace_back(MQT_SC_QDMI_Operation_impl_d::"
+            "makeUniqueTwoQubit(\""
+         << operation.name << "\", " << operation.numParameters
+         << ", _couplings))";
+    } else {
+      std::ostringstream ss;
+      ss << "Got operation with " << operation.numQubits << " qubits but only "
+         << "single- and two-qubit operations are supported.";
+      throw std::runtime_error(ss.str());
+    }
+  }
+  os << "\n";
+}
+
+/**
  * @brief Emits a macro to initialize the device coupling map.
  *
  * Writes the C preprocessor macro `INITIALIZE_COUPLINGMAP(var)` which assigns
- * `var = std::move(_couplings)`.
+ * `var = _couplings`.
  *
  * @note This macro depends on the `_couplings` variable created by
  *       the INITIALIZE_SITES macro from writeSites(). The macro
@@ -105,7 +143,7 @@ auto writeSites(const Device& device, std::ostream& os) -> void {
  * @param os Output stream to write the macro definition to.
  */
 auto writeCouplingMap(const Device& /* unused */, std::ostream& os) -> void {
-  os << "#define INITIALIZE_COUPLINGMAP(var) var = std::move(_couplings)\n";
+  os << "#define INITIALIZE_COUPLINGMAP(var) var = _couplings\n";
 }
 } // namespace
 
@@ -153,7 +191,7 @@ auto writeJSONSchema(const std::string& path) -> void {
  * Reads JSON from the provided input stream and converts it into a Device.
  *
  * @param is Input stream that supplies the JSON representation of the Device.
- * @return Device Device constructed from the parsed JSON.
+ * @return Device constructed from the parsed JSON.
  * @throws std::runtime_error If JSON parsing fails; the exception message
  * contains parser error details.
  */
@@ -176,7 +214,7 @@ auto writeJSONSchema(const std::string& path) -> void {
  *
  * @param path Filesystem path to the JSON file containing the device
  * configuration.
- * @return Device Device parsed from the JSON file.
+ * @returns Device parsed from the JSON file.
  * @throws std::runtime_error If the file cannot be opened or if parsing the
  * JSON fails.
  */
@@ -203,11 +241,17 @@ auto writeJSONSchema(const std::string& path) -> void {
  * @param os Output stream to write the header content to.
  */
 auto writeHeader(const Device& device, std::ostream& os) -> void {
-  os << "#pragma once\n\n";
+  os << "#pragma once\n\n"
+     << "#include <algorithm>\n"
+     << "#include <iterator>\n"
+     << "#include <memory>\n"
+     << "#include <utility>\n"
+     << "#include <vector>\n\n";
   writeName(device, os);
   writeQubitsNum(device, os);
   writeSites(device, os);
   writeCouplingMap(device, os);
+  writeOperations(device, os);
 }
 
 /**

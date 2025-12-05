@@ -41,9 +41,27 @@ struct Device {
   /// @brief The list of couplings the device supports.
   std::vector<std::pair<uint64_t, uint64_t>> couplings;
 
+private:
+  struct Operation {
+    /// @brief The name of the operation.
+    std::string name;
+    /// @brief The number of parameters the operation takes.
+    uint64_t numParameters = 0;
+    /// @brief The number of qubits the operation takes.
+    uint64_t numQubits = 0;
+
+    // NOLINTNEXTLINE(misc-include-cleaner)
+    NLOHMANN_DEFINE_TYPE_INTRUSIVE_WITH_DEFAULT(Operation, name, numParameters,
+                                                numQubits)
+  };
+
+public:
+  /// @brief The list of operations the device supports.
+  std::vector<Operation> operations;
+
   // NOLINTNEXTLINE(misc-include-cleaner)
   NLOHMANN_DEFINE_TYPE_INTRUSIVE_WITH_DEFAULT(Device, name, numQubits,
-                                              couplings)
+                                              couplings, operations)
 };
 
 /**

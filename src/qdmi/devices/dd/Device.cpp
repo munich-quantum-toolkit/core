@@ -354,7 +354,13 @@ auto MQT_DDSIM_QDMI_Device_Session_impl_d::queryDeviceProperty(
   if (status_ != Status::INITIALIZED) {
     return QDMI_ERROR_BADSTATE;
   }
-  return qdmi::dd::Device::get()->queryProperty(prop, size, value, sizeRet);
+  try {
+    // Use the new get() that returns a shared_ptr.
+    return qdmi::dd::Device::get()->queryProperty(prop, size, value, sizeRet);
+  } catch (const std::runtime_error&) {
+    // This happens if get() throws because the device is not initialized.
+    return QDMI_ERROR_BADSTATE;
+  }
 }
 auto MQT_DDSIM_QDMI_Device_Session_impl_d::querySiteProperty(
     MQT_DDSIM_QDMI_Site site, const QDMI_Site_Property prop, const size_t size,
@@ -797,7 +803,13 @@ int MQT_DDSIM_QDMI_device_finalize() {
 
 int MQT_DDSIM_QDMI_device_session_alloc(
     MQT_DDSIM_QDMI_Device_Session* session) {
-  return qdmi::dd::Device::get()->sessionAlloc(session);
+  try {
+    // Use the new get() that returns a shared_ptr.
+    return qdmi::dd::Device::get()->sessionAlloc(session);
+  } catch (const std::runtime_error&) {
+    // This happens if get() throws because the device is not initialized.
+    return QDMI_ERROR_BADSTATE;
+  }
 }
 
 int MQT_DDSIM_QDMI_device_session_init(MQT_DDSIM_QDMI_Device_Session session) {
@@ -808,7 +820,11 @@ int MQT_DDSIM_QDMI_device_session_init(MQT_DDSIM_QDMI_Device_Session session) {
 }
 
 void MQT_DDSIM_QDMI_device_session_free(MQT_DDSIM_QDMI_Device_Session session) {
-  qdmi::dd::Device::get()->sessionFree(session);
+  try {
+    // Use the new get() that returns a shared_ptr.
+    qdmi::dd::Device::get()->sessionFree(session);
+  } catch (const std::runtime_error&) {
+  }
 }
 
 int MQT_DDSIM_QDMI_device_session_set_parameter(
