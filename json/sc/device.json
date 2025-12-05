@@ -182,5 +182,9 @@
     [87, 97],
     [88, 98],
     [89, 99]
+  ],
+  "operations": [
+    { "name": "r", "numParameters": 2, "numQubits": 1 },
+    { "name": "cz", "numParameters": 0, "numQubits": 2 }
   ]
 }

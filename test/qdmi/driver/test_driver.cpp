@@ -49,8 +49,10 @@ protected:
   QDMI_Device device = nullptr;
 #ifndef _WIN32
   static void SetUpTestSuite() {
-    ASSERT_NO_THROW(for (const auto& [lib, prefix] : DYN_DEV_LIBS) {
-      qdmi::Driver::get().addDynamicDeviceLibrary(lib, prefix);
+    ASSERT_NO_THROW({
+      for (const auto& [lib, prefix] : DYN_DEV_LIBS) {
+        qdmi::Driver::get().addDynamicDeviceLibrary(lib, prefix);
+      }
     });
   }
 #endif // _WIN32
@@ -125,11 +127,14 @@ protected:
 
 #ifndef _WIN32
 TEST(DriverTest, LoadLibraryTwice) {
-  for (const auto& [lib, prefix] : DYN_DEV_LIBS) {
-    EXPECT_NO_THROW(qdmi::Driver::get().addDynamicDeviceLibrary(lib, prefix));
-    EXPECT_NO_THROW(
-        EXPECT_FALSE(qdmi::Driver::get().addDynamicDeviceLibrary(lib, prefix)));
-  }
+  // Verify that attempting to load already-loaded libraries returns false.
+  // Note: SetUpTestSuite may have already loaded these libraries, so the first
+  // call here might also return false. This test validates that duplicate loads
+  // are safely handled and consistently return false (idempotent behavior).
+  EXPECT_NO_THROW(for (const auto& [lib, prefix] : DYN_DEV_LIBS) {
+    qdmi::Driver::get().addDynamicDeviceLibrary(lib, prefix);
+    EXPECT_FALSE(qdmi::Driver::get().addDynamicDeviceLibrary(lib, prefix));
+  });
 }
 #endif // _WIN32
 
@@ -508,11 +513,11 @@ TEST_P(DriverTest, QueryNeedsCalibration) {
   EXPECT_THAT(needsCalibration, testing::AnyOf(0, 1));
 }
 #ifdef _WIN32
-const std::array<const char*, 3> DEVICES{"MQT NA Default QDMI Device",
-                                         "MQT Core DDSIM QDMI Device",
-                                         "MQT SC Default QDMI Device"};
+constexpr std::array DEVICES{"MQT NA Default QDMI Device",
+                             "MQT Core DDSIM QDMI Device",
+                             "MQT SC Default QDMI Device"};
 #else
-const std::array<const char*, 5> DEVICES{
+constexpr std::array DEVICES{
     "MQT NA Default QDMI Device", "MQT NA Dynamic QDMI Device",
     "MQT Core DDSIM QDMI Device", "MQT SC Default QDMI Device",
     "MQT SC Dynamic QDMI Device"};

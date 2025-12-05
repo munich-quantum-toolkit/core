@@ -662,11 +662,11 @@ class CompoundOperation(Operation, MutableSequence[Operation]):
         """The number of operations in the compound operation."""
 
     @overload
-    def __getitem__(self, idx: int) -> Operation:
+    def __getitem__(self, index: int) -> Operation:
         """Get the operation at the given index.
 
         Args:
-            idx: The index of the operation to get.
+            index: The index of the operation to get.
 
         Returns:
             The operation at the given index.
@@ -676,11 +676,11 @@ class CompoundOperation(Operation, MutableSequence[Operation]):
         """
 
     @overload
-    def __getitem__(self, idx: slice) -> list[Operation]:
+    def __getitem__(self, index: slice) -> list[Operation]:
         """Get the operations in the given slice.
 
         Args:
-            idx: The slice of the operations to get.
+            index: The slice of the operations to get.
 
         Returns:
             The operations in the given slice.
@@ -690,48 +690,48 @@ class CompoundOperation(Operation, MutableSequence[Operation]):
         """
 
     @overload
-    def __setitem__(self, idx: int, op: Operation) -> None:
+    def __setitem__(self, index: int, value: Operation) -> None:
         """Set the operation at the given index.
 
         Args:
-            idx: The index of the operation to set.
-            op: The operation to set at the given index.
+            index: The index of the operation to set.
+            value: The operation to set at the given index.
         """
 
     @overload
-    def __setitem__(self, idx: slice, ops: Iterable[Operation]) -> None:
+    def __setitem__(self, index: slice, value: Iterable[Operation]) -> None:
         """Set the operations in the given slice.
 
         Args:
-            idx: The slice of operations to set.
-            ops: The operations to set in the given slice.
+            index: The slice of operations to set.
+            value: The operations to set in the given slice.
         """
 
     @overload
-    def __delitem__(self, idx: int) -> None:
+    def __delitem__(self, index: int) -> None:
         """Delete the operation at the given index.
 
         Args:
-            idx: The index of the operation to delete.
+            index: The index of the operation to delete.
         """
 
     @overload
-    def __delitem__(self, idx: slice) -> None:
+    def __delitem__(self, index: slice) -> None:
         """Delete the operations in the given slice.
 
         Args:
-            idx: The slice of operations to delete.
+            index: The slice of operations to delete.
         """
 
-    def insert(self, idx: int, op: Operation) -> None:
+    def insert(self, index: int, value: Operation) -> None:
         """Insert an operation at the given index.
 
         Args:
-            idx: The index to insert the operation at.
-            op: The operation to insert.
+            index: The index to insert the operation at.
+            value: The operation to insert.
         """
 
-    def append(self, op: Operation) -> None:
+    def append(self, value: Operation) -> None:
         """Append an operation to the compound operation."""
 
     def empty(self) -> bool:

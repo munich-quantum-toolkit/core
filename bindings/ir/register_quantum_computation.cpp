@@ -102,7 +102,7 @@ void registerQuantumComputation(py::module& m) {
         i = wrap(i, circ.getNops());
         return circ.at(static_cast<SizeType>(i)).get();
       },
-      py::return_value_policy::reference_internal, "idx"_a);
+      py::return_value_policy::reference_internal, "index"_a);
   qc.def(
       "__getitem__",
       [](qc::QuantumComputation& circ, const py::slice& slice) {
@@ -121,7 +121,7 @@ void registerQuantumComputation(py::module& m) {
         }
         return ops;
       },
-      py::return_value_policy::reference_internal, "slice"_a);
+      py::return_value_policy::reference_internal, "index"_a);
   qc.def(
       "__setitem__",
       [&wrap](qc::QuantumComputation& circ, DiffType i,
@@ -129,7 +129,7 @@ void registerQuantumComputation(py::module& m) {
         i = wrap(i, circ.getNops());
         circ.at(static_cast<SizeType>(i)) = op.clone();
       },
-      "idx"_a, "op"_a);
+      "index"_a, "value"_a);
   qc.def(
       "__setitem__",
       [](qc::QuantumComputation& circ, const py::slice& slice,
@@ -151,14 +151,14 @@ void registerQuantumComputation(py::module& m) {
           start += step;
         }
       },
-      "slice"_a, "ops"_a);
+      "index"_a, "value"_a);
   qc.def(
       "__delitem__",
       [&wrap](qc::QuantumComputation& circ, DiffType i) {
         i = wrap(i, circ.getNops());
         circ.erase(circ.begin() + i);
       },
-      "idx"_a);
+      "index"_a);
   qc.def(
       "__delitem__",
       [](qc::QuantumComputation& circ, const py::slice& slice) {
@@ -176,7 +176,7 @@ void registerQuantumComputation(py::module& m) {
                      static_cast<int64_t>(start + ((i - 1) * step)));
         }
       },
-      "slice"_a);
+      "index"_a);
   qc.def("__len__", &qc::QuantumComputation::getNops);
   qc.def(
       "insert",
@@ -184,13 +184,13 @@ void registerQuantumComputation(py::module& m) {
          const qc::Operation& op) {
         circ.insert(circ.begin() + static_cast<int64_t>(idx), op.clone());
       },
-      "idx"_a, "op"_a);
+      "index"_a, "value"_a);
   qc.def(
       "append",
       [](qc::QuantumComputation& circ, const qc::Operation& op) {
         circ.emplace_back(op.clone());
       },
-      "op"_a);
+      "value"_a);
   qc.def("reverse", &qc::QuantumComputation::reverse);
   qc.def("clear", py::overload_cast<>(&qc::QuantumComputation::reset));
 
