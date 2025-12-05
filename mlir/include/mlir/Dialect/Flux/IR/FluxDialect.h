@@ -76,11 +76,17 @@ public:
       if constexpr (T == 0) {
         llvm::reportFatalUsageError("Operation does not have qubits");
       }
+      if (i >= T) {
+        llvm::reportFatalUsageError("Qubit index out of bounds");
+      }
       return this->getOperation()->getOperand(i);
     }
     Value getOutputQubit(size_t i) {
       if constexpr (T == 0) {
         llvm::reportFatalUsageError("Operation does not have qubits");
+      }
+      if (i >= T) {
+        llvm::reportFatalUsageError("Qubit index out of bounds");
       }
       return this->getOperation()->getResult(i);
     }
