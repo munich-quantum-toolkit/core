@@ -29,6 +29,7 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 
 ### Fixed
 
+- 🚨 Fix argument naming of `QuantumComputation` and `CompoundOperation` dunder methods for properly implementing the `MutableSequence` protocol ([#1338]) ([**@burgholzer**])
 - 🐛 Fix memory management in dynamic QDMI device by making it explicit ([#1336]) ([**@ystade**])
 
 ### Removed
@@ -265,6 +266,7 @@ _📚 Refer to the [GitHub Release Notes](https://github.com/munich-quantum-tool
 
 <!-- PR links -->
 
+[#1338]: https://github.com/munich-quantum-toolkit/core/pull/1338
 [#1336]: https://github.com/munich-quantum-toolkit/core/pull/1336
 [#1328]: https://github.com/munich-quantum-toolkit/core/pull/1328
 [#1327]: https://github.com/munich-quantum-toolkit/core/pull/1327
