@@ -58,9 +58,15 @@ def device_and_operation(request: pytest.FixtureRequest) -> tuple[Device, Device
     Returns:
        A tuple containing a quantum device instance and one of its operations.
     """
-    dev = request.param
-    operation = dev.operations()[0]
-    return dev, operation
+    device = request.param
+
+    # If the device has no operations, skip tests that use this fixture.
+    ops = device.operations()
+    if not ops:
+        pytest.skip(f"Device '{device.name()}' has no operations.")
+
+    operation = ops[0]
+    return device, operation
 
 
 @pytest.fixture
@@ -119,10 +125,9 @@ def test_device_sites(device: Device) -> None:
 
 
 def test_device_operations(device: Device) -> None:
-    """Test that the device operations is a non-empty list of Device.Operation objects."""
+    """Test that the device operations is a list of Device.Operation objects."""
     operations = device.operations()
     assert isinstance(operations, list)
-    assert len(operations) > 0
     assert all(isinstance(op, Device.Operation) for op in operations)
 
 

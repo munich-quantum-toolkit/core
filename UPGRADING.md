@@ -27,6 +27,24 @@ Install with Qiskit support: `pip install "mqt-core[qiskit]"`
 
 See the [Qiskit Backend documentation](https://mqt.readthedocs.io/projects/core/en/latest/qdmi/qiskit_backend.html) for details.
 
+### Argument name changes in `QuantumComputation` and `CompoundOperation` dunder methods
+
+Since we enabled `ty` for type checking, it revealed that some of the dunder methods of `QuantumComputation` and `CompoundOperation` had incorrect argument names, which would prevent these classes from properly implementing the `MutableSequence` protocol.
+This release fixes these issues by renaming the arguments of the following methods:
+
+- `QuantumComputation.__getitem__`
+- `QuantumComputation.__setitem__`
+- `QuantumComputation.__delitem__`
+- `QuantumComputation.insert`
+- `QuantumComputation.append`
+- `CompoundOperation.__getitem__`
+- `CompoundOperation.__setitem__`
+- `CompoundOperation.__delitem__`
+- `CompoundOperation.insert`
+- `CompoundOperation.append`
+
+All index arguments are now named `index` instead of `idx` (or `i` or `slice`) and all values are now named `value` instead of `val` (or `op` or `ops`).
+
 ### DD Package evaluation
 
 This release moves the DD Package evaluation functionality from within the `mqt.core` package to a dedicated script in the `eval` directory.

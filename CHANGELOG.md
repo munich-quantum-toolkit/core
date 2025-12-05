@@ -12,6 +12,7 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 ### Added
 
 - ✨ Add authentication support for QDMI sessions with token, username/password, auth file, auth URL, and project ID parameters ([#1355]) ([**@marcelwa**])
+- ✨ Add a new QDMI device that represents a superconducting architecture featuring a coupling map ([#1328]) ([**@ystade**])
 - ✨ Add bi-directional iterator that traverses the def-use chain of a qubit value ([#1310]) ([**@MatthiasReumann**])
 - ✨ Add `OptionalDependencyTester` to lazily handle optional Python dependencies like Qiskit ([#1243]) ([**@marcelwa**], [**@burgholzer**])
 - ✨ Expose the QDMI job interface through FoMaC ([#1243]) ([**@marcelwa**], [**@burgholzer**])
@@ -22,6 +23,10 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 ### Changed
 
 - ♻️ Refactor `FoMaC` singleton to instantiable `Session` class with configurable authentication parameters ([#1355]) ([**@marcelwa**])
+- 👷 Stop testing on `ubuntu-22.04` and `ubuntu-22.04-arm` runners ([#1359]) ([**@denialhaag**], [**@burgholzer**])
+- 👷 Stop testing with `clang-19` and start testing with `clang-21` ([#1359]) ([**@denialhaag**], [**@burgholzer**])
+- 👷 Fix macOS tests with Homebrew Clang via new `munich-quantum-toolkit/workflows` version ([#1359]) ([**@denialhaag**], [**@burgholzer**])
+- 👷 Re-enable macOS tests with GCC by disabling module scanning ([#1359]) ([**@denialhaag**], [**@burgholzer**])
 - ♻️ Group circuit operations into scheduling units for MLIR routing ([#1301]) ([**@MatthiasReumann**])
 - 👷 Use `munich-quantum-software/setup-mlir` to set up MLIR ([#1294]) ([**@denialhaag**])
 - ♻️ Preserve tuple structure and improve site type clarity of the MQT NA Default QDMI Device ([#1299]) ([**@marcelwa**])
@@ -30,6 +35,7 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 
 ### Fixed
 
+- 🚨 Fix argument naming of `QuantumComputation` and `CompoundOperation` dunder methods for properly implementing the `MutableSequence` protocol ([#1338]) ([**@burgholzer**])
 - 🐛 Fix memory management in dynamic QDMI device by making it explicit ([#1336]) ([**@ystade**])
 
 ### Removed
@@ -266,8 +272,11 @@ _📚 Refer to the [GitHub Release Notes](https://github.com/munich-quantum-tool
 
 <!-- PR links -->
 
+[#1359]: https://github.com/munich-quantum-toolkit/core/pull/1359
 [#1355]: https://github.com/munich-quantum-toolkit/core/pull/1355
+[#1338]: https://github.com/munich-quantum-toolkit/core/pull/1338
 [#1336]: https://github.com/munich-quantum-toolkit/core/pull/1336
+[#1328]: https://github.com/munich-quantum-toolkit/core/pull/1328
 [#1327]: https://github.com/munich-quantum-toolkit/core/pull/1327
 [#1310]: https://github.com/munich-quantum-toolkit/core/pull/1310
 [#1301]: https://github.com/munich-quantum-toolkit/core/pull/1301

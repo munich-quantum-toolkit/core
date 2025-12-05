@@ -8,7 +8,7 @@
  * Licensed under the MIT License
  */
 
-#include "na/device/Generator.hpp"
+#include "qdmi/sc/Generator.hpp"
 
 #include <cstddef>
 #include <cstdint>
@@ -25,13 +25,15 @@
 
 namespace {
 /**
- * Prints the usage information for the command line tool.
- * @param programName is the name of the program executable.
+ * @brief Writes usage information and available commands and options to stdout.
+ *
+ * @param programName Program executable name inserted into the Usage line.
  */
 auto printUsage(const std::string& programName) -> void {
   std::cout
-      << "Generator for turning neutral atom computer JSON specifications into "
-         "header files to be used as part of a neutral atom QDMI device "
+      << "Generator for turning superconducting computer JSON specifications "
+         "into "
+         "header files to be used as part of a superconducting QDMI device "
          "implementation.\n"
          "\n"
          "Usage: "
@@ -93,7 +95,7 @@ auto printGenerateUsage(const std::string& programName) -> void {
                "\n"
                "Usage: "
             << programName
-            << " generate [options] <json_file>\n"
+            << " generate [options] [<json_file>]\n"
                "\n"
                "Arguments:\n"
                "  json_file       the path to the JSON file to generate the\n"
@@ -109,11 +111,13 @@ auto printGenerateUsage(const std::string& programName) -> void {
 }
 
 /**
- * Prints the version information for the command line tool.
+ * @brief Writes the tool's version string to standard output.
+ *
+ * Prints the program name and the embedded MQT core version to stdout.
  */
 auto printVersion() -> void {
   // NOLINTNEXTLINE(misc-include-cleaner)
-  std::cout << "MQT QDMI NA Device Generator (MQT Version " MQT_CORE_VERSION
+  std::cout << "MQT QDMI SC Device Generator (MQT Version " MQT_CORE_VERSION
                ")\n";
 }
 
@@ -157,17 +161,22 @@ struct GenerateArguments {
 };
 
 /**
- * Parses the command line arguments and returns an Arguments struct.
- * @param args is the vector of command line arguments.
- * @returns the parsed arguments as an Arguments struct and an index indicating
- * the position of the first sub-command argument.
- * @throws std::invalid_argument if the value after an option is missing.
+ * @brief Parse top-level command-line options and locate the chosen
+ * sub-command.
+ *
+ * @param args Vector of command-line tokens (typically argv converted to
+ * std::string), where args[0] is the program name.
+ * @return std::pair<Arguments, size_t> The first element is the parsed
+ * top-level Arguments; the second element is the index in `args` of the
+ * first argument belonging to the chosen sub-command (i.e., one past the
+ * sub-command token). If no sub-command is present, the returned index
+ * will be `args.size() + 1`.
  */
 auto parseArguments(const std::vector<std::string>& args)
     -> std::pair<Arguments, size_t> {
   Arguments arguments;
   arguments.programName =
-      args.empty() ? "mqt-core-na-device-gen" : args.front();
+      args.empty() ? "mqt-core-sc-device-gen" : args.front();
   size_t i = 1;
   while (i < args.size()) {
     if (const std::string& arg = args.at(i); arg == "-h" || arg == "--help") {
@@ -176,13 +185,15 @@ auto parseArguments(const std::vector<std::string>& args)
       arguments.version = true;
     } else if (arg == "schema") {
       arguments.command = Command::Schema;
-      break; // No more arguments for schema command
+      break; // Stop top-level parsing; remaining args handled by schema parser
     } else if (arg == "validate") {
       arguments.command = Command::Validate;
-      break; // No more arguments for validate command
+      // Stop top-level parsing; remaining args handled by validate parser
+      break;
     } else if (arg == "generate") {
       arguments.command = Command::Generate;
-      break; // No more arguments for generate command
+      // Stop top-level parsing; remaining args handled by generate parser
+      break;
     } else {
       throw std::invalid_argument("Unknown argument: " + arg);
     }
@@ -192,11 +203,15 @@ auto parseArguments(const std::vector<std::string>& args)
 }
 
 /**
- * Parses the command line arguments for the schema command and returns a
- * SchemaArguments struct.
- * @param args is the vector of command line arguments.
- * @param i is the index to the first sub-command argument within @p args
- * @return Parsed schema arguments as a SchemaArguments struct.
+ * @brief Parse arguments for the "schema" sub-command.
+ *
+ * Parses options for the schema command and produces a SchemaArguments value
+ * describing whether help was requested and which output file (if any) was set.
+ *
+ * @param args Vector of all command-line arguments.
+ * @param i Index of the first argument belonging to the schema sub-command.
+ * @return SchemaArguments Struct with `help` set if help was requested and
+ *         `outputFile` containing the path provided with `-o|--output`, if any.
  */
 auto parseSchemaArguments(const std::vector<std::string>& args, size_t i)
     -> SchemaArguments {
@@ -218,11 +233,14 @@ auto parseSchemaArguments(const std::vector<std::string>& args, size_t i)
 }
 
 /**
- * Parses the command line arguments for the validate command and returns a
- * ValidateArguments struct.
- * @param args is the vector of command line arguments.
- * @param i is the index to the first sub-command argument within @p args
- * @return Parsed validate arguments as a ValidateArguments struct.
+ * @brief Parses arguments for the "validate" subcommand.
+ *
+ * @param args Vector of command-line arguments.
+ * @param i Index of the first validate subcommand argument within @p args.
+ * @return ValidateArguments Parsed flags and optional JSON input file path:
+ * `help` is set if -h/--help was present, `jsonFile` contains the positional
+ * JSON file if provided.
+ * @throws std::invalid_argument if multiple JSON files are specified.
  */
 auto parseValidateArguments(const std::vector<std::string>& args, size_t i)
     -> ValidateArguments {
@@ -231,6 +249,9 @@ auto parseValidateArguments(const std::vector<std::string>& args, size_t i)
     if (const std::string& arg = args.at(i); arg == "-h" || arg == "--help") {
       validateArgs.help = true;
     } else {
+      if (validateArgs.jsonFile.has_value()) {
+        throw std::invalid_argument("Multiple JSON files specified");
+      }
       validateArgs.jsonFile = arg;
     }
     ++i;
@@ -239,11 +260,22 @@ auto parseValidateArguments(const std::vector<std::string>& args, size_t i)
 }
 
 /**
- * Parses the command line arguments for the generate command and returns a
- * GenerateArguments struct.
- * @param args is the vector of command line arguments.
- * @param i is the index to the first sub-command argument within @p args
- * @return Parsed generate arguments as a GenerateArguments struct.
+ * Parse arguments for the "generate" subcommand.
+ *
+ * Recognizes the following arguments:
+ * - `-h`, `--help`: sets the help flag.
+ * - `-o <file>`, `--output <file>`: sets the output header file path.
+ * - `<jsonFile>` (positional): sets the input JSON file; if omitted, input is
+ * read from stdin.
+ *
+ * @param args Vector of command-line arguments.
+ * @param i Index of the first argument belonging to the subcommand within
+ * `args`.
+ * @return GenerateArguments Structure with `help`, optional `outputFile`, and
+ * optional `jsonFile` populated.
+ * @throws std::invalid_argument If an `-o`/`--output` option is provided
+ * without a following value.
+ * @throws std::invalid_argument if multiple JSON files are specified.
  */
 auto parseGenerateArguments(const std::vector<std::string>& args, size_t i)
     -> GenerateArguments {
@@ -257,6 +289,9 @@ auto parseGenerateArguments(const std::vector<std::string>& args, size_t i)
       }
       generateArgs.outputFile = args.at(i);
     } else {
+      if (generateArgs.jsonFile.has_value()) {
+        throw std::invalid_argument("Multiple JSON files specified");
+      }
       generateArgs.jsonFile = arg;
     }
     ++i;
@@ -292,9 +327,9 @@ auto executeSchemaCommand(const std::string& progName,
   // generate the JSON schema and write it to the output file or stdout
   try {
     if (schemaArgs.outputFile.has_value()) {
-      na::writeJSONSchema(schemaArgs.outputFile.value());
+      sc::writeJSONSchema(schemaArgs.outputFile.value());
     } else {
-      na::writeJSONSchema(std::cout);
+      sc::writeJSONSchema(std::cout);
     }
   } catch (const std::exception& e) {
     SPDLOG_ERROR("Error generating JSON schema: {}", e.what());
@@ -304,19 +339,32 @@ auto executeSchemaCommand(const std::string& progName,
 }
 
 /**
- * Executes the validate command, validating a JSON file or JSON string from
- * stdin.
- * @param progName is the name of the program executable.
- * @param argVec is the vector of command line arguments.
- * @param i is the index to the first sub-command argument within @p argVec
- * @return 0 on success, 1 on error.
+ * @brief Run the "validate" subcommand to validate a JSON input.
+ *
+ * Parses validate-specific arguments, prints subcommand usage if the help
+ * flag is set, and validates JSON read from the provided file path or from
+ * standard input.
+ *
+ * @param progName Name of the program executable (used for usage output).
+ * @param argVec Full command-line argument vector.
+ * @param i Index of the first argument belonging to the validate subcommand.
+ * @return int `0` on successful validation or when help was printed, `1` on
+ * error.
  */
 auto executeValidateCommand(const std::string& progName,
                             const std::vector<std::string>& argVec,
                             const size_t i) -> int {
+  ValidateArguments validateArgs;
   // parse the rest of the command line arguments for the validate command
-  const ValidateArguments validateArgs = parseValidateArguments(argVec, i);
-  //
+  try {
+    validateArgs = parseValidateArguments(argVec, i);
+  } catch (const std::exception& e) {
+    SPDLOG_ERROR("Error parsing validate arguments: {}", e.what());
+    printValidateUsage(progName);
+    return 1;
+  }
+
+  // if the help flag is set, print the validate usage information and exit
   if (validateArgs.help) {
     printValidateUsage(progName);
     return 0;
@@ -324,9 +372,9 @@ auto executeValidateCommand(const std::string& progName,
   // validate the JSON file or the JSON string from stdin
   try {
     if (validateArgs.jsonFile.has_value()) {
-      std::ignore = na::readJSON(validateArgs.jsonFile.value());
+      std::ignore = sc::readJSON(validateArgs.jsonFile.value());
     } else {
-      std::ignore = na::readJSON(std::cin);
+      std::ignore = sc::readJSON(std::cin);
     }
   } catch (const std::exception& e) {
     SPDLOG_ERROR("Error validating JSON: {}", e.what());
@@ -336,12 +384,17 @@ auto executeValidateCommand(const std::string& progName,
 }
 
 /**
- * Executes the generate command, generating a header file from a JSON file or
- * JSON string from stdin.
- * @param progName is the name of the program executable.
- * @param argVec is the vector of command line arguments.
- * @param i is the index to the first sub-command argument within @p argVec
- * @return 0 on success, 1 on error.
+ * @brief Generates a C++ header from a device JSON specification (file or
+ * stdin).
+ *
+ * Parses generate-specific arguments from argVec starting at index i, reads a
+ * sc::Device from the specified JSON file or from stdin, and writes a header to
+ * the specified output file or to stdout.
+ *
+ * @param progName Program executable name (used for usage/help output).
+ * @param argVec Full command-line argument vector.
+ * @param i Index in argVec of the first generate sub-command argument.
+ * @return int 0 on success, 1 on error.
  */
 auto executeGenerateCommand(const std::string& progName,
                             const std::vector<std::string>& argVec,
@@ -355,25 +408,25 @@ auto executeGenerateCommand(const std::string& progName,
     printGenerateUsage(progName);
     return 1;
   }
-  // if the help flag is set, print the generate usage information and exit
+  // if the help flag is set, print the 'generate' usage information and exit
   if (generateArgs.help) {
     printGenerateUsage(progName);
     return 0;
   }
   // generate the header file from the JSON specification
   try {
-    na::Device device;
+    sc::Device device;
     // read the JSON file or the JSON string from stdin
     if (generateArgs.jsonFile.has_value()) {
-      device = na::readJSON(generateArgs.jsonFile.value());
+      device = sc::readJSON(generateArgs.jsonFile.value());
     } else {
-      device = na::readJSON(std::cin);
+      device = sc::readJSON(std::cin);
     }
     // write the header file to the output file or stdout
     if (generateArgs.outputFile.has_value()) {
-      na::writeHeader(device, generateArgs.outputFile.value());
+      sc::writeHeader(device, generateArgs.outputFile.value());
     } else {
-      na::writeHeader(device, std::cout);
+      sc::writeHeader(device, std::cout);
     }
   } catch (const std::exception& e) {
     SPDLOG_ERROR("Error generating header file: {}", e.what());
@@ -384,15 +437,16 @@ auto executeGenerateCommand(const std::string& progName,
 } // namespace
 
 /**
- * @brief Main function that parses command-line-arguments and processes the
- * JSON.
- * @details This function handles the command line arguments, checks for help
- * and version flags, and processes the JSON file or schema file as specified by
- * the user. Either a JSON file or a schema file must be provided. If no output
- * file is specified, the JSON file is parsed but no header file is generated.
+ * @brief Parses command-line arguments, dispatches the selected subcommand
+ * (schema, validate, generate), and performs the requested operation.
  *
- * @param argc is the number of command line arguments.
- * @param argv is the array of command line arguments.
+ * The function handles global flags (help, version), prints usage/version
+ * information when requested, and forwards remaining arguments to the
+ * appropriate subcommand executor which performs IO and error handling.
+ *
+ * @param argc Number of command-line arguments.
+ * @param argv Array of command-line argument strings.
+ * @return int Exit code: `0` on success, `1` on error.
  */
 int main(int argc, char* argv[]) {
   std::vector<std::string> argVec;
@@ -413,7 +467,7 @@ int main(int argc, char* argv[]) {
     parsedArgs = parseArguments(argVec);
   } catch (const std::exception& e) {
     SPDLOG_ERROR("Error parsing arguments: {}", e.what());
-    printUsage(argVec.empty() ? "mqt-core-na-device-gen" : argVec.front());
+    printUsage(argVec.empty() ? "mqt-core-sc-device-gen" : argVec.front());
     return 1;
   }
   // unpack the parsed arguments and the index of the first sub-command here
@@ -442,5 +496,11 @@ int main(int argc, char* argv[]) {
   case Command::Generate:
     return executeGenerateCommand(args.programName, argVec, i);
   }
-  return 0;
+  // LCOV_EXCL_START
+#ifdef __GNUC__ // GCC, Clang, ICC
+  __builtin_unreachable();
+#elif defined(_MSC_VER) // MSVC
+  __assume(false);
+#endif
+  // LCOV_EXCL_STOP
 }
