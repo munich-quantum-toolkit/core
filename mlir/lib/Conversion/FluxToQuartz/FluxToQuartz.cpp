@@ -59,7 +59,7 @@ convertZeroTargetOneParameter(FluxOpType& op,
  *
  * @tparam QuartzOpType The operation type of the Quartz operation
  * @tparam FluxOpType The operation type of the Flux operation
- * @param FluxOpAdaptorType The OpAdaptor type of the Flux operation
+ * @tparam FluxOpAdaptorType The OpAdaptor type of the Flux operation
  * @param op The Flux operation instance to convert
  * @param adaptor The OpAdaptor of the Flux operation
  * @param rewriter The pattern rewriter
@@ -87,7 +87,7 @@ convertOneTargetZeroParameter(FluxOpType& op, FluxOpAdaptorType& adaptor,
  *
  * @tparam QuartzOpType The operation type of the Quartz operation
  * @tparam FluxOpType The operation type of the Flux operation
- * @param FluxOpAdaptorType The OpAdaptor type of the Flux operation
+ * @tparam FluxOpAdaptorType The OpAdaptor type of the Flux operation
  * @param op The Flux operation instance to convert
  * @param adaptor The OpAdaptor of the Flux operation
  * @param rewriter The pattern rewriter
@@ -115,7 +115,7 @@ convertOneTargetOneParameter(FluxOpType& op, FluxOpAdaptorType& adaptor,
  *
  * @tparam QuartzOpType The operation type of the Quartz operation
  * @tparam FluxOpType The operation type of the Flux operation
- * @param FluxOpAdaptorType The OpAdaptor type of the Flux operation
+ * @tparam FluxOpAdaptorType The OpAdaptor type of the Flux operation
  * @param op The Flux operation instance to convert
  * @param adaptor The OpAdaptor of the Flux operation
  * @param rewriter The pattern rewriter
@@ -140,11 +140,11 @@ convertOneTargetTwoParameter(FluxOpType& op, FluxOpAdaptorType& adaptor,
 }
 
 /**
- * @brief Converts a two-target, zero-parameter Flux operation to Quartz
+ * @brief Converts a one-target, three-parameter Flux operation to Quartz
  *
  * @tparam QuartzOpType The operation type of the Quartz operation
  * @tparam FluxOpType The operation type of the Flux operation
- * @param FluxOpAdaptorType The OpAdaptor type of the Flux operation
+ * @tparam FluxOpAdaptorType The OpAdaptor type of the Flux operation
  * @param op The Flux operation instance to convert
  * @param adaptor The OpAdaptor of the Flux operation
  * @param rewriter The pattern rewriter
@@ -173,7 +173,7 @@ convertOneTargetThreeParameter(FluxOpType& op, FluxOpAdaptorType& adaptor,
  *
  * @tparam QuartzOpType The operation type of the Quartz operation
  * @tparam FluxOpType The operation type of the Flux operation
- * @param FluxOpAdaptorType The OpAdaptor type of the Flux operation
+ * @tparam FluxOpAdaptorType The OpAdaptor type of the Flux operation
  * @param op The Flux operation instance to convert
  * @param adaptor The OpAdaptor of the Flux operation
  * @param rewriter The pattern rewriter
@@ -202,7 +202,7 @@ convertTwoTargetZeroParameter(FluxOpType& op, FluxOpAdaptorType& adaptor,
  *
  * @tparam QuartzOpType The operation type of the Quartz operation
  * @tparam FluxOpType The operation type of the Flux operation
- * @param FluxOpAdaptorType The OpAdaptor type of the Flux operation
+ * @tparam FluxOpAdaptorType The OpAdaptor type of the Flux operation
  * @param op The Flux operation instance to convert
  * @param adaptor The OpAdaptor of the Flux operation
  * @param rewriter The pattern rewriter
@@ -232,7 +232,7 @@ convertTwoTargetOneParameter(FluxOpType& op, FluxOpAdaptorType& adaptor,
  *
  * @tparam QuartzOpType The operation type of the Quartz operation
  * @tparam FluxOpType The operation type of the Flux operation
- * @param FluxOpAdaptorType The OpAdaptor type of the Flux operation
+ * @tparam FluxOpAdaptorType The OpAdaptor type of the Flux operation
  * @param op The Flux operation instance to convert
  * @param adaptor The OpAdaptor of the Flux operation
  * @param rewriter The pattern rewriter
@@ -761,7 +761,7 @@ struct ConvertFluxBarrierOp final : OpConversionPattern<flux::BarrierOp> {
 };
 
 /**
- * @brief Converts quartz.ctrl to flux.ctrl
+ * @brief Converts flux.ctrl to quartz.ctrl
  *
  * @par Example:
  * ```mlir
@@ -773,8 +773,7 @@ struct ConvertFluxBarrierOp final : OpConversionPattern<flux::BarrierOp> {
  * is converted to
  * ```mlir
  * quartz.ctrl(%q0) {
- *   quartz.x %q1
- *   quartz.yield
+ *   quartz.x %q1 : !quartz.qubit
  * }
  * ```
  */

@@ -298,7 +298,7 @@ def XOp : QuartzOp<"x", traits = [UnitaryOpInterface, OneTargetZeroParameter]> {
 
         Example:
         ```mlir
-        quartz.x %q : !flux.qubit
+        quartz.x %q : !quartz.qubit
         ```
     }];
 
@@ -317,7 +317,7 @@ def YOp : QuartzOp<"y", traits = [UnitaryOpInterface, OneTargetZeroParameter]> {
 
         Example:
         ```mlir
-        quartz.y %q : !flux.qubit
+        quartz.y %q : !quartz.qubit
         ```
     }];
 
@@ -336,7 +336,7 @@ def ZOp : QuartzOp<"z", traits = [UnitaryOpInterface, OneTargetZeroParameter]> {
 
         Example:
         ```mlir
-        quartz.z %q : !flux.qubit
+        quartz.z %q : !quartz.qubit
         ```
     }];
 
@@ -355,7 +355,7 @@ def HOp : QuartzOp<"h", traits = [UnitaryOpInterface, OneTargetZeroParameter]> {
 
         Example:
         ```mlir
-        quartz.h %q : !flux.qubit
+        quartz.h %q : !quartz.qubit
         ```
     }];
 
@@ -374,7 +374,7 @@ def SOp : QuartzOp<"s", traits = [UnitaryOpInterface, OneTargetZeroParameter]> {
 
         Example:
         ```mlir
-        quartz.s %q : !flux.qubit
+        quartz.s %q : !quartz.qubit
         ```
     }];
 
@@ -393,7 +393,7 @@ def SdgOp : QuartzOp<"sdg", traits = [UnitaryOpInterface, OneTargetZeroParameter
 
         Example:
         ```mlir
-        quartz.sdg %q : !flux.qubit
+        quartz.sdg %q : !quartz.qubit
         ```
     }];
 
@@ -412,7 +412,7 @@ def TOp : QuartzOp<"t", traits = [UnitaryOpInterface, OneTargetZeroParameter]> {
 
         Example:
         ```mlir
-        quartz.t %q : !flux.qubit
+        quartz.t %q : !quartz.qubit
         ```
     }];
 
@@ -431,7 +431,7 @@ def TdgOp : QuartzOp<"tdg", traits = [UnitaryOpInterface, OneTargetZeroParameter
 
         Example:
         ```mlir
-        quartz.tdg %q : !flux.qubit
+        quartz.tdg %q : !quartz.qubit
         ```
     }];
 
@@ -450,7 +450,7 @@ def SXOp : QuartzOp<"sx", traits = [UnitaryOpInterface, OneTargetZeroParameter]>
 
         Example:
         ```mlir
-        quartz.sx %q : !flux.qubit
+        quartz.sx %q : !quartz.qubit
         ```
     }];
 
@@ -469,7 +469,7 @@ def SXdgOp : QuartzOp<"sxdg", traits = [UnitaryOpInterface, OneTargetZeroParamet
 
         Example:
         ```mlir
-        quartz.sxdg %q : !flux.qubit
+        quartz.sxdg %q : !quartz.qubit
         ```
     }];
 
@@ -488,7 +488,7 @@ def RXOp : QuartzOp<"rx", traits = [UnitaryOpInterface, OneTargetOneParameter]> 
 
         Example:
         ```mlir
-        quartz.rx(%theta) %q : !flux.qubit
+        quartz.rx(%theta) %q : !quartz.qubit
         ```
     }];
 
@@ -512,7 +512,7 @@ def RYOp : QuartzOp<"ry", traits = [UnitaryOpInterface, OneTargetOneParameter]> 
 
         Example:
         ```mlir
-        quartz.ry(%theta) %q : !flux.qubit
+        quartz.ry(%theta) %q : !quartz.qubit
         ```
     }];
 
@@ -536,7 +536,7 @@ def RZOp : QuartzOp<"rz", traits = [UnitaryOpInterface, OneTargetOneParameter]> 
 
         Example:
         ```mlir
-        quartz.rz(%theta) %q : !flux.qubit
+        quartz.rz(%theta) %q : !quartz.qubit
         ```
     }];
 
@@ -560,7 +560,7 @@ def POp : QuartzOp<"p", traits = [UnitaryOpInterface, OneTargetOneParameter]> {
 
         Example:
         ```mlir
-        quartz.p(%theta) %q : !flux.qubit
+        quartz.p(%theta) %q : !quartz.qubit
         ```
     }];
 
@@ -584,7 +584,7 @@ def ROp : QuartzOp<"r", traits = [UnitaryOpInterface, OneTargetTwoParameter]> {
 
         Example:
         ```mlir
-        quartz.r(%theta, %phi) %q : !flux.qubit
+        quartz.r(%theta, %phi) %q : !quartz.qubit
         ```
     }];
 
@@ -609,7 +609,7 @@ def U2Op : QuartzOp<"u2", traits = [UnitaryOpInterface, OneTargetTwoParameter]> 
 
         Example:
         ```mlir
-        quartz.u2(%phi, %lambda) %q : !flux.qubit
+        quartz.u2(%phi, %lambda) %q : !quartz.qubit
         ```
     }];
 
@@ -634,7 +634,7 @@ def UOp : QuartzOp<"u", traits = [UnitaryOpInterface, OneTargetThreeParameter]> 
 
         Example:
         ```mlir
-        quartz.u(%theta, %phi, %lambda) %q : !flux.qubit
+        quartz.u(%theta, %phi, %lambda) %q : !quartz.qubit
         ```
     }];
 
@@ -660,7 +660,7 @@ def SWAPOp : QuartzOp<"swap", traits = [UnitaryOpInterface, TwoTargetZeroParamet
 
         Example:
         ```mlir
-        quartz.swap %q0, %q1 : !flux.qubit, !flux.qubit
+        quartz.swap %q0, %q1 : !quartz.qubit, !quartz.qubit
         ```
     }];
 
@@ -680,7 +680,7 @@ def iSWAPOp : QuartzOp<"iswap", traits = [UnitaryOpInterface, TwoTargetZeroParam
 
         Example:
         ```mlir
-        quartz.iswap %q0, %q1 : !flux.qubit, !flux.qubit
+        quartz.iswap %q0, %q1 : !quartz.qubit, !quartz.qubit
         ```
     }];
 
@@ -700,7 +700,7 @@ def DCXOp : QuartzOp<"dcx", traits = [UnitaryOpInterface, TwoTargetZeroParameter
 
         Example:
         ```mlir
-        quartz.dcx %q0, %q1 : !flux.qubit, !flux.qubit
+        quartz.dcx %q0, %q1 : !quartz.qubit, !quartz.qubit
         ```
     }];
 
@@ -720,7 +720,7 @@ def ECROp : QuartzOp<"ecr", traits = [UnitaryOpInterface, TwoTargetZeroParameter
 
         Example:
         ```mlir
-        quartz.ecr %q0, %q1 : !flux.qubit, !flux.qubit
+        quartz.ecr %q0, %q1 : !quartz.qubit, !quartz.qubit
         ```
     }];
 
@@ -740,7 +740,7 @@ def RXXOp : QuartzOp<"rxx", traits = [UnitaryOpInterface, TwoTargetOneParameter]
 
         Example:
         ```mlir
-        quartz.rxx(%theta) %q0, %q1 : !flux.qubit, !flux.qubit
+        quartz.rxx(%theta) %q0, %q1 : !quartz.qubit, !quartz.qubit
         ```
     }];
 
@@ -765,7 +765,7 @@ def RYYOp : QuartzOp<"ryy", traits = [UnitaryOpInterface, TwoTargetOneParameter]
 
         Example:
         ```mlir
-        quartz.ryy(%theta) %q0, %q1 : !flux.qubit, !flux.qubit
+        quartz.ryy(%theta) %q0, %q1 : !quartz.qubit, !quartz.qubit
         ```
     }];
 
@@ -790,7 +790,7 @@ def RZXOp : QuartzOp<"rzx", traits = [UnitaryOpInterface, TwoTargetOneParameter]
 
         Example:
         ```mlir
-        quartz.rzx(%theta) %q0, %q1 : !flux.qubit, !flux.qubit
+        quartz.rzx(%theta) %q0, %q1 : !quartz.qubit, !quartz.qubit
         ```
     }];
 
@@ -815,7 +815,7 @@ def RZZOp : QuartzOp<"rzz", traits = [UnitaryOpInterface, TwoTargetOneParameter]
 
         Example:
         ```mlir
-        quartz.rzz(%theta) %q0, %q1 : !flux.qubit, !flux.qubit
+        quartz.rzz(%theta) %q0, %q1 : !quartz.qubit, !quartz.qubit
         ```
     }];
 
@@ -840,7 +840,7 @@ def XXPlusYYOp : QuartzOp<"xx_plus_yy", traits = [UnitaryOpInterface, TwoTargetT
 
         Example:
         ```mlir
-        quartz.xx_plus_yy(%theta, %beta) %q0, %q1 : !flux.qubit, !flux.qubit
+        quartz.xx_plus_yy(%theta, %beta) %q0, %q1 : !quartz.qubit, !quartz.qubit
         ```
     }];
 
@@ -866,7 +866,7 @@ def XXMinusYYOp : QuartzOp<"xx_minus_yy", traits = [UnitaryOpInterface, TwoTarge
 
         Example:
         ```mlir
-        quartz.xx_minus_yy(%theta, %beta) %q0, %q1 : !flux.qubit, !flux.qubit
+        quartz.xx_minus_yy(%theta, %beta) %q0, %q1 : !quartz.qubit, !quartz.qubit
         ```
     }];
 

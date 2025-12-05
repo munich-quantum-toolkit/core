@@ -736,7 +736,7 @@ def SWAPOp : FluxOp<"swap", traits = [UnitaryOpInterface, TwoTargetZeroParameter
     let assemblyFormat = "$qubit0_in `,` $qubit1_in attr-dict `:` type($qubit0_in) `,` type($qubit1_in) `->` type($qubit0_out) `,` type($qubit1_out)";
 
     let extraClassDeclaration = [{
-        static StringRef getBaseSymbol() { return "x"; }
+        static StringRef getBaseSymbol() { return "swap"; }
     }];
 
     let hasCanonicalizer = 1;

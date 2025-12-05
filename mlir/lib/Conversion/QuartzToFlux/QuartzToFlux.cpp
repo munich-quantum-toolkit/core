@@ -155,7 +155,7 @@ LogicalResult convertOneTargetZeroParameter(QuartzOpType& op,
   auto& qubitMap = state.qubitMap;
   const auto inCtrlOp = state.inCtrlOp;
 
-  // Get the atest Flux qubit
+  // Get the latest Flux qubit
   const auto quartzQubit = op->getOperand(0);
   Value fluxQubit = nullptr;
   if (inCtrlOp == 0) {
@@ -1003,8 +1003,8 @@ DEFINE_TWO_TARGET_TWO_PARAMETER(XXMinusYYOp, xx_minus_yy, theta, beta)
  * ```
  * is converted to
  * ```mlir
- * %q0_out, %q1_out = flux.barrier %q0_in, %q1_in : !quartz.qubit, !quartz.qubit
- * -> !quartz.qubit, !quartz.qubit
+ * %q0_out, %q1_out = flux.barrier %q0_in, %q1_in : !flux.qubit, !flux.qubit ->
+ * !flux.qubit, !flux.qubit
  * ```
  */
 struct ConvertQuartzBarrierOp final

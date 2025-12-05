@@ -100,7 +100,6 @@ def UnitaryOpInterface : OpInterface<"UnitaryOpInterface"> {
             "Returns the i-th parameter.",
             "Value", "getParameter", (ins "size_t":$i)
         >,
-        /// TODO: Add convenience methods as necessary
 
         // Convenience methods
         InterfaceMethod<

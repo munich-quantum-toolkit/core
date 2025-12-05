@@ -100,7 +100,7 @@ public:
    * Automatically configures the PassManager with:
    * - Timing statistics if enableTiming is true
    * - Pass statistics if enableStatistics is true
-   * - IR printing options if printIRAfterAll or printIRAfterFailure is true
+   * - IR printing after each stage if printIRAfterAllStages is true
    *
    * @param module The MLIR module to compile
    * @param record Optional pointer to record intermediate states
