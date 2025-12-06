@@ -251,7 +251,7 @@ QDMI_Device_impl_d::QDMI_Device_impl_d(
               deviceSession_, param, value->size() + 1, value->c_str()));
       if (status == QDMI_ERROR_NOTSUPPORTED) {
         // Optional parameter not supported by device - skip it
-        spdlog::debug(
+        SPDLOG_INFO(
             "Device session parameter {} not supported by device (skipped)",
             qdmi::toString(param));
         return;

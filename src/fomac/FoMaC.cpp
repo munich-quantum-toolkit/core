@@ -252,7 +252,7 @@ auto throwIfError(const int result, const std::string& msg) -> void {
   case QDMI_SUCCESS:
     break;
   case QDMI_WARN_GENERAL:
-    spdlog::warn("{}", msg);
+    SPDLOG_WARN("{}", msg);
     break;
   default:
     throwError(result, msg);
@@ -841,8 +841,8 @@ Session::Session(const SessionConfig& config) {
           session_, param, value->size() + 1, value->c_str()));
       if (status == QDMI_ERROR_NOTSUPPORTED) {
         // Optional parameter not supported by session - skip it
-        spdlog::debug("Session parameter {} not supported (skipped)",
-                      toString(param));
+        SPDLOG_INFO("Session parameter {} not supported (skipped)",
+                    toString(param));
         return;
       }
       if (status != QDMI_SUCCESS && status != QDMI_WARN_GENERAL) {
@@ -852,7 +852,7 @@ Session::Session(const SessionConfig& config) {
         throwError(status, ss.str());
       }
       if (status == QDMI_WARN_GENERAL) {
-        spdlog::warn("Setting session parameter {}", toString(param));
+        SPDLOG_WARN("Setting session parameter {}", toString(param));
       }
     }
   };
