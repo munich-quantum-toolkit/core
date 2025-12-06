@@ -264,7 +264,7 @@ ignore = ["GH200"]
 
 [tool.cibuildwheel]
 build = "cp3*"
-skip = "*-musllinux_*"
+skip = ["*-musllinux_*", "cp313t-*"]
 archs = "auto64"
 test-groups = ["test"]
 test-sources = ["test/python", "json/na"]
@@ -272,7 +272,7 @@ test-command = "pytest test/python"
 build-frontend = "build[uv]"
 enable = ["cpython-freethreading"]
 test-skip = [
-  "cp3*t-*", # no freethreading qiskit wheels
+  "cp3??t-*", # no freethreading qiskit wheels
   "cp*-win_arm64", # no numpy, qiskit, ... wheels
 ]
 
@@ -285,7 +285,7 @@ before-test = "uvx sccache --show-stats"
 environment = { MACOSX_DEPLOYMENT_TARGET = "11.0" }
 
 [tool.cibuildwheel.windows]
-before-build = "uv pip install delvewheel>=1.9.0"
+before-build = "uv pip install delvewheel>=1.11.2"
 repair-wheel-command = "delvewheel repair -w {dest_dir} {wheel} --namespace-pkg mqt --ignore-existing"
 
 
