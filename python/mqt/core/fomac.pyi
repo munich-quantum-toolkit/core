@@ -6,6 +6,7 @@
 #
 # Licensed under the MIT License
 
+import sys
 from collections.abc import Iterable
 from enum import Enum
 
@@ -15,6 +16,10 @@ __all__ = [
     "ProgramFormat",
     "Session",
 ]
+
+# add_dynamic_device_library is only available on non-Windows platforms
+if sys.platform != "win32":
+    __all__ += ["add_dynamic_device_library"]
 
 class ProgramFormat(Enum):
     """Enumeration of program formats."""
@@ -274,3 +279,65 @@ class Device:
         """Checks if two devices are equal."""
     def __ne__(self, other: object) -> bool:
         """Checks if two devices are not equal."""
+
+# Dynamic library loading is only available on non-Windows platforms
+if sys.platform != "win32":
+    def add_dynamic_device_library(
+        library_path: str,
+        prefix: str,
+        *,
+        base_url: str | None = None,
+        token: str | None = None,
+        auth_file: str | None = None,
+        auth_url: str | None = None,
+        username: str | None = None,
+        password: str | None = None,
+        custom1: str | None = None,
+        custom2: str | None = None,
+        custom3: str | None = None,
+        custom4: str | None = None,
+        custom5: str | None = None,
+    ) -> bool:
+        """Load a dynamic device library into the QDMI driver.
+
+        This function loads a shared library (.so, .dll, or .dylib) that implements
+        a QDMI device interface and makes it available for use in sessions.
+
+        Note: This function is only available on non-Windows platforms.
+
+        Args:
+            library_path: Path to the shared library file to load.
+            prefix: Function prefix used by the library (e.g., "MY_DEVICE").
+            base_url: Optional base URL for the device API endpoint.
+            token: Optional authentication token.
+            auth_file: Optional path to authentication file.
+            auth_url: Optional authentication server URL.
+            username: Optional username for authentication.
+            password: Optional password for authentication.
+            custom1: Optional custom configuration parameter 1.
+            custom2: Optional custom configuration parameter 2.
+            custom3: Optional custom configuration parameter 3.
+            custom4: Optional custom configuration parameter 4.
+            custom5: Optional custom configuration parameter 5.
+
+        Returns:
+            True if the library was successfully loaded, False if it was already loaded.
+
+        Raises:
+            RuntimeError: If library loading fails or configuration is invalid.
+
+        Examples:
+            Load a device library with configuration:
+
+            >>> import mqt.core.fomac as fomac
+            >>> success = fomac.add_dynamic_device_library(
+            ...     "/path/to/libmy_device.so", "MY_DEVICE", base_url="http://localhost:8080", custom1="API_V2"
+            ... )
+            >>> if success:
+            ...     print("Library loaded successfully")
+
+            Now the device is available in sessions:
+
+            >>> session = fomac.Session()
+            >>> devices = session.get_devices()
+        """

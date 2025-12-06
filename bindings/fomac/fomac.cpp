@@ -10,6 +10,8 @@
 
 #include "fomac/FoMaC.hpp"
 
+#include "qdmi/Driver.hpp"
+
 #include <optional>
 #include <pybind11/cast.h>
 #include <pybind11/complex.h> // NOLINT(misc-include-cleaner)
@@ -221,6 +223,45 @@ PYBIND11_MODULE(MQT_CORE_MODULE_NAME, m, py::mod_gil_not_used()) {
   });
   device.def(py::self == py::self); // NOLINT(misc-redundant-expression)
   device.def(py::self != py::self); // NOLINT(misc-redundant-expression)
+
+#ifndef _WIN32
+  // Module-level function to add dynamic device libraries on non-Windows
+  // systems
+  m.def(
+      "add_dynamic_device_library",
+      [](const std::string& libraryPath, const std::string& prefix,
+         const std::optional<std::string>& baseUrl = std::nullopt,
+         const std::optional<std::string>& token = std::nullopt,
+         const std::optional<std::string>& authFile = std::nullopt,
+         const std::optional<std::string>& authUrl = std::nullopt,
+         const std::optional<std::string>& username = std::nullopt,
+         const std::optional<std::string>& password = std::nullopt,
+         const std::optional<std::string>& custom1 = std::nullopt,
+         const std::optional<std::string>& custom2 = std::nullopt,
+         const std::optional<std::string>& custom3 = std::nullopt,
+         const std::optional<std::string>& custom4 = std::nullopt,
+         const std::optional<std::string>& custom5 = std::nullopt) -> bool {
+        const qdmi::DeviceSessionConfig config{.baseUrl = baseUrl,
+                                               .token = token,
+                                               .authFile = authFile,
+                                               .authUrl = authUrl,
+                                               .username = username,
+                                               .password = password,
+                                               .custom1 = custom1,
+                                               .custom2 = custom2,
+                                               .custom3 = custom3,
+                                               .custom4 = custom4,
+                                               .custom5 = custom5};
+        return qdmi::Driver::get().addDynamicDeviceLibrary(libraryPath, prefix,
+                                                           config);
+      },
+      "library_path"_a, "prefix"_a, "base_url"_a = std::nullopt,
+      "token"_a = std::nullopt, "auth_file"_a = std::nullopt,
+      "auth_url"_a = std::nullopt, "username"_a = std::nullopt,
+      "password"_a = std::nullopt, "custom1"_a = std::nullopt,
+      "custom2"_a = std::nullopt, "custom3"_a = std::nullopt,
+      "custom4"_a = std::nullopt, "custom5"_a = std::nullopt);
+#endif // _WIN32
 }
 
 } // namespace mqt
