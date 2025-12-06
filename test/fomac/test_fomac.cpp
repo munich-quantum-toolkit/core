@@ -871,26 +871,26 @@ TEST(AuthenticationTest, SessionConstructionWithCustomParameters) {
   SessionConfig config1;
   config1.custom1 = "custom_value_1";
   try {
-    const Session session(config1);
-    SUCCEED();
+    Session session(config1);
+    EXPECT_NO_THROW(std::ignore = session.getDevices());
   } catch (const std::invalid_argument&) {
     // Validation error - parameter recognized but value invalid
     SUCCEED();
   } catch (const std::runtime_error&) {
     // Not supported or other error
-    SUCCEED();
+    GTEST_SKIP() << "Custom parameter not supported by backend";
   }
 
   // Test custom2
   SessionConfig config2;
   config2.custom2 = "custom_value_2";
   try {
-    const Session session(config2);
-    SUCCEED();
+    Session session(config2);
+    EXPECT_NO_THROW(std::ignore = session.getDevices());
   } catch (const std::invalid_argument&) {
     SUCCEED();
   } catch (const std::runtime_error&) {
-    SUCCEED();
+    GTEST_SKIP() << "Custom parameter not supported by backend";
   }
 
   // Test all custom parameters together
@@ -901,12 +901,12 @@ TEST(AuthenticationTest, SessionConstructionWithCustomParameters) {
   config3.custom4 = "value4";
   config3.custom5 = "value5";
   try {
-    const Session session(config3);
-    SUCCEED();
+    Session session(config3);
+    EXPECT_NO_THROW(std::ignore = session.getDevices());
   } catch (const std::invalid_argument&) {
     SUCCEED();
   } catch (const std::runtime_error&) {
-    SUCCEED();
+    GTEST_SKIP() << "Custom parameter not supported by backend";
   }
 
   // Test mixing custom parameters with standard authentication
@@ -915,12 +915,12 @@ TEST(AuthenticationTest, SessionConstructionWithCustomParameters) {
   config4.custom1 = "custom_value";
   config4.projectId = "project_id";
   try {
-    const Session session(config4);
-    SUCCEED();
+    Session session(config4);
+    EXPECT_NO_THROW(std::ignore = session.getDevices());
   } catch (const std::invalid_argument&) {
     SUCCEED();
   } catch (const std::runtime_error&) {
-    SUCCEED();
+    GTEST_SKIP() << "Custom parameter not supported by backend";
   }
 }
 
