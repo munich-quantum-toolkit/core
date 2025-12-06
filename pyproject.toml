@@ -272,7 +272,7 @@ test-command = "pytest test/python"
 build-frontend = "build[uv]"
 enable = ["cpython-freethreading"]
 test-skip = [
-  "cp3*t-*", # no freethreading qiskit wheels
+  "cp3??t-*", # no freethreading qiskit wheels
   "cp*-win_arm64", # no numpy, qiskit, ... wheels
 ]
 
