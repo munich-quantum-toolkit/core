@@ -22,7 +22,6 @@
 #include <optional>
 #include <qdmi/client.h>
 #include <ranges>
-#include <spdlog/spdlog.h>
 #include <string>
 #include <type_traits>
 #include <utility>
@@ -169,17 +168,7 @@ auto toString(QDMI_SESSION_PARAMETER_T param) -> std::string;
 [[noreturn]] auto throwError(int result, const std::string& msg) -> void;
 
 /// Throws an exception if the result indicates an error.
-inline auto throwIfError(int result, const std::string& msg) -> void {
-  switch (result) {
-  case QDMI_SUCCESS:
-    break;
-  case QDMI_WARN_GENERAL:
-    spdlog::warn("{}", msg);
-    break;
-  default:
-    throwError(result, msg);
-  }
-}
+auto throwIfError(int result, const std::string& msg) -> void;
 
 /**
  * @brief Configuration structure for session authentication parameters.

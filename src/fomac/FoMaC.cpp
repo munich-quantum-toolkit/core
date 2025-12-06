@@ -247,6 +247,17 @@ auto throwError(const int result, const std::string& msg) -> void {
                              toString(static_cast<QDMI_STATUS>(result)) + ".");
   }
 }
+auto throwIfError(const int result, const std::string& msg) -> void {
+  switch (result) {
+  case QDMI_SUCCESS:
+    break;
+  case QDMI_WARN_GENERAL:
+    spdlog::warn("{}", msg);
+    break;
+  default:
+    throwError(result, msg);
+  }
+}
 auto Session::Device::Site::getIndex() const -> size_t {
   return queryProperty<size_t>(QDMI_SITE_PROPERTY_INDEX);
 }
