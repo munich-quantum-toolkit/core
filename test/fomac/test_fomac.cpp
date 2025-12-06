@@ -12,6 +12,8 @@
 
 #include <algorithm>
 #include <cstdlib>
+#include <filesystem>
+#include <fstream>
 #include <gmock/gmock-matchers.h>
 #include <gtest/gtest.h>
 #include <new>
@@ -20,40 +22,42 @@
 #include <ranges>
 #include <stdexcept>
 #include <string>
+#include <thread>
 #include <tuple>
 #include <vector>
 
 namespace fomac {
-class DeviceTest : public testing::TestWithParam<FoMaC::Device> {
+class DeviceTest : public testing::TestWithParam<Session::Device> {
 protected:
-  FoMaC::Device device;
+  Session::Device device;
 
   DeviceTest() : device(GetParam()) {}
 };
 
 class SiteTest : public DeviceTest {
 protected:
-  std::vector<FoMaC::Device::Site> sites;
+  std::vector<Session::Device::Site> sites;
 
   void SetUp() override { sites = device.getSites(); }
 };
 
 class OperationTest : public DeviceTest {
 protected:
-  std::vector<FoMaC::Device::Operation> operations;
+  std::vector<Session::Device::Operation> operations;
 
   void SetUp() override { operations = device.getOperations(); }
 };
 
 class DDSimulatorDeviceTest : public testing::Test {
 protected:
-  FoMaC::Device device;
+  Session::Device device;
 
   DDSimulatorDeviceTest() : device(getDDSimulatorDevice()) {}
 
 private:
-  static auto getDDSimulatorDevice() -> FoMaC::Device {
-    for (const auto& dev : FoMaC::getDevices()) {
+  static auto getDDSimulatorDevice() -> Session::Device {
+    Session session;
+    for (const auto& dev : session.getDevices()) {
       if (dev.getName() == "MQT Core DDSIM QDMI Device") {
         return dev;
       }
@@ -64,11 +68,11 @@ private:
 
 class JobTest : public DDSimulatorDeviceTest {
 protected:
-  FoMaC::Job job;
+  Session::Job job;
 
   JobTest() : job(createTestJob()) {}
 
-  [[nodiscard]] FoMaC::Job createTestJob() const {
+  [[nodiscard]] Session::Job createTestJob() const {
     const std::string qasm3Program = R"(
 OPENQASM 3.0;
 qubit[1] q;
@@ -82,11 +86,11 @@ c[0] = measure q[0];
 
 class SimulatorJobTest : public DDSimulatorDeviceTest {
 protected:
-  FoMaC::Job job;
+  Session::Job job;
 
   SimulatorJobTest() : job(createTestJob()) {}
 
-  [[nodiscard]] FoMaC::Job createTestJob() const {
+  [[nodiscard]] Session::Job createTestJob() const {
     const std::string qasm3Program = R"(
 OPENQASM 3.0;
 qubit[2] q;
@@ -720,14 +724,250 @@ TEST_F(SimulatorJobTest, getSparseProbabilitiesReturnsValidProbabilities) {
   EXPECT_NEAR(it11->second, 0.5, 1e-10);
 }
 
+TEST(AuthenticationTest, SessionParameterToString) {
+  EXPECT_EQ(toString(QDMI_SESSION_PARAMETER_TOKEN), "TOKEN");
+  EXPECT_EQ(toString(QDMI_SESSION_PARAMETER_AUTHFILE), "AUTHFILE");
+  EXPECT_EQ(toString(QDMI_SESSION_PARAMETER_AUTHURL), "AUTHURL");
+  EXPECT_EQ(toString(QDMI_SESSION_PARAMETER_USERNAME), "USERNAME");
+  EXPECT_EQ(toString(QDMI_SESSION_PARAMETER_PASSWORD), "PASSWORD");
+  EXPECT_EQ(toString(QDMI_SESSION_PARAMETER_PROJECTID), "PROJECTID");
+  EXPECT_EQ(toString(QDMI_SESSION_PARAMETER_MAX), "MAX");
+  EXPECT_EQ(toString(QDMI_SESSION_PARAMETER_CUSTOM1), "CUSTOM1");
+  EXPECT_EQ(toString(QDMI_SESSION_PARAMETER_CUSTOM2), "CUSTOM2");
+  EXPECT_EQ(toString(QDMI_SESSION_PARAMETER_CUSTOM3), "CUSTOM3");
+  EXPECT_EQ(toString(QDMI_SESSION_PARAMETER_CUSTOM4), "CUSTOM4");
+  EXPECT_EQ(toString(QDMI_SESSION_PARAMETER_CUSTOM5), "CUSTOM5");
+}
+
+TEST(AuthenticationTest, SessionConstructionWithToken) {
+  // Empty token should be accepted
+  SessionConfig config1;
+  config1.token = "";
+  EXPECT_NO_THROW({ const Session session(config1); });
+
+  // Non-empty token should be accepted
+  SessionConfig config2;
+  config2.token = "test_token_123";
+  EXPECT_NO_THROW({ const Session session(config2); });
+
+  // Token with special characters should be accepted
+  SessionConfig config3;
+  config3.token = "very_long_token_with_special_characters_!@#$%^&*()";
+  EXPECT_NO_THROW({ const Session session(config3); });
+}
+
+TEST(AuthenticationTest, SessionConstructionWithAuthUrl) {
+  // Valid HTTPS URL
+  SessionConfig config1;
+  config1.authUrl = "https://example.com";
+  EXPECT_NO_THROW({ const Session session(config1); });
+
+  // Valid HTTP URL with port and path
+  SessionConfig config2;
+  config2.authUrl = "http://auth.server.com:8080/api";
+  EXPECT_NO_THROW({ const Session session(config2); });
+
+  // Valid HTTPS URL with query parameters
+  SessionConfig config3;
+  config3.authUrl = "https://auth.example.com/token?param=value";
+  EXPECT_NO_THROW({ const Session session(config3); });
+
+  // Valid localhost URL
+  SessionConfig configLocalhost;
+  configLocalhost.authUrl = "http://localhost";
+  EXPECT_NO_THROW({ const Session session(configLocalhost); });
+
+  // Valid localhost URL with port
+  SessionConfig configLocalhostPort;
+  configLocalhostPort.authUrl = "http://localhost:8080";
+  EXPECT_NO_THROW({ const Session session(configLocalhostPort); });
+
+  // Valid localhost URL with port and path
+  SessionConfig configLocalhostPath;
+  configLocalhostPath.authUrl = "https://localhost:3000/auth/api";
+  EXPECT_NO_THROW({ const Session session(configLocalhostPath); });
+
+  // Invalid URL - not a URL at all (validation fails before setting parameter)
+  SessionConfig config4;
+  config4.authUrl = "not-a-url";
+  EXPECT_THROW({ const Session session(config4); }, std::runtime_error);
+
+  // Invalid URL - unsupported protocol
+  SessionConfig config5;
+  config5.authUrl = "ftp://invalid.com";
+  EXPECT_THROW({ const Session session(config5); }, std::runtime_error);
+
+  // Invalid URL - missing protocol
+  SessionConfig config6;
+  config6.authUrl = "example.com";
+  EXPECT_THROW({ const Session session(config6); }, std::runtime_error);
+}
+
+TEST(AuthenticationTest, SessionConstructionWithAuthFile) {
+  // Non-existent file (validation fails before setting parameter)
+  SessionConfig config1;
+  config1.authFile = "/nonexistent/path/to/file.txt";
+  EXPECT_THROW({ const Session session(config1); }, std::runtime_error);
+
+  // Existing file (should succeed even if parameter is unsupported)
+  const auto tempDir = std::filesystem::temp_directory_path();
+  auto tmpPath = tempDir / ("fomac_test_auth_" +
+                            std::to_string(std::hash<std::thread::id>{}(
+                                std::this_thread::get_id())) +
+                            ".txt");
+  {
+    std::ofstream tmpFile(tmpPath);
+    ASSERT_TRUE(tmpFile.is_open()) << "Failed to create temporary file";
+    tmpFile << "test_token_content";
+  }
+
+  SessionConfig config2;
+  config2.authFile = tmpPath.string();
+  EXPECT_NO_THROW({ const Session session(config2); });
+
+  // Clean up
+  std::filesystem::remove(tmpPath);
+}
+
+TEST(AuthenticationTest, SessionConstructionWithUsernamePassword) {
+  // Username only
+  SessionConfig config1;
+  config1.username = "user123";
+  EXPECT_NO_THROW({ const Session session(config1); });
+
+  // Password only
+  SessionConfig config2;
+  config2.password = "secure_password";
+  EXPECT_NO_THROW({ const Session session(config2); });
+
+  // Both username and password
+  SessionConfig config3;
+  config3.username = "user123";
+  config3.password = "secure_password";
+  EXPECT_NO_THROW({ const Session session(config3); });
+}
+
+TEST(AuthenticationTest, SessionConstructionWithProjectId) {
+  SessionConfig config;
+  config.projectId = "project-123-abc";
+  EXPECT_NO_THROW({ const Session session(config); });
+}
+
+TEST(AuthenticationTest, SessionConstructionWithMultipleParameters) {
+  SessionConfig config;
+  config.token = "test_token";
+  config.username = "test_user";
+  config.password = "test_pass";
+  config.projectId = "test_project";
+  EXPECT_NO_THROW({ const Session session(config); });
+}
+
+TEST(AuthenticationTest, SessionConstructionWithCustomParameters) {
+  // Custom parameters may not be supported by all devices, or may have specific
+  // validation requirements. This test verifies they can be passed to the
+  // Session constructor. Currently a smoke test.
+
+  // Test custom1 - may succeed or fail with validation/unsupported errors
+  SessionConfig config1;
+  config1.custom1 = "custom_value_1";
+  try {
+    const Session session(config1);
+    SUCCEED();
+  } catch (const std::invalid_argument&) {
+    // Validation error - parameter recognized but value invalid
+    SUCCEED();
+  } catch (const std::runtime_error&) {
+    // Not supported or other error
+    SUCCEED();
+  }
+
+  // Test custom2
+  SessionConfig config2;
+  config2.custom2 = "custom_value_2";
+  try {
+    const Session session(config2);
+    SUCCEED();
+  } catch (const std::invalid_argument&) {
+    SUCCEED();
+  } catch (const std::runtime_error&) {
+    SUCCEED();
+  }
+
+  // Test all custom parameters together
+  SessionConfig config3;
+  config3.custom1 = "value1";
+  config3.custom2 = "value2";
+  config3.custom3 = "value3";
+  config3.custom4 = "value4";
+  config3.custom5 = "value5";
+  try {
+    const Session session(config3);
+    SUCCEED();
+  } catch (const std::invalid_argument&) {
+    SUCCEED();
+  } catch (const std::runtime_error&) {
+    SUCCEED();
+  }
+
+  // Test mixing custom parameters with standard authentication
+  SessionConfig config4;
+  config4.token = "test_token";
+  config4.custom1 = "custom_value";
+  config4.projectId = "project_id";
+  try {
+    const Session session(config4);
+    SUCCEED();
+  } catch (const std::invalid_argument&) {
+    SUCCEED();
+  } catch (const std::runtime_error&) {
+    SUCCEED();
+  }
+}
+
+TEST(AuthenticationTest, SessionGetDevicesReturnsList) {
+  Session session;
+  auto devices = session.getDevices();
+
+  EXPECT_FALSE(devices.empty());
+
+  // All elements should be Device instances
+  for (const auto& device : devices) {
+    // Device should have a name
+    EXPECT_FALSE(device.getName().empty());
+  }
+}
+
+TEST(AuthenticationTest, SessionMultipleInstances) {
+  Session session1;
+  Session session2;
+
+  auto devices1 = session1.getDevices();
+  auto devices2 = session2.getDevices();
+
+  // Both should return devices
+  EXPECT_FALSE(devices1.empty());
+  EXPECT_FALSE(devices2.empty());
+
+  // Should return the same number of devices
+  EXPECT_EQ(devices1.size(), devices2.size());
+}
+
+namespace {
+// Helper function to get all devices for parameterized tests
+auto getDevices() -> std::vector<Session::Device> {
+  Session session;
+  return session.getDevices();
+}
+} // namespace
+
 INSTANTIATE_TEST_SUITE_P(
     // Custom instantiation name
     DeviceTest,
     // Test suite name
     DeviceTest,
     // Parameters to test with
-    testing::ValuesIn(FoMaC::getDevices()),
-    [](const testing::TestParamInfo<FoMaC::Device>& paramInfo) {
+    testing::ValuesIn(getDevices()),
+    [](const testing::TestParamInfo<Session::Device>& paramInfo) {
       auto name = paramInfo.param.getName();
       // Replace spaces with underscores for valid test names
       std::ranges::replace(name, ' ', '_');
@@ -740,8 +980,8 @@ INSTANTIATE_TEST_SUITE_P(
     // Test suite name
     SiteTest,
     // Parameters to test with
-    testing::ValuesIn(FoMaC::getDevices()),
-    [](const testing::TestParamInfo<FoMaC::Device>& paramInfo) {
+    testing::ValuesIn(getDevices()),
+    [](const testing::TestParamInfo<Session::Device>& paramInfo) {
       auto name = paramInfo.param.getName();
       // Replace spaces with underscores for valid test names
       std::ranges::replace(name, ' ', '_');
@@ -754,8 +994,8 @@ INSTANTIATE_TEST_SUITE_P(
     // Test suite name
     OperationTest,
     // Parameters to test with
-    testing::ValuesIn(FoMaC::getDevices()),
-    [](const testing::TestParamInfo<FoMaC::Device>& paramInfo) {
+    testing::ValuesIn(getDevices()),
+    [](const testing::TestParamInfo<Session::Device>& paramInfo) {
       auto name = paramInfo.param.getName();
       // Replace spaces with underscores for valid test names
       std::ranges::replace(name, ' ', '_');

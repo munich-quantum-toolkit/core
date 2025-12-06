@@ -451,7 +451,8 @@ def real_qdmi_devices() -> list[fomac.Device]:
     Returns:
         List of all QDMI devices from FoMaC.
     """
-    return fomac.devices()
+    session = fomac.Session()
+    return session.get_devices()
 
 
 @pytest.fixture(scope="module")

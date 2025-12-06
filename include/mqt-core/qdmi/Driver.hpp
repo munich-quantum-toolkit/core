@@ -13,6 +13,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <qdmi/client.h>
 #include <qdmi/device.h>
 #include <string>
@@ -21,6 +22,36 @@
 #include <vector>
 
 namespace qdmi {
+
+/**
+ * @brief Configuration for device session parameters.
+ * @details This struct holds optional parameters that can be set on a device
+ * session before initialization. All parameters are optional.
+ */
+struct DeviceSessionConfig {
+  /// Base URL for API endpoint
+  std::optional<std::string> baseUrl;
+  /// Authentication token
+  std::optional<std::string> token;
+  /// Path to file containing authentication information
+  std::optional<std::string> authFile;
+  /// URL to authentication server
+  std::optional<std::string> authUrl;
+  /// Username for authentication
+  std::optional<std::string> username;
+  /// Password for authentication
+  std::optional<std::string> password;
+  /// Custom configuration parameter 1
+  std::optional<std::string> custom1;
+  /// Custom configuration parameter 2
+  std::optional<std::string> custom2;
+  /// Custom configuration parameter 3
+  std::optional<std::string> custom3;
+  /// Custom configuration parameter 4
+  std::optional<std::string> custom4;
+  /// Custom configuration parameter 5
+  std::optional<std::string> custom5;
+};
 
 /**
  * @brief Definition of the device library.
@@ -182,8 +213,10 @@ public:
    * the device session handle.
    * @param lib is a unique pointer to the device library that provides the
    * device interface functions.
+   * @param config is the configuration for device session parameters.
    */
-  explicit QDMI_Device_impl_d(std::unique_ptr<qdmi::DeviceLibrary>&& lib);
+  explicit QDMI_Device_impl_d(std::unique_ptr<qdmi::DeviceLibrary>&& lib,
+                              const qdmi::DeviceSessionConfig& config = {});
 
   /**
    * @brief Destructor for the QDMI device.
@@ -407,15 +440,12 @@ public:
   ~Driver();
 #ifndef _WIN32
   /**
-   * @brief Adds a dynamic device library to the driver.
-   * @details This function attempts to load a dynamic library containing
-   * QDMI device interface functions. If the library is already loaded, the
-   * function returns `false`. Otherwise, it loads the library, initializes
-   * the device, and adds it to the list of devices.
+   * @brief Loads a dynamic device library and adds it to the driver.
    *
    * @param libName The path to the dynamic library to load.
    * @param prefix The prefix used for the device interface functions in the
    * library.
+   * @param config Configuration for device session parameters.
    * @returns `true` if the library was successfully loaded, `false` if it was
    * already loaded.
    *
@@ -426,7 +456,9 @@ public:
    * @throws std::bad_alloc If memory allocation fails during the process.
    */
   auto addDynamicDeviceLibrary(const std::string& libName,
-                               const std::string& prefix) -> bool;
+                               const std::string& prefix,
+                               const qdmi::DeviceSessionConfig& config = {})
+      -> bool;
 #endif // _WIN32
   /**
    * @brief Allocates a new session.

@@ -18,6 +18,7 @@
 #include <iostream>
 #include <iterator>
 #include <map>
+#include <mutex>
 #include <optional>
 #include <qdmi/client.h>
 #include <ranges>
@@ -160,33 +161,56 @@ constexpr auto toString(QDMI_Session_Property prop) -> std::string {
   return "QDMI_SESSION_PROPERTY_UNKNOWN";
 }
 
+/// @returns the string representation of the given QDMI_SESSION_PARAMETER_T.
+auto toString(QDMI_SESSION_PARAMETER_T param) -> std::string;
+
 /// Throws an exception corresponding to the given QDMI_STATUS code.
 [[noreturn]] auto throwError(int result, const std::string& msg) -> void;
 
 /// Throws an exception if the result indicates an error.
-inline auto throwIfError(int result, const std::string& msg) -> void {
-  switch (result) {
-  case QDMI_SUCCESS:
-    break;
-  case QDMI_WARN_GENERAL:
-    std::cerr << "Warning: " << msg << "\n";
-    break;
-  default:
-    throwError(result, msg);
-  }
-}
+auto throwIfError(int result, const std::string& msg) -> void;
 
 /**
- * @brief Class representing the FoMaC library.
+ * @brief Configuration structure for session authentication parameters.
+ * @details All parameters are optional. Only set the parameters needed for
+ * your authentication method. Parameters are validated when the session is
+ * constructed.
+ */
+struct SessionConfig {
+  /// Authentication token
+  std::optional<std::string> token;
+  /// Path to file containing authentication information
+  std::optional<std::string> authFile;
+  /// URL to authentication server
+  std::optional<std::string> authUrl;
+  /// Username for authentication
+  std::optional<std::string> username;
+  /// Password for authentication
+  std::optional<std::string> password;
+  /// Project ID for session
+  std::optional<std::string> projectId;
+  /// Custom configuration parameter 1
+  std::optional<std::string> custom1;
+  /// Custom configuration parameter 2
+  std::optional<std::string> custom2;
+  /// Custom configuration parameter 3
+  std::optional<std::string> custom3;
+  /// Custom configuration parameter 4
+  std::optional<std::string> custom4;
+  /// Custom configuration parameter 5
+  std::optional<std::string> custom5;
+};
+
+/**
+ * @brief Class representing the Session library.
  * @details This class provides methods to query available devices and
  * manage the QDMI session.
- * @note This class is a singleton.
  * @see QDMI_Session
  */
-class FoMaC {
+class Session {
   /**
    * @brief Private token class.
-   * @details Only the FoMaC class can create instances of this class.
+   * @details Only the Session class can create instances of this class.
    */
   class Token {
   public:
@@ -608,7 +632,7 @@ public:
      * @brief Constructs a Device object from a QDMI_Device handle.
      * @param device The QDMI_Device handle to wrap.
      */
-    Device(FoMaC::Token /* unused */, QDMI_Device device) : device_(device) {}
+    Device(Session::Token /* unused */, QDMI_Device device) : device_(device) {}
     /// @returns the underlying QDMI_Device object.
     [[nodiscard]] auto getQDMIDevice() const -> QDMI_Device { return device_; }
     // NOLINTNEXTLINE(google-explicit-constructor)
@@ -675,11 +699,6 @@ public:
 private:
   QDMI_Session session_ = nullptr;
 
-  FoMaC();
-  static auto get() -> FoMaC& {
-    static FoMaC instance;
-    return instance;
-  }
   template <size_constructible_contiguous_range T>
   [[nodiscard]] auto queryProperty(const QDMI_Session_Property prop) const
       -> T {
@@ -696,14 +715,28 @@ private:
   }
 
 public:
-  virtual ~FoMaC();
-  // Delete copy constructors and assignment operators to prevent copying the
-  // singleton instance.
-  FoMaC(const FoMaC&) = delete;
-  FoMaC& operator=(const FoMaC&) = delete;
-  FoMaC(FoMaC&&) = default;
-  FoMaC& operator=(FoMaC&&) = default;
+  /**
+   * @brief Constructs a new QDMI Session with optional authentication.
+   * @param config Optional session configuration containing authentication
+   * parameters. If not provided, uses default (no authentication).
+   * @details Creates, allocates, and initializes a new QDMI session.
+   */
+  explicit Session(const SessionConfig& config = {});
+
+  /**
+   * @brief Destructor that releases the QDMI session.
+   */
+  ~Session();
+
+  // Delete copy constructors and assignment operators
+  Session(const Session&) = delete;
+  Session& operator=(const Session&) = delete;
+
+  // Allow move semantics
+  Session(Session&&) noexcept;
+  Session& operator=(Session&&) noexcept;
+
   /// @see QDMI_SESSION_PROPERTY_DEVICES
-  [[nodiscard]] static auto getDevices() -> std::vector<Device>;
+  [[nodiscard]] auto getDevices() -> std::vector<Device>;
 };
 } // namespace fomac

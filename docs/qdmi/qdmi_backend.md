@@ -102,6 +102,112 @@ filtered_ddsim = provider.backends(name="DDSIM")  # Matches "MQT Core DDSIM QDMI
 exact = provider.backends(name="MQT Core DDSIM QDMI Device")
 ```
 
+## Authentication
+
+The {py:class}`~mqt.core.plugins.qiskit.QDMIProvider` supports authentication for accessing QDMI devices that require credentials.
+Authentication parameters are passed to the provider constructor and forwarded to the underlying session.
+
+:::{note}
+The default local devices (MQT Core DDSIM QDMI Device, MQT NA Default QDMI Device) do not require authentication.
+Authentication is primarily used when connecting to remote quantum hardware.
+:::
+
+### Supported Authentication Methods
+
+The provider supports multiple authentication methods:
+
+- **Token-based authentication**: Using an API token or access token
+- **Username/password authentication**: Traditional credential-based authentication
+- **File-based authentication**: Reading credentials from a file
+- **URL-based authentication**: Connecting to an authentication server
+- **Project-based authentication**: Associating sessions with specific projects, e.g., for accounting or quota management
+
+### Using Authentication Tokens
+
+The most common authentication method is using an API token:
+
+```python
+from mqt.core.plugins.qiskit import QDMIProvider
+
+# Authenticate with a token
+provider = QDMIProvider(token="your_api_token_here")
+
+# Get backends
+backends = provider.backends()
+for backend in backends:
+    print(f"{backend.name}: {backend.target.num_qubits} qubits")
+```
+
+### Username and Password Authentication
+
+For services that use traditional username/password authentication:
+
+```python
+# Authenticate with username and password
+provider = QDMIProvider(username="your_username", password="your_password")
+
+# Access backend
+backend = provider.get_backend("RemoteQuantumDevice")
+```
+
+### File-Based Authentication
+
+Store credentials in a secure file for better security:
+
+```python
+# Authenticate using a credentials file
+# The file should contain authentication information in the format expected by the service
+provider = QDMIProvider(auth_file="/path/to/credentials.txt")
+```
+
+### Authentication Server URL
+
+Connect to a custom authentication server:
+
+```python
+# Use a custom authentication URL
+provider = QDMIProvider(auth_url="https://auth.quantum-service.com/api/v1/auth")
+```
+
+### Project-Based Authentication
+
+Associate your session with a specific project or organization:
+
+```python
+# Specify a project ID
+provider = QDMIProvider(
+    token="your_api_token", project_id="quantum-research-project-2024"
+)
+```
+
+### Combining Authentication Parameters
+
+Multiple authentication parameters can be combined for services that require multiple credentials:
+
+```python
+# Use multiple authentication parameters
+provider = QDMIProvider(
+    token="your_api_token",
+    username="your_username",
+    password="your_password",
+    project_id="your_project_id",
+    auth_url="https://custom-auth.example.com",
+)
+```
+
+### Authentication Error Handling
+
+When authentication fails, the provider raises a `RuntimeError`:
+
+```python
+try:
+    provider = QDMIProvider(token="invalid_token")
+    backends = provider.backends()
+except RuntimeError as e:
+    print(f"Authentication failed: {e}")
+    # Handle authentication error (e.g., prompt for valid credentials)
+```
+
 ## Device Capabilities and Target
 
 The backend automatically introspects the FoMaC (QDMI) device and constructs a Qiskit {py:class}`~qiskit.transpiler.Target`

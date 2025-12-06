@@ -19,8 +19,11 @@
 #include <cstring>
 #include <exception>
 #include <memory>
+#include <optional>
 #include <qdmi/client.h>
 #include <qdmi/device.h>
+#include <spdlog/spdlog.h>
+#include <sstream>
 #include <stdexcept>
 #include <string>
 #include <unordered_map>
@@ -32,6 +35,82 @@
 #endif // _WIN32
 
 namespace qdmi {
+namespace {
+/**
+ * @brief Function used to mark unreachable code
+ * @details Uses compiler specific extensions if possible. Even if no extension
+ * is used, undefined behavior is still raised by an empty function body and the
+ * noreturn attribute.
+ */
+[[noreturn]] inline void unreachable() {
+#ifdef __GNUC__ // GCC, Clang, ICC
+  __builtin_unreachable();
+#elif defined(_MSC_VER) // MSVC
+  __assume(false);
+#endif
+}
+auto toString(const QDMI_Device_Session_Parameter param) -> std::string {
+  switch (param) {
+  case QDMI_DEVICE_SESSION_PARAMETER_BASEURL:
+    return "BASEURL";
+  case QDMI_DEVICE_SESSION_PARAMETER_TOKEN:
+    return "TOKEN";
+  case QDMI_DEVICE_SESSION_PARAMETER_AUTHFILE:
+    return "AUTHFILE";
+  case QDMI_DEVICE_SESSION_PARAMETER_AUTHURL:
+    return "AUTHURL";
+  case QDMI_DEVICE_SESSION_PARAMETER_USERNAME:
+    return "USERNAME";
+  case QDMI_DEVICE_SESSION_PARAMETER_PASSWORD:
+    return "PASSWORD";
+  case QDMI_DEVICE_SESSION_PARAMETER_MAX:
+    return "MAX";
+  case QDMI_DEVICE_SESSION_PARAMETER_CUSTOM1:
+    return "CUSTOM1";
+  case QDMI_DEVICE_SESSION_PARAMETER_CUSTOM2:
+    return "CUSTOM2";
+  case QDMI_DEVICE_SESSION_PARAMETER_CUSTOM3:
+    return "CUSTOM3";
+  case QDMI_DEVICE_SESSION_PARAMETER_CUSTOM4:
+    return "CUSTOM4";
+  case QDMI_DEVICE_SESSION_PARAMETER_CUSTOM5:
+    return "CUSTOM5";
+  }
+  unreachable();
+}
+auto toString(const QDMI_STATUS result) -> std::string {
+  switch (result) {
+  case QDMI_WARN_GENERAL:
+    return "General warning";
+  case QDMI_SUCCESS:
+    return "Success";
+  case QDMI_ERROR_FATAL:
+    return "A fatal error";
+  case QDMI_ERROR_OUTOFMEM:
+    return "Out of memory";
+  case QDMI_ERROR_NOTIMPLEMENTED:
+    return "Not implemented";
+  case QDMI_ERROR_LIBNOTFOUND:
+    return "Library not found";
+  case QDMI_ERROR_NOTFOUND:
+    return "Element not found";
+  case QDMI_ERROR_OUTOFRANGE:
+    return "Out of range";
+  case QDMI_ERROR_INVALIDARGUMENT:
+    return "Invalid argument";
+  case QDMI_ERROR_PERMISSIONDENIED:
+    return "Permission denied";
+  case QDMI_ERROR_NOTSUPPORTED:
+    return "Not supported";
+  case QDMI_ERROR_BADSTATE:
+    return "Bad state";
+  case QDMI_ERROR_TIMEOUT:
+    return "Timeout";
+  }
+  unreachable();
+}
+} // namespace
+
 // Macro to load a static symbol from a statically linked library.
 // @param prefix is the prefix used for the function names in the library.
 // @param symbol is the name of the symbol to load.
@@ -154,11 +233,49 @@ DynamicDeviceLibrary::~DynamicDeviceLibrary() {
 } // namespace qdmi
 
 QDMI_Device_impl_d::QDMI_Device_impl_d(
-    std::unique_ptr<qdmi::DeviceLibrary>&& lib)
+    std::unique_ptr<qdmi::DeviceLibrary>&& lib,
+    const qdmi::DeviceSessionConfig& config)
     : library_(std::move(lib)) {
   if (library_->device_session_alloc(&deviceSession_) != QDMI_SUCCESS) {
     throw std::runtime_error("Failed to allocate device session");
   }
+
+  // Set device session parameters from config
+  auto setParameter = [this](const std::optional<std::string>& value,
+                             QDMI_Device_Session_Parameter param) {
+    if (value && library_->device_session_set_parameter) {
+      const auto status =
+          static_cast<QDMI_STATUS>(library_->device_session_set_parameter(
+              deviceSession_, param, value->size() + 1, value->c_str()));
+      if (status == QDMI_ERROR_NOTSUPPORTED) {
+        // Optional parameter not supported by device - skip it
+        SPDLOG_INFO(
+            "Device session parameter {} not supported by device (skipped)",
+            qdmi::toString(param));
+        return;
+      }
+      if (status != QDMI_SUCCESS) {
+        library_->device_session_free(deviceSession_);
+        std::ostringstream ss;
+        ss << "Failed to set device session parameter " << qdmi::toString(param)
+           << ": " << qdmi::toString(status);
+        throw std::runtime_error(ss.str());
+      }
+    }
+  };
+
+  setParameter(config.baseUrl, QDMI_DEVICE_SESSION_PARAMETER_BASEURL);
+  setParameter(config.token, QDMI_DEVICE_SESSION_PARAMETER_TOKEN);
+  setParameter(config.authFile, QDMI_DEVICE_SESSION_PARAMETER_AUTHFILE);
+  setParameter(config.authUrl, QDMI_DEVICE_SESSION_PARAMETER_AUTHURL);
+  setParameter(config.username, QDMI_DEVICE_SESSION_PARAMETER_USERNAME);
+  setParameter(config.password, QDMI_DEVICE_SESSION_PARAMETER_PASSWORD);
+  setParameter(config.custom1, QDMI_DEVICE_SESSION_PARAMETER_CUSTOM1);
+  setParameter(config.custom2, QDMI_DEVICE_SESSION_PARAMETER_CUSTOM2);
+  setParameter(config.custom3, QDMI_DEVICE_SESSION_PARAMETER_CUSTOM3);
+  setParameter(config.custom4, QDMI_DEVICE_SESSION_PARAMETER_CUSTOM4);
+  setParameter(config.custom5, QDMI_DEVICE_SESSION_PARAMETER_CUSTOM5);
+
   if (library_->device_session_init(deviceSession_) != QDMI_SUCCESS) {
     library_->device_session_free(deviceSession_);
     throw std::runtime_error("Failed to initialize device session");
@@ -349,10 +466,12 @@ Driver::~Driver() {
 
 #ifndef _WIN32
 auto Driver::addDynamicDeviceLibrary(const std::string& libName,
-                                     const std::string& prefix) -> bool {
+                                     const std::string& prefix,
+                                     const qdmi::DeviceSessionConfig& config)
+    -> bool {
   try {
     devices_.emplace_back(std::make_unique<QDMI_Device_impl_d>(
-        std::make_unique<DynamicDeviceLibrary>(libName, prefix)));
+        std::make_unique<DynamicDeviceLibrary>(libName, prefix), config));
   } catch (const std::runtime_error& e) {
     if (std::string(e.what()).starts_with("Device library already loaded:")) {
       // The library is already loaded, so we can ignore this error but return
