@@ -600,84 +600,57 @@ def test_simulator_job_get_sparse_probabilities_returns_valid_probabilities(simu
 def test_session_construction_with_token() -> None:
     """Test Session construction with a token parameter.
 
-    Note: The underlying QDMI library may not support authentication parameters yet,
-    so this test verifies that the parameter can be passed without causing errors
-    during construction, even if it's not actually used.
+    Unsupported parameters are skipped during Session initialization,
+    so Session construction succeeds unless there's a critical error.
     """
     # Empty token should be accepted
-    try:
-        session = Session(token="")
-        assert session is not None
-    except RuntimeError:
-        # If not supported, that's okay for now
-        pass
+    session = Session(token="")
+    assert session is not None
 
     # Non-empty token should be accepted
-    try:
-        session = Session(token="test_token_123")  # noqa: S106
-        assert session is not None
-    except RuntimeError:
-        # If not supported, that's okay for now
-        pass
+    session = Session(token="test_token_123")  # noqa: S106
+    assert session is not None
 
     # Token with special characters should be accepted
-    try:
-        session = Session(token="very_long_token_with_special_characters_!@#$%^&*()")  # noqa: S106
-        assert session is not None
-    except RuntimeError:
-        # If not supported, that's okay for now
-        pass
+    session = Session(token="very_long_token_with_special_characters_!@#$%^&*()")  # noqa: S106
+    assert session is not None
 
 
 def test_session_construction_with_auth_url() -> None:
     """Test Session construction with auth URL parameter.
 
-    Note: The currently available QDMI devices don't support authentication.
-    Valid URLs should either be accepted or rejected with "Not supported" error.
-    Invalid URLs should be rejected with validation errors.
+    Valid URLs should pass validation and Session construction should succeed
+    (even if the parameter is unsupported and skipped). Invalid URLs should
+    fail validation before attempting to set the parameter.
     """
     # Valid HTTPS URL
-    try:
-        session = Session(auth_url="https://example.com")
-        assert session is not None
-    except RuntimeError:
-        # Either not supported or validation failed - both acceptable
-        pass
+    session = Session(auth_url="https://example.com")
+    assert session is not None
+
     # Valid HTTP URL with port and path
-    try:
-        session = Session(auth_url="http://auth.server.com:8080/api")
-        assert session is not None
-    except RuntimeError:
-        # Either not supported or validation failed - both acceptable
-        pass
+    session = Session(auth_url="http://auth.server.com:8080/api")
+    assert session is not None
+
     # Valid HTTPS URL with query parameters
-    try:
-        session = Session(auth_url="https://auth.example.com/token?param=value")
-        assert session is not None
-    except RuntimeError:
-        # Either not supported or validation failed - both acceptable
-        pass
+    session = Session(auth_url="https://auth.example.com/token?param=value")
+    assert session is not None
+
     # Valid localhost URL
-    try:
-        session = Session(auth_url="http://localhost")
-        assert session is not None
-    except RuntimeError:
-        pass
+    session = Session(auth_url="http://localhost")
+    assert session is not None
+
     # Valid localhost URL with port
-    try:
-        session = Session(auth_url="http://localhost:8080")
-        assert session is not None
-    except RuntimeError:
-        pass
+    session = Session(auth_url="http://localhost:8080")
+    assert session is not None
+
     # Valid localhost URL with port and path
-    try:
-        session = Session(auth_url="https://localhost:3000/auth/api")
-        assert session is not None
-    except RuntimeError:
-        pass
+    session = Session(auth_url="https://localhost:3000/auth/api")
+    assert session is not None
+
     # Invalid URL - not a URL at all
     with pytest.raises(RuntimeError):
         Session(auth_url="not-a-url")
+
     # Invalid URL - unsupported protocol
     with pytest.raises(RuntimeError):
         Session(auth_url="ftp://invalid.com")
@@ -690,17 +663,12 @@ def test_session_construction_with_auth_url() -> None:
 def test_session_construction_with_auth_file() -> None:
     """Test Session construction with auth file parameter.
 
-    Note: The currently available QDMI devices don't support authentication.
-    Existing files should either be accepted or rejected with "Not supported" error.
-    Non-existent files should be rejected with validation errors.
+    Existing files should pass validation and Session construction should succeed.
+    Non-existent files should fail validation before attempting to set the parameter.
     """
-    # Test with non-existent file - should raise error
+    # Test with non-existent file
     with pytest.raises(RuntimeError):
         Session(auth_file="/nonexistent/path/to/file.txt")
-
-    # Test with another non-existent file
-    with pytest.raises(RuntimeError):
-        Session(auth_file="/tmp/this_file_does_not_exist_12345.txt")  # noqa: S108
 
     # Test with existing file
     with tempfile.NamedTemporaryFile(encoding="utf-8", mode="w", delete=False, suffix=".txt") as tmp_file:
@@ -708,13 +676,9 @@ def test_session_construction_with_auth_file() -> None:
         tmp_path = tmp_file.name
 
     try:
-        # Existing file should be accepted or rejected with "Not supported"
-        try:
-            session = Session(auth_file=tmp_path)
-            assert session is not None
-        except RuntimeError:
-            # If not supported, that's okay for now
-            pass
+        # Existing file should be accepted (validation passes, parameter may be skipped)
+        session = Session(auth_file=tmp_path)
+        assert session is not None
     finally:
         # Clean up
         Path(tmp_path).unlink(missing_ok=True)
@@ -723,106 +687,56 @@ def test_session_construction_with_auth_file() -> None:
 def test_session_construction_with_username_password() -> None:
     """Test Session construction with username and password parameters.
 
-    Note: The currently available QDMI devices don't support authentication.
+    Unsupported parameters are skipped, so construction should succeed.
     """
     # Username only
-    try:
-        session = Session(username="user123")
-        assert session is not None
-    except RuntimeError:
-        # If not supported, that's okay for now
-        pass
+    session = Session(username="user123")
+    assert session is not None
 
     # Password only
-    try:
-        session = Session(password="secure_password")  # noqa: S106
-        assert session is not None
-    except RuntimeError:
-        # If not supported, that's okay for now
-        pass
+    session = Session(password="secure_password")  # noqa: S106
+    assert session is not None
 
     # Both username and password
-    try:
-        session = Session(username="user123", password="secure_password")  # noqa: S106
-        assert session is not None
-    except RuntimeError:
-        # If not supported, that's okay for now
-        pass
+    session = Session(username="user123", password="secure_password")  # noqa: S106
+    assert session is not None
 
 
 def test_session_construction_with_project_id() -> None:
     """Test Session construction with project ID parameter.
 
-    Note: The currently available QDMI devices don't support authentication.
+    Unsupported parameters are skipped, so construction should succeed.
     """
-    try:
-        session = Session(project_id="project-123-abc")
-        assert session is not None
-    except RuntimeError:
-        # If not supported, that's okay for now
-        pass
+    session = Session(project_id="project-123-abc")
+    assert session is not None
 
 
 def test_session_construction_with_multiple_parameters() -> None:
     """Test Session construction with multiple authentication parameters.
 
-    Note: The currently available QDMI devices don't support authentication.
+    Unsupported parameters are skipped, so construction should succeed.
     """
-    try:
-        session = Session(
-            token="test_token",  # noqa: S106
-            username="test_user",
-            password="test_pass",  # noqa: S106
-            project_id="test_project",
-        )
-        assert session is not None
-    except RuntimeError:
-        # If not supported, that's okay for now
-        pass
-
-
-def test_session_get_devices_returns_list() -> None:
-    """Test that get_devices() returns a list of Device objects."""
-    session = Session()
-    devices = session.get_devices()
-
-    assert isinstance(devices, list)
-    assert len(devices) > 0
-
-    # All elements should be Device instances
-    for device in devices:
-        assert isinstance(device, Device)
-        # Device should have a name
-        assert len(device.name()) > 0
-
-
-def test_session_multiple_instances() -> None:
-    """Test that multiple Session instances can be created independently."""
-    session1 = Session()
-    session2 = Session()
-
-    devices1 = session1.get_devices()
-    devices2 = session2.get_devices()
-
-    # Both should return devices
-    assert len(devices1) > 0
-    assert len(devices2) > 0
-
-    # Should return the same number of devices
-    assert len(devices1) == len(devices2)
+    session = Session(
+        token="test_token",  # noqa: S106
+        username="test_user",
+        password="test_pass",  # noqa: S106
+        project_id="test_project",
+    )
+    assert session is not None
 
 
 def test_session_construction_with_custom_parameters() -> None:
     """Test Session construction with custom configuration parameters.
 
-    Note: The currently available QDMI devices don't support custom parameters.
+    Custom parameters may not be supported by all devices, or may have specific
+    validation requirements. This test verifies they can be passed to the Session
+    constructor. Currently a smoke test..
     """
-    # Test custom1
+    # Test custom1 - may succeed or fail with validation/unsupported errors
     try:
         session = Session(custom1="custom_value_1")
         assert session is not None
     except (RuntimeError, ValueError):
-        # If not supported, that's okay for now
         pass
 
     # Test custom2
@@ -855,3 +769,34 @@ def test_session_construction_with_custom_parameters() -> None:
         assert session is not None
     except (RuntimeError, ValueError):
         pass
+
+
+def test_session_get_devices_returns_list() -> None:
+    """Test that get_devices() returns a list of Device objects."""
+    session = Session()
+    devices = session.get_devices()
+
+    assert isinstance(devices, list)
+    assert len(devices) > 0
+
+    # All elements should be Device instances
+    for device in devices:
+        assert isinstance(device, Device)
+        # Device should have a name
+        assert len(device.name()) > 0
+
+
+def test_session_multiple_instances() -> None:
+    """Test that multiple Session instances can be created independently."""
+    session1 = Session()
+    session2 = Session()
+
+    devices1 = session1.get_devices()
+    devices2 = session2.get_devices()
+
+    # Both should return devices
+    assert len(devices1) > 0
+    assert len(devices2) > 0
+
+    # Should return the same number of devices
+    assert len(devices1) == len(devices2)
