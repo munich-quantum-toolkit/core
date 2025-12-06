@@ -264,7 +264,7 @@ ignore = ["GH200"]
 
 [tool.cibuildwheel]
 build = "cp3*"
-skip = "*-musllinux_*"
+skip = ["*-musllinux_*", "cp313t-*"]
 archs = "auto64"
 test-groups = ["test"]
 test-sources = ["test/python", "json/na"]
