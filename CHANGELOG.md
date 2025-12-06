@@ -40,6 +40,7 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 
 ### Removed
 
+- 🔥 Remove wheel builds for Python 3.13t ([#1371]) ([**@burgholzer**])
 - 🔥 Remove the `evaluation` extra from the MQT Core Python package ([#1327]) ([**@burgholzer**])
 - 🔥 Remove the `mqt-core-dd-compare` entry point from the MQT Core Python package ([#1327]) ([**@burgholzer**])
 
@@ -272,6 +273,7 @@ _📚 Refer to the [GitHub Release Notes](https://github.com/munich-quantum-tool
 
 <!-- PR links -->
 
+[#1371]: https://github.com/munich-quantum-toolkit/core/pull/1371
 [#1359]: https://github.com/munich-quantum-toolkit/core/pull/1359
 [#1355]: https://github.com/munich-quantum-toolkit/core/pull/1355
 [#1338]: https://github.com/munich-quantum-toolkit/core/pull/1338
