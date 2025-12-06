@@ -42,7 +42,7 @@ namespace {
  * is used, undefined behavior is still raised by an empty function body and the
  * noreturn attribute.
  */
-[[noreturn]] inline void unreachable() {
+[[noreturn]] void unreachable() {
 #ifdef __GNUC__ // GCC, Clang, ICC
   __builtin_unreachable();
 #elif defined(_MSC_VER) // MSVC
