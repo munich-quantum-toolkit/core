@@ -80,7 +80,7 @@ class QDMIProvider:
             custom4: Custom configuration parameter 4.
             custom5: Custom configuration parameter 5.
         """
-        session = fomac.Session(
+        self._session = fomac.Session(
             token=token,
             auth_file=auth_file,
             auth_url=auth_url,
@@ -94,7 +94,7 @@ class QDMIProvider:
             custom5=custom5,
         )
         self._backends = [
-            QDMIBackend(device=d, provider=self) for d in session.get_devices() if QDMIBackend.is_convertible(d)
+            QDMIBackend(device=d, provider=self) for d in self._session.get_devices() if QDMIBackend.is_convertible(d)
         ]
 
     def backends(self, name: str | None = None) -> list[QDMIBackend]:
