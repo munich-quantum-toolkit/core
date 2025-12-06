@@ -698,7 +698,7 @@ TEST(DeviceSessionConfigTest, VerifyDynamicDevicesInSession) {
 }
 
 TEST(DeviceSessionConfigTest, IdempotentLoadingWithDifferentConfigs) {
-  if (DYN_DEV_LIBS.size() > 0) {
+  if (!DYN_DEV_LIBS.empty()) {
     // Make a copy to avoid dangling reference
     const auto firstLib = DYN_DEV_LIBS[0];
     const auto& lib = firstLib.first;
