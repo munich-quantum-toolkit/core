@@ -49,9 +49,11 @@ protected:
   QDMI_Device device = nullptr;
 #ifndef _WIN32
   static void SetUpTestSuite() {
+    // Load dynamic libraries with default device session configuration
+    qdmi::DeviceSessionConfig config;
     ASSERT_NO_THROW({
       for (const auto& [lib, prefix] : DYN_DEV_LIBS) {
-        qdmi::Driver::get().addDynamicDeviceLibrary(lib, prefix);
+        qdmi::Driver::get().addDynamicDeviceLibrary(lib, prefix, config);
       }
     });
   }
@@ -127,13 +129,25 @@ protected:
 
 #ifndef _WIN32
 TEST(DriverTest, LoadLibraryTwice) {
-  // Verify that attempting to load already-loaded libraries returns false.
-  // Note: SetUpTestSuite may have already loaded these libraries, so the first
-  // call here might also return false. This test validates that duplicate loads
-  // are safely handled and consistently return false (idempotent behavior).
+  // Test that loading the same library twice returns false (idempotent
+  // behavior). First load should succeed (return true), subsequent loads should
+  // return false.
+  qdmi::DeviceSessionConfig config;
   EXPECT_NO_THROW(for (const auto& [lib, prefix] : DYN_DEV_LIBS) {
-    qdmi::Driver::get().addDynamicDeviceLibrary(lib, prefix);
-    EXPECT_FALSE(qdmi::Driver::get().addDynamicDeviceLibrary(lib, prefix));
+    // First attempt - should return true
+    const auto firstResult =
+        qdmi::Driver::get().addDynamicDeviceLibrary(lib, prefix, config);
+    EXPECT_TRUE(firstResult) << "First load should return true";
+
+    // Second attempt - should return false (idempotent)
+    const auto secondResult =
+        qdmi::Driver::get().addDynamicDeviceLibrary(lib, prefix, config);
+    EXPECT_FALSE(secondResult) << "Second load should return false";
+
+    // Third attempt - also should return false (idempotent)
+    const auto thirdResult =
+        qdmi::Driver::get().addDynamicDeviceLibrary(lib, prefix, config);
+    EXPECT_FALSE(thirdResult) << "Third load should return false (idempotent)";
   });
 }
 #endif // _WIN32
@@ -539,6 +553,191 @@ INSTANTIATE_TEST_SUITE_P(
       std::erase(name, ')');
       return name;
     });
+
+#ifndef _WIN32
+TEST(DeviceSessionConfigTest, AddDynamicDeviceLibraryWithBaseUrl) {
+  qdmi::DeviceSessionConfig config;
+  config.baseUrl = "http://localhost:8080";
+
+  for (const auto& [lib, prefix] : DYN_DEV_LIBS) {
+    EXPECT_NO_THROW(
+        { qdmi::Driver::get().addDynamicDeviceLibrary(lib, prefix, config); });
+  }
+}
+
+TEST(DeviceSessionConfigTest, AddDynamicDeviceLibraryWithCustomParameters) {
+  qdmi::DeviceSessionConfig config;
+  config.custom1 = "RESONANCE_COCOS_V1";
+  config.custom2 = "test_value";
+  config.baseUrl = "http://localhost:9090";
+
+  for (const auto& [lib, prefix] : DYN_DEV_LIBS) {
+    // Custom parameters may fail with validation errors or succeed/return false
+    try {
+      qdmi::Driver::get().addDynamicDeviceLibrary(lib, prefix, config);
+      SUCCEED() << "Library loaded or already loaded";
+    } catch (const std::runtime_error& e) {
+      // Custom parameters may be rejected with INVALIDARGUMENT
+      std::string msg = e.what();
+      if (msg.find("CUSTOM") != std::string::npos &&
+          msg.find("Invalid argument") != std::string::npos) {
+        SUCCEED() << "Custom parameter validation error (expected): " << msg;
+      } else {
+        throw; // Re-throw unexpected errors
+      }
+    }
+  }
+}
+
+TEST(DeviceSessionConfigTest, AddDynamicDeviceLibraryWithAuthToken) {
+  qdmi::DeviceSessionConfig config;
+  config.token = "test_token_123";
+  config.baseUrl = "https://api.example.com";
+
+  for (const auto& [lib, prefix] : DYN_DEV_LIBS) {
+    EXPECT_NO_THROW(
+        { qdmi::Driver::get().addDynamicDeviceLibrary(lib, prefix, config); });
+  }
+}
+
+TEST(DeviceSessionConfigTest, AddDynamicDeviceLibraryWithAuthFile) {
+  qdmi::DeviceSessionConfig config;
+  config.authFile = "/nonexistent/auth.json";
+
+  for (const auto& [lib, prefix] : DYN_DEV_LIBS) {
+    // This should not throw even with non-existent file because
+    // if the auth file parameter is not supported, it's skipped
+    EXPECT_NO_THROW(
+        { qdmi::Driver::get().addDynamicDeviceLibrary(lib, prefix, config); });
+  }
+}
+
+TEST(DeviceSessionConfigTest, AddDynamicDeviceLibraryWithUsernamePassword) {
+  qdmi::DeviceSessionConfig config;
+  config.authUrl = "https://auth.example.com";
+  config.username = "quantum_user";
+  config.password = "secret_password";
+
+  for (const auto& [lib, prefix] : DYN_DEV_LIBS) {
+    EXPECT_NO_THROW(
+        { qdmi::Driver::get().addDynamicDeviceLibrary(lib, prefix, config); });
+  }
+}
+
+TEST(DeviceSessionConfigTest, AddDynamicDeviceLibraryWithAllParameters) {
+  qdmi::DeviceSessionConfig config;
+  config.baseUrl = "http://localhost:8080";
+  config.token = "test_token";
+  config.authUrl = "https://auth.example.com";
+  config.username = "user";
+  config.password = "pass";
+  config.custom1 = "value1";
+  config.custom2 = "value2";
+  config.custom3 = "value3";
+  config.custom4 = "value4";
+  config.custom5 = "value5";
+
+  for (const auto& [lib, prefix] : DYN_DEV_LIBS) {
+    try {
+      qdmi::Driver::get().addDynamicDeviceLibrary(lib, prefix, config);
+      SUCCEED() << "Library loaded or already loaded";
+    } catch (const std::runtime_error& e) {
+      // Custom parameters may be rejected with INVALIDARGUMENT
+      std::string msg = e.what();
+      if (msg.find("CUSTOM") != std::string::npos &&
+          msg.find("Invalid argument") != std::string::npos) {
+        SUCCEED() << "Custom parameter validation error (expected): " << msg;
+      } else {
+        throw; // Re-throw unexpected errors
+      }
+    }
+  }
+}
+
+TEST(DeviceSessionConfigTest, VerifyDynamicDevicesInSession) {
+  QDMI_Session session = nullptr;
+  ASSERT_EQ(QDMI_session_alloc(&session), QDMI_SUCCESS);
+  ASSERT_EQ(QDMI_session_init(session), QDMI_SUCCESS);
+
+  size_t devicesSize = 0;
+  ASSERT_EQ(QDMI_session_query_session_property(session,
+                                                QDMI_SESSION_PROPERTY_DEVICES,
+                                                0, nullptr, &devicesSize),
+            QDMI_SUCCESS);
+
+  const size_t numDevices = devicesSize / sizeof(QDMI_Device);
+
+  // Should have at least the static devices (NA, DDSIM, SC)
+  const size_t expectedMinDevices = 3;
+  EXPECT_GE(numDevices, expectedMinDevices)
+      << "Should have at least " << expectedMinDevices << " static devices";
+
+  // Verify we can query device names
+  std::vector<QDMI_Device> devices(numDevices);
+  ASSERT_EQ(QDMI_session_query_session_property(
+                session, QDMI_SESSION_PROPERTY_DEVICES, devicesSize,
+                devices.data(), nullptr),
+            QDMI_SUCCESS);
+
+  for (auto* device : devices) {
+    size_t nameSize = 0;
+    ASSERT_EQ(QDMI_device_query_device_property(
+                  device, QDMI_DEVICE_PROPERTY_NAME, 0, nullptr, &nameSize),
+              QDMI_SUCCESS);
+
+    std::string name(nameSize - 1, '\0');
+    ASSERT_EQ(QDMI_device_query_device_property(device,
+                                                QDMI_DEVICE_PROPERTY_NAME,
+                                                nameSize, name.data(), nullptr),
+              QDMI_SUCCESS);
+
+    EXPECT_FALSE(name.empty()) << "Device should have a non-empty name";
+  }
+
+  QDMI_session_free(session);
+}
+
+TEST(DeviceSessionConfigTest, IdempotentLoadingWithDifferentConfigs) {
+  if (DYN_DEV_LIBS.size() > 0) {
+    // Make a copy to avoid dangling reference
+    const auto firstLib = DYN_DEV_LIBS[0];
+    const auto& lib = firstLib.first;
+    const auto& prefix = firstLib.second;
+
+    // Config 1: baseUrl
+    {
+      qdmi::DeviceSessionConfig config;
+      config.baseUrl = "http://localhost:8080";
+      EXPECT_NO_THROW({
+        qdmi::Driver::get().addDynamicDeviceLibrary(lib, prefix, config);
+      });
+    }
+
+    // Config 2: different baseUrl and custom parameters
+    {
+      qdmi::DeviceSessionConfig config;
+      config.baseUrl = "http://localhost:9090";
+      config.custom1 = "API_V2";
+      const auto result =
+          qdmi::Driver::get().addDynamicDeviceLibrary(lib, prefix, config);
+      EXPECT_FALSE(result)
+          << "Library should already be loaded with first config";
+    }
+
+    // Config 3: authentication parameters
+    {
+      qdmi::DeviceSessionConfig config;
+      config.token = "new_token";
+      config.authUrl = "https://auth.example.com";
+      const auto result =
+          qdmi::Driver::get().addDynamicDeviceLibrary(lib, prefix, config);
+      EXPECT_FALSE(result)
+          << "Library should already be loaded with first config";
+    }
+  }
+}
+#endif // _WIN32
+
 INSTANTIATE_TEST_SUITE_P(
     // Custom instantiation name
     DefaultDevices,
