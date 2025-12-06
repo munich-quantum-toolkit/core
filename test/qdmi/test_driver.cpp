@@ -19,6 +19,7 @@
 #include <qdmi/client.h>
 #include <random>
 #include <sstream>
+#include <stdexcept>
 #include <string>
 #include <unordered_set>
 #include <utility>
@@ -50,7 +51,7 @@ protected:
 #ifndef _WIN32
   static void SetUpTestSuite() {
     // Load dynamic libraries with default device session configuration
-    qdmi::DeviceSessionConfig config;
+    const qdmi::DeviceSessionConfig config;
     ASSERT_NO_THROW({
       for (const auto& [lib, prefix] : DYN_DEV_LIBS) {
         qdmi::Driver::get().addDynamicDeviceLibrary(lib, prefix, config);
@@ -132,7 +133,7 @@ TEST(DriverTest, LoadLibraryTwice) {
   // Test that loading the same library twice returns false (idempotent
   // behavior). First load should succeed (return true), subsequent loads should
   // return false.
-  qdmi::DeviceSessionConfig config;
+  const qdmi::DeviceSessionConfig config;
   EXPECT_NO_THROW(for (const auto& [lib, prefix] : DYN_DEV_LIBS) {
     // First attempt - should return true
     const auto firstResult =
@@ -578,7 +579,7 @@ TEST(DeviceSessionConfigTest, AddDynamicDeviceLibraryWithCustomParameters) {
       SUCCEED() << "Library loaded or already loaded";
     } catch (const std::runtime_error& e) {
       // Custom parameters may be rejected with INVALIDARGUMENT
-      std::string msg = e.what();
+      const std::string msg = e.what();
       if (msg.find("CUSTOM") != std::string::npos &&
           msg.find("Invalid argument") != std::string::npos) {
         SUCCEED() << "Custom parameter validation error (expected): " << msg;
@@ -643,7 +644,7 @@ TEST(DeviceSessionConfigTest, AddDynamicDeviceLibraryWithAllParameters) {
       SUCCEED() << "Library loaded or already loaded";
     } catch (const std::runtime_error& e) {
       // Custom parameters may be rejected with INVALIDARGUMENT
-      std::string msg = e.what();
+      const std::string msg = e.what();
       if (msg.find("CUSTOM") != std::string::npos &&
           msg.find("Invalid argument") != std::string::npos) {
         SUCCEED() << "Custom parameter validation error (expected): " << msg;
@@ -676,7 +677,7 @@ TEST(DeviceSessionConfigTest, VerifyDynamicDevicesInSession) {
   std::vector<QDMI_Device> devices(numDevices);
   ASSERT_EQ(QDMI_session_query_session_property(
                 session, QDMI_SESSION_PROPERTY_DEVICES, devicesSize,
-                devices.data(), nullptr),
+                static_cast<void*>(devices.data()), nullptr),
             QDMI_SUCCESS);
 
   for (auto* device : devices) {

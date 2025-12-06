@@ -49,8 +49,6 @@ namespace {
   __assume(false);
 #endif
 }
-} // namespace
-
 auto toString(const QDMI_Device_Session_Parameter param) -> std::string {
   switch (param) {
   case QDMI_DEVICE_SESSION_PARAMETER_BASEURL:
@@ -80,7 +78,6 @@ auto toString(const QDMI_Device_Session_Parameter param) -> std::string {
   }
   unreachable();
 }
-
 auto toString(const QDMI_STATUS result) -> std::string {
   switch (result) {
   case QDMI_WARN_GENERAL:
@@ -112,6 +109,7 @@ auto toString(const QDMI_STATUS result) -> std::string {
   }
   unreachable();
 }
+} // namespace
 
 // Macro to load a static symbol from a statically linked library.
 // @param prefix is the prefix used for the function names in the library.
