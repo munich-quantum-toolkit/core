@@ -19,6 +19,7 @@
 #include <cstring>
 #include <exception>
 #include <memory>
+#include <optional>
 #include <qdmi/client.h>
 #include <qdmi/device.h>
 #include <stdexcept>
