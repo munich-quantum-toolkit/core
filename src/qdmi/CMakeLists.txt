@@ -27,7 +27,7 @@ if(NOT TARGET ${TARGET_NAME})
     ${TARGET_NAME}
     PUBLIC qdmi::qdmi
     PRIVATE MQT::CoreQDMINaDevice MQT::CoreQDMIScDevice MQT::CoreQDMI_DDSIM_Device
-            qdmi::project_warnings)
+            qdmi::project_warnings spdlog::spdlog)
 
   # add to list of MQT core targets
   set(MQT_CORE_TARGETS

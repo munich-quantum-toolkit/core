@@ -22,6 +22,7 @@
 #include <optional>
 #include <qdmi/client.h>
 #include <ranges>
+#include <spdlog/spdlog.h>
 #include <string>
 #include <type_traits>
 #include <utility>
@@ -173,7 +174,7 @@ inline auto throwIfError(int result, const std::string& msg) -> void {
   case QDMI_SUCCESS:
     break;
   case QDMI_WARN_GENERAL:
-    std::cerr << "Warning: " << msg << "\n";
+    spdlog::warn("{}", msg);
     break;
   default:
     throwError(result, msg);

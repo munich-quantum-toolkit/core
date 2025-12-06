@@ -20,6 +20,7 @@
 #include <optional>
 #include <qdmi/client.h>
 #include <regex>
+#include <spdlog/spdlog.h>
 #include <sstream>
 #include <stdexcept>
 #include <string>
@@ -825,9 +826,23 @@ Session::Session(const SessionConfig& config) {
   const auto setParameter = [this](const std::optional<std::string>& value,
                                    QDMI_Session_Parameter param) -> void {
     if (value) {
-      throwIfError(QDMI_session_set_parameter(
-                       session_, param, value->size() + 1, value->c_str()),
-                   "Setting session parameter " + toString(param));
+      const auto status = static_cast<QDMI_STATUS>(QDMI_session_set_parameter(
+          session_, param, value->size() + 1, value->c_str()));
+      if (status == QDMI_ERROR_NOTSUPPORTED) {
+        // Optional parameter not supported by session - skip it
+        spdlog::debug("Session parameter {} not supported (skipped)",
+                      toString(param));
+        return;
+      }
+      if (status != QDMI_SUCCESS && status != QDMI_WARN_GENERAL) {
+        std::ostringstream ss;
+        ss << "Setting session parameter " << toString(param) << ": "
+           << toString(status) << " (status = " << status << ")";
+        throwError(status, ss.str());
+      }
+      if (status == QDMI_WARN_GENERAL) {
+        spdlog::warn("Setting session parameter {}", toString(param));
+      }
     }
   };
 
