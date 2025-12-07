@@ -378,7 +378,7 @@ except UnsupportedFormatError as e:
 When you run a circuit, the backend:
 
 1. Validates the circuit (checks for unbound parameters, supported operations, valid options)
-2. Converts the circuit to one of the program formats supported by the target device (IQM JSON, OpenQASM 2, OpenQASM 3) using {py:func}`~mqt.core.plugins.qiskit.convert_to_iqm_json` or Qiskit's built-in QASM exporters
+2. Converts the circuit to one of the program formats supported by the target device (IQM JSON, OpenQASM 2, OpenQASM 3) using {py:func}`~mqt.core.plugins.qiskit.qiskit_to_iqm_json` or Qiskit's built-in QASM exporters
 3. Submits the program to the QDMI device via `device.submit_job()`
 4. Returns a {py:class}`~mqt.core.plugins.qiskit.QDMIJob`
 
