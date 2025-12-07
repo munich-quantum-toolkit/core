@@ -300,7 +300,7 @@ auto Session::Device::initOperationsFromDevice() -> bool {
   for (const fomac::Session::Device::Operation& op : getOperations()) {
     const auto zoned = op.isZoned();
     const auto& nq = op.getQubitsNum();
-    const auto& name = op.getName();
+    const auto& opName = op.getName();
     const auto& sitesOpt = op.getSites();
     if (!sitesOpt.has_value() || sitesOpt->empty()) {
       SPDLOG_INFO("Operation missing sites");
@@ -344,7 +344,7 @@ auto Session::Device::initOperationsFromDevice() -> bool {
       if (!nq.has_value()) {
         // shuttling operations
         std::smatch match;
-        if (std::regex_match(name, match, std::regex("load<(\\d+)>"))) {
+        if (std::regex_match(opName, match, std::regex("load<(\\d+)>"))) {
           const auto id = std::stoul(match[1]);
           const auto& d = op.getDuration();
           if (!d.has_value()) {
@@ -381,7 +381,8 @@ auto Session::Device::initOperationsFromDevice() -> bool {
           }
           unit.loadDuration = *d;
           unit.loadFidelity = *f;
-        } else if (std::regex_match(name, match, std::regex("move<(\\d+)>"))) {
+        } else if (std::regex_match(opName, match,
+                                    std::regex("move<(\\d+)>"))) {
           const auto id = std::stoul(match[1]);
           const auto& speed = op.getMeanShuttlingSpeed();
           if (!speed.has_value()) {
@@ -412,7 +413,8 @@ auto Session::Device::initOperationsFromDevice() -> bool {
             }
           }
           unit.meanShuttlingSpeed = *speed;
-        } else if (std::regex_match(name, match, std::regex("store<(\\d+)>"))) {
+        } else if (std::regex_match(opName, match,
+                                    std::regex("store<(\\d+)>"))) {
           const auto id = std::stoul(match[1]);
           const auto& d = op.getDuration();
           if (!d.has_value()) {
@@ -467,7 +469,7 @@ auto Session::Device::initOperationsFromDevice() -> bool {
         if (*nq == 1) {
           // zoned single-qubit operations
           globalSingleQubitOperations.emplace_back(GlobalSingleQubitOperation{
-              {.name = name,
+              {.name = opName,
                .region = region,
                .duration = *d,
                .fidelity = *f,
@@ -490,7 +492,7 @@ auto Session::Device::initOperationsFromDevice() -> bool {
             return false;
           }
           globalMultiQubitOperations.emplace_back(GlobalMultiQubitOperation{
-              {.name = name,
+              {.name = opName,
                .region = region,
                .duration = *d,
                .fidelity = *f,
@@ -521,7 +523,7 @@ auto Session::Device::initOperationsFromDevice() -> bool {
       const auto region = calculateExtentFromSites(*sitesOpt);
       if (*nq == 1) {
         localSingleQubitOperations.emplace_back(LocalSingleQubitOperation{
-            {.name = name,
+            {.name = opName,
              .region = region,
              .duration = *d,
              .fidelity = *f,
@@ -546,7 +548,7 @@ auto Session::Device::initOperationsFromDevice() -> bool {
           return false;
         }
         localMultiQubitOperations.emplace_back(
-            LocalMultiQubitOperation{{.name = name,
+            LocalMultiQubitOperation{{.name = opName,
                                       .region = pairRegion,
                                       .duration = *d,
                                       .fidelity = *f,

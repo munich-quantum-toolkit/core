@@ -391,7 +391,7 @@ public:
           : device_(device), site_(site) {}
       /// @returns the underlying QDMI_Site object.
       [[nodiscard]] auto getQDMISite() const -> QDMI_Site { return site_; }
-      // NOLINTNEXTLINE(google-explicit-constructor)
+      // NOLINTNEXTLINE(google-explicit-constructor, *-explicit-conversions)
       operator QDMI_Site() const { return site_; }
       auto operator<=>(const Site&) const = default;
       /// @see QDMI_SITE_PROPERTY_INDEX
@@ -510,7 +510,7 @@ public:
       [[nodiscard]] auto getQDMIOperation() const -> QDMI_Operation {
         return operation_;
       }
-      // NOLINTNEXTLINE(google-explicit-constructor)
+      // NOLINTNEXTLINE(google-explicit-constructor, *-explicit-conversions)
       operator QDMI_Operation() const { return operation_; }
       auto operator<=>(const Operation&) const = default;
       /// @see QDMI_OPERATION_PROPERTY_NAME
@@ -635,7 +635,7 @@ public:
     Device(Session::Token /* unused */, QDMI_Device device) : device_(device) {}
     /// @returns the underlying QDMI_Device object.
     [[nodiscard]] auto getQDMIDevice() const -> QDMI_Device { return device_; }
-    // NOLINTNEXTLINE(google-explicit-constructor)
+    // NOLINTNEXTLINE(google-explicit-constructor, *-explicit-conversions)
     operator QDMI_Device() const { return device_; }
     auto operator<=>(const Device&) const = default;
     /// @see QDMI_DEVICE_PROPERTY_NAME
