@@ -94,7 +94,7 @@ if(NOT TARGET ${TARGET_NAME})
   set(DEVICE_HDR ${CMAKE_CURRENT_BINARY_DIR}/include/qdmi/na/DeviceMemberInitializers.hpp)
 
   # Create include directory
-  file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/include/na/device)
+  file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/include/qdmi/na)
 
   # Generate definitions for device
   add_custom_command(
