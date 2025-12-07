@@ -805,6 +805,16 @@ TEST(AuthenticationTest, SessionConstructionWithAuthUrl) {
   configLocalhostPath.authUrl = "https://localhost:3000/auth/api";
   EXPECT_NO_THROW({ const Session session(configLocalhostPath); });
 
+  // Valid IPv4 address URL
+  SessionConfig configIPv4;
+  configIPv4.authUrl = "http://127.0.0.1:5000/auth";
+  EXPECT_NO_THROW({ const Session session(configIPv4); });
+
+  // Valid IPv6 address URL
+  SessionConfig configIPv6;
+  configIPv6.authUrl = "https://[::1]:8080/auth";
+  EXPECT_NO_THROW({ const Session session(configIPv6); });
+
   // Invalid URL - not a URL at all (validation fails before setting parameter)
   SessionConfig config4;
   config4.authUrl = "not-a-url";

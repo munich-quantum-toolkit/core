@@ -645,9 +645,31 @@ Session::Session(const SessionConfig& config) {
     }
     // Validate URL format for authUrl
     if (config.authUrl) {
-      // Adapted from: https://uibakery.io/regex-library/url
+      // Breakdown of the regex pattern:
+      // 1. ^https?://              -> Start with http:// or https://
+      // 2. (?:                     -> Start Host Group
+      //      \[[a-fA-F0-9:]+\]     -> Branch A: IPv6 (Must be in brackets like
+      //      [::1])
+      //                            -> Note: No \b used here because ']' is a
+      //                            non-word char
+      //      |                     -> OR
+      //      (?:                   -> Branch B: Alphanumeric Hosts (Group for
+      //      \b check)
+      //        (?:\d{1,3}\.){3}\d{1,3} -> IPv4 (e.g., 127.0.0.1)
+      //        |                   -> OR
+      //        localhost           -> Localhost
+      //        |                   -> OR
+      //        (?:www\.)?[-a-zA-Z0-9@:%._\+~#=]{1,256}\.[a-zA-Z0-9()]{1,6} ->
+      //        Domain
+      //      )\b                   -> End Branch B + Word Boundary (Prevents
+      //      "localhostX")
+      //    )                       -> End Host Group
+      // 3. (?::\d+)?               -> Optional Port (e.g., :8080)
+      // 4. (?:...)*$               -> Optional Path/Query params + End of
+      // string
       static const std::regex URL_PATTERN(
-          R"(^https?://(?:localhost|(?:www\.)?[-a-zA-Z0-9@:%._\+~#=]{1,256}\.[a-zA-Z0-9()]{1,6})\b(?::\d+)?(?:[-a-zA-Z0-9()@:%_\+.~#?&/=]*)$)");
+          R"(^https?://(?:\[[a-fA-F0-9:]+\]|(?:(?:\d{1,3}\.){3}\d{1,3}|localhost|(?:www\.)?[-a-zA-Z0-9@:%._\+~#=]{1,256}\.[a-zA-Z0-9()]{1,6})\b)(?::\d+)?(?:[-a-zA-Z0-9()@:%_\+.~#?&/=]*)$)",
+          std::regex::optimize);
       if (!std::regex_match(*config.authUrl, URL_PATTERN)) {
         throw std::runtime_error("Invalid URL format: " + *config.authUrl);
       }
