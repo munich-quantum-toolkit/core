@@ -206,6 +206,11 @@ constexpr std::array SUPPORTED_PROGRAM_FORMATS = {QDMI_PROGRAM_FORMAT_QASM2,
       return QDMI_SUCCESS;                                                     \
     }                                                                          \
   }
+
+#define IS_INVALID_ARGUMENT(prop, prefix)                                      \
+  ((prop) > prefix##_MAX && (prop) != prefix##_CUSTOM1 &&                      \
+   (prop) != prefix##_CUSTOM2 && (prop) != prefix##_CUSTOM3 &&                 \
+   (prop) != prefix##_CUSTOM4 && (prop) != prefix##_CUSTOM5)
 // NOLINTEND(bugprone-macro-parentheses)
 
 namespace qdmi::dd {
@@ -272,12 +277,7 @@ auto Device::sessionFree(MQT_DDSIM_QDMI_Device_Session session) -> void {
 auto Device::queryProperty(const QDMI_Device_Property prop, const size_t size,
                            void* value, size_t* sizeRet) const -> QDMI_STATUS {
   if ((value != nullptr && size == 0) ||
-      (prop >= QDMI_DEVICE_PROPERTY_MAX &&
-       prop != QDMI_DEVICE_PROPERTY_CUSTOM1 &&
-       prop != QDMI_DEVICE_PROPERTY_CUSTOM2 &&
-       prop != QDMI_DEVICE_PROPERTY_CUSTOM3 &&
-       prop != QDMI_DEVICE_PROPERTY_CUSTOM4 &&
-       prop != QDMI_DEVICE_PROPERTY_CUSTOM5)) {
+      IS_INVALID_ARGUMENT(prop, QDMI_DEVICE_PROPERTY)) {
     return QDMI_ERROR_INVALIDARGUMENT;
   }
   ADD_STRING_PROPERTY(QDMI_DEVICE_PROPERTY_NAME, name_.c_str(), prop, size,
@@ -349,12 +349,7 @@ auto MQT_DDSIM_QDMI_Device_Session_impl_d::setParameter(
     const QDMI_Device_Session_Parameter param, const size_t size,
     const void* value) const -> QDMI_STATUS {
   if ((value != nullptr && size == 0) ||
-      (param >= QDMI_DEVICE_SESSION_PARAMETER_MAX &&
-       param != QDMI_DEVICE_SESSION_PARAMETER_CUSTOM1 &&
-       param != QDMI_DEVICE_SESSION_PARAMETER_CUSTOM2 &&
-       param != QDMI_DEVICE_SESSION_PARAMETER_CUSTOM3 &&
-       param != QDMI_DEVICE_SESSION_PARAMETER_CUSTOM4 &&
-       param != QDMI_DEVICE_SESSION_PARAMETER_CUSTOM5)) {
+      IS_INVALID_ARGUMENT(param, QDMI_DEVICE_SESSION_PARAMETER)) {
     return QDMI_ERROR_INVALIDARGUMENT;
   }
   if (status_ != Status::ALLOCATED) {
@@ -398,11 +393,7 @@ auto MQT_DDSIM_QDMI_Device_Session_impl_d::querySiteProperty(
     return QDMI_ERROR_BADSTATE;
   }
   if (site == nullptr || (value != nullptr && size == 0) ||
-      (prop >= QDMI_SITE_PROPERTY_MAX && prop != QDMI_SITE_PROPERTY_CUSTOM1 &&
-       prop != QDMI_SITE_PROPERTY_CUSTOM2 &&
-       prop != QDMI_SITE_PROPERTY_CUSTOM3 &&
-       prop != QDMI_SITE_PROPERTY_CUSTOM4 &&
-       prop != QDMI_SITE_PROPERTY_CUSTOM5)) {
+      IS_INVALID_ARGUMENT(prop, QDMI_SITE_PROPERTY)) {
     return QDMI_ERROR_INVALIDARGUMENT;
   }
   const auto id =
@@ -422,12 +413,7 @@ auto MQT_DDSIM_QDMI_Device_Session_impl_d::queryOperationProperty(
   if (operation == nullptr || (sites != nullptr && numSites == 0) ||
       (params != nullptr && numParams == 0) ||
       (value != nullptr && size == 0) ||
-      (prop >= QDMI_OPERATION_PROPERTY_MAX &&
-       prop != QDMI_OPERATION_PROPERTY_CUSTOM1 &&
-       prop != QDMI_OPERATION_PROPERTY_CUSTOM2 &&
-       prop != QDMI_OPERATION_PROPERTY_CUSTOM3 &&
-       prop != QDMI_OPERATION_PROPERTY_CUSTOM4 &&
-       prop != QDMI_OPERATION_PROPERTY_CUSTOM5)) {
+      IS_INVALID_ARGUMENT(prop, QDMI_OPERATION_PROPERTY)) {
     return QDMI_ERROR_INVALIDARGUMENT;
   }
   const auto& [name_, numSites_, numParams_, isVariadic] =
@@ -458,12 +444,7 @@ auto MQT_DDSIM_QDMI_Device_Job_impl_d::setParameter(
     const QDMI_Device_Job_Parameter param, const size_t size, const void* value)
     -> QDMI_STATUS {
   if ((value != nullptr && size == 0) ||
-      (param >= QDMI_DEVICE_JOB_PARAMETER_MAX &&
-       param != QDMI_DEVICE_JOB_PARAMETER_CUSTOM1 &&
-       param != QDMI_DEVICE_JOB_PARAMETER_CUSTOM2 &&
-       param != QDMI_DEVICE_JOB_PARAMETER_CUSTOM3 &&
-       param != QDMI_DEVICE_JOB_PARAMETER_CUSTOM4 &&
-       param != QDMI_DEVICE_JOB_PARAMETER_CUSTOM5)) {
+      IS_INVALID_ARGUMENT(param, QDMI_DEVICE_JOB_PARAMETER)) {
     return QDMI_ERROR_INVALIDARGUMENT;
   }
   if (status_.load() != QDMI_JOB_STATUS_CREATED) {
@@ -473,12 +454,7 @@ auto MQT_DDSIM_QDMI_Device_Job_impl_d::setParameter(
   case QDMI_DEVICE_JOB_PARAMETER_PROGRAMFORMAT:
     if (value != nullptr) {
       const auto format = *static_cast<const QDMI_Program_Format*>(value);
-      if (format >= QDMI_PROGRAM_FORMAT_MAX &&
-          format != QDMI_PROGRAM_FORMAT_CUSTOM1 &&
-          format != QDMI_PROGRAM_FORMAT_CUSTOM2 &&
-          format != QDMI_PROGRAM_FORMAT_CUSTOM3 &&
-          format != QDMI_PROGRAM_FORMAT_CUSTOM4 &&
-          format != QDMI_PROGRAM_FORMAT_CUSTOM5) {
+      if (IS_INVALID_ARGUMENT(format, QDMI_PROGRAM_FORMAT)) {
         return QDMI_ERROR_INVALIDARGUMENT;
       }
       if (format != QDMI_PROGRAM_FORMAT_QASM2 &&
@@ -507,12 +483,7 @@ auto MQT_DDSIM_QDMI_Device_Job_impl_d::queryProperty(
     const QDMI_Device_Job_Property prop, const size_t size, void* value,
     size_t* sizeRet) const -> QDMI_STATUS {
   if ((value != nullptr && size == 0) ||
-      (prop >= QDMI_DEVICE_JOB_PROPERTY_MAX &&
-       prop != QDMI_DEVICE_JOB_PROPERTY_CUSTOM1 &&
-       prop != QDMI_DEVICE_JOB_PROPERTY_CUSTOM2 &&
-       prop != QDMI_DEVICE_JOB_PROPERTY_CUSTOM3 &&
-       prop != QDMI_DEVICE_JOB_PROPERTY_CUSTOM4 &&
-       prop != QDMI_DEVICE_JOB_PROPERTY_CUSTOM5)) {
+      IS_INVALID_ARGUMENT(prop, QDMI_DEVICE_JOB_PROPERTY)) {
     return QDMI_ERROR_INVALIDARGUMENT;
   }
   const auto str = std::to_string(id_);
@@ -779,10 +750,7 @@ auto MQT_DDSIM_QDMI_Device_Job_impl_d::getResults(const QDMI_Job_Result result,
                                                   size_t* sizeRet)
     -> QDMI_STATUS {
   if ((data != nullptr && size == 0) ||
-      (result >= QDMI_JOB_RESULT_MAX && result != QDMI_JOB_RESULT_CUSTOM1 &&
-       result != QDMI_JOB_RESULT_CUSTOM2 && result != QDMI_JOB_RESULT_CUSTOM3 &&
-       result != QDMI_JOB_RESULT_CUSTOM4 &&
-       result != QDMI_JOB_RESULT_CUSTOM5)) {
+      IS_INVALID_ARGUMENT(result, QDMI_JOB_RESULT)) {
     return QDMI_ERROR_INVALIDARGUMENT;
   }
   if (status_.load() != QDMI_JOB_STATUS_DONE) {

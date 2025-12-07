@@ -93,6 +93,11 @@
       return QDMI_SUCCESS;                                                     \
     }                                                                          \
   }
+
+#define IS_INVALID_ARGUMENT(prop, prefix)                                      \
+  ((prop) > prefix##_MAX && (prop) != prefix##_CUSTOM1 &&                      \
+   (prop) != prefix##_CUSTOM2 && (prop) != prefix##_CUSTOM3 &&                 \
+   (prop) != prefix##_CUSTOM4 && (prop) != prefix##_CUSTOM5)
 // NOLINTEND(bugprone-macro-parentheses)
 
 namespace qdmi::na {
@@ -164,12 +169,7 @@ auto Device::sessionFree(MQT_NA_QDMI_Device_Session session) -> void {
 auto Device::queryProperty(const QDMI_Device_Property prop, const size_t size,
                            void* value, size_t* sizeRet) -> int {
   if ((value != nullptr && size == 0) ||
-      (prop >= QDMI_DEVICE_PROPERTY_MAX &&
-       prop != QDMI_DEVICE_PROPERTY_CUSTOM1 &&
-       prop != QDMI_DEVICE_PROPERTY_CUSTOM2 &&
-       prop != QDMI_DEVICE_PROPERTY_CUSTOM3 &&
-       prop != QDMI_DEVICE_PROPERTY_CUSTOM4 &&
-       prop != QDMI_DEVICE_PROPERTY_CUSTOM5)) {
+      IS_INVALID_ARGUMENT(prop, QDMI_DEVICE_PROPERTY)) {
     return QDMI_ERROR_INVALIDARGUMENT;
   }
   ADD_STRING_PROPERTY(QDMI_DEVICE_PROPERTY_NAME, name_.c_str(), prop, size,
@@ -230,12 +230,7 @@ auto MQT_NA_QDMI_Device_Session_impl_d::setParameter(
     QDMI_Device_Session_Parameter param, const size_t size,
     const void* value) const -> int {
   if ((value != nullptr && size == 0) ||
-      (param >= QDMI_DEVICE_SESSION_PARAMETER_MAX &&
-       param != QDMI_DEVICE_SESSION_PARAMETER_CUSTOM1 &&
-       param != QDMI_DEVICE_SESSION_PARAMETER_CUSTOM2 &&
-       param != QDMI_DEVICE_SESSION_PARAMETER_CUSTOM3 &&
-       param != QDMI_DEVICE_SESSION_PARAMETER_CUSTOM4 &&
-       param != QDMI_DEVICE_SESSION_PARAMETER_CUSTOM5)) {
+      IS_INVALID_ARGUMENT(param, QDMI_DEVICE_SESSION_PARAMETER)) {
     return QDMI_ERROR_INVALIDARGUMENT;
   }
   if (status_ != Status::ALLOCATED) {
@@ -303,12 +298,7 @@ auto MQT_NA_QDMI_Device_Job_impl_d::setParameter(
     const QDMI_Device_Job_Parameter param, const size_t size, const void* value)
     -> int {
   if ((value != nullptr && size == 0) ||
-      (param >= QDMI_DEVICE_JOB_PARAMETER_MAX &&
-       param != QDMI_DEVICE_JOB_PARAMETER_CUSTOM1 &&
-       param != QDMI_DEVICE_JOB_PARAMETER_CUSTOM2 &&
-       param != QDMI_DEVICE_JOB_PARAMETER_CUSTOM3 &&
-       param != QDMI_DEVICE_JOB_PARAMETER_CUSTOM4 &&
-       param != QDMI_DEVICE_JOB_PARAMETER_CUSTOM5)) {
+      IS_INVALID_ARGUMENT(param, QDMI_DEVICE_JOB_PARAMETER)) {
     return QDMI_ERROR_INVALIDARGUMENT;
   }
   return QDMI_ERROR_NOTSUPPORTED;
@@ -319,12 +309,7 @@ auto MQT_NA_QDMI_Device_Job_impl_d::queryProperty(
     const QDMI_Device_Job_Property prop, const size_t size, void* value,
     [[maybe_unused]] size_t* sizeRet) -> int {
   if ((value != nullptr && size == 0) ||
-      (prop >= QDMI_DEVICE_JOB_PROPERTY_MAX &&
-       prop != QDMI_DEVICE_JOB_PROPERTY_CUSTOM1 &&
-       prop != QDMI_DEVICE_JOB_PROPERTY_CUSTOM2 &&
-       prop != QDMI_DEVICE_JOB_PROPERTY_CUSTOM3 &&
-       prop != QDMI_DEVICE_JOB_PROPERTY_CUSTOM4 &&
-       prop != QDMI_DEVICE_JOB_PROPERTY_CUSTOM5)) {
+      IS_INVALID_ARGUMENT(prop, QDMI_DEVICE_JOB_PROPERTY)) {
     return QDMI_ERROR_INVALIDARGUMENT;
   }
   return QDMI_ERROR_NOTSUPPORTED;
@@ -355,10 +340,7 @@ auto MQT_NA_QDMI_Device_Job_impl_d::getResults(
     // NOLINTNEXTLINE(readability-non-const-parameter)
     const size_t size, void* data, [[maybe_unused]] size_t* sizeRet) -> int {
   if ((data != nullptr && size == 0) ||
-      (result >= QDMI_JOB_RESULT_MAX && result != QDMI_JOB_RESULT_CUSTOM1 &&
-       result != QDMI_JOB_RESULT_CUSTOM2 && result != QDMI_JOB_RESULT_CUSTOM3 &&
-       result != QDMI_JOB_RESULT_CUSTOM4 &&
-       result != QDMI_JOB_RESULT_CUSTOM5)) {
+      IS_INVALID_ARGUMENT(result, QDMI_JOB_RESULT)) {
     return QDMI_ERROR_INVALIDARGUMENT;
   }
   return QDMI_ERROR_NOTSUPPORTED;
@@ -399,11 +381,7 @@ auto MQT_NA_QDMI_Site_impl_d::queryProperty(const QDMI_Site_Property prop,
                                             const size_t size, void* value,
                                             size_t* sizeRet) const -> int {
   if ((value != nullptr && size == 0) ||
-      (prop >= QDMI_SITE_PROPERTY_MAX && prop != QDMI_SITE_PROPERTY_CUSTOM1 &&
-       prop != QDMI_SITE_PROPERTY_CUSTOM2 &&
-       prop != QDMI_SITE_PROPERTY_CUSTOM3 &&
-       prop != QDMI_SITE_PROPERTY_CUSTOM4 &&
-       prop != QDMI_SITE_PROPERTY_CUSTOM5)) {
+      IS_INVALID_ARGUMENT(prop, QDMI_SITE_PROPERTY)) {
     return QDMI_ERROR_INVALIDARGUMENT;
   }
   ADD_SINGLE_VALUE_PROPERTY(QDMI_SITE_PROPERTY_INDEX, uint64_t, id_, prop, size,
@@ -572,12 +550,7 @@ auto MQT_NA_QDMI_Operation_impl_d::queryProperty(
   if ((sites != nullptr && numSites == 0) ||
       (params != nullptr && numParams == 0) ||
       (value != nullptr && size == 0) ||
-      (prop >= QDMI_OPERATION_PROPERTY_MAX &&
-       prop != QDMI_OPERATION_PROPERTY_CUSTOM1 &&
-       prop != QDMI_OPERATION_PROPERTY_CUSTOM2 &&
-       prop != QDMI_OPERATION_PROPERTY_CUSTOM3 &&
-       prop != QDMI_OPERATION_PROPERTY_CUSTOM4 &&
-       prop != QDMI_OPERATION_PROPERTY_CUSTOM5) ||
+      IS_INVALID_ARGUMENT(prop, QDMI_OPERATION_PROPERTY) ||
       (isZoned_ && numSites > 1) ||
       (!isZoned_ && numSites > 0 && numQubits_ != numSites)) {
     return QDMI_ERROR_INVALIDARGUMENT;
