@@ -62,7 +62,7 @@ def qiskit_to_iqm_json(circuit: QuantumCircuit, device: fomac.Device) -> str:
         >>> import numpy as np
         >>> from mqt.core.plugins.qiskit.converters import qiskit_to_iqm_json
         >>> qc = QuantumCircuit(2, 2)
-        >>> qc.r(np.pi / 2, 0)
+        >>> qc.r(np.pi / 2, 0, 0)
         >>> qc.cz(0, 1)
         >>> qc.measure_all()
         >>> json_str = qiskit_to_iqm_json(qc, device)
