@@ -128,16 +128,6 @@ class DynamicDeviceLibrary final : public DeviceLibrary {
   /// @brief Handle to the dynamic library returned by `dlopen`.
   void* libHandle_;
 
-  /**
-   * @brief Returns a reference to the set of open library handles.
-   * @details This set can be used to check whether a newly opened library
-   * is already open.
-   */
-  static auto openLibHandles() -> std::unordered_set<void*>& {
-    static std::unordered_set<void*> libHandles;
-    return libHandles;
-  }
-
 public:
   /**
    * @brief Constructs a DynamicDeviceLibrary object.
