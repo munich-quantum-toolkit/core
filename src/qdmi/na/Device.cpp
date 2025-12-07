@@ -12,13 +12,13 @@
  * @brief The MQT QDMI device implementation for neutral atom devices.
  */
 
-#include "na/device/Device.hpp"
+#include "qdmi/na/Device.hpp"
 
 #include "mqt_na_qdmi/device.h"
-#include "na/device/DeviceMemberInitializers.hpp"
+#include "qdmi/Common.hpp"
+#include "qdmi/na/DeviceMemberInitializers.hpp"
 
 #include <algorithm>
-#include <atomic>
 #include <cassert>
 #include <cstddef>
 #include <cstdint>
@@ -31,73 +31,7 @@
 #include <variant>
 #include <vector>
 
-// NOLINTBEGIN(bugprone-macro-parentheses)
-#define ADD_SINGLE_VALUE_PROPERTY(prop_name, prop_type, prop_value, prop,      \
-                                  size, value, size_ret)                       \
-  {                                                                            \
-    if ((prop) == (prop_name)) {                                               \
-      if ((value) != nullptr) {                                                \
-        if ((size) < sizeof(prop_type)) {                                      \
-          return QDMI_ERROR_INVALIDARGUMENT;                                   \
-        }                                                                      \
-        *static_cast<prop_type*>(value) = prop_value;                          \
-      }                                                                        \
-      if ((size_ret) != nullptr) {                                             \
-        *size_ret = sizeof(prop_type);                                         \
-      }                                                                        \
-      return QDMI_SUCCESS;                                                     \
-    }                                                                          \
-  }
-
-#ifdef _WIN32
-#define STRNCPY(dest, src, size)                                               \
-  strncpy_s(static_cast<char*>(dest), size, src, size);
-#else
-#define STRNCPY(dest, src, size) strncpy(static_cast<char*>(dest), src, size);
-#endif
-
-#define ADD_STRING_PROPERTY(prop_name, prop_value, prop, size, value,          \
-                            size_ret)                                          \
-  {                                                                            \
-    if ((prop) == (prop_name)) {                                               \
-      if ((value) != nullptr) {                                                \
-        if ((size) < strlen(prop_value) + 1) {                                 \
-          return QDMI_ERROR_INVALIDARGUMENT;                                   \
-        }                                                                      \
-        STRNCPY(value, prop_value, size);                                      \
-        /* NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic) */  \
-        static_cast<char*>(value)[size - 1] = '\0';                            \
-      }                                                                        \
-      if ((size_ret) != nullptr) {                                             \
-        *size_ret = strlen(prop_value) + 1;                                    \
-      }                                                                        \
-      return QDMI_SUCCESS;                                                     \
-    }                                                                          \
-  }
-
-#define ADD_LIST_PROPERTY(prop_name, prop_type, prop_values, prop, size,       \
-                          value, size_ret)                                     \
-  {                                                                            \
-    if ((prop) == (prop_name)) {                                               \
-      if ((value) != nullptr) {                                                \
-        if ((size) < (prop_values).size() * sizeof(prop_type)) {               \
-          return QDMI_ERROR_INVALIDARGUMENT;                                   \
-        }                                                                      \
-        memcpy(static_cast<void*>(value),                                      \
-               static_cast<const void*>((prop_values).data()),                 \
-               (prop_values).size() * sizeof(prop_type));                      \
-      }                                                                        \
-      if ((size_ret) != nullptr) {                                             \
-        *size_ret = (prop_values).size() * sizeof(prop_type);                  \
-      }                                                                        \
-      return QDMI_SUCCESS;                                                     \
-    }                                                                          \
-  }
-// NOLINTEND(bugprone-macro-parentheses)
-
 namespace qdmi::na {
-std::atomic<Device*> Device::instance = nullptr;
-
 Device::Device() {
   // NOLINTBEGIN(cppcoreguidelines-prefer-member-initializer)
   INITIALIZE_NAME(name_);
@@ -110,34 +44,13 @@ Device::Device() {
   INITIALIZE_SITES(sites_);
   INITIALIZE_OPERATIONS(operations_);
 }
-
-void Device::initialize() {
-  // NOLINTNEXTLINE(misc-const-correctness)
-  Device* expected = nullptr;
-  // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
-  auto* newInstance = new Device();
-  if (!instance.compare_exchange_strong(expected, newInstance)) {
-    // Another thread won the race, so delete the instance we created.
-    // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
-    delete newInstance;
-  }
-}
-
-void Device::finalize() {
-  // Atomically swap the instance pointer with nullptr and get the old value.
-  const Device* oldInstance = instance.exchange(nullptr);
-  // Delete the old instance if it existed.
-  // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
-  delete oldInstance;
-}
-
 auto Device::get() -> Device& {
-  auto* loadedInstance = instance.load();
-  assert(loadedInstance != nullptr &&
-         "Device not initialized. Call `initialize()` first.");
-  return *loadedInstance;
+  // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
+  static auto* instance = new Device();
+  // The instance is intentionally leaked to avoid static deinitialization
+  // issues (cf. static (de)initialization order fiasco)
+  return *instance;
 }
-
 auto Device::sessionAlloc(MQT_NA_QDMI_Device_Session* session) -> int {
   if (session == nullptr) {
     return QDMI_ERROR_INVALIDARGUMENT;
@@ -158,7 +71,8 @@ auto Device::sessionFree(MQT_NA_QDMI_Device_Session session) -> void {
 }
 auto Device::queryProperty(const QDMI_Device_Property prop, const size_t size,
                            void* value, size_t* sizeRet) -> int {
-  if ((value != nullptr && size == 0) || prop >= QDMI_DEVICE_PROPERTY_MAX) {
+  if ((value != nullptr && size == 0) ||
+      IS_INVALID_ARGUMENT(prop, QDMI_DEVICE_PROPERTY)) {
     return QDMI_ERROR_INVALIDARGUMENT;
   }
   ADD_STRING_PROPERTY(QDMI_DEVICE_PROPERTY_NAME, name_.c_str(), prop, size,
@@ -219,7 +133,7 @@ auto MQT_NA_QDMI_Device_Session_impl_d::setParameter(
     QDMI_Device_Session_Parameter param, const size_t size,
     const void* value) const -> int {
   if ((value != nullptr && size == 0) ||
-      param >= QDMI_DEVICE_SESSION_PARAMETER_MAX) {
+      IS_INVALID_ARGUMENT(param, QDMI_DEVICE_SESSION_PARAMETER)) {
     return QDMI_ERROR_INVALIDARGUMENT;
   }
   if (status_ != Status::ALLOCATED) {
@@ -287,7 +201,7 @@ auto MQT_NA_QDMI_Device_Job_impl_d::setParameter(
     const QDMI_Device_Job_Parameter param, const size_t size, const void* value)
     -> int {
   if ((value != nullptr && size == 0) ||
-      param >= QDMI_DEVICE_JOB_PARAMETER_MAX) {
+      IS_INVALID_ARGUMENT(param, QDMI_DEVICE_JOB_PARAMETER)) {
     return QDMI_ERROR_INVALIDARGUMENT;
   }
   return QDMI_ERROR_NOTSUPPORTED;
@@ -297,7 +211,8 @@ auto MQT_NA_QDMI_Device_Job_impl_d::queryProperty(
     // NOLINTNEXTLINE(readability-non-const-parameter)
     const QDMI_Device_Job_Property prop, const size_t size, void* value,
     [[maybe_unused]] size_t* sizeRet) -> int {
-  if ((value != nullptr && size == 0) || prop >= QDMI_DEVICE_JOB_PROPERTY_MAX) {
+  if ((value != nullptr && size == 0) ||
+      IS_INVALID_ARGUMENT(prop, QDMI_DEVICE_JOB_PROPERTY)) {
     return QDMI_ERROR_INVALIDARGUMENT;
   }
   return QDMI_ERROR_NOTSUPPORTED;
@@ -327,7 +242,8 @@ auto MQT_NA_QDMI_Device_Job_impl_d::getResults(
     QDMI_Job_Result result,
     // NOLINTNEXTLINE(readability-non-const-parameter)
     const size_t size, void* data, [[maybe_unused]] size_t* sizeRet) -> int {
-  if ((data != nullptr && size == 0) || result >= QDMI_JOB_RESULT_MAX) {
+  if ((data != nullptr && size == 0) ||
+      IS_INVALID_ARGUMENT(result, QDMI_JOB_RESULT)) {
     return QDMI_ERROR_INVALIDARGUMENT;
   }
   return QDMI_ERROR_NOTSUPPORTED;
@@ -367,7 +283,8 @@ auto MQT_NA_QDMI_Site_impl_d::makeUniqueZone(const uint64_t id, const int64_t x,
 auto MQT_NA_QDMI_Site_impl_d::queryProperty(const QDMI_Site_Property prop,
                                             const size_t size, void* value,
                                             size_t* sizeRet) const -> int {
-  if ((value != nullptr && size == 0) || prop >= QDMI_SITE_PROPERTY_MAX) {
+  if ((value != nullptr && size == 0) ||
+      IS_INVALID_ARGUMENT(prop, QDMI_SITE_PROPERTY)) {
     return QDMI_ERROR_INVALIDARGUMENT;
   }
   ADD_SINGLE_VALUE_PROPERTY(QDMI_SITE_PROPERTY_INDEX, uint64_t, id_, prop, size,
@@ -535,7 +452,8 @@ auto MQT_NA_QDMI_Operation_impl_d::queryProperty(
     size_t* sizeRet) const -> int {
   if ((sites != nullptr && numSites == 0) ||
       (params != nullptr && numParams == 0) ||
-      (value != nullptr && size == 0) || prop >= QDMI_OPERATION_PROPERTY_MAX ||
+      (value != nullptr && size == 0) ||
+      IS_INVALID_ARGUMENT(prop, QDMI_OPERATION_PROPERTY) ||
       (isZoned_ && numSites > 1) ||
       (!isZoned_ && numSites > 0 && numQubits_ != numSites)) {
     return QDMI_ERROR_INVALIDARGUMENT;
@@ -654,14 +572,12 @@ auto MQT_NA_QDMI_Operation_impl_d::queryProperty(
 }
 
 int MQT_NA_QDMI_device_initialize() {
-  qdmi::na::Device::initialize();
+  // ensure the singleton is initialized
+  std::ignore = qdmi::na::Device::get();
   return QDMI_SUCCESS;
 }
 
-int MQT_NA_QDMI_device_finalize() {
-  qdmi::na::Device::finalize();
-  return QDMI_SUCCESS;
-}
+int MQT_NA_QDMI_device_finalize() { return QDMI_SUCCESS; }
 
 int MQT_NA_QDMI_device_session_alloc(MQT_NA_QDMI_Device_Session* session) {
   return qdmi::na::Device::get().sessionAlloc(session);

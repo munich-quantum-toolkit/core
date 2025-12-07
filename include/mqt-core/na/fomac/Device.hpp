@@ -11,7 +11,7 @@
 #pragma once
 
 #include "fomac/FoMaC.hpp"
-#include "na/device/Generator.hpp"
+#include "qdmi/na/Generator.hpp"
 
 // NOLINTNEXTLINE(misc-include-cleaner)
 #include <nlohmann/json.hpp>
@@ -20,18 +20,18 @@
 
 namespace na {
 /**
- * @brief Class representing the FoMaC library with neutral atom extensions.
- * @see fomac::FoMaC
+ * @brief Class representing the Session library with neutral atom extensions.
+ * @see fomac::Session
  */
-class FoMaC : public fomac::FoMaC {
+class Session : public fomac::Session {
 public:
   /**
    * @brief Class representing a quantum device with neutral atom extensions.
-   * @see fomac::FoMaC::Device
+   * @see fomac::Session::Device
    * @note Since it inherits from @ref na::Device, Device objects can be
    * converted to `nlohmann::json` objects.
    */
-  class Device : public fomac::FoMaC::Device, na::Device {
+  class Device : public fomac::Session::Device, na::Device {
 
     /**
      * @brief Initializes the name from the underlying QDMI device.
@@ -79,13 +79,13 @@ public:
     auto initOperationsFromDevice() -> bool;
 
     /**
-     * @brief Constructs a Device object from a fomac::FoMaC::Device object.
-     * @param device The fomac::FoMaC::Device object to wrap.
+     * @brief Constructs a Device object from a fomac::Session::Device object.
+     * @param device The fomac::Session::Device object to wrap.
      * @note The constructor does not initialize the additional fields of this
      * class. For their initialization, the corresponding `init*FromDevice`
      * methods must be called, see @ref tryCreateFromDevice.
      */
-    explicit Device(const fomac::FoMaC::Device& device);
+    explicit Device(const fomac::Session::Device& device);
 
   public:
     /// @returns the length unit of the device.
@@ -109,17 +109,18 @@ public:
     }
 
     /**
-     * @brief Try to create a Device object from a fomac::FoMaC::Device object.
+     * @brief Try to create a Device object from a fomac::Session::Device
+     * object.
      * @details This method attempts to create a Device object by initializing
-     * all necessary fields from the provided fomac::FoMaC::Device object. If
+     * all necessary fields from the provided fomac::Session::Device object. If
      * any required information is missing or invalid, the method returns
      * `std::nullopt`.
-     * @param device is the fomac::FoMaC::Device object to wrap.
+     * @param device is the fomac::Session::Device object to wrap.
      * @return An optional containing the instantiated device if compatible,
      * std::nullopt otherwise.
      */
     [[nodiscard]] static auto
-    tryCreateFromDevice(const fomac::FoMaC::Device& device)
+    tryCreateFromDevice(const fomac::Session::Device& device)
         -> std::optional<Device> {
       Device d(device);
       // The sequence of the following method calls does not matter.
@@ -160,7 +161,7 @@ public:
   };
 
   /// @brief Deleted default constructor to prevent instantiation.
-  FoMaC() = delete;
+  Session() = delete;
 
   /// @see QDMI_SESSION_PROPERTY_DEVICES
   [[nodiscard]] static auto getDevices() -> std::vector<Device>;

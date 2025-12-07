@@ -6,6 +6,7 @@
 #
 # Licensed under the MIT License
 
+import sys
 from collections.abc import Iterable
 from enum import Enum
 
@@ -13,8 +14,12 @@ __all__ = [
     "Device",
     "Job",
     "ProgramFormat",
-    "devices",
+    "Session",
 ]
+
+# add_dynamic_device_library is only available on non-Windows platforms
+if sys.platform != "win32":
+    __all__ += ["add_dynamic_device_library"]
 
 class ProgramFormat(Enum):
     """Enumeration of program formats."""
@@ -33,6 +38,76 @@ class ProgramFormat(Enum):
     CUSTOM3 = ...
     CUSTOM4 = ...
     CUSTOM5 = ...
+
+class Session:
+    """A FoMaC session for managing QDMI devices.
+
+    Allows creating isolated sessions with independent authentication settings.
+    All authentication parameters are optional and can be provided as keyword
+    arguments to the constructor.
+    """
+
+    def __init__(
+        self,
+        *,
+        token: str | None = None,
+        auth_file: str | None = None,
+        auth_url: str | None = None,
+        username: str | None = None,
+        password: str | None = None,
+        project_id: str | None = None,
+        custom1: str | None = None,
+        custom2: str | None = None,
+        custom3: str | None = None,
+        custom4: str | None = None,
+        custom5: str | None = None,
+    ) -> None:
+        """Create a new FoMaC session with optional authentication.
+
+        Args:
+            token: Authentication token
+            auth_file: Path to file containing authentication information
+            auth_url: URL to authentication server
+            username: Username for authentication
+            password: Password for authentication
+            project_id: Project ID for session
+            custom1: Custom configuration parameter 1
+            custom2: Custom configuration parameter 2
+            custom3: Custom configuration parameter 3
+            custom4: Custom configuration parameter 4
+            custom5: Custom configuration parameter 5
+
+        Raises:
+            RuntimeError: If auth_file does not exist
+            RuntimeError: If auth_url has invalid format
+
+        Example:
+            >>> from mqt.core.fomac import Session
+            >>> # Session without authentication
+            >>> session = Session()
+            >>> devices = session.get_devices()
+            >>>
+            >>> # Session with token authentication
+            >>> session = Session(token="my_secret_token")
+            >>> devices = session.get_devices()
+            >>>
+            >>> # Session with file-based authentication
+            >>> session = Session(auth_file="/path/to/auth.json")
+            >>> devices = session.get_devices()
+            >>>
+            >>> # Session with multiple parameters
+            >>> session = Session(
+            ...     auth_url="https://auth.example.com", username="user", password="pass", project_id="project-123"
+            ... )
+            >>> devices = session.get_devices()
+        """
+
+    def get_devices(self) -> list[Device]:
+        """Get available devices from this session.
+
+        Returns:
+            List of available devices
+        """
 
 class Job:
     """A job represents a submitted quantum program execution."""
@@ -205,5 +280,59 @@ class Device:
     def __ne__(self, other: object) -> bool:
         """Checks if two devices are not equal."""
 
-def devices() -> list[Device]:
-    """Returns a list of available devices."""
+# Dynamic library loading is only available on non-Windows platforms
+if sys.platform != "win32":
+    def add_dynamic_device_library(
+        library_path: str,
+        prefix: str,
+        *,
+        base_url: str | None = None,
+        token: str | None = None,
+        auth_file: str | None = None,
+        auth_url: str | None = None,
+        username: str | None = None,
+        password: str | None = None,
+        custom1: str | None = None,
+        custom2: str | None = None,
+        custom3: str | None = None,
+        custom4: str | None = None,
+        custom5: str | None = None,
+    ) -> None:
+        """Load a dynamic device library into the QDMI driver.
+
+        This function loads a shared library (.so, .dll, or .dylib) that implements
+        a QDMI device interface and makes it available for use in sessions.
+
+        Note: This function is only available on non-Windows platforms.
+
+        Args:
+            library_path: Path to the shared library file to load.
+            prefix: Function prefix used by the library (e.g., "MY_DEVICE").
+            base_url: Optional base URL for the device API endpoint.
+            token: Optional authentication token.
+            auth_file: Optional path to authentication file.
+            auth_url: Optional authentication server URL.
+            username: Optional username for authentication.
+            password: Optional password for authentication.
+            custom1: Optional custom configuration parameter 1.
+            custom2: Optional custom configuration parameter 2.
+            custom3: Optional custom configuration parameter 3.
+            custom4: Optional custom configuration parameter 4.
+            custom5: Optional custom configuration parameter 5.
+
+        Raises:
+            RuntimeError: If library loading fails or configuration is invalid.
+
+        Examples:
+            Load a device library with configuration:
+
+            >>> import mqt.core.fomac as fomac
+            >>> fomac.add_dynamic_device_library(
+            ...     "/path/to/libmy_device.so", "MY_DEVICE", base_url="http://localhost:8080", custom1="API_V2"
+            ... )
+
+            Now the device is available in sessions:
+
+            >>> session = fomac.Session()
+            >>> devices = session.get_devices()
+        """

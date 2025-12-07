@@ -8,7 +8,7 @@
  * Licensed under the MIT License
  */
 
-#include "na/device/Generator.hpp"
+#include "qdmi/na/Generator.hpp"
 
 #include <cstddef>
 #include <cstdint>

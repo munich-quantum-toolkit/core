@@ -265,11 +265,11 @@ def test_backend_warns_on_unmappable_operation(
         operations=["cz", "custom_unmappable_gate", "measure"],
     )
 
-    # Monkeypatch fomac.devices to return mock device
-    def mock_devices() -> list[MockQDMIDevice]:
+    # Monkeypatch Session.get_devices to return mock device
+    def mock_get_devices(_self: object) -> list[MockQDMIDevice]:
         return [mock_device]
 
-    monkeypatch.setattr(fomac, "devices", mock_devices)
+    monkeypatch.setattr(fomac.Session, "get_devices", mock_get_devices)
 
     # Creating backend should trigger warning about unmappable operation
     with warnings.catch_warnings(record=True) as w:
@@ -297,11 +297,11 @@ def test_backend_warns_on_missing_measurement_operation(
         operations=["cz"],  # No measure operation
     )
 
-    # Monkeypatch fomac.devices to return mock device
-    def mock_devices() -> list[MockQDMIDevice]:
+    # Monkeypatch Session.get_devices to return mock device
+    def mock_get_devices(_self: object) -> list[MockQDMIDevice]:
         return [mock_device]
 
-    monkeypatch.setattr(fomac, "devices", mock_devices)
+    monkeypatch.setattr(fomac.Session, "get_devices", mock_get_devices)
 
     # Creating backend should trigger warning about missing measurement operation
     with warnings.catch_warnings(record=True) as w:

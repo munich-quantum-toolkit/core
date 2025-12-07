@@ -16,11 +16,9 @@
 
 #include "mqt_sc_qdmi/device.h"
 
-#include <atomic>
 #include <cstddef>
 #include <cstdint>
 #include <memory>
-#include <optional>
 #include <string>
 #include <unordered_map>
 #include <utility>
@@ -52,9 +50,6 @@ class Device final {
   /// @brief Private constructor to enforce the singleton pattern.
   Device();
 
-  /// @brief The singleton instance.
-  static std::atomic<Device*> instance;
-
 public:
   // Delete move constructor and move assignment operator.
   Device(Device&&) = delete;
@@ -65,19 +60,6 @@ public:
 
   /// @brief Destructor for the Device class.
   ~Device();
-
-  /**
-   * @brief Initializes the singleton instance.
-   * @details Must be called before `get()`.
-   */
-  static void initialize();
-
-  /**
-   * @brief Destroys the singleton instance.
-   * @details After this call, `get()` must not be called until a new
-   * `initialize()` call.
-   */
-  static void finalize();
 
   /// @returns the singleton instance of the Device class.
   [[nodiscard]] static auto get() -> Device&;

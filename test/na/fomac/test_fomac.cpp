@@ -42,7 +42,7 @@ TEST(TestNAFoMaC, TrapsJSONRoundTrip) {
   } catch (const nlohmann::json::parse_error& e) {
     GTEST_FAIL() << "JSON parsing error: " << e.what();
   }
-  nlohmann::json qdmiDevice = FoMaC::getDevices().front();
+  nlohmann::json qdmiDevice = Session::getDevices().front();
   canonicallyOrderLatticeVectors(fomacDevice);
   canonicallyOrderLatticeVectors(qdmiDevice);
   EXPECT_EQ(fomacDevice["traps"], qdmiDevice["traps"]);
@@ -58,7 +58,7 @@ TEST(TestNAFoMaC, FullJSONRoundTrip) {
   } catch (const nlohmann::json::parse_error& e) {
     GTEST_FAIL() << "JSON parsing error: " << e.what();
   }
-  nlohmann::json fomacDevice = FoMaC::getDevices().front();
+  nlohmann::json fomacDevice = Session::getDevices().front();
   canonicallyOrderLatticeVectors(jsonDevice);
   canonicallyOrderLatticeVectors(fomacDevice);
   EXPECT_EQ(jsonDevice, fomacDevice);
