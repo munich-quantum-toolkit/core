@@ -18,13 +18,13 @@
 #include "qdmi/na/DeviceMemberInitializers.hpp"
 
 #include <algorithm>
-#include <atomic>
 #include <cassert>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
 #include <functional>
 #include <memory>
+#include <mutex>
 #include <span>
 #include <type_traits>
 #include <utility>
@@ -101,9 +101,6 @@
 // NOLINTEND(bugprone-macro-parentheses)
 
 namespace qdmi::na {
-std::atomic<Device*> Device::instance_ = nullptr;
-std::atomic<std::size_t> Device::refCount_ = 0U;
-
 Device::Device() {
   // NOLINTBEGIN(cppcoreguidelines-prefer-member-initializer)
   INITIALIZE_NAME(name_);
@@ -116,40 +113,33 @@ Device::Device() {
   INITIALIZE_SITES(sites_);
   INITIALIZE_OPERATIONS(operations_);
 }
-
 void Device::initialize() {
+  const std::scoped_lock<std::mutex> lock(*instanceMutex_);
   // Always increment the reference count when initialize is called.
-  refCount_.fetch_add(1);
-  // NOLINTNEXTLINE(misc-const-correctness)
-  Device* expected = nullptr;
-  // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
-  if (auto* newInstance = new Device();
-      !instance_.compare_exchange_strong(expected, newInstance)) {
-    // Another thread won the race, so delete the instance we created.
+  ++refCount_;
+  if (instance_ == nullptr) {
     // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
-    delete newInstance;
+    instance_ = new Device();
   }
 }
-
 void Device::finalize() {
-  // Always decrement the reference count when finalize is called.
-  if (const auto prev = refCount_.fetch_sub(1); prev > 1) {
-    return;
+  const std::scoped_lock<std::mutex> lock(*instanceMutex_);
+  --refCount_;
+  if (refCount_ == 0) {
+    // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
+    delete instance_;
+    instance_ = nullptr;
   }
-  // Atomically swap the instance pointer with nullptr and get the old value.
-  const Device* oldInstance = instance_.exchange(nullptr);
-  // Delete the old instance if it existed.
-  // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
-  delete oldInstance;
+  // Do NOT delete the static mutex. The mutex is intentionally leaked to
+  // avoid static deinitialization issues (cf. static deinitialization order
+  // fiasco)
 }
-
 auto Device::get() -> Device& {
-  auto* loadedInstance = instance_.load();
-  assert(loadedInstance != nullptr &&
-         "Device not initialized. Call `initialize()` first.");
-  return *loadedInstance;
+  // May only be called after `initialize()` has been called.
+  // Thus, `instance_` should not be null.
+  assert(instance_ != nullptr && "Device not initialized.");
+  return *instance_;
 }
-
 auto Device::sessionAlloc(MQT_NA_QDMI_Device_Session* session) -> int {
   if (session == nullptr) {
     return QDMI_ERROR_INVALIDARGUMENT;

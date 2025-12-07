@@ -16,10 +16,10 @@
 
 #include "mqt_na_qdmi/device.h"
 
-#include <atomic>
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <mutex>
 #include <optional>
 #include <string>
 #include <unordered_map>
@@ -70,9 +70,12 @@ class Device final {
   Device();
 
   /// @brief The singleton instance.
-  static std::atomic<Device*> instance_;
+  inline static Device* instance_ = nullptr;
   /// @brief Reference count for the singleton instance.
-  static std::atomic<size_t> refCount_;
+  inline static size_t refCount_ = 0U;
+  /// @brief Mutex for synchronizing access to the singleton instance.
+  inline static auto* // NOLINT(cppcoreguidelines-owning-memory)
+      instanceMutex_ = new std::mutex;
 
 public:
   // Default move constructor and move assignment operator.
