@@ -87,14 +87,20 @@ public:
 
   /**
    * @brief Initializes the singleton instance.
-   * @details Must be called before `get()`.
+   * @details Must be called before using `get()`.
+   * Each call to `initialize()` must be paired with exactly one call to
+   * `finalize()`. Multiple threads may call `initialize()` and `finalize()`
+   * independently, with the instance being destroyed only when the last thread
+   * calls `finalize()`.
    */
   static void initialize();
 
   /**
-   * @brief Destroys the singleton instance.
-   * @details After this call, `get()` must not be called until a new
-   * `initialize()` call.
+   * @brief Decrements the reference count and destroys the singleton instance
+   * if this is the last active reference.
+   * @details This must be called exactly once per call to `initialize()`.
+   * After calling `finalize()`, `get()` must not be called until `initialize()`
+   * is called again.
    */
   static void finalize();
 
