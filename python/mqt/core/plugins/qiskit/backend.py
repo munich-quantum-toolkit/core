@@ -403,6 +403,9 @@ class QDMIBackend(BackendV2):  # type: ignore[misc]
         if fomac.ProgramFormat.IQM_JSON in supported_program_formats:
             try:
                 return qiskit_to_iqm_json(circuit, self._device), fomac.ProgramFormat.IQM_JSON
+            except UnsupportedOperationError:
+                # Let this propagate so caller can handle fallback
+                raise
             except Exception as exc:
                 msg = f"Failed to convert circuit to IQM JSON: {exc}"
                 raise TranslationError(msg) from exc
