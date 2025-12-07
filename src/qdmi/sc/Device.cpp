@@ -96,7 +96,7 @@
   }
 
 #define IS_INVALID_ARGUMENT(prop, prefix)                                      \
-  ((prop) > prefix##_MAX && (prop) != prefix##_CUSTOM1 &&                      \
+  ((prop) >= prefix##_MAX && (prop) != prefix##_CUSTOM1 &&                     \
    (prop) != prefix##_CUSTOM2 && (prop) != prefix##_CUSTOM3 &&                 \
    (prop) != prefix##_CUSTOM4 && (prop) != prefix##_CUSTOM5)
 // NOLINTEND(bugprone-macro-parentheses)
