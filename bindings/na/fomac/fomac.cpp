@@ -12,7 +12,7 @@
 // clang-format off
 #include "fomac/FoMaC.hpp"
 #include "na/fomac/Device.hpp"
-#include "na/device/Generator.hpp"
+#include "qdmi/devices/na/Generator.hpp"
 
 #include <pybind11/cast.h>
 #include <pybind11/operators.h>

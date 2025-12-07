@@ -21,6 +21,7 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 
 ### Changed
 
+- 🎨 Extract the singleton handling of QDMI devices and make it thread-safe ([#1347]) ([**@ystade**])
 - 👷 Stop testing on `ubuntu-22.04` and `ubuntu-22.04-arm` runners ([#1359]) ([**@denialhaag**], [**@burgholzer**])
 - 👷 Stop testing with `clang-19` and start testing with `clang-21` ([#1359]) ([**@denialhaag**], [**@burgholzer**])
 - 👷 Fix macOS tests with Homebrew Clang via new `munich-quantum-toolkit/workflows` version ([#1359]) ([**@denialhaag**], [**@burgholzer**])
@@ -273,6 +274,7 @@ _📚 Refer to the [GitHub Release Notes](https://github.com/munich-quantum-tool
 
 [#1371]: https://github.com/munich-quantum-toolkit/core/pull/1371
 [#1359]: https://github.com/munich-quantum-toolkit/core/pull/1359
+[#1347]: https://github.com/munich-quantum-toolkit/core/pull/1347
 [#1338]: https://github.com/munich-quantum-toolkit/core/pull/1338
 [#1336]: https://github.com/munich-quantum-toolkit/core/pull/1336
 [#1328]: https://github.com/munich-quantum-toolkit/core/pull/1328
