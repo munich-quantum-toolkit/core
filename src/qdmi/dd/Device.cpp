@@ -314,7 +314,7 @@ auto Device::queryProperty(const QDMI_Device_Property prop, const size_t size,
 }
 
 auto Device::generateUniqueID() -> int {
-  const std::scoped_lock<std::mutex> lock(sessionsMutex_);
+  const std::scoped_lock<std::mutex> lock(rngMutex_);
   return dis_(rng_);
 }
 auto Device::setStatus(const QDMI_Device_Status status) -> void {
