@@ -364,7 +364,7 @@ except JobSubmissionError as e:
     # Failed to submit job to device
     print(f"Job submission failed: {e}")
 except TranslationError as e:
-    # Failed to convert circuit to QASM
+    # Failed to convert circuit to supported program format
     print(f"Translation error: {e}")
 except UnsupportedFormatError as e:
     # No supported program format available
@@ -378,9 +378,9 @@ except UnsupportedFormatError as e:
 When you run a circuit, the backend:
 
 1. Validates the circuit (checks for unbound parameters, supported operations, valid options)
-2. Converts the circuit to QASM (QASM3 by default, QASM2 optionally)
-3. Submits the QASM program to the FoMaC (QDMI) device via `device.submit_job()`
-4. Returns a {py:class}`~mqt.core.plugins.qiskit.QDMIJob` wrapping the FoMaC (QDMI) job
+2. Converts the circuit to one of the program formats supported by the target device (IQM JSON, OpenQASM 2, OpenQASM 3) using {py:func}`~mqt.core.plugins.qiskit.convert_to_iqm_json` or Qiskit's built-in QASM exporters
+3. Submits the program to the QDMI device via `device.submit_job()`
+4. Returns a {py:class}`~mqt.core.plugins.qiskit.QDMIJob`
 
 ### Device Introspection
 
