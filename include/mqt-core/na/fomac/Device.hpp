@@ -11,7 +11,7 @@
 #pragma once
 
 #include "fomac/FoMaC.hpp"
-#include "na/device/Generator.hpp"
+#include "qdmi/na/Generator.hpp"
 
 // NOLINTNEXTLINE(misc-include-cleaner)
 #include <nlohmann/json.hpp>

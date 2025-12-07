@@ -12,7 +12,7 @@
  * @brief The MQT QDMI device generator for neutral atom devices.
  */
 
-#include "na/device/Generator.hpp"
+#include "qdmi/na/Generator.hpp"
 
 #include <algorithm>
 #include <cassert>

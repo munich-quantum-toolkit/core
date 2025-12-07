@@ -8,6 +8,7 @@
 
 add_subdirectory(dd)
 add_subdirectory(sc)
+add_subdirectory(na)
 
 set(TARGET_NAME ${MQT_CORE_TARGET_NAME}-qdmi-driver)
 

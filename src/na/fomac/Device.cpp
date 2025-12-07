@@ -12,7 +12,7 @@
 
 #include "fomac/FoMaC.hpp"
 #include "ir/Definitions.hpp"
-#include "na/device/Generator.hpp"
+#include "qdmi/na/Generator.hpp"
 
 #include <algorithm>
 #include <array>
