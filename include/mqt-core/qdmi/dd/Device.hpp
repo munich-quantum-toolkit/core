@@ -64,7 +64,9 @@ class Device final {
   Device();
 
   /// @brief The singleton instance.
-  static std::atomic<Device*> instance;
+  static std::atomic<Device*> instance_;
+  /// @brief Reference count for the singleton instance.
+  static std::atomic<size_t> refCount_;
 
 public:
   // Default move constructor and move assignment operator.

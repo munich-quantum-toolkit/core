@@ -22,6 +22,7 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 
 ### Changed
 
+- ♻️ Enable thread-safe reference counting for QDMI devices singletons ([#1355]) ([**@burgholzer**])
 - ♻️ Refactor `FoMaC` singleton to instantiable `Session` class with configurable authentication parameters ([#1355]) ([**@marcelwa**])
 - 👷 Stop testing on `ubuntu-22.04` and `ubuntu-22.04-arm` runners ([#1359]) ([**@denialhaag**], [**@burgholzer**])
 - 👷 Stop testing with `clang-19` and start testing with `clang-21` ([#1359]) ([**@denialhaag**], [**@burgholzer**])

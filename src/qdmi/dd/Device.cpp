@@ -210,7 +210,8 @@ constexpr std::array SUPPORTED_PROGRAM_FORMATS = {QDMI_PROGRAM_FORMAT_QASM2,
 
 namespace qdmi::dd {
 
-std::atomic<Device*> Device::instance = nullptr;
+std::atomic<Device*> Device::instance_ = nullptr;
+std::atomic<std::size_t> Device::refCount_ = 0U;
 
 Device::Device()
     : name_("MQT Core DDSIM QDMI Device"),
@@ -221,23 +222,27 @@ void Device::initialize() {
   Device* expected = nullptr;
   // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
   auto* newInstance = new Device();
-  if (!instance.compare_exchange_strong(expected, newInstance)) {
+  if (!instance_.compare_exchange_strong(expected, newInstance)) {
     // Another thread won the race, so delete the instance we created.
     // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
     delete newInstance;
   }
+  refCount_.fetch_add(1);
 }
 
 void Device::finalize() {
+  if (const auto prev = refCount_.fetch_sub(1); prev > 1) {
+    return;
+  }
   // Atomically swap the instance pointer with nullptr and get the old value.
-  const Device* oldInstance = instance.exchange(nullptr);
+  const Device* oldInstance = instance_.exchange(nullptr);
   // Delete the old instance if it existed.
   // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
   delete oldInstance;
 }
 
 auto Device::get() -> Device& {
-  auto* loadedInstance = instance.load();
+  auto* loadedInstance = instance_.load();
   assert(loadedInstance != nullptr &&
          "Device not initialized. Call `initialize()` first.");
   return *loadedInstance;
