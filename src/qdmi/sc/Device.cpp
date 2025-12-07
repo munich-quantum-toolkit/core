@@ -120,18 +120,20 @@ Device::~Device() {
   sessions_.clear();
 }
 void Device::initialize() {
+  // Always increment the reference count when initialize is called.
+  refCount_.fetch_add(1);
   // NOLINTNEXTLINE(misc-const-correctness)
   Device* expected = nullptr;
   // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
-  auto* newInstance = new Device();
-  if (!instance_.compare_exchange_strong(expected, newInstance)) {
+  if (auto* newInstance = new Device();
+      !instance_.compare_exchange_strong(expected, newInstance)) {
     // Another thread won the race, so delete the instance we created.
     // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
     delete newInstance;
   }
-  refCount_.fetch_add(1);
 }
 void Device::finalize() {
+  // Always decrement the reference count when finalize is called.
   if (const auto prev = refCount_.fetch_sub(1); prev > 1) {
     return;
   }
