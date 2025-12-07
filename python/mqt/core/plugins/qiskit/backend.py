@@ -393,6 +393,7 @@ class QDMIBackend(BackendV2):  # type: ignore[misc]
 
         Raises:
             UnsupportedFormatError: If no supported program formats are found.
+            UnsupportedOperationError: If the circuit contains operations not supported by IQM JSON.
             TranslationError: If conversion fails.
         """
         if not supported_program_formats:
