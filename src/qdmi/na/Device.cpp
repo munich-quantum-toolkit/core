@@ -113,32 +113,12 @@ Device::Device() {
   INITIALIZE_SITES(sites_);
   INITIALIZE_OPERATIONS(operations_);
 }
-void Device::initialize() {
-  const std::scoped_lock<std::mutex> lock(*instanceMutex_);
-  // Always increment the reference count when initialize is called.
-  ++refCount_;
-  if (instance_ == nullptr) {
-    // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
-    instance_ = new Device();
-  }
-}
-void Device::finalize() {
-  const std::scoped_lock<std::mutex> lock(*instanceMutex_);
-  --refCount_;
-  if (refCount_ == 0) {
-    // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
-    delete instance_;
-    instance_ = nullptr;
-  }
-  // Do NOT delete the static mutex. The mutex is intentionally leaked to
-  // avoid static deinitialization issues (cf. static deinitialization order
-  // fiasco)
-}
 auto Device::get() -> Device& {
-  // May only be called after `initialize()` has been called.
-  // Thus, `instance_` should not be null.
-  assert(instance_ != nullptr && "Device not initialized.");
-  return *instance_;
+  // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
+  static auto* instance = new Device();
+  // The instance is intentionally leaked to avoid static deinitialization
+  // issues (cf. static (de)initialization order fiasco)
+  return *instance;
 }
 auto Device::sessionAlloc(MQT_NA_QDMI_Device_Session* session) -> int {
   if (session == nullptr) {
@@ -661,14 +641,12 @@ auto MQT_NA_QDMI_Operation_impl_d::queryProperty(
 }
 
 int MQT_NA_QDMI_device_initialize() {
-  qdmi::na::Device::initialize();
+  // ensure the singleton is initialized
+  std::ignore = qdmi::na::Device::get();
   return QDMI_SUCCESS;
 }
 
-int MQT_NA_QDMI_device_finalize() {
-  qdmi::na::Device::finalize();
-  return QDMI_SUCCESS;
-}
+int MQT_NA_QDMI_device_finalize() { return QDMI_SUCCESS; }
 
 int MQT_NA_QDMI_device_session_alloc(MQT_NA_QDMI_Device_Session* session) {
   return qdmi::na::Device::get().sessionAlloc(session);

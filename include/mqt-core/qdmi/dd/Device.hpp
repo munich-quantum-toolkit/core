@@ -63,14 +63,6 @@ class Device final {
   /// @brief Private constructor to enforce the singleton pattern.
   Device();
 
-  /// @brief The singleton instance.
-  inline static Device* instance_ = nullptr;
-  /// @brief Reference count for the singleton instance.
-  inline static size_t refCount_ = 0U;
-  /// @brief Mutex for synchronizing access to the singleton instance.
-  inline static auto* // NOLINT(cppcoreguidelines-owning-memory)
-      instanceMutex_ = new std::mutex;
-
 public:
   // Default move constructor and move assignment operator.
   Device(Device&&) = delete;
@@ -81,25 +73,6 @@ public:
 
   /// @brief Destructor for the Device class.
   ~Device() = default;
-
-  /**
-   * @brief Initializes the singleton instance.
-   * @details Must be called before using `get()`.
-   * Each call to `initialize()` must be paired with exactly one call to
-   * `finalize()`. Multiple threads may call `initialize()` and `finalize()`
-   * independently, with the instance being destroyed only when the last thread
-   * calls `finalize()`.
-   */
-  static void initialize();
-
-  /**
-   * @brief Decrements the reference count and destroys the singleton instance
-   * if this is the last active reference.
-   * @details This must be called exactly once per call to `initialize()`.
-   * After calling `finalize()`, `get()` must not be called until `initialize()`
-   * is called again.
-   */
-  static void finalize();
 
   /// @returns the singleton instance of the Device class.
   [[nodiscard]] static auto get() -> Device&;

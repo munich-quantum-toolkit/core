@@ -217,32 +217,12 @@ namespace qdmi::dd {
 Device::Device()
     : name_("MQT Core DDSIM QDMI Device"),
       qubitsNum_(std::numeric_limits<::dd::Qubit>::max()) {}
-void Device::initialize() {
-  const std::scoped_lock<std::mutex> lock(*instanceMutex_);
-  // Always increment the reference count when initialize is called.
-  ++refCount_;
-  if (instance_ == nullptr) {
-    // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
-    instance_ = new Device();
-  }
-}
-void Device::finalize() {
-  const std::scoped_lock<std::mutex> lock(*instanceMutex_);
-  --refCount_;
-  if (refCount_ == 0) {
-    // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
-    delete instance_;
-    instance_ = nullptr;
-  }
-  // Do NOT delete the static mutex. The mutex is intentionally leaked to
-  // avoid static deinitialization issues (cf. static deinitialization order
-  // fiasco)
-}
 auto Device::get() -> Device& {
-  // May only be called after `initialize()` has been called.
-  // Thus, `instance_` should not be null.
-  assert(instance_ != nullptr && "Device not initialized.");
-  return *instance_;
+  // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
+  static auto* instance = new Device();
+  // The instance is intentionally leaked to avoid static deinitialization
+  // issues (cf. static (de)initialization order fiasco)
+  return *instance;
 }
 auto Device::sessionAlloc(MQT_DDSIM_QDMI_Device_Session* session)
     -> QDMI_STATUS {
@@ -780,14 +760,12 @@ auto MQT_DDSIM_QDMI_Device_Job_impl_d::getResults(const QDMI_Job_Result result,
 // QDMI uses a different naming convention for its C interface functions
 // NOLINTBEGIN(readability-identifier-naming)
 int MQT_DDSIM_QDMI_device_initialize() {
-  qdmi::dd::Device::initialize();
+  // ensure the singleton is initialized
+  std::ignore = qdmi::dd::Device::get();
   return QDMI_SUCCESS;
 }
 
-int MQT_DDSIM_QDMI_device_finalize() {
-  qdmi::dd::Device::finalize();
-  return QDMI_SUCCESS;
-}
+int MQT_DDSIM_QDMI_device_finalize() { return QDMI_SUCCESS; }
 
 int MQT_DDSIM_QDMI_device_session_alloc(
     MQT_DDSIM_QDMI_Device_Session* session) {
