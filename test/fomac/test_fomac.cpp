@@ -801,6 +801,11 @@ TEST(AuthenticationTest, SessionConstructionWithAuthUrl) {
   SessionConfig config6;
   config6.authUrl = "example.com";
   EXPECT_THROW({ const Session session(config6); }, std::runtime_error);
+
+  // Invalid URL - empty
+  SessionConfig config7;
+  config7.authUrl = "";
+  EXPECT_THROW({ const Session session(config7); }, std::runtime_error);
 }
 
 TEST(AuthenticationTest, SessionConstructionWithAuthFile) {
