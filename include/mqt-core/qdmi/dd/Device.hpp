@@ -46,12 +46,12 @@ class Device final {
                      std::unique_ptr<MQT_DDSIM_QDMI_Device_Session_impl_d>>
       sessions_;
   /// Mutex protecting access to sessions_.
-  mutable std::mutex sessionsMutex_{};
+  mutable std::mutex sessionsMutex_;
 
   /// RNG for generating unique IDs.
   std::mt19937_64 rng_{std::random_device{}()};
   /// Mutex protecting RNG usage.
-  mutable std::mutex rngMutex_{};
+  mutable std::mutex rngMutex_;
 
   /// Distribution for generating unique IDs.
   std::uniform_int_distribution<> dis_ =
@@ -143,7 +143,7 @@ private:
                      std::unique_ptr<MQT_DDSIM_QDMI_Device_Job_impl_d>>
       jobs_;
   /// @brief Mutex protecting access to jobs_.
-  mutable std::mutex jobsMutex_{};
+  mutable std::mutex jobsMutex_;
 
 public:
   /**
