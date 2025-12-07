@@ -91,8 +91,7 @@ def qiskit_to_iqm_json(circuit: QuantumCircuit, device: fomac.Device) -> str:
             if isinstance(operation, RGate):
                 angle_t = float(operation.params[0] / (2 * np.pi))
                 phase_t = float(operation.params[1] / (2 * np.pi))
-                qubit_loc = circuit.find_bit(qargs[0])
-                qubit_index = qubit_loc.registers[0][1]
+                qubit_index = circuit.find_bit(qargs[0]).index
                 instructions.append({
                     "name": "prx",
                     "qubits": [sites[qubit_index].name()],
@@ -104,10 +103,8 @@ def qiskit_to_iqm_json(circuit: QuantumCircuit, device: fomac.Device) -> str:
 
             # CZ gate
             elif isinstance(operation, CZGate):
-                qubit_loc1 = circuit.find_bit(qargs[0])
-                qubit_index1 = qubit_loc1.registers[0][1]
-                qubit_loc2 = circuit.find_bit(qargs[1])
-                qubit_index2 = qubit_loc2.registers[0][1]
+                qubit_index1 = circuit.find_bit(qargs[0]).index
+                qubit_index2 = circuit.find_bit(qargs[1]).index
                 instructions.append({
                     "name": "cz",
                     "qubits": [
@@ -121,8 +118,7 @@ def qiskit_to_iqm_json(circuit: QuantumCircuit, device: fomac.Device) -> str:
             elif isinstance(operation, Barrier):
                 qubit_indices: list[int] = []
                 for qubit in qargs:
-                    qubit_loc = circuit.find_bit(qubit)
-                    qubit_index = qubit_loc.registers[0][1]
+                    qubit_index = circuit.find_bit(qubit).index
                     qubit_indices.append(qubit_index)
                 instructions.append({
                     "name": "barrier",
@@ -138,8 +134,7 @@ def qiskit_to_iqm_json(circuit: QuantumCircuit, device: fomac.Device) -> str:
                 creg_idx = circuit.cregs.index(creg)
                 clbit_index = bitloc.registers[0][1]
                 key = f"{creg.name}_{len(creg)}_{creg_idx}_{clbit_index}"
-                qubit_loc = circuit.find_bit(qargs[0])
-                qubit_index = qubit_loc.registers[0][1]
+                qubit_index = circuit.find_bit(qargs[0]).index
                 instructions.append({
                     "name": "measure",
                     "qubits": [sites[qubit_index].name()],
