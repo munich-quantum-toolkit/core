@@ -9,7 +9,7 @@
 set(TARGET_NAME ${MQT_CORE_TARGET_NAME}-qdmi-common)
 
 if(NOT TARGET ${TARGET_NAME})
-  # Add driver library
+  # Add common library
   add_mqt_core_library(${TARGET_NAME} ALIAS_NAME QDMICommon)
 
   # Add sources to target
