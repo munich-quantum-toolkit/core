@@ -24,7 +24,6 @@
 #include <cstring>
 #include <functional>
 #include <memory>
-#include <mutex>
 #include <span>
 #include <type_traits>
 #include <utility>
