@@ -10,6 +10,8 @@
 
 #pragma once
 
+#include "qdmi/Common.hpp"
+
 #include <algorithm>
 #include <complex>
 #include <concepts>
@@ -140,35 +142,6 @@ concept maybe_optional_value_or_string = value_or_string<remove_optional_t<T>>;
 template <typename T>
 concept maybe_optional_value_or_string_or_vector =
     value_or_string_or_vector<remove_optional_t<T>>;
-
-/// @returns the string representation of the given QDMI_STATUS.
-auto toString(QDMI_STATUS result) -> std::string;
-
-/// @returns the string representation of the given QDMI_Site_Property.
-auto toString(QDMI_Site_Property prop) -> std::string;
-
-/// @returns the string representation of the given QDMI_Operation_Property.
-auto toString(QDMI_Operation_Property prop) -> std::string;
-
-/// @returns the string representation of the given QDMI_Device_Property.
-auto toString(QDMI_Device_Property prop) -> std::string;
-
-/// @returns the string representation of the given QDMI_Session_Property.
-constexpr auto toString(QDMI_Session_Property prop) -> std::string {
-  if (prop == QDMI_SESSION_PROPERTY_DEVICES) {
-    return "QDMI_SESSION_PROPERTY_DEVICES";
-  }
-  return "QDMI_SESSION_PROPERTY_UNKNOWN";
-}
-
-/// @returns the string representation of the given QDMI_SESSION_PARAMETER_T.
-auto toString(QDMI_SESSION_PARAMETER_T param) -> std::string;
-
-/// Throws an exception corresponding to the given QDMI_STATUS code.
-[[noreturn]] auto throwError(int result, const std::string& msg) -> void;
-
-/// Throws an exception if the result indicates an error.
-auto throwIfError(int result, const std::string& msg) -> void;
 
 /**
  * @brief Configuration structure for session authentication parameters.
@@ -350,21 +323,24 @@ public:
       QDMI_Site site_;
 
       template <maybe_optional_value_or_string T>
-      [[nodiscard]] auto queryProperty(QDMI_Site_Property prop) const -> T {
+      [[nodiscard]] auto queryProperty(const QDMI_Site_Property prop) const
+          -> T {
+        std::string msg = "Querying ";
+        msg += qdmi::toString(prop);
         if constexpr (string_or_optional_string<T>) {
           size_t size = 0;
-          const auto result = QDMI_device_query_site_property(
-              device_, site_, prop, 0, nullptr, &size);
+          auto result = QDMI_device_query_site_property(device_, site_, prop, 0,
+                                                        nullptr, &size);
           if constexpr (is_optional<T>) {
             if (result == QDMI_ERROR_NOTSUPPORTED) {
               return std::nullopt;
             }
           }
-          throwIfError(result, "Querying " + toString(prop));
+          qdmi::throwIfError(result, msg);
           std::string value(size - 1, '\0');
-          throwIfError(QDMI_device_query_site_property(
-                           device_, site_, prop, size, value.data(), nullptr),
-                       "Querying " + toString(prop));
+          result = QDMI_device_query_site_property(device_, site_, prop, size,
+                                                   value.data(), nullptr);
+          qdmi::throwIfError(result, msg);
           return value;
         } else {
           remove_optional_t<T> value{};
@@ -376,7 +352,7 @@ public:
               return std::nullopt;
             }
           }
-          throwIfError(result, "Querying " + toString(prop));
+          qdmi::throwIfError(result, msg);
           return value;
         }
       }
@@ -434,10 +410,12 @@ public:
       QDMI_Operation operation_;
 
       template <maybe_optional_value_or_string_or_vector T>
-      [[nodiscard]] auto queryProperty(QDMI_Operation_Property prop,
+      [[nodiscard]] auto queryProperty(const QDMI_Operation_Property prop,
                                        const std::vector<Site>& sites,
                                        const std::vector<double>& params) const
           -> T {
+        std::string msg = "Querying ";
+        msg += qdmi::toString(prop);
         std::vector<QDMI_Site> qdmiSites;
         qdmiSites.reserve(sites.size());
         std::ranges::transform(
@@ -445,7 +423,7 @@ public:
             [](const Site& site) -> QDMI_Site { return site; });
         if constexpr (string_or_optional_string<T>) {
           size_t size = 0;
-          const auto result = QDMI_device_query_operation_property(
+          auto result = QDMI_device_query_operation_property(
               device_, operation_, sites.size(), qdmiSites.data(),
               params.size(), params.data(), prop, 0, nullptr, &size);
           if constexpr (is_optional<T>) {
@@ -453,18 +431,17 @@ public:
               return std::nullopt;
             }
           }
-          throwIfError(result, "Querying " + toString(prop));
+          qdmi::throwIfError(result, msg);
           std::string value(size - 1, '\0');
-          throwIfError(QDMI_device_query_operation_property(
-                           device_, operation_, sites.size(), qdmiSites.data(),
-                           params.size(), params.data(), prop, size,
-                           value.data(), nullptr),
-                       "Querying " + toString(prop));
+          result = QDMI_device_query_operation_property(
+              device_, operation_, sites.size(), qdmiSites.data(),
+              params.size(), params.data(), prop, size, value.data(), nullptr);
+          qdmi::throwIfError(result, msg);
           return value;
         } else if constexpr (maybe_optional_size_constructible_contiguous_range<
                                  T>) {
           size_t size = 0;
-          const auto result = QDMI_device_query_operation_property(
+          auto result = QDMI_device_query_operation_property(
               device_, operation_, sites.size(), qdmiSites.data(),
               params.size(), params.data(), prop, 0, nullptr, &size);
           if constexpr (is_optional<T>) {
@@ -472,14 +449,13 @@ public:
               return std::nullopt;
             }
           }
-          throwIfError(result, "Querying " + toString(prop));
+          qdmi::throwIfError(result, msg);
           remove_optional_t<T> value(
               size / sizeof(typename remove_optional_t<T>::value_type));
-          throwIfError(QDMI_device_query_operation_property(
-                           device_, operation_, sites.size(), qdmiSites.data(),
-                           params.size(), params.data(), prop, size,
-                           value.data(), nullptr),
-                       "Querying " + toString(prop));
+          result = QDMI_device_query_operation_property(
+              device_, operation_, sites.size(), qdmiSites.data(),
+              params.size(), params.data(), prop, size, value.data(), nullptr);
+          qdmi::throwIfError(result, msg);
           return value;
         } else {
           remove_optional_t<T> value{};
@@ -492,7 +468,7 @@ public:
               return std::nullopt;
             }
           }
-          throwIfError(result, "Querying " + toString(prop));
+          qdmi::throwIfError(result, msg);
           return value;
         }
       }
@@ -580,38 +556,41 @@ public:
     QDMI_Device device_;
 
     template <maybe_optional_value_or_string_or_vector T>
-    [[nodiscard]] auto queryProperty(QDMI_Device_Property prop) const -> T {
+    [[nodiscard]] auto queryProperty(const QDMI_Device_Property prop) const
+        -> T {
+      std::string msg = "Querying ";
+      msg += qdmi::toString(prop);
       if constexpr (string_or_optional_string<T>) {
         size_t size = 0;
-        const auto result =
+        auto result =
             QDMI_device_query_device_property(device_, prop, 0, nullptr, &size);
         if constexpr (is_optional<T>) {
           if (result == QDMI_ERROR_NOTSUPPORTED) {
             return std::nullopt;
           }
         }
-        throwIfError(result, "Querying " + toString(prop));
+        qdmi::throwIfError(result, msg);
         std::string value(size - 1, '\0');
-        throwIfError(QDMI_device_query_device_property(device_, prop, size,
-                                                       value.data(), nullptr),
-                     "Querying " + toString(prop));
+        result = QDMI_device_query_device_property(device_, prop, size,
+                                                   value.data(), nullptr);
+        qdmi::throwIfError(result, msg);
         return value;
       } else if constexpr (maybe_optional_size_constructible_contiguous_range<
                                T>) {
         size_t size = 0;
-        const auto result =
+        auto result =
             QDMI_device_query_device_property(device_, prop, 0, nullptr, &size);
         if constexpr (is_optional<T>) {
           if (result == QDMI_ERROR_NOTSUPPORTED) {
             return std::nullopt;
           }
         }
-        throwIfError(result, "Querying " + toString(prop));
+        qdmi::throwIfError(result, msg);
         remove_optional_t<T> value(
             size / sizeof(typename remove_optional_t<T>::value_type));
-        throwIfError(QDMI_device_query_device_property(device_, prop, size,
-                                                       value.data(), nullptr),
-                     "Querying " + toString(prop));
+        result = QDMI_device_query_device_property(device_, prop, size,
+                                                   value.data(), nullptr);
+        qdmi::throwIfError(result, msg);
         return value;
       } else {
         remove_optional_t<T> value{};
@@ -622,7 +601,7 @@ public:
             return std::nullopt;
           }
         }
-        throwIfError(result, "Querying " + toString(prop));
+        qdmi::throwIfError(result, msg);
         return value;
       }
     }
@@ -702,15 +681,17 @@ private:
   template <size_constructible_contiguous_range T>
   [[nodiscard]] auto queryProperty(const QDMI_Session_Property prop) const
       -> T {
+    std::string msg = "Querying ";
+    msg += qdmi::toString(prop);
     size_t size = 0;
-    throwIfError(
-        QDMI_session_query_session_property(session_, prop, 0, nullptr, &size),
-        "Querying " + toString(prop));
+    auto result =
+        QDMI_session_query_session_property(session_, prop, 0, nullptr, &size);
+    qdmi::throwIfError(result, msg);
     remove_optional_t<T> value(
         size / sizeof(typename remove_optional_t<T>::value_type));
-    throwIfError(QDMI_session_query_session_property(session_, prop, size,
-                                                     value.data(), nullptr),
-                 "Querying " + toString(prop));
+    result = QDMI_session_query_session_property(session_, prop, size,
+                                                 value.data(), nullptr);
+    qdmi::throwIfError(result, msg);
     return value;
   }
 

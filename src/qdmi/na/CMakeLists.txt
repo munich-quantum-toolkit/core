@@ -132,21 +132,11 @@ if(NOT TARGET ${TARGET_NAME})
   target_link_libraries(
     ${TARGET_NAME}
     PUBLIC qdmi::qdmi
-    PRIVATE MQT::ProjectOptions MQT::ProjectWarnings spdlog::spdlog)
+    PRIVATE MQT::CoreQDMICommon spdlog::spdlog)
 
   # Always compile with position independent code such that the library can be used in shared
   # libraries
   set_target_properties(${TARGET_NAME} PROPERTIES POSITION_INDEPENDENT_CODE ON)
-
-  # set c++ standard
-  target_compile_features(${TARGET_NAME} PRIVATE cxx_std_20)
-
-  # set versioning information
-  set_target_properties(
-    ${TARGET_NAME}
-    PROPERTIES VERSION ${PROJECT_VERSION}
-               SOVERSION ${PROJECT_VERSION_MAJOR}.${PROJECT_VERSION_MINOR}
-               EXPORT_NAME CoreQDMINaDevice)
 
   # add to list of MQT core targets
   set(MQT_CORE_TARGETS
@@ -191,7 +181,8 @@ if(NOT TARGET ${TARGET_NAME})
       target_link_libraries(
         ${DYN_TARGET_NAME}
         PUBLIC qdmi::qdmi
-        PRIVATE ${TARGET_NAME} MQT::ProjectOptions MQT::ProjectWarnings spdlog::spdlog)
+        PRIVATE ${TARGET_NAME} MQT::CoreQDMICommon MQT::ProjectOptions MQT::ProjectWarnings
+                spdlog::spdlog)
       # set c++ standard
       target_compile_features(${DYN_TARGET_NAME} PRIVATE cxx_std_20)
       # set versioning information

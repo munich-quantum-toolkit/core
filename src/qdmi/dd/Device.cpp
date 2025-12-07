@@ -22,6 +22,7 @@
 #include "ir/QuantumComputation.hpp"
 #include "mqt_ddsim_qdmi/device.h"
 #include "qasm3/Importer.hpp"
+#include "qdmi/Common.hpp"
 
 #include <algorithm>
 #include <array>
@@ -143,75 +144,6 @@ constexpr std::array SUPPORTED_PROGRAM_FORMATS = {QDMI_PROGRAM_FORMAT_QASM2,
                                                   QDMI_PROGRAM_FORMAT_QASM3};
 
 } // namespace
-
-// NOLINTBEGIN(bugprone-macro-parentheses)
-#define ADD_SINGLE_VALUE_PROPERTY(prop_name, prop_type, prop_value, prop,      \
-                                  size, value, size_ret)                       \
-  {                                                                            \
-    if ((prop) == (prop_name)) {                                               \
-      if ((value) != nullptr) {                                                \
-        if ((size) < sizeof(prop_type)) {                                      \
-          return QDMI_ERROR_INVALIDARGUMENT;                                   \
-        }                                                                      \
-        *static_cast<prop_type*>(value) = prop_value;                          \
-      }                                                                        \
-      if ((size_ret) != nullptr) {                                             \
-        *size_ret = sizeof(prop_type);                                         \
-      }                                                                        \
-      return QDMI_SUCCESS;                                                     \
-    }                                                                          \
-  }
-
-#ifdef _WIN32
-#define STRNCPY(dest, src, size)                                               \
-  strncpy_s(static_cast<char*>(dest), size, src, size);
-#else
-#define STRNCPY(dest, src, size) strncpy(static_cast<char*>(dest), src, size);
-#endif
-
-#define ADD_STRING_PROPERTY(prop_name, prop_value, prop, size, value,          \
-                            size_ret)                                          \
-  {                                                                            \
-    if ((prop) == (prop_name)) {                                               \
-      if ((value) != nullptr) {                                                \
-        if ((size) < strlen(prop_value) + 1) {                                 \
-          return QDMI_ERROR_INVALIDARGUMENT;                                   \
-        }                                                                      \
-        STRNCPY(value, prop_value, size);                                      \
-        /* NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic) */  \
-        static_cast<char*>(value)[size - 1] = '\0';                            \
-      }                                                                        \
-      if ((size_ret) != nullptr) {                                             \
-        *size_ret = strlen(prop_value) + 1;                                    \
-      }                                                                        \
-      return QDMI_SUCCESS;                                                     \
-    }                                                                          \
-  }
-
-#define ADD_LIST_PROPERTY(prop_name, prop_type, prop_values, prop, size,       \
-                          value, size_ret)                                     \
-  {                                                                            \
-    if ((prop) == (prop_name)) {                                               \
-      if ((value) != nullptr) {                                                \
-        if ((size) < (prop_values).size() * sizeof(prop_type)) {               \
-          return QDMI_ERROR_INVALIDARGUMENT;                                   \
-        }                                                                      \
-        memcpy(static_cast<void*>(value),                                      \
-               static_cast<const void*>((prop_values).data()),                 \
-               (prop_values).size() * sizeof(prop_type));                      \
-      }                                                                        \
-      if ((size_ret) != nullptr) {                                             \
-        *size_ret = (prop_values).size() * sizeof(prop_type);                  \
-      }                                                                        \
-      return QDMI_SUCCESS;                                                     \
-    }                                                                          \
-  }
-
-#define IS_INVALID_ARGUMENT(prop, prefix)                                      \
-  ((prop) >= prefix##_MAX && (prop) != prefix##_CUSTOM1 &&                     \
-   (prop) != prefix##_CUSTOM2 && (prop) != prefix##_CUSTOM3 &&                 \
-   (prop) != prefix##_CUSTOM4 && (prop) != prefix##_CUSTOM5)
-// NOLINTEND(bugprone-macro-parentheses)
 
 namespace qdmi::dd {
 Device::Device()

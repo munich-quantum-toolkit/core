@@ -13,6 +13,7 @@
 #include "mqt_ddsim_qdmi/device.h"
 #include "mqt_na_qdmi/device.h"
 #include "mqt_sc_qdmi/device.h"
+#include "qdmi/Common.hpp"
 
 #include <cassert>
 #include <cstddef>
@@ -35,82 +36,6 @@
 #endif // _WIN32
 
 namespace qdmi {
-namespace {
-/**
- * @brief Function used to mark unreachable code
- * @details Uses compiler specific extensions if possible. Even if no extension
- * is used, undefined behavior is still raised by an empty function body and the
- * noreturn attribute.
- */
-[[noreturn]] void unreachable() {
-#ifdef __GNUC__ // GCC, Clang, ICC
-  __builtin_unreachable();
-#elif defined(_MSC_VER) // MSVC
-  __assume(false);
-#endif
-}
-auto toString(const QDMI_Device_Session_Parameter param) -> std::string {
-  switch (param) {
-  case QDMI_DEVICE_SESSION_PARAMETER_BASEURL:
-    return "BASEURL";
-  case QDMI_DEVICE_SESSION_PARAMETER_TOKEN:
-    return "TOKEN";
-  case QDMI_DEVICE_SESSION_PARAMETER_AUTHFILE:
-    return "AUTHFILE";
-  case QDMI_DEVICE_SESSION_PARAMETER_AUTHURL:
-    return "AUTHURL";
-  case QDMI_DEVICE_SESSION_PARAMETER_USERNAME:
-    return "USERNAME";
-  case QDMI_DEVICE_SESSION_PARAMETER_PASSWORD:
-    return "PASSWORD";
-  case QDMI_DEVICE_SESSION_PARAMETER_MAX:
-    return "MAX";
-  case QDMI_DEVICE_SESSION_PARAMETER_CUSTOM1:
-    return "CUSTOM1";
-  case QDMI_DEVICE_SESSION_PARAMETER_CUSTOM2:
-    return "CUSTOM2";
-  case QDMI_DEVICE_SESSION_PARAMETER_CUSTOM3:
-    return "CUSTOM3";
-  case QDMI_DEVICE_SESSION_PARAMETER_CUSTOM4:
-    return "CUSTOM4";
-  case QDMI_DEVICE_SESSION_PARAMETER_CUSTOM5:
-    return "CUSTOM5";
-  }
-  unreachable();
-}
-auto toString(const QDMI_STATUS result) -> std::string {
-  switch (result) {
-  case QDMI_WARN_GENERAL:
-    return "General warning";
-  case QDMI_SUCCESS:
-    return "Success";
-  case QDMI_ERROR_FATAL:
-    return "A fatal error";
-  case QDMI_ERROR_OUTOFMEM:
-    return "Out of memory";
-  case QDMI_ERROR_NOTIMPLEMENTED:
-    return "Not implemented";
-  case QDMI_ERROR_LIBNOTFOUND:
-    return "Library not found";
-  case QDMI_ERROR_NOTFOUND:
-    return "Element not found";
-  case QDMI_ERROR_OUTOFRANGE:
-    return "Out of range";
-  case QDMI_ERROR_INVALIDARGUMENT:
-    return "Invalid argument";
-  case QDMI_ERROR_PERMISSIONDENIED:
-    return "Permission denied";
-  case QDMI_ERROR_NOTSUPPORTED:
-    return "Not supported";
-  case QDMI_ERROR_BADSTATE:
-    return "Bad state";
-  case QDMI_ERROR_TIMEOUT:
-    return "Timeout";
-  }
-  unreachable();
-}
-} // namespace
-
 // Macro to load a static symbol from a statically linked library.
 // @param prefix is the prefix used for the function names in the library.
 // @param symbol is the name of the symbol to load.

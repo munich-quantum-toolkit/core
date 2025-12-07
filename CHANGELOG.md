@@ -22,6 +22,7 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 
 ### Changed
 
+- ✨ Add common definitions and utilities for QDMI ([**@burgholzer**])
 - 🚚 Move `NA` QDMI device in its right place next to other QDMI devices ([#1355]) ([**@burgholzer**])
 - ♻️ Allow repeated loading of QDMI device library with potentially different session configurations ([#1355]) ([**@burgholzer**])
 - ♻️ Enable thread-safe reference counting for QDMI devices singletons ([#1355]) ([**@burgholzer**])

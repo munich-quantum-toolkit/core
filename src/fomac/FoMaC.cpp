@@ -10,6 +10,8 @@
 
 #include "fomac/FoMaC.hpp"
 
+#include "qdmi/Common.hpp"
+
 #include <algorithm>
 #include <complex>
 #include <cstddef>
@@ -28,236 +30,6 @@
 #include <vector>
 
 namespace fomac {
-
-namespace {
-/**
- * @brief Function used to mark unreachable code
- * @details Uses compiler specific extensions if possible. Even if no extension
- * is used, undefined behavior is still raised by an empty function body and the
- * noreturn attribute.
- */
-[[noreturn]] inline void unreachable() {
-#ifdef __GNUC__ // GCC, Clang, ICC
-  __builtin_unreachable();
-#elif defined(_MSC_VER) // MSVC
-  __assume(false);
-#endif
-}
-} // namespace
-
-auto toString(const QDMI_STATUS result) -> std::string {
-  switch (result) {
-  case QDMI_WARN_GENERAL:
-    return "General warning";
-  case QDMI_SUCCESS:
-    return "Success";
-  case QDMI_ERROR_FATAL:
-    return "A fatal error";
-  case QDMI_ERROR_OUTOFMEM:
-    return "Out of memory";
-  case QDMI_ERROR_NOTIMPLEMENTED:
-    return "Not implemented";
-  case QDMI_ERROR_LIBNOTFOUND:
-    return "Library not found";
-  case QDMI_ERROR_NOTFOUND:
-    return "Element not found";
-  case QDMI_ERROR_OUTOFRANGE:
-    return "Out of range";
-  case QDMI_ERROR_INVALIDARGUMENT:
-    return "Invalid argument";
-  case QDMI_ERROR_PERMISSIONDENIED:
-    return "Permission denied";
-  case QDMI_ERROR_NOTSUPPORTED:
-    return "Not supported";
-  case QDMI_ERROR_BADSTATE:
-    return "Bad state";
-  case QDMI_ERROR_TIMEOUT:
-    return "Timeout";
-  }
-  unreachable();
-}
-
-auto toString(const QDMI_SESSION_PARAMETER_T param) -> std::string {
-  switch (param) {
-  case QDMI_SESSION_PARAMETER_TOKEN:
-    return "TOKEN";
-  case QDMI_SESSION_PARAMETER_AUTHFILE:
-    return "AUTHFILE";
-  case QDMI_SESSION_PARAMETER_AUTHURL:
-    return "AUTHURL";
-  case QDMI_SESSION_PARAMETER_USERNAME:
-    return "USERNAME";
-  case QDMI_SESSION_PARAMETER_PASSWORD:
-    return "PASSWORD";
-  case QDMI_SESSION_PARAMETER_PROJECTID:
-    return "PROJECTID";
-  case QDMI_SESSION_PARAMETER_MAX:
-    return "MAX";
-  case QDMI_SESSION_PARAMETER_CUSTOM1:
-    return "CUSTOM1";
-  case QDMI_SESSION_PARAMETER_CUSTOM2:
-    return "CUSTOM2";
-  case QDMI_SESSION_PARAMETER_CUSTOM3:
-    return "CUSTOM3";
-  case QDMI_SESSION_PARAMETER_CUSTOM4:
-    return "CUSTOM4";
-  case QDMI_SESSION_PARAMETER_CUSTOM5:
-    return "CUSTOM5";
-  }
-  unreachable();
-}
-
-auto toString(const QDMI_Site_Property prop) -> std::string {
-  switch (prop) {
-  case QDMI_SITE_PROPERTY_INDEX:
-    return "QDMI_SITE_PROPERTY_INDEX";
-  case QDMI_SITE_PROPERTY_T1:
-    return "QDMI_SITE_PROPERTY_T1";
-  case QDMI_SITE_PROPERTY_T2:
-    return "QDMI_SITE_PROPERTY_T2";
-  case QDMI_SITE_PROPERTY_NAME:
-    return "QDMI_SITE_PROPERTY_NAME";
-  case QDMI_SITE_PROPERTY_XCOORDINATE:
-    return "QDMI_SITE_PROPERTY_XCOORDINATE";
-  case QDMI_SITE_PROPERTY_YCOORDINATE:
-    return "QDMI_SITE_PROPERTY_YCOORDINATE";
-  case QDMI_SITE_PROPERTY_ZCOORDINATE:
-    return "QDMI_SITE_PROPERTY_ZCOORDINATE";
-  case QDMI_SITE_PROPERTY_ISZONE:
-    return "QDMI_SITE_PROPERTY_ISZONE";
-  case QDMI_SITE_PROPERTY_XEXTENT:
-    return "QDMI_SITE_PROPERTY_XEXTENT";
-  case QDMI_SITE_PROPERTY_YEXTENT:
-    return "QDMI_SITE_PROPERTY_YEXTENT";
-  case QDMI_SITE_PROPERTY_ZEXTENT:
-    return "QDMI_SITE_PROPERTY_ZEXTENT";
-  case QDMI_SITE_PROPERTY_MODULEINDEX:
-    return "QDMI_SITE_PROPERTY_MODULEINDEX";
-  case QDMI_SITE_PROPERTY_SUBMODULEINDEX:
-    return "QDMI_SITE_PROPERTY_SUBMODULEINDEX";
-  case QDMI_SITE_PROPERTY_MAX:
-  case QDMI_SITE_PROPERTY_CUSTOM1:
-  case QDMI_SITE_PROPERTY_CUSTOM2:
-  case QDMI_SITE_PROPERTY_CUSTOM3:
-  case QDMI_SITE_PROPERTY_CUSTOM4:
-  case QDMI_SITE_PROPERTY_CUSTOM5:
-    return "QDMI_SITE_PROPERTY_UNKNOWN";
-  }
-  unreachable();
-}
-auto toString(const QDMI_Operation_Property prop) -> std::string {
-  switch (prop) {
-  case QDMI_OPERATION_PROPERTY_NAME:
-    return "QDMI_OPERATION_PROPERTY_NAME";
-  case QDMI_OPERATION_PROPERTY_QUBITSNUM:
-    return "QDMI_OPERATION_PROPERTY_QUBITSNUM";
-  case QDMI_OPERATION_PROPERTY_PARAMETERSNUM:
-    return "QDMI_OPERATION_PROPERTY_PARAMETERSNUM";
-  case QDMI_OPERATION_PROPERTY_DURATION:
-    return "QDMI_OPERATION_PROPERTY_DURATION";
-  case QDMI_OPERATION_PROPERTY_FIDELITY:
-    return "QDMI_OPERATION_PROPERTY_FIDELITY";
-  case QDMI_OPERATION_PROPERTY_INTERACTIONRADIUS:
-    return "QDMI_OPERATION_PROPERTY_INTERACTIONRADIUS";
-  case QDMI_OPERATION_PROPERTY_BLOCKINGRADIUS:
-    return "QDMI_OPERATION_PROPERTY_BLOCKINGRADIUS";
-  case QDMI_OPERATION_PROPERTY_IDLINGFIDELITY:
-    return "QDMI_OPERATION_PROPERTY_IDLINGFIDELITY";
-  case QDMI_OPERATION_PROPERTY_ISZONED:
-    return "QDMI_OPERATION_PROPERTY_ISZONED";
-  case QDMI_OPERATION_PROPERTY_SITES:
-    return "QDMI_OPERATION_PROPERTY_SITES";
-  case QDMI_OPERATION_PROPERTY_MEANSHUTTLINGSPEED:
-    return "QDMI_OPERATION_PROPERTY_MEANSHUTTLINGSPEED";
-  case QDMI_OPERATION_PROPERTY_MAX:
-  case QDMI_OPERATION_PROPERTY_CUSTOM1:
-  case QDMI_OPERATION_PROPERTY_CUSTOM2:
-  case QDMI_OPERATION_PROPERTY_CUSTOM3:
-  case QDMI_OPERATION_PROPERTY_CUSTOM4:
-  case QDMI_OPERATION_PROPERTY_CUSTOM5:
-    return "QDMI_OPERATION_PROPERTY_UNKNOWN";
-  }
-  unreachable();
-}
-auto toString(const QDMI_Device_Property prop) -> std::string {
-  switch (prop) {
-  case QDMI_DEVICE_PROPERTY_NAME:
-    return "QDMI_DEVICE_PROPERTY_NAME";
-  case QDMI_DEVICE_PROPERTY_VERSION:
-    return "QDMI_DEVICE_PROPERTY_VERSION";
-  case QDMI_DEVICE_PROPERTY_STATUS:
-    return "QDMI_DEVICE_PROPERTY_STATUS";
-  case QDMI_DEVICE_PROPERTY_LIBRARYVERSION:
-    return "QDMI_DEVICE_PROPERTY_LIBRARYVERSION";
-  case QDMI_DEVICE_PROPERTY_QUBITSNUM:
-    return "QDMI_DEVICE_PROPERTY_QUBITSNUM";
-  case QDMI_DEVICE_PROPERTY_SITES:
-    return "QDMI_DEVICE_PROPERTY_SITES";
-  case QDMI_DEVICE_PROPERTY_OPERATIONS:
-    return "QDMI_DEVICE_PROPERTY_OPERATIONS";
-  case QDMI_DEVICE_PROPERTY_COUPLINGMAP:
-    return "QDMI_DEVICE_PROPERTY_COUPLINGMAP";
-  case QDMI_DEVICE_PROPERTY_NEEDSCALIBRATION:
-    return "QDMI_DEVICE_PROPERTY_NEEDSCALIBRATION";
-  case QDMI_DEVICE_PROPERTY_LENGTHUNIT:
-    return "QDMI_DEVICE_PROPERTY_LENGTHUNIT";
-  case QDMI_DEVICE_PROPERTY_LENGTHSCALEFACTOR:
-    return "QDMI_DEVICE_PROPERTY_LENGTHSCALEFACTOR";
-  case QDMI_DEVICE_PROPERTY_DURATIONUNIT:
-    return "QDMI_DEVICE_PROPERTY_DURATIONUNIT";
-  case QDMI_DEVICE_PROPERTY_DURATIONSCALEFACTOR:
-    return "QDMI_DEVICE_PROPERTY_DURATIONSCALEFACTOR";
-  case QDMI_DEVICE_PROPERTY_MINATOMDISTANCE:
-    return "QDMI_DEVICE_PROPERTY_MINATOMDISTANCE";
-  case QDMI_DEVICE_PROPERTY_PULSESUPPORT:
-    return "QDMI_DEVICE_PROPERTY_PULSESUPPORT";
-  case QDMI_DEVICE_PROPERTY_SUPPORTEDPROGRAMFORMATS:
-    return "QDMI_DEVICE_PROPERTY_SUPPORTEDPROGRAMFORMATS";
-  case QDMI_DEVICE_PROPERTY_MAX:
-  case QDMI_DEVICE_PROPERTY_CUSTOM1:
-  case QDMI_DEVICE_PROPERTY_CUSTOM2:
-  case QDMI_DEVICE_PROPERTY_CUSTOM3:
-  case QDMI_DEVICE_PROPERTY_CUSTOM4:
-  case QDMI_DEVICE_PROPERTY_CUSTOM5:
-    return "QDMI_DEVICE_PROPERTY_UNKNOWN";
-  }
-  unreachable();
-}
-auto throwError(const int result, const std::string& msg) -> void {
-  std::ostringstream ss;
-  ss << msg << ": " << toString(static_cast<QDMI_STATUS>(result)) << ".";
-  switch (result) {
-  case QDMI_ERROR_OUTOFMEM:
-    throw std::bad_alloc();
-  case QDMI_ERROR_OUTOFRANGE:
-    throw std::out_of_range(ss.str());
-  case QDMI_ERROR_INVALIDARGUMENT:
-    throw std::invalid_argument(ss.str());
-  case QDMI_ERROR_FATAL:
-  case QDMI_ERROR_NOTIMPLEMENTED:
-  case QDMI_ERROR_LIBNOTFOUND:
-  case QDMI_ERROR_NOTFOUND:
-  case QDMI_ERROR_PERMISSIONDENIED:
-  case QDMI_ERROR_NOTSUPPORTED:
-  case QDMI_ERROR_BADSTATE:
-  case QDMI_ERROR_TIMEOUT:
-    throw std::runtime_error(ss.str());
-  default:
-    throw std::runtime_error("Unknown error code: " +
-                             toString(static_cast<QDMI_STATUS>(result)) + ".");
-  }
-}
-auto throwIfError(const int result, const std::string& msg) -> void {
-  switch (result) {
-  case QDMI_SUCCESS:
-    break;
-  case QDMI_WARN_GENERAL:
-    SPDLOG_WARN("{}", msg);
-    break;
-  default:
-    throwError(result, msg);
-  }
-}
 auto Session::Device::Site::getIndex() const -> size_t {
   return queryProperty<size_t>(QDMI_SITE_PROPERTY_INDEX);
 }
@@ -506,33 +278,35 @@ auto Session::Device::submitJob(const std::string& program,
                                 const QDMI_Program_Format format,
                                 const size_t numShots) const -> Job {
   QDMI_Job job = nullptr;
-  throwIfError(QDMI_device_create_job(device_, &job), "Creating job");
+  qdmi::throwIfError(QDMI_device_create_job(device_, &job), "Creating job");
   Job jobWrapper{job}; // RAII wrapper to prevent leaks in case of exceptions
 
   // Set program format
-  throwIfError(QDMI_job_set_parameter(jobWrapper,
-                                      QDMI_JOB_PARAMETER_PROGRAMFORMAT,
-                                      sizeof(format), &format),
-               "Setting program format");
+  qdmi::throwIfError(QDMI_job_set_parameter(jobWrapper,
+                                            QDMI_JOB_PARAMETER_PROGRAMFORMAT,
+                                            sizeof(format), &format),
+                     "Setting program format");
 
   // Set program
-  throwIfError(QDMI_job_set_parameter(jobWrapper, QDMI_JOB_PARAMETER_PROGRAM,
-                                      program.size() + 1, program.c_str()),
-               "Setting program");
+  qdmi::throwIfError(
+      QDMI_job_set_parameter(jobWrapper, QDMI_JOB_PARAMETER_PROGRAM,
+                             program.size() + 1, program.c_str()),
+      "Setting program");
 
   // Set number of shots
-  throwIfError(QDMI_job_set_parameter(jobWrapper, QDMI_JOB_PARAMETER_SHOTSNUM,
-                                      sizeof(numShots), &numShots),
-               "Setting number of shots");
+  qdmi::throwIfError(QDMI_job_set_parameter(jobWrapper,
+                                            QDMI_JOB_PARAMETER_SHOTSNUM,
+                                            sizeof(numShots), &numShots),
+                     "Setting number of shots");
 
   // Submit the job
-  throwIfError(QDMI_job_submit(jobWrapper), "Submitting job");
+  qdmi::throwIfError(QDMI_job_submit(jobWrapper), "Submitting job");
   return jobWrapper;
 }
 
 auto Session::Job::check() const -> QDMI_Job_Status {
   QDMI_Job_Status status{};
-  throwIfError(QDMI_job_check(job_, &status), "Checking job status");
+  qdmi::throwIfError(QDMI_job_check(job_, &status), "Checking job status");
   return status;
 }
 
@@ -544,58 +318,60 @@ auto Session::Job::wait(const size_t timeout) const -> bool {
   if (ret == QDMI_ERROR_TIMEOUT) {
     return false;
   }
-  throwIfError(ret, "Waiting for job");
-  unreachable();
+  qdmi::throwIfError(ret, "Waiting for job");
+  qdmi::unreachable();
 }
 
 auto Session::Job::cancel() const -> void {
-  throwIfError(QDMI_job_cancel(job_), "Cancelling job");
+  qdmi::throwIfError(QDMI_job_cancel(job_), "Cancelling job");
 }
 
 auto Session::Job::getId() const -> std::string {
   size_t size = 0;
-  throwIfError(
+  qdmi::throwIfError(
       QDMI_job_query_property(job_, QDMI_JOB_PROPERTY_ID, 0, nullptr, &size),
       "Querying job ID size");
   std::string id(size - 1, '\0');
-  throwIfError(QDMI_job_query_property(job_, QDMI_JOB_PROPERTY_ID, size,
-                                       id.data(), nullptr),
-               "Querying job ID");
+  qdmi::throwIfError(QDMI_job_query_property(job_, QDMI_JOB_PROPERTY_ID, size,
+                                             id.data(), nullptr),
+                     "Querying job ID");
   return id;
 }
 
 auto Session::Job::getProgramFormat() const -> QDMI_Program_Format {
   QDMI_Program_Format format{};
-  throwIfError(QDMI_job_query_property(job_, QDMI_JOB_PROPERTY_PROGRAMFORMAT,
-                                       sizeof(format), &format, nullptr),
-               "Querying program format");
+  qdmi::throwIfError(QDMI_job_query_property(job_,
+                                             QDMI_JOB_PROPERTY_PROGRAMFORMAT,
+                                             sizeof(format), &format, nullptr),
+                     "Querying program format");
   return format;
 }
 
 auto Session::Job::getProgram() const -> std::string {
   size_t size = 0;
-  throwIfError(QDMI_job_query_property(job_, QDMI_JOB_PROPERTY_PROGRAM, 0,
-                                       nullptr, &size),
-               "Querying program size");
+  qdmi::throwIfError(QDMI_job_query_property(job_, QDMI_JOB_PROPERTY_PROGRAM, 0,
+                                             nullptr, &size),
+                     "Querying program size");
 
   std::string program(size - 1, '\0');
-  throwIfError(QDMI_job_query_property(job_, QDMI_JOB_PROPERTY_PROGRAM, size,
-                                       program.data(), nullptr),
-               "Querying program");
+  qdmi::throwIfError(QDMI_job_query_property(job_, QDMI_JOB_PROPERTY_PROGRAM,
+                                             size, program.data(), nullptr),
+                     "Querying program");
   return program;
 }
 
 auto Session::Job::getNumShots() const -> size_t {
   size_t numShots = 0;
-  throwIfError(QDMI_job_query_property(job_, QDMI_JOB_PROPERTY_SHOTSNUM,
-                                       sizeof(numShots), &numShots, nullptr),
-               "Querying number of shots");
+  qdmi::throwIfError(QDMI_job_query_property(job_, QDMI_JOB_PROPERTY_SHOTSNUM,
+                                             sizeof(numShots), &numShots,
+                                             nullptr),
+                     "Querying number of shots");
   return numShots;
 }
 
 auto Session::Job::getShots() const -> std::vector<std::string> {
   size_t shotsSize = 0;
-  throwIfError(
+  qdmi::throwIfError(
       QDMI_job_get_results(job_, QDMI_JOB_RESULT_SHOTS, 0, nullptr, &shotsSize),
       "Querying shots size");
 
@@ -604,9 +380,9 @@ auto Session::Job::getShots() const -> std::vector<std::string> {
   }
 
   std::string shots(shotsSize - 1, '\0');
-  throwIfError(QDMI_job_get_results(job_, QDMI_JOB_RESULT_SHOTS, shotsSize,
-                                    shots.data(), nullptr),
-               "Querying shots");
+  qdmi::throwIfError(QDMI_job_get_results(job_, QDMI_JOB_RESULT_SHOTS,
+                                          shotsSize, shots.data(), nullptr),
+                     "Querying shots");
 
   // Parse the shots (comma-separated)
   std::vector<std::string> shotsVec;
@@ -627,24 +403,24 @@ auto Session::Job::getShots() const -> std::vector<std::string> {
 auto Session::Job::getCounts() const -> std::map<std::string, size_t> {
   // Get the histogram keys
   size_t keysSize = 0;
-  throwIfError(QDMI_job_get_results(job_, QDMI_JOB_RESULT_HIST_KEYS, 0, nullptr,
-                                    &keysSize),
-               "Querying histogram keys size");
+  qdmi::throwIfError(QDMI_job_get_results(job_, QDMI_JOB_RESULT_HIST_KEYS, 0,
+                                          nullptr, &keysSize),
+                     "Querying histogram keys size");
 
   if (keysSize == 0) {
     return {}; // Empty histogram
   }
 
   std::string keys(keysSize - 1, '\0');
-  throwIfError(QDMI_job_get_results(job_, QDMI_JOB_RESULT_HIST_KEYS, keysSize,
-                                    keys.data(), nullptr),
-               "Querying histogram keys");
+  qdmi::throwIfError(QDMI_job_get_results(job_, QDMI_JOB_RESULT_HIST_KEYS,
+                                          keysSize, keys.data(), nullptr),
+                     "Querying histogram keys");
 
   // Get the histogram values
   size_t valuesSize = 0;
-  throwIfError(QDMI_job_get_results(job_, QDMI_JOB_RESULT_HIST_VALUES, 0,
-                                    nullptr, &valuesSize),
-               "Querying histogram values size");
+  qdmi::throwIfError(QDMI_job_get_results(job_, QDMI_JOB_RESULT_HIST_VALUES, 0,
+                                          nullptr, &valuesSize),
+                     "Querying histogram values size");
 
   if (valuesSize % sizeof(size_t) != 0) {
     throw std::runtime_error(
@@ -652,9 +428,9 @@ auto Session::Job::getCounts() const -> std::map<std::string, size_t> {
   }
 
   std::vector<size_t> values(valuesSize / sizeof(size_t));
-  throwIfError(QDMI_job_get_results(job_, QDMI_JOB_RESULT_HIST_VALUES,
-                                    valuesSize, values.data(), nullptr),
-               "Querying histogram values");
+  qdmi::throwIfError(QDMI_job_get_results(job_, QDMI_JOB_RESULT_HIST_VALUES,
+                                          valuesSize, values.data(), nullptr),
+                     "Querying histogram values");
 
   // Parse the keys (comma-separated)
   std::map<std::string, size_t> counts;
@@ -678,9 +454,10 @@ auto Session::Job::getCounts() const -> std::map<std::string, size_t> {
 auto Session::Job::getDenseStateVector() const
     -> std::vector<std::complex<double>> {
   size_t size = 0;
-  throwIfError(QDMI_job_get_results(job_, QDMI_JOB_RESULT_STATEVECTOR_DENSE, 0,
-                                    nullptr, &size),
-               "Querying dense state vector size");
+  qdmi::throwIfError(QDMI_job_get_results(job_,
+                                          QDMI_JOB_RESULT_STATEVECTOR_DENSE, 0,
+                                          nullptr, &size),
+                     "Querying dense state vector size");
 
   if (size % sizeof(std::complex<double>) != 0) {
     throw std::runtime_error(
@@ -689,17 +466,19 @@ auto Session::Job::getDenseStateVector() const
 
   std::vector<std::complex<double>> stateVector(size /
                                                 sizeof(std::complex<double>));
-  throwIfError(QDMI_job_get_results(job_, QDMI_JOB_RESULT_STATEVECTOR_DENSE,
-                                    size, stateVector.data(), nullptr),
-               "Querying dense state vector");
+  qdmi::throwIfError(QDMI_job_get_results(job_,
+                                          QDMI_JOB_RESULT_STATEVECTOR_DENSE,
+                                          size, stateVector.data(), nullptr),
+                     "Querying dense state vector");
   return stateVector;
 }
 
 auto Session::Job::getDenseProbabilities() const -> std::vector<double> {
   size_t size = 0;
-  throwIfError(QDMI_job_get_results(job_, QDMI_JOB_RESULT_PROBABILITIES_DENSE,
-                                    0, nullptr, &size),
-               "Querying dense probabilities size");
+  qdmi::throwIfError(QDMI_job_get_results(job_,
+                                          QDMI_JOB_RESULT_PROBABILITIES_DENSE,
+                                          0, nullptr, &size),
+                     "Querying dense probabilities size");
 
   if (size % sizeof(double) != 0) {
     throw std::runtime_error(
@@ -707,35 +486,36 @@ auto Session::Job::getDenseProbabilities() const -> std::vector<double> {
   }
 
   std::vector<double> probabilities(size / sizeof(double));
-  throwIfError(QDMI_job_get_results(job_, QDMI_JOB_RESULT_PROBABILITIES_DENSE,
-                                    size, probabilities.data(), nullptr),
-               "Querying dense probabilities");
+  qdmi::throwIfError(QDMI_job_get_results(job_,
+                                          QDMI_JOB_RESULT_PROBABILITIES_DENSE,
+                                          size, probabilities.data(), nullptr),
+                     "Querying dense probabilities");
   return probabilities;
 }
 
 auto Session::Job::getSparseStateVector() const
     -> std::map<std::string, std::complex<double>> {
   size_t keysSize = 0;
-  throwIfError(QDMI_job_get_results(job_,
-                                    QDMI_JOB_RESULT_STATEVECTOR_SPARSE_KEYS, 0,
-                                    nullptr, &keysSize),
-               "Querying sparse state vector keys size");
+  qdmi::throwIfError(
+      QDMI_job_get_results(job_, QDMI_JOB_RESULT_STATEVECTOR_SPARSE_KEYS, 0,
+                           nullptr, &keysSize),
+      "Querying sparse state vector keys size");
 
   if (keysSize == 0) {
     return {}; // Empty state vector
   }
 
   std::string keys(keysSize - 1, '\0');
-  throwIfError(QDMI_job_get_results(job_,
-                                    QDMI_JOB_RESULT_STATEVECTOR_SPARSE_KEYS,
-                                    keysSize, keys.data(), nullptr),
-               "Querying sparse state vector keys");
+  qdmi::throwIfError(
+      QDMI_job_get_results(job_, QDMI_JOB_RESULT_STATEVECTOR_SPARSE_KEYS,
+                           keysSize, keys.data(), nullptr),
+      "Querying sparse state vector keys");
 
   size_t valuesSize = 0;
-  throwIfError(QDMI_job_get_results(job_,
-                                    QDMI_JOB_RESULT_STATEVECTOR_SPARSE_VALUES,
-                                    0, nullptr, &valuesSize),
-               "Querying sparse state vector values size");
+  qdmi::throwIfError(
+      QDMI_job_get_results(job_, QDMI_JOB_RESULT_STATEVECTOR_SPARSE_VALUES, 0,
+                           nullptr, &valuesSize),
+      "Querying sparse state vector values size");
 
   if (valuesSize % sizeof(std::complex<double>) != 0) {
     throw std::runtime_error(
@@ -745,10 +525,10 @@ auto Session::Job::getSparseStateVector() const
 
   std::vector<std::complex<double>> values(valuesSize /
                                            sizeof(std::complex<double>));
-  throwIfError(QDMI_job_get_results(job_,
-                                    QDMI_JOB_RESULT_STATEVECTOR_SPARSE_VALUES,
-                                    valuesSize, values.data(), nullptr),
-               "Querying sparse state vector values");
+  qdmi::throwIfError(
+      QDMI_job_get_results(job_, QDMI_JOB_RESULT_STATEVECTOR_SPARSE_VALUES,
+                           valuesSize, values.data(), nullptr),
+      "Querying sparse state vector values");
 
   // Parse the keys (comma-separated)
   std::map<std::string, std::complex<double>> stateVector;
@@ -772,26 +552,26 @@ auto Session::Job::getSparseStateVector() const
 auto Session::Job::getSparseProbabilities() const
     -> std::map<std::string, double> {
   size_t keysSize = 0;
-  throwIfError(QDMI_job_get_results(job_,
-                                    QDMI_JOB_RESULT_PROBABILITIES_SPARSE_KEYS,
-                                    0, nullptr, &keysSize),
-               "Querying sparse probabilities keys size");
+  qdmi::throwIfError(
+      QDMI_job_get_results(job_, QDMI_JOB_RESULT_PROBABILITIES_SPARSE_KEYS, 0,
+                           nullptr, &keysSize),
+      "Querying sparse probabilities keys size");
 
   if (keysSize == 0) {
     return {}; // Empty probabilities
   }
 
   std::string keys(keysSize - 1, '\0');
-  throwIfError(QDMI_job_get_results(job_,
-                                    QDMI_JOB_RESULT_PROBABILITIES_SPARSE_KEYS,
-                                    keysSize, keys.data(), nullptr),
-               "Querying sparse probabilities keys");
+  qdmi::throwIfError(
+      QDMI_job_get_results(job_, QDMI_JOB_RESULT_PROBABILITIES_SPARSE_KEYS,
+                           keysSize, keys.data(), nullptr),
+      "Querying sparse probabilities keys");
 
   size_t valuesSize = 0;
-  throwIfError(QDMI_job_get_results(job_,
-                                    QDMI_JOB_RESULT_PROBABILITIES_SPARSE_VALUES,
-                                    0, nullptr, &valuesSize),
-               "Querying sparse probabilities values size");
+  qdmi::throwIfError(
+      QDMI_job_get_results(job_, QDMI_JOB_RESULT_PROBABILITIES_SPARSE_VALUES, 0,
+                           nullptr, &valuesSize),
+      "Querying sparse probabilities values size");
 
   if (valuesSize % sizeof(double) != 0) {
     throw std::runtime_error(
@@ -799,10 +579,10 @@ auto Session::Job::getSparseProbabilities() const
   }
 
   std::vector<double> values(valuesSize / sizeof(double));
-  throwIfError(QDMI_job_get_results(job_,
-                                    QDMI_JOB_RESULT_PROBABILITIES_SPARSE_VALUES,
-                                    valuesSize, values.data(), nullptr),
-               "Querying sparse probabilities values");
+  qdmi::throwIfError(
+      QDMI_job_get_results(job_, QDMI_JOB_RESULT_PROBABILITIES_SPARSE_VALUES,
+                           valuesSize, values.data(), nullptr),
+      "Querying sparse probabilities values");
 
   // Parse the keys (comma-separated)
   std::map<std::string, double> probabilities;
@@ -824,7 +604,7 @@ auto Session::Job::getSparseProbabilities() const
 
 Session::Session(const SessionConfig& config) {
   const auto result = QDMI_session_alloc(&session_);
-  throwIfError(result, "Allocating QDMI session");
+  qdmi::throwIfError(result, "Allocating QDMI session");
 
   // Helper to ensure session is freed if an exception is thrown during setup
   const auto cleanup = [this]() -> void {
@@ -842,18 +622,16 @@ Session::Session(const SessionConfig& config) {
       if (status == QDMI_ERROR_NOTSUPPORTED) {
         // Optional parameter not supported by session - skip it
         SPDLOG_INFO("Session parameter {} not supported (skipped)",
-                    toString(param));
+                    qdmi::toString(param));
         return;
       }
-      if (status != QDMI_SUCCESS && status != QDMI_WARN_GENERAL) {
-        std::ostringstream ss;
-        ss << "Setting session parameter " << toString(param) << ": "
-           << toString(status) << " (status = " << status << ")";
-        throwError(status, ss.str());
+      if (status == QDMI_SUCCESS) {
+        return;
       }
-      if (status == QDMI_WARN_GENERAL) {
-        SPDLOG_WARN("Setting session parameter {}", toString(param));
-      }
+      std::ostringstream ss;
+      ss << "Setting session parameter " << qdmi::toString(param) << ": "
+         << qdmi::toString(status) << " (status = " << status << ")";
+      qdmi::throwIfError(status, ss.str());
     }
   };
 
@@ -889,7 +667,7 @@ Session::Session(const SessionConfig& config) {
     setParameter(config.custom5, QDMI_SESSION_PARAMETER_CUSTOM5);
 
     // Initialize the session
-    throwIfError(QDMI_session_init(session_), "Initializing session");
+    qdmi::throwIfError(QDMI_session_init(session_), "Initializing session");
   } catch (...) {
     cleanup();
     throw;
