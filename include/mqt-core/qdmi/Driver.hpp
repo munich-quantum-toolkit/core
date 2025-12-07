@@ -446,19 +446,15 @@ public:
    * @param prefix The prefix used for the device interface functions in the
    * library.
    * @param config Configuration for device session parameters.
-   * @returns `true` if the library was successfully loaded, `false` if it was
-   * already loaded.
    *
    * @note This function is only available on non-Windows platforms.
    *
-   * @throws std::runtime_error If the library fails to load or the device
-   * cannot be initialized.
+   * @throws std::runtime_error If the device cannot be initialized.
    * @throws std::bad_alloc If memory allocation fails during the process.
    */
   auto addDynamicDeviceLibrary(const std::string& libName,
                                const std::string& prefix,
-                               const qdmi::DeviceSessionConfig& config = {})
-      -> bool;
+                               const DeviceSessionConfig& config = {}) -> void;
 #endif // _WIN32
   /**
    * @brief Allocates a new session.

@@ -297,7 +297,7 @@ if sys.platform != "win32":
         custom3: str | None = None,
         custom4: str | None = None,
         custom5: str | None = None,
-    ) -> bool:
+    ) -> None:
         """Load a dynamic device library into the QDMI driver.
 
         This function loads a shared library (.so, .dll, or .dylib) that implements
@@ -320,9 +320,6 @@ if sys.platform != "win32":
             custom4: Optional custom configuration parameter 4.
             custom5: Optional custom configuration parameter 5.
 
-        Returns:
-            True if the library was successfully loaded, False if it was already loaded.
-
         Raises:
             RuntimeError: If library loading fails or configuration is invalid.
 
@@ -330,11 +327,9 @@ if sys.platform != "win32":
             Load a device library with configuration:
 
             >>> import mqt.core.fomac as fomac
-            >>> success = fomac.add_dynamic_device_library(
+            >>> fomac.add_dynamic_device_library(
             ...     "/path/to/libmy_device.so", "MY_DEVICE", base_url="http://localhost:8080", custom1="API_V2"
             ... )
-            >>> if success:
-            ...     print("Library loaded successfully")
 
             Now the device is available in sessions:
 

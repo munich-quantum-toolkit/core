@@ -240,7 +240,7 @@ PYBIND11_MODULE(MQT_CORE_MODULE_NAME, m, py::mod_gil_not_used()) {
          const std::optional<std::string>& custom2 = std::nullopt,
          const std::optional<std::string>& custom3 = std::nullopt,
          const std::optional<std::string>& custom4 = std::nullopt,
-         const std::optional<std::string>& custom5 = std::nullopt) -> bool {
+         const std::optional<std::string>& custom5 = std::nullopt) -> void {
         const qdmi::DeviceSessionConfig config{.baseUrl = baseUrl,
                                                .token = token,
                                                .authFile = authFile,
@@ -252,8 +252,8 @@ PYBIND11_MODULE(MQT_CORE_MODULE_NAME, m, py::mod_gil_not_used()) {
                                                .custom3 = custom3,
                                                .custom4 = custom4,
                                                .custom5 = custom5};
-        return qdmi::Driver::get().addDynamicDeviceLibrary(libraryPath, prefix,
-                                                           config);
+        qdmi::Driver::get().addDynamicDeviceLibrary(libraryPath, prefix,
+                                                    config);
       },
       "library_path"_a, "prefix"_a, "base_url"_a = std::nullopt,
       "token"_a = std::nullopt, "auth_file"_a = std::nullopt,

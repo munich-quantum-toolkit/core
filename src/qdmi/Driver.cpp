@@ -165,12 +165,6 @@ DynamicDeviceLibrary::DynamicDeviceLibrary(const std::string& libName,
   if (libHandle_ == nullptr) {
     throw std::runtime_error("Couldn't open the device library: " + libName);
   }
-  if (!openLibHandles().emplace(libHandle_).second) {
-    // dlopen uses reference counting, so we need to decrement the reference
-    // count that was increased by dlopen.
-    dlclose(libHandle_);
-    throw std::runtime_error("Device library already loaded: " + libName);
-  }
 
 //===----------------------------------------------------------------------===//
 // Macro for loading a symbol from the dynamic library.
@@ -467,21 +461,10 @@ Driver::~Driver() {
 #ifndef _WIN32
 auto Driver::addDynamicDeviceLibrary(const std::string& libName,
                                      const std::string& prefix,
-                                     const qdmi::DeviceSessionConfig& config)
-    -> bool {
-  try {
-    devices_.emplace_back(std::make_unique<QDMI_Device_impl_d>(
-        std::make_unique<DynamicDeviceLibrary>(libName, prefix), config));
-  } catch (const std::runtime_error& e) {
-    if (std::string(e.what()).starts_with("Device library already loaded:")) {
-      // The library is already loaded, so we can ignore this error but return
-      // false.
-      return false;
-    }
-    // Re-throw other exception
-    throw;
-  }
-  return true;
+                                     const DeviceSessionConfig& config)
+    -> void {
+  devices_.emplace_back(std::make_unique<QDMI_Device_impl_d>(
+      std::make_unique<DynamicDeviceLibrary>(libName, prefix), config));
 }
 #endif
 
