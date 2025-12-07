@@ -51,6 +51,8 @@ namespace qdmi {
     }                                                                          \
   }
 
+// STRNCPY wrapper: strncpy_s on Windows (auto null-terminates),
+// strncpy on other platforms (requires manual null-termination - see usage).
 #ifdef _WIN32
 #define STRNCPY(dest, src, size)                                               \
   strncpy_s(static_cast<char*>(dest), size, src, size);
@@ -67,6 +69,7 @@ namespace qdmi {
           return QDMI_ERROR_INVALIDARGUMENT;                                   \
         }                                                                      \
         STRNCPY(value, prop_value, size);                                      \
+        /* Ensure null-termination: strncpy doesn't guarantee it on non-Win */ \
         /* NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic) */  \
         static_cast<char*>(value)[size - 1] = '\0';                            \
       }                                                                        \
