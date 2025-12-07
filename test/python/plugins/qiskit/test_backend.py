@@ -355,24 +355,30 @@ def test_backend_with_site_specific_properties(
         assert abs(props.error - expected_error) < 1e-10
 
 
-def test_backend_qasm_conversion_no_supported_formats() -> None:
+def test_backend_qasm_conversion_no_supported_formats(mock_qdmi_device_factory: type[MockQDMIDevice]) -> None:
     """Backend should raise UnsupportedFormatError when no supported program formats exist."""
     qc = QuantumCircuit(2, 2)
     qc.cz(0, 1)
     qc.measure_all()
 
+    device = mock_qdmi_device_factory(num_qubits=2, operations=["cz", "measure"])
+    backend = QDMIBackend(device)  # type: ignore[arg-type]
+
     with pytest.raises(UnsupportedFormatError, match="No supported program formats found"):
-        QDMIBackend._convert_circuit(qc, [])  # noqa: SLF001
+        backend._convert_circuit(qc, [])  # noqa: SLF001
 
 
-def test_backend_qasm3_conversion_success() -> None:
+def test_backend_qasm3_conversion_success(mock_qdmi_device_factory: type[MockQDMIDevice]) -> None:
     """Backend should successfully convert circuit to QASM3."""
     qc = QuantumCircuit(2, 2)
     qc.h(0)
     qc.cx(0, 1)
     qc.measure_all()
 
-    program, fmt = QDMIBackend._convert_circuit(qc, [fomac.ProgramFormat.QASM3])  # noqa: SLF001
+    device = mock_qdmi_device_factory(num_qubits=2, operations=["h", "cx", "measure"])
+    backend = QDMIBackend(device)  # type: ignore[arg-type]
+
+    program, fmt = backend._convert_circuit(qc, [fomac.ProgramFormat.QASM3])  # noqa: SLF001
 
     assert fmt == fomac.ProgramFormat.QASM3
     assert "OPENQASM 3" in program
@@ -380,32 +386,94 @@ def test_backend_qasm3_conversion_success() -> None:
     assert "cx q[0], q[1]" in program
 
 
-def test_backend_qasm2_conversion_success() -> None:
+def test_backend_qasm2_conversion_success(mock_qdmi_device_factory: type[MockQDMIDevice]) -> None:
     """Backend should successfully convert circuit to QASM2."""
     qc = QuantumCircuit(2, 2)
     qc.h(0)
     qc.cx(0, 1)
     qc.measure_all()
 
-    program, fmt = QDMIBackend._convert_circuit(qc, [fomac.ProgramFormat.QASM2])  # noqa: SLF001
+    device = mock_qdmi_device_factory(num_qubits=2, operations=["h", "cx", "measure"])
+    backend = QDMIBackend(device)  # type: ignore[arg-type]
+
+    program, fmt = backend._convert_circuit(qc, [fomac.ProgramFormat.QASM2])  # noqa: SLF001
 
     assert fmt == fomac.ProgramFormat.QASM2
-    assert "OPENQASM 2" in program
+    assert "OPENQASM 2.0" in program
     assert "h q[0]" in program
     assert "cx q[0],q[1]" in program
 
 
-def test_backend_qasm3_preferred_over_qasm2() -> None:
+def test_backend_qasm3_preferred_over_qasm2(mock_qdmi_device_factory: type[MockQDMIDevice]) -> None:
     """Backend should prefer QASM3 over QASM2 when both are available."""
     qc = QuantumCircuit(2, 2)
     qc.h(0)
     qc.measure_all()
 
+    device = mock_qdmi_device_factory(num_qubits=2, operations=["h", "measure"])
+    backend = QDMIBackend(device)  # type: ignore[arg-type]
+
     # When both formats are available, QASM3 should be chosen
-    program, fmt = QDMIBackend._convert_circuit(qc, [fomac.ProgramFormat.QASM2, fomac.ProgramFormat.QASM3])  # noqa: SLF001
+    program, fmt = backend._convert_circuit(qc, [fomac.ProgramFormat.QASM2, fomac.ProgramFormat.QASM3])  # noqa: SLF001
 
     assert fmt == fomac.ProgramFormat.QASM3
     assert "OPENQASM 3" in program
+
+
+def test_backend_uses_iqm_json_when_supported(mock_qdmi_device_factory: type[MockQDMIDevice]) -> None:
+    """Test that backend uses IQM JSON format when supported."""
+    device = mock_qdmi_device_factory(num_qubits=2, operations=["r", "cz", "measure"])
+
+    submitted_format: fomac.ProgramFormat | None = None
+
+    def mock_supported_formats() -> list[fomac.ProgramFormat]:
+        return [fomac.ProgramFormat.IQM_JSON, fomac.ProgramFormat.QASM3]
+
+    def mock_submit_job(program: str, program_format: fomac.ProgramFormat, num_shots: int) -> MockQDMIDevice.MockJob:  # noqa: ARG001
+        nonlocal submitted_format
+        submitted_format = program_format
+        return device.MockJob(num_clbits=2, shots=num_shots)
+
+    device.supported_program_formats = mock_supported_formats  # type: ignore[method-assign]
+    device.submit_job = mock_submit_job  # type: ignore[method-assign]
+
+    backend = QDMIBackend(device)  # type: ignore[arg-type]
+    qc = QuantumCircuit(2, 2)
+    qc.r(1.5708, 0.0, 0)
+    qc.cz(0, 1)
+    qc.measure_all()
+
+    backend.run(qc, shots=100)
+
+    assert submitted_format == fomac.ProgramFormat.IQM_JSON
+
+
+def test_backend_iqm_json_preferred_over_qasm(mock_qdmi_device_factory: type[MockQDMIDevice]) -> None:
+    """Test that IQM JSON takes priority over QASM formats."""
+    device = mock_qdmi_device_factory(num_qubits=2, operations=["r", "cz", "measure"])
+
+    submitted_format: fomac.ProgramFormat | None = None
+
+    def mock_supported_formats() -> list[fomac.ProgramFormat]:
+        return [fomac.ProgramFormat.QASM2, fomac.ProgramFormat.QASM3, fomac.ProgramFormat.IQM_JSON]
+
+    def mock_submit_job(program: str, program_format: fomac.ProgramFormat, num_shots: int) -> MockQDMIDevice.MockJob:  # noqa: ARG001
+        nonlocal submitted_format
+        submitted_format = program_format
+        return device.MockJob(num_clbits=2, shots=num_shots)
+
+    device.supported_program_formats = mock_supported_formats  # type: ignore[method-assign]
+    device.submit_job = mock_submit_job  # type: ignore[method-assign]
+
+    backend = QDMIBackend(device)  # type: ignore[arg-type]
+    qc = QuantumCircuit(2, 2)
+    qc.r(1.5708, 0.0, 0)
+    qc.cz(0, 1)
+    qc.measure_all()
+
+    backend.run(qc, shots=100)
+
+    assert submitted_format == fomac.ProgramFormat.IQM_JSON
 
 
 @pytest.mark.parametrize(
@@ -419,6 +487,7 @@ def test_backend_qasm_conversion_failure(
     monkeypatch: pytest.MonkeyPatch,
     qasm_module_name: str,
     program_format: fomac.ProgramFormat,
+    mock_qdmi_device_factory: type[MockQDMIDevice],
 ) -> None:
     """Backend should raise TranslationError when QASM conversion fails."""
     qasm_module = qasm3 if qasm_module_name == "qasm3" else qasm2
@@ -434,21 +503,27 @@ def test_backend_qasm_conversion_failure(
     qc.cz(0, 1)
     qc.measure_all()
 
+    device = mock_qdmi_device_factory(num_qubits=2, operations=["cz", "measure"])
+    backend = QDMIBackend(device)  # type: ignore[arg-type]
+
     with pytest.raises(TranslationError, match=f"Failed to convert circuit to {qasm_module_name.upper()}"):
-        QDMIBackend._convert_circuit(qc, [program_format])  # noqa: SLF001
+        backend._convert_circuit(qc, [program_format])  # noqa: SLF001
 
 
-def test_backend_unsupported_format_error() -> None:
+def test_backend_unsupported_format_error(mock_qdmi_device_factory: type[MockQDMIDevice]) -> None:
     """Backend should raise UnsupportedFormatError when only unsupported formats available."""
     qc = QuantumCircuit(2, 2)
     qc.cz(0, 1)
     qc.measure_all()
 
+    device = mock_qdmi_device_factory(num_qubits=2, operations=["cz", "measure"])
+    backend = QDMIBackend(device)  # type: ignore[arg-type]
+
     # Test with QPY format which is not supported for conversion from Qiskit
     with pytest.raises(
         UnsupportedFormatError, match="No conversion from Qiskit to any of the supported program formats"
     ):
-        QDMIBackend._convert_circuit(qc, [fomac.ProgramFormat.QPY])  # noqa: SLF001
+        backend._convert_circuit(qc, [fomac.ProgramFormat.QPY])  # noqa: SLF001
 
 
 def test_backend_supports_cz_gate(backend_with_mock_jobs: QDMIBackend) -> None:
