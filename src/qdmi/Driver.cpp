@@ -241,20 +241,21 @@ QDMI_Device_impl_d::QDMI_Device_impl_d(
       const auto status =
           static_cast<QDMI_STATUS>(library_->device_session_set_parameter(
               deviceSession_, param, value->size() + 1, value->c_str()));
+      if (status == QDMI_SUCCESS) {
+        return;
+      }
+
       if (status == QDMI_ERROR_NOTSUPPORTED) {
-        // Optional parameter not supported by device - skip it
         SPDLOG_INFO(
             "Device session parameter {} not supported by device (skipped)",
             qdmi::toString(param));
         return;
       }
-      if (status != QDMI_SUCCESS) {
-        library_->device_session_free(deviceSession_);
-        std::ostringstream ss;
-        ss << "Failed to set device session parameter " << qdmi::toString(param)
-           << ": " << qdmi::toString(status);
-        throw std::runtime_error(ss.str());
-      }
+      library_->device_session_free(deviceSession_);
+      std::ostringstream ss;
+      ss << "Failed to set device session parameter " << qdmi::toString(param)
+         << ": " << qdmi::toString(status);
+      throw std::runtime_error(ss.str());
     }
   };
 
