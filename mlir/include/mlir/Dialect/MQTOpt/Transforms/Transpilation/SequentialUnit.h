@@ -22,23 +22,24 @@
 namespace mqt::ir::opt {
 
 /// @brief A SequentialUnit traverses a program sequentially.
-class SequentialUnit : public Unit {
+class SequentialUnit : public Unit<SequentialUnit> {
 public:
   [[nodiscard]] static SequentialUnit
   fromEntryPointFunction(mlir::func::FuncOp func, std::size_t nqubits);
 
   SequentialUnit(Layout layout, mlir::Region* region,
-                 mlir::Region::OpIterator start, bool restore = false);
+                 mlir::Region::OpIterator start);
 
-  SequentialUnit(Layout layout, mlir::Region* region, bool restore = false)
-      : SequentialUnit(std::move(layout), region, region->op_begin(), restore) {
-  }
-
-  [[nodiscard]] mlir::SmallVector<SequentialUnit, 3> next();
-  [[nodiscard]] mlir::Region::OpIterator begin() const { return start_; }
-  [[nodiscard]] mlir::Region::OpIterator end() const { return end_; }
+  SequentialUnit(Layout layout, mlir::Region* region)
+      : SequentialUnit(std::move(layout), region, region->op_begin()) {}
 
 private:
+  friend class Unit<SequentialUnit>;
+
+  [[nodiscard]] mlir::SmallVector<SequentialUnit, 3> nextImpl();
+  [[nodiscard]] mlir::Region::OpIterator beginImpl() const { return start_; }
+  [[nodiscard]] mlir::Region::OpIterator endImpl() const { return end_; }
+
   mlir::Region::OpIterator start_;
   mlir::Region::OpIterator end_;
 };

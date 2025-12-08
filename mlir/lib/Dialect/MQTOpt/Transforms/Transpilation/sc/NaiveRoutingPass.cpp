@@ -141,11 +141,9 @@ private:
               .Case<ResetOp>([&](ResetOp op) { unit.layout().remap(op); })
               .Case<MeasureOp>([&](MeasureOp op) { unit.layout().remap(op); })
               .Case<scf::YieldOp>([&](scf::YieldOp op) {
-                if (unit.restore()) {
-                  rewriter.setInsertionPointAfter(op->getPrevNode());
-                  insertSWAPs(op.getLoc(), llvm::reverse(history),
-                              unit.layout(), rewriter);
-                }
+                rewriter.setInsertionPointAfter(op->getPrevNode());
+                insertSWAPs(op.getLoc(), llvm::reverse(history), unit.layout(),
+                            rewriter);
               });
         }
 
