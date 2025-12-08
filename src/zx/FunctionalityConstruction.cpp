@@ -333,6 +333,7 @@ void FunctionalityConstruction::addCrz(ZXDiagram& diag,
                                        const PiExpression& phase,
                                        const Qubit control, const Qubit target,
                                        std::vector<Vertex>& qubits) {
+  // CRZ decomposition uses reversed CNOT direction
   addCnot(diag, target, control, qubits);
   addZSpider(diag, control, qubits, -phase / 2);
   addZSpider(diag, target, qubits, phase / 2);
@@ -385,23 +386,25 @@ void FunctionalityConstruction::addMcx(ZXDiagram& diag,
 
     if (qubits.size() > controls.size() + 1) {
       controls.push_back(target);
-      Qubit anc = -1;
-      auto it = std::ranges::find_if(qubits, [&](Vertex x) {
-        return std::ranges::find(controls, static_cast<Qubit>(x)) ==
-               controls.end();
-      });
-      if (it == qubits.end()) {
-        throw ZXException("No ancilla qubit available for MCX decomposition");
-      } else {
-        anc = static_cast<Qubit>(*it);
+      std::optional<Qubit> anc{};
+      for (std::size_t q = 0; q < qubits.size(); ++q) {
+        const auto qb = static_cast<Qubit>(q);
+        if (std::ranges::find(controls, qb) == controls.end()) {
+          anc = qb;
+          break;
+        }
       }
+      if (!anc.has_value()) {
+        throw ZXException("No ancilla qubit available for MCX decomposition");
+      } 
+    
       controls.pop_back();
-      second.push_back(anc);
+      second.push_back(*anc);
 
-      addMcx(diag, first, anc, qubits);
+      addMcx(diag, first, *anc, qubits);
       addMcx(diag, second, target, qubits);
 
-      addMcx(diag, first, anc, qubits);
+      addMcx(diag, first, *anc, qubits);
       addMcx(diag, second, target, qubits);
     } else {
       addRx(diag, PiExpression(PiRational(1, 4)), target, qubits);

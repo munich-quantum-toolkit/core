@@ -244,13 +244,63 @@ TEST_F(ZXFunctionalityTest, CRZ) {
   EXPECT_TRUE(d.connected(d.getInput(0), d.getOutput(0)));
 }
 
+TEST_F(ZXFunctionalityTest, MultiCZ) {
+  using namespace qc::literals;
+  qc = qc::QuantumComputation(3);
+  qc.mcz({1, 2}, 0);
+
+  auto qcPrime = qc::QuantumComputation(3);
+  qcPrime.h(0);
+  qcPrime.mcx({1, 2}, 0);
+  qcPrime.h(0);
+
+  auto d = FunctionalityConstruction::buildFunctionality(&qc);
+
+  auto dPrime = FunctionalityConstruction::buildFunctionality(&qcPrime);
+
+  d.concat(dPrime.invert());
+
+  fullReduce(d);
+
+  EXPECT_TRUE(d.isIdentity());
+  EXPECT_TRUE(d.globalPhaseIsZero());
+  EXPECT_TRUE(d.connected(d.getInput(0), d.getOutput(0)));
+}
+TEST_F(ZXFunctionalityTest, CCZ) {
+  using namespace qc::literals;
+  const std::string testfile = "OPENQASM 2.0;"
+                               "include \"qelib1.inc\";"
+                               "qreg q[3];"
+                               "ccz q[0],q[1],q[2];\n";
+
+  qc = qasm3::Importer::imports(testfile);
+  auto qcPrime = qc::QuantumComputation(3);
+  qcPrime.h(0);
+  qcPrime.mcx({1, 2}, 0);
+  qcPrime.h(0);
+
+  auto d = FunctionalityConstruction::buildFunctionality(&qc);
+
+  auto dPrime = FunctionalityConstruction::buildFunctionality(&qcPrime);
+
+  d.concat(dPrime.invert());
+
+  fullReduce(d);
+
+  EXPECT_TRUE(d.isIdentity());
+  EXPECT_TRUE(d.globalPhaseIsZero());
+  EXPECT_TRUE(d.connected(d.getInput(0), d.getOutput(0)));
+}
+
 TEST_F(ZXFunctionalityTest, MultiControlX) {
   using namespace qc::literals;
   qc = qc::QuantumComputation(4);
   qc.mcx({1, 2, 3}, 0);
 
   auto qcPrime = qc::QuantumComputation(4);
-  qcPrime.mcx({1, 2, 3}, 0);
+  qcPrime.h(0);
+  qcPrime.mcz({1, 2, 3}, 0);
+  qcPrime.h(0);
 
   auto d = FunctionalityConstruction::buildFunctionality(&qc);
 
@@ -333,7 +383,75 @@ TEST_F(ZXFunctionalityTest, MultiControlX1) {
   EXPECT_TRUE(d.connected(d.getInput(0), d.getOutput(0)));
 }
 
-TEST_F(ZXFunctionalityTest, MultiCRZ) {
+TEST_F(ZXFunctionalityTest, MultiControlZ) {
+  using namespace qc::literals;
+  qc = qc::QuantumComputation(4);
+  qc.mcz({1, 2, 3}, 0);
+
+  auto qcPrime = qc::QuantumComputation(4);
+  qcPrime.h(0);
+  qcPrime.mcx({1, 2, 3}, 0);
+  qcPrime.h(0);
+
+  auto d = FunctionalityConstruction::buildFunctionality(&qc);
+
+  auto dPrime = FunctionalityConstruction::buildFunctionality(&qcPrime);
+
+  d.concat(dPrime.invert());
+
+  fullReduce(d);
+
+  EXPECT_TRUE(d.isIdentity());
+  EXPECT_TRUE(d.globalPhaseIsZero());
+  EXPECT_TRUE(d.connected(d.getInput(0), d.getOutput(0)));
+  EXPECT_TRUE(d.connected(d.getInput(1), d.getOutput(1)));
+  EXPECT_TRUE(d.connected(d.getInput(2), d.getOutput(2)));
+}
+
+TEST_F(ZXFunctionalityTest, MultiControlZ0) {
+  using namespace qc::literals;
+  qc = qc::QuantumComputation(1);
+  qc.mcz({}, 0);
+
+  auto qcPrime = qc::QuantumComputation(1);
+  qcPrime.z(0);
+  
+  auto d = FunctionalityConstruction::buildFunctionality(&qc);
+
+  auto dPrime = FunctionalityConstruction::buildFunctionality(&qcPrime);
+
+  d.concat(dPrime.invert());
+
+  fullReduce(d);
+
+  EXPECT_TRUE(d.isIdentity());
+  EXPECT_TRUE(d.globalPhaseIsZero());
+  EXPECT_TRUE(d.connected(d.getInput(0), d.getOutput(0)));
+}
+
+TEST_F(ZXFunctionalityTest, MultiControlZ1) {
+  using namespace qc::literals;
+  qc = qc::QuantumComputation(2);
+  qc.mcz({1}, 0);
+
+  auto qcPrime = qc::QuantumComputation(2);
+  qcPrime.cz(1, 0);
+  
+  auto d = FunctionalityConstruction::buildFunctionality(&qc);
+
+  auto dPrime = FunctionalityConstruction::buildFunctionality(&qcPrime);
+
+  d.concat(dPrime.invert());
+
+  fullReduce(d);
+
+  EXPECT_TRUE(d.isIdentity());
+  EXPECT_TRUE(d.globalPhaseIsZero());
+  EXPECT_TRUE(d.connected(d.getInput(0), d.getOutput(0)));
+}
+
+
+TEST_F(ZXFunctionalityTest, MultiControlRZ) {
   using namespace qc::literals;
   qc = qc::QuantumComputation(3);
   qc.mcrz(PI / 4, {1, 2}, 0);
@@ -347,6 +465,49 @@ TEST_F(ZXFunctionalityTest, MultiCRZ) {
   EXPECT_TRUE(d.globalPhaseIsZero());
   EXPECT_TRUE(d.connected(d.getInput(0), d.getOutput(0)));
 }
+
+TEST_F(ZXFunctionalityTest, MultiControlRZ0) {
+  using namespace qc::literals;
+  qc = qc::QuantumComputation(1);
+  qc.mcrz(PI / 4, {}, 0);
+  
+  auto qcPrime = qc::QuantumComputation(1);
+  qcPrime.rz(PI / 4, 0);
+
+  auto d = FunctionalityConstruction::buildFunctionality(&qc);
+
+  auto dPrime = FunctionalityConstruction::buildFunctionality(&qcPrime);
+
+  d.concat(dPrime.invert());
+
+  fullReduce(d);
+
+  EXPECT_TRUE(d.isIdentity());
+  EXPECT_TRUE(d.globalPhaseIsZero());
+  EXPECT_TRUE(d.connected(d.getInput(0), d.getOutput(0)));
+}
+
+TEST_F(ZXFunctionalityTest, MultiControlRZ1) {
+  using namespace qc::literals;
+  qc = qc::QuantumComputation(2);
+  qc.mcrz(PI / 4, {1}, 0);
+
+  auto qcPrime = qc::QuantumComputation(2);
+  qcPrime.crz(PI / 4, 1, 0);
+
+  auto d = FunctionalityConstruction::buildFunctionality(&qc);
+
+  auto dPrime = FunctionalityConstruction::buildFunctionality(&qcPrime);
+
+  d.concat(dPrime.invert());
+
+  fullReduce(d);
+
+  EXPECT_TRUE(d.isIdentity());
+  EXPECT_TRUE(d.globalPhaseIsZero());
+  EXPECT_TRUE(d.connected(d.getInput(0), d.getOutput(0)));
+}
+
 
 TEST_F(ZXFunctionalityTest, UnsupportedControl) {
   using namespace qc::literals;
