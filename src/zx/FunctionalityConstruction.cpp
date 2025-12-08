@@ -331,13 +331,13 @@ void FunctionalityConstruction::addCcz(ZXDiagram& diag, const Qubit ctrl0,
 
 void FunctionalityConstruction::addCrz(ZXDiagram& diag,
                                        const PiExpression& phase,
-                                       const Qubit control, const Qubit target,
+                                       const Qubit ctrl, const Qubit target,
                                        std::vector<Vertex>& qubits) {
   // CRZ decomposition uses reversed CNOT direction
-  addCnot(diag, target, control, qubits);
-  addZSpider(diag, control, qubits, -phase / 2);
+  addCnot(diag, target, ctrl, qubits);
+  addZSpider(diag, ctrl, qubits, -phase / 2);
   addZSpider(diag, target, qubits, phase / 2);
-  addCnot(diag, target, control, qubits);
+  addCnot(diag, target, ctrl, qubits);
 }
 
 void FunctionalityConstruction::addMcrz(ZXDiagram& diag,
@@ -396,7 +396,7 @@ void FunctionalityConstruction::addMcx(ZXDiagram& diag,
       }
       if (!anc.has_value()) {
         throw ZXException("No ancilla qubit available for MCX decomposition");
-      } 
+      }
     
       controls.pop_back();
       second.push_back(*anc);
