@@ -128,6 +128,9 @@ LLVM::AddressOfOp createResultLabel(OpBuilder& builder, Operation* op,
   if (!module) {
     module = op->getParentOfType<ModuleOp>();
   }
+  if (!module) {
+    llvm::reportFatalInternalError("Module not found");
+  }
   builder.setInsertionPointToStart(module.getBody());
 
   const auto symbolName =
