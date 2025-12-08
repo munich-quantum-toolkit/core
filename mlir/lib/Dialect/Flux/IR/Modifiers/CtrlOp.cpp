@@ -166,13 +166,31 @@ Value CtrlOp::getOutputQubit(const size_t i) {
   llvm::reportFatalUsageError("Invalid qubit index");
 }
 
-Value CtrlOp::getInputTarget(const size_t i) { return getTargetsIn()[i]; }
+Value CtrlOp::getInputTarget(const size_t i) {
+  if (i >= getNumTargets()) {
+    llvm::reportFatalUsageError("Target index out of bounds");
+  }
+  return getTargetsIn()[i];
+}
 
-Value CtrlOp::getOutputTarget(const size_t i) { return getTargetsOut()[i]; }
+Value CtrlOp::getOutputTarget(const size_t i) {
+  if (i >= getNumTargets()) {
+    llvm::reportFatalUsageError("Target index out of bounds");
+  }
+  return getTargetsOut()[i];
+}
 
-Value CtrlOp::getInputPosControl(const size_t i) { return getControlsIn()[i]; }
+Value CtrlOp::getInputPosControl(const size_t i) {
+  if (i >= getNumPosControls()) {
+    llvm::reportFatalUsageError("Control index out of bounds");
+  }
+  return getControlsIn()[i];
+}
 
 Value CtrlOp::getOutputPosControl(const size_t i) {
+  if (i >= getNumPosControls()) {
+    llvm::reportFatalUsageError("Control index out of bounds");
+  }
   return getControlsOut()[i];
 }
 

@@ -129,7 +129,12 @@ Value CtrlOp::getTarget(const size_t i) {
   return getBodyUnitary().getTarget(i);
 }
 
-Value CtrlOp::getPosControl(const size_t i) { return getControls()[i]; }
+Value CtrlOp::getPosControl(const size_t i) {
+  if (i >= getNumPosControls()) {
+    llvm::reportFatalUsageError("Control index out of bounds");
+  }
+  return getControls()[i];
+}
 
 Value CtrlOp::getNegControl(const size_t i) {
   return getBodyUnitary().getNegControl(i);
