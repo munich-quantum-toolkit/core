@@ -70,6 +70,10 @@ class MockQDMIDevice:
             """Return site index."""
             return self._index
 
+        def name(self) -> str:
+            """Return site name."""
+            return f"site_{self._index}"
+
         @staticmethod
         def is_zone() -> bool:
             """Return whether site is a zone (always False for mock sites)."""
