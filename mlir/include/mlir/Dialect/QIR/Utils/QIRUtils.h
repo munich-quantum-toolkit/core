@@ -19,23 +19,23 @@ namespace mlir::qir {
 
 // QIR function names
 
-static constexpr auto QIR_INITIALIZE = "__quantum__rt__initialize";
-static constexpr auto QIR_MEASURE = "__quantum__qis__mz__body";
-static constexpr auto QIR_RECORD_OUTPUT = "__quantum__rt__result_record_output";
-static constexpr auto QIR_ARRAY_RECORD_OUTPUT =
+inline constexpr auto QIR_INITIALIZE = "__quantum__rt__initialize";
+inline constexpr auto QIR_MEASURE = "__quantum__qis__mz__body";
+inline constexpr auto QIR_RECORD_OUTPUT = "__quantum__rt__result_record_output";
+inline constexpr auto QIR_ARRAY_RECORD_OUTPUT =
     "__quantum__rt__array_record_output";
-static constexpr auto QIR_RESET = "__quantum__qis__reset__body";
+inline constexpr auto QIR_RESET = "__quantum__qis__reset__body";
 
-static constexpr auto QIR_GPHASE = "__quantum__qis__gphase__body";
+inline constexpr auto QIR_GPHASE = "__quantum__qis__gphase__body";
 
 #define ADD_STANDARD_GATE(NAME_BIG, NAME_SMALL)                                \
-  static constexpr auto QIR_##NAME_BIG =                                       \
+  inline constexpr auto QIR_##NAME_BIG =                                       \
       "__quantum__qis__" #NAME_SMALL "__body";                                 \
-  static constexpr auto QIR_C##NAME_BIG =                                      \
+  inline constexpr auto QIR_C##NAME_BIG =                                      \
       "__quantum__qis__c" #NAME_SMALL "__body";                                \
-  static constexpr auto QIR_CC##NAME_BIG =                                     \
+  inline constexpr auto QIR_CC##NAME_BIG =                                     \
       "__quantum__qis__cc" #NAME_SMALL "__body";                               \
-  static constexpr auto QIR_CCC##NAME_BIG =                                    \
+  inline constexpr auto QIR_CCC##NAME_BIG =                                    \
       "__quantum__qis__ccc" #NAME_SMALL "__body";
 
 ADD_STANDARD_GATE(I, i)
