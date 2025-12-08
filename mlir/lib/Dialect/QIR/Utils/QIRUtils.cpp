@@ -94,7 +94,7 @@ LLVM::LLVMFuncOp getOrCreateFunctionDeclaration(OpBuilder& builder,
 
   if (fnDecl == nullptr) {
     // Save current insertion point
-    const OpBuilder::InsertionGuard insertGuard(builder);
+    const OpBuilder::InsertionGuard guard(builder);
 
     // Create the declaration at the end of the module
     auto module = dyn_cast<ModuleOp>(op);
@@ -121,7 +121,7 @@ LLVM::AddressOfOp createResultLabel(OpBuilder& builder, Operation* op,
                                     const StringRef label,
                                     const StringRef symbolPrefix) {
   // Save current insertion point
-  const OpBuilder::InsertionGuard insertGuard(builder);
+  const OpBuilder::InsertionGuard guard(builder);
 
   // Create the declaration at the start of the module
   auto module = dyn_cast<ModuleOp>(op);

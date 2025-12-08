@@ -140,7 +140,7 @@ QIRProgramBuilder::allocClassicalBitRegister(const int64_t size,
   }
 
   // Save current insertion point
-  const OpBuilder::InsertionGuard insertGuard(builder);
+  const OpBuilder::InsertionGuard guard(builder);
 
   // Insert in measurements block (before branch)
   builder.setInsertionPoint(measurementsBlock->getTerminator());
@@ -164,7 +164,7 @@ QIRProgramBuilder::allocClassicalBitRegister(const int64_t size,
 
 Value QIRProgramBuilder::measure(const Value qubit, const int64_t resultIndex) {
   // Save current insertion point
-  const OpBuilder::InsertionGuard insertGuard(builder);
+  const OpBuilder::InsertionGuard guard(builder);
 
   // Insert in measurements block (before branch)
   builder.setInsertionPoint(measurementsBlock->getTerminator());
@@ -203,7 +203,7 @@ Value QIRProgramBuilder::measure(const Value qubit, const int64_t resultIndex) {
 QIRProgramBuilder& QIRProgramBuilder::measure(const Value qubit,
                                               const Bit& bit) {
   // Save current insertion point
-  const OpBuilder::InsertionGuard insertGuard(builder);
+  const OpBuilder::InsertionGuard guard(builder);
 
   // Insert in measurements block (before branch)
   builder.setInsertionPoint(measurementsBlock->getTerminator());
@@ -230,7 +230,7 @@ QIRProgramBuilder& QIRProgramBuilder::measure(const Value qubit,
 
 QIRProgramBuilder& QIRProgramBuilder::reset(const Value qubit) {
   // Save current insertion point
-  const OpBuilder::InsertionGuard insertGuard(builder);
+  const OpBuilder::InsertionGuard guard(builder);
 
   // Insert in measurements block (before branch)
   builder.setInsertionPoint(measurementsBlock->getTerminator());
@@ -255,7 +255,7 @@ void QIRProgramBuilder::createCallOp(
     const ValueRange controls, const SmallVector<Value>& targets,
     StringRef fnName) {
   // Save current insertion point
-  const OpBuilder::InsertionGuard insertGuard(builder);
+  const OpBuilder::InsertionGuard guard(builder);
 
   // Insert constants in entry block
   builder.setInsertionPoint(entryBlock->getTerminator());
@@ -552,7 +552,7 @@ void QIRProgramBuilder::generateOutputRecording() {
   }
 
   // Save current insertion point
-  const OpBuilder::InsertionGuard insertGuard(builder);
+  const OpBuilder::InsertionGuard guard(builder);
 
   // Insert in output block (before return)
   builder.setInsertionPoint(outputBlock->getTerminator());

@@ -66,7 +66,13 @@ struct RemoveTrivialCtrl final : OpRewritePattern<CtrlOp> {
     if (op.getNumPosControls() > 0) {
       return failure();
     }
-    rewriter.replaceOp(op, op.getBodyUnitary());
+
+    const OpBuilder::InsertionGuard guard(rewriter);
+    rewriter.setInsertionPoint(op);
+
+    auto* clonedBody = rewriter.clone(*op.getBodyUnitary().getOperation());
+    rewriter.replaceOp(op, clonedBody->getResults());
+
     return success();
   }
 };

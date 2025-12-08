@@ -33,20 +33,20 @@ namespace {
  */
 struct MergeNestedCtrl final : OpRewritePattern<CtrlOp> {
   using OpRewritePattern::OpRewritePattern;
-  LogicalResult matchAndRewrite(CtrlOp ctrlOp,
+  LogicalResult matchAndRewrite(CtrlOp op,
                                 PatternRewriter& rewriter) const override {
-    auto bodyUnitary = ctrlOp.getBodyUnitary();
+    auto bodyUnitary = op.getBodyUnitary();
     auto bodyCtrlOp = llvm::dyn_cast<CtrlOp>(bodyUnitary.getOperation());
     if (!bodyCtrlOp) {
       return failure();
     }
 
-    llvm::SmallVector<Value> newControls(ctrlOp.getControls());
+    llvm::SmallVector<Value> newControls(op.getControls());
     for (const auto control : bodyCtrlOp.getControls()) {
       newControls.push_back(control);
     }
 
-    rewriter.replaceOpWithNewOp<CtrlOp>(ctrlOp, newControls,
+    rewriter.replaceOpWithNewOp<CtrlOp>(op, newControls,
                                         bodyCtrlOp.getBodyUnitary());
 
     return success();
@@ -58,12 +58,18 @@ struct MergeNestedCtrl final : OpRewritePattern<CtrlOp> {
  */
 struct RemoveTrivialCtrl final : OpRewritePattern<CtrlOp> {
   using OpRewritePattern::OpRewritePattern;
-  LogicalResult matchAndRewrite(CtrlOp ctrlOp,
+  LogicalResult matchAndRewrite(CtrlOp op,
                                 PatternRewriter& rewriter) const override {
-    if (ctrlOp.getNumPosControls() > 0) {
+    if (op.getNumPosControls() > 0) {
       return failure();
     }
-    rewriter.replaceOp(ctrlOp, ctrlOp.getBodyUnitary());
+
+    const OpBuilder::InsertionGuard guard(rewriter);
+    rewriter.setInsertionPoint(op);
+
+    auto* clonedBody = rewriter.clone(*op.getBodyUnitary().getOperation());
+    rewriter.replaceOp(op, clonedBody->getResults());
+
     return success();
   }
 };

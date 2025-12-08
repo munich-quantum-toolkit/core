@@ -989,7 +989,7 @@ struct QuartzToQIR final : impl::QuartzToQIRBase<QuartzToQIR> {
     auto* fnDecl = SymbolTable::lookupNearestSymbolFrom(
         main, builder.getStringAttr(QIR_INITIALIZE));
     if (fnDecl == nullptr) {
-      const PatternRewriter::InsertionGuard insertGuard(builder);
+      const PatternRewriter::InsertionGuard guard(builder);
       builder.setInsertionPointToEnd(moduleOp.getBody());
       auto fnSignature = LLVM::LLVMFunctionType::get(
           LLVM::LLVMVoidType::get(ctx), LLVM::LLVMPointerType::get(ctx));
