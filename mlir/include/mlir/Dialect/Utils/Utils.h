@@ -10,6 +10,8 @@
 
 #pragma once
 
+#include <variant>
+
 namespace mlir::utils {
 
 constexpr double TOLERANCE = 1e-12;
