@@ -458,8 +458,19 @@ llvm::LogicalResult addIfElseOp(mlir::OpBuilder& builder,
   {
     const mlir::OpBuilder::InsertionGuard thenGuard(builder);
     builder.setInsertionPointToStart(ifOp.thenBlock());
-    if (addOperation(builder, *thenOp, qubits, bitMap).failed()) {
-      return llvm::failure();
+    if (thenOp->isCompoundOperation()) {
+      for (const auto& operation :
+           dynamic_cast<const qc::CompoundOperation&>(*thenOp)) {
+        if (const auto result =
+                addOperation(builder, *operation, qubits, bitMap);
+            result.failed()) {
+          return result;
+        }
+      }
+    } else {
+      if (addOperation(builder, *thenOp, qubits, bitMap).failed()) {
+        return llvm::failure();
+      }
     }
   }
 
@@ -467,8 +478,19 @@ llvm::LogicalResult addIfElseOp(mlir::OpBuilder& builder,
   if (elseOp != nullptr) {
     const mlir::OpBuilder::InsertionGuard elseGuard(builder);
     builder.setInsertionPointToStart(ifOp.elseBlock());
-    if (addOperation(builder, *elseOp, qubits, bitMap).failed()) {
-      return llvm::failure();
+    if (elseOp->isCompoundOperation()) {
+      for (const auto& operation :
+           dynamic_cast<const qc::CompoundOperation&>(*elseOp)) {
+        if (const auto result =
+                addOperation(builder, *operation, qubits, bitMap);
+            result.failed()) {
+          return result;
+        }
+      }
+    } else {
+      if (addOperation(builder, *elseOp, qubits, bitMap).failed()) {
+        return llvm::failure();
+      }
     }
   }
 
