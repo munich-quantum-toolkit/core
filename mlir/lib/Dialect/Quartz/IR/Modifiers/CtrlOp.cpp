@@ -67,8 +67,8 @@ struct RemoveTrivialCtrl final : OpRewritePattern<CtrlOp> {
     const OpBuilder::InsertionGuard guard(rewriter);
     rewriter.setInsertionPoint(op);
 
-    auto* clonedBody = rewriter.clone(*op.getBodyUnitary().getOperation());
-    rewriter.replaceOp(op, clonedBody->getResults());
+    rewriter.clone(*op.getBodyUnitary().getOperation());
+    rewriter.eraseOp(op);
 
     return success();
   }
