@@ -171,6 +171,7 @@ void CtrlOp::build(OpBuilder& builder, OperationState& state,
   state.addOperands(controls);
   auto* region = state.addRegion();
   auto& block = region->emplaceBlock();
+
   builder.setInsertionPointToStart(&block);
   bodyBuilder(builder);
   builder.create<YieldOp>(state.location);

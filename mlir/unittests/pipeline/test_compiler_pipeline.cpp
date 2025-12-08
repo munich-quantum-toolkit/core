@@ -1579,6 +1579,38 @@ TEST_F(CompilerPipelineTest, MCX) {
   });
 }
 
+TEST_F(CompilerPipelineTest, MCXNested) {
+  auto input = buildQuartzIR([](quartz::QuartzProgramBuilder& b) {
+    auto reg = b.allocQubitRegister(3, "q");
+    b.ctrl(reg[0], [&](OpBuilder& b) {
+      static_cast<quartz::QuartzProgramBuilder&>(b).cx(reg[1], reg[2]);
+    });
+  });
+
+  ASSERT_TRUE(runPipeline(input.get()).succeeded());
+
+  const auto quartz = buildQuartzIR([](quartz::QuartzProgramBuilder& b) {
+    auto reg = b.allocQubitRegister(3, "q");
+    b.mcx({reg[0], reg[1]}, reg[2]);
+  });
+  const auto flux = buildFluxIR([](flux::FluxProgramBuilder& b) {
+    auto reg = b.allocQubitRegister(3, "q");
+    b.mcx({reg[0], reg[1]}, reg[2]);
+  });
+  const auto qir = buildQIR([](qir::QIRProgramBuilder& b) {
+    auto reg = b.allocQubitRegister(3);
+    b.mcx({reg[0], reg[1]}, reg[2]);
+  });
+
+  verifyAllStages({
+      .quartzImport = quartz.get(),
+      .fluxConversion = flux.get(),
+      .optimization = flux.get(),
+      .quartzConversion = quartz.get(),
+      .qirConversion = qir.get(),
+  });
+}
+
 TEST_F(CompilerPipelineTest, Y) {
   qc::QuantumComputation qc;
   qc.addQubitRegister(1, "q");
