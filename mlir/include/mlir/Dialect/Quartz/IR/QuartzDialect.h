@@ -23,7 +23,6 @@
 
 #include <mlir/Bytecode/BytecodeOpInterface.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
-#include <mlir/Dialect/LLVMIR/LLVMOps.h.inc>
 #include <mlir/IR/Value.h>
 #include <mlir/IR/ValueRange.h>
 #include <mlir/Interfaces/SideEffectInterfaces.h>
