@@ -93,12 +93,11 @@ LLVM::LLVMFuncOp getOrCreateFunctionDeclaration(OpBuilder& builder,
     const OpBuilder::InsertionGuard insertGuard(builder);
 
     // Create the declaration at the end of the module
-    if (auto module = dyn_cast<ModuleOp>(op)) {
-      builder.setInsertionPointToEnd(module.getBody());
-    } else {
+    auto module = dyn_cast<ModuleOp>(op);
+    if (!module) {
       module = op->getParentOfType<ModuleOp>();
-      builder.setInsertionPointToEnd(module.getBody());
     }
+    builder.setInsertionPointToEnd(module.getBody());
 
     fnDecl = builder.create<LLVM::LLVMFuncOp>(op->getLoc(), fnName, fnType);
 
