@@ -35,7 +35,7 @@ removeInversePairOneTargetZeroParameter(OpType op,
     return failure();
   }
 
-  // Remove both operations
+  // Trivialize both operations
   rewriter.replaceOp(prevOp, prevOp.getInputQubit(0));
   rewriter.replaceOp(op, op.getInputQubit(0));
 
@@ -66,7 +66,7 @@ removeInversePairTwoTargetZeroParameter(OpType op,
     return failure();
   }
 
-  // Remove both operations
+  // Trivialize both operations
   rewriter.replaceOp(prevOp,
                      {prevOp.getInputQubit(0), prevOp.getInputQubit(1)});
   rewriter.replaceOp(op, {op.getInputQubit(0), op.getInputQubit(1)});
@@ -103,6 +103,7 @@ mergeOneTargetZeroParameter(OpType op, mlir::PatternRewriter& rewriter) {
 
   // Trivialize predecessor
   rewriter.replaceOp(prevOp, prevOp.getInputQubit(0));
+
   return success();
 }
 
@@ -197,6 +198,7 @@ removeTrivialOneTargetOneParameter(OpType op, mlir::PatternRewriter& rewriter) {
     return failure();
   }
 
+  // Trivialize operation
   rewriter.replaceOp(op, op.getInputQubit(0));
 
   return success();
@@ -223,6 +225,7 @@ removeTrivialTwoTargetOneParameter(OpType op, mlir::PatternRewriter& rewriter) {
     return failure();
   }
 
+  // Trivialize operation
   rewriter.replaceOp(op, {op.getInputQubit(0), op.getInputQubit(1)});
 
   return success();
