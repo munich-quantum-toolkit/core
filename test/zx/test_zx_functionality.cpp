@@ -219,16 +219,6 @@ TEST_F(ZXFunctionalityTest, Compound) {
   EXPECT_TRUE(diag.isIdentity());
 }
 
-// TEST_F(ZXFunctionalityTest, UnsupportedMultiControl) {
-//   using namespace qc::literals;
-//   qc = qc::QuantumComputation(4);
-//   qc.mcx({1, 2, 3}, 0);
-//   EXPECT_FALSE(FunctionalityConstruction::transformableToZX(&qc));
-//   EXPECT_THROW(const ZXDiagram diag =
-//                    FunctionalityConstruction::buildFunctionality(&qc),
-//                ZXException);
-// }
-
 TEST_F(ZXFunctionalityTest, CRZ) {
   using namespace qc::literals;
   qc = qc::QuantumComputation(2);
