@@ -246,7 +246,7 @@ void QIRProgramBuilder::createCallOp(
   const OpBuilder::InsertionGuard entryGuard(builder);
 
   // Insert constants in entry block
-  builder.setInsertionPointToEnd(entryBlock);
+  builder.setInsertionPoint(entryBlock->getTerminator());
 
   SmallVector<Value> parameterOperands;
   parameterOperands.reserve(parameters.size());
