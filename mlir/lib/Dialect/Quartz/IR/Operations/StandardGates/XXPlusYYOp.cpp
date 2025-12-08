@@ -21,11 +21,11 @@ using namespace mlir;
 using namespace mlir::quartz;
 using namespace mlir::utils;
 
-void XXPlusYYOp::build(OpBuilder& odsBuilder, OperationState& odsState,
+void XXPlusYYOp::build(OpBuilder& builder, OperationState& state,
                        const Value qubit0In, const Value qubit1In,
                        const std::variant<double, Value>& theta,
                        const std::variant<double, Value>& beta) {
-  const auto& thetaOperand = variantToValue(odsBuilder, odsState, theta);
-  const auto& betaOperand = variantToValue(odsBuilder, odsState, beta);
-  build(odsBuilder, odsState, qubit0In, qubit1In, thetaOperand, betaOperand);
+  const auto& thetaOperand = variantToValue(builder, state, theta);
+  const auto& betaOperand = variantToValue(builder, state, beta);
+  build(builder, state, qubit0In, qubit1In, thetaOperand, betaOperand);
 }

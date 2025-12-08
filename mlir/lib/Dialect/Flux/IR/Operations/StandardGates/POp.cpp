@@ -54,10 +54,10 @@ struct RemoveTrivialP final : OpRewritePattern<POp> {
 
 } // namespace
 
-void POp::build(OpBuilder& odsBuilder, OperationState& odsState,
-                const Value qubitIn, const std::variant<double, Value>& theta) {
-  const auto& thetaOperand = variantToValue(odsBuilder, odsState, theta);
-  build(odsBuilder, odsState, qubitIn, thetaOperand);
+void POp::build(OpBuilder& builder, OperationState& state, const Value qubitIn,
+                const std::variant<double, Value>& theta) {
+  const auto& thetaOperand = variantToValue(builder, state, theta);
+  build(builder, state, qubitIn, thetaOperand);
 }
 
 void POp::getCanonicalizationPatterns(RewritePatternSet& results,

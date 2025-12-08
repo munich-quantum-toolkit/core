@@ -114,14 +114,14 @@ struct ReplaceUWithRY final : OpRewritePattern<UOp> {
 
 } // namespace
 
-void UOp::build(OpBuilder& odsBuilder, OperationState& odsState,
-                const Value qubitIn, const std::variant<double, Value>& theta,
+void UOp::build(OpBuilder& builder, OperationState& state, const Value qubitIn,
+                const std::variant<double, Value>& theta,
                 const std::variant<double, Value>& phi,
                 const std::variant<double, Value>& lambda) {
-  const auto& thetaOperand = variantToValue(odsBuilder, odsState, theta);
-  const auto& phiOperand = variantToValue(odsBuilder, odsState, phi);
-  const auto& lambdaOperand = variantToValue(odsBuilder, odsState, lambda);
-  build(odsBuilder, odsState, qubitIn, thetaOperand, phiOperand, lambdaOperand);
+  const auto& thetaOperand = variantToValue(builder, state, theta);
+  const auto& phiOperand = variantToValue(builder, state, phi);
+  const auto& lambdaOperand = variantToValue(builder, state, lambda);
+  build(builder, state, qubitIn, thetaOperand, phiOperand, lambdaOperand);
 }
 
 void UOp::getCanonicalizationPatterns(RewritePatternSet& results,

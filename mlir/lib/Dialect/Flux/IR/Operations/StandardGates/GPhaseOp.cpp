@@ -52,10 +52,10 @@ struct RemoveTrivialGPhase final : OpRewritePattern<GPhaseOp> {
 
 } // namespace
 
-void GPhaseOp::build(OpBuilder& odsBuilder, OperationState& odsState,
+void GPhaseOp::build(OpBuilder& builder, OperationState& state,
                      const std::variant<double, Value>& theta) {
-  const auto& thetaOperand = variantToValue(odsBuilder, odsState, theta);
-  build(odsBuilder, odsState, thetaOperand);
+  const auto& thetaOperand = variantToValue(builder, state, theta);
+  build(builder, state, thetaOperand);
 }
 
 void GPhaseOp::getCanonicalizationPatterns(RewritePatternSet& results,

@@ -21,10 +21,10 @@ using namespace mlir;
 using namespace mlir::quartz;
 using namespace mlir::utils;
 
-void U2Op::build(OpBuilder& odsBuilder, OperationState& odsState,
-                 const Value qubitIn, const std::variant<double, Value>& phi,
+void U2Op::build(OpBuilder& builder, OperationState& state, const Value qubitIn,
+                 const std::variant<double, Value>& phi,
                  const std::variant<double, Value>& lambda) {
-  const auto& phiOperand = variantToValue(odsBuilder, odsState, phi);
-  const auto& lambdaOperand = variantToValue(odsBuilder, odsState, lambda);
-  build(odsBuilder, odsState, qubitIn, phiOperand, lambdaOperand);
+  const auto& phiOperand = variantToValue(builder, state, phi);
+  const auto& lambdaOperand = variantToValue(builder, state, lambda);
+  build(builder, state, qubitIn, phiOperand, lambdaOperand);
 }

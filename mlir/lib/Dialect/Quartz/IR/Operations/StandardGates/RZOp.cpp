@@ -21,9 +21,8 @@ using namespace mlir;
 using namespace mlir::quartz;
 using namespace mlir::utils;
 
-void RZOp::build(OpBuilder& odsBuilder, OperationState& odsState,
-                 const Value qubitIn,
+void RZOp::build(OpBuilder& builder, OperationState& state, const Value qubitIn,
                  const std::variant<double, Value>& theta) {
-  const auto& thetaOperand = variantToValue(odsBuilder, odsState, theta);
-  build(odsBuilder, odsState, qubitIn, thetaOperand);
+  const auto& thetaOperand = variantToValue(builder, state, theta);
+  build(builder, state, qubitIn, thetaOperand);
 }
