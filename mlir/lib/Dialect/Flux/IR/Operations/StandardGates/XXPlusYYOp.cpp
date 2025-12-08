@@ -12,6 +12,7 @@
 #include "mlir/Dialect/Utils/Utils.h"
 
 #include <cmath>
+#include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OperationSupport.h>
