@@ -12,6 +12,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <llvm/Support/ErrorHandling.h>
 #include <mlir/Dialect/LLVMIR/LLVMDialect.h>
 #include <mlir/IR/Operation.h>
 

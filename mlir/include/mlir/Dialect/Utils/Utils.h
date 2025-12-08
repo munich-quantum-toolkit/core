@@ -13,6 +13,7 @@
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/OperationSupport.h>
+#include <mlir/IR/Value.h>
 #include <variant>
 
 namespace mlir::utils {
