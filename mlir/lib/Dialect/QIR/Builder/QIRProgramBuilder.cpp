@@ -255,7 +255,7 @@ void QIRProgramBuilder::createCallOp(
     const ValueRange controls, const SmallVector<Value>& targets,
     StringRef fnName) {
   // Save current insertion point
-  const OpBuilder::InsertionGuard entryGuard(builder);
+  const OpBuilder::InsertionGuard insertGuard(builder);
 
   // Insert constants in entry block
   builder.setInsertionPoint(entryBlock->getTerminator());
@@ -277,7 +277,7 @@ void QIRProgramBuilder::createCallOp(
   }
 
   // Save current insertion point
-  const OpBuilder::InsertionGuard bodyGuard(builder);
+  const OpBuilder::InsertionGuard entryBlockGuard(builder);
 
   // Insert in body block (before branch)
   builder.setInsertionPoint(bodyBlock->getTerminator());
