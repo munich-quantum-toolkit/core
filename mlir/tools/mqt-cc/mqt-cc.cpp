@@ -37,30 +37,30 @@ using namespace mlir;
 namespace {
 
 // Command-line options
-const cl::opt<std::string> INPUT_FILENAME(cl::Positional,
+static cl::opt<std::string> InputFilename(cl::Positional,
                                           cl::desc("<input .mlir file>"),
                                           cl::init("-"));
 
-const cl::opt<std::string> OUTPUT_FILENAME("o", cl::desc("Output filename"),
+static cl::opt<std::string> OutputFilename("o", cl::desc("Output filename"),
                                            cl::value_desc("filename"),
                                            cl::init("-"));
 
-const cl::opt<bool> CONVERT_TO_QIR("emit-qir",
-                                   cl::desc("Convert to QIR at the end"),
-                                   cl::init(false));
+static cl::opt<bool> ConvertToQIR("emit-qir",
+                                  cl::desc("Convert to QIR at the end"),
+                                  cl::init(false));
 
-const cl::opt<bool> ENABLE_TIMING("mlir-timing",
+static cl::opt<bool> EnableTiming("mlir-timing",
                                   cl::desc("Enable pass timing statistics"),
                                   cl::init(false));
 
-const cl::opt<bool> ENABLE_STATISTICS("mlir-statistics",
+static cl::opt<bool> EnableStatistics("mlir-statistics",
                                       cl::desc("Enable pass statistics"),
                                       cl::init(false));
 
-const cl::opt<bool>
-    PRINT_IR_AFTER_ALL_STAGES("mlir-print-ir-after-all-stages",
-                              cl::desc("Print IR after each compiler stage"),
-                              cl::init(false));
+static cl::opt<bool>
+    PrintIRAfterAllStages("mlir-print-ir-after-all-stages",
+                          cl::desc("Print IR after each compiler stage"),
+                          cl::init(false));
 
 /**
  * @brief Load and parse a .mlir file
