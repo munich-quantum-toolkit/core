@@ -157,7 +157,7 @@ LogicalResult convertOneTargetZeroParameter(QuartzOpType& op,
 
   // Get the latest Flux qubit
   const auto quartzQubit = op->getOperand(0);
-  Value fluxQubit = nullptr;
+  Value fluxQubit;
   if (inCtrlOp == 0) {
     fluxQubit = qubitMap[quartzQubit];
   } else {
@@ -200,7 +200,7 @@ LogicalResult convertOneTargetOneParameter(QuartzOpType& op,
 
   // Get the latest Flux qubit
   const auto quartzQubit = op->getOperand(0);
-  Value fluxQubit = nullptr;
+  Value fluxQubit;
   if (inCtrlOp == 0) {
     fluxQubit = qubitMap[quartzQubit];
   } else {
@@ -244,7 +244,7 @@ LogicalResult convertOneTargetTwoParameter(QuartzOpType& op,
 
   // Get the latest Flux qubit
   const auto quartzQubit = op->getOperand(0);
-  Value fluxQubit = nullptr;
+  Value fluxQubit;
   if (inCtrlOp == 0) {
     fluxQubit = qubitMap[quartzQubit];
   } else {
@@ -289,7 +289,7 @@ convertOneTargetThreeParameter(QuartzOpType& op,
 
   // Get the latest Flux qubit
   const auto quartzQubit = op->getOperand(0);
-  Value fluxQubit = nullptr;
+  Value fluxQubit;
   if (inCtrlOp == 0) {
     fluxQubit = qubitMap[quartzQubit];
   } else {
@@ -335,8 +335,8 @@ LogicalResult convertTwoTargetZeroParameter(QuartzOpType& op,
   // Get the latest Flux qubits
   const auto quartzQubit0 = op->getOperand(0);
   const auto quartzQubit1 = op->getOperand(1);
-  Value fluxQubit0 = nullptr;
-  Value fluxQubit1 = nullptr;
+  Value fluxQubit0;
+  Value fluxQubit1;
   if (inCtrlOp == 0) {
     fluxQubit0 = qubitMap[quartzQubit0];
     fluxQubit1 = qubitMap[quartzQubit1];
@@ -386,8 +386,8 @@ LogicalResult convertTwoTargetOneParameter(QuartzOpType& op,
   // Get the latest Flux qubits
   const auto quartzQubit0 = op->getOperand(0);
   const auto quartzQubit1 = op->getOperand(1);
-  Value fluxQubit0 = nullptr;
-  Value fluxQubit1 = nullptr;
+  Value fluxQubit0;
+  Value fluxQubit1;
   if (inCtrlOp == 0) {
     fluxQubit0 = qubitMap[quartzQubit0];
     fluxQubit1 = qubitMap[quartzQubit1];
@@ -437,8 +437,8 @@ LogicalResult convertTwoTargetTwoParameter(QuartzOpType& op,
   // Get the latest Flux qubits
   const auto quartzQubit0 = op->getOperand(0);
   const auto quartzQubit1 = op->getOperand(1);
-  Value fluxQubit0 = nullptr;
-  Value fluxQubit1 = nullptr;
+  Value fluxQubit0;
+  Value fluxQubit1;
   if (inCtrlOp == 0) {
     fluxQubit0 = qubitMap[quartzQubit0];
     fluxQubit1 = qubitMap[quartzQubit1];
