@@ -14,4 +14,25 @@ namespace mlir::utils {
 
 constexpr double TOLERANCE = 1e-12;
 
+/**
+ * @brief Convert a variant parameter (double or Value) to a Value
+ *
+ * @param odsBuilder The operation builder.
+ * @param odsState The operation state.
+ * @param parameter The parameter as a variant (double or Value).
+ * @return Value The parameter as a Value.
+ */
+inline Value variantToValue(OpBuilder& odsBuilder, OperationState& odsState,
+                            const std::variant<double, Value>& parameter) {
+  Value operand;
+  if (std::holds_alternative<double>(parameter)) {
+    operand = odsBuilder.create<arith::ConstantOp>(
+        odsState.location,
+        odsBuilder.getF64FloatAttr(std::get<double>(parameter)));
+  } else {
+    operand = std::get<Value>(parameter);
+  }
+  return operand;
+}
+
 } // namespace mlir::utils

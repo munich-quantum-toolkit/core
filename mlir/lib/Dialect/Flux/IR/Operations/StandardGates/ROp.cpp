@@ -84,22 +84,8 @@ struct ReplaceRWithRY final : OpRewritePattern<ROp> {
 void ROp::build(OpBuilder& odsBuilder, OperationState& odsState,
                 const Value qubitIn, const std::variant<double, Value>& theta,
                 const std::variant<double, Value>& phi) {
-  Value thetaOperand;
-  if (std::holds_alternative<double>(theta)) {
-    thetaOperand = odsBuilder.create<arith::ConstantOp>(
-        odsState.location, odsBuilder.getF64FloatAttr(std::get<double>(theta)));
-  } else {
-    thetaOperand = std::get<Value>(theta);
-  }
-
-  Value phiOperand;
-  if (std::holds_alternative<double>(phi)) {
-    phiOperand = odsBuilder.create<arith::ConstantOp>(
-        odsState.location, odsBuilder.getF64FloatAttr(std::get<double>(phi)));
-  } else {
-    phiOperand = std::get<Value>(phi);
-  }
-
+  const auto& thetaOperand = variantToValue(odsBuilder, odsState, theta);
+  const auto& phiOperand = variantToValue(odsBuilder, odsState, phi);
   build(odsBuilder, odsState, qubitIn, thetaOperand, phiOperand);
 }
 

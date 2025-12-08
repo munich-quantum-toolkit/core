@@ -9,6 +9,7 @@
  */
 
 #include "mlir/Dialect/Quartz/IR/QuartzDialect.h"
+#include "mlir/Dialect/Utils/Utils.h"
 
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/IR/Builders.h>
@@ -18,26 +19,13 @@
 
 using namespace mlir;
 using namespace mlir::quartz;
+using namespace mlir::utils;
 
 void XXMinusYYOp::build(OpBuilder& odsBuilder, OperationState& odsState,
                         const Value qubit0In, const Value qubit1In,
                         const std::variant<double, Value>& theta,
                         const std::variant<double, Value>& beta) {
-  Value thetaOperand;
-  if (std::holds_alternative<double>(theta)) {
-    thetaOperand = odsBuilder.create<arith::ConstantOp>(
-        odsState.location, odsBuilder.getF64FloatAttr(std::get<double>(theta)));
-  } else {
-    thetaOperand = std::get<Value>(theta);
-  }
-
-  Value betaOperand;
-  if (std::holds_alternative<double>(beta)) {
-    betaOperand = odsBuilder.create<arith::ConstantOp>(
-        odsState.location, odsBuilder.getF64FloatAttr(std::get<double>(beta)));
-  } else {
-    betaOperand = std::get<Value>(beta);
-  }
-
+  const auto& thetaOperand = variantToValue(odsBuilder, odsState, theta);
+  const auto& betaOperand = variantToValue(odsBuilder, odsState, beta);
   build(odsBuilder, odsState, qubit0In, qubit1In, thetaOperand, betaOperand);
 }

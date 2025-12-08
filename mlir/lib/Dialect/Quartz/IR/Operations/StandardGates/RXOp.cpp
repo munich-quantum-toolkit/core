@@ -9,6 +9,7 @@
  */
 
 #include "mlir/Dialect/Quartz/IR/QuartzDialect.h"
+#include "mlir/Dialect/Utils/Utils.h"
 
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/IR/Builders.h>
@@ -18,16 +19,11 @@
 
 using namespace mlir;
 using namespace mlir::quartz;
+using namespace mlir::utils;
 
 void RXOp::build(OpBuilder& odsBuilder, OperationState& odsState,
                  const Value qubitIn,
                  const std::variant<double, Value>& theta) {
-  Value thetaOperand;
-  if (std::holds_alternative<double>(theta)) {
-    thetaOperand = odsBuilder.create<arith::ConstantOp>(
-        odsState.location, odsBuilder.getF64FloatAttr(std::get<double>(theta)));
-  } else {
-    thetaOperand = std::get<Value>(theta);
-  }
+  const auto& thetaOperand = variantToValue(odsBuilder, odsState, theta);
   build(odsBuilder, odsState, qubitIn, thetaOperand);
 }

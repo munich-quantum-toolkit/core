@@ -54,13 +54,7 @@ struct RemoveTrivialGPhase final : OpRewritePattern<GPhaseOp> {
 
 void GPhaseOp::build(OpBuilder& odsBuilder, OperationState& odsState,
                      const std::variant<double, Value>& theta) {
-  Value thetaOperand;
-  if (std::holds_alternative<double>(theta)) {
-    thetaOperand = odsBuilder.create<arith::ConstantOp>(
-        odsState.location, odsBuilder.getF64FloatAttr(std::get<double>(theta)));
-  } else {
-    thetaOperand = std::get<Value>(theta);
-  }
+  const auto& thetaOperand = variantToValue(odsBuilder, odsState, theta);
   build(odsBuilder, odsState, thetaOperand);
 }
 
