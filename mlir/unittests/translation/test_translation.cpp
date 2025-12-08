@@ -743,15 +743,15 @@ TEST_F(ImportTest, IfElseRegister) {
 TEST_F(ImportTest, IfElseHandlingFromQasm) {
   const qc::QuantumComputation qc = qasm3::Importer::imports("OPENQASM 3.0;"
                                                              "qubit q;"
-                                                       "bit c;"
+                                                             "bit c;"
                                                              "h q;"
                                                              "c = measure q;"
-                                                       "if(c) {"
-                                                       "  x q;"
-                                                       "} else {"
-                                                       "  h q;"
-                                                       "}"
-                                                       "c = measure q;");
+                                                             "if(c) {"
+                                                             "  x q;"
+                                                             "} else {"
+                                                             "  h q;"
+                                                             "}"
+                                                             "c = measure q;");
   auto module = translateQuantumComputationToMLIR(context.get(), qc);
 
   const auto outputString = getOutputString(&module);
