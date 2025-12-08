@@ -11,9 +11,8 @@
 #include "mlir/Dialect/Flux/IR/FluxDialect.h"
 #include "mlir/Dialect/Utils/Utils.h"
 
-#include <mlir/Dialect/Arith/IR/Arith.h>
+#include <cmath>
 #include <mlir/IR/Builders.h>
-#include <mlir/IR/BuiltinAttributes.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OperationSupport.h>
 #include <mlir/IR/PatternMatch.h>
@@ -71,8 +70,8 @@ struct ReplaceU2WithRX final : OpRewritePattern<U2Op> {
 
     const auto phiValue = phi.getValueAsDouble();
     const auto lambdaValue = lambda.getValueAsDouble();
-    if (std::abs(phiValue + std::numbers::pi / 2.0) > TOLERANCE ||
-        std::abs(lambdaValue - std::numbers::pi / 2.0) > TOLERANCE) {
+    if (std::abs(phiValue + (std::numbers::pi / 2.0)) > TOLERANCE ||
+        std::abs(lambdaValue - (std::numbers::pi / 2.0)) > TOLERANCE) {
       return failure();
     }
 

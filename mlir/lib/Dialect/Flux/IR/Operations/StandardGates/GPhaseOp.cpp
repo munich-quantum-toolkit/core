@@ -8,11 +8,10 @@
  * Licensed under the MIT License
  */
 
-#include "mlir/Dialect/Flux/FluxUtils.h"
 #include "mlir/Dialect/Flux/IR/FluxDialect.h"
 #include "mlir/Dialect/Utils/Utils.h"
 
-#include <mlir/Dialect/Arith/IR/Arith.h>
+#include <cmath>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/BuiltinAttributes.h>
 #include <mlir/IR/MLIRContext.h>
