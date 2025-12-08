@@ -13,6 +13,7 @@
 #include <cstdint>
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/SmallVector.h>
+#include <llvm/Support/ErrorHandling.h>
 #include <mlir/Dialect/LLVMIR/LLVMAttrs.h>
 #include <mlir/Dialect/LLVMIR/LLVMDialect.h>
 #include <mlir/Dialect/LLVMIR/LLVMTypes.h>
@@ -31,6 +32,9 @@ LLVM::LLVMFuncOp getMainFunction(Operation* op) {
   auto module = dyn_cast<ModuleOp>(op);
   if (!module) {
     module = op->getParentOfType<ModuleOp>();
+  }
+  if (!module) {
+    return nullptr;
   }
 
   // Search for function with entry_point attribute
@@ -97,6 +101,9 @@ LLVM::LLVMFuncOp getOrCreateFunctionDeclaration(OpBuilder& builder,
     if (!module) {
       module = op->getParentOfType<ModuleOp>();
     }
+    if (!module) {
+      llvm::reportFatalInternalError("Module not found");
+    }
     builder.setInsertionPointToEnd(module.getBody());
 
     fnDecl = builder.create<LLVM::LLVMFuncOp>(op->getLoc(), fnName, fnType);
@@ -135,9 +142,12 @@ LLVM::AddressOfOp createResultLabel(OpBuilder& builder, Operation* op,
   globalOp->setAttr("addr_space", builder.getI32IntegerAttr(0));
   globalOp->setAttr("dso_local", builder.getUnitAttr());
 
-  // Create addressOf operation
+  // Create AddressOfOp
   // Shall be added to the first block of the `main` function in the module
   auto main = getMainFunction(op);
+  if (!main) {
+    llvm::reportFatalInternalError("Main function not found");
+  }
   auto& firstBlock = *(main.getBlocks().begin());
   builder.setInsertionPointToStart(&firstBlock);
 

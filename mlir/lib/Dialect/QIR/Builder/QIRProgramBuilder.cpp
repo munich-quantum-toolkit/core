@@ -201,7 +201,7 @@ QIRProgramBuilder& QIRProgramBuilder::measure(const Value qubit,
   const auto registerIndex = bit.registerIndex;
   const auto key = std::make_pair(registerName, registerIndex);
   if (!registerResultMap.contains(key)) {
-    llvm::report_fatal_error("Result pointer not found");
+    llvm::reportFatalInternalError("Result pointer not found");
   }
   const auto resultValue = registerResultMap.at(key);
 
