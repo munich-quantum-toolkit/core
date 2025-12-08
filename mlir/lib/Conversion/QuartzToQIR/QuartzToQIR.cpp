@@ -966,8 +966,7 @@ struct QuartzToQIR final : impl::QuartzToQIRBase<QuartzToQIR> {
    * @param main The main LLVM function
    * @param ctx The MLIR context
    */
-  static void addInitialize(LLVM::LLVMFuncOp& main, MLIRContext* ctx,
-                            LoweringState* /*state*/) {
+  static void addInitialize(LLVM::LLVMFuncOp& main, MLIRContext* ctx) {
     auto moduleOp = main->getParentOfType<ModuleOp>();
     auto& firstBlock = *(main.getBlocks().begin());
     OpBuilder builder(main.getBody());
@@ -1169,8 +1168,9 @@ struct QuartzToQIR final : impl::QuartzToQIRBase<QuartzToQIR> {
     }
 
     ensureBlocks(main);
+    addInitialize(main, ctx);
+
     LoweringState state;
-    addInitialize(main, ctx, &state);
 
     // Stage 3: Convert Quartz dialect to LLVM (QIR calls)
     {
