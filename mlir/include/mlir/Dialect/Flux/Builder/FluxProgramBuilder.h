@@ -154,7 +154,9 @@ public:
      * @return A Bit structure representing the specified bit
      */
     Bit operator[](const int64_t index) const {
-      assert(index < size && "Bit index out of bounds");
+      if (index < 0 || index >= size) {
+        llvm::report_fatal_error("Bit index out of bounds");
+      }
       return {
           .registerName = name, .registerSize = size, .registerIndex = index};
     }

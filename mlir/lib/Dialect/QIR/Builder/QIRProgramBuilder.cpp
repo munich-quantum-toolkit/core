@@ -200,7 +200,9 @@ QIRProgramBuilder& QIRProgramBuilder::measure(const Value qubit,
   const auto& registerName = bit.registerName;
   const auto registerIndex = bit.registerIndex;
   const auto key = std::make_pair(registerName, registerIndex);
-  assert(registerResultMap.contains(key));
+  if (!registerResultMap.contains(key)) {
+    llvm::report_fatal_error("Result pointer not found");
+  }
   const auto resultValue = registerResultMap.at(key);
 
   // Create mz call

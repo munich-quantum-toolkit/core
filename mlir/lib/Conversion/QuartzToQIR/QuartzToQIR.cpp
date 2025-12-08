@@ -246,7 +246,9 @@ struct ConvertQuartzAllocQIR final : StatefulOpConversionPattern<AllocOp> {
         // Register is already tracked
         // The pointer was created by the step below
         const auto globalIndex = it->second + registerIndex;
-        assert(ptrMap.contains(globalIndex));
+        if (!ptrMap.contains(globalIndex)) {
+          llvm::report_fatal_error("Pointer not found");
+        }
         rewriter.replaceOp(op, ptrMap.at(globalIndex));
         return success();
       }
