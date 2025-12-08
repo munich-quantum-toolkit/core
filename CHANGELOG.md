@@ -11,6 +11,7 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 
 ### Added
 
+- ✨ Add IQM JSON support for job submission in Qiskit-QDMI Backend ([#1375]) ([**@marcelwa**])
 - ✨ Add authentication support for QDMI sessions with token, username/password, auth file, auth URL, and project ID parameters ([#1355]) ([**@marcelwa**])
 - ✨ Add a new QDMI device that represents a superconducting architecture featuring a coupling map ([#1328]) ([**@ystade**])
 - ✨ Add bi-directional iterator that traverses the def-use chain of a qubit value ([#1310]) ([**@MatthiasReumann**])
@@ -278,6 +279,7 @@ _📚 Refer to the [GitHub Release Notes](https://github.com/munich-quantum-tool
 
 <!-- PR links -->
 
+[#1375]: https://github.com/munich-quantum-toolkit/core/pull/1375
 [#1371]: https://github.com/munich-quantum-toolkit/core/pull/1371
 [#1359]: https://github.com/munich-quantum-toolkit/core/pull/1359
 [#1355]: https://github.com/munich-quantum-toolkit/core/pull/1355

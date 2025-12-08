@@ -24,6 +24,7 @@ from qiskit.providers import BackendV2, Options
 from qiskit.transpiler import InstructionProperties, Target
 
 from ... import fomac
+from .converters import qiskit_to_iqm_json
 from .exceptions import (
     CircuitValidationError,
     JobSubmissionError,
@@ -373,29 +374,44 @@ class QDMIBackend(BackendV2):  # type: ignore[misc]
         # Operation has unspecified qubit count or 3+ qubits -> assume it applies to all qubits
         return [None]
 
-    @staticmethod
     def _convert_circuit(
-        circuit: QuantumCircuit, supported_program_formats: Iterable[fomac.ProgramFormat]
+        self, circuit: QuantumCircuit, supported_program_formats: Iterable[fomac.ProgramFormat]
     ) -> tuple[str, fomac.ProgramFormat]:
         """Convert a :class:`~qiskit.circuit.QuantumCircuit` to one of the supported program formats.
 
-        OpenQASM 3 takes precedence over OpenQASM 2 since it is a superset of the latter.
+        The conversion priority order is:
+        1. IQM JSON (if supported) - device-specific format
+        2. OpenQASM 3 (if supported) - superset of QASM 2
+        3. OpenQASM 2 (if supported) - legacy format
 
         Args:
             circuit: The quantum circuit to convert.
             supported_program_formats: Supported program formats.
 
         Returns:
-            String representation of the circuit in the specified format.
+            Tuple of (program string, program format).
 
         Raises:
             UnsupportedFormatError: If no supported program formats are found.
+            UnsupportedOperationError: If the circuit contains operations not supported by IQM JSON.
             TranslationError: If conversion fails.
         """
         if not supported_program_formats:
             msg = "No supported program formats found"
             raise UnsupportedFormatError(msg)
 
+        # Try IQM JSON format first (device-specific)
+        if fomac.ProgramFormat.IQM_JSON in supported_program_formats:
+            try:
+                return qiskit_to_iqm_json(circuit, self._device), fomac.ProgramFormat.IQM_JSON
+            except UnsupportedOperationError:
+                # Let this propagate so caller can handle fallback
+                raise
+            except Exception as exc:
+                msg = f"Failed to convert circuit to IQM JSON: {exc}"
+                raise TranslationError(msg) from exc
+
+        # Try OpenQASM3
         if fomac.ProgramFormat.QASM3 in supported_program_formats:
             try:
                 return str(qasm3.dumps(circuit)), fomac.ProgramFormat.QASM3
@@ -403,6 +419,7 @@ class QDMIBackend(BackendV2):  # type: ignore[misc]
                 msg = f"Failed to convert circuit to QASM3: {exc}"
                 raise TranslationError(msg) from exc
 
+        # Try OpenQASM2 (legacy)
         if fomac.ProgramFormat.QASM2 in supported_program_formats:
             try:
                 return str(qasm2.dumps(circuit)), fomac.ProgramFormat.QASM2
