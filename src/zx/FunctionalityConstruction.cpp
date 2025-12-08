@@ -353,7 +353,7 @@ void FunctionalityConstruction::addMcrz(ZXDiagram& diag,
     addCrz(diag, phase, controls.front(), target, qubits);
     return;
   default:
-    Qubit nextControl = controls.back();
+    const Qubit nextControl = controls.back();
     controls.pop_back();
 
     addCrz(diag, phase / 2, nextControl, target, qubits);
@@ -379,19 +379,21 @@ void FunctionalityConstruction::addMcx(ZXDiagram& diag,
     addCcx(diag, controls.front(), controls.back(), target, qubits);
     return;
   default:
-    size_t half = (controls.size() + 1) / 2;
-    std::vector<Qubit> first(controls.begin(), controls.begin() + half);
+    const auto half = static_cast<std::ptrdiff_t>((controls.size() + 1) / 2);
+    const std::vector<Qubit> first(controls.begin(), controls.begin() + half);
     std::vector<Qubit> second(controls.begin() + half, controls.end());
 
     if (qubits.size() > controls.size() + 1) {
       controls.push_back(target);
-      Qubit anc;
-      for (int x : qubits) {
-        if (std::find(controls.begin(), controls.end(),
-                      static_cast<Qubit>(x)) == controls.end()) {
-          anc = x;
-          break;
-        }
+      Qubit anc = -1;
+      auto it = std::ranges::find_if(qubits, [&](Vertex x) {
+        return std::ranges::find(controls, static_cast<Qubit>(x)) ==
+               controls.end();
+      });
+      if (it == qubits.end()) {
+        throw ZXException("No ancilla qubit available for MCX decomposition");
+      } else {
+        anc = static_cast<Qubit>(*it);
       }
       controls.pop_back();
       second.push_back(anc);
@@ -411,7 +413,7 @@ void FunctionalityConstruction::addMcx(ZXDiagram& diag,
       addMcz(diag, second, target, qubits);
       addRx(diag, PiExpression(-PiRational(1, 4)), target, qubits);
       addMcx(diag, first, target, qubits);
-      Qubit lastControl = controls.back();
+      const Qubit lastControl = controls.back();
       controls.pop_back();
       addMcrz(diag, PiExpression(PiRational(1, 2)), controls, lastControl,
               qubits);
@@ -436,7 +438,7 @@ void FunctionalityConstruction::addMcz(ZXDiagram& diag,
     addCcz(diag, controls.front(), controls.back(), target, qubits);
     return;
   default:
-    Qubit nextControl = controls.back();
+    const Qubit nextControl = controls.back();
     controls.pop_back();
 
     addCrz(diag, PiExpression(PiRational(1, 2)), nextControl, target, qubits);
@@ -722,7 +724,7 @@ FunctionalityConstruction::parseOp(ZXDiagram& diag, op_it it, op_it end,
     }
     std::vector<Qubit> controls;
     for (const auto& ctrl : op->getControls()) {
-      controls.push_back(p.at(ctrl.qubit));
+      controls.push_back(static_cast<Qubit>(p.at(ctrl.qubit)));
     }
     switch (op->getType()) {
     case qc::OpType::X:
@@ -742,7 +744,7 @@ FunctionalityConstruction::parseOp(ZXDiagram& diag, op_it it, op_it end,
     const auto target = static_cast<Qubit>(p.at(op->getTargets().front()));
     std::vector<Qubit> controls;
     for (const auto& ctrl : op->getControls()) {
-      controls.push_back(p.at(ctrl.qubit));
+      controls.push_back(static_cast<Qubit>(p.at(ctrl.qubit)));
     }
     switch (op->getType()) {
     case qc::OpType::X:
@@ -893,8 +895,8 @@ bool FunctionalityConstruction::transformableToZX(const qc::Operation* op) {
     default:
       return false;
     }
-    return false;
   }
+  return false;
 }
 
 PiExpression FunctionalityConstruction::parseParam(const qc::Operation* op,
