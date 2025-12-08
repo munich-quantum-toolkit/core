@@ -8,6 +8,8 @@
  * Licensed under the MIT License
  */
 
+#pragma once
+
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Utils/Utils.h>
 #include <mlir/IR/PatternMatch.h>
