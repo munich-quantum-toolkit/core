@@ -163,6 +163,10 @@ QIRProgramBuilder::allocClassicalBitRegister(const int64_t size,
 }
 
 Value QIRProgramBuilder::measure(const Value qubit, const int64_t resultIndex) {
+  if (resultIndex < 0) {
+    llvm::reportFatalUsageError("Result index must be non-negative");
+  }
+
   // Save current insertion point
   const OpBuilder::InsertionGuard guard(builder);
 
