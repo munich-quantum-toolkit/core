@@ -163,7 +163,7 @@ LLVM::LLVMFuncOp getMainFunction(Operation* op);
  * @details
  * Adds the required metadata attributes for QIR base profile compliance:
  * - `entry_point`: Marks the main entry point function
- * - `output_labeling_schema`: schema_id
+ * - `output_labeling_schema`: labeled
  * - `qir_profiles`: base_profile
  * - `required_num_qubits`: Number of qubits used
  * - `required_num_results`: Number of measurement results
