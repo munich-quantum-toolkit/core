@@ -108,9 +108,9 @@ FluxProgramBuilder::allocClassicalBitRegister(int64_t size, StringRef name) {
 
 void FluxProgramBuilder::validateQubitValue(const Value qubit) const {
   if (!validQubits.contains(qubit)) {
-    llvm::errs() << "Error: Attempting to use an invalid qubit SSA value. "
+    llvm::errs() << "Attempting to use an invalid qubit SSA value. "
                  << "The value may have been consumed by a previous operation "
-                 << "or was never created through this \n";
+                 << "or was never created through this builder.\n";
     llvm::reportFatalUsageError(
         "Invalid qubit value used (either consumed or not tracked)");
   }
