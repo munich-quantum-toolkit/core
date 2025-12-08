@@ -117,12 +117,11 @@ LLVM::AddressOfOp createResultLabel(OpBuilder& builder, Operation* op,
   const OpBuilder::InsertionGuard insertGuard(builder);
 
   // Create the declaration at the start of the module
-  if (auto module = dyn_cast<ModuleOp>(op)) {
-    builder.setInsertionPointToStart(module.getBody());
-  } else {
+  auto module = dyn_cast<ModuleOp>(op);
+  if (!module) {
     module = op->getParentOfType<ModuleOp>();
-    builder.setInsertionPointToStart(module.getBody());
   }
+  builder.setInsertionPointToStart(module.getBody());
 
   const auto symbolName =
       builder.getStringAttr((symbolPrefix + "_" + label).str());
