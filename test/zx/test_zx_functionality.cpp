@@ -415,7 +415,7 @@ TEST_F(ZXFunctionalityTest, MultiControlZ0) {
 
   auto qcPrime = qc::QuantumComputation(1);
   qcPrime.z(0);
-  
+
   auto d = FunctionalityConstruction::buildFunctionality(&qc);
 
   auto dPrime = FunctionalityConstruction::buildFunctionality(&qcPrime);
@@ -436,7 +436,7 @@ TEST_F(ZXFunctionalityTest, MultiControlZ1) {
 
   auto qcPrime = qc::QuantumComputation(2);
   qcPrime.cz(1, 0);
-  
+
   auto d = FunctionalityConstruction::buildFunctionality(&qc);
 
   auto dPrime = FunctionalityConstruction::buildFunctionality(&qcPrime);
@@ -449,7 +449,6 @@ TEST_F(ZXFunctionalityTest, MultiControlZ1) {
   EXPECT_TRUE(d.globalPhaseIsZero());
   EXPECT_TRUE(d.connected(d.getInput(0), d.getOutput(0)));
 }
-
 
 TEST_F(ZXFunctionalityTest, MultiControlRZ) {
   using namespace qc::literals;
@@ -470,7 +469,7 @@ TEST_F(ZXFunctionalityTest, MultiControlRZ0) {
   using namespace qc::literals;
   qc = qc::QuantumComputation(1);
   qc.mcrz(PI / 4, {}, 0);
-  
+
   auto qcPrime = qc::QuantumComputation(1);
   qcPrime.rz(PI / 4, 0);
 
@@ -507,7 +506,6 @@ TEST_F(ZXFunctionalityTest, MultiControlRZ1) {
   EXPECT_TRUE(d.globalPhaseIsZero());
   EXPECT_TRUE(d.connected(d.getInput(0), d.getOutput(0)));
 }
-
 
 TEST_F(ZXFunctionalityTest, UnsupportedControl) {
   using namespace qc::literals;
