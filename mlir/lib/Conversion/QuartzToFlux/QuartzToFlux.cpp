@@ -1088,7 +1088,8 @@ struct ConvertQuartzCtrlOp final : StatefulOpConversionPattern<quartz::CtrlOp> {
     auto fluxOp =
         rewriter.create<flux::CtrlOp>(op.getLoc(), fluxControls, fluxTargets);
 
-    // Update state map
+    // Update state map if this is a top-level CtrlOp
+    // Nested CtrlOps are managed via the targetsIn and targetsOut maps
     if (state.inCtrlOp == 0) {
       for (const auto& [quartzControl, fluxControl] :
            llvm::zip(quartzControls, fluxOp.getControlsOut())) {
