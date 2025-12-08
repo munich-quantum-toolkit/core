@@ -67,6 +67,10 @@ Value FluxProgramBuilder::allocQubit() {
 }
 
 Value FluxProgramBuilder::staticQubit(const int64_t index) {
+  if (index < 0) {
+    llvm::reportFatalUsageError("Index must be non-negative");
+  }
+
   auto indexAttr = getI64IntegerAttr(index);
   auto staticOp = create<StaticOp>(loc, indexAttr);
   const auto qubit = staticOp.getQubit();

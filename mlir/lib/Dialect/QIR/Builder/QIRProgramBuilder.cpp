@@ -94,6 +94,10 @@ void QIRProgramBuilder::initialize() {
 }
 
 Value QIRProgramBuilder::staticQubit(const int64_t index) {
+  if (index < 0) {
+    llvm::reportFatalUsageError("Index must be non-negative");
+  }
+
   // Check cache
   Value val{};
   if (const auto it = ptrCache.find(index); it != ptrCache.end()) {

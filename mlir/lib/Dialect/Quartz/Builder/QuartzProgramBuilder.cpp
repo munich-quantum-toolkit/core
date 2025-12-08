@@ -64,6 +64,10 @@ Value QuartzProgramBuilder::allocQubit() {
 }
 
 Value QuartzProgramBuilder::staticQubit(const int64_t index) {
+  if (index < 0) {
+    llvm::reportFatalUsageError("Index must be non-negative");
+  }
+
   // Create the StaticOp with the given index
   auto indexAttr = getI64IntegerAttr(index);
   auto staticOp = create<StaticOp>(loc, indexAttr);
