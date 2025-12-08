@@ -248,8 +248,7 @@ struct ConvertQuartzAllocQIR final : StatefulOpConversionPattern<AllocOp> {
         // The pointer was created by the step below
         const auto globalIndex = it->second + registerIndex;
         if (!ptrMap.contains(globalIndex)) {
-          llvm::errs() << "Pointer not found.\n";
-          return failure();
+          return op.emitError("Pointer not found");
         }
         rewriter.replaceOp(op, ptrMap.at(globalIndex));
         return success();
@@ -514,8 +513,7 @@ struct ConvertQuartzGPhaseOpQIR final : StatefulOpConversionPattern<GPhaseOp> {
                   ConversionPatternRewriter& rewriter) const override {
     auto& state = getState();
     if (state.inCtrlOp != 0) {
-      llvm::errs() << "Controlled GPhaseOps cannot be converted to QIR.\n";
-      return failure();
+      return op.emitError("Controlled GPhaseOps cannot be converted to QIR");
     }
     return convertUnitaryToCallOp(op, adaptor, rewriter, getContext(), state,
                                   QIR_GPHASE, 0, 1);
