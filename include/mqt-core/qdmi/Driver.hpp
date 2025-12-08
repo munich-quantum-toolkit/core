@@ -13,6 +13,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <qdmi/client.h>
 #include <qdmi/device.h>
 #include <string>
@@ -21,6 +22,36 @@
 #include <vector>
 
 namespace qdmi {
+
+/**
+ * @brief Configuration for device session parameters.
+ * @details This struct holds optional parameters that can be set on a device
+ * session before initialization. All parameters are optional.
+ */
+struct DeviceSessionConfig {
+  /// Base URL for API endpoint
+  std::optional<std::string> baseUrl;
+  /// Authentication token
+  std::optional<std::string> token;
+  /// Path to file containing authentication information
+  std::optional<std::string> authFile;
+  /// URL to authentication server
+  std::optional<std::string> authUrl;
+  /// Username for authentication
+  std::optional<std::string> username;
+  /// Password for authentication
+  std::optional<std::string> password;
+  /// Custom configuration parameter 1
+  std::optional<std::string> custom1;
+  /// Custom configuration parameter 2
+  std::optional<std::string> custom2;
+  /// Custom configuration parameter 3
+  std::optional<std::string> custom3;
+  /// Custom configuration parameter 4
+  std::optional<std::string> custom4;
+  /// Custom configuration parameter 5
+  std::optional<std::string> custom5;
+};
 
 /**
  * @brief Definition of the device library.
@@ -97,16 +128,6 @@ class DynamicDeviceLibrary final : public DeviceLibrary {
   /// @brief Handle to the dynamic library returned by `dlopen`.
   void* libHandle_;
 
-  /**
-   * @brief Returns a reference to the set of open library handles.
-   * @details This set can be used to check whether a newly opened library
-   * is already open.
-   */
-  static auto openLibHandles() -> std::unordered_set<void*>& {
-    static std::unordered_set<void*> libHandles;
-    return libHandles;
-  }
-
 public:
   /**
    * @brief Constructs a DynamicDeviceLibrary object.
@@ -140,6 +161,7 @@ public:
 // Call the above macro for all static libraries that we want to support.
 DECLARE_STATIC_LIBRARY(MQT_NA)
 DECLARE_STATIC_LIBRARY(MQT_DDSIM)
+DECLARE_STATIC_LIBRARY(MQT_SC)
 
 /**
  * @brief The status of a session.
@@ -181,8 +203,10 @@ public:
    * the device session handle.
    * @param lib is a unique pointer to the device library that provides the
    * device interface functions.
+   * @param config is the configuration for device session parameters.
    */
-  explicit QDMI_Device_impl_d(std::unique_ptr<qdmi::DeviceLibrary>&& lib);
+  explicit QDMI_Device_impl_d(std::unique_ptr<qdmi::DeviceLibrary>&& lib,
+                              const qdmi::DeviceSessionConfig& config = {});
 
   /**
    * @brief Destructor for the QDMI device.
@@ -406,15 +430,21 @@ public:
   ~Driver();
 #ifndef _WIN32
   /**
-   * @brief Adds a dynamic device library to the driver.
-   * @param libName is the path to the dynamic library to load.
-   * @param prefix is the prefix used for the device interface functions.
-   * @returns `true` if the library was successfully loaded, `false`
-   * if it was already loaded.
+   * @brief Loads a dynamic device library and adds it to the driver.
+   *
+   * @param libName The path to the dynamic library to load.
+   * @param prefix The prefix used for the device interface functions in the
+   * library.
+   * @param config Configuration for device session parameters.
+   *
    * @note This function is only available on non-Windows platforms.
+   *
+   * @throws std::runtime_error If the device cannot be initialized.
+   * @throws std::bad_alloc If memory allocation fails during the process.
    */
   auto addDynamicDeviceLibrary(const std::string& libName,
-                               const std::string& prefix) -> bool;
+                               const std::string& prefix,
+                               const DeviceSessionConfig& config = {}) -> void;
 #endif // _WIN32
   /**
    * @brief Allocates a new session.

@@ -11,6 +11,8 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 
 ### Added
 
+- ✨ Add authentication support for QDMI sessions with token, username/password, auth file, auth URL, and project ID parameters ([#1355]) ([**@marcelwa**])
+- ✨ Add a new QDMI device that represents a superconducting architecture featuring a coupling map ([#1328]) ([**@ystade**])
 - ✨ Add bi-directional iterator that traverses the def-use chain of a qubit value ([#1310]) ([**@MatthiasReumann**])
 - ✨ Add `OptionalDependencyTester` to lazily handle optional Python dependencies like Qiskit ([#1243]) ([**@marcelwa**], [**@burgholzer**])
 - ✨ Expose the QDMI job interface through FoMaC ([#1243]) ([**@marcelwa**], [**@burgholzer**])
@@ -20,6 +22,16 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 
 ### Changed
 
+- ✨ Add common definitions and utilities for QDMI ([#1355]) ([**@burgholzer**])
+- 🚚 Move `NA` QDMI device in its right place next to other QDMI devices ([#1355]) ([**@burgholzer**])
+- ♻️ Allow repeated loading of QDMI device library with potentially different session configurations ([#1355]) ([**@burgholzer**])
+- ♻️ Enable thread-safe reference counting for QDMI devices singletons ([#1355]) ([**@burgholzer**])
+- ♻️ Refactor `FoMaC` singleton to instantiable `Session` class with configurable authentication parameters ([#1355]) ([**@marcelwa**])
+- 👷 Stop testing on `ubuntu-22.04` and `ubuntu-22.04-arm` runners ([#1359]) ([**@denialhaag**], [**@burgholzer**])
+- 👷 Stop testing with `clang-19` and start testing with `clang-21` ([#1359]) ([**@denialhaag**], [**@burgholzer**])
+- 👷 Fix macOS tests with Homebrew Clang via new `munich-quantum-toolkit/workflows` version ([#1359]) ([**@denialhaag**], [**@burgholzer**])
+- 👷 Re-enable macOS tests with GCC by disabling module scanning ([#1359]) ([**@denialhaag**], [**@burgholzer**])
+- ♻️ Group circuit operations into scheduling units for MLIR routing ([#1301]) ([**@MatthiasReumann**])
 - 👷 Use `munich-quantum-software/setup-mlir` to set up MLIR ([#1294]) ([**@denialhaag**])
 - ♻️ Preserve tuple structure and improve site type clarity of the MQT NA Default QDMI Device ([#1299]) ([**@marcelwa**])
 - ♻️ Move DD package evaluation module to standalone script ([#1327]) ([**@burgholzer**])
@@ -27,10 +39,13 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 
 ### Fixed
 
+- 🐛 Fix custom QDMI property and parameter handling in SC and NA devices ([#1355]) ([**@burgholzer**])
+- 🚨 Fix argument naming of `QuantumComputation` and `CompoundOperation` dunder methods for properly implementing the `MutableSequence` protocol ([#1338]) ([**@burgholzer**])
 - 🐛 Fix memory management in dynamic QDMI device by making it explicit ([#1336]) ([**@ystade**])
 
 ### Removed
 
+- 🔥 Remove wheel builds for Python 3.13t ([#1371]) ([**@burgholzer**])
 - 🔥 Remove the `evaluation` extra from the MQT Core Python package ([#1327]) ([**@burgholzer**])
 - 🔥 Remove the `mqt-core-dd-compare` entry point from the MQT Core Python package ([#1327]) ([**@burgholzer**])
 
@@ -263,9 +278,15 @@ _📚 Refer to the [GitHub Release Notes](https://github.com/munich-quantum-tool
 
 <!-- PR links -->
 
+[#1371]: https://github.com/munich-quantum-toolkit/core/pull/1371
+[#1359]: https://github.com/munich-quantum-toolkit/core/pull/1359
+[#1355]: https://github.com/munich-quantum-toolkit/core/pull/1355
+[#1338]: https://github.com/munich-quantum-toolkit/core/pull/1338
 [#1336]: https://github.com/munich-quantum-toolkit/core/pull/1336
+[#1328]: https://github.com/munich-quantum-toolkit/core/pull/1328
 [#1327]: https://github.com/munich-quantum-toolkit/core/pull/1327
 [#1310]: https://github.com/munich-quantum-toolkit/core/pull/1310
+[#1301]: https://github.com/munich-quantum-toolkit/core/pull/1301
 [#1300]: https://github.com/munich-quantum-toolkit/core/pull/1300
 [#1299]: https://github.com/munich-quantum-toolkit/core/pull/1299
 [#1294]: https://github.com/munich-quantum-toolkit/core/pull/1294

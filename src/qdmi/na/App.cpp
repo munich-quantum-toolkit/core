@@ -8,7 +8,7 @@
  * Licensed under the MIT License
  */
 
-#include "na/device/Generator.hpp"
+#include "qdmi/na/Generator.hpp"
 
 #include <cstddef>
 #include <cstdint>
@@ -19,6 +19,7 @@
 #include <spdlog/spdlog.h>
 #include <stdexcept>
 #include <string>
+#include <tuple>
 #include <utility>
 #include <vector>
 
@@ -60,10 +61,8 @@ auto printSchemaUsage(const std::string& programName) -> void {
                "\n"
                "Options:\n"
                "  -h, --help            Show this help message and exit.\n"
-               "  -o, --output <file>   Specify the output file. If no output "
-               "                        file is "
-               "                        specified, the schema is printed to "
-               "                        stdout.\n";
+               "  -o, --output <file>   Specify the output file. If not\n"
+               "                        specified, prints to stdout.\n";
 }
 
 /**

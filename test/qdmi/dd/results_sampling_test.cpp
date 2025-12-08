@@ -32,7 +32,7 @@ TEST(ResultsSampling, HistogramKeysAndValuesSumToShots) {
 
   auto [keys, vals] = qdmi_test::getHistogram(j.job);
   ASSERT_EQ(keys.size(), vals.size());
-  auto sum = 0U;
+  size_t sum = 0U;
   for (const auto& v : vals) {
     sum += v;
   }

@@ -12,14 +12,19 @@
 
 #include "mqt_ddsim_qdmi/device.h"
 #include "mqt_na_qdmi/device.h"
+#include "mqt_sc_qdmi/device.h"
+#include "qdmi/Common.hpp"
 
 #include <cassert>
 #include <cstddef>
 #include <cstring>
 #include <exception>
 #include <memory>
+#include <optional>
 #include <qdmi/client.h>
 #include <qdmi/device.h>
+#include <spdlog/spdlog.h>
+#include <sstream>
 #include <stdexcept>
 #include <string>
 #include <unordered_map>
@@ -76,6 +81,7 @@ namespace qdmi {
   }
 DEFINE_STATIC_LIBRARY(MQT_NA)
 DEFINE_STATIC_LIBRARY(MQT_DDSIM)
+DEFINE_STATIC_LIBRARY(MQT_SC)
 
 #ifndef _WIN32
 DynamicDeviceLibrary::DynamicDeviceLibrary(const std::string& libName,
@@ -83,12 +89,6 @@ DynamicDeviceLibrary::DynamicDeviceLibrary(const std::string& libName,
     : libHandle_(dlopen(libName.c_str(), RTLD_NOW | RTLD_LOCAL)) {
   if (libHandle_ == nullptr) {
     throw std::runtime_error("Couldn't open the device library: " + libName);
-  }
-  if (!openLibHandles().emplace(libHandle_).second) {
-    // dlopen uses reference counting, so we need to decrement the reference
-    // count that was increased by dlopen.
-    dlclose(libHandle_);
-    throw std::runtime_error("Device library already loaded: " + libName);
   }
 
 //===----------------------------------------------------------------------===//
@@ -152,11 +152,50 @@ DynamicDeviceLibrary::~DynamicDeviceLibrary() {
 } // namespace qdmi
 
 QDMI_Device_impl_d::QDMI_Device_impl_d(
-    std::unique_ptr<qdmi::DeviceLibrary>&& lib)
+    std::unique_ptr<qdmi::DeviceLibrary>&& lib,
+    const qdmi::DeviceSessionConfig& config)
     : library_(std::move(lib)) {
   if (library_->device_session_alloc(&deviceSession_) != QDMI_SUCCESS) {
     throw std::runtime_error("Failed to allocate device session");
   }
+
+  // Set device session parameters from config
+  auto setParameter = [this](const std::optional<std::string>& value,
+                             QDMI_Device_Session_Parameter param) {
+    if (value && library_->device_session_set_parameter) {
+      const auto status =
+          static_cast<QDMI_STATUS>(library_->device_session_set_parameter(
+              deviceSession_, param, value->size() + 1, value->c_str()));
+      if (status == QDMI_SUCCESS) {
+        return;
+      }
+
+      if (status == QDMI_ERROR_NOTSUPPORTED) {
+        SPDLOG_INFO(
+            "Device session parameter {} not supported by device (skipped)",
+            qdmi::toString(param));
+        return;
+      }
+      library_->device_session_free(deviceSession_);
+      std::ostringstream ss;
+      ss << "Failed to set device session parameter " << qdmi::toString(param)
+         << ": " << qdmi::toString(status);
+      throw std::runtime_error(ss.str());
+    }
+  };
+
+  setParameter(config.baseUrl, QDMI_DEVICE_SESSION_PARAMETER_BASEURL);
+  setParameter(config.token, QDMI_DEVICE_SESSION_PARAMETER_TOKEN);
+  setParameter(config.authFile, QDMI_DEVICE_SESSION_PARAMETER_AUTHFILE);
+  setParameter(config.authUrl, QDMI_DEVICE_SESSION_PARAMETER_AUTHURL);
+  setParameter(config.username, QDMI_DEVICE_SESSION_PARAMETER_USERNAME);
+  setParameter(config.password, QDMI_DEVICE_SESSION_PARAMETER_PASSWORD);
+  setParameter(config.custom1, QDMI_DEVICE_SESSION_PARAMETER_CUSTOM1);
+  setParameter(config.custom2, QDMI_DEVICE_SESSION_PARAMETER_CUSTOM2);
+  setParameter(config.custom3, QDMI_DEVICE_SESSION_PARAMETER_CUSTOM3);
+  setParameter(config.custom4, QDMI_DEVICE_SESSION_PARAMETER_CUSTOM4);
+  setParameter(config.custom5, QDMI_DEVICE_SESSION_PARAMETER_CUSTOM5);
+
   if (library_->device_session_init(deviceSession_) != QDMI_SUCCESS) {
     library_->device_session_free(deviceSession_);
     throw std::runtime_error("Failed to initialize device session");
@@ -336,6 +375,8 @@ Driver::Driver() {
       std::make_unique<MQT_NADeviceLibrary>()));
   devices_.emplace_back(std::make_unique<QDMI_Device_impl_d>(
       std::make_unique<MQT_DDSIMDeviceLibrary>()));
+  devices_.emplace_back(std::make_unique<QDMI_Device_impl_d>(
+      std::make_unique<MQT_SCDeviceLibrary>()));
 }
 
 Driver::~Driver() {
@@ -345,18 +386,11 @@ Driver::~Driver() {
 
 #ifndef _WIN32
 auto Driver::addDynamicDeviceLibrary(const std::string& libName,
-                                     const std::string& prefix) -> bool {
-  try {
-    devices_.emplace_back(std::make_unique<QDMI_Device_impl_d>(
-        std::make_unique<DynamicDeviceLibrary>(libName, prefix)));
-  } catch (const std::runtime_error& e) {
-    if (std::string(e.what()).starts_with("Device library already loaded:")) {
-      // The library is already loaded, so we can ignore this error but return
-      // false.
-      return false;
-    }
-  }
-  return true;
+                                     const std::string& prefix,
+                                     const DeviceSessionConfig& config)
+    -> void {
+  devices_.emplace_back(std::make_unique<QDMI_Device_impl_d>(
+      std::make_unique<DynamicDeviceLibrary>(libName, prefix), config));
 }
 #endif
 

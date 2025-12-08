@@ -10,14 +10,19 @@
 
 #include "fomac/FoMaC.hpp"
 
+#include "qdmi/Common.hpp"
+
 #include <algorithm>
 #include <complex>
 #include <cstddef>
 #include <cstdint>
+#include <filesystem>
 #include <iterator>
 #include <map>
 #include <optional>
 #include <qdmi/client.h>
+#include <regex>
+#include <spdlog/spdlog.h>
 #include <sstream>
 #include <stdexcept>
 #include <string>
@@ -25,289 +30,102 @@
 #include <vector>
 
 namespace fomac {
-
-namespace {
-/**
- * @brief Function used to mark unreachable code
- * @details Uses compiler specific extensions if possible. Even if no extension
- * is used, undefined behavior is still raised by an empty function body and the
- * noreturn attribute.
- */
-[[noreturn]] inline void unreachable() {
-#ifdef __GNUC__ // GCC, Clang, ICC
-  __builtin_unreachable();
-#elif defined(_MSC_VER) // MSVC
-  __assume(false);
-#endif
-}
-} // namespace
-
-auto toString(const QDMI_STATUS result) -> std::string {
-  switch (result) {
-  case QDMI_WARN_GENERAL:
-    return "General warning";
-  case QDMI_SUCCESS:
-    return "Success";
-  case QDMI_ERROR_FATAL:
-    return "A fatal error";
-  case QDMI_ERROR_OUTOFMEM:
-    return "Out of memory";
-  case QDMI_ERROR_NOTIMPLEMENTED:
-    return "Not implemented";
-  case QDMI_ERROR_LIBNOTFOUND:
-    return "Library not found";
-  case QDMI_ERROR_NOTFOUND:
-    return "Element not found";
-  case QDMI_ERROR_OUTOFRANGE:
-    return "Out of range";
-  case QDMI_ERROR_INVALIDARGUMENT:
-    return "Invalid argument";
-  case QDMI_ERROR_PERMISSIONDENIED:
-    return "Permission denied";
-  case QDMI_ERROR_NOTSUPPORTED:
-    return "Not supported";
-  case QDMI_ERROR_BADSTATE:
-    return "Bad state";
-  case QDMI_ERROR_TIMEOUT:
-    return "Timeout";
-  }
-  unreachable();
-}
-auto toString(QDMI_Site_Property prop) -> std::string {
-  switch (prop) {
-  case QDMI_SITE_PROPERTY_INDEX:
-    return "QDMI_SITE_PROPERTY_INDEX";
-  case QDMI_SITE_PROPERTY_T1:
-    return "QDMI_SITE_PROPERTY_T1";
-  case QDMI_SITE_PROPERTY_T2:
-    return "QDMI_SITE_PROPERTY_T2";
-  case QDMI_SITE_PROPERTY_NAME:
-    return "QDMI_SITE_PROPERTY_NAME";
-  case QDMI_SITE_PROPERTY_XCOORDINATE:
-    return "QDMI_SITE_PROPERTY_XCOORDINATE";
-  case QDMI_SITE_PROPERTY_YCOORDINATE:
-    return "QDMI_SITE_PROPERTY_YCOORDINATE";
-  case QDMI_SITE_PROPERTY_ZCOORDINATE:
-    return "QDMI_SITE_PROPERTY_ZCOORDINATE";
-  case QDMI_SITE_PROPERTY_ISZONE:
-    return "QDMI_SITE_PROPERTY_ISZONE";
-  case QDMI_SITE_PROPERTY_XEXTENT:
-    return "QDMI_SITE_PROPERTY_XEXTENT";
-  case QDMI_SITE_PROPERTY_YEXTENT:
-    return "QDMI_SITE_PROPERTY_YEXTENT";
-  case QDMI_SITE_PROPERTY_ZEXTENT:
-    return "QDMI_SITE_PROPERTY_ZEXTENT";
-  case QDMI_SITE_PROPERTY_MODULEINDEX:
-    return "QDMI_SITE_PROPERTY_MODULEINDEX";
-  case QDMI_SITE_PROPERTY_SUBMODULEINDEX:
-    return "QDMI_SITE_PROPERTY_SUBMODULEINDEX";
-  case QDMI_SITE_PROPERTY_MAX:
-  case QDMI_SITE_PROPERTY_CUSTOM1:
-  case QDMI_SITE_PROPERTY_CUSTOM2:
-  case QDMI_SITE_PROPERTY_CUSTOM3:
-  case QDMI_SITE_PROPERTY_CUSTOM4:
-  case QDMI_SITE_PROPERTY_CUSTOM5:
-    return "QDMI_SITE_PROPERTY_UNKNOWN";
-  }
-  unreachable();
-}
-auto toString(QDMI_Operation_Property prop) -> std::string {
-  switch (prop) {
-  case QDMI_OPERATION_PROPERTY_NAME:
-    return "QDMI_OPERATION_PROPERTY_NAME";
-  case QDMI_OPERATION_PROPERTY_QUBITSNUM:
-    return "QDMI_OPERATION_PROPERTY_QUBITSNUM";
-  case QDMI_OPERATION_PROPERTY_PARAMETERSNUM:
-    return "QDMI_OPERATION_PROPERTY_PARAMETERSNUM";
-  case QDMI_OPERATION_PROPERTY_DURATION:
-    return "QDMI_OPERATION_PROPERTY_DURATION";
-  case QDMI_OPERATION_PROPERTY_FIDELITY:
-    return "QDMI_OPERATION_PROPERTY_FIDELITY";
-  case QDMI_OPERATION_PROPERTY_INTERACTIONRADIUS:
-    return "QDMI_OPERATION_PROPERTY_INTERACTIONRADIUS";
-  case QDMI_OPERATION_PROPERTY_BLOCKINGRADIUS:
-    return "QDMI_OPERATION_PROPERTY_BLOCKINGRADIUS";
-  case QDMI_OPERATION_PROPERTY_IDLINGFIDELITY:
-    return "QDMI_OPERATION_PROPERTY_IDLINGFIDELITY";
-  case QDMI_OPERATION_PROPERTY_ISZONED:
-    return "QDMI_OPERATION_PROPERTY_ISZONED";
-  case QDMI_OPERATION_PROPERTY_SITES:
-    return "QDMI_OPERATION_PROPERTY_SITES";
-  case QDMI_OPERATION_PROPERTY_MEANSHUTTLINGSPEED:
-    return "QDMI_OPERATION_PROPERTY_MEANSHUTTLINGSPEED";
-  case QDMI_OPERATION_PROPERTY_MAX:
-  case QDMI_OPERATION_PROPERTY_CUSTOM1:
-  case QDMI_OPERATION_PROPERTY_CUSTOM2:
-  case QDMI_OPERATION_PROPERTY_CUSTOM3:
-  case QDMI_OPERATION_PROPERTY_CUSTOM4:
-  case QDMI_OPERATION_PROPERTY_CUSTOM5:
-    return "QDMI_OPERATION_PROPERTY_UNKNOWN";
-  }
-  unreachable();
-}
-auto toString(QDMI_Device_Property prop) -> std::string {
-  switch (prop) {
-  case QDMI_DEVICE_PROPERTY_NAME:
-    return "QDMI_DEVICE_PROPERTY_NAME";
-  case QDMI_DEVICE_PROPERTY_VERSION:
-    return "QDMI_DEVICE_PROPERTY_VERSION";
-  case QDMI_DEVICE_PROPERTY_STATUS:
-    return "QDMI_DEVICE_PROPERTY_STATUS";
-  case QDMI_DEVICE_PROPERTY_LIBRARYVERSION:
-    return "QDMI_DEVICE_PROPERTY_LIBRARYVERSION";
-  case QDMI_DEVICE_PROPERTY_QUBITSNUM:
-    return "QDMI_DEVICE_PROPERTY_QUBITSNUM";
-  case QDMI_DEVICE_PROPERTY_SITES:
-    return "QDMI_DEVICE_PROPERTY_SITES";
-  case QDMI_DEVICE_PROPERTY_OPERATIONS:
-    return "QDMI_DEVICE_PROPERTY_OPERATIONS";
-  case QDMI_DEVICE_PROPERTY_COUPLINGMAP:
-    return "QDMI_DEVICE_PROPERTY_COUPLINGMAP";
-  case QDMI_DEVICE_PROPERTY_NEEDSCALIBRATION:
-    return "QDMI_DEVICE_PROPERTY_NEEDSCALIBRATION";
-  case QDMI_DEVICE_PROPERTY_LENGTHUNIT:
-    return "QDMI_DEVICE_PROPERTY_LENGTHUNIT";
-  case QDMI_DEVICE_PROPERTY_LENGTHSCALEFACTOR:
-    return "QDMI_DEVICE_PROPERTY_LENGTHSCALEFACTOR";
-  case QDMI_DEVICE_PROPERTY_DURATIONUNIT:
-    return "QDMI_DEVICE_PROPERTY_DURATIONUNIT";
-  case QDMI_DEVICE_PROPERTY_DURATIONSCALEFACTOR:
-    return "QDMI_DEVICE_PROPERTY_DURATIONSCALEFACTOR";
-  case QDMI_DEVICE_PROPERTY_MINATOMDISTANCE:
-    return "QDMI_DEVICE_PROPERTY_MINATOMDISTANCE";
-  case QDMI_DEVICE_PROPERTY_PULSESUPPORT:
-    return "QDMI_DEVICE_PROPERTY_PULSESUPPORT";
-  case QDMI_DEVICE_PROPERTY_SUPPORTEDPROGRAMFORMATS:
-    return "QDMI_DEVICE_PROPERTY_SUPPORTEDPROGRAMFORMATS";
-  case QDMI_DEVICE_PROPERTY_MAX:
-  case QDMI_DEVICE_PROPERTY_CUSTOM1:
-  case QDMI_DEVICE_PROPERTY_CUSTOM2:
-  case QDMI_DEVICE_PROPERTY_CUSTOM3:
-  case QDMI_DEVICE_PROPERTY_CUSTOM4:
-  case QDMI_DEVICE_PROPERTY_CUSTOM5:
-    return "QDMI_DEVICE_PROPERTY_UNKNOWN";
-  }
-  unreachable();
-}
-auto throwError(int result, const std::string& msg) -> void {
-  std::ostringstream ss;
-  ss << msg << ": " << toString(static_cast<QDMI_STATUS>(result)) << ".";
-  switch (result) {
-  case QDMI_ERROR_OUTOFMEM:
-    throw std::bad_alloc();
-  case QDMI_ERROR_OUTOFRANGE:
-    throw std::out_of_range(ss.str());
-  case QDMI_ERROR_INVALIDARGUMENT:
-    throw std::invalid_argument(ss.str());
-  case QDMI_ERROR_FATAL:
-  case QDMI_ERROR_NOTIMPLEMENTED:
-  case QDMI_ERROR_LIBNOTFOUND:
-  case QDMI_ERROR_NOTFOUND:
-  case QDMI_ERROR_PERMISSIONDENIED:
-  case QDMI_ERROR_NOTSUPPORTED:
-  case QDMI_ERROR_BADSTATE:
-  case QDMI_ERROR_TIMEOUT:
-    throw std::runtime_error(ss.str());
-  default:
-    throw std::runtime_error("Unknown error code: " +
-                             toString(static_cast<QDMI_STATUS>(result)) + ".");
-  }
-}
-auto FoMaC::Device::Site::getIndex() const -> size_t {
+auto Session::Device::Site::getIndex() const -> size_t {
   return queryProperty<size_t>(QDMI_SITE_PROPERTY_INDEX);
 }
-auto FoMaC::Device::Site::getT1() const -> std::optional<uint64_t> {
+auto Session::Device::Site::getT1() const -> std::optional<uint64_t> {
   return queryProperty<std::optional<uint64_t>>(QDMI_SITE_PROPERTY_T1);
 }
-auto FoMaC::Device::Site::getT2() const -> std::optional<uint64_t> {
+auto Session::Device::Site::getT2() const -> std::optional<uint64_t> {
   return queryProperty<std::optional<uint64_t>>(QDMI_SITE_PROPERTY_T2);
 }
-auto FoMaC::Device::Site::getName() const -> std::optional<std::string> {
+auto Session::Device::Site::getName() const -> std::optional<std::string> {
   return queryProperty<std::optional<std::string>>(QDMI_SITE_PROPERTY_NAME);
 }
-auto FoMaC::Device::Site::getXCoordinate() const -> std::optional<int64_t> {
+auto Session::Device::Site::getXCoordinate() const -> std::optional<int64_t> {
   return queryProperty<std::optional<int64_t>>(QDMI_SITE_PROPERTY_XCOORDINATE);
 }
-auto FoMaC::Device::Site::getYCoordinate() const -> std::optional<int64_t> {
+auto Session::Device::Site::getYCoordinate() const -> std::optional<int64_t> {
   return queryProperty<std::optional<int64_t>>(QDMI_SITE_PROPERTY_YCOORDINATE);
 }
-auto FoMaC::Device::Site::getZCoordinate() const -> std::optional<int64_t> {
+auto Session::Device::Site::getZCoordinate() const -> std::optional<int64_t> {
   return queryProperty<std::optional<int64_t>>(QDMI_SITE_PROPERTY_ZCOORDINATE);
 }
-auto FoMaC::Device::Site::isZone() const -> bool {
+auto Session::Device::Site::isZone() const -> bool {
   return queryProperty<std::optional<bool>>(QDMI_SITE_PROPERTY_ISZONE)
       .value_or(false);
 }
-auto FoMaC::Device::Site::getXExtent() const -> std::optional<uint64_t> {
+auto Session::Device::Site::getXExtent() const -> std::optional<uint64_t> {
   return queryProperty<std::optional<uint64_t>>(QDMI_SITE_PROPERTY_XEXTENT);
 }
-auto FoMaC::Device::Site::getYExtent() const -> std::optional<uint64_t> {
+auto Session::Device::Site::getYExtent() const -> std::optional<uint64_t> {
   return queryProperty<std::optional<uint64_t>>(QDMI_SITE_PROPERTY_YEXTENT);
 }
-auto FoMaC::Device::Site::getZExtent() const -> std::optional<uint64_t> {
+auto Session::Device::Site::getZExtent() const -> std::optional<uint64_t> {
   return queryProperty<std::optional<uint64_t>>(QDMI_SITE_PROPERTY_ZEXTENT);
 }
-auto FoMaC::Device::Site::getModuleIndex() const -> std::optional<uint64_t> {
+auto Session::Device::Site::getModuleIndex() const -> std::optional<uint64_t> {
   return queryProperty<std::optional<uint64_t>>(QDMI_SITE_PROPERTY_MODULEINDEX);
 }
-auto FoMaC::Device::Site::getSubmoduleIndex() const -> std::optional<uint64_t> {
+auto Session::Device::Site::getSubmoduleIndex() const
+    -> std::optional<uint64_t> {
   return queryProperty<std::optional<uint64_t>>(
       QDMI_SITE_PROPERTY_SUBMODULEINDEX);
 }
-auto FoMaC::Device::Operation::getName(const std::vector<Site>& sites,
-                                       const std::vector<double>& params) const
+auto Session::Device::Operation::getName(
+    const std::vector<Site>& sites, const std::vector<double>& params) const
     -> std::string {
   return queryProperty<std::string>(QDMI_OPERATION_PROPERTY_NAME, sites,
                                     params);
 }
-auto FoMaC::Device::Operation::getQubitsNum(
+auto Session::Device::Operation::getQubitsNum(
     const std::vector<Site>& sites, const std::vector<double>& params) const
     -> std::optional<size_t> {
   return queryProperty<std::optional<size_t>>(QDMI_OPERATION_PROPERTY_QUBITSNUM,
                                               sites, params);
 }
-auto FoMaC::Device::Operation::getParametersNum(
+auto Session::Device::Operation::getParametersNum(
     const std::vector<Site>& sites, const std::vector<double>& params) const
     -> size_t {
   return queryProperty<size_t>(QDMI_OPERATION_PROPERTY_PARAMETERSNUM, sites,
                                params);
 }
-auto FoMaC::Device::Operation::getDuration(
+auto Session::Device::Operation::getDuration(
     const std::vector<Site>& sites, const std::vector<double>& params) const
     -> std::optional<uint64_t> {
   return queryProperty<std::optional<uint64_t>>(
       QDMI_OPERATION_PROPERTY_DURATION, sites, params);
 }
-auto FoMaC::Device::Operation::getFidelity(
+auto Session::Device::Operation::getFidelity(
     const std::vector<Site>& sites, const std::vector<double>& params) const
     -> std::optional<double> {
   return queryProperty<std::optional<double>>(QDMI_OPERATION_PROPERTY_FIDELITY,
                                               sites, params);
 }
-auto FoMaC::Device::Operation::getInteractionRadius(
+auto Session::Device::Operation::getInteractionRadius(
     const std::vector<Site>& sites, const std::vector<double>& params) const
     -> std::optional<uint64_t> {
   return queryProperty<std::optional<uint64_t>>(
       QDMI_OPERATION_PROPERTY_INTERACTIONRADIUS, sites, params);
 }
-auto FoMaC::Device::Operation::getBlockingRadius(
+auto Session::Device::Operation::getBlockingRadius(
     const std::vector<Site>& sites, const std::vector<double>& params) const
     -> std::optional<uint64_t> {
   return queryProperty<std::optional<uint64_t>>(
       QDMI_OPERATION_PROPERTY_BLOCKINGRADIUS, sites, params);
 }
-auto FoMaC::Device::Operation::getIdlingFidelity(
+auto Session::Device::Operation::getIdlingFidelity(
     const std::vector<Site>& sites, const std::vector<double>& params) const
     -> std::optional<double> {
   return queryProperty<std::optional<double>>(
       QDMI_OPERATION_PROPERTY_IDLINGFIDELITY, sites, params);
 }
-auto FoMaC::Device::Operation::isZoned() const -> bool {
+auto Session::Device::Operation::isZoned() const -> bool {
   return queryProperty<std::optional<bool>>(QDMI_OPERATION_PROPERTY_ISZONED, {},
                                             {})
       .value_or(false);
 }
-auto FoMaC::Device::Operation::getSites() const
+auto Session::Device::Operation::getSites() const
     -> std::optional<std::vector<Site>> {
   const auto& qdmiSites = queryProperty<std::optional<std::vector<QDMI_Site>>>(
       QDMI_OPERATION_PROPERTY_SITES, {}, {});
@@ -322,7 +140,7 @@ auto FoMaC::Device::Operation::getSites() const
                          });
   return returnedSites;
 }
-auto FoMaC::Device::Operation::getSitePairs() const
+auto Session::Device::Operation::getSitePairs() const
     -> std::optional<std::vector<std::pair<Site, Site>>> {
   if (const auto qubitsNum = getQubitsNum({}, {});
       !qubitsNum.has_value() || *qubitsNum != 2 || isZoned()) {
@@ -348,28 +166,28 @@ auto FoMaC::Device::Operation::getSitePairs() const
 
   return pairs;
 }
-auto FoMaC::Device::Operation::getMeanShuttlingSpeed(
+auto Session::Device::Operation::getMeanShuttlingSpeed(
     const std::vector<Site>& sites, const std::vector<double>& params) const
     -> std::optional<uint64_t> {
   return queryProperty<std::optional<uint64_t>>(
       QDMI_OPERATION_PROPERTY_MEANSHUTTLINGSPEED, sites, params);
 }
-auto FoMaC::Device::getName() const -> std::string {
+auto Session::Device::getName() const -> std::string {
   return queryProperty<std::string>(QDMI_DEVICE_PROPERTY_NAME);
 }
-auto FoMaC::Device::getVersion() const -> std::string {
+auto Session::Device::getVersion() const -> std::string {
   return queryProperty<std::string>(QDMI_DEVICE_PROPERTY_VERSION);
 }
-auto FoMaC::Device::getStatus() const -> QDMI_Device_Status {
+auto Session::Device::getStatus() const -> QDMI_Device_Status {
   return queryProperty<QDMI_Device_Status>(QDMI_DEVICE_PROPERTY_STATUS);
 }
-auto FoMaC::Device::getLibraryVersion() const -> std::string {
+auto Session::Device::getLibraryVersion() const -> std::string {
   return queryProperty<std::string>(QDMI_DEVICE_PROPERTY_LIBRARYVERSION);
 }
-auto FoMaC::Device::getQubitsNum() const -> size_t {
+auto Session::Device::getQubitsNum() const -> size_t {
   return queryProperty<size_t>(QDMI_DEVICE_PROPERTY_QUBITSNUM);
 }
-auto FoMaC::Device::getSites() const -> std::vector<Site> {
+auto Session::Device::getSites() const -> std::vector<Site> {
   const auto& qdmiSites =
       queryProperty<std::vector<QDMI_Site>>(QDMI_DEVICE_PROPERTY_SITES);
   std::vector<Site> sites;
@@ -380,14 +198,14 @@ auto FoMaC::Device::getSites() const -> std::vector<Site> {
                          });
   return sites;
 }
-auto FoMaC::Device::getRegularSites() const -> std::vector<Site> {
+auto Session::Device::getRegularSites() const -> std::vector<Site> {
   auto allSites = getSites();
   const auto newEnd = std::ranges::remove_if(
       allSites, [](const Site& s) { return s.isZone(); });
   allSites.erase(newEnd.begin(), newEnd.end());
   return allSites;
 }
-auto FoMaC::Device::getZones() const -> std::vector<Site> {
+auto Session::Device::getZones() const -> std::vector<Site> {
   const auto& allSites = getSites();
   std::vector<Site> zones;
   zones.reserve(3); // Reserve space for a typical max number of zones
@@ -395,7 +213,7 @@ auto FoMaC::Device::getZones() const -> std::vector<Site> {
                        [](const Site& s) { return s.isZone(); });
   return zones;
 }
-auto FoMaC::Device::getOperations() const -> std::vector<Operation> {
+auto Session::Device::getOperations() const -> std::vector<Operation> {
   const auto& qdmiOperations = queryProperty<std::vector<QDMI_Operation>>(
       QDMI_DEVICE_PROPERTY_OPERATIONS);
   std::vector<Operation> operations;
@@ -407,7 +225,7 @@ auto FoMaC::Device::getOperations() const -> std::vector<Operation> {
       });
   return operations;
 }
-auto FoMaC::Device::getCouplingMap() const
+auto Session::Device::getCouplingMap() const
     -> std::optional<std::vector<std::pair<Site, Site>>> {
   const auto& qdmiCouplingMap = queryProperty<
       std::optional<std::vector<std::pair<QDMI_Site, QDMI_Site>>>>(
@@ -425,72 +243,74 @@ auto FoMaC::Device::getCouplingMap() const
                          });
   return couplingMap;
 }
-auto FoMaC::Device::getNeedsCalibration() const -> std::optional<size_t> {
+auto Session::Device::getNeedsCalibration() const -> std::optional<size_t> {
   return queryProperty<std::optional<size_t>>(
       QDMI_DEVICE_PROPERTY_NEEDSCALIBRATION);
 }
-auto FoMaC::Device::getLengthUnit() const -> std::optional<std::string> {
+auto Session::Device::getLengthUnit() const -> std::optional<std::string> {
   return queryProperty<std::optional<std::string>>(
       QDMI_DEVICE_PROPERTY_LENGTHUNIT);
 }
-auto FoMaC::Device::getLengthScaleFactor() const -> std::optional<double> {
+auto Session::Device::getLengthScaleFactor() const -> std::optional<double> {
   return queryProperty<std::optional<double>>(
       QDMI_DEVICE_PROPERTY_LENGTHSCALEFACTOR);
 }
-auto FoMaC::Device::getDurationUnit() const -> std::optional<std::string> {
+auto Session::Device::getDurationUnit() const -> std::optional<std::string> {
   return queryProperty<std::optional<std::string>>(
       QDMI_DEVICE_PROPERTY_DURATIONUNIT);
 }
-auto FoMaC::Device::getDurationScaleFactor() const -> std::optional<double> {
+auto Session::Device::getDurationScaleFactor() const -> std::optional<double> {
   return queryProperty<std::optional<double>>(
       QDMI_DEVICE_PROPERTY_DURATIONSCALEFACTOR);
 }
-auto FoMaC::Device::getMinAtomDistance() const -> std::optional<uint64_t> {
+auto Session::Device::getMinAtomDistance() const -> std::optional<uint64_t> {
   return queryProperty<std::optional<uint64_t>>(
       QDMI_DEVICE_PROPERTY_MINATOMDISTANCE);
 }
 
-auto FoMaC::Device::getSupportedProgramFormats() const
+auto Session::Device::getSupportedProgramFormats() const
     -> std::vector<QDMI_Program_Format> {
   return queryProperty<std::vector<QDMI_Program_Format>>(
       QDMI_DEVICE_PROPERTY_SUPPORTEDPROGRAMFORMATS);
 }
 
-auto FoMaC::Device::submitJob(const std::string& program,
-                              const QDMI_Program_Format format,
-                              const size_t numShots) const -> Job {
+auto Session::Device::submitJob(const std::string& program,
+                                const QDMI_Program_Format format,
+                                const size_t numShots) const -> Job {
   QDMI_Job job = nullptr;
-  throwIfError(QDMI_device_create_job(device_, &job), "Creating job");
+  qdmi::throwIfError(QDMI_device_create_job(device_, &job), "Creating job");
   Job jobWrapper{job}; // RAII wrapper to prevent leaks in case of exceptions
 
   // Set program format
-  throwIfError(QDMI_job_set_parameter(jobWrapper,
-                                      QDMI_JOB_PARAMETER_PROGRAMFORMAT,
-                                      sizeof(format), &format),
-               "Setting program format");
+  qdmi::throwIfError(QDMI_job_set_parameter(jobWrapper,
+                                            QDMI_JOB_PARAMETER_PROGRAMFORMAT,
+                                            sizeof(format), &format),
+                     "Setting program format");
 
   // Set program
-  throwIfError(QDMI_job_set_parameter(jobWrapper, QDMI_JOB_PARAMETER_PROGRAM,
-                                      program.size() + 1, program.c_str()),
-               "Setting program");
+  qdmi::throwIfError(
+      QDMI_job_set_parameter(jobWrapper, QDMI_JOB_PARAMETER_PROGRAM,
+                             program.size() + 1, program.c_str()),
+      "Setting program");
 
   // Set number of shots
-  throwIfError(QDMI_job_set_parameter(jobWrapper, QDMI_JOB_PARAMETER_SHOTSNUM,
-                                      sizeof(numShots), &numShots),
-               "Setting number of shots");
+  qdmi::throwIfError(QDMI_job_set_parameter(jobWrapper,
+                                            QDMI_JOB_PARAMETER_SHOTSNUM,
+                                            sizeof(numShots), &numShots),
+                     "Setting number of shots");
 
   // Submit the job
-  throwIfError(QDMI_job_submit(jobWrapper), "Submitting job");
+  qdmi::throwIfError(QDMI_job_submit(jobWrapper), "Submitting job");
   return jobWrapper;
 }
 
-auto FoMaC::Job::check() const -> QDMI_Job_Status {
+auto Session::Job::check() const -> QDMI_Job_Status {
   QDMI_Job_Status status{};
-  throwIfError(QDMI_job_check(job_, &status), "Checking job status");
+  qdmi::throwIfError(QDMI_job_check(job_, &status), "Checking job status");
   return status;
 }
 
-auto FoMaC::Job::wait(const size_t timeout) const -> bool {
+auto Session::Job::wait(const size_t timeout) const -> bool {
   const auto ret = QDMI_job_wait(job_, timeout);
   if (ret == QDMI_SUCCESS) {
     return true;
@@ -498,58 +318,60 @@ auto FoMaC::Job::wait(const size_t timeout) const -> bool {
   if (ret == QDMI_ERROR_TIMEOUT) {
     return false;
   }
-  throwIfError(ret, "Waiting for job");
-  unreachable();
+  qdmi::throwIfError(ret, "Waiting for job");
+  qdmi::unreachable();
 }
 
-auto FoMaC::Job::cancel() const -> void {
-  throwIfError(QDMI_job_cancel(job_), "Cancelling job");
+auto Session::Job::cancel() const -> void {
+  qdmi::throwIfError(QDMI_job_cancel(job_), "Cancelling job");
 }
 
-auto FoMaC::Job::getId() const -> std::string {
+auto Session::Job::getId() const -> std::string {
   size_t size = 0;
-  throwIfError(
+  qdmi::throwIfError(
       QDMI_job_query_property(job_, QDMI_JOB_PROPERTY_ID, 0, nullptr, &size),
       "Querying job ID size");
   std::string id(size - 1, '\0');
-  throwIfError(QDMI_job_query_property(job_, QDMI_JOB_PROPERTY_ID, size,
-                                       id.data(), nullptr),
-               "Querying job ID");
+  qdmi::throwIfError(QDMI_job_query_property(job_, QDMI_JOB_PROPERTY_ID, size,
+                                             id.data(), nullptr),
+                     "Querying job ID");
   return id;
 }
 
-auto FoMaC::Job::getProgramFormat() const -> QDMI_Program_Format {
+auto Session::Job::getProgramFormat() const -> QDMI_Program_Format {
   QDMI_Program_Format format{};
-  throwIfError(QDMI_job_query_property(job_, QDMI_JOB_PROPERTY_PROGRAMFORMAT,
-                                       sizeof(format), &format, nullptr),
-               "Querying program format");
+  qdmi::throwIfError(QDMI_job_query_property(job_,
+                                             QDMI_JOB_PROPERTY_PROGRAMFORMAT,
+                                             sizeof(format), &format, nullptr),
+                     "Querying program format");
   return format;
 }
 
-auto FoMaC::Job::getProgram() const -> std::string {
+auto Session::Job::getProgram() const -> std::string {
   size_t size = 0;
-  throwIfError(QDMI_job_query_property(job_, QDMI_JOB_PROPERTY_PROGRAM, 0,
-                                       nullptr, &size),
-               "Querying program size");
+  qdmi::throwIfError(QDMI_job_query_property(job_, QDMI_JOB_PROPERTY_PROGRAM, 0,
+                                             nullptr, &size),
+                     "Querying program size");
 
   std::string program(size - 1, '\0');
-  throwIfError(QDMI_job_query_property(job_, QDMI_JOB_PROPERTY_PROGRAM, size,
-                                       program.data(), nullptr),
-               "Querying program");
+  qdmi::throwIfError(QDMI_job_query_property(job_, QDMI_JOB_PROPERTY_PROGRAM,
+                                             size, program.data(), nullptr),
+                     "Querying program");
   return program;
 }
 
-auto FoMaC::Job::getNumShots() const -> size_t {
+auto Session::Job::getNumShots() const -> size_t {
   size_t numShots = 0;
-  throwIfError(QDMI_job_query_property(job_, QDMI_JOB_PROPERTY_SHOTSNUM,
-                                       sizeof(numShots), &numShots, nullptr),
-               "Querying number of shots");
+  qdmi::throwIfError(QDMI_job_query_property(job_, QDMI_JOB_PROPERTY_SHOTSNUM,
+                                             sizeof(numShots), &numShots,
+                                             nullptr),
+                     "Querying number of shots");
   return numShots;
 }
 
-auto FoMaC::Job::getShots() const -> std::vector<std::string> {
+auto Session::Job::getShots() const -> std::vector<std::string> {
   size_t shotsSize = 0;
-  throwIfError(
+  qdmi::throwIfError(
       QDMI_job_get_results(job_, QDMI_JOB_RESULT_SHOTS, 0, nullptr, &shotsSize),
       "Querying shots size");
 
@@ -558,9 +380,9 @@ auto FoMaC::Job::getShots() const -> std::vector<std::string> {
   }
 
   std::string shots(shotsSize - 1, '\0');
-  throwIfError(QDMI_job_get_results(job_, QDMI_JOB_RESULT_SHOTS, shotsSize,
-                                    shots.data(), nullptr),
-               "Querying shots");
+  qdmi::throwIfError(QDMI_job_get_results(job_, QDMI_JOB_RESULT_SHOTS,
+                                          shotsSize, shots.data(), nullptr),
+                     "Querying shots");
 
   // Parse the shots (comma-separated)
   std::vector<std::string> shotsVec;
@@ -578,27 +400,27 @@ auto FoMaC::Job::getShots() const -> std::vector<std::string> {
   return shotsVec;
 }
 
-auto FoMaC::Job::getCounts() const -> std::map<std::string, size_t> {
+auto Session::Job::getCounts() const -> std::map<std::string, size_t> {
   // Get the histogram keys
   size_t keysSize = 0;
-  throwIfError(QDMI_job_get_results(job_, QDMI_JOB_RESULT_HIST_KEYS, 0, nullptr,
-                                    &keysSize),
-               "Querying histogram keys size");
+  qdmi::throwIfError(QDMI_job_get_results(job_, QDMI_JOB_RESULT_HIST_KEYS, 0,
+                                          nullptr, &keysSize),
+                     "Querying histogram keys size");
 
   if (keysSize == 0) {
     return {}; // Empty histogram
   }
 
   std::string keys(keysSize - 1, '\0');
-  throwIfError(QDMI_job_get_results(job_, QDMI_JOB_RESULT_HIST_KEYS, keysSize,
-                                    keys.data(), nullptr),
-               "Querying histogram keys");
+  qdmi::throwIfError(QDMI_job_get_results(job_, QDMI_JOB_RESULT_HIST_KEYS,
+                                          keysSize, keys.data(), nullptr),
+                     "Querying histogram keys");
 
   // Get the histogram values
   size_t valuesSize = 0;
-  throwIfError(QDMI_job_get_results(job_, QDMI_JOB_RESULT_HIST_VALUES, 0,
-                                    nullptr, &valuesSize),
-               "Querying histogram values size");
+  qdmi::throwIfError(QDMI_job_get_results(job_, QDMI_JOB_RESULT_HIST_VALUES, 0,
+                                          nullptr, &valuesSize),
+                     "Querying histogram values size");
 
   if (valuesSize % sizeof(size_t) != 0) {
     throw std::runtime_error(
@@ -606,9 +428,9 @@ auto FoMaC::Job::getCounts() const -> std::map<std::string, size_t> {
   }
 
   std::vector<size_t> values(valuesSize / sizeof(size_t));
-  throwIfError(QDMI_job_get_results(job_, QDMI_JOB_RESULT_HIST_VALUES,
-                                    valuesSize, values.data(), nullptr),
-               "Querying histogram values");
+  qdmi::throwIfError(QDMI_job_get_results(job_, QDMI_JOB_RESULT_HIST_VALUES,
+                                          valuesSize, values.data(), nullptr),
+                     "Querying histogram values");
 
   // Parse the keys (comma-separated)
   std::map<std::string, size_t> counts;
@@ -629,12 +451,13 @@ auto FoMaC::Job::getCounts() const -> std::map<std::string, size_t> {
   return counts;
 }
 
-auto FoMaC::Job::getDenseStateVector() const
+auto Session::Job::getDenseStateVector() const
     -> std::vector<std::complex<double>> {
   size_t size = 0;
-  throwIfError(QDMI_job_get_results(job_, QDMI_JOB_RESULT_STATEVECTOR_DENSE, 0,
-                                    nullptr, &size),
-               "Querying dense state vector size");
+  qdmi::throwIfError(QDMI_job_get_results(job_,
+                                          QDMI_JOB_RESULT_STATEVECTOR_DENSE, 0,
+                                          nullptr, &size),
+                     "Querying dense state vector size");
 
   if (size % sizeof(std::complex<double>) != 0) {
     throw std::runtime_error(
@@ -643,17 +466,19 @@ auto FoMaC::Job::getDenseStateVector() const
 
   std::vector<std::complex<double>> stateVector(size /
                                                 sizeof(std::complex<double>));
-  throwIfError(QDMI_job_get_results(job_, QDMI_JOB_RESULT_STATEVECTOR_DENSE,
-                                    size, stateVector.data(), nullptr),
-               "Querying dense state vector");
+  qdmi::throwIfError(QDMI_job_get_results(job_,
+                                          QDMI_JOB_RESULT_STATEVECTOR_DENSE,
+                                          size, stateVector.data(), nullptr),
+                     "Querying dense state vector");
   return stateVector;
 }
 
-auto FoMaC::Job::getDenseProbabilities() const -> std::vector<double> {
+auto Session::Job::getDenseProbabilities() const -> std::vector<double> {
   size_t size = 0;
-  throwIfError(QDMI_job_get_results(job_, QDMI_JOB_RESULT_PROBABILITIES_DENSE,
-                                    0, nullptr, &size),
-               "Querying dense probabilities size");
+  qdmi::throwIfError(QDMI_job_get_results(job_,
+                                          QDMI_JOB_RESULT_PROBABILITIES_DENSE,
+                                          0, nullptr, &size),
+                     "Querying dense probabilities size");
 
   if (size % sizeof(double) != 0) {
     throw std::runtime_error(
@@ -661,35 +486,36 @@ auto FoMaC::Job::getDenseProbabilities() const -> std::vector<double> {
   }
 
   std::vector<double> probabilities(size / sizeof(double));
-  throwIfError(QDMI_job_get_results(job_, QDMI_JOB_RESULT_PROBABILITIES_DENSE,
-                                    size, probabilities.data(), nullptr),
-               "Querying dense probabilities");
+  qdmi::throwIfError(QDMI_job_get_results(job_,
+                                          QDMI_JOB_RESULT_PROBABILITIES_DENSE,
+                                          size, probabilities.data(), nullptr),
+                     "Querying dense probabilities");
   return probabilities;
 }
 
-auto FoMaC::Job::getSparseStateVector() const
+auto Session::Job::getSparseStateVector() const
     -> std::map<std::string, std::complex<double>> {
   size_t keysSize = 0;
-  throwIfError(QDMI_job_get_results(job_,
-                                    QDMI_JOB_RESULT_STATEVECTOR_SPARSE_KEYS, 0,
-                                    nullptr, &keysSize),
-               "Querying sparse state vector keys size");
+  qdmi::throwIfError(
+      QDMI_job_get_results(job_, QDMI_JOB_RESULT_STATEVECTOR_SPARSE_KEYS, 0,
+                           nullptr, &keysSize),
+      "Querying sparse state vector keys size");
 
   if (keysSize == 0) {
     return {}; // Empty state vector
   }
 
   std::string keys(keysSize - 1, '\0');
-  throwIfError(QDMI_job_get_results(job_,
-                                    QDMI_JOB_RESULT_STATEVECTOR_SPARSE_KEYS,
-                                    keysSize, keys.data(), nullptr),
-               "Querying sparse state vector keys");
+  qdmi::throwIfError(
+      QDMI_job_get_results(job_, QDMI_JOB_RESULT_STATEVECTOR_SPARSE_KEYS,
+                           keysSize, keys.data(), nullptr),
+      "Querying sparse state vector keys");
 
   size_t valuesSize = 0;
-  throwIfError(QDMI_job_get_results(job_,
-                                    QDMI_JOB_RESULT_STATEVECTOR_SPARSE_VALUES,
-                                    0, nullptr, &valuesSize),
-               "Querying sparse state vector values size");
+  qdmi::throwIfError(
+      QDMI_job_get_results(job_, QDMI_JOB_RESULT_STATEVECTOR_SPARSE_VALUES, 0,
+                           nullptr, &valuesSize),
+      "Querying sparse state vector values size");
 
   if (valuesSize % sizeof(std::complex<double>) != 0) {
     throw std::runtime_error(
@@ -699,10 +525,10 @@ auto FoMaC::Job::getSparseStateVector() const
 
   std::vector<std::complex<double>> values(valuesSize /
                                            sizeof(std::complex<double>));
-  throwIfError(QDMI_job_get_results(job_,
-                                    QDMI_JOB_RESULT_STATEVECTOR_SPARSE_VALUES,
-                                    valuesSize, values.data(), nullptr),
-               "Querying sparse state vector values");
+  qdmi::throwIfError(
+      QDMI_job_get_results(job_, QDMI_JOB_RESULT_STATEVECTOR_SPARSE_VALUES,
+                           valuesSize, values.data(), nullptr),
+      "Querying sparse state vector values");
 
   // Parse the keys (comma-separated)
   std::map<std::string, std::complex<double>> stateVector;
@@ -723,29 +549,29 @@ auto FoMaC::Job::getSparseStateVector() const
   return stateVector;
 }
 
-auto FoMaC::Job::getSparseProbabilities() const
+auto Session::Job::getSparseProbabilities() const
     -> std::map<std::string, double> {
   size_t keysSize = 0;
-  throwIfError(QDMI_job_get_results(job_,
-                                    QDMI_JOB_RESULT_PROBABILITIES_SPARSE_KEYS,
-                                    0, nullptr, &keysSize),
-               "Querying sparse probabilities keys size");
+  qdmi::throwIfError(
+      QDMI_job_get_results(job_, QDMI_JOB_RESULT_PROBABILITIES_SPARSE_KEYS, 0,
+                           nullptr, &keysSize),
+      "Querying sparse probabilities keys size");
 
   if (keysSize == 0) {
     return {}; // Empty probabilities
   }
 
   std::string keys(keysSize - 1, '\0');
-  throwIfError(QDMI_job_get_results(job_,
-                                    QDMI_JOB_RESULT_PROBABILITIES_SPARSE_KEYS,
-                                    keysSize, keys.data(), nullptr),
-               "Querying sparse probabilities keys");
+  qdmi::throwIfError(
+      QDMI_job_get_results(job_, QDMI_JOB_RESULT_PROBABILITIES_SPARSE_KEYS,
+                           keysSize, keys.data(), nullptr),
+      "Querying sparse probabilities keys");
 
   size_t valuesSize = 0;
-  throwIfError(QDMI_job_get_results(job_,
-                                    QDMI_JOB_RESULT_PROBABILITIES_SPARSE_VALUES,
-                                    0, nullptr, &valuesSize),
-               "Querying sparse probabilities values size");
+  qdmi::throwIfError(
+      QDMI_job_get_results(job_, QDMI_JOB_RESULT_PROBABILITIES_SPARSE_VALUES, 0,
+                           nullptr, &valuesSize),
+      "Querying sparse probabilities values size");
 
   if (valuesSize % sizeof(double) != 0) {
     throw std::runtime_error(
@@ -753,10 +579,10 @@ auto FoMaC::Job::getSparseProbabilities() const
   }
 
   std::vector<double> values(valuesSize / sizeof(double));
-  throwIfError(QDMI_job_get_results(job_,
-                                    QDMI_JOB_RESULT_PROBABILITIES_SPARSE_VALUES,
-                                    valuesSize, values.data(), nullptr),
-               "Querying sparse probabilities values");
+  qdmi::throwIfError(
+      QDMI_job_get_results(job_, QDMI_JOB_RESULT_PROBABILITIES_SPARSE_VALUES,
+                           valuesSize, values.data(), nullptr),
+      "Querying sparse probabilities values");
 
   // Parse the keys (comma-separated)
   std::map<std::string, double> probabilities;
@@ -776,14 +602,125 @@ auto FoMaC::Job::getSparseProbabilities() const
   return probabilities;
 }
 
-FoMaC::FoMaC() {
-  QDMI_session_alloc(&session_);
-  QDMI_session_init(session_);
+Session::Session(const SessionConfig& config) {
+  const auto result = QDMI_session_alloc(&session_);
+  qdmi::throwIfError(result, "Allocating QDMI session");
+
+  // Helper to ensure session is freed if an exception is thrown during setup
+  const auto cleanup = [this]() -> void {
+    if (session_ != nullptr) {
+      QDMI_session_free(session_);
+      session_ = nullptr;
+    }
+  };
+  // Helper to set session parameters
+  const auto setParameter = [this](const std::optional<std::string>& value,
+                                   QDMI_Session_Parameter param) -> void {
+    if (value) {
+      const auto status = static_cast<QDMI_STATUS>(QDMI_session_set_parameter(
+          session_, param, value->size() + 1, value->c_str()));
+      if (status == QDMI_ERROR_NOTSUPPORTED) {
+        // Optional parameter not supported by session - skip it
+        SPDLOG_INFO("Session parameter {} not supported (skipped)",
+                    qdmi::toString(param));
+        return;
+      }
+      if (status == QDMI_SUCCESS) {
+        return;
+      }
+      std::ostringstream ss;
+      ss << "Setting session parameter " << qdmi::toString(param) << ": "
+         << qdmi::toString(status) << " (status = " << status << ")";
+      qdmi::throwIfError(status, ss.str());
+    }
+  };
+
+  try {
+    // Validate file existence for authFile
+    if (config.authFile) {
+      if (!std::filesystem::exists(*config.authFile)) {
+        throw std::runtime_error("Authentication file does not exist: " +
+                                 *config.authFile);
+      }
+    }
+    // Validate URL format for authUrl
+    if (config.authUrl) {
+      // Breakdown of the regex pattern:
+      // 1. ^https?://              -> Start with http:// or https://
+      // 2. (?:                     -> Start Host Group
+      //      \[[a-fA-F0-9:]+\]     -> Branch A: IPv6 (Must be in brackets like
+      //      [::1])
+      //                            -> Note: No \b used here because ']' is a
+      //                            non-word char
+      //      |                     -> OR
+      //      (?:                   -> Branch B: Alphanumeric Hosts (Group for
+      //      \b check)
+      //        (?:\d{1,3}\.){3}\d{1,3} -> IPv4 (e.g., 127.0.0.1)
+      //        |                   -> OR
+      //        localhost           -> Localhost
+      //        |                   -> OR
+      //        (?:www\.)?[-a-zA-Z0-9@:%._\+~#=]{1,256}\.[a-zA-Z0-9()]{1,6} ->
+      //        Domain
+      //      )\b                   -> End Branch B + Word Boundary (Prevents
+      //      "localhostX")
+      //    )                       -> End Host Group
+      // 3. (?::\d+)?               -> Optional Port (e.g., :8080)
+      // 4. (?:...)*$               -> Optional Path/Query params + End of
+      // string
+      static const std::regex URL_PATTERN(
+          R"(^https?://(?:\[[a-fA-F0-9:]+\]|(?:(?:\d{1,3}\.){3}\d{1,3}|localhost|(?:www\.)?[-a-zA-Z0-9@:%._\+~#=]{1,256}\.[a-zA-Z0-9()]{1,6})\b)(?::\d+)?(?:[-a-zA-Z0-9()@:%_\+.~#?&/=]*)$)",
+          std::regex::optimize);
+      if (!std::regex_match(*config.authUrl, URL_PATTERN)) {
+        throw std::runtime_error("Invalid URL format: " + *config.authUrl);
+      }
+    }
+
+    // Set session parameters
+    setParameter(config.token, QDMI_SESSION_PARAMETER_TOKEN);
+    setParameter(config.authFile, QDMI_SESSION_PARAMETER_AUTHFILE);
+    setParameter(config.authUrl, QDMI_SESSION_PARAMETER_AUTHURL);
+    setParameter(config.username, QDMI_SESSION_PARAMETER_USERNAME);
+    setParameter(config.password, QDMI_SESSION_PARAMETER_PASSWORD);
+    setParameter(config.projectId, QDMI_SESSION_PARAMETER_PROJECTID);
+    setParameter(config.custom1, QDMI_SESSION_PARAMETER_CUSTOM1);
+    setParameter(config.custom2, QDMI_SESSION_PARAMETER_CUSTOM2);
+    setParameter(config.custom3, QDMI_SESSION_PARAMETER_CUSTOM3);
+    setParameter(config.custom4, QDMI_SESSION_PARAMETER_CUSTOM4);
+    setParameter(config.custom5, QDMI_SESSION_PARAMETER_CUSTOM5);
+
+    // Initialize the session
+    qdmi::throwIfError(QDMI_session_init(session_), "Initializing session");
+  } catch (...) {
+    cleanup();
+    throw;
+  }
 }
-FoMaC::~FoMaC() { QDMI_session_free(session_); }
-auto FoMaC::getDevices() -> std::vector<Device> {
-  const auto& qdmiDevices = get().queryProperty<std::vector<QDMI_Device>>(
-      QDMI_SESSION_PROPERTY_DEVICES);
+
+Session::~Session() {
+  if (session_ != nullptr) {
+    QDMI_session_free(session_);
+  }
+}
+
+Session::Session(Session&& other) noexcept : session_(other.session_) {
+  other.session_ = nullptr;
+}
+
+Session& Session::operator=(Session&& other) noexcept {
+  if (this != &other) {
+    if (session_ != nullptr) {
+      QDMI_session_free(session_);
+    }
+    session_ = other.session_;
+    other.session_ = nullptr;
+  }
+  return *this;
+}
+
+auto Session::getDevices() -> std::vector<Device> {
+
+  const auto& qdmiDevices =
+      queryProperty<std::vector<QDMI_Device>>(QDMI_SESSION_PROPERTY_DEVICES);
   std::vector<Device> devices;
   devices.reserve(qdmiDevices.size());
   std::ranges::transform(
