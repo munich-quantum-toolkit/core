@@ -65,7 +65,7 @@ struct RemoveTrivialCtrl final : OpRewritePattern<CtrlOp> {
 
   LogicalResult matchAndRewrite(CtrlOp op,
                                 PatternRewriter& rewriter) const override {
-    if (op.getNumControls() > 0) {
+    if (op.getNumPosControls() > 0) {
       return failure();
     }
     rewriter.replaceOp(op, op.getBodyUnitary());
@@ -116,7 +116,7 @@ struct CtrlInlineId final : OpRewritePattern<CtrlOp> {
     auto idOp = rewriter.create<IdOp>(op.getLoc(), op.getTargetsIn().front());
 
     SmallVector<Value> newOperands;
-    newOperands.reserve(op.getNumControls() + 1);
+    newOperands.reserve(op.getNumPosControls() + 1);
     newOperands.append(op.getControlsIn().begin(), op.getControlsIn().end());
     newOperands.push_back(idOp.getQubitOut());
     rewriter.replaceOp(op, newOperands);

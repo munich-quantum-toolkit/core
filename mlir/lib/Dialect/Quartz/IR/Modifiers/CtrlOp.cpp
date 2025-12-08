@@ -61,7 +61,7 @@ struct RemoveTrivialCtrl final : OpRewritePattern<CtrlOp> {
   using OpRewritePattern::OpRewritePattern;
   LogicalResult matchAndRewrite(CtrlOp ctrlOp,
                                 PatternRewriter& rewriter) const override {
-    if (ctrlOp.getNumControls() > 0) {
+    if (ctrlOp.getNumPosControls() > 0) {
       return failure();
     }
     rewriter.replaceOp(ctrlOp, ctrlOp.getBodyUnitary());
@@ -83,7 +83,7 @@ struct CtrlInlineGPhase final : OpRewritePattern<CtrlOp> {
       return failure();
     }
 
-    for (size_t i = 0; i < op.getNumControls(); ++i) {
+    for (size_t i = 0; i < op.getNumPosControls(); ++i) {
       rewriter.create<POp>(op.getLoc(), op.getPosControl(i),
                            gPhaseOp.getTheta());
     }
