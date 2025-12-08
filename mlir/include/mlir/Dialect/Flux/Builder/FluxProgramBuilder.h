@@ -248,7 +248,6 @@ public:
    * @brief Apply a OP_CLASS                                                   \
    *                                                                           \
    * @param PARAM Rotation angle in radians                                    \
-   * @return Reference to this builder for method chaining                     \
    *                                                                           \
    * @par Example:                                                             \
    * ```c++                                                                    \
@@ -972,11 +971,11 @@ public:
    * @param controls Control qubits
    * @param targets Target qubits
    * @param body Function that builds the body containing the target operation
-   * @return Reference to this builder for method chaining
+   * @return Pair of (output_control_qubits, output_target_qubits)
    *
    * @par Example:
    * ```c++
-   * controls_out, targets_out = builder.ctrl(q0_in, q1_in, [&](auto& b) {
+   * {controls_out, targets_out} = builder.ctrl(q0_in, q1_in, [&](auto& b) {
    *   auto q1_res = b.x(q1_in);
    *   return {q1_res};
    * });

@@ -312,7 +312,7 @@ public:
    *                                                                           \
    * @param control Control qubit                                              \
    * @param target Target qubit                                                \
-   * @return Reference to this builder for method  chaining                    \
+   * @return Reference to this builder for method chaining                     \
    *                                                                           \
    * @par Example:                                                             \
    * ```c++                                                                    \

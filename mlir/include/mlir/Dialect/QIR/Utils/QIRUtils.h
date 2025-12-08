@@ -167,7 +167,7 @@ LLVM::LLVMFuncOp getMainFunction(Operation* op);
  * - `qir_profiles`: base_profile
  * - `required_num_qubits`: Number of qubits used
  * - `required_num_results`: Number of measurement results
- * - `qir_major_version`: 1
+ * - `qir_major_version`: 2
  * - `qir_minor_version`: 0
  * - `dynamic_qubit_management`: true/false
  * - `dynamic_result_management`: true/false
