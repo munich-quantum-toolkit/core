@@ -80,6 +80,10 @@ Value FluxProgramBuilder::staticQubit(const int64_t index) {
 llvm::SmallVector<Value>
 FluxProgramBuilder::allocQubitRegister(const int64_t size,
                                        const StringRef name) {
+  if (size <= 0) {
+    llvm::reportFatalUsageError("Size must be positive");
+  }
+
   llvm::SmallVector<Value> qubits;
   qubits.reserve(static_cast<size_t>(size));
 
@@ -99,6 +103,10 @@ FluxProgramBuilder::allocQubitRegister(const int64_t size,
 
 FluxProgramBuilder::ClassicalRegister&
 FluxProgramBuilder::allocClassicalBitRegister(int64_t size, StringRef name) {
+  if (size <= 0) {
+    llvm::reportFatalUsageError("Size must be positive");
+  }
+
   return allocatedClassicalRegisters.emplace_back(name, size);
 }
 

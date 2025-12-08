@@ -114,6 +114,10 @@ Value QIRProgramBuilder::staticQubit(const int64_t index) {
 
 llvm::SmallVector<Value>
 QIRProgramBuilder::allocQubitRegister(const int64_t size) {
+  if (size <= 0) {
+    llvm::reportFatalUsageError("Size must be positive");
+  }
+
   llvm::SmallVector<Value> qubits;
   qubits.reserve(size);
 
@@ -127,6 +131,10 @@ QIRProgramBuilder::allocQubitRegister(const int64_t size) {
 QIRProgramBuilder::ClassicalRegister&
 QIRProgramBuilder::allocClassicalBitRegister(const int64_t size,
                                              StringRef name) {
+  if (size <= 0) {
+    llvm::reportFatalUsageError("Size must be positive");
+  }
+
   // Save current insertion point
   const OpBuilder::InsertionGuard insertGuard(builder);
 

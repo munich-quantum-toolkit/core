@@ -73,6 +73,10 @@ Value QuartzProgramBuilder::staticQubit(const int64_t index) {
 llvm::SmallVector<Value>
 QuartzProgramBuilder::allocQubitRegister(const int64_t size,
                                          const StringRef name) {
+  if (size <= 0) {
+    llvm::reportFatalUsageError("Size must be positive");
+  }
+
   // Allocate a sequence of qubits with register metadata
   llvm::SmallVector<Value> qubits;
   qubits.reserve(size);
@@ -93,6 +97,10 @@ QuartzProgramBuilder::allocQubitRegister(const int64_t size,
 
 QuartzProgramBuilder::ClassicalRegister&
 QuartzProgramBuilder::allocClassicalBitRegister(int64_t size, StringRef name) {
+  if (size <= 0) {
+    llvm::reportFatalUsageError("Size must be positive");
+  }
+
   return allocatedClassicalRegisters.emplace_back(name, size);
 }
 
