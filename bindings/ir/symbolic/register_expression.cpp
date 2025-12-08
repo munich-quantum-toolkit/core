@@ -10,52 +10,52 @@
 
 #include "ir/operations/Expression.hpp"
 
-// These includes must be the first includes for any bindings code
-// clang-format off
-#include <pybind11/pybind11.h>
-#include <pybind11/stl.h> // NOLINT(misc-include-cleaner)
-
-#include <pybind11/attr.h>
-#include <pybind11/cast.h>
-#include <pybind11/operators.h>
-// clang-format on
-
 #include <cstddef>
+#include <nanobind/make_iterator.h>
+#include <nanobind/nanobind.h>
+#include <nanobind/operators.h>
+#include <nanobind/stl/string.h>
 #include <sstream>
 #include <vector>
 
 namespace mqt {
 
-namespace py = pybind11;
-using namespace pybind11::literals;
+namespace nb = nanobind;
+using namespace nb::literals;
 
 // NOLINTNEXTLINE(misc-use-internal-linkage)
-void registerExpression(py::module& m) {
-  py::class_<sym::Expression<double, double>>(m, "Expression")
-      .def(py::init([](const std::vector<sym::Term<double>>& terms,
-                       double constant) {
-             return sym::Expression<double, double>(terms, constant);
-           }),
-           "terms"_a, "constant"_a = 0.0)
-      .def(py::init([](const sym::Term<double>& term, double constant) {
-             return sym::Expression<double, double>(
-                 std::vector<sym::Term<double>>{term}, constant);
-           }),
-           "term"_a, "constant"_a = 0.0)
-      .def(py::init<double>(), "constant"_a = 0.0)
-      .def_property("constant", &sym::Expression<double, double>::getConst,
-                    &sym::Expression<double, double>::setConst)
+void registerExpression(nb::module_& m) {
+  nb::class_<sym::Expression<double, double>>(m, "Expression")
+      .def(
+          "__init__",
+          [](sym::Expression<double, double>* self,
+             const std::vector<sym::Term<double>>& terms, double constant) {
+            new (self) sym::Expression<double, double>(terms, constant);
+          },
+          "terms"_a, "constant"_a = 0.0)
+      .def(
+          "__init__",
+          [](sym::Expression<double, double>* self,
+             const sym::Term<double>& term, double constant) {
+            new (self) sym::Expression<double, double>(
+                std::vector<sym::Term<double>>{term}, constant);
+          },
+          "term"_a, "constant"_a = 0.0)
+      .def(nb::init<double>(), "constant"_a = 0.0)
+      .def_prop_rw("constant", &sym::Expression<double, double>::getConst,
+                   &sym::Expression<double, double>::setConst)
       .def(
           "__iter__",
           [](const sym::Expression<double, double>& expr) {
-            return py::make_iterator(expr.begin(), expr.end());
+            return nb::make_iterator(nb::handle(), "ExpressionIterator",
+                                     expr.begin(), expr.end());
           },
-          py::keep_alive<0, 1>())
+          nb::keep_alive<0, 1>())
       .def("__getitem__",
            [](const sym::Expression<double, double>& expr,
               const std::size_t idx) {
              if (idx >= expr.numTerms()) {
-               throw py::index_error();
+               throw nb::index_error();
              }
              return expr.getTerms()[idx];
            })
@@ -63,15 +63,13 @@ void registerExpression(py::module& m) {
       .def("is_constant", &sym::Expression<double, double>::isConstant)
       .def("num_terms", &sym::Expression<double, double>::numTerms)
       .def("__len__", &sym::Expression<double, double>::numTerms)
-      .def_property_readonly("terms",
-                             &sym::Expression<double, double>::getTerms)
-      .def_property_readonly("variables",
-                             &sym::Expression<double, double>::getVariables)
+      .def_prop_ro("terms", &sym::Expression<double, double>::getTerms)
+      .def_prop_ro("variables", &sym::Expression<double, double>::getVariables)
       .def("evaluate", &sym::Expression<double, double>::evaluate,
            "assignment"_a)
       // addition operators
-      .def(py::self + py::self)
-      .def(py::self + double())
+      .def(nb::self + nb::self)
+      .def(nb::self + double())
       .def("__add__", [](const sym::Expression<double, double>& lhs,
                          const sym::Term<double>& rhs) { return lhs + rhs; })
       .def("__radd__", [](const sym::Expression<double, double>& rhs,
@@ -79,24 +77,24 @@ void registerExpression(py::module& m) {
       .def("__radd__", [](const sym::Expression<double, double>& rhs,
                           const double lhs) { return rhs + lhs; })
       // subtraction operators
-      .def(py::self - py::self) // NOLINT(misc-redundant-expression)
-      .def(py::self - double())
-      .def(double() - py::self)
+      .def(nb::self - nb::self) // NOLINT(misc-redundant-expression)
+      .def(nb::self - double())
+      .def(double() - nb::self)
       .def("__sub__", [](const sym::Expression<double, double>& lhs,
                          const sym::Term<double>& rhs) { return lhs - rhs; })
       .def("__rsub__", [](const sym::Expression<double, double>& rhs,
                           const sym::Term<double>& lhs) { return lhs - rhs; })
       // multiplication operators
-      .def(py::self * double())
-      .def(double() * py::self)
+      .def(nb::self * double())
+      .def(double() * nb::self)
       // division operators
-      .def(py::self / double())
+      .def(nb::self / double())
       .def("__rtruediv__", [](const sym::Expression<double, double>& rhs,
                               double lhs) { return rhs / lhs; })
       // comparison operators
-      .def(py::self == py::self) // NOLINT(misc-redundant-expression)
-      .def(py::self != py::self) // NOLINT(misc-redundant-expression)
-      .def(hash(py::self))
+      .def(nb::self == nb::self)
+      .def(nb::self != nb::self)
+      .def(nb::hash(nb::self))
       .def("__str__",
            [](const sym::Expression<double, double>& expr) {
              std::stringstream ss;

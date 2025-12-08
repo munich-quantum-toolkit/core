@@ -13,28 +13,21 @@
 #include "ir/operations/IfElseOperation.hpp"
 #include "ir/operations/Operation.hpp"
 
-// These includes must be the first includes for any bindings code
-// clang-format off
-#include <pybind11/pybind11.h>
-#include <pybind11/stl.h> // NOLINT(misc-include-cleaner)
-
-#include <pybind11/cast.h>
-#include <pybind11/native_enum.h>
-// clang-format on
-
 #include <cstdint>
 #include <memory>
+#include <nanobind/nanobind.h>
+#include <nanobind/stl/string.h>
 #include <sstream>
 #include <utility>
 
 namespace mqt {
 
-namespace py = pybind11;
-using namespace pybind11::literals;
+namespace nb = nanobind;
+using namespace nb::literals;
 
 // NOLINTNEXTLINE(misc-use-internal-linkage)
-void registerIfElseOperation(const py::module& m) {
-  py::native_enum<qc::ComparisonKind>(
+void registerIfElseOperation(const nb::module_& m) {
+  nb::enum_<qc::ComparisonKind>(
       m, "ComparisonKind", "enum.Enum",
       "Enumeration of comparison types for classic-controlled operations.")
       .value("eq", qc::ComparisonKind::Eq)
@@ -43,57 +36,52 @@ void registerIfElseOperation(const py::module& m) {
       .value("leq", qc::ComparisonKind::Leq)
       .value("gt", qc::ComparisonKind::Gt)
       .value("geq", qc::ComparisonKind::Geq)
-      .export_values()
-      .finalize();
+      .export_values();
 
   auto ifElse =
-      py::class_<qc::IfElseOperation, qc::Operation>(m, "IfElseOperation");
+      nb::class_<qc::IfElseOperation, qc::Operation>(m, "IfElseOperation");
 
-  ifElse.def(py::init([](qc::Operation* thenOp, qc::Operation* elseOp,
-                         qc::ClassicalRegister& controlReg,
-                         const std::uint64_t expectedVal,
-                         const qc::ComparisonKind kind) {
-               std::unique_ptr<qc::Operation> thenPtr =
-                   thenOp ? thenOp->clone() : nullptr;
-               std::unique_ptr<qc::Operation> elsePtr =
-                   elseOp ? elseOp->clone() : nullptr;
-               return std::make_unique<qc::IfElseOperation>(
-                   std::move(thenPtr), std::move(elsePtr), controlReg,
-                   expectedVal, kind);
-             }),
-             "then_operation"_a, "else_operation"_a, "control_register"_a,
-             "expected_value"_a = 1U,
-             "comparison_kind"_a = qc::ComparisonKind::Eq);
-  ifElse.def(py::init([](qc::Operation* thenOp, qc::Operation* elseOp,
-                         qc::Bit controlBit, std::uint64_t expectedVal,
-                         qc::ComparisonKind kind) {
-               std::unique_ptr<qc::Operation> thenPtr =
-                   thenOp ? thenOp->clone() : nullptr;
-               std::unique_ptr<qc::Operation> elsePtr =
-                   elseOp ? elseOp->clone() : nullptr;
-               return std::make_unique<qc::IfElseOperation>(
-                   std::move(thenPtr), std::move(elsePtr), controlBit,
-                   expectedVal, kind);
-             }),
-             "then_operation"_a, "else_operation"_a, "control_bit"_a,
-             "expected_value"_a = 1U,
-             "comparison_kind"_a = qc::ComparisonKind::Eq);
-  ifElse.def_property_readonly("then_operation",
-                               &qc::IfElseOperation::getThenOp,
-                               py::return_value_policy::reference_internal);
-  ifElse.def_property_readonly("else_operation",
-                               &qc::IfElseOperation::getElseOp,
-                               py::return_value_policy::reference_internal);
-  ifElse.def_property_readonly("control_register",
-                               &qc::IfElseOperation::getControlRegister);
-  ifElse.def_property_readonly("control_bit",
-                               &qc::IfElseOperation::getControlBit);
-  ifElse.def_property_readonly("expected_value_register",
-                               &qc::IfElseOperation::getExpectedValueRegister);
-  ifElse.def_property_readonly("expected_value_bit",
-                               &qc::IfElseOperation::getExpectedValueBit);
-  ifElse.def_property_readonly("comparison_kind",
-                               &qc::IfElseOperation::getComparisonKind);
+  ifElse.def(
+      "__init__",
+      [](qc::IfElseOperation* self, qc::Operation* thenOp,
+         qc::Operation* elseOp, qc::ClassicalRegister& controlReg,
+         const std::uint64_t expectedVal, const qc::ComparisonKind kind) {
+        std::unique_ptr<qc::Operation> thenPtr =
+            thenOp ? thenOp->clone() : nullptr;
+        std::unique_ptr<qc::Operation> elsePtr =
+            elseOp ? elseOp->clone() : nullptr;
+        new (self) qc::IfElseOperation(std::move(thenPtr), std::move(elsePtr),
+                                       controlReg, expectedVal, kind);
+      },
+      "then_operation"_a, "else_operation"_a, "control_register"_a,
+      "expected_value"_a = 1U, "comparison_kind"_a = qc::ComparisonKind::Eq);
+  ifElse.def(
+      "__init__",
+      [](qc::IfElseOperation* self, qc::Operation* thenOp,
+         qc::Operation* elseOp, qc::Bit controlBit, std::uint64_t expectedVal,
+         qc::ComparisonKind kind) {
+        std::unique_ptr<qc::Operation> thenPtr =
+            thenOp ? thenOp->clone() : nullptr;
+        std::unique_ptr<qc::Operation> elsePtr =
+            elseOp ? elseOp->clone() : nullptr;
+        new (self) qc::IfElseOperation(std::move(thenPtr), std::move(elsePtr),
+                                       controlBit, expectedVal, kind);
+      },
+      "then_operation"_a, "else_operation"_a, "control_bit"_a,
+      "expected_value"_a = 1U, "comparison_kind"_a = qc::ComparisonKind::Eq);
+  ifElse.def_prop_ro("then_operation", &qc::IfElseOperation::getThenOp,
+                     nb::rv_policy::reference_internal);
+  ifElse.def_prop_ro("else_operation", &qc::IfElseOperation::getElseOp,
+                     nb::rv_policy::reference_internal);
+  ifElse.def_prop_ro("control_register",
+                     &qc::IfElseOperation::getControlRegister);
+  ifElse.def_prop_ro("control_bit", &qc::IfElseOperation::getControlBit);
+  ifElse.def_prop_ro("expected_value_register",
+                     &qc::IfElseOperation::getExpectedValueRegister);
+  ifElse.def_prop_ro("expected_value_bit",
+                     &qc::IfElseOperation::getExpectedValueBit);
+  ifElse.def_prop_ro("comparison_kind",
+                     &qc::IfElseOperation::getComparisonKind);
   ifElse.def("__repr__", [](const qc::IfElseOperation& op) {
     std::stringstream ss;
     ss << "IfElseOperation(<...then-op...>, <...else-op...>, ";

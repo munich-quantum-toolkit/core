@@ -11,43 +11,34 @@
 #include "ir/Definitions.hpp"
 #include "ir/operations/Control.hpp"
 
-// These includes must be the first includes for any bindings code
-// clang-format off
-#include <pybind11/pybind11.h>
-#include <pybind11/stl.h> // NOLINT(misc-include-cleaner)
-
-#include <pybind11/cast.h>
-#include <pybind11/native_enum.h>
-#include <pybind11/operators.h>
-#include <pybind11/pytypes.h>
-// clang-format on
+#include <nanobind/nanobind.h>
+#include <nanobind/operators.h>
+#include <nanobind/stl/string.h>
 
 namespace mqt {
 
-namespace py = pybind11;
-using namespace pybind11::literals;
+namespace nb = nanobind;
+using namespace nb::literals;
 
 // NOLINTNEXTLINE(misc-use-internal-linkage)
-void registerControl(const py::module& m) {
+void registerControl(const nb::module_& m) {
+  auto control = nb::class_<qc::Control>(m, "Control");
 
-  auto control = py::class_<qc::Control>(m, "Control");
-
-  py::native_enum<qc::Control::Type>(control, "Type", "enum.Enum",
-                                     "Enumeration of control types.")
+  nb::enum_<qc::Control::Type>(control, "Type", "enum.Enum",
+                               "Enumeration of control types.")
       .value("Pos", qc::Control::Type::Pos)
-      .value("Neg", qc::Control::Type::Neg)
-      .finalize();
+      .value("Neg", qc::Control::Type::Neg);
 
-  control.def(py::init<qc::Qubit, qc::Control::Type>(), "qubit"_a,
+  control.def(nb::init<qc::Qubit, qc::Control::Type>(), "qubit"_a,
               "type_"_a = qc::Control::Type::Pos);
-  control.def_readwrite("type_", &qc::Control::type);
-  control.def_readwrite("qubit", &qc::Control::qubit);
+  control.def_rw("type_", &qc::Control::type);
+  control.def_rw("qubit", &qc::Control::qubit);
   control.def("__str__", [](const qc::Control& c) { return c.toString(); });
   control.def("__repr__", [](const qc::Control& c) { return c.toString(); });
-  control.def(py::self == py::self); // NOLINT(misc-redundant-expression)
-  control.def(py::self != py::self); // NOLINT(misc-redundant-expression)
-  control.def(hash(py::self));
-  py::implicitly_convertible<py::int_, qc::Control>();
+  control.def(nb::self == nb::self);
+  control.def(nb::self != nb::self);
+  control.def(nb::hash(nb::self));
+  nb::implicitly_convertible<nb::int_, qc::Control>();
 }
 
 } // namespace mqt

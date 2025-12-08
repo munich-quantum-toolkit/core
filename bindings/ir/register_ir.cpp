@@ -8,33 +8,29 @@
  * Licensed under the MIT License
  */
 
-// These includes must be the first includes for any bindings code
-// clang-format off
-#include <pybind11/pybind11.h>
-#include <pybind11/stl.h> // NOLINT(misc-include-cleaner)
-// clang-format on
+#include <nanobind/nanobind.h>
 
 namespace mqt {
 
-namespace py = pybind11;
-using namespace py::literals;
+namespace nb = nanobind;
 
 // forward declarations
-void registerRegisters(py::module& m);
-void registerPermutation(py::module& m);
-void registerOperations(py::module& m);
-void registerSymbolic(py::module& m);
-void registerQuantumComputation(py::module& m);
+void registerRegisters(nb::module_& m);
+void registerPermutation(nb::module_& m);
+void registerOperations(nb::module_& m);
+void registerSymbolic(nb::module_& m);
+void registerQuantumComputation(nb::module_& m);
 
-PYBIND11_MODULE(MQT_CORE_MODULE_NAME, m, py::mod_gil_not_used()) {
+NB_MODULE(MQT_CORE_MODULE_NAME, m) {
   registerPermutation(m);
-  py::module registers = m.def_submodule("registers");
-  registerRegisters(registers);
 
-  py::module symbolic = m.def_submodule("symbolic");
+  nb::module_ symbolic = m.def_submodule("symbolic");
   registerSymbolic(symbolic);
 
-  py::module operations = m.def_submodule("operations");
+  nb::module_ registers = m.def_submodule("registers");
+  registerRegisters(registers);
+
+  nb::module_ operations = m.def_submodule("operations");
   registerOperations(operations);
 
   registerQuantumComputation(m);

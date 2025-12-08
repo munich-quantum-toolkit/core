@@ -11,18 +11,10 @@
 #include "ir/operations/CompoundOperation.hpp"
 #include "ir/operations/Operation.hpp"
 
-// These includes must be the first includes for any bindings code
-// clang-format off
-#include <pybind11/pybind11.h>
-#include <pybind11/stl.h> // NOLINT(misc-include-cleaner)
-
-#include <pybind11/cast.h>
-#include <pybind11/pytypes.h>
-// clang-format on
-
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <nanobind/nanobind.h>
 #include <sstream>
 #include <stdexcept>
 #include <utility>
@@ -30,35 +22,38 @@
 
 namespace mqt {
 
-namespace py = pybind11;
-using namespace pybind11::literals;
+namespace nb = nanobind;
+using namespace nb::literals;
 
 using DiffType = std::vector<std::unique_ptr<qc::Operation>>::difference_type;
 using SizeType = std::vector<std::unique_ptr<qc::Operation>>::size_type;
 
 // NOLINTNEXTLINE(misc-use-internal-linkage)
-void registerCompoundOperation(const py::module& m) {
+void registerCompoundOperation(const nb::module_& m) {
   auto wrap = [](DiffType i, const SizeType size) {
     if (i < 0) {
       i += static_cast<DiffType>(size);
     }
     if (i < 0 || std::cmp_greater_equal(i, size)) {
-      throw py::index_error();
+      throw nb::index_error();
     }
     return i;
   };
 
-  py::class_<qc::CompoundOperation, qc::Operation>(m, "CompoundOperation")
-      .def(py::init<>())
-      .def(py::init([](const std::vector<qc::Operation*>& ops) {
-             std::vector<std::unique_ptr<qc::Operation>> uniqueOps;
-             uniqueOps.reserve(ops.size());
-             for (const auto& op : ops) {
-               uniqueOps.emplace_back(op->clone());
-             }
-             return qc::CompoundOperation(std::move(uniqueOps));
-           }),
-           "ops"_a)
+  nb::class_<qc::CompoundOperation, qc::Operation>(m, "CompoundOperation")
+      .def(nb::init<>())
+      .def(
+          "__init__",
+          [](qc::CompoundOperation* self,
+             const std::vector<qc::Operation*>& ops) {
+            std::vector<std::unique_ptr<qc::Operation>> uniqueOps;
+            uniqueOps.reserve(ops.size());
+            for (const auto& op : ops) {
+              uniqueOps.emplace_back(op->clone());
+            }
+            new (self) qc::CompoundOperation(std::move(uniqueOps));
+          },
+          "ops"_a)
       .def("__len__", &qc::CompoundOperation::size)
       .def(
           "__getitem__",
@@ -66,17 +61,11 @@ void registerCompoundOperation(const py::module& m) {
             i = wrap(i, op.size());
             return op.at(static_cast<SizeType>(i)).get();
           },
-          py::return_value_policy::reference_internal, "index"_a)
+          nb::rv_policy::reference_internal, "index"_a)
       .def(
           "__getitem__",
-          [](const qc::CompoundOperation& op, const py::slice& slice) {
-            std::size_t start{};
-            std::size_t stop{};
-            std::size_t step{};
-            std::size_t sliceLength{};
-            if (!slice.compute(op.size(), &start, &stop, &step, &sliceLength)) {
-              throw py::error_already_set();
-            }
+          [](const qc::CompoundOperation& op, const nb::slice& slice) {
+            auto [start, stop, step, sliceLength] = slice.compute(op.size());
             auto ops = std::vector<qc::Operation*>();
             ops.reserve(sliceLength);
             for (std::size_t i = start; i < stop; i += step) {
@@ -84,7 +73,7 @@ void registerCompoundOperation(const py::module& m) {
             }
             return ops;
           },
-          py::return_value_policy::reference_internal, "index"_a)
+          nb::rv_policy::reference_internal, "index"_a)
       .def(
           "__setitem__",
           [&wrap](qc::CompoundOperation& compOp, DiffType i,
@@ -95,16 +84,10 @@ void registerCompoundOperation(const py::module& m) {
           "index"_a, "value"_a)
       .def(
           "__setitem__",
-          [](qc::CompoundOperation& compOp, const py::slice& slice,
+          [](qc::CompoundOperation& compOp, const nb::slice& slice,
              const std::vector<qc::Operation*>& ops) {
-            std::size_t start{};
-            std::size_t stop{};
-            std::size_t step{};
-            std::size_t sliceLength{};
-            if (!slice.compute(compOp.size(), &start, &stop, &step,
-                               &sliceLength)) {
-              throw py::error_already_set();
-            }
+            auto [start, stop, step, sliceLength] =
+                slice.compute(compOp.size());
             if (sliceLength != ops.size()) {
               throw std::runtime_error(
                   "Length of slice and number of operations do not match.");
@@ -117,26 +100,19 @@ void registerCompoundOperation(const py::module& m) {
           "index"_a, "value"_a)
       .def(
           "__delitem__",
-          [&wrap](qc::CompoundOperation& compOp, DiffType i) {
-            i = wrap(i, compOp.size());
-            compOp.erase(compOp.begin() + i);
+          [&wrap](qc::CompoundOperation& op, DiffType i) {
+            i = wrap(i, op.size());
+            op.erase(op.begin() + i);
           },
           "index"_a)
       .def(
           "__delitem__",
-          [](qc::CompoundOperation& compOp, const py::slice& slice) {
-            std::size_t start{};
-            std::size_t stop{};
-            std::size_t step{};
-            std::size_t sliceLength{};
-            if (!slice.compute(compOp.size(), &start, &stop, &step,
-                               &sliceLength)) {
-              throw py::error_already_set();
-            }
+          [](qc::CompoundOperation& op, const nb::slice& slice) {
+            auto [start, stop, step, sliceLength] = slice.compute(op.size());
             // delete in reverse order to not invalidate indices
             for (std::size_t i = sliceLength; i > 0; --i) {
-              compOp.erase(compOp.begin() +
-                           static_cast<int64_t>(start + ((i - 1) * step)));
+              op.erase(op.begin() +
+                       static_cast<int64_t>(start + ((i - 1) * step)));
             }
           },
           "index"_a)

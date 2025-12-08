@@ -10,23 +10,16 @@
 
 #include "ir/operations/OpType.hpp"
 
-// These includes must be the first includes for any bindings code
-// clang-format off
-#include <pybind11/pybind11.h>
-#include <pybind11/stl.h> // NOLINT(misc-include-cleaner)
-
-#include <pybind11/native_enum.h>
-// clang-format on
+#include <nanobind/nanobind.h>
 
 namespace mqt {
 
-namespace py = pybind11;
-using namespace pybind11::literals;
+namespace nb = nanobind;
 
 // NOLINTNEXTLINE(misc-use-internal-linkage)
-void registerOptype(const py::module& m) {
-  py::native_enum<qc::OpType>(m, "OpType", "enum.Enum",
-                              "Enumeration of operation types.")
+void registerOptype(const nb::module_& m) {
+  nb::enum_<qc::OpType>(m, "OpType", "enum.Enum",
+                        "Enumeration of operation types.")
       .value("none", qc::OpType::None)
       .value("gphase", qc::OpType::GPhase)
       .value("i", qc::OpType::I)
@@ -67,8 +60,7 @@ void registerOptype(const py::module& m) {
       .value("reset", qc::OpType::Reset)
       .value("barrier", qc::OpType::Barrier)
       .value("if_else", qc::OpType::IfElse)
-      .export_values()
-      .finalize();
+      .export_values();
 }
 
 } // namespace mqt

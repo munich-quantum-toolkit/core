@@ -11,34 +11,27 @@
 #include "ir/operations/Control.hpp"
 #include "ir/operations/Operation.hpp"
 
-// These includes must be the first includes for any bindings code
-// clang-format off
-#include <pybind11/pybind11.h>
-#include <pybind11/stl.h> // NOLINT(misc-include-cleaner)
-
-#include <pybind11/cast.h>
-// clang-format on
-
+#include <nanobind/nanobind.h>
 #include <sstream>
 
 namespace mqt {
 
-namespace py = pybind11;
-using namespace pybind11::literals;
+namespace nb = nanobind;
+using namespace nb::literals;
 
 // NOLINTNEXTLINE(misc-use-internal-linkage)
-void registerOperation(const py::module& m) {
-  py::class_<qc::Operation>(m, "Operation")
-      .def_property_readonly("name", &qc::Operation::getName)
-      .def_property("type_", &qc::Operation::getType, &qc::Operation::setGate)
-      .def_property(
+void registerOperation(const nb::module_& m) {
+  nb::class_<qc::Operation>(m, "Operation")
+      .def_prop_ro("name", &qc::Operation::getName)
+      .def_prop_rw("type_", &qc::Operation::getType, &qc::Operation::setGate)
+      .def_prop_rw(
           "targets", [](const qc::Operation& op) { return op.getTargets(); },
           &qc::Operation::setTargets)
-      .def_property_readonly("num_targets", &qc::Operation::getNtargets)
-      .def_property(
+      .def_prop_ro("num_targets", &qc::Operation::getNtargets)
+      .def_prop_rw(
           "controls", [](const qc::Operation& op) { return op.getControls(); },
           &qc::Operation::setControls)
-      .def_property_readonly("num_controls", &qc::Operation::getNcontrols)
+      .def_prop_ro("num_controls", &qc::Operation::getNcontrols)
       .def("add_control", &qc::Operation::addControl, "control"_a)
       .def("add_controls", &qc::Operation::addControls, "controls"_a)
       .def("clear_controls", &qc::Operation::clearControls)
@@ -49,7 +42,7 @@ void registerOperation(const py::module& m) {
       .def("remove_controls", &qc::Operation::removeControls, "controls"_a)
       .def("get_used_qubits", &qc::Operation::getUsedQubits)
       .def("acts_on", &qc::Operation::actsOn, "qubit"_a)
-      .def_property(
+      .def_prop_rw(
           "parameter",
           [](const qc::Operation& op) { return op.getParameter(); },
           &qc::Operation::setParameter)

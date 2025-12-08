@@ -26,6 +26,13 @@ if(BUILD_MQT_CORE_BINDINGS)
 
   # add pybind11 library
   find_package(pybind11 3.0.1 CONFIG REQUIRED)
+
+  # Detect the installed nanobind package and import it into CMake
+  execute_process(
+    COMMAND "${Python_EXECUTABLE}" -m nanobind --cmake_dir
+    OUTPUT_STRIP_TRAILING_WHITESPACE
+    OUTPUT_VARIABLE nanobind_ROOT)
+  find_package(nanobind CONFIG REQUIRED)
 endif()
 
 set(JSON_VERSION

@@ -17,18 +17,12 @@
 #include "ir/operations/Operation.hpp"
 #include "qasm3/Importer.hpp"
 
-// These includes must be the first includes for any bindings code
-// clang-format off
-#include <pybind11/pybind11.h>
-#include <pybind11/stl.h> // NOLINT(misc-include-cleaner)
-
-#include <pybind11/cast.h>
-#include <pybind11/pytypes.h>
-// clang-format on
-
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <nanobind/nanobind.h>
+#include <nanobind/stl/string.h>
+#include <nanobind/stl/vector.h>
 #include <stdexcept>
 #include <string>
 #include <utility>
@@ -36,30 +30,30 @@
 
 namespace mqt {
 
-namespace py = pybind11;
-using namespace pybind11::literals;
+namespace nb = nanobind;
+using namespace nb::literals;
 
 using DiffType = std::vector<std::unique_ptr<qc::Operation>>::difference_type;
 using SizeType = std::vector<std::unique_ptr<qc::Operation>>::size_type;
 
 // NOLINTNEXTLINE(misc-use-internal-linkage)
-void registerQuantumComputation(py::module& m) {
+void registerQuantumComputation(nb::module_& m) {
   auto wrap = [](DiffType i, const SizeType size) {
     if (i < 0) {
       i += static_cast<DiffType>(size);
     }
     if (i < 0 || std::cmp_greater_equal(i, size)) {
-      throw py::index_error();
+      throw nb::index_error();
     }
     return i;
   };
 
-  auto qc = py::class_<qc::QuantumComputation>(m, "QuantumComputation");
+  auto qc = nb::class_<qc::QuantumComputation>(m, "QuantumComputation");
 
   ///---------------------------------------------------------------------------
   ///                           \n Constructors \n
   ///---------------------------------------------------------------------------
-  qc.def(py::init<std::size_t, std::size_t, std::size_t>(), "nq"_a = 0U,
+  qc.def(nb::init<std::size_t, std::size_t, std::size_t>(), "nq"_a = 0U,
          "nc"_a = 0U, "seed"_a = 0U);
 
   // expose the static constructor from qasm strings or files
@@ -70,25 +64,23 @@ void registerQuantumComputation(py::module& m) {
   ///                       \n General Properties \n
   ///---------------------------------------------------------------------------
 
-  qc.def_property("name", &qc::QuantumComputation::getName,
-                  &qc::QuantumComputation::setName);
-  qc.def_property_readonly("num_qubits", &qc::QuantumComputation::getNqubits);
-  qc.def_property_readonly("num_ancilla_qubits",
-                           &qc::QuantumComputation::getNancillae);
-  qc.def_property_readonly("num_garbage_qubits",
-                           &qc::QuantumComputation::getNgarbageQubits);
-  qc.def_property_readonly("num_measured_qubits",
-                           &qc::QuantumComputation::getNmeasuredQubits);
-  qc.def_property_readonly("num_data_qubits",
-                           &qc::QuantumComputation::getNqubitsWithoutAncillae);
-  qc.def_property_readonly("num_classical_bits",
-                           &qc::QuantumComputation::getNcbits);
-  qc.def_property_readonly("num_ops", &qc::QuantumComputation::getNops);
+  qc.def_prop_rw("name", &qc::QuantumComputation::getName,
+                 &qc::QuantumComputation::setName);
+  qc.def_prop_ro("num_qubits", &qc::QuantumComputation::getNqubits);
+  qc.def_prop_ro("num_ancilla_qubits", &qc::QuantumComputation::getNancillae);
+  qc.def_prop_ro("num_garbage_qubits",
+                 &qc::QuantumComputation::getNgarbageQubits);
+  qc.def_prop_ro("num_measured_qubits",
+                 &qc::QuantumComputation::getNmeasuredQubits);
+  qc.def_prop_ro("num_data_qubits",
+                 &qc::QuantumComputation::getNqubitsWithoutAncillae);
+  qc.def_prop_ro("num_classical_bits", &qc::QuantumComputation::getNcbits);
+  qc.def_prop_ro("num_ops", &qc::QuantumComputation::getNops);
   qc.def("num_single_qubit_ops", &qc::QuantumComputation::getNsingleQubitOps);
   qc.def("num_total_ops", &qc::QuantumComputation::getNindividualOps);
   qc.def("depth", &qc::QuantumComputation::getDepth);
-  qc.def_property("global_phase", &qc::QuantumComputation::getGlobalPhase,
-                  &qc::QuantumComputation::gphase);
+  qc.def_prop_rw("global_phase", &qc::QuantumComputation::getGlobalPhase,
+                 &qc::QuantumComputation::gphase);
   qc.def("invert", &qc::QuantumComputation::invert);
   qc.def("to_operation", &qc::QuantumComputation::asOperation);
 
@@ -102,18 +94,11 @@ void registerQuantumComputation(py::module& m) {
         i = wrap(i, circ.getNops());
         return circ.at(static_cast<SizeType>(i)).get();
       },
-      py::return_value_policy::reference_internal, "index"_a);
+      nb::rv_policy::reference_internal, "index"_a);
   qc.def(
       "__getitem__",
-      [](qc::QuantumComputation& circ, const py::slice& slice) {
-        std::size_t start{};
-        std::size_t stop{};
-        std::size_t step{};
-        std::size_t sliceLength{};
-        if (!slice.compute(circ.getNops(), &start, &stop, &step,
-                           &sliceLength)) {
-          throw py::error_already_set();
-        }
+      [](qc::QuantumComputation& circ, const nb::slice& slice) {
+        auto [start, stop, step, sliceLength] = slice.compute(circ.getNops());
         auto ops = std::vector<qc::Operation*>();
         ops.reserve(sliceLength);
         for (std::size_t i = start; i < stop; i += step) {
@@ -121,7 +106,7 @@ void registerQuantumComputation(py::module& m) {
         }
         return ops;
       },
-      py::return_value_policy::reference_internal, "index"_a);
+      nb::rv_policy::reference_internal, "index"_a);
   qc.def(
       "__setitem__",
       [&wrap](qc::QuantumComputation& circ, DiffType i,
@@ -132,16 +117,9 @@ void registerQuantumComputation(py::module& m) {
       "index"_a, "value"_a);
   qc.def(
       "__setitem__",
-      [](qc::QuantumComputation& circ, const py::slice& slice,
+      [](qc::QuantumComputation& circ, const nb::slice& slice,
          const std::vector<qc::Operation*>& ops) {
-        std::size_t start{};
-        std::size_t stop{};
-        std::size_t step{};
-        std::size_t sliceLength{};
-        if (!slice.compute(circ.getNops(), &start, &stop, &step,
-                           &sliceLength)) {
-          throw py::error_already_set();
-        }
+        auto [start, stop, step, sliceLength] = slice.compute(circ.getNops());
         if (sliceLength != ops.size()) {
           throw std::runtime_error(
               "Length of slice and number of operations do not match.");
@@ -161,15 +139,8 @@ void registerQuantumComputation(py::module& m) {
       "index"_a);
   qc.def(
       "__delitem__",
-      [](qc::QuantumComputation& circ, const py::slice& slice) {
-        std::size_t start{};
-        std::size_t stop{};
-        std::size_t step{};
-        std::size_t sliceLength{};
-        if (!slice.compute(circ.getNops(), &start, &stop, &step,
-                           &sliceLength)) {
-          throw py::error_already_set();
-        }
+      [](qc::QuantumComputation& circ, const nb::slice& slice) {
+        auto [start, stop, step, sliceLength] = slice.compute(circ.getNops());
         // delete in reverse order to not invalidate indices
         for (std::size_t i = sliceLength; i > 0; --i) {
           circ.erase(circ.begin() +
@@ -192,7 +163,7 @@ void registerQuantumComputation(py::module& m) {
       },
       "value"_a);
   qc.def("reverse", &qc::QuantumComputation::reverse);
-  qc.def("clear", py::overload_cast<>(&qc::QuantumComputation::reset));
+  qc.def("clear", nb::overload_cast<>(&qc::QuantumComputation::reset));
 
   ///---------------------------------------------------------------------------
   ///                         \n (Qu)Bit Registers \n
@@ -208,28 +179,24 @@ void registerQuantumComputation(py::module& m) {
   qc.def("unify_quantum_registers",
          &qc::QuantumComputation::unifyQuantumRegisters, "name"_a = "q");
 
-  qc.def_property_readonly("qregs",
-                           &qc::QuantumComputation::getQuantumRegisters);
-  qc.def_property_readonly("cregs",
-                           &qc::QuantumComputation::getClassicalRegisters);
-  qc.def_property_readonly("ancregs",
-                           &qc::QuantumComputation::getAncillaRegisters);
+  qc.def_prop_ro("qregs", &qc::QuantumComputation::getQuantumRegisters);
+  qc.def_prop_ro("cregs", &qc::QuantumComputation::getClassicalRegisters);
+  qc.def_prop_ro("ancregs", &qc::QuantumComputation::getAncillaRegisters);
 
   ///---------------------------------------------------------------------------
   ///               \n Input Layout and Output Permutation \n
   ///---------------------------------------------------------------------------
 
-  qc.def_readwrite("initial_layout", &qc::QuantumComputation::initialLayout);
-  qc.def_readwrite("output_permutation",
-                   &qc::QuantumComputation::outputPermutation);
+  qc.def_rw("initial_layout", &qc::QuantumComputation::initialLayout);
+  qc.def_rw("output_permutation", &qc::QuantumComputation::outputPermutation);
   qc.def("initialize_io_mapping", &qc::QuantumComputation::initializeIOMapping);
 
   ///---------------------------------------------------------------------------
   ///                  \n Ancillary and Garbage Handling \n
   ///---------------------------------------------------------------------------
 
-  qc.def_property_readonly(
-      "ancillary", py::overload_cast<>(&qc::QuantumComputation::getAncillary));
+  qc.def_prop_ro("ancillary",
+                 nb::overload_cast<>(&qc::QuantumComputation::getAncillary));
   qc.def("set_circuit_qubit_ancillary",
          &qc::QuantumComputation::setLogicalQubitAncillary, "q"_a);
   qc.def("se_circuit_qubits_ancillary",
@@ -237,8 +204,8 @@ void registerQuantumComputation(py::module& m) {
          "q_max"_a);
   qc.def("is_circuit_qubit_ancillary",
          &qc::QuantumComputation::logicalQubitIsAncillary, "q"_a);
-  qc.def_property_readonly(
-      "garbage", py::overload_cast<>(&qc::QuantumComputation::getGarbage));
+  qc.def_prop_ro("garbage",
+                 nb::overload_cast<>(&qc::QuantumComputation::getGarbage));
   qc.def("set_circuit_qubit_garbage",
          &qc::QuantumComputation::setLogicalQubitGarbage, "q"_a);
   qc.def("set_circuit_qubits_garbage",
@@ -251,7 +218,7 @@ void registerQuantumComputation(py::module& m) {
   ///                    \n Symbolic Circuit Handling \n
   ///---------------------------------------------------------------------------
 
-  qc.def_property_readonly("variables", &qc::QuantumComputation::getVariables);
+  qc.def_prop_ro("variables", &qc::QuantumComputation::getVariables);
   qc.def("add_variable", &qc::QuantumComputation::addVariable, "var"_a);
   qc.def(
       "add_variables",
@@ -325,10 +292,10 @@ void registerQuantumComputation(py::module& m) {
   DEFINE_SINGLE_TARGET_OPERATION(sxdg)
 
 #define DEFINE_SINGLE_TARGET_SINGLE_PARAMETER_OPERATION(op, param)             \
-  qc.def(#op, &qc::QuantumComputation::op, py::arg(#param), "q"_a);            \
-  qc.def("c" #op, &qc::QuantumComputation::c##op, py::arg(#param),             \
+  qc.def(#op, &qc::QuantumComputation::op, nb::arg(#param), "q"_a);            \
+  qc.def("c" #op, &qc::QuantumComputation::c##op, nb::arg(#param),             \
          "control"_a, "target"_a);                                             \
-  qc.def("mc" #op, &qc::QuantumComputation::mc##op, py::arg(#param),           \
+  qc.def("mc" #op, &qc::QuantumComputation::mc##op, nb::arg(#param),           \
          "controls"_a, "target"_a);
 
   DEFINE_SINGLE_TARGET_SINGLE_PARAMETER_OPERATION(rx, theta)
@@ -337,24 +304,24 @@ void registerQuantumComputation(py::module& m) {
   DEFINE_SINGLE_TARGET_SINGLE_PARAMETER_OPERATION(p, theta)
 
 #define DEFINE_SINGLE_TARGET_TWO_PARAMETER_OPERATION(op, param0, param1)       \
-  qc.def(#op, &qc::QuantumComputation::op, py::arg(#param0), py::arg(#param1), \
+  qc.def(#op, &qc::QuantumComputation::op, nb::arg(#param0), nb::arg(#param1), \
          "q"_a);                                                               \
-  qc.def("c" #op, &qc::QuantumComputation::c##op, py::arg(#param0),            \
-         py::arg(#param1), "control"_a, "target"_a);                           \
-  qc.def("mc" #op, &qc::QuantumComputation::mc##op, py::arg(#param0),          \
-         py::arg(#param1), "controls"_a, "target"_a);
+  qc.def("c" #op, &qc::QuantumComputation::c##op, nb::arg(#param0),            \
+         nb::arg(#param1), "control"_a, "target"_a);                           \
+  qc.def("mc" #op, &qc::QuantumComputation::mc##op, nb::arg(#param0),          \
+         nb::arg(#param1), "controls"_a, "target"_a);
 
   DEFINE_SINGLE_TARGET_TWO_PARAMETER_OPERATION(u2, phi, lambda_)
   DEFINE_SINGLE_TARGET_TWO_PARAMETER_OPERATION(r, theta, phi)
 
 #define DEFINE_SINGLE_TARGET_THREE_PARAMETER_OPERATION(op, param0, param1,     \
                                                        param2)                 \
-  qc.def(#op, &qc::QuantumComputation::op, py::arg(#param0), py::arg(#param1), \
-         py::arg(#param2), "q"_a);                                             \
-  qc.def("c" #op, &qc::QuantumComputation::c##op, py::arg(#param0),            \
-         py::arg(#param1), py::arg(#param2), "control"_a, "target"_a);         \
-  qc.def("mc" #op, &qc::QuantumComputation::mc##op, py::arg(#param0),          \
-         py::arg(#param1), py::arg(#param2), "controls"_a, "target"_a);
+  qc.def(#op, &qc::QuantumComputation::op, nb::arg(#param0), nb::arg(#param1), \
+         nb::arg(#param2), "q"_a);                                             \
+  qc.def("c" #op, &qc::QuantumComputation::c##op, nb::arg(#param0),            \
+         nb::arg(#param1), nb::arg(#param2), "control"_a, "target"_a);         \
+  qc.def("mc" #op, &qc::QuantumComputation::mc##op, nb::arg(#param0),          \
+         nb::arg(#param1), nb::arg(#param2), "controls"_a, "target"_a);
 
   DEFINE_SINGLE_TARGET_THREE_PARAMETER_OPERATION(u, theta, phi, lambda_)
 
@@ -373,11 +340,11 @@ void registerQuantumComputation(py::module& m) {
   DEFINE_TWO_TARGET_OPERATION(peresdg)
 
 #define DEFINE_TWO_TARGET_SINGLE_PARAMETER_OPERATION(op, param)                \
-  qc.def(#op, &qc::QuantumComputation::op, py::arg(#param), "target1"_a,       \
+  qc.def(#op, &qc::QuantumComputation::op, nb::arg(#param), "target1"_a,       \
          "target2"_a);                                                         \
-  qc.def("c" #op, &qc::QuantumComputation::c##op, py::arg(#param),             \
+  qc.def("c" #op, &qc::QuantumComputation::c##op, nb::arg(#param),             \
          "control"_a, "target1"_a, "target2"_a);                               \
-  qc.def("mc" #op, &qc::QuantumComputation::mc##op, py::arg(#param),           \
+  qc.def("mc" #op, &qc::QuantumComputation::mc##op, nb::arg(#param),           \
          "controls"_a, "target1"_a, "target2"_a);
 
   DEFINE_TWO_TARGET_SINGLE_PARAMETER_OPERATION(rxx, theta)
@@ -386,12 +353,12 @@ void registerQuantumComputation(py::module& m) {
   DEFINE_TWO_TARGET_SINGLE_PARAMETER_OPERATION(rzx, theta)
 
 #define DEFINE_TWO_TARGET_TWO_PARAMETER_OPERATION(op, param0, param1)          \
-  qc.def(#op, &qc::QuantumComputation::op, py::arg(#param0), py::arg(#param1), \
+  qc.def(#op, &qc::QuantumComputation::op, nb::arg(#param0), nb::arg(#param1), \
          "target1"_a, "target2"_a);                                            \
-  qc.def("c" #op, &qc::QuantumComputation::c##op, py::arg(#param0),            \
-         py::arg(#param1), "control"_a, "target1"_a, "target2"_a);             \
-  qc.def("mc" #op, &qc::QuantumComputation::mc##op, py::arg(#param0),          \
-         py::arg(#param1), "controls"_a, "target1"_a, "target2"_a);
+  qc.def("c" #op, &qc::QuantumComputation::c##op, nb::arg(#param0),            \
+         nb::arg(#param1), "control"_a, "target1"_a, "target2"_a);             \
+  qc.def("mc" #op, &qc::QuantumComputation::mc##op, nb::arg(#param0),          \
+         nb::arg(#param1), "controls"_a, "target1"_a, "target2"_a);
 
   DEFINE_TWO_TARGET_TWO_PARAMETER_OPERATION(xx_minus_yy, theta, beta)
   DEFINE_TWO_TARGET_TWO_PARAMETER_OPERATION(xx_plus_yy, theta, beta)
@@ -407,28 +374,28 @@ void registerQuantumComputation(py::module& m) {
   qc.def("gphase", &qc::QuantumComputation::gphase, "phase"_a);
 
   qc.def("measure",
-         py::overload_cast<qc::Qubit, std::size_t>(
+         nb::overload_cast<qc::Qubit, std::size_t>(
              &qc::QuantumComputation::measure),
          "qubit"_a, "cbit"_a);
   qc.def("measure",
-         py::overload_cast<const std::vector<qc::Qubit>&,
+         nb::overload_cast<const std::vector<qc::Qubit>&,
                            const std::vector<qc::Bit>&>(
              &qc::QuantumComputation::measure),
          "qubits"_a, "cbits"_a);
-  qc.def("measure_all", &qc::QuantumComputation::measureAll, py::kw_only(),
+  qc.def("measure_all", &qc::QuantumComputation::measureAll, nb::kw_only(),
          "add_bits"_a = true);
 
-  qc.def("reset", py::overload_cast<qc::Qubit>(&qc::QuantumComputation::reset),
+  qc.def("reset", nb::overload_cast<qc::Qubit>(&qc::QuantumComputation::reset),
          "q"_a);
   qc.def("reset",
-         py::overload_cast<const std::vector<qc::Qubit>&>(
+         nb::overload_cast<const std::vector<qc::Qubit>&>(
              &qc::QuantumComputation::reset),
          "qubits"_a);
 
-  qc.def("barrier", py::overload_cast<>(&qc::QuantumComputation::barrier));
+  qc.def("barrier", nb::overload_cast<>(&qc::QuantumComputation::barrier));
   qc.def("barrier",
-         py::overload_cast<qc::Qubit>(&qc::QuantumComputation::barrier), "q"_a);
-  qc.def("barrier", py::overload_cast<const std::vector<qc::Qubit>&>(
+         nb::overload_cast<qc::Qubit>(&qc::QuantumComputation::barrier), "q"_a);
+  qc.def("barrier", nb::overload_cast<const std::vector<qc::Qubit>&>(
                         &qc::QuantumComputation::barrier));
 
   qc.def(
@@ -464,7 +431,7 @@ void registerQuantumComputation(py::module& m) {
 
   qc.def(
       "if_",
-      py::overload_cast<const qc::OpType, const qc::Qubit,
+      nb::overload_cast<const qc::OpType, const qc::Qubit,
                         const qc::ClassicalRegister&, const std::uint64_t,
                         const qc::ComparisonKind, const std::vector<qc::fp>&>(
           &qc::QuantumComputation::if_),
@@ -473,7 +440,7 @@ void registerQuantumComputation(py::module& m) {
       "params"_a = std::vector<qc::fp>{});
   qc.def(
       "if_",
-      py::overload_cast<const qc::OpType, const qc::Qubit, const qc::Control,
+      nb::overload_cast<const qc::OpType, const qc::Qubit, const qc::Control,
                         const qc::ClassicalRegister&, const std::uint64_t,
                         const qc::ComparisonKind, const std::vector<qc::fp>&>(
           &qc::QuantumComputation::if_),
@@ -482,7 +449,7 @@ void registerQuantumComputation(py::module& m) {
       "params"_a = std::vector<qc::fp>{});
   qc.def(
       "if_",
-      py::overload_cast<const qc::OpType, const qc::Qubit, const qc::Controls&,
+      nb::overload_cast<const qc::OpType, const qc::Qubit, const qc::Controls&,
                         const qc::ClassicalRegister&, const std::uint64_t,
                         const qc::ComparisonKind, const std::vector<qc::fp>&>(
           &qc::QuantumComputation::if_),
@@ -490,7 +457,7 @@ void registerQuantumComputation(py::module& m) {
       "expected_value"_a = 1U, "comparison_kind"_a = qc::ComparisonKind::Eq,
       "params"_a = std::vector<qc::fp>{});
   qc.def("if_",
-         py::overload_cast<const qc::OpType, const qc::Qubit, const qc::Bit,
+         nb::overload_cast<const qc::OpType, const qc::Qubit, const qc::Bit,
                            const bool, const qc::ComparisonKind,
                            const std::vector<qc::fp>&>(
              &qc::QuantumComputation::if_),
@@ -498,7 +465,7 @@ void registerQuantumComputation(py::module& m) {
          "comparison_kind"_a = qc::ComparisonKind::Eq,
          "params"_a = std::vector<qc::fp>{});
   qc.def("if_",
-         py::overload_cast<const qc::OpType, const qc::Qubit, const qc::Control,
+         nb::overload_cast<const qc::OpType, const qc::Qubit, const qc::Control,
                            const qc::Bit, const bool, const qc::ComparisonKind,
                            const std::vector<qc::fp>&>(
              &qc::QuantumComputation::if_),
@@ -508,7 +475,7 @@ void registerQuantumComputation(py::module& m) {
          "params"_a = std::vector<qc::fp>{});
   qc.def(
       "if_",
-      py::overload_cast<const qc::OpType, const qc::Qubit, const qc::Controls&,
+      nb::overload_cast<const qc::OpType, const qc::Qubit, const qc::Controls&,
                         const qc::Bit, const bool, const qc::ComparisonKind,
                         const std::vector<qc::fp>&>(
           &qc::QuantumComputation::if_),

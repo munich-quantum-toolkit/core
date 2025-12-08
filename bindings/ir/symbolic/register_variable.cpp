@@ -10,33 +10,27 @@
 
 #include "ir/operations/Expression.hpp"
 
-// These includes must be the first includes for any bindings code
-// clang-format off
-#include <pybind11/pybind11.h>
-#include <pybind11/stl.h> // NOLINT(misc-include-cleaner)
-
-#include <pybind11/cast.h>
-#include <pybind11/operators.h>
-// clang-format on
-
+#include <nanobind/nanobind.h>
+#include <nanobind/operators.h>
+#include <nanobind/stl/string.h>
 #include <string>
 
 namespace mqt {
 
-namespace py = pybind11;
-using namespace pybind11::literals;
+namespace nb = nanobind;
+using namespace nb::literals;
 
 // NOLINTNEXTLINE(misc-use-internal-linkage)
-void registerVariable(py::module& m) {
-  py::class_<sym::Variable>(m, "Variable")
-      .def(py::init<std::string>(), "name"_a = "")
-      .def_property_readonly("name", &sym::Variable::getName)
+void registerVariable(nb::module_& m) {
+  nb::class_<sym::Variable>(m, "Variable")
+      .def(nb::init<std::string>(), "name"_a = "")
+      .def_prop_ro("name", &sym::Variable::getName)
       .def("__str__", &sym::Variable::getName)
       .def("__repr__", &sym::Variable::getName)
-      .def(py::self == py::self) // NOLINT(misc-redundant-expression)
-      .def(py::self != py::self) // NOLINT(misc-redundant-expression)
-      .def(hash(py::self))
-      .def(py::self < py::self)  // NOLINT(misc-redundant-expression)
-      .def(py::self > py::self); // NOLINT(misc-redundant-expression)
+      .def(nb::self == nb::self)
+      .def(nb::self != nb::self)
+      .def(nb::hash(nb::self))
+      .def(nb::self < nb::self)
+      .def(nb::self > nb::self);
 }
 } // namespace mqt

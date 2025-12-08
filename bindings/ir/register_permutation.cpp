@@ -12,44 +12,39 @@
 #include "ir/Permutation.hpp"
 #include "ir/operations/Control.hpp"
 
-// These includes must be the first includes for any bindings code
-// clang-format off
-#include <pybind11/pybind11.h>
-#include <pybind11/stl.h> // NOLINT(misc-include-cleaner)
-
-#include <pybind11/attr.h>
-#include <pybind11/cast.h>
-#include <pybind11/operators.h>
-#include <pybind11/pytypes.h>
-// clang-format on
-
 #include <iterator>
+#include <nanobind/make_iterator.h>
+#include <nanobind/nanobind.h>
+#include <nanobind/operators.h>
+#include <nanobind/stl/string.h>
 #include <sstream>
 
 namespace mqt {
 
-namespace py = pybind11;
-using namespace pybind11::literals;
+namespace nb = nanobind;
+using namespace nb::literals;
 
 // NOLINTNEXTLINE(misc-use-internal-linkage)
-void registerPermutation(py::module& m) {
-  py::class_<qc::Permutation>(m, "Permutation")
-      .def(py::init<>())
-      .def(py::init([](const py::dict& p) {
-             qc::Permutation perm;
-             for (const auto& [key, value] : p) {
-               perm[key.cast<qc::Qubit>()] = value.cast<qc::Qubit>();
-             }
-             return perm;
-           }),
-           "perm"_a, "Create a permutation from a dictionary.")
+void registerPermutation(nb::module_& m) {
+  nb::class_<qc::Permutation>(m, "Permutation")
+      .def(nb::init<>())
+      .def(
+          "__init__",
+          [](qc::Permutation* self, const nb::dict& p) {
+            qc::Permutation perm;
+            for (const auto& [key, value] : p) {
+              perm[nb::cast<qc::Qubit>(key)] = nb::cast<qc::Qubit>(value);
+            }
+            new (self) qc::Permutation(std::move(perm));
+          },
+          "perm"_a, "Create a permutation from a dictionary.")
       .def("apply",
-           py::overload_cast<const qc::Controls&>(&qc::Permutation::apply,
-                                                  py::const_),
+           nb::overload_cast<const qc::Controls&>(&qc::Permutation::apply,
+                                                  nb::const_),
            "controls"_a)
       .def("apply",
-           py::overload_cast<const qc::Targets&>(&qc::Permutation::apply,
-                                                 py::const_),
+           nb::overload_cast<const qc::Targets&>(&qc::Permutation::apply,
+                                                 nb::const_),
            "targets"_a)
       .def("clear", [](qc::Permutation& p) { p.clear(); })
       .def("__getitem__",
@@ -61,17 +56,19 @@ void registerPermutation(py::module& m) {
       .def("__len__", &qc::Permutation::size)
       .def("__iter__",
            [](const qc::Permutation& p) {
-             return py::make_key_iterator(p.begin(), p.end());
+             return nb::make_key_iterator(
+                 nb::handle(), "PermutationKeyIterator", p.begin(), p.end());
            })
       .def(
           "items",
           [](const qc::Permutation& p) {
-            return py::make_iterator(p.begin(), p.end());
+            return nb::make_iterator(nb::handle(), "PermutationItemIterator",
+                                     p.begin(), p.end());
           },
-          py::keep_alive<0, 1>())
-      .def(py::self == py::self) // NOLINT(misc-redundant-expression)
-      .def(py::self != py::self) // NOLINT(misc-redundant-expression)
-      .def(hash(py::self))
+          nb::keep_alive<0, 1>())
+      .def(nb::self == nb::self)
+      .def(nb::self != nb::self)
+      .def(nb::hash(nb::self))
       .def("__str__",
            [](const qc::Permutation& p) {
              std::stringstream ss;
@@ -97,7 +94,6 @@ void registerPermutation(py::module& m) {
         ss << "})";
         return ss.str();
       });
-  py::implicitly_convertible<py::dict, qc::Permutation>();
 }
 
 } // namespace mqt
