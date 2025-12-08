@@ -50,7 +50,6 @@ struct MergeNestedCtrl final : OpRewritePattern<CtrlOp> {
 
     rewriter.replaceOpWithNewOp<CtrlOp>(op, newControls, op.getTargetsIn(),
                                         bodyCtrlOp.getBodyUnitary());
-    rewriter.eraseOp(bodyCtrlOp);
 
     return success();
   }
