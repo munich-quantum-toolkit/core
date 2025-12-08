@@ -16,8 +16,6 @@
 
 namespace mlir::flux {
 
-using namespace mlir::utils;
-
 /**
  * @brief Remove a pair of inverse one-target, zero-parameter operations
  *
@@ -191,7 +189,7 @@ removeTrivialOneTargetOneParameter(OpType op, mlir::PatternRewriter& rewriter) {
   }
 
   const auto paramValue = paramAttr.getValueAsDouble();
-  if (std::abs(paramValue) > TOLERANCE) {
+  if (std::abs(paramValue) > utils::TOLERANCE) {
     return failure();
   }
 
@@ -217,7 +215,7 @@ removeTrivialTwoTargetOneParameter(OpType op, mlir::PatternRewriter& rewriter) {
   }
 
   const auto paramValue = paramAttr.getValueAsDouble();
-  if (std::abs(paramValue) > TOLERANCE) {
+  if (std::abs(paramValue) > utils::TOLERANCE) {
     return failure();
   }
 
