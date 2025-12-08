@@ -9,6 +9,7 @@
  */
 
 #include "ir/QuantumComputation.hpp"
+#include "ir/operations/CompoundOperation.hpp"
 #include "ir/operations/Control.hpp"
 #include "ir/operations/IfElseOperation.hpp"
 #include "ir/operations/OpType.hpp"
@@ -741,11 +742,11 @@ TEST_F(ImportTest, IfElseRegister) {
 }
 
 TEST_F(ImportTest, IfElseHandlingFromQasm) {
-  qc::QuantumComputation qc = qasm3::Importer::imports("OPENQASM 3.0;"
-                                                       "qubit q;"
+  const qc::QuantumComputation qc = qasm3::Importer::imports("OPENQASM 3.0;"
+                                                             "qubit q;"
                                                        "bit c;"
-                                                       "h q;"
-                                                       "c = measure q;"
+                                                             "h q;"
+                                                             "c = measure q;"
                                                        "if(c) {"
                                                        "  x q;"
                                                        "} else {"
