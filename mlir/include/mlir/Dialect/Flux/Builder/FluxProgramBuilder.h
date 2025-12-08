@@ -20,7 +20,6 @@
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OwningOpRef.h>
 #include <variant>
-#include <vector>
 
 namespace mlir::flux {
 
