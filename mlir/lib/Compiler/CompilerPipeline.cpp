@@ -52,7 +52,6 @@ void prettyPrintStage(ModuleOp module, const llvm::StringRef stageName,
   std::string irString;
   llvm::raw_string_ostream irStream(irString);
   module.print(irStream);
-  irStream.flush();
 
   // Print the IR with box lines and wrapping
   printBoxText(irString);
@@ -257,7 +256,6 @@ std::string captureIR(ModuleOp module) {
   std::string result;
   llvm::raw_string_ostream os(result);
   module.print(os);
-  os.flush();
   return result;
 }
 
