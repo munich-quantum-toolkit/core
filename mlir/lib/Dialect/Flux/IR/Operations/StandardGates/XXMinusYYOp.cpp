@@ -36,13 +36,13 @@ struct MergeSubsequentXXMinusYY final : OpRewritePattern<XXMinusYYOp> {
 
   LogicalResult matchAndRewrite(XXMinusYYOp op,
                                 PatternRewriter& rewriter) const override {
-    auto prevOp = op.getQubit0In().getDefiningOp<XXMinusYYOp>();
+    auto prevOp = op.getInputQubit(0).getDefiningOp<XXMinusYYOp>();
     if (!prevOp) {
       return failure();
     }
 
     // Confirm operations act on same qubits
-    if (op.getQubit1In() != prevOp.getQubit1Out()) {
+    if (op.getInputQubit(1) != prevOp.getOutputQubit(1)) {
       return failure();
     }
 
@@ -58,14 +58,14 @@ struct MergeSubsequentXXMinusYY final : OpRewritePattern<XXMinusYYOp> {
       return failure();
     }
 
-    // Compute and set new theta
+    // Compute and set new theta, which has index 2
     auto newParameter = rewriter.create<arith::AddFOp>(
         op.getLoc(), op.getOperand(2), prevOp.getOperand(2));
     op->setOperand(2, newParameter.getResult());
 
     // Trivialize predecessor
-    rewriter.replaceOp(prevOp, {prevOp.getQubit0In(), prevOp.getQubit1In()});
-
+    rewriter.replaceOp(prevOp,
+                       {prevOp.getInputQubit(0), prevOp.getInputQubit(1)});
     return success();
   }
 };

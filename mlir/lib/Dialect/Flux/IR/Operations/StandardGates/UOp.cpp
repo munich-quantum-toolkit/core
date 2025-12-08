@@ -48,7 +48,7 @@ struct ReplaceUWithP final : OpRewritePattern<UOp> {
     }
 
     auto pOp =
-        rewriter.create<POp>(op.getLoc(), op.getQubitIn(), op.getLambda());
+        rewriter.create<POp>(op.getLoc(), op.getInputQubit(0), op.getLambda());
     rewriter.replaceOp(op, pOp.getResult());
 
     return success();
@@ -77,7 +77,7 @@ struct ReplaceUWithRX final : OpRewritePattern<UOp> {
     }
 
     auto rxOp =
-        rewriter.create<RXOp>(op.getLoc(), op.getQubitIn(), op.getTheta());
+        rewriter.create<RXOp>(op.getLoc(), op.getInputQubit(0), op.getTheta());
     rewriter.replaceOp(op, rxOp.getResult());
 
     return success();
@@ -105,7 +105,7 @@ struct ReplaceUWithRY final : OpRewritePattern<UOp> {
     }
 
     auto ryOp =
-        rewriter.create<RYOp>(op.getLoc(), op.getQubitIn(), op.getTheta());
+        rewriter.create<RYOp>(op.getLoc(), op.getInputQubit(0), op.getTheta());
     rewriter.replaceOp(op, ryOp.getResult());
 
     return success();

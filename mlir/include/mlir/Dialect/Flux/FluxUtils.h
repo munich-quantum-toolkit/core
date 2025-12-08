@@ -30,14 +30,14 @@ inline mlir::LogicalResult
 removeInversePairOneTargetZeroParameter(OpType op,
                                         mlir::PatternRewriter& rewriter) {
   // Check if the predecessor is the inverse operation
-  auto prevOp = op.getQubitIn().template getDefiningOp<InverseOpType>();
+  auto prevOp = op.getInputQubit(0).template getDefiningOp<InverseOpType>();
   if (!prevOp) {
     return failure();
   }
 
   // Remove both operations
-  rewriter.replaceOp(prevOp, prevOp.getQubitIn());
-  rewriter.replaceOp(op, op.getQubitIn());
+  rewriter.replaceOp(prevOp, prevOp.getInputQubit(0));
+  rewriter.replaceOp(op, op.getInputQubit(0));
 
   return success();
 }
@@ -56,19 +56,20 @@ inline mlir::LogicalResult
 removeInversePairTwoTargetZeroParameter(OpType op,
                                         mlir::PatternRewriter& rewriter) {
   // Check if the predecessor is the inverse operation
-  auto prevOp = op.getQubit0In().template getDefiningOp<InverseOpType>();
+  auto prevOp = op.getInputQubit(0).template getDefiningOp<InverseOpType>();
   if (!prevOp) {
     return failure();
   }
 
   // Confirm operations act on same qubits
-  if (op.getQubit1In() != prevOp.getQubit1Out()) {
+  if (op.getInputQubit(1) != prevOp.getOutputQubit(1)) {
     return failure();
   }
 
   // Remove both operations
-  rewriter.replaceOp(prevOp, {prevOp.getQubit0In(), prevOp.getQubit1In()});
-  rewriter.replaceOp(op, {op.getQubit0In(), op.getQubit1In()});
+  rewriter.replaceOp(prevOp,
+                     {prevOp.getInputQubit(0), prevOp.getInputQubit(1)});
+  rewriter.replaceOp(op, {op.getInputQubit(0), op.getInputQubit(1)});
 
   return success();
 }
@@ -90,18 +91,18 @@ template <typename SquareOpType, typename OpType>
 inline mlir::LogicalResult
 mergeOneTargetZeroParameter(OpType op, mlir::PatternRewriter& rewriter) {
   // Check if the predecessor is the same operation
-  auto prevOp = op.getQubitIn().template getDefiningOp<OpType>();
+  auto prevOp = op.getInputQubit(0).template getDefiningOp<OpType>();
   if (!prevOp) {
     return failure();
   }
 
   // Replace operation with square operation
-  auto squareOp = rewriter.create<SquareOpType>(op.getLoc(), op.getQubitIn());
-  rewriter.replaceOp(op, squareOp.getQubitOut());
+  auto squareOp =
+      rewriter.create<SquareOpType>(op.getLoc(), op.getInputQubit(0));
+  rewriter.replaceOp(op, squareOp.getOutputQubit(0));
 
   // Trivialize predecessor
-  rewriter.replaceOp(prevOp, prevOp.getQubitIn());
-
+  rewriter.replaceOp(prevOp, prevOp.getInputQubit(0));
   return success();
 }
 
@@ -120,18 +121,19 @@ template <typename OpType>
 inline mlir::LogicalResult
 mergeOneTargetOneParameter(OpType op, mlir::PatternRewriter& rewriter) {
   // Check if the predecessor is the same operation
-  auto prevOp = op.getQubitIn().template getDefiningOp<OpType>();
+  auto prevOp = op.getInputQubit(0).template getDefiningOp<OpType>();
   if (!prevOp) {
     return failure();
   }
 
-  // Compute and set new angle
+  // Compute and set new parameter
+  // For OneTargetOneParameter operations, the parameter has index 1
   auto newParameter = rewriter.create<arith::AddFOp>(
       op.getLoc(), op.getOperand(1), prevOp.getOperand(1));
   op->setOperand(1, newParameter.getResult());
 
   // Trivialize predecessor
-  rewriter.replaceOp(prevOp, prevOp.getQubitIn());
+  rewriter.replaceOp(prevOp, prevOp.getInputQubit(0));
 
   return success();
 }
@@ -151,23 +153,25 @@ template <typename OpType>
 inline mlir::LogicalResult
 mergeTwoTargetOneParameter(OpType op, mlir::PatternRewriter& rewriter) {
   // Check if the predecessor is the same operation
-  auto prevOp = op.getQubit0In().template getDefiningOp<OpType>();
+  auto prevOp = op.getInputQubit(0).template getDefiningOp<OpType>();
   if (!prevOp) {
     return failure();
   }
 
   // Confirm operations act on same qubits
-  if (op.getQubit1In() != prevOp.getQubit1Out()) {
+  if (op.getInputQubit(1) != prevOp.getOutputQubit(1)) {
     return failure();
   }
 
-  // Compute and set new angle
+  // Compute and set new parameter
+  // For TwoTargetOneParameter operations, the parameter has index 2
   auto newParameter = rewriter.create<arith::AddFOp>(
       op.getLoc(), op.getOperand(2), prevOp.getOperand(2));
   op->setOperand(2, newParameter.getResult());
 
   // Trivialize predecessor
-  rewriter.replaceOp(prevOp, {prevOp.getQubit0In(), prevOp.getQubit1In()});
+  rewriter.replaceOp(prevOp,
+                     {prevOp.getInputQubit(0), prevOp.getInputQubit(1)});
 
   return success();
 }
@@ -193,7 +197,7 @@ removeTrivialOneTargetOneParameter(OpType op, mlir::PatternRewriter& rewriter) {
     return failure();
   }
 
-  rewriter.replaceOp(op, op.getQubitIn());
+  rewriter.replaceOp(op, op.getInputQubit(0));
 
   return success();
 }
@@ -219,7 +223,7 @@ removeTrivialTwoTargetOneParameter(OpType op, mlir::PatternRewriter& rewriter) {
     return failure();
   }
 
-  rewriter.replaceOp(op, {op.getQubit0In(), op.getQubit1In()});
+  rewriter.replaceOp(op, {op.getInputQubit(0), op.getInputQubit(1)});
 
   return success();
 }

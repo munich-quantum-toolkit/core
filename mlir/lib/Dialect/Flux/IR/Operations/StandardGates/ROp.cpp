@@ -46,7 +46,7 @@ struct ReplaceRWithRX final : OpRewritePattern<ROp> {
     }
 
     auto rxOp =
-        rewriter.create<RXOp>(op.getLoc(), op.getQubitIn(), op.getTheta());
+        rewriter.create<RXOp>(op.getLoc(), op.getInputQubit(0), op.getTheta());
     rewriter.replaceOp(op, rxOp.getResult());
 
     return success();
@@ -72,7 +72,7 @@ struct ReplaceRWithRY final : OpRewritePattern<ROp> {
     }
 
     auto ryOp =
-        rewriter.create<RYOp>(op.getLoc(), op.getQubitIn(), op.getTheta());
+        rewriter.create<RYOp>(op.getLoc(), op.getInputQubit(0), op.getTheta());
     rewriter.replaceOp(op, ryOp.getResult());
 
     return success();

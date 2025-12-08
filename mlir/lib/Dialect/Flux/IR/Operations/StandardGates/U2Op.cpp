@@ -48,7 +48,7 @@ struct ReplaceU2WithH final : OpRewritePattern<U2Op> {
       return failure();
     }
 
-    auto hOp = rewriter.create<HOp>(op.getLoc(), op.getQubitIn());
+    auto hOp = rewriter.create<HOp>(op.getLoc(), op.getInputQubit(0));
     rewriter.replaceOp(op, hOp.getResult());
 
     return success();
@@ -76,7 +76,7 @@ struct ReplaceU2WithRX final : OpRewritePattern<U2Op> {
       return failure();
     }
 
-    auto rxOp = rewriter.create<RXOp>(op.getLoc(), op.getQubitIn(),
+    auto rxOp = rewriter.create<RXOp>(op.getLoc(), op.getInputQubit(0),
                                       std::numbers::pi / 2.0);
     rewriter.replaceOp(op, rxOp.getResult());
 
@@ -104,7 +104,7 @@ struct ReplaceU2WithRY final : OpRewritePattern<U2Op> {
       return failure();
     }
 
-    auto ryOp = rewriter.create<RYOp>(op.getLoc(), op.getQubitIn(),
+    auto ryOp = rewriter.create<RYOp>(op.getLoc(), op.getInputQubit(0),
                                       std::numbers::pi / 2.0);
     rewriter.replaceOp(op, ryOp.getResult());
 
