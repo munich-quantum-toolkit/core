@@ -9,6 +9,7 @@
  */
 
 #include "mlir/Dialect/Flux/IR/FluxDialect.h"
+#include "mlir/Dialect/Utils/Utils.h"
 
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/IR/Builders.h>
@@ -22,6 +23,7 @@
 
 using namespace mlir;
 using namespace mlir::flux;
+using namespace mlir::utils;
 
 namespace {
 
@@ -41,7 +43,7 @@ struct ReplaceUWithP final : OpRewritePattern<UOp> {
 
     const auto thetaValue = theta.getValueAsDouble();
     const auto phiValue = phi.getValueAsDouble();
-    if (thetaValue != 0.0 || phiValue != 0.0) {
+    if (std::abs(thetaValue) > TOLERANCE || std::abs(phiValue) > TOLERANCE) {
       return failure();
     }
 
@@ -69,8 +71,8 @@ struct ReplaceUWithRX final : OpRewritePattern<UOp> {
 
     const auto phiValue = phi.getValueAsDouble();
     const auto lambdaValue = lambda.getValueAsDouble();
-    if (phiValue != -std::numbers::pi / 2.0 ||
-        lambdaValue != std::numbers::pi / 2.0) {
+    if (std::abs(phiValue + std::numbers::pi / 2.0) > TOLERANCE ||
+        std::abs(lambdaValue - std::numbers::pi / 2.0) > TOLERANCE) {
       return failure();
     }
 
@@ -98,7 +100,7 @@ struct ReplaceUWithRY final : OpRewritePattern<UOp> {
 
     const auto phiValue = phi.getValueAsDouble();
     const auto lambdaValue = lambda.getValueAsDouble();
-    if (phiValue != 0.0 || lambdaValue != 0.0) {
+    if (std::abs(phiValue) > TOLERANCE || std::abs(lambdaValue) > TOLERANCE) {
       return failure();
     }
 

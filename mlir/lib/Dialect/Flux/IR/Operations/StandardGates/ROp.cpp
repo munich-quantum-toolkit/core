@@ -9,6 +9,7 @@
  */
 
 #include "mlir/Dialect/Flux/IR/FluxDialect.h"
+#include "mlir/Dialect/Utils/Utils.h"
 
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/IR/Builders.h>
@@ -22,6 +23,7 @@
 
 using namespace mlir;
 using namespace mlir::flux;
+using namespace mlir::utils;
 
 namespace {
 
@@ -39,7 +41,7 @@ struct ReplaceRWithRX final : OpRewritePattern<ROp> {
     }
 
     const auto phiValue = phi.getValueAsDouble();
-    if (phiValue != 0.0) {
+    if (std::abs(phiValue) > TOLERANCE) {
       return failure();
     }
 
@@ -65,7 +67,7 @@ struct ReplaceRWithRY final : OpRewritePattern<ROp> {
     }
 
     const auto phiValue = phi.getValueAsDouble();
-    if (phiValue != std::numbers::pi / 2.0) {
+    if (std::abs(phiValue - std::numbers::pi / 2.0) > TOLERANCE) {
       return failure();
     }
 

@@ -9,9 +9,12 @@
  */
 
 #include <mlir/Dialect/Arith/IR/Arith.h>
+#include <mlir/Dialect/Utils/Utils.h>
 #include <mlir/IR/PatternMatch.h>
 
 namespace mlir::flux {
+
+using namespace mlir::utils;
 
 /**
  * @brief Remove a pair of inverse one-target, zero-parameter operations
@@ -186,7 +189,7 @@ removeTrivialOneTargetOneParameter(OpType op, mlir::PatternRewriter& rewriter) {
   }
 
   const auto paramValue = paramAttr.getValueAsDouble();
-  if (paramValue != 0.0) {
+  if (std::abs(paramValue) > TOLERANCE) {
     return failure();
   }
 
@@ -212,7 +215,7 @@ removeTrivialTwoTargetOneParameter(OpType op, mlir::PatternRewriter& rewriter) {
   }
 
   const auto paramValue = paramAttr.getValueAsDouble();
-  if (paramValue != 0.0) {
+  if (std::abs(paramValue) > TOLERANCE) {
     return failure();
   }
 

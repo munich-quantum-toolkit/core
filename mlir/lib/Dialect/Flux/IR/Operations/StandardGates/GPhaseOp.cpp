@@ -10,6 +10,7 @@
 
 #include "mlir/Dialect/Flux/FluxUtils.h"
 #include "mlir/Dialect/Flux/IR/FluxDialect.h"
+#include "mlir/Dialect/Utils/Utils.h"
 
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/IR/Builders.h>
@@ -22,6 +23,7 @@
 
 using namespace mlir;
 using namespace mlir::flux;
+using namespace mlir::utils;
 
 namespace {
 
@@ -39,7 +41,7 @@ struct RemoveTrivialGPhase final : OpRewritePattern<GPhaseOp> {
     }
 
     const auto thetaValue = thetaAttr.getValueAsDouble();
-    if (thetaValue != 0.0) {
+    if (std::abs(thetaValue) > TOLERANCE) {
       return failure();
     }
 

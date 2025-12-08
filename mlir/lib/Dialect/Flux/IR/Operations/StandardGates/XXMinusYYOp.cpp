@@ -10,6 +10,7 @@
 
 #include "mlir/Dialect/Flux/FluxUtils.h"
 #include "mlir/Dialect/Flux/IR/FluxDialect.h"
+#include "mlir/Dialect/Utils/Utils.h"
 
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/IR/Builders.h>
@@ -22,6 +23,7 @@
 
 using namespace mlir;
 using namespace mlir::flux;
+using namespace mlir::utils;
 
 namespace {
 
@@ -48,7 +50,8 @@ struct MergeSubsequentXXMinusYY final : OpRewritePattern<XXMinusYYOp> {
     auto beta = XXMinusYYOp::getStaticParameter(op.getBeta());
     auto prevBeta = XXMinusYYOp::getStaticParameter(prevOp.getBeta());
     if (beta && prevBeta) {
-      if (beta.getValueAsDouble() != prevBeta.getValueAsDouble()) {
+      if (std::abs(beta.getValueAsDouble() - prevBeta.getValueAsDouble()) >
+          TOLERANCE) {
         return failure();
       }
     } else {
