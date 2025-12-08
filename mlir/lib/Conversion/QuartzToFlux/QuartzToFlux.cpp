@@ -94,7 +94,6 @@ struct LoweringState {
  */
 template <typename OpType>
 class StatefulOpConversionPattern : public OpConversionPattern<OpType> {
-  using OpConversionPattern<OpType>::OpConversionPattern;
 
 public:
   StatefulOpConversionPattern(TypeConverter& typeConverter,
