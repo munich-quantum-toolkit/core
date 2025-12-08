@@ -68,19 +68,26 @@ def qiskit_to_iqm_json(circuit: QuantumCircuit, device: fomac.Device) -> str:
         >>> json_str = qiskit_to_iqm_json(qc, device)
     """
 
-    def _raise_unsupported_operation(operation_name: str) -> None:
-        """Helper to raise UnsupportedOperationError (satisfies TRY301).
+    def _raise_error(exception_type: type[Exception], message: str) -> None:
+        """Helper to raise exceptions (satisfies TRY301).
 
         Args:
-            operation_name: Name of the unsupported operation.
-
-        Raises:
-            UnsupportedOperationError: Always raised for unsupported operations.
+            exception_type: The type of exception to raise.
+            message: The error message.
         """
-        msg = f"Operation '{operation_name}' is not supported in IQM JSON format"
-        raise UnsupportedOperationError(msg)
+        raise exception_type(message)
 
     try:
+        # Check for unbound parameters
+        if circuit.parameters:
+            param_names = ", ".join(sorted(p.name for p in circuit.parameters))
+            msg = (
+                f"Circuit contains unbound parameters: {param_names}. "
+                "All parameters must be bound to numeric values before conversion to IQM JSON. "
+                "Use circuit.assign_parameters() to bind parameters."
+            )
+            _raise_error(UnsupportedOperationError, msg)
+
         sites = device.sites()
         instructions: list[dict[str, Any]] = []
 
@@ -130,6 +137,15 @@ def qiskit_to_iqm_json(circuit: QuantumCircuit, device: fomac.Device) -> str:
             elif isinstance(operation, Measure):
                 clbit = cargs[0]
                 bitloc = circuit.find_bit(clbit)
+
+                # Check if classical bit is part of a register
+                if not bitloc.registers:
+                    msg = (
+                        "Measurement of unregistered classical bit is unsupported by IQM JSON export. "
+                        "All classical bits must be part of a ClassicalRegister."
+                    )
+                    _raise_error(TranslationError, msg)
+
                 creg = bitloc.registers[0][0]
                 creg_idx = circuit.cregs.index(creg)
                 clbit_index = bitloc.registers[0][1]
@@ -145,7 +161,8 @@ def qiskit_to_iqm_json(circuit: QuantumCircuit, device: fomac.Device) -> str:
 
             # Unsupported operation
             else:
-                _raise_unsupported_operation(operation.name)
+                msg = f"Operation '{operation.name}' is not supported in IQM JSON format"
+                _raise_error(UnsupportedOperationError, msg)
 
         program: dict[str, Any] = {
             "name": circuit.name or "circuit",
