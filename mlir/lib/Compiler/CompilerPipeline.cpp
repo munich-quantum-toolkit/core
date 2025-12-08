@@ -89,24 +89,31 @@ QuantumCompilerPipeline::runPipeline(ModuleOp module,
   configurePassManager(pm);
 
   // Determine total number of stages for progress indication
-  auto totalStages =
-      8; // Base stages: Initial + Flux + FluxCanon + Optimization +
-         // OptimizationCanon + QuartzBack + QuartzCanon
+  // 1. Quartz import
+  // 2. Quartz canonicalization
+  // 3. Quartz-to-Flux conversion
+  // 4. Flux canonicalization
+  // 5. Optimization passes
+  // 6. Flux canonicalization
+  // 7. Flux-to-Quartz conversion
+  // 8. Quartz canonicalization
+  // 9. Quartz-to-QIR conversion (optional)
+  // 10. QIR canonicalization (optional)
+  auto totalStages = 8;
   if (config_.convertToQIR) {
-    totalStages += 2; // QIR + QIRCanon
+    totalStages += 2;
   }
   auto currentStage = 0;
 
-  // Record initial state if requested
+  // Stage 1: Quartz import
   if (record != nullptr && config_.recordIntermediates) {
     record->afterQuartzImport = captureIR(module);
     if (config_.printIRAfterAllStages) {
-      prettyPrintStage(module, "Quartz Import (Initial)", ++currentStage,
-                       totalStages);
+      prettyPrintStage(module, "Quartz Import", ++currentStage, totalStages);
     }
   }
 
-  // Stage 1: Initial canonicalization
+  // Stage 2: Quartz canonicalization
   addCleanupPasses(pm);
   if (pm.run(module).failed()) {
     return failure();
@@ -114,13 +121,13 @@ QuantumCompilerPipeline::runPipeline(ModuleOp module,
   if (record != nullptr && config_.recordIntermediates) {
     record->afterInitialCanon = captureIR(module);
     if (config_.printIRAfterAllStages) {
-      prettyPrintStage(module, "Initial Canonicalization", ++currentStage,
-                       totalStages);
+      prettyPrintStage(module, "Initial Quartz Canonicalization",
+                       ++currentStage, totalStages);
     }
   }
   pm.clear();
 
-  // Stage 2: Convert to Flux
+  // Stage 3: Quartz-to-Flux conversion
   pm.addPass(createQuartzToFlux());
   if (failed(pm.run(module))) {
     return failure();
@@ -134,7 +141,7 @@ QuantumCompilerPipeline::runPipeline(ModuleOp module,
   }
   pm.clear();
 
-  // Stage 3: Canonicalize Flux
+  // Stage 4: Flux canonicalization
   addCleanupPasses(pm);
   if (failed(pm.run(module))) {
     return failure();
@@ -142,13 +149,13 @@ QuantumCompilerPipeline::runPipeline(ModuleOp module,
   if (record != nullptr && config_.recordIntermediates) {
     record->afterFluxCanon = captureIR(module);
     if (config_.printIRAfterAllStages) {
-      prettyPrintStage(module, "Flux Canonicalization", ++currentStage,
+      prettyPrintStage(module, "Initial Flux Canonicalization", ++currentStage,
                        totalStages);
     }
   }
   pm.clear();
 
-  // Stage 4: Optimization passes
+  // Stage 5: Optimization passes
   // TODO: Add optimization passes
   addCleanupPasses(pm);
   if (failed(pm.run(module))) {
@@ -163,7 +170,7 @@ QuantumCompilerPipeline::runPipeline(ModuleOp module,
   }
   pm.clear();
 
-  // Stage 5: Canonicalize after optimization
+  // Stage 6: Flux canonicalization
   addCleanupPasses(pm);
   if (failed(pm.run(module))) {
     return failure();
@@ -171,13 +178,13 @@ QuantumCompilerPipeline::runPipeline(ModuleOp module,
   if (record != nullptr && config_.recordIntermediates) {
     record->afterOptimizationCanon = captureIR(module);
     if (config_.printIRAfterAllStages) {
-      prettyPrintStage(module, "Post-Optimization Canonicalization",
-                       ++currentStage, totalStages);
+      prettyPrintStage(module, "Final Flux Canonicalization", ++currentStage,
+                       totalStages);
     }
   }
   pm.clear();
 
-  // Stage 6: Convert back to Quartz
+  // Stage 7: Flux-to-Quartz conversion
   pm.addPass(createFluxToQuartz());
   if (failed(pm.run(module))) {
     return failure();
@@ -191,7 +198,7 @@ QuantumCompilerPipeline::runPipeline(ModuleOp module,
   }
   pm.clear();
 
-  // Stage 7: Canonicalize Quartz
+  // Stage 8: Quartz canonicalization
   addCleanupPasses(pm);
   if (failed(pm.run(module))) {
     return failure();
@@ -205,7 +212,7 @@ QuantumCompilerPipeline::runPipeline(ModuleOp module,
   }
   pm.clear();
 
-  // Stage 8: Optional QIR conversion
+  // Stage 9: Quartz-to-QIR conversion (optional)
   if (config_.convertToQIR) {
     pm.addPass(createQuartzToQIR());
     if (failed(pm.run(module))) {
@@ -220,7 +227,7 @@ QuantumCompilerPipeline::runPipeline(ModuleOp module,
     }
     pm.clear();
 
-    // Final canonicalization
+    // Stage 10: QIR canonicalization (optional)
     addCleanupPasses(pm);
     if (failed(pm.run(module))) {
       return failure();
@@ -228,7 +235,7 @@ QuantumCompilerPipeline::runPipeline(ModuleOp module,
     if (record != nullptr && config_.recordIntermediates) {
       record->afterQIRCanon = captureIR(module);
       if (config_.printIRAfterAllStages) {
-        prettyPrintStage(module, "Final QIR Canonicalization", ++currentStage,
+        prettyPrintStage(module, "QIR Canonicalization", ++currentStage,
                          totalStages);
       }
     }
