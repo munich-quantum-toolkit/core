@@ -54,7 +54,7 @@ struct MergeSubsequentXXMinusYY final : OpRewritePattern<XXMinusYYOp> {
           TOLERANCE) {
         return failure();
       }
-    } else {
+    } else if (op.getBeta() != prevOp.getBeta()) {
       return failure();
     }
 
