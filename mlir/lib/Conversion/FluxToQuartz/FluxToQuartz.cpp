@@ -47,7 +47,7 @@ template <typename QuartzOpType, typename FluxOpType>
 LogicalResult
 convertZeroTargetOneParameter(FluxOpType& op,
                               ConversionPatternRewriter& rewriter) {
-  rewriter.create<QuartzOpType>(op.getLoc(), op.getOperand());
+  rewriter.create<QuartzOpType>(op.getLoc(), op.getParameter(0));
   rewriter.eraseOp(op);
   return success();
 }
@@ -100,7 +100,7 @@ convertOneTargetOneParameter(FluxOpType& op, FluxOpAdaptorType& adaptor,
   const auto& quartzQubit = adaptor.getQubitIn();
 
   // Create the Quartz operation (in-place, no result)
-  rewriter.create<QuartzOpType>(op.getLoc(), quartzQubit, op.getOperand(1));
+  rewriter.create<QuartzOpType>(op.getLoc(), quartzQubit, op.getParameter(0));
 
   // Replace the output qubit with the same Quartz reference
   rewriter.replaceOp(op, quartzQubit);
@@ -128,8 +128,8 @@ convertOneTargetTwoParameter(FluxOpType& op, FluxOpAdaptorType& adaptor,
   const auto& quartzQubit = adaptor.getQubitIn();
 
   // Create the Quartz operation (in-place, no result)
-  rewriter.create<QuartzOpType>(op.getLoc(), quartzQubit, op.getOperand(1),
-                                op.getOperand(2));
+  rewriter.create<QuartzOpType>(op.getLoc(), quartzQubit, op.getParameter(0),
+                                op.getParameter(1));
 
   // Replace the output qubit with the same Quartz reference
   rewriter.replaceOp(op, quartzQubit);
@@ -157,8 +157,8 @@ convertOneTargetThreeParameter(FluxOpType& op, FluxOpAdaptorType& adaptor,
   const auto& quartzQubit = adaptor.getQubitIn();
 
   // Create the Quartz operation (in-place, no result)
-  rewriter.create<QuartzOpType>(op.getLoc(), quartzQubit, op.getOperand(1),
-                                op.getOperand(2), op.getOperand(3));
+  rewriter.create<QuartzOpType>(op.getLoc(), quartzQubit, op.getParameter(0),
+                                op.getParameter(1), op.getParameter(2));
 
   // Replace the output qubit with the same Quartz reference
   rewriter.replaceOp(op, quartzQubit);
@@ -217,7 +217,7 @@ convertTwoTargetOneParameter(FluxOpType& op, FluxOpAdaptorType& adaptor,
 
   // Create the Quartz operation (in-place, no result)
   rewriter.create<QuartzOpType>(op.getLoc(), quartzQubit0, quartzQubit1,
-                                op.getOperand(2));
+                                op.getParameter(0));
 
   // Replace the output qubits with the same Quartz references
   rewriter.replaceOp(op, {quartzQubit0, quartzQubit1});
@@ -247,7 +247,7 @@ convertTwoTargetTwoParameter(FluxOpType& op, FluxOpAdaptorType& adaptor,
 
   // Create the Quartz operation (in-place, no result)
   rewriter.create<QuartzOpType>(op.getLoc(), quartzQubit0, quartzQubit1,
-                                op.getOperand(2), op.getOperand(3));
+                                op.getParameter(0), op.getParameter(1));
 
   // Replace the output qubits with the same Quartz references
   rewriter.replaceOp(op, {quartzQubit0, quartzQubit1});

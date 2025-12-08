@@ -124,7 +124,7 @@ LogicalResult convertZeroTargetOneParameter(QuartzOpType& op,
                                             LoweringState& state) {
   const auto inCtrlOp = state.inCtrlOp;
 
-  rewriter.create<FluxOpType>(op.getLoc(), op.getOperand());
+  rewriter.create<FluxOpType>(op.getLoc(), op.getParameter(0));
 
   // Update the state
   if (inCtrlOp != 0) {
@@ -156,7 +156,7 @@ LogicalResult convertOneTargetZeroParameter(QuartzOpType& op,
   const auto inCtrlOp = state.inCtrlOp;
 
   // Get the latest Flux qubit
-  const auto quartzQubit = op->getOperand(0);
+  const auto quartzQubit = op.getQubitIn();
   Value fluxQubit;
   if (inCtrlOp == 0) {
     fluxQubit = qubitMap[quartzQubit];
@@ -199,7 +199,7 @@ LogicalResult convertOneTargetOneParameter(QuartzOpType& op,
   const auto inCtrlOp = state.inCtrlOp;
 
   // Get the latest Flux qubit
-  const auto quartzQubit = op->getOperand(0);
+  const auto quartzQubit = op.getQubitIn();
   Value fluxQubit;
   if (inCtrlOp == 0) {
     fluxQubit = qubitMap[quartzQubit];
@@ -209,7 +209,7 @@ LogicalResult convertOneTargetOneParameter(QuartzOpType& op,
 
   // Create the Flux operation (consumes input, produces output)
   auto fluxOp =
-      rewriter.create<FluxOpType>(op.getLoc(), fluxQubit, op->getOperand(1));
+      rewriter.create<FluxOpType>(op.getLoc(), fluxQubit, op.getParameter(0));
 
   // Update the state map
   if (inCtrlOp == 0) {
@@ -243,7 +243,7 @@ LogicalResult convertOneTargetTwoParameter(QuartzOpType& op,
   const auto inCtrlOp = state.inCtrlOp;
 
   // Get the latest Flux qubit
-  const auto quartzQubit = op->getOperand(0);
+  const auto quartzQubit = op.getQubitIn();
   Value fluxQubit;
   if (inCtrlOp == 0) {
     fluxQubit = qubitMap[quartzQubit];
@@ -253,7 +253,7 @@ LogicalResult convertOneTargetTwoParameter(QuartzOpType& op,
 
   // Create the Flux operation (consumes input, produces output)
   auto fluxOp = rewriter.create<FluxOpType>(
-      op.getLoc(), fluxQubit, op->getOperand(1), op->getOperand(2));
+      op.getLoc(), fluxQubit, op.getParameter(0), op.getParameter(1));
 
   // Update the state map
   if (inCtrlOp == 0) {
@@ -288,7 +288,7 @@ convertOneTargetThreeParameter(QuartzOpType& op,
   const auto inCtrlOp = state.inCtrlOp;
 
   // Get the latest Flux qubit
-  const auto quartzQubit = op->getOperand(0);
+  const auto quartzQubit = op.getQubitIn();
   Value fluxQubit;
   if (inCtrlOp == 0) {
     fluxQubit = qubitMap[quartzQubit];
@@ -298,8 +298,8 @@ convertOneTargetThreeParameter(QuartzOpType& op,
 
   // Create the Flux operation (consumes input, produces output)
   auto fluxOp =
-      rewriter.create<FluxOpType>(op.getLoc(), fluxQubit, op->getOperand(1),
-                                  op->getOperand(2), op->getOperand(3));
+      rewriter.create<FluxOpType>(op.getLoc(), fluxQubit, op.getParameter(0),
+                                  op.getParameter(1), op.getParameter(2));
 
   // Update the state map
   if (inCtrlOp == 0) {
@@ -333,8 +333,8 @@ LogicalResult convertTwoTargetZeroParameter(QuartzOpType& op,
   const auto inCtrlOp = state.inCtrlOp;
 
   // Get the latest Flux qubits
-  const auto quartzQubit0 = op->getOperand(0);
-  const auto quartzQubit1 = op->getOperand(1);
+  const auto quartzQubit0 = op.getQubit0In();
+  const auto quartzQubit1 = op.getQubit1In();
   Value fluxQubit0;
   Value fluxQubit1;
   if (inCtrlOp == 0) {
@@ -384,8 +384,8 @@ LogicalResult convertTwoTargetOneParameter(QuartzOpType& op,
   const auto inCtrlOp = state.inCtrlOp;
 
   // Get the latest Flux qubits
-  const auto quartzQubit0 = op->getOperand(0);
-  const auto quartzQubit1 = op->getOperand(1);
+  const auto quartzQubit0 = op.getQubit0In();
+  const auto quartzQubit1 = op.getQubit1In();
   Value fluxQubit0;
   Value fluxQubit1;
   if (inCtrlOp == 0) {
@@ -399,7 +399,7 @@ LogicalResult convertTwoTargetOneParameter(QuartzOpType& op,
 
   // Create the Flux operation (consumes input, produces output)
   auto fluxOp = rewriter.create<FluxOpType>(op.getLoc(), fluxQubit0, fluxQubit1,
-                                            op->getOperand(2));
+                                            op.getParameter(0));
 
   // Update state map
   if (inCtrlOp == 0) {
@@ -435,8 +435,8 @@ LogicalResult convertTwoTargetTwoParameter(QuartzOpType& op,
   const auto inCtrlOp = state.inCtrlOp;
 
   // Get the latest Flux qubits
-  const auto quartzQubit0 = op->getOperand(0);
-  const auto quartzQubit1 = op->getOperand(1);
+  const auto quartzQubit0 = op.getQubit0In();
+  const auto quartzQubit1 = op.getQubit1In();
   Value fluxQubit0;
   Value fluxQubit1;
   if (inCtrlOp == 0) {
@@ -451,7 +451,7 @@ LogicalResult convertTwoTargetTwoParameter(QuartzOpType& op,
   // Create the Flux operation (consumes input, produces output)
   auto fluxOp =
       rewriter.create<FluxOpType>(op.getLoc(), fluxQubit0, fluxQubit1,
-                                  op->getOperand(2), op->getOperand(3));
+                                  op.getParameter(0), op.getParameter(1));
 
   // Update state map
   if (inCtrlOp == 0) {
