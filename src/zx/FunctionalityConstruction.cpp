@@ -307,6 +307,145 @@ void FunctionalityConstruction::addCcx(ZXDiagram& diag, const Qubit ctrl0,
   addCnot(diag, ctrl0, ctrl1, qubits);
 }
 
+void FunctionalityConstruction::addCcz(ZXDiagram& diag, const Qubit ctrl0,
+                                       const Qubit ctrl1, const Qubit target,
+                                       std::vector<Vertex>& qubits) {
+
+  addCnot(diag, ctrl1, target, qubits);
+  addZSpider(diag, target, qubits, PiExpression(PiRational(-1, 4)));
+  addCnot(diag, ctrl0, target, qubits);
+  addZSpider(diag, target, qubits, PiExpression(PiRational(1, 4)));
+  addCnot(diag, ctrl1, target, qubits);
+  addZSpider(diag, ctrl1, qubits, PiExpression(PiRational(1, 4)));
+  addZSpider(diag, target, qubits, PiExpression(PiRational(-1, 4)));
+  addCnot(diag, ctrl0, target, qubits);
+  addZSpider(diag, target, qubits, PiExpression(PiRational(1, 4)));
+  addCnot(diag, ctrl0, ctrl1, qubits);
+  addZSpider(diag, ctrl0, qubits, PiExpression(PiRational(1, 4)));
+  addZSpider(diag, ctrl1, qubits, PiExpression(PiRational(-1, 4)));
+  addZSpider(diag, target, qubits, PiExpression(PiRational(0, 1)),
+             EdgeType::Hadamard);
+  addCnot(diag, ctrl0, ctrl1, qubits);
+  addZSpider(diag, target, qubits, PiExpression(), EdgeType::Hadamard);
+}
+
+void FunctionalityConstruction::addCrz(ZXDiagram& diag,
+                                       const PiExpression& phase,
+                                       const Qubit control, const Qubit target,
+                                       std::vector<Vertex>& qubits) {
+  addCnot(diag, target, control, qubits);
+  addZSpider(diag, control, qubits, -phase / 2);
+  addZSpider(diag, target, qubits, phase / 2);
+  addCnot(diag, target, control, qubits);
+}
+
+void FunctionalityConstruction::addMcrz(ZXDiagram& diag,
+                                        const PiExpression& phase,
+                                        std::vector<Qubit> controls,
+                                        const Qubit target,
+                                        std::vector<Vertex>& qubits) {
+
+  switch (controls.size()) {
+  case 0:
+    addZSpider(diag, target, qubits, phase);
+    return;
+  case 1:
+    addCrz(diag, phase, controls.front(), target, qubits);
+    return;
+  default:
+    Qubit nextControl = controls.back();
+    controls.pop_back();
+
+    addCrz(diag, phase / 2, nextControl, target, qubits);
+    addMcx(diag, controls, target, qubits);
+    addCrz(diag, -phase / 2, nextControl, target, qubits);
+    addMcx(diag, controls, target, qubits);
+  }
+}
+
+void FunctionalityConstruction::addMcx(ZXDiagram& diag,
+                                       std::vector<Qubit> controls,
+                                       const Qubit target,
+                                       std::vector<Vertex>& qubits) {
+
+  switch (controls.size()) {
+  case 0:
+    addXSpider(diag, target, qubits, PiExpression(PiRational(1, 1)));
+    return;
+  case 1:
+    addCnot(diag, controls.front(), target, qubits);
+    return;
+  case 2:
+    addCcx(diag, controls.front(), controls.back(), target, qubits);
+    return;
+  default:
+    size_t half = (controls.size() + 1) / 2;
+    std::vector<Qubit> first(controls.begin(), controls.begin() + half);
+    std::vector<Qubit> second(controls.begin() + half, controls.end());
+
+    if (qubits.size() > controls.size() + 1) {
+      controls.push_back(target);
+      Qubit anc;
+      for (int x : qubits) {
+        if (std::find(controls.begin(), controls.end(),
+                      static_cast<Qubit>(x)) == controls.end()) {
+          anc = x;
+          break;
+        }
+      }
+      controls.pop_back();
+      second.push_back(anc);
+
+      addMcx(diag, first, anc, qubits);
+      addMcx(diag, second, target, qubits);
+
+      addMcx(diag, first, anc, qubits);
+      addMcx(diag, second, target, qubits);
+    } else {
+      addRx(diag, PiExpression(PiRational(1, 4)), target, qubits);
+      addMcz(diag, second, target, qubits);
+      addRx(diag, PiExpression(-PiRational(1, 4)), target, qubits);
+      addMcx(diag, first, target, qubits);
+
+      addRx(diag, PiExpression(PiRational(1, 4)), target, qubits);
+      addMcz(diag, second, target, qubits);
+      addRx(diag, PiExpression(-PiRational(1, 4)), target, qubits);
+      addMcx(diag, first, target, qubits);
+      Qubit lastControl = controls.back();
+      controls.pop_back();
+      addMcrz(diag, PiExpression(PiRational(1, 2)), controls, lastControl,
+              qubits);
+    }
+  }
+}
+
+void FunctionalityConstruction::addMcz(ZXDiagram& diag,
+                                       std::vector<Qubit> controls,
+                                       const Qubit target,
+                                       std::vector<Vertex>& qubits) {
+
+  switch (controls.size()) {
+  case 0:
+    addZSpider(diag, target, qubits, PiExpression(PiRational(1, 1)));
+    return;
+  case 1:
+    addCrz(diag, PiExpression(PiRational(1, 1)), controls.front(), target,
+           qubits);
+    return;
+  case 2:
+    addCcz(diag, controls.front(), controls.back(), target, qubits);
+    return;
+  default:
+    Qubit nextControl = controls.back();
+    controls.pop_back();
+
+    addCrz(diag, PiExpression(PiRational(1, 2)), nextControl, target, qubits);
+    addMcx(diag, controls, target, qubits);
+    addCrz(diag, PiExpression(-PiRational(1, 2)), nextControl, target, qubits);
+    addMcx(diag, controls, target, qubits);
+  }
+}
+
 FunctionalityConstruction::op_it
 FunctionalityConstruction::parseOp(ZXDiagram& diag, op_it it, op_it end,
                                    std::vector<Vertex>& qubits,
@@ -538,6 +677,9 @@ FunctionalityConstruction::parseOp(ZXDiagram& diag, op_it it, op_it end,
                    qubits[static_cast<std::size_t>(target)],
                    EdgeType::Hadamard);
       break;
+    case qc::OpType::RZ:
+      addCrz(diag, parseParam(op.get(), 0), ctrl, target, qubits);
+      break;
 
     case qc::OpType::I:
       break;
@@ -578,15 +720,41 @@ FunctionalityConstruction::parseOp(ZXDiagram& diag, op_it it, op_it end,
         ctrl1 = static_cast<Qubit>(p.at(ctrl.qubit));
       }
     }
+    std::vector<Qubit> controls;
+    for (const auto& ctrl : op->getControls()) {
+      controls.push_back(p.at(ctrl.qubit));
+    }
     switch (op->getType()) {
     case qc::OpType::X:
       addCcx(diag, ctrl0, ctrl1, target, qubits);
       break;
-
+    case qc::OpType::Z:
+      addCcz(diag, ctrl0, ctrl1, target, qubits);
+      break;
+    case qc::OpType::RZ:
+      addMcrz(diag, parseParam(op.get(), 0), controls, target, qubits);
+      break;
+    default:
+      throw ZXException("Unsupported Multi-control operation: " +
+                        qc::toString(op->getType()));
+    }
+  } else if (op->getNtargets() == 1) {
+    const auto target = static_cast<Qubit>(p.at(op->getTargets().front()));
+    std::vector<Qubit> controls;
+    for (const auto& ctrl : op->getControls()) {
+      controls.push_back(p.at(ctrl.qubit));
+    }
+    switch (op->getType()) {
+    case qc::OpType::X:
+      addMcx(diag, controls, target, qubits);
+      break;
     case qc::OpType::Z:
       addZSpider(diag, target, qubits, PiExpression(), EdgeType::Hadamard);
-      addCcx(diag, ctrl0, ctrl1, target, qubits);
+      addMcx(diag, controls, target, qubits);
       addZSpider(diag, target, qubits, PiExpression(), EdgeType::Hadamard);
+      break;
+    case qc::OpType::RZ:
+      addMcrz(diag, parseParam(op.get(), 0), controls, target, qubits);
       break;
     default:
       throw ZXException("Unsupported Multi-control operation: " +
@@ -701,6 +869,7 @@ bool FunctionalityConstruction::transformableToZX(const qc::Operation* op) {
     case qc::OpType::S:
     case qc::OpType::Tdg:
     case qc::OpType::Sdg:
+    case qc::OpType::RZ:
       return true;
 
     default:
@@ -710,12 +879,22 @@ bool FunctionalityConstruction::transformableToZX(const qc::Operation* op) {
     switch (op->getType()) {
     case qc::OpType::X:
     case qc::OpType::Z:
+    case qc::OpType::RZ:
       return true;
     default:
       return false;
     }
+  } else if (op->getNtargets() == 1) {
+    switch (op->getType()) {
+    case qc::OpType::X:
+    case qc::OpType::Z:
+    case qc::OpType::RZ:
+      return true;
+    default:
+      return false;
+    }
+    return false;
   }
-  return false;
 }
 
 PiExpression FunctionalityConstruction::parseParam(const qc::Operation* op,
