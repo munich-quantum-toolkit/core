@@ -153,7 +153,7 @@ Value CtrlOp::getInputQubit(const size_t i) {
   if (numPosControls <= i && i < getNumQubits()) {
     return getBodyUnitary().getInputQubit(i - numPosControls);
   }
-  llvm::report_fatal_error("Invalid qubit index");
+  llvm::reportFatalUsageError("Invalid qubit index");
 }
 
 Value CtrlOp::getOutputQubit(const size_t i) {
@@ -164,7 +164,7 @@ Value CtrlOp::getOutputQubit(const size_t i) {
   if (numPosControls <= i && i < getNumQubits()) {
     return getBodyUnitary().getOutputQubit(i - numPosControls);
   }
-  llvm::report_fatal_error("Invalid qubit index");
+  llvm::reportFatalUsageError("Invalid qubit index");
 }
 
 Value CtrlOp::getInputTarget(const size_t i) { return getTargetsIn()[i]; }
@@ -196,7 +196,7 @@ Value CtrlOp::getInputForOutput(const Value output) {
       return getTargetsIn()[i];
     }
   }
-  llvm::report_fatal_error("Given qubit is not an output of the operation");
+  llvm::reportFatalUsageError("Given qubit is not an output of the operation");
 }
 
 Value CtrlOp::getOutputForInput(const Value input) {
@@ -210,7 +210,7 @@ Value CtrlOp::getOutputForInput(const Value input) {
       return getTargetsOut()[i];
     }
   }
-  llvm::report_fatal_error("Given qubit is not an input of the operation");
+  llvm::reportFatalUsageError("Given qubit is not an input of the operation");
 }
 
 size_t CtrlOp::getNumParams() { return getBodyUnitary().getNumParams(); }

@@ -89,7 +89,7 @@ ADD_STANDARD_GATE(XXMINUSYY, xx_minus_yy)
     case 3:                                                                    \
       return QIR_CCC##NAME;                                                    \
     default:                                                                   \
-      llvm::report_fatal_error(                                                \
+      llvm::reportFatalUsageError(                                             \
           "Multi-controlled with more than 3 controls are currently not "      \
           "supported");                                                        \
     }                                                                          \

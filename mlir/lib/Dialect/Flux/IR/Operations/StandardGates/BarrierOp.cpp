@@ -127,7 +127,7 @@ Value BarrierOp::getInputForOutput(const Value output) {
       return getQubitsIn()[i];
     }
   }
-  llvm::report_fatal_error("Given qubit is not an output of the operation");
+  llvm::reportFatalUsageError("Given qubit is not an output of the operation");
 }
 
 Value BarrierOp::getOutputForInput(const Value input) {
@@ -136,7 +136,7 @@ Value BarrierOp::getOutputForInput(const Value input) {
       return getQubitsOut()[i];
     }
   }
-  llvm::report_fatal_error("Given qubit is not an input of the operation");
+  llvm::reportFatalUsageError("Given qubit is not an input of the operation");
 }
 
 size_t BarrierOp::getNumParams() { return 0; }

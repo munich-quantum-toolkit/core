@@ -151,7 +151,7 @@ public:
      */
     Bit operator[](const int64_t index) const {
       if (index < 0 || index >= size) {
-        llvm::report_fatal_error("Bit index out of bounds");
+        llvm::reportFatalUsageError("Bit index out of bounds");
       }
       return {
           .registerName = name, .registerSize = size, .registerIndex = index};
