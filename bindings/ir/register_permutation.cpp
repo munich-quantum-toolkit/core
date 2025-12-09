@@ -56,14 +56,14 @@ void registerPermutation(nb::module_& m) {
       .def("__len__", &qc::Permutation::size)
       .def("__iter__",
            [](const qc::Permutation& p) {
-             return nb::make_key_iterator(
-                 nb::handle(), "PermutationKeyIterator", p.begin(), p.end());
+             return nb::make_key_iterator(nb::type<qc::Permutation>(),
+                                          "key_iterator", p.begin(), p.end());
            })
       .def(
           "items",
           [](const qc::Permutation& p) {
-            return nb::make_iterator(nb::handle(), "PermutationItemIterator",
-                                     p.begin(), p.end());
+            return nb::make_iterator(nb::type<qc::Permutation>(),
+                                     "item_iterator", p.begin(), p.end());
           },
           nb::keep_alive<0, 1>())
       .def(nb::self == nb::self)
@@ -94,6 +94,7 @@ void registerPermutation(nb::module_& m) {
         ss << "})";
         return ss.str();
       });
+  nb::implicitly_convertible<nb::dict, qc::Permutation>();
 }
 
 } // namespace mqt

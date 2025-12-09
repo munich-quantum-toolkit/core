@@ -48,8 +48,9 @@ void registerExpression(nb::module_& m) {
       .def(
           "__iter__",
           [](const sym::Expression<double, double>& expr) {
-            return nb::make_iterator(nb::handle(), "ExpressionIterator",
-                                     expr.begin(), expr.end());
+            return nb::make_iterator(
+                nb::type<sym::Expression<double, double>>(), "iterator",
+                expr.begin(), expr.end());
           },
           nb::keep_alive<0, 1>())
       .def("__getitem__",
