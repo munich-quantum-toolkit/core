@@ -717,17 +717,15 @@ TEST(DynamicDeviceLibraryTest, addDynamicDeviceLibraryReturnsDevice) {
     QDMI_Device device = nullptr;
     ASSERT_NO_THROW(
         { device = driver.addDynamicDeviceLibrary(lib, prefix, config); });
-    EXPECT_NE(device, nullptr)
+    ASSERT_NE(device, nullptr)
         << "addDynamicDeviceLibrary should return a non-null device pointer";
 
     // Verify the device is valid by querying its name
-    if (device != nullptr) {
-      size_t size = 0;
-      EXPECT_EQ(QDMI_device_query_device_property(
-                    device, QDMI_DEVICE_PROPERTY_NAME, 0, nullptr, &size),
-                QDMI_SUCCESS);
-      EXPECT_GT(size, 0) << "Device should have a non-empty name";
-    }
+    size_t size = 0;
+    EXPECT_EQ(QDMI_device_query_device_property(
+                  device, QDMI_DEVICE_PROPERTY_NAME, 0, nullptr, &size),
+              QDMI_SUCCESS);
+    EXPECT_GT(size, 0) << "Device should have a non-empty name";
   }
 }
 #endif // _WIN32
