@@ -228,7 +228,8 @@ NB_MODULE(MQT_CORE_MODULE_NAME, m) {
          const std::optional<std::string>& custom2 = std::nullopt,
          const std::optional<std::string>& custom3 = std::nullopt,
          const std::optional<std::string>& custom4 = std::nullopt,
-         const std::optional<std::string>& custom5 = std::nullopt) -> void {
+         const std::optional<std::string>& custom5 =
+             std::nullopt) -> fomac::Session::Device {
         const qdmi::DeviceSessionConfig config{.baseUrl = baseUrl,
                                                .token = token,
                                                .authFile = authFile,
@@ -240,8 +241,9 @@ NB_MODULE(MQT_CORE_MODULE_NAME, m) {
                                                .custom3 = custom3,
                                                .custom4 = custom4,
                                                .custom5 = custom5};
-        qdmi::Driver::get().addDynamicDeviceLibrary(libraryPath, prefix,
-                                                    config);
+        auto* const qdmiDevice = qdmi::Driver::get().addDynamicDeviceLibrary(
+            libraryPath, prefix, config);
+        return fomac::Session::Device::fromQDMIDevice(qdmiDevice);
       },
       "library_path"_a, "prefix"_a, "base_url"_a = std::nullopt,
       "token"_a = std::nullopt, "auth_file"_a = std::nullopt,

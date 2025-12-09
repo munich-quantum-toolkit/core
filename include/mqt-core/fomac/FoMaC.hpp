@@ -612,6 +612,16 @@ public:
      * @param device The QDMI_Device handle to wrap.
      */
     Device(Session::Token /* unused */, QDMI_Device device) : device_(device) {}
+    /**
+     * @brief Creates a Device object from a QDMI_Device handle.
+     * @param device The QDMI_Device handle to wrap.
+     * @return A Device object wrapping the given handle.
+     * @note This is a factory method for use in bindings where Token
+     * construction is not accessible.
+     */
+    [[nodiscard]] static auto fromQDMIDevice(QDMI_Device device) -> Device {
+      return Device(Session::Token{}, device);
+    }
     /// @returns the underlying QDMI_Device object.
     [[nodiscard]] auto getQDMIDevice() const -> QDMI_Device { return device_; }
     // NOLINTNEXTLINE(google-explicit-constructor, *-explicit-conversions)

@@ -40,9 +40,8 @@ SequentialUnit::fromEntryPointFunction(mlir::func::FuncOp func,
 }
 
 SequentialUnit::SequentialUnit(Layout layout, mlir::Region* region,
-                               mlir::Region::OpIterator start, bool restore)
-    : Unit(std::move(layout), region, restore), start_(start),
-      end_(region->op_end()) {
+                               mlir::Region::OpIterator start)
+    : Unit(std::move(layout), region), start_(start), end_(region->op_end()) {
   mlir::Region::OpIterator it = start_;
   for (; it != end_; ++it) {
     mlir::Operation* op = &*it;
@@ -54,7 +53,7 @@ SequentialUnit::SequentialUnit(Layout layout, mlir::Region* region,
   end_ = it;
 }
 
-mlir::SmallVector<SequentialUnit, 3> SequentialUnit::next() {
+mlir::SmallVector<SequentialUnit, 3> SequentialUnit::nextImpl() {
   if (divider_ == nullptr) {
     return {};
   }
@@ -65,16 +64,14 @@ mlir::SmallVector<SequentialUnit, 3> SequentialUnit::next() {
         Layout forLayout(layout_); // Copy layout.
         forLayout.remapToLoopBody(op);
         layout_.remapToLoopResults(op);
-        units.emplace_back(std::move(layout_), region_, std::next(end_),
-                           restore_);
-        units.emplace_back(std::move(forLayout), &op.getRegion(), true);
+        units.emplace_back(std::move(layout_), region_, std::next(end_));
+        units.emplace_back(std::move(forLayout), &op.getRegion());
       })
       .Case<mlir::scf::IfOp>([&](mlir::scf::IfOp op) {
-        units.emplace_back(layout_, &op.getThenRegion(), true);
-        units.emplace_back(layout_, &op.getElseRegion(), true);
+        units.emplace_back(layout_, &op.getThenRegion());
+        units.emplace_back(layout_, &op.getElseRegion());
         layout_.remapIfResults(op);
-        units.emplace_back(std::move(layout_), region_, std::next(end_),
-                           restore_);
+        units.emplace_back(std::move(layout_), region_, std::next(end_));
       })
       .Default([](auto) { llvm_unreachable("invalid 'next' operation"); });
 
