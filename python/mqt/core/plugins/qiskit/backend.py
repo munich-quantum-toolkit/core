@@ -316,6 +316,92 @@ class QDMIBackend(BackendV2):  # type: ignore[misc]
 
         return gate_map.get(op_name.lower())
 
+    @staticmethod
+    def _map_qiskit_gate_to_operation_names(qiskit_gate_name: str) -> set[str]:
+        """Map a Qiskit gate name to possible QDMI device operation names.
+
+        This is the inverse of _map_operation_to_gate, accounting for the fact that
+        different devices may use different naming conventions for the same operation.
+
+        Args:
+            qiskit_gate_name: Qiskit gate name.
+
+        Returns:
+            Set of possible QDMI device operation names that could map to this gate.
+        """
+        qiskit_to_qdmi_map: dict[str, set[str]] = {
+            # Single-qubit Pauli gates
+            "x": {"x"},
+            "y": {"y"},
+            "z": {"z"},
+            "id": {"id", "i"},
+            "i": {"id", "i"},
+            # Hadamard
+            "h": {"h"},
+            # Phase gates
+            "s": {"s"},
+            "sdg": {"sdg"},
+            "t": {"t"},
+            "tdg": {"tdg"},
+            "sx": {"sx"},
+            "sxdg": {"sxdg"},
+            "p": {"p", "phase"},
+            "phase": {"p", "phase"},
+            "gphase": {"gphase"},
+            # Rotation gates (parametric)
+            "rx": {"rx"},
+            "ry": {"ry"},
+            "rz": {"rz"},
+            "r": {"r", "prx"},  # Some devices use 'prx' for the R gate
+            # Universal gates (parametric)
+            "u": {"u", "u3"},
+            "u1": {"u1"},
+            "u2": {"u2"},
+            "u3": {"u", "u3"},
+            # Two-qubit gates
+            "cx": {"cx", "cnot"},
+            "cnot": {"cx", "cnot"},
+            "cy": {"cy"},
+            "cz": {"cz"},
+            "ch": {"ch"},
+            "cs": {"cs"},
+            "csdg": {"csdg"},
+            "csx": {"csx"},
+            "swap": {"swap"},
+            "iswap": {"iswap"},
+            "dcx": {"dcx"},
+            "ecr": {"ecr"},
+            # Two-qubit gates (parametric)
+            "cp": {"cp"},
+            "cu1": {"cu1"},
+            "cu3": {"cu3"},
+            "crx": {"crx"},
+            "cry": {"cry"},
+            "crz": {"crz"},
+            "rxx": {"rxx"},
+            "ryy": {"ryy"},
+            "rzz": {"rzz"},
+            "rzx": {"rzx"},
+            "xx_plus_yy": {"xx_plus_yy"},
+            "xx_minus_yy": {"xx_minus_yy"},
+            # Three-qubit gates
+            "ccx": {"ccx"},
+            "ccz": {"ccz"},
+            "cswap": {"cswap"},
+            # Multi-controlled gates
+            "mcx": {"mcx"},
+            "mcz": {"mcz"},
+            "mcp": {"mcp"},
+            "mcrx": {"mcrx"},
+            "mcry": {"mcry"},
+            "mcrz": {"mcrz"},
+            # Nonunitary operations
+            "reset": {"reset"},
+            "measure": {"measure"},
+        }
+
+        return qiskit_to_qdmi_map.get(qiskit_gate_name.lower(), {qiskit_gate_name.lower()})
+
     def _get_operation_qargs(self, op: fomac.Device.Operation) -> list[tuple[int]] | list[tuple[int, int]] | list[None]:
         """Get the qubit argument tuples for an operation.
 
@@ -462,13 +548,16 @@ class QDMIBackend(BackendV2):  # type: ignore[misc]
             msg = f"Circuit contains unbound parameters: {param_names}"
             raise CircuitValidationError(msg)
 
-        # Validate operations are supported
-        allowed_ops = {op.name() for op in self._device.operations()}
-        allowed_ops.update({"measure", "barrier"})  # Always allow measure and barrier
+        # Validate operations are supported - build set of all supported QDMI operation names
+        device_ops = {op.name().lower() for op in self._device.operations()}
 
         for instruction in run_input.data:
             op_name = instruction.operation.name
-            if op_name not in allowed_ops:
+            # Map the Qiskit gate name to possible QDMI operation names and check if any match
+            possible_qdmi_names = self._map_qiskit_gate_to_operation_names(op_name)
+            # Check if any of the possible QDMI names are supported by the device
+            # Also always allow 'barrier' as it's a directive, not an operation
+            if op_name != "barrier" and not any(qdmi_name in device_ops for qdmi_name in possible_qdmi_names):
                 msg = f"Unsupported operation: '{op_name}'"
                 raise UnsupportedOperationError(msg)
 
