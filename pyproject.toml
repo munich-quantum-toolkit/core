@@ -9,7 +9,6 @@
 [build-system]
 requires = [
   "nanobind>=2.10.1",
-  "pybind11>=3.0.1",
   "scikit-build-core>=0.11.6",
   "setuptools-scm>=9.2.2",
 ]
@@ -317,7 +316,6 @@ exclude = [
 [dependency-groups]
 build = [
   "nanobind>=2.10.1",
-  "pybind11>=3.0.1",
   "scikit-build-core>=0.11.6",
   "setuptools-scm>=9.2.2",
 ]
