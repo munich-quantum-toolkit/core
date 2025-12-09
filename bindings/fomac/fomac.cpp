@@ -12,62 +12,53 @@
 
 #include "qdmi/Driver.hpp"
 
+#include <nanobind/nanobind.h>
+#include <nanobind/operators.h>
+#include <nanobind/stl/complex.h>
+#include <nanobind/stl/map.h>
+#include <nanobind/stl/optional.h>
+#include <nanobind/stl/pair.h>
+#include <nanobind/stl/string.h>
+#include <nanobind/stl/vector.h>
 #include <optional>
-#include <pybind11/cast.h>
-#include <pybind11/complex.h> // NOLINT(misc-include-cleaner)
-#include <pybind11/native_enum.h>
-#include <pybind11/operators.h>
-#include <pybind11/pybind11.h>
-#include <pybind11/stl.h> // NOLINT(misc-include-cleaner)
 #include <qdmi/client.h>
 #include <string>
 #include <vector>
 
 namespace mqt {
 
-namespace py = pybind11;
-using namespace py::literals;
+namespace nb = nanobind;
+using namespace nb::literals;
 
-PYBIND11_MODULE(MQT_CORE_MODULE_NAME, m, py::mod_gil_not_used()) {
-  auto session = py::class_<fomac::Session>(m, "Session");
-
+NB_MODULE(MQT_CORE_MODULE_NAME, m) {
+  // Session class
+  auto session = nb::class_<fomac::Session>(m, "Session");
   session.def(
-      py::init([](const std::optional<std::string>& token = std::nullopt,
-                  const std::optional<std::string>& authFile = std::nullopt,
-                  const std::optional<std::string>& authUrl = std::nullopt,
-                  const std::optional<std::string>& username = std::nullopt,
-                  const std::optional<std::string>& password = std::nullopt,
-                  const std::optional<std::string>& projectId = std::nullopt,
-                  const std::optional<std::string>& custom1 = std::nullopt,
-                  const std::optional<std::string>& custom2 = std::nullopt,
-                  const std::optional<std::string>& custom3 = std::nullopt,
-                  const std::optional<std::string>& custom4 = std::nullopt,
-                  const std::optional<std::string>& custom5 =
-                      std::nullopt) -> fomac::Session {
-        const fomac::SessionConfig config{.token = token,
-                                          .authFile = authFile,
-                                          .authUrl = authUrl,
-                                          .username = username,
-                                          .password = password,
-                                          .projectId = projectId,
-                                          .custom1 = custom1,
-                                          .custom2 = custom2,
-                                          .custom3 = custom3,
-                                          .custom4 = custom4,
-                                          .custom5 = custom5};
-        return fomac::Session{config};
-      }),
+      "__init__",
+      [](fomac::Session* self, std::optional<std::string> token,
+         std::optional<std::string> authFile,
+         std::optional<std::string> authUrl,
+         std::optional<std::string> username,
+         std::optional<std::string> password,
+         std::optional<std::string> projectId,
+         std::optional<std::string> custom1, std::optional<std::string> custom2,
+         std::optional<std::string> custom3, std::optional<std::string> custom4,
+         std::optional<std::string> custom5) {
+        fomac::SessionConfig config{token,    authFile,  authUrl, username,
+                                    password, projectId, custom1, custom2,
+                                    custom3,  custom4,   custom5};
+        new (self) fomac::Session(config);
+      },
       "token"_a = std::nullopt, "auth_file"_a = std::nullopt,
       "auth_url"_a = std::nullopt, "username"_a = std::nullopt,
       "password"_a = std::nullopt, "project_id"_a = std::nullopt,
       "custom1"_a = std::nullopt, "custom2"_a = std::nullopt,
       "custom3"_a = std::nullopt, "custom4"_a = std::nullopt,
       "custom5"_a = std::nullopt);
-
   session.def("get_devices", &fomac::Session::getDevices);
 
   // Job class
-  auto job = py::class_<fomac::Session::Job>(m, "Job");
+  auto job = nb::class_<fomac::Session::Job>(m, "Job");
   job.def("check", &fomac::Session::Job::check);
   job.def("wait", &fomac::Session::Job::wait, "timeout"_a = 0);
   job.def("cancel", &fomac::Session::Job::cancel);
@@ -79,17 +70,16 @@ PYBIND11_MODULE(MQT_CORE_MODULE_NAME, m, py::mod_gil_not_used()) {
   job.def("get_sparse_statevector", &fomac::Session::Job::getSparseStateVector);
   job.def("get_sparse_probabilities",
           &fomac::Session::Job::getSparseProbabilities);
-  job.def_property_readonly("id", &fomac::Session::Job::getId);
-  job.def_property_readonly("program_format",
-                            &fomac::Session::Job::getProgramFormat);
-  job.def_property_readonly("program", &fomac::Session::Job::getProgram);
-  job.def_property_readonly("num_shots", &fomac::Session::Job::getNumShots);
-  job.def(py::self == py::self); // NOLINT(misc-redundant-expression)
-  job.def(py::self != py::self); // NOLINT(misc-redundant-expression)
+  job.def_prop_ro("id", &fomac::Session::Job::getId);
+  job.def_prop_ro("program_format", &fomac::Session::Job::getProgramFormat);
+  job.def_prop_ro("program", &fomac::Session::Job::getProgram);
+  job.def_prop_ro("num_shots", &fomac::Session::Job::getNumShots);
+  job.def(nb::self == nb::self);
+  job.def(nb::self != nb::self);
 
   // JobStatus enum
-  py::native_enum<QDMI_Job_Status>(job, "Status", "enum.Enum",
-                                   "Enumeration of job status.")
+  nb::enum_<QDMI_Job_Status>(job, "Status", "enum.Enum",
+                             "Enumeration of job status.")
       .value("CREATED", QDMI_JOB_STATUS_CREATED)
       .value("SUBMITTED", QDMI_JOB_STATUS_SUBMITTED)
       .value("QUEUED", QDMI_JOB_STATUS_QUEUED)
@@ -97,12 +87,11 @@ PYBIND11_MODULE(MQT_CORE_MODULE_NAME, m, py::mod_gil_not_used()) {
       .value("DONE", QDMI_JOB_STATUS_DONE)
       .value("CANCELED", QDMI_JOB_STATUS_CANCELED)
       .value("FAILED", QDMI_JOB_STATUS_FAILED)
-      .export_values()
-      .finalize();
+      .export_values();
 
   // ProgramFormat enum
-  py::native_enum<QDMI_Program_Format>(m, "ProgramFormat", "enum.Enum",
-                                       "Enumeration of program formats.")
+  nb::enum_<QDMI_Program_Format>(m, "ProgramFormat", "enum.Enum",
+                                 "Enumeration of program formats.")
       .value("QASM2", QDMI_PROGRAM_FORMAT_QASM2)
       .value("QASM3", QDMI_PROGRAM_FORMAT_QASM3)
       .value("QIR_BASE_STRING", QDMI_PROGRAM_FORMAT_QIRBASESTRING)
@@ -117,23 +106,49 @@ PYBIND11_MODULE(MQT_CORE_MODULE_NAME, m, py::mod_gil_not_used()) {
       .value("CUSTOM3", QDMI_PROGRAM_FORMAT_CUSTOM3)
       .value("CUSTOM4", QDMI_PROGRAM_FORMAT_CUSTOM4)
       .value("CUSTOM5", QDMI_PROGRAM_FORMAT_CUSTOM5)
-      .export_values()
-      .finalize();
+      .export_values();
 
-  auto device = py::class_<fomac::Session::Device>(m, "Device");
-
-  py::native_enum<QDMI_Device_Status>(device, "Status", "enum.Enum",
-                                      "Enumeration of device status.")
+  // Device class
+  auto device = nb::class_<fomac::Session::Device>(m, "Device");
+  nb::enum_<QDMI_Device_Status>(device, "Status", "enum.Enum",
+                                "Enumeration of device status.")
       .value("offline", QDMI_DEVICE_STATUS_OFFLINE)
       .value("idle", QDMI_DEVICE_STATUS_IDLE)
       .value("busy", QDMI_DEVICE_STATUS_BUSY)
       .value("error", QDMI_DEVICE_STATUS_ERROR)
       .value("maintenance", QDMI_DEVICE_STATUS_MAINTENANCE)
       .value("calibration", QDMI_DEVICE_STATUS_CALIBRATION)
-      .export_values()
-      .finalize();
+      .export_values();
+  device.def("name", &fomac::Session::Device::getName);
+  device.def("version", &fomac::Session::Device::getVersion);
+  device.def("status", &fomac::Session::Device::getStatus);
+  device.def("library_version", &fomac::Session::Device::getLibraryVersion);
+  device.def("qubits_num", &fomac::Session::Device::getQubitsNum);
+  device.def("sites", &fomac::Session::Device::getSites);
+  device.def("regular_sites", &fomac::Session::Device::getRegularSites);
+  device.def("zones", &fomac::Session::Device::getZones);
+  device.def("operations", &fomac::Session::Device::getOperations);
+  device.def("coupling_map", &fomac::Session::Device::getCouplingMap);
+  device.def("needs_calibration", &fomac::Session::Device::getNeedsCalibration);
+  device.def("length_unit", &fomac::Session::Device::getLengthUnit);
+  device.def("length_scale_factor",
+             &fomac::Session::Device::getLengthScaleFactor);
+  device.def("duration_unit", &fomac::Session::Device::getDurationUnit);
+  device.def("duration_scale_factor",
+             &fomac::Session::Device::getDurationScaleFactor);
+  device.def("min_atom_distance", &fomac::Session::Device::getMinAtomDistance);
+  device.def("supported_program_formats",
+             &fomac::Session::Device::getSupportedProgramFormats);
+  device.def("submit_job", &fomac::Session::Device::submitJob, "program"_a,
+             "program_format"_a, "num_shots"_a);
+  device.def("__repr__", [](const fomac::Session::Device& dev) {
+    return "<Device name=\"" + dev.getName() + "\">";
+  });
+  device.def(nb::self == nb::self);
+  device.def(nb::self != nb::self);
 
-  auto site = py::class_<fomac::Session::Device::Site>(device, "Site");
+  // Site class
+  auto site = nb::class_<fomac::Session::Device::Site>(device, "Site");
   site.def("index", &fomac::Session::Device::Site::getIndex);
   site.def("t1", &fomac::Session::Device::Site::getT1);
   site.def("t2", &fomac::Session::Device::Site::getT2);
@@ -150,11 +165,12 @@ PYBIND11_MODULE(MQT_CORE_MODULE_NAME, m, py::mod_gil_not_used()) {
   site.def("__repr__", [](const fomac::Session::Device::Site& s) {
     return "<Site index=" + std::to_string(s.getIndex()) + ">";
   });
-  site.def(py::self == py::self); // NOLINT(misc-redundant-expression)
-  site.def(py::self != py::self); // NOLINT(misc-redundant-expression)
+  site.def(nb::self == nb::self);
+  site.def(nb::self != nb::self);
 
+  // Operation class
   auto operation =
-      py::class_<fomac::Session::Device::Operation>(device, "Operation");
+      nb::class_<fomac::Session::Device::Operation>(device, "Operation");
   operation.def("name", &fomac::Session::Device::Operation::getName,
                 "sites"_a = std::vector<fomac::Session::Device::Site>{},
                 "params"_a = std::vector<double>{});
@@ -193,36 +209,8 @@ PYBIND11_MODULE(MQT_CORE_MODULE_NAME, m, py::mod_gil_not_used()) {
   operation.def("__repr__", [](const fomac::Session::Device::Operation& op) {
     return "<Operation name=\"" + op.getName() + "\">";
   });
-  operation.def(py::self == py::self); // NOLINT(misc-redundant-expression)
-  operation.def(py::self != py::self); // NOLINT(misc-redundant-expression)
-
-  device.def("name", &fomac::Session::Device::getName);
-  device.def("version", &fomac::Session::Device::getVersion);
-  device.def("status", &fomac::Session::Device::getStatus);
-  device.def("library_version", &fomac::Session::Device::getLibraryVersion);
-  device.def("qubits_num", &fomac::Session::Device::getQubitsNum);
-  device.def("sites", &fomac::Session::Device::getSites);
-  device.def("regular_sites", &fomac::Session::Device::getRegularSites);
-  device.def("zones", &fomac::Session::Device::getZones);
-  device.def("operations", &fomac::Session::Device::getOperations);
-  device.def("coupling_map", &fomac::Session::Device::getCouplingMap);
-  device.def("needs_calibration", &fomac::Session::Device::getNeedsCalibration);
-  device.def("length_unit", &fomac::Session::Device::getLengthUnit);
-  device.def("length_scale_factor",
-             &fomac::Session::Device::getLengthScaleFactor);
-  device.def("duration_unit", &fomac::Session::Device::getDurationUnit);
-  device.def("duration_scale_factor",
-             &fomac::Session::Device::getDurationScaleFactor);
-  device.def("min_atom_distance", &fomac::Session::Device::getMinAtomDistance);
-  device.def("supported_program_formats",
-             &fomac::Session::Device::getSupportedProgramFormats);
-  device.def("submit_job", &fomac::Session::Device::submitJob, "program"_a,
-             "program_format"_a, "num_shots"_a);
-  device.def("__repr__", [](const fomac::Session::Device& dev) {
-    return "<Device name=\"" + dev.getName() + "\">";
-  });
-  device.def(py::self == py::self); // NOLINT(misc-redundant-expression)
-  device.def(py::self != py::self); // NOLINT(misc-redundant-expression)
+  operation.def(nb::self == nb::self);
+  operation.def(nb::self != nb::self);
 
 #ifndef _WIN32
   // Module-level function to add dynamic device libraries on non-Windows
