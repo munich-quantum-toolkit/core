@@ -253,7 +253,7 @@ PYBIND11_MODULE(MQT_CORE_MODULE_NAME, m, py::mod_gil_not_used()) {
                                                .custom3 = custom3,
                                                .custom4 = custom4,
                                                .custom5 = custom5};
-        const auto qdmiDevice = qdmi::Driver::get().addDynamicDeviceLibrary(
+        auto* const qdmiDevice = qdmi::Driver::get().addDynamicDeviceLibrary(
             libraryPath, prefix, config);
         return fomac::Session::Device::fromQDMIDevice(qdmiDevice);
       },
