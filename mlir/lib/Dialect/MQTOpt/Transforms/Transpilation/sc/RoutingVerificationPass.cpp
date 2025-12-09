@@ -125,10 +125,6 @@ private:
                     return success();
                   })
                   .Case<scf::YieldOp>([&](scf::YieldOp op) -> LogicalResult {
-                    if (!unit.restore()) {
-                      return success();
-                    }
-
                     /// Verify that the layouts match at the end.
                     const auto mappingBefore = unmodified.getCurrentLayout();
                     const auto mappingNow = unit.layout().getCurrentLayout();

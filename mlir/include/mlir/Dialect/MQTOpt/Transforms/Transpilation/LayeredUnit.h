@@ -43,18 +43,13 @@ struct Layer {
 };
 
 /// @brief A LayeredUnit traverses a program layer-by-layer.
-class LayeredUnit : public Unit {
+class LayeredUnit : public Unit<LayeredUnit> {
 public:
-  using Layers = mlir::SmallVector<Layer, 0>;
-
   [[nodiscard]] static LayeredUnit
   fromEntryPointFunction(mlir::func::FuncOp func, std::size_t nqubits);
 
-  LayeredUnit(Layout layout, mlir::Region* region, bool restore = false);
+  LayeredUnit(Layout layout, mlir::Region* region);
 
-  [[nodiscard]] mlir::SmallVector<LayeredUnit, 3> next();
-  [[nodiscard]] Layers::const_iterator begin() const { return layers_.begin(); }
-  [[nodiscard]] Layers::const_iterator end() const { return layers_.end(); }
   [[nodiscard]] const Layer& operator[](std::size_t i) const {
     return layers_[i];
   }
@@ -65,6 +60,14 @@ public:
 #endif
 
 private:
+  friend class Unit<LayeredUnit>;
+  using Layers = mlir::SmallVector<Layer, 0>;
+  using const_iterator = Layers::const_iterator;
+
+  [[nodiscard]] mlir::SmallVector<LayeredUnit, 3> nextImpl();
+  [[nodiscard]] const_iterator beginImpl() const { return layers_.begin(); }
+  [[nodiscard]] const_iterator endImpl() const { return layers_.end(); }
+
   Layers layers_;
 };
 } // namespace mqt::ir::opt

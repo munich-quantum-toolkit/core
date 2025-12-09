@@ -17,26 +17,36 @@
 namespace mqt::ir::opt {
 
 /// @brief A Unit divides a quantum-classical program into routable sections.
-class Unit {
+template <class Derived> class Unit {
 public:
-  Unit(Layout layout, mlir::Region* region, bool restore = false)
-      : layout_(std::move(layout)), region_(region), restore_(restore) {}
+  /// @brief Compute and return subsequent units.
+  [[nodiscard]] mlir::SmallVector<Derived, 3> next() {
+    return static_cast<Derived*>(this)->nextImpl();
+  }
+
+  /// @returns an iterator pointing at the first element of the unit.
+  [[nodiscard]] auto begin() const {
+    return static_cast<const Derived*>(this)->beginImpl();
+  }
+
+  /// @returns an iterator pointing at the past-the-end position.
+  [[nodiscard]] auto end() const {
+    return static_cast<const Derived*>(this)->endImpl();
+  }
 
   /// @returns the managed layout.
   [[nodiscard]] Layout& layout() { return layout_; }
 
-  /// @returns true iff. the unit has to be restored.
-  [[nodiscard]] bool restore() const { return restore_; }
-
 protected:
+  Unit(Layout layout, mlir::Region* region)
+      : layout_(std::move(layout)), region_(region) {}
+
   /// @brief The layout this unit manages.
   Layout layout_;
   /// @brief The region this unit belongs to.
   mlir::Region* region_;
   /// @brief Pointer to the next dividing operation.
   mlir::Operation* divider_{};
-  /// @brief Whether to uncompute the inserted SWAP sequence.
-  bool restore_;
 };
 
 } // namespace mqt::ir::opt
