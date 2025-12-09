@@ -207,7 +207,7 @@ Value CtrlOp::getOutputNegControl(const size_t i) {
   return getBodyUnitary().getOutputNegControl(i);
 }
 
-Value CtrlOp::getInputForOutput(const Value output) {
+Value CtrlOp::getInputForOutput(Value output) {
   for (size_t i = 0; i < getNumPosControls(); ++i) {
     if (output == getControlsOut()[i]) {
       return getControlsIn()[i];
@@ -221,7 +221,7 @@ Value CtrlOp::getInputForOutput(const Value output) {
   llvm::reportFatalUsageError("Given qubit is not an output of the operation");
 }
 
-Value CtrlOp::getOutputForInput(const Value input) {
+Value CtrlOp::getOutputForInput(Value input) {
   for (size_t i = 0; i < getNumPosControls(); ++i) {
     if (input == getControlsIn()[i]) {
       return getControlsOut()[i];
@@ -242,7 +242,7 @@ Value CtrlOp::getParameter(const size_t i) {
 }
 
 void CtrlOp::build(OpBuilder& builder, OperationState& state,
-                   const ValueRange controls, const ValueRange targets,
+                   ValueRange controls, ValueRange targets,
                    UnitaryOpInterface bodyUnitary) {
   build(builder, state, controls, targets);
   auto& block = state.regions.front()->emplaceBlock();
@@ -255,8 +255,8 @@ void CtrlOp::build(OpBuilder& builder, OperationState& state,
 }
 
 void CtrlOp::build(
-    OpBuilder& builder, OperationState& state, const ValueRange controls,
-    const ValueRange targets,
+    OpBuilder& builder, OperationState& state, ValueRange controls,
+    ValueRange targets,
     const std::function<ValueRange(OpBuilder&, ValueRange)>& bodyBuilder) {
   build(builder, state, controls, targets);
   auto& block = state.regions.front()->emplaceBlock();

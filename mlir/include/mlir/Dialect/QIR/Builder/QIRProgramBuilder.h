@@ -837,8 +837,8 @@ private:
    * @param fnName Name of the QIR function to call
    */
   void createCallOp(const SmallVector<std::variant<double, Value>>& parameters,
-                    const ValueRange controls,
-                    const SmallVector<Value>& targets, StringRef fnName);
+                    ValueRange controls, const SmallVector<Value>& targets,
+                    StringRef fnName);
 
   /**
    * @brief Generate array-based output recording in the output block

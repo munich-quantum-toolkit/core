@@ -120,7 +120,7 @@ Value BarrierOp::getOutputNegControl(const size_t /*i*/) {
   llvm::reportFatalUsageError("BarrierOp cannot be controlled");
 }
 
-Value BarrierOp::getInputForOutput(const Value output) {
+Value BarrierOp::getInputForOutput(Value output) {
   for (size_t i = 0; i < getNumTargets(); ++i) {
     if (output == getQubitsOut()[i]) {
       return getQubitsIn()[i];
@@ -129,7 +129,7 @@ Value BarrierOp::getInputForOutput(const Value output) {
   llvm::reportFatalUsageError("Given qubit is not an output of the operation");
 }
 
-Value BarrierOp::getOutputForInput(const Value input) {
+Value BarrierOp::getOutputForInput(Value input) {
   for (size_t i = 0; i < getNumTargets(); ++i) {
     if (input == getQubitsIn()[i]) {
       return getQubitsOut()[i];
@@ -145,10 +145,10 @@ Value BarrierOp::getParameter(const size_t /*i*/) {
 }
 
 void BarrierOp::build(OpBuilder& builder, OperationState& state,
-                      const ValueRange qubits) {
+                      ValueRange qubits) {
   SmallVector<Type> resultTypes;
   resultTypes.reserve(qubits.size());
-  for (const Value qubit : qubits) {
+  for (Value qubit : qubits) {
     resultTypes.push_back(qubit.getType());
   }
   build(builder, state, resultTypes, qubits);

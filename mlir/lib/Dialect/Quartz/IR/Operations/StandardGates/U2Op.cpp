@@ -19,7 +19,7 @@ using namespace mlir;
 using namespace mlir::quartz;
 using namespace mlir::utils;
 
-void U2Op::build(OpBuilder& builder, OperationState& state, const Value qubitIn,
+void U2Op::build(OpBuilder& builder, OperationState& state, Value qubitIn,
                  const std::variant<double, Value>& phi,
                  const std::variant<double, Value>& lambda) {
   const auto& phiOperand = variantToValue(builder, state, phi);

@@ -108,7 +108,7 @@ public:
       return this->getOperation()->getOperand(T + i);
     }
 
-    [[nodiscard]] static FloatAttr getStaticParameter(const Value param) {
+    [[nodiscard]] static FloatAttr getStaticParameter(Value param) {
       auto constantOp = param.getDefiningOp<arith::ConstantOp>();
       if (!constantOp) {
         return nullptr;

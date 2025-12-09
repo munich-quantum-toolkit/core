@@ -81,7 +81,7 @@ struct ReplaceRWithRY final : OpRewritePattern<ROp> {
 
 } // namespace
 
-void ROp::build(OpBuilder& builder, OperationState& state, const Value qubitIn,
+void ROp::build(OpBuilder& builder, OperationState& state, Value qubitIn,
                 const std::variant<double, Value>& theta,
                 const std::variant<double, Value>& phi) {
   const auto& thetaOperand = variantToValue(builder, state, theta);

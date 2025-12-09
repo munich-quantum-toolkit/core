@@ -73,7 +73,7 @@ struct MergeSubsequentXXPlusYY final : OpRewritePattern<XXPlusYYOp> {
 } // namespace
 
 void XXPlusYYOp::build(OpBuilder& builder, OperationState& state,
-                       const Value qubit0In, const Value qubit1In,
+                       Value qubit0In, Value qubit1In,
                        const std::variant<double, Value>& theta,
                        const std::variant<double, Value>& beta) {
   const auto& thetaOperand = variantToValue(builder, state, theta);

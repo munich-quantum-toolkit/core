@@ -78,7 +78,7 @@ struct OperationStructuralHash {
     }
 
     // Hash operand types (not values)
-    for (const Value operand : op->getOperands()) {
+    for (Value operand : op->getOperands()) {
       hash = llvm::hash_combine(hash, operand.getType().getAsOpaquePointer());
     }
 
@@ -264,7 +264,7 @@ buildDependenceGraph(ArrayRef<Operation*> ops) {
     }
 
     // Register this operation as the producer of its results
-    for (const Value result : op->getResults()) {
+    for (Value result : op->getResults()) {
       valueProducers[result] = op;
     }
   }

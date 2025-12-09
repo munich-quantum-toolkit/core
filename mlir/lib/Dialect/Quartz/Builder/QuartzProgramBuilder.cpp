@@ -291,7 +291,7 @@ DEFINE_ONE_TARGET_THREE_PARAMETER(UOp, u, theta, phi, lambda)
     return *this;                                                              \
   }                                                                            \
   QuartzProgramBuilder& QuartzProgramBuilder::c##OP_NAME(                      \
-      Value control, const Value qubit0, const Value qubit1) {                 \
+      Value control, Value qubit0, Value qubit1) {                             \
     return mc##OP_NAME({control}, qubit0, qubit1);                             \
   }                                                                            \
   QuartzProgramBuilder& QuartzProgramBuilder::mc##OP_NAME(                     \
@@ -412,7 +412,7 @@ QuartzProgramBuilder& QuartzProgramBuilder::dealloc(Value qubit) {
 
 OwningOpRef<ModuleOp> QuartzProgramBuilder::finalize() {
   // Automatically deallocate all remaining allocated qubits
-  for (const Value qubit : allocatedQubits) {
+  for (Value qubit : allocatedQubits) {
     create<DeallocOp>(loc, qubit);
   }
 

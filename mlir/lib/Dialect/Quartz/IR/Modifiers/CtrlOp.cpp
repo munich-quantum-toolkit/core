@@ -152,7 +152,7 @@ Value CtrlOp::getParameter(const size_t i) {
 }
 
 void CtrlOp::build(OpBuilder& builder, OperationState& state,
-                   const ValueRange controls, UnitaryOpInterface bodyUnitary) {
+                   ValueRange controls, UnitaryOpInterface bodyUnitary) {
   const OpBuilder::InsertionGuard guard(builder);
   state.addOperands(controls);
   auto* region = state.addRegion();
@@ -165,7 +165,7 @@ void CtrlOp::build(OpBuilder& builder, OperationState& state,
 }
 
 void CtrlOp::build(OpBuilder& builder, OperationState& state,
-                   const ValueRange controls,
+                   ValueRange controls,
                    const std::function<void(OpBuilder&)>& bodyBuilder) {
   const OpBuilder::InsertionGuard guard(builder);
   state.addOperands(controls);

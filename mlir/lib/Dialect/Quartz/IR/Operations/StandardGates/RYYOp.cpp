@@ -19,9 +19,8 @@ using namespace mlir;
 using namespace mlir::quartz;
 using namespace mlir::utils;
 
-void RYYOp::build(OpBuilder& builder, OperationState& state,
-                  const Value qubit0In, const Value qubit1In,
-                  const std::variant<double, Value>& theta) {
+void RYYOp::build(OpBuilder& builder, OperationState& state, Value qubit0In,
+                  Value qubit1In, const std::variant<double, Value>& theta) {
   const auto& thetaOperand = variantToValue(builder, state, theta);
   build(builder, state, qubit0In, qubit1In, thetaOperand);
 }
