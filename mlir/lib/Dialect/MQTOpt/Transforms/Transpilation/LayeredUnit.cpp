@@ -141,8 +141,8 @@ LayeredUnit LayeredUnit::fromEntryPointFunction(mlir::func::FuncOp func,
   return {std::move(layout), &func.getBody()};
 }
 
-LayeredUnit::LayeredUnit(Layout layout, mlir::Region* region, bool restore)
-    : Unit(std::move(layout), region, restore) {
+LayeredUnit::LayeredUnit(Layout layout, mlir::Region* region)
+    : Unit(std::move(layout), region) {
   SynchronizationMap sync;
 
   mlir::SmallVector<Wire, 0> curr;
@@ -272,7 +272,7 @@ LayeredUnit::LayeredUnit(Layout layout, mlir::Region* region, bool restore)
   };
 }
 
-mlir::SmallVector<LayeredUnit, 3> LayeredUnit::next() {
+mlir::SmallVector<LayeredUnit, 3> LayeredUnit::nextImpl() {
   if (divider_ == nullptr) {
     return {};
   }
@@ -283,14 +283,14 @@ mlir::SmallVector<LayeredUnit, 3> LayeredUnit::next() {
         Layout forLayout(layout_); // Copy layout.
         forLayout.remapToLoopBody(op);
         layout_.remapToLoopResults(op);
-        units.emplace_back(std::move(layout_), region_, restore_);
-        units.emplace_back(std::move(forLayout), &op.getRegion(), true);
+        units.emplace_back(std::move(layout_), region_);
+        units.emplace_back(std::move(forLayout), &op.getRegion());
       })
       .Case<mlir::scf::IfOp>([&](mlir::scf::IfOp op) {
-        units.emplace_back(layout_, &op.getThenRegion(), true);
-        units.emplace_back(layout_, &op.getElseRegion(), true);
+        units.emplace_back(layout_, &op.getThenRegion());
+        units.emplace_back(layout_, &op.getElseRegion());
         layout_.remapIfResults(op);
-        units.emplace_back(layout_, region_, restore_);
+        units.emplace_back(layout_, region_);
       })
       .Default([](auto) { llvm_unreachable("invalid 'next' operation"); });
 
