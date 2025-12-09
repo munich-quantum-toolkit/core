@@ -20,22 +20,15 @@
 #include "ir/operations/NonUnitaryOperation.hpp"
 #include "ir/operations/Operation.hpp"
 
-// These includes must be the first includes for any bindings code
-// clang-format off
-#include <pybind11/pybind11.h>
-#include <pybind11/stl.h> // NOLINT(misc-include-cleaner)
-
-#include <pybind11/attr.h>
-#include <pybind11/cast.h>
-#include <pybind11/native_enum.h>
-#include <pybind11/numpy.h>
-// clang-format on
-
 #include <array>
 #include <cmath>
 #include <complex>
 #include <cstddef>
 #include <memory>
+#include <nanobind/nanobind.h>
+#include <nanobind/ndarray.h>
+#include <nanobind/stl/complex.h>
+#include <nanobind/stl/vector.h>
 #include <random>
 #include <stdexcept>
 #include <utility>
@@ -43,15 +36,17 @@
 
 namespace mqt {
 
-namespace py = pybind11;
-using namespace pybind11::literals;
+namespace nb = nanobind;
+using namespace nb::literals;
+
+using Vector = nb::ndarray<nb::numpy, std::complex<dd::fp>, nb::ndim<1>>;
+using Matrix = nb::ndarray<nb::numpy, std::complex<dd::fp>, nb::ndim<2>>;
 
 namespace {
 /// Recursive helper function to create a vector DD from a numpy array
-dd::vCachedEdge makeDDFromVector(
-    dd::Package& p,
-    const py::detail::unchecked_reference<std::complex<dd::fp>, 1>& v,
-    const size_t startIdx, const size_t endIdx, const dd::Qubit level) {
+dd::vCachedEdge makeDDFromVector(dd::Package& p, const Vector& v,
+                                 const size_t startIdx, const size_t endIdx,
+                                 const dd::Qubit level) {
   if (level == 0U) {
     const auto zeroSuccessor = dd::vCachedEdge::terminal(v(startIdx));
     const auto oneSuccessor = dd::vCachedEdge::terminal(v(startIdx + 1));
@@ -67,11 +62,10 @@ dd::vCachedEdge makeDDFromVector(
 }
 
 /// Recursive helper function to create a matrix DD from a numpy array
-dd::mCachedEdge makeDDFromMatrix(
-    dd::Package& p,
-    const py::detail::unchecked_reference<std::complex<dd::fp>, 2>& m,
-    const size_t rowStart, const size_t rowEnd, const size_t colStart,
-    const size_t colEnd, const dd::Qubit level) {
+dd::mCachedEdge makeDDFromMatrix(dd::Package& p, const Matrix& m,
+                                 const size_t rowStart, const size_t rowEnd,
+                                 const size_t colStart, const size_t colEnd,
+                                 const dd::Qubit level) {
   if (level == 0U) {
     const auto zeroSuccessor = dd::mCachedEdge::terminal(m(rowStart, colStart));
     const auto oneSuccessor =
@@ -96,18 +90,17 @@ dd::mCachedEdge makeDDFromMatrix(
 } // namespace
 
 // NOLINTNEXTLINE(misc-use-internal-linkage)
-void registerDDPackage(const py::module& mod) {
-  auto dd =
-      py::class_<dd::Package, std::unique_ptr<dd::Package>>(mod, "DDPackage");
+void registerDDPackage(const nb::module_& m) {
+  auto dd = nb::class_<dd::Package>(m, "DDPackage");
 
   // Constructor
-  dd.def(py::init<size_t>(), "num_qubits"_a = dd::Package::DEFAULT_QUBITS);
+  dd.def(nb::init<size_t>(), "num_qubits"_a = dd::Package::DEFAULT_QUBITS);
 
   // Resizing the package
   dd.def("resize", &dd::Package::resize, "num_qubits"_a);
 
   // Getting the number of qubits the package is configured for
-  dd.def_property_readonly("max_qubits", &dd::Package::qubits);
+  dd.def_prop_ro("max_qubits", &dd::Package::qubits);
 
   ///------------------------------------------------------------------------///
   /// Vector DD Generation
@@ -120,7 +113,7 @@ void registerDDPackage(const py::module& mod) {
       },
       "num_qubits"_a,
       // keep the DD package alive while the returned vector DD is alive.
-      py::keep_alive<0, 1>());
+      nb::keep_alive<0, 1>());
 
   dd.def(
       "computational_basis_state",
@@ -130,17 +123,16 @@ void registerDDPackage(const py::module& mod) {
       },
       "num_qubits"_a, "state"_a,
       // keep the DD package alive while the returned vector DD is alive.
-      py::keep_alive<0, 1>());
+      nb::keep_alive<0, 1>());
 
-  py::native_enum<dd::BasisStates>(mod, "BasisStates", "enum.Enum",
-                                   "Enumeration of basis states.")
+  nb::enum_<dd::BasisStates>(m, "BasisStates", "enum.Enum",
+                             "Enumeration of basis states.")
       .value("zero", dd::BasisStates::zero)
       .value("one", dd::BasisStates::one)
       .value("plus", dd::BasisStates::plus)
       .value("minus", dd::BasisStates::minus)
       .value("right", dd::BasisStates::right)
-      .value("left", dd::BasisStates::left)
-      .finalize();
+      .value("left", dd::BasisStates::left);
 
   dd.def(
       "basis_state",
@@ -150,7 +142,7 @@ void registerDDPackage(const py::module& mod) {
       },
       "num_qubits"_a, "state"_a,
       // keep the DD package alive while the returned vector DD is alive.
-      py::keep_alive<0, 1>());
+      nb::keep_alive<0, 1>());
 
   dd.def(
       "ghz_state",
@@ -159,7 +151,7 @@ void registerDDPackage(const py::module& mod) {
       },
       "num_qubits"_a,
       // keep the DD package alive while the returned vector DD is alive.
-      py::keep_alive<0, 1>());
+      nb::keep_alive<0, 1>());
 
   dd.def(
       "w_state",
@@ -168,13 +160,12 @@ void registerDDPackage(const py::module& mod) {
       },
       "num_qubits"_a,
       // keep the DD package alive while the returned vector DD is alive.
-      py::keep_alive<0, 1>());
+      nb::keep_alive<0, 1>());
 
   dd.def(
       "from_vector",
-      [](dd::Package& p, const py::array_t<std::complex<dd::fp>>& v) {
-        const auto data = v.unchecked<1>();
-        const auto length = static_cast<size_t>(data.shape(0));
+      [](dd::Package& p, const Vector& v) {
+        const auto length = static_cast<size_t>(v.shape(0));
         if (length == 0) {
           return dd::vEdge::one();
         }
@@ -183,20 +174,19 @@ void registerDDPackage(const py::module& mod) {
               "State vector must have a length of a power of two.");
         }
         if (length == 1) {
-          const auto state = dd::vEdge::terminal(p.cn.lookup(data(0)));
+          const auto state = dd::vEdge::terminal(p.cn.lookup(v(0)));
           p.incRef(state);
           return state;
         }
-
         const auto level = static_cast<dd::Qubit>(std::log2(length) - 1);
-        const auto state = makeDDFromVector(p, data, 0, length, level);
+        const auto state = makeDDFromVector(p, v, 0, length, level);
         const dd::vEdge e{state.p, p.cn.lookup(state.w)};
         p.incRef(e);
         return e;
       },
       "state"_a,
       // keep the DD package alive while the returned vector DD is alive.
-      py::keep_alive<0, 1>());
+      nb::keep_alive<0, 1>());
 
   dd.def(
       "apply_unitary_operation",
@@ -206,7 +196,7 @@ void registerDDPackage(const py::module& mod) {
       },
       "vec"_a, "operation"_a, "permutation"_a = qc::Permutation{},
       // keep the DD package alive while the returned vector DD is alive.
-      py::keep_alive<0, 1>());
+      nb::keep_alive<0, 1>());
 
   dd.def(
       "apply_measurement",
@@ -222,7 +212,7 @@ void registerDDPackage(const py::module& mod) {
       "vec"_a, "operation"_a, "measurements"_a,
       "permutation"_a = qc::Permutation{},
       // keep the DD package alive while the returned vector DD is alive.
-      py::keep_alive<0, 1>());
+      nb::keep_alive<0, 1>());
 
   dd.def(
       "apply_reset",
@@ -233,7 +223,7 @@ void registerDDPackage(const py::module& mod) {
       },
       "vec"_a, "operation"_a, "permutation"_a = qc::Permutation{},
       // keep the DD package alive while the returned vector DD is alive.
-      py::keep_alive<0, 1>());
+      nb::keep_alive<0, 1>());
 
   dd.def(
       "apply_if_else_operation",
@@ -245,7 +235,7 @@ void registerDDPackage(const py::module& mod) {
       "vec"_a, "operation"_a, "measurements"_a,
       "permutation"_a = qc::Permutation{},
       // keep the DD package alive while the returned vector DD is alive.
-      py::keep_alive<0, 1>());
+      nb::keep_alive<0, 1>());
 
   dd.def(
       "measure_collapsing",
@@ -265,115 +255,105 @@ void registerDDPackage(const py::module& mod) {
 
   dd.def_static("identity", &dd::Package::makeIdent);
 
-  using NumPyMatrix = py::array_t<std::complex<dd::fp>,
-                                  py::array::c_style | py::array::forcecast>;
   dd.def(
       "single_qubit_gate",
-      [](dd::Package& p, const NumPyMatrix& m, const dd::Qubit target) {
+      [](dd::Package& p, const Matrix& m, const dd::Qubit target) {
         if (m.ndim() != 2 || m.shape(0) != 2 || m.shape(1) != 2) {
           throw std::invalid_argument("Matrix must be 2x2.");
         }
-        const auto data = m.unchecked<2>();
-        return p.makeGateDD({data(0, 0), data(0, 1), data(1, 0), data(1, 1)},
-                            target);
+        return p.makeGateDD({m(0, 0), m(0, 1), m(1, 0), m(1, 1)}, target);
       },
       "matrix"_a, "target"_a,
       // keep the DD package alive while the returned matrix DD is alive.
-      py::keep_alive<0, 1>());
+      nb::keep_alive<0, 1>());
 
   dd.def(
       "controlled_single_qubit_gate",
-      [](dd::Package& p, const NumPyMatrix& m, const qc::Control& control,
+      [](dd::Package& p, const Matrix& m, const qc::Control& control,
          const dd::Qubit target) {
         if (m.ndim() != 2 || m.shape(0) != 2 || m.shape(1) != 2) {
           throw std::invalid_argument("Matrix must be 2x2.");
         }
-        const auto data = m.unchecked<2>();
-        return p.makeGateDD({data(0, 0), data(0, 1), data(1, 0), data(1, 1)},
-                            control, target);
+        return p.makeGateDD({m(0, 0), m(0, 1), m(1, 0), m(1, 1)}, control,
+                            target);
       },
       "matrix"_a, "control"_a, "target"_a,
       // keep the DD package alive while the returned matrix DD is alive.
-      py::keep_alive<0, 1>());
+      nb::keep_alive<0, 1>());
 
   dd.def(
       "multi_controlled_single_qubit_gate",
-      [](dd::Package& p, const NumPyMatrix& m, const qc::Controls& controls,
+      [](dd::Package& p, const Matrix& m, const qc::Controls& controls,
          const dd::Qubit target) {
         if (m.ndim() != 2 || m.shape(0) != 2 || m.shape(1) != 2) {
           throw std::invalid_argument("Matrix must be 2x2.");
         }
-        const auto data = m.unchecked<2>();
-        return p.makeGateDD({data(0, 0), data(0, 1), data(1, 0), data(1, 1)},
-                            controls, target);
+        return p.makeGateDD({m(0, 0), m(0, 1), m(1, 0), m(1, 1)}, controls,
+                            target);
       },
       "matrix"_a, "controls"_a, "target"_a,
       // keep the DD package alive while the returned matrix DD is alive.
-      py::keep_alive<0, 1>());
+      nb::keep_alive<0, 1>());
 
   dd.def(
       "two_qubit_gate",
-      [](dd::Package& p, const NumPyMatrix& m, const dd::Qubit target0,
+      [](dd::Package& p, const Matrix& m, const dd::Qubit target0,
          const dd::Qubit target1) {
         if (m.ndim() != 2 || m.shape(0) != 4 || m.shape(1) != 4) {
           throw std::invalid_argument("Matrix must be 4x4.");
         }
-        const auto data = m.unchecked<2>();
         return p.makeTwoQubitGateDD(
-            {std::array{data(0, 0), data(0, 1), data(0, 2), data(0, 3)},
-             {data(1, 0), data(1, 1), data(1, 2), data(1, 3)},
-             {data(2, 0), data(2, 1), data(2, 2), data(2, 3)},
-             {data(3, 0), data(3, 1), data(3, 2), data(3, 3)}},
+            {std::array{m(0, 0), m(0, 1), m(0, 2), m(0, 3)},
+             {m(1, 0), m(1, 1), m(1, 2), m(1, 3)},
+             {m(2, 0), m(2, 1), m(2, 2), m(2, 3)},
+             {m(3, 0), m(3, 1), m(3, 2), m(3, 3)}},
             target0, target1);
       },
       "matrix"_a, "target0"_a, "target1"_a,
       // keep the DD package alive while the returned matrix DD is alive.
-      py::keep_alive<0, 1>());
+      nb::keep_alive<0, 1>());
 
   dd.def(
       "controlled_two_qubit_gate",
-      [](dd::Package& p, const NumPyMatrix& m, const qc::Control& control,
+      [](dd::Package& p, const Matrix& m, const qc::Control& control,
          const dd::Qubit target0, const dd::Qubit target1) {
         if (m.ndim() != 2 || m.shape(0) != 4 || m.shape(1) != 4) {
           throw std::invalid_argument("Matrix must be 4x4.");
         }
-        const auto data = m.unchecked<2>();
         return p.makeTwoQubitGateDD(
-            {std::array{data(0, 0), data(0, 1), data(0, 2), data(0, 3)},
-             {data(1, 0), data(1, 1), data(1, 2), data(1, 3)},
-             {data(2, 0), data(2, 1), data(2, 2), data(2, 3)},
-             {data(3, 0), data(3, 1), data(3, 2), data(3, 3)}},
+            {std::array{m(0, 0), m(0, 1), m(0, 2), m(0, 3)},
+             {m(1, 0), m(1, 1), m(1, 2), m(1, 3)},
+             {m(2, 0), m(2, 1), m(2, 2), m(2, 3)},
+             {m(3, 0), m(3, 1), m(3, 2), m(3, 3)}},
             control, target0, target1);
       },
       "matrix"_a, "control"_a, "target0"_a, "target1"_a,
       // keep the DD package alive while the returned matrix DD is alive.
-      py::keep_alive<0, 1>());
+      nb::keep_alive<0, 1>());
 
   dd.def(
       "multi_controlled_two_qubit_gate",
-      [](dd::Package& p, const NumPyMatrix& m, const qc::Controls& controls,
+      [](dd::Package& p, const Matrix& m, const qc::Controls& controls,
          const dd::Qubit target0, const dd::Qubit target1) {
         if (m.ndim() != 2 || m.shape(0) != 4 || m.shape(1) != 4) {
           throw std::invalid_argument("Matrix must be 4x4.");
         }
-        const auto data = m.unchecked<2>();
         return p.makeTwoQubitGateDD(
-            {std::array{data(0, 0), data(0, 1), data(0, 2), data(0, 3)},
-             {data(1, 0), data(1, 1), data(1, 2), data(1, 3)},
-             {data(2, 0), data(2, 1), data(2, 2), data(2, 3)},
-             {data(3, 0), data(3, 1), data(3, 2), data(3, 3)}},
+            {std::array{m(0, 0), m(0, 1), m(0, 2), m(0, 3)},
+             {m(1, 0), m(1, 1), m(1, 2), m(1, 3)},
+             {m(2, 0), m(2, 1), m(2, 2), m(2, 3)},
+             {m(3, 0), m(3, 1), m(3, 2), m(3, 3)}},
             controls, target0, target1);
       },
       "matrix"_a, "controls"_a, "target0"_a, "target1"_a,
       // keep the DD package alive while the returned matrix DD is alive.
-      py::keep_alive<0, 1>());
+      nb::keep_alive<0, 1>());
 
   dd.def(
       "from_matrix",
-      [](dd::Package& p, const NumPyMatrix& m) {
-        const auto data = m.unchecked<2>();
-        const auto rows = static_cast<size_t>(data.shape(0));
-        const auto cols = static_cast<size_t>(data.shape(1));
+      [](dd::Package& p, const Matrix& m) {
+        const auto rows = static_cast<size_t>(m.shape(0));
+        const auto cols = static_cast<size_t>(m.shape(1));
         if (rows != cols) {
           throw std::invalid_argument("Matrix must be square.");
         }
@@ -385,16 +365,15 @@ void registerDDPackage(const py::module& mod) {
               "Matrix must have a size of a power of two.");
         }
         if (rows == 1) {
-          return dd::mEdge::terminal(p.cn.lookup(data(0, 0)));
+          return dd::mEdge::terminal(p.cn.lookup(m(0, 0)));
         }
         const auto level = static_cast<dd::Qubit>(std::log2(rows) - 1);
-        const auto matrixDD =
-            makeDDFromMatrix(p, data, 0, rows, 0, cols, level);
+        const auto matrixDD = makeDDFromMatrix(p, m, 0, rows, 0, cols, level);
         return dd::mEdge{matrixDD.p, p.cn.lookup(matrixDD.w)};
       },
       "matrix"_a,
       // keep the DD package alive while the returned matrix DD is alive.
-      py::keep_alive<0, 1>());
+      nb::keep_alive<0, 1>());
 
   dd.def(
       "from_operation",
@@ -406,7 +385,7 @@ void registerDDPackage(const py::module& mod) {
       },
       "operation"_a, "invert"_a = false,
       // keep the DD package alive while the returned matrix DD is alive.
-      py::keep_alive<0, 1>());
+      nb::keep_alive<0, 1>());
 
   // Reference counting and garbage collection
   dd.def("inc_ref_vec", &dd::Package::incRef<dd::vNode>, "vec"_a);
@@ -421,22 +400,22 @@ void registerDDPackage(const py::module& mod) {
              const dd::vEdge&, const dd::vEdge&)>(&dd::Package::add),
          "lhs"_a, "rhs"_a,
          // keep the DD package alive while the returned vector DD is alive.
-         py::keep_alive<0, 1>());
+         nb::keep_alive<0, 1>());
 
   dd.def("matrix_add",
          static_cast<dd::mEdge (dd::Package::*)(
              const dd::mEdge&, const dd::mEdge&)>(&dd::Package::add),
          "lhs"_a, "rhs"_a,
          // keep the DD package alive while the returned matrix DD is alive.
-         py::keep_alive<0, 1>());
+         nb::keep_alive<0, 1>());
 
   dd.def("conjugate", &dd::Package::conjugate, "vec"_a,
          // keep the DD package alive while the returned vector DD is alive.
-         py::keep_alive<0, 1>());
+         nb::keep_alive<0, 1>());
 
   dd.def("conjugate_transpose", &dd::Package::conjugateTranspose, "mat"_a,
          // keep the DD package alive while the returned matrix DD is alive.
-         py::keep_alive<0, 1>());
+         nb::keep_alive<0, 1>());
 
   dd.def(
       "matrix_vector_multiply",
@@ -445,7 +424,7 @@ void registerDDPackage(const py::module& mod) {
       },
       "mat"_a, "vec"_a,
       // keep the DD package alive while the returned vector DD is alive.
-      py::keep_alive<0, 1>());
+      nb::keep_alive<0, 1>());
 
   dd.def(
       "matrix_multiply",
@@ -454,7 +433,7 @@ void registerDDPackage(const py::module& mod) {
       },
       "lhs"_a, "rhs"_a,
       // keep the DD package alive while the returned matrix DD is alive.
-      py::keep_alive<0, 1>());
+      nb::keep_alive<0, 1>());
 
   dd.def(
       "inner_product",
@@ -474,7 +453,7 @@ void registerDDPackage(const py::module& mod) {
              &dd::Package::kronecker),
          "top"_a, "bottom"_a, "bottom_num_qubits"_a, "increment_index"_a = true,
          // keep the DD package alive while the returned vector DD is alive.
-         py::keep_alive<0, 1>());
+         nb::keep_alive<0, 1>());
 
   dd.def("matrix_kronecker",
          static_cast<dd::mEdge (dd::Package::*)(
@@ -482,11 +461,11 @@ void registerDDPackage(const py::module& mod) {
              &dd::Package::kronecker),
          "top"_a, "bottom"_a, "bottom_num_qubits"_a, "increment_index"_a = true,
          // keep the DD package alive while the returned matrix DD is alive.
-         py::keep_alive<0, 1>());
+         nb::keep_alive<0, 1>());
 
   dd.def("partial_trace", &dd::Package::partialTrace, "mat"_a, "eliminate"_a,
          // keep the DD package alive while the returned matrix DD is alive.
-         py::keep_alive<0, 1>());
+         nb::keep_alive<0, 1>());
 
   dd.def(
       "trace",
@@ -495,4 +474,5 @@ void registerDDPackage(const py::module& mod) {
       },
       "mat"_a, "num_qubits"_a);
 }
+
 } // namespace mqt

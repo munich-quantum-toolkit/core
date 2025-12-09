@@ -13,75 +13,63 @@
 #include "dd/Export.hpp"
 #include "dd/Node.hpp"
 
-// These includes must be the first includes for any bindings code
-// clang-format off
-#include <pybind11/pybind11.h>
-#include <pybind11/stl.h> // NOLINT(misc-include-cleaner)
-
-#include <pybind11/buffer_info.h>
-#include <pybind11/cast.h>
-#include <pybind11/numpy.h> // NOLINT(misc-include-cleaner)
-// clang-format on
-
 #include <cmath>
 #include <complex>
 #include <cstddef>
+#include <nanobind/nanobind.h>
+#include <nanobind/ndarray.h>
+#include <nanobind/stl/complex.h>
+#include <nanobind/stl/string.h>
+#include <nanobind/stl/vector.h>
 #include <sstream>
 #include <string>
 #include <vector>
 
 namespace mqt {
 
-namespace py = pybind11;
-using namespace pybind11::literals;
+namespace nb = nanobind;
+using namespace nb::literals;
 
-struct Matrix {
-  std::vector<std::complex<dd::fp>> data;
-  size_t n;
-};
+using Matrix = nb::ndarray<nb::numpy, std::complex<dd::fp>, nb::ndim<2>>;
 
 // NOLINTNEXTLINE(misc-use-internal-linkage)
 Matrix getMatrix(const dd::mEdge& m, const size_t numQubits,
                  const dd::fp threshold = 0.) {
   if (numQubits == 0U) {
-    return Matrix{.data = {static_cast<std::complex<dd::fp>>(m.w)}, .n = 1};
+    auto* data = new std::complex<dd::fp>[1];
+    data[0] = static_cast<std::complex<dd::fp>>(m.w);
+    nb::capsule owner(
+        data, [](void* p) noexcept { delete[] (std::complex<dd::fp>*)p; });
+    return Matrix(data, {1, 1}, owner);
   }
-  const size_t dim = 1ULL << numQubits;
-  auto data = std::vector<std::complex<dd::fp>>(dim * dim);
+
+  const auto dim = 1ULL << numQubits;
+  auto* data = new std::complex<dd::fp>[dim * dim];
   m.traverseMatrix(
       std::complex<dd::fp>{1., 0.}, 0ULL, 0ULL,
       [&data, dim](const std::size_t i, const std::size_t j,
                    const std::complex<dd::fp>& c) { data[(i * dim) + j] = c; },
       numQubits, threshold);
-  return Matrix{.data = data, .n = dim};
+  nb::capsule owner(
+      data, [](void* p) noexcept { delete[] (std::complex<dd::fp>*)p; });
+  return Matrix(data, {dim, dim}, owner);
 }
 
 // NOLINTNEXTLINE(misc-use-internal-linkage)
-void registerMatrixDDs(const py::module& mod) {
-  auto mat = py::class_<dd::mEdge>(mod, "MatrixDD");
+void registerMatrixDDs(const nb::module_& m) {
+  auto mat = nb::class_<dd::mEdge>(m, "MatrixDD");
 
   mat.def("is_terminal", &dd::mEdge::isTerminal);
   mat.def("is_zero_terminal", &dd::mEdge::isZeroTerminal);
   mat.def("is_identity", &dd::mEdge::isIdentity<>,
           "up_to_global_phase"_a = true);
 
-  mat.def("size", py::overload_cast<>(&dd::mEdge::size, py::const_));
+  mat.def("size", nb::overload_cast<>(&dd::mEdge::size, nb::const_));
 
   mat.def("get_entry", &dd::mEdge::getValueByIndex<>, "num_qubits"_a, "row"_a,
           "col"_a);
   mat.def("get_entry_by_path", &dd::mEdge::getValueByPath, "num_qubits"_a,
           "decisions"_a);
-
-  py::class_<Matrix>(mod, "Matrix", py::buffer_protocol())
-      .def_buffer([](Matrix& matrix) -> py::buffer_info {
-        return py::buffer_info(
-            matrix.data.data(), sizeof(std::complex<dd::fp>),
-            // NOLINTNEXTLINE(misc-include-cleaner)
-            py::format_descriptor<std::complex<dd::fp>>::format(), 2,
-            {matrix.n, matrix.n},
-            {sizeof(std::complex<dd::fp>) * matrix.n,
-             sizeof(std::complex<dd::fp>)});
-      });
 
   mat.def("get_matrix", &getMatrix, "num_qubits"_a, "threshold"_a = 0.);
 

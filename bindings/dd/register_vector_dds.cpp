@@ -13,44 +13,42 @@
 #include "dd/Export.hpp"
 #include "dd/Node.hpp"
 
-// These includes must be the first includes for any bindings code
-// clang-format off
-#include <pybind11/pybind11.h>
-#include <pybind11/stl.h> // NOLINT(misc-include-cleaner)
-
-#include <pybind11/buffer_info.h>
-#include <pybind11/cast.h>
-#include <pybind11/numpy.h> // NOLINT(misc-include-cleaner)
-// clang-format on
-
 #include <cmath>
 #include <complex>
 #include <cstddef>
+#include <nanobind/nanobind.h>
+#include <nanobind/ndarray.h>
+#include <nanobind/stl/complex.h>
+#include <nanobind/stl/string.h>
+#include <nanobind/stl/vector.h>
 #include <sstream>
 #include <string>
 
 namespace mqt {
 
-namespace py = pybind11;
-using namespace pybind11::literals;
+namespace nb = nanobind;
+using namespace nb::literals;
 
-struct Vector {
-  dd::CVec v;
-};
+using Vector = nb::ndarray<nb::numpy, std::complex<dd::fp>, nb::ndim<1>>;
 
 // NOLINTNEXTLINE(misc-use-internal-linkage)
 Vector getVector(const dd::vEdge& v, const dd::fp threshold = 0.) {
-  return {v.getVector(threshold)};
+  auto vec = v.getVector(threshold);
+  auto* data = new std::complex<dd::fp>[vec.size()];
+  std::copy(vec.begin(), vec.end(), data);
+  nb::capsule owner(
+      data, [](void* p) noexcept { delete[] (std::complex<dd::fp>*)p; });
+  return Vector(data, {vec.size()}, owner);
 }
 
 // NOLINTNEXTLINE(misc-use-internal-linkage)
-void registerVectorDDs(const py::module& mod) {
-  auto vec = py::class_<dd::vEdge>(mod, "VectorDD");
+void registerVectorDDs(const nb::module_& m) {
+  auto vec = nb::class_<dd::vEdge>(m, "VectorDD");
 
   vec.def("is_terminal", &dd::vEdge::isTerminal);
   vec.def("is_zero_terminal", &dd::vEdge::isZeroTerminal);
 
-  vec.def("size", py::overload_cast<>(&dd::vEdge::size, py::const_));
+  vec.def("size", nb::overload_cast<>(&dd::vEdge::size, nb::const_));
 
   vec.def(
       "__getitem__",
@@ -66,15 +64,6 @@ void registerVectorDDs(const py::module& mod) {
         return v.getValueByPath(numQubits, decisions);
       },
       "num_qubits"_a, "decisions"_a);
-
-  py::class_<Vector>(mod, "Vector", py::buffer_protocol())
-      .def_buffer([](Vector& vector) -> py::buffer_info {
-        return py::buffer_info(
-            vector.v.data(), sizeof(std::complex<dd::fp>),
-            // NOLINTNEXTLINE(misc-include-cleaner)
-            py::format_descriptor<std::complex<dd::fp>>::format(), 1,
-            {vector.v.size()}, {sizeof(std::complex<dd::fp>)});
-      });
 
   vec.def("get_vector", &getVector, "threshold"_a = 0.);
 

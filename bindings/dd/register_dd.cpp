@@ -16,57 +16,48 @@
 #include "dd/StateGeneration.hpp"
 #include "ir/QuantumComputation.hpp"
 
-// These includes must be the first includes for any bindings code
-// clang-format off
-#include <pybind11/pybind11.h>
-#include <pybind11/stl.h> // NOLINT(misc-include-cleaner)
-
-#include <pybind11/cast.h>
-// clang-format on
-
 #include <complex>
 #include <cstddef>
 #include <memory>
+#include <nanobind/nanobind.h>
+#include <nanobind/ndarray.h>
+#include <nanobind/stl/map.h>
+#include <nanobind/stl/string.h>
 #include <vector>
 
 namespace mqt {
 
-namespace py = pybind11;
-using namespace pybind11::literals;
+namespace nb = nanobind;
+using namespace nb::literals;
 
 // forward declarations
-void registerVectorDDs(const py::module& mod);
-void registerMatrixDDs(const py::module& mod);
-void registerDDPackage(const py::module& mod);
+void registerVectorDDs(const nb::module_& m);
+void registerMatrixDDs(const nb::module_& m);
+void registerDDPackage(const nb::module_& m);
 
-struct Vector {
-  dd::CVec v;
-};
+using Vector = nb::ndarray<nb::numpy, std::complex<dd::fp>, nb::ndim<1>>;
 Vector getVector(const dd::vEdge& v, dd::fp threshold = 0.);
 
-struct Matrix {
-  std::vector<std::complex<dd::fp>> data;
-  size_t n;
-};
+using Matrix = nb::ndarray<nb::numpy, std::complex<dd::fp>, nb::ndim<2>>;
 Matrix getMatrix(const dd::mEdge& m, size_t numQubits, dd::fp threshold = 0.);
 
-PYBIND11_MODULE(MQT_CORE_MODULE_NAME, mod, py::mod_gil_not_used()) {
+NB_MODULE(MQT_CORE_MODULE_NAME, m) {
   // Vector Decision Diagrams
-  registerVectorDDs(mod);
+  registerVectorDDs(m);
 
   // Matrix Decision Diagrams
-  registerMatrixDDs(mod);
+  registerMatrixDDs(m);
 
   // DD Package
-  registerDDPackage(mod);
+  registerDDPackage(m);
 
-  mod.def(
+  m.def(
       "sample",
       [](const qc::QuantumComputation& qc, const size_t shots = 1024U,
          const size_t seed = 0U) { return dd::sample(qc, shots, seed); },
       "qc"_a, "shots"_a = 1024U, "seed"_a = 0U);
 
-  mod.def(
+  m.def(
       "simulate_statevector",
       [](const qc::QuantumComputation& qc) {
         auto dd = std::make_unique<dd::Package>(qc.getNqubits());
@@ -76,7 +67,7 @@ PYBIND11_MODULE(MQT_CORE_MODULE_NAME, mod, py::mod_gil_not_used()) {
       },
       "qc"_a);
 
-  mod.def(
+  m.def(
       "build_unitary",
       [](const qc::QuantumComputation& qc, const bool recursive = false) {
         auto dd = std::make_unique<dd::Package>(qc.getNqubits());
@@ -86,9 +77,9 @@ PYBIND11_MODULE(MQT_CORE_MODULE_NAME, mod, py::mod_gil_not_used()) {
       },
       "qc"_a, "recursive"_a = false);
 
-  mod.def("simulate", &dd::simulate, "qc"_a, "initial_state"_a, "dd_package"_a);
+  m.def("simulate", &dd::simulate, "qc"_a, "initial_state"_a, "dd_package"_a);
 
-  mod.def(
+  m.def(
       "build_functionality",
       [](const qc::QuantumComputation& qc, dd::Package& p,
          const bool recursive = false) {
