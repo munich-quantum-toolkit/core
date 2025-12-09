@@ -21,6 +21,6 @@ using namespace mlir::utils;
 
 void RXOp::build(OpBuilder& builder, OperationState& state, Value qubitIn,
                  const std::variant<double, Value>& theta) {
-  const auto& thetaOperand = variantToValue(builder, state, theta);
+  auto thetaOperand = variantToValue(builder, state, theta);
   build(builder, state, qubitIn, thetaOperand);
 }

@@ -118,9 +118,9 @@ void UOp::build(OpBuilder& builder, OperationState& state, Value qubitIn,
                 const std::variant<double, Value>& theta,
                 const std::variant<double, Value>& phi,
                 const std::variant<double, Value>& lambda) {
-  const auto& thetaOperand = variantToValue(builder, state, theta);
-  const auto& phiOperand = variantToValue(builder, state, phi);
-  const auto& lambdaOperand = variantToValue(builder, state, lambda);
+  auto thetaOperand = variantToValue(builder, state, theta);
+  auto phiOperand = variantToValue(builder, state, phi);
+  auto lambdaOperand = variantToValue(builder, state, lambda);
   build(builder, state, qubitIn, thetaOperand, phiOperand, lambdaOperand);
 }
 

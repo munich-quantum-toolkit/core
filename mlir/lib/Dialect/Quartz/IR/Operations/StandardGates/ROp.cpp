@@ -22,7 +22,7 @@ using namespace mlir::utils;
 void ROp::build(OpBuilder& builder, OperationState& state, Value qubitIn,
                 const std::variant<double, Value>& theta,
                 const std::variant<double, Value>& phi) {
-  const auto& thetaOperand = variantToValue(builder, state, theta);
-  const auto& phiOperand = variantToValue(builder, state, phi);
+  auto thetaOperand = variantToValue(builder, state, theta);
+  auto phiOperand = variantToValue(builder, state, phi);
   build(builder, state, qubitIn, thetaOperand, phiOperand);
 }

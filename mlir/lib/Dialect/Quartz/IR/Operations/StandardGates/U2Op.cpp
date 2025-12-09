@@ -22,7 +22,7 @@ using namespace mlir::utils;
 void U2Op::build(OpBuilder& builder, OperationState& state, Value qubitIn,
                  const std::variant<double, Value>& phi,
                  const std::variant<double, Value>& lambda) {
-  const auto& phiOperand = variantToValue(builder, state, phi);
-  const auto& lambdaOperand = variantToValue(builder, state, lambda);
+  auto phiOperand = variantToValue(builder, state, phi);
+  auto lambdaOperand = variantToValue(builder, state, lambda);
   build(builder, state, qubitIn, phiOperand, lambdaOperand);
 }
