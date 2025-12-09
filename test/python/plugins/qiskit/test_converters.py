@@ -86,7 +86,7 @@ def test_qiskit_to_iqm_json_barrier(mock_qdmi_device_factory: type[MockQDMIDevic
 
     barrier_instr = program["instructions"][0]
     assert barrier_instr["name"] == "barrier"
-    assert len(barrier_instr["qubits"]) == 3
+    assert len(barrier_instr["locus"]) == 3
     assert barrier_instr["args"] == {}
 
 
@@ -102,7 +102,7 @@ def test_qiskit_to_iqm_json_cz_gate(mock_qdmi_device_factory: type[MockQDMIDevic
 
     cz_instr = program["instructions"][0]
     assert cz_instr["name"] == "cz"
-    assert len(cz_instr["qubits"]) == 2
+    assert len(cz_instr["locus"]) == 2
     assert cz_instr["args"] == {}
 
 
