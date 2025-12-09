@@ -8,105 +8,97 @@
  * Licensed under the MIT License
  */
 
-// These includes must be the first includes for any bindings code
-// clang-format off
 #include "fomac/FoMaC.hpp"
+
 #include "na/fomac/Device.hpp"
 #include "qdmi/na/Generator.hpp"
 
-#include <pybind11/cast.h>
-#include <pybind11/operators.h>
-#include <pybind11/pybind11.h>
-#include <pybind11/pytypes.h>
-#include <pybind11/stl.h> // NOLINT(misc-include-cleaner)
+#include <nanobind/nanobind.h>
+#include <nanobind/operators.h>
+#include <nanobind/stl/string.h>
+#include <nanobind/stl/vector.h>
 #include <string>
-// clang-format on
 
 namespace mqt {
 
-namespace py = pybind11;
-using namespace py::literals;
+namespace nb = nanobind;
+using namespace nb::literals;
 
 namespace {
+
 template <typename T>
-concept pyClass = requires(T t) { py::cast(t); };
+concept pyClass = requires(T t) { nb::cast(t); };
 template <pyClass T> [[nodiscard]] auto repr(T c) -> std::string {
-  return py::repr(py::cast(c)).template cast<std::string>();
+  return nb::repr(nb::cast(c)).c_str();
 }
+
 } // namespace
 
-// The definition of the (in-)equality operators produces warnings in clang-tidy
-// which are ignored by the following comment
-// NOLINTBEGIN(misc-redundant-expression)
-PYBIND11_MODULE(MQT_CORE_MODULE_NAME, m, py::mod_gil_not_used()) {
-  pybind11::module_::import("mqt.core.fomac");
+NB_MODULE(MQT_CORE_MODULE_NAME, m) {
+  nb::module_::import_("mqt.core.fomac");
 
   auto device =
-      py::class_<na::Session::Device, fomac::Session::Device>(m, "Device");
+      nb::class_<na::Session::Device, fomac::Session::Device>(m, "Device");
 
-  auto lattice = py::class_<na::Device::Lattice>(device, "Lattice");
+  auto lattice = nb::class_<na::Device::Lattice>(device, "Lattice");
 
-  auto vector = py::class_<na::Device::Vector>(lattice, "Vector");
-  vector.def_readonly("x", &na::Device::Vector::x);
-  vector.def_readonly("y", &na::Device::Vector::y);
+  auto vector = nb::class_<na::Device::Vector>(lattice, "Vector");
+  vector.def_ro("x", &na::Device::Vector::x);
+  vector.def_ro("y", &na::Device::Vector::y);
   vector.def("__repr__", [](const na::Device::Vector& v) {
     return "<Vector x=" + std::to_string(v.x) + " y=" + std::to_string(v.y) +
            ">";
   });
-  vector.def(py::self == py::self);
-  vector.def(py::self != py::self);
+  vector.def(nb::self == nb::self);
+  vector.def(nb::self != nb::self);
 
-  auto region = py::class_<na::Device::Region>(lattice, "Region");
+  auto region = nb::class_<na::Device::Region>(lattice, "Region");
 
-  auto size = py::class_<na::Device::Region::Size>(region, "Size");
-  size.def_readonly("width", &na::Device::Region::Size::width);
-  size.def_readonly("height", &na::Device::Region::Size::height);
+  auto size = nb::class_<na::Device::Region::Size>(region, "Size");
+  size.def_ro("width", &na::Device::Region::Size::width);
+  size.def_ro("height", &na::Device::Region::Size::height);
   size.def("__repr__", [](const na::Device::Region::Size& s) {
     return "<Size width=" + std::to_string(s.width) +
            " height=" + std::to_string(s.height) + ">";
   });
-  size.def(py::self == py::self);
-  size.def(py::self != py::self);
+  size.def(nb::self == nb::self);
+  size.def(nb::self != nb::self);
 
-  region.def_readonly("origin", &na::Device::Region::origin);
-  region.def_readonly("size", &na::Device::Region::size);
+  region.def_ro("origin", &na::Device::Region::origin);
+  region.def_ro("size", &na::Device::Region::size);
   region.def("__repr__", [](const na::Device::Region& r) {
     return "<Region origin=" + repr(r.origin) + " size=" + repr(r.size) + ">";
   });
-  region.def(py::self == py::self);
-  region.def(py::self != py::self);
+  region.def(nb::self == nb::self);
+  region.def(nb::self != nb::self);
 
-  lattice.def_readonly("lattice_origin", &na::Device::Lattice::latticeOrigin);
-  lattice.def_readonly("lattice_vector_1",
-                       &na::Device::Lattice::latticeVector1);
-  lattice.def_readonly("lattice_vector_2",
-                       &na::Device::Lattice::latticeVector2);
-  lattice.def_readonly("sublattice_offsets",
-                       &na::Device::Lattice::sublatticeOffsets);
-  lattice.def_readonly("extent", &na::Device::Lattice::extent);
+  lattice.def_ro("lattice_origin", &na::Device::Lattice::latticeOrigin);
+  lattice.def_ro("lattice_vector_1", &na::Device::Lattice::latticeVector1);
+  lattice.def_ro("lattice_vector_2", &na::Device::Lattice::latticeVector2);
+  lattice.def_ro("sublattice_offsets", &na::Device::Lattice::sublatticeOffsets);
+  lattice.def_ro("extent", &na::Device::Lattice::extent);
   lattice.def("__repr__", [](const na::Device::Lattice& l) {
-    return "<Lattice origin=" +
-           py::repr(py::cast(l.latticeOrigin)).cast<std::string>() + ">";
+    return "<Lattice origin=" + repr(l.latticeOrigin) + ">";
   });
-  lattice.def(py::self == py::self);
-  lattice.def(py::self != py::self);
+  lattice.def(nb::self == nb::self);
+  lattice.def(nb::self != nb::self);
 
-  device.def_property_readonly("traps", &na::Session::Device::getTraps);
-  device.def_property_readonly("t1", [](const na::Session::Device& dev) {
+  device.def_prop_ro("traps", &na::Session::Device::getTraps);
+  device.def_prop_ro("t1", [](const na::Session::Device& dev) {
     return dev.getDecoherenceTimes().t1;
   });
-  device.def_property_readonly("t2", [](const na::Session::Device& dev) {
+  device.def_prop_ro("t2", [](const na::Session::Device& dev) {
     return dev.getDecoherenceTimes().t2;
   });
   device.def("__repr__", [](const fomac::Session::Device& dev) {
     return "<Device name=\"" + dev.getName() + "\">";
   });
-  device.def(py::self == py::self);
-  device.def(py::self != py::self);
+  device.def(nb::self == nb::self);
+  device.def(nb::self != nb::self);
 
   m.def("devices", &na::Session::getDevices);
   device.def_static("try_create_from_device",
                     &na::Session::Device::tryCreateFromDevice, "device"_a);
 }
-// NOLINTEND(misc-redundant-expression)
+
 } // namespace mqt
