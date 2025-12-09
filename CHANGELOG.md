@@ -41,6 +41,7 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 
 ### Fixed
 
+- 🐛 Fix operation validation in Qiskit backend to handle device-specific gate naming conventions ([#1384]) ([**@marcelwa**])
 - 🐛 Fix custom QDMI property and parameter handling in SC and NA devices ([#1355]) ([**@burgholzer**])
 - 🚨 Fix argument naming of `QuantumComputation` and `CompoundOperation` dunder methods for properly implementing the `MutableSequence` protocol ([#1338]) ([**@burgholzer**])
 - 🐛 Fix memory management in dynamic QDMI device by making it explicit ([#1336]) ([**@ystade**])
@@ -129,8 +130,10 @@ _If you are upgrading: please see [`UPGRADING.md`](UPGRADING.md#330)._
 
 ### Removed
 
-- 🔥 Drop support for Python 3.9 ([#1181]) ([**@denialhaag**])
-- 🔥 Remove `ClassicControlledOperation` from C++ library and Python package ([#1117]) ([**@denialhaag**])
+- **Breaking**: 🔥 Remove the `Teleportation` gate from the IR ([#882]) ([**@burgholzer**])
+- **Breaking**: 🔥 Remove parsers for `.real`, `.qc`, `.tfc`, and `GRCS` files ([#822]) ([**@burgholzer**])
+- **Breaking**: 🔥 Remove tensor dump functionality ([#798]) ([**@burgholzer**])
+- **Breaking**: 🔥 Remove `extract_probability_vector` functionality ([#883]) ([**@burgholzer**])
 
 ### Fixed
 
@@ -280,6 +283,7 @@ _📚 Refer to the [GitHub Release Notes](https://github.com/munich-quantum-tool
 
 <!-- PR links -->
 
+[#1384]: https://github.com/munich-quantum-toolkit/core/pull/1384
 [#1382]: https://github.com/munich-quantum-toolkit/core/pull/1382
 [#1381]: https://github.com/munich-quantum-toolkit/core/pull/1381
 [#1375]: https://github.com/munich-quantum-toolkit/core/pull/1375
