@@ -388,9 +388,10 @@ Driver::~Driver() {
 auto Driver::addDynamicDeviceLibrary(const std::string& libName,
                                      const std::string& prefix,
                                      const DeviceSessionConfig& config)
-    -> void {
+    -> QDMI_Device {
   devices_.emplace_back(std::make_unique<QDMI_Device_impl_d>(
       std::make_unique<DynamicDeviceLibrary>(libName, prefix), config));
+  return devices_.back().get();
 }
 #endif
 

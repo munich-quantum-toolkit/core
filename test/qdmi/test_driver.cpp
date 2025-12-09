@@ -705,6 +705,31 @@ TEST(DeviceSessionConfigTest, IdempotentLoadingWithDifferentConfigs) {
     }
   }
 }
+
+TEST(DynamicDeviceLibraryTest, addDynamicDeviceLibraryReturnsDevice) {
+  // Test that addDynamicDeviceLibrary returns a valid device pointer
+  if constexpr (DYN_DEV_LIBS.empty()) {
+    GTEST_SKIP() << "No dynamic device libraries configured for testing.";
+  }
+  auto& driver = qdmi::Driver::get();
+  for (const auto& [lib, prefix] : DYN_DEV_LIBS) {
+    const qdmi::DeviceSessionConfig config;
+    QDMI_Device device = nullptr;
+    ASSERT_NO_THROW(
+        { device = driver.addDynamicDeviceLibrary(lib, prefix, config); });
+    EXPECT_NE(device, nullptr)
+        << "addDynamicDeviceLibrary should return a non-null device pointer";
+
+    // Verify the device is valid by querying its name
+    if (device != nullptr) {
+      size_t size = 0;
+      EXPECT_EQ(QDMI_device_query_device_property(
+                    device, QDMI_DEVICE_PROPERTY_NAME, 0, nullptr, &size),
+                QDMI_SUCCESS);
+      EXPECT_GT(size, 0) << "Device should have a non-empty name";
+    }
+  }
+}
 #endif // _WIN32
 
 INSTANTIATE_TEST_SUITE_P(
