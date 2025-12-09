@@ -16,6 +16,7 @@
 #include <cstdint>
 #include <memory>
 #include <nanobind/nanobind.h>
+#include <nanobind/stl/optional.h>
 #include <nanobind/stl/string.h>
 #include <sstream>
 #include <utility>

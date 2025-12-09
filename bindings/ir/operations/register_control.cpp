@@ -13,6 +13,7 @@
 
 #include <nanobind/nanobind.h>
 #include <nanobind/operators.h>
+#include <nanobind/stl/set.h>
 #include <nanobind/stl/string.h>
 
 namespace mqt {

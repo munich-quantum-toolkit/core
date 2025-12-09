@@ -15,9 +15,9 @@
 #include "ir/operations/StandardOperation.hpp"
 
 #include <nanobind/nanobind.h>
+#include <nanobind/stl/set.h>
 #include <nanobind/stl/string.h>
 #include <nanobind/stl/vector.h>
-#include <nanobind/trampoline.h>
 #include <sstream>
 #include <vector>
 

@@ -21,7 +21,10 @@
 #include <cstdint>
 #include <memory>
 #include <nanobind/nanobind.h>
+#include <nanobind/stl/set.h>
 #include <nanobind/stl/string.h>
+#include <nanobind/stl/unordered_map.h>
+#include <nanobind/stl/variant.h>
 #include <nanobind/stl/vector.h>
 #include <stdexcept>
 #include <string>
