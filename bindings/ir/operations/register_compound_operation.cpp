@@ -43,7 +43,16 @@ void registerCompoundOperation(const nb::module_& m) {
     return i;
   };
 
-  nb::class_<qc::CompoundOperation, qc::Operation>(m, "CompoundOperation")
+  nb::class_<qc::CompoundOperation, qc::Operation>(
+      m, "CompoundOperation", R"pb(Compound quantum operation.
+
+This class is used to aggregate and group multiple operations into a single object.
+This is useful for optimizations and for representing complex quantum functionality.
+A :class:`CompoundOperation` can contain any number of operations, including other :class:`CompoundOperation`'s.
+
+Args:
+    ops: The operations that are part of the compound operation.)pb")
+
       .def(nb::init<>())
       .def(
           "__init__",
@@ -57,14 +66,28 @@ void registerCompoundOperation(const nb::module_& m) {
             new (self) qc::CompoundOperation(std::move(uniqueOps));
           },
           "ops"_a)
-      .def("__len__", &qc::CompoundOperation::size)
+
+      .def("__len__", &qc::CompoundOperation::size,
+           "The number of operations in the compound operation.")
+
       .def(
           "__getitem__",
           [&wrap](const qc::CompoundOperation& op, DiffType i) {
             i = wrap(i, op.size());
             return op.at(static_cast<SizeType>(i)).get();
           },
-          nb::rv_policy::reference_internal, "index"_a)
+          nb::rv_policy::reference_internal, "index"_a,
+          R"pb(Get the operation at the given index.
+
+Note:
+    This gives direct access to the operations in the compound operation
+
+Args:
+    index: The index of the operation to get.
+
+Returns:
+    The operation at the given index.)pb")
+
       .def(
           "__getitem__",
           [](const qc::CompoundOperation& op, const nb::slice& slice) {
@@ -76,7 +99,18 @@ void registerCompoundOperation(const nb::module_& m) {
             }
             return ops;
           },
-          nb::rv_policy::reference_internal, "index"_a)
+          nb::rv_policy::reference_internal, "index"_a,
+          R"pb(Get the operations in the given slice.
+
+Note:
+    This gives direct access to the operations in the compound operation.
+
+Args:
+    index: The slice of the operations to get.
+
+Returns:
+    The operations in the given slice.)pb")
+
       .def(
           "__setitem__",
           [&wrap](qc::CompoundOperation& compOp, DiffType i,
@@ -84,7 +118,12 @@ void registerCompoundOperation(const nb::module_& m) {
             i = wrap(i, compOp.size());
             compOp[static_cast<SizeType>(i)] = op.clone();
           },
-          "index"_a, "value"_a)
+          "index"_a, "value"_a, R"pb(Set the operation at the given index.
+
+Args:
+    index: The index of the operation to set.
+    value: The operation to set at the given index.)pb")
+
       .def(
           "__setitem__",
           [](qc::CompoundOperation& compOp, const nb::slice& slice,
@@ -100,14 +139,23 @@ void registerCompoundOperation(const nb::module_& m) {
               start += step;
             }
           },
-          "index"_a, "value"_a)
+          "index"_a, "value"_a, R"pb(Set the operations in the given slice.
+
+Args:
+    index: The slice of operations to set.
+    value: The operations to set in the given slice.)pb")
+
       .def(
           "__delitem__",
           [&wrap](qc::CompoundOperation& op, DiffType i) {
             i = wrap(i, op.size());
             op.erase(op.begin() + i);
           },
-          "index"_a)
+          "index"_a, R"pb(Delete the operation at the given index.
+
+Args:
+    index: The index of the operation to delete.)pb")
+
       .def(
           "__delitem__",
           [](qc::CompoundOperation& op, const nb::slice& slice) {
@@ -120,13 +168,18 @@ void registerCompoundOperation(const nb::module_& m) {
               op.erase(op.begin() + offset);
             }
           },
-          "index"_a)
+          "index"_a, R"pb(Delete the operations in the given slice.
+
+Args:
+    index: The slice of operations to delete.)pb")
+
       .def(
           "append",
           [](qc::CompoundOperation& compOp, const qc::Operation& op) {
             compOp.emplace_back(op.clone());
           },
-          "value"_a)
+          "value"_a, "Append an operation to the compound operation.")
+
       .def(
           "insert",
           [](qc::CompoundOperation& compOp, const std::size_t idx,
@@ -134,9 +187,18 @@ void registerCompoundOperation(const nb::module_& m) {
             compOp.insert(compOp.begin() + static_cast<int64_t>(idx),
                           op.clone());
           },
-          "index"_a, "value"_a)
-      .def("empty", &qc::CompoundOperation::empty)
-      .def("clear", &qc::CompoundOperation::clear)
+          "index"_a, "value"_a, R"pb(Insert an operation at the given index.
+
+Args:
+    index: The index to insert the operation at.
+    value: The operation to insert.)pb")
+
+      .def("empty", &qc::CompoundOperation::empty,
+           "Check if the compound operation is empty.")
+
+      .def("clear", &qc::CompoundOperation::clear,
+           "Clear all operations in the compound operation.")
+
       .def("__repr__", [](const qc::CompoundOperation& op) {
         std::stringstream ss;
         ss << "CompoundOperation([..." << op.size() << " ops...])";

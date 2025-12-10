@@ -26,15 +26,29 @@ using namespace nb::literals;
 
 // NOLINTNEXTLINE(misc-use-internal-linkage)
 void registerNonUnitaryOperation(const nb::module_& m) {
-  nb::class_<qc::NonUnitaryOperation, qc::Operation>(m, "NonUnitaryOperation")
+  nb::class_<qc::NonUnitaryOperation, qc::Operation>(m, "NonUnitaryOperation",
+                                                     R"pb(Non-unitary operation.
+
+This class is used to represent all non-unitary operations, i.e., operations that are not reversible.
+This includes measurements and resets.
+
+Args:
+    targets: The target qubit(s) of the operation.
+    classics: The classical bit(s) that are associated with the operation (only relevant for measurements).
+    op_type: The type of the operation.)pb")
+
       .def(nb::init<std::vector<qc::Qubit>, std::vector<qc::Bit>>(),
            "targets"_a, "classics"_a)
       .def(nb::init<qc::Qubit, qc::Bit>(), "target"_a, "classic"_a)
       .def(nb::init<std::vector<qc::Qubit>, qc::OpType>(), "targets"_a,
            "op_type"_a = qc::OpType::Reset)
-      .def_prop_ro("classics",
-                   nb::overload_cast<>(&qc::NonUnitaryOperation::getClassics,
-                                       nb::const_))
+
+      .def_prop_ro(
+          "classics",
+          nb::overload_cast<>(&qc::NonUnitaryOperation::getClassics,
+                              nb::const_),
+          "The classical registers that are associated with the operation.")
+
       .def("__repr__", [](const qc::NonUnitaryOperation& op) {
         std::stringstream ss;
         ss << "NonUnitaryOperation(";

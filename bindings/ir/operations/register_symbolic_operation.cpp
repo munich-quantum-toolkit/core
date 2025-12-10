@@ -31,10 +31,20 @@ using namespace nb::literals;
 void registerSymbolicOperation(const nb::module_& m) {
   nb::class_<qc::SymbolicOperation, qc::StandardOperation>(
       m, "SymbolicOperation",
-      "Class representing a symbolic operation."
-      "This encompasses all symbolic versions of `StandardOperation` that "
-      "involve (float) angle parameters.")
-      .def(nb::init<>(), "Create an empty symbolic operation.")
+      R"pb(Symbolic quantum operation.
+
+This class is used to represent quantum operations that are not yet fully defined.
+This can be useful for representing operations that depend on parameters that are not yet known.
+A :class:`SymbolicOperation` is defined by its :class:`OpType`, the qubits (controls and targets) it acts on, and its parameters.
+The parameters can be either fixed values or symbolic expressions.
+
+Args:
+     controls: The control qubit(s) of the operation (if any).
+     targets: The target qubit(s) of the operation.
+     op_type: The type of the operation.
+     params: The parameters of the operation (if any).)pb")
+
+      .def(nb::init<>())
       .def(nb::init<qc::Qubit, qc::OpType,
                     const std::vector<qc::SymbolOrNumber>&>(),
            "target"_a, "op_type"_a,
@@ -63,11 +73,37 @@ void registerSymbolicOperation(const nb::module_& m) {
                     const std::vector<qc::SymbolOrNumber>&>(),
            "controls"_a, "target0"_a, "target1"_a, "op_type"_a,
            "params"_a = std::vector<qc::SymbolOrNumber>{})
-      .def("get_parameter", &qc::SymbolicOperation::getParameter)
-      .def("get_parameters", &qc::SymbolicOperation::getParameters)
+
+      .def("get_parameter", &qc::SymbolicOperation::getParameter, "index"_a,
+           R"pb(Get the parameter at the given index.
+
+Args:
+     index: The index of the parameter to get.
+
+Returns:
+     The parameter at the given index.)pb")
+
+      .def("get_parameters", &qc::SymbolicOperation::getParameters,
+           R"pb(Get all parameters of the operation.
+
+Returns:
+     The parameters of the operation.)pb")
+
       .def("get_instantiated_operation",
-           &qc::SymbolicOperation::getInstantiatedOperation, "assignment"_a)
-      .def("instantiate", &qc::SymbolicOperation::instantiate, "assignment"_a);
+           &qc::SymbolicOperation::getInstantiatedOperation, "assignment"_a,
+           R"pb(Get the instantiated operation.
+
+Args:
+     assignment: The assignment of the symbolic parameters.
+
+Returns:
+     The instantiated operation.)pb")
+
+      .def("instantiate", &qc::SymbolicOperation::instantiate, "assignment"_a,
+           R"pb(Instantiate the operation (in-place).
+
+Args:
+     assignment: The assignment of the symbolic parameters.)pb");
 }
 
 } // namespace mqt

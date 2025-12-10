@@ -28,7 +28,19 @@ using namespace nb::literals;
 
 // NOLINTNEXTLINE(misc-use-internal-linkage)
 void registerStandardOperation(const nb::module_& m) {
-  nb::class_<qc::StandardOperation, qc::Operation>(m, "StandardOperation")
+  nb::class_<qc::StandardOperation, qc::Operation>(
+      m, "StandardOperation", R"pb(Standard quantum operation.
+
+This class is used to represent all standard quantum operations, i.e., operations that are unitary.
+This includes all possible quantum gates.
+Such Operations are defined by their :class:`OpType`, the qubits (controls and targets) they act on, and their parameters.
+
+Args:
+    control: The control qubit(s) of the operation (if any).
+    target: The target qubit(s) of the operation.
+    op_type: The type of the operation.
+    params: The parameters of the operation (if any).)pb")
+
       .def(nb::init<>())
       .def(nb::init<qc::Qubit, qc::OpType, std::vector<qc::fp>>(), "target"_a,
            "op_type"_a, "params"_a = std::vector<qc::fp>{})

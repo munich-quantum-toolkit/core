@@ -23,7 +23,13 @@ using namespace nb::literals;
 
 // NOLINTNEXTLINE(misc-use-internal-linkage)
 void registerControl(const nb::module_& m) {
-  auto control = nb::class_<qc::Control>(m, "Control");
+  auto control = nb::class_<qc::Control>(
+      m, "Control",
+      R"pb(A control is a pair of a qubit and a type. The type can be either positive or negative.
+
+Args:
+    qubit: The qubit that is the control.
+    type_: The type of the control.)pb");
 
   nb::enum_<qc::Control::Type>(control, "Type", "enum.Enum",
                                "Enumeration of control types.")
@@ -32,13 +38,18 @@ void registerControl(const nb::module_& m) {
 
   control.def(nb::init<qc::Qubit, qc::Control::Type>(), "qubit"_a,
               "type_"_a = qc::Control::Type::Pos);
-  control.def_rw("type_", &qc::Control::type);
-  control.def_rw("qubit", &qc::Control::qubit);
+
+  control.def_rw("qubit", &qc::Control::qubit,
+                 "The qubit that is the control.");
+
+  control.def_rw("type_", &qc::Control::type, "The type of the control.");
+
   control.def("__str__", [](const qc::Control& c) { return c.toString(); });
   control.def("__repr__", [](const qc::Control& c) { return c.toString(); });
   control.def(nb::self == nb::self); // NOLINT(misc-redundant-expression)
   control.def(nb::self != nb::self); // NOLINT(misc-redundant-expression)
   control.def(nb::hash(nb::self));
+
   nb::implicitly_convertible<nb::int_, qc::Control>();
 }
 
