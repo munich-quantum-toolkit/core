@@ -571,6 +571,11 @@ def test_map_qiskit_gate_to_operation_names() -> None:
     assert p_names == {"p", "phase"}
     assert QDMIBackend._map_qiskit_gate_to_operation_names("phase") == p_names  # noqa: SLF001
 
+    # MCZ/MCP are aliases (both map to MCPhaseGate)
+    mcz_names = QDMIBackend._map_qiskit_gate_to_operation_names("mcz")  # noqa: SLF001
+    assert mcz_names == {"mcz", "mcp"}
+    assert QDMIBackend._map_qiskit_gate_to_operation_names("mcp") == mcz_names  # noqa: SLF001
+
     # Case-insensitive matching
     assert QDMIBackend._map_qiskit_gate_to_operation_names("X") == {"x"}  # noqa: SLF001
     assert QDMIBackend._map_qiskit_gate_to_operation_names("CX") == {"cx", "cnot"}  # noqa: SLF001

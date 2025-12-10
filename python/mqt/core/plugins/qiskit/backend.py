@@ -144,8 +144,8 @@ class QDMIBackend(BackendV2):  # type: ignore[misc]
         "cswap": {"cswap"},
         # Multi-controlled gates
         "mcx": {"mcx"},
-        "mcz": {"mcz"},
-        "mcp": {"mcp"},
+        "mcz": {"mcz", "mcp"},  # Both are aliases for MCPhaseGate
+        "mcp": {"mcz", "mcp"},  # Bidirectional: both map to the same gate
         "mcrx": {"mcrx"},
         "mcry": {"mcry"},
         "mcrz": {"mcrz"},
