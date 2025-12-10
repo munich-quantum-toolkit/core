@@ -55,43 +55,44 @@ function(add_mqt_python_binding package_name target_name)
 endfunction()
 
 function(add_mqt_python_binding_nanobind package_name target_name)
-  # parse the arguments
   cmake_parse_arguments(ARG "" "MODULE_NAME;INSTALL_DIR" "LINK_LIBS" ${ARGN})
   set(SOURCES ${ARG_UNPARSED_ARGUMENTS})
 
-  # declare the Python module
   nanobind_add_module(
-    # name of the extension
+    # Name of the extension
     ${target_name}
-    # source code goes here
+    # Target the stable ABI for Python 3.12+, which reduces the number of binary wheels
+    STABLE_ABI
+    # Suppress compiler warnings from the nanobind library
+    NB_SUPPRESS_WARNINGS
+    # Source files
     ${SOURCES})
 
-  # set default "." for INSTALL_DIR
-  if(NOT ARG_INSTALL_DIR)
-    set(ARG_INSTALL_DIR ".")
-  endif()
+  # Set C++ standard
+  target_compile_features(${target_name} PRIVATE cxx_std_20)
 
   if(ARG_MODULE_NAME)
-    # the library name must be the same as the module name
+    # The library name must be the same as the module name
     set_target_properties(${target_name} PROPERTIES OUTPUT_NAME ${ARG_MODULE_NAME})
     target_compile_definitions(${target_name}
                                PRIVATE MQT_${package_name}_MODULE_NAME=${ARG_MODULE_NAME})
   else()
-    # use the target name as the module name
+    # Use the target name as the module name
     target_compile_definitions(${target_name}
                                PRIVATE MQT_${package_name}_MODULE_NAME=${target_name})
   endif()
 
-  # add project libraries to the link libraries
+  # Add project libraries to the link libraries
   list(APPEND ARG_LINK_LIBS MQT::ProjectOptions MQT::ProjectWarnings)
 
-  # Set c++ standard
-  target_compile_features(${target_name} PRIVATE cxx_std_20)
-
-  # link the required libraries
   target_link_libraries(${target_name} PRIVATE ${ARG_LINK_LIBS})
 
-  # install directive for scikit-build-core
+  # Set default "." for INSTALL_DIR
+  if(NOT ARG_INSTALL_DIR)
+    set(ARG_INSTALL_DIR ".")
+  endif()
+
+  # Install directive for scikit-build-core
   install(
     TARGETS ${target_name}
     DESTINATION ${ARG_INSTALL_DIR}
