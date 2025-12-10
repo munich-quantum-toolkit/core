@@ -27,8 +27,12 @@ using namespace nb::literals;
 
 // NOLINTNEXTLINE(misc-use-internal-linkage)
 void registerPermutation(nb::module_& m) {
-  nb::class_<qc::Permutation>(m, "Permutation")
+  nb::class_<qc::Permutation>(
+      m, "Permutation",
+      "A class to represent a permutation of the qubits in a quantum circuit.")
+
       .def(nb::init<>())
+
       .def(
           "__init__",
           [](qc::Permutation* self, const nb::dict& p) {
@@ -39,37 +43,89 @@ void registerPermutation(nb::module_& m) {
             new (self) qc::Permutation(std::move(perm));
           },
           "perm"_a, "Create a permutation from a dictionary.")
+
       .def("apply",
            nb::overload_cast<const qc::Controls&>(&qc::Permutation::apply,
                                                   nb::const_),
-           "controls"_a)
+           "controls"_a, R"pb(Apply the permutation to a set of controls.
+
+Args:
+    controls: The set of controls to apply the permutation to.
+
+Returns:
+    The set of controls with the permutation applied.)pb")
+
       .def("apply",
            nb::overload_cast<const qc::Targets&>(&qc::Permutation::apply,
                                                  nb::const_),
-           "targets"_a)
-      .def("clear", [](qc::Permutation& p) { p.clear(); })
-      .def("__getitem__",
-           [](const qc::Permutation& p, const qc::Qubit q) { return p.at(q); })
-      .def("__setitem__", [](qc::Permutation& p, const qc::Qubit q,
-                             const qc::Qubit r) { p[q] = r; })
-      .def("__delitem__",
-           [](qc::Permutation& p, const qc::Qubit q) { p.erase(q); })
-      .def("__len__", &qc::Permutation::size)
+           "targets"_a, R"pb(Apply the permutation to a list of targets.
+
+Args:
+    targets: The list of targets to apply the permutation to.
+
+Returns:
+    The list of targets with the permutation applied.)pb")
+
+      .def(
+          "clear", [](qc::Permutation& p) { p.clear(); },
+          "Clear the permutation of all indices and values.")
+
+      .def(
+          "__getitem__",
+          [](const qc::Permutation& p, const qc::Qubit q) { return p.at(q); },
+          "index"_a, R"pb(Get the value of the permutation at the given index.
+
+Args:
+    index: The index to get the value of the permutation at.
+
+Returns:
+    The value of the permutation at the given index.)pb")
+
+      .def(
+          "__setitem__",
+          [](qc::Permutation& p, const qc::Qubit q, const qc::Qubit r) {
+            p[q] = r;
+          },
+          "index"_a, "value"_a,
+          R"pb(Set the value of the permutation at the given index.
+
+Args:
+    index: The index to set the value of the permutation at.
+    value: The value to set the permutation at the given index to.)pb")
+
+      .def(
+          "__delitem__",
+          [](qc::Permutation& p, const qc::Qubit q) { p.erase(q); }, "index"_a,
+          R"pb(Delete the value of the permutation at the given index.
+
+        Args:
+            key: The index to delete the value of the permutation at.)pb")
+
+      .def("__len__", &qc::Permutation::size,
+           "Return the number of indices in the permutation.")
+
       .def("__iter__",
            [](const qc::Permutation& p) {
-             return nb::make_key_iterator(nb::type<qc::Permutation>(),
-                                          "key_iterator", p.begin(), p.end());
+             return nb::make_key_iterator(
+                 nb::type<qc::Permutation>(), "key_iterator", p.begin(),
+                 p.end(),
+                 "Return an iterator over the indices of the permutation.");
            })
+
       .def(
           "items",
           [](const qc::Permutation& p) {
-            return nb::make_iterator(nb::type<qc::Permutation>(),
-                                     "item_iterator", p.begin(), p.end());
+            return nb::make_iterator(
+                nb::type<qc::Permutation>(), "item_iterator", p.begin(),
+                p.end(),
+                "Return an iterable over the items of the permutation.");
           },
           nb::keep_alive<0, 1>())
+
       .def(nb::self == nb::self) // NOLINT(misc-redundant-expression)
       .def(nb::self != nb::self) // NOLINT(misc-redundant-expression)
       .def(nb::hash(nb::self))
+
       .def("__str__",
            [](const qc::Permutation& p) {
              std::stringstream ss;
@@ -95,6 +151,7 @@ void registerPermutation(nb::module_& m) {
         ss << "})";
         return ss.str();
       });
+
   nb::implicitly_convertible<nb::dict, qc::Permutation>();
 }
 
