@@ -41,6 +41,7 @@ Vector getVector(const dd::vEdge& v, dd::fp threshold = 0.);
 using Matrix = nb::ndarray<nb::numpy, std::complex<dd::fp>, nb::ndim<2>>;
 Matrix getMatrix(const dd::mEdge& m, size_t numQubits, dd::fp threshold = 0.);
 
+// NOLINTNEXTLINE
 NB_MODULE(MQT_CORE_MODULE_NAME, m) {
   // Vector Decision Diagrams
   registerVectorDDs(m);

@@ -21,6 +21,7 @@ void registerOperations(nb::module_& m);
 void registerSymbolic(nb::module_& m);
 void registerQuantumComputation(nb::module_& m);
 
+// NOLINTNEXTLINE
 NB_MODULE(MQT_CORE_MODULE_NAME, m) {
   registerPermutation(m);
 
