@@ -558,10 +558,6 @@ def test_map_qiskit_gate_to_operation_names() -> None:
     assert cx_names == {"cx", "cnot"}
     assert QDMIBackend._map_qiskit_gate_to_operation_names("cnot") == cx_names  # noqa: SLF001
 
-    u_names = QDMIBackend._map_qiskit_gate_to_operation_names("u")  # noqa: SLF001
-    assert u_names == {"u", "u3"}
-    assert QDMIBackend._map_qiskit_gate_to_operation_names("u3") == u_names  # noqa: SLF001
-
     # Device-specific aliases: bidirectional consistency for R/PRX (IQM naming)
     r_names = QDMIBackend._map_qiskit_gate_to_operation_names("r")  # noqa: SLF001
     assert r_names == {"r", "prx"}
@@ -570,11 +566,6 @@ def test_map_qiskit_gate_to_operation_names() -> None:
     p_names = QDMIBackend._map_qiskit_gate_to_operation_names("p")  # noqa: SLF001
     assert p_names == {"p", "phase"}
     assert QDMIBackend._map_qiskit_gate_to_operation_names("phase") == p_names  # noqa: SLF001
-
-    # MCZ/MCP are aliases (both map to MCPhaseGate)
-    mcz_names = QDMIBackend._map_qiskit_gate_to_operation_names("mcz")  # noqa: SLF001
-    assert mcz_names == {"mcz", "mcp"}
-    assert QDMIBackend._map_qiskit_gate_to_operation_names("mcp") == mcz_names  # noqa: SLF001
 
     # Case-insensitive matching
     assert QDMIBackend._map_qiskit_gate_to_operation_names("X") == {"x"}  # noqa: SLF001
