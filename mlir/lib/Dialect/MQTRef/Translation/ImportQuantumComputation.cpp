@@ -326,7 +326,7 @@ llvm::LogicalResult addOperation(mlir::OpBuilder& builder,
  * @brief Adds the operation(s) in a block to the MLIR module.
  *
  * @param builder The MLIR OpBuilder
- * @param operationInBlock The reset operation(s) in a block
+ * @param operationInBlock The operation(s) in a block
  * @param qubits The qubits of the quantum register
  * @param bitMap The mapping from global classical bit index to (memref,
  * localIdx)
