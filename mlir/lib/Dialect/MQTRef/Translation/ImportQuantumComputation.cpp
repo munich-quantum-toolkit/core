@@ -462,10 +462,8 @@ llvm::LogicalResult addIfElseOp(mlir::OpBuilder& builder,
     if (thenOp->isCompoundOperation()) {
       for (const auto& operation :
            dynamic_cast<const qc::CompoundOperation&>(*thenOp)) {
-        if (const auto result =
-                addOperation(builder, *operation, qubits, bitMap);
-            result.failed()) {
-          return result;
+        if (addOperation(builder, *operation, qubits, bitMap).failed()) {
+          return llvm::failure;
         }
       }
     } else {
