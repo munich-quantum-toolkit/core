@@ -130,10 +130,8 @@ _If you are upgrading: please see [`UPGRADING.md`](UPGRADING.md#330)._
 
 ### Removed
 
-- **Breaking**: 🔥 Remove the `Teleportation` gate from the IR ([#882]) ([**@burgholzer**])
-- **Breaking**: 🔥 Remove parsers for `.real`, `.qc`, `.tfc`, and `GRCS` files ([#822]) ([**@burgholzer**])
-- **Breaking**: 🔥 Remove tensor dump functionality ([#798]) ([**@burgholzer**])
-- **Breaking**: 🔥 Remove `extract_probability_vector` functionality ([#883]) ([**@burgholzer**])
+- 🔥 Drop support for Python 3.9 ([#1181]) ([**@denialhaag**])
+- 🔥 Remove `ClassicControlledOperation` from C++ library and Python package ([#1117]) ([**@denialhaag**])
 
 ### Fixed
 
