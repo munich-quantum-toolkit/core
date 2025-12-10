@@ -12,6 +12,7 @@
 
 #include "ir/QuantumComputation.hpp"
 #include "ir/Register.hpp"
+#include "ir/operations/CompoundOperation.hpp"
 #include "ir/operations/Control.hpp"
 #include "ir/operations/IfElseOperation.hpp"
 #include "ir/operations/NonUnitaryOperation.hpp"
@@ -322,6 +323,35 @@ llvm::LogicalResult addOperation(mlir::OpBuilder& builder,
                                  const BitIndexVec& bitMap);
 
 /**
+ * @brief Adds the operation(s) in a block to the MLIR module.
+ *
+ * @param builder The MLIR OpBuilder
+ * @param operationInBlock The operation(s) in a block
+ * @param qubits The qubits of the quantum register
+ * @param bitMap The mapping from global classical bit index to (memref,
+ * localIdx)
+ * @return llvm::LogicalResult whether the adding of the blockOps was successful
+ */
+llvm::LogicalResult addBlockOps(mlir::OpBuilder& builder,
+                                const qc::Operation* operationInBlock,
+                                const llvm::SmallVector<mlir::Value>& qubits,
+                                const BitIndexVec& bitMap) {
+  if (operationInBlock->isCompoundOperation()) {
+    for (const auto& operation :
+         dynamic_cast<const qc::CompoundOperation&>(*operationInBlock)) {
+      if (addOperation(builder, *operation, qubits, bitMap).failed()) {
+        return llvm::failure();
+      }
+    }
+  } else {
+    if (addOperation(builder, *operationInBlock, qubits, bitMap).failed()) {
+      return llvm::failure();
+    }
+  }
+  return llvm::success();
+}
+
+/**
  * @brief Compute integer value from a classical register (memref<Nxi1>).
  *
  * @param builder The MLIR OpBuilder
@@ -458,7 +488,7 @@ llvm::LogicalResult addIfElseOp(mlir::OpBuilder& builder,
   {
     const mlir::OpBuilder::InsertionGuard thenGuard(builder);
     builder.setInsertionPointToStart(ifOp.thenBlock());
-    if (addOperation(builder, *thenOp, qubits, bitMap).failed()) {
+    if (addBlockOps(builder, thenOp, qubits, bitMap).failed()) {
       return llvm::failure();
     }
   }
@@ -467,7 +497,7 @@ llvm::LogicalResult addIfElseOp(mlir::OpBuilder& builder,
   if (elseOp != nullptr) {
     const mlir::OpBuilder::InsertionGuard elseGuard(builder);
     builder.setInsertionPointToStart(ifOp.elseBlock());
-    if (addOperation(builder, *elseOp, qubits, bitMap).failed()) {
+    if (addBlockOps(builder, elseOp, qubits, bitMap).failed()) {
       return llvm::failure();
     }
   }

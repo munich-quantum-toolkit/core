@@ -15,6 +15,7 @@
 #include "ir/operations/StandardOperation.hpp"
 #include "mlir/Dialect/MQTRef/IR/MQTRefDialect.h"
 #include "mlir/Dialect/MQTRef/Translation/ImportQuantumComputation.h"
+#include "qasm3/Importer.hpp"
 
 #include <cstddef>
 #include <functional>
@@ -734,6 +735,96 @@ TEST_F(ImportTest, IfElseRegister) {
     CHECK: } else {
     CHECK: mqtref.y() %[[Q0]]
     CHECK: }
+  )";
+
+  ASSERT_TRUE(checkOutput(checkString, outputString));
+}
+
+TEST_F(ImportTest, IfElseHandlingFromQasm) {
+  const qc::QuantumComputation qc = qasm3::Importer::imports("OPENQASM 3.0;"
+                                                             "qubit q;"
+                                                             "bit c;"
+                                                             "h q;"
+                                                             "c = measure q;"
+                                                             "if(c) {"
+                                                             "  x q;"
+                                                             "} else {"
+                                                             "  h q;"
+                                                             "}"
+                                                             "c = measure q;");
+  auto module = translateQuantumComputationToMLIR(context.get(), qc);
+
+  const auto outputString = getOutputString(&module);
+  const auto* checkString = R"(
+    CHECK: func.func @main() attributes {passthrough = ["entry_point"]}
+    CHECK: %[[Qreg:.*]] = memref.alloc() : memref<1x!mqtref.Qubit>
+    CHECK: %[[I0:.*]] = arith.constant 0 : index
+    CHECK: %[[Q0:.*]] = memref.load %[[Qreg]][%[[I0]]] : memref<1x!mqtref.Qubit>
+    CHECK: %[[Creg:.*]] = memref.alloca() : memref<1xi1>
+    CHECK: mqtref.h() %[[Q0]]
+    CHECK: %[[M0:.*]] = mqtref.measure %[[Q0]]
+    CHECK: %[[I1:.*]] = arith.constant 0 : index
+    CHECK: memref.store %[[M0]], %[[Creg]][%[[I1]]] : memref<1xi1>
+    CHECK: %[[I2:.*]] = arith.constant 0 : index
+    CHECK: %[[M2:.*]] = memref.load %[[Creg]][%[[I2]]] : memref<1xi1>
+    CHECK: %[[true:.*]] = arith.constant true
+    CHECK: %[[M3:.*]] = arith.cmpi eq, %[[M2]], %[[true]] : i1
+    CHECK: scf.if %[[M3]] {
+    CHECK:  mqtref.x() %[[Q0]]
+    CHECK: } else {
+    CHECK:  mqtref.h() %[[Q0]]
+    CHECK: }
+    CHECK: %[[M4:.*]] = mqtref.measure %[[Q0]]
+    CHECK: %[[I3:.*]] = arith.constant 0 : index
+    CHECK: memref.store %[[M4]], %[[Creg]][%[[I3]]] : memref<1xi1>
+    CHECK: memref.dealloc %[[Qreg]] : memref<1x!mqtref.Qubit>
+  )";
+
+  ASSERT_TRUE(checkOutput(checkString, outputString));
+}
+
+TEST_F(ImportTest, IfElseHandlingFromQasmMultipleStatements) {
+  const qc::QuantumComputation qc = qasm3::Importer::imports("OPENQASM 3.0;"
+                                                             "qubit q;"
+                                                             "bit c;"
+                                                             "h q;"
+                                                             "c = measure q;"
+                                                             "if(c) {"
+                                                             "  x q;"
+                                                             "  s q;"
+                                                             "} else {"
+                                                             "  h q;"
+                                                             "  t q;"
+                                                             "}"
+                                                             "c = measure q;");
+  auto module = translateQuantumComputationToMLIR(context.get(), qc);
+
+  const auto outputString = getOutputString(&module);
+  const auto* checkString = R"(
+    CHECK: func.func @main() attributes {passthrough = ["entry_point"]}
+    CHECK: %[[Qreg:.*]] = memref.alloc() : memref<1x!mqtref.Qubit>
+    CHECK: %[[I0:.*]] = arith.constant 0 : index
+    CHECK: %[[Q0:.*]] = memref.load %[[Qreg]][%[[I0]]] : memref<1x!mqtref.Qubit>
+    CHECK: %[[Creg:.*]] = memref.alloca() : memref<1xi1>
+    CHECK: mqtref.h() %[[Q0]]
+    CHECK: %[[M0:.*]] = mqtref.measure %[[Q0]]
+    CHECK: %[[I1:.*]] = arith.constant 0 : index
+    CHECK: memref.store %[[M0]], %[[Creg]][%[[I1]]] : memref<1xi1>
+    CHECK: %[[I2:.*]] = arith.constant 0 : index
+    CHECK: %[[M2:.*]] = memref.load %[[Creg]][%[[I2]]] : memref<1xi1>
+    CHECK: %[[true:.*]] = arith.constant true
+    CHECK: %[[M3:.*]] = arith.cmpi eq, %[[M2]], %[[true]] : i1
+    CHECK: scf.if %[[M3]] {
+    CHECK:  mqtref.x() %[[Q0]]
+    CHECK:  mqtref.s() %[[Q0]]
+    CHECK: } else {
+    CHECK:  mqtref.h() %[[Q0]]
+    CHECK:  mqtref.t() %[[Q0]]
+    CHECK: }
+    CHECK: %[[M4:.*]] = mqtref.measure %[[Q0]]
+    CHECK: %[[I3:.*]] = arith.constant 0 : index
+    CHECK: memref.store %[[M4]], %[[Creg]][%[[I3]]] : memref<1xi1>
+    CHECK: memref.dealloc %[[Qreg]] : memref<1x!mqtref.Qubit>
   )";
 
   ASSERT_TRUE(checkOutput(checkString, outputString));
