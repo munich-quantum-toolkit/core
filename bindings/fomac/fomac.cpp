@@ -31,7 +31,6 @@ namespace mqt {
 namespace nb = nanobind;
 using namespace nb::literals;
 
-// NOLINTNEXTLINE
 NB_MODULE(MQT_CORE_MODULE_NAME, m) {
   // Session class
   auto session = nb::class_<fomac::Session>(m, "Session");
