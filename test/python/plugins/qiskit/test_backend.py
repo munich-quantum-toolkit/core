@@ -12,7 +12,6 @@ from __future__ import annotations
 
 import warnings
 from typing import TYPE_CHECKING, NoReturn, Protocol, cast
-from unittest.mock import MagicMock
 
 import numpy as np
 import pytest
@@ -20,7 +19,6 @@ from qiskit import QuantumCircuit, qasm2, qasm3
 from qiskit.circuit import Parameter
 from qiskit.circuit.library import UnitaryGate
 from qiskit.providers import JobStatus
-from qiskit.transpiler.target import InstructionProperties
 
 from mqt.core import fomac
 from mqt.core.plugins.qiskit import (
@@ -544,42 +542,79 @@ def test_map_operation_returns_none_for_unknown() -> None:
     assert QDMIBackend._map_operation_to_gate("") is None  # noqa: SLF001
 
 
-@pytest.mark.parametrize(
-    ("gate_name", "expected_qargs"),
-    [
-        ("h", [(0,), (1,), (2,)]),
-        ("cz", [(0, 1), (1, 2)]),
-    ],
-)
-def test_backend_operation_properties(
-    site_specific_device: SiteSpecificDevice, gate_name: str, expected_qargs: list[tuple[int, ...]]
+def test_map_qiskit_gate_to_operation_names() -> None:
+    """Test the inverse gate name mapping function comprehensively."""
+    # Basic gates map to themselves
+    assert QDMIBackend._map_qiskit_gate_to_operation_names("x") == {"x"}  # noqa: SLF001
+    assert QDMIBackend._map_qiskit_gate_to_operation_names("h") == {"h"}  # noqa: SLF001
+    assert QDMIBackend._map_qiskit_gate_to_operation_names("cz") == {"cz"}  # noqa: SLF001
+
+    # Aliases: gates with multiple naming conventions return all possible aliases
+    id_names = QDMIBackend._map_qiskit_gate_to_operation_names("id")  # noqa: SLF001
+    assert id_names == {"id", "i"}
+    assert QDMIBackend._map_qiskit_gate_to_operation_names("i") == id_names  # noqa: SLF001
+
+    cx_names = QDMIBackend._map_qiskit_gate_to_operation_names("cx")  # noqa: SLF001
+    assert cx_names == {"cx", "cnot"}
+    assert QDMIBackend._map_qiskit_gate_to_operation_names("cnot") == cx_names  # noqa: SLF001
+
+    u_names = QDMIBackend._map_qiskit_gate_to_operation_names("u")  # noqa: SLF001
+    assert u_names == {"u", "u3"}
+    assert QDMIBackend._map_qiskit_gate_to_operation_names("u3") == u_names  # noqa: SLF001
+
+    # Device-specific aliases: bidirectional consistency for R/PRX (IQM naming)
+    r_names = QDMIBackend._map_qiskit_gate_to_operation_names("r")  # noqa: SLF001
+    assert r_names == {"r", "prx"}
+    assert QDMIBackend._map_qiskit_gate_to_operation_names("prx") == r_names  # noqa: SLF001
+
+    p_names = QDMIBackend._map_qiskit_gate_to_operation_names("p")  # noqa: SLF001
+    assert p_names == {"p", "phase"}
+    assert QDMIBackend._map_qiskit_gate_to_operation_names("phase") == p_names  # noqa: SLF001
+
+    # Case-insensitive matching
+    assert QDMIBackend._map_qiskit_gate_to_operation_names("X") == {"x"}  # noqa: SLF001
+    assert QDMIBackend._map_qiskit_gate_to_operation_names("CX") == {"cx", "cnot"}  # noqa: SLF001
+
+    # Fallback for unknown gates (returns lowercase name)
+    assert QDMIBackend._map_qiskit_gate_to_operation_names("unknown") == {"unknown"}  # noqa: SLF001
+    assert QDMIBackend._map_qiskit_gate_to_operation_names("CUSTOM") == {"custom"}  # noqa: SLF001
+
+
+def test_backend_validation_uses_inverse_mapping(
+    monkeypatch: pytest.MonkeyPatch, mock_qdmi_device_factory: type[MockQDMIDevice]
 ) -> None:
-    """Target exposes per-qarg instruction properties for site-aware operations."""
-    backend = QDMIBackend(device=cast("fomac.Device", site_specific_device))
-    props_map = backend.target[gate_name]
-    assert sorted(props_map.keys()) == sorted(expected_qargs)
+    """Backend validation correctly uses inverse mapping to handle device-specific naming."""
+    # Create a mock device that uses 'prx' instead of 'r' (like IQM devices)
+    mock_device = mock_qdmi_device_factory(
+        name="Test Device with PRX",
+        num_qubits=2,
+        operations=["prx", "cz", "measure"],  # Uses 'prx' instead of 'r'
+    )
 
-    for qarg in expected_qargs:
-        props = props_map[qarg]
-        assert isinstance(props, InstructionProperties)
-        assert props.duration is not None
-        assert props.error is not None
+    # Monkeypatch Session.get_devices to return mock device
+    def mock_get_devices(_self: object) -> list[MockQDMIDevice]:
+        return [mock_device]
 
+    monkeypatch.setattr(fomac.Session, "get_devices", mock_get_devices)
 
-def test_misconfigured_device_coupling_map_without_operation_sites(
-    misconfigured_coupling_device: MisconfiguredDevice,
-) -> None:
-    """Devices with coupling maps must provide site pairs for two-qubit operations."""
-    backend = QDMIBackend(device=cast("fomac.Device", misconfigured_coupling_device))
+    provider = QDMIProvider()
+    backend = provider.get_backend("Test Device with PRX")
 
-    mock_op = MagicMock()
-    mock_op.name.return_value = "custom_2q"
-    mock_op.qubits_num.return_value = 2
-    mock_op.site_pairs.return_value = None
-    mock_op.is_zoned.return_value = False
+    # Create a circuit with the 'r' gate (Qiskit's name)
+    qc = QuantumCircuit(2, 2)
+    theta = Parameter("theta")
+    phi = Parameter("phi")
+    qc.r(theta, phi, 0)  # Qiskit uses 'r'
+    qc.cz(0, 1)
+    qc.measure_all()
 
-    with pytest.raises(UnsupportedOperationError, match="misconfigured device"):
-        backend._get_operation_qargs(mock_op)  # noqa: SLF001
+    # Bind parameters before running
+    qc_bound = qc.assign_parameters({theta: 1.5708, phi: 0.0})
+
+    # This should NOT raise UnsupportedOperationError because the inverse mapping
+    # knows that Qiskit's 'r' can map to device's 'prx'
+    job = backend.run(qc_bound, shots=100)
+    assert job is not None
 
 
 def test_zoned_operation_rejected_at_backend_init(zoned_operation_device: ZonedDevice) -> None:

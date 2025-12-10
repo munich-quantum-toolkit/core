@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import itertools
 import warnings
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, ClassVar
 
 import qiskit.circuit.library as qcl
 from qiskit import qasm2, qasm3
@@ -79,6 +79,154 @@ class QDMIBackend(BackendV2):  # type: ignore[misc]
 
     # Class-level counter for generating unique circuit names
     _circuit_counter = itertools.count()
+
+    # Mapping from Qiskit gate names to possible QDMI device operation names
+    # This is used by _map_qiskit_gate_to_operation_names for efficient lookup
+    _QISKIT_TO_QDMI_GATE_MAP: ClassVar[dict[str, set[str]]] = {
+        # Single-qubit Pauli gates
+        "x": {"x"},
+        "y": {"y"},
+        "z": {"z"},
+        "id": {"id", "i"},
+        "i": {"id", "i"},
+        # Hadamard
+        "h": {"h"},
+        # Phase gates
+        "s": {"s"},
+        "sdg": {"sdg"},
+        "t": {"t"},
+        "tdg": {"tdg"},
+        "sx": {"sx"},
+        "sxdg": {"sxdg"},
+        "p": {"p", "phase"},
+        "phase": {"p", "phase"},
+        "gphase": {"gphase"},
+        # Rotation gates (parametric)
+        "rx": {"rx"},
+        "ry": {"ry"},
+        "rz": {"rz"},
+        "r": {"r", "prx"},  # Some devices use 'prx' for the R gate
+        "prx": {"r", "prx"},  # Bidirectional: 'prx' also maps to both aliases
+        # Universal gates (parametric)
+        "u": {"u", "u3"},
+        "u1": {"u1"},
+        "u2": {"u2"},
+        "u3": {"u", "u3"},
+        # Two-qubit gates
+        "cx": {"cx", "cnot"},
+        "cnot": {"cx", "cnot"},
+        "cy": {"cy"},
+        "cz": {"cz"},
+        "ch": {"ch"},
+        "cs": {"cs"},
+        "csdg": {"csdg"},
+        "csx": {"csx"},
+        "swap": {"swap"},
+        "iswap": {"iswap"},
+        "dcx": {"dcx"},
+        "ecr": {"ecr"},
+        # Two-qubit gates (parametric)
+        "cp": {"cp"},
+        "cu1": {"cu1"},
+        "cu3": {"cu3"},
+        "crx": {"crx"},
+        "cry": {"cry"},
+        "crz": {"crz"},
+        "rxx": {"rxx"},
+        "ryy": {"ryy"},
+        "rzz": {"rzz"},
+        "rzx": {"rzx"},
+        "xx_plus_yy": {"xx_plus_yy"},
+        "xx_minus_yy": {"xx_minus_yy"},
+        # Three-qubit gates
+        "ccx": {"ccx"},
+        "ccz": {"ccz"},
+        "cswap": {"cswap"},
+        # Multi-controlled gates
+        "mcx": {"mcx"},
+        "mcz": {"mcz"},
+        "mcp": {"mcp"},
+        "mcrx": {"mcrx"},
+        "mcry": {"mcry"},
+        "mcrz": {"mcrz"},
+        # Nonunitary operations
+        "reset": {"reset"},
+        "measure": {"measure"},
+    }
+
+    # Mapping from device operation names to Qiskit gate instances
+    # This is used by _map_operation_to_gate for efficient lookup
+    _OPERATION_TO_GATE_MAP: ClassVar[dict[str, Instruction]] = {
+        # Single-qubit Pauli gates
+        "x": qcl.XGate(),
+        "y": qcl.YGate(),
+        "z": qcl.ZGate(),
+        "id": qcl.IGate(),
+        "i": qcl.IGate(),
+        # Hadamard
+        "h": qcl.HGate(),
+        # Phase gates
+        "s": qcl.SGate(),
+        "sdg": qcl.SdgGate(),
+        "t": qcl.TGate(),
+        "tdg": qcl.TdgGate(),
+        "sx": qcl.SXGate(),
+        "sxdg": qcl.SXdgGate(),
+        "p": qcl.PhaseGate(Parameter("lambda")),
+        "phase": qcl.PhaseGate(Parameter("lambda")),
+        "gphase": qcl.GlobalPhaseGate(Parameter("theta")),
+        # Rotation gates (parametric)
+        "rx": qcl.RXGate(Parameter("theta")),
+        "ry": qcl.RYGate(Parameter("theta")),
+        "rz": qcl.RZGate(Parameter("phi")),
+        "r": qcl.RGate(Parameter("theta"), Parameter("phi")),
+        "prx": qcl.RGate(Parameter("theta"), Parameter("phi")),
+        # Universal gates (parametric)
+        "u": qcl.UGate(Parameter("theta"), Parameter("phi"), Parameter("lambda")),
+        "u1": qcl.U1Gate(Parameter("lambda")),
+        "u2": qcl.U2Gate(Parameter("phi"), Parameter("lambda")),
+        "u3": qcl.UGate(Parameter("theta"), Parameter("phi"), Parameter("lambda")),
+        # Two-qubit gates
+        "cx": qcl.CXGate(),
+        "cnot": qcl.CXGate(),
+        "cy": qcl.CYGate(),
+        "cz": qcl.CZGate(),
+        "ch": qcl.CHGate(),
+        "cs": qcl.CSGate(),
+        "csdg": qcl.CSdgGate(),
+        "csx": qcl.CSXGate(),
+        "swap": qcl.SwapGate(),
+        "iswap": qcl.iSwapGate(),
+        "dcx": qcl.DCXGate(),
+        "ecr": qcl.ECRGate(),
+        # Two-qubit gates (parametric)
+        "cp": qcl.CPhaseGate(Parameter("lambda")),
+        "cu1": qcl.CU1Gate(Parameter("lambda")),
+        "cu3": qcl.CU3Gate(Parameter("theta"), Parameter("phi"), Parameter("lambda")),
+        "crx": qcl.CRXGate(Parameter("theta")),
+        "cry": qcl.CRYGate(Parameter("theta")),
+        "crz": qcl.CRZGate(Parameter("phi")),
+        "rxx": qcl.RXXGate(Parameter("theta")),
+        "ryy": qcl.RYYGate(Parameter("theta")),
+        "rzz": qcl.RZZGate(Parameter("theta")),
+        "rzx": qcl.RZXGate(Parameter("theta")),
+        "xx_plus_yy": qcl.XXPlusYYGate(Parameter("theta"), Parameter("beta")),
+        "xx_minus_yy": qcl.XXMinusYYGate(Parameter("theta"), Parameter("beta")),
+        # Three-qubit gates
+        "ccx": qcl.CCXGate(),
+        "ccz": qcl.CCZGate(),
+        "cswap": qcl.CSwapGate(),
+        # Multi-controlled gates
+        "mcx": qcl.MCXGate(num_ctrl_qubits=2),
+        "mcz": qcl.MCPhaseGate(Parameter("lambda"), num_ctrl_qubits=2),
+        "mcp": qcl.MCPhaseGate(Parameter("lambda"), num_ctrl_qubits=2),
+        "mcrx": qcl.MCXGate(num_ctrl_qubits=2),  # Approximation
+        "mcry": qcl.MCXGate(num_ctrl_qubits=2),  # Approximation
+        "mcrz": qcl.MCXGate(num_ctrl_qubits=2),  # Approximation
+        # nonunitary operations
+        "reset": qcl.Reset(),
+        "measure": qcl.Measure(),
+    }
 
     def __init__(self, device: fomac.Device, provider: QDMIProvider | None = None) -> None:
         """Initialize the backend with a FoMaC device.
@@ -241,80 +389,7 @@ class QDMIBackend(BackendV2):  # type: ignore[misc]
         Returns:
             Qiskit gate instance or None if not mappable.
         """
-        # Map known operations to Qiskit gates
-        gate_map: dict[str, Instruction] = {
-            # Single-qubit Pauli gates
-            "x": qcl.XGate(),
-            "y": qcl.YGate(),
-            "z": qcl.ZGate(),
-            "id": qcl.IGate(),
-            "i": qcl.IGate(),
-            # Hadamard
-            "h": qcl.HGate(),
-            # Phase gates
-            "s": qcl.SGate(),
-            "sdg": qcl.SdgGate(),
-            "t": qcl.TGate(),
-            "tdg": qcl.TdgGate(),
-            "sx": qcl.SXGate(),
-            "sxdg": qcl.SXdgGate(),
-            "p": qcl.PhaseGate(Parameter("lambda")),
-            "phase": qcl.PhaseGate(Parameter("lambda")),
-            "gphase": qcl.GlobalPhaseGate(Parameter("theta")),
-            # Rotation gates (parametric)
-            "rx": qcl.RXGate(Parameter("theta")),
-            "ry": qcl.RYGate(Parameter("theta")),
-            "rz": qcl.RZGate(Parameter("phi")),
-            "r": qcl.RGate(Parameter("theta"), Parameter("phi")),
-            "prx": qcl.RGate(Parameter("theta"), Parameter("phi")),
-            # Universal gates (parametric)
-            "u": qcl.UGate(Parameter("theta"), Parameter("phi"), Parameter("lambda")),
-            "u1": qcl.U1Gate(Parameter("lambda")),
-            "u2": qcl.U2Gate(Parameter("phi"), Parameter("lambda")),
-            "u3": qcl.UGate(Parameter("theta"), Parameter("phi"), Parameter("lambda")),
-            # Two-qubit gates
-            "cx": qcl.CXGate(),
-            "cnot": qcl.CXGate(),
-            "cy": qcl.CYGate(),
-            "cz": qcl.CZGate(),
-            "ch": qcl.CHGate(),
-            "cs": qcl.CSGate(),
-            "csdg": qcl.CSdgGate(),
-            "csx": qcl.CSXGate(),
-            "swap": qcl.SwapGate(),
-            "iswap": qcl.iSwapGate(),
-            "dcx": qcl.DCXGate(),
-            "ecr": qcl.ECRGate(),
-            # Two-qubit gates (parametric)
-            "cp": qcl.CPhaseGate(Parameter("lambda")),
-            "cu1": qcl.CU1Gate(Parameter("lambda")),
-            "cu3": qcl.CU3Gate(Parameter("theta"), Parameter("phi"), Parameter("lambda")),
-            "crx": qcl.CRXGate(Parameter("theta")),
-            "cry": qcl.CRYGate(Parameter("theta")),
-            "crz": qcl.CRZGate(Parameter("phi")),
-            "rxx": qcl.RXXGate(Parameter("theta")),
-            "ryy": qcl.RYYGate(Parameter("theta")),
-            "rzz": qcl.RZZGate(Parameter("theta")),
-            "rzx": qcl.RZXGate(Parameter("theta")),
-            "xx_plus_yy": qcl.XXPlusYYGate(Parameter("theta"), Parameter("beta")),
-            "xx_minus_yy": qcl.XXMinusYYGate(Parameter("theta"), Parameter("beta")),
-            # Three-qubit gates
-            "ccx": qcl.CCXGate(),
-            "ccz": qcl.CCZGate(),
-            "cswap": qcl.CSwapGate(),
-            # Multi-controlled gates
-            "mcx": qcl.MCXGate(num_ctrl_qubits=2),
-            "mcz": qcl.MCPhaseGate(Parameter("lambda"), num_ctrl_qubits=2),
-            "mcp": qcl.MCPhaseGate(Parameter("lambda"), num_ctrl_qubits=2),
-            "mcrx": qcl.MCXGate(num_ctrl_qubits=2),  # Approximation
-            "mcry": qcl.MCXGate(num_ctrl_qubits=2),  # Approximation
-            "mcrz": qcl.MCXGate(num_ctrl_qubits=2),  # Approximation
-            # nonunitary operations
-            "reset": qcl.Reset(),
-            "measure": qcl.Measure(),
-        }
-
-        return gate_map.get(op_name.lower())
+        return QDMIBackend._OPERATION_TO_GATE_MAP.get(op_name.lower())
 
     @staticmethod
     def _map_qiskit_gate_to_operation_names(qiskit_gate_name: str) -> set[str]:
@@ -329,78 +404,7 @@ class QDMIBackend(BackendV2):  # type: ignore[misc]
         Returns:
             Set of possible QDMI device operation names that could map to this gate.
         """
-        qiskit_to_qdmi_map: dict[str, set[str]] = {
-            # Single-qubit Pauli gates
-            "x": {"x"},
-            "y": {"y"},
-            "z": {"z"},
-            "id": {"id", "i"},
-            "i": {"id", "i"},
-            # Hadamard
-            "h": {"h"},
-            # Phase gates
-            "s": {"s"},
-            "sdg": {"sdg"},
-            "t": {"t"},
-            "tdg": {"tdg"},
-            "sx": {"sx"},
-            "sxdg": {"sxdg"},
-            "p": {"p", "phase"},
-            "phase": {"p", "phase"},
-            "gphase": {"gphase"},
-            # Rotation gates (parametric)
-            "rx": {"rx"},
-            "ry": {"ry"},
-            "rz": {"rz"},
-            "r": {"r", "prx"},  # Some devices use 'prx' for the R gate
-            # Universal gates (parametric)
-            "u": {"u", "u3"},
-            "u1": {"u1"},
-            "u2": {"u2"},
-            "u3": {"u", "u3"},
-            # Two-qubit gates
-            "cx": {"cx", "cnot"},
-            "cnot": {"cx", "cnot"},
-            "cy": {"cy"},
-            "cz": {"cz"},
-            "ch": {"ch"},
-            "cs": {"cs"},
-            "csdg": {"csdg"},
-            "csx": {"csx"},
-            "swap": {"swap"},
-            "iswap": {"iswap"},
-            "dcx": {"dcx"},
-            "ecr": {"ecr"},
-            # Two-qubit gates (parametric)
-            "cp": {"cp"},
-            "cu1": {"cu1"},
-            "cu3": {"cu3"},
-            "crx": {"crx"},
-            "cry": {"cry"},
-            "crz": {"crz"},
-            "rxx": {"rxx"},
-            "ryy": {"ryy"},
-            "rzz": {"rzz"},
-            "rzx": {"rzx"},
-            "xx_plus_yy": {"xx_plus_yy"},
-            "xx_minus_yy": {"xx_minus_yy"},
-            # Three-qubit gates
-            "ccx": {"ccx"},
-            "ccz": {"ccz"},
-            "cswap": {"cswap"},
-            # Multi-controlled gates
-            "mcx": {"mcx"},
-            "mcz": {"mcz"},
-            "mcp": {"mcp"},
-            "mcrx": {"mcrx"},
-            "mcry": {"mcry"},
-            "mcrz": {"mcrz"},
-            # Nonunitary operations
-            "reset": {"reset"},
-            "measure": {"measure"},
-        }
-
-        return qiskit_to_qdmi_map.get(qiskit_gate_name.lower(), {qiskit_gate_name.lower()})
+        return QDMIBackend._QISKIT_TO_QDMI_GATE_MAP.get(qiskit_gate_name.lower(), {qiskit_gate_name.lower()})
 
     def _get_operation_qargs(self, op: fomac.Device.Operation) -> list[tuple[int]] | list[tuple[int, int]] | list[None]:
         """Get the qubit argument tuples for an operation.
