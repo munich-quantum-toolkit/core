@@ -35,22 +35,27 @@ using Matrix = nb::ndarray<nb::numpy, std::complex<dd::fp>, nb::ndim<2>>;
 Matrix getMatrix(const dd::mEdge& m, const size_t numQubits,
                  const dd::fp threshold = 0.) {
   if (numQubits == 0U) {
-    auto* data = new std::complex<dd::fp>[1];
-    data[0] = static_cast<std::complex<dd::fp>>(m.w);
-    nb::capsule owner(
-        data, [](void* p) noexcept { delete[] (std::complex<dd::fp>*)p; });
+    auto dataPtr = std::make_unique<std::complex<dd::fp>>(m.w);
+    auto* data = dataPtr.release();
+    const nb::capsule owner(data, [](void* ptr) noexcept {
+      delete static_cast<std::complex<dd::fp>*>(ptr);
+    });
     return Matrix(data, {1, 1}, owner);
   }
 
   const auto dim = 1ULL << numQubits;
-  auto* data = new std::complex<dd::fp>[dim * dim];
+  auto dataPtr = std::make_unique<std::complex<dd::fp>[]>(dim * dim);
   m.traverseMatrix(
       std::complex<dd::fp>{1., 0.}, 0ULL, 0ULL,
-      [&data, dim](const std::size_t i, const std::size_t j,
-                   const std::complex<dd::fp>& c) { data[(i * dim) + j] = c; },
+      [&dataPtr, dim](const std::size_t i, const std::size_t j,
+                      const std::complex<dd::fp>& c) {
+        dataPtr[(i * dim) + j] = c;
+      },
       numQubits, threshold);
-  nb::capsule owner(
-      data, [](void* p) noexcept { delete[] (std::complex<dd::fp>*)p; });
+  auto* data = dataPtr.release();
+  const nb::capsule owner(data, [](void* ptr) noexcept {
+    delete[] static_cast<std::complex<dd::fp>*>(ptr);
+  });
   return Matrix(data, {dim, dim}, owner);
 }
 

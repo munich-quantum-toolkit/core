@@ -34,10 +34,12 @@ using Vector = nb::ndarray<nb::numpy, std::complex<dd::fp>, nb::ndim<1>>;
 // NOLINTNEXTLINE(misc-use-internal-linkage)
 Vector getVector(const dd::vEdge& v, const dd::fp threshold = 0.) {
   auto vec = v.getVector(threshold);
-  auto* data = new std::complex<dd::fp>[vec.size()];
-  std::copy(vec.begin(), vec.end(), data);
-  nb::capsule owner(
-      data, [](void* p) noexcept { delete[] (std::complex<dd::fp>*)p; });
+  auto dataPtr = std::make_unique<std::complex<dd::fp>[]>(vec.size());
+  std::ranges::copy(vec, dataPtr.get());
+  auto* data = dataPtr.release();
+  const nb::capsule owner(data, [](void* ptr) noexcept {
+    delete[] static_cast<std::complex<dd::fp>*>(ptr);
+  });
   return Vector(data, {vec.size()}, owner);
 }
 
