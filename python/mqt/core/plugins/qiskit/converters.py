@@ -101,7 +101,7 @@ def qiskit_to_iqm_json(circuit: QuantumCircuit, device: fomac.Device) -> str:
                 qubit_index = circuit.find_bit(qargs[0]).index
                 instructions.append({
                     "name": "prx",
-                    "qubits": [sites[qubit_index].name()],
+                    "locus": [sites[qubit_index].name()],
                     "args": {
                         "angle_t": angle_t,
                         "phase_t": phase_t,
@@ -114,7 +114,7 @@ def qiskit_to_iqm_json(circuit: QuantumCircuit, device: fomac.Device) -> str:
                 qubit_index2 = circuit.find_bit(qargs[1]).index
                 instructions.append({
                     "name": "cz",
-                    "qubits": [
+                    "locus": [
                         sites[qubit_index1].name(),
                         sites[qubit_index2].name(),
                     ],
@@ -129,7 +129,7 @@ def qiskit_to_iqm_json(circuit: QuantumCircuit, device: fomac.Device) -> str:
                     qubit_indices.append(qubit_index)
                 instructions.append({
                     "name": "barrier",
-                    "qubits": [sites[i].name() for i in qubit_indices],
+                    "locus": [sites[i].name() for i in qubit_indices],
                     "args": {},
                 })
 
@@ -153,7 +153,7 @@ def qiskit_to_iqm_json(circuit: QuantumCircuit, device: fomac.Device) -> str:
                 qubit_index = circuit.find_bit(qargs[0]).index
                 instructions.append({
                     "name": "measure",
-                    "qubits": [sites[qubit_index].name()],
+                    "locus": [sites[qubit_index].name()],
                     "args": {
                         "key": key,
                     },

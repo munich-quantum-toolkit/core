@@ -437,6 +437,8 @@ public:
    * library.
    * @param config Configuration for device session parameters.
    *
+   * @return A pointer to the newly created device.
+   *
    * @note This function is only available on non-Windows platforms.
    *
    * @throws std::runtime_error If the device cannot be initialized.
@@ -444,7 +446,8 @@ public:
    */
   auto addDynamicDeviceLibrary(const std::string& libName,
                                const std::string& prefix,
-                               const DeviceSessionConfig& config = {}) -> void;
+                               const DeviceSessionConfig& config = {})
+      -> QDMI_Device;
 #endif // _WIN32
   /**
    * @brief Allocates a new session.

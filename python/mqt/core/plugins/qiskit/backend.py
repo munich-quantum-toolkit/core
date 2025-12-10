@@ -15,11 +15,10 @@ from __future__ import annotations
 
 import itertools
 import warnings
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, ClassVar
 
-import qiskit.circuit.library as qcl
 from qiskit import qasm2, qasm3
-from qiskit.circuit import Parameter
+from qiskit.circuit.library import get_standard_gate_name_mapping
 from qiskit.providers import BackendV2, Options
 from qiskit.transpiler import InstructionProperties, Target
 
@@ -47,6 +46,41 @@ __all__ = ["QDMIBackend"]
 
 def __dir__() -> list[str]:
     return __all__
+
+
+def _build_gate_mappings_for_backend(
+    gate_aliases: dict[str, set[str]],
+) -> tuple[dict[str, set[str]], dict[str, Instruction]]:
+    """Build both forward (Qiskit→QDMI) and inverse (QDMI→Gate) mappings.
+
+    Uses Qiskit's standard gate mapping as the canonical source of truth,
+    combined with a list of device-specific aliases.
+
+    Args:
+        gate_aliases: Maps canonical names to their aliases.
+
+    Returns:
+        Tuple of (qiskit_to_qdmi_map, operation_to_gate_map).
+    """
+    # Get Qiskit's standard gate name mapping as our canonical source
+    canonical_gates = get_standard_gate_name_mapping()
+
+    qiskit_to_qdmi: dict[str, set[str]] = {}
+    operation_to_gate: dict[str, Instruction] = {}
+
+    # Process each canonical gate from Qiskit's standard library
+    for canonical_name, gate_instance in canonical_gates.items():
+        # Get all names for this gate (canonical + aliases)
+        all_names = {canonical_name}
+        if canonical_name in gate_aliases:
+            all_names.update(gate_aliases[canonical_name])
+
+        # For each name, map it to all names (bidirectional aliases)
+        for name in all_names:
+            qiskit_to_qdmi[name] = all_names.copy()
+            operation_to_gate[name] = gate_instance
+
+    return qiskit_to_qdmi, operation_to_gate
 
 
 class QDMIBackend(BackendV2):  # type: ignore[misc]
@@ -79,6 +113,21 @@ class QDMIBackend(BackendV2):  # type: ignore[misc]
 
     # Class-level counter for generating unique circuit names
     _circuit_counter = itertools.count()
+
+    # Define known aliases
+    _GATE_ALIASES: ClassVar[dict[str, set[str]]] = {
+        "id": {"i"},  # Identity gate can also be called 'i'
+        "p": {"phase"},  # Phase gate can also be called 'phase'
+        "r": {"prx"},  # R gate can also be called 'prx' (IQM naming)
+        "u": {"u3"},  # U and U3 are the same gate
+        "cx": {"cnot"},  # CX and CNOT are the same gate
+    }
+
+    _QISKIT_TO_QDMI_GATE_MAP: ClassVar[dict[str, set[str]]]
+    _OPERATION_TO_GATE_MAP: ClassVar[dict[str, Instruction]]
+
+    # Initialize derived mappings at class definition time
+    _QISKIT_TO_QDMI_GATE_MAP, _OPERATION_TO_GATE_MAP = _build_gate_mappings_for_backend(_GATE_ALIASES)
 
     def __init__(self, device: fomac.Device, provider: QDMIProvider | None = None) -> None:
         """Initialize the backend with a FoMaC device.
@@ -241,80 +290,22 @@ class QDMIBackend(BackendV2):  # type: ignore[misc]
         Returns:
             Qiskit gate instance or None if not mappable.
         """
-        # Map known operations to Qiskit gates
-        gate_map: dict[str, Instruction] = {
-            # Single-qubit Pauli gates
-            "x": qcl.XGate(),
-            "y": qcl.YGate(),
-            "z": qcl.ZGate(),
-            "id": qcl.IGate(),
-            "i": qcl.IGate(),
-            # Hadamard
-            "h": qcl.HGate(),
-            # Phase gates
-            "s": qcl.SGate(),
-            "sdg": qcl.SdgGate(),
-            "t": qcl.TGate(),
-            "tdg": qcl.TdgGate(),
-            "sx": qcl.SXGate(),
-            "sxdg": qcl.SXdgGate(),
-            "p": qcl.PhaseGate(Parameter("lambda")),
-            "phase": qcl.PhaseGate(Parameter("lambda")),
-            "gphase": qcl.GlobalPhaseGate(Parameter("theta")),
-            # Rotation gates (parametric)
-            "rx": qcl.RXGate(Parameter("theta")),
-            "ry": qcl.RYGate(Parameter("theta")),
-            "rz": qcl.RZGate(Parameter("phi")),
-            "r": qcl.RGate(Parameter("theta"), Parameter("phi")),
-            "prx": qcl.RGate(Parameter("theta"), Parameter("phi")),
-            # Universal gates (parametric)
-            "u": qcl.UGate(Parameter("theta"), Parameter("phi"), Parameter("lambda")),
-            "u1": qcl.U1Gate(Parameter("lambda")),
-            "u2": qcl.U2Gate(Parameter("phi"), Parameter("lambda")),
-            "u3": qcl.UGate(Parameter("theta"), Parameter("phi"), Parameter("lambda")),
-            # Two-qubit gates
-            "cx": qcl.CXGate(),
-            "cnot": qcl.CXGate(),
-            "cy": qcl.CYGate(),
-            "cz": qcl.CZGate(),
-            "ch": qcl.CHGate(),
-            "cs": qcl.CSGate(),
-            "csdg": qcl.CSdgGate(),
-            "csx": qcl.CSXGate(),
-            "swap": qcl.SwapGate(),
-            "iswap": qcl.iSwapGate(),
-            "dcx": qcl.DCXGate(),
-            "ecr": qcl.ECRGate(),
-            # Two-qubit gates (parametric)
-            "cp": qcl.CPhaseGate(Parameter("lambda")),
-            "cu1": qcl.CU1Gate(Parameter("lambda")),
-            "cu3": qcl.CU3Gate(Parameter("theta"), Parameter("phi"), Parameter("lambda")),
-            "crx": qcl.CRXGate(Parameter("theta")),
-            "cry": qcl.CRYGate(Parameter("theta")),
-            "crz": qcl.CRZGate(Parameter("phi")),
-            "rxx": qcl.RXXGate(Parameter("theta")),
-            "ryy": qcl.RYYGate(Parameter("theta")),
-            "rzz": qcl.RZZGate(Parameter("theta")),
-            "rzx": qcl.RZXGate(Parameter("theta")),
-            "xx_plus_yy": qcl.XXPlusYYGate(Parameter("theta"), Parameter("beta")),
-            "xx_minus_yy": qcl.XXMinusYYGate(Parameter("theta"), Parameter("beta")),
-            # Three-qubit gates
-            "ccx": qcl.CCXGate(),
-            "ccz": qcl.CCZGate(),
-            "cswap": qcl.CSwapGate(),
-            # Multi-controlled gates
-            "mcx": qcl.MCXGate(num_ctrl_qubits=2),
-            "mcz": qcl.MCPhaseGate(Parameter("lambda"), num_ctrl_qubits=2),
-            "mcp": qcl.MCPhaseGate(Parameter("lambda"), num_ctrl_qubits=2),
-            "mcrx": qcl.MCXGate(num_ctrl_qubits=2),  # Approximation
-            "mcry": qcl.MCXGate(num_ctrl_qubits=2),  # Approximation
-            "mcrz": qcl.MCXGate(num_ctrl_qubits=2),  # Approximation
-            # nonunitary operations
-            "reset": qcl.Reset(),
-            "measure": qcl.Measure(),
-        }
+        return QDMIBackend._OPERATION_TO_GATE_MAP.get(op_name.lower())
 
-        return gate_map.get(op_name.lower())
+    @staticmethod
+    def _map_qiskit_gate_to_operation_names(qiskit_gate_name: str) -> set[str]:
+        """Map a Qiskit gate name to possible QDMI device operation names.
+
+        This is the inverse of _map_operation_to_gate, accounting for the fact that
+        different devices may use different naming conventions for the same operation.
+
+        Args:
+            qiskit_gate_name: Qiskit gate name.
+
+        Returns:
+            Set of possible QDMI device operation names that could map to this gate.
+        """
+        return QDMIBackend._QISKIT_TO_QDMI_GATE_MAP.get(qiskit_gate_name.lower(), {qiskit_gate_name.lower()})
 
     def _get_operation_qargs(self, op: fomac.Device.Operation) -> list[tuple[int]] | list[tuple[int, int]] | list[None]:
         """Get the qubit argument tuples for an operation.
@@ -462,13 +453,16 @@ class QDMIBackend(BackendV2):  # type: ignore[misc]
             msg = f"Circuit contains unbound parameters: {param_names}"
             raise CircuitValidationError(msg)
 
-        # Validate operations are supported
-        allowed_ops = {op.name() for op in self._device.operations()}
-        allowed_ops.update({"measure", "barrier"})  # Always allow measure and barrier
+        # Validate operations are supported - build set of all supported QDMI operation names
+        device_ops = {op.name().lower() for op in self._device.operations()}
 
         for instruction in run_input.data:
             op_name = instruction.operation.name
-            if op_name not in allowed_ops:
+            # Map the Qiskit gate name to possible QDMI operation names and check if any match
+            possible_qdmi_names = self._map_qiskit_gate_to_operation_names(op_name)
+            # Check if any of the possible QDMI names are supported by the device
+            # Also always allow 'barrier' as it's a directive, not an operation
+            if op_name != "barrier" and not any(qdmi_name in device_ops for qdmi_name in possible_qdmi_names):
                 msg = f"Unsupported operation: '{op_name}'"
                 raise UnsupportedOperationError(msg)
 
