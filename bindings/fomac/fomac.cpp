@@ -74,8 +74,8 @@ NB_MODULE(MQT_CORE_MODULE_NAME, m) {
   job.def_prop_ro("program_format", &fomac::Session::Job::getProgramFormat);
   job.def_prop_ro("program", &fomac::Session::Job::getProgram);
   job.def_prop_ro("num_shots", &fomac::Session::Job::getNumShots);
-  job.def(nb::self == nb::self);
-  job.def(nb::self != nb::self);
+  job.def(nb::self == nb::self); // NOLINT(misc-redundant-expression)
+  job.def(nb::self != nb::self); // NOLINT(misc-redundant-expression)
 
   // JobStatus enum
   nb::enum_<QDMI_Job_Status>(job, "Status", "enum.Enum",
@@ -144,8 +144,8 @@ NB_MODULE(MQT_CORE_MODULE_NAME, m) {
   device.def("__repr__", [](const fomac::Session::Device& dev) {
     return "<Device name=\"" + dev.getName() + "\">";
   });
-  device.def(nb::self == nb::self);
-  device.def(nb::self != nb::self);
+  device.def(nb::self == nb::self); // NOLINT(misc-redundant-expression)
+  device.def(nb::self != nb::self); // NOLINT(misc-redundant-expression)
 
   // Site class
   auto site = nb::class_<fomac::Session::Device::Site>(device, "Site");
@@ -165,8 +165,8 @@ NB_MODULE(MQT_CORE_MODULE_NAME, m) {
   site.def("__repr__", [](const fomac::Session::Device::Site& s) {
     return "<Site index=" + std::to_string(s.getIndex()) + ">";
   });
-  site.def(nb::self == nb::self);
-  site.def(nb::self != nb::self);
+  site.def(nb::self == nb::self); // NOLINT(misc-redundant-expression)
+  site.def(nb::self != nb::self); // NOLINT(misc-redundant-expression)
 
   // Operation class
   auto operation =
@@ -209,8 +209,8 @@ NB_MODULE(MQT_CORE_MODULE_NAME, m) {
   operation.def("__repr__", [](const fomac::Session::Device::Operation& op) {
     return "<Operation name=\"" + op.getName() + "\">";
   });
-  operation.def(nb::self == nb::self);
-  operation.def(nb::self != nb::self);
+  operation.def(nb::self == nb::self); // NOLINT(misc-redundant-expression)
+  operation.def(nb::self != nb::self); // NOLINT(misc-redundant-expression)
 
 #ifndef _WIN32
   // Module-level function to add dynamic device libraries on non-Windows

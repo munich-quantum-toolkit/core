@@ -49,8 +49,8 @@ NB_MODULE(MQT_CORE_MODULE_NAME, m) {
     return "<Vector x=" + std::to_string(v.x) + " y=" + std::to_string(v.y) +
            ">";
   });
-  vector.def(nb::self == nb::self);
-  vector.def(nb::self != nb::self);
+  vector.def(nb::self == nb::self); // NOLINT(misc-redundant-expression)
+  vector.def(nb::self != nb::self); // NOLINT(misc-redundant-expression)
 
   auto region = nb::class_<na::Device::Region>(lattice, "Region");
 
@@ -61,16 +61,16 @@ NB_MODULE(MQT_CORE_MODULE_NAME, m) {
     return "<Size width=" + std::to_string(s.width) +
            " height=" + std::to_string(s.height) + ">";
   });
-  size.def(nb::self == nb::self);
-  size.def(nb::self != nb::self);
+  size.def(nb::self == nb::self); // NOLINT(misc-redundant-expression)
+  size.def(nb::self != nb::self); // NOLINT(misc-redundant-expression)
 
   region.def_ro("origin", &na::Device::Region::origin);
   region.def_ro("size", &na::Device::Region::size);
   region.def("__repr__", [](const na::Device::Region& r) {
     return "<Region origin=" + repr(r.origin) + " size=" + repr(r.size) + ">";
   });
-  region.def(nb::self == nb::self);
-  region.def(nb::self != nb::self);
+  region.def(nb::self == nb::self); // NOLINT(misc-redundant-expression)
+  region.def(nb::self != nb::self); // NOLINT(misc-redundant-expression)
 
   lattice.def_ro("lattice_origin", &na::Device::Lattice::latticeOrigin);
   lattice.def_ro("lattice_vector_1", &na::Device::Lattice::latticeVector1);
@@ -80,8 +80,8 @@ NB_MODULE(MQT_CORE_MODULE_NAME, m) {
   lattice.def("__repr__", [](const na::Device::Lattice& l) {
     return "<Lattice origin=" + repr(l.latticeOrigin) + ">";
   });
-  lattice.def(nb::self == nb::self);
-  lattice.def(nb::self != nb::self);
+  lattice.def(nb::self == nb::self); // NOLINT(misc-redundant-expression)
+  lattice.def(nb::self != nb::self); // NOLINT(misc-redundant-expression)
 
   device.def_prop_ro("traps", &na::Session::Device::getTraps);
   device.def_prop_ro("t1", [](const na::Session::Device& dev) {
@@ -93,8 +93,8 @@ NB_MODULE(MQT_CORE_MODULE_NAME, m) {
   device.def("__repr__", [](const fomac::Session::Device& dev) {
     return "<Device name=\"" + dev.getName() + "\">";
   });
-  device.def(nb::self == nb::self);
-  device.def(nb::self != nb::self);
+  device.def(nb::self == nb::self); // NOLINT(misc-redundant-expression)
+  device.def(nb::self != nb::self); // NOLINT(misc-redundant-expression)
 
   m.def("devices", &na::Session::getDevices);
   device.def_static("try_create_from_device",

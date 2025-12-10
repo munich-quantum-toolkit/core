@@ -27,8 +27,8 @@ void registerVariable(nb::module_& m) {
       .def_prop_ro("name", &sym::Variable::getName)
       .def("__str__", &sym::Variable::getName)
       .def("__repr__", &sym::Variable::getName)
-      .def(nb::self == nb::self)
-      .def(nb::self != nb::self)
+      .def(nb::self == nb::self) // NOLINT(misc-redundant-expression)
+      .def(nb::self != nb::self) // NOLINT(misc-redundant-expression)
       .def(nb::hash(nb::self))
       .def(nb::self < nb::self)
       .def(nb::self > nb::self);

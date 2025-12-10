@@ -34,8 +34,8 @@ void registerTerm(nb::module_& m) {
       .def(double() * nb::self)
       .def(nb::self / double())
       .def(double() / nb::self)
-      .def(nb::self == nb::self)
-      .def(nb::self != nb::self)
+      .def(nb::self == nb::self) // NOLINT(misc-redundant-expression)
+      .def(nb::self != nb::self) // NOLINT(misc-redundant-expression)
       .def(nb::hash(nb::self))
       .def("__str__",
            [](const sym::Term<double>& term) {

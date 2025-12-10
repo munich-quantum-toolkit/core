@@ -36,8 +36,8 @@ void registerControl(const nb::module_& m) {
   control.def_rw("qubit", &qc::Control::qubit);
   control.def("__str__", [](const qc::Control& c) { return c.toString(); });
   control.def("__repr__", [](const qc::Control& c) { return c.toString(); });
-  control.def(nb::self == nb::self);
-  control.def(nb::self != nb::self);
+  control.def(nb::self == nb::self); // NOLINT(misc-redundant-expression)
+  control.def(nb::self != nb::self); // NOLINT(misc-redundant-expression)
   control.def(nb::hash(nb::self));
   nb::implicitly_convertible<nb::int_, qc::Control>();
 }

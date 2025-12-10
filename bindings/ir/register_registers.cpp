@@ -75,8 +75,8 @@ void registerRegisters(nb::module_& m) {
       .def_prop_ro(
           "end",
           [](const qc::ClassicalRegister& reg) { return reg.getEndIndex(); })
-      .def(nb::self == nb::self)
-      .def(nb::self != nb::self)
+      .def(nb::self == nb::self) // NOLINT(misc-redundant-expression)
+      .def(nb::self != nb::self) // NOLINT(misc-redundant-expression)
       .def(nb::hash(nb::self))
       .def("__getitem__", &qc::ClassicalRegister::getGlobalIndex, "key"_a)
       .def("__contains__", &qc::ClassicalRegister::contains)

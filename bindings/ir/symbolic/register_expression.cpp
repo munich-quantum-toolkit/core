@@ -94,8 +94,8 @@ void registerExpression(nb::module_& m) {
       .def("__rtruediv__", [](const sym::Expression<double, double>& rhs,
                               double lhs) { return rhs / lhs; })
       // comparison operators
-      .def(nb::self == nb::self)
-      .def(nb::self != nb::self)
+      .def(nb::self == nb::self) // NOLINT(misc-redundant-expression)
+      .def(nb::self != nb::self) // NOLINT(misc-redundant-expression)
       .def(nb::hash(nb::self))
       .def("__str__",
            [](const sym::Expression<double, double>& expr) {

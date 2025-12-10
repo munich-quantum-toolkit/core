@@ -66,8 +66,8 @@ void registerPermutation(nb::module_& m) {
                                      "item_iterator", p.begin(), p.end());
           },
           nb::keep_alive<0, 1>())
-      .def(nb::self == nb::self)
-      .def(nb::self != nb::self)
+      .def(nb::self == nb::self) // NOLINT(misc-redundant-expression)
+      .def(nb::self != nb::self) // NOLINT(misc-redundant-expression)
       .def(nb::hash(nb::self))
       .def("__str__",
            [](const qc::Permutation& p) {
