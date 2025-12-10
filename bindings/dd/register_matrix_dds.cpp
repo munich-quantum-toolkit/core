@@ -23,7 +23,6 @@
 #include <nanobind/stl/vector.h>  // NOLINT(misc-include-cleaner)
 #include <sstream>
 #include <string>
-#include <vector>
 
 namespace mqt {
 

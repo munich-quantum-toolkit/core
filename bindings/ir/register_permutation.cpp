@@ -13,6 +13,7 @@
 #include "ir/operations/Control.hpp"
 
 #include <iterator>
+#include <memory>
 #include <nanobind/make_iterator.h>
 #include <nanobind/nanobind.h>
 #include <nanobind/operators.h>
