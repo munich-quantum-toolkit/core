@@ -427,7 +427,6 @@ _📚 Refer to the [GitHub Release Notes](https://github.com/munich-quantum-tool
 [**@jannikpflieger**]: https://github.com/jannikpflieger
 [**@lsschmid**]: https://github.com/lsschmid
 [**@marcelwa**]: https://github.com/marcelwa
-
 [**@lirem101**]: https://github.com/lirem101
 
 <!-- General links -->
