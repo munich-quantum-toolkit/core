@@ -23,6 +23,7 @@
 #include <optional>
 #include <qdmi/client.h>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace mqt {
@@ -45,9 +46,17 @@ NB_MODULE(MQT_CORE_MODULE_NAME, m) {
          std::optional<std::string> custom1, std::optional<std::string> custom2,
          std::optional<std::string> custom3, std::optional<std::string> custom4,
          std::optional<std::string> custom5) {
-        fomac::SessionConfig config{token,    authFile,  authUrl, username,
-                                    password, projectId, custom1, custom2,
-                                    custom3,  custom4,   custom5};
+        const fomac::SessionConfig config{.token = std::move(token),
+                                          .authFile = std::move(authFile),
+                                          .authUrl = std::move(authUrl),
+                                          .username = std::move(username),
+                                          .password = std::move(password),
+                                          .projectId = std::move(projectId),
+                                          .custom1 = std::move(custom1),
+                                          .custom2 = std::move(custom2),
+                                          .custom3 = std::move(custom3),
+                                          .custom4 = std::move(custom4),
+                                          .custom5 = std::move(custom5)};
         new (self) fomac::Session(config);
       },
       "token"_a = std::nullopt, "auth_file"_a = std::nullopt,

@@ -164,7 +164,7 @@ void registerDDPackage(const nb::module_& m) {
   dd.def(
       "from_vector",
       [](dd::Package& p, const Vector& v) {
-        const auto length = static_cast<size_t>(v.shape(0));
+        const auto length = v.shape(0);
         if (length == 0) {
           return dd::vEdge::one();
         }
@@ -351,8 +351,8 @@ void registerDDPackage(const nb::module_& m) {
   dd.def(
       "from_matrix",
       [](dd::Package& p, const Matrix& m) {
-        const auto rows = static_cast<size_t>(m.shape(0));
-        const auto cols = static_cast<size_t>(m.shape(1));
+        const auto rows = m.shape(0);
+        const auto cols = m.shape(1);
         if (rows != cols) {
           throw std::invalid_argument("Matrix must be square.");
         }

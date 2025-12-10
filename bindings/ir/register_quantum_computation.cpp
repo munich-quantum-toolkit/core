@@ -104,7 +104,8 @@ void registerQuantumComputation(nb::module_& m) {
         auto [start, stop, step, sliceLength] = slice.compute(circ.getNops());
         auto ops = std::vector<qc::Operation*>();
         ops.reserve(sliceLength);
-        for (std::size_t i = start; i < stop; i += step) {
+        for (size_t i = start; std::cmp_less(i, stop);
+             i += static_cast<size_t>(step)) {
           ops.emplace_back(circ.at(i).get());
         }
         return ops;
@@ -128,7 +129,7 @@ void registerQuantumComputation(nb::module_& m) {
               "Length of slice and number of operations do not match.");
         }
         for (std::size_t i = 0; i < sliceLength; ++i) {
-          circ.at(start) = ops[i]->clone();
+          circ.at(static_cast<std::size_t>(start)) = ops[i]->clone();
           start += step;
         }
       },
@@ -146,8 +147,8 @@ void registerQuantumComputation(nb::module_& m) {
         auto [start, stop, step, sliceLength] = slice.compute(circ.getNops());
         // delete in reverse order to not invalidate indices
         for (std::size_t i = sliceLength; i > 0; --i) {
-          circ.erase(circ.begin() +
-                     static_cast<int64_t>(start + ((i - 1) * step)));
+          circ.erase(circ.begin() + static_cast<std::size_t>(start) +
+                     ((i - 1) * static_cast<std::size_t>(step)));
         }
       },
       "index"_a);

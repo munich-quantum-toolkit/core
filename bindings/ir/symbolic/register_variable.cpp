@@ -30,7 +30,7 @@ void registerVariable(nb::module_& m) {
       .def(nb::self == nb::self) // NOLINT(misc-redundant-expression)
       .def(nb::self != nb::self) // NOLINT(misc-redundant-expression)
       .def(nb::hash(nb::self))
-      .def(nb::self < nb::self)
-      .def(nb::self > nb::self);
+      .def(nb::self < nb::self)  // NOLINT(misc-redundant-expression)
+      .def(nb::self > nb::self); // NOLINT(misc-redundant-expression)
 }
 } // namespace mqt
