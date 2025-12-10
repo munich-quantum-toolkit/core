@@ -70,9 +70,8 @@ void registerCompoundOperation(const nb::module_& m) {
             auto [start, stop, step, sliceLength] = slice.compute(op.size());
             auto ops = std::vector<qc::Operation*>();
             ops.reserve(sliceLength);
-            for (std::size_t i = start; std::cmp_less(i, stop);
-                 i += static_cast<std::size_t>(step)) {
-              ops.emplace_back(op.at(i).get());
+            for (auto i = start; i < stop; i += step) {
+              ops.emplace_back(op.at(static_cast<std::size_t>(i)).get());
             }
             return ops;
           },
@@ -114,8 +113,9 @@ void registerCompoundOperation(const nb::module_& m) {
             auto [start, stop, step, sliceLength] = slice.compute(op.size());
             // delete in reverse order to not invalidate indices
             for (std::size_t i = sliceLength; i > 0; --i) {
-              op.erase(op.begin() + static_cast<std::size_t>(start) +
-                       ((i - 1) * static_cast<std::size_t>(step)));
+              const auto offset =
+                  static_cast<std::ptrdiff_t>(start + ((i - 1) * step));
+              op.erase(op.begin() + offset);
             }
           },
           "index"_a)
