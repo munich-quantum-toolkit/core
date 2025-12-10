@@ -16,8 +16,8 @@
 #include <cstdint>
 #include <memory>
 #include <nanobind/nanobind.h>
-#include <nanobind/stl/optional.h>
-#include <nanobind/stl/string.h>
+#include <nanobind/stl/optional.h> // NOLINT(misc-include-cleaner)
+#include <nanobind/stl/string.h>   // NOLINT(misc-include-cleaner)
 #include <sstream>
 #include <utility>
 

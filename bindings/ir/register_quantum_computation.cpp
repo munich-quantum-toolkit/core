@@ -21,11 +21,11 @@
 #include <cstdint>
 #include <memory>
 #include <nanobind/nanobind.h>
-#include <nanobind/stl/set.h>
-#include <nanobind/stl/string.h>
-#include <nanobind/stl/unordered_map.h>
-#include <nanobind/stl/variant.h>
-#include <nanobind/stl/vector.h>
+#include <nanobind/stl/set.h>           // NOLINT(misc-include-cleaner)
+#include <nanobind/stl/string.h>        // NOLINT(misc-include-cleaner)
+#include <nanobind/stl/unordered_map.h> // NOLINT(misc-include-cleaner)
+#include <nanobind/stl/variant.h>       // NOLINT(misc-include-cleaner)
+#include <nanobind/stl/vector.h>        // NOLINT(misc-include-cleaner)
 #include <stdexcept>
 #include <string>
 #include <utility>

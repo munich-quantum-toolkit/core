@@ -14,8 +14,8 @@
 #include <nanobind/make_iterator.h>
 #include <nanobind/nanobind.h>
 #include <nanobind/operators.h>
-#include <nanobind/stl/string.h>
-#include <nanobind/stl/vector.h>
+#include <nanobind/stl/string.h> // NOLINT(misc-include-cleaner)
+#include <nanobind/stl/vector.h> // NOLINT(misc-include-cleaner)
 #include <sstream>
 #include <vector>
 

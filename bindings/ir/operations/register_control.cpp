@@ -13,8 +13,8 @@
 
 #include <nanobind/nanobind.h>
 #include <nanobind/operators.h>
-#include <nanobind/stl/set.h>
-#include <nanobind/stl/string.h>
+#include <nanobind/stl/set.h>    // NOLINT(misc-include-cleaner)
+#include <nanobind/stl/string.h> // NOLINT(misc-include-cleaner)
 
 namespace mqt {
 

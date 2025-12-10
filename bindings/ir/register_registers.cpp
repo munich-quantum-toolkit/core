@@ -14,7 +14,7 @@
 #include <cstddef>
 #include <nanobind/nanobind.h>
 #include <nanobind/operators.h>
-#include <nanobind/stl/string.h>
+#include <nanobind/stl/string.h> // NOLINT(misc-include-cleaner)
 #include <string>
 
 namespace mqt {
