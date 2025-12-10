@@ -280,6 +280,7 @@ _📚 Refer to the [GitHub Release Notes](https://github.com/munich-quantum-tool
 
 <!-- PR links -->
 
+[#1378]: https://github.com/munich-quantum-toolkit/core/pull/1378
 [#1375]: https://github.com/munich-quantum-toolkit/core/pull/1375
 [#1371]: https://github.com/munich-quantum-toolkit/core/pull/1371
 [#1359]: https://github.com/munich-quantum-toolkit/core/pull/1359
@@ -421,6 +422,8 @@ _📚 Refer to the [GitHub Release Notes](https://github.com/munich-quantum-tool
 [**@jannikpflieger**]: https://github.com/jannikpflieger
 [**@lsschmid**]: https://github.com/lsschmid
 [**@marcelwa**]: https://github.com/marcelwa
+
+[**@lirem101**]: https://github.com/lirem101
 
 <!-- General links -->
 
