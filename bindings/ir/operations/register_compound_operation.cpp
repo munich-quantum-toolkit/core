@@ -71,7 +71,7 @@ void registerCompoundOperation(const nb::module_& m) {
             auto ops = std::vector<qc::Operation*>();
             ops.reserve(sliceLength);
             for (auto i = start; i < stop; i += step) {
-              ops.emplace_back(op.at(static_cast<std::size_t>(i)).get());
+              ops.emplace_back(op.at(static_cast<SizeType>(i)).get());
             }
             return ops;
           },
@@ -95,7 +95,7 @@ void registerCompoundOperation(const nb::module_& m) {
                   "Length of slice and number of operations do not match.");
             }
             for (std::size_t i = 0; i < sliceLength; ++i) {
-              compOp[static_cast<std::size_t>(start)] = ops[i]->clone();
+              compOp[static_cast<SizeType>(start)] = ops[i]->clone();
               start += step;
             }
           },
@@ -113,8 +113,9 @@ void registerCompoundOperation(const nb::module_& m) {
             auto [start, stop, step, sliceLength] = slice.compute(op.size());
             // delete in reverse order to not invalidate indices
             for (std::size_t i = sliceLength; i > 0; --i) {
-              const auto offset =
-                  static_cast<std::ptrdiff_t>(start + ((i - 1) * step));
+              const auto offset = static_cast<DiffType>(
+                  static_cast<SizeType>(start) +
+                  ((i - 1) * static_cast<SizeType>(step)));
               op.erase(op.begin() + offset);
             }
           },
