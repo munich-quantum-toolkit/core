@@ -56,13 +56,29 @@ class QDMIJob(JobV1):  # type: ignore[misc]
             backend: The backend to use for the job.
             jobs: The FoMaC Job object(s).
             circuit_names: The name(s) of the circuit(s) the job is associated with.
+
+        Raises:
+            ValueError: If jobs list is empty or if jobs and circuit_names have mismatched lengths.
         """
         # Normalize to lists
         self._jobs = [jobs] if isinstance(jobs, fomac.Job) else jobs
         self._circuit_names = [circuit_names] if isinstance(circuit_names, str) else circuit_names
 
+        # Validate non-empty jobs list
+        if not self._jobs:
+            msg = "QDMIJob must be initialized with at least one underlying job."
+            raise ValueError(msg)
+
+        # Validate that jobs and circuit_names have matching lengths
+        if len(self._jobs) != len(self._circuit_names):
+            msg = (
+                f"Length mismatch: jobs ({len(self._jobs)}) and circuit_names ({len(self._circuit_names)}) "
+                "must have the same length."
+            )
+            raise ValueError(msg)
+
         # Use the first job's ID as the primary job ID
-        job_id = self._jobs[0].id if self._jobs else "unknown"
+        job_id = self._jobs[0].id
         super().__init__(backend=backend, job_id=job_id)
         self._backend: QDMIBackend = backend
         self._counts_cache: list[dict[str, int] | None] = [None] * len(self._jobs)
@@ -137,7 +153,7 @@ class QDMIJob(JobV1):  # type: ignore[misc]
             fomac.Job.Status.FAILED: JobStatus.ERROR,
         }
 
-        # Collect all statuses
+        # Collect all statuses (self._jobs is guaranteed non-empty by __init__)
         statuses = []
         for job in self._jobs:
             qdmi_status = job.check()

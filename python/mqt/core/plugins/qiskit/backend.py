@@ -473,6 +473,11 @@ class QDMIBackend(BackendV2):  # type: ignore[misc]
         # Normalize input to a list of circuits
         circuits = [run_input] if isinstance(run_input, QuantumCircuit) else run_input
 
+        # Validate non-empty circuit list
+        if not circuits:
+            msg = "No circuits provided to run. At least one circuit is required."
+            raise CircuitValidationError(msg)
+
         # Validate parameter_values length if provided
         if parameter_values is not None and len(parameter_values) != len(circuits):
             msg = (
@@ -510,6 +515,22 @@ class QDMIBackend(BackendV2):  # type: ignore[misc]
                     except Exception as exc:
                         msg = f"Failed to bind parameters for circuit {idx}: {exc}"
                         raise CircuitValidationError(msg) from exc
+                elif param_vals:
+                    # Warn if parameter values provided for circuit without parameters
+                    warnings.warn(
+                        f"Parameter values provided for circuit {idx}, but the circuit has no parameters. "
+                        "These values will be ignored.",
+                        stacklevel=2,
+                    )
+            elif circuit.parameters:
+                # Circuits have parameters but no parameter_values provided
+                param_names = ", ".join(sorted(p.name for p in circuit.parameters))
+                msg = (
+                    f"Circuit {idx} contains unbound parameters: {param_names}. "
+                    "Provide parameter_values or bind them manually."
+                )
+                raise CircuitValidationError(msg)
+
             # Validate circuit has no unbound parameters
             if bound_circuit.parameters:
                 param_names = ", ".join(sorted(p.name for p in bound_circuit.parameters))
