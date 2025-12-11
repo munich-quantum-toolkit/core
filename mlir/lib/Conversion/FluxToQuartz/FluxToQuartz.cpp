@@ -853,6 +853,9 @@ struct ConvertFluxScfWhileOp final : OpConversionPattern<scf::WhileOp> {
   LogicalResult
   matchAndRewrite(scf::WhileOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
+    // create the bew while operation
+    auto newWhileOp =
+        rewriter.create<scf::WhileOp>(op->getLoc(), ValueRange{}, ValueRange{});
 
     // replace the uses of the blockarguments with the init values
     const auto& inits = adaptor.getInits();
@@ -862,9 +865,6 @@ struct ConvertFluxScfWhileOp final : OpConversionPattern<scf::WhileOp> {
       beforeArgs[i].replaceAllUsesWith(inits[i]);
       afterArgs[i].replaceAllUsesWith(inits[i]);
     }
-    // create the bew while operation
-    auto newWhileOp =
-        rewriter.create<scf::WhileOp>(op->getLoc(), ValueRange{}, ValueRange{});
 
     // create the blocks of the new operation and move the operations to them
     auto* newBeforeBlock =
@@ -878,6 +878,34 @@ struct ConvertFluxScfWhileOp final : OpConversionPattern<scf::WhileOp> {
 
     // replace the result values with the init values
     rewriter.replaceOp(op, adaptor.getInits());
+    return success();
+  }
+};
+struct ConvertFluxScfForOp final : OpConversionPattern<scf::ForOp> {
+  using OpConversionPattern::OpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(scf::ForOp op, OpAdaptor adaptor,
+                  ConversionPatternRewriter& rewriter) const override {
+    // Create a new for-loop with no iter_args
+    auto newFor = rewriter.create<scf::ForOp>(
+        op.getLoc(), adaptor.getLowerBound(), adaptor.getUpperBound(),
+        adaptor.getStep(), ValueRange{});
+
+    for (const auto& [fluxQubit, quartzQubit] :
+         llvm::zip_equal(op.getRegionIterArgs(), adaptor.getInitArgs())) {
+      fluxQubit.replaceAllUsesWith(quartzQubit);
+    }
+
+    // move all the operations from the old block to the new block
+    auto* newBlock = newFor.getBody();
+    // erase the existing yield operation
+    rewriter.eraseOp(newBlock->getTerminator());
+    newBlock->getOperations().splice(newBlock->end(),
+                                     op.getBody()->getOperations());
+                                     
+    rewriter.replaceOp(op, adaptor.getInitArgs());
+
     return success();
   }
 };
@@ -966,6 +994,11 @@ struct FluxToQuartz final : impl::FluxToQuartzBase<FluxToQuartz> {
         return type == flux::QubitType::get(context);
       });
     });
+    target.addDynamicallyLegalOp<scf::ForOp>([&](scf::ForOp op) {
+      return !llvm::any_of(op->getResultTypes(), [&](Type type) {
+        return type == flux::QubitType::get(context);
+      });
+    });
     // Register operation conversion patterns
     // Note: No state tracking needed - OpAdaptors handle type conversion
     patterns.add<
@@ -980,8 +1013,8 @@ struct FluxToQuartz final : impl::FluxToQuartzBase<FluxToQuartz> {
         ConvertFluxRZXOp, ConvertFluxRZZOp, ConvertFluxXXPlusYYOp,
         ConvertFluxXXMinusYYOp, ConvertFluxBarrierOp, ConvertFluxCtrlOp,
         ConvertFluxYieldOp, ConvertFluxScfIfOp, ConvertFluxScfYieldOp,
-        ConvertFluxScfWhileOp, ConvertFluxScfConditionOp>(typeConverter,
-                                                          context);
+        ConvertFluxScfWhileOp, ConvertFluxScfConditionOp, ConvertFluxScfForOp>(
+        typeConverter, context);
 
     // Conversion of flux types in func.func signatures
     // Note: This currently has limitations with signature changes

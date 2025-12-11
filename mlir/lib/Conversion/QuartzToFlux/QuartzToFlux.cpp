@@ -1307,6 +1307,53 @@ struct ConvertQuartzScfWhileOp final
   }
 };
 
+struct ConvertQuartzScfForOp final : StatefulOpConversionPattern<scf::ForOp> {
+  using StatefulOpConversionPattern<scf::ForOp>::StatefulOpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(scf::ForOp op, OpAdaptor adaptor,
+                  ConversionPatternRewriter& rewriter) const override {
+
+    auto& qubitMap = getState().qubitMap[op->getParentRegion()];
+
+    auto refQubits = getState().regionMap[op];
+    SmallVector<Value> values;
+    values.reserve(refQubits.size());
+    for (auto qubit : refQubits) {
+      values.push_back(qubit);
+    }
+
+    SmallVector<Value> optQubits;
+    for (auto [quartQubit, fluxQubit] : qubitMap) {
+      optQubits.push_back(fluxQubit);
+    }
+    // Create a new for-loop with flux qubits as iter_args
+    auto newFor = rewriter.create<scf::ForOp>(
+        op.getLoc(), adaptor.getLowerBound(), adaptor.getUpperBound(),
+        adaptor.getStep(), ValueRange(optQubits));
+    auto& srcBlock = op.getRegion().front();
+    auto& dstBlock = newFor.getRegion().front();
+    dstBlock.getOperations().splice(dstBlock.end(), srcBlock.getOperations());
+
+    auto& newRegion = newFor.getRegion();
+
+    auto& regionQubitMap = getState().qubitMap[&newRegion];
+
+
+    for (const auto& [refQubit, optQubit] :
+         llvm::zip_equal(refQubits, newFor.getRegionIterArgs())) {
+      regionQubitMap.try_emplace(refQubit, optQubit);
+    }
+
+    auto& map = getState().qubitMap[op->getParentRegion()];
+    for (size_t i = 0; i < newFor->getResults().size(); i++) {
+      map[refQubits[i]] = newFor->getResult(i);
+    }
+    rewriter.eraseOp(op);
+    return success();
+  }
+};
+
 struct ConvertQuartzScfYieldOp final
     : StatefulOpConversionPattern<scf::YieldOp> {
   using StatefulOpConversionPattern<scf::YieldOp>::StatefulOpConversionPattern;
@@ -1402,6 +1449,9 @@ struct QuartzToFlux final : impl::QuartzToFluxBase<QuartzToFlux> {
     target.addDynamicallyLegalOp<scf::ConditionOp>([&](scf::ConditionOp op) {
       return !(op->getAttrOfType<StringAttr>("needChange"));
     });
+    target.addDynamicallyLegalOp<scf::ForOp>([&](scf::ForOp op) {
+      return !(op->getAttrOfType<StringAttr>("needChange"));
+    });
     // Register operation conversion patterns with state
     // tracking
     patterns.add<
@@ -1418,7 +1468,8 @@ struct QuartzToFlux final : impl::QuartzToFluxBase<QuartzToFlux> {
         ConvertQuartzRZZOp, ConvertQuartzXXPlusYYOp, ConvertQuartzXXMinusYYOp,
         ConvertQuartzBarrierOp, ConvertQuartzCtrlOp, ConvertQuartzYieldOp,
         ConvertQuartzScfIfOp, ConvertQuartzScfYieldOp, ConvertQuartzScfWhileOp,
-        ConvertQuartzScfCondtionOp>(typeConverter, context, &state);
+        ConvertQuartzScfCondtionOp, ConvertQuartzScfForOp>(typeConverter,
+                                                           context, &state);
 
     // Apply the conversion
     if (failed(applyPartialConversion(module, target, std::move(patterns)))) {
