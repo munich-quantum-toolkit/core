@@ -97,18 +97,4 @@ function(add_mqt_python_binding_nanobind package_name target_name)
     TARGETS ${target_name}
     DESTINATION ${ARG_INSTALL_DIR}
     COMPONENT ${MQT_${package_name}_TARGET_NAME}_Python)
-
-  nanobind_add_stub(
-    ${target_name}_stub
-    INSTALL_TIME
-    RECURSIVE
-    MODULE
-    ${target_name}
-    OUTPUT
-    ${target_name}.pyi
-    OUTPUT_PATH
-    ${ARG_INSTALL_DIR}
-    MARKER_FILE
-    py.typed
-    INCLUDE_PRIVATE)
 endfunction()

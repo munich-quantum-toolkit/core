@@ -22,4 +22,23 @@ if(NOT TARGET ${MQT_CORE_TARGET_NAME}-ir-bindings)
     LINK_LIBS
     MQT::CoreIR
     MQT::CoreQASM)
+
+  nanobind_add_stub(
+    ${MQT_CORE_TARGET_NAME}-ir-bindings_stub
+    INSTALL_TIME
+    MODULE
+    mqt.core.ir
+    RECURSIVE
+    OUTPUT_PATH
+    ${PROJECT_SOURCE_DIR}/python/mqt/core/
+    OUTPUT
+    ${PROJECT_SOURCE_DIR}/python/mqt/core/ir/__init__.pyi
+    ${PROJECT_SOURCE_DIR}/python/mqt/core/ir/operations.pyi
+    ${PROJECT_SOURCE_DIR}/python/mqt/core/ir/registers.pyi
+    ${PROJECT_SOURCE_DIR}/python/mqt/core/ir/symbolic.pyi
+    PYTHON_PATH
+    ${PROJECT_SOURCE_DIR}/python
+    MARKER_FILE
+    py.typed
+    INCLUDE_PRIVATE)
 endif()

@@ -21,4 +21,17 @@ if(NOT TARGET ${MQT_CORE_TARGET_NAME}-dd-bindings)
     .
     LINK_LIBS
     MQT::CoreDD)
+
+  nanobind_add_stub(
+    ${MQT_CORE_TARGET_NAME}-dd-bindings_stub
+    INSTALL_TIME
+    MODULE
+    mqt.core.dd
+    OUTPUT
+    ${PROJECT_SOURCE_DIR}/python/mqt/core/dd.pyi
+    PYTHON_PATH
+    ${PROJECT_SOURCE_DIR}/python
+    MARKER_FILE
+    py.typed
+    INCLUDE_PRIVATE)
 endif()
