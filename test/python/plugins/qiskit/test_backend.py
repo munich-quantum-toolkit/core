@@ -109,7 +109,10 @@ def test_backend_runs_multiple_circuits(backend_with_mock_jobs: QDMIBackend) -> 
     for idx, expected_name in enumerate(["bell_state", "x_then_measure", "hadamard_all"]):
         exp_result = result.results[idx]
         assert exp_result.success is True
-        assert exp_result.header["name"] == expected_name
+        # Support both dict-style (Qiskit 2.x) and object-style (Qiskit 1.x) header access
+        header = exp_result.header
+        circuit_name = header["name"] if isinstance(header, dict) else header.name
+        assert circuit_name == expected_name
         assert exp_result.shots == 500
 
         # Check counts for this circuit
