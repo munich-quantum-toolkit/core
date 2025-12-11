@@ -144,7 +144,9 @@ llvm::SetVector<Value> collectRegionQubits(Operation* op, LoweringState* state,
           uniqueQubits.insert(result);
         }
       }
-      if (llvm::isa<scf::YieldOp>(operation) && uniqueQubits.size() > 0) {
+      if ((llvm::isa<scf::YieldOp>(operation) ||
+           llvm::isa<scf::ConditionOp>(operation)) &&
+          uniqueQubits.size() > 0) {
         operation.setAttr("needChange", StringAttr::get(ctx, "yes"));
       }
     }
@@ -1194,7 +1196,7 @@ struct ConvertQuartzYieldOp final
   }
 };
 
-struct ConvertScfIfOp final : StatefulOpConversionPattern<scf::IfOp> {
+struct ConvertQuartzScfIfOp final : StatefulOpConversionPattern<scf::IfOp> {
   using StatefulOpConversionPattern<scf::IfOp>::StatefulOpConversionPattern;
 
   LogicalResult
@@ -1250,22 +1252,97 @@ struct ConvertScfIfOp final : StatefulOpConversionPattern<scf::IfOp> {
     return success();
   }
 };
+struct ConvertQuartzScfWhileOp final
+    : StatefulOpConversionPattern<scf::WhileOp> {
+  using StatefulOpConversionPattern<scf::WhileOp>::StatefulOpConversionPattern;
 
-struct ConvertScfYieldOp final : StatefulOpConversionPattern<scf::YieldOp> {
+  LogicalResult
+  matchAndRewrite(scf::WhileOp op, OpAdaptor /*adaptor*/,
+                  ConversionPatternRewriter& rewriter) const override {
+
+    auto& qubitMap = getState().qubitMap[op->getParentRegion()];
+    auto refQubits = getState().regionMap[op];
+
+    SmallVector<Value> values;
+    values.reserve(refQubits.size());
+    for (auto qubit : refQubits) {
+      values.push_back(qubit);
+    }
+    SmallVector<Value> optQubits;
+    SmallVector<Type> types(refQubits.size(),
+                            flux::QubitType::get(rewriter.getContext()));
+    for (auto [refQubit, optQubit] : qubitMap) {
+      optQubits.push_back(optQubit);
+    }
+    auto newWhileOp = rewriter.create<scf::WhileOp>(
+        op.getLoc(), TypeRange(types), ValueRange(optQubits));
+    auto& newBeforeRegion = newWhileOp.getBefore();
+    auto& newAfterRegion = newWhileOp.getAfter();
+    SmallVector<Location> locs(refQubits.size(), op->getLoc());
+    auto* newBeforeBlock =
+        rewriter.createBlock(&newBeforeRegion, {}, types, locs);
+    auto* newAfterBlock =
+        rewriter.createBlock(&newAfterRegion, {}, types, locs);
+
+    newBeforeBlock->getOperations().splice(newBeforeBlock->end(),
+                                           op.getBeforeBody()->getOperations());
+    newAfterBlock->getOperations().splice(newAfterBlock->end(),
+                                          op.getAfterBody()->getOperations());
+    auto& newBeforeRegionMap = getState().qubitMap[&newWhileOp.getBefore()];
+    auto& newAfterRegionMap = getState().qubitMap[&newWhileOp.getAfter()];
+    for (size_t i = 0; i < refQubits.size(); i++) {
+      newBeforeRegionMap.try_emplace(refQubits[i],
+                                     newWhileOp.getBeforeArguments()[i]);
+    }
+    for (size_t i = 0; i < refQubits.size(); i++) {
+      newAfterRegionMap.try_emplace(refQubits[i],
+                                    newWhileOp.getAfterArguments()[i]);
+    }
+
+    for (size_t i = 0; i < newWhileOp->getResults().size(); i++) {
+      qubitMap[refQubits[i]] = newWhileOp->getResult(i);
+    }
+    rewriter.eraseOp(op);
+    return success();
+  }
+};
+
+struct ConvertQuartzScfYieldOp final
+    : StatefulOpConversionPattern<scf::YieldOp> {
   using StatefulOpConversionPattern<scf::YieldOp>::StatefulOpConversionPattern;
 
   LogicalResult
   matchAndRewrite(scf::YieldOp op, OpAdaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
 
-    auto* region = op->getParentRegion();
-    auto& qubitMap = getState().qubitMap[region];
+    const auto& qubitMap = getState().qubitMap[op->getParentRegion()];
 
     SmallVector<Value> optQubits;
     for (auto [refQubit, optQubit] : qubitMap) {
       optQubits.push_back(optQubit);
     }
     rewriter.replaceOpWithNewOp<scf::YieldOp>(op, optQubits);
+    return success();
+  }
+};
+struct ConvertQuartzScfCondtionOp final
+    : StatefulOpConversionPattern<scf::ConditionOp> {
+  using StatefulOpConversionPattern<
+      scf::ConditionOp>::StatefulOpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(scf::ConditionOp op, OpAdaptor /*adaptor*/,
+                  ConversionPatternRewriter& rewriter) const override {
+
+    const auto& qubitMap = getState().qubitMap[op->getParentRegion()];
+
+    SmallVector<Value> optQubits;
+    for (auto [refQubit, optQubit] : qubitMap) {
+      optQubits.push_back(optQubit);
+    }
+    rewriter.replaceOpWithNewOp<scf::ConditionOp>(op, op.getCondition(),
+                                                  optQubits);
+
     return success();
   }
 };
@@ -1319,6 +1396,12 @@ struct QuartzToFlux final : impl::QuartzToFluxBase<QuartzToFlux> {
     target.addDynamicallyLegalOp<scf::IfOp>([&](scf::IfOp op) {
       return !(op->getAttrOfType<StringAttr>("needChange"));
     });
+    target.addDynamicallyLegalOp<scf::WhileOp>([&](scf::WhileOp op) {
+      return !(op->getAttrOfType<StringAttr>("needChange"));
+    });
+    target.addDynamicallyLegalOp<scf::ConditionOp>([&](scf::ConditionOp op) {
+      return !(op->getAttrOfType<StringAttr>("needChange"));
+    });
     // Register operation conversion patterns with state
     // tracking
     patterns.add<
@@ -1334,7 +1417,8 @@ struct QuartzToFlux final : impl::QuartzToFluxBase<QuartzToFlux> {
         ConvertQuartzRXXOp, ConvertQuartzRYYOp, ConvertQuartzRZXOp,
         ConvertQuartzRZZOp, ConvertQuartzXXPlusYYOp, ConvertQuartzXXMinusYYOp,
         ConvertQuartzBarrierOp, ConvertQuartzCtrlOp, ConvertQuartzYieldOp,
-        ConvertScfIfOp, ConvertScfYieldOp>(typeConverter, context, &state);
+        ConvertQuartzScfIfOp, ConvertQuartzScfYieldOp, ConvertQuartzScfWhileOp,
+        ConvertQuartzScfCondtionOp>(typeConverter, context, &state);
 
     // Apply the conversion
     if (failed(applyPartialConversion(module, target, std::move(patterns)))) {

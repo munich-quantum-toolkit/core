@@ -836,7 +836,6 @@ struct ConvertFluxScfIfOp final : OpConversionPattern<scf::IfOp> {
     if (!op.getElseRegion().empty()) {
       rewriter.inlineRegionBefore(op.getElseRegion(), newIf.getElseRegion(),
                                   newIf.getElseRegion().end());
-
     }
     rewriter.eraseBlock(&newIf.getThenRegion().front());
 
@@ -845,6 +844,40 @@ struct ConvertFluxScfIfOp final : OpConversionPattern<scf::IfOp> {
 
     rewriter.replaceOp(op, yield->getOperands());
 
+    return success();
+  }
+};
+struct ConvertFluxScfWhileOp final : OpConversionPattern<scf::WhileOp> {
+  using OpConversionPattern::OpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(scf::WhileOp op, OpAdaptor adaptor,
+                  ConversionPatternRewriter& rewriter) const override {
+
+    // replace the uses of the blockarguments with the init values
+    const auto& inits = adaptor.getInits();
+    const auto beforeArgs = op.getBeforeArguments();
+    const auto afterArgs = op.getAfterArguments();
+    for (size_t i = 0; i < beforeArgs.size(); i++) {
+      beforeArgs[i].replaceAllUsesWith(inits[i]);
+      afterArgs[i].replaceAllUsesWith(inits[i]);
+    }
+    // create the bew while operation
+    auto newWhileOp =
+        rewriter.create<scf::WhileOp>(op->getLoc(), ValueRange{}, ValueRange{});
+
+    // create the blocks of the new operation and move the operations to them
+    auto* newBeforeBlock =
+        rewriter.createBlock(&newWhileOp.getBefore(), {}, {}, {});
+    auto* newAfterBlock =
+        rewriter.createBlock(&newWhileOp.getAfter(), {}, {}, {});
+    newBeforeBlock->getOperations().splice(newBeforeBlock->end(),
+                                           op.getBeforeBody()->getOperations());
+    newAfterBlock->getOperations().splice(newAfterBlock->end(),
+                                          op.getAfterBody()->getOperations());
+
+    // replace the result values with the init values
+    rewriter.replaceOp(op, adaptor.getInits());
     return success();
   }
 };
@@ -859,7 +892,18 @@ struct ConvertFluxScfYieldOp final : OpConversionPattern<scf::YieldOp> {
     return success();
   }
 };
+struct ConvertFluxScfConditionOp final : OpConversionPattern<scf::ConditionOp> {
+  using OpConversionPattern::OpConversionPattern;
 
+  LogicalResult
+  matchAndRewrite(scf::ConditionOp op, OpAdaptor adaptor,
+                  ConversionPatternRewriter& rewriter) const override {
+
+    rewriter.replaceOpWithNewOp<scf::ConditionOp>(op, op.getCondition(),
+                                                  ValueRange{});
+    return success();
+  }
+};
 /**
  * @brief Pass implementation for Flux-to-Quartz conversion
  *
@@ -912,21 +956,32 @@ struct FluxToQuartz final : impl::FluxToQuartzBase<FluxToQuartz> {
         return type == flux::QubitType::get(context);
       });
     });
+    target.addDynamicallyLegalOp<scf::WhileOp>([&](scf::WhileOp op) {
+      return !llvm::any_of(op->getResultTypes(), [&](Type type) {
+        return type == flux::QubitType::get(context);
+      });
+    });
+    target.addDynamicallyLegalOp<scf::ConditionOp>([&](scf::ConditionOp op) {
+      return !llvm::any_of(op.getOperandTypes(), [&](Type type) {
+        return type == flux::QubitType::get(context);
+      });
+    });
     // Register operation conversion patterns
     // Note: No state tracking needed - OpAdaptors handle type conversion
-    patterns
-        .add<ConvertFluxAllocOp, ConvertFluxDeallocOp, ConvertFluxStaticOp,
-             ConvertFluxMeasureOp, ConvertFluxResetOp, ConvertFluxGPhaseOp,
-             ConvertFluxIdOp, ConvertFluxXOp, ConvertFluxYOp, ConvertFluxZOp,
-             ConvertFluxHOp, ConvertFluxSOp, ConvertFluxSdgOp, ConvertFluxTOp,
-             ConvertFluxTdgOp, ConvertFluxSXOp, ConvertFluxSXdgOp,
-             ConvertFluxRXOp, ConvertFluxRYOp, ConvertFluxRZOp, ConvertFluxPOp,
-             ConvertFluxROp, ConvertFluxU2Op, ConvertFluxUOp, ConvertFluxSWAPOp,
-             ConvertFluxiSWAPOp, ConvertFluxDCXOp, ConvertFluxECROp,
-             ConvertFluxRXXOp, ConvertFluxRYYOp, ConvertFluxRZXOp,
-             ConvertFluxRZZOp, ConvertFluxXXPlusYYOp, ConvertFluxXXMinusYYOp,
-             ConvertFluxBarrierOp, ConvertFluxCtrlOp, ConvertFluxYieldOp,
-             ConvertFluxScfIfOp, ConvertFluxScfYieldOp>(typeConverter, context);
+    patterns.add<
+        ConvertFluxAllocOp, ConvertFluxDeallocOp, ConvertFluxStaticOp,
+        ConvertFluxMeasureOp, ConvertFluxResetOp, ConvertFluxGPhaseOp,
+        ConvertFluxIdOp, ConvertFluxXOp, ConvertFluxYOp, ConvertFluxZOp,
+        ConvertFluxHOp, ConvertFluxSOp, ConvertFluxSdgOp, ConvertFluxTOp,
+        ConvertFluxTdgOp, ConvertFluxSXOp, ConvertFluxSXdgOp, ConvertFluxRXOp,
+        ConvertFluxRYOp, ConvertFluxRZOp, ConvertFluxPOp, ConvertFluxROp,
+        ConvertFluxU2Op, ConvertFluxUOp, ConvertFluxSWAPOp, ConvertFluxiSWAPOp,
+        ConvertFluxDCXOp, ConvertFluxECROp, ConvertFluxRXXOp, ConvertFluxRYYOp,
+        ConvertFluxRZXOp, ConvertFluxRZZOp, ConvertFluxXXPlusYYOp,
+        ConvertFluxXXMinusYYOp, ConvertFluxBarrierOp, ConvertFluxCtrlOp,
+        ConvertFluxYieldOp, ConvertFluxScfIfOp, ConvertFluxScfYieldOp,
+        ConvertFluxScfWhileOp, ConvertFluxScfConditionOp>(typeConverter,
+                                                          context);
 
     // Conversion of flux types in func.func signatures
     // Note: This currently has limitations with signature changes
