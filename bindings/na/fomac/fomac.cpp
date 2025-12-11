@@ -37,14 +37,16 @@ template <pyClass T> [[nodiscard]] auto repr(T c) -> std::string {
 NB_MODULE(MQT_CORE_MODULE_NAME, m) {
   nb::module_::import_("mqt.core.fomac");
 
-  auto device =
-      nb::class_<na::Session::Device, fomac::Session::Device>(m, "Device");
+  auto device = nb::class_<na::Session::Device, fomac::Session::Device>(
+      m, "Device", "Represents a device with a lattice of traps.");
 
-  auto lattice = nb::class_<na::Device::Lattice>(device, "Lattice");
+  auto lattice = nb::class_<na::Device::Lattice>(
+      device, "Lattice", "Represents a lattice of traps in the device.");
 
-  auto vector = nb::class_<na::Device::Vector>(lattice, "Vector");
-  vector.def_ro("x", &na::Device::Vector::x);
-  vector.def_ro("y", &na::Device::Vector::y);
+  auto vector = nb::class_<na::Device::Vector>(lattice, "Vector",
+                                               "Represents a 2D vector.");
+  vector.def_ro("x", &na::Device::Vector::x, "The x-coordinate of the vector.");
+  vector.def_ro("y", &na::Device::Vector::y, "The y-coordinate of the vector.");
   vector.def("__repr__", [](const na::Device::Vector& v) {
     return "<Vector x=" + std::to_string(v.x) + " y=" + std::to_string(v.y) +
            ">";
@@ -52,11 +54,15 @@ NB_MODULE(MQT_CORE_MODULE_NAME, m) {
   vector.def(nb::self == nb::self); // NOLINT(misc-redundant-expression)
   vector.def(nb::self != nb::self); // NOLINT(misc-redundant-expression)
 
-  auto region = nb::class_<na::Device::Region>(lattice, "Region");
+  auto region = nb::class_<na::Device::Region>(
+      lattice, "Region", "Represents a region in the device.");
 
-  auto size = nb::class_<na::Device::Region::Size>(region, "Size");
-  size.def_ro("width", &na::Device::Region::Size::width);
-  size.def_ro("height", &na::Device::Region::Size::height);
+  auto size = nb::class_<na::Device::Region::Size>(
+      region, "Size", "Represents the size of a region.");
+  size.def_ro("width", &na::Device::Region::Size::width,
+              "The width of the region.");
+  size.def_ro("height", &na::Device::Region::Size::height,
+              "The height of the region.");
   size.def("__repr__", [](const na::Device::Region::Size& s) {
     return "<Size width=" + std::to_string(s.width) +
            " height=" + std::to_string(s.height) + ">";
@@ -64,41 +70,62 @@ NB_MODULE(MQT_CORE_MODULE_NAME, m) {
   size.def(nb::self == nb::self); // NOLINT(misc-redundant-expression)
   size.def(nb::self != nb::self); // NOLINT(misc-redundant-expression)
 
-  region.def_ro("origin", &na::Device::Region::origin);
-  region.def_ro("size", &na::Device::Region::size);
+  region.def_ro("origin", &na::Device::Region::origin,
+                "The origin of the region.");
+  region.def_ro("size", &na::Device::Region::size, "The size of the region.");
   region.def("__repr__", [](const na::Device::Region& r) {
     return "<Region origin=" + repr(r.origin) + " size=" + repr(r.size) + ">";
   });
   region.def(nb::self == nb::self); // NOLINT(misc-redundant-expression)
   region.def(nb::self != nb::self); // NOLINT(misc-redundant-expression)
 
-  lattice.def_ro("lattice_origin", &na::Device::Lattice::latticeOrigin);
-  lattice.def_ro("lattice_vector_1", &na::Device::Lattice::latticeVector1);
-  lattice.def_ro("lattice_vector_2", &na::Device::Lattice::latticeVector2);
-  lattice.def_ro("sublattice_offsets", &na::Device::Lattice::sublatticeOffsets);
-  lattice.def_ro("extent", &na::Device::Lattice::extent);
+  lattice.def_ro("lattice_origin", &na::Device::Lattice::latticeOrigin,
+                 "The origin of the lattice.");
+  lattice.def_ro("lattice_vector_1", &na::Device::Lattice::latticeVector1,
+                 "The first lattice vector.");
+  lattice.def_ro("lattice_vector_2", &na::Device::Lattice::latticeVector2,
+                 "The second lattice vector.");
+  lattice.def_ro("sublattice_offsets", &na::Device::Lattice::sublatticeOffsets,
+                 "The offsets of the sublattices.");
+  lattice.def_ro("extent", &na::Device::Lattice::extent,
+                 "The extent of the lattice.");
   lattice.def("__repr__", [](const na::Device::Lattice& l) {
     return "<Lattice origin=" + repr(l.latticeOrigin) + ">";
   });
   lattice.def(nb::self == nb::self); // NOLINT(misc-redundant-expression)
   lattice.def(nb::self != nb::self); // NOLINT(misc-redundant-expression)
 
-  device.def_prop_ro("traps", &na::Session::Device::getTraps);
-  device.def_prop_ro("t1", [](const na::Session::Device& dev) {
-    return dev.getDecoherenceTimes().t1;
-  });
-  device.def_prop_ro("t2", [](const na::Session::Device& dev) {
-    return dev.getDecoherenceTimes().t2;
-  });
+  device.def_prop_ro("traps", &na::Session::Device::getTraps,
+                     "The list of trap positions in the device.");
+  device.def_prop_ro(
+      "t1",
+      [](const na::Session::Device& dev) {
+        return dev.getDecoherenceTimes().t1;
+      },
+      "The T1 time of the device.");
+  device.def_prop_ro(
+      "t2",
+      [](const na::Session::Device& dev) {
+        return dev.getDecoherenceTimes().t2;
+      },
+      "The T2 time of the device.");
   device.def("__repr__", [](const fomac::Session::Device& dev) {
     return "<Device name=\"" + dev.getName() + "\">";
   });
+  device.def_static("try_create_from_device",
+                    &na::Session::Device::tryCreateFromDevice, "device"_a,
+                    R"pb(Create NA FoMaC Device from generic FoMaC Device.
+
+Args:
+    device: The generic FoMaC Device to convert.
+
+Returns:
+    The converted NA FoMaC Device or None if the conversion is not possible.)pb");
   device.def(nb::self == nb::self); // NOLINT(misc-redundant-expression)
   device.def(nb::self != nb::self); // NOLINT(misc-redundant-expression)
 
-  m.def("devices", &na::Session::getDevices);
-  device.def_static("try_create_from_device",
-                    &na::Session::Device::tryCreateFromDevice, "device"_a);
+  m.def("devices", &na::Session::getDevices,
+        "Returns a list of available devices.");
 }
 
 } // namespace mqt
