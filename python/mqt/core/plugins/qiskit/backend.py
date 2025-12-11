@@ -503,6 +503,8 @@ class QDMIBackend(BackendV2):  # type: ignore[misc]
         # Process each circuit
         qdmi_jobs: list[fomac.Job] = []
         circuit_names: list[str] = []
+        # First pass: validate and convert all circuits
+        converted_circuits: list[tuple[str, fomac.ProgramFormat, str]] = []
 
         for idx, circuit in enumerate(circuits):
             # Bind parameters if provided
@@ -550,7 +552,11 @@ class QDMIBackend(BackendV2):  # type: ignore[misc]
 
             # Convert circuit to specified program format
             program_str, program_format = self._convert_circuit(bound_circuit, self._device.supported_program_formats())
+            circuit_name = circuit.name or f"circuit-{next(QDMIBackend._circuit_counter)}"
+            converted_circuits.append((program_str, program_format, circuit_name))
 
+        # Second pass: submit all validated circuits
+        for program_str, program_format, circuit_name in converted_circuits:
             # Submit job to QDMI device
             try:
                 qdmi_job = self._device.submit_job(
@@ -564,7 +570,6 @@ class QDMIBackend(BackendV2):  # type: ignore[misc]
 
             # Track the job and circuit name
             qdmi_jobs.append(qdmi_job)
-            circuit_name = circuit.name or f"circuit-{next(QDMIBackend._circuit_counter)}"
             circuit_names.append(circuit_name)
 
         # Create and return Qiskit job wrapper (handles single or multiple jobs)

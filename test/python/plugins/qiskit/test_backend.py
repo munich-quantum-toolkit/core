@@ -138,6 +138,47 @@ def test_backend_runs_single_circuit_in_list(backend_with_mock_jobs: QDMIBackend
     assert sum(counts.values()) == 100
 
 
+def test_backend_runs_circuits_with_different_qubit_counts(backend_with_mock_jobs: QDMIBackend) -> None:
+    """Backend correctly handles multiple circuits with different qubit counts."""
+    # Create a 1-qubit circuit
+    qc1 = QuantumCircuit(1, name="single_qubit")
+    qc1.h(0)
+    qc1.measure_all()
+
+    # Create a 2-qubit circuit
+    qc2 = QuantumCircuit(2, name="two_qubit")
+    qc2.h(0)
+    qc2.cx(0, 1)
+    qc2.measure_all()
+
+    # Run both circuits together
+    circuits = [qc1, qc2]
+    shots = 200
+    job = backend_with_mock_jobs.run(circuits, shots=shots)
+    result = job.result()
+
+    # Check overall success
+    assert result.success is True
+
+    # Check we have results for both circuits
+    assert result.results is not None
+    assert len(result.results) == 2
+
+    # Check first circuit (1-qubit)
+    counts_1q = result.get_counts(0)
+    assert sum(counts_1q.values()) == shots
+    for bitstring in counts_1q:
+        assert len(bitstring) == 1, f"Expected 1-qubit bitstring, got '{bitstring}' with length {len(bitstring)}"
+        assert all(bit in {"0", "1"} for bit in bitstring)
+
+    # Check second circuit (2-qubit)
+    counts_2q = result.get_counts(1)
+    assert sum(counts_2q.values()) == shots
+    for bitstring in counts_2q:
+        assert len(bitstring) == 2, f"Expected 2-qubit bitstring, got '{bitstring}' with length {len(bitstring)}"
+        assert all(bit in {"0", "1"} for bit in bitstring)
+
+
 def test_unsupported_operation(real_backend: QDMIBackend) -> None:
     """Unsupported operation raises UnsupportedOperationError."""
     qc = QuantumCircuit(1, 1)
