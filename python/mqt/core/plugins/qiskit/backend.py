@@ -18,6 +18,7 @@ import warnings
 from typing import TYPE_CHECKING, Any, ClassVar
 
 from qiskit import qasm2, qasm3
+from qiskit.circuit import QuantumCircuit
 from qiskit.circuit.library import get_standard_gate_name_mapping
 from qiskit.providers import BackendV2, Options
 from qiskit.transpiler import InstructionProperties, Target
@@ -35,11 +36,15 @@ from .exceptions import (
 from .job import QDMIJob
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable
+    from collections.abc import Iterable, Mapping, Sequence
 
-    from qiskit.circuit import Instruction, QuantumCircuit
+    from qiskit.circuit import Instruction, Parameter
+    from qiskit.circuit.parameterexpression import ParameterValueType
 
     from .provider import QDMIProvider
+
+    # Type alias for parameter values
+    ParametersType = Mapping[Parameter, ParameterValueType] | Iterable[ParameterValueType]
 
 __all__ = ["QDMIBackend"]
 
@@ -421,21 +426,66 @@ class QDMIBackend(BackendV2):  # type: ignore[misc]
         msg = f"No conversion from Qiskit to any of the supported program formats: {supported_program_formats}"
         raise UnsupportedFormatError(msg)
 
-    def run(self, run_input: QuantumCircuit, **options: Any) -> QDMIJob:  # noqa: ANN401
-        """Execute a :class:`~qiskit.circuit.QuantumCircuit` on the backend.
+    def run(
+        self,
+        run_input: QuantumCircuit | Sequence[QuantumCircuit],
+        parameter_values: Sequence[ParametersType] | None = None,
+        **options: Any,  # noqa: ANN401
+    ) -> QDMIJob:
+        """Execute one or more :class:`~qiskit.circuit.QuantumCircuit` instances on the backend.
 
         Args:
-            run_input: Circuit to execute.
-            **options: Execution options (e.g., shots, program_format).
+            run_input: A single quantum circuit or a sequence of quantum circuits to execute.
+            parameter_values: Optional parameter values to bind to the circuits. If provided, must be a sequence
+                with one entry per circuit. Each entry can be either a dictionary mapping parameters to values,
+                or a sequence of values in the order of circuit.parameters.
+            **options: Execution options (e.g., shots).
 
         Returns:
-            Job handle for the execution.
+            Job handle for the execution. For multiple circuits, the job aggregates results from all circuits.
 
         Raises:
-            CircuitValidationError: If circuit validation fails (e.g., invalid shots, unbound parameters).
-            UnsupportedOperationError: If circuit contains unsupported operations.
+            CircuitValidationError: If circuit validation fails (e.g., invalid shots, unbound parameters,
+                parameter_values length mismatch).
+            UnsupportedOperationError: If a circuit contains unsupported operations.
             JobSubmissionError: If job submission to the device fails.
+
+        Examples:
+            Run a single circuit with parameter values:
+
+            >>> from qiskit.circuit import Parameter, QuantumCircuit
+            >>> theta = Parameter("theta")
+            >>> qc = QuantumCircuit(1)
+            >>> qc.ry(theta, 0)
+            >>> qc.measure_all()
+            >>> job = backend.run(qc, parameter_values=[{theta: 1.5708}])
+
+            Run multiple circuits with different parameter values:
+
+            >>> qc1 = QuantumCircuit(1)
+            >>> qc1.ry(theta, 0)
+            >>> qc1.measure_all()
+            >>> qc2 = QuantumCircuit(1)
+            >>> qc2.ry(theta, 0)
+            >>> qc2.measure_all()
+            >>> job = backend.run([qc1, qc2], parameter_values=[{theta: 0.5}, {theta: 1.5}])
         """
+        # Normalize input to a list of circuits
+        circuits = [run_input] if isinstance(run_input, QuantumCircuit) else run_input
+
+        # Validate non-empty circuit list
+        if not circuits:
+            msg = "No circuits provided to run. At least one circuit is required."
+            raise CircuitValidationError(msg)
+
+        # Validate parameter_values length if provided
+        if parameter_values is not None and len(parameter_values) != len(circuits):
+            msg = (
+                f"Length of parameter_values ({len(parameter_values)}) must match "
+                f"the number of circuits ({len(circuits)})"
+            )
+            raise CircuitValidationError(msg)
+
         # Get shots option
         shots_opt = options.get("shots", self._options.shots)
         try:
@@ -447,40 +497,65 @@ class QDMIBackend(BackendV2):  # type: ignore[misc]
             msg = f"'shots' must be >= 0, got {shots}"
             raise CircuitValidationError(msg)
 
-        # Validate circuit has no unbound parameters
-        if run_input.parameters:
-            param_names = ", ".join(sorted(p.name for p in run_input.parameters))
-            msg = f"Circuit contains unbound parameters: {param_names}"
-            raise CircuitValidationError(msg)
-
-        # Validate operations are supported - build set of all supported QDMI operation names
+        # Build set of all supported QDMI operation names once
         device_ops = {op.name().lower() for op in self._device.operations()}
 
-        for instruction in run_input.data:
-            op_name = instruction.operation.name
-            # Map the Qiskit gate name to possible QDMI operation names and check if any match
-            possible_qdmi_names = self._map_qiskit_gate_to_operation_names(op_name)
-            # Check if any of the possible QDMI names are supported by the device
-            # Also always allow 'barrier' as it's a directive, not an operation
-            if op_name != "barrier" and not any(qdmi_name in device_ops for qdmi_name in possible_qdmi_names):
-                msg = f"Unsupported operation: '{op_name}'"
-                raise UnsupportedOperationError(msg)
+        # Process each circuit
+        qdmi_jobs: list[fomac.Job] = []
+        circuit_names: list[str] = []
+        # First pass: validate and convert all circuits
+        converted_circuits: list[tuple[str, fomac.ProgramFormat, str]] = []
 
-        # Convert circuit to specified program format
-        program_str, program_format = self._convert_circuit(run_input, self._device.supported_program_formats())
+        for idx, circuit in enumerate(circuits):
+            # Bind parameters if provided
+            bound_circuit = circuit
+            if parameter_values is not None:
+                try:
+                    bound_circuit = circuit.assign_parameters(parameter_values[idx])
+                except Exception as exc:
+                    msg = f"Failed to bind parameters for circuit {idx}: {exc}"
+                    raise CircuitValidationError(msg) from exc
 
-        # Submit job to QDMI device
-        try:
-            qdmi_job = self._device.submit_job(
-                program=program_str,
-                program_format=program_format,
-                num_shots=shots,
-            )
-        except Exception as exc:
-            msg = f"Failed to submit job to device: {exc}"
-            raise JobSubmissionError(msg) from exc
+            # Validate circuit has no unbound parameters
+            if bound_circuit.parameters:
+                params = ", ".join(sorted(p.name for p in bound_circuit.parameters))
+                msg = (
+                    f"Circuit contains unbound parameters: {params}. Provide `parameter_values` or bind them manually."
+                )
+                raise CircuitValidationError(msg)
 
-        # Create and return Qiskit job wrapper
-        circuit_name = run_input.name or f"circuit-{next(QDMIBackend._circuit_counter)}"
+            # Validate operations are supported
+            for instruction in bound_circuit.data:
+                op_name = instruction.operation.name
+                # Map the Qiskit gate name to possible QDMI operation names and check if any match
+                possible_qdmi_names = self._map_qiskit_gate_to_operation_names(op_name)
+                # Check if any of the possible QDMI names are supported by the device
+                # Also always allow 'barrier' as it's a directive, not an operation
+                if op_name != "barrier" and not any(qdmi_name in device_ops for qdmi_name in possible_qdmi_names):
+                    msg = f"Unsupported operation: '{op_name}'"
+                    raise UnsupportedOperationError(msg)
 
-        return QDMIJob(backend=self, job=qdmi_job, circuit_name=circuit_name)
+            # Convert circuit to the specified program format
+            program_str, program_format = self._convert_circuit(bound_circuit, self._device.supported_program_formats())
+            circuit_name = circuit.name or f"circuit-{next(QDMIBackend._circuit_counter)}"
+            converted_circuits.append((program_str, program_format, circuit_name))
+
+        # Second pass: submit all validated circuits
+        for program_str, program_format, circuit_name in converted_circuits:
+            # Submit job to QDMI device
+            try:
+                qdmi_job = self._device.submit_job(
+                    program=program_str,
+                    program_format=program_format,
+                    num_shots=shots,
+                )
+            except Exception as exc:
+                msg = f"Failed to submit job to device: {exc}"
+                raise JobSubmissionError(msg) from exc
+
+            # Track the job and circuit name
+            qdmi_jobs.append(qdmi_job)
+            circuit_names.append(circuit_name)
+
+        # Create and return Qiskit job wrapper (handles single or multiple jobs)
+        return QDMIJob(backend=self, jobs=qdmi_jobs, circuit_names=circuit_names)
