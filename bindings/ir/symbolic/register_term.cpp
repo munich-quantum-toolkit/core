@@ -22,14 +22,41 @@ using namespace nb::literals;
 
 // NOLINTNEXTLINE(misc-use-internal-linkage)
 void registerTerm(nb::module_& m) {
-  nb::class_<sym::Term<double>>(m, "Term")
+  nb::class_<sym::Term<double>>(
+      m, "Term",
+      R"pb(A symbolic term which consists of a variable with a given coefficient.
+
+Args:
+    variable: The variable of the term.
+    coefficient: The coefficient of the term.)pb")
+
       .def(nb::init<sym::Variable, double>(), "variable"_a,
            "coefficient"_a = 1.0)
-      .def_prop_ro("variable", &sym::Term<double>::getVar)
-      .def_prop_ro("coefficient", &sym::Term<double>::getCoeff)
-      .def("has_zero_coefficient", &sym::Term<double>::hasZeroCoeff)
-      .def("add_coefficient", &sym::Term<double>::addCoeff, "coeff"_a)
-      .def("evaluate", &sym::Term<double>::evaluate, "assignment"_a)
+
+      .def_prop_ro("variable", &sym::Term<double>::getVar,
+                   "The variable of the term.")
+
+      .def_prop_ro("coefficient", &sym::Term<double>::getCoeff,
+                   "The coefficient of the term.")
+
+      .def("has_zero_coefficient", &sym::Term<double>::hasZeroCoeff,
+           "Check if the coefficient of the term is zero.")
+
+      .def("add_coefficient", &sym::Term<double>::addCoeff, "coeff"_a,
+           R"pb(Add a coefficient to the coefficient of this term.
+
+Args:
+    coeff: The coefficient to add.)pb")
+
+      .def("evaluate", &sym::Term<double>::evaluate, "assignment"_a,
+           R"pb(Evaluate the term with a given variable assignment.
+
+Args:
+    assignment: The variable assignment.
+
+Returns:
+    The evaluated value of the term.)pb")
+
       .def(nb::self * double())
       .def(double() * nb::self)
       .def(nb::self / double())
@@ -37,12 +64,14 @@ void registerTerm(nb::module_& m) {
       .def(nb::self == nb::self) // NOLINT(misc-redundant-expression)
       .def(nb::self != nb::self) // NOLINT(misc-redundant-expression)
       .def(nb::hash(nb::self))
+
       .def("__str__",
            [](const sym::Term<double>& term) {
              std::stringstream ss;
              ss << term;
              return ss.str();
            })
+
       .def("__repr__", [](const sym::Term<double>& term) {
         std::stringstream ss;
         ss << term;

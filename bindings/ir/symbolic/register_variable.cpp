@@ -22,11 +22,20 @@ using namespace nb::literals;
 
 // NOLINTNEXTLINE(misc-use-internal-linkage)
 void registerVariable(nb::module_& m) {
-  nb::class_<sym::Variable>(m, "Variable")
+  nb::class_<sym::Variable>(m, "Variable", R"pb(A symbolic variable.
+Note:
+    Variables are uniquely identified by their name, so if a variable with the same name already exists, the existing variable will be returned.
+
+Args:
+    name: The name of the variable.)pb")
+
       .def(nb::init<std::string>(), "name"_a = "")
-      .def_prop_ro("name", &sym::Variable::getName)
+
+      .def_prop_ro("name", &sym::Variable::getName, "The name of the variable.")
+
       .def("__str__", &sym::Variable::getName)
       .def("__repr__", &sym::Variable::getName)
+
       .def(nb::self == nb::self) // NOLINT(misc-redundant-expression)
       .def(nb::self != nb::self) // NOLINT(misc-redundant-expression)
       .def(nb::hash(nb::self))

@@ -26,7 +26,18 @@ using namespace nb::literals;
 
 // NOLINTNEXTLINE(misc-use-internal-linkage)
 void registerExpression(nb::module_& m) {
-  nb::class_<sym::Expression<double, double>>(m, "Expression")
+  nb::class_<sym::Expression<double, double>>(
+      m, "Expression",
+      R"pb(A symbolic expression which consists of a sum of terms and a constant.
+
+The expression is of the form :math:`constant + term_1 + term_2 + \dots + term_n`.
+Alternatively, an expression can be created with a single term and a constant or just a constant.
+
+Args:
+    terms: The list of terms.
+    constant: The constant.)pb")
+
+      .def(nb::init<double>(), "constant"_a = 0.0)
       .def(
           "__init__",
           [](sym::Expression<double, double>* self,
@@ -42,9 +53,10 @@ void registerExpression(nb::module_& m) {
                 std::vector<sym::Term<double>>{term}, constant);
           },
           "term"_a, "constant"_a = 0.0)
-      .def(nb::init<double>(), "constant"_a = 0.0)
+
       .def_prop_rw("constant", &sym::Expression<double, double>::getConst,
-                   &sym::Expression<double, double>::setConst)
+                   &sym::Expression<double, double>::setConst,
+                   "The constant of the expression.")
       .def(
           "__iter__",
           [](const sym::Expression<double, double>& expr) {
@@ -53,22 +65,45 @@ void registerExpression(nb::module_& m) {
                 expr.begin(), expr.end());
           },
           nb::keep_alive<0, 1>())
-      .def("__getitem__",
-           [](const sym::Expression<double, double>& expr,
-              const std::size_t idx) {
-             if (idx >= expr.numTerms()) {
-               throw nb::index_error();
-             }
-             return expr.getTerms()[idx];
-           })
-      .def("is_zero", &sym::Expression<double, double>::isZero)
-      .def("is_constant", &sym::Expression<double, double>::isConstant)
-      .def("num_terms", &sym::Expression<double, double>::numTerms)
+
+      .def(
+          "__getitem__",
+          [](const sym::Expression<double, double>& expr,
+             const std::size_t idx) {
+            if (idx >= expr.numTerms()) {
+              throw nb::index_error();
+            }
+            return expr.getTerms()[idx];
+          },
+          "key"_a)
+
+      .def("is_zero", &sym::Expression<double, double>::isZero,
+           "Check if the expression is zero.")
+
+      .def("is_constant", &sym::Expression<double, double>::isConstant,
+           "Check if the expression is a constant.")
+
+      .def("num_terms", &sym::Expression<double, double>::numTerms,
+           "The number of terms in the expression.")
+
       .def("__len__", &sym::Expression<double, double>::numTerms)
-      .def_prop_ro("terms", &sym::Expression<double, double>::getTerms)
-      .def_prop_ro("variables", &sym::Expression<double, double>::getVariables)
+
+      .def_prop_ro("terms", &sym::Expression<double, double>::getTerms,
+                   "The terms of the expression.")
+
+      .def_prop_ro("variables", &sym::Expression<double, double>::getVariables,
+                   "The variables in the expression.")
+
       .def("evaluate", &sym::Expression<double, double>::evaluate,
-           "assignment"_a)
+           "assignment"_a,
+           R"pb(Evaluate the expression with a given variable assignment.
+
+Args:
+    assignment: The variable assignment.
+
+Returns:
+    The evaluated value of the expression.)pb")
+
       // addition operators
       .def(nb::self + nb::self)
       .def(nb::self + double())
@@ -97,12 +132,14 @@ void registerExpression(nb::module_& m) {
       .def(nb::self == nb::self) // NOLINT(misc-redundant-expression)
       .def(nb::self != nb::self) // NOLINT(misc-redundant-expression)
       .def(nb::hash(nb::self))
+
       .def("__str__",
            [](const sym::Expression<double, double>& expr) {
              std::stringstream ss;
              ss << expr;
              return ss.str();
            })
+
       .def("__repr__", [](const sym::Expression<double, double>& expr) {
         std::stringstream ss;
         ss << expr;
