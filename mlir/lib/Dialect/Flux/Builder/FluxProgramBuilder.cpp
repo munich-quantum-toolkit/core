@@ -549,6 +549,20 @@ std::pair<ValueRange, ValueRange> FluxProgramBuilder::ctrl(
   return {controlsOut, targetsOut};
 }
 
+ValueRange FluxProgramBuilder::inv(
+    ValueRange targets,
+    const std::function<ValueRange(OpBuilder&, ValueRange)>& body) {
+  auto invOp = create<InvOp>(loc, targets, body);
+
+  // Update tracking
+  const auto& targetsOut = invOp.getTargetsOut();
+  for (const auto& [target, targetOut] : llvm::zip(targets, targetsOut)) {
+    updateQubitTracking(target, targetOut);
+  }
+
+  return targetsOut;
+}
+
 //===----------------------------------------------------------------------===//
 // Deallocation
 //===----------------------------------------------------------------------===//
