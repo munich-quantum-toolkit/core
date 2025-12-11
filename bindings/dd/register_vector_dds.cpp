@@ -47,19 +47,24 @@ Vector getVector(const dd::vEdge& v, const dd::fp threshold = 0.) {
 
 // NOLINTNEXTLINE(misc-use-internal-linkage)
 void registerVectorDDs(const nb::module_& m) {
-  auto vec = nb::class_<dd::vEdge>(m, "VectorDD");
+  auto vec = nb::class_<dd::vEdge>(
+      m, "VectorDD", "A class representing a vector decision diagram (DD).");
 
-  vec.def("is_terminal", &dd::vEdge::isTerminal);
-  vec.def("is_zero_terminal", &dd::vEdge::isZeroTerminal);
+  vec.def("is_terminal", &dd::vEdge::isTerminal,
+          "Check if the DD is a terminal node.");
 
-  vec.def("size", nb::overload_cast<>(&dd::vEdge::size, nb::const_));
+  vec.def("is_zero_terminal", &dd::vEdge::isZeroTerminal,
+          "Check if the DD is a zero terminal node.");
+
+  vec.def("size", nb::overload_cast<>(&dd::vEdge::size, nb::const_),
+          "Get the size of the DD by traversing it once.");
 
   vec.def(
       "__getitem__",
       [](const dd::vEdge& v, const size_t idx) {
         return v.getValueByIndex(idx);
       },
-      "index"_a);
+      "index"_a, "Get the amplitude of a basis state by index.");
 
   vec.def(
       "get_amplitude",
@@ -67,9 +72,25 @@ void registerVectorDDs(const nb::module_& m) {
          const std::string& decisions) {
         return v.getValueByPath(numQubits, decisions);
       },
-      "num_qubits"_a, "decisions"_a);
+      "num_qubits"_a, "decisions"_a,
+      R"pb(Get the amplitude of a basis state by decisions.
 
-  vec.def("get_vector", &getVector, "threshold"_a = 0.);
+Args:
+    num_qubits: The number of qubits.
+    decisions: The decisions as a string of bits (`0` or `1`), where `decisions[i]` corresponds to the successor to follow at level `i` of the DD.
+        Must be at least `num_qubits` long.
+
+Returns:
+    The amplitude of the basis state.)pb");
+
+  vec.def("get_vector", &getVector, "threshold"_a = 0.,
+          R"pb(Get the state vector represented by the DD.
+
+Args:
+    threshold: The threshold for not including amplitudes in the state vector. Defaults to 0.0.
+
+Returns:
+    The state vector.)pb");
 
   vec.def(
       "to_dot",
@@ -81,7 +102,18 @@ void registerVectorDDs(const nb::module_& m) {
         return os.str();
       },
       "colored"_a = true, "edge_labels"_a = false, "classic"_a = false,
-      "memory"_a = false, "format_as_polar"_a = true);
+      "memory"_a = false, "format_as_polar"_a = true,
+      R"pb(Convert the DD to a DOT graph that can be plotted via Graphviz.
+
+Args:
+    colored: Whether to use colored edge weights
+    edge_labels: Whether to include edge weights as labels.
+    classic: Whether to use the classic DD visualization style.
+    memory: Whether to include memory information. For debugging purposes only.
+    format_as_polar: Whether to format the edge weights in polar coordinates.
+
+Returns:
+    The DOT graph.)pb");
 
   vec.def(
       "to_svg",
@@ -96,7 +128,19 @@ void registerVectorDDs(const nb::module_& m) {
                        true, formatAsPolar);
       },
       "filename"_a, "colored"_a = true, "edge_labels"_a = false,
-      "classic"_a = false, "memory"_a = false, "format_as_polar"_a = true);
+      "classic"_a = false, "memory"_a = false, "format_as_polar"_a = true,
+      R"pb(Convert the DD to an SVG file that can be viewed in a browser.
+
+Requires the `dot` command from Graphviz to be installed and available in the PATH.
+
+Args:
+    filename: The filename of the SVG file. Any file extension will be replaced by `.dot` and then `.svg`.
+    colored: Whether to use colored edge weights.
+    edge_labels: Whether to include edge weights as labels.
+    classic: Whether to use the classic DD visualization style.
+    memory: Whether to include memory information. For debugging purposes only.
+    show: Whether to open the SVG file in the default browser.
+    format_as_polar: Whether to format the edge weights in polar coordinates.)pb");
 }
 
 } // namespace mqt
