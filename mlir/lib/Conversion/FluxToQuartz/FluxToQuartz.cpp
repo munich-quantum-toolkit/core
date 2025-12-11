@@ -12,6 +12,7 @@
 
 #include "mlir/Dialect/Flux/IR/FluxDialect.h"
 #include "mlir/Dialect/Quartz/IR/QuartzDialect.h"
+#include "mlir/Dialect/SCF/IR/SCF.h"
 
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/Func/Transforms/FuncConversions.h>
@@ -820,6 +821,44 @@ struct ConvertFluxYieldOp final : OpConversionPattern<flux::YieldOp> {
     return success();
   }
 };
+struct ConvertFluxScfIfOp final : OpConversionPattern<scf::IfOp> {
+  using OpConversionPattern::OpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(scf::IfOp op, OpAdaptor /*adaptor*/,
+                  ConversionPatternRewriter& rewriter) const override {
+    auto newIf =
+        rewriter.create<scf::IfOp>(op.getLoc(), ValueRange{}, op.getCondition(),
+                                   op.getElseRegion().empty());
+    // inline the regions
+    rewriter.inlineRegionBefore(op.getThenRegion(), newIf.getThenRegion(),
+                                newIf.getThenRegion().end());
+    if (!op.getElseRegion().empty()) {
+      rewriter.inlineRegionBefore(op.getElseRegion(), newIf.getElseRegion(),
+                                  newIf.getElseRegion().end());
+
+    }
+    rewriter.eraseBlock(&newIf.getThenRegion().front());
+
+    auto yield =
+        dyn_cast<scf::YieldOp>(newIf.getThenRegion().back().getTerminator());
+
+    rewriter.replaceOp(op, yield->getOperands());
+
+    return success();
+  }
+};
+
+struct ConvertFluxScfYieldOp final : OpConversionPattern<scf::YieldOp> {
+  using OpConversionPattern::OpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(scf::YieldOp op, OpAdaptor /*adaptor*/,
+                  ConversionPatternRewriter& rewriter) const override {
+    rewriter.replaceOpWithNewOp<scf::YieldOp>(op);
+    return success();
+  }
+};
 
 /**
  * @brief Pass implementation for Flux-to-Quartz conversion
@@ -862,7 +901,17 @@ struct FluxToQuartz final : impl::FluxToQuartzBase<FluxToQuartz> {
     // Configure conversion target: Flux illegal, Quartz legal
     target.addIllegalDialect<FluxDialect>();
     target.addLegalDialect<QuartzDialect>();
+    target.addDynamicallyLegalOp<scf::IfOp>([&](scf::IfOp op) {
+      return !llvm::any_of(op->getResultTypes(), [&](Type type) {
+        return type == flux::QubitType::get(context);
+      });
+    });
 
+    target.addDynamicallyLegalOp<scf::YieldOp>([&](scf::YieldOp op) {
+      return !llvm::any_of(op.getOperandTypes(), [&](Type type) {
+        return type == flux::QubitType::get(context);
+      });
+    });
     // Register operation conversion patterns
     // Note: No state tracking needed - OpAdaptors handle type conversion
     patterns
@@ -876,8 +925,8 @@ struct FluxToQuartz final : impl::FluxToQuartzBase<FluxToQuartz> {
              ConvertFluxiSWAPOp, ConvertFluxDCXOp, ConvertFluxECROp,
              ConvertFluxRXXOp, ConvertFluxRYYOp, ConvertFluxRZXOp,
              ConvertFluxRZZOp, ConvertFluxXXPlusYYOp, ConvertFluxXXMinusYYOp,
-             ConvertFluxBarrierOp, ConvertFluxCtrlOp, ConvertFluxYieldOp>(
-            typeConverter, context);
+             ConvertFluxBarrierOp, ConvertFluxCtrlOp, ConvertFluxYieldOp,
+             ConvertFluxScfIfOp, ConvertFluxScfYieldOp>(typeConverter, context);
 
     // Conversion of flux types in func.func signatures
     // Note: This currently has limitations with signature changes
