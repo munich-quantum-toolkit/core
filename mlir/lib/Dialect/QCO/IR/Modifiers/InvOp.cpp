@@ -29,7 +29,7 @@ using namespace mlir::qco;
 namespace {
 
 /**
- * @brief Cancel nested inverse modifiers, i.e., `inv(inv(x)) = x`.
+ * @brief Cancel nested inverse modifiers, i.e., `inv(inv(x)) => x`.
  */
 struct CancelNestedInv final : OpRewritePattern<InvOp> {
   using OpRewritePattern::OpRewritePattern;
@@ -44,8 +44,8 @@ struct CancelNestedInv final : OpRewritePattern<InvOp> {
 
     // Remove both inverse operations
     auto innerInnerUnitary = innerInvOp.getBodyUnitary();
-    rewriter.replaceOp(op, innerInnerUnitary.getOperation());
-    rewriter.eraseOp(innerInvOp);
+    auto* clonedOp = rewriter.clone(*innerInnerUnitary.getOperation());
+    rewriter.replaceOp(op, clonedOp->getResults());
 
     return success();
   }
