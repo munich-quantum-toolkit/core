@@ -77,6 +77,67 @@ def test_backend_runs_variety_of_circuits(
             assert all(bit in {"0", "1"} for bit in key)
 
 
+def test_backend_runs_multiple_circuits(backend_with_mock_jobs: QDMIBackend) -> None:
+    """Backend executes multiple circuits in a single run call."""
+    # Create three different circuits
+    qc1 = QuantumCircuit(2, name="bell_state")
+    qc1.h(0)
+    qc1.cx(0, 1)
+    qc1.measure_all()
+
+    qc2 = QuantumCircuit(2, name="x_then_measure")
+    qc2.x(0)
+    qc2.measure_all()
+
+    qc3 = QuantumCircuit(2, name="hadamard_all")
+    qc3.h([0, 1])
+    qc3.measure_all()
+
+    # Submit all circuits at once
+    circuits = [qc1, qc2, qc3]
+    job = backend_with_mock_jobs.run(circuits, shots=500)
+    result = job.result()
+
+    # Check overall success
+    assert result.success is True
+
+    # Check we have results for all circuits
+    assert result.results is not None
+    assert len(result.results) == 3
+
+    # Check each circuit result
+    for idx, expected_name in enumerate(["bell_state", "x_then_measure", "hadamard_all"]):
+        exp_result = result.results[idx]
+        assert exp_result.success is True
+        assert exp_result.header["name"] == expected_name
+        assert exp_result.shots == 500
+
+        # Check counts for this circuit
+        counts = result.get_counts(idx)
+        assert sum(counts.values()) == 500
+        for key in counts:
+            assert all(bit in {"0", "1"} for bit in key)
+            assert len(key) == 2  # 2 qubits
+
+
+def test_backend_runs_single_circuit_in_list(backend_with_mock_jobs: QDMIBackend) -> None:
+    """Backend correctly handles a single circuit passed as a list."""
+    qc = QuantumCircuit(2)
+    qc.h(0)
+    qc.cx(0, 1)
+    qc.measure_all()
+
+    # Submit as a list with one element
+    job = backend_with_mock_jobs.run([qc], shots=100)
+    result = job.result()
+
+    assert result.success is True
+    assert result.results is not None
+    assert len(result.results) == 1
+    counts = result.get_counts()
+    assert sum(counts.values()) == 100
+
+
 def test_unsupported_operation(real_backend: QDMIBackend) -> None:
     """Unsupported operation raises UnsupportedOperationError."""
     qc = QuantumCircuit(1, 1)
@@ -155,6 +216,92 @@ def test_backend_circuit_with_parameter_expression(real_backend: QDMIBackend) ->
 
     with pytest.raises(CircuitValidationError, match="Circuit contains unbound parameters"):
         real_backend.run(qc)
+
+
+def test_backend_run_with_parameter_values_dict(backend_with_mock_jobs: QDMIBackend) -> None:
+    """Backend should bind parameters using parameter_values with dict format."""
+    theta = Parameter("theta")
+    qc = QuantumCircuit(2)
+    qc.ry(theta, 0)
+    qc.measure_all()
+
+    # Pass parameter values as a dict
+    job = backend_with_mock_jobs.run(qc, parameter_values=[{theta: 1.5708}], shots=100)
+    result = job.result()
+    assert result.success
+    counts = result.get_counts()
+    assert sum(counts.values()) == 100
+
+
+def test_backend_run_with_parameter_values_list(backend_with_mock_jobs: QDMIBackend) -> None:
+    """Backend should bind parameters using parameter_values with list format."""
+    theta = Parameter("theta")
+    qc = QuantumCircuit(2)
+    qc.ry(theta, 0)
+    qc.measure_all()
+
+    # Pass parameter values as a list (in order of circuit.parameters)
+    job = backend_with_mock_jobs.run(qc, parameter_values=[[1.5708]], shots=100)
+    result = job.result()
+    assert result.success
+    counts = result.get_counts()
+    assert sum(counts.values()) == 100
+
+
+def test_backend_run_multiple_circuits_with_parameter_values(backend_with_mock_jobs: QDMIBackend) -> None:
+    """Backend should bind different parameters to multiple circuits."""
+    theta = Parameter("theta")
+
+    # Create two parameterized circuits
+    qc1 = QuantumCircuit(2, name="circuit1")
+    qc1.ry(theta, 0)
+    qc1.measure_all()
+
+    qc2 = QuantumCircuit(2, name="circuit2")
+    qc2.ry(theta, 0)
+    qc2.measure_all()
+
+    # Pass different parameter values for each circuit
+    circuits = [qc1, qc2]
+    param_values = [{theta: 0.5}, {theta: 1.5}]
+
+    job = backend_with_mock_jobs.run(circuits, parameter_values=param_values, shots=200)
+    result = job.result()
+
+    assert result.success
+    assert result.results is not None
+    assert len(result.results) == 2
+
+    for idx in range(2):
+        counts = result.get_counts(idx)
+        assert sum(counts.values()) == 200
+
+
+def test_backend_run_parameter_values_length_mismatch(backend_with_mock_jobs: QDMIBackend) -> None:
+    """Backend should raise error when parameter_values length doesn't match circuits."""
+    theta = Parameter("theta")
+    qc = QuantumCircuit(2)
+    qc.ry(theta, 0)
+    qc.measure_all()
+
+    # Pass 2 parameter values for only 1 circuit
+    with pytest.raises(CircuitValidationError, match=r"Length of parameter_values.*must match"):
+        backend_with_mock_jobs.run(qc, parameter_values=[{theta: 0.5}, {theta: 1.5}])
+
+
+def test_backend_run_parameter_binding_failure(backend_with_mock_jobs: QDMIBackend) -> None:
+    """Backend should raise error when parameters remain unbound after partial binding."""
+    theta = Parameter("theta")
+    phi = Parameter("phi")
+    qc = QuantumCircuit(2)
+    qc.ry(theta, 0)
+    qc.rz(phi, 0)
+    qc.measure_all()
+
+    # Pass incomplete parameter dict (missing phi) - Qiskit allows partial binding
+    # but we'll catch the remaining unbound parameters
+    with pytest.raises(CircuitValidationError, match="Circuit contains unbound parameters"):
+        backend_with_mock_jobs.run(qc, parameter_values=[{theta: 0.5}])
 
 
 def test_backend_named_circuit_results_queryable_by_name(backend_with_mock_jobs: QDMIBackend) -> None:
