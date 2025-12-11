@@ -18,7 +18,7 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 - ✨ Add bi-directional iterator that traverses the def-use chain of a qubit value ([#1310]) ([**@MatthiasReumann**])
 - ✨ Add `OptionalDependencyTester` to lazily handle optional Python dependencies like Qiskit ([#1243]) ([**@marcelwa**], [**@burgholzer**])
 - ✨ Expose the QDMI job interface through FoMaC ([#1243]) ([**@marcelwa**], [**@burgholzer**])
-- ✨ Add Qiskit backend wrapper with job submission support for QDMI devices through a provider interface ([#1243]) ([**@marcelwa**], [**@burgholzer**])
+- ✨ Add Qiskit backend wrapper with job submission support for QDMI devices through a provider interface ([#1243], [#1385]) ([**@marcelwa**], [**@burgholzer**])
 - ✨ Support `QDMI_DEVICE_PROPERTY_SUPPORTEDPROGRAMFORMATS` in the NA QDMI Device and the DDSIM QDMI Device ([#1243]) ([**@marcelwa**], [**@burgholzer**])
 - ✨ Support `QDMI_DEVICE_JOB_PROPERTY_PROGRAM` in the NA QDMI Device ([#1243]) ([**@marcelwa**], [**@burgholzer**])
 
@@ -282,6 +282,7 @@ _📚 Refer to the [GitHub Release Notes](https://github.com/munich-quantum-tool
 
 <!-- PR links -->
 
+[#1385]: https://github.com/munich-quantum-toolkit/core/pull/1385
 [#1384]: https://github.com/munich-quantum-toolkit/core/pull/1384
 [#1382]: https://github.com/munich-quantum-toolkit/core/pull/1382
 [#1381]: https://github.com/munich-quantum-toolkit/core/pull/1381
