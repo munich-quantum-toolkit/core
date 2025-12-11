@@ -36,15 +36,15 @@ from .exceptions import (
 from .job import QDMIJob
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable, Sequence
+    from collections.abc import Iterable, Mapping, Sequence
 
-    from qiskit.circuit import Instruction
+    from qiskit.circuit import Instruction, Parameter
+    from qiskit.circuit.parameterexpression import ParameterValueType
 
     from .provider import QDMIProvider
 
-    # Type alias for parameter values: either a dict mapping Parameter to value,
-    # or a sequence of values in the order of circuit.parameters
-    ParameterValueType = dict[Any, float] | Sequence[float]
+    # Type alias for parameter values
+    ParametersType = Mapping[Parameter, ParameterValueType] | Iterable[ParameterValueType]
 
 __all__ = ["QDMIBackend"]
 
@@ -428,14 +428,14 @@ class QDMIBackend(BackendV2):  # type: ignore[misc]
 
     def run(
         self,
-        run_input: QuantumCircuit | list[QuantumCircuit],
-        parameter_values: Sequence[ParameterValueType] | None = None,
+        run_input: QuantumCircuit | Sequence[QuantumCircuit],
+        parameter_values: Sequence[ParametersType] | None = None,
         **options: Any,  # noqa: ANN401
     ) -> QDMIJob:
         """Execute one or more :class:`~qiskit.circuit.QuantumCircuit` instances on the backend.
 
         Args:
-            run_input: A single quantum circuit or a list of quantum circuits to execute.
+            run_input: A single quantum circuit or a sequence of quantum circuits to execute.
             parameter_values: Optional parameter values to bind to the circuits. If provided, must be a sequence
                 with one entry per circuit. Each entry can be either a dictionary mapping parameters to values,
                 or a sequence of values in the order of circuit.parameters.
