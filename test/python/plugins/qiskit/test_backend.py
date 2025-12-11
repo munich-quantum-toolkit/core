@@ -228,7 +228,7 @@ def test_backend_circuit_with_parameters(real_backend: QDMIBackend) -> None:
     qc.measure_all()
 
     # Unbound parameters should raise an error
-    with pytest.raises(CircuitValidationError, match=r"Circuit \d+ contains unbound parameters"):
+    with pytest.raises(CircuitValidationError, match=r"Circuit contains unbound parameters"):
         real_backend.run(qc)
 
 
@@ -255,7 +255,7 @@ def test_backend_circuit_with_parameter_expression(real_backend: QDMIBackend) ->
     qc.ry(theta + phi, 0)  # Parameter expression
     qc.measure_all()
 
-    with pytest.raises(CircuitValidationError, match=r"Circuit \d+ contains unbound parameters"):
+    with pytest.raises(CircuitValidationError, match=r"Circuit contains unbound parameters"):
         real_backend.run(qc)
 
 
@@ -378,8 +378,8 @@ def test_backend_run_mixed_parameterized_circuits(backend_with_mock_jobs: QDMIBa
     assert len(result.results) == 2
 
 
-def test_backend_run_warns_unused_parameter_values(backend_with_mock_jobs: QDMIBackend) -> None:
-    """Backend should warn when parameter values provided for circuit without parameters."""
+def test_backend_run_raises_unused_parameter_values(backend_with_mock_jobs: QDMIBackend) -> None:
+    """Backend should raise when parameter values provided for circuit without parameters."""
     theta = Parameter("theta")
 
     # Circuit without parameters
@@ -388,11 +388,8 @@ def test_backend_run_warns_unused_parameter_values(backend_with_mock_jobs: QDMIB
     qc.measure_all()
 
     # Provide parameter values for non-parameterized circuit
-    with pytest.warns(UserWarning, match="Parameter values provided for circuit.*has no parameters"):
-        job = backend_with_mock_jobs.run(qc, parameter_values=[{theta: 1.0}], shots=100)
-
-    result = job.result()
-    assert result.success
+    with pytest.raises(CircuitValidationError, match="Failed to bind parameters for circuit"):
+        backend_with_mock_jobs.run(qc, parameter_values=[{theta: 1.0}], shots=100)
 
 
 def test_backend_run_missing_parameter_values(backend_with_mock_jobs: QDMIBackend) -> None:
@@ -404,7 +401,7 @@ def test_backend_run_missing_parameter_values(backend_with_mock_jobs: QDMIBacken
 
     # Don't provide parameter_values
     with pytest.raises(
-        CircuitValidationError, match=r"Circuit 0 contains unbound parameters.*Provide parameter_values"
+        CircuitValidationError, match=r"Circuit contains unbound parameters.*Provide `parameter_values`"
     ):
         backend_with_mock_jobs.run(qc)
 

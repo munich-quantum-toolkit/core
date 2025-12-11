@@ -510,33 +510,18 @@ class QDMIBackend(BackendV2):  # type: ignore[misc]
             # Bind parameters if provided
             bound_circuit = circuit
             if parameter_values is not None:
-                param_vals = parameter_values[idx]
-                if circuit.parameters:
-                    try:
-                        bound_circuit = circuit.assign_parameters(param_vals)
-                    except Exception as exc:
-                        msg = f"Failed to bind parameters for circuit {idx}: {exc}"
-                        raise CircuitValidationError(msg) from exc
-                elif param_vals:
-                    # Warn if parameter values provided for circuit without parameters
-                    warnings.warn(
-                        f"Parameter values provided for circuit {idx}, but the circuit has no parameters. "
-                        "These values will be ignored.",
-                        stacklevel=2,
-                    )
-            elif circuit.parameters:
-                # Circuits have parameters but no parameter_values provided
-                param_names = ", ".join(sorted(p.name for p in circuit.parameters))
-                msg = (
-                    f"Circuit {idx} contains unbound parameters: {param_names}. "
-                    "Provide parameter_values or bind them manually."
-                )
-                raise CircuitValidationError(msg)
+                try:
+                    bound_circuit = circuit.assign_parameters(parameter_values[idx])
+                except Exception as exc:
+                    msg = f"Failed to bind parameters for circuit {idx}: {exc}"
+                    raise CircuitValidationError(msg) from exc
 
             # Validate circuit has no unbound parameters
             if bound_circuit.parameters:
-                param_names = ", ".join(sorted(p.name for p in bound_circuit.parameters))
-                msg = f"Circuit contains unbound parameters: {param_names}"
+                params = ", ".join(sorted(p.name for p in bound_circuit.parameters))
+                msg = (
+                    f"Circuit contains unbound parameters: {params}. Provide `parameter_values` or bind them manually."
+                )
                 raise CircuitValidationError(msg)
 
             # Validate operations are supported
@@ -550,7 +535,7 @@ class QDMIBackend(BackendV2):  # type: ignore[misc]
                     msg = f"Unsupported operation: '{op_name}'"
                     raise UnsupportedOperationError(msg)
 
-            # Convert circuit to specified program format
+            # Convert circuit to the specified program format
             program_str, program_format = self._convert_circuit(bound_circuit, self._device.supported_program_formats())
             circuit_name = circuit.name or f"circuit-{next(QDMIBackend._circuit_counter)}"
             converted_circuits.append((program_str, program_format, circuit_name))

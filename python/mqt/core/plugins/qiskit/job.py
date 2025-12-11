@@ -23,6 +23,8 @@ from qiskit.result.models import ExperimentResult
 from mqt.core import fomac
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
+
     from .backend import QDMIBackend
 
 __all__ = ["QDMIJob"]
@@ -47,8 +49,8 @@ class QDMIJob(JobV1):  # type: ignore[misc]
     def __init__(
         self,
         backend: QDMIBackend,
-        jobs: fomac.Job | list[fomac.Job],
-        circuit_names: str | list[str],
+        jobs: fomac.Job | Sequence[fomac.Job],
+        circuit_names: str | Sequence[str],
     ) -> None:
         """Initialize the job.
 
@@ -131,9 +133,9 @@ class QDMIJob(JobV1):  # type: ignore[misc]
 
         For multi-circuit jobs, returns the most relevant status:
         - ERROR if any job failed
-        - CANCELLED if any job was cancelled (and none failed)
-        - RUNNING if any job is running (and none failed/cancelled)
-        - QUEUED if any job is queued (and none failed/cancelled/running)
+        - CANCELLED if any job was canceled (and none failed)
+        - RUNNING if any job is running (and none failed/canceled)
+        - QUEUED if any job is queued (and none failed/canceled/running)
         - DONE if all jobs are done
 
         Returns:
