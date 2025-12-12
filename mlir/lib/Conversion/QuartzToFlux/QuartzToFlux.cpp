@@ -1223,6 +1223,7 @@ struct ConvertQuartzYieldOp final
 
 /**
  * @brief Converts scf.if with memory semantics to scf.if with value semantics
+ * for qubit values
  *
  * @par Example:
  * ```mlir
@@ -1305,7 +1306,7 @@ struct ConvertQuartzScfIfOp final : StatefulOpConversionPattern<scf::IfOp> {
 
 /**
  * @brief Converts scf.while with memory semantics to scf.while with value
- * semantics
+ * semantics for qubit values
  *
  * @par Example:
  * ```mlir
@@ -1392,7 +1393,7 @@ struct ConvertQuartzScfWhileOp final
 
 /**
  * @brief Converts scf.for with memory semantics to scf.while with value
- * semantics
+ * semantics for qubit values
  *
  * @par Example:
  * ```mlir
@@ -1455,7 +1456,7 @@ struct ConvertQuartzScfForOp final : StatefulOpConversionPattern<scf::ForOp> {
 
 /**
  * @brief Converts scf.yield with memory semantics to scf.yield with value
- * semantics
+ * semantics for qubit values
  *
  * @par Example:
  * ```mlir
@@ -1487,7 +1488,7 @@ struct ConvertQuartzScfYieldOp final
 
 /**
  * @brief Converts scf.condition with memory semantics to scf.condition with
- * value semantics
+ * value semantics for qubit values
  *
  * @par Example:
  * ```mlir
@@ -1518,6 +1519,21 @@ struct ConvertQuartzScfConditionOp final
     return success();
   }
 };
+
+/**
+ * @brief Converts func.call with memory semantics to func.call with
+ * value semantics for qubit values
+ *
+ * @par Example:
+ * ```mlir
+ * call @test(%q0) : (!quartz.qubit) -> ()
+ * }
+ * ```
+ * is converted to
+ * ```mlir
+ * %q1 = call @test(%q1) : (!flux.qubit) -> !flux.qubit
+ * ```
+ */
 struct ConvertQuartzFuncCallOp final
     : StatefulOpConversionPattern<func::CallOp> {
   using StatefulOpConversionPattern<func::CallOp>::StatefulOpConversionPattern;
@@ -1526,11 +1542,11 @@ struct ConvertQuartzFuncCallOp final
   matchAndRewrite(func::CallOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
     auto& qubitMap = getState().qubitMap[op->getParentRegion()];
-    auto& quartzQubits = getState().regionMap[op];
+    auto quartzQubits = op->getOperands();
 
     SmallVector<Value> fluxQubits;
     fluxQubits.reserve(qubitMap.size());
-    for (auto [quartQubit, fluxQubit] : qubitMap) {
+    for (auto [quartzQubit, fluxQubit] : qubitMap) {
       fluxQubits.push_back(fluxQubit);
     }
     // create the result typerange
@@ -1550,6 +1566,23 @@ struct ConvertQuartzFuncCallOp final
   }
 };
 
+/**
+ * @brief Converts func.func with memory semantics to func.func with
+ * value semantics for qubit values
+ *
+ * @par Example:
+ * ```mlir
+ * func.func @test(%arg0: !quartz.qubit){
+ * ...
+ * }
+ * ```
+ * is converted to
+ * ```mlir
+ * func.func @test(%arg0: !flux.qubit) -> !flux.qubit{
+ * ...
+ * }
+ * ```
+ */
 struct ConvertQuartzFuncFuncOp final
     : StatefulOpConversionPattern<func::FuncOp> {
   using StatefulOpConversionPattern<func::FuncOp>::StatefulOpConversionPattern;
@@ -1576,6 +1609,19 @@ struct ConvertQuartzFuncFuncOp final
   }
 };
 
+/**
+ * @brief Converts func.return with memory semantics to func.return with
+ * value semantics for qubit values
+ *
+ * @par Example:
+ * ```mlir
+ * func.return
+ * ```
+ * is converted to
+ * ```mlir
+ * func.return %targets
+ * ```
+ */
 struct ConvertQuartzFuncReturnOp final
     : StatefulOpConversionPattern<func::ReturnOp> {
   using StatefulOpConversionPattern<
