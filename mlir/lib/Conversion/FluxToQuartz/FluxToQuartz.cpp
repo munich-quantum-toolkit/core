@@ -821,12 +821,34 @@ struct ConvertFluxYieldOp final : OpConversionPattern<flux::YieldOp> {
     return success();
   }
 };
+
+/**
+ * @brief Converts scf.if with value semantics to scf.if with memory semantics
+ *
+ * @par Example:
+ * ```mlir
+ * %targets_out = scf.if %cond -> (!flux.qubit) {
+ *   %q1 = flux.h %q0 : !flux.qubit -> !flux.qubit
+ *   scf.yield %q1 : !flux.qubit
+ * } else {
+ *   scf.yield %q0 : !flux.qubit
+ * }
+ * ```
+ * is converted to
+ * ```mlir
+ * scf.if %cond {
+ *   quartz.x %q0
+ *   scf.yield
+ * }
+ * ```
+ */
 struct ConvertFluxScfIfOp final : OpConversionPattern<scf::IfOp> {
   using OpConversionPattern::OpConversionPattern;
 
   LogicalResult
   matchAndRewrite(scf::IfOp op, OpAdaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
+    // create the new if operation
     auto newIf =
         rewriter.create<scf::IfOp>(op.getLoc(), ValueRange{}, op.getCondition(),
                                    op.getElseRegion().empty());
@@ -837,23 +859,50 @@ struct ConvertFluxScfIfOp final : OpConversionPattern<scf::IfOp> {
       rewriter.inlineRegionBefore(op.getElseRegion(), newIf.getElseRegion(),
                                   newIf.getElseRegion().end());
     }
+    // erase the empty block that was created during the initialization
     rewriter.eraseBlock(&newIf.getThenRegion().front());
 
-    auto yield =
-        dyn_cast<scf::YieldOp>(newIf.getThenRegion().back().getTerminator());
+    const auto& yield =
+        dyn_cast<scf::YieldOp>(newIf.getThenRegion().front().getTerminator());
 
     rewriter.replaceOp(op, yield->getOperands());
-
     return success();
   }
 };
+
+/**
+ * @brief Converts scf.while with value semantics to scf.while with memory
+ * semantics
+ *
+ * @par Example:
+ * ```mlir
+ * %targets_out = scf.while (%arg0 = %q0) : (!flux.qubit) -> !flux.qubit {
+ *   %q1 = quartz.x %arg0 : !flux.qubit -> !flux.qubit
+ *   scf.condition(%cond) %q1 : !flux.qubit
+ * } do {
+ * ^bb0(%arg0: !flux.qubit):
+ *   %q1 = quartz.x %arg0 : !flux.qubit -> !flux.qubit
+ *   scf.yield %q1 : !flux.qubit
+ * }
+ * ```
+ * is converted to
+ * ```mlir
+ * scf.while : () -> () {
+ *   quartz.x %q0
+ *   scf.condition(%cond)
+ * } do {
+ *   quartz.x %q0
+ *   scf.yield
+ * }
+ * ```
+ */
 struct ConvertFluxScfWhileOp final : OpConversionPattern<scf::WhileOp> {
   using OpConversionPattern::OpConversionPattern;
 
   LogicalResult
   matchAndRewrite(scf::WhileOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
-    // create the bew while operation
+    // create the new while operation
     auto newWhileOp =
         rewriter.create<scf::WhileOp>(op->getLoc(), ValueRange{}, ValueRange{});
 
@@ -881,6 +930,27 @@ struct ConvertFluxScfWhileOp final : OpConversionPattern<scf::WhileOp> {
     return success();
   }
 };
+
+/**
+ * @brief Converts scf.for with value semantics to scf.while with memory
+ * semantics
+ *
+ * @par Example:
+ * ```mlir
+ * %targets_out = scf.for %iv = %lb to %ub step %step iter_args(%arg0 = q0) ->
+ * (!flux.qubit) {
+ * %q1 = quartz.x %arg0 : !flux.qubit -> !flux.qubit
+ * scf.yield %q1 : !flux.qubit
+ * }
+ * ```
+ * is converted to
+ * ```mlir
+ * scf.for %iv = %lb to %ub step %step {
+ *   quartz.x %q0
+ *   scf.yield
+ * }
+ * ```
+ */
 struct ConvertFluxScfForOp final : OpConversionPattern<scf::ForOp> {
   using OpConversionPattern::OpConversionPattern;
 
@@ -892,6 +962,7 @@ struct ConvertFluxScfForOp final : OpConversionPattern<scf::ForOp> {
         op.getLoc(), adaptor.getLowerBound(), adaptor.getUpperBound(),
         adaptor.getStep(), ValueRange{});
 
+    // replace the uses of the previous iter_args
     for (const auto& [fluxQubit, quartzQubit] :
          llvm::zip_equal(op.getRegionIterArgs(), adaptor.getInitArgs())) {
       fluxQubit.replaceAllUsesWith(quartzQubit);
@@ -903,13 +974,26 @@ struct ConvertFluxScfForOp final : OpConversionPattern<scf::ForOp> {
     rewriter.eraseOp(newBlock->getTerminator());
     newBlock->getOperations().splice(newBlock->end(),
                                      op.getBody()->getOperations());
-                                     
-    rewriter.replaceOp(op, adaptor.getInitArgs());
 
+    // replace the result values with the init values
+    rewriter.replaceOp(op, adaptor.getInitArgs());
     return success();
   }
 };
 
+/**
+ * @brief Converts scf.yield with value semantics to scf.yield with memory
+ * semantics
+ *
+ * @par Example:
+ * ```mlir
+ * scf.yield %targets
+ * ```
+ * is converted to
+ * ```mlir
+ * scf.yield
+ * ```
+ */
 struct ConvertFluxScfYieldOp final : OpConversionPattern<scf::YieldOp> {
   using OpConversionPattern::OpConversionPattern;
 
@@ -920,13 +1004,27 @@ struct ConvertFluxScfYieldOp final : OpConversionPattern<scf::YieldOp> {
     return success();
   }
 };
+
+/**
+ * @brief Converts scf.condition with value semantics to scf.condition with
+ * memory semantics
+ *
+ * @par Example:
+ * ```mlir
+ * scf.condition(%cond) %targets
+ * ```
+ * is converted to
+ * ```mlir
+ * scf.condition(%cond)
+
+ * ```
+ */
 struct ConvertFluxScfConditionOp final : OpConversionPattern<scf::ConditionOp> {
   using OpConversionPattern::OpConversionPattern;
 
   LogicalResult
-  matchAndRewrite(scf::ConditionOp op, OpAdaptor adaptor,
+  matchAndRewrite(scf::ConditionOp op, OpAdaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
-
     rewriter.replaceOpWithNewOp<scf::ConditionOp>(op, op.getCondition(),
                                                   ValueRange{});
     return success();

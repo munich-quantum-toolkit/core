@@ -1234,19 +1234,16 @@ struct ConvertQuartzScfIfOp final : StatefulOpConversionPattern<scf::IfOp> {
   matchAndRewrite(scf::IfOp op, OpAdaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
     const auto& quartzQubits = getState().regionMap[op];
-    SmallVector<Value> quartzValues;
-    quartzValues.reserve(quartzQubits.size());
-    for (auto qubit : quartzQubits) {
-      quartzValues.push_back(qubit);
-    }
+    const SmallVector<Value> quartzValues(quartzQubits.begin(),
+                                          quartzQubits.end());
+
     // create result typerange
-    SmallVector<Type> resultTypes;
-    resultTypes.assign(quartzQubits.size(),
-                       flux::QubitType::get(rewriter.getContext()));
+    const SmallVector<Type> fluxTypes(
+        quartzQubits.size(), flux::QubitType::get(rewriter.getContext()));
 
     // create new if operation
     auto newIfOp = rewriter.create<scf::IfOp>(
-        op->getLoc(), TypeRange{resultTypes}, op.getCondition(), true);
+        op->getLoc(), TypeRange{fluxTypes}, op.getCondition(), true);
     auto& thenRegion = newIfOp.getThenRegion();
     auto& elseRegion = newIfOp.getElseRegion();
 
@@ -1326,21 +1323,16 @@ struct ConvertQuartzScfWhileOp final
   matchAndRewrite(scf::WhileOp op, OpAdaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
     auto& qubitMap = getState().qubitMap[op->getParentRegion()];
-    auto quartzQubits = getState().regionMap[op];
+    auto& quartzQubits = getState().regionMap[op];
 
-    SmallVector<Value> quartzValues;
-    quartzValues.reserve(quartzQubits.size());
-    for (auto qubit : quartzQubits) {
-      quartzValues.push_back(qubit);
-    }
     SmallVector<Value> fluxQubits;
     fluxQubits.reserve(quartzQubits.size());
     for (const auto& [quartzQubit, fluxQubit] : qubitMap) {
       fluxQubits.push_back(fluxQubit);
     }
     // create the result typerange
-    SmallVector<Type> fluxTypes(quartzQubits.size(),
-                                flux::QubitType::get(rewriter.getContext()));
+    const SmallVector<Type> fluxTypes(
+        quartzQubits.size(), flux::QubitType::get(rewriter.getContext()));
 
     // create the new while operation
     auto newWhileOp = rewriter.create<scf::WhileOp>(
@@ -1398,8 +1390,9 @@ struct ConvertQuartzScfWhileOp final
  * is converted to
  * ```mlir
  * %targets_out = scf.for %iv = %lb to %ub step %step iter_args(%arg0 = q0) ->
- * (!flux.qubit) { %q1 = quartz.x %arg0 : !flux.qubit -> !flux.qubit scf.yield
- * %q1 : !flux.qubit
+ * (!flux.qubit) {
+ * %q1 = quartz.x %arg0 : !flux.qubit -> !flux.qubit
+ * scf.yield %q1 : !flux.qubit
  * }
  * ```
  */
@@ -1410,13 +1403,7 @@ struct ConvertQuartzScfForOp final : StatefulOpConversionPattern<scf::ForOp> {
   matchAndRewrite(scf::ForOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
     auto& qubitMap = getState().qubitMap[op->getParentRegion()];
-
-    auto quartzQubits = getState().regionMap[op];
-    SmallVector<Value> values;
-    values.reserve(quartzQubits.size());
-    for (auto qubit : quartzQubits) {
-      values.push_back(qubit);
-    }
+    auto& quartzQubits = getState().regionMap[op];
 
     SmallVector<Value> fluxQubits;
     for (auto [quartQubit, fluxQubit] : qubitMap) {
