@@ -107,7 +107,6 @@ The project relies on some external dependencies:
 
 - [boost/multiprecision](https://github.com/boostorg/multiprecision): A library for multiprecision arithmetic (used in the ZX package).
 - [nlohmann/json](https://github.com/nlohmann/json): A JSON library for modern C++.
-- [pybind/pybind11_json](https://github.com/pybind/pybind11_json): A library for using `nlohmann::json` with `pybind11` (only used for creating the Python bindings).
 - [google/googletest](https://github.com/google/googletest): A testing framework for C++ (only used in tests).
 
 CMake will automatically look for installed versions of these libraries. If it does not find them, they will be fetched automatically at configure time via the [FetchContent](https://cmake.org/cmake/help/latest/module/FetchContent.html) module (check out the documentation for more information on how to customize this behavior).

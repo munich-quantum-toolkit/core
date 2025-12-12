@@ -8,105 +8,134 @@
  * Licensed under the MIT License
  */
 
-// These includes must be the first includes for any bindings code
-// clang-format off
 #include "fomac/FoMaC.hpp"
+
 #include "na/fomac/Device.hpp"
 #include "qdmi/na/Generator.hpp"
 
-#include <pybind11/cast.h>
-#include <pybind11/operators.h>
-#include <pybind11/pybind11.h>
-#include <pybind11/pytypes.h>
-#include <pybind11/stl.h> // NOLINT(misc-include-cleaner)
+#include <nanobind/nanobind.h>
+#include <nanobind/operators.h>
+#include <nanobind/stl/string.h> // NOLINT(misc-include-cleaner)
+#include <nanobind/stl/vector.h> // NOLINT(misc-include-cleaner)
 #include <string>
-// clang-format on
 
 namespace mqt {
 
-namespace py = pybind11;
-using namespace py::literals;
+namespace nb = nanobind;
+using namespace nb::literals;
 
 namespace {
+
 template <typename T>
-concept pyClass = requires(T t) { py::cast(t); };
+concept pyClass = requires(T t) { nb::cast(t); };
 template <pyClass T> [[nodiscard]] auto repr(T c) -> std::string {
-  return py::repr(py::cast(c)).template cast<std::string>();
+  return nb::repr(nb::cast(c)).c_str();
 }
+
 } // namespace
 
-// The definition of the (in-)equality operators produces warnings in clang-tidy
-// which are ignored by the following comment
-// NOLINTBEGIN(misc-redundant-expression)
-PYBIND11_MODULE(MQT_CORE_MODULE_NAME, m, py::mod_gil_not_used()) {
-  pybind11::module_::import("mqt.core.fomac");
+NB_MODULE(MQT_CORE_MODULE_NAME, m) {
+  nb::module_::import_("mqt.core.fomac");
 
-  auto device =
-      py::class_<na::Session::Device, fomac::Session::Device>(m, "Device");
+  auto device = nb::class_<na::Session::Device, fomac::Session::Device>(
+      m, "Device", "Represents a device with a lattice of traps.");
 
-  auto lattice = py::class_<na::Device::Lattice>(device, "Lattice");
+  auto lattice = nb::class_<na::Device::Lattice>(
+      device, "Lattice", "Represents a lattice of traps in the device.");
 
-  auto vector = py::class_<na::Device::Vector>(lattice, "Vector");
-  vector.def_readonly("x", &na::Device::Vector::x);
-  vector.def_readonly("y", &na::Device::Vector::y);
+  auto vector = nb::class_<na::Device::Vector>(lattice, "Vector",
+                                               "Represents a 2D vector.");
+  vector.def_ro("x", &na::Device::Vector::x, "The x-coordinate of the vector.");
+  vector.def_ro("y", &na::Device::Vector::y, "The y-coordinate of the vector.");
   vector.def("__repr__", [](const na::Device::Vector& v) {
     return "<Vector x=" + std::to_string(v.x) + " y=" + std::to_string(v.y) +
            ">";
   });
-  vector.def(py::self == py::self);
-  vector.def(py::self != py::self);
+  vector.def(nb::self == nb::self, // NOLINT(misc-redundant-expression)
+             nb::sig("def __eq__(self, arg: object, /) -> bool"));
+  vector.def(nb::self != nb::self, // NOLINT(misc-redundant-expression)
+             nb::sig("def __ne__(self, arg: object, /) -> bool"));
 
-  auto region = py::class_<na::Device::Region>(lattice, "Region");
+  auto region = nb::class_<na::Device::Region>(
+      lattice, "Region", "Represents a region in the device.");
 
-  auto size = py::class_<na::Device::Region::Size>(region, "Size");
-  size.def_readonly("width", &na::Device::Region::Size::width);
-  size.def_readonly("height", &na::Device::Region::Size::height);
+  auto size = nb::class_<na::Device::Region::Size>(
+      region, "Size", "Represents the size of a region.");
+  size.def_ro("width", &na::Device::Region::Size::width,
+              "The width of the region.");
+  size.def_ro("height", &na::Device::Region::Size::height,
+              "The height of the region.");
   size.def("__repr__", [](const na::Device::Region::Size& s) {
     return "<Size width=" + std::to_string(s.width) +
            " height=" + std::to_string(s.height) + ">";
   });
-  size.def(py::self == py::self);
-  size.def(py::self != py::self);
+  size.def(nb::self == nb::self, // NOLINT(misc-redundant-expression)
+           nb::sig("def __eq__(self, arg: object, /) -> bool"));
+  size.def(nb::self != nb::self, // NOLINT(misc-redundant-expression)
+           nb::sig("def __ne__(self, arg: object, /) -> bool"));
 
-  region.def_readonly("origin", &na::Device::Region::origin);
-  region.def_readonly("size", &na::Device::Region::size);
+  region.def_ro("origin", &na::Device::Region::origin,
+                "The origin of the region.");
+  region.def_ro("size", &na::Device::Region::size, "The size of the region.");
   region.def("__repr__", [](const na::Device::Region& r) {
     return "<Region origin=" + repr(r.origin) + " size=" + repr(r.size) + ">";
   });
-  region.def(py::self == py::self);
-  region.def(py::self != py::self);
+  region.def(nb::self == nb::self, // NOLINT(misc-redundant-expression)
+             nb::sig("def __eq__(self, arg: object, /) -> bool"));
+  region.def(nb::self != nb::self, // NOLINT(misc-redundant-expression)
+             nb::sig("def __ne__(self, arg: object, /) -> bool"));
 
-  lattice.def_readonly("lattice_origin", &na::Device::Lattice::latticeOrigin);
-  lattice.def_readonly("lattice_vector_1",
-                       &na::Device::Lattice::latticeVector1);
-  lattice.def_readonly("lattice_vector_2",
-                       &na::Device::Lattice::latticeVector2);
-  lattice.def_readonly("sublattice_offsets",
-                       &na::Device::Lattice::sublatticeOffsets);
-  lattice.def_readonly("extent", &na::Device::Lattice::extent);
+  lattice.def_ro("lattice_origin", &na::Device::Lattice::latticeOrigin,
+                 "The origin of the lattice.");
+  lattice.def_ro("lattice_vector_1", &na::Device::Lattice::latticeVector1,
+                 "The first lattice vector.");
+  lattice.def_ro("lattice_vector_2", &na::Device::Lattice::latticeVector2,
+                 "The second lattice vector.");
+  lattice.def_ro("sublattice_offsets", &na::Device::Lattice::sublatticeOffsets,
+                 "The offsets of the sublattices.");
+  lattice.def_ro("extent", &na::Device::Lattice::extent,
+                 "The extent of the lattice.");
   lattice.def("__repr__", [](const na::Device::Lattice& l) {
-    return "<Lattice origin=" +
-           py::repr(py::cast(l.latticeOrigin)).cast<std::string>() + ">";
+    return "<Lattice origin=" + repr(l.latticeOrigin) + ">";
   });
-  lattice.def(py::self == py::self);
-  lattice.def(py::self != py::self);
+  lattice.def(nb::self == nb::self, // NOLINT(misc-redundant-expression)
+              nb::sig("def __eq__(self, arg: object, /) -> bool"));
+  lattice.def(nb::self != nb::self, // NOLINT(misc-redundant-expression)
+              nb::sig("def __ne__(self, arg: object, /) -> bool"));
 
-  device.def_property_readonly("traps", &na::Session::Device::getTraps);
-  device.def_property_readonly("t1", [](const na::Session::Device& dev) {
-    return dev.getDecoherenceTimes().t1;
-  });
-  device.def_property_readonly("t2", [](const na::Session::Device& dev) {
-    return dev.getDecoherenceTimes().t2;
-  });
+  device.def_prop_ro("traps", &na::Session::Device::getTraps,
+                     "The list of trap positions in the device.");
+  device.def_prop_ro(
+      "t1",
+      [](const na::Session::Device& dev) {
+        return dev.getDecoherenceTimes().t1;
+      },
+      "The T1 time of the device.");
+  device.def_prop_ro(
+      "t2",
+      [](const na::Session::Device& dev) {
+        return dev.getDecoherenceTimes().t2;
+      },
+      "The T2 time of the device.");
   device.def("__repr__", [](const fomac::Session::Device& dev) {
     return "<Device name=\"" + dev.getName() + "\">";
   });
-  device.def(py::self == py::self);
-  device.def(py::self != py::self);
-
-  m.def("devices", &na::Session::getDevices);
   device.def_static("try_create_from_device",
-                    &na::Session::Device::tryCreateFromDevice, "device"_a);
+                    &na::Session::Device::tryCreateFromDevice, "device"_a,
+                    R"pb(Create NA FoMaC Device from generic FoMaC Device.
+
+Args:
+    device: The generic FoMaC Device to convert.
+
+Returns:
+    The converted NA FoMaC Device or None if the conversion is not possible.)pb");
+  device.def(nb::self == nb::self, // NOLINT(misc-redundant-expression)
+             nb::sig("def __eq__(self, arg: object, /) -> bool"));
+  device.def(nb::self != nb::self, // NOLINT(misc-redundant-expression)
+             nb::sig("def __ne__(self, arg: object, /) -> bool"));
+
+  m.def("devices", &na::Session::getDevices,
+        "Returns a list of available devices.");
 }
-// NOLINTEND(misc-redundant-expression)
+
 } // namespace mqt

@@ -11,7 +11,7 @@ if(NOT TARGET ${MQT_CORE_TARGET_NAME}-dd-bindings)
   file(GLOB_RECURSE DD_SOURCES **.cpp)
 
   # declare the Python module
-  add_mqt_python_binding(
+  add_mqt_python_binding_nanobind(
     CORE
     ${MQT_CORE_TARGET_NAME}-dd-bindings
     ${DD_SOURCES}
@@ -21,12 +21,4 @@ if(NOT TARGET ${MQT_CORE_TARGET_NAME}-dd-bindings)
     .
     LINK_LIBS
     MQT::CoreDD)
-
-  # install the Python stub file in editable mode for better IDE support
-  if(SKBUILD_STATE STREQUAL "editable")
-    install(
-      FILES ${PROJECT_SOURCE_DIR}/python/mqt/core/dd.pyi
-      DESTINATION .
-      COMPONENT ${MQT_CORE_TARGET_NAME}_Python)
-  endif()
 endif()

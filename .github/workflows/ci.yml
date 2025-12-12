@@ -149,7 +149,7 @@ jobs:
       build-project: true
       files-changed-only: true
       setup-python: true
-      install-pkgs: "pybind11==3.0.1"
+      install-pkgs: "nanobind==2.10.1"
       cpp-linter-extra-args: "-std=c++20"
 
   python-tests:

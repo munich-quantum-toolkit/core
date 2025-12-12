@@ -8,24 +8,19 @@
  * Licensed under the MIT License
  */
 
-// These includes must be the first includes for any bindings code
-// clang-format off
-#include <pybind11/pybind11.h>
-#include <pybind11/stl.h> // NOLINT(misc-include-cleaner)
-// clang-format on
+#include <nanobind/nanobind.h>
 
 namespace mqt {
 
-namespace py = pybind11;
-using namespace pybind11::literals;
+namespace nb = nanobind;
 
 // forward declarations
-void registerVariable(py::module& m);
-void registerTerm(py::module& m);
-void registerExpression(py::module& m);
+void registerVariable(nb::module_& m);
+void registerTerm(nb::module_& m);
+void registerExpression(nb::module_& m);
 
 // NOLINTNEXTLINE(misc-use-internal-linkage)
-void registerSymbolic(pybind11::module& m) {
+void registerSymbolic(nb::module_& m) {
   registerVariable(m);
   registerTerm(m);
   registerExpression(m);
