@@ -915,7 +915,6 @@ struct ConvertFluxScfWhileOp final : OpConversionPattern<scf::WhileOp> {
       beforeArgs[i].replaceAllUsesWith(inits[i]);
       afterArgs[i].replaceAllUsesWith(inits[i]);
     }
-
     // create the blocks of the new operation and move the operations to them
     auto* newBeforeBlock =
         rewriter.createBlock(&newWhileOp.getBefore(), {}, {}, {});
@@ -927,7 +926,7 @@ struct ConvertFluxScfWhileOp final : OpConversionPattern<scf::WhileOp> {
                                           op.getAfterBody()->getOperations());
 
     // replace the result values with the init values
-    rewriter.replaceOp(op, adaptor.getInits());
+    rewriter.replaceOp(op, inits);
     return success();
   }
 };
@@ -1028,6 +1027,7 @@ struct ConvertFluxScfConditionOp final : OpConversionPattern<scf::ConditionOp> {
                   ConversionPatternRewriter& rewriter) const override {
     rewriter.replaceOpWithNewOp<scf::ConditionOp>(op, op.getCondition(),
                                                   ValueRange{});
+
     return success();
   }
 };
@@ -1166,8 +1166,9 @@ struct FluxToQuartz final : impl::FluxToQuartzBase<FluxToQuartz> {
     });
 
     target.addDynamicallyLegalOp<scf::YieldOp>([&](scf::YieldOp op) {
-      return !llvm::any_of(op.getOperandTypes(), [&](Type type) {
-        return type == flux::QubitType::get(context);
+      return !llvm::any_of(op->getOperandTypes(), [&](Type type) {
+        return type == quartz::QubitType::get(context) ||
+               type == flux::QubitType::get(context);
       });
     });
     target.addDynamicallyLegalOp<scf::WhileOp>([&](scf::WhileOp op) {
