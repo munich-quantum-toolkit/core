@@ -1483,7 +1483,7 @@ struct ConvertQuartzScfYieldOp final
  * scf.condition(%cond) %targets
  * ```
  */
-struct ConvertQuartzScfCondtionOp final
+struct ConvertQuartzScfConditionOp final
     : StatefulOpConversionPattern<scf::ConditionOp> {
   using StatefulOpConversionPattern<
       scf::ConditionOp>::StatefulOpConversionPattern;
@@ -1578,8 +1578,8 @@ struct QuartzToFlux final : impl::QuartzToFluxBase<QuartzToFlux> {
         ConvertQuartzRZZOp, ConvertQuartzXXPlusYYOp, ConvertQuartzXXMinusYYOp,
         ConvertQuartzBarrierOp, ConvertQuartzCtrlOp, ConvertQuartzYieldOp,
         ConvertQuartzScfIfOp, ConvertQuartzScfYieldOp, ConvertQuartzScfWhileOp,
-        ConvertQuartzScfCondtionOp, ConvertQuartzScfForOp>(typeConverter,
-                                                           context, &state);
+        ConvertQuartzScfConditionOp, ConvertQuartzScfForOp>(typeConverter,
+                                                            context, &state);
 
     // Apply the conversion
     if (failed(applyPartialConversion(module, target, std::move(patterns)))) {
