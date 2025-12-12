@@ -26,7 +26,6 @@ if(NOT TARGET ${TARGET_NAME})
 
   nanobind_add_stub(
     ${TARGET_NAME}_stub
-    INSTALL_TIME
     MODULE
     mqt.core.fomac
     OUTPUT

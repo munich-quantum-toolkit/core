@@ -24,7 +24,6 @@ if(NOT TARGET ${MQT_CORE_TARGET_NAME}-dd-bindings)
 
   nanobind_add_stub(
     ${MQT_CORE_TARGET_NAME}-dd-bindings_stub
-    INSTALL_TIME
     MODULE
     mqt.core.dd
     OUTPUT

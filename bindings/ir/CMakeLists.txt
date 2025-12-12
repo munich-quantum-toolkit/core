@@ -25,7 +25,6 @@ if(NOT TARGET ${MQT_CORE_TARGET_NAME}-ir-bindings)
 
   nanobind_add_stub(
     ${MQT_CORE_TARGET_NAME}-ir-bindings_stub
-    INSTALL_TIME
     MODULE
     mqt.core.ir
     RECURSIVE
