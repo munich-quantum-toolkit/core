@@ -25,6 +25,7 @@
 #include <nanobind/stl/string.h>        // NOLINT(misc-include-cleaner)
 #include <nanobind/stl/unique_ptr.h>    // NOLINT(misc-include-cleaner)
 #include <nanobind/stl/unordered_map.h> // NOLINT(misc-include-cleaner)
+#include <nanobind/stl/unordered_set.h> // NOLINT(misc-include-cleaner)
 #include <nanobind/stl/variant.h>       // NOLINT(misc-include-cleaner)
 #include <nanobind/stl/vector.h>        // NOLINT(misc-include-cleaner)
 #include <stdexcept>

@@ -33,6 +33,5 @@ if(NOT TARGET ${TARGET_NAME})
     PYTHON_PATH
     ${PROJECT_SOURCE_DIR}/python
     MARKER_FILE
-    py.typed
-    INCLUDE_PRIVATE)
+    py.typed)
 endif()

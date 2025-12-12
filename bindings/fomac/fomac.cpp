@@ -167,8 +167,10 @@ Returns:
   job.def_prop_ro("num_shots", &fomac::Session::Job::getNumShots,
                   "Returns the number of shots for the job.");
 
-  job.def(nb::self == nb::self); // NOLINT(misc-redundant-expression)
-  job.def(nb::self != nb::self); // NOLINT(misc-redundant-expression)
+  job.def(nb::self == nb::self, // NOLINT(misc-redundant-expression)
+          nb::sig("def __eq__(self, arg: object, /) -> bool"));
+  job.def(nb::self != nb::self, // NOLINT(misc-redundant-expression)
+          nb::sig("def __ne__(self, arg: object, /) -> bool"));
 
   // JobStatus enum
   nb::enum_<QDMI_Job_Status>(job, "Status", "enum.Enum",
@@ -281,8 +283,10 @@ Returns:
     return "<Device name=\"" + dev.getName() + "\">";
   });
 
-  device.def(nb::self == nb::self); // NOLINT(misc-redundant-expression)
-  device.def(nb::self != nb::self); // NOLINT(misc-redundant-expression)
+  job.def(nb::self == nb::self, // NOLINT(misc-redundant-expression)
+          nb::sig("def __eq__(self, arg: object, /) -> bool"));
+  job.def(nb::self != nb::self, // NOLINT(misc-redundant-expression)
+          nb::sig("def __ne__(self, arg: object, /) -> bool"));
 
   // Site class
   auto site = nb::class_<fomac::Session::Device::Site>(
@@ -332,8 +336,10 @@ Returns:
     return "<Site index=" + std::to_string(s.getIndex()) + ">";
   });
 
-  site.def(nb::self == nb::self); // NOLINT(misc-redundant-expression)
-  site.def(nb::self != nb::self); // NOLINT(misc-redundant-expression)
+  job.def(nb::self == nb::self, // NOLINT(misc-redundant-expression)
+          nb::sig("def __eq__(self, arg: object, /) -> bool"));
+  job.def(nb::self != nb::self, // NOLINT(misc-redundant-expression)
+          nb::sig("def __ne__(self, arg: object, /) -> bool"));
 
   // Operation class
   auto operation = nb::class_<fomac::Session::Device::Operation>(
@@ -405,8 +411,10 @@ Returns:
     return "<Operation name=\"" + op.getName() + "\">";
   });
 
-  operation.def(nb::self == nb::self); // NOLINT(misc-redundant-expression)
-  operation.def(nb::self != nb::self); // NOLINT(misc-redundant-expression)
+  job.def(nb::self == nb::self, // NOLINT(misc-redundant-expression)
+          nb::sig("def __eq__(self, arg: object, /) -> bool"));
+  job.def(nb::self != nb::self, // NOLINT(misc-redundant-expression)
+          nb::sig("def __ne__(self, arg: object, /) -> bool"));
 
 #ifndef _WIN32
   // Module-level function to add dynamic device libraries on non-Windows

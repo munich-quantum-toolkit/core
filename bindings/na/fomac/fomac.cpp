@@ -51,8 +51,10 @@ NB_MODULE(MQT_CORE_MODULE_NAME, m) {
     return "<Vector x=" + std::to_string(v.x) + " y=" + std::to_string(v.y) +
            ">";
   });
-  vector.def(nb::self == nb::self); // NOLINT(misc-redundant-expression)
-  vector.def(nb::self != nb::self); // NOLINT(misc-redundant-expression)
+  vector.def(nb::self == nb::self, // NOLINT(misc-redundant-expression)
+             nb::sig("def __eq__(self, arg: object, /) -> bool"));
+  vector.def(nb::self != nb::self, // NOLINT(misc-redundant-expression)
+             nb::sig("def __ne__(self, arg: object, /) -> bool"));
 
   auto region = nb::class_<na::Device::Region>(
       lattice, "Region", "Represents a region in the device.");
@@ -67,8 +69,10 @@ NB_MODULE(MQT_CORE_MODULE_NAME, m) {
     return "<Size width=" + std::to_string(s.width) +
            " height=" + std::to_string(s.height) + ">";
   });
-  size.def(nb::self == nb::self); // NOLINT(misc-redundant-expression)
-  size.def(nb::self != nb::self); // NOLINT(misc-redundant-expression)
+  size.def(nb::self == nb::self, // NOLINT(misc-redundant-expression)
+           nb::sig("def __eq__(self, arg: object, /) -> bool"));
+  size.def(nb::self != nb::self, // NOLINT(misc-redundant-expression)
+           nb::sig("def __ne__(self, arg: object, /) -> bool"));
 
   region.def_ro("origin", &na::Device::Region::origin,
                 "The origin of the region.");
@@ -76,8 +80,10 @@ NB_MODULE(MQT_CORE_MODULE_NAME, m) {
   region.def("__repr__", [](const na::Device::Region& r) {
     return "<Region origin=" + repr(r.origin) + " size=" + repr(r.size) + ">";
   });
-  region.def(nb::self == nb::self); // NOLINT(misc-redundant-expression)
-  region.def(nb::self != nb::self); // NOLINT(misc-redundant-expression)
+  region.def(nb::self == nb::self, // NOLINT(misc-redundant-expression)
+             nb::sig("def __eq__(self, arg: object, /) -> bool"));
+  region.def(nb::self != nb::self, // NOLINT(misc-redundant-expression)
+             nb::sig("def __ne__(self, arg: object, /) -> bool"));
 
   lattice.def_ro("lattice_origin", &na::Device::Lattice::latticeOrigin,
                  "The origin of the lattice.");
@@ -92,8 +98,10 @@ NB_MODULE(MQT_CORE_MODULE_NAME, m) {
   lattice.def("__repr__", [](const na::Device::Lattice& l) {
     return "<Lattice origin=" + repr(l.latticeOrigin) + ">";
   });
-  lattice.def(nb::self == nb::self); // NOLINT(misc-redundant-expression)
-  lattice.def(nb::self != nb::self); // NOLINT(misc-redundant-expression)
+  lattice.def(nb::self == nb::self, // NOLINT(misc-redundant-expression)
+              nb::sig("def __eq__(self, arg: object, /) -> bool"));
+  lattice.def(nb::self != nb::self, // NOLINT(misc-redundant-expression)
+              nb::sig("def __ne__(self, arg: object, /) -> bool"));
 
   device.def_prop_ro("traps", &na::Session::Device::getTraps,
                      "The list of trap positions in the device.");
@@ -121,8 +129,10 @@ Args:
 
 Returns:
     The converted NA FoMaC Device or None if the conversion is not possible.)pb");
-  device.def(nb::self == nb::self); // NOLINT(misc-redundant-expression)
-  device.def(nb::self != nb::self); // NOLINT(misc-redundant-expression)
+  device.def(nb::self == nb::self, // NOLINT(misc-redundant-expression)
+             nb::sig("def __eq__(self, arg: object, /) -> bool"));
+  device.def(nb::self != nb::self, // NOLINT(misc-redundant-expression)
+             nb::sig("def __ne__(self, arg: object, /) -> bool"));
 
   m.def("devices", &na::Session::getDevices,
         "Returns a list of available devices.");

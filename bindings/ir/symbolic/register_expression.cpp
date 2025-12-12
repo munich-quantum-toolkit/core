@@ -14,8 +14,9 @@
 #include <nanobind/make_iterator.h>
 #include <nanobind/nanobind.h>
 #include <nanobind/operators.h>
-#include <nanobind/stl/string.h> // NOLINT(misc-include-cleaner)
-#include <nanobind/stl/vector.h> // NOLINT(misc-include-cleaner)
+#include <nanobind/stl/string.h>        // NOLINT(misc-include-cleaner)
+#include <nanobind/stl/unordered_map.h> // NOLINT(misc-include-cleaner)
+#include <nanobind/stl/vector.h>        // NOLINT(misc-include-cleaner)
 #include <sstream>
 #include <vector>
 
@@ -129,8 +130,10 @@ Returns:
       .def("__rtruediv__", [](const sym::Expression<double, double>& rhs,
                               double lhs) { return rhs / lhs; })
       // comparison operators
-      .def(nb::self == nb::self) // NOLINT(misc-redundant-expression)
-      .def(nb::self != nb::self) // NOLINT(misc-redundant-expression)
+      .def(nb::self == nb::self, // NOLINT(misc-redundant-expression)
+           nb::sig("def __eq__(self, arg: object, /) -> bool"))
+      .def(nb::self != nb::self, // NOLINT(misc-redundant-expression)
+           nb::sig("def __ne__(self, arg: object, /) -> bool"))
       .def(nb::hash(nb::self))
 
       .def("__str__",

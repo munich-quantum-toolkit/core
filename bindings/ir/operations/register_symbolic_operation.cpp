@@ -16,10 +16,11 @@
 #include "ir/operations/SymbolicOperation.hpp"
 
 #include <nanobind/nanobind.h>
-#include <nanobind/stl/set.h>     // NOLINT(misc-include-cleaner)
-#include <nanobind/stl/string.h>  // NOLINT(misc-include-cleaner)
-#include <nanobind/stl/variant.h> // NOLINT(misc-include-cleaner)
-#include <nanobind/stl/vector.h>  // NOLINT(misc-include-cleaner)
+#include <nanobind/stl/set.h>           // NOLINT(misc-include-cleaner)
+#include <nanobind/stl/string.h>        // NOLINT(misc-include-cleaner)
+#include <nanobind/stl/unordered_map.h> // NOLINT(misc-include-cleaner)
+#include <nanobind/stl/variant.h>       // NOLINT(misc-include-cleaner)
+#include <nanobind/stl/vector.h>        // NOLINT(misc-include-cleaner)
 #include <vector>
 
 namespace mqt {

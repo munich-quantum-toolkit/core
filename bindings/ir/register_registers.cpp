@@ -57,8 +57,10 @@ Args:
           [](const qc::QuantumRegister& reg) { return reg.getEndIndex(); },
           "Index of the last qubit in the quantum register.")
 
-      .def(nb::self == nb::self) // NOLINT(misc-redundant-expression)
-      .def(nb::self != nb::self) // NOLINT(misc-redundant-expression)
+      .def(nb::self == nb::self, // NOLINT(misc-redundant-expression)
+           nb::sig("def __eq__(self, arg: object, /) -> bool"))
+      .def(nb::self != nb::self, // NOLINT(misc-redundant-expression)
+           nb::sig("def __ne__(self, arg: object, /) -> bool"))
       .def(hash(nb::self))
 
       .def("__getitem__", &qc::QuantumRegister::getGlobalIndex, "key"_a,
@@ -111,8 +113,12 @@ Args:
           [](const qc::ClassicalRegister& reg) { return reg.getEndIndex(); },
           "Index of the last bit in the classical register.")
 
-      .def(nb::self == nb::self) // NOLINT(misc-redundant-expression)
-      .def(nb::self != nb::self) // NOLINT(misc-redundant-expression)
+      // NOLINTNEXTLINE(misc-redundant-expression)
+      .def(nb::self == nb::self,
+           nb::sig("def __eq__(self, arg: object, /) -> bool"))
+      // NOLINTNEXTLINE(misc-redundant-expression)
+      .def(nb::self != nb::self,
+           nb::sig("def __ne__(self, arg: object, /) -> bool"))
       .def(nb::hash(nb::self))
 
       .def("__getitem__", &qc::ClassicalRegister::getGlobalIndex, "key"_a,
