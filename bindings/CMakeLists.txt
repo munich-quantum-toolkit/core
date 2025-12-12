@@ -31,7 +31,10 @@ if(SKBUILD_STATE STREQUAL "editable")
     ir/registers.pyi
     ir/symbolic.pyi
     PYTHON_PATH
-    ${CMAKE_INSTALL_PREFIX}/../..)
+    ${CMAKE_INSTALL_PREFIX}/../..
+    MARKER_FILE
+    ir/py.typed
+    INCLUDE_PRIVATE)
 
   nanobind_add_stub(
     dd_stub
@@ -41,7 +44,10 @@ if(SKBUILD_STATE STREQUAL "editable")
     OUTPUT
     dd.pyi
     PYTHON_PATH
-    ${CMAKE_INSTALL_PREFIX}/../..)
+    ${CMAKE_INSTALL_PREFIX}/../..
+    MARKER_FILE
+    py.typed
+    INCLUDE_PRIVATE)
 
   nanobind_add_stub(
     fomac_stub
@@ -51,7 +57,10 @@ if(SKBUILD_STATE STREQUAL "editable")
     OUTPUT
     fomac.pyi
     PYTHON_PATH
-    ${CMAKE_INSTALL_PREFIX}/../..)
+    ${CMAKE_INSTALL_PREFIX}/../..
+    MARKER_FILE
+    py.typed
+    INCLUDE_PRIVATE)
 
   nanobind_add_stub(
     na_fomac_stub
@@ -61,11 +70,20 @@ if(SKBUILD_STATE STREQUAL "editable")
     OUTPUT
     na/fomac.pyi
     PYTHON_PATH
-    ${CMAKE_INSTALL_PREFIX}/../..)
+    ${CMAKE_INSTALL_PREFIX}/../..
+    MARKER_FILE
+    na/py.typed
+    INCLUDE_PRIVATE)
 
   file(GLOB_RECURSE PYI_FILES ${CMAKE_INSTALL_PREFIX}/*.pyi)
   install(
     FILES ${PYI_FILES}
+    DESTINATION .
+    COMPONENT ${MQT_CORE_TARGET_NAME}_Python)
+
+  file(GLOB_RECURSE PY_TYPED_FILES ${CMAKE_INSTALL_PREFIX}/py.typed)
+  install(
+    FILES ${PY_TYPED_FILES}
     DESTINATION .
     COMPONENT ${MQT_CORE_TARGET_NAME}_Python)
 endif()
