@@ -336,10 +336,10 @@ Returns:
     return "<Site index=" + std::to_string(s.getIndex()) + ">";
   });
 
-  job.def(nb::self == nb::self, // NOLINT(misc-redundant-expression)
-          nb::sig("def __eq__(self, arg: object, /) -> bool"));
-  job.def(nb::self != nb::self, // NOLINT(misc-redundant-expression)
-          nb::sig("def __ne__(self, arg: object, /) -> bool"));
+  site.def(nb::self == nb::self, // NOLINT(misc-redundant-expression)
+           nb::sig("def __eq__(self, arg: object, /) -> bool"));
+  site.def(nb::self != nb::self, // NOLINT(misc-redundant-expression)
+           nb::sig("def __ne__(self, arg: object, /) -> bool"));
 
   // Operation class
   auto operation = nb::class_<fomac::Session::Device::Operation>(
