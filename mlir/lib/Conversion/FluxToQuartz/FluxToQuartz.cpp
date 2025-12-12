@@ -1030,6 +1030,59 @@ struct ConvertFluxScfConditionOp final : OpConversionPattern<scf::ConditionOp> {
     return success();
   }
 };
+
+struct ConvertFluxFuncCallOp final : OpConversionPattern<func::CallOp> {
+  using OpConversionPattern::OpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(func::CallOp op, OpAdaptor adaptor,
+                  ConversionPatternRewriter& rewriter) const override {
+    rewriter.create<func::CallOp>(op->getLoc(), adaptor.getCallee(),
+                                  TypeRange{}, adaptor.getOperands());
+    rewriter.replaceOp(op, adaptor.getOperands());
+    return success();
+  }
+};
+
+struct ConvertFluxFuncFuncOp final : OpConversionPattern<func::FuncOp> {
+  using OpConversionPattern::OpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(func::FuncOp op, OpAdaptor /*adaptor*/,
+                  ConversionPatternRewriter& rewriter) const override {
+    const SmallVector<Type> argumentTypes(
+        op.front().getNumArguments(),
+        quartz::QubitType::get(rewriter.getContext()));
+
+    auto newFuncType = rewriter.getFunctionType(argumentTypes, {});
+    op.setFunctionType(newFuncType);
+    return success();
+  }
+};
+
+/**
+ * @brief Converts func.return for fluxQubits to a trivial func.return
+ *
+ * @par Example:
+ * ```mlir
+ * scf.condition(%cond) %targets
+ * ```
+ * is converted to
+ * ```mlir
+ * scf.condition(%cond)
+
+ * ```
+ */
+struct ConvertFluxFuncReturnOp final : OpConversionPattern<func::ReturnOp> {
+  using OpConversionPattern::OpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(func::ReturnOp op, OpAdaptor /*adaptor*/,
+                  ConversionPatternRewriter& rewriter) const override {
+    rewriter.replaceOpWithNewOp<func::ReturnOp>(op);
+    return success();
+  }
+};
 /**
  * @brief Pass implementation for Flux-to-Quartz conversion
  *
@@ -1097,6 +1150,21 @@ struct FluxToQuartz final : impl::FluxToQuartzBase<FluxToQuartz> {
         return type == flux::QubitType::get(context);
       });
     });
+    target.addDynamicallyLegalOp<func::CallOp>([&](func::CallOp op) {
+      return !llvm::any_of(op->getResultTypes(), [&](Type type) {
+        return type == flux::QubitType::get(context);
+      });
+    });
+    target.addDynamicallyLegalOp<func::FuncOp>([&](func::FuncOp op) {
+      return !llvm::any_of(op->getResultTypes(), [&](Type type) {
+        return type == flux::QubitType::get(context);
+      });
+    });
+    target.addDynamicallyLegalOp<func::ReturnOp>([&](func::ReturnOp op) {
+      return !llvm::any_of(op->getOperandTypes(), [&](Type type) {
+        return type == flux::QubitType::get(context);
+      });
+    });
     // Register operation conversion patterns
     // Note: No state tracking needed - OpAdaptors handle type conversion
     patterns.add<
@@ -1111,7 +1179,8 @@ struct FluxToQuartz final : impl::FluxToQuartzBase<FluxToQuartz> {
         ConvertFluxRZXOp, ConvertFluxRZZOp, ConvertFluxXXPlusYYOp,
         ConvertFluxXXMinusYYOp, ConvertFluxBarrierOp, ConvertFluxCtrlOp,
         ConvertFluxYieldOp, ConvertFluxScfIfOp, ConvertFluxScfYieldOp,
-        ConvertFluxScfWhileOp, ConvertFluxScfConditionOp, ConvertFluxScfForOp>(
+        ConvertFluxScfWhileOp, ConvertFluxScfConditionOp, ConvertFluxScfForOp,
+        ConvertFluxFuncCallOp, ConvertFluxFuncFuncOp, ConvertFluxFuncReturnOp>(
         typeConverter, context);
 
     // Conversion of flux types in func.func signatures

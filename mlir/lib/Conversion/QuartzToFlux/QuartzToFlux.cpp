@@ -12,6 +12,7 @@
 
 #include "mlir/Dialect/Flux/IR/FluxDialect.h"
 #include "mlir/Dialect/Quartz/IR/QuartzDialect.h"
+#include "mlir/IR/Block.h"
 
 #include <cassert>
 #include <cstddef>
@@ -160,6 +161,16 @@ llvm::SetVector<Value> collectRegionQubits(Operation* op, LoweringState* state,
           uniqueQubits.size() > 0) {
         operation.setAttr("needChange", StringAttr::get(ctx, "yes"));
       }
+      // mark func.return operation for functions that need to return a qubit
+      // value
+      if (llvm::isa<func::ReturnOp>(operation)) {
+        if (auto func = operation.getParentOfType<func::FuncOp>()) {
+          if (!func.getArgumentTypes().empty() &&
+              func.getArgumentTypes().front() == quartz::QubitType::get(ctx)) {
+            operation.setAttr("needChange", StringAttr::get(ctx, "yes"));
+          }
+        }
+      }
     }
   }
   if (!uniqueQubits.empty() &&
@@ -221,9 +232,12 @@ LogicalResult convertOneTargetZeroParameter(QuartzOpType& op,
 
   // Get the latest Flux qubit
   const auto& quartzQubit = op.getQubitIn();
+
   Value fluxQubit;
   if (inCtrlOp == 0) {
+
     fluxQubit = qubitMap[quartzQubit];
+
   } else {
     fluxQubit = state.targetsIn[inCtrlOp].front();
   }
@@ -1406,6 +1420,7 @@ struct ConvertQuartzScfForOp final : StatefulOpConversionPattern<scf::ForOp> {
     auto& quartzQubits = getState().regionMap[op];
 
     SmallVector<Value> fluxQubits;
+    fluxQubits.reserve(qubitMap.size());
     for (auto [quartQubit, fluxQubit] : qubitMap) {
       fluxQubits.push_back(fluxQubit);
     }
@@ -1503,7 +1518,82 @@ struct ConvertQuartzScfConditionOp final
     return success();
   }
 };
+struct ConvertQuartzFuncCallOp final
+    : StatefulOpConversionPattern<func::CallOp> {
+  using StatefulOpConversionPattern<func::CallOp>::StatefulOpConversionPattern;
 
+  LogicalResult
+  matchAndRewrite(func::CallOp op, OpAdaptor adaptor,
+                  ConversionPatternRewriter& rewriter) const override {
+    auto& qubitMap = getState().qubitMap[op->getParentRegion()];
+    auto& quartzQubits = getState().regionMap[op];
+
+    SmallVector<Value> fluxQubits;
+    fluxQubits.reserve(qubitMap.size());
+    for (auto [quartQubit, fluxQubit] : qubitMap) {
+      fluxQubits.push_back(fluxQubit);
+    }
+    // create the result typerange
+    const SmallVector<Type> fluxTypes(
+        quartzQubits.size(), flux::QubitType::get(rewriter.getContext()));
+
+    const auto callOp = rewriter.create<func::CallOp>(
+        op->getLoc(), adaptor.getCallee(), fluxTypes, fluxQubits);
+
+    for (const auto& [quartzQubit, fluxQubit] :
+         llvm::zip_equal(quartzQubits, callOp->getResults())) {
+      qubitMap[quartzQubit] = fluxQubit;
+    }
+
+    rewriter.eraseOp(op);
+    return success();
+  }
+};
+
+struct ConvertQuartzFuncFuncOp final
+    : StatefulOpConversionPattern<func::FuncOp> {
+  using StatefulOpConversionPattern<func::FuncOp>::StatefulOpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(func::FuncOp op, OpAdaptor /*adaptor*/,
+                  ConversionPatternRewriter& rewriter) const override {
+    auto& qubitMap = getState().qubitMap[&op->getRegion(0)];
+    const SmallVector<Type> fluxTypes(
+        op.front().getNumArguments(),
+        flux::QubitType::get(rewriter.getContext()));
+
+    // set the arguments to flux qubit type
+    for (auto blockArg : op.front().getArguments()) {
+      blockArg.setType(flux::QubitType::get(rewriter.getContext()));
+      qubitMap.try_emplace(blockArg, blockArg);
+    }
+
+    // change the function signature to return the same number of flux Qubits as
+    // it gets as input
+    auto newFuncType = rewriter.getFunctionType(fluxTypes, fluxTypes); //
+    op.setFunctionType(newFuncType);
+    return success();
+  }
+};
+
+struct ConvertQuartzFuncReturnOp final
+    : StatefulOpConversionPattern<func::ReturnOp> {
+  using StatefulOpConversionPattern<
+      func::ReturnOp>::StatefulOpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(func::ReturnOp op, OpAdaptor /*adaptor*/,
+                  ConversionPatternRewriter& rewriter) const override {
+    const auto& qubitMap = getState().qubitMap[op->getParentRegion()];
+    SmallVector<Value> fluxQubits;
+    fluxQubits.reserve(qubitMap.size());
+    for (auto [quartzQubit, fluxQubit] : qubitMap) {
+      fluxQubits.push_back(fluxQubit);
+    }
+    rewriter.replaceOpWithNewOp<func::ReturnOp>(op, fluxQubits);
+    return success();
+  }
+};
 /**
  * @brief Pass implementation for Quartz-to-Flux conversion
  *
@@ -1562,6 +1652,19 @@ struct QuartzToFlux final : impl::QuartzToFluxBase<QuartzToFlux> {
     target.addDynamicallyLegalOp<scf::ForOp>([&](scf::ForOp op) {
       return !(op->getAttrOfType<StringAttr>("needChange"));
     });
+    target.addDynamicallyLegalOp<func::FuncOp>([&](func::FuncOp op) {
+      return !llvm::any_of(op.front().getArgumentTypes(), [&](Type type) {
+        return type == quartz::QubitType::get(context);
+      });
+    });
+    target.addDynamicallyLegalOp<func::CallOp>([&](func::CallOp op) {
+      return !llvm::any_of(op->getOperandTypes(), [&](Type type) {
+        return type == quartz::QubitType::get(context);
+      });
+    });
+    target.addDynamicallyLegalOp<func::ReturnOp>([&](func::ReturnOp op) {
+      return !op->getAttrOfType<StringAttr>("needChange");
+    });
     // Register operation conversion patterns with state
     // tracking
     patterns.add<
@@ -1578,8 +1681,9 @@ struct QuartzToFlux final : impl::QuartzToFluxBase<QuartzToFlux> {
         ConvertQuartzRZZOp, ConvertQuartzXXPlusYYOp, ConvertQuartzXXMinusYYOp,
         ConvertQuartzBarrierOp, ConvertQuartzCtrlOp, ConvertQuartzYieldOp,
         ConvertQuartzScfIfOp, ConvertQuartzScfYieldOp, ConvertQuartzScfWhileOp,
-        ConvertQuartzScfConditionOp, ConvertQuartzScfForOp>(typeConverter,
-                                                            context, &state);
+        ConvertQuartzScfConditionOp, ConvertQuartzScfForOp,
+        ConvertQuartzFuncCallOp, ConvertQuartzFuncFuncOp,
+        ConvertQuartzFuncReturnOp>(typeConverter, context, &state);
 
     // Apply the conversion
     if (failed(applyPartialConversion(module, target, std::move(patterns)))) {
