@@ -1038,7 +1038,7 @@ struct ConvertFluxScfConditionOp final : OpConversionPattern<scf::ConditionOp> {
  *
  * @par Example:
  * ```mlir
- * %q1 = call @test(%q1) : (!flux.qubit) -> !flux.qubit
+ * %q1 = call @test(%q0) : (!flux.qubit) -> !flux.qubit
  * }
  * ```
  * is converted to

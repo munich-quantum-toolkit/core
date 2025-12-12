@@ -121,10 +121,10 @@ private:
  * @param ctx The MLIRContext of the current program
  * @return llvm::Setvector<Value> The set of unique Quartz qubit references
  */
-llvm::SetVector<Value> collectRegionQubits(Operation* op, LoweringState* state,
+llvm::SetVector<Value> collectUniqueQubits(Operation* op, LoweringState* state,
                                            MLIRContext* ctx) {
   // get the regions of the current operation
-  const auto regions = op->getRegions();
+  const auto& regions = op->getRegions();
   SetVector<Value> uniqueQubits;
   for (auto& region : regions) {
     // skip empty regions e.g. empty else region of an If operation
@@ -137,7 +137,7 @@ llvm::SetVector<Value> collectRegionQubits(Operation* op, LoweringState* state,
       // check if the operation has an region, if yes recursively collect the
       // qubits
       if (operation.getNumRegions() > 0) {
-        const auto& qubits = collectRegionQubits(&operation, state, ctx);
+        const auto& qubits = collectUniqueQubits(&operation, state, ctx);
         uniqueQubits.set_union(qubits);
       }
       // collect qubits form the operands
@@ -171,11 +171,11 @@ llvm::SetVector<Value> collectRegionQubits(Operation* op, LoweringState* state,
       }
     }
   }
+  // mark scf operations that need to be changed afterwards
   if (!uniqueQubits.empty() &&
       (llvm::isa<scf::IfOp>(op) || (llvm::isa<scf::ForOp>(op)) ||
        llvm::isa<scf::WhileOp>(op))) {
     state->regionMap[op] = uniqueQubits;
-    // mark scf operations that need to be changed afterwards
     op->setAttr("needChange", StringAttr::get(ctx, "yes"));
   }
   return uniqueQubits;
@@ -1675,7 +1675,7 @@ struct QuartzToFlux final : impl::QuartzToFluxBase<QuartzToFlux> {
     RewritePatternSet patterns(context);
     QuartzToFluxTypeConverter typeConverter(context);
 
-    collectRegionQubits(module, &state, context);
+    collectUniqueQubits(module, &state, context);
     // Configure conversion target: Quartz illegal, Flux
     // legal
     target.addIllegalDialect<QuartzDialect>();
