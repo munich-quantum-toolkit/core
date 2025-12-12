@@ -41,6 +41,8 @@ using Matrix = nb::ndarray<nb::numpy, std::complex<dd::fp>, nb::ndim<2>>;
 Matrix getMatrix(const dd::mEdge& m, size_t numQubits, dd::fp threshold = 0.);
 
 NB_MODULE(MQT_CORE_MODULE_NAME, m) {
+  nb::module_::import_("mqt.core.ir");
+
   // Vector Decision Diagrams
   registerVectorDDs(m);
 

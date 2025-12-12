@@ -23,15 +23,4 @@ if(NOT TARGET ${TARGET_NAME})
     ./na
     LINK_LIBS
     MQT::CoreNAFoMaC)
-
-  nanobind_add_stub(
-    ${TARGET_NAME}_stub
-    MODULE
-    mqt.core.fomac
-    OUTPUT
-    ${PROJECT_SOURCE_DIR}/python/mqt/core/na/fomac.pyi
-    PYTHON_PATH
-    ${PROJECT_SOURCE_DIR}/python
-    MARKER_FILE
-    py.typed)
 endif()
