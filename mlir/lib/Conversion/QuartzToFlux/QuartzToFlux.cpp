@@ -70,8 +70,9 @@ namespace {
  */
 struct LoweringState {
   /// Map from original Quartz qubit references to their latest Flux SSA values
+  /// for each region
   llvm::DenseMap<Region*, llvm::DenseMap<Value, Value>> qubitMap;
-  /// Map each initial op to its refQubits.
+  /// Map each operation to its Set of Quartz qubit references
   llvm::DenseMap<Operation*, llvm::SetVector<Value>> regionMap;
 
   /// Modifier information
@@ -110,9 +111,17 @@ private:
   LoweringState* state_;
 };
 
+/**
+ * @brief Recursively collects all the Quartz qubit references used by an
+ * operation and store them in map
+ *
+ * @param Operation The operation that is currently traversed
+ * @param state The lowering state
+ * @param ctx The MLIRContext of the current program
+ * @return llvm::Setvector<Value> The set of unique Quartz qubit references
+ */
 llvm::SetVector<Value> collectRegionQubits(Operation* op, LoweringState* state,
                                            MLIRContext* ctx) {
-
   // get the regions of the current operation
   const auto regions = op->getRegions();
   SetVector<Value> uniqueQubits;
@@ -127,23 +136,25 @@ llvm::SetVector<Value> collectRegionQubits(Operation* op, LoweringState* state,
       // check if the operation has an region, if yes recursively collect the
       // qubits
       if (operation.getNumRegions() > 0) {
-        auto qubits = collectRegionQubits(&operation, state, ctx);
-        for (auto qubit : qubits) {
+        const auto& qubits = collectRegionQubits(&operation, state, ctx);
+        for (const auto& qubit : qubits) {
           uniqueQubits.insert(qubit);
         }
       }
       // collect qubits form the operands
-      for (auto operand : operation.getOperands()) {
+      for (const auto& operand : operation.getOperands()) {
         if (operand.getType() == quartz::QubitType::get(ctx)) {
           uniqueQubits.insert(operand);
         }
       }
       // collect qubits from the results
-      for (auto result : operation.getResults()) {
+      for (const auto& result : operation.getResults()) {
         if (result.getType() == quartz::QubitType::get(ctx)) {
           uniqueQubits.insert(result);
         }
       }
+      // mark scf terminator operations if they need to return a value after the
+      // conversion
       if ((llvm::isa<scf::YieldOp>(operation) ||
            llvm::isa<scf::ConditionOp>(operation)) &&
           uniqueQubits.size() > 0) {
@@ -155,7 +166,7 @@ llvm::SetVector<Value> collectRegionQubits(Operation* op, LoweringState* state,
       (llvm::isa<scf::IfOp>(op) || (llvm::isa<scf::ForOp>(op)) ||
        llvm::isa<scf::WhileOp>(op))) {
     state->regionMap[op] = uniqueQubits;
-    // mark operations that need to be changed afterwards
+    // mark scf operations that need to be changed afterwards
     op->setAttr("needChange", StringAttr::get(ctx, "yes"));
   }
   return uniqueQubits;
@@ -1196,31 +1207,53 @@ struct ConvertQuartzYieldOp final
   }
 };
 
+/**
+ * @brief Converts scf.if with memory semantics to scf.if with value semantics
+ *
+ * @par Example:
+ * ```mlir
+ * scf.if %cond {
+ *   quartz.x %q0
+ *   scf.yield
+ * }
+ * ```
+ * is converted to
+ * ```mlir
+ * %targets_out = scf.if %cond -> (!flux.qubit) {
+ *   %q1 = flux.h %q0 : !flux.qubit -> !flux.qubit
+ *   scf.yield %q1 : !flux.qubit
+ * } else {
+ *   scf.yield %q0 : !flux.qubit
+ * }
+ * ```
+ */
 struct ConvertQuartzScfIfOp final : StatefulOpConversionPattern<scf::IfOp> {
   using StatefulOpConversionPattern<scf::IfOp>::StatefulOpConversionPattern;
 
   LogicalResult
   matchAndRewrite(scf::IfOp op, OpAdaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
-    auto quartzQubits = getState().regionMap[op];
-    SmallVector<Value> values;
-    values.reserve(quartzQubits.size());
+    const auto& quartzQubits = getState().regionMap[op];
+    SmallVector<Value> quartzValues;
+    quartzValues.reserve(quartzQubits.size());
     for (auto qubit : quartzQubits) {
-      values.push_back(qubit);
+      quartzValues.push_back(qubit);
     }
     // create result typerange
-    auto const optType = flux::QubitType::get(rewriter.getContext());
     SmallVector<Type> resultTypes;
-    resultTypes.assign(quartzQubits.size(), optType);
+    resultTypes.assign(quartzQubits.size(),
+                       flux::QubitType::get(rewriter.getContext()));
 
     // create new if operation
-    auto newIf = rewriter.create<scf::IfOp>(
+    auto newIfOp = rewriter.create<scf::IfOp>(
         op->getLoc(), TypeRange{resultTypes}, op.getCondition(), true);
-    auto& thenRegion = newIf.getThenRegion();
-    auto& elseRegion = newIf.getElseRegion();
+    auto& thenRegion = newIfOp.getThenRegion();
+    auto& elseRegion = newIfOp.getElseRegion();
+
     // move the regions of the old operations inside the new operation
     rewriter.inlineRegionBefore(op.getThenRegion(), thenRegion,
                                 thenRegion.end());
+    // eliminate the empty block that was created during the initialization
     rewriter.eraseBlock(&thenRegion.front());
 
     if (!op.getElseRegion().empty()) {
@@ -1228,30 +1261,63 @@ struct ConvertQuartzScfIfOp final : StatefulOpConversionPattern<scf::IfOp> {
                                   elseRegion.end());
       rewriter.eraseBlock(&elseRegion.front());
     } else {
+      // create the yield operation if it does not exist yet
       rewriter.setInsertionPointToEnd(&elseRegion.front());
       const auto elseYield =
-          rewriter.create<scf::YieldOp>(op->getLoc(), values);
+          rewriter.create<scf::YieldOp>(op->getLoc(), quartzValues);
+      // mark the yield operation for conversion
       elseYield->setAttr("needChange",
                          StringAttr::get(rewriter.getContext(), "yes"));
     }
 
+    // create the qubit map for the regions
     auto& thenRegionQubitMap = getState().qubitMap[&thenRegion];
     auto& elseRegionQubitMap = getState().qubitMap[&elseRegion];
-    for (const auto& refQubit : quartzQubits) {
+    for (const auto& quartzQubit : quartzQubits) {
       thenRegionQubitMap.try_emplace(
-          refQubit, getState().qubitMap[op->getParentRegion()][refQubit]);
+          quartzQubit, getState().qubitMap[op->getParentRegion()][quartzQubit]);
       elseRegionQubitMap.try_emplace(
-          refQubit, getState().qubitMap[op->getParentRegion()][refQubit]);
+          quartzQubit, getState().qubitMap[op->getParentRegion()][quartzQubit]);
     }
+
+    // update the qubit map in the current region
     auto& qubitMap = getState().qubitMap[op->getParentRegion()];
-    for (size_t i = 0; i < newIf->getResults().size(); i++) {
-      qubitMap[quartzQubits[i]] = newIf->getResult(i);
+    for (const auto& [quartzQubit, fluxQubit] :
+         llvm::zip_equal(quartzQubits, newIfOp->getResults())) {
+      qubitMap[quartzQubit] = fluxQubit;
     }
 
     rewriter.eraseOp(op);
     return success();
   }
 };
+
+/**
+ * @brief Converts scf.while with memory semantics to scf.while with value
+ * semantics
+ *
+ * @par Example:
+ * ```mlir
+ * scf.while : () -> () {
+ *   quartz.x %q0
+ *   scf.condition(%cond)
+ * } do {
+ *   quartz.x %q0
+ *   scf.yield
+ * }
+ * ```
+ * is converted to
+ * ```mlir
+ * %targets_out = scf.while (%arg0 = %q0) : (!flux.qubit) -> !flux.qubit {
+ *   %q1 = quartz.x %arg0 : !flux.qubit -> !flux.qubit
+ *   scf.condition(%cond) %q1 : !flux.qubit
+ * } do {
+ * ^bb0(%arg0: !flux.qubit):
+ *   %q1 = quartz.x %arg0 : !flux.qubit -> !flux.qubit
+ *   scf.yield %q1 : !flux.qubit
+ * }
+ * ```
+ */
 struct ConvertQuartzScfWhileOp final
     : StatefulOpConversionPattern<scf::WhileOp> {
   using StatefulOpConversionPattern<scf::WhileOp>::StatefulOpConversionPattern;
@@ -1259,101 +1325,145 @@ struct ConvertQuartzScfWhileOp final
   LogicalResult
   matchAndRewrite(scf::WhileOp op, OpAdaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
-
     auto& qubitMap = getState().qubitMap[op->getParentRegion()];
-    auto refQubits = getState().regionMap[op];
+    auto quartzQubits = getState().regionMap[op];
 
-    SmallVector<Value> values;
-    values.reserve(refQubits.size());
-    for (auto qubit : refQubits) {
-      values.push_back(qubit);
+    SmallVector<Value> quartzValues;
+    quartzValues.reserve(quartzQubits.size());
+    for (auto qubit : quartzQubits) {
+      quartzValues.push_back(qubit);
     }
-    SmallVector<Value> optQubits;
-    SmallVector<Type> types(refQubits.size(),
-                            flux::QubitType::get(rewriter.getContext()));
-    for (auto [refQubit, optQubit] : qubitMap) {
-      optQubits.push_back(optQubit);
+    SmallVector<Value> fluxQubits;
+    fluxQubits.reserve(quartzQubits.size());
+    for (const auto& [quartzQubit, fluxQubit] : qubitMap) {
+      fluxQubits.push_back(fluxQubit);
     }
+    // create the result typerange
+    SmallVector<Type> fluxTypes(quartzQubits.size(),
+                                flux::QubitType::get(rewriter.getContext()));
+
+    // create the new while operation
     auto newWhileOp = rewriter.create<scf::WhileOp>(
-        op.getLoc(), TypeRange(types), ValueRange(optQubits));
+        op.getLoc(), TypeRange(fluxTypes), ValueRange(fluxQubits));
     auto& newBeforeRegion = newWhileOp.getBefore();
     auto& newAfterRegion = newWhileOp.getAfter();
-    SmallVector<Location> locs(refQubits.size(), op->getLoc());
+    SmallVector<Location> locs(quartzQubits.size(), op->getLoc());
+    // create the new blocks
     auto* newBeforeBlock =
-        rewriter.createBlock(&newBeforeRegion, {}, types, locs);
+        rewriter.createBlock(&newBeforeRegion, {}, fluxTypes, locs);
     auto* newAfterBlock =
-        rewriter.createBlock(&newAfterRegion, {}, types, locs);
+        rewriter.createBlock(&newAfterRegion, {}, fluxTypes, locs);
 
+    // move the operations to the new blocks
     newBeforeBlock->getOperations().splice(newBeforeBlock->end(),
                                            op.getBeforeBody()->getOperations());
     newAfterBlock->getOperations().splice(newAfterBlock->end(),
                                           op.getAfterBody()->getOperations());
+
+    // create the qubit map for the new regions
     auto& newBeforeRegionMap = getState().qubitMap[&newWhileOp.getBefore()];
     auto& newAfterRegionMap = getState().qubitMap[&newWhileOp.getAfter()];
-    for (size_t i = 0; i < refQubits.size(); i++) {
-      newBeforeRegionMap.try_emplace(refQubits[i],
-                                     newWhileOp.getBeforeArguments()[i]);
+
+    for (const auto& [quartzQubit, fluxQubit] :
+         llvm::zip_equal(quartzQubits, newWhileOp.getBeforeArguments())) {
+      newBeforeRegionMap.try_emplace(quartzQubit, fluxQubit);
     }
-    for (size_t i = 0; i < refQubits.size(); i++) {
-      newAfterRegionMap.try_emplace(refQubits[i],
-                                    newWhileOp.getAfterArguments()[i]);
+    for (const auto& [quartzQubit, fluxQubit] :
+         llvm::zip_equal(quartzQubits, newWhileOp.getAfterArguments())) {
+      newAfterRegionMap.try_emplace(quartzQubit, fluxQubit);
     }
 
-    for (size_t i = 0; i < newWhileOp->getResults().size(); i++) {
-      qubitMap[refQubits[i]] = newWhileOp->getResult(i);
+    // update the qubit map in the current region
+    for (const auto& [quartzQubit, fluxQubit] :
+         llvm::zip_equal(quartzQubits, newWhileOp->getResults())) {
+      qubitMap[quartzQubit] = fluxQubit;
     }
+
     rewriter.eraseOp(op);
     return success();
   }
 };
 
+/**
+ * @brief Converts scf.for with memory semantics to scf.while with value
+ * semantics
+ *
+ * @par Example:
+ * ```mlir
+ * scf.for %iv = %lb to %ub step %step {
+ *   quartz.x %q0
+ *   scf.yield
+ * }
+ * ```
+ * is converted to
+ * ```mlir
+ * %targets_out = scf.for %iv = %lb to %ub step %step iter_args(%arg0 = q0) ->
+ * (!flux.qubit) { %q1 = quartz.x %arg0 : !flux.qubit -> !flux.qubit scf.yield
+ * %q1 : !flux.qubit
+ * }
+ * ```
+ */
 struct ConvertQuartzScfForOp final : StatefulOpConversionPattern<scf::ForOp> {
   using StatefulOpConversionPattern<scf::ForOp>::StatefulOpConversionPattern;
 
   LogicalResult
   matchAndRewrite(scf::ForOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
-
     auto& qubitMap = getState().qubitMap[op->getParentRegion()];
 
-    auto refQubits = getState().regionMap[op];
+    auto quartzQubits = getState().regionMap[op];
     SmallVector<Value> values;
-    values.reserve(refQubits.size());
-    for (auto qubit : refQubits) {
+    values.reserve(quartzQubits.size());
+    for (auto qubit : quartzQubits) {
       values.push_back(qubit);
     }
 
-    SmallVector<Value> optQubits;
+    SmallVector<Value> fluxQubits;
     for (auto [quartQubit, fluxQubit] : qubitMap) {
-      optQubits.push_back(fluxQubit);
+      fluxQubits.push_back(fluxQubit);
     }
     // Create a new for-loop with flux qubits as iter_args
     auto newFor = rewriter.create<scf::ForOp>(
         op.getLoc(), adaptor.getLowerBound(), adaptor.getUpperBound(),
-        adaptor.getStep(), ValueRange(optQubits));
+        adaptor.getStep(), ValueRange(fluxQubits));
+
+    // move the operations to the new block
     auto& srcBlock = op.getRegion().front();
     auto& dstBlock = newFor.getRegion().front();
     dstBlock.getOperations().splice(dstBlock.end(), srcBlock.getOperations());
 
     auto& newRegion = newFor.getRegion();
-
     auto& regionQubitMap = getState().qubitMap[&newRegion];
 
-
-    for (const auto& [refQubit, optQubit] :
-         llvm::zip_equal(refQubits, newFor.getRegionIterArgs())) {
-      regionQubitMap.try_emplace(refQubit, optQubit);
+    // create the qubitmap for the new region
+    for (const auto& [quartzQubit, fluxQubit] :
+         llvm::zip_equal(quartzQubits, newFor.getRegionIterArgs())) {
+      regionQubitMap.try_emplace(quartzQubit, fluxQubit);
+    }
+    // update the qubitmap in the current region
+    for (const auto& [quartzQubit, fluxQubit] :
+         llvm::zip_equal(quartzQubits, newFor->getResults())) {
+      qubitMap[quartzQubit] = fluxQubit;
     }
 
-    auto& map = getState().qubitMap[op->getParentRegion()];
-    for (size_t i = 0; i < newFor->getResults().size(); i++) {
-      map[refQubits[i]] = newFor->getResult(i);
-    }
     rewriter.eraseOp(op);
     return success();
   }
 };
 
+/**
+ * @brief Converts scf.yield with memory semantics to scf.yield with value
+ * semantics
+ *
+ * @par Example:
+ * ```mlir
+ * scf.yield
+ * ```
+ * is converted to
+ * ```mlir
+ * scf.yield %targets
+ * ```
+ */
 struct ConvertQuartzScfYieldOp final
     : StatefulOpConversionPattern<scf::YieldOp> {
   using StatefulOpConversionPattern<scf::YieldOp>::StatefulOpConversionPattern;
@@ -1361,17 +1471,31 @@ struct ConvertQuartzScfYieldOp final
   LogicalResult
   matchAndRewrite(scf::YieldOp op, OpAdaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
-
     const auto& qubitMap = getState().qubitMap[op->getParentRegion()];
-
-    SmallVector<Value> optQubits;
-    for (auto [refQubit, optQubit] : qubitMap) {
-      optQubits.push_back(optQubit);
+    SmallVector<Value> fluxQubits;
+    fluxQubits.reserve(qubitMap.size());
+    for (auto [quartzQubit, fluxQubit] : qubitMap) {
+      fluxQubits.push_back(fluxQubit);
     }
-    rewriter.replaceOpWithNewOp<scf::YieldOp>(op, optQubits);
+
+    rewriter.replaceOpWithNewOp<scf::YieldOp>(op, fluxQubits);
     return success();
   }
 };
+
+/**
+ * @brief Converts scf.condition with memory semantics to scf.condition with
+ * value semantics
+ *
+ * @par Example:
+ * ```mlir
+ * scf.condition(%cond)
+ * ```
+ * is converted to
+ * ```mlir
+ * scf.condition(%cond) %targets
+ * ```
+ */
 struct ConvertQuartzScfCondtionOp final
     : StatefulOpConversionPattern<scf::ConditionOp> {
   using StatefulOpConversionPattern<
@@ -1380,16 +1504,15 @@ struct ConvertQuartzScfCondtionOp final
   LogicalResult
   matchAndRewrite(scf::ConditionOp op, OpAdaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
-
     const auto& qubitMap = getState().qubitMap[op->getParentRegion()];
-
-    SmallVector<Value> optQubits;
-    for (auto [refQubit, optQubit] : qubitMap) {
-      optQubits.push_back(optQubit);
+    SmallVector<Value> fluxQubits;
+    fluxQubits.reserve(qubitMap.size());
+    for (auto [quartzQubit, fluxQubit] : qubitMap) {
+      fluxQubits.push_back(fluxQubit);
     }
-    rewriter.replaceOpWithNewOp<scf::ConditionOp>(op, op.getCondition(),
-                                                  optQubits);
 
+    rewriter.replaceOpWithNewOp<scf::ConditionOp>(op, op.getCondition(),
+                                                  fluxQubits);
     return success();
   }
 };
