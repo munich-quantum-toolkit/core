@@ -37,7 +37,7 @@ Args:
       .value("Neg", qc::Control::Type::Neg);
 
   control.def(nb::init<qc::Qubit, qc::Control::Type>(), "qubit"_a,
-              "type_"_a = qc::Control::Type::Pos);
+              "type_"_a.sig("...") = qc::Control::Type::Pos);
 
   control.def_rw("qubit", &qc::Control::qubit,
                  "The qubit that is the control.");

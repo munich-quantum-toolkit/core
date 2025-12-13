@@ -44,7 +44,11 @@ void registerCompoundOperation(const nb::module_& m) {
   };
 
   nb::class_<qc::CompoundOperation, qc::Operation>(
-      m, "CompoundOperation", R"pb(Compound quantum operation.
+      m, "CompoundOperation",
+      nb::sig(
+          "class CompoundOperation(mqt.core.ir.operations.Operation, "
+          "collections.abc.MutableSequence[mqt.core.ir.operations.Operation])"),
+      R"pb(Compound quantum operation.
 
 This class is used to aggregate and group multiple operations into a single object.
 This is useful for optimizations and for representing complex quantum functionality.
@@ -139,7 +143,10 @@ Args:
               start += step;
             }
           },
-          "index"_a, "value"_a, R"pb(Set the operations in the given slice.
+          nb::sig("def __setitem__(self, index: slice, value: "
+                  "collections.abc.Iterable[mqt.core.ir.operations.Operation]) "
+                  "-> None"),
+          R"pb(Set the operations in the given slice.
 
 Args:
     index: The slice of operations to set.

@@ -31,13 +31,15 @@ using namespace nb::literals;
 void registerPermutation(nb::module_& m) {
   nb::class_<qc::Permutation>(
       m, "Permutation",
+      nb::sig("class Permutation(collections.abc.MutableMapping[int, int])"),
       "A class to represent a permutation of the qubits in a quantum circuit.")
 
       .def(nb::init<>())
 
       .def(
           "__init__",
-          [](qc::Permutation* self, const nb::dict& p) {
+          [](qc::Permutation* self,
+             const nb::typed<nb::dict, nb::int_, nb::int_>& p) {
             qc::Permutation perm;
             for (const auto& [key, value] : p) {
               perm[nb::cast<qc::Qubit>(key)] = nb::cast<qc::Qubit>(value);
@@ -100,8 +102,8 @@ Args:
           [](qc::Permutation& p, const qc::Qubit q) { p.erase(q); }, "index"_a,
           R"pb(Delete the value of the permutation at the given index.
 
-        Args:
-            index: The index to delete the value of the permutation at.)pb")
+Args:
+    index: The index to delete the value of the permutation at.)pb")
 
       .def("__len__", &qc::Permutation::size,
            "Return the number of indices in the permutation.")
@@ -122,6 +124,7 @@ Args:
                 p.end(),
                 "Return an iterable over the items of the permutation.");
           },
+          nb::sig("def items(self) -> collections.abc.ItemsView[int, int]"),
           nb::keep_alive<0, 1>())
 
       .def(nb::self == nb::self, // NOLINT(misc-redundant-expression)

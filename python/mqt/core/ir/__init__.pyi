@@ -6,7 +6,7 @@
 #
 # Licensed under the MIT License
 
-from collections.abc import Iterator, Mapping, Sequence
+from collections.abc import ItemsView, Iterable, Iterator, Mapping, MutableMapping, MutableSequence, Sequence
 from collections.abc import Set as AbstractSet
 from typing import overload
 
@@ -14,13 +14,13 @@ from . import operations as operations
 from . import registers as registers
 from . import symbolic as symbolic
 
-class Permutation:
+class Permutation(MutableMapping[int, int]):
     """A class to represent a permutation of the qubits in a quantum circuit."""
 
     @overload
     def __init__(self) -> None: ...
     @overload
-    def __init__(self, perm: dict) -> None:
+    def __init__(self, perm: dict[int, int]) -> None:
         """Create a permutation from a dictionary."""
 
     @overload
@@ -70,19 +70,19 @@ class Permutation:
         """Delete the value of the permutation at the given index.
 
         Args:
-                    index: The index to delete the value of the permutation at.
+            index: The index to delete the value of the permutation at.
         """
 
     def __len__(self) -> int:
         """Return the number of indices in the permutation."""
 
     def __iter__(self) -> Iterator[int]: ...
-    def items(self) -> Iterator[tuple[int, int]]: ...
+    def items(self) -> ItemsView[int, int]: ...
     def __eq__(self, arg: object, /) -> bool: ...
     def __ne__(self, arg: object, /) -> bool: ...
     def __hash__(self) -> int: ...
 
-class QuantumComputation:
+class QuantumComputation(MutableSequence[operations.Operation]):
     """The main class for representing quantum computations within the MQT.
 
     Acts as mutable sequence of :class:`~mqt.core.ir.operations.Operation` objects, which represent the individual operations in the quantum computation.
@@ -234,7 +234,7 @@ class QuantumComputation:
         """
 
     @overload
-    def __setitem__(self, index: slice, value: Sequence[operations.Operation]) -> None:
+    def __setitem__(self, index: slice, value: Iterable[operations.Operation]) -> None:
         """Set the operations in the given slice.
 
         Args:
@@ -563,7 +563,7 @@ class QuantumComputation:
             q: The target qubit
         """
 
-    def cx(self, control: operations.Control, target: int) -> None:
+    def cx(self, control: operations.Control | int, target: int) -> None:
         """Apply a controlled Pauli-X (i.e., CNOT or CX) gate.
 
         See Also:
@@ -574,7 +574,7 @@ class QuantumComputation:
             target: The target qubit
         """
 
-    def mcx(self, controls: AbstractSet[operations.Control], target: int) -> None:
+    def mcx(self, controls: AbstractSet[operations.Control | int], target: int) -> None:
         """Apply a multi-controlled Pauli-X (i.e., Toffoli or MCX) gate.
 
         See Also:
@@ -595,7 +595,7 @@ class QuantumComputation:
             q: The target qubit
         """
 
-    def cy(self, control: operations.Control, target: int) -> None:
+    def cy(self, control: operations.Control | int, target: int) -> None:
         """Apply a controlled Pauli-Y gate.
 
         See Also:
@@ -606,7 +606,7 @@ class QuantumComputation:
             target: The target qubit
         """
 
-    def mcy(self, controls: AbstractSet[operations.Control], target: int) -> None:
+    def mcy(self, controls: AbstractSet[operations.Control | int], target: int) -> None:
         """Apply a multi-controlled Pauli-Y gate.
 
         See Also:
@@ -627,7 +627,7 @@ class QuantumComputation:
             q: The target qubit
         """
 
-    def cz(self, control: operations.Control, target: int) -> None:
+    def cz(self, control: operations.Control | int, target: int) -> None:
         """Apply a controlled Pauli-Z gate.
 
         See Also:
@@ -638,7 +638,7 @@ class QuantumComputation:
             target: The target qubit
         """
 
-    def mcz(self, controls: AbstractSet[operations.Control], target: int) -> None:
+    def mcz(self, controls: AbstractSet[operations.Control | int], target: int) -> None:
         """Apply a multi-controlled Pauli-Z gate.
 
         See Also:
@@ -659,7 +659,7 @@ class QuantumComputation:
             q: The target qubit
         """
 
-    def ch(self, control: operations.Control, target: int) -> None:
+    def ch(self, control: operations.Control | int, target: int) -> None:
         """Apply a controlled Hadamard gate.
 
         See Also:
@@ -670,7 +670,7 @@ class QuantumComputation:
             target: The target qubit
         """
 
-    def mch(self, controls: AbstractSet[operations.Control], target: int) -> None:
+    def mch(self, controls: AbstractSet[operations.Control | int], target: int) -> None:
         """Apply a multi-controlled Hadamard gate.
 
         See Also:
@@ -691,7 +691,7 @@ class QuantumComputation:
             q: The target qubit
         """
 
-    def cs(self, control: operations.Control, target: int) -> None:
+    def cs(self, control: operations.Control | int, target: int) -> None:
         """Apply a controlled S gate.
 
         See Also:
@@ -702,7 +702,7 @@ class QuantumComputation:
             target: The target qubit
         """
 
-    def mcs(self, controls: AbstractSet[operations.Control], target: int) -> None:
+    def mcs(self, controls: AbstractSet[operations.Control | int], target: int) -> None:
         """Apply a multi-controlled S gate.
 
         See Also:
@@ -723,7 +723,7 @@ class QuantumComputation:
             q: The target qubit
         """
 
-    def csdg(self, control: operations.Control, target: int) -> None:
+    def csdg(self, control: operations.Control | int, target: int) -> None:
         r"""Apply a controlled :math:`S^\dagger` gate.
 
         See Also:
@@ -734,7 +734,7 @@ class QuantumComputation:
             target: The target qubit
         """
 
-    def mcsdg(self, controls: AbstractSet[operations.Control], target: int) -> None:
+    def mcsdg(self, controls: AbstractSet[operations.Control | int], target: int) -> None:
         r"""Apply a multi-controlled :math:`S^\dagger` gate.
 
         See Also:
@@ -755,7 +755,7 @@ class QuantumComputation:
             q: The target qubit
         """
 
-    def ct(self, control: operations.Control, target: int) -> None:
+    def ct(self, control: operations.Control | int, target: int) -> None:
         """Apply a controlled T gate.
 
         See Also:
@@ -766,7 +766,7 @@ class QuantumComputation:
             target: The target qubit
         """
 
-    def mct(self, controls: AbstractSet[operations.Control], target: int) -> None:
+    def mct(self, controls: AbstractSet[operations.Control | int], target: int) -> None:
         """Apply a multi-controlled T gate.
 
         See Also:
@@ -787,7 +787,7 @@ class QuantumComputation:
             q: The target qubit
         """
 
-    def ctdg(self, control: operations.Control, target: int) -> None:
+    def ctdg(self, control: operations.Control | int, target: int) -> None:
         r"""Apply a controlled :math:`T^\dagger` gate.
 
         See Also:
@@ -798,7 +798,7 @@ class QuantumComputation:
             target: The target qubit
         """
 
-    def mctdg(self, controls: AbstractSet[operations.Control], target: int) -> None:
+    def mctdg(self, controls: AbstractSet[operations.Control | int], target: int) -> None:
         r"""Apply a multi-controlled :math:`T^\dagger` gate.
 
         See Also:
@@ -819,7 +819,7 @@ class QuantumComputation:
             q: The target qubit
         """
 
-    def cv(self, control: operations.Control, target: int) -> None:
+    def cv(self, control: operations.Control | int, target: int) -> None:
         """Apply a controlled V gate.
 
         See Also:
@@ -830,7 +830,7 @@ class QuantumComputation:
             target: The target qubit
         """
 
-    def mcv(self, controls: AbstractSet[operations.Control], target: int) -> None:
+    def mcv(self, controls: AbstractSet[operations.Control | int], target: int) -> None:
         """Apply a multi-controlled V gate.
 
         See Also:
@@ -851,7 +851,7 @@ class QuantumComputation:
             q: The target qubit
         """
 
-    def cvdg(self, control: operations.Control, target: int) -> None:
+    def cvdg(self, control: operations.Control | int, target: int) -> None:
         r"""Apply a controlled :math:`V^\dagger` gate.
 
         See Also:
@@ -862,7 +862,7 @@ class QuantumComputation:
             target: The target qubit
         """
 
-    def mcvdg(self, controls: AbstractSet[operations.Control], target: int) -> None:
+    def mcvdg(self, controls: AbstractSet[operations.Control | int], target: int) -> None:
         r"""Apply a multi-controlled :math:`V^\dagger` gate.
 
         See Also:
@@ -883,7 +883,7 @@ class QuantumComputation:
             q: The target qubit
         """
 
-    def csx(self, control: operations.Control, target: int) -> None:
+    def csx(self, control: operations.Control | int, target: int) -> None:
         r"""Apply a controlled :math:`\sqrt{X}` gate.
 
         See Also:
@@ -894,7 +894,7 @@ class QuantumComputation:
             target: The target qubit
         """
 
-    def mcsx(self, controls: AbstractSet[operations.Control], target: int) -> None:
+    def mcsx(self, controls: AbstractSet[operations.Control | int], target: int) -> None:
         r"""Apply a multi-controlled :math:`\sqrt{X}` gate.
 
         See Also:
@@ -915,7 +915,7 @@ class QuantumComputation:
             q: The target qubit
         """
 
-    def csxdg(self, control: operations.Control, target: int) -> None:
+    def csxdg(self, control: operations.Control | int, target: int) -> None:
         r"""Apply a controlled :math:`\sqrt{X}^\dagger` gate.
 
         See Also:
@@ -926,7 +926,7 @@ class QuantumComputation:
             target: The target qubit
         """
 
-    def mcsxdg(self, controls: AbstractSet[operations.Control], target: int) -> None:
+    def mcsxdg(self, controls: AbstractSet[operations.Control | int], target: int) -> None:
         r"""Apply a multi-controlled :math:`\sqrt{X}^\dagger` gate.
 
         See Also:
@@ -949,7 +949,7 @@ class QuantumComputation:
             q: The target qubit
         """
 
-    def crx(self, theta: symbolic.Expression | float, control: operations.Control, target: int) -> None:
+    def crx(self, theta: symbolic.Expression | float, control: operations.Control | int, target: int) -> None:
         r"""Apply a controlled :math:`R_x(\theta)` gate.
 
         See Also:
@@ -961,7 +961,9 @@ class QuantumComputation:
             target: The target qubit
         """
 
-    def mcrx(self, theta: symbolic.Expression | float, controls: AbstractSet[operations.Control], target: int) -> None:
+    def mcrx(
+        self, theta: symbolic.Expression | float, controls: AbstractSet[operations.Control | int], target: int
+    ) -> None:
         r"""Apply a multi-controlled :math:`R_x(\theta)` gate.
 
         See Also:
@@ -985,7 +987,7 @@ class QuantumComputation:
             q: The target qubit
         """
 
-    def cry(self, theta: symbolic.Expression | float, control: operations.Control, target: int) -> None:
+    def cry(self, theta: symbolic.Expression | float, control: operations.Control | int, target: int) -> None:
         r"""Apply a controlled :math:`R_y(\theta)` gate.
 
         See Also:
@@ -997,7 +999,9 @@ class QuantumComputation:
             target: The target qubit
         """
 
-    def mcry(self, theta: symbolic.Expression | float, controls: AbstractSet[operations.Control], target: int) -> None:
+    def mcry(
+        self, theta: symbolic.Expression | float, controls: AbstractSet[operations.Control | int], target: int
+    ) -> None:
         r"""Apply a multi-controlled :math:`R_y(\theta)` gate.
 
         See Also:
@@ -1020,7 +1024,7 @@ class QuantumComputation:
             q: The target qubit
         """
 
-    def crz(self, theta: symbolic.Expression | float, control: operations.Control, target: int) -> None:
+    def crz(self, theta: symbolic.Expression | float, control: operations.Control | int, target: int) -> None:
         r"""Apply a controlled :math:`R_z(\theta)` gate.
 
         See Also:
@@ -1032,7 +1036,9 @@ class QuantumComputation:
             target: The target qubit
         """
 
-    def mcrz(self, theta: symbolic.Expression | float, controls: AbstractSet[operations.Control], target: int) -> None:
+    def mcrz(
+        self, theta: symbolic.Expression | float, controls: AbstractSet[operations.Control | int], target: int
+    ) -> None:
         r"""Apply a multi-controlled :math:`R_z(\theta)` gate.
 
         See Also:
@@ -1055,7 +1061,7 @@ class QuantumComputation:
             q: The target qubit
         """
 
-    def cp(self, theta: symbolic.Expression | float, control: operations.Control, target: int) -> None:
+    def cp(self, theta: symbolic.Expression | float, control: operations.Control | int, target: int) -> None:
         """Apply a controlled phase gate.
 
         See Also:
@@ -1067,7 +1073,9 @@ class QuantumComputation:
             target: The target qubit
         """
 
-    def mcp(self, theta: symbolic.Expression | float, controls: AbstractSet[operations.Control], target: int) -> None:
+    def mcp(
+        self, theta: symbolic.Expression | float, controls: AbstractSet[operations.Control | int], target: int
+    ) -> None:
         """Apply a multi-controlled phase gate.
 
         See Also:
@@ -1095,7 +1103,7 @@ class QuantumComputation:
         self,
         phi: symbolic.Expression | float,
         lambda_: symbolic.Expression | float,
-        control: operations.Control,
+        control: operations.Control | int,
         target: int,
     ) -> None:
         r"""Apply a controlled :math:`U_2(\phi, \lambda)` gate.
@@ -1114,7 +1122,7 @@ class QuantumComputation:
         self,
         phi: symbolic.Expression | float,
         lambda_: symbolic.Expression | float,
-        controls: AbstractSet[operations.Control],
+        controls: AbstractSet[operations.Control | int],
         target: int,
     ) -> None:
         r"""Apply a multi-controlled :math:`U_2(\phi, \lambda)` gate.
@@ -1146,7 +1154,7 @@ class QuantumComputation:
         self,
         theta: symbolic.Expression | float,
         phi: symbolic.Expression | float,
-        control: operations.Control,
+        control: operations.Control | int,
         target: int,
     ) -> None:
         r"""Apply a controlled :math:`R(\theta, \phi)` gate.
@@ -1165,7 +1173,7 @@ class QuantumComputation:
         self,
         theta: symbolic.Expression | float,
         phi: symbolic.Expression | float,
-        controls: AbstractSet[operations.Control],
+        controls: AbstractSet[operations.Control | int],
         target: int,
     ) -> None:
         r"""Apply a multi-controlled :math:`R(\theta, \phi)` gate.
@@ -1204,7 +1212,7 @@ class QuantumComputation:
         theta: symbolic.Expression | float,
         phi: symbolic.Expression | float,
         lambda_: symbolic.Expression | float,
-        control: operations.Control,
+        control: operations.Control | int,
         target: int,
     ) -> None:
         r"""Apply a controlled :math:`U(\theta, \phi, \lambda)` gate.
@@ -1225,7 +1233,7 @@ class QuantumComputation:
         theta: symbolic.Expression | float,
         phi: symbolic.Expression | float,
         lambda_: symbolic.Expression | float,
-        controls: AbstractSet[operations.Control],
+        controls: AbstractSet[operations.Control | int],
         target: int,
     ) -> None:
         r"""Apply a multi-controlled :math:`U(\theta, \phi, \lambda)` gate.
@@ -1252,7 +1260,7 @@ class QuantumComputation:
             target2: The second target qubit
         """
 
-    def cswap(self, control: operations.Control, target1: int, target2: int) -> None:
+    def cswap(self, control: operations.Control | int, target1: int, target2: int) -> None:
         """Apply a controlled SWAP gate.
 
         See Also:
@@ -1264,7 +1272,7 @@ class QuantumComputation:
             target2: The second target qubit
         """
 
-    def mcswap(self, controls: AbstractSet[operations.Control], target1: int, target2: int) -> None:
+    def mcswap(self, controls: AbstractSet[operations.Control | int], target1: int, target2: int) -> None:
         """Apply a multi-controlled SWAP gate.
 
         See Also:
@@ -1287,7 +1295,7 @@ class QuantumComputation:
             target2: The second target qubit
         """
 
-    def cdcx(self, control: operations.Control, target1: int, target2: int) -> None:
+    def cdcx(self, control: operations.Control | int, target1: int, target2: int) -> None:
         """Apply a controlled DCX gate.
 
         See Also:
@@ -1299,7 +1307,7 @@ class QuantumComputation:
             target2: The second target qubit
         """
 
-    def mcdcx(self, controls: AbstractSet[operations.Control], target1: int, target2: int) -> None:
+    def mcdcx(self, controls: AbstractSet[operations.Control | int], target1: int, target2: int) -> None:
         """Apply a multi-controlled DCX gate.
 
         See Also:
@@ -1322,7 +1330,7 @@ class QuantumComputation:
             target2: The second target qubit
         """
 
-    def cecr(self, control: operations.Control, target1: int, target2: int) -> None:
+    def cecr(self, control: operations.Control | int, target1: int, target2: int) -> None:
         """Apply a controlled ECR gate.
 
         See Also:
@@ -1334,7 +1342,7 @@ class QuantumComputation:
             target2: The second target qubit
         """
 
-    def mcecr(self, controls: AbstractSet[operations.Control], target1: int, target2: int) -> None:
+    def mcecr(self, controls: AbstractSet[operations.Control | int], target1: int, target2: int) -> None:
         """Apply a multi-controlled ECR gate.
 
         See Also:
@@ -1357,7 +1365,7 @@ class QuantumComputation:
             target2: The second target qubit
         """
 
-    def ciswap(self, control: operations.Control, target1: int, target2: int) -> None:
+    def ciswap(self, control: operations.Control | int, target1: int, target2: int) -> None:
         r"""Apply a controlled :math:`i\text{SWAP}` gate.
 
         See Also:
@@ -1369,7 +1377,7 @@ class QuantumComputation:
             target2: The second target qubit
         """
 
-    def mciswap(self, controls: AbstractSet[operations.Control], target1: int, target2: int) -> None:
+    def mciswap(self, controls: AbstractSet[operations.Control | int], target1: int, target2: int) -> None:
         r"""Apply a multi-controlled :math:`i\text{SWAP}` gate.
 
         See Also:
@@ -1392,7 +1400,7 @@ class QuantumComputation:
             target2: The second target qubit
         """
 
-    def ciswapdg(self, control: operations.Control, target1: int, target2: int) -> None:
+    def ciswapdg(self, control: operations.Control | int, target1: int, target2: int) -> None:
         r"""Apply a controlled :math:`i\text{SWAP}^\dagger` gate.
 
         See Also:
@@ -1404,7 +1412,7 @@ class QuantumComputation:
             target2: The second target qubit
         """
 
-    def mciswapdg(self, controls: AbstractSet[operations.Control], target1: int, target2: int) -> None:
+    def mciswapdg(self, controls: AbstractSet[operations.Control | int], target1: int, target2: int) -> None:
         r"""Apply a multi-controlled :math:`i\text{SWAP}^\dagger` gate.
 
         See Also:
@@ -1427,7 +1435,7 @@ class QuantumComputation:
             target2: The second target qubit
         """
 
-    def cperes(self, control: operations.Control, target1: int, target2: int) -> None:
+    def cperes(self, control: operations.Control | int, target1: int, target2: int) -> None:
         """Apply a controlled Peres gate.
 
         See Also:
@@ -1439,7 +1447,7 @@ class QuantumComputation:
             target2: The second target qubit
         """
 
-    def mcperes(self, controls: AbstractSet[operations.Control], target1: int, target2: int) -> None:
+    def mcperes(self, controls: AbstractSet[operations.Control | int], target1: int, target2: int) -> None:
         """Apply a multi-controlled Peres gate.
 
         See Also:
@@ -1462,7 +1470,7 @@ class QuantumComputation:
             target2: The second target qubit
         """
 
-    def cperesdg(self, control: operations.Control, target1: int, target2: int) -> None:
+    def cperesdg(self, control: operations.Control | int, target1: int, target2: int) -> None:
         r"""Apply a controlled :math:`\text{Peres}^\dagger` gate.
 
         See Also:
@@ -1474,7 +1482,7 @@ class QuantumComputation:
             target2: The second target qubit
         """
 
-    def mcperesdg(self, controls: AbstractSet[operations.Control], target1: int, target2: int) -> None:
+    def mcperesdg(self, controls: AbstractSet[operations.Control | int], target1: int, target2: int) -> None:
         r"""Apply a multi-controlled :math:`\text{Peres}^\dagger` gate.
 
         See Also:
@@ -1502,7 +1510,9 @@ class QuantumComputation:
             target2: The second target qubit
         """
 
-    def crxx(self, theta: symbolic.Expression | float, control: operations.Control, target1: int, target2: int) -> None:
+    def crxx(
+        self, theta: symbolic.Expression | float, control: operations.Control | int, target1: int, target2: int
+    ) -> None:
         r"""Apply a controlled :math:`R_{xx}(\theta)` gate.
 
         See Also:
@@ -1516,7 +1526,11 @@ class QuantumComputation:
         """
 
     def mcrxx(
-        self, theta: symbolic.Expression | float, controls: AbstractSet[operations.Control], target1: int, target2: int
+        self,
+        theta: symbolic.Expression | float,
+        controls: AbstractSet[operations.Control | int],
+        target1: int,
+        target2: int,
     ) -> None:
         r"""Apply a multi-controlled :math:`R_{xx}(\theta)` gate.
 
@@ -1546,7 +1560,9 @@ class QuantumComputation:
             target2: The second target qubit
         """
 
-    def cryy(self, theta: symbolic.Expression | float, control: operations.Control, target1: int, target2: int) -> None:
+    def cryy(
+        self, theta: symbolic.Expression | float, control: operations.Control | int, target1: int, target2: int
+    ) -> None:
         r"""Apply a controlled :math:`R_{yy}(\theta)` gate.
 
         See Also:
@@ -1560,7 +1576,11 @@ class QuantumComputation:
         """
 
     def mcryy(
-        self, theta: symbolic.Expression | float, controls: AbstractSet[operations.Control], target1: int, target2: int
+        self,
+        theta: symbolic.Expression | float,
+        controls: AbstractSet[operations.Control | int],
+        target1: int,
+        target2: int,
     ) -> None:
         r"""Apply a multi-controlled :math:`R_{yy}(\theta)` gate.
 
@@ -1590,7 +1610,9 @@ class QuantumComputation:
             target2: The second target qubit
         """
 
-    def crzx(self, theta: symbolic.Expression | float, control: operations.Control, target1: int, target2: int) -> None:
+    def crzx(
+        self, theta: symbolic.Expression | float, control: operations.Control | int, target1: int, target2: int
+    ) -> None:
         r"""Apply a controlled :math:`R_{zx}(\theta)` gate.
 
         See Also:
@@ -1604,7 +1626,11 @@ class QuantumComputation:
         """
 
     def mcrzx(
-        self, theta: symbolic.Expression | float, controls: AbstractSet[operations.Control], target1: int, target2: int
+        self,
+        theta: symbolic.Expression | float,
+        controls: AbstractSet[operations.Control | int],
+        target1: int,
+        target2: int,
     ) -> None:
         r"""Apply a multi-controlled :math:`R_{zx}(\theta)` gate.
 
@@ -1634,7 +1660,9 @@ class QuantumComputation:
             target2: The second target qubit
         """
 
-    def crzz(self, theta: symbolic.Expression | float, control: operations.Control, target1: int, target2: int) -> None:
+    def crzz(
+        self, theta: symbolic.Expression | float, control: operations.Control | int, target1: int, target2: int
+    ) -> None:
         r"""Apply a controlled :math:`R_{zz}(\theta)` gate.
 
         See Also:
@@ -1648,7 +1676,11 @@ class QuantumComputation:
         """
 
     def mcrzz(
-        self, theta: symbolic.Expression | float, controls: AbstractSet[operations.Control], target1: int, target2: int
+        self,
+        theta: symbolic.Expression | float,
+        controls: AbstractSet[operations.Control | int],
+        target1: int,
+        target2: int,
     ) -> None:
         r"""Apply a multi-controlled :math:`R_{zz}(\theta)` gate.
 
@@ -1685,7 +1717,7 @@ class QuantumComputation:
         self,
         theta: symbolic.Expression | float,
         beta: symbolic.Expression | float,
-        control: operations.Control,
+        control: operations.Control | int,
         target1: int,
         target2: int,
     ) -> None:
@@ -1706,7 +1738,7 @@ class QuantumComputation:
         self,
         theta: symbolic.Expression | float,
         beta: symbolic.Expression | float,
-        controls: AbstractSet[operations.Control],
+        controls: AbstractSet[operations.Control | int],
         target1: int,
         target2: int,
     ) -> None:
@@ -1746,7 +1778,7 @@ class QuantumComputation:
         self,
         theta: symbolic.Expression | float,
         beta: symbolic.Expression | float,
-        control: operations.Control,
+        control: operations.Control | int,
         target1: int,
         target2: int,
     ) -> None:
@@ -1767,7 +1799,7 @@ class QuantumComputation:
         self,
         theta: symbolic.Expression | float,
         beta: symbolic.Expression | float,
-        controls: AbstractSet[operations.Control],
+        controls: AbstractSet[operations.Control | int],
         target1: int,
         target2: int,
     ) -> None:

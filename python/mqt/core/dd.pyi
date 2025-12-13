@@ -449,7 +449,7 @@ class DDPackage:
     def controlled_single_qubit_gate(
         self,
         matrix: Annotated[NDArray[np.complex128], {"shape": (None, None)}],
-        control: mqt.core.ir.operations.Control,
+        control: mqt.core.ir.operations.Control | int,
         target: int,
     ) -> MatrixDD:
         r"""Create the DD for a controlled single-qubit gate.
@@ -466,7 +466,7 @@ class DDPackage:
     def multi_controlled_single_qubit_gate(
         self,
         matrix: Annotated[NDArray[np.complex128], {"shape": (None, None)}],
-        controls: AbstractSet[mqt.core.ir.operations.Control],
+        controls: AbstractSet[mqt.core.ir.operations.Control | int],
         target: int,
     ) -> MatrixDD:
         r"""Create the DD for a multi-controlled single-qubit gate.
@@ -497,7 +497,7 @@ class DDPackage:
     def controlled_two_qubit_gate(
         self,
         matrix: Annotated[NDArray[np.complex128], {"shape": (None, None)}],
-        control: mqt.core.ir.operations.Control,
+        control: mqt.core.ir.operations.Control | int,
         target0: int,
         target1: int,
     ) -> MatrixDD:
@@ -516,7 +516,7 @@ class DDPackage:
     def multi_controlled_two_qubit_gate(
         self,
         matrix: Annotated[NDArray[np.complex128], {"shape": (None, None)}],
-        controls: AbstractSet[mqt.core.ir.operations.Control],
+        controls: AbstractSet[mqt.core.ir.operations.Control | int],
         target0: int,
         target1: int,
     ) -> MatrixDD:

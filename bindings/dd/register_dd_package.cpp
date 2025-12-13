@@ -30,6 +30,7 @@
 #include <nanobind/stl/pair.h>    // NOLINT(misc-include-cleaner)
 #include <nanobind/stl/set.h>     // NOLINT(misc-include-cleaner)
 #include <nanobind/stl/string.h>  // NOLINT(misc-include-cleaner)
+#include <nanobind/stl/variant.h> // NOLINT(misc-include-cleaner)
 #include <nanobind/stl/vector.h>  // NOLINT(misc-include-cleaner)
 #include <random>
 #include <stdexcept>
@@ -44,7 +45,11 @@ using namespace nb::literals;
 using Vector = nb::ndarray<nb::numpy, std::complex<dd::fp>, nb::ndim<1>>;
 using Matrix = nb::ndarray<nb::numpy, std::complex<dd::fp>, nb::ndim<2>>;
 
+using Control = std::variant<qc::Control, nb::int_>;
+using Controls = std::set<std::variant<qc::Control, nb::int_>>;
+
 namespace {
+
 /// Recursive helper function to create a vector DD from a numpy array
 dd::vCachedEdge makeDDFromVector(dd::Package& p, const Vector& v,
                                  const size_t startIdx, const size_t endIdx,
@@ -89,6 +94,25 @@ dd::mCachedEdge makeDDFromMatrix(dd::Package& p, const Matrix& m,
        makeDDFromMatrix(p, m, rowHalf, rowEnd, colStart, colHalf, level - 1),
        makeDDFromMatrix(p, m, rowHalf, rowEnd, colHalf, colEnd, level - 1)});
 }
+
+/// Helper function to convert Control variant to qc::Control
+qc::Control getControl(const Control& control) {
+  if (std::holds_alternative<qc::Control>(control)) {
+    return std::get<qc::Control>(control);
+  } else {
+    return static_cast<qc::Qubit>(std::get<nb::int_>(control));
+  }
+}
+
+/// Helper function to convert Controls variant to qc::Controls
+qc::Controls getControls(const Controls& controls) {
+  qc::Controls result;
+  for (const auto& control : controls) {
+    result.insert(getControl(control));
+  }
+  return result;
+}
+
 } // namespace
 
 // NOLINTNEXTLINE(misc-use-internal-linkage)
@@ -455,13 +479,13 @@ Returns:
 
   dd.def(
       "controlled_single_qubit_gate",
-      [](dd::Package& p, const Matrix& m, const qc::Control& control,
+      [](dd::Package& p, const Matrix& m, const Control& control,
          const dd::Qubit target) {
         if (m.ndim() != 2 || m.shape(0) != 2 || m.shape(1) != 2) {
           throw std::invalid_argument("Matrix must be 2x2.");
         }
-        return p.makeGateDD({m(0, 0), m(0, 1), m(1, 0), m(1, 1)}, control,
-                            target);
+        return p.makeGateDD({m(0, 0), m(0, 1), m(1, 0), m(1, 1)},
+                            getControl(control), target);
       },
       "matrix"_a, "control"_a, "target"_a,
       // keep the DD package alive while the returned matrix DD is alive.
@@ -478,13 +502,13 @@ Returns:
 
   dd.def(
       "multi_controlled_single_qubit_gate",
-      [](dd::Package& p, const Matrix& m, const qc::Controls& controls,
+      [](dd::Package& p, const Matrix& m, const Controls& controls,
          const dd::Qubit target) {
         if (m.ndim() != 2 || m.shape(0) != 2 || m.shape(1) != 2) {
           throw std::invalid_argument("Matrix must be 2x2.");
         }
-        return p.makeGateDD({m(0, 0), m(0, 1), m(1, 0), m(1, 1)}, controls,
-                            target);
+        return p.makeGateDD({m(0, 0), m(0, 1), m(1, 0), m(1, 1)},
+                            getControls(controls), target);
       },
       "matrix"_a, "controls"_a, "target"_a,
       // keep the DD package alive while the returned matrix DD is alive.
@@ -527,7 +551,7 @@ Returns:
 
   dd.def(
       "controlled_two_qubit_gate",
-      [](dd::Package& p, const Matrix& m, const qc::Control& control,
+      [](dd::Package& p, const Matrix& m, const Control& control,
          const dd::Qubit target0, const dd::Qubit target1) {
         if (m.ndim() != 2 || m.shape(0) != 4 || m.shape(1) != 4) {
           throw std::invalid_argument("Matrix must be 4x4.");
@@ -537,7 +561,7 @@ Returns:
              {m(1, 0), m(1, 1), m(1, 2), m(1, 3)},
              {m(2, 0), m(2, 1), m(2, 2), m(2, 3)},
              {m(3, 0), m(3, 1), m(3, 2), m(3, 3)}},
-            control, target0, target1);
+            getControl(control), target0, target1);
       },
       "matrix"_a, "control"_a, "target0"_a, "target1"_a,
       // keep the DD package alive while the returned matrix DD is alive.
@@ -555,7 +579,7 @@ Returns:
 
   dd.def(
       "multi_controlled_two_qubit_gate",
-      [](dd::Package& p, const Matrix& m, const qc::Controls& controls,
+      [](dd::Package& p, const Matrix& m, const Controls& controls,
          const dd::Qubit target0, const dd::Qubit target1) {
         if (m.ndim() != 2 || m.shape(0) != 4 || m.shape(1) != 4) {
           throw std::invalid_argument("Matrix must be 4x4.");
@@ -565,7 +589,7 @@ Returns:
              {m(1, 0), m(1, 1), m(1, 2), m(1, 3)},
              {m(2, 0), m(2, 1), m(2, 2), m(2, 3)},
              {m(3, 0), m(3, 1), m(3, 2), m(3, 3)}},
-            controls, target0, target1);
+            getControls(controls), target0, target1);
       },
       "matrix"_a, "controls"_a, "target0"_a, "target1"_a,
       // keep the DD package alive while the returned matrix DD is alive.

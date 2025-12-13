@@ -66,8 +66,9 @@ Args:
         new (self) qc::IfElseOperation(std::move(thenPtr), std::move(elsePtr),
                                        controlReg, expectedVal, kind);
       },
-      "then_operation"_a, "else_operation"_a, "control_register"_a,
-      "expected_value"_a = 1U, "comparison_kind"_a = qc::ComparisonKind::Eq);
+      "then_operation"_a, nb::arg("else_operation").none(true),
+      "control_register"_a, "expected_value"_a = 1U,
+      "comparison_kind"_a = qc::ComparisonKind::Eq);
   ifElse.def(
       "__init__",
       [](qc::IfElseOperation* self, qc::Operation* thenOp,
@@ -80,7 +81,7 @@ Args:
         new (self) qc::IfElseOperation(std::move(thenPtr), std::move(elsePtr),
                                        controlBit, expectedVal, kind);
       },
-      "then_operation"_a, "else_operation"_a, "control_bit"_a,
+      "then_operation"_a, nb::arg("else_operation").none(true), "control_bit"_a,
       "expected_value"_a = 1U, "comparison_kind"_a = qc::ComparisonKind::Eq);
 
   ifElse.def_prop_ro("then_operation", &qc::IfElseOperation::getThenOp,

@@ -7,7 +7,7 @@
 # Licensed under the MIT License
 
 import enum
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterable, Mapping, MutableSequence, Sequence
 from collections.abc import Set as AbstractSet
 from typing import overload
 
@@ -429,7 +429,7 @@ class Control:
         type_: The type of the control.
     """
 
-    def __init__(self, qubit: int, type_: Control.Type = Control.Type.Pos) -> None: ...
+    def __init__(self, qubit: int, type_: Control.Type = ...) -> None: ...
 
     class Type(enum.Enum):
         """Enumeration of control types."""
@@ -653,7 +653,7 @@ class StandardOperation(Operation):
         self, controls: AbstractSet[Control], target0: int, target1: int, op_type: OpType, params: Sequence[float] = []
     ) -> None: ...
 
-class CompoundOperation(Operation):
+class CompoundOperation(Operation, MutableSequence[Operation]):
     """Compound quantum operation.
 
     This class is used to aggregate and group multiple operations into a single object.
@@ -709,7 +709,7 @@ class CompoundOperation(Operation):
         """
 
     @overload
-    def __setitem__(self, index: slice, value: Sequence[Operation]) -> None:
+    def __setitem__(self, index: slice, value: Iterable[Operation]) -> None:
         """Set the operations in the given slice.
 
         Args:
@@ -926,7 +926,7 @@ class IfElseOperation(Operation):
     def __init__(
         self,
         then_operation: Operation,
-        else_operation: Operation,
+        else_operation: Operation | None,
         control_register: mqt.core.ir.registers.ClassicalRegister,
         expected_value: int = 1,
         comparison_kind: ComparisonKind = ComparisonKind.eq,
@@ -935,7 +935,7 @@ class IfElseOperation(Operation):
     def __init__(
         self,
         then_operation: Operation,
-        else_operation: Operation,
+        else_operation: Operation | None,
         control_bit: int,
         expected_value: int = 1,
         comparison_kind: ComparisonKind = ComparisonKind.eq,
