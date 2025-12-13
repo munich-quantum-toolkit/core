@@ -1,0 +1,106 @@
+<!--
+ Copyright (c) 2023 - 2025 Chair for Design Automation, TUM
+ Copyright (c) 2025 Munich Quantum Software Company GmbH
+ All rights reserved.
+
+ SPDX-License-Identifier: MIT
+
+ Licensed under the MIT License
+-->
+
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 400">
+  <defs>
+    <linearGradient id="fluxGrad1" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#00D4FF;stop-opacity:1" />
+      <stop offset="50%" style="stop-color:#0099FF;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#0066FF;stop-opacity:1" />
+    </linearGradient>
+    <linearGradient id="fluxGrad3" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#00D4FF;stop-opacity:0.15" />
+      <stop offset="100%" style="stop-color:#0066FF;stop-opacity:0.03" />
+    </linearGradient>
+    <radialGradient id="bubbleGrad1" cx="35%" cy="35%">
+      <stop offset="0%" style="stop-color:#E0F7FF;stop-opacity:0.9" />
+      <stop offset="50%" style="stop-color:#00D4FF;stop-opacity:0.6" />
+      <stop offset="100%" style="stop-color:#0099FF;stop-opacity:0.8" />
+    </radialGradient>
+    <radialGradient id="bubbleGrad2" cx="35%" cy="35%">
+      <stop offset="0%" style="stop-color:#B3E5FC;stop-opacity:0.9" />
+      <stop offset="50%" style="stop-color:#0099FF;stop-opacity:0.65" />
+      <stop offset="100%" style="stop-color:#0066FF;stop-opacity:0.85" />
+    </radialGradient>
+    <radialGradient id="bubbleGrad3" cx="35%" cy="35%">
+      <stop offset="0%" style="stop-color:#E0F7FF;stop-opacity:0.85" />
+      <stop offset="50%" style="stop-color:#00D4FF;stop-opacity:0.55" />
+      <stop offset="100%" style="stop-color:#0066FF;stop-opacity:0.75" />
+    </radialGradient>
+    <filter id="glow">
+      <feGaussianBlur stdDeviation="3.5" result="coloredBlur"/>
+      <feMerge>
+        <feMergeNode in="coloredBlur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+    <filter id="bubbleGlow">
+      <feGaussianBlur stdDeviation="2" result="coloredBlur"/>
+      <feMerge>
+        <feMergeNode in="coloredBlur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+    <clipPath id="circleClip">
+      <circle cx="200" cy="200" r="190"/>
+    </clipPath>
+  </defs>
+
+  <g clip-path="url(#circleClip)">
+    <!-- Background -->
+    <circle cx="200" cy="200" r="190" fill="url(#fluxGrad3)"/>
+
+    <!-- Flowing wave patterns -->
+    <path d="M 20 140 Q 100 132 180 142 T 340 138 Q 370 136 380 134"
+          stroke="url(#fluxGrad1)" stroke-width="8" fill="none"
+          stroke-linecap="round" opacity="0.4" filter="url(#glow)"/>
+
+    <path d="M 20 200 Q 100 188 180 202 T 340 198 Q 370 196 380 194"
+          stroke="url(#fluxGrad1)" stroke-width="12" fill="none"
+          stroke-linecap="round" opacity="0.6" filter="url(#glow)"/>
+
+    <path d="M 20 260 Q 100 268 180 258 T 340 262 Q 370 264 380 266"
+          stroke="url(#fluxGrad1)" stroke-width="8" fill="none"
+          stroke-linecap="round" opacity="0.4" filter="url(#glow)"/>
+
+    <!-- Water bubbles (quantum operations) -->
+    <circle cx="80" cy="137" r="22" fill="url(#bubbleGrad1)"
+            stroke="#00D4FF" stroke-width="2.5" opacity="0.9" filter="url(#bubbleGlow)"/>
+    <circle cx="75" cy="132" r="6" fill="#FFFFFF" opacity="0.6"/>
+    <circle cx="84" cy="139" r="3" fill="#FFFFFF" opacity="0.5"/>
+
+    <circle cx="140" cy="195" r="26" fill="url(#bubbleGrad2)"
+            stroke="#0099FF" stroke-width="2.5" opacity="0.95" filter="url(#bubbleGlow)"/>
+    <circle cx="134" cy="189" r="7" fill="#FFFFFF" opacity="0.65"/>
+    <circle cx="145" cy="197" r="3.5" fill="#FFFFFF" opacity="0.5"/>
+
+    <ellipse cx="210" cy="230" rx="32" ry="38" fill="url(#bubbleGrad2)"
+             stroke="#0099FF" stroke-width="3" opacity="0.92" filter="url(#bubbleGlow)"/>
+    <ellipse cx="203" cy="221" rx="9" ry="11" fill="#FFFFFF" opacity="0.7"/>
+    <circle cx="216" cy="232" r="4" fill="#FFFFFF" opacity="0.55"/>
+
+    <circle cx="280" cy="201" r="24" fill="url(#bubbleGrad1)"
+            stroke="#0066FF" stroke-width="2.5" opacity="0.9" filter="url(#bubbleGlow)"/>
+    <circle cx="274" cy="195" r="6.5" fill="#FFFFFF" opacity="0.6"/>
+    <circle cx="285" cy="203" r="3" fill="#FFFFFF" opacity="0.5"/>
+
+    <circle cx="320" cy="140" r="20" fill="url(#bubbleGrad3)"
+            stroke="#0066FF" stroke-width="2.5" opacity="0.85" filter="url(#bubbleGlow)"/>
+    <circle cx="315" cy="136" r="5.5" fill="#FFFFFF" opacity="0.6"/>
+    <circle cx="323" cy="142" r="2.5" fill="#FFFFFF" opacity="0.5"/>
+
+    <!-- Text label -->
+    <text x="200" y="348" font-family="Arial, sans-serif" font-size="52" font-weight="bold"
+          font-style="italic" fill="url(#fluxGrad1)" text-anchor="middle" letter-spacing="4">FLUX</text>
+  </g>
+
+  <!-- Circle border -->
+  <circle cx="200" cy="200" r="190" fill="none" stroke="url(#fluxGrad1)" stroke-width="2" opacity="0.5"/>
+</svg>
