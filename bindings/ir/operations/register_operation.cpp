@@ -12,6 +12,7 @@
 #include "ir/operations/Operation.hpp"
 
 #include <nanobind/nanobind.h>
+#include <nanobind/operators.h>
 #include <nanobind/stl/set.h>        // NOLINT(misc-include-cleaner)
 #include <nanobind/stl/string.h>     // NOLINT(misc-include-cleaner)
 #include <nanobind/stl/unique_ptr.h> // NOLINT(misc-include-cleaner)
@@ -154,22 +155,12 @@ Returns:
 
       .def("invert", &qc::Operation::invert, "Invert the operation (in-place).")
 
-      .def(
-          "__eq__",
-          [](const qc::Operation& op, const qc::Operation& other) {
-            return op == other;
-          },
-          nb::arg("other").sig("object"))
-      .def(
-          "__ne__",
-          [](const qc::Operation& op, const qc::Operation& other) {
-            return op != other;
-          },
-          nb::arg("other").sig("object"))
-      .def("__hash__",
-           [](const qc::Operation& op) {
-             return std::hash<qc::Operation>{}(op);
-           })
+      .def(nb::self == nb::self, // NOLINT(misc-redundant-expression)
+           nb::sig("def __eq__(self, arg: object, /) -> bool"))
+      .def(nb::self != nb::self, // NOLINT(misc-redundant-expression)
+           nb::sig("def __ne__(self, arg: object, /) -> bool"))
+      .def(hash(nb::self))
+
       .def("__repr__", [](const qc::Operation& op) {
         std::ostringstream oss;
         oss << "Operation(type=" << op.getType() << ", ...)";
