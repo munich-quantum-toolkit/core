@@ -38,7 +38,7 @@ jobs:
           fetch-depth: 0
 
       - name: Set up MLIR
-        uses: munich-quantum-software/setup-mlir@a55b2f85c1975e18e723c6a4c45b137762c48547 # 2025.12.06
+        uses: munich-quantum-software/setup-mlir@447a87756d29f9b7a82a8e3239ef1654658d2b83 # 2025.12.12
         with:
           llvm-version: 21.1.7
 
@@ -110,7 +110,7 @@ jobs:
 
       - name: Upload coverage to Codecov
         if: matrix.coverage
-        uses: codecov/codecov-action@5a1091511ad55cbe89839c7260b706298ca349f7 # v5.5.1
+        uses: codecov/codecov-action@671740ac38dd9b0130fbe1cec585b89eea48d3de # v5.5.2
         with:
           flags: mlir
           name: mlir-coverage
