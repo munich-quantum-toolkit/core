@@ -1642,6 +1642,7 @@ See Also:
 
 Args:
     theta: The rotation angle
+    beta: The rotation angle
     control: The control qubit
     target1: The first target qubit
     target2: The second target qubit)pb");
@@ -1654,6 +1655,7 @@ See Also:
 
 Args:
     theta: The rotation angle
+    beta: The rotation angle
     controls: The control qubits
     target1: The first target qubit
     target2: The second target qubit)pb");
@@ -1685,6 +1687,7 @@ See Also:
 
 Args:
     theta: The rotation angle
+    beta: The rotation angle
     control: The control qubit
     target1: The first target qubit
     target2: The second target qubit)pb");
@@ -1697,6 +1700,7 @@ See Also:
 
 Args:
     theta: The rotation angle
+    beta: The rotation angle
     controls: The control qubits
     target1: The first target qubit
     target2: The second target qubit)pb");
@@ -1708,7 +1712,7 @@ Args:
     GPhase(\theta) = (e^{i \theta})
 
 Args:
-    theta: The rotation angle)pb");
+    phase: The rotation angle)pb");
 
   qc.def("measure",
          nb::overload_cast<qc::Qubit, std::size_t>(

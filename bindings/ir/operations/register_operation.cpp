@@ -12,9 +12,10 @@
 #include "ir/operations/Operation.hpp"
 
 #include <nanobind/nanobind.h>
-#include <nanobind/stl/set.h>    // NOLINT(misc-include-cleaner)
-#include <nanobind/stl/string.h> // NOLINT(misc-include-cleaner)
-#include <nanobind/stl/vector.h> // NOLINT(misc-include-cleaner)
+#include <nanobind/stl/set.h>        // NOLINT(misc-include-cleaner)
+#include <nanobind/stl/string.h>     // NOLINT(misc-include-cleaner)
+#include <nanobind/stl/unique_ptr.h> // NOLINT(misc-include-cleaner)
+#include <nanobind/stl/vector.h>     // NOLINT(misc-include-cleaner)
 #include <sstream>
 
 namespace mqt {
@@ -153,10 +154,18 @@ Returns:
 
       .def("invert", &qc::Operation::invert, "Invert the operation (in-place).")
 
-      .def("__eq__", [](const qc::Operation& op,
-                        const qc::Operation& other) { return op == other; })
-      .def("__ne__", [](const qc::Operation& op,
-                        const qc::Operation& other) { return op != other; })
+      .def(
+          "__eq__",
+          [](const qc::Operation& op, const qc::Operation& other) {
+            return op == other;
+          },
+          nb::arg("other").sig("object"))
+      .def(
+          "__ne__",
+          [](const qc::Operation& op, const qc::Operation& other) {
+            return op != other;
+          },
+          nb::arg("other").sig("object"))
       .def("__hash__",
            [](const qc::Operation& op) {
              return std::hash<qc::Operation>{}(op);

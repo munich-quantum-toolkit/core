@@ -101,7 +101,7 @@ Args:
           R"pb(Delete the value of the permutation at the given index.
 
         Args:
-            key: The index to delete the value of the permutation at.)pb")
+            index: The index to delete the value of the permutation at.)pb")
 
       .def("__len__", &qc::Permutation::size,
            "Return the number of indices in the permutation.")
