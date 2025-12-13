@@ -38,7 +38,7 @@ jobs:
           fetch-depth: 0
 
       - name: Set up MLIR
-        uses: munich-quantum-software/setup-mlir@447a87756d29f9b7a82a8e3239ef1654658d2b83 # 2025.12.12
+        uses: munich-quantum-software/setup-mlir@78e8f61380c7823641ccf70c513b26bfb7602f47 # 2025.12.13
         with:
           llvm-version: 21.1.7
 
@@ -47,7 +47,7 @@ jobs:
         uses: rui314/setup-mold@725a8794d15fc7563f59595bd9556495c0564878 # v1
 
       - name: Install the latest version of uv
-        uses: astral-sh/setup-uv@ed21f2f24f8dd64503750218de024bcf64c7250a # v7.1.5
+        uses: astral-sh/setup-uv@681c641aba71e4a1c380be3ab5e12ad51f415867 # v7.1.6
         with:
           python-version: 3.13
           activate-environment: true
