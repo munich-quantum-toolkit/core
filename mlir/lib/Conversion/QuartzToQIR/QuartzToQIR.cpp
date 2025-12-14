@@ -881,6 +881,10 @@ struct ConvertQuartzYieldQIR final : StatefulOpConversionPattern<YieldOp> {
  * 4. Set QIR metadata attributes
  * 5. Convert arith and cf dialects to LLVM
  * 6. Reconcile unrealized casts
+ *
+ * @pre
+ * The entry function must have a single block. The pass will restructure it
+ * into a 4-block layout. Multi-block functions are currently unsupported.
  */
 struct QuartzToQIR final : impl::QuartzToQIRBase<QuartzToQIR> {
   using QuartzToQIRBase::QuartzToQIRBase;
