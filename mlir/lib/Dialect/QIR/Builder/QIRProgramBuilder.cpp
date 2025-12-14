@@ -37,12 +37,11 @@ namespace mlir::qir {
 QIRProgramBuilder::QIRProgramBuilder(MLIRContext* context)
     : builder(context),
       module(builder.create<ModuleOp>(UnknownLoc::get(context))),
-      loc(UnknownLoc::get(context)) {}
+      loc(UnknownLoc::get(context)) {
+  builder.getContext()->loadDialect<LLVM::LLVMDialect>();
+}
 
 void QIRProgramBuilder::initialize() {
-  // Ensure LLVM dialect is loaded
-  builder.getContext()->loadDialect<LLVM::LLVMDialect>();
-
   // Set insertion point to the module body
   builder.setInsertionPointToStart(module.getBody());
 

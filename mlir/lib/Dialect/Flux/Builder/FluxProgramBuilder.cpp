@@ -34,12 +34,11 @@ namespace mlir::flux {
 
 FluxProgramBuilder::FluxProgramBuilder(MLIRContext* context)
     : OpBuilder(context), ctx(context), loc(getUnknownLoc()),
-      module(ModuleOp::create(loc)) {}
+      module(ModuleOp::create(loc)) {
+  ctx->loadDialect<FluxDialect>();
+}
 
 void FluxProgramBuilder::initialize() {
-  // Ensure the Flux dialect is loaded
-  ctx->loadDialect<FluxDialect>();
-
   // Set insertion point to the module body
   setInsertionPointToStart(module.getBody());
 

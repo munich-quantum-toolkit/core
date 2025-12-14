@@ -30,12 +30,11 @@ namespace mlir::quartz {
 
 QuartzProgramBuilder::QuartzProgramBuilder(MLIRContext* context)
     : OpBuilder(context), ctx(context), loc(getUnknownLoc()),
-      module(ModuleOp::create(loc)) {}
+      module(ModuleOp::create(loc)) {
+  ctx->loadDialect<QuartzDialect>();
+}
 
 void QuartzProgramBuilder::initialize() {
-  // Ensure the Quartz dialect is loaded
-  ctx->loadDialect<QuartzDialect>();
-
   // Set insertion point to the module body
   setInsertionPointToStart(module.getBody());
 
