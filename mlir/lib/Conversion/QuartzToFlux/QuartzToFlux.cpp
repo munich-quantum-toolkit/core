@@ -18,10 +18,12 @@
 #include <cstdint>
 #include <llvm/ADT/DenseMap.h>
 #include <llvm/ADT/STLExtras.h>
+#include <llvm/Support/Casting.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/Func/Transforms/FuncConversions.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
 #include <mlir/IR/Block.h>
+#include <mlir/IR/BuiltinAttributes.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OperationSupport.h>
 #include <mlir/IR/PatternMatch.h>
@@ -156,7 +158,7 @@ llvm::SetVector<Value> collectUniqueQubits(Operation* op, LoweringState* state,
       // conversion
       if ((llvm::isa<scf::YieldOp>(operation) ||
            llvm::isa<scf::ConditionOp>(operation)) &&
-          uniqueQubits.size() > 0) {
+          !uniqueQubits.empty()) {
         operation.setAttr("needChange", StringAttr::get(ctx, "yes"));
       }
       // mark func.return operation for functions that need to return a qubit
@@ -1352,7 +1354,7 @@ struct ConvertQuartzScfWhileOp final
         op.getLoc(), TypeRange(fluxTypes), ValueRange(fluxQubits));
     auto& newBeforeRegion = newWhileOp.getBefore();
     auto& newAfterRegion = newWhileOp.getAfter();
-    SmallVector<Location> locs(quartzQubits.size(), op->getLoc());
+    const SmallVector<Location> locs(quartzQubits.size(), op->getLoc());
     // create the new blocks
     auto* newBeforeBlock =
         rewriter.createBlock(&newBeforeRegion, {}, fluxTypes, locs);
