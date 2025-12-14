@@ -140,13 +140,14 @@ Args:
       .def("__len__", &qc::Permutation::size,
            "Return the number of indices in the permutation.")
 
-      .def("__iter__",
-           [](const qc::Permutation& p) {
-             return nb::make_key_iterator(
-                 nb::type<qc::Permutation>(), "key_iterator", p.begin(),
-                 p.end(),
-                 "Return an iterator over the indices of the permutation.");
-           })
+      .def(
+          "__iter__",
+          [](const qc::Permutation& p) {
+            return nb::make_key_iterator(
+                nb::type<qc::Permutation>(), "key_iterator", p.begin(), p.end(),
+                "Return an iterator over the indices of the permutation.");
+          },
+          nb::keep_alive<0, 1>())
 
       .def(
           "items",
