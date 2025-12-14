@@ -937,7 +937,7 @@ class IfElseOperation(Operation):
         then_operation: Operation,
         else_operation: Operation | None,
         control_bit: int,
-        expected_value: int = 1,
+        expected_value: bool = True,
         comparison_kind: ComparisonKind = ComparisonKind.eq,
     ) -> None: ...
     @property
@@ -945,7 +945,7 @@ class IfElseOperation(Operation):
         """The operation that is executed if the condition is met."""
 
     @property
-    def else_operation(self) -> Operation:
+    def else_operation(self) -> Operation | None:
         """The operation that is executed if the condition is not met."""
 
     @property

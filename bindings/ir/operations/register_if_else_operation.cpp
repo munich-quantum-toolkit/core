@@ -72,7 +72,7 @@ Args:
   ifElse.def(
       "__init__",
       [](qc::IfElseOperation* self, qc::Operation* thenOp,
-         qc::Operation* elseOp, qc::Bit controlBit, std::uint64_t expectedVal,
+         qc::Operation* elseOp, qc::Bit controlBit, bool expectedVal,
          qc::ComparisonKind kind) {
         std::unique_ptr<qc::Operation> thenPtr =
             thenOp ? thenOp->clone() : nullptr;
@@ -82,7 +82,7 @@ Args:
                                        controlBit, expectedVal, kind);
       },
       "then_operation"_a, nb::arg("else_operation").none(true), "control_bit"_a,
-      "expected_value"_a = 1U, "comparison_kind"_a = qc::ComparisonKind::Eq);
+      "expected_value"_a = true, "comparison_kind"_a = qc::ComparisonKind::Eq);
 
   ifElse.def_prop_ro("then_operation", &qc::IfElseOperation::getThenOp,
                      nb::rv_policy::reference_internal,
@@ -91,6 +91,8 @@ Args:
   ifElse.def_prop_ro(
       "else_operation", &qc::IfElseOperation::getElseOp,
       nb::rv_policy::reference_internal,
+      nb::sig("def else_operation(self) -> "
+              "mqt.core.ir.operations.Operation | None"),
       "The operation that is executed if the condition is not met.");
 
   ifElse.def_prop_ro("control_register",
