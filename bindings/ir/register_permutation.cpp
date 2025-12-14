@@ -16,23 +16,53 @@
 #include <nanobind/make_iterator.h>
 #include <nanobind/nanobind.h>
 #include <nanobind/operators.h>
-#include <nanobind/stl/set.h>    // NOLINT(misc-include-cleaner)
-#include <nanobind/stl/string.h> // NOLINT(misc-include-cleaner)
-#include <nanobind/stl/vector.h> // NOLINT(misc-include-cleaner)
+#include <nanobind/stl/set.h>     // NOLINT(misc-include-cleaner)
+#include <nanobind/stl/string.h>  // NOLINT(misc-include-cleaner)
+#include <nanobind/stl/variant.h> // NOLINT(misc-include-cleaner)
+#include <nanobind/stl/vector.h>  // NOLINT(misc-include-cleaner)
+#include <set>
 #include <sstream>
 #include <utility>
+#include <variant>
 
 namespace mqt {
 
 namespace nb = nanobind;
 using namespace nb::literals;
 
+using Control = std::variant<qc::Control, nb::int_>;
+using Controls = std::set<std::variant<qc::Control, nb::int_>>;
+
+namespace {
+
+/// Helper function to convert Control variant to qc::Control
+qc::Control getControl(const Control& control) {
+  if (std::holds_alternative<qc::Control>(control)) {
+    return std::get<qc::Control>(control);
+  }
+  return static_cast<qc::Qubit>(std::get<nb::int_>(control));
+}
+
+/// Helper function to convert Controls variant to qc::Controls
+qc::Controls getControls(const Controls& controls) {
+  qc::Controls result;
+  for (const auto& control : controls) {
+    result.insert(getControl(control));
+  }
+  return result;
+}
+
+} // namespace
+
 // NOLINTNEXTLINE(misc-use-internal-linkage)
 void registerPermutation(nb::module_& m) {
   nb::class_<qc::Permutation>(
       m, "Permutation",
       nb::sig("class Permutation(collections.abc.MutableMapping[int, int])"),
-      "A class to represent a permutation of the qubits in a quantum circuit.")
+      R"pb(A class to represent a permutation of the qubits in a quantum circuit.
+
+Args:
+    permutation: The permutation to initialize the object with.)pb")
 
       .def(nb::init<>())
 
@@ -46,12 +76,14 @@ void registerPermutation(nb::module_& m) {
             }
             new (self) qc::Permutation(std::move(perm));
           },
-          "perm"_a, "Create a permutation from a dictionary.")
+          "permutation"_a, "Create a permutation from a dictionary.")
 
-      .def("apply",
-           nb::overload_cast<const qc::Controls&>(&qc::Permutation::apply,
-                                                  nb::const_),
-           "controls"_a, R"pb(Apply the permutation to a set of controls.
+      .def(
+          "apply",
+          [](const qc::Permutation& p, const Controls& controls) {
+            return p.apply(getControls(controls));
+          },
+          "controls"_a, R"pb(Apply the permutation to a set of controls.
 
 Args:
     controls: The set of controls to apply the permutation to.

@@ -102,8 +102,8 @@ dd::mCachedEdge makeDDFromMatrix(dd::Package& p, const Matrix& m,
 qc::Control getControl(const Control& control) {
   if (std::holds_alternative<qc::Control>(control)) {
     return std::get<qc::Control>(control);
-  } else
-    return static_cast<qc::Qubit>(std::get<nb::int_>(control));
+  }
+  return static_cast<qc::Qubit>(std::get<nb::int_>(control));
 }
 
 /// Helper function to convert Controls variant to qc::Controls

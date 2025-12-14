@@ -15,16 +15,20 @@ from . import registers as registers
 from . import symbolic as symbolic
 
 class Permutation(MutableMapping[int, int]):
-    """A class to represent a permutation of the qubits in a quantum circuit."""
+    """A class to represent a permutation of the qubits in a quantum circuit.
+
+    Args:
+        permutation: The permutation to initialize the object with.
+    """
 
     @overload
     def __init__(self) -> None: ...
     @overload
-    def __init__(self, perm: dict[int, int]) -> None:
+    def __init__(self, permutation: dict[int, int]) -> None:
         """Create a permutation from a dictionary."""
 
     @overload
-    def apply(self, controls: AbstractSet[operations.Control]) -> set[operations.Control]:
+    def apply(self, controls: AbstractSet[operations.Control | int]) -> set[operations.Control]:
         """Apply the permutation to a set of controls.
 
         Args:
