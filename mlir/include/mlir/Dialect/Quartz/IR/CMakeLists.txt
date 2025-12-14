@@ -6,9 +6,6 @@
 #
 # Licensed under the MIT License
 
-set(DIALECT_NAME "Quartz")
-set(DIALECT_NAME_UPPER "QUARTZ")
-
 add_mlir_dialect(QuartzOps quartz)
 add_mlir_interface(QuartzInterfaces)
 add_mlir_doc(QuartzOps MLIRQuartzDialect Dialects/ -gen-dialect-doc)
