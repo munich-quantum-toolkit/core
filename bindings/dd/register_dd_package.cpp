@@ -14,6 +14,7 @@
 #include "dd/Operations.hpp"
 #include "dd/Package.hpp"
 #include "dd/StateGeneration.hpp"
+#include "ir/Definitions.hpp"
 #include "ir/Permutation.hpp"
 #include "ir/operations/Control.hpp"
 #include "ir/operations/IfElseOperation.hpp"
@@ -33,8 +34,10 @@
 #include <nanobind/stl/variant.h> // NOLINT(misc-include-cleaner)
 #include <nanobind/stl/vector.h>  // NOLINT(misc-include-cleaner)
 #include <random>
+#include <set>
 #include <stdexcept>
 #include <utility>
+#include <variant>
 #include <vector>
 
 namespace mqt {
@@ -99,9 +102,8 @@ dd::mCachedEdge makeDDFromMatrix(dd::Package& p, const Matrix& m,
 qc::Control getControl(const Control& control) {
   if (std::holds_alternative<qc::Control>(control)) {
     return std::get<qc::Control>(control);
-  } else {
+  } else
     return static_cast<qc::Qubit>(std::get<nb::int_>(control));
-  }
 }
 
 /// Helper function to convert Controls variant to qc::Controls

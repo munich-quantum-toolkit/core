@@ -28,9 +28,11 @@
 #include <nanobind/stl/unordered_set.h> // NOLINT(misc-include-cleaner)
 #include <nanobind/stl/variant.h>       // NOLINT(misc-include-cleaner)
 #include <nanobind/stl/vector.h>        // NOLINT(misc-include-cleaner)
+#include <set>
 #include <stdexcept>
 #include <string>
 #include <utility>
+#include <variant>
 #include <vector>
 
 namespace mqt {
@@ -50,9 +52,8 @@ namespace {
 qc::Control getControl(const Control& control) {
   if (std::holds_alternative<qc::Control>(control)) {
     return std::get<qc::Control>(control);
-  } else {
-    return static_cast<qc::Qubit>(std::get<nb::int_>(control));
   }
+  return static_cast<qc::Qubit>(std::get<nb::int_>(control));
 }
 
 /// Helper function to convert Controls variant to qc::Controls
@@ -653,7 +654,7 @@ Args:
   qc.def(
       "cx",
       [](qc::QuantumComputation& circ, const Control& control,
-         qc::Qubit target) { return circ.cx(getControl(control), target); },
+         qc::Qubit target) { circ.cx(getControl(control), target); },
       "control"_a, "target"_a,
       R"pb(Apply a controlled Pauli-X (i.e., CNOT or CX) gate.
 
@@ -666,7 +667,7 @@ Args:
   qc.def(
       "mcx",
       [](qc::QuantumComputation& circ, const Controls& controls,
-         qc::Qubit target) { return circ.mcx(getControls(controls), target); },
+         qc::Qubit target) { circ.mcx(getControls(controls), target); },
       "controls"_a, "target"_a,
       R"pb(Apply a multi-controlled Pauli-X (i.e., Toffoli or MCX) gate.
 
@@ -690,7 +691,7 @@ Args:
   qc.def(
       "cy",
       [](qc::QuantumComputation& circ, const Control& control,
-         qc::Qubit target) { return circ.cy(getControl(control), target); },
+         qc::Qubit target) { circ.cy(getControl(control), target); },
       "control"_a, "target"_a,
       R"pb(Apply a controlled Pauli-Y gate.
 
@@ -703,7 +704,7 @@ Args:
   qc.def(
       "mcy",
       [](qc::QuantumComputation& circ, const Controls& controls,
-         qc::Qubit target) { return circ.mcy(getControls(controls), target); },
+         qc::Qubit target) { circ.mcy(getControls(controls), target); },
       "controls"_a, "target"_a,
       R"pb(Apply a multi-controlled Pauli-Y gate.
 
@@ -727,7 +728,7 @@ Args:
   qc.def(
       "cz",
       [](qc::QuantumComputation& circ, const Control& control,
-         qc::Qubit target) { return circ.cz(getControl(control), target); },
+         qc::Qubit target) { circ.cz(getControl(control), target); },
       "control"_a, "target"_a,
       R"pb(Apply a controlled Pauli-Z gate.
 
@@ -740,7 +741,7 @@ Args:
   qc.def(
       "mcz",
       [](qc::QuantumComputation& circ, const Controls& controls,
-         qc::Qubit target) { return circ.mcz(getControls(controls), target); },
+         qc::Qubit target) { circ.mcz(getControls(controls), target); },
       "controls"_a, "target"_a,
       R"pb(Apply a multi-controlled Pauli-Z gate.
 
@@ -764,7 +765,7 @@ Args:
   qc.def(
       "ch",
       [](qc::QuantumComputation& circ, const Control& control,
-         qc::Qubit target) { return circ.ch(getControl(control), target); },
+         qc::Qubit target) { circ.ch(getControl(control), target); },
       "control"_a, "target"_a,
       R"pb(Apply a controlled Hadamard gate.
 
@@ -777,7 +778,7 @@ Args:
   qc.def(
       "mch",
       [](qc::QuantumComputation& circ, const Controls& controls,
-         qc::Qubit target) { return circ.mch(getControls(controls), target); },
+         qc::Qubit target) { circ.mch(getControls(controls), target); },
       "controls"_a, "target"_a,
       R"pb(Apply a multi-controlled Hadamard gate.
 
@@ -801,7 +802,7 @@ Args:
   qc.def(
       "cs",
       [](qc::QuantumComputation& circ, const Control& control,
-         qc::Qubit target) { return circ.cs(getControl(control), target); },
+         qc::Qubit target) { circ.cs(getControl(control), target); },
       "control"_a, "target"_a,
       R"pb(Apply a controlled S gate.
 
@@ -814,7 +815,7 @@ Args:
   qc.def(
       "mcs",
       [](qc::QuantumComputation& circ, const Controls& controls,
-         qc::Qubit target) { return circ.mcs(getControls(controls), target); },
+         qc::Qubit target) { circ.mcs(getControls(controls), target); },
       "controls"_a, "target"_a,
       R"pb(Apply a multi-controlled S gate.
 
@@ -838,7 +839,7 @@ Args:
   qc.def(
       "csdg",
       [](qc::QuantumComputation& circ, const Control& control,
-         qc::Qubit target) { return circ.csdg(getControl(control), target); },
+         qc::Qubit target) { circ.csdg(getControl(control), target); },
       "control"_a, "target"_a,
       R"pb(Apply a controlled :math:`S^\dagger` gate.
 
@@ -851,9 +852,7 @@ Args:
   qc.def(
       "mcsdg",
       [](qc::QuantumComputation& circ, const Controls& controls,
-         qc::Qubit target) {
-        return circ.mcsdg(getControls(controls), target);
-      },
+         qc::Qubit target) { circ.mcsdg(getControls(controls), target); },
       "controls"_a, "target"_a,
       R"pb(Apply a multi-controlled :math:`S^\dagger` gate.
 
@@ -877,7 +876,7 @@ Args:
   qc.def(
       "ct",
       [](qc::QuantumComputation& circ, const Control& control,
-         qc::Qubit target) { return circ.ct(getControl(control), target); },
+         qc::Qubit target) { circ.ct(getControl(control), target); },
       "control"_a, "target"_a,
       R"pb(Apply a controlled T gate.
 
@@ -890,7 +889,7 @@ Args:
   qc.def(
       "mct",
       [](qc::QuantumComputation& circ, const Controls& controls,
-         qc::Qubit target) { return circ.mct(getControls(controls), target); },
+         qc::Qubit target) { circ.mct(getControls(controls), target); },
       "controls"_a, "target"_a,
       R"pb(Apply a multi-controlled T gate.
 
@@ -914,7 +913,7 @@ Args:
   qc.def(
       "ctdg",
       [](qc::QuantumComputation& circ, const Control& control,
-         qc::Qubit target) { return circ.ctdg(getControl(control), target); },
+         qc::Qubit target) { circ.ctdg(getControl(control), target); },
       "control"_a, "target"_a,
       R"pb(Apply a controlled :math:`T^\dagger` gate.
 
@@ -927,9 +926,7 @@ Args:
   qc.def(
       "mctdg",
       [](qc::QuantumComputation& circ, const Controls& controls,
-         qc::Qubit target) {
-        return circ.mctdg(getControls(controls), target);
-      },
+         qc::Qubit target) { circ.mctdg(getControls(controls), target); },
       "controls"_a, "target"_a,
       R"pb(Apply a multi-controlled :math:`T^\dagger` gate.
 
@@ -953,7 +950,7 @@ Args:
   qc.def(
       "cv",
       [](qc::QuantumComputation& circ, const Control& control,
-         qc::Qubit target) { return circ.cv(getControl(control), target); },
+         qc::Qubit target) { circ.cv(getControl(control), target); },
       "control"_a, "target"_a,
       R"pb(Apply a controlled V gate.
 
@@ -966,7 +963,7 @@ Args:
   qc.def(
       "mcv",
       [](qc::QuantumComputation& circ, const Controls& controls,
-         qc::Qubit target) { return circ.mcv(getControls(controls), target); },
+         qc::Qubit target) { circ.mcv(getControls(controls), target); },
       "controls"_a, "target"_a,
       R"pb(Apply a multi-controlled V gate.
 
@@ -990,7 +987,7 @@ Args:
   qc.def(
       "cvdg",
       [](qc::QuantumComputation& circ, const Control& control,
-         qc::Qubit target) { return circ.cvdg(getControl(control), target); },
+         qc::Qubit target) { circ.cvdg(getControl(control), target); },
       "control"_a, "target"_a,
       R"pb(Apply a controlled :math:`V^\dagger` gate.
 
@@ -1003,9 +1000,7 @@ Args:
   qc.def(
       "mcvdg",
       [](qc::QuantumComputation& circ, const Controls& controls,
-         qc::Qubit target) {
-        return circ.mcvdg(getControls(controls), target);
-      },
+         qc::Qubit target) { circ.mcvdg(getControls(controls), target); },
       "controls"_a, "target"_a,
       R"pb(Apply a multi-controlled :math:`V^\dagger` gate.
 
@@ -1029,7 +1024,7 @@ Args:
   qc.def(
       "csx",
       [](qc::QuantumComputation& circ, const Control& control,
-         qc::Qubit target) { return circ.csx(getControl(control), target); },
+         qc::Qubit target) { circ.csx(getControl(control), target); },
       "control"_a, "target"_a,
       R"pb(Apply a controlled :math:`\sqrt{X}` gate.
 
@@ -1042,7 +1037,7 @@ Args:
   qc.def(
       "mcsx",
       [](qc::QuantumComputation& circ, const Controls& controls,
-         qc::Qubit target) { return circ.mcsx(getControls(controls), target); },
+         qc::Qubit target) { circ.mcsx(getControls(controls), target); },
       "controls"_a, "target"_a,
       R"pb(Apply a multi-controlled :math:`\sqrt{X}` gate.
 
@@ -1066,7 +1061,7 @@ Args:
   qc.def(
       "csxdg",
       [](qc::QuantumComputation& circ, const Control& control,
-         qc::Qubit target) { return circ.csxdg(getControl(control), target); },
+         qc::Qubit target) { circ.csxdg(getControl(control), target); },
       "control"_a, "target"_a,
       R"pb(Apply a controlled :math:`\sqrt{X}^\dagger` gate.
 
@@ -1079,9 +1074,7 @@ Args:
   qc.def(
       "mcsxdg",
       [](qc::QuantumComputation& circ, const Controls& controls,
-         qc::Qubit target) {
-        return circ.mcsxdg(getControls(controls), target);
-      },
+         qc::Qubit target) { circ.mcsxdg(getControls(controls), target); },
       "controls"_a, "target"_a,
       R"pb(Apply a multi-controlled :math:`\sqrt{X}^\dagger` gate.
 
@@ -1107,9 +1100,8 @@ Args:
   qc.def(
       "crx",
       [](qc::QuantumComputation& circ, qc::SymbolOrNumber& theta,
-         const Control& control, qc::Qubit target) {
-        return circ.crx(theta, getControl(control), target);
-      },
+         const Control& control,
+         qc::Qubit target) { circ.crx(theta, getControl(control), target); },
       "theta"_a, "control"_a, "target"_a,
       R"pb(Apply a controlled :math:`R_x(\theta)` gate.
 
@@ -1123,9 +1115,8 @@ Args:
   qc.def(
       "mcrx",
       [](qc::QuantumComputation& circ, qc::SymbolOrNumber& theta,
-         const Controls& controls, qc::Qubit target) {
-        return circ.mcrx(theta, getControls(controls), target);
-      },
+         const Controls& controls,
+         qc::Qubit target) { circ.mcrx(theta, getControls(controls), target); },
       "theta"_a, "controls"_a, "target"_a,
       R"pb(Apply a multi-controlled :math:`R_x(\theta)` gate.
 
@@ -1152,9 +1143,8 @@ Args:
   qc.def(
       "cry",
       [](qc::QuantumComputation& circ, qc::SymbolOrNumber& theta,
-         const Control& control, qc::Qubit target) {
-        return circ.cry(theta, getControl(control), target);
-      },
+         const Control& control,
+         qc::Qubit target) { circ.cry(theta, getControl(control), target); },
       "theta"_a, "control"_a, "target"_a,
       R"pb(Apply a controlled :math:`R_y(\theta)` gate.
 
@@ -1168,9 +1158,8 @@ Args:
   qc.def(
       "mcry",
       [](qc::QuantumComputation& circ, qc::SymbolOrNumber& theta,
-         const Controls& controls, qc::Qubit target) {
-        return circ.mcry(theta, getControls(controls), target);
-      },
+         const Controls& controls,
+         qc::Qubit target) { circ.mcry(theta, getControls(controls), target); },
       "theta"_a, "controls"_a, "target"_a,
       R"pb(Apply a multi-controlled :math:`R_y(\theta)` gate.
 
@@ -1196,9 +1185,8 @@ Args:
   qc.def(
       "crz",
       [](qc::QuantumComputation& circ, qc::SymbolOrNumber& theta,
-         const Control& control, qc::Qubit target) {
-        return circ.crz(theta, getControl(control), target);
-      },
+         const Control& control,
+         qc::Qubit target) { circ.crz(theta, getControl(control), target); },
       "theta"_a, "control"_a, "target"_a,
       R"pb(Apply a controlled :math:`R_z(\theta)` gate.
 
@@ -1212,9 +1200,8 @@ Args:
   qc.def(
       "mcrz",
       [](qc::QuantumComputation& circ, qc::SymbolOrNumber& theta,
-         const Controls& controls, qc::Qubit target) {
-        return circ.mcrx(theta, getControls(controls), target);
-      },
+         const Controls& controls,
+         qc::Qubit target) { circ.mcrx(theta, getControls(controls), target); },
       "theta"_a, "controls"_a, "target"_a,
       R"pb(Apply a multi-controlled :math:`R_z(\theta)` gate.
 
@@ -1240,9 +1227,8 @@ Args:
   qc.def(
       "cp",
       [](qc::QuantumComputation& circ, qc::SymbolOrNumber& theta,
-         const Control& control, qc::Qubit target) {
-        return circ.cp(theta, getControl(control), target);
-      },
+         const Control& control,
+         qc::Qubit target) { circ.cp(theta, getControl(control), target); },
       "theta"_a, "control"_a, "target"_a,
       R"pb(Apply a controlled phase gate.
 
@@ -1256,9 +1242,8 @@ Args:
   qc.def(
       "mcp",
       [](qc::QuantumComputation& circ, qc::SymbolOrNumber& theta,
-         const Controls& controls, qc::Qubit target) {
-        return circ.mcp(theta, getControls(controls), target);
-      },
+         const Controls& controls,
+         qc::Qubit target) { circ.mcp(theta, getControls(controls), target); },
       "theta"_a, "controls"_a, "target"_a,
       R"pb(Apply a multi-controlled phase gate.
 
@@ -1285,9 +1270,8 @@ Args:
   qc.def(
       "cu2",
       [](qc::QuantumComputation& circ, qc::SymbolOrNumber& phi,
-         qc::SymbolOrNumber& lambda_, const Control& control,
-         qc::Qubit target) {
-        return circ.cu2(phi, lambda_, getControl(control), target);
+         qc::SymbolOrNumber& lambda, const Control& control, qc::Qubit target) {
+        circ.cu2(phi, lambda, getControl(control), target);
       },
       "phi"_a, "lambda_"_a, "control"_a, "target"_a,
       R"pb(Apply a controlled :math:`U_2(\phi, \lambda)` gate.
@@ -1303,9 +1287,9 @@ Args:
   qc.def(
       "mcu2",
       [](qc::QuantumComputation& circ, qc::SymbolOrNumber& phi,
-         qc::SymbolOrNumber& lambda_, const Controls& controls,
+         qc::SymbolOrNumber& lambda, const Controls& controls,
          qc::Qubit target) {
-        return circ.mcu2(phi, lambda_, getControls(controls), target);
+        circ.mcu2(phi, lambda, getControls(controls), target);
       },
       "phi"_a, "lambda_"_a, "controls"_a, "target"_a,
       R"pb(Apply a multi-controlled :math:`U_2(\phi, \lambda)` gate.
@@ -1336,7 +1320,7 @@ Args:
       "cr",
       [](qc::QuantumComputation& circ, qc::SymbolOrNumber& theta,
          qc::SymbolOrNumber& phi, const Control& control, qc::Qubit target) {
-        return circ.cr(theta, phi, getControl(control), target);
+        circ.cr(theta, phi, getControl(control), target);
       },
       "theta"_a, "phi"_a, "control"_a, "target"_a,
       R"pb(Apply a controlled :math:`R(\theta, \phi)` gate.
@@ -1353,7 +1337,7 @@ Args:
       "mcr",
       [](qc::QuantumComputation& circ, qc::SymbolOrNumber& theta,
          qc::SymbolOrNumber& phi, const Controls& controls, qc::Qubit target) {
-        return circ.mcr(theta, phi, getControls(controls), target);
+        circ.mcr(theta, phi, getControls(controls), target);
       },
       "theta"_a, "phi"_a, "controls"_a, "target"_a,
       R"pb(Apply a multi-controlled :math:`R(\theta, \phi)` gate.
@@ -1386,7 +1370,7 @@ Args:
       [](qc::QuantumComputation& circ, qc::SymbolOrNumber& theta,
          qc::SymbolOrNumber& phi, qc::SymbolOrNumber& lambda,
          const Control& control, qc::Qubit target) {
-        return circ.cu(theta, phi, lambda, getControl(control), target);
+        circ.cu(theta, phi, lambda, getControl(control), target);
       },
       "theta"_a, "phi"_a, "lambda_"_a, "control"_a, "target"_a,
       R"pb(Apply a controlled :math:`U(\theta, \phi, \lambda)` gate.
@@ -1405,7 +1389,7 @@ Args:
       [](qc::QuantumComputation& circ, qc::SymbolOrNumber& theta,
          qc::SymbolOrNumber& phi, qc::SymbolOrNumber& lambda,
          const Controls& controls, qc::Qubit target) {
-        return circ.mcu(theta, phi, lambda, getControls(controls), target);
+        circ.mcu(theta, phi, lambda, getControls(controls), target);
       },
       "theta"_a, "phi"_a, "lambda_"_a, "controls"_a, "target"_a,
       R"pb(Apply a multi-controlled :math:`U(\theta, \phi, \lambda)` gate.
@@ -1434,8 +1418,8 @@ Args:
   qc.def(
       "cswap",
       [](qc::QuantumComputation& circ, const Control& control,
-         qc::Qubit target1, qc::Qubit target2) {
-        return circ.cswap(getControl(control), target1, target2);
+         qc::Qubit target0, qc::Qubit target1) {
+        circ.cswap(getControl(control), target0, target1);
       },
       "control"_a, "target1"_a, "target2"_a,
       R"pb(Apply a controlled SWAP gate.
@@ -1450,8 +1434,8 @@ Args:
   qc.def(
       "mcswap",
       [](qc::QuantumComputation& circ, const Controls& controls,
-         qc::Qubit target1, qc::Qubit target2) {
-        return circ.mcswap(getControls(controls), target1, target2);
+         qc::Qubit target0, qc::Qubit target1) {
+        circ.mcswap(getControls(controls), target0, target1);
       },
       "controls"_a, "target1"_a, "target2"_a,
       R"pb(Apply a multi-controlled SWAP gate.
@@ -1478,8 +1462,8 @@ Args:
   qc.def(
       "cdcx",
       [](qc::QuantumComputation& circ, const Control& control,
-         qc::Qubit target1, qc::Qubit target2) {
-        return circ.cdcx(getControl(control), target1, target2);
+         qc::Qubit target0, qc::Qubit target1) {
+        circ.cdcx(getControl(control), target0, target1);
       },
       "control"_a, "target1"_a, "target2"_a,
       R"pb(Apply a controlled DCX gate.
@@ -1494,8 +1478,8 @@ Args:
   qc.def(
       "mcdcx",
       [](qc::QuantumComputation& circ, const Controls& controls,
-         qc::Qubit target1, qc::Qubit target2) {
-        return circ.mcdcx(getControls(controls), target1, target2);
+         qc::Qubit target0, qc::Qubit target1) {
+        circ.mcdcx(getControls(controls), target0, target1);
       },
       "controls"_a, "target1"_a, "target2"_a,
       R"pb(Apply a multi-controlled DCX gate.
@@ -1522,8 +1506,8 @@ Args:
   qc.def(
       "cecr",
       [](qc::QuantumComputation& circ, const Control& control,
-         qc::Qubit target1, qc::Qubit target2) {
-        return circ.cecr(getControl(control), target1, target2);
+         qc::Qubit target0, qc::Qubit target1) {
+        circ.cecr(getControl(control), target0, target1);
       },
       "control"_a, "target1"_a, "target2"_a,
       R"pb(Apply a controlled ECR gate.
@@ -1538,8 +1522,8 @@ Args:
   qc.def(
       "mcecr",
       [](qc::QuantumComputation& circ, const Controls& controls,
-         qc::Qubit target1, qc::Qubit target2) {
-        return circ.mcecr(getControls(controls), target1, target2);
+         qc::Qubit target0, qc::Qubit target1) {
+        circ.mcecr(getControls(controls), target0, target1);
       },
       "controls"_a, "target1"_a, "target2"_a,
       R"pb(Apply a multi-controlled ECR gate.
@@ -1566,8 +1550,8 @@ Args:
   qc.def(
       "ciswap",
       [](qc::QuantumComputation& circ, const Control& control,
-         qc::Qubit target1, qc::Qubit target2) {
-        return circ.ciswap(getControl(control), target1, target2);
+         qc::Qubit target0, qc::Qubit target1) {
+        circ.ciswap(getControl(control), target0, target1);
       },
       "control"_a, "target1"_a, "target2"_a,
       R"pb(Apply a controlled :math:`i\text{SWAP}` gate.
@@ -1582,8 +1566,8 @@ Args:
   qc.def(
       "mciswap",
       [](qc::QuantumComputation& circ, const Controls& controls,
-         qc::Qubit target1, qc::Qubit target2) {
-        return circ.mciswap(getControls(controls), target1, target2);
+         qc::Qubit target0, qc::Qubit target1) {
+        circ.mciswap(getControls(controls), target0, target1);
       },
       "controls"_a, "target1"_a, "target2"_a,
       R"pb(Apply a multi-controlled :math:`i\text{SWAP}` gate.
@@ -1610,8 +1594,8 @@ Args:
   qc.def(
       "ciswapdg",
       [](qc::QuantumComputation& circ, const Control& control,
-         qc::Qubit target1, qc::Qubit target2) {
-        return circ.ciswapdg(getControl(control), target1, target2);
+         qc::Qubit target0, qc::Qubit target1) {
+        circ.ciswapdg(getControl(control), target0, target1);
       },
       "control"_a, "target1"_a, "target2"_a,
       R"pb(Apply a controlled :math:`i\text{SWAP}^\dagger` gate.
@@ -1626,8 +1610,8 @@ Args:
   qc.def(
       "mciswapdg",
       [](qc::QuantumComputation& circ, const Controls& controls,
-         qc::Qubit target1, qc::Qubit target2) {
-        return circ.mciswapdg(getControls(controls), target1, target2);
+         qc::Qubit target0, qc::Qubit target1) {
+        circ.mciswapdg(getControls(controls), target0, target1);
       },
       "controls"_a, "target1"_a, "target2"_a,
       R"pb(Apply a multi-controlled :math:`i\text{SWAP}^\dagger` gate.
@@ -1654,8 +1638,8 @@ Args:
   qc.def(
       "cperes",
       [](qc::QuantumComputation& circ, const Control& control,
-         qc::Qubit target1, qc::Qubit target2) {
-        return circ.cperes(getControl(control), target1, target2);
+         qc::Qubit target0, qc::Qubit target1) {
+        circ.cperes(getControl(control), target0, target1);
       },
       "control"_a, "target1"_a, "target2"_a,
       R"pb(Apply a controlled Peres gate.
@@ -1670,8 +1654,8 @@ Args:
   qc.def(
       "mcperes",
       [](qc::QuantumComputation& circ, const Controls& controls,
-         qc::Qubit target1, qc::Qubit target2) {
-        return circ.mcperes(getControls(controls), target1, target2);
+         qc::Qubit target0, qc::Qubit target1) {
+        circ.mcperes(getControls(controls), target0, target1);
       },
       "controls"_a, "target1"_a, "target2"_a,
       R"pb(Apply a multi-controlled Peres gate.
@@ -1697,8 +1681,8 @@ Args:
   qc.def(
       "cperesdg",
       [](qc::QuantumComputation& circ, const Control& control,
-         qc::Qubit target1, qc::Qubit target2) {
-        return circ.cperesdg(getControl(control), target1, target2);
+         qc::Qubit target0, qc::Qubit target1) {
+        circ.cperesdg(getControl(control), target0, target1);
       },
       "control"_a, "target1"_a, "target2"_a,
       R"pb(Apply a controlled :math:`\text{Peres}^\dagger` gate.
@@ -1713,8 +1697,8 @@ Args:
   qc.def(
       "mcperesdg",
       [](qc::QuantumComputation& circ, const Controls& controls,
-         qc::Qubit target1, qc::Qubit target2) {
-        return circ.mcperesdg(getControls(controls), target1, target2);
+         qc::Qubit target0, qc::Qubit target1) {
+        circ.mcperesdg(getControls(controls), target0, target1);
       },
       "controls"_a, "target1"_a, "target2"_a,
       R"pb(Apply a multi-controlled :math:`\text{Peres}^\dagger` gate.
@@ -1747,8 +1731,8 @@ Args:
   qc.def(
       "crxx",
       [](qc::QuantumComputation& circ, qc::SymbolOrNumber& theta,
-         const Control& control, qc::Qubit target1, qc::Qubit target2) {
-        return circ.crxx(theta, getControl(control), target1, target2);
+         const Control& control, qc::Qubit target0, qc::Qubit target1) {
+        circ.crxx(theta, getControl(control), target0, target1);
       },
       "theta"_a, "control"_a, "target1"_a, "target2"_a,
       R"pb(Apply a controlled :math:`R_{xx}(\theta)` gate.
@@ -1764,8 +1748,8 @@ Args:
   qc.def(
       "mcrxx",
       [](qc::QuantumComputation& circ, qc::SymbolOrNumber& theta,
-         const Controls& controls, qc::Qubit target1, qc::Qubit target2) {
-        return circ.mcrxx(theta, getControls(controls), target1, target2);
+         const Controls& controls, qc::Qubit target0, qc::Qubit target1) {
+        circ.mcrxx(theta, getControls(controls), target0, target1);
       },
       "theta"_a, "controls"_a, "target1"_a, "target2"_a,
       R"pb(Apply a multi-controlled :math:`R_{xx}(\theta)` gate.
@@ -1799,8 +1783,8 @@ Args:
   qc.def(
       "cryy",
       [](qc::QuantumComputation& circ, qc::SymbolOrNumber& theta,
-         const Control& control, qc::Qubit target1, qc::Qubit target2) {
-        return circ.cryy(theta, getControl(control), target1, target2);
+         const Control& control, qc::Qubit target0, qc::Qubit target1) {
+        circ.cryy(theta, getControl(control), target0, target1);
       },
       "theta"_a, "control"_a, "target1"_a, "target2"_a,
       R"pb(Apply a controlled :math:`R_{yy}(\theta)` gate.
@@ -1816,8 +1800,8 @@ Args:
   qc.def(
       "mcryy",
       [](qc::QuantumComputation& circ, qc::SymbolOrNumber& theta,
-         const Controls& controls, qc::Qubit target1, qc::Qubit target2) {
-        return circ.mcryy(theta, getControls(controls), target1, target2);
+         const Controls& controls, qc::Qubit target0, qc::Qubit target1) {
+        circ.mcryy(theta, getControls(controls), target0, target1);
       },
       "theta"_a, "controls"_a, "target1"_a, "target2"_a,
       R"pb(Apply a multi-controlled :math:`R_{yy}(\theta)` gate.
@@ -1851,8 +1835,8 @@ Args:
   qc.def(
       "crzx",
       [](qc::QuantumComputation& circ, qc::SymbolOrNumber& theta,
-         const Control& control, qc::Qubit target1, qc::Qubit target2) {
-        return circ.crzx(theta, getControl(control), target1, target2);
+         const Control& control, qc::Qubit target0, qc::Qubit target1) {
+        circ.crzx(theta, getControl(control), target0, target1);
       },
       "theta"_a, "control"_a, "target1"_a, "target2"_a,
       R"pb(Apply a controlled :math:`R_{zx}(\theta)` gate.
@@ -1868,8 +1852,8 @@ Args:
   qc.def(
       "mcrzx",
       [](qc::QuantumComputation& circ, qc::SymbolOrNumber& theta,
-         const Controls& controls, qc::Qubit target1, qc::Qubit target2) {
-        return circ.mcrzx(theta, getControls(controls), target1, target2);
+         const Controls& controls, qc::Qubit target0, qc::Qubit target1) {
+        circ.mcrzx(theta, getControls(controls), target0, target1);
       },
       "theta"_a, "controls"_a, "target1"_a, "target2"_a,
       R"pb(Apply a multi-controlled :math:`R_{zx}(\theta)` gate.
@@ -1903,8 +1887,8 @@ Args:
   qc.def(
       "crzz",
       [](qc::QuantumComputation& circ, qc::SymbolOrNumber& theta,
-         const Control& control, qc::Qubit target1, qc::Qubit target2) {
-        return circ.crzz(theta, getControl(control), target1, target2);
+         const Control& control, qc::Qubit target0, qc::Qubit target1) {
+        circ.crzz(theta, getControl(control), target0, target1);
       },
       "theta"_a, "control"_a, "target1"_a, "target2"_a,
       R"pb(Apply a controlled :math:`R_{zz}(\theta)` gate.
@@ -1920,8 +1904,8 @@ Args:
   qc.def(
       "mcrzz",
       [](qc::QuantumComputation& circ, qc::SymbolOrNumber& theta,
-         const Controls& controls, qc::Qubit target1, qc::Qubit target2) {
-        return circ.mcrzz(theta, getControls(controls), target1, target2);
+         const Controls& controls, qc::Qubit target0, qc::Qubit target1) {
+        circ.mcrzz(theta, getControls(controls), target0, target1);
       },
       "theta"_a, "controls"_a, "target1"_a, "target2"_a,
       R"pb(Apply a multi-controlled :math:`R_{zz}(\theta)` gate.
@@ -1956,10 +1940,9 @@ Args:
   qc.def(
       "cxx_minus_yy",
       [](qc::QuantumComputation& circ, qc::SymbolOrNumber& theta,
-         qc::SymbolOrNumber& beta, const Control& control, qc::Qubit target1,
-         qc::Qubit target2) {
-        return circ.cxx_minus_yy(theta, beta, getControl(control), target1,
-                                 target2);
+         qc::SymbolOrNumber& beta, const Control& control, qc::Qubit target0,
+         qc::Qubit target1) {
+        circ.cxx_minus_yy(theta, beta, getControl(control), target0, target1);
       },
       "theta"_a, "beta"_a, "control"_a, "target1"_a, "target2"_a,
       R"pb(Apply a controlled :math:`R_{XX - YY}(\theta, \beta)` gate.
@@ -1976,10 +1959,10 @@ Args:
   qc.def(
       "mcxx_minus_yy",
       [](qc::QuantumComputation& circ, qc::SymbolOrNumber& theta,
-         qc::SymbolOrNumber& beta, const Controls& controls, qc::Qubit target1,
-         qc::Qubit target2) {
-        return circ.mcxx_minus_yy(theta, beta, getControls(controls), target1,
-                                  target2);
+         qc::SymbolOrNumber& beta, const Controls& controls, qc::Qubit target0,
+         qc::Qubit target1) {
+        circ.mcxx_minus_yy(theta, beta, getControls(controls), target0,
+                           target1);
       },
       "theta"_a, "beta"_a, "controls"_a, "target1"_a, "target2"_a,
       R"pb(Apply a multi-controlled :math:`R_{XX - YY}(\theta, \beta)` gate.
@@ -2015,10 +1998,9 @@ Args:
   qc.def(
       "cxx_plus_yy",
       [](qc::QuantumComputation& circ, qc::SymbolOrNumber& theta,
-         qc::SymbolOrNumber& beta, const Control& control, qc::Qubit target1,
-         qc::Qubit target2) {
-        return circ.cxx_plus_yy(theta, beta, getControl(control), target1,
-                                target2);
+         qc::SymbolOrNumber& beta, const Control& control, qc::Qubit target0,
+         qc::Qubit target1) {
+        circ.cxx_plus_yy(theta, beta, getControl(control), target0, target1);
       },
       "theta"_a, "beta"_a, "control"_a, "target1"_a, "target2"_a,
       R"pb(Apply a controlled :math:`R_{XX + YY}(\theta, \beta)` gate.
@@ -2035,10 +2017,9 @@ Args:
   qc.def(
       "mcxx_plus_yy",
       [](qc::QuantumComputation& circ, qc::SymbolOrNumber& theta,
-         qc::SymbolOrNumber& beta, const Controls& controls, qc::Qubit target1,
-         qc::Qubit target2) {
-        return circ.mcxx_plus_yy(theta, beta, getControls(controls), target1,
-                                 target2);
+         qc::SymbolOrNumber& beta, const Controls& controls, qc::Qubit target0,
+         qc::Qubit target1) {
+        circ.mcxx_plus_yy(theta, beta, getControls(controls), target0, target1);
       },
       "theta"_a, "beta"_a, "controls"_a, "target1"_a, "target2"_a,
       R"pb(Apply a multi-controlled :math:`R_{XX + YY}(\theta, \beta)` gate.
