@@ -127,7 +127,7 @@ class MatrixDD:
 
         Args:
             num_qubits: The number of qubits.
-            decisions: The decisions as a string of `0`, `1`, `2`, or `3`, where decisions[i]` corresponds to the successor to follow at level `i` of the DD.
+            decisions: The decisions as a string of `0`, `1`, `2`, or `3`, where `decisions[i]` corresponds to the successor to follow at level `i` of the DD.
                 Must be at least `num_qubits` long.
 
         Returns:
@@ -187,7 +187,6 @@ class MatrixDD:
             edge_labels: Whether to include edge weights as labels.
             classic: Whether to use the classic DD visualization style.
             memory: Whether to include memory information. For debugging purposes only.
-            show: Whether to open the SVG file in the default browser.
             format_as_polar: Whether to format the edge weights in polar coordinates.
         """
 

@@ -770,7 +770,7 @@ class NonUnitaryOperation(Operation):
     def __init__(self, targets: Sequence[int], op_type: OpType = OpType.reset) -> None: ...
     @property
     def classics(self) -> list[int]:
-        """The classical registers that are associated with the operation."""
+        """The classical bits that are associated with the operation."""
 
 class SymbolicOperation(StandardOperation):
     """Symbolic quantum operation.

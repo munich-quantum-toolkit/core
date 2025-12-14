@@ -43,11 +43,10 @@ Args:
       .def(nb::init<std::vector<qc::Qubit>, qc::OpType>(), "targets"_a,
            "op_type"_a = qc::OpType::Reset)
 
-      .def_prop_ro(
-          "classics",
-          nb::overload_cast<>(&qc::NonUnitaryOperation::getClassics,
-                              nb::const_),
-          "The classical registers that are associated with the operation.")
+      .def_prop_ro("classics",
+                   nb::overload_cast<>(&qc::NonUnitaryOperation::getClassics,
+                                       nb::const_),
+                   "The classical bits that are associated with the operation.")
 
       .def("__repr__", [](const qc::NonUnitaryOperation& op) {
         std::stringstream ss;
