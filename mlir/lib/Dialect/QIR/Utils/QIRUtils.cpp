@@ -123,7 +123,6 @@ LLVM::AddressOfOp createResultLabel(OpBuilder& builder, Operation* op,
   // Save current insertion point
   const OpBuilder::InsertionGuard guard(builder);
 
-  // Create the declaration at the start of the module
   auto module = dyn_cast<ModuleOp>(op);
   if (!module) {
     module = op->getParentOfType<ModuleOp>();
@@ -131,19 +130,24 @@ LLVM::AddressOfOp createResultLabel(OpBuilder& builder, Operation* op,
   if (!module) {
     llvm::reportFatalInternalError("Module not found");
   }
-  builder.setInsertionPointToStart(module.getBody());
 
   const auto symbolName =
       builder.getStringAttr((symbolPrefix + "_" + label).str());
-  const auto llvmArrayType = LLVM::LLVMArrayType::get(
-      builder.getIntegerType(8), static_cast<unsigned>(label.size() + 1));
-  const auto stringInitializer = builder.getStringAttr(label.str() + '\0');
 
-  const auto globalOp = builder.create<LLVM::GlobalOp>(
-      op->getLoc(), llvmArrayType, /*isConstant=*/true, LLVM::Linkage::Internal,
-      symbolName, stringInitializer);
-  globalOp->setAttr("addr_space", builder.getI32IntegerAttr(0));
-  globalOp->setAttr("dso_local", builder.getUnitAttr());
+  if (!module.lookupSymbol<LLVM::GlobalOp>(symbolName)) {
+    const auto llvmArrayType = LLVM::LLVMArrayType::get(
+        builder.getIntegerType(8), static_cast<unsigned>(label.size() + 1));
+    const auto stringInitializer = builder.getStringAttr(label.str() + '\0');
+
+    // Create the declaration at the start of the module
+    builder.setInsertionPointToStart(module.getBody());
+
+    const auto globalOp = builder.create<LLVM::GlobalOp>(
+        op->getLoc(), llvmArrayType, /*isConstant=*/true,
+        LLVM::Linkage::Internal, symbolName, stringInitializer);
+    globalOp->setAttr("addr_space", builder.getI32IntegerAttr(0));
+    globalOp->setAttr("dso_local", builder.getUnitAttr());
+  }
 
   // Create AddressOfOp
   // Shall be added to the first block of the `main` function in the module
