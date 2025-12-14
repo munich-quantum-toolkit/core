@@ -159,7 +159,7 @@ Returns:
            nb::sig("def __eq__(self, arg: object, /) -> bool"))
       .def(nb::self != nb::self, // NOLINT(misc-redundant-expression)
            nb::sig("def __ne__(self, arg: object, /) -> bool"))
-      .def(hash(nb::self))
+      .def(nb::hash(nb::self))
 
       .def("__repr__", [](const qc::Operation& op) {
         std::ostringstream oss;
