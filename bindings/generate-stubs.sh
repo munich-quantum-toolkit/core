@@ -18,7 +18,7 @@ files=(
 )
 
 # Check if all files exist
-for file in ${files[@]}; do
+for file in "${files[@]}"; do
   if [ ! -f "$file" ]; then
     echo "Error: $file does not exist. Are you running this script from the root directory?"
     exit 1
@@ -29,7 +29,7 @@ done
 uv sync
 
 # Remove the existing stub files
-for file in ${files[@]}; do
+for file in "${files[@]}"; do
   rm -f "$file"
 done
 
@@ -43,7 +43,7 @@ python -m nanobind.stubgen -m mqt.core.fomac -o python/mqt/core/fomac.pyi -P
 python -m nanobind.stubgen -m mqt.core.na.fomac -o python/mqt/core/na/fomac.pyi -P
 
 # Remove private Enum members from the stub files
-for file in ${files[@]}; do
+for file in "${files[@]}"; do
   if [[ "$OSTYPE" == "darwin"* ]]; then
     sed -i '' '/_hashable_values_:/d' "$file"
     sed -i '' '/_unhashable_values_map_:/d' "$file"
@@ -54,7 +54,7 @@ for file in ${files[@]}; do
 done
 
 # Add license headers to the generated stub files
-for file in ${files[@]}; do
+for file in "${files[@]}"; do
   prek license-tools --files "$file"
 done
 
