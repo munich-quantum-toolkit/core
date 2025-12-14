@@ -166,13 +166,21 @@ Value QIRProgramBuilder::measure(Value qubit, const int64_t resultIndex) {
     llvm::reportFatalUsageError("Result index must be non-negative");
   }
 
+  // Choose a safe default register name
+  StringRef defaultRegName = "c";
+  if (llvm::any_of(registerResultMap, [](const auto& entry) {
+        return entry.first.first == "c";
+      })) {
+    defaultRegName = "__unnamed__";
+  }
+
   // Save current insertion point
   const OpBuilder::InsertionGuard guard(builder);
 
   // Insert in measurements block (before branch)
   builder.setInsertionPoint(measurementsBlock->getTerminator());
 
-  const auto key = std::make_pair("c", resultIndex);
+  const auto key = std::make_pair(defaultRegName, resultIndex);
   if (const auto it = registerResultMap.find(key);
       it != registerResultMap.end()) {
     return it->second;

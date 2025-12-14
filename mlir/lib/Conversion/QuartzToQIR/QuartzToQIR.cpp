@@ -429,14 +429,19 @@ struct ConvertQuartzMeasureQIR final : StatefulOpConversionPattern<MeasureOp> {
         resultValue = registerResultMap.at(key);
       }
     } else {
-      // no register info, check if ptr has already been allocated (as a Qubit)
+      // Choose a safe default register name
+      StringRef defaultRegName = "c";
+      if (state.registerStartIndexMap.contains("c")) {
+        defaultRegName = "__unnamed__";
+      }
+      // No register info, check if ptr has already been allocated (as a Qubit)
       if (const auto it = ptrMap.find(numResults); it != ptrMap.end()) {
         resultValue = it->second;
       } else {
         resultValue = createPointerFromIndex(rewriter, op.getLoc(), numResults);
         ptrMap[numResults] = resultValue;
       }
-      registerResultMap.insert({{"c", numResults}, resultValue});
+      registerResultMap.insert({{defaultRegName, numResults}, resultValue});
       state.numResults++;
     }
 
