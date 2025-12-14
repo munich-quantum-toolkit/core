@@ -850,6 +850,11 @@ private:
    * 2. result_record_output for each measurement in the register
    */
   void generateOutputRecording();
+
+  bool isFinalized = false;
+
+  /// Check if the builder has been finalized
+  void checkFinalized() const;
 };
 
 } // namespace mlir::qir

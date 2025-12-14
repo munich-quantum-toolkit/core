@@ -93,6 +93,8 @@ void QIRProgramBuilder::initialize() {
 }
 
 Value QIRProgramBuilder::staticQubit(const int64_t index) {
+  checkFinalized();
+
   if (index < 0) {
     llvm::reportFatalUsageError("Index must be non-negative");
   }
@@ -117,6 +119,8 @@ Value QIRProgramBuilder::staticQubit(const int64_t index) {
 
 llvm::SmallVector<Value>
 QIRProgramBuilder::allocQubitRegister(const int64_t size) {
+  checkFinalized();
+
   if (size <= 0) {
     llvm::reportFatalUsageError("Size must be positive");
   }
@@ -134,6 +138,8 @@ QIRProgramBuilder::allocQubitRegister(const int64_t size) {
 QIRProgramBuilder::ClassicalRegister&
 QIRProgramBuilder::allocClassicalBitRegister(const int64_t size,
                                              StringRef name) {
+  checkFinalized();
+
   if (size <= 0) {
     llvm::reportFatalUsageError("Size must be positive");
   }
@@ -162,6 +168,8 @@ QIRProgramBuilder::allocClassicalBitRegister(const int64_t size,
 }
 
 Value QIRProgramBuilder::measure(Value qubit, const int64_t resultIndex) {
+  checkFinalized();
+
   if (resultIndex < 0) {
     llvm::reportFatalUsageError("Result index must be non-negative");
   }
@@ -212,6 +220,8 @@ Value QIRProgramBuilder::measure(Value qubit, const int64_t resultIndex) {
 }
 
 QIRProgramBuilder& QIRProgramBuilder::measure(Value qubit, const Bit& bit) {
+  checkFinalized();
+
   // Save current insertion point
   const OpBuilder::InsertionGuard guard(builder);
 
@@ -239,6 +249,8 @@ QIRProgramBuilder& QIRProgramBuilder::measure(Value qubit, const Bit& bit) {
 }
 
 QIRProgramBuilder& QIRProgramBuilder::reset(Value qubit) {
+  checkFinalized();
+
   // Save current insertion point
   const OpBuilder::InsertionGuard guard(builder);
 
@@ -263,6 +275,8 @@ QIRProgramBuilder& QIRProgramBuilder::reset(Value qubit) {
 void QIRProgramBuilder::createCallOp(
     const SmallVector<std::variant<double, Value>>& parameters,
     ValueRange controls, const SmallVector<Value>& targets, StringRef fnName) {
+  checkFinalized();
+
   // Save current insertion point
   const OpBuilder::InsertionGuard guard(builder);
 
@@ -555,6 +569,13 @@ DEFINE_TWO_TARGET_TWO_PARAMETER(XXMINUSYY, xx_minus_yy, theta, beta)
 // Finalization
 //===----------------------------------------------------------------------===//
 
+void QIRProgramBuilder::checkFinalized() const {
+  if (isFinalized) {
+    llvm::reportFatalUsageError(
+        "QIRProgramBuilder instance has been finalized");
+  }
+}
+
 void QIRProgramBuilder::generateOutputRecording() {
   if (registerResultMap.empty()) {
     return; // No measurements to record
@@ -631,6 +652,8 @@ OwningOpRef<ModuleOp> QIRProgramBuilder::finalize() {
   generateOutputRecording();
 
   setQIRAttributes(mainFunc, metadata_);
+
+  isFinalized = true;
 
   return module;
 }

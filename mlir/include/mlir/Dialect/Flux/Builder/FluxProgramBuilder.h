@@ -1037,6 +1037,9 @@ private:
   Location loc;
   ModuleOp module;
 
+  /// Check if the builder has been finalized
+  void checkFinalized() const;
+
   //===--------------------------------------------------------------------===//
   // Linear Type Tracking Helpers
   //===--------------------------------------------------------------------===//

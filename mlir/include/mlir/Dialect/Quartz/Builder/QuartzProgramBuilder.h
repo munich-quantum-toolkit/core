@@ -872,5 +872,8 @@ private:
 
   /// Track allocated classical Registers
   SmallVector<ClassicalRegister> allocatedClassicalRegisters;
+
+  /// Check if the builder has been finalized
+  void checkFinalized() const;
 };
 } // namespace mlir::quartz

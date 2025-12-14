@@ -56,6 +56,8 @@ void FluxProgramBuilder::initialize() {
 }
 
 Value FluxProgramBuilder::allocQubit() {
+  checkFinalized();
+
   auto allocOp = create<AllocOp>(loc);
   const auto qubit = allocOp.getResult();
 
@@ -66,6 +68,8 @@ Value FluxProgramBuilder::allocQubit() {
 }
 
 Value FluxProgramBuilder::staticQubit(const int64_t index) {
+  checkFinalized();
+
   if (index < 0) {
     llvm::reportFatalUsageError("Index must be non-negative");
   }
@@ -83,6 +87,8 @@ Value FluxProgramBuilder::staticQubit(const int64_t index) {
 llvm::SmallVector<Value>
 FluxProgramBuilder::allocQubitRegister(const int64_t size,
                                        const StringRef name) {
+  checkFinalized();
+
   if (size <= 0) {
     llvm::reportFatalUsageError("Size must be positive");
   }
@@ -106,6 +112,8 @@ FluxProgramBuilder::allocQubitRegister(const int64_t size,
 
 FluxProgramBuilder::ClassicalRegister&
 FluxProgramBuilder::allocClassicalBitRegister(int64_t size, StringRef name) {
+  checkFinalized();
+
   if (size <= 0) {
     llvm::reportFatalUsageError("Size must be positive");
   }
@@ -144,6 +152,8 @@ void FluxProgramBuilder::updateQubitTracking(Value inputQubit,
 //===----------------------------------------------------------------------===//
 
 std::pair<Value, Value> FluxProgramBuilder::measure(Value qubit) {
+  checkFinalized();
+
   auto measureOp = create<MeasureOp>(loc, qubit);
   auto qubitOut = measureOp.getQubitOut();
   auto result = measureOp.getResult();
@@ -155,6 +165,8 @@ std::pair<Value, Value> FluxProgramBuilder::measure(Value qubit) {
 }
 
 Value FluxProgramBuilder::measure(Value qubit, const Bit& bit) {
+  checkFinalized();
+
   auto nameAttr = getStringAttr(bit.registerName);
   auto sizeAttr = getI64IntegerAttr(bit.registerSize);
   auto indexAttr = getI64IntegerAttr(bit.registerIndex);
@@ -168,6 +180,8 @@ Value FluxProgramBuilder::measure(Value qubit, const Bit& bit) {
 }
 
 Value FluxProgramBuilder::reset(Value qubit) {
+  checkFinalized();
+
   auto resetOp = create<ResetOp>(loc, qubit);
   const auto qubitOut = resetOp.getQubitOut();
 
@@ -186,10 +200,12 @@ Value FluxProgramBuilder::reset(Value qubit) {
 #define DEFINE_ZERO_TARGET_ONE_PARAMETER(OP_CLASS, OP_NAME, PARAM)             \
   void FluxProgramBuilder::OP_NAME(                                            \
       const std::variant<double, Value>&(PARAM)) {                             \
+    checkFinalized();                                                          \
     create<OP_CLASS>(loc, PARAM);                                              \
   }                                                                            \
   Value FluxProgramBuilder::c##OP_NAME(                                        \
       const std::variant<double, Value>&(PARAM), Value control) {              \
+    checkFinalized();                                                          \
     const auto [controlsOut, targetsOut] = ctrl(                               \
         control, {}, [&](OpBuilder& b, ValueRange /*targets*/) -> ValueRange { \
           b.create<OP_CLASS>(loc, PARAM);                                      \
@@ -199,6 +215,7 @@ Value FluxProgramBuilder::reset(Value qubit) {
   }                                                                            \
   ValueRange FluxProgramBuilder::mc##OP_NAME(                                  \
       const std::variant<double, Value>&(PARAM), ValueRange controls) {        \
+    checkFinalized();                                                          \
     const auto [controlsOut, targetsOut] =                                     \
         ctrl(controls, {},                                                     \
              [&](OpBuilder& b, ValueRange /*targets*/) -> ValueRange {         \
@@ -216,6 +233,7 @@ DEFINE_ZERO_TARGET_ONE_PARAMETER(GPhaseOp, gphase, theta)
 
 #define DEFINE_ONE_TARGET_ZERO_PARAMETER(OP_CLASS, OP_NAME)                    \
   Value FluxProgramBuilder::OP_NAME(Value qubit) {                             \
+    checkFinalized();                                                          \
     auto op = create<OP_CLASS>(loc, qubit);                                    \
     const auto& qubitOut = op.getQubitOut();                                   \
     updateQubitTracking(qubit, qubitOut);                                      \
@@ -223,6 +241,7 @@ DEFINE_ZERO_TARGET_ONE_PARAMETER(GPhaseOp, gphase, theta)
   }                                                                            \
   std::pair<Value, Value> FluxProgramBuilder::c##OP_NAME(Value control,        \
                                                          Value target) {       \
+    checkFinalized();                                                          \
     const auto [controlsOut, targetsOut] = ctrl(                               \
         control, target, [&](OpBuilder& b, ValueRange targets) -> ValueRange { \
           const auto op = b.create<OP_CLASS>(loc, targets[0]);                 \
@@ -232,6 +251,7 @@ DEFINE_ZERO_TARGET_ONE_PARAMETER(GPhaseOp, gphase, theta)
   }                                                                            \
   std::pair<ValueRange, Value> FluxProgramBuilder::mc##OP_NAME(                \
       ValueRange controls, Value target) {                                     \
+    checkFinalized();                                                          \
     const auto [controlsOut, targetsOut] =                                     \
         ctrl(controls, target,                                                 \
              [&](OpBuilder& b, ValueRange targets) -> ValueRange {             \
@@ -260,6 +280,7 @@ DEFINE_ONE_TARGET_ZERO_PARAMETER(SXdgOp, sxdg)
 #define DEFINE_ONE_TARGET_ONE_PARAMETER(OP_CLASS, OP_NAME, PARAM)              \
   Value FluxProgramBuilder::OP_NAME(const std::variant<double, Value>&(PARAM), \
                                     Value qubit) {                             \
+    checkFinalized();                                                          \
     auto op = create<OP_CLASS>(loc, qubit, PARAM);                             \
     const auto& qubitOut = op.getQubitOut();                                   \
     updateQubitTracking(qubit, qubitOut);                                      \
@@ -268,6 +289,7 @@ DEFINE_ONE_TARGET_ZERO_PARAMETER(SXdgOp, sxdg)
   std::pair<Value, Value> FluxProgramBuilder::c##OP_NAME(                      \
       const std::variant<double, Value>&(PARAM), Value control,                \
       Value target) {                                                          \
+    checkFinalized();                                                          \
     const auto [controlsOut, targetsOut] = ctrl(                               \
         control, target, [&](OpBuilder& b, ValueRange targets) -> ValueRange { \
           const auto op = b.create<OP_CLASS>(loc, targets[0], PARAM);          \
@@ -278,6 +300,7 @@ DEFINE_ONE_TARGET_ZERO_PARAMETER(SXdgOp, sxdg)
   std::pair<ValueRange, Value> FluxProgramBuilder::mc##OP_NAME(                \
       const std::variant<double, Value>&(PARAM), ValueRange controls,          \
       Value target) {                                                          \
+    checkFinalized();                                                          \
     const auto [controlsOut, targetsOut] =                                     \
         ctrl(controls, target,                                                 \
              [&](OpBuilder& b, ValueRange targets) -> ValueRange {             \
@@ -300,6 +323,7 @@ DEFINE_ONE_TARGET_ONE_PARAMETER(POp, p, phi)
   Value FluxProgramBuilder::OP_NAME(                                           \
       const std::variant<double, Value>&(PARAM1),                              \
       const std::variant<double, Value>&(PARAM2), Value qubit) {               \
+    checkFinalized();                                                          \
     auto op = create<OP_CLASS>(loc, qubit, PARAM1, PARAM2);                    \
     const auto& qubitOut = op.getQubitOut();                                   \
     updateQubitTracking(qubit, qubitOut);                                      \
@@ -309,6 +333,7 @@ DEFINE_ONE_TARGET_ONE_PARAMETER(POp, p, phi)
       const std::variant<double, Value>&(PARAM1),                              \
       const std::variant<double, Value>&(PARAM2), Value control,               \
       Value target) {                                                          \
+    checkFinalized();                                                          \
     const auto [controlsOut, targetsOut] = ctrl(                               \
         control, target, [&](OpBuilder& b, ValueRange targets) -> ValueRange { \
           const auto op = b.create<OP_CLASS>(loc, targets[0], PARAM1, PARAM2); \
@@ -320,6 +345,7 @@ DEFINE_ONE_TARGET_ONE_PARAMETER(POp, p, phi)
       const std::variant<double, Value>&(PARAM1),                              \
       const std::variant<double, Value>&(PARAM2), ValueRange controls,         \
       Value target) {                                                          \
+    checkFinalized();                                                          \
     const auto [controlsOut, targetsOut] =                                     \
         ctrl(controls, target,                                                 \
              [&](OpBuilder& b, ValueRange targets) -> ValueRange {             \
@@ -343,6 +369,7 @@ DEFINE_ONE_TARGET_TWO_PARAMETER(U2Op, u2, phi, lambda)
       const std::variant<double, Value>&(PARAM1),                              \
       const std::variant<double, Value>&(PARAM2),                              \
       const std::variant<double, Value>&(PARAM3), Value qubit) {               \
+    checkFinalized();                                                          \
     auto op = create<OP_CLASS>(loc, qubit, PARAM1, PARAM2, PARAM3);            \
     const auto& qubitOut = op.getQubitOut();                                   \
     updateQubitTracking(qubit, qubitOut);                                      \
@@ -353,6 +380,7 @@ DEFINE_ONE_TARGET_TWO_PARAMETER(U2Op, u2, phi, lambda)
       const std::variant<double, Value>&(PARAM2),                              \
       const std::variant<double, Value>&(PARAM3), Value control,               \
       Value target) {                                                          \
+    checkFinalized();                                                          \
     const auto [controlsOut, targetsOut] = ctrl(                               \
         control, target, [&](OpBuilder& b, ValueRange targets) -> ValueRange { \
           const auto op =                                                      \
@@ -366,6 +394,7 @@ DEFINE_ONE_TARGET_TWO_PARAMETER(U2Op, u2, phi, lambda)
       const std::variant<double, Value>&(PARAM2),                              \
       const std::variant<double, Value>&(PARAM3), ValueRange controls,         \
       Value target) {                                                          \
+    checkFinalized();                                                          \
     const auto [controlsOut, targetsOut] =                                     \
         ctrl(controls, target,                                                 \
              [&](OpBuilder& b, ValueRange targets) -> ValueRange {             \
@@ -385,6 +414,7 @@ DEFINE_ONE_TARGET_THREE_PARAMETER(UOp, u, theta, phi, lambda)
 #define DEFINE_TWO_TARGET_ZERO_PARAMETER(OP_CLASS, OP_NAME)                    \
   std::pair<Value, Value> FluxProgramBuilder::OP_NAME(Value qubit0,            \
                                                       Value qubit1) {          \
+    checkFinalized();                                                          \
     auto op = create<OP_CLASS>(loc, qubit0, qubit1);                           \
     const auto& qubit0Out = op.getQubit0Out();                                 \
     const auto& qubit1Out = op.getQubit1Out();                                 \
@@ -394,6 +424,7 @@ DEFINE_ONE_TARGET_THREE_PARAMETER(UOp, u, theta, phi, lambda)
   }                                                                            \
   std::pair<Value, std::pair<Value, Value>> FluxProgramBuilder::c##OP_NAME(    \
       Value control, Value qubit0, Value qubit1) {                             \
+    checkFinalized();                                                          \
     const auto [controlsOut, targetsOut] =                                     \
         ctrl(control, {qubit0, qubit1},                                        \
              [&](OpBuilder& b, ValueRange targets) -> ValueRange {             \
@@ -406,6 +437,7 @@ DEFINE_ONE_TARGET_THREE_PARAMETER(UOp, u, theta, phi, lambda)
   std::pair<ValueRange, std::pair<Value, Value>>                               \
       FluxProgramBuilder::mc##OP_NAME(ValueRange controls, Value qubit0,       \
                                       Value qubit1) {                          \
+    checkFinalized();                                                          \
     const auto [controlsOut, targetsOut] =                                     \
         ctrl(controls, {qubit0, qubit1},                                       \
              [&](OpBuilder& b, ValueRange targets) -> ValueRange {             \
@@ -428,6 +460,7 @@ DEFINE_TWO_TARGET_ZERO_PARAMETER(ECROp, ecr)
 #define DEFINE_TWO_TARGET_ONE_PARAMETER(OP_CLASS, OP_NAME, PARAM)              \
   std::pair<Value, Value> FluxProgramBuilder::OP_NAME(                         \
       const std::variant<double, Value>&(PARAM), Value qubit0, Value qubit1) { \
+    checkFinalized();                                                          \
     auto op = create<OP_CLASS>(loc, qubit0, qubit1, PARAM);                    \
     const auto& qubit0Out = op.getQubit0Out();                                 \
     const auto& qubit1Out = op.getQubit1Out();                                 \
@@ -438,6 +471,7 @@ DEFINE_TWO_TARGET_ZERO_PARAMETER(ECROp, ecr)
   std::pair<Value, std::pair<Value, Value>> FluxProgramBuilder::c##OP_NAME(    \
       const std::variant<double, Value>&(PARAM), Value control, Value qubit0,  \
       Value qubit1) {                                                          \
+    checkFinalized();                                                          \
     const auto [controlsOut, targetsOut] =                                     \
         ctrl(control, {qubit0, qubit1},                                        \
              [&](OpBuilder& b, ValueRange targets) -> ValueRange {             \
@@ -451,6 +485,7 @@ DEFINE_TWO_TARGET_ZERO_PARAMETER(ECROp, ecr)
       FluxProgramBuilder::mc##OP_NAME(                                         \
           const std::variant<double, Value>&(PARAM), ValueRange controls,      \
           Value qubit0, Value qubit1) {                                        \
+    checkFinalized();                                                          \
     const auto [controlsOut, targetsOut] =                                     \
         ctrl(controls, {qubit0, qubit1},                                       \
              [&](OpBuilder& b, ValueRange targets) -> ValueRange {             \
@@ -475,6 +510,7 @@ DEFINE_TWO_TARGET_ONE_PARAMETER(RZZOp, rzz, theta)
       const std::variant<double, Value>&(PARAM1),                              \
       const std::variant<double, Value>&(PARAM2), Value qubit0,                \
       Value qubit1) {                                                          \
+    checkFinalized();                                                          \
     auto op = create<OP_CLASS>(loc, qubit0, qubit1, PARAM1, PARAM2);           \
     const auto& qubit0Out = op.getQubit0Out();                                 \
     const auto& qubit1Out = op.getQubit1Out();                                 \
@@ -486,6 +522,7 @@ DEFINE_TWO_TARGET_ONE_PARAMETER(RZZOp, rzz, theta)
       const std::variant<double, Value>&(PARAM1),                              \
       const std::variant<double, Value>&(PARAM2), Value control, Value qubit0, \
       Value qubit1) {                                                          \
+    checkFinalized();                                                          \
     const auto [controlsOut, targetsOut] =                                     \
         ctrl(control, {qubit0, qubit1},                                        \
              [&](OpBuilder& b, ValueRange targets) -> ValueRange {             \
@@ -500,6 +537,7 @@ DEFINE_TWO_TARGET_ONE_PARAMETER(RZZOp, rzz, theta)
           const std::variant<double, Value>&(PARAM1),                          \
           const std::variant<double, Value>&(PARAM2), ValueRange controls,     \
           Value qubit0, Value qubit1) {                                        \
+    checkFinalized();                                                          \
     const auto [controlsOut, targetsOut] =                                     \
         ctrl(controls, {qubit0, qubit1},                                       \
              [&](OpBuilder& b, ValueRange targets) -> ValueRange {             \
@@ -518,6 +556,8 @@ DEFINE_TWO_TARGET_TWO_PARAMETER(XXMinusYYOp, xx_minus_yy, theta, beta)
 // BarrierOp
 
 ValueRange FluxProgramBuilder::barrier(ValueRange qubits) {
+  checkFinalized();
+
   auto op = create<BarrierOp>(loc, qubits);
   const auto& qubitsOut = op.getQubitsOut();
   for (const auto& [inputQubit, outputQubit] : llvm::zip(qubits, qubitsOut)) {
@@ -533,6 +573,8 @@ ValueRange FluxProgramBuilder::barrier(ValueRange qubits) {
 std::pair<ValueRange, ValueRange> FluxProgramBuilder::ctrl(
     ValueRange controls, ValueRange targets,
     const std::function<ValueRange(OpBuilder&, ValueRange)>& body) {
+  checkFinalized();
+
   auto ctrlOp = create<CtrlOp>(loc, controls, targets, body);
 
   // Update tracking
@@ -553,6 +595,8 @@ std::pair<ValueRange, ValueRange> FluxProgramBuilder::ctrl(
 //===----------------------------------------------------------------------===//
 
 FluxProgramBuilder& FluxProgramBuilder::dealloc(Value qubit) {
+  checkFinalized();
+
   validateQubitValue(qubit);
   validQubits.erase(qubit);
 
@@ -564,6 +608,13 @@ FluxProgramBuilder& FluxProgramBuilder::dealloc(Value qubit) {
 //===----------------------------------------------------------------------===//
 // Finalization
 //===----------------------------------------------------------------------===//
+
+void FluxProgramBuilder::checkFinalized() const {
+  if (ctx == nullptr) {
+    llvm::reportFatalUsageError(
+        "FluxProgramBuilder instance has been finalized");
+  }
+}
 
 OwningOpRef<ModuleOp> FluxProgramBuilder::finalize() {
   // Automatically deallocate all remaining valid qubits
@@ -578,6 +629,9 @@ OwningOpRef<ModuleOp> FluxProgramBuilder::finalize() {
 
   // Add return statement with exit code 0 to the main function
   create<func::ReturnOp>(loc, ValueRange{exitCode});
+
+  // Invalidate context to prevent use-after-finalize
+  ctx = nullptr;
 
   return module;
 }

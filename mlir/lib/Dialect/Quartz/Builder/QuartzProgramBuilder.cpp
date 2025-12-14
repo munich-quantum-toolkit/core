@@ -52,6 +52,8 @@ void QuartzProgramBuilder::initialize() {
 }
 
 Value QuartzProgramBuilder::allocQubit() {
+  checkFinalized();
+
   // Create the AllocOp without register metadata
   auto allocOp = create<AllocOp>(loc);
   const auto qubit = allocOp.getResult();
@@ -63,6 +65,8 @@ Value QuartzProgramBuilder::allocQubit() {
 }
 
 Value QuartzProgramBuilder::staticQubit(const int64_t index) {
+  checkFinalized();
+
   if (index < 0) {
     llvm::reportFatalUsageError("Index must be non-negative");
   }
@@ -76,6 +80,8 @@ Value QuartzProgramBuilder::staticQubit(const int64_t index) {
 llvm::SmallVector<Value>
 QuartzProgramBuilder::allocQubitRegister(const int64_t size,
                                          const StringRef name) {
+  checkFinalized();
+
   if (size <= 0) {
     llvm::reportFatalUsageError("Size must be positive");
   }
@@ -100,6 +106,8 @@ QuartzProgramBuilder::allocQubitRegister(const int64_t size,
 
 QuartzProgramBuilder::ClassicalRegister&
 QuartzProgramBuilder::allocClassicalBitRegister(int64_t size, StringRef name) {
+  checkFinalized();
+
   if (size <= 0) {
     llvm::reportFatalUsageError("Size must be positive");
   }
@@ -112,12 +120,14 @@ QuartzProgramBuilder::allocClassicalBitRegister(int64_t size, StringRef name) {
 //===----------------------------------------------------------------------===//
 
 Value QuartzProgramBuilder::measure(Value qubit) {
+  checkFinalized();
   auto measureOp = create<MeasureOp>(loc, qubit);
   return measureOp.getResult();
 }
 
 QuartzProgramBuilder& QuartzProgramBuilder::measure(Value qubit,
                                                     const Bit& bit) {
+  checkFinalized();
   auto nameAttr = getStringAttr(bit.registerName);
   auto sizeAttr = getI64IntegerAttr(bit.registerSize);
   auto indexAttr = getI64IntegerAttr(bit.registerIndex);
@@ -126,6 +136,7 @@ QuartzProgramBuilder& QuartzProgramBuilder::measure(Value qubit,
 }
 
 QuartzProgramBuilder& QuartzProgramBuilder::reset(Value qubit) {
+  checkFinalized();
   create<ResetOp>(loc, qubit);
   return *this;
 }
@@ -139,15 +150,18 @@ QuartzProgramBuilder& QuartzProgramBuilder::reset(Value qubit) {
 #define DEFINE_ZERO_TARGET_ONE_PARAMETER(OP_CLASS, OP_NAME, PARAM)             \
   QuartzProgramBuilder& QuartzProgramBuilder::OP_NAME(                         \
       const std::variant<double, Value>&(PARAM)) {                             \
+    checkFinalized();                                                          \
     create<OP_CLASS>(loc, PARAM);                                              \
     return *this;                                                              \
   }                                                                            \
   QuartzProgramBuilder& QuartzProgramBuilder::c##OP_NAME(                      \
       const std::variant<double, Value>&(PARAM), Value control) {              \
+    checkFinalized();                                                          \
     return mc##OP_NAME(PARAM, {control});                                      \
   }                                                                            \
   QuartzProgramBuilder& QuartzProgramBuilder::mc##OP_NAME(                     \
       const std::variant<double, Value>&(PARAM), ValueRange controls) {        \
+    checkFinalized();                                                          \
     create<CtrlOp>(loc, controls,                                              \
                    [&](OpBuilder& b) { b.create<OP_CLASS>(loc, PARAM); });     \
     return *this;                                                              \
@@ -161,15 +175,18 @@ DEFINE_ZERO_TARGET_ONE_PARAMETER(GPhaseOp, gphase, theta)
 
 #define DEFINE_ONE_TARGET_ZERO_PARAMETER(OP_CLASS, OP_NAME)                    \
   QuartzProgramBuilder& QuartzProgramBuilder::OP_NAME(Value qubit) {           \
+    checkFinalized();                                                          \
     create<OP_CLASS>(loc, qubit);                                              \
     return *this;                                                              \
   }                                                                            \
   QuartzProgramBuilder& QuartzProgramBuilder::c##OP_NAME(Value control,        \
                                                          Value target) {       \
+    checkFinalized();                                                          \
     return mc##OP_NAME({control}, target);                                     \
   }                                                                            \
   QuartzProgramBuilder& QuartzProgramBuilder::mc##OP_NAME(ValueRange controls, \
                                                           Value target) {      \
+    checkFinalized();                                                          \
     create<CtrlOp>(loc, controls,                                              \
                    [&](OpBuilder& b) { b.create<OP_CLASS>(loc, target); });    \
     return *this;                                                              \
@@ -194,17 +211,20 @@ DEFINE_ONE_TARGET_ZERO_PARAMETER(SXdgOp, sxdg)
 #define DEFINE_ONE_TARGET_ONE_PARAMETER(OP_CLASS, OP_NAME, PARAM)              \
   QuartzProgramBuilder& QuartzProgramBuilder::OP_NAME(                         \
       const std::variant<double, Value>&(PARAM), Value qubit) {                \
+    checkFinalized();                                                          \
     create<OP_CLASS>(loc, qubit, PARAM);                                       \
     return *this;                                                              \
   }                                                                            \
   QuartzProgramBuilder& QuartzProgramBuilder::c##OP_NAME(                      \
       const std::variant<double, Value>&(PARAM), Value control,                \
       Value target) {                                                          \
+    checkFinalized();                                                          \
     return mc##OP_NAME(PARAM, {control}, target);                              \
   }                                                                            \
   QuartzProgramBuilder& QuartzProgramBuilder::mc##OP_NAME(                     \
       const std::variant<double, Value>&(PARAM), ValueRange controls,          \
       Value target) {                                                          \
+    checkFinalized();                                                          \
     create<CtrlOp>(loc, controls, [&](OpBuilder& b) {                          \
       b.create<OP_CLASS>(loc, target, PARAM);                                  \
     });                                                                        \
@@ -224,6 +244,7 @@ DEFINE_ONE_TARGET_ONE_PARAMETER(POp, p, theta)
   QuartzProgramBuilder& QuartzProgramBuilder::OP_NAME(                         \
       const std::variant<double, Value>&(PARAM1),                              \
       const std::variant<double, Value>&(PARAM2), Value qubit) {               \
+    checkFinalized();                                                          \
     create<OP_CLASS>(loc, qubit, PARAM1, PARAM2);                              \
     return *this;                                                              \
   }                                                                            \
@@ -231,12 +252,14 @@ DEFINE_ONE_TARGET_ONE_PARAMETER(POp, p, theta)
       const std::variant<double, Value>&(PARAM1),                              \
       const std::variant<double, Value>&(PARAM2), Value control,               \
       Value target) {                                                          \
+    checkFinalized();                                                          \
     return mc##OP_NAME(PARAM1, PARAM2, {control}, target);                     \
   }                                                                            \
   QuartzProgramBuilder& QuartzProgramBuilder::mc##OP_NAME(                     \
       const std::variant<double, Value>&(PARAM1),                              \
       const std::variant<double, Value>&(PARAM2), ValueRange controls,         \
       Value target) {                                                          \
+    checkFinalized();                                                          \
     create<CtrlOp>(loc, controls, [&](OpBuilder& b) {                          \
       b.create<OP_CLASS>(loc, target, PARAM1, PARAM2);                         \
     });                                                                        \
@@ -256,6 +279,7 @@ DEFINE_ONE_TARGET_TWO_PARAMETER(U2Op, u2, phi, lambda)
       const std::variant<double, Value>&(PARAM1),                              \
       const std::variant<double, Value>&(PARAM2),                              \
       const std::variant<double, Value>&(PARAM3), Value qubit) {               \
+    checkFinalized();                                                          \
     create<OP_CLASS>(loc, qubit, PARAM1, PARAM2, PARAM3);                      \
     return *this;                                                              \
   }                                                                            \
@@ -264,6 +288,7 @@ DEFINE_ONE_TARGET_TWO_PARAMETER(U2Op, u2, phi, lambda)
       const std::variant<double, Value>&(PARAM2),                              \
       const std::variant<double, Value>&(PARAM3), Value control,               \
       Value target) {                                                          \
+    checkFinalized();                                                          \
     return mc##OP_NAME(PARAM1, PARAM2, PARAM3, {control}, target);             \
   }                                                                            \
   QuartzProgramBuilder& QuartzProgramBuilder::mc##OP_NAME(                     \
@@ -271,6 +296,7 @@ DEFINE_ONE_TARGET_TWO_PARAMETER(U2Op, u2, phi, lambda)
       const std::variant<double, Value>&(PARAM2),                              \
       const std::variant<double, Value>&(PARAM3), ValueRange controls,         \
       Value target) {                                                          \
+    checkFinalized();                                                          \
     create<CtrlOp>(loc, controls, [&](OpBuilder& b) {                          \
       b.create<OP_CLASS>(loc, target, PARAM1, PARAM2, PARAM3);                 \
     });                                                                        \
@@ -286,15 +312,18 @@ DEFINE_ONE_TARGET_THREE_PARAMETER(UOp, u, theta, phi, lambda)
 #define DEFINE_TWO_TARGET_ZERO_PARAMETER(OP_CLASS, OP_NAME)                    \
   QuartzProgramBuilder& QuartzProgramBuilder::OP_NAME(Value qubit0,            \
                                                       Value qubit1) {          \
+    checkFinalized();                                                          \
     create<OP_CLASS>(loc, qubit0, qubit1);                                     \
     return *this;                                                              \
   }                                                                            \
   QuartzProgramBuilder& QuartzProgramBuilder::c##OP_NAME(                      \
       Value control, Value qubit0, Value qubit1) {                             \
+    checkFinalized();                                                          \
     return mc##OP_NAME({control}, qubit0, qubit1);                             \
   }                                                                            \
   QuartzProgramBuilder& QuartzProgramBuilder::mc##OP_NAME(                     \
       ValueRange controls, Value qubit0, Value qubit1) {                       \
+    checkFinalized();                                                          \
     create<CtrlOp>(loc, controls, [&](OpBuilder& b) {                          \
       b.create<OP_CLASS>(loc, qubit0, qubit1);                                 \
     });                                                                        \
@@ -313,17 +342,20 @@ DEFINE_TWO_TARGET_ZERO_PARAMETER(ECROp, ecr)
 #define DEFINE_TWO_TARGET_ONE_PARAMETER(OP_CLASS, OP_NAME, PARAM)              \
   QuartzProgramBuilder& QuartzProgramBuilder::OP_NAME(                         \
       const std::variant<double, Value>&(PARAM), Value qubit0, Value qubit1) { \
+    checkFinalized();                                                          \
     create<OP_CLASS>(loc, qubit0, qubit1, PARAM);                              \
     return *this;                                                              \
   }                                                                            \
   QuartzProgramBuilder& QuartzProgramBuilder::c##OP_NAME(                      \
       const std::variant<double, Value>&(PARAM), Value control, Value qubit0,  \
       Value qubit1) {                                                          \
+    checkFinalized();                                                          \
     return mc##OP_NAME(PARAM, {control}, qubit0, qubit1);                      \
   }                                                                            \
   QuartzProgramBuilder& QuartzProgramBuilder::mc##OP_NAME(                     \
       const std::variant<double, Value>&(PARAM), ValueRange controls,          \
       Value qubit0, Value qubit1) {                                            \
+    checkFinalized();                                                          \
     create<CtrlOp>(loc, controls, [&](OpBuilder& b) {                          \
       b.create<OP_CLASS>(loc, qubit0, qubit1, PARAM);                          \
     });                                                                        \
@@ -344,6 +376,7 @@ DEFINE_TWO_TARGET_ONE_PARAMETER(RZZOp, rzz, theta)
       const std::variant<double, Value>&(PARAM1),                              \
       const std::variant<double, Value>&(PARAM2), Value qubit0,                \
       Value qubit1) {                                                          \
+    checkFinalized();                                                          \
     create<OP_CLASS>(loc, qubit0, qubit1, PARAM1, PARAM2);                     \
     return *this;                                                              \
   }                                                                            \
@@ -351,12 +384,14 @@ DEFINE_TWO_TARGET_ONE_PARAMETER(RZZOp, rzz, theta)
       const std::variant<double, Value>&(PARAM1),                              \
       const std::variant<double, Value>&(PARAM2), Value control, Value qubit0, \
       Value qubit1) {                                                          \
+    checkFinalized();                                                          \
     return mc##OP_NAME(PARAM1, PARAM2, {control}, qubit0, qubit1);             \
   }                                                                            \
   QuartzProgramBuilder& QuartzProgramBuilder::mc##OP_NAME(                     \
       const std::variant<double, Value>&(PARAM1),                              \
       const std::variant<double, Value>&(PARAM2), ValueRange controls,         \
       Value qubit0, Value qubit1) {                                            \
+    checkFinalized();                                                          \
     create<CtrlOp>(loc, controls, [&](OpBuilder& b) {                          \
       b.create<OP_CLASS>(loc, qubit0, qubit1, PARAM1, PARAM2);                 \
     });                                                                        \
@@ -371,6 +406,7 @@ DEFINE_TWO_TARGET_TWO_PARAMETER(XXMinusYYOp, xx_minus_yy, theta, beta)
 // BarrierOp
 
 QuartzProgramBuilder& QuartzProgramBuilder::barrier(ValueRange qubits) {
+  checkFinalized();
   create<BarrierOp>(loc, qubits);
   return *this;
 }
@@ -382,6 +418,7 @@ QuartzProgramBuilder& QuartzProgramBuilder::barrier(ValueRange qubits) {
 QuartzProgramBuilder&
 QuartzProgramBuilder::ctrl(ValueRange controls,
                            const std::function<void(OpBuilder&)>& body) {
+  checkFinalized();
   create<CtrlOp>(loc, controls, body);
   return *this;
 }
@@ -391,6 +428,8 @@ QuartzProgramBuilder::ctrl(ValueRange controls,
 //===----------------------------------------------------------------------===//
 
 QuartzProgramBuilder& QuartzProgramBuilder::dealloc(Value qubit) {
+  checkFinalized();
+
   // Check if the qubit is in the tracking set
   if (!allocatedQubits.erase(qubit)) {
     // Qubit was not found in the set - either never allocated or already
@@ -409,6 +448,13 @@ QuartzProgramBuilder& QuartzProgramBuilder::dealloc(Value qubit) {
 // Finalization
 //===----------------------------------------------------------------------===//
 
+void QuartzProgramBuilder::checkFinalized() const {
+  if (ctx == nullptr) {
+    llvm::reportFatalUsageError(
+        "QuartzProgramBuilder instance has been finalized");
+  }
+}
+
 OwningOpRef<ModuleOp> QuartzProgramBuilder::finalize() {
   // Automatically deallocate all remaining allocated qubits
   for (Value qubit : allocatedQubits) {
@@ -423,6 +469,9 @@ OwningOpRef<ModuleOp> QuartzProgramBuilder::finalize() {
 
   // Add return statement with exit code 0 to the main function
   create<func::ReturnOp>(loc, ValueRange{exitCode});
+
+  // Invalidate context to prevent use-after-finalize
+  ctx = nullptr;
 
   // Transfer ownership to the caller
   return module;
