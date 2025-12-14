@@ -18,8 +18,7 @@ namespace nb = nanobind;
 
 // NOLINTNEXTLINE(misc-use-internal-linkage)
 void registerOptype(const nb::module_& m) {
-  nb::enum_<qc::OpType>(m, "OpType", "enum.Enum",
-                        "Enumeration of operation types.")
+  nb::enum_<qc::OpType>(m, "OpType", "Enumeration of operation types.")
 
       .value("none", qc::OpType::None, R"pb(A placeholder operation.
 

@@ -31,8 +31,7 @@ Args:
     qubit: The qubit that is the control.
     type_: The type of the control.)pb");
 
-  nb::enum_<qc::Control::Type>(control, "Type", "enum.Enum",
-                               "Enumeration of control types.")
+  nb::enum_<qc::Control::Type>(control, "Type", "Enumeration of control types.")
       .value("Pos", qc::Control::Type::Pos)
       .value("Neg", qc::Control::Type::Neg);
 

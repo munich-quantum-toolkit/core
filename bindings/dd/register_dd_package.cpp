@@ -202,8 +202,7 @@ Returns:
     The DD for the computational basis state.
     The resulting state is guaranteed to have its reference count increased.)pb");
 
-  nb::enum_<dd::BasisStates>(m, "BasisStates", "enum.Enum",
-                             "Enumeration of basis states.")
+  nb::enum_<dd::BasisStates>(m, "BasisStates", "Enumeration of basis states.")
       .value("zero", dd::BasisStates::zero,
              R"pb(The computational basis state :math:`|0\rangle`.)pb")
       .value("one", dd::BasisStates::one,

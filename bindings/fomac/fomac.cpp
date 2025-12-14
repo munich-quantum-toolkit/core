@@ -173,8 +173,7 @@ Returns:
           nb::sig("def __ne__(self, arg: object, /) -> bool"));
 
   // JobStatus enum
-  nb::enum_<QDMI_Job_Status>(job, "Status", "enum.Enum",
-                             "Enumeration of job status.")
+  nb::enum_<QDMI_Job_Status>(job, "Status", "Enumeration of job status.")
       .value("CREATED", QDMI_JOB_STATUS_CREATED)
       .value("SUBMITTED", QDMI_JOB_STATUS_SUBMITTED)
       .value("QUEUED", QDMI_JOB_STATUS_QUEUED)
@@ -185,7 +184,7 @@ Returns:
       .export_values();
 
   // ProgramFormat enum
-  nb::enum_<QDMI_Program_Format>(m, "ProgramFormat", "enum.Enum",
+  nb::enum_<QDMI_Program_Format>(m, "ProgramFormat",
                                  "Enumeration of program formats.")
       .value("QASM2", QDMI_PROGRAM_FORMAT_QASM2)
       .value("QASM3", QDMI_PROGRAM_FORMAT_QASM3)
@@ -209,7 +208,7 @@ Returns:
       "A device represents a quantum device with its properties and "
       "capabilities.");
 
-  nb::enum_<QDMI_Device_Status>(device, "Status", "enum.Enum",
+  nb::enum_<QDMI_Device_Status>(device, "Status",
                                 "Enumeration of device status.")
       .value("offline", QDMI_DEVICE_STATUS_OFFLINE)
       .value("idle", QDMI_DEVICE_STATUS_IDLE)

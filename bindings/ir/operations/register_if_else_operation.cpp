@@ -29,7 +29,7 @@ using namespace nb::literals;
 // NOLINTNEXTLINE(misc-use-internal-linkage)
 void registerIfElseOperation(const nb::module_& m) {
   nb::enum_<qc::ComparisonKind>(
-      m, "ComparisonKind", "enum.Enum",
+      m, "ComparisonKind",
       "Enumeration of comparison types for classic-controlled operations.")
       .value("eq", qc::ComparisonKind::Eq, "Equality comparison.")
       .value("neq", qc::ComparisonKind::Neq, "Inequality comparison.")
