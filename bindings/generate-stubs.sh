@@ -34,13 +34,13 @@ for file in "${files[@]}"; do
 done
 
 # Generate new stub files
-python -m nanobind.stubgen -m mqt.core.ir -o python/mqt/core/ir/__init__.pyi -P
-python -m nanobind.stubgen -m mqt.core.ir.operations -o python/mqt/core/ir/operations.pyi -P
-python -m nanobind.stubgen -m mqt.core.ir.registers -o python/mqt/core/ir/registers.pyi -P
-python -m nanobind.stubgen -m mqt.core.ir.symbolic -o python/mqt/core/ir/symbolic.pyi -P
-python -m nanobind.stubgen -m mqt.core.dd -o python/mqt/core/dd.pyi -P
-python -m nanobind.stubgen -m mqt.core.fomac -o python/mqt/core/fomac.pyi -P
-python -m nanobind.stubgen -m mqt.core.na.fomac -o python/mqt/core/na/fomac.pyi -P
+uv run --no-sync -m nanobind.stubgen -m mqt.core.ir -o python/mqt/core/ir/__init__.pyi -P
+uv run --no-sync -m nanobind.stubgen -m mqt.core.ir.operations -o python/mqt/core/ir/operations.pyi -P
+uv run --no-sync -m nanobind.stubgen -m mqt.core.ir.registers -o python/mqt/core/ir/registers.pyi -P
+uv run --no-sync -m nanobind.stubgen -m mqt.core.ir.symbolic -o python/mqt/core/ir/symbolic.pyi -P
+uv run --no-sync -m nanobind.stubgen -m mqt.core.dd -o python/mqt/core/dd.pyi -P
+uv run --no-sync -m nanobind.stubgen -m mqt.core.fomac -o python/mqt/core/fomac.pyi -P
+uv run --no-sync -m nanobind.stubgen -m mqt.core.na.fomac -o python/mqt/core/na/fomac.pyi -P
 
 # Remove private Enum members from the stub files
 for file in "${files[@]}"; do
@@ -58,9 +58,6 @@ for file in "${files[@]}"; do
   prek license-tools --files "$file"
 done
 
-# Run ruff twice to ensure all formatting issues are resolved
-uvx ruff format
+# Run ruff
 uvx ruff check
-
 uvx ruff format
-uvx ruff check

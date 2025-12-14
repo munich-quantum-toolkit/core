@@ -819,9 +819,7 @@ def sample(qc: mqt.core.ir.QuantumComputation, shots: int = 1024, seed: int = 0)
         Otherwise, all qubits in the circuit are measured.
     """
 
-def simulate_statevector(
-    qc: mqt.core.ir.QuantumComputation,
-) -> Annotated[NDArray[np.complex128], {"shape": (None,)}]:
+def simulate_statevector(qc: mqt.core.ir.QuantumComputation) -> Annotated[NDArray[np.complex128], {"shape": (None,)}]:
     """Simulate the quantum computation and return the final state vector.
 
     This function classically simulates the quantum computation and returns the state vector of the final state.
