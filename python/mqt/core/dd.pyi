@@ -29,7 +29,7 @@ class VectorDD:
     def size(self) -> int:
         """Get the size of the DD by traversing it once."""
 
-    def __getitem__(self, index: int) -> complex:
+    def __getitem__(self, key: int) -> complex:
         """Get the amplitude of a basis state by index."""
 
     def get_amplitude(self, num_qubits: int, decisions: str) -> complex:

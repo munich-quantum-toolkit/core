@@ -65,12 +65,15 @@ Args:
 
       .def(
           "__getitem__",
-          [](const sym::Expression<double, double>& expr,
-             const std::size_t idx) {
-            if (idx >= expr.numTerms()) {
+          [](const sym::Expression<double, double>& expr, nb::ssize_t idx) {
+            const auto n = static_cast<nb::ssize_t>(expr.numTerms());
+            if (idx < 0) {
+              idx += n;
+            }
+            if (idx < 0 || idx >= n) {
               throw nb::index_error();
             }
-            return expr.getTerms()[idx];
+            return expr.getTerms()[static_cast<std::size_t>(idx)];
           },
           "key"_a)
 

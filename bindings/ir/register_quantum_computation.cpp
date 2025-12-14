@@ -218,8 +218,10 @@ Returns:
         auto [start, stop, step, sliceLength] = slice.compute(circ.getNops());
         auto ops = std::vector<qc::Operation*>();
         ops.reserve(sliceLength);
-        for (auto i = start; i < stop; i += step) {
-          ops.emplace_back(circ.at(static_cast<SizeType>(i)).get());
+        for (std::size_t i = 0; i < sliceLength; ++i) {
+          auto idx =
+              static_cast<DiffType>(start) + static_cast<DiffType>(i) * step;
+          ops.emplace_back(circ.at(static_cast<SizeType>(idx)).get());
         }
         return ops;
       },

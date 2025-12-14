@@ -63,8 +63,19 @@ Args:
            nb::sig("def __ne__(self, arg: object, /) -> bool"))
       .def(nb::hash(nb::self))
 
-      .def("__getitem__", &qc::QuantumRegister::getGlobalIndex, "key"_a,
-           "Get the qubit at the specified index.")
+      .def(
+          "__getitem__",
+          [](const qc::QuantumRegister& reg, nb::ssize_t idx) {
+            const auto n = static_cast<nb::ssize_t>(reg.getSize());
+            if (idx < 0) {
+              idx += n;
+            }
+            if (idx < 0 || idx >= n) {
+              throw nb::index_error();
+            }
+            return reg.getGlobalIndex(static_cast<std::size_t>(idx));
+          },
+          "key"_a, "Get the qubit at the specified index.")
 
       .def("__contains__", &qc::QuantumRegister::contains, "item"_a,
            "Check if the quantum register contains a qubit.")
@@ -121,8 +132,19 @@ Args:
            nb::sig("def __ne__(self, arg: object, /) -> bool"))
       .def(nb::hash(nb::self))
 
-      .def("__getitem__", &qc::ClassicalRegister::getGlobalIndex, "key"_a,
-           "Get the bit at the specified index.")
+      .def(
+          "__getitem__",
+          [](const qc::ClassicalRegister& reg, nb::ssize_t idx) {
+            auto n = static_cast<nb::ssize_t>(reg.getSize());
+            if (idx < 0) {
+              idx += n;
+            }
+            if (idx < 0 || idx >= n) {
+              throw nb::index_error();
+            }
+            return reg.getGlobalIndex(static_cast<std::size_t>(idx));
+          },
+          "key"_a, "Get the bit at the specified index.")
 
       .def("__contains__", &qc::ClassicalRegister::contains, "item"_a,
            "Check if the classical register contains a bit.")

@@ -61,10 +61,17 @@ void registerVectorDDs(const nb::module_& m) {
 
   vec.def(
       "__getitem__",
-      [](const dd::vEdge& v, const size_t idx) {
-        return v.getValueByIndex(idx);
+      [](const dd::vEdge& v, nb::ssize_t idx) {
+        const auto n = static_cast<nb::ssize_t>(v.size());
+        if (idx < 0) {
+          idx += n;
+        }
+        if (idx < 0 || idx >= n) {
+          throw nb::index_error();
+        }
+        return v.getValueByIndex(static_cast<std::size_t>(idx));
       },
-      "index"_a, "Get the amplitude of a basis state by index.");
+      "key"_a, "Get the amplitude of a basis state by index.");
 
   vec.def(
       "get_amplitude",
