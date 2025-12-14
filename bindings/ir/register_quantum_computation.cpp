@@ -1201,7 +1201,7 @@ Args:
       "mcrz",
       [](qc::QuantumComputation& circ, qc::SymbolOrNumber& theta,
          const Controls& controls,
-         qc::Qubit target) { circ.mcrx(theta, getControls(controls), target); },
+         qc::Qubit target) { circ.mcrz(theta, getControls(controls), target); },
       "theta"_a, "controls"_a, "target"_a,
       R"pb(Apply a multi-controlled :math:`R_z(\theta)` gate.
 
