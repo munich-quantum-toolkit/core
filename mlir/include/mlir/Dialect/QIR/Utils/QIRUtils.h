@@ -188,8 +188,8 @@ void setQIRAttributes(LLVM::LLVMFuncOp& main, const QIRMetadata& metadata);
  * Searches for an existing function declaration in the symbol table. If not
  * found, creates a new function declaration at the end of the module.
  *
- * For QIR functions that are irreversible (measurement, reset, deallocation),
- * the "irreversible" attribute is added automatically.
+ * For QIR functions that are irreversible (measurement and reset), the
+ * "irreversible" attribute is added automatically.
  *
  * @param builder The builder to use for creating operations
  * @param op The operation requesting the function (for context)
@@ -205,9 +205,8 @@ LLVM::LLVMFuncOp getOrCreateFunctionDeclaration(OpBuilder& builder,
  * @brief Create a global string constant for result labeling
  *
  * @details
- * Creates a global string constant at module level and returns an addressOf
- * operation pointing to it. The global is created at the start of the module,
- * and the addressOf is inserted at the builder's current insertion point.
+ * Creates a global string constant at the module level and inserts an
+ * AddressOfOp at the start of the main function's entry block.
  *
  * @param builder The builder to use for creating operations
  * @param op The operation requesting the label (for context/location)
