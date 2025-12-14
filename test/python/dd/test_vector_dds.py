@@ -96,6 +96,5 @@ def test_from_vector() -> None:
             vec /= np.linalg.norm(vec)
             dd = p.from_vector(vec)
             vec2 = dd.get_vector()
-            print(vec2)
             assert np.allclose(vec, vec2)
             p.dec_ref_vec(dd)
