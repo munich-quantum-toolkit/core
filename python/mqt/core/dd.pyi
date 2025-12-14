@@ -94,7 +94,6 @@ class VectorDD:
             edge_labels: Whether to include edge weights as labels.
             classic: Whether to use the classic DD visualization style.
             memory: Whether to include memory information. For debugging purposes only.
-            show: Whether to open the SVG file in the default browser.
             format_as_polar: Whether to format the edge weights in polar coordinates.
         """
 
@@ -348,7 +347,7 @@ class DDPackage:
             permutation: The permutation of the qubits. Defaults to the identity permutation.
 
         Returns:
-            The resulting DD after the measurement as well as the updated measurement outcomes..
+            The resulting DD after the measurement as well as the updated measurement outcomes.
         """
 
     def apply_reset(
@@ -557,10 +556,10 @@ class DDPackage:
         """Increment the reference count of a vector."""
 
     def inc_ref_mat(self, mat: MatrixDD) -> None:
-        """Decrement the reference count of a vector."""
+        """Increment the reference count of a matrix."""
 
     def dec_ref_vec(self, vec: VectorDD) -> None:
-        """Increment the reference count of a matrix."""
+        """Decrement the reference count of a vector."""
 
     def dec_ref_mat(self, mat: MatrixDD) -> None:
         """Decrement the reference count of a matrix."""
@@ -655,14 +654,14 @@ class DDPackage:
         """Multiply two matrices.
 
         Notes:
-              It is the caller's responsibility to update the reference count of the input and output matrices after the operation.
+            It is the caller's responsibility to update the reference count of the input and output matrices after the operation.
 
         Args:
-              lhs: The left matrix.
-              rhs: The right matrix.
+            lhs: The left matrix.
+            rhs: The right matrix.
 
         Returns:
-              The product of the two matrices.
+            The product of the two matrices.
         """
 
     def inner_product(self, lhs: VectorDD, rhs: VectorDD) -> complex:
@@ -771,12 +770,10 @@ class BasisStates(enum.Enum):
     """Enumeration of basis states."""
 
     zero = 0
-    """The computational basis state :math:`|0
-    angle`."""
+    r"""The computational basis state :math:`|0\rangle`."""
 
     one = 1
-    """The computational basis state :math:`|1
-    angle`."""
+    r"""The computational basis state :math:`|1\rangle`."""
 
     plus = 2
     r"""

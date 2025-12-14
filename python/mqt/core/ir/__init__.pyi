@@ -426,7 +426,7 @@ class QuantumComputation(MutableSequence[operations.Operation]):
         """
 
     def set_circuit_qubits_garbage(self, q_min: int, q_max: int) -> None:
-        """Et a range of circuit (i.e., logical) qubits to be garbage.
+        """Set a range of circuit (i.e., logical) qubits to be garbage.
 
         Args:
             q_min: The minimum index of the circuit qubits to set as garbage.
@@ -1945,7 +1945,7 @@ class QuantumComputation(MutableSequence[operations.Operation]):
         comparison_kind: operations.ComparisonKind = operations.ComparisonKind.eq,
         params: Sequence[float] = [],
     ) -> None:
-        """Add an if operartion to the circuit.
+        """Add an if operation to the circuit.
 
         Args:
             op_type: The operation to apply
@@ -1967,7 +1967,7 @@ class QuantumComputation(MutableSequence[operations.Operation]):
         comparison_kind: operations.ComparisonKind = operations.ComparisonKind.eq,
         params: Sequence[float] = [],
     ) -> None:
-        """Add an if operartion to the circuit.
+        """Add an if operation to the circuit.
 
         Args:
             op_type: The operation to apply
@@ -1990,16 +1990,16 @@ class QuantumComputation(MutableSequence[operations.Operation]):
         comparison_kind: operations.ComparisonKind = operations.ComparisonKind.eq,
         params: Sequence[float] = [],
     ) -> None:
-        """Add an if operartion to the circuit.
+        """Add an if operation to the circuit.
 
         Args:
-                    op_type: The operation to apply
-                    target: The target qubit
-                    controls: The control qubits
-                    control_register: The classical register to check against
-                    expected_value: The expected value of the control register
-                    comparison_kind: The kind of comparison to perform
-                    params: The parameters of the operation.
+            op_type: The operation to apply
+            target: The target qubit
+            controls: The control qubits
+            control_register: The classical register to check against
+            expected_value: The expected value of the control register
+            comparison_kind: The kind of comparison to perform
+            params: The parameters of the operation.
         """
 
     @overload
@@ -2012,7 +2012,7 @@ class QuantumComputation(MutableSequence[operations.Operation]):
         comparison_kind: operations.ComparisonKind = operations.ComparisonKind.eq,
         params: Sequence[float] = [],
     ) -> None:
-        """Add an if operartion to the circuit.
+        """Add an if operation to the circuit.
 
         Args:
             op_type: The operation to apply
@@ -2034,7 +2034,7 @@ class QuantumComputation(MutableSequence[operations.Operation]):
         comparison_kind: operations.ComparisonKind = operations.ComparisonKind.eq,
         params: Sequence[float] = [],
     ) -> None:
-        """Add an if operartion to the circuit.
+        """Add an if operation to the circuit.
 
         Args:
             op_type: The operation to apply
@@ -2057,7 +2057,7 @@ class QuantumComputation(MutableSequence[operations.Operation]):
         comparison_kind: operations.ComparisonKind = operations.ComparisonKind.eq,
         params: Sequence[float] = [],
     ) -> None:
-        """Add an if operartion to the circuit.
+        """Add an if operation to the circuit.
 
         Args:
             op_type: The operation to apply

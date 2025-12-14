@@ -473,7 +473,7 @@ Args:
 
   qc.def("set_circuit_qubits_garbage",
          &qc::QuantumComputation::setLogicalQubitsGarbage, "q_min"_a, "q_max"_a,
-         R"pb(et a range of circuit (i.e., logical) qubits to be garbage.
+         R"pb(Set a range of circuit (i.e., logical) qubits to be garbage.
 
 Args:
     q_min: The minimum index of the circuit qubits to set as garbage.
@@ -2165,7 +2165,7 @@ Args:
       "op_type"_a, "target"_a, "control_register"_a, "expected_value"_a = 1U,
       "comparison_kind"_a = qc::ComparisonKind::Eq,
       "params"_a = std::vector<qc::fp>{},
-      R"pb(Add an if operartion to the circuit.
+      R"pb(Add an if operation to the circuit.
 
 Args:
     op_type: The operation to apply
@@ -2184,7 +2184,7 @@ Args:
       "op_type"_a, "target"_a, "control"_a, "control_register"_a,
       "expected_value"_a = 1U, "comparison_kind"_a = qc::ComparisonKind::Eq,
       "params"_a = std::vector<qc::fp>{},
-      R"pb(Add an if operartion to the circuit.
+      R"pb(Add an if operation to the circuit.
 
 Args:
     op_type: The operation to apply
@@ -2204,16 +2204,16 @@ Args:
       "op_type"_a, "target"_a, "controls"_a, "control_register"_a,
       "expected_value"_a = 1U, "comparison_kind"_a = qc::ComparisonKind::Eq,
       "params"_a = std::vector<qc::fp>{},
-      R"pb(Add an if operartion to the circuit.
+      R"pb(Add an if operation to the circuit.
 
-        Args:
-            op_type: The operation to apply
-            target: The target qubit
-            controls: The control qubits
-            control_register: The classical register to check against
-            expected_value: The expected value of the control register
-            comparison_kind: The kind of comparison to perform
-            params: The parameters of the operation.)pb");
+Args:
+    op_type: The operation to apply
+    target: The target qubit
+    controls: The control qubits
+    control_register: The classical register to check against
+    expected_value: The expected value of the control register
+    comparison_kind: The kind of comparison to perform
+    params: The parameters of the operation.)pb");
 
   qc.def("if_",
          nb::overload_cast<const qc::OpType, const qc::Qubit, const qc::Bit,
@@ -2223,7 +2223,7 @@ Args:
          "op_type"_a, "target"_a, "control_bit"_a, "expected_value"_a = true,
          "comparison_kind"_a = qc::ComparisonKind::Eq,
          "params"_a = std::vector<qc::fp>{},
-         R"pb(Add an if operartion to the circuit.
+         R"pb(Add an if operation to the circuit.
 
 Args:
     op_type: The operation to apply
@@ -2242,7 +2242,7 @@ Args:
          "expected_value"_a = true,
          "comparison_kind"_a = qc::ComparisonKind::Eq,
          "params"_a = std::vector<qc::fp>{},
-         R"pb(Add an if operartion to the circuit.
+         R"pb(Add an if operation to the circuit.
 
 Args:
     op_type: The operation to apply
@@ -2262,7 +2262,7 @@ Args:
       "op_type"_a, "target"_a, "controls"_a, "control_bit"_a,
       "expected_value"_a = true, "comparison_kind"_a = qc::ComparisonKind::Eq,
       "params"_a = std::vector<qc::fp>{},
-      R"pb(Add an if operartion to the circuit.
+      R"pb(Add an if operation to the circuit.
 
 Args:
     op_type: The operation to apply

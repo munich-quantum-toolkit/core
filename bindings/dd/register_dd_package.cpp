@@ -205,9 +205,9 @@ Returns:
   nb::enum_<dd::BasisStates>(m, "BasisStates", "enum.Enum",
                              "Enumeration of basis states.")
       .value("zero", dd::BasisStates::zero,
-             "The computational basis state :math:`|0\rangle`.")
+             R"pb(The computational basis state :math:`|0\rangle`.)pb")
       .value("one", dd::BasisStates::one,
-             "The computational basis state :math:`|1\rangle`.")
+             R"pb(The computational basis state :math:`|1\rangle`.)pb")
       .value(
           "plus", dd::BasisStates::plus,
           R"pb(The superposition state :math:`|+\rangle = \frac{1}{\sqrt{2}} (|0\rangle + |1\rangle)`.)pb")
@@ -365,7 +365,7 @@ Args:
     permutation: The permutation of the qubits. Defaults to the identity permutation.
 
 Returns:
-    The resulting DD after the measurement as well as the updated measurement outcomes..)pb");
+    The resulting DD after the measurement as well as the updated measurement outcomes.)pb");
 
   dd.def(
       "apply_reset",
@@ -662,9 +662,9 @@ Returns:
   dd.def("inc_ref_vec", &dd::Package::incRef<dd::vNode>, "vec"_a,
          "Increment the reference count of a vector.");
   dd.def("inc_ref_mat", &dd::Package::incRef<dd::mNode>, "mat"_a,
-         "Decrement the reference count of a vector.");
-  dd.def("dec_ref_vec", &dd::Package::decRef<dd::vNode>, "vec"_a,
          "Increment the reference count of a matrix.");
+  dd.def("dec_ref_vec", &dd::Package::decRef<dd::vNode>, "vec"_a,
+         "Decrement the reference count of a vector.");
   dd.def("dec_ref_mat", &dd::Package::decRef<dd::mNode>, "mat"_a,
          "Decrement the reference count of a matrix.");
   dd.def("garbage_collect", &dd::Package::garbageCollect, "force"_a = false,
@@ -773,15 +773,15 @@ Returns:
       // keep the DD package alive while the returned matrix DD is alive.
       nb::keep_alive<0, 1>(), R"pb(Multiply two matrices.
 
-  Notes:
-      It is the caller's responsibility to update the reference count of the input and output matrices after the operation.
+Notes:
+    It is the caller's responsibility to update the reference count of the input and output matrices after the operation.
 
-  Args:
-      lhs: The left matrix.
-      rhs: The right matrix.
+Args:
+    lhs: The left matrix.
+    rhs: The right matrix.
 
-  Returns:
-      The product of the two matrices.)pb");
+Returns:
+    The product of the two matrices.)pb");
 
   dd.def(
       "inner_product",

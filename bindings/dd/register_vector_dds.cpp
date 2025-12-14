@@ -139,7 +139,6 @@ Args:
     edge_labels: Whether to include edge weights as labels.
     classic: Whether to use the classic DD visualization style.
     memory: Whether to include memory information. For debugging purposes only.
-    show: Whether to open the SVG file in the default browser.
     format_as_polar: Whether to format the edge weights in polar coordinates.)pb");
 }
 
