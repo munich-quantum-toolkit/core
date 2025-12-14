@@ -12,6 +12,7 @@
 #include "ir/Permutation.hpp"
 #include "ir/operations/Control.hpp"
 
+#include <cstdint>
 #include <iterator>
 #include <nanobind/make_iterator.h>
 #include <nanobind/nanobind.h>
@@ -30,8 +31,8 @@ namespace mqt {
 namespace nb = nanobind;
 using namespace nb::literals;
 
-using Control = std::variant<qc::Control, nb::int_>;
-using Controls = std::set<std::variant<qc::Control, nb::int_>>;
+using Control = std::variant<qc::Control, std::uint32_t>;
+using Controls = std::set<std::variant<qc::Control, std::uint32_t>>;
 
 namespace {
 
@@ -40,7 +41,7 @@ qc::Control getControl(const Control& control) {
   if (std::holds_alternative<qc::Control>(control)) {
     return std::get<qc::Control>(control);
   }
-  return static_cast<qc::Qubit>(std::get<nb::int_>(control));
+  return std::get<std::uint32_t>(control);
 }
 
 /// Helper function to convert Controls variant to qc::Controls

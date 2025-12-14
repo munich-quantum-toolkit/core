@@ -43,8 +43,8 @@ using namespace nb::literals;
 using DiffType = std::vector<std::unique_ptr<qc::Operation>>::difference_type;
 using SizeType = std::vector<std::unique_ptr<qc::Operation>>::size_type;
 
-using Control = std::variant<qc::Control, nb::int_>;
-using Controls = std::set<std::variant<qc::Control, nb::int_>>;
+using Control = std::variant<qc::Control, std::uint32_t>;
+using Controls = std::set<std::variant<qc::Control, std::uint32_t>>;
 
 namespace {
 
@@ -53,7 +53,7 @@ qc::Control getControl(const Control& control) {
   if (std::holds_alternative<qc::Control>(control)) {
     return std::get<qc::Control>(control);
   }
-  return static_cast<qc::Qubit>(std::get<nb::int_>(control));
+  return std::get<std::uint32_t>(control);
 }
 
 /// Helper function to convert Controls variant to qc::Controls
