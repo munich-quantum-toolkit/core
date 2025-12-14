@@ -456,8 +456,14 @@ void QuartzProgramBuilder::checkFinalized() const {
 }
 
 OwningOpRef<ModuleOp> QuartzProgramBuilder::finalize() {
-  // Automatically deallocate all remaining allocated qubits
-  for (auto qubit : allocatedQubits) {
+  // Automatically deallocate all still-allocated qubits
+  // Sort qubits for deterministic output
+  SmallVector<Value> sortedQubits(allocatedQubits.begin(),
+                                  allocatedQubits.end());
+  llvm::sort(sortedQubits, [](Value a, Value b) {
+    return a.getAsOpaquePointer() < b.getAsOpaquePointer();
+  });
+  for (auto qubit : sortedQubits) {
     create<DeallocOp>(loc, qubit);
   }
 

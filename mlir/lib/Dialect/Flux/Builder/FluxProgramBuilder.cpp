@@ -617,8 +617,13 @@ void FluxProgramBuilder::checkFinalized() const {
 }
 
 OwningOpRef<ModuleOp> FluxProgramBuilder::finalize() {
-  // Automatically deallocate all remaining valid qubits
-  for (const auto qubit : validQubits) {
+  // Automatically deallocate all still-allocated qubits
+  // Sort qubits for deterministic output
+  SmallVector<Value> sortedQubits(validQubits.begin(), validQubits.end());
+  llvm::sort(sortedQubits, [](Value a, Value b) {
+    return a.getAsOpaquePointer() < b.getAsOpaquePointer();
+  });
+  for (auto qubit : sortedQubits) {
     create<DeallocOp>(loc, qubit);
   }
 
