@@ -40,13 +40,8 @@ Args:
     constant: The constant.)pb")
 
       .def(nb::init<double>(), "constant"_a = 0.0)
-      .def(
-          "__init__",
-          [](sym::Expression<double, double>* self,
-             const std::vector<sym::Term<double>>& terms, double constant) {
-            new (self) sym::Expression<double, double>(terms, constant);
-          },
-          "terms"_a, "constant"_a = 0.0)
+      .def(nb::init<const std::vector<sym::Term<double>>&, double>(), "terms"_a,
+           "constant"_a = 0.0)
       .def(
           "__init__",
           [](sym::Expression<double, double>* self,
