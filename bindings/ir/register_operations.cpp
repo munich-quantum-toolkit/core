@@ -25,7 +25,7 @@ void registerSymbolicOperation(const nb::module_& m);
 void registerIfElseOperation(const nb::module_& m);
 
 // NOLINTNEXTLINE(misc-use-internal-linkage)
-void registerOperations(nb::module_& m) {
+void registerOperations(const nb::module_& m) {
   registerOptype(m);
   registerControl(m);
   registerOperation(m);

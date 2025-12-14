@@ -15,12 +15,12 @@ namespace mqt {
 namespace nb = nanobind;
 
 // forward declarations
-void registerVariable(nb::module_& m);
-void registerTerm(nb::module_& m);
-void registerExpression(nb::module_& m);
+void registerVariable(const nb::module_& m);
+void registerTerm(const nb::module_& m);
+void registerExpression(const nb::module_& m);
 
 // NOLINTNEXTLINE(misc-use-internal-linkage)
-void registerSymbolic(nb::module_& m) {
+void registerSymbolic(const nb::module_& m) {
   registerVariable(m);
   registerTerm(m);
   registerExpression(m);

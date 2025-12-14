@@ -22,7 +22,7 @@ namespace nb = nanobind;
 using namespace nb::literals;
 
 // NOLINTNEXTLINE(misc-use-internal-linkage)
-void registerTerm(nb::module_& m) {
+void registerTerm(const nb::module_& m) {
   nb::class_<sym::Term<double>>(
       m, "Term",
       R"pb(A symbolic term which consists of a variable with a given coefficient.

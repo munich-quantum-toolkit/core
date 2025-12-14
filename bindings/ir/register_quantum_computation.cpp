@@ -68,7 +68,7 @@ qc::Controls getControls(const Controls& controls) {
 } // namespace
 
 // NOLINTNEXTLINE(misc-use-internal-linkage)
-void registerQuantumComputation(nb::module_& m) {
+void registerQuantumComputation(const nb::module_& m) {
   auto wrap = [](DiffType i, const SizeType size) {
     if (i < 0) {
       i += static_cast<DiffType>(size);

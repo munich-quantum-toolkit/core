@@ -23,7 +23,7 @@ namespace nb = nanobind;
 using namespace nb::literals;
 
 // NOLINTNEXTLINE(misc-use-internal-linkage)
-void registerRegisters(nb::module_& m) {
+void registerRegisters(const nb::module_& m) {
   nb::class_<qc::QuantumRegister>(
       m, "QuantumRegister", R"pb(A class to represent a collection of qubits.
 

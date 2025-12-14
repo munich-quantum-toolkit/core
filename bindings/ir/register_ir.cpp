@@ -15,11 +15,11 @@ namespace mqt {
 namespace nb = nanobind;
 
 // forward declarations
-void registerRegisters(nb::module_& m);
-void registerPermutation(nb::module_& m);
-void registerOperations(nb::module_& m);
-void registerSymbolic(nb::module_& m);
-void registerQuantumComputation(nb::module_& m);
+void registerRegisters(const nb::module_& m);
+void registerPermutation(const nb::module_& m);
+void registerOperations(const nb::module_& m);
+void registerSymbolic(const nb::module_& m);
+void registerQuantumComputation(const nb::module_& m);
 
 NB_MODULE(MQT_CORE_MODULE_NAME, m) {
   registerPermutation(m);

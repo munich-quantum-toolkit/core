@@ -56,7 +56,7 @@ qc::Controls getControls(const Controls& controls) {
 } // namespace
 
 // NOLINTNEXTLINE(misc-use-internal-linkage)
-void registerPermutation(nb::module_& m) {
+void registerPermutation(const nb::module_& m) {
   nb::class_<qc::Permutation>(
       m, "Permutation",
       nb::sig("class Permutation(collections.abc.MutableMapping[int, int])"),

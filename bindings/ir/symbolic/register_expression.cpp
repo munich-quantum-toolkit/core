@@ -27,7 +27,7 @@ namespace nb = nanobind;
 using namespace nb::literals;
 
 // NOLINTNEXTLINE(misc-use-internal-linkage)
-void registerExpression(nb::module_& m) {
+void registerExpression(const nb::module_& m) {
   nb::class_<sym::Expression<double, double>>(
       m, "Expression",
       R"pb(A symbolic expression which consists of a sum of terms and a constant.

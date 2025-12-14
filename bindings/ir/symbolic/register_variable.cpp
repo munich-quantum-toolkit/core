@@ -21,7 +21,7 @@ namespace nb = nanobind;
 using namespace nb::literals;
 
 // NOLINTNEXTLINE(misc-use-internal-linkage)
-void registerVariable(nb::module_& m) {
+void registerVariable(const nb::module_& m) {
   nb::class_<sym::Variable>(m, "Variable", R"pb(A symbolic variable.
 Note:
     Variables are uniquely identified by their name, so if a variable with the same name already exists, the existing variable will be returned.
