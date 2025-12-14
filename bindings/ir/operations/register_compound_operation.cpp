@@ -65,6 +65,9 @@ Args:
             std::vector<std::unique_ptr<qc::Operation>> uniqueOps;
             uniqueOps.reserve(ops.size());
             for (const auto& op : ops) {
+              if (op == nullptr) {
+                throw std::runtime_error("ops must not contain None.");
+              }
               uniqueOps.emplace_back(op->clone());
             }
             new (self) qc::CompoundOperation(std::move(uniqueOps));
