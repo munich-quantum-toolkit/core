@@ -216,7 +216,7 @@ void addMeasureOp(QuartzProgramBuilder& builder, const qc::Operation& operation,
 void addResetOp(QuartzProgramBuilder& builder, const qc::Operation& operation,
                 const llvm::SmallVector<Value>& qubits) {
   for (const auto& target : operation.getTargets()) {
-    Value qubit = qubits[target];
+    auto qubit = qubits[target];
     builder.reset(qubit);
   }
 }

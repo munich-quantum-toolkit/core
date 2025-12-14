@@ -457,7 +457,7 @@ void QuartzProgramBuilder::checkFinalized() const {
 
 OwningOpRef<ModuleOp> QuartzProgramBuilder::finalize() {
   // Automatically deallocate all remaining allocated qubits
-  for (Value qubit : allocatedQubits) {
+  for (auto qubit : allocatedQubits) {
     create<DeallocOp>(loc, qubit);
   }
 
