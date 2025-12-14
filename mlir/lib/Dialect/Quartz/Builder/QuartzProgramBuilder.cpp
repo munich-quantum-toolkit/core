@@ -30,7 +30,7 @@ namespace mlir::quartz {
 
 QuartzProgramBuilder::QuartzProgramBuilder(MLIRContext* context)
     : OpBuilder(context), ctx(context), loc(getUnknownLoc()),
-      module(create<ModuleOp>(loc)) {}
+      module(ModuleOp::create(loc)) {}
 
 void QuartzProgramBuilder::initialize() {
   // Ensure the Quartz dialect is loaded

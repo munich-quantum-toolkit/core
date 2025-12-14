@@ -34,7 +34,7 @@ namespace mlir::flux {
 
 FluxProgramBuilder::FluxProgramBuilder(MLIRContext* context)
     : OpBuilder(context), ctx(context), loc(getUnknownLoc()),
-      module(create<ModuleOp>(loc)) {}
+      module(ModuleOp::create(loc)) {}
 
 void FluxProgramBuilder::initialize() {
   // Ensure the Flux dialect is loaded
