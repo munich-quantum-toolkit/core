@@ -83,6 +83,13 @@ void QuantumCompilerPipeline::configurePassManager(PassManager& pm) const {
 LogicalResult
 QuantumCompilerPipeline::runPipeline(ModuleOp module,
                                      CompilationRecord* record) const {
+  // Ensure printIRAfterAllStages implies recordIntermediates
+  if (config_.printIRAfterAllStages && !config_.recordIntermediates) {
+    llvm::errs() << "Invalid configuration: printIRAfterAllStages requires "
+                    "recordIntermediates to be enabled.\n";
+    return failure();
+  }
+
   PassManager pm(module.getContext());
 
   // Configure PassManager with diagnostic options
