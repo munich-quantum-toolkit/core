@@ -38,10 +38,10 @@ Args:
   control.def(nb::init<qc::Qubit, qc::Control::Type>(), "qubit"_a,
               "type_"_a.sig("...") = qc::Control::Type::Pos);
 
-  control.def_rw("qubit", &qc::Control::qubit,
+  control.def_ro("qubit", &qc::Control::qubit,
                  "The qubit that is the control.");
 
-  control.def_rw("type_", &qc::Control::type, "The type of the control.");
+  control.def_ro("type_", &qc::Control::type, "The type of the control.");
 
   control.def("__str__", [](const qc::Control& c) { return c.toString(); });
   control.def("__repr__", [](const qc::Control& c) { return c.toString(); });
