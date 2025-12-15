@@ -205,22 +205,25 @@ Value FluxProgramBuilder::reset(Value qubit) {
   Value FluxProgramBuilder::c##OP_NAME(                                        \
       const std::variant<double, Value>&(PARAM), Value control) {              \
     checkFinalized();                                                          \
-    const auto [controlsOut, targetsOut] = ctrl(                               \
-        control, {}, [&](OpBuilder& b, ValueRange /*targets*/) -> ValueRange { \
-          b.create<OP_CLASS>(loc, PARAM);                                      \
-          return {};                                                           \
-        });                                                                    \
+    const auto controlsOut =                                                   \
+        ctrl(control, {},                                                      \
+             [&](OpBuilder& b, ValueRange /*targets*/) -> ValueRange {         \
+               b.create<OP_CLASS>(loc, PARAM);                                 \
+               return {};                                                      \
+             })                                                                \
+            .first;                                                            \
     return controlsOut[0];                                                     \
   }                                                                            \
   ValueRange FluxProgramBuilder::mc##OP_NAME(                                  \
       const std::variant<double, Value>&(PARAM), ValueRange controls) {        \
     checkFinalized();                                                          \
-    const auto [controlsOut, targetsOut] =                                     \
+    const auto controlsOut =                                                   \
         ctrl(controls, {},                                                     \
              [&](OpBuilder& b, ValueRange /*targets*/) -> ValueRange {         \
                b.create<OP_CLASS>(loc, PARAM);                                 \
                return {};                                                      \
-             });                                                               \
+             })                                                                \
+            .first;                                                            \
     return controlsOut;                                                        \
   }
 
