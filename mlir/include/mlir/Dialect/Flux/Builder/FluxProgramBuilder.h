@@ -280,6 +280,7 @@ public:
    *   flux.OP_NAME(%PARAM)                                                    \
    *   flux.yield                                                              \
    * } : ({!flux.qubit}) -> ({!flux.qubit})                                    \
+   * ```                                                                       \
    */                                                                          \
   Value c##OP_NAME(const std::variant<double, Value>&(PARAM), Value control);  \
   /**                                                                          \
@@ -298,6 +299,7 @@ public:
    *   flux.OP_NAME(%PARAM)                                                    \
    *   flux.yield                                                              \
    * } : ({!flux.qubit, !flux.qubit}) -> ({!flux.qubit, !flux.qubit})          \
+   * ```                                                                       \
    */                                                                          \
   ValueRange mc##OP_NAME(const std::variant<double, Value>&(PARAM),            \
                          ValueRange controls);

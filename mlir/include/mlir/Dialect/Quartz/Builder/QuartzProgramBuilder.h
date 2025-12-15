@@ -269,6 +269,7 @@ public:
    * quartz.ctrl(%q) {                                                         \
    *   quartz.OP_NAME(%PARAM)                                                  \
    * }                                                                         \
+   * ```                                                                       \
    */                                                                          \
   QuartzProgramBuilder& c##OP_NAME(const std::variant<double, Value>&(PARAM),  \
                                    Value control);                             \
@@ -287,6 +288,7 @@ public:
    * quartz.ctrl(%q0, %q1) {                                                   \
    *   quartz.OP_NAME(%PARAM)                                                  \
    * }                                                                         \
+   * ```                                                                       \
    */                                                                          \
   QuartzProgramBuilder& mc##OP_NAME(const std::variant<double, Value>&(PARAM), \
                                     ValueRange controls);
@@ -328,6 +330,7 @@ public:
    * quartz.ctrl(%q0) {                                                        \
    *   quartz.OP_NAME %q1 : !quartz.qubit                                      \
    * }                                                                         \
+   * ```                                                                       \
    */                                                                          \
   QuartzProgramBuilder& c##OP_NAME(Value control, Value target);               \
   /**                                                                          \
@@ -345,6 +348,7 @@ public:
    * quartz.ctrl(%q0, %q1) {                                                   \
    *   quartz.OP_NAME %q2 : !quartz.qubit                                      \
    * }                                                                         \
+   * ```                                                                       \
    */                                                                          \
   QuartzProgramBuilder& mc##OP_NAME(ValueRange controls, Value target);
 
@@ -398,6 +402,7 @@ public:
    * quartz.ctrl(%q0) {                                                        \
    *   quartz.OP_NAME(%PARAM) %q1 : !quartz.qubit                              \
    * }                                                                         \
+   * ```                                                                       \
    */                                                                          \
   QuartzProgramBuilder& c##OP_NAME(const std::variant<double, Value>&(PARAM),  \
                                    Value control, Value target);               \
@@ -417,6 +422,7 @@ public:
    * quartz.ctrl(%q0, %q1) {                                                   \
    *   quartz.OP_NAME(%PARAM) %q2 : !quartz.qubit                              \
    * }                                                                         \
+   * ```                                                                       \
    */                                                                          \
   QuartzProgramBuilder& mc##OP_NAME(const std::variant<double, Value>&(PARAM), \
                                     ValueRange controls, Value target);
@@ -467,6 +473,7 @@ public:
    * quartz.ctrl(%q0) {                                                        \
    *   quartz.OP_NAME(%PARAM1, %PARAM2) %q1 : !quartz.qubit                    \
    * }                                                                         \
+   * ```                                                                       \
    */                                                                          \
   QuartzProgramBuilder& c##OP_NAME(const std::variant<double, Value>&(PARAM1), \
                                    const std::variant<double, Value>&(PARAM2), \
@@ -488,6 +495,7 @@ public:
    * quartz.ctrl(%q0, %q1) {                                                   \
    *   quartz.OP_NAME(%PARAM1, %PARAM2) %q2 : !quartz.qubit                    \
    * }                                                                         \
+   * ```                                                                       \
    */                                                                          \
   QuartzProgramBuilder& mc##OP_NAME(                                           \
       const std::variant<double, Value>&(PARAM1),                              \
@@ -542,6 +550,7 @@ public:
    * quartz.ctrl(%q0) {                                                        \
    *   quartz.OP_NAME(%PARAM1, %PARAM2, %PARAM3) %q1 : !quartz.qubit           \
    * }                                                                         \
+   * ```                                                                       \
    */                                                                          \
   QuartzProgramBuilder& c##OP_NAME(const std::variant<double, Value>&(PARAM1), \
                                    const std::variant<double, Value>&(PARAM2), \
@@ -565,6 +574,7 @@ public:
    * quartz.ctrl(%q0, %q1) {                                                   \
    *   quartz.OP_NAME(%PARAM1, %PARAM2, %PARAM3) %q2 : !quartz.qubit           \
    * }                                                                         \
+   * ```                                                                       \
    */                                                                          \
   QuartzProgramBuilder& mc##OP_NAME(                                           \
       const std::variant<double, Value>&(PARAM1),                              \
@@ -611,6 +621,7 @@ public:
    * quartz.ctrl(%q0) {                                                        \
    *   quartz.OP_NAME %q1, %q2 : !quartz.qubit, !quartz.qubit                  \
    * }                                                                         \
+   * ```                                                                       \
    */                                                                          \
   QuartzProgramBuilder& c##OP_NAME(Value control, Value qubit0, Value qubit1); \
   /**                                                                          \
@@ -629,6 +640,7 @@ public:
    * quartz.ctrl(%q0, %q1) {                                                   \
    *   quartz.OP_NAME %q2, %q3 : !quartz.qubit, !quartz.qubit                  \
    * }                                                                         \
+   * ```                                                                       \
    */                                                                          \
   QuartzProgramBuilder& mc##OP_NAME(ValueRange controls, Value qubit0,         \
                                     Value qubit1);
@@ -678,6 +690,7 @@ public:
    * quartz.ctrl(%q0) {                                                        \
    *   quartz.OP_NAME(%PARAM) %q1, %q2 : !quartz.qubit, !quartz.qubit          \
    * }                                                                         \
+   * ```                                                                       \
    */                                                                          \
   QuartzProgramBuilder& c##OP_NAME(const std::variant<double, Value>&(PARAM),  \
                                    Value control, Value qubit0, Value qubit1); \
@@ -698,6 +711,7 @@ public:
    * quartz.ctrl(%q0, %q1) {                                                   \
    *   quartz.OP_NAME(%PARAM) %q2, %q3 : !quartz.qubit, !quartz.qubit          \
    * }                                                                         \
+   * ```                                                                       \
    */                                                                          \
   QuartzProgramBuilder& mc##OP_NAME(const std::variant<double, Value>&(PARAM), \
                                     ValueRange controls, Value qubit0,         \
@@ -752,6 +766,7 @@ public:
    *   quartz.OP_NAME(%PARAM1, %PARAM2) %q1, %q2 : !quartz.qubit,              \
    * !quartz.qubit                                                             \
    * }                                                                         \
+   * ```                                                                       \
    */                                                                          \
   QuartzProgramBuilder& c##OP_NAME(const std::variant<double, Value>&(PARAM1), \
                                    const std::variant<double, Value>&(PARAM2), \
@@ -774,6 +789,7 @@ public:
    * quartz.ctrl(%q0, %q1) {                                                   \
    *  quartz.OP_NAME(%PARAM1, %PARAM2) %q2, %q3 : !quartz.qubit, !quartz.qubit \
    * }                                                                         \
+   * ```                                                                       \
    */                                                                          \
   QuartzProgramBuilder& mc##OP_NAME(                                           \
       const std::variant<double, Value>&(PARAM1),                              \
