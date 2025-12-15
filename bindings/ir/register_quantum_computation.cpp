@@ -17,6 +17,7 @@
 #include "ir/operations/Operation.hpp"
 #include "qasm3/Importer.hpp"
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <memory>
@@ -288,12 +289,16 @@ Args:
       "__delitem__",
       [](qc::QuantumComputation& circ, const nb::slice& slice) {
         auto [start, stop, step, sliceLength] = slice.compute(circ.getNops());
-        // delete in reverse order to not invalidate indices
-        for (std::size_t i = sliceLength; i > 0; --i) {
-          const auto offset =
-              static_cast<DiffType>(static_cast<SizeType>(start) +
-                                    ((i - 1) * static_cast<SizeType>(step)));
-          circ.erase(circ.begin() + offset);
+        // Delete in reverse order to not invalidate indices
+        std::vector<DiffType> indices;
+        indices.reserve(sliceLength);
+        for (std::size_t i = 0; i < sliceLength; ++i) {
+          indices.emplace_back(static_cast<DiffType>(start) +
+                               static_cast<DiffType>(i) * step);
+        }
+        std::sort(indices.begin(), indices.end(), std::greater<DiffType>());
+        for (const auto idx : indices) {
+          circ.erase(circ.begin() + idx);
         }
       },
       "index"_a, R"pb(Delete the operations in the given slice.
