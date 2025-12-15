@@ -84,9 +84,10 @@ LogicalResult
 QuantumCompilerPipeline::runPipeline(ModuleOp module,
                                      CompilationRecord* record) const {
   // Ensure printIRAfterAllStages implies recordIntermediates
-  if (config_.printIRAfterAllStages && !config_.recordIntermediates) {
-    llvm::errs() << "Invalid configuration: printIRAfterAllStages requires "
-                    "recordIntermediates to be enabled.\n";
+  if (config_.printIRAfterAllStages &&
+      (!config_.recordIntermediates || record == nullptr)) {
+    llvm::errs() << "printIRAfterAllStages requires recordIntermediates to be "
+                    "enabled and the record pointer to be non-null.\n";
     return failure();
   }
 
