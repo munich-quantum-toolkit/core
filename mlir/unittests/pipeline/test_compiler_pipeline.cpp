@@ -1583,8 +1583,7 @@ TEST_F(CompilerPipelineTest, MCXNested) {
   auto input = buildQuartzIR([](quartz::QuartzProgramBuilder& b) {
     auto reg = b.allocQubitRegister(3, "q");
     b.ctrl(reg[0], [&](OpBuilder& b) {
-      // NOLINTNEXTLINE(cppcoreguidelines-pro-type-static-cast-downcast)
-      static_cast<quartz::QuartzProgramBuilder&>(b).cx(reg[1], reg[2]);
+      llvm::cast<quartz::QuartzProgramBuilder&>(b).cx(reg[1], reg[2]);
     });
   });
 
