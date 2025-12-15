@@ -15,6 +15,7 @@
 #include <llvm/ADT/DenseMap.h>
 #include <llvm/ADT/DenseSet.h>
 #include <llvm/ADT/SmallVector.h>
+#include <llvm/Support/StringSaver.h>
 #include <mlir/Dialect/LLVMIR/LLVMDialect.h>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/BuiltinOps.h>
@@ -804,6 +805,10 @@ private:
   Location loc;
 
   LLVM::LLVMFuncOp mainFunc;
+
+  /// Allocator and StringSaver for stable StringRefs
+  llvm::BumpPtrAllocator allocator;
+  llvm::StringSaver stringSaver{allocator};
 
   /// Entry block: constants and initialization
   Block* entryBlock{};

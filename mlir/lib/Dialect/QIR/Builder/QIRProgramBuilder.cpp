@@ -160,7 +160,7 @@ QIRProgramBuilder::allocClassicalBitRegister(const int64_t size,
       // Cache for reuse
       ptrCache[numResults + i] = val;
     }
-    registerResultMap.insert({{name, i}, val});
+    registerResultMap.insert({{stringSaver.save(name), i}, val});
   }
   metadata_.numResults += size;
   return {.name = name, .size = size};
