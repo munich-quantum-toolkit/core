@@ -165,7 +165,6 @@ Args:
            nb::sig("def __eq__(self, arg: object, /) -> bool"))
       .def(nb::self != nb::self, // NOLINT(misc-redundant-expression)
            nb::sig("def __ne__(self, arg: object, /) -> bool"))
-      .def(nb::hash(nb::self))
 
       .def("__str__",
            [](const qc::Permutation& p) {
