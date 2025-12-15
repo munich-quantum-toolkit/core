@@ -111,8 +111,8 @@ SmallVector<Value> FluxProgramBuilder::allocQubitRegister(const int64_t size,
 }
 
 FluxProgramBuilder::ClassicalRegister
-FluxProgramBuilder::allocClassicalBitRegister(int64_t size,
-                                              const std::string& name) {
+FluxProgramBuilder::allocClassicalBitRegister(const int64_t size,
+                                              std::string name) {
   checkFinalized();
 
   if (size <= 0) {

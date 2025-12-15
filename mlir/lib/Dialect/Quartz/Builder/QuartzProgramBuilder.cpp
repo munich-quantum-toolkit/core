@@ -106,8 +106,8 @@ SmallVector<Value> QuartzProgramBuilder::allocQubitRegister(const int64_t size,
 }
 
 QuartzProgramBuilder::ClassicalRegister
-QuartzProgramBuilder::allocClassicalBitRegister(int64_t size,
-                                                const std::string& name) {
+QuartzProgramBuilder::allocClassicalBitRegister(const int64_t size,
+                                                std::string name) {
   checkFinalized();
 
   if (size <= 0) {

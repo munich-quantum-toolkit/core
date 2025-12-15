@@ -159,10 +159,10 @@ public:
      */
     Bit operator[](const int64_t index) const {
       if (index < 0 || index >= size) {
-        StringRef msg = "Bit index " + std::to_string(index) +
-                        " out of bounds for register '" + name + "' of size " +
-                        std::to_string(size);
-        llvm::reportFatalUsageError(msg);
+        const std::string msg = "Bit index " + std::to_string(index) +
+                                " out of bounds for register '" + name +
+                                "' of size " + std::to_string(size);
+        llvm::reportFatalUsageError(msg.c_str());
       }
       return {
           .registerName = name, .registerSize = size, .registerIndex = index};
@@ -181,7 +181,7 @@ public:
    * ```
    */
   ClassicalRegister allocClassicalBitRegister(int64_t size,
-                                              const std::string& name = "c");
+                                              std::string name = "c");
 
   //===--------------------------------------------------------------------===//
   // Measurement and Reset
