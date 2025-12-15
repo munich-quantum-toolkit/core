@@ -7,6 +7,8 @@
 #
 # Licensed under the MIT License
 
+set -euo pipefail
+
 files=(
   "./python/mqt/core/ir/__init__.pyi"
   "./python/mqt/core/ir/operations.pyi"
@@ -52,6 +54,8 @@ for file in "${files[@]}"; do
     sed -i '/_unhashable_values_map_:/d' "$file"
   fi
 done
+
+set +e
 
 # Add license headers to the generated stub files
 for file in "${files[@]}"; do
