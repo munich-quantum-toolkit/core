@@ -15,11 +15,11 @@ from __future__ import annotations
 
 import itertools
 import warnings
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, ClassVar
 
-import qiskit.circuit.library as qcl
 from qiskit import qasm2, qasm3
-from qiskit.circuit import Parameter
+from qiskit.circuit import QuantumCircuit
+from qiskit.circuit.library import get_standard_gate_name_mapping
 from qiskit.providers import BackendV2, Options
 from qiskit.transpiler import InstructionProperties, Target
 
@@ -36,17 +36,56 @@ from .exceptions import (
 from .job import QDMIJob
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable
+    from collections.abc import Iterable, Mapping, Sequence
 
-    from qiskit.circuit import Instruction, QuantumCircuit
+    from qiskit.circuit import Instruction, Parameter
+    from qiskit.circuit.parameterexpression import ParameterValueType
 
     from .provider import QDMIProvider
+
+    # Type alias for parameter values
+    ParametersType = Mapping[Parameter, ParameterValueType] | Iterable[ParameterValueType]
 
 __all__ = ["QDMIBackend"]
 
 
 def __dir__() -> list[str]:
     return __all__
+
+
+def _build_gate_mappings_for_backend(
+    gate_aliases: dict[str, set[str]],
+) -> tuple[dict[str, set[str]], dict[str, Instruction]]:
+    """Build both forward (Qiskit→QDMI) and inverse (QDMI→Gate) mappings.
+
+    Uses Qiskit's standard gate mapping as the canonical source of truth,
+    combined with a list of device-specific aliases.
+
+    Args:
+        gate_aliases: Maps canonical names to their aliases.
+
+    Returns:
+        Tuple of (qiskit_to_qdmi_map, operation_to_gate_map).
+    """
+    # Get Qiskit's standard gate name mapping as our canonical source
+    canonical_gates = get_standard_gate_name_mapping()
+
+    qiskit_to_qdmi: dict[str, set[str]] = {}
+    operation_to_gate: dict[str, Instruction] = {}
+
+    # Process each canonical gate from Qiskit's standard library
+    for canonical_name, gate_instance in canonical_gates.items():
+        # Get all names for this gate (canonical + aliases)
+        all_names = {canonical_name}
+        if canonical_name in gate_aliases:
+            all_names.update(gate_aliases[canonical_name])
+
+        # For each name, map it to all names (bidirectional aliases)
+        for name in all_names:
+            qiskit_to_qdmi[name] = all_names.copy()
+            operation_to_gate[name] = gate_instance
+
+    return qiskit_to_qdmi, operation_to_gate
 
 
 class QDMIBackend(BackendV2):  # type: ignore[misc]
@@ -79,6 +118,21 @@ class QDMIBackend(BackendV2):  # type: ignore[misc]
 
     # Class-level counter for generating unique circuit names
     _circuit_counter = itertools.count()
+
+    # Define known aliases
+    _GATE_ALIASES: ClassVar[dict[str, set[str]]] = {
+        "id": {"i"},  # Identity gate can also be called 'i'
+        "p": {"phase"},  # Phase gate can also be called 'phase'
+        "r": {"prx"},  # R gate can also be called 'prx' (IQM naming)
+        "u": {"u3"},  # U and U3 are the same gate
+        "cx": {"cnot"},  # CX and CNOT are the same gate
+    }
+
+    _QISKIT_TO_QDMI_GATE_MAP: ClassVar[dict[str, set[str]]]
+    _OPERATION_TO_GATE_MAP: ClassVar[dict[str, Instruction]]
+
+    # Initialize derived mappings at class definition time
+    _QISKIT_TO_QDMI_GATE_MAP, _OPERATION_TO_GATE_MAP = _build_gate_mappings_for_backend(_GATE_ALIASES)
 
     def __init__(self, device: fomac.Device, provider: QDMIProvider | None = None) -> None:
         """Initialize the backend with a FoMaC device.
@@ -241,80 +295,22 @@ class QDMIBackend(BackendV2):  # type: ignore[misc]
         Returns:
             Qiskit gate instance or None if not mappable.
         """
-        # Map known operations to Qiskit gates
-        gate_map: dict[str, Instruction] = {
-            # Single-qubit Pauli gates
-            "x": qcl.XGate(),
-            "y": qcl.YGate(),
-            "z": qcl.ZGate(),
-            "id": qcl.IGate(),
-            "i": qcl.IGate(),
-            # Hadamard
-            "h": qcl.HGate(),
-            # Phase gates
-            "s": qcl.SGate(),
-            "sdg": qcl.SdgGate(),
-            "t": qcl.TGate(),
-            "tdg": qcl.TdgGate(),
-            "sx": qcl.SXGate(),
-            "sxdg": qcl.SXdgGate(),
-            "p": qcl.PhaseGate(Parameter("lambda")),
-            "phase": qcl.PhaseGate(Parameter("lambda")),
-            "gphase": qcl.GlobalPhaseGate(Parameter("theta")),
-            # Rotation gates (parametric)
-            "rx": qcl.RXGate(Parameter("theta")),
-            "ry": qcl.RYGate(Parameter("theta")),
-            "rz": qcl.RZGate(Parameter("phi")),
-            "r": qcl.RGate(Parameter("theta"), Parameter("phi")),
-            "prx": qcl.RGate(Parameter("theta"), Parameter("phi")),
-            # Universal gates (parametric)
-            "u": qcl.UGate(Parameter("theta"), Parameter("phi"), Parameter("lambda")),
-            "u1": qcl.U1Gate(Parameter("lambda")),
-            "u2": qcl.U2Gate(Parameter("phi"), Parameter("lambda")),
-            "u3": qcl.UGate(Parameter("theta"), Parameter("phi"), Parameter("lambda")),
-            # Two-qubit gates
-            "cx": qcl.CXGate(),
-            "cnot": qcl.CXGate(),
-            "cy": qcl.CYGate(),
-            "cz": qcl.CZGate(),
-            "ch": qcl.CHGate(),
-            "cs": qcl.CSGate(),
-            "csdg": qcl.CSdgGate(),
-            "csx": qcl.CSXGate(),
-            "swap": qcl.SwapGate(),
-            "iswap": qcl.iSwapGate(),
-            "dcx": qcl.DCXGate(),
-            "ecr": qcl.ECRGate(),
-            # Two-qubit gates (parametric)
-            "cp": qcl.CPhaseGate(Parameter("lambda")),
-            "cu1": qcl.CU1Gate(Parameter("lambda")),
-            "cu3": qcl.CU3Gate(Parameter("theta"), Parameter("phi"), Parameter("lambda")),
-            "crx": qcl.CRXGate(Parameter("theta")),
-            "cry": qcl.CRYGate(Parameter("theta")),
-            "crz": qcl.CRZGate(Parameter("phi")),
-            "rxx": qcl.RXXGate(Parameter("theta")),
-            "ryy": qcl.RYYGate(Parameter("theta")),
-            "rzz": qcl.RZZGate(Parameter("theta")),
-            "rzx": qcl.RZXGate(Parameter("theta")),
-            "xx_plus_yy": qcl.XXPlusYYGate(Parameter("theta"), Parameter("beta")),
-            "xx_minus_yy": qcl.XXMinusYYGate(Parameter("theta"), Parameter("beta")),
-            # Three-qubit gates
-            "ccx": qcl.CCXGate(),
-            "ccz": qcl.CCZGate(),
-            "cswap": qcl.CSwapGate(),
-            # Multi-controlled gates
-            "mcx": qcl.MCXGate(num_ctrl_qubits=2),
-            "mcz": qcl.MCPhaseGate(Parameter("lambda"), num_ctrl_qubits=2),
-            "mcp": qcl.MCPhaseGate(Parameter("lambda"), num_ctrl_qubits=2),
-            "mcrx": qcl.MCXGate(num_ctrl_qubits=2),  # Approximation
-            "mcry": qcl.MCXGate(num_ctrl_qubits=2),  # Approximation
-            "mcrz": qcl.MCXGate(num_ctrl_qubits=2),  # Approximation
-            # nonunitary operations
-            "reset": qcl.Reset(),
-            "measure": qcl.Measure(),
-        }
+        return QDMIBackend._OPERATION_TO_GATE_MAP.get(op_name.lower())
 
-        return gate_map.get(op_name.lower())
+    @staticmethod
+    def _map_qiskit_gate_to_operation_names(qiskit_gate_name: str) -> set[str]:
+        """Map a Qiskit gate name to possible QDMI device operation names.
+
+        This is the inverse of _map_operation_to_gate, accounting for the fact that
+        different devices may use different naming conventions for the same operation.
+
+        Args:
+            qiskit_gate_name: Qiskit gate name.
+
+        Returns:
+            Set of possible QDMI device operation names that could map to this gate.
+        """
+        return QDMIBackend._QISKIT_TO_QDMI_GATE_MAP.get(qiskit_gate_name.lower(), {qiskit_gate_name.lower()})
 
     def _get_operation_qargs(self, op: fomac.Device.Operation) -> list[tuple[int]] | list[tuple[int, int]] | list[None]:
         """Get the qubit argument tuples for an operation.
@@ -430,21 +426,66 @@ class QDMIBackend(BackendV2):  # type: ignore[misc]
         msg = f"No conversion from Qiskit to any of the supported program formats: {supported_program_formats}"
         raise UnsupportedFormatError(msg)
 
-    def run(self, run_input: QuantumCircuit, **options: Any) -> QDMIJob:  # noqa: ANN401
-        """Execute a :class:`~qiskit.circuit.QuantumCircuit` on the backend.
+    def run(
+        self,
+        run_input: QuantumCircuit | Sequence[QuantumCircuit],
+        parameter_values: Sequence[ParametersType] | None = None,
+        **options: Any,  # noqa: ANN401
+    ) -> QDMIJob:
+        """Execute one or more :class:`~qiskit.circuit.QuantumCircuit` instances on the backend.
 
         Args:
-            run_input: Circuit to execute.
-            **options: Execution options (e.g., shots, program_format).
+            run_input: A single quantum circuit or a sequence of quantum circuits to execute.
+            parameter_values: Optional parameter values to bind to the circuits. If provided, must be a sequence
+                with one entry per circuit. Each entry can be either a dictionary mapping parameters to values,
+                or a sequence of values in the order of circuit.parameters.
+            **options: Execution options (e.g., shots).
 
         Returns:
-            Job handle for the execution.
+            Job handle for the execution. For multiple circuits, the job aggregates results from all circuits.
 
         Raises:
-            CircuitValidationError: If circuit validation fails (e.g., invalid shots, unbound parameters).
-            UnsupportedOperationError: If circuit contains unsupported operations.
+            CircuitValidationError: If circuit validation fails (e.g., invalid shots, unbound parameters,
+                parameter_values length mismatch).
+            UnsupportedOperationError: If a circuit contains unsupported operations.
             JobSubmissionError: If job submission to the device fails.
+
+        Examples:
+            Run a single circuit with parameter values:
+
+            >>> from qiskit.circuit import Parameter, QuantumCircuit
+            >>> theta = Parameter("theta")
+            >>> qc = QuantumCircuit(1)
+            >>> qc.ry(theta, 0)
+            >>> qc.measure_all()
+            >>> job = backend.run(qc, parameter_values=[{theta: 1.5708}])
+
+            Run multiple circuits with different parameter values:
+
+            >>> qc1 = QuantumCircuit(1)
+            >>> qc1.ry(theta, 0)
+            >>> qc1.measure_all()
+            >>> qc2 = QuantumCircuit(1)
+            >>> qc2.ry(theta, 0)
+            >>> qc2.measure_all()
+            >>> job = backend.run([qc1, qc2], parameter_values=[{theta: 0.5}, {theta: 1.5}])
         """
+        # Normalize input to a list of circuits
+        circuits = [run_input] if isinstance(run_input, QuantumCircuit) else run_input
+
+        # Validate non-empty circuit list
+        if not circuits:
+            msg = "No circuits provided to run. At least one circuit is required."
+            raise CircuitValidationError(msg)
+
+        # Validate parameter_values length if provided
+        if parameter_values is not None and len(parameter_values) != len(circuits):
+            msg = (
+                f"Length of parameter_values ({len(parameter_values)}) must match "
+                f"the number of circuits ({len(circuits)})"
+            )
+            raise CircuitValidationError(msg)
+
         # Get shots option
         shots_opt = options.get("shots", self._options.shots)
         try:
@@ -456,37 +497,65 @@ class QDMIBackend(BackendV2):  # type: ignore[misc]
             msg = f"'shots' must be >= 0, got {shots}"
             raise CircuitValidationError(msg)
 
-        # Validate circuit has no unbound parameters
-        if run_input.parameters:
-            param_names = ", ".join(sorted(p.name for p in run_input.parameters))
-            msg = f"Circuit contains unbound parameters: {param_names}"
-            raise CircuitValidationError(msg)
+        # Build set of all supported QDMI operation names once
+        device_ops = {op.name().lower() for op in self._device.operations()}
 
-        # Validate operations are supported
-        allowed_ops = {op.name() for op in self._device.operations()}
-        allowed_ops.update({"measure", "barrier"})  # Always allow measure and barrier
+        # Process each circuit
+        qdmi_jobs: list[fomac.Job] = []
+        circuit_names: list[str] = []
+        # First pass: validate and convert all circuits
+        converted_circuits: list[tuple[str, fomac.ProgramFormat, str]] = []
 
-        for instruction in run_input.data:
-            op_name = instruction.operation.name
-            if op_name not in allowed_ops:
-                msg = f"Unsupported operation: '{op_name}'"
-                raise UnsupportedOperationError(msg)
+        for idx, circuit in enumerate(circuits):
+            # Bind parameters if provided
+            bound_circuit = circuit
+            if parameter_values is not None:
+                try:
+                    bound_circuit = circuit.assign_parameters(parameter_values[idx])
+                except Exception as exc:
+                    msg = f"Failed to bind parameters for circuit {idx}: {exc}"
+                    raise CircuitValidationError(msg) from exc
 
-        # Convert circuit to specified program format
-        program_str, program_format = self._convert_circuit(run_input, self._device.supported_program_formats())
+            # Validate circuit has no unbound parameters
+            if bound_circuit.parameters:
+                params = ", ".join(sorted(p.name for p in bound_circuit.parameters))
+                msg = (
+                    f"Circuit contains unbound parameters: {params}. Provide `parameter_values` or bind them manually."
+                )
+                raise CircuitValidationError(msg)
 
-        # Submit job to QDMI device
-        try:
-            qdmi_job = self._device.submit_job(
-                program=program_str,
-                program_format=program_format,
-                num_shots=shots,
-            )
-        except Exception as exc:
-            msg = f"Failed to submit job to device: {exc}"
-            raise JobSubmissionError(msg) from exc
+            # Validate operations are supported
+            for instruction in bound_circuit.data:
+                op_name = instruction.operation.name
+                # Map the Qiskit gate name to possible QDMI operation names and check if any match
+                possible_qdmi_names = self._map_qiskit_gate_to_operation_names(op_name)
+                # Check if any of the possible QDMI names are supported by the device
+                # Also always allow 'barrier' as it's a directive, not an operation
+                if op_name != "barrier" and not any(qdmi_name in device_ops for qdmi_name in possible_qdmi_names):
+                    msg = f"Unsupported operation: '{op_name}'"
+                    raise UnsupportedOperationError(msg)
 
-        # Create and return Qiskit job wrapper
-        circuit_name = run_input.name or f"circuit-{next(QDMIBackend._circuit_counter)}"
+            # Convert circuit to the specified program format
+            program_str, program_format = self._convert_circuit(bound_circuit, self._device.supported_program_formats())
+            circuit_name = circuit.name or f"circuit-{next(QDMIBackend._circuit_counter)}"
+            converted_circuits.append((program_str, program_format, circuit_name))
 
-        return QDMIJob(backend=self, job=qdmi_job, circuit_name=circuit_name)
+        # Second pass: submit all validated circuits
+        for program_str, program_format, circuit_name in converted_circuits:
+            # Submit job to QDMI device
+            try:
+                qdmi_job = self._device.submit_job(
+                    program=program_str,
+                    program_format=program_format,
+                    num_shots=shots,
+                )
+            except Exception as exc:
+                msg = f"Failed to submit job to device: {exc}"
+                raise JobSubmissionError(msg) from exc
+
+            # Track the job and circuit name
+            qdmi_jobs.append(qdmi_job)
+            circuit_names.append(circuit_name)
+
+        # Create and return Qiskit job wrapper (handles single or multiple jobs)
+        return QDMIJob(backend=self, jobs=qdmi_jobs, circuit_names=circuit_names)
