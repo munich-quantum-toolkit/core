@@ -18,7 +18,7 @@
 
 namespace mlir::utils {
 
-constexpr double TOLERANCE = 1e-12;
+constexpr auto TOLERANCE = 1e-15;
 
 /**
  * @brief Convert a variant parameter (double or Value) to a Value
