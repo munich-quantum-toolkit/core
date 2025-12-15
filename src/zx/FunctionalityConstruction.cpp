@@ -346,13 +346,13 @@ void FunctionalityConstruction::addMcrz(ZXDiagram& diag,
                                         const Qubit target,
                                         std::vector<Vertex>& qubits) {
 
-    const Qubit nextControl = controls.back();
-    controls.pop_back();
+  const Qubit nextControl = controls.back();
+  controls.pop_back();
 
-    addCrz(diag, phase / 2, nextControl, target, qubits);
-    addMcx(diag, controls, target, qubits);
-    addCrz(diag, -phase / 2, nextControl, target, qubits);
-    addMcx(diag, controls, target, qubits);
+  addCrz(diag, phase / 2, nextControl, target, qubits);
+  addMcx(diag, controls, target, qubits);
+  addCrz(diag, -phase / 2, nextControl, target, qubits);
+  addMcx(diag, controls, target, qubits);
 }
 
 void FunctionalityConstruction::addMcx(ZXDiagram& diag,
@@ -419,27 +419,13 @@ void FunctionalityConstruction::addMcz(ZXDiagram& diag,
                                        std::vector<Qubit> controls,
                                        const Qubit target,
                                        std::vector<Vertex>& qubits) {
+  const Qubit nextControl = controls.back();
+  controls.pop_back();
 
-  switch (controls.size()) {
-  case 0:
-    addZSpider(diag, target, qubits, PiExpression(PiRational(1, 1)));
-    return;
-  case 1:
-    addCrz(diag, PiExpression(PiRational(1, 1)), controls.front(), target,
-           qubits);
-    return;
-  case 2:
-    addCcz(diag, controls.front(), controls.back(), target, qubits);
-    return;
-  default:
-    const Qubit nextControl = controls.back();
-    controls.pop_back();
-
-    addCrz(diag, PiExpression(PiRational(1, 2)), nextControl, target, qubits);
-    addMcx(diag, controls, target, qubits);
-    addCrz(diag, PiExpression(-PiRational(1, 2)), nextControl, target, qubits);
-    addMcx(diag, controls, target, qubits);
-  }
+  addCrz(diag, PiExpression(PiRational(1, 2)), nextControl, target, qubits);
+  addMcx(diag, controls, target, qubits);
+  addCrz(diag, PiExpression(-PiRational(1, 2)), nextControl, target, qubits);
+  addMcx(diag, controls, target, qubits);
 }
 
 FunctionalityConstruction::op_it
