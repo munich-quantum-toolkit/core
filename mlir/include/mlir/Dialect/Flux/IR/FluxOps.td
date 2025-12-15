@@ -1041,7 +1041,8 @@ def CtrlOp : FluxOp<"ctrl", traits =
                 AttrSizedResultSegments,
                 SameOperandsAndResultType,
                 SameOperandsAndResultShape,
-                SingleBlock
+                SingleBlock,
+                RecursiveMemoryEffects
             ]> {
     let summary = "Add control qubits to a unitary operation";
     let description = [{

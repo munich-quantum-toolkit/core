@@ -931,7 +931,8 @@ def YieldOp : QuartzOp<"yield", traits = [Terminator]> {
 def CtrlOp : QuartzOp<"ctrl",
             traits = [
                 UnitaryOpInterface,
-                SingleBlockImplicitTerminator<"::mlir::quartz::YieldOp">
+                SingleBlockImplicitTerminator<"::mlir::quartz::YieldOp">,
+                RecursiveMemoryEffects
             ]> {
     let summary = "Add control qubits to a unitary operation";
     let description = [{
