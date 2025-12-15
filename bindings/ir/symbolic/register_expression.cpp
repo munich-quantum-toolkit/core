@@ -126,8 +126,6 @@ Returns:
       .def(double() * nb::self)
       // division operators
       .def(nb::self / double())
-      .def("__rtruediv__", [](const sym::Expression<double, double>& rhs,
-                              double lhs) { return rhs / lhs; })
       // comparison operators
       .def(nb::self == nb::self, // NOLINT(misc-redundant-expression)
            nb::sig("def __eq__(self, arg: object, /) -> bool"))

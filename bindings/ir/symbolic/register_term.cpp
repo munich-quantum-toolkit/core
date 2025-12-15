@@ -61,7 +61,9 @@ Returns:
       .def(nb::self * double())
       .def(double() * nb::self)
       .def(nb::self / double())
-      .def(double() / nb::self)
+      .def("__rtruediv__",
+           [](const sym::Term<double>& lhs, double rhs) { return rhs / lhs; })
+
       .def(nb::self == nb::self, // NOLINT(misc-redundant-expression)
            nb::sig("def __eq__(self, arg: object, /) -> bool"))
       .def(nb::self != nb::self, // NOLINT(misc-redundant-expression)
