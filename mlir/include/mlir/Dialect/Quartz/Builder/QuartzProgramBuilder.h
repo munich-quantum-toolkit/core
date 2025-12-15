@@ -172,7 +172,7 @@ public:
    * ```
    */
   ClassicalRegister allocClassicalBitRegister(int64_t size,
-                                              std::string name = "c");
+                                              const std::string& name = "c");
 
   //===--------------------------------------------------------------------===//
   // Measurement and Reset

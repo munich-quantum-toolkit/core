@@ -14,7 +14,7 @@
 
 #include <cstdint>
 #include <functional>
-#include <llvm/ADT/SmallVector.h>
+#include <llvm/ADT/STLExtras.h>
 #include <llvm/Support/ErrorHandling.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
@@ -24,6 +24,8 @@
 #include <mlir/IR/OwningOpRef.h>
 #include <mlir/IR/Value.h>
 #include <mlir/IR/ValueRange.h>
+#include <mlir/Support/LLVM.h>
+#include <string>
 #include <variant>
 
 namespace mlir::quartz {
@@ -77,8 +79,8 @@ Value QuartzProgramBuilder::staticQubit(const int64_t index) {
   return staticOp.getQubit();
 }
 
-llvm::SmallVector<Value>
-QuartzProgramBuilder::allocQubitRegister(const int64_t size, std::string name) {
+SmallVector<Value> QuartzProgramBuilder::allocQubitRegister(const int64_t size,
+                                                            std::string name) {
   checkFinalized();
 
   if (size <= 0) {
@@ -86,7 +88,7 @@ QuartzProgramBuilder::allocQubitRegister(const int64_t size, std::string name) {
   }
 
   // Allocate a sequence of qubits with register metadata
-  llvm::SmallVector<Value> qubits;
+  SmallVector<Value> qubits;
   qubits.reserve(size);
 
   auto nameAttr = getStringAttr(name);
@@ -105,14 +107,14 @@ QuartzProgramBuilder::allocQubitRegister(const int64_t size, std::string name) {
 
 QuartzProgramBuilder::ClassicalRegister
 QuartzProgramBuilder::allocClassicalBitRegister(int64_t size,
-                                                std::string name) {
+                                                const std::string& name) {
   checkFinalized();
 
   if (size <= 0) {
     llvm::reportFatalUsageError("Size must be positive");
   }
 
-  return {.name = name, .size = size};
+  return {.name = std::move(name), .size = size};
 }
 
 //===----------------------------------------------------------------------===//
@@ -470,7 +472,8 @@ OwningOpRef<ModuleOp> QuartzProgramBuilder::finalize() {
   if (!mainFunc) {
     llvm::reportFatalUsageError("Could not find main function");
   }
-  if (!insertionBlock || insertionBlock != &mainFunc.getBody().front()) {
+  if ((insertionBlock == nullptr) ||
+      insertionBlock != &mainFunc.getBody().front()) {
     llvm::reportFatalUsageError(
         "Insertion point is not in entry block of main function");
   }

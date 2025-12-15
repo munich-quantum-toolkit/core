@@ -16,7 +16,6 @@
 #include <cstdint>
 #include <functional>
 #include <llvm/ADT/STLExtras.h>
-#include <llvm/ADT/SmallVector.h>
 #include <llvm/Support/ErrorHandling.h>
 #include <llvm/Support/raw_ostream.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
@@ -27,6 +26,8 @@
 #include <mlir/IR/OwningOpRef.h>
 #include <mlir/IR/Value.h>
 #include <mlir/IR/ValueRange.h>
+#include <mlir/Support/LLVM.h>
+#include <string>
 #include <utility>
 #include <variant>
 
@@ -84,15 +85,15 @@ Value FluxProgramBuilder::staticQubit(const int64_t index) {
   return qubit;
 }
 
-llvm::SmallVector<Value>
-FluxProgramBuilder::allocQubitRegister(const int64_t size, std::string name) {
+SmallVector<Value> FluxProgramBuilder::allocQubitRegister(const int64_t size,
+                                                          std::string name) {
   checkFinalized();
 
   if (size <= 0) {
     llvm::reportFatalUsageError("Size must be positive");
   }
 
-  llvm::SmallVector<Value> qubits;
+  SmallVector<Value> qubits;
   qubits.reserve(static_cast<size_t>(size));
 
   auto nameAttr = getStringAttr(name);
@@ -110,14 +111,15 @@ FluxProgramBuilder::allocQubitRegister(const int64_t size, std::string name) {
 }
 
 FluxProgramBuilder::ClassicalRegister
-FluxProgramBuilder::allocClassicalBitRegister(int64_t size, std::string name) {
+FluxProgramBuilder::allocClassicalBitRegister(int64_t size,
+                                              const std::string& name) {
   checkFinalized();
 
   if (size <= 0) {
     llvm::reportFatalUsageError("Size must be positive");
   }
 
-  return {.name = name, .size = size};
+  return {.name = std::move(name), .size = size};
 }
 
 //===----------------------------------------------------------------------===//
@@ -633,7 +635,8 @@ OwningOpRef<ModuleOp> FluxProgramBuilder::finalize() {
   if (!mainFunc) {
     llvm::reportFatalUsageError("Could not find main function");
   }
-  if (!insertionBlock || insertionBlock != &mainFunc.getBody().front()) {
+  if ((insertionBlock == nullptr) ||
+      insertionBlock != &mainFunc.getBody().front()) {
     llvm::reportFatalUsageError(
         "Insertion point is not in entry block of main function");
   }

@@ -28,6 +28,7 @@
 #include <mlir/IR/OwningOpRef.h>
 #include <mlir/IR/Types.h>
 #include <mlir/IR/Value.h>
+#include <mlir/Support/LLVM.h>
 #include <string>
 #include <utility>
 #include <variant>
@@ -117,15 +118,14 @@ Value QIRProgramBuilder::staticQubit(const int64_t index) {
   return val;
 }
 
-llvm::SmallVector<Value>
-QIRProgramBuilder::allocQubitRegister(const int64_t size) {
+SmallVector<Value> QIRProgramBuilder::allocQubitRegister(const int64_t size) {
   checkFinalized();
 
   if (size <= 0) {
     llvm::reportFatalUsageError("Size must be positive");
   }
 
-  llvm::SmallVector<Value> qubits;
+  SmallVector<Value> qubits;
   qubits.reserve(size);
 
   for (int64_t i = 0; i < size; ++i) {
@@ -137,7 +137,7 @@ QIRProgramBuilder::allocQubitRegister(const int64_t size) {
 
 QIRProgramBuilder::ClassicalRegister
 QIRProgramBuilder::allocClassicalBitRegister(const int64_t size,
-                                             std::string name) {
+                                             const std::string& name) {
   checkFinalized();
 
   if (size <= 0) {
@@ -589,15 +589,14 @@ void QIRProgramBuilder::generateOutputRecording() {
   auto ptrType = LLVM::LLVMPointerType::get(builder.getContext());
 
   // Group measurements by register
-  llvm::StringMap<llvm::SmallVector<std::pair<int64_t, Value>>> registerGroups;
+  llvm::StringMap<SmallVector<std::pair<int64_t, Value>>> registerGroups;
   for (const auto& [key, resultPtr] : registerResultMap) {
     const auto& [regName, regIdx] = key;
     registerGroups[regName].emplace_back(regIdx, resultPtr);
   }
 
   // Sort registers by name for deterministic output
-  llvm::SmallVector<
-      std::pair<std::string, llvm::SmallVector<std::pair<int64_t, Value>>>>
+  SmallVector<std::pair<std::string, SmallVector<std::pair<int64_t, Value>>>>
       sortedRegisters;
   for (auto& [name, measurements] : registerGroups) {
     sortedRegisters.emplace_back(name, std::move(measurements));
