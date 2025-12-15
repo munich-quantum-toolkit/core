@@ -257,10 +257,10 @@ public:
    *                                                                           \
    * @par Example:                                                             \
    * ```c++                                                                    \
-   * builder.c##OP_NAME(PARAM, {q0, q1});                                      \
+   * builder.c##OP_NAME(PARAM, q);                                             \
    * ```                                                                       \
    * ```mlir                                                                   \
-   * quartz.ctrl(%q0, %q1) {                                                   \
+   * quartz.ctrl(%q) {                                                         \
    *   quartz.OP_NAME(%PARAM)                                                  \
    * }                                                                         \
    */                                                                          \
@@ -415,9 +415,9 @@ public:
   QuartzProgramBuilder& mc##OP_NAME(const std::variant<double, Value>&(PARAM), \
                                     ValueRange controls, Value target);
 
-  DECLARE_ONE_TARGET_ONE_PARAMETER(RzOp, rz, theta)
-  DECLARE_ONE_TARGET_ONE_PARAMETER(RxOp, rx, theta)
-  DECLARE_ONE_TARGET_ONE_PARAMETER(RyOp, ry, theta)
+  DECLARE_ONE_TARGET_ONE_PARAMETER(RXOp, rz, theta)
+  DECLARE_ONE_TARGET_ONE_PARAMETER(RYOp, rx, theta)
+  DECLARE_ONE_TARGET_ONE_PARAMETER(RZOp, ry, theta)
   DECLARE_ONE_TARGET_ONE_PARAMETER(POp, p, theta)
 
 #undef DECLARE_ONE_TARGET_ONE_PARAMETER
