@@ -210,12 +210,12 @@ Returns:
 
   nb::enum_<QDMI_Device_Status>(device, "Status",
                                 "Enumeration of device status.")
-      .value("offline", QDMI_DEVICE_STATUS_OFFLINE)
-      .value("idle", QDMI_DEVICE_STATUS_IDLE)
-      .value("busy", QDMI_DEVICE_STATUS_BUSY)
-      .value("error", QDMI_DEVICE_STATUS_ERROR)
-      .value("maintenance", QDMI_DEVICE_STATUS_MAINTENANCE)
-      .value("calibration", QDMI_DEVICE_STATUS_CALIBRATION)
+      .value("OFFLINE", QDMI_DEVICE_STATUS_OFFLINE)
+      .value("IDLE", QDMI_DEVICE_STATUS_IDLE)
+      .value("BUSY", QDMI_DEVICE_STATUS_BUSY)
+      .value("ERROR", QDMI_DEVICE_STATUS_ERROR)
+      .value("MAINTENANCE", QDMI_DEVICE_STATUS_MAINTENANCE)
+      .value("CALIBRATION", QDMI_DEVICE_STATUS_CALIBRATION)
       .export_values();
 
   device.def("name", &fomac::Session::Device::getName,

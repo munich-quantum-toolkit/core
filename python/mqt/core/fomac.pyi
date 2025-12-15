@@ -229,29 +229,29 @@ class Device:
     class Status(enum.Enum):
         """Enumeration of device status."""
 
-        offline = 0
+        OFFLINE = 0
 
-        idle = 1
+        IDLE = 1
 
-        busy = 2
+        BUSY = 2
 
-        error = 3
+        ERROR = 3
 
-        maintenance = 4
+        MAINTENANCE = 4
 
-        calibration = 5
+        CALIBRATION = 5
 
-    offline: Device.Status = ...
+    OFFLINE: Device.Status = ...
 
-    idle: Device.Status = ...
+    IDLE: Device.Status = ...
 
-    busy: Device.Status = ...
+    BUSY: Device.Status = ...
 
-    error: Device.Status = ...
+    ERROR: Device.Status = ...
 
-    maintenance: Device.Status = ...
+    MAINTENANCE: Device.Status = ...
 
-    calibration: Device.Status = ...
+    CALIBRATION: Device.Status = ...
 
     def name(self) -> str:
         """Returns the name of the device."""
