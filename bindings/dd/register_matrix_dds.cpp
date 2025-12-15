@@ -35,6 +35,10 @@ using Matrix = nb::ndarray<nb::numpy, std::complex<dd::fp>, nb::ndim<2>>;
 // NOLINTNEXTLINE(misc-use-internal-linkage)
 Matrix getMatrix(const dd::mEdge& m, const size_t numQubits,
                  const dd::fp threshold = 0.) {
+  if (numQubits > 20U) {
+    throw nb::value_error("num_qubits exceeds practical limit of 20");
+  }
+
   if (numQubits == 0U) {
     auto dataPtr = std::make_unique<std::complex<dd::fp>>(m.w);
     auto* data = dataPtr.release();
