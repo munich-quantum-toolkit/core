@@ -564,9 +564,9 @@ translateOperations(QuartzProgramBuilder& builder,
       ADD_OP_CASE(XXminusYY)
       ADD_OP_CASE(Barrier)
     default:
-      // Unsupported operation - skip for now
-      // As the Quartz dialect is expanded, more operations will be supported
-      continue;
+      llvm::errs() << operation->getName()
+                   << "cannot be translated to Quartz\n";
+      return failure();
     }
   }
 
@@ -627,8 +627,8 @@ OwningOpRef<ModuleOp> translateQuantumComputationToQuartz(
   // Translate operations
   if (translateOperations(builder, quantumComputation, qubits, bitMap)
           .failed()) {
-    // Note: Currently all operations succeed or are skipped
-    // This check is here for future error handling
+    llvm::reportFatalInternalError(
+        "Failed to translate QuantumComputation to Quartz");
   }
 
   // Finalize and return the module (adds return statement and transfers
