@@ -18,6 +18,7 @@
 #include <llvm/Support/ErrorHandling.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
+#include <mlir/Dialect/SCF/IR/SCF.h>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/MLIRContext.h>
@@ -427,6 +428,31 @@ OwningOpRef<ModuleOp> QuartzProgramBuilder::finalize() {
 
   // Transfer ownership to the caller
   return module;
+}
+
+QuartzProgramBuilder&
+QuartzProgramBuilder::scfFor(Value lowerbound, Value upperbound, Value step,
+                             const std::function<void(OpBuilder&)>& body) {
+  create<scf::ForOp>(loc, lowerbound, upperbound, step, ValueRange{},
+                     [&](OpBuilder& b, Location, Value, ValueRange) {
+                       body(b); // adapt
+                       b.create<scf::YieldOp>(loc);
+                     });
+
+  return *this;
+}
+Value QuartzProgramBuilder::arithConstantIndex(int i) {
+
+  const auto op =
+      create<arith::ConstantOp>(loc, getIndexType(), getIndexAttr(i));
+  return op->getResult(0);
+}
+Value QuartzProgramBuilder::arithConstantBool(bool b) {
+  const auto i1Type = getI1Type();
+  const auto op =
+      b ? create<arith::ConstantOp>(loc, i1Type, getIntegerAttr(i1Type, 1))
+        : create<arith::ConstantOp>(loc, i1Type, getIntegerAttr(i1Type, 0));
+  return op->getResult(0);
 }
 
 } // namespace mlir::quartz

@@ -21,6 +21,7 @@
 #include <llvm/Support/raw_ostream.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
+#include <mlir/Dialect/SCF/IR/SCF.h>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/MLIRContext.h>
@@ -50,7 +51,7 @@ void FluxProgramBuilder::initialize() {
   // Add entry_point attribute to identify the main function
   auto entryPointAttr = getStringAttr("entry_point");
   mainFunc->setAttr("passthrough", getArrayAttr({entryPointAttr}));
-
+  funcRegion = &mainFunc->getRegion(0);
   // Create entry block and set insertion point
   auto& entryBlock = mainFunc.getBody().emplaceBlock();
   setInsertionPointToStart(&entryBlock);
@@ -61,7 +62,7 @@ Value FluxProgramBuilder::allocQubit() {
   const auto qubit = allocOp.getResult();
 
   // Track the allocated qubit as valid
-  validQubits.insert(qubit);
+  validQubits[allocOp->getParentRegion()].insert(qubit);
 
   return qubit;
 }
@@ -76,7 +77,7 @@ Value FluxProgramBuilder::staticQubit(const int64_t index) {
   const auto qubit = staticOp.getQubit();
 
   // Track the static qubit as valid
-  validQubits.insert(qubit);
+  validQubits[staticOp->getParentRegion()].insert(qubit);
 
   return qubit;
 }
@@ -99,7 +100,7 @@ FluxProgramBuilder::allocQubitRegister(const int64_t size,
     auto allocOp = create<AllocOp>(loc, nameAttr, sizeAttr, indexAttr);
     const auto& qubit = qubits.emplace_back(allocOp.getResult());
     // Track the allocated qubit as valid
-    validQubits.insert(qubit);
+    validQubits[allocOp->getParentRegion()].insert(qubit);
   }
 
   return qubits;
@@ -118,8 +119,8 @@ FluxProgramBuilder::allocClassicalBitRegister(int64_t size, StringRef name) {
 // Linear Type Tracking Helpers
 //===----------------------------------------------------------------------===//
 
-void FluxProgramBuilder::validateQubitValue(Value qubit) const {
-  if (!validQubits.contains(qubit)) {
+void FluxProgramBuilder::validateQubitValue(Value qubit) {
+  if (!validQubits[qubit.getParentRegion()].contains(qubit)) {
     llvm::errs() << "Attempting to use an invalid qubit SSA value. "
                  << "The value may have been consumed by a previous operation "
                  << "or was never created through this builder.\n";
@@ -129,15 +130,16 @@ void FluxProgramBuilder::validateQubitValue(Value qubit) const {
 }
 
 void FluxProgramBuilder::updateQubitTracking(Value inputQubit,
-                                             Value outputQubit) {
+                                             Value outputQubit,
+                                             Region* region) {
   // Validate the input qubit
   validateQubitValue(inputQubit);
 
   // Remove the input (consumed) value from tracking
-  validQubits.erase(inputQubit);
+  validQubits[region].erase(inputQubit);
 
   // Add the output (new) value to tracking
-  validQubits.insert(outputQubit);
+  validQubits[region].insert(outputQubit);
 }
 
 //===----------------------------------------------------------------------===//
@@ -150,7 +152,7 @@ std::pair<Value, Value> FluxProgramBuilder::measure(Value qubit) {
   auto result = measureOp.getResult();
 
   // Update tracking
-  updateQubitTracking(qubit, qubitOut);
+  updateQubitTracking(qubit, qubitOut, measureOp->getParentRegion());
 
   return {qubitOut, result};
 }
@@ -163,7 +165,7 @@ Value FluxProgramBuilder::measure(Value qubit, const Bit& bit) {
   const auto qubitOut = measureOp.getQubitOut();
 
   // Update tracking
-  updateQubitTracking(qubit, qubitOut);
+  updateQubitTracking(qubit, qubitOut, measureOp->getParentRegion());
 
   return qubitOut;
 }
@@ -173,7 +175,7 @@ Value FluxProgramBuilder::reset(Value qubit) {
   const auto qubitOut = resetOp.getQubitOut();
 
   // Update tracking
-  updateQubitTracking(qubit, qubitOut);
+  updateQubitTracking(qubit, qubitOut, resetOp->getParentRegion());
 
   return qubitOut;
 }
@@ -219,7 +221,7 @@ DEFINE_ZERO_TARGET_ONE_PARAMETER(GPhaseOp, gphase, theta)
   Value FluxProgramBuilder::OP_NAME(Value qubit) {                             \
     auto op = create<OP_CLASS>(loc, qubit);                                    \
     const auto& qubitOut = op.getQubitOut();                                   \
-    updateQubitTracking(qubit, qubitOut);                                      \
+    updateQubitTracking(qubit, qubitOut, op->getParentRegion());               \
     return qubitOut;                                                           \
   }                                                                            \
   std::pair<Value, Value> FluxProgramBuilder::c##OP_NAME(Value control,        \
@@ -263,7 +265,7 @@ DEFINE_ONE_TARGET_ZERO_PARAMETER(SXdgOp, sxdg)
                                     Value qubit) {                             \
     auto op = create<OP_CLASS>(loc, qubit, PARAM);                             \
     const auto& qubitOut = op.getQubitOut();                                   \
-    updateQubitTracking(qubit, qubitOut);                                      \
+    updateQubitTracking(qubit, qubitOut, op->getParentRegion());               \
     return qubitOut;                                                           \
   }                                                                            \
   std::pair<Value, Value> FluxProgramBuilder::c##OP_NAME(                      \
@@ -303,7 +305,7 @@ DEFINE_ONE_TARGET_ONE_PARAMETER(POp, p, phi)
       const std::variant<double, Value>&(PARAM2), Value qubit) {               \
     auto op = create<OP_CLASS>(loc, qubit, PARAM1, PARAM2);                    \
     const auto& qubitOut = op.getQubitOut();                                   \
-    updateQubitTracking(qubit, qubitOut);                                      \
+    updateQubitTracking(qubit, qubitOut, op->getParentRegion());               \
     return qubitOut;                                                           \
   }                                                                            \
   std::pair<Value, Value> FluxProgramBuilder::c##OP_NAME(                      \
@@ -346,7 +348,7 @@ DEFINE_ONE_TARGET_TWO_PARAMETER(U2Op, u2, phi, lambda)
       const std::variant<double, Value>&(PARAM3), Value qubit) {               \
     auto op = create<OP_CLASS>(loc, qubit, PARAM1, PARAM2, PARAM3);            \
     const auto& qubitOut = op.getQubitOut();                                   \
-    updateQubitTracking(qubit, qubitOut);                                      \
+    updateQubitTracking(qubit, qubitOut, op->getParentRegion());               \
     return qubitOut;                                                           \
   }                                                                            \
   std::pair<Value, Value> FluxProgramBuilder::c##OP_NAME(                      \
@@ -389,8 +391,8 @@ DEFINE_ONE_TARGET_THREE_PARAMETER(UOp, u, theta, phi, lambda)
     auto op = create<OP_CLASS>(loc, qubit0, qubit1);                           \
     const auto& qubit0Out = op.getQubit0Out();                                 \
     const auto& qubit1Out = op.getQubit1Out();                                 \
-    updateQubitTracking(qubit0, qubit0Out);                                    \
-    updateQubitTracking(qubit1, qubit1Out);                                    \
+    updateQubitTracking(qubit0, qubit0Out, op->getParentRegion());             \
+    updateQubitTracking(qubit1, qubit1Out, op->getParentRegion());             \
     return {qubit0Out, qubit1Out};                                             \
   }                                                                            \
   std::pair<Value, std::pair<Value, Value>> FluxProgramBuilder::c##OP_NAME(    \
@@ -432,8 +434,8 @@ DEFINE_TWO_TARGET_ZERO_PARAMETER(ECROp, ecr)
     auto op = create<OP_CLASS>(loc, qubit0, qubit1, PARAM);                    \
     const auto& qubit0Out = op.getQubit0Out();                                 \
     const auto& qubit1Out = op.getQubit1Out();                                 \
-    updateQubitTracking(qubit0, qubit0Out);                                    \
-    updateQubitTracking(qubit1, qubit1Out);                                    \
+    updateQubitTracking(qubit0, qubit0Out, op->getParentRegion());             \
+    updateQubitTracking(qubit1, qubit1Out, op->getParentRegion());             \
     return {qubit0Out, qubit1Out};                                             \
   }                                                                            \
   std::pair<Value, std::pair<Value, Value>> FluxProgramBuilder::c##OP_NAME(    \
@@ -479,8 +481,8 @@ DEFINE_TWO_TARGET_ONE_PARAMETER(RZZOp, rzz, theta)
     auto op = create<OP_CLASS>(loc, qubit0, qubit1, PARAM1, PARAM2);           \
     const auto& qubit0Out = op.getQubit0Out();                                 \
     const auto& qubit1Out = op.getQubit1Out();                                 \
-    updateQubitTracking(qubit0, qubit0Out);                                    \
-    updateQubitTracking(qubit1, qubit1Out);                                    \
+    updateQubitTracking(qubit0, qubit0Out, op->getParentRegion());             \
+    updateQubitTracking(qubit1, qubit1Out, op->getParentRegion());             \
     return {qubit0Out, qubit1Out};                                             \
   }                                                                            \
   std::pair<Value, std::pair<Value, Value>> FluxProgramBuilder::c##OP_NAME(    \
@@ -522,7 +524,7 @@ ValueRange FluxProgramBuilder::barrier(ValueRange qubits) {
   auto op = create<BarrierOp>(loc, qubits);
   const auto& qubitsOut = op.getQubitsOut();
   for (const auto& [inputQubit, outputQubit] : llvm::zip(qubits, qubitsOut)) {
-    updateQubitTracking(inputQubit, outputQubit);
+    updateQubitTracking(inputQubit, outputQubit, op->getParentRegion());
   }
   return qubitsOut;
 }
@@ -539,11 +541,11 @@ std::pair<ValueRange, ValueRange> FluxProgramBuilder::ctrl(
   // Update tracking
   const auto& controlsOut = ctrlOp.getControlsOut();
   for (const auto& [control, controlOut] : llvm::zip(controls, controlsOut)) {
-    updateQubitTracking(control, controlOut);
+    updateQubitTracking(control, controlOut, ctrlOp->getParentRegion());
   }
   const auto& targetsOut = ctrlOp.getTargetsOut();
   for (const auto& [target, targetOut] : llvm::zip(targets, targetsOut)) {
-    updateQubitTracking(target, targetOut);
+    updateQubitTracking(target, targetOut, ctrlOp->getParentRegion());
   }
 
   return {controlsOut, targetsOut};
@@ -555,7 +557,7 @@ std::pair<ValueRange, ValueRange> FluxProgramBuilder::ctrl(
 
 FluxProgramBuilder& FluxProgramBuilder::dealloc(Value qubit) {
   validateQubitValue(qubit);
-  validQubits.erase(qubit);
+  validQubits[qubit.getParentRegion()].erase(qubit);
 
   create<DeallocOp>(loc, qubit);
 
@@ -568,7 +570,7 @@ FluxProgramBuilder& FluxProgramBuilder::dealloc(Value qubit) {
 
 OwningOpRef<ModuleOp> FluxProgramBuilder::finalize() {
   // Automatically deallocate all remaining valid qubits
-  for (const auto qubit : validQubits) {
+  for (const auto qubit : validQubits[funcRegion]) {
     create<DeallocOp>(loc, qubit);
   }
 
@@ -582,5 +584,30 @@ OwningOpRef<ModuleOp> FluxProgramBuilder::finalize() {
 
   return module;
 }
+Value FluxProgramBuilder::arithConstantIndex(int i) {
 
+  const auto op =
+      create<arith::ConstantOp>(loc, getIndexType(), getIndexAttr(i));
+  return op->getResult(0);
+}
+
+Value FluxProgramBuilder::arithConstantBool(bool b) {
+  const auto i1Type = getI1Type();
+  const auto op =
+      b ? create<arith::ConstantOp>(loc, i1Type, getIntegerAttr(i1Type, 1))
+        : create<arith::ConstantOp>(loc, i1Type, getIntegerAttr(i1Type, 0));
+  return op->getResult(0);
+}
+
+ValueRange
+FluxProgramBuilder::scfFor(Value lowerbound, Value upperbound, Value step,
+                           const std::function<void(OpBuilder&)>& body) {
+  auto op = create<scf::ForOp>(loc, lowerbound, upperbound, step, ValueRange{},
+                               [&](OpBuilder& b, Location, Value, ValueRange) {
+                                 body(b); // adapt
+                                 b.create<scf::YieldOp>(loc);
+                               });
+
+  return op->getResults();
+}
 } // namespace mlir::flux

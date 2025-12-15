@@ -862,6 +862,13 @@ public:
    */
   OwningOpRef<ModuleOp> finalize();
 
+  QuartzProgramBuilder& scfFor(Value lowerbound, Value upperbound, Value step,
+                               const std::function<void(OpBuilder&)>& body);
+
+  Value arithConstantIndex(int i);
+
+  Value arithConstantBool(bool b);
+
 private:
   MLIRContext* ctx{};
   Location loc;

@@ -1036,6 +1036,7 @@ private:
   MLIRContext* ctx{};
   Location loc;
   ModuleOp module;
+  Region* funcRegion;
 
   //===--------------------------------------------------------------------===//
   // Linear Type Tracking Helpers
@@ -1046,22 +1047,29 @@ private:
    * @param qubit Qubit value to validate
    * @throws Aborts if qubit is not tracked (consumed or never created)
    */
-  void validateQubitValue(Value qubit) const;
+  void validateQubitValue(Value qubit);
 
   /**
    * @brief Update tracking when an operation consumes and produces a qubit
    * @param inputQubit Input qubit being consumed (must be valid)
    * @param outputQubit New output qubit being produced
    */
-  void updateQubitTracking(Value inputQubit, Value outputQubit);
+  void updateQubitTracking(Value inputQubit, Value outputQubit, Region* region);
 
   /// Track valid (unconsumed) qubit SSA values for linear type enforcement.
   /// Only values present in this set are valid for use in operations.
   /// When an operation consumes a qubit and produces a new one, the old value
   /// is removed and the new output is added.
-  llvm::DenseSet<Value> validQubits;
+  llvm::DenseMap<Region*, llvm::DenseSet<Value>> validQubits;
 
   /// Track allocated classical Registers
   SmallVector<ClassicalRegister> allocatedClassicalRegisters;
+
+  Value arithConstantIndex(int i);
+
+  Value arithConstantBool(bool b);
+
+  ValueRange scfFor(Value lowerbound, Value upperbound, Value step,
+                    const std::function<void(OpBuilder&)>& body);
 };
 } // namespace mlir::flux
