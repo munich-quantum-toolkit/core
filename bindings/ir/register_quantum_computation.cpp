@@ -448,7 +448,7 @@ If the circuit contains measurements at the end, these measurements are used to 
 Args:
     q: The index of the circuit qubit to set as ancillary.)pb");
 
-  qc.def("se_circuit_qubits_ancillary",
+  qc.def("set_circuit_qubits_ancillary",
          &qc::QuantumComputation::setLogicalQubitsAncillary, "q_min"_a,
          "q_max"_a,
          R"pb(Set a range of circuit (i.e., logical) qubits to be ancillary.

@@ -396,7 +396,7 @@ class QuantumComputation(MutableSequence[operations.Operation]):
             q: The index of the circuit qubit to set as ancillary.
         """
 
-    def se_circuit_qubits_ancillary(self, q_min: int, q_max: int) -> None:
+    def set_circuit_qubits_ancillary(self, q_min: int, q_max: int) -> None:
         """Set a range of circuit (i.e., logical) qubits to be ancillary.
 
         Args:
