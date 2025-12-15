@@ -480,7 +480,12 @@ OwningOpRef<ModuleOp> QuartzProgramBuilder::finalize() {
   SmallVector<Value> sortedQubits(allocatedQubits.begin(),
                                   allocatedQubits.end());
   llvm::sort(sortedQubits, [](Value a, Value b) {
-    return a.getAsOpaquePointer() < b.getAsOpaquePointer();
+    auto* opA = a.getDefiningOp();
+    auto* opB = b.getDefiningOp();
+    if (!opA || !opB || opA->getBlock() != opB->getBlock()) {
+      return a.getAsOpaquePointer() < b.getAsOpaquePointer();
+    }
+    return opA->isBeforeInBlock(opB);
   });
   for (auto qubit : sortedQubits) {
     create<DeallocOp>(loc, qubit);
