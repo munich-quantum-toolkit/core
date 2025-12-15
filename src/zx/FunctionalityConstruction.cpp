@@ -731,9 +731,7 @@ FunctionalityConstruction::parseOp(ZXDiagram& diag, op_it it, op_it end,
       addMcx(diag, controls, target, qubits);
       break;
     case qc::OpType::Z:
-      addZSpider(diag, target, qubits, PiExpression(), EdgeType::Hadamard);
-      addMcx(diag, controls, target, qubits);
-      addZSpider(diag, target, qubits, PiExpression(), EdgeType::Hadamard);
+      addMcz(diag, controls, target, qubits);
       break;
     case qc::OpType::RZ:
       addMcrz(diag, parseParam(op.get(), 0), controls, target, qubits);
