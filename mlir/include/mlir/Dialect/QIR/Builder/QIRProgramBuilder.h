@@ -224,7 +224,7 @@ public:
    *
    * @par Example:
    * ```c++
-   * auto& c = builder.allocClassicalBitRegister(2, "c");
+   * auto c = builder.allocClassicalBitRegister(2, "c");
    * builder.measure(q0, c[0]);
    * builder.measure(q1, c[1]);
    * ```

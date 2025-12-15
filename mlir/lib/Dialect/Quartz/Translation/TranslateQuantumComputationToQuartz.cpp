@@ -560,7 +560,7 @@ translateOperations(QuartzProgramBuilder& builder,
       ADD_OP_CASE(Barrier)
     default:
       llvm::errs() << operation->getName()
-                   << "cannot be translated to Quartz\n";
+                   << " cannot be translated to Quartz\n";
       return failure();
     }
   }
