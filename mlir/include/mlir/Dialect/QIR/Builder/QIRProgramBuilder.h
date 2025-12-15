@@ -155,7 +155,10 @@ public:
      */
     Bit operator[](const int64_t index) const {
       if (index < 0 || index >= size) {
-        llvm::reportFatalUsageError("Bit index out of bounds");
+        StringRef msg = "Bit index " + std::to_string(index) +
+                        " out of bounds for register '" + name + "' of size " +
+                        std::to_string(size);
+        llvm::reportFatalUsageError(msg);
       }
       return {
           .registerName = name, .registerSize = size, .registerIndex = index};
