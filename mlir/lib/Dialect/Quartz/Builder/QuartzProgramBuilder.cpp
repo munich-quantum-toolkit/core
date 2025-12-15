@@ -456,6 +456,23 @@ void QuartzProgramBuilder::checkFinalized() const {
 }
 
 OwningOpRef<ModuleOp> QuartzProgramBuilder::finalize() {
+  // Ensure that main function exists and insertion point is valid
+  auto* insertionBlock = getInsertionBlock();
+  func::FuncOp mainFunc = nullptr;
+  for (auto op : module.getOps<func::FuncOp>()) {
+    if (op.getName() == "main") {
+      mainFunc = op;
+      break;
+    }
+  }
+  if (!mainFunc) {
+    llvm::reportFatalUsageError("Could not find main function");
+  }
+  if (!insertionBlock || insertionBlock != &mainFunc.getBody().front()) {
+    llvm::reportFatalUsageError(
+        "Insertion point is not in entry block of main function");
+  }
+
   // Automatically deallocate all still-allocated qubits
   // Sort qubits for deterministic output
   SmallVector<Value> sortedQubits(allocatedQubits.begin(),
