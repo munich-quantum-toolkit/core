@@ -45,7 +45,7 @@ using DiffType = std::vector<std::unique_ptr<qc::Operation>>::difference_type;
 using SizeType = std::vector<std::unique_ptr<qc::Operation>>::size_type;
 
 using Control = std::variant<qc::Control, std::uint32_t>;
-using Controls = std::set<std::variant<qc::Control, std::uint32_t>>;
+using Controls = std::set<Control>;
 
 namespace {
 
@@ -54,7 +54,7 @@ qc::Control getControl(const Control& control) {
   if (std::holds_alternative<qc::Control>(control)) {
     return std::get<qc::Control>(control);
   }
-  return std::get<std::uint32_t>(control);
+  return static_cast<qc::Control>(std::get<std::uint32_t>(control));
 }
 
 /// Helper function to convert Controls variant to qc::Controls

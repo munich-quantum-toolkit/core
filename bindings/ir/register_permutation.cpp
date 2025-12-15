@@ -32,7 +32,7 @@ namespace nb = nanobind;
 using namespace nb::literals;
 
 using Control = std::variant<qc::Control, std::uint32_t>;
-using Controls = std::set<std::variant<qc::Control, std::uint32_t>>;
+using Controls = std::set<Control>;
 
 namespace {
 
@@ -41,7 +41,7 @@ qc::Control getControl(const Control& control) {
   if (std::holds_alternative<qc::Control>(control)) {
     return std::get<qc::Control>(control);
   }
-  return std::get<std::uint32_t>(control);
+  return static_cast<qc::Control>(std::get<std::uint32_t>(control));
 }
 
 /// Helper function to convert Controls variant to qc::Controls
