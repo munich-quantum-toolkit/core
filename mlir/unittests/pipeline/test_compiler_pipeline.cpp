@@ -1348,18 +1348,15 @@ TEST_F(CompilerPipelineTest, MCGPhase) {
 
   const auto quartz = buildQuartzIR([](quartz::QuartzProgramBuilder& b) {
     auto reg = b.allocQubitRegister(2, "q");
-    b.p(1.0, reg[0]);
-    b.p(1.0, reg[1]);
+    b.cp(1.0, reg[0], reg[1]);
   });
   const auto flux = buildFluxIR([](flux::FluxProgramBuilder& b) {
     auto reg = b.allocQubitRegister(2, "q");
-    b.p(1.0, reg[0]);
-    b.p(1.0, reg[1]);
+    b.cp(1.0, reg[0], reg[1]);
   });
   const auto qir = buildQIR([](qir::QIRProgramBuilder& b) {
     auto reg = b.allocQubitRegister(2);
-    b.p(1.0, reg[0]);
-    b.p(1.0, reg[1]);
+    b.cp(1.0, reg[0], reg[1]);
   });
 
   verifyAllStages({

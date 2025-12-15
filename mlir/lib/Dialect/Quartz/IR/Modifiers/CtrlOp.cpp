@@ -88,11 +88,12 @@ struct CtrlInlineGPhase final : OpRewritePattern<CtrlOp> {
       return failure();
     }
 
-    for (size_t i = 0; i < op.getNumPosControls(); ++i) {
-      rewriter.create<POp>(op.getLoc(), op.getPosControl(i),
-                           gPhaseOp.getTheta());
-    }
-
+    SmallVector<Value> newControls(op.getControls());
+    const auto newTarget = newControls.back();
+    newControls.pop_back();
+    CtrlOp::create(rewriter, op.getLoc(), newControls, [&](OpBuilder& b) {
+      POp::create(b, op.getLoc(), newTarget, gPhaseOp.getTheta());
+    });
     rewriter.eraseOp(op);
 
     return success();
