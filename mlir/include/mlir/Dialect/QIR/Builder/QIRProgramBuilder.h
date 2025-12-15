@@ -20,6 +20,7 @@
 #include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OwningOpRef.h>
+#include <string>
 #include <variant>
 
 namespace mlir::qir {
@@ -128,7 +129,7 @@ public:
    */
   struct Bit {
     /// Name of the register containing this bit
-    StringRef registerName;
+    std::string registerName;
     /// Size of the register containing this bit
     int64_t registerSize{};
     /// Index of this bit within the register
@@ -140,7 +141,7 @@ public:
    */
   struct ClassicalRegister {
     /// Name of the classical register
-    StringRef name;
+    std::string name;
     /// Size of the classical register
     int64_t size;
 
@@ -162,15 +163,15 @@ public:
    * @brief Allocate a classical bit register
    * @param size Number of bits
    * @param name Register name (default: "c")
-   * @return A reference to a ClassicalRegister structure
+   * @return A ClassicalRegister structure
    *
    * @par Example:
    * ```c++
    * auto& c = builder.allocClassicalBitRegister(3, "c");
    * ```
    */
-  ClassicalRegister& allocClassicalBitRegister(int64_t size,
-                                               StringRef name = "c");
+  ClassicalRegister allocClassicalBitRegister(int64_t size,
+                                              std::string name = "c");
 
   //===--------------------------------------------------------------------===//
   // Measurement and Reset
@@ -801,9 +802,6 @@ private:
   OpBuilder builder;
   ModuleOp module;
   Location loc;
-
-  /// Track allocated classical Registers
-  SmallVector<ClassicalRegister> allocatedClassicalRegisters;
 
   LLVM::LLVMFuncOp mainFunc;
 

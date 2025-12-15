@@ -135,9 +135,9 @@ QIRProgramBuilder::allocQubitRegister(const int64_t size) {
   return qubits;
 }
 
-QIRProgramBuilder::ClassicalRegister&
+QIRProgramBuilder::ClassicalRegister
 QIRProgramBuilder::allocClassicalBitRegister(const int64_t size,
-                                             StringRef name) {
+                                             std::string name) {
   checkFinalized();
 
   if (size <= 0) {
@@ -151,7 +151,6 @@ QIRProgramBuilder::allocClassicalBitRegister(const int64_t size,
   builder.setInsertionPoint(measurementsBlock->getTerminator());
 
   const auto numResults = static_cast<int64_t>(metadata_.numResults);
-  auto& reg = allocatedClassicalRegisters.emplace_back(name, size);
   for (int64_t i = 0; i < size; ++i) {
     Value val{};
     if (const auto it = ptrCache.find(numResults + i); it != ptrCache.end()) {
@@ -164,7 +163,7 @@ QIRProgramBuilder::allocClassicalBitRegister(const int64_t size,
     registerResultMap.insert({{name, i}, val});
   }
   metadata_.numResults += size;
-  return reg;
+  return {.name = name, .size = size};
 }
 
 Value QIRProgramBuilder::measure(Value qubit, const int64_t resultIndex) {
@@ -175,7 +174,7 @@ Value QIRProgramBuilder::measure(Value qubit, const int64_t resultIndex) {
   }
 
   // Choose a safe default register name
-  StringRef defaultRegName = "c";
+  std::string defaultRegName = "c";
   if (llvm::any_of(registerResultMap, [](const auto& entry) {
         return entry.first.first == "c";
       })) {
@@ -598,7 +597,7 @@ void QIRProgramBuilder::generateOutputRecording() {
 
   // Sort registers by name for deterministic output
   llvm::SmallVector<
-      std::pair<StringRef, llvm::SmallVector<std::pair<int64_t, Value>>>>
+      std::pair<std::string, llvm::SmallVector<std::pair<int64_t, Value>>>>
       sortedRegisters;
   for (auto& [name, measurements] : registerGroups) {
     sortedRegisters.emplace_back(name, std::move(measurements));
@@ -637,7 +636,7 @@ void QIRProgramBuilder::generateOutputRecording() {
     for (const auto [regIdx, resultPtr] : measurements) {
       // Create label for result: "{registerName}{regIdx}r"
       const std::string resultLabel =
-          registerName.str() + std::to_string(regIdx) + "r";
+          registerName + std::to_string(regIdx) + "r";
       auto resultLabelOp = createResultLabel(builder, module, resultLabel);
 
       builder.create<LLVM::CallOp>(

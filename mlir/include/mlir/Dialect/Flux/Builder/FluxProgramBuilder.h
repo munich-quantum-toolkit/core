@@ -18,7 +18,7 @@
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/MLIRContext.h>
-#include <mlir/IR/OwningOpRef.h>
+#include <string>
 #include <variant>
 
 namespace mlir::flux {
@@ -123,7 +123,7 @@ public:
    * %q2 = flux.alloc("q", 3, 2) : !flux.qubit
    * ```
    */
-  SmallVector<Value> allocQubitRegister(int64_t size, StringRef name = "q");
+  SmallVector<Value> allocQubitRegister(int64_t size, std::string name = "q");
 
   /**
    * @brief A small structure representing a single classical bit within a
@@ -131,7 +131,7 @@ public:
    */
   struct Bit {
     /// Name of the register containing this bit
-    StringRef registerName;
+    std::string registerName;
     /// Size of the register containing this bit
     int64_t registerSize{};
     /// Index of this bit within the register
@@ -143,7 +143,7 @@ public:
    */
   struct ClassicalRegister {
     /// Name of the classical register
-    StringRef name;
+    std::string name;
     /// Size of the classical register
     int64_t size;
 
@@ -165,15 +165,15 @@ public:
    * @brief Allocate a classical bit register
    * @param size Number of bits
    * @param name Register name (default: "c")
-   * @return A reference to a ClassicalRegister structure
+   * @return A ClassicalRegister structure
    *
    * @par Example:
    * ```c++
    * auto c = builder.allocClassicalBitRegister(3, "c");
    * ```
    */
-  ClassicalRegister& allocClassicalBitRegister(int64_t size,
-                                               StringRef name = "c");
+  ClassicalRegister allocClassicalBitRegister(int64_t size,
+                                              std::string name = "c");
 
   //===--------------------------------------------------------------------===//
   // Measurement and Reset
@@ -1063,8 +1063,5 @@ private:
   /// When an operation consumes a qubit and produces a new one, the old value
   /// is removed and the new output is added.
   llvm::DenseSet<Value> validQubits;
-
-  /// Track allocated classical Registers
-  SmallVector<ClassicalRegister> allocatedClassicalRegisters;
 };
 } // namespace mlir::flux

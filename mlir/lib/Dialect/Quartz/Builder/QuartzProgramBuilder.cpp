@@ -79,7 +79,7 @@ Value QuartzProgramBuilder::staticQubit(const int64_t index) {
 
 llvm::SmallVector<Value>
 QuartzProgramBuilder::allocQubitRegister(const int64_t size,
-                                         const StringRef name) {
+                                         const std::string name) {
   checkFinalized();
 
   if (size <= 0) {
@@ -104,15 +104,16 @@ QuartzProgramBuilder::allocQubitRegister(const int64_t size,
   return qubits;
 }
 
-QuartzProgramBuilder::ClassicalRegister&
-QuartzProgramBuilder::allocClassicalBitRegister(int64_t size, StringRef name) {
+QuartzProgramBuilder::ClassicalRegister
+QuartzProgramBuilder::allocClassicalBitRegister(int64_t size,
+                                                std::string name) {
   checkFinalized();
 
   if (size <= 0) {
     llvm::reportFatalUsageError("Size must be positive");
   }
 
-  return allocatedClassicalRegisters.emplace_back(name, size);
+  return {.name = name, .size = size};
 }
 
 //===----------------------------------------------------------------------===//

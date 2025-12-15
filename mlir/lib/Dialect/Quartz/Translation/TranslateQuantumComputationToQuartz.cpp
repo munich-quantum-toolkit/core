@@ -49,7 +49,7 @@ struct QregInfo {
   llvm::SmallVector<Value> qubits;
 };
 
-using BitMemInfo = std::pair<QuartzProgramBuilder::ClassicalRegister*,
+using BitMemInfo = std::pair<QuartzProgramBuilder::ClassicalRegister,
                              size_t>; // (register ref, localIdx)
 using BitIndexVec = llvm::SmallVector<BitMemInfo>;
 
@@ -161,11 +161,11 @@ allocateClassicalRegisters(QuartzProgramBuilder& builder,
   BitIndexVec bitMap;
   bitMap.resize(quantumComputation.getNcbits());
   for (const auto* reg : cregPtrs) {
-    auto& mem = builder.allocClassicalBitRegister(
+    const auto& mem = builder.allocClassicalBitRegister(
         static_cast<int64_t>(reg->getSize()), reg->getName());
     for (size_t i = 0; i < reg->getSize(); ++i) {
       const auto globalIdx = static_cast<size_t>(reg->getStartIndex() + i);
-      bitMap[globalIdx] = {&mem, i};
+      bitMap[globalIdx] = {mem, i};
     }
   }
 
@@ -198,7 +198,7 @@ void addMeasureOp(QuartzProgramBuilder& builder, const qc::Operation& operation,
     const auto& [mem, localIdx] = bitMap[bitIdx];
 
     // Use builder's measure method which keeps output record
-    builder.measure(qubit, (*mem)[static_cast<int64_t>(localIdx)]);
+    builder.measure(qubit, mem[static_cast<int64_t>(localIdx)]);
   }
 }
 
