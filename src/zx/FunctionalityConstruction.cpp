@@ -851,16 +851,6 @@ bool FunctionalityConstruction::transformableToZX(const qc::Operation* op) {
     case qc::OpType::Sdg:
     case qc::OpType::RZ:
       return true;
-
-    default:
-      return false;
-    }
-  } else if (op->getNcontrols() == 2) {
-    switch (op->getType()) {
-    case qc::OpType::X:
-    case qc::OpType::Z:
-    case qc::OpType::RZ:
-      return true;
     default:
       return false;
     }
