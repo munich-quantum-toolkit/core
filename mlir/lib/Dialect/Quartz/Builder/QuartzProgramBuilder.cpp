@@ -456,6 +456,8 @@ void QuartzProgramBuilder::checkFinalized() const {
 }
 
 OwningOpRef<ModuleOp> QuartzProgramBuilder::finalize() {
+  checkFinalized();
+
   // Ensure that main function exists and insertion point is valid
   auto* insertionBlock = getInsertionBlock();
   func::FuncOp mainFunc = nullptr;

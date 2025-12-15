@@ -619,6 +619,8 @@ void FluxProgramBuilder::checkFinalized() const {
 }
 
 OwningOpRef<ModuleOp> FluxProgramBuilder::finalize() {
+  checkFinalized();
+
   // Ensure that main function exists and insertion point is valid
   auto* insertionBlock = getInsertionBlock();
   func::FuncOp mainFunc = nullptr;

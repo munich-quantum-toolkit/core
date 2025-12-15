@@ -647,6 +647,8 @@ void QIRProgramBuilder::generateOutputRecording() {
 }
 
 OwningOpRef<ModuleOp> QIRProgramBuilder::finalize() {
+  checkFinalized();
+
   // Generate output recording in the output block
   generateOutputRecording();
 
