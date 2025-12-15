@@ -346,14 +346,6 @@ void FunctionalityConstruction::addMcrz(ZXDiagram& diag,
                                         const Qubit target,
                                         std::vector<Vertex>& qubits) {
 
-  switch (controls.size()) {
-  case 0:
-    addZSpider(diag, target, qubits, phase);
-    return;
-  case 1:
-    addCrz(diag, phase, controls.front(), target, qubits);
-    return;
-  default:
     const Qubit nextControl = controls.back();
     controls.pop_back();
 
@@ -361,7 +353,6 @@ void FunctionalityConstruction::addMcrz(ZXDiagram& diag,
     addMcx(diag, controls, target, qubits);
     addCrz(diag, -phase / 2, nextControl, target, qubits);
     addMcx(diag, controls, target, qubits);
-  }
 }
 
 void FunctionalityConstruction::addMcx(ZXDiagram& diag,
