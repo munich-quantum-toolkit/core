@@ -85,8 +85,7 @@ Value FluxProgramBuilder::staticQubit(const int64_t index) {
 }
 
 llvm::SmallVector<Value>
-FluxProgramBuilder::allocQubitRegister(const int64_t size,
-                                       const std::string name) {
+FluxProgramBuilder::allocQubitRegister(const int64_t size, std::string name) {
   checkFinalized();
 
   if (size <= 0) {

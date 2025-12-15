@@ -78,8 +78,7 @@ Value QuartzProgramBuilder::staticQubit(const int64_t index) {
 }
 
 llvm::SmallVector<Value>
-QuartzProgramBuilder::allocQubitRegister(const int64_t size,
-                                         const std::string name) {
+QuartzProgramBuilder::allocQubitRegister(const int64_t size, std::string name) {
   checkFinalized();
 
   if (size <= 0) {
