@@ -666,7 +666,7 @@ def SWAPOp : QuartzOp<"swap", traits = [UnitaryOpInterface, TwoTargetZeroParamet
 
     let arguments = (ins Arg<QubitType, "the first target qubit", [MemRead, MemWrite]>:$qubit0_in,
                      Arg<QubitType, "the second target qubit", [MemRead, MemWrite]>:$qubit1_in);
-    let assemblyFormat = "$qubit0_in $qubit1_in attr-dict";
+    let assemblyFormat = "$qubit0_in `,` $qubit1_in attr-dict";
 
     let extraClassDeclaration = [{
         static StringRef getBaseSymbol() { return "swap"; }
@@ -686,7 +686,7 @@ def iSWAPOp : QuartzOp<"iswap", traits = [UnitaryOpInterface, TwoTargetZeroParam
 
     let arguments = (ins Arg<QubitType, "the first target qubit", [MemRead, MemWrite]>:$qubit0_in,
                      Arg<QubitType, "the second target qubit", [MemRead, MemWrite]>:$qubit1_in);
-    let assemblyFormat = "$qubit0_in $qubit1_in attr-dict";
+    let assemblyFormat = "$qubit0_in `,` $qubit1_in attr-dict";
 
     let extraClassDeclaration = [{
         static StringRef getBaseSymbol() { return "iswap"; }
@@ -706,7 +706,7 @@ def DCXOp : QuartzOp<"dcx", traits = [UnitaryOpInterface, TwoTargetZeroParameter
 
     let arguments = (ins Arg<QubitType, "the first target qubit", [MemRead, MemWrite]>:$qubit0_in,
                      Arg<QubitType, "the second target qubit", [MemRead, MemWrite]>:$qubit1_in);
-    let assemblyFormat = "$qubit0_in $qubit1_in attr-dict";
+    let assemblyFormat = "$qubit0_in `,` $qubit1_in attr-dict";
 
     let extraClassDeclaration = [{
         static StringRef getBaseSymbol() { return "dcx"; }
@@ -726,7 +726,7 @@ def ECROp : QuartzOp<"ecr", traits = [UnitaryOpInterface, TwoTargetZeroParameter
 
     let arguments = (ins Arg<QubitType, "the first target qubit", [MemRead, MemWrite]>:$qubit0_in,
                      Arg<QubitType, "the second target qubit", [MemRead, MemWrite]>:$qubit1_in);
-    let assemblyFormat = "$qubit0_in $qubit1_in attr-dict";
+    let assemblyFormat = "$qubit0_in `,` $qubit1_in attr-dict";
 
     let extraClassDeclaration = [{
         static StringRef getBaseSymbol() { return "ecr"; }
