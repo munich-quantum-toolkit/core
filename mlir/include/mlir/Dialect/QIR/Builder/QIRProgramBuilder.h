@@ -57,8 +57,9 @@ namespace mlir::qir {
  * builder.h(q0).cx(q0, q1);
  *
  * // Measure with register info for proper output recording
- * builder.measure(q0, "c", 0);
- * builder.measure(q1, "c", 1);
+ * auto c = builder.allocClassicalBitRegister(2, "c");
+ * builder.measure(q0, c[0]);
+ * builder.measure(q1, c[1]);
  *
  * auto module = builder.finalize();
  * ```

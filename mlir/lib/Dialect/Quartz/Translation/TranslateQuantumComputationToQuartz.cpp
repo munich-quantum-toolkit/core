@@ -507,7 +507,7 @@ void addBarrierOp(QuartzProgramBuilder& builder, const qc::Operation& operation,
  *
  * @details
  * Iterates through all operations in the QuantumComputation and translates
- * them to Quartz dialect operations.
+ * them to Quartz operations.
  *
  * @param builder The QuartzProgramBuilder used to create operations
  * @param quantumComputation The quantum computation to translate
@@ -578,27 +578,20 @@ translateOperations(QuartzProgramBuilder& builder,
  *
  * @details
  * This function takes a quantum computation and translates it into an MLIR
- * module containing Quartz dialect operations. It uses the QuartzProgramBuilder
- * to handle module and function creation, resource allocation, and operation
+ * module containing Quartz operations. It uses the QuartzProgramBuilder to
+ * handle module and function creation, resource allocation, and operation
  * translation.
  *
  * The translation process:
- * 1. Creates a QuartzProgramBuilder and initializes it (creates main function
- *    with signature () -> i64)
- * 2. Allocates quantum registers using quartz.alloc with register metadata
+ * 1. Creates a QuartzProgramBuilder and initializes it (creates the main
+ * function)
+ * 2. Allocates quantum registers using quartz.alloc
  * 3. Tracks classical registers for measurement results
- * 4. Translates operations (currently: measure, reset)
+ * 4. Translates operations
  * 5. Finalizes the module (adds return statement with exit code 0)
  *
- * The generated main function returns exit code 0 to indicate successful
- * execution of the quantum program.
- *
- * Currently supported operations:
- * - Measurement (quartz.measure)
- * - Reset (quartz.reset)
- *
- * Operations not yet supported are silently skipped. As the Quartz dialect
- * is expanded with gate operations, this translation will be enhanced.
+ * If the translation fails due to an unsupported operation, a fatal error is
+ * reported.
  *
  * @param context The MLIR context in which the module will be created
  * @param quantumComputation The quantum computation to translate
