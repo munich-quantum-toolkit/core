@@ -13,11 +13,14 @@
 #include "mlir/Dialect/Quartz/IR/QuartzDialect.h"
 
 #include <cstdint>
+#include <functional>
 #include <llvm/ADT/DenseSet.h>
 #include <llvm/ADT/SmallVector.h>
+#include <llvm/Support/ErrorHandling.h>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/MLIRContext.h>
+#include <mlir/IR/OwningOpRef.h>
 #include <string>
 #include <variant>
 
