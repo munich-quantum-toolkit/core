@@ -243,6 +243,7 @@ TEST_F(ZXFunctionalityTest, CRZ) {
   EXPECT_TRUE(d.isIdentity());
   EXPECT_TRUE(d.globalPhaseIsZero());
   EXPECT_TRUE(d.connected(d.getInput(0), d.getOutput(0)));
+  EXPECT_TRUE(d.connected(d.getInput(1), d.getOutput(1)));
 }
 
 TEST_F(ZXFunctionalityTest, MultiCZ) {
@@ -313,6 +314,9 @@ TEST_F(ZXFunctionalityTest, MultiControlX) {
   EXPECT_TRUE(d.isIdentity());
   EXPECT_TRUE(d.globalPhaseIsZero());
   EXPECT_TRUE(d.connected(d.getInput(0), d.getOutput(0)));
+  EXPECT_TRUE(d.connected(d.getInput(1), d.getOutput(1)));
+  EXPECT_TRUE(d.connected(d.getInput(2), d.getOutput(2)));
+  EXPECT_TRUE(d.connected(d.getInput(3), d.getOutput(3)));
 }
 
 TEST_F(ZXFunctionalityTest, MultiControlXLarger) {
@@ -406,6 +410,7 @@ TEST_F(ZXFunctionalityTest, MultiControlZ) {
   EXPECT_TRUE(d.connected(d.getInput(0), d.getOutput(0)));
   EXPECT_TRUE(d.connected(d.getInput(1), d.getOutput(1)));
   EXPECT_TRUE(d.connected(d.getInput(2), d.getOutput(2)));
+  EXPECT_TRUE(d.connected(d.getInput(3), d.getOutput(3)));
 }
 
 TEST_F(ZXFunctionalityTest, MultiControlZ0) {
@@ -448,6 +453,7 @@ TEST_F(ZXFunctionalityTest, MultiControlZ1) {
   EXPECT_TRUE(d.isIdentity());
   EXPECT_TRUE(d.globalPhaseIsZero());
   EXPECT_TRUE(d.connected(d.getInput(0), d.getOutput(0)));
+  EXPECT_TRUE(d.connected(d.getInput(1), d.getOutput(1)));
 }
 
 TEST_F(ZXFunctionalityTest, MultiControlZ2) {
@@ -473,6 +479,7 @@ TEST_F(ZXFunctionalityTest, MultiControlZ2) {
   EXPECT_TRUE(d.connected(d.getInput(0), d.getOutput(0)));
   EXPECT_TRUE(d.connected(d.getInput(1), d.getOutput(1)));
   EXPECT_TRUE(d.connected(d.getInput(2), d.getOutput(2)));
+  EXPECT_TRUE(d.connected(d.getInput(3), d.getOutput(3)));
 }
 
 TEST_F(ZXFunctionalityTest, MultiControlRZ) {
