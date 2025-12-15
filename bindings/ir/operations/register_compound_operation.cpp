@@ -14,6 +14,7 @@
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <memory>
 #include <nanobind/nanobind.h>
 #include <nanobind/stl/string.h>     // NOLINT(misc-include-cleaner)
@@ -178,9 +179,9 @@ Args:
             indices.reserve(sliceLength);
             for (std::size_t i = 0; i < sliceLength; ++i) {
               indices.emplace_back(static_cast<DiffType>(start) +
-                                   static_cast<DiffType>(i) * step);
+                                   (static_cast<DiffType>(i) * step));
             }
-            std::sort(indices.begin(), indices.end(), std::greater<DiffType>());
+            std::ranges::sort(indices.begin(), indices.end(), std::greater<>());
             for (const auto idx : indices) {
               op.erase(op.begin() + idx);
             }
