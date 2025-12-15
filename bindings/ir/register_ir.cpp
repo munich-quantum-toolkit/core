@@ -24,13 +24,13 @@ void registerQuantumComputation(const nb::module_& m);
 NB_MODULE(MQT_CORE_MODULE_NAME, m) {
   registerPermutation(m);
 
-  nb::module_ symbolic = m.def_submodule("symbolic");
+  const nb::module_ symbolic = m.def_submodule("symbolic");
   registerSymbolic(symbolic);
 
-  nb::module_ registers = m.def_submodule("registers");
+  const nb::module_ registers = m.def_submodule("registers");
   registerRegisters(registers);
 
-  nb::module_ operations = m.def_submodule("operations");
+  const nb::module_ operations = m.def_submodule("operations");
   registerOperations(operations);
 
   registerQuantumComputation(m);

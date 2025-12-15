@@ -14,7 +14,6 @@
 #include "dd/Operations.hpp"
 #include "dd/Package.hpp"
 #include "dd/StateGeneration.hpp"
-#include "ir/Definitions.hpp"
 #include "ir/Permutation.hpp"
 #include "ir/operations/Control.hpp"
 #include "ir/operations/IfElseOperation.hpp"

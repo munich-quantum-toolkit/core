@@ -73,7 +73,7 @@ Args:
             if (idx < 0 || idx >= n) {
               throw nb::index_error();
             }
-            return reg.getGlobalIndex(static_cast<std::size_t>(idx));
+            return reg.getGlobalIndex(static_cast<qc::Qubit>(idx));
           },
           "key"_a, "Get the qubit at the specified index.")
 
@@ -142,7 +142,7 @@ Args:
             if (idx < 0 || idx >= n) {
               throw nb::index_error();
             }
-            return reg.getGlobalIndex(static_cast<std::size_t>(idx));
+            return reg.getGlobalIndex(static_cast<qc::Bit>(idx));
           },
           "key"_a, "Get the bit at the specified index.")
 
