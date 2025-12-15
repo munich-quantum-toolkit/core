@@ -18,6 +18,7 @@
 #include "qasm3/Importer.hpp"
 
 #include <algorithm>
+#include <cassert>
 #include <cstddef>
 #include <cstdint>
 #include <functional>
@@ -262,6 +263,7 @@ Args:
               "Length of slice and number of operations do not match.");
         }
         for (std::size_t i = 0; i < sliceLength; ++i) {
+          assert(ops[i] != nullptr && "ops must not contain nullptr");
           circ.at(static_cast<SizeType>(start)) = ops[i]->clone();
           start += step;
         }

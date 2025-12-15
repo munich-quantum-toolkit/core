@@ -12,6 +12,7 @@
 #include "ir/operations/Operation.hpp"
 
 #include <algorithm>
+#include <cassert>
 #include <cstddef>
 #include <cstdint>
 #include <functional>
@@ -67,9 +68,7 @@ Args:
             std::vector<std::unique_ptr<qc::Operation>> uniqueOps;
             uniqueOps.reserve(ops.size());
             for (const auto& op : ops) {
-              if (op == nullptr) {
-                throw std::runtime_error("ops must not contain None.");
-              }
+              assert(op != nullptr && "ops must not contain nullptr");
               uniqueOps.emplace_back(op->clone());
             }
             new (self) qc::CompoundOperation(std::move(uniqueOps));
@@ -146,6 +145,7 @@ Args:
                   "Length of slice and number of operations do not match.");
             }
             for (std::size_t i = 0; i < sliceLength; ++i) {
+              assert(ops[i] != nullptr && "ops must not contain nullptr");
               compOp[static_cast<SizeType>(start)] = ops[i]->clone();
               start += step;
             }
