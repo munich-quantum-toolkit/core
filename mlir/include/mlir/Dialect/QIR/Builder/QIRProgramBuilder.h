@@ -13,8 +13,8 @@
 #include "mlir/Dialect/QIR/Utils/QIRUtils.h"
 
 #include <llvm/ADT/DenseMap.h>
-#include <llvm/ADT/DenseSet.h>
 #include <llvm/ADT/SmallVector.h>
+#include <llvm/Support/Allocator.h>
 #include <llvm/Support/ErrorHandling.h>
 #include <llvm/Support/StringSaver.h>
 #include <mlir/Dialect/LLVMIR/LLVMDialect.h>
@@ -23,6 +23,7 @@
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OwningOpRef.h>
 #include <string>
+#include <utility>
 #include <variant>
 
 namespace mlir::qir {
