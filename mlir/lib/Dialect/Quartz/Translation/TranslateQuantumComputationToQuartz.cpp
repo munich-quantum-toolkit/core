@@ -507,12 +507,7 @@ void addBarrierOp(QuartzProgramBuilder& builder, const qc::Operation& operation,
  *
  * @details
  * Iterates through all operations in the QuantumComputation and translates
- * them to Quartz dialect operations. Currently supports:
- * - Measurement operations
- * - Reset operations
- *
- * Unary gates and other operations will be added as the Quartz dialect
- * is expanded.
+ * them to Quartz dialect operations.
  *
  * @param builder The QuartzProgramBuilder used to create operations
  * @param quantumComputation The quantum computation to translate

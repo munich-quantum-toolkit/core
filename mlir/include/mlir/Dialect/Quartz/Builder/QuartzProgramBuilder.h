@@ -418,9 +418,9 @@ public:
   QuartzProgramBuilder& mc##OP_NAME(const std::variant<double, Value>&(PARAM), \
                                     ValueRange controls, Value target);
 
-  DECLARE_ONE_TARGET_ONE_PARAMETER(RXOp, rz, theta)
-  DECLARE_ONE_TARGET_ONE_PARAMETER(RYOp, rx, theta)
-  DECLARE_ONE_TARGET_ONE_PARAMETER(RZOp, ry, theta)
+  DECLARE_ONE_TARGET_ONE_PARAMETER(RXOp, rx, theta)
+  DECLARE_ONE_TARGET_ONE_PARAMETER(RYOp, ry, theta)
+  DECLARE_ONE_TARGET_ONE_PARAMETER(RZOp, rz, theta)
   DECLARE_ONE_TARGET_ONE_PARAMETER(POp, p, theta)
 
 #undef DECLARE_ONE_TARGET_ONE_PARAMETER

@@ -169,7 +169,7 @@ public:
    *
    * @par Example:
    * ```c++
-   * auto& c = builder.allocClassicalBitRegister(3, "c");
+   * auto c = builder.allocClassicalBitRegister(3, "c");
    * ```
    */
   ClassicalRegister allocClassicalBitRegister(int64_t size,
