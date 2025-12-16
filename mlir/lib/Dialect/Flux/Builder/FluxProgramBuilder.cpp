@@ -85,8 +85,9 @@ Value FluxProgramBuilder::staticQubit(const int64_t index) {
   return qubit;
 }
 
-SmallVector<Value> FluxProgramBuilder::allocQubitRegister(const int64_t size,
-                                                          std::string name) {
+SmallVector<Value>
+FluxProgramBuilder::allocQubitRegister(const int64_t size,
+                                       const std::string& name) {
   checkFinalized();
 
   if (size <= 0) {
@@ -112,7 +113,7 @@ SmallVector<Value> FluxProgramBuilder::allocQubitRegister(const int64_t size,
 
 FluxProgramBuilder::ClassicalRegister
 FluxProgramBuilder::allocClassicalBitRegister(const int64_t size,
-                                              std::string name) {
+                                              std::string name) const {
   checkFinalized();
 
   if (size <= 0) {

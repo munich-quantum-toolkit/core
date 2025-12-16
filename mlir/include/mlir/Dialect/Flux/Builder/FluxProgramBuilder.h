@@ -128,7 +128,8 @@ public:
    * %q2 = flux.alloc("q", 3, 2) : !flux.qubit
    * ```
    */
-  SmallVector<Value> allocQubitRegister(int64_t size, std::string name = "q");
+  SmallVector<Value> allocQubitRegister(int64_t size,
+                                        const std::string& name = "q");
 
   /**
    * @brief A small structure representing a single classical bit within a
@@ -181,7 +182,7 @@ public:
    * ```
    */
   ClassicalRegister allocClassicalBitRegister(int64_t size,
-                                              std::string name = "c");
+                                              std::string name = "c") const;
 
   //===--------------------------------------------------------------------===//
   // Measurement and Reset

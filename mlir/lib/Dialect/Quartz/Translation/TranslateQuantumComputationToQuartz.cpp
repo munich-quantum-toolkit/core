@@ -23,6 +23,7 @@
 #include <cstdint>
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/Support/ErrorHandling.h>
+#include <llvm/Support/raw_ostream.h>
 #include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/Diagnostics.h>
 #include <mlir/IR/MLIRContext.h>
@@ -47,12 +48,12 @@ namespace {
  */
 struct QregInfo {
   const qc::QuantumRegister* qregPtr;
-  llvm::SmallVector<Value> qubits;
+  SmallVector<Value> qubits;
 };
 
 using BitMemInfo = std::pair<QuartzProgramBuilder::ClassicalRegister,
                              size_t>; // (register ref, localIdx)
-using BitIndexVec = llvm::SmallVector<BitMemInfo>;
+using BitIndexVec = SmallVector<BitMemInfo>;
 
 /**
  * @brief Allocates quantum registers using the QuartzProgramBuilder
@@ -67,11 +68,11 @@ using BitIndexVec = llvm::SmallVector<BitMemInfo>;
  * @param quantumComputation The quantum computation to translate
  * @return Vector containing information about all quantum registers
  */
-llvm::SmallVector<QregInfo>
+SmallVector<QregInfo>
 allocateQregs(QuartzProgramBuilder& builder,
               const qc::QuantumComputation& quantumComputation) {
   // Build list of pointers for sorting
-  llvm::SmallVector<const qc::QuantumRegister*> qregPtrs;
+  SmallVector<const qc::QuantumRegister*> qregPtrs;
   qregPtrs.reserve(quantumComputation.getQuantumRegisters().size() +
                    quantumComputation.getAncillaRegisters().size());
   for (const auto& qreg :
@@ -90,7 +91,7 @@ allocateQregs(QuartzProgramBuilder& builder,
       });
 
   // Allocate quantum registers using the builder
-  llvm::SmallVector<QregInfo> qregs;
+  SmallVector<QregInfo> qregs;
   for (const auto* qregPtr : qregPtrs) {
     auto qubits = builder.allocQubitRegister(
         static_cast<int64_t>(qregPtr->getSize()), qregPtr->getName());
@@ -112,10 +113,10 @@ allocateQregs(QuartzProgramBuilder& builder,
  * @param qregs Vector containing information about all quantum registers
  * @return Flat vector of qubit values indexed by physical qubit index
  */
-llvm::SmallVector<Value>
+SmallVector<Value>
 buildQubitMap(const qc::QuantumComputation& quantumComputation,
-              const llvm::SmallVector<QregInfo>& qregs) {
-  llvm::SmallVector<Value> flatQubits;
+              const SmallVector<QregInfo>& qregs) {
+  SmallVector<Value> flatQubits;
   const auto maxPhys = quantumComputation.getHighestPhysicalQubitIndex();
   flatQubits.resize(static_cast<size_t>(maxPhys) + 1);
 
@@ -145,7 +146,7 @@ BitIndexVec
 allocateClassicalRegisters(QuartzProgramBuilder& builder,
                            const qc::QuantumComputation& quantumComputation) {
   // Build list of pointers for sorting
-  llvm::SmallVector<const qc::ClassicalRegister*> cregPtrs;
+  SmallVector<const qc::ClassicalRegister*> cregPtrs;
   cregPtrs.reserve(quantumComputation.getClassicalRegisters().size());
   for (const auto& reg :
        quantumComputation.getClassicalRegisters() | std::views::values) {
@@ -186,8 +187,7 @@ allocateClassicalRegisters(QuartzProgramBuilder& builder,
  * @param bitMap Mapping from global bit index to (register, local_index)
  */
 void addMeasureOp(QuartzProgramBuilder& builder, const qc::Operation& operation,
-                  const llvm::SmallVector<Value>& qubits,
-                  const BitIndexVec& bitMap) {
+                  const SmallVector<Value>& qubits, const BitIndexVec& bitMap) {
   const auto& measureOp =
       dynamic_cast<const qc::NonUnitaryOperation&>(operation);
   const auto& targets = measureOp.getTargets();
@@ -215,7 +215,7 @@ void addMeasureOp(QuartzProgramBuilder& builder, const qc::Operation& operation,
  * @param qubits Flat vector of qubit values indexed by physical qubit index
  */
 void addResetOp(QuartzProgramBuilder& builder, const qc::Operation& operation,
-                const llvm::SmallVector<Value>& qubits) {
+                const SmallVector<Value>& qubits) {
   for (const auto& target : operation.getTargets()) {
     auto qubit = qubits[target];
     builder.reset(qubit);
@@ -233,10 +233,9 @@ void addResetOp(QuartzProgramBuilder& builder, const qc::Operation& operation,
  * @param qubits Flat vector of qubit values indexed by physical qubit index
  * @return Vector of qubit values corresponding to positive controls
  */
-llvm::SmallVector<Value>
-getPosControls(const qc::Operation& operation,
-               const llvm::SmallVector<Value>& qubits) {
-  llvm::SmallVector<Value> controls;
+SmallVector<Value> getPosControls(const qc::Operation& operation,
+                                  const SmallVector<Value>& qubits) {
+  SmallVector<Value> controls;
   for (const auto& [control, type] : operation.getControls()) {
     if (type == qc::Control::Type::Neg) {
       continue;
@@ -262,7 +261,7 @@ getPosControls(const qc::Operation& operation,
    */                                                                          \
   void add##OP_QC##Op(QuartzProgramBuilder& builder,                           \
                       const qc::Operation& operation,                          \
-                      const llvm::SmallVector<Value>& qubits) {                \
+                      const SmallVector<Value>& qubits) {                      \
     const auto& target = qubits[operation.getTargets()[0]];                    \
     if (const auto& posControls = getPosControls(operation, qubits);           \
         posControls.empty()) {                                                 \
@@ -302,7 +301,7 @@ DEFINE_ONE_TARGET_ZERO_PARAMETER(SXdg, sxdg)
    */                                                                          \
   void add##OP_QC##Op(QuartzProgramBuilder& builder,                           \
                       const qc::Operation& operation,                          \
-                      const llvm::SmallVector<Value>& qubits) {                \
+                      const SmallVector<Value>& qubits) {                      \
     const auto& param = operation.getParameter()[0];                           \
     const auto& target = qubits[operation.getTargets()[0]];                    \
     if (const auto& posControls = getPosControls(operation, qubits);           \
@@ -334,7 +333,7 @@ DEFINE_ONE_TARGET_ONE_PARAMETER(P, p)
    */                                                                          \
   void add##OP_QC##Op(QuartzProgramBuilder& builder,                           \
                       const qc::Operation& operation,                          \
-                      const llvm::SmallVector<Value>& qubits) {                \
+                      const SmallVector<Value>& qubits) {                      \
     const auto& param1 = operation.getParameter()[0];                          \
     const auto& param2 = operation.getParameter()[1];                          \
     const auto& target = qubits[operation.getTargets()[0]];                    \
@@ -367,7 +366,7 @@ DEFINE_ONE_TARGET_TWO_PARAMETER(U2, u2)
    */                                                                          \
   void add##OP_QC##Op(QuartzProgramBuilder& builder,                           \
                       const qc::Operation& operation,                          \
-                      const llvm::SmallVector<Value>& qubits) {                \
+                      const SmallVector<Value>& qubits) {                      \
     const auto& param1 = operation.getParameter()[0];                          \
     const auto& param2 = operation.getParameter()[1];                          \
     const auto& param3 = operation.getParameter()[2];                          \
@@ -400,7 +399,7 @@ DEFINE_ONE_TARGET_THREE_PARAMETER(U, u)
    */                                                                          \
   void add##OP_QC##Op(QuartzProgramBuilder& builder,                           \
                       const qc::Operation& operation,                          \
-                      const llvm::SmallVector<Value>& qubits) {                \
+                      const SmallVector<Value>& qubits) {                      \
     const auto& target0 = qubits[operation.getTargets()[0]];                   \
     const auto& target1 = qubits[operation.getTargets()[1]];                   \
     if (const auto& posControls = getPosControls(operation, qubits);           \
@@ -434,7 +433,7 @@ DEFINE_TWO_TARGET_ZERO_PARAMETER(ECR, ecr)
    */                                                                          \
   void add##OP_QC##Op(QuartzProgramBuilder& builder,                           \
                       const qc::Operation& operation,                          \
-                      const llvm::SmallVector<Value>& qubits) {                \
+                      const SmallVector<Value>& qubits) {                      \
     const auto& param = operation.getParameter()[0];                           \
     const auto& target0 = qubits[operation.getTargets()[0]];                   \
     const auto& target1 = qubits[operation.getTargets()[1]];                   \
@@ -469,7 +468,7 @@ DEFINE_TWO_TARGET_ONE_PARAMETER(RZZ, rzz)
    */                                                                          \
   void add##OP_QC##Op(QuartzProgramBuilder& builder,                           \
                       const qc::Operation& operation,                          \
-                      const llvm::SmallVector<Value>& qubits) {                \
+                      const SmallVector<Value>& qubits) {                      \
     const auto& param1 = operation.getParameter()[0];                          \
     const auto& param2 = operation.getParameter()[1];                          \
     const auto& target0 = qubits[operation.getTargets()[0]];                   \
@@ -490,8 +489,8 @@ DEFINE_TWO_TARGET_TWO_PARAMETER(XXminusYY, xx_minus_yy)
 // BarrierOp
 
 void addBarrierOp(QuartzProgramBuilder& builder, const qc::Operation& operation,
-                  const llvm::SmallVector<Value>& qubits) {
-  llvm::SmallVector<Value> targets;
+                  const SmallVector<Value>& qubits) {
+  SmallVector<Value> targets;
   for (const auto& targetIdx : operation.getTargets()) {
     targets.push_back(qubits[targetIdx]);
   }
@@ -519,7 +518,7 @@ void addBarrierOp(QuartzProgramBuilder& builder, const qc::Operation& operation,
 LogicalResult
 translateOperations(QuartzProgramBuilder& builder,
                     const qc::QuantumComputation& quantumComputation,
-                    const llvm::SmallVector<Value>& qubits,
+                    const SmallVector<Value>& qubits,
                     const BitIndexVec& bitMap) {
   if (quantumComputation.hasGlobalPhase()) {
     builder.gphase(quantumComputation.getGlobalPhase());

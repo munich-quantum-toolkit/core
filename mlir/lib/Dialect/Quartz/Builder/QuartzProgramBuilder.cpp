@@ -26,6 +26,7 @@
 #include <mlir/IR/ValueRange.h>
 #include <mlir/Support/LLVM.h>
 #include <string>
+#include <utility>
 #include <variant>
 
 namespace mlir::quartz {
@@ -79,8 +80,9 @@ Value QuartzProgramBuilder::staticQubit(const int64_t index) {
   return staticOp.getQubit();
 }
 
-SmallVector<Value> QuartzProgramBuilder::allocQubitRegister(const int64_t size,
-                                                            std::string name) {
+SmallVector<Value>
+QuartzProgramBuilder::allocQubitRegister(const int64_t size,
+                                         const std::string& name) {
   checkFinalized();
 
   if (size <= 0) {
@@ -107,7 +109,7 @@ SmallVector<Value> QuartzProgramBuilder::allocQubitRegister(const int64_t size,
 
 QuartzProgramBuilder::ClassicalRegister
 QuartzProgramBuilder::allocClassicalBitRegister(const int64_t size,
-                                                std::string name) {
+                                                std::string name) const {
   checkFinalized();
 
   if (size <= 0) {
