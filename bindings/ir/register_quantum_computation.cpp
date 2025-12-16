@@ -305,7 +305,7 @@ Args:
           indices.emplace_back(static_cast<DiffType>(start) +
                                (static_cast<DiffType>(i) * step));
         }
-        std::ranges::sort(indices.begin(), indices.end(), std::greater<>());
+        std::ranges::sort(indices, std::greater<>());
         for (const auto idx : indices) {
           circ.erase(circ.begin() + idx);
         }
