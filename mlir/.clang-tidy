@@ -6,4 +6,5 @@ Checks: |
   llvm-prefer-register-over-unsigned,
   llvm-prefer-static-over-anonymous-namespace,
   -misc-use-anonymous-namespace,
-  llvm-twine-local
+  llvm-twine-local,
+  -cppcoreguidelines-pro-bounds-avoid-unchecked-container-access
