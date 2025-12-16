@@ -408,6 +408,82 @@ QuartzProgramBuilder& QuartzProgramBuilder::dealloc(Value qubit) {
 }
 
 //===----------------------------------------------------------------------===//
+// SCF operations
+//===----------------------------------------------------------------------===//
+
+QuartzProgramBuilder&
+QuartzProgramBuilder::scfFor(Value lowerbound, Value upperbound, Value step,
+                             const std::function<void(OpBuilder&)>& body) {
+  create<scf::ForOp>(loc, lowerbound, upperbound, step, ValueRange{},
+                     [&](OpBuilder& b, Location, Value, ValueRange) {
+                       body(b);
+                       b.create<scf::YieldOp>(loc);
+                     });
+
+  return *this;
+}
+
+QuartzProgramBuilder& QuartzProgramBuilder::scfWhile(
+    const std::function<void(OpBuilder&)>& beforeBody,
+    const std::function<void(OpBuilder&)>& afterBody) {
+  create<scf::WhileOp>(
+      loc, TypeRange{}, ValueRange{},
+      [&](OpBuilder& b, Location, ValueRange) { beforeBody(b); },
+      [&](OpBuilder& b, Location loc, ValueRange) {
+        afterBody(b);
+        b.create<scf::YieldOp>(loc);
+      });
+
+  return *this;
+}
+
+QuartzProgramBuilder&
+QuartzProgramBuilder::scfIf(Value cond,
+                            const std::function<void(OpBuilder&)>& thenBody,
+                            const std::function<void(OpBuilder&)>& elseBody) {
+  if (!elseBody) {
+    create<scf::IfOp>(loc, cond, [&](OpBuilder& b, Location loc) {
+      thenBody(b);
+      b.create<scf::YieldOp>(loc);
+    });
+  } else {
+    create<scf::IfOp>(
+        loc, cond,
+        [&](OpBuilder& b, Location loc) {
+          thenBody(b);
+          b.create<scf::YieldOp>(loc);
+        },
+        [&](OpBuilder& b, Location loc) {
+          elseBody(b);
+          b.create<scf::YieldOp>(loc);
+        });
+  }
+  return *this;
+}
+
+QuartzProgramBuilder& QuartzProgramBuilder::scfCondition(Value condition) {
+  create<scf::ConditionOp>(loc, condition, ValueRange{});
+  return *this;
+}
+
+//===----------------------------------------------------------------------===//
+// Arith operations
+//===----------------------------------------------------------------------===//
+
+Value QuartzProgramBuilder::arithConstantIndex(int index) {
+  const auto op =
+      create<arith::ConstantOp>(loc, getIndexType(), getIndexAttr(index));
+  return op->getResult(0);
+}
+
+Value QuartzProgramBuilder::arithConstantBool(bool b) {
+  const auto i1Type = getI1Type();
+  const auto op =
+      create<arith::ConstantOp>(loc, i1Type, getIntegerAttr(i1Type, b ? 1 : 0));
+  return op->getResult(0);
+}
+
+//===----------------------------------------------------------------------===//
 // Finalization
 //===----------------------------------------------------------------------===//
 
@@ -428,31 +504,6 @@ OwningOpRef<ModuleOp> QuartzProgramBuilder::finalize() {
 
   // Transfer ownership to the caller
   return module;
-}
-
-QuartzProgramBuilder&
-QuartzProgramBuilder::scfFor(Value lowerbound, Value upperbound, Value step,
-                             const std::function<void(OpBuilder&)>& body) {
-  create<scf::ForOp>(loc, lowerbound, upperbound, step, ValueRange{},
-                     [&](OpBuilder& b, Location, Value, ValueRange) {
-                       body(b); // adapt
-                       b.create<scf::YieldOp>(loc);
-                     });
-
-  return *this;
-}
-Value QuartzProgramBuilder::arithConstantIndex(int i) {
-
-  const auto op =
-      create<arith::ConstantOp>(loc, getIndexType(), getIndexAttr(i));
-  return op->getResult(0);
-}
-Value QuartzProgramBuilder::arithConstantBool(bool b) {
-  const auto i1Type = getI1Type();
-  const auto op =
-      b ? create<arith::ConstantOp>(loc, i1Type, getIntegerAttr(i1Type, 1))
-        : create<arith::ConstantOp>(loc, i1Type, getIntegerAttr(i1Type, 0));
-  return op->getResult(0);
 }
 
 } // namespace mlir::quartz

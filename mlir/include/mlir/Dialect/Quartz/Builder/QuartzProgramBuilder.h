@@ -846,6 +846,147 @@ public:
   QuartzProgramBuilder& dealloc(Value qubit);
 
   //===--------------------------------------------------------------------===//
+  // SCF operations
+  //===--------------------------------------------------------------------===//
+
+  /**
+   * @brief Constructs a scf.for operation without iter args
+   *
+   * @param lowerbound Lowerbound of the loop
+   * @param upperbound Upperbound of the loop
+   * @param step Stepsize of the loop
+   * @param body Function that builds the body of the for operation
+   * @return Reference to this builder for method chaining
+   *
+   * @par Example:
+   * ```c++
+   * builder.scfFor(lb, ub, step, [&](auto& b) { b.x(q0); });
+   * ```
+   * ```mlir
+   * scf.for %iv = %lb to %ub step %step {
+   *   quartz.x %q0 : !quartz.qubit
+   * }
+   * ```
+   */
+  QuartzProgramBuilder& scfFor(Value lowerbound, Value upperbound, Value step,
+                               const std::function<void(OpBuilder&)>& body);
+
+  /**
+   * @brief Constructs a scf.while operation without return values
+   *
+   * @param beforeBody Function that builds the before body of the while
+   * operation
+   * @param afterBody Function that builds the after body of the while operation
+   * @return Reference to this builder for method chaining
+   *
+   * @par Example:
+   * ```c++
+   * builder.scfWhile([&](auto& b) {
+   * b.h(q0);
+   * auto res = b.measure(q0)
+   * b.condition(res)
+   * }, [&](auto& b) {
+   * b.x(q0);
+   * b.yield()
+   * });
+   * ```
+   * ```mlir
+   * scf.while : () -> () {
+   * quartz.h %q0 : !quartz.qubit
+   * %res = quartz.measure %q0 : !quartz.qubit -> i1
+   * scf.condition(%tres)
+   * } do {
+   * quartz.x %q0 : !quartz.qubit
+   * scf.yield
+   * }
+   * ```
+   */
+  QuartzProgramBuilder&
+  scfWhile(const std::function<void(OpBuilder&)>& beforeBody,
+           const std::function<void(OpBuilder&)>& afterBody);
+
+  /**
+   * @brief Constructs a scf.if operation without return values
+   *
+   * @param condition Condition for the if operation
+   * @param thenBody Function that builds the then body of the if
+   * operation
+   * @param elseBody Function that builds the else body of the if operation
+   * @return Reference to this builder for method chaining
+   *
+   * @par Example:
+   * ```c++
+   * builder.scf.if(condition, [&](auto& b) {
+   * b.h(q0);
+   * }, [&](auto& b) {
+   * b.x(q0);
+   * });
+   * ```
+   * ```mlir
+   * scf.if %condition {
+   * quartz.h %q0 : !quartz.qubit
+   * } else {
+   * quartz.x %q0 : !quartz.qubit
+   * }
+   * ```
+   */
+  QuartzProgramBuilder&
+  scfIf(Value condition, const std::function<void(OpBuilder&)>& thenBody,
+        const std::function<void(OpBuilder&)>& elseBody = nullptr);
+
+  /**
+   * @brief Constructs a scf.condition operation without any additional Values
+   *
+   * @param condition Condition for condition operation
+   * @return Reference to this builder for method chaining
+   *
+   * @par Example:
+   * ```c++
+   * builder.condition(condition);
+   * ```
+   * ```mlir
+   * scf.condition(%condition)
+   * ```
+   */
+  QuartzProgramBuilder& scfCondition(Value condition);
+
+  //===--------------------------------------------------------------------===//
+  // Arith operations
+  //===--------------------------------------------------------------------===//
+
+  /**
+   * @brief Constructs a arith.constant of type Index with a given value
+   *
+   * @param index Value of the constant operation
+   * @return Result of the constant operation
+   *
+   * @par Example:
+   * ```c++
+   * builder.arithConstantIndex(4);
+   * ```
+   * ```mlir
+   * arith.constant 4 : index
+   * ```
+   */
+  Value arithConstantIndex(int index);
+
+  /**
+   * @brief Constructs a arith.constant of type i1 with a given bool value
+   *
+   * @param b Bool value of the constant operation
+   * @return Result of the constant operation
+   *
+   * @par Example:
+   * ```c++
+   * builder.arithConstantBool(true);
+   * ```
+   * ```mlir
+   * arith.constant 1 : i1
+   * ```
+   */
+  Value arithConstantBool(bool b);
+
+  //===--------------------------------------------------------------------===//
   // Finalization
   //===--------------------------------------------------------------------===//
 
@@ -861,13 +1002,6 @@ public:
    * @return OwningOpRef containing the constructed quantum program module
    */
   OwningOpRef<ModuleOp> finalize();
-
-  QuartzProgramBuilder& scfFor(Value lowerbound, Value upperbound, Value step,
-                               const std::function<void(OpBuilder&)>& body);
-
-  Value arithConstantIndex(int i);
-
-  Value arithConstantBool(bool b);
 
 private:
   MLIRContext* ctx{};
