@@ -80,7 +80,7 @@ Args:
 
       .def(
           "__getitem__",
-          [&wrap](const qc::CompoundOperation& op, DiffType i) {
+          [wrap](const qc::CompoundOperation& op, DiffType i) {
             i = wrap(i, op.size());
             return op.at(static_cast<SizeType>(i)).get();
           },
@@ -123,8 +123,8 @@ Returns:
 
       .def(
           "__setitem__",
-          [&wrap](qc::CompoundOperation& compOp, DiffType i,
-                  const qc::Operation& op) {
+          [wrap](qc::CompoundOperation& compOp, DiffType i,
+                 const qc::Operation& op) {
             i = wrap(i, compOp.size());
             compOp[static_cast<SizeType>(i)] = op.clone();
           },
@@ -161,7 +161,7 @@ Args:
 
       .def(
           "__delitem__",
-          [&wrap](qc::CompoundOperation& op, DiffType i) {
+          [wrap](qc::CompoundOperation& op, DiffType i) {
             i = wrap(i, op.size());
             op.erase(op.begin() + i);
           },

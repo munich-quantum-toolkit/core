@@ -209,7 +209,7 @@ Returns:
 
   qc.def(
       "__getitem__",
-      [&wrap](const qc::QuantumComputation& circ, DiffType i) {
+      [wrap](const qc::QuantumComputation& circ, DiffType i) {
         i = wrap(i, circ.getNops());
         return circ.at(static_cast<SizeType>(i)).get();
       },
@@ -252,8 +252,8 @@ Returns:
 
   qc.def(
       "__setitem__",
-      [&wrap](qc::QuantumComputation& circ, DiffType i,
-              const qc::Operation& op) {
+      [wrap](qc::QuantumComputation& circ, DiffType i,
+             const qc::Operation& op) {
         i = wrap(i, circ.getNops());
         circ.at(static_cast<SizeType>(i)) = op.clone();
       },
@@ -289,7 +289,7 @@ Args:
 
   qc.def(
       "__delitem__",
-      [&wrap](qc::QuantumComputation& circ, DiffType i) {
+      [wrap](qc::QuantumComputation& circ, DiffType i) {
         i = wrap(i, circ.getNops());
         circ.erase(circ.begin() + i);
       },
