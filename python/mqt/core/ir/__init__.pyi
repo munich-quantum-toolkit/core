@@ -1057,7 +1057,7 @@ class QuantumComputation(MutableSequence[operations.Operation]):
         r"""Apply a phase gate.
 
         .. math::
-            P(\theta) = \begin{pmatrix} 1 & 0 \\ 0 & e^{i \ theta} \end{pmatrix}
+            P(\theta) = \begin{pmatrix} 1 & 0 \\ 0 & e^{i \theta} \end{pmatrix}
 
         Args:
             theta: The rotation angle
