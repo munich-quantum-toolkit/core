@@ -37,20 +37,24 @@ using Controls = std::set<Control>;
 
 namespace {
 
+qc::Qubit nbIntToQubit(const nb::int_& value) {
+  const auto valueInt = static_cast<std::int64_t>(value);
+  if (valueInt < 0) {
+    throw nb::value_error("Qubit index cannot be negative");
+  }
+  const auto valueUint = static_cast<std::uint64_t>(valueInt);
+  if (valueUint > std::numeric_limits<qc::Qubit>::max()) {
+    throw nb::value_error("Qubit index exceeds maximum value");
+  }
+  return static_cast<qc::Qubit>(valueUint);
+}
+
 /// Helper function to convert Control variant to qc::Control
 qc::Control getControl(const Control& control) {
   if (std::holds_alternative<qc::Control>(control)) {
     return std::get<qc::Control>(control);
   }
-  auto controlInt = static_cast<std::int64_t>(std::get<nb::int_>(control));
-  if (controlInt < 0) {
-    throw nb::value_error("Control qubit index cannot be negative");
-  }
-  const auto controlUint = static_cast<std::uint64_t>(controlInt);
-  if (controlUint > std::numeric_limits<qc::Qubit>::max()) {
-    throw nb::value_error("Control qubit index exceeds maximum value");
-  }
-  return static_cast<qc::Qubit>(controlUint);
+  return nbIntToQubit(std::get<nb::int_>(control));
 }
 
 /// Helper function to convert Controls variant to qc::Controls
@@ -82,7 +86,10 @@ Args:
              const nb::typed<nb::dict, nb::int_, nb::int_>& p) {
             qc::Permutation perm;
             for (const auto& [key, value] : p) {
-              perm[nb::cast<qc::Qubit>(key)] = nb::cast<qc::Qubit>(value);
+              const auto keyQubit = nbIntToQubit(static_cast<nb::int_>(key));
+              const auto valueQubit =
+                  nbIntToQubit(static_cast<nb::int_>(value));
+              perm[keyQubit] = valueQubit;
             }
             new (self) qc::Permutation(std::move(perm));
           },
