@@ -59,10 +59,10 @@ Args:
           [](qc::QuantumRegister& reg, const nb::int_ size) {
             const auto sizeInt = static_cast<std::int64_t>(size);
             if (sizeInt < 0) {
-              throw nb::value_error("Start index cannot be negative");
+              throw nb::value_error("Size cannot be negative");
             }
             if (sizeInt > std::numeric_limits<std::size_t>::max()) {
-              throw nb::value_error("Start index exceeds maximum value");
+              throw nb::value_error("Size exceeds maximum value");
             }
             reg.getSize() = static_cast<std::size_t>(sizeInt);
           },
