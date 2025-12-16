@@ -63,7 +63,11 @@ Args:
             if (sizeInt < 0) {
               throw nb::value_error("Size cannot be negative");
             }
-            reg.getSize() = static_cast<std::size_t>(sizeInt);
+            const auto sizeUint = static_cast<std::uint64_t>(sizeInt);
+            if (sizeUint > std::numeric_limits<std::size_t>::max()) {
+              throw nb::value_error("Size exceeds maximum value");
+            }
+            reg.getSize() = static_cast<std::size_t>(sizeUint);
           },
           "The number of qubits in the quantum register.")
       .def_prop_ro(
@@ -141,7 +145,11 @@ Args:
             if (sizeInt < 0) {
               throw nb::value_error("Size cannot be negative");
             }
-            reg.getSize() = static_cast<std::size_t>(sizeInt);
+            const auto sizeUint = static_cast<std::uint64_t>(sizeInt);
+            if (sizeUint > std::numeric_limits<std::size_t>::max()) {
+              throw nb::value_error("Size exceeds maximum value");
+            }
+            reg.getSize() = static_cast<std::size_t>(sizeUint);
           },
           "The number of bits in the classical register.")
 
