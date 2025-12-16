@@ -161,7 +161,7 @@ Args:
       .def(
           "__getitem__",
           [](const qc::ClassicalRegister& reg, nb::ssize_t idx) {
-            auto n = static_cast<nb::ssize_t>(reg.getSize());
+            const auto n = static_cast<nb::ssize_t>(reg.getSize());
             if (idx < 0) {
               idx += n;
             }
