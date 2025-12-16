@@ -22,6 +22,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <functional>
+#include <limits>
 #include <memory>
 #include <nanobind/nanobind.h>
 #include <nanobind/stl/set.h>           // NOLINT(misc-include-cleaner)
@@ -46,7 +47,7 @@ using namespace nb::literals;
 using DiffType = std::vector<std::unique_ptr<qc::Operation>>::difference_type;
 using SizeType = std::vector<std::unique_ptr<qc::Operation>>::size_type;
 
-using Control = std::variant<qc::Control, std::uint32_t>;
+using Control = std::variant<qc::Control, nb::int_>;
 using Controls = std::set<Control>;
 
 namespace {
@@ -56,7 +57,12 @@ qc::Control getControl(const Control& control) {
   if (std::holds_alternative<qc::Control>(control)) {
     return std::get<qc::Control>(control);
   }
-  return static_cast<qc::Control>(std::get<std::uint32_t>(control));
+  const auto controlInt =
+      static_cast<std::int64_t>(std::get<nb::int_>(control));
+  if (controlInt > std::numeric_limits<qc::Qubit>::max()) {
+    throw nb::value_error("Qubit index exceeds maximum value");
+  }
+  return static_cast<qc::Qubit>(controlInt);
 }
 
 /// Helper function to convert Controls variant to qc::Controls

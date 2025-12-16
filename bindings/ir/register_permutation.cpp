@@ -14,6 +14,7 @@
 
 #include <cstdint>
 #include <iterator>
+#include <limits>
 #include <nanobind/make_iterator.h>
 #include <nanobind/nanobind.h>
 #include <nanobind/operators.h>
@@ -31,7 +32,7 @@ namespace mqt {
 namespace nb = nanobind;
 using namespace nb::literals;
 
-using Control = std::variant<qc::Control, std::uint32_t>;
+using Control = std::variant<qc::Control, nb::int_>;
 using Controls = std::set<Control>;
 
 namespace {
@@ -41,7 +42,12 @@ qc::Control getControl(const Control& control) {
   if (std::holds_alternative<qc::Control>(control)) {
     return std::get<qc::Control>(control);
   }
-  return static_cast<qc::Control>(std::get<std::uint32_t>(control));
+  const auto controlInt =
+      static_cast<std::int64_t>(std::get<nb::int_>(control));
+  if (controlInt > std::numeric_limits<qc::Qubit>::max()) {
+    throw nb::value_error("Qubit index exceeds maximum value");
+  }
+  return static_cast<qc::Qubit>(controlInt);
 }
 
 /// Helper function to convert Controls variant to qc::Controls
