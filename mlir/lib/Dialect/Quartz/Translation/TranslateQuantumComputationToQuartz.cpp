@@ -22,6 +22,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <llvm/ADT/SmallVector.h>
+#include <llvm/Support/ErrorHandling.h>
 #include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/Diagnostics.h>
 #include <mlir/IR/MLIRContext.h>
@@ -49,7 +50,7 @@ struct QregInfo {
   llvm::SmallVector<Value> qubits;
 };
 
-using BitMemInfo = std::pair<QuartzProgramBuilder::ClassicalRegister*,
+using BitMemInfo = std::pair<QuartzProgramBuilder::ClassicalRegister,
                              size_t>; // (register ref, localIdx)
 using BitIndexVec = llvm::SmallVector<BitMemInfo>;
 
@@ -161,11 +162,11 @@ allocateClassicalRegisters(QuartzProgramBuilder& builder,
   BitIndexVec bitMap;
   bitMap.resize(quantumComputation.getNcbits());
   for (const auto* reg : cregPtrs) {
-    auto& mem = builder.allocClassicalBitRegister(
+    const auto& mem = builder.allocClassicalBitRegister(
         static_cast<int64_t>(reg->getSize()), reg->getName());
     for (size_t i = 0; i < reg->getSize(); ++i) {
       const auto globalIdx = static_cast<size_t>(reg->getStartIndex() + i);
-      bitMap[globalIdx] = {&mem, i};
+      bitMap[globalIdx] = {mem, i};
     }
   }
 
@@ -198,7 +199,7 @@ void addMeasureOp(QuartzProgramBuilder& builder, const qc::Operation& operation,
     const auto& [mem, localIdx] = bitMap[bitIdx];
 
     // Use builder's measure method which keeps output record
-    builder.measure(qubit, (*mem)[static_cast<int64_t>(localIdx)]);
+    builder.measure(qubit, mem[static_cast<int64_t>(localIdx)]);
   }
 }
 
@@ -216,7 +217,7 @@ void addMeasureOp(QuartzProgramBuilder& builder, const qc::Operation& operation,
 void addResetOp(QuartzProgramBuilder& builder, const qc::Operation& operation,
                 const llvm::SmallVector<Value>& qubits) {
   for (const auto& target : operation.getTargets()) {
-    Value qubit = qubits[target];
+    auto qubit = qubits[target];
     builder.reset(qubit);
   }
 }
@@ -507,12 +508,7 @@ void addBarrierOp(QuartzProgramBuilder& builder, const qc::Operation& operation,
  *
  * @details
  * Iterates through all operations in the QuantumComputation and translates
- * them to Quartz dialect operations. Currently supports:
- * - Measurement operations
- * - Reset operations
- *
- * Unary gates and other operations will be added as the Quartz dialect
- * is expanded.
+ * them to Quartz operations.
  *
  * @param builder The QuartzProgramBuilder used to create operations
  * @param quantumComputation The quantum computation to translate
@@ -564,9 +560,9 @@ translateOperations(QuartzProgramBuilder& builder,
       ADD_OP_CASE(XXminusYY)
       ADD_OP_CASE(Barrier)
     default:
-      // Unsupported operation - skip for now
-      // As the Quartz dialect is expanded, more operations will be supported
-      continue;
+      llvm::errs() << operation->getName()
+                   << " cannot be translated to Quartz\n";
+      return failure();
     }
   }
 
@@ -583,27 +579,20 @@ translateOperations(QuartzProgramBuilder& builder,
  *
  * @details
  * This function takes a quantum computation and translates it into an MLIR
- * module containing Quartz dialect operations. It uses the QuartzProgramBuilder
- * to handle module and function creation, resource allocation, and operation
+ * module containing Quartz operations. It uses the QuartzProgramBuilder to
+ * handle module and function creation, resource allocation, and operation
  * translation.
  *
  * The translation process:
- * 1. Creates a QuartzProgramBuilder and initializes it (creates main function
- *    with signature () -> i64)
- * 2. Allocates quantum registers using quartz.alloc with register metadata
+ * 1. Creates a QuartzProgramBuilder and initializes it (creates the main
+ * function)
+ * 2. Allocates quantum registers using quartz.alloc
  * 3. Tracks classical registers for measurement results
- * 4. Translates operations (currently: measure, reset)
+ * 4. Translates operations
  * 5. Finalizes the module (adds return statement with exit code 0)
  *
- * The generated main function returns exit code 0 to indicate successful
- * execution of the quantum program.
- *
- * Currently supported operations:
- * - Measurement (quartz.measure)
- * - Reset (quartz.reset)
- *
- * Operations not yet supported are silently skipped. As the Quartz dialect
- * is expanded with gate operations, this translation will be enhanced.
+ * If the translation fails due to an unsupported operation, a fatal error is
+ * reported.
  *
  * @param context The MLIR context in which the module will be created
  * @param quantumComputation The quantum computation to translate
@@ -627,8 +616,8 @@ OwningOpRef<ModuleOp> translateQuantumComputationToQuartz(
   // Translate operations
   if (translateOperations(builder, quantumComputation, qubits, bitMap)
           .failed()) {
-    // Note: Currently all operations succeed or are skipped
-    // This check is here for future error handling
+    llvm::reportFatalInternalError(
+        "Failed to translate QuantumComputation to Quartz");
   }
 
   // Finalize and return the module (adds return statement and transfers

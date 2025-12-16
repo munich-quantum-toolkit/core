@@ -73,12 +73,12 @@ struct OperationStructuralHash {
     size_t hash = llvm::hash_value(op->getName().getStringRef());
 
     // Hash result types
-    for (const Type type : op->getResultTypes()) {
+    for (auto type : op->getResultTypes()) {
       hash = llvm::hash_combine(hash, type.getAsOpaquePointer());
     }
 
     // Hash operand types (not values)
-    for (Value operand : op->getOperands()) {
+    for (auto operand : op->getOperands()) {
       hash = llvm::hash_combine(hash, operand.getType().getAsOpaquePointer());
     }
 
@@ -264,7 +264,7 @@ buildDependenceGraph(ArrayRef<Operation*> ops) {
     }
 
     // Register this operation as the producer of its results
-    for (Value result : op->getResults()) {
+    for (auto result : op->getResults()) {
       valueProducers[result] = op;
     }
   }
@@ -637,7 +637,7 @@ protected:
     pm.addPass(createCanonicalizerPass());
     pm.addPass(createRemoveDeadValuesPass());
     if (pm.run(module).failed()) {
-      llvm::errs() << "Failed to run canonicalization passes\n";
+      llvm::errs() << "Failed to run canonicalization passes.\n";
     }
   }
 
@@ -1348,18 +1348,15 @@ TEST_F(CompilerPipelineTest, MCGPhase) {
 
   const auto quartz = buildQuartzIR([](quartz::QuartzProgramBuilder& b) {
     auto reg = b.allocQubitRegister(2, "q");
-    b.p(1.0, reg[0]);
-    b.p(1.0, reg[1]);
+    b.cp(1.0, reg[0], reg[1]);
   });
   const auto flux = buildFluxIR([](flux::FluxProgramBuilder& b) {
     auto reg = b.allocQubitRegister(2, "q");
-    b.p(1.0, reg[0]);
-    b.p(1.0, reg[1]);
+    b.cp(1.0, reg[0], reg[1]);
   });
   const auto qir = buildQIR([](qir::QIRProgramBuilder& b) {
     auto reg = b.allocQubitRegister(2);
-    b.p(1.0, reg[0]);
-    b.p(1.0, reg[1]);
+    b.cp(1.0, reg[0], reg[1]);
   });
 
   verifyAllStages({
@@ -1583,6 +1580,7 @@ TEST_F(CompilerPipelineTest, MCXNested) {
   auto input = buildQuartzIR([](quartz::QuartzProgramBuilder& b) {
     auto reg = b.allocQubitRegister(3, "q");
     b.ctrl(reg[0], [&](OpBuilder& b) {
+      // NOLINTNEXTLINE(cppcoreguidelines-pro-type-static-cast-downcast)
       static_cast<quartz::QuartzProgramBuilder&>(b).cx(reg[1], reg[2]);
     });
   });
@@ -1600,6 +1598,36 @@ TEST_F(CompilerPipelineTest, MCXNested) {
   const auto qir = buildQIR([](qir::QIRProgramBuilder& b) {
     auto reg = b.allocQubitRegister(3);
     b.mcx({reg[0], reg[1]}, reg[2]);
+  });
+
+  verifyAllStages({
+      .quartzImport = quartz.get(),
+      .fluxConversion = flux.get(),
+      .optimization = flux.get(),
+      .quartzConversion = quartz.get(),
+      .qirConversion = qir.get(),
+  });
+}
+
+TEST_F(CompilerPipelineTest, MCXTrivial) {
+  auto input = buildQuartzIR([](quartz::QuartzProgramBuilder& b) {
+    auto reg = b.allocQubitRegister(1, "q");
+    b.mcx({}, reg[0]);
+  });
+
+  ASSERT_TRUE(runPipeline(input.get()).succeeded());
+
+  const auto quartz = buildQuartzIR([](quartz::QuartzProgramBuilder& b) {
+    auto reg = b.allocQubitRegister(1, "q");
+    b.x(reg[0]);
+  });
+  const auto flux = buildFluxIR([](flux::FluxProgramBuilder& b) {
+    auto reg = b.allocQubitRegister(1, "q");
+    b.x(reg[0]);
+  });
+  const auto qir = buildQIR([](qir::QIRProgramBuilder& b) {
+    auto reg = b.allocQubitRegister(1);
+    b.x(reg[0]);
   });
 
   verifyAllStages({

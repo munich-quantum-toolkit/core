@@ -88,11 +88,12 @@ struct CtrlInlineGPhase final : OpRewritePattern<CtrlOp> {
       return failure();
     }
 
-    for (size_t i = 0; i < op.getNumPosControls(); ++i) {
-      rewriter.create<POp>(op.getLoc(), op.getPosControl(i),
-                           gPhaseOp.getTheta());
-    }
-
+    SmallVector<Value> newControls(op.getControls());
+    const auto newTarget = newControls.back();
+    newControls.pop_back();
+    CtrlOp::create(rewriter, op.getLoc(), newControls, [&](OpBuilder& b) {
+      POp::create(b, op.getLoc(), newTarget, gPhaseOp.getTheta());
+    });
     rewriter.eraseOp(op);
 
     return success();
@@ -151,30 +152,30 @@ Value CtrlOp::getParameter(const size_t i) {
   return getBodyUnitary().getParameter(i);
 }
 
-void CtrlOp::build(OpBuilder& builder, OperationState& state,
+void CtrlOp::build(OpBuilder& odsBuilder, OperationState& odsState,
                    ValueRange controls, UnitaryOpInterface bodyUnitary) {
-  const OpBuilder::InsertionGuard guard(builder);
-  state.addOperands(controls);
-  auto* region = state.addRegion();
+  const OpBuilder::InsertionGuard guard(odsBuilder);
+  odsState.addOperands(controls);
+  auto* region = odsState.addRegion();
   auto& block = region->emplaceBlock();
 
   // Move the unitary op into the block
-  builder.setInsertionPointToStart(&block);
-  builder.clone(*bodyUnitary.getOperation());
-  builder.create<YieldOp>(state.location);
+  odsBuilder.setInsertionPointToStart(&block);
+  odsBuilder.clone(*bodyUnitary.getOperation());
+  odsBuilder.create<YieldOp>(odsState.location);
 }
 
-void CtrlOp::build(OpBuilder& builder, OperationState& state,
+void CtrlOp::build(OpBuilder& odsBuilder, OperationState& odsState,
                    ValueRange controls,
                    const std::function<void(OpBuilder&)>& bodyBuilder) {
-  const OpBuilder::InsertionGuard guard(builder);
-  state.addOperands(controls);
-  auto* region = state.addRegion();
+  const OpBuilder::InsertionGuard guard(odsBuilder);
+  odsState.addOperands(controls);
+  auto* region = odsState.addRegion();
   auto& block = region->emplaceBlock();
 
-  builder.setInsertionPointToStart(&block);
-  bodyBuilder(builder);
-  builder.create<YieldOp>(state.location);
+  odsBuilder.setInsertionPointToStart(&block);
+  bodyBuilder(odsBuilder);
+  odsBuilder.create<YieldOp>(odsState.location);
 }
 
 LogicalResult CtrlOp::verify() {

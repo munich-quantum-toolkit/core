@@ -13,12 +13,17 @@
 #include "mlir/Dialect/Flux/IR/FluxDialect.h"
 
 #include <cstdint>
+#include <functional>
 #include <llvm/ADT/DenseSet.h>
 #include <llvm/ADT/SmallVector.h>
+#include <llvm/Support/ErrorHandling.h>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OwningOpRef.h>
+#include <mlir/IR/Value.h>
+#include <mlir/IR/ValueRange.h>
+#include <string>
 #include <variant>
 
 namespace mlir::flux {
@@ -123,7 +128,7 @@ public:
    * %q2 = flux.alloc("q", 3, 2) : !flux.qubit
    * ```
    */
-  SmallVector<Value> allocQubitRegister(int64_t size, StringRef name = "q");
+  SmallVector<Value> allocQubitRegister(int64_t size, std::string name = "q");
 
   /**
    * @brief A small structure representing a single classical bit within a
@@ -131,7 +136,7 @@ public:
    */
   struct Bit {
     /// Name of the register containing this bit
-    StringRef registerName;
+    std::string registerName;
     /// Size of the register containing this bit
     int64_t registerSize{};
     /// Index of this bit within the register
@@ -143,7 +148,7 @@ public:
    */
   struct ClassicalRegister {
     /// Name of the classical register
-    StringRef name;
+    std::string name;
     /// Size of the classical register
     int64_t size;
 
@@ -154,7 +159,10 @@ public:
      */
     Bit operator[](const int64_t index) const {
       if (index < 0 || index >= size) {
-        llvm::reportFatalUsageError("Bit index out of bounds");
+        const std::string msg = "Bit index " + std::to_string(index) +
+                                " out of bounds for register '" + name +
+                                "' of size " + std::to_string(size);
+        llvm::reportFatalUsageError(msg.c_str());
       }
       return {
           .registerName = name, .registerSize = size, .registerIndex = index};
@@ -165,15 +173,15 @@ public:
    * @brief Allocate a classical bit register
    * @param size Number of bits
    * @param name Register name (default: "c")
-   * @return A reference to a ClassicalRegister structure
+   * @return A ClassicalRegister structure
    *
    * @par Example:
    * ```c++
    * auto c = builder.allocClassicalBitRegister(3, "c");
    * ```
    */
-  ClassicalRegister& allocClassicalBitRegister(int64_t size,
-                                               StringRef name = "c");
+  ClassicalRegister allocClassicalBitRegister(int64_t size,
+                                              std::string name = "c");
 
   //===--------------------------------------------------------------------===//
   // Measurement and Reset
@@ -274,6 +282,7 @@ public:
    *   flux.OP_NAME(%PARAM)                                                    \
    *   flux.yield                                                              \
    * } : ({!flux.qubit}) -> ({!flux.qubit})                                    \
+   * ```                                                                       \
    */                                                                          \
   Value c##OP_NAME(const std::variant<double, Value>&(PARAM), Value control);  \
   /**                                                                          \
@@ -292,6 +301,7 @@ public:
    *   flux.OP_NAME(%PARAM)                                                    \
    *   flux.yield                                                              \
    * } : ({!flux.qubit, !flux.qubit}) -> ({!flux.qubit, !flux.qubit})          \
+   * ```                                                                       \
    */                                                                          \
   ValueRange mc##OP_NAME(const std::variant<double, Value>&(PARAM),            \
                          ValueRange controls);
@@ -1045,6 +1055,9 @@ private:
   ModuleOp module;
   Region* funcRegion;
 
+  /// Check if the builder has been finalized
+  void checkFinalized() const;
+
   //===--------------------------------------------------------------------===//
   // Linear Type Tracking Helpers
   //===--------------------------------------------------------------------===//
@@ -1068,8 +1081,5 @@ private:
   /// When an operation consumes a qubit and produces a new one, the old value
   /// is removed and the new output is added.
   llvm::DenseMap<Region*, llvm::DenseSet<Value>> validQubits;
-
-  /// Track allocated classical Registers
-  SmallVector<ClassicalRegister> allocatedClassicalRegisters;
 };
 } // namespace mlir::flux

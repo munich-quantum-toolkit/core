@@ -235,10 +235,12 @@ LogicalResult convertOneTargetZeroParameter(QuartzOpType& op,
 
   Value fluxQubit;
   if (inCtrlOp == 0) {
-
+    assert(qubitMap.contains(quartzQubit) && "Quartz qubit not found");
     fluxQubit = qubitMap[quartzQubit];
 
   } else {
+    assert(state.targetsIn[inCtrlOp].size() == 1 &&
+           "Invalid number of input targets");
     fluxQubit = state.targetsIn[inCtrlOp].front();
   }
 
@@ -280,8 +282,11 @@ LogicalResult convertOneTargetOneParameter(QuartzOpType& op,
   const auto& quartzQubit = op.getOperand(0);
   Value fluxQubit;
   if (inCtrlOp == 0) {
+    assert(qubitMap.contains(quartzQubit) && "Quartz qubit not found");
     fluxQubit = qubitMap[quartzQubit];
   } else {
+    assert(state.targetsIn[inCtrlOp].size() == 1 &&
+           "Invalid number of input targets");
     fluxQubit = state.targetsIn[inCtrlOp].front();
   }
 
@@ -324,8 +329,11 @@ LogicalResult convertOneTargetTwoParameter(QuartzOpType& op,
   const auto& quartzQubit = op.getOperand(0);
   Value fluxQubit;
   if (inCtrlOp == 0) {
+    assert(qubitMap.contains(quartzQubit) && "Quartz qubit not found");
     fluxQubit = qubitMap[quartzQubit];
   } else {
+    assert(state.targetsIn[inCtrlOp].size() == 1 &&
+           "Invalid number of input targets");
     fluxQubit = state.targetsIn[inCtrlOp].front();
   }
 
@@ -369,8 +377,11 @@ convertOneTargetThreeParameter(QuartzOpType& op,
   const auto& quartzQubit = op.getOperand(0);
   Value fluxQubit;
   if (inCtrlOp == 0) {
+    assert(qubitMap.contains(quartzQubit) && "Quartz qubit not found");
     fluxQubit = qubitMap[quartzQubit];
   } else {
+    assert(state.targetsIn[inCtrlOp].size() == 1 &&
+           "Invalid number of input targets");
     fluxQubit = state.targetsIn[inCtrlOp].front();
   }
 
@@ -416,9 +427,13 @@ LogicalResult convertTwoTargetZeroParameter(QuartzOpType& op,
   Value fluxQubit0;
   Value fluxQubit1;
   if (inCtrlOp == 0) {
+    assert(qubitMap.contains(quartzQubit0) && "Quartz qubit not found");
+    assert(qubitMap.contains(quartzQubit1) && "Quartz qubit not found");
     fluxQubit0 = qubitMap[quartzQubit0];
     fluxQubit1 = qubitMap[quartzQubit1];
   } else {
+    assert(state.targetsIn[inCtrlOp].size() == 2 &&
+           "Invalid number of input targets");
     const auto& targetsIn = state.targetsIn[inCtrlOp];
     fluxQubit0 = targetsIn[0];
     fluxQubit1 = targetsIn[1];
@@ -430,9 +445,13 @@ LogicalResult convertTwoTargetZeroParameter(QuartzOpType& op,
 
   // Update state map
   if (inCtrlOp == 0) {
+    assert(qubitMap.contains(quartzQubit0) && "Quartz qubit not found");
+    assert(qubitMap.contains(quartzQubit1) && "Quartz qubit not found");
     qubitMap[quartzQubit0] = fluxOp.getQubit0Out();
     qubitMap[quartzQubit1] = fluxOp.getQubit1Out();
   } else {
+    assert(state.targetsIn[inCtrlOp].size() == 2 &&
+           "Invalid number of input targets");
     state.targetsIn.erase(inCtrlOp);
     const SmallVector<Value> targetsOut(
         {fluxOp.getQubit0Out(), fluxOp.getQubit1Out()});
@@ -467,9 +486,13 @@ LogicalResult convertTwoTargetOneParameter(QuartzOpType& op,
   Value fluxQubit0;
   Value fluxQubit1;
   if (inCtrlOp == 0) {
+    assert(qubitMap.contains(quartzQubit0) && "Quartz qubit not found");
+    assert(qubitMap.contains(quartzQubit1) && "Quartz qubit not found");
     fluxQubit0 = qubitMap[quartzQubit0];
     fluxQubit1 = qubitMap[quartzQubit1];
   } else {
+    assert(state.targetsIn[inCtrlOp].size() == 2 &&
+           "Invalid number of input targets");
     const auto& targetsIn = state.targetsIn[inCtrlOp];
     fluxQubit0 = targetsIn[0];
     fluxQubit1 = targetsIn[1];
@@ -518,9 +541,13 @@ LogicalResult convertTwoTargetTwoParameter(QuartzOpType& op,
   Value fluxQubit0;
   Value fluxQubit1;
   if (inCtrlOp == 0) {
+    assert(qubitMap.contains(quartzQubit0) && "Quartz qubit not found");
+    assert(qubitMap.contains(quartzQubit1) && "Quartz qubit not found");
     fluxQubit0 = qubitMap[quartzQubit0];
     fluxQubit1 = qubitMap[quartzQubit1];
   } else {
+    assert(state.targetsIn[inCtrlOp].size() == 2 &&
+           "Invalid number of input targets");
     const auto& targetsIn = state.targetsIn[inCtrlOp];
     fluxQubit0 = targetsIn[0];
     fluxQubit1 = targetsIn[1];
@@ -642,6 +669,7 @@ struct ConvertQuartzDeallocOp final
     const auto& quartzQubit = op.getQubit();
 
     // Look up the latest Flux value for this Quartz qubit
+    assert(qubitMap.contains(quartzQubit) && "Quartz qubit not found");
     const auto& fluxQubit = qubitMap[quartzQubit];
 
     // Create the dealloc operation
@@ -729,6 +757,7 @@ struct ConvertQuartzMeasureOp final
     const auto& quartzQubit = op.getQubit();
 
     // Get the latest Flux qubit value from the state map
+    assert(qubitMap.contains(quartzQubit) && "Quartz qubit not found");
     const auto& fluxQubit = qubitMap[quartzQubit];
 
     // Create flux.measure (returns both output qubit and bit result)
@@ -780,6 +809,7 @@ struct ConvertQuartzResetOp final
     const auto& quartzQubit = op.getQubit();
 
     // Get the latest Flux qubit value from the state map
+    assert(qubitMap.contains(quartzQubit) && "Quartz qubit not found");
     const auto& fluxQubit = qubitMap[quartzQubit];
 
     // Create flux.reset (consumes input, produces output)
@@ -1100,6 +1130,7 @@ struct ConvertQuartzBarrierOp final
     SmallVector<Value> fluxQubits;
     fluxQubits.reserve(quartzQubits.size());
     for (const auto& quartzQubit : quartzQubits) {
+      assert(qubitMap.contains(quartzQubit) && "Quartz qubit not found");
       fluxQubits.push_back(qubitMap[quartzQubit]);
     }
 
@@ -1149,6 +1180,7 @@ struct ConvertQuartzCtrlOp final : StatefulOpConversionPattern<quartz::CtrlOp> {
     SmallVector<Value> fluxControls;
     fluxControls.reserve(quartzControls.size());
     for (const auto& quartzControl : quartzControls) {
+      assert(qubitMap.contains(quartzControl) && "Quartz qubit not found");
       fluxControls.push_back(qubitMap[quartzControl]);
     }
 
@@ -1158,6 +1190,7 @@ struct ConvertQuartzCtrlOp final : StatefulOpConversionPattern<quartz::CtrlOp> {
     fluxTargets.reserve(numTargets);
     for (size_t i = 0; i < numTargets; ++i) {
       const auto& quartzTarget = op.getTarget(i);
+      assert(qubitMap.contains(quartzTarget) && "Quartz qubit not found");
       const auto& fluxTarget = qubitMap[quartzTarget];
       fluxTargets.push_back(fluxTarget);
     }

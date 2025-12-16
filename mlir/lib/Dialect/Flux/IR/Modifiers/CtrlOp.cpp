@@ -91,15 +91,18 @@ struct CtrlInlineGPhase final : OpRewritePattern<CtrlOp> {
       return failure();
     }
 
-    SmallVector<Value> newOperands;
-    newOperands.reserve(op.getNumPosControls());
-    for (size_t i = 0; i < op.getNumPosControls(); ++i) {
-      auto pOp = rewriter.create<POp>(op.getLoc(), op.getInputPosControl(i),
-                                      gPhaseOp.getTheta());
-      newOperands.push_back(pOp.getQubitOut());
-    }
+    SmallVector<Value> newControls(op.getControlsIn());
+    const auto newTarget = newControls.back();
+    newControls.pop_back();
+    auto ctrlOp = CtrlOp::create(rewriter, op.getLoc(), newControls, newTarget,
+                                 [&](OpBuilder& b, ValueRange targets) {
+                                   auto pOp =
+                                       POp::create(b, op.getLoc(), targets[0],
+                                                   gPhaseOp.getTheta());
+                                   return pOp.getQubitOut();
+                                 });
 
-    rewriter.replaceOp(op, newOperands);
+    rewriter.replaceOp(op, ctrlOp.getResults());
 
     return success();
   }
@@ -241,31 +244,31 @@ Value CtrlOp::getParameter(const size_t i) {
   return getBodyUnitary().getParameter(i);
 }
 
-void CtrlOp::build(OpBuilder& builder, OperationState& state,
+void CtrlOp::build(OpBuilder& odsBuilder, OperationState& odsState,
                    ValueRange controls, ValueRange targets,
                    UnitaryOpInterface bodyUnitary) {
-  build(builder, state, controls, targets);
-  auto& block = state.regions.front()->emplaceBlock();
+  build(odsBuilder, odsState, controls, targets);
+  auto& block = odsState.regions.front()->emplaceBlock();
 
   // Move the unitary op into the block
-  const OpBuilder::InsertionGuard guard(builder);
-  builder.setInsertionPointToStart(&block);
-  auto* op = builder.clone(*bodyUnitary.getOperation());
-  builder.create<YieldOp>(state.location, op->getResults());
+  const OpBuilder::InsertionGuard guard(odsBuilder);
+  odsBuilder.setInsertionPointToStart(&block);
+  auto* op = odsBuilder.clone(*bodyUnitary.getOperation());
+  odsBuilder.create<YieldOp>(odsState.location, op->getResults());
 }
 
 void CtrlOp::build(
-    OpBuilder& builder, OperationState& state, ValueRange controls,
+    OpBuilder& odsBuilder, OperationState& odsState, ValueRange controls,
     ValueRange targets,
     const std::function<ValueRange(OpBuilder&, ValueRange)>& bodyBuilder) {
-  build(builder, state, controls, targets);
-  auto& block = state.regions.front()->emplaceBlock();
+  build(odsBuilder, odsState, controls, targets);
+  auto& block = odsState.regions.front()->emplaceBlock();
 
   // Move the unitary op into the block
-  const OpBuilder::InsertionGuard guard(builder);
-  builder.setInsertionPointToStart(&block);
-  auto targetsOut = bodyBuilder(builder, targets);
-  builder.create<YieldOp>(state.location, targetsOut);
+  const OpBuilder::InsertionGuard guard(odsBuilder);
+  odsBuilder.setInsertionPointToStart(&block);
+  auto targetsOut = bodyBuilder(odsBuilder, targets);
+  odsBuilder.create<YieldOp>(odsState.location, targetsOut);
 }
 
 LogicalResult CtrlOp::verify() {

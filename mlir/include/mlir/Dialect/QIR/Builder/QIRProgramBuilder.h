@@ -13,13 +13,17 @@
 #include "mlir/Dialect/QIR/Utils/QIRUtils.h"
 
 #include <llvm/ADT/DenseMap.h>
-#include <llvm/ADT/DenseSet.h>
 #include <llvm/ADT/SmallVector.h>
+#include <llvm/Support/Allocator.h>
+#include <llvm/Support/ErrorHandling.h>
+#include <llvm/Support/StringSaver.h>
 #include <mlir/Dialect/LLVMIR/LLVMDialect.h>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OwningOpRef.h>
+#include <string>
+#include <utility>
 #include <variant>
 
 namespace mlir::qir {
@@ -54,8 +58,9 @@ namespace mlir::qir {
  * builder.h(q0).cx(q0, q1);
  *
  * // Measure with register info for proper output recording
- * builder.measure(q0, "c", 0);
- * builder.measure(q1, "c", 1);
+ * auto c = builder.allocClassicalBitRegister(2, "c");
+ * builder.measure(q0, c[0]);
+ * builder.measure(q1, c[1]);
  *
  * auto module = builder.finalize();
  * ```
@@ -128,7 +133,7 @@ public:
    */
   struct Bit {
     /// Name of the register containing this bit
-    StringRef registerName;
+    std::string registerName;
     /// Size of the register containing this bit
     int64_t registerSize{};
     /// Index of this bit within the register
@@ -140,7 +145,7 @@ public:
    */
   struct ClassicalRegister {
     /// Name of the classical register
-    StringRef name;
+    std::string name;
     /// Size of the classical register
     int64_t size;
 
@@ -151,7 +156,10 @@ public:
      */
     Bit operator[](const int64_t index) const {
       if (index < 0 || index >= size) {
-        llvm::reportFatalUsageError("Bit index out of bounds");
+        const std::string msg = "Bit index " + std::to_string(index) +
+                                " out of bounds for register '" + name +
+                                "' of size " + std::to_string(size);
+        llvm::reportFatalUsageError(msg.c_str());
       }
       return {
           .registerName = name, .registerSize = size, .registerIndex = index};
@@ -162,15 +170,15 @@ public:
    * @brief Allocate a classical bit register
    * @param size Number of bits
    * @param name Register name (default: "c")
-   * @return A reference to a ClassicalRegister structure
+   * @return A ClassicalRegister structure
    *
    * @par Example:
    * ```c++
-   * auto& c = builder.allocClassicalBitRegister(3, "c");
+   * auto c = builder.allocClassicalBitRegister(3, "c");
    * ```
    */
-  ClassicalRegister& allocClassicalBitRegister(int64_t size,
-                                               StringRef name = "c");
+  ClassicalRegister allocClassicalBitRegister(int64_t size,
+                                              const std::string& name = "c");
 
   //===--------------------------------------------------------------------===//
   // Measurement and Reset
@@ -221,7 +229,7 @@ public:
    *
    * @par Example:
    * ```c++
-   * auto& c = builder.allocClassicalBitRegister(2, "c");
+   * auto c = builder.allocClassicalBitRegister(2, "c");
    * builder.measure(q0, c[0]);
    * builder.measure(q1, c[1]);
    * ```
@@ -802,10 +810,11 @@ private:
   ModuleOp module;
   Location loc;
 
-  /// Track allocated classical Registers
-  SmallVector<ClassicalRegister> allocatedClassicalRegisters;
-
   LLVM::LLVMFuncOp mainFunc;
+
+  /// Allocator and StringSaver for stable StringRefs
+  llvm::BumpPtrAllocator allocator;
+  llvm::StringSaver stringSaver{allocator};
 
   /// Entry block: constants and initialization
   Block* entryBlock{};
@@ -850,6 +859,11 @@ private:
    * 2. result_record_output for each measurement in the register
    */
   void generateOutputRecording();
+
+  bool isFinalized = false;
+
+  /// Check if the builder has been finalized
+  void checkFinalized() const;
 };
 
 } // namespace mlir::qir

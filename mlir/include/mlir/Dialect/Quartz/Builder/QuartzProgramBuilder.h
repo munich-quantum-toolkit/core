@@ -13,12 +13,15 @@
 #include "mlir/Dialect/Quartz/IR/QuartzDialect.h"
 
 #include <cstdint>
+#include <functional>
 #include <llvm/ADT/DenseSet.h>
 #include <llvm/ADT/SmallVector.h>
+#include <llvm/Support/ErrorHandling.h>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OwningOpRef.h>
+#include <string>
 #include <variant>
 
 namespace mlir::quartz {
@@ -116,7 +119,7 @@ public:
    * %q2 = quartz.alloc("q", 3, 2) : !quartz.qubit
    * ```
    */
-  SmallVector<Value> allocQubitRegister(int64_t size, StringRef name = "q");
+  SmallVector<Value> allocQubitRegister(int64_t size, std::string name = "q");
 
   /**
    * @brief A small structure representing a single classical bit within a
@@ -124,7 +127,7 @@ public:
    */
   struct Bit {
     /// Name of the register containing this bit
-    StringRef registerName;
+    std::string registerName;
     /// Size of the register containing this bit
     int64_t registerSize{};
     /// Index of this bit within the register
@@ -136,7 +139,7 @@ public:
    */
   struct ClassicalRegister {
     /// Name of the classical register
-    StringRef name;
+    std::string name;
     /// Size of the classical register
     int64_t size;
 
@@ -147,7 +150,10 @@ public:
      */
     Bit operator[](const int64_t index) const {
       if (index < 0 || index >= size) {
-        llvm::reportFatalUsageError("Bit index out of bounds");
+        const std::string msg = "Bit index " + std::to_string(index) +
+                                " out of bounds for register '" + name +
+                                "' of size " + std::to_string(size);
+        llvm::reportFatalUsageError(msg.c_str());
       }
       return {
           .registerName = name, .registerSize = size, .registerIndex = index};
@@ -158,15 +164,15 @@ public:
    * @brief Allocate a classical bit register
    * @param size Number of bits
    * @param name Register name (default: "c")
-   * @return A reference to a ClassicalRegister structure
+   * @return A ClassicalRegister structure
    *
    * @par Example:
    * ```c++
    * auto c = builder.allocClassicalBitRegister(3, "c");
    * ```
    */
-  ClassicalRegister& allocClassicalBitRegister(int64_t size,
-                                               StringRef name = "c");
+  ClassicalRegister allocClassicalBitRegister(int64_t size,
+                                              std::string name = "c");
 
   //===--------------------------------------------------------------------===//
   // Measurement and Reset
@@ -257,12 +263,13 @@ public:
    *                                                                           \
    * @par Example:                                                             \
    * ```c++                                                                    \
-   * builder.c##OP_NAME(PARAM, {q0, q1});                                      \
+   * builder.c##OP_NAME(PARAM, q);                                             \
    * ```                                                                       \
    * ```mlir                                                                   \
-   * quartz.ctrl(%q0, %q1) {                                                   \
+   * quartz.ctrl(%q) {                                                         \
    *   quartz.OP_NAME(%PARAM)                                                  \
    * }                                                                         \
+   * ```                                                                       \
    */                                                                          \
   QuartzProgramBuilder& c##OP_NAME(const std::variant<double, Value>&(PARAM),  \
                                    Value control);                             \
@@ -281,6 +288,7 @@ public:
    * quartz.ctrl(%q0, %q1) {                                                   \
    *   quartz.OP_NAME(%PARAM)                                                  \
    * }                                                                         \
+   * ```                                                                       \
    */                                                                          \
   QuartzProgramBuilder& mc##OP_NAME(const std::variant<double, Value>&(PARAM), \
                                     ValueRange controls);
@@ -322,6 +330,7 @@ public:
    * quartz.ctrl(%q0) {                                                        \
    *   quartz.OP_NAME %q1 : !quartz.qubit                                      \
    * }                                                                         \
+   * ```                                                                       \
    */                                                                          \
   QuartzProgramBuilder& c##OP_NAME(Value control, Value target);               \
   /**                                                                          \
@@ -339,6 +348,7 @@ public:
    * quartz.ctrl(%q0, %q1) {                                                   \
    *   quartz.OP_NAME %q2 : !quartz.qubit                                      \
    * }                                                                         \
+   * ```                                                                       \
    */                                                                          \
   QuartzProgramBuilder& mc##OP_NAME(ValueRange controls, Value target);
 
@@ -392,6 +402,7 @@ public:
    * quartz.ctrl(%q0) {                                                        \
    *   quartz.OP_NAME(%PARAM) %q1 : !quartz.qubit                              \
    * }                                                                         \
+   * ```                                                                       \
    */                                                                          \
   QuartzProgramBuilder& c##OP_NAME(const std::variant<double, Value>&(PARAM),  \
                                    Value control, Value target);               \
@@ -411,13 +422,14 @@ public:
    * quartz.ctrl(%q0, %q1) {                                                   \
    *   quartz.OP_NAME(%PARAM) %q2 : !quartz.qubit                              \
    * }                                                                         \
+   * ```                                                                       \
    */                                                                          \
   QuartzProgramBuilder& mc##OP_NAME(const std::variant<double, Value>&(PARAM), \
                                     ValueRange controls, Value target);
 
-  DECLARE_ONE_TARGET_ONE_PARAMETER(RzOp, rz, theta)
-  DECLARE_ONE_TARGET_ONE_PARAMETER(RxOp, rx, theta)
-  DECLARE_ONE_TARGET_ONE_PARAMETER(RyOp, ry, theta)
+  DECLARE_ONE_TARGET_ONE_PARAMETER(RXOp, rx, theta)
+  DECLARE_ONE_TARGET_ONE_PARAMETER(RYOp, ry, theta)
+  DECLARE_ONE_TARGET_ONE_PARAMETER(RZOp, rz, theta)
   DECLARE_ONE_TARGET_ONE_PARAMETER(POp, p, theta)
 
 #undef DECLARE_ONE_TARGET_ONE_PARAMETER
@@ -461,6 +473,7 @@ public:
    * quartz.ctrl(%q0) {                                                        \
    *   quartz.OP_NAME(%PARAM1, %PARAM2) %q1 : !quartz.qubit                    \
    * }                                                                         \
+   * ```                                                                       \
    */                                                                          \
   QuartzProgramBuilder& c##OP_NAME(const std::variant<double, Value>&(PARAM1), \
                                    const std::variant<double, Value>&(PARAM2), \
@@ -482,6 +495,7 @@ public:
    * quartz.ctrl(%q0, %q1) {                                                   \
    *   quartz.OP_NAME(%PARAM1, %PARAM2) %q2 : !quartz.qubit                    \
    * }                                                                         \
+   * ```                                                                       \
    */                                                                          \
   QuartzProgramBuilder& mc##OP_NAME(                                           \
       const std::variant<double, Value>&(PARAM1),                              \
@@ -536,6 +550,7 @@ public:
    * quartz.ctrl(%q0) {                                                        \
    *   quartz.OP_NAME(%PARAM1, %PARAM2, %PARAM3) %q1 : !quartz.qubit           \
    * }                                                                         \
+   * ```                                                                       \
    */                                                                          \
   QuartzProgramBuilder& c##OP_NAME(const std::variant<double, Value>&(PARAM1), \
                                    const std::variant<double, Value>&(PARAM2), \
@@ -559,6 +574,7 @@ public:
    * quartz.ctrl(%q0, %q1) {                                                   \
    *   quartz.OP_NAME(%PARAM1, %PARAM2, %PARAM3) %q2 : !quartz.qubit           \
    * }                                                                         \
+   * ```                                                                       \
    */                                                                          \
   QuartzProgramBuilder& mc##OP_NAME(                                           \
       const std::variant<double, Value>&(PARAM1),                              \
@@ -605,6 +621,7 @@ public:
    * quartz.ctrl(%q0) {                                                        \
    *   quartz.OP_NAME %q1, %q2 : !quartz.qubit, !quartz.qubit                  \
    * }                                                                         \
+   * ```                                                                       \
    */                                                                          \
   QuartzProgramBuilder& c##OP_NAME(Value control, Value qubit0, Value qubit1); \
   /**                                                                          \
@@ -623,6 +640,7 @@ public:
    * quartz.ctrl(%q0, %q1) {                                                   \
    *   quartz.OP_NAME %q2, %q3 : !quartz.qubit, !quartz.qubit                  \
    * }                                                                         \
+   * ```                                                                       \
    */                                                                          \
   QuartzProgramBuilder& mc##OP_NAME(ValueRange controls, Value qubit0,         \
                                     Value qubit1);
@@ -672,6 +690,7 @@ public:
    * quartz.ctrl(%q0) {                                                        \
    *   quartz.OP_NAME(%PARAM) %q1, %q2 : !quartz.qubit, !quartz.qubit          \
    * }                                                                         \
+   * ```                                                                       \
    */                                                                          \
   QuartzProgramBuilder& c##OP_NAME(const std::variant<double, Value>&(PARAM),  \
                                    Value control, Value qubit0, Value qubit1); \
@@ -692,6 +711,7 @@ public:
    * quartz.ctrl(%q0, %q1) {                                                   \
    *   quartz.OP_NAME(%PARAM) %q2, %q3 : !quartz.qubit, !quartz.qubit          \
    * }                                                                         \
+   * ```                                                                       \
    */                                                                          \
   QuartzProgramBuilder& mc##OP_NAME(const std::variant<double, Value>&(PARAM), \
                                     ValueRange controls, Value qubit0,         \
@@ -746,6 +766,7 @@ public:
    *   quartz.OP_NAME(%PARAM1, %PARAM2) %q1, %q2 : !quartz.qubit,              \
    * !quartz.qubit                                                             \
    * }                                                                         \
+   * ```                                                                       \
    */                                                                          \
   QuartzProgramBuilder& c##OP_NAME(const std::variant<double, Value>&(PARAM1), \
                                    const std::variant<double, Value>&(PARAM2), \
@@ -768,6 +789,7 @@ public:
    * quartz.ctrl(%q0, %q1) {                                                   \
    *  quartz.OP_NAME(%PARAM1, %PARAM2) %q2, %q3 : !quartz.qubit, !quartz.qubit \
    * }                                                                         \
+   * ```                                                                       \
    */                                                                          \
   QuartzProgramBuilder& mc##OP_NAME(                                           \
       const std::variant<double, Value>&(PARAM1),                              \
@@ -1011,7 +1033,7 @@ private:
   /// Track allocated qubits for automatic deallocation
   llvm::DenseSet<Value> allocatedQubits;
 
-  /// Track allocated classical Registers
-  SmallVector<ClassicalRegister> allocatedClassicalRegisters;
+  /// Check if the builder has been finalized
+  void checkFinalized() const;
 };
 } // namespace mlir::quartz

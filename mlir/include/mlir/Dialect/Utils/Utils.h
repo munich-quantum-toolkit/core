@@ -18,7 +18,7 @@
 
 namespace mlir::utils {
 
-constexpr double TOLERANCE = 1e-12;
+constexpr auto TOLERANCE = 1e-15;
 
 /**
  * @brief Convert a variant parameter (double or Value) to a Value
@@ -28,7 +28,7 @@ constexpr double TOLERANCE = 1e-12;
  * @param parameter The parameter as a variant (double or Value).
  * @return Value The parameter as a Value.
  */
-inline Value variantToValue(OpBuilder& builder, OperationState& state,
+inline Value variantToValue(OpBuilder& builder, const OperationState& state,
                             const std::variant<double, Value>& parameter) {
   Value operand;
   if (std::holds_alternative<double>(parameter)) {

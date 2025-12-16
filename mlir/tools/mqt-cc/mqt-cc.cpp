@@ -49,6 +49,11 @@ const cl::opt<bool> CONVERT_TO_QIR("emit-qir",
                                    cl::desc("Convert to QIR at the end"),
                                    cl::init(false));
 
+const cl::opt<bool> RECORD_INTERMEDIATES(
+    "record-intermediates",
+    cl::desc("Record intermediate IR after each compiler stage"),
+    cl::init(false));
+
 const cl::opt<bool> ENABLE_TIMING("mlir-timing",
                                   cl::desc("Enable pass timing statistics"),
                                   cl::init(false));
@@ -127,6 +132,7 @@ int main(int argc, char** argv) {
   // Configure the compiler pipeline
   QuantumCompilerConfig config;
   config.convertToQIR = CONVERT_TO_QIR;
+  config.recordIntermediates = RECORD_INTERMEDIATES;
   config.enableTiming = ENABLE_TIMING;
   config.enableStatistics = ENABLE_STATISTICS;
   config.printIRAfterAllStages = PRINT_IR_AFTER_ALL_STAGES;

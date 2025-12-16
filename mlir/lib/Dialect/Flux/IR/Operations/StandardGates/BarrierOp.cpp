@@ -148,7 +148,7 @@ void BarrierOp::build(OpBuilder& builder, OperationState& state,
                       ValueRange qubits) {
   SmallVector<Type> resultTypes;
   resultTypes.reserve(qubits.size());
-  for (Value qubit : qubits) {
+  for (auto qubit : qubits) {
     resultTypes.push_back(qubit.getType());
   }
   build(builder, state, resultTypes, qubits);

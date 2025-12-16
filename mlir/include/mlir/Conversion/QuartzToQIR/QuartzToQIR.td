@@ -21,6 +21,8 @@ def QuartzToQIR : Pass<"quartz-to-qir"> {
       Requirements:
       - Input is a valid module in the Quartz dialect.
       - The entry function must be marked with the `entry_point` attribute.
+      - The entry function must have a single block.
+        Multi-block functions are currently unsupported.
       - The program must have straight-line control flow (i.e., Base Profile QIR).
 
       Behavior:
@@ -30,8 +32,7 @@ def QuartzToQIR : Pass<"quartz-to-qir"> {
         0. Initialization block: Sets up the execution environment and performs required runtime initialization.
         1. Reversible operations block: Contains only void-returning calls to reversible quantum operations.
         2. Irreversible operations block: Contains only void-returning calls to operations marked irreversible, e.g.:
-           `__quantum__qis__mz__body`, `__quantum__rt__qubit_release_array`,
-           `__quantum__rt__qubit_release`, `__quantum__qis__reset__body`.
+           `__quantum__qis__mz__body`, `__quantum__qis__reset__body`.
         3. Epilogue block: Records measurement results and returns from the entry function.
       - Blocks are connected via unconditional branches in the order listed above.
       - Non-quantum dialects are lowered via MLIR's built-in conversions.

@@ -6,9 +6,6 @@
 #
 # Licensed under the MIT License
 
-set(DIALECT_NAME "Flux")
-set(DIALECT_NAME_UPPER "FLUX")
-
 add_mlir_dialect(FluxOps flux)
 add_mlir_interface(FluxInterfaces)
 add_mlir_doc(FluxOps MLIRFluxDialect Dialects/ -gen-dialect-doc)

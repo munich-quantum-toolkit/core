@@ -429,14 +429,19 @@ struct ConvertQuartzMeasureQIR final : StatefulOpConversionPattern<MeasureOp> {
         resultValue = registerResultMap.at(key);
       }
     } else {
-      // no register info, check if ptr has already been allocated (as a Qubit)
+      // Choose a safe default register name
+      StringRef defaultRegName = "c";
+      if (state.registerStartIndexMap.contains("c")) {
+        defaultRegName = "__unnamed__";
+      }
+      // No register info, check if ptr has already been allocated (as a Qubit)
       if (const auto it = ptrMap.find(numResults); it != ptrMap.end()) {
         resultValue = it->second;
       } else {
         resultValue = createPointerFromIndex(rewriter, op.getLoc(), numResults);
         ptrMap[numResults] = resultValue;
       }
-      registerResultMap.insert({{"c", numResults}, resultValue});
+      registerResultMap.insert({{defaultRegName, numResults}, resultValue});
       state.numResults++;
     }
 
@@ -881,6 +886,10 @@ struct ConvertQuartzYieldQIR final : StatefulOpConversionPattern<YieldOp> {
  * 4. Set QIR metadata attributes
  * 5. Convert arith and cf dialects to LLVM
  * 6. Reconcile unrealized casts
+ *
+ * @pre
+ * The entry function must have a single block. The pass will restructure it
+ * into a 4-block layout. Multi-block functions are currently unsupported.
  */
 struct QuartzToQIR final : impl::QuartzToQIRBase<QuartzToQIR> {
   using QuartzToQIRBase::QuartzToQIRBase;
