@@ -599,15 +599,13 @@ Value FluxProgramBuilder::arithConstantBool(bool b) {
   return op->getResult(0);
 }
 
-ValueRange
-FluxProgramBuilder::scfFor(Value lowerbound, Value upperbound, Value step,
-                           const std::function<void(OpBuilder&)>& body) {
-  auto op = create<scf::ForOp>(loc, lowerbound, upperbound, step, ValueRange{},
-                               [&](OpBuilder& b, Location, Value, ValueRange) {
-                                 body(b); // adapt
-                                 b.create<scf::YieldOp>(loc);
-                               });
+ValueRange FluxProgramBuilder::scfFor(
+    Value lowerbound, Value upperbound, Value step, ValueRange initArgs,
+    const std::function<ValueRange(OpBuilder&, Value, ValueRange)>& body) {
+  auto op = create<scf::ForOp>(loc, lowerbound, upperbound, step,
+                               initArgs // iter_args
+  );
 
-  return op->getResults();
+  return ValueRange{op->getResults()};
 }
 } // namespace mlir::flux

@@ -1015,6 +1015,13 @@ public:
    */
   FluxProgramBuilder& dealloc(Value qubit);
 
+  Value arithConstantIndex(int i);
+
+  Value arithConstantBool(bool b);
+
+  ValueRange
+  scfFor(Value lowerbound, Value upperbound, Value step, ValueRange initArgs,
+         const std::function<ValueRange(OpBuilder&, Value, ValueRange)>& body);
   //===--------------------------------------------------------------------===//
   // Finalization
   //===--------------------------------------------------------------------===//
@@ -1064,12 +1071,5 @@ private:
 
   /// Track allocated classical Registers
   SmallVector<ClassicalRegister> allocatedClassicalRegisters;
-
-  Value arithConstantIndex(int i);
-
-  Value arithConstantBool(bool b);
-
-  ValueRange scfFor(Value lowerbound, Value upperbound, Value step,
-                    const std::function<void(OpBuilder&)>& body);
 };
 } // namespace mlir::flux
