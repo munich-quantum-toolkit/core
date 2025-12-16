@@ -180,8 +180,7 @@ Returns:
       .value("RUNNING", QDMI_JOB_STATUS_RUNNING)
       .value("DONE", QDMI_JOB_STATUS_DONE)
       .value("CANCELED", QDMI_JOB_STATUS_CANCELED)
-      .value("FAILED", QDMI_JOB_STATUS_FAILED)
-      .export_values();
+      .value("FAILED", QDMI_JOB_STATUS_FAILED);
 
   // ProgramFormat enum
   nb::enum_<QDMI_Program_Format>(m, "ProgramFormat",
@@ -199,8 +198,7 @@ Returns:
       .value("CUSTOM2", QDMI_PROGRAM_FORMAT_CUSTOM2)
       .value("CUSTOM3", QDMI_PROGRAM_FORMAT_CUSTOM3)
       .value("CUSTOM4", QDMI_PROGRAM_FORMAT_CUSTOM4)
-      .value("CUSTOM5", QDMI_PROGRAM_FORMAT_CUSTOM5)
-      .export_values();
+      .value("CUSTOM5", QDMI_PROGRAM_FORMAT_CUSTOM5);
 
   // Device class
   auto device = nb::class_<fomac::Session::Device>(
@@ -215,8 +213,7 @@ Returns:
       .value("BUSY", QDMI_DEVICE_STATUS_BUSY)
       .value("ERROR", QDMI_DEVICE_STATUS_ERROR)
       .value("MAINTENANCE", QDMI_DEVICE_STATUS_MAINTENANCE)
-      .value("CALIBRATION", QDMI_DEVICE_STATUS_CALIBRATION)
-      .export_values();
+      .value("CALIBRATION", QDMI_DEVICE_STATUS_CALIBRATION);
 
   device.def("name", &fomac::Session::Device::getName,
              "Returns the name of the device.");

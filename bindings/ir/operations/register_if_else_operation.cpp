@@ -37,8 +37,7 @@ void registerIfElseOperation(const nb::module_& m) {
       .value("leq", qc::ComparisonKind::Leq, "Less-than-or-equal comparison.")
       .value("gt", qc::ComparisonKind::Gt, "Greater-than comparison.")
       .value("geq", qc::ComparisonKind::Geq,
-             "Greater-than-or-equal comparison.")
-      .export_values();
+             "Greater-than-or-equal comparison.");
 
   auto ifElse = nb::class_<qc::IfElseOperation, qc::Operation>(
       m, "IfElseOperation", R"pb(If-else quantum operation.

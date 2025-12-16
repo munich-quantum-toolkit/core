@@ -226,9 +226,7 @@ See Also:
 It is used to control the execution of an operation based on the value of a classical register.
 
 See Also:
-    :meth:`mqt.core.ir.QuantumComputation.if_else`)pb")
-
-      .export_values();
+    :meth:`mqt.core.ir.QuantumComputation.if_else`)pb");
 }
 
 } // namespace mqt
