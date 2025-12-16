@@ -645,7 +645,8 @@ OwningOpRef<ModuleOp> FluxProgramBuilder::finalize() {
 
   // Automatically deallocate all still-allocated qubits
   // Sort qubits for deterministic output
-  SmallVector<Value> sortedQubits(validQubits.begin(), validQubits.end());
+  SmallVector<Value> sortedQubits(validQubits[&mainFunc->getRegion(0)].begin(),
+                                  validQubits[&mainFunc->getRegion(0)].end());
   llvm::sort(sortedQubits, [](Value a, Value b) {
     auto* opA = a.getDefiningOp();
     auto* opB = b.getDefiningOp();
