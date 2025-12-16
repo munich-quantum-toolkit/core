@@ -105,8 +105,8 @@ Returns:
     The evaluated value of the expression.)pb")
 
       // addition operators
-      .def(nb::self + nb::self)
-      .def(nb::self + double())
+      .def(nb::self + nb::self, nb::is_operator())
+      .def(nb::self + double(), nb::is_operator())
       .def("__add__", [](const sym::Expression<double, double>& lhs,
                          const sym::Term<double>& rhs) { return lhs + rhs; })
       .def("__radd__", [](const sym::Expression<double, double>& rhs,
@@ -114,18 +114,19 @@ Returns:
       .def("__radd__", [](const sym::Expression<double, double>& rhs,
                           const double lhs) { return rhs + lhs; })
       // subtraction operators
-      .def(nb::self - nb::self) // NOLINT(misc-redundant-expression)
-      .def(nb::self - double())
-      .def(double() - nb::self)
+      // NOLINTNEXTLINE(misc-redundant-expression)
+      .def(nb::self - nb::self, nb::is_operator())
+      .def(nb::self - double(), nb::is_operator())
+      .def(double() - nb::self, nb::is_operator())
       .def("__sub__", [](const sym::Expression<double, double>& lhs,
                          const sym::Term<double>& rhs) { return lhs - rhs; })
       .def("__rsub__", [](const sym::Expression<double, double>& rhs,
                           const sym::Term<double>& lhs) { return lhs - rhs; })
       // multiplication operators
-      .def(nb::self * double())
-      .def(double() * nb::self)
+      .def(nb::self * double(), nb::is_operator())
+      .def(double() * nb::self, nb::is_operator())
       // division operators
-      .def(nb::self / double())
+      .def(nb::self / double(), nb::is_operator())
       // comparison operators
       .def(nb::self == nb::self, // NOLINT(misc-redundant-expression)
            nb::sig("def __eq__(self, arg: object, /) -> bool"))
