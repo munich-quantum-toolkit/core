@@ -24,6 +24,7 @@
 #include <mlir/IR/Value.h>
 #include <mlir/IR/ValueRange.h>
 #include <string>
+#include <utility>
 #include <variant>
 
 namespace mlir::flux {
@@ -128,8 +129,8 @@ public:
    * %q2 = flux.alloc("q", 3, 2) : !flux.qubit
    * ```
    */
-  SmallVector<Value> allocQubitRegister(int64_t size,
-                                        const std::string& name = "q");
+  llvm::SmallVector<Value> allocQubitRegister(int64_t size,
+                                              const std::string& name = "q");
 
   /**
    * @brief A small structure representing a single classical bit within a
@@ -181,8 +182,8 @@ public:
    * auto c = builder.allocClassicalBitRegister(3, "c");
    * ```
    */
-  ClassicalRegister allocClassicalBitRegister(int64_t size,
-                                              std::string name = "c") const;
+  [[nodiscard]] ClassicalRegister
+  allocClassicalBitRegister(int64_t size, std::string name = "c") const;
 
   //===--------------------------------------------------------------------===//
   // Measurement and Reset
@@ -417,7 +418,7 @@ public:
    * %q_out = flux.OP_NAME(%PARAM) %q_in : !flux.qubit -> !flux.qubit          \
    * ```                                                                       \
    */                                                                          \
-  Value OP_NAME(const std::variant<double, Value>& PARAM, Value qubit);        \
+  Value OP_NAME(const std::variant<double, Value>&(PARAM), Value qubit);       \
   /**                                                                          \
    * @brief Apply a controlled OP_CLASS                                        \
    *                                                                           \
@@ -503,8 +504,8 @@ public:
    * !flux.qubit                                                               \
    * ```                                                                       \
    */                                                                          \
-  Value OP_NAME(const std::variant<double, Value>& PARAM1,                     \
-                const std::variant<double, Value>& PARAM2, Value qubit);       \
+  Value OP_NAME(const std::variant<double, Value>&(PARAM1),                    \
+                const std::variant<double, Value>&(PARAM2), Value qubit);      \
   /**                                                                          \
    * @brief Apply a controlled OP_CLASS                                        \
    *                                                                           \
@@ -597,9 +598,9 @@ public:
    * !flux.qubit                                                               \
    * ```                                                                       \
    */                                                                          \
-  Value OP_NAME(const std::variant<double, Value>& PARAM1,                     \
-                const std::variant<double, Value>& PARAM2,                     \
-                const std::variant<double, Value>& PARAM3, Value qubit);       \
+  Value OP_NAME(const std::variant<double, Value>&(PARAM1),                    \
+                const std::variant<double, Value>&(PARAM2),                    \
+                const std::variant<double, Value>&(PARAM3), Value qubit);      \
   /**                                                                          \
    * @brief Apply a controlled OP_CLASS                                        \
    *                                                                           \
@@ -783,7 +784,7 @@ public:
    * -> !flux.qubit, !flux.qubit                                               \
    * ```                                                                       \
    */                                                                          \
-  std::pair<Value, Value> OP_NAME(const std::variant<double, Value>& PARAM,    \
+  std::pair<Value, Value> OP_NAME(const std::variant<double, Value>&(PARAM),   \
                                   Value qubit0, Value qubit1);                 \
   /**                                                                          \
    * @brief Apply a controlled OP_CLASS                                        \
@@ -813,7 +814,7 @@ public:
    * ```                                                                       \
    */                                                                          \
   std::pair<Value, std::pair<Value, Value>> c##OP_NAME(                        \
-      const std::variant<double, Value>& PARAM, Value control, Value qubit0,   \
+      const std::variant<double, Value>&(PARAM), Value control, Value qubit0,  \
       Value qubit1);                                                           \
   /**                                                                          \
    * @brief Apply a multi-controlled OP_CLASS                                  \
@@ -844,7 +845,7 @@ public:
    * ```                                                                       \
    */                                                                          \
   std::pair<ValueRange, std::pair<Value, Value>> mc##OP_NAME(                  \
-      const std::variant<double, Value>& PARAM, ValueRange controls,           \
+      const std::variant<double, Value>&(PARAM), ValueRange controls,          \
       Value qubit0, Value qubit1);
 
   DECLARE_TWO_TARGET_ONE_PARAMETER(RXXOp, rxx, theta)

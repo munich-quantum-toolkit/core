@@ -903,7 +903,7 @@ TEST_F(CompilerPipelineTest, SingleClassicalBitRegister) {
   ASSERT_TRUE(runPipeline(module.get()).succeeded());
 
   const auto expected = buildQuartzIR([](quartz::QuartzProgramBuilder& b) {
-    b.allocClassicalBitRegister(1, "c");
+    std::ignore = b.allocClassicalBitRegister(1, "c");
   });
 
   verifyAllStages({
@@ -930,7 +930,7 @@ TEST_F(CompilerPipelineTest, MultiBitClassicalRegister) {
   ASSERT_TRUE(runPipeline(module.get()).succeeded());
 
   const auto expected = buildQuartzIR([](quartz::QuartzProgramBuilder& b) {
-    b.allocClassicalBitRegister(5, "c");
+    std::ignore = b.allocClassicalBitRegister(5, "c");
   });
 
   verifyAllStages({
@@ -959,8 +959,8 @@ TEST_F(CompilerPipelineTest, MultipleClassicalRegisters) {
   ASSERT_TRUE(runPipeline(module.get()).succeeded());
 
   const auto expected = buildQuartzIR([](quartz::QuartzProgramBuilder& b) {
-    b.allocClassicalBitRegister(3, "c");
-    b.allocClassicalBitRegister(2, "d");
+    std::ignore = b.allocClassicalBitRegister(3, "c");
+    std::ignore = b.allocClassicalBitRegister(2, "d");
   });
 
   verifyAllStages({

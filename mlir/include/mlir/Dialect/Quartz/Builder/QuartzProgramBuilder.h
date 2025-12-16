@@ -21,6 +21,8 @@
 #include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OwningOpRef.h>
+#include <mlir/IR/Value.h>
+#include <mlir/IR/ValueRange.h>
 #include <string>
 #include <variant>
 
@@ -119,8 +121,8 @@ public:
    * %q2 = quartz.alloc("q", 3, 2) : !quartz.qubit
    * ```
    */
-  SmallVector<Value> allocQubitRegister(int64_t size,
-                                        const std::string& name = "q");
+  llvm::SmallVector<Value> allocQubitRegister(int64_t size,
+                                              const std::string& name = "q");
 
   /**
    * @brief A small structure representing a single classical bit within a
@@ -172,8 +174,8 @@ public:
    * auto c = builder.allocClassicalBitRegister(3, "c");
    * ```
    */
-  ClassicalRegister allocClassicalBitRegister(int64_t size,
-                                              std::string name = "c") const;
+  [[nodiscard]] ClassicalRegister
+  allocClassicalBitRegister(int64_t size, std::string name = "c") const;
 
   //===--------------------------------------------------------------------===//
   // Measurement and Reset
