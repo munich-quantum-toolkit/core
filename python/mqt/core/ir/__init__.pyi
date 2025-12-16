@@ -1942,7 +1942,7 @@ class QuantumComputation(MutableSequence[operations.Operation]):
         control_register: registers.ClassicalRegister,
         expected_value: int = 1,
         comparison_kind: operations.ComparisonKind = operations.ComparisonKind.eq,
-        params: Sequence[float] = [],
+        params: Sequence[float] = ...,
     ) -> None:
         """Add an if operation to the circuit.
 
@@ -1964,7 +1964,7 @@ class QuantumComputation(MutableSequence[operations.Operation]):
         control_register: registers.ClassicalRegister,
         expected_value: int = 1,
         comparison_kind: operations.ComparisonKind = operations.ComparisonKind.eq,
-        params: Sequence[float] = [],
+        params: Sequence[float] = ...,
     ) -> None:
         """Add an if operation to the circuit.
 
@@ -1987,7 +1987,7 @@ class QuantumComputation(MutableSequence[operations.Operation]):
         control_register: registers.ClassicalRegister,
         expected_value: int = 1,
         comparison_kind: operations.ComparisonKind = operations.ComparisonKind.eq,
-        params: Sequence[float] = [],
+        params: Sequence[float] = ...,
     ) -> None:
         """Add an if operation to the circuit.
 
@@ -2009,7 +2009,7 @@ class QuantumComputation(MutableSequence[operations.Operation]):
         control_bit: int,
         expected_value: bool = True,
         comparison_kind: operations.ComparisonKind = operations.ComparisonKind.eq,
-        params: Sequence[float] = [],
+        params: Sequence[float] = ...,
     ) -> None:
         """Add an if operation to the circuit.
 
@@ -2031,7 +2031,7 @@ class QuantumComputation(MutableSequence[operations.Operation]):
         control_bit: int,
         expected_value: bool = True,
         comparison_kind: operations.ComparisonKind = operations.ComparisonKind.eq,
-        params: Sequence[float] = [],
+        params: Sequence[float] = ...,
     ) -> None:
         """Add an if operation to the circuit.
 
@@ -2054,7 +2054,7 @@ class QuantumComputation(MutableSequence[operations.Operation]):
         control_bit: int,
         expected_value: bool = True,
         comparison_kind: operations.ComparisonKind = operations.ComparisonKind.eq,
-        params: Sequence[float] = [],
+        params: Sequence[float] = ...,
     ) -> None:
         """Add an if operation to the circuit.
 

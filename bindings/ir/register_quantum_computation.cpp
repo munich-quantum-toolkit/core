@@ -2174,7 +2174,7 @@ Args:
           &qc::QuantumComputation::if_),
       "op_type"_a, "target"_a, "control_register"_a, "expected_value"_a = 1U,
       "comparison_kind"_a = qc::ComparisonKind::Eq,
-      "params"_a = std::vector<qc::fp>{},
+      "params"_a.sig("...") = std::vector<qc::fp>{},
       R"pb(Add an if operation to the circuit.
 
 Args:
@@ -2193,7 +2193,7 @@ Args:
           &qc::QuantumComputation::if_),
       "op_type"_a, "target"_a, "control"_a, "control_register"_a,
       "expected_value"_a = 1U, "comparison_kind"_a = qc::ComparisonKind::Eq,
-      "params"_a = std::vector<qc::fp>{},
+      "params"_a.sig("...") = std::vector<qc::fp>{},
       R"pb(Add an if operation to the circuit.
 
 Args:
@@ -2213,7 +2213,7 @@ Args:
           &qc::QuantumComputation::if_),
       "op_type"_a, "target"_a, "controls"_a, "control_register"_a,
       "expected_value"_a = 1U, "comparison_kind"_a = qc::ComparisonKind::Eq,
-      "params"_a = std::vector<qc::fp>{},
+      "params"_a.sig("...") = std::vector<qc::fp>{},
       R"pb(Add an if operation to the circuit.
 
 Args:
@@ -2232,7 +2232,7 @@ Args:
              &qc::QuantumComputation::if_),
          "op_type"_a, "target"_a, "control_bit"_a, "expected_value"_a = true,
          "comparison_kind"_a = qc::ComparisonKind::Eq,
-         "params"_a = std::vector<qc::fp>{},
+         "params"_a.sig("...") = std::vector<qc::fp>{},
          R"pb(Add an if operation to the circuit.
 
 Args:
@@ -2251,7 +2251,7 @@ Args:
          "op_type"_a, "target"_a, "control"_a, "control_bit"_a,
          "expected_value"_a = true,
          "comparison_kind"_a = qc::ComparisonKind::Eq,
-         "params"_a = std::vector<qc::fp>{},
+         "params"_a.sig("...") = std::vector<qc::fp>{},
          R"pb(Add an if operation to the circuit.
 
 Args:
@@ -2271,7 +2271,7 @@ Args:
           &qc::QuantumComputation::if_),
       "op_type"_a, "target"_a, "controls"_a, "control_bit"_a,
       "expected_value"_a = true, "comparison_kind"_a = qc::ComparisonKind::Eq,
-      "params"_a = std::vector<qc::fp>{},
+      "params"_a.sig("...") = std::vector<qc::fp>{},
       R"pb(Add an if operation to the circuit.
 
 Args:

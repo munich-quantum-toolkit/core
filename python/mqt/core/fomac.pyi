@@ -358,28 +358,28 @@ class Device:
     class Operation:
         """An operation represents a quantum operation that can be performed on a quantum device."""
 
-        def name(self, sites: Sequence[Device.Site] = [], params: Sequence[float] = []) -> str:
+        def name(self, sites: Sequence[Device.Site] = ..., params: Sequence[float] = ...) -> str:
             """Returns the name of the operation."""
 
-        def qubits_num(self, sites: Sequence[Device.Site] = [], params: Sequence[float] = []) -> int | None:
+        def qubits_num(self, sites: Sequence[Device.Site] = ..., params: Sequence[float] = ...) -> int | None:
             """Returns the number of qubits the operation acts on."""
 
-        def parameters_num(self, sites: Sequence[Device.Site] = [], params: Sequence[float] = []) -> int:
+        def parameters_num(self, sites: Sequence[Device.Site] = ..., params: Sequence[float] = ...) -> int:
             """Returns the number of parameters the operation has."""
 
-        def duration(self, sites: Sequence[Device.Site] = [], params: Sequence[float] = []) -> int | None:
+        def duration(self, sites: Sequence[Device.Site] = ..., params: Sequence[float] = ...) -> int | None:
             """Returns the duration of the operation."""
 
-        def fidelity(self, sites: Sequence[Device.Site] = [], params: Sequence[float] = []) -> float | None:
+        def fidelity(self, sites: Sequence[Device.Site] = ..., params: Sequence[float] = ...) -> float | None:
             """Returns the fidelity of the operation."""
 
-        def interaction_radius(self, sites: Sequence[Device.Site] = [], params: Sequence[float] = []) -> int | None:
+        def interaction_radius(self, sites: Sequence[Device.Site] = ..., params: Sequence[float] = ...) -> int | None:
             """Returns the interaction radius of the operation."""
 
-        def blocking_radius(self, sites: Sequence[Device.Site] = [], params: Sequence[float] = []) -> int | None:
+        def blocking_radius(self, sites: Sequence[Device.Site] = ..., params: Sequence[float] = ...) -> int | None:
             """Returns the blocking radius of the operation."""
 
-        def idling_fidelity(self, sites: Sequence[Device.Site] = [], params: Sequence[float] = []) -> float | None:
+        def idling_fidelity(self, sites: Sequence[Device.Site] = ..., params: Sequence[float] = ...) -> float | None:
             """Returns the idling fidelity of the operation."""
 
         def is_zoned(self) -> bool:
@@ -391,7 +391,7 @@ class Device:
         def site_pairs(self) -> list[tuple[Device.Site, Device.Site]] | None:
             """Returns the list of site pairs the local 2-qubit operation can be performed on."""
 
-        def mean_shuttling_speed(self, sites: Sequence[Device.Site] = [], params: Sequence[float] = []) -> int | None:
+        def mean_shuttling_speed(self, sites: Sequence[Device.Site] = ..., params: Sequence[float] = ...) -> int | None:
             """Returns the mean shuttling speed of the operation."""
 
         def __eq__(self, arg: object, /) -> bool: ...

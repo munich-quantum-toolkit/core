@@ -49,32 +49,31 @@ Args:
       .def(nb::init<qc::Qubit, qc::OpType,
                     const std::vector<qc::SymbolOrNumber>&>(),
            "target"_a, "op_type"_a,
-           "params"_a = std::vector<qc::SymbolOrNumber>{})
+           "params"_a.sig("...") = std::vector<qc::SymbolOrNumber>{})
       .def(nb::init<const qc::Targets&, qc::OpType,
                     const std::vector<qc::SymbolOrNumber>&>(),
            "targets"_a, "op_type"_a,
-           "params"_a = std::vector<qc::SymbolOrNumber>{})
+           "params"_a.sig("...") = std::vector<qc::SymbolOrNumber>{})
       .def(nb::init<qc::Control, qc::Qubit, qc::OpType,
                     const std::vector<qc::SymbolOrNumber>&>(),
            "control"_a, "target"_a, "op_type"_a,
-           "params"_a = std::vector<qc::SymbolOrNumber>{})
+           "params"_a.sig("...") = std::vector<qc::SymbolOrNumber>{})
       .def(nb::init<qc::Control, const qc::Targets&, qc::OpType,
                     const std::vector<qc::SymbolOrNumber>&>(),
            "control"_a, "targets"_a, "op_type"_a,
-           "params"_a = std::vector<qc::SymbolOrNumber>{})
+           "params"_a.sig("...") = std::vector<qc::SymbolOrNumber>{})
       .def(nb::init<const qc::Controls&, qc::Qubit, qc::OpType,
                     const std::vector<qc::SymbolOrNumber>&>(),
            "controls"_a, "target"_a, "op_type"_a,
-           "params"_a = std::vector<qc::SymbolOrNumber>{})
+           "params"_a.sig("...") = std::vector<qc::SymbolOrNumber>{})
       .def(nb::init<const qc::Controls&, const qc::Targets&, qc::OpType,
                     const std::vector<qc::SymbolOrNumber>&>(),
            "controls"_a, "targets"_a, "op_type"_a,
-           "params"_a = std::vector<qc::SymbolOrNumber>{})
+           "params"_a.sig("...") = std::vector<qc::SymbolOrNumber>{})
       .def(nb::init<const qc::Controls&, qc::Qubit, qc::Qubit, qc::OpType,
                     const std::vector<qc::SymbolOrNumber>&>(),
            "controls"_a, "target0"_a, "target1"_a, "op_type"_a,
-           "params"_a = std::vector<qc::SymbolOrNumber>{})
-
+           "params"_a.sig("...") = std::vector<qc::SymbolOrNumber>{})
       .def("get_parameter", &qc::SymbolicOperation::getParameter, "index"_a,
            R"pb(Get the parameter at the given index.
 

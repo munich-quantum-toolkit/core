@@ -627,26 +627,26 @@ class StandardOperation(Operation):
     @overload
     def __init__(self) -> None: ...
     @overload
-    def __init__(self, target: int, op_type: OpType, params: Sequence[float] = []) -> None: ...
+    def __init__(self, target: int, op_type: OpType, params: Sequence[float] = ...) -> None: ...
     @overload
-    def __init__(self, targets: Sequence[int], op_type: OpType, params: Sequence[float] = []) -> None: ...
+    def __init__(self, targets: Sequence[int], op_type: OpType, params: Sequence[float] = ...) -> None: ...
     @overload
-    def __init__(self, control: Control, target: int, op_type: OpType, params: Sequence[float] = []) -> None: ...
+    def __init__(self, control: Control, target: int, op_type: OpType, params: Sequence[float] = ...) -> None: ...
     @overload
     def __init__(
-        self, control: Control, targets: Sequence[int], op_type: OpType, params: Sequence[float] = []
+        self, control: Control, targets: Sequence[int], op_type: OpType, params: Sequence[float] = ...
     ) -> None: ...
     @overload
     def __init__(
-        self, controls: AbstractSet[Control], target: int, op_type: OpType, params: Sequence[float] = []
+        self, controls: AbstractSet[Control], target: int, op_type: OpType, params: Sequence[float] = ...
     ) -> None: ...
     @overload
     def __init__(
-        self, controls: AbstractSet[Control], targets: Sequence[int], op_type: OpType, params: Sequence[float] = []
+        self, controls: AbstractSet[Control], targets: Sequence[int], op_type: OpType, params: Sequence[float] = ...
     ) -> None: ...
     @overload
     def __init__(
-        self, controls: AbstractSet[Control], target0: int, target1: int, op_type: OpType, params: Sequence[float] = []
+        self, controls: AbstractSet[Control], target0: int, target1: int, op_type: OpType, params: Sequence[float] = ...
     ) -> None: ...
 
 class CompoundOperation(Operation, MutableSequence[Operation]):
@@ -787,11 +787,11 @@ class SymbolicOperation(StandardOperation):
     def __init__(self) -> None: ...
     @overload
     def __init__(
-        self, target: int, op_type: OpType, params: Sequence[mqt.core.ir.symbolic.Expression | float] = []
+        self, target: int, op_type: OpType, params: Sequence[mqt.core.ir.symbolic.Expression | float] = ...
     ) -> None: ...
     @overload
     def __init__(
-        self, targets: Sequence[int], op_type: OpType, params: Sequence[mqt.core.ir.symbolic.Expression | float] = []
+        self, targets: Sequence[int], op_type: OpType, params: Sequence[mqt.core.ir.symbolic.Expression | float] = ...
     ) -> None: ...
     @overload
     def __init__(
@@ -799,7 +799,7 @@ class SymbolicOperation(StandardOperation):
         control: Control,
         target: int,
         op_type: OpType,
-        params: Sequence[mqt.core.ir.symbolic.Expression | float] = [],
+        params: Sequence[mqt.core.ir.symbolic.Expression | float] = ...,
     ) -> None: ...
     @overload
     def __init__(
@@ -807,7 +807,7 @@ class SymbolicOperation(StandardOperation):
         control: Control,
         targets: Sequence[int],
         op_type: OpType,
-        params: Sequence[mqt.core.ir.symbolic.Expression | float] = [],
+        params: Sequence[mqt.core.ir.symbolic.Expression | float] = ...,
     ) -> None: ...
     @overload
     def __init__(
@@ -815,7 +815,7 @@ class SymbolicOperation(StandardOperation):
         controls: AbstractSet[Control],
         target: int,
         op_type: OpType,
-        params: Sequence[mqt.core.ir.symbolic.Expression | float] = [],
+        params: Sequence[mqt.core.ir.symbolic.Expression | float] = ...,
     ) -> None: ...
     @overload
     def __init__(
@@ -823,7 +823,7 @@ class SymbolicOperation(StandardOperation):
         controls: AbstractSet[Control],
         targets: Sequence[int],
         op_type: OpType,
-        params: Sequence[mqt.core.ir.symbolic.Expression | float] = [],
+        params: Sequence[mqt.core.ir.symbolic.Expression | float] = ...,
     ) -> None: ...
     @overload
     def __init__(
@@ -832,7 +832,7 @@ class SymbolicOperation(StandardOperation):
         target0: int,
         target1: int,
         op_type: OpType,
-        params: Sequence[mqt.core.ir.symbolic.Expression | float] = [],
+        params: Sequence[mqt.core.ir.symbolic.Expression | float] = ...,
     ) -> None: ...
     def get_parameter(self, index: int) -> mqt.core.ir.symbolic.Expression | float:
         """Get the parameter at the given index.

@@ -348,48 +348,53 @@ Returns:
       "quantum device.");
 
   operation.def("name", &fomac::Session::Device::Operation::getName,
-                "sites"_a = std::vector<fomac::Session::Device::Site>{},
-                "params"_a = std::vector<double>{},
+                "sites"_a.sig("...") =
+                    std::vector<fomac::Session::Device::Site>{},
+                "params"_a.sig("...") = std::vector<double>{},
                 "Returns the name of the operation.");
 
   operation.def("qubits_num", &fomac::Session::Device::Operation::getQubitsNum,
-                "sites"_a = std::vector<fomac::Session::Device::Site>{},
-                "params"_a = std::vector<double>{},
+                "sites"_a.sig("...") =
+                    std::vector<fomac::Session::Device::Site>{},
+                "params"_a.sig("...") = std::vector<double>{},
                 "Returns the number of qubits the operation acts on.");
 
-  operation.def("parameters_num",
-                &fomac::Session::Device::Operation::getParametersNum,
-                "sites"_a = std::vector<fomac::Session::Device::Site>{},
-                "params"_a = std::vector<double>{},
-                "Returns the number of parameters the operation has.");
+  operation.def(
+      "parameters_num", &fomac::Session::Device::Operation::getParametersNum,
+      "sites"_a.sig("...") = std::vector<fomac::Session::Device::Site>{},
+      "params"_a.sig("...") = std::vector<double>{},
+      "Returns the number of parameters the operation has.");
 
   operation.def("duration", &fomac::Session::Device::Operation::getDuration,
-                "sites"_a = std::vector<fomac::Session::Device::Site>{},
-                "params"_a = std::vector<double>{},
+                "sites"_a.sig("...") =
+                    std::vector<fomac::Session::Device::Site>{},
+                "params"_a.sig("...") = std::vector<double>{},
                 "Returns the duration of the operation.");
 
   operation.def("fidelity", &fomac::Session::Device::Operation::getFidelity,
-                "sites"_a = std::vector<fomac::Session::Device::Site>{},
-                "params"_a = std::vector<double>{},
+                "sites"_a.sig("...") =
+                    std::vector<fomac::Session::Device::Site>{},
+                "params"_a.sig("...") = std::vector<double>{},
                 "Returns the fidelity of the operation.");
 
   operation.def("interaction_radius",
                 &fomac::Session::Device::Operation::getInteractionRadius,
-                "sites"_a = std::vector<fomac::Session::Device::Site>{},
-                "params"_a = std::vector<double>{},
+                "sites"_a.sig("...") =
+                    std::vector<fomac::Session::Device::Site>{},
+                "params"_a.sig("...") = std::vector<double>{},
                 "Returns the interaction radius of the operation.");
 
-  operation.def("blocking_radius",
-                &fomac::Session::Device::Operation::getBlockingRadius,
-                "sites"_a = std::vector<fomac::Session::Device::Site>{},
-                "params"_a = std::vector<double>{},
-                "Returns the blocking radius of the operation.");
+  operation.def(
+      "blocking_radius", &fomac::Session::Device::Operation::getBlockingRadius,
+      "sites"_a.sig("...") = std::vector<fomac::Session::Device::Site>{},
+      "params"_a.sig("...") = std::vector<double>{},
+      "Returns the blocking radius of the operation.");
 
-  operation.def("idling_fidelity",
-                &fomac::Session::Device::Operation::getIdlingFidelity,
-                "sites"_a = std::vector<fomac::Session::Device::Site>{},
-                "params"_a = std::vector<double>{},
-                "Returns the idling fidelity of the operation.");
+  operation.def(
+      "idling_fidelity", &fomac::Session::Device::Operation::getIdlingFidelity,
+      "sites"_a.sig("...") = std::vector<fomac::Session::Device::Site>{},
+      "params"_a.sig("...") = std::vector<double>{},
+      "Returns the idling fidelity of the operation.");
 
   operation.def("is_zoned", &fomac::Session::Device::Operation::isZoned,
                 "Returns whether the operation is zoned.");
@@ -403,8 +408,9 @@ Returns:
 
   operation.def("mean_shuttling_speed",
                 &fomac::Session::Device::Operation::getMeanShuttlingSpeed,
-                "sites"_a = std::vector<fomac::Session::Device::Site>{},
-                "params"_a = std::vector<double>{},
+                "sites"_a.sig("...") =
+                    std::vector<fomac::Session::Device::Site>{},
+                "params"_a.sig("...") = std::vector<double>{},
                 "Returns the mean shuttling speed of the operation.");
 
   operation.def("__repr__", [](const fomac::Session::Device::Operation& op) {

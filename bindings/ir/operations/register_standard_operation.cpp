@@ -43,29 +43,30 @@ Args:
 
       .def(nb::init<>())
       .def(nb::init<qc::Qubit, qc::OpType, std::vector<qc::fp>>(), "target"_a,
-           "op_type"_a, "params"_a = std::vector<qc::fp>{})
+           "op_type"_a, "params"_a.sig("...") = std::vector<qc::fp>{})
       .def(nb::init<const qc::Targets&, qc::OpType, std::vector<qc::fp>>(),
-           "targets"_a, "op_type"_a, "params"_a = std::vector<qc::fp>{})
+           "targets"_a, "op_type"_a,
+           "params"_a.sig("...") = std::vector<qc::fp>{})
       .def(nb::init<qc::Control, qc::Qubit, qc::OpType,
                     const std::vector<qc::fp>&>(),
            "control"_a, "target"_a, "op_type"_a,
-           "params"_a = std::vector<qc::fp>{})
+           "params"_a.sig("...") = std::vector<qc::fp>{})
       .def(nb::init<qc::Control, const qc::Targets&, qc::OpType,
                     const std::vector<qc::fp>&>(),
            "control"_a, "targets"_a, "op_type"_a,
-           "params"_a = std::vector<qc::fp>{})
+           "params"_a.sig("...") = std::vector<qc::fp>{})
       .def(nb::init<const qc::Controls&, qc::Qubit, qc::OpType,
                     const std::vector<qc::fp>&>(),
            "controls"_a, "target"_a, "op_type"_a,
-           "params"_a = std::vector<qc::fp>{})
+           "params"_a.sig("...") = std::vector<qc::fp>{})
       .def(nb::init<const qc::Controls&, const qc::Targets&, qc::OpType,
                     std::vector<qc::fp>>(),
            "controls"_a, "targets"_a, "op_type"_a,
-           "params"_a = std::vector<qc::fp>{})
+           "params"_a.sig("...") = std::vector<qc::fp>{})
       .def(nb::init<const qc::Controls&, qc::Qubit, qc::Qubit, qc::OpType,
                     std::vector<qc::fp>>(),
            "controls"_a, "target0"_a, "target1"_a, "op_type"_a,
-           "params"_a = std::vector<qc::fp>{})
+           "params"_a.sig("...") = std::vector<qc::fp>{})
       .def("__repr__", [](const qc::StandardOperation& op) {
         std::stringstream ss;
         ss << "StandardOperation(";
