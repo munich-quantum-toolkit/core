@@ -36,9 +36,15 @@ struct MergeNestedCtrl final : OpRewritePattern<CtrlOp> {
 
   LogicalResult matchAndRewrite(CtrlOp op,
                                 PatternRewriter& rewriter) const override {
-    auto bodyUnitary = op.getBodyUnitary();
-    auto bodyCtrlOp = llvm::dyn_cast<CtrlOp>(bodyUnitary.getOperation());
+    auto bodyCtrlOp =
+        llvm::dyn_cast<CtrlOp>(op.getBodyUnitary().getOperation());
     if (!bodyCtrlOp) {
+      return failure();
+    }
+
+    // Require at least one positive control; otherwise let other patterns
+    // (e.g., RemoveTrivialCtrl) handle the trivial case.
+    if (op.getNumPosControls() == 0) {
       return failure();
     }
 

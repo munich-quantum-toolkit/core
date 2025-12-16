@@ -88,6 +88,12 @@ struct CtrlInlineGPhase final : OpRewritePattern<CtrlOp> {
       return failure();
     }
 
+    // Require at least one positive control; otherwise let other patterns
+    // (e.g., RemoveTrivialCtrl) handle the trivial case.
+    if (op.getNumPosControls() == 0) {
+      return failure();
+    }
+
     SmallVector<Value> newControls(op.getControls());
     const auto newTarget = newControls.back();
     newControls.pop_back();
