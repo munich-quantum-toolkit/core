@@ -263,18 +263,30 @@ Circuits must meet the following requirements before execution:
 2. **Only supported operations**: Operations not supported by the device raise {py:class}`~mqt.core.plugins.qiskit.UnsupportedOperationError`
 3. **Valid shots value**: Must be a non-negative integer
 
+### Parameter Binding
+
+The backend supports automatic parameter binding through the `parameter_values` argument.
+You can pass parameter values either as dictionaries or as sequences of values:
+
 ```python
 from qiskit.circuit import Parameter
 
-# This will raise CircuitValidationError
+# Option 1: Bind parameters manually
 theta = Parameter("theta")
 qc = QuantumCircuit(1)
 qc.ry(theta, 0)
-# job = backend.run(qc)  # Error: unbound parameter
+qc.measure_all()
 
-# Bind parameters first
 qc_bound = qc.assign_parameters({theta: 1.5708})
-job = backend.run(qc_bound, shots=100)  # Success
+job = backend.run(qc_bound, shots=100)
+
+# Option 2: Use parameter_values argument (recommended)
+job = backend.run(qc, parameter_values=[{theta: 1.5708}], shots=100)
+
+# For multiple circuits with different parameters
+circuits = [qc, qc, qc]
+param_values = [{theta: 0.5}, {theta: 1.0}, {theta: 1.5}]
+job = backend.run(circuits, parameter_values=param_values, shots=100)
 ```
 
 ## Job Handling
@@ -316,22 +328,46 @@ print(f"Success: {exp_result.success}")
 
 ## Multi-Circuit Execution
 
-The backend processes circuits individually.
-To execute multiple circuits, submit them sequentially:
+The backend supports both single-circuit and multi-circuit execution.
+You can submit multiple circuits in a single call:
 
 ```python
-circuits = [qc1, qc2, qc3]
-results = []
+# Create multiple circuits
+qc1 = QuantumCircuit(2)
+qc1.h(0)
+qc1.cx(0, 1)
+qc1.measure_all()
 
+qc2 = QuantumCircuit(2)
+qc2.x(0)
+qc2.cx(0, 1)
+qc2.measure_all()
+
+qc3 = QuantumCircuit(2)
+qc3.h([0, 1])
+qc3.measure_all()
+
+# Submit all circuits at once
+circuits = [qc1, qc2, qc3]
+job = backend.run(circuits, shots=1000)
+
+# Get aggregated results
+result = job.result()
+
+# Process results for each circuit
+for idx in range(len(circuits)):
+    counts = result.get_counts(idx)
+    print(f"Circuit {idx} results: {counts}")
+```
+
+Alternatively, you can still submit circuits individually:
+
+```python
+results = []
 for qc in circuits:
     job = backend.run(qc, shots=1000)
     result = job.result()
     results.append(result)
-
-# Process results
-for idx, result in enumerate(results):
-    counts = result.get_counts()
-    print(f"Circuit {idx} results: {counts}")
 ```
 
 ## Error Handling
