@@ -97,7 +97,10 @@ Args:
     threshold: The threshold for not including amplitudes in the state vector. Defaults to 0.0.
 
 Returns:
-    The state vector.)pb");
+    The state vector.
+
+Raises:
+    MemoryError: If the memory allocation fails.)pb");
 
   vec.def(
       "to_dot",

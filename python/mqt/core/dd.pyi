@@ -52,6 +52,9 @@ class VectorDD:
 
         Returns:
             The state vector.
+
+        Raises:
+            MemoryError: If the memory allocation fails.
         """
 
     def to_dot(
@@ -145,6 +148,9 @@ class MatrixDD:
 
         Returns:
             The matrix.
+
+        Raises:
+            MemoryError: If the memory allocation fails.
         """
 
     def to_dot(

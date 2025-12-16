@@ -109,7 +109,10 @@ Args:
     threshold: The threshold for not including entries in the matrix. Defaults to 0.0.
 
 Returns:
-    The matrix.)pb");
+    The matrix.
+
+Raises:
+    MemoryError: If the memory allocation fails.)pb");
 
   mat.def(
       "to_dot",
