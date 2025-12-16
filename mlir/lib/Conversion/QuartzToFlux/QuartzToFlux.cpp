@@ -231,7 +231,7 @@ LogicalResult convertOneTargetZeroParameter(QuartzOpType& op,
   const auto inCtrlOp = state.inCtrlOp;
 
   // Get the latest Flux qubit
-  const auto& quartzQubit = op.getQubitIn();
+  const auto& quartzQubit = op.getOperand();
 
   Value fluxQubit;
   if (inCtrlOp == 0) {
@@ -277,7 +277,7 @@ LogicalResult convertOneTargetOneParameter(QuartzOpType& op,
   const auto inCtrlOp = state.inCtrlOp;
 
   // Get the latest Flux qubit
-  const auto& quartzQubit = op.getQubitIn();
+  const auto& quartzQubit = op.getOperand(0);
   Value fluxQubit;
   if (inCtrlOp == 0) {
     fluxQubit = qubitMap[quartzQubit];
@@ -321,7 +321,7 @@ LogicalResult convertOneTargetTwoParameter(QuartzOpType& op,
   const auto inCtrlOp = state.inCtrlOp;
 
   // Get the latest Flux qubit
-  const auto& quartzQubit = op.getQubitIn();
+  const auto& quartzQubit = op.getOperand(0);
   Value fluxQubit;
   if (inCtrlOp == 0) {
     fluxQubit = qubitMap[quartzQubit];
@@ -366,7 +366,7 @@ convertOneTargetThreeParameter(QuartzOpType& op,
   const auto inCtrlOp = state.inCtrlOp;
 
   // Get the latest Flux qubit
-  const auto& quartzQubit = op.getQubitIn();
+  const auto& quartzQubit = op.getOperand(0);
   Value fluxQubit;
   if (inCtrlOp == 0) {
     fluxQubit = qubitMap[quartzQubit];
@@ -411,8 +411,8 @@ LogicalResult convertTwoTargetZeroParameter(QuartzOpType& op,
   const auto inCtrlOp = state.inCtrlOp;
 
   // Get the latest Flux qubits
-  const auto& quartzQubit0 = op.getQubit0In();
-  const auto& quartzQubit1 = op.getQubit1In();
+  const auto& quartzQubit0 = op.getOperand(0);
+  const auto& quartzQubit1 = op.getOperand(1);
   Value fluxQubit0;
   Value fluxQubit1;
   if (inCtrlOp == 0) {
@@ -462,8 +462,8 @@ LogicalResult convertTwoTargetOneParameter(QuartzOpType& op,
   const auto inCtrlOp = state.inCtrlOp;
 
   // Get the latest Flux qubits
-  const auto& quartzQubit0 = op.getQubit0In();
-  const auto& quartzQubit1 = op.getQubit1In();
+  const auto& quartzQubit0 = op.getOperand(0);
+  const auto& quartzQubit1 = op.getOperand(1);
   Value fluxQubit0;
   Value fluxQubit1;
   if (inCtrlOp == 0) {
@@ -513,8 +513,8 @@ LogicalResult convertTwoTargetTwoParameter(QuartzOpType& op,
   const auto inCtrlOp = state.inCtrlOp;
 
   // Get the latest Flux qubits
-  const auto& quartzQubit0 = op.getQubit0In();
-  const auto& quartzQubit1 = op.getQubit1In();
+  const auto& quartzQubit0 = op.getOperand(0);
+  const auto& quartzQubit1 = op.getOperand(1);
   Value fluxQubit0;
   Value fluxQubit1;
   if (inCtrlOp == 0) {
