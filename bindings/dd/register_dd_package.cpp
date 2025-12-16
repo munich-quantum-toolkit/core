@@ -106,8 +106,11 @@ qc::Control getControl(const Control& control) {
   }
   const auto controlInt =
       static_cast<std::int64_t>(std::get<nb::int_>(control));
+  if (controlInt < 0) {
+    throw nb::value_error("Control qubit index cannot be negative");
+  }
   if (controlInt > std::numeric_limits<qc::Qubit>::max()) {
-    throw nb::value_error("Qubit index exceeds maximum value");
+    throw nb::value_error("Control qubit index exceeds maximum value");
   }
   return static_cast<qc::Qubit>(controlInt);
 }
