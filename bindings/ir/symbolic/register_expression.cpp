@@ -75,7 +75,7 @@ Args:
             }
             return expr.getTerms()[static_cast<std::size_t>(idx)];
           },
-          "key"_a)
+          "index"_a)
 
       .def("is_zero", &sym::Expression<double, double>::isZero,
            "Check if the expression is zero.")
