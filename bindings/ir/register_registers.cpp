@@ -12,6 +12,7 @@
 #include "ir/Register.hpp"
 
 #include <cstddef>
+#include <cstdint>
 #include <limits>
 #include <nanobind/nanobind.h>
 #include <nanobind/operators.h>
@@ -43,26 +44,24 @@ Args:
       .def_prop_rw(
           "start",
           [](const qc::QuantumRegister& reg) { return reg.getStartIndex(); },
-          [](qc::QuantumRegister& reg, const nb::int_ start) {
-            const auto startInt = static_cast<std::int64_t>(start);
+          [](qc::QuantumRegister& reg, const nb::int_& start) {
+            auto startInt = static_cast<std::int64_t>(start);
             if (startInt < 0) {
               throw nb::value_error("Start index cannot be negative");
             }
-            if (startInt > std::numeric_limits<qc::Qubit>::max()) {
+            const auto startUint = static_cast<std::uint64_t>(startInt);
+            if (startUint > std::numeric_limits<qc::Qubit>::max()) {
               throw nb::value_error("Start index exceeds maximum value");
             }
-            reg.getStartIndex() = static_cast<qc::Qubit>(startInt);
+            reg.getStartIndex() = static_cast<qc::Qubit>(startUint);
           },
           "The index of the first qubit in the quantum register.")
       .def_prop_rw(
           "size", [](const qc::QuantumRegister& reg) { return reg.getSize(); },
-          [](qc::QuantumRegister& reg, const nb::int_ size) {
+          [](qc::QuantumRegister& reg, const nb::int_& size) {
             const auto sizeInt = static_cast<std::int64_t>(size);
             if (sizeInt < 0) {
               throw nb::value_error("Size cannot be negative");
-            }
-            if (sizeInt > std::numeric_limits<std::size_t>::max()) {
-              throw nb::value_error("Size exceeds maximum value");
             }
             reg.getSize() = static_cast<std::size_t>(sizeInt);
           },
@@ -121,28 +120,26 @@ Args:
       .def_prop_rw(
           "start",
           [](const qc::ClassicalRegister& reg) { return reg.getStartIndex(); },
-          [](qc::ClassicalRegister& reg, const nb::int_ start) {
+          [](qc::ClassicalRegister& reg, const nb::int_& start) {
             const auto startInt = static_cast<std::int64_t>(start);
             if (startInt < 0) {
               throw nb::value_error("Start index cannot be negative");
             }
-            if (startInt > std::numeric_limits<qc::Bit>::max()) {
+            const auto startUint = static_cast<std::uint64_t>(startInt);
+            if (startUint > std::numeric_limits<qc::Bit>::max()) {
               throw nb::value_error("Start index exceeds maximum value");
             }
-            reg.getStartIndex() = static_cast<qc::Bit>(startInt);
+            reg.getStartIndex() = static_cast<qc::Bit>(startUint);
           },
           "The index of the first bit in the classical register.")
 
       .def_prop_rw(
           "size",
           [](const qc::ClassicalRegister& reg) { return reg.getSize(); },
-          [](qc::ClassicalRegister& reg, const nb::int_ size) {
+          [](qc::ClassicalRegister& reg, const nb::int_& size) {
             const auto sizeInt = static_cast<std::int64_t>(size);
             if (sizeInt < 0) {
               throw nb::value_error("Size cannot be negative");
-            }
-            if (sizeInt > std::numeric_limits<std::size_t>::max()) {
-              throw nb::value_error("Size exceeds maximum value");
             }
             reg.getSize() = static_cast<std::size_t>(sizeInt);
           },
