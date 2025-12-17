@@ -36,15 +36,12 @@ def QCODialect : Dialect {
         - Advanced transformation passes
         - Explicit dependency tracking
 
-        The name "QCO" captures the flowing, transformative nature of
-        value-based representations—quantum states flow through operations,
-        each transformation producing new values like a river flowing through
-        a landscape.
+        The name "QCO" stands for "Quantum Circuit Optimization."
 
         Example:
         ```mlir
-        %q_out = qco.h %q_in                        // Consumes %q_in, produces %q_out
-        %q0_out, %q1_out = qco.swap %q0_in, %q1_in  // Consumes inputs, produces outputs
+        %q_out = qco.h %q_in                       // Consumes %q_in, produces %q_out
+        %q0_out, %q1_out = qco.swap %q0_in, %q1_in // Consumes inputs, produces outputs
         ```
     }];
 

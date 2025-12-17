@@ -37,14 +37,12 @@ def QCDialect : Dialect {
         - Direct compatibility with imperative quantum programming languages
         - Straightforward backend code generation
 
-        The name "QC" reflects the crystalline, structured nature of
-        hardware-oriented representations—operations have fixed positions and
-        transform states in place, like atoms in a crystal lattice.
+        The name "QC" stands for "Quantum Circuit."
 
         Example:
         ```mlir
-        qc.h %q              // Applies Hadamard to qubit %q in place
-        qc.swap %q0, %q1     // Applies SWAP using %q0, %q1 as targets
+        qc.h %q          // Applies Hadamard to qubit %q in place
+        qc.swap %q0, %q1 // Applies SWAP using %q0, %q1 as targets
         ```
     }];
 
