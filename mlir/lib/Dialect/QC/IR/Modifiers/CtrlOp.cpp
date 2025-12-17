@@ -60,7 +60,7 @@ struct RemoveTrivialCtrl final : OpRewritePattern<CtrlOp> {
   using OpRewritePattern::OpRewritePattern;
   LogicalResult matchAndRewrite(CtrlOp op,
                                 PatternRewriter& rewriter) const override {
-    if (op.getNumPosControls() > 0) {
+    if (op.getNumControls() > 0) {
       return failure();
     }
 
@@ -84,7 +84,7 @@ struct CtrlInlineGPhase final : OpRewritePattern<CtrlOp> {
                                 PatternRewriter& rewriter) const override {
     // Require at least one positive control
     // Trivial case is handled by RemoveTrivialCtrl
-    if (op.getNumPosControls() == 0) {
+    if (op.getNumControls() == 0) {
       return failure();
     }
 
@@ -116,23 +116,15 @@ size_t CtrlOp::getNumQubits() { return getNumTargets() + getNumControls(); }
 
 size_t CtrlOp::getNumTargets() { return getBodyUnitary().getNumTargets(); }
 
-size_t CtrlOp::getNumControls() {
-  return getNumPosControls() + getNumNegControls();
-}
-
-size_t CtrlOp::getNumPosControls() { return getControls().size(); }
-
-size_t CtrlOp::getNumNegControls() {
-  return getBodyUnitary().getNumNegControls();
-}
+size_t CtrlOp::getNumControls() { return getControls().size(); }
 
 Value CtrlOp::getQubit(const size_t i) {
-  const auto numPosControls = getNumPosControls();
-  if (i < numPosControls) {
+  const auto numControls = getNumControls();
+  if (i < numControls) {
     return getControls()[i];
   }
-  if (numPosControls <= i && i < getNumQubits()) {
-    return getBodyUnitary().getQubit(i - numPosControls);
+  if (numControls <= i && i < getNumQubits()) {
+    return getBodyUnitary().getQubit(i - numControls);
   }
   llvm::reportFatalUsageError("Invalid qubit index");
 }
@@ -141,15 +133,11 @@ Value CtrlOp::getTarget(const size_t i) {
   return getBodyUnitary().getTarget(i);
 }
 
-Value CtrlOp::getPosControl(const size_t i) {
-  if (i >= getNumPosControls()) {
+Value CtrlOp::getControl(const size_t i) {
+  if (i >= getNumControls()) {
     llvm::reportFatalUsageError("Control index out of bounds");
   }
   return getControls()[i];
-}
-
-Value CtrlOp::getNegControl(const size_t i) {
-  return getBodyUnitary().getNegControl(i);
 }
 
 size_t CtrlOp::getNumParams() { return getBodyUnitary().getNumParams(); }

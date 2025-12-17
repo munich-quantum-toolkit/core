@@ -239,8 +239,8 @@ static void addResetOp(QCProgramBuilder& builder,
  * @param qubits Flat vector of qubit values indexed by physical qubit index
  * @return Vector of qubit values corresponding to positive controls
  */
-static SmallVector<Value> getPosControls(const ::qc::Operation& operation,
-                                         const SmallVector<Value>& qubits) {
+static SmallVector<Value> getControls(const ::qc::Operation& operation,
+                                      const SmallVector<Value>& qubits) {
   SmallVector<Value> controls;
   for (const auto& [control, type] : operation.getControls()) {
     if (type == ::qc::Control::Type::Neg) {
@@ -270,11 +270,11 @@ static SmallVector<Value> getPosControls(const ::qc::Operation& operation,
                                const ::qc::Operation& operation,               \
                                const SmallVector<Value>& qubits) {             \
     const auto& target = qubits[operation.getTargets()[0]];                    \
-    if (const auto& posControls = getPosControls(operation, qubits);           \
-        posControls.empty()) {                                                 \
+    if (const auto& controls = getControls(operation, qubits);                 \
+        controls.empty()) {                                                    \
       builder.OP_QC(target);                                                   \
     } else {                                                                   \
-      builder.mc##OP_QC(posControls, target);                                  \
+      builder.mc##OP_QC(controls, target);                                     \
     }                                                                          \
   }
 
@@ -311,11 +311,11 @@ DEFINE_ONE_TARGET_ZERO_PARAMETER(SXdg, sxdg)
                                const SmallVector<Value>& qubits) {             \
     const auto& param = operation.getParameter()[0];                           \
     const auto& target = qubits[operation.getTargets()[0]];                    \
-    if (const auto& posControls = getPosControls(operation, qubits);           \
-        posControls.empty()) {                                                 \
+    if (const auto& controls = getControls(operation, qubits);                 \
+        controls.empty()) {                                                    \
       builder.OP_QC(param, target);                                            \
     } else {                                                                   \
-      builder.mc##OP_QC(param, posControls, target);                           \
+      builder.mc##OP_QC(param, controls, target);                              \
     }                                                                          \
   }
 
@@ -344,11 +344,11 @@ DEFINE_ONE_TARGET_ONE_PARAMETER(P, p)
     const auto& param1 = operation.getParameter()[0];                          \
     const auto& param2 = operation.getParameter()[1];                          \
     const auto& target = qubits[operation.getTargets()[0]];                    \
-    if (const auto& posControls = getPosControls(operation, qubits);           \
-        posControls.empty()) {                                                 \
+    if (const auto& controls = getControls(operation, qubits);                 \
+        controls.empty()) {                                                    \
       builder.OP_QC(param1, param2, target);                                   \
     } else {                                                                   \
-      builder.mc##OP_QC(param1, param2, posControls, target);                  \
+      builder.mc##OP_QC(param1, param2, controls, target);                     \
     }                                                                          \
   }
 
@@ -378,11 +378,11 @@ DEFINE_ONE_TARGET_TWO_PARAMETER(U2, u2)
     const auto& param2 = operation.getParameter()[1];                          \
     const auto& param3 = operation.getParameter()[2];                          \
     const auto& target = qubits[operation.getTargets()[0]];                    \
-    if (const auto& posControls = getPosControls(operation, qubits);           \
-        posControls.empty()) {                                                 \
+    if (const auto& controls = getControls(operation, qubits);                 \
+        controls.empty()) {                                                    \
       builder.OP_QC(param1, param2, param3, target);                           \
     } else {                                                                   \
-      builder.mc##OP_QC(param1, param2, param3, posControls, target);          \
+      builder.mc##OP_QC(param1, param2, param3, controls, target);             \
     }                                                                          \
   }
 
@@ -409,11 +409,11 @@ DEFINE_ONE_TARGET_THREE_PARAMETER(U, u)
                                const SmallVector<Value>& qubits) {             \
     const auto& target0 = qubits[operation.getTargets()[0]];                   \
     const auto& target1 = qubits[operation.getTargets()[1]];                   \
-    if (const auto& posControls = getPosControls(operation, qubits);           \
-        posControls.empty()) {                                                 \
+    if (const auto& controls = getControls(operation, qubits);                 \
+        controls.empty()) {                                                    \
       builder.OP_QC(target0, target1);                                         \
     } else {                                                                   \
-      builder.mc##OP_QC(posControls, target0, target1);                        \
+      builder.mc##OP_QC(controls, target0, target1);                           \
     }                                                                          \
   }
 
@@ -444,11 +444,11 @@ DEFINE_TWO_TARGET_ZERO_PARAMETER(ECR, ecr)
     const auto& param = operation.getParameter()[0];                           \
     const auto& target0 = qubits[operation.getTargets()[0]];                   \
     const auto& target1 = qubits[operation.getTargets()[1]];                   \
-    if (const auto& posControls = getPosControls(operation, qubits);           \
-        posControls.empty()) {                                                 \
+    if (const auto& controls = getControls(operation, qubits);                 \
+        controls.empty()) {                                                    \
       builder.OP_QC(param, target0, target1);                                  \
     } else {                                                                   \
-      builder.mc##OP_QC(param, posControls, target0, target1);                 \
+      builder.mc##OP_QC(param, controls, target0, target1);                    \
     }                                                                          \
   }
 
@@ -480,11 +480,11 @@ DEFINE_TWO_TARGET_ONE_PARAMETER(RZZ, rzz)
     const auto& param2 = operation.getParameter()[1];                          \
     const auto& target0 = qubits[operation.getTargets()[0]];                   \
     const auto& target1 = qubits[operation.getTargets()[1]];                   \
-    if (const auto& posControls = getPosControls(operation, qubits);           \
-        posControls.empty()) {                                                 \
+    if (const auto& controls = getControls(operation, qubits);                 \
+        controls.empty()) {                                                    \
       builder.OP_QC(param1, param2, target0, target1);                         \
     } else {                                                                   \
-      builder.mc##OP_QC(param1, param2, posControls, target0, target1);        \
+      builder.mc##OP_QC(param1, param2, controls, target0, target1);           \
     }                                                                          \
   }
 

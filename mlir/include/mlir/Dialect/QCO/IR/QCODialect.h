@@ -69,8 +69,6 @@ public:
     static size_t getNumQubits() { return T; }
     static size_t getNumTargets() { return T; }
     static size_t getNumControls() { return 0; }
-    static size_t getNumPosControls() { return 0; }
-    static size_t getNumNegControls() { return 0; }
 
     Value getInputQubit(size_t i) {
       if constexpr (T == 0) {
@@ -94,17 +92,10 @@ public:
     Value getInputTarget(const size_t i) { return getInputQubit(i); }
     Value getOutputTarget(const size_t i) { return getOutputQubit(i); }
 
-    static Value getInputPosControl([[maybe_unused]] size_t i) {
+    static Value getInputControl([[maybe_unused]] size_t i) {
       llvm::reportFatalUsageError("Operation does not have controls");
     }
-    static Value getOutputPosControl([[maybe_unused]] size_t i) {
-      llvm::reportFatalUsageError("Operation does not have controls");
-    }
-    static Value getInputNegControl([[maybe_unused]] size_t i) {
-      llvm::reportFatalUsageError("Operation does not have controls");
-    }
-
-    static Value getOutputNegControl([[maybe_unused]] size_t i) {
+    static Value getOutputControl([[maybe_unused]] size_t i) {
       llvm::reportFatalUsageError("Operation does not have controls");
     }
 

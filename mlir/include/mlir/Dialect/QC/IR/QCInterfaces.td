@@ -42,14 +42,6 @@ def UnitaryOpInterface : OpInterface<"UnitaryOpInterface"> {
             "size_t", "getNumControls", (ins)
         >,
         InterfaceMethod<
-            "Returns the number of positive control qubits.",
-            "size_t", "getNumPosControls", (ins)
-        >,
-        InterfaceMethod<
-            "Returns the number of negative control qubits.",
-            "size_t", "getNumNegControls", (ins)
-        >,
-        InterfaceMethod<
             "Returns the i-th qubit (targets + controls combined).",
             "Value", "getQubit", (ins "size_t":$i)
         >,
@@ -58,12 +50,8 @@ def UnitaryOpInterface : OpInterface<"UnitaryOpInterface"> {
             "Value", "getTarget", (ins "size_t":$i)
         >,
         InterfaceMethod<
-            "Returns the i-th positive control qubit.",
-            "Value", "getPosControl", (ins "size_t":$i)
-        >,
-        InterfaceMethod<
-            "Returns the i-th negative control qubit.",
-            "Value", "getNegControl", (ins "size_t":$i)
+            "Returns the i-th control qubit.",
+            "Value", "getControl", (ins "size_t":$i)
         >,
 
         // Parameter handling

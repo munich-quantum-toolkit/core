@@ -82,10 +82,6 @@ size_t BarrierOp::getNumTargets() { return getQubitsIn().size(); }
 
 size_t BarrierOp::getNumControls() { return 0; }
 
-size_t BarrierOp::getNumPosControls() { return 0; }
-
-size_t BarrierOp::getNumNegControls() { return 0; }
-
 Value BarrierOp::getInputQubit(const size_t i) { return getInputTarget(i); }
 
 Value BarrierOp::getOutputQubit(const size_t i) { return getOutputTarget(i); }
@@ -104,19 +100,11 @@ Value BarrierOp::getOutputTarget(const size_t i) {
   llvm::reportFatalUsageError("Invalid qubit index");
 }
 
-Value BarrierOp::getInputPosControl(const size_t /*i*/) {
+Value BarrierOp::getInputControl(const size_t /*i*/) {
   llvm::reportFatalUsageError("BarrierOp cannot be controlled");
 }
 
-Value BarrierOp::getOutputPosControl(const size_t /*i*/) {
-  llvm::reportFatalUsageError("BarrierOp cannot be controlled");
-}
-
-Value BarrierOp::getInputNegControl(const size_t /*i*/) {
-  llvm::reportFatalUsageError("BarrierOp cannot be controlled");
-}
-
-Value BarrierOp::getOutputNegControl(const size_t /*i*/) {
+Value BarrierOp::getOutputControl(const size_t /*i*/) {
   llvm::reportFatalUsageError("BarrierOp cannot be controlled");
 }
 

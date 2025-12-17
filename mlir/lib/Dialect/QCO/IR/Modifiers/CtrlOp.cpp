@@ -38,7 +38,7 @@ struct MergeNestedCtrl final : OpRewritePattern<CtrlOp> {
                                 PatternRewriter& rewriter) const override {
     // Require at least one positive control
     // Trivial case is handled by RemoveTrivialCtrl
-    if (op.getNumPosControls() == 0) {
+    if (op.getNumControls() == 0) {
       return failure();
     }
 
@@ -69,7 +69,7 @@ struct RemoveTrivialCtrl final : OpRewritePattern<CtrlOp> {
 
   LogicalResult matchAndRewrite(CtrlOp op,
                                 PatternRewriter& rewriter) const override {
-    if (op.getNumPosControls() > 0) {
+    if (op.getNumControls() > 0) {
       return failure();
     }
 
@@ -93,7 +93,7 @@ struct CtrlInlineGPhase final : OpRewritePattern<CtrlOp> {
                                 PatternRewriter& rewriter) const override {
     // Require at least one positive control
     // Trivial case is handled by RemoveTrivialCtrl
-    if (op.getNumPosControls() == 0) {
+    if (op.getNumControls() == 0) {
       return failure();
     }
 
@@ -130,7 +130,7 @@ struct CtrlInlineId final : OpRewritePattern<CtrlOp> {
                                 PatternRewriter& rewriter) const override {
     // Require at least one positive control
     // Trivial case is handled by RemoveTrivialCtrl
-    if (op.getNumPosControls() == 0) {
+    if (op.getNumControls() == 0) {
       return failure();
     }
 
@@ -141,7 +141,7 @@ struct CtrlInlineId final : OpRewritePattern<CtrlOp> {
     auto idOp = rewriter.create<IdOp>(op.getLoc(), op.getTargetsIn().front());
 
     SmallVector<Value> newOperands;
-    newOperands.reserve(op.getNumPosControls() + 1);
+    newOperands.reserve(op.getNumControls() + 1);
     newOperands.append(op.getControlsIn().begin(), op.getControlsIn().end());
     newOperands.push_back(idOp.getQubitOut());
     rewriter.replaceOp(op, newOperands);
@@ -160,34 +160,26 @@ size_t CtrlOp::getNumQubits() { return getNumTargets() + getNumControls(); }
 
 size_t CtrlOp::getNumTargets() { return getTargetsIn().size(); }
 
-size_t CtrlOp::getNumControls() {
-  return getNumPosControls() + getNumNegControls();
-}
-
-size_t CtrlOp::getNumPosControls() { return getControlsIn().size(); }
-
-size_t CtrlOp::getNumNegControls() {
-  return getBodyUnitary().getNumNegControls();
-}
+size_t CtrlOp::getNumControls() { return getControlsIn().size(); }
 
 Value CtrlOp::getInputQubit(const size_t i) {
-  const auto numPosControls = getNumPosControls();
-  if (i < numPosControls) {
+  const auto numControls = getNumControls();
+  if (i < numControls) {
     return getControlsIn()[i];
   }
-  if (numPosControls <= i && i < getNumQubits()) {
-    return getBodyUnitary().getInputQubit(i - numPosControls);
+  if (numControls <= i && i < getNumQubits()) {
+    return getBodyUnitary().getInputQubit(i - numControls);
   }
   llvm::reportFatalUsageError("Invalid qubit index");
 }
 
 Value CtrlOp::getOutputQubit(const size_t i) {
-  const auto numPosControls = getNumPosControls();
-  if (i < numPosControls) {
+  const auto numControls = getNumControls();
+  if (i < numControls) {
     return getControlsOut()[i];
   }
-  if (numPosControls <= i && i < getNumQubits()) {
-    return getBodyUnitary().getOutputQubit(i - numPosControls);
+  if (numControls <= i && i < getNumQubits()) {
+    return getBodyUnitary().getOutputQubit(i - numControls);
   }
   llvm::reportFatalUsageError("Invalid qubit index");
 }
@@ -206,30 +198,22 @@ Value CtrlOp::getOutputTarget(const size_t i) {
   return getTargetsOut()[i];
 }
 
-Value CtrlOp::getInputPosControl(const size_t i) {
-  if (i >= getNumPosControls()) {
+Value CtrlOp::getInputControl(const size_t i) {
+  if (i >= getNumControls()) {
     llvm::reportFatalUsageError("Control index out of bounds");
   }
   return getControlsIn()[i];
 }
 
-Value CtrlOp::getOutputPosControl(const size_t i) {
-  if (i >= getNumPosControls()) {
+Value CtrlOp::getOutputControl(const size_t i) {
+  if (i >= getNumControls()) {
     llvm::reportFatalUsageError("Control index out of bounds");
   }
   return getControlsOut()[i];
 }
 
-Value CtrlOp::getInputNegControl(const size_t i) {
-  return getBodyUnitary().getInputNegControl(i);
-}
-
-Value CtrlOp::getOutputNegControl(const size_t i) {
-  return getBodyUnitary().getOutputNegControl(i);
-}
-
 Value CtrlOp::getInputForOutput(Value output) {
-  for (size_t i = 0; i < getNumPosControls(); ++i) {
+  for (size_t i = 0; i < getNumControls(); ++i) {
     if (output == getControlsOut()[i]) {
       return getControlsIn()[i];
     }
@@ -243,7 +227,7 @@ Value CtrlOp::getInputForOutput(Value output) {
 }
 
 Value CtrlOp::getOutputForInput(Value input) {
-  for (size_t i = 0; i < getNumPosControls(); ++i) {
+  for (size_t i = 0; i < getNumControls(); ++i) {
     if (input == getControlsIn()[i]) {
       return getControlsOut()[i];
     }

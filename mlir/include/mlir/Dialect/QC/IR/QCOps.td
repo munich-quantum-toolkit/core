@@ -901,12 +901,9 @@ def BarrierOp : QCOp<"barrier", traits = [UnitaryOpInterface]> {
         size_t getNumQubits();
         size_t getNumTargets();
         static size_t getNumControls();
-        static size_t getNumPosControls();
-        static size_t getNumNegControls();
         Value getQubit(size_t i);
         Value getTarget(size_t i);
-        static Value getPosControl(size_t i);
-        static Value getNegControl(size_t i);
+        static Value getControl(size_t i);
         static size_t getNumParams();
         static Value getParameter(size_t i);
         static StringRef getBaseSymbol() { return "barrier"; }
@@ -959,12 +956,9 @@ def CtrlOp : QCOp<"ctrl",
         size_t getNumQubits();
         size_t getNumTargets();
         size_t getNumControls();
-        size_t getNumPosControls();
-        size_t getNumNegControls();
         Value getQubit(size_t i);
         Value getTarget(size_t i);
-        Value getPosControl(size_t i);
-        Value getNegControl(size_t i);
+        Value getControl(size_t i);
         size_t getNumParams();
         Value getParameter(size_t i);
         static StringRef getBaseSymbol() { return "ctrl"; }
