@@ -888,8 +888,9 @@ struct ConvertQCYieldQIR final : StatefulOpConversionPattern<YieldOp> {
  * 6. Reconcile unrealized casts
  *
  * @pre
- * The entry function must have a single block. The pass will restructure it
- * into a 4-block layout. Multi-block functions are currently unsupported.
+ * The input entry function must consist of a single block. The pass will
+ * restructure it into a four blocks. Multi-block input functions are currently
+ * not supported.
  */
 struct QCToQIR final : impl::QCToQIRBase<QCToQIR> {
   using QCToQIRBase::QCToQIRBase;

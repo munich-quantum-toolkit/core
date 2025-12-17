@@ -21,14 +21,14 @@ def QCToQIR : Pass<"qc-to-qir"> {
       Requirements:
       - Input is a valid module in the QC dialect.
       - The entry function must be marked with the `entry_point` attribute.
-      - The entry function must have a single block.
-        Multi-block functions are currently unsupported.
+      - The input entry function must consist of a single block.
+        Multi-block input functions are currently not supported.
       - The program must have straight-line control flow (i.e., Base Profile QIR).
 
       Behavior:
       - Each QC quantum operation is replaced by a call to the corresponding QIR function in the LLVM dialect.
       - Required QIR module flags are attached as attributes to the entry function.
-      - The entry function is split into four blocks to satisfy QIR Base Profile constraints:
+      - The pass transforms the single-block entry function into four blocks to satisfy QIR Base Profile constraints:
         0. Initialization block: Sets up the execution environment and performs required runtime initialization.
         1. Reversible operations block: Contains only void-returning calls to reversible quantum operations.
         2. Irreversible operations block: Contains only void-returning calls to operations marked irreversible, e.g.:
