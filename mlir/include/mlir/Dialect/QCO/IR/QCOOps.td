@@ -263,12 +263,12 @@ def GPhaseOp : QCOOp<"gphase", traits = [UnitaryOpInterface, ZeroTargetOneParame
 
         Example:
         ```mlir
-        qco.gphase(%theta) : ()
+        qco.gphase(%theta)
         ```
     }];
 
     let arguments = (ins Arg<F64, "the rotation angle theta in radians">:$theta);
-    let assemblyFormat = "$theta attr-dict";
+    let assemblyFormat = "`(` $theta `)` attr-dict";
 
     let extraClassDeclaration = [{
         static StringRef getBaseSymbol() { return "gphase"; }

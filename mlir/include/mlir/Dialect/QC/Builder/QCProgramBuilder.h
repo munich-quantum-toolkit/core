@@ -271,7 +271,7 @@ public:
    * ```mlir                                                                   \
    * qc.ctrl(%q) {                                                             \
    *   qc.OP_NAME(%PARAM)                                                      \
-   * }                                                                         \
+   * } : !qc.qubit                                                             \
    * ```                                                                       \
    */                                                                          \
   QCProgramBuilder& c##OP_NAME(const std::variant<double, Value>&(PARAM),      \
@@ -290,7 +290,7 @@ public:
    * ```mlir                                                                   \
    * qc.ctrl(%q0, %q1) {                                                       \
    *   qc.OP_NAME(%PARAM)                                                      \
-   * }                                                                         \
+   * } : !qc.qubit, !qc.qubit                                                  \
    * ```                                                                       \
    */                                                                          \
   QCProgramBuilder& mc##OP_NAME(const std::variant<double, Value>&(PARAM),     \
@@ -332,7 +332,7 @@ public:
    * ```mlir                                                                   \
    * qc.ctrl(%q0) {                                                            \
    *   qc.OP_NAME %q1 : !qc.qubit                                              \
-   * }                                                                         \
+   * } : !qc.qubit                                                             \
    * ```                                                                       \
    */                                                                          \
   QCProgramBuilder& c##OP_NAME(Value control, Value target);                   \
@@ -350,7 +350,7 @@ public:
    * ```mlir                                                                   \
    * qc.ctrl(%q0, %q1) {                                                       \
    *   qc.OP_NAME %q2 : !qc.qubit                                              \
-   * }                                                                         \
+   * } : !qc.qubit, !qc.qubit                                                  \
    * ```                                                                       \
    */                                                                          \
   QCProgramBuilder& mc##OP_NAME(ValueRange controls, Value target);
@@ -404,7 +404,7 @@ public:
    * ```mlir                                                                   \
    * qc.ctrl(%q0) {                                                            \
    *   qc.OP_NAME(%PARAM) %q1 : !qc.qubit                                      \
-   * }                                                                         \
+   * } : !qc.qubit                                                             \
    * ```                                                                       \
    */                                                                          \
   QCProgramBuilder& c##OP_NAME(const std::variant<double, Value>&(PARAM),      \
@@ -424,7 +424,7 @@ public:
    * ```mlir                                                                   \
    * qc.ctrl(%q0, %q1) {                                                       \
    *   qc.OP_NAME(%PARAM) %q2 : !qc.qubit                                      \
-   * }                                                                         \
+   * } : !qc.qubit, !qc.qubit                                                  \
    * ```                                                                       \
    */                                                                          \
   QCProgramBuilder& mc##OP_NAME(const std::variant<double, Value>&(PARAM),     \
@@ -475,7 +475,7 @@ public:
    * ```mlir                                                                   \
    * qc.ctrl(%q0) {                                                            \
    *   qc.OP_NAME(%PARAM1, %PARAM2) %q1 : !qc.qubit                            \
-   * }                                                                         \
+   * } : !qc.qubit                                                             \
    * ```                                                                       \
    */                                                                          \
   QCProgramBuilder& c##OP_NAME(const std::variant<double, Value>&(PARAM1),     \
@@ -497,7 +497,7 @@ public:
    * ```mlir                                                                   \
    * qc.ctrl(%q0, %q1) {                                                       \
    *   qc.OP_NAME(%PARAM1, %PARAM2) %q2 : !qc.qubit                            \
-   * }                                                                         \
+   * } : !qc.qubit, !qc.qubit                                                  \
    * ```                                                                       \
    */                                                                          \
   QCProgramBuilder& mc##OP_NAME(const std::variant<double, Value>&(PARAM1),    \
@@ -551,7 +551,7 @@ public:
    * ```mlir                                                                   \
    * qc.ctrl(%q0) {                                                            \
    *   qc.OP_NAME(%PARAM1, %PARAM2, %PARAM3) %q1 : !qc.qubit                   \
-   * }                                                                         \
+   * } : !qc.qubit                                                             \
    * ```                                                                       \
    */                                                                          \
   QCProgramBuilder& c##OP_NAME(const std::variant<double, Value>&(PARAM1),     \
@@ -575,7 +575,7 @@ public:
    * ```mlir                                                                   \
    * qc.ctrl(%q0, %q1) {                                                       \
    *   qc.OP_NAME(%PARAM1, %PARAM2, %PARAM3) %q2 : !qc.qubit                   \
-   * }                                                                         \
+   * } : !qc.qubit, !qc.qubit                                                  \
    * ```                                                                       \
    */                                                                          \
   QCProgramBuilder& mc##OP_NAME(const std::variant<double, Value>&(PARAM1),    \
@@ -621,7 +621,7 @@ public:
    * ```mlir                                                                   \
    * qc.ctrl(%q0) {                                                            \
    *   qc.OP_NAME %q1, %q2 : !qc.qubit, !qc.qubit                              \
-   * }                                                                         \
+   * } : !qc.qubit                                                             \
    * ```                                                                       \
    */                                                                          \
   QCProgramBuilder& c##OP_NAME(Value control, Value qubit0, Value qubit1);     \
@@ -640,7 +640,7 @@ public:
    * ```mlir                                                                   \
    * qc.ctrl(%q0, %q1) {                                                       \
    *   qc.OP_NAME %q2, %q3 : !qc.qubit, !qc.qubit                              \
-   * }                                                                         \
+   * } : !qc.qubit, !qc.qubit                                                  \
    * ```                                                                       \
    */                                                                          \
   QCProgramBuilder& mc##OP_NAME(ValueRange controls, Value qubit0,             \
@@ -690,7 +690,7 @@ public:
    * ```mlir                                                                   \
    * qc.ctrl(%q0) {                                                            \
    *   qc.OP_NAME(%PARAM) %q1, %q2 : !qc.qubit, !qc.qubit                      \
-   * }                                                                         \
+   * } : !qc.qubit                                                             \
    * ```                                                                       \
    */                                                                          \
   QCProgramBuilder& c##OP_NAME(const std::variant<double, Value>&(PARAM),      \
@@ -711,7 +711,7 @@ public:
    * ```mlir                                                                   \
    * qc.ctrl(%q0, %q1) {                                                       \
    *   qc.OP_NAME(%PARAM) %q2, %q3 : !qc.qubit, !qc.qubit                      \
-   * }                                                                         \
+   * } : !qc.qubit, !qc.qubit                                                  \
    * ```                                                                       \
    */                                                                          \
   QCProgramBuilder& mc##OP_NAME(const std::variant<double, Value>&(PARAM),     \
@@ -766,7 +766,7 @@ public:
    * qc.ctrl(%q0) {                                                            \
    *   qc.OP_NAME(%PARAM1, %PARAM2) %q1, %q2 : !qc.qubit,                      \
    * !qc.qubit                                                                 \
-   * }                                                                         \
+   * } : !qc.qubit                                                             \
    * ```                                                                       \
    */                                                                          \
   QCProgramBuilder& c##OP_NAME(const std::variant<double, Value>&(PARAM1),     \
@@ -789,7 +789,7 @@ public:
    * ```mlir                                                                   \
    * qc.ctrl(%q0, %q1) {                                                       \
    *  qc.OP_NAME(%PARAM1, %PARAM2) %q2, %q3 : !qc.qubit, !qc.qubit             \
-   * }                                                                         \
+   * } : !qc.qubit, !qc.qubit                                                  \
    * ```                                                                       \
    */                                                                          \
   QCProgramBuilder& mc##OP_NAME(const std::variant<double, Value>&(PARAM1),    \
@@ -838,7 +838,7 @@ public:
    * ```mlir
    * qc.ctrl(%q0) {
    *   qc.x %q1 : !qc.qubit
-   * }
+   * } : !qc.qubit
    * ```
    */
   QCProgramBuilder& ctrl(ValueRange controls,

@@ -1063,9 +1063,9 @@ struct ConvertQCBarrierOp final : StatefulOpConversionPattern<qc::BarrierOp> {
  * @par Example:
  * ```mlir
  * qc.ctrl(%q0) {
- *   qc.x %q1
+ *   qc.x %q1 : !qc.qubit
  *   qc.yield
- * }
+ * } : !qc.qubit
  * ```
  * is converted to
  * ```mlir
