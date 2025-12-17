@@ -937,7 +937,10 @@ def CtrlOp : QCOp<"ctrl",
         A modifier operation that adds control qubits to the unitary operation
         defined in its body region. The controlled operation applies the
         underlying unitary only when all control qubits are in the |1⟩ state.
-        The control qubits are not modified by this operation.
+
+        Note that control qubits are logically unmodified by this operation in that
+        their quantum state remains unchanged. However, the `controls` argument
+        is marked with `MemWrite` to ensure correct dependency tracking in MLIR.
 
         Example:
         ```mlir
