@@ -91,8 +91,7 @@ static OwningOpRef<ModuleOp> loadMLIRFile(StringRef filename,
 /**
  * @brief Write the module to the output file
  */
-static mlir::LogicalResult writeOutput(ModuleOp module,
-                                       const StringRef filename) {
+static mlir::LogicalResult writeOutput(ModuleOp module, StringRef filename) {
   std::string errorMessage;
   const auto output = openOutputFile(filename, &errorMessage);
   if (!output) {
