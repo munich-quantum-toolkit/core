@@ -151,17 +151,19 @@ int main(int argc, char** argv) {
   if (RECORD_INTERMEDIATES) {
     outs() << "=== Compilation Record ===\n";
     outs() << "After QC Import:\n" << record.afterQCImport << "\n";
-    outs() << "After QC Canonicalization:\n"
+    outs() << "After Initial QC Canonicalization:\n"
            << record.afterInitialCanon << "\n";
     outs() << "After QC-to-QCO Conversion:\n"
            << record.afterQCOConversion << "\n";
-    outs() << "After QCO Canonicalization:\n" << record.afterQCOCanon << "\n";
+    outs() << "After Initial QCO Canonicalization:\n"
+           << record.afterQCOCanon << "\n";
     outs() << "After Optimization:\n" << record.afterOptimization << "\n";
-    outs() << "After QCO Canonicalization:\n"
+    outs() << "After Final QCO Canonicalization:\n"
            << record.afterOptimizationCanon << "\n";
     outs() << "After QCO-to-QC Conversion:\n"
            << record.afterQCConversion << "\n";
-    outs() << "After QC Canonicalization:\n" << record.afterQCCanon << "\n";
+    outs() << "After Final QC Canonicalization:\n"
+           << record.afterQCCanon << "\n";
     outs() << "After QC-to-QIR Conversion:\n"
            << record.afterQIRConversion << "\n";
     outs() << "After QIR Canonicalization:\n" << record.afterQIRCanon << "\n";
