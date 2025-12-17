@@ -10,9 +10,9 @@
 
 #include "mlir/Compiler/CompilerPipeline.h"
 
-#include "mlir/Conversion/FluxToQuartz/FluxToQuartz.h"
-#include "mlir/Conversion/QuartzToFlux/QuartzToFlux.h"
-#include "mlir/Conversion/QuartzToQIR/QuartzToQIR.h"
+#include "mlir/Conversion/QCOToQC/QCOToQC.h"
+#include "mlir/Conversion/QCToQCO/QCToQCO.h"
+#include "mlir/Conversion/QCToQIR/QCToQIR.h"
 #include "mlir/Support/PrettyPrinting.h"
 
 #include <llvm/ADT/StringRef.h>
@@ -97,15 +97,15 @@ QuantumCompilerPipeline::runPipeline(ModuleOp module,
   configurePassManager(pm);
 
   // Determine total number of stages for progress indication
-  // 1. Quartz import
-  // 2. Quartz canonicalization
-  // 3. Quartz-to-Flux conversion
-  // 4. Flux canonicalization
+  // 1. QC import
+  // 2. QC canonicalization
+  // 3. QC-to-QCO conversion
+  // 4. QCO canonicalization
   // 5. Optimization passes
-  // 6. Flux canonicalization
-  // 7. Flux-to-Quartz conversion
-  // 8. Quartz canonicalization
-  // 9. Quartz-to-QIR conversion (optional)
+  // 6. QCO canonicalization
+  // 7. QCO-to-QC conversion
+  // 8. QC canonicalization
+  // 9. QC-to-QIR conversion (optional)
   // 10. QIR canonicalization (optional)
   auto totalStages = 8;
   if (config_.convertToQIR) {
@@ -113,15 +113,15 @@ QuantumCompilerPipeline::runPipeline(ModuleOp module,
   }
   auto currentStage = 0;
 
-  // Stage 1: Quartz import
+  // Stage 1: QC import
   if (record != nullptr && config_.recordIntermediates) {
-    record->afterQuartzImport = captureIR(module);
+    record->afterQCImport = captureIR(module);
     if (config_.printIRAfterAllStages) {
-      prettyPrintStage(module, "Quartz Import", ++currentStage, totalStages);
+      prettyPrintStage(module, "QC Import", ++currentStage, totalStages);
     }
   }
 
-  // Stage 2: Quartz canonicalization
+  // Stage 2: QC canonicalization
   addCleanupPasses(pm);
   if (pm.run(module).failed()) {
     return failure();
@@ -129,35 +129,35 @@ QuantumCompilerPipeline::runPipeline(ModuleOp module,
   if (record != nullptr && config_.recordIntermediates) {
     record->afterInitialCanon = captureIR(module);
     if (config_.printIRAfterAllStages) {
-      prettyPrintStage(module, "Initial Quartz Canonicalization",
-                       ++currentStage, totalStages);
-    }
-  }
-  pm.clear();
-
-  // Stage 3: Quartz-to-Flux conversion
-  pm.addPass(createQuartzToFlux());
-  if (failed(pm.run(module))) {
-    return failure();
-  }
-  if (record != nullptr && config_.recordIntermediates) {
-    record->afterFluxConversion = captureIR(module);
-    if (config_.printIRAfterAllStages) {
-      prettyPrintStage(module, "Quartz → Flux Conversion", ++currentStage,
+      prettyPrintStage(module, "Initial QC Canonicalization", ++currentStage,
                        totalStages);
     }
   }
   pm.clear();
 
-  // Stage 4: Flux canonicalization
+  // Stage 3: QC-to-QCO conversion
+  pm.addPass(createQCToQCO());
+  if (failed(pm.run(module))) {
+    return failure();
+  }
+  if (record != nullptr && config_.recordIntermediates) {
+    record->afterQCOConversion = captureIR(module);
+    if (config_.printIRAfterAllStages) {
+      prettyPrintStage(module, "QC → QCO Conversion", ++currentStage,
+                       totalStages);
+    }
+  }
+  pm.clear();
+
+  // Stage 4: QCO canonicalization
   addCleanupPasses(pm);
   if (failed(pm.run(module))) {
     return failure();
   }
   if (record != nullptr && config_.recordIntermediates) {
-    record->afterFluxCanon = captureIR(module);
+    record->afterQCOCanon = captureIR(module);
     if (config_.printIRAfterAllStages) {
-      prettyPrintStage(module, "Initial Flux Canonicalization", ++currentStage,
+      prettyPrintStage(module, "Initial QCO Canonicalization", ++currentStage,
                        totalStages);
     }
   }
@@ -178,7 +178,7 @@ QuantumCompilerPipeline::runPipeline(ModuleOp module,
   }
   pm.clear();
 
-  // Stage 6: Flux canonicalization
+  // Stage 6: QCO canonicalization
   addCleanupPasses(pm);
   if (failed(pm.run(module))) {
     return failure();
@@ -186,50 +186,50 @@ QuantumCompilerPipeline::runPipeline(ModuleOp module,
   if (record != nullptr && config_.recordIntermediates) {
     record->afterOptimizationCanon = captureIR(module);
     if (config_.printIRAfterAllStages) {
-      prettyPrintStage(module, "Final Flux Canonicalization", ++currentStage,
+      prettyPrintStage(module, "Final QCO Canonicalization", ++currentStage,
                        totalStages);
     }
   }
   pm.clear();
 
-  // Stage 7: Flux-to-Quartz conversion
-  pm.addPass(createFluxToQuartz());
+  // Stage 7: QCO-to-QC conversion
+  pm.addPass(createQCOToQC());
   if (failed(pm.run(module))) {
     return failure();
   }
   if (record != nullptr && config_.recordIntermediates) {
-    record->afterQuartzConversion = captureIR(module);
+    record->afterQCConversion = captureIR(module);
     if (config_.printIRAfterAllStages) {
-      prettyPrintStage(module, "Flux → Quartz Conversion", ++currentStage,
+      prettyPrintStage(module, "QCO → QC Conversion", ++currentStage,
                        totalStages);
     }
   }
   pm.clear();
 
-  // Stage 8: Quartz canonicalization
+  // Stage 8: QC canonicalization
   addCleanupPasses(pm);
   if (failed(pm.run(module))) {
     return failure();
   }
   if (record != nullptr && config_.recordIntermediates) {
-    record->afterQuartzCanon = captureIR(module);
+    record->afterQCCanon = captureIR(module);
     if (config_.printIRAfterAllStages) {
-      prettyPrintStage(module, "Final Quartz Canonicalization", ++currentStage,
+      prettyPrintStage(module, "Final QC Canonicalization", ++currentStage,
                        totalStages);
     }
   }
   pm.clear();
 
-  // Stage 9: Quartz-to-QIR conversion (optional)
+  // Stage 9: QC-to-QIR conversion (optional)
   if (config_.convertToQIR) {
-    pm.addPass(createQuartzToQIR());
+    pm.addPass(createQCToQIR());
     if (failed(pm.run(module))) {
       return failure();
     }
     if (record != nullptr && config_.recordIntermediates) {
       record->afterQIRConversion = captureIR(module);
       if (config_.printIRAfterAllStages) {
-        prettyPrintStage(module, "Quartz → QIR Conversion", ++currentStage,
+        prettyPrintStage(module, "QC → QIR Conversion", ++currentStage,
                          totalStages);
       }
     }

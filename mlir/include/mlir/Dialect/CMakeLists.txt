@@ -8,5 +8,5 @@
 
 add_subdirectory(MQTOpt)
 add_subdirectory(MQTRef)
-add_subdirectory(Quartz)
-add_subdirectory(Flux)
+add_subdirectory(QC)
+add_subdirectory(QCO)

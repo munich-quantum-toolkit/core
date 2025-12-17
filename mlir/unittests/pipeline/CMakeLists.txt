@@ -12,9 +12,9 @@ target_link_libraries(
   mqt-core-mlir-compiler-pipeline-test
   PRIVATE GTest::gtest_main
           MQTCompilerPipeline
-          MLIRQuartzTranslation
-          MLIRQuartzProgramBuilder
-          MLIRFluxProgramBuilder
+          MLIRQCTranslation
+          MLIRQCProgramBuilder
+          MLIRQCOProgramBuilder
           MLIRQIRProgramBuilder
           MLIRParser
           MQT::CoreIR)

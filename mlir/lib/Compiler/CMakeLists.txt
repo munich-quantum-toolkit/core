@@ -17,9 +17,9 @@ add_mlir_library(
   MLIRPass
   MLIRTransforms
   MLIRTransformUtils
-  QuartzToFlux
-  FluxToQuartz
-  QuartzToQIR
+  QCToQCO
+  QCOToQC
+  QCToQIR
   MQT::MLIRSupport
   MQT::ProjectOptions)
 

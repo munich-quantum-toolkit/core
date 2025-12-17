@@ -39,7 +39,7 @@ namespace mlir::qir {
  *
  * @details
  * The QIRProgramBuilder provides a type-safe interface for constructing
- * quantum programs in QIR format. Like Quartz, QIR uses reference semantics
+ * quantum programs in QIR format. Like QC, QIR uses reference semantics
  * where operations modify qubits in place, but QIR programs require specific
  * boilerplate structure including proper block organization and metadata
  * attributes.

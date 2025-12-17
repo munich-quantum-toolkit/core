@@ -9,8 +9,8 @@
  */
 
 #include "mlir/Compiler/CompilerPipeline.h"
-#include "mlir/Dialect/Flux/IR/FluxDialect.h"
-#include "mlir/Dialect/Quartz/IR/QuartzDialect.h"
+#include "mlir/Dialect/QC/IR/QCDialect.h"
+#include "mlir/Dialect/QCO/IR/QCODialect.h"
 
 #include <llvm/Support/CommandLine.h>
 #include <llvm/Support/InitLLVM.h>
@@ -111,8 +111,8 @@ int main(int argc, char** argv) {
 
   // Set up MLIR context with all required dialects
   DialectRegistry registry;
-  registry.insert<quartz::QuartzDialect>();
-  registry.insert<flux::FluxDialect>();
+  registry.insert<qc::QCDialect>();
+  registry.insert<qco::QCODialect>();
   registry.insert<arith::ArithDialect>();
   registry.insert<cf::ControlFlowDialect>();
   registry.insert<func::FuncDialect>();
