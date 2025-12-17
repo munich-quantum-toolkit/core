@@ -74,25 +74,27 @@ private:
   LoweringState* state_;
 };
 
-bool isQubitType(const MemRefType type) {
+} // namespace
+
+static bool isQubitType(const MemRefType type) {
   return llvm::isa<ref::QubitType>(type.getElementType());
 }
 
-bool isQubitType(memref::AllocOp op) { return isQubitType(op.getType()); }
+static bool isQubitType(memref::AllocOp op) {
+  return isQubitType(op.getType());
+}
 
-bool isQubitType(memref::DeallocOp op) {
+static bool isQubitType(memref::DeallocOp op) {
   const auto& memRef = op.getMemref();
   const auto& memRefType = llvm::cast<MemRefType>(memRef.getType());
   return isQubitType(memRefType);
 }
 
-bool isQubitType(memref::LoadOp op) {
+static bool isQubitType(memref::LoadOp op) {
   const auto& memRef = op.getMemref();
   const auto& memRefType = llvm::cast<MemRefType>(memRef.getType());
   return isQubitType(memRefType);
 }
-
-} // namespace
 
 class MQTRefToMQTOptTypeConverter final : public TypeConverter {
 public:

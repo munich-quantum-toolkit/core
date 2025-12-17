@@ -337,10 +337,10 @@ addOperation(mlir::OpBuilder& builder, const qc::Operation& operation,
  * localIdx)
  * @return llvm::LogicalResult whether the adding of the blockOps was successful
  */
-llvm::LogicalResult addBlockOps(mlir::OpBuilder& builder,
-                                const qc::Operation* operationInBlock,
-                                const llvm::SmallVector<mlir::Value>& qubits,
-                                const BitIndexVec& bitMap) {
+static llvm::LogicalResult
+addBlockOps(mlir::OpBuilder& builder, const qc::Operation* operationInBlock,
+            const llvm::SmallVector<mlir::Value>& qubits,
+            const BitIndexVec& bitMap) {
   if (operationInBlock->isCompoundOperation()) {
     for (const auto& operation :
          dynamic_cast<const qc::CompoundOperation&>(*operationInBlock)) {

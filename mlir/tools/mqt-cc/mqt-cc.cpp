@@ -67,10 +67,13 @@ const cl::opt<bool>
                               cl::desc("Print IR after each compiler stage"),
                               cl::init(false));
 
+} // namespace
+
 /**
  * @brief Load and parse a .mlir file
  */
-OwningOpRef<ModuleOp> loadMLIRFile(StringRef filename, MLIRContext* context) {
+static OwningOpRef<ModuleOp> loadMLIRFile(StringRef filename,
+                                          MLIRContext* context) {
   // Set up the input file
   std::string errorMessage;
   auto file = openInputFile(filename, &errorMessage);
@@ -88,7 +91,8 @@ OwningOpRef<ModuleOp> loadMLIRFile(StringRef filename, MLIRContext* context) {
 /**
  * @brief Write the module to the output file
  */
-mlir::LogicalResult writeOutput(ModuleOp module, const StringRef filename) {
+static mlir::LogicalResult writeOutput(ModuleOp module,
+                                       const StringRef filename) {
   std::string errorMessage;
   const auto output = openOutputFile(filename, &errorMessage);
   if (!output) {
@@ -100,8 +104,6 @@ mlir::LogicalResult writeOutput(ModuleOp module, const StringRef filename) {
   output->keep();
   return mlir::success();
 }
-
-} // namespace
 
 int main(int argc, char** argv) {
   const InitLLVM y(argc, argv);

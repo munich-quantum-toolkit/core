@@ -80,9 +80,10 @@ private:
   /// @brief Maps operations to ref counts.
   mlir::DenseMap<mlir::Operation*, std::size_t> refCount;
 };
+} // namespace
 
-mlir::SmallVector<Wire, 2> skipTwoQubitBlock(mlir::ArrayRef<Wire> wires,
-                                             Layer& opLayer) {
+static mlir::SmallVector<Wire, 2> skipTwoQubitBlock(mlir::ArrayRef<Wire> wires,
+                                                    Layer& opLayer) {
   assert(wires.size() == 2 && "expected two wires");
 
   auto [it0, index0] = wires[0];
@@ -130,7 +131,6 @@ mlir::SmallVector<Wire, 2> skipTwoQubitBlock(mlir::ArrayRef<Wire> wires,
 
   return {Wire(it0, index0), Wire(it1, index1)};
 }
-} // namespace
 
 LayeredUnit LayeredUnit::fromEntryPointFunction(mlir::func::FuncOp func,
                                                 const std::size_t nqubits) {
