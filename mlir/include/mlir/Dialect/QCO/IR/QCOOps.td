@@ -267,7 +267,7 @@ def GPhaseOp : QCOOp<"gphase", traits = [UnitaryOpInterface, ZeroTargetOneParame
         ```
     }];
 
-    let arguments = (ins Arg<F64, "the rotation angle theta in radians", [MemRead]>:$theta);
+    let arguments = (ins Arg<F64, "the rotation angle theta in radians">:$theta);
     let assemblyFormat = "$theta attr-dict";
 
     let extraClassDeclaration = [{
@@ -535,7 +535,7 @@ def RXOp : QCOOp<"rx", traits = [UnitaryOpInterface, OneTargetOneParameter]> {
     }];
 
     let arguments = (ins Arg<QubitType, "the target qubit", [MemRead]>:$qubit_in,
-                     Arg<F64, "the rotation angle theta in radians", [MemRead]>:$theta);
+                     Arg<F64, "the rotation angle theta in radians">:$theta);
     let results = (outs QubitType:$qubit_out);
     let assemblyFormat = "`(` $theta `)` $qubit_in attr-dict `:` type($qubit_in) `->` type($qubit_out)";
 
@@ -562,7 +562,7 @@ def RYOp : QCOOp<"ry", traits = [UnitaryOpInterface, OneTargetOneParameter]> {
     }];
 
     let arguments = (ins Arg<QubitType, "the target qubit", [MemRead]>:$qubit_in,
-                     Arg<F64, "the rotation angle theta in radians", [MemRead]>:$theta);
+                     Arg<F64, "the rotation angle theta in radians">:$theta);
     let results = (outs QubitType:$qubit_out);
     let assemblyFormat = "`(` $theta `)` $qubit_in attr-dict `:` type($qubit_in) `->` type($qubit_out)";
 
@@ -589,7 +589,7 @@ def RZOp : QCOOp<"rz", traits = [UnitaryOpInterface, OneTargetOneParameter]> {
     }];
 
     let arguments = (ins Arg<QubitType, "the target qubit", [MemRead]>:$qubit_in,
-                     Arg<F64, "the rotation angle theta in radians", [MemRead]>:$theta);
+                     Arg<F64, "the rotation angle theta in radians">:$theta);
     let results = (outs QubitType:$qubit_out);
     let assemblyFormat = "`(` $theta `)` $qubit_in attr-dict `:` type($qubit_in) `->` type($qubit_out)";
 
@@ -616,7 +616,7 @@ def POp : QCOOp<"p", traits = [UnitaryOpInterface, OneTargetOneParameter]> {
     }];
 
     let arguments = (ins Arg<QubitType, "the target qubit", [MemRead]>:$qubit_in,
-                     Arg<F64, "the rotation angle theta in radians", [MemRead]>:$theta);
+                     Arg<F64, "the rotation angle theta in radians">:$theta);
     let results = (outs QubitType:$qubit_out);
     let assemblyFormat = "`(` $theta `)` $qubit_in attr-dict `:` type($qubit_in) `->` type($qubit_out)";
 
@@ -643,8 +643,8 @@ def ROp : QCOOp<"r", traits = [UnitaryOpInterface, OneTargetTwoParameter]> {
     }];
 
     let arguments = (ins Arg<QubitType, "the target qubit", [MemRead]>:$qubit_in,
-                     Arg<F64, "the rotation angle theta in radians", [MemRead]>:$theta,
-                     Arg<F64, "the rotation angle phi in radians", [MemRead]>:$phi);
+                     Arg<F64, "the rotation angle theta in radians">:$theta,
+                     Arg<F64, "the rotation angle phi in radians">:$phi);
     let results = (outs QubitType:$qubit_out);
     let assemblyFormat = "`(` $theta `,` $phi `)` $qubit_in attr-dict `:` type($qubit_in) `->` type($qubit_out)";
 
@@ -671,8 +671,8 @@ def U2Op : QCOOp<"u2", traits = [UnitaryOpInterface, OneTargetTwoParameter]> {
     }];
 
     let arguments = (ins Arg<QubitType, "the target qubit", [MemRead]>:$qubit_in,
-                     Arg<F64, "the rotation angle phi in radians", [MemRead]>:$phi,
-                     Arg<F64, "the rotation angle lambda in radians", [MemRead]>:$lambda);
+                     Arg<F64, "the rotation angle phi in radians">:$phi,
+                     Arg<F64, "the rotation angle lambda in radians">:$lambda);
     let results = (outs QubitType:$qubit_out);
     let assemblyFormat = "`(` $phi `,` $lambda `)` $qubit_in attr-dict `:` type($qubit_in) `->` type($qubit_out)";
 
@@ -699,9 +699,9 @@ def UOp : QCOOp<"u", traits = [UnitaryOpInterface, OneTargetThreeParameter]> {
     }];
 
     let arguments = (ins Arg<QubitType, "the target qubit", [MemRead]>:$qubit_in,
-                     Arg<F64, "the rotation angle theta in radians", [MemRead]>:$theta,
-                     Arg<F64, "the rotation angle phi in radians", [MemRead]>:$phi,
-                     Arg<F64, "the rotation angle lambda in radians", [MemRead]>:$lambda);
+                     Arg<F64, "the rotation angle theta in radians">:$theta,
+                     Arg<F64, "the rotation angle phi in radians">:$phi,
+                     Arg<F64, "the rotation angle lambda in radians">:$lambda);
     let results = (outs QubitType:$qubit_out);
     let assemblyFormat = "`(` $theta `,` $phi `,` $lambda `)` $qubit_in attr-dict `:` type($qubit_in) `->` type($qubit_out)";
 
@@ -817,7 +817,7 @@ def RXXOp : QCOOp<"rxx", traits = [UnitaryOpInterface, TwoTargetOneParameter]> {
 
     let arguments = (ins Arg<QubitType, "the first target qubit", [MemRead]>:$qubit0_in,
                      Arg<QubitType, "the second target qubit", [MemRead]>:$qubit1_in,
-                     Arg<F64, "the rotation angle theta in radians", [MemRead]>:$theta);
+                     Arg<F64, "the rotation angle theta in radians">:$theta);
     let results = (outs QubitType:$qubit0_out, QubitType:$qubit1_out);
     let assemblyFormat = "`(` $theta `)` $qubit0_in `,` $qubit1_in attr-dict `:` type($qubit0_in) `,` type($qubit1_in) `->` type($qubit0_out) `,` type($qubit1_out)";
 
@@ -845,7 +845,7 @@ def RYYOp : QCOOp<"ryy", traits = [UnitaryOpInterface, TwoTargetOneParameter]> {
 
     let arguments = (ins Arg<QubitType, "the first target qubit", [MemRead]>:$qubit0_in,
                      Arg<QubitType, "the second target qubit", [MemRead]>:$qubit1_in,
-                     Arg<F64, "the rotation angle theta in radians", [MemRead]>:$theta);
+                     Arg<F64, "the rotation angle theta in radians">:$theta);
     let results = (outs QubitType:$qubit0_out, QubitType:$qubit1_out);
     let assemblyFormat = "`(` $theta `)` $qubit0_in `,` $qubit1_in attr-dict `:` type($qubit0_in) `,` type($qubit1_in) `->` type($qubit0_out) `,` type($qubit1_out)";
 
@@ -873,7 +873,7 @@ def RZXOp : QCOOp<"rzx", traits = [UnitaryOpInterface, TwoTargetOneParameter]> {
 
     let arguments = (ins Arg<QubitType, "the first target qubit", [MemRead]>:$qubit0_in,
                      Arg<QubitType, "the second target qubit", [MemRead]>:$qubit1_in,
-                     Arg<F64, "the rotation angle theta in radians", [MemRead]>:$theta);
+                     Arg<F64, "the rotation angle theta in radians">:$theta);
     let results = (outs QubitType:$qubit0_out, QubitType:$qubit1_out);
     let assemblyFormat = "`(` $theta `)` $qubit0_in `,` $qubit1_in attr-dict `:` type($qubit0_in) `,` type($qubit1_in) `->` type($qubit0_out) `,` type($qubit1_out)";
 
@@ -901,7 +901,7 @@ def RZZOp : QCOOp<"rzz", traits = [UnitaryOpInterface, TwoTargetOneParameter]> {
 
     let arguments = (ins Arg<QubitType, "the first target qubit", [MemRead]>:$qubit0_in,
                      Arg<QubitType, "the second target qubit", [MemRead]>:$qubit1_in,
-                     Arg<F64, "the rotation angle theta in radians", [MemRead]>:$theta);
+                     Arg<F64, "the rotation angle theta in radians">:$theta);
     let results = (outs QubitType:$qubit0_out, QubitType:$qubit1_out);
     let assemblyFormat = "`(` $theta `)` $qubit0_in `,` $qubit1_in attr-dict `:` type($qubit0_in) `,` type($qubit1_in) `->` type($qubit0_out) `,` type($qubit1_out)";
 
@@ -929,8 +929,8 @@ def XXPlusYYOp : QCOOp<"xx_plus_yy", traits = [UnitaryOpInterface, TwoTargetTwoP
 
     let arguments = (ins Arg<QubitType, "the first target qubit", [MemRead]>:$qubit0_in,
                      Arg<QubitType, "the second target qubit", [MemRead]>:$qubit1_in,
-                     Arg<F64, "the rotation angle theta in radians", [MemRead]>:$theta,
-                     Arg<F64, "the rotation angle beta in radians", [MemRead]>:$beta);
+                     Arg<F64, "the rotation angle theta in radians">:$theta,
+                     Arg<F64, "the rotation angle beta in radians">:$beta);
     let results = (outs QubitType:$qubit0_out, QubitType:$qubit1_out);
     let assemblyFormat = "`(` $theta `,` $beta `)` $qubit0_in `,` $qubit1_in attr-dict `:` type($qubit0_in) `,` type($qubit1_in) `->` type($qubit0_out) `,` type($qubit1_out)";
 
@@ -958,8 +958,8 @@ def XXMinusYYOp : QCOOp<"xx_minus_yy", traits = [UnitaryOpInterface, TwoTargetTw
 
     let arguments = (ins Arg<QubitType, "the first target qubit", [MemRead]>:$qubit0_in,
                      Arg<QubitType, "the second target qubit", [MemRead]>:$qubit1_in,
-                     Arg<F64, "the rotation angle theta in radians", [MemRead]>:$theta,
-                     Arg<F64, "the rotation angle beta in radians", [MemRead]>:$beta);
+                     Arg<F64, "the rotation angle theta in radians">:$theta,
+                     Arg<F64, "the rotation angle beta in radians">:$beta);
     let results = (outs QubitType:$qubit0_out, QubitType:$qubit1_out);
     let assemblyFormat = "`(` $theta `,` $beta `)` $qubit0_in `,` $qubit1_in attr-dict `:` type($qubit0_in) `,` type($qubit1_in) `->` type($qubit0_out) `,` type($qubit1_out)";
 

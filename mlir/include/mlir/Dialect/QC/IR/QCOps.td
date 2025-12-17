@@ -258,7 +258,7 @@ def GPhaseOp : QCOp<"gphase", traits = [UnitaryOpInterface, ZeroTargetOneParamet
         ```
     }];
 
-    let arguments = (ins Arg<F64, "the rotation angle theta in radians", [MemRead]>:$theta);
+    let arguments = (ins Arg<F64, "the rotation angle theta in radians">:$theta);
     let assemblyFormat = "$theta attr-dict";
 
     let extraClassDeclaration = [{
@@ -491,7 +491,7 @@ def RXOp : QCOp<"rx", traits = [UnitaryOpInterface, OneTargetOneParameter]> {
     }];
 
     let arguments = (ins Arg<QubitType, "the target qubit", [MemRead, MemWrite]>:$qubit_in,
-                     Arg<F64, "the rotation angle theta in radians", [MemRead]>:$theta);
+                     Arg<F64, "the rotation angle theta in radians">:$theta);
     let assemblyFormat = "`(` $theta `)` $qubit_in attr-dict";
 
     let extraClassDeclaration = [{
@@ -515,7 +515,7 @@ def RYOp : QCOp<"ry", traits = [UnitaryOpInterface, OneTargetOneParameter]> {
     }];
 
     let arguments = (ins Arg<QubitType, "the target qubit", [MemRead, MemWrite]>:$qubit_in,
-                     Arg<F64, "the rotation angle theta in radians", [MemRead]>:$theta);
+                     Arg<F64, "the rotation angle theta in radians">:$theta);
     let assemblyFormat = "`(` $theta `)` $qubit_in attr-dict";
 
     let extraClassDeclaration = [{
@@ -539,7 +539,7 @@ def RZOp : QCOp<"rz", traits = [UnitaryOpInterface, OneTargetOneParameter]> {
     }];
 
     let arguments = (ins Arg<QubitType, "the target qubit", [MemRead, MemWrite]>:$qubit_in,
-                     Arg<F64, "the rotation angle theta in radians", [MemRead]>:$theta);
+                     Arg<F64, "the rotation angle theta in radians">:$theta);
     let assemblyFormat = "`(` $theta `)` $qubit_in attr-dict";
 
     let extraClassDeclaration = [{
@@ -563,7 +563,7 @@ def POp : QCOp<"p", traits = [UnitaryOpInterface, OneTargetOneParameter]> {
     }];
 
     let arguments = (ins Arg<QubitType, "the target qubit", [MemRead, MemWrite]>:$qubit_in,
-                     Arg<F64, "the rotation angle theta in radians", [MemRead]>:$theta);
+                     Arg<F64, "the rotation angle theta in radians">:$theta);
     let assemblyFormat = "`(` $theta `)` $qubit_in attr-dict";
 
     let extraClassDeclaration = [{
@@ -587,8 +587,8 @@ def ROp : QCOp<"r", traits = [UnitaryOpInterface, OneTargetTwoParameter]> {
     }];
 
     let arguments = (ins Arg<QubitType, "the target qubit", [MemRead, MemWrite]>:$qubit_in,
-                     Arg<F64, "the rotation angle theta in radians", [MemRead]>:$theta,
-                     Arg<F64, "the rotation angle phi in radians", [MemRead]>:$phi);
+                     Arg<F64, "the rotation angle theta in radians">:$theta,
+                     Arg<F64, "the rotation angle phi in radians">:$phi);
     let assemblyFormat = "`(` $theta `,` $phi `)` $qubit_in attr-dict";
 
     let extraClassDeclaration = [{
@@ -612,8 +612,8 @@ def U2Op : QCOp<"u2", traits = [UnitaryOpInterface, OneTargetTwoParameter]> {
     }];
 
     let arguments = (ins Arg<QubitType, "the target qubit", [MemRead, MemWrite]>:$qubit_in,
-                     Arg<F64, "the rotation angle phi in radians", [MemRead]>:$phi,
-                     Arg<F64, "the rotation angle lambda in radians", [MemRead]>:$lambda);
+                     Arg<F64, "the rotation angle phi in radians">:$phi,
+                     Arg<F64, "the rotation angle lambda in radians">:$lambda);
     let assemblyFormat = "`(` $phi `,` $lambda `)` $qubit_in attr-dict";
 
     let extraClassDeclaration = [{
@@ -637,9 +637,9 @@ def UOp : QCOp<"u", traits = [UnitaryOpInterface, OneTargetThreeParameter]> {
     }];
 
     let arguments = (ins Arg<QubitType, "the target qubit", [MemRead, MemWrite]>:$qubit_in,
-                     Arg<F64, "the rotation angle theta in radians", [MemRead]>:$theta,
-                     Arg<F64, "the rotation angle phi in radians", [MemRead]>:$phi,
-                     Arg<F64, "the rotation angle lambda in radians", [MemRead]>:$lambda);
+                     Arg<F64, "the rotation angle theta in radians">:$theta,
+                     Arg<F64, "the rotation angle phi in radians">:$phi,
+                     Arg<F64, "the rotation angle lambda in radians">:$lambda);
     let assemblyFormat = "`(` $theta `,` $phi `,` $lambda `)` $qubit_in attr-dict";
 
     let extraClassDeclaration = [{
@@ -744,7 +744,7 @@ def RXXOp : QCOp<"rxx", traits = [UnitaryOpInterface, TwoTargetOneParameter]> {
 
     let arguments = (ins Arg<QubitType, "the first target qubit", [MemRead, MemWrite]>:$qubit0_in,
                      Arg<QubitType, "the second target qubit", [MemRead, MemWrite]>:$qubit1_in,
-                     Arg<F64, "the rotation angle theta in radians", [MemRead]>:$theta);
+                     Arg<F64, "the rotation angle theta in radians">:$theta);
     let assemblyFormat = "`(` $theta `)` $qubit0_in `,` $qubit1_in attr-dict";
 
     let extraClassDeclaration = [{
@@ -769,7 +769,7 @@ def RYYOp : QCOp<"ryy", traits = [UnitaryOpInterface, TwoTargetOneParameter]> {
 
     let arguments = (ins Arg<QubitType, "the first target qubit", [MemRead, MemWrite]>:$qubit0_in,
                      Arg<QubitType, "the second target qubit", [MemRead, MemWrite]>:$qubit1_in,
-                     Arg<F64, "the rotation angle theta in radians", [MemRead]>:$theta);
+                     Arg<F64, "the rotation angle theta in radians">:$theta);
     let assemblyFormat = "`(` $theta `)` $qubit0_in `,` $qubit1_in attr-dict";
 
     let extraClassDeclaration = [{
@@ -794,7 +794,7 @@ def RZXOp : QCOp<"rzx", traits = [UnitaryOpInterface, TwoTargetOneParameter]> {
 
     let arguments = (ins Arg<QubitType, "the first target qubit", [MemRead, MemWrite]>:$qubit0_in,
                      Arg<QubitType, "the second target qubit", [MemRead, MemWrite]>:$qubit1_in,
-                     Arg<F64, "the rotation angle theta in radians", [MemRead]>:$theta);
+                     Arg<F64, "the rotation angle theta in radians">:$theta);
     let assemblyFormat = "`(` $theta `)` $qubit0_in `,` $qubit1_in attr-dict";
 
     let extraClassDeclaration = [{
@@ -819,7 +819,7 @@ def RZZOp : QCOp<"rzz", traits = [UnitaryOpInterface, TwoTargetOneParameter]> {
 
     let arguments = (ins Arg<QubitType, "the first target qubit", [MemRead, MemWrite]>:$qubit0_in,
                      Arg<QubitType, "the second target qubit", [MemRead, MemWrite]>:$qubit1_in,
-                     Arg<F64, "the rotation angle theta in radians", [MemRead]>:$theta);
+                     Arg<F64, "the rotation angle theta in radians">:$theta);
     let assemblyFormat = "`(` $theta `)` $qubit0_in `,` $qubit1_in attr-dict";
 
     let extraClassDeclaration = [{
@@ -844,8 +844,8 @@ def XXPlusYYOp : QCOp<"xx_plus_yy", traits = [UnitaryOpInterface, TwoTargetTwoPa
 
     let arguments = (ins Arg<QubitType, "the first target qubit", [MemRead, MemWrite]>:$qubit0_in,
                      Arg<QubitType, "the second target qubit", [MemRead, MemWrite]>:$qubit1_in,
-                     Arg<F64, "the rotation angle theta in radians", [MemRead]>:$theta,
-                     Arg<F64, "the rotation angle beta in radians", [MemRead]>:$beta);
+                     Arg<F64, "the rotation angle theta in radians">:$theta,
+                     Arg<F64, "the rotation angle beta in radians">:$beta);
     let assemblyFormat = "`(` $theta `,` $beta `)` $qubit0_in `,` $qubit1_in attr-dict";
 
     let extraClassDeclaration = [{
@@ -870,8 +870,8 @@ def XXMinusYYOp : QCOp<"xx_minus_yy", traits = [UnitaryOpInterface, TwoTargetTwo
 
     let arguments = (ins Arg<QubitType, "the first target qubit", [MemRead, MemWrite]>:$qubit0_in,
                      Arg<QubitType, "the second target qubit", [MemRead, MemWrite]>:$qubit1_in,
-                     Arg<F64, "the rotation angle theta in radians", [MemRead]>:$theta,
-                     Arg<F64, "the rotation angle beta in radians", [MemRead]>:$beta);
+                     Arg<F64, "the rotation angle theta in radians">:$theta,
+                     Arg<F64, "the rotation angle beta in radians">:$beta);
     let assemblyFormat = "`(` $theta `,` $beta `)` $qubit0_in `,` $qubit1_in attr-dict";
 
     let extraClassDeclaration = [{
