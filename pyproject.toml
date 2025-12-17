@@ -295,6 +295,11 @@ environment = { MACOSX_DEPLOYMENT_TARGET = "11.0" }
 before-build = "uv pip install delvewheel>=1.11.2"
 repair-wheel-command = "delvewheel repair -w {dest_dir} {wheel} --namespace-pkg mqt --ignore-existing"
 
+[[tool.cibuildwheel.overrides]]
+select = "cp312-*"
+inherit.repair-wheel-command = "append"
+repair-wheel-command = "uvx abi3audit --strict --report {wheel}"
+
 
 [tool.uv]
 required-version = ">=0.5.20"
