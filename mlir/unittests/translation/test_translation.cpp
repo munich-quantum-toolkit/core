@@ -312,8 +312,8 @@ struct TestCaseUnitary {
 
 } // namespace
 
-static std::ostream& operator<<(std::ostream& os,
-                                const TestCaseUnitary& testCase) {
+[[maybe_unused]] static std::ostream&
+operator<<(std::ostream& os, const TestCaseUnitary& testCase) {
   return os << testCase.name;
 }
 
@@ -605,8 +605,8 @@ struct TestCaseIfRegister {
 
 } // namespace
 
-static std::ostream& operator<<(std::ostream& os,
-                                const TestCaseIfRegister& testCase) {
+[[maybe_unused]] static std::ostream&
+operator<<(std::ostream& os, const TestCaseIfRegister& testCase) {
   return os << testCase.name;
 }
 
@@ -870,8 +870,8 @@ struct TestCaseIfBit {
 
 } // namespace
 
-static std::ostream& operator<<(std::ostream& os,
-                                const TestCaseIfBit& testCase) {
+[[maybe_unused]] static std::ostream&
+operator<<(std::ostream& os, const TestCaseIfBit& testCase) {
   return os << testCase.name;
 }
 
@@ -963,8 +963,8 @@ struct TestCaseIfElseBit {
 
 } // namespace
 
-static std::ostream& operator<<(std::ostream& os,
-                                const TestCaseIfElseBit& testCase) {
+[[maybe_unused]] static std::ostream&
+operator<<(std::ostream& os, const TestCaseIfElseBit& testCase) {
   return os << testCase.name;
 }
 
