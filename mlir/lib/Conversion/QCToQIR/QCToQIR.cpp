@@ -889,7 +889,7 @@ struct ConvertQCYieldQIR final : StatefulOpConversionPattern<YieldOp> {
  *
  * @pre
  * The input entry function must consist of a single block. The pass will
- * restructure it into a four blocks. Multi-block input functions are currently
+ * restructure it into four blocks. Multi-block input functions are currently
  * not supported.
  */
 struct QCToQIR final : impl::QCToQIRBase<QCToQIR> {
@@ -906,9 +906,8 @@ struct QCToQIR final : impl::QCToQIRBase<QCToQIR> {
    *    reset, dealloc)
    * 4. **Output block**: Contains output recording calls
    *
-   * Blocks are connected with unconditional jumps (entry → body →
-   * measurements → output). This structure ensures proper QIR Base
-   * Profile semantics.
+   * Blocks are connected with unconditional jumps (entry, body, measurements,
+   * output). This structure ensures proper QIR Base Profile semantics.
    *
    * If the function already has multiple blocks, this function does nothing.
    *
@@ -1055,11 +1054,10 @@ struct QCToQIR final : impl::QCToQIRBase<QCToQIR> {
     OpBuilder builder(ctx);
     const auto ptrType = LLVM::LLVMPointerType::get(ctx);
 
-    // Find the output block (4th block: entry, body, measurements, output,
-    // end)
+    // Find the output block
     auto& outputBlock = main.getBlocks().back();
 
-    // Insert before the branch to end block
+    // Insert before the branch to output block
     builder.setInsertionPoint(&outputBlock.back());
 
     // Group measurements by register
@@ -1132,7 +1130,7 @@ struct QCToQIR final : impl::QCToQIRBase<QCToQIR> {
    *
    * **Stage 2: Block structure and initialization**
    * Create proper 4-block structure for QIR base profile (entry, main,
-   * irreversible, end blocks) and insert the `__quantum__rt__initialize` call
+   * irreversible, output) and insert the `__quantum__rt__initialize` call
    * in the entry block.
    *
    * **Stage 3: QC to LLVM**
