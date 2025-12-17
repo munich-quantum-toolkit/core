@@ -1024,7 +1024,16 @@ def BarrierOp : QCOOp<"barrier", traits = [UnitaryOpInterface]> {
 def YieldOp : QCOOp<"yield", traits = [Terminator]> {
     let summary = "Yield from a modifier region";
     let description = [{
-        Terminates a modifier region, yielding control back to the enclosing operation.
+        Terminates a modifier region, yielding the transformed target qubits back to the enclosing modifier operation.
+        The targets must match the expected output signature of the modifier region.
+
+        Example:
+        ```mlir
+        %ctrl_q_out, %tgt_q_out = qco.ctrl(%ctrl_q_in) %tgt_q_in {
+            %tgt_q_res = qco.h %tgt_q_in : !qco.qubit -> !qco.qubit
+            qco.yield %tgt_q_res : !qco.qubit
+        } : ({!qco.qubit}, {!qco.qubit}) -> ({!qco.qubit}, {!qco.qubit})
+        ```
     }];
 
     let arguments = (ins Variadic<QubitType>:$targets);
@@ -1053,8 +1062,8 @@ def CtrlOp : QCOOp<"ctrl", traits =
         Example:
         ```mlir
         %ctrl_q_out, %tgt_q_out = qco.ctrl(%ctrl_q_in) %tgt_q_in {
-            %tgt_q_out = qco.h %tgt_q_in : !qco.qubit -> !qco.qubit
-            qco.yield %tgt_q_out : !qco.qubit
+            %tgt_q_res = qco.h %tgt_q_in : !qco.qubit -> !qco.qubit
+            qco.yield %tgt_q_res : !qco.qubit
         } : ({!qco.qubit}, {!qco.qubit}) -> ({!qco.qubit}, {!qco.qubit})
         ```
     }];
