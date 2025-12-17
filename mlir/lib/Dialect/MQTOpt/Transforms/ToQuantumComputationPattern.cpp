@@ -39,7 +39,7 @@
 
 namespace mqt::ir::opt {
 
-static bool isQubitType(const mlir::MemRefType type) {
+static bool isQubitType(mlir::MemRefType type) {
   return llvm::isa<QubitType>(type.getElementType());
 }
 
