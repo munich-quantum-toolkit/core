@@ -140,10 +140,32 @@ int main(int argc, char** argv) {
   config.printIRAfterAllStages = PRINT_IR_AFTER_ALL_STAGES;
 
   // Run the compilation pipeline
+  CompilationRecord record;
   if (const QuantumCompilerPipeline pipeline(config);
-      pipeline.runPipeline(module.get()).failed()) {
+      pipeline
+          .runPipeline(module.get(), RECORD_INTERMEDIATES ? &record : nullptr)
+          .failed()) {
     errs() << "Compilation pipeline failed\n";
     return 1;
+  }
+
+  if (RECORD_INTERMEDIATES) {
+    outs() << "=== Compilation Record ===\n";
+    outs() << "After QC Import:\n" << record.afterQCImport << "\n";
+    outs() << "After QC Canonicalization:\n"
+           << record.afterInitialCanon << "\n";
+    outs() << "After QC-to-QCO Conversion:\n"
+           << record.afterQCOConversion << "\n";
+    outs() << "After QCO Canonicalization:\n" << record.afterQCOCanon << "\n";
+    outs() << "After Optimization:\n" << record.afterOptimization << "\n";
+    outs() << "After QCO Canonicalization:\n"
+           << record.afterOptimizationCanon << "\n";
+    outs() << "After QCO-to-QC Conversion:\n"
+           << record.afterQCConversion << "\n";
+    outs() << "After QC Canonicalization:\n" << record.afterQCCanon << "\n";
+    outs() << "After QC-to-QIR Conversion:\n"
+           << record.afterQIRConversion << "\n";
+    outs() << "After QIR Canonicalization:\n" << record.afterQIRCanon << "\n";
   }
 
   // Write the output
