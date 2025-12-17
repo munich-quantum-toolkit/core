@@ -129,12 +129,12 @@ private:
  * @param numParams The number of parameters
  * @return LogicalResult Success or failure of the conversion
  */
-template <typename QCOpType, typename QCOpAdaptorType>
-static LogicalResult
-convertUnitaryToCallOp(QCOpType& op, QCOpAdaptorType& adaptor,
-                       ConversionPatternRewriter& rewriter, MLIRContext* ctx,
-                       LoweringState& state, StringRef fnName,
-                       size_t numTargets, size_t numParams) {
+static template <typename QCOpType, typename QCOpAdaptorType>
+LogicalResult convertUnitaryToCallOp(QCOpType& op, QCOpAdaptorType& adaptor,
+                                     ConversionPatternRewriter& rewriter,
+                                     MLIRContext* ctx, LoweringState& state,
+                                     StringRef fnName, size_t numTargets,
+                                     size_t numParams) {
   // Query state for modifier information
   const auto inCtrlOp = state.inCtrlOp;
   const SmallVector<Value> posCtrls =
@@ -431,7 +431,9 @@ struct ConvertQCMeasureQIR final : StatefulOpConversionPattern<MeasureOp> {
     } else {
       // Choose a safe default register name
       StringRef defaultRegName = "c";
-      if (state.registerStartIndexMap.contains("c")) {
+      if (llvm::any_of(registerResultMap, [](const auto& entry) {
+            return entry.first.first == "c";
+          })) {
         defaultRegName = "__unnamed__";
       }
       // No register info, check if ptr has already been allocated (as a Qubit)
