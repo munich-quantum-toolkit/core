@@ -46,12 +46,12 @@ class Device final {
                      std::unique_ptr<MQT_DDSIM_QDMI_Device_Session_impl_d>>
       sessions_;
   /// Mutex protecting access to sessions_.
-  mutable std::mutex sessionsMutex_{};
+  mutable std::mutex sessionsMutex_;
 
   /// RNG for generating unique IDs.
   std::mt19937_64 rng_{std::random_device{}()};
   /// Mutex protecting RNG usage.
-  mutable std::mutex rngMutex_{};
+  mutable std::mutex rngMutex_;
 
   /// Distribution for generating unique IDs.
   std::uniform_int_distribution<> dis_ =
@@ -63,9 +63,6 @@ class Device final {
   /// @brief Private constructor to enforce the singleton pattern.
   Device();
 
-  /// @brief The singleton instance.
-  static std::atomic<Device*> instance;
-
 public:
   // Default move constructor and move assignment operator.
   Device(Device&&) = delete;
@@ -76,19 +73,6 @@ public:
 
   /// @brief Destructor for the Device class.
   ~Device() = default;
-
-  /**
-   * @brief Initializes the singleton instance.
-   * @details Must be called before `get()`.
-   */
-  static void initialize();
-
-  /**
-   * @brief Destroys the singleton instance.
-   * @details After this call, `get()` must not be called until a new
-   * `initialize()` call.
-   */
-  static void finalize();
 
   /// @returns the singleton instance of the Device class.
   [[nodiscard]] static auto get() -> Device&;
@@ -143,7 +127,7 @@ private:
                      std::unique_ptr<MQT_DDSIM_QDMI_Device_Job_impl_d>>
       jobs_;
   /// @brief Mutex protecting access to jobs_.
-  mutable std::mutex jobsMutex_{};
+  mutable std::mutex jobsMutex_;
 
 public:
   /**

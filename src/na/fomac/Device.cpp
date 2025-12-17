@@ -12,7 +12,7 @@
 
 #include "fomac/FoMaC.hpp"
 #include "ir/Definitions.hpp"
-#include "na/device/Generator.hpp"
+#include "qdmi/na/Generator.hpp"
 
 #include <algorithm>
 #include <array>
@@ -38,12 +38,12 @@
 namespace na {
 namespace {
 /**
- * @brief Calculate the rectangular extent covering all given FoMaC sites.
- * @param sites is a vector of FoMaC sites
+ * @brief Calculate the rectangular extent covering all given Session sites.
+ * @param sites is a vector of Session sites
  * @return the extent covering all given sites
  */
 auto calculateExtentFromSites(
-    const std::vector<fomac::FoMaC::Device::Site>& sites) -> Device::Region {
+    const std::vector<fomac::Session::Device::Site>& sites) -> Device::Region {
   auto minX = std::numeric_limits<int64_t>::max();
   auto maxX = std::numeric_limits<int64_t>::min();
   auto minY = std::numeric_limits<int64_t>::max();
@@ -61,13 +61,14 @@ auto calculateExtentFromSites(
                    .height = static_cast<uint64_t>(maxY - minY)}};
 }
 /**
- * @brief Calculate the rectangular extent covering all given FoMaC site pairs.
- * @param sitePairs is a vector of FoMaC site pairs
+ * @brief Calculate the rectangular extent covering all given Session site
+ * pairs.
+ * @param sitePairs is a vector of Session site pairs
  * @return the extent covering all sites in the pairs
  */
 auto calculateExtentFromSites(
-    const std::vector<std::pair<fomac::FoMaC::Device::Site,
-                                fomac::FoMaC::Device::Site>>& sitePairs)
+    const std::vector<std::pair<fomac::Session::Device::Site,
+                                fomac::Session::Device::Site>>& sitePairs)
     -> Device::Region {
   auto minX = std::numeric_limits<int64_t>::max();
   auto maxX = std::numeric_limits<int64_t>::min();
@@ -109,8 +110,8 @@ public:
   }
 };
 } // namespace
-auto FoMaC::Device::initNameFromDevice() -> void { name = getName(); }
-auto FoMaC::Device::initMinAtomDistanceFromDevice() -> bool {
+auto Session::Device::initNameFromDevice() -> void { name = getName(); }
+auto Session::Device::initMinAtomDistanceFromDevice() -> bool {
   const auto& d = getMinAtomDistance();
   if (!d.has_value()) {
     SPDLOG_INFO("Minimal atom distance not set");
@@ -119,11 +120,11 @@ auto FoMaC::Device::initMinAtomDistanceFromDevice() -> bool {
   minAtomDistance = *d;
   return true;
 }
-auto FoMaC::Device::initQubitsNumFromDevice() -> void {
+auto Session::Device::initQubitsNumFromDevice() -> void {
   numQubits = getQubitsNum();
 }
-auto FoMaC::Device::initLengthUnitFromDevice() -> bool {
-  const auto& u = fomac::FoMaC::Device::getLengthUnit();
+auto Session::Device::initLengthUnitFromDevice() -> bool {
+  const auto& u = fomac::Session::Device::getLengthUnit();
   if (!u.has_value()) {
     SPDLOG_INFO("Length unit not set");
     return false;
@@ -132,8 +133,8 @@ auto FoMaC::Device::initLengthUnitFromDevice() -> bool {
   lengthUnit.scaleFactor = getLengthScaleFactor().value_or(1.0);
   return true;
 }
-auto FoMaC::Device::initDurationUnitFromDevice() -> bool {
-  const auto& u = fomac::FoMaC::Device::getDurationUnit();
+auto Session::Device::initDurationUnitFromDevice() -> bool {
+  const auto& u = fomac::Session::Device::getDurationUnit();
   if (!u.has_value()) {
     SPDLOG_INFO("Duration unit not set");
     return false;
@@ -142,7 +143,7 @@ auto FoMaC::Device::initDurationUnitFromDevice() -> bool {
   durationUnit.scaleFactor = getDurationScaleFactor().value_or(1.0);
   return true;
 }
-auto FoMaC::Device::initDecoherenceTimesFromDevice() -> bool {
+auto Session::Device::initDecoherenceTimesFromDevice() -> bool {
   const auto regularSites = getRegularSites();
   if (regularSites.empty()) {
     SPDLOG_INFO("Device has no regular sites with decoherence data");
@@ -169,7 +170,7 @@ auto FoMaC::Device::initDecoherenceTimesFromDevice() -> bool {
   decoherenceTimes.t2 = sumT2 / count;
   return true;
 }
-auto FoMaC::Device::initTrapsfromDevice() -> bool {
+auto Session::Device::initTrapsfromDevice() -> bool {
   traps.clear();
   const auto regularSites = getRegularSites();
   if (regularSites.empty()) {
@@ -293,13 +294,13 @@ auto FoMaC::Device::initTrapsfromDevice() -> bool {
   }
   return true;
 }
-auto FoMaC::Device::initOperationsFromDevice() -> bool {
+auto Session::Device::initOperationsFromDevice() -> bool {
   std::map<size_t, std::pair<ShuttlingUnit, std::array<bool, 3>>>
       shuttlingUnitsPerId;
-  for (const fomac::FoMaC::Device::Operation& op : getOperations()) {
+  for (const fomac::Session::Device::Operation& op : getOperations()) {
     const auto zoned = op.isZoned();
     const auto& nq = op.getQubitsNum();
-    const auto& name = op.getName();
+    const auto& opName = op.getName();
     const auto& sitesOpt = op.getSites();
     if (!sitesOpt.has_value() || sitesOpt->empty()) {
       SPDLOG_INFO("Operation missing sites");
@@ -307,7 +308,7 @@ auto FoMaC::Device::initOperationsFromDevice() -> bool {
     }
     if (zoned) {
       if (std::ranges::any_of(
-              *sitesOpt, [](const fomac::FoMaC::Device::Site& site) -> bool {
+              *sitesOpt, [](const fomac::Session::Device::Site& site) -> bool {
                 return !site.isZone();
               })) {
         SPDLOG_INFO("Operation marked as zoned but has non-zone sites");
@@ -343,7 +344,7 @@ auto FoMaC::Device::initOperationsFromDevice() -> bool {
       if (!nq.has_value()) {
         // shuttling operations
         std::smatch match;
-        if (std::regex_match(name, match, std::regex("load<(\\d+)>"))) {
+        if (std::regex_match(opName, match, std::regex("load<(\\d+)>"))) {
           const auto id = std::stoul(match[1]);
           const auto& d = op.getDuration();
           if (!d.has_value()) {
@@ -380,7 +381,8 @@ auto FoMaC::Device::initOperationsFromDevice() -> bool {
           }
           unit.loadDuration = *d;
           unit.loadFidelity = *f;
-        } else if (std::regex_match(name, match, std::regex("move<(\\d+)>"))) {
+        } else if (std::regex_match(opName, match,
+                                    std::regex("move<(\\d+)>"))) {
           const auto id = std::stoul(match[1]);
           const auto& speed = op.getMeanShuttlingSpeed();
           if (!speed.has_value()) {
@@ -411,7 +413,8 @@ auto FoMaC::Device::initOperationsFromDevice() -> bool {
             }
           }
           unit.meanShuttlingSpeed = *speed;
-        } else if (std::regex_match(name, match, std::regex("store<(\\d+)>"))) {
+        } else if (std::regex_match(opName, match,
+                                    std::regex("store<(\\d+)>"))) {
           const auto id = std::stoul(match[1]);
           const auto& d = op.getDuration();
           if (!d.has_value()) {
@@ -466,7 +469,7 @@ auto FoMaC::Device::initOperationsFromDevice() -> bool {
         if (*nq == 1) {
           // zoned single-qubit operations
           globalSingleQubitOperations.emplace_back(GlobalSingleQubitOperation{
-              {.name = name,
+              {.name = opName,
                .region = region,
                .duration = *d,
                .fidelity = *f,
@@ -489,7 +492,7 @@ auto FoMaC::Device::initOperationsFromDevice() -> bool {
             return false;
           }
           globalMultiQubitOperations.emplace_back(GlobalMultiQubitOperation{
-              {.name = name,
+              {.name = opName,
                .region = region,
                .duration = *d,
                .fidelity = *f,
@@ -520,7 +523,7 @@ auto FoMaC::Device::initOperationsFromDevice() -> bool {
       const auto region = calculateExtentFromSites(*sitesOpt);
       if (*nq == 1) {
         localSingleQubitOperations.emplace_back(LocalSingleQubitOperation{
-            {.name = name,
+            {.name = opName,
              .region = region,
              .duration = *d,
              .fidelity = *f,
@@ -545,7 +548,7 @@ auto FoMaC::Device::initOperationsFromDevice() -> bool {
           return false;
         }
         localMultiQubitOperations.emplace_back(
-            LocalMultiQubitOperation{{.name = name,
+            LocalMultiQubitOperation{{.name = opName,
                                       .region = pairRegion,
                                       .duration = *d,
                                       .fidelity = *f,
@@ -573,11 +576,12 @@ auto FoMaC::Device::initOperationsFromDevice() -> bool {
   }
   return true;
 }
-FoMaC::Device::Device(const fomac::FoMaC::Device& device)
-    : fomac::FoMaC::Device(device) {}
-auto FoMaC::getDevices() -> std::vector<Device> {
+Session::Device::Device(const fomac::Session::Device& device)
+    : fomac::Session::Device(device) {}
+auto Session::getDevices() -> std::vector<Device> {
   std::vector<Device> devices;
-  for (const auto& d : fomac::FoMaC::getDevices()) {
+  fomac::Session session;
+  for (const auto& d : session.getDevices()) {
     if (auto r = Device::tryCreateFromDevice(d); r.has_value()) {
       devices.emplace_back(r.value());
     }

@@ -13,12 +13,13 @@
 #include "mlir/Dialect/MQTOpt/Transforms/Transpilation/Architecture.h"
 #include "mlir/Dialect/MQTOpt/Transforms/Transpilation/Common.h"
 #include "mlir/Dialect/MQTOpt/Transforms/Transpilation/Layout.h"
-#include "mlir/Dialect/MQTOpt/Transforms/Transpilation/Stack.h"
+#include "mlir/Dialect/MQTOpt/Transforms/Transpilation/SequentialUnit.h"
 
 #include <cassert>
-#include <cstddef>
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/TypeSwitch.h>
+#include <llvm/Support/Debug.h>
+#include <llvm/Support/LogicalResult.h>
 #include <memory>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
@@ -30,8 +31,8 @@
 #include <mlir/IR/Visitors.h>
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/WalkResult.h>
+#include <queue>
 #include <utility>
-#include <vector>
 
 #define DEBUG_TYPE "routing-verification-sc"
 
@@ -44,183 +45,8 @@ namespace {
 using namespace mlir;
 
 /**
- * @brief The necessary datastructures for verification.
- */
-struct VerificationContext {
-  explicit VerificationContext(std::unique_ptr<Architecture> arch)
-      : arch(std::move(arch)) {}
-
-  std::unique_ptr<Architecture> arch;
-  LayoutStack<Layout> stack{};
-};
-
-/**
- * @brief Push new state onto the stack. Skip non entry-point functions.
- */
-WalkResult handleFunc(func::FuncOp op, VerificationContext& ctx) {
-  if (!isEntryPoint(op)) {
-    return WalkResult::skip();
-  }
-
-  /// Function body state.
-  ctx.stack.emplace(ctx.arch->nqubits());
-
-  return WalkResult::advance();
-}
-
-/**
- * @brief Defines the end of a region: Pop the top of the stack.
- */
-WalkResult handleReturn(VerificationContext& ctx) {
-  ctx.stack.pop();
-  return WalkResult::advance();
-}
-
-/**
- * @brief Prepares state for nested regions: Pushes a copy of the state on
- * the stack. Forwards all out-of-loop and in-loop SSA values for their
- * respective map in the stack.
- */
-WalkResult handleFor(scf::ForOp op, VerificationContext& ctx) {
-  /// Loop body state.
-  ctx.stack.duplicateTop();
-
-  /// Forward out-of-loop and in-loop values.
-  const auto initArgs = op.getInitArgs().take_front(ctx.arch->nqubits());
-  const auto results = op.getResults().take_front(ctx.arch->nqubits());
-  const auto iterArgs = op.getRegionIterArgs().take_front(ctx.arch->nqubits());
-  for (const auto [arg, res, iter] : llvm::zip(initArgs, results, iterArgs)) {
-    ctx.stack.getItemAtDepth(FOR_PARENT_DEPTH).remapQubitValue(arg, res);
-    ctx.stack.top().remapQubitValue(arg, iter);
-  }
-
-  return WalkResult::advance();
-}
-
-/**
- * @brief Prepares state for nested regions: Pushes two copies of the state on
- * the stack. Forwards the results in the parent state.
- */
-WalkResult handleIf(scf::IfOp op, VerificationContext& ctx) {
-  /// Prepare stack.
-  ctx.stack.duplicateTop(); /// Else
-  ctx.stack.duplicateTop(); /// Then.
-
-  /// Forward results for all hardware qubits.
-  const auto results = op->getResults().take_front(ctx.arch->nqubits());
-  Layout& stateBeforeIf = ctx.stack.getItemAtDepth(IF_PARENT_DEPTH);
-  for (const auto [hardwareIdx, res] : llvm::enumerate(results)) {
-    const Value q = stateBeforeIf.lookupHardwareValue(hardwareIdx);
-    stateBeforeIf.remapQubitValue(q, res);
-  }
-
-  return WalkResult::advance();
-}
-
-/**
- * @brief Defines the end of a nested region: Pop the top of the stack.
- */
-WalkResult handleYield(scf::YieldOp op, VerificationContext& ctx) {
-  if (isa<scf::ForOp>(op->getParentOp()) || isa<scf::IfOp>(op->getParentOp())) {
-    assert(ctx.stack.size() >= 2 && "expected at least two elements on stack.");
-
-    if (!llvm::equal(ctx.stack.top().getCurrentLayout(),
-                     ctx.stack.getItemAtDepth(1).getCurrentLayout())) {
-      return op.emitOpError() << "layouts must match after restoration";
-    }
-
-    ctx.stack.pop();
-  }
-  return WalkResult::advance();
-}
-
-/**
- * @brief Add hardware qubit with respective program & hardware index to layout.
- */
-WalkResult handleQubit(QubitOp op, VerificationContext& ctx) {
-  const std::size_t index = op.getIndex();
-  ctx.stack.top().add(index, index, op.getQubit());
-  return WalkResult::advance();
-}
-
-/**
- * @brief Verifies if the unitary acts on either zero, one, or two qubits:
- * - Advances for zero qubit unitaries (Nothing to do)
- * - Forwards SSA values for one qubit.
- * - Verifies executability for two-qubit gates for the given architecture and
- *   forwards SSA values.
- */
-WalkResult handleUnitary(UnitaryInterface op, VerificationContext& ctx) {
-  const std::vector<Value> inQubits = op.getAllInQubits();
-  const std::vector<Value> outQubits = op.getAllOutQubits();
-  const std::size_t nacts = inQubits.size();
-
-  if (nacts == 0) {
-    return WalkResult::advance();
-  }
-
-  if (isa<BarrierOp>(op)) {
-    for (const auto [in, out] : llvm::zip(inQubits, outQubits)) {
-      ctx.stack.top().remapQubitValue(in, out);
-    }
-    return WalkResult::advance();
-  }
-
-  if (nacts > 2) {
-    return op->emitOpError() << "acts on more than two qubits";
-  }
-
-  const Value in0 = inQubits[0];
-  const Value out0 = outQubits[0];
-
-  Layout& state = ctx.stack.top();
-
-  if (nacts == 1) {
-    state.remapQubitValue(in0, out0);
-    return WalkResult::advance();
-  }
-
-  const Value in1 = inQubits[1];
-  const Value out1 = outQubits[1];
-
-  const auto idx0 = state.lookupHardwareIndex(in0);
-  const auto idx1 = state.lookupHardwareIndex(in1);
-
-  if (!ctx.arch->areAdjacent(idx0, idx1)) {
-    return op->emitOpError() << "(" << idx0 << "," << idx1 << ")"
-                             << " is not executable on target architecture '"
-                             << ctx.arch->name() << "'";
-  }
-
-  if (isa<SWAPOp>(op)) {
-    state.swap(in0, in1);
-  }
-
-  state.remapQubitValue(in0, out0);
-  state.remapQubitValue(in1, out1);
-
-  return WalkResult::advance();
-}
-
-/**
- * @brief Update layout.
- */
-WalkResult handleReset(ResetOp op, VerificationContext& ctx) {
-  ctx.stack.top().remapQubitValue(op.getInQubit(), op.getOutQubit());
-  return WalkResult::advance();
-}
-
-/**
- * @brief Update layout.
- */
-WalkResult handleMeasure(MeasureOp op, VerificationContext& ctx) {
-  ctx.stack.top().remapQubitValue(op.getInQubit(), op.getOutQubit());
-  return WalkResult::advance();
-}
-
-/**
- * @brief This pass verifies that the constraints of a target architecture are
- * met.
+ * @brief This pass verifies that all two-qubit gates are executable on the
+ * target architecture.
  */
 struct RoutingVerificationPassSC final
     : impl::RoutingVerificationSCPassBase<RoutingVerificationPassSC> {
@@ -228,59 +54,103 @@ struct RoutingVerificationPassSC final
       RoutingVerificationPassSC>::RoutingVerificationSCPassBase;
 
   void runOnOperation() override {
-    if (preflight().failed()) {
+    if (failed(preflight())) {
       signalPassFailure();
       return;
     }
 
-    auto arch = getArchitecture(archName);
-    if (!arch) {
-      emitError(UnknownLoc::get(&getContext()))
-          << "unsupported architecture '" << archName << "'";
+    if (failed(verify())) {
       signalPassFailure();
       return;
-    }
-
-    VerificationContext ctx(std::move(arch));
-    const auto res =
-        getOperation()->walk<WalkOrder::PreOrder>([&](Operation* op) {
-          return TypeSwitch<Operation*, WalkResult>(op)
-              /// built-in Dialect
-              .Case<ModuleOp>(
-                  [&](ModuleOp /* op */) { return WalkResult::advance(); })
-              /// func Dialect
-              .Case<func::FuncOp>(
-                  [&](func::FuncOp op) { return handleFunc(op, ctx); })
-              .Case<func::ReturnOp>(
-                  [&](func::ReturnOp /* op */) { return handleReturn(ctx); })
-              /// scf Dialect
-              .Case<scf::ForOp>(
-                  [&](scf::ForOp op) { return handleFor(op, ctx); })
-              .Case<scf::IfOp>([&](scf::IfOp op) { return handleIf(op, ctx); })
-              .Case<scf::YieldOp>(
-                  [&](scf::YieldOp op) { return handleYield(op, ctx); })
-              /// mqtopt Dialect
-              .Case<QubitOp>([&](QubitOp op) { return handleQubit(op, ctx); })
-              .Case<AllocQubitOp, DeallocQubitOp>([&](auto op) {
-                return WalkResult(
-                    op->emitOpError("not allowed for transpiled program"));
-              })
-              .Case<ResetOp>([&](ResetOp op) { return handleReset(op, ctx); })
-              .Case<MeasureOp>(
-                  [&](MeasureOp op) { return handleMeasure(op, ctx); })
-              .Case<UnitaryInterface>([&](UnitaryInterface unitary) {
-                return handleUnitary(unitary, ctx);
-              })
-              /// Skip the rest.
-              .Default([](auto) { return WalkResult::skip(); });
-        });
-
-    if (res.wasInterrupted()) {
-      signalPassFailure();
     }
   }
 
 private:
+  LogicalResult verify() {
+    ModuleOp module(getOperation());
+    std::unique_ptr<Architecture> arch(getArchitecture(archName));
+
+    if (!arch) {
+      const Location loc = UnknownLoc::get(&getContext());
+      emitError(loc) << "unsupported architecture '" << archName << "'";
+      return failure();
+    }
+
+    for (auto func : module.getOps<func::FuncOp>()) {
+      LLVM_DEBUG(llvm::dbgs() << "handleFunc: " << func.getSymName() << '\n');
+
+      if (!isEntryPoint(func)) {
+        LLVM_DEBUG(llvm::dbgs() << "\tskip non entry\n");
+        continue;
+      }
+
+      /// Iteratively process each unit in the function.
+      std::queue<SequentialUnit> units;
+      units.emplace(
+          SequentialUnit::fromEntryPointFunction(func, arch->nqubits()));
+      for (; !units.empty(); units.pop()) {
+        SequentialUnit& unit = units.front();
+
+        Layout unmodified(unit.layout());
+        for (const Operation& curr : unit) {
+          const auto res =
+              TypeSwitch<const Operation*, LogicalResult>(&curr)
+                  .Case<UnitaryInterface>([&](UnitaryInterface op)
+                                              -> LogicalResult {
+                    if (isTwoQubitGate(op)) {
+                      /// Verify that the two-qubit gate is executable.
+                      if (!arch->isExecutable(op, unit.layout())) {
+                        const auto ins = getIns(op);
+                        const auto hw0 =
+                            unit.layout().lookupHardwareIndex(ins.first);
+                        const auto hw1 =
+                            unit.layout().lookupHardwareIndex(ins.second);
+
+                        return op->emitOpError()
+                               << "(" << hw0 << "," << hw1 << ")"
+                               << " is not executable on target architecture '"
+                               << arch->name() << "'";
+                      }
+                    }
+
+                    unit.layout().remap(op);
+                    return success();
+                  })
+                  .Case<ResetOp>([&](ResetOp op) {
+                    unit.layout().remap(op);
+                    return success();
+                  })
+                  .Case<MeasureOp>([&](MeasureOp op) {
+                    unit.layout().remap(op);
+                    return success();
+                  })
+                  .Case<scf::YieldOp>([&](scf::YieldOp op) -> LogicalResult {
+                    /// Verify that the layouts match at the end.
+                    const auto mappingBefore = unmodified.getCurrentLayout();
+                    const auto mappingNow = unit.layout().getCurrentLayout();
+                    if (llvm::equal(mappingBefore, mappingNow)) {
+                      return success();
+                    }
+
+                    return op.emitOpError()
+                           << "layouts must match after restoration";
+                  })
+                  .Default([](auto) { return success(); });
+
+          if (failed(res)) {
+            return res;
+          }
+        }
+
+        for (const auto& next : unit.next()) {
+          units.emplace(next);
+        }
+      }
+    }
+
+    return success();
+  }
+
   LogicalResult preflight() {
     if (archName.empty()) {
       return emitError(UnknownLoc::get(&getContext()),

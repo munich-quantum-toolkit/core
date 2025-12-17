@@ -4,12 +4,60 @@ This document describes breaking changes and how to upgrade. For a complete list
 
 ## [Unreleased]
 
+### QDMI-Qiskit integration
+
+This release introduces a Qiskit `BackendV2`-compatible interface to QDMI devices.
+The `mqt.core.plugins.qiskit` module has been extended with `QDMIProvider`, `QDMIBackend`, and `QDMIJob` classes that allow running Qiskit circuits on QDMI-compliant devices.
+
+Users can now execute Qiskit circuits directly on QDMI devices:
+
+```python
+from mqt.core.plugins.qiskit import QDMIProvider
+
+provider = QDMIProvider()
+backend = provider.get_backend("MQT Core DDSIM QDMI Device")
+job = backend.run(circuit, shots=1024)
+result = job.result()
+```
+
+The backend automatically converts circuits to QASM, introspects device capabilities, validates circuits, and formats results.
+The existing FoMaC interface (`mqt.core.fomac`) remains fully supported for direct, low-level access to QDMI devices.
+
+Install with Qiskit support: `pip install "mqt-core[qiskit]"`
+
+See the [Qiskit Backend documentation](https://mqt.readthedocs.io/projects/core/en/latest/qdmi/qiskit_backend.html) for details.
+
+### Argument name changes in `QuantumComputation` and `CompoundOperation` dunder methods
+
+Since we enabled `ty` for type checking, it revealed that some of the dunder methods of `QuantumComputation` and `CompoundOperation` had incorrect argument names, which would prevent these classes from properly implementing the `MutableSequence` protocol.
+This release fixes these issues by renaming the arguments of the following methods:
+
+- `QuantumComputation.__getitem__`
+- `QuantumComputation.__setitem__`
+- `QuantumComputation.__delitem__`
+- `QuantumComputation.insert`
+- `QuantumComputation.append`
+- `CompoundOperation.__getitem__`
+- `CompoundOperation.__setitem__`
+- `CompoundOperation.__delitem__`
+- `CompoundOperation.insert`
+- `CompoundOperation.append`
+
+All index arguments are now named `index` instead of `idx` (or `i` or `slice`) and all values are now named `value` instead of `val` (or `op` or `ops`).
+
 ### DD Package evaluation
 
 This release moves the DD Package evaluation functionality from within the `mqt.core` package to a dedicated script in the `eval` directory.
 In the process, the `mqt-core-dd-compare` entry point as well as the `evaluation` extra have been removed.
 The `eval/dd_evaluation.py` script acts as a drop-in replacement for the previous CLI entry point.
 Since the `eval` directory is not part of the Python package, this functionality is only available via source installations or by cloning the repository.
+
+### Removal of Python 3.13t wheels
+
+Free-threading Python was introduced as an experimental feature in Python 3.13.
+It became stable in Python 3.14.
+To conserve space on PyPI and to reduce the CD build times, we have removed all wheels for Python 3.13t from our CI.
+We continue to provide wheels for the regular Python versions 3.10 to 3.14, as well as 3.14t.
 
 ## [3.3.0]
 
@@ -61,7 +109,7 @@ Instead of `OpType("x")`, use `OpType.x`.
 The shared library ABI version (`SOVERSION`) is increased from `3.0` to `3.1`.
 Thus, consuming libraries need to update their wheel repair configuration for `cibuildwheel` to ensure the `mqt-core` libraries are properly skipped in the wheel repair step.
 
-Even tough this is not a breaking change, it is worth mentioning to developers of MQT Core that all Python code (except tests) has been moved to the top-level `python` directory.
+Even though this is not a breaking change, it is worth mentioning to developers of MQT Core that all Python code (except tests) has been moved to the top-level `python` directory.
 Furthermore, the C++ code for the Python bindings has been moved to the top-level `bindings` directory.
 
 ### DD Package

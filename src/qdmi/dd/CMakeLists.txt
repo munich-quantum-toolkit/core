@@ -41,8 +41,7 @@ if(NOT TARGET ${TARGET_NAME})
   target_link_libraries(
     ${TARGET_NAME}
     PUBLIC qdmi::qdmi
-    PRIVATE MQT::CoreDD MQT::CoreQASM MQT::CoreCircuitOptimizer MQT::ProjectOptions
-            MQT::ProjectWarnings spdlog::spdlog)
+    PRIVATE MQT::CoreDD MQT::CoreQASM MQT::CoreCircuitOptimizer MQT::CoreQDMICommon spdlog::spdlog)
 
   # Always compile with position independent code such that the library can be used in shared
   # libraries

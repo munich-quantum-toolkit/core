@@ -8,7 +8,7 @@
  * Licensed under the MIT License
  */
 
-#include "na/device/Generator.hpp"
+#include "qdmi/na/Generator.hpp"
 
 #include <gtest/gtest.h>
 #include <sstream>
@@ -41,7 +41,7 @@ auto testPopulation(const nlohmann::json& json) -> void {
 }
 } // namespace
 
-TEST(GeneratorTest, WriteJSONSchema) {
+TEST(NaGeneratorTest, WriteJSONSchema) {
   std::ostringstream os;
   EXPECT_NO_THROW(writeJSONSchema(os));
   // clang-tidy wants to include the forward header, but we have the full
@@ -53,7 +53,7 @@ TEST(GeneratorTest, WriteJSONSchema) {
   testPopulation(json);
 }
 
-TEST(GeneratorTest, DurationUnitNanosecond) {
+TEST(NaGeneratorTest, DurationUnitNanosecond) {
   std::istringstream is(R"({
   "durationUnit": {
     "scaleFactor": 5,
@@ -66,7 +66,7 @@ TEST(GeneratorTest, DurationUnitNanosecond) {
   EXPECT_EQ(device.durationUnit.unit, "ns");
 }
 
-TEST(GeneratorTest, DurationUnitInvalid) {
+TEST(NaGeneratorTest, DurationUnitInvalid) {
   std::istringstream is(R"({
   "durationUnit": {
     "scaleFactor": 1,
@@ -76,7 +76,7 @@ TEST(GeneratorTest, DurationUnitInvalid) {
   EXPECT_THROW(std::ignore = readJSON(is), std::runtime_error);
 }
 
-TEST(GeneratorTest, LengthUnitNanometer) {
+TEST(NaGeneratorTest, LengthUnitNanometer) {
   std::istringstream is(R"({
   "lengthUnit": {
     "scaleFactor": 5,
@@ -89,7 +89,7 @@ TEST(GeneratorTest, LengthUnitNanometer) {
   EXPECT_EQ(device.lengthUnit.unit, "nm");
 }
 
-TEST(GeneratorTest, LengthUnitInvalid) {
+TEST(NaGeneratorTest, LengthUnitInvalid) {
   std::istringstream is(R"({
   "lengthUnit": {
     "scaleFactor": 1,
