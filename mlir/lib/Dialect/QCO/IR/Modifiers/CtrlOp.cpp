@@ -36,15 +36,15 @@ struct MergeNestedCtrl final : OpRewritePattern<CtrlOp> {
 
   LogicalResult matchAndRewrite(CtrlOp op,
                                 PatternRewriter& rewriter) const override {
-    auto bodyCtrlOp =
-        llvm::dyn_cast<CtrlOp>(op.getBodyUnitary().getOperation());
-    if (!bodyCtrlOp) {
+    // Require at least one positive control
+    // Trivial case is handled by RemoveTrivialCtrl
+    if (op.getNumPosControls() == 0) {
       return failure();
     }
 
-    // Require at least one positive control; otherwise let other patterns
-    // (e.g., RemoveTrivialCtrl) handle the trivial case.
-    if (op.getNumPosControls() == 0) {
+    auto bodyCtrlOp =
+        llvm::dyn_cast<CtrlOp>(op.getBodyUnitary().getOperation());
+    if (!bodyCtrlOp) {
       return failure();
     }
 
@@ -91,6 +91,12 @@ struct CtrlInlineGPhase final : OpRewritePattern<CtrlOp> {
 
   LogicalResult matchAndRewrite(CtrlOp op,
                                 PatternRewriter& rewriter) const override {
+    // Require at least one positive control
+    // Trivial case is handled by RemoveTrivialCtrl
+    if (op.getNumPosControls() == 0) {
+      return failure();
+    }
+
     auto gPhaseOp =
         llvm::dyn_cast<GPhaseOp>(op.getBodyUnitary().getOperation());
     if (!gPhaseOp) {
@@ -122,6 +128,12 @@ struct CtrlInlineId final : OpRewritePattern<CtrlOp> {
 
   LogicalResult matchAndRewrite(CtrlOp op,
                                 PatternRewriter& rewriter) const override {
+    // Require at least one positive control
+    // Trivial case is handled by RemoveTrivialCtrl
+    if (op.getNumPosControls() == 0) {
+      return failure();
+    }
+
     if (!llvm::isa<IdOp>(op.getBodyUnitary().getOperation())) {
       return failure();
     }

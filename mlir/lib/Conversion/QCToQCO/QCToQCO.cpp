@@ -364,15 +364,11 @@ convertTwoTargetZeroParameter(QCOpType& op, ConversionPatternRewriter& rewriter,
   // Create the QCO operation (consumes input, produces output)
   auto qcoOp = rewriter.create<QCOOpType>(op.getLoc(), qcoQubit0, qcoQubit1);
 
-  // Update state map
+  // Update the state map
   if (inCtrlOp == 0) {
-    assert(qubitMap.contains(qcQubit0) && "QC qubit not found");
-    assert(qubitMap.contains(qcQubit1) && "QC qubit not found");
     qubitMap[qcQubit0] = qcoOp.getQubit0Out();
     qubitMap[qcQubit1] = qcoOp.getQubit1Out();
   } else {
-    assert(state.targetsIn[inCtrlOp].size() == 2 &&
-           "Invalid number of input targets");
     state.targetsIn.erase(inCtrlOp);
     const SmallVector<Value> targetsOut(
         {qcoOp.getQubit0Out(), qcoOp.getQubit1Out()});
@@ -423,7 +419,7 @@ convertTwoTargetOneParameter(QCOpType& op, ConversionPatternRewriter& rewriter,
   auto qcoOp = rewriter.create<QCOOpType>(op.getLoc(), qcoQubit0, qcoQubit1,
                                           op.getParameter(0));
 
-  // Update state map
+  // Update the state map
   if (inCtrlOp == 0) {
     qubitMap[qcQubit0] = qcoOp.getQubit0Out();
     qubitMap[qcQubit1] = qcoOp.getQubit1Out();
@@ -479,7 +475,7 @@ convertTwoTargetTwoParameter(QCOpType& op, ConversionPatternRewriter& rewriter,
       rewriter.create<QCOOpType>(op.getLoc(), qcoQubit0, qcoQubit1,
                                  op.getParameter(0), op.getParameter(1));
 
-  // Update state map
+  // Update the state map
   if (inCtrlOp == 0) {
     qubitMap[qcQubit0] = qcoOp.getQubit0Out();
     qubitMap[qcQubit1] = qcoOp.getQubit1Out();
@@ -1050,7 +1046,7 @@ struct ConvertQCBarrierOp final : StatefulOpConversionPattern<qc::BarrierOp> {
     // Create qco.barrier
     auto qcoOp = rewriter.create<qco::BarrierOp>(op.getLoc(), qcoQubits);
 
-    // Update state map
+    // Update the state map
     for (const auto& [qcQubit, qcoQubitOut] :
          llvm::zip(qcQubits, qcoOp.getQubitsOut())) {
       qubitMap[qcQubit] = qcoQubitOut;
@@ -1112,7 +1108,7 @@ struct ConvertQCCtrlOp final : StatefulOpConversionPattern<qc::CtrlOp> {
     auto qcoOp =
         rewriter.create<qco::CtrlOp>(op.getLoc(), qcoControls, qcoTargets);
 
-    // Update state map if this is a top-level CtrlOp
+    // Update the state map if this is a top-level CtrlOp
     // Nested CtrlOps are managed via the targetsIn and targetsOut maps
     if (state.inCtrlOp == 0) {
       for (const auto& [qcControl, qcoControl] :

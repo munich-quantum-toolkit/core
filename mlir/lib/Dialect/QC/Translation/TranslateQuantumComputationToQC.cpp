@@ -244,7 +244,8 @@ static SmallVector<Value> getPosControls(const ::qc::Operation& operation,
   SmallVector<Value> controls;
   for (const auto& [control, type] : operation.getControls()) {
     if (type == ::qc::Control::Type::Neg) {
-      continue;
+      llvm::reportFatalInternalError(
+          "Negative controls cannot be translated to QC at the moment");
     }
     controls.push_back(qubits[control]);
   }

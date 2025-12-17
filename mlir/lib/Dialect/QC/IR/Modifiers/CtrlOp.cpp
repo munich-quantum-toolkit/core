@@ -82,15 +82,15 @@ struct CtrlInlineGPhase final : OpRewritePattern<CtrlOp> {
 
   LogicalResult matchAndRewrite(CtrlOp op,
                                 PatternRewriter& rewriter) const override {
-    auto gPhaseOp =
-        llvm::dyn_cast<GPhaseOp>(op.getBodyUnitary().getOperation());
-    if (!gPhaseOp) {
+    // Require at least one positive control
+    // Trivial case is handled by RemoveTrivialCtrl
+    if (op.getNumPosControls() == 0) {
       return failure();
     }
 
-    // Require at least one positive control; otherwise let other patterns
-    // (e.g., RemoveTrivialCtrl) handle the trivial case.
-    if (op.getNumPosControls() == 0) {
+    auto gPhaseOp =
+        llvm::dyn_cast<GPhaseOp>(op.getBodyUnitary().getOperation());
+    if (!gPhaseOp) {
       return failure();
     }
 

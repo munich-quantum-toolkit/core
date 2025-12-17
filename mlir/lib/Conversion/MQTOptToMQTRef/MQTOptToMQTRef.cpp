@@ -44,7 +44,7 @@ using namespace mlir;
 #define GEN_PASS_DEF_MQTOPTTOMQTREF
 #include "mlir/Conversion/MQTOptToMQTRef/MQTOptToMQTRef.h.inc"
 
-static bool isQubitType(const MemRefType type) {
+static bool isQubitType(MemRefType type) {
   return llvm::isa<opt::QubitType>(type.getElementType());
 }
 

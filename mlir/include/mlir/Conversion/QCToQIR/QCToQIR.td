@@ -37,9 +37,9 @@ def QCToQIR : Pass<"qc-to-qir"> {
       - Blocks are connected via unconditional branches in the order listed above.
       - Non-quantum dialects are lowered via MLIR's built-in conversions.
 
-     Producing LLVM IR:
-     - After conversion to the LLVM dialect, produce LLVM IR with:
-       mlir-translate --mlir-to-llvmir input.mlir > output.ll
+      Producing LLVM IR:
+      - After conversion to the LLVM dialect, produce LLVM IR with:
+        mlir-translate --mlir-to-llvmir input.mlir > output.ll
    }];
 
 

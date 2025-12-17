@@ -138,7 +138,7 @@ private:
 
 } // namespace
 
-static bool isQubitType(const MemRefType type) {
+static bool isQubitType(MemRefType type) {
   return llvm::isa<ref::QubitType>(type.getElementType());
 }
 
