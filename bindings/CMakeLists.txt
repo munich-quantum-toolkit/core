@@ -26,8 +26,6 @@ if(SKBUILD_STATE STREQUAL "editable")
     PYTHON_PATH
     ${CMAKE_INSTALL_PREFIX}/../..
     INCLUDE_PRIVATE
-    MARKER_FILE
-    ir/py.typed
     COMPONENT
     ${MQT_CORE_TARGET_NAME}_Python)
 
@@ -41,8 +39,6 @@ if(SKBUILD_STATE STREQUAL "editable")
     PYTHON_PATH
     ${CMAKE_INSTALL_PREFIX}/../..
     INCLUDE_PRIVATE
-    MARKER_FILE
-    py.typed
     COMPONENT
     ${MQT_CORE_TARGET_NAME}_Python)
 
@@ -56,8 +52,6 @@ if(SKBUILD_STATE STREQUAL "editable")
     PYTHON_PATH
     ${CMAKE_INSTALL_PREFIX}/../..
     INCLUDE_PRIVATE
-    MARKER_FILE
-    py.typed
     COMPONENT
     ${MQT_CORE_TARGET_NAME}_Python)
 
@@ -71,8 +65,6 @@ if(SKBUILD_STATE STREQUAL "editable")
     PYTHON_PATH
     ${CMAKE_INSTALL_PREFIX}/../..
     INCLUDE_PRIVATE
-    MARKER_FILE
-    na/py.typed
     COMPONENT
     ${MQT_CORE_TARGET_NAME}_Python)
 endif()
