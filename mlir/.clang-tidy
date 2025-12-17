@@ -1,6 +1,5 @@
 InheritParentConfig: true
 Checks: |
-  llvm-include-order,
   llvm-namespace-comment,
   llvm-prefer-isa-or-dyn-cast-in-conditionals,
   llvm-prefer-register-over-unsigned,
