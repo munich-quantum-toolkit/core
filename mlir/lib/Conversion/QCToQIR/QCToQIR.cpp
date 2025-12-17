@@ -112,6 +112,8 @@ private:
   LoweringState* state_;
 };
 
+} // namespace
+
 /**
  * @brief Helper to convert a QC operation to a LLVM CallOp
  *
@@ -128,11 +130,11 @@ private:
  * @return LogicalResult Success or failure of the conversion
  */
 template <typename QCOpType, typename QCOpAdaptorType>
-LogicalResult convertUnitaryToCallOp(QCOpType& op, QCOpAdaptorType& adaptor,
-                                     ConversionPatternRewriter& rewriter,
-                                     MLIRContext* ctx, LoweringState& state,
-                                     StringRef fnName, size_t numTargets,
-                                     size_t numParams) {
+static LogicalResult
+convertUnitaryToCallOp(QCOpType& op, QCOpAdaptorType& adaptor,
+                       ConversionPatternRewriter& rewriter, MLIRContext* ctx,
+                       LoweringState& state, StringRef fnName,
+                       size_t numTargets, size_t numParams) {
   // Query state for modifier information
   const auto inCtrlOp = state.inCtrlOp;
   const SmallVector<Value> posCtrls =
@@ -180,8 +182,6 @@ LogicalResult convertUnitaryToCallOp(QCOpType& op, QCOpAdaptorType& adaptor,
   rewriter.replaceOpWithNewOp<LLVM::CallOp>(op, fnDecl, operands);
   return success();
 }
-
-} // namespace
 
 /**
  * @brief Type converter for lowering QC dialect types to LLVM types

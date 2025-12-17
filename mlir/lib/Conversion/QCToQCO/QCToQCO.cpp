@@ -107,6 +107,8 @@ private:
   LoweringState* state_;
 };
 
+} // namespace
+
 /**
  * @brief Converts a zero-target, one-parameter QC operation to QCO
  *
@@ -118,9 +120,9 @@ private:
  * @return LogicalResult Success or failure of the conversion
  */
 template <typename QCOOpType, typename QCOpType>
-LogicalResult convertZeroTargetOneParameter(QCOpType& op,
-                                            ConversionPatternRewriter& rewriter,
-                                            LoweringState& state) {
+static LogicalResult
+convertZeroTargetOneParameter(QCOpType& op, ConversionPatternRewriter& rewriter,
+                              LoweringState& state) {
   const auto inCtrlOp = state.inCtrlOp;
 
   rewriter.create<QCOOpType>(op.getLoc(), op.getParameter(0));
@@ -148,9 +150,9 @@ LogicalResult convertZeroTargetOneParameter(QCOpType& op,
  * @return LogicalResult Success or failure of the conversion
  */
 template <typename QCOOpType, typename QCOpType>
-LogicalResult convertOneTargetZeroParameter(QCOpType& op,
-                                            ConversionPatternRewriter& rewriter,
-                                            LoweringState& state) {
+static LogicalResult
+convertOneTargetZeroParameter(QCOpType& op, ConversionPatternRewriter& rewriter,
+                              LoweringState& state) {
   auto& qubitMap = state.qubitMap;
   const auto inCtrlOp = state.inCtrlOp;
 
@@ -194,9 +196,9 @@ LogicalResult convertOneTargetZeroParameter(QCOpType& op,
  * @return LogicalResult Success or failure of the conversion
  */
 template <typename QCOOpType, typename QCOpType>
-LogicalResult convertOneTargetOneParameter(QCOpType& op,
-                                           ConversionPatternRewriter& rewriter,
-                                           LoweringState& state) {
+static LogicalResult
+convertOneTargetOneParameter(QCOpType& op, ConversionPatternRewriter& rewriter,
+                             LoweringState& state) {
   auto& qubitMap = state.qubitMap;
   const auto inCtrlOp = state.inCtrlOp;
 
@@ -241,9 +243,9 @@ LogicalResult convertOneTargetOneParameter(QCOpType& op,
  * @return LogicalResult Success or failure of the conversion
  */
 template <typename QCOOpType, typename QCOpType>
-LogicalResult convertOneTargetTwoParameter(QCOpType& op,
-                                           ConversionPatternRewriter& rewriter,
-                                           LoweringState& state) {
+static LogicalResult
+convertOneTargetTwoParameter(QCOpType& op, ConversionPatternRewriter& rewriter,
+                             LoweringState& state) {
   auto& qubitMap = state.qubitMap;
   const auto inCtrlOp = state.inCtrlOp;
 
@@ -288,7 +290,7 @@ LogicalResult convertOneTargetTwoParameter(QCOpType& op,
  * @return LogicalResult Success or failure of the conversion
  */
 template <typename QCOOpType, typename QCOpType>
-LogicalResult convertOneTargetThreeParameter(
+static LogicalResult convertOneTargetThreeParameter(
     QCOpType& op, ConversionPatternRewriter& rewriter, LoweringState& state) {
   auto& qubitMap = state.qubitMap;
   const auto inCtrlOp = state.inCtrlOp;
@@ -335,9 +337,9 @@ LogicalResult convertOneTargetThreeParameter(
  * @return LogicalResult Success or failure of the conversion
  */
 template <typename QCOOpType, typename QCOpType>
-LogicalResult convertTwoTargetZeroParameter(QCOpType& op,
-                                            ConversionPatternRewriter& rewriter,
-                                            LoweringState& state) {
+static LogicalResult
+convertTwoTargetZeroParameter(QCOpType& op, ConversionPatternRewriter& rewriter,
+                              LoweringState& state) {
   auto& qubitMap = state.qubitMap;
   const auto inCtrlOp = state.inCtrlOp;
 
@@ -393,9 +395,9 @@ LogicalResult convertTwoTargetZeroParameter(QCOpType& op,
  * @return LogicalResult Success or failure of the conversion
  */
 template <typename QCOOpType, typename QCOpType>
-LogicalResult convertTwoTargetOneParameter(QCOpType& op,
-                                           ConversionPatternRewriter& rewriter,
-                                           LoweringState& state) {
+static LogicalResult
+convertTwoTargetOneParameter(QCOpType& op, ConversionPatternRewriter& rewriter,
+                             LoweringState& state) {
   auto& qubitMap = state.qubitMap;
   const auto inCtrlOp = state.inCtrlOp;
 
@@ -448,9 +450,9 @@ LogicalResult convertTwoTargetOneParameter(QCOpType& op,
  * @return LogicalResult Success or failure of the conversion
  */
 template <typename QCOOpType, typename QCOpType>
-LogicalResult convertTwoTargetTwoParameter(QCOpType& op,
-                                           ConversionPatternRewriter& rewriter,
-                                           LoweringState& state) {
+static LogicalResult
+convertTwoTargetTwoParameter(QCOpType& op, ConversionPatternRewriter& rewriter,
+                             LoweringState& state) {
   auto& qubitMap = state.qubitMap;
   const auto inCtrlOp = state.inCtrlOp;
 
@@ -492,8 +494,6 @@ LogicalResult convertTwoTargetTwoParameter(QCOpType& op,
 
   return success();
 }
-
-} // namespace
 
 /**
  * @brief Type converter for QC-to-QCO conversion

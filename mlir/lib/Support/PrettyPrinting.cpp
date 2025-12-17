@@ -18,17 +18,13 @@
 
 namespace mlir {
 
-namespace {
-
 /**
  * @brief Trim trailing whitespace from a string
  */
-std::string trimTrailingWhitespace(const std::string& str) {
+static std::string trimTrailingWhitespace(const std::string& str) {
   const size_t end = str.find_last_not_of(" \t\r\n");
   return (end == std::string::npos) ? "" : str.substr(0, end + 1);
 }
-
-} // namespace
 
 constexpr auto TOTAL_WIDTH = 120;
 constexpr auto BORDER_WIDTH = 2; // "║ " on each side

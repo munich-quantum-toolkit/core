@@ -120,10 +120,12 @@ struct OperationStructuralEquality {
 /// Map to track value equivalence between two modules.
 using ValueEquivalenceMap = llvm::DenseMap<Value, Value>;
 
+} // namespace
+
 /// Compare two operations for structural equivalence.
 /// Updates valueMap to track corresponding SSA values.
-bool areOperationsEquivalent(Operation* lhs, Operation* rhs,
-                             ValueEquivalenceMap& valueMap) {
+static bool areOperationsEquivalent(Operation* lhs, Operation* rhs,
+                                    ValueEquivalenceMap& valueMap) {
   // Check operation name
   if (lhs->getName() != rhs->getName()) {
     return false;
@@ -190,11 +192,12 @@ bool areOperationsEquivalent(Operation* lhs, Operation* rhs,
 }
 
 /// Forward declaration for mutual recursion.
-bool areBlocksEquivalent(Block& lhs, Block& rhs, ValueEquivalenceMap& valueMap);
+static bool areBlocksEquivalent(Block& lhs, Block& rhs,
+                                ValueEquivalenceMap& valueMap);
 
 /// Compare two regions for structural equivalence.
-bool areRegionsEquivalent(Region& lhs, Region& rhs,
-                          ValueEquivalenceMap& valueMap) {
+static bool areRegionsEquivalent(Region& lhs, Region& rhs,
+                                 ValueEquivalenceMap& valueMap) {
   if (lhs.getBlocks().size() != rhs.getBlocks().size()) {
     return false;
   }
@@ -210,7 +213,7 @@ bool areRegionsEquivalent(Region& lhs, Region& rhs,
 
 /// Check if an operation has memory effects or control flow side effects
 /// that would prevent reordering.
-bool hasOrderingConstraints(Operation* op) {
+static bool hasOrderingConstraints(Operation* op) {
   // Terminators must maintain their position
   if (op->hasTrait<OpTrait::IsTerminator>()) {
     return true;
@@ -247,7 +250,7 @@ bool hasOrderingConstraints(Operation* op) {
 
 /// Build a dependence graph for operations.
 /// Returns a map from each operation to the set of operations it depends on.
-llvm::DenseMap<Operation*, llvm::DenseSet<Operation*>>
+static llvm::DenseMap<Operation*, llvm::DenseSet<Operation*>>
 buildDependenceGraph(ArrayRef<Operation*> ops) {
   llvm::DenseMap<Operation*, llvm::DenseSet<Operation*>> dependsOn;
   llvm::DenseMap<Value, Operation*> valueProducers;
@@ -274,7 +277,7 @@ buildDependenceGraph(ArrayRef<Operation*> ops) {
 
 /// Partition operations into groups that can be compared as multisets.
 /// Operations in the same group are independent and can be reordered.
-std::vector<llvm::SmallVector<Operation*>>
+static std::vector<llvm::SmallVector<Operation*>>
 partitionIndependentGroups(ArrayRef<Operation*> ops) {
   std::vector<llvm::SmallVector<Operation*>> groups;
   if (ops.empty()) {
@@ -326,8 +329,8 @@ partitionIndependentGroups(ArrayRef<Operation*> ops) {
 }
 
 /// Compare two groups of independent operations using multiset equivalence.
-bool areIndependentGroupsEquivalent(ArrayRef<Operation*> lhsOps,
-                                    ArrayRef<Operation*> rhsOps) {
+static bool areIndependentGroupsEquivalent(ArrayRef<Operation*> lhsOps,
+                                           ArrayRef<Operation*> rhsOps) {
   if (lhsOps.size() != rhsOps.size()) {
     return false;
   }
@@ -366,8 +369,8 @@ bool areIndependentGroupsEquivalent(ArrayRef<Operation*> lhsOps,
 
 /// Compare two blocks for structural equivalence, allowing permutations
 /// of independent operations.
-bool areBlocksEquivalent(Block& lhs, Block& rhs,
-                         ValueEquivalenceMap& valueMap) {
+static bool areBlocksEquivalent(Block& lhs, Block& rhs,
+                                ValueEquivalenceMap& valueMap) {
   // Check block arguments
   if (lhs.getNumArguments() != rhs.getNumArguments()) {
     return false;
@@ -456,7 +459,7 @@ bool areBlocksEquivalent(Block& lhs, Block& rhs,
 
 /// Compare two MLIR modules for structural equivalence, allowing permutations
 /// of speculatable operations.
-bool areModulesEquivalentWithPermutations(ModuleOp lhs, ModuleOp rhs) {
+static bool areModulesEquivalentWithPermutations(ModuleOp lhs, ModuleOp rhs) {
   ValueEquivalenceMap valueMap;
   return areRegionsEquivalent(lhs.getBodyRegion(), rhs.getBodyRegion(),
                               valueMap);
@@ -470,9 +473,9 @@ bool areModulesEquivalentWithPermutations(ModuleOp lhs, ModuleOp rhs) {
  * @param expectedModule Expected module to compare against
  * @return True if modules match, false otherwise with diagnostic output
  */
-[[nodiscard]] testing::AssertionResult verify(const std::string& stageName,
-                                              const std::string& actualIR,
-                                              ModuleOp expectedModule) {
+[[nodiscard]] static testing::AssertionResult
+verify(const std::string& stageName, const std::string& actualIR,
+       ModuleOp expectedModule) {
   // Parse the actual IR string into a ModuleOp
   const auto actualModule =
       parseSourceString<ModuleOp>(actualIR, expectedModule.getContext());
@@ -498,6 +501,8 @@ bool areModulesEquivalentWithPermutations(ModuleOp lhs, ModuleOp rhs) {
 
   return testing::AssertionSuccess();
 }
+
+namespace {
 
 //===----------------------------------------------------------------------===//
 // Stage Expectation Builder

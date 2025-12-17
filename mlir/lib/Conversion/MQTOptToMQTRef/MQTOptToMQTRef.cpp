@@ -44,33 +44,31 @@ using namespace mlir;
 #define GEN_PASS_DEF_MQTOPTTOMQTREF
 #include "mlir/Conversion/MQTOptToMQTRef/MQTOptToMQTRef.h.inc"
 
-namespace {
-
-bool isQubitType(const MemRefType type) {
+static bool isQubitType(const MemRefType type) {
   return llvm::isa<opt::QubitType>(type.getElementType());
 }
 
-bool isQubitType(memref::AllocOp op) { return isQubitType(op.getType()); }
+static bool isQubitType(memref::AllocOp op) {
+  return isQubitType(op.getType());
+}
 
-bool isQubitType(memref::DeallocOp op) {
+static bool isQubitType(memref::DeallocOp op) {
   const auto& memRef = op.getMemref();
   const auto& memRefType = llvm::cast<MemRefType>(memRef.getType());
   return isQubitType(memRefType);
 }
 
-bool isQubitType(memref::LoadOp op) {
+static bool isQubitType(memref::LoadOp op) {
   const auto& memRef = op.getMemref();
   const auto& memRefType = llvm::cast<MemRefType>(memRef.getType());
   return isQubitType(memRefType);
 }
 
-bool isQubitType(memref::StoreOp op) {
+static bool isQubitType(memref::StoreOp op) {
   const auto& memRef = op.getMemref();
   const auto& memRefType = llvm::cast<MemRefType>(memRef.getType());
   return isQubitType(memRefType);
 }
-
-} // namespace
 
 class MQTOptToMQTRefTypeConverter final : public TypeConverter {
 public:

@@ -32,8 +32,6 @@ using namespace qc;
 #define GEN_PASS_DEF_QCOTOQC
 #include "mlir/Conversion/QCOToQC/QCOToQC.h.inc"
 
-namespace {
-
 /**
  * @brief Converts a zero-target, one-parameter QCO operation to QC
  *
@@ -44,7 +42,7 @@ namespace {
  * @return LogicalResult Success or failure of the conversion
  */
 template <typename QCOpType, typename QCOOpType>
-LogicalResult
+static LogicalResult
 convertZeroTargetOneParameter(QCOOpType& op,
                               ConversionPatternRewriter& rewriter) {
   rewriter.create<QCOpType>(op.getLoc(), op.getParameter(0));
@@ -64,7 +62,7 @@ convertZeroTargetOneParameter(QCOOpType& op,
  * @return LogicalResult Success or failure of the conversion
  */
 template <typename QCOpType, typename QCOOpType, typename QCOOpAdaptorType>
-LogicalResult
+static LogicalResult
 convertOneTargetZeroParameter(QCOOpType& op, QCOOpAdaptorType& adaptor,
                               ConversionPatternRewriter& rewriter) {
   // OpAdaptor provides the already type-converted input qubit
@@ -91,7 +89,7 @@ convertOneTargetZeroParameter(QCOOpType& op, QCOOpAdaptorType& adaptor,
  * @return LogicalResult Success or failure of the conversion
  */
 template <typename QCOpType, typename QCOOpType, typename QCOOpAdaptorType>
-LogicalResult
+static LogicalResult
 convertOneTargetOneParameter(QCOOpType& op, QCOOpAdaptorType& adaptor,
                              ConversionPatternRewriter& rewriter) {
   // OpAdaptor provides the already type-converted input qubit
@@ -118,7 +116,7 @@ convertOneTargetOneParameter(QCOOpType& op, QCOOpAdaptorType& adaptor,
  * @return LogicalResult Success or failure of the conversion
  */
 template <typename QCOpType, typename QCOOpType, typename QCOOpAdaptorType>
-LogicalResult
+static LogicalResult
 convertOneTargetTwoParameter(QCOOpType& op, QCOOpAdaptorType& adaptor,
                              ConversionPatternRewriter& rewriter) {
   // OpAdaptor provides the already type-converted input qubit
@@ -146,7 +144,7 @@ convertOneTargetTwoParameter(QCOOpType& op, QCOOpAdaptorType& adaptor,
  * @return LogicalResult Success or failure of the conversion
  */
 template <typename QCOpType, typename QCOOpType, typename QCOOpAdaptorType>
-LogicalResult
+static LogicalResult
 convertOneTargetThreeParameter(QCOOpType& op, QCOOpAdaptorType& adaptor,
                                ConversionPatternRewriter& rewriter) {
   // OpAdaptor provides the already type-converted input qubit
@@ -174,7 +172,7 @@ convertOneTargetThreeParameter(QCOOpType& op, QCOOpAdaptorType& adaptor,
  * @return LogicalResult Success or failure of the conversion
  */
 template <typename QCOpType, typename QCOOpType, typename QCOOpAdaptorType>
-LogicalResult
+static LogicalResult
 convertTwoTargetZeroParameter(QCOOpType& op, QCOOpAdaptorType& adaptor,
                               ConversionPatternRewriter& rewriter) {
   // OpAdaptor provides the already type-converted input qubits
@@ -202,7 +200,7 @@ convertTwoTargetZeroParameter(QCOOpType& op, QCOOpAdaptorType& adaptor,
  * @return LogicalResult Success or failure of the conversion
  */
 template <typename QCOpType, typename QCOOpType, typename QCOOpAdaptorType>
-LogicalResult
+static LogicalResult
 convertTwoTargetOneParameter(QCOOpType& op, QCOOpAdaptorType& adaptor,
                              ConversionPatternRewriter& rewriter) {
   // OpAdaptor provides the already type-converted input qubits
@@ -231,7 +229,7 @@ convertTwoTargetOneParameter(QCOOpType& op, QCOOpAdaptorType& adaptor,
  * @return LogicalResult Success or failure of the conversion
  */
 template <typename QCOpType, typename QCOOpType, typename QCOOpAdaptorType>
-LogicalResult
+static LogicalResult
 convertTwoTargetTwoParameter(QCOOpType& op, QCOOpAdaptorType& adaptor,
                              ConversionPatternRewriter& rewriter) {
   // OpAdaptor provides the already type-converted input qubits
@@ -247,8 +245,6 @@ convertTwoTargetTwoParameter(QCOOpType& op, QCOOpAdaptorType& adaptor,
 
   return success();
 }
-
-} // namespace
 
 /**
  * @brief Type converter for QCO-to-QC conversion

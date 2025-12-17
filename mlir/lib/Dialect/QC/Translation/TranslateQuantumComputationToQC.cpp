@@ -29,6 +29,7 @@
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OwningOpRef.h>
 #include <mlir/IR/Value.h>
+#include <mlir/Support/LLVM.h>
 #include <mlir/Support/LogicalResult.h>
 #include <ranges>
 #include <utility>
@@ -55,6 +56,8 @@ using BitMemInfo = std::pair<QCProgramBuilder::ClassicalRegister,
                              size_t>; // (register ref, localIdx)
 using BitIndexVec = SmallVector<BitMemInfo>;
 
+} // namespace
+
 /**
  * @brief Allocates quantum registers using the QCProgramBuilder
  *
@@ -68,7 +71,7 @@ using BitIndexVec = SmallVector<BitMemInfo>;
  * @param quantumComputation The quantum computation to translate
  * @return Vector containing information about all quantum registers
  */
-SmallVector<QregInfo>
+static SmallVector<QregInfo>
 allocateQregs(QCProgramBuilder& builder,
               const ::qc::QuantumComputation& quantumComputation) {
   // Build list of pointers for sorting
@@ -113,7 +116,7 @@ allocateQregs(QCProgramBuilder& builder,
  * @param qregs Vector containing information about all quantum registers
  * @return Flat vector of qubit values indexed by physical qubit index
  */
-SmallVector<Value>
+static SmallVector<Value>
 buildQubitMap(const ::qc::QuantumComputation& quantumComputation,
               const SmallVector<QregInfo>& qregs) {
   SmallVector<Value> flatQubits;
@@ -142,7 +145,7 @@ buildQubitMap(const ::qc::QuantumComputation& quantumComputation,
  * @param quantumComputation The quantum computation to translate
  * @return Vector mapping global bit indices to register and local indices
  */
-BitIndexVec
+static BitIndexVec
 allocateClassicalRegisters(QCProgramBuilder& builder,
                            const ::qc::QuantumComputation& quantumComputation) {
   // Build list of pointers for sorting
@@ -186,8 +189,10 @@ allocateClassicalRegisters(QCProgramBuilder& builder,
  * @param qubits Flat vector of qubit values indexed by physical qubit index
  * @param bitMap Mapping from global bit index to (register, local_index)
  */
-void addMeasureOp(QCProgramBuilder& builder, const ::qc::Operation& operation,
-                  const SmallVector<Value>& qubits, const BitIndexVec& bitMap) {
+static void addMeasureOp(QCProgramBuilder& builder,
+                         const ::qc::Operation& operation,
+                         const SmallVector<Value>& qubits,
+                         const BitIndexVec& bitMap) {
   const auto& measureOp =
       dynamic_cast<const ::qc::NonUnitaryOperation&>(operation);
   const auto& targets = measureOp.getTargets();
@@ -214,8 +219,9 @@ void addMeasureOp(QCProgramBuilder& builder, const ::qc::Operation& operation,
  * @param operation The reset operation to translate
  * @param qubits Flat vector of qubit values indexed by physical qubit index
  */
-void addResetOp(QCProgramBuilder& builder, const ::qc::Operation& operation,
-                const SmallVector<Value>& qubits) {
+static void addResetOp(QCProgramBuilder& builder,
+                       const ::qc::Operation& operation,
+                       const SmallVector<Value>& qubits) {
   for (const auto& target : operation.getTargets()) {
     auto qubit = qubits[target];
     builder.reset(qubit);
@@ -233,8 +239,8 @@ void addResetOp(QCProgramBuilder& builder, const ::qc::Operation& operation,
  * @param qubits Flat vector of qubit values indexed by physical qubit index
  * @return Vector of qubit values corresponding to positive controls
  */
-SmallVector<Value> getPosControls(const ::qc::Operation& operation,
-                                  const SmallVector<Value>& qubits) {
+static SmallVector<Value> getPosControls(const ::qc::Operation& operation,
+                                         const SmallVector<Value>& qubits) {
   SmallVector<Value> controls;
   for (const auto& [control, type] : operation.getControls()) {
     if (type == ::qc::Control::Type::Neg) {
@@ -259,9 +265,9 @@ SmallVector<Value> getPosControls(const ::qc::Operation& operation,
    * @param operation The OP_CORE operation to translate                       \
    * @param qubits Flat vector of qubit values indexed by physical qubit index \
    */                                                                          \
-  void add##OP_CORE##Op(QCProgramBuilder& builder,                             \
-                        const ::qc::Operation& operation,                      \
-                        const SmallVector<Value>& qubits) {                    \
+  static void add##OP_CORE##Op(QCProgramBuilder& builder,                      \
+                               const ::qc::Operation& operation,               \
+                               const SmallVector<Value>& qubits) {             \
     const auto& target = qubits[operation.getTargets()[0]];                    \
     if (const auto& posControls = getPosControls(operation, qubits);           \
         posControls.empty()) {                                                 \
@@ -299,9 +305,9 @@ DEFINE_ONE_TARGET_ZERO_PARAMETER(SXdg, sxdg)
    * @param operation The OP_CORE operation to translate                       \
    * @param qubits Flat vector of qubit values indexed by physical qubit index \
    */                                                                          \
-  void add##OP_CORE##Op(QCProgramBuilder& builder,                             \
-                        const ::qc::Operation& operation,                      \
-                        const SmallVector<Value>& qubits) {                    \
+  static void add##OP_CORE##Op(QCProgramBuilder& builder,                      \
+                               const ::qc::Operation& operation,               \
+                               const SmallVector<Value>& qubits) {             \
     const auto& param = operation.getParameter()[0];                           \
     const auto& target = qubits[operation.getTargets()[0]];                    \
     if (const auto& posControls = getPosControls(operation, qubits);           \
@@ -331,9 +337,9 @@ DEFINE_ONE_TARGET_ONE_PARAMETER(P, p)
    * @param operation The OP_CORE operation to translate                       \
    * @param qubits Flat vector of qubit values indexed by physical qubit index \
    */                                                                          \
-  void add##OP_CORE##Op(QCProgramBuilder& builder,                             \
-                        const ::qc::Operation& operation,                      \
-                        const SmallVector<Value>& qubits) {                    \
+  static void add##OP_CORE##Op(QCProgramBuilder& builder,                      \
+                               const ::qc::Operation& operation,               \
+                               const SmallVector<Value>& qubits) {             \
     const auto& param1 = operation.getParameter()[0];                          \
     const auto& param2 = operation.getParameter()[1];                          \
     const auto& target = qubits[operation.getTargets()[0]];                    \
@@ -364,9 +370,9 @@ DEFINE_ONE_TARGET_TWO_PARAMETER(U2, u2)
    * @param operation The OP_CORE operation to translate                       \
    * @param qubits Flat vector of qubit values indexed by physical qubit index \
    */                                                                          \
-  void add##OP_CORE##Op(QCProgramBuilder& builder,                             \
-                        const ::qc::Operation& operation,                      \
-                        const SmallVector<Value>& qubits) {                    \
+  static void add##OP_CORE##Op(QCProgramBuilder& builder,                      \
+                               const ::qc::Operation& operation,               \
+                               const SmallVector<Value>& qubits) {             \
     const auto& param1 = operation.getParameter()[0];                          \
     const auto& param2 = operation.getParameter()[1];                          \
     const auto& param3 = operation.getParameter()[2];                          \
@@ -397,9 +403,9 @@ DEFINE_ONE_TARGET_THREE_PARAMETER(U, u)
    * @param operation The OP_CORE operation to translate                       \
    * @param qubits Flat vector of qubit values indexed by physical qubit index \
    */                                                                          \
-  void add##OP_CORE##Op(QCProgramBuilder& builder,                             \
-                        const ::qc::Operation& operation,                      \
-                        const SmallVector<Value>& qubits) {                    \
+  static void add##OP_CORE##Op(QCProgramBuilder& builder,                      \
+                               const ::qc::Operation& operation,               \
+                               const SmallVector<Value>& qubits) {             \
     const auto& target0 = qubits[operation.getTargets()[0]];                   \
     const auto& target1 = qubits[operation.getTargets()[1]];                   \
     if (const auto& posControls = getPosControls(operation, qubits);           \
@@ -431,9 +437,9 @@ DEFINE_TWO_TARGET_ZERO_PARAMETER(ECR, ecr)
    * @param operation The OP_CORE operation to translate                       \
    * @param qubits Flat vector of qubit values indexed by physical qubit index \
    */                                                                          \
-  void add##OP_CORE##Op(QCProgramBuilder& builder,                             \
-                        const ::qc::Operation& operation,                      \
-                        const SmallVector<Value>& qubits) {                    \
+  static void add##OP_CORE##Op(QCProgramBuilder& builder,                      \
+                               const ::qc::Operation& operation,               \
+                               const SmallVector<Value>& qubits) {             \
     const auto& param = operation.getParameter()[0];                           \
     const auto& target0 = qubits[operation.getTargets()[0]];                   \
     const auto& target1 = qubits[operation.getTargets()[1]];                   \
@@ -466,9 +472,9 @@ DEFINE_TWO_TARGET_ONE_PARAMETER(RZZ, rzz)
    * @param operation The OP_CORE operation to translate                       \
    * @param qubits Flat vector of qubit values indexed by physical qubit index \
    */                                                                          \
-  void add##OP_CORE##Op(QCProgramBuilder& builder,                             \
-                        const ::qc::Operation& operation,                      \
-                        const SmallVector<Value>& qubits) {                    \
+  static void add##OP_CORE##Op(QCProgramBuilder& builder,                      \
+                               const ::qc::Operation& operation,               \
+                               const SmallVector<Value>& qubits) {             \
     const auto& param1 = operation.getParameter()[0];                          \
     const auto& param2 = operation.getParameter()[1];                          \
     const auto& target0 = qubits[operation.getTargets()[0]];                   \
@@ -488,8 +494,9 @@ DEFINE_TWO_TARGET_TWO_PARAMETER(XXminusYY, xx_minus_yy)
 
 // BarrierOp
 
-void addBarrierOp(QCProgramBuilder& builder, const ::qc::Operation& operation,
-                  const SmallVector<Value>& qubits) {
+static void addBarrierOp(QCProgramBuilder& builder,
+                         const ::qc::Operation& operation,
+                         const SmallVector<Value>& qubits) {
   SmallVector<Value> targets;
   for (const auto& targetIdx : operation.getTargets()) {
     targets.push_back(qubits[targetIdx]);
@@ -515,7 +522,7 @@ void addBarrierOp(QCProgramBuilder& builder, const ::qc::Operation& operation,
  * @param bitMap Mapping from global bit index to (register, local_index)
  * @return Success if all supported operations were translated
  */
-LogicalResult
+static LogicalResult
 translateOperations(QCProgramBuilder& builder,
                     const ::qc::QuantumComputation& quantumComputation,
                     const SmallVector<Value>& qubits,
@@ -568,8 +575,6 @@ translateOperations(QCProgramBuilder& builder,
 }
 
 #undef ADD_OP_CASE
-
-} // namespace
 
 /**
  * @brief Translates a QuantumComputation to an MLIR module with QC

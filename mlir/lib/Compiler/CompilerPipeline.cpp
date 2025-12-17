@@ -25,8 +25,6 @@
 
 namespace mlir {
 
-namespace {
-
 /**
  * @brief Pretty print IR with ASCII art borders and stage identifier
  *
@@ -35,8 +33,8 @@ namespace {
  * @param stageNumber Current stage number
  * @param totalStages Total number of stages (for progress indication)
  */
-void prettyPrintStage(ModuleOp module, const llvm::StringRef stageName,
-                      const int stageNumber, const int totalStages) {
+static void prettyPrintStage(ModuleOp module, const llvm::StringRef stageName,
+                             const int stageNumber, const int totalStages) {
   llvm::errs() << "\n";
   printBoxTop();
 
@@ -59,8 +57,6 @@ void prettyPrintStage(ModuleOp module, const llvm::StringRef stageName,
   printBoxBottom();
   llvm::errs().flush();
 }
-
-} // namespace
 
 void QuantumCompilerPipeline::addCleanupPasses(PassManager& pm) {
   // Always run canonicalization and dead value removal
