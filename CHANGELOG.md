@@ -11,6 +11,7 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 
 ### Added
 
+- ✨ Add initial infrastructure for new QC and QCO MLIR dialects ([#1264]) ([**@burgholzer**], [**@denialhaag**])
 - ✨ Add bi-directional iterator that traverses the def-use chain of a qubit value ([#1310]) ([**@MatthiasReumann**])
 
 ### Changed
