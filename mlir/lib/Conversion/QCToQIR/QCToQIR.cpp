@@ -129,12 +129,12 @@ private:
  * @param numParams The number of parameters
  * @return LogicalResult Success or failure of the conversion
  */
-static template <typename QCOpType, typename QCOpAdaptorType>
-LogicalResult convertUnitaryToCallOp(QCOpType& op, QCOpAdaptorType& adaptor,
-                                     ConversionPatternRewriter& rewriter,
-                                     MLIRContext* ctx, LoweringState& state,
-                                     StringRef fnName, size_t numTargets,
-                                     size_t numParams) {
+template <typename QCOpType, typename QCOpAdaptorType>
+static LogicalResult
+convertUnitaryToCallOp(QCOpType& op, QCOpAdaptorType& adaptor,
+                       ConversionPatternRewriter& rewriter, MLIRContext* ctx,
+                       LoweringState& state, StringRef fnName,
+                       size_t numTargets, size_t numParams) {
   // Query state for modifier information
   const auto inCtrlOp = state.inCtrlOp;
   const SmallVector<Value> posCtrls =
