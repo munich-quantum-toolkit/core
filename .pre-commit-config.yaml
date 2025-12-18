@@ -58,6 +58,12 @@ repos:
       - id: rst-directive-colons
       - id: rst-inline-touching-normal
 
+  # Check for license headers
+  - repo: https://github.com/emzeat/mz-lictools
+    rev: v2.9.0
+    hooks:
+      - id: license-tools
+
   # Ensure uv lock file is up-to-date
   - repo: https://github.com/astral-sh/uv-pre-commit
     rev: 0.9.17
@@ -100,12 +106,6 @@ repos:
     hooks:
       - id: blacken-docs
         additional_dependencies: [black==25.*]
-
-  # Check for license headers
-  - repo: https://github.com/emzeat/mz-lictools
-    rev: v2.9.0
-    hooks:
-      - id: license-tools
 
   # Clang-format the C++ part of the code base automatically
   - repo: https://github.com/pre-commit/mirrors-clang-format
