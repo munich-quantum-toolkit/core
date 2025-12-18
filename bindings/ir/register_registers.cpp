@@ -45,7 +45,7 @@ Args:
           "start",
           [](const qc::QuantumRegister& reg) { return reg.getStartIndex(); },
           [](qc::QuantumRegister& reg, const nb::int_& start) {
-            auto startInt = static_cast<std::int64_t>(start);
+            const auto startInt = static_cast<std::int64_t>(start);
             if (startInt < 0) {
               throw nb::value_error("Start index cannot be negative");
             }

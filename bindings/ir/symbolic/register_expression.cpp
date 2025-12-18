@@ -107,21 +107,37 @@ Returns:
       // addition operators
       .def(nb::self + nb::self, nb::is_operator())
       .def(nb::self + double(), nb::is_operator())
-      .def("__add__", [](const sym::Expression<double, double>& lhs,
-                         const sym::Term<double>& rhs) { return lhs + rhs; })
-      .def("__radd__", [](const sym::Expression<double, double>& rhs,
-                          const sym::Term<double>& lhs) { return lhs + rhs; })
-      .def("__radd__", [](const sym::Expression<double, double>& rhs,
-                          const double lhs) { return rhs + lhs; })
+      .def(
+          "__add__",
+          [](const sym::Expression<double, double>& lhs,
+             const sym::Term<double>& rhs) { return lhs + rhs; },
+          nb::is_operator())
+      .def(
+          "__radd__",
+          [](const sym::Expression<double, double>& rhs,
+             const sym::Term<double>& lhs) { return lhs + rhs; },
+          nb::is_operator())
+      .def(
+          "__radd__",
+          [](const sym::Expression<double, double>& rhs, const double lhs) {
+            return rhs + lhs;
+          },
+          nb::is_operator())
       // subtraction operators
       // NOLINTNEXTLINE(misc-redundant-expression)
       .def(nb::self - nb::self, nb::is_operator())
       .def(nb::self - double(), nb::is_operator())
       .def(double() - nb::self, nb::is_operator())
-      .def("__sub__", [](const sym::Expression<double, double>& lhs,
-                         const sym::Term<double>& rhs) { return lhs - rhs; })
-      .def("__rsub__", [](const sym::Expression<double, double>& rhs,
-                          const sym::Term<double>& lhs) { return lhs - rhs; })
+      .def(
+          "__sub__",
+          [](const sym::Expression<double, double>& lhs,
+             const sym::Term<double>& rhs) { return lhs - rhs; },
+          nb::is_operator())
+      .def(
+          "__rsub__",
+          [](const sym::Expression<double, double>& rhs,
+             const sym::Term<double>& lhs) { return lhs - rhs; },
+          nb::is_operator())
       // multiplication operators
       .def(nb::self * double(), nb::is_operator())
       .def(double() * nb::self, nb::is_operator())

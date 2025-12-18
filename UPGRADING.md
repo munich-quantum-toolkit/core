@@ -63,7 +63,7 @@ It became stable in Python 3.14.
 Second, for Python 3.12+, we are now providing Stable ABI wheels instead of separate version-specific wheels.
 This was enabled by migrating our Python bindings from `pybind11` to `nanobind`.
 
-Both of these changes were made in the interest of conserving PyPI space and reducing CD build times.
+Both of these changes were made in the interest of conserving PyPI space and reducing CI/CD build times.
 The full list of Python now reads:
 
 - 3.10
