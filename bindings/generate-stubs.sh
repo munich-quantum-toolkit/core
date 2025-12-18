@@ -9,35 +9,39 @@
 
 set -euo pipefail
 
-files=(
-  "./python/mqt/core/ir/__init__.pyi"
-  "./python/mqt/core/ir/operations.pyi"
-  "./python/mqt/core/ir/registers.pyi"
-  "./python/mqt/core/ir/symbolic.pyi"
-  "./python/mqt/core/dd.pyi"
-  "./python/mqt/core/fomac.pyi"
-  "./python/mqt/core/na/fomac.pyi"
+core_dir=./python/mqt/core
+stub_files=(
+  "$core_dir/ir/__init__.pyi"
+  "$core_dir/ir/operations.pyi"
+  "$core_dir/ir/registers.pyi"
+  "$core_dir/ir/symbolic.pyi"
+  "$core_dir/dd.pyi"
+  "$core_dir/fomac.pyi"
+  "$core_dir/na/fomac.pyi"
 )
 
-# Check if all files exist
-for file in "${files[@]}"; do
-  if [ ! -f "$file" ]; then
-    echo "Error: $file does not exist. Are you running this script from the root directory?"
+core_patterns=./bindings/core_patterns.txt
+
+# Check if all stub files exist
+for stub_file in "${stub_files[@]}"; do
+  if [ ! -f "$stub_file" ]; then
+    echo "Error: $stub_file does not exist. Are you running this script from the root directory?"
     exit 1
   fi
 done
+
+if [ ! -f "$core_patterns" ]; then
+  echo "Error: $core_patterns does not exist. Are you running this script from the root directory?"
+  exit 1
+fi
 
 # Ensure that the most recent version of mqt.core is installed
 uv sync
 
 # Remove the existing stub files
-for file in "${files[@]}"; do
-  rm -f "$file"
+for stub_file in "${stub_files[@]}"; do
+  rm -f "$stub_file"
 done
-
-# Define common paths
-core_dir=./python/mqt/core
-core_patterns=./bindings/core_patterns.txt
 
 # Generate new stub files
 uv run --no-sync -m nanobind.stubgen -m mqt.core.ir -o "$core_dir/ir/__init__.pyi" -p "$core_patterns" -P
@@ -51,6 +55,6 @@ uv run --no-sync -m nanobind.stubgen -m mqt.core.na.fomac -o "$core_dir/na/fomac
 set +e
 
 # Run prek on generated stub files
-for file in "${files[@]}"; do
-  uvx prek --files "$file"
+for stub_file in "${stub_files[@]}"; do
+  uvx prek --files "$stub_file"
 done
