@@ -451,9 +451,9 @@ QCProgramBuilder& QCProgramBuilder::dealloc(Value qubit) {
 // SCF operations
 //===----------------------------------------------------------------------===//
 
-QuartzProgramBuilder&
-QuartzProgramBuilder::scfFor(Value lowerbound, Value upperbound, Value step,
-                             const std::function<void(OpBuilder&)>& body) {
+QCProgramBuilder&
+QCProgramBuilder::scfFor(Value lowerbound, Value upperbound, Value step,
+                         const std::function<void(OpBuilder&)>& body) {
   create<scf::ForOp>(loc, lowerbound, upperbound, step, ValueRange{},
                      [&](OpBuilder& b, Location, Value, ValueRange) {
                        body(b);
@@ -463,9 +463,9 @@ QuartzProgramBuilder::scfFor(Value lowerbound, Value upperbound, Value step,
   return *this;
 }
 
-QuartzProgramBuilder& QuartzProgramBuilder::scfWhile(
-    const std::function<void(OpBuilder&)>& beforeBody,
-    const std::function<void(OpBuilder&)>& afterBody) {
+QCProgramBuilder&
+QCProgramBuilder::scfWhile(const std::function<void(OpBuilder&)>& beforeBody,
+                           const std::function<void(OpBuilder&)>& afterBody) {
   create<scf::WhileOp>(
       loc, TypeRange{}, ValueRange{},
       [&](OpBuilder& b, Location, ValueRange) { beforeBody(b); },
@@ -477,10 +477,10 @@ QuartzProgramBuilder& QuartzProgramBuilder::scfWhile(
   return *this;
 }
 
-QuartzProgramBuilder&
-QuartzProgramBuilder::scfIf(Value cond,
-                            const std::function<void(OpBuilder&)>& thenBody,
-                            const std::function<void(OpBuilder&)>& elseBody) {
+QCProgramBuilder&
+QCProgramBuilder::scfIf(Value cond,
+                        const std::function<void(OpBuilder&)>& thenBody,
+                        const std::function<void(OpBuilder&)>& elseBody) {
   if (!elseBody) {
     create<scf::IfOp>(loc, cond, [&](OpBuilder& b, Location loc) {
       thenBody(b);
@@ -501,7 +501,7 @@ QuartzProgramBuilder::scfIf(Value cond,
   return *this;
 }
 
-QuartzProgramBuilder& QuartzProgramBuilder::scfCondition(Value condition) {
+QCProgramBuilder& QCProgramBuilder::scfCondition(Value condition) {
   create<scf::ConditionOp>(loc, condition, ValueRange{});
   return *this;
 }
@@ -510,13 +510,13 @@ QuartzProgramBuilder& QuartzProgramBuilder::scfCondition(Value condition) {
 // Arith operations
 //===----------------------------------------------------------------------===//
 
-Value QuartzProgramBuilder::arithConstantIndex(int index) {
+Value QCProgramBuilder::arithConstantIndex(int index) {
   const auto op =
       create<arith::ConstantOp>(loc, getIndexType(), getIndexAttr(index));
   return op->getResult(0);
 }
 
-Value QuartzProgramBuilder::arithConstantBool(bool b) {
+Value QCProgramBuilder::arithConstantBool(bool b) {
   const auto i1Type = getI1Type();
   const auto op =
       create<arith::ConstantOp>(loc, i1Type, getIntegerAttr(i1Type, b ? 1 : 0));

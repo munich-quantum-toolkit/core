@@ -819,22 +819,22 @@ struct ConvertQCOYieldOp final : OpConversionPattern<qco::YieldOp> {
  *
  * @par Example:
  * ```mlir
- * %targets_out = scf.if %cond -> (!flux.qubit) {
- *   %q1 = flux.h %q0 : !flux.qubit -> !flux.qubit
- *   scf.yield %q1 : !flux.qubit
+ * %targets_out = scf.if %cond -> (!qco.qubit) {
+ *   %q1 = qco.h %q0 : !qco.qubit -> !qco.qubit
+ *   scf.yield %q1 : !qco.qubit
  * } else {
- *   scf.yield %q0 : !flux.qubit
+ *   scf.yield %q0 : !qco.qubit
  * }
  * ```
  * is converted to
  * ```mlir
  * scf.if %cond {
- *   quartz.x %q0
+ *   qc.x %q0
  *   scf.yield
  * }
  * ```
  */
-struct ConvertFluxScfIfOp final : OpConversionPattern<scf::IfOp> {
+struct ConvertQCOScfIfOp final : OpConversionPattern<scf::IfOp> {
   using OpConversionPattern::OpConversionPattern;
 
   LogicalResult
@@ -868,27 +868,27 @@ struct ConvertFluxScfIfOp final : OpConversionPattern<scf::IfOp> {
  *
  * @par Example:
  * ```mlir
- * %targets_out = scf.while (%arg0 = %q0) : (!flux.qubit) -> !flux.qubit {
- *   %q1 = quartz.x %arg0 : !flux.qubit -> !flux.qubit
- *   scf.condition(%cond) %q1 : !flux.qubit
+ * %targets_out = scf.while (%arg0 = %q0) : (!qco.qubit) -> !qco.qubit {
+ *   %q1 = qc.x %arg0 : !qco.qubit -> !qco.qubit
+ *   scf.condition(%cond) %q1 : !qco.qubit
  * } do {
- * ^bb0(%arg0: !flux.qubit):
- *   %q1 = quartz.x %arg0 : !flux.qubit -> !flux.qubit
- *   scf.yield %q1 : !flux.qubit
+ * ^bb0(%arg0: !qco.qubit):
+ *   %q1 = qc.x %arg0 : !qco.qubit -> !qco.qubit
+ *   scf.yield %q1 : !qco.qubit
  * }
  * ```
  * is converted to
  * ```mlir
  * scf.while : () -> () {
- *   quartz.x %q0
+ *   qc.x %q0
  *   scf.condition(%cond)
  * } do {
- *   quartz.x %q0
+ *   qc.x %q0
  *   scf.yield
  * }
  * ```
  */
-struct ConvertFluxScfWhileOp final : OpConversionPattern<scf::WhileOp> {
+struct ConvertQCOScfWhileOp final : OpConversionPattern<scf::WhileOp> {
   using OpConversionPattern::OpConversionPattern;
 
   LogicalResult
@@ -929,20 +929,20 @@ struct ConvertFluxScfWhileOp final : OpConversionPattern<scf::WhileOp> {
  * @par Example:
  * ```mlir
  * %targets_out = scf.for %iv = %lb to %ub step %step iter_args(%arg0 = q0) ->
- * (!flux.qubit) {
- * %q1 = quartz.x %arg0 : !flux.qubit -> !flux.qubit
- * scf.yield %q1 : !flux.qubit
+ * (!qco.qubit) {
+ * %q1 = qc.x %arg0 : !qco.qubit -> !qco.qubit
+ * scf.yield %q1 : !qco.qubit
  * }
  * ```
  * is converted to
  * ```mlir
  * scf.for %iv = %lb to %ub step %step {
- *   quartz.x %q0
+ *   qc.x %q0
  *   scf.yield
  * }
  * ```
  */
-struct ConvertFluxScfForOp final : OpConversionPattern<scf::ForOp> {
+struct ConvertQCOScfForOp final : OpConversionPattern<scf::ForOp> {
   using OpConversionPattern::OpConversionPattern;
 
   LogicalResult
@@ -954,9 +954,9 @@ struct ConvertFluxScfForOp final : OpConversionPattern<scf::ForOp> {
         adaptor.getStep(), ValueRange{});
 
     // replace the uses of the previous iter_args
-    for (const auto& [fluxQubit, quartzQubit] :
+    for (const auto& [qcoQubit, qcQubit] :
          llvm::zip_equal(op.getRegionIterArgs(), adaptor.getInitArgs())) {
-      fluxQubit.replaceAllUsesWith(quartzQubit);
+      qcoQubit.replaceAllUsesWith(qcQubit);
     }
 
     // move all the operations from the old block to the new block
@@ -985,7 +985,7 @@ struct ConvertFluxScfForOp final : OpConversionPattern<scf::ForOp> {
  * scf.yield
  * ```
  */
-struct ConvertFluxScfYieldOp final : OpConversionPattern<scf::YieldOp> {
+struct ConvertQCOScfYieldOp final : OpConversionPattern<scf::YieldOp> {
   using OpConversionPattern::OpConversionPattern;
 
   LogicalResult
@@ -1010,7 +1010,7 @@ struct ConvertFluxScfYieldOp final : OpConversionPattern<scf::YieldOp> {
 
  * ```
  */
-struct ConvertFluxScfConditionOp final : OpConversionPattern<scf::ConditionOp> {
+struct ConvertQCOScfConditionOp final : OpConversionPattern<scf::ConditionOp> {
   using OpConversionPattern::OpConversionPattern;
 
   LogicalResult
@@ -1029,15 +1029,15 @@ struct ConvertFluxScfConditionOp final : OpConversionPattern<scf::ConditionOp> {
  *
  * @par Example:
  * ```mlir
- * %q1 = call @test(%q0) : (!flux.qubit) -> !flux.qubit
+ * %q1 = call @test(%q0) : (!qco.qubit) -> !qco.qubit
  * }
  * ```
  * is converted to
  * ```mlir
- * call @test(%q0) : (!quartz.qubit) -> ()
+ * call @test(%q0) : (!qc.qubit) -> ()
  * ```
  */
-struct ConvertFluxFuncCallOp final : OpConversionPattern<func::CallOp> {
+struct ConvertQCOFuncCallOp final : OpConversionPattern<func::CallOp> {
   using OpConversionPattern::OpConversionPattern;
 
   LogicalResult
@@ -1056,18 +1056,18 @@ struct ConvertFluxFuncCallOp final : OpConversionPattern<func::CallOp> {
  *
  * @par Example:
  * ```mlir
- * func.func @test(%arg0: !flux.qubit) -> !flux.qubit {
+ * func.func @test(%arg0: !qco.qubit) -> !qco.qubit {
  * ...
  * }
  * ```
  * is converted to
  * ```mlir
- * func.func @test(%arg0: !quartz.qubit){
+ * func.func @test(%arg0: !qc.qubit){
  * ...
  * }
  * ```
  */
-struct ConvertFluxFuncFuncOp final : OpConversionPattern<func::FuncOp> {
+struct ConvertQCOFuncFuncOp final : OpConversionPattern<func::FuncOp> {
   using OpConversionPattern::OpConversionPattern;
 
   LogicalResult
@@ -1075,9 +1075,9 @@ struct ConvertFluxFuncFuncOp final : OpConversionPattern<func::FuncOp> {
                   ConversionPatternRewriter& rewriter) const override {
     const SmallVector<Type> argumentTypes(
         op.front().getNumArguments(),
-        quartz::QubitType::get(rewriter.getContext()));
+        qc::QubitType::get(rewriter.getContext()));
     for (auto blockArg : op.front().getArguments()) {
-      blockArg.setType(quartz::QubitType::get(rewriter.getContext()));
+      blockArg.setType(qc::QubitType::get(rewriter.getContext()));
     }
     auto newFuncType = rewriter.getFunctionType(argumentTypes, {});
     op.setFunctionType(newFuncType);
@@ -1091,14 +1091,14 @@ struct ConvertFluxFuncFuncOp final : OpConversionPattern<func::FuncOp> {
  *
  * @par Example:
  * ```mlir
- * func.return %targets : !flux.qubit
+ * func.return %targets : !qco.qubit
  * ```
  * is converted to
  * ```mlir
  * func.return
  * ```
  */
-struct ConvertFluxFuncReturnOp final : OpConversionPattern<func::ReturnOp> {
+struct ConvertQCOFuncReturnOp final : OpConversionPattern<func::ReturnOp> {
   using OpConversionPattern::OpConversionPattern;
 
   LogicalResult
@@ -1197,18 +1197,22 @@ struct QCOToQC final : impl::QCOToQCBase<QCOToQC> {
 
     // Register operation conversion patterns
     // Note: No state tracking needed - OpAdaptors handle type conversion
-    patterns.add<ConvertQCOAllocOp, ConvertQCODeallocOp, ConvertQCOStaticOp,
-                 ConvertQCOMeasureOp, ConvertQCOResetOp, ConvertQCOGPhaseOp,
-                 ConvertQCOIdOp, ConvertQCOXOp, ConvertQCOYOp, ConvertQCOZOp,
-                 ConvertQCOHOp, ConvertQCOSOp, ConvertQCOSdgOp, ConvertQCOTOp,
-                 ConvertQCOTdgOp, ConvertQCOSXOp, ConvertQCOSXdgOp,
-                 ConvertQCORXOp, ConvertQCORYOp, ConvertQCORZOp, ConvertQCOPOp,
-                 ConvertQCOROp, ConvertQCOU2Op, ConvertQCOUOp, ConvertQCOSWAPOp,
-                 ConvertQCOiSWAPOp, ConvertQCODCXOp, ConvertQCOECROp,
-                 ConvertQCORXXOp, ConvertQCORYYOp, ConvertQCORZXOp,
-                 ConvertQCORZZOp, ConvertQCOXXPlusYYOp, ConvertQCOXXMinusYYOp,
-                 ConvertQCOBarrierOp, ConvertQCOCtrlOp, ConvertQCOYieldOp>(
-        typeConverter, context);
+    patterns
+        .add<ConvertQCOAllocOp, ConvertQCODeallocOp, ConvertQCOStaticOp,
+             ConvertQCOMeasureOp, ConvertQCOResetOp, ConvertQCOGPhaseOp,
+             ConvertQCOIdOp, ConvertQCOXOp, ConvertQCOYOp, ConvertQCOZOp,
+             ConvertQCOHOp, ConvertQCOSOp, ConvertQCOSdgOp, ConvertQCOTOp,
+             ConvertQCOTdgOp, ConvertQCOSXOp, ConvertQCOSXdgOp, ConvertQCORXOp,
+             ConvertQCORYOp, ConvertQCORZOp, ConvertQCOPOp, ConvertQCOROp,
+             ConvertQCOU2Op, ConvertQCOUOp, ConvertQCOSWAPOp, ConvertQCOiSWAPOp,
+             ConvertQCODCXOp, ConvertQCOECROp, ConvertQCORXXOp, ConvertQCORYYOp,
+             ConvertQCORZXOp, ConvertQCORZZOp, ConvertQCOXXPlusYYOp,
+             ConvertQCOXXMinusYYOp, ConvertQCOBarrierOp, ConvertQCOCtrlOp,
+             ConvertQCOYieldOp, ConvertQCOYieldOp, ConvertQCOScfIfOp,
+             ConvertQCOScfYieldOp, ConvertQCOScfWhileOp,
+             ConvertQCOScfConditionOp, ConvertQCOScfForOp, ConvertQCOFuncCallOp,
+             ConvertQCOFuncFuncOp, ConvertQCOFuncReturnOp>(typeConverter,
+                                                           context);
 
     // Apply the conversion
     if (failed(applyPartialConversion(module, target, std::move(patterns)))) {

@@ -675,14 +675,14 @@ OwningOpRef<ModuleOp> QCOProgramBuilder::finalize() {
   return module;
 }
 
-Value FluxProgramBuilder::arithConstantIndex(int i) {
+Value QCOProgramBuilder::arithConstantIndex(int i) {
 
   const auto op =
       create<arith::ConstantOp>(loc, getIndexType(), getIndexAttr(i));
   return op->getResult(0);
 }
 
-Value FluxProgramBuilder::arithConstantBool(bool b) {
+Value QCOProgramBuilder::arithConstantBool(bool b) {
   const auto i1Type = getI1Type();
   const auto op =
       b ? create<arith::ConstantOp>(loc, i1Type, getIntegerAttr(i1Type, 1))
@@ -690,7 +690,7 @@ Value FluxProgramBuilder::arithConstantBool(bool b) {
   return op->getResult(0);
 }
 
-ValueRange FluxProgramBuilder::scfFor(
+ValueRange QCOProgramBuilder::scfFor(
     Value lowerbound, Value upperbound, Value step, ValueRange initArgs,
     const std::function<ValueRange(OpBuilder&, Value, ValueRange)>& body) {
   auto op = create<scf::ForOp>(loc, lowerbound, upperbound, step,

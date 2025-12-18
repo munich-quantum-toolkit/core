@@ -887,12 +887,12 @@ public:
    * ```
    * ```mlir
    * scf.for %iv = %lb to %ub step %step {
-   *   quartz.x %q0 : !quartz.qubit
+   *   qc.x %q0 : !qc.qubit
    * }
    * ```
    */
-  QuartzProgramBuilder& scfFor(Value lowerbound, Value upperbound, Value step,
-                               const std::function<void(OpBuilder&)>& body);
+  QCProgramBuilder& scfFor(Value lowerbound, Value upperbound, Value step,
+                           const std::function<void(OpBuilder&)>& body);
 
   /**
    * @brief Constructs a scf.while operation without return values
@@ -915,18 +915,17 @@ public:
    * ```
    * ```mlir
    * scf.while : () -> () {
-   * quartz.h %q0 : !quartz.qubit
-   * %res = quartz.measure %q0 : !quartz.qubit -> i1
+   * qc.h %q0 : !qc.qubit
+   * %res = qc.measure %q0 : !qc.qubit -> i1
    * scf.condition(%tres)
    * } do {
-   * quartz.x %q0 : !quartz.qubit
+   * qc.x %q0 : !qc.qubit
    * scf.yield
    * }
    * ```
    */
-  QuartzProgramBuilder&
-  scfWhile(const std::function<void(OpBuilder&)>& beforeBody,
-           const std::function<void(OpBuilder&)>& afterBody);
+  QCProgramBuilder& scfWhile(const std::function<void(OpBuilder&)>& beforeBody,
+                             const std::function<void(OpBuilder&)>& afterBody);
 
   /**
    * @brief Constructs a scf.if operation without return values
@@ -947,13 +946,13 @@ public:
    * ```
    * ```mlir
    * scf.if %condition {
-   * quartz.h %q0 : !quartz.qubit
+   * qc.h %q0 : !qc.qubit
    * } else {
-   * quartz.x %q0 : !quartz.qubit
+   * qc.x %q0 : !qc.qubit
    * }
    * ```
    */
-  QuartzProgramBuilder&
+  QCProgramBuilder&
   scfIf(Value condition, const std::function<void(OpBuilder&)>& thenBody,
         const std::function<void(OpBuilder&)>& elseBody = nullptr);
 
@@ -971,7 +970,7 @@ public:
    * scf.condition(%condition)
    * ```
    */
-  QuartzProgramBuilder& scfCondition(Value condition);
+  QCProgramBuilder& scfCondition(Value condition);
 
   //===--------------------------------------------------------------------===//
   // Arith operations
