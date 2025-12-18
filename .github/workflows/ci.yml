@@ -147,7 +147,7 @@ jobs:
       cmake-args: -DBUILD_MQT_CORE_BENCHMARKS=ON -DBUILD_MQT_CORE_MLIR=ON -DBUILD_MQT_CORE_BINDINGS=ON
       clang-version: 21
       build-project: true
-      files-changed-only: true
+      files-changed-only: false
       setup-python: true
       install-pkgs: "nanobind==2.10.2"
       cpp-linter-extra-args: "-std=c++20"

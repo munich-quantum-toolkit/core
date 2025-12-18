@@ -39,24 +39,23 @@
 
 namespace mqt::ir::opt {
 
-namespace {
-bool isQubitType(const mlir::MemRefType type) {
+static bool isQubitType(mlir::MemRefType type) {
   return llvm::isa<QubitType>(type.getElementType());
 }
 
-bool isQubitType(mlir::memref::LoadOp op) {
+static bool isQubitType(mlir::memref::LoadOp op) {
   const auto& memRef = op.getMemref();
   const auto& memRefType = llvm::cast<mlir::MemRefType>(memRef.getType());
   return isQubitType(memRefType);
 }
 
-bool isQubitType(mlir::memref::StoreOp op) {
+static bool isQubitType(mlir::memref::StoreOp op) {
   const auto& memRef = op.getMemref();
   const auto& memRefType = llvm::cast<mlir::MemRefType>(memRef.getType());
   return isQubitType(memRefType);
 }
 
-bool isSupportedMemRefOp(mlir::Operation* op) {
+static bool isSupportedMemRefOp(mlir::Operation* op) {
   if (auto loadOp = llvm::dyn_cast<mlir::memref::LoadOp>(op)) {
     return isQubitType(loadOp);
   }
@@ -65,7 +64,6 @@ bool isSupportedMemRefOp(mlir::Operation* op) {
   }
   return false;
 }
-} // namespace
 
 /// Analysis pattern that filters out all quantum operations from a given
 /// program and creates a quantum computation from them.

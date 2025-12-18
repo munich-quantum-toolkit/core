@@ -62,8 +62,6 @@ using namespace mlir;
 #define GEN_PASS_DEF_MQTREFTOQIR
 #include "mlir/Conversion/MQTRefToQIR/MQTRefToQIR.h.inc"
 
-namespace {
-
 /**
  * @brief Look up the function declaration with a given name. If it does not
  exist create one and return it.
@@ -74,9 +72,9 @@ namespace {
  * @param fnType The type signature of the function.
  * @return The LLVM funcOp declaration with the requested name and signature.
  */
-LLVM::LLVMFuncOp getFunctionDeclaration(PatternRewriter& rewriter,
-                                        Operation* op, StringRef fnName,
-                                        Type fnType) {
+static LLVM::LLVMFuncOp getFunctionDeclaration(PatternRewriter& rewriter,
+                                               Operation* op, StringRef fnName,
+                                               Type fnType) {
   // check if the function already exists
   auto* fnDecl =
       SymbolTable::lookupNearestSymbolFrom(op, rewriter.getStringAttr(fnName));
@@ -101,6 +99,8 @@ LLVM::LLVMFuncOp getFunctionDeclaration(PatternRewriter& rewriter,
 
   return static_cast<LLVM::LLVMFuncOp>(fnDecl);
 }
+
+namespace {
 
 struct LoweringState {
   // map a given index to a pointer value, to reuse the value instead of
@@ -136,25 +136,27 @@ private:
   LoweringState* state_;
 };
 
-bool isQubitType(const MemRefType type) {
+} // namespace
+
+static bool isQubitType(MemRefType type) {
   return llvm::isa<ref::QubitType>(type.getElementType());
 }
 
-bool isQubitType(memref::AllocOp op) { return isQubitType(op.getType()); }
+static bool isQubitType(memref::AllocOp op) {
+  return isQubitType(op.getType());
+}
 
-bool isQubitType(memref::DeallocOp op) {
+static bool isQubitType(memref::DeallocOp op) {
   const auto& memRef = op.getMemref();
   const auto& memRefType = llvm::cast<MemRefType>(memRef.getType());
   return isQubitType(memRefType);
 }
 
-bool isQubitType(memref::LoadOp op) {
+static bool isQubitType(memref::LoadOp op) {
   const auto& memRef = op.getMemref();
   const auto& memRefType = llvm::cast<MemRefType>(memRef.getType());
   return isQubitType(memRefType);
 }
-
-} // namespace
 
 struct MQTRefToQIRTypeConverter final : LLVMTypeConverter {
   explicit MQTRefToQIRTypeConverter(MLIRContext* ctx) : LLVMTypeConverter(ctx) {

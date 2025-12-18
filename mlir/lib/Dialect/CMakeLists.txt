@@ -8,3 +8,6 @@
 
 add_subdirectory(MQTOpt)
 add_subdirectory(MQTRef)
+add_subdirectory(QCO)
+add_subdirectory(QIR)
+add_subdirectory(QC)

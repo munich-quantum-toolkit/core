@@ -10,7 +10,7 @@
 set(MQT_MLIR_SOURCE_INCLUDE_DIR "${PROJECT_SOURCE_DIR}/mlir/include")
 set(MQT_MLIR_BUILD_INCLUDE_DIR "${PROJECT_BINARY_DIR}/mlir/include")
 set(MQT_MLIR_MIN_VERSION
-    "21.0"
+    "21.1"
     CACHE STRING "Minimum required MLIR version")
 
 # MLIR must be installed on the system
