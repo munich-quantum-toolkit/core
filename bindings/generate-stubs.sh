@@ -35,33 +35,22 @@ for file in "${files[@]}"; do
   rm -f "$file"
 done
 
-# Generate new stub files
-uv run --no-sync -m nanobind.stubgen -m mqt.core.ir -o python/mqt/core/ir/__init__.pyi -P
-uv run --no-sync -m nanobind.stubgen -m mqt.core.ir.operations -o python/mqt/core/ir/operations.pyi -P
-uv run --no-sync -m nanobind.stubgen -m mqt.core.ir.registers -o python/mqt/core/ir/registers.pyi -P
-uv run --no-sync -m nanobind.stubgen -m mqt.core.ir.symbolic -o python/mqt/core/ir/symbolic.pyi -P
-uv run --no-sync -m nanobind.stubgen -m mqt.core.dd -o python/mqt/core/dd.pyi -P
-uv run --no-sync -m nanobind.stubgen -m mqt.core.fomac -o python/mqt/core/fomac.pyi -P
-uv run --no-sync -m nanobind.stubgen -m mqt.core.na.fomac -o python/mqt/core/na/fomac.pyi -P
+# Define
+core_dir=./python/mqt/core
+core_patterns=./bindings/core_patterns.txt
 
-# Remove private Enum members from the stub files
-for file in "${files[@]}"; do
-  if [[ "$OSTYPE" == "darwin"* ]]; then
-    sed -i '' '/_hashable_values_:/d' "$file"
-    sed -i '' '/_unhashable_values_map_:/d' "$file"
-  else
-    sed -i '/_hashable_values_:/d' "$file"
-    sed -i '/_unhashable_values_map_:/d' "$file"
-  fi
-done
+# Generate new stub files
+uv run --no-sync -m nanobind.stubgen -m mqt.core.ir -o $core_dir/ir/__init__.pyi -p $core_patterns -P
+uv run --no-sync -m nanobind.stubgen -m mqt.core.ir.operations -o $core_dir/ir/operations.pyi -p $core_patterns -P
+uv run --no-sync -m nanobind.stubgen -m mqt.core.ir.registers -o $core_dir/ir/registers.pyi -p $core_patterns -P
+uv run --no-sync -m nanobind.stubgen -m mqt.core.ir.symbolic -o $core_dir/ir/symbolic.pyi -p $core_patterns -P
+uv run --no-sync -m nanobind.stubgen -m mqt.core.dd -o $core_dir/dd.pyi -p $core_patterns -P
+uv run --no-sync -m nanobind.stubgen -m mqt.core.fomac -o $core_dir/fomac.pyi -p $core_patterns -P
+uv run --no-sync -m nanobind.stubgen -m mqt.core.na.fomac -o $core_dir/na/fomac.pyi -p $core_patterns -P
 
 set +e
 
-# Add license headers to the generated stub files
+# Run prek on generated stub files
 for file in "${files[@]}"; do
-  prek license-tools --files "$file"
+  uvx prek --files "$file"
 done
-
-# Run ruff
-uvx ruff check
-uvx ruff format
