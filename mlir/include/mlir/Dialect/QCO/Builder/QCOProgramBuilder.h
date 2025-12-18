@@ -1031,9 +1031,11 @@ public:
 
   Value arithConstantBool(bool b);
 
-  ValueRange
-  scfFor(Value lowerbound, Value upperbound, Value step, ValueRange initArgs,
-         const std::function<ValueRange(OpBuilder&, Value, ValueRange)>& body);
+  ValueRange scfFor(Value lowerbound, Value upperbound, Value step,
+                    ValueRange initArgs,
+                    const std::function<ValueRange(OpBuilder&, Location, Value,
+                                                   ValueRange)>& body);
+  QCOProgramBuilder& scfYield(Location loc, ValueRange yieldedValues);
   //===--------------------------------------------------------------------===//
   // Finalization
   //===--------------------------------------------------------------------===//

@@ -142,10 +142,8 @@ void QCOProgramBuilder::updateQubitTracking(Value inputQubit, Value outputQubit,
                                             Region* region) {
   // Validate the input qubit
   validateQubitValue(inputQubit);
-
   // Remove the input (consumed) value from tracking
   validQubits[region].erase(inputQubit);
-
   // Add the output (new) value to tracking
   validQubits[region].insert(outputQubit);
 }
@@ -625,7 +623,6 @@ void QCOProgramBuilder::checkFinalized() const {
 
 OwningOpRef<ModuleOp> QCOProgramBuilder::finalize() {
   checkFinalized();
-
   // Ensure that main function exists and insertion point is valid
   auto* insertionBlock = getInsertionBlock();
   func::FuncOp mainFunc = nullptr;
@@ -690,14 +687,42 @@ Value QCOProgramBuilder::arithConstantBool(bool b) {
   return op->getResult(0);
 }
 
+QCOProgramBuilder& QCOProgramBuilder::scfYield(Location loc,
+                                               ValueRange yieldedValues) {
+  create<scf::YieldOp>(loc, yieldedValues);
+  return *this;
+}
+
 ValueRange QCOProgramBuilder::scfFor(
     Value lowerbound, Value upperbound, Value step, ValueRange initArgs,
-    const std::function<ValueRange(OpBuilder&, Value, ValueRange)>& body) {
-  auto op = create<scf::ForOp>(loc, lowerbound, upperbound, step,
-                               initArgs // iter_args
-  );
+    const std::function<ValueRange(OpBuilder&, Location, Value, ValueRange)>&
+        body) {
 
-  return ValueRange{op->getResults()};
+  auto forOp = create<scf::ForOp>(loc, lowerbound, upperbound, step, initArgs);
+  Block* block = forOp.getBody();
+
+  // Block arguments:
+  //  - arg 0 : induction variable
+  //  - arg 1..n : iter_args
+  Value iv = block->getArgument(0);
+  ValueRange loopArgs = block->getArguments().drop_front();
+
+  // Set insertion point into the loop body
+  OpBuilder::InsertionGuard guard(*this);
+  setInsertionPointToStart(block);
+
+  // Register iter_args as valid qubits in this region
+  Region* bodyRegion = block->getParent();
+  for (Value arg : loopArgs) {
+    validQubits[bodyRegion].insert(arg);
+  }
+
+  // Build user body
+  body(*this, loc, iv, loopArgs);
+  for (auto [initArg, result] : llvm::zip_equal(initArgs, forOp.getResults())) {
+    updateQubitTracking(initArg, result, forOp->getParentRegion());
+  }
+  return forOp->getResults();
 }
 
 } // namespace mlir::qco
