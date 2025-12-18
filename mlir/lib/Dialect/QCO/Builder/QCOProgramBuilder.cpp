@@ -687,27 +687,29 @@ Value QCOProgramBuilder::arithConstantBool(bool b) {
   return op->getResult(0);
 }
 
-QCOProgramBuilder& QCOProgramBuilder::scfYield(Location loc,
-                                               ValueRange yieldedValues) {
+QCOProgramBuilder& QCOProgramBuilder::scfYield(ValueRange yieldedValues) {
   create<scf::YieldOp>(loc, yieldedValues);
   return *this;
 }
 
+QCOProgramBuilder& QCOProgramBuilder::scfCondition(Value condition,
+                                                   ValueRange yieldedValues) {
+  create<scf::ConditionOp>(loc, condition, yieldedValues);
+  return *this;
+}
 ValueRange QCOProgramBuilder::scfFor(
     Value lowerbound, Value upperbound, Value step, ValueRange initArgs,
     const std::function<ValueRange(OpBuilder&, Location, Value, ValueRange)>&
         body) {
 
   auto forOp = create<scf::ForOp>(loc, lowerbound, upperbound, step, initArgs);
-  Block* block = forOp.getBody();
+  auto* block = forOp.getBody();
 
   // Block arguments:
   //  - arg 0 : induction variable
   //  - arg 1..n : iter_args
   Value iv = block->getArgument(0);
   ValueRange loopArgs = block->getArguments().drop_front();
-
-  // Set insertion point into the loop body
   OpBuilder::InsertionGuard guard(*this);
   setInsertionPointToStart(block);
 
@@ -723,6 +725,81 @@ ValueRange QCOProgramBuilder::scfFor(
     updateQubitTracking(initArg, result, forOp->getParentRegion());
   }
   return forOp->getResults();
+}
+
+ValueRange QCOProgramBuilder::scfWhile(
+    ValueRange initArgs,
+    const std::function<ValueRange(OpBuilder&, Location, ValueRange)>&
+        beforeBody,
+    const std::function<ValueRange(OpBuilder&, Location, ValueRange)>&
+        afterBody) {
+  auto whileOp = create<scf::WhileOp>(loc, initArgs.getTypes(), initArgs);
+  const SmallVector<Location> locs(initArgs.size(), loc);
+  // Before region (condition)
+  {
+    Block* block =
+        createBlock(&whileOp.getBefore(), {}, initArgs.getTypes(), locs);
+    ValueRange args = block->getArguments();
+
+    OpBuilder::InsertionGuard guard(*this);
+    setInsertionPointToStart(block);
+
+    Region* region = block->getParent();
+    for (Value arg : args) {
+      validQubits[region].insert(arg);
+    }
+
+    beforeBody(*this, loc, args);
+  }
+
+  // After region (body)
+  {
+    Block* block =
+        createBlock(&whileOp.getAfter(), {}, initArgs.getTypes(), locs);
+    ValueRange args = block->getArguments();
+
+    OpBuilder::InsertionGuard guard(*this);
+    setInsertionPointToStart(block);
+
+    Region* region = block->getParent();
+    for (Value arg : args) {
+      validQubits[region].insert(arg);
+    }
+
+    ValueRange yields = afterBody(*this, loc, args);
+  }
+  for (auto [arg, result] : llvm::zip_equal(initArgs, whileOp.getResults())) {
+    updateQubitTracking(arg, result, whileOp->getParentRegion());
+  }
+  setInsertionPointAfter(whileOp);
+  return whileOp->getResults();
+}
+ValueRange QCOProgramBuilder::scfIf(
+    Value condition, ValueRange initArgs,
+    const std::function<ValueRange(OpBuilder&, Location)>& thenBody,
+    const std::function<ValueRange(OpBuilder&, Location)>& elseBody) {
+  auto ifOp = create<scf::IfOp>(loc, initArgs.getTypes(), condition,
+                                /*withElseRegion=*/true);
+  auto& thenBlock = ifOp.getThenRegion().front();
+  auto& elseBlock = ifOp.getElseRegion().front();
+  OpBuilder::InsertionGuard guard(*this);
+  setInsertionPointToStart(&thenBlock);
+  for (Value arg : initArgs) {
+    validQubits[thenBlock.getParent()].insert(arg);
+  }
+  thenBody(*this, loc);
+
+  OpBuilder::InsertionGuard guardElse(*this);
+  setInsertionPointToStart(&elseBlock);
+  for (Value arg : initArgs) {
+    validQubits[elseBlock.getParent()].insert(arg);
+  }
+  elseBody(*this, loc);
+  for (auto [arg, result] : llvm::zip_equal(initArgs, ifOp.getResults())) {
+    updateQubitTracking(arg, result, ifOp->getParentRegion());
+  }
+  setInsertionPointAfter(ifOp);
+  return ifOp->getResults();
 }
 
 } // namespace mlir::qco

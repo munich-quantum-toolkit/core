@@ -1035,7 +1035,22 @@ public:
                     ValueRange initArgs,
                     const std::function<ValueRange(OpBuilder&, Location, Value,
                                                    ValueRange)>& body);
-  QCOProgramBuilder& scfYield(Location loc, ValueRange yieldedValues);
+
+  ValueRange
+  scfWhile(ValueRange args,
+           const std::function<ValueRange(OpBuilder&, Location, ValueRange)>&
+               beforeBody,
+           const std::function<ValueRange(OpBuilder&, Location, ValueRange)>&
+               afterBody);
+  ValueRange
+  scfIf(Value condition, ValueRange args,
+        const std::function<ValueRange(OpBuilder&, Location)>& thenBody,
+        const std::function<ValueRange(OpBuilder&, Location)>& elseBody);
+
+  QCOProgramBuilder& scfYield(ValueRange yieldedValues);
+
+  QCOProgramBuilder& scfCondition(Value condition, ValueRange yieldedValues);
+
   //===--------------------------------------------------------------------===//
   // Finalization
   //===--------------------------------------------------------------------===//
