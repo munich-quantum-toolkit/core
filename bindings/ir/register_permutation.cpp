@@ -177,9 +177,9 @@ Args:
           nb::sig("def items(self) -> collections.abc.ItemsView[int, int]"),
           nb::keep_alive<0, 1>())
 
-      .def(nb::self == nb::self, // NOLINT(misc-redundant-expression)
+      .def(nb::self == nb::self,
            nb::sig("def __eq__(self, arg: object, /) -> bool"))
-      .def(nb::self != nb::self, // NOLINT(misc-redundant-expression)
+      .def(nb::self != nb::self,
            nb::sig("def __ne__(self, arg: object, /) -> bool"))
 
       .def("__str__",

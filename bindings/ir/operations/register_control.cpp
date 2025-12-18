@@ -46,9 +46,9 @@ Args:
   control.def("__str__", [](const qc::Control& c) { return c.toString(); });
   control.def("__repr__", [](const qc::Control& c) { return c.toString(); });
 
-  control.def(nb::self == nb::self, // NOLINT(misc-redundant-expression)
+  control.def(nb::self == nb::self,
               nb::sig("def __eq__(self, arg: object, /) -> bool"));
-  control.def(nb::self != nb::self, // NOLINT(misc-redundant-expression)
+  control.def(nb::self != nb::self,
               nb::sig("def __ne__(self, arg: object, /) -> bool"));
   control.def(nb::hash(nb::self));
 

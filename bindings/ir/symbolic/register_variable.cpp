@@ -36,12 +36,12 @@ Args:
       .def("__str__", &sym::Variable::getName)
       .def("__repr__", &sym::Variable::getName)
 
-      .def(nb::self == nb::self, // NOLINT(misc-redundant-expression)
+      .def(nb::self == nb::self,
            nb::sig("def __eq__(self, arg: object, /) -> bool"))
-      .def(nb::self != nb::self, // NOLINT(misc-redundant-expression)
+      .def(nb::self != nb::self,
            nb::sig("def __ne__(self, arg: object, /) -> bool"))
       .def(nb::hash(nb::self))
-      .def(nb::self < nb::self)  // NOLINT(misc-redundant-expression)
-      .def(nb::self > nb::self); // NOLINT(misc-redundant-expression)
+      .def(nb::self < nb::self)
+      .def(nb::self > nb::self);
 }
 } // namespace mqt

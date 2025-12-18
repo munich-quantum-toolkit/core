@@ -62,9 +62,9 @@ Returns:
       .def(double() * nb::self, nb::is_operator())
       .def(nb::self / double(), nb::is_operator())
 
-      .def(nb::self == nb::self, // NOLINT(misc-redundant-expression)
+      .def(nb::self == nb::self,
            nb::sig("def __eq__(self, arg: object, /) -> bool"))
-      .def(nb::self != nb::self, // NOLINT(misc-redundant-expression)
+      .def(nb::self != nb::self,
            nb::sig("def __ne__(self, arg: object, /) -> bool"))
       .def(nb::hash(nb::self))
 

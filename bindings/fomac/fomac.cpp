@@ -167,9 +167,9 @@ Returns:
   job.def_prop_ro("num_shots", &fomac::Session::Job::getNumShots,
                   "Returns the number of shots for the job.");
 
-  job.def(nb::self == nb::self, // NOLINT(misc-redundant-expression)
+  job.def(nb::self == nb::self,
           nb::sig("def __eq__(self, arg: object, /) -> bool"));
-  job.def(nb::self != nb::self, // NOLINT(misc-redundant-expression)
+  job.def(nb::self != nb::self,
           nb::sig("def __ne__(self, arg: object, /) -> bool"));
 
   // JobStatus enum
@@ -280,9 +280,9 @@ Returns:
     return "<Device name=\"" + dev.getName() + "\">";
   });
 
-  device.def(nb::self == nb::self, // NOLINT(misc-redundant-expression)
+  device.def(nb::self == nb::self,
              nb::sig("def __eq__(self, arg: object, /) -> bool"));
-  device.def(nb::self != nb::self, // NOLINT(misc-redundant-expression)
+  device.def(nb::self != nb::self,
              nb::sig("def __ne__(self, arg: object, /) -> bool"));
 
   // Site class
@@ -333,9 +333,9 @@ Returns:
     return "<Site index=" + std::to_string(s.getIndex()) + ">";
   });
 
-  site.def(nb::self == nb::self, // NOLINT(misc-redundant-expression)
+  site.def(nb::self == nb::self,
            nb::sig("def __eq__(self, arg: object, /) -> bool"));
-  site.def(nb::self != nb::self, // NOLINT(misc-redundant-expression)
+  site.def(nb::self != nb::self,
            nb::sig("def __ne__(self, arg: object, /) -> bool"));
 
   // Operation class
@@ -414,9 +414,9 @@ Returns:
     return "<Operation name=\"" + op.getName() + "\">";
   });
 
-  operation.def(nb::self == nb::self, // NOLINT(misc-redundant-expression)
+  operation.def(nb::self == nb::self,
                 nb::sig("def __eq__(self, arg: object, /) -> bool"));
-  operation.def(nb::self != nb::self, // NOLINT(misc-redundant-expression)
+  operation.def(nb::self != nb::self,
                 nb::sig("def __ne__(self, arg: object, /) -> bool"));
 
 #ifndef _WIN32

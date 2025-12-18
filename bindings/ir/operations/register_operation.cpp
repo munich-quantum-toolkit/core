@@ -155,9 +155,9 @@ Returns:
 
       .def("invert", &qc::Operation::invert, "Invert the operation (in-place).")
 
-      .def(nb::self == nb::self, // NOLINT(misc-redundant-expression)
+      .def(nb::self == nb::self,
            nb::sig("def __eq__(self, arg: object, /) -> bool"))
-      .def(nb::self != nb::self, // NOLINT(misc-redundant-expression)
+      .def(nb::self != nb::self,
            nb::sig("def __ne__(self, arg: object, /) -> bool"))
       .def(nb::hash(nb::self))
 

@@ -1,0 +1,6 @@
+InheritParentConfig: true
+Checks: |
+  -cppcoreguidelines-avoid-c-arrays,
+  -cppcoreguidelines-owning-memory,
+  -misc-redundant-expression,
+  -modernize-avoid-c-arrays

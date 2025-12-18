@@ -75,9 +75,9 @@ Args:
           [](const qc::QuantumRegister& reg) { return reg.getEndIndex(); },
           "Index of the last qubit in the quantum register.")
 
-      .def(nb::self == nb::self, // NOLINT(misc-redundant-expression)
+      .def(nb::self == nb::self,
            nb::sig("def __eq__(self, arg: object, /) -> bool"))
-      .def(nb::self != nb::self, // NOLINT(misc-redundant-expression)
+      .def(nb::self != nb::self,
            nb::sig("def __ne__(self, arg: object, /) -> bool"))
       .def(nb::hash(nb::self))
 
