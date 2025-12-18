@@ -56,5 +56,7 @@ set +e
 
 # Run prek on generated stub files
 for stub_file in "${stub_files[@]}"; do
-  uvx prek --files "$stub_file"
+  uvx prek license-tools --quiet --files "$stub_file"
+  uvx prek ruff-check --quiet --files "$stub_file"
+  uvx prek ruff-format --quiet --files "$stub_file"
 done
