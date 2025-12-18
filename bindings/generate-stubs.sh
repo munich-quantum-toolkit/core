@@ -35,18 +35,18 @@ for file in "${files[@]}"; do
   rm -f "$file"
 done
 
-# Define
+# Define common paths
 core_dir=./python/mqt/core
 core_patterns=./bindings/core_patterns.txt
 
 # Generate new stub files
-uv run --no-sync -m nanobind.stubgen -m mqt.core.ir -o $core_dir/ir/__init__.pyi -p $core_patterns -P
-uv run --no-sync -m nanobind.stubgen -m mqt.core.ir.operations -o $core_dir/ir/operations.pyi -p $core_patterns -P
-uv run --no-sync -m nanobind.stubgen -m mqt.core.ir.registers -o $core_dir/ir/registers.pyi -p $core_patterns -P
-uv run --no-sync -m nanobind.stubgen -m mqt.core.ir.symbolic -o $core_dir/ir/symbolic.pyi -p $core_patterns -P
-uv run --no-sync -m nanobind.stubgen -m mqt.core.dd -o $core_dir/dd.pyi -p $core_patterns -P
-uv run --no-sync -m nanobind.stubgen -m mqt.core.fomac -o $core_dir/fomac.pyi -p $core_patterns -P
-uv run --no-sync -m nanobind.stubgen -m mqt.core.na.fomac -o $core_dir/na/fomac.pyi -p $core_patterns -P
+uv run --no-sync -m nanobind.stubgen -m mqt.core.ir -o "$core_dir/ir/__init__.pyi" -p "$core_patterns" -P
+uv run --no-sync -m nanobind.stubgen -m mqt.core.ir.operations -o "$core_dir/ir/operations.pyi" -p "$core_patterns" -P
+uv run --no-sync -m nanobind.stubgen -m mqt.core.ir.registers -o "$core_dir/ir/registers.pyi" -p "$core_patterns" -P
+uv run --no-sync -m nanobind.stubgen -m mqt.core.ir.symbolic -o "$core_dir/ir/symbolic.pyi" -p "$core_patterns" -P
+uv run --no-sync -m nanobind.stubgen -m mqt.core.dd -o "$core_dir/dd.pyi" -p "$core_patterns" -P
+uv run --no-sync -m nanobind.stubgen -m mqt.core.fomac -o "$core_dir/fomac.pyi" -p "$core_patterns" -P
+uv run --no-sync -m nanobind.stubgen -m mqt.core.na.fomac -o "$core_dir/na/fomac.pyi" -p "$core_patterns" -P
 
 set +e
 
