@@ -12,16 +12,21 @@
 
 #include "mlir/Dialect/QIR/Utils/QIRUtils.h"
 
+#include <cstdint>
 #include <llvm/ADT/DenseMap.h>
 #include <llvm/ADT/SmallVector.h>
+#include <llvm/ADT/StringRef.h>
 #include <llvm/Support/Allocator.h>
 #include <llvm/Support/ErrorHandling.h>
 #include <llvm/Support/StringSaver.h>
 #include <mlir/Dialect/LLVMIR/LLVMDialect.h>
+#include <mlir/IR/Block.h>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OwningOpRef.h>
+#include <mlir/IR/Value.h>
+#include <mlir/IR/ValueRange.h>
 #include <string>
 #include <utility>
 #include <variant>
@@ -34,7 +39,7 @@ namespace mlir::qir {
  *
  * @details
  * The QIRProgramBuilder provides a type-safe interface for constructing
- * quantum programs in QIR format. Like Quartz, QIR uses reference semantics
+ * quantum programs in QIR format. Like QC, QIR uses reference semantics
  * where operations modify qubits in place, but QIR programs require specific
  * boilerplate structure including proper block organization and metadata
  * attributes.
@@ -125,7 +130,7 @@ public:
    * %q2 = llvm.inttoptr %c2 : i64 to !llvm.ptr
    * ```
    */
-  SmallVector<Value> allocQubitRegister(int64_t size);
+  llvm::SmallVector<Value> allocQubitRegister(int64_t size);
 
   /**
    * @brief A small structure representing a single classical bit within a
@@ -829,10 +834,10 @@ private:
   LLVM::ConstantOp exitCode;
 
   /// Cache static pointers for reuse
-  DenseMap<int64_t, Value> ptrCache;
+  llvm::DenseMap<int64_t, Value> ptrCache;
 
   /// Map from (register_name, register_index) to result pointer
-  DenseMap<std::pair<StringRef, int64_t>, Value> registerResultMap;
+  llvm::DenseMap<std::pair<llvm::StringRef, int64_t>, Value> registerResultMap;
 
   /// Track qubit and result counts for QIR metadata
   QIRMetadata metadata_;
@@ -845,9 +850,10 @@ private:
    * @param targets Target qubits
    * @param fnName Name of the QIR function to call
    */
-  void createCallOp(const SmallVector<std::variant<double, Value>>& parameters,
-                    ValueRange controls, const SmallVector<Value>& targets,
-                    StringRef fnName);
+  void
+  createCallOp(const llvm::SmallVector<std::variant<double, Value>>& parameters,
+               ValueRange controls, const SmallVector<Value>& targets,
+               llvm::StringRef fnName);
 
   /**
    * @brief Generate array-based output recording in the output block

@@ -22,6 +22,7 @@
 #include "ir/QuantumComputation.hpp"
 #include "mqt_ddsim_qdmi/device.h"
 #include "qasm3/Importer.hpp"
+#include "qdmi/Common.hpp"
 
 #include <algorithm>
 #include <array>
@@ -139,107 +140,22 @@ makeOperationAddresses(const std::array<OperationInfo, N>& ops) {
 }
 constexpr auto OPERATION_ADDRESSES = makeOperationAddresses(OPERATIONS);
 
+constexpr std::array SUPPORTED_PROGRAM_FORMATS = {QDMI_PROGRAM_FORMAT_QASM2,
+                                                  QDMI_PROGRAM_FORMAT_QASM3};
+
 } // namespace
 
-// NOLINTBEGIN(bugprone-macro-parentheses)
-#define ADD_SINGLE_VALUE_PROPERTY(prop_name, prop_type, prop_value, prop,      \
-                                  size, value, size_ret)                       \
-  {                                                                            \
-    if ((prop) == (prop_name)) {                                               \
-      if ((value) != nullptr) {                                                \
-        if ((size) < sizeof(prop_type)) {                                      \
-          return QDMI_ERROR_INVALIDARGUMENT;                                   \
-        }                                                                      \
-        *static_cast<prop_type*>(value) = prop_value;                          \
-      }                                                                        \
-      if ((size_ret) != nullptr) {                                             \
-        *size_ret = sizeof(prop_type);                                         \
-      }                                                                        \
-      return QDMI_SUCCESS;                                                     \
-    }                                                                          \
-  }
-
-#ifdef _WIN32
-#define STRNCPY(dest, src, size)                                               \
-  strncpy_s(static_cast<char*>(dest), size, src, size);
-#else
-#define STRNCPY(dest, src, size) strncpy(static_cast<char*>(dest), src, size);
-#endif
-
-#define ADD_STRING_PROPERTY(prop_name, prop_value, prop, size, value,          \
-                            size_ret)                                          \
-  {                                                                            \
-    if ((prop) == (prop_name)) {                                               \
-      if ((value) != nullptr) {                                                \
-        if ((size) < strlen(prop_value) + 1) {                                 \
-          return QDMI_ERROR_INVALIDARGUMENT;                                   \
-        }                                                                      \
-        STRNCPY(value, prop_value, size);                                      \
-        /* NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic) */  \
-        static_cast<char*>(value)[size - 1] = '\0';                            \
-      }                                                                        \
-      if ((size_ret) != nullptr) {                                             \
-        *size_ret = strlen(prop_value) + 1;                                    \
-      }                                                                        \
-      return QDMI_SUCCESS;                                                     \
-    }                                                                          \
-  }
-
-#define ADD_LIST_PROPERTY(prop_name, prop_type, prop_values, prop, size,       \
-                          value, size_ret)                                     \
-  {                                                                            \
-    if ((prop) == (prop_name)) {                                               \
-      if ((value) != nullptr) {                                                \
-        if ((size) < (prop_values).size() * sizeof(prop_type)) {               \
-          return QDMI_ERROR_INVALIDARGUMENT;                                   \
-        }                                                                      \
-        memcpy(static_cast<void*>(value),                                      \
-               static_cast<const void*>((prop_values).data()),                 \
-               (prop_values).size() * sizeof(prop_type));                      \
-      }                                                                        \
-      if ((size_ret) != nullptr) {                                             \
-        *size_ret = (prop_values).size() * sizeof(prop_type);                  \
-      }                                                                        \
-      return QDMI_SUCCESS;                                                     \
-    }                                                                          \
-  }
-// NOLINTEND(bugprone-macro-parentheses)
-
 namespace qdmi::dd {
-
-std::atomic<Device*> Device::instance = nullptr;
-
 Device::Device()
     : name_("MQT Core DDSIM QDMI Device"),
       qubitsNum_(std::numeric_limits<::dd::Qubit>::max()) {}
-
-void Device::initialize() {
-  // NOLINTNEXTLINE(misc-const-correctness)
-  Device* expected = nullptr;
-  // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
-  auto* newInstance = new Device();
-  if (!instance.compare_exchange_strong(expected, newInstance)) {
-    // Another thread won the race, so delete the instance we created.
-    // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
-    delete newInstance;
-  }
-}
-
-void Device::finalize() {
-  // Atomically swap the instance pointer with nullptr and get the old value.
-  const Device* oldInstance = instance.exchange(nullptr);
-  // Delete the old instance if it existed.
-  // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
-  delete oldInstance;
-}
-
 auto Device::get() -> Device& {
-  auto* loadedInstance = instance.load();
-  assert(loadedInstance != nullptr &&
-         "Device not initialized. Call `initialize()` first.");
-  return *loadedInstance;
+  // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
+  static auto* instance = new Device();
+  // The instance is intentionally leaked to avoid static deinitialization
+  // issues (cf. static (de)initialization order fiasco)
+  return *instance;
 }
-
 auto Device::sessionAlloc(MQT_DDSIM_QDMI_Device_Session* session)
     -> QDMI_STATUS {
   if (session == nullptr) {
@@ -264,12 +180,7 @@ auto Device::sessionFree(MQT_DDSIM_QDMI_Device_Session session) -> void {
 auto Device::queryProperty(const QDMI_Device_Property prop, const size_t size,
                            void* value, size_t* sizeRet) const -> QDMI_STATUS {
   if ((value != nullptr && size == 0) ||
-      (prop >= QDMI_DEVICE_PROPERTY_MAX &&
-       prop != QDMI_DEVICE_PROPERTY_CUSTOM1 &&
-       prop != QDMI_DEVICE_PROPERTY_CUSTOM2 &&
-       prop != QDMI_DEVICE_PROPERTY_CUSTOM3 &&
-       prop != QDMI_DEVICE_PROPERTY_CUSTOM4 &&
-       prop != QDMI_DEVICE_PROPERTY_CUSTOM5)) {
+      IS_INVALID_ARGUMENT(prop, QDMI_DEVICE_PROPERTY)) {
     return QDMI_ERROR_INVALIDARGUMENT;
   }
   ADD_STRING_PROPERTY(QDMI_DEVICE_PROPERTY_NAME, name_.c_str(), prop, size,
@@ -304,11 +215,14 @@ auto Device::queryProperty(const QDMI_Device_Property prop, const size_t size,
                     prop, size, value, sizeRet)
   ADD_LIST_PROPERTY(QDMI_DEVICE_PROPERTY_OPERATIONS, MQT_DDSIM_QDMI_Operation,
                     OPERATION_ADDRESSES, prop, size, value, sizeRet)
+  ADD_LIST_PROPERTY(QDMI_DEVICE_PROPERTY_SUPPORTEDPROGRAMFORMATS,
+                    QDMI_Program_Format, SUPPORTED_PROGRAM_FORMATS, prop, size,
+                    value, sizeRet)
   return QDMI_ERROR_NOTSUPPORTED;
 }
 
 auto Device::generateUniqueID() -> int {
-  const std::scoped_lock<std::mutex> lock(sessionsMutex_);
+  const std::scoped_lock<std::mutex> lock(rngMutex_);
   return dis_(rng_);
 }
 auto Device::setStatus(const QDMI_Device_Status status) -> void {
@@ -338,12 +252,7 @@ auto MQT_DDSIM_QDMI_Device_Session_impl_d::setParameter(
     const QDMI_Device_Session_Parameter param, const size_t size,
     const void* value) const -> QDMI_STATUS {
   if ((value != nullptr && size == 0) ||
-      (param >= QDMI_DEVICE_SESSION_PARAMETER_MAX &&
-       param != QDMI_DEVICE_SESSION_PARAMETER_CUSTOM1 &&
-       param != QDMI_DEVICE_SESSION_PARAMETER_CUSTOM2 &&
-       param != QDMI_DEVICE_SESSION_PARAMETER_CUSTOM3 &&
-       param != QDMI_DEVICE_SESSION_PARAMETER_CUSTOM4 &&
-       param != QDMI_DEVICE_SESSION_PARAMETER_CUSTOM5)) {
+      IS_INVALID_ARGUMENT(param, QDMI_DEVICE_SESSION_PARAMETER)) {
     return QDMI_ERROR_INVALIDARGUMENT;
   }
   if (status_ != Status::ALLOCATED) {
@@ -387,11 +296,7 @@ auto MQT_DDSIM_QDMI_Device_Session_impl_d::querySiteProperty(
     return QDMI_ERROR_BADSTATE;
   }
   if (site == nullptr || (value != nullptr && size == 0) ||
-      (prop >= QDMI_SITE_PROPERTY_MAX && prop != QDMI_SITE_PROPERTY_CUSTOM1 &&
-       prop != QDMI_SITE_PROPERTY_CUSTOM2 &&
-       prop != QDMI_SITE_PROPERTY_CUSTOM3 &&
-       prop != QDMI_SITE_PROPERTY_CUSTOM4 &&
-       prop != QDMI_SITE_PROPERTY_CUSTOM5)) {
+      IS_INVALID_ARGUMENT(prop, QDMI_SITE_PROPERTY)) {
     return QDMI_ERROR_INVALIDARGUMENT;
   }
   const auto id =
@@ -411,12 +316,7 @@ auto MQT_DDSIM_QDMI_Device_Session_impl_d::queryOperationProperty(
   if (operation == nullptr || (sites != nullptr && numSites == 0) ||
       (params != nullptr && numParams == 0) ||
       (value != nullptr && size == 0) ||
-      (prop >= QDMI_OPERATION_PROPERTY_MAX &&
-       prop != QDMI_OPERATION_PROPERTY_CUSTOM1 &&
-       prop != QDMI_OPERATION_PROPERTY_CUSTOM2 &&
-       prop != QDMI_OPERATION_PROPERTY_CUSTOM3 &&
-       prop != QDMI_OPERATION_PROPERTY_CUSTOM4 &&
-       prop != QDMI_OPERATION_PROPERTY_CUSTOM5)) {
+      IS_INVALID_ARGUMENT(prop, QDMI_OPERATION_PROPERTY)) {
     return QDMI_ERROR_INVALIDARGUMENT;
   }
   const auto& [name_, numSites_, numParams_, isVariadic] =
@@ -447,12 +347,7 @@ auto MQT_DDSIM_QDMI_Device_Job_impl_d::setParameter(
     const QDMI_Device_Job_Parameter param, const size_t size, const void* value)
     -> QDMI_STATUS {
   if ((value != nullptr && size == 0) ||
-      (param >= QDMI_DEVICE_JOB_PARAMETER_MAX &&
-       param != QDMI_DEVICE_JOB_PARAMETER_CUSTOM1 &&
-       param != QDMI_DEVICE_JOB_PARAMETER_CUSTOM2 &&
-       param != QDMI_DEVICE_JOB_PARAMETER_CUSTOM3 &&
-       param != QDMI_DEVICE_JOB_PARAMETER_CUSTOM4 &&
-       param != QDMI_DEVICE_JOB_PARAMETER_CUSTOM5)) {
+      IS_INVALID_ARGUMENT(param, QDMI_DEVICE_JOB_PARAMETER)) {
     return QDMI_ERROR_INVALIDARGUMENT;
   }
   if (status_.load() != QDMI_JOB_STATUS_CREATED) {
@@ -462,12 +357,7 @@ auto MQT_DDSIM_QDMI_Device_Job_impl_d::setParameter(
   case QDMI_DEVICE_JOB_PARAMETER_PROGRAMFORMAT:
     if (value != nullptr) {
       const auto format = *static_cast<const QDMI_Program_Format*>(value);
-      if (format >= QDMI_PROGRAM_FORMAT_MAX &&
-          format != QDMI_PROGRAM_FORMAT_CUSTOM1 &&
-          format != QDMI_PROGRAM_FORMAT_CUSTOM2 &&
-          format != QDMI_PROGRAM_FORMAT_CUSTOM3 &&
-          format != QDMI_PROGRAM_FORMAT_CUSTOM4 &&
-          format != QDMI_PROGRAM_FORMAT_CUSTOM5) {
+      if (IS_INVALID_ARGUMENT(format, QDMI_PROGRAM_FORMAT)) {
         return QDMI_ERROR_INVALIDARGUMENT;
       }
       if (format != QDMI_PROGRAM_FORMAT_QASM2 &&
@@ -496,12 +386,7 @@ auto MQT_DDSIM_QDMI_Device_Job_impl_d::queryProperty(
     const QDMI_Device_Job_Property prop, const size_t size, void* value,
     size_t* sizeRet) const -> QDMI_STATUS {
   if ((value != nullptr && size == 0) ||
-      (prop >= QDMI_DEVICE_JOB_PROPERTY_MAX &&
-       prop != QDMI_DEVICE_JOB_PROPERTY_CUSTOM1 &&
-       prop != QDMI_DEVICE_JOB_PROPERTY_CUSTOM2 &&
-       prop != QDMI_DEVICE_JOB_PROPERTY_CUSTOM3 &&
-       prop != QDMI_DEVICE_JOB_PROPERTY_CUSTOM4 &&
-       prop != QDMI_DEVICE_JOB_PROPERTY_CUSTOM5)) {
+      IS_INVALID_ARGUMENT(prop, QDMI_DEVICE_JOB_PROPERTY)) {
     return QDMI_ERROR_INVALIDARGUMENT;
   }
   const auto str = std::to_string(id_);
@@ -510,6 +395,8 @@ auto MQT_DDSIM_QDMI_Device_Job_impl_d::queryProperty(
   ADD_SINGLE_VALUE_PROPERTY(QDMI_DEVICE_JOB_PROPERTY_PROGRAMFORMAT,
                             QDMI_Program_Format, format_, prop, size, value,
                             sizeRet)
+  ADD_STRING_PROPERTY(QDMI_DEVICE_JOB_PROPERTY_PROGRAM, program_.c_str(), prop,
+                      size, value, sizeRet)
   ADD_SINGLE_VALUE_PROPERTY(QDMI_DEVICE_JOB_PROPERTY_SHOTSNUM, size_t,
                             numShots_, prop, size, value, sizeRet)
   return QDMI_ERROR_NOTSUPPORTED;
@@ -766,10 +653,7 @@ auto MQT_DDSIM_QDMI_Device_Job_impl_d::getResults(const QDMI_Job_Result result,
                                                   size_t* sizeRet)
     -> QDMI_STATUS {
   if ((data != nullptr && size == 0) ||
-      (result >= QDMI_JOB_RESULT_MAX && result != QDMI_JOB_RESULT_CUSTOM1 &&
-       result != QDMI_JOB_RESULT_CUSTOM2 && result != QDMI_JOB_RESULT_CUSTOM3 &&
-       result != QDMI_JOB_RESULT_CUSTOM4 &&
-       result != QDMI_JOB_RESULT_CUSTOM5)) {
+      IS_INVALID_ARGUMENT(result, QDMI_JOB_RESULT)) {
     return QDMI_ERROR_INVALIDARGUMENT;
   }
   if (status_.load() != QDMI_JOB_STATUS_DONE) {
@@ -808,14 +692,12 @@ auto MQT_DDSIM_QDMI_Device_Job_impl_d::getResults(const QDMI_Job_Result result,
 // QDMI uses a different naming convention for its C interface functions
 // NOLINTBEGIN(readability-identifier-naming)
 int MQT_DDSIM_QDMI_device_initialize() {
-  qdmi::dd::Device::initialize();
+  // ensure the singleton is initialized
+  std::ignore = qdmi::dd::Device::get();
   return QDMI_SUCCESS;
 }
 
-int MQT_DDSIM_QDMI_device_finalize() {
-  qdmi::dd::Device::finalize();
-  return QDMI_SUCCESS;
-}
+int MQT_DDSIM_QDMI_device_finalize() { return QDMI_SUCCESS; }
 
 int MQT_DDSIM_QDMI_device_session_alloc(
     MQT_DDSIM_QDMI_Device_Session* session) {

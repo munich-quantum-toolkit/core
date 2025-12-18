@@ -12,6 +12,7 @@
 
 #include "ir/QuantumComputation.hpp"
 #include "ir/Register.hpp"
+#include "ir/operations/CompoundOperation.hpp"
 #include "ir/operations/Control.hpp"
 #include "ir/operations/IfElseOperation.hpp"
 #include "ir/operations/NonUnitaryOperation.hpp"
@@ -52,6 +53,8 @@ struct QregInfo {
 using BitMemInfo = std::pair<mlir::Value, std::size_t>; // (memref, localIdx)
 using BitIndexVec = llvm::SmallVector<BitMemInfo>;
 
+} // namespace
+
 /**
  * @brief Allocates a quantum register in the MLIR module.
  *
@@ -60,8 +63,9 @@ using BitIndexVec = llvm::SmallVector<BitMemInfo>;
  * @param numQubits The number of qubits to allocate in the register
  * @return mlir::Value The allocated quantum register value
  */
-mlir::Value allocateQreg(mlir::OpBuilder& builder, mlir::MLIRContext* context,
-                         const std::size_t numQubits) {
+static mlir::Value allocateQreg(mlir::OpBuilder& builder,
+                                mlir::MLIRContext* context,
+                                const std::size_t numQubits) {
   const auto& qubitType = mqt::ir::ref::QubitType::get(context);
   auto memRefType =
       mlir::MemRefType::get({static_cast<int64_t>(numQubits)}, qubitType);
@@ -78,9 +82,9 @@ mlir::Value allocateQreg(mlir::OpBuilder& builder, mlir::MLIRContext* context,
  * @param numQubits The number of qubits to extract
  * @return llvm::SmallVector<mlir::Value> Vector of extracted qubit values
  */
-llvm::SmallVector<mlir::Value> extractQubits(mlir::OpBuilder& builder,
-                                             mlir::Value qreg,
-                                             const std::size_t numQubits) {
+static llvm::SmallVector<mlir::Value>
+extractQubits(mlir::OpBuilder& builder, mlir::Value qreg,
+              const std::size_t numQubits) {
   llvm::SmallVector<mlir::Value> qubits;
   qubits.reserve(numQubits);
 
@@ -106,7 +110,7 @@ llvm::SmallVector<mlir::Value> extractQubits(mlir::OpBuilder& builder,
  * @return llvm::SmallVector<QregInfo> Vector containing information about all
  * quantum registers
  */
-llvm::SmallVector<QregInfo>
+static llvm::SmallVector<QregInfo>
 getQregs(mlir::OpBuilder& builder, mlir::MLIRContext* context,
          const qc::QuantumComputation& quantumComputation) {
   // Build list of pointers for sorting
@@ -147,7 +151,7 @@ getQregs(mlir::OpBuilder& builder, mlir::MLIRContext* context,
  * @param qregs Vector containing information about all quantum registers
  * @return llvm::SmallVector<mlir::Value> Sorted vector of qubit values
  */
-llvm::SmallVector<mlir::Value>
+static llvm::SmallVector<mlir::Value>
 getQubits(const qc::QuantumComputation& quantumComputation,
           llvm::SmallVector<QregInfo>& qregs) {
   llvm::SmallVector<mlir::Value> flatQubits;
@@ -170,7 +174,7 @@ getQubits(const qc::QuantumComputation& quantumComputation,
  * @param builder The MLIR OpBuilder used to create operations
  * @param qreg The quantum register to deallocate
  */
-void deallocateQreg(mlir::OpBuilder& builder, mlir::Value qreg) {
+static void deallocateQreg(mlir::OpBuilder& builder, mlir::Value qreg) {
   builder.create<mlir::memref::DeallocOp>(builder.getUnknownLoc(), qreg);
 }
 
@@ -181,7 +185,7 @@ void deallocateQreg(mlir::OpBuilder& builder, mlir::Value qreg) {
  * @param numBits The number of bits to allocate in the register
  * @return mlir::Value The allocated classical register value
  */
-mlir::Value allocateBits(mlir::OpBuilder& builder, int64_t numBits) {
+static mlir::Value allocateBits(mlir::OpBuilder& builder, int64_t numBits) {
   auto memRefType = mlir::MemRefType::get({numBits}, builder.getI1Type());
   auto memref = builder.create<mlir::memref::AllocaOp>(builder.getUnknownLoc(),
                                                        memRefType);
@@ -195,8 +199,8 @@ mlir::Value allocateBits(mlir::OpBuilder& builder, int64_t numBits) {
  * @param numBits The number of bits to allocate in the register
  * @return mlir::Value The allocated classical register value
  */
-BitIndexVec getBitMap(mlir::OpBuilder& builder,
-                      const qc::QuantumComputation& quantumComputation) {
+static BitIndexVec getBitMap(mlir::OpBuilder& builder,
+                             const qc::QuantumComputation& quantumComputation) {
   // Build list of pointers for sorting
   llvm::SmallVector<const qc::ClassicalRegister*> cregPtrs;
   cregPtrs.reserve(quantumComputation.getClassicalRegisters().size());
@@ -233,8 +237,9 @@ BitIndexVec getBitMap(mlir::OpBuilder& builder,
  * @param qubits The qubits of the quantum register
  */
 template <typename OpType>
-void addUnitaryOp(mlir::OpBuilder& builder, const qc::Operation& operation,
-                  const llvm::SmallVector<mlir::Value>& qubits) {
+static void addUnitaryOp(mlir::OpBuilder& builder,
+                         const qc::Operation& operation,
+                         const llvm::SmallVector<mlir::Value>& qubits) {
   // Define operation parameters
   mlir::DenseF64ArrayAttr staticParamsAttr = nullptr;
   if (const auto& parameters = operation.getParameter(); !parameters.empty()) {
@@ -279,9 +284,10 @@ void addUnitaryOp(mlir::OpBuilder& builder, const qc::Operation& operation,
  * @param bitMap The mapping from global classical bit index to (memref,
  * localIdx)
  */
-void addMeasureOp(mlir::OpBuilder& builder, const qc::Operation& operation,
-                  const llvm::SmallVector<mlir::Value>& qubits,
-                  const BitIndexVec& bitMap) {
+static void addMeasureOp(mlir::OpBuilder& builder,
+                         const qc::Operation& operation,
+                         const llvm::SmallVector<mlir::Value>& qubits,
+                         const BitIndexVec& bitMap) {
   const auto& measureOp =
       dynamic_cast<const qc::NonUnitaryOperation&>(operation);
   const auto& targets = measureOp.getTargets();
@@ -307,8 +313,8 @@ void addMeasureOp(mlir::OpBuilder& builder, const qc::Operation& operation,
  * @param operation The reset operation to add
  * @param qubits The qubits of the quantum register
  */
-void addResetOp(mlir::OpBuilder& builder, const qc::Operation& operation,
-                const llvm::SmallVector<mlir::Value>& qubits) {
+static void addResetOp(mlir::OpBuilder& builder, const qc::Operation& operation,
+                       const llvm::SmallVector<mlir::Value>& qubits) {
   for (const auto& target : operation.getTargets()) {
     const mlir::Value inQubit = qubits[target];
     builder.create<mqt::ir::ref::ResetOp>(builder.getUnknownLoc(), inQubit);
@@ -316,10 +322,39 @@ void addResetOp(mlir::OpBuilder& builder, const qc::Operation& operation,
 }
 
 // Forward declaration
-llvm::LogicalResult addOperation(mlir::OpBuilder& builder,
-                                 const qc::Operation& operation,
-                                 const llvm::SmallVector<mlir::Value>& qubits,
-                                 const BitIndexVec& bitMap);
+static llvm::LogicalResult
+addOperation(mlir::OpBuilder& builder, const qc::Operation& operation,
+             const llvm::SmallVector<mlir::Value>& qubits,
+             const BitIndexVec& bitMap);
+
+/**
+ * @brief Adds the operation(s) in a block to the MLIR module.
+ *
+ * @param builder The MLIR OpBuilder
+ * @param operationInBlock The operation(s) in a block
+ * @param qubits The qubits of the quantum register
+ * @param bitMap The mapping from global classical bit index to (memref,
+ * localIdx)
+ * @return llvm::LogicalResult whether the adding of the blockOps was successful
+ */
+static llvm::LogicalResult
+addBlockOps(mlir::OpBuilder& builder, const qc::Operation* operationInBlock,
+            const llvm::SmallVector<mlir::Value>& qubits,
+            const BitIndexVec& bitMap) {
+  if (operationInBlock->isCompoundOperation()) {
+    for (const auto& operation :
+         dynamic_cast<const qc::CompoundOperation&>(*operationInBlock)) {
+      if (addOperation(builder, *operation, qubits, bitMap).failed()) {
+        return llvm::failure();
+      }
+    }
+  } else {
+    if (addOperation(builder, *operationInBlock, qubits, bitMap).failed()) {
+      return llvm::failure();
+    }
+  }
+  return llvm::success();
+}
 
 /**
  * @brief Compute integer value from a classical register (memref<Nxi1>).
@@ -328,8 +363,8 @@ llvm::LogicalResult addOperation(mlir::OpBuilder& builder,
  * @param bits The bits of the classical register
  * @return mlir::Value The integer value of the register
  */
-mlir::Value getIntegerValueFromRegister(mlir::OpBuilder& builder,
-                                        const mlir::Value bits) {
+static mlir::Value getIntegerValueFromRegister(mlir::OpBuilder& builder,
+                                               const mlir::Value bits) {
   const auto loc = builder.getUnknownLoc();
 
   // Extract length (assumed 1-D static memref<Nxi1>)
@@ -382,10 +417,10 @@ mlir::Value getIntegerValueFromRegister(mlir::OpBuilder& builder,
  * @return mlir::LogicalResult Success if all operations were added, failure
  * otherwise
  */
-llvm::LogicalResult addIfElseOp(mlir::OpBuilder& builder,
-                                const qc::Operation& op,
-                                const llvm::SmallVector<mlir::Value>& qubits,
-                                const BitIndexVec& bitMap) {
+static llvm::LogicalResult
+addIfElseOp(mlir::OpBuilder& builder, const qc::Operation& op,
+            const llvm::SmallVector<mlir::Value>& qubits,
+            const BitIndexVec& bitMap) {
   const auto loc = builder.getUnknownLoc();
   const auto& ifElse = dynamic_cast<const qc::IfElseOperation&>(op);
 
@@ -458,7 +493,7 @@ llvm::LogicalResult addIfElseOp(mlir::OpBuilder& builder,
   {
     const mlir::OpBuilder::InsertionGuard thenGuard(builder);
     builder.setInsertionPointToStart(ifOp.thenBlock());
-    if (addOperation(builder, *thenOp, qubits, bitMap).failed()) {
+    if (addBlockOps(builder, thenOp, qubits, bitMap).failed()) {
       return llvm::failure();
     }
   }
@@ -467,7 +502,7 @@ llvm::LogicalResult addIfElseOp(mlir::OpBuilder& builder,
   if (elseOp != nullptr) {
     const mlir::OpBuilder::InsertionGuard elseGuard(builder);
     builder.setInsertionPointToStart(ifOp.elseBlock());
-    if (addOperation(builder, *elseOp, qubits, bitMap).failed()) {
+    if (addBlockOps(builder, elseOp, qubits, bitMap).failed()) {
       return llvm::failure();
     }
   }
@@ -491,10 +526,10 @@ llvm::LogicalResult addIfElseOp(mlir::OpBuilder& builder,
  * @return mlir::LogicalResult Success if all operations were added, failure
  * otherwise
  */
-llvm::LogicalResult addOperation(mlir::OpBuilder& builder,
-                                 const qc::Operation& operation,
-                                 const llvm::SmallVector<mlir::Value>& qubits,
-                                 const BitIndexVec& bitMap) {
+static llvm::LogicalResult
+addOperation(mlir::OpBuilder& builder, const qc::Operation& operation,
+             const llvm::SmallVector<mlir::Value>& qubits,
+             const BitIndexVec& bitMap) {
   switch (operation.getType()) {
     ADD_OP_CASE(Barrier)
     ADD_OP_CASE(I)
@@ -554,7 +589,7 @@ llvm::LogicalResult addOperation(mlir::OpBuilder& builder,
  * @return mlir::LogicalResult Success if all operations were added, failure
  * otherwise
  */
-llvm::LogicalResult addOperations(
+static llvm::LogicalResult addOperations(
     mlir::OpBuilder& builder, const qc::QuantumComputation& quantumComputation,
     const llvm::SmallVector<mlir::Value>& qubits, const BitIndexVec& bitMap) {
   for (const auto& operation : quantumComputation) {
@@ -565,7 +600,6 @@ llvm::LogicalResult addOperations(
   }
   return llvm::success();
 }
-} // namespace
 
 /**
  * @brief Translates a QuantumComputation to an MLIR module with MQTRef

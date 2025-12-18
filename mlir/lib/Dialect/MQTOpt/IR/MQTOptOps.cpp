@@ -71,19 +71,19 @@ void mqt::ir::opt::MQTOptDialect::initialize() {
 #include "mlir/Dialect/MQTOpt/IR/MQTOptOps.cpp.inc"
 
 namespace mqt::ir::opt {
-namespace {
+
 /**
  * @brief Prints the given list of types as a comma-separated list
  *
  * @param printer The printer to use.
  * @param types The types to print.
  **/
-void printCommaSeparated(mlir::OpAsmPrinter& printer, mlir::TypeRange types) {
+static void printCommaSeparated(mlir::OpAsmPrinter& printer,
+                                mlir::TypeRange types) {
   llvm::interleaveComma(llvm::make_range(types.begin(), types.end()),
                         printer.getStream(),
                         [&printer](mlir::Type t) { printer.printType(t); });
 }
-} // namespace
 
 mlir::ParseResult
 parseOptOutputTypes(mlir::OpAsmParser& parser,

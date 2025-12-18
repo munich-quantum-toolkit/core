@@ -60,13 +60,13 @@ repos:
 
   # Ensure uv lock file is up-to-date
   - repo: https://github.com/astral-sh/uv-pre-commit
-    rev: 0.9.13
+    rev: 0.9.17
     hooks:
       - id: uv-lock
 
   # Python linting using ruff
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.14.7
+    rev: v0.14.9
     hooks:
       - id: ruff-check
       - id: ruff-format
@@ -88,10 +88,11 @@ repos:
     hooks:
       - id: ty-check
         name: ty check
-        entry: python -c "import subprocess; import sys; subprocess.run(['uv', 'sync', '--no-install-project']); sys.exit(subprocess.run(['uv', 'run', '--no-sync', 'ty', 'check']).returncode)"
+        entry: uvx python -c "import subprocess; import sys; subprocess.run(['uv', 'sync', '--no-install-project', '--inexact']); sys.exit(subprocess.run(['uv', 'run', '--no-sync', 'ty', 'check']).returncode)"
         language: unsupported
         require_serial: true
         types_or: [python, pyi, jupyter]
+        exclude: ^(docs/|mlir/|eval/)
 
   # Also run Black on examples in the documentation
   - repo: https://github.com/adamchainz/blacken-docs
@@ -108,7 +109,7 @@ repos:
 
   # Clang-format the C++ part of the code base automatically
   - repo: https://github.com/pre-commit/mirrors-clang-format
-    rev: v21.1.6
+    rev: v21.1.7
     hooks:
       - id: clang-format
         types_or: [c++, c, cuda]
@@ -124,7 +125,7 @@ repos:
 
   # Format configuration files with prettier
   - repo: https://github.com/rbubley/mirrors-prettier
-    rev: v3.7.3
+    rev: v3.7.4
     hooks:
       - id: prettier
         types_or: [yaml, markdown, html, css, scss, javascript, json]

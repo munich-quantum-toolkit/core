@@ -1,0 +1,9 @@
+InheritParentConfig: true
+Checks: |
+  llvm-namespace-comment,
+  llvm-prefer-isa-or-dyn-cast-in-conditionals,
+  llvm-prefer-register-over-unsigned,
+  llvm-prefer-static-over-anonymous-namespace,
+  -misc-use-anonymous-namespace,
+  llvm-twine-local,
+  -cppcoreguidelines-pro-bounds-avoid-unchecked-container-access

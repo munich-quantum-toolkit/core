@@ -936,6 +936,10 @@ std::unique_ptr<qc::Operation> Importer::translateBlockOperations(
     auto op = evaluateGateCall(gateCall, gateCall->identifier,
                                gateCall->arguments, gateCall->operands, qregs);
 
+    if (statements.size() == 1) {
+      return op;
+    }
+
     blockOps->emplace_back(std::move(op));
   }
 

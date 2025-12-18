@@ -6,8 +6,6 @@
 #
 # Licensed under the MIT License
 
-# add subdirectories
-add_subdirectory(device)
 add_subdirectory(fomac)
 
 if(NOT TARGET ${MQT_CORE_TARGET_NAME}-na)

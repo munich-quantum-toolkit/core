@@ -27,7 +27,7 @@
 // NOLINTEND(misc-include-cleaner)
 #endif // _WIN32
 
-TEST(ExecutableTest, Version) {
+TEST(NaExecutableTest, Version) {
   // Command to execute
   // NOLINTNEXTLINE(misc-include-cleaner)
   const std::string command = EXECUTABLE_PATH " --version";
@@ -55,7 +55,7 @@ TEST(ExecutableTest, Version) {
             ")\n");
 }
 
-TEST(ExecutableTest, MissingSubcommand) {
+TEST(NaExecutableTest, MissingSubcommand) {
   // Command to execute
   // NOLINTNEXTLINE(misc-include-cleaner)
   const std::string command = EXECUTABLE_PATH;
@@ -77,7 +77,7 @@ TEST(ExecutableTest, MissingSubcommand) {
   EXPECT_NE(returnCode, 0);
 }
 
-TEST(ExecutableTest, UnknownSubcommand) {
+TEST(NaExecutableTest, UnknownSubcommand) {
   // Command to execute
   // NOLINTNEXTLINE(misc-include-cleaner)
   const std::string command = EXECUTABLE_PATH " unknown";
@@ -99,7 +99,7 @@ TEST(ExecutableTest, UnknownSubcommand) {
   EXPECT_NE(returnCode, 0);
 }
 
-TEST(ExecutableTest, SchemaUnknownOption) {
+TEST(NaExecutableTest, SchemaUnknownOption) {
   // Command to execute
   // NOLINTNEXTLINE(misc-include-cleaner)
   const std::string command = EXECUTABLE_PATH " schema --unknown-option";
@@ -121,7 +121,7 @@ TEST(ExecutableTest, SchemaUnknownOption) {
   EXPECT_NE(returnCode, 0);
 }
 
-TEST(ExecutableTest, SchemaMissingFile) {
+TEST(NaExecutableTest, SchemaMissingFile) {
   // Command to execute
   // NOLINTNEXTLINE(misc-include-cleaner)
   const std::string command = EXECUTABLE_PATH " schema --output";
@@ -143,7 +143,7 @@ TEST(ExecutableTest, SchemaMissingFile) {
   EXPECT_NE(returnCode, 0);
 }
 
-TEST(ExecutableTest, ValidateInvalidJson) {
+TEST(NaExecutableTest, ValidateInvalidJson) {
   // Command to execute
   // NOLINTNEXTLINE(misc-include-cleaner)
   const std::string command = EXECUTABLE_PATH " validate";
@@ -158,7 +158,7 @@ TEST(ExecutableTest, ValidateInvalidJson) {
                            << returnCode;
 }
 
-TEST(ExecutableTest, GenerateMissingFile) {
+TEST(NaExecutableTest, GenerateMissingFile) {
   // Command to execute
   // NOLINTNEXTLINE(misc-include-cleaner)
   const std::string command = EXECUTABLE_PATH " generate --output";
@@ -180,7 +180,7 @@ TEST(ExecutableTest, GenerateMissingFile) {
   EXPECT_NE(returnCode, 0);
 }
 
-TEST(ExecutableTest, Usage) {
+TEST(NaExecutableTest, Usage) {
   // Command to execute
   // NOLINTNEXTLINE(misc-include-cleaner)
   const std::string command = EXECUTABLE_PATH " --help";
@@ -204,7 +204,7 @@ TEST(ExecutableTest, Usage) {
   EXPECT_FALSE(output.str().empty());
 }
 
-TEST(ExecutableTest, SchemaUsage) {
+TEST(NaExecutableTest, SchemaUsage) {
   // Command to execute
   // NOLINTNEXTLINE(misc-include-cleaner)
   const std::string command = EXECUTABLE_PATH " schema --help";
@@ -228,7 +228,7 @@ TEST(ExecutableTest, SchemaUsage) {
   EXPECT_TRUE(output.str().rfind("Generates a JSON schema", 0) == 0);
 }
 
-TEST(ExecutableTest, ValidateUsage) {
+TEST(NaExecutableTest, ValidateUsage) {
   // Command to execute
   // NOLINTNEXTLINE(misc-include-cleaner)
   const std::string command = EXECUTABLE_PATH " validate --help";
@@ -252,7 +252,7 @@ TEST(ExecutableTest, ValidateUsage) {
   EXPECT_TRUE(output.str().rfind("Validates", 0) == 0);
 }
 
-TEST(ExecutableTest, GenerateUsage) {
+TEST(NaExecutableTest, GenerateUsage) {
   // Command to execute
   // NOLINTNEXTLINE(misc-include-cleaner)
   const std::string command = EXECUTABLE_PATH " generate --help";
@@ -276,7 +276,7 @@ TEST(ExecutableTest, GenerateUsage) {
   EXPECT_TRUE(output.str().rfind("Generates a header file", 0) == 0);
 }
 
-TEST(ExecutableTest, RoundTrip) {
+TEST(NaExecutableTest, RoundTrip) {
   std::string schema;
   // Capture the output of the schema command
   {
@@ -319,7 +319,7 @@ TEST(ExecutableTest, RoundTrip) {
   }
 }
 
-TEST(ExecutableTest, RoundTripFile) {
+TEST(NaExecutableTest, RoundTripFile) {
   // Write schema to a file
   {
     // Command to execute

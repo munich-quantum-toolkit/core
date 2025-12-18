@@ -18,6 +18,7 @@
 #include <algorithm>
 #include <cassert>
 #include <cstddef>
+#include <cstdint>
 #include <deque>
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/SmallVector.h>
@@ -45,16 +46,27 @@
 
 namespace mqt::ir::opt {
 
+using namespace mlir;
+
 #define GEN_PASS_DEF_PLACEMENTPASSSC
 #include "mlir/Dialect/MQTOpt/Transforms/Passes.h.inc"
 
 namespace {
-using namespace mlir;
+
+/**
+ * @brief 'For' pushes once onto the stack, hence the parent is at depth one.
+ */
+constexpr std::size_t FOR_PARENT_DEPTH = 1UL;
+
+/**
+ * @brief 'If' pushes twice onto the stack, hence the parent is at depth two.
+ */
+constexpr std::size_t IF_PARENT_DEPTH = 2UL;
 
 /**
  * @brief A queue of hardware indices.
  */
-using HardwareIndexPool = std::deque<QubitIndex>;
+using HardwareIndexPool = std::deque<uint32_t>;
 
 /**
  * @brief A base class for all initial placement strategies.
@@ -67,7 +79,7 @@ public:
   InitialPlacer(InitialPlacer&&) noexcept = default;
   InitialPlacer& operator=(InitialPlacer&&) noexcept = default;
   virtual ~InitialPlacer() = default;
-  [[nodiscard]] virtual SmallVector<QubitIndex> operator()() = 0;
+  [[nodiscard]] virtual SmallVector<uint32_t> operator()() = 0;
 };
 
 /**
@@ -77,8 +89,8 @@ class IdentityPlacer final : public InitialPlacer {
 public:
   explicit IdentityPlacer(const std::size_t nqubits) : nqubits_(nqubits) {}
 
-  [[nodiscard]] SmallVector<QubitIndex> operator()() override {
-    SmallVector<QubitIndex> mapping(nqubits_);
+  [[nodiscard]] SmallVector<uint32_t> operator()() override {
+    SmallVector<uint32_t> mapping(nqubits_);
     std::iota(mapping.begin(), mapping.end(), 0);
     return mapping;
   }
@@ -95,8 +107,8 @@ public:
   explicit RandomPlacer(const std::size_t nqubits, const std::mt19937_64& rng)
       : nqubits_(nqubits), rng_(rng) {}
 
-  [[nodiscard]] SmallVector<QubitIndex> operator()() override {
-    SmallVector<QubitIndex> mapping(nqubits_);
+  [[nodiscard]] SmallVector<uint32_t> operator()() override {
+    SmallVector<uint32_t> mapping(nqubits_);
     std::iota(mapping.begin(), mapping.end(), 0);
     std::ranges::shuffle(mapping, rng_);
     return mapping;
@@ -120,12 +132,14 @@ struct PlacementContext {
   LayoutStack<Layout> stack{};
 };
 
+} // namespace
+
 /**
  * @brief Adds the necessary hardware qubits for entry_point functions and
  * prepares the stack for the qubit placement in the function body.
  */
-WalkResult handleFunc(func::FuncOp op, PlacementContext& ctx,
-                      PatternRewriter& rewriter) {
+static WalkResult handleFunc(func::FuncOp op, PlacementContext& ctx,
+                             PatternRewriter& rewriter) {
   assert(ctx.stack.empty() && "handleFunc: stack must be empty");
 
   rewriter.setInsertionPointToStart(&op.getBody().front());
@@ -138,7 +152,7 @@ WalkResult handleFunc(func::FuncOp op, PlacementContext& ctx,
 
   /// Create static / hardware qubits for entry_point functions.
   SmallVector<Value> qubits(ctx.arch->nqubits());
-  for (QubitIndex i = 0; i < ctx.arch->nqubits(); ++i) {
+  for (uint32_t i = 0; i < ctx.arch->nqubits(); ++i) {
     auto qubitOp =
         rewriter.create<QubitOp>(rewriter.getInsertionPoint()->getLoc(), i);
     rewriter.setInsertionPointAfter(qubitOp);
@@ -161,7 +175,7 @@ WalkResult handleFunc(func::FuncOp op, PlacementContext& ctx,
  * @brief Indicates the end of a region defined by a function. Consequently, pop
  * the region's state from the stack.
  */
-WalkResult handleReturn(PlacementContext& ctx) {
+static WalkResult handleReturn(PlacementContext& ctx) {
   ctx.stack.pop();
   return WalkResult::advance();
 }
@@ -173,8 +187,8 @@ WalkResult handleReturn(PlacementContext& ctx) {
  * Prepares the stack for the placement of the loop body by adding a copy of the
  * current state to the stack. Forwards the results in the parent state.
  */
-WalkResult handleFor(scf::ForOp op, PlacementContext& ctx,
-                     PatternRewriter& rewriter) {
+static WalkResult handleFor(scf::ForOp op, PlacementContext& ctx,
+                            PatternRewriter& rewriter) {
   const std::size_t nargs = op.getBody()->getNumArguments();
   const std::size_t nresults = op->getNumResults();
 
@@ -220,8 +234,8 @@ WalkResult handleFor(scf::ForOp op, PlacementContext& ctx,
  * a copy of the current state to the stack for each branch. Forwards the
  * results in the parent state.
  */
-WalkResult handleIf(scf::IfOp op, PlacementContext& ctx,
-                    PatternRewriter& rewriter) {
+static WalkResult handleIf(scf::IfOp op, PlacementContext& ctx,
+                           PatternRewriter& rewriter) {
   const std::size_t nresults = op->getNumResults();
 
   /// Construct new result types.
@@ -266,8 +280,8 @@ WalkResult handleIf(scf::IfOp op, PlacementContext& ctx,
  * @brief Indicates the end of a region defined by a branching op. Consequently,
  * we pop the region's state from the stack.
  */
-WalkResult handleYield(scf::YieldOp op, PlacementContext& ctx,
-                       PatternRewriter& rewriter) {
+static WalkResult handleYield(scf::YieldOp op, PlacementContext& ctx,
+                              PatternRewriter& rewriter) {
   if (!isa<scf::ForOp>(op->getParentOp()) &&
       !isa<scf::IfOp>(op->getParentOp())) {
     return WalkResult::skip();
@@ -285,8 +299,8 @@ WalkResult handleYield(scf::YieldOp op, PlacementContext& ctx,
  * @brief Retrieve free qubit from pool and replace the allocated qubit with it.
  * Reset the qubit if it has already been allocated before.
  */
-WalkResult handleAlloc(AllocQubitOp op, PlacementContext& ctx,
-                       PatternRewriter& rewriter) {
+static WalkResult handleAlloc(AllocQubitOp op, PlacementContext& ctx,
+                              PatternRewriter& rewriter) {
   if (ctx.pool.empty()) {
     return op.emitOpError(
         "requires one too many qubits for the targeted architecture");
@@ -319,8 +333,8 @@ WalkResult handleAlloc(AllocQubitOp op, PlacementContext& ctx,
 /**
  * @brief Release hardware qubit and erase dealloc operation.
  */
-WalkResult handleDealloc(DeallocQubitOp op, PlacementContext& ctx,
-                         PatternRewriter& rewriter) {
+static WalkResult handleDealloc(DeallocQubitOp op, PlacementContext& ctx,
+                                PatternRewriter& rewriter) {
   const std::size_t index = ctx.stack.top().lookupHardwareIndex(op.getQubit());
   ctx.pool.push_back(index);
   rewriter.eraseOp(op);
@@ -330,7 +344,7 @@ WalkResult handleDealloc(DeallocQubitOp op, PlacementContext& ctx,
 /**
  * @brief Update layout.
  */
-WalkResult handleReset(ResetOp op, PlacementContext& ctx) {
+static WalkResult handleReset(ResetOp op, PlacementContext& ctx) {
   ctx.stack.top().remapQubitValue(op.getInQubit(), op.getOutQubit());
   return WalkResult::advance();
 }
@@ -338,7 +352,7 @@ WalkResult handleReset(ResetOp op, PlacementContext& ctx) {
 /**
  * @brief Update layout.
  */
-WalkResult handleMeasure(MeasureOp op, PlacementContext& ctx) {
+static WalkResult handleMeasure(MeasureOp op, PlacementContext& ctx) {
   ctx.stack.top().remapQubitValue(op.getInQubit(), op.getOutQubit());
   return WalkResult::advance();
 }
@@ -346,7 +360,7 @@ WalkResult handleMeasure(MeasureOp op, PlacementContext& ctx) {
 /**
  * @brief Update layout.
  */
-WalkResult handleUnitary(UnitaryInterface op, PlacementContext& ctx) {
+static WalkResult handleUnitary(UnitaryInterface op, PlacementContext& ctx) {
   for (const auto [in, out] :
        llvm::zip(op.getAllInQubits(), op.getAllOutQubits())) {
     ctx.stack.top().remapQubitValue(in, out);
@@ -355,8 +369,8 @@ WalkResult handleUnitary(UnitaryInterface op, PlacementContext& ctx) {
   return WalkResult::advance();
 }
 
-LogicalResult run(ModuleOp module, MLIRContext* mlirCtx,
-                  PlacementContext& ctx) {
+static LogicalResult run(ModuleOp module, MLIRContext* mlirCtx,
+                         PlacementContext& ctx) {
   PatternRewriter rewriter(mlirCtx);
 
   /// Prepare work-list.
@@ -420,8 +434,10 @@ LogicalResult run(ModuleOp module, MLIRContext* mlirCtx,
   return success();
 }
 
+namespace {
+
 /**
- * @brief This pass maps dynamic qubits to static qubits on superconducting
+ * @brief This pass maps program qubits to hardware qubits on superconducting
  * quantum devices using initial placement strategies.
  */
 struct PlacementPassSC final : impl::PlacementPassSCBase<PlacementPassSC> {
@@ -478,5 +494,7 @@ private:
     return success();
   }
 };
+
 } // namespace
+
 } // namespace mqt::ir::opt

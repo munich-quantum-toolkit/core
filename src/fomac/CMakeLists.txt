@@ -22,7 +22,7 @@ if(NOT TARGET ${TARGET_NAME})
   # Add link libraries
   target_link_libraries(
     ${TARGET_NAME}
-    PUBLIC qdmi::qdmi MQT::CoreQDMIDriver
+    PUBLIC qdmi::qdmi MQT::CoreQDMICommon MQT::CoreQDMIDriver
     PRIVATE spdlog::spdlog)
 
   # add to list of MQT core targets

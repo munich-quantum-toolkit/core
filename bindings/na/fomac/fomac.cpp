@@ -12,7 +12,7 @@
 // clang-format off
 #include "fomac/FoMaC.hpp"
 #include "na/fomac/Device.hpp"
-#include "na/device/Generator.hpp"
+#include "qdmi/na/Generator.hpp"
 
 #include <pybind11/cast.h>
 #include <pybind11/operators.h>
@@ -42,7 +42,7 @@ PYBIND11_MODULE(MQT_CORE_MODULE_NAME, m, py::mod_gil_not_used()) {
   pybind11::module_::import("mqt.core.fomac");
 
   auto device =
-      py::class_<na::FoMaC::Device, fomac::FoMaC::Device>(m, "Device");
+      py::class_<na::Session::Device, fomac::Session::Device>(m, "Device");
 
   auto lattice = py::class_<na::Device::Lattice>(device, "Lattice");
 
@@ -91,22 +91,22 @@ PYBIND11_MODULE(MQT_CORE_MODULE_NAME, m, py::mod_gil_not_used()) {
   lattice.def(py::self == py::self);
   lattice.def(py::self != py::self);
 
-  device.def_property_readonly("traps", &na::FoMaC::Device::getTraps);
-  device.def_property_readonly("t1", [](const na::FoMaC::Device& dev) {
+  device.def_property_readonly("traps", &na::Session::Device::getTraps);
+  device.def_property_readonly("t1", [](const na::Session::Device& dev) {
     return dev.getDecoherenceTimes().t1;
   });
-  device.def_property_readonly("t2", [](const na::FoMaC::Device& dev) {
+  device.def_property_readonly("t2", [](const na::Session::Device& dev) {
     return dev.getDecoherenceTimes().t2;
   });
-  device.def("__repr__", [](const fomac::FoMaC::Device& dev) {
+  device.def("__repr__", [](const fomac::Session::Device& dev) {
     return "<Device name=\"" + dev.getName() + "\">";
   });
   device.def(py::self == py::self);
   device.def(py::self != py::self);
 
-  m.def("devices", &na::FoMaC::getDevices);
+  m.def("devices", &na::Session::getDevices);
   device.def_static("try_create_from_device",
-                    &na::FoMaC::Device::tryCreateFromDevice, "device"_a);
+                    &na::Session::Device::tryCreateFromDevice, "device"_a);
 }
 // NOLINTEND(misc-redundant-expression)
 } // namespace mqt

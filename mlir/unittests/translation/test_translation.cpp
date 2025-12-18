@@ -15,6 +15,7 @@
 #include "ir/operations/StandardOperation.hpp"
 #include "mlir/Dialect/MQTRef/IR/MQTRefDialect.h"
 #include "mlir/Dialect/MQTRef/Translation/ImportQuantumComputation.h"
+#include "qasm3/Importer.hpp"
 
 #include <cstddef>
 #include <functional>
@@ -42,9 +43,9 @@
 #include <string>
 #include <utility>
 
-namespace {
-
 using namespace qc;
+
+namespace {
 
 class ImportTest : public ::testing::Test {
 protected:
@@ -76,11 +77,13 @@ protected:
   void TearDown() override {}
 };
 
+} // namespace
+
 // ##################################################
 // # Helper functions
 // ##################################################
 
-std::string getOutputString(mlir::OwningOpRef<mlir::ModuleOp>* module) {
+static std::string getOutputString(mlir::OwningOpRef<mlir::ModuleOp>* module) {
   std::string outputString;
   llvm::raw_string_ostream os(outputString);
   (*module)->print(os);
@@ -88,7 +91,7 @@ std::string getOutputString(mlir::OwningOpRef<mlir::ModuleOp>* module) {
   return outputString;
 }
 
-std::string formatTargets(std::initializer_list<size_t> targets) {
+static std::string formatTargets(std::initializer_list<size_t> targets) {
   std::string s;
   bool first = true;
   for (auto t : targets) {
@@ -101,7 +104,7 @@ std::string formatTargets(std::initializer_list<size_t> targets) {
   return s;
 }
 
-std::string formatParams(std::initializer_list<double> params) {
+static std::string formatParams(std::initializer_list<double> params) {
   if (params.size() == 0) {
     return "";
   }
@@ -121,12 +124,12 @@ std::string formatParams(std::initializer_list<double> params) {
   return os.str();
 }
 
-std::string getCheckStringOperation(const char* op,
-                                    std::initializer_list<size_t> targets) {
+static std::string
+getCheckStringOperation(const char* op, std::initializer_list<size_t> targets) {
   return std::string("CHECK: mqtref.") + op + "() " + formatTargets(targets);
 }
 
-std::string
+static std::string
 getCheckStringOperationParams(const char* op,
                               std::initializer_list<double> params,
                               std::initializer_list<size_t> targets) {
@@ -136,8 +139,8 @@ getCheckStringOperationParams(const char* op,
 
 // Adapted from
 // https://github.com/llvm/llvm-project/blob/d2b3e86321eaf954451e0a49534fa654dd67421e/llvm/unittests/MIR/MachineMetadata.cpp#L181
-bool checkOutput(const std::string& checkString,
-                 const std::string& outputString) {
+static bool checkOutput(const std::string& checkString,
+                        const std::string& outputString) {
   auto checkBuffer = llvm::MemoryBuffer::getMemBuffer(checkString, "");
   auto outputBuffer =
       llvm::MemoryBuffer::getMemBuffer(outputString, "Output", false);
@@ -164,6 +167,8 @@ bool checkOutput(const std::string& checkString,
 // ##################################################
 // # Basic tests
 // ##################################################
+
+namespace {
 
 TEST_F(ImportTest, EntryPoint) {
   const QuantumComputation qc{};
@@ -290,9 +295,13 @@ TEST_F(ImportTest, Reset0) {
   ASSERT_TRUE(checkOutput(checkString, outputString));
 }
 
+} // namespace
+
 // ##################################################
 // # Test unitary operations
 // ##################################################
+
+namespace {
 
 struct TestCaseUnitary {
   std::string name; // Name of the test case
@@ -301,11 +310,15 @@ struct TestCaseUnitary {
   std::string checkStringOperation;
 };
 
-std::ostream& operator<<(std::ostream& os, const TestCaseUnitary& testCase) {
+} // namespace
+
+[[maybe_unused]] static std::ostream&
+operator<<(std::ostream& os, const TestCaseUnitary& testCase) {
   return os << testCase.name;
 }
 
-std::string getCheckStringTestCaseUnitary(const TestCaseUnitary& testCase) {
+static std::string
+getCheckStringTestCaseUnitary(const TestCaseUnitary& testCase) {
   std::string result;
 
   // Add entry point
@@ -339,6 +352,8 @@ std::string getCheckStringTestCaseUnitary(const TestCaseUnitary& testCase) {
 
   return result;
 }
+
+namespace {
 
 class OperationTestUnitary
     : public ImportTest,
@@ -574,9 +589,13 @@ INSTANTIATE_TEST_SUITE_P(
             .checkStringOperation =
                 "CHECK: mqtref.x() %[[Q0]] nctrl %[[Q1]], %[[Q2]]"}));
 
+} // namespace
+
 // ##################################################
 // # Test register-controlled if-else operations
 // ##################################################
+
+namespace {
 
 struct TestCaseIfRegister {
   std::string name; // Name of the test case
@@ -584,11 +603,14 @@ struct TestCaseIfRegister {
   std::string predicate;
 };
 
-std::ostream& operator<<(std::ostream& os, const TestCaseIfRegister& testCase) {
+} // namespace
+
+[[maybe_unused]] static std::ostream&
+operator<<(std::ostream& os, const TestCaseIfRegister& testCase) {
   return os << testCase.name;
 }
 
-std::string
+static std::string
 getCheckStringTestCaseIfRegister(const TestCaseIfRegister& testCase) {
   std::string result;
 
@@ -616,6 +638,8 @@ getCheckStringTestCaseIfRegister(const TestCaseIfRegister& testCase) {
 
   return result;
 }
+
+namespace {
 
 class OperationTestIfRegister
     : public ImportTest,
@@ -739,9 +763,103 @@ TEST_F(ImportTest, IfElseRegister) {
   ASSERT_TRUE(checkOutput(checkString, outputString));
 }
 
+TEST_F(ImportTest, IfElseHandlingFromQasm) {
+  const qc::QuantumComputation qc = qasm3::Importer::imports("OPENQASM 3.0;"
+                                                             "qubit q;"
+                                                             "bit c;"
+                                                             "h q;"
+                                                             "c = measure q;"
+                                                             "if(c) {"
+                                                             "  x q;"
+                                                             "} else {"
+                                                             "  h q;"
+                                                             "}"
+                                                             "c = measure q;");
+  auto module = translateQuantumComputationToMLIR(context.get(), qc);
+
+  const auto outputString = getOutputString(&module);
+  const auto* checkString = R"(
+    CHECK: func.func @main() attributes {passthrough = ["entry_point"]}
+    CHECK: %[[Qreg:.*]] = memref.alloc() : memref<1x!mqtref.Qubit>
+    CHECK: %[[I0:.*]] = arith.constant 0 : index
+    CHECK: %[[Q0:.*]] = memref.load %[[Qreg]][%[[I0]]] : memref<1x!mqtref.Qubit>
+    CHECK: %[[Creg:.*]] = memref.alloca() : memref<1xi1>
+    CHECK: mqtref.h() %[[Q0]]
+    CHECK: %[[M0:.*]] = mqtref.measure %[[Q0]]
+    CHECK: %[[I1:.*]] = arith.constant 0 : index
+    CHECK: memref.store %[[M0]], %[[Creg]][%[[I1]]] : memref<1xi1>
+    CHECK: %[[I2:.*]] = arith.constant 0 : index
+    CHECK: %[[M2:.*]] = memref.load %[[Creg]][%[[I2]]] : memref<1xi1>
+    CHECK: %[[true:.*]] = arith.constant true
+    CHECK: %[[M3:.*]] = arith.cmpi eq, %[[M2]], %[[true]] : i1
+    CHECK: scf.if %[[M3]] {
+    CHECK:  mqtref.x() %[[Q0]]
+    CHECK: } else {
+    CHECK:  mqtref.h() %[[Q0]]
+    CHECK: }
+    CHECK: %[[M4:.*]] = mqtref.measure %[[Q0]]
+    CHECK: %[[I3:.*]] = arith.constant 0 : index
+    CHECK: memref.store %[[M4]], %[[Creg]][%[[I3]]] : memref<1xi1>
+    CHECK: memref.dealloc %[[Qreg]] : memref<1x!mqtref.Qubit>
+  )";
+
+  ASSERT_TRUE(checkOutput(checkString, outputString));
+}
+
+TEST_F(ImportTest, IfElseHandlingFromQasmMultipleStatements) {
+  const qc::QuantumComputation qc = qasm3::Importer::imports("OPENQASM 3.0;"
+                                                             "qubit q;"
+                                                             "bit c;"
+                                                             "h q;"
+                                                             "c = measure q;"
+                                                             "if(c) {"
+                                                             "  x q;"
+                                                             "  s q;"
+                                                             "} else {"
+                                                             "  h q;"
+                                                             "  t q;"
+                                                             "}"
+                                                             "c = measure q;");
+  auto module = translateQuantumComputationToMLIR(context.get(), qc);
+
+  const auto outputString = getOutputString(&module);
+  const auto* checkString = R"(
+    CHECK: func.func @main() attributes {passthrough = ["entry_point"]}
+    CHECK: %[[Qreg:.*]] = memref.alloc() : memref<1x!mqtref.Qubit>
+    CHECK: %[[I0:.*]] = arith.constant 0 : index
+    CHECK: %[[Q0:.*]] = memref.load %[[Qreg]][%[[I0]]] : memref<1x!mqtref.Qubit>
+    CHECK: %[[Creg:.*]] = memref.alloca() : memref<1xi1>
+    CHECK: mqtref.h() %[[Q0]]
+    CHECK: %[[M0:.*]] = mqtref.measure %[[Q0]]
+    CHECK: %[[I1:.*]] = arith.constant 0 : index
+    CHECK: memref.store %[[M0]], %[[Creg]][%[[I1]]] : memref<1xi1>
+    CHECK: %[[I2:.*]] = arith.constant 0 : index
+    CHECK: %[[M2:.*]] = memref.load %[[Creg]][%[[I2]]] : memref<1xi1>
+    CHECK: %[[true:.*]] = arith.constant true
+    CHECK: %[[M3:.*]] = arith.cmpi eq, %[[M2]], %[[true]] : i1
+    CHECK: scf.if %[[M3]] {
+    CHECK:  mqtref.x() %[[Q0]]
+    CHECK:  mqtref.s() %[[Q0]]
+    CHECK: } else {
+    CHECK:  mqtref.h() %[[Q0]]
+    CHECK:  mqtref.t() %[[Q0]]
+    CHECK: }
+    CHECK: %[[M4:.*]] = mqtref.measure %[[Q0]]
+    CHECK: %[[I3:.*]] = arith.constant 0 : index
+    CHECK: memref.store %[[M4]], %[[Creg]][%[[I3]]] : memref<1xi1>
+    CHECK: memref.dealloc %[[Qreg]] : memref<1x!mqtref.Qubit>
+  )";
+
+  ASSERT_TRUE(checkOutput(checkString, outputString));
+}
+
+} // namespace
+
 // ##################################################
 // # Test bit-controlled if-else operations
 // ##################################################
+
+namespace {
 
 struct TestCaseIfBit {
   std::string name; // Name of the test case
@@ -750,11 +868,14 @@ struct TestCaseIfBit {
   bool expectedValueOutput;
 };
 
-std::ostream& operator<<(std::ostream& os, const TestCaseIfBit& testCase) {
+} // namespace
+
+[[maybe_unused]] static std::ostream&
+operator<<(std::ostream& os, const TestCaseIfBit& testCase) {
   return os << testCase.name;
 }
 
-std::string getCheckStringTestCaseIfBit(const TestCaseIfBit& testCase) {
+static std::string getCheckStringTestCaseIfBit(const TestCaseIfBit& testCase) {
   std::string result;
 
   result += R"(
@@ -790,6 +911,8 @@ std::string getCheckStringTestCaseIfBit(const TestCaseIfBit& testCase) {
 
   return result;
 }
+
+namespace {
 
 class OperationTestIfBit : public ImportTest,
                            public ::testing::WithParamInterface<TestCaseIfBit> {
@@ -838,11 +961,15 @@ struct TestCaseIfElseBit {
   std::string elseOperation;
 };
 
-std::ostream& operator<<(std::ostream& os, const TestCaseIfElseBit& testCase) {
+} // namespace
+
+[[maybe_unused]] static std::ostream&
+operator<<(std::ostream& os, const TestCaseIfElseBit& testCase) {
   return os << testCase.name;
 }
 
-std::string getCheckStringTestCaseIfElseBit(const TestCaseIfElseBit& testCase) {
+static std::string
+getCheckStringTestCaseIfElseBit(const TestCaseIfElseBit& testCase) {
   std::string result;
 
   result += R"(
@@ -866,6 +993,8 @@ std::string getCheckStringTestCaseIfElseBit(const TestCaseIfElseBit& testCase) {
 
   return result;
 }
+
+namespace {
 
 class OperationTestIfElseBit
     : public ImportTest,
@@ -912,9 +1041,13 @@ INSTANTIATE_TEST_SUITE_P(
                                         .thenOperation = "x",
                                         .elseOperation = "y"}));
 
+} // namespace
+
 // ##################################################
 // # Test full programs
 // ##################################################
+
+namespace {
 
 TEST_F(ImportTest, GHZ) {
   QuantumComputation qc(3, 3);

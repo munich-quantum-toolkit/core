@@ -9,8 +9,8 @@
  */
 
 #include "mlir/Compiler/CompilerPipeline.h"
-#include "mlir/Dialect/Flux/IR/FluxDialect.h"
-#include "mlir/Dialect/Quartz/IR/QuartzDialect.h"
+#include "mlir/Dialect/QC/IR/QCDialect.h"
+#include "mlir/Dialect/QCO/IR/QCODialect.h"
 
 #include <llvm/Support/CommandLine.h>
 #include <llvm/Support/InitLLVM.h>
@@ -67,10 +67,13 @@ const cl::opt<bool>
                               cl::desc("Print IR after each compiler stage"),
                               cl::init(false));
 
+} // namespace
+
 /**
  * @brief Load and parse a .mlir file
  */
-OwningOpRef<ModuleOp> loadMLIRFile(StringRef filename, MLIRContext* context) {
+static OwningOpRef<ModuleOp> loadMLIRFile(StringRef filename,
+                                          MLIRContext* context) {
   // Set up the input file
   std::string errorMessage;
   auto file = openInputFile(filename, &errorMessage);
@@ -88,7 +91,7 @@ OwningOpRef<ModuleOp> loadMLIRFile(StringRef filename, MLIRContext* context) {
 /**
  * @brief Write the module to the output file
  */
-mlir::LogicalResult writeOutput(ModuleOp module, const StringRef filename) {
+static mlir::LogicalResult writeOutput(ModuleOp module, StringRef filename) {
   std::string errorMessage;
   const auto output = openOutputFile(filename, &errorMessage);
   if (!output) {
@@ -101,8 +104,6 @@ mlir::LogicalResult writeOutput(ModuleOp module, const StringRef filename) {
   return mlir::success();
 }
 
-} // namespace
-
 int main(int argc, char** argv) {
   const InitLLVM y(argc, argv);
 
@@ -111,8 +112,8 @@ int main(int argc, char** argv) {
 
   // Set up MLIR context with all required dialects
   DialectRegistry registry;
-  registry.insert<quartz::QuartzDialect>();
-  registry.insert<flux::FluxDialect>();
+  registry.insert<qc::QCDialect>();
+  registry.insert<qco::QCODialect>();
   registry.insert<arith::ArithDialect>();
   registry.insert<cf::ControlFlowDialect>();
   registry.insert<func::FuncDialect>();
@@ -138,10 +139,34 @@ int main(int argc, char** argv) {
   config.printIRAfterAllStages = PRINT_IR_AFTER_ALL_STAGES;
 
   // Run the compilation pipeline
+  CompilationRecord record;
   if (const QuantumCompilerPipeline pipeline(config);
-      pipeline.runPipeline(module.get()).failed()) {
+      pipeline
+          .runPipeline(module.get(), RECORD_INTERMEDIATES ? &record : nullptr)
+          .failed()) {
     errs() << "Compilation pipeline failed\n";
     return 1;
+  }
+
+  if (RECORD_INTERMEDIATES) {
+    outs() << "=== Compilation Record ===\n";
+    outs() << "After QC Import:\n" << record.afterQCImport << "\n";
+    outs() << "After Initial QC Canonicalization:\n"
+           << record.afterInitialCanon << "\n";
+    outs() << "After QC-to-QCO Conversion:\n"
+           << record.afterQCOConversion << "\n";
+    outs() << "After Initial QCO Canonicalization:\n"
+           << record.afterQCOCanon << "\n";
+    outs() << "After Optimization:\n" << record.afterOptimization << "\n";
+    outs() << "After Final QCO Canonicalization:\n"
+           << record.afterOptimizationCanon << "\n";
+    outs() << "After QCO-to-QC Conversion:\n"
+           << record.afterQCConversion << "\n";
+    outs() << "After Final QC Canonicalization:\n"
+           << record.afterQCCanon << "\n";
+    outs() << "After QC-to-QIR Conversion:\n"
+           << record.afterQIRConversion << "\n";
+    outs() << "After QIR Canonicalization:\n" << record.afterQIRCanon << "\n";
   }
 
   // Write the output

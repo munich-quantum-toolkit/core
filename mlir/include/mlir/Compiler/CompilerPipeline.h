@@ -50,14 +50,14 @@ struct QuantumCompilerConfig {
  * All stages are recorded when recordIntermediates is enabled.
  */
 struct CompilationRecord {
-  std::string afterQuartzImport;
+  std::string afterQCImport;
   std::string afterInitialCanon;
-  std::string afterFluxConversion;
-  std::string afterFluxCanon;
+  std::string afterQCOConversion;
+  std::string afterQCOCanon;
   std::string afterOptimization;
   std::string afterOptimizationCanon;
-  std::string afterQuartzConversion;
-  std::string afterQuartzCanon;
+  std::string afterQCConversion;
+  std::string afterQCCanon;
   std::string afterQIRConversion;
   std::string afterQIRCanon;
 };
@@ -69,14 +69,14 @@ struct CompilationRecord {
  * Provides a high-level interface for compiling quantum programs through
  * the MQT compiler infrastructure. The pipeline stages are:
  *
- * 1. Quartz dialect (reference semantics) - imported from
+ * 1. QC dialect (reference semantics) - imported from
  * qc::QuantumComputation
  * 2. Canonicalization + cleanup
- * 3. Flux dialect (value semantics) - enables SSA-based optimizations
+ * 3. QCO dialect (value semantics) - enables SSA-based optimizations
  * 4. Canonicalization + cleanup
  * 5. Quantum optimization passes
  * 6. Canonicalization + cleanup
- * 7. Quartz dialect - converted back for backend lowering
+ * 7. QC dialect - converted back for backend lowering
  * 8. Canonicalization + cleanup
  * 9. QIR (Quantum Intermediate Representation) - optional final lowering
  * 10. Canonicalization + cleanup

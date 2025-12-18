@@ -10,45 +10,77 @@
 
 from __future__ import annotations
 
+import sys
+import tempfile
+from pathlib import Path
 from typing import cast
 
 import pytest
 
-from mqt.core.fomac import Device, devices
+from mqt.core.fomac import Device, Job, ProgramFormat, Session
 
 
-@pytest.fixture(params=devices())
+def _get_devices() -> list[Device]:
+    """Get all available devices from a Session.
+
+    Returns:
+        List of all available QDMI devices.
+    """
+    session = Session()
+    return session.get_devices()
+
+
+@pytest.fixture(params=_get_devices())
 def device(request: pytest.FixtureRequest) -> Device:
     """Fixture to provide a device for testing.
 
     Returns:
-        Device: A quantum device instance.
+       A quantum device instance.
     """
     return cast("Device", request.param)
 
 
-@pytest.fixture(params=devices())
+@pytest.fixture(params=_get_devices())
 def device_and_site(request: pytest.FixtureRequest) -> tuple[Device, Device.Site]:
     """Fixture to provide a device for testing.
 
     Returns:
-        tuple[Device, Device.Site]: A tuple containing a quantum device instance and one of its sites.
+       A tuple containing a quantum device instance and one of its sites.
     """
-    device = request.param
-    site = device.sites()[0]
-    return device, site
+    dev = request.param
+    site = dev.sites()[0]
+    return dev, site
 
 
-@pytest.fixture(params=devices())
+@pytest.fixture(params=_get_devices())
 def device_and_operation(request: pytest.FixtureRequest) -> tuple[Device, Device.Operation]:
     """Fixture to provide a device for testing.
 
     Returns:
-        tuple[Device, Device.Operation]: A tuple containing a quantum device instance and one of its operations.
+       A tuple containing a quantum device instance and one of its operations.
     """
     device = request.param
-    operation = device.operations()[0]
+
+    # If the device has no operations, skip tests that use this fixture.
+    ops = device.operations()
+    if not ops:
+        pytest.skip(f"Device '{device.name()}' has no operations.")
+
+    operation = ops[0]
     return device, operation
+
+
+@pytest.fixture
+def ddsim_device() -> Device:
+    """Fixture to provide the DDSIM device for job submission testing.
+
+    Returns:
+        The MQT Core DDSIM QDMI Device if it can be found.
+    """
+    for dev in _get_devices():
+        if dev.name() == "MQT Core DDSIM QDMI Device":
+            return dev
+    pytest.skip("DDSIM device not found - job submission tests require DDSIM device")
 
 
 def test_device_name(device: Device) -> None:
@@ -94,10 +126,9 @@ def test_device_sites(device: Device) -> None:
 
 
 def test_device_operations(device: Device) -> None:
-    """Test that the device operations is a non-empty list of Device.Operation objects."""
+    """Test that the device operations is a list of Device.Operation objects."""
     operations = device.operations()
     assert isinstance(operations, list)
-    assert len(operations) > 0
     assert all(isinstance(op, Device.Operation) for op in operations)
 
 
@@ -365,3 +396,422 @@ def test_operation_mean_shuttling_speed(device_and_operation: tuple[Device, Devi
     if mss is not None:
         assert isinstance(mss, int)
         assert mss > 0
+
+
+def test_device_submit_job_returns_valid_job(ddsim_device: Device) -> None:
+    """Test that submit_job creates a Job object with valid properties."""
+    qasm3_program = """
+OPENQASM 3.0;
+include "stdgates.inc";
+qubit[2] q;
+bit[2] c;
+h q[0];
+cx q[0], q[1];
+c = measure q;
+"""
+
+    job = ddsim_device.submit_job(qasm3_program, ProgramFormat.QASM3, num_shots=100)
+
+    # Job should have a non-empty ID
+    assert len(job.id) > 0
+    # The program format should be preserved
+    assert job.program_format == ProgramFormat.QASM3
+    # The program should be preserved
+    assert job.program == qasm3_program
+    # Num shots should match request
+    assert job.num_shots == 100
+
+
+def test_device_submit_job_preserves_num_shots(ddsim_device: Device) -> None:
+    """Test that different shot counts are correctly preserved."""
+    qasm3_program = """
+OPENQASM 3.0;
+qubit[1] q;
+bit[1] c;
+c[0] = measure q[0];
+"""
+
+    # Submit jobs with different shot counts
+    job1 = ddsim_device.submit_job(qasm3_program, ProgramFormat.QASM3, num_shots=10)
+    job2 = ddsim_device.submit_job(qasm3_program, ProgramFormat.QASM3, num_shots=100)
+    job3 = ddsim_device.submit_job(qasm3_program, ProgramFormat.QASM3, num_shots=1000)
+
+    assert job1.num_shots == 10
+    assert job2.num_shots == 100
+    assert job3.num_shots == 1000
+
+
+@pytest.fixture
+def submitted_job(ddsim_device: Device) -> Job:
+    """Fixture that provides a submitted job for testing.
+
+    Returns:
+        A submitted job with 10 shots.
+    """
+    qasm3_program = """
+OPENQASM 3.0;
+qubit[1] q;
+bit[1] c;
+c[0] = measure q[0];
+"""
+    return ddsim_device.submit_job(qasm3_program, ProgramFormat.QASM3, num_shots=10)
+
+
+def test_job_ids_are_unique(ddsim_device: Device) -> None:
+    """Test that different jobs have unique IDs."""
+    qasm3_program = """
+OPENQASM 3.0;
+qubit[1] q;
+bit[1] c;
+c[0] = measure q[0];
+"""
+
+    job1 = ddsim_device.submit_job(qasm3_program, ProgramFormat.QASM3, num_shots=10)
+    job2 = ddsim_device.submit_job(qasm3_program, ProgramFormat.QASM3, num_shots=10)
+
+    assert job1.id != job2.id
+
+
+def test_job_status_progresses(submitted_job: Job) -> None:
+    """Test that job status progresses to completion."""
+    initial_status = submitted_job.check()
+    assert isinstance(initial_status, Job.Status)
+
+    # Wait for completion
+    submitted_job.wait()
+
+    # After waiting, status should be DONE or FAILED
+    final_status = submitted_job.check()
+    assert final_status in {Job.Status.DONE, Job.Status.FAILED}
+
+
+def test_job_get_counts_returns_valid_histogram(submitted_job: Job) -> None:
+    """Test that job get_counts() returns valid measurement results."""
+    # Wait for job to complete
+    submitted_job.wait()
+
+    # Get counts
+    counts = submitted_job.get_counts()
+    assert isinstance(counts, dict)
+    assert len(counts) > 0
+
+    # For a single qubit, all keys should be "0" or "1"
+    for key in counts:
+        assert isinstance(key, str)
+        assert len(key) == 1
+        assert key in {"0", "1"}
+
+    # All values should be positive integers
+    for value in counts.values():
+        assert isinstance(value, int)
+        assert value > 0
+
+    # Verify total counts match num_shots
+    total_counts = sum(counts.values())
+    assert total_counts == submitted_job.num_shots
+
+
+def test_job_get_counts_is_consistent(submitted_job: Job) -> None:
+    """Test that multiple get_counts() calls return consistent results."""
+    # Wait for job to complete
+    submitted_job.wait()
+
+    # Get counts multiple times
+    counts1 = submitted_job.get_counts()
+    counts2 = submitted_job.get_counts()
+
+    # Results should be identical
+    assert counts1 == counts2
+
+
+@pytest.fixture
+def simulator_job(ddsim_device: Device) -> Job:
+    """Fixture that provides a simulator job for testing.
+
+    Returns:
+        A submitted job with 0 shots.
+    """
+    qasm3_program = """
+OPENQASM 3.0;
+qubit[2] q;
+h q[0];
+cx q[0], q[1];
+"""
+    return ddsim_device.submit_job(qasm3_program, ProgramFormat.QASM3, num_shots=0)
+
+
+def test_simulator_job_get_dense_state_vector_returns_valid_state(simulator_job: Job) -> None:
+    """Test that get_dense_statevector() returns the correct Bell state."""
+    simulator_job.wait()
+
+    state_vector = simulator_job.get_dense_statevector()
+    assert len(state_vector) == 4  # 2 qubits -> 4 amplitudes
+
+    # The expected state is (|00> + |11>)/sqrt(2)
+    inv_sqrt2 = 1.0 / (2**0.5)
+    assert abs(state_vector[0]) == pytest.approx(inv_sqrt2)  # |00>
+    assert abs(state_vector[1]) == pytest.approx(0.0)  # |01>
+    assert abs(state_vector[2]) == pytest.approx(0.0)  # |10>
+    assert abs(state_vector[3]) == pytest.approx(inv_sqrt2)  # |11>
+
+
+def test_simulator_job_get_dense_probabilities_returns_valid_probabilities(simulator_job: Job) -> None:
+    """Test that get_dense_probabilities() returns the correct probabilities."""
+    simulator_job.wait()
+
+    probabilities = simulator_job.get_dense_probabilities()
+    assert len(probabilities) == 4  # 2 qubits -> 4 probabilities
+
+    # The expected probabilities are 0.5 for |00> and |11>, and 0 for |01> and |10>
+    assert probabilities[0] == pytest.approx(0.5)  # |00>
+    assert probabilities[1] == pytest.approx(0.0)  # |01>
+    assert probabilities[2] == pytest.approx(0.0)  # |10>
+    assert probabilities[3] == pytest.approx(0.5)  # |11>
+
+
+def test_simulator_job_get_sparse_state_vector_returns_valid_state(simulator_job: Job) -> None:
+    """Test that get_sparse_statevector() returns the correct Bell state."""
+    simulator_job.wait()
+
+    sparse_state_vector = simulator_job.get_sparse_statevector()
+    assert len(sparse_state_vector) == 2  # Only |00> and |11> should be present
+
+    inv_sqrt2 = 1.0 / (2**0.5)
+    assert "00" in sparse_state_vector
+    assert abs(sparse_state_vector["00"]) == pytest.approx(inv_sqrt2)
+
+    assert "11" in sparse_state_vector
+    assert abs(sparse_state_vector["11"]) == pytest.approx(inv_sqrt2)
+
+
+def test_simulator_job_get_sparse_probabilities_returns_valid_probabilities(simulator_job: Job) -> None:
+    """Test that get_sparse_probabilities() returns the correct probabilities."""
+    simulator_job.wait()
+
+    sparse_probabilities = simulator_job.get_sparse_probabilities()
+    assert len(sparse_probabilities) == 2  # Only |00> and |11> should be present
+
+    assert "00" in sparse_probabilities
+    assert sparse_probabilities["00"] == pytest.approx(0.5)
+
+    assert "11" in sparse_probabilities
+    assert sparse_probabilities["11"] == pytest.approx(0.5)
+
+
+def test_session_construction_with_token() -> None:
+    """Test Session construction with a token parameter.
+
+    Unsupported parameters are skipped during Session initialization,
+    so Session construction succeeds unless there's a critical error.
+    """
+    # Empty token should be accepted
+    session = Session(token="")
+    assert session is not None
+
+    # Non-empty token should be accepted
+    session = Session(token="test_token_123")  # noqa: S106
+    assert session is not None
+
+    # Token with special characters should be accepted
+    session = Session(token="very_long_token_with_special_characters_!@#$%^&*()")  # noqa: S106
+    assert session is not None
+
+
+def test_session_construction_with_auth_url() -> None:
+    """Test Session construction with auth URL parameter.
+
+    Valid URLs should pass validation and Session construction should succeed
+    (even if the parameter is unsupported and skipped). Invalid URLs should
+    fail validation before attempting to set the parameter.
+    """
+    # Valid HTTPS URL
+    session = Session(auth_url="https://example.com")
+    assert session is not None
+
+    # Valid HTTP URL with port and path
+    session = Session(auth_url="http://auth.server.com:8080/api")
+    assert session is not None
+
+    # Valid HTTPS URL with query parameters
+    session = Session(auth_url="https://auth.example.com/token?param=value")
+    assert session is not None
+
+    # Valid localhost URL
+    session = Session(auth_url="http://localhost")
+    assert session is not None
+
+    # Valid localhost URL with port
+    session = Session(auth_url="http://localhost:8080")
+    assert session is not None
+
+    # Valid localhost URL with port and path
+    session = Session(auth_url="https://localhost:3000/auth/api")
+    assert session is not None
+
+    # Invalid URL - not a URL at all
+    with pytest.raises(RuntimeError):
+        Session(auth_url="not-a-url")
+
+    # Invalid URL - unsupported protocol
+    with pytest.raises(RuntimeError):
+        Session(auth_url="ftp://invalid.com")
+
+    # Invalid URL - missing protocol
+    with pytest.raises(RuntimeError):
+        Session(auth_url="example.com")
+
+
+def test_session_construction_with_auth_file() -> None:
+    """Test Session construction with auth file parameter.
+
+    Existing files should pass validation and Session construction should succeed.
+    Non-existent files should fail validation before attempting to set the parameter.
+    """
+    # Test with non-existent file
+    with pytest.raises(RuntimeError):
+        Session(auth_file="/nonexistent/path/to/file.txt")
+
+    # Test with existing file
+    with tempfile.NamedTemporaryFile(encoding="utf-8", mode="w", delete=False, suffix=".txt") as tmp_file:
+        tmp_file.write("test_token_content")
+        tmp_path = tmp_file.name
+
+    try:
+        # Existing file should be accepted (validation passes, parameter may be skipped)
+        session = Session(auth_file=tmp_path)
+        assert session is not None
+    finally:
+        # Clean up
+        Path(tmp_path).unlink(missing_ok=True)
+
+
+def test_session_construction_with_username_password() -> None:
+    """Test Session construction with username and password parameters.
+
+    Unsupported parameters are skipped, so construction should succeed.
+    """
+    # Username only
+    session = Session(username="user123")
+    assert session is not None
+
+    # Password only
+    session = Session(password="secure_password")  # noqa: S106
+    assert session is not None
+
+    # Both username and password
+    session = Session(username="user123", password="secure_password")  # noqa: S106
+    assert session is not None
+
+
+def test_session_construction_with_project_id() -> None:
+    """Test Session construction with project ID parameter.
+
+    Unsupported parameters are skipped, so construction should succeed.
+    """
+    session = Session(project_id="project-123-abc")
+    assert session is not None
+
+
+def test_session_construction_with_multiple_parameters() -> None:
+    """Test Session construction with multiple authentication parameters.
+
+    Unsupported parameters are skipped, so construction should succeed.
+    """
+    session = Session(
+        token="test_token",  # noqa: S106
+        username="test_user",
+        password="test_pass",  # noqa: S106
+        project_id="test_project",
+    )
+    assert session is not None
+
+
+def test_session_construction_with_custom_parameters() -> None:
+    """Test Session construction with custom configuration parameters.
+
+    Custom parameters may not be supported by all devices, or may have specific
+    validation requirements. This test verifies they can be passed to the Session
+    constructor. Currently a smoke test..
+    """
+    # Test custom1 - may succeed or fail with validation/unsupported errors
+    try:
+        session = Session(custom1="custom_value_1")
+        assert session is not None
+    except (RuntimeError, ValueError):
+        pass
+
+    # Test custom2
+    try:
+        session = Session(custom2="custom_value_2")
+        assert session is not None
+    except (RuntimeError, ValueError):
+        pass
+
+    # Test all custom parameters together
+    try:
+        session = Session(
+            custom1="value1",
+            custom2="value2",
+            custom3="value3",
+            custom4="value4",
+            custom5="value5",
+        )
+        assert session is not None
+    except (RuntimeError, ValueError):
+        pass
+
+    # Test mixing custom parameters with standard authentication
+    try:
+        session = Session(
+            token="test_token",  # noqa: S106
+            custom1="custom_value",
+            project_id="project_id",
+        )
+        assert session is not None
+    except (RuntimeError, ValueError):
+        pass
+
+
+def test_session_get_devices_returns_list() -> None:
+    """Test that get_devices() returns a list of Device objects."""
+    session = Session()
+    devices = session.get_devices()
+
+    assert isinstance(devices, list)
+    assert len(devices) > 0
+
+    # All elements should be Device instances
+    for device in devices:
+        assert isinstance(device, Device)
+        # Device should have a name
+        assert len(device.name()) > 0
+
+
+def test_session_multiple_instances() -> None:
+    """Test that multiple Session instances can be created independently."""
+    session1 = Session()
+    session2 = Session()
+
+    devices1 = session1.get_devices()
+    devices2 = session2.get_devices()
+
+    # Both should return devices
+    assert len(devices1) > 0
+    assert len(devices2) > 0
+
+    # Should return the same number of devices
+    assert len(devices1) == len(devices2)
+
+
+if sys.platform != "win32":
+    from mqt.core import fomac
+
+    def test_add_dynamic_device_library_exists() -> None:
+        """Test that add_dynamic_device_library function exists on non-Windows platforms."""
+        assert hasattr(fomac, "add_dynamic_device_library")
+        assert callable(fomac.add_dynamic_device_library)
+
+    def test_add_dynamic_device_library_nonexistent_library() -> None:
+        """Test that loading a non-existent library raises an error."""
+        with pytest.raises(RuntimeError):
+            fomac.add_dynamic_device_library("/nonexistent/lib.so", "PREFIX")
