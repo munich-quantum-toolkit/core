@@ -121,6 +121,6 @@ module {
 
 ## Development
 
-Building the MLIR library requires LLVM version 21.0 or later.
+Building the MLIR library requires LLVM version 21.1 or later.
 Our CI pipeline on GitHub continuously builds and tests the MLIR library on Linux, macOS, and Windows.
 To access the latest build logs, visit the [GitHub Actions page](https://github.com/munich-quantum-toolkit/core/actions/workflows/ci.yml).

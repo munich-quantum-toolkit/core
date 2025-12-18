@@ -33,11 +33,10 @@
 using namespace mlir;
 using namespace mqt::ir::opt;
 
-namespace {
 /** @returns a module containing the circuit from the "Tackling the Qubit
  * Mapping Problem for NISQ-Era Quantum Devices" paper by Li et al.
  */
-OwningOpRef<ModuleOp> getModule(MLIRContext& ctx) {
+static OwningOpRef<ModuleOp> getModule(MLIRContext& ctx) {
   const char* ir = R"mlir(
 module {
   %0 = mqtopt.allocQubit
@@ -74,7 +73,7 @@ module {
   return parseSourceString<ModuleOp>(ir, &ctx);
 }
 
-std::string toString(Operation* op) {
+static std::string toString(Operation* op) {
   std::string opStr;
   llvm::raw_string_ostream os(opStr);
   os << *op;
@@ -82,14 +81,13 @@ std::string toString(Operation* op) {
   return opStr;
 }
 
-void checkOperationEqual(Operation* op, const std::string& expected) {
+static void checkOperationEqual(Operation* op, const std::string& expected) {
   ASSERT_EQ(expected, toString(op));
 }
 
-void checkOperationStartsWith(Operation* op, const std::string& prefix) {
+static void checkOperationStartsWith(Operation* op, const std::string& prefix) {
   ASSERT_TRUE(toString(op).starts_with(prefix));
 }
-} // namespace
 
 class WireIteratorTest : public ::testing::Test {
 protected:
