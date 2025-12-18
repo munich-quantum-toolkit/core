@@ -1136,6 +1136,68 @@ struct ConvertQCCtrlOp final : StatefulOpConversionPattern<qc::CtrlOp> {
 };
 
 /**
+ * @brief Converts qc.inv to qco.inv
+ *
+ * @par Example:
+ * ```mlir
+ * qc.inv {
+ *   qc.s %q0
+ * }
+ * ```
+ * is converted to
+ * ```mlir
+ * %targets_out = qco.inv %q0_in {
+ *   %q0_res = qco.s %q0_in : !qco.qubit -> !qco.qubit
+ *   qco.yield %q0_res
+ * } : {!qco.qubit} -> {!qco.qubit}
+ * ```
+ */
+struct ConvertQCInvOp final : StatefulOpConversionPattern<qc::InvOp> {
+  using StatefulOpConversionPattern::StatefulOpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(qc::InvOp op, OpAdaptor /*adaptor*/,
+                  ConversionPatternRewriter& rewriter) const override {
+    auto& state = getState();
+    auto& qubitMap = state.qubitMap;
+
+    // Get QCO targets from state map
+    const auto numTargets = op.getNumTargets();
+    SmallVector<Value> qcoTargets;
+    qcoTargets.reserve(numTargets);
+    for (size_t i = 0; i < numTargets; ++i) {
+      const auto& qcTarget = op.getTarget(i);
+      assert(qubitMap.contains(qcTarget) && "QC qubit not found");
+      const auto& qcoTarget = qubitMap[qcTarget];
+      qcoTargets.push_back(qcoTarget);
+    }
+
+    // Create qco.inv
+    auto qcoOp = qco::InvOp::create(rewriter, op.getLoc(), qcoTargets);
+
+    // Update state map
+    if (state.inCtrlOp == 0) {
+      const auto targetsOut = qcoOp.getTargetsOut();
+      for (size_t i = 0; i < numTargets; ++i) {
+        const auto& qcTarget = op.getTarget(i);
+        qubitMap[qcTarget] = targetsOut[i];
+      }
+    }
+
+    // Update modifier information
+    state.inCtrlOp++;
+    state.targetsIn.try_emplace(state.inCtrlOp, qcoTargets);
+
+    // Clone body region from QC to QCO
+    auto& dstRegion = qcoOp.getBody();
+    rewriter.cloneRegionBefore(op.getBody(), dstRegion, dstRegion.end());
+
+    rewriter.eraseOp(op);
+    return success();
+  }
+};
+
+/**
  * @brief Converts qc.yield to qco.yield
  *
  * @par Example:
@@ -1216,7 +1278,8 @@ struct QCToQCO final : impl::QCToQCOBase<QCToQCO> {
                  ConvertQCDCXOp, ConvertQCECROp, ConvertQCRXXOp, ConvertQCRYYOp,
                  ConvertQCRZXOp, ConvertQCRZZOp, ConvertQCXXPlusYYOp,
                  ConvertQCXXMinusYYOp, ConvertQCBarrierOp, ConvertQCCtrlOp,
-                 ConvertQCYieldOp>(typeConverter, context, &state);
+                 ConvertQCInvOp, ConvertQCYieldOp>(typeConverter, context,
+                                                   &state);
 
     // Conversion of qc types in func.func signatures
     // Note: This currently has limitations with signature
