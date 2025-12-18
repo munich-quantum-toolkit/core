@@ -25,6 +25,8 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 
 ### Changed
 
+- ♻️ Migrate Python bindings from `pybind11` to `nanobind` ([#1383]) ([**@denialhaag**])
+- 📦️ Provide Stable ABI wheels for Python 3.12+ ([#1383]) ([**@burgholzer**], [**@denialhaag**])
 - ✨ Add common definitions and utilities for QDMI ([#1355]) ([**@burgholzer**])
 - 🚚 Move `NA` QDMI device in its right place next to other QDMI devices ([#1355]) ([**@burgholzer**])
 - ♻️ Allow repeated loading of QDMI device library with potentially different session configurations ([#1355]) ([**@burgholzer**])
@@ -285,6 +287,7 @@ _📚 Refer to the [GitHub Release Notes](https://github.com/munich-quantum-tool
 
 [#1385]: https://github.com/munich-quantum-toolkit/core/pull/1385
 [#1384]: https://github.com/munich-quantum-toolkit/core/pull/1384
+[#1383]: https://github.com/munich-quantum-toolkit/core/pull/1383
 [#1382]: https://github.com/munich-quantum-toolkit/core/pull/1382
 [#1381]: https://github.com/munich-quantum-toolkit/core/pull/1381
 [#1378]: https://github.com/munich-quantum-toolkit/core/pull/1378
