@@ -23,4 +23,12 @@ if(NOT TARGET ${TARGET_NAME})
     ./na
     LINK_LIBS
     MQT::CoreNAFoMaC)
+
+  # install the Python stub file in editable mode for better IDE support
+  if(SKBUILD_STATE STREQUAL "editable")
+    install(
+      FILES ${PROJECT_SOURCE_DIR}/python/mqt/core/na/fomac.pyi
+      DESTINATION .
+      COMPONENT ${MQT_CORE_TARGET_NAME}_Python)
+  endif()
 endif()

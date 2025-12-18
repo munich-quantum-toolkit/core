@@ -22,4 +22,13 @@ if(NOT TARGET ${MQT_CORE_TARGET_NAME}-ir-bindings)
     LINK_LIBS
     MQT::CoreIR
     MQT::CoreQASM)
+
+  # install the Python stub file in editable mode for better IDE support
+  if(SKBUILD_STATE STREQUAL "editable")
+    file(GLOB_RECURSE IR_PYI_FILES ${PROJECT_SOURCE_DIR}/python/mqt/core/ir/*.pyi)
+    install(
+      FILES ${IR_PYI_FILES}
+      DESTINATION .
+      COMPONENT ${MQT_CORE_TARGET_NAME}_Python)
+  endif()
 endif()
