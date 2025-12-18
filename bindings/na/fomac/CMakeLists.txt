@@ -28,7 +28,7 @@ if(NOT TARGET ${TARGET_NAME})
   if(SKBUILD_STATE STREQUAL "editable")
     install(
       FILES ${PROJECT_SOURCE_DIR}/python/mqt/core/na/fomac.pyi
-      DESTINATION .
+      DESTINATION ./na
       COMPONENT ${MQT_CORE_TARGET_NAME}_Python)
   endif()
 endif()
