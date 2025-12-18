@@ -109,6 +109,7 @@ Example:
     >>> devices = session.get_devices())pb");
 
   session.def("get_devices", &fomac::Session::getDevices,
+              nb::rv_policy::reference_internal,
               R"pb(Get available devices from this session.
 
 Returns:
@@ -273,8 +274,8 @@ Returns:
              "Returns the list of program formats supported by the device.");
 
   device.def("submit_job", &fomac::Session::Device::submitJob, "program"_a,
-             "program_format"_a, "num_shots"_a, nb::keep_alive<0, 1>(),
-             "Submits a job to the device.");
+             "program_format"_a, "num_shots"_a,
+             nb::rv_policy::reference_internal, "Submits a job to the device.");
 
   device.def("__repr__", [](const fomac::Session::Device& dev) {
     return "<Device name=\"" + dev.getName() + "\">";
