@@ -194,7 +194,7 @@ static void addMeasureOp(QCProgramBuilder& builder,
                          const SmallVector<Value>& qubits,
                          const BitIndexVec& bitMap) {
   const auto& measureOp =
-      dynamic_cast<const ::qc::NonUnitaryOperation&>(operation);
+      static_cast<const ::qc::NonUnitaryOperation&>(operation);
   const auto& targets = measureOp.getTargets();
   const auto& classics = measureOp.getClassics();
 
