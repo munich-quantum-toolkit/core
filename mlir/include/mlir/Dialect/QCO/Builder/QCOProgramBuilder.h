@@ -1027,29 +1027,155 @@ public:
    */
   QCOProgramBuilder& dealloc(Value qubit);
 
-  Value arithConstantIndex(int i);
+  //===--------------------------------------------------------------------===//
+  // SCF operations
+  //===--------------------------------------------------------------------===//
 
-  Value arithConstantBool(bool b);
-
+  /**
+   * @brief Constructs a scf.for operation with iterArgs
+   *
+   * @param lowerbound Lowerbound of the loop
+   * @param upperbound Upperbound of the loop
+   * @param step Stepsize of the loop
+   * @param initArgs Initial arguments for the iterArgs
+   * @param body Function that builds the body of the for operation
+   * @return Reference to this builder for method chaining
+   *
+   * @par Example:
+   * ```c++
+   * builder.scfFor(lb, ub, step, [&](auto& b) { b.x(q0); });
+   * ```
+   * ```mlir
+   * scf.for %iv = %lb to %ub step %step {
+   *   qc.x %q0 : !qc.qubit
+   * }
+   * ```
+   */
   ValueRange scfFor(Value lowerbound, Value upperbound, Value step,
                     ValueRange initArgs,
                     const std::function<ValueRange(OpBuilder&, Location, Value,
                                                    ValueRange)>& body);
-
+  /**
+   * @brief Constructs a scf.while operation with return values
+   *
+   * @param args Arguments for the while loop
+   * @param beforeBody Function that builds the before body of the while
+   * operation
+   * @param afterBody Function that builds the after body of the while operation
+   * @return Reference to this builder for method chaining
+   *
+   * @par Example:
+   * ```c++
+   * builder.scfWhile([&](auto& b) {
+   * b.h(q0);
+   * auto res = b.measure(q0)
+   * b.condition(res)
+   * }, [&](auto& b) {
+   * b.x(q0);
+   * b.yield()
+   * });
+   * ```
+   * ```mlir
+   * scf.while : () -> () {
+   * qc.h %q0 : !qc.qubit
+   * %res = qc.measure %q0 : !qc.qubit -> i1
+   * scf.condition(%tres)
+   * } do {
+   * qc.x %q0 : !qc.qubit
+   * scf.yield
+   * }
+   * ```
+   */
   ValueRange
   scfWhile(ValueRange args,
            const std::function<ValueRange(OpBuilder&, Location, ValueRange)>&
                beforeBody,
            const std::function<ValueRange(OpBuilder&, Location, ValueRange)>&
                afterBody);
+
+  /**
+   * @brief Constructs a scf.if operation with return values
+   *
+   * @param condition Condition for the if operation
+   * @param qubits Qubits used in the if/else body
+   * @param thenBody Function that builds the then body of the if
+   * operation
+   * @param elseBody Function that builds the else body of the if operation
+   * @return Reference to this builder for method chaining
+   *
+   * @par Example:
+   * ```c++
+   * builder.scf.if(condition, [&](auto& b) {
+   * b.h(q0);
+   * }, [&](auto& b) {
+   * b.x(q0);
+   * });
+   * ```
+   * ```mlir
+   * scf.if %condition {
+   * qc.h %q0 : !qc.qubit
+   * } else {
+   * qc.x %q0 : !qc.qubit
+   * }
+   * ```
+   */
   ValueRange
-  scfIf(Value condition, ValueRange args,
+  scfIf(Value condition, ValueRange qubits,
         const std::function<ValueRange(OpBuilder&, Location)>& thenBody,
         const std::function<ValueRange(OpBuilder&, Location)>& elseBody);
 
-  QCOProgramBuilder& scfYield(ValueRange yieldedValues);
-
+  /**
+   * @brief Constructs a scf.condition operation without any additional Values
+   *
+   * @param condition Condition for condition operation
+   * @return Reference to this builder for method chaining
+   *
+   * @par Example:
+   * ```c++
+   * builder.condition(condition);
+   * ```
+   * ```mlir
+   * scf.condition(%condition)
+   * ```
+   */
   QCOProgramBuilder& scfCondition(Value condition, ValueRange yieldedValues);
+
+  QCOProgramBuilder& scfYield(ValueRange yieldedValues);
+  //===--------------------------------------------------------------------===//
+  // Arith operations
+  //===--------------------------------------------------------------------===//
+
+  /**
+   * @brief Constructs a arith.constant of type Index with a given value
+   *
+   * @param index Value of the constant operation
+   * @return Result of the constant operation
+   *
+   * @par Example:
+   * ```c++
+   * builder.arithConstantIndex(4);
+   * ```
+   * ```mlir
+   * arith.constant 4 : index
+   * ```
+   */
+  Value arithConstantIndex(int i);
+
+  /**
+   * @brief Constructs a arith.constant of type i1 with a given bool value
+   *
+   * @param b Bool value of the constant operation
+   * @return Result of the constant operation
+   *
+   * @par Example:
+   * ```c++
+   * builder.arithConstantBool(true);
+   * ```
+   * ```mlir
+   * arith.constant 1 : i1
+   * ```
+   */
+  Value arithConstantBool(bool b);
 
   //===--------------------------------------------------------------------===//
   // Finalization
