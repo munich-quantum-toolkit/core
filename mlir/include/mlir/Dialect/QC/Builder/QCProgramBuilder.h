@@ -973,6 +973,17 @@ public:
   QCProgramBuilder& scfCondition(Value condition);
 
   //===--------------------------------------------------------------------===//
+  // Func operations
+  //===--------------------------------------------------------------------===//
+  QCProgramBuilder& funcReturn();
+
+  QCProgramBuilder& funcCall(StringRef name, ValueRange operands);
+
+  QCProgramBuilder&
+  funcFunc(StringRef name, TypeRange argTypes, TypeRange resultTypes,
+           const std::function<void(OpBuilder&, Location, ValueRange)>& body);
+
+  //===--------------------------------------------------------------------===//
   // Arith operations
   //===--------------------------------------------------------------------===//
 

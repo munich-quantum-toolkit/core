@@ -507,6 +507,37 @@ QCProgramBuilder& QCProgramBuilder::scfCondition(Value condition) {
 }
 
 //===----------------------------------------------------------------------===//
+// Func operations
+//===----------------------------------------------------------------------===//
+
+QCProgramBuilder& QCProgramBuilder::funcCall(StringRef name,
+                                             ValueRange operands) {
+  create<func::CallOp>(loc, name, TypeRange{}, operands);
+  return *this;
+}
+
+QCProgramBuilder& QCProgramBuilder::funcReturn() {
+  create<func::ReturnOp>(loc);
+  return *this;
+}
+QCProgramBuilder& QCProgramBuilder::funcFunc(
+    StringRef name, TypeRange argTypes, TypeRange resultTypes,
+    const std::function<void(OpBuilder&, Location, ValueRange)>& body) {
+  const auto funcType = getFunctionType(argTypes, resultTypes);
+  OpBuilder::InsertionGuard guard(*this);
+  setInsertionPointToEnd(module.getBody());
+  auto funcOp = create<func::FuncOp>(loc, name, funcType);
+
+  auto* entryBlock = funcOp.addEntryBlock();
+
+  setInsertionPointToStart(entryBlock);
+
+  // Build function body
+  body(*this, loc, entryBlock->getArguments());
+  return *this;
+}
+
+//===----------------------------------------------------------------------===//
 // Arith operations
 //===----------------------------------------------------------------------===//
 

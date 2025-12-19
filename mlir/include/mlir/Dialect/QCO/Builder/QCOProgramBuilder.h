@@ -1141,6 +1141,19 @@ public:
   QCOProgramBuilder& scfCondition(Value condition, ValueRange yieldedValues);
 
   QCOProgramBuilder& scfYield(ValueRange yieldedValues);
+
+  //===--------------------------------------------------------------------===//
+  // Func operations
+  //===--------------------------------------------------------------------===//
+
+  QCOProgramBuilder& funcReturn(ValueRange yieldedValues);
+
+  ValueRange funcCall(StringRef name, ValueRange operands);
+
+  QCOProgramBuilder&
+  funcFunc(StringRef name, TypeRange argTypes, TypeRange resultTypes,
+           const std::function<void(OpBuilder&, Location, ValueRange)>& body);
+
   //===--------------------------------------------------------------------===//
   // Arith operations
   //===--------------------------------------------------------------------===//
