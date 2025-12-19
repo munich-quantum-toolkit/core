@@ -289,7 +289,7 @@ static void addMeasureOp(mlir::OpBuilder& builder,
                          const llvm::SmallVector<mlir::Value>& qubits,
                          const BitIndexVec& bitMap) {
   const auto& measureOp =
-      dynamic_cast<const qc::NonUnitaryOperation&>(operation);
+      static_cast<const qc::NonUnitaryOperation&>(operation);
   const auto& targets = measureOp.getTargets();
   const auto& classics = measureOp.getClassics();
   for (std::size_t i = 0; i < targets.size(); ++i) {
@@ -343,7 +343,7 @@ addBlockOps(mlir::OpBuilder& builder, const qc::Operation* operationInBlock,
             const BitIndexVec& bitMap) {
   if (operationInBlock->isCompoundOperation()) {
     for (const auto& operation :
-         dynamic_cast<const qc::CompoundOperation&>(*operationInBlock)) {
+         static_cast<const qc::CompoundOperation&>(*operationInBlock)) {
       if (addOperation(builder, *operation, qubits, bitMap).failed()) {
         return llvm::failure();
       }
@@ -422,7 +422,7 @@ addIfElseOp(mlir::OpBuilder& builder, const qc::Operation& op,
             const llvm::SmallVector<mlir::Value>& qubits,
             const BitIndexVec& bitMap) {
   const auto loc = builder.getUnknownLoc();
-  const auto& ifElse = dynamic_cast<const qc::IfElseOperation&>(op);
+  const auto& ifElse = static_cast<const qc::IfElseOperation&>(op);
 
   const auto* thenOp = ifElse.getThenOp();
   // Canonicalization should have removed empty then blocks
