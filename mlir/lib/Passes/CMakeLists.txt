@@ -12,7 +12,14 @@ add_compile_options(-fexceptions)
 
 file(GLOB_RECURSE PASSES_SOURCES *.cpp)
 
-add_mlir_library(QcoPasses ${PASSES_SOURCES} LINK_LIBS PUBLIC ${LIBRARIES} DEPENDS QcoPassesIncGen)
+add_mlir_library(
+  QcoPasses
+  ${PASSES_SOURCES}
+  LINK_LIBS
+  PUBLIC
+  ${LIBRARIES}
+  DEPENDS
+  QcoPassesIncGen)
 
 # collect header files
 file(GLOB_RECURSE PASSES_HEADERS_SOURCE ${MQT_MLIR_SOURCE_INCLUDE_DIR}/mlir/Passes/*.h)
