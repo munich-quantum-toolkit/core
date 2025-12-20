@@ -39,7 +39,7 @@
 #include <unsupported/Eigen/MatrixFunctions> // TODO: unstable, NOLINT(misc-include-cleaner)
 #include <utility>
 
-namespace mqt::ir::opt::decomposition {
+namespace mlir::qco::decomposition {
 /**
  * Allowed deviation for internal assert statements which ensure the correctness
  * of the decompositions.
@@ -781,4 +781,4 @@ protected:
     return flippedFromOriginal;
   }
 };
-} // namespace mqt::ir::opt::decomposition
+} // namespace mlir::qco::decomposition

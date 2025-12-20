@@ -32,7 +32,7 @@
 #include <mlir/Support/LogicalResult.h>
 #include <optional>
 
-namespace mqt::ir::opt::decomposition {
+namespace mlir::qco::decomposition {
 
 /**
  * Decomposition of single-qubit matrices into rotation gates using a KAK
@@ -210,4 +210,4 @@ private:
     return sequence;
   }
 };
-} // namespace mqt::ir::opt::decomposition
+} // namespace mlir::qco::decomposition

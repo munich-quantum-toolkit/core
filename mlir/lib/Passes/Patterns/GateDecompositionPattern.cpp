@@ -9,16 +9,16 @@
  */
 
 #include "ir/operations/OpType.hpp"
-#include "mlir/Dialect/MQTOpt/IR/MQTOptDialect.h"
-#include "mlir/Dialect/MQTOpt/Transforms/Decomposition/BasisDecomposer.h"
-#include "mlir/Dialect/MQTOpt/Transforms/Decomposition/EulerBasis.h"
-#include "mlir/Dialect/MQTOpt/Transforms/Decomposition/EulerDecomposition.h"
-#include "mlir/Dialect/MQTOpt/Transforms/Decomposition/Gate.h"
-#include "mlir/Dialect/MQTOpt/Transforms/Decomposition/GateSequence.h"
-#include "mlir/Dialect/MQTOpt/Transforms/Decomposition/Helpers.h"
-#include "mlir/Dialect/MQTOpt/Transforms/Decomposition/UnitaryMatrices.h"
-#include "mlir/Dialect/MQTOpt/Transforms/Decomposition/WeylDecomposition.h"
-#include "mlir/Dialect/MQTOpt/Transforms/Passes.h"
+#include "mlir/Dialect/QCO/IR/QCODialect.h"
+#include "mlir/Passes/Decomposition/BasisDecomposer.h"
+#include "mlir/Passes/Decomposition/EulerBasis.h"
+#include "mlir/Passes/Decomposition/EulerDecomposition.h"
+#include "mlir/Passes/Decomposition/Gate.h"
+#include "mlir/Passes/Decomposition/GateSequence.h"
+#include "mlir/Passes/Decomposition/Helpers.h"
+#include "mlir/Passes/Decomposition/UnitaryMatrices.h"
+#include "mlir/Passes/Decomposition/WeylDecomposition.h"
+#include "mlir/Passes/Passes.h"
 
 #include <Eigen/Core>
 #include <array>
@@ -40,7 +40,7 @@
 #include <optional>
 #include <utility>
 
-namespace mqt::ir::opt {
+namespace mlir::qco {
 
 /**
  * @brief This pattern attempts to collect as many operations as possible into a
@@ -48,7 +48,7 @@ namespace mqt::ir::opt {
  *        gates.
  */
 struct GateDecompositionPattern final
-    : mlir::OpInterfaceRewritePattern<UnitaryInterface> {
+    : mlir::OpInterfaceRewritePattern<UnitaryOpInterface> {
   using EulerBasis = decomposition::EulerBasis;
   using Gate = decomposition::Gate;
 
@@ -70,7 +70,7 @@ struct GateDecompositionPattern final
   }
 
   mlir::LogicalResult
-  matchAndRewrite(UnitaryInterface op,
+  matchAndRewrite(UnitaryOpInterface op,
                   mlir::PatternRewriter& rewriter) const override {
     auto series = TwoQubitSeries::getTwoQubitSeries(op);
 
@@ -157,23 +157,24 @@ protected:
     std::array<mlir::Value, 2> outQubits{};
 
     struct MlirGate {
-      UnitaryInterface op;
+      UnitaryOpInterface op;
       llvm::SmallVector<QubitId, 2> qubitIds;
     };
     llvm::SmallVector<MlirGate, 8> gates;
 
-    [[nodiscard]] static TwoQubitSeries getTwoQubitSeries(UnitaryInterface op) {
+    [[nodiscard]] static TwoQubitSeries
+    getTwoQubitSeries(UnitaryOpInterface op) {
       if (isBarrier(op)) {
         return {};
       }
       TwoQubitSeries result(op);
 
       auto getUser = [](mlir::Value qubit,
-                        auto&& filter) -> std::optional<UnitaryInterface> {
+                        auto&& filter) -> std::optional<UnitaryOpInterface> {
         if (qubit) {
           assert(qubit.hasOneUse());
           auto user =
-              mlir::dyn_cast<UnitaryInterface>(*qubit.getUsers().begin());
+              mlir::dyn_cast<UnitaryOpInterface>(*qubit.getUsers().begin());
           if (user && filter(user)) {
             return user;
           }
@@ -246,31 +247,31 @@ protected:
     /**
      * Initialize TwoQubitSeries instance with given first operation.
      */
-    explicit TwoQubitSeries(UnitaryInterface initialOperation) {
-      auto&& in = initialOperation.getAllInQubits();
-      auto&& out = initialOperation->getResults();
+    explicit TwoQubitSeries(UnitaryOpInterface initialOperation) {
       if (helpers::isSingleQubitOperation(initialOperation)) {
-        inQubits = {in[0], mlir::Value{}};
-        outQubits = {out[0], mlir::Value{}};
+        inQubits = {initialOperation.getInputQubit(0), mlir::Value{}};
+        outQubits = {initialOperation.getOutputQubit(0), mlir::Value{}};
         gates.push_back({.op = initialOperation, .qubitIds = {0}});
       } else if (helpers::isTwoQubitOperation(initialOperation)) {
-        inQubits = {in[0], in[1]};
-        outQubits = {out[0], out[1]};
+        inQubits = {initialOperation.getInputQubit(0),
+                    initialOperation.getInputQubit(1)};
+        outQubits = {initialOperation.getOutputQubit(0),
+                     initialOperation.getOutputQubit(1)};
         gates.push_back({.op = initialOperation, .qubitIds = {0, 1}});
       }
       complexity += helpers::getComplexity(helpers::getQcType(initialOperation),
-                                           in.size());
+                                           initialOperation.getNumQubits());
     }
 
     /**
      * @return true if series continues, otherwise false
      *         (will always return true)
      */
-    bool appendSingleQubitGate(UnitaryInterface nextGate) {
+    bool appendSingleQubitGate(UnitaryOpInterface nextGate) {
       if (isBarrier(nextGate)) {
         return false;
       }
-      auto operand = nextGate.getAllInQubits()[0];
+      auto operand = nextGate.getInputQubit(0);
       // NOLINTNEXTLINE(readability-qualified-auto)
       auto it = llvm::find(outQubits, operand);
       if (it == outQubits.end()) {
@@ -288,10 +289,9 @@ protected:
     /**
      * @return true if series continues, otherwise false
      */
-    bool appendTwoQubitGate(UnitaryInterface nextGate) {
-      auto opInQubits = nextGate.getAllInQubits();
-      auto&& firstOperand = opInQubits[0];
-      auto&& secondOperand = opInQubits[1];
+    bool appendTwoQubitGate(UnitaryOpInterface nextGate) {
+      auto&& firstOperand = nextGate.getInputQubit(0);
+      auto&& secondOperand = nextGate.getInputQubit(1);
       auto firstQubitIt = // NOLINT(readability-qualified-auto)
           llvm::find(outQubits, firstOperand);
       auto secondQubitIt = // NOLINT(readability-qualified-auto)
@@ -304,6 +304,9 @@ protected:
         if (it == outQubits.end()) {
           return false;
         }
+        // TODO: this only works because parameters are at end of operands;
+        // use future getInputQubits() instead
+        auto&& opInQubits = nextGate->getOperands();
         // iterator in the operation input of "old" qubit that already has
         // previous single-qubit gates in this series
         auto it2 = llvm::find(opInQubits, firstQubitIt != outQubits.end()
@@ -350,14 +353,14 @@ protected:
      * in the series.
      */
     void backtrackSingleQubitSeries(QubitId qubitId) {
-      auto prependSingleQubitGate = [&](UnitaryInterface op) {
-        inQubits[qubitId] = op.getAllInQubits()[0];
+      auto prependSingleQubitGate = [&](UnitaryOpInterface op) {
+        inQubits[qubitId] = op.getInputQubit(0);
         gates.insert(gates.begin(), {.op = op, .qubitIds = {qubitId}});
         // outQubits do not need to be updated because the final out qubit is
         // already fixed
       };
       while (auto* op = inQubits[qubitId].getDefiningOp()) {
-        auto unitaryOp = mlir::dyn_cast<UnitaryInterface>(op);
+        auto unitaryOp = mlir::dyn_cast<UnitaryOpInterface>(op);
         if (unitaryOp && helpers::isSingleQubitOperation(unitaryOp) &&
             !isBarrier(unitaryOp)) {
           prependSingleQubitGate(unitaryOp);
@@ -367,37 +370,14 @@ protected:
       }
     }
 
-    [[nodiscard]] static bool isBarrier(UnitaryInterface op) {
+    [[nodiscard]] static bool isBarrier(UnitaryOpInterface op) {
       return llvm::isa_and_nonnull<BarrierOp>(*op);
     }
   };
 
-  /**
-   * @brief Creates a new rotation gate with no controls.
-   *
-   * @tparam OpType The type of the operation to be created.
-   * @param op The first instance of the rotation gate.
-   * @param rewriter The pattern rewriter.
-   * @return A new rotation gate.
-   */
-  template <typename OpType>
-  static OpType createOneParameterGate(mlir::PatternRewriter& rewriter,
-                                       mlir::Location location, fp parameter,
-                                       mlir::ValueRange inQubits) {
-    auto parameterValue = rewriter.create<mlir::arith::ConstantOp>(
-        location, rewriter.getF64Type(), rewriter.getF64FloatAttr(parameter));
-
-    return rewriter.create<OpType>(
-        location, inQubits.getType(), mlir::TypeRange{}, mlir::TypeRange{},
-        mlir::DenseF64ArrayAttr{}, mlir::DenseBoolArrayAttr{},
-        mlir::ValueRange{parameterValue}, inQubits, mlir::ValueRange{},
-        mlir::ValueRange{});
-  }
-
   template <typename OpType>
   static OpType createGate(mlir::PatternRewriter& rewriter,
                            mlir::Location location, mlir::ValueRange inQubits,
-                           mlir::ValueRange ctrlQubits,
                            const llvm::SmallVector<fp, 3>& parameters) {
     mlir::SmallVector<mlir::Value, 2> parameterValues;
     for (auto&& parameter : parameters) {
@@ -406,10 +386,17 @@ protected:
       parameterValues.push_back(parameterValue);
     }
 
-    return rewriter.create<OpType>(
-        location, inQubits.getType(), ctrlQubits.getType(), mlir::TypeRange{},
-        mlir::DenseF64ArrayAttr{}, mlir::DenseBoolArrayAttr{}, parameterValues,
-        inQubits, ctrlQubits, mlir::ValueRange{});
+    return rewriter.create<OpType>(location, inQubits, parameterValues);
+  }
+
+  template <typename OpType>
+  static CtrlOp
+  createControlledGate(mlir::PatternRewriter& rewriter, mlir::Location location,
+                       mlir::ValueRange inQubits, mlir::ValueRange ctrlQubits,
+                       const llvm::SmallVector<fp, 3>& parameters) {
+    auto op = createGate<OpType>(rewriter, location, inQubits, parameters);
+    auto opOutQubits = op->getResults();
+    return rewriter.create<CtrlOp>(location, ctrlQubits, opOutQubits);
   }
 
   static void applySeries(mlir::PatternRewriter& rewriter,
@@ -423,21 +410,18 @@ protected:
     auto updateInQubits =
         [&inQubits](const llvm::SmallVector<QubitId, 2>& qubitIds,
                     auto&& newGate) {
-          // TODO: need to handle controls differently?
-          auto results = newGate.getAllOutQubits();
           if (qubitIds.size() == 2) {
-            inQubits[qubitIds[0]] = results[0];
-            inQubits[qubitIds[1]] = results[1];
+            inQubits[qubitIds[0]] = newGate.getOutputQubit(0);
+            inQubits[qubitIds[1]] = newGate.getOutputQubit(1);
           } else if (qubitIds.size() == 1) {
-            inQubits[qubitIds[0]] = results[0];
+            inQubits[qubitIds[0]] = newGate.getOutputQubit(0);
           } else {
             throw std::logic_error{"Invalid number of qubit IDs!"};
           }
         };
 
     if (sequence.hasGlobalPhase()) {
-      createOneParameterGate<GPhaseOp>(rewriter, location, sequence.globalPhase,
-                                       {});
+      createGate<GPhaseOp>(rewriter, location, {}, {sequence.globalPhase});
     }
 
     matrix4x4 unitaryMatrix = helpers::kroneckerProduct(
@@ -450,12 +434,12 @@ protected:
       if (gate.type == qc::X) {
         mlir::SmallVector<mlir::Value, 1> inCtrlQubits;
         if (gate.qubitId.size() > 1) {
-          // controls come first
+          // controls come last
           inCtrlQubits.push_back(inQubits[gate.qubitId[1]]);
         }
-        auto newGate =
-            createGate<XOp>(rewriter, location, {inQubits[gate.qubitId[0]]},
-                            inCtrlQubits, gate.parameter);
+        auto newGate = createControlledGate<XOp>(rewriter, location,
+                                                 {inQubits[gate.qubitId[0]]},
+                                                 inCtrlQubits, gate.parameter);
         updateInQubits(gate.qubitId, newGate);
       } else if (gate.type == qc::RX) {
         mlir::SmallVector<mlir::Value, 2> qubits;
@@ -463,7 +447,7 @@ protected:
           qubits.push_back(inQubits[x]);
         }
         auto newGate =
-            createGate<RXOp>(rewriter, location, qubits, {}, gate.parameter);
+            createGate<RXOp>(rewriter, location, qubits, gate.parameter);
         updateInQubits(gate.qubitId, newGate);
       } else if (gate.type == qc::RY) {
         mlir::SmallVector<mlir::Value, 2> qubits;
@@ -471,7 +455,7 @@ protected:
           qubits.push_back(inQubits[x]);
         }
         auto newGate =
-            createGate<RYOp>(rewriter, location, qubits, {}, gate.parameter);
+            createGate<RYOp>(rewriter, location, qubits, gate.parameter);
         updateInQubits(gate.qubitId, newGate);
       } else if (gate.type == qc::RZ) {
         mlir::SmallVector<mlir::Value, 2> qubits;
@@ -479,7 +463,7 @@ protected:
           qubits.push_back(inQubits[x]);
         }
         auto newGate =
-            createGate<RZOp>(rewriter, location, qubits, {}, gate.parameter);
+            createGate<RZOp>(rewriter, location, qubits, gate.parameter);
         updateInQubits(gate.qubitId, newGate);
       } else {
         throw std::runtime_error{"Unknown gate type!"};
@@ -520,4 +504,4 @@ void populateGateDecompositionPatterns(mlir::RewritePatternSet& patterns) {
                                          eulerBases);
 }
 
-} // namespace mqt::ir::opt
+} // namespace mlir::qco

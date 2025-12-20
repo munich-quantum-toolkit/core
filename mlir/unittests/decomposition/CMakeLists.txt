@@ -13,8 +13,16 @@ if(NOT TARGET ${testname})
   # create an executable in which the tests will be stored
   add_executable(${testname} ${DECOMPOSITION_TEST_SOURCES})
   # link the Google test infrastructure and a default main function to the test executable.
-  target_link_libraries(${testname} PRIVATE GTest::gmock GTest::gtest_main LLVMFileCheck MLIRPass
-                                            MLIRTransforms MLIRMQTOptTransforms)
+  target_link_libraries(
+    ${testname}
+    PRIVATE GTest::gmock
+            GTest::gtest_main
+            LLVMFileCheck
+            MLIRPass
+            MLIRTransforms
+            MQTCompilerPipeline
+            MQT::CoreIR
+            Eigen3::Eigen)
   # discover tests
   gtest_discover_tests(${testname} DISCOVERY_TIMEOUT 60)
   set_target_properties(${testname} PROPERTIES FOLDER unittests)

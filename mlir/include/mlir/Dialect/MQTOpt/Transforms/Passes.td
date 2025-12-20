@@ -43,15 +43,6 @@ def GateElimination : Pass<"gate-elimination", "mlir::ModuleOp"> {
   }];
 }
 
-def GateDecomposition : Pass<"gate-decomposition", "mlir::ModuleOp"> {
-  let dependentDialects = [ "mlir::arith::ArithDialect", "mqt::ir::opt::MQTOptDialect" ];
-  let summary = "This pass performs various gate decompositions to translate quantum gates being used.";
-  let description = [{
-    Decomposes series of operations that operate on up to two qubits into a sequence of up to three
-    two-qubit basis gates and single-qubit operations.
-  }];
-}
-
 def MergeRotationGates : Pass<"merge-rotation-gates", "mlir::ModuleOp"> {
   let summary = "This pass searches for consecutive applications of rotation gates that can be merged.";
   let description = [{

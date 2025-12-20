@@ -15,7 +15,6 @@
 #include "Helpers.h"
 #include "UnitaryMatrices.h"
 #include "ir/operations/OpType.hpp"
-#include "mlir/Dialect/MQTOpt/Transforms/Decomposition/Helpers.h"
 
 #include <Eigen/Core>
 #include <cassert>
@@ -32,7 +31,7 @@
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/LogicalResult.h>
 
-namespace mqt::ir::opt::decomposition {
+namespace mlir::qco::decomposition {
 /**
  * Gate sequence of single-qubit and/or two-qubit gates.
  */
@@ -96,4 +95,4 @@ using OneQubitGateSequence = QubitGateSequence;
  */
 using TwoQubitGateSequence = QubitGateSequence;
 
-} // namespace mqt::ir::opt::decomposition
+} // namespace mlir::qco::decomposition

@@ -6,6 +6,7 @@
 #
 # Licensed under the MIT License
 
-add_subdirectory(Conversion)
-add_subdirectory(Dialect)
-add_subdirectory(Passes)
+set(LLVM_TARGET_DEFINITIONS Passes.td)
+mlir_tablegen(Passes.h.inc -gen-pass-decls -name QCO)
+add_public_tablegen_target(QcoPassesIncGen)
+add_mlir_doc(Passes QcoPasses Passes/ -gen-pass-doc)

@@ -9,13 +9,13 @@
  */
 
 #include "ir/operations/OpType.hpp"
-#include "mlir/Dialect/MQTOpt/Transforms/Decomposition/BasisDecomposer.h"
-#include "mlir/Dialect/MQTOpt/Transforms/Decomposition/EulerBasis.h"
-#include "mlir/Dialect/MQTOpt/Transforms/Decomposition/Gate.h"
-#include "mlir/Dialect/MQTOpt/Transforms/Decomposition/GateSequence.h"
-#include "mlir/Dialect/MQTOpt/Transforms/Decomposition/Helpers.h"
-#include "mlir/Dialect/MQTOpt/Transforms/Decomposition/UnitaryMatrices.h"
-#include "mlir/Dialect/MQTOpt/Transforms/Decomposition/WeylDecomposition.h"
+#include "mlir/Passes/Decomposition/BasisDecomposer.h"
+#include "mlir/Passes/Decomposition/EulerBasis.h"
+#include "mlir/Passes/Decomposition/Gate.h"
+#include "mlir/Passes/Decomposition/GateSequence.h"
+#include "mlir/Passes/Decomposition/Helpers.h"
+#include "mlir/Passes/Decomposition/UnitaryMatrices.h"
+#include "mlir/Passes/Decomposition/WeylDecomposition.h"
 
 #include <Eigen/QR>
 #include <cassert>
@@ -28,8 +28,8 @@
 #include <optional>
 #include <tuple>
 
-using namespace mqt::ir::opt;
-using namespace mqt::ir::opt::decomposition;
+using namespace mlir::qco;
+using namespace mlir::qco::decomposition;
 
 namespace {
 [[nodiscard]] matrix4x4 randomUnitaryMatrix() {

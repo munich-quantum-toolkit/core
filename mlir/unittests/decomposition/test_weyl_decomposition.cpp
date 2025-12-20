@@ -9,9 +9,9 @@
  */
 
 #include "ir/operations/OpType.hpp"
-#include "mlir/Dialect/MQTOpt/Transforms/Decomposition/Helpers.h"
-#include "mlir/Dialect/MQTOpt/Transforms/Decomposition/UnitaryMatrices.h"
-#include "mlir/Dialect/MQTOpt/Transforms/Decomposition/WeylDecomposition.h"
+#include "mlir/Passes/Decomposition/Helpers.h"
+#include "mlir/Passes/Decomposition/UnitaryMatrices.h"
+#include "mlir/Passes/Decomposition/WeylDecomposition.h"
 
 #include <Eigen/QR>
 #include <cassert>
@@ -21,8 +21,8 @@
 #include <gtest/gtest.h>
 #include <iostream>
 
-using namespace mqt::ir::opt;
-using namespace mqt::ir::opt::decomposition;
+using namespace mlir::qco;
+using namespace mlir::qco::decomposition;
 
 namespace {
 [[nodiscard]] matrix4x4 randomUnitaryMatrix() {

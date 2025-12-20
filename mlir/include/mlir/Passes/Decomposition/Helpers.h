@@ -12,7 +12,7 @@
 
 #include "ir/Definitions.hpp"
 #include "ir/operations/OpType.hpp"
-#include "mlir/Dialect/MQTOpt/IR/MQTOptDialect.h"
+#include "mlir/Dialect/QCO/IR/QCODialect.h"
 
 #include <Eigen/Core>        // NOLINT(misc-include-cleaner)
 #include <Eigen/Eigenvalues> // NOLINT(misc-include-cleaner)
@@ -30,7 +30,7 @@
 #include <string>
 #include <unsupported/Eigen/KroneckerProduct> // TODO: unstable, NOLINT(misc-include-cleaner)
 
-namespace mqt::ir::opt {
+namespace mlir::qco {
 using fp = qc::fp;
 using qfp = std::complex<fp>;
 // NOLINTBEGIN(misc-include-cleaner)
@@ -47,9 +47,9 @@ constexpr qfp C_M_ONE{-1., 0.};
 constexpr qfp IM{0., 1.};
 constexpr qfp M_IM{0., -1.};
 
-} // namespace mqt::ir::opt
+} // namespace mlir::qco
 
-namespace mqt::ir::opt::helpers {
+namespace mlir::qco::helpers {
 
 std::optional<fp> mlirValueToFp(mlir::Value value);
 
@@ -136,17 +136,17 @@ template <typename T, typename Func>
 }
 
 [[nodiscard]] inline llvm::SmallVector<fp, 3>
-getParameters(UnitaryInterface op) {
+getParameters(UnitaryOpInterface op) {
   llvm::SmallVector<fp, 3> parameters;
-  for (auto&& param : op.getParams()) {
-    if (auto value = helpers::mlirValueToFp(param)) {
+  for (std::size_t i = 0; i < op.getNumParams(); ++i) {
+    if (auto value = helpers::mlirValueToFp(op.getParameter(i))) {
       parameters.push_back(*value);
     }
   }
   return parameters;
 }
 
-[[nodiscard]] inline qc::OpType getQcType(UnitaryInterface op) {
+[[nodiscard]] inline qc::OpType getQcType(UnitaryOpInterface op) {
   try {
     const std::string type = op->getName().stripDialect().str();
     return qc::opTypeFromString(type);
@@ -155,27 +155,12 @@ getParameters(UnitaryInterface op) {
   }
 }
 
-[[nodiscard]] inline bool isSingleQubitOperation(UnitaryInterface op) {
-  auto&& inQubits = op.getInQubits();
-  auto&& outQubits = op.getOutQubits();
-  const bool isSingleQubitOp =
-      inQubits.size() == 1 && outQubits.size() == 1 && !op.isControlled();
-  return isSingleQubitOp;
+[[nodiscard]] inline bool isSingleQubitOperation(UnitaryOpInterface op) {
+  return op.isSingleQubit();
 }
 
-[[nodiscard]] inline bool isTwoQubitOperation(UnitaryInterface op) {
-  auto&& inQubits = op.getInQubits();
-  auto&& inPosCtrlQubits = op.getPosCtrlInQubits();
-  auto&& inNegCtrlQubits = op.getNegCtrlInQubits();
-  auto inQubitSize =
-      inQubits.size() + inPosCtrlQubits.size() + inNegCtrlQubits.size();
-  auto&& outQubits = op.getOutQubits();
-  auto&& outPosCtrlQubits = op.getPosCtrlOutQubits();
-  auto&& outNegCtrlQubits = op.getNegCtrlOutQubits();
-  auto outQubitSize =
-      outQubits.size() + outPosCtrlQubits.size() + outNegCtrlQubits.size();
-  const bool isTwoQubitOp = inQubitSize == 2 && outQubitSize == 2;
-  return isTwoQubitOp;
+[[nodiscard]] inline bool isTwoQubitOperation(UnitaryOpInterface op) {
+  return op.isTwoQubit();
 }
 
 // NOLINTBEGIN(misc-include-cleaner)
@@ -235,4 +220,4 @@ template <typename T, int N, int M>
   return 1;
 }
 
-} // namespace mqt::ir::opt::helpers
+} // namespace mlir::qco::helpers
