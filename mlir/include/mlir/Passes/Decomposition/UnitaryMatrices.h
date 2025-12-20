@@ -14,7 +14,7 @@
 #include "Helpers.h"
 #include "ir/operations/OpType.hpp"
 
-namespace mqt::ir::opt::decomposition {
+namespace mlir::qco::decomposition {
 
 inline constexpr auto SQRT2 =
     static_cast<fp>(1.414213562373095048801688724209698079L);
@@ -184,4 +184,4 @@ inline matrix4x4 getTwoQubitMatrix(const Gate& gate) {
   throw std::logic_error{"Invalid number of qubit IDs in compute_unitary"};
 }
 
-} // namespace mqt::ir::opt::decomposition
+} // namespace mlir::qco::decomposition

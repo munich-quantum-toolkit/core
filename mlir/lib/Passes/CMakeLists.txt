@@ -7,32 +7,29 @@
 # Licensed under the MIT License
 
 get_property(dialect_libs GLOBAL PROPERTY MLIR_DIALECT_LIBS)
-set(LIBRARIES ${dialect_libs} MQT::CoreIR)
+set(LIBRARIES ${dialect_libs} MQT::CoreIR Eigen3::Eigen)
 add_compile_options(-fexceptions)
 
-file(GLOB_RECURSE TRANSFORMS_SOURCES *.cpp)
+file(GLOB_RECURSE PASSES_SOURCES *.cpp)
 
-add_mlir_library(MLIRMQTOptTransforms ${TRANSFORMS_SOURCES} LINK_LIBS ${LIBRARIES} DEPENDS
-                 MLIRMQTOptTransformsIncGen)
+add_mlir_library(QcoPasses ${PASSES_SOURCES} LINK_LIBS PUBLIC ${LIBRARIES} DEPENDS QcoPassesIncGen)
 
 # collect header files
-file(GLOB_RECURSE TRANSFORMS_HEADERS_SOURCE
-     ${MQT_MLIR_SOURCE_INCLUDE_DIR}/mlir/Dialect/MQTOpt/Transforms/*.h)
-file(GLOB_RECURSE TRANSFORMS_HEADERS_BUILD
-     ${MQT_MLIR_BUILD_INCLUDE_DIR}/mlir/Dialect/MQTOpt/Transforms/*.inc)
+file(GLOB_RECURSE PASSES_HEADERS_SOURCE ${MQT_MLIR_SOURCE_INCLUDE_DIR}/mlir/Passes/*.h)
+file(GLOB_RECURSE PASSES_HEADERS_BUILD ${MQT_MLIR_BUILD_INCLUDE_DIR}/mlir/Passes/*.inc)
 
 # add public headers using file sets
 target_sources(
-  MLIRMQTOptTransforms
+  QcoPasses
   PUBLIC FILE_SET
          HEADERS
          BASE_DIRS
          ${MQT_MLIR_SOURCE_INCLUDE_DIR}
          FILES
-         ${TRANSFORMS_HEADERS_SOURCE}
+         ${PASSES_HEADERS_SOURCE}
          FILE_SET
          HEADERS
          BASE_DIRS
          ${MQT_MLIR_BUILD_INCLUDE_DIR}
          FILES
-         ${TRANSFORMS_HEADERS_BUILD})
+         ${PASSES_HEADERS_BUILD})

@@ -8,11 +8,11 @@
  * Licensed under the MIT License
  */
 
-#include "mlir/Dialect/MQTOpt/Transforms/Decomposition/EulerBasis.h"
-#include "mlir/Dialect/MQTOpt/Transforms/Decomposition/EulerDecomposition.h"
-#include "mlir/Dialect/MQTOpt/Transforms/Decomposition/GateSequence.h"
-#include "mlir/Dialect/MQTOpt/Transforms/Decomposition/Helpers.h"
-#include "mlir/Dialect/MQTOpt/Transforms/Decomposition/UnitaryMatrices.h"
+#include "mlir/Passes/Decomposition/EulerBasis.h"
+#include "mlir/Passes/Decomposition/EulerDecomposition.h"
+#include "mlir/Passes/Decomposition/GateSequence.h"
+#include "mlir/Passes/Decomposition/Helpers.h"
+#include "mlir/Passes/Decomposition/UnitaryMatrices.h"
 
 #include <Eigen/QR>
 #include <array>
@@ -25,8 +25,8 @@
 #include <optional>
 #include <tuple>
 
-using namespace mqt::ir::opt;
-using namespace mqt::ir::opt::decomposition;
+using namespace mlir::qco;
+using namespace mlir::qco::decomposition;
 
 namespace {
 [[nodiscard]] matrix2x2 randomUnitaryMatrix() {

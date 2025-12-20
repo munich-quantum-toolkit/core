@@ -15,7 +15,7 @@
 
 #include <llvm/ADT/SmallVector.h>
 
-namespace mqt::ir::opt::decomposition {
+namespace mlir::qco::decomposition {
 
 using QubitId = std::size_t;
 
@@ -29,4 +29,4 @@ struct Gate {
   llvm::SmallVector<QubitId, 2> qubitId = {0};
 };
 
-} // namespace mqt::ir::opt::decomposition
+} // namespace mlir::qco::decomposition

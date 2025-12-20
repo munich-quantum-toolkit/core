@@ -12,7 +12,7 @@
 
 #include <cstdint>
 
-namespace mqt::ir::opt::decomposition {
+namespace mlir::qco::decomposition {
 /**
  * Largest number that will be assumed as zero for the euler decompositions.
  */
@@ -37,4 +37,4 @@ enum class EulerBasis : std::uint8_t {
   ZSXX = 10,
   ZSX = 11,
 };
-} // namespace mqt::ir::opt::decomposition
+} // namespace mlir::qco::decomposition

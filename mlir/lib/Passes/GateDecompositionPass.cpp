@@ -8,25 +8,25 @@
  * Licensed under the MIT License
  */
 
-#include "mlir/Dialect/MQTOpt/Transforms/Passes.h"
+#include "mlir/Passes/Passes.h"
 
 #include <mlir/IR/PatternMatch.h>
 #include <mlir/Support/LLVM.h>
 #include <mlir/Transforms/GreedyPatternRewriteDriver.h>
 #include <utility>
 
-namespace mqt::ir::opt {
+namespace mlir::qco {
 
-#define GEN_PASS_DEF_GATEDECOMPOSITION
-#include "mlir/Dialect/MQTOpt/Transforms/Passes.h.inc"
+#define GEN_PASS_DEF_GATEDECOMPOSITIONPASS
+#include "mlir/Passes/Passes.h.inc"
 
 /**
  * @brief This pass attempts to collect as many operations as possible into a
  *        4x4 unitary matrix and then decompose it into 1q rotations and 2q
  *        basis gates.
  */
-struct GateDecomposition final
-    : impl::GateDecompositionBase<GateDecomposition> {
+struct GateDecompositionPass final
+    : impl::GateDecompositionPassBase<GateDecompositionPass> {
 
   void runOnOperation() override {
     // Get the current operation being operated on.
@@ -49,4 +49,4 @@ struct GateDecomposition final
   }
 };
 
-} // namespace mqt::ir::opt
+} // namespace mlir::qco

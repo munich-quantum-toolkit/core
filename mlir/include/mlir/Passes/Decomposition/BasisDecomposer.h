@@ -38,7 +38,7 @@
 #include <optional>
 #include <utility>
 
-namespace mqt::ir::opt::decomposition {
+namespace mlir::qco::decomposition {
 
 /**
  * Decomposer that must be initialized with a two-qubit basis gate that will
@@ -544,4 +544,4 @@ private:
   matrix2x2 q2r;
 };
 
-} // namespace mqt::ir::opt::decomposition
+} // namespace mlir::qco::decomposition
