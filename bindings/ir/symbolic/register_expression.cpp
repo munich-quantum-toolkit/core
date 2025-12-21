@@ -57,9 +57,8 @@ Args:
       .def(
           "__iter__",
           [](const sym::Expression<double, double>& expr) {
-            return nb::make_iterator(
-                nb::type<sym::Expression<double, double>>(), "iterator",
-                expr.begin(), expr.end());
+            return make_iterator(nb::type<sym::Expression<double, double>>(),
+                                 "iterator", expr.begin(), expr.end());
           },
           nb::keep_alive<0, 1>())
 
@@ -73,6 +72,7 @@ Args:
             if (idx < 0 || idx >= n) {
               throw nb::index_error();
             }
+            // NOLINTNEXTLINE(*-pro-bounds-avoid-unchecked-container-access)
             return expr.getTerms()[static_cast<std::size_t>(idx)];
           },
           "index"_a)
@@ -149,14 +149,12 @@ Returns:
       .def(nb::self != nb::self,
            nb::sig("def __ne__(self, arg: object, /) -> bool"))
       .def(nb::hash(nb::self))
-
       .def("__str__",
            [](const sym::Expression<double, double>& expr) {
              std::stringstream ss;
              ss << expr;
              return ss.str();
            })
-
       .def("__repr__", [](const sym::Expression<double, double>& expr) {
         std::stringstream ss;
         ss << expr;
