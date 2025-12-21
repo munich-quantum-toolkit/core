@@ -18,6 +18,7 @@ class Session:
 
     def __init__(
         self,
+        *,
         token: str | None = None,
         auth_file: str | None = None,
         auth_url: str | None = None,
@@ -346,6 +347,7 @@ class Device:
 def add_dynamic_device_library(
     library_path: str,
     prefix: str,
+    *,
     base_url: str | None = None,
     token: str | None = None,
     auth_file: str | None = None,

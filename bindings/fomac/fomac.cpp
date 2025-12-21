@@ -63,7 +63,7 @@ All authentication parameters are optional and can be provided as keyword argume
                                           .custom5 = std::move(custom5)};
         new (self) fomac::Session(config);
       },
-      "token"_a = std::nullopt, "auth_file"_a = std::nullopt,
+      nb::kw_only(), "token"_a = std::nullopt, "auth_file"_a = std::nullopt,
       "auth_url"_a = std::nullopt, "username"_a = std::nullopt,
       "password"_a = std::nullopt, "project_id"_a = std::nullopt,
       "custom1"_a = std::nullopt, "custom2"_a = std::nullopt,
@@ -453,7 +453,7 @@ Returns:
             libraryPath, prefix, config);
         return fomac::Session::Device::fromQDMIDevice(qdmiDevice);
       },
-      "library_path"_a, "prefix"_a, "base_url"_a = std::nullopt,
+      "library_path"_a, "prefix"_a, nb::kw_only(), "base_url"_a = std::nullopt,
       "token"_a = std::nullopt, "auth_file"_a = std::nullopt,
       "auth_url"_a = std::nullopt, "username"_a = std::nullopt,
       "password"_a = std::nullopt, "custom1"_a = std::nullopt,
