@@ -49,6 +49,10 @@ using namespace nb::literals;
 
 using Vector = nb::ndarray<nb::numpy, std::complex<dd::fp>, nb::ndim<1>>;
 using Matrix = nb::ndarray<nb::numpy, std::complex<dd::fp>, nb::ndim<2>>;
+using SingleQubitMatrix =
+    nb::ndarray<nb::numpy, std::complex<dd::fp>, nb::shape<2, 2>>;
+using TwoQubitMatrix =
+    nb::ndarray<nb::numpy, std::complex<dd::fp>, nb::shape<4, 4>>;
 
 using Control = std::variant<qc::Control, nb::int_>;
 using Controls = std::set<Control>;
@@ -177,7 +181,7 @@ Args:
   dd.def(
       "zero_state",
       [](dd::Package& p, const size_t numQubits) {
-        return dd::makeZeroState(numQubits, p);
+        return makeZeroState(numQubits, p);
       },
       "num_qubits"_a,
       // keep the DD package alive while the returned vector DD is alive.
@@ -196,7 +200,7 @@ Returns:
       "computational_basis_state",
       [](dd::Package& p, const size_t numQubits,
          const std::vector<bool>& state) {
-        return dd::makeBasisState(numQubits, state, p);
+        return makeBasisState(numQubits, state, p);
       },
       "num_qubits"_a, "state"_a,
       // keep the DD package alive while the returned vector DD is alive.
@@ -235,7 +239,7 @@ Returns:
       "basis_state",
       [](dd::Package& p, const size_t numQubits,
          const std::vector<dd::BasisStates>& state) {
-        return dd::makeBasisState(numQubits, state, p);
+        return makeBasisState(numQubits, state, p);
       },
       "num_qubits"_a, "state"_a,
       // keep the DD package alive while the returned vector DD is alive.
@@ -255,7 +259,7 @@ Returns:
   dd.def(
       "ghz_state",
       [](dd::Package& p, const size_t numQubits) {
-        return dd::makeGHZState(numQubits, p);
+        return makeGHZState(numQubits, p);
       },
       "num_qubits"_a,
       // keep the DD package alive while the returned vector DD is alive.
@@ -273,7 +277,7 @@ Returns:
   dd.def(
       "w_state",
       [](dd::Package& p, const size_t numQubits) {
-        return dd::makeWState(numQubits, p);
+        return makeWState(numQubits, p);
       },
       "num_qubits"_a,
       // keep the DD package alive while the returned vector DD is alive.
@@ -309,7 +313,7 @@ Returns:
         }
         const auto level = static_cast<dd::Qubit>(std::log2(length) - 1);
         const auto state = makeDDFromVector(p, v, 0, length, level);
-        const dd::vEdge e{state.p, p.cn.lookup(state.w)};
+        const dd::vEdge e{.p = state.p, .w = p.cn.lookup(state.w)};
         p.incRef(e);
         return e;
       },
@@ -330,7 +334,7 @@ Returns:
       "apply_unitary_operation",
       [](dd::Package& p, const dd::vEdge& v, const qc::Operation& op,
          const qc::Permutation& perm = {}) {
-        return dd::applyUnitaryOperation(op, v, p, perm);
+        return applyUnitaryOperation(op, v, p, perm);
       },
       "vec"_a, "operation"_a, "permutation"_a = qc::Permutation{},
       // keep the DD package alive while the returned vector DD is alive.
@@ -356,7 +360,7 @@ Returns:
         static std::mt19937_64 rng(std::random_device{}());
         auto measurementsCopy = measurements;
         return std::pair{
-            dd::applyMeasurement(op, v, p, rng, measurementsCopy, perm),
+            applyMeasurement(op, v, p, rng, measurementsCopy, perm),
             measurementsCopy};
       },
       "vec"_a, "operation"_a, "measurements"_a,
@@ -382,7 +386,7 @@ Returns:
       [](dd::Package& p, const dd::vEdge& v, const qc::NonUnitaryOperation& op,
          const qc::Permutation& perm = {}) {
         static std::mt19937_64 rng(std::random_device{}());
-        return dd::applyReset(op, v, p, rng, perm);
+        return applyReset(op, v, p, rng, perm);
       },
       "vec"_a, "operation"_a, "permutation"_a = qc::Permutation{},
       // keep the DD package alive while the returned vector DD is alive.
@@ -405,7 +409,7 @@ Returns:
       [](dd::Package& p, const dd::vEdge& v, const qc::IfElseOperation& op,
          const std::vector<bool>& measurements,
          const qc::Permutation& perm = {}) {
-        return dd::applyIfElseOperation(op, v, p, measurements, perm);
+        return applyIfElseOperation(op, v, p, measurements, perm);
       },
       "vec"_a, "operation"_a, "measurements"_a,
       "permutation"_a = qc::Permutation{},
@@ -472,11 +476,9 @@ Returns:
 
   dd.def(
       "single_qubit_gate",
-      [](dd::Package& p, const Matrix& m, const dd::Qubit target) {
-        if (m.ndim() != 2 || m.shape(0) != 2 || m.shape(1) != 2) {
-          throw std::invalid_argument("Matrix must be 2x2.");
-        }
-        return p.makeGateDD({m(0, 0), m(0, 1), m(1, 0), m(1, 1)}, target);
+      [](dd::Package& p, const SingleQubitMatrix& mat, const dd::Qubit target) {
+        return p.makeGateDD({mat(0, 0), mat(0, 1), mat(1, 0), mat(1, 1)},
+                            target);
       },
       "matrix"_a, "target"_a,
       // keep the DD package alive while the returned matrix DD is alive.
@@ -491,12 +493,9 @@ Returns:
 
   dd.def(
       "controlled_single_qubit_gate",
-      [](dd::Package& p, const Matrix& m, const Control& control,
+      [](dd::Package& p, const SingleQubitMatrix& mat, const Control& control,
          const dd::Qubit target) {
-        if (m.ndim() != 2 || m.shape(0) != 2 || m.shape(1) != 2) {
-          throw std::invalid_argument("Matrix must be 2x2.");
-        }
-        return p.makeGateDD({m(0, 0), m(0, 1), m(1, 0), m(1, 1)},
+        return p.makeGateDD({mat(0, 0), mat(0, 1), mat(1, 0), mat(1, 1)},
                             getControl(control), target);
       },
       "matrix"_a, "control"_a, "target"_a,
@@ -514,12 +513,9 @@ Returns:
 
   dd.def(
       "multi_controlled_single_qubit_gate",
-      [](dd::Package& p, const Matrix& m, const Controls& controls,
+      [](dd::Package& p, const SingleQubitMatrix& mat, const Controls& controls,
          const dd::Qubit target) {
-        if (m.ndim() != 2 || m.shape(0) != 2 || m.shape(1) != 2) {
-          throw std::invalid_argument("Matrix must be 2x2.");
-        }
-        return p.makeGateDD({m(0, 0), m(0, 1), m(1, 0), m(1, 1)},
+        return p.makeGateDD({mat(0, 0), mat(0, 1), mat(1, 0), mat(1, 1)},
                             getControls(controls), target);
       },
       "matrix"_a, "controls"_a, "target"_a,
@@ -537,16 +533,13 @@ Returns:
 
   dd.def(
       "two_qubit_gate",
-      [](dd::Package& p, const Matrix& m, const dd::Qubit target0,
+      [](dd::Package& p, const TwoQubitMatrix& mat, const dd::Qubit target0,
          const dd::Qubit target1) {
-        if (m.ndim() != 2 || m.shape(0) != 4 || m.shape(1) != 4) {
-          throw std::invalid_argument("Matrix must be 4x4.");
-        }
         return p.makeTwoQubitGateDD(
-            {std::array{m(0, 0), m(0, 1), m(0, 2), m(0, 3)},
-             {m(1, 0), m(1, 1), m(1, 2), m(1, 3)},
-             {m(2, 0), m(2, 1), m(2, 2), m(2, 3)},
-             {m(3, 0), m(3, 1), m(3, 2), m(3, 3)}},
+            {std::array{mat(0, 0), mat(0, 1), mat(0, 2), mat(0, 3)},
+             {mat(1, 0), mat(1, 1), mat(1, 2), mat(1, 3)},
+             {mat(2, 0), mat(2, 1), mat(2, 2), mat(2, 3)},
+             {mat(3, 0), mat(3, 1), mat(3, 2), mat(3, 3)}},
             target0, target1);
       },
       "matrix"_a, "target0"_a, "target1"_a,
@@ -563,16 +556,13 @@ Returns:
 
   dd.def(
       "controlled_two_qubit_gate",
-      [](dd::Package& p, const Matrix& m, const Control& control,
+      [](dd::Package& p, const TwoQubitMatrix& mat, const Control& control,
          const dd::Qubit target0, const dd::Qubit target1) {
-        if (m.ndim() != 2 || m.shape(0) != 4 || m.shape(1) != 4) {
-          throw std::invalid_argument("Matrix must be 4x4.");
-        }
         return p.makeTwoQubitGateDD(
-            {std::array{m(0, 0), m(0, 1), m(0, 2), m(0, 3)},
-             {m(1, 0), m(1, 1), m(1, 2), m(1, 3)},
-             {m(2, 0), m(2, 1), m(2, 2), m(2, 3)},
-             {m(3, 0), m(3, 1), m(3, 2), m(3, 3)}},
+            {std::array{mat(0, 0), mat(0, 1), mat(0, 2), mat(0, 3)},
+             {mat(1, 0), mat(1, 1), mat(1, 2), mat(1, 3)},
+             {mat(2, 0), mat(2, 1), mat(2, 2), mat(2, 3)},
+             {mat(3, 0), mat(3, 1), mat(3, 2), mat(3, 3)}},
             getControl(control), target0, target1);
       },
       "matrix"_a, "control"_a, "target0"_a, "target1"_a,
@@ -591,16 +581,13 @@ Returns:
 
   dd.def(
       "multi_controlled_two_qubit_gate",
-      [](dd::Package& p, const Matrix& m, const Controls& controls,
+      [](dd::Package& p, const TwoQubitMatrix& mat, const Controls& controls,
          const dd::Qubit target0, const dd::Qubit target1) {
-        if (m.ndim() != 2 || m.shape(0) != 4 || m.shape(1) != 4) {
-          throw std::invalid_argument("Matrix must be 4x4.");
-        }
         return p.makeTwoQubitGateDD(
-            {std::array{m(0, 0), m(0, 1), m(0, 2), m(0, 3)},
-             {m(1, 0), m(1, 1), m(1, 2), m(1, 3)},
-             {m(2, 0), m(2, 1), m(2, 2), m(2, 3)},
-             {m(3, 0), m(3, 1), m(3, 2), m(3, 3)}},
+            {std::array{mat(0, 0), mat(0, 1), mat(0, 2), mat(0, 3)},
+             {mat(1, 0), mat(1, 1), mat(1, 2), mat(1, 3)},
+             {mat(2, 0), mat(2, 1), mat(2, 2), mat(2, 3)},
+             {mat(3, 0), mat(3, 1), mat(3, 2), mat(3, 3)}},
             getControls(controls), target0, target1);
       },
       "matrix"_a, "controls"_a, "target0"_a, "target1"_a,
@@ -619,9 +606,9 @@ Returns:
 
   dd.def(
       "from_matrix",
-      [](dd::Package& p, const Matrix& m) {
-        const auto rows = m.shape(0);
-        const auto cols = m.shape(1);
+      [](dd::Package& p, const Matrix& mat) {
+        const auto rows = mat.shape(0);
+        const auto cols = mat.shape(1);
         if (rows != cols) {
           throw std::invalid_argument("Matrix must be square.");
         }
@@ -633,11 +620,11 @@ Returns:
               "Matrix must have a size of a power of two.");
         }
         if (rows == 1) {
-          return dd::mEdge::terminal(p.cn.lookup(m(0, 0)));
+          return dd::mEdge::terminal(p.cn.lookup(mat(0, 0)));
         }
         const auto level = static_cast<dd::Qubit>(std::log2(rows) - 1);
-        const auto matrixDD = makeDDFromMatrix(p, m, 0, rows, 0, cols, level);
-        return dd::mEdge{matrixDD.p, p.cn.lookup(matrixDD.w)};
+        const auto matrixDD = makeDDFromMatrix(p, mat, 0, rows, 0, cols, level);
+        return dd::mEdge{.p = matrixDD.p, .w = p.cn.lookup(matrixDD.w)};
       },
       "matrix"_a,
       // keep the DD package alive while the returned matrix DD is alive.
@@ -653,9 +640,9 @@ Returns:
       "from_operation",
       [](dd::Package& p, const qc::Operation& op, const bool invert = false) {
         if (invert) {
-          return dd::getInverseDD(op, p);
+          return getInverseDD(op, p);
         }
-        return dd::getDD(op, p);
+        return getDD(op, p);
       },
       "operation"_a, "invert"_a = false,
       // keep the DD package alive while the returned matrix DD is alive.

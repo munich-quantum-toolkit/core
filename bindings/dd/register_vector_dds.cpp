@@ -108,7 +108,7 @@ Raises:
          const bool edgeLabels = false, const bool classic = false,
          const bool memory = false, const bool formatAsPolar = true) {
         std::ostringstream os;
-        dd::toDot(e, os, colored, edgeLabels, classic, memory, formatAsPolar);
+        toDot(e, os, colored, edgeLabels, classic, memory, formatAsPolar);
         return os.str();
       },
       "colored"_a = true, "edge_labels"_a = false, "classic"_a = false,
@@ -134,8 +134,8 @@ Returns:
         // replace the filename extension with .dot
         const auto dotFilename =
             filename.substr(0, filename.find_last_of('.')) + ".dot";
-        dd::export2Dot(e, dotFilename, colored, edgeLabels, classic, memory,
-                       true, formatAsPolar);
+        export2Dot(e, dotFilename, colored, edgeLabels, classic, memory, true,
+                   formatAsPolar);
       },
       "filename"_a, "colored"_a = true, "edge_labels"_a = false,
       "classic"_a = false, "memory"_a = false, "format_as_polar"_a = true,

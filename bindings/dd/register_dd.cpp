@@ -83,9 +83,9 @@ Returns:
   m.def(
       "simulate_statevector",
       [](const qc::QuantumComputation& qc) {
-        auto dd = std::make_unique<dd::Package>(qc.getNqubits());
-        auto in = makeZeroState(qc.getNqubits(), *dd);
-        const auto sim = dd::simulate(qc, in, *dd);
+        const auto dd = std::make_unique<dd::Package>(qc.getNqubits());
+        const auto in = makeZeroState(qc.getNqubits(), *dd);
+        const auto sim = simulate(qc, in, *dd);
         return getVector(sim);
       },
       "qc"_a,
@@ -111,9 +111,9 @@ Returns:
   m.def(
       "build_unitary",
       [](const qc::QuantumComputation& qc, const bool recursive = false) {
-        auto dd = std::make_unique<dd::Package>(qc.getNqubits());
-        auto u = recursive ? dd::buildFunctionalityRecursive(qc, *dd)
-                           : dd::buildFunctionality(qc, *dd);
+        const auto dd = std::make_unique<dd::Package>(qc.getNqubits());
+        const auto u = recursive ? buildFunctionalityRecursive(qc, *dd)
+                                 : buildFunctionality(qc, *dd);
         return getMatrix(u, qc.getNqubits());
       },
       "qc"_a, "recursive"_a = false,
@@ -163,9 +163,9 @@ Returns:
       [](const qc::QuantumComputation& qc, dd::Package& p,
          const bool recursive = false) {
         if (recursive) {
-          return dd::buildFunctionalityRecursive(qc, p);
+          return buildFunctionalityRecursive(qc, p);
         }
-        return dd::buildFunctionality(qc, p);
+        return buildFunctionality(qc, p);
       },
       "qc"_a, "dd_package"_a, "recursive"_a = false,
       R"pb(Build a functional representation of a quantum computation.

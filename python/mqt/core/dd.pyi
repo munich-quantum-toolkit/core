@@ -437,9 +437,7 @@ class DDPackage:
             The DD for the identity matrix.
         """
 
-    def single_qubit_gate(
-        self, matrix: Annotated[NDArray[np.complex128], {"shape": (None, None)}], target: int
-    ) -> MatrixDD:
+    def single_qubit_gate(self, matrix: Annotated[NDArray[np.complex128], {"shape": (2, 2)}], target: int) -> MatrixDD:
         r"""Create the DD for a single-qubit gate.
 
         Args:
@@ -452,7 +450,7 @@ class DDPackage:
 
     def controlled_single_qubit_gate(
         self,
-        matrix: Annotated[NDArray[np.complex128], {"shape": (None, None)}],
+        matrix: Annotated[NDArray[np.complex128], {"shape": (2, 2)}],
         control: mqt.core.ir.operations.Control | int,
         target: int,
     ) -> MatrixDD:
@@ -469,7 +467,7 @@ class DDPackage:
 
     def multi_controlled_single_qubit_gate(
         self,
-        matrix: Annotated[NDArray[np.complex128], {"shape": (None, None)}],
+        matrix: Annotated[NDArray[np.complex128], {"shape": (2, 2)}],
         controls: AbstractSet[mqt.core.ir.operations.Control | int],
         target: int,
     ) -> MatrixDD:
@@ -485,7 +483,7 @@ class DDPackage:
         """
 
     def two_qubit_gate(
-        self, matrix: Annotated[NDArray[np.complex128], {"shape": (None, None)}], target0: int, target1: int
+        self, matrix: Annotated[NDArray[np.complex128], {"shape": (4, 4)}], target0: int, target1: int
     ) -> MatrixDD:
         r"""Create the DD for a two-qubit gate.
 
@@ -500,7 +498,7 @@ class DDPackage:
 
     def controlled_two_qubit_gate(
         self,
-        matrix: Annotated[NDArray[np.complex128], {"shape": (None, None)}],
+        matrix: Annotated[NDArray[np.complex128], {"shape": (4, 4)}],
         control: mqt.core.ir.operations.Control | int,
         target0: int,
         target1: int,
@@ -519,7 +517,7 @@ class DDPackage:
 
     def multi_controlled_two_qubit_gate(
         self,
-        matrix: Annotated[NDArray[np.complex128], {"shape": (None, None)}],
+        matrix: Annotated[NDArray[np.complex128], {"shape": (4, 4)}],
         controls: AbstractSet[mqt.core.ir.operations.Control | int],
         target0: int,
         target1: int,
