@@ -231,7 +231,7 @@ known-first-party = ["mqt.core"]
 [tool.ruff.lint.per-file-ignores]
 "test/python/**" = ["T20", "INP001"]
 "docs/**" = ["T20", "INP001"]
-"noxfile.py" = ["T20", "TID251"]
+"noxfile.py" = ["T20", "TID251", "PLC0415"]
 "*.pyi" = ["D418", "DOC202", "E501", "PYI011", "PYI021"]
 "*.ipynb" = [
     "D",    # pydocstyle
