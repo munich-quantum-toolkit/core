@@ -9,7 +9,6 @@
  */
 
 #include "fomac/FoMaC.hpp"
-
 #include "na/fomac/Device.hpp"
 #include "qdmi/na/Generator.hpp"
 
@@ -35,7 +34,7 @@ template <pyClass T> [[nodiscard]] auto repr(T c) -> std::string {
 
 } // namespace
 
-NB_MODULE(MQT_CORE_MODULE_NAME, m) {
+void registerFomac(nb::module_& m) {
   nb::module_::import_("mqt.core.fomac");
 
   auto device = nb::class_<na::Session::Device, fomac::Session::Device>(
