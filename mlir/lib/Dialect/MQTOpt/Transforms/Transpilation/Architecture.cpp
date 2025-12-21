@@ -38,13 +38,13 @@ Architecture::shortestSWAPsBetween(uint32_t u, uint32_t v) const {
   }
 
   llvm::SmallVector<std::pair<uint32_t, uint32_t>> swaps;
-  uint32_t curr = v;
   uint32_t last = v;
+  uint32_t curr = prev_[u][v];
 
   while (curr != u) {
-    curr = prev_[u][curr];
-    swaps.emplace_back(last, curr);
+    swaps.emplace_back(last, curr); // Insert SWAP(last, curr).
     last = curr;
+    curr = prev_[u][curr];
   }
 
   return swaps;
