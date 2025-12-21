@@ -10,7 +10,7 @@ set(TARGET_NAME "${MQT_CORE_TARGET_NAME}-na-bindings")
 
 if(NOT TARGET ${TARGET_NAME})
   # collect source files
-  file(GLOB_RECURSE SOURCES **.cpp)
+  file(GLOB_RECURSE SOURCES *.cpp)
 
   # declare the Python module
   add_mqt_python_binding_nanobind(

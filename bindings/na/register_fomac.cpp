@@ -105,6 +105,7 @@ void registerFomac(nb::module_& m) {
               nb::sig("def __ne__(self, arg: object, /) -> bool"));
 
   device.def_prop_ro("traps", &na::Session::Device::getTraps,
+                     nb::rv_policy::reference_internal,
                      "The list of trap positions in the device.");
   device.def_prop_ro(
       "t1",
@@ -135,7 +136,7 @@ Returns:
   device.def(nb::self != nb::self,
              nb::sig("def __ne__(self, arg: object, /) -> bool"));
 
-  m.def("devices", &na::Session::getDevices,
+  m.def("devices", &na::Session::getDevices, nb::rv_policy::reference_internal,
         "Returns a list of available devices.");
 }
 
