@@ -34,6 +34,7 @@ template <pyClass T> [[nodiscard]] auto repr(T c) -> std::string {
 
 } // namespace
 
+// NOLINTNEXTLINE(misc-use-internal-linkage)
 void registerFomac(nb::module_& m) {
   nb::module_::import_("mqt.core.fomac");
 
