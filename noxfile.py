@@ -214,15 +214,19 @@ def stubs(session: nox.Session) -> None:
     session.run(
         "uv",
         "sync",
+        "--no-dev",
+        "--group",
+        "build",
         env=env,
     )
-
-    from nanobind.stubgen import main as nanobind_main  # type: ignore[import-not-found]
 
     package_root = Path(__file__).parent / "python" / "mqt" / "core"
     pattern_file = Path(__file__).parent / "bindings" / "core_patterns.txt"
 
-    args = [
+    session.run(
+        "python",
+        "-m",
+        "nanobind.stubgen",
         "--recursive",
         "--include-private",
         "--output-dir",
@@ -237,19 +241,20 @@ def stubs(session: nox.Session) -> None:
         "mqt.core.fomac",
         "--module",
         "mqt.core.na",
-    ]
-
-    nanobind_main(args)
+    )
 
     pyi_files = list(package_root.glob("**/*.pyi"))
 
     if shutil.which("prek") is None:
         session.install("prek")
 
+    # Allow both 0 (no issues) and 1 as success codes for fixing up stubs.
     success_codes = [0, 1]
     session.run("prek", "run", "license-tools", "--files", *pyi_files, external=True, success_codes=success_codes)
     session.run("prek", "run", "ruff-check", "--files", *pyi_files, external=True, success_codes=success_codes)
     session.run("prek", "run", "ruff-format", "--files", *pyi_files, external=True, success_codes=success_codes)
+
+    # Finally, run ruff-check again to ensure everything is clean.
     session.run("prek", "run", "ruff-check", "--files", *pyi_files, external=True)
 
 
