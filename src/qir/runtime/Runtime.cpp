@@ -90,7 +90,7 @@ auto Runtime::enlargeState(const std::uint64_t maxQubit) -> void {
                   static_cast<std::vector<qc::Qubit>::difference_type>(
                       numQubitsInQState),
               qubitPermutation.end(), numQubitsInQState);
-    numQubitsInQState += d;
+    numQubitsInQState += static_cast<dd::Qubit>(d);
 
     // resize the DD package only if necessary
     if (dd->qubits() < numQubitsInQState) {

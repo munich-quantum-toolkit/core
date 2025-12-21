@@ -299,8 +299,8 @@ auto MQT_DDSIM_QDMI_Device_Session_impl_d::querySiteProperty(
       IS_INVALID_ARGUMENT(prop, QDMI_SITE_PROPERTY)) {
     return QDMI_ERROR_INVALIDARGUMENT;
   }
-  const auto id =
-      static_cast<size_t>(reinterpret_cast<uintptr_t>(site) - OFFSET);
+  const auto id = reinterpret_cast<uintptr_t>(site) - OFFSET;
+  static_assert(sizeof(uintptr_t) == sizeof(size_t));
   ADD_SINGLE_VALUE_PROPERTY(QDMI_SITE_PROPERTY_INDEX, size_t, id, prop, size,
                             value, sizeRet)
   return QDMI_ERROR_NOTSUPPORTED;
