@@ -32,9 +32,6 @@ namespace mqt {
 namespace nb = nanobind;
 using namespace nb::literals;
 
-using Control = std::variant<qc::Control, nb::int_>;
-using Controls = std::set<Control>;
-
 namespace {
 
 qc::Qubit nbIntToQubit(const nb::int_& value) {
@@ -47,23 +44,6 @@ qc::Qubit nbIntToQubit(const nb::int_& value) {
     throw nb::value_error("Qubit index exceeds maximum value");
   }
   return static_cast<qc::Qubit>(valueUint);
-}
-
-/// Helper function to convert Control variant to qc::Control
-qc::Control getControl(const Control& control) {
-  if (std::holds_alternative<qc::Control>(control)) {
-    return std::get<qc::Control>(control);
-  }
-  return nbIntToQubit(std::get<nb::int_>(control));
-}
-
-/// Helper function to convert Controls variant to qc::Controls
-qc::Controls getControls(const Controls& controls) {
-  qc::Controls result;
-  for (const auto& control : controls) {
-    result.insert(getControl(control));
-  }
-  return result;
 }
 
 } // namespace
@@ -95,12 +75,10 @@ Args:
           },
           "permutation"_a, "Create a permutation from a dictionary.")
 
-      .def(
-          "apply",
-          [](const qc::Permutation& p, const Controls& controls) {
-            return p.apply(getControls(controls));
-          },
-          "controls"_a, R"pb(Apply the permutation to a set of controls.
+      .def("apply",
+           nb::overload_cast<const qc::Controls&>(&qc::Permutation::apply,
+                                                  nb::const_),
+           "controls"_a, R"pb(Apply the permutation to a set of controls.
 
 Args:
     controls: The set of controls to apply the permutation to.
@@ -160,7 +138,7 @@ Args:
       .def(
           "__iter__",
           [](const qc::Permutation& p) {
-            return nb::make_key_iterator(
+            return make_key_iterator(
                 nb::type<qc::Permutation>(), "key_iterator", p.begin(), p.end(),
                 "Return an iterator over the indices of the permutation.");
           },
@@ -169,7 +147,7 @@ Args:
       .def(
           "items",
           [](const qc::Permutation& p) {
-            return nb::make_iterator(
+            return make_iterator(
                 nb::type<qc::Permutation>(), "item_iterator", p.begin(),
                 p.end(),
                 "Return an iterable over the items of the permutation.");

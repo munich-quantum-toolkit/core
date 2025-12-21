@@ -28,7 +28,7 @@ class Permutation(MutableMapping[int, int]):
         """Create a permutation from a dictionary."""
 
     @overload
-    def apply(self, controls: AbstractSet[operations.Control | int]) -> set[operations.Control]:
+    def apply(self, controls: AbstractSet[operations.Control]) -> set[operations.Control]:
         """Apply the permutation to a set of controls.
 
         Args:
