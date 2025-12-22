@@ -840,18 +840,18 @@ struct ConvertQCOScfIfOp final : OpConversionPattern<scf::IfOp> {
   LogicalResult
   matchAndRewrite(scf::IfOp op, OpAdaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
-    // create the new if operation
+    // Create the new if operation
     auto newIf =
         rewriter.create<scf::IfOp>(op.getLoc(), ValueRange{}, op.getCondition(),
                                    op.getElseRegion().empty());
-    // inline the regions
+    // Inline the regions
     rewriter.inlineRegionBefore(op.getThenRegion(), newIf.getThenRegion(),
                                 newIf.getThenRegion().end());
     if (!op.getElseRegion().empty()) {
       rewriter.inlineRegionBefore(op.getElseRegion(), newIf.getElseRegion(),
                                   newIf.getElseRegion().end());
     }
-    // erase the empty block that was created during the initialization
+    // Erase the empty block that was created during the initialization
     rewriter.eraseBlock(&newIf.getThenRegion().front());
 
     const auto& yield =
@@ -894,11 +894,11 @@ struct ConvertQCOScfWhileOp final : OpConversionPattern<scf::WhileOp> {
   LogicalResult
   matchAndRewrite(scf::WhileOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
-    // create the new while operation
+    // Create the new while operation
     auto newWhileOp =
         rewriter.create<scf::WhileOp>(op->getLoc(), ValueRange{}, ValueRange{});
 
-    // replace the uses of the blockarguments with the init values
+    // Replace the uses of the blockarguments with the init values
     const auto& inits = adaptor.getInits();
     const auto beforeArgs = op.getBeforeArguments();
     const auto afterArgs = op.getAfterArguments();
@@ -906,7 +906,7 @@ struct ConvertQCOScfWhileOp final : OpConversionPattern<scf::WhileOp> {
       beforeArgs[i].replaceAllUsesWith(inits[i]);
       afterArgs[i].replaceAllUsesWith(inits[i]);
     }
-    // create the blocks of the new operation and move the operations to them
+    // Create the blocks of the new operation and move the operations to them
     auto* newBeforeBlock =
         rewriter.createBlock(&newWhileOp.getBefore(), {}, {}, {});
     auto* newAfterBlock =
@@ -953,20 +953,20 @@ struct ConvertQCOScfForOp final : OpConversionPattern<scf::ForOp> {
         op.getLoc(), adaptor.getLowerBound(), adaptor.getUpperBound(),
         adaptor.getStep(), ValueRange{});
 
-    // replace the uses of the previous iter_args
+    // Replace the uses of the previous iter_args
     for (const auto& [qcoQubit, qcQubit] :
          llvm::zip_equal(op.getRegionIterArgs(), adaptor.getInitArgs())) {
       qcoQubit.replaceAllUsesWith(qcQubit);
     }
 
-    // move all the operations from the old block to the new block
+    // Move all the operations from the old block to the new block
     auto* newBlock = newFor.getBody();
-    // erase the existing yield operation
+    // Erase the existing yield operation
     rewriter.eraseOp(newBlock->getTerminator());
     newBlock->getOperations().splice(newBlock->end(),
                                      op.getBody()->getOperations());
-
-    // replace the result values with the init values
+    rewriter.replaceAllUsesWith(op.getInductionVar(), newFor.getInductionVar());
+    // Replace the result values with the init values
     rewriter.replaceOp(op, adaptor.getInitArgs());
     return success();
   }
@@ -1194,7 +1194,7 @@ struct QCOToQC final : impl::QCOToQCBase<QCOToQC> {
     // Configure conversion target: QCO illegal, QC legal
     target.addIllegalDialect<QCODialect>();
     target.addLegalDialect<QCDialect>();
-
+    target.addLegalDialect<arith::ArithDialect>();
     // Register operation conversion patterns
     // Note: No state tracking needed - OpAdaptors handle type conversion
     patterns

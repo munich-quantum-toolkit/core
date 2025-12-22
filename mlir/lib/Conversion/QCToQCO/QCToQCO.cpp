@@ -1434,7 +1434,7 @@ struct ConvertQCScfForOp final : StatefulOpConversionPattern<scf::ForOp> {
     const auto& qcQubits = getState().regionMap[op];
 
     SmallVector<Value> qcoQubits;
-    qcoQubits.reserve(qubitMap.size());
+    qcoQubits.reserve(qcoQubits.size());
     for (const auto& qcQubit : qcQubits) {
       qcoQubits.push_back(qubitMap[qcQubit]);
     }
@@ -1447,7 +1447,9 @@ struct ConvertQCScfForOp final : StatefulOpConversionPattern<scf::ForOp> {
     // move the operations to the new block
     auto& srcBlock = op.getRegion().front();
     auto& dstBlock = newFor.getRegion().front();
+
     dstBlock.getOperations().splice(dstBlock.end(), srcBlock.getOperations());
+    rewriter.replaceAllUsesWith(op.getInductionVar(), newFor.getInductionVar());
 
     auto& newRegion = newFor.getRegion();
     auto& regionQubitMap = getState().qubitMap[&newRegion];
@@ -1694,7 +1696,7 @@ struct QCToQCO final : impl::QCToQCOBase<QCToQCO> {
     // legal
     target.addIllegalDialect<QCDialect>();
     target.addLegalDialect<QCODialect>();
-
+    target.addLegalDialect<arith::ArithDialect>();
     target.addDynamicallyLegalOp<scf::YieldOp>([&](scf::YieldOp op) {
       return !(op->getAttrOfType<StringAttr>("needChange"));
     });
