@@ -6,14 +6,7 @@
 #
 # Licensed under the MIT License
 
-# add the IR bindings package
 add_subdirectory(ir)
-
-# add the DD bindings package
 add_subdirectory(dd)
-
-# add the NA bindings package
-add_subdirectory(na)
-
-# add the FoMaC bindings package
 add_subdirectory(fomac)
+add_subdirectory(na)

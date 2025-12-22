@@ -30,7 +30,8 @@ Checks: |
   readability-*,
   -readability-identifier-length,
   -readability-magic-numbers,
-  -readability-function-cognitive-complexity
+  -readability-function-cognitive-complexity,
+  -*-prefer-static-over-anonymous-namespace
 
 CheckOptions:
   - key: readability-identifier-naming.ClassCase
@@ -73,5 +74,3 @@ CheckOptions:
     value: CamelCase
   - key: readability-identifier-naming.VariableCase
     value: camelBack
-  - key: misc-include-cleaner.IgnoreHeaders
-    value: pybind11/detail/.*
