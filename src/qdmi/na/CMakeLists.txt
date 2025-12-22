@@ -35,7 +35,8 @@ if(NOT TARGET ${TARGET_NAME})
   set_target_properties(
     ${TARGET_NAME}
     PROPERTIES LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_LIBDIR}"
-               ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_LIBDIR}")
+               ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_LIBDIR}"
+               RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
 endif()
 
 # Set target name
@@ -87,9 +88,11 @@ if(NOT TARGET ${TARGET_NAME})
 
   # Generate definitions for device
   add_custom_command(
-    OUTPUT ${DEVICE_HDR}
-    COMMAND MQT::CoreQDMINaDeviceGenerator ARGS generate --output ${DEVICE_HDR} ${JSON_FILE}
-    DEPENDS ${JSON_FILE} MQT::CoreQDMINaDeviceGenerator
+    OUTPUT "${DEVICE_HDR}"
+    COMMAND $<TARGET_FILE:MQT::CoreQDMINaDeviceGenerator> generate --output "${DEVICE_HDR}"
+            "${JSON_FILE}"
+    DEPENDS "${JSON_FILE}" mqt-core-qdmi-na-device-generator
+    VERBATIM
     COMMENT "Generating C++ header from ${JSON_FILE}")
   add_custom_target(generate_qdmi_na_device_header DEPENDS ${DEVICE_HDR})
 
