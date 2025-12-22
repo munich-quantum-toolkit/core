@@ -1099,7 +1099,7 @@ def CtrlOp : QCOOp<"ctrl", traits =
            build($_builder, $_state, controls.getTypes(), targets.getTypes(), controls, targets);
         }]>,
         OpBuilder<(ins "ValueRange":$controls, "ValueRange":$targets, "UnitaryOpInterface":$bodyUnitary)>,
-        OpBuilder<(ins "ValueRange":$controls, "ValueRange":$targets, "const std::function<ValueRange(OpBuilder &, ValueRange)>&":$bodyBuilder)>
+        OpBuilder<(ins "ValueRange":$controls, "ValueRange":$targets, "const std::function<ValueRange(ValueRange)>&":$bodyBuilder)>
     ];
 
     let hasCanonicalizer = 1;

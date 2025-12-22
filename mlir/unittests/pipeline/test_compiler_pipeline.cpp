@@ -1583,8 +1583,7 @@ TEST_F(CompilerPipelineTest, MCX) {
 TEST_F(CompilerPipelineTest, MCXNested) {
   auto input = buildQCIR([](mlir::qc::QCProgramBuilder& b) {
     auto reg = b.allocQubitRegister(3, "q");
-    b.ctrl(reg[0],
-           [&](mlir::qc::QCProgramBuilder& b) { b.cx(reg[1], reg[2]); });
+    b.ctrl(reg[0], [&] { b.cx(reg[1], reg[2]); });
   });
 
   ASSERT_TRUE(runPipeline(input.get()).succeeded());

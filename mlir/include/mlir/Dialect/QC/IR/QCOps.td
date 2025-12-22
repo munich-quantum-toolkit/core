@@ -966,7 +966,7 @@ def CtrlOp : QCOp<"ctrl",
 
     let builders = [
         OpBuilder<(ins "ValueRange":$controls, "UnitaryOpInterface":$bodyUnitary)>,
-        OpBuilder<(ins "ValueRange":$controls, "const std::function<void(OpBuilder &)>&":$bodyBuilder)>
+        OpBuilder<(ins "ValueRange":$controls, "const std::function<void()>&":$bodyBuilder)>
     ];
 
     let hasCanonicalizer = 1;
