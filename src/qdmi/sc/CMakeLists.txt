@@ -28,6 +28,9 @@ if(NOT TARGET ${TARGET_NAME})
     PUBLIC nlohmann_json::nlohmann_json
     PRIVATE spdlog::spdlog)
 
+  # add to list of MQT core targets
+  list(APPEND MQT_CORE_TARGETS ${TARGET_NAME})
+
   # place the generated library in a predictable location where the executable can find it
   set_target_properties(
     ${TARGET_NAME}
