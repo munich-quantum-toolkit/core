@@ -24,8 +24,6 @@
 #include <cmath>
 #include <complex>
 #include <cstddef>
-#include <cstdint>
-#include <limits>
 #include <nanobind/nanobind.h>
 #include <nanobind/ndarray.h>
 #include <nanobind/stl/complex.h> // NOLINT(misc-include-cleaner)
