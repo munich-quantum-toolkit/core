@@ -987,9 +987,11 @@ public:
    *
    * @par Example:
    * ```c++
-   * {controls_out, targets_out} = builder.ctrl(q0_in, q1_in,
-   * [&](ValueRange targets) { auto q1_res = b.x(targets[0]); return {q1_res};
-   * });
+   * {controls_out, targets_out} =
+   *   builder.ctrl(q0_in, q1_in, [&](ValueRange targets) {
+   *     auto q1_res = builder.x(targets[0]);
+   *     return {q1_res};
+   *   });
    * ```
    * ```mlir
    * %controls_out, %targets_out = qco.ctrl(%q0_in) %q1_in {
