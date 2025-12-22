@@ -15,8 +15,8 @@
 #include "mlir/Dialect/QCO/Builder/QCOProgramBuilder.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 
+#include <functional>
 #include <gtest/gtest.h>
-#include <llvm/Support/LogicalResult.h>
 #include <llvm/Support/raw_ostream.h>
 #include <memory>
 #include <mlir/Dialect/Arith/IR/Arith.h>
@@ -29,6 +29,7 @@
 #include <mlir/IR/OwningOpRef.h>
 #include <mlir/IR/ValueRange.h>
 #include <mlir/Pass/PassManager.h>
+#include <mlir/Support/LogicalResult.h>
 #include <string>
 
 using namespace mlir;
