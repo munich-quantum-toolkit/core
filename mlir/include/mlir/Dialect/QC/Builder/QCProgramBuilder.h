@@ -975,12 +975,63 @@ public:
   //===--------------------------------------------------------------------===//
   // Func operations
   //===--------------------------------------------------------------------===//
+
+  /**
+   * @brief Constructs a func.return operation without return values
+   *
+   * @return Reference to this builder for method chaining
+   *
+   * @par Example:
+   * ```c++
+   * builder.funcReturn();
+   * ```
+   * ```mlir
+   * func.return
+   * ```
+   */
   QCProgramBuilder& funcReturn();
 
+  /**
+   * @brief Constructs a func.call operation without return values
+   *
+   * @param name Name of the function that is called
+   * @param operands ValueRange of the used operands
+   *
+   * @par Example:
+   * ```c++
+   * builder.funcCall("test", {q0});
+   * ```
+   * ```mlir
+   * func.call @test(%q0) : (!qco.qubit) -> ()
+   * ```
+   */
   QCProgramBuilder& funcCall(StringRef name, ValueRange operands);
 
+  /**
+   * @brief Constructs a func.func operation with return values
+   *
+   * @param name Name of the function that is called
+   * @param argTypes TypeRange of the arguments
+   * @param body Body of the function
+   * @return Reference to this builder for method chaining
+   *
+   * @par Example:
+   * ```c++
+   * builder.funcFunc("test", argTypes, [&](OpBuilder& b,
+   * ValueRange args) {
+   *   b.h(args[0]);
+   *   b.funcReturn();
+   * })
+   * ```
+   * ```mlir
+   * func.func @test(%arg0 : !qco.qubit) {
+   *   qc.h %arg0 : !qc.qubit
+   *   func.return
+   * }
+   * ```
+   */
   QCProgramBuilder&
-  funcFunc(StringRef name, TypeRange argTypes, TypeRange resultTypes,
+  funcFunc(StringRef name, TypeRange argTypes,
            const std::function<void(OpBuilder&, ValueRange)>& body);
 
   //===--------------------------------------------------------------------===//

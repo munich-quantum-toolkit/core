@@ -144,13 +144,13 @@ TEST_F(ConversionTest, ScfForTest2) {
         });
     b.h(scfForRes[0]);
   });
-
+  input->print(llvm::outs());
   PassManager pm(context.get());
   pm.addPass(createQCOToQC());
   if (failed(pm.run(input.get()))) {
     FAIL() << "Conversion error during QCO-QC conversion for scf.for";
   }
-
+  input->print(llvm::outs());
   auto expectedOutput = buildQCIR([](mlir::qc::QCProgramBuilder& b) {
     auto q0 = b.allocQubit();
     auto c0 = b.arithConstantIndex(0);
@@ -193,13 +193,13 @@ TEST_F(ConversionTest, ScfWhileTest) {
         });
     b.h(q0);
   });
-
+  input->print(llvm::outs());
   PassManager pm(context.get());
   pm.addPass(createQCToQCO());
   if (failed(pm.run(input.get()))) {
     FAIL() << "Conversion error during QC-QCO conversion for scf.while";
   }
-
+  input->print(llvm::outs());
   auto expectedOutput = buildQCOIR([](mlir::qco::QCOProgramBuilder& b) {
     auto q0 = b.allocQubit();
     auto scfWhileResult = b.scfWhile(
@@ -313,13 +313,13 @@ TEST_F(ConversionTest, ScfIfTest) {
         });
     b.h(q0);
   });
-
+  input->print(llvm::outs());
   PassManager pm(context.get());
   pm.addPass(createQCToQCO());
   if (failed(pm.run(input.get()))) {
     FAIL() << "Conversion error during QC-QCO conversion for scf.if";
   }
-
+  input->print(llvm::outs());
   auto expectedOutput = buildQCOIR([](mlir::qco::QCOProgramBuilder& b) {
     auto q0 = b.allocQubit();
     auto measure = b.measure(q0);
@@ -426,7 +426,7 @@ TEST_F(ConversionTest, FuncFuncTest) {
     b.funcCall("test", q0);
     b.h(q0);
     b.funcFunc(
-        "test", q0.getType(), {},
+        "test", q0.getType(),
         [&](OpBuilder& b,
             ValueRange
                 args) { // NOLINTNEXTLINE(cppcoreguidelines-pro-type-static-cast-downcast)
@@ -437,13 +437,13 @@ TEST_F(ConversionTest, FuncFuncTest) {
           static_cast<mlir::qc::QCProgramBuilder&>(b).funcReturn();
         });
   });
-
+  input->print(llvm::outs());
   PassManager pm(context.get());
   pm.addPass(createQCToQCO());
   if (failed(pm.run(input.get()))) {
     FAIL() << "Conversion error during QC-QCO conversion for func.func";
   }
-
+  input->print(llvm::outs());
   auto expectedOutput = buildQCOIR([](mlir::qco::QCOProgramBuilder& b) {
     auto q0 = b.allocQubit();
     auto q1 = b.funcCall("test", q0);
@@ -492,7 +492,7 @@ TEST_F(ConversionTest, FuncFuncTest2) {
     b.funcCall("test", q0);
     b.h(q0);
     b.funcFunc(
-        "test", q0.getType(), {},
+        "test", q0.getType(),
         [&](OpBuilder& b,
             ValueRange
                 args) { // NOLINTNEXTLINE(cppcoreguidelines-pro-type-static-cast-downcast)

@@ -518,9 +518,9 @@ QCProgramBuilder& QCProgramBuilder::funcReturn() {
   return *this;
 }
 QCProgramBuilder& QCProgramBuilder::funcFunc(
-    StringRef name, TypeRange argTypes, TypeRange resultTypes,
+    StringRef name, TypeRange argTypes,
     const std::function<void(OpBuilder&, ValueRange)>& body) {
-  const auto funcType = getFunctionType(argTypes, resultTypes);
+  const auto funcType = getFunctionType(argTypes, {});
   OpBuilder::InsertionGuard guard(*this);
   setInsertionPointToEnd(module.getBody());
   auto funcOp = create<func::FuncOp>(loc, name, funcType);

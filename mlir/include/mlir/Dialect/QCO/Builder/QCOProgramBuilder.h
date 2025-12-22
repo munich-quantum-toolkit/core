@@ -1040,15 +1040,20 @@ public:
    * @param step Stepsize of the loop
    * @param initArgs Initial arguments for the iterArgs
    * @param body Function that builds the body of the for operation
-   * @return Reference to this builder for method chaining
+   * @return ValueRange of the results
    *
    * @par Example:
    * ```c++
-   * builder.scfFor(lb, ub, step, [&](auto& b) { b.x(q0); });
+   * builder.scfFor(lb, ub, step, initArgs, [&](auto& b) {
+   *    auto q1 = b.x(initArgs[0]);
+   *    b.scfYield(q1);
+   });
    * ```
    * ```mlir
-   * scf.for %iv = %lb to %ub step %step {
-   *   qc.x %q0 : !qc.qubit
+   * %q1 = scf.for %iv = %lb to %ub step %step iter_args(%arg0 = %q0) ->
+   !qco.qubit {
+   *    %q2 = qc.x %arg0 : !qco.qubit -> !qco.qubit
+   *    scf.yield %q2 : !qco.qubit
    * }
    * ```
    */
@@ -1062,27 +1067,28 @@ public:
    * @param beforeBody Function that builds the before body of the while
    * operation
    * @param afterBody Function that builds the after body of the while operation
-   * @return Reference to this builder for method chaining
+   * @return ValueRange of the results
    *
    * @par Example:
    * ```c++
-   * builder.scfWhile([&](auto& b) {
-   * b.h(q0);
-   * auto res = b.measure(q0)
-   * b.condition(res)
-   * }, [&](auto& b) {
-   * b.x(q0);
-   * b.yield()
+   * builder.scfWhile(args, [&](auto& b, ValueRange iterArgs) {
+   *    auto q1 = b.h(iterArgs[0]);
+   *    auto [q2, measureRes] = b.measure(q1);
+   *    b.condition(measureRes);
+   * }, [&](auto& b, ValueRange iterArgs) {
+   *    auto q1 = b.x(iterArgs[0]);
+   *    b.scfYield(q1);
    * });
    * ```
    * ```mlir
-   * scf.while : () -> () {
-   * qc.h %q0 : !qc.qubit
-   * %res = qc.measure %q0 : !qc.qubit -> i1
-   * scf.condition(%tres)
-   * } do {
-   * qc.x %q0 : !qc.qubit
-   * scf.yield
+   * %q1 = scf.while (%arg0 = %q0): (!qco.qubit) -> (!qco.qubit) {
+   *    %q2 = qco.h(%arg0)
+   *    %q3, %result = qco.measure %q2 : !qco.qubit
+   *    scf.condition(%result) %q3 : !qco.qubit
+   *  } do {
+   *  ^bb0(%arg0 : !qco.qubit):
+   *    %q4 = qco.x %arg0 : !qco.qubit -> !qco.qubit
+   *    scf.yield %q4 : !qco.qubit
    * }
    * ```
    */
@@ -1099,21 +1105,25 @@ public:
    * @param thenBody Function that builds the then body of the if
    * operation
    * @param elseBody Function that builds the else body of the if operation
-   * @return Reference to this builder for method chaining
+   * @return ValueRange of the results
    *
    * @par Example:
    * ```c++
-   * builder.scf.if(condition, [&](auto& b) {
-   * b.h(q0);
+   * builder.scf.if(condition, qubits, [&](auto& b) {
+   *    auto q1 = b.h(q0);
+   *    b.scfYield(q1);
    * }, [&](auto& b) {
-   * b.x(q0);
+   *    auto q1 = b.x(q0);
+   *    b.scfYield(q1);
    * });
    * ```
    * ```mlir
-   * scf.if %condition {
-   * qc.h %q0 : !qc.qubit
+   * %q1 = scf.if %condition -> (!qco.qubit) {
+   *    %q2 = qco.h %q0 : !qco.qubit -> !qco.qubit
+   *    scf.yield %q2 : !qco.qubit
    * } else {
-   * qc.x %q0 : !qc.qubit
+   *    %q2 = qco.x %q0 : !qco.qubit -> !qco.qubit
+   *    scf.yield %q2 : !qco.qubit
    * }
    * ```
    */
@@ -1122,31 +1132,99 @@ public:
                    const std::function<ValueRange(OpBuilder&)>& elseBody);
 
   /**
-   * @brief Constructs a scf.condition operation without any additional Values
+   * @brief Constructs a scf.condition operation with yielded values
    *
    * @param condition Condition for condition operation
+   * @param yieldedValues ValueRange of the yieldedValues
    * @return Reference to this builder for method chaining
    *
    * @par Example:
    * ```c++
-   * builder.condition(condition);
+   * builder.scfCondition(condition, yieldedValues);
    * ```
    * ```mlir
-   * scf.condition(%condition)
+   * scf.condition(%condition) %q0 : !qco.qubit
    * ```
    */
   QCOProgramBuilder& scfCondition(Value condition, ValueRange yieldedValues);
 
+  /**
+   * @brief Constructs a scf.yield operation with yielded values
+   *
+   * @param yieldedValues ValueRange of the yieldedValues
+   * @return Reference to this builder for method chaining
+   *
+   * @par Example:
+   * ```c++
+   * builder.scfYield( yieldedValues);
+   * ```
+   * ```mlir
+   * scf.yield %q0 : !qco.qubit
+   * ```
+   */
   QCOProgramBuilder& scfYield(ValueRange yieldedValues);
 
   //===--------------------------------------------------------------------===//
   // Func operations
   //===--------------------------------------------------------------------===//
 
-  QCOProgramBuilder& funcReturn(ValueRange yieldedValues);
+  /**
+   * @brief Constructs a func.return operation with return values
+   *
+   * @param returnValues ValueRange of the returned values
+   * @return Reference to this builder for method chaining
+   *
+   * @par Example:
+   * ```c++
+   * builder.funcReturn( yieldedValues);
+   * ```
+   * ```mlir
+   * func.return %q0 : !qco.qubit
+   * ```
+   */
+  QCOProgramBuilder& funcReturn(ValueRange returnValues);
 
+  /**
+   * @brief Constructs a func.call operation with return values
+   *
+   * @param name Name of the function that is called
+   * @param operands ValueRange of the used operands
+   * @return ValueRange of the results
+   *
+   * @par Example:
+   * ```c++
+   * auto q1 = builder.funcCall("test", {q0});
+   * ```
+   * ```mlir
+   * %q1 = func.call @test(%q0) : (!qco.qubit) -> !qco.qubit
+   * ```
+   */
   ValueRange funcCall(StringRef name, ValueRange operands);
 
+  /**
+   * @brief Constructs a func.func operation with return values
+   *
+   * @param name Name of the function that is called
+   * @param argTypes TypeRange of the arguments
+   * @param resultTypes TypeRange of the results
+   * @param body Body of the function
+   * @return Reference to this builder for method chaining
+   *
+   * @par Example:
+   * ```c++
+   * builder.funcFunc("test", argTypes, resultTypes, [&](OpBuilder& b,
+   * ValueRange args) {
+   *   auto q1 = b.h(args[0]);
+   *   b.funcReturn({q1});
+   * })
+   * ```
+   * ```mlir
+   * func.func @test(%arg0 : !qco.qubit) -> !qco.qubit {
+   *   %q1 = qco.h %arg0 : !qco.qubit -> !qco.qubit
+   *   func.return %q1 : !qco.qubit
+   * }
+   * ```
+   */
   QCOProgramBuilder&
   funcFunc(StringRef name, TypeRange argTypes, TypeRange resultTypes,
            const std::function<void(OpBuilder&, ValueRange)>& body);

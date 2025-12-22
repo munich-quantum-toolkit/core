@@ -737,8 +737,8 @@ ValueRange QCOProgramBuilder::funcCall(StringRef name, ValueRange operands) {
   return callOp->getResults();
 }
 
-QCOProgramBuilder& QCOProgramBuilder::funcReturn(ValueRange yieldedValues) {
-  create<func::ReturnOp>(loc, yieldedValues);
+QCOProgramBuilder& QCOProgramBuilder::funcReturn(ValueRange returnValues) {
+  create<func::ReturnOp>(loc, returnValues);
   return *this;
 }
 QCOProgramBuilder& QCOProgramBuilder::funcFunc(
