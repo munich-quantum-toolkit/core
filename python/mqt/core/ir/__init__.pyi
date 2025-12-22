@@ -6,6 +6,7 @@
 #
 # Licensed under the MIT License
 
+import os
 from collections.abc import ItemsView, Iterable, Iterator, Mapping, MutableMapping, MutableSequence, Sequence
 from collections.abc import Set as AbstractSet
 from typing import overload
@@ -364,9 +365,7 @@ class QuantumComputation(MutableSequence[operations.Operation]):
 
         This is a permutation of the qubits in the quantum computation.
         It is mainly used to track where individual qubits end up at the end of the quantum computation, for example after a circuit has been compiled to a specific device and SWAP gates have been inserted, which permute the qubits.
-        The keys are the qubits in the circuit and the values are the actual qubits being measured.
-
-        Similar to the initial layout, the keys in the output permutation are the qubits actually present in the circuit and the values are the qubits in the "original" circuit.
+        Similar to the initial layout, the keys are the qubits in the circuit and the values are the qubits in the "original" circuit.
 
         Examples:
             - If no output permutation is explicitly specified and the circuit does not contain measurements at the end, the output permutation is assumed to be the identity permutation.
@@ -497,7 +496,7 @@ class QuantumComputation(MutableSequence[operations.Operation]):
             The OpenQASM2 representation of the quantum computation as a string.
         """
 
-    def qasm2(self, filename: str) -> None:
+    def qasm2(self, filename: os.PathLike[str] | str) -> None:
         """Write the OpenQASM2 representation of the quantum computation to a file.
 
         See Also:
@@ -514,7 +513,7 @@ class QuantumComputation(MutableSequence[operations.Operation]):
             The OpenQASM3 representation of the quantum computation as a string.
         """
 
-    def qasm3(self, filename: str) -> None:
+    def qasm3(self, filename: os.PathLike[str] | str) -> None:
         """Write the OpenQASM3 representation of the quantum computation to a file.
 
         See Also:
@@ -534,7 +533,7 @@ class QuantumComputation(MutableSequence[operations.Operation]):
             q: The target qubit
         """
 
-    def ci(self, control: operations.Control, target: int) -> None:
+    def ci(self, control: operations.Control | int, target: int) -> None:
         """Apply a controlled identity operation.
 
         See Also:
@@ -545,7 +544,7 @@ class QuantumComputation(MutableSequence[operations.Operation]):
             target: The target qubit
         """
 
-    def mci(self, controls: AbstractSet[operations.Control], target: int) -> None:
+    def mci(self, controls: AbstractSet[operations.Control | int], target: int) -> None:
         """Apply a multi-controlled identity operation.
 
         See Also:
@@ -1960,11 +1959,11 @@ class QuantumComputation(MutableSequence[operations.Operation]):
         self,
         op_type: operations.OpType,
         target: int,
-        control: operations.Control,
+        control: operations.Control | int,
         control_register: registers.ClassicalRegister,
         expected_value: int = 1,
         comparison_kind: operations.ComparisonKind = ...,
-        params: Sequence[float] = ...,
+        params: Sequence[symbolic.Expression | float] = ...,
     ) -> None:
         """Add an if operation to the circuit.
 
@@ -1983,11 +1982,11 @@ class QuantumComputation(MutableSequence[operations.Operation]):
         self,
         op_type: operations.OpType,
         target: int,
-        controls: AbstractSet[operations.Control],
+        controls: AbstractSet[operations.Control | int],
         control_register: registers.ClassicalRegister,
         expected_value: int = 1,
         comparison_kind: operations.ComparisonKind = ...,
-        params: Sequence[float] = ...,
+        params: Sequence[symbolic.Expression | float] = ...,
     ) -> None:
         """Add an if operation to the circuit.
 
@@ -2027,11 +2026,11 @@ class QuantumComputation(MutableSequence[operations.Operation]):
         self,
         op_type: operations.OpType,
         target: int,
-        control: operations.Control,
+        control: operations.Control | int,
         control_bit: int,
         expected_value: bool = True,
         comparison_kind: operations.ComparisonKind = ...,
-        params: Sequence[float] = ...,
+        params: Sequence[symbolic.Expression | float] = ...,
     ) -> None:
         """Add an if operation to the circuit.
 
@@ -2050,11 +2049,11 @@ class QuantumComputation(MutableSequence[operations.Operation]):
         self,
         op_type: operations.OpType,
         target: int,
-        controls: AbstractSet[operations.Control],
+        controls: AbstractSet[operations.Control | int],
         control_bit: int,
         expected_value: bool = True,
         comparison_kind: operations.ComparisonKind = ...,
-        params: Sequence[float] = ...,
+        params: Sequence[symbolic.Expression | float] = ...,
     ) -> None:
         """Add an if operation to the circuit.
 
