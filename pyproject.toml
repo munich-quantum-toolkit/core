@@ -262,6 +262,7 @@ anc = "anc"
 mch = "mch"
 ket = "ket"
 optin = "optin"
+nd = "nd"
 
 
 [tool.repo-review]

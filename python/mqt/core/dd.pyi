@@ -211,6 +211,7 @@ class DDPackage:
 
     Notes:
         It is undefined behavior to pass VectorDD or MatrixDD objects that were created with a different DDPackage to the methods of the DDPackage.
+        The only exception is the identity DD returned by identity(), which represents the global one-terminal and can be used with any DDPackage instance.
 
     Args:
         num_qubits: The maximum number of qubits that the DDPackage can handle.
@@ -432,6 +433,9 @@ class DDPackage:
     @staticmethod
     def identity() -> MatrixDD:
         """Create the DD for the identity matrix :math:`I`.
+
+        Notes:
+            Returns the global one-terminal (identity matrix), which is package-agnostic and safe to use across DDPackage instances.
 
         Returns:
             The DD for the identity matrix.

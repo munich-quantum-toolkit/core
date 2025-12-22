@@ -103,7 +103,14 @@ Returns:
           "__getitem__",
           [](const qc::Permutation& p, const nb::int_& index) {
             const auto q = nbIntToQubit(index);
-            return p.at(q);
+            const auto it = p.find(q);
+            if (it == p.end()) {
+              const auto msg =
+                  std::string("Permutation does not contain index ") +
+                  std::to_string(q);
+              throw nb::key_error(msg.c_str());
+            }
+            return it->second;
           },
           "index"_a, R"pb(Get the value of the permutation at the given index.
 

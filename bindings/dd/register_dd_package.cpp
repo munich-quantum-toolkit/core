@@ -14,7 +14,6 @@
 #include "dd/Operations.hpp"
 #include "dd/Package.hpp"
 #include "dd/StateGeneration.hpp"
-#include "ir/Definitions.hpp"
 #include "ir/Permutation.hpp"
 #include "ir/operations/Control.hpp"
 #include "ir/operations/IfElseOperation.hpp"
@@ -117,6 +116,7 @@ Specifically, it
 
 Notes:
     It is undefined behavior to pass VectorDD or MatrixDD objects that were created with a different DDPackage to the methods of the DDPackage.
+    The only exception is the identity DD returned by identity(), which represents the global one-terminal and can be used with any DDPackage instance.
 
 Args:
     num_qubits: The maximum number of qubits that the DDPackage can handle.
@@ -438,6 +438,9 @@ Returns:
   dd.def_static("identity", &dd::Package::makeIdent,
                 R"pb(Create the DD for the identity matrix :math:`I`.
 
+Notes:
+    Returns the global one-terminal (identity matrix), which is package-agnostic and safe to use across DDPackage instances.
+
 Returns:
     The DD for the identity matrix.)pb");
 
@@ -470,7 +473,7 @@ Returns:
       nb::keep_alive<0, 1>(),
       nb::sig(
           "def controlled_single_qubit_gate(self, "
-          "matrix: Annotated[ANDArray[numpy.complex128], {\"shape\": (2, 2)}],"
+          "matrix: Annotated[NDArray[numpy.complex128], {\"shape\": (2, 2)}],"
           "control: mqt.core.ir.operations.Control | int,"
           "target: int) -> mqt.core.dd.MatrixDD"),
       R"pb(Create the DD for a controlled single-qubit gate.
@@ -495,7 +498,7 @@ Returns:
       nb::keep_alive<0, 1>(),
       nb::sig(
           "def multi_controlled_single_qubit_gate(self, "
-          "matrix: Annotated[ANDArray[numpy.complex128], {\"shape\": (2, 2)}],"
+          "matrix: Annotated[NDArray[numpy.complex128], {\"shape\": (2, 2)}],"
           "controls: collections.abc.Set[mqt.core.ir.operations.Control | int],"
           "target: int) -> mqt.core.dd.MatrixDD"),
       R"pb(Create the DD for a multi-controlled single-qubit gate.
@@ -547,7 +550,7 @@ Returns:
       nb::keep_alive<0, 1>(),
       nb::sig(
           "def controlled_two_qubit_gate(self, "
-          "matrix: Annotated[ANDArray[numpy.complex128], {\"shape\": (4, 4)}],"
+          "matrix: Annotated[NDArray[numpy.complex128], {\"shape\": (4, 4)}],"
           "control: mqt.core.ir.operations.Control | int,"
           "target0: int, target1: int) -> mqt.core.dd.MatrixDD"),
       R"pb(Create the DD for a controlled two-qubit gate.
@@ -578,7 +581,7 @@ Returns:
       nb::keep_alive<0, 1>(),
       nb::sig(
           "def multi_controlled_two_qubit_gate(self, "
-          "matrix: Annotated[ANDArray[numpy.complex128], {\"shape\": (4, 4)}],"
+          "matrix: Annotated[NDArray[numpy.complex128], {\"shape\": (4, 4)}],"
           "controls: collections.abc.Set[mqt.core.ir.operations.Control | int],"
           "target0: int, target1: int) -> mqt.core.dd.MatrixDD"),
       R"pb(Create the DD for a multi-controlled two-qubit gate.
