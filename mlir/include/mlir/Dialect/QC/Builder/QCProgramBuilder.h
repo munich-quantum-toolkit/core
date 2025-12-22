@@ -981,7 +981,7 @@ public:
 
   QCProgramBuilder&
   funcFunc(StringRef name, TypeRange argTypes, TypeRange resultTypes,
-           const std::function<void(OpBuilder&, Location, ValueRange)>& body);
+           const std::function<void(OpBuilder&, ValueRange)>& body);
 
   //===--------------------------------------------------------------------===//
   // Arith operations
