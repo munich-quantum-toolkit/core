@@ -581,6 +581,7 @@ Returns:
         circ.dump(filename, qc::Format::OpenQASM2);
       },
       "filename"_a,
+      nb::sig("def qasm2(self, filename: os.PathLike[str] | str) -> None"),
       R"pb(Write the OpenQASM2 representation of the quantum computation to a file.
 
 See Also:
@@ -603,6 +604,7 @@ Returns:
         circ.dump(filename, qc::Format::OpenQASM3);
       },
       "filename"_a,
+      nb::sig("def qasm3(self, filename: os.PathLike[str] | str) -> None"),
       R"pb(Write the OpenQASM3 representation of the quantum computation to a file.
 
 See Also:
