@@ -10,6 +10,7 @@
 
 #include "qir/runtime/Runtime.hpp"
 
+#include "dd/DDDefinitions.hpp"
 #include "dd/Node.hpp"
 #include "dd/Package.hpp"
 #include "dd/StateGeneration.hpp"
@@ -99,7 +100,7 @@ auto Runtime::enlargeState(const std::uint64_t maxQubit) -> void {
 
     // if the state is terminal, we need to create a new node
     if (qState.isTerminal()) {
-      qState = dd::makeZeroState(d, *dd);
+      qState = makeZeroState(d, *dd);
       return;
     }
 

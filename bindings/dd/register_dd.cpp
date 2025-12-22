@@ -100,7 +100,6 @@ Consider using the :func:`~mqt.core.dd.simulate` or the :func:`~mqt.core.dd.samp
 Notes:
     This function internally constructs a :class:`~mqt.core.dd.DDPackage`, creates the zero state, and simulates the quantum computation via the :func:`simulate` function.
     The state vector is then extracted from the resulting DD via the :meth:`~mqt.core.dd.VectorDD.get_vector` method.
-    The resulting :class:`~mqt.core.dd.Vector` can be converted to a NumPy array without copying the data by calling :func:`numpy.array` with the `copy=False` argument.
 
 Args:
     qc: The quantum computation. Must only contain unitary operations.
@@ -128,7 +127,6 @@ Consider using the :func:`~mqt.core.dd.build_functionality` function, which neve
 Notes:
     This function internally constructs a :class:`~mqt.core.dd.DDPackage`, creates the identity matrix, and builds the unitary matrix via the :func:`~mqt.core.dd.build_functionality` function.
     The unitary matrix is then extracted from the resulting DD via the :meth:`~mqt.core.dd.MatrixDD.get_matrix` method.
-    The resulting :class:`~mqt.core.dd.Matrix` can be converted to a NumPy array without copying the data by calling :func:`numpy.array` with the `copy=False` argument.
 
 Args:
     qc: The quantum computation. Must only contain unitary operations.

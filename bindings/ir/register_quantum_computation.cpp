@@ -22,7 +22,6 @@
 #include <cstddef>
 #include <cstdint>
 #include <functional>
-#include <limits>
 #include <memory>
 #include <nanobind/nanobind.h>
 #include <nanobind/stl/set.h>           // NOLINT(misc-include-cleaner)
@@ -32,11 +31,9 @@
 #include <nanobind/stl/unordered_set.h> // NOLINT(misc-include-cleaner)
 #include <nanobind/stl/variant.h>       // NOLINT(misc-include-cleaner)
 #include <nanobind/stl/vector.h>        // NOLINT(misc-include-cleaner)
-#include <set>
 #include <stdexcept>
 #include <string>
 #include <utility>
-#include <variant>
 #include <vector>
 
 namespace mqt {

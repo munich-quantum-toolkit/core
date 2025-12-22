@@ -22,10 +22,8 @@
 #include <nanobind/stl/string.h>  // NOLINT(misc-include-cleaner)
 #include <nanobind/stl/variant.h> // NOLINT(misc-include-cleaner)
 #include <nanobind/stl/vector.h>  // NOLINT(misc-include-cleaner)
-#include <set>
 #include <sstream>
 #include <utility>
-#include <variant>
 
 namespace mqt {
 
@@ -126,7 +124,18 @@ Args:
 
       .def(
           "__delitem__",
-          [](qc::Permutation& p, const qc::Qubit q) { p.erase(q); }, "index"_a,
+          [](qc::Permutation& p, const qc::Qubit q) {
+            const auto it = p.find(q);
+            if (it == p.end()) {
+              // Match Python's KeyError semantics for missing keys.
+              const auto msg =
+                  std::string("Permutation does not contain index ") +
+                  std::to_string(q);
+              throw nb::key_error(msg.c_str());
+            }
+            p.erase(it);
+          },
+          "index"_a,
           R"pb(Delete the value of the permutation at the given index.
 
 Args:
