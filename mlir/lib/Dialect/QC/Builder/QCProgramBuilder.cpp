@@ -522,7 +522,7 @@ QCProgramBuilder& QCProgramBuilder::funcFunc(
     StringRef name, TypeRange argTypes,
     const std::function<void(OpBuilder&, ValueRange)>& body) {
   // Set the insertionPoint
-  OpBuilder::InsertionGuard guard(*this);
+  const OpBuilder::InsertionGuard guard(*this);
   setInsertionPointToEnd(module.getBody());
 
   // Create the empty func operation

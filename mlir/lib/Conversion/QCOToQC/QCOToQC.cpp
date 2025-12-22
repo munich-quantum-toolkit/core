@@ -1145,7 +1145,7 @@ struct QCOToQC final : impl::QCOToQCBase<QCOToQC> {
 
     ConversionTarget target(*context);
     RewritePatternSet patterns(context);
-    QCOToQCTypeConverter typeConverter(context);
+    const QCOToQCTypeConverter typeConverter(context);
 
     target.addDynamicallyLegalOp<scf::IfOp>([&](scf::IfOp op) {
       return !llvm::any_of(op->getResultTypes(), [&](Type type) {
@@ -1194,7 +1194,6 @@ struct QCOToQC final : impl::QCOToQCBase<QCOToQC> {
     // Configure conversion target: QCO illegal, QC legal
     target.addIllegalDialect<QCODialect>();
     target.addLegalDialect<QCDialect>();
-    target.addLegalDialect<arith::ArithDialect>();
     // Register operation conversion patterns
     // Note: No state tracking needed - OpAdaptors handle type conversion
     patterns

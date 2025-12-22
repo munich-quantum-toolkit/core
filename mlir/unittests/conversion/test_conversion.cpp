@@ -16,14 +16,20 @@
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 
 #include <gtest/gtest.h>
-#include <mlir/Dialect/ControlFlow/IR/ControlFlow.h>
+#include <llvm/Support/LogicalResult.h>
+#include <llvm/Support/raw_ostream.h>
+#include <memory>
+#include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/LLVMIR/LLVMDialect.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
 #include <mlir/IR/Builders.h>
+#include <mlir/IR/BuiltinOps.h>
+#include <mlir/IR/DialectRegistry.h>
+#include <mlir/IR/OwningOpRef.h>
 #include <mlir/IR/ValueRange.h>
 #include <mlir/Pass/PassManager.h>
-#include <utility>
+#include <string>
 
 using namespace mlir;
 
@@ -276,9 +282,9 @@ TEST_F(ConversionTest, ScfWhileTest2) {
   auto expectedOutput = buildQCIR([](mlir::qc::QCProgramBuilder& b) {
     auto q0 = b.allocQubit();
     b.scfWhile(
-        [&](OpBuilder&
-                b) { // NOLINTNEXTLINE(cppcoreguidelines-pro-type-static-cast-downcast)
-          auto measureResult =
+        [&](OpBuilder& b) {
+          auto
+              measureResult = // NOLINTNEXTLINE(cppcoreguidelines-pro-type-static-cast-downcast)
               static_cast<mlir::qc::QCProgramBuilder&>(b).measure(
                   q0); // NOLINTNEXTLINE(cppcoreguidelines-pro-type-static-cast-downcast)
           static_cast<mlir::qc::QCProgramBuilder&>(b).scfCondition(

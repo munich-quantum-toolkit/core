@@ -28,6 +28,7 @@
 #include <mlir/IR/OwningOpRef.h>
 #include <mlir/IR/Value.h>
 #include <mlir/IR/ValueRange.h>
+#include <mlir/Support/LLVM.h>
 #include <string>
 #include <utility>
 #include <variant>
@@ -36,7 +37,7 @@ namespace mlir::qco {
 
 QCOProgramBuilder::QCOProgramBuilder(MLIRContext* context)
     : OpBuilder(context), ctx(context), loc(getUnknownLoc()),
-      module(ModuleOp::create(loc)) {
+      module(ModuleOp::create(loc)), funcRegion(nullptr) {
   ctx->loadDialect<QCODialect>();
 }
 
@@ -606,16 +607,16 @@ ValueRange QCOProgramBuilder::scfFor(
   // Create the empty for operation
   auto forOp = create<scf::ForOp>(loc, lowerbound, upperbound, step, initArgs);
   auto* forBody = forOp.getBody();
-  auto iv = forBody->getArgument(0);
-  auto loopArgs = forBody->getArguments().drop_front();
+  const auto iv = forBody->getArgument(0);
+  const auto loopArgs = forBody->getArguments().drop_front();
 
   // Set the insertionpoint
-  OpBuilder::InsertionGuard guard(*this);
+  const OpBuilder::InsertionGuard guard(*this);
   setInsertionPointToStart(forBody);
 
   // Add the iterArgs to the validQubits
   auto* bodyRegion = forBody->getParent();
-  for (Value arg : loopArgs) {
+  for (const auto& arg : loopArgs) {
     validQubits[bodyRegion].insert(arg);
   }
   // Build the body
@@ -638,7 +639,7 @@ ValueRange QCOProgramBuilder::scfWhile(
   auto whileOp = create<scf::WhileOp>(loc, initArgs.getTypes(), initArgs);
   const SmallVector<Location> locs(initArgs.size(), loc);
 
-  OpBuilder::InsertionGuard guard(*this);
+  const OpBuilder::InsertionGuard guard(*this);
 
   // Construct the before block
   auto* beforeBlock =
@@ -650,7 +651,7 @@ ValueRange QCOProgramBuilder::scfWhile(
   setInsertionPointToStart(beforeBlock);
 
   // Add the beforeArgs to the validQubits
-  for (Value arg : beforeArgs) {
+  for (const auto& arg : beforeArgs) {
     validQubits[beforeRegion].insert(arg);
   }
 
@@ -666,14 +667,15 @@ ValueRange QCOProgramBuilder::scfWhile(
   setInsertionPointToStart(afterBlock);
 
   // Add the afterArgs to the validQubits
-  for (Value arg : afterArgs) {
+  for (const auto& arg : afterArgs) {
     validQubits[afterRegion].insert(arg);
   }
 
   afterBody(*this, afterArgs);
 
   // Update the qubit tracking
-  for (auto [arg, result] : llvm::zip_equal(initArgs, whileOp.getResults())) {
+  for (const auto& [arg, result] :
+       llvm::zip_equal(initArgs, whileOp.getResults())) {
     updateQubitTracking(arg, result, whileOp->getParentRegion());
   }
 
@@ -693,11 +695,11 @@ ValueRange QCOProgramBuilder::scfIf(
   auto* elseRegion = elseBlock.getParent();
 
   // Set the insertionpoint
-  OpBuilder::InsertionGuard guard(*this);
+  const OpBuilder::InsertionGuard guard(*this);
   setInsertionPointToStart(&thenBlock);
 
   // Add the qubits to the validQubits of the then and else region
-  for (Value arg : qubits) {
+  for (const auto& arg : qubits) {
     validQubits[thenRegion].insert(arg);
     validQubits[elseRegion].insert(arg);
   }
@@ -712,7 +714,7 @@ ValueRange QCOProgramBuilder::scfIf(
   elseBody(*this);
 
   // Update the qubit tracking
-  for (auto [arg, result] : llvm::zip_equal(qubits, ifOp.getResults())) {
+  for (const auto& [arg, result] : llvm::zip_equal(qubits, ifOp.getResults())) {
     updateQubitTracking(arg, result, ifOp->getParentRegion());
   }
 
@@ -751,7 +753,7 @@ QCOProgramBuilder& QCOProgramBuilder::funcFunc(
     StringRef name, TypeRange argTypes, TypeRange resultTypes,
     const std::function<void(OpBuilder&, ValueRange)>& body) {
   // Set the insertionPoint
-  OpBuilder::InsertionGuard guard(*this);
+  const OpBuilder::InsertionGuard guard(*this);
   setInsertionPointToEnd(module.getBody());
 
   // Create the empty func operation
@@ -760,7 +762,7 @@ QCOProgramBuilder& QCOProgramBuilder::funcFunc(
   auto* entryBlock = funcOp.addEntryBlock();
 
   // Add the arguments to the validQubits
-  for (Value arg : entryBlock->getArguments()) {
+  for (const auto& arg : entryBlock->getArguments()) {
     validQubits[entryBlock->getParent()].insert(arg);
   }
 

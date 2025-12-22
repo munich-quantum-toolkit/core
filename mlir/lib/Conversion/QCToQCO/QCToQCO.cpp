@@ -125,8 +125,8 @@ private:
  * @param ctx The MLIRContext of the current program
  * @return llvm::Setvector<Value> The set of unique QC qubit references
  */
-llvm::SetVector<Value> collectUniqueQubits(Operation* op, LoweringState* state,
-                                           MLIRContext* ctx) {
+static llvm::SetVector<Value>
+collectUniqueQubits(Operation* op, LoweringState* state, MLIRContext* ctx) {
   // get the regions of the current operation
   const auto& regions = op->getRegions();
   SetVector<Value> uniqueQubits;
@@ -1696,7 +1696,7 @@ struct QCToQCO final : impl::QCToQCOBase<QCToQCO> {
     // legal
     target.addIllegalDialect<QCDialect>();
     target.addLegalDialect<QCODialect>();
-    target.addLegalDialect<arith::ArithDialect>();
+
     target.addDynamicallyLegalOp<scf::YieldOp>([&](scf::YieldOp op) {
       return !(op->getAttrOfType<StringAttr>("needChange"));
     });
@@ -1727,7 +1727,6 @@ struct QCToQCO final : impl::QCToQCOBase<QCToQCO> {
     });
     // Register operation conversion patterns with state
     // tracking
-
     patterns.add<
         ConvertQCAllocOp, ConvertQCDeallocOp, ConvertQCStaticOp,
         ConvertQCMeasureOp, ConvertQCResetOp, ConvertQCGPhaseOp, ConvertQCIdOp,
