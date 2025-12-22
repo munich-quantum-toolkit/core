@@ -430,9 +430,7 @@ Examples:
 
 This is a permutation of the qubits in the quantum computation.
 It is mainly used to track where individual qubits end up at the end of the quantum computation, for example after a circuit has been compiled to a specific device and SWAP gates have been inserted, which permute the qubits.
-The keys are the qubits in the circuit and the values are the actual qubits being measured.
-
-Similar to the initial layout, the keys in the output permutation are the qubits actually present in the circuit and the values are the qubits in the "original" circuit.
+Similar to the initial layout, the keys are the qubits in the circuit and the values are the qubits in the "original" circuit.
 
 Examples:
     - If no output permutation is explicitly specified and the circuit does not contain measurements at the end, the output permutation is assumed to be the identity permutation.
