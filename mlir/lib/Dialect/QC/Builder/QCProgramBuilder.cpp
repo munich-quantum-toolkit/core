@@ -419,9 +419,10 @@ QCProgramBuilder& QCProgramBuilder::barrier(ValueRange qubits) {
 
 QCProgramBuilder&
 QCProgramBuilder::ctrl(ValueRange controls,
-                       const std::function<void(OpBuilder&)>& body) {
+                       const std::function<void(QCProgramBuilder&)>& body) {
   checkFinalized();
-  CtrlOp::create(*this, loc, controls, body);
+  CtrlOp::create(*this, loc, controls,
+                 [&](OpBuilder& builder) { body(*this); });
   return *this;
 }
 

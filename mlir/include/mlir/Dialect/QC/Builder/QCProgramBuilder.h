@@ -842,7 +842,7 @@ public:
    * ```
    */
   QCProgramBuilder& ctrl(ValueRange controls,
-                         const std::function<void(OpBuilder&)>& body);
+                         const std::function<void(QCProgramBuilder&)>& body);
 
   //===--------------------------------------------------------------------===//
   // Deallocation

@@ -1001,7 +1001,7 @@ public:
    */
   std::pair<ValueRange, ValueRange>
   ctrl(ValueRange controls, ValueRange targets,
-       const std::function<ValueRange(OpBuilder&, ValueRange)>& body);
+       const std::function<ValueRange(QCOProgramBuilder&, ValueRange)>& body);
 
   //===--------------------------------------------------------------------===//
   // Deallocation

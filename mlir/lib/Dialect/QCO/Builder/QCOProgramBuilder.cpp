@@ -578,10 +578,14 @@ ValueRange QCOProgramBuilder::barrier(ValueRange qubits) {
 
 std::pair<ValueRange, ValueRange> QCOProgramBuilder::ctrl(
     ValueRange controls, ValueRange targets,
-    const std::function<ValueRange(OpBuilder&, ValueRange)>& body) {
+    const std::function<ValueRange(QCOProgramBuilder&, ValueRange)>& body) {
   checkFinalized();
 
-  auto ctrlOp = CtrlOp::create(*this, loc, controls, targets, body);
+  auto ctrlOp =
+      CtrlOp::create(*this, loc, controls, targets,
+                     [this, &body](OpBuilder& builder, ValueRange targets) {
+                       return body(*this, targets);
+                     });
 
   // Update tracking
   const auto& controlsOut = ctrlOp.getControlsOut();
