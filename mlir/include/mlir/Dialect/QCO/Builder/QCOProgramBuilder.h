@@ -987,10 +987,11 @@ public:
    *
    * @par Example:
    * ```c++
-   * {controls_out, targets_out} = builder.ctrl(q0_in, q1_in, [&](auto& b) {
-   *   auto q1_res = b.x(q1_in);
-   *   return {q1_res};
-   * });
+   * {controls_out, targets_out} =
+   *   builder.ctrl(q0_in, q1_in, [&](ValueRange targets) {
+   *     auto q1_res = builder.x(targets[0]);
+   *     return {q1_res};
+   *   });
    * ```
    * ```mlir
    * %controls_out, %targets_out = qco.ctrl(%q0_in) %q1_in {
@@ -1001,7 +1002,7 @@ public:
    */
   std::pair<ValueRange, ValueRange>
   ctrl(ValueRange controls, ValueRange targets,
-       const std::function<ValueRange(OpBuilder&, ValueRange)>& body);
+       const std::function<ValueRange(ValueRange)>& body);
 
   //===--------------------------------------------------------------------===//
   // Deallocation

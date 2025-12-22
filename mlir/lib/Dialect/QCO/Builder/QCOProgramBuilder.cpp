@@ -209,24 +209,20 @@ Value QCOProgramBuilder::reset(Value qubit) {
       const std::variant<double, Value>&(PARAM), Value control) {              \
     checkFinalized();                                                          \
     const auto controlsOut =                                                   \
-        ctrl(control, {},                                                      \
-             [&](OpBuilder& b, ValueRange /*targets*/) -> ValueRange {         \
-               OP_CLASS::create(b, loc, PARAM);                                \
-               return {};                                                      \
-             })                                                                \
-            .first;                                                            \
+        ctrl(control, {}, [&](ValueRange /*targets*/) -> ValueRange {          \
+          OP_CLASS::create(*this, loc, PARAM);                                 \
+          return {};                                                           \
+        }).first;                                                              \
     return controlsOut[0];                                                     \
   }                                                                            \
   ValueRange QCOProgramBuilder::mc##OP_NAME(                                   \
       const std::variant<double, Value>&(PARAM), ValueRange controls) {        \
     checkFinalized();                                                          \
     const auto controlsOut =                                                   \
-        ctrl(controls, {},                                                     \
-             [&](OpBuilder& b, ValueRange /*targets*/) -> ValueRange {         \
-               OP_CLASS::create(b, loc, PARAM);                                \
-               return {};                                                      \
-             })                                                                \
-            .first;                                                            \
+        ctrl(controls, {}, [&](ValueRange /*targets*/) -> ValueRange {         \
+          OP_CLASS::create(*this, loc, PARAM);                                 \
+          return {};                                                           \
+        }).first;                                                              \
     return controlsOut;                                                        \
   }
 
@@ -247,9 +243,9 @@ DEFINE_ZERO_TARGET_ONE_PARAMETER(GPhaseOp, gphase, theta)
   std::pair<Value, Value> QCOProgramBuilder::c##OP_NAME(Value control,         \
                                                         Value target) {        \
     checkFinalized();                                                          \
-    const auto [controlsOut, targetsOut] = ctrl(                               \
-        control, target, [&](OpBuilder& b, ValueRange targets) -> ValueRange { \
-          const auto op = OP_CLASS::create(b, loc, targets[0]);                \
+    const auto [controlsOut, targetsOut] =                                     \
+        ctrl(control, target, [&](ValueRange targets) -> ValueRange {          \
+          const auto op = OP_CLASS::create(*this, loc, targets[0]);            \
           return op->getResults();                                             \
         });                                                                    \
     return {controlsOut[0], targetsOut[0]};                                    \
@@ -258,11 +254,10 @@ DEFINE_ZERO_TARGET_ONE_PARAMETER(GPhaseOp, gphase, theta)
       ValueRange controls, Value target) {                                     \
     checkFinalized();                                                          \
     const auto [controlsOut, targetsOut] =                                     \
-        ctrl(controls, target,                                                 \
-             [&](OpBuilder& b, ValueRange targets) -> ValueRange {             \
-               const auto op = OP_CLASS::create(b, loc, targets[0]);           \
-               return op->getResults();                                        \
-             });                                                               \
+        ctrl(controls, target, [&](ValueRange targets) -> ValueRange {         \
+          const auto op = OP_CLASS::create(*this, loc, targets[0]);            \
+          return op->getResults();                                             \
+        });                                                                    \
     return {controlsOut, targetsOut[0]};                                       \
   }
 
@@ -295,9 +290,9 @@ DEFINE_ONE_TARGET_ZERO_PARAMETER(SXdgOp, sxdg)
       const std::variant<double, Value>&(PARAM), Value control,                \
       Value target) {                                                          \
     checkFinalized();                                                          \
-    const auto [controlsOut, targetsOut] = ctrl(                               \
-        control, target, [&](OpBuilder& b, ValueRange targets) -> ValueRange { \
-          const auto op = OP_CLASS::create(b, loc, targets[0], PARAM);         \
+    const auto [controlsOut, targetsOut] =                                     \
+        ctrl(control, target, [&](ValueRange targets) -> ValueRange {          \
+          const auto op = OP_CLASS::create(*this, loc, targets[0], PARAM);     \
           return op->getResults();                                             \
         });                                                                    \
     return {controlsOut[0], targetsOut[0]};                                    \
@@ -307,11 +302,10 @@ DEFINE_ONE_TARGET_ZERO_PARAMETER(SXdgOp, sxdg)
       Value target) {                                                          \
     checkFinalized();                                                          \
     const auto [controlsOut, targetsOut] =                                     \
-        ctrl(controls, target,                                                 \
-             [&](OpBuilder& b, ValueRange targets) -> ValueRange {             \
-               const auto op = OP_CLASS::create(b, loc, targets[0], PARAM);    \
-               return op->getResults();                                        \
-             });                                                               \
+        ctrl(controls, target, [&](ValueRange targets) -> ValueRange {         \
+          const auto op = OP_CLASS::create(*this, loc, targets[0], PARAM);     \
+          return op->getResults();                                             \
+        });                                                                    \
     return {controlsOut, targetsOut[0]};                                       \
   }
 
@@ -339,10 +333,10 @@ DEFINE_ONE_TARGET_ONE_PARAMETER(POp, p, phi)
       const std::variant<double, Value>&(PARAM2), Value control,               \
       Value target) {                                                          \
     checkFinalized();                                                          \
-    const auto [controlsOut, targetsOut] = ctrl(                               \
-        control, target, [&](OpBuilder& b, ValueRange targets) -> ValueRange { \
+    const auto [controlsOut, targetsOut] =                                     \
+        ctrl(control, target, [&](ValueRange targets) -> ValueRange {          \
           const auto op =                                                      \
-              OP_CLASS::create(b, loc, targets[0], PARAM1, PARAM2);            \
+              OP_CLASS::create(*this, loc, targets[0], PARAM1, PARAM2);        \
           return op->getResults();                                             \
         });                                                                    \
     return {controlsOut[0], targetsOut[0]};                                    \
@@ -353,12 +347,11 @@ DEFINE_ONE_TARGET_ONE_PARAMETER(POp, p, phi)
       Value target) {                                                          \
     checkFinalized();                                                          \
     const auto [controlsOut, targetsOut] =                                     \
-        ctrl(controls, target,                                                 \
-             [&](OpBuilder& b, ValueRange targets) -> ValueRange {             \
-               const auto op =                                                 \
-                   OP_CLASS::create(b, loc, targets[0], PARAM1, PARAM2);       \
-               return op->getResults();                                        \
-             });                                                               \
+        ctrl(controls, target, [&](ValueRange targets) -> ValueRange {         \
+          const auto op =                                                      \
+              OP_CLASS::create(*this, loc, targets[0], PARAM1, PARAM2);        \
+          return op->getResults();                                             \
+        });                                                                    \
     return {controlsOut, targetsOut[0]};                                       \
   }
 
@@ -387,10 +380,10 @@ DEFINE_ONE_TARGET_TWO_PARAMETER(U2Op, u2, phi, lambda)
       const std::variant<double, Value>&(PARAM3), Value control,               \
       Value target) {                                                          \
     checkFinalized();                                                          \
-    const auto [controlsOut, targetsOut] = ctrl(                               \
-        control, target, [&](OpBuilder& b, ValueRange targets) -> ValueRange { \
-          const auto op =                                                      \
-              OP_CLASS::create(b, loc, targets[0], PARAM1, PARAM2, PARAM3);    \
+    const auto [controlsOut, targetsOut] =                                     \
+        ctrl(control, target, [&](ValueRange targets) -> ValueRange {          \
+          const auto op = OP_CLASS::create(*this, loc, targets[0], PARAM1,     \
+                                           PARAM2, PARAM3);                    \
           return op->getResults();                                             \
         });                                                                    \
     return {controlsOut[0], targetsOut[0]};                                    \
@@ -402,12 +395,11 @@ DEFINE_ONE_TARGET_TWO_PARAMETER(U2Op, u2, phi, lambda)
       Value target) {                                                          \
     checkFinalized();                                                          \
     const auto [controlsOut, targetsOut] =                                     \
-        ctrl(controls, target,                                                 \
-             [&](OpBuilder& b, ValueRange targets) -> ValueRange {             \
-               const auto op = OP_CLASS::create(b, loc, targets[0], PARAM1,    \
-                                                PARAM2, PARAM3);               \
-               return op->getResults();                                        \
-             });                                                               \
+        ctrl(controls, target, [&](ValueRange targets) -> ValueRange {         \
+          const auto op = OP_CLASS::create(*this, loc, targets[0], PARAM1,     \
+                                           PARAM2, PARAM3);                    \
+          return op->getResults();                                             \
+        });                                                                    \
     return {controlsOut, targetsOut[0]};                                       \
   }
 
@@ -431,26 +423,24 @@ DEFINE_ONE_TARGET_THREE_PARAMETER(UOp, u, theta, phi, lambda)
   std::pair<Value, std::pair<Value, Value>> QCOProgramBuilder::c##OP_NAME(     \
       Value control, Value qubit0, Value qubit1) {                             \
     checkFinalized();                                                          \
-    const auto [controlsOut, targetsOut] =                                     \
-        ctrl(control, {qubit0, qubit1},                                        \
-             [&](OpBuilder& b, ValueRange targets) -> ValueRange {             \
-               const auto op =                                                 \
-                   OP_CLASS::create(b, loc, targets[0], targets[1]);           \
-               return op->getResults();                                        \
-             });                                                               \
+    const auto [controlsOut, targetsOut] = ctrl(                               \
+        control, {qubit0, qubit1}, [&](ValueRange targets) -> ValueRange {     \
+          const auto op =                                                      \
+              OP_CLASS::create(*this, loc, targets[0], targets[1]);            \
+          return op->getResults();                                             \
+        });                                                                    \
     return {controlsOut[0], {targetsOut[0], targetsOut[1]}};                   \
   }                                                                            \
   std::pair<ValueRange, std::pair<Value, Value>>                               \
       QCOProgramBuilder::mc##OP_NAME(ValueRange controls, Value qubit0,        \
                                      Value qubit1) {                           \
     checkFinalized();                                                          \
-    const auto [controlsOut, targetsOut] =                                     \
-        ctrl(controls, {qubit0, qubit1},                                       \
-             [&](OpBuilder& b, ValueRange targets) -> ValueRange {             \
-               const auto op =                                                 \
-                   OP_CLASS::create(b, loc, targets[0], targets[1]);           \
-               return op->getResults();                                        \
-             });                                                               \
+    const auto [controlsOut, targetsOut] = ctrl(                               \
+        controls, {qubit0, qubit1}, [&](ValueRange targets) -> ValueRange {    \
+          const auto op =                                                      \
+              OP_CLASS::create(*this, loc, targets[0], targets[1]);            \
+          return op->getResults();                                             \
+        });                                                                    \
     return {controlsOut, {targetsOut[0], targetsOut[1]}};                      \
   }
 
@@ -478,13 +468,12 @@ DEFINE_TWO_TARGET_ZERO_PARAMETER(ECROp, ecr)
       const std::variant<double, Value>&(PARAM), Value control, Value qubit0,  \
       Value qubit1) {                                                          \
     checkFinalized();                                                          \
-    const auto [controlsOut, targetsOut] =                                     \
-        ctrl(control, {qubit0, qubit1},                                        \
-             [&](OpBuilder& b, ValueRange targets) -> ValueRange {             \
-               const auto op =                                                 \
-                   OP_CLASS::create(b, loc, targets[0], targets[1], PARAM);    \
-               return op->getResults();                                        \
-             });                                                               \
+    const auto [controlsOut, targetsOut] = ctrl(                               \
+        control, {qubit0, qubit1}, [&](ValueRange targets) -> ValueRange {     \
+          const auto op =                                                      \
+              OP_CLASS::create(*this, loc, targets[0], targets[1], PARAM);     \
+          return op->getResults();                                             \
+        });                                                                    \
     return {controlsOut[0], {targetsOut[0], targetsOut[1]}};                   \
   }                                                                            \
   std::pair<ValueRange, std::pair<Value, Value>>                               \
@@ -492,13 +481,12 @@ DEFINE_TWO_TARGET_ZERO_PARAMETER(ECROp, ecr)
           const std::variant<double, Value>&(PARAM), ValueRange controls,      \
           Value qubit0, Value qubit1) {                                        \
     checkFinalized();                                                          \
-    const auto [controlsOut, targetsOut] =                                     \
-        ctrl(controls, {qubit0, qubit1},                                       \
-             [&](OpBuilder& b, ValueRange targets) -> ValueRange {             \
-               const auto op =                                                 \
-                   OP_CLASS::create(b, loc, targets[0], targets[1], PARAM);    \
-               return op->getResults();                                        \
-             });                                                               \
+    const auto [controlsOut, targetsOut] = ctrl(                               \
+        controls, {qubit0, qubit1}, [&](ValueRange targets) -> ValueRange {    \
+          const auto op =                                                      \
+              OP_CLASS::create(*this, loc, targets[0], targets[1], PARAM);     \
+          return op->getResults();                                             \
+        });                                                                    \
     return {controlsOut, {targetsOut[0], targetsOut[1]}};                      \
   }
 
@@ -529,13 +517,12 @@ DEFINE_TWO_TARGET_ONE_PARAMETER(RZZOp, rzz, theta)
       const std::variant<double, Value>&(PARAM2), Value control, Value qubit0, \
       Value qubit1) {                                                          \
     checkFinalized();                                                          \
-    const auto [controlsOut, targetsOut] =                                     \
-        ctrl(control, {qubit0, qubit1},                                        \
-             [&](OpBuilder& b, ValueRange targets) -> ValueRange {             \
-               const auto op = OP_CLASS::create(b, loc, targets[0],            \
-                                                targets[1], PARAM1, PARAM2);   \
-               return op->getResults();                                        \
-             });                                                               \
+    const auto [controlsOut, targetsOut] = ctrl(                               \
+        control, {qubit0, qubit1}, [&](ValueRange targets) -> ValueRange {     \
+          const auto op = OP_CLASS::create(*this, loc, targets[0], targets[1], \
+                                           PARAM1, PARAM2);                    \
+          return op->getResults();                                             \
+        });                                                                    \
     return {controlsOut[0], {targetsOut[0], targetsOut[1]}};                   \
   }                                                                            \
   std::pair<ValueRange, std::pair<Value, Value>>                               \
@@ -544,13 +531,12 @@ DEFINE_TWO_TARGET_ONE_PARAMETER(RZZOp, rzz, theta)
           const std::variant<double, Value>&(PARAM2), ValueRange controls,     \
           Value qubit0, Value qubit1) {                                        \
     checkFinalized();                                                          \
-    const auto [controlsOut, targetsOut] =                                     \
-        ctrl(controls, {qubit0, qubit1},                                       \
-             [&](OpBuilder& b, ValueRange targets) -> ValueRange {             \
-               const auto op = OP_CLASS::create(b, loc, targets[0],            \
-                                                targets[1], PARAM1, PARAM2);   \
-               return op->getResults();                                        \
-             });                                                               \
+    const auto [controlsOut, targetsOut] = ctrl(                               \
+        controls, {qubit0, qubit1}, [&](ValueRange targets) -> ValueRange {    \
+          const auto op = OP_CLASS::create(*this, loc, targets[0], targets[1], \
+                                           PARAM1, PARAM2);                    \
+          return op->getResults();                                             \
+        });                                                                    \
     return {controlsOut, {targetsOut[0], targetsOut[1]}};                      \
   }
 
@@ -576,9 +562,9 @@ ValueRange QCOProgramBuilder::barrier(ValueRange qubits) {
 // Modifiers
 //===----------------------------------------------------------------------===//
 
-std::pair<ValueRange, ValueRange> QCOProgramBuilder::ctrl(
-    ValueRange controls, ValueRange targets,
-    const std::function<ValueRange(OpBuilder&, ValueRange)>& body) {
+std::pair<ValueRange, ValueRange>
+QCOProgramBuilder::ctrl(ValueRange controls, ValueRange targets,
+                        const std::function<ValueRange(ValueRange)>& body) {
   checkFinalized();
 
   auto ctrlOp = CtrlOp::create(*this, loc, controls, targets, body);

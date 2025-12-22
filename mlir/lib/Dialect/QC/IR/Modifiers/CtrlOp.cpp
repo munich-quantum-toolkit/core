@@ -97,8 +97,8 @@ struct CtrlInlineGPhase final : OpRewritePattern<CtrlOp> {
     SmallVector<Value> newControls(op.getControls());
     const auto newTarget = newControls.back();
     newControls.pop_back();
-    CtrlOp::create(rewriter, op.getLoc(), newControls, [&](OpBuilder& b) {
-      POp::create(b, op.getLoc(), newTarget, gPhaseOp.getTheta());
+    CtrlOp::create(rewriter, op.getLoc(), newControls, [&] {
+      POp::create(rewriter, op.getLoc(), newTarget, gPhaseOp.getTheta());
     });
     rewriter.eraseOp(op);
 
@@ -161,14 +161,14 @@ void CtrlOp::build(OpBuilder& odsBuilder, OperationState& odsState,
 
 void CtrlOp::build(OpBuilder& odsBuilder, OperationState& odsState,
                    ValueRange controls,
-                   const std::function<void(OpBuilder&)>& bodyBuilder) {
+                   const std::function<void()>& bodyBuilder) {
   const OpBuilder::InsertionGuard guard(odsBuilder);
   odsState.addOperands(controls);
   auto* region = odsState.addRegion();
   auto& block = region->emplaceBlock();
 
   odsBuilder.setInsertionPointToStart(&block);
-  bodyBuilder(odsBuilder);
+  bodyBuilder();
   odsBuilder.create<YieldOp>(odsState.location);
 }
 
