@@ -33,13 +33,10 @@
 #include <nanobind/stl/pair.h>    // NOLINT(misc-include-cleaner)
 #include <nanobind/stl/set.h>     // NOLINT(misc-include-cleaner)
 #include <nanobind/stl/string.h>  // NOLINT(misc-include-cleaner)
-#include <nanobind/stl/variant.h> // NOLINT(misc-include-cleaner)
 #include <nanobind/stl/vector.h>  // NOLINT(misc-include-cleaner)
 #include <random>
-#include <set>
 #include <stdexcept>
 #include <utility>
-#include <variant>
 #include <vector>
 
 namespace mqt {
@@ -53,9 +50,6 @@ using SingleQubitMatrix =
     nb::ndarray<nb::numpy, std::complex<dd::fp>, nb::shape<2, 2>>;
 using TwoQubitMatrix =
     nb::ndarray<nb::numpy, std::complex<dd::fp>, nb::shape<4, 4>>;
-
-using Control = std::variant<qc::Control, nb::int_>;
-using Controls = std::set<Control>;
 
 namespace {
 
@@ -103,33 +97,6 @@ dd::mCachedEdge makeDDFromMatrix(dd::Package& p, const Matrix& m,
        makeDDFromMatrix(p, m, rowHalf, rowEnd, colStart, colHalf, level - 1),
        makeDDFromMatrix(p, m, rowHalf, rowEnd, colHalf, colEnd, level - 1)});
 }
-
-/// Helper function to convert Control variant to qc::Control
-qc::Control getControl(const Control& control) {
-  if (std::holds_alternative<qc::Control>(control)) {
-    return std::get<qc::Control>(control);
-  }
-  const auto controlInt =
-      static_cast<std::int64_t>(std::get<nb::int_>(control));
-  if (controlInt < 0) {
-    throw nb::value_error("Control qubit index cannot be negative");
-  }
-  const auto controlUint = static_cast<std::uint64_t>(controlInt);
-  if (controlUint > std::numeric_limits<qc::Qubit>::max()) {
-    throw nb::value_error("Control qubit index exceeds maximum value");
-  }
-  return static_cast<qc::Qubit>(controlUint);
-}
-
-/// Helper function to convert Controls variant to qc::Controls
-qc::Controls getControls(const Controls& controls) {
-  qc::Controls result;
-  for (const auto& control : controls) {
-    result.insert(getControl(control));
-  }
-  return result;
-}
-
 } // namespace
 
 // NOLINTNEXTLINE(misc-use-internal-linkage)
@@ -493,14 +460,19 @@ Returns:
 
   dd.def(
       "controlled_single_qubit_gate",
-      [](dd::Package& p, const SingleQubitMatrix& mat, const Control& control,
-         const dd::Qubit target) {
+      [](dd::Package& p, const SingleQubitMatrix& mat,
+         const qc::Control& control, const dd::Qubit target) {
         return p.makeGateDD({mat(0, 0), mat(0, 1), mat(1, 0), mat(1, 1)},
-                            getControl(control), target);
+                            control, target);
       },
       "matrix"_a, "control"_a, "target"_a,
       // keep the DD package alive while the returned matrix DD is alive.
       nb::keep_alive<0, 1>(),
+      nb::sig(
+          "def controlled_single_qubit_gate(self, "
+          "matrix: Annotated[ANDArray[numpy.complex128], {\"shape\": (2, 2)}],"
+          "control: mqt.core.ir.operations.Control | int,"
+          "target: int) -> mqt.core.dd.MatrixDD"),
       R"pb(Create the DD for a controlled single-qubit gate.
 
 Args:
@@ -513,14 +485,19 @@ Returns:
 
   dd.def(
       "multi_controlled_single_qubit_gate",
-      [](dd::Package& p, const SingleQubitMatrix& mat, const Controls& controls,
-         const dd::Qubit target) {
+      [](dd::Package& p, const SingleQubitMatrix& mat,
+         const qc::Controls& controls, const dd::Qubit target) {
         return p.makeGateDD({mat(0, 0), mat(0, 1), mat(1, 0), mat(1, 1)},
-                            getControls(controls), target);
+                            controls, target);
       },
       "matrix"_a, "controls"_a, "target"_a,
       // keep the DD package alive while the returned matrix DD is alive.
       nb::keep_alive<0, 1>(),
+      nb::sig(
+          "def multi_controlled_single_qubit_gate(self, "
+          "matrix: Annotated[ANDArray[numpy.complex128], {\"shape\": (2, 2)}],"
+          "controls: collections.abc.Set[mqt.core.ir.operations.Control | int],"
+          "target: int) -> mqt.core.dd.MatrixDD"),
       R"pb(Create the DD for a multi-controlled single-qubit gate.
 
 Args:
@@ -556,18 +533,23 @@ Returns:
 
   dd.def(
       "controlled_two_qubit_gate",
-      [](dd::Package& p, const TwoQubitMatrix& mat, const Control& control,
+      [](dd::Package& p, const TwoQubitMatrix& mat, const qc::Control& control,
          const dd::Qubit target0, const dd::Qubit target1) {
         return p.makeTwoQubitGateDD(
             {std::array{mat(0, 0), mat(0, 1), mat(0, 2), mat(0, 3)},
              {mat(1, 0), mat(1, 1), mat(1, 2), mat(1, 3)},
              {mat(2, 0), mat(2, 1), mat(2, 2), mat(2, 3)},
              {mat(3, 0), mat(3, 1), mat(3, 2), mat(3, 3)}},
-            getControl(control), target0, target1);
+            control, target0, target1);
       },
       "matrix"_a, "control"_a, "target0"_a, "target1"_a,
       // keep the DD package alive while the returned matrix DD is alive.
       nb::keep_alive<0, 1>(),
+      nb::sig(
+          "def controlled_two_qubit_gate(self, "
+          "matrix: Annotated[ANDArray[numpy.complex128], {\"shape\": (4, 4)}],"
+          "control: mqt.core.ir.operations.Control | int,"
+          "target0: int, target1: int) -> mqt.core.dd.MatrixDD"),
       R"pb(Create the DD for a controlled two-qubit gate.
 
 Args:
@@ -581,18 +563,24 @@ Returns:
 
   dd.def(
       "multi_controlled_two_qubit_gate",
-      [](dd::Package& p, const TwoQubitMatrix& mat, const Controls& controls,
-         const dd::Qubit target0, const dd::Qubit target1) {
+      [](dd::Package& p, const TwoQubitMatrix& mat,
+         const qc::Controls& controls, const dd::Qubit target0,
+         const dd::Qubit target1) {
         return p.makeTwoQubitGateDD(
             {std::array{mat(0, 0), mat(0, 1), mat(0, 2), mat(0, 3)},
              {mat(1, 0), mat(1, 1), mat(1, 2), mat(1, 3)},
              {mat(2, 0), mat(2, 1), mat(2, 2), mat(2, 3)},
              {mat(3, 0), mat(3, 1), mat(3, 2), mat(3, 3)}},
-            getControls(controls), target0, target1);
+            controls, target0, target1);
       },
       "matrix"_a, "controls"_a, "target0"_a, "target1"_a,
       // keep the DD package alive while the returned matrix DD is alive.
       nb::keep_alive<0, 1>(),
+      nb::sig(
+          "def multi_controlled_two_qubit_gate(self, "
+          "matrix: Annotated[ANDArray[numpy.complex128], {\"shape\": (4, 4)}],"
+          "controls: collections.abc.Set[mqt.core.ir.operations.Control | int],"
+          "target0: int, target1: int) -> mqt.core.dd.MatrixDD"),
       R"pb(Create the DD for a multi-controlled two-qubit gate.
 
 Args:
