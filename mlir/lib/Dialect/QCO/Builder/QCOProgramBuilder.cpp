@@ -583,7 +583,7 @@ std::pair<ValueRange, ValueRange> QCOProgramBuilder::ctrl(
 
   auto ctrlOp =
       CtrlOp::create(*this, loc, controls, targets,
-                     [this, &body](OpBuilder& builder, ValueRange targets) {
+                     [this, &body](OpBuilder& /*builder*/, ValueRange targets) {
                        return body(*this, targets);
                      });
 
