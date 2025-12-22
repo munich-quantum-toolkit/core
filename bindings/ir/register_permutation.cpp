@@ -101,7 +101,10 @@ Returns:
 
       .def(
           "__getitem__",
-          [](const qc::Permutation& p, const qc::Qubit q) { return p.at(q); },
+          [](const qc::Permutation& p, const nb::int_& index) {
+            const auto q = nbIntToQubit(index);
+            return p.at(q);
+          },
           "index"_a, R"pb(Get the value of the permutation at the given index.
 
 Args:
@@ -112,7 +115,9 @@ Returns:
 
       .def(
           "__setitem__",
-          [](qc::Permutation& p, const qc::Qubit q, const qc::Qubit r) {
+          [](qc::Permutation& p, const nb::int_& index, const nb::int_& value) {
+            const auto q = nbIntToQubit(index);
+            const auto r = nbIntToQubit(value);
             p[q] = r;
           },
           "index"_a, "value"_a,
@@ -124,7 +129,8 @@ Args:
 
       .def(
           "__delitem__",
-          [](qc::Permutation& p, const qc::Qubit q) {
+          [](qc::Permutation& p, const nb::int_& index) {
+            const auto q = nbIntToQubit(index);
             const auto it = p.find(q);
             if (it == p.end()) {
               // Match Python's KeyError semantics for missing keys.
