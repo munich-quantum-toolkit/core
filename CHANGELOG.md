@@ -25,7 +25,7 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 
 ### Changed
 
-- ♻️ Migrate Python bindings from `pybind11` to `nanobind` ([#1383]) ([**@denialhaag**])
+- ♻️ Migrate Python bindings from `pybind11` to `nanobind` ([#1383]) ([**@denialhaag**], [**@burgholzer**])
 - 📦️ Provide Stable ABI wheels for Python 3.12+ ([#1383]) ([**@burgholzer**], [**@denialhaag**])
 - 🚚 create dedicated `mqt.core.na` submodule to closely follow the structure of other submodules ([#1383]) ([**@burgholzer**])
 - ✨ Add common definitions and utilities for QDMI ([#1355]) ([**@burgholzer**])
