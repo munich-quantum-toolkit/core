@@ -1235,7 +1235,7 @@ Args:
 
   // P
 
-  qc.def("p", &qc::QuantumComputation::rz, "theta"_a, "q"_a,
+  qc.def("p", &qc::QuantumComputation::p, "theta"_a, "q"_a,
          R"pb(Apply a phase gate.
 
 .. math::
