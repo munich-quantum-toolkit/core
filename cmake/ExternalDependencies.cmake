@@ -69,9 +69,9 @@ if(BUILD_MQT_CORE_TESTS)
 endif()
 
 # cmake-format: off
-set(QDMI_VERSION 1.2.0
+set(QDMI_VERSION 1.2.1
         CACHE STRING "QDMI version")
-set(QDMI_REV "3da94506d365963db8b1e419488858cfa6371d2d" # v1.2.0
+set(QDMI_REV "d5e657c777b54c482b6fd372961ee59add2ded8b" # v1.2.1
         CACHE STRING "QDMI identifier (tag, branch or commit hash)")
 set(QDMI_REPO_OWNER "Munich-Quantum-Software-Stack"
         CACHE STRING "QDMI repository owner (change when using a fork)")
