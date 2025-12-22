@@ -603,7 +603,6 @@ QCOProgramBuilder& QCOProgramBuilder::dealloc(Value qubit) {
 ValueRange QCOProgramBuilder::scfFor(
     Value lowerbound, Value upperbound, Value step, ValueRange initArgs,
     const std::function<ValueRange(OpBuilder&, Value, ValueRange)>& body) {
-
   // Create the empty for operation
   auto forOp = create<scf::ForOp>(loc, lowerbound, upperbound, step, initArgs);
   auto* forBody = forOp.getBody();
@@ -627,6 +626,7 @@ ValueRange QCOProgramBuilder::scfFor(
        llvm::zip_equal(initArgs, forOp.getResults())) {
     updateQubitTracking(initArg, result, forOp->getParentRegion());
   }
+
   return forOp->getResults();
 }
 
@@ -634,41 +634,49 @@ ValueRange QCOProgramBuilder::scfWhile(
     ValueRange initArgs,
     const std::function<ValueRange(OpBuilder&, ValueRange)>& beforeBody,
     const std::function<ValueRange(OpBuilder&, ValueRange)>& afterBody) {
+  // Create the empty while operation
   auto whileOp = create<scf::WhileOp>(loc, initArgs.getTypes(), initArgs);
   const SmallVector<Location> locs(initArgs.size(), loc);
 
   OpBuilder::InsertionGuard guard(*this);
+
+  // Construct the before block
   auto* beforeBlock =
       createBlock(&whileOp.getBefore(), {}, initArgs.getTypes(), locs);
   auto beforeArgs = beforeBlock->getArguments();
   auto* beforeRegion = beforeBlock->getParent();
 
+  // Set the insertionpoint
   setInsertionPointToStart(beforeBlock);
 
+  // Add the beforeArgs to the validQubits
   for (Value arg : beforeArgs) {
     validQubits[beforeRegion].insert(arg);
   }
 
   beforeBody(*this, beforeArgs);
 
+  // Construct the after block
   auto* afterBlock =
       createBlock(&whileOp.getAfter(), {}, initArgs.getTypes(), locs);
   auto afterArgs = afterBlock->getArguments();
+  auto* afterRegion = afterBlock->getParent();
 
+  // Set the insertionpoint
   setInsertionPointToStart(afterBlock);
 
-  auto* afterRegion = afterBlock->getParent();
+  // Add the afterArgs to the validQubits
   for (Value arg : afterArgs) {
     validQubits[afterRegion].insert(arg);
   }
 
   afterBody(*this, afterArgs);
 
+  // Update the qubit tracking
   for (auto [arg, result] : llvm::zip_equal(initArgs, whileOp.getResults())) {
     updateQubitTracking(arg, result, whileOp->getParentRegion());
   }
 
-  setInsertionPointAfter(whileOp);
   return whileOp->getResults();
 }
 
@@ -688,7 +696,7 @@ ValueRange QCOProgramBuilder::scfIf(
   OpBuilder::InsertionGuard guard(*this);
   setInsertionPointToStart(&thenBlock);
 
-  // add the qubits to the validQubits of the then and else region
+  // Add the qubits to the validQubits of the then and else region
   for (Value arg : qubits) {
     validQubits[thenRegion].insert(arg);
     validQubits[elseRegion].insert(arg);
@@ -698,7 +706,6 @@ ValueRange QCOProgramBuilder::scfIf(
   thenBody(*this);
 
   // Set the insertionpoint
-  OpBuilder::InsertionGuard guardElse(*this);
   setInsertionPointToStart(&elseBlock);
 
   // Build the else body
@@ -709,7 +716,6 @@ ValueRange QCOProgramBuilder::scfIf(
     updateQubitTracking(arg, result, ifOp->getParentRegion());
   }
 
-  setInsertionPointAfter(ifOp);
   return ifOp->getResults();
 }
 
@@ -744,13 +750,16 @@ QCOProgramBuilder& QCOProgramBuilder::funcReturn(ValueRange returnValues) {
 QCOProgramBuilder& QCOProgramBuilder::funcFunc(
     StringRef name, TypeRange argTypes, TypeRange resultTypes,
     const std::function<void(OpBuilder&, ValueRange)>& body) {
-  const auto funcType = getFunctionType(argTypes, resultTypes);
+  // Set the insertionPoint
   OpBuilder::InsertionGuard guard(*this);
   setInsertionPointToEnd(module.getBody());
-  auto funcOp = create<func::FuncOp>(loc, name, funcType);
 
+  // Create the empty func operation
+  const auto funcType = getFunctionType(argTypes, resultTypes);
+  auto funcOp = create<func::FuncOp>(loc, name, funcType);
   auto* entryBlock = funcOp.addEntryBlock();
 
+  // Add the arguments to the validQubits
   for (Value arg : entryBlock->getArguments()) {
     validQubits[entryBlock->getParent()].insert(arg);
   }
@@ -759,6 +768,7 @@ QCOProgramBuilder& QCOProgramBuilder::funcFunc(
 
   // Build function body
   body(*this, entryBlock->getArguments());
+
   return *this;
 }
 

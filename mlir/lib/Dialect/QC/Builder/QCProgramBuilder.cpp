@@ -517,20 +517,24 @@ QCProgramBuilder& QCProgramBuilder::funcReturn() {
   create<func::ReturnOp>(loc);
   return *this;
 }
+
 QCProgramBuilder& QCProgramBuilder::funcFunc(
     StringRef name, TypeRange argTypes,
     const std::function<void(OpBuilder&, ValueRange)>& body) {
-  const auto funcType = getFunctionType(argTypes, {});
+  // Set the insertionPoint
   OpBuilder::InsertionGuard guard(*this);
   setInsertionPointToEnd(module.getBody());
-  auto funcOp = create<func::FuncOp>(loc, name, funcType);
 
+  // Create the empty func operation
+  const auto funcType = getFunctionType(argTypes, {});
+  auto funcOp = create<func::FuncOp>(loc, name, funcType);
   auto* entryBlock = funcOp.addEntryBlock();
 
   setInsertionPointToStart(entryBlock);
 
   // Build function body
   body(*this, entryBlock->getArguments());
+
   return *this;
 }
 

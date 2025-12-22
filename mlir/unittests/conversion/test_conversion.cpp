@@ -180,10 +180,11 @@ TEST_F(ConversionTest, ScfWhileTest) {
     b.scfWhile(
         [&](OpBuilder& b) {
           auto
-              measure = // NOLINTNEXTLINE(cppcoreguidelines-pro-type-static-cast-downcast)
+              measureResult = // NOLINTNEXTLINE(cppcoreguidelines-pro-type-static-cast-downcast)
               static_cast<mlir::qc::QCProgramBuilder&>(b).measure(q0);
           // NOLINTNEXTLINE(cppcoreguidelines-pro-type-static-cast-downcast)
-          static_cast<mlir::qc::QCProgramBuilder&>(b).scfCondition(measure);
+          static_cast<mlir::qc::QCProgramBuilder&>(b).scfCondition(
+              measureResult);
         },
         [&](OpBuilder&
                 b) { // NOLINTNEXTLINE(cppcoreguidelines-pro-type-static-cast-downcast)
@@ -205,13 +206,15 @@ TEST_F(ConversionTest, ScfWhileTest) {
     auto scfWhileResult = b.scfWhile(
         ValueRange{q0},
         [&](OpBuilder& b, ValueRange iterArgs) {
-          // NOLINTNEXTLINE(cppcoreguidelines-pro-type-static-cast-downcast)
-          auto measure = static_cast<mlir::qco::QCOProgramBuilder&>(b).measure(
-              iterArgs
-                  [0]); // NOLINTNEXTLINE(cppcoreguidelines-pro-type-static-cast-downcast)
+          auto
+              [q1,
+               measureResult] = // NOLINTNEXTLINE(cppcoreguidelines-pro-type-static-cast-downcast)
+              static_cast<mlir::qco::QCOProgramBuilder&>(b).measure(
+                  iterArgs
+                      [0]); // NOLINTNEXTLINE(cppcoreguidelines-pro-type-static-cast-downcast)
           static_cast<mlir::qco::QCOProgramBuilder&>(b).scfCondition(
-              measure.second, ValueRange{measure.first});
-          return measure.first;
+              measureResult, ValueRange{q1});
+          return q1;
         },
         [&](OpBuilder& b, ValueRange iterArgs) {
           auto
@@ -239,15 +242,16 @@ TEST_F(ConversionTest, ScfWhileTest2) {
     auto q0 = b.allocQubit();
     auto scfWhileResult = b.scfWhile(
         ValueRange{q0},
-        [&](OpBuilder& b,
-            ValueRange
-                iterArgs) { // NOLINTNEXTLINE(cppcoreguidelines-pro-type-static-cast-downcast)
-          auto measure = static_cast<mlir::qco::QCOProgramBuilder&>(b).measure(
-              iterArgs
-                  [0]); // NOLINTNEXTLINE(cppcoreguidelines-pro-type-static-cast-downcast)
+        [&](OpBuilder& b, ValueRange iterArgs) {
+          auto
+              [q1,
+               measureResult] = // NOLINTNEXTLINE(cppcoreguidelines-pro-type-static-cast-downcast)
+              static_cast<mlir::qco::QCOProgramBuilder&>(b).measure(
+                  iterArgs
+                      [0]); // NOLINTNEXTLINE(cppcoreguidelines-pro-type-static-cast-downcast)
           static_cast<mlir::qco::QCOProgramBuilder&>(b).scfCondition(
-              measure.second, ValueRange{measure.first});
-          return measure.first;
+              measureResult, ValueRange{q1});
+          return q1;
         },
         [&](OpBuilder& b, ValueRange iterArgs) {
           auto
@@ -274,9 +278,11 @@ TEST_F(ConversionTest, ScfWhileTest2) {
     b.scfWhile(
         [&](OpBuilder&
                 b) { // NOLINTNEXTLINE(cppcoreguidelines-pro-type-static-cast-downcast)
-          auto measure = static_cast<mlir::qc::QCProgramBuilder&>(b).measure(
-              q0); // NOLINTNEXTLINE(cppcoreguidelines-pro-type-static-cast-downcast)
-          static_cast<mlir::qc::QCProgramBuilder&>(b).scfCondition(measure);
+          auto measureResult =
+              static_cast<mlir::qc::QCProgramBuilder&>(b).measure(
+                  q0); // NOLINTNEXTLINE(cppcoreguidelines-pro-type-static-cast-downcast)
+          static_cast<mlir::qc::QCProgramBuilder&>(b).scfCondition(
+              measureResult);
         },
         [&](OpBuilder&
                 b) { // NOLINTNEXTLINE(cppcoreguidelines-pro-type-static-cast-downcast)
@@ -322,29 +328,28 @@ TEST_F(ConversionTest, ScfIfTest) {
 
   auto expectedOutput = buildQCOIR([](mlir::qco::QCOProgramBuilder& b) {
     auto q0 = b.allocQubit();
-    auto measure = b.measure(q0);
+    auto [q1, measureResult] = b.measure(q0);
     auto scfIfResult = b.scfIf(
-        measure.second, ValueRange{measure.first},
+        measureResult, ValueRange{q1},
         [&](OpBuilder& b) {
           auto
-              q1 = // NOLINTNEXTLINE(cppcoreguidelines-pro-type-static-cast-downcast)
-              static_cast<mlir::qco::QCOProgramBuilder&>(b).h(measure.first);
+              q2 = // NOLINTNEXTLINE(cppcoreguidelines-pro-type-static-cast-downcast)
+              static_cast<mlir::qco::QCOProgramBuilder&>(b).h(q1);
           // NOLINTNEXTLINE(cppcoreguidelines-pro-type-static-cast-downcast)
-          auto q2 = static_cast<mlir::qco::QCOProgramBuilder&>(b).y(
-              q1); // NOLINTNEXTLINE(cppcoreguidelines-pro-type-static-cast-downcast)
-          static_cast<mlir::qco::QCOProgramBuilder&>(b).scfYield(q2);
-          return q2;
+          auto q3 = static_cast<mlir::qco::QCOProgramBuilder&>(b).y(
+              q2); // NOLINTNEXTLINE(cppcoreguidelines-pro-type-static-cast-downcast)
+          static_cast<mlir::qco::QCOProgramBuilder&>(b).scfYield(q3);
+          return q3;
         },
         [&](OpBuilder& b) {
           auto
-              q1 = // NOLINTNEXTLINE(cppcoreguidelines-pro-type-static-cast-downcast)
+              q2 = // NOLINTNEXTLINE(cppcoreguidelines-pro-type-static-cast-downcast)
               static_cast<mlir::qco::QCOProgramBuilder&>(b).y(
-                  measure
-                      .first); // NOLINTNEXTLINE(cppcoreguidelines-pro-type-static-cast-downcast)
-          auto q2 = static_cast<mlir::qco::QCOProgramBuilder&>(b).h(
-              q1); // NOLINTNEXTLINE(cppcoreguidelines-pro-type-static-cast-downcast)
-          static_cast<mlir::qco::QCOProgramBuilder&>(b).scfYield(q2);
-          return q2;
+                  q1); // NOLINTNEXTLINE(cppcoreguidelines-pro-type-static-cast-downcast)
+          auto q3 = static_cast<mlir::qco::QCOProgramBuilder&>(b).h(
+              q2); // NOLINTNEXTLINE(cppcoreguidelines-pro-type-static-cast-downcast)
+          static_cast<mlir::qco::QCOProgramBuilder&>(b).scfYield(q3);
+          return q3;
         });
     b.h(scfIfResult[0]);
   });
@@ -359,30 +364,28 @@ TEST_F(ConversionTest, ScfIfTest2) {
   // Test conversion from qco to qc for scf.if operation
   auto input = buildQCOIR([](mlir::qco::QCOProgramBuilder& b) {
     auto q0 = b.allocQubit();
-    auto measure = b.measure(q0);
+    auto [q1, measureResult] = b.measure(q0);
     auto scfIfResult = b.scfIf(
-        measure.second, ValueRange{measure.first},
-        [&](OpBuilder& b) -> ValueRange {
+        measureResult, ValueRange{q1},
+        [&](OpBuilder& b) {
           auto
-              q1 = // NOLINTNEXTLINE(cppcoreguidelines-pro-type-static-cast-downcast)
-              static_cast<mlir::qco::QCOProgramBuilder&>(b).h(
-                  measure
-                      .first); // NOLINTNEXTLINE(cppcoreguidelines-pro-type-static-cast-downcast)
-          auto q2 = static_cast<mlir::qco::QCOProgramBuilder&>(b).y(
-              q1); // NOLINTNEXTLINE(cppcoreguidelines-pro-type-static-cast-downcast)
-          static_cast<mlir::qco::QCOProgramBuilder&>(b).scfYield(q2);
-          return q2; // NOLINT
-        },
-        [&](OpBuilder& b) -> ValueRange {
-          auto
-              q1 = // NOLINTNEXTLINE(cppcoreguidelines-pro-type-static-cast-downcast)
-              static_cast<mlir::qco::QCOProgramBuilder&>(b).y(
-                  measure
-                      .first); // NOLINTNEXTLINE(cppcoreguidelines-pro-type-static-cast-downcast)
-          auto q2 = static_cast<mlir::qco::QCOProgramBuilder&>(b).h(q1);
+              q2 = // NOLINTNEXTLINE(cppcoreguidelines-pro-type-static-cast-downcast)
+              static_cast<mlir::qco::QCOProgramBuilder&>(b).h(q1);
           // NOLINTNEXTLINE(cppcoreguidelines-pro-type-static-cast-downcast)
-          static_cast<mlir::qco::QCOProgramBuilder&>(b).scfYield(q2);
-          return q2; // NOLINT
+          auto q3 = static_cast<mlir::qco::QCOProgramBuilder&>(b).y(
+              q2); // NOLINTNEXTLINE(cppcoreguidelines-pro-type-static-cast-downcast)
+          static_cast<mlir::qco::QCOProgramBuilder&>(b).scfYield(q3);
+          return q3;
+        },
+        [&](OpBuilder& b) {
+          auto
+              q2 = // NOLINTNEXTLINE(cppcoreguidelines-pro-type-static-cast-downcast)
+              static_cast<mlir::qco::QCOProgramBuilder&>(b).y(
+                  q1); // NOLINTNEXTLINE(cppcoreguidelines-pro-type-static-cast-downcast)
+          auto q3 = static_cast<mlir::qco::QCOProgramBuilder&>(b).h(
+              q2); // NOLINTNEXTLINE(cppcoreguidelines-pro-type-static-cast-downcast)
+          static_cast<mlir::qco::QCOProgramBuilder&>(b).scfYield(q3);
+          return q3;
         });
     b.h(scfIfResult[0]);
   });
