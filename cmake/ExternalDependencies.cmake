@@ -13,19 +13,12 @@ include(CMakeDependentOption)
 set(FETCH_PACKAGES "")
 
 if(BUILD_MQT_CORE_BINDINGS)
-  if(NOT SKBUILD)
-    # Manually detect the installed pybind11 package and import it into CMake.
-    execute_process(
-      COMMAND "${Python_EXECUTABLE}" -m pybind11 --cmakedir
-      OUTPUT_STRIP_TRAILING_WHITESPACE
-      OUTPUT_VARIABLE pybind11_DIR)
-    list(APPEND CMAKE_PREFIX_PATH "${pybind11_DIR}")
-  endif()
-
-  message(STATUS "Python executable: ${Python_EXECUTABLE}")
-
-  # add pybind11 library
-  find_package(pybind11 3.0.1 CONFIG REQUIRED)
+  # Detect the installed nanobind package and import it into CMake
+  execute_process(
+    COMMAND "${Python_EXECUTABLE}" -m nanobind --cmake_dir
+    OUTPUT_STRIP_TRAILING_WHITESPACE
+    OUTPUT_VARIABLE nanobind_ROOT)
+  find_package(nanobind CONFIG REQUIRED)
 endif()
 
 set(JSON_VERSION
@@ -76,9 +69,9 @@ if(BUILD_MQT_CORE_TESTS)
 endif()
 
 # cmake-format: off
-set(QDMI_VERSION 1.2.0
+set(QDMI_VERSION 1.2.1
         CACHE STRING "QDMI version")
-set(QDMI_REV "3da94506d365963db8b1e419488858cfa6371d2d" # v1.2.0
+set(QDMI_REV "d5e657c777b54c482b6fd372961ee59add2ded8b" # v1.2.1
         CACHE STRING "QDMI identifier (tag, branch or commit hash)")
 set(QDMI_REPO_OWNER "Munich-Quantum-Software-Stack"
         CACHE STRING "QDMI repository owner (change when using a fork)")

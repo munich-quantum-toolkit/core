@@ -11,7 +11,7 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 
 ### Added
 
-- ✨ Add initial infrastructure for new QC and QCO MLIR dialects ([#1264]) ([**@burgholzer**], [**@denialhaag**])
+- ✨ Add initial infrastructure for new QC and QCO MLIR dialects ([#1264], [#1402]) ([**@burgholzer**], [**@denialhaag**])
 - ✨ Return device handle from `add_dynamic_device_library` for direct backend creation ([#1381]) ([**@marcelwa**])
 - ✨ Add IQM JSON support for job submission in Qiskit-QDMI Backend ([#1375], [#1382]) ([**@marcelwa**], [**@burgholzer**])
 - ✨ Add authentication support for QDMI sessions with token, username/password, auth file, auth URL, and project ID parameters ([#1355]) ([**@marcelwa**])
@@ -25,6 +25,9 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 
 ### Changed
 
+- ♻️ Migrate Python bindings from `pybind11` to `nanobind` ([#1383]) ([**@denialhaag**], [**@burgholzer**])
+- 📦️ Provide Stable ABI wheels for Python 3.12+ ([#1383]) ([**@burgholzer**], [**@denialhaag**])
+- 🚚 Create dedicated `mqt.core.na` submodule to closely follow the structure of other submodules ([#1383]) ([**@burgholzer**])
 - ✨ Add common definitions and utilities for QDMI ([#1355]) ([**@burgholzer**])
 - 🚚 Move `NA` QDMI device in its right place next to other QDMI devices ([#1355]) ([**@burgholzer**])
 - ♻️ Allow repeated loading of QDMI device library with potentially different session configurations ([#1355]) ([**@burgholzer**])
@@ -283,8 +286,10 @@ _📚 Refer to the [GitHub Release Notes](https://github.com/munich-quantum-tool
 
 <!-- PR links -->
 
+[#1402]: https://github.com/munich-quantum-toolkit/core/pull/1402
 [#1385]: https://github.com/munich-quantum-toolkit/core/pull/1385
 [#1384]: https://github.com/munich-quantum-toolkit/core/pull/1384
+[#1383]: https://github.com/munich-quantum-toolkit/core/pull/1383
 [#1382]: https://github.com/munich-quantum-toolkit/core/pull/1382
 [#1381]: https://github.com/munich-quantum-toolkit/core/pull/1381
 [#1378]: https://github.com/munich-quantum-toolkit/core/pull/1378

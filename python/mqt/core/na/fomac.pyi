@@ -6,102 +6,93 @@
 #
 # Licensed under the MIT License
 
-"""Reconstruction of NADevice from QDMI's Device class."""
+import mqt.core.fomac
 
-from collections.abc import Iterable
-
-from ..fomac import Device as GenericDevice
-
-__all__ = ["Device"]
-
-class Device(GenericDevice):
+class Device(mqt.core.fomac.Device):
     """Represents a device with a lattice of traps."""
-
-    class Vector:
-        """Represents a 2D vector."""
-
-        x: int
-        """
-        The x-coordinate of the vector.
-        """
-        y: int
-        """
-        The y-coordinate of the vector.
-        """
-        def __eq__(self, other: object) -> bool: ...
-        def __ne__(self, other: object) -> bool: ...
-
-    class Region:
-        """Represents a region in the device."""
-
-        origin: Device.Vector
-        """
-        The origin of the region.
-        """
-
-        class Size:
-            """Represents the size of a region."""
-
-            width: int
-            """
-            The width of the region.
-            """
-            height: int
-            """
-            The height of the region.
-            """
-            def __eq__(self, other: object) -> bool: ...
-            def __ne__(self, other: object) -> bool: ...
-
-        size: Size
-        """
-        The size of the region.
-        """
-
-        def __eq__(self, other: object) -> bool: ...
-        def __ne__(self, other: object) -> bool: ...
 
     class Lattice:
         """Represents a lattice of traps in the device."""
 
-        lattice_origin: Device.Vector
-        """
-        The origin of the lattice.
-        """
-        lattice_vector_1: Device.Vector
-        """
-        The first lattice vector.
-        """
-        lattice_vector_2: Device.Vector
-        """
-        The second lattice vector.
-        """
-        sublattice_offsets: Iterable[Device.Vector]
-        """
-        The offsets of the sublattices.
-        """
-        extent: Device.Region
-        """
-        The extent of the lattice.
-        """
-        def __eq__(self, other: object) -> bool: ...
-        def __ne__(self, other: object) -> bool: ...
+        class Vector:
+            """Represents a 2D vector."""
 
-    traps: Iterable[Device.Lattice]
-    """
-    The list of trap positions in the device.
-    """
-    t1: int
-    """
-    The T1 time of the device.
-    """
-    t2: int
-    """
-    The T2 time of the device.
-    """
+            @property
+            def x(self) -> int:
+                """The x-coordinate of the vector."""
 
-    @classmethod
-    def try_create_from_device(cls, device: GenericDevice) -> Device | None:
+            @property
+            def y(self) -> int:
+                """The y-coordinate of the vector."""
+
+            def __eq__(self, arg: object, /) -> bool: ...
+            def __ne__(self, arg: object, /) -> bool: ...
+
+        class Region:
+            """Represents a region in the device."""
+
+            class Size:
+                """Represents the size of a region."""
+
+                @property
+                def width(self) -> int:
+                    """The width of the region."""
+
+                @property
+                def height(self) -> int:
+                    """The height of the region."""
+
+                def __eq__(self, arg: object, /) -> bool: ...
+                def __ne__(self, arg: object, /) -> bool: ...
+
+            @property
+            def origin(self) -> Device.Lattice.Vector:
+                """The origin of the region."""
+
+            @property
+            def size(self) -> Device.Lattice.Region.Size:
+                """The size of the region."""
+
+            def __eq__(self, arg: object, /) -> bool: ...
+            def __ne__(self, arg: object, /) -> bool: ...
+
+        @property
+        def lattice_origin(self) -> Device.Lattice.Vector:
+            """The origin of the lattice."""
+
+        @property
+        def lattice_vector_1(self) -> Device.Lattice.Vector:
+            """The first lattice vector."""
+
+        @property
+        def lattice_vector_2(self) -> Device.Lattice.Vector:
+            """The second lattice vector."""
+
+        @property
+        def sublattice_offsets(self) -> list[Device.Lattice.Vector]:
+            """The offsets of the sublattices."""
+
+        @property
+        def extent(self) -> Device.Lattice.Region:
+            """The extent of the lattice."""
+
+        def __eq__(self, arg: object, /) -> bool: ...
+        def __ne__(self, arg: object, /) -> bool: ...
+
+    @property
+    def traps(self) -> list[Device.Lattice]:
+        """The list of trap positions in the device."""
+
+    @property
+    def t1(self) -> int:
+        """The T1 time of the device."""
+
+    @property
+    def t2(self) -> int:
+        """The T2 time of the device."""
+
+    @staticmethod
+    def try_create_from_device(device: mqt.core.fomac.Device) -> Device | None:
         """Create NA FoMaC Device from generic FoMaC Device.
 
         Args:
@@ -110,8 +101,9 @@ class Device(GenericDevice):
         Returns:
             The converted NA FoMaC Device or None if the conversion is not possible.
         """
-    def __eq__(self, other: object) -> bool: ...
-    def __ne__(self, other: object) -> bool: ...
 
-def devices() -> Iterable[Device]:
+    def __eq__(self, arg: object, /) -> bool: ...
+    def __ne__(self, arg: object, /) -> bool: ...
+
+def devices() -> list[Device]:
     """Returns a list of available devices."""

@@ -15,8 +15,13 @@ if(NOT TARGET ${TARGET_NAME})
     add_llvm_tool(${TARGET_NAME} Runner.cpp DEPENDS intrinsics_gen)
     export_executable_symbols(${TARGET_NAME})
   endif()
+
+  # Get the native target libraries
+  llvm_map_components_to_libnames(llvm_native_libs native)
+
   # Add link libraries
-  target_link_libraries(${TARGET_NAME} PRIVATE MQT::CoreQIRRuntime ${llvm_libs})
+  target_link_libraries(${TARGET_NAME} PRIVATE MQT::CoreQIRRuntime LLVMOrcDebugging
+                                               ${llvm_native_libs})
 
   # Set versioning information
   set_target_properties(${TARGET_NAME} PROPERTIES VERSION ${PROJECT_VERSION} EXPORT_NAME

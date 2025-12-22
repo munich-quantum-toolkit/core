@@ -15,14 +15,15 @@ namespace mqt {
 namespace nb = nanobind;
 
 // forward declarations
-void registerVariable(const nb::module_& m);
-void registerTerm(const nb::module_& m);
-void registerExpression(const nb::module_& m);
+void registerFomac(nb::module_& m);
 
-// NOLINTNEXTLINE(misc-use-internal-linkage)
-void registerSymbolic(const nb::module_& m) {
-  registerVariable(m);
-  registerTerm(m);
-  registerExpression(m);
+NB_MODULE(MQT_CORE_MODULE_NAME, m) {
+  m.doc() = R"pb(MQT Core NA - The MQT Core neutral atom module.
+
+This module contains all neutral atom related functionality of MQT Core.)pb";
+
+  nb::module_ fomac = m.def_submodule("fomac");
+  registerFomac(fomac);
 }
+
 } // namespace mqt

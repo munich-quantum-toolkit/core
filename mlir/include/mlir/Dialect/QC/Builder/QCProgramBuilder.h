@@ -833,7 +833,7 @@ public:
    *
    * @par Example:
    * ```c++
-   * builder.ctrl(q0, [&](auto& b) { b.x(q1); });
+   * builder.ctrl(q0, [&] { builder.x(q1); });
    * ```
    * ```mlir
    * qc.ctrl(%q0) {
@@ -842,7 +842,7 @@ public:
    * ```
    */
   QCProgramBuilder& ctrl(ValueRange controls,
-                         const std::function<void(OpBuilder&)>& body);
+                         const std::function<void()>& body);
 
   //===--------------------------------------------------------------------===//
   // Deallocation
