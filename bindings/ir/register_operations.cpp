@@ -8,29 +8,24 @@
  * Licensed under the MIT License
  */
 
-// These includes must be the first includes for any bindings code
-// clang-format off
-#include <pybind11/pybind11.h>
-#include <pybind11/stl.h> // NOLINT(misc-include-cleaner)
-// clang-format on
+#include <nanobind/nanobind.h>
 
 namespace mqt {
 
-namespace py = pybind11;
-using namespace pybind11::literals;
+namespace nb = nanobind;
 
 // forward declarations
-void registerOptype(const py::module& m);
-void registerControl(const py::module& m);
-void registerOperation(const py::module& m);
-void registerStandardOperation(const py::module& m);
-void registerCompoundOperation(const py::module& m);
-void registerNonUnitaryOperation(const py::module& m);
-void registerSymbolicOperation(const py::module& m);
-void registerIfElseOperation(const py::module& m);
+void registerOptype(const nb::module_& m);
+void registerControl(const nb::module_& m);
+void registerOperation(const nb::module_& m);
+void registerStandardOperation(const nb::module_& m);
+void registerCompoundOperation(const nb::module_& m);
+void registerNonUnitaryOperation(const nb::module_& m);
+void registerSymbolicOperation(const nb::module_& m);
+void registerIfElseOperation(const nb::module_& m);
 
 // NOLINTNEXTLINE(misc-use-internal-linkage)
-void registerOperations(py::module& m) {
+void registerOperations(const nb::module_& m) {
   registerOptype(m);
   registerControl(m);
   registerOperation(m);

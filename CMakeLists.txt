@@ -7,7 +7,7 @@
 # Licensed under the MIT License
 
 # set required cmake version
-cmake_minimum_required(VERSION 3.24...4.0)
+cmake_minimum_required(VERSION 3.24...4.2)
 
 project(
   mqt-core
@@ -47,7 +47,8 @@ if(BUILD_MQT_CORE_BINDINGS)
   endif()
 
   # top-level call to find Python
-  find_package(Python 3.10 REQUIRED COMPONENTS Interpreter Development.Module)
+  find_package(Python 3.10 REQUIRED COMPONENTS Interpreter Development.Module
+                                               ${SKBUILD_SABI_COMPONENT})
 endif()
 
 # check if this is the master project or used via add_subdirectory

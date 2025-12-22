@@ -13,51 +13,65 @@
 #include "dd/Export.hpp"
 #include "dd/Node.hpp"
 
-// These includes must be the first includes for any bindings code
-// clang-format off
-#include <pybind11/pybind11.h>
-#include <pybind11/stl.h> // NOLINT(misc-include-cleaner)
-
-#include <pybind11/buffer_info.h>
-#include <pybind11/cast.h>
-#include <pybind11/numpy.h> // NOLINT(misc-include-cleaner)
-// clang-format on
-
+#include <algorithm>
 #include <cmath>
 #include <complex>
 #include <cstddef>
+#include <memory>
+#include <nanobind/nanobind.h>
+#include <nanobind/ndarray.h>
+#include <nanobind/stl/complex.h> // NOLINT(misc-include-cleaner)
+#include <nanobind/stl/string.h>  // NOLINT(misc-include-cleaner)
+#include <nanobind/stl/vector.h>  // NOLINT(misc-include-cleaner)
 #include <sstream>
 #include <string>
 
 namespace mqt {
 
-namespace py = pybind11;
-using namespace pybind11::literals;
+namespace nb = nanobind;
+using namespace nb::literals;
 
-struct Vector {
-  dd::CVec v;
-};
+using Vector = nb::ndarray<nb::numpy, std::complex<dd::fp>, nb::ndim<1>>;
 
 // NOLINTNEXTLINE(misc-use-internal-linkage)
 Vector getVector(const dd::vEdge& v, const dd::fp threshold = 0.) {
-  return {v.getVector(threshold)};
+  auto vec = v.getVector(threshold);
+  auto dataPtr = std::make_unique<std::complex<dd::fp>[]>(vec.size());
+  std::ranges::copy(vec, dataPtr.get());
+  auto* data = dataPtr.release();
+  const nb::capsule owner(data, [](void* ptr) noexcept {
+    delete[] static_cast<std::complex<dd::fp>*>(ptr);
+  });
+  return Vector(data, {vec.size()}, owner);
 }
 
 // NOLINTNEXTLINE(misc-use-internal-linkage)
-void registerVectorDDs(const py::module& mod) {
-  auto vec = py::class_<dd::vEdge>(mod, "VectorDD");
+void registerVectorDDs(const nb::module_& m) {
+  auto vec = nb::class_<dd::vEdge>(
+      m, "VectorDD", "A class representing a vector decision diagram (DD).");
 
-  vec.def("is_terminal", &dd::vEdge::isTerminal);
-  vec.def("is_zero_terminal", &dd::vEdge::isZeroTerminal);
+  vec.def("is_terminal", &dd::vEdge::isTerminal,
+          "Check if the DD is a terminal node.");
 
-  vec.def("size", py::overload_cast<>(&dd::vEdge::size, py::const_));
+  vec.def("is_zero_terminal", &dd::vEdge::isZeroTerminal,
+          "Check if the DD is a zero terminal node.");
+
+  vec.def("size", nb::overload_cast<>(&dd::vEdge::size, nb::const_),
+          "Get the size of the DD by traversing it once.");
 
   vec.def(
       "__getitem__",
-      [](const dd::vEdge& v, const size_t idx) {
-        return v.getValueByIndex(idx);
+      [](const dd::vEdge& v, nb::ssize_t idx) {
+        const auto n = static_cast<nb::ssize_t>(v.size());
+        if (idx < 0) {
+          idx += n;
+        }
+        if (idx < 0 || idx >= n) {
+          throw nb::index_error();
+        }
+        return v.getValueByIndex(static_cast<std::size_t>(idx));
       },
-      "index"_a);
+      "key"_a, "Get the amplitude of a basis state by index.");
 
   vec.def(
       "get_amplitude",
@@ -65,18 +79,28 @@ void registerVectorDDs(const py::module& mod) {
          const std::string& decisions) {
         return v.getValueByPath(numQubits, decisions);
       },
-      "num_qubits"_a, "decisions"_a);
+      "num_qubits"_a, "decisions"_a,
+      R"pb(Get the amplitude of a basis state by decisions.
 
-  py::class_<Vector>(mod, "Vector", py::buffer_protocol())
-      .def_buffer([](Vector& vector) -> py::buffer_info {
-        return py::buffer_info(
-            vector.v.data(), sizeof(std::complex<dd::fp>),
-            // NOLINTNEXTLINE(misc-include-cleaner)
-            py::format_descriptor<std::complex<dd::fp>>::format(), 1,
-            {vector.v.size()}, {sizeof(std::complex<dd::fp>)});
-      });
+Args:
+    num_qubits: The number of qubits.
+    decisions: The decisions as a string of bits (`0` or `1`), where `decisions[i]` corresponds to the successor to follow at level `i` of the DD.
+        Must be at least `num_qubits` long.
 
-  vec.def("get_vector", &getVector, "threshold"_a = 0.);
+Returns:
+    The amplitude of the basis state.)pb");
+
+  vec.def("get_vector", &getVector, "threshold"_a = 0.,
+          R"pb(Get the state vector represented by the DD.
+
+Args:
+    threshold: The threshold for not including amplitudes in the state vector. Defaults to 0.0.
+
+Returns:
+    The state vector.
+
+Raises:
+    MemoryError: If the memory allocation fails.)pb");
 
   vec.def(
       "to_dot",
@@ -84,11 +108,22 @@ void registerVectorDDs(const py::module& mod) {
          const bool edgeLabels = false, const bool classic = false,
          const bool memory = false, const bool formatAsPolar = true) {
         std::ostringstream os;
-        dd::toDot(e, os, colored, edgeLabels, classic, memory, formatAsPolar);
+        toDot(e, os, colored, edgeLabels, classic, memory, formatAsPolar);
         return os.str();
       },
       "colored"_a = true, "edge_labels"_a = false, "classic"_a = false,
-      "memory"_a = false, "format_as_polar"_a = true);
+      "memory"_a = false, "format_as_polar"_a = true,
+      R"pb(Convert the DD to a DOT graph that can be plotted via Graphviz.
+
+Args:
+    colored: Whether to use colored edge weights
+    edge_labels: Whether to include edge weights as labels.
+    classic: Whether to use the classic DD visualization style.
+    memory: Whether to include memory information. For debugging purposes only.
+    format_as_polar: Whether to format the edge weights in polar coordinates.
+
+Returns:
+    The DOT graph.)pb");
 
   vec.def(
       "to_svg",
@@ -99,11 +134,22 @@ void registerVectorDDs(const py::module& mod) {
         // replace the filename extension with .dot
         const auto dotFilename =
             filename.substr(0, filename.find_last_of('.')) + ".dot";
-        dd::export2Dot(e, dotFilename, colored, edgeLabels, classic, memory,
-                       true, formatAsPolar);
+        export2Dot(e, dotFilename, colored, edgeLabels, classic, memory, true,
+                   formatAsPolar);
       },
       "filename"_a, "colored"_a = true, "edge_labels"_a = false,
-      "classic"_a = false, "memory"_a = false, "format_as_polar"_a = true);
+      "classic"_a = false, "memory"_a = false, "format_as_polar"_a = true,
+      R"pb(Convert the DD to an SVG file that can be viewed in a browser.
+
+Requires the `dot` command from Graphviz to be installed and available in the PATH.
+
+Args:
+    filename: The filename of the SVG file. Any file extension will be replaced by `.dot` and then `.svg`.
+    colored: Whether to use colored edge weights.
+    edge_labels: Whether to include edge weights as labels.
+    classic: Whether to use the classic DD visualization style.
+    memory: Whether to include memory information. For debugging purposes only.
+    format_as_polar: Whether to format the edge weights in polar coordinates.)pb");
 }
 
 } // namespace mqt
