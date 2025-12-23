@@ -19,6 +19,7 @@
 #include <llvm/Support/ErrorHandling.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
+#include <mlir/Dialect/SCF/IR/SCF.h>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/MLIRContext.h>
@@ -441,6 +442,117 @@ QCProgramBuilder& QCProgramBuilder::dealloc(Value qubit) {
   DeallocOp::create(*this, loc, qubit);
 
   return *this;
+}
+
+//===----------------------------------------------------------------------===//
+// SCF operations
+//===----------------------------------------------------------------------===//
+
+QCProgramBuilder&
+QCProgramBuilder::scfFor(Value lowerbound, Value upperbound, Value step,
+                         const std::function<void(OpBuilder&)>& body) {
+  create<scf::ForOp>(loc, lowerbound, upperbound, step, ValueRange{},
+                     [&](OpBuilder& b, Location, Value, ValueRange) {
+                       body(b);
+                       b.create<scf::YieldOp>(loc);
+                     });
+
+  return *this;
+}
+
+QCProgramBuilder&
+QCProgramBuilder::scfWhile(const std::function<void(OpBuilder&)>& beforeBody,
+                           const std::function<void(OpBuilder&)>& afterBody) {
+  create<scf::WhileOp>(
+      loc, TypeRange{}, ValueRange{},
+      [&](OpBuilder& b, Location, ValueRange) { beforeBody(b); },
+      [&](OpBuilder& b, Location loc, ValueRange) {
+        afterBody(b);
+        b.create<scf::YieldOp>(loc);
+      });
+
+  return *this;
+}
+
+QCProgramBuilder&
+QCProgramBuilder::scfIf(Value cond,
+                        const std::function<void(OpBuilder&)>& thenBody,
+                        const std::function<void(OpBuilder&)>& elseBody) {
+  if (!elseBody) {
+    create<scf::IfOp>(loc, cond, [&](OpBuilder& b, Location loc) {
+      thenBody(b);
+      b.create<scf::YieldOp>(loc);
+    });
+  } else {
+    create<scf::IfOp>(
+        loc, cond,
+        [&](OpBuilder& b, Location loc) {
+          thenBody(b);
+          b.create<scf::YieldOp>(loc);
+        },
+        [&](OpBuilder& b, Location loc) {
+          elseBody(b);
+          b.create<scf::YieldOp>(loc);
+        });
+  }
+  return *this;
+}
+
+QCProgramBuilder& QCProgramBuilder::scfCondition(Value condition) {
+  create<scf::ConditionOp>(loc, condition, ValueRange{});
+  return *this;
+}
+
+//===----------------------------------------------------------------------===//
+// Func operations
+//===----------------------------------------------------------------------===//
+
+QCProgramBuilder& QCProgramBuilder::funcCall(StringRef name,
+                                             ValueRange operands) {
+  create<func::CallOp>(loc, name, TypeRange{}, operands);
+  return *this;
+}
+
+QCProgramBuilder& QCProgramBuilder::funcReturn() {
+  create<func::ReturnOp>(loc);
+  return *this;
+}
+
+QCProgramBuilder& QCProgramBuilder::funcFunc(
+    StringRef name, TypeRange argTypes,
+    const std::function<void(OpBuilder&, ValueRange)>& body) {
+  // Set the insertionPoint
+  const OpBuilder::InsertionGuard guard(*this);
+  setInsertionPointToEnd(module.getBody());
+
+  // Create the empty func operation
+  const auto funcType = getFunctionType(argTypes, {});
+  auto funcOp = create<func::FuncOp>(loc, name, funcType);
+  auto* entryBlock = funcOp.addEntryBlock();
+
+  setInsertionPointToStart(entryBlock);
+
+  // Build function body
+  body(*this, entryBlock->getArguments());
+
+  return *this;
+}
+
+//===----------------------------------------------------------------------===//
+// Arith operations
+//===----------------------------------------------------------------------===//
+
+Value QCProgramBuilder::arithConstantIndex(int index) {
+  const auto op =
+      create<arith::ConstantOp>(loc, getIndexType(), getIndexAttr(index));
+  return op->getResult(0);
+}
+
+Value QCProgramBuilder::arithConstantBool(bool b) {
+  const auto i1Type = getI1Type();
+  const auto op =
+      create<arith::ConstantOp>(loc, i1Type, getIntegerAttr(i1Type, b ? 1 : 0));
+  return op->getResult(0);
 }
 
 //===----------------------------------------------------------------------===//

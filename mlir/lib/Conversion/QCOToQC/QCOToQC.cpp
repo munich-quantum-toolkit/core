@@ -13,8 +13,11 @@
 #include "mlir/Dialect/QC/IR/QCDialect.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 
+#include <cstddef>
+#include <llvm/ADT/STLExtras.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/Func/Transforms/FuncConversions.h>
+#include <mlir/Dialect/SCF/IR/SCF.h>
 #include <mlir/IR/BuiltinTypeInterfaces.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OperationSupport.h>
@@ -811,6 +814,302 @@ struct ConvertQCOYieldOp final : OpConversionPattern<qco::YieldOp> {
 };
 
 /**
+ * @brief Converts scf.if with value semantics to scf.if with memory semantics
+ * for qubit values
+ *
+ * @par Example:
+ * ```mlir
+ * %targets_out = scf.if %cond -> (!qco.qubit) {
+ *   %q1 = qco.h %q0 : !qco.qubit -> !qco.qubit
+ *   scf.yield %q1 : !qco.qubit
+ * } else {
+ *   scf.yield %q0 : !qco.qubit
+ * }
+ * ```
+ * is converted to
+ * ```mlir
+ * scf.if %cond {
+ *   qc.x %q0
+ *   scf.yield
+ * }
+ * ```
+ */
+struct ConvertQCOScfIfOp final : OpConversionPattern<scf::IfOp> {
+  using OpConversionPattern::OpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(scf::IfOp op, OpAdaptor /*adaptor*/,
+                  ConversionPatternRewriter& rewriter) const override {
+    // Create the new if operation
+    auto newIf =
+        rewriter.create<scf::IfOp>(op.getLoc(), ValueRange{}, op.getCondition(),
+                                   op.getElseRegion().empty());
+    // Inline the regions
+    rewriter.inlineRegionBefore(op.getThenRegion(), newIf.getThenRegion(),
+                                newIf.getThenRegion().end());
+    if (!op.getElseRegion().empty()) {
+      rewriter.inlineRegionBefore(op.getElseRegion(), newIf.getElseRegion(),
+                                  newIf.getElseRegion().end());
+    }
+    // Erase the empty block that was created during the initialization
+    rewriter.eraseBlock(&newIf.getThenRegion().front());
+
+    const auto& yield =
+        dyn_cast<scf::YieldOp>(newIf.getThenRegion().front().getTerminator());
+
+    rewriter.replaceOp(op, yield->getOperands());
+    return success();
+  }
+};
+
+/**
+ * @brief Converts scf.while with value semantics to scf.while with memory
+ * semantics for qubit values
+ *
+ * @par Example:
+ * ```mlir
+ * %targets_out = scf.while (%arg0 = %q0) : (!qco.qubit) -> !qco.qubit {
+ *   %q1 = qc.x %arg0 : !qco.qubit -> !qco.qubit
+ *   scf.condition(%cond) %q1 : !qco.qubit
+ * } do {
+ * ^bb0(%arg0: !qco.qubit):
+ *   %q1 = qc.x %arg0 : !qco.qubit -> !qco.qubit
+ *   scf.yield %q1 : !qco.qubit
+ * }
+ * ```
+ * is converted to
+ * ```mlir
+ * scf.while : () -> () {
+ *   qc.x %q0
+ *   scf.condition(%cond)
+ * } do {
+ *   qc.x %q0
+ *   scf.yield
+ * }
+ * ```
+ */
+struct ConvertQCOScfWhileOp final : OpConversionPattern<scf::WhileOp> {
+  using OpConversionPattern::OpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(scf::WhileOp op, OpAdaptor adaptor,
+                  ConversionPatternRewriter& rewriter) const override {
+    // Create the new while operation
+    auto newWhileOp =
+        rewriter.create<scf::WhileOp>(op->getLoc(), ValueRange{}, ValueRange{});
+
+    // Replace the uses of the blockarguments with the init values
+    const auto& inits = adaptor.getInits();
+    const auto beforeArgs = op.getBeforeArguments();
+    const auto afterArgs = op.getAfterArguments();
+    for (size_t i = 0; i < beforeArgs.size(); i++) {
+      beforeArgs[i].replaceAllUsesWith(inits[i]);
+      afterArgs[i].replaceAllUsesWith(inits[i]);
+    }
+    // Create the blocks of the new operation and move the operations to them
+    auto* newBeforeBlock =
+        rewriter.createBlock(&newWhileOp.getBefore(), {}, {}, {});
+    auto* newAfterBlock =
+        rewriter.createBlock(&newWhileOp.getAfter(), {}, {}, {});
+    newBeforeBlock->getOperations().splice(newBeforeBlock->end(),
+                                           op.getBeforeBody()->getOperations());
+    newAfterBlock->getOperations().splice(newAfterBlock->end(),
+                                          op.getAfterBody()->getOperations());
+
+    // replace the result values with the init values
+    rewriter.replaceOp(op, inits);
+    return success();
+  }
+};
+
+/**
+ * @brief Converts scf.for with value semantics to scf.while with memory
+ * semantics for qubit values
+ *
+ * @par Example:
+ * ```mlir
+ * %targets_out = scf.for %iv = %lb to %ub step %step iter_args(%arg0 = q0) ->
+ * (!qco.qubit) {
+ * %q1 = qc.x %arg0 : !qco.qubit -> !qco.qubit
+ * scf.yield %q1 : !qco.qubit
+ * }
+ * ```
+ * is converted to
+ * ```mlir
+ * scf.for %iv = %lb to %ub step %step {
+ *   qc.x %q0
+ *   scf.yield
+ * }
+ * ```
+ */
+struct ConvertQCOScfForOp final : OpConversionPattern<scf::ForOp> {
+  using OpConversionPattern::OpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(scf::ForOp op, OpAdaptor adaptor,
+                  ConversionPatternRewriter& rewriter) const override {
+    // Create a new for-loop with no iter_args
+    auto newFor = rewriter.create<scf::ForOp>(
+        op.getLoc(), adaptor.getLowerBound(), adaptor.getUpperBound(),
+        adaptor.getStep(), ValueRange{});
+
+    // Replace the uses of the previous iter_args
+    for (const auto& [qcoQubit, qcQubit] :
+         llvm::zip_equal(op.getRegionIterArgs(), adaptor.getInitArgs())) {
+      qcoQubit.replaceAllUsesWith(qcQubit);
+    }
+
+    // Move all the operations from the old block to the new block
+    auto* newBlock = newFor.getBody();
+    // Erase the existing yield operation
+    rewriter.eraseOp(newBlock->getTerminator());
+    newBlock->getOperations().splice(newBlock->end(),
+                                     op.getBody()->getOperations());
+    rewriter.replaceAllUsesWith(op.getInductionVar(), newFor.getInductionVar());
+    // Replace the result values with the init values
+    rewriter.replaceOp(op, adaptor.getInitArgs());
+    return success();
+  }
+};
+
+/**
+ * @brief Converts scf.yield with value semantics to scf.yield with memory
+ * semantics for qubit values
+ *
+ * @par Example:
+ * ```mlir
+ * scf.yield %targets
+ * ```
+ * is converted to
+ * ```mlir
+ * scf.yield
+ * ```
+ */
+struct ConvertQCOScfYieldOp final : OpConversionPattern<scf::YieldOp> {
+  using OpConversionPattern::OpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(scf::YieldOp op, OpAdaptor /*adaptor*/,
+                  ConversionPatternRewriter& rewriter) const override {
+    rewriter.replaceOpWithNewOp<scf::YieldOp>(op);
+    return success();
+  }
+};
+
+/**
+ * @brief Converts scf.condition with value semantics to scf.condition with
+ * memory semantics for qubit values
+ *
+ * @par Example:
+ * ```mlir
+ * scf.condition(%cond) %targets
+ * ```
+ * is converted to
+ * ```mlir
+ * scf.condition(%cond)
+
+ * ```
+ */
+struct ConvertQCOScfConditionOp final : OpConversionPattern<scf::ConditionOp> {
+  using OpConversionPattern::OpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(scf::ConditionOp op, OpAdaptor /*adaptor*/,
+                  ConversionPatternRewriter& rewriter) const override {
+    rewriter.replaceOpWithNewOp<scf::ConditionOp>(op, op.getCondition(),
+                                                  ValueRange{});
+
+    return success();
+  }
+};
+
+/**
+ * @brief Converts func.call with value semantics to func.call with
+ * memory semantics for qubit values
+ *
+ * @par Example:
+ * ```mlir
+ * %q1 = call @test(%q0) : (!qco.qubit) -> !qco.qubit
+ * }
+ * ```
+ * is converted to
+ * ```mlir
+ * call @test(%q0) : (!qc.qubit) -> ()
+ * ```
+ */
+struct ConvertQCOFuncCallOp final : OpConversionPattern<func::CallOp> {
+  using OpConversionPattern::OpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(func::CallOp op, OpAdaptor adaptor,
+                  ConversionPatternRewriter& rewriter) const override {
+    rewriter.create<func::CallOp>(op->getLoc(), adaptor.getCallee(),
+                                  TypeRange{}, adaptor.getOperands());
+    rewriter.replaceOp(op, adaptor.getOperands());
+    return success();
+  }
+};
+
+/**
+ * @brief Converts func.func with memory semantics to func.func with
+ * value semantics for qubit values
+ *
+ * @par Example:
+ * ```mlir
+ * func.func @test(%arg0: !qco.qubit) -> !qco.qubit {
+ * ...
+ * }
+ * ```
+ * is converted to
+ * ```mlir
+ * func.func @test(%arg0: !qc.qubit){
+ * ...
+ * }
+ * ```
+ */
+struct ConvertQCOFuncFuncOp final : OpConversionPattern<func::FuncOp> {
+  using OpConversionPattern::OpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(func::FuncOp op, OpAdaptor /*adaptor*/,
+                  ConversionPatternRewriter& rewriter) const override {
+    const SmallVector<Type> argumentTypes(
+        op.front().getNumArguments(),
+        qc::QubitType::get(rewriter.getContext()));
+    for (auto blockArg : op.front().getArguments()) {
+      blockArg.setType(qc::QubitType::get(rewriter.getContext()));
+    }
+    auto newFuncType = rewriter.getFunctionType(argumentTypes, {});
+    op.setFunctionType(newFuncType);
+    return success();
+  }
+};
+
+/**
+ * @brief Converts func.return with value semantics to func.return with
+ * memory semantics for qubit values
+ *
+ * @par Example:
+ * ```mlir
+ * func.return %targets : !qco.qubit
+ * ```
+ * is converted to
+ * ```mlir
+ * func.return
+ * ```
+ */
+struct ConvertQCOFuncReturnOp final : OpConversionPattern<func::ReturnOp> {
+  using OpConversionPattern::OpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(func::ReturnOp op, OpAdaptor /*adaptor*/,
+                  ConversionPatternRewriter& rewriter) const override {
+    rewriter.create<func::ReturnOp>(op->getLoc());
+    rewriter.eraseOp(op);
+    return success();
+  }
+};
+/**
  * @brief Pass implementation for QCO-to-QC conversion
  *
  * @details
@@ -846,48 +1145,73 @@ struct QCOToQC final : impl::QCOToQCBase<QCOToQC> {
 
     ConversionTarget target(*context);
     RewritePatternSet patterns(context);
-    QCOToQCTypeConverter typeConverter(context);
+    const QCOToQCTypeConverter typeConverter(context);
+
+    target.addDynamicallyLegalOp<scf::IfOp>([&](scf::IfOp op) {
+      return !llvm::any_of(op->getResultTypes(), [&](Type type) {
+        return type == qco::QubitType::get(context);
+      });
+    });
+
+    target.addDynamicallyLegalOp<scf::YieldOp>([&](scf::YieldOp op) {
+      return !llvm::any_of(op->getOperandTypes(), [&](Type type) {
+        return type == qc::QubitType::get(context) ||
+               type == qco::QubitType::get(context);
+      });
+    });
+    target.addDynamicallyLegalOp<scf::WhileOp>([&](scf::WhileOp op) {
+      return !llvm::any_of(op->getResultTypes(), [&](Type type) {
+        return type == qco::QubitType::get(context);
+      });
+    });
+    target.addDynamicallyLegalOp<scf::ConditionOp>([&](scf::ConditionOp op) {
+      return !llvm::any_of(op.getOperandTypes(), [&](Type type) {
+        return type == qco::QubitType::get(context);
+      });
+    });
+    target.addDynamicallyLegalOp<scf::ForOp>([&](scf::ForOp op) {
+      return !llvm::any_of(op->getResultTypes(), [&](Type type) {
+        return type == qco::QubitType::get(context);
+      });
+    });
+    target.addDynamicallyLegalOp<func::CallOp>([&](func::CallOp op) {
+      return !llvm::any_of(op->getResultTypes(), [&](Type type) {
+        return type == qco::QubitType::get(context);
+      });
+    });
+    target.addDynamicallyLegalOp<func::FuncOp>([&](func::FuncOp op) {
+      return !llvm::any_of(op.getArgumentTypes(), [&](Type type) {
+        return type == qco::QubitType::get(context);
+      });
+    });
+    target.addDynamicallyLegalOp<func::ReturnOp>([&](func::ReturnOp op) {
+      return !llvm::any_of(op->getOperandTypes(), [&](Type type) {
+        return type == qc::QubitType::get(context) ||
+               type == qco::QubitType::get(context);
+      });
+    });
 
     // Configure conversion target: QCO illegal, QC legal
     target.addIllegalDialect<QCODialect>();
     target.addLegalDialect<QCDialect>();
-
     // Register operation conversion patterns
     // Note: No state tracking needed - OpAdaptors handle type conversion
-    patterns.add<ConvertQCOAllocOp, ConvertQCODeallocOp, ConvertQCOStaticOp,
-                 ConvertQCOMeasureOp, ConvertQCOResetOp, ConvertQCOGPhaseOp,
-                 ConvertQCOIdOp, ConvertQCOXOp, ConvertQCOYOp, ConvertQCOZOp,
-                 ConvertQCOHOp, ConvertQCOSOp, ConvertQCOSdgOp, ConvertQCOTOp,
-                 ConvertQCOTdgOp, ConvertQCOSXOp, ConvertQCOSXdgOp,
-                 ConvertQCORXOp, ConvertQCORYOp, ConvertQCORZOp, ConvertQCOPOp,
-                 ConvertQCOROp, ConvertQCOU2Op, ConvertQCOUOp, ConvertQCOSWAPOp,
-                 ConvertQCOiSWAPOp, ConvertQCODCXOp, ConvertQCOECROp,
-                 ConvertQCORXXOp, ConvertQCORYYOp, ConvertQCORZXOp,
-                 ConvertQCORZZOp, ConvertQCOXXPlusYYOp, ConvertQCOXXMinusYYOp,
-                 ConvertQCOBarrierOp, ConvertQCOCtrlOp, ConvertQCOYieldOp>(
-        typeConverter, context);
-
-    // Conversion of qco types in func.func signatures
-    // Note: This currently has limitations with signature changes
-    populateFunctionOpInterfaceTypeConversionPattern<func::FuncOp>(
-        patterns, typeConverter);
-    target.addDynamicallyLegalOp<func::FuncOp>([&](func::FuncOp op) {
-      return typeConverter.isSignatureLegal(op.getFunctionType()) &&
-             typeConverter.isLegal(&op.getBody());
-    });
-
-    // Conversion of qco types in func.return
-    populateReturnOpTypeConversionPattern(patterns, typeConverter);
-    target.addDynamicallyLegalOp<func::ReturnOp>(
-        [&](const func::ReturnOp op) { return typeConverter.isLegal(op); });
-
-    // Conversion of qco types in func.call
-    populateCallOpTypeConversionPattern(patterns, typeConverter);
-    target.addDynamicallyLegalOp<func::CallOp>(
-        [&](const func::CallOp op) { return typeConverter.isLegal(op); });
-
-    // Conversion of qco types in control-flow ops (e.g., cf.br, cf.cond_br)
-    populateBranchOpInterfaceTypeConversionPattern(patterns, typeConverter);
+    patterns
+        .add<ConvertQCOAllocOp, ConvertQCODeallocOp, ConvertQCOStaticOp,
+             ConvertQCOMeasureOp, ConvertQCOResetOp, ConvertQCOGPhaseOp,
+             ConvertQCOIdOp, ConvertQCOXOp, ConvertQCOYOp, ConvertQCOZOp,
+             ConvertQCOHOp, ConvertQCOSOp, ConvertQCOSdgOp, ConvertQCOTOp,
+             ConvertQCOTdgOp, ConvertQCOSXOp, ConvertQCOSXdgOp, ConvertQCORXOp,
+             ConvertQCORYOp, ConvertQCORZOp, ConvertQCOPOp, ConvertQCOROp,
+             ConvertQCOU2Op, ConvertQCOUOp, ConvertQCOSWAPOp, ConvertQCOiSWAPOp,
+             ConvertQCODCXOp, ConvertQCOECROp, ConvertQCORXXOp, ConvertQCORYYOp,
+             ConvertQCORZXOp, ConvertQCORZZOp, ConvertQCOXXPlusYYOp,
+             ConvertQCOXXMinusYYOp, ConvertQCOBarrierOp, ConvertQCOCtrlOp,
+             ConvertQCOYieldOp, ConvertQCOYieldOp, ConvertQCOScfIfOp,
+             ConvertQCOScfYieldOp, ConvertQCOScfWhileOp,
+             ConvertQCOScfConditionOp, ConvertQCOScfForOp, ConvertQCOFuncCallOp,
+             ConvertQCOFuncFuncOp, ConvertQCOFuncReturnOp>(typeConverter,
+                                                           context);
 
     // Apply the conversion
     if (failed(applyPartialConversion(module, target, std::move(patterns)))) {
