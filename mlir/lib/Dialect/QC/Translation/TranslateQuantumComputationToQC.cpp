@@ -98,7 +98,8 @@ allocateQregs(QCProgramBuilder& builder,
   for (const auto* qregPtr : qregPtrs) {
     auto qubits = builder.allocQubitRegister(
         static_cast<int64_t>(qregPtr->getSize()), qregPtr->getName());
-    qregs.emplace_back(qregPtr, std::move(qubits));
+    QregInfo qregInfo = {.qregPtr = qregPtr, .qubits = std::move(qubits)};
+    qregs.emplace_back(std::move(qregInfo));
   }
 
   return qregs;

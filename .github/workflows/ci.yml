@@ -35,6 +35,8 @@ jobs:
       runs-on: ${{ matrix.runs-on }}
       compiler: ${{ matrix.compiler }}
       config: ${{ matrix.config }}
+      setup-mlir: true
+      llvm-version: 21.1.8
 
   cpp-tests-macos:
     name: 🇨‌ Test 🍎
@@ -56,6 +58,8 @@ jobs:
       compiler: ${{ matrix.compiler }}
       config: ${{ matrix.config }}
       cmake-args: -DMQT_CORE_WITH_GMP=ON
+      setup-mlir: true
+      llvm-version: 21.1.8
 
   cpp-tests-windows:
     name: 🇨‌ Test 🏁
@@ -76,6 +80,8 @@ jobs:
       runs-on: ${{ matrix.runs-on }}
       compiler: ${{ matrix.compiler }}
       config: ${{ matrix.config }}
+      setup-mlir: true
+      llvm-version: 21.1.8
 
   # run extensive C++ tests on PRs labeled with the `extensive-cpp-ci` label
   cpp-tests-extensive-ubuntu:
@@ -93,6 +99,8 @@ jobs:
       runs-on: ${{ matrix.runs-on }}
       compiler: ${{ matrix.compiler }}
       config: ${{ matrix.config }}
+      setup-mlir: true
+      llvm-version: 21.1.8
 
   # run extensive C++ tests on PRs labeled with the `extensive-cpp-ci` label
   cpp-tests-extensive-macos:
@@ -111,6 +119,8 @@ jobs:
       compiler: ${{ matrix.compiler }}
       config: ${{ matrix.config }}
       cmake-args: -DMQT_CORE_WITH_GMP=ON
+      setup-mlir: true
+      llvm-version: 21.1.8
 
   # run extensive C++ tests on PRs labeled with the `extensive-cpp-ci` label
   cpp-tests-extensive-windows:
@@ -128,12 +138,17 @@ jobs:
       runs-on: ${{ matrix.runs-on }}
       compiler: ${{ matrix.compiler }}
       config: ${{ matrix.config }}
+      setup-mlir: true
+      llvm-version: 21.1.8
 
   cpp-coverage:
     name: 🇨‌ Coverage
     needs: change-detection
     if: fromJSON(needs.change-detection.outputs.run-cpp-tests)
     uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-cpp-coverage.yml@7f8eeed7a3dba08e1e9be54966e5722f5753d0df # v1.17.7
+    with:
+      setup-mlir: true
+      llvm-version: 21.1.8
     permissions:
       contents: read
       id-token: write
@@ -152,6 +167,7 @@ jobs:
       install-pkgs: "nanobind==2.10.2"
       cpp-linter-extra-args: "-std=c++20"
       setup-mlir: true
+      llvm-version: 21.1.8
 
   python-tests:
     name: 🐍 Test
@@ -171,6 +187,8 @@ jobs:
     uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-python-tests.yml@7f8eeed7a3dba08e1e9be54966e5722f5753d0df # v1.17.7
     with:
       runs-on: ${{ matrix.runs-on }}
+      setup-mlir: true
+      llvm-version: 21.1.8
 
   python-coverage:
     name: 🐍 Coverage
@@ -193,6 +211,8 @@ jobs:
     uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-python-tests.yml@7f8eeed7a3dba08e1e9be54966e5722f5753d0df # v1.17.7
     with:
       runs-on: ${{ matrix.runs-on }}
+      setup-mlir: true
+      llvm-version: 21.1.8
 
   python-linter:
     name: 🐍 Lint
@@ -202,6 +222,8 @@ jobs:
     with:
       check-stubs: true
       enable-ty: true
+      setup-mlir: true
+      llvm-version: 21.1.8
 
   build-sdist:
     name: 🚀 CD
@@ -228,6 +250,8 @@ jobs:
     uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-python-packaging-wheel-cibuildwheel.yml@7f8eeed7a3dba08e1e9be54966e5722f5753d0df # v1.17.7
     with:
       runs-on: ${{ matrix.runs-on }}
+      setup-mlir: true
+      llvm-version: 21.1.8
 
   mlir-tests:
     name: 🐉 Test

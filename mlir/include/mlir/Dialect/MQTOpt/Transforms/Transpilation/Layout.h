@@ -149,7 +149,11 @@ public:
   void add(uint32_t prog, uint32_t hw, mlir::Value q) {
     ThinLayout::add(prog, hw);
     qubits_[hw] = q;
-    valueToMapping_.try_emplace(q, prog, hw);
+    const QubitInfo qubitInfo = {
+        .prog = prog,
+        .hw = hw,
+    };
+    valueToMapping_.try_emplace(q, qubitInfo);
   }
 
   /**
