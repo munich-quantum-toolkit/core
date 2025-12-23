@@ -788,6 +788,43 @@ struct ConvertQCOCtrlOp final : OpConversionPattern<qco::CtrlOp> {
 };
 
 /**
+ * @brief Converts qco.inv to qc.inv
+ *
+ * @par Example:
+ * ```mlir
+ * %targets_out = qco.inv %q0_in {
+ *   %q0_res = qco.s %q0_in : !qco.qubit -> !qco.qubit
+ *   qco.yield %q0_res
+ * } : {!qco.qubit} -> {!qco.qubit}
+ * ```
+ * is converted to
+ * ```mlir
+ * qc.inv {
+ *   qc.s %q0 : !qc.qubit
+ * }
+ * ```
+ */
+struct ConvertQCOInvOp final : OpConversionPattern<qco::InvOp> {
+  using OpConversionPattern::OpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(qco::InvOp op, OpAdaptor adaptor,
+                  ConversionPatternRewriter& rewriter) const override {
+    // Create qc.inv operation
+    auto qcOp = qc::InvOp::create(rewriter, op->getLoc());
+
+    // Clone body region from QCO to QC
+    auto& dstRegion = qcOp.getBody();
+    rewriter.cloneRegionBefore(op.getBody(), dstRegion, dstRegion.end());
+
+    // Replace the output qubits with the same QC references
+    rewriter.replaceOp(op, adaptor.getOperands());
+
+    return success();
+  }
+};
+
+/**
  * @brief Converts qco.yield to qc.yield
  *
  * @par Example:
@@ -854,18 +891,18 @@ struct QCOToQC final : impl::QCOToQCBase<QCOToQC> {
 
     // Register operation conversion patterns
     // Note: No state tracking needed - OpAdaptors handle type conversion
-    patterns.add<ConvertQCOAllocOp, ConvertQCODeallocOp, ConvertQCOStaticOp,
-                 ConvertQCOMeasureOp, ConvertQCOResetOp, ConvertQCOGPhaseOp,
-                 ConvertQCOIdOp, ConvertQCOXOp, ConvertQCOYOp, ConvertQCOZOp,
-                 ConvertQCOHOp, ConvertQCOSOp, ConvertQCOSdgOp, ConvertQCOTOp,
-                 ConvertQCOTdgOp, ConvertQCOSXOp, ConvertQCOSXdgOp,
-                 ConvertQCORXOp, ConvertQCORYOp, ConvertQCORZOp, ConvertQCOPOp,
-                 ConvertQCOROp, ConvertQCOU2Op, ConvertQCOUOp, ConvertQCOSWAPOp,
-                 ConvertQCOiSWAPOp, ConvertQCODCXOp, ConvertQCOECROp,
-                 ConvertQCORXXOp, ConvertQCORYYOp, ConvertQCORZXOp,
-                 ConvertQCORZZOp, ConvertQCOXXPlusYYOp, ConvertQCOXXMinusYYOp,
-                 ConvertQCOBarrierOp, ConvertQCOCtrlOp, ConvertQCOYieldOp>(
-        typeConverter, context);
+    patterns
+        .add<ConvertQCOAllocOp, ConvertQCODeallocOp, ConvertQCOStaticOp,
+             ConvertQCOMeasureOp, ConvertQCOResetOp, ConvertQCOGPhaseOp,
+             ConvertQCOIdOp, ConvertQCOXOp, ConvertQCOYOp, ConvertQCOZOp,
+             ConvertQCOHOp, ConvertQCOSOp, ConvertQCOSdgOp, ConvertQCOTOp,
+             ConvertQCOTdgOp, ConvertQCOSXOp, ConvertQCOSXdgOp, ConvertQCORXOp,
+             ConvertQCORYOp, ConvertQCORZOp, ConvertQCOPOp, ConvertQCOROp,
+             ConvertQCOU2Op, ConvertQCOUOp, ConvertQCOSWAPOp, ConvertQCOiSWAPOp,
+             ConvertQCODCXOp, ConvertQCOECROp, ConvertQCORXXOp, ConvertQCORYYOp,
+             ConvertQCORZXOp, ConvertQCORZZOp, ConvertQCOXXPlusYYOp,
+             ConvertQCOXXMinusYYOp, ConvertQCOBarrierOp, ConvertQCOCtrlOp,
+             ConvertQCOInvOp, ConvertQCOYieldOp>(typeConverter, context);
 
     // Conversion of qco types in func.func signatures
     // Note: This currently has limitations with signature changes
