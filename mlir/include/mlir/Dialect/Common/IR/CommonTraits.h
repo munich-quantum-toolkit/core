@@ -10,13 +10,41 @@
 
 #pragma once
 
+#include <array>
+#include <cmath>
 #include <cstddef>
+#include <functional>
 #include <mlir/IR/OpDefinition.h>
 #include <mlir/IR/Operation.h>
 #include <mlir/Support/LLVM.h>
+#include <stdexcept>
 
 namespace mqt::ir::common {
-template <size_t N> class TargetArityTrait {
+
+template <std::size_t NumQubits> struct DefinitionMatrix {
+  static constexpr std::size_t MatrixSize = 1 << NumQubits;
+
+  template <typename T>
+  using MatrixType = std::array<T, MatrixSize * MatrixSize>;
+
+  MatrixType<double (*)(mlir::ValueRange)> matrix;
+
+  static constexpr std::size_t index(std::size_t x, std::size_t y) {
+    return (y * MatrixSize) + x;
+  }
+
+  constexpr MatrixType<double> getMatrix(mlir::ValueRange params) {
+    // TODO? lazy-initialized cache
+    MatrixType<double> result;
+    static_assert(result.size() == matrix.size());
+    for (std::size_t i = 0; i < result.size(); ++i) {
+      result[i] = matrix[i](params);
+    }
+    return result;
+  }
+};
+
+template <size_t N, DefinitionMatrix<N> Matrix> class TargetArityTrait {
 public:
   template <typename ConcreteOp>
   class Impl : public mlir::OpTrait::TraitBase<ConcreteOp, Impl> {
@@ -28,6 +56,17 @@ public:
                << "number of input qubits (" << size << ") must be " << N;
       }
       return mlir::success();
+    }
+
+    [[nodiscard]] static auto getDefinitionMatrix() { return Matrix; }
+    [[nodiscard]] static auto getDefinitionMatrix(mlir::Operation* op) {
+      auto concreteOp = mlir::cast<ConcreteOp>(op);
+      return Matrix.getMatrix(concreteOp.getParams());
+    }
+    [[nodiscard]] static double getDefinitionMatrixElement(mlir::Operation* op,
+                                                           std::size_t x,
+                                                           std::size_t y) {
+      return getDefinitionMatrix(op).at(DefinitionMatrix<N>::index(x, y));
     }
   };
 };
