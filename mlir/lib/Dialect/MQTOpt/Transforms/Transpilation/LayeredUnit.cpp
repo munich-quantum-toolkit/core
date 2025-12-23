@@ -166,7 +166,9 @@ LayeredUnit::LayeredUnit(Layout layout, mlir::Region* region)
 
     bool haltOnWire{};
 
-    for (auto [it, index] : curr) {
+    for (const auto& wire : curr) {
+      auto it = wire.it;
+      const auto index = wire.index;
       while (it != std::default_sentinel) {
         haltOnWire =
             mlir::TypeSwitch<mlir::Operation*, bool>(*it)
