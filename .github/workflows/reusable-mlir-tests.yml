@@ -38,7 +38,7 @@ jobs:
           fetch-depth: 0
 
       - name: Set up MLIR
-        uses: munich-quantum-software/setup-mlir@fe382b2b7f0fbe38d64ad72ddc83cbb7697b6765 # v1.0.0
+        uses: munich-quantum-software/setup-mlir@81729fff6f2b938a65a059b7401cb9b0144afcaa # v1.0.1
         with:
           llvm-version: 21.1.8
 
