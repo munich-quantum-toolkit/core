@@ -19,9 +19,9 @@ add_mlir_library(MLIRQCOTransforms ${TRANSFORMS_SOURCES} LINK_LIBS ${LIBRARIES} 
 
 # collect header files
 file(GLOB_RECURSE TRANSFORMS_HEADERS_SOURCE
-  ${MQT_MLIR_SOURCE_INCLUDE_DIR}/mlir/Dialect/QCO/Transforms/*.h)
+     ${MQT_MLIR_SOURCE_INCLUDE_DIR}/mlir/Dialect/QCO/Transforms/*.h)
 file(GLOB_RECURSE TRANSFORMS_HEADERS_BUILD
-  ${MQT_MLIR_BUILD_INCLUDE_DIR}/mlir/Dialect/QCO/Transforms/*.inc)
+     ${MQT_MLIR_BUILD_INCLUDE_DIR}/mlir/Dialect/QCO/Transforms/*.inc)
 
 # add public headers using file sets
 target_sources(
