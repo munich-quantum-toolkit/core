@@ -31,7 +31,9 @@
 #include <utility>
 #include <vector>
 
-#ifndef _WIN32
+#ifdef _WIN32
+#include <windows.h>
+#else
 #include <dlfcn.h>
 #endif // _WIN32
 
@@ -83,10 +85,19 @@ DEFINE_STATIC_LIBRARY(MQT_NA)
 DEFINE_STATIC_LIBRARY(MQT_DDSIM)
 DEFINE_STATIC_LIBRARY(MQT_SC)
 
-#ifndef _WIN32
+#ifdef _WIN32
+#define DL_OPEN(lib) LoadLibraryA((lib))
+#define DL_SYM(lib, sym) GetProcAddress(static_cast<HMODULE>((lib)), (sym))
+#define DL_CLOSE(lib) FreeLibrary(static_cast<HMODULE>((lib)))
+#else
+#define DL_OPEN(lib) dlopen((lib), RTLD_NOW | RTLD_LOCAL)
+#define DL_SYM(lib, sym) dlsym((lib), (sym))
+#define DL_CLOSE(lib) dlclose((lib))
+#endif
+
 DynamicDeviceLibrary::DynamicDeviceLibrary(const std::string& libName,
                                            const std::string& prefix)
-    : libHandle_(dlopen(libName.c_str(), RTLD_NOW | RTLD_LOCAL)) {
+    : libHandle_(DL_OPEN(libName.c_str())) {
   if (libHandle_ == nullptr) {
     throw std::runtime_error("Couldn't open the device library: " + libName);
   }
@@ -98,7 +109,7 @@ DynamicDeviceLibrary::DynamicDeviceLibrary(const std::string& libName,
   {                                                                            \
     const std::string symbolName = std::string(prefix) + "_QDMI_" + #symbol;   \
     (symbol) = reinterpret_cast<decltype(symbol)>(                             \
-        dlsym(libHandle_, symbolName.c_str()));                                \
+        DL_SYM(libHandle_, symbolName.c_str()));                               \
     if ((symbol) == nullptr) {                                                 \
       throw std::runtime_error("Failed to load symbol: " + symbolName);        \
     }                                                                          \
@@ -131,7 +142,7 @@ DynamicDeviceLibrary::DynamicDeviceLibrary(const std::string& libName,
     LOAD_DYNAMIC_SYMBOL(device_session_query_operation_property)
     // NOLINTEND(cppcoreguidelines-pro-type-reinterpret-cast)
   } catch (const std::exception&) {
-    dlclose(libHandle_);
+    DL_CLOSE(libHandle_);
     throw;
   }
   // initialize the device
@@ -145,10 +156,13 @@ DynamicDeviceLibrary::~DynamicDeviceLibrary() {
   }
   // close the dynamic library
   if (libHandle_ != nullptr) {
-    dlclose(libHandle_);
+    DL_CLOSE(libHandle_);
   }
 }
-#endif // _WIN32
+
+#undef DL_OPEN
+#undef DL_SYM
+#undef DL_CLOSE
 } // namespace qdmi
 
 QDMI_Device_impl_d::QDMI_Device_impl_d(
@@ -384,7 +398,6 @@ Driver::~Driver() {
   devices_.clear();
 }
 
-#ifndef _WIN32
 auto Driver::addDynamicDeviceLibrary(const std::string& libName,
                                      const std::string& prefix,
                                      const DeviceSessionConfig& config)
@@ -393,7 +406,6 @@ auto Driver::addDynamicDeviceLibrary(const std::string& libName,
       std::make_unique<DynamicDeviceLibrary>(libName, prefix), config));
   return devices_.back().get();
 }
-#endif
 
 auto Driver::sessionAlloc(QDMI_Session* session) -> int {
   if (session == nullptr) {
