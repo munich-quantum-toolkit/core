@@ -29,6 +29,7 @@
 #include <optional>
 #include <string>
 #include <variant>
+#include <Eigen/Core>
 
 #define DIALECT_NAME_QCO "qco"
 
@@ -66,6 +67,8 @@ public:
   template <typename ConcreteType>
   class Impl : public OpTrait::TraitBase<ConcreteType, Impl> {
   public:
+    using UnitaryMatrixType = Eigen::Matrix<std::complex<double>, 1 << T, 1 << T>;
+
     static size_t getNumQubits() { return T; }
     static size_t getNumTargets() { return T; }
     static size_t getNumControls() { return 0; }
