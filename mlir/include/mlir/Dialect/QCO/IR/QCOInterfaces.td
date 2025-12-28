@@ -15,7 +15,7 @@ include "mlir/IR/OpBase.td"
 // UnitaryOpInterface
 //===----------------------------------------------------------------------===//
 
-def UnitaryOpInterface : OpInterface<"UnitaryOpInterface"> {
+class UnitaryOpInterface<code matrixDefinition = [{}]> : OpInterface<"UnitaryOpInterface"> {
     let description = [{
         This interface provides a unified API for all operations that apply or
         produce a unitary transformation in the QCO dialect. This includes base
@@ -107,7 +107,22 @@ def UnitaryOpInterface : OpInterface<"UnitaryOpInterface"> {
             "Returns the base symbol/mnemonic of the operation.",
             "StringRef", "getBaseSymbol", (ins)
         >,
+
+        // Unitary matrix methods
+        InterfaceMethod<
+            "Returns the unitary matrix definition of the operation.",
+            "Eigen::MatrixXcd", "getUnitaryMatrix", (ins),
+            matrixDefinition, [{ throw std::logic_error{ "Operation has no matrix definition!" } }]
+        >,
     ];
+
+    let extraClassDeclaration = [{
+      template<typename MatrixType>
+      MatrixType getUnitaryMatrix() {
+        static_assert(std::is_same_v<MatrixType, UnitaryMatrixType>,
+         "Provided matrix type does not equal expected type for the contained operation.");
+      }
+    }];
 }
 
 #endif // QCO_INTERFACES
