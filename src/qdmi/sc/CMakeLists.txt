@@ -151,47 +151,44 @@ if(NOT TARGET ${TARGET_NAME})
   # in the tests
   add_library(qdmi::mqt_sc_device ALIAS ${TARGET_NAME})
 
-  # Do not build dynamic SC device on Windows because it cannot be used anyways in the current setup
-  if(NOT WIN32)
-    set(DYN_TARGET_NAME ${MQT_CORE_TARGET_NAME}-qdmi-sc-device-dyn)
-    if(NOT TARGET ${DYN_TARGET_NAME})
-      # Set prefix for QDMI
-      set(QDMI_PREFIX "MQT_SC_DYN")
-      # Generate prefixed QDMI headers
-      generate_prefixed_qdmi_headers(${QDMI_PREFIX})
-      file(GLOB_RECURSE QDMI_HDRS ${CMAKE_CURRENT_BINARY_DIR}/include/mqt_sc_dyn_qdmi/**.hpp)
-      # Add dynamic library target
-      add_library(${DYN_TARGET_NAME} SHARED)
-      add_dependencies(${DYN_TARGET_NAME} ${TARGET_NAME})
-      # add sources to target
-      target_sources(${DYN_TARGET_NAME} PRIVATE DynDevice.cpp)
-      # add headers using file sets
-      target_sources(
-        ${DYN_TARGET_NAME}
-        PUBLIC FILE_SET
-               HEADERS
-               BASE_DIRS
-               ${MQT_CORE_INCLUDE_BUILD_DIR}
-               ${CMAKE_CURRENT_BINARY_DIR}/include
-               FILES
-               ${DEVICE_HDR}
-               ${MQT_CORE_INCLUDE_BUILD_DIR}/qdmi/sc/Device.hpp
-               ${QDMI_HDRS})
-      # add link libraries
-      target_link_libraries(
-        ${DYN_TARGET_NAME}
-        PUBLIC qdmi::qdmi
-        PRIVATE ${TARGET_NAME} MQT::CoreQDMICommon MQT::ProjectOptions MQT::ProjectWarnings
-                spdlog::spdlog)
-      # set c++ standard
-      target_compile_features(${DYN_TARGET_NAME} PRIVATE cxx_std_20)
-      # set versioning information
-      set_target_properties(
-        ${DYN_TARGET_NAME}
-        PROPERTIES VERSION ${PROJECT_VERSION}
-                   SOVERSION ${PROJECT_VERSION_MAJOR}.${PROJECT_VERSION_MINOR}
-                   EXPORT_NAME CoreQDMIScDeviceDyn)
-      add_library(MQT::CoreQDMIScDeviceDyn ALIAS ${DYN_TARGET_NAME})
-    endif()
+  set(DYN_TARGET_NAME ${MQT_CORE_TARGET_NAME}-qdmi-sc-device-dyn)
+  if(NOT TARGET ${DYN_TARGET_NAME})
+    # Set prefix for QDMI
+    set(QDMI_PREFIX "MQT_SC_DYN")
+    # Generate prefixed QDMI headers
+    generate_prefixed_qdmi_headers(${QDMI_PREFIX})
+    file(GLOB_RECURSE QDMI_HDRS ${CMAKE_CURRENT_BINARY_DIR}/include/mqt_sc_dyn_qdmi/**.hpp)
+    # Add dynamic library target
+    add_library(${DYN_TARGET_NAME} SHARED)
+    add_dependencies(${DYN_TARGET_NAME} ${TARGET_NAME})
+    # add sources to target
+    target_sources(${DYN_TARGET_NAME} PRIVATE DynDevice.cpp)
+    # add headers using file sets
+    target_sources(
+      ${DYN_TARGET_NAME}
+      PUBLIC FILE_SET
+             HEADERS
+             BASE_DIRS
+             ${MQT_CORE_INCLUDE_BUILD_DIR}
+             ${CMAKE_CURRENT_BINARY_DIR}/include
+             FILES
+             ${DEVICE_HDR}
+             ${MQT_CORE_INCLUDE_BUILD_DIR}/qdmi/sc/Device.hpp
+             ${QDMI_HDRS})
+    # add link libraries
+    target_link_libraries(
+      ${DYN_TARGET_NAME}
+      PUBLIC qdmi::qdmi
+      PRIVATE ${TARGET_NAME} MQT::CoreQDMICommon MQT::ProjectOptions MQT::ProjectWarnings
+              spdlog::spdlog)
+    # set c++ standard
+    target_compile_features(${DYN_TARGET_NAME} PRIVATE cxx_std_20)
+    # set versioning information
+    set_target_properties(
+      ${DYN_TARGET_NAME}
+      PROPERTIES VERSION ${PROJECT_VERSION}
+                 SOVERSION ${PROJECT_VERSION_MAJOR}.${PROJECT_VERSION_MINOR}
+                 EXPORT_NAME CoreQDMIScDeviceDyn)
+    add_library(MQT::CoreQDMIScDeviceDyn ALIAS ${DYN_TARGET_NAME})
   endif()
 endif()

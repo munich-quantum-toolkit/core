@@ -364,9 +364,6 @@ def add_dynamic_device_library(
 
     This function loads a shared library (.so, .dll, or .dylib) that implements a QDMI device interface and makes it available for use in sessions.
 
-    Note:
-        This function is only available on non-Windows platforms.
-
     Args:
         library_path: Path to the shared library file to load.
         prefix: Function prefix used by the library (e.g., "MY_DEVICE").

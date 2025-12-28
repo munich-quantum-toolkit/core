@@ -420,9 +420,7 @@ Returns:
   operation.def(nb::self != nb::self,
                 nb::sig("def __ne__(self, arg: object, /) -> bool"));
 
-#ifndef _WIN32
-  // Module-level function to add dynamic device libraries on non-Windows
-  // systems
+  // Module-level function to add dynamic device libraries
   m.def(
       "add_dynamic_device_library",
       [](const std::string& libraryPath, const std::string& prefix,
@@ -463,9 +461,6 @@ Returns:
 
 This function loads a shared library (.so, .dll, or .dylib) that implements a QDMI device interface and makes it available for use in sessions.
 
-Note:
-    This function is only available on non-Windows platforms.
-
 Args:
     library_path: Path to the shared library file to load.
     prefix: Function prefix used by the library (e.g., "MY_DEVICE").
@@ -499,7 +494,6 @@ Examples:
 
     >>> from mqt.core.plugins.qiskit import QDMIBackend
     >>> backend = QDMIBackend(device=device))pb");
-#endif // _WIN32
 }
 
 } // namespace mqt

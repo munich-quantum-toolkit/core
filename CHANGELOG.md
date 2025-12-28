@@ -24,6 +24,7 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 
 ### Changed
 
+- ♻️🏁 Remove Windows-specific restrictions for dynamic QDMI device library handling ([#1406]) ([**@burgholzer**])
 - ♻️ Migrate Python bindings from `pybind11` to `nanobind` ([#1383]) ([**@denialhaag**], [**@burgholzer**])
 - 📦️ Provide Stable ABI wheels for Python 3.12+ ([#1383]) ([**@burgholzer**], [**@denialhaag**])
 - 🚚 Create dedicated `mqt.core.na` submodule to closely follow the structure of other submodules ([#1383]) ([**@burgholzer**])
@@ -285,6 +286,8 @@ _📚 Refer to the [GitHub Release Notes](https://github.com/munich-quantum-tool
 
 <!-- PR links -->
 
+[#1406]: https://github.com/munich-quantum-toolkit/core/pull/1406
+[#1402]: https://github.com/munich-quantum-toolkit/core/pull/1402
 [#1385]: https://github.com/munich-quantum-toolkit/core/pull/1385
 [#1384]: https://github.com/munich-quantum-toolkit/core/pull/1384
 [#1383]: https://github.com/munich-quantum-toolkit/core/pull/1383
