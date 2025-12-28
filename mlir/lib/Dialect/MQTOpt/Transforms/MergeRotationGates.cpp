@@ -26,24 +26,23 @@ namespace mqt::ir::opt {
  */
 struct MergeRotationGates final
     : impl::MergeRotationGatesBase<MergeRotationGates> {
-    using impl::MergeRotationGatesBase<
-        MergeRotationGates>::MergeRotationGatesBase;
+  using impl::MergeRotationGatesBase<
+      MergeRotationGates>::MergeRotationGatesBase;
 
-    void runOnOperation() override {
-        // Get the current operation being operated on.
-        auto op = getOperation();
-        auto* ctx = &getContext();
+  void runOnOperation() override {
+    // Get the current operation being operated on.
+    auto op = getOperation();
+    auto* ctx = &getContext();
 
-        // Define the set of patterns to use.
-        mlir::RewritePatternSet patterns(ctx);
-        populateMergeRotationGatesPatterns(patterns, quaternionFolding);
+    // Define the set of patterns to use.
+    mlir::RewritePatternSet patterns(ctx);
+    populateMergeRotationGatesPatterns(patterns, quaternionFolding);
 
-        // Apply patterns in an iterative and greedy manner.
-        if (mlir::failed(
-                mlir::applyPatternsGreedily(op, std::move(patterns)))) {
-            signalPassFailure();
-        }
+    // Apply patterns in an iterative and greedy manner.
+    if (mlir::failed(mlir::applyPatternsGreedily(op, std::move(patterns)))) {
+      signalPassFailure();
     }
+  }
 };
 
 } // namespace mqt::ir::opt
