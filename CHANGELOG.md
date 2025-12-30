@@ -26,7 +26,7 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 ### Changed
 
 - ⚡ Improve uv build caching by removing unconditional `reinstall-package` and configuring dedicated `cache-keys` ([#1412]) ([**@burgholzer**])
-- 👨‍💻📦 Build `spdlog` and QDMI generators as a shared libraries on project installs ([#1411], [#1403]) ([**@burgholzer**])
+- 👨‍💻📦 Build `spdlog` and QDMI generators as shared libraries in Python package builds ([#1411], [#1403]) ([**@burgholzer**])
 - ♻️🏁 Remove Windows-specific restrictions for dynamic QDMI device library handling ([#1406]) ([**@burgholzer**])
 - ♻️ Migrate Python bindings from `pybind11` to `nanobind` ([#1383]) ([**@denialhaag**], [**@burgholzer**])
 - 📦️ Provide Stable ABI wheels for Python 3.12+ ([#1383]) ([**@burgholzer**], [**@denialhaag**])
