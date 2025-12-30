@@ -21,6 +21,7 @@ macro(ADD_QIR_CIRCUIT target_name circuit_path)
       COMMENT "Compiling ${circuit_path} to ${circuit_name}.o")
     add_executable(${target_name} ${circuit_name}.o)
     target_link_libraries(${target_name} PRIVATE MQT::CoreQIRRuntime)
+    set_target_properties(${target_name} PROPERTIES LINKER_LANGUAGE CXX)
   endif()
 endmacro()
 
