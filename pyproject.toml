@@ -303,7 +303,11 @@ repair-wheel-command = "uvx abi3audit --strict --report {wheel}"
 
 [tool.uv]
 required-version = ">=0.5.20"
-reinstall-package = ["mqt-core"]
+cache-keys = [
+  { file = "pyproject.toml" },
+  { git = { commit = true, tags = true } },
+  { file = "bindings/**/*.cpp"},
+]
 
 [tool.uv.sources]
 mqt-core = { workspace = true }
