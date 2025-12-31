@@ -3,6 +3,8 @@
 # All rights reserved.
 #
 # SPDX-License-Identifier: MIT
+#
+# Licensed under the MIT License
 
 add_mlir_library(
   MLIRSupportMQT
