@@ -189,8 +189,9 @@ struct ToQuantumComputationPattern final
       const std::string type = op->getName().stripDialect().str();
       opType = qc::opTypeFromString(type);
     } catch (const std::invalid_argument& e) {
-      throw std::runtime_error("Unsupported operation type: " +
-                               op->getName().getStringRef().str());
+      throw std::runtime_error(
+          "Unsupported operation type: " + op->getName().getStringRef().str() +
+          " (" + e.what() + ")");
     }
 
     const auto in = op.getInQubits();
