@@ -9,15 +9,9 @@
 # set the include directory for the build tree
 set(MQT_MLIR_SOURCE_INCLUDE_DIR "${PROJECT_SOURCE_DIR}/mlir/include")
 set(MQT_MLIR_BUILD_INCLUDE_DIR "${PROJECT_BINARY_DIR}/mlir/include")
-set(MQT_MLIR_MIN_VERSION
-    "21.1"
-    CACHE STRING "Minimum required MLIR version")
 
 # MLIR must be installed on the system
-find_package(MLIR REQUIRED CONFIG)
-if(MLIR_VERSION VERSION_LESS MQT_MLIR_MIN_VERSION)
-  message(FATAL_ERROR "MLIR version must be at least ${MQT_MLIR_MIN_VERSION}")
-endif()
+find_package(MLIR 21.1 REQUIRED CONFIG)
 message(STATUS "Using MLIRConfig.cmake in: ${MLIR_DIR}")
 message(STATUS "Using LLVMConfig.cmake in: ${LLVM_DIR}")
 
