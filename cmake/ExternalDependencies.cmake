@@ -10,6 +10,7 @@
 
 include(FetchContent)
 include(CMakeDependentOption)
+include(GNUInstallDirs)
 set(FETCH_PACKAGES "")
 
 if(BUILD_MQT_CORE_BINDINGS)
@@ -105,13 +106,14 @@ FetchContent_MakeAvailable(${FETCH_PACKAGES})
 # Ensure external shared libraries end up in a common lib layout used by our RUNPATH
 if(TARGET spdlog)
   set_target_properties(
-    spdlog PROPERTIES LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_LIBDIR}"
-                      ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_LIBDIR}")
+    spdlog
+    PROPERTIES LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_LIBDIR}"
+               ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_LIBDIR}"
+               RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_BINDIR}")
 endif()
 
 # Patch for spdlog cmake files to be installed in a common cmake directory
 if(SPDLOG_INSTALL)
-  include(GNUInstallDirs)
   install(
     CODE "
     file(GLOB SPDLOG_CMAKE_FILES

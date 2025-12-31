@@ -48,7 +48,6 @@ class DriverTest : public testing::TestWithParam<const char*> {
 protected:
   QDMI_Session session = nullptr;
   QDMI_Device device = nullptr;
-#ifndef _WIN32
   static void SetUpTestSuite() {
     // Load dynamic libraries with default device session configuration
     const qdmi::DeviceSessionConfig config;
@@ -58,7 +57,6 @@ protected:
       }
     });
   }
-#endif // _WIN32
 
   void SetUp() override {
     const auto& deviceName = GetParam();
@@ -502,16 +500,10 @@ TEST_P(DriverTest, QueryNeedsCalibration) {
   EXPECT_EQ(ret, QDMI_SUCCESS);
   EXPECT_THAT(needsCalibration, testing::AnyOf(0, 1));
 }
-#ifdef _WIN32
-constexpr std::array DEVICES{"MQT NA Default QDMI Device",
-                             "MQT Core DDSIM QDMI Device",
-                             "MQT SC Default QDMI Device"};
-#else
 constexpr std::array DEVICES{
     "MQT NA Default QDMI Device", "MQT NA Dynamic QDMI Device",
     "MQT Core DDSIM QDMI Device", "MQT SC Default QDMI Device",
     "MQT SC Dynamic QDMI Device"};
-#endif
 // Instantiate the test suite with different parameters
 INSTANTIATE_TEST_SUITE_P(
     // Custom instantiation name
@@ -530,7 +522,6 @@ INSTANTIATE_TEST_SUITE_P(
       return name;
     });
 
-#ifndef _WIN32
 TEST(DeviceSessionConfigTest, AddDynamicDeviceLibraryWithBaseUrl) {
   qdmi::DeviceSessionConfig config;
   config.baseUrl = "http://localhost:8080";
@@ -728,7 +719,6 @@ TEST(DynamicDeviceLibraryTest, addDynamicDeviceLibraryReturnsDevice) {
     EXPECT_GT(size, 0) << "Device should have a non-empty name";
   }
 }
-#endif // _WIN32
 
 INSTANTIATE_TEST_SUITE_P(
     // Custom instantiation name
