@@ -51,7 +51,7 @@ if(NOT TARGET ${TARGET_NAME})
     ${TARGET_NAME}
     PUBLIC qdmi::qdmi MQT::CoreQDMICommon
     PRIVATE MQT::CoreQDMINaDevice MQT::CoreQDMIScDevice MQT::CoreQDMI_DDSIM_Device
-            qdmi::qdmi_project_warnings spdlog::spdlog)
+            qdmi::qdmi_project_warnings spdlog::spdlog ${CMAKE_DL_LIBS})
 
   # add to list of MQT core targets
   list(APPEND MQT_CORE_TARGETS ${TARGET_NAME})
