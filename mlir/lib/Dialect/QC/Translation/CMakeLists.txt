@@ -16,6 +16,7 @@ add_mlir_library(
   MLIRFuncDialect
   MLIRSCFDialect
   MLIRQCDialect
+  MLIRQCProgramBuilder
   MQT::CoreIR)
 
 # collect header files

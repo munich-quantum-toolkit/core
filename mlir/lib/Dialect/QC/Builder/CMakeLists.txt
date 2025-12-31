@@ -14,8 +14,7 @@ add_mlir_library(
   MLIRArithDialect
   MLIRFuncDialect
   MLIRSCFDialect
-  MLIRQCDialect
-  DISABLE_INSTALL)
+  MLIRQCDialect)
 
 # collect header files
 file(GLOB_RECURSE BUILDER_HEADERS_SOURCE ${MQT_MLIR_SOURCE_INCLUDE_DIR}/mlir/Dialect/QC/Builder/*.h)

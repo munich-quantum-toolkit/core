@@ -24,6 +24,8 @@ add_mlir_dialect_library(
   LINK_LIBS
   PUBLIC
   MLIRIR
+  MLIRArithDialect
+  MLIRInferTypeOpInterface
   MLIRSideEffectInterfaces)
 
 # collect header files

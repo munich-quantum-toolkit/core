@@ -18,4 +18,6 @@ add_mlir_library(
   MLIRQCDialect
   MLIRQCODialect
   MLIRArithDialect
-  MLIRFuncDialect)
+  MLIRFuncDialect
+  MLIRTransforms
+  MLIRFuncTransforms)
