@@ -6,7 +6,7 @@
 # SPDX-License-Identifier: MIT
 #
 # Licensed under the MIT License
-#
+
 # /// script
 # requires-python = ">=3.10"
 # dependencies = [

@@ -4,6 +4,7 @@
     "years": [2023, 2025]
   },
   "force_author": true,
+  "force_license": true,
   "license": "MIT",
   "title": false,
   "include": ["**/*"],
