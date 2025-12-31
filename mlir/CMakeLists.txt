@@ -15,13 +15,6 @@ if(ENABLE_COVERAGE)
   add_link_options(--coverage)
 endif()
 
-# Conditionally set SHARED keyword for shared library builds
-if(BUILD_MQT_CORE_SHARED_LIBS)
-  set(MQT_CORE_MLIR_LIBRARY_TYPE SHARED)
-else()
-  set(MQT_CORE_MLIR_LIBRARY_TYPE)
-endif()
-
 # add main library code
 add_subdirectory(include)
 add_subdirectory(lib)

@@ -22,4 +22,5 @@ add_mlir_library(
   MLIRTransforms
   MLIRFuncDialect
   MLIRFuncToLLVM
-  MLIRReconcileUnrealizedCasts)
+  MLIRReconcileUnrealizedCasts
+  DISABLE_INSTALL)

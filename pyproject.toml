@@ -100,8 +100,6 @@ build.targets = [
   "mqt-core-qdmi-na-device-dyn",
   "mqt-core-qdmi-sc-device",
   "mqt-core-qdmi-sc-device-dyn",
-  "MLIRQCTranslation",
-  "mqt-cc",
 ]
 
 metadata.version.provider = "scikit_build_core.metadata.setuptools_scm"
