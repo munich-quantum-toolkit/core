@@ -22,9 +22,9 @@ INSTANTIATE_TEST_SUITE_P(
     QIRRunnerTest, //< Test suite name
     // Parameters to test with
     ::testing::Values(QIR_FILES),
-    [](const testing::TestParamInfo<std::filesystem::path>& info) {
+    [](const testing::TestParamInfo<std::filesystem::path>& paramInfo) {
       // Extract the last part of the file path
-      auto filename = info.param.stem().string();
+      auto filename = paramInfo.param.stem().string();
       return filename;
     });
 

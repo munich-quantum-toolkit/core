@@ -10,6 +10,10 @@ set(CMAKE_CXX_STANDARD
     20
     CACHE STRING "C++ standard to conform to")
 
+if(MSVC)
+  add_compile_definitions(_SILENCE_NONFLOATING_COMPLEX_DEPRECATION_WARNING)
+endif()
+
 if(ENABLE_COVERAGE)
   add_compile_options(--coverage -O0)
   add_link_options(--coverage)

@@ -87,7 +87,8 @@ DEFINE_STATIC_LIBRARY(MQT_SC)
 
 #ifdef _WIN32
 #define DL_OPEN(lib) LoadLibraryA((lib))
-#define DL_SYM(lib, sym) GetProcAddress(static_cast<HMODULE>((lib)), (sym))
+#define DL_SYM(lib, sym)                                                       \
+  reinterpret_cast<void*>(GetProcAddress(static_cast<HMODULE>((lib)), (sym)))
 #define DL_CLOSE(lib) FreeLibrary(static_cast<HMODULE>((lib)))
 #else
 #define DL_OPEN(lib) dlopen((lib), RTLD_NOW | RTLD_LOCAL)
