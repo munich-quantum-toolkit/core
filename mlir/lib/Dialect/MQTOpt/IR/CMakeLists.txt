@@ -8,14 +8,15 @@
 
 add_mlir_dialect_library(
   MLIRMQTOpt
-  ${MQT_CORE_MLIR_LIBRARY_TYPE}
   MQTOptOps.cpp
   DEPENDS
   MLIRMQTOptOpsIncGen
   MLIRMQTOptInterfacesIncGen
   LINK_LIBS
   MLIRIR
-  MLIRInferTypeOpInterface)
+  MLIRInferTypeOpInterface
+  DISABLE_INSTALL)
+
 # collect header files
 file(GLOB_RECURSE IR_HEADERS_SOURCE "${MQT_MLIR_SOURCE_INCLUDE_DIR}/mlir/Dialect/MQTOpt/IR/*.h")
 file(GLOB_RECURSE IR_HEADERS_BUILD "${MQT_MLIR_BUILD_INCLUDE_DIR}/mlir/Dialect/MQTOpt/IR/*.inc")

@@ -17,4 +17,5 @@ add_mlir_library(
   MLIRMQTRef
   MLIRMemRefDialect
   MLIRTransforms
-  MLIRLLVMDialect)
+  MLIRLLVMDialect
+  DISABLE_INSTALL)

@@ -14,7 +14,8 @@ add_mlir_library(
   MLIRLLVMDialect
   MLIRQIRUtils
   MLIRIR
-  MLIRSupport)
+  MLIRSupport
+  DISABLE_INSTALL)
 
 # collect header files
 file(GLOB_RECURSE QIR_BUILDER_HEADERS_SOURCE

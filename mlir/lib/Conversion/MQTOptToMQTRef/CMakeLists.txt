@@ -19,4 +19,5 @@ add_mlir_library(
   MLIRMemRefDialect
   MLIRTransforms
   MLIRFuncDialect
-  MLIRFuncTransforms)
+  MLIRFuncTransforms
+  DISABLE_INSTALL)

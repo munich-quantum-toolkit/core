@@ -10,7 +10,6 @@ add_compile_options(-fexceptions)
 
 add_mlir_library(
   MLIRMQTRefTranslation
-  ${MQT_CORE_MLIR_LIBRARY_TYPE}
   ImportQuantumComputation.cpp
   LINK_LIBS
   MLIRArithDialect
@@ -18,7 +17,8 @@ add_mlir_library(
   MLIRMemRefDialect
   MLIRSCFDialect
   MLIRMQTRef
-  MQT::CoreIR)
+  MQT::CoreIR
+  DISABLE_INSTALL)
 
 # collect header files
 file(GLOB_RECURSE TRANSLATION_HEADERS_SOURCE
