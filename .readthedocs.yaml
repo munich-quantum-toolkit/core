@@ -32,7 +32,7 @@ build:
       - asdf install uv latest
       - asdf global uv latest
       # Install MLIR
-      - curl -LsSf https://github.com/munich-quantum-software/setup-mlir/releases/latest/download/setup-mlir.sh | bash -s -- -v f8cb7987c64dcffb72414a40560055cb717dbf74 -p $HOME/mlir
+      - curl -LsSf https://github.com/munich-quantum-software/setup-mlir/releases/latest/download/setup-mlir.sh | bash -s -- -v 21.1.8 -p $HOME/mlir
       # Build the MLIR documentation
       - uvx cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DBUILD_MQT_CORE_MLIR=ON -DMLIR_DIR=$HOME/mlir/lib/cmake/mlir
       - uvx cmake --build build --target mlir-doc
