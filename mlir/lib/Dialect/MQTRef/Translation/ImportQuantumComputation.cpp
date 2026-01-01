@@ -137,9 +137,7 @@ getQregs(mlir::OpBuilder& builder, mlir::MLIRContext* context,
   for (const auto* qregPtr : qregPtrs) {
     const auto qreg = allocateQreg(builder, context, qregPtr->getSize());
     auto qubits = extractQubits(builder, qreg, qregPtr->getSize());
-    QregInfo qregInfo = {
-        .qregPtr = qregPtr, .qreg = qreg, .qubits = std::move(qubits)};
-    qregs.emplace_back(std::move(qregInfo));
+    qregs.emplace_back(qregPtr, qreg, std::move(qubits));
   }
 
   return qregs;
