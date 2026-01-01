@@ -24,6 +24,7 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 
 ### Changed
 
+- 📦🍎 Build macOS arm64 wheels on macos-15 runner for newer compiler ([#1413]) ([**@burgholzer**])
 - ⚡ Improve uv build caching by removing unconditional `reinstall-package` and configuring dedicated `cache-keys` ([#1412]) ([**@burgholzer**])
 - 👨‍💻📦 Build `spdlog` and QDMI generators as shared libraries in Python package builds ([#1411], [#1403]) ([**@burgholzer**])
 - ♻️🏁 Remove Windows-specific restrictions for dynamic QDMI device library handling ([#1406]) ([**@burgholzer**])
@@ -289,6 +290,7 @@ _📚 Refer to the [GitHub Release Notes](https://github.com/munich-quantum-tool
 
 <!-- PR links -->
 
+[#1413]: https://github.com/munich-quantum-toolkit/core/pull/1413
 [#1412]: https://github.com/munich-quantum-toolkit/core/pull/1412
 [#1411]: https://github.com/munich-quantum-toolkit/core/pull/1411
 [#1406]: https://github.com/munich-quantum-toolkit/core/pull/1406
