@@ -103,6 +103,20 @@ if(APPLE AND CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
   message(
     WARNING "Disabling MLIR build on macOS with GCC to avoid ABI issues between STL and libstdc++")
 endif()
+if(APPLE AND CMAKE_CXX_COMPILER_ID STREQUAL "AppleClang")
+  if(CMAKE_CXX_COMPILER_VERSION VERSION_LESS_EQUAL "15.0.0")
+    set(BUILD_MQT_CORE_MLIR
+        OFF
+        CACHE
+          BOOL
+          "Disable MLIR build on macOS with Apple Clang <= 15 due to missing complete C++20 support"
+          FORCE)
+    message(
+      WARNING
+        "Disabling MLIR build on macOS with Apple Clang <= 15 due to missing complete C++20 support"
+    )
+  endif()
+endif()
 if(WIN32 AND CMAKE_BUILD_TYPE STREQUAL "Debug")
   set(BUILD_MQT_CORE_MLIR
       OFF
