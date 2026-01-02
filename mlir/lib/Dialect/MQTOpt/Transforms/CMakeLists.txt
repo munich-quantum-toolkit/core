@@ -9,6 +9,10 @@
 get_property(dialect_libs GLOBAL PROPERTY MLIR_DIALECT_LIBS)
 set(LIBRARIES ${dialect_libs} MQT::CoreIR)
 
+if(NOT MSVC)
+  add_compile_options(-fexceptions)
+endif()
+
 file(GLOB_RECURSE TRANSFORMS_SOURCES *.cpp)
 
 add_mlir_library(

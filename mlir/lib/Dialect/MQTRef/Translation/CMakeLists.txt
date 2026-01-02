@@ -6,6 +6,10 @@
 #
 # Licensed under the MIT License
 
+if(NOT MSVC)
+  add_compile_options(-fexceptions)
+endif()
+
 add_mlir_library(
   MLIRMQTRefTranslation
   ImportQuantumComputation.cpp
