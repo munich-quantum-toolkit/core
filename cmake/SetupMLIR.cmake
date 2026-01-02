@@ -23,6 +23,8 @@ list(APPEND CMAKE_MODULE_PATH "${LLVM_CMAKE_DIR}")
 include(TableGen)
 include(AddLLVM)
 include(AddMLIR)
+set(LLVM_ENABLE_RTTI ON)
+set(LLVM_ENABLE_EH ON)
 include(HandleLLVMOptions)
 
 include_directories(${LLVM_INCLUDE_DIRS})
