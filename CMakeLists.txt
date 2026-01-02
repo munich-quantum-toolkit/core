@@ -94,6 +94,15 @@ endif()
 set(MQT_CORE_TARGET_NAME "mqt-core")
 
 option(BUILD_MQT_CORE_MLIR "Build the MLIR submodule of the MQT Core project" ON)
+if(APPLE AND CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+  set(BUILD_MQT_CORE_MLIR
+      OFF
+      CACHE BOOL
+            "Disable MLIR build on macOS with GCC to avoid ABI issues between STL and libstdc++"
+            FORCE)
+  message(
+    WARNING "Disabling MLIR build on macOS with GCC to avoid ABI issues between STL and libstdc++")
+endif()
 if(WIN32 AND CMAKE_BUILD_TYPE STREQUAL "Debug")
   set(BUILD_MQT_CORE_MLIR
       OFF
