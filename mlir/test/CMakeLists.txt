@@ -25,5 +25,5 @@ add_lit_testsuite(mqt-core-mlir-lit-test "Running the MQT MLIR tests" ${CMAKE_CU
 set_target_properties(mqt-core-mlir-lit-test PROPERTIES FOLDER "Tests")
 
 add_test(NAME mqt-core-mlir-lit-test COMMAND ${CMAKE_COMMAND} --build ${CMAKE_BINARY_DIR} --target
-                                             mqt-core-mlir-lit-test)
+                                             mqt-core-mlir-lit-test --config ${CMAKE_BUILD_TYPE})
 set_tests_properties(mqt-core-mlir-lit-test PROPERTIES DEPENDS mqt-core-mlir-lit-test-build-only)
