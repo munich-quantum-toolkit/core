@@ -128,6 +128,7 @@ git-only = [
 BUILD_MQT_CORE_BINDINGS = "ON"
 BUILD_MQT_CORE_TESTS = "OFF"
 BUILD_MQT_CORE_SHARED_LIBS = "ON"
+BUILD_MQT_CORE_MLIR = "OFF"
 
 [[tool.scikit-build.overrides]]
 if.python-version = ">=3.13"
@@ -287,12 +288,8 @@ test-skip = [
 ]
 
 [tool.cibuildwheel.linux]
-before-all = [
-    "uv tool install sccache>=0.10.0",
-    "yum install -y zstd",
-    "curl -LsSf https://github.com/munich-quantum-software/setup-mlir/releases/latest/download/setup-mlir.sh | bash -s -- -v 21.1.8 -p /tmp/mlir",
-]
-environment = { DEPLOY = "ON", PATH="$PATH:/root/.local/bin", MLIR_DIR="/tmp/mlir/lib/cmake/mlir" }
+before-all = "uv tool install sccache>=0.10.0"
+environment = { DEPLOY = "ON", PATH="$PATH:/root/.local/bin" }
 before-test = "uvx sccache --show-stats"
 
 [tool.cibuildwheel.macos]
