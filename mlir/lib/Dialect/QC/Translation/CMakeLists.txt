@@ -6,8 +6,6 @@
 #
 # Licensed under the MIT License
 
-add_compile_options("-fexceptions")
-
 add_mlir_library(
   MLIRQCTranslation
   TranslateQuantumComputationToQC.cpp

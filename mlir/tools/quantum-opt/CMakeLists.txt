@@ -23,7 +23,6 @@ set(LIBS
     QIRToMQTRef)
 
 add_mlir_tool(quantum-opt quantum-opt.cpp DEPENDS ${LIBS} SUPPORT_PLUGINS)
-target_compile_options(quantum-opt PRIVATE -fexceptions)
 target_link_libraries(quantum-opt PUBLIC ${LIBS})
 llvm_update_compile_flags(quantum-opt)
 mlir_check_all_link_libraries(quantum-opt)

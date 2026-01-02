@@ -8,7 +8,6 @@
 
 # Build the compiler driver executable
 add_mlir_tool(mqt-cc mqt-cc.cpp DEPENDS MQTCompilerPipeline SUPPORT_PLUGINS)
-target_compile_options(mqt-cc PRIVATE -fexceptions)
 target_link_libraries(
   mqt-cc
   PRIVATE MQTCompilerPipeline
