@@ -71,13 +71,8 @@ int64_t __quantum__rt__array_get_size_1d(const Array* array) {
 }
 
 int8_t* __quantum__rt__array_get_element_ptr_1d(Array* array, const int64_t i) {
-  if (i < 0) {
-    throw std::out_of_range("Index out of bounds (negative): " +
-                            std::to_string(i));
-  }
-  if (const auto size = __quantum__rt__array_get_size_1d(array); i >= size) {
-    throw std::out_of_range("Index out of bounds (size: " +
-                            std::to_string(size) + "): " + std::to_string(i));
+  if (i < 0 || i >= __quantum__rt__array_get_size_1d(array)) {
+    return nullptr;
   }
   return &array->data[static_cast<size_t>(array->elementSize * i)];
 }
