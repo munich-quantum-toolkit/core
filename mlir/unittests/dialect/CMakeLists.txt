@@ -9,6 +9,12 @@
 set(testname "mqt-core-mlir-wireiterator-test")
 file(GLOB_RECURSE WIREITERATOR_TEST_SOURCES *.cpp)
 
+if(MSVC)
+  add_compile_options(/EHsc)
+else()
+  add_compile_options(-fexceptions)
+endif()
+
 if(NOT TARGET ${testname})
   # create an executable in which the tests will be stored
   add_executable(${testname} ${WIREITERATOR_TEST_SOURCES})

@@ -6,7 +6,9 @@
 #
 # Licensed under the MIT License
 
-if(NOT MSVC)
+if(MSVC)
+  add_compile_options(/EHsc)
+else()
   add_compile_options(-fexceptions)
 endif()
 
