@@ -25,6 +25,9 @@ function(enable_project_options target_name)
     # always include debug symbols (avoids common problems with LTO)
     target_compile_options(${target_name} INTERFACE -g)
 
+    # ensure that exceptions are enabled
+    target_compile_options(${target_name} INTERFACE -fexceptions)
+
     # enable coverage collection options
     option(ENABLE_COVERAGE "Enable coverage reporting for gcc/clang" FALSE)
     if(ENABLE_COVERAGE)
