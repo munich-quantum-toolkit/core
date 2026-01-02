@@ -25,4 +25,10 @@ if(NOT TARGET ${testname})
   # discover tests
   gtest_discover_tests(${testname} DISCOVERY_TIMEOUT 60)
   set_target_properties(${testname} PROPERTIES FOLDER unittests)
+
+  if(WIN32)
+    target_compile_options(${testname} PRIVATE /EHsc)
+  else()
+    target_compile_options(${testname} PRIVATE -fexceptions)
+  endif()
 endif()
