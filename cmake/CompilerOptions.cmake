@@ -20,7 +20,7 @@ function(enable_project_options target_name)
   endif()
 
   if(MSVC)
-    target_compile_options(${target_name} INTERFACE /utf-8 /Zm10)
+    target_compile_options(${target_name} INTERFACE /utf-8 /Zm10 /EHsc)
   else()
     # always include debug symbols (avoids common problems with LTO)
     target_compile_options(${target_name} INTERFACE -g)
