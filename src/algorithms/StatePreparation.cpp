@@ -119,7 +119,7 @@ template <typename T>
   }
 
   Matrix const matrix{std::vector{0.5, 0.5}, std::vector{0.5, -0.5}};
-  Matrix const identity = createIdentity(1 << (localNumQubits - 2));
+  Matrix const identity = createIdentity(1ULL << (localNumQubits - 2));
   Matrix const angleWeights = kroneckerProduct(matrix, identity);
 
   angles = matrixVectorProd(angleWeights, angles);
