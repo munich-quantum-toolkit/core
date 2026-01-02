@@ -17,7 +17,9 @@
 #include <llvm/ExecutionEngine/JITSymbol.h>
 #include <llvm/ExecutionEngine/Orc/AbsoluteSymbols.h>
 #include <llvm/ExecutionEngine/Orc/Core.h>
+#include <llvm/ExecutionEngine/Orc/CoreContainers.h>
 #include <llvm/ExecutionEngine/Orc/Debugging/DebuggerSupport.h>
+#include <llvm/ExecutionEngine/Orc/ExecutionUtils.h>
 #include <llvm/ExecutionEngine/Orc/JITTargetMachineBuilder.h>
 #include <llvm/ExecutionEngine/Orc/LLJIT.h>
 #include <llvm/ExecutionEngine/Orc/LazyReexports.h>
@@ -46,6 +48,7 @@
 #include <span>
 #include <string>
 #include <utility>
+#include <vector>
 
 #define DEBUG_TYPE "mqt-core-qir-runner"
 
@@ -67,9 +70,9 @@ llvm::ExitOnError exitOnErr;
 // NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables)
 std::vector<std::pair<std::string, void*>> manualSymbols;
 
-#define REGISTER_SYMBOL(name)                                                  \
-  llvm::sys::DynamicLibrary::AddSymbol(#name, reinterpret_cast<void*>(&name)); \
-  manualSymbols.emplace_back(#name, reinterpret_cast<void*>(&name))
+#define REGISTER_SYMBOL(name)                                                   \
+  llvm::sys::DynamicLibrary::AddSymbol(#name, reinterpret_cast<void*>(&(name)); \
+  manualSymbols.emplace_back(#name, reinterpret_cast<void*>(&(name))
 
 void exitOnLazyCallThroughFailure() { exit(1); }
 

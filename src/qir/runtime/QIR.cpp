@@ -16,8 +16,6 @@
 #include <cstddef>
 #include <cstdint>
 #include <iostream>
-#include <stdexcept>
-#include <string>
 #include <vector>
 
 extern "C" {
