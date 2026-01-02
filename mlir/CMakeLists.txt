@@ -11,7 +11,10 @@ set(CMAKE_CXX_STANDARD
     CACHE STRING "C++ standard to conform to")
 
 if(MSVC)
+  add_compile_options(/EHsc)
   add_compile_definitions(_SILENCE_NONFLOATING_COMPLEX_DEPRECATION_WARNING)
+else()
+  add_compile_options(-fexceptions)
 endif()
 
 if(ENABLE_COVERAGE)
