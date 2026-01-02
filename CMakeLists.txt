@@ -94,6 +94,12 @@ endif()
 set(MQT_CORE_TARGET_NAME "mqt-core")
 
 option(BUILD_MQT_CORE_MLIR "Build the MLIR submodule of the MQT Core project" ON)
+if(WIN32 AND CMAKE_BUILD_TYPE STREQUAL "Debug")
+  set(BUILD_MQT_CORE_MLIR
+      OFF
+      CACHE BOOL "Disable MLIR build on Windows in Debug mode to avoid ABI issues" FORCE)
+  message(WARNING "Disabling MLIR build on Windows in Debug mode to avoid ABI issues")
+endif()
 if(BUILD_MQT_CORE_MLIR)
   include(SetupMLIR)
 endif()
