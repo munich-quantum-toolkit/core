@@ -51,7 +51,8 @@ if(NOT TARGET ${TARGET_NAME})
   target_sources(${TARGET_NAME} PRIVATE App.cpp)
 
   # Link Generator library
-  target_link_libraries(${TARGET_NAME} PRIVATE MQT::CoreQDMINaDeviceGen spdlog::spdlog)
+  target_link_libraries(${TARGET_NAME} PRIVATE MQT::CoreQDMINaDeviceGen MQT::ProjectOptions
+                                               MQT::ProjectWarnings spdlog::spdlog)
 
   # set versioning information
   set_target_properties(${TARGET_NAME} PROPERTIES VERSION ${PROJECT_VERSION} EXPORT_NAME
