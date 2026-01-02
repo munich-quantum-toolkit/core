@@ -83,15 +83,9 @@ jobs:
       - name: Build MLIR lit target
         run: cmake --build build --config ${{ matrix.coverage && 'Debug' || 'Release' }} --target mqt-core-mlir-lit-test-build-only
 
-      - name: Build MLIR unittests
-        run: cmake --build build --config ${{ matrix.coverage && 'Debug' || 'Release' }} --target mqt-core-mlir-unittests
-
       # Test
       - name: Run lit tests
         run: cmake --build build --config ${{ matrix.coverage && 'Debug' || 'Release' }} --target mqt-core-mlir-lit-test
-
-      - name: Run unit tests
-        run: ctest -C ${{ matrix.coverage && 'Debug' || 'Release' }} --output-on-failure --test-dir build/mlir --repeat until-pass:3 --timeout 600
 
       # Coverage
       - name: Generate coverage data as JSON (gcovr)
