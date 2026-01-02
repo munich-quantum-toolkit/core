@@ -93,6 +93,10 @@ function(set_project_warnings target_name)
   endif()
 
   target_compile_options(${target_name} INTERFACE ${project_warnings})
+  if(MSVC)
+    target_compile_definitions(${target_name}
+                               INTERFACE _SILENCE_NONFLOATING_COMPLEX_DEPRECATION_WARNING)
+  endif()
 
   if(MSVC)
     add_compile_options(/bigobj)
