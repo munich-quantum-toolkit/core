@@ -169,7 +169,8 @@ struct MergeRotationGatesPattern final
     } else if (type == "rzx") {
       newUser = createOpAdditiveAngle<RZXOp>(op, user, rewriter);
     } else {
-      throw std::runtime_error("Unsupported operation type: " + type);
+      const std::string msg = "Unsupported operation type: " + type;
+      llvm::reportFatalInternalError(msg.c_str());
     }
 
     // Prepare erasure of op
