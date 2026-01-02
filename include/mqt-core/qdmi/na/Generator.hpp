@@ -186,12 +186,12 @@ public:
      * @brief The interaction radius of the operation within which two qubits
      * can interact.
      */
-    uint64_t interactionRadius = 0.0;
+    uint64_t interactionRadius = 0;
     /**
      * @brief The blocking radius of the operation within which no other
      * operation can be performed to avoid interference.
      */
-    uint64_t blockingRadius = 0.0;
+    uint64_t blockingRadius = 0;
     /// @brief The number of qubits involved in the operation.
     uint64_t numQubits = 0;
 
