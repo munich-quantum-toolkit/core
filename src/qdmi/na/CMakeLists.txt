@@ -148,7 +148,6 @@ if(NOT TARGET ${TARGET_NAME})
     file(GLOB_RECURSE QDMI_HDRS ${CMAKE_CURRENT_BINARY_DIR}/include/mqt_na_dyn_qdmi/**.hpp)
     # Add dynamic library target
     add_library(${DYN_TARGET_NAME} SHARED)
-    add_dependencies(${DYN_TARGET_NAME} ${TARGET_NAME})
     # add sources to target
     target_sources(${DYN_TARGET_NAME} PRIVATE DynDevice.cpp)
     # add headers using file sets
@@ -177,6 +176,10 @@ if(NOT TARGET ${TARGET_NAME})
       PROPERTIES VERSION ${PROJECT_VERSION}
                  SOVERSION ${PROJECT_VERSION_MAJOR}.${PROJECT_VERSION_MINOR}
                  EXPORT_NAME CoreQDMINaDeviceDyn)
+    if(MSVC)
+      set_target_properties(${DYN_TARGET_NAME} PROPERTIES INTERPROCEDURAL_OPTIMIZATION FALSE)
+      target_link_options(${DYN_TARGET_NAME} PRIVATE /LTCG:OFF)
+    endif()
     add_library(MQT::CoreQDMINaDeviceDyn ALIAS ${DYN_TARGET_NAME})
     list(APPEND MQT_CORE_TARGETS ${DYN_TARGET_NAME})
   endif()
