@@ -70,9 +70,10 @@ llvm::ExitOnError exitOnErr;
 // NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables)
 std::vector<std::pair<std::string, void*>> manualSymbols;
 
-#define REGISTER_SYMBOL(name)                                                   \
-  llvm::sys::DynamicLibrary::AddSymbol(#name, reinterpret_cast<void*>(&(name)); \
-  manualSymbols.emplace_back(#name, reinterpret_cast<void*>(&(name))
+#define REGISTER_SYMBOL(name)                                                  \
+  llvm::sys::DynamicLibrary::AddSymbol(#name,                                  \
+                                       reinterpret_cast<void*>(&(name)));      \
+  manualSymbols.emplace_back(#name, reinterpret_cast<void*>(&(name)));
 
 void exitOnLazyCallThroughFailure() { exit(1); }
 
