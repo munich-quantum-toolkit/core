@@ -40,22 +40,31 @@ config.test_exec_root = Path(config.mqt_core_mlir_test_dir)
 
 # For multi-config generators (MSVC), CMAKE_BUILD_TYPE may be empty or "$<CONFIG>"
 # We need to detect the actual build directory at runtime
-base_tool_dir = Path(config.mqt_core_mlir_tools_dir)
+base_tool_dir_str = config.mqt_core_mlir_tools_dir
 
-# Check for multi-config subdirectories (Release, Debug, etc.)
-if config.cmake_build_type and config.cmake_build_type != "$<CONFIG>":
-    multi_config_path = base_tool_dir / config.cmake_build_type
+# Handle unexpanded generator expressions - remove the $<CONFIG> suffix if present
+if base_tool_dir_str.endswith("/$<CONFIG>") or base_tool_dir_str.endswith("\\$<CONFIG>"):
+    base_tool_dir = Path(base_tool_dir_str.rsplit("$<CONFIG>", 1)[0].rstrip("/\\"))
 else:
-    # Multi-config generator - search for the actual config directory
-    multi_config_path = None
+    base_tool_dir = Path(base_tool_dir_str)
+
+# Try to find the quantum-opt tool
+mqt_tool_dir = None
+
+# First, check if tool exists in the base directory (single-config generators: Linux/macOS)
+if (base_tool_dir / "quantum-opt").exists() or (base_tool_dir / "quantum-opt.exe").exists():
+    mqt_tool_dir = str(base_tool_dir)
+# If not found, search in multi-config subdirectories (Windows MSVC)
+elif base_tool_dir.exists():
     for config_type in ["Release", "Debug", "RelWithDebInfo", "MinSizeRel"]:
         candidate = base_tool_dir / config_type
         if (candidate / "quantum-opt.exe").exists() or (candidate / "quantum-opt").exists():
-            multi_config_path = candidate
+            mqt_tool_dir = str(candidate)
             break
 
-# Use the found path, or fall back to base directory
-mqt_tool_dir = str(multi_config_path) if multi_config_path else str(base_tool_dir)
+# Fall back to base directory if tool not found
+if mqt_tool_dir is None:
+    mqt_tool_dir = str(base_tool_dir)
 
 tool_dirs = [config.llvm_tools_dir, mqt_tool_dir]
 tools = ["not", "FileCheck", "quantum-opt"]
