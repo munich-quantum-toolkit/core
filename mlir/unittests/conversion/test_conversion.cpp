@@ -66,10 +66,10 @@ protected:
   }
 };
 
-static std::string getOutputString(mlir::OwningOpRef<mlir::ModuleOp>* module) {
+static std::string getOutputString(mlir::OwningOpRef<mlir::ModuleOp>& module) {
   std::string outputString;
   llvm::raw_string_ostream os(outputString);
-  (*module)->print(os);
+  module->print(os);
   os.flush();
   return outputString;
 }
@@ -121,8 +121,8 @@ TEST_F(ConversionTest, ScfForTest) {
     b.h(scfForRes[0]);
   });
 
-  const auto outputString = getOutputString(&input);
-  const auto checkString = getOutputString(&expectedOutput);
+  const auto outputString = getOutputString(input);
+  const auto checkString = getOutputString(expectedOutput);
 
   ASSERT_EQ(outputString, checkString);
 }
@@ -174,8 +174,8 @@ TEST_F(ConversionTest, ScfForTest2) {
     b.h(q0);
   });
 
-  const auto outputString = getOutputString(&input);
-  const auto checkString = getOutputString(&expectedOutput);
+  const auto outputString = getOutputString(input);
+  const auto checkString = getOutputString(expectedOutput);
 
   ASSERT_EQ(outputString, checkString);
 }
@@ -237,8 +237,8 @@ TEST_F(ConversionTest, ScfWhileTest) {
     b.h(scfWhileResult[0]);
   });
 
-  const auto outputString = getOutputString(&input);
-  const auto checkString = getOutputString(&expectedOutput);
+  const auto outputString = getOutputString(input);
+  const auto checkString = getOutputString(expectedOutput);
 
   ASSERT_EQ(outputString, checkString);
 }
@@ -299,8 +299,8 @@ TEST_F(ConversionTest, ScfWhileTest2) {
         });
     b.h(q0);
   });
-  const auto outputString = getOutputString(&input);
-  const auto checkString = getOutputString(&expectedOutput);
+  const auto outputString = getOutputString(input);
+  const auto checkString = getOutputString(expectedOutput);
 
   ASSERT_EQ(outputString, checkString);
 }
@@ -361,8 +361,8 @@ TEST_F(ConversionTest, ScfIfTest) {
     b.h(scfIfResult[0]);
   });
 
-  const auto outputString = getOutputString(&input);
-  const auto checkString = getOutputString(&expectedOutput);
+  const auto outputString = getOutputString(input);
+  const auto checkString = getOutputString(expectedOutput);
 
   ASSERT_EQ(outputString, checkString);
 }
@@ -423,8 +423,8 @@ TEST_F(ConversionTest, ScfIfTest2) {
     b.h(q0);
   });
 
-  const auto outputString = getOutputString(&input);
-  const auto checkString = getOutputString(&expectedOutput);
+  const auto outputString = getOutputString(input);
+  const auto checkString = getOutputString(expectedOutput);
 
   ASSERT_EQ(outputString, checkString);
 }
@@ -468,8 +468,8 @@ TEST_F(ConversionTest, FuncFuncTest) {
           static_cast<mlir::qco::QCOProgramBuilder&>(b).funcReturn(q3);
         });
   });
-  const auto outputString = getOutputString(&input);
-  const auto checkString = getOutputString(&expectedOutput);
+  const auto outputString = getOutputString(input);
+  const auto checkString = getOutputString(expectedOutput);
 
   ASSERT_EQ(outputString, checkString);
 }
@@ -514,8 +514,8 @@ TEST_F(ConversionTest, FuncFuncTest2) {
         });
   });
 
-  const auto outputString = getOutputString(&input);
-  const auto checkString = getOutputString(&expectedOutput);
+  const auto outputString = getOutputString(input);
+  const auto checkString = getOutputString(expectedOutput);
 
   ASSERT_EQ(outputString, checkString);
 }

@@ -1104,8 +1104,7 @@ struct ConvertQCOFuncReturnOp final : OpConversionPattern<func::ReturnOp> {
   LogicalResult
   matchAndRewrite(func::ReturnOp op, OpAdaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
-    rewriter.create<func::ReturnOp>(op->getLoc());
-    rewriter.eraseOp(op);
+    rewriter.replaceOpWithNewOp<func::ReturnOp>(op);
     return success();
   }
 };
@@ -1207,11 +1206,10 @@ struct QCOToQC final : impl::QCOToQCBase<QCOToQC> {
              ConvertQCODCXOp, ConvertQCOECROp, ConvertQCORXXOp, ConvertQCORYYOp,
              ConvertQCORZXOp, ConvertQCORZZOp, ConvertQCOXXPlusYYOp,
              ConvertQCOXXMinusYYOp, ConvertQCOBarrierOp, ConvertQCOCtrlOp,
-             ConvertQCOYieldOp, ConvertQCOYieldOp, ConvertQCOScfIfOp,
-             ConvertQCOScfYieldOp, ConvertQCOScfWhileOp,
-             ConvertQCOScfConditionOp, ConvertQCOScfForOp, ConvertQCOFuncCallOp,
-             ConvertQCOFuncFuncOp, ConvertQCOFuncReturnOp>(typeConverter,
-                                                           context);
+             ConvertQCOYieldOp, ConvertQCOScfIfOp, ConvertQCOScfYieldOp,
+             ConvertQCOScfWhileOp, ConvertQCOScfConditionOp, ConvertQCOScfForOp,
+             ConvertQCOFuncCallOp, ConvertQCOFuncFuncOp,
+             ConvertQCOFuncReturnOp>(typeConverter, context);
 
     // Apply the conversion
     if (failed(applyPartialConversion(module, target, std::move(patterns)))) {

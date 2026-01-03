@@ -1109,7 +1109,7 @@ public:
    *
    * @par Example:
    * ```c++
-   * builder.scf.if(condition, qubits, [&](auto& b) {
+   * builder.scfIf(condition, qubits, [&](auto& b) {
    *    auto q1 = b.h(q0);
    *    b.scfYield(q1);
    * }, [&](auto& b) {
@@ -1156,7 +1156,7 @@ public:
    *
    * @par Example:
    * ```c++
-   * builder.scfYield( yieldedValues);
+   * builder.scfYield(yieldedValues);
    * ```
    * ```mlir
    * scf.yield %q0 : !qco.qubit

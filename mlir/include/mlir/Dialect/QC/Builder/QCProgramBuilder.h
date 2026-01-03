@@ -938,7 +938,7 @@ public:
    *
    * @par Example:
    * ```c++
-   * builder.scf.if(condition, [&](auto& b) {
+   * builder.scfIf(condition, [&](auto& b) {
    * b.h(q0);
    * }, [&](auto& b) {
    * b.x(q0);
@@ -1002,7 +1002,7 @@ public:
    * builder.funcCall("test", {q0});
    * ```
    * ```mlir
-   * func.call @test(%q0) : (!qco.qubit) -> ()
+   * func.call @test(%q0) : (!qc.qubit) -> ()
    * ```
    */
   QCProgramBuilder& funcCall(StringRef name, ValueRange operands);

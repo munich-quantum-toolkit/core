@@ -170,6 +170,7 @@ collectUniqueQubits(Operation* op, LoweringState* state, MLIRContext* ctx) {
           if (!func.getArgumentTypes().empty() &&
               func.getArgumentTypes().front() == qc::QubitType::get(ctx)) {
             operation.setAttr("needChange", StringAttr::get(ctx, "yes"));
+            state->regionMap[func] = uniqueQubits;
           }
         }
       }
@@ -1265,7 +1266,8 @@ struct ConvertQCScfIfOp final : StatefulOpConversionPattern<scf::IfOp> {
   LogicalResult
   matchAndRewrite(scf::IfOp op, OpAdaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
-    const auto& qcQubits = getState().regionMap[op];
+    auto& regionMap = getState().regionMap;
+    const auto& qcQubits = regionMap[op];
     const SmallVector<Value> qcValues(qcQubits.begin(), qcQubits.end());
 
     // create result typerange
@@ -1315,6 +1317,12 @@ struct ConvertQCScfIfOp final : StatefulOpConversionPattern<scf::IfOp> {
       qubitMap[qcQubit] = qcoQubit;
     }
 
+    // replace the old entry in the regionMap with the new operation
+    const auto& it = regionMap.find(op);
+    const auto values = std::move(it->second);
+    regionMap.erase(op);
+    regionMap.try_emplace(newIfOp, values);
+
     rewriter.eraseOp(op);
     return success();
   }
@@ -1353,7 +1361,8 @@ struct ConvertQCScfWhileOp final : StatefulOpConversionPattern<scf::WhileOp> {
   matchAndRewrite(scf::WhileOp op, OpAdaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
     auto& qubitMap = getState().qubitMap[op->getParentRegion()];
-    const auto& qcQubits = getState().regionMap[op];
+    auto& regionMap = getState().regionMap;
+    const auto& qcQubits = regionMap[op];
 
     SmallVector<Value> qcoQubits;
     qcoQubits.reserve(qcQubits.size());
@@ -1399,7 +1408,14 @@ struct ConvertQCScfWhileOp final : StatefulOpConversionPattern<scf::WhileOp> {
          llvm::zip_equal(qcQubits, newWhileOp->getResults())) {
       qubitMap[qcQubit] = qcoQubit;
     }
+
+    // replace the old entry in the regionMap with the new operation
+    const auto& it = regionMap.find(op);
+    const auto values = std::move(it->second);
+    regionMap.erase(op);
+    regionMap.try_emplace(newWhileOp, values);
     rewriter.eraseOp(op);
+
     return success();
   }
 };
@@ -1431,10 +1447,11 @@ struct ConvertQCScfForOp final : StatefulOpConversionPattern<scf::ForOp> {
   matchAndRewrite(scf::ForOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
     auto& qubitMap = getState().qubitMap[op->getParentRegion()];
-    const auto& qcQubits = getState().regionMap[op];
+    auto& regionMap = getState().regionMap;
+    const auto& qcQubits = regionMap[op];
 
     SmallVector<Value> qcoQubits;
-    qcoQubits.reserve(qcoQubits.size());
+    qcoQubits.reserve(qcQubits.size());
     for (const auto& qcQubit : qcQubits) {
       qcoQubits.push_back(qubitMap[qcQubit]);
     }
@@ -1466,6 +1483,12 @@ struct ConvertQCScfForOp final : StatefulOpConversionPattern<scf::ForOp> {
       qubitMap[qcQubit] = qcoQubit;
     }
 
+    // replace the old entry in the regionMap with the new operation
+    const auto& it = regionMap.find(op);
+    const auto values = std::move(it->second);
+    regionMap.erase(op);
+    regionMap.try_emplace(newFor, values);
+
     rewriter.eraseOp(op);
     return success();
   }
@@ -1490,11 +1513,15 @@ struct ConvertQCScfYieldOp final : StatefulOpConversionPattern<scf::YieldOp> {
   LogicalResult
   matchAndRewrite(scf::YieldOp op, OpAdaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
-    const auto& qubitMap = getState().qubitMap[op->getParentRegion()];
+    const auto& parentRegion = op->getParentRegion();
+    const auto& qubitMap = getState().qubitMap[parentRegion];
+    const auto& orderedQubits =
+        getState().regionMap[parentRegion->getParentOp()];
+
     SmallVector<Value> qcoQubits;
-    qcoQubits.reserve(qubitMap.size());
-    for (auto [qcQubit, qcoQubit] : qubitMap) {
-      qcoQubits.push_back(qcoQubit);
+    qcoQubits.reserve(orderedQubits.size());
+    for (const auto& qcQubit : orderedQubits) {
+      qcoQubits.push_back(qubitMap.lookup(qcQubit));
     }
 
     rewriter.replaceOpWithNewOp<scf::YieldOp>(op, qcoQubits);
@@ -1523,11 +1550,15 @@ struct ConvertQCScfConditionOp final
   LogicalResult
   matchAndRewrite(scf::ConditionOp op, OpAdaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
-    const auto& qubitMap = getState().qubitMap[op->getParentRegion()];
+    const auto& parentRegion = op->getParentRegion();
+    const auto& qubitMap = getState().qubitMap[parentRegion];
+    const auto& orderedQubits =
+        getState().regionMap[parentRegion->getParentOp()];
+
     SmallVector<Value> qcoQubits;
-    qcoQubits.reserve(qubitMap.size());
-    for (auto [qcQubit, qcoQubit] : qubitMap) {
-      qcoQubits.push_back(qcoQubit);
+    qcoQubits.reserve(orderedQubits.size());
+    for (const auto& qcQubit : orderedQubits) {
+      qcoQubits.push_back(qubitMap.lookup(qcQubit));
     }
 
     rewriter.replaceOpWithNewOp<scf::ConditionOp>(op, op.getCondition(),
@@ -1560,7 +1591,7 @@ struct ConvertQCFuncCallOp final : StatefulOpConversionPattern<func::CallOp> {
     auto qcQubits = op->getOperands();
 
     SmallVector<Value> qcoQubits;
-    qcoQubits.reserve(qubitMap.size());
+    qcoQubits.reserve(qcQubits.size());
     for (const auto& qcQubit : qcQubits) {
       qcoQubits.push_back(qubitMap[qcQubit]);
     }
@@ -1644,11 +1675,15 @@ struct ConvertQCFuncReturnOp final
   LogicalResult
   matchAndRewrite(func::ReturnOp op, OpAdaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
-    const auto& qubitMap = getState().qubitMap[op->getParentRegion()];
+    const auto& parentRegion = op->getParentRegion();
+    const auto& qubitMap = getState().qubitMap[parentRegion];
+    const auto& orderedQubits =
+        getState().regionMap[parentRegion->getParentOp()];
+
     SmallVector<Value> qcoQubits;
-    qcoQubits.reserve(qubitMap.size());
-    for (auto [qcQubit, qcoQubit] : qubitMap) {
-      qcoQubits.push_back(qcoQubit);
+    qcoQubits.reserve(orderedQubits.size());
+    for (const auto& qcQubit : orderedQubits) {
+      qcoQubits.push_back(qubitMap.lookup(qcQubit));
     }
     rewriter.replaceOpWithNewOp<func::ReturnOp>(op, qcoQubits);
     return success();
@@ -1727,20 +1762,21 @@ struct QCToQCO final : impl::QCToQCOBase<QCToQCO> {
     });
     // Register operation conversion patterns with state
     // tracking
-    patterns.add<
-        ConvertQCAllocOp, ConvertQCDeallocOp, ConvertQCStaticOp,
-        ConvertQCMeasureOp, ConvertQCResetOp, ConvertQCGPhaseOp, ConvertQCIdOp,
-        ConvertQCXOp, ConvertQCYOp, ConvertQCZOp, ConvertQCHOp, ConvertQCSOp,
-        ConvertQCSdgOp, ConvertQCTOp, ConvertQCTdgOp, ConvertQCSXOp,
-        ConvertQCSXdgOp, ConvertQCRXOp, ConvertQCRYOp, ConvertQCRZOp,
-        ConvertQCPOp, ConvertQCROp, ConvertQCU2Op, ConvertQCUOp,
-        ConvertQCSWAPOp, ConvertQCiSWAPOp, ConvertQCDCXOp, ConvertQCECROp,
-        ConvertQCRXXOp, ConvertQCRYYOp, ConvertQCRZXOp, ConvertQCRZZOp,
-        ConvertQCXXPlusYYOp, ConvertQCXXMinusYYOp, ConvertQCBarrierOp,
-        ConvertQCCtrlOp, ConvertQCYieldOp, ConvertQCYieldOp, ConvertQCScfIfOp,
-        ConvertQCScfYieldOp, ConvertQCScfWhileOp, ConvertQCScfConditionOp,
-        ConvertQCScfForOp, ConvertQCFuncCallOp, ConvertQCFuncFuncOp,
-        ConvertQCFuncReturnOp>(typeConverter, context, &state);
+    patterns
+        .add<ConvertQCAllocOp, ConvertQCDeallocOp, ConvertQCStaticOp,
+             ConvertQCMeasureOp, ConvertQCResetOp, ConvertQCGPhaseOp,
+             ConvertQCIdOp, ConvertQCXOp, ConvertQCYOp, ConvertQCZOp,
+             ConvertQCHOp, ConvertQCSOp, ConvertQCSdgOp, ConvertQCTOp,
+             ConvertQCTdgOp, ConvertQCSXOp, ConvertQCSXdgOp, ConvertQCRXOp,
+             ConvertQCRYOp, ConvertQCRZOp, ConvertQCPOp, ConvertQCROp,
+             ConvertQCU2Op, ConvertQCUOp, ConvertQCSWAPOp, ConvertQCiSWAPOp,
+             ConvertQCDCXOp, ConvertQCECROp, ConvertQCRXXOp, ConvertQCRYYOp,
+             ConvertQCRZXOp, ConvertQCRZZOp, ConvertQCXXPlusYYOp,
+             ConvertQCXXMinusYYOp, ConvertQCBarrierOp, ConvertQCCtrlOp,
+             ConvertQCYieldOp, ConvertQCScfIfOp, ConvertQCScfYieldOp,
+             ConvertQCScfWhileOp, ConvertQCScfConditionOp, ConvertQCScfForOp,
+             ConvertQCFuncCallOp, ConvertQCFuncFuncOp, ConvertQCFuncReturnOp>(
+            typeConverter, context, &state);
 
     // Apply the conversion
     if (failed(applyPartialConversion(module, target, std::move(patterns)))) {
