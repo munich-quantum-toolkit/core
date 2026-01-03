@@ -55,10 +55,7 @@ else:
             break
 
 # Use the found path, or fall back to base directory
-if multi_config_path:
-    mqt_tool_dir = str(multi_config_path)
-else:
-    mqt_tool_dir = str(base_tool_dir)
+mqt_tool_dir = str(multi_config_path) if multi_config_path else str(base_tool_dir)
 
 tool_dirs = [config.llvm_tools_dir, mqt_tool_dir]
 tools = ["not", "FileCheck", "quantum-opt"]
