@@ -43,7 +43,7 @@ config.test_exec_root = Path(config.mqt_core_mlir_test_dir)
 base_tool_dir_str = config.mqt_core_mlir_tools_dir
 
 # Handle unexpanded generator expressions - remove the $<CONFIG> suffix if present
-if base_tool_dir_str.endswith("/$<CONFIG>") or base_tool_dir_str.endswith("\\$<CONFIG>"):
+if base_tool_dir_str.endswith(("/$<CONFIG>", "\\$<CONFIG>")):
     base_tool_dir = Path(base_tool_dir_str.rsplit("$<CONFIG>", 1)[0].rstrip("/\\"))
 else:
     base_tool_dir = Path(base_tool_dir_str)
