@@ -38,15 +38,9 @@ config.test_source_root = Path(__file__).parent
 # Define where to execute tests (and produce the output).
 config.test_exec_root = Path(config.mqt_core_mlir_test_dir)
 
-# For multi-config generators (MSVC), CMAKE_BUILD_TYPE may be empty or "$<CONFIG>"
+# For multi-config generators (MSVC), CMAKE_BUILD_TYPE may be empty
 # We need to detect the actual build directory at runtime
-base_tool_dir_str = config.mqt_core_mlir_tools_dir
-
-# Handle unexpanded generator expressions - remove the $<CONFIG> suffix if present
-if base_tool_dir_str.endswith(("/$<CONFIG>", "\\$<CONFIG>")):
-    base_tool_dir = Path(base_tool_dir_str.rsplit("$<CONFIG>", 1)[0].rstrip("/\\"))
-else:
-    base_tool_dir = Path(base_tool_dir_str)
+base_tool_dir = Path(config.mqt_core_mlir_tools_dir)
 
 # Try to find the quantum-opt tool
 mqt_tool_dir = None
@@ -55,7 +49,7 @@ mqt_tool_dir = None
 if (base_tool_dir / "quantum-opt").exists() or (base_tool_dir / "quantum-opt.exe").exists():
     mqt_tool_dir = str(base_tool_dir)
 # If not found, search in multi-config subdirectories (Windows MSVC)
-elif base_tool_dir.exists():
+else:
     for config_type in ["Release", "Debug", "RelWithDebInfo", "MinSizeRel"]:
         candidate = base_tool_dir / config_type
         if (candidate / "quantum-opt.exe").exists() or (candidate / "quantum-opt").exists():
