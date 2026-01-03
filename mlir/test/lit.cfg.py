@@ -55,7 +55,7 @@ else:
             break
 
 # Use the found path, or fall back to base directory
-if multi_config_path and multi_config_path.exists():
+if multi_config_path:
     mqt_tool_dir = str(multi_config_path)
 else:
     mqt_tool_dir = str(base_tool_dir)
