@@ -25,6 +25,12 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 
 ### Changed
 
+- 📦🏁 Build Windows x86 wheels on windows-2025 runner for newer compiler ([#1415]) ([**@burgholzer**])
+- 👷 Build on `macos-15`/`windows-2025` by default and `macos-14`/`windows-2022` for extensive tests ([#1414]) ([**@burgholzer**])
+- 📦🍎 Build macOS arm64 wheels on macos-15 runner for newer compiler ([#1413]) ([**@burgholzer**])
+- ⚡ Improve uv build caching by removing unconditional `reinstall-package` and configuring dedicated `cache-keys` ([#1412]) ([**@burgholzer**])
+- 👨‍💻📦 Build `spdlog` and QDMI generators as shared libraries in Python package builds ([#1411], [#1403]) ([**@burgholzer**])
+- ♻️🏁 Remove Windows-specific restrictions for dynamic QDMI device library handling ([#1406]) ([**@burgholzer**])
 - ♻️ Migrate Python bindings from `pybind11` to `nanobind` ([#1383]) ([**@denialhaag**], [**@burgholzer**])
 - 📦️ Provide Stable ABI wheels for Python 3.12+ ([#1383]) ([**@burgholzer**], [**@denialhaag**])
 - 🚚 Create dedicated `mqt.core.na` submodule to closely follow the structure of other submodules ([#1383]) ([**@burgholzer**])
@@ -45,6 +51,7 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 
 ### Fixed
 
+- 🔧 Install all available QDMI device targets in Python package builds ([#1403]) ([**@burgholzer**])
 - 🐛 Fix operation validation in Qiskit backend to handle device-specific gate naming conventions ([#1384]) ([**@marcelwa**])
 - 🐛 Fix conditional branch handling when importing MLIR from `QuantumComputation` ([#1378]) ([**@lirem101**])
 - 🐛 Fix custom QDMI property and parameter handling in SC and NA devices ([#1355]) ([**@burgholzer**])
@@ -286,6 +293,13 @@ _📚 Refer to the [GitHub Release Notes](https://github.com/munich-quantum-tool
 
 <!-- PR links -->
 
+[#1415]: https://github.com/munich-quantum-toolkit/core/pull/1415
+[#1414]: https://github.com/munich-quantum-toolkit/core/pull/1414
+[#1413]: https://github.com/munich-quantum-toolkit/core/pull/1413
+[#1412]: https://github.com/munich-quantum-toolkit/core/pull/1412
+[#1411]: https://github.com/munich-quantum-toolkit/core/pull/1411
+[#1406]: https://github.com/munich-quantum-toolkit/core/pull/1406
+[#1403]: https://github.com/munich-quantum-toolkit/core/pull/1403
 [#1402]: https://github.com/munich-quantum-toolkit/core/pull/1402
 [#1385]: https://github.com/munich-quantum-toolkit/core/pull/1385
 [#1384]: https://github.com/munich-quantum-toolkit/core/pull/1384

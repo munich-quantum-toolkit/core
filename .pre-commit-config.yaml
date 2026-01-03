@@ -66,7 +66,7 @@ repos:
 
   # Ensure uv lock file is up-to-date
   - repo: https://github.com/astral-sh/uv-pre-commit
-    rev: 0.9.18
+    rev: 0.9.21
     hooks:
       - id: uv-lock
 
@@ -132,7 +132,7 @@ repos:
 
   # Check for spelling
   - repo: https://github.com/crate-ci/typos
-    rev: v1.40.0
+    rev: v1.41.0
     hooks:
       - id: typos
 
@@ -162,7 +162,7 @@ repos:
 
   # Check the pyproject.toml file
   - repo: https://github.com/henryiii/validate-pyproject-schema-store
-    rev: 2025.11.21
+    rev: 2026.01.02
     hooks:
       - id: validate-pyproject
 

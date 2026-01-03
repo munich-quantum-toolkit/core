@@ -13,12 +13,10 @@ set(TARGET_NAME mqt-core-qdmi-driver-test)
 
 if(TARGET MQT::CoreQDMIDriver)
   package_add_test(${TARGET_NAME} MQT::CoreQDMIDriver test_driver.cpp)
-  if(NOT WIN32)
-    add_dependencies(${TARGET_NAME} MQT::CoreQDMINaDeviceDyn MQT::CoreQDMIScDeviceDyn)
-    target_compile_definitions(
-      ${TARGET_NAME}
-      PRIVATE
-        "DYN_DEV_LIBS=std::array{ std::pair{\"$<TARGET_FILE:MQT::CoreQDMINaDeviceDyn>\", \"MQT_NA_DYN\"}, std::pair{\"$<TARGET_FILE:MQT::CoreQDMIScDeviceDyn>\", \"MQT_SC_DYN\"} }"
-    )
-  endif()
+  add_dependencies(${TARGET_NAME} MQT::CoreQDMINaDeviceDyn MQT::CoreQDMIScDeviceDyn)
+  target_compile_definitions(
+    ${TARGET_NAME}
+    PRIVATE
+      "DYN_DEV_LIBS=std::array{ std::pair{\"$<TARGET_FILE:MQT::CoreQDMINaDeviceDyn>\", \"MQT_NA_DYN\"}, std::pair{\"$<TARGET_FILE:MQT::CoreQDMIScDeviceDyn>\", \"MQT_SC_DYN\"} }"
+  )
 endif()
