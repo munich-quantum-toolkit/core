@@ -19,7 +19,7 @@ jobs:
   cpp-tests-ubuntu:
     name: 🇨‌ Test 🐧
     needs: change-detection
-    if: fromJSON(needs.change-detection.outputs.run-cpp-tests) && !contains(github.event.pull_request.labels.*.name, 'extensive-cpp-ci')
+    if: (fromJSON(needs.change-detection.outputs.run-cpp-tests) || fromJSON(needs.change-detection.outputs.run-mlir)) && !contains(github.event.pull_request.labels.*.name, 'extensive-cpp-ci')
     strategy:
       fail-fast: false
       matrix:
@@ -39,7 +39,7 @@ jobs:
   cpp-tests-macos:
     name: 🇨‌ Test 🍎
     needs: change-detection
-    if: fromJSON(needs.change-detection.outputs.run-cpp-tests) && !contains(github.event.pull_request.labels.*.name, 'extensive-cpp-ci')
+    if: (fromJSON(needs.change-detection.outputs.run-cpp-tests) || fromJSON(needs.change-detection.outputs.run-mlir)) && !contains(github.event.pull_request.labels.*.name, 'extensive-cpp-ci')
     strategy:
       fail-fast: false
       matrix:
@@ -60,7 +60,7 @@ jobs:
   cpp-tests-windows:
     name: 🇨‌ Test 🏁
     needs: change-detection
-    if: fromJSON(needs.change-detection.outputs.run-cpp-tests) && !contains(github.event.pull_request.labels.*.name, 'extensive-cpp-ci')
+    if: (fromJSON(needs.change-detection.outputs.run-cpp-tests) || fromJSON(needs.change-detection.outputs.run-mlir)) && !contains(github.event.pull_request.labels.*.name, 'extensive-cpp-ci')
     strategy:
       fail-fast: false
       matrix:
@@ -81,7 +81,7 @@ jobs:
   cpp-tests-extensive-ubuntu:
     name: 🇨‌ Test (Extensive) 🐧
     needs: change-detection
-    if: fromJSON(needs.change-detection.outputs.run-cpp-tests) && github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'extensive-cpp-ci')
+    if: (fromJSON(needs.change-detection.outputs.run-cpp-tests) || fromJSON(needs.change-detection.outputs.run-mlir)) && github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'extensive-cpp-ci')
     strategy:
       fail-fast: false
       matrix:
@@ -98,7 +98,7 @@ jobs:
   cpp-tests-extensive-macos:
     name: 🇨‌ Test (Extensive) 🍎
     needs: change-detection
-    if: fromJSON(needs.change-detection.outputs.run-cpp-tests) && github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'extensive-cpp-ci')
+    if: (fromJSON(needs.change-detection.outputs.run-cpp-tests) || fromJSON(needs.change-detection.outputs.run-mlir)) && github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'extensive-cpp-ci')
     strategy:
       fail-fast: false
       matrix:
@@ -116,7 +116,7 @@ jobs:
   cpp-tests-extensive-windows:
     name: 🇨‌ Test (Extensive) 🏁
     needs: change-detection
-    if: fromJSON(needs.change-detection.outputs.run-cpp-tests) && github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'extensive-cpp-ci')
+    if: (fromJSON(needs.change-detection.outputs.run-cpp-tests) || fromJSON(needs.change-detection.outputs.run-mlir)) && github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'extensive-cpp-ci')
     strategy:
       fail-fast: false
       matrix:
@@ -132,7 +132,7 @@ jobs:
   cpp-coverage:
     name: 🇨‌ Coverage
     needs: change-detection
-    if: fromJSON(needs.change-detection.outputs.run-cpp-tests)
+    if: fromJSON(needs.change-detection.outputs.run-cpp-tests) || fromJSON(needs.change-detection.outputs.run-mlir)
     uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-cpp-coverage.yml@7f8eeed7a3dba08e1e9be54966e5722f5753d0df # v1.17.7
     permissions:
       contents: read
@@ -262,15 +262,15 @@ jobs:
         with:
           allowed-skips: >-
             ${{
-              fromJSON(needs.change-detection.outputs.run-cpp-tests) && !contains(github.event.pull_request.labels.*.name, 'extensive-cpp-ci')
+              (fromJSON(needs.change-detection.outputs.run-cpp-tests) || fromJSON(needs.change-detection.outputs.run-mlir)) && !contains(github.event.pull_request.labels.*.name, 'extensive-cpp-ci')
               && '' || 'cpp-tests-ubuntu,cpp-tests-macos,cpp-tests-windows,'
             }}
             ${{
-              fromJSON(needs.change-detection.outputs.run-cpp-tests) && github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'extensive-cpp-ci')
+              (fromJSON(needs.change-detection.outputs.run-cpp-tests) || fromJSON(needs.change-detection.outputs.run-mlir)) && github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'extensive-cpp-ci')
               && '' || 'cpp-tests-extensive-ubuntu,cpp-tests-extensive-macos,cpp-tests-extensive-windows,'
             }}
             ${{
-              fromJSON(needs.change-detection.outputs.run-cpp-tests)
+              (fromJSON(needs.change-detection.outputs.run-cpp-tests) || fromJSON(needs.change-detection.outputs.run-mlir))
               && '' || 'cpp-coverage,'
             }}
             ${{
