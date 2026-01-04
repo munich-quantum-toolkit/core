@@ -112,7 +112,13 @@ def UnitaryOpInterface : OpInterface<"UnitaryOpInterface"> {
         InterfaceMethod<
             "Returns the unitary matrix definition of the operation.",
             "Eigen::MatrixXcd", "getUnitaryMatrix", (ins),
-            [{ return $_op.getUnitaryMatrixDefinition(); }]
+            [{
+              if constexpr (decltype($_op)::HAS_MATRIX_DEFINITION) {
+                return $_op.getUnitaryMatrixDefinition();
+              } else {
+                llvm::reportFatalUsageError("Operation has no unitary matrix definition!");
+              }
+            }]
         >,
         // does not work :(
         //InterfaceMethod<

@@ -56,6 +56,13 @@
 namespace mlir::qco {
 
 /**
+ * @brief Retrieve C++ type of static mlir::Value.
+ * @details The returned float attribute can be used to get the value of the
+ *          given parameter as a C++ type.
+ */
+[[nodiscard]] inline std::optional<double>
+tryGetParameterAsDouble(UnitaryOpInterface op,  size_t i);
+/**
  * @brief Trait for operations with a fixed number of target qubits and
  * parameters
  * @details This trait indicates that an operation has a fixed number of target
@@ -64,8 +71,16 @@ namespace mlir::qco {
  * verification and code generation optimizations.
  * @tparam T The target arity.
  * @tparam P The parameter arity.
+ * @tparam HasMatrixDefinition If false, operation does not provide a matrix
+ *                             definition.
+ * @tparam MatrixDefinition A function returning the matrix definition of the
+ *                          operation. The operation will be provided as the
+ *                          only argument of the function.
  */
-template <size_t T, size_t P> class TargetAndParameterArityTrait {
+template <size_t T, size_t P, bool HasMatrixDefinition,
+          Eigen::Matrix<std::complex<double>, (1 << T), (1 << T)> (
+              *MatrixDefinition)(UnitaryOpInterface)>
+class TargetAndParameterArityTrait {
 public:
   template <typename ConcreteType>
   class Impl : public OpTrait::TraitBase<ConcreteType, Impl> {
@@ -125,6 +140,17 @@ public:
       return dyn_cast<FloatAttr>(constantOp.getValue());
     }
 
+    using UnitaryMatrixType =
+        Eigen::Matrix<std::complex<double>, 1 << T, 1 << T>;
+
+    static constexpr auto HAS_MATRIX_DEFINITION = HasMatrixDefinition;
+    [[nodiscard]] UnitaryMatrixType getUnitaryMatrixDefinition()
+      requires(HAS_MATRIX_DEFINITION)
+    {
+      const auto& op = this->getOperation();
+      return MatrixDefinition(llvm::dyn_cast<UnitaryOpInterface>(op));
+    }
+
     Value getInputForOutput(Value output) {
       const auto& op = this->getOperation();
       for (size_t i = 0; i < T; ++i) {
@@ -148,50 +174,28 @@ public:
   };
 };
 
-/**
- * @brief Retrieve C++ type of static mlir::Value.
- * @details The returned float attribute can be used to get the value of the
- *          given parameter as a C++ type.
- */
-[[nodiscard]] static std::optional<double> staticParameterAsDouble(Value param) {
-  using DummyArityType =
-      TargetAndParameterArityTrait<0, 0>::Impl<arith::ConstantOp>;
-  auto floatAttr = DummyArityType::getStaticParameter(param);
+} // namespace mlir::qco
+
+// #include "mlir/Dialect/QCO/IR/QCOInterfaces.h.inc" // IWYU pragma: export
+
+//===----------------------------------------------------------------------===//
+// Operations Helpers
+//===----------------------------------------------------------------------===//
+
+namespace mlir::qco {
+
+[[nodiscard]] inline std::optional<double>
+tryGetParameterAsDouble(UnitaryOpInterface op, size_t i) {
+  using DummyArityType = TargetAndParameterArityTrait<0, 0, false, nullptr>;
+  const auto param = op.getParameter(i);
+  const auto floatAttr = DummyArityType::Impl<arith::ConstantOp>::getStaticParameter(param);
   if (!floatAttr) {
     return std::nullopt;
   }
   return floatAttr.getValueAsDouble();
 }
 
-/**
- * @brief Trait for operations with a fixed number of target qubits which have
- *        a pre-defined unitary matrix definition.
- * @tparam T The target arity. Should match the value given to
- *           TargetAndParameterArityTrait if an operation has both traits.
- * @tparam MatrixDefinition Function defining the operation. The operation
- *                          will be provided as the only argument of the
- *                          function.
- */
-template <int T, Eigen::Matrix<std::complex<double>, (1 << T), (1 << T)> (
-                     *MatrixDefinition)(UnitaryOpInterface)>
-class UnitaryMatrixTrait {
-public:
-  template <typename ConcreteType>
-  class Impl : public OpTrait::TraitBase<ConcreteType, Impl> {
-  public:
-    using UnitaryMatrixType =
-        Eigen::Matrix<std::complex<double>, 1 << T, 1 << T>;
-
-    UnitaryMatrixType getUnitaryMatrixDefinition() {
-      const auto& op = this->getOperation();
-      return MatrixDefinition(llvm::dyn_cast<UnitaryOpInterface>(op));
-    }
-  };
-};
-
 } // namespace mlir::qco
-
-// #include "mlir/Dialect/QCO/IR/QCOInterfaces.h.inc" // IWYU pragma: export
 
 //===----------------------------------------------------------------------===//
 // Operations
