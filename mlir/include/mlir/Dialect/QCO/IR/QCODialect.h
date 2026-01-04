@@ -21,6 +21,9 @@
 #pragma clang diagnostic pop
 #endif
 
+#include "mlir/Dialect/Utils/MatrixUtils.h"
+
+#include <Eigen/Core>
 #include <mlir/Bytecode/BytecodeOpInterface.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/IR/Value.h>
@@ -29,7 +32,6 @@
 #include <optional>
 #include <string>
 #include <variant>
-#include <Eigen/Core>
 
 #define DIALECT_NAME_QCO "qco"
 
@@ -44,6 +46,7 @@
 //===----------------------------------------------------------------------===//
 
 #define GET_TYPEDEF_CLASSES
+#include "mlir/Dialect/QCO/IR/QCOInterfaces.h.inc"
 #include "mlir/Dialect/QCO/IR/QCOOpsTypes.h.inc"
 
 //===----------------------------------------------------------------------===//
@@ -67,8 +70,6 @@ public:
   template <typename ConcreteType>
   class Impl : public OpTrait::TraitBase<ConcreteType, Impl> {
   public:
-    using UnitaryMatrixType = Eigen::Matrix<std::complex<double>, 1 << T, 1 << T>;
-
     static size_t getNumQubits() { return T; }
     static size_t getNumTargets() { return T; }
     static size_t getNumControls() { return 0; }
@@ -111,6 +112,11 @@ public:
       return this->getOperation()->getOperand(T + i);
     }
 
+    /**
+     * @brief Retrieve mlir::FloatAttr of static mlir::Value.
+     * @details The returned float attribute can be used to get the value of the
+     *          given parameter as a C++ type or perform other mlir operations.
+     */
     [[nodiscard]] static FloatAttr getStaticParameter(Value param) {
       auto constantOp = param.getDefiningOp<arith::ConstantOp>();
       if (!constantOp) {
@@ -142,9 +148,50 @@ public:
   };
 };
 
+/**
+ * @brief Retrieve C++ type of static mlir::Value.
+ * @details The returned float attribute can be used to get the value of the
+ *          given parameter as a C++ type.
+ */
+[[nodiscard]] static std::optional<double> staticParameterAsDouble(Value param) {
+  using DummyArityType =
+      TargetAndParameterArityTrait<0, 0>::Impl<arith::ConstantOp>;
+  auto floatAttr = DummyArityType::getStaticParameter(param);
+  if (!floatAttr) {
+    return std::nullopt;
+  }
+  return floatAttr.getValueAsDouble();
+}
+
+/**
+ * @brief Trait for operations with a fixed number of target qubits which have
+ *        a pre-defined unitary matrix definition.
+ * @tparam T The target arity. Should match the value given to
+ *           TargetAndParameterArityTrait if an operation has both traits.
+ * @tparam MatrixDefinition Function defining the operation. The operation
+ *                          will be provided as the only argument of the
+ *                          function.
+ */
+template <int T, Eigen::Matrix<std::complex<double>, (1 << T), (1 << T)> (
+                     *MatrixDefinition)(UnitaryOpInterface)>
+class UnitaryMatrixTrait {
+public:
+  template <typename ConcreteType>
+  class Impl : public OpTrait::TraitBase<ConcreteType, Impl> {
+  public:
+    using UnitaryMatrixType =
+        Eigen::Matrix<std::complex<double>, 1 << T, 1 << T>;
+
+    UnitaryMatrixType getUnitaryMatrixDefinition() {
+      const auto& op = this->getOperation();
+      return MatrixDefinition(llvm::dyn_cast<UnitaryOpInterface>(op));
+    }
+  };
+};
+
 } // namespace mlir::qco
 
-#include "mlir/Dialect/QCO/IR/QCOInterfaces.h.inc" // IWYU pragma: export
+// #include "mlir/Dialect/QCO/IR/QCOInterfaces.h.inc" // IWYU pragma: export
 
 //===----------------------------------------------------------------------===//
 // Operations
