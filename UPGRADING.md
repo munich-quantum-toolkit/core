@@ -4,6 +4,26 @@ This document describes breaking changes and how to upgrade. For a complete list
 
 ## [Unreleased]
 
+### MLIR enabled by default for C++ builds
+
+The MLIR-based functionality within MQT Core has long been experimental and opt-in.
+Starting with this release, MLIR is enabled by default for C++ library builds.
+This means that LLVM (including MLIR) is now a required dependency for building MQT Core from source.
+
+We offer pre-built distributions for all supported platforms as part of the `setup-mlir` project at [munich-quantum-software/setup-mlir](https://github.com/munich-quantum-software/setup-mlir).
+Please follow the instructions there to install the distribution for your platform.
+You can then point CMake to the installation directory using the `-DMLIR_DIR=/path/to/mlir/installation/lib/cmake/mlir` option.
+
+The MLIR components can still be manually disabled by passing `-DBUILD_MQT_CORE_MLIR=OFF` to CMake.
+MLIR is also not enabled for the Python package builds because no functionality depends on it yet.
+This is expected to change in the future, when we expose the MLIR-based functionality via the Python package.
+
+Known limitations:
+
+- Our pre-built distributions are incompatible with GCC on macOS. Use (Apple)Clang instead or compile LLVM from source using your preferred compiler.
+- AppleClang 17+ is required to build MQT Core with MLIR enabled due to some C++20 features being used that are not yet properly supported by older versions.
+- Our pre-built distributions are compiled in Release mode. On Windows, this leads to ABI incompatibilities with debug builds. Either build in Release mode or build LLVM from source in Debug mode to resolve this.
+
 ### QDMI-Qiskit integration
 
 This release introduces a Qiskit `BackendV2`-compatible interface to QDMI devices.
