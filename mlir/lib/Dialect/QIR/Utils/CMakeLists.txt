@@ -17,6 +17,8 @@ add_mlir_library(
   MLIRIR
   DISABLE_INSTALL)
 
-target_include_directories(
-  MLIRQIRUtils PUBLIC FILE_SET HEADERS BASE_DIRS ${MQT_MLIR_SOURCE_INCLUDE_DIR} FILES
-                      ${MQT_MLIR_SOURCE_INCLUDE_DIR}/mlir/Dialect/QIR/Utils/QIRUtils.h)
+file(GLOB_RECURSE QIR_UTILS_HEADERS_SOURCE
+     ${MQT_MLIR_SOURCE_INCLUDE_DIR}/mlir/Dialect/QIR/Utils/*.h)
+
+target_sources(MLIRQIRUtils PUBLIC FILE_SET HEADERS BASE_DIRS ${MQT_MLIR_SOURCE_INCLUDE_DIR} FILES
+                                   ${QIR_UTILS_HEADERS_SOURCE})
