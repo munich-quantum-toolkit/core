@@ -8,21 +8,33 @@
  * Licensed under the MIT License
  */
 
-#include "mlir/Dialect/MQTOpt/Transforms/Passes.h"
+/*
+ * Copyright (c) 2023 - 2025 Chair for Design Automation, TUM
+ * Copyright (c) 2025 Munich Quantum Software Company GmbH
+ * All rights reserved.
+ *
+ * SPDX-License-Identifier: MIT
+ *
+ * Licensed under the MIT License
+ */
 
+#include "mlir/Dialect/QCO/Transforms/Passes.h"
+
+#include <iostream>
 #include <mlir/Dialect/Math/IR/Math.h>
 #include <mlir/IR/PatternMatch.h>
 #include <mlir/Support/LLVM.h>
 #include <mlir/Transforms/GreedyPatternRewriteDriver.h>
 #include <utility>
 
-namespace mqt::ir::opt {
+namespace mlir::qco {
 
 #define GEN_PASS_DEF_MERGEROTATIONGATES
-#include "mlir/Dialect/MQTOpt/Transforms/Passes.h.inc"
+#include "mlir/Dialect/QCO/Transforms/Passes.h.inc"
 
 /**
- * @brief This pattern attempts to merge consecutive rotation gates.
+ * @brief This pattern attempts to merge consecutive rotation gates by using
+ * quaternions
  */
 struct MergeRotationGates final
     : impl::MergeRotationGatesBase<MergeRotationGates> {
@@ -30,19 +42,8 @@ struct MergeRotationGates final
       MergeRotationGates>::MergeRotationGatesBase;
 
   void runOnOperation() override {
-    // Get the current operation being operated on.
-    auto op = getOperation();
-    auto* ctx = &getContext();
-
-    // Define the set of patterns to use.
-    mlir::RewritePatternSet patterns(ctx);
-    populateMergeRotationGatesPatterns(patterns, quaternionFolding);
-
-    // Apply patterns in an iterative and greedy manner.
-    if (mlir::failed(mlir::applyPatternsGreedily(op, std::move(patterns)))) {
-      signalPassFailure();
-    }
+    // TODO implement pass here
   }
 };
 
-} // namespace mqt::ir::opt
+} // namespace mlir::qco

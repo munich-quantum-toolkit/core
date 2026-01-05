@@ -34,7 +34,8 @@ enum class PlacementStrategy : std::uint8_t { Random, Identity };
 #include "mlir/Dialect/MQTOpt/Transforms/Passes.h.inc" // IWYU pragma: export
 
 void populateGateEliminationPatterns(mlir::RewritePatternSet& patterns);
-void populateMergeRotationGatesPatterns(mlir::RewritePatternSet& patterns);
+void populateMergeRotationGatesPatterns(mlir::RewritePatternSet& patterns,
+                                        bool quaternionFolding);
 void populateSwapReconstructionAndElisionPatterns(
     mlir::RewritePatternSet& patterns);
 void populateQuantumSinkShiftPatterns(mlir::RewritePatternSet& patterns);
