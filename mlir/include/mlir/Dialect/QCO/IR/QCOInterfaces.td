@@ -120,20 +120,14 @@ def UnitaryOpInterface : OpInterface<"UnitaryOpInterface"> {
               }
             }]
         >,
-        // does not work :(
-        //InterfaceMethod<
-        //    "Returns the unitary matrix definition of the operation.",
-        //    "template<typename MatrixType> MatrixType", "getUnitaryMatrix", (ins),
-        //    [{ return $_op.getUnitaryMatrixDefinition(); }]
-        //>,
     ];
 
-    //let extraClassDeclaration = [{
-    //  template<typename MatrixType>
-    //  MatrixType getUnitaryMatrix() {
-    //    return $_op.getUnitaryMatrixDefinition();
-    //  }
-    //}];
+    let extraTraitClassDeclaration = [{
+      template<typename MatrixType>
+      MatrixType getUnitaryMatrix() {
+        return $_op.getUnitaryMatrixDefinition();
+      }
+    }];
 }
 
 #endif // QCO_INTERFACES
