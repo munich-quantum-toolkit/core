@@ -166,7 +166,7 @@ QuantumCompilerPipeline::runPipeline(ModuleOp module,
   pm.clear();
 
   // Stage 5: Optimization passes
-  // TODO: Add optimization passes
+  addOptimizationPasses(pm);
   addCleanupPasses(pm);
   if (failed(pm.run(module))) {
     return failure();

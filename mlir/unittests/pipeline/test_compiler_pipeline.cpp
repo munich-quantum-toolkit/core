@@ -3725,4 +3725,57 @@ TEST_F(CompilerPipelineTest, Bell) {
   });
 }
 
+TEST_F(CompilerPipelineTest, TwoQubitDecomposition) {
+  ::qc::QuantumComputation comp;
+  comp.addQubitRegister(2, "q");
+
+  auto buildCircuit = [](auto& circuit, auto&& qubitGetter) {
+    auto constant0 = 2.5;
+    auto constant1 = 1.2;
+    auto constant2 = 0.5;
+    circuit.h(qubitGetter(0));
+    circuit.cx(qubitGetter(0), qubitGetter(1));
+    circuit.rzz(constant0, qubitGetter(0), qubitGetter(1));
+    circuit.ry(constant1, qubitGetter(1));
+    circuit.ry(constant1, qubitGetter(0));
+    circuit.cx(qubitGetter(1), qubitGetter(0));
+    circuit.rz(constant2, qubitGetter(0));
+    circuit.rxx(constant0, qubitGetter(0), qubitGetter(1));
+    circuit.ryy(constant2, qubitGetter(0), qubitGetter(1));
+    // make series longer to enforce decomposition
+    circuit.rxx(0.1, qubitGetter(1), qubitGetter(0));
+    circuit.rzz(0.1, qubitGetter(1), qubitGetter(0));
+    circuit.rxx(0.1, qubitGetter(1), qubitGetter(0));
+    circuit.rzz(0.1, qubitGetter(1), qubitGetter(0));
+    circuit.rxx(0.1, qubitGetter(1), qubitGetter(0));
+    circuit.rzz(0.1, qubitGetter(1), qubitGetter(0));
+    circuit.rxx(0.1, qubitGetter(1), qubitGetter(0));
+    circuit.rzz(0.1, qubitGetter(1), qubitGetter(0));
+  };
+
+  buildCircuit(comp, [](auto&& index) { return index; });
+
+  const auto module = importQuantumCircuit(comp);
+  ASSERT_TRUE(module);
+  ASSERT_TRUE(runPipeline(module.get()).succeeded());
+
+  const auto qco = buildQCOIR([&](qco::QCOProgramBuilder& b) {
+    auto reg = b.allocQubitRegister(2, "q");
+    buildCircuit(b, [&reg](auto&& index) { return reg[index]; });
+  });
+
+  const auto optimizedQco = buildQCOIR([&](qco::QCOProgramBuilder& b) {
+    auto reg = b.allocQubitRegister(2, "q");
+    buildCircuit(b, [&reg](auto&& index) { return reg[index]; });
+  });
+
+  verifyAllStages({
+      .qcImport = nullptr,
+      .qcoConversion = qco.get(),
+      .optimization = optimizedQco.get(),
+      .qcConversion = nullptr,
+      .qirConversion = nullptr,
+  });
+}
+
 } // namespace
