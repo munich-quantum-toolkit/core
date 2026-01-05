@@ -61,7 +61,7 @@ namespace mlir::qco {
  *          given parameter as a C++ type.
  */
 [[nodiscard]] inline std::optional<double>
-tryGetParameterAsDouble(UnitaryOpInterface op,  size_t i);
+tryGetParameterAsDouble(UnitaryOpInterface op, size_t i);
 /**
  * @brief Trait for operations with a fixed number of target qubits and
  * parameters
@@ -188,7 +188,8 @@ namespace mlir::qco {
 tryGetParameterAsDouble(UnitaryOpInterface op, size_t i) {
   using DummyArityType = TargetAndParameterArityTrait<0, 0, false, nullptr>;
   const auto param = op.getParameter(i);
-  const auto floatAttr = DummyArityType::Impl<arith::ConstantOp>::getStaticParameter(param);
+  const auto floatAttr =
+      DummyArityType::Impl<arith::ConstantOp>::getStaticParameter(param);
   if (!floatAttr) {
     return std::nullopt;
   }
