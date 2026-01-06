@@ -1050,7 +1050,7 @@ def YieldOp : QCOOp<"yield", traits = [Terminator]> {
 def CtrlOp : QCOOp<"ctrl", traits =
             [
                 UnitaryOpInterface,
-                ZeroTargetZeroParameterUnitaryMatrix<[{ /* TODO: define operation helper? */ }]>,
+                ZeroTargetZeroParameterUnitaryMatrix<[{ return utils::getMatrixCtrl(); }]>,
                 AttrSizedOperandSegments,
                 AttrSizedResultSegments,
                 SameOperandsAndResultType,

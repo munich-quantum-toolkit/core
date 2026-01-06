@@ -10,6 +10,8 @@
 
 #pragma once
 
+#include "mlir/Dialect/QCO/IR/QCODialect.h"
+#include <mlir/IR/Region.h>
 #include <Eigen/Core>
 #include <cmath>
 #include <complex>
@@ -268,22 +270,14 @@ inline Eigen::Matrix4cd getMatrixXXMinusYY(double theta, double beta) {
                           {msp, m0, m0, mc}}; // row 3
 }
 
-// TODO? change target type to template
 inline Eigen::MatrixXcd getMatrixCtrl(size_t numControls,
-                                      mlir::DenseElementsAttr target) {
+                                      Eigen::MatrixXcd targetMatrix) {
   // Get dimensions of target matrix
-  const auto& targetType = llvm::dyn_cast<RankedTensorType>(target.getType());
-  if (!targetType || targetType.getRank() != 2 ||
-      targetType.getDimSize(0) != targetType.getDimSize(1)) {
-    llvm::report_fatal_error("Invalid target matrix");
-  }
-  const auto targetDim = targetType.getDimSize(0);
-
-  // Get values of target matrix
-  const auto& targetMatrix = target.getValues<std::complex<double>>();
+  const auto targetDim = targetMatrix.cols();
+  assert(targetMatrix.cols() == targetMatrix.rows());
 
   // Define dimensions and type of output matrix
-  const auto dim = static_cast<int64_t>(std::pow(2, numControls) * targetDim);
+  const auto dim = static_cast<int64_t>((1 << numControls) * targetDim);
 
   // Allocate output matrix
   Eigen::MatrixXcd matrix = Eigen::MatrixXcd::Identity(dim, dim);
@@ -299,6 +293,7 @@ inline Eigen::MatrixXcd getMatrixCtrl(size_t numControls,
   }
 
   // TODO: undo permutation
+
   return matrix;
 }
 

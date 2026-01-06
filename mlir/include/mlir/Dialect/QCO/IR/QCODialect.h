@@ -31,6 +31,7 @@
 #include <mlir/Interfaces/SideEffectInterfaces.h>
 #include <optional>
 #include <string>
+#include <unsupported/Eigen/src/KroneckerProduct/KroneckerTensorProduct.h>
 #include <variant>
 
 #define DIALECT_NAME_QCO "qco"
@@ -201,6 +202,30 @@ tryGetParameterAsDouble(UnitaryOpInterface op, size_t i) {
     return std::nullopt;
   }
   return floatAttr.getValueAsDouble();
+}
+
+[[nodiscard]] inline Eigen::MatrixXcd getBlockMatrix(size_t dim, mlir::Region& region) {
+  assert(dim == 1); // TODO: remove once permutations are properly handled
+
+  Eigen::MatrixXcd result = Eigen::MatrixXcd::Identity(1 << dim, 1 << dim);
+  for (auto&& block : region) {
+    for (auto&& op : block) {
+      auto unitaryOp = llvm::dyn_cast<mlir::qco::UnitaryOpInterface>(op);
+      if (unitaryOp) {
+        return result;
+      }
+      auto matrix = unitaryOp.getUnitaryMatrix();
+      size_t matrixDim = matrix.cols();
+      if (matrixDim < dim) {
+        // TODO: adjust according to permutation (position in targets?)
+        auto paddingDim = dim - matrixDim;
+        auto padding = Eigen::MatrixXcd::Identity(1 << paddingDim, 1 << paddingDim);
+        matrix = Eigen::kroneckerProduct(matrix, padding);
+      }
+      result = matrix * result;
+    }
+  }
+  return result;
 }
 
 } // namespace mlir::qco
