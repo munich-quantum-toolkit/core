@@ -112,9 +112,20 @@ struct GateDecompositionPattern final
         }
       }
     }
+
+    llvm::errs() << "Found series (" << series.complexity << "): ";
+    for (auto&& gate : series.gates) {
+      llvm::errs() << gate.op->getName().stripDialect().str() << ", ";
+    }
+
     if (!bestSequence) {
       return mlir::failure();
     }
+    llvm::errs() << "\nDecomposition (" << bestSequence->complexity() << "): ";
+    for (auto&& gate : bestSequence->gates) {
+      llvm::errs() << qc::toString(gate.type) << ", ";
+    }
+    llvm::errs() << "\n";
     // only accept new sequence if it shortens existing series by more than two
     // gates; this prevents an oscillation with phase gates
     if (bestSequence->complexity() + 2 >= series.complexity) {
