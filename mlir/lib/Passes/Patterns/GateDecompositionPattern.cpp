@@ -172,9 +172,18 @@ protected:
       auto getUser = [](mlir::Value qubit,
                         auto&& filter) -> std::optional<UnitaryOpInterface> {
         if (qubit) {
-          assert(qubit.hasOneUse());
-          auto user =
-              mlir::dyn_cast<UnitaryOpInterface>(*qubit.getUsers().begin());
+          auto userIt = qubit.getUsers().begin();
+          // qubit may have more than one use if it is in a ctrl block (one use
+          // for gate, one use for ctrl); we want to use the ctrl operation
+          // since it is relevant for the total unitary matrix of the circuit
+          assert(qubit.hasOneUse() || qubit.hasNUses(2));
+          if (!qubit.hasOneUse()) {
+            // TODO: use wire iterator for proper handling
+            while (!mlir::dyn_cast<CtrlOp>(*userIt)) {
+              ++userIt;
+            }
+          }
+          auto user = mlir::dyn_cast<UnitaryOpInterface>(*userIt);
           if (user && filter(user)) {
             return user;
           }
@@ -204,13 +213,11 @@ protected:
       return result;
     }
 
-    [[nodiscard]] matrix2x2 getSingleQubitUnitaryMatrix() const {
+    [[nodiscard]] matrix2x2 getSingleQubitUnitaryMatrix() {
       auto unitaryMatrix = decomposition::IDENTITY_GATE;
       for (auto&& gate : gates) {
-        auto gateMatrix = decomposition::getSingleQubitMatrix(
-            {.type = helpers::getQcType(gate.op),
-             .parameter = helpers::getParameters(gate.op),
-             .qubitId = gate.qubitIds});
+        // auto gateMatrix = gate.op.getFastUnitaryMatrix<matrix2x2>();
+        auto gateMatrix = gate.op.getUnitaryMatrix();
         unitaryMatrix = gateMatrix * unitaryMatrix;
       }
 
@@ -218,14 +225,23 @@ protected:
       return unitaryMatrix;
     }
 
-    [[nodiscard]] matrix4x4 getUnitaryMatrix() const {
+    [[nodiscard]] matrix4x4 getUnitaryMatrix() {
       matrix4x4 unitaryMatrix = helpers::kroneckerProduct(
           decomposition::IDENTITY_GATE, decomposition::IDENTITY_GATE);
       for (auto&& gate : gates) {
-        auto gateMatrix = decomposition::getTwoQubitMatrix(
-            {.type = helpers::getQcType(gate.op),
-             .parameter = helpers::getParameters(gate.op),
-             .qubitId = gate.qubitIds});
+        auto gateMatrix = gate.op.getUnitaryMatrix();
+        if (gate.op.isSingleQubit()) {
+          assert(gate.qubitIds.size() == 1);
+          // TODO: use helpers::kroneckerProduct or Eigen::kroneckerProduct?
+          if (gate.qubitIds[0] == 0) {
+            gateMatrix = Eigen::kroneckerProduct(decomposition::IDENTITY_GATE,
+                                                 gateMatrix);
+          } else if (gate.qubitIds[0] == 1) {
+            gateMatrix = Eigen::kroneckerProduct(gateMatrix,
+                                                 decomposition::IDENTITY_GATE);
+          }
+        }
+        // auto gateMatrix = gate.op.getFastUnitaryMatrix<matrix4x4>();
         unitaryMatrix = gateMatrix * unitaryMatrix;
       }
 
