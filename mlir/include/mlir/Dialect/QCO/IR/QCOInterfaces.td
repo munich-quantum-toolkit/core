@@ -28,6 +28,7 @@ def UnitaryOpInterface : OpInterface<"UnitaryOpInterface"> {
 
     let cppNamespace = "::mlir::qco";
 
+    // TODO: fix const correctness?
     let methods = [
         // Qubit accessors
         InterfaceMethod<
@@ -113,7 +114,7 @@ def UnitaryOpInterface : OpInterface<"UnitaryOpInterface"> {
             "Returns the unitary matrix definition of the operation.",
             "Eigen::MatrixXcd", "getUnitaryMatrix", (ins),
             [{
-              if constexpr (decltype($_op)::HAS_MATRIX_DEFINITION) {
+              if constexpr (requires { $_op.getUnitaryMatrixDefinition(); }) {
                 return $_op.getUnitaryMatrixDefinition();
               } else {
                 llvm::reportFatalUsageError("Operation has no unitary matrix definition!");
@@ -124,7 +125,7 @@ def UnitaryOpInterface : OpInterface<"UnitaryOpInterface"> {
 
     let extraTraitClassDeclaration = [{
       template<typename MatrixType>
-      MatrixType getUnitaryMatrix() {
+      MatrixType getFastUnitaryMatrix() const {
         return $_op.getUnitaryMatrixDefinition();
       }
     }];

@@ -71,13 +71,13 @@ tryGetParameterAsDouble(UnitaryOpInterface op, size_t i);
  * verification and code generation optimizations.
  * @tparam T The target arity.
  * @tparam P The parameter arity.
- * @tparam HasMatrixDefinition If false, operation does not provide a matrix
- *                             definition.
  * @tparam MatrixDefinition A function returning the matrix definition of the
  *                          operation. The operation will be provided as the
- *                          only argument of the function.
+ *                          only argument of the function. If the operation does
+ *                          not have a matrix definition, set this value to
+ *                          nullptr.
  */
-template <size_t T, size_t P, bool HasMatrixDefinition,
+template <size_t T, size_t P,
           Eigen::Matrix<std::complex<double>, (1 << T), (1 << T)> (
               *MatrixDefinition)(UnitaryOpInterface)>
 class TargetAndParameterArityTrait {
@@ -143,11 +143,10 @@ public:
     using UnitaryMatrixType =
         Eigen::Matrix<std::complex<double>, 1 << T, 1 << T>;
 
-    static constexpr auto HAS_MATRIX_DEFINITION = HasMatrixDefinition;
-    [[nodiscard]] UnitaryMatrixType getUnitaryMatrixDefinition()
-      requires(HAS_MATRIX_DEFINITION)
+    [[nodiscard]] UnitaryMatrixType getUnitaryMatrixDefinition() const
+      requires(MatrixDefinition != nullptr)
     {
-      const auto& op = this->getOperation();
+      const auto* op = this->getConstOperation();
       return MatrixDefinition(llvm::dyn_cast<UnitaryOpInterface>(op));
     }
 
@@ -171,6 +170,14 @@ public:
       llvm::reportFatalUsageError(
           "Given qubit is not an input of the operation");
     }
+
+  protected:
+    [[nodiscard]] const Operation* getConstOperation() const {
+      auto* concrete = static_cast<const ConcreteType*>(this);
+      // use dereference operator instead of getOperation() of mlir::Op; the
+      // operator provides a const overload, getOperation() does not
+      return *concrete;
+    }
   };
 };
 
@@ -186,7 +193,7 @@ namespace mlir::qco {
 
 [[nodiscard]] inline std::optional<double>
 tryGetParameterAsDouble(UnitaryOpInterface op, size_t i) {
-  using DummyArityType = TargetAndParameterArityTrait<0, 0, false, nullptr>;
+  using DummyArityType = TargetAndParameterArityTrait<0, 0, nullptr>;
   const auto param = op.getParameter(i);
   const auto floatAttr =
       DummyArityType::Impl<arith::ConstantOp>::getStaticParameter(param);

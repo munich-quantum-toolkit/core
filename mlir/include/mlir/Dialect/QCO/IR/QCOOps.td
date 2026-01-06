@@ -238,30 +238,30 @@ def ResetOp : QCOOp<"reset", [Idempotent, SameOperandsAndResultType]> {
 // Traits
 //===----------------------------------------------------------------------===//
 
-class TargetAndParameterArityTrait<int T, int P, bit HasMatrixDefinition, code MatrixDefinitionBody>
-        : ParamNativeOpTrait<"TargetAndParameterArityTrait", !cast<string>(T) # "," # !cast<string>(P) # "," # !cast<string>(HasMatrixDefinition) # ", [](UnitaryOpInterface op) -> Eigen::Matrix<std::complex<double>, 1 << " # !cast<string>(T) # ", " # "1 << " # !cast<string>(T) # "> { " # MatrixDefinitionBody # " }"> {
+class TargetAndParameterArityTrait<int T, int P, code MatrixDefinitionBody = [{}]>
+        : ParamNativeOpTrait<"TargetAndParameterArityTrait", !cast<string>(T) # ", " # !cast<string>(P) # ", " # !cond(!empty(MatrixDefinitionBody): "nullptr", true: "[](UnitaryOpInterface op) -> Eigen::Matrix<std::complex<double>, 1 << " # !cast<string>(T) # ", " # "1 << " # !cast<string>(T) # "> { " # MatrixDefinitionBody # " }")> {
     let cppNamespace = "::mlir::qco";
 }
 
-def ZeroTargetZeroParameter : TargetAndParameterArityTrait<0, 0, false, [{ return Eigen::Matrix<std::complex<double>, 1, 1>::Zero(); }]>;
-def ZeroTargetOneParameter : TargetAndParameterArityTrait<0, 1, false, [{ return Eigen::Matrix<std::complex<double>, 1, 1>::Zero(); }]>;
-def OneTargetZeroParameter : TargetAndParameterArityTrait<1, 0, false, [{ return Eigen::Matrix2cd::Zero(); }]>;
-def OneTargetOneParameter : TargetAndParameterArityTrait<1, 1, false, [{ return Eigen::Matrix2cd::Zero(); }]>;
-def OneTargetTwoParameter : TargetAndParameterArityTrait<1, 2, false, [{ return Eigen::Matrix2cd::Zero(); }]>;
-def OneTargetThreeParameter : TargetAndParameterArityTrait<1, 3, false, [{ return Eigen::Matrix2cd::Zero(); }]>;
-def TwoTargetZeroParameter : TargetAndParameterArityTrait<2, 0, false, [{ return Eigen::Matrix4cd::Zero(); }]>;
-def TwoTargetOneParameter : TargetAndParameterArityTrait<2, 1, false, [{ return Eigen::Matrix4cd::Zero(); }]>;
-def TwoTargetTwoParameter : TargetAndParameterArityTrait<2, 2, false, [{ return Eigen::Matrix4cd::Zero(); }]>;
+def ZeroTargetZeroParameter : TargetAndParameterArityTrait<0, 0>;
+def ZeroTargetOneParameter : TargetAndParameterArityTrait<0, 1>;
+def OneTargetZeroParameter : TargetAndParameterArityTrait<1, 0>;
+def OneTargetOneParameter : TargetAndParameterArityTrait<1, 1>;
+def OneTargetTwoParameter : TargetAndParameterArityTrait<1, 2>;
+def OneTargetThreeParameter : TargetAndParameterArityTrait<1, 3>;
+def TwoTargetZeroParameter : TargetAndParameterArityTrait<2, 0>;
+def TwoTargetOneParameter : TargetAndParameterArityTrait<2, 1>;
+def TwoTargetTwoParameter : TargetAndParameterArityTrait<2, 2>;
 
-class ZeroTargetZeroParameterUnitaryMatrix<code MatrixDefinitionBody = [{}]> : TargetAndParameterArityTrait<0, 0, true, MatrixDefinitionBody>;
-class ZeroTargetOneParameterUnitaryMatrix<code MatrixDefinitionBody = [{}]> : TargetAndParameterArityTrait<0, 1, true, MatrixDefinitionBody>;
-class OneTargetZeroParameterUnitaryMatrix<code MatrixDefinitionBody = [{}]> : TargetAndParameterArityTrait<1, 0, true, MatrixDefinitionBody>;
-class OneTargetOneParameterUnitaryMatrix<code MatrixDefinitionBody = [{}]> : TargetAndParameterArityTrait<1, 1, true, MatrixDefinitionBody>;
-class OneTargetTwoParameterUnitaryMatrix<code MatrixDefinitionBody = [{}]> : TargetAndParameterArityTrait<1, 2, true, MatrixDefinitionBody>;
-class OneTargetThreeParameterUnitaryMatrix<code MatrixDefinitionBody = [{}]> : TargetAndParameterArityTrait<1, 3, true, MatrixDefinitionBody>;
-class TwoTargetZeroParameterUnitaryMatrix<code MatrixDefinitionBody = [{}]> : TargetAndParameterArityTrait<2, 0, true, MatrixDefinitionBody>;
-class TwoTargetOneParameterUnitaryMatrix<code MatrixDefinitionBody = [{}]> : TargetAndParameterArityTrait<2, 1, true, MatrixDefinitionBody>;
-class TwoTargetTwoParameterUnitaryMatrix<code MatrixDefinitionBody = [{}]> : TargetAndParameterArityTrait<2, 2, true, MatrixDefinitionBody>;
+class ZeroTargetZeroParameterUnitaryMatrix<code MatrixDefinitionBody> : TargetAndParameterArityTrait<0, 0, MatrixDefinitionBody>;
+class ZeroTargetOneParameterUnitaryMatrix<code MatrixDefinitionBody> : TargetAndParameterArityTrait<0, 1, MatrixDefinitionBody>;
+class OneTargetZeroParameterUnitaryMatrix<code MatrixDefinitionBody> : TargetAndParameterArityTrait<1, 0, MatrixDefinitionBody>;
+class OneTargetOneParameterUnitaryMatrix<code MatrixDefinitionBody> : TargetAndParameterArityTrait<1, 1, MatrixDefinitionBody>;
+class OneTargetTwoParameterUnitaryMatrix<code MatrixDefinitionBody> : TargetAndParameterArityTrait<1, 2, MatrixDefinitionBody>;
+class OneTargetThreeParameterUnitaryMatrix<code MatrixDefinitionBody> : TargetAndParameterArityTrait<1, 3, MatrixDefinitionBody>;
+class TwoTargetZeroParameterUnitaryMatrix<code MatrixDefinitionBody> : TargetAndParameterArityTrait<2, 0, MatrixDefinitionBody>;
+class TwoTargetOneParameterUnitaryMatrix<code MatrixDefinitionBody> : TargetAndParameterArityTrait<2, 1, MatrixDefinitionBody>;
+class TwoTargetTwoParameterUnitaryMatrix<code MatrixDefinitionBody> : TargetAndParameterArityTrait<2, 2, MatrixDefinitionBody>;
 
 //===----------------------------------------------------------------------===//
 // Unitary Operations
@@ -314,7 +314,7 @@ def IdOp : QCOOp<"id", traits = [UnitaryOpInterface, OneTargetZeroParameter]> {
     let hasCanonicalizer = 1;
 }
 
-def XOp : QCOOp<"x", traits = [UnitaryOpInterface, OneTargetZeroParameter]> {
+def XOp : QCOOp<"x", traits = [UnitaryOpInterface, OneTargetZeroParameterUnitaryMatrix<[{ return utils::getMatrixX(); }]>]> {
     let summary = "Apply an X gate to a qubit";
     let description = [{
         Applies an X gate to a qubit and returns the transformed qubit.
@@ -380,7 +380,7 @@ def ZOp : QCOOp<"z", traits = [UnitaryOpInterface, OneTargetZeroParameter]> {
     let hasCanonicalizer = 1;
 }
 
-def HOp : QCOOp<"h", traits = [UnitaryOpInterface, OneTargetZeroParameter]> {
+def HOp : QCOOp<"h", traits = [UnitaryOpInterface, OneTargetZeroParameterUnitaryMatrix<[{ return utils::getMatrixH(); }]>]> {
     let summary = "Apply a H gate to a qubit";
     let description = [{
         Applies a H gate to a qubit and returns the transformed qubit.
@@ -534,7 +534,7 @@ def SXdgOp : QCOOp<"sxdg", traits = [UnitaryOpInterface, OneTargetZeroParameter]
     let hasCanonicalizer = 1;
 }
 
-def RXOp : QCOOp<"rx", traits = [UnitaryOpInterface, OneTargetOneParameter]> {
+def RXOp : QCOOp<"rx", traits = [UnitaryOpInterface, OneTargetOneParameterUnitaryMatrix<[{ return utils::getMatrixRX(tryGetParameterAsDouble(op, 0).value()); }]>]> {
     let summary = "Apply an RX gate to a qubit";
     let description = [{
         Applies an RX gate to a qubit and returns the transformed qubit.
@@ -561,7 +561,7 @@ def RXOp : QCOOp<"rx", traits = [UnitaryOpInterface, OneTargetOneParameter]> {
     let hasCanonicalizer = 1;
 }
 
-def RYOp : QCOOp<"ry", traits = [UnitaryOpInterface, OneTargetOneParameter]> {
+def RYOp : QCOOp<"ry", traits = [UnitaryOpInterface, OneTargetOneParameterUnitaryMatrix<[{ return utils::getMatrixRY(tryGetParameterAsDouble(op, 0).value()); }]>]> {
     let summary = "Apply an RY gate to a qubit";
     let description = [{
         Applies an RY gate to a qubit and returns the transformed qubit.
@@ -588,7 +588,7 @@ def RYOp : QCOOp<"ry", traits = [UnitaryOpInterface, OneTargetOneParameter]> {
     let hasCanonicalizer = 1;
 }
 
-def RZOp : QCOOp<"rz", traits = [UnitaryOpInterface, OneTargetOneParameter]> {
+def RZOp : QCOOp<"rz", traits = [UnitaryOpInterface, OneTargetOneParameterUnitaryMatrix<[{ return utils::getMatrixRZ(tryGetParameterAsDouble(op, 0).value()); }]>]> {
     let summary = "Apply an RZ gate to a qubit";
     let description = [{
         Applies an RZ gate to a qubit and returns the transformed qubit.
@@ -815,7 +815,7 @@ def ECROp : QCOOp<"ecr", traits = [UnitaryOpInterface, TwoTargetZeroParameter]> 
     let hasCanonicalizer = 1;
 }
 
-def RXXOp : QCOOp<"rxx", traits = [UnitaryOpInterface, TwoTargetOneParameter]> {
+def RXXOp : QCOOp<"rxx", traits = [UnitaryOpInterface, TwoTargetOneParameterUnitaryMatrix<[{ return utils::getMatrixRXX(tryGetParameterAsDouble(op, 0).value(); }]>]> {
     let summary = "Apply an RXX gate to two qubits";
     let description = [{
         Applies an RXX gate to two qubits and returns the transformed qubits.
@@ -843,7 +843,7 @@ def RXXOp : QCOOp<"rxx", traits = [UnitaryOpInterface, TwoTargetOneParameter]> {
     let hasCanonicalizer = 1;
 }
 
-def RYYOp : QCOOp<"ryy", traits = [UnitaryOpInterface, TwoTargetOneParameter]> {
+def RYYOp : QCOOp<"ryy", traits = [UnitaryOpInterface, TwoTargetOneParameterUnitaryMatrix<[{ return utils::getMatrixRYY(tryGetParameterAsDouble(op, 0).value(); }]>]> {
     let summary = "Apply an RYY gate to two qubits";
     let description = [{
         Applies an RYY gate to two qubits and returns the transformed qubits.
@@ -899,7 +899,7 @@ def RZXOp : QCOOp<"rzx", traits = [UnitaryOpInterface, TwoTargetOneParameter]> {
     let hasCanonicalizer = 1;
 }
 
-def RZZOp : QCOOp<"rzz", traits = [UnitaryOpInterface, TwoTargetOneParameter]> {
+def RZZOp : QCOOp<"rzz", traits = [UnitaryOpInterface, TwoTargetOneParameterUnitaryMatrix<[{ return utils::getMatrixRZZ(tryGetParameterAsDouble(op, 0).value(); }]>]> {
     let summary = "Apply an RZZ gate to two qubits";
     let description = [{
         Applies an RZZ gate to two qubits and returns the transformed qubits.
