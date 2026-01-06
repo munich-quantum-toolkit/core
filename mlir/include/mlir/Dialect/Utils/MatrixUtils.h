@@ -11,13 +11,14 @@
 #pragma once
 
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
-#include <mlir/IR/Region.h>
+
 #include <Eigen/Core>
 #include <cmath>
 #include <complex>
 #include <llvm/Support/Casting.h>
 #include <llvm/Support/ErrorHandling.h>
 #include <mlir/IR/BuiltinTypes.h>
+#include <mlir/IR/Region.h>
 #include <numbers>
 
 namespace mlir::utils {

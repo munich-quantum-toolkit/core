@@ -204,7 +204,8 @@ tryGetParameterAsDouble(UnitaryOpInterface op, size_t i) {
   return floatAttr.getValueAsDouble();
 }
 
-[[nodiscard]] inline Eigen::MatrixXcd getBlockMatrix(size_t dim, mlir::Region& region) {
+[[nodiscard]] inline Eigen::MatrixXcd getBlockMatrix(size_t dim,
+                                                     mlir::Region& region) {
   assert(dim == 1); // TODO: remove once permutations are properly handled
 
   Eigen::MatrixXcd result = Eigen::MatrixXcd::Identity(1 << dim, 1 << dim);
@@ -219,7 +220,8 @@ tryGetParameterAsDouble(UnitaryOpInterface op, size_t i) {
       if (matrixDim < dim) {
         // TODO: adjust according to permutation (position in targets?)
         auto paddingDim = dim - matrixDim;
-        auto padding = Eigen::MatrixXcd::Identity(1 << paddingDim, 1 << paddingDim);
+        auto padding =
+            Eigen::MatrixXcd::Identity(1 << paddingDim, 1 << paddingDim);
         matrix = Eigen::kroneckerProduct(matrix, padding);
       }
       result = matrix * result;
