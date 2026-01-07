@@ -24,6 +24,7 @@
 #include "mlir/Dialect/Utils/MatrixUtils.h"
 
 #include <Eigen/Core>
+#include <Eigen/SparseCore>
 #include <mlir/Bytecode/BytecodeOpInterface.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/IR/Value.h>
@@ -31,7 +32,6 @@
 #include <mlir/Interfaces/SideEffectInterfaces.h>
 #include <optional>
 #include <string>
-#include <Eigen/SparseCore>
 #include <unsupported/Eigen/src/KroneckerProduct/KroneckerTensorProduct.h>
 #include <variant>
 
@@ -79,9 +79,8 @@ tryGetParameterAsDouble(UnitaryOpInterface op, size_t i);
  *                          not have a matrix definition, set this value to
  *                          nullptr.
  */
-template <size_t T, size_t P,
-          Eigen::Matrix<std::complex<double>, (1 << T), (1 << T)> (
-              *MatrixDefinition)(UnitaryOpInterface)>
+template <size_t T, size_t P, typename UnitaryMatrixType,
+          UnitaryMatrixType (*MatrixDefinition)(UnitaryOpInterface)>
 class TargetAndParameterArityTrait {
 public:
   template <typename ConcreteType>
@@ -142,9 +141,6 @@ public:
       return dyn_cast<FloatAttr>(constantOp.getValue());
     }
 
-    using UnitaryMatrixType =
-        Eigen::Matrix<std::complex<double>, 1 << T, 1 << T>;
-
     [[nodiscard]] UnitaryMatrixType getUnitaryMatrixDefinition() const
       requires(MatrixDefinition != nullptr)
     {
@@ -195,7 +191,8 @@ namespace mlir::qco {
 
 [[nodiscard]] inline std::optional<double>
 tryGetParameterAsDouble(UnitaryOpInterface op, size_t i) {
-  using DummyArityType = TargetAndParameterArityTrait<0, 0, nullptr>;
+  using DummyArityType =
+      TargetAndParameterArityTrait<0, 0, Eigen::MatrixXcd, nullptr>;
   const auto param = op.getParameter(i);
   const auto floatAttr =
       DummyArityType::Impl<arith::ConstantOp>::getStaticParameter(param);

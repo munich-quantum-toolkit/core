@@ -238,8 +238,14 @@ def ResetOp : QCOOp<"reset", [Idempotent, SameOperandsAndResultType]> {
 // Traits
 //===----------------------------------------------------------------------===//
 
-class TargetAndParameterArityTrait<int T, int P, code MatrixDefinitionBody = [{}]>
-        : ParamNativeOpTrait<"TargetAndParameterArityTrait", !cast<string>(T) # ", " # !cast<string>(P) # ", " # !cond(!empty(MatrixDefinitionBody): "nullptr", true: "[](UnitaryOpInterface op) -> Eigen::Matrix<std::complex<double>, 1 << " # !cast<string>(T) # ", " # "1 << " # !cast<string>(T) # "> { " # MatrixDefinitionBody # " }")> {
+class MatrixDefinitionLambda<code MatrixSize, code MatrixDefinitionBody> {
+  code MatrixType = "Eigen::Matrix<std::complex<double>, " # MatrixSize # ", " # MatrixSize # ">";
+  code Code = !cond(!empty(MatrixDefinitionBody): "nullptr", true: "[](UnitaryOpInterface op) -> " # MatrixType # " { " # MatrixDefinitionBody # " }");
+}
+class FixedSizeMatrixDefinitionLambda<int T, code MatrixDefinitionBody> : MatrixDefinitionLambda<"1 << " # !cast<string>(T), MatrixDefinitionBody>;
+
+class TargetAndParameterArityTrait<int T, int P, MatrixDefinitionLambda MatrixDefinition = FixedSizeMatrixDefinitionLambda<T, [{}]>>
+        : ParamNativeOpTrait<"TargetAndParameterArityTrait", !cast<string>(T) # ", " # !cast<string>(P) # ", " # MatrixDefinition.MatrixType # ", " # MatrixDefinition.Code> {
     let cppNamespace = "::mlir::qco";
 }
 
@@ -253,15 +259,16 @@ def TwoTargetZeroParameter : TargetAndParameterArityTrait<2, 0>;
 def TwoTargetOneParameter : TargetAndParameterArityTrait<2, 1>;
 def TwoTargetTwoParameter : TargetAndParameterArityTrait<2, 2>;
 
-class ZeroTargetZeroParameterUnitaryMatrix<code MatrixDefinitionBody> : TargetAndParameterArityTrait<0, 0, MatrixDefinitionBody>;
-class ZeroTargetOneParameterUnitaryMatrix<code MatrixDefinitionBody> : TargetAndParameterArityTrait<0, 1, MatrixDefinitionBody>;
-class OneTargetZeroParameterUnitaryMatrix<code MatrixDefinitionBody> : TargetAndParameterArityTrait<1, 0, MatrixDefinitionBody>;
-class OneTargetOneParameterUnitaryMatrix<code MatrixDefinitionBody> : TargetAndParameterArityTrait<1, 1, MatrixDefinitionBody>;
-class OneTargetTwoParameterUnitaryMatrix<code MatrixDefinitionBody> : TargetAndParameterArityTrait<1, 2, MatrixDefinitionBody>;
-class OneTargetThreeParameterUnitaryMatrix<code MatrixDefinitionBody> : TargetAndParameterArityTrait<1, 3, MatrixDefinitionBody>;
-class TwoTargetZeroParameterUnitaryMatrix<code MatrixDefinitionBody> : TargetAndParameterArityTrait<2, 0, MatrixDefinitionBody>;
-class TwoTargetOneParameterUnitaryMatrix<code MatrixDefinitionBody> : TargetAndParameterArityTrait<2, 1, MatrixDefinitionBody>;
-class TwoTargetTwoParameterUnitaryMatrix<code MatrixDefinitionBody> : TargetAndParameterArityTrait<2, 2, MatrixDefinitionBody>;
+class DynamicTargetZeroParameterUnitaryMatrix<code MatrixDefinitionBody> : TargetAndParameterArityTrait<0, 0, MatrixDefinitionLambda<"Eigen::Dynamic", MatrixDefinitionBody>>;
+
+class ZeroTargetOneParameterUnitaryMatrix<code MatrixDefinitionBody> : TargetAndParameterArityTrait<0, 1, FixedSizeMatrixDefinitionLambda<0, MatrixDefinitionBody>>;
+class OneTargetZeroParameterUnitaryMatrix<code MatrixDefinitionBody> : TargetAndParameterArityTrait<1, 0, FixedSizeMatrixDefinitionLambda<1, MatrixDefinitionBody>>;
+class OneTargetOneParameterUnitaryMatrix<code MatrixDefinitionBody> : TargetAndParameterArityTrait<1, 1, FixedSizeMatrixDefinitionLambda<1, MatrixDefinitionBody>>;
+class OneTargetTwoParameterUnitaryMatrix<code MatrixDefinitionBody> : TargetAndParameterArityTrait<1, 2, FixedSizeMatrixDefinitionLambda<1, MatrixDefinitionBody>>;
+class OneTargetThreeParameterUnitaryMatrix<code MatrixDefinitionBody> : TargetAndParameterArityTrait<1, 3, FixedSizeMatrixDefinitionLambda<1, MatrixDefinitionBody>>;
+class TwoTargetZeroParameterUnitaryMatrix<code MatrixDefinitionBody> : TargetAndParameterArityTrait<2, 0, FixedSizeMatrixDefinitionLambda<2, MatrixDefinitionBody>>;
+class TwoTargetOneParameterUnitaryMatrix<code MatrixDefinitionBody> : TargetAndParameterArityTrait<2, 1, FixedSizeMatrixDefinitionLambda<2, MatrixDefinitionBody>>;
+class TwoTargetTwoParameterUnitaryMatrix<code MatrixDefinitionBody> : TargetAndParameterArityTrait<2, 2, FixedSizeMatrixDefinitionLambda<2, MatrixDefinitionBody>>;
 
 //===----------------------------------------------------------------------===//
 // Unitary Operations
@@ -1050,7 +1057,7 @@ def YieldOp : QCOOp<"yield", traits = [Terminator]> {
 def CtrlOp : QCOOp<"ctrl", traits =
             [
                 UnitaryOpInterface,
-                ZeroTargetZeroParameterUnitaryMatrix<[{ return utils::getMatrixCtrl(op.getNumControls(), getBlockMatrix(op.getNumTargets(), getCtrlBody(op))); }]>,
+                DynamicTargetZeroParameterUnitaryMatrix<[{ return utils::getMatrixCtrl(op.getNumControls(), getBlockMatrix(op.getNumTargets(), getCtrlBody(op))); }]>,
                 AttrSizedOperandSegments,
                 AttrSizedResultSegments,
                 SameOperandsAndResultType,

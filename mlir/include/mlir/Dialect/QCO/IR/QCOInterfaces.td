@@ -117,7 +117,7 @@ def UnitaryOpInterface : OpInterface<"UnitaryOpInterface"> {
               if constexpr (requires { $_op.getUnitaryMatrixDefinition(); }) {
                 return $_op.getUnitaryMatrixDefinition();
               } else {
-                llvm::reportFatalUsageError("Operation has no unitary matrix definition!");
+                llvm::reportFatalUsageError("Operation '" + $_op.getBaseSymbol() + "' has no unitary matrix definition!");
               }
             }]
         >,
