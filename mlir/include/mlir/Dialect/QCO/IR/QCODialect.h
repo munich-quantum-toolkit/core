@@ -21,6 +21,10 @@
 #pragma clang diagnostic pop
 #endif
 
+#include "mlir/Dialect/Utils/MatrixUtils.h"
+
+#include <Eigen/Core>
+#include <Eigen/SparseCore>
 #include <mlir/Bytecode/BytecodeOpInterface.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/IR/Value.h>
@@ -28,6 +32,7 @@
 #include <mlir/Interfaces/SideEffectInterfaces.h>
 #include <optional>
 #include <string>
+#include <unsupported/Eigen/src/KroneckerProduct/KroneckerTensorProduct.h>
 #include <variant>
 
 #define DIALECT_NAME_QCO "qco"
@@ -43,6 +48,7 @@
 //===----------------------------------------------------------------------===//
 
 #define GET_TYPEDEF_CLASSES
+#include "mlir/Dialect/QCO/IR/QCOInterfaces.h.inc"
 #include "mlir/Dialect/QCO/IR/QCOOpsTypes.h.inc"
 
 //===----------------------------------------------------------------------===//
@@ -52,6 +58,13 @@
 namespace mlir::qco {
 
 /**
+ * @brief Retrieve C++ type of static mlir::Value.
+ * @details The returned float attribute can be used to get the value of the
+ *          given parameter as a C++ type.
+ */
+[[nodiscard]] inline std::optional<double>
+tryGetParameterAsDouble(UnitaryOpInterface op, size_t i);
+/**
  * @brief Trait for operations with a fixed number of target qubits and
  * parameters
  * @details This trait indicates that an operation has a fixed number of target
@@ -60,8 +73,15 @@ namespace mlir::qco {
  * verification and code generation optimizations.
  * @tparam T The target arity.
  * @tparam P The parameter arity.
+ * @tparam MatrixDefinition A function returning the matrix definition of the
+ *                          operation. The operation will be provided as the
+ *                          only argument of the function. If the operation does
+ *                          not have a matrix definition, set this value to
+ *                          nullptr.
  */
-template <size_t T, size_t P> class TargetAndParameterArityTrait {
+template <size_t T, size_t P, typename UnitaryMatrixType,
+          UnitaryMatrixType (*MatrixDefinition)(UnitaryOpInterface)>
+class TargetAndParameterArityTrait {
 public:
   template <typename ConcreteType>
   class Impl : public OpTrait::TraitBase<ConcreteType, Impl> {
@@ -108,6 +128,13 @@ public:
       return this->getOperation()->getOperand(T + i);
     }
 
+    [[nodiscard]] UnitaryMatrixType getUnitaryMatrixDefinition() const
+      requires(MatrixDefinition != nullptr)
+    {
+      const auto* op = this->getConstOperation();
+      return MatrixDefinition(llvm::dyn_cast<UnitaryOpInterface>(op));
+    }
+
     Value getInputForOutput(Value output) {
       const auto& op = this->getOperation();
       for (size_t i = 0; i < T; ++i) {
@@ -128,12 +155,93 @@ public:
       llvm::reportFatalUsageError(
           "Given qubit is not an input of the operation");
     }
+
+  protected:
+    [[nodiscard]] const Operation* getConstOperation() const {
+      auto* concrete = static_cast<const ConcreteType*>(this);
+      // use dereference operator instead of getOperation() of mlir::Op; the
+      // operator provides a const overload, getOperation() does not
+      return *concrete;
+    }
   };
 };
 
 } // namespace mlir::qco
 
-#include "mlir/Dialect/QCO/IR/QCOInterfaces.h.inc" // IWYU pragma: export
+// #include "mlir/Dialect/QCO/IR/QCOInterfaces.h.inc" // IWYU pragma: export
+
+//===----------------------------------------------------------------------===//
+// Operations Helpers
+//===----------------------------------------------------------------------===//
+
+namespace mlir::qco {
+
+[[nodiscard]] inline std::optional<double>
+tryGetParameterAsDouble(UnitaryOpInterface op, size_t i) {
+  using DummyArityType =
+      TargetAndParameterArityTrait<0, 0, Eigen::MatrixXcd, nullptr>;
+  const auto param = op.getParameter(i);
+  const auto floatAttr =
+      DummyArityType::Impl<arith::ConstantOp>::getStaticParameter(param);
+  if (!floatAttr) {
+    return std::nullopt;
+  }
+  return floatAttr.getValueAsDouble();
+}
+
+[[nodiscard]] inline std::pair<Eigen::MatrixXcd, Eigen::VectorXi>
+permutate(const Eigen::MatrixXcd& inputMatrix,
+          const Eigen::VectorXi& permutation) {
+  const auto swapMatrix = utils::getMatrixSWAP();
+
+  auto dim = inputMatrix.cols();
+  assert(inputMatrix.cols() == inputMatrix.rows());
+  assert(dim == permutation.size());
+
+  Eigen::MatrixXcd permutatedMatrix(dim, dim);
+  Eigen::VectorXi undoPermutation(permutation.size());
+  for (int i = 0; i < permutation.size(); ++i) {
+    undoPermutation(permutation(i)) = i;
+    // TODO
+  }
+
+  return {permutatedMatrix, undoPermutation};
+}
+
+[[nodiscard]] inline Eigen::MatrixXcd getBlockMatrix(size_t dim,
+                                                     mlir::Region& region) {
+  // TODO: check if dim == region.getArguments().size()
+  assert(dim == 1); // TODO: remove once permutations are properly handled
+
+  Eigen::MatrixXcd result = Eigen::MatrixXcd::Identity(1 << dim, 1 << dim);
+  for (auto&& block : region) {
+    for (auto&& op : block) {
+      auto unitaryOp = llvm::dyn_cast<mlir::qco::UnitaryOpInterface>(op);
+      if (unitaryOp) {
+        return result;
+      }
+      auto matrix = unitaryOp.getUnitaryMatrix();
+      size_t matrixDim = matrix.cols();
+      if (matrixDim < dim) {
+        // TODO: permutate such that operation qubits are next to each other;
+        //       then perform front/back padding accordingly
+
+        auto paddingDim = dim - matrixDim;
+        auto padding =
+            Eigen::MatrixXcd::Identity(1 << paddingDim, 1 << paddingDim);
+        matrix = Eigen::kroneckerProduct(matrix, padding);
+
+        // TODO: undo permutation
+      }
+      result = matrix * result;
+    }
+  }
+  return result;
+}
+
+mlir::Region& getCtrlBody(UnitaryOpInterface op);
+
+} // namespace mlir::qco
 
 //===----------------------------------------------------------------------===//
 // Operations
@@ -141,3 +249,11 @@ public:
 
 #define GET_OP_CLASSES
 #include "mlir/Dialect/QCO/IR/QCOOps.h.inc" // IWYU pragma: export
+
+namespace mlir::qco {
+
+[[nodiscard]] inline mlir::Region& getCtrlBody(UnitaryOpInterface op) {
+  return llvm::cast<CtrlOp>(op).getBody();
+}
+
+} // namespace mlir::qco
