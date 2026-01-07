@@ -246,10 +246,12 @@ protected:
           // TODO: use helpers::kroneckerProduct or Eigen::kroneckerProduct?
           if (gate.qubitIds[0] == 0) {
             gateMatrix = Eigen::kroneckerProduct(decomposition::IDENTITY_GATE,
-                                                 gateMatrix);
+                                                 gateMatrix)
+                             .eval();
           } else if (gate.qubitIds[0] == 1) {
             gateMatrix = Eigen::kroneckerProduct(gateMatrix,
-                                                 decomposition::IDENTITY_GATE);
+                                                 decomposition::IDENTITY_GATE)
+                             .eval();
           }
         }
         // auto gateMatrix = gate.op.getFastUnitaryMatrix<matrix4x4>();
@@ -402,28 +404,32 @@ protected:
     }
   };
 
-  template <typename OpType>
+  template <typename OpType, typename... Args>
   static OpType createGate(mlir::PatternRewriter& rewriter,
-                           mlir::Location location, mlir::ValueRange inQubits,
-                           const llvm::SmallVector<fp, 3>& parameters) {
-    mlir::SmallVector<mlir::Value, 2> parameterValues;
-    for (auto&& parameter : parameters) {
-      auto parameterValue = rewriter.create<mlir::arith::ConstantOp>(
-          location, rewriter.getF64Type(), rewriter.getF64FloatAttr(parameter));
-      parameterValues.push_back(parameterValue);
-    }
-
-    return rewriter.create<OpType>(location, inQubits, parameterValues);
+                           mlir::Location location,
+                           Args&&... inQubitsAndParams) {
+    return rewriter.create<OpType>(location,
+                                   std::forward<Args>(inQubitsAndParams)...);
   }
 
-  template <typename OpType>
-  static CtrlOp
-  createControlledGate(mlir::PatternRewriter& rewriter, mlir::Location location,
-                       mlir::ValueRange inQubits, mlir::ValueRange ctrlQubits,
-                       const llvm::SmallVector<fp, 3>& parameters) {
-    auto op = createGate<OpType>(rewriter, location, inQubits, parameters);
-    auto opOutQubits = op->getResults();
-    return rewriter.create<CtrlOp>(location, ctrlQubits, opOutQubits);
+  template <typename OpType, typename... Args>
+  static CtrlOp createControlledGate(mlir::PatternRewriter& rewriter,
+                                     mlir::Location location,
+                                     mlir::ValueRange ctrlQubits,
+                                     Args&&... inQubitsAndParams) {
+    llvm::SmallVector<mlir::Value, 3> inQubits;
+    auto collectInQubits = [&inQubits](auto&& x) {
+      if constexpr (std::is_same_v<std::remove_cvref_t<decltype(x)>,
+                                   mlir::Value>) {
+        // if argument is a qubit, add it to list; otherwise, do nothing
+        inQubits.push_back(std::forward<decltype(x)>(x));
+      }
+    };
+    (collectInQubits(inQubitsAndParams), ...);
+    return rewriter.create<CtrlOp>(
+        location, ctrlQubits, mlir::ValueRange{inQubits},
+        createGate<OpType>(rewriter, location,
+                           std::forward<Args>(inQubitsAndParams)...));
   }
 
   static void applySeries(mlir::PatternRewriter& rewriter,
@@ -448,7 +454,7 @@ protected:
         };
 
     if (sequence.hasGlobalPhase()) {
-      createGate<GPhaseOp>(rewriter, location, {}, {sequence.globalPhase});
+      createGate<GPhaseOp>(rewriter, location, sequence.globalPhase);
     }
 
     matrix4x4 unitaryMatrix = helpers::kroneckerProduct(
@@ -464,33 +470,23 @@ protected:
           // controls come last
           inCtrlQubits.push_back(inQubits[gate.qubitId[1]]);
         }
-        auto newGate = createControlledGate<XOp>(rewriter, location,
-                                                 {inQubits[gate.qubitId[0]]},
-                                                 inCtrlQubits, gate.parameter);
+        auto newGate = createControlledGate<XOp>(
+            rewriter, location, {inQubits[gate.qubitId[0]]}, inCtrlQubits);
         updateInQubits(gate.qubitId, newGate);
       } else if (gate.type == qc::RX) {
-        mlir::SmallVector<mlir::Value, 2> qubits;
-        for (auto&& x : gate.qubitId) {
-          qubits.push_back(inQubits[x]);
-        }
-        auto newGate =
-            createGate<RXOp>(rewriter, location, qubits, gate.parameter);
+        assert(gate.qubitId.size() == 1);
+        auto newGate = createGate<RXOp>(
+            rewriter, location, inQubits[gate.qubitId[0]], gate.parameter[0]);
         updateInQubits(gate.qubitId, newGate);
       } else if (gate.type == qc::RY) {
-        mlir::SmallVector<mlir::Value, 2> qubits;
-        for (auto&& x : gate.qubitId) {
-          qubits.push_back(inQubits[x]);
-        }
-        auto newGate =
-            createGate<RYOp>(rewriter, location, qubits, gate.parameter);
+        assert(gate.qubitId.size() == 1);
+        auto newGate = createGate<RYOp>(
+            rewriter, location, inQubits[gate.qubitId[0]], gate.parameter[0]);
         updateInQubits(gate.qubitId, newGate);
       } else if (gate.type == qc::RZ) {
-        mlir::SmallVector<mlir::Value, 2> qubits;
-        for (auto&& x : gate.qubitId) {
-          qubits.push_back(inQubits[x]);
-        }
-        auto newGate =
-            createGate<RZOp>(rewriter, location, qubits, gate.parameter);
+        assert(gate.qubitId.size() == 1);
+        auto newGate = createGate<RZOp>(
+            rewriter, location, inQubits[gate.qubitId[0]], gate.parameter[0]);
         updateInQubits(gate.qubitId, newGate);
       } else {
         throw std::runtime_error{"Unknown gate type!"};
