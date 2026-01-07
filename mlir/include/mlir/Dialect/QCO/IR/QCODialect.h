@@ -31,6 +31,7 @@
 #include <mlir/Interfaces/SideEffectInterfaces.h>
 #include <optional>
 #include <string>
+#include <Eigen/SparseCore>
 #include <unsupported/Eigen/src/KroneckerProduct/KroneckerTensorProduct.h>
 #include <variant>
 
@@ -204,8 +205,28 @@ tryGetParameterAsDouble(UnitaryOpInterface op, size_t i) {
   return floatAttr.getValueAsDouble();
 }
 
+[[nodiscard]] inline std::pair<Eigen::MatrixXcd, Eigen::VectorXi>
+permutate(const Eigen::MatrixXcd& inputMatrix,
+          const Eigen::VectorXi& permutation) {
+  const auto swapMatrix = utils::getMatrixSWAP();
+
+  auto dim = inputMatrix.cols();
+  assert(inputMatrix.cols() == inputMatrix.rows());
+  assert(dim == permutation.size());
+
+  Eigen::MatrixXcd permutatedMatrix(dim, dim);
+  Eigen::VectorXi undoPermutation(permutation.size());
+  for (int i = 0; i < permutation.size(); ++i) {
+    undoPermutation(permutation(i)) = i;
+    // TODO
+  }
+
+  return {permutatedMatrix, undoPermutation};
+}
+
 [[nodiscard]] inline Eigen::MatrixXcd getBlockMatrix(size_t dim,
                                                      mlir::Region& region) {
+  // TODO: check if dim == region.getArguments().size()
   assert(dim == 1); // TODO: remove once permutations are properly handled
 
   Eigen::MatrixXcd result = Eigen::MatrixXcd::Identity(1 << dim, 1 << dim);
@@ -218,17 +239,23 @@ tryGetParameterAsDouble(UnitaryOpInterface op, size_t i) {
       auto matrix = unitaryOp.getUnitaryMatrix();
       size_t matrixDim = matrix.cols();
       if (matrixDim < dim) {
-        // TODO: adjust according to permutation (position in targets?)
+        // TODO: permutate such that operation qubits are next to each other;
+        //       then perform front/back padding accordingly
+
         auto paddingDim = dim - matrixDim;
         auto padding =
             Eigen::MatrixXcd::Identity(1 << paddingDim, 1 << paddingDim);
         matrix = Eigen::kroneckerProduct(matrix, padding);
+
+        // TODO: undo permutation
       }
       result = matrix * result;
     }
   }
   return result;
 }
+
+mlir::Region& getCtrlBody(UnitaryOpInterface op);
 
 } // namespace mlir::qco
 
@@ -238,3 +265,11 @@ tryGetParameterAsDouble(UnitaryOpInterface op, size_t i) {
 
 #define GET_OP_CLASSES
 #include "mlir/Dialect/QCO/IR/QCOOps.h.inc" // IWYU pragma: export
+
+namespace mlir::qco {
+
+[[nodiscard]] inline mlir::Region& getCtrlBody(UnitaryOpInterface op) {
+  return llvm::cast<CtrlOp>(op).getBody();
+}
+
+} // namespace mlir::qco
