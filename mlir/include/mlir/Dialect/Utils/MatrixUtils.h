@@ -288,8 +288,7 @@ inline Eigen::MatrixXcd getMatrixCtrl(size_t numControls,
   // Fill output matrix
   for (int64_t i = 0; i < targetDim; ++i) {
     for (int64_t j = 0; j < targetDim; ++j) {
-      matrix(dim - targetDim - j, dim - targetDim - i) =
-          targetMatrix(j, i);
+      matrix(dim - targetDim - j, dim - targetDim - i) = targetMatrix(j, i);
     }
   }
 
