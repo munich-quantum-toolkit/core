@@ -183,7 +183,8 @@ protected:
       auto getUser = [](mlir::Value qubit,
                         auto&& filter) -> std::optional<UnitaryOpInterface> {
         if (qubit) {
-          auto userIt = qubit.getUsers().begin();
+          auto users = qubit.getUsers();
+          auto userIt = users.begin();
           // qubit may have more than one use if it is in a ctrl block (one use
           // for gate, one use for ctrl); we want to use the ctrl operation
           // since it is relevant for the total unitary matrix of the circuit
@@ -192,6 +193,10 @@ protected:
             // TODO: use wire iterator for proper handling
             while (!mlir::dyn_cast<CtrlOp>(*userIt)) {
               ++userIt;
+              if (userIt == users.end()) {
+                // TODO: should not happen?
+                return std::nullopt;
+              }
             }
           }
           auto user = mlir::dyn_cast<UnitaryOpInterface>(*userIt);
@@ -471,7 +476,7 @@ protected:
           inCtrlQubits.push_back(inQubits[gate.qubitId[1]]);
         }
         auto newGate = createControlledGate<XOp>(
-            rewriter, location, {inQubits[gate.qubitId[0]]}, inCtrlQubits);
+            rewriter, location, inCtrlQubits, inQubits[gate.qubitId[0]]);
         updateInQubits(gate.qubitId, newGate);
       } else if (gate.type == qc::RX) {
         assert(gate.qubitId.size() == 1);
@@ -501,6 +506,9 @@ protected:
       rewriter.replaceAllUsesWith(series.outQubits, inQubits);
     }
     for (auto&& gate : llvm::reverse(series.gates)) {
+      if (auto ctrlOp = llvm::dyn_cast<CtrlOp>(*gate.op)) {
+        rewriter.eraseBlock(&ctrlOp.getBody().front());
+      }
       rewriter.eraseOp(gate.op);
     }
   }
