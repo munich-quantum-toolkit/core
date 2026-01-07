@@ -28,6 +28,7 @@ def UnitaryOpInterface : OpInterface<"UnitaryOpInterface"> {
 
     let cppNamespace = "::mlir::qco";
 
+    // TODO: fix const correctness?
     let methods = [
         // Qubit accessors
         InterfaceMethod<
@@ -89,17 +90,17 @@ def UnitaryOpInterface : OpInterface<"UnitaryOpInterface"> {
         InterfaceMethod<
             "Returns true if the operation has any control qubits, otherwise false.",
             "bool", "isControlled", (ins),
-            [{ return getNumControls(impl, tablegen_opaque_val) > 0; }]
+            [{ return $_op.getNumControls() > 0; }]
         >,
         InterfaceMethod<
             "Returns true if the operation only acts on a single qubit.",
             "bool", "isSingleQubit", (ins),
-            [{ return getNumQubits(impl, tablegen_opaque_val) == 1; }]
+            [{ return $_op.getNumQubits() == 1; }]
         >,
         InterfaceMethod<
             "Returns true if the operation acts on two qubits.",
             "bool", "isTwoQubit", (ins),
-            [{ return getNumQubits(impl, tablegen_opaque_val) == 2; }]
+            [{ return $_op.getNumQubits() == 2; }]
         >,
 
         // Identification
@@ -107,7 +108,27 @@ def UnitaryOpInterface : OpInterface<"UnitaryOpInterface"> {
             "Returns the base symbol/mnemonic of the operation.",
             "StringRef", "getBaseSymbol", (ins)
         >,
+
+        // Unitary matrix methods
+        InterfaceMethod<
+            "Returns the unitary matrix definition of the operation.",
+            "Eigen::MatrixXcd", "getUnitaryMatrix", (ins),
+            [{
+              if constexpr (requires { $_op.getUnitaryMatrixDefinition(); }) {
+                return $_op.getUnitaryMatrixDefinition();
+              } else {
+                llvm::reportFatalUsageError("Operation '" + $_op.getBaseSymbol() + "' has no unitary matrix definition!");
+              }
+            }]
+        >,
     ];
+
+    let extraTraitClassDeclaration = [{
+      template<typename MatrixType>
+      MatrixType getFastUnitaryMatrix() const {
+        return $_op.getUnitaryMatrixDefinition();
+      }
+    }];
 }
 
 #endif // QCO_INTERFACES
