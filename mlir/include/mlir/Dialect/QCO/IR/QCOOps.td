@@ -292,7 +292,7 @@ def GPhaseOp : QCOOp<"gphase", traits = [UnitaryOpInterface, ZeroTargetOneParame
     let hasCanonicalizer = 1;
 }
 
-def IdOp : QCOOp<"id", traits = [UnitaryOpInterface, OneTargetZeroParameter]> {
+def IdOp : QCOOp<"id", traits = [UnitaryOpInterface, OneTargetZeroParameterUnitaryMatrix<[{ return utils::getMatrixId(); }]>]> {
     let summary = "Apply an Id gate to a qubit";
     let description = [{
         Applies an Id gate to a qubit and returns the transformed qubit.
@@ -336,7 +336,7 @@ def XOp : QCOOp<"x", traits = [UnitaryOpInterface, OneTargetZeroParameterUnitary
     let hasCanonicalizer = 1;
 }
 
-def YOp : QCOOp<"y", traits = [UnitaryOpInterface, OneTargetZeroParameter]> {
+def YOp : QCOOp<"y", traits = [UnitaryOpInterface, OneTargetZeroParameterUnitaryMatrix<[{ return utils::getMatrixY(); }]>]> {
     let summary = "Apply a Y gate to a qubit";
     let description = [{
         Applies a Y gate to a qubit and returns the transformed qubit.
@@ -358,7 +358,7 @@ def YOp : QCOOp<"y", traits = [UnitaryOpInterface, OneTargetZeroParameter]> {
     let hasCanonicalizer = 1;
 }
 
-def ZOp : QCOOp<"z", traits = [UnitaryOpInterface, OneTargetZeroParameter]> {
+def ZOp : QCOOp<"z", traits = [UnitaryOpInterface, OneTargetZeroParameterUnitaryMatrix<[{ return utils::getMatrixZ(); }]>]> {
     let summary = "Apply a Z gate to a qubit";
     let description = [{
         Applies a Z gate to a qubit and returns the transformed qubit.
@@ -402,7 +402,7 @@ def HOp : QCOOp<"h", traits = [UnitaryOpInterface, OneTargetZeroParameterUnitary
     let hasCanonicalizer = 1;
 }
 
-def SOp : QCOOp<"s", traits = [UnitaryOpInterface, OneTargetZeroParameter]> {
+def SOp : QCOOp<"s", traits = [UnitaryOpInterface, OneTargetZeroParameterUnitaryMatrix<[{ return utils::getMatrixS(); }]>]> {
     let summary = "Apply an S gate to a qubit";
     let description = [{
         Applies an S gate to a qubit and returns the transformed qubit.
@@ -424,7 +424,7 @@ def SOp : QCOOp<"s", traits = [UnitaryOpInterface, OneTargetZeroParameter]> {
     let hasCanonicalizer = 1;
 }
 
-def SdgOp : QCOOp<"sdg", traits = [UnitaryOpInterface, OneTargetZeroParameter]> {
+def SdgOp : QCOOp<"sdg", traits = [UnitaryOpInterface, OneTargetZeroParameterUnitaryMatrix<[{ return utils::getMatrixSdg(); }]>]> {
     let summary = "Apply an Sdg gate to a qubit";
     let description = [{
         Applies an Sdg gate to a qubit and returns the transformed qubit.
@@ -446,7 +446,7 @@ def SdgOp : QCOOp<"sdg", traits = [UnitaryOpInterface, OneTargetZeroParameter]> 
     let hasCanonicalizer = 1;
 }
 
-def TOp : QCOOp<"t", traits = [UnitaryOpInterface, OneTargetZeroParameter]> {
+def TOp : QCOOp<"t", traits = [UnitaryOpInterface, OneTargetZeroParameterUnitaryMatrix<[{ return utils::getMatrixT(); }]>]> {
     let summary = "Apply a T gate to a qubit";
     let description = [{
         Applies a T gate to a qubit and returns the transformed qubit.
@@ -468,7 +468,7 @@ def TOp : QCOOp<"t", traits = [UnitaryOpInterface, OneTargetZeroParameter]> {
     let hasCanonicalizer = 1;
 }
 
-def TdgOp : QCOOp<"tdg", traits = [UnitaryOpInterface, OneTargetZeroParameter]> {
+def TdgOp : QCOOp<"tdg", traits = [UnitaryOpInterface, OneTargetZeroParameterUnitaryMatrix<[{ return utils::getMatrixTdg(); }]>]> {
     let summary = "Apply a Tdg gate to a qubit";
     let description = [{
         Applies a Tdg gate to a qubit and returns the transformed qubit.
@@ -490,7 +490,7 @@ def TdgOp : QCOOp<"tdg", traits = [UnitaryOpInterface, OneTargetZeroParameter]> 
     let hasCanonicalizer = 1;
 }
 
-def SXOp : QCOOp<"sx", traits = [UnitaryOpInterface, OneTargetZeroParameter]> {
+def SXOp : QCOOp<"sx", traits = [UnitaryOpInterface, OneTargetZeroParameterUnitaryMatrix<[{ return utils::getMatrixSX(); }]>]> {
     let summary = "Apply an SX gate to a qubit";
     let description = [{
         Applies an SX gate to a qubit and returns the transformed qubit.
@@ -512,7 +512,7 @@ def SXOp : QCOOp<"sx", traits = [UnitaryOpInterface, OneTargetZeroParameter]> {
     let hasCanonicalizer = 1;
 }
 
-def SXdgOp : QCOOp<"sxdg", traits = [UnitaryOpInterface, OneTargetZeroParameter]> {
+def SXdgOp : QCOOp<"sxdg", traits = [UnitaryOpInterface, OneTargetZeroParameterUnitaryMatrix<[{ return utils::getMatrixSXdg(); }]>]> {
     let summary = "Apply an SXdg gate to a qubit";
     let description = [{
         Applies an SXdg gate to a qubit and returns the transformed qubit.
@@ -615,7 +615,7 @@ def RZOp : QCOOp<"rz", traits = [UnitaryOpInterface, OneTargetOneParameterUnitar
     let hasCanonicalizer = 1;
 }
 
-def POp : QCOOp<"p", traits = [UnitaryOpInterface, OneTargetOneParameter]> {
+def POp : QCOOp<"p", traits = [UnitaryOpInterface, OneTargetOneParameterUnitaryMatrix<[{ return utils::getMatrixP(tryGetParameterAsDouble(op, 0).value()); }]>]> {
     let summary = "Apply a P gate to a qubit";
     let description = [{
         Applies a P gate to a qubit and returns the transformed qubit.
@@ -642,7 +642,7 @@ def POp : QCOOp<"p", traits = [UnitaryOpInterface, OneTargetOneParameter]> {
     let hasCanonicalizer = 1;
 }
 
-def ROp : QCOOp<"r", traits = [UnitaryOpInterface, OneTargetTwoParameter]> {
+def ROp : QCOOp<"r", traits = [UnitaryOpInterface, OneTargetTwoParameterUnitaryMatrix<[{ return utils::getMatrixR(tryGetParameterAsDouble(op, 0).value(), tryGetParameterAsDouble(op, 1).value()); }]>]> {
     let summary = "Apply an R gate to a qubit";
     let description = [{
         Applies an R gate to a qubit and returns the transformed qubit.
@@ -670,7 +670,7 @@ def ROp : QCOOp<"r", traits = [UnitaryOpInterface, OneTargetTwoParameter]> {
     let hasCanonicalizer = 1;
 }
 
-def U2Op : QCOOp<"u2", traits = [UnitaryOpInterface, OneTargetTwoParameter]> {
+def U2Op : QCOOp<"u2", traits = [UnitaryOpInterface, OneTargetTwoParameterUnitaryMatrix<[{ return utils::getMatrixU2(tryGetParameterAsDouble(op, 0).value(), tryGetParameterAsDouble(op, 1).value()); }]>]> {
     let summary = "Apply a U2 gate to a qubit";
     let description = [{
         Applies a U2 gate to a qubit and returns the transformed qubit.
@@ -698,7 +698,7 @@ def U2Op : QCOOp<"u2", traits = [UnitaryOpInterface, OneTargetTwoParameter]> {
     let hasCanonicalizer = 1;
 }
 
-def UOp : QCOOp<"u", traits = [UnitaryOpInterface, OneTargetThreeParameter]> {
+def UOp : QCOOp<"u", traits = [UnitaryOpInterface, OneTargetThreeParameterUnitaryMatrix<[{ return utils::getMatrixU(tryGetParameterAsDouble(op, 0).value(), tryGetParameterAsDouble(op, 1).value(), tryGetParameterAsDouble(op, 2).value()); }]>]> {
     let summary = "Apply a U gate to a qubit";
     let description = [{
         Applies a U gate to a qubit and returns the transformed qubit.
@@ -727,7 +727,7 @@ def UOp : QCOOp<"u", traits = [UnitaryOpInterface, OneTargetThreeParameter]> {
     let hasCanonicalizer = 1;
 }
 
-def SWAPOp : QCOOp<"swap", traits = [UnitaryOpInterface, TwoTargetZeroParameter]> {
+def SWAPOp : QCOOp<"swap", traits = [UnitaryOpInterface, TwoTargetZeroParameterUnitaryMatrix<[{ return utils::getMatrixSWAP(); }]>]> {
     let summary = "Apply a SWAP gate to two qubits";
     let description = [{
         Applies a SWAP gate to two qubits and returns the transformed qubits.
@@ -750,7 +750,7 @@ def SWAPOp : QCOOp<"swap", traits = [UnitaryOpInterface, TwoTargetZeroParameter]
     let hasCanonicalizer = 1;
 }
 
-def iSWAPOp : QCOOp<"iswap", traits = [UnitaryOpInterface, TwoTargetZeroParameter]> {
+def iSWAPOp : QCOOp<"iswap", traits = [UnitaryOpInterface, TwoTargetZeroParameterUnitaryMatrix<[{ return utils::getMatrixiSWAP(); }]>]> {
     let summary = "Apply a iSWAP gate to two qubits";
     let description = [{
         Applies a iSWAP gate to two qubits and returns the transformed qubits.
@@ -771,7 +771,7 @@ def iSWAPOp : QCOOp<"iswap", traits = [UnitaryOpInterface, TwoTargetZeroParamete
     }];
 }
 
-def DCXOp : QCOOp<"dcx", traits = [UnitaryOpInterface, TwoTargetZeroParameter]> {
+def DCXOp : QCOOp<"dcx", traits = [UnitaryOpInterface, TwoTargetZeroParameterUnitaryMatrix<[{ return utils::getMatrixDCX(); }]>]> {
     let summary = "Apply a DCX gate to two qubits";
     let description = [{
         Applies a DCX gate to two qubits and returns the transformed qubits.
@@ -792,7 +792,7 @@ def DCXOp : QCOOp<"dcx", traits = [UnitaryOpInterface, TwoTargetZeroParameter]> 
     }];
 }
 
-def ECROp : QCOOp<"ecr", traits = [UnitaryOpInterface, TwoTargetZeroParameter]> {
+def ECROp : QCOOp<"ecr", traits = [UnitaryOpInterface, TwoTargetZeroParameterUnitaryMatrix<[{ return utils::getMatrixECR(); }]>]> {
     let summary = "Apply an ECR gate to two qubits";
     let description = [{
         Applies an ECR gate to two qubits and returns the transformed qubits.
@@ -815,7 +815,7 @@ def ECROp : QCOOp<"ecr", traits = [UnitaryOpInterface, TwoTargetZeroParameter]> 
     let hasCanonicalizer = 1;
 }
 
-def RXXOp : QCOOp<"rxx", traits = [UnitaryOpInterface, TwoTargetOneParameterUnitaryMatrix<[{ return utils::getMatrixRXX(tryGetParameterAsDouble(op, 0).value(); }]>]> {
+def RXXOp : QCOOp<"rxx", traits = [UnitaryOpInterface, TwoTargetOneParameterUnitaryMatrix<[{ return utils::getMatrixRXX(tryGetParameterAsDouble(op, 0).value()); }]>]> {
     let summary = "Apply an RXX gate to two qubits";
     let description = [{
         Applies an RXX gate to two qubits and returns the transformed qubits.
@@ -843,7 +843,7 @@ def RXXOp : QCOOp<"rxx", traits = [UnitaryOpInterface, TwoTargetOneParameterUnit
     let hasCanonicalizer = 1;
 }
 
-def RYYOp : QCOOp<"ryy", traits = [UnitaryOpInterface, TwoTargetOneParameterUnitaryMatrix<[{ return utils::getMatrixRYY(tryGetParameterAsDouble(op, 0).value(); }]>]> {
+def RYYOp : QCOOp<"ryy", traits = [UnitaryOpInterface, TwoTargetOneParameterUnitaryMatrix<[{ return utils::getMatrixRYY(tryGetParameterAsDouble(op, 0).value()); }]>]> {
     let summary = "Apply an RYY gate to two qubits";
     let description = [{
         Applies an RYY gate to two qubits and returns the transformed qubits.
@@ -871,7 +871,7 @@ def RYYOp : QCOOp<"ryy", traits = [UnitaryOpInterface, TwoTargetOneParameterUnit
     let hasCanonicalizer = 1;
 }
 
-def RZXOp : QCOOp<"rzx", traits = [UnitaryOpInterface, TwoTargetOneParameter]> {
+def RZXOp : QCOOp<"rzx", traits = [UnitaryOpInterface, TwoTargetOneParameterUnitaryMatrix<[{ return utils::getMatrixRZX(tryGetParameterAsDouble(op, 0).value()); }]>]> {
     let summary = "Apply an RZX gate to two qubits";
     let description = [{
         Applies an RZX gate to two qubits and returns the transformed qubits.
@@ -899,7 +899,7 @@ def RZXOp : QCOOp<"rzx", traits = [UnitaryOpInterface, TwoTargetOneParameter]> {
     let hasCanonicalizer = 1;
 }
 
-def RZZOp : QCOOp<"rzz", traits = [UnitaryOpInterface, TwoTargetOneParameterUnitaryMatrix<[{ return utils::getMatrixRZZ(tryGetParameterAsDouble(op, 0).value(); }]>]> {
+def RZZOp : QCOOp<"rzz", traits = [UnitaryOpInterface, TwoTargetOneParameterUnitaryMatrix<[{ return utils::getMatrixRZZ(tryGetParameterAsDouble(op, 0).value()); }]>]> {
     let summary = "Apply an RZZ gate to two qubits";
     let description = [{
         Applies an RZZ gate to two qubits and returns the transformed qubits.
@@ -927,7 +927,7 @@ def RZZOp : QCOOp<"rzz", traits = [UnitaryOpInterface, TwoTargetOneParameterUnit
     let hasCanonicalizer = 1;
 }
 
-def XXPlusYYOp : QCOOp<"xx_plus_yy", traits = [UnitaryOpInterface, TwoTargetTwoParameter]> {
+def XXPlusYYOp : QCOOp<"xx_plus_yy", traits = [UnitaryOpInterface, TwoTargetTwoParameterUnitaryMatrix<[{ return utils::getMatrixXXPlusYY(tryGetParameterAsDouble(op, 0).value(), tryGetParameterAsDouble(op, 1).value()); }]>]> {
     let summary = "Apply an XX+YY gate to two qubits";
     let description = [{
         Applies an XX+YY gate to two qubits and returns the transformed qubits.
@@ -956,7 +956,7 @@ def XXPlusYYOp : QCOOp<"xx_plus_yy", traits = [UnitaryOpInterface, TwoTargetTwoP
     let hasCanonicalizer = 1;
 }
 
-def XXMinusYYOp : QCOOp<"xx_minus_yy", traits = [UnitaryOpInterface, TwoTargetTwoParameter]> {
+def XXMinusYYOp : QCOOp<"xx_minus_yy", traits = [UnitaryOpInterface, TwoTargetTwoParameterUnitaryMatrix<[{ return utils::getMatrixXXMinusYY(tryGetParameterAsDouble(op, 0).value(), tryGetParameterAsDouble(op, 1).value()); }]>]> {
     let summary = "Apply an XX-YY gate to two qubits";
     let description = [{
         Applies an XX-YY gate to two qubits and returns the transformed qubits.
@@ -1050,7 +1050,7 @@ def YieldOp : QCOOp<"yield", traits = [Terminator]> {
 def CtrlOp : QCOOp<"ctrl", traits =
             [
                 UnitaryOpInterface,
-                ZeroTargetZeroParameterUnitaryMatrix<[{ return utils::getMatrixCtrl(); }]>,
+                ZeroTargetZeroParameterUnitaryMatrix<[{ return utils::getMatrixCtrl(op.getNumControls(), getBlockMatrix(op.getNumTargets(), getCtrlBody(op))); }]>,
                 AttrSizedOperandSegments,
                 AttrSizedResultSegments,
                 SameOperandsAndResultType,
