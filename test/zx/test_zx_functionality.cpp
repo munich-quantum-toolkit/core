@@ -549,6 +549,7 @@ TEST_F(ZXFunctionalityTest, MultiControlRZ1) {
   EXPECT_TRUE(d.isIdentity());
   EXPECT_TRUE(d.globalPhaseIsZero());
   EXPECT_TRUE(d.connected(d.getInput(0), d.getOutput(0)));
+  EXPECT_TRUE(d.connected(d.getInput(1), d.getOutput(1)));
 }
 
 TEST_F(ZXFunctionalityTest, UnsupportedControl) {
