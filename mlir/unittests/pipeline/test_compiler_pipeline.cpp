@@ -1,6 +1,6 @@
 /*
- * Copyright (c) 2023 - 2025 Chair for Design Automation, TUM
- * Copyright (c) 2025 Munich Quantum Software Company GmbH
+ * Copyright (c) 2023 - 2026 Chair for Design Automation, TUM
+ * Copyright (c) 2025 - 2026 Munich Quantum Software Company GmbH
  * All rights reserved.
  *
  * SPDX-License-Identifier: MIT
@@ -3689,8 +3689,11 @@ TEST_F(CompilerPipelineTest, Barrier2) {
 TEST_F(CompilerPipelineTest, Bell) {
   ::qc::QuantumComputation comp;
   comp.addQubitRegister(2, "q");
+  comp.addClassicalRegister(2, "c");
   comp.h(0);
   comp.cx(0, 1);
+  comp.measure(0, 0);
+  comp.measure(1, 1);
 
   const auto module = importQuantumCircuit(comp);
   ASSERT_TRUE(module);
