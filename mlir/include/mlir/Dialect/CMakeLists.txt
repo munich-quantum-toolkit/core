@@ -6,7 +6,5 @@
 #
 # Licensed under the MIT License
 
-add_subdirectory(MQTOpt)
-add_subdirectory(MQTRef)
 add_subdirectory(QC)
 add_subdirectory(QCO)
