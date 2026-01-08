@@ -131,7 +131,7 @@ repos:
         types_or: [yaml, markdown, html, css, scss, javascript, json]
 
   # Check for spelling
-  - repo: https://github.com/crate-ci/typos
+  - repo: https://github.com/adhtruong/mirrors-typos
     rev: v1.41.0
     hooks:
       - id: typos
