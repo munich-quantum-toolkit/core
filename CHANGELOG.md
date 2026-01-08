@@ -9,6 +9,8 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 
 ## [Unreleased]
 
+## [3.4.0] - 2026-01-08
+
 ### Added
 
 - ✨ Return device handle from `add_dynamic_device_library` for direct backend creation ([#1381]) ([**@marcelwa**])
@@ -277,7 +279,8 @@ _📚 Refer to the [GitHub Release Notes](https://github.com/munich-quantum-tool
 
 <!-- Version links -->
 
-[unreleased]: https://github.com/munich-quantum-toolkit/core/compare/v3.3.3...HEAD
+[unreleased]: https://github.com/munich-quantum-toolkit/core/compare/v3.4.0...HEAD
+[3.4.0]: https://github.com/munich-quantum-toolkit/core/releases/tag/v3.4.0
 [3.3.3]: https://github.com/munich-quantum-toolkit/core/releases/tag/v3.3.3
 [3.3.2]: https://github.com/munich-quantum-toolkit/core/releases/tag/v3.3.2
 [3.3.1]: https://github.com/munich-quantum-toolkit/core/releases/tag/v3.3.1
