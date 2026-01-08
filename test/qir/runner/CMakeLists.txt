@@ -14,8 +14,9 @@ if(TARGET MQT::CoreQIRRunner)
   # Collect QIR files
   set(QIR_FILES "")
   set(QIR_FILES_DIR ${CMAKE_CURRENT_SOURCE_DIR}/..)
+  file(REAL_PATH "${QIR_FILES_DIR}" QIR_FILES_DIR)
   file(GLOB QIR_FILES "${QIR_FILES_DIR}/*.ll")
-  # transform QIR_EXECUTABLES to comma separated list of string ("...")
+  # transform QIR_FILES to comma separated list of string ("...")
   string(REPLACE ";" "\",\"" QIR_FILES "\"${QIR_FILES}\"")
   # Set the executable path and version information
   target_compile_definitions(

@@ -14,8 +14,10 @@ add_mlir_library(
   DEPENDS
   QCToQCOIncGen
   LINK_LIBS
-  PUBLIC
   MLIRQCDialect
   MLIRQCODialect
   MLIRArithDialect
-  MLIRFuncDialect)
+  MLIRFuncDialect
+  MLIRTransforms
+  MLIRFuncTransforms
+  DISABLE_INSTALL)

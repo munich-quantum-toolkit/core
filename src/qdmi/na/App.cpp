@@ -400,8 +400,8 @@ int main(int argc, char* argv[]) {
   // `main` functions should not throw exceptions. Apparently, the
   // initialization of a vector can throw exceptions, so we catch them here.
   try {
-    argVec.reserve(argc);
-    for (const auto& arg : std::span(argv, argc)) {
+    argVec.reserve(static_cast<size_t>(argc));
+    for (const auto& arg : std::span(argv, static_cast<size_t>(argc))) {
       argVec.emplace_back(arg);
     }
   } catch (std::exception& e) {

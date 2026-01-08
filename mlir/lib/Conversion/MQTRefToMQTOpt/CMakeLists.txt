@@ -8,4 +8,16 @@
 
 file(GLOB CONVERSION_SOURCES *.cpp)
 
-add_mlir_library(MQTRefToMQTOpt ${CONVERSION_SOURCES} DEPENDS MQTRefToMQTOptIncGen)
+add_mlir_library(
+  MQTRefToMQTOpt
+  ${CONVERSION_SOURCES}
+  DEPENDS
+  MQTRefToMQTOptIncGen
+  LINK_LIBS
+  MLIRMQTOpt
+  MLIRMQTRef
+  MLIRMemRefDialect
+  MLIRTransforms
+  MLIRFuncDialect
+  MLIRFuncTransforms
+  DISABLE_INSTALL)

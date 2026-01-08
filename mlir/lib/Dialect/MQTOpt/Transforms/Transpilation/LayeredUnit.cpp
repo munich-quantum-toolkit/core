@@ -166,7 +166,7 @@ LayeredUnit::LayeredUnit(Layout layout, mlir::Region* region)
 
     bool haltOnWire{};
 
-    for (auto [it, index] : curr) {
+    for (auto& [it, index] : curr) {
       while (it != std::default_sentinel) {
         haltOnWire =
             mlir::TypeSwitch<mlir::Operation*, bool>(*it)
@@ -300,7 +300,7 @@ mlir::SmallVector<LayeredUnit, 3> LayeredUnit::nextImpl() {
 #ifndef NDEBUG
 LLVM_DUMP_METHOD void LayeredUnit::dump(llvm::raw_ostream& os) const {
   os << "schedule: layers=\n";
-  for (const auto [i, layer] : llvm::enumerate(layers_)) {
+  for (const auto& [i, layer] : llvm::enumerate(layers_)) {
     os << '\t' << '[' << i << "]:\n";
     os << "\t #ops= " << layer.ops.size();
     if (!layer.ops.empty()) {
@@ -309,7 +309,7 @@ LLVM_DUMP_METHOD void LayeredUnit::dump(llvm::raw_ostream& os) const {
     os << '\n';
     os << "\t gates= ";
     if (!layer.hasZero2QOps()) {
-      for (const auto [prog0, prog1] : layer.twoQubitProgs) {
+      for (const auto& [prog0, prog1] : layer.twoQubitProgs) {
         os << "(" << prog0 << "," << prog1 << "), ";
       }
     } else {

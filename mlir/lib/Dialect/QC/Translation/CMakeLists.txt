@@ -6,8 +6,6 @@
 #
 # Licensed under the MIT License
 
-add_compile_options("-fexceptions")
-
 add_mlir_library(
   MLIRQCTranslation
   TranslateQuantumComputationToQC.cpp
@@ -16,7 +14,9 @@ add_mlir_library(
   MLIRFuncDialect
   MLIRSCFDialect
   MLIRQCDialect
-  MQT::CoreIR)
+  MLIRQCProgramBuilder
+  MQT::CoreIR
+  DISABLE_INSTALL)
 
 # collect header files
 file(GLOB_RECURSE TRANSLATION_HEADERS_SOURCE

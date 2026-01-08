@@ -3,6 +3,8 @@
 # All rights reserved.
 #
 # SPDX-License-Identifier: MIT
+#
+# Licensed under the MIT License
 
 add_mlir_library(
   MLIRSupportMQT
@@ -12,7 +14,8 @@ add_mlir_library(
   LINK_LIBS
   PUBLIC
   MLIRSupport
-  MLIRIR)
+  MLIRIR
+  DISABLE_INSTALL)
 
 # add library alias
 add_library(MQT::MLIRSupport ALIAS MLIRSupportMQT)
