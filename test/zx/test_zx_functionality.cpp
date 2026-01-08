@@ -271,7 +271,6 @@ TEST_F(ZXFunctionalityTest, MultiCZ) {
   EXPECT_TRUE(d.connected(d.getInput(2), d.getOutput(2)));
 }
 TEST_F(ZXFunctionalityTest, CCZ) {
-  using namespace qc::literals;
   const std::string testfile = "OPENQASM 2.0;"
                                "include \"qelib1.inc\";"
                                "qreg q[3];"
