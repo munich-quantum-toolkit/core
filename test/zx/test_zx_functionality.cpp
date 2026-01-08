@@ -267,6 +267,8 @@ TEST_F(ZXFunctionalityTest, MultiCZ) {
   EXPECT_TRUE(d.isIdentity());
   EXPECT_TRUE(d.globalPhaseIsZero());
   EXPECT_TRUE(d.connected(d.getInput(0), d.getOutput(0)));
+  EXPECT_TRUE(d.connected(d.getInput(1), d.getOutput(1)));
+  EXPECT_TRUE(d.connected(d.getInput(2), d.getOutput(2)));
 }
 TEST_F(ZXFunctionalityTest, CCZ) {
   using namespace qc::literals;
@@ -292,6 +294,8 @@ TEST_F(ZXFunctionalityTest, CCZ) {
   EXPECT_TRUE(d.isIdentity());
   EXPECT_TRUE(d.globalPhaseIsZero());
   EXPECT_TRUE(d.connected(d.getInput(0), d.getOutput(0)));
+  EXPECT_TRUE(d.connected(d.getInput(1), d.getOutput(1)));
+  EXPECT_TRUE(d.connected(d.getInput(2), d.getOutput(2)));
 }
 
 TEST_F(ZXFunctionalityTest, MultiControlX) {
@@ -390,6 +394,7 @@ TEST_F(ZXFunctionalityTest, MultiControlX1) {
   EXPECT_TRUE(d.isIdentity());
   EXPECT_TRUE(d.globalPhaseIsZero());
   EXPECT_TRUE(d.connected(d.getInput(0), d.getOutput(0)));
+  EXPECT_TRUE(d.connected(d.getInput(1), d.getOutput(1)));
 }
 
 TEST_F(ZXFunctionalityTest, MultiControlZ) {
@@ -500,6 +505,8 @@ TEST_F(ZXFunctionalityTest, MultiControlRZ) {
   EXPECT_TRUE(d.isIdentity());
   EXPECT_TRUE(d.globalPhaseIsZero());
   EXPECT_TRUE(d.connected(d.getInput(0), d.getOutput(0)));
+  EXPECT_TRUE(d.connected(d.getInput(1), d.getOutput(1)));
+  EXPECT_TRUE(d.connected(d.getInput(2), d.getOutput(2)));
 }
 
 TEST_F(ZXFunctionalityTest, MultiControlRZ0) {
