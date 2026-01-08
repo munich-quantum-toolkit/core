@@ -152,7 +152,7 @@ struct CtrlInlineId final : OpRewritePattern<CtrlOp> {
 } // namespace
 
 UnitaryOpInterface CtrlOp::getBodyUnitary() {
-  return llvm::dyn_cast<UnitaryOpInterface>(&getBody().front().front());
+  return llvm::dyn_cast<UnitaryOpInterface>(&getBody()->front());
 }
 
 size_t CtrlOp::getNumQubits() { return getNumTargets() + getNumControls(); }
@@ -272,7 +272,7 @@ void CtrlOp::build(OpBuilder& odsBuilder, OperationState& odsState,
 }
 
 LogicalResult CtrlOp::verify() {
-  auto& block = getBody().front();
+  auto& block = *getBody();
   if (block.getOperations().size() != 2) {
     return emitOpError("body region must have exactly two operations");
   }

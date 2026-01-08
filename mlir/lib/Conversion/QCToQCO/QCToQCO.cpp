@@ -1127,8 +1127,8 @@ struct ConvertQCCtrlOp final : StatefulOpConversionPattern<qc::CtrlOp> {
     state.targetsIn.try_emplace(state.inCtrlOp, qcoTargets);
 
     // Clone body region from QC to QCO
-    auto& dstRegion = qcoOp.getBody();
-    rewriter.cloneRegionBefore(op.getBody(), dstRegion, dstRegion.end());
+    auto& dstRegion = qcoOp.getRegion();
+    rewriter.cloneRegionBefore(op.getRegion(), dstRegion, dstRegion.end());
 
     rewriter.eraseOp(op);
     return success();
