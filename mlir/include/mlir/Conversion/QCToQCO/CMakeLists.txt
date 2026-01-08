@@ -6,7 +6,8 @@
 #
 # Licensed under the MIT License
 
-"""MQT Core NA - The MQT Core neutral atom module.
+set(LLVM_TARGET_DEFINITIONS QCToQCO.td)
+mlir_tablegen(QCToQCO.h.inc -gen-pass-decls -name QCToQCO)
+add_public_tablegen_target(QCToQCOIncGen)
 
-This module contains all neutral atom related functionality of MQT Core.
-"""
+add_mlir_doc(QCToQCO MLIRQCToQCO Conversions/ -gen-pass-doc)

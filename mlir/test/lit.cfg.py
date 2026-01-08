@@ -15,6 +15,7 @@ This file configures the LLVM LIT testing infrastructure for MLIR dialect tests.
 
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 
 import lit.formats
@@ -38,7 +39,31 @@ config.test_source_root = Path(__file__).parent
 # Define where to execute tests (and produce the output).
 config.test_exec_root = Path(config.mqt_core_mlir_test_dir)
 
-multi_config_path = Path(config.mqt_core_mlir_tools_dir) / config.cmake_build_type
-tool_dirs = [config.llvm_tools_dir, config.mqt_core_mlir_tools_dir, str(multi_config_path)]
-tools = ["not", "FileCheck", "quantum-opt"]
-llvm_config.add_tool_substitutions(tools, tool_dirs)
+# Add substitutions for the required tools.
+found = llvm_config.add_tool_substitutions(tools=["not", "FileCheck", "split-file"])
+if not found:
+    msg = "Could not find one or more required LLVM tools: 'not', 'FileCheck', 'split-file'."
+    raise RuntimeError(msg)
+
+# Successively check directories whether they contain the quantum-opt tool
+tool_name = "quantum-opt" if sys.platform != "win32" else "quantum-opt.exe"
+base_tool_dir = Path(config.mqt_core_mlir_tools_dir)
+
+candidate_dirs = [base_tool_dir]
+if config.cmake_build_type:
+    candidate_dirs.append(base_tool_dir / config.cmake_build_type)
+for cfg in ["Debug", "Release", "RelWithDebInfo", "MinSizeRel"]:
+    cfg_dir = base_tool_dir / cfg
+    if cfg_dir not in candidate_dirs:
+        candidate_dirs.append(cfg_dir)
+
+found = False
+for candidate_dir in candidate_dirs:
+    if (candidate_dir / tool_name).exists():
+        llvm_config.add_tool_substitutions(["quantum-opt"], [str(candidate_dir)])
+        found = True
+        break
+
+if not found:
+    msg = f"Could not find {tool_name} anywhere under {base_tool_dir}."
+    raise RuntimeError(msg)

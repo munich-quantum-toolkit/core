@@ -15,6 +15,7 @@
 #include <cstddef>
 #include <iterator>
 #include <llvm/ADT/STLExtras.h>
+#include <llvm/Support/ErrorHandling.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/Operation.h>
@@ -23,7 +24,6 @@
 #include <mlir/IR/ValueRange.h>
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/LogicalResult.h>
-#include <stdexcept>
 #include <string>
 #include <unordered_set>
 
@@ -169,7 +169,7 @@ struct MergeRotationGatesPattern final
     } else if (type == "rzx") {
       newUser = createOpAdditiveAngle<RZXOp>(op, user, rewriter);
     } else {
-      throw std::runtime_error("Unsupported operation type: " + type);
+      llvm_unreachable("Unsupported operation type");
     }
 
     // Prepare erasure of op

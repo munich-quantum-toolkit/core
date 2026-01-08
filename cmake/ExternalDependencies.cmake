@@ -10,22 +10,16 @@
 
 include(FetchContent)
 include(CMakeDependentOption)
+include(GNUInstallDirs)
 set(FETCH_PACKAGES "")
 
 if(BUILD_MQT_CORE_BINDINGS)
-  if(NOT SKBUILD)
-    # Manually detect the installed pybind11 package and import it into CMake.
-    execute_process(
-      COMMAND "${Python_EXECUTABLE}" -m pybind11 --cmakedir
-      OUTPUT_STRIP_TRAILING_WHITESPACE
-      OUTPUT_VARIABLE pybind11_DIR)
-    list(APPEND CMAKE_PREFIX_PATH "${pybind11_DIR}")
-  endif()
-
-  message(STATUS "Python executable: ${Python_EXECUTABLE}")
-
-  # add pybind11 library
-  find_package(pybind11 3.0.1 CONFIG REQUIRED)
+  # Detect the installed nanobind package and import it into CMake
+  execute_process(
+    COMMAND "${Python_EXECUTABLE}" -m nanobind --cmake_dir
+    OUTPUT_STRIP_TRAILING_WHITESPACE
+    OUTPUT_VARIABLE nanobind_ROOT)
+  find_package(nanobind CONFIG REQUIRED)
 endif()
 
 set(JSON_VERSION
@@ -76,9 +70,9 @@ if(BUILD_MQT_CORE_TESTS)
 endif()
 
 # cmake-format: off
-set(QDMI_VERSION 1.2.0
+set(QDMI_VERSION 1.2.1
         CACHE STRING "QDMI version")
-set(QDMI_REV "3da94506d365963db8b1e419488858cfa6371d2d" # v1.2.0
+set(QDMI_REV "d5e657c777b54c482b6fd372961ee59add2ded8b" # v1.2.1
         CACHE STRING "QDMI identifier (tag, branch or commit hash)")
 set(QDMI_REPO_OWNER "Munich-Quantum-Software-Stack"
         CACHE STRING "QDMI repository owner (change when using a fork)")
@@ -101,15 +95,25 @@ set(SPDLOG_SYSTEM_INCLUDES
     ON
     CACHE INTERNAL "Treat the library headers like system headers")
 cmake_dependent_option(SPDLOG_INSTALL "Install spdlog library" ON "MQT_CORE_INSTALL" OFF)
+cmake_dependent_option(SPDLOG_BUILD_SHARED "Build spdlog as shared library" ON
+                       "BUILD_MQT_CORE_SHARED_LIBS" OFF)
 FetchContent_Declare(spdlog URL ${SPDLOG_URL} FIND_PACKAGE_ARGS ${SPDLOG_VERSION})
 list(APPEND FETCH_PACKAGES spdlog)
 
 # Make all declared dependencies available.
 FetchContent_MakeAvailable(${FETCH_PACKAGES})
 
+# Ensure external shared libraries end up in a common lib layout used by our RUNPATH
+if(TARGET spdlog)
+  set_target_properties(
+    spdlog
+    PROPERTIES LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_LIBDIR}"
+               ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_LIBDIR}"
+               RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_BINDIR}")
+endif()
+
 # Patch for spdlog cmake files to be installed in a common cmake directory
 if(SPDLOG_INSTALL)
-  include(GNUInstallDirs)
   install(
     CODE "
     file(GLOB SPDLOG_CMAKE_FILES

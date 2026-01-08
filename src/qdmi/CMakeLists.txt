@@ -23,7 +23,7 @@ if(NOT TARGET ${TARGET_NAME})
   target_link_libraries(
     ${TARGET_NAME}
     PUBLIC qdmi::qdmi
-    PRIVATE qdmi::project_warnings)
+    PRIVATE qdmi::qdmi_project_warnings)
 
   # add to list of MQT core targets
   list(APPEND MQT_CORE_TARGETS ${TARGET_NAME})
@@ -51,7 +51,7 @@ if(NOT TARGET ${TARGET_NAME})
     ${TARGET_NAME}
     PUBLIC qdmi::qdmi MQT::CoreQDMICommon
     PRIVATE MQT::CoreQDMINaDevice MQT::CoreQDMIScDevice MQT::CoreQDMI_DDSIM_Device
-            qdmi::project_warnings spdlog::spdlog)
+            qdmi::qdmi_project_warnings spdlog::spdlog ${CMAKE_DL_LIBS})
 
   # add to list of MQT core targets
   list(APPEND MQT_CORE_TARGETS ${TARGET_NAME})

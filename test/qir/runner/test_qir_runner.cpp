@@ -13,12 +13,6 @@
 #include <gtest/gtest.h>
 #include <sstream>
 
-#ifdef _WIN32
-#define SYSTEM _wsystem
-#else
-#define SYSTEM std::system
-#endif
-
 namespace qir {
 class QIRRunnerTest : public testing::TestWithParam<std::filesystem::path> {};
 
@@ -28,9 +22,9 @@ INSTANTIATE_TEST_SUITE_P(
     QIRRunnerTest, //< Test suite name
     // Parameters to test with
     ::testing::Values(QIR_FILES),
-    [](const testing::TestParamInfo<std::filesystem::path>& info) {
+    [](const testing::TestParamInfo<std::filesystem::path>& paramInfo) {
       // Extract the last part of the file path
-      auto filename = info.param.stem().string();
+      auto filename = paramInfo.param.stem().string();
       return filename;
     });
 
@@ -38,7 +32,7 @@ TEST_P(QIRRunnerTest, QIRFile) {
   const auto& file = GetParam();
   std::ostringstream command;
   command << EXECUTABLE_PATH << " " << file;
-  const auto result = SYSTEM(command.str().c_str());
+  const auto result = std::system(command.str().c_str());
   EXPECT_EQ(result, 0);
 }
 } // namespace qir

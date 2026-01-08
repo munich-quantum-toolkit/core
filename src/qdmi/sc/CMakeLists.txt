@@ -13,11 +13,7 @@ set(TARGET_NAME ${MQT_CORE_TARGET_NAME}-qdmi-sc-device-gen)
 if(NOT TARGET ${TARGET_NAME})
 
   # Add library for device generation
-  #
-  # Note: We use a static library here to avoid issues with RPATH and finding the executable during
-  # the build process in Python builds
-  add_library(${TARGET_NAME} STATIC)
-  add_library(MQT::CoreQDMIScDeviceGen ALIAS ${TARGET_NAME})
+  add_mqt_core_library(${TARGET_NAME} ALIAS_NAME QDMIScDeviceGen)
 
   # add sources to target
   target_sources(${TARGET_NAME} PRIVATE Generator.cpp)
@@ -26,27 +22,18 @@ if(NOT TARGET ${TARGET_NAME})
   target_sources(${TARGET_NAME} PUBLIC FILE_SET HEADERS BASE_DIRS ${MQT_CORE_INCLUDE_BUILD_DIR}
                                        FILES ${MQT_CORE_INCLUDE_BUILD_DIR}/qdmi/sc/Generator.hpp)
 
-  # Link nlohmann_json, spdlog
+  # Link nlohmann_json and spdlog
   target_link_libraries(
     ${TARGET_NAME}
     PUBLIC nlohmann_json::nlohmann_json
-    PRIVATE spdlog::spdlog MQT::ProjectOptions MQT::ProjectWarnings)
+    PRIVATE spdlog::spdlog)
 
-  # set versioning information
+  # place the generated library in a predictable location where the executable can find it
   set_target_properties(
     ${TARGET_NAME}
-    PROPERTIES VERSION ${PROJECT_VERSION}
-               SOVERSION ${PROJECT_VERSION_MAJOR}.${PROJECT_VERSION_MINOR}
-               EXPORT_NAME CoreScDeviceGen)
-
-  # set c++ standard
-  target_compile_features(${TARGET_NAME} PRIVATE cxx_std_20)
-
-  # add to list of MQT core targets
-  set(MQT_CORE_TARGETS ${MQT_CORE_TARGETS} ${TARGET_NAME})
-
-  # Make version available
-  target_compile_definitions(${TARGET_NAME} PRIVATE MQT_CORE_VERSION="${MQT_CORE_VERSION}")
+    PROPERTIES LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_LIBDIR}"
+               ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_LIBDIR}"
+               RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_BINDIR}")
 endif()
 
 # Set target name
@@ -61,7 +48,8 @@ if(NOT TARGET ${TARGET_NAME})
   target_sources(${TARGET_NAME} PRIVATE App.cpp)
 
   # Link Generator library
-  target_link_libraries(${TARGET_NAME} PRIVATE MQT::CoreQDMIScDeviceGen spdlog::spdlog)
+  target_link_libraries(${TARGET_NAME} PRIVATE MQT::CoreQDMIScDeviceGen MQT::ProjectOptions
+                                               MQT::ProjectWarnings spdlog::spdlog)
 
   # set versioning information
   set_target_properties(${TARGET_NAME} PROPERTIES VERSION ${PROJECT_VERSION} EXPORT_NAME
@@ -139,59 +127,63 @@ if(NOT TARGET ${TARGET_NAME})
   set_target_properties(${TARGET_NAME} PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
   # add to list of MQT core targets
-  set(MQT_CORE_TARGETS
-      ${MQT_CORE_TARGETS} ${TARGET_NAME}
-      PARENT_SCOPE)
+  list(APPEND MQT_CORE_TARGETS ${TARGET_NAME})
 
-  # Make QDMI and MQT Core Version available
-  target_compile_definitions(${TARGET_NAME} PRIVATE QDMI_VERSION="${QDMI_VERSION}"
-                                                    MQT_CORE_VERSION="${MQT_CORE_VERSION}")
+  # Make QDMI version available
+  target_compile_definitions(${TARGET_NAME} PRIVATE QDMI_VERSION="${QDMI_VERSION}")
 
   # Generate additional alias for the target required for generate_device_defs_executable function
   # in the tests
   add_library(qdmi::mqt_sc_device ALIAS ${TARGET_NAME})
 
-  # Do not build dynamic SC device on Windows because it cannot be used anyways in the current setup
-  if(NOT WIN32)
-    set(DYN_TARGET_NAME ${MQT_CORE_TARGET_NAME}-qdmi-sc-device-dyn)
-    if(NOT TARGET ${DYN_TARGET_NAME})
-      # Set prefix for QDMI
-      set(QDMI_PREFIX "MQT_SC_DYN")
-      # Generate prefixed QDMI headers
-      generate_prefixed_qdmi_headers(${QDMI_PREFIX})
-      file(GLOB_RECURSE QDMI_HDRS ${CMAKE_CURRENT_BINARY_DIR}/include/mqt_sc_dyn_qdmi/**.hpp)
-      # Add dynamic library target
-      add_library(${DYN_TARGET_NAME} SHARED)
-      add_dependencies(${DYN_TARGET_NAME} ${TARGET_NAME})
-      # add sources to target
-      target_sources(${DYN_TARGET_NAME} PRIVATE DynDevice.cpp)
-      # add headers using file sets
-      target_sources(
-        ${DYN_TARGET_NAME}
-        PUBLIC FILE_SET
-               HEADERS
-               BASE_DIRS
-               ${MQT_CORE_INCLUDE_BUILD_DIR}
-               ${CMAKE_CURRENT_BINARY_DIR}/include
-               FILES
-               ${DEVICE_HDR}
-               ${MQT_CORE_INCLUDE_BUILD_DIR}/qdmi/sc/Device.hpp
-               ${QDMI_HDRS})
-      # add link libraries
-      target_link_libraries(
-        ${DYN_TARGET_NAME}
-        PUBLIC qdmi::qdmi
-        PRIVATE ${TARGET_NAME} MQT::CoreQDMICommon MQT::ProjectOptions MQT::ProjectWarnings
-                spdlog::spdlog)
-      # set c++ standard
-      target_compile_features(${DYN_TARGET_NAME} PRIVATE cxx_std_20)
-      # set versioning information
-      set_target_properties(
-        ${DYN_TARGET_NAME}
-        PROPERTIES VERSION ${PROJECT_VERSION}
-                   SOVERSION ${PROJECT_VERSION_MAJOR}.${PROJECT_VERSION_MINOR}
-                   EXPORT_NAME CoreQDMIScDeviceDyn)
-      add_library(MQT::CoreQDMIScDeviceDyn ALIAS ${DYN_TARGET_NAME})
+  set(DYN_TARGET_NAME ${MQT_CORE_TARGET_NAME}-qdmi-sc-device-dyn)
+  if(NOT TARGET ${DYN_TARGET_NAME})
+    # Set prefix for QDMI
+    set(QDMI_PREFIX "MQT_SC_DYN")
+    # Generate prefixed QDMI headers
+    generate_prefixed_qdmi_headers(${QDMI_PREFIX})
+    file(GLOB_RECURSE QDMI_HDRS ${CMAKE_CURRENT_BINARY_DIR}/include/mqt_sc_dyn_qdmi/**.hpp)
+    # Add dynamic library target
+    add_library(${DYN_TARGET_NAME} SHARED)
+    # add sources to target
+    target_sources(${DYN_TARGET_NAME} PRIVATE DynDevice.cpp)
+    # add headers using file sets
+    target_sources(
+      ${DYN_TARGET_NAME}
+      PUBLIC FILE_SET
+             HEADERS
+             BASE_DIRS
+             ${MQT_CORE_INCLUDE_BUILD_DIR}
+             ${CMAKE_CURRENT_BINARY_DIR}/include
+             FILES
+             ${DEVICE_HDR}
+             ${MQT_CORE_INCLUDE_BUILD_DIR}/qdmi/sc/Device.hpp
+             ${QDMI_HDRS})
+    # add link libraries
+    target_link_libraries(
+      ${DYN_TARGET_NAME}
+      PUBLIC qdmi::qdmi
+      PRIVATE ${TARGET_NAME} MQT::CoreQDMICommon MQT::ProjectOptions MQT::ProjectWarnings
+              spdlog::spdlog)
+    # set c++ standard
+    target_compile_features(${DYN_TARGET_NAME} PRIVATE cxx_std_20)
+    # set versioning information
+    set_target_properties(
+      ${DYN_TARGET_NAME}
+      PROPERTIES VERSION ${PROJECT_VERSION}
+                 SOVERSION ${PROJECT_VERSION_MAJOR}.${PROJECT_VERSION_MINOR}
+                 EXPORT_NAME CoreQDMIScDeviceDyn)
+    if(MSVC)
+      # Disable link-time code generation for dynamic library on Windows to avoid issues with
+      # missing symbols and other link errors
+      set_target_properties(${DYN_TARGET_NAME} PROPERTIES INTERPROCEDURAL_OPTIMIZATION FALSE)
+      target_link_options(${DYN_TARGET_NAME} PRIVATE /LTCG:OFF)
     endif()
+    add_library(MQT::CoreQDMIScDeviceDyn ALIAS ${DYN_TARGET_NAME})
+    list(APPEND MQT_CORE_TARGETS ${DYN_TARGET_NAME})
   endif()
 endif()
+
+set(MQT_CORE_TARGETS
+    ${MQT_CORE_TARGETS}
+    PARENT_SCOPE)

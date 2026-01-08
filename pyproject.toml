@@ -7,7 +7,11 @@
 # Licensed under the MIT License
 
 [build-system]
-requires = ["scikit-build-core>=0.11.6", "setuptools-scm>=9.2.2", "pybind11>=3.0.1"]
+requires = [
+  "nanobind>=2.10.2",
+  "scikit-build-core>=0.11.6",
+  "setuptools-scm>=9.2.2",
+]
 build-backend = "scikit_build_core.build"
 
 [project]
@@ -69,6 +73,9 @@ wheel.install-dir = "mqt/core"
 # Explicitly set the package directory
 wheel.packages = ["python/mqt"]
 
+# Enable Stable ABI builds for CPython 3.12+
+wheel.py-api = "cp312"
+
 # Set required Ninja version
 ninja.version = ">=1.10"
 
@@ -86,11 +93,13 @@ build.targets = [
   "mqt-core-na",
   "mqt-core-ir-bindings",
   "mqt-core-dd-bindings",
-  "mqt-core-qdmi-na-device",
-  "mqt-core-qdmi-ddsim-device",
   "mqt-core-fomac-bindings",
-  "mqt-core-na-fomac",
-  "mqt-core-na-fomac-bindings",
+  "mqt-core-na-bindings",
+  "mqt-core-qdmi-ddsim-device",
+  "mqt-core-qdmi-na-device",
+  "mqt-core-qdmi-na-device-dyn",
+  "mqt-core-qdmi-sc-device",
+  "mqt-core-qdmi-sc-device-dyn",
 ]
 
 metadata.version.provider = "scikit_build_core.metadata.setuptools_scm"
@@ -119,6 +128,7 @@ git-only = [
 BUILD_MQT_CORE_BINDINGS = "ON"
 BUILD_MQT_CORE_TESTS = "OFF"
 BUILD_MQT_CORE_SHARED_LIBS = "ON"
+BUILD_MQT_CORE_MLIR = "OFF"
 
 [[tool.scikit-build.overrides]]
 if.python-version = ">=3.13"
@@ -225,8 +235,8 @@ known-first-party = ["mqt.core"]
 [tool.ruff.lint.per-file-ignores]
 "test/python/**" = ["T20", "INP001"]
 "docs/**" = ["T20", "INP001"]
-"noxfile.py" = ["T20", "TID251"]
-"*.pyi" = ["D418", "DOC202", "PYI011", "PYI021"]
+"noxfile.py" = ["T20", "TID251", "PLC0415"]
+"*.pyi" = ["D418", "E501", "PYI021"]
 "*.ipynb" = [
     "D",    # pydocstyle
     "E402", # Allow imports to appear anywhere in Jupyter notebooks
@@ -256,6 +266,7 @@ anc = "anc"
 mch = "mch"
 ket = "ket"
 optin = "optin"
+nd = "nd"
 
 
 [tool.repo-review]
@@ -288,10 +299,19 @@ environment = { MACOSX_DEPLOYMENT_TARGET = "11.0" }
 before-build = "uv pip install delvewheel>=1.11.2"
 repair-wheel-command = "delvewheel repair -w {dest_dir} {wheel} --namespace-pkg mqt --ignore-existing"
 
+[[tool.cibuildwheel.overrides]]
+select = "cp312-*"
+inherit.repair-wheel-command = "append"
+repair-wheel-command = "uvx abi3audit --strict --report {wheel}"
+
 
 [tool.uv]
 required-version = ">=0.5.20"
-reinstall-package = ["mqt-core"]
+cache-keys = [
+  { file = "pyproject.toml" },
+  { git = { commit = true, tags = true } },
+  { file = "bindings/**/*.cpp"},
+]
 
 [tool.uv.sources]
 mqt-core = { workspace = true }
@@ -311,7 +331,7 @@ exclude = [
 
 [dependency-groups]
 build = [
-  "pybind11>=3.0.1",
+  "nanobind>=2.10.2",
   "scikit-build-core>=0.11.6",
   "setuptools-scm>=9.2.2",
 ]
@@ -348,5 +368,5 @@ dev = [
   {include-group = "test"},
   "lit>=18.1.8",
   "nox>=2025.11.12",
-  "ty==0.0.1a34",
+  "ty==0.0.8",
 ]

@@ -508,9 +508,9 @@ INSTANTIATE_TEST_SUITE_P(
     QIRFilesTest,       //< Test suite name
     // Parameters to test with
     ::testing::Values(TEST_EXECUTABLES),
-    [](const testing::TestParamInfo<std::filesystem::path>& info) {
+    [](const testing::TestParamInfo<std::filesystem::path>& inf) {
       // Extract the last part of the file path
-      auto filename = info.param.stem().string();
+      auto filename = inf.param.stem().string();
       // replace all '-' with '_'
       std::ranges::replace(filename, '-', '_');
       return filename;

@@ -13,77 +13,106 @@
 #include "dd/Export.hpp"
 #include "dd/Node.hpp"
 
-// These includes must be the first includes for any bindings code
-// clang-format off
-#include <pybind11/pybind11.h>
-#include <pybind11/stl.h> // NOLINT(misc-include-cleaner)
-
-#include <pybind11/buffer_info.h>
-#include <pybind11/cast.h>
-#include <pybind11/numpy.h> // NOLINT(misc-include-cleaner)
-// clang-format on
-
 #include <cmath>
 #include <complex>
 #include <cstddef>
+#include <memory>
+#include <nanobind/nanobind.h>
+#include <nanobind/ndarray.h>
+#include <nanobind/stl/complex.h> // NOLINT(misc-include-cleaner)
+#include <nanobind/stl/string.h>  // NOLINT(misc-include-cleaner)
+#include <nanobind/stl/vector.h>  // NOLINT(misc-include-cleaner)
 #include <sstream>
 #include <string>
-#include <vector>
 
 namespace mqt {
 
-namespace py = pybind11;
-using namespace pybind11::literals;
+namespace nb = nanobind;
+using namespace nb::literals;
 
-struct Matrix {
-  std::vector<std::complex<dd::fp>> data;
-  size_t n;
-};
+using Matrix = nb::ndarray<nb::numpy, std::complex<dd::fp>, nb::ndim<2>>;
 
 // NOLINTNEXTLINE(misc-use-internal-linkage)
 Matrix getMatrix(const dd::mEdge& m, const size_t numQubits,
                  const dd::fp threshold = 0.) {
-  if (numQubits == 0U) {
-    return Matrix{.data = {static_cast<std::complex<dd::fp>>(m.w)}, .n = 1};
+  if (numQubits > 20U) {
+    throw nb::value_error("num_qubits exceeds practical limit of 20");
   }
-  const size_t dim = 1ULL << numQubits;
-  auto data = std::vector<std::complex<dd::fp>>(dim * dim);
+
+  if (numQubits == 0U) {
+    auto dataPtr = std::make_unique<std::complex<dd::fp>>(m.w);
+    auto* data = dataPtr.release();
+    const nb::capsule owner(data, [](void* ptr) noexcept {
+      delete static_cast<std::complex<dd::fp>*>(ptr);
+    });
+    return Matrix(data, {1, 1}, owner);
+  }
+
+  const auto dim = 1ULL << numQubits;
+  auto dataPtr = std::make_unique<std::complex<dd::fp>[]>(dim * dim);
   m.traverseMatrix(
       std::complex<dd::fp>{1., 0.}, 0ULL, 0ULL,
-      [&data, dim](const std::size_t i, const std::size_t j,
-                   const std::complex<dd::fp>& c) { data[(i * dim) + j] = c; },
+      [&dataPtr, dim](const std::size_t i, const std::size_t j,
+                      const std::complex<dd::fp>& c) {
+        dataPtr[(i * dim) + j] = c;
+      },
       numQubits, threshold);
-  return Matrix{.data = data, .n = dim};
+  auto* data = dataPtr.release();
+  const nb::capsule owner(data, [](void* ptr) noexcept {
+    delete[] static_cast<std::complex<dd::fp>*>(ptr);
+  });
+  return Matrix(data, {dim, dim}, owner);
 }
 
 // NOLINTNEXTLINE(misc-use-internal-linkage)
-void registerMatrixDDs(const py::module& mod) {
-  auto mat = py::class_<dd::mEdge>(mod, "MatrixDD");
+void registerMatrixDDs(const nb::module_& m) {
+  auto mat = nb::class_<dd::mEdge>(
+      m, "MatrixDD", "A class representing a matrix decision diagram (DD).");
 
-  mat.def("is_terminal", &dd::mEdge::isTerminal);
-  mat.def("is_zero_terminal", &dd::mEdge::isZeroTerminal);
+  mat.def("is_terminal", &dd::mEdge::isTerminal,
+          "Check if the DD is a terminal node.");
+  mat.def("is_zero_terminal", &dd::mEdge::isZeroTerminal,
+          "Check if the DD is a zero terminal node.");
+
   mat.def("is_identity", &dd::mEdge::isIdentity<>,
-          "up_to_global_phase"_a = true);
+          "up_to_global_phase"_a = true,
+          R"pb(Check if the DD represents the identity matrix.
 
-  mat.def("size", py::overload_cast<>(&dd::mEdge::size, py::const_));
+Args:
+    up_to_global_phase: Whether to ignore global phase.
+
+Returns:
+    Whether the DD represents the identity matrix.)pb");
+
+  mat.def("size", nb::overload_cast<>(&dd::mEdge::size, nb::const_),
+          "Get the size of the DD by traversing it once.");
 
   mat.def("get_entry", &dd::mEdge::getValueByIndex<>, "num_qubits"_a, "row"_a,
-          "col"_a);
+          "col"_a, "Get the entry of the matrix by row and column index.");
+
   mat.def("get_entry_by_path", &dd::mEdge::getValueByPath, "num_qubits"_a,
-          "decisions"_a);
+          "decisions"_a, R"pb(Get the entry of the matrix by decisions.
 
-  py::class_<Matrix>(mod, "Matrix", py::buffer_protocol())
-      .def_buffer([](Matrix& matrix) -> py::buffer_info {
-        return py::buffer_info(
-            matrix.data.data(), sizeof(std::complex<dd::fp>),
-            // NOLINTNEXTLINE(misc-include-cleaner)
-            py::format_descriptor<std::complex<dd::fp>>::format(), 2,
-            {matrix.n, matrix.n},
-            {sizeof(std::complex<dd::fp>) * matrix.n,
-             sizeof(std::complex<dd::fp>)});
-      });
+Args:
+    num_qubits: The number of qubits.
+    decisions: The decisions as a string of `0`, `1`, `2`, or `3`, where `decisions[i]` corresponds to the successor to follow at level `i` of the DD.
+        Must be at least `num_qubits` long.
 
-  mat.def("get_matrix", &getMatrix, "num_qubits"_a, "threshold"_a = 0.);
+Returns:
+    The entry of the matrix.)pb");
+
+  mat.def("get_matrix", &getMatrix, "num_qubits"_a, "threshold"_a = 0.,
+          R"pb(Get the matrix represented by the DD.
+
+Args:
+    num_qubits: The number of qubits.
+    threshold: The threshold for not including entries in the matrix. Defaults to 0.0.
+
+Returns:
+    The matrix.
+
+Raises:
+    MemoryError: If the memory allocation fails.)pb");
 
   mat.def(
       "to_dot",
@@ -91,11 +120,22 @@ void registerMatrixDDs(const py::module& mod) {
          const bool edgeLabels = false, const bool classic = false,
          const bool memory = false, const bool formatAsPolar = true) {
         std::ostringstream os;
-        dd::toDot(e, os, colored, edgeLabels, classic, memory, formatAsPolar);
+        toDot(e, os, colored, edgeLabels, classic, memory, formatAsPolar);
         return os.str();
       },
       "colored"_a = true, "edge_labels"_a = false, "classic"_a = false,
-      "memory"_a = false, "format_as_polar"_a = true);
+      "memory"_a = false, "format_as_polar"_a = true,
+      R"pb(Convert the DD to a DOT graph that can be plotted via Graphviz.
+
+Args:
+    colored: Whether to use colored edge weights
+    edge_labels: Whether to include edge weights as labels.
+    classic: Whether to use the classic DD visualization style.
+    memory: Whether to include memory information. For debugging purposes only.
+    format_as_polar: Whether to format the edge weights in polar coordinates.
+
+Returns:
+    The DOT graph.)pb");
 
   mat.def(
       "to_svg",
@@ -106,10 +146,21 @@ void registerMatrixDDs(const py::module& mod) {
         // replace the filename extension with .dot
         const auto dotFilename =
             filename.substr(0, filename.find_last_of('.')) + ".dot";
-        dd::export2Dot(e, dotFilename, colored, edgeLabels, classic, memory,
-                       true, formatAsPolar);
+        export2Dot(e, dotFilename, colored, edgeLabels, classic, memory, true,
+                   formatAsPolar);
       },
       "filename"_a, "colored"_a = true, "edge_labels"_a = false,
-      "classic"_a = false, "memory"_a = false, "format_as_polar"_a = true);
+      "classic"_a = false, "memory"_a = false, "format_as_polar"_a = true,
+      R"pb(Convert the DD to an SVG file that can be viewed in a browser.
+
+Requires the `dot` command from Graphviz to be installed and available in the PATH.
+
+Args:
+    filename: The filename of the SVG file. Any file extension will be replaced by `.dot` and then `.svg`.
+    colored: Whether to use colored edge weights.
+    edge_labels: Whether to include edge weights as labels.
+    classic: Whether to use the classic DD visualization style.
+    memory: Whether to include memory information. For debugging purposes only.
+    format_as_polar: Whether to format the edge weights in polar coordinates.)pb");
 }
 } // namespace mqt

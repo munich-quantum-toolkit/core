@@ -10,7 +10,7 @@
 set(MQT_MLIR_SOURCE_INCLUDE_DIR "${PROJECT_SOURCE_DIR}/mlir/include")
 set(MQT_MLIR_BUILD_INCLUDE_DIR "${PROJECT_BINARY_DIR}/mlir/include")
 set(MQT_MLIR_MIN_VERSION
-    "21.0"
+    "21.1"
     CACHE STRING "Minimum required MLIR version")
 
 # MLIR must be installed on the system
@@ -29,6 +29,8 @@ list(APPEND CMAKE_MODULE_PATH "${LLVM_CMAKE_DIR}")
 include(TableGen)
 include(AddLLVM)
 include(AddMLIR)
+set(LLVM_ENABLE_RTTI ON)
+set(LLVM_ENABLE_EH ON)
 include(HandleLLVMOptions)
 
 include_directories(${LLVM_INCLUDE_DIRS})

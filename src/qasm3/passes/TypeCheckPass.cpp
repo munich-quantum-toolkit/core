@@ -332,13 +332,17 @@ InferredType TypeCheckPass::visitIdentifierExpression(
   return type->second;
 }
 
+#ifdef __GNUC__
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wsuggest-attribute=noreturn"
+#endif
 InferredType TypeCheckPass::visitIdentifierList(
     std::shared_ptr<IdentifierList> /*identifierList*/) {
   throw TypeCheckError("TypeCheckPass::visitIdentifierList not implemented");
 }
+#ifdef __GNUC__
 #pragma GCC diagnostic pop
+#endif
 
 InferredType TypeCheckPass::visitIndexedIdentifier(
     const std::shared_ptr<IndexedIdentifier> indexedIdentifier) {

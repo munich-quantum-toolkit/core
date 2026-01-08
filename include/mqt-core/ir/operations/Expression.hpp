@@ -255,11 +255,6 @@ template <typename T,
 Term<T> operator*(double lhs, const Term<T>& rhs) {
   return rhs * lhs;
 }
-template <typename T,
-          typename = std::enable_if_t<std::is_constructible_v<int, T>>>
-Term<T> operator/(double lhs, const Term<T>& rhs) {
-  return rhs / lhs;
-}
 ///@}
 
 /**
