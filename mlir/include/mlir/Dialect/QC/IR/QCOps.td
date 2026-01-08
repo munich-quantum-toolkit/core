@@ -948,8 +948,8 @@ def CtrlOp : QCOp<"ctrl",
     }];
 
     let arguments = (ins Arg<Variadic<QubitType>, "the control qubits", [MemRead, MemWrite]>:$controls);
-    let regions = (region SizedRegion<1>:$ctrlBodyRegion);
-    let assemblyFormat = "`(` $controls `)` $ctrlBodyRegion attr-dict `:` type($controls)";
+    let regions = (region SizedRegion<1>:$region);
+    let assemblyFormat = "`(` $controls `)` $region attr-dict `:` type($controls)";
 
     let extraClassDeclaration = [{
         [[nodiscard]] UnitaryOpInterface getBodyUnitary();
