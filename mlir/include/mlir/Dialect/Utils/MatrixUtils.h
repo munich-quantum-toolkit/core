@@ -10,8 +10,6 @@
 
 #pragma once
 
-#include "mlir/Dialect/QCO/IR/QCODialect.h"
-
 #include <Eigen/Core>
 #include <cmath>
 #include <complex>
@@ -273,24 +271,20 @@ inline Eigen::Matrix4cd getMatrixXXMinusYY(double theta, double beta) {
 
 inline Eigen::MatrixXcd getMatrixCtrl(size_t numControls,
                                       Eigen::MatrixXcd targetMatrix) {
-  // Get dimensions of target matrix
+  // get dimensions of target matrix
   const auto targetDim = targetMatrix.cols();
   assert(targetMatrix.cols() == targetMatrix.rows());
 
-  // Define dimensions and type of output matrix
+  // define dimensions and type of output matrix
   const auto dim = static_cast<int64_t>((1 << numControls) * targetDim);
 
-  // Allocate output matrix
+  // initialize result with identity
   Eigen::MatrixXcd matrix = Eigen::MatrixXcd::Identity(dim, dim);
 
   // TODO: apply permutation such that target qubits are last
 
-  // Fill output matrix
-  for (int64_t i = 0; i < targetDim; ++i) {
-    for (int64_t j = 0; j < targetDim; ++j) {
-      matrix(dim - targetDim - j, dim - targetDim - i) = targetMatrix(j, i);
-    }
-  }
+  // Apply target matrix
+  matrix.bottomRightCorner(targetDim, targetDim) = targetMatrix;
 
   // TODO: undo permutation
 
