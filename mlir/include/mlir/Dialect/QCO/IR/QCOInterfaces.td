@@ -89,17 +89,17 @@ def UnitaryOpInterface : OpInterface<"UnitaryOpInterface"> {
         InterfaceMethod<
             "Returns true if the operation has any control qubits, otherwise false.",
             "bool", "isControlled", (ins),
-            [{ return getNumControls(impl, tablegen_opaque_val) > 0; }]
+            [{ return $_op.getNumControls() > 0; }]
         >,
         InterfaceMethod<
             "Returns true if the operation only acts on a single qubit.",
             "bool", "isSingleQubit", (ins),
-            [{ return getNumQubits(impl, tablegen_opaque_val) == 1; }]
+            [{ return $_op.getNumQubits() == 1; }]
         >,
         InterfaceMethod<
             "Returns true if the operation acts on two qubits.",
             "bool", "isTwoQubit", (ins),
-            [{ return getNumQubits(impl, tablegen_opaque_val) == 2; }]
+            [{ return $_op.getNumQubits() == 2; }]
         >,
 
         // Identification
