@@ -186,6 +186,10 @@ def docs(session: nox.Session) -> None:
             external=True,
         )
 
+    # build the MLIR API docs via building mlir-doc
+    session.run("uvx", "cmake", "-S", ".", "-B", "build", "-DBUILD_MQT_CORE_MLIR=ON")
+    session.run("uvx", "cmake", "--build", "build", "--target", "mlir-doc")
+
     shared_args = [
         "-n",  # nitpicky mode
         "-T",  # full tracebacks
