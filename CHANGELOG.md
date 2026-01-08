@@ -11,7 +11,7 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 
 ### Added
 
-- ✨ Add initial infrastructure for new QC and QCO MLIR dialects ([#1264], [#1402]) ([**@burgholzer**], [**@denialhaag**])
+- ✨ Add initial infrastructure for new QC and QCO MLIR dialects ([#1264], [#1402], [#1428], [#1430]) ([**@burgholzer**], [**@denialhaag**], [**@taminob**])
 - ✨ Return device handle from `add_dynamic_device_library` for direct backend creation ([#1381]) ([**@marcelwa**])
 - ✨ Add IQM JSON support for job submission in Qiskit-QDMI Backend ([#1375], [#1382]) ([**@marcelwa**], [**@burgholzer**])
 - ✨ Add authentication support for QDMI sessions with token, username/password, auth file, auth URL, and project ID parameters ([#1355]) ([**@marcelwa**])
@@ -294,6 +294,8 @@ _📚 Refer to the [GitHub Release Notes](https://github.com/munich-quantum-tool
 
 <!-- PR links -->
 
+[#1430]: https://github.com/munich-quantum-toolkit/core/pull/1430
+[#1428]: https://github.com/munich-quantum-toolkit/core/pull/1428
 [#1415]: https://github.com/munich-quantum-toolkit/core/pull/1415
 [#1414]: https://github.com/munich-quantum-toolkit/core/pull/1414
 [#1413]: https://github.com/munich-quantum-toolkit/core/pull/1413
