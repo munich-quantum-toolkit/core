@@ -40,10 +40,6 @@ include_directories(${MQT_MLIR_BUILD_INCLUDE_DIR})
 link_directories(${LLVM_BUILD_LIBRARY_DIR})
 add_definitions(${LLVM_DEFINITIONS})
 
-string(REPLACE "." ";" MLIR_VERSION_COMPONENTS ${MLIR_VERSION})
-list(GET MLIR_VERSION_COMPONENTS 0 MLIR_VERSION_MAJOR)
-add_compile_definitions(MLIR_VERSION_MAJOR=${MLIR_VERSION_MAJOR})
-
 # set the binary directory for the build tree such that, e.g., docs can be generated in the build
 # tree
 set(MLIR_BINARY_DIR ${CMAKE_CURRENT_BINARY_DIR})
