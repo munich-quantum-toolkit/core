@@ -24,7 +24,6 @@
 #include "mlir/Dialect/Utils/MatrixUtils.h"
 
 #include <Eigen/Core>
-#include <Eigen/SparseCore>
 #include <mlir/Bytecode/BytecodeOpInterface.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/IR/Value.h>
@@ -32,7 +31,7 @@
 #include <mlir/Interfaces/SideEffectInterfaces.h>
 #include <optional>
 #include <string>
-#include <unsupported/Eigen/src/KroneckerProduct/KroneckerTensorProduct.h>
+#include <unsupported/Eigen/KroneckerProduct>
 #include <variant>
 
 #define DIALECT_NAME_QCO "qco"
@@ -217,7 +216,7 @@ permutate(const Eigen::MatrixXcd& inputMatrix,
   for (auto&& block : region) {
     for (auto&& op : block) {
       auto unitaryOp = llvm::dyn_cast<mlir::qco::UnitaryOpInterface>(op);
-      if (unitaryOp) {
+      if (!unitaryOp) {
         return result;
       }
       auto matrix = unitaryOp.getUnitaryMatrix();
