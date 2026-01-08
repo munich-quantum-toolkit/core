@@ -342,6 +342,10 @@ TEST_F(ZXFunctionalityTest, MultiControlXLarger) {
   EXPECT_TRUE(d.isIdentity());
   EXPECT_TRUE(d.globalPhaseIsZero());
   EXPECT_TRUE(d.connected(d.getInput(0), d.getOutput(0)));
+  EXPECT_TRUE(d.connected(d.getInput(1), d.getOutput(1)));
+  EXPECT_TRUE(d.connected(d.getInput(2), d.getOutput(2)));
+  EXPECT_TRUE(d.connected(d.getInput(3), d.getOutput(3)));
+  EXPECT_TRUE(d.connected(d.getInput(4), d.getOutput(3)));
 }
 
 TEST_F(ZXFunctionalityTest, MultiControlX0) {
