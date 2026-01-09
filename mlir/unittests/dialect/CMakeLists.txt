@@ -7,3 +7,4 @@
 # Licensed under the MIT License
 
 add_subdirectory(mqtopt)
+add_subdirectory(qco)
