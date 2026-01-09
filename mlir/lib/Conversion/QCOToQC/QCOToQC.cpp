@@ -777,7 +777,7 @@ struct ConvertQCOCtrlOp final : OpConversionPattern<qco::CtrlOp> {
     auto qcOp = rewriter.create<qc::CtrlOp>(op.getLoc(), qcControls);
 
     // Clone body region from QCO to QC
-    auto& dstRegion = qcoOp.getRegion();
+    auto& dstRegion = qcOp.getRegion();
     rewriter.cloneRegionBefore(op.getRegion(), dstRegion, dstRegion.end());
 
     // Remove all block arguments in the cloned region
