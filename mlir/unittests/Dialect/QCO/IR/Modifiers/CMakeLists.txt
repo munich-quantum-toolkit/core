@@ -15,6 +15,7 @@ target_link_libraries(
           MLIRQCODialect
           MLIRFuncDialect
           MLIRIR
+          MLIRParser
           MLIRSupport
           LLVMSupport)
 

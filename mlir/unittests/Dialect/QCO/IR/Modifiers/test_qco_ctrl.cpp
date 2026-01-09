@@ -21,6 +21,7 @@
 #include <mlir/IR/Value.h>
 #include <mlir/IR/ValueRange.h>
 #include <mlir/IR/Verifier.h>
+#include <mlir/Parser/Parser.h>
 #include <mlir/Support/LLVM.h>
 
 using namespace mlir;
@@ -51,6 +52,17 @@ protected:
     builder.create<func::ReturnOp>(builder.getUnknownLoc());
     builder.setInsertionPointToStart(entryBlock);
   }
+
+  bool testParse(StringRef ctrlOpAssembly) {
+    // Wrap the op in a function to provide operands
+    std::string source =
+        (Twine("func.func @test(%q0: !qco.qubit, %q1: !qco.qubit) {\n") +
+         ctrlOpAssembly + "\n" + "  return\n" + "}")
+            .str();
+    ScopedDiagnosticHandler diagHandler(&context);
+    // Parse should fail
+    return parseSourceString<ModuleOp>(source, &context).get() == nullptr;
+  };
 };
 
 TEST_F(QCOCtrlOpTest, LambdaBuilder) {
@@ -230,4 +242,31 @@ TEST_F(QCOCtrlOpTest, VerifierBodyFirstOp) {
 
   // Should fail because body must use a unitary as first operation
   EXPECT_TRUE(mlir::verify(ctrlOp).failed());
+}
+
+TEST_F(QCOCtrlOpTest, ParserErrors) {
+  // 1. Missing opening parenthesis for targets
+  EXPECT_TRUE(testParse(
+      "qco.ctrl(%q0) targets %a = %q1) { qco.yield %a } : ({!qco.qubit}, "
+      "{!qco.qubit}) -> ({!qco.qubit}, {!qco.qubit})"));
+
+  // 2. Missing argument name
+  EXPECT_TRUE(testParse(
+      "qco.ctrl(%q0) targets ( = %q1) { qco.yield %q1 } : ({!qco.qubit}, "
+      "{!qco.qubit}) -> ({!qco.qubit}, {!qco.qubit})"));
+
+  // 3. Missing equals sign
+  EXPECT_TRUE(testParse(
+      "qco.ctrl(%q0) targets (%a %q1) { qco.yield %a } : ({!qco.qubit}, "
+      "{!qco.qubit}) -> ({!qco.qubit}, {!qco.qubit})"));
+
+  // 4. Missing operand (old value)
+  EXPECT_TRUE(testParse(
+      "qco.ctrl(%q0) targets (%a = ) { qco.yield %a } : ({!qco.qubit}, "
+      "{!qco.qubit}) -> ({!qco.qubit}, {!qco.qubit})"));
+
+  // 5. Missing closing parenthesis
+  EXPECT_TRUE(testParse(
+      "qco.ctrl(%q0) targets (%a = %q1 { qco.yield %a } : ({!qco.qubit}, "
+      "{!qco.qubit}) -> ({!qco.qubit}, {!qco.qubit})"));
 }
