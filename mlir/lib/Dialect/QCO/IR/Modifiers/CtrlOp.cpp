@@ -292,6 +292,12 @@ LogicalResult CtrlOp::verify() {
     return emitOpError(
         "number of block arguments must match number of targets");
   }
+  for (size_t i = 0; i < getNumTargets(); ++i) {
+    if (block.getArgument(i).getType() != getTargetsIn()[i].getType()) {
+      return emitOpError("block argument type at index ")
+             << i << " does not match target type";
+    }
+  }
   if (!llvm::isa<UnitaryOpInterface>(block.front())) {
     return emitOpError(
         "first operation in body region must be a unitary operation");
