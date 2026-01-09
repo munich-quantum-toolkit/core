@@ -207,38 +207,7 @@ permutate(const Eigen::MatrixXcd& inputMatrix,
   return {permutatedMatrix, undoPermutation};
 }
 
-[[nodiscard]] inline Eigen::MatrixXcd getBlockMatrix(size_t dim,
-                                                     mlir::Region& region) {
-  // TODO: check if dim == region.getArguments().size()
-  assert(dim == 1); // TODO: remove once permutations are properly handled
-
-  Eigen::MatrixXcd result = Eigen::MatrixXcd::Identity(1 << dim, 1 << dim);
-  for (auto&& block : region) {
-    for (auto&& op : block) {
-      auto unitaryOp = llvm::dyn_cast<mlir::qco::UnitaryOpInterface>(op);
-      if (!unitaryOp) {
-        return result;
-      }
-      auto matrix = unitaryOp.getUnitaryMatrix();
-      size_t matrixDim = matrix.cols();
-      if (matrixDim < dim) {
-        // TODO: permutate such that operation qubits are next to each other;
-        //       then perform front/back padding accordingly
-
-        auto paddingDim = dim - matrixDim;
-        auto padding =
-            Eigen::MatrixXcd::Identity(1 << paddingDim, 1 << paddingDim);
-        matrix = Eigen::kroneckerProduct(matrix, padding);
-
-        // TODO: undo permutation
-      }
-      result = matrix * result;
-    }
-  }
-  return result;
-}
-
-mlir::Region& getCtrlBody(UnitaryOpInterface op);
+UnitaryOpInterface getControlledOp(UnitaryOpInterface op);
 
 } // namespace mlir::qco
 
@@ -251,8 +220,8 @@ mlir::Region& getCtrlBody(UnitaryOpInterface op);
 
 namespace mlir::qco {
 
-[[nodiscard]] inline mlir::Region& getCtrlBody(UnitaryOpInterface op) {
-  return llvm::cast<CtrlOp>(op).getBody();
+[[nodiscard]] inline UnitaryOpInterface getControlledOp(UnitaryOpInterface op) {
+  return llvm::cast<CtrlOp>(op).getBodyUnitary();
 }
 
 } // namespace mlir::qco
