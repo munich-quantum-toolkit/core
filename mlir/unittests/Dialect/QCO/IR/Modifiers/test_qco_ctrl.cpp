@@ -16,6 +16,7 @@
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/MLIRContext.h>
+#include <mlir/IR/Verifier.h>
 
 using namespace mlir;
 using namespace mlir::qco;
@@ -41,12 +42,15 @@ protected:
     auto func =
         builder.create<func::FuncOp>(builder.getUnknownLoc(), "main", funcType);
     auto* entryBlock = func.addEntryBlock();
+    builder.setInsertionPointToEnd(entryBlock);
+    builder.create<func::ReturnOp>(builder.getUnknownLoc());
     builder.setInsertionPointToStart(entryBlock);
   }
 };
 
 TEST_F(QCOCtrlOpTest, LambdaBuilder) {
   // Allocate qubits to use as operands
+  auto qType = QubitType::get(&context);
   auto q0 = builder.create<AllocOp>(builder.getUnknownLoc()).getResult();
   auto q1 = builder.create<AllocOp>(builder.getUnknownLoc()).getResult();
   auto q2 = builder.create<AllocOp>(builder.getUnknownLoc()).getResult();
@@ -78,11 +82,22 @@ TEST_F(QCOCtrlOpTest, LambdaBuilder) {
   EXPECT_TRUE(isa<SWAPOp>(block.front()));
   EXPECT_TRUE(isa<YieldOp>(block.back()));
 
-  EXPECT_TRUE(module->verify().succeeded());
+  // Verify target aliasing via block arguments
+  EXPECT_EQ(block.getNumArguments(), 2); // 2 target block args
+  EXPECT_EQ(block.getArgument(0).getType(), qType);
+  EXPECT_EQ(block.getArgument(1).getType(), qType);
+
+  // Verify the SWAP uses block arguments, not original operands
+  auto swapOp = cast<SWAPOp>(block.front());
+  EXPECT_EQ(swapOp.getOperand(0), block.getArgument(0));
+  EXPECT_EQ(swapOp.getOperand(1), block.getArgument(1));
+
+  EXPECT_TRUE(mlir::verify(ctrlOp).succeeded());
 }
 
 TEST_F(QCOCtrlOpTest, UnitaryOpBuilder) {
   // Allocate qubits
+  auto qType = QubitType::get(&context);
   auto q0 = builder.create<AllocOp>(builder.getUnknownLoc()).getResult();
   auto q1 = builder.create<AllocOp>(builder.getUnknownLoc()).getResult();
 
@@ -111,8 +126,16 @@ TEST_F(QCOCtrlOpTest, UnitaryOpBuilder) {
   EXPECT_TRUE(isa<XOp>(block.front()));
   EXPECT_TRUE(isa<YieldOp>(block.back()));
 
+  // Verify target aliasing via block arguments
+  EXPECT_EQ(block.getNumArguments(), 1); // 1 target block arg
+  EXPECT_EQ(block.getArgument(0).getType(), qType);
+
+  // Verify the XOp inside region uses block argument
+  auto innerXOp = cast<XOp>(block.front());
+  EXPECT_EQ(innerXOp.getOperand(), block.getArgument(0));
+
   // The template op 'xOp' still exists in the main block before ctrlOp.
-  EXPECT_TRUE(module->verify().succeeded());
+  EXPECT_TRUE(mlir::verify(ctrlOp).succeeded());
 }
 
 TEST_F(QCOCtrlOpTest, VerifierBodySize) {
@@ -138,7 +161,7 @@ TEST_F(QCOCtrlOpTest, VerifierBodySize) {
   builder.create<XOp>(builder.getUnknownLoc(), block.getArgument(0));
 
   // Should fail because body must have exactly 2 operations
-  EXPECT_TRUE(ctrlOp.verify().failed());
+  EXPECT_TRUE(mlir::verify(ctrlOp).failed());
 }
 
 TEST_F(QCOCtrlOpTest, VerifierBlockArgsCount) {
@@ -160,7 +183,7 @@ TEST_F(QCOCtrlOpTest, VerifierBlockArgsCount) {
   block.addArgument(qType, builder.getUnknownLoc());
 
   // Should fail because number of block args must match number of targets (1)
-  EXPECT_TRUE(ctrlOp.verify().failed());
+  EXPECT_TRUE(mlir::verify(ctrlOp).failed());
 }
 
 TEST_F(QCOCtrlOpTest, VerifierInputTypes) {
@@ -189,14 +212,14 @@ TEST_F(QCOCtrlOpTest, VerifierInputTypes) {
   auto& block = region.front();
   block.getArgument(0).setType(nonQubit.getType());
 
-  EXPECT_TRUE(ctrlOp.verify().failed());
+  EXPECT_TRUE(mlir::verify(ctrlOp).failed());
 }
 
 TEST_F(QCOCtrlOpTest, VerifierBodyFirstOp) {
   auto q0 = builder.create<AllocOp>(builder.getUnknownLoc()).getResult();
   auto q1 = builder.create<AllocOp>(builder.getUnknownLoc()).getResult();
 
-  // Create valid CtrlOp
+  // Create CtrlOp that uses a non-unitary as first operation in body
   auto ctrlOp = builder.create<CtrlOp>(
       builder.getUnknownLoc(), ValueRange{q0}, ValueRange{q1},
       [&](ValueRange innerTargets) -> ValueRange {
@@ -205,10 +228,6 @@ TEST_F(QCOCtrlOpTest, VerifierBodyFirstOp) {
         return resetOp->getResults();
       });
 
-  // Insert an extra operation into the body
-  auto& region = ctrlOp.getRegion();
-  auto& block = region.front();
-
-  // Should fail because body must have exactly 2 operations
-  EXPECT_TRUE(ctrlOp.verify().failed());
+  // Should fail because body must use a unitary as first operation
+  EXPECT_TRUE(mlir::verify(ctrlOp).failed());
 }
