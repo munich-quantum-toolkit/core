@@ -250,6 +250,9 @@ void CtrlOp::build(OpBuilder& odsBuilder, OperationState& odsState,
                    UnitaryOpInterface bodyUnitary) {
   build(odsBuilder, odsState, controls, targets);
   auto& block = odsState.regions.front()->emplaceBlock();
+  for (const auto target : targets) {
+    block.addArgument(target.getType(), odsState.location);
+  }
 
   // Move the unitary op into the block
   const OpBuilder::InsertionGuard guard(odsBuilder);
@@ -263,11 +266,15 @@ void CtrlOp::build(OpBuilder& odsBuilder, OperationState& odsState,
                    const std::function<ValueRange(ValueRange)>& bodyBuilder) {
   build(odsBuilder, odsState, controls, targets);
   auto& block = odsState.regions.front()->emplaceBlock();
+  for (const auto target : targets) {
+    block.addArgument(target.getType(), odsState.location);
+  }
+  auto blockArgs = block.getArguments();
 
   // Move the unitary op into the block
   const OpBuilder::InsertionGuard guard(odsBuilder);
   odsBuilder.setInsertionPointToStart(&block);
-  auto targetsOut = bodyBuilder(targets);
+  auto targetsOut = bodyBuilder(blockArgs);
   odsBuilder.create<YieldOp>(odsState.location, targetsOut);
 }
 
