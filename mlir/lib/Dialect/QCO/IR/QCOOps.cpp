@@ -33,7 +33,6 @@ using namespace mlir::qco;
 // Custom Parsers
 //===----------------------------------------------------------------------===//
 
-namespace {
 static ParseResult
 parseTargetAliasing(OpAsmParser& parser, Region& region,
                     SmallVectorImpl<OpAsmParser::UnresolvedOperand>& operands) {
@@ -109,7 +108,6 @@ static void printTargetAliasing(OpAsmPrinter& printer, Operation* /*op*/,
 
   printer.printRegion(region, /*printEntryBlockArgs=*/false);
 }
-} // end anonymous namespace
 
 //===----------------------------------------------------------------------===//
 // Dialect

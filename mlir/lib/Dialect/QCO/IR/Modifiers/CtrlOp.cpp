@@ -276,6 +276,10 @@ LogicalResult CtrlOp::verify() {
   if (block.getOperations().size() != 2) {
     return emitOpError("body region must have exactly two operations");
   }
+  if (block.getArguments().size() != getNumTargets()) {
+    return emitOpError(
+        "number of block arguments must match number of targets");
+  }
   if (!llvm::isa<UnitaryOpInterface>(block.front())) {
     return emitOpError(
         "first operation in body region must be a unitary operation");
