@@ -10,8 +10,11 @@
 
 #include "mlir/Dialect/QCO/IR/QCODialect.h" // IWYU pragma: associated
 
+#include <mlir/IR/Block.h>
 #include <mlir/IR/OpImplementation.h>
+#include <mlir/IR/Operation.h>
 #include <mlir/IR/Region.h>
+#include <mlir/IR/ValueRange.h>
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/LogicalResult.h>
 
@@ -67,7 +70,7 @@ parseTargetAliasing(OpAsmParser& parser, Region& region,
       // Hard-code QubitType since targets in qco.ctrl are always qubits.
       // This avoids double-binding type($targets_in) in the assembly format
       // while keeping the parser simple and the assembly format clean.
-      Type type = qco::QubitType::get(parser.getBuilder().getContext());
+      const Type type = qco::QubitType::get(parser.getBuilder().getContext());
       newArg.type = type;
       blockArgs.push_back(newArg);
 
@@ -88,19 +91,19 @@ parseTargetAliasing(OpAsmParser& parser, Region& region,
   return success();
 }
 
-static void printTargetAliasing(OpAsmPrinter& printer, Operation* op,
-                                Region& region, OperandRange targets_in) {
+static void printTargetAliasing(OpAsmPrinter& printer, Operation* /*op*/,
+                                Region& region, OperandRange targetsIn) {
   printer << "(";
   Block& entryBlock = region.front();
   auto blockArgs = entryBlock.getArguments();
 
-  for (unsigned i = 0; i < targets_in.size(); ++i) {
+  for (unsigned i = 0; i < targetsIn.size(); ++i) {
     if (i > 0) {
       printer << ", ";
     }
     printer.printOperand(blockArgs[i]);
     printer << " = ";
-    printer.printOperand(targets_in[i]);
+    printer.printOperand(targetsIn[i]);
   }
   printer << ") ";
 
