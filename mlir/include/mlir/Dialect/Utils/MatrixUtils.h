@@ -281,12 +281,8 @@ inline Eigen::MatrixXcd getMatrixCtrl(size_t numControls,
   // initialize result with identity
   Eigen::MatrixXcd matrix = Eigen::MatrixXcd::Identity(dim, dim);
 
-  // TODO: apply permutation such that target qubits are last
-
   // Apply target matrix
   matrix.bottomRightCorner(targetDim, targetDim) = targetMatrix;
-
-  // TODO: undo permutation
 
   return matrix;
 }
