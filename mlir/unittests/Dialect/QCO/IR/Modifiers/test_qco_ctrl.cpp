@@ -11,6 +11,7 @@
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 
 #include <gtest/gtest.h>
+#include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/BuiltinOps.h>
@@ -30,6 +31,7 @@ protected:
   void SetUp() override {
     context.loadDialect<QCODialect>();
     context.loadDialect<func::FuncDialect>();
+    context.loadDialect<arith::ArithDialect>();
 
     // Setup Module and Function
     module = ModuleOp::create(builder.getUnknownLoc());
@@ -45,19 +47,9 @@ protected:
 
 TEST_F(QCOCtrlOpTest, LambdaBuilder) {
   // Allocate qubits to use as operands
-  auto qType = QubitType::get(&context);
-  auto q0 = builder
-                .create<AllocOp>(builder.getUnknownLoc(), qType, nullptr,
-                                 nullptr, nullptr)
-                .getResult();
-  auto q1 = builder
-                .create<AllocOp>(builder.getUnknownLoc(), qType, nullptr,
-                                 nullptr, nullptr)
-                .getResult();
-  auto q2 = builder
-                .create<AllocOp>(builder.getUnknownLoc(), qType, nullptr,
-                                 nullptr, nullptr)
-                .getResult();
+  auto q0 = builder.create<AllocOp>(builder.getUnknownLoc()).getResult();
+  auto q1 = builder.create<AllocOp>(builder.getUnknownLoc()).getResult();
+  auto q2 = builder.create<AllocOp>(builder.getUnknownLoc()).getResult();
 
   ValueRange controls = {q0};
   ValueRange targets = {q1, q2};
@@ -91,22 +83,13 @@ TEST_F(QCOCtrlOpTest, LambdaBuilder) {
 
 TEST_F(QCOCtrlOpTest, UnitaryOpBuilder) {
   // Allocate qubits
-  auto qType = QubitType::get(&context);
-  auto q0 = builder
-                .create<AllocOp>(builder.getUnknownLoc(), qType, nullptr,
-                                 nullptr, nullptr)
-                .getResult();
-  auto q1 = builder
-                .create<AllocOp>(builder.getUnknownLoc(), qType, nullptr,
-                                 nullptr, nullptr)
-                .getResult();
+  auto q0 = builder.create<AllocOp>(builder.getUnknownLoc()).getResult();
+  auto q1 = builder.create<AllocOp>(builder.getUnknownLoc()).getResult();
 
   ValueRange controls = {q0};
   ValueRange targets = {q1};
 
   // Create a template unitary operation (X gate)
-  // We create it in the module mainly to get a handle to it.
-  // In a real scenario, this might be a temporary op or one we want to "wrap".
   auto xOp = builder.create<XOp>(builder.getUnknownLoc(), q1);
 
   // Create CtrlOp using the UnitaryOpInterface builder
@@ -129,7 +112,103 @@ TEST_F(QCOCtrlOpTest, UnitaryOpBuilder) {
   EXPECT_TRUE(isa<YieldOp>(block.back()));
 
   // The template op 'xOp' still exists in the main block before ctrlOp.
-  // This is expected behavior for the builder as it clones the op.
-  // Just ensuring everything is valid.
   EXPECT_TRUE(module->verify().succeeded());
+}
+
+TEST_F(QCOCtrlOpTest, VerifierBodySize) {
+  auto q0 = builder.create<AllocOp>(builder.getUnknownLoc()).getResult();
+  auto q1 = builder.create<AllocOp>(builder.getUnknownLoc()).getResult();
+
+  // Create valid CtrlOp
+  auto ctrlOp = builder.create<CtrlOp>(
+      builder.getUnknownLoc(), ValueRange{q0}, ValueRange{q1},
+      [&](ValueRange innerTargets) -> ValueRange {
+        auto xOp =
+            builder.create<XOp>(builder.getUnknownLoc(), innerTargets[0]);
+        return xOp->getResults();
+      });
+
+  // Insert an extra operation into the body
+  auto& region = ctrlOp.getRegion();
+  auto& block = region.front();
+
+  OpBuilder::InsertionGuard guard(builder);
+  builder.setInsertionPoint(&block.back()); // Before Yield
+  // We can insert another XOp
+  builder.create<XOp>(builder.getUnknownLoc(), block.getArgument(0));
+
+  // Should fail because body must have exactly 2 operations
+  EXPECT_TRUE(ctrlOp.verify().failed());
+}
+
+TEST_F(QCOCtrlOpTest, VerifierBlockArgsCount) {
+  auto qType = QubitType::get(&context);
+  auto q0 = builder.create<AllocOp>(builder.getUnknownLoc()).getResult();
+  auto q1 = builder.create<AllocOp>(builder.getUnknownLoc()).getResult();
+
+  auto ctrlOp = builder.create<CtrlOp>(
+      builder.getUnknownLoc(), ValueRange{q0}, ValueRange{q1},
+      [&](ValueRange innerTargets) -> ValueRange {
+        auto xOp =
+            builder.create<XOp>(builder.getUnknownLoc(), innerTargets[0]);
+        return xOp->getResults();
+      });
+
+  // Add an extra argument to the block
+  auto& region = ctrlOp.getRegion();
+  auto& block = region.front();
+  block.addArgument(qType, builder.getUnknownLoc());
+
+  // Should fail because number of block args must match number of targets (1)
+  EXPECT_TRUE(ctrlOp.verify().failed());
+}
+
+TEST_F(QCOCtrlOpTest, VerifierInputTypes) {
+  auto q0 = builder.create<AllocOp>(builder.getUnknownLoc()).getResult();
+  auto q1 = builder.create<AllocOp>(builder.getUnknownLoc()).getResult();
+
+  // Create a non-qubit value (a constant i1)
+  auto cstOp =
+      builder.create<arith::ConstantIntOp>(builder.getUnknownLoc(), 1, 1);
+  Value nonQubit = cstOp.getResult();
+
+  ValueRange controls = {q0};
+  ValueRange targets = {q1};
+
+  // Create a CtrlOp using a qubit as target.
+  auto ctrlOp =
+      builder.create<CtrlOp>(builder.getUnknownLoc(), controls, targets,
+                             [&](ValueRange innerTargets) -> ValueRange {
+                               auto xOp = builder.create<XOp>(
+                                   builder.getUnknownLoc(), innerTargets[0]);
+                               return xOp->getResults();
+                             });
+
+  // Change the block argument type to a non-qubit
+  auto& region = ctrlOp.getRegion();
+  auto& block = region.front();
+  block.getArgument(0).setType(nonQubit.getType());
+
+  EXPECT_TRUE(ctrlOp.verify().failed());
+}
+
+TEST_F(QCOCtrlOpTest, VerifierBodyFirstOp) {
+  auto q0 = builder.create<AllocOp>(builder.getUnknownLoc()).getResult();
+  auto q1 = builder.create<AllocOp>(builder.getUnknownLoc()).getResult();
+
+  // Create valid CtrlOp
+  auto ctrlOp = builder.create<CtrlOp>(
+      builder.getUnknownLoc(), ValueRange{q0}, ValueRange{q1},
+      [&](ValueRange innerTargets) -> ValueRange {
+        auto resetOp =
+            builder.create<ResetOp>(builder.getUnknownLoc(), innerTargets[0]);
+        return resetOp->getResults();
+      });
+
+  // Insert an extra operation into the body
+  auto& region = ctrlOp.getRegion();
+  auto& block = region.front();
+
+  // Should fail because body must have exactly 2 operations
+  EXPECT_TRUE(ctrlOp.verify().failed());
 }
