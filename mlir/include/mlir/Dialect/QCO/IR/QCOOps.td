@@ -1057,7 +1057,7 @@ def YieldOp : QCOOp<"yield", traits = [Terminator]> {
 def CtrlOp : QCOOp<"ctrl", traits =
             [
                 UnitaryOpInterface,
-                DynamicTargetZeroParameterUnitaryMatrix<[{ return utils::getMatrixCtrl(op.getNumControls(), getBlockMatrix(op.getNumTargets(), getCtrlBody(op))); }]>,
+                DynamicTargetZeroParameterUnitaryMatrix<[{ return utils::getMatrixCtrl(op.getNumControls(), getControlledOp(op).getUnitaryMatrix()); }]>,
                 AttrSizedOperandSegments,
                 AttrSizedResultSegments,
                 SameOperandsAndResultType,
