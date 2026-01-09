@@ -9,6 +9,11 @@
  */
 
 #include "mlir/Dialect/QCO/IR/QCODialect.h" // IWYU pragma: associated
+#include "mlir/IR/OpImplementation.h"
+#include "mlir/IR/Region.h"
+#include "mlir/Support/LogicalResult.h"
+
+#include "llvm/ADT/SmallVector.h"
 
 // The following headers are needed for some template instantiations.
 // IWYU pragma: begin_keep
@@ -25,13 +30,14 @@ using namespace mlir::qco;
 // Custom Parsers
 //===----------------------------------------------------------------------===//
 
-namespace mlir::qco {
+namespace {
 ParseResult
 parseTargetAliasing(OpAsmParser& parser, Region& region,
                     SmallVectorImpl<OpAsmParser::UnresolvedOperand>& operands) {
   // 1. Parse the opening parenthesis
-  if (parser.parseLParen())
+  if (parser.parseLParen()) {
     return failure();
+  }
 
   // Temporary storage for block arguments we are about to create
   SmallVector<OpAsmParser::Argument> blockArgs;
@@ -43,16 +49,19 @@ parseTargetAliasing(OpAsmParser& parser, Region& region,
       OpAsmParser::UnresolvedOperand oldOperand; // The "old" input variable
 
       // Parse "%new"
-      if (parser.parseArgument(newArg))
+      if (parser.parseArgument(newArg)) {
         return failure();
+      }
 
       // Parse "="
-      if (parser.parseEqual())
+      if (parser.parseEqual()) {
         return failure();
+      }
 
       // Parse "%old"
-      if (parser.parseOperand(oldOperand))
+      if (parser.parseOperand(oldOperand)) {
         return failure();
+      }
       operands.push_back(oldOperand);
 
       Type type = qco::QubitType::get(parser.getBuilder().getContext());
@@ -61,15 +70,17 @@ parseTargetAliasing(OpAsmParser& parser, Region& region,
 
     } while (succeeded(parser.parseOptionalComma()));
 
-    if (parser.parseRParen())
+    if (parser.parseRParen()) {
       return failure();
+    }
   }
 
   // 4. Parse the Region
   // We explicitly pass the blockArgs we just parsed so they become the entry
   // block!
-  if (parser.parseRegion(region, blockArgs))
+  if (parser.parseRegion(region, blockArgs)) {
     return failure();
+  }
 
   return success();
 }
@@ -81,8 +92,9 @@ void printTargetAliasing(OpAsmPrinter& printer, Operation* op, Region& region,
   auto blockArgs = entryBlock.getArguments();
 
   for (unsigned i = 0; i < targets_in.size(); ++i) {
-    if (i > 0)
+    if (i > 0) {
       printer << ", ";
+    }
     printer.printOperand(blockArgs[i]);
     printer << " = ";
     printer.printOperand(targets_in[i]);
@@ -91,7 +103,7 @@ void printTargetAliasing(OpAsmPrinter& printer, Operation* op, Region& region,
 
   printer.printRegion(region, /*printEntryBlockArgs=*/false);
 }
-} // namespace mlir::qco
+} // end anonymous namespace
 
 //===----------------------------------------------------------------------===//
 // Dialect

@@ -788,7 +788,7 @@ struct ConvertQCOCtrlOp final : OpConversionPattern<qco::CtrlOp> {
       // 1. Replace uses (Must be done BEFORE erasing)
       // We iterate 0..N using indices since the block args are still stable
       // here.
-      for (auto i = 0ul; i < numArgs; ++i) {
+      for (auto i = 0UL; i < numArgs; ++i) {
         entryBlock.getArgument(i).replaceAllUsesWith(adaptor.getTargetsIn()[i]);
       }
 
