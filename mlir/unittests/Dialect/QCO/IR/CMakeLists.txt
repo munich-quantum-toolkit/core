@@ -6,7 +6,7 @@
 #
 # Licensed under the MIT License
 
-add_executable(mqt-core-mlir-qco-dialect-test test_unitary_matrix.cpp)
+add_executable(mqt-core-mlir-qco-dialect-test test_unitary_matrix.cpp test_unitary_op_interface.cpp)
 
 target_link_libraries(mqt-core-mlir-qco-dialect-test PRIVATE GTest::gtest_main MLIRQCODialect
                                                              MLIRLLVMDialect MLIRQCOProgramBuilder)
