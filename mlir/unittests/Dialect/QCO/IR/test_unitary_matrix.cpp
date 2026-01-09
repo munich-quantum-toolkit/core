@@ -20,7 +20,7 @@ namespace {
 
 using namespace mlir;
 
-class UnitaryMatrixTest : public testing::Test {
+class QcoUnitaryMatrixTest : public testing::Test {
 protected:
   void SetUp() override {
     DialectRegistry registry;
@@ -88,7 +88,7 @@ private:
  * @details
  * Ensure the correct gate definition is returned.
  */
-TEST_F(UnitaryMatrixTest, IdOpMatrix) {
+TEST_F(QcoUnitaryMatrixTest, IdOpMatrix) {
   auto moduleOp = buildQCOIR([](qco::QCOProgramBuilder& builder) {
     auto reg = builder.allocQubitRegister(1, "q");
     builder.id(reg[0]);
@@ -105,7 +105,7 @@ TEST_F(UnitaryMatrixTest, IdOpMatrix) {
  * @details
  * Ensure the correct gate definition is returned.
  */
-TEST_F(UnitaryMatrixTest, XOpMatrix) {
+TEST_F(QcoUnitaryMatrixTest, XOpMatrix) {
   auto moduleOp = buildQCOIR([](qco::QCOProgramBuilder& builder) {
     auto reg = builder.allocQubitRegister(1, "q");
     builder.x(reg[0]);
@@ -122,7 +122,7 @@ TEST_F(UnitaryMatrixTest, XOpMatrix) {
  * @details
  * Ensure the correct gate definition is returned.
  */
-TEST_F(UnitaryMatrixTest, YOpMatrix) {
+TEST_F(QcoUnitaryMatrixTest, YOpMatrix) {
   auto moduleOp = buildQCOIR([](qco::QCOProgramBuilder& builder) {
     auto reg = builder.allocQubitRegister(1, "q");
     builder.y(reg[0]);
@@ -139,7 +139,7 @@ TEST_F(UnitaryMatrixTest, YOpMatrix) {
  * @details
  * Ensure the correct gate definition is returned.
  */
-TEST_F(UnitaryMatrixTest, ZOpMatrix) {
+TEST_F(QcoUnitaryMatrixTest, ZOpMatrix) {
   auto moduleOp = buildQCOIR([](qco::QCOProgramBuilder& builder) {
     auto reg = builder.allocQubitRegister(1, "q");
     builder.z(reg[0]);
@@ -156,7 +156,7 @@ TEST_F(UnitaryMatrixTest, ZOpMatrix) {
  * @details
  * Ensure the correct gate definition is returned.
  */
-TEST_F(UnitaryMatrixTest, CtrlXOpMatrix) {
+TEST_F(QcoUnitaryMatrixTest, CtrlXOpMatrix) {
   auto moduleOp = buildQCOIR([](qco::QCOProgramBuilder& builder) {
     auto reg = builder.allocQubitRegister(2, "q");
     builder.cx(reg[0], reg[1]);
@@ -177,7 +177,7 @@ TEST_F(UnitaryMatrixTest, CtrlXOpMatrix) {
  * Ensure the correct gate definition is returned and is equal for both
  * orientations.
  */
-TEST_F(UnitaryMatrixTest, CtrlX10OpMatrix) {
+TEST_F(QcoUnitaryMatrixTest, CtrlX10OpMatrix) {
   auto moduleOp01 = buildQCOIR([](qco::QCOProgramBuilder& builder) {
     auto reg = builder.allocQubitRegister(2, "q");
     builder.cx(reg[0], reg[1]);
