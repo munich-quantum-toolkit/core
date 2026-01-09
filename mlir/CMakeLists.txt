@@ -26,6 +26,5 @@ add_subdirectory(tools)
 
 # add test code
 if(BUILD_MQT_CORE_TESTS)
-  add_subdirectory(test)
   add_subdirectory(unittests)
 endif()

@@ -6,10 +6,6 @@
 #
 # Licensed under the MIT License
 
-add_subdirectory(MQTRefToMQTOpt)
-add_subdirectory(MQTOptToMQTRef)
-add_subdirectory(MQTRefToQIR)
-add_subdirectory(QIRToMQTRef)
 add_subdirectory(QCOToQC)
 add_subdirectory(QCToQCO)
 add_subdirectory(QCToQIR)
