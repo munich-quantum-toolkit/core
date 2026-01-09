@@ -121,12 +121,27 @@ def UnitaryOpInterface : OpInterface<"UnitaryOpInterface"> {
               }
             }]
         >,
+        InterfaceMethod<
+            "Returns the unitary matrix definition of the operation.",
+            "std::variant<Eigen::Matrix<std::complex<double>, 1, 1>, Eigen::Matrix2cd, Eigen::Matrix4cd, Eigen::MatrixXcd>",
+            "getFastUnitaryMatrixVariant", (ins),
+            [{
+              if constexpr (requires { $_op.getUnitaryMatrixDefinition(); }) {
+                return $_op.getUnitaryMatrixDefinition();
+              } else {
+                llvm::reportFatalUsageError("Operation '" + $_op.getBaseSymbol() + "' has no unitary matrix definition!");
+              }
+            }]
+        >,
     ];
 
-    let extraTraitClassDeclaration = [{
+    let extraClassDeclaration = [{
       template<typename MatrixType>
       MatrixType getFastUnitaryMatrix() const {
-        return $_op.getUnitaryMatrixDefinition();
+        // removing const since it's safe to say UnitaryOpInterface::getFastUnitaryMatrixVariant()
+        // and OpType::getUnitaryMatrixDefinition() will not modify the state of this
+        auto&& matrix = const_cast<UnitaryOpInterface*>(this)->getFastUnitaryMatrixVariant();
+        return std::get<MatrixType>(matrix);
       }
     }];
 }
