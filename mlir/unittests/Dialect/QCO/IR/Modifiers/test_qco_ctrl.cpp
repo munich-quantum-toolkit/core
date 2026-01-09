@@ -16,7 +16,12 @@
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/MLIRContext.h>
+#include <mlir/IR/Operation.h>
+#include <mlir/IR/OwningOpRef.h>
+#include <mlir/IR/Value.h>
+#include <mlir/IR/ValueRange.h>
 #include <mlir/IR/Verifier.h>
+#include <mlir/Support/LLVM.h>
 
 using namespace mlir;
 using namespace mlir::qco;
@@ -55,8 +60,8 @@ TEST_F(QCOCtrlOpTest, LambdaBuilder) {
   auto q1 = builder.create<AllocOp>(builder.getUnknownLoc()).getResult();
   auto q2 = builder.create<AllocOp>(builder.getUnknownLoc()).getResult();
 
-  SmallVector<Value> controls = {q0};
-  SmallVector<Value> targets = {q1, q2};
+  const SmallVector<Value> controls = {q0};
+  const SmallVector<Value> targets = {q1, q2};
 
   // Create CtrlOp using the lambda builder
   auto ctrlOp = builder.create<CtrlOp>(
@@ -101,8 +106,8 @@ TEST_F(QCOCtrlOpTest, UnitaryOpBuilder) {
   auto q0 = builder.create<AllocOp>(builder.getUnknownLoc()).getResult();
   auto q1 = builder.create<AllocOp>(builder.getUnknownLoc()).getResult();
 
-  SmallVector<Value> controls = {q0};
-  SmallVector<Value> targets = {q1};
+  const SmallVector<Value> controls = {q0};
+  const SmallVector<Value> targets = {q1};
 
   // Create a template unitary operation (X gate)
   auto xOp = builder.create<XOp>(builder.getUnknownLoc(), q1);
@@ -190,8 +195,8 @@ TEST_F(QCOCtrlOpTest, VerifierInputTypes) {
   auto q0 = builder.create<AllocOp>(builder.getUnknownLoc()).getResult();
   auto q1 = builder.create<AllocOp>(builder.getUnknownLoc()).getResult();
 
-  SmallVector<Value> controls = {q0};
-  SmallVector<Value> targets = {q1};
+  const SmallVector<Value> controls = {q0};
+  const SmallVector<Value> targets = {q1};
 
   // Create a CtrlOp using a qubit as target.
   auto ctrlOp =
