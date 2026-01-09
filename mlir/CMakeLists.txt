@@ -1,5 +1,5 @@
-# Copyright (c) 2023 - 2025 Chair for Design Automation, TUM
-# Copyright (c) 2025 Munich Quantum Software Company GmbH
+# Copyright (c) 2023 - 2026 Chair for Design Automation, TUM
+# Copyright (c) 2025 - 2026 Munich Quantum Software Company GmbH
 # All rights reserved.
 #
 # SPDX-License-Identifier: MIT
@@ -26,6 +26,5 @@ add_subdirectory(tools)
 
 # add test code
 if(BUILD_MQT_CORE_TESTS)
-  add_subdirectory(test)
   add_subdirectory(unittests)
 endif()

@@ -1,6 +1,6 @@
 /*
- * Copyright (c) 2023 - 2025 Chair for Design Automation, TUM
- * Copyright (c) 2025 Munich Quantum Software Company GmbH
+ * Copyright (c) 2023 - 2026 Chair for Design Automation, TUM
+ * Copyright (c) 2025 - 2026 Munich Quantum Software Company GmbH
  * All rights reserved.
  *
  * SPDX-License-Identifier: MIT
@@ -777,9 +777,8 @@ struct ConvertQCOCtrlOp final : OpConversionPattern<qco::CtrlOp> {
     auto qcOp = rewriter.create<qc::CtrlOp>(op.getLoc(), qcControls);
 
     // Clone body region from QCO to QC
-    auto& dstRegion = qcOp.getBody();
-
-    rewriter.cloneRegionBefore(op.getBody(), dstRegion, dstRegion.end());
+    auto& dstRegion = qcoOp.getRegion();
+    rewriter.cloneRegionBefore(op.getRegion(), dstRegion, dstRegion.end());
 
     // Remove all block arguments in the cloned region
     rewriter.modifyOpInPlace(qcOp, [&] {

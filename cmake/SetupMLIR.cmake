@@ -1,5 +1,5 @@
-# Copyright (c) 2023 - 2025 Chair for Design Automation, TUM
-# Copyright (c) 2025 Munich Quantum Software Company GmbH
+# Copyright (c) 2023 - 2026 Chair for Design Automation, TUM
+# Copyright (c) 2025 - 2026 Munich Quantum Software Company GmbH
 # All rights reserved.
 #
 # SPDX-License-Identifier: MIT
@@ -39,10 +39,6 @@ include_directories(${MQT_MLIR_SOURCE_INCLUDE_DIR})
 include_directories(${MQT_MLIR_BUILD_INCLUDE_DIR})
 link_directories(${LLVM_BUILD_LIBRARY_DIR})
 add_definitions(${LLVM_DEFINITIONS})
-
-string(REPLACE "." ";" MLIR_VERSION_COMPONENTS ${MLIR_VERSION})
-list(GET MLIR_VERSION_COMPONENTS 0 MLIR_VERSION_MAJOR)
-add_compile_definitions(MLIR_VERSION_MAJOR=${MLIR_VERSION_MAJOR})
 
 # set the binary directory for the build tree such that, e.g., docs can be generated in the build
 # tree

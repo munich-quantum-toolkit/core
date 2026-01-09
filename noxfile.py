@@ -1,6 +1,6 @@
 #!/usr/bin/env -S uv run --script --quiet
-# Copyright (c) 2023 - 2025 Chair for Design Automation, TUM
-# Copyright (c) 2025 Munich Quantum Software Company GmbH
+# Copyright (c) 2023 - 2026 Chair for Design Automation, TUM
+# Copyright (c) 2025 - 2026 Munich Quantum Software Company GmbH
 # All rights reserved.
 #
 # SPDX-License-Identifier: MIT
@@ -185,6 +185,10 @@ def docs(session: nox.Session) -> None:
             "_build/doxygen/xml/",
             external=True,
         )
+
+    # build the MLIR API docs via building mlir-doc
+    session.run("uvx", "cmake", "-S", ".", "-B", "build", "-DBUILD_MQT_CORE_MLIR=ON")
+    session.run("uvx", "cmake", "--build", "build", "--target", "mlir-doc")
 
     shared_args = [
         "-n",  # nitpicky mode
