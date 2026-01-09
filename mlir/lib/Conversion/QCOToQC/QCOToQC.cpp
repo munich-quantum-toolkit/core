@@ -774,11 +774,32 @@ struct ConvertQCOCtrlOp final : OpConversionPattern<qco::CtrlOp> {
     const auto& qcControls = adaptor.getControlsIn();
 
     // Create qc.ctrl operation
-    auto qcoOp = rewriter.create<qc::CtrlOp>(op.getLoc(), qcControls);
+    auto qcOp = rewriter.create<qc::CtrlOp>(op.getLoc(), qcControls);
 
     // Clone body region from QCO to QC
-    auto& dstRegion = qcoOp.getBody();
+    auto& dstRegion = qcOp.getBody();
+
     rewriter.cloneRegionBefore(op.getBody(), dstRegion, dstRegion.end());
+
+    // Remove all block arguments in the cloned region
+    rewriter.modifyOpInPlace(qcOp, [&] {
+      auto& entryBlock = dstRegion.front();
+      auto numArgs = entryBlock.getNumArguments();
+
+      // 1. Replace uses (Must be done BEFORE erasing)
+      // We iterate 0..N using indices since the block args are still stable
+      // here.
+      for (auto i = 0ul; i < numArgs; ++i) {
+        entryBlock.getArgument(i).replaceAllUsesWith(adaptor.getTargetsIn()[i]);
+      }
+
+      // 2. Erase all block arguments
+      // Now that they have no uses, we can safely wipe them.
+      // We use a bulk erase for efficiency (start index 0, count N).
+      if (numArgs > 0) {
+        entryBlock.eraseArguments(0, numArgs);
+      }
+    });
 
     // Replace the output qubits with the same QC references
     rewriter.replaceOp(op, adaptor.getOperands());

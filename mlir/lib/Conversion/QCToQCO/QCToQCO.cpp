@@ -1124,11 +1124,26 @@ struct ConvertQCCtrlOp final : StatefulOpConversionPattern<qc::CtrlOp> {
 
     // Update modifier information
     state.inCtrlOp++;
-    state.targetsIn.try_emplace(state.inCtrlOp, qcoTargets);
 
     // Clone body region from QC to QCO
     auto& dstRegion = qcoOp.getBody();
     rewriter.cloneRegionBefore(op.getBody(), dstRegion, dstRegion.end());
+
+    // Create block arguments for target qubits and store them in
+    // `state.targetsIn`.
+    auto& entryBlock = dstRegion.front();
+    SmallVector<Value> qcoTargetAliases;
+    qcoTargetAliases.reserve(numTargets);
+
+    rewriter.modifyOpInPlace(qcoOp, [&] {
+      for (auto i = 0UL; i < qcoOp.getNumTargets(); i++) {
+        auto originalTarget = qcoOp.getInputTarget(i);
+        auto arg =
+            entryBlock.addArgument(originalTarget.getType(), op.getLoc());
+        qcoTargetAliases.push_back(arg);
+      }
+    });
+    state.targetsIn.try_emplace(state.inCtrlOp, qcoTargetAliases);
 
     rewriter.eraseOp(op);
     return success();

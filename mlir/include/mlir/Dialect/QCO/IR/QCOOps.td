@@ -1069,8 +1069,10 @@ def CtrlOp : QCOOp<"ctrl", traits =
     let results = (outs Variadic<QubitType>:$controls_out, Variadic<QubitType>:$targets_out);
     let regions = (region SizedRegion<1>:$body);
     let assemblyFormat = [{
-        `(` $controls_in `)` $targets_in
-        $body attr-dict `:`
+        `(` $controls_in `)`
+        `targets`
+        custom<TargetAliasing>($body, $targets_in)
+        attr-dict `:`
         `(` `{` type($controls_in) `}` ( `,` `{` type($targets_in)^ `}` )? `)`
         `->`
         `(` `{` type($controls_out) `}` ( `,` `{` type($targets_out)^ `}` )? `)`
