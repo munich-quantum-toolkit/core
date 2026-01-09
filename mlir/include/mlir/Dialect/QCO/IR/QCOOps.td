@@ -1025,10 +1025,10 @@ def YieldOp : QCOOp<"yield", traits = [Terminator]> {
 
         Example:
         ```mlir
-        %ctrl_q_out, %tgt_q_out = qco.ctrl(%ctrl_q_in) %tgt_q_in {
-            %tgt_q_res = qco.h %tgt_q_in : !qco.qubit -> !qco.qubit
-            qco.yield %tgt_q_res : !qco.qubit
-        } : ({!qco.qubit}, {!qco.qubit}) -> ({!qco.qubit}, {!qco.qubit})
+        %res_ctrl, %res_tgt:2 = qco.ctrl(%ctrl) targets(%a0 = %q0, %a1 = %q1) {
+            %a0_1, %a1_1 = qco.swap %a0, %a1 : !qco.qubit, !qco.qubit -> !qco.qubit, !qco.qubit
+            qco.yield %a0_1, %a1_1
+        } : ({!qco.qubit}, {!qco.qubit, !qco.qubit}) -> ({!qco.qubit}, {!qco.qubit, !qco.qubit})
         ```
     }];
 
@@ -1057,10 +1057,10 @@ def CtrlOp : QCOOp<"ctrl", traits =
 
         Example:
         ```mlir
-        %ctrl_q_out, %tgt_q_out = qco.ctrl(%ctrl_q_in) %tgt_q_in {
-            %tgt_q_res = qco.h %tgt_q_in : !qco.qubit -> !qco.qubit
-            qco.yield %tgt_q_res : !qco.qubit
-        } : ({!qco.qubit}, {!qco.qubit}) -> ({!qco.qubit}, {!qco.qubit})
+        %res_ctrl, %res_tgt:2 = qco.ctrl(%ctrl) targets(%a0 = %q0, %a1 = %q1) {
+            %a0_1, %a1_1 = qco.swap %a0, %a1 : !qco.qubit, !qco.qubit -> !qco.qubit, !qco.qubit
+            qco.yield %a0_1, %a1_1
+        } : ({!qco.qubit}, {!qco.qubit, !qco.qubit}) -> ({!qco.qubit}, {!qco.qubit, !qco.qubit})
         ```
     }];
 
