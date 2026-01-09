@@ -55,8 +55,8 @@ TEST_F(QCOCtrlOpTest, LambdaBuilder) {
   auto q1 = builder.create<AllocOp>(builder.getUnknownLoc()).getResult();
   auto q2 = builder.create<AllocOp>(builder.getUnknownLoc()).getResult();
 
-  ValueRange controls = {q0};
-  ValueRange targets = {q1, q2};
+  SmallVector<Value> controls = {q0};
+  SmallVector<Value> targets = {q1, q2};
 
   // Create CtrlOp using the lambda builder
   auto ctrlOp = builder.create<CtrlOp>(
@@ -101,8 +101,8 @@ TEST_F(QCOCtrlOpTest, UnitaryOpBuilder) {
   auto q0 = builder.create<AllocOp>(builder.getUnknownLoc()).getResult();
   auto q1 = builder.create<AllocOp>(builder.getUnknownLoc()).getResult();
 
-  ValueRange controls = {q0};
-  ValueRange targets = {q1};
+  SmallVector<Value> controls = {q0};
+  SmallVector<Value> targets = {q1};
 
   // Create a template unitary operation (X gate)
   auto xOp = builder.create<XOp>(builder.getUnknownLoc(), q1);
@@ -190,13 +190,8 @@ TEST_F(QCOCtrlOpTest, VerifierInputTypes) {
   auto q0 = builder.create<AllocOp>(builder.getUnknownLoc()).getResult();
   auto q1 = builder.create<AllocOp>(builder.getUnknownLoc()).getResult();
 
-  // Create a non-qubit value (a constant i1)
-  auto cstOp =
-      builder.create<arith::ConstantIntOp>(builder.getUnknownLoc(), 1, 1);
-  Value nonQubit = cstOp.getResult();
-
-  ValueRange controls = {q0};
-  ValueRange targets = {q1};
+  SmallVector<Value> controls = {q0};
+  SmallVector<Value> targets = {q1};
 
   // Create a CtrlOp using a qubit as target.
   auto ctrlOp =
@@ -210,7 +205,7 @@ TEST_F(QCOCtrlOpTest, VerifierInputTypes) {
   // Change the block argument type to a non-qubit
   auto& region = ctrlOp.getRegion();
   auto& block = region.front();
-  block.getArgument(0).setType(nonQubit.getType());
+  block.getArgument(0).setType(builder.getI1Type());
 
   EXPECT_TRUE(mlir::verify(ctrlOp).failed());
 }
