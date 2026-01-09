@@ -45,20 +45,21 @@ protected:
   }
 
   /**
-   * @brief Get first operation of given type in a module.
+   * @brief Get first operation of given type in a module containing a function
+   *        as its first operation.
    */
   template <typename OpType>
-  [[nodiscard]] static OpType getFirstOp(ModuleOp moduleOp) {
-    auto&& moduleOperations = moduleOp.getBody()->getOperations();
+  [[nodiscard]] OpType getFirstOp(ModuleOp moduleOp) {
+    auto funcOp = llvm::dyn_cast<func::FuncOp>(
+        moduleOp.getBody()->getOperations().front());
+    assert(funcOp);
 
-    ASSERT_EQ(moduleOperations.size(), 1);
-    auto&& funcOp = moduleOperations.front();
-    auto&& concreteFuncOp = llvm::dyn_cast<func::FuncOp>(funcOp);
-    ASSERT_TRUE(concreteFuncOp);
+    auto ops = funcOp.getOps<OpType>();
+    if (ops.empty()) {
+      return nullptr;
+    }
 
-    auto funcOperations = concreteFuncOp.getBody().getOps<qco::IdOp>();
-    ASSERT_EQ(std::distance(funcOperations.begin(), funcOperations.end()), 1);
-    return *funcOperations.begin();
+    return *ops.begin();
   }
 
   /**
@@ -85,7 +86,7 @@ private:
  * @brief Test: Identity unitary matrix
  *
  * @details
- * Ensure the correct gate definition is returned for a IdOp.
+ * Ensure the correct gate definition is returned.
  */
 TEST_F(UnitaryMatrixTest, IdOpMatrix) {
   auto moduleOp = buildQCOIR([](qco::QCOProgramBuilder& builder) {
@@ -102,7 +103,7 @@ TEST_F(UnitaryMatrixTest, IdOpMatrix) {
  * @brief Test: X unitary matrix
  *
  * @details
- * Ensure the correct gate definition is returned for a IdOp.
+ * Ensure the correct gate definition is returned.
  */
 TEST_F(UnitaryMatrixTest, XOpMatrix) {
   auto moduleOp = buildQCOIR([](qco::QCOProgramBuilder& builder) {
@@ -112,5 +113,89 @@ TEST_F(UnitaryMatrixTest, XOpMatrix) {
   auto op = getFirstOp<qco::XOp>(*moduleOp);
   ASSERT_TRUE(op) << toString(*moduleOp);
 
-  EXPECT_EQ(op.getUnitaryMatrixDefinition(), utils::getMatrixId());
+  EXPECT_EQ(op.getUnitaryMatrixDefinition(), utils::getMatrixX());
+}
+
+/**
+ * @brief Test: Y unitary matrix
+ *
+ * @details
+ * Ensure the correct gate definition is returned.
+ */
+TEST_F(UnitaryMatrixTest, YOpMatrix) {
+  auto moduleOp = buildQCOIR([](qco::QCOProgramBuilder& builder) {
+    auto reg = builder.allocQubitRegister(1, "q");
+    builder.y(reg[0]);
+  });
+  auto op = getFirstOp<qco::YOp>(*moduleOp);
+  ASSERT_TRUE(op) << toString(*moduleOp);
+
+  EXPECT_EQ(op.getUnitaryMatrixDefinition(), utils::getMatrixY());
+}
+
+/**
+ * @brief Test: Z unitary matrix
+ *
+ * @details
+ * Ensure the correct gate definition is returned.
+ */
+TEST_F(UnitaryMatrixTest, ZOpMatrix) {
+  auto moduleOp = buildQCOIR([](qco::QCOProgramBuilder& builder) {
+    auto reg = builder.allocQubitRegister(1, "q");
+    builder.z(reg[0]);
+  });
+  auto op = getFirstOp<qco::ZOp>(*moduleOp);
+  ASSERT_TRUE(op) << toString(*moduleOp);
+
+  EXPECT_EQ(op.getUnitaryMatrixDefinition(), utils::getMatrixZ());
+}
+
+/**
+ * @brief Test: CX unitary matrix
+ *
+ * @details
+ * Ensure the correct gate definition is returned.
+ */
+TEST_F(UnitaryMatrixTest, CtrlXOpMatrix) {
+  auto moduleOp = buildQCOIR([](qco::QCOProgramBuilder& builder) {
+    auto reg = builder.allocQubitRegister(2, "q");
+    builder.cx(reg[0], reg[1]);
+  });
+  auto op = getFirstOp<qco::CtrlOp>(*moduleOp);
+  ASSERT_TRUE(op) << toString(*moduleOp);
+
+  const Eigen::MatrixXcd cxMatrix = Eigen::Matrix4cd{
+      {{1, 0, 0, 0}, {0, 1, 0, 0}, {0, 0, 0, 1}, {0, 0, 1, 0}}};
+
+  EXPECT_EQ(op.getUnitaryMatrixDefinition(), cxMatrix);
+}
+
+/**
+ * @brief Test: CX unitary matrix, both orientations
+ *
+ * @details
+ * Ensure the correct gate definition is returned and is equal for both
+ * orientations.
+ */
+TEST_F(UnitaryMatrixTest, CtrlX10OpMatrix) {
+  auto moduleOp01 = buildQCOIR([](qco::QCOProgramBuilder& builder) {
+    auto reg = builder.allocQubitRegister(2, "q");
+    builder.cx(reg[0], reg[1]);
+  });
+  auto moduleOp10 = buildQCOIR([](qco::QCOProgramBuilder& builder) {
+    auto reg = builder.allocQubitRegister(2, "q");
+    builder.cx(reg[1], reg[0]);
+  });
+  auto op01 = getFirstOp<qco::CtrlOp>(*moduleOp01);
+  ASSERT_TRUE(op01) << toString(*moduleOp01);
+  auto op10 = getFirstOp<qco::CtrlOp>(*moduleOp10);
+  ASSERT_TRUE(op10) << toString(*moduleOp10);
+
+  const Eigen::MatrixXcd cxMatrix = Eigen::Matrix4cd{
+      {{1, 0, 0, 0}, {0, 1, 0, 0}, {0, 0, 0, 1}, {0, 0, 1, 0}}};
+
+  EXPECT_EQ(op01.getUnitaryMatrixDefinition(), cxMatrix);
+  EXPECT_EQ(op10.getUnitaryMatrixDefinition(), cxMatrix);
+  EXPECT_EQ(op10.getUnitaryMatrixDefinition(),
+            op01.getUnitaryMatrixDefinition());
 }
