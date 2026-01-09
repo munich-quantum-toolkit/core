@@ -1136,7 +1136,7 @@ struct ConvertQCCtrlOp final : StatefulOpConversionPattern<qc::CtrlOp> {
     qcoTargetAliases.reserve(numTargets);
 
     rewriter.modifyOpInPlace(qcoOp, [&] {
-      for (auto i = 0UL; i < qcoOp.getNumTargets(); i++) {
+      for (auto i = 0UL; i < numTargets; i++) {
         auto originalTarget = qcoOp.getInputTarget(i);
         auto arg =
             entryBlock.addArgument(originalTarget.getType(), op.getLoc());
