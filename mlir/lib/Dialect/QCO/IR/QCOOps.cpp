@@ -9,11 +9,11 @@
  */
 
 #include "mlir/Dialect/QCO/IR/QCODialect.h" // IWYU pragma: associated
-#include "mlir/IR/OpImplementation.h"
-#include "mlir/IR/Region.h"
-#include "mlir/Support/LogicalResult.h"
 
-#include "llvm/ADT/SmallVector.h"
+#include <mlir/IR/OpImplementation.h>
+#include <mlir/IR/Region.h>
+#include <mlir/Support/LLVM.h>
+#include <mlir/Support/LogicalResult.h>
 
 // The following headers are needed for some template instantiations.
 // IWYU pragma: begin_keep
@@ -31,7 +31,7 @@ using namespace mlir::qco;
 //===----------------------------------------------------------------------===//
 
 namespace {
-ParseResult
+static ParseResult
 parseTargetAliasing(OpAsmParser& parser, Region& region,
                     SmallVectorImpl<OpAsmParser::UnresolvedOperand>& operands) {
   // 1. Parse the opening parenthesis
@@ -64,6 +64,9 @@ parseTargetAliasing(OpAsmParser& parser, Region& region,
       }
       operands.push_back(oldOperand);
 
+      // Hard-code QubitType since targets in qco.ctrl are always qubits.
+      // This avoids double-binding type($targets_in) in the assembly format
+      // while keeping the parser simple and the assembly format clean.
       Type type = qco::QubitType::get(parser.getBuilder().getContext());
       newArg.type = type;
       blockArgs.push_back(newArg);
@@ -85,8 +88,8 @@ parseTargetAliasing(OpAsmParser& parser, Region& region,
   return success();
 }
 
-void printTargetAliasing(OpAsmPrinter& printer, Operation* op, Region& region,
-                         OperandRange targets_in) {
+static void printTargetAliasing(OpAsmPrinter& printer, Operation* op,
+                                Region& region, OperandRange targets_in) {
   printer << "(";
   Block& entryBlock = region.front();
   auto blockArgs = entryBlock.getArguments();
