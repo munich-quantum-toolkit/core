@@ -72,7 +72,7 @@ namespace {
  * - %q2 after the X gate
  */
 struct LoweringState {
-  /// Map from original QC qubit references to their latest Flux SSA values
+  /// Map from original QC qubit references to their latest QCO SSA values
   /// for each region
   llvm::DenseMap<Region*, llvm::DenseMap<Value, Value>> qubitMap;
   /// Map each operation to its Set of QC qubit references

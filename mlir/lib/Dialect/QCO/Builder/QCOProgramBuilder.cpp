@@ -778,7 +778,7 @@ QCOProgramBuilder& QCOProgramBuilder::funcFunc(
 // Arith operations
 //===----------------------------------------------------------------------===//
 
-Value QCOProgramBuilder::arithConstantIndex(int i) {
+Value QCOProgramBuilder::arithConstantIndex(int64_t i) {
   const auto op =
       create<arith::ConstantOp>(loc, getIndexType(), getIndexAttr(i));
   return op->getResult(0);

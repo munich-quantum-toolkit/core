@@ -906,11 +906,11 @@ public:
    * ```c++
    * builder.scfWhile([&](auto& b) {
    * b.h(q0);
-   * auto res = b.measure(q0)
-   * b.condition(res)
+   * auto res = b.measure(q0);
+   * b.condition(res);
    * }, [&](auto& b) {
    * b.x(q0);
-   * b.yield()
+   * b.yield();
    * });
    * ```
    * ```mlir
@@ -1024,7 +1024,7 @@ public:
    * })
    * ```
    * ```mlir
-   * func.func @test(%arg0 : !qco.qubit) {
+   * func.func @test(%arg0 : !qc.qubit) {
    *   qc.h %arg0 : !qc.qubit
    *   func.return
    * }
@@ -1052,7 +1052,7 @@ public:
    * arith.constant 4 : index
    * ```
    */
-  Value arithConstantIndex(int index);
+  Value arithConstantIndex(int64_t index);
 
   /**
    * @brief Constructs a arith.constant of type i1 with a given bool value

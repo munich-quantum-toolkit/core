@@ -1247,7 +1247,7 @@ public:
    * arith.constant 4 : index
    * ```
    */
-  Value arithConstantIndex(int i);
+  Value arithConstantIndex(int64_t i);
 
   /**
    * @brief Constructs a arith.constant of type i1 with a given bool value

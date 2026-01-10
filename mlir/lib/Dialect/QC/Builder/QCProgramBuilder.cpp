@@ -542,7 +542,7 @@ QCProgramBuilder& QCProgramBuilder::funcFunc(
 // Arith operations
 //===----------------------------------------------------------------------===//
 
-Value QCProgramBuilder::arithConstantIndex(int index) {
+Value QCProgramBuilder::arithConstantIndex(int64_t index) {
   const auto op =
       create<arith::ConstantOp>(loc, getIndexType(), getIndexAttr(index));
   return op->getResult(0);
