@@ -1044,16 +1044,16 @@ public:
    *
    * @par Example:
    * ```c++
-   * builder.scfFor(lb, ub, step, initArgs, [&](auto& b) {
-   *    auto q1 = b.x(initArgs[0]);
-   *    b.scfYield(q1);
-   });
+   * builder.scfFor(lb, ub, step, initArgs, [&] {
+   *    auto q1 = builder.x(initArgs[0]);
+   *    builder.scfYield(q1);
+   * });
    * ```
    * ```mlir
-   * %q1 = scf.for %iv = %lb to %ub step %step iter_args(%arg0 = %q0) ->
-   !qco.qubit {
-   *    %q2 = qc.x %arg0 : !qco.qubit -> !qco.qubit
-   *    scf.yield %q2 : !qco.qubit
+   * %q1 = scf.for %iv = %lb to %ub step %step iter_args(%arg0 = %q0)
+   * -> !qco.qubit {
+   *   %q2 = qc.x %arg0 : !qco.qubit -> !qco.qubit
+   *   scf.yield %q2 : !qco.qubit
    * }
    * ```
    */
@@ -1071,24 +1071,24 @@ public:
    *
    * @par Example:
    * ```c++
-   * builder.scfWhile(args, [&](auto& b, ValueRange iterArgs) {
-   *    auto q1 = b.h(iterArgs[0]);
-   *    auto [q2, measureRes] = b.measure(q1);
-   *    b.condition(measureRes);
-   * }, [&](auto& b, ValueRange iterArgs) {
-   *    auto q1 = b.x(iterArgs[0]);
-   *    b.scfYield(q1);
+   * builder.scfWhile(args, [&](ValueRange iterArgs) {
+   *   auto q1 = builder.h(iterArgs[0]);
+   *   auto [q2, measureRes] = builder.measure(q1);
+   *   builder.condition(measureRes, q2);
+   * }, [&](ValueRange iterArgs) {
+   *   auto q1 = builder.x(iterArgs[0]);
+   *   builder.scfYield(q1);
    * });
    * ```
    * ```mlir
    * %q1 = scf.while (%arg0 = %q0): (!qco.qubit) -> (!qco.qubit) {
-   *    %q2 = qco.h(%arg0)
-   *    %q3, %result = qco.measure %q2 : !qco.qubit
-   *    scf.condition(%result) %q3 : !qco.qubit
-   *  } do {
-   *  ^bb0(%arg0 : !qco.qubit):
-   *    %q4 = qco.x %arg0 : !qco.qubit -> !qco.qubit
-   *    scf.yield %q4 : !qco.qubit
+   *   %q2 = qco.h(%arg0)
+   *   %q3, %result = qco.measure %q2 : !qco.qubit
+   *   scf.condition(%result) %q3 : !qco.qubit
+   * } do {
+   * ^bb0(%arg0 : !qco.qubit):
+   *   %q4 = qco.x %arg0 : !qco.qubit -> !qco.qubit
+   *   scf.yield %q4 : !qco.qubit
    * }
    * ```
    */
@@ -1108,21 +1108,21 @@ public:
    *
    * @par Example:
    * ```c++
-   * builder.scfIf(condition, qubits, [&](auto& b) {
-   *    auto q1 = b.h(q0);
-   *    b.scfYield(q1);
-   * }, [&](auto& b) {
-   *    auto q1 = b.x(q0);
-   *    b.scfYield(q1);
+   * builder.scfIf(condition, qubits, [&] {
+   *   auto q1 = builder.h(q0);
+   *   builder.scfYield(q1);
+   * }, [&] {
+   *   auto q1 = builder.x(q0);
+   *   builder.scfYield(q1);
    * });
    * ```
    * ```mlir
    * %q1 = scf.if %condition -> (!qco.qubit) {
-   *    %q2 = qco.h %q0 : !qco.qubit -> !qco.qubit
-   *    scf.yield %q2 : !qco.qubit
+   *   %q2 = qco.h %q0 : !qco.qubit -> !qco.qubit
+   *   scf.yield %q2 : !qco.qubit
    * } else {
-   *    %q2 = qco.x %q0 : !qco.qubit -> !qco.qubit
-   *    scf.yield %q2 : !qco.qubit
+   *   %q2 = qco.x %q0 : !qco.qubit -> !qco.qubit
+   *   scf.yield %q2 : !qco.qubit
    * }
    * ```
    */
@@ -1175,7 +1175,7 @@ public:
    *
    * @par Example:
    * ```c++
-   * builder.funcReturn( yieldedValues);
+   * builder.funcReturn(yieldedValues);
    * ```
    * ```mlir
    * func.return %q0 : !qco.qubit
@@ -1211,10 +1211,9 @@ public:
    *
    * @par Example:
    * ```c++
-   * builder.funcFunc("test", argTypes, resultTypes, [&](OpBuilder& b,
-   * ValueRange args) {
-   *   auto q1 = b.h(args[0]);
-   *   b.funcReturn({q1});
+   * builder.funcFunc("test", argTypes, resultTypes, [&](ValueRange args) {
+   *   auto q1 = builder.h(args[0]);
+   *   builder.funcReturn(q1);
    * })
    * ```
    * ```mlir

@@ -883,7 +883,7 @@ public:
    *
    * @par Example:
    * ```c++
-   * builder.scfFor(lb, ub, step, [&](auto& b) { b.x(q0); });
+   * builder.scfFor(lb, ub, step, [&] { builder.x(q0); });
    * ```
    * ```mlir
    * scf.for %iv = %lb to %ub step %step {
@@ -904,23 +904,23 @@ public:
    *
    * @par Example:
    * ```c++
-   * builder.scfWhile([&](auto& b) {
-   * b.h(q0);
-   * auto res = b.measure(q0);
-   * b.condition(res);
-   * }, [&](auto& b) {
-   * b.x(q0);
-   * b.yield();
+   * builder.scfWhile([&] {
+   *   builder.h(q0);
+   *   auto res = builder.measure(q0);
+   *   builder.condition(res);
+   * }, [&] {
+   *   builder.x(q0);
+   *   builder.yield();
    * });
    * ```
    * ```mlir
    * scf.while : () -> () {
-   * qc.h %q0 : !qc.qubit
-   * %res = qc.measure %q0 : !qc.qubit -> i1
-   * scf.condition(%tres)
+   *   qc.h %q0 : !qc.qubit
+   *   %res = qc.measure %q0 : !qc.qubit -> i1
+   *   scf.condition(%tres)
    * } do {
-   * qc.x %q0 : !qc.qubit
-   * scf.yield
+   *   qc.x %q0 : !qc.qubit
+   *   scf.yield
    * }
    * ```
    */
@@ -938,17 +938,17 @@ public:
    *
    * @par Example:
    * ```c++
-   * builder.scfIf(condition, [&](auto& b) {
-   * b.h(q0);
-   * }, [&](auto& b) {
-   * b.x(q0);
+   * builder.scfIf(condition, [&] {
+   *   builder.h(q0);
+   * }, [&] {
+   *   builder.x(q0);
    * });
    * ```
    * ```mlir
    * scf.if %condition {
-   * qc.h %q0 : !qc.qubit
+   *   qc.h %q0 : !qc.qubit
    * } else {
-   * qc.x %q0 : !qc.qubit
+   *   qc.x %q0 : !qc.qubit
    * }
    * ```
    */
@@ -1017,10 +1017,9 @@ public:
    *
    * @par Example:
    * ```c++
-   * builder.funcFunc("test", argTypes, [&](OpBuilder& b,
-   * ValueRange args) {
-   *   b.h(args[0]);
-   *   b.funcReturn();
+   * builder.funcFunc("test", argTypes, [&](ValueRange args) {
+   *   builder.h(args[0]);
+   *   builder.funcReturn();
    * })
    * ```
    * ```mlir

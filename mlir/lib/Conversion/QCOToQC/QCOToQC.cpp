@@ -829,7 +829,7 @@ struct ConvertQCOYieldOp final : OpConversionPattern<qco::YieldOp> {
  * is converted to
  * ```mlir
  * scf.if %cond {
- *   qc.x %q0
+ *   qc.x %q0 : !qc.qubit
  *   scf.yield
  * }
  * ```
@@ -880,10 +880,10 @@ struct ConvertQCOScfIfOp final : OpConversionPattern<scf::IfOp> {
  * is converted to
  * ```mlir
  * scf.while : () -> () {
- *   qc.x %q0
+ *   qc.x %q0 : !qc.qubit
  *   scf.condition(%cond)
  * } do {
- *   qc.x %q0
+ *   qc.x %q0 : !qc.qubit
  *   scf.yield
  * }
  * ```
@@ -937,7 +937,7 @@ struct ConvertQCOScfWhileOp final : OpConversionPattern<scf::WhileOp> {
  * is converted to
  * ```mlir
  * scf.for %iv = %lb to %ub step %step {
- *   qc.x %q0
+ *   qc.x %q0 : !qc.qubit
  *   scf.yield
  * }
  * ```
