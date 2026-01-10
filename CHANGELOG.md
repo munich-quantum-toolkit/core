@@ -14,6 +14,10 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 - ♻️ Extract singleton pattern into reusable template base class for QDMI devices and driver ([#1444]) ([**@ystade**], [**@burgholzer**])
 - 🚚 Reorganize QDMI code structure by moving devices into dedicated subdirectories and separating driver and common utilities ([#1444]) ([**@ystade**])
 
+### Removed
+
+- 🔥 No longer actively type check Python code with `mypy` and solely rely on `ty` ([#1437]) ([**@burgholzer**])
+
 ## [3.4.0] - 2026-01-08
 
 ### Added
@@ -301,6 +305,7 @@ _📚 Refer to the [GitHub Release Notes](https://github.com/munich-quantum-tool
 <!-- PR links -->
 
 [#1444]: https://github.com/munich-quantum-toolkit/core/pull/1444
+[#1437]: https://github.com/munich-quantum-toolkit/core/pull/1437
 [#1415]: https://github.com/munich-quantum-toolkit/core/pull/1415
 [#1414]: https://github.com/munich-quantum-toolkit/core/pull/1414
 [#1413]: https://github.com/munich-quantum-toolkit/core/pull/1413
