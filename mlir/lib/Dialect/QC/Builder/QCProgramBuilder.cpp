@@ -456,6 +456,8 @@ QCProgramBuilder::scfFor(Value lowerbound, Value upperbound, Value step,
 
   create<scf::ForOp>(loc, lowerbound, upperbound, step, ValueRange{},
                      [&](OpBuilder& b, Location, Value iv, ValueRange) {
+                       const OpBuilder::InsertionGuard guard(*this);
+                       setInsertionPointToStart(b.getInsertionBlock());
                        body(iv);
                        b.create<scf::YieldOp>(loc);
                      });
@@ -470,8 +472,14 @@ QCProgramBuilder::scfWhile(const std::function<void()>& beforeBody,
 
   create<scf::WhileOp>(
       loc, TypeRange{}, ValueRange{},
-      [&](OpBuilder& /*b*/, Location, ValueRange) { beforeBody(); },
+      [&](OpBuilder& b, Location, ValueRange) {
+        const OpBuilder::InsertionGuard guard(*this);
+        setInsertionPointToStart(b.getInsertionBlock());
+        beforeBody();
+      },
       [&](OpBuilder& b, Location loc, ValueRange) {
+        const OpBuilder::InsertionGuard guard(*this);
+        setInsertionPointToStart(b.getInsertionBlock());
         afterBody();
         b.create<scf::YieldOp>(loc);
       });
@@ -486,6 +494,8 @@ QCProgramBuilder::scfIf(Value cond, const std::function<void()>& thenBody,
 
   if (!elseBody) {
     create<scf::IfOp>(loc, cond, [&](OpBuilder& b, Location loc) {
+      const OpBuilder::InsertionGuard guard(*this);
+      setInsertionPointToStart(b.getInsertionBlock());
       thenBody();
       b.create<scf::YieldOp>(loc);
     });
@@ -493,10 +503,14 @@ QCProgramBuilder::scfIf(Value cond, const std::function<void()>& thenBody,
     create<scf::IfOp>(
         loc, cond,
         [&](OpBuilder& b, Location loc) {
+          const OpBuilder::InsertionGuard guard(*this);
+          setInsertionPointToStart(b.getInsertionBlock());
           thenBody();
           b.create<scf::YieldOp>(loc);
         },
         [&](OpBuilder& b, Location loc) {
+          const OpBuilder::InsertionGuard guard(*this);
+          setInsertionPointToStart(b.getInsertionBlock());
           (*elseBody)();
           b.create<scf::YieldOp>(loc);
         });
