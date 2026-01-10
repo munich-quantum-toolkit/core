@@ -37,7 +37,7 @@ namespace mlir::qco {
 
 QCOProgramBuilder::QCOProgramBuilder(MLIRContext* context)
     : OpBuilder(context), ctx(context), loc(getUnknownLoc()),
-      module(ModuleOp::create(loc)), funcRegion(nullptr) {
+      module(ModuleOp::create(loc)) {
   ctx->loadDialect<QCODialect>();
 }
 
@@ -52,7 +52,6 @@ void QCOProgramBuilder::initialize() {
   // Add entry_point attribute to identify the main function
   auto entryPointAttr = getStringAttr("entry_point");
   mainFunc->setAttr("passthrough", getArrayAttr({entryPointAttr}));
-  funcRegion = &mainFunc->getRegion(0);
   // Create entry block and set insertion point
   auto& entryBlock = mainFunc.getBody().emplaceBlock();
   setInsertionPointToStart(&entryBlock);

@@ -23,7 +23,6 @@
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/LLVMIR/LLVMDialect.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
-#include <mlir/IR/Builders.h>
 #include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/DialectRegistry.h>
 #include <mlir/IR/OwningOpRef.h>
@@ -81,7 +80,7 @@ TEST_F(ConversionTest, ScfForQCToQCOTest) {
     auto c0 = b.arithConstantIndex(0);
     auto c1 = b.arithConstantIndex(1);
     auto c2 = b.arithConstantIndex(2);
-    b.scfFor(c0, c2, c1, [&] {
+    b.scfFor(c0, c2, c1, [&](Value /*iv*/) {
       b.h(q0);
       b.x(q0);
       b.h(q0);
@@ -101,7 +100,7 @@ TEST_F(ConversionTest, ScfForQCToQCOTest) {
     auto c1 = b.arithConstantIndex(1);
     auto c2 = b.arithConstantIndex(2);
     auto scfForRes =
-        b.scfFor(c0, c2, c1, {q0}, [&](Value, ValueRange iterArgs) {
+        b.scfFor(c0, c2, c1, {q0}, [&](Value /*iv*/, ValueRange iterArgs) {
           auto q1 = b.h(iterArgs[0]);
           auto q2 = b.x(q1);
           auto q3 = b.h(q2);
@@ -125,7 +124,7 @@ TEST_F(ConversionTest, ScfForQCOToQCTest) {
     auto c1 = b.arithConstantIndex(1);
     auto c2 = b.arithConstantIndex(2);
     auto scfForRes =
-        b.scfFor(c0, c2, c1, {q0}, [&](Value, ValueRange iterArgs) {
+        b.scfFor(c0, c2, c1, {q0}, [&](Value /*iv*/, ValueRange iterArgs) {
           auto q1 = b.h(iterArgs[0]);
           auto q2 = b.x(q1);
           auto q3 = b.h(q2);
@@ -146,7 +145,7 @@ TEST_F(ConversionTest, ScfForQCOToQCTest) {
     auto c0 = b.arithConstantIndex(0);
     auto c1 = b.arithConstantIndex(1);
     auto c2 = b.arithConstantIndex(2);
-    b.scfFor(c0, c2, c1, [&] {
+    b.scfFor(c0, c2, c1, [&](Value /*iv*/) {
       b.h(q0);
       b.x(q0);
       b.h(q0);
@@ -344,6 +343,48 @@ TEST_F(ConversionTest, ScfIfQCOToQCTest) {
           b.h(q0);
         });
     b.h(q0);
+  });
+
+  const auto outputString = getOutputString(input);
+  const auto checkString = getOutputString(expectedOutput);
+
+  ASSERT_EQ(outputString, checkString);
+}
+
+TEST_F(ConversionTest, ScfIfEmptyElseTest) {
+  // Test conversion from qc to qco for scf.if operation without an else body
+  auto input = buildQCIR([](mlir::qc::QCProgramBuilder& b) {
+    auto q0 = b.allocQubit();
+    auto measure = b.measure(q0);
+    b.scfIf(measure, [&] {
+      b.h(q0);
+      b.y(q0);
+    });
+    b.h(q0);
+  });
+
+  PassManager pm(context.get());
+  pm.addPass(createQCToQCO());
+  if (failed(pm.run(input.get()))) {
+    FAIL() << "Conversion error during QC-QCO conversion for scf.if";
+  }
+
+  auto expectedOutput = buildQCOIR([](mlir::qco::QCOProgramBuilder& b) {
+    auto q0 = b.allocQubit();
+    auto [q1, measureResult] = b.measure(q0);
+    auto scfIfResult = b.scfIf(
+        measureResult, {q1},
+        [&] {
+          auto q2 = b.h(q1);
+          auto q3 = b.y(q2);
+          b.scfYield(q3);
+          return q3;
+        },
+        [&] {
+          b.scfYield(q1);
+          return q1;
+        });
+    b.h(scfIfResult[0]);
   });
 
   const auto outputString = getOutputString(input);

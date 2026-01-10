@@ -815,7 +815,7 @@ struct ConvertQCOYieldOp final : OpConversionPattern<qco::YieldOp> {
 
 /**
  * @brief Converts scf.if with value semantics to scf.if with memory semantics
- * for qubit values
+ * for qubit values. This currently assumes no mixed types as return values.
  *
  * @par Example:
  * ```mlir
@@ -841,16 +841,15 @@ struct ConvertQCOScfIfOp final : OpConversionPattern<scf::IfOp> {
   matchAndRewrite(scf::IfOp op, OpAdaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
     // Create the new if operation
-    auto newIf =
-        rewriter.create<scf::IfOp>(op.getLoc(), ValueRange{}, op.getCondition(),
-                                   op.getElseRegion().empty());
+    auto newIf = rewriter.create<scf::IfOp>(op.getLoc(), ValueRange{},
+                                            op.getCondition(), false);
     // Inline the regions
     rewriter.inlineRegionBefore(op.getThenRegion(), newIf.getThenRegion(),
                                 newIf.getThenRegion().end());
-    if (!op.getElseRegion().empty()) {
-      rewriter.inlineRegionBefore(op.getElseRegion(), newIf.getElseRegion(),
-                                  newIf.getElseRegion().end());
-    }
+
+    rewriter.inlineRegionBefore(op.getElseRegion(), newIf.getElseRegion(),
+                                newIf.getElseRegion().end());
+
     // Erase the empty block that was created during the initialization
     rewriter.eraseBlock(&newIf.getThenRegion().front());
 
@@ -864,7 +863,8 @@ struct ConvertQCOScfIfOp final : OpConversionPattern<scf::IfOp> {
 
 /**
  * @brief Converts scf.while with value semantics to scf.while with memory
- * semantics for qubit values
+ * semantics for qubit values. This currently assumes no mixed types as return
+ * values.
  *
  * @par Example:
  * ```mlir
@@ -906,6 +906,7 @@ struct ConvertQCOScfWhileOp final : OpConversionPattern<scf::WhileOp> {
       beforeArgs[i].replaceAllUsesWith(inits[i]);
       afterArgs[i].replaceAllUsesWith(inits[i]);
     }
+
     // Create the blocks of the new operation and move the operations to them
     auto* newBeforeBlock =
         rewriter.createBlock(&newWhileOp.getBefore(), {}, {}, {});
@@ -915,7 +916,7 @@ struct ConvertQCOScfWhileOp final : OpConversionPattern<scf::WhileOp> {
                                            op.getBeforeBody()->getOperations());
     newAfterBlock->getOperations().splice(newAfterBlock->end(),
                                           op.getAfterBody()->getOperations());
-
+    llvm::outs() << newWhileOp.getBefore().getBlocks().size() << "\n";
     // replace the result values with the init values
     rewriter.replaceOp(op, inits);
     return success();
@@ -924,7 +925,8 @@ struct ConvertQCOScfWhileOp final : OpConversionPattern<scf::WhileOp> {
 
 /**
  * @brief Converts scf.for with value semantics to scf.while with memory
- * semantics for qubit values
+ * semantics for qubit values. This currently assumes no mixed types as return
+ * values.
  *
  * @par Example:
  * ```mlir
@@ -974,7 +976,8 @@ struct ConvertQCOScfForOp final : OpConversionPattern<scf::ForOp> {
 
 /**
  * @brief Converts scf.yield with value semantics to scf.yield with memory
- * semantics for qubit values
+ * semantics for qubit values. This currently assumes no mixed types as yielded
+ * values.
  *
  * @par Example:
  * ```mlir
@@ -998,7 +1001,8 @@ struct ConvertQCOScfYieldOp final : OpConversionPattern<scf::YieldOp> {
 
 /**
  * @brief Converts scf.condition with value semantics to scf.condition with
- * memory semantics for qubit values
+ * memory semantics for qubit values. This currently assumes no mixed types as
+ * target values.
  *
  * @par Example:
  * ```mlir
@@ -1025,7 +1029,8 @@ struct ConvertQCOScfConditionOp final : OpConversionPattern<scf::ConditionOp> {
 
 /**
  * @brief Converts func.call with value semantics to func.call with
- * memory semantics for qubit values
+ * memory semantics for qubit values. This currently assumes no mixed types as
+ * parameters/return values.
  *
  * @par Example:
  * ```mlir
@@ -1052,7 +1057,8 @@ struct ConvertQCOFuncCallOp final : OpConversionPattern<func::CallOp> {
 
 /**
  * @brief Converts func.func with memory semantics to func.func with
- * value semantics for qubit values
+ * value semantics for qubit values. This currently assumes no mixed types as
+ * parameters/return values.
  *
  * @par Example:
  * ```mlir
@@ -1087,7 +1093,8 @@ struct ConvertQCOFuncFuncOp final : OpConversionPattern<func::FuncOp> {
 
 /**
  * @brief Converts func.return with value semantics to func.return with
- * memory semantics for qubit values
+ * memory semantics for qubit values. This currently assumes no mixed types as
+ * target values.
  *
  * @par Example:
  * ```mlir
@@ -1154,8 +1161,7 @@ struct QCOToQC final : impl::QCOToQCBase<QCOToQC> {
 
     target.addDynamicallyLegalOp<scf::YieldOp>([&](scf::YieldOp op) {
       return !llvm::any_of(op->getOperandTypes(), [&](Type type) {
-        return type == qc::QubitType::get(context) ||
-               type == qco::QubitType::get(context);
+        return type == qco::QubitType::get(context);
       });
     });
     target.addDynamicallyLegalOp<scf::WhileOp>([&](scf::WhileOp op) {
@@ -1185,8 +1191,7 @@ struct QCOToQC final : impl::QCOToQCBase<QCOToQC> {
     });
     target.addDynamicallyLegalOp<func::ReturnOp>([&](func::ReturnOp op) {
       return !llvm::any_of(op->getOperandTypes(), [&](Type type) {
-        return type == qc::QubitType::get(context) ||
-               type == qco::QubitType::get(context);
+        return type == qco::QubitType::get(context);
       });
     });
 

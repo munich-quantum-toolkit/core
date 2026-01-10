@@ -1276,7 +1276,8 @@ struct ConvertQCScfIfOp final : StatefulOpConversionPattern<scf::IfOp> {
 
     // create new if operation
     auto newIfOp = rewriter.create<scf::IfOp>(op->getLoc(), TypeRange{qcoTypes},
-                                              op.getCondition(), true);
+                                              op.getCondition(),
+                                              op.getElseRegion().empty());
     auto& thenRegion = newIfOp.getThenRegion();
     auto& elseRegion = newIfOp.getElseRegion();
 
@@ -1289,7 +1290,6 @@ struct ConvertQCScfIfOp final : StatefulOpConversionPattern<scf::IfOp> {
     if (!op.getElseRegion().empty()) {
       rewriter.inlineRegionBefore(op.getElseRegion(), elseRegion,
                                   elseRegion.end());
-      rewriter.eraseBlock(&elseRegion.front());
     } else {
       // create the yield operation if it does not exist yet
       rewriter.setInsertionPointToEnd(&elseRegion.front());
@@ -1330,7 +1330,7 @@ struct ConvertQCScfIfOp final : StatefulOpConversionPattern<scf::IfOp> {
 
 /**
  * @brief Converts scf.while with memory semantics to scf.while with value
- * semantics for qubit values
+ * semantics for qubit values.
  *
  * @par Example:
  * ```mlir
@@ -1521,6 +1521,7 @@ struct ConvertQCScfYieldOp final : StatefulOpConversionPattern<scf::YieldOp> {
     SmallVector<Value> qcoQubits;
     qcoQubits.reserve(orderedQubits.size());
     for (const auto& qcQubit : orderedQubits) {
+      assert(qubitMap.contains(qcQubit) && "QC qubit not found");
       qcoQubits.push_back(qubitMap.lookup(qcQubit));
     }
 
@@ -1558,6 +1559,7 @@ struct ConvertQCScfConditionOp final
     SmallVector<Value> qcoQubits;
     qcoQubits.reserve(orderedQubits.size());
     for (const auto& qcQubit : orderedQubits) {
+      assert(qubitMap.contains(qcQubit) && "QC qubit not found");
       qcoQubits.push_back(qubitMap.lookup(qcQubit));
     }
 
@@ -1683,6 +1685,7 @@ struct ConvertQCFuncReturnOp final
     SmallVector<Value> qcoQubits;
     qcoQubits.reserve(orderedQubits.size());
     for (const auto& qcQubit : orderedQubits) {
+      assert(qubitMap.contains(qcQubit) && "QC qubit not found");
       qcoQubits.push_back(qubitMap.lookup(qcQubit));
     }
     rewriter.replaceOpWithNewOp<func::ReturnOp>(op, qcoQubits);

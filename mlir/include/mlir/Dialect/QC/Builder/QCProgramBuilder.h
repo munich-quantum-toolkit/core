@@ -892,7 +892,7 @@ public:
    * ```
    */
   QCProgramBuilder& scfFor(Value lowerbound, Value upperbound, Value step,
-                           const std::function<void()>& body);
+                           const std::function<void(Value)>& body);
 
   /**
    * @brief Constructs a scf.while operation without return values
@@ -910,7 +910,7 @@ public:
    *   builder.condition(res);
    * }, [&] {
    *   builder.x(q0);
-   *   builder.yield();
+   *   builder.scfYield();
    * });
    * ```
    * ```mlir
@@ -952,9 +952,9 @@ public:
    * }
    * ```
    */
-  QCProgramBuilder& scfIf(Value condition,
-                          const std::function<void()>& thenBody,
-                          const std::function<void()>& elseBody = nullptr);
+  QCProgramBuilder&
+  scfIf(Value condition, const std::function<void()>& thenBody,
+        std::optional<std::function<void()>> elseBody = std::nullopt);
 
   /**
    * @brief Constructs a scf.condition operation without any additional Values
@@ -964,7 +964,7 @@ public:
    *
    * @par Example:
    * ```c++
-   * builder.condition(condition);
+   * builder.scfCondition(condition);
    * ```
    * ```mlir
    * scf.condition(%condition)
@@ -1008,7 +1008,7 @@ public:
   QCProgramBuilder& funcCall(StringRef name, ValueRange operands);
 
   /**
-   * @brief Constructs a func.func operation with return values
+   * @brief Constructs a func.func operation without return values
    *
    * @param name Name of the function that is called
    * @param argTypes TypeRange of the arguments

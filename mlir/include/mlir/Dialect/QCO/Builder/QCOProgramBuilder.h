@@ -1284,7 +1284,6 @@ private:
   MLIRContext* ctx{};
   Location loc;
   ModuleOp module;
-  Region* funcRegion;
 
   /// Check if the builder has been finalized
   void checkFinalized() const;

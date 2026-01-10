@@ -448,12 +448,12 @@ QCProgramBuilder& QCProgramBuilder::dealloc(Value qubit) {
 // SCF operations
 //===----------------------------------------------------------------------===//
 
-QCProgramBuilder& QCProgramBuilder::scfFor(Value lowerbound, Value upperbound,
-                                           Value step,
-                                           const std::function<void()>& body) {
+QCProgramBuilder&
+QCProgramBuilder::scfFor(Value lowerbound, Value upperbound, Value step,
+                         const std::function<void(Value)>& body) {
   create<scf::ForOp>(loc, lowerbound, upperbound, step, ValueRange{},
-                     [&](OpBuilder& b, Location, Value, ValueRange) {
-                       body();
+                     [&](OpBuilder& b, Location, Value iv, ValueRange) {
+                       body(iv);
                        b.create<scf::YieldOp>(loc);
                      });
 
@@ -476,7 +476,7 @@ QCProgramBuilder::scfWhile(const std::function<void()>& beforeBody,
 
 QCProgramBuilder&
 QCProgramBuilder::scfIf(Value cond, const std::function<void()>& thenBody,
-                        const std::function<void()>& elseBody) {
+                        std::optional<std::function<void()>> elseBody) {
   if (!elseBody) {
     create<scf::IfOp>(loc, cond, [&](OpBuilder& b, Location loc) {
       thenBody();
@@ -490,7 +490,7 @@ QCProgramBuilder::scfIf(Value cond, const std::function<void()>& thenBody,
           b.create<scf::YieldOp>(loc);
         },
         [&](OpBuilder& b, Location loc) {
-          elseBody();
+          (*elseBody)();
           b.create<scf::YieldOp>(loc);
         });
   }
