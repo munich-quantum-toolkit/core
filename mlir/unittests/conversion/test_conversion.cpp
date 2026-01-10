@@ -74,7 +74,7 @@ static std::string getOutputString(mlir::OwningOpRef<mlir::ModuleOp>& module) {
   return outputString;
 }
 
-TEST_F(ConversionTest, ScfForTest) {
+TEST_F(ConversionTest, ScfForQCToQCOTest) {
   // Test conversion from qc to qco for scf.for operation
   auto input = buildQCIR([](mlir::qc::QCProgramBuilder& b) {
     auto q0 = b.allocQubit();
@@ -101,11 +101,11 @@ TEST_F(ConversionTest, ScfForTest) {
     auto c1 = b.arithConstantIndex(1);
     auto c2 = b.arithConstantIndex(2);
     auto scfForRes =
-        b.scfFor(c0, c2, c1, ValueRange{q0}, [&](Value, ValueRange iterArgs) {
+        b.scfFor(c0, c2, c1, {q0}, [&](Value, ValueRange iterArgs) {
           auto q1 = b.h(iterArgs[0]);
           auto q2 = b.x(q1);
           auto q3 = b.h(q2);
-          b.scfYield(ValueRange{q3});
+          b.scfYield(q3);
           return q3;
         });
     b.h(scfForRes[0]);
@@ -117,7 +117,7 @@ TEST_F(ConversionTest, ScfForTest) {
   ASSERT_EQ(outputString, checkString);
 }
 
-TEST_F(ConversionTest, ScfForTest2) {
+TEST_F(ConversionTest, ScfForQCOToQCTest) {
   // Test conversion from qco to qc for scf.for operation
   auto input = buildQCOIR([](mlir::qco::QCOProgramBuilder& b) {
     auto q0 = b.allocQubit();
@@ -125,11 +125,11 @@ TEST_F(ConversionTest, ScfForTest2) {
     auto c1 = b.arithConstantIndex(1);
     auto c2 = b.arithConstantIndex(2);
     auto scfForRes =
-        b.scfFor(c0, c2, c1, ValueRange{q0}, [&](Value, ValueRange iterArgs) {
+        b.scfFor(c0, c2, c1, {q0}, [&](Value, ValueRange iterArgs) {
           auto q1 = b.h(iterArgs[0]);
           auto q2 = b.x(q1);
           auto q3 = b.h(q2);
-          b.scfYield(ValueRange{q3});
+          b.scfYield(q3);
           return q3;
         });
     b.h(scfForRes[0]);
@@ -160,14 +160,13 @@ TEST_F(ConversionTest, ScfForTest2) {
   ASSERT_EQ(outputString, checkString);
 }
 
-TEST_F(ConversionTest, ScfWhileTest) {
+TEST_F(ConversionTest, ScfWhileQCToQCOTest) {
   // Test conversion from qc to qco for scf.while operation
   auto input = buildQCIR([](mlir::qc::QCProgramBuilder& b) {
     auto q0 = b.allocQubit();
     b.scfWhile(
         [&] {
           auto measureResult = b.measure(q0);
-
           b.scfCondition(measureResult);
         },
         [&] {
@@ -189,13 +188,13 @@ TEST_F(ConversionTest, ScfWhileTest) {
         ValueRange{q0},
         [&](ValueRange iterArgs) {
           auto [q1, measureResult] = b.measure(iterArgs[0]);
-          b.scfCondition(measureResult, ValueRange{q1});
+          b.scfCondition(measureResult, q1);
           return q1;
         },
         [&](ValueRange iterArgs) {
           auto q1 = b.h(iterArgs[0]);
           auto q2 = b.y(q1);
-          b.scfYield({q2});
+          b.scfYield(q2);
           return q2;
         });
     b.h(scfWhileResult[0]);
@@ -207,7 +206,7 @@ TEST_F(ConversionTest, ScfWhileTest) {
   ASSERT_EQ(outputString, checkString);
 }
 
-TEST_F(ConversionTest, ScfWhileTest2) {
+TEST_F(ConversionTest, ScfWhileQCOToQCTest) {
   // Test conversion from qco to qc for scf.while operation
   auto input = buildQCOIR([](mlir::qco::QCOProgramBuilder& b) {
     auto q0 = b.allocQubit();
@@ -215,13 +214,13 @@ TEST_F(ConversionTest, ScfWhileTest2) {
         ValueRange{q0},
         [&](ValueRange iterArgs) {
           auto [q1, measureResult] = b.measure(iterArgs[0]);
-          b.scfCondition(measureResult, ValueRange{q1});
+          b.scfCondition(measureResult, q1);
           return q1;
         },
         [&](ValueRange iterArgs) {
           auto q1 = b.h(iterArgs[0]);
           auto q2 = b.y(q1);
-          b.scfYield({q2});
+          b.scfYield(q2);
           return q2;
         });
     b.h(scfWhileResult[0]);
@@ -253,7 +252,7 @@ TEST_F(ConversionTest, ScfWhileTest2) {
   ASSERT_EQ(outputString, checkString);
 }
 
-TEST_F(ConversionTest, ScfIfTest) {
+TEST_F(ConversionTest, ScfIfQCToQCOTest) {
   // Test conversion from qc to qco for scf.if operation
   auto input = buildQCIR([](mlir::qc::QCProgramBuilder& b) {
     auto q0 = b.allocQubit();
@@ -281,10 +280,9 @@ TEST_F(ConversionTest, ScfIfTest) {
     auto q0 = b.allocQubit();
     auto [q1, measureResult] = b.measure(q0);
     auto scfIfResult = b.scfIf(
-        measureResult, ValueRange{q1},
+        measureResult, {q1},
         [&] {
           auto q2 = b.h(q1);
-
           auto q3 = b.y(q2);
           b.scfYield(q3);
           return q3;
@@ -304,16 +302,15 @@ TEST_F(ConversionTest, ScfIfTest) {
   ASSERT_EQ(outputString, checkString);
 }
 
-TEST_F(ConversionTest, ScfIfTest2) {
+TEST_F(ConversionTest, ScfIfQCOToQCTest) {
   // Test conversion from qco to qc for scf.if operation
   auto input = buildQCOIR([](mlir::qco::QCOProgramBuilder& b) {
     auto q0 = b.allocQubit();
     auto [q1, measureResult] = b.measure(q0);
     auto scfIfResult = b.scfIf(
-        measureResult, ValueRange{q1},
+        measureResult, {q1},
         [&] {
           auto q2 = b.h(q1);
-
           auto q3 = b.y(q2);
           b.scfYield(q3);
           return q3;
@@ -355,7 +352,7 @@ TEST_F(ConversionTest, ScfIfTest2) {
   ASSERT_EQ(outputString, checkString);
 }
 
-TEST_F(ConversionTest, FuncFuncTest) {
+TEST_F(ConversionTest, FuncFuncQCToQCOTest) {
   // Test conversion from qc to qco for func.func operation
   auto input = buildQCIR([](mlir::qc::QCProgramBuilder& b) {
     auto q0 = b.allocQubit();
@@ -391,7 +388,7 @@ TEST_F(ConversionTest, FuncFuncTest) {
   ASSERT_EQ(outputString, checkString);
 }
 
-TEST_F(ConversionTest, FuncFuncTest2) {
+TEST_F(ConversionTest, FuncFuncQCOToQCTest) {
   // Test conversion from qco to qc for func.func operation
   auto input = buildQCOIR([](mlir::qco::QCOProgramBuilder& b) {
     auto q0 = b.allocQubit();
