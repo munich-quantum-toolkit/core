@@ -209,20 +209,24 @@ Value QCOProgramBuilder::reset(Value qubit) {
       const std::variant<double, Value>&(PARAM), Value control) {              \
     checkFinalized();                                                          \
     const auto controlsOut =                                                   \
-        ctrl(control, {}, [&](ValueRange /*targets*/) -> SmallVector<Value> {  \
-          OP_NAME(PARAM);                                                      \
-          return {};                                                           \
-        }).first;                                                              \
+        ctrl(control, {},                                                      \
+             [&](ValueRange /*targets*/) -> llvm::SmallVector<Value> {         \
+               OP_NAME(PARAM);                                                 \
+               return {};                                                      \
+             })                                                                \
+            .first;                                                            \
     return controlsOut[0];                                                     \
   }                                                                            \
   ValueRange QCOProgramBuilder::mc##OP_NAME(                                   \
       const std::variant<double, Value>&(PARAM), ValueRange controls) {        \
     checkFinalized();                                                          \
     const auto controlsOut =                                                   \
-        ctrl(controls, {}, [&](ValueRange /*targets*/) -> SmallVector<Value> { \
-          OP_NAME(PARAM);                                                      \
-          return {};                                                           \
-        }).first;                                                              \
+        ctrl(controls, {},                                                     \
+             [&](ValueRange /*targets*/) -> llvm::SmallVector<Value> {         \
+               OP_NAME(PARAM);                                                 \
+               return {};                                                      \
+             })                                                                \
+            .first;                                                            \
     return controlsOut;                                                        \
   }
 
@@ -243,8 +247,8 @@ DEFINE_ZERO_TARGET_ONE_PARAMETER(GPhaseOp, gphase, theta)
   std::pair<Value, Value> QCOProgramBuilder::c##OP_NAME(Value control,         \
                                                         Value target) {        \
     checkFinalized();                                                          \
-    const auto [controlsOut, targetsOut] =                                     \
-        ctrl(control, target, [&](ValueRange targets) -> SmallVector<Value> {  \
+    const auto [controlsOut, targetsOut] = ctrl(                               \
+        control, target, [&](ValueRange targets) -> llvm::SmallVector<Value> { \
           return {OP_NAME(targets[0])};                                        \
         });                                                                    \
     return {controlsOut[0], targetsOut[0]};                                    \
@@ -253,9 +257,10 @@ DEFINE_ZERO_TARGET_ONE_PARAMETER(GPhaseOp, gphase, theta)
       ValueRange controls, Value target) {                                     \
     checkFinalized();                                                          \
     const auto [controlsOut, targetsOut] =                                     \
-        ctrl(controls, target, [&](ValueRange targets) -> SmallVector<Value> { \
-          return {OP_NAME(targets[0])};                                        \
-        });                                                                    \
+        ctrl(controls, target,                                                 \
+             [&](ValueRange targets) -> llvm::SmallVector<Value> {             \
+               return {OP_NAME(targets[0])};                                   \
+             });                                                               \
     return {controlsOut, targetsOut[0]};                                       \
   }
 
@@ -288,8 +293,8 @@ DEFINE_ONE_TARGET_ZERO_PARAMETER(SXdgOp, sxdg)
       const std::variant<double, Value>&(PARAM), Value control,                \
       Value target) {                                                          \
     checkFinalized();                                                          \
-    const auto [controlsOut, targetsOut] =                                     \
-        ctrl(control, target, [&](ValueRange targets) -> SmallVector<Value> {  \
+    const auto [controlsOut, targetsOut] = ctrl(                               \
+        control, target, [&](ValueRange targets) -> llvm::SmallVector<Value> { \
           return {OP_NAME(PARAM, targets[0])};                                 \
         });                                                                    \
     return {controlsOut[0], targetsOut[0]};                                    \
@@ -299,9 +304,10 @@ DEFINE_ONE_TARGET_ZERO_PARAMETER(SXdgOp, sxdg)
       Value target) {                                                          \
     checkFinalized();                                                          \
     const auto [controlsOut, targetsOut] =                                     \
-        ctrl(controls, target, [&](ValueRange targets) -> SmallVector<Value> { \
-          return {OP_NAME(PARAM, targets[0])};                                 \
-        });                                                                    \
+        ctrl(controls, target,                                                 \
+             [&](ValueRange targets) -> llvm::SmallVector<Value> {             \
+               return {OP_NAME(PARAM, targets[0])};                            \
+             });                                                               \
     return {controlsOut, targetsOut[0]};                                       \
   }
 
@@ -329,8 +335,8 @@ DEFINE_ONE_TARGET_ONE_PARAMETER(POp, p, phi)
       const std::variant<double, Value>&(PARAM2), Value control,               \
       Value target) {                                                          \
     checkFinalized();                                                          \
-    const auto [controlsOut, targetsOut] =                                     \
-        ctrl(control, target, [&](ValueRange targets) -> SmallVector<Value> {  \
+    const auto [controlsOut, targetsOut] = ctrl(                               \
+        control, target, [&](ValueRange targets) -> llvm::SmallVector<Value> { \
           return {OP_NAME(PARAM1, PARAM2, targets[0])};                        \
         });                                                                    \
     return {controlsOut[0], targetsOut[0]};                                    \
@@ -341,9 +347,10 @@ DEFINE_ONE_TARGET_ONE_PARAMETER(POp, p, phi)
       Value target) {                                                          \
     checkFinalized();                                                          \
     const auto [controlsOut, targetsOut] =                                     \
-        ctrl(controls, target, [&](ValueRange targets) -> SmallVector<Value> { \
-          return {OP_NAME(PARAM1, PARAM2, targets[0])};                        \
-        });                                                                    \
+        ctrl(controls, target,                                                 \
+             [&](ValueRange targets) -> llvm::SmallVector<Value> {             \
+               return {OP_NAME(PARAM1, PARAM2, targets[0])};                   \
+             });                                                               \
     return {controlsOut, targetsOut[0]};                                       \
   }
 
@@ -372,8 +379,8 @@ DEFINE_ONE_TARGET_TWO_PARAMETER(U2Op, u2, phi, lambda)
       const std::variant<double, Value>&(PARAM3), Value control,               \
       Value target) {                                                          \
     checkFinalized();                                                          \
-    const auto [controlsOut, targetsOut] =                                     \
-        ctrl(control, target, [&](ValueRange targets) -> SmallVector<Value> {  \
+    const auto [controlsOut, targetsOut] = ctrl(                               \
+        control, target, [&](ValueRange targets) -> llvm::SmallVector<Value> { \
           return {OP_NAME(PARAM1, PARAM2, PARAM3, targets[0])};                \
         });                                                                    \
     return {controlsOut[0], targetsOut[0]};                                    \
@@ -385,9 +392,10 @@ DEFINE_ONE_TARGET_TWO_PARAMETER(U2Op, u2, phi, lambda)
       Value target) {                                                          \
     checkFinalized();                                                          \
     const auto [controlsOut, targetsOut] =                                     \
-        ctrl(controls, target, [&](ValueRange targets) -> SmallVector<Value> { \
-          return {OP_NAME(PARAM1, PARAM2, PARAM3, targets[0])};                \
-        });                                                                    \
+        ctrl(controls, target,                                                 \
+             [&](ValueRange targets) -> llvm::SmallVector<Value> {             \
+               return {OP_NAME(PARAM1, PARAM2, PARAM3, targets[0])};           \
+             });                                                               \
     return {controlsOut, targetsOut[0]};                                       \
   }
 
@@ -413,8 +421,8 @@ DEFINE_ONE_TARGET_THREE_PARAMETER(UOp, u, theta, phi, lambda)
     checkFinalized();                                                          \
     const auto [controlsOut, targetsOut] =                                     \
         ctrl(control, {qubit0, qubit1},                                        \
-             [&](ValueRange targets) -> SmallVector<Value> {                   \
-               const auto& [q0, q1] = OP_NAME(targets[0], targets[1]);         \
+             [&](ValueRange targets) -> llvm::SmallVector<Value> {             \
+               auto [q0, q1] = OP_NAME(targets[0], targets[1]);                \
                return {q0, q1};                                                \
              });                                                               \
     return {controlsOut[0], {targetsOut[0], targetsOut[1]}};                   \
@@ -425,8 +433,8 @@ DEFINE_ONE_TARGET_THREE_PARAMETER(UOp, u, theta, phi, lambda)
     checkFinalized();                                                          \
     const auto [controlsOut, targetsOut] =                                     \
         ctrl(controls, {qubit0, qubit1},                                       \
-             [&](ValueRange targets) -> SmallVector<Value> {                   \
-               const auto& [q0, q1] = OP_NAME(targets[0], targets[1]);         \
+             [&](ValueRange targets) -> llvm::SmallVector<Value> {             \
+               auto [q0, q1] = OP_NAME(targets[0], targets[1]);                \
                return {q0, q1};                                                \
              });                                                               \
     return {controlsOut, {targetsOut[0], targetsOut[1]}};                      \
@@ -458,8 +466,8 @@ DEFINE_TWO_TARGET_ZERO_PARAMETER(ECROp, ecr)
     checkFinalized();                                                          \
     const auto [controlsOut, targetsOut] =                                     \
         ctrl(control, {qubit0, qubit1},                                        \
-             [&](ValueRange targets) -> SmallVector<Value> {                   \
-               const auto& [q0, q1] = OP_NAME(PARAM, targets[0], targets[1]);  \
+             [&](ValueRange targets) -> llvm::SmallVector<Value> {             \
+               auto [q0, q1] = OP_NAME(PARAM, targets[0], targets[1]);         \
                return {q0, q1};                                                \
              });                                                               \
     return {controlsOut[0], {targetsOut[0], targetsOut[1]}};                   \
@@ -471,8 +479,8 @@ DEFINE_TWO_TARGET_ZERO_PARAMETER(ECROp, ecr)
     checkFinalized();                                                          \
     const auto [controlsOut, targetsOut] =                                     \
         ctrl(controls, {qubit0, qubit1},                                       \
-             [&](ValueRange targets) -> SmallVector<Value> {                   \
-               const auto& [q0, q1] = OP_NAME(PARAM, targets[0], targets[1]);  \
+             [&](ValueRange targets) -> llvm::SmallVector<Value> {             \
+               auto [q0, q1] = OP_NAME(PARAM, targets[0], targets[1]);         \
                return {q0, q1};                                                \
              });                                                               \
     return {controlsOut, {targetsOut[0], targetsOut[1]}};                      \
@@ -507,8 +515,8 @@ DEFINE_TWO_TARGET_ONE_PARAMETER(RZZOp, rzz, theta)
     checkFinalized();                                                          \
     const auto [controlsOut, targetsOut] =                                     \
         ctrl(control, {qubit0, qubit1},                                        \
-             [&](ValueRange targets) -> SmallVector<Value> {                   \
-               const auto& [q0, q1] =                                          \
+             [&](ValueRange targets) -> llvm::SmallVector<Value> {             \
+               auto [q0, q1] =                                                 \
                    OP_NAME(PARAM1, PARAM2, targets[0], targets[1]);            \
                return {q0, q1};                                                \
              });                                                               \
@@ -522,8 +530,8 @@ DEFINE_TWO_TARGET_ONE_PARAMETER(RZZOp, rzz, theta)
     checkFinalized();                                                          \
     const auto [controlsOut, targetsOut] =                                     \
         ctrl(controls, {qubit0, qubit1},                                       \
-             [&](ValueRange targets) -> SmallVector<Value> {                   \
-               const auto& [q0, q1] =                                          \
+             [&](ValueRange targets) -> llvm::SmallVector<Value> {             \
+               auto [q0, q1] =                                                 \
                    OP_NAME(PARAM1, PARAM2, targets[0], targets[1]);            \
                return {q0, q1};                                                \
              });                                                               \
@@ -554,15 +562,15 @@ ValueRange QCOProgramBuilder::barrier(ValueRange qubits) {
 
 std::pair<ValueRange, ValueRange> QCOProgramBuilder::ctrl(
     ValueRange controls, ValueRange targets,
-    const std::function<SmallVector<Value>(ValueRange)>& body) {
+    const std::function<llvm::SmallVector<Value>(ValueRange)>& body) {
   checkFinalized();
 
   auto ctrlOp = CtrlOp::create(*this, loc, controls, targets);
   auto& block = ctrlOp.getBodyRegion().emplaceBlock();
   const auto qubitType = QubitType::get(getContext());
-  for (size_t i = 0; i < targets.size(); ++i) {
+  for (const auto target : targets) {
     const auto arg = block.addArgument(qubitType, loc);
-    updateQubitTracking(targets[i], arg);
+    updateQubitTracking(target, arg);
   }
   const InsertionGuard guard(*this);
   setInsertionPointToStart(&block);

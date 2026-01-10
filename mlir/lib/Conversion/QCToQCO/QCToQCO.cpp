@@ -1132,6 +1132,8 @@ struct ConvertQCCtrlOp final : StatefulOpConversionPattern<qc::CtrlOp> {
     // Create block arguments for target qubits and store them in
     // `state.targetsIn`.
     auto& entryBlock = dstRegion.front();
+    assert(entryBlock.getNumArguments() == 0 &&
+           "QC ctrl region unexpectedly has entry block arguments");
     SmallVector<Value> qcoTargetAliases;
     qcoTargetAliases.reserve(numTargets);
     const auto qubitType = qco::QubitType::get(qcoOp.getContext());

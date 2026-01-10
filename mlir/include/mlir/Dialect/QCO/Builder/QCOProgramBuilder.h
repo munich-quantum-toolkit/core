@@ -988,8 +988,9 @@ public:
    * @par Example:
    * ```c++
    * {controls_out, targets_out} =
-   *   builder.ctrl(q0_in, q1_in, [&](ValueRange targets) {
-   *     return {builder.x(targets[0])};
+   *   builder.ctrl(q0_in, q1_in,
+   *     [&](ValueRange targets) -> llvm::SmallVector<Value> {
+   *       return {builder.x(targets[0])};
    *   });
    * ```
    * ```mlir
@@ -1001,7 +1002,7 @@ public:
    */
   std::pair<ValueRange, ValueRange>
   ctrl(ValueRange controls, ValueRange targets,
-       const std::function<SmallVector<Value>(ValueRange)>& body);
+       const std::function<llvm::SmallVector<Value>(ValueRange)>& body);
 
   //===--------------------------------------------------------------------===//
   // Deallocation

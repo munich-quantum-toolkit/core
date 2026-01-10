@@ -784,6 +784,9 @@ struct ConvertQCOCtrlOp final : OpConversionPattern<qco::CtrlOp> {
     rewriter.modifyOpInPlace(qcOp, [&] {
       auto& entryBlock = dstRegion.front();
       const auto numArgs = entryBlock.getNumArguments();
+      assert(
+          adaptor.getTargetsIn().size() == numArgs &&
+          +"qco.ctrl: entry block args must match number of target operands");
 
       // 1. Replace uses (Must be done BEFORE erasing)
       // We iterate 0..N using indices since the block args are still stable

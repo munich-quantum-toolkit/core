@@ -257,9 +257,9 @@ void CtrlOp::build(OpBuilder& odsBuilder, OperationState& odsState,
   odsBuilder.setInsertionPointToStart(&block);
   const auto qubitType = QubitType::get(odsBuilder.getContext());
   auto* op = odsBuilder.clone(*bodyUnitary.getOperation());
-  for (size_t i = 0; i < targets.size(); ++i) {
+  for (const auto target : targets) {
     const auto arg = block.addArgument(qubitType, odsState.location);
-    op->replaceUsesOfWith(targets[i], arg);
+    op->replaceUsesOfWith(target, arg);
   }
   YieldOp::create(odsBuilder, odsState.location, op->getResults());
 }
