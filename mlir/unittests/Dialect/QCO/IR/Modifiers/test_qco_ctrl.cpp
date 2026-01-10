@@ -24,7 +24,7 @@
 #include <mlir/IR/Verifier.h>
 #include <mlir/Parser/Parser.h>
 #include <mlir/Support/LLVM.h>
-#include <string.h>
+#include <string>
 
 using namespace mlir;
 using namespace mlir::qco;
