@@ -144,16 +144,18 @@ TEST_F(QCOCtrlOpTest, VerifierBodySize) {
     return {builder.x(innerTargets[0])};
   });
   auto ctrlOp = cast<CtrlOp>(builder.getBlock()->getOperations().back());
-  auto module = builder.finalize();
 
   // Insert an extra operation into the body
   auto& region = ctrlOp.getRegion();
   auto& block = region.front();
 
-  const OpBuilder::InsertionGuard guard(builder);
-  builder.setInsertionPoint(&block.back()); // Before Yield
-  // We can insert another XOp
-  builder.create<XOp>(builder.getUnknownLoc(), block.getArgument(0));
+  {
+    const OpBuilder::InsertionGuard guard(builder);
+    builder.setInsertionPoint(&block.back()); // Before Yield
+    // We can insert another XOp
+    XOp::create(builder, builder.getUnknownLoc(), block.getArgument(0));
+  }
+  auto module = builder.finalize();
 
   // Should fail because body must have exactly 2 operations
   EXPECT_TRUE(mlir::verify(ctrlOp).failed());

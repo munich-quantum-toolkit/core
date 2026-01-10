@@ -15,6 +15,7 @@
 #include <cstdint>
 #include <functional>
 #include <llvm/ADT/DenseSet.h>
+#include <llvm/ADT/STLFunctionalExtras.h>
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/Support/ErrorHandling.h>
 #include <mlir/IR/Builders.h>
@@ -1002,7 +1003,7 @@ public:
    */
   std::pair<ValueRange, ValueRange>
   ctrl(ValueRange controls, ValueRange targets,
-       const std::function<llvm::SmallVector<Value>(ValueRange)>& body);
+       llvm::function_ref<llvm::SmallVector<Value>(ValueRange)> body);
 
   //===--------------------------------------------------------------------===//
   // Deallocation

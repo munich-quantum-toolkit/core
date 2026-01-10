@@ -1143,7 +1143,7 @@ struct ConvertQCCtrlOp final : StatefulOpConversionPattern<qc::CtrlOp> {
         qcoTargetAliases.emplace_back(entryBlock.addArgument(qubitType, opLoc));
       }
     });
-    state.targetsIn.try_emplace(state.inCtrlOp, qcoTargetAliases);
+    state.targetsIn.try_emplace(state.inCtrlOp, std::move(qcoTargetAliases));
 
     rewriter.eraseOp(op);
     return success();

@@ -13,7 +13,6 @@
 #include "mlir/Dialect/QC/IR/QCDialect.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 
-#include <cassert>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/Func/Transforms/FuncConversions.h>
 #include <mlir/IR/BuiltinTypeInterfaces.h>
@@ -781,14 +780,16 @@ struct ConvertQCOCtrlOp final : OpConversionPattern<qco::CtrlOp> {
     auto& dstRegion = qcOp.getRegion();
     rewriter.cloneRegionBefore(op.getRegion(), dstRegion, dstRegion.end());
 
+    auto& entryBlock = dstRegion.front();
+    const auto numArgs = entryBlock.getNumArguments();
+    if (adaptor.getTargetsIn().size() != numArgs) {
+      return op.emitOpError() << "qco.ctrl: entry block args (" << numArgs
+                              << ") must match number of target operands ("
+                              << adaptor.getTargetsIn().size() << ")";
+    }
+
     // Remove all block arguments in the cloned region
     rewriter.modifyOpInPlace(qcOp, [&] {
-      auto& entryBlock = dstRegion.front();
-      const auto numArgs = entryBlock.getNumArguments();
-      assert(
-          adaptor.getTargetsIn().size() == numArgs &&
-          +"qco.ctrl: entry block args must match number of target operands");
-
       // 1. Replace uses (Must be done BEFORE erasing)
       // We iterate 0..N using indices since the block args are still stable
       // here.

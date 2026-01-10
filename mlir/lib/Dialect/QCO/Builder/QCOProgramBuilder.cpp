@@ -16,6 +16,7 @@
 #include <cstdint>
 #include <functional>
 #include <llvm/ADT/STLExtras.h>
+#include <llvm/ADT/STLFunctionalExtras.h>
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/Support/ErrorHandling.h>
 #include <llvm/Support/raw_ostream.h>
@@ -562,7 +563,7 @@ ValueRange QCOProgramBuilder::barrier(ValueRange qubits) {
 
 std::pair<ValueRange, ValueRange> QCOProgramBuilder::ctrl(
     ValueRange controls, ValueRange targets,
-    const std::function<llvm::SmallVector<Value>(ValueRange)>& body) {
+    llvm::function_ref<llvm::SmallVector<Value>(ValueRange)> body) {
   checkFinalized();
 
   auto ctrlOp = CtrlOp::create(*this, loc, controls, targets);
@@ -576,6 +577,11 @@ std::pair<ValueRange, ValueRange> QCOProgramBuilder::ctrl(
   setInsertionPointToStart(&block);
   const auto innerTargetsOut = body(block.getArguments());
   YieldOp::create(*this, loc, innerTargetsOut);
+
+  if (innerTargetsOut.size() != targets.size()) {
+    llvm::reportFatalUsageError(
+        "Ctrl body must return exactly one output qubit per target");
+  }
 
   // Update tracking
   const auto& controlsOut = ctrlOp.getControlsOut();

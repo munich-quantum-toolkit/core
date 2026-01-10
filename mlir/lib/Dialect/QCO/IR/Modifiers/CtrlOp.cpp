@@ -13,6 +13,8 @@
 #include <cstddef>
 #include <functional>
 #include <llvm/ADT/STLExtras.h>
+#include <llvm/ADT/STLFunctionalExtras.h>
+#include <llvm/ADT/SmallVector.h>
 #include <llvm/Support/Casting.h>
 #include <llvm/Support/ErrorHandling.h>
 #include <mlir/IR/Builders.h>
@@ -49,7 +51,7 @@ struct MergeNestedCtrl final : OpRewritePattern<CtrlOp> {
     }
 
     // Merge controls
-    SmallVector<Value> newControls(op.getControlsIn());
+    llvm::SmallVector<Value> newControls(op.getControlsIn());
     for (const auto control : bodyCtrlOp.getControlsIn()) {
       newControls.push_back(control);
     }
@@ -103,16 +105,17 @@ struct CtrlInlineGPhase final : OpRewritePattern<CtrlOp> {
       return failure();
     }
 
-    SmallVector<Value> newControls(op.getControlsIn());
+    llvm::SmallVector<Value> newControls(op.getControlsIn());
     const auto newTarget = newControls.back();
     newControls.pop_back();
-    auto ctrlOp = CtrlOp::create(rewriter, op.getLoc(), newControls, newTarget,
-                                 [&](ValueRange targets) -> SmallVector<Value> {
-                                   auto pOp = POp::create(rewriter, op.getLoc(),
-                                                          targets[0],
-                                                          gPhaseOp.getTheta());
-                                   return {pOp.getQubitOut()};
-                                 });
+    auto ctrlOp =
+        CtrlOp::create(rewriter, op.getLoc(), newControls, newTarget,
+                       [&](ValueRange targets) -> llvm::SmallVector<Value> {
+                         auto pOp =
+                             POp::create(rewriter, op.getLoc(), targets[0],
+                                         gPhaseOp.getTheta());
+                         return {pOp.getQubitOut()};
+                       });
 
     rewriter.replaceOp(op, ctrlOp.getResults());
 
@@ -140,7 +143,7 @@ struct CtrlInlineId final : OpRewritePattern<CtrlOp> {
 
     auto idOp = rewriter.create<IdOp>(op.getLoc(), op.getTargetsIn().front());
 
-    SmallVector<Value> newOperands;
+    llvm::SmallVector<Value> newOperands;
     newOperands.reserve(op.getNumControls() + 1);
     newOperands.append(op.getControlsIn().begin(), op.getControlsIn().end());
     newOperands.push_back(idOp.getQubitOut());
@@ -267,7 +270,7 @@ void CtrlOp::build(OpBuilder& odsBuilder, OperationState& odsState,
 void CtrlOp::build(
     OpBuilder& odsBuilder, OperationState& odsState, ValueRange controls,
     ValueRange targets,
-    const std::function<SmallVector<Value>(ValueRange)>& bodyBuilder) {
+    llvm::function_ref<llvm::SmallVector<Value>(ValueRange)> bodyBuilder) {
   build(odsBuilder, odsState, controls, targets);
   auto& block = odsState.regions.front()->emplaceBlock();
   const auto qubitType = QubitType::get(odsBuilder.getContext());
