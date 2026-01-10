@@ -19,12 +19,14 @@
 #include <llvm/Support/ErrorHandling.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
+#include <mlir/Dialect/SCF/IR/SCF.h>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OwningOpRef.h>
 #include <mlir/IR/Value.h>
 #include <mlir/IR/ValueRange.h>
+#include <optional>
 #include <string>
 #include <utility>
 #include <variant>
@@ -441,6 +443,134 @@ QCProgramBuilder& QCProgramBuilder::dealloc(Value qubit) {
   DeallocOp::create(*this, loc, qubit);
 
   return *this;
+}
+
+//===----------------------------------------------------------------------===//
+// SCF operations
+//===----------------------------------------------------------------------===//
+
+QCProgramBuilder&
+QCProgramBuilder::scfFor(Value lowerbound, Value upperbound, Value step,
+                         const std::function<void(Value)>& body) {
+  checkFinalized();
+
+  create<scf::ForOp>(loc, lowerbound, upperbound, step, ValueRange{},
+                     [&](OpBuilder& b, Location, Value iv, ValueRange) {
+                       body(iv);
+                       b.create<scf::YieldOp>(loc);
+                     });
+
+  return *this;
+}
+
+QCProgramBuilder&
+QCProgramBuilder::scfWhile(const std::function<void()>& beforeBody,
+                           const std::function<void()>& afterBody) {
+  checkFinalized();
+
+  create<scf::WhileOp>(
+      loc, TypeRange{}, ValueRange{},
+      [&](OpBuilder& /*b*/, Location, ValueRange) { beforeBody(); },
+      [&](OpBuilder& b, Location loc, ValueRange) {
+        afterBody();
+        b.create<scf::YieldOp>(loc);
+      });
+
+  return *this;
+}
+
+QCProgramBuilder&
+QCProgramBuilder::scfIf(Value cond, const std::function<void()>& thenBody,
+                        std::optional<std::function<void()>> elseBody) {
+  checkFinalized();
+
+  if (!elseBody) {
+    create<scf::IfOp>(loc, cond, [&](OpBuilder& b, Location loc) {
+      thenBody();
+      b.create<scf::YieldOp>(loc);
+    });
+  } else {
+    create<scf::IfOp>(
+        loc, cond,
+        [&](OpBuilder& b, Location loc) {
+          thenBody();
+          b.create<scf::YieldOp>(loc);
+        },
+        [&](OpBuilder& b, Location loc) {
+          (*elseBody)();
+          b.create<scf::YieldOp>(loc);
+        });
+  }
+  return *this;
+}
+
+QCProgramBuilder& QCProgramBuilder::scfCondition(Value condition) {
+  checkFinalized();
+
+  create<scf::ConditionOp>(loc, condition, ValueRange{});
+  return *this;
+}
+
+//===----------------------------------------------------------------------===//
+// Func operations
+//===----------------------------------------------------------------------===//
+
+QCProgramBuilder& QCProgramBuilder::funcCall(StringRef name,
+                                             ValueRange operands) {
+  checkFinalized();
+
+  create<func::CallOp>(loc, name, TypeRange{}, operands);
+  return *this;
+}
+
+QCProgramBuilder& QCProgramBuilder::funcReturn() {
+  checkFinalized();
+
+  create<func::ReturnOp>(loc);
+  return *this;
+}
+
+QCProgramBuilder&
+QCProgramBuilder::funcFunc(StringRef name, TypeRange argTypes,
+                           const std::function<void(ValueRange)>& body) {
+  checkFinalized();
+
+  // Set the insertionPoint
+  const OpBuilder::InsertionGuard guard(*this);
+  setInsertionPointToEnd(module.getBody());
+
+  // Create the empty func operation
+  const auto funcType = getFunctionType(argTypes, {});
+  auto funcOp = create<func::FuncOp>(loc, name, funcType);
+  auto* entryBlock = funcOp.addEntryBlock();
+
+  setInsertionPointToStart(entryBlock);
+
+  // Build function body
+  body(entryBlock->getArguments());
+
+  return *this;
+}
+
+//===----------------------------------------------------------------------===//
+// Arith operations
+//===----------------------------------------------------------------------===//
+
+Value QCProgramBuilder::arithConstantIndex(int64_t index) {
+  checkFinalized();
+
+  const auto op =
+      create<arith::ConstantOp>(loc, getIndexType(), getIndexAttr(index));
+  return op->getResult(0);
+}
+
+Value QCProgramBuilder::arithConstantBool(bool b) {
+  checkFinalized();
+
+  const auto i1Type = getI1Type();
+  const auto op =
+      create<arith::ConstantOp>(loc, i1Type, getIntegerAttr(i1Type, b ? 1 : 0));
+  return op->getResult(0);
 }
 
 //===----------------------------------------------------------------------===//
