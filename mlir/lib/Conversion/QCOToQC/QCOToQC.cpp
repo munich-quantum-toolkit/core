@@ -841,7 +841,7 @@ struct ConvertQCOScfIfOp final : OpConversionPattern<scf::IfOp> {
   matchAndRewrite(scf::IfOp op, OpAdaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
     // Create the new if operation
-    auto newIf = rewriter.create<scf::IfOp>(op.getLoc(), ValueRange{},
+    auto newIf = rewriter.create<scf::IfOp>(op.getLoc(), TypeRange{},
                                             op.getCondition(), false);
     // Inline the regions
     rewriter.inlineRegionBefore(op.getThenRegion(), newIf.getThenRegion(),
@@ -896,7 +896,7 @@ struct ConvertQCOScfWhileOp final : OpConversionPattern<scf::WhileOp> {
                   ConversionPatternRewriter& rewriter) const override {
     // Create the new while operation
     auto newWhileOp =
-        rewriter.create<scf::WhileOp>(op->getLoc(), ValueRange{}, ValueRange{});
+        rewriter.create<scf::WhileOp>(op->getLoc(), TypeRange{}, ValueRange{});
 
     // Replace the uses of the blockarguments with the init values
     const auto& inits = adaptor.getInits();
@@ -959,6 +959,7 @@ struct ConvertQCOScfForOp final : OpConversionPattern<scf::ForOp> {
          llvm::zip_equal(op.getRegionIterArgs(), adaptor.getInitArgs())) {
       qcoQubit.replaceAllUsesWith(qcQubit);
     }
+    rewriter.replaceAllUsesWith(op.getInductionVar(), newFor.getInductionVar());
 
     // Move all the operations from the old block to the new block
     auto* newBlock = newFor.getBody();
@@ -966,7 +967,7 @@ struct ConvertQCOScfForOp final : OpConversionPattern<scf::ForOp> {
     rewriter.eraseOp(newBlock->getTerminator());
     newBlock->getOperations().splice(newBlock->end(),
                                      op.getBody()->getOperations());
-    rewriter.replaceAllUsesWith(op.getInductionVar(), newFor.getInductionVar());
+
     // Replace the result values with the init values
     rewriter.replaceOp(op, adaptor.getInitArgs());
     return success();
@@ -1078,14 +1079,16 @@ struct ConvertQCOFuncFuncOp final : OpConversionPattern<func::FuncOp> {
   LogicalResult
   matchAndRewrite(func::FuncOp op, OpAdaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
-    const SmallVector<Type> argumentTypes(
-        op.front().getNumArguments(),
-        qc::QubitType::get(rewriter.getContext()));
-    for (auto blockArg : op.front().getArguments()) {
-      blockArg.setType(qc::QubitType::get(rewriter.getContext()));
-    }
-    auto newFuncType = rewriter.getFunctionType(argumentTypes, {});
-    op.setFunctionType(newFuncType);
+    rewriter.modifyOpInPlace(op, [&] {
+      const SmallVector<Type> argumentTypes(
+          op.front().getNumArguments(),
+          qc::QubitType::get(rewriter.getContext()));
+      for (auto blockArg : op.front().getArguments()) {
+        blockArg.setType(qc::QubitType::get(rewriter.getContext()));
+      }
+      auto newFuncType = rewriter.getFunctionType(argumentTypes, {});
+      op.setFunctionType(newFuncType);
+    });
     return success();
   }
 };
@@ -1114,6 +1117,7 @@ struct ConvertQCOFuncReturnOp final : OpConversionPattern<func::ReturnOp> {
     return success();
   }
 };
+
 /**
  * @brief Pass implementation for QCO-to-QC conversion
  *

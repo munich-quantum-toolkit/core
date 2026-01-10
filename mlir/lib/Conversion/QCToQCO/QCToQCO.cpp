@@ -135,6 +135,9 @@ collectUniqueQubits(Operation* op, LoweringState* state, MLIRContext* ctx) {
     if (region.empty()) {
       continue;
     }
+    // check that the region has only one block
+    assert(region.hasOneBlock() && "Expected single-block region");
+
     // iterate over all operations inside the region
     // currently assumes that each region only has one block
     for (auto& operation : region.front().getOperations()) {
@@ -1513,6 +1516,11 @@ struct ConvertQCScfYieldOp final : StatefulOpConversionPattern<scf::YieldOp> {
   LogicalResult
   matchAndRewrite(scf::YieldOp op, OpAdaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
+    auto const qcType = qc::QubitType::get(rewriter.getContext());
+    assert(llvm::all_of(op.getOperandTypes(),
+                        [&](Type type) { return type == qcType; }) &&
+           "Not all operands are qc qubits");
+
     const auto& parentRegion = op->getParentRegion();
     const auto& qubitMap = getState().qubitMap[parentRegion];
     const auto& orderedQubits =
@@ -1551,6 +1559,7 @@ struct ConvertQCScfConditionOp final
   LogicalResult
   matchAndRewrite(scf::ConditionOp op, OpAdaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
+
     const auto& parentRegion = op->getParentRegion();
     const auto& qubitMap = getState().qubitMap[parentRegion];
     const auto& orderedQubits =
@@ -1589,6 +1598,11 @@ struct ConvertQCFuncCallOp final : StatefulOpConversionPattern<func::CallOp> {
   LogicalResult
   matchAndRewrite(func::CallOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
+    auto const qcType = qc::QubitType::get(rewriter.getContext());
+    assert(llvm::all_of(op.getOperandTypes(),
+                        [&](Type type) { return type == qcType; }) &&
+           "Not all operands are qc qubits");
+
     auto& qubitMap = getState().qubitMap[op->getParentRegion()];
     auto qcQubits = op->getOperands();
 
@@ -1637,21 +1651,28 @@ struct ConvertQCFuncFuncOp final : StatefulOpConversionPattern<func::FuncOp> {
   LogicalResult
   matchAndRewrite(func::FuncOp op, OpAdaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
-    auto& qubitMap = getState().qubitMap[&op->getRegion(0)];
-    const SmallVector<Type> qcoTypes(
-        op.front().getNumArguments(),
-        qco::QubitType::get(rewriter.getContext()));
+    auto const qcType = qc::QubitType::get(rewriter.getContext());
+    assert(llvm::all_of(op->getOperandTypes(),
+                        [&](Type type) { return type == qcType; }) &&
+           "Not all operands are qc qubits");
 
-    // set the arguments to qco qubit type
-    for (auto blockArg : op.front().getArguments()) {
-      blockArg.setType(qco::QubitType::get(rewriter.getContext()));
-      qubitMap.try_emplace(blockArg, blockArg);
-    }
+    rewriter.modifyOpInPlace(op, [&] {
+      auto& qubitMap = getState().qubitMap[&op->getRegion(0)];
+      const SmallVector<Type> qcoTypes(
+          op.front().getNumArguments(),
+          qco::QubitType::get(rewriter.getContext()));
 
-    // change the function signature to return the same number of qco Qubits as
-    // it gets as input
-    auto newFuncType = rewriter.getFunctionType(qcoTypes, qcoTypes); //
-    op.setFunctionType(newFuncType);
+      // set the arguments to qco qubit type
+      for (auto blockArg : op.front().getArguments()) {
+        blockArg.setType(qco::QubitType::get(rewriter.getContext()));
+        qubitMap.try_emplace(blockArg, blockArg);
+      }
+
+      // change the function signature to return the same number of qco Qubits
+      // as it gets as input
+      auto newFuncType = rewriter.getFunctionType(qcoTypes, qcoTypes); //
+      op.setFunctionType(newFuncType);
+    });
     return success();
   }
 };
@@ -1677,6 +1698,11 @@ struct ConvertQCFuncReturnOp final
   LogicalResult
   matchAndRewrite(func::ReturnOp op, OpAdaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
+    auto const qcType = qc::QubitType::get(rewriter.getContext());
+    assert(llvm::all_of(op.getOperandTypes(),
+                        [&](Type type) { return type == qcType; }) &&
+           "Not all operands are qc qubits");
+
     const auto& parentRegion = op->getParentRegion();
     const auto& qubitMap = getState().qubitMap[parentRegion];
     const auto& orderedQubits =
@@ -1692,6 +1718,7 @@ struct ConvertQCFuncReturnOp final
     return success();
   }
 };
+
 /**
  * @brief Pass implementation for QC-to-QCO conversion
  *
