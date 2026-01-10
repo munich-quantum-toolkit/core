@@ -13,6 +13,7 @@
 #include "mlir/Dialect/QC/IR/QCDialect.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 
+#include <cassert>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/Func/Transforms/FuncConversions.h>
 #include <mlir/IR/BuiltinTypeInterfaces.h>
