@@ -916,7 +916,6 @@ struct ConvertQCOScfWhileOp final : OpConversionPattern<scf::WhileOp> {
                                            op.getBeforeBody()->getOperations());
     newAfterBlock->getOperations().splice(newAfterBlock->end(),
                                           op.getAfterBody()->getOperations());
-    llvm::outs() << newWhileOp.getBefore().getBlocks().size() << "\n";
     // replace the result values with the init values
     rewriter.replaceOp(op, inits);
     return success();
