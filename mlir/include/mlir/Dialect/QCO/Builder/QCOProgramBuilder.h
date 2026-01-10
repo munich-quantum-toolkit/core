@@ -14,6 +14,7 @@
 
 #include <cstdint>
 #include <functional>
+#include <llvm/ADT/DenseMap.h>
 #include <llvm/ADT/DenseSet.h>
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/Support/ErrorHandling.h>
@@ -1052,7 +1053,7 @@ public:
    * ```mlir
    * %q1 = scf.for %iv = %lb to %ub step %step iter_args(%arg0 = %q0)
    * -> !qco.qubit {
-   *   %q2 = qc.x %arg0 : !qco.qubit -> !qco.qubit
+   *   %q2 = qco.x %arg0 : !qco.qubit -> !qco.qubit
    *   scf.yield %q2 : !qco.qubit
    * }
    * ```
@@ -1074,7 +1075,7 @@ public:
    * builder.scfWhile(args, [&](ValueRange iterArgs) {
    *   auto q1 = builder.h(iterArgs[0]);
    *   auto [q2, measureRes] = builder.measure(q1);
-   *   builder.condition(measureRes, q2);
+   *   builder.scfCondition(measureRes, q2);
    * }, [&](ValueRange iterArgs) {
    *   auto q1 = builder.x(iterArgs[0]);
    *   builder.scfYield(q1);
