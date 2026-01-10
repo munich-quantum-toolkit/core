@@ -7,6 +7,7 @@
 # Licensed under the MIT License
 
 add_subdirectory(pipeline)
+add_subdirectory(conversion)
 
 add_custom_target(mqt-core-mlir-unittests)
 

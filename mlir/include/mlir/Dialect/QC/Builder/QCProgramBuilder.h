@@ -892,7 +892,7 @@ public:
    * ```
    */
   QCProgramBuilder& scfFor(Value lowerbound, Value upperbound, Value step,
-                           const std::function<void(OpBuilder&)>& body);
+                           const std::function<void()>& body);
 
   /**
    * @brief Constructs a scf.while operation without return values
@@ -924,8 +924,8 @@ public:
    * }
    * ```
    */
-  QCProgramBuilder& scfWhile(const std::function<void(OpBuilder&)>& beforeBody,
-                             const std::function<void(OpBuilder&)>& afterBody);
+  QCProgramBuilder& scfWhile(const std::function<void()>& beforeBody,
+                             const std::function<void()>& afterBody);
 
   /**
    * @brief Constructs a scf.if operation without return values
@@ -952,9 +952,9 @@ public:
    * }
    * ```
    */
-  QCProgramBuilder&
-  scfIf(Value condition, const std::function<void(OpBuilder&)>& thenBody,
-        const std::function<void(OpBuilder&)>& elseBody = nullptr);
+  QCProgramBuilder& scfIf(Value condition,
+                          const std::function<void()>& thenBody,
+                          const std::function<void()>& elseBody = nullptr);
 
   /**
    * @brief Constructs a scf.condition operation without any additional Values
@@ -1030,9 +1030,8 @@ public:
    * }
    * ```
    */
-  QCProgramBuilder&
-  funcFunc(StringRef name, TypeRange argTypes,
-           const std::function<void(OpBuilder&, ValueRange)>& body);
+  QCProgramBuilder& funcFunc(StringRef name, TypeRange argTypes,
+                             const std::function<void(ValueRange)>& body);
 
   //===--------------------------------------------------------------------===//
   // Arith operations

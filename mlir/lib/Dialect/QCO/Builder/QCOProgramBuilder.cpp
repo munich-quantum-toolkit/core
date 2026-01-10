@@ -603,7 +603,7 @@ QCOProgramBuilder& QCOProgramBuilder::dealloc(Value qubit) {
 
 ValueRange QCOProgramBuilder::scfFor(
     Value lowerbound, Value upperbound, Value step, ValueRange initArgs,
-    const std::function<ValueRange(OpBuilder&, Value, ValueRange)>& body) {
+    const std::function<ValueRange(Value, ValueRange)>& body) {
   // Create the empty for operation
   auto forOp = create<scf::ForOp>(loc, lowerbound, upperbound, step, initArgs);
   auto* forBody = forOp.getBody();
@@ -620,7 +620,7 @@ ValueRange QCOProgramBuilder::scfFor(
     validQubits[bodyRegion].insert(arg);
   }
   // Build the body
-  body(*this, iv, loopArgs);
+  body(iv, loopArgs);
 
   // Update the qubit tracking
   for (const auto& [initArg, result] :
@@ -633,8 +633,8 @@ ValueRange QCOProgramBuilder::scfFor(
 
 ValueRange QCOProgramBuilder::scfWhile(
     ValueRange initArgs,
-    const std::function<ValueRange(OpBuilder&, ValueRange)>& beforeBody,
-    const std::function<ValueRange(OpBuilder&, ValueRange)>& afterBody) {
+    const std::function<ValueRange(ValueRange)>& beforeBody,
+    const std::function<ValueRange(ValueRange)>& afterBody) {
   // Create the empty while operation
   auto whileOp = create<scf::WhileOp>(loc, initArgs.getTypes(), initArgs);
   const SmallVector<Location> locs(initArgs.size(), loc);
@@ -655,7 +655,7 @@ ValueRange QCOProgramBuilder::scfWhile(
     validQubits[beforeRegion].insert(arg);
   }
 
-  beforeBody(*this, beforeArgs);
+  beforeBody(beforeArgs);
 
   // Construct the after block
   auto* afterBlock =
@@ -671,7 +671,7 @@ ValueRange QCOProgramBuilder::scfWhile(
     validQubits[afterRegion].insert(arg);
   }
 
-  afterBody(*this, afterArgs);
+  afterBody(afterArgs);
 
   // Update the qubit tracking
   for (const auto& [arg, result] :
@@ -682,10 +682,10 @@ ValueRange QCOProgramBuilder::scfWhile(
   return whileOp->getResults();
 }
 
-ValueRange QCOProgramBuilder::scfIf(
-    Value condition, ValueRange qubits,
-    const std::function<ValueRange(OpBuilder&)>& thenBody,
-    const std::function<ValueRange(OpBuilder&)>& elseBody) {
+ValueRange
+QCOProgramBuilder::scfIf(Value condition, ValueRange qubits,
+                         const std::function<ValueRange()>& thenBody,
+                         const std::function<ValueRange()>& elseBody) {
   // Create the empty while operation
   auto ifOp = create<scf::IfOp>(loc, qubits.getTypes(), condition,
                                 /*withElseRegion=*/true);
@@ -705,13 +705,13 @@ ValueRange QCOProgramBuilder::scfIf(
   }
 
   // Build the then body
-  thenBody(*this);
+  thenBody();
 
   // Set the insertionpoint
   setInsertionPointToStart(&elseBlock);
 
   // Build the else body
-  elseBody(*this);
+  elseBody();
 
   // Update the qubit tracking
   for (const auto& [arg, result] : llvm::zip_equal(qubits, ifOp.getResults())) {
@@ -749,9 +749,10 @@ QCOProgramBuilder& QCOProgramBuilder::funcReturn(ValueRange returnValues) {
   create<func::ReturnOp>(loc, returnValues);
   return *this;
 }
-QCOProgramBuilder& QCOProgramBuilder::funcFunc(
-    StringRef name, TypeRange argTypes, TypeRange resultTypes,
-    const std::function<void(OpBuilder&, ValueRange)>& body) {
+QCOProgramBuilder&
+QCOProgramBuilder::funcFunc(StringRef name, TypeRange argTypes,
+                            TypeRange resultTypes,
+                            const std::function<void(ValueRange)>& body) {
   // Set the insertionPoint
   const OpBuilder::InsertionGuard guard(*this);
   setInsertionPointToEnd(module.getBody());
@@ -769,7 +770,7 @@ QCOProgramBuilder& QCOProgramBuilder::funcFunc(
   setInsertionPointToStart(entryBlock);
 
   // Build function body
-  body(*this, entryBlock->getArguments());
+  body(entryBlock->getArguments());
 
   return *this;
 }

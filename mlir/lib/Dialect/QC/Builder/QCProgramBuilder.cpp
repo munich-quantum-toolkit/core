@@ -448,12 +448,12 @@ QCProgramBuilder& QCProgramBuilder::dealloc(Value qubit) {
 // SCF operations
 //===----------------------------------------------------------------------===//
 
-QCProgramBuilder&
-QCProgramBuilder::scfFor(Value lowerbound, Value upperbound, Value step,
-                         const std::function<void(OpBuilder&)>& body) {
+QCProgramBuilder& QCProgramBuilder::scfFor(Value lowerbound, Value upperbound,
+                                           Value step,
+                                           const std::function<void()>& body) {
   create<scf::ForOp>(loc, lowerbound, upperbound, step, ValueRange{},
                      [&](OpBuilder& b, Location, Value, ValueRange) {
-                       body(b);
+                       body();
                        b.create<scf::YieldOp>(loc);
                      });
 
@@ -461,13 +461,13 @@ QCProgramBuilder::scfFor(Value lowerbound, Value upperbound, Value step,
 }
 
 QCProgramBuilder&
-QCProgramBuilder::scfWhile(const std::function<void(OpBuilder&)>& beforeBody,
-                           const std::function<void(OpBuilder&)>& afterBody) {
+QCProgramBuilder::scfWhile(const std::function<void()>& beforeBody,
+                           const std::function<void()>& afterBody) {
   create<scf::WhileOp>(
       loc, TypeRange{}, ValueRange{},
-      [&](OpBuilder& b, Location, ValueRange) { beforeBody(b); },
+      [&](OpBuilder& /*b*/, Location, ValueRange) { beforeBody(); },
       [&](OpBuilder& b, Location loc, ValueRange) {
-        afterBody(b);
+        afterBody();
         b.create<scf::YieldOp>(loc);
       });
 
@@ -475,23 +475,22 @@ QCProgramBuilder::scfWhile(const std::function<void(OpBuilder&)>& beforeBody,
 }
 
 QCProgramBuilder&
-QCProgramBuilder::scfIf(Value cond,
-                        const std::function<void(OpBuilder&)>& thenBody,
-                        const std::function<void(OpBuilder&)>& elseBody) {
+QCProgramBuilder::scfIf(Value cond, const std::function<void()>& thenBody,
+                        const std::function<void()>& elseBody) {
   if (!elseBody) {
     create<scf::IfOp>(loc, cond, [&](OpBuilder& b, Location loc) {
-      thenBody(b);
+      thenBody();
       b.create<scf::YieldOp>(loc);
     });
   } else {
     create<scf::IfOp>(
         loc, cond,
         [&](OpBuilder& b, Location loc) {
-          thenBody(b);
+          thenBody();
           b.create<scf::YieldOp>(loc);
         },
         [&](OpBuilder& b, Location loc) {
-          elseBody(b);
+          elseBody();
           b.create<scf::YieldOp>(loc);
         });
   }
@@ -518,9 +517,9 @@ QCProgramBuilder& QCProgramBuilder::funcReturn() {
   return *this;
 }
 
-QCProgramBuilder& QCProgramBuilder::funcFunc(
-    StringRef name, TypeRange argTypes,
-    const std::function<void(OpBuilder&, ValueRange)>& body) {
+QCProgramBuilder&
+QCProgramBuilder::funcFunc(StringRef name, TypeRange argTypes,
+                           const std::function<void(ValueRange)>& body) {
   // Set the insertionPoint
   const OpBuilder::InsertionGuard guard(*this);
   setInsertionPointToEnd(module.getBody());
@@ -533,7 +532,7 @@ QCProgramBuilder& QCProgramBuilder::funcFunc(
   setInsertionPointToStart(entryBlock);
 
   // Build function body
-  body(*this, entryBlock->getArguments());
+  body(entryBlock->getArguments());
 
   return *this;
 }

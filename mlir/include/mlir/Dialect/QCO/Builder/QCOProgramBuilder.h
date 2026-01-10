@@ -1057,9 +1057,9 @@ public:
    * }
    * ```
    */
-  ValueRange
-  scfFor(Value lowerbound, Value upperbound, Value step, ValueRange initArgs,
-         const std::function<ValueRange(OpBuilder&, Value, ValueRange)>& body);
+  ValueRange scfFor(Value lowerbound, Value upperbound, Value step,
+                    ValueRange initArgs,
+                    const std::function<ValueRange(Value, ValueRange)>& body);
   /**
    * @brief Constructs a scf.while operation with return values
    *
@@ -1092,10 +1092,9 @@ public:
    * }
    * ```
    */
-  ValueRange
-  scfWhile(ValueRange args,
-           const std::function<ValueRange(OpBuilder&, ValueRange)>& beforeBody,
-           const std::function<ValueRange(OpBuilder&, ValueRange)>& afterBody);
+  ValueRange scfWhile(ValueRange args,
+                      const std::function<ValueRange(ValueRange)>& beforeBody,
+                      const std::function<ValueRange(ValueRange)>& afterBody);
 
   /**
    * @brief Constructs a scf.if operation with return values
@@ -1128,8 +1127,8 @@ public:
    * ```
    */
   ValueRange scfIf(Value condition, ValueRange qubits,
-                   const std::function<ValueRange(OpBuilder&)>& thenBody,
-                   const std::function<ValueRange(OpBuilder&)>& elseBody);
+                   const std::function<ValueRange()>& thenBody,
+                   const std::function<ValueRange()>& elseBody);
 
   /**
    * @brief Constructs a scf.condition operation with yielded values
@@ -1225,9 +1224,9 @@ public:
    * }
    * ```
    */
-  QCOProgramBuilder&
-  funcFunc(StringRef name, TypeRange argTypes, TypeRange resultTypes,
-           const std::function<void(OpBuilder&, ValueRange)>& body);
+  QCOProgramBuilder& funcFunc(StringRef name, TypeRange argTypes,
+                              TypeRange resultTypes,
+                              const std::function<void(ValueRange)>& body);
 
   //===--------------------------------------------------------------------===//
   // Arith operations
