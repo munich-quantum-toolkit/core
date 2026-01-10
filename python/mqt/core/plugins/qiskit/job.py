@@ -34,7 +34,7 @@ def __dir__() -> list[str]:
     return __all__
 
 
-class QDMIJob(JobV1):  # type: ignore[misc]
+class QDMIJob(JobV1):
     """Qiskit job wrapping one or more QDMI/FoMaC jobs.
 
     This class handles both single-circuit and multi-circuit execution,
