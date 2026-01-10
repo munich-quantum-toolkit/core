@@ -15,6 +15,7 @@
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/BuiltinOps.h>
+#include <mlir/IR/Diagnostics.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/Operation.h>
 #include <mlir/IR/OwningOpRef.h>
@@ -23,6 +24,7 @@
 #include <mlir/IR/Verifier.h>
 #include <mlir/Parser/Parser.h>
 #include <mlir/Support/LLVM.h>
+#include <string.h>
 
 using namespace mlir;
 using namespace mlir::qco;
@@ -55,11 +57,11 @@ protected:
 
   bool testParse(StringRef ctrlOpAssembly) {
     // Wrap the op in a function to provide operands
-    std::string source =
+    const std::string source =
         (Twine("func.func @test(%q0: !qco.qubit, %q1: !qco.qubit) {\n") +
          ctrlOpAssembly + "\n" + "  return\n" + "}")
             .str();
-    ScopedDiagnosticHandler diagHandler(&context);
+    const ScopedDiagnosticHandler diagHandler(&context);
     // Parse should fail
     return parseSourceString<ModuleOp>(source, &context).get() == nullptr;
   };
@@ -172,7 +174,7 @@ TEST_F(QCOCtrlOpTest, VerifierBodySize) {
   auto& region = ctrlOp.getRegion();
   auto& block = region.front();
 
-  OpBuilder::InsertionGuard guard(builder);
+  const OpBuilder::InsertionGuard guard(builder);
   builder.setInsertionPoint(&block.back()); // Before Yield
   // We can insert another XOp
   builder.create<XOp>(builder.getUnknownLoc(), block.getArgument(0));
