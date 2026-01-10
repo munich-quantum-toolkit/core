@@ -1045,8 +1045,8 @@ public:
    *
    * @par Example:
    * ```c++
-   * builder.scfFor(lb, ub, step, initArgs, [&] {
-   *    auto q1 = builder.x(initArgs[0]);
+   * builder.scfFor(lb, ub, step, initArgs, [&](Value iv, ValueRange iterArgs) {
+   *    auto q1 = builder.x(iterArgs[0]);
    *    builder.scfYield(q1);
    * });
    * ```
@@ -1298,7 +1298,7 @@ private:
    * @param qubit Qubit value to validate
    * @throws Aborts if qubit is not tracked (consumed or never created)
    */
-  void validateQubitValue(Value qubit);
+  void validateQubitValue(Value qubit, Region* region) const;
 
   /**
    * @brief Update tracking when an operation consumes and produces a qubit

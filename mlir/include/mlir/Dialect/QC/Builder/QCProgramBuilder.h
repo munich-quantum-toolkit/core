@@ -884,7 +884,7 @@ public:
    *
    * @par Example:
    * ```c++
-   * builder.scfFor(lb, ub, step, [&] { builder.x(q0); });
+   * builder.scfFor(lb, ub, step, [&](Value iv) { builder.x(q0); });
    * ```
    * ```mlir
    * scf.for %iv = %lb to %ub step %step {
@@ -908,10 +908,9 @@ public:
    * builder.scfWhile([&] {
    *   builder.h(q0);
    *   auto res = builder.measure(q0);
-   *   builder.condition(res);
+   *   builder.scfCondition(res);
    * }, [&] {
    *   builder.x(q0);
-   *   builder.scfYield();
    * });
    * ```
    * ```mlir
