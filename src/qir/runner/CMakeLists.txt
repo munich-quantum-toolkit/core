@@ -1,5 +1,5 @@
-# Copyright (c) 2023 - 2025 Chair for Design Automation, TUM
-# Copyright (c) 2025 Munich Quantum Software Company GmbH
+# Copyright (c) 2023 - 2026 Chair for Design Automation, TUM
+# Copyright (c) 2025 - 2026 Munich Quantum Software Company GmbH
 # All rights reserved.
 #
 # SPDX-License-Identifier: MIT
@@ -9,12 +9,7 @@
 set(TARGET_NAME ${MQT_CORE_TARGET_NAME}-qir-runner)
 
 if(NOT TARGET ${TARGET_NAME})
-  if(MLIR_VERSION VERSION_GREATER_EQUAL 20.0)
-    add_llvm_tool(${TARGET_NAME} Runner.cpp DEPENDS intrinsics_gen EXPORT_SYMBOLS)
-  else()
-    add_llvm_tool(${TARGET_NAME} Runner.cpp DEPENDS intrinsics_gen)
-    export_executable_symbols(${TARGET_NAME})
-  endif()
+  add_llvm_tool(${TARGET_NAME} Runner.cpp DEPENDS intrinsics_gen EXPORT_SYMBOLS)
 
   # Get the native target libraries
   llvm_map_components_to_libnames(llvm_native_libs native)
@@ -26,9 +21,12 @@ if(NOT TARGET ${TARGET_NAME})
   # Set versioning information
   set_target_properties(${TARGET_NAME} PROPERTIES VERSION ${PROJECT_VERSION} EXPORT_NAME
                                                                              CoreQIRRunner)
-  # place in the bin directory
-  set_target_properties(${TARGET_NAME} PROPERTIES RUNTIME_OUTPUT_DIRECTORY
-                                                  "${CMAKE_BINARY_DIR}/bin")
+  # Set the appropriate output directories
+  set_target_properties(
+    ${TARGET_NAME}
+    PROPERTIES LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_LIBDIR}"
+               ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_LIBDIR}"
+               RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_BINDIR}")
 
   # Set c++ standard
   target_compile_features(${TARGET_NAME} PRIVATE cxx_std_20)

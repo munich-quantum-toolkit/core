@@ -1,5 +1,5 @@
-# Copyright (c) 2023 - 2025 Chair for Design Automation, TUM
-# Copyright (c) 2025 Munich Quantum Software Company GmbH
+# Copyright (c) 2023 - 2026 Chair for Design Automation, TUM
+# Copyright (c) 2025 - 2026 Munich Quantum Software Company GmbH
 # All rights reserved.
 #
 # SPDX-License-Identifier: MIT
@@ -20,10 +20,13 @@ function(enable_project_options target_name)
   endif()
 
   if(MSVC)
-    target_compile_options(${target_name} INTERFACE /utf-8 /Zm10)
+    target_compile_options(${target_name} INTERFACE /utf-8 /Zm10 /EHsc)
   else()
     # always include debug symbols (avoids common problems with LTO)
     target_compile_options(${target_name} INTERFACE -g)
+
+    # ensure that exceptions are enabled
+    target_compile_options(${target_name} INTERFACE -fexceptions)
 
     # enable coverage collection options
     option(ENABLE_COVERAGE "Enable coverage reporting for gcc/clang" FALSE)

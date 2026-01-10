@@ -1,6 +1,6 @@
 /*
- * Copyright (c) 2023 - 2025 Chair for Design Automation, TUM
- * Copyright (c) 2025 Munich Quantum Software Company GmbH
+ * Copyright (c) 2023 - 2026 Chair for Design Automation, TUM
+ * Copyright (c) 2025 - 2026 Munich Quantum Software Company GmbH
  * All rights reserved.
  *
  * SPDX-License-Identifier: MIT
@@ -22,16 +22,16 @@ INSTANTIATE_TEST_SUITE_P(
     QIRRunnerTest, //< Test suite name
     // Parameters to test with
     ::testing::Values(QIR_FILES),
-    [](const testing::TestParamInfo<std::filesystem::path>& info) {
+    [](const testing::TestParamInfo<std::filesystem::path>& paramInfo) {
       // Extract the last part of the file path
-      auto filename = info.param.stem().string();
+      auto filename = paramInfo.param.stem().string();
       return filename;
     });
 
 TEST_P(QIRRunnerTest, QIRFile) {
   const auto& file = GetParam();
   std::ostringstream command;
-  command << "\"" << EXECUTABLE_PATH << "\" \"" << file << "\"";
+  command << EXECUTABLE_PATH << " " << file;
   const auto result = std::system(command.str().c_str());
   EXPECT_EQ(result, 0);
 }

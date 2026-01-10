@@ -4,6 +4,47 @@ This document describes breaking changes and how to upgrade. For a complete list
 
 ## [Unreleased]
 
+### MLIR enabled by default for C++ builds
+
+The MLIR-based functionality within MQT Core has long been experimental and opt-in.
+Starting with this release, MLIR is enabled by default for C++ library builds.
+This means that LLVM (including MLIR) is now a required dependency for building MQT Core from source.
+
+We offer pre-built distributions for all supported platforms as part of the `setup-mlir` project at [munich-quantum-software/setup-mlir](https://github.com/munich-quantum-software/setup-mlir).
+Please follow the instructions there to install the distribution for your platform.
+You can then point CMake to the installation directory using the `-DMLIR_DIR=/path/to/mlir/installation/lib/cmake/mlir` option.
+
+The MLIR components can still be manually disabled by passing `-DBUILD_MQT_CORE_MLIR=OFF` to CMake.
+MLIR is also not enabled for the Python package builds because no functionality depends on it yet.
+This is expected to change in the future, when we expose the MLIR-based functionality via the Python package.
+
+Known limitations:
+
+- Our pre-built distributions are incompatible with GCC on macOS. Use (Apple)Clang instead or compile LLVM from source using your preferred compiler.
+- AppleClang 17+ is required to build MQT Core with MLIR enabled due to some C++20 features being used that are not yet properly supported by older versions.
+- Our pre-built distributions are compiled in Release mode. On Windows, this leads to ABI incompatibilities with debug builds. Either build in Release mode or build LLVM from source in Debug mode to resolve this.
+
+## [3.4.0]
+
+### Python wheels
+
+This release contains two changes to the distributed wheels.
+
+First, we have removed all wheels for Python 3.13t.
+Free-threading Python was introduced as an experimental feature in Python 3.13.
+It became stable in Python 3.14.
+
+Second, for Python 3.12+, we are now providing Stable ABI wheels instead of separate version-specific wheels.
+This was enabled by migrating our Python bindings from `pybind11` to `nanobind`.
+
+Both of these changes were made in the interest of conserving PyPI space and reducing CI/CD build times.
+The full list of wheels now reads:
+
+- 3.10
+- 3.11
+- 3.12+ Stable ABI
+- 3.14t
+
 ### QDMI-Qiskit integration
 
 This release introduces a Qiskit `BackendV2`-compatible interface to QDMI devices.
@@ -23,7 +64,7 @@ result = job.result()
 The backend automatically converts circuits to QASM, introspects device capabilities, validates circuits, and formats results.
 The existing FoMaC interface (`mqt.core.fomac`) remains fully supported for direct, low-level access to QDMI devices.
 
-Install with Qiskit support: `pip install "mqt-core[qiskit]"`
+Install with Qiskit support: `uv pip install "mqt-core[qiskit]"`
 
 See the [Qiskit Backend documentation](https://mqt.readthedocs.io/projects/core/en/latest/qdmi/qiskit_backend.html) for details.
 
@@ -51,25 +92,6 @@ This release moves the DD Package evaluation functionality from within the `mqt.
 In the process, the `mqt-core-dd-compare` entry point as well as the `evaluation` extra have been removed.
 The `eval/dd_evaluation.py` script acts as a drop-in replacement for the previous CLI entry point.
 Since the `eval` directory is not part of the Python package, this functionality is only available via source installations or by cloning the repository.
-
-### Python wheels
-
-This release contains two changes to the distributed wheels.
-
-First, we have removed all wheels for Python 3.13t.
-Free-threading Python was introduced as an experimental feature in Python 3.13.
-It became stable in Python 3.14.
-
-Second, for Python 3.12+, we are now providing Stable ABI wheels instead of separate version-specific wheels.
-This was enabled by migrating our Python bindings from `pybind11` to `nanobind`.
-
-Both of these changes were made in the interest of conserving PyPI space and reducing CI/CD build times.
-The full list of wheels now reads:
-
-- 3.10
-- 3.11
-- 3.12+ Stable ABI
-- 3.14t
 
 ## [3.3.0]
 
@@ -182,7 +204,8 @@ It also requires the `uv` library version 0.5.20 or higher.
 
 <!-- Version links -->
 
-[unreleased]: https://github.com/munich-quantum-toolkit/core/compare/v3.3.0...HEAD
+[unreleased]: https://github.com/munich-quantum-toolkit/core/compare/v3.4.0...HEAD
+[3.4.0]: https://github.com/munich-quantum-toolkit/core/compare/v3.3.0...v3.4.0
 [3.3.0]: https://github.com/munich-quantum-toolkit/core/compare/v3.2.0...v3.3.0
 [3.2.0]: https://github.com/munich-quantum-toolkit/core/compare/v3.1.0...v3.2.0
 [3.1.0]: https://github.com/munich-quantum-toolkit/core/compare/v3.0.0...v3.1.0

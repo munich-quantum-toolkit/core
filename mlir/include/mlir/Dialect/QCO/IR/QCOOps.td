@@ -1,5 +1,5 @@
-// Copyright (c) 2023 - 2025 Chair for Design Automation, TUM
-// Copyright (c) 2025 Munich Quantum Software Company GmbH
+// Copyright (c) 2023 - 2026 Chair for Design Automation, TUM
+// Copyright (c) 2025 - 2026 Munich Quantum Software Company GmbH
 // All rights reserved.
 //
 // SPDX-License-Identifier: MIT
@@ -1067,10 +1067,10 @@ def CtrlOp : QCOOp<"ctrl", traits =
     let arguments = (ins Arg<Variadic<QubitType>, "the control qubits", [MemRead]>:$controls_in,
                      Arg<Variadic<QubitType>, "the target qubits", [MemRead]>:$targets_in);
     let results = (outs Variadic<QubitType>:$controls_out, Variadic<QubitType>:$targets_out);
-    let regions = (region SizedRegion<1>:$body);
+    let regions = (region SizedRegion<1>:$region);
     let assemblyFormat = [{
         `(` $controls_in `)` $targets_in
-        $body attr-dict `:`
+        $region attr-dict `:`
         `(` `{` type($controls_in) `}` ( `,` `{` type($targets_in)^ `}` )? `)`
         `->`
         `(` `{` type($controls_out) `}` ( `,` `{` type($targets_out)^ `}` )? `)`

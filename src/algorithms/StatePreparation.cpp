@@ -1,6 +1,6 @@
 /*
- * Copyright (c) 2023 - 2025 Chair for Design Automation, TUM
- * Copyright (c) 2025 Munich Quantum Software Company GmbH
+ * Copyright (c) 2023 - 2026 Chair for Design Automation, TUM
+ * Copyright (c) 2025 - 2026 Munich Quantum Software Company GmbH
  * All rights reserved.
  *
  * SPDX-License-Identifier: MIT
@@ -119,7 +119,7 @@ template <typename T>
   }
 
   Matrix const matrix{std::vector{0.5, 0.5}, std::vector{0.5, -0.5}};
-  Matrix const identity = createIdentity(1 << (localNumQubits - 2));
+  Matrix const identity = createIdentity(1ULL << (localNumQubits - 2));
   Matrix const angleWeights = kroneckerProduct(matrix, identity);
 
   angles = matrixVectorProd(angleWeights, angles);

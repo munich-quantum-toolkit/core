@@ -1,6 +1,6 @@
 /*
- * Copyright (c) 2023 - 2025 Chair for Design Automation, TUM
- * Copyright (c) 2025 Munich Quantum Software Company GmbH
+ * Copyright (c) 2023 - 2026 Chair for Design Automation, TUM
+ * Copyright (c) 2025 - 2026 Munich Quantum Software Company GmbH
  * All rights reserved.
  *
  * SPDX-License-Identifier: MIT
@@ -190,18 +190,18 @@ public:
  */
 class Runtime {
 public:
-  static constexpr auto RESULT_ZERO_ADDRESS = 0x10000;
-  static constexpr auto RESULT_ONE_ADDRESS = 0x10001;
+  static constexpr uintptr_t RESULT_ZERO_ADDRESS = 0x10000;
+  static constexpr uintptr_t RESULT_ONE_ADDRESS = 0x10001;
 
 private:
-  static constexpr auto MIN_DYN_QUBIT_ADDRESS = 0x10000;
+  static constexpr uintptr_t MIN_DYN_QUBIT_ADDRESS = 0x10000;
   enum class AddressMode : uint8_t { UNKNOWN, DYNAMIC, STATIC };
 
   AddressMode addressMode;
   std::unordered_map<const Qubit*, qc::Qubit> qRegister;
   // swap gates are not executed, they are tracked here
   std::vector<qc::Qubit> qubitPermutation;
-  static constexpr auto MIN_DYN_RESULT_ADDRESS = 0x10000;
+  static constexpr uintptr_t MIN_DYN_RESULT_ADDRESS = 0x10000;
   std::unordered_map<Result*, ResultStruct> rRegister;
   uintptr_t currentMaxQubitAddress;
   qc::Qubit currentMaxQubitId;

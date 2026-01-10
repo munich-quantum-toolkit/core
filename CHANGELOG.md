@@ -11,7 +11,20 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 
 ### Added
 
-- ✨ Add initial infrastructure for new QC and QCO MLIR dialects ([#1264], [#1402]) ([**@burgholzer**], [**@denialhaag**])
+- ✨ Add initial infrastructure for new QC and QCO MLIR dialects ([#1264], [#1402], [#1428], [#1430]) ([**@burgholzer**], [**@denialhaag**], [**@taminob**])
+
+### Changed
+
+- 📦 Build MLIR by default for C++ library builds ([#1356]) ([**@burgholzer**], [**@denialhaag**])
+
+### Removed
+
+- 🔥 No longer actively type check Python code with `mypy` and solely rely on `ty` ([#1437]) ([**@burgholzer**])
+
+## [3.4.0] - 2026-01-08
+
+### Added
+
 - ✨ Return device handle from `add_dynamic_device_library` for direct backend creation ([#1381]) ([**@marcelwa**])
 - ✨ Add IQM JSON support for job submission in Qiskit-QDMI Backend ([#1375], [#1382]) ([**@marcelwa**], [**@burgholzer**])
 - ✨ Add authentication support for QDMI sessions with token, username/password, auth file, auth URL, and project ID parameters ([#1355]) ([**@marcelwa**])
@@ -278,7 +291,8 @@ _📚 Refer to the [GitHub Release Notes](https://github.com/munich-quantum-tool
 
 <!-- Version links -->
 
-[unreleased]: https://github.com/munich-quantum-toolkit/core/compare/v3.3.3...HEAD
+[unreleased]: https://github.com/munich-quantum-toolkit/core/compare/v3.4.0...HEAD
+[3.4.0]: https://github.com/munich-quantum-toolkit/core/releases/tag/v3.4.0
 [3.3.3]: https://github.com/munich-quantum-toolkit/core/releases/tag/v3.3.3
 [3.3.2]: https://github.com/munich-quantum-toolkit/core/releases/tag/v3.3.2
 [3.3.1]: https://github.com/munich-quantum-toolkit/core/releases/tag/v3.3.1
@@ -293,6 +307,9 @@ _📚 Refer to the [GitHub Release Notes](https://github.com/munich-quantum-tool
 
 <!-- PR links -->
 
+[#1437]: https://github.com/munich-quantum-toolkit/core/pull/1437
+[#1430]: https://github.com/munich-quantum-toolkit/core/pull/1430
+[#1428]: https://github.com/munich-quantum-toolkit/core/pull/1428
 [#1415]: https://github.com/munich-quantum-toolkit/core/pull/1415
 [#1414]: https://github.com/munich-quantum-toolkit/core/pull/1414
 [#1413]: https://github.com/munich-quantum-toolkit/core/pull/1413
