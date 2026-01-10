@@ -12,7 +12,7 @@ target_link_libraries(
   mqt-core-mlir-dialect-qco-ir-modifiers-test
   PRIVATE GTest::gtest_main
           MQT::CoreIR
-          MLIRQCODialect
+          MLIRQCOProgramBuilder
           MLIRFuncDialect
           MLIRIR
           MLIRParser

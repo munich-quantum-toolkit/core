@@ -8,6 +8,7 @@
  * Licensed under the MIT License
  */
 
+#include "mlir/Dialect/QCO/Builder/QCOProgramBuilder.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 
 #include <gtest/gtest.h>
@@ -32,8 +33,7 @@ using namespace mlir::qco;
 class QCOCtrlOpTest : public ::testing::Test {
 protected:
   MLIRContext context;
-  OpBuilder builder;
-  OwningOpRef<ModuleOp> module;
+  QCOProgramBuilder builder;
 
   QCOCtrlOpTest() : builder(&context) {}
 
@@ -42,50 +42,34 @@ protected:
     context.loadDialect<func::FuncDialect>();
     context.loadDialect<arith::ArithDialect>();
 
-    // Setup Module and Function
-    module = ModuleOp::create(builder.getUnknownLoc());
-    builder.setInsertionPointToEnd(module->getBody());
-
-    auto funcType = builder.getFunctionType({}, {});
-    auto func =
-        builder.create<func::FuncOp>(builder.getUnknownLoc(), "main", funcType);
-    auto* entryBlock = func.addEntryBlock();
-    builder.setInsertionPointToEnd(entryBlock);
-    builder.create<func::ReturnOp>(builder.getUnknownLoc());
-    builder.setInsertionPointToStart(entryBlock);
+    // Setup Builder
+    builder.initialize();
   }
 
-  bool testParse(StringRef ctrlOpAssembly) {
+  OwningOpRef<ModuleOp> testParse(const StringRef ctrlOpAssembly) {
     // Wrap the op in a function to provide operands
     const std::string source =
         (Twine("func.func @test(%q0: !qco.qubit, %q1: !qco.qubit) {\n") +
          ctrlOpAssembly + "\n" + "  return\n" + "}")
             .str();
     const ScopedDiagnosticHandler diagHandler(&context);
-    // Parse should fail
-    return parseSourceString<ModuleOp>(source, &context).get() == nullptr;
+    return parseSourceString<ModuleOp>(source, &context);
   };
 };
 
 TEST_F(QCOCtrlOpTest, LambdaBuilder) {
   // Allocate qubits to use as operands
-  auto qType = QubitType::get(&context);
-  auto q0 = builder.create<AllocOp>(builder.getUnknownLoc()).getResult();
-  auto q1 = builder.create<AllocOp>(builder.getUnknownLoc()).getResult();
-  auto q2 = builder.create<AllocOp>(builder.getUnknownLoc()).getResult();
-
-  const SmallVector<Value> controls = {q0};
-  const SmallVector<Value> targets = {q1, q2};
+  const auto q = builder.allocQubitRegister(3);
 
   // Create CtrlOp using the lambda builder
-  auto ctrlOp = builder.create<CtrlOp>(
-      builder.getUnknownLoc(), controls, targets,
-      [&](ValueRange innerTargets) -> ValueRange {
-        // Create the inner operation (e.g. SwapOp on the two targets)
-        auto swapOp = builder.create<SWAPOp>(builder.getUnknownLoc(),
-                                             innerTargets[0], innerTargets[1]);
-        return swapOp.getResults();
-      });
+  builder.ctrl(q[0], {q[1], q[2]},
+               [&](ValueRange innerTargets) -> SmallVector<Value> {
+                 // Create the inner operation
+                 auto [q0, q1] = builder.swap(innerTargets[0], innerTargets[1]);
+                 return {q0, q1};
+               });
+  auto ctrlOp = cast<CtrlOp>(builder.getBlock()->getOperations().back());
+  auto module = builder.finalize();
 
   // Verify the operation structure
   EXPECT_EQ(ctrlOp.getNumControls(), 1);
@@ -102,6 +86,7 @@ TEST_F(QCOCtrlOpTest, LambdaBuilder) {
   EXPECT_TRUE(isa<YieldOp>(block.back()));
 
   // Verify target aliasing via block arguments
+  const auto qType = QubitType::get(&context);
   ASSERT_EQ(block.getNumArguments(), 2); // 2 target block args
   EXPECT_EQ(block.getArgument(0).getType(), qType);
   EXPECT_EQ(block.getArgument(1).getType(), qType);
@@ -116,20 +101,15 @@ TEST_F(QCOCtrlOpTest, LambdaBuilder) {
 
 TEST_F(QCOCtrlOpTest, UnitaryOpBuilder) {
   // Allocate qubits
-  auto qType = QubitType::get(&context);
-  auto q0 = builder.create<AllocOp>(builder.getUnknownLoc()).getResult();
-  auto q1 = builder.create<AllocOp>(builder.getUnknownLoc()).getResult();
-
-  const SmallVector<Value> controls = {q0};
-  const SmallVector<Value> targets = {q1};
+  const auto q = builder.allocQubitRegister(2);
+  const auto qType = QubitType::get(&context);
 
   // Create a template unitary operation (X gate)
-  auto xOp = builder.create<XOp>(builder.getUnknownLoc(), q1);
+  auto xOp = XOp::create(builder, builder.getUnknownLoc(), q[1]);
 
   // Create CtrlOp using the UnitaryOpInterface builder
-  auto ctrlOp =
-      builder.create<CtrlOp>(builder.getUnknownLoc(), controls, targets,
-                             cast<UnitaryOpInterface>(xOp.getOperation()));
+  auto ctrlOp = CtrlOp::create(builder, builder.getUnknownLoc(), q[0], q[1],
+                               cast<UnitaryOpInterface>(xOp.getOperation()));
 
   // Verify structure
   EXPECT_EQ(ctrlOp.getNumControls(), 1);
@@ -158,17 +138,14 @@ TEST_F(QCOCtrlOpTest, UnitaryOpBuilder) {
 }
 
 TEST_F(QCOCtrlOpTest, VerifierBodySize) {
-  auto q0 = builder.create<AllocOp>(builder.getUnknownLoc()).getResult();
-  auto q1 = builder.create<AllocOp>(builder.getUnknownLoc()).getResult();
+  const auto q = builder.allocQubitRegister(2);
 
   // Create valid CtrlOp
-  auto ctrlOp = builder.create<CtrlOp>(
-      builder.getUnknownLoc(), ValueRange{q0}, ValueRange{q1},
-      [&](ValueRange innerTargets) -> ValueRange {
-        auto xOp =
-            builder.create<XOp>(builder.getUnknownLoc(), innerTargets[0]);
-        return xOp->getResults();
-      });
+  builder.ctrl(q[0], q[1], [&](ValueRange innerTargets) -> SmallVector<Value> {
+    return {builder.x(innerTargets[0])};
+  });
+  auto ctrlOp = cast<CtrlOp>(builder.getBlock()->getOperations().back());
+  auto module = builder.finalize();
 
   // Insert an extra operation into the body
   auto& region = ctrlOp.getRegion();
@@ -184,21 +161,19 @@ TEST_F(QCOCtrlOpTest, VerifierBodySize) {
 }
 
 TEST_F(QCOCtrlOpTest, VerifierBlockArgsCount) {
-  auto qType = QubitType::get(&context);
-  auto q0 = builder.create<AllocOp>(builder.getUnknownLoc()).getResult();
-  auto q1 = builder.create<AllocOp>(builder.getUnknownLoc()).getResult();
+  const auto q = builder.allocQubitRegister(2);
 
-  auto ctrlOp = builder.create<CtrlOp>(
-      builder.getUnknownLoc(), ValueRange{q0}, ValueRange{q1},
-      [&](ValueRange innerTargets) -> ValueRange {
-        auto xOp =
-            builder.create<XOp>(builder.getUnknownLoc(), innerTargets[0]);
-        return xOp->getResults();
-      });
+  // Create valid CtrlOp
+  builder.ctrl(q[0], q[1], [&](ValueRange innerTargets) -> SmallVector<Value> {
+    return {builder.x(innerTargets[0])};
+  });
+  auto ctrlOp = cast<CtrlOp>(builder.getBlock()->getOperations().back());
+  auto module = builder.finalize();
 
   // Add an extra argument to the block
   auto& region = ctrlOp.getRegion();
   auto& block = region.front();
+  const auto qType = QubitType::get(&context);
   block.addArgument(qType, builder.getUnknownLoc());
 
   // Should fail because number of block args must match number of targets (1)
@@ -206,20 +181,14 @@ TEST_F(QCOCtrlOpTest, VerifierBlockArgsCount) {
 }
 
 TEST_F(QCOCtrlOpTest, VerifierInputTypes) {
-  auto q0 = builder.create<AllocOp>(builder.getUnknownLoc()).getResult();
-  auto q1 = builder.create<AllocOp>(builder.getUnknownLoc()).getResult();
+  const auto q = builder.allocQubitRegister(2);
 
-  const SmallVector<Value> controls = {q0};
-  const SmallVector<Value> targets = {q1};
-
-  // Create a CtrlOp using a qubit as target.
-  auto ctrlOp =
-      builder.create<CtrlOp>(builder.getUnknownLoc(), controls, targets,
-                             [&](ValueRange innerTargets) -> ValueRange {
-                               auto xOp = builder.create<XOp>(
-                                   builder.getUnknownLoc(), innerTargets[0]);
-                               return xOp->getResults();
-                             });
+  // Create valid CtrlOp
+  builder.ctrl(q[0], q[1], [&](ValueRange innerTargets) -> SmallVector<Value> {
+    return {builder.x(innerTargets[0])};
+  });
+  auto ctrlOp = cast<CtrlOp>(builder.getBlock()->getOperations().back());
+  auto module = builder.finalize();
 
   // Change the block argument type to a non-qubit
   auto& region = ctrlOp.getRegion();
@@ -230,17 +199,14 @@ TEST_F(QCOCtrlOpTest, VerifierInputTypes) {
 }
 
 TEST_F(QCOCtrlOpTest, VerifierBodyFirstOp) {
-  auto q0 = builder.create<AllocOp>(builder.getUnknownLoc()).getResult();
-  auto q1 = builder.create<AllocOp>(builder.getUnknownLoc()).getResult();
+  const auto q = builder.allocQubitRegister(2);
 
-  // Create CtrlOp that uses a non-unitary as first operation in body
-  auto ctrlOp = builder.create<CtrlOp>(
-      builder.getUnknownLoc(), ValueRange{q0}, ValueRange{q1},
-      [&](ValueRange innerTargets) -> ValueRange {
-        auto resetOp =
-            builder.create<ResetOp>(builder.getUnknownLoc(), innerTargets[0]);
-        return resetOp->getResults();
-      });
+  // Create valid CtrlOp
+  builder.ctrl(q[0], q[1], [&](ValueRange innerTargets) -> SmallVector<Value> {
+    return {builder.reset(innerTargets[0])};
+  });
+  auto ctrlOp = cast<CtrlOp>(builder.getBlock()->getOperations().back());
+  auto module = builder.finalize();
 
   // Should fail because body must use a unitary as first operation
   EXPECT_TRUE(mlir::verify(ctrlOp).failed());
@@ -248,27 +214,42 @@ TEST_F(QCOCtrlOpTest, VerifierBodyFirstOp) {
 
 TEST_F(QCOCtrlOpTest, ParserErrors) {
   // 1. Missing opening parenthesis for targets
-  EXPECT_TRUE(testParse(
-      "qco.ctrl(%q0) targets %a = %q1) { qco.yield %a } : ({!qco.qubit}, "
-      "{!qco.qubit}) -> ({!qco.qubit}, {!qco.qubit})"));
+  EXPECT_EQ(
+      testParse(
+          "qco.ctrl(%q0) targets %a = %q1) { qco.yield %a } : ({!qco.qubit}, "
+          "{!qco.qubit}) -> ({!qco.qubit}, {!qco.qubit})")
+          .get(),
+      nullptr);
 
   // 2. Missing argument name
-  EXPECT_TRUE(testParse(
-      "qco.ctrl(%q0) targets ( = %q1) { qco.yield %q1 } : ({!qco.qubit}, "
-      "{!qco.qubit}) -> ({!qco.qubit}, {!qco.qubit})"));
+  EXPECT_EQ(
+      testParse(
+          "qco.ctrl(%q0) targets ( = %q1) { qco.yield %q1 } : ({!qco.qubit}, "
+          "{!qco.qubit}) -> ({!qco.qubit}, {!qco.qubit})")
+          .get(),
+      nullptr);
 
   // 3. Missing equals sign
-  EXPECT_TRUE(testParse(
-      "qco.ctrl(%q0) targets (%a %q1) { qco.yield %a } : ({!qco.qubit}, "
-      "{!qco.qubit}) -> ({!qco.qubit}, {!qco.qubit})"));
+  EXPECT_EQ(
+      testParse(
+          "qco.ctrl(%q0) targets (%a %q1) { qco.yield %a } : ({!qco.qubit}, "
+          "{!qco.qubit}) -> ({!qco.qubit}, {!qco.qubit})")
+          .get(),
+      nullptr);
 
   // 4. Missing operand (old value)
-  EXPECT_TRUE(testParse(
-      "qco.ctrl(%q0) targets (%a = ) { qco.yield %a } : ({!qco.qubit}, "
-      "{!qco.qubit}) -> ({!qco.qubit}, {!qco.qubit})"));
+  EXPECT_EQ(
+      testParse(
+          "qco.ctrl(%q0) targets (%a = ) { qco.yield %a } : ({!qco.qubit}, "
+          "{!qco.qubit}) -> ({!qco.qubit}, {!qco.qubit})")
+          .get(),
+      nullptr);
 
   // 5. Missing closing parenthesis
-  EXPECT_TRUE(testParse(
-      "qco.ctrl(%q0) targets (%a = %q1 { qco.yield %a } : ({!qco.qubit}, "
-      "{!qco.qubit}) -> ({!qco.qubit}, {!qco.qubit})"));
+  EXPECT_EQ(
+      testParse(
+          "qco.ctrl(%q0) targets (%a = %q1 { qco.yield %a } : ({!qco.qubit}, "
+          "{!qco.qubit}) -> ({!qco.qubit}, {!qco.qubit})")
+          .get(),
+      nullptr);
 }
