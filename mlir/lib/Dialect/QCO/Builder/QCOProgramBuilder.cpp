@@ -562,12 +562,22 @@ ValueRange QCOProgramBuilder::barrier(ValueRange qubits) {
 // Modifiers
 //===----------------------------------------------------------------------===//
 
-std::pair<ValueRange, ValueRange>
-QCOProgramBuilder::ctrl(ValueRange controls, ValueRange targets,
-                        const std::function<ValueRange(ValueRange)>& body) {
+std::pair<ValueRange, ValueRange> QCOProgramBuilder::ctrl(
+    ValueRange controls, ValueRange targets,
+    const std::function<SmallVector<Value>(ValueRange)>& body) {
   checkFinalized();
 
-  auto ctrlOp = CtrlOp::create(*this, loc, controls, targets, body);
+  auto ctrlOp = CtrlOp::create(*this, loc, controls, targets);
+  auto& block = ctrlOp.getBodyRegion().emplaceBlock();
+  const auto qubitType = QubitType::get(getContext());
+  for (size_t i = 0; i < targets.size(); ++i) {
+    const auto arg = block.addArgument(qubitType, loc);
+    updateQubitTracking(targets[i], arg);
+  }
+  const InsertionGuard guard(*this);
+  setInsertionPointToStart(&block);
+  const auto innerTargetsOut = body(block.getArguments());
+  YieldOp::create(*this, loc, innerTargetsOut);
 
   // Update tracking
   const auto& controlsOut = ctrlOp.getControlsOut();
@@ -575,7 +585,8 @@ QCOProgramBuilder::ctrl(ValueRange controls, ValueRange targets,
     updateQubitTracking(control, controlOut);
   }
   const auto& targetsOut = ctrlOp.getTargetsOut();
-  for (const auto& [target, targetOut] : llvm::zip(targets, targetsOut)) {
+  for (const auto& [target, targetOut] :
+       llvm::zip(innerTargetsOut, targetsOut)) {
     updateQubitTracking(target, targetOut);
   }
 

@@ -989,20 +989,19 @@ public:
    * ```c++
    * {controls_out, targets_out} =
    *   builder.ctrl(q0_in, q1_in, [&](ValueRange targets) {
-   *     auto q1_res = builder.x(targets[0]);
-   *     return {q1_res};
+   *     return {builder.x(targets[0])};
    *   });
    * ```
    * ```mlir
-   * %controls_out, %targets_out = qco.ctrl(%q0_in) %q1_in {
-   *   %q1_res = qco.x %q1_in : !qco.qubit -> !qco.qubit
+   * %controls_out, %targets_out = qco.ctrl(%q0_in) targets(%t = %q1_in) {
+   *   %q1_res = qco.x %t : !qco.qubit -> !qco.qubit
    *   qco.yield %q1_res
    * } : ({!qco.qubit}, {!qco.qubit}) -> ({!qco.qubit}, {!qco.qubit})
    * ```
    */
   std::pair<ValueRange, ValueRange>
   ctrl(ValueRange controls, ValueRange targets,
-       const std::function<ValueRange(ValueRange)>& body);
+       const std::function<SmallVector<Value>(ValueRange)>& body);
 
   //===--------------------------------------------------------------------===//
   // Deallocation

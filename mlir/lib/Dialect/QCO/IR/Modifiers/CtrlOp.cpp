@@ -106,12 +106,13 @@ struct CtrlInlineGPhase final : OpRewritePattern<CtrlOp> {
     SmallVector<Value> newControls(op.getControlsIn());
     const auto newTarget = newControls.back();
     newControls.pop_back();
-    auto ctrlOp = CtrlOp::create(
-        rewriter, op.getLoc(), newControls, newTarget, [&](ValueRange targets) {
-          auto pOp = POp::create(rewriter, op.getLoc(), targets[0],
-                                 gPhaseOp.getTheta());
-          return pOp.getQubitOut();
-        });
+    auto ctrlOp = CtrlOp::create(rewriter, op.getLoc(), newControls, newTarget,
+                                 [&](ValueRange targets) -> SmallVector<Value> {
+                                   auto pOp = POp::create(rewriter, op.getLoc(),
+                                                          targets[0],
+                                                          gPhaseOp.getTheta());
+                                   return {pOp.getQubitOut()};
+                                 });
 
     rewriter.replaceOp(op, ctrlOp.getResults());
 
@@ -266,9 +267,10 @@ void CtrlOp::build(OpBuilder& odsBuilder, OperationState& odsState,
   odsBuilder.create<YieldOp>(odsState.location, op->getResults());
 }
 
-void CtrlOp::build(OpBuilder& odsBuilder, OperationState& odsState,
-                   ValueRange controls, ValueRange targets,
-                   const std::function<ValueRange(ValueRange)>& bodyBuilder) {
+void CtrlOp::build(
+    OpBuilder& odsBuilder, OperationState& odsState, ValueRange controls,
+    ValueRange targets,
+    const std::function<SmallVector<Value>(ValueRange)>& bodyBuilder) {
   build(odsBuilder, odsState, controls, targets);
   auto& block = odsState.regions.front()->emplaceBlock();
   for (const auto target : targets) {
