@@ -774,7 +774,7 @@ struct ConvertQCOCtrlOp final : OpConversionPattern<qco::CtrlOp> {
     const auto& qcControls = adaptor.getControlsIn();
 
     // Create qc.ctrl operation
-    auto qcOp = rewriter.create<qc::CtrlOp>(op.getLoc(), qcControls);
+    auto qcOp = qc::CtrlOp::create(rewriter, op.getLoc(), qcControls);
 
     // Clone body region from QCO to QC
     auto& dstRegion = qcOp.getRegion();

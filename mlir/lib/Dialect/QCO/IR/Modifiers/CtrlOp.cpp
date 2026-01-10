@@ -263,8 +263,7 @@ void CtrlOp::build(OpBuilder& odsBuilder, OperationState& odsState,
   for (size_t i = 0; i < targets.size(); ++i) {
     op->replaceUsesOfWith(targets[i], blockArgs[i]);
   }
-
-  odsBuilder.create<YieldOp>(odsState.location, op->getResults());
+  YieldOp::create(odsBuilder, odsState.location, op->getResults());
 }
 
 void CtrlOp::build(
@@ -276,13 +275,12 @@ void CtrlOp::build(
   for (const auto target : targets) {
     block.addArgument(target.getType(), odsState.location);
   }
-  auto blockArgs = block.getArguments();
 
   // Move the unitary op into the block
   const OpBuilder::InsertionGuard guard(odsBuilder);
   odsBuilder.setInsertionPointToStart(&block);
-  auto targetsOut = bodyBuilder(blockArgs);
-  odsBuilder.create<YieldOp>(odsState.location, targetsOut);
+  const auto targetsOut = bodyBuilder(block.getArguments());
+  YieldOp::create(odsBuilder, odsState.location, targetsOut);
 }
 
 LogicalResult CtrlOp::verify() {

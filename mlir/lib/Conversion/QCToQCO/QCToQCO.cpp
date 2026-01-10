@@ -1106,7 +1106,7 @@ struct ConvertQCCtrlOp final : StatefulOpConversionPattern<qc::CtrlOp> {
 
     // Create qco.ctrl
     auto qcoOp =
-        rewriter.create<qco::CtrlOp>(op.getLoc(), qcoControls, qcoTargets);
+        qco::CtrlOp::create(rewriter, op.getLoc(), qcoControls, qcoTargets);
 
     // Update the state map if this is a top-level CtrlOp
     // Nested CtrlOps are managed via the targetsIn and targetsOut maps
