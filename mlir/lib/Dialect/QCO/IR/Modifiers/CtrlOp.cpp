@@ -251,17 +251,15 @@ void CtrlOp::build(OpBuilder& odsBuilder, OperationState& odsState,
                    UnitaryOpInterface bodyUnitary) {
   build(odsBuilder, odsState, controls, targets);
   auto& block = odsState.regions.front()->emplaceBlock();
-  for (const auto target : targets) {
-    block.addArgument(target.getType(), odsState.location);
-  }
-  auto blockArgs = block.getArguments();
 
   // Move the unitary op into the block
   const OpBuilder::InsertionGuard guard(odsBuilder);
   odsBuilder.setInsertionPointToStart(&block);
+  const auto qubitType = QubitType::get(odsBuilder.getContext());
   auto* op = odsBuilder.clone(*bodyUnitary.getOperation());
   for (size_t i = 0; i < targets.size(); ++i) {
-    op->replaceUsesOfWith(targets[i], blockArgs[i]);
+    const auto arg = block.addArgument(qubitType, odsState.location);
+    op->replaceUsesOfWith(targets[i], arg);
   }
   YieldOp::create(odsBuilder, odsState.location, op->getResults());
 }
@@ -272,8 +270,9 @@ void CtrlOp::build(
     const std::function<SmallVector<Value>(ValueRange)>& bodyBuilder) {
   build(odsBuilder, odsState, controls, targets);
   auto& block = odsState.regions.front()->emplaceBlock();
-  for (const auto target : targets) {
-    block.addArgument(target.getType(), odsState.location);
+  const auto qubitType = QubitType::get(odsBuilder.getContext());
+  for (size_t i = 0; i < targets.size(); ++i) {
+    block.addArgument(qubitType, odsState.location);
   }
 
   // Move the unitary op into the block
@@ -288,12 +287,14 @@ LogicalResult CtrlOp::verify() {
   if (block.getOperations().size() != 2) {
     return emitOpError("body region must have exactly two operations");
   }
-  if (block.getArguments().size() != getNumTargets()) {
+  const auto numTargets = getNumTargets();
+  if (block.getArguments().size() != numTargets) {
     return emitOpError(
-        "number of block arguments must match number of targets");
+        "number of block arguments must match the number of targets");
   }
-  for (size_t i = 0; i < getNumTargets(); ++i) {
-    if (block.getArgument(i).getType() != getTargetsIn()[i].getType()) {
+  const auto qubitType = QubitType::get(getContext());
+  for (size_t i = 0; i < numTargets; ++i) {
+    if (block.getArgument(i).getType() != qubitType) {
       return emitOpError("block argument type at index ")
              << i << " does not match target type";
     }
@@ -306,10 +307,10 @@ LogicalResult CtrlOp::verify() {
     return emitOpError(
         "second operation in body region must be a yield operation");
   }
-  if (block.back().getNumOperands() != getNumTargets()) {
+  if (const auto numYieldOperands = block.back().getNumOperands();
+      numYieldOperands != numTargets) {
     return emitOpError("yield operation must yield ")
-           << getNumTargets() << " values, but found "
-           << block.back().getNumOperands();
+           << numTargets << " values, but found " << numYieldOperands;
   }
 
   SmallPtrSet<Value, 4> uniqueQubitsIn;

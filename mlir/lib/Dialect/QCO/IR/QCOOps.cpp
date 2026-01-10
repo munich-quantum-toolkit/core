@@ -69,8 +69,7 @@ parseTargetAliasing(OpAsmParser& parser, Region& region,
       // Hard-code QubitType since targets in qco.ctrl are always qubits.
       // This avoids double-binding type($targets_in) in the assembly format
       // while keeping the parser simple and the assembly format clean.
-      const Type type = qco::QubitType::get(parser.getBuilder().getContext());
-      newArg.type = type;
+      newArg.type = QubitType::get(parser.getBuilder().getContext());
       blockArgs.push_back(newArg);
 
     } while (succeeded(parser.parseOptionalComma()));
@@ -94,13 +93,13 @@ static void printTargetAliasing(OpAsmPrinter& printer, Operation* /*op*/,
                                 Region& region, OperandRange targetsIn) {
   printer << "(";
   Block& entryBlock = region.front();
-  auto blockArgs = entryBlock.getArguments();
 
-  for (unsigned i = 0; i < targetsIn.size(); ++i) {
+  const auto numTargets = targetsIn.size();
+  for (unsigned i = 0; i < numTargets; ++i) {
     if (i > 0) {
       printer << ", ";
     }
-    printer.printOperand(blockArgs[i]);
+    printer.printOperand(entryBlock.getArgument(i));
     printer << " = ";
     printer.printOperand(targetsIn[i]);
   }

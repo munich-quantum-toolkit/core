@@ -1134,13 +1134,11 @@ struct ConvertQCCtrlOp final : StatefulOpConversionPattern<qc::CtrlOp> {
     auto& entryBlock = dstRegion.front();
     SmallVector<Value> qcoTargetAliases;
     qcoTargetAliases.reserve(numTargets);
-
+    const auto qubitType = qco::QubitType::get(qcoOp.getContext());
+    const auto opLoc = op.getLoc();
     rewriter.modifyOpInPlace(qcoOp, [&] {
       for (auto i = 0UL; i < numTargets; i++) {
-        auto originalTarget = qcoOp.getInputTarget(i);
-        auto arg =
-            entryBlock.addArgument(originalTarget.getType(), op.getLoc());
-        qcoTargetAliases.push_back(arg);
+        qcoTargetAliases.emplace_back(entryBlock.addArgument(qubitType, opLoc));
       }
     });
     state.targetsIn.try_emplace(state.inCtrlOp, qcoTargetAliases);

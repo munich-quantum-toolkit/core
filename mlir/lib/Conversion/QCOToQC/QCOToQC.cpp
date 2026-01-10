@@ -783,7 +783,7 @@ struct ConvertQCOCtrlOp final : OpConversionPattern<qco::CtrlOp> {
     // Remove all block arguments in the cloned region
     rewriter.modifyOpInPlace(qcOp, [&] {
       auto& entryBlock = dstRegion.front();
-      auto numArgs = entryBlock.getNumArguments();
+      const auto numArgs = entryBlock.getNumArguments();
 
       // 1. Replace uses (Must be done BEFORE erasing)
       // We iterate 0..N using indices since the block args are still stable
