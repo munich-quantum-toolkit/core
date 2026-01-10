@@ -11,7 +11,7 @@ ci:
   autoupdate_commit_msg: "⬆️🪝 update pre-commit hooks"
   autoupdate_schedule: quarterly
   autofix_commit_msg: "🎨 pre-commit fixes"
-  skip: [mypy, ty-check]
+  skip: [ty-check]
 
 repos:
   # Standard hooks
@@ -76,18 +76,6 @@ repos:
     hooks:
       - id: ruff-check
       - id: ruff-format
-
-  # Static type checking using mypy
-  - repo: https://github.com/pre-commit/mirrors-mypy
-    rev: v1.19.1
-    hooks:
-      - id: mypy
-        files: ^(python/mqt|test/python|noxfile.py)
-        args: []
-        additional_dependencies:
-          - nox
-          - numpy
-          - pytest
 
   # Static type checking using ty
   - repo: local
