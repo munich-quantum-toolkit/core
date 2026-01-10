@@ -1303,11 +1303,13 @@ private:
    * @brief Update tracking when an operation consumes and produces a qubit
    * @param inputQubit Input qubit being consumed (must be valid)
    * @param outputQubit New output qubit being produced
+   * @param region The Region in where the qubits are defined.
    */
   void updateQubitTracking(Value inputQubit, Value outputQubit, Region* region);
 
   /// Track valid (unconsumed) qubit SSA values for linear type enforcement.
   /// Only values present in this set are valid for use in operations.
+  /// Each Region has its own set of valid qubits.
   /// When an operation consumes a qubit and produces a new one, the old value
   /// is removed and the new output is added.
   llvm::DenseMap<Region*, llvm::DenseSet<Value>> validQubits;
