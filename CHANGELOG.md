@@ -17,6 +17,10 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 
 - 📦 Build MLIR by default for C++ library builds ([#1356]) ([**@burgholzer**], [**@denialhaag**])
 
+### Removed
+
+- 🔥 No longer actively type check Python code with `mypy` and solely rely on `ty` ([#1437]) ([**@burgholzer**])
+
 ## [3.4.0] - 2026-01-08
 
 ### Added
@@ -303,6 +307,7 @@ _📚 Refer to the [GitHub Release Notes](https://github.com/munich-quantum-tool
 
 <!-- PR links -->
 
+[#1437]: https://github.com/munich-quantum-toolkit/core/pull/1437
 [#1430]: https://github.com/munich-quantum-toolkit/core/pull/1430
 [#1428]: https://github.com/munich-quantum-toolkit/core/pull/1428
 [#1415]: https://github.com/munich-quantum-toolkit/core/pull/1415
