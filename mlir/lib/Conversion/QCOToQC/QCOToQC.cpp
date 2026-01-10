@@ -1164,7 +1164,8 @@ struct QCOToQC final : impl::QCOToQCBase<QCOToQC> {
 
     target.addDynamicallyLegalOp<scf::YieldOp>([&](scf::YieldOp op) {
       return !llvm::any_of(op->getOperandTypes(), [&](Type type) {
-        return type == qco::QubitType::get(context);
+        return type == qco::QubitType::get(context) ||
+               type == qc::QubitType::get(context);
       });
     });
     target.addDynamicallyLegalOp<scf::WhileOp>([&](scf::WhileOp op) {
@@ -1174,7 +1175,8 @@ struct QCOToQC final : impl::QCOToQCBase<QCOToQC> {
     });
     target.addDynamicallyLegalOp<scf::ConditionOp>([&](scf::ConditionOp op) {
       return !llvm::any_of(op.getOperandTypes(), [&](Type type) {
-        return type == qco::QubitType::get(context);
+        return type == qco::QubitType::get(context) ||
+               type == qc::QubitType::get(context);
       });
     });
     target.addDynamicallyLegalOp<scf::ForOp>([&](scf::ForOp op) {
@@ -1194,7 +1196,8 @@ struct QCOToQC final : impl::QCOToQCBase<QCOToQC> {
     });
     target.addDynamicallyLegalOp<func::ReturnOp>([&](func::ReturnOp op) {
       return !llvm::any_of(op->getOperandTypes(), [&](Type type) {
-        return type == qco::QubitType::get(context);
+        return type == qco::QubitType::get(context) ||
+               type == qc::QubitType::get(context);
       });
     });
 
