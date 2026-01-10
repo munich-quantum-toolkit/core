@@ -603,6 +603,8 @@ QCOProgramBuilder& QCOProgramBuilder::dealloc(Value qubit) {
 ValueRange QCOProgramBuilder::scfFor(
     Value lowerbound, Value upperbound, Value step, ValueRange initArgs,
     const std::function<ValueRange(Value, ValueRange)>& body) {
+  checkFinalized();
+
   // Create the empty for operation
   auto forOp = create<scf::ForOp>(loc, lowerbound, upperbound, step, initArgs);
   auto* forBody = forOp.getBody();
@@ -634,6 +636,8 @@ ValueRange QCOProgramBuilder::scfWhile(
     ValueRange initArgs,
     const std::function<ValueRange(ValueRange)>& beforeBody,
     const std::function<ValueRange(ValueRange)>& afterBody) {
+  checkFinalized();
+
   // Create the empty while operation
   auto whileOp = create<scf::WhileOp>(loc, initArgs.getTypes(), initArgs);
   const SmallVector<Location> locs(initArgs.size(), loc);
@@ -685,6 +689,8 @@ ValueRange
 QCOProgramBuilder::scfIf(Value condition, ValueRange qubits,
                          const std::function<ValueRange()>& thenBody,
                          const std::function<ValueRange()>& elseBody) {
+  checkFinalized();
+
   // Create the empty while operation
   auto ifOp = create<scf::IfOp>(loc, qubits.getTypes(), condition,
                                 /*withElseRegion=*/true);
@@ -722,11 +728,15 @@ QCOProgramBuilder::scfIf(Value condition, ValueRange qubits,
 
 QCOProgramBuilder& QCOProgramBuilder::scfCondition(Value condition,
                                                    ValueRange yieldedValues) {
+  checkFinalized();
+
   create<scf::ConditionOp>(loc, condition, yieldedValues);
   return *this;
 }
 
 QCOProgramBuilder& QCOProgramBuilder::scfYield(ValueRange yieldedValues) {
+  checkFinalized();
+
   create<scf::YieldOp>(loc, yieldedValues);
   return *this;
 }
@@ -736,6 +746,8 @@ QCOProgramBuilder& QCOProgramBuilder::scfYield(ValueRange yieldedValues) {
 //===----------------------------------------------------------------------===//
 
 ValueRange QCOProgramBuilder::funcCall(StringRef name, ValueRange operands) {
+  checkFinalized();
+
   const auto callOp =
       create<func::CallOp>(loc, name, operands.getTypes(), operands);
   for (auto [arg, result] : llvm::zip_equal(operands, callOp->getResults())) {
@@ -745,6 +757,8 @@ ValueRange QCOProgramBuilder::funcCall(StringRef name, ValueRange operands) {
 }
 
 QCOProgramBuilder& QCOProgramBuilder::funcReturn(ValueRange returnValues) {
+  checkFinalized();
+
   create<func::ReturnOp>(loc, returnValues);
   return *this;
 }
@@ -752,6 +766,8 @@ QCOProgramBuilder&
 QCOProgramBuilder::funcFunc(StringRef name, TypeRange argTypes,
                             TypeRange resultTypes,
                             const std::function<void(ValueRange)>& body) {
+  checkFinalized();
+
   // Set the insertionPoint
   const OpBuilder::InsertionGuard guard(*this);
   setInsertionPointToEnd(module.getBody());
@@ -779,12 +795,16 @@ QCOProgramBuilder::funcFunc(StringRef name, TypeRange argTypes,
 //===----------------------------------------------------------------------===//
 
 Value QCOProgramBuilder::arithConstantIndex(int64_t i) {
+  checkFinalized();
+
   const auto op =
       create<arith::ConstantOp>(loc, getIndexType(), getIndexAttr(i));
   return op->getResult(0);
 }
 
 Value QCOProgramBuilder::arithConstantBool(bool b) {
+  checkFinalized();
+
   const auto i1Type = getI1Type();
   const auto op =
       create<arith::ConstantOp>(loc, i1Type, getIntegerAttr(i1Type, b ? 1 : 0));

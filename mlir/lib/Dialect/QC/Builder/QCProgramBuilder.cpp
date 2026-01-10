@@ -452,6 +452,8 @@ QCProgramBuilder& QCProgramBuilder::dealloc(Value qubit) {
 QCProgramBuilder&
 QCProgramBuilder::scfFor(Value lowerbound, Value upperbound, Value step,
                          const std::function<void(Value)>& body) {
+  checkFinalized();
+
   create<scf::ForOp>(loc, lowerbound, upperbound, step, ValueRange{},
                      [&](OpBuilder& b, Location, Value iv, ValueRange) {
                        body(iv);
@@ -464,6 +466,8 @@ QCProgramBuilder::scfFor(Value lowerbound, Value upperbound, Value step,
 QCProgramBuilder&
 QCProgramBuilder::scfWhile(const std::function<void()>& beforeBody,
                            const std::function<void()>& afterBody) {
+  checkFinalized();
+
   create<scf::WhileOp>(
       loc, TypeRange{}, ValueRange{},
       [&](OpBuilder& /*b*/, Location, ValueRange) { beforeBody(); },
@@ -478,6 +482,8 @@ QCProgramBuilder::scfWhile(const std::function<void()>& beforeBody,
 QCProgramBuilder&
 QCProgramBuilder::scfIf(Value cond, const std::function<void()>& thenBody,
                         std::optional<std::function<void()>> elseBody) {
+  checkFinalized();
+
   if (!elseBody) {
     create<scf::IfOp>(loc, cond, [&](OpBuilder& b, Location loc) {
       thenBody();
@@ -499,6 +505,8 @@ QCProgramBuilder::scfIf(Value cond, const std::function<void()>& thenBody,
 }
 
 QCProgramBuilder& QCProgramBuilder::scfCondition(Value condition) {
+  checkFinalized();
+
   create<scf::ConditionOp>(loc, condition, ValueRange{});
   return *this;
 }
@@ -509,11 +517,15 @@ QCProgramBuilder& QCProgramBuilder::scfCondition(Value condition) {
 
 QCProgramBuilder& QCProgramBuilder::funcCall(StringRef name,
                                              ValueRange operands) {
+  checkFinalized();
+
   create<func::CallOp>(loc, name, TypeRange{}, operands);
   return *this;
 }
 
 QCProgramBuilder& QCProgramBuilder::funcReturn() {
+  checkFinalized();
+
   create<func::ReturnOp>(loc);
   return *this;
 }
@@ -521,6 +533,8 @@ QCProgramBuilder& QCProgramBuilder::funcReturn() {
 QCProgramBuilder&
 QCProgramBuilder::funcFunc(StringRef name, TypeRange argTypes,
                            const std::function<void(ValueRange)>& body) {
+  checkFinalized();
+
   // Set the insertionPoint
   const OpBuilder::InsertionGuard guard(*this);
   setInsertionPointToEnd(module.getBody());
@@ -543,12 +557,16 @@ QCProgramBuilder::funcFunc(StringRef name, TypeRange argTypes,
 //===----------------------------------------------------------------------===//
 
 Value QCProgramBuilder::arithConstantIndex(int64_t index) {
+  checkFinalized();
+
   const auto op =
       create<arith::ConstantOp>(loc, getIndexType(), getIndexAttr(index));
   return op->getResult(0);
 }
 
 Value QCProgramBuilder::arithConstantBool(bool b) {
+  checkFinalized();
+
   const auto i1Type = getI1Type();
   const auto op =
       create<arith::ConstantOp>(loc, i1Type, getIntegerAttr(i1Type, b ? 1 : 0));
