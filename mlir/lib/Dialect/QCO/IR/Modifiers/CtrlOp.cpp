@@ -310,13 +310,34 @@ LogicalResult CtrlOp::verify() {
       return emitOpError("duplicate control qubit found");
     }
   }
-  auto bodyUnitary = getBodyUnitary();
-  const auto numQubits = bodyUnitary.getNumQubits();
-  for (size_t i = 0; i < numQubits; i++) {
-    if (!uniqueQubitsIn.insert(bodyUnitary.getInputQubit(i)).second) {
-      return emitOpError("duplicate qubit found");
+  for (const auto& target : getTargetsIn()) {
+    if (!uniqueQubitsIn.insert(target).second) {
+      return emitOpError("duplicate target qubit found");
     }
   }
+
+  auto bodyUnitary = getBodyUnitary();
+  if (bodyUnitary.getNumQubits() != numTargets) {
+    return emitOpError("body unitary must operate on exactly ")
+           << numTargets << " target qubits, but found "
+           << bodyUnitary.getNumQubits();
+  }
+  const auto numQubits = bodyUnitary.getNumQubits();
+  for (size_t i = 0; i < numQubits; i++) {
+    if (bodyUnitary.getInputQubit(i) != block.getArgument(i)) {
+      return emitOpError("body unitary must use target alias block argument ")
+             << i << " (and not the original target operand)";
+    }
+  }
+
+  // Also require yield to forward the unitary's outputs in-order.
+  for (size_t i = 0; i < numTargets; ++i) {
+    if (block.back().getOperand(i) != bodyUnitary.getOutputQubit(i)) {
+      return emitOpError("yield operand ")
+             << i << " must be the body unitary output qubit " << i;
+    }
+  }
+
   SmallPtrSet<Value, 4> uniqueQubitsOut;
   for (const auto& control : getControlsOut()) {
     if (!uniqueQubitsOut.insert(control).second) {

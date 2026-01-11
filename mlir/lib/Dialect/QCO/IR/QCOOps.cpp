@@ -92,6 +92,11 @@ parseTargetAliasing(OpAsmParser& parser, Region& region,
 static void printTargetAliasing(OpAsmPrinter& printer, Operation* /*op*/,
                                 Region& region, OperandRange targetsIn) {
   printer << "(";
+  if (region.empty()) {
+    printer << ") ";
+    printer.printRegion(region, false);
+    return;
+  }
   Block& entryBlock = region.front();
 
   const auto numTargets = targetsIn.size();
@@ -105,7 +110,7 @@ static void printTargetAliasing(OpAsmPrinter& printer, Operation* /*op*/,
   }
   printer << ") ";
 
-  printer.printRegion(region, /*printEntryBlockArgs=*/false);
+  printer.printRegion(region, false);
 }
 
 //===----------------------------------------------------------------------===//
@@ -119,11 +124,13 @@ void QCODialect::initialize() {
   addTypes<
 #define GET_TYPEDEF_LIST
 #include "mlir/Dialect/QCO/IR/QCOOpsTypes.cpp.inc"
+
       >();
 
   addOperations<
 #define GET_OP_LIST
 #include "mlir/Dialect/QCO/IR/QCOOps.cpp.inc"
+
       >();
 }
 

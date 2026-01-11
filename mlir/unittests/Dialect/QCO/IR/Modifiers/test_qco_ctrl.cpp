@@ -110,6 +110,9 @@ TEST_F(QCOCtrlOpTest, UnitaryOpBuilder) {
   auto ctrlOp = CtrlOp::create(builder, builder.getUnknownLoc(), q[0], q[1],
                                cast<UnitaryOpInterface>(xOp.getOperation()));
 
+  // Erase the template op so it doesn't consume q[1] in the main block
+  xOp.erase();
+
   // Verify structure
   EXPECT_EQ(ctrlOp.getNumControls(), 1);
   EXPECT_EQ(ctrlOp.getNumTargets(), 1);
