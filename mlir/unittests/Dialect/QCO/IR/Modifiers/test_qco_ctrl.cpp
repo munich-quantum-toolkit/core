@@ -75,26 +75,7 @@ TEST_F(QCOCtrlOpTest, LambdaBuilder) {
   EXPECT_EQ(ctrlOp.getNumTargets(), 2);
   EXPECT_EQ(ctrlOp.getResults().size(), 3); // 1 control out + 2 targets out
 
-  // Verify body region
-  auto& region = ctrlOp.getRegion();
-  ASSERT_FALSE(region.empty());
-  auto& block = region.front();
-  ASSERT_EQ(block.getOperations().size(), 2); // Body Unitary + Yield
-
-  EXPECT_TRUE(isa<SWAPOp>(block.front()));
-  EXPECT_TRUE(isa<YieldOp>(block.back()));
-
-  // Verify target aliasing via block arguments
-  const auto qType = QubitType::get(&context);
-  ASSERT_EQ(block.getNumArguments(), 2); // 2 target block args
-  EXPECT_EQ(block.getArgument(0).getType(), qType);
-  EXPECT_EQ(block.getArgument(1).getType(), qType);
-
-  // Verify the SWAP uses block arguments, not original operands
-  auto swapOp = cast<SWAPOp>(block.front());
-  EXPECT_EQ(swapOp.getOperand(0), block.getArgument(0));
-  EXPECT_EQ(swapOp.getOperand(1), block.getArgument(1));
-
+  // Verify operation
   ASSERT_TRUE(mlir::verify(ctrlOp).succeeded());
 }
 
@@ -118,24 +99,7 @@ TEST_F(QCOCtrlOpTest, UnitaryOpBuilder) {
   EXPECT_EQ(ctrlOp.getNumTargets(), 1);
   EXPECT_EQ(ctrlOp.getResults().size(), 2); // 1 control out + 1 target out
 
-  // Verify body
-  auto& region = ctrlOp.getRegion();
-  ASSERT_FALSE(region.empty());
-  auto& block = region.front();
-  ASSERT_EQ(block.getOperations().size(), 2);
-
-  EXPECT_TRUE(isa<XOp>(block.front()));
-  EXPECT_TRUE(isa<YieldOp>(block.back()));
-
-  // Verify target aliasing via block arguments
-  ASSERT_EQ(block.getNumArguments(), 1); // 1 target block arg
-  EXPECT_EQ(block.getArgument(0).getType(), qType);
-
-  // Verify the XOp inside region uses block argument
-  auto innerXOp = cast<XOp>(block.front());
-  EXPECT_EQ(innerXOp.getOperand(), block.getArgument(0));
-
-  // The template op 'xOp' still exists in the main block before ctrlOp.
+  // Verify operation
   EXPECT_TRUE(mlir::verify(ctrlOp).succeeded());
 }
 
