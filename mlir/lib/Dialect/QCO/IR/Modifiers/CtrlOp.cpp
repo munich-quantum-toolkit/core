@@ -11,7 +11,6 @@
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 
 #include <cstddef>
-#include <functional>
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/STLFunctionalExtras.h>
 #include <llvm/ADT/SmallVector.h>
@@ -52,7 +51,7 @@ struct MergeNestedCtrl final : OpRewritePattern<CtrlOp> {
     }
 
     // Merge controls
-    llvm::SmallVector<Value> newControls = llvm::to_vector(
+    const auto newControls = llvm::to_vector(
         llvm::concat<Value>(op.getControlsIn(), bodyCtrlOp.getControlsIn()));
     rewriter.replaceOpWithNewOp<CtrlOp>(op, newControls, op.getTargetsIn(),
                                         bodyCtrlOp.getBodyUnitary());
