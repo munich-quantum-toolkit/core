@@ -33,6 +33,7 @@ class QCOCtrlOpTest : public ::testing::Test {
 protected:
   MLIRContext context;
   QCOProgramBuilder builder;
+  OwningOpRef<ModuleOp> module;
 
   QCOCtrlOpTest() : builder(&context) {}
 
@@ -68,7 +69,7 @@ TEST_F(QCOCtrlOpTest, LambdaBuilder) {
                  return {q0, q1};
                });
   auto ctrlOp = cast<CtrlOp>(builder.getBlock()->getOperations().back());
-  auto module = builder.finalize();
+  module = builder.finalize();
 
   // Verify the operation structure
   EXPECT_EQ(ctrlOp.getNumControls(), 1);
@@ -82,7 +83,6 @@ TEST_F(QCOCtrlOpTest, LambdaBuilder) {
 TEST_F(QCOCtrlOpTest, UnitaryOpBuilder) {
   // Allocate qubits
   const auto q = builder.allocQubitRegister(2);
-  const auto qType = QubitType::get(&context);
 
   // Create a template unitary operation (X gate)
   auto xOp = XOp::create(builder, builder.getUnknownLoc(), q[1]);
@@ -122,7 +122,7 @@ TEST_F(QCOCtrlOpTest, VerifierBodySize) {
     // We can insert another XOp
     XOp::create(builder, builder.getUnknownLoc(), block.getArgument(0));
   }
-  auto module = builder.finalize();
+  module = builder.finalize();
 
   // Should fail because body must have exactly 2 operations
   EXPECT_TRUE(mlir::verify(ctrlOp).failed());
@@ -136,7 +136,7 @@ TEST_F(QCOCtrlOpTest, VerifierBlockArgsCount) {
     return {builder.x(innerTargets[0])};
   });
   auto ctrlOp = cast<CtrlOp>(builder.getBlock()->getOperations().back());
-  auto module = builder.finalize();
+  module = builder.finalize();
 
   // Add an extra argument to the block
   auto& region = ctrlOp.getRegion();
@@ -156,7 +156,7 @@ TEST_F(QCOCtrlOpTest, VerifierInputTypes) {
     return {builder.x(innerTargets[0])};
   });
   auto ctrlOp = cast<CtrlOp>(builder.getBlock()->getOperations().back());
-  auto module = builder.finalize();
+  module = builder.finalize();
 
   // Change the block argument type to a non-qubit
   auto& region = ctrlOp.getRegion();
@@ -174,7 +174,7 @@ TEST_F(QCOCtrlOpTest, VerifierBodyFirstOp) {
     return {builder.reset(innerTargets[0])};
   });
   auto ctrlOp = cast<CtrlOp>(builder.getBlock()->getOperations().back());
-  auto module = builder.finalize();
+  module = builder.finalize();
 
   // Should fail because body must use a unitary as first operation
   EXPECT_TRUE(mlir::verify(ctrlOp).failed());
