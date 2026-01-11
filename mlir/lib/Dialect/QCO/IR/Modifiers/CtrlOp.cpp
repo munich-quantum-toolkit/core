@@ -19,6 +19,7 @@
 #include <llvm/Support/ErrorHandling.h>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/BuiltinAttributes.h>
+#include <mlir/IR/IRMapping.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OperationSupport.h>
 #include <mlir/IR/PatternMatch.h>
@@ -51,11 +52,8 @@ struct MergeNestedCtrl final : OpRewritePattern<CtrlOp> {
     }
 
     // Merge controls
-    llvm::SmallVector<Value> newControls(op.getControlsIn());
-    for (const auto control : bodyCtrlOp.getControlsIn()) {
-      newControls.push_back(control);
-    }
-
+    llvm::SmallVector<Value> newControls = llvm::to_vector(
+        llvm::concat<Value>(op.getControlsIn(), bodyCtrlOp.getControlsIn()));
     rewriter.replaceOpWithNewOp<CtrlOp>(op, newControls, op.getTargetsIn(),
                                         bodyCtrlOp.getBodyUnitary());
 
@@ -105,19 +103,14 @@ struct CtrlInlineGPhase final : OpRewritePattern<CtrlOp> {
       return failure();
     }
 
-    llvm::SmallVector<Value> newControls(op.getControlsIn());
-    const auto newTarget = newControls.back();
-    newControls.pop_back();
-    auto ctrlOp =
-        CtrlOp::create(rewriter, op.getLoc(), newControls, newTarget,
-                       [&](ValueRange targets) -> llvm::SmallVector<Value> {
-                         auto pOp =
-                             POp::create(rewriter, op.getLoc(), targets[0],
-                                         gPhaseOp.getTheta());
-                         return {pOp.getQubitOut()};
-                       });
-
-    rewriter.replaceOp(op, ctrlOp.getResults());
+    const auto controls = op.getControlsIn();
+    rewriter.replaceOpWithNewOp<CtrlOp>(
+        op, controls.drop_back(), controls.back(),
+        [&](ValueRange targets) -> llvm::SmallVector<Value> {
+          auto pOp = POp::create(rewriter, op.getLoc(), targets[0],
+                                 gPhaseOp.getTheta());
+          return {pOp.getQubitOut()};
+        });
 
     return success();
   }
@@ -133,21 +126,15 @@ struct CtrlInlineId final : OpRewritePattern<CtrlOp> {
                                 PatternRewriter& rewriter) const override {
     // Require at least one positive control
     // Trivial case is handled by RemoveTrivialCtrl
-    if (op.getNumControls() == 0) {
+    if (op.getNumControls() == 0 ||
+        !llvm::isa<IdOp>(op.getBodyUnitary().getOperation())) {
       return failure();
     }
 
-    if (!llvm::isa<IdOp>(op.getBodyUnitary().getOperation())) {
-      return failure();
-    }
+    auto idOp = IdOp::create(rewriter, op.getLoc(), op.getTargetsIn().front());
 
-    auto idOp = rewriter.create<IdOp>(op.getLoc(), op.getTargetsIn().front());
-
-    llvm::SmallVector<Value> newOperands;
-    newOperands.reserve(op.getNumControls() + 1);
-    newOperands.append(op.getControlsIn().begin(), op.getControlsIn().end());
-    newOperands.push_back(idOp.getQubitOut());
-    rewriter.replaceOp(op, newOperands);
+    rewriter.replaceOp(op, llvm::to_vector(llvm::concat<Value>(
+                               op.getControlsIn(), idOp->getResults())));
 
     return success();
   }
@@ -255,15 +242,17 @@ void CtrlOp::build(OpBuilder& odsBuilder, OperationState& odsState,
   build(odsBuilder, odsState, controls, targets);
   auto& block = odsState.regions.front()->emplaceBlock();
 
-  // Move the unitary op into the block
+  // Create block arguments and map targets to them
+  IRMapping mapping;
+  const auto qubitType = QubitType::get(odsBuilder.getContext());
+  for (const auto target : targets) {
+    mapping.map(target, block.addArgument(qubitType, odsState.location));
+  }
+
+  // Clone the operation using the mapping
   const OpBuilder::InsertionGuard guard(odsBuilder);
   odsBuilder.setInsertionPointToStart(&block);
-  const auto qubitType = QubitType::get(odsBuilder.getContext());
-  auto* op = odsBuilder.clone(*bodyUnitary.getOperation());
-  for (const auto target : targets) {
-    const auto arg = block.addArgument(qubitType, odsState.location);
-    op->replaceUsesOfWith(target, arg);
-  }
+  auto* op = odsBuilder.clone(*bodyUnitary.getOperation(), mapping);
   YieldOp::create(odsBuilder, odsState.location, op->getResults());
 }
 
@@ -273,16 +262,16 @@ void CtrlOp::build(
     llvm::function_ref<llvm::SmallVector<Value>(ValueRange)> bodyBuilder) {
   build(odsBuilder, odsState, controls, targets);
   auto& block = odsState.regions.front()->emplaceBlock();
+
   const auto qubitType = QubitType::get(odsBuilder.getContext());
   for (size_t i = 0; i < targets.size(); ++i) {
     block.addArgument(qubitType, odsState.location);
   }
 
-  // Move the unitary op into the block
   const OpBuilder::InsertionGuard guard(odsBuilder);
   odsBuilder.setInsertionPointToStart(&block);
-  const auto targetsOut = bodyBuilder(block.getArguments());
-  YieldOp::create(odsBuilder, odsState.location, targetsOut);
+  YieldOp::create(odsBuilder, odsState.location,
+                  bodyBuilder(block.getArguments()));
 }
 
 LogicalResult CtrlOp::verify() {
