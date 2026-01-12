@@ -37,10 +37,10 @@ public:
   Singleton(const Singleton&) = delete;
   Singleton& operator=(const Singleton&) = delete;
 
-  /// @brief Destructor for the Device class.
+  /// @brief Virtual destructor for the Singleton base class.
   virtual ~Singleton() = default;
 
-  /// @returns the singleton instance of the Device class.
+  /// @returns the singleton instance of the derived class.
   [[nodiscard]] static auto get() -> Concrete& {
     // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
     static auto* instance = new Concrete();
