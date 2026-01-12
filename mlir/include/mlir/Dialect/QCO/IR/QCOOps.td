@@ -1025,10 +1025,10 @@ def YieldOp : QCOOp<"yield", traits = [Terminator]> {
 
         Example:
         ```mlir
-        %ctrl_q_out, %tgt_q_out = qco.ctrl(%ctrl_q_in) %tgt_q_in {
-            %tgt_q_res = qco.h %tgt_q_in : !qco.qubit -> !qco.qubit
-            qco.yield %tgt_q_res : !qco.qubit
-        } : ({!qco.qubit}, {!qco.qubit}) -> ({!qco.qubit}, {!qco.qubit})
+        %res_ctrl, %res_tgt:2 = qco.ctrl(%ctrl) targets(%a0 = %q0, %a1 = %q1) {
+            %a0_1, %a1_1 = qco.swap %a0, %a1 : !qco.qubit, !qco.qubit -> !qco.qubit, !qco.qubit
+            qco.yield %a0_1, %a1_1
+        } : ({!qco.qubit}, {!qco.qubit, !qco.qubit}) -> ({!qco.qubit}, {!qco.qubit, !qco.qubit})
         ```
     }];
 
@@ -1057,10 +1057,10 @@ def CtrlOp : QCOOp<"ctrl", traits =
 
         Example:
         ```mlir
-        %ctrl_q_out, %tgt_q_out = qco.ctrl(%ctrl_q_in) %tgt_q_in {
-            %tgt_q_res = qco.h %tgt_q_in : !qco.qubit -> !qco.qubit
-            qco.yield %tgt_q_res : !qco.qubit
-        } : ({!qco.qubit}, {!qco.qubit}) -> ({!qco.qubit}, {!qco.qubit})
+        %res_ctrl, %res_tgt:2 = qco.ctrl(%ctrl) targets(%a0 = %q0, %a1 = %q1) {
+            %a0_1, %a1_1 = qco.swap %a0, %a1 : !qco.qubit, !qco.qubit -> !qco.qubit, !qco.qubit
+            qco.yield %a0_1, %a1_1
+        } : ({!qco.qubit}, {!qco.qubit, !qco.qubit}) -> ({!qco.qubit}, {!qco.qubit, !qco.qubit})
         ```
     }];
 
@@ -1069,8 +1069,10 @@ def CtrlOp : QCOOp<"ctrl", traits =
     let results = (outs Variadic<QubitType>:$controls_out, Variadic<QubitType>:$targets_out);
     let regions = (region SizedRegion<1>:$region);
     let assemblyFormat = [{
-        `(` $controls_in `)` $targets_in
-        $region attr-dict `:`
+        `(` $controls_in `)`
+        `targets`
+        custom<TargetAliasing>($region, $targets_in)
+        attr-dict `:`
         `(` `{` type($controls_in) `}` ( `,` `{` type($targets_in)^ `}` )? `)`
         `->`
         `(` `{` type($controls_out) `}` ( `,` `{` type($targets_out)^ `}` )? `)`
@@ -1099,7 +1101,7 @@ def CtrlOp : QCOOp<"ctrl", traits =
            build($_builder, $_state, controls.getTypes(), targets.getTypes(), controls, targets);
         }]>,
         OpBuilder<(ins "ValueRange":$controls, "ValueRange":$targets, "UnitaryOpInterface":$bodyUnitary)>,
-        OpBuilder<(ins "ValueRange":$controls, "ValueRange":$targets, "const std::function<ValueRange(ValueRange)>&":$bodyBuilder)>
+        OpBuilder<(ins "ValueRange":$controls, "ValueRange":$targets, "llvm::function_ref<llvm::SmallVector<Value>(ValueRange)>":$bodyBuilder)>
     ];
 
     let hasCanonicalizer = 1;
