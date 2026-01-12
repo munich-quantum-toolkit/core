@@ -15,6 +15,7 @@
 #include <memory>
 #include <optional>
 #include <qdmi/client.h>
+#include <qdmi/common/Common.hpp>
 #include <qdmi/device.h>
 #include <string>
 #include <unordered_map>
@@ -393,7 +394,9 @@ namespace qdmi {
  * sessions. It is responsible for loading the libraries, allocating sessions,
  * and providing access to the devices.
  */
-class Driver final {
+class Driver final : public Singleton<Driver> {
+  friend Singleton;
+
   /// @brief Private constructor to enforce the singleton pattern.
   Driver();
 
@@ -410,21 +413,9 @@ class Driver final {
       sessions_;
 
 public:
-  // Delete copy constructors and assignment operators to prevent copying the
-  // singleton instance.
-  Driver(const Driver&) = delete;
-  Driver& operator=(const Driver&) = delete;
-  Driver(Driver&&) = default;
-  Driver& operator=(Driver&&) = default;
-
-  /// @brief Returns the singleton instance.
-  static auto get() -> Driver& {
-    static Driver instance;
-    return instance;
-  }
-
   /// @brief Destructor for the Driver class.
-  ~Driver();
+  ~Driver() override;
+
   /**
    * @brief Loads a dynamic device library and adds it to the driver.
    *
