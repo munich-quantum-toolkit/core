@@ -1652,7 +1652,7 @@ struct ConvertQCFuncFuncOp final : StatefulOpConversionPattern<func::FuncOp> {
   matchAndRewrite(func::FuncOp op, OpAdaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
     auto const qcType = qc::QubitType::get(rewriter.getContext());
-    assert(llvm::all_of(op->getOperandTypes(),
+    assert(llvm::all_of(op.getArgumentTypes(),
                         [&](Type type) { return type == qcType; }) &&
            "Not all operands are qc qubits");
 

@@ -128,8 +128,10 @@ QCOProgramBuilder::allocClassicalBitRegister(const int64_t size,
 // Linear Type Tracking Helpers
 //===----------------------------------------------------------------------===//
 
-void QCOProgramBuilder::validateQubitValue(Value qubit) {
-  if (!validQubits[qubit.getParentRegion()].contains(qubit)) {
+void QCOProgramBuilder::validateQubitValue(Value qubit, Region* region) const {
+  auto qubits = validQubits.lookup(region);
+
+  if (qubits.empty() || !qubits.contains(qubit)) {
     llvm::errs() << "Attempting to use an invalid qubit SSA value. "
                  << "The value may have been consumed by a previous operation "
                  << "or was never created through this builder.\n";
@@ -141,7 +143,7 @@ void QCOProgramBuilder::validateQubitValue(Value qubit) {
 void QCOProgramBuilder::updateQubitTracking(Value inputQubit, Value outputQubit,
                                             Region* region) {
   // Validate the input qubit
-  validateQubitValue(inputQubit);
+  validateQubitValue(inputQubit, region);
   // Remove the input (consumed) value from tracking
   validQubits[region].erase(inputQubit);
   // Add the output (new) value to tracking
@@ -588,7 +590,7 @@ QCOProgramBuilder::ctrl(ValueRange controls, ValueRange targets,
 QCOProgramBuilder& QCOProgramBuilder::dealloc(Value qubit) {
   checkFinalized();
 
-  validateQubitValue(qubit);
+  validateQubitValue(qubit, qubit.getParentRegion());
   validQubits[qubit.getParentRegion()].erase(qubit);
 
   DeallocOp::create(*this, loc, qubit);
