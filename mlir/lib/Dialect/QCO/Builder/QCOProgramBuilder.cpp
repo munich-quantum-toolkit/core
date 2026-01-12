@@ -36,7 +36,7 @@ namespace mlir::qco {
 
 QCOProgramBuilder::QCOProgramBuilder(MLIRContext* context)
     : ImplicitLocOpBuilder(
-          FileLineColLoc::get(context, "<qco-program-builder>", 0, 0), context),
+          FileLineColLoc::get(context, "<qco-program-builder>", 1, 1), context),
       ctx(context), module(ModuleOp::create(*this)) {
   ctx->loadDialect<QCODialect>();
 }

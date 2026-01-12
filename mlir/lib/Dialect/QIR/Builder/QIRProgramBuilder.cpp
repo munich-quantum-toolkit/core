@@ -37,7 +37,7 @@ namespace mlir::qir {
 
 QIRProgramBuilder::QIRProgramBuilder(MLIRContext* context)
     : ImplicitLocOpBuilder(
-          FileLineColLoc::get(context, "<qir-program-builder>", 0, 0), context),
+          FileLineColLoc::get(context, "<qir-program-builder>", 1, 1), context),
       module(ModuleOp::create(*this)),
       ptrType(LLVM::LLVMPointerType::get(context)),
       voidType(LLVM::LLVMVoidType::get(context)) {

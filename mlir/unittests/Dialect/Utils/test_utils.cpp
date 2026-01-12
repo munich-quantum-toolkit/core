@@ -18,6 +18,7 @@
 #include <memory>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/IR/Builders.h>
+#include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/Location.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/Operation.h>
@@ -28,13 +29,16 @@ using namespace mlir;
 class UtilsTest : public ::testing::Test {
 protected:
   MLIRContext context;
+  OwningOpRef<ModuleOp> module;
   std::unique_ptr<ImplicitLocOpBuilder> builder;
 
   void SetUp() override {
     context.loadDialect<arith::ArithDialect>();
 
-    builder = std::make_unique<ImplicitLocOpBuilder>(
-        FileLineColLoc::get(&context, "<utils-test-builder>", 0, 0), &context);
+    auto loc = FileLineColLoc::get(&context, "<utils-test-builder>", 1, 1);
+    module = ModuleOp::create(loc);
+    builder = std::make_unique<ImplicitLocOpBuilder>(loc, &context);
+    builder->setInsertionPointToStart(module->getBody());
   }
 
   [[nodiscard]] arith::AddFOp createAddition(const double a, const double b) {

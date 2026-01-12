@@ -34,7 +34,7 @@ namespace mlir::qc {
 
 QCProgramBuilder::QCProgramBuilder(MLIRContext* context)
     : ImplicitLocOpBuilder(
-          FileLineColLoc::get(context, "<qc-program-builder>", 0, 0), context),
+          FileLineColLoc::get(context, "<qc-program-builder>", 1, 1), context),
       ctx(context), module(ModuleOp::create(*this)) {
   ctx->loadDialect<QCDialect>();
 }
