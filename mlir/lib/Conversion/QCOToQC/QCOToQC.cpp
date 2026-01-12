@@ -1179,7 +1179,7 @@ struct QCOToQC final : impl::QCOToQCBase<QCOToQC> {
 
     ConversionTarget target(*context);
     RewritePatternSet patterns(context);
-    const QCOToQCTypeConverter typeConverter(context);
+    QCOToQCTypeConverter typeConverter(context);
 
     target.addDynamicallyLegalOp<scf::IfOp>([&](scf::IfOp op) {
       return !llvm::any_of(op->getResultTypes(), [&](Type type) {
