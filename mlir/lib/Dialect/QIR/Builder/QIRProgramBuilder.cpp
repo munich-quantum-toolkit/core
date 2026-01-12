@@ -291,9 +291,6 @@ void QIRProgramBuilder::createCallOp(
     parameterOperands.push_back(parameterOperand);
   }
 
-  // Save current insertion point
-  const InsertionGuard entryBlockGuard(*this);
-
   // Insert in body block (before branch)
   setInsertionPoint(bodyBlock->getTerminator());
 
