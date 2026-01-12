@@ -26,7 +26,7 @@ if(BUILD_MQT_CORE_MLIR)
   FetchContent_Declare(
     Eigen
     GIT_REPOSITORY https://gitlab.com/libeigen/eigen.git
-    GIT_TAG 3.4.1
+    GIT_TAG 5.0.1
     GIT_SHALLOW TRUE)
   FetchContent_MakeAvailable(Eigen)
   if(WIN32 AND ${CMAKE_HOST_SYSTEM_PROCESSOR} STREQUAL ARM64)
