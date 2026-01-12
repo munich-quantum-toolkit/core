@@ -28,27 +28,28 @@ class UtilsTest : public ::testing::Test {
 protected:
   MLIRContext context;
   std::unique_ptr<OpBuilder> builder;
+  std::unique_ptr<Location> loc;
 
   void SetUp() override {
     context.loadDialect<arith::ArithDialect>();
 
     builder = std::make_unique<OpBuilder>(&context);
+    loc = std::make_unique<Location>(builder->getUnknownLoc());
   }
 
   arith::AddFOp createAddition(double a, double b) {
-    auto firstOperand = builder->create<arith::ConstantOp>(
-        builder->getUnknownLoc(), builder->getF64FloatAttr(a));
-    auto secondOperand = builder->create<arith::ConstantOp>(
-        builder->getUnknownLoc(), builder->getF64FloatAttr(b));
-    return builder->create<arith::AddFOp>(builder->getUnknownLoc(),
-                                          firstOperand, secondOperand);
+    auto firstOperand =
+        builder->create<arith::ConstantOp>(*loc, builder->getF64FloatAttr(a));
+    auto secondOperand =
+        builder->create<arith::ConstantOp>(*loc, builder->getF64FloatAttr(b));
+    return builder->create<arith::AddFOp>(*loc, firstOperand, secondOperand);
   }
 };
 
 TEST_F(UtilsTest, valueToDouble) {
   constexpr double expectedValue = 1.234;
   auto op = builder->create<arith::ConstantOp>(
-      builder->getUnknownLoc(), builder->getF64FloatAttr(expectedValue));
+      *loc, builder->getF64FloatAttr(expectedValue));
   ASSERT_TRUE(op);
 
   auto value = op.getResult();
@@ -60,7 +61,7 @@ TEST_F(UtilsTest, valueToDouble) {
 TEST_F(UtilsTest, valueToDoubleCastFromInteger) {
   constexpr int expectedValue = 42;
   auto op = builder->create<arith::ConstantOp>(
-      builder->getUnknownLoc(), builder->getI32IntegerAttr(expectedValue));
+      *loc, builder->getI32IntegerAttr(expectedValue));
   ASSERT_TRUE(op);
 
   auto value = op.getResult();
@@ -72,7 +73,7 @@ TEST_F(UtilsTest, valueToDoubleCastFromInteger) {
 TEST_F(UtilsTest, valueToDoubleCastFromNegativeInteger) {
   constexpr int expectedValue = -123;
   auto op = builder->create<arith::ConstantOp>(
-      builder->getUnknownLoc(), builder->getSI32IntegerAttr(expectedValue));
+      *loc, builder->getSI32IntegerAttr(expectedValue));
   ASSERT_TRUE(op);
 
   auto value = op.getResult();
@@ -85,9 +86,8 @@ TEST_F(UtilsTest, valueToDoubleCastFromMaxUnsignedInteger) {
   constexpr auto expectedValue = std::numeric_limits<uint64_t>::max();
   constexpr auto bitCount = 64;
   auto op = builder->create<arith::ConstantOp>(
-      builder->getUnknownLoc(),
-      builder->getIntegerAttr(builder->getIntegerType(bitCount, false),
-                              llvm::APInt::getMaxValue(bitCount)));
+      *loc, builder->getIntegerAttr(builder->getIntegerType(bitCount, false),
+                                    llvm::APInt::getMaxValue(bitCount)));
   ASSERT_TRUE(op);
 
   auto value = op.getResult();
@@ -99,8 +99,8 @@ TEST_F(UtilsTest, valueToDoubleCastFromMaxUnsignedInteger) {
 }
 
 TEST_F(UtilsTest, valueToDoubleWrongType) {
-  auto op = builder->create<arith::ConstantOp>(builder->getUnknownLoc(),
-                                               builder->getStringAttr("test"));
+  auto op =
+      builder->create<arith::ConstantOp>(*loc, builder->getStringAttr("test"));
   ASSERT_TRUE(op);
 
   auto value = op.getResult();
