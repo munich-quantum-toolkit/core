@@ -618,7 +618,7 @@ QCOProgramBuilder& QCOProgramBuilder::dealloc(Value qubit) {
 
 ValueRange QCOProgramBuilder::scfFor(
     Value lowerbound, Value upperbound, Value step, ValueRange initArgs,
-    const std::function<ValueRange(Value, ValueRange)>& body) {
+    llvm::function_ref<llvm::SmallVector<Value>(Value, ValueRange)> body) {
   checkFinalized();
 
   // Create the empty for operation
@@ -650,8 +650,8 @@ ValueRange QCOProgramBuilder::scfFor(
 
 ValueRange QCOProgramBuilder::scfWhile(
     ValueRange initArgs,
-    const std::function<ValueRange(ValueRange)>& beforeBody,
-    const std::function<ValueRange(ValueRange)>& afterBody) {
+    llvm::function_ref<llvm::SmallVector<Value>(ValueRange)> beforeBody,
+    llvm::function_ref<llvm::SmallVector<Value>(ValueRange)> afterBody) {
   checkFinalized();
 
   // Create the empty while operation
@@ -701,10 +701,10 @@ ValueRange QCOProgramBuilder::scfWhile(
   return whileOp->getResults();
 }
 
-ValueRange
-QCOProgramBuilder::scfIf(Value condition, ValueRange qubits,
-                         const std::function<ValueRange()>& thenBody,
-                         const std::function<ValueRange()>& elseBody) {
+ValueRange QCOProgramBuilder::scfIf(
+    Value condition, ValueRange qubits,
+    llvm::function_ref<llvm::SmallVector<Value>()> thenBody,
+    llvm::function_ref<llvm::SmallVector<Value>()> elseBody) {
   checkFinalized();
 
   // Create the empty while operation

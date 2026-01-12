@@ -1046,9 +1046,10 @@ public:
    *
    * @par Example:
    * ```c++
-   * builder.scfFor(lb, ub, step, initArgs, [&](Value iv, ValueRange iterArgs) {
-   *    auto q1 = builder.x(iterArgs[0]);
+   * builder.scfFor(lb, ub, step, initArgs, [&](Value iv, ValueRange iterArgs)
+   * -> llvm::SmallVector<Value> { auto q1 = builder.x(iterArgs[0]);
    *    builder.scfYield(q1);
+   *    return {q1};
    * });
    * ```
    * ```mlir
@@ -1059,9 +1060,9 @@ public:
    * }
    * ```
    */
-  ValueRange scfFor(Value lowerbound, Value upperbound, Value step,
-                    ValueRange initArgs,
-                    const std::function<ValueRange(Value, ValueRange)>& body);
+  ValueRange
+  scfFor(Value lowerbound, Value upperbound, Value step, ValueRange initArgs,
+         llvm::function_ref<llvm::SmallVector<Value>(Value, ValueRange)> body);
   /**
    * @brief Constructs a scf.while operation with return values
    *
@@ -1073,13 +1074,15 @@ public:
    *
    * @par Example:
    * ```c++
-   * builder.scfWhile(args, [&](ValueRange iterArgs) {
-   *   auto q1 = builder.h(iterArgs[0]);
+   * builder.scfWhile(args, [&](ValueRange iterArgs) -> llvm::SmallVector<Value>
+   * { auto q1 = builder.h(iterArgs[0]);
    *   auto [q2, measureRes] = builder.measure(q1);
    *   builder.scfCondition(measureRes, q2);
-   * }, [&](ValueRange iterArgs) {
+   *   return {q2};
+   * }, [&](ValueRange iterArgs) -> llvm::SmallVector<Value> {
    *   auto q1 = builder.x(iterArgs[0]);
    *   builder.scfYield(q1);
+   *   return {q1};
    * });
    * ```
    * ```mlir
@@ -1094,9 +1097,10 @@ public:
    * }
    * ```
    */
-  ValueRange scfWhile(ValueRange args,
-                      const std::function<ValueRange(ValueRange)>& beforeBody,
-                      const std::function<ValueRange(ValueRange)>& afterBody);
+  ValueRange
+  scfWhile(ValueRange args,
+           llvm::function_ref<llvm::SmallVector<Value>(ValueRange)> beforeBody,
+           llvm::function_ref<llvm::SmallVector<Value>(ValueRange)> afterBody);
 
   /**
    * @brief Constructs a scf.if operation with return values
@@ -1110,12 +1114,14 @@ public:
    *
    * @par Example:
    * ```c++
-   * builder.scfIf(condition, qubits, [&] {
+   * builder.scfIf(condition, qubits, [&]() -> llvm::SmallVector<Value> {
    *   auto q1 = builder.h(q0);
    *   builder.scfYield(q1);
-   * }, [&] {
+   *   return {q1};
+   * }, [&]() -> llvm::SmallVector<Value> {
    *   auto q1 = builder.x(q0);
    *   builder.scfYield(q1);
+   *   return {q1};
    * });
    * ```
    * ```mlir
@@ -1129,8 +1135,8 @@ public:
    * ```
    */
   ValueRange scfIf(Value condition, ValueRange qubits,
-                   const std::function<ValueRange()>& thenBody,
-                   const std::function<ValueRange()>& elseBody);
+                   llvm::function_ref<llvm::SmallVector<Value>()> thenBody,
+                   llvm::function_ref<llvm::SmallVector<Value>()> elseBody);
 
   /**
    * @brief Constructs a scf.condition operation with yielded values

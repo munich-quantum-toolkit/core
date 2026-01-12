@@ -17,6 +17,7 @@
 
 #include <functional>
 #include <gtest/gtest.h>
+#include <llvm/ADT/SmallVector.h>
 #include <llvm/Support/raw_ostream.h>
 #include <memory>
 #include <mlir/Dialect/Arith/IR/Arith.h>
@@ -100,13 +101,14 @@ TEST_F(ConversionTest, ScfForQCToQCOTest) {
     auto c1 = b.arithConstantIndex(1);
     auto c2 = b.arithConstantIndex(2);
     auto scfForRes =
-        b.scfFor(c0, c2, c1, {q0}, [&](Value /*iv*/, ValueRange iterArgs) {
-          auto q1 = b.h(iterArgs[0]);
-          auto q2 = b.x(q1);
-          auto q3 = b.h(q2);
-          b.scfYield(q3);
-          return q3;
-        });
+        b.scfFor(c0, c2, c1, {q0},
+                 [&](Value /*iv*/, ValueRange iterArgs) -> SmallVector<Value> {
+                   auto q1 = b.h(iterArgs[0]);
+                   auto q2 = b.x(q1);
+                   auto q3 = b.h(q2);
+                   b.scfYield(q3);
+                   return {q3};
+                 });
     b.h(scfForRes[0]);
   });
 
@@ -124,13 +126,14 @@ TEST_F(ConversionTest, ScfForQCOToQCTest) {
     auto c1 = b.arithConstantIndex(1);
     auto c2 = b.arithConstantIndex(2);
     auto scfForRes =
-        b.scfFor(c0, c2, c1, {q0}, [&](Value /*iv*/, ValueRange iterArgs) {
-          auto q1 = b.h(iterArgs[0]);
-          auto q2 = b.x(q1);
-          auto q3 = b.h(q2);
-          b.scfYield(q3);
-          return q3;
-        });
+        b.scfFor(c0, c2, c1, {q0},
+                 [&](Value /*iv*/, ValueRange iterArgs) -> SmallVector<Value> {
+                   auto q1 = b.h(iterArgs[0]);
+                   auto q2 = b.x(q1);
+                   auto q3 = b.h(q2);
+                   b.scfYield(q3);
+                   return {q3};
+                 });
     b.h(scfForRes[0]);
   });
 
@@ -185,16 +188,16 @@ TEST_F(ConversionTest, ScfWhileQCToQCOTest) {
     auto q0 = b.allocQubit();
     auto scfWhileResult = b.scfWhile(
         ValueRange{q0},
-        [&](ValueRange iterArgs) {
+        [&](ValueRange iterArgs) -> SmallVector<Value> {
           auto [q1, measureResult] = b.measure(iterArgs[0]);
           b.scfCondition(measureResult, q1);
-          return q1;
+          return {q1};
         },
-        [&](ValueRange iterArgs) {
+        [&](ValueRange iterArgs) -> SmallVector<Value> {
           auto q1 = b.h(iterArgs[0]);
           auto q2 = b.y(q1);
           b.scfYield(q2);
-          return q2;
+          return {q2};
         });
     b.h(scfWhileResult[0]);
   });
@@ -211,16 +214,16 @@ TEST_F(ConversionTest, ScfWhileQCOToQCTest) {
     auto q0 = b.allocQubit();
     auto scfWhileResult = b.scfWhile(
         ValueRange{q0},
-        [&](ValueRange iterArgs) {
+        [&](ValueRange iterArgs) -> SmallVector<Value> {
           auto [q1, measureResult] = b.measure(iterArgs[0]);
           b.scfCondition(measureResult, q1);
-          return q1;
+          return {q1};
         },
-        [&](ValueRange iterArgs) {
+        [&](ValueRange iterArgs) -> SmallVector<Value> {
           auto q1 = b.h(iterArgs[0]);
           auto q2 = b.y(q1);
           b.scfYield(q2);
-          return q2;
+          return {q2};
         });
     b.h(scfWhileResult[0]);
   });
@@ -280,17 +283,17 @@ TEST_F(ConversionTest, ScfIfQCToQCOTest) {
     auto [q1, measureResult] = b.measure(q0);
     auto scfIfResult = b.scfIf(
         measureResult, {q1},
-        [&] {
+        [&]() -> SmallVector<Value> {
           auto q2 = b.h(q1);
           auto q3 = b.y(q2);
           b.scfYield(q3);
-          return q3;
+          return {q3};
         },
-        [&] {
+        [&]() -> SmallVector<Value> {
           auto q2 = b.y(q1);
           auto q3 = b.h(q2);
           b.scfYield(q3);
-          return q3;
+          return {q3};
         });
     b.h(scfIfResult[0]);
   });
@@ -308,17 +311,17 @@ TEST_F(ConversionTest, ScfIfQCOToQCTest) {
     auto [q1, measureResult] = b.measure(q0);
     auto scfIfResult = b.scfIf(
         measureResult, {q1},
-        [&] {
+        [&]() -> SmallVector<Value> {
           auto q2 = b.h(q1);
           auto q3 = b.y(q2);
           b.scfYield(q3);
-          return q3;
+          return {q3};
         },
-        [&] {
+        [&]() -> SmallVector<Value> {
           auto q2 = b.y(q1);
           auto q3 = b.h(q2);
           b.scfYield(q3);
-          return q3;
+          return {q3};
         });
     b.h(scfIfResult[0]);
   });
@@ -374,15 +377,15 @@ TEST_F(ConversionTest, ScfIfEmptyElseTest) {
     auto [q1, measureResult] = b.measure(q0);
     auto scfIfResult = b.scfIf(
         measureResult, {q1},
-        [&] {
+        [&]() -> SmallVector<Value> {
           auto q2 = b.h(q1);
           auto q3 = b.y(q2);
           b.scfYield(q3);
-          return q3;
+          return {q3};
         },
-        [&] {
+        [&]() -> SmallVector<Value> {
           b.scfYield(q1);
-          return q1;
+          return {q1};
         });
     b.h(scfIfResult[0]);
   });
