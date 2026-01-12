@@ -119,18 +119,6 @@ if(APPLE AND CMAKE_CXX_COMPILER_ID STREQUAL "AppleClang")
 endif()
 if(BUILD_MQT_CORE_MLIR)
   include(SetupMLIR)
-
-  FetchContent_Declare(
-    Eigen
-    GIT_REPOSITORY https://gitlab.com/libeigen/eigen.git
-    GIT_TAG 3.4.1
-    GIT_SHALLOW TRUE)
-  FetchContent_MakeAvailable(Eigen)
-  if(WIN32 AND ${CMAKE_HOST_SYSTEM_PROCESSOR} STREQUAL ARM64)
-    message(STATUS "Enabling non-optimal vectorization in Eigen to avoid alignment issues")
-    add_compile_definitions(EIGEN_DONT_ALIGN_STATICALLY)
-  endif()
-
 endif()
 cmake_dependent_option(BUILD_MQT_CORE_QIR_RUNNER "Build the QIR runner of the MQT Core project" ON
                        "BUILD_MQT_CORE_MLIR" OFF)
