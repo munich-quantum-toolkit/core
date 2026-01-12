@@ -18,6 +18,7 @@
 #include <memory>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/IR/Builders.h>
+#include <mlir/IR/Location.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/Operation.h>
 #include <mlir/IR/Value.h>
@@ -27,57 +28,53 @@ using namespace mlir;
 class UtilsTest : public ::testing::Test {
 protected:
   MLIRContext context;
-  std::unique_ptr<OpBuilder> builder;
-  std::unique_ptr<Location> loc;
+  std::unique_ptr<ImplicitLocOpBuilder> builder;
 
   void SetUp() override {
     context.loadDialect<arith::ArithDialect>();
 
-    builder = std::make_unique<OpBuilder>(&context);
-    loc = std::make_unique<Location>(builder->getUnknownLoc());
+    builder = std::make_unique<ImplicitLocOpBuilder>(
+        FileLineColLoc::get(&context, "<utils-test-builder>", 0, 0), &context);
   }
 
-  arith::AddFOp createAddition(double a, double b) {
+  arith::AddFOp createAddition(const double a, const double b) const {
     auto firstOperand =
-        builder->create<arith::ConstantOp>(*loc, builder->getF64FloatAttr(a));
+        arith::ConstantOp::create(*builder, builder->getF64FloatAttr(a));
     auto secondOperand =
-        builder->create<arith::ConstantOp>(*loc, builder->getF64FloatAttr(b));
-    return builder->create<arith::AddFOp>(*loc, firstOperand, secondOperand);
+        arith::ConstantOp::create(*builder, builder->getF64FloatAttr(b));
+    return arith::AddFOp::create(*builder, firstOperand, secondOperand);
   }
 };
 
 TEST_F(UtilsTest, valueToDouble) {
   constexpr double expectedValue = 1.234;
-  auto op = builder->create<arith::ConstantOp>(
-      *loc, builder->getF64FloatAttr(expectedValue));
+  auto op = arith::ConstantOp::create(*builder,
+                                      builder->getF64FloatAttr(expectedValue));
   ASSERT_TRUE(op);
 
-  auto value = op.getResult();
-  auto stdValue = utils::valueToDouble(value);
+  const auto stdValue = utils::valueToDouble(op.getResult());
   ASSERT_TRUE(stdValue.has_value());
   EXPECT_DOUBLE_EQ(stdValue.value(), expectedValue);
 }
 
 TEST_F(UtilsTest, valueToDoubleCastFromInteger) {
   constexpr int expectedValue = 42;
-  auto op = builder->create<arith::ConstantOp>(
-      *loc, builder->getI32IntegerAttr(expectedValue));
+  auto op = arith::ConstantOp::create(
+      *builder, builder->getI32IntegerAttr(expectedValue));
   ASSERT_TRUE(op);
 
-  auto value = op.getResult();
-  auto stdValue = utils::valueToDouble(value);
+  const auto stdValue = utils::valueToDouble(op.getResult());
   ASSERT_TRUE(stdValue.has_value());
   EXPECT_DOUBLE_EQ(stdValue.value(), expectedValue);
 }
 
 TEST_F(UtilsTest, valueToDoubleCastFromNegativeInteger) {
   constexpr int expectedValue = -123;
-  auto op = builder->create<arith::ConstantOp>(
-      *loc, builder->getSI32IntegerAttr(expectedValue));
+  auto op = arith::ConstantOp::create(
+      *builder, builder->getSI32IntegerAttr(expectedValue));
   ASSERT_TRUE(op);
 
-  auto value = op.getResult();
-  auto stdValue = utils::valueToDouble(value);
+  const auto stdValue = utils::valueToDouble(op.getResult());
   ASSERT_TRUE(stdValue.has_value());
   EXPECT_DOUBLE_EQ(stdValue.value(), expectedValue);
 }
@@ -85,13 +82,13 @@ TEST_F(UtilsTest, valueToDoubleCastFromNegativeInteger) {
 TEST_F(UtilsTest, valueToDoubleCastFromMaxUnsignedInteger) {
   constexpr auto expectedValue = std::numeric_limits<uint64_t>::max();
   constexpr auto bitCount = 64;
-  auto op = builder->create<arith::ConstantOp>(
-      *loc, builder->getIntegerAttr(builder->getIntegerType(bitCount, false),
-                                    llvm::APInt::getMaxValue(bitCount)));
+  auto op = arith::ConstantOp::create(
+      *builder,
+      builder->getIntegerAttr(builder->getIntegerType(bitCount, false),
+                              llvm::APInt::getMaxValue(bitCount)));
   ASSERT_TRUE(op);
 
-  auto value = op.getResult();
-  auto stdValue = utils::valueToDouble(value);
+  const auto stdValue = utils::valueToDouble(op.getResult());
   ASSERT_TRUE(stdValue.has_value());
   // cast to double will lose precision, but difference to maximum value of
   // int64_t is large enough that the check still makes sense
@@ -99,12 +96,10 @@ TEST_F(UtilsTest, valueToDoubleCastFromMaxUnsignedInteger) {
 }
 
 TEST_F(UtilsTest, valueToDoubleWrongType) {
-  auto op =
-      builder->create<arith::ConstantOp>(*loc, builder->getStringAttr("test"));
+  auto op = arith::ConstantOp::create(*builder, builder->getStringAttr("test"));
   ASSERT_TRUE(op);
 
-  auto value = op.getResult();
-  auto stdValue = utils::valueToDouble(value);
+  const auto stdValue = utils::valueToDouble(op.getResult());
   EXPECT_FALSE(stdValue.has_value());
 }
 
@@ -112,8 +107,7 @@ TEST_F(UtilsTest, valueToDoubleNonStaticValue) {
   auto op = createAddition(9.5, 21.5);
   ASSERT_TRUE(op);
 
-  auto value = op.getResult();
-  auto stdValue = utils::valueToDouble(value);
+  const auto stdValue = utils::valueToDouble(op.getResult());
   EXPECT_FALSE(stdValue.has_value());
 }
 
@@ -125,8 +119,7 @@ TEST_F(UtilsTest, valueToDoubleFoldedConstant) {
   llvm::SmallVector<Operation*> newConstants;
   ASSERT_TRUE(builder->tryFold(op, tmp, &newConstants).succeeded());
   ASSERT_EQ(newConstants.size(), 1);
-  auto value = newConstants[0]->getResult(0);
-  auto stdValue = utils::valueToDouble(value);
+  const auto stdValue = utils::valueToDouble(newConstants[0]->getResult(0));
   ASSERT_TRUE(stdValue.has_value());
   EXPECT_DOUBLE_EQ(stdValue.value(), 3.5);
 }
