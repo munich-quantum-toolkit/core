@@ -17,7 +17,6 @@
 #include <llvm/ADT/SmallVector.h>
 #include <memory>
 #include <mlir/Dialect/Arith/IR/Arith.h>
-#include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/Operation.h>
@@ -31,7 +30,6 @@ protected:
   std::unique_ptr<OpBuilder> builder;
 
   void SetUp() override {
-    context.loadDialect<func::FuncDialect>();
     context.loadDialect<arith::ArithDialect>();
 
     builder = std::make_unique<OpBuilder>(&context);
@@ -59,10 +57,22 @@ TEST_F(UtilsTest, valueToDouble) {
   EXPECT_DOUBLE_EQ(stdValue.value(), expectedValue);
 }
 
-TEST_F(UtilsTest, valueToDoubleCastFromIntegerType) {
+TEST_F(UtilsTest, valueToDoubleCastFromInteger) {
   constexpr int expectedValue = 42;
   auto op = builder->create<arith::ConstantOp>(
       builder->getUnknownLoc(), builder->getI32IntegerAttr(expectedValue));
+  ASSERT_TRUE(op);
+
+  auto value = op.getResult();
+  auto stdValue = utils::valueToDouble(value);
+  ASSERT_TRUE(stdValue.has_value());
+  EXPECT_DOUBLE_EQ(stdValue.value(), expectedValue);
+}
+
+TEST_F(UtilsTest, valueToDoubleCastFromNegativeInteger) {
+  constexpr int expectedValue = -123;
+  auto op = builder->create<arith::ConstantOp>(
+      builder->getUnknownLoc(), builder->getSI32IntegerAttr(expectedValue));
   ASSERT_TRUE(op);
 
   auto value = op.getResult();
