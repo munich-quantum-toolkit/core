@@ -13,7 +13,6 @@
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 
 #include <cstdint>
-#include <functional>
 #include <llvm/ADT/DenseMap.h>
 #include <llvm/ADT/DenseSet.h>
 #include <llvm/ADT/STLFunctionalExtras.h>
@@ -1233,7 +1232,7 @@ public:
    */
   QCOProgramBuilder& funcFunc(StringRef name, TypeRange argTypes,
                               TypeRange resultTypes,
-                              const std::function<void(ValueRange)>& body);
+                              llvm::function_ref<void(ValueRange)> body);
 
   //===--------------------------------------------------------------------===//
   // Arith operations

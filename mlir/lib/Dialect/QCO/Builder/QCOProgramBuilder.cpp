@@ -781,7 +781,7 @@ QCOProgramBuilder& QCOProgramBuilder::funcReturn(ValueRange returnValues) {
 QCOProgramBuilder&
 QCOProgramBuilder::funcFunc(StringRef name, TypeRange argTypes,
                             TypeRange resultTypes,
-                            const std::function<void(ValueRange)>& body) {
+                            llvm::function_ref<void(ValueRange)> body) {
   checkFinalized();
 
   // Set the insertionPoint
