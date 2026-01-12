@@ -11,12 +11,14 @@
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 
 #include <cstddef>
-#include <functional>
 #include <llvm/ADT/STLExtras.h>
+#include <llvm/ADT/STLFunctionalExtras.h>
+#include <llvm/ADT/SmallVector.h>
 #include <llvm/Support/Casting.h>
 #include <llvm/Support/ErrorHandling.h>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/BuiltinAttributes.h>
+#include <mlir/IR/IRMapping.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OperationSupport.h>
 #include <mlir/IR/PatternMatch.h>
@@ -49,11 +51,8 @@ struct MergeNestedCtrl final : OpRewritePattern<CtrlOp> {
     }
 
     // Merge controls
-    SmallVector<Value> newControls(op.getControlsIn());
-    for (const auto control : bodyCtrlOp.getControlsIn()) {
-      newControls.push_back(control);
-    }
-
+    const auto newControls = llvm::to_vector(
+        llvm::concat<Value>(op.getControlsIn(), bodyCtrlOp.getControlsIn()));
     rewriter.replaceOpWithNewOp<CtrlOp>(op, newControls, op.getTargetsIn(),
                                         bodyCtrlOp.getBodyUnitary());
 
@@ -103,17 +102,14 @@ struct CtrlInlineGPhase final : OpRewritePattern<CtrlOp> {
       return failure();
     }
 
-    SmallVector<Value> newControls(op.getControlsIn());
-    const auto newTarget = newControls.back();
-    newControls.pop_back();
-    auto ctrlOp = CtrlOp::create(
-        rewriter, op.getLoc(), newControls, newTarget, [&](ValueRange targets) {
+    const auto controls = op.getControlsIn();
+    rewriter.replaceOpWithNewOp<CtrlOp>(
+        op, controls.drop_back(), controls.back(),
+        [&](ValueRange targets) -> llvm::SmallVector<Value> {
           auto pOp = POp::create(rewriter, op.getLoc(), targets[0],
                                  gPhaseOp.getTheta());
-          return pOp.getQubitOut();
+          return {pOp.getQubitOut()};
         });
-
-    rewriter.replaceOp(op, ctrlOp.getResults());
 
     return success();
   }
@@ -129,21 +125,15 @@ struct CtrlInlineId final : OpRewritePattern<CtrlOp> {
                                 PatternRewriter& rewriter) const override {
     // Require at least one positive control
     // Trivial case is handled by RemoveTrivialCtrl
-    if (op.getNumControls() == 0) {
+    if (op.getNumControls() == 0 ||
+        !llvm::isa<IdOp>(op.getBodyUnitary().getOperation())) {
       return failure();
     }
 
-    if (!llvm::isa<IdOp>(op.getBodyUnitary().getOperation())) {
-      return failure();
-    }
+    auto idOp = IdOp::create(rewriter, op.getLoc(), op.getTargetsIn().front());
 
-    auto idOp = rewriter.create<IdOp>(op.getLoc(), op.getTargetsIn().front());
-
-    SmallVector<Value> newOperands;
-    newOperands.reserve(op.getNumControls() + 1);
-    newOperands.append(op.getControlsIn().begin(), op.getControlsIn().end());
-    newOperands.push_back(idOp.getQubitOut());
-    rewriter.replaceOp(op, newOperands);
+    rewriter.replaceOp(op, llvm::to_vector(llvm::concat<Value>(
+                               op.getControlsIn(), idOp->getResults())));
 
     return success();
   }
@@ -251,30 +241,54 @@ void CtrlOp::build(OpBuilder& odsBuilder, OperationState& odsState,
   build(odsBuilder, odsState, controls, targets);
   auto& block = odsState.regions.front()->emplaceBlock();
 
-  // Move the unitary op into the block
+  // Create block arguments and map targets to them
+  IRMapping mapping;
+  const auto qubitType = QubitType::get(odsBuilder.getContext());
+  for (const auto target : targets) {
+    mapping.map(target, block.addArgument(qubitType, odsState.location));
+  }
+
+  // Clone the operation using the mapping
   const OpBuilder::InsertionGuard guard(odsBuilder);
   odsBuilder.setInsertionPointToStart(&block);
-  auto* op = odsBuilder.clone(*bodyUnitary.getOperation());
-  odsBuilder.create<YieldOp>(odsState.location, op->getResults());
+  auto* op = odsBuilder.clone(*bodyUnitary.getOperation(), mapping);
+  YieldOp::create(odsBuilder, odsState.location, op->getResults());
 }
 
-void CtrlOp::build(OpBuilder& odsBuilder, OperationState& odsState,
-                   ValueRange controls, ValueRange targets,
-                   const std::function<ValueRange(ValueRange)>& bodyBuilder) {
+void CtrlOp::build(
+    OpBuilder& odsBuilder, OperationState& odsState, ValueRange controls,
+    ValueRange targets,
+    llvm::function_ref<llvm::SmallVector<Value>(ValueRange)> bodyBuilder) {
   build(odsBuilder, odsState, controls, targets);
   auto& block = odsState.regions.front()->emplaceBlock();
 
-  // Move the unitary op into the block
+  const auto qubitType = QubitType::get(odsBuilder.getContext());
+  for (size_t i = 0; i < targets.size(); ++i) {
+    block.addArgument(qubitType, odsState.location);
+  }
+
   const OpBuilder::InsertionGuard guard(odsBuilder);
   odsBuilder.setInsertionPointToStart(&block);
-  auto targetsOut = bodyBuilder(targets);
-  odsBuilder.create<YieldOp>(odsState.location, targetsOut);
+  YieldOp::create(odsBuilder, odsState.location,
+                  bodyBuilder(block.getArguments()));
 }
 
 LogicalResult CtrlOp::verify() {
   auto& block = *getBody();
   if (block.getOperations().size() != 2) {
     return emitOpError("body region must have exactly two operations");
+  }
+  const auto numTargets = getNumTargets();
+  if (block.getArguments().size() != numTargets) {
+    return emitOpError(
+        "number of block arguments must match the number of targets");
+  }
+  const auto qubitType = QubitType::get(getContext());
+  for (size_t i = 0; i < numTargets; ++i) {
+    if (block.getArgument(i).getType() != qubitType) {
+      return emitOpError("block argument type at index ")
+             << i << " does not match target type";
+    }
   }
   if (!llvm::isa<UnitaryOpInterface>(block.front())) {
     return emitOpError(
@@ -284,10 +298,10 @@ LogicalResult CtrlOp::verify() {
     return emitOpError(
         "second operation in body region must be a yield operation");
   }
-  if (block.back().getNumOperands() != getNumTargets()) {
+  if (const auto numYieldOperands = block.back().getNumOperands();
+      numYieldOperands != numTargets) {
     return emitOpError("yield operation must yield ")
-           << getNumTargets() << " values, but found "
-           << block.back().getNumOperands();
+           << numTargets << " values, but found " << numYieldOperands;
   }
 
   SmallPtrSet<Value, 4> uniqueQubitsIn;
@@ -296,13 +310,34 @@ LogicalResult CtrlOp::verify() {
       return emitOpError("duplicate control qubit found");
     }
   }
-  auto bodyUnitary = getBodyUnitary();
-  const auto numQubits = bodyUnitary.getNumQubits();
-  for (size_t i = 0; i < numQubits; i++) {
-    if (!uniqueQubitsIn.insert(bodyUnitary.getInputQubit(i)).second) {
-      return emitOpError("duplicate qubit found");
+  for (const auto& target : getTargetsIn()) {
+    if (!uniqueQubitsIn.insert(target).second) {
+      return emitOpError("duplicate target qubit found");
     }
   }
+
+  auto bodyUnitary = getBodyUnitary();
+  if (bodyUnitary.getNumQubits() != numTargets) {
+    return emitOpError("body unitary must operate on exactly ")
+           << numTargets << " target qubits, but found "
+           << bodyUnitary.getNumQubits();
+  }
+  const auto numQubits = bodyUnitary.getNumQubits();
+  for (size_t i = 0; i < numQubits; i++) {
+    if (bodyUnitary.getInputQubit(i) != block.getArgument(i)) {
+      return emitOpError("body unitary must use target alias block argument ")
+             << i << " (and not the original target operand)";
+    }
+  }
+
+  // Also require yield to forward the unitary's outputs in-order.
+  for (size_t i = 0; i < numTargets; ++i) {
+    if (block.back().getOperand(i) != bodyUnitary.getOutputQubit(i)) {
+      return emitOpError("yield operand ")
+             << i << " must be the body unitary output qubit " << i;
+    }
+  }
+
   SmallPtrSet<Value, 4> uniqueQubitsOut;
   for (const auto& control : getControlsOut()) {
     if (!uniqueQubitsOut.insert(control).second) {

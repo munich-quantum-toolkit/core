@@ -16,6 +16,7 @@
 #include <functional>
 #include <llvm/ADT/DenseMap.h>
 #include <llvm/ADT/DenseSet.h>
+#include <llvm/ADT/STLFunctionalExtras.h>
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/Support/ErrorHandling.h>
 #include <mlir/IR/Builders.h>
@@ -989,21 +990,21 @@ public:
    * @par Example:
    * ```c++
    * {controls_out, targets_out} =
-   *   builder.ctrl(q0_in, q1_in, [&](ValueRange targets) {
-   *     auto q1_res = builder.x(targets[0]);
-   *     return {q1_res};
+   *   builder.ctrl(q0_in, q1_in,
+   *     [&](ValueRange targets) -> llvm::SmallVector<Value> {
+   *       return {builder.x(targets[0])};
    *   });
    * ```
    * ```mlir
-   * %controls_out, %targets_out = qco.ctrl(%q0_in) %q1_in {
-   *   %q1_res = qco.x %q1_in : !qco.qubit -> !qco.qubit
+   * %controls_out, %targets_out = qco.ctrl(%q0_in) targets(%t = %q1_in) {
+   *   %q1_res = qco.x %t : !qco.qubit -> !qco.qubit
    *   qco.yield %q1_res
    * } : ({!qco.qubit}, {!qco.qubit}) -> ({!qco.qubit}, {!qco.qubit})
    * ```
    */
   std::pair<ValueRange, ValueRange>
   ctrl(ValueRange controls, ValueRange targets,
-       const std::function<ValueRange(ValueRange)>& body);
+       llvm::function_ref<llvm::SmallVector<Value>(ValueRange)> body);
 
   //===--------------------------------------------------------------------===//
   // Deallocation
