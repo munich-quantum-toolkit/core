@@ -47,12 +47,13 @@
 //===----------------------------------------------------------------------===//
 
 #define GET_TYPEDEF_CLASSES
-#include "mlir/Dialect/QCO/IR/QCOInterfaces.h.inc"
 #include "mlir/Dialect/QCO/IR/QCOOpsTypes.h.inc"
 
 //===----------------------------------------------------------------------===//
 // Interfaces
 //===----------------------------------------------------------------------===//
+
+#include "mlir/Dialect/QCO/IR/QCOInterfaces.h.inc" // IWYU pragma: export
 
 namespace mlir::qco {
 
@@ -166,8 +167,6 @@ public:
 };
 
 } // namespace mlir::qco
-
-// #include "mlir/Dialect/QCO/IR/QCOInterfaces.h.inc" // IWYU pragma: export
 
 //===----------------------------------------------------------------------===//
 // Operations Helpers
