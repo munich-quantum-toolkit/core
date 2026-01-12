@@ -70,7 +70,7 @@ namespace mlir::qir {
  * auto module = builder.finalize();
  * ```
  */
-class QIRProgramBuilder {
+class QIRProgramBuilder final : public ImplicitLocOpBuilder {
 public:
   /**
    * @brief Construct a new QIRProgramBuilder
@@ -811,9 +811,7 @@ public:
   OwningOpRef<ModuleOp> finalize();
 
 private:
-  OpBuilder builder;
   ModuleOp module;
-  Location loc;
 
   LLVM::LLVMFuncOp mainFunc;
 
@@ -841,6 +839,12 @@ private:
 
   /// Track qubit and result counts for QIR metadata
   QIRMetadata metadata_;
+
+  /// Helper variable for storing the LLVM pointer type
+  LLVM::LLVMPointerType ptrType;
+
+  /// Helper variable for storing the LLVM void type
+  LLVM::LLVMVoidType voidType;
 
   /**
    * @brief Helper to create a LLVM CallOp
