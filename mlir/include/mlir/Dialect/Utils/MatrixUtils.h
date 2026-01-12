@@ -21,11 +21,6 @@
 
 namespace mlir::utils {
 
-inline Eigen::Matrix<std::complex<double>, 1, 1> getMatrixGPhase(double theta) {
-  using namespace std::complex_literals;
-  return Eigen::Matrix<std::complex<double>, 1, 1>{std::exp(1i * theta)};
-}
-
 inline Eigen::Matrix2cd getMatrixId() {
   using namespace std::complex_literals;
   return Eigen::Matrix2cd{{1.0 + 0i, 0.0 + 0i},  // row 0

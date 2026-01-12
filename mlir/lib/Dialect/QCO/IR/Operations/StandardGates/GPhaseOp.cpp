@@ -55,3 +55,13 @@ void GPhaseOp::getCanonicalizationPatterns(RewritePatternSet& results,
                                            MLIRContext* context) {
   results.add<RemoveTrivialGPhase>(context);
 }
+
+std::optional<Eigen::Matrix<std::complex<double>, 1, 1>>
+GPhaseOp::getMatrixGPhase() {
+  using namespace std::complex_literals;
+
+  if (auto theta = utils::valueToDouble(getTheta())) {
+    return Eigen::Matrix<std::complex<double>, 1, 1>{std::exp(1i * *theta)};
+  }
+  return std::nullopt;
+}
