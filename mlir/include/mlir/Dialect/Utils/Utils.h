@@ -40,4 +40,23 @@ inline Value variantToValue(OpBuilder& builder, const OperationState& state,
   return operand;
 }
 
+/**
+ * @brief Try to convert a float mlir::Value to a standard C++ double
+ *
+ * @details
+ * Resolving the mlir::Value will only work if it is a static value, so a value
+ * of type float and defined via a "arith.constant" operation.
+ */
+[[nodiscard]] inline std::optional<double> valueToDouble(Value value) {
+  auto constantOp = value.getDefiningOp<arith::ConstantOp>();
+  if (!constantOp) {
+    return std::nullopt;
+  }
+  auto&& floatAttr = dyn_cast<FloatAttr>(constantOp.getValue());
+  if (!floatAttr) {
+    return std::nullopt;
+  }
+  return floatAttr.getValueAsDouble();
+}
+
 } // namespace mlir::utils

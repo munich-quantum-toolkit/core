@@ -34,16 +34,10 @@ struct ReplaceU2WithH final : OpRewritePattern<U2Op> {
 
   LogicalResult matchAndRewrite(U2Op op,
                                 PatternRewriter& rewriter) const override {
-    const auto phi = U2Op::getStaticParameter(op.getPhi());
-    const auto lambda = U2Op::getStaticParameter(op.getLambda());
-    if (!phi || !lambda) {
-      return failure();
-    }
-
-    const auto phiValue = phi.getValueAsDouble();
-    const auto lambdaValue = lambda.getValueAsDouble();
-    if (std::abs(phiValue) > TOLERANCE ||
-        std::abs(lambdaValue - std::numbers::pi) > TOLERANCE) {
+    const auto phi = valueToDouble(op.getPhi());
+    const auto lambda = valueToDouble(op.getLambda());
+    if (!phi || std::abs(*phi) > TOLERANCE || !lambda ||
+        std::abs(*lambda - std::numbers::pi) > TOLERANCE) {
       return failure();
     }
 
@@ -62,16 +56,10 @@ struct ReplaceU2WithRX final : OpRewritePattern<U2Op> {
 
   LogicalResult matchAndRewrite(U2Op op,
                                 PatternRewriter& rewriter) const override {
-    const auto phi = U2Op::getStaticParameter(op.getPhi());
-    const auto lambda = U2Op::getStaticParameter(op.getLambda());
-    if (!phi || !lambda) {
-      return failure();
-    }
-
-    const auto phiValue = phi.getValueAsDouble();
-    const auto lambdaValue = lambda.getValueAsDouble();
-    if (std::abs(phiValue + (std::numbers::pi / 2.0)) > TOLERANCE ||
-        std::abs(lambdaValue - (std::numbers::pi / 2.0)) > TOLERANCE) {
+    const auto phi = valueToDouble(op.getPhi());
+    const auto lambda = valueToDouble(op.getLambda());
+    if (!phi || std::abs(*phi + (std::numbers::pi / 2.0)) > TOLERANCE ||
+        !lambda || std::abs(*lambda - (std::numbers::pi / 2.0)) > TOLERANCE) {
       return failure();
     }
 
@@ -91,15 +79,10 @@ struct ReplaceU2WithRY final : OpRewritePattern<U2Op> {
 
   LogicalResult matchAndRewrite(U2Op op,
                                 PatternRewriter& rewriter) const override {
-    const auto phi = U2Op::getStaticParameter(op.getPhi());
-    const auto lambda = U2Op::getStaticParameter(op.getLambda());
-    if (!phi || !lambda) {
-      return failure();
-    }
-
-    const auto phiValue = phi.getValueAsDouble();
-    const auto lambdaValue = lambda.getValueAsDouble();
-    if (std::abs(phiValue) > TOLERANCE || std::abs(lambdaValue) > TOLERANCE) {
+    const auto phi = valueToDouble(op.getPhi());
+    const auto lambda = valueToDouble(op.getLambda());
+    if (!phi || std::abs(*phi) > TOLERANCE || !lambda ||
+        std::abs(*lambda) > TOLERANCE) {
       return failure();
     }
 

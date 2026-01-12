@@ -13,7 +13,6 @@
 
 #include <cmath>
 #include <mlir/IR/Builders.h>
-#include <mlir/IR/BuiltinAttributes.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OperationSupport.h>
 #include <mlir/IR/PatternMatch.h>
@@ -35,13 +34,8 @@ struct ReplaceRWithRX final : OpRewritePattern<ROp> {
 
   LogicalResult matchAndRewrite(ROp op,
                                 PatternRewriter& rewriter) const override {
-    const auto phi = ROp::getStaticParameter(op.getPhi());
-    if (!phi) {
-      return failure();
-    }
-
-    const auto phiValue = phi.getValueAsDouble();
-    if (std::abs(phiValue) > TOLERANCE) {
+    const auto phi = valueToDouble(op.getPhi());
+    if (!phi || std::abs(*phi) > TOLERANCE) {
       return failure();
     }
 
@@ -61,13 +55,8 @@ struct ReplaceRWithRY final : OpRewritePattern<ROp> {
 
   LogicalResult matchAndRewrite(ROp op,
                                 PatternRewriter& rewriter) const override {
-    const auto phi = ROp::getStaticParameter(op.getPhi());
-    if (!phi) {
-      return failure();
-    }
-
-    const auto phiValue = phi.getValueAsDouble();
-    if (std::abs(phiValue - (std::numbers::pi / 2.0)) > TOLERANCE) {
+    const auto phi = valueToDouble(op.getPhi());
+    if (!phi || std::abs(*phi - (std::numbers::pi / 2.0)) > TOLERANCE) {
       return failure();
     }
 
