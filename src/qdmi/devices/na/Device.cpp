@@ -12,10 +12,10 @@
  * @brief The MQT QDMI device implementation for neutral atom devices.
  */
 
-#include "qdmi/na/Device.hpp"
+#include "qdmi/devices/na/Device.hpp"
 
 #include "mqt_na_qdmi/device.h"
-#include "qdmi/Common.hpp"
+#include "qdmi/devices/common/Common.hpp"
 #include "qdmi/na/DeviceMemberInitializers.hpp"
 
 #include <algorithm>

@@ -12,10 +12,10 @@
  * @brief The MQT QDMI device implementation for superconducting devices.
  */
 
-#include "qdmi/sc/Device.hpp"
+#include "qdmi/devices/sc/Device.hpp"
 
 #include "mqt_sc_qdmi/device.h"
-#include "qdmi/Common.hpp"
+#include "qdmi/devices/common/Common.hpp"
 #include "qdmi/sc/DeviceMemberInitializers.hpp"
 
 #include <algorithm>

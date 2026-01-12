@@ -9,7 +9,7 @@
  */
 
 #include "mqt_na_qdmi/device.h"
-#include "qdmi/na/Generator.hpp"
+#include "qdmi/devices/na/Generator.hpp"
 
 #include <algorithm>
 #include <cstddef>

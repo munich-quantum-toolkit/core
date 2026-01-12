@@ -10,7 +10,7 @@
 
 #include "fomac/FoMaC.hpp"
 
-#include "qdmi/Driver.hpp"
+#include "../../include/mqt-core/qdmi/driver/Driver.hpp"
 
 #include <nanobind/nanobind.h>
 #include <nanobind/operators.h>

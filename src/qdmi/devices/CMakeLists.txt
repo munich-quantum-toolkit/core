@@ -6,5 +6,11 @@
 #
 # Licensed under the MIT License
 
-add_subdirectory(devices)
-add_subdirectory(driver)
+add_subdirectory(common)
+add_subdirectory(dd)
+add_subdirectory(sc)
+add_subdirectory(na)
+
+set(MQT_CORE_TARGETS
+    ${MQT_CORE_TARGETS}
+    PARENT_SCOPE)

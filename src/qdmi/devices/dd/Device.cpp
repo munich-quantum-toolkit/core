@@ -12,7 +12,7 @@
  * @brief The MQT QDMI device implementation for its DD-based simulator.
  */
 
-#include "qdmi/dd/Device.hpp"
+#include "qdmi/devices/dd/Device.hpp"
 
 #include "circuit_optimizer/CircuitOptimizer.hpp"
 #include "dd/DDDefinitions.hpp"
@@ -22,7 +22,7 @@
 #include "ir/QuantumComputation.hpp"
 #include "mqt_ddsim_qdmi/device.h"
 #include "qasm3/Importer.hpp"
-#include "qdmi/Common.hpp"
+#include "qdmi/devices/common/Common.hpp"
 
 #include <algorithm>
 #include <array>

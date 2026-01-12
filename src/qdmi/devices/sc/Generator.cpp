@@ -12,7 +12,7 @@
  * @brief The MQT QDMI device generator for superconducting devices.
  */
 
-#include "qdmi/sc/Generator.hpp"
+#include "qdmi/devices/sc/Generator.hpp"
 
 #include <cstdint>
 #include <fstream>

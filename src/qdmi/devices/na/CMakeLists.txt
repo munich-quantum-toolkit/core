@@ -7,26 +7,30 @@
 # Licensed under the MIT License
 
 # Set target name
-set(TARGET_NAME ${MQT_CORE_TARGET_NAME}-qdmi-sc-device-gen)
+set(TARGET_NAME ${MQT_CORE_TARGET_NAME}-qdmi-na-device-gen)
 
 # If the target is not already defined
 if(NOT TARGET ${TARGET_NAME})
 
   # Add library for device generation
-  add_mqt_core_library(${TARGET_NAME} ALIAS_NAME QDMIScDeviceGen)
+  add_mqt_core_library(${TARGET_NAME} ALIAS_NAME QDMINaDeviceGen)
 
   # add sources to target
   target_sources(${TARGET_NAME} PRIVATE Generator.cpp)
 
   # add headers using file sets
-  target_sources(${TARGET_NAME} PUBLIC FILE_SET HEADERS BASE_DIRS ${MQT_CORE_INCLUDE_BUILD_DIR}
-                                       FILES ${MQT_CORE_INCLUDE_BUILD_DIR}/qdmi/sc/Generator.hpp)
+  target_sources(
+    ${TARGET_NAME} PUBLIC FILE_SET HEADERS BASE_DIRS ${MQT_CORE_INCLUDE_BUILD_DIR} FILES
+                          ${MQT_CORE_INCLUDE_BUILD_DIR}/qdmi/devices/na/Generator.hpp)
 
   # Link nlohmann_json and spdlog
   target_link_libraries(
     ${TARGET_NAME}
     PUBLIC nlohmann_json::nlohmann_json
     PRIVATE spdlog::spdlog)
+
+  # add to list of MQT core targets
+  list(APPEND MQT_CORE_TARGETS ${TARGET_NAME})
 
   # place the generated library in a predictable location where the executable can find it
   set_target_properties(
@@ -37,7 +41,7 @@ if(NOT TARGET ${TARGET_NAME})
 endif()
 
 # Set target name
-set(TARGET_NAME mqt-core-qdmi-sc-device-generator)
+set(TARGET_NAME mqt-core-qdmi-na-device-generator)
 
 # If the target is not already defined
 if(NOT TARGET ${TARGET_NAME})
@@ -48,12 +52,12 @@ if(NOT TARGET ${TARGET_NAME})
   target_sources(${TARGET_NAME} PRIVATE App.cpp)
 
   # Link Generator library
-  target_link_libraries(${TARGET_NAME} PRIVATE MQT::CoreQDMIScDeviceGen MQT::ProjectOptions
+  target_link_libraries(${TARGET_NAME} PRIVATE MQT::CoreQDMINaDeviceGen MQT::ProjectOptions
                                                MQT::ProjectWarnings spdlog::spdlog)
 
   # set versioning information
   set_target_properties(${TARGET_NAME} PROPERTIES VERSION ${PROJECT_VERSION} EXPORT_NAME
-                                                                             CoreScDeviceGen)
+                                                                             CoreNaDeviceGen)
   # place in the bin directory
   set_target_properties(${TARGET_NAME} PROPERTIES RUNTIME_OUTPUT_DIRECTORY
                                                   "${CMAKE_BINARY_DIR}/bin")
@@ -65,40 +69,40 @@ if(NOT TARGET ${TARGET_NAME})
   target_compile_definitions(${TARGET_NAME} PRIVATE MQT_CORE_VERSION="${MQT_CORE_VERSION}")
 
   # Create an alias for the target
-  add_executable(MQT::CoreQDMIScDeviceGenerator ALIAS ${TARGET_NAME})
+  add_executable(MQT::CoreQDMINaDeviceGenerator ALIAS ${TARGET_NAME})
 endif()
 
 # Set target name
-set(TARGET_NAME ${MQT_CORE_TARGET_NAME}-qdmi-sc-device)
+set(TARGET_NAME ${MQT_CORE_TARGET_NAME}-qdmi-na-device)
 
 # Set prefix for QDMI
-set(QDMI_PREFIX "MQT_SC")
+set(QDMI_PREFIX "MQT_NA")
 
 # If the target is not already defined
 if(NOT TARGET ${TARGET_NAME})
 
   # Set paths
-  set(JSON_FILE ${PROJECT_SOURCE_DIR}/json/sc/device.json)
-  set(DEVICE_HDR ${CMAKE_CURRENT_BINARY_DIR}/include/qdmi/sc/DeviceMemberInitializers.hpp)
+  set(JSON_FILE ${PROJECT_SOURCE_DIR}/json/na/device.json)
+  set(DEVICE_HDR ${CMAKE_CURRENT_BINARY_DIR}/include/qdmi/na/DeviceMemberInitializers.hpp)
 
   # Create include directory
-  file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/include/qdmi/sc)
+  file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/include/qdmi/na)
 
   # Generate definitions for device
   add_custom_command(
     OUTPUT ${DEVICE_HDR}
-    COMMAND MQT::CoreQDMIScDeviceGenerator ARGS generate --output ${DEVICE_HDR} ${JSON_FILE}
-    DEPENDS ${JSON_FILE} MQT::CoreQDMIScDeviceGenerator
+    COMMAND MQT::CoreQDMINaDeviceGenerator ARGS generate --output ${DEVICE_HDR} ${JSON_FILE}
+    DEPENDS ${JSON_FILE} MQT::CoreQDMINaDeviceGenerator
     COMMENT "Generating C++ header from ${JSON_FILE}")
-  add_custom_target(generate_qdmi_sc_device_header DEPENDS ${DEVICE_HDR})
+  add_custom_target(generate_qdmi_na_device_header DEPENDS ${DEVICE_HDR})
 
   # Add library
-  add_mqt_core_library(${TARGET_NAME} ALIAS_NAME QDMIScDevice)
-  add_dependencies(${TARGET_NAME} generate_qdmi_sc_device_header)
+  add_mqt_core_library(${TARGET_NAME} ALIAS_NAME QDMINaDevice)
+  add_dependencies(${TARGET_NAME} generate_qdmi_na_device_header)
 
   # Generate prefixed QDMI headers
   generate_prefixed_qdmi_headers(${QDMI_PREFIX})
-  file(GLOB_RECURSE QDMI_HDRS ${CMAKE_CURRENT_BINARY_DIR}/include/mqt_sc_qdmi/**.h)
+  file(GLOB_RECURSE QDMI_HDRS ${CMAKE_CURRENT_BINARY_DIR}/include/mqt_na_qdmi/**.h)
 
   # add sources to target
   target_sources(${TARGET_NAME} PRIVATE Device.cpp)
@@ -113,7 +117,7 @@ if(NOT TARGET ${TARGET_NAME})
            ${CMAKE_CURRENT_BINARY_DIR}/include
            FILES
            ${DEVICE_HDR}
-           ${MQT_CORE_INCLUDE_BUILD_DIR}/qdmi/sc/Device.hpp
+           ${MQT_CORE_INCLUDE_BUILD_DIR}/qdmi/devices/na/Device.hpp
            ${QDMI_HDRS})
 
   # add link libraries
@@ -134,15 +138,15 @@ if(NOT TARGET ${TARGET_NAME})
 
   # Generate additional alias for the target required for generate_device_defs_executable function
   # in the tests
-  add_library(qdmi::mqt_sc_device ALIAS ${TARGET_NAME})
+  add_library(qdmi::mqt_na_device ALIAS ${TARGET_NAME})
 
-  set(DYN_TARGET_NAME ${MQT_CORE_TARGET_NAME}-qdmi-sc-device-dyn)
+  set(DYN_TARGET_NAME ${MQT_CORE_TARGET_NAME}-qdmi-na-device-dyn)
   if(NOT TARGET ${DYN_TARGET_NAME})
     # Set prefix for QDMI
-    set(QDMI_PREFIX "MQT_SC_DYN")
+    set(QDMI_PREFIX "MQT_NA_DYN")
     # Generate prefixed QDMI headers
     generate_prefixed_qdmi_headers(${QDMI_PREFIX})
-    file(GLOB_RECURSE QDMI_HDRS ${CMAKE_CURRENT_BINARY_DIR}/include/mqt_sc_dyn_qdmi/**.hpp)
+    file(GLOB_RECURSE QDMI_HDRS ${CMAKE_CURRENT_BINARY_DIR}/include/mqt_na_dyn_qdmi/**.hpp)
     # Add dynamic library target
     add_library(${DYN_TARGET_NAME} SHARED)
     # add sources to target
@@ -157,7 +161,7 @@ if(NOT TARGET ${TARGET_NAME})
              ${CMAKE_CURRENT_BINARY_DIR}/include
              FILES
              ${DEVICE_HDR}
-             ${MQT_CORE_INCLUDE_BUILD_DIR}/qdmi/sc/Device.hpp
+             ${MQT_CORE_INCLUDE_BUILD_DIR}/qdmi/devices/na/Device.hpp
              ${QDMI_HDRS})
     # add link libraries
     target_link_libraries(
@@ -172,14 +176,14 @@ if(NOT TARGET ${TARGET_NAME})
       ${DYN_TARGET_NAME}
       PROPERTIES VERSION ${PROJECT_VERSION}
                  SOVERSION ${PROJECT_VERSION_MAJOR}.${PROJECT_VERSION_MINOR}
-                 EXPORT_NAME CoreQDMIScDeviceDyn)
+                 EXPORT_NAME CoreQDMINaDeviceDyn)
     if(MSVC)
       # Disable link-time code generation for dynamic library on Windows to avoid issues with
       # missing symbols and other link errors
       set_target_properties(${DYN_TARGET_NAME} PROPERTIES INTERPROCEDURAL_OPTIMIZATION FALSE)
       target_link_options(${DYN_TARGET_NAME} PRIVATE /LTCG:OFF)
     endif()
-    add_library(MQT::CoreQDMIScDeviceDyn ALIAS ${DYN_TARGET_NAME})
+    add_library(MQT::CoreQDMINaDeviceDyn ALIAS ${DYN_TARGET_NAME})
     list(APPEND MQT_CORE_TARGETS ${DYN_TARGET_NAME})
   endif()
 endif()

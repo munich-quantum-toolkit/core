@@ -10,7 +10,7 @@
 
 #include "fomac/FoMaC.hpp"
 
-#include "qdmi/Common.hpp"
+#include "../../include/mqt-core/qdmi/devices/common/Common.hpp"
 
 #include <algorithm>
 #include <complex>

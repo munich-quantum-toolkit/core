@@ -8,7 +8,7 @@
  * Licensed under the MIT License
  */
 
-#include "qdmi/Driver.hpp"
+#include "qdmi/driver/Driver.hpp"
 
 #include <algorithm>
 #include <array>

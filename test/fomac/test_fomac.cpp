@@ -8,8 +8,8 @@
  * Licensed under the MIT License
  */
 
+#include "../../include/mqt-core/qdmi/devices/common/Common.hpp"
 #include "fomac/FoMaC.hpp"
-#include "qdmi/Common.hpp"
 
 #include <algorithm>
 #include <cstdlib>

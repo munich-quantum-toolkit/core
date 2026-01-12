@@ -34,7 +34,7 @@ if(NOT TARGET ${TARGET_NAME})
            ${MQT_CORE_INCLUDE_BUILD_DIR}
            ${CMAKE_CURRENT_BINARY_DIR}/include
            FILES
-           ${MQT_CORE_INCLUDE_BUILD_DIR}/qdmi/dd/Device.hpp
+           ${MQT_CORE_INCLUDE_BUILD_DIR}/qdmi/devices/dd/Device.hpp
            ${QDMI_HDRS})
 
   # Add link libraries
@@ -48,9 +48,7 @@ if(NOT TARGET ${TARGET_NAME})
   set_target_properties(${TARGET_NAME} PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
   # Add to list of MQT Core targets
-  set(MQT_CORE_TARGETS
-      ${MQT_CORE_TARGETS} ${TARGET_NAME}
-      PARENT_SCOPE)
+  list(APPEND MQT_CORE_TARGETS ${TARGET_NAME})
 
   # Make QDMI version available
   target_compile_definitions(${TARGET_NAME} PRIVATE QDMI_VERSION="${QDMI_VERSION}")
@@ -59,3 +57,7 @@ if(NOT TARGET ${TARGET_NAME})
   # in the tests
   add_library(qdmi::mqt_ddsim_device ALIAS ${TARGET_NAME})
 endif()
+
+set(MQT_CORE_TARGETS
+    ${MQT_CORE_TARGETS}
+    PARENT_SCOPE)
