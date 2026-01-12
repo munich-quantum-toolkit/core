@@ -37,8 +37,7 @@ protected:
         FileLineColLoc::get(&context, "<utils-test-builder>", 0, 0), &context);
   }
 
-  [[nodiscard]] arith::AddFOp createAddition(const double a,
-                                             const double b) const {
+  [[nodiscard]] arith::AddFOp createAddition(const double a, const double b) {
     auto firstOperand =
         arith::ConstantOp::create(*builder, builder->getF64FloatAttr(a));
     auto secondOperand =
