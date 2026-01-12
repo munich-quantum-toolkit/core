@@ -26,12 +26,15 @@
 #include <map>
 #include <memory>
 #include <mutex>
+#include <qdmi/devices/common/Common.hpp>
 #include <random>
 #include <string>
 #include <unordered_map>
 
 namespace qdmi::dd {
-class Device final {
+class Device final : public Singleton<Device> {
+  friend Singleton;
+
   /// Provides access to the device name.
   std::string name_;
 
@@ -64,18 +67,8 @@ class Device final {
   Device();
 
 public:
-  // Default move constructor and move assignment operator.
-  Device(Device&&) = delete;
-  Device& operator=(Device&&) = delete;
-  // Delete copy constructor and assignment operator to enforce singleton.
-  Device(const Device&) = delete;
-  Device& operator=(const Device&) = delete;
-
   /// @brief Destructor for the Device class.
-  ~Device() = default;
-
-  /// @returns the singleton instance of the Device class.
-  [[nodiscard]] static auto get() -> Device&;
+  ~Device() override = default;
 
   /**
    * @brief Allocates a new device session.

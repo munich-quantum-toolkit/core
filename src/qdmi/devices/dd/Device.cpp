@@ -149,13 +149,6 @@ namespace qdmi::dd {
 Device::Device()
     : name_("MQT Core DDSIM QDMI Device"),
       qubitsNum_(std::numeric_limits<::dd::Qubit>::max()) {}
-auto Device::get() -> Device& {
-  // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
-  static auto* instance = new Device();
-  // The instance is intentionally leaked to avoid static deinitialization
-  // issues (cf. static (de)initialization order fiasco)
-  return *instance;
-}
 auto Device::sessionAlloc(MQT_DDSIM_QDMI_Device_Session* session)
     -> QDMI_STATUS {
   if (session == nullptr) {

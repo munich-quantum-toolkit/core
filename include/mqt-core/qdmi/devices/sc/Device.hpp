@@ -19,6 +19,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <qdmi/devices/common/Common.hpp>
 #include <string>
 #include <unordered_map>
 #include <utility>
@@ -26,7 +27,9 @@
 #include <vector>
 
 namespace qdmi::sc {
-class Device final {
+class Device final : public Singleton<Device> {
+  friend Singleton;
+
   /// @brief Provides access to the device name.
   std::string name_;
 
@@ -51,18 +54,8 @@ class Device final {
   Device();
 
 public:
-  // Delete move constructor and move assignment operator.
-  Device(Device&&) = delete;
-  Device& operator=(Device&&) = delete;
-  // Delete copy constructor and assignment operator to enforce singleton.
-  Device(const Device&) = delete;
-  Device& operator=(const Device&) = delete;
-
   /// @brief Destructor for the Device class.
-  ~Device();
-
-  /// @returns the singleton instance of the Device class.
-  [[nodiscard]] static auto get() -> Device&;
+  ~Device() override;
 
   /**
    * @brief Allocates a new device session.

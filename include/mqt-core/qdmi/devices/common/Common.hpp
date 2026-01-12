@@ -19,9 +19,35 @@
 #include <string>
 
 namespace qdmi {
+template <class Concrete> class Singleton {
+protected:
+  /// @brief Protected constructor to enforce the singleton pattern.
+  Singleton() = default;
+
+public:
+  // Default move constructor and move assignment operator.
+  Singleton(Singleton&&) = default;
+  Singleton& operator=(Singleton&&) = default;
+  // Delete copy constructor and assignment operator to enforce singleton.
+  Singleton(const Singleton&) = delete;
+  Singleton& operator=(const Singleton&) = delete;
+
+  /// @brief Destructor for the Device class.
+  virtual ~Singleton() = default;
+
+  /// @returns the singleton instance of the Device class.
+  [[nodiscard]] static auto get() -> Concrete& {
+    // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
+    static auto* instance = new Concrete();
+    // The instance is intentionally leaked to avoid static deinitialization
+    // issues (cf. static (de)initialization order fiasco)
+    return *instance;
+  }
+};
+
 /**
  * @brief Function used to mark unreachable code
- * @details Uses compiler specific extensions if possible. Even if no extension
+ * @details Uses compiler-specific extensions if possible. Even if no extension
  * is used, undefined behavior is still raised by an empty function body and the
  * noreturn attribute.
  */

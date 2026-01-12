@@ -44,13 +44,6 @@ Device::Device() {
   INITIALIZE_SITES(sites_);
   INITIALIZE_OPERATIONS(operations_);
 }
-auto Device::get() -> Device& {
-  // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
-  static auto* instance = new Device();
-  // The instance is intentionally leaked to avoid static deinitialization
-  // issues (cf. static (de)initialization order fiasco)
-  return *instance;
-}
 auto Device::sessionAlloc(MQT_NA_QDMI_Device_Session* session) -> int {
   if (session == nullptr) {
     return QDMI_ERROR_INVALIDARGUMENT;

@@ -47,13 +47,6 @@ Device::~Device() {
   // Explicitly clear sessions before destruction to avoid spurious segfaults
   sessions_.clear();
 }
-auto Device::get() -> Device& {
-  // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
-  static auto* instance = new Device();
-  // The instance is intentionally leaked to avoid static deinitialization
-  // issues (cf. static (de)initialization order fiasco)
-  return *instance;
-}
 auto Device::sessionAlloc(MQT_SC_QDMI_Device_Session* session) -> int {
   if (session == nullptr) {
     return QDMI_ERROR_INVALIDARGUMENT;
