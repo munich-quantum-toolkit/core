@@ -29,10 +29,6 @@ if(BUILD_MQT_CORE_MLIR)
     GIT_TAG 5.0.1
     GIT_SHALLOW TRUE)
   FetchContent_MakeAvailable(Eigen)
-  if(WIN32 AND ${CMAKE_HOST_SYSTEM_PROCESSOR} STREQUAL ARM64)
-    message(STATUS "Enabling non-optimal vectorization in Eigen to avoid alignment issues")
-    add_compile_definitions(EIGEN_DONT_ALIGN_STATICALLY)
-  endif()
 endif()
 
 set(JSON_VERSION
