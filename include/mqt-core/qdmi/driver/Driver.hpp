@@ -10,16 +10,16 @@
 
 #pragma once
 
+#include "qdmi/common/Common.hpp"
+
 #include <cstddef>
 #include <cstdint>
 #include <memory>
 #include <optional>
 #include <qdmi/client.h>
-#include <qdmi/common/Common.hpp>
 #include <qdmi/device.h>
 #include <string>
 #include <unordered_map>
-#include <unordered_set>
 #include <vector>
 
 namespace qdmi {
