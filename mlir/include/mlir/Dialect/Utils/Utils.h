@@ -28,8 +28,9 @@ constexpr auto TOLERANCE = 1e-15;
  * @param parameter The parameter as a variant (double or Value).
  * @return Value The parameter as a Value.
  */
-inline Value variantToValue(OpBuilder& builder, const OperationState& state,
-                            const std::variant<double, Value>& parameter) {
+[[nodiscard]] inline Value
+variantToValue(OpBuilder& builder, const OperationState& state,
+               const std::variant<double, Value>& parameter) {
   Value operand;
   if (std::holds_alternative<double>(parameter)) {
     operand = builder.create<arith::ConstantOp>(
