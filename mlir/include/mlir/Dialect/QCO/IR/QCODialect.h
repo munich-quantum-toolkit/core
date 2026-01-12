@@ -188,25 +188,6 @@ tryGetParameterAsDouble(UnitaryOpInterface op, size_t i) {
   return floatAttr.getValueAsDouble();
 }
 
-[[nodiscard]] inline std::pair<Eigen::MatrixXcd, Eigen::VectorXi>
-permutate(const Eigen::MatrixXcd& inputMatrix,
-          const Eigen::VectorXi& permutation) {
-  const auto swapMatrix = utils::getMatrixSWAP();
-
-  auto dim = inputMatrix.cols();
-  assert(inputMatrix.cols() == inputMatrix.rows());
-  assert(dim == permutation.size());
-
-  Eigen::MatrixXcd permutatedMatrix(dim, dim);
-  Eigen::VectorXi undoPermutation(permutation.size());
-  for (int i = 0; i < permutation.size(); ++i) {
-    undoPermutation(permutation(i)) = i;
-    // TODO
-  }
-
-  return {permutatedMatrix, undoPermutation};
-}
-
 UnitaryOpInterface getControlledOp(UnitaryOpInterface op);
 
 } // namespace mlir::qco
