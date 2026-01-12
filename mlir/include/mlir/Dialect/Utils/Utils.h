@@ -42,22 +42,31 @@ variantToValue(OpBuilder& builder, const OperationState& state,
 }
 
 /**
- * @brief Try to convert a float mlir::Value to a standard C++ double
+ * @brief Try to convert a mlir::Value to a standard C++ double
  *
  * @details
  * Resolving the mlir::Value will only work if it is a static value, so a value
- * of type float and defined via a "arith.constant" operation.
+ * defined via a "arith.constant" operation. It must also be of type
+ * float or integer.
  */
 [[nodiscard]] inline std::optional<double> valueToDouble(Value value) {
   auto constantOp = value.getDefiningOp<arith::ConstantOp>();
   if (!constantOp) {
     return std::nullopt;
   }
-  auto&& floatAttr = dyn_cast<FloatAttr>(constantOp.getValue());
-  if (!floatAttr) {
-    return std::nullopt;
+  auto floatAttr = dyn_cast<FloatAttr>(constantOp.getValue());
+  if (floatAttr) {
+    return floatAttr.getValueAsDouble();
   }
-  return floatAttr.getValueAsDouble();
+  auto intAttr = dyn_cast<IntegerAttr>(constantOp.getValue());
+  if (intAttr) {
+    if (intAttr.getType().isUnsignedInteger()) {
+      return static_cast<double>(intAttr.getValue().getZExtValue());
+    }
+    // interpret both signed+signless as signed integers
+    return static_cast<double>(intAttr.getValue().getSExtValue());
+  }
+  return std::nullopt;
 }
 
 } // namespace mlir::utils
