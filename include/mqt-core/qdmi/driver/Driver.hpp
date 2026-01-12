@@ -395,7 +395,7 @@ namespace qdmi {
  * and providing access to the devices.
  */
 class Driver final : public Singleton<Driver> {
-  friend class Singleton<Driver>;
+  friend class Singleton;
 
   /// @brief Private constructor to enforce the singleton pattern.
   Driver();

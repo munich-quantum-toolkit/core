@@ -33,7 +33,7 @@
 
 namespace qdmi::dd {
 class Device final : public Singleton<Device> {
-  friend class Singleton<Device>;
+  friend class Singleton;
 
   /// Provides access to the device name.
   std::string name_;
