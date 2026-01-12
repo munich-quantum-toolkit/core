@@ -455,3 +455,105 @@ TEST_F(ConversionTest, FuncFuncQCOToQCTest) {
 
   ASSERT_EQ(outputString, checkString);
 }
+
+TEST_F(ConversionTest, ScfCtrlQCtoQCOTest) {
+  // Test conversion from qc to qco for scf.for operation with nested ctrl
+  auto input = buildQCIR([](mlir::qc::QCProgramBuilder& b) {
+    auto q0 = b.allocQubit();
+    auto control = b.allocQubit();
+    auto c0 = b.arithConstantIndex(0);
+    auto c1 = b.arithConstantIndex(1);
+    auto c2 = b.arithConstantIndex(2);
+    b.scfFor(c0, c2, c1, [&](Value) {
+      b.ctrl(control, [&] { b.h(q0); });
+      b.x(q0);
+      b.h(q0);
+    });
+    b.h(control);
+  });
+
+  PassManager pm(context.get());
+  pm.addPass(createQCToQCO());
+  if (failed(pm.run(input.get()))) {
+    FAIL() << "Conversion error during QC-QCO conversion for scf nested";
+  }
+
+  auto expectedOutput = buildQCOIR([](mlir::qco::QCOProgramBuilder& b) {
+    auto q0 = b.allocQubit();
+    auto control = b.allocQubit();
+    auto c0 = b.arithConstantIndex(0);
+    auto c1 = b.arithConstantIndex(1);
+    auto c2 = b.arithConstantIndex(2);
+    auto scfForRes =
+        b.scfFor(c0, c2, c1, {q0, control},
+                 [&](Value, ValueRange iterArgs) -> llvm::SmallVector<Value> {
+                   auto [controls, targets] = b.ctrl(
+                       iterArgs[1], iterArgs[0],
+                       [&](ValueRange targets) -> llvm::SmallVector<Value> {
+                         auto target = b.h(targets[0]);
+                         return {target};
+                       });
+                   auto q1 = b.x(targets[0]);
+                   auto q2 = b.h(q1);
+                   return {q2, controls[0]};
+                 });
+
+    b.h(scfForRes[1]);
+  });
+
+  const auto outputString = getOutputString(input);
+  const auto checkString = getOutputString(expectedOutput);
+
+  ASSERT_EQ(outputString, checkString);
+}
+
+TEST_F(ConversionTest, ScfCtrlQCOtoQCTest) {
+  // Test conversion from qco to qc for scf.for operation with nested ctrl
+  auto input = buildQCOIR([](mlir::qco::QCOProgramBuilder& b) {
+    auto q0 = b.allocQubit();
+    auto control = b.allocQubit();
+    auto c0 = b.arithConstantIndex(0);
+    auto c1 = b.arithConstantIndex(1);
+    auto c2 = b.arithConstantIndex(2);
+    auto scfForRes =
+        b.scfFor(c0, c2, c1, {q0, control},
+                 [&](Value, ValueRange iterArgs) -> llvm::SmallVector<Value> {
+                   auto [controls, targets] = b.ctrl(
+                       iterArgs[1], iterArgs[0],
+                       [&](ValueRange targets) -> llvm::SmallVector<Value> {
+                         auto target = b.h(targets[0]);
+                         return {target};
+                       });
+                   auto q1 = b.x(targets[0]);
+                   auto q2 = b.h(q1);
+                   return {q2, controls[0]};
+                 });
+
+    b.h(scfForRes[1]);
+  });
+
+  PassManager pm(context.get());
+  pm.addPass(createQCOToQC());
+  if (failed(pm.run(input.get()))) {
+    FAIL() << "Conversion error during QCO-QC conversion for scf nested";
+  }
+
+  auto expectedOutput = buildQCIR([](mlir::qc::QCProgramBuilder& b) {
+    auto q0 = b.allocQubit();
+    auto control = b.allocQubit();
+    auto c0 = b.arithConstantIndex(0);
+    auto c1 = b.arithConstantIndex(1);
+    auto c2 = b.arithConstantIndex(2);
+    b.scfFor(c0, c2, c1, [&](Value) {
+      b.ctrl(control, [&] { b.h(q0); });
+      b.x(q0);
+      b.h(q0);
+    });
+    b.h(control);
+  });
+
+  const auto outputString = getOutputString(input);
+  const auto checkString = getOutputString(expectedOutput);
+
+  ASSERT_EQ(outputString, checkString);
+}
