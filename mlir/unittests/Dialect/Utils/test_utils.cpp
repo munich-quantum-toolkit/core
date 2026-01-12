@@ -119,7 +119,9 @@ TEST_F(UtilsTest, valueToDoubleFoldedConstant) {
   llvm::SmallVector<Operation*> newConstants;
   ASSERT_TRUE(builder->tryFold(op, tmp, &newConstants).succeeded());
   ASSERT_EQ(newConstants.size(), 1);
-  const auto stdValue = utils::valueToDouble(newConstants[0]->getResult(0));
+  auto cst = dyn_cast<arith::ConstantOp>(newConstants[0]);
+  ASSERT_TRUE(cst);
+  const auto stdValue = utils::valueToDouble(cst.getResult());
   ASSERT_TRUE(stdValue.has_value());
   EXPECT_DOUBLE_EQ(stdValue.value(), 3.5);
 }
