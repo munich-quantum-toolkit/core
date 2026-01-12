@@ -11,6 +11,7 @@
 #include "mlir/Dialect/QCO/Builder/QCOProgramBuilder.h"
 
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
+#include "mlir/Dialect/Utils/Utils.h"
 
 #include <cstddef>
 #include <cstdint>
@@ -617,12 +618,18 @@ QCOProgramBuilder& QCOProgramBuilder::dealloc(Value qubit) {
 //===----------------------------------------------------------------------===//
 
 ValueRange QCOProgramBuilder::scfFor(
-    Value lowerbound, Value upperbound, Value step, ValueRange initArgs,
+    const std::variant<int64_t, Value>& lowerbound,
+    const std::variant<int64_t, Value>& upperbound,
+    const std::variant<int64_t, Value>& step, ValueRange initArgs,
     llvm::function_ref<llvm::SmallVector<Value>(Value, ValueRange)> body) {
   checkFinalized();
 
+  const auto lb = utils::variantToValue(*this, loc, lowerbound);
+  const auto ub = utils::variantToValue(*this, loc, upperbound);
+  const auto stepSize = utils::variantToValue(*this, loc, step);
+
   // Create the empty for operation
-  auto forOp = create<scf::ForOp>(loc, lowerbound, upperbound, step, initArgs);
+  auto forOp = create<scf::ForOp>(loc, lb, ub, stepSize, initArgs);
   auto* forBody = forOp.getBody();
   const auto iv = forBody->getArgument(0);
   const auto loopArgs = forBody->getArguments().drop_front();
@@ -704,10 +711,12 @@ ValueRange QCOProgramBuilder::scfWhile(
 }
 
 ValueRange QCOProgramBuilder::scfIf(
-    Value condition, ValueRange qubits,
+    const std::variant<bool, Value>& cond, ValueRange qubits,
     llvm::function_ref<llvm::SmallVector<Value>()> thenBody,
     llvm::function_ref<llvm::SmallVector<Value>()> elseBody) {
   checkFinalized();
+
+  const auto condition = utils::variantToValue(*this, loc, cond);
 
   // Create the empty while operation
   auto ifOp = create<scf::IfOp>(loc, qubits.getTypes(), condition,

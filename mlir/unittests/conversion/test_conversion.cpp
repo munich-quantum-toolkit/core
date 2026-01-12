@@ -78,10 +78,7 @@ TEST_F(ConversionTest, ScfForQCToQCOTest) {
   // Test conversion from qc to qco for scf.for operation
   auto input = buildQCIR([](mlir::qc::QCProgramBuilder& b) {
     auto q0 = b.allocQubit();
-    auto c0 = b.arithConstantIndex(0);
-    auto c1 = b.arithConstantIndex(1);
-    auto c2 = b.arithConstantIndex(2);
-    b.scfFor(c0, c2, c1, [&](Value /*iv*/) {
+    b.scfFor(0, 2, 1, [&](Value /*iv*/) {
       b.h(q0);
       b.x(q0);
       b.h(q0);
@@ -97,11 +94,8 @@ TEST_F(ConversionTest, ScfForQCToQCOTest) {
 
   auto expectedOutput = buildQCOIR([](mlir::qco::QCOProgramBuilder& b) {
     auto q0 = b.allocQubit();
-    auto c0 = b.arithConstantIndex(0);
-    auto c1 = b.arithConstantIndex(1);
-    auto c2 = b.arithConstantIndex(2);
     auto scfForRes = b.scfFor(
-        c0, c2, c1, {q0},
+        0, 2, 1, {q0},
         [&](Value /*iv*/, ValueRange iterArgs) -> llvm::SmallVector<Value> {
           auto q1 = b.h(iterArgs[0]);
           auto q2 = b.x(q1);
@@ -121,11 +115,8 @@ TEST_F(ConversionTest, ScfForQCOToQCTest) {
   // Test conversion from qco to qc for scf.for operation
   auto input = buildQCOIR([](mlir::qco::QCOProgramBuilder& b) {
     auto q0 = b.allocQubit();
-    auto c0 = b.arithConstantIndex(0);
-    auto c1 = b.arithConstantIndex(1);
-    auto c2 = b.arithConstantIndex(2);
     auto scfForRes = b.scfFor(
-        c0, c2, c1, {q0},
+        0, 2, 1, {q0},
         [&](Value /*iv*/, ValueRange iterArgs) -> llvm::SmallVector<Value> {
           auto q1 = b.h(iterArgs[0]);
           auto q2 = b.x(q1);
@@ -143,10 +134,7 @@ TEST_F(ConversionTest, ScfForQCOToQCTest) {
 
   auto expectedOutput = buildQCIR([](mlir::qc::QCProgramBuilder& b) {
     auto q0 = b.allocQubit();
-    auto c0 = b.arithConstantIndex(0);
-    auto c1 = b.arithConstantIndex(1);
-    auto c2 = b.arithConstantIndex(2);
-    b.scfFor(c0, c2, c1, [&](Value /*iv*/) {
+    b.scfFor(0, 2, 1, [&](Value /*iv*/) {
       b.h(q0);
       b.x(q0);
       b.h(q0);
@@ -235,7 +223,6 @@ TEST_F(ConversionTest, ScfWhileQCOToQCTest) {
     b.scfWhile(
         [&] {
           auto measureResult = b.measure(q0);
-
           b.scfCondition(measureResult);
         },
         [&] {
@@ -461,10 +448,7 @@ TEST_F(ConversionTest, ScfCtrlQCtoQCOTest) {
   auto input = buildQCIR([](mlir::qc::QCProgramBuilder& b) {
     auto q0 = b.allocQubit();
     auto control = b.allocQubit();
-    auto c0 = b.arithConstantIndex(0);
-    auto c1 = b.arithConstantIndex(1);
-    auto c2 = b.arithConstantIndex(2);
-    b.scfFor(c0, c2, c1, [&](Value) {
+    b.scfFor(0, 2, 1, [&](Value) {
       b.ctrl(control, [&] { b.h(q0); });
       b.x(q0);
       b.h(q0);
@@ -481,11 +465,8 @@ TEST_F(ConversionTest, ScfCtrlQCtoQCOTest) {
   auto expectedOutput = buildQCOIR([](mlir::qco::QCOProgramBuilder& b) {
     auto q0 = b.allocQubit();
     auto control = b.allocQubit();
-    auto c0 = b.arithConstantIndex(0);
-    auto c1 = b.arithConstantIndex(1);
-    auto c2 = b.arithConstantIndex(2);
     auto scfForRes =
-        b.scfFor(c0, c2, c1, {q0, control},
+        b.scfFor(0, 2, 1, {q0, control},
                  [&](Value, ValueRange iterArgs) -> llvm::SmallVector<Value> {
                    auto [controls, targets] = b.ctrl(
                        iterArgs[1], iterArgs[0],
@@ -512,11 +493,8 @@ TEST_F(ConversionTest, ScfCtrlQCOtoQCTest) {
   auto input = buildQCOIR([](mlir::qco::QCOProgramBuilder& b) {
     auto q0 = b.allocQubit();
     auto control = b.allocQubit();
-    auto c0 = b.arithConstantIndex(0);
-    auto c1 = b.arithConstantIndex(1);
-    auto c2 = b.arithConstantIndex(2);
     auto scfForRes =
-        b.scfFor(c0, c2, c1, {q0, control},
+        b.scfFor(0, 2, 1, {q0, control},
                  [&](Value, ValueRange iterArgs) -> llvm::SmallVector<Value> {
                    auto [controls, targets] = b.ctrl(
                        iterArgs[1], iterArgs[0],
@@ -541,10 +519,7 @@ TEST_F(ConversionTest, ScfCtrlQCOtoQCTest) {
   auto expectedOutput = buildQCIR([](mlir::qc::QCProgramBuilder& b) {
     auto q0 = b.allocQubit();
     auto control = b.allocQubit();
-    auto c0 = b.arithConstantIndex(0);
-    auto c1 = b.arithConstantIndex(1);
-    auto c2 = b.arithConstantIndex(2);
-    b.scfFor(c0, c2, c1, [&](Value) {
+    b.scfFor(0, 2, 1, [&](Value) {
       b.ctrl(control, [&] { b.h(q0); });
       b.x(q0);
       b.h(q0);

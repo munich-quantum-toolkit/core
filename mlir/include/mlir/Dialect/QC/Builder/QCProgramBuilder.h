@@ -892,7 +892,9 @@ public:
    * }
    * ```
    */
-  QCProgramBuilder& scfFor(Value lowerbound, Value upperbound, Value step,
+  QCProgramBuilder& scfFor(const std::variant<int64_t, Value>& lowerbound,
+                           const std::variant<int64_t, Value>& upperbound,
+                           const std::variant<int64_t, Value>& step,
                            const std::function<void(Value)>& body);
 
   /**
@@ -953,7 +955,8 @@ public:
    * ```
    */
   QCProgramBuilder&
-  scfIf(Value condition, const std::function<void()>& thenBody,
+  scfIf(const std::variant<bool, Value>& condition,
+        const std::function<void()>& thenBody,
         std::optional<std::function<void()>> elseBody = std::nullopt);
 
   /**

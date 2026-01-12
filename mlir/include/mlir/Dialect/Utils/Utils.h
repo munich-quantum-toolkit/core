@@ -40,4 +40,28 @@ inline Value variantToValue(OpBuilder& builder, const OperationState& state,
   return operand;
 }
 
+inline Value constantFromScalar(OpBuilder& builder, Location loc, int64_t v) {
+  return builder.create<arith::ConstantOp>(loc, builder.getI64IntegerAttr(v));
+}
+
+inline Value constantFromScalar(OpBuilder& builder, Location loc, bool v) {
+  return builder.create<arith::ConstantOp>(loc, builder.getBoolAttr(v));
+}
+
+/**
+ * @brief Convert a variant parameter (T or Value) to a Value
+ *
+ * @param builder The operation builder.
+ * @param state The location of the operation.
+ * @param parameter The parameter as a variant (T or Value).
+ * @return Value The parameter as a Value.
+ */
+template <typename T>
+Value variantToValue(OpBuilder& builder, const Location loc,
+                     const std::variant<T, Value>& parameter) {
+  if (std::holds_alternative<Value>(parameter)) {
+    return std::get<Value>(parameter);
+  }
+  return constantFromScalar(builder, loc, std::get<T>(parameter));
+}
 } // namespace mlir::utils

@@ -11,6 +11,7 @@
 #include "mlir/Dialect/QC/Builder/QCProgramBuilder.h"
 
 #include "mlir/Dialect/QC/IR/QCDialect.h"
+#include "mlir/Dialect/Utils/Utils.h"
 
 #include <cstdint>
 #include <functional>
@@ -450,11 +451,17 @@ QCProgramBuilder& QCProgramBuilder::dealloc(Value qubit) {
 //===----------------------------------------------------------------------===//
 
 QCProgramBuilder&
-QCProgramBuilder::scfFor(Value lowerbound, Value upperbound, Value step,
+QCProgramBuilder::scfFor(const std::variant<int64_t, Value>& lowerbound,
+                         const std::variant<int64_t, Value>& upperbound,
+                         const std::variant<int64_t, Value>& step,
                          const std::function<void(Value)>& body) {
   checkFinalized();
 
-  create<scf::ForOp>(loc, lowerbound, upperbound, step, ValueRange{},
+  const auto lb = utils::variantToValue(*this, loc, lowerbound);
+  const auto ub = utils::variantToValue(*this, loc, upperbound);
+  const auto stepSize = utils::variantToValue(*this, loc, step);
+
+  create<scf::ForOp>(loc, lb, ub, stepSize, ValueRange{},
                      [&](OpBuilder& b, Location, Value iv, ValueRange) {
                        const OpBuilder::InsertionGuard guard(*this);
                        setInsertionPointToStart(b.getInsertionBlock());
@@ -488,12 +495,15 @@ QCProgramBuilder::scfWhile(const std::function<void()>& beforeBody,
 }
 
 QCProgramBuilder&
-QCProgramBuilder::scfIf(Value cond, const std::function<void()>& thenBody,
+QCProgramBuilder::scfIf(const std::variant<bool, Value>& cond,
+                        const std::function<void()>& thenBody,
                         std::optional<std::function<void()>> elseBody) {
   checkFinalized();
 
+  const auto condition = utils::variantToValue(*this, loc, cond);
+
   if (!elseBody) {
-    create<scf::IfOp>(loc, cond, [&](OpBuilder& b, Location loc) {
+    create<scf::IfOp>(loc, condition, [&](OpBuilder& b, Location loc) {
       const OpBuilder::InsertionGuard guard(*this);
       setInsertionPointToStart(b.getInsertionBlock());
       thenBody();
@@ -501,7 +511,7 @@ QCProgramBuilder::scfIf(Value cond, const std::function<void()>& thenBody,
     });
   } else {
     create<scf::IfOp>(
-        loc, cond,
+        loc, condition,
         [&](OpBuilder& b, Location loc) {
           const OpBuilder::InsertionGuard guard(*this);
           setInsertionPointToStart(b.getInsertionBlock());

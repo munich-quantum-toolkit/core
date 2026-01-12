@@ -1059,7 +1059,9 @@ public:
    * ```
    */
   ValueRange
-  scfFor(Value lowerbound, Value upperbound, Value step, ValueRange initArgs,
+  scfFor(const std::variant<int64_t, Value>& lowerbound,
+         const std::variant<int64_t, Value>& upperbound,
+         const std::variant<int64_t, Value>& step, ValueRange initArgs,
          llvm::function_ref<llvm::SmallVector<Value>(Value, ValueRange)> body);
   /**
    * @brief Constructs a scf.while operation with return values
@@ -1129,7 +1131,8 @@ public:
    * }
    * ```
    */
-  ValueRange scfIf(Value condition, ValueRange qubits,
+  ValueRange scfIf(const std::variant<bool, Value>& condition,
+                   ValueRange qubits,
                    llvm::function_ref<llvm::SmallVector<Value>()> thenBody,
                    llvm::function_ref<llvm::SmallVector<Value>()> elseBody);
 
