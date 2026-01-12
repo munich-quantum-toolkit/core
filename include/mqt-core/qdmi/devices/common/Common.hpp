@@ -25,9 +25,14 @@ protected:
   Singleton() = default;
 
 public:
-  // Default move constructor and move assignment operator.
-  Singleton(Singleton&&) = default;
-  Singleton& operator=(Singleton&&) = default;
+  // Delete move constructor and move assignment operator because of the
+  // following reason:
+  //
+  // - Users access the singleton via get() which returns a reference
+  // - Moving would invalidate the singleton's state
+  // - Users never own the singleton instance
+  Singleton(Singleton&&) = delete;
+  Singleton& operator=(Singleton&&) = delete;
   // Delete copy constructor and assignment operator to enforce singleton.
   Singleton(const Singleton&) = delete;
   Singleton& operator=(const Singleton&) = delete;
