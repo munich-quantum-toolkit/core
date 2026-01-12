@@ -8,14 +8,7 @@
 
 add_executable(mqt-core-mlir-dialect-utils-test test_utils.cpp)
 
-target_link_libraries(
-  mqt-core-mlir-dialect-utils-test
-  PRIVATE GTest::gtest_main
-          MLIRFuncDialect
-          MLIRArithDialect
-          MLIRIR
-          MLIRParser
-          MLIRSupport
-          LLVMSupport)
+target_link_libraries(mqt-core-mlir-dialect-utils-test PRIVATE GTest::gtest_main MLIRArithDialect
+                                                               MLIRIR MLIRSupport LLVMSupport)
 
 gtest_discover_tests(mqt-core-mlir-dialect-utils-test)
