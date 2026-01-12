@@ -172,13 +172,13 @@ Value QIRProgramBuilder::measure(Value qubit, const int64_t resultIndex) {
   }
 
   // Choose a safe default register name
-  static constexpr auto defaultRegName = "c";
-  StringRef regName{defaultRegName};
+  static constexpr auto DEFAULT_REG_NAME = "c";
+  StringRef regName{DEFAULT_REG_NAME};
   if (llvm::any_of(registerResultMap, [](const auto& entry) {
-        return entry.first.first == defaultRegName;
+        return entry.first.first == DEFAULT_REG_NAME;
       })) {
-    static constexpr auto fallbackRegName = "__unnamed__";
-    regName = fallbackRegName;
+    static constexpr auto FALLBACK_REG_NAME = "__unnamed__";
+    regName = FALLBACK_REG_NAME;
   }
 
   // Save current insertion point

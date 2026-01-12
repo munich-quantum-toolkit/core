@@ -15,6 +15,7 @@
 #include <limits>
 #include <llvm/ADT/APInt.h>
 #include <llvm/ADT/SmallVector.h>
+#include <llvm/Support/Casting.h>
 #include <memory>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/IR/Builders.h>
@@ -22,6 +23,7 @@
 #include <mlir/IR/Location.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/Operation.h>
+#include <mlir/IR/OwningOpRef.h>
 #include <mlir/IR/Value.h>
 
 using namespace mlir;
