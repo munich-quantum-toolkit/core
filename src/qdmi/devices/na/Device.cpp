@@ -15,7 +15,7 @@
 #include "qdmi/devices/na/Device.hpp"
 
 #include "mqt_na_qdmi/device.h"
-#include "qdmi/devices/common/Common.hpp"
+#include "qdmi/common/Common.hpp"
 #include "qdmi/na/DeviceMemberInitializers.hpp"
 
 #include <algorithm>

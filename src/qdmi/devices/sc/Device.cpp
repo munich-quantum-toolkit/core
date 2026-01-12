@@ -15,7 +15,7 @@
 #include "qdmi/devices/sc/Device.hpp"
 
 #include "mqt_sc_qdmi/device.h"
-#include "qdmi/devices/common/Common.hpp"
+#include "qdmi/common/Common.hpp"
 #include "qdmi/sc/DeviceMemberInitializers.hpp"
 
 #include <algorithm>

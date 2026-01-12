@@ -22,7 +22,7 @@
 #include "ir/QuantumComputation.hpp"
 #include "mqt_ddsim_qdmi/device.h"
 #include "qasm3/Importer.hpp"
-#include "qdmi/devices/common/Common.hpp"
+#include "qdmi/common/Common.hpp"
 
 #include <algorithm>
 #include <array>

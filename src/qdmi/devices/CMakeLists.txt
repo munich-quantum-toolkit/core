@@ -6,7 +6,6 @@
 #
 # Licensed under the MIT License
 
-add_subdirectory(common)
 add_subdirectory(dd)
 add_subdirectory(sc)
 add_subdirectory(na)

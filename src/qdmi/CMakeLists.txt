@@ -6,6 +6,7 @@
 #
 # Licensed under the MIT License
 
+add_subdirectory(common)
 add_subdirectory(devices)
 add_subdirectory(driver)
 

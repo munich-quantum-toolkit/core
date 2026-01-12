@@ -15,12 +15,12 @@
  */
 
 #include "mqt_na_qdmi/device.h"
+#include "qdmi/common/Common.hpp"
 
 #include <cstddef>
 #include <cstdint>
 #include <memory>
 #include <optional>
-#include <qdmi/devices/common/Common.hpp>
 #include <string>
 #include <unordered_map>
 #include <utility>

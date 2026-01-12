@@ -16,9 +16,8 @@ if(NOT TARGET ${TARGET_NAME})
   target_sources(${TARGET_NAME} PRIVATE Common.cpp)
 
   # Add headers using file sets
-  target_sources(
-    ${TARGET_NAME} PUBLIC FILE_SET HEADERS BASE_DIRS ${MQT_CORE_INCLUDE_BUILD_DIR} FILES
-                          ${MQT_CORE_INCLUDE_BUILD_DIR}/qdmi/devices/common/Common.hpp)
+  target_sources(${TARGET_NAME} PUBLIC FILE_SET HEADERS BASE_DIRS ${MQT_CORE_INCLUDE_BUILD_DIR}
+                                       FILES ${MQT_CORE_INCLUDE_BUILD_DIR}/qdmi/common/Common.hpp)
 
   # Add link libraries
   target_link_libraries(

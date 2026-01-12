@@ -13,7 +13,7 @@
 #include "mqt_ddsim_qdmi/device.h"
 #include "mqt_na_qdmi/device.h"
 #include "mqt_sc_qdmi/device.h"
-#include "qdmi/devices/common/Common.hpp"
+#include "qdmi/common/Common.hpp"
 
 #include <cassert>
 #include <cstddef>

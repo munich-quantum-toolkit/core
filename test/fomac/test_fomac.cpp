@@ -9,7 +9,7 @@
  */
 
 #include "fomac/FoMaC.hpp"
-#include "qdmi/devices/common/Common.hpp"
+#include "qdmi/common/Common.hpp"
 
 #include <algorithm>
 #include <cstdlib>

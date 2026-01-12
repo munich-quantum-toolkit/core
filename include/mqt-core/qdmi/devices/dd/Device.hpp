@@ -17,6 +17,7 @@
 #include "dd/DDDefinitions.hpp"
 #include "dd/Package.hpp"
 #include "mqt_ddsim_qdmi/device.h"
+#include "qdmi/common/Common.hpp"
 
 #include <atomic>
 #include <cstddef>
@@ -26,7 +27,6 @@
 #include <map>
 #include <memory>
 #include <mutex>
-#include <qdmi/devices/common/Common.hpp>
 #include <random>
 #include <string>
 #include <unordered_map>
