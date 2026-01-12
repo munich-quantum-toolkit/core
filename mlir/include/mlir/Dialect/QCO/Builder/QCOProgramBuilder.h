@@ -1047,7 +1047,6 @@ public:
    * ```c++
    * builder.scfFor(lb, ub, step, initArgs, [&](Value iv, ValueRange iterArgs)
    * -> llvm::SmallVector<Value> { auto q1 = builder.x(iterArgs[0]);
-   *    builder.scfYield(q1);
    *    return {q1};
    * });
    * ```
@@ -1080,7 +1079,6 @@ public:
    *   return {q2};
    * }, [&](ValueRange iterArgs) -> llvm::SmallVector<Value> {
    *   auto q1 = builder.x(iterArgs[0]);
-   *   builder.scfYield(q1);
    *   return {q1};
    * });
    * ```
@@ -1115,11 +1113,9 @@ public:
    * ```c++
    * builder.scfIf(condition, qubits, [&]() -> llvm::SmallVector<Value> {
    *   auto q1 = builder.h(q0);
-   *   builder.scfYield(q1);
    *   return {q1};
    * }, [&]() -> llvm::SmallVector<Value> {
    *   auto q1 = builder.x(q0);
-   *   builder.scfYield(q1);
    *   return {q1};
    * });
    * ```
@@ -1154,41 +1150,9 @@ public:
    */
   QCOProgramBuilder& scfCondition(Value condition, ValueRange yieldedValues);
 
-  /**
-   * @brief Constructs a scf.yield operation with yielded values
-   *
-   * @param yieldedValues ValueRange of the yieldedValues
-   * @return Reference to this builder for method chaining
-   *
-   * @par Example:
-   * ```c++
-   * builder.scfYield(yieldedValues);
-   * ```
-   * ```mlir
-   * scf.yield %q0 : !qco.qubit
-   * ```
-   */
-  QCOProgramBuilder& scfYield(ValueRange yieldedValues);
-
   //===--------------------------------------------------------------------===//
   // Func operations
   //===--------------------------------------------------------------------===//
-
-  /**
-   * @brief Constructs a func.return operation with return values
-   *
-   * @param returnValues ValueRange of the returned values
-   * @return Reference to this builder for method chaining
-   *
-   * @par Example:
-   * ```c++
-   * builder.funcReturn(yieldedValues);
-   * ```
-   * ```mlir
-   * func.return %q0 : !qco.qubit
-   * ```
-   */
-  QCOProgramBuilder& funcReturn(ValueRange returnValues);
 
   /**
    * @brief Constructs a func.call operation with return values
@@ -1218,9 +1182,8 @@ public:
    *
    * @par Example:
    * ```c++
-   * builder.funcFunc("test", argTypes, resultTypes, [&](ValueRange args) {
-   *   auto q1 = builder.h(args[0]);
-   *   builder.funcReturn(q1);
+   * builder.funcFunc("test", argTypes, resultTypes, [&](ValueRange args) ->
+   * llvm::SmallVector<Value> { auto q1 = builder.h(args[0]); return {q1};
    * })
    * ```
    * ```mlir
@@ -1230,9 +1193,9 @@ public:
    * }
    * ```
    */
-  QCOProgramBuilder& funcFunc(StringRef name, TypeRange argTypes,
-                              TypeRange resultTypes,
-                              llvm::function_ref<void(ValueRange)> body);
+  QCOProgramBuilder&
+  funcFunc(StringRef name, TypeRange argTypes, TypeRange resultTypes,
+           llvm::function_ref<llvm::SmallVector<Value>(ValueRange)> body);
 
   //===--------------------------------------------------------------------===//
   // Arith operations

@@ -537,13 +537,6 @@ QCProgramBuilder& QCProgramBuilder::funcCall(StringRef name,
   return *this;
 }
 
-QCProgramBuilder& QCProgramBuilder::funcReturn() {
-  checkFinalized();
-
-  create<func::ReturnOp>(loc);
-  return *this;
-}
-
 QCProgramBuilder&
 QCProgramBuilder::funcFunc(StringRef name, TypeRange argTypes,
                            const std::function<void(ValueRange)>& body) {
@@ -562,7 +555,7 @@ QCProgramBuilder::funcFunc(StringRef name, TypeRange argTypes,
 
   // Build function body
   body(entryBlock->getArguments());
-
+  create<func::ReturnOp>(loc);
   return *this;
 }
 

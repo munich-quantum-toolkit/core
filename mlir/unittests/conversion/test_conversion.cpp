@@ -106,7 +106,6 @@ TEST_F(ConversionTest, ScfForQCToQCOTest) {
           auto q1 = b.h(iterArgs[0]);
           auto q2 = b.x(q1);
           auto q3 = b.h(q2);
-          b.scfYield(q3);
           return {q3};
         });
     b.h(scfForRes[0]);
@@ -131,7 +130,6 @@ TEST_F(ConversionTest, ScfForQCOToQCTest) {
           auto q1 = b.h(iterArgs[0]);
           auto q2 = b.x(q1);
           auto q3 = b.h(q2);
-          b.scfYield(q3);
           return {q3};
         });
     b.h(scfForRes[0]);
@@ -196,7 +194,6 @@ TEST_F(ConversionTest, ScfWhileQCToQCOTest) {
         [&](ValueRange iterArgs) -> llvm::SmallVector<Value> {
           auto q1 = b.h(iterArgs[0]);
           auto q2 = b.y(q1);
-          b.scfYield(q2);
           return {q2};
         });
     b.h(scfWhileResult[0]);
@@ -222,7 +219,6 @@ TEST_F(ConversionTest, ScfWhileQCOToQCTest) {
         [&](ValueRange iterArgs) -> llvm::SmallVector<Value> {
           auto q1 = b.h(iterArgs[0]);
           auto q2 = b.y(q1);
-          b.scfYield(q2);
           return {q2};
         });
     b.h(scfWhileResult[0]);
@@ -286,13 +282,11 @@ TEST_F(ConversionTest, ScfIfQCToQCOTest) {
         [&]() -> llvm::SmallVector<Value> {
           auto q2 = b.h(q1);
           auto q3 = b.y(q2);
-          b.scfYield(q3);
           return {q3};
         },
         [&]() -> llvm::SmallVector<Value> {
           auto q2 = b.y(q1);
           auto q3 = b.h(q2);
-          b.scfYield(q3);
           return {q3};
         });
     b.h(scfIfResult[0]);
@@ -314,13 +308,11 @@ TEST_F(ConversionTest, ScfIfQCOToQCTest) {
         [&]() -> llvm::SmallVector<Value> {
           auto q2 = b.h(q1);
           auto q3 = b.y(q2);
-          b.scfYield(q3);
           return {q3};
         },
         [&]() -> llvm::SmallVector<Value> {
           auto q2 = b.y(q1);
           auto q3 = b.h(q2);
-          b.scfYield(q3);
           return {q3};
         });
     b.h(scfIfResult[0]);
@@ -380,13 +372,9 @@ TEST_F(ConversionTest, ScfIfEmptyElseTest) {
         [&]() -> llvm::SmallVector<Value> {
           auto q2 = b.h(q1);
           auto q3 = b.y(q2);
-          b.scfYield(q3);
           return {q3};
         },
-        [&]() -> llvm::SmallVector<Value> {
-          b.scfYield(q1);
-          return {q1};
-        });
+        [&]() -> llvm::SmallVector<Value> { return {q1}; });
     b.h(scfIfResult[0]);
   });
 
@@ -405,7 +393,6 @@ TEST_F(ConversionTest, FuncFuncQCToQCOTest) {
     b.funcFunc("test", q0.getType(), [&](ValueRange args) {
       b.h(args[0]);
       b.y(args[0]);
-      b.funcReturn();
     });
   });
 
@@ -419,11 +406,12 @@ TEST_F(ConversionTest, FuncFuncQCToQCOTest) {
     auto q0 = b.allocQubit();
     auto q1 = b.funcCall("test", q0);
     b.h(q1[0]);
-    b.funcFunc("test", q0.getType(), q0.getType(), [&](ValueRange args) {
-      auto q2 = b.h(args[0]);
-      auto q3 = b.y(q2);
-      b.funcReturn(q3);
-    });
+    b.funcFunc("test", q0.getType(), q0.getType(),
+               [&](ValueRange args) -> llvm::SmallVector<Value> {
+                 auto q2 = b.h(args[0]);
+                 auto q3 = b.y(q2);
+                 return {q3};
+               });
   });
 
   const auto outputString = getOutputString(input);
@@ -438,11 +426,12 @@ TEST_F(ConversionTest, FuncFuncQCOToQCTest) {
     auto q0 = b.allocQubit();
     auto q1 = b.funcCall("test", q0);
     b.h(q1[0]);
-    b.funcFunc("test", q0.getType(), q0.getType(), [&](ValueRange args) {
-      auto q2 = b.h(args[0]);
-      auto q3 = b.y(q2);
-      b.funcReturn(q3);
-    });
+    b.funcFunc("test", q0.getType(), q0.getType(),
+               [&](ValueRange args) -> llvm::SmallVector<Value> {
+                 auto q2 = b.h(args[0]);
+                 auto q3 = b.y(q2);
+                 return {q3};
+               });
   });
 
   PassManager pm(context.get());
@@ -458,7 +447,6 @@ TEST_F(ConversionTest, FuncFuncQCOToQCTest) {
     b.funcFunc("test", q0.getType(), [&](ValueRange args) {
       b.h(args[0]);
       b.y(args[0]);
-      b.funcReturn();
     });
   });
 

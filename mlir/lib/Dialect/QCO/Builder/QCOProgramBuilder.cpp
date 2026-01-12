@@ -637,7 +637,8 @@ ValueRange QCOProgramBuilder::scfFor(
     validQubits[bodyRegion].insert(arg);
   }
   // Build the body
-  body(iv, loopArgs);
+  const auto bodyResults = body(iv, loopArgs);
+  create<scf ::YieldOp>(loc, bodyResults);
 
   // Update the qubit tracking
   for (const auto& [initArg, result] :
@@ -690,7 +691,8 @@ ValueRange QCOProgramBuilder::scfWhile(
     validQubits[afterRegion].insert(arg);
   }
 
-  afterBody(afterArgs);
+  const auto afterResults = afterBody(afterArgs);
+  create<scf::YieldOp>(loc, afterResults);
 
   // Update the qubit tracking
   for (const auto& [arg, result] :
@@ -726,13 +728,14 @@ ValueRange QCOProgramBuilder::scfIf(
   }
 
   // Build the then body
-  thenBody();
-
+  const auto thenResults = thenBody();
+  create<scf::YieldOp>(loc, thenResults);
   // Set the insertionpoint
   setInsertionPointToStart(&elseBlock);
 
   // Build the else body
-  elseBody();
+  const auto elseResults = elseBody();
+  create<scf::YieldOp>(loc, elseResults);
 
   // Update the qubit tracking
   for (const auto& [arg, result] : llvm::zip_equal(qubits, ifOp.getResults())) {
@@ -747,13 +750,6 @@ QCOProgramBuilder& QCOProgramBuilder::scfCondition(Value condition,
   checkFinalized();
 
   create<scf::ConditionOp>(loc, condition, yieldedValues);
-  return *this;
-}
-
-QCOProgramBuilder& QCOProgramBuilder::scfYield(ValueRange yieldedValues) {
-  checkFinalized();
-
-  create<scf::YieldOp>(loc, yieldedValues);
   return *this;
 }
 
@@ -772,16 +768,9 @@ ValueRange QCOProgramBuilder::funcCall(StringRef name, ValueRange operands) {
   return callOp->getResults();
 }
 
-QCOProgramBuilder& QCOProgramBuilder::funcReturn(ValueRange returnValues) {
-  checkFinalized();
-
-  create<func::ReturnOp>(loc, returnValues);
-  return *this;
-}
-QCOProgramBuilder&
-QCOProgramBuilder::funcFunc(StringRef name, TypeRange argTypes,
-                            TypeRange resultTypes,
-                            llvm::function_ref<void(ValueRange)> body) {
+QCOProgramBuilder& QCOProgramBuilder::funcFunc(
+    StringRef name, TypeRange argTypes, TypeRange resultTypes,
+    llvm::function_ref<llvm::SmallVector<Value>(ValueRange)> body) {
   checkFinalized();
 
   // Set the insertionPoint
@@ -801,7 +790,8 @@ QCOProgramBuilder::funcFunc(StringRef name, TypeRange argTypes,
   setInsertionPointToStart(entryBlock);
 
   // Build function body
-  body(entryBlock->getArguments());
+  const auto bodyResults = body(entryBlock->getArguments());
+  create<func::ReturnOp>(loc, bodyResults);
 
   return *this;
 }

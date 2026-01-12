@@ -977,21 +977,6 @@ public:
   //===--------------------------------------------------------------------===//
 
   /**
-   * @brief Constructs a func.return operation without return values
-   *
-   * @return Reference to this builder for method chaining
-   *
-   * @par Example:
-   * ```c++
-   * builder.funcReturn();
-   * ```
-   * ```mlir
-   * func.return
-   * ```
-   */
-  QCProgramBuilder& funcReturn();
-
-  /**
    * @brief Constructs a func.call operation without return values
    *
    * @param name Name of the function that is called
@@ -1019,7 +1004,6 @@ public:
    * ```c++
    * builder.funcFunc("test", argTypes, [&](ValueRange args) {
    *   builder.h(args[0]);
-   *   builder.funcReturn();
    * })
    * ```
    * ```mlir
