@@ -394,11 +394,6 @@ Driver::Driver() {
       std::make_unique<MQT_SCDeviceLibrary>()));
 }
 
-Driver::~Driver() {
-  sessions_.clear();
-  devices_.clear();
-}
-
 auto Driver::addDynamicDeviceLibrary(const std::string& libName,
                                      const std::string& prefix,
                                      const DeviceSessionConfig& config)

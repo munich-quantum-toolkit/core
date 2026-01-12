@@ -54,9 +54,6 @@ class Device final : public Singleton<Device> {
   Device();
 
 public:
-  /// @brief Destructor for the Device class.
-  ~Device() override;
-
   /**
    * @brief Allocates a new device session.
    * @see MQT_SC_QDMI_device_session_alloc

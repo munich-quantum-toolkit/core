@@ -413,9 +413,6 @@ class Driver final : public Singleton<Driver> {
       sessions_;
 
 public:
-  /// @brief Destructor for the Driver class.
-  ~Driver() override;
-
   /**
    * @brief Loads a dynamic device library and adds it to the driver.
    *
