@@ -172,11 +172,13 @@ Value QIRProgramBuilder::measure(Value qubit, const int64_t resultIndex) {
   }
 
   // Choose a safe default register name
-  std::string defaultRegName = "c";
+  static constexpr auto defaultRegName = "c";
+  StringRef regName{defaultRegName};
   if (llvm::any_of(registerResultMap, [](const auto& entry) {
-        return entry.first.first == "c";
+        return entry.first.first == defaultRegName;
       })) {
-    defaultRegName = "__unnamed__";
+    static constexpr auto fallbackRegName = "__unnamed__";
+    regName = fallbackRegName;
   }
 
   // Save current insertion point
@@ -185,7 +187,7 @@ Value QIRProgramBuilder::measure(Value qubit, const int64_t resultIndex) {
   // Insert in measurements block (before branch)
   setInsertionPoint(measurementsBlock->getTerminator());
 
-  const auto key = std::make_pair(defaultRegName, resultIndex);
+  const auto key = std::make_pair(regName, resultIndex);
   if (const auto it = registerResultMap.find(key);
       it != registerResultMap.end()) {
     return it->second;
@@ -197,7 +199,7 @@ Value QIRProgramBuilder::measure(Value qubit, const int64_t resultIndex) {
   } else {
     resultValue = createPointerFromIndex(*this, getLoc(), resultIndex);
     ptrCache[resultIndex] = resultValue;
-    registerResultMap.insert({key, resultValue});
+    registerResultMap.try_emplace(key, resultValue);
   }
 
   // Update result count

@@ -138,7 +138,7 @@ public:
    */
   struct Bit {
     /// Name of the register containing this bit
-    std::string registerName;
+    llvm::StringRef registerName;
     /// Size of the register containing this bit
     int64_t registerSize{};
     /// Index of this bit within the register
@@ -811,8 +811,10 @@ public:
   OwningOpRef<ModuleOp> finalize();
 
 private:
+  /// The main module
   ModuleOp module;
 
+  /// The main function
   LLVM::LLVMFuncOp mainFunc;
 
   /// Allocator and StringSaver for stable StringRefs
