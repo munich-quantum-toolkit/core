@@ -274,7 +274,7 @@ class TwoTargetTwoParameterUnitaryMatrix<code MatrixDefinitionBody> : TargetAndP
 // Unitary Operations
 //===----------------------------------------------------------------------===//
 
-def GPhaseOp : QCOOp<"gphase", traits = [UnitaryOpInterface, ZeroTargetOneParameterUnitaryMatrix<[{ return utils::getMatrixGPhase(tryGetParameterAsDouble(op, 0).value()); }]>, MemoryEffects<[MemWrite]>]> {
+def GPhaseOp : QCOOp<"gphase", traits = [UnitaryOpInterface, ZeroTargetOneParameter, MemoryEffects<[MemWrite]>]> {
     let summary = "Apply a global phase to the state";
     let description = [{
         Applies a global phase to the state.
@@ -289,7 +289,8 @@ def GPhaseOp : QCOOp<"gphase", traits = [UnitaryOpInterface, ZeroTargetOneParame
     let assemblyFormat = "`(` $theta `)` attr-dict";
 
     let extraClassDeclaration = [{
-        static StringRef getBaseSymbol() { return "gphase"; }
+        [[nodiscard]] static StringRef getBaseSymbol() { return "gphase"; }
+        [[nodiscard]] std::optional<Eigen::Matrix<std::complex<double>, 1, 1>> getMatrixGPhase();
     }];
 
     let builders = [
