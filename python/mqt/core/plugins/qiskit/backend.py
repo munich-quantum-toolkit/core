@@ -88,7 +88,7 @@ def _build_gate_mappings_for_backend(
     return qiskit_to_qdmi, operation_to_gate
 
 
-class QDMIBackend(BackendV2):  # type: ignore[misc]
+class QDMIBackend(BackendV2):
     """A Qiskit BackendV2 adapter for QDMI devices via FoMaC.
 
     This backend provides program submission to QDMI devices.

@@ -223,6 +223,7 @@ jobs:
     with:
       check-stubs: true
       enable-ty: true
+      enable-mypy: false
 
   build-sdist:
     name: 🚀 CD
