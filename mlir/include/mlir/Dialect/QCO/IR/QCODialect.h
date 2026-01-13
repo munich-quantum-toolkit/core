@@ -21,8 +21,6 @@
 #pragma clang diagnostic pop
 #endif
 
-#include "mlir/Dialect/Utils/MatrixUtils.h"
-
 #include <Eigen/Core>
 #include <mlir/Bytecode/BytecodeOpInterface.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
@@ -79,9 +77,7 @@ tryGetParameterAsDouble(UnitaryOpInterface op, size_t i);
  *                          not have a matrix definition, set this value to
  *                          nullptr.
  */
-template <size_t T, size_t P, typename UnitaryMatrixType,
-          UnitaryMatrixType (*MatrixDefinition)(UnitaryOpInterface)>
-class TargetAndParameterArityTrait {
+template <size_t T, size_t P> class TargetAndParameterArityTrait {
 public:
   template <typename ConcreteType>
   class Impl : public OpTrait::TraitBase<ConcreteType, Impl> {
@@ -128,13 +124,6 @@ public:
       return this->getOperation()->getOperand(T + i);
     }
 
-    [[nodiscard]] UnitaryMatrixType getUnitaryMatrixDefinition() const
-      requires(MatrixDefinition != nullptr)
-    {
-      const auto* op = this->getConstOperation();
-      return MatrixDefinition(llvm::dyn_cast<UnitaryOpInterface>(op));
-    }
-
     Value getInputForOutput(Value output) {
       const auto& op = this->getOperation();
       for (size_t i = 0; i < T; ++i) {
@@ -165,29 +154,6 @@ public:
     }
   };
 };
-
-} // namespace mlir::qco
-
-//===----------------------------------------------------------------------===//
-// Operations Helpers
-//===----------------------------------------------------------------------===//
-
-namespace mlir::qco {
-
-[[nodiscard]] inline std::optional<double>
-tryGetParameterAsDouble(UnitaryOpInterface op, size_t i) {
-  using DummyArityType =
-      TargetAndParameterArityTrait<0, 0, Eigen::MatrixXcd, nullptr>;
-  const auto param = op.getParameter(i);
-  const auto floatAttr =
-      DummyArityType::Impl<arith::ConstantOp>::getStaticParameter(param);
-  if (!floatAttr) {
-    return std::nullopt;
-  }
-  return floatAttr.getValueAsDouble();
-}
-
-UnitaryOpInterface getControlledOp(UnitaryOpInterface op);
 
 } // namespace mlir::qco
 

@@ -62,3 +62,18 @@ void RZZOp::getCanonicalizationPatterns(RewritePatternSet& results,
                                         MLIRContext* context) {
   results.add<MergeSubsequentRZZ, RemoveTrivialRZZ>(context);
 }
+
+std::optional<Eigen::Matrix4cd> RZZOp::getUnitaryMatrix() {
+  using namespace std::complex_literals;
+
+  if (auto theta = utils::valueToDouble(getTheta())) {
+    const auto m0 = 0i;
+    const auto mp = std::polar(1.0, *theta / 2.0);
+    const auto mm = std::polar(1.0, -*theta / 2.0);
+    return Eigen::Matrix4cd{{mm, m0, m0, m0},  // row 0
+                            {m0, mp, m0, m0},  // row 1
+                            {m0, m0, mp, m0},  // row 2
+                            {m0, m0, m0, mm}}; // row 3
+  }
+  return std::nullopt;
+}

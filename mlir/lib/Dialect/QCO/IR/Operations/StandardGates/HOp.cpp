@@ -11,6 +11,7 @@
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QCO/QCOUtils.h"
 
+#include <Eigen/Core>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OperationSupport.h>
 #include <mlir/IR/PatternMatch.h>
@@ -38,4 +39,9 @@ struct RemoveSubsequentH final : OpRewritePattern<HOp> {
 void HOp::getCanonicalizationPatterns(RewritePatternSet& results,
                                       MLIRContext* context) {
   results.add<RemoveSubsequentH>(context);
+}
+
+Eigen::Matrix2cd HOp::getUnitaryMatrix() {
+  constexpr auto x = 1.0 / std::numbers::sqrt2;
+  return Eigen::Matrix2cd{{x, x}, {x, -1.0 * x}};
 }

@@ -11,6 +11,7 @@
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/Utils/Utils.h"
 
+#include <Eigen/Core>
 #include <cmath>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/MLIRContext.h>
@@ -18,6 +19,7 @@
 #include <mlir/IR/PatternMatch.h>
 #include <mlir/Support/LogicalResult.h>
 #include <numbers>
+#include <optional>
 #include <variant>
 
 using namespace mlir;
@@ -81,4 +83,17 @@ void ROp::build(OpBuilder& builder, OperationState& state, Value qubitIn,
 void ROp::getCanonicalizationPatterns(RewritePatternSet& results,
                                       MLIRContext* context) {
   results.add<ReplaceRWithRX, ReplaceRWithRY>(context);
+}
+
+std::optional<Eigen::Matrix2cd> ROp::getUnitaryMatrix() {
+  if (auto theta = utils::valueToDouble(getTheta())) {
+    if (auto phi = utils::valueToDouble(getPhi())) {
+      const auto thetaSin = std::sin(*theta / 2.0);
+      const auto m01 = std::polar(thetaSin, -*phi - (std::numbers::pi / 2));
+      const auto m10 = std::polar(thetaSin, *phi - (std::numbers::pi / 2));
+      const std::complex<double> thetaCos = std::cos(*theta / 2.0);
+      return Eigen::Matrix2cd{{thetaCos, m01}, {m10, thetaCos}};
+    }
+  }
+  return std::nullopt;
 }

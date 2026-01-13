@@ -363,3 +363,25 @@ void CtrlOp::getCanonicalizationPatterns(RewritePatternSet& results,
       .add<MergeNestedCtrl, RemoveTrivialCtrl, CtrlInlineGPhase, CtrlInlineId>(
           context);
 }
+
+std::optional<Eigen::MatrixXcd> CtrlOp::getUnitaryMatrix() {
+  auto&& targetMatrix = getBodyUnitary().getUnitaryMatrix<Eigen::MatrixXcd>();
+  if (!targetMatrix) {
+    return std::nullopt;
+  }
+
+  // get dimensions of target matrix
+  const auto targetDim = targetMatrix->cols();
+  assert(targetMatrix->cols() == targetMatrix->rows());
+
+  // define dimensions and type of output matrix
+  const auto dim = static_cast<int64_t>((1 << getNumControls()) * targetDim);
+
+  // initialize result with identity
+  Eigen::MatrixXcd matrix = Eigen::MatrixXcd::Identity(dim, dim);
+
+  // apply target matrix
+  matrix.bottomRightCorner(targetDim, targetDim) = *targetMatrix;
+
+  return matrix;
+}

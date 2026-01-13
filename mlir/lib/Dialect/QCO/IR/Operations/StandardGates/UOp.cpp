@@ -111,3 +111,22 @@ void UOp::getCanonicalizationPatterns(RewritePatternSet& results,
                                       MLIRContext* context) {
   results.add<ReplaceUWithP, ReplaceUWithRX, ReplaceUWithRY>(context);
 }
+
+std::optional<Eigen::Matrix2cd> UOp::getUnitaryMatrix() {
+  using namespace std::complex_literals;
+
+  if (auto theta = utils::valueToDouble(getTheta())) {
+    if (auto phi = utils::valueToDouble(getPhi())) {
+      if (auto lambda = utils::valueToDouble(getLambda())) {
+        const auto c = std::cos(*theta / 2.0);
+        const auto s = std::sin(*theta / 2.0);
+        const auto m00 = c + 0i;
+        const auto m01 = std::polar(s, *lambda + std::numbers::pi);
+        const auto m10 = std::polar(s, *phi);
+        const auto m11 = std::polar(c, *phi + *lambda);
+        return Eigen::Matrix2cd{{m00, m01}, {m10, m11}};
+      }
+    }
+  }
+  return std::nullopt;
+}

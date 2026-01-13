@@ -39,3 +39,9 @@ void YOp::getCanonicalizationPatterns(RewritePatternSet& results,
                                       MLIRContext* context) {
   results.add<RemoveSubsequentY>(context);
 }
+
+Eigen::Matrix2cd YOp::getUnitaryMatrix() {
+  using namespace std::complex_literals;
+
+  return Eigen::Matrix2cd{{0, -1i}, {1i, 0}};
+}

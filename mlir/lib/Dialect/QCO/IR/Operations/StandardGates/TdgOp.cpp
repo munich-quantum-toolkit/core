@@ -52,3 +52,10 @@ void TdgOp::getCanonicalizationPatterns(RewritePatternSet& results,
                                         MLIRContext* context) {
   results.add<RemoveTdgAfterT, MergeSubsequentTdg>(context);
 }
+
+Eigen::Matrix2cd TdgOp::getUnitaryMatrix() {
+  const std::complex<double> m00 = 1.0;
+  const std::complex<double> m01 = 0.0;
+  const auto m11 = std::polar(1.0, -std::numbers::pi / 4.0);
+  return Eigen::Matrix2cd{{m00, m01}, {m01, m11}};
+}

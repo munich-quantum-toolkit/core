@@ -62,3 +62,15 @@ void RZOp::getCanonicalizationPatterns(RewritePatternSet& results,
                                        MLIRContext* context) {
   results.add<MergeSubsequentRZ, RemoveTrivialRZ>(context);
 }
+
+std::optional<Eigen::Matrix2cd> RZOp::getUnitaryMatrix() {
+  using namespace std::complex_literals;
+
+  if (auto theta = utils::valueToDouble(getTheta())) {
+    const auto m00 = std::polar(1.0, -*theta / 2.0);
+    const auto m01 = 0i;
+    const auto m11 = std::polar(1.0, *theta / 2.0);
+    return Eigen::Matrix2cd{{m00, m01}, {m01, m11}};
+  }
+  return std::nullopt;
+}

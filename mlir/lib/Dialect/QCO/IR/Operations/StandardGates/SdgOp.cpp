@@ -51,3 +51,10 @@ void SdgOp::getCanonicalizationPatterns(RewritePatternSet& results,
                                         MLIRContext* context) {
   results.add<RemoveSdgAfterS, MergeSubsequentSdg>(context);
 }
+
+Eigen::Matrix2cd SdgOp::getUnitaryMatrix() {
+  using namespace std::complex_literals;
+
+  return Eigen::Matrix2cd{{1.0, 0.0},  // row 0
+                          {0.0, -1i}}; // row 1
+}

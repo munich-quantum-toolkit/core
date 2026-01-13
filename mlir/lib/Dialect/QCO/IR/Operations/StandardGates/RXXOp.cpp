@@ -12,11 +12,13 @@
 #include "mlir/Dialect/QCO/QCOUtils.h"
 #include "mlir/Dialect/Utils/Utils.h"
 
+#include <Eigen/Core>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OperationSupport.h>
 #include <mlir/IR/PatternMatch.h>
 #include <mlir/Support/LogicalResult.h>
+#include <optional>
 #include <variant>
 
 using namespace mlir;
@@ -61,4 +63,19 @@ void RXXOp::build(OpBuilder& builder, OperationState& state, Value qubit0In,
 void RXXOp::getCanonicalizationPatterns(RewritePatternSet& results,
                                         MLIRContext* context) {
   results.add<MergeSubsequentRXX, RemoveTrivialRXX>(context);
+}
+
+std::optional<Eigen::Matrix4cd> RXXOp::getUnitaryMatrix() {
+  using namespace std::complex_literals;
+
+  if (auto theta = utils::valueToDouble(getTheta())) {
+    const auto m0 = 0i;
+    const auto mc = std::cos(*theta / 2.0) + 0i;
+    const auto ms = -1i * std::sin(*theta / 2.0);
+    return Eigen::Matrix4cd{{mc, m0, m0, ms},  // row 0
+                            {m0, mc, ms, m0},  // row 1
+                            {m0, ms, mc, m0},  // row 2
+                            {ms, m0, m0, mc}}; // row 3
+  }
+  return std::nullopt;
 }
