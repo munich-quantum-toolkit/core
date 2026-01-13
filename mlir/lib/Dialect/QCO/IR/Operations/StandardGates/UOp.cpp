@@ -13,7 +13,6 @@
 
 #include <cmath>
 #include <mlir/IR/Builders.h>
-#include <mlir/IR/BuiltinAttributes.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OperationSupport.h>
 #include <mlir/IR/PatternMatch.h>
@@ -35,15 +34,10 @@ struct ReplaceUWithP final : OpRewritePattern<UOp> {
 
   LogicalResult matchAndRewrite(UOp op,
                                 PatternRewriter& rewriter) const override {
-    const auto theta = UOp::getStaticParameter(op.getTheta());
-    const auto phi = UOp::getStaticParameter(op.getPhi());
-    if (!theta || !phi) {
-      return failure();
-    }
-
-    const auto thetaValue = theta.getValueAsDouble();
-    const auto phiValue = phi.getValueAsDouble();
-    if (std::abs(thetaValue) > TOLERANCE || std::abs(phiValue) > TOLERANCE) {
+    const auto theta = valueToDouble(op.getTheta());
+    const auto phi = valueToDouble(op.getPhi());
+    if (!theta || std::abs(*theta) > TOLERANCE || !phi ||
+        std::abs(*phi) > TOLERANCE) {
       return failure();
     }
 
@@ -63,16 +57,10 @@ struct ReplaceUWithRX final : OpRewritePattern<UOp> {
 
   LogicalResult matchAndRewrite(UOp op,
                                 PatternRewriter& rewriter) const override {
-    const auto phi = UOp::getStaticParameter(op.getPhi());
-    const auto lambda = UOp::getStaticParameter(op.getLambda());
-    if (!phi || !lambda) {
-      return failure();
-    }
-
-    const auto phiValue = phi.getValueAsDouble();
-    const auto lambdaValue = lambda.getValueAsDouble();
-    if (std::abs(phiValue + (std::numbers::pi / 2.0)) > TOLERANCE ||
-        std::abs(lambdaValue - (std::numbers::pi / 2.0)) > TOLERANCE) {
+    const auto phi = valueToDouble(op.getPhi());
+    const auto lambda = valueToDouble(op.getLambda());
+    if (!phi || std::abs(*phi + (std::numbers::pi / 2.0)) > TOLERANCE ||
+        !lambda || std::abs(*lambda - (std::numbers::pi / 2.0)) > TOLERANCE) {
       return failure();
     }
 
@@ -92,15 +80,10 @@ struct ReplaceUWithRY final : OpRewritePattern<UOp> {
 
   LogicalResult matchAndRewrite(UOp op,
                                 PatternRewriter& rewriter) const override {
-    const auto phi = UOp::getStaticParameter(op.getPhi());
-    const auto lambda = UOp::getStaticParameter(op.getLambda());
-    if (!phi || !lambda) {
-      return failure();
-    }
-
-    const auto phiValue = phi.getValueAsDouble();
-    const auto lambdaValue = lambda.getValueAsDouble();
-    if (std::abs(phiValue) > TOLERANCE || std::abs(lambdaValue) > TOLERANCE) {
+    const auto phi = valueToDouble(op.getPhi());
+    const auto lambda = valueToDouble(op.getLambda());
+    if (!phi || std::abs(*phi) > TOLERANCE || !lambda ||
+        std::abs(*lambda) > TOLERANCE) {
       return failure();
     }
 

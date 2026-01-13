@@ -10,8 +10,9 @@
 
 #pragma once
 
+#include "mlir/Dialect/Utils/Utils.h"
+
 #include <mlir/Dialect/Arith/IR/Arith.h>
-#include <mlir/Dialect/Utils/Utils.h>
 #include <mlir/IR/PatternMatch.h>
 
 namespace mlir::qco {
@@ -188,13 +189,8 @@ mergeTwoTargetOneParameter(OpType op, mlir::PatternRewriter& rewriter) {
 template <typename OpType>
 inline mlir::LogicalResult
 removeTrivialOneTargetOneParameter(OpType op, mlir::PatternRewriter& rewriter) {
-  const auto paramAttr = OpType::getStaticParameter(op.getOperand(1));
-  if (!paramAttr) {
-    return failure();
-  }
-
-  const auto paramValue = paramAttr.getValueAsDouble();
-  if (std::abs(paramValue) > utils::TOLERANCE) {
+  const auto param = utils::valueToDouble(op.getOperand(1));
+  if (!param || std::abs(*param) > utils::TOLERANCE) {
     return failure();
   }
 
@@ -215,13 +211,8 @@ removeTrivialOneTargetOneParameter(OpType op, mlir::PatternRewriter& rewriter) {
 template <typename OpType>
 inline mlir::LogicalResult
 removeTrivialTwoTargetOneParameter(OpType op, mlir::PatternRewriter& rewriter) {
-  const auto paramAttr = OpType::getStaticParameter(op.getOperand(2));
-  if (!paramAttr) {
-    return failure();
-  }
-
-  const auto paramValue = paramAttr.getValueAsDouble();
-  if (std::abs(paramValue) > utils::TOLERANCE) {
+  const auto param = utils::valueToDouble(op.getOperand(2));
+  if (!param || std::abs(*param) > utils::TOLERANCE) {
     return failure();
   }
 

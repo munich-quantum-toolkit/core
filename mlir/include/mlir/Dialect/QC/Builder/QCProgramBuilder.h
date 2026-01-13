@@ -51,7 +51,7 @@ namespace mlir::qc {
  * auto module = builder.finalize();
  * ```
  */
-class QCProgramBuilder final : public OpBuilder {
+class QCProgramBuilder final : public ImplicitLocOpBuilder {
 public:
   /**
    * @brief Construct a new QCProgramBuilder
@@ -887,7 +887,6 @@ public:
 
 private:
   MLIRContext* ctx{};
-  Location loc;
   ModuleOp module;
 
   /// Track allocated qubits for automatic deallocation
