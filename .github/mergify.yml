@@ -26,3 +26,11 @@ pull_request_rules:
           - backport
       merge:
         method: squash
+
+  - name: Warn on conflicts
+    conditions:
+      - conflict
+    actions:
+      label:
+        toggle:
+          - conflict
