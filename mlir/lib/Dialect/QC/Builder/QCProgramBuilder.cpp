@@ -460,7 +460,7 @@ QCProgramBuilder::scfFor(const std::variant<int64_t, Value>& lowerbound,
   const auto ub = utils::variantToValue(*this, loc, upperbound);
   const auto stepSize = utils::variantToValue(*this, loc, step);
 
-  create<scf::ForOp>(lb, ub, stepSize, ValueRange{},
+  scf::ForOp::create(*this, lb, ub, stepSize, ValueRange{},
                      [&](OpBuilder& b, Location, Value iv, ValueRange) {
                        const OpBuilder::InsertionGuard guard(*this);
                        setInsertionPointToStart(b.getInsertionBlock());
@@ -476,8 +476,8 @@ QCProgramBuilder::scfWhile(const std::function<void()>& beforeBody,
                            const std::function<void()>& afterBody) {
   checkFinalized();
 
-  create<scf::WhileOp>(
-      TypeRange{}, ValueRange{},
+  scf::WhileOp::create(
+      *this, TypeRange{}, ValueRange{},
       [&](OpBuilder& b, Location, ValueRange) {
         const OpBuilder::InsertionGuard guard(*this);
         setInsertionPointToStart(b.getInsertionBlock());
@@ -502,15 +502,15 @@ QCProgramBuilder::scfIf(const std::variant<bool, Value>& cond,
   const auto condition = utils::variantToValue(*this, getLoc(), cond);
 
   if (!elseBody) {
-    create<scf::IfOp>(condition, [&](OpBuilder& b, Location loc) {
+    scf::IfOp::create(*this, condition, [&](OpBuilder& b, Location loc) {
       const OpBuilder::InsertionGuard guard(*this);
       setInsertionPointToStart(b.getInsertionBlock());
       thenBody();
       b.create<scf::YieldOp>(loc);
     });
   } else {
-    create<scf::IfOp>(
-        condition,
+    scf::IfOp::create(
+        *this, condition,
         [&](OpBuilder& b, Location loc) {
           const OpBuilder::InsertionGuard guard(*this);
           setInsertionPointToStart(b.getInsertionBlock());
@@ -530,7 +530,7 @@ QCProgramBuilder::scfIf(const std::variant<bool, Value>& cond,
 QCProgramBuilder& QCProgramBuilder::scfCondition(Value condition) {
   checkFinalized();
 
-  create<scf::ConditionOp>(condition, ValueRange{});
+  scf::ConditionOp::create(*this, condition, ValueRange{});
   return *this;
 }
 
@@ -542,7 +542,7 @@ QCProgramBuilder& QCProgramBuilder::funcCall(StringRef name,
                                              ValueRange operands) {
   checkFinalized();
 
-  create<func::CallOp>(name, TypeRange{}, operands);
+  func::CallOp::create(*this, name, TypeRange{}, operands);
   return *this;
 }
 
@@ -557,14 +557,14 @@ QCProgramBuilder::funcFunc(StringRef name, TypeRange argTypes,
 
   // Create the empty func operation
   const auto funcType = getFunctionType(argTypes, {});
-  auto funcOp = create<func::FuncOp>(name, funcType);
+  auto funcOp = func::FuncOp::create(*this, name, funcType);
   auto* entryBlock = funcOp.addEntryBlock();
 
   setInsertionPointToStart(entryBlock);
 
   // Build function body
   body(entryBlock->getArguments());
-  create<func::ReturnOp>();
+  func::ReturnOp::create(*this);
   return *this;
 }
 
