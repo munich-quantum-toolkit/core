@@ -15,6 +15,9 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 
 ### Changed
 
+- ⬆️ Update Boost version to 1.89.0 ([#1453]) ([**@burgholzer**])
+- ⬆️ Update QDMI to latest version from stable v1.2.x branch ([#1453]) ([**@burgholzer**])
+- ⬆️ Bump spdlog to v1.17.0 ([#1453]) ([**@burgholzer**])
 - ♻️ Use `llc` instead of random `clang` for compiling QIR test circuits to improve robustness and handle opaque pointers correctly across LLVM versions ([#1447]) ([**@burgholzer**])
 - ♻️ Extract singleton pattern into reusable template base class for QDMI devices and driver ([#1444]) ([**@ystade**], [**@burgholzer**])
 - 🚚 Reorganize QDMI code structure by moving devices into dedicated subdirectories and separating driver and common utilities ([#1444]) ([**@ystade**])
@@ -310,6 +313,7 @@ _📚 Refer to the [GitHub Release Notes](https://github.com/munich-quantum-tool
 
 <!-- PR links -->
 
+[#1453]: https://github.com/munich-quantum-toolkit/core/pull/1453
 [#1447]: https://github.com/munich-quantum-toolkit/core/pull/1447
 [#1446]: https://github.com/munich-quantum-toolkit/core/pull/1446
 [#1444]: https://github.com/munich-quantum-toolkit/core/pull/1444

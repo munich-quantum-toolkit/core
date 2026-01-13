@@ -2,6 +2,8 @@
   "⚛️ MQT Core IR": ["Core"],
   "⚖️ MQT Core DD Package": ["DD"],
   "🐉 MQT Core MLIR": ["MLIR"],
+  "🐲 MQT Core QIR": ["QIR"],
+  "🔌 MQT Core QDMI": ["QDMI"],
   "🏼 MQT Core NA Package": ["NA"],
   "🕸️ MQT Core ZX Package": ["ZX"],
   "🚀 Features and Enhancements": [
