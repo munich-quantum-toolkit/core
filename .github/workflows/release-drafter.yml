@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - main
+      - v3.x
   pull_request:
     types: [opened, reopened, synchronize]
   merge_group:
