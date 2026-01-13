@@ -808,25 +808,6 @@ QCOProgramBuilder& QCOProgramBuilder::funcFunc(
 }
 
 //===----------------------------------------------------------------------===//
-// Arith operations
-//===----------------------------------------------------------------------===//
-
-Value QCOProgramBuilder::arithConstantIndex(int64_t i) {
-  checkFinalized();
-
-  const auto op = create<arith::ConstantOp>(getIndexType(), getIndexAttr(i));
-  return op->getResult(0);
-}
-
-Value QCOProgramBuilder::arithConstantBool(bool b) {
-  checkFinalized();
-
-  const auto i1Type = getI1Type();
-  const auto op =
-      create<arith::ConstantOp>(i1Type, getIntegerAttr(i1Type, b ? 1 : 0));
-  return op->getResult(0);
-}
-//===----------------------------------------------------------------------===//
 // Finalization
 //===----------------------------------------------------------------------===//
 

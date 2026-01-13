@@ -569,27 +569,6 @@ QCProgramBuilder::funcFunc(StringRef name, TypeRange argTypes,
 }
 
 //===----------------------------------------------------------------------===//
-// Arith operations
-//===----------------------------------------------------------------------===//
-
-Value QCProgramBuilder::arithConstantIndex(int64_t index) {
-  checkFinalized();
-
-  const auto op =
-      create<arith::ConstantOp>(getIndexType(), getIndexAttr(index));
-  return op->getResult(0);
-}
-
-Value QCProgramBuilder::arithConstantBool(bool b) {
-  checkFinalized();
-
-  const auto i1Type = getI1Type();
-  const auto op =
-      create<arith::ConstantOp>(i1Type, getIntegerAttr(i1Type, b ? 1 : 0));
-  return op->getResult(0);
-}
-
-//===----------------------------------------------------------------------===//
 // Finalization
 //===----------------------------------------------------------------------===//
 

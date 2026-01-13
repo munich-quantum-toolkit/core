@@ -1020,42 +1020,6 @@ public:
                              const std::function<void(ValueRange)>& body);
 
   //===--------------------------------------------------------------------===//
-  // Arith operations
-  //===--------------------------------------------------------------------===//
-
-  /**
-   * @brief Constructs a arith.constant of type Index with a given value
-   *
-   * @param index Value of the constant operation
-   * @return Result of the constant operation
-   *
-   * @par Example:
-   * ```c++
-   * builder.arithConstantIndex(4);
-   * ```
-   * ```mlir
-   * arith.constant 4 : index
-   * ```
-   */
-  Value arithConstantIndex(int64_t index);
-
-  /**
-   * @brief Constructs a arith.constant of type i1 with a given bool value
-   *
-   * @param b Bool value of the constant operation
-   * @return Result of the constant operation
-   *
-   * @par Example:
-   * ```c++
-   * builder.arithConstantBool(true);
-   * ```
-   * ```mlir
-   * arith.constant 1 : i1
-   * ```
-   */
-  Value arithConstantBool(bool b);
-
-  //===--------------------------------------------------------------------===//
   // Finalization
   //===--------------------------------------------------------------------===//
 
