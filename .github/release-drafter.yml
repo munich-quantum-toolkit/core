@@ -13,6 +13,12 @@ categories:
   - title: "🐉 MQT Core MLIR"
     labels:
       - "MLIR"
+  - title: "🐲 MQT Core QIR"
+    labels:
+      - "QIR"
+  - title: "🔌 MQT Core QDMI"
+    labels:
+      - "QDMI"
   - title: "🏼 MQT Core NA Package"
     labels:
       - "NA"
