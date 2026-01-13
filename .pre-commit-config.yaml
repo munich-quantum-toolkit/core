@@ -14,7 +14,7 @@ ci:
   skip: [ty-check]
 
 repos:
-  # Priority 0: Read-only hooks
+  # Priority 0: Fast validation and independent fixers
 
   ## Standard hooks
   - repo: https://github.com/pre-commit/pre-commit-hooks
