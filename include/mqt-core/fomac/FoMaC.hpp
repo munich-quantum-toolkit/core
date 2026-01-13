@@ -10,7 +10,7 @@
 
 #pragma once
 
-#include "qdmi/Common.hpp"
+#include "qdmi/common/Common.hpp"
 
 #include <algorithm>
 #include <complex>
