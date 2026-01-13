@@ -11,6 +11,7 @@
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QCO/QCOUtils.h"
 
+#include <llvm/Support/MathExtras.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OperationSupport.h>
 #include <mlir/IR/PatternMatch.h>
@@ -44,8 +45,8 @@ Eigen::Matrix4cd ECROp::getUnitaryMatrix() {
   using namespace std::complex_literals;
 
   const auto m0 = 0i;
-  const auto m1 = std::complex<double>{1.0 / std::numbers::sqrt2};
-  const auto mi = std::complex<double>{0.0, 1.0 / std::numbers::sqrt2};
+  const auto m1 = std::complex<double>{1.0 / llvm::numbers::sqrt2};
+  const auto mi = std::complex<double>{0.0, 1.0 / llvm::numbers::sqrt2};
   return Eigen::Matrix4cd{{m0, m0, m1, mi},   // row 0
                           {m0, m0, mi, m1},   // row 1
                           {m1, -mi, m0, m0},  // row 2

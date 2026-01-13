@@ -12,12 +12,12 @@
 #include "mlir/Dialect/Utils/Utils.h"
 
 #include <cmath>
+#include <llvm/Support/MathExtras.h>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OperationSupport.h>
 #include <mlir/IR/PatternMatch.h>
 #include <mlir/Support/LogicalResult.h>
-#include <numbers>
 #include <variant>
 
 using namespace mlir;
@@ -37,7 +37,7 @@ struct ReplaceU2WithH final : OpRewritePattern<U2Op> {
     const auto phi = valueToDouble(op.getPhi());
     const auto lambda = valueToDouble(op.getLambda());
     if (!phi || std::abs(*phi) > TOLERANCE || !lambda ||
-        std::abs(*lambda - std::numbers::pi) > TOLERANCE) {
+        std::abs(*lambda - llvm::numbers::pi) > TOLERANCE) {
       return failure();
     }
 
@@ -58,13 +58,13 @@ struct ReplaceU2WithRX final : OpRewritePattern<U2Op> {
                                 PatternRewriter& rewriter) const override {
     const auto phi = valueToDouble(op.getPhi());
     const auto lambda = valueToDouble(op.getLambda());
-    if (!phi || std::abs(*phi + (std::numbers::pi / 2.0)) > TOLERANCE ||
-        !lambda || std::abs(*lambda - (std::numbers::pi / 2.0)) > TOLERANCE) {
+    if (!phi || std::abs(*phi + (llvm::numbers::pi / 2.0)) > TOLERANCE ||
+        !lambda || std::abs(*lambda - (llvm::numbers::pi / 2.0)) > TOLERANCE) {
       return failure();
     }
 
     auto rxOp = rewriter.create<RXOp>(op.getLoc(), op.getInputQubit(0),
-                                      std::numbers::pi / 2.0);
+                                      llvm::numbers::pi / 2.0);
     rewriter.replaceOp(op, rxOp.getResult());
 
     return success();
@@ -87,7 +87,7 @@ struct ReplaceU2WithRY final : OpRewritePattern<U2Op> {
     }
 
     auto ryOp = rewriter.create<RYOp>(op.getLoc(), op.getInputQubit(0),
-                                      std::numbers::pi / 2.0);
+                                      llvm::numbers::pi / 2.0);
     rewriter.replaceOp(op, ryOp.getResult());
 
     return success();
@@ -114,11 +114,11 @@ std::optional<Eigen::Matrix2cd> U2Op::getUnitaryMatrix() {
 
   if (auto phi = utils::valueToDouble(getPhi())) {
     if (auto lambda = utils::valueToDouble(getLambda())) {
-      const auto m00 = 1.0 / std::numbers::sqrt2 + 0i;
+      const auto m00 = 1.0 / llvm::numbers::sqrt2 + 0i;
       const auto m01 =
-          std::polar(1.0 / std::numbers::sqrt2, *lambda + std::numbers::pi);
-      const auto m10 = std::polar(1.0 / std::numbers::sqrt2, *phi);
-      const auto m11 = std::polar(1.0 / std::numbers::sqrt2, *phi + *lambda);
+          std::polar(1.0 / llvm::numbers::sqrt2, *lambda + llvm::numbers::pi);
+      const auto m10 = std::polar(1.0 / llvm::numbers::sqrt2, *phi);
+      const auto m11 = std::polar(1.0 / llvm::numbers::sqrt2, *phi + *lambda);
       return Eigen::Matrix2cd{{m00, m01}, {m10, m11}};
     }
   }
