@@ -243,7 +243,6 @@ class TargetAndParameterArityTrait<int T, int P>
     let cppNamespace = "::mlir::qco";
 }
 
-def ZeroTargetZeroParameter : TargetAndParameterArityTrait<0, 0>;
 def ZeroTargetOneParameter : TargetAndParameterArityTrait<0, 1>;
 def OneTargetZeroParameter : TargetAndParameterArityTrait<1, 0>;
 def OneTargetOneParameter : TargetAndParameterArityTrait<1, 1>;
@@ -1004,7 +1003,7 @@ def XXMinusYYOp : QCOOp<"xx_minus_yy", traits = [UnitaryOpInterface, TwoTargetTw
     let hasCanonicalizer = 1;
 }
 
-def BarrierOp : QCOOp<"barrier", traits = [UnitaryOpInterface, ZeroTargetZeroParameter]> {
+def BarrierOp : QCOOp<"barrier", traits = [UnitaryOpInterface]> {
     let summary = "Apply a barrier gate to a set of qubits";
     let description = [{
         Applies a barrier gate to a set of qubits and returns the transformed qubits.

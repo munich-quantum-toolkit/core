@@ -28,7 +28,6 @@ def UnitaryOpInterface : OpInterface<"UnitaryOpInterface"> {
 
     let cppNamespace = "::mlir::qco";
 
-    // TODO: fix const correctness?
     let methods = [
         // Qubit accessors
         InterfaceMethod<
@@ -146,12 +145,20 @@ def UnitaryOpInterface : OpInterface<"UnitaryOpInterface"> {
 
         if constexpr (std::is_same_v<std::remove_cvref_t<MatrixType>, Eigen::MatrixXcd>) {
           // cast to Eigen::MatrixXcd via visitor pattern
-          auto&& visitor = [](auto&& m) -> std::optional<MatrixType> { return m; };
+          auto&& visitor = [](auto&& m) -> std::optional<MatrixType> {
+            // implicit cast to Eigen::MatrixXcd if variant holds a matrix type;
+            // if variant holds std::nullopt_t, std::optional will be initialized with
+            // the std::nullopt_t instance, so std::nullopt
+            return m;
+          };
           return std::visit(visitor, matrix);
         } else {
           // if an explicit size has been requested, use checked access to variant
-          // to return the correct type (throws on wrong type)
-          return std::get<MatrixType>(matrix);
+          // to try to return the correct type
+          if (auto* ptr = std::get_if<MatrixType>(&matrix)) {
+            return *ptr;
+          }
+          return std::nullopt;
         }
       }
     }];

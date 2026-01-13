@@ -23,7 +23,6 @@ include(PreventInSourceBuilds)
 include(PackageAddTest)
 include(Cache)
 include(AddMQTCoreLibrary)
-include(FetchContent)
 
 option(BUILD_MQT_CORE_BINDINGS "Build the MQT Core Python bindings" OFF)
 if(BUILD_MQT_CORE_BINDINGS)

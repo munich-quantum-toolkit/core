@@ -375,7 +375,7 @@ std::optional<Eigen::MatrixXcd> CtrlOp::getUnitaryMatrix() {
   assert(targetMatrix->cols() == targetMatrix->rows());
 
   // define dimensions and type of output matrix
-  const auto dim = static_cast<int64_t>((1 << getNumControls()) * targetDim);
+  const auto dim = static_cast<int64_t>((1ULL << getNumControls()) * targetDim);
 
   // initialize result with identity
   Eigen::MatrixXcd matrix = Eigen::MatrixXcd::Identity(dim, dim);

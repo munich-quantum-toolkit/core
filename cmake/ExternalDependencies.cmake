@@ -27,8 +27,10 @@ if(BUILD_MQT_CORE_MLIR)
     Eigen
     GIT_REPOSITORY https://gitlab.com/libeigen/eigen.git
     GIT_TAG 5.0.1
-    GIT_SHALLOW TRUE)
-  FetchContent_MakeAvailable(Eigen)
+    GIT_SHALLOW TRUE
+    FIND_PACKAGE_ARGS 3.4.0 # minimum version for locally installed package
+  )
+  list(APPEND FETCH_PACKAGES Eigen)
 endif()
 
 set(JSON_VERSION
