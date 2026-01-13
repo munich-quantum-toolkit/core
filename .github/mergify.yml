@@ -17,8 +17,8 @@ pull_request_rules:
   - name: Automatically merge backport PRs
     conditions:
       - author = mergify[bot]
-      - base ~= ^mergify/bp/
-      - head ~= ^v3\.x
+      - head ~= ^mergify/bp/
+      - base ~= ^v3\.x
       - check-success = 🚦 Check
     actions:
       label:
