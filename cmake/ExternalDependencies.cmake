@@ -44,7 +44,7 @@ else()
       ON
       CACHE INTERNAL "Use standalone boost multiprecision")
   set(BOOST_VERSION
-      1_86_0
+      1_89_0
       CACHE INTERNAL "Boost version")
   set(BOOST_URL
       https://github.com/boostorg/multiprecision/archive/refs/tags/Boost_${BOOST_VERSION}.tar.gz)
@@ -72,7 +72,7 @@ endif()
 # cmake-format: off
 set(QDMI_VERSION 1.2.1
         CACHE STRING "QDMI version")
-set(QDMI_REV "d5e657c777b54c482b6fd372961ee59add2ded8b" # v1.2.1
+set(QDMI_REV "70b815615475598c6194096a29c1b2340dd54a6c" # v1.2.x
         CACHE STRING "QDMI identifier (tag, branch or commit hash)")
 set(QDMI_REPO_OWNER "Munich-Quantum-Software-Stack"
         CACHE STRING "QDMI repository owner (change when using a fork)")
@@ -86,7 +86,7 @@ FetchContent_Declare(
 list(APPEND FETCH_PACKAGES qdmi)
 
 set(SPDLOG_VERSION
-    1.15.3
+    1.17.0
     CACHE STRING "spdlog version")
 set(SPDLOG_URL https://github.com/gabime/spdlog/archive/refs/tags/v${SPDLOG_VERSION}.tar.gz)
 # Add position independent code for spdlog, this is required for python bindings on linux
