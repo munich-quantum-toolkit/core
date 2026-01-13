@@ -29,7 +29,6 @@
 #include <mlir/Interfaces/SideEffectInterfaces.h>
 #include <optional>
 #include <string>
-#include <unsupported/Eigen/KroneckerProduct>
 #include <variant>
 
 #define DIALECT_NAME_QCO "qco"
@@ -56,13 +55,6 @@
 namespace mlir::qco {
 
 /**
- * @brief Retrieve C++ type of static mlir::Value.
- * @details The returned float attribute can be used to get the value of the
- *          given parameter as a C++ type.
- */
-[[nodiscard]] inline std::optional<double>
-tryGetParameterAsDouble(UnitaryOpInterface op, size_t i);
-/**
  * @brief Trait for operations with a fixed number of target qubits and
  * parameters
  * @details This trait indicates that an operation has a fixed number of target
@@ -71,11 +63,6 @@ tryGetParameterAsDouble(UnitaryOpInterface op, size_t i);
  * verification and code generation optimizations.
  * @tparam T The target arity.
  * @tparam P The parameter arity.
- * @tparam MatrixDefinition A function returning the matrix definition of the
- *                          operation. The operation will be provided as the
- *                          only argument of the function. If the operation does
- *                          not have a matrix definition, set this value to
- *                          nullptr.
  */
 template <size_t T, size_t P> class TargetAndParameterArityTrait {
 public:
@@ -144,14 +131,6 @@ public:
       llvm::reportFatalUsageError(
           "Given qubit is not an input of the operation");
     }
-
-  protected:
-    [[nodiscard]] const Operation* getConstOperation() const {
-      auto* concrete = static_cast<const ConcreteType*>(this);
-      // use dereference operator instead of getOperation() of mlir::Op; the
-      // operator provides a const overload, getOperation() does not
-      return *concrete;
-    }
   };
 };
 
@@ -163,11 +142,3 @@ public:
 
 #define GET_OP_CLASSES
 #include "mlir/Dialect/QCO/IR/QCOOps.h.inc" // IWYU pragma: export
-
-namespace mlir::qco {
-
-[[nodiscard]] inline UnitaryOpInterface getControlledOp(UnitaryOpInterface op) {
-  return llvm::cast<CtrlOp>(op).getBodyUnitary();
-}
-
-} // namespace mlir::qco
