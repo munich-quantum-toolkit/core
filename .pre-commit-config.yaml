@@ -3,6 +3,7 @@
 #     uvx prek run -a
 #
 # To install pre-commit hooks that run every time you commit:
+#
 #     uv tool install prek
 #     prek install
 #
@@ -67,8 +68,6 @@ repos:
       - id: sp-repo-review
         additional_dependencies: ["repo-review[cli]"]
         priority: 0
-
-  # Priority 0: Check for license headers and run independent checks
 
   ## Check for license headers
   - repo: https://github.com/emzeat/mz-lictools
