@@ -62,3 +62,18 @@ void RZXOp::getCanonicalizationPatterns(RewritePatternSet& results,
                                         MLIRContext* context) {
   results.add<MergeSubsequentRZX, RemoveTrivialRZX>(context);
 }
+
+std::optional<Eigen::Matrix4cd> RZXOp::getUnitaryMatrix() {
+  using namespace std::complex_literals;
+
+  if (auto theta = utils::valueToDouble(getTheta())) {
+    const auto m0 = 0i;
+    const auto mc = std::complex<double>{std::cos(*theta / 2.0)};
+    const auto ms = std::complex<double>{0.0, -std::sin(*theta / 2.0)};
+    return Eigen::Matrix4cd{{mc, -ms, m0, m0}, // row 0
+                            {-ms, mc, m0, m0}, // row 1
+                            {m0, m0, mc, ms},  // row 2
+                            {m0, m0, ms, mc}}; // row 3
+  }
+  return std::nullopt;
+}

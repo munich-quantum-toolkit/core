@@ -109,25 +109,29 @@ def UnitaryOpInterface : OpInterface<"UnitaryOpInterface"> {
             "StringRef", "getBaseSymbol", (ins)
         >,
 
-        // Unitary matrix methods
+        // Internal helper methods, should not be used by user
         InterfaceMethod<
             "Returns the unitary matrix definition of the operation.",
-            "Eigen::MatrixXcd", "getUnitaryMatrix", (ins),
             [{
-              if constexpr (requires { $_op.getUnitaryMatrixDefinition(); }) {
-                return $_op.getUnitaryMatrixDefinition();
-              } else {
-                llvm::reportFatalUsageError("Operation '" + $_op.getBaseSymbol() + "' has no unitary matrix definition!");
-              }
-            }]
-        >,
-        InterfaceMethod<
-            "Returns the unitary matrix definition of the operation.",
-            "std::variant<Eigen::Matrix<std::complex<double>, 1, 1>, Eigen::Matrix2cd, Eigen::Matrix4cd, Eigen::MatrixXcd>",
-            "getFastUnitaryMatrixVariant", (ins),
+              std::variant<
+                std::nullopt_t,
+                Eigen::Matrix<std::complex<double>, 1, 1>,
+                Eigen::Matrix2cd,
+                Eigen::Matrix4cd,
+                Eigen::MatrixXcd
+              >
+            }],
+            "internalGetUnitaryVariant", (ins),
             [{
-              if constexpr (requires { $_op.getUnitaryMatrixDefinition(); }) {
-                return $_op.getUnitaryMatrixDefinition();
+              if constexpr (requires { $_op.getUnitaryMatrix().has_value(); }) {
+                // is matrix in std::optional
+                if (auto&& matrix = $_op.getUnitaryMatrix()) {
+                  return *matrix;
+                }
+                return std::nullopt;
+              } else if constexpr (requires { $_op.getUnitaryMatrix(); }) {
+                // is static matrix
+                return $_op.getUnitaryMatrix();
               } else {
                 llvm::reportFatalUsageError("Operation '" + $_op.getBaseSymbol() + "' has no unitary matrix definition!");
               }
@@ -137,11 +141,18 @@ def UnitaryOpInterface : OpInterface<"UnitaryOpInterface"> {
 
     let extraClassDeclaration = [{
       template<typename MatrixType>
-      MatrixType getFastUnitaryMatrix() const {
-        // removing const since it's safe to say UnitaryOpInterface::getFastUnitaryMatrixVariant()
-        // and OpType::getUnitaryMatrixDefinition() will not modify the state of this
-        auto&& matrix = const_cast<UnitaryOpInterface*>(this)->getFastUnitaryMatrixVariant();
-        return std::get<MatrixType>(matrix);
+      std::optional<MatrixType> getUnitaryMatrix() {
+        auto&& matrix = this->internalGetUnitaryVariant();
+
+        if constexpr (std::is_same_v<std::remove_cvref_t<MatrixType>, Eigen::MatrixXcd>) {
+          // cast to Eigen::MatrixXcd via visitor pattern
+          auto&& visitor = [](auto&& m) -> std::optional<MatrixType> { return m; };
+          return std::visit(visitor, matrix);
+        } else {
+          // if an explicit size has been requested, use checked access to variant
+          // to return the correct type (throws on wrong type)
+          return std::get<MatrixType>(matrix);
+        }
       }
     }];
 }

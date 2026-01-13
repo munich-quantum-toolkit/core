@@ -39,3 +39,10 @@ void SWAPOp::getCanonicalizationPatterns(RewritePatternSet& results,
                                          MLIRContext* context) {
   results.add<RemoveSubsequentSWAP>(context);
 }
+
+Eigen::Matrix4cd SWAPOp::getUnitaryMatrix() {
+  return Eigen::Matrix4cd{{1, 0, 0, 0},  // row 0
+                          {0, 0, 1, 0},  // row 1
+                          {0, 1, 0, 0},  // row 2
+                          {0, 0, 0, 1}}; // row 3
+}

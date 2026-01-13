@@ -19,6 +19,7 @@
 namespace {
 
 using namespace mlir;
+using namespace std::complex_literals;
 
 class QcoUnitaryOpInterfaceTest : public testing::Test {
 protected:
@@ -78,7 +79,12 @@ private:
 
 } // namespace
 
-TEST_F(QcoUnitaryOpInterfaceTest, getFastUnitaryMatrix2x2) {
+TEST_F(QcoUnitaryOpInterfaceTest, getUnitaryMatrix2x2) {
+  const auto expectedValues = std::array{
+      Eigen::Matrix2cd{{1, 0}, {0, 1}},
+      Eigen::Matrix2cd{{0.87758256, -0.47942554i}, {-0.47942554i, 0.87758256}},
+      Eigen::Matrix2cd{{0.99500417, -0.09195267 - 0.03887696i},
+                       {0.09537451 + 0.02950279i, 0.76102116 + 0.64099928i}}};
   auto moduleOp = buildQCOIR([](qco::QCOProgramBuilder& builder) {
     auto reg = builder.allocQubitRegister(1, "q");
     reg[0] = builder.id(reg[0]);
@@ -89,48 +95,13 @@ TEST_F(QcoUnitaryOpInterfaceTest, getFastUnitaryMatrix2x2) {
   auto&& moduleOps = moduleOp->getBody()->getOperations();
   ASSERT_FALSE(moduleOps.empty());
   auto funcOp = llvm::dyn_cast<func::FuncOp>(moduleOps.begin());
+  int i{0};
   for (auto&& op : funcOp.getOps()) {
     auto unitaryOp = llvm::dyn_cast<qco::UnitaryOpInterface>(op);
     if (unitaryOp) {
-      EXPECT_EQ(unitaryOp.getUnitaryMatrix(),
-                unitaryOp.getFastUnitaryMatrix<Eigen::Matrix2cd>());
-    }
-  }
-}
-
-TEST_F(QcoUnitaryOpInterfaceTest, getFastUnitaryMatrix4x4) {
-  auto moduleOp = buildQCOIR([](qco::QCOProgramBuilder& builder) {
-    auto reg = builder.allocQubitRegister(2, "q");
-    std::tie(reg[0], reg[1]) = builder.rxx(2.0, reg[0], reg[1]);
-    std::tie(reg[0], reg[1]) = builder.rzx(1.0, reg[0], reg[1]);
-  });
-
-  auto&& moduleOps = moduleOp->getBody()->getOperations();
-  ASSERT_FALSE(moduleOps.empty());
-  auto funcOp = llvm::dyn_cast<func::FuncOp>(moduleOps.begin());
-  for (auto&& op : funcOp.getOps()) {
-    auto unitaryOp = llvm::dyn_cast<qco::UnitaryOpInterface>(op);
-    if (unitaryOp) {
-      EXPECT_EQ(unitaryOp.getUnitaryMatrix(),
-                unitaryOp.getFastUnitaryMatrix<Eigen::Matrix4cd>());
-    }
-  }
-}
-
-TEST_F(QcoUnitaryOpInterfaceTest, getFastUnitaryMatrixDynamic) {
-  auto moduleOp = buildQCOIR([](qco::QCOProgramBuilder& builder) {
-    auto reg = builder.allocQubitRegister(2, "q");
-    std::tie(reg[1], reg[0]) = builder.ch(reg[1], reg[0]);
-  });
-
-  auto&& moduleOps = moduleOp->getBody()->getOperations();
-  ASSERT_FALSE(moduleOps.empty());
-  auto funcOp = llvm::dyn_cast<func::FuncOp>(moduleOps.begin());
-  for (auto&& op : funcOp.getOps()) {
-    auto unitaryOp = llvm::dyn_cast<qco::UnitaryOpInterface>(op);
-    if (unitaryOp) {
-      EXPECT_EQ(unitaryOp.getUnitaryMatrix(),
-                unitaryOp.getFastUnitaryMatrix<Eigen::MatrixXcd>());
+      EXPECT_TRUE(unitaryOp.getUnitaryMatrix<Eigen::Matrix2cd>()->isApprox(
+          expectedValues.at(i++), 1e-8))
+          << "Failed at gate " << (i - 1);
     }
   }
 }

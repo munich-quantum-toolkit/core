@@ -11,6 +11,7 @@
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/Utils/Utils.h"
 
+#include <Eigen/Core>
 #include <cmath>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/IR/Builders.h>
@@ -19,6 +20,7 @@
 #include <mlir/IR/OperationSupport.h>
 #include <mlir/IR/PatternMatch.h>
 #include <mlir/Support/LogicalResult.h>
+#include <optional>
 #include <variant>
 
 using namespace mlir;
@@ -83,4 +85,24 @@ void XXMinusYYOp::build(OpBuilder& builder, OperationState& state,
 void XXMinusYYOp::getCanonicalizationPatterns(RewritePatternSet& results,
                                               MLIRContext* context) {
   results.add<MergeSubsequentXXMinusYY>(context);
+}
+
+std::optional<Eigen::Matrix4cd> XXMinusYYOp::getUnitaryMatrix() {
+  using namespace std::complex_literals;
+
+  if (auto theta = utils::valueToDouble(getTheta())) {
+    if (auto beta = utils::valueToDouble(getBeta())) {
+      const auto m0 = 0.0 + 0i;
+      const auto m1 = 1.0 + 0i;
+      const auto mc = std::cos(*theta / 2.0) + 0i;
+      const auto s = std::sin(*theta / 2.0);
+      const auto msp = std::polar(s, -*beta);
+      const auto msm = std::polar(-s, *beta);
+      return Eigen::Matrix4cd{{mc, m0, m0, msm},  // row 0
+                              {m0, m1, m0, m0},   // row 1
+                              {m0, m0, m1, m0},   // row 2
+                              {msp, m0, m0, mc}}; // row 3
+    }
+  }
+  return std::nullopt;
 }

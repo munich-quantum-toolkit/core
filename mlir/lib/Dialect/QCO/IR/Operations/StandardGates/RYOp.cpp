@@ -12,11 +12,13 @@
 #include "mlir/Dialect/QCO/QCOUtils.h"
 #include "mlir/Dialect/Utils/Utils.h"
 
+#include <Eigen/Core>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OperationSupport.h>
 #include <mlir/IR/PatternMatch.h>
 #include <mlir/Support/LogicalResult.h>
+#include <optional>
 #include <variant>
 
 using namespace mlir;
@@ -61,4 +63,13 @@ void RYOp::build(OpBuilder& builder, OperationState& state, Value qubitIn,
 void RYOp::getCanonicalizationPatterns(RewritePatternSet& results,
                                        MLIRContext* context) {
   results.add<MergeSubsequentRY, RemoveTrivialRY>(context);
+}
+
+std::optional<Eigen::Matrix2cd> RYOp::getUnitaryMatrix() {
+  if (auto theta = utils::valueToDouble(getTheta())) {
+    const auto m00 = std::complex<double>{std::cos(*theta / 2.0)};
+    const auto m01 = std::complex<double>{-std::sin(*theta / 2.0)};
+    return Eigen::Matrix2cd{{m00, m01}, {-m01, m00}};
+  }
+  return std::nullopt;
 }

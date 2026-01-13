@@ -39,3 +39,8 @@ void ZOp::getCanonicalizationPatterns(RewritePatternSet& results,
                                       MLIRContext* context) {
   results.add<RemoveSubsequentZ>(context);
 }
+
+Eigen::Matrix2cd ZOp::getUnitaryMatrix() {
+  return Eigen::Matrix2cd{{1.0, 0.0},   // row 0
+                          {0.0, -1.0}}; // row 1
+}

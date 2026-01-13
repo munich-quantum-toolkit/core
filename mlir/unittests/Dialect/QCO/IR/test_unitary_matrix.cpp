@@ -96,7 +96,7 @@ TEST_F(QcoUnitaryMatrixTest, IdOpMatrix) {
   auto op = getFirstOp<qco::IdOp>(*moduleOp);
   ASSERT_TRUE(op) << toString(*moduleOp);
 
-  EXPECT_EQ(op.getUnitaryMatrixDefinition(), utils::getMatrixId());
+  EXPECT_EQ(op.getUnitaryMatrix(), Eigen::Matrix2cd::Identity());
 }
 
 /**
@@ -113,41 +113,8 @@ TEST_F(QcoUnitaryMatrixTest, XOpMatrix) {
   auto op = getFirstOp<qco::XOp>(*moduleOp);
   ASSERT_TRUE(op) << toString(*moduleOp);
 
-  EXPECT_EQ(op.getUnitaryMatrixDefinition(), utils::getMatrixX());
-}
-
-/**
- * @brief Test: Y unitary matrix
- *
- * @details
- * Ensure the correct gate definition is returned.
- */
-TEST_F(QcoUnitaryMatrixTest, YOpMatrix) {
-  auto moduleOp = buildQCOIR([](qco::QCOProgramBuilder& builder) {
-    auto reg = builder.allocQubitRegister(1, "q");
-    builder.y(reg[0]);
-  });
-  auto op = getFirstOp<qco::YOp>(*moduleOp);
-  ASSERT_TRUE(op) << toString(*moduleOp);
-
-  EXPECT_EQ(op.getUnitaryMatrixDefinition(), utils::getMatrixY());
-}
-
-/**
- * @brief Test: Z unitary matrix
- *
- * @details
- * Ensure the correct gate definition is returned.
- */
-TEST_F(QcoUnitaryMatrixTest, ZOpMatrix) {
-  auto moduleOp = buildQCOIR([](qco::QCOProgramBuilder& builder) {
-    auto reg = builder.allocQubitRegister(1, "q");
-    builder.z(reg[0]);
-  });
-  auto op = getFirstOp<qco::ZOp>(*moduleOp);
-  ASSERT_TRUE(op) << toString(*moduleOp);
-
-  EXPECT_EQ(op.getUnitaryMatrixDefinition(), utils::getMatrixZ());
+  const Eigen::Matrix2cd expectedValue{{0, 1}, {1, 0}};
+  EXPECT_EQ(op.getUnitaryMatrix(), expectedValue);
 }
 
 /**
@@ -167,7 +134,7 @@ TEST_F(QcoUnitaryMatrixTest, CtrlXOpMatrix) {
   const Eigen::MatrixXcd cxMatrix = Eigen::Matrix4cd{
       {{1, 0, 0, 0}, {0, 1, 0, 0}, {0, 0, 0, 1}, {0, 0, 1, 0}}};
 
-  EXPECT_EQ(op.getUnitaryMatrixDefinition(), cxMatrix);
+  EXPECT_EQ(op.getUnitaryMatrix(), cxMatrix);
 }
 
 /**
@@ -194,8 +161,7 @@ TEST_F(QcoUnitaryMatrixTest, CtrlX10OpMatrix) {
   const Eigen::MatrixXcd cxMatrix = Eigen::Matrix4cd{
       {{1, 0, 0, 0}, {0, 1, 0, 0}, {0, 0, 0, 1}, {0, 0, 1, 0}}};
 
-  EXPECT_EQ(op01.getUnitaryMatrixDefinition(), cxMatrix);
-  EXPECT_EQ(op10.getUnitaryMatrixDefinition(), cxMatrix);
-  EXPECT_EQ(op10.getUnitaryMatrixDefinition(),
-            op01.getUnitaryMatrixDefinition());
+  EXPECT_EQ(op01.getUnitaryMatrix(), cxMatrix);
+  EXPECT_EQ(op10.getUnitaryMatrix(), cxMatrix);
+  EXPECT_EQ(op10.getUnitaryMatrix(), op01.getUnitaryMatrix());
 }

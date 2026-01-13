@@ -51,3 +51,11 @@ void SXOp::getCanonicalizationPatterns(RewritePatternSet& results,
                                        MLIRContext* context) {
   results.add<RemoveSXAfterSXdg, MergeSubsequentSX>(context);
 }
+
+Eigen::Matrix2cd SXOp::getUnitaryMatrix() {
+  using namespace std::complex_literals;
+
+  const auto m00 = (1.0 + 1i) / 2.0;
+  const auto m01 = (1.0 - 1i) / 2.0;
+  return Eigen::Matrix2cd{{m00, m01}, {m01, m00}};
+}
