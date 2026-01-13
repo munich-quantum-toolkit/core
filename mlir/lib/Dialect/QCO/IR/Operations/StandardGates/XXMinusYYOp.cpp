@@ -47,11 +47,10 @@ struct MergeSubsequentXXMinusYY final : OpRewritePattern<XXMinusYYOp> {
     }
 
     // Confirm betas are equal
-    auto beta = XXMinusYYOp::getStaticParameter(op.getBeta());
-    auto prevBeta = XXMinusYYOp::getStaticParameter(prevOp.getBeta());
+    auto beta = valueToDouble(op.getBeta());
+    auto prevBeta = valueToDouble(prevOp.getBeta());
     if (beta && prevBeta) {
-      if (std::abs(beta.getValueAsDouble() - prevBeta.getValueAsDouble()) >
-          TOLERANCE) {
+      if (std::abs(*beta - *prevBeta) > TOLERANCE) {
         return failure();
       }
     } else if (op.getBeta() != prevOp.getBeta()) {

@@ -13,7 +13,6 @@
 
 #include <cmath>
 #include <mlir/IR/Builders.h>
-#include <mlir/IR/BuiltinAttributes.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OperationSupport.h>
 #include <mlir/IR/PatternMatch.h>
@@ -34,13 +33,8 @@ struct RemoveTrivialGPhase final : OpRewritePattern<GPhaseOp> {
 
   LogicalResult matchAndRewrite(GPhaseOp op,
                                 PatternRewriter& rewriter) const override {
-    const auto thetaAttr = GPhaseOp::getStaticParameter(op.getTheta());
-    if (!thetaAttr) {
-      return failure();
-    }
-
-    const auto thetaValue = thetaAttr.getValueAsDouble();
-    if (std::abs(thetaValue) > TOLERANCE) {
+    const auto theta = valueToDouble(op.getTheta());
+    if (!theta || std::abs(*theta) > TOLERANCE) {
       return failure();
     }
 

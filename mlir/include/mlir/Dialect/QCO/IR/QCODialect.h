@@ -108,14 +108,6 @@ public:
       return this->getOperation()->getOperand(T + i);
     }
 
-    [[nodiscard]] static FloatAttr getStaticParameter(Value param) {
-      auto constantOp = param.getDefiningOp<arith::ConstantOp>();
-      if (!constantOp) {
-        return nullptr;
-      }
-      return dyn_cast<FloatAttr>(constantOp.getValue());
-    }
-
     Value getInputForOutput(Value output) {
       const auto& op = this->getOperation();
       for (size_t i = 0; i < T; ++i) {

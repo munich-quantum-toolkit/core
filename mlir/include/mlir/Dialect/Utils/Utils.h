@@ -28,8 +28,9 @@ constexpr auto TOLERANCE = 1e-15;
  * @param parameter The parameter as a variant (double or Value).
  * @return Value The parameter as a Value.
  */
-inline Value variantToValue(OpBuilder& builder, const OperationState& state,
-                            const std::variant<double, Value>& parameter) {
+[[nodiscard]] inline Value
+variantToValue(OpBuilder& builder, const OperationState& state,
+               const std::variant<double, Value>& parameter) {
   Value operand;
   if (std::holds_alternative<double>(parameter)) {
     operand = builder.create<arith::ConstantOp>(
@@ -64,4 +65,32 @@ Value variantToValue(OpBuilder& builder, const Location loc,
   }
   return constantFromScalar(builder, loc, std::get<T>(parameter));
 }
+/**
+ * @brief Try to convert a mlir::Value to a standard C++ double
+ *
+ * @details
+ * Resolving the mlir::Value will only work if it is a static value, so a value
+ * defined via a "arith.constant" operation. It must also be of type
+ * float or integer.
+ */
+[[nodiscard]] inline std::optional<double> valueToDouble(Value value) {
+  auto constantOp = value.getDefiningOp<arith::ConstantOp>();
+  if (!constantOp) {
+    return std::nullopt;
+  }
+  auto floatAttr = dyn_cast<FloatAttr>(constantOp.getValue());
+  if (floatAttr) {
+    return floatAttr.getValueAsDouble();
+  }
+  auto intAttr = dyn_cast<IntegerAttr>(constantOp.getValue());
+  if (intAttr) {
+    if (intAttr.getType().isUnsignedInteger()) {
+      return static_cast<double>(intAttr.getValue().getZExtValue());
+    }
+    // interpret both signed+signless as signed integers
+    return static_cast<double>(intAttr.getValue().getSExtValue());
+  }
+  return std::nullopt;
+}
+
 } // namespace mlir::utils

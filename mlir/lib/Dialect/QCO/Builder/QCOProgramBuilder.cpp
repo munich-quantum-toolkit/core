@@ -25,6 +25,7 @@
 #include <mlir/Dialect/SCF/IR/SCF.h>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/BuiltinOps.h>
+#include <mlir/IR/Location.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OwningOpRef.h>
 #include <mlir/IR/Value.h>
@@ -37,8 +38,9 @@
 namespace mlir::qco {
 
 QCOProgramBuilder::QCOProgramBuilder(MLIRContext* context)
-    : OpBuilder(context), ctx(context), loc(getUnknownLoc()),
-      module(ModuleOp::create(loc)) {
+    : ImplicitLocOpBuilder(
+          FileLineColLoc::get(context, "<qco-program-builder>", 1, 1), context),
+      ctx(context), module(ModuleOp::create(*this)) {
   ctx->loadDialect<QCODialect>();
 }
 
@@ -48,7 +50,7 @@ void QCOProgramBuilder::initialize() {
 
   // Create main function as entry point
   auto funcType = getFunctionType({}, {getI64Type()});
-  auto mainFunc = func::FuncOp::create(*this, loc, "main", funcType);
+  auto mainFunc = func::FuncOp::create(*this, "main", funcType);
 
   // Add entry_point attribute to identify the main function
   auto entryPointAttr = getStringAttr("entry_point");
@@ -61,7 +63,7 @@ void QCOProgramBuilder::initialize() {
 Value QCOProgramBuilder::allocQubit() {
   checkFinalized();
 
-  auto allocOp = AllocOp::create(*this, loc);
+  auto allocOp = AllocOp::create(*this);
   const auto qubit = allocOp.getResult();
 
   // Track the allocated qubit as valid
@@ -78,7 +80,7 @@ Value QCOProgramBuilder::staticQubit(const int64_t index) {
   }
 
   auto indexAttr = getI64IntegerAttr(index);
-  auto staticOp = StaticOp::create(*this, loc, indexAttr);
+  auto staticOp = StaticOp::create(*this, indexAttr);
   const auto qubit = staticOp.getQubit();
 
   // Track the static qubit as valid
@@ -104,7 +106,7 @@ QCOProgramBuilder::allocQubitRegister(const int64_t size,
 
   for (int64_t i = 0; i < size; ++i) {
     const auto indexAttr = getI64IntegerAttr(i);
-    auto allocOp = AllocOp::create(*this, loc, nameAttr, sizeAttr, indexAttr);
+    auto allocOp = AllocOp::create(*this, nameAttr, sizeAttr, indexAttr);
     const auto& qubit = qubits.emplace_back(allocOp.getResult());
     // Track the allocated qubit as valid
     validQubits[allocOp->getParentRegion()].insert(qubit);
@@ -158,7 +160,7 @@ void QCOProgramBuilder::updateQubitTracking(Value inputQubit, Value outputQubit,
 std::pair<Value, Value> QCOProgramBuilder::measure(Value qubit) {
   checkFinalized();
 
-  auto measureOp = MeasureOp::create(*this, loc, qubit);
+  auto measureOp = MeasureOp::create(*this, qubit);
   auto qubitOut = measureOp.getQubitOut();
   auto result = measureOp.getResult();
 
@@ -175,7 +177,7 @@ Value QCOProgramBuilder::measure(Value qubit, const Bit& bit) {
   auto sizeAttr = getI64IntegerAttr(bit.registerSize);
   auto indexAttr = getI64IntegerAttr(bit.registerIndex);
   auto measureOp =
-      MeasureOp::create(*this, loc, qubit, nameAttr, sizeAttr, indexAttr);
+      MeasureOp::create(*this, qubit, nameAttr, sizeAttr, indexAttr);
   const auto qubitOut = measureOp.getQubitOut();
 
   // Update tracking
@@ -187,7 +189,7 @@ Value QCOProgramBuilder::measure(Value qubit, const Bit& bit) {
 Value QCOProgramBuilder::reset(Value qubit) {
   checkFinalized();
 
-  auto resetOp = ResetOp::create(*this, loc, qubit);
+  auto resetOp = ResetOp::create(*this, qubit);
   const auto qubitOut = resetOp.getQubitOut();
 
   // Update tracking
@@ -205,7 +207,7 @@ Value QCOProgramBuilder::reset(Value qubit) {
 #define DEFINE_ZERO_TARGET_ONE_PARAMETER(OP_CLASS, OP_NAME, PARAM)             \
   void QCOProgramBuilder::OP_NAME(const std::variant<double, Value>&(PARAM)) { \
     checkFinalized();                                                          \
-    OP_CLASS::create(*this, loc, PARAM);                                       \
+    OP_CLASS::create(*this, PARAM);                                            \
   }                                                                            \
   Value QCOProgramBuilder::c##OP_NAME(                                         \
       const std::variant<double, Value>&(PARAM), Value control) {              \
@@ -241,7 +243,7 @@ DEFINE_ZERO_TARGET_ONE_PARAMETER(GPhaseOp, gphase, theta)
 #define DEFINE_ONE_TARGET_ZERO_PARAMETER(OP_CLASS, OP_NAME)                    \
   Value QCOProgramBuilder::OP_NAME(Value qubit) {                              \
     checkFinalized();                                                          \
-    auto op = OP_CLASS::create(*this, loc, qubit);                             \
+    auto op = OP_CLASS::create(*this, qubit);                                  \
     const auto& qubitOut = op.getQubitOut();                                   \
     updateQubitTracking(qubit, qubitOut, op->getParentRegion());               \
     return qubitOut;                                                           \
@@ -286,7 +288,7 @@ DEFINE_ONE_TARGET_ZERO_PARAMETER(SXdgOp, sxdg)
   Value QCOProgramBuilder::OP_NAME(const std::variant<double, Value>&(PARAM),  \
                                    Value qubit) {                              \
     checkFinalized();                                                          \
-    auto op = OP_CLASS::create(*this, loc, qubit, PARAM);                      \
+    auto op = OP_CLASS::create(*this, qubit, PARAM);                           \
     const auto& qubitOut = op.getQubitOut();                                   \
     updateQubitTracking(qubit, qubitOut, op->getParentRegion());               \
     return qubitOut;                                                           \
@@ -327,7 +329,7 @@ DEFINE_ONE_TARGET_ONE_PARAMETER(POp, p, phi)
                                    const std::variant<double, Value>&(PARAM2), \
                                    Value qubit) {                              \
     checkFinalized();                                                          \
-    auto op = OP_CLASS::create(*this, loc, qubit, PARAM1, PARAM2);             \
+    auto op = OP_CLASS::create(*this, qubit, PARAM1, PARAM2);                  \
     const auto& qubitOut = op.getQubitOut();                                   \
     updateQubitTracking(qubit, qubitOut, op->getParentRegion());               \
     return qubitOut;                                                           \
@@ -370,7 +372,7 @@ DEFINE_ONE_TARGET_TWO_PARAMETER(U2Op, u2, phi, lambda)
                                    const std::variant<double, Value>&(PARAM3), \
                                    Value qubit) {                              \
     checkFinalized();                                                          \
-    auto op = OP_CLASS::create(*this, loc, qubit, PARAM1, PARAM2, PARAM3);     \
+    auto op = OP_CLASS::create(*this, qubit, PARAM1, PARAM2, PARAM3);          \
     const auto& qubitOut = op.getQubitOut();                                   \
     updateQubitTracking(qubit, qubitOut, op->getParentRegion());               \
     return qubitOut;                                                           \
@@ -411,7 +413,7 @@ DEFINE_ONE_TARGET_THREE_PARAMETER(UOp, u, theta, phi, lambda)
   std::pair<Value, Value> QCOProgramBuilder::OP_NAME(Value qubit0,             \
                                                      Value qubit1) {           \
     checkFinalized();                                                          \
-    auto op = OP_CLASS::create(*this, loc, qubit0, qubit1);                    \
+    auto op = OP_CLASS::create(*this, qubit0, qubit1);                         \
     const auto& qubit0Out = op.getQubit0Out();                                 \
     const auto& qubit1Out = op.getQubit1Out();                                 \
     updateQubitTracking(qubit0, qubit0Out, op->getParentRegion());             \
@@ -455,7 +457,7 @@ DEFINE_TWO_TARGET_ZERO_PARAMETER(ECROp, ecr)
   std::pair<Value, Value> QCOProgramBuilder::OP_NAME(                          \
       const std::variant<double, Value>&(PARAM), Value qubit0, Value qubit1) { \
     checkFinalized();                                                          \
-    auto op = OP_CLASS::create(*this, loc, qubit0, qubit1, PARAM);             \
+    auto op = OP_CLASS::create(*this, qubit0, qubit1, PARAM);                  \
     const auto& qubit0Out = op.getQubit0Out();                                 \
     const auto& qubit1Out = op.getQubit1Out();                                 \
     updateQubitTracking(qubit0, qubit0Out, op->getParentRegion());             \
@@ -503,7 +505,7 @@ DEFINE_TWO_TARGET_ONE_PARAMETER(RZZOp, rzz, theta)
       const std::variant<double, Value>&(PARAM2), Value qubit0,                \
       Value qubit1) {                                                          \
     checkFinalized();                                                          \
-    auto op = OP_CLASS::create(*this, loc, qubit0, qubit1, PARAM1, PARAM2);    \
+    auto op = OP_CLASS::create(*this, qubit0, qubit1, PARAM1, PARAM2);         \
     const auto& qubit0Out = op.getQubit0Out();                                 \
     const auto& qubit1Out = op.getQubit1Out();                                 \
     updateQubitTracking(qubit0, qubit0Out, op->getParentRegion());             \
@@ -550,7 +552,7 @@ DEFINE_TWO_TARGET_TWO_PARAMETER(XXMinusYYOp, xx_minus_yy, theta, beta)
 ValueRange QCOProgramBuilder::barrier(ValueRange qubits) {
   checkFinalized();
 
-  auto op = BarrierOp::create(*this, loc, qubits);
+  auto op = BarrierOp::create(*this, qubits);
   const auto& qubitsOut = op.getQubitsOut();
   for (const auto& [inputQubit, outputQubit] : llvm::zip(qubits, qubitsOut)) {
     updateQubitTracking(inputQubit, outputQubit, op->getParentRegion());
@@ -567,18 +569,18 @@ std::pair<ValueRange, ValueRange> QCOProgramBuilder::ctrl(
     llvm::function_ref<llvm::SmallVector<Value>(ValueRange)> body) {
   checkFinalized();
 
-  auto ctrlOp = CtrlOp::create(*this, loc, controls, targets);
+  auto ctrlOp = CtrlOp::create(*this, controls, targets);
   auto& block = ctrlOp.getBodyRegion().emplaceBlock();
   const auto qubitType = QubitType::get(getContext());
   auto* region = block.getParent();
   for (size_t i = 0; i < targets.size(); i++) {
-    const auto arg = block.addArgument(qubitType, loc);
+    const auto arg = block.addArgument(qubitType, getLoc());
     validQubits[region].insert(arg);
   }
   const InsertionGuard guard(*this);
   setInsertionPointToStart(&block);
   const auto innerTargetsOut = body(block.getArguments());
-  YieldOp::create(*this, loc, innerTargetsOut);
+  YieldOp::create(*this, innerTargetsOut);
 
   if (innerTargetsOut.size() != targets.size()) {
     llvm::reportFatalUsageError(
@@ -608,7 +610,7 @@ QCOProgramBuilder& QCOProgramBuilder::dealloc(Value qubit) {
   validateQubitValue(qubit, qubit.getParentRegion());
   validQubits[qubit.getParentRegion()].erase(qubit);
 
-  DeallocOp::create(*this, loc, qubit);
+  DeallocOp::create(*this, qubit);
 
   return *this;
 }
@@ -624,12 +626,13 @@ ValueRange QCOProgramBuilder::scfFor(
     llvm::function_ref<llvm::SmallVector<Value>(Value, ValueRange)> body) {
   checkFinalized();
 
+  const auto loc = getLoc();
   const auto lb = utils::variantToValue(*this, loc, lowerbound);
   const auto ub = utils::variantToValue(*this, loc, upperbound);
   const auto stepSize = utils::variantToValue(*this, loc, step);
 
   // Create the empty for operation
-  auto forOp = create<scf::ForOp>(loc, lb, ub, stepSize, initArgs);
+  auto forOp = create<scf::ForOp>(lb, ub, stepSize, initArgs);
   auto* forBody = forOp.getBody();
   const auto iv = forBody->getArgument(0);
   const auto loopArgs = forBody->getArguments().drop_front();
@@ -663,8 +666,8 @@ ValueRange QCOProgramBuilder::scfWhile(
   checkFinalized();
 
   // Create the empty while operation
-  auto whileOp = create<scf::WhileOp>(loc, initArgs.getTypes(), initArgs);
-  const SmallVector<Location> locs(initArgs.size(), loc);
+  auto whileOp = create<scf::WhileOp>(initArgs.getTypes(), initArgs);
+  const SmallVector<Location> locs(initArgs.size(), getLoc());
 
   const OpBuilder::InsertionGuard guard(*this);
 
@@ -699,7 +702,7 @@ ValueRange QCOProgramBuilder::scfWhile(
   }
 
   const auto afterResults = afterBody(afterArgs);
-  create<scf::YieldOp>(loc, afterResults);
+  create<scf::YieldOp>(afterResults);
 
   // Update the qubit tracking
   for (const auto& [arg, result] :
@@ -716,10 +719,10 @@ ValueRange QCOProgramBuilder::scfIf(
     llvm::function_ref<llvm::SmallVector<Value>()> elseBody) {
   checkFinalized();
 
-  const auto condition = utils::variantToValue(*this, loc, cond);
+  const auto condition = utils::variantToValue(*this, getLoc(), cond);
 
   // Create the empty while operation
-  auto ifOp = create<scf::IfOp>(loc, qubits.getTypes(), condition,
+  auto ifOp = create<scf::IfOp>(qubits.getTypes(), condition,
                                 /*withElseRegion=*/true);
   auto& thenBlock = ifOp.getThenRegion().front();
   auto& elseBlock = ifOp.getElseRegion().front();
@@ -738,13 +741,13 @@ ValueRange QCOProgramBuilder::scfIf(
 
   // Build the then body
   const auto thenResults = thenBody();
-  create<scf::YieldOp>(loc, thenResults);
+  create<scf::YieldOp>(thenResults);
   // Set the insertionpoint
   setInsertionPointToStart(&elseBlock);
 
   // Build the else body
   const auto elseResults = elseBody();
-  create<scf::YieldOp>(loc, elseResults);
+  create<scf::YieldOp>(elseResults);
 
   // Update the qubit tracking
   for (const auto& [arg, result] : llvm::zip_equal(qubits, ifOp.getResults())) {
@@ -758,7 +761,7 @@ QCOProgramBuilder& QCOProgramBuilder::scfCondition(Value condition,
                                                    ValueRange yieldedValues) {
   checkFinalized();
 
-  create<scf::ConditionOp>(loc, condition, yieldedValues);
+  create<scf::ConditionOp>(condition, yieldedValues);
   return *this;
 }
 
@@ -769,8 +772,7 @@ QCOProgramBuilder& QCOProgramBuilder::scfCondition(Value condition,
 ValueRange QCOProgramBuilder::funcCall(StringRef name, ValueRange operands) {
   checkFinalized();
 
-  const auto callOp =
-      create<func::CallOp>(loc, name, operands.getTypes(), operands);
+  const auto callOp = create<func::CallOp>(name, operands.getTypes(), operands);
   for (auto [arg, result] : llvm::zip_equal(operands, callOp->getResults())) {
     updateQubitTracking(arg, result, callOp->getParentRegion());
   }
@@ -788,7 +790,7 @@ QCOProgramBuilder& QCOProgramBuilder::funcFunc(
 
   // Create the empty func operation
   const auto funcType = getFunctionType(argTypes, resultTypes);
-  auto funcOp = create<func::FuncOp>(loc, name, funcType);
+  auto funcOp = create<func::FuncOp>(name, funcType);
   auto* entryBlock = funcOp.addEntryBlock();
   auto* region = entryBlock->getParent();
   // Add the arguments to the validQubits
@@ -800,7 +802,7 @@ QCOProgramBuilder& QCOProgramBuilder::funcFunc(
 
   // Build function body
   const auto bodyResults = body(entryBlock->getArguments());
-  create<func::ReturnOp>(loc, bodyResults);
+  create<func::ReturnOp>(bodyResults);
 
   return *this;
 }
@@ -812,8 +814,7 @@ QCOProgramBuilder& QCOProgramBuilder::funcFunc(
 Value QCOProgramBuilder::arithConstantIndex(int64_t i) {
   checkFinalized();
 
-  const auto op =
-      create<arith::ConstantOp>(loc, getIndexType(), getIndexAttr(i));
+  const auto op = create<arith::ConstantOp>(getIndexType(), getIndexAttr(i));
   return op->getResult(0);
 }
 
@@ -822,7 +823,7 @@ Value QCOProgramBuilder::arithConstantBool(bool b) {
 
   const auto i1Type = getI1Type();
   const auto op =
-      create<arith::ConstantOp>(loc, i1Type, getIntegerAttr(i1Type, b ? 1 : 0));
+      create<arith::ConstantOp>(i1Type, getIntegerAttr(i1Type, b ? 1 : 0));
   return op->getResult(0);
 }
 //===----------------------------------------------------------------------===//
@@ -870,16 +871,16 @@ OwningOpRef<ModuleOp> QCOProgramBuilder::finalize() {
     return opA->isBeforeInBlock(opB);
   });
   for (auto qubit : sortedQubits) {
-    DeallocOp::create(*this, loc, qubit);
+    DeallocOp::create(*this, qubit);
   }
 
   validQubits.clear();
 
   // Create constant 0 for successful exit code
-  auto exitCode = arith::ConstantOp::create(*this, loc, getI64IntegerAttr(0));
+  auto exitCode = arith::ConstantOp::create(*this, getI64IntegerAttr(0));
 
   // Add return statement with exit code 0 to the main function
-  func::ReturnOp::create(*this, loc, ValueRange{exitCode});
+  func::ReturnOp::create(*this, ValueRange{exitCode});
 
   // Invalidate context to prevent use-after-finalize
   ctx = nullptr;

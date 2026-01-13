@@ -60,7 +60,7 @@ namespace mlir::qco {
  * auto module = builder.finalize();
  * ```
  */
-class QCOProgramBuilder final : public OpBuilder {
+class QCOProgramBuilder final : public ImplicitLocOpBuilder {
 public:
   /**
    * @brief Construct a new QCOProgramBuilder
@@ -1255,7 +1255,6 @@ public:
 
 private:
   MLIRContext* ctx{};
-  Location loc;
   ModuleOp module;
 
   /// Check if the builder has been finalized
