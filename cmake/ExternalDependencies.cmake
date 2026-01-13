@@ -44,7 +44,7 @@ else()
       ON
       CACHE INTERNAL "Use standalone boost multiprecision")
   set(BOOST_VERSION
-      1_86_0
+      1_89_0
       CACHE INTERNAL "Boost version")
   set(BOOST_URL
       https://github.com/boostorg/multiprecision/archive/refs/tags/Boost_${BOOST_VERSION}.tar.gz)
