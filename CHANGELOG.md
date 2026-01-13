@@ -15,6 +15,7 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 
 ### Changed
 
+- ♻️ Use `llc` instead of random `clang` for compiling QIR test circuits to improve robustness and handle opaque pointers correctly across LLVM versions ([#1447]) ([**@burgholzer**])
 - ♻️ Extract singleton pattern into reusable template base class for QDMI devices and driver ([#1444]) ([**@ystade**], [**@burgholzer**])
 - 🚚 Reorganize QDMI code structure by moving devices into dedicated subdirectories and separating driver and common utilities ([#1444]) ([**@ystade**])
 - 📦 Build MLIR by default for C++ library builds ([#1356]) ([**@burgholzer**], [**@denialhaag**])
@@ -309,6 +310,7 @@ _📚 Refer to the [GitHub Release Notes](https://github.com/munich-quantum-tool
 
 <!-- PR links -->
 
+[#1447]: https://github.com/munich-quantum-toolkit/core/pull/1447
 [#1446]: https://github.com/munich-quantum-toolkit/core/pull/1446
 [#1444]: https://github.com/munich-quantum-toolkit/core/pull/1444
 [#1443]: https://github.com/munich-quantum-toolkit/core/pull/1443

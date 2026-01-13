@@ -6,6 +6,18 @@
 #
 # Licensed under the MIT License
 
+# Find llc tool (LLVM is guaranteed to be available at this point)
+find_program(
+  LLC_EXECUTABLE
+  NAMES llc
+  HINTS ${LLVM_TOOLS_BINARY_DIR})
+
+if(NOT LLC_EXECUTABLE)
+  message(FATAL_ERROR "llc not found. This should not happen since LLVM is available.")
+endif()
+
+message(STATUS "Found llc: ${LLC_EXECUTABLE}")
+
 # macro to add a test executable for one qir circuit
 macro(ADD_QIR_CIRCUIT target_name circuit_path)
   if(NOT TARGET ${target_name})
@@ -13,12 +25,10 @@ macro(ADD_QIR_CIRCUIT target_name circuit_path)
     get_filename_component(circuit_name ${circuit_path} NAME_WE)
     add_custom_command(
       OUTPUT ${circuit_name}.o
-      COMMAND
-        clang
-        "$<$<BOOL:${CMAKE_OSX_DEPLOYMENT_TARGET}>:-mmacos-version-min=${CMAKE_OSX_DEPLOYMENT_TARGET}>"
-        -c ${circuit_path} -o ${circuit_name}.o
+      COMMAND ${LLC_EXECUTABLE} -filetype=obj -relocation-model=pic ${circuit_path} -o
+              ${circuit_name}.o
       DEPENDS ${circuit_path}
-      COMMENT "Compiling ${circuit_path} to ${circuit_name}.o")
+      COMMENT "Compiling ${circuit_path} to ${circuit_name}.o with llc")
     add_executable(${target_name} ${circuit_name}.o)
     target_link_libraries(${target_name} PRIVATE MQT::CoreQIRRuntime)
     set_target_properties(${target_name} PROPERTIES LINKER_LANGUAGE CXX)
