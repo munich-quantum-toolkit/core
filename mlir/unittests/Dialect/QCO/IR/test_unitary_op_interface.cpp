@@ -87,7 +87,7 @@ TEST_F(QcoUnitaryOpInterfaceTest, getUnitaryMatrix2x2) {
 
   auto&& moduleOps = moduleOp->getBody()->getOperations();
   ASSERT_FALSE(moduleOps.empty());
-  auto funcOp = llvm::dyn_cast<func::FuncOp>(moduleOps.begin());
+  auto funcOp = llvm::dyn_cast<func::FuncOp>(*moduleOps.begin());
 
   llvm::SmallVector<Eigen::Matrix2cd> actualValues;
   for (auto&& op : funcOp.getOps()) {

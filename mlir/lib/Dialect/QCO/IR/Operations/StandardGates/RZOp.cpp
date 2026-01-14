@@ -12,6 +12,7 @@
 #include "mlir/Dialect/QCO/QCOUtils.h"
 #include "mlir/Dialect/Utils/Utils.h"
 
+#include <Eigen/Core>
 #include <complex>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/MLIRContext.h>
