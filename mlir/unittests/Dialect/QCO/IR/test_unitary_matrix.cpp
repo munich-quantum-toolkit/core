@@ -9,12 +9,24 @@
  */
 
 #include "mlir/Dialect/QCO/Builder/QCOProgramBuilder.h"
+#include "mlir/Dialect/QCO/IR/QCODialect.h"
 
+#include <Eigen/Core>
+#include <functional>
 #include <gtest/gtest.h>
+#include <llvm/Support/Casting.h>
+#include <llvm/Support/raw_ostream.h>
+#include <memory>
+#include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/ControlFlow/IR/ControlFlow.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/LLVMIR/LLVMDialect.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
+#include <mlir/IR/BuiltinOps.h>
+#include <mlir/IR/DialectRegistry.h>
+#include <mlir/IR/MLIRContext.h>
+#include <mlir/IR/OwningOpRef.h>
+#include <string>
 
 namespace {
 
@@ -52,7 +64,9 @@ protected:
   [[nodiscard]] OpType getFirstOp(ModuleOp moduleOp) {
     auto funcOp = llvm::dyn_cast<func::FuncOp>(
         moduleOp.getBody()->getOperations().front());
-    assert(funcOp);
+    if (!funcOp) {
+      return nullptr;
+    }
 
     auto ops = funcOp.getOps<OpType>();
     if (ops.empty()) {

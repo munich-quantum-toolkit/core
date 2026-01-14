@@ -13,6 +13,7 @@
 
 #include <Eigen/Core>
 #include <cmath>
+#include <complex>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/BuiltinAttributes.h>

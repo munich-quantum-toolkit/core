@@ -18,6 +18,7 @@
 #include <mlir/IR/PatternMatch.h>
 #include <mlir/Support/LogicalResult.h>
 #include <numbers>
+#include <optional>
 #include <variant>
 
 using namespace mlir;

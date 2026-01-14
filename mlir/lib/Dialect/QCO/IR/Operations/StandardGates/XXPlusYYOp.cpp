@@ -12,12 +12,15 @@
 #include "mlir/Dialect/Utils/Utils.h"
 
 #include <cmath>
+#include <complex>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OperationSupport.h>
 #include <mlir/IR/PatternMatch.h>
 #include <mlir/Support/LogicalResult.h>
+#include <numbers>
+#include <optional>
 #include <variant>
 
 using namespace mlir;

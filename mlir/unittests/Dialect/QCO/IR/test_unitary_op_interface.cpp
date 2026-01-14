@@ -10,11 +10,22 @@
 
 #include "mlir/Dialect/QCO/Builder/QCOProgramBuilder.h"
 
+#include <complex>
+#include <functional>
 #include <gtest/gtest.h>
+#include <llvm/Support/Casting.h>
+#include <llvm/Support/raw_ostream.h>
+#include <memory>
+#include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/ControlFlow/IR/ControlFlow.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/LLVMIR/LLVMDialect.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
+#include <mlir/IR/BuiltinOps.h>
+#include <mlir/IR/DialectRegistry.h>
+#include <mlir/IR/MLIRContext.h>
+#include <mlir/IR/OwningOpRef.h>
+#include <string>
 
 namespace {
 
@@ -43,24 +54,6 @@ protected:
     builder.initialize();
     buildFunc(builder);
     return builder.finalize();
-  }
-
-  /**
-   * @brief Get first operation of given type in a module containing a function
-   *        as its first operation.
-   */
-  template <typename OpType>
-  [[nodiscard]] OpType getFirstOp(ModuleOp moduleOp) {
-    auto funcOp = llvm::dyn_cast<func::FuncOp>(
-        moduleOp.getBody()->getOperations().front());
-    assert(funcOp);
-
-    auto ops = funcOp.getOps<OpType>();
-    if (ops.empty()) {
-      return nullptr;
-    }
-
-    return *ops.begin();
   }
 
   /**
@@ -95,13 +88,23 @@ TEST_F(QcoUnitaryOpInterfaceTest, getUnitaryMatrix2x2) {
   auto&& moduleOps = moduleOp->getBody()->getOperations();
   ASSERT_FALSE(moduleOps.empty());
   auto funcOp = llvm::dyn_cast<func::FuncOp>(moduleOps.begin());
-  int i{0};
+
+  llvm::SmallVector<Eigen::Matrix2cd> actualValues;
   for (auto&& op : funcOp.getOps()) {
     auto unitaryOp = llvm::dyn_cast<qco::UnitaryOpInterface>(op);
     if (unitaryOp) {
-      EXPECT_TRUE(unitaryOp.getUnitaryMatrix<Eigen::Matrix2cd>()->isApprox(
-          expectedValues.at(i++), 1e-8))
-          << "Failed at gate " << (i - 1);
+      auto matrix = unitaryOp.getUnitaryMatrix<Eigen::Matrix2cd>();
+      ASSERT_TRUE(matrix) << toString(*moduleOp)
+                          << "\nFailed to get matrix of gate "
+                          << actualValues.size();
+      actualValues.push_back(*matrix);
     }
+  }
+
+  ASSERT_EQ(actualValues.size(), expectedValues.size())
+      << "Mismatch of size of actual and expected values";
+  for (std::size_t i = 0; i < actualValues.size(); ++i) {
+    EXPECT_TRUE(actualValues[i].isApprox(expectedValues.at(i), 1e-8))
+        << "Wrong matrix at gate " << i;
   }
 }
