@@ -20,15 +20,6 @@
 
 namespace mlir::qco {
 
-struct Quaternion {
-  mlir::Value w;
-  mlir::Value x;
-  mlir::Value y;
-  mlir::Value z;
-};
-
-static const std::unordered_set<std::string> MERGEABLE_GATES = {"u", "rx", "ry",
-                                                                "rz"};
 
 /**
  * @brief This pattern attempts to merge consecutive rotation gates.
@@ -37,6 +28,20 @@ struct MergeRotationGatesPattern final
     : mlir::OpInterfaceRewritePattern<UnitaryOpInterface> {
   explicit MergeRotationGatesPattern(mlir::MLIRContext* context)
       : OpInterfaceRewritePattern(context) {}
+
+  struct Quaternion {
+    mlir::Value w;
+    mlir::Value x;
+    mlir::Value y;
+    mlir::Value z;
+  };
+
+  static constexpr std::array<std::string_view, 4> MERGEABLE_GATES = {
+      "u", "rx", "ry", "rz"};
+
+  static bool isMergeable(std::string_view name) {
+    return std::ranges::find(MERGEABLE_GATES, name) != MERGEABLE_GATES.end();
+  }
 
   /**
    * @brief Checks if two gates can and should be merged with quaternions.
@@ -54,7 +59,7 @@ struct MergeRotationGatesPattern final
     const auto aName = a.getName().stripDialect().str();
     const auto bName = b.getName().stripDialect().str();
 
-    if (!(MERGEABLE_GATES.contains(aName) && MERGEABLE_GATES.contains(bName))) {
+    if (!(isMergeable(aName) && isMergeable(bName))) {
       return false;
     }
     return (aName != bName) || (aName == "u" && bName == "u");
