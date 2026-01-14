@@ -11,15 +11,26 @@
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QCO/Transforms/Passes.h"
 
-#include <iostream>
+#include <algorithm>
+#include <array>
+#include <llvm/ADT/STLExtras.h>
+#include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Math/IR/Math.h>
+#include <mlir/IR/MLIRContext.h>
+#include <mlir/IR/Operation.h>
 #include <mlir/IR/PatternMatch.h>
-#include <mlir/Support/LLVM.h>
+#include <mlir/IR/Value.h>
+#include <mlir/IR/ValueRange.h>
+#include <mlir/Support/LogicalResult.h>
 #include <mlir/Transforms/GreedyPatternRewriteDriver.h>
-#include <unordered_set>
+#include <stdexcept>
+#include <string_view>
+#include <utility>
 
 namespace mlir::qco {
 
+#define GEN_PASS_DEF_MERGEROTATIONGATES
+#include "mlir/Dialect/QCO/Transforms/Passes.h.inc"
 
 /**
  * @brief This pattern attempts to merge consecutive rotation gates.
@@ -301,9 +312,6 @@ static void
 populateMergeRotationGatesPatterns(mlir::RewritePatternSet& patterns) {
   patterns.add<MergeRotationGatesPattern>(patterns.getContext());
 }
-
-#define GEN_PASS_DEF_MERGEROTATIONGATES
-#include "mlir/Dialect/QCO/Transforms/Passes.h.inc"
 
 /**
  * @brief This pattern attempts to merge consecutive rotation gates by using
