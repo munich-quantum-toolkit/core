@@ -88,34 +88,19 @@ struct MergeRotationGatesPattern final
       return mlir::failure();
     }
     auto user = mlir::dyn_cast<UnitaryOpInterface>(userOP);
+    // QCU operations cannot contain control qubits so we dont need to check for
+    // these
+
+    // Check if consecutive operations are connected and feed into on another
     if (op.getOutputQubit(0) != user.getInputQubit(0)) {
-      // if (op.getAllOutQubits() != unitaryUser.getAllInQubits()) {
       return mlir::failure();
     }
-    // TODO maybe check for size of ctrl qubits - we only merge gates without
-    // control
-    // rewriteAdditiveAngle(op, rewriter, quaternionFolding);
-    auto const type = op->getName().stripDialect().str();
 
     UnitaryOpInterface newUser =
         createOpQuaternionMergedAngle(op, user, rewriter);
 
-    // Prepare erasure of op
-    const auto& opAllInQubits = op.getAllInQubits();
-    const auto& newUserAllInQubits = newUser.getAllInQubits();
-    for (size_t i = 0; i < newUser->getOperands().size(); i++) {
-      const auto& operand = newUser->getOperand(i);
-      const auto found = llvm::find(newUserAllInQubits, operand);
-      if (found == newUserAllInQubits.end()) {
-        continue;
-      }
-      const auto idx = std::distance(newUserAllInQubits.begin(), found);
-      rewriter.modifyOpInPlace(
-          newUser, [&] { newUser->setOperand(i, opAllInQubits[idx]); });
-    }
-
     // Replace user with newUser
-    rewriter.replaceOp(user, newUser);
+    rewriter.replaceOp(user, newUser->getResults());
 
     // Erase op
     rewriter.eraseOp(op);
@@ -166,15 +151,12 @@ struct MergeRotationGatesPattern final
 
     if (type == "rx") {
       return createAxisQuaternion(angle, 'x', loc, rewriter);
-      // return {.w = cos, .x = sin, .y = zero, .z = zero};
     }
     if (type == "ry") {
       return createAxisQuaternion(angle, 'y', loc, rewriter);
-      // return {.w = cos, .x = zero, .y = sin, .z = zero};
     }
     if (type == "rz") {
       return createAxisQuaternion(angle, 'z', loc, rewriter);
-      // return {.w = cos, .x = zero, .y = zero, .z = sin};
     }
     throw std::runtime_error("Unsupported operation type: " + type);
   }
@@ -241,11 +223,6 @@ struct MergeRotationGatesPattern final
   uGateFromQuaternion(Quaternion q, UnitaryOpInterface op,
                       mlir::PatternRewriter& rewriter) {
     auto loc = op->getLoc();
-    auto user = mlir::dyn_cast<UnitaryOpInterface>(*op->getUsers().begin());
-
-    auto userInQubits = user.getInQubits();
-    auto userPosCtrlInQubits = user.getPosCtrlInQubits();
-    auto userNegCtrlInQubits = user.getNegCtrlInQubits();
 
     // convert back to zyz euler angles
     auto floatType = op.getParameter(0).getType();
@@ -280,15 +257,8 @@ struct MergeRotationGatesPattern final
     auto gamma =
         rewriter.create<mlir::arith::AddFOp>(loc, thetaPlus, thetaMinus);
 
-    const llvm::SmallVector<mlir::Value, 3> newParamsVec{
-        alpha.getResult(), beta.getResult(), gamma.getResult()};
-    const mlir::ValueRange newParams(newParamsVec);
-
-    return rewriter.create<UOp>(
-        loc, userInQubits.getType(), userPosCtrlInQubits.getType(),
-        userNegCtrlInQubits.getType(), mlir::DenseF64ArrayAttr{},
-        mlir::DenseBoolArrayAttr{}, newParams, userInQubits,
-        userPosCtrlInQubits, userNegCtrlInQubits);
+    return rewriter.create<UOp>(loc, op.getInputQubit(0), alpha.getResult(),
+                                beta.getResult(), gamma.getResult());
   }
 
   /**
@@ -353,7 +323,6 @@ struct MergeRotationGates final
     if (mlir::failed(mlir::applyPatternsGreedily(op, std::move(patterns)))) {
       signalPassFailure();
     }
-    // TODO implement pass here
   }
 };
 
