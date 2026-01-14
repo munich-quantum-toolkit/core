@@ -82,24 +82,43 @@ struct MergeRotationGatesPattern final
     if (!areUsersUnique(users)) {
       return mlir::failure();
     }
-    auto* user = *users.begin();
+    auto* userOP = *users.begin();
 
-    if (!(quaternionFolding && areQuaternionMergeable(*op, *user))) {
+    if (!areQuaternionMergeable(*op, *userOP)) {
       return mlir::failure();
     }
-    auto unitaryUser = mlir::dyn_cast<UnitaryOpInterface>(user);
-    if (op.getAllOutQubits() != unitaryUser.getAllInQubits()) {
+    auto user = mlir::dyn_cast<UnitaryOpInterface>(userOP);
+    if (op.getOutputQubit(0) != user.getInputQubit(0)) {
+      // if (op.getAllOutQubits() != unitaryUser.getAllInQubits()) {
       return mlir::failure();
     }
-    if (op.getPosCtrlInQubits().size() !=
-            unitaryUser.getPosCtrlInQubits().size() ||
-        op.getNegCtrlInQubits().size() !=
-            unitaryUser.getNegCtrlInQubits().size()) {
-      // We only need to check the sizes, because the order of the
-      // controls was already checked by the previous condition.
-      return mlir::failure();
+    // TODO maybe check for size of ctrl qubits - we only merge gates without
+    // control
+    // rewriteAdditiveAngle(op, rewriter, quaternionFolding);
+    auto const type = op->getName().stripDialect().str();
+
+    UnitaryOpInterface newUser =
+        createOpQuaternionMergedAngle(op, user, rewriter);
+
+    // Prepare erasure of op
+    const auto& opAllInQubits = op.getAllInQubits();
+    const auto& newUserAllInQubits = newUser.getAllInQubits();
+    for (size_t i = 0; i < newUser->getOperands().size(); i++) {
+      const auto& operand = newUser->getOperand(i);
+      const auto found = llvm::find(newUserAllInQubits, operand);
+      if (found == newUserAllInQubits.end()) {
+        continue;
+      }
+      const auto idx = std::distance(newUserAllInQubits.begin(), found);
+      rewriter.modifyOpInPlace(
+          newUser, [&] { newUser->setOperand(i, opAllInQubits[idx]); });
     }
-    rewriteAdditiveAngle(op, rewriter, quaternionFolding);
+
+    // Replace user with newUser
+    rewriter.replaceOp(user, newUser);
+
+    // Erase op
+    rewriter.eraseOp(op);
     return mlir::success();
   }
 
@@ -296,52 +315,6 @@ struct MergeRotationGatesPattern final
     auto newUser = uGateFromQuaternion(qHam, op, rewriter);
 
     return newUser;
-  }
-
-  /**
-   * @brief Merges two consecutive rotation gates into a single gate.
-   *
-   * The function supports gphase, p, rx, ry, rz, rxx, ryy, rzz, and rzx.
-   * The gates are merged by adding their angles.
-   * The merged gate is not removed if the angles add up to zero.
-   *
-   * @param op The first instance of the rotation gate.
-   * @param rewriter The pattern rewriter.
-   */
-  void static rewriteAdditiveAngle(UnitaryOpInterface op,
-                                   mlir::PatternRewriter& rewriter,
-                                   bool quaternionFolding) {
-    auto const type = op->getName().stripDialect().str();
-
-    auto user = mlir::dyn_cast<UnitaryOpInterface>(*op->getUsers().begin());
-
-    UnitaryOpInterface newUser;
-
-    if (quaternionFolding && areQuaternionMergeable(*op, *user)) {
-      newUser = createOpQuaternionMergedAngle(op, user, rewriter);
-    } else {
-      throw std::runtime_error("Unsupported operation type: " + type);
-    }
-
-    // Prepare erasure of op
-    const auto& opAllInQubits = op.getAllInQubits();
-    const auto& newUserAllInQubits = newUser.getAllInQubits();
-    for (size_t i = 0; i < newUser->getOperands().size(); i++) {
-      const auto& operand = newUser->getOperand(i);
-      const auto found = llvm::find(newUserAllInQubits, operand);
-      if (found == newUserAllInQubits.end()) {
-        continue;
-      }
-      const auto idx = std::distance(newUserAllInQubits.begin(), found);
-      rewriter.modifyOpInPlace(
-          newUser, [&] { newUser->setOperand(i, opAllInQubits[idx]); });
-    }
-
-    // Replace user with newUser
-    rewriter.replaceOp(user, newUser);
-
-    // Erase op
-    rewriter.eraseOp(op);
   }
 };
 
