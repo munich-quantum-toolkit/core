@@ -162,7 +162,7 @@ struct MergeRotationGatesPattern final
     }
 
     auto loc = op->getLoc();
-    auto angle = op.getParams()[0];
+    auto angle = op.getParameter(0);
 
     if (type == "rx") {
       return createAxisQuaternion(angle, 'x', loc, rewriter);
@@ -226,13 +226,12 @@ struct MergeRotationGatesPattern final
   static Quaternion quaternionFromUGate(UnitaryOpInterface op,
                                         mlir::PatternRewriter& rewriter) {
     auto loc = op->getLoc();
-    auto params = op.getParams();
 
     // U gate uses ZYZ decomposition:
     // U(alpha, beta, gamma) = Rz(alpha) * Ry(beta) * Rz(gamma)
-    auto qAlpha = createAxisQuaternion(params[0], 'z', loc, rewriter);
-    auto qBeta = createAxisQuaternion(params[1], 'y', loc, rewriter);
-    auto qGamma = createAxisQuaternion(params[2], 'z', loc, rewriter);
+    auto qAlpha = createAxisQuaternion(op.getParameter(0), 'z', loc, rewriter);
+    auto qBeta = createAxisQuaternion(op.getParameter(1), 'y', loc, rewriter);
+    auto qGamma = createAxisQuaternion(op.getParameter(2), 'z', loc, rewriter);
 
     auto temp = hamiltonProduct(qAlpha, qBeta, op, rewriter);
     return hamiltonProduct(temp, qGamma, op, rewriter);
@@ -249,7 +248,7 @@ struct MergeRotationGatesPattern final
     auto userNegCtrlInQubits = user.getNegCtrlInQubits();
 
     // convert back to zyz euler angles
-    auto floatType = op.getParams()[0].getType();
+    auto floatType = op.getParameter(0).getType();
     // constant 1.0
     auto oneAttr = rewriter.getFloatAttr(floatType, 1.0);
     auto one = rewriter.create<mlir::arith::ConstantOp>(loc, oneAttr);
