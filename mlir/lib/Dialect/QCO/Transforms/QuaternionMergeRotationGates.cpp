@@ -96,7 +96,7 @@ struct MergeRotationGatesPattern final
   }
 
   mlir::LogicalResult
-  matchAndRewrite(UnitaryInterface op,
+  matchAndRewrite(UnitaryOpInterface op,
                   mlir::PatternRewriter& rewriter) const override {
     const auto& users = op->getUsers();
     if (users.empty()) {
@@ -111,7 +111,7 @@ struct MergeRotationGatesPattern final
           (quaternionFolding && areQuaternionMergeable(*op, *user)))) {
       return mlir::failure();
     }
-    auto unitaryUser = mlir::dyn_cast<UnitaryInterface>(user);
+    auto unitaryUser = mlir::dyn_cast<UnitaryOpInterface>(user);
     if (op.getAllOutQubits() != unitaryUser.getAllInQubits()) {
       return mlir::failure();
     }
@@ -140,8 +140,8 @@ struct MergeRotationGatesPattern final
    * @return A new rotation gate.
    */
   template <typename OpType>
-  static UnitaryInterface
-  createOpAdditiveAngle(UnitaryInterface op, UnitaryInterface user,
+  static UnitaryOpInterface
+  createOpAdditiveAngle(UnitaryOpInterface op, UnitaryOpInterface user,
                         mlir::PatternRewriter& rewriter) {
     auto loc = user->getLoc();
 
@@ -193,7 +193,7 @@ struct MergeRotationGatesPattern final
     }
   }
 
-  static Quaternion quaternionFromRotation(UnitaryInterface op,
+  static Quaternion quaternionFromRotation(UnitaryOpInterface op,
                                            mlir::PatternRewriter& rewriter) {
     auto const type = op->getName().stripDialect().str();
 
@@ -220,7 +220,7 @@ struct MergeRotationGatesPattern final
   }
 
   static Quaternion hamiltonProduct(Quaternion q1, Quaternion q2,
-                                    UnitaryInterface op,
+                                    UnitaryOpInterface op,
                                     mlir::PatternRewriter& rewriter) {
     auto loc = op->getLoc();
 
@@ -263,7 +263,7 @@ struct MergeRotationGatesPattern final
     return {.w = wRes, .x = xRes, .y = yRes, .z = zRes};
   }
 
-  static Quaternion quaternionFromUGate(UnitaryInterface op,
+  static Quaternion quaternionFromUGate(UnitaryOpInterface op,
                                         mlir::PatternRewriter& rewriter) {
     auto loc = op->getLoc();
     auto params = op.getParams();
@@ -278,10 +278,11 @@ struct MergeRotationGatesPattern final
     return hamiltonProduct(temp, qGamma, op, rewriter);
   }
 
-  static UnitaryInterface uGateFromQuaternion(Quaternion q, UnitaryInterface op,
-                                              mlir::PatternRewriter& rewriter) {
+  static UnitaryOpInterface
+  uGateFromQuaternion(Quaternion q, UnitaryOpInterface op,
+                      mlir::PatternRewriter& rewriter) {
     auto loc = op->getLoc();
-    auto user = mlir::dyn_cast<UnitaryInterface>(*op->getUsers().begin());
+    auto user = mlir::dyn_cast<UnitaryOpInterface>(*op->getUsers().begin());
 
     auto userInQubits = user.getInQubits();
     auto userPosCtrlInQubits = user.getPosCtrlInQubits();
@@ -345,8 +346,8 @@ struct MergeRotationGatesPattern final
    * @param rewriter The pattern rewriter.
    * @return A new rotation gate.
    */
-  static UnitaryInterface
-  createOpQuaternionMergedAngle(UnitaryInterface op, UnitaryInterface user,
+  static UnitaryOpInterface
+  createOpQuaternionMergedAngle(UnitaryOpInterface op, UnitaryOpInterface user,
                                 mlir::PatternRewriter& rewriter) {
     auto q1 = quaternionFromRotation(op, rewriter);
     auto q2 = quaternionFromRotation(user, rewriter);
@@ -366,14 +367,14 @@ struct MergeRotationGatesPattern final
    * @param op The first instance of the rotation gate.
    * @param rewriter The pattern rewriter.
    */
-  void static rewriteAdditiveAngle(UnitaryInterface op,
+  void static rewriteAdditiveAngle(UnitaryOpInterface op,
                                    mlir::PatternRewriter& rewriter,
                                    bool quaternionFolding) {
     auto const type = op->getName().stripDialect().str();
 
-    auto user = mlir::dyn_cast<UnitaryInterface>(*op->getUsers().begin());
+    auto user = mlir::dyn_cast<UnitaryOpInterface>(*op->getUsers().begin());
 
-    UnitaryInterface newUser;
+    UnitaryOpInterface newUser;
 
     if (quaternionFolding && areQuaternionMergeable(*op, *user)) {
       newUser = createOpQuaternionMergedAngle(op, user, rewriter);
