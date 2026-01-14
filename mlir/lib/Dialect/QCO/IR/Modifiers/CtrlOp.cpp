@@ -10,7 +10,9 @@
 
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 
+#include <cassert>
 #include <cstddef>
+#include <cstdint>
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/STLFunctionalExtras.h>
 #include <llvm/ADT/SmallVector.h>
@@ -24,6 +26,7 @@
 #include <mlir/IR/PatternMatch.h>
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/LogicalResult.h>
+#include <optional>
 
 using namespace mlir;
 using namespace mlir::qco;

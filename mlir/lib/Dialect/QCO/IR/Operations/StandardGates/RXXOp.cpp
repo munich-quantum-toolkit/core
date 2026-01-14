@@ -13,6 +13,8 @@
 #include "mlir/Dialect/Utils/Utils.h"
 
 #include <Eigen/Core>
+#include <cmath>
+#include <complex>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OperationSupport.h>

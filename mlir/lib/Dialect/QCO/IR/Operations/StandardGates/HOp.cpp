@@ -16,6 +16,7 @@
 #include <mlir/IR/OperationSupport.h>
 #include <mlir/IR/PatternMatch.h>
 #include <mlir/Support/LogicalResult.h>
+#include <numbers>
 
 using namespace mlir;
 using namespace mlir::qco;

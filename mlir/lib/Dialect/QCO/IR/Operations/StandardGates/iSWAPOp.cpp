@@ -11,6 +11,7 @@
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 
 #include <Eigen/Core>
+#include <complex>
 
 using namespace mlir;
 using namespace mlir::qco;

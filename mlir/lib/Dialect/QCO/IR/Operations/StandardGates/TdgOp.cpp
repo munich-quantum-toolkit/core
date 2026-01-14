@@ -11,10 +11,12 @@
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QCO/QCOUtils.h"
 
+#include <complex>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OperationSupport.h>
 #include <mlir/IR/PatternMatch.h>
 #include <mlir/Support/LogicalResult.h>
+#include <numbers>
 
 using namespace mlir;
 using namespace mlir::qco;
@@ -54,8 +56,6 @@ void TdgOp::getCanonicalizationPatterns(RewritePatternSet& results,
 }
 
 Eigen::Matrix2cd TdgOp::getUnitaryMatrix() {
-  const std::complex<double> m00 = 1.0;
-  const std::complex<double> m01 = 0.0;
   const auto m11 = std::polar(1.0, -std::numbers::pi / 4.0);
-  return Eigen::Matrix2cd{{m00, m01}, {m01, m11}};
+  return Eigen::Matrix2cd{{1.0, 0.0}, {0.0, m11}};
 }
