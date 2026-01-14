@@ -120,7 +120,6 @@ if(BUILD_MQT_CORE_BINDINGS)
       mqt-core-circuit-optimizer
       mqt-core-dd
       mqt-core-zx
-      mqt-core-ds
       mqt-core-na
       mqt-core-ir-bindings
       mqt-core-dd-bindings

@@ -37,6 +37,8 @@ releases may include breaking changes.
 - 💥 Remove the entire MQT Core QIR stack, including its runtime, JIT,
   standalone runner, DDSIM integration, build integration, tests, and
   documentation. ([#2314]) ([**@denialhaag**])
+- 🔥 Remove `datastructures` (`ds`) (sub)library from MQT Core ([#1458])
+  ([**@burgholzer**])
 
 ### Fixed
 
@@ -826,6 +828,7 @@ for previous changelogs._
 [#1528]: https://github.com/munich-quantum-toolkit/core/pull/1528
 [#1507]: https://github.com/munich-quantum-toolkit/core/pull/1507
 [#1481]: https://github.com/munich-quantum-toolkit/core/pull/1481
+[#1458]: https://github.com/munich-quantum-toolkit/core/pull/1458
 [#1453]: https://github.com/munich-quantum-toolkit/core/pull/1453
 [#1447]: https://github.com/munich-quantum-toolkit/core/pull/1447
 [#1444]: https://github.com/munich-quantum-toolkit/core/pull/1444

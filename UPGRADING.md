@@ -22,6 +22,13 @@ configurations.
 The bundled DDSIM QDMI device no longer accepts QIR Base or Adaptive Profile
 programs in string or module form. Use QASM2 or QASM3 with this device.
 
+### Removal of the `datastructures` (sub)library
+
+MQT Core no longer provides the `datastructures` (`ds`) sublibrary. [MQT QMAP]
+3.8.0 and newer provide the moved code under `datastructures/` through the
+`MQT::QMapDS` CMake target. Downstream users must depend on MQT QMAP or provide
+the required data structures directly.
+
 ### Python 3.11 and split-mode wheels
 
 MQT Core now requires Python 3.11 or newer. Upgrade the Python environment
