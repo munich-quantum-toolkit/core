@@ -27,38 +27,16 @@ struct Quaternion {
   mlir::Value z;
 };
 
-static const std::unordered_set<std::string> MERGEABLE_GATES = {
-    "gphase", "p", "rx", "ry", "rz", "rxx", "ryy", "rzz", "rzx"};
-
-static const std::unordered_set<std::string> QUATERNION_GATES = {"u", "rx",
-                                                                 "ry", "rz"};
+static const std::unordered_set<std::string> MERGEABLE_GATES = {"u", "rx", "ry",
+                                                                "rz"};
 
 /**
  * @brief This pattern attempts to merge consecutive rotation gates.
  */
 struct MergeRotationGatesPattern final
     : mlir::OpInterfaceRewritePattern<UnitaryOpInterface> {
-  explicit MergeRotationGatesPattern(mlir::MLIRContext* context,
-                                     bool quaternionFolding)
-      : OpInterfaceRewritePattern(context),
-        quaternionFolding(quaternionFolding) {}
-
-  const bool quaternionFolding = false;
-
-  /**
-   * @brief Checks if two gates can be merged.
-   *
-   * @param a The first gate.
-   * @param b The second gate.
-   * @return True if the gates can be merged, false otherwise.
-   */
-  [[nodiscard]] static bool areGatesMergeable(mlir::Operation& a,
-                                              mlir::Operation& b) {
-    const auto aName = a.getName().stripDialect().str();
-    const auto bName = b.getName().stripDialect().str();
-
-    return ((aName == bName) && (MERGEABLE_GATES.count(aName) == 1));
-  }
+  explicit MergeRotationGatesPattern(mlir::MLIRContext* context)
+      : OpInterfaceRewritePattern(context) {}
 
   /**
    * @brief Checks if two gates can and should be merged with quaternions.
@@ -76,8 +54,7 @@ struct MergeRotationGatesPattern final
     const auto aName = a.getName().stripDialect().str();
     const auto bName = b.getName().stripDialect().str();
 
-    if (!(QUATERNION_GATES.contains(aName) &&
-          QUATERNION_GATES.contains(bName))) {
+    if (!(MERGEABLE_GATES.contains(aName) && MERGEABLE_GATES.contains(bName))) {
       return false;
     }
     return (aName != bName) || (aName == "u" && bName == "u");
@@ -107,8 +84,7 @@ struct MergeRotationGatesPattern final
     }
     auto* user = *users.begin();
 
-    if (!(areGatesMergeable(*op, *user) ||
-          (quaternionFolding && areQuaternionMergeable(*op, *user)))) {
+    if (!(quaternionFolding && areQuaternionMergeable(*op, *user))) {
       return mlir::failure();
     }
     auto unitaryUser = mlir::dyn_cast<UnitaryOpInterface>(user);
@@ -125,41 +101,6 @@ struct MergeRotationGatesPattern final
     }
     rewriteAdditiveAngle(op, rewriter, quaternionFolding);
     return mlir::success();
-  }
-
-  /**
-   * @brief Creates a new rotation gate.
-   *
-   * The new rotation gate is created by adding the angles of two compatible
-   * rotation gates.
-   *
-   * @tparam OpType The type of the operation to create.
-   * @param op The first instance of the rotation gate.
-   * @param user The second instance of the rotation gate.
-   * @param rewriter The pattern rewriter.
-   * @return A new rotation gate.
-   */
-  template <typename OpType>
-  static UnitaryOpInterface
-  createOpAdditiveAngle(UnitaryOpInterface op, UnitaryOpInterface user,
-                        mlir::PatternRewriter& rewriter) {
-    auto loc = user->getLoc();
-
-    auto userInQubits = user.getInQubits();
-    auto userPosCtrlInQubits = user.getPosCtrlInQubits();
-    auto userNegCtrlInQubits = user.getNegCtrlInQubits();
-
-    auto opParam = op.getParams()[0];
-    auto userParam = user.getParams()[0];
-    auto add = rewriter.create<mlir::arith::AddFOp>(loc, opParam, userParam);
-    const llvm::SmallVector<mlir::Value, 1> newParamsVec{add.getResult()};
-    const mlir::ValueRange newParams(newParamsVec);
-
-    return rewriter.create<OpType>(
-        loc, userInQubits.getType(), userPosCtrlInQubits.getType(),
-        userNegCtrlInQubits.getType(), mlir::DenseF64ArrayAttr{},
-        mlir::DenseBoolArrayAttr{}, newParams, userInQubits,
-        userPosCtrlInQubits, userNegCtrlInQubits);
   }
 
   static Quaternion createAxisQuaternion(mlir::Value angle, char axis,
@@ -378,24 +319,6 @@ struct MergeRotationGatesPattern final
 
     if (quaternionFolding && areQuaternionMergeable(*op, *user)) {
       newUser = createOpQuaternionMergedAngle(op, user, rewriter);
-    } else if (type == "gphase") {
-      newUser = createOpAdditiveAngle<GPhaseOp>(op, user, rewriter);
-    } else if (type == "p") {
-      newUser = createOpAdditiveAngle<POp>(op, user, rewriter);
-    } else if (type == "rx") {
-      newUser = createOpAdditiveAngle<RXOp>(op, user, rewriter);
-    } else if (type == "ry") {
-      newUser = createOpAdditiveAngle<RYOp>(op, user, rewriter);
-    } else if (type == "rz") {
-      newUser = createOpAdditiveAngle<RZOp>(op, user, rewriter);
-    } else if (type == "rxx") {
-      newUser = createOpAdditiveAngle<RXXOp>(op, user, rewriter);
-    } else if (type == "ryy") {
-      newUser = createOpAdditiveAngle<RYYOp>(op, user, rewriter);
-    } else if (type == "rzz") {
-      newUser = createOpAdditiveAngle<RZZOp>(op, user, rewriter);
-    } else if (type == "rzx") {
-      newUser = createOpAdditiveAngle<RZXOp>(op, user, rewriter);
     } else {
       throw std::runtime_error("Unsupported operation type: " + type);
     }
@@ -427,10 +350,9 @@ struct MergeRotationGatesPattern final
  *
  * @param patterns The pattern set to populate.
  */
-void populateMergeRotationGatesPatterns(mlir::RewritePatternSet& patterns,
-                                        bool quaternionFolding) {
-  patterns.add<MergeRotationGatesPattern>(patterns.getContext(),
-                                          quaternionFolding);
+static void
+populateMergeRotationGatesPatterns(mlir::RewritePatternSet& patterns) {
+  patterns.add<MergeRotationGatesPattern>(patterns.getContext());
 }
 
 #define GEN_PASS_DEF_MERGEROTATIONGATES
@@ -447,7 +369,18 @@ struct MergeRotationGates final
 
   // TODO add flag for pass
   void runOnOperation() override {
-    std::cout << "Hello from MergeRotationGates" << std::endl;
+    // Get the current operation being operated on.
+    auto op = getOperation();
+    auto* ctx = &getContext();
+
+    // Define the set of patterns to use.
+    mlir::RewritePatternSet patterns(ctx);
+    populateMergeRotationGatesPatterns(patterns);
+
+    // Apply patterns in an iterative and greedy manner.
+    if (mlir::failed(mlir::applyPatternsGreedily(op, std::move(patterns)))) {
+      signalPassFailure();
+    }
     // TODO implement pass here
   }
 };
