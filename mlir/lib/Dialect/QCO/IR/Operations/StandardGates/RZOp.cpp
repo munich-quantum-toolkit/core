@@ -54,7 +54,7 @@ struct RemoveTrivialRZ final : OpRewritePattern<RZOp> {
 
 void RZOp::build(OpBuilder& builder, OperationState& state, Value qubitIn,
                  const std::variant<double, Value>& theta) {
-  auto thetaOperand = variantToValue(builder, state, theta);
+  auto thetaOperand = variantToValue(builder, state.location, theta);
   build(builder, state, qubitIn, thetaOperand);
 }
 

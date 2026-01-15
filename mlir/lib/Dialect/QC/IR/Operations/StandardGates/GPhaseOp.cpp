@@ -21,6 +21,6 @@ using namespace mlir::utils;
 
 void GPhaseOp::build(OpBuilder& builder, OperationState& state,
                      const std::variant<double, Value>& theta) {
-  auto thetaOperand = variantToValue(builder, state, theta);
+  auto thetaOperand = variantToValue(builder, state.location, theta);
   build(builder, state, thetaOperand);
 }

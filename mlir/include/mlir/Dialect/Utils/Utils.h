@@ -12,7 +12,7 @@
 
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/IR/Builders.h>
-#include <mlir/IR/OperationSupport.h>
+#include <mlir/IR/Location.h>
 #include <mlir/IR/Value.h>
 #include <variant>
 
@@ -20,25 +20,36 @@ namespace mlir::utils {
 
 constexpr auto TOLERANCE = 1e-15;
 
+inline Value constantFromScalar(OpBuilder& builder, const Location& loc,
+                                double v) {
+  return builder.create<arith::ConstantOp>(loc, builder.getF64FloatAttr(v));
+}
+
+inline Value constantFromScalar(OpBuilder& builder, const Location& loc,
+                                int64_t v) {
+  return builder.create<arith::ConstantOp>(loc, builder.getI64IntegerAttr(v));
+}
+
+inline Value constantFromScalar(OpBuilder& builder, const Location& loc,
+                                bool v) {
+  return builder.create<arith::ConstantOp>(loc, builder.getBoolAttr(v));
+}
+
 /**
- * @brief Convert a variant parameter (double or Value) to a Value
+ * @brief Convert a variant parameter (T or Value) to a Value
  *
  * @param builder The operation builder.
- * @param state The operation state.
- * @param parameter The parameter as a variant (double or Value).
+ * @param state The location of the operation.
+ * @param parameter The parameter as a variant (T or Value).
  * @return Value The parameter as a Value.
  */
-[[nodiscard]] inline Value
-variantToValue(OpBuilder& builder, const OperationState& state,
-               const std::variant<double, Value>& parameter) {
-  Value operand;
-  if (std::holds_alternative<double>(parameter)) {
-    operand = builder.create<arith::ConstantOp>(
-        state.location, builder.getF64FloatAttr(std::get<double>(parameter)));
-  } else {
-    operand = std::get<Value>(parameter);
+template <typename T>
+[[nodiscard]] Value variantToValue(OpBuilder& builder, const Location& loc,
+                                   const std::variant<T, Value>& parameter) {
+  if (std::holds_alternative<Value>(parameter)) {
+    return std::get<Value>(parameter);
   }
-  return operand;
+  return constantFromScalar(builder, loc, std::get<T>(parameter));
 }
 
 /**
