@@ -20,18 +20,15 @@ namespace mlir::utils {
 
 constexpr auto TOLERANCE = 1e-15;
 
-inline Value constantFromScalar(OpBuilder& builder, const Location& loc,
-                                double v) {
+inline Value constantFromScalar(OpBuilder& builder, Location loc, double v) {
   return builder.create<arith::ConstantOp>(loc, builder.getF64FloatAttr(v));
 }
 
-inline Value constantFromScalar(OpBuilder& builder, const Location& loc,
-                                int64_t v) {
+inline Value constantFromScalar(OpBuilder& builder, Location loc, int64_t v) {
   return builder.create<arith::ConstantOp>(loc, builder.getIndexAttr(v));
 }
 
-inline Value constantFromScalar(OpBuilder& builder, const Location& loc,
-                                bool v) {
+inline Value constantFromScalar(OpBuilder& builder, Location loc, bool v) {
   return builder.create<arith::ConstantOp>(loc, builder.getBoolAttr(v));
 }
 
@@ -44,7 +41,7 @@ inline Value constantFromScalar(OpBuilder& builder, const Location& loc,
  * @return Value The parameter as a Value.
  */
 template <typename T>
-[[nodiscard]] Value variantToValue(OpBuilder& builder, const Location& loc,
+[[nodiscard]] Value variantToValue(OpBuilder& builder, Location loc,
                                    const std::variant<T, Value>& parameter) {
   if (std::holds_alternative<Value>(parameter)) {
     return std::get<Value>(parameter);
