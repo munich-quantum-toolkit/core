@@ -36,10 +36,10 @@ inline Value constantFromScalar(OpBuilder& builder, const Location& loc,
 }
 
 /**
- * @brief Convert a variant parameter (T or Value) to a Value
+ * @brief Convert a variant parameter (T or Value) to a Value.
  *
  * @param builder The operation builder.
- * @param state The location of the operation.
+ * @param loc The location of the operation.
  * @param parameter The parameter as a variant (T or Value).
  * @return Value The parameter as a Value.
  */
