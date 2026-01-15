@@ -76,53 +76,6 @@ struct MergeRotationGatesPattern final
     return (aName != bName) || (aName == "u" && bName == "u");
   }
 
-  /**
-   * @brief Checks if all users of an operation are the same.
-   *
-   * @param users The users to check.
-   * @return True if all users are the same, false otherwise.
-   */
-  [[nodiscard]] static bool
-  areUsersUnique(const mlir::ResultRange::user_range& users) {
-    return llvm::none_of(users,
-                         [&](auto* user) { return user != *users.begin(); });
-  }
-
-  mlir::LogicalResult
-  matchAndRewrite(UnitaryOpInterface op,
-                  mlir::PatternRewriter& rewriter) const override {
-    const auto& users = op->getUsers();
-    if (users.empty()) {
-      return mlir::failure();
-    }
-    if (!areUsersUnique(users)) {
-      return mlir::failure();
-    }
-    auto* userOP = *users.begin();
-
-    if (!areQuaternionMergeable(*op, *userOP)) {
-      return mlir::failure();
-    }
-    auto user = mlir::dyn_cast<UnitaryOpInterface>(userOP);
-    // QCU operations cannot contain control qubits so we dont need to check for
-    // these
-
-    // Check if consecutive operations are connected and feed into on another
-    if (op.getOutputQubit(0) != user.getInputQubit(0)) {
-      return mlir::failure();
-    }
-
-    UnitaryOpInterface newUser =
-        createOpQuaternionMergedAngle(op, user, rewriter);
-
-    // Replace user with newUser
-    rewriter.replaceOp(user, newUser->getResults());
-
-    // Erase op
-    rewriter.eraseOp(op);
-    return mlir::success();
-  }
-
   static Quaternion createAxisQuaternion(mlir::Value angle, char axis,
                                          mlir::Location loc,
                                          mlir::PatternRewriter& rewriter) {
@@ -300,6 +253,35 @@ struct MergeRotationGatesPattern final
     auto newUser = uGateFromQuaternion(qHam, op, rewriter);
 
     return newUser;
+  }
+
+  mlir::LogicalResult
+  matchAndRewrite(UnitaryOpInterface op,
+                  mlir::PatternRewriter& rewriter) const override {
+    // QCO operations cannot contain control qubits so we dont need to check for
+    // these
+    if (!op->hasOneUse()) {
+      return mlir::failure();
+    }
+
+    const auto& users = op->getUsers();
+    auto* userOP = *users.begin();
+
+    if (!areQuaternionMergeable(*op, *userOP)) {
+      return mlir::failure();
+    }
+    auto user = mlir::dyn_cast<UnitaryOpInterface>(userOP);
+
+    // TODO: merge createOpQuaternionMergedAngle into here?
+    UnitaryOpInterface newUser =
+        createOpQuaternionMergedAngle(op, user, rewriter);
+
+    // Replace user with newUser
+    rewriter.replaceOp(user, newUser->getResults());
+
+    // Erase op
+    rewriter.eraseOp(op);
+    return mlir::success();
   }
 };
 
