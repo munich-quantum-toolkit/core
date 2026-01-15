@@ -24,6 +24,12 @@ Known limitations:
 - AppleClang 17+ is required to build MQT Core with MLIR enabled due to some C++20 features being used that are not yet properly supported by older versions.
 - Our pre-built distributions are compiled in Release mode. On Windows, this leads to ABI incompatibilities with debug builds. Either build in Release mode or build LLVM from source in Debug mode to resolve this.
 
+### Removal of the `datastructures` (sub)library
+
+The `datastructures` (sub)library has been removed from the MQT Core repository.
+Its functionality has only ever been used in [MQT QMAP] since its inception.
+As a consequence, the code shall be moved to [MQT QMAP] once QMAP adopts an MQT Core version that includes this change.
+
 ## [3.4.0]
 
 ### Python wheels

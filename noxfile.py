@@ -249,16 +249,20 @@ def stubs(session: nox.Session) -> None:
 
     pyi_files = list(package_root.glob("**/*.pyi"))
 
+    if not pyi_files:
+        session.warn("No .pyi files found")
+        return
+
     if shutil.which("prek") is None:
         session.install("prek")
 
-    # Allow both 0 (no issues) and 1 as success codes for fixing up stubs.
+    # Allow both 0 (no issues) and 1 as success codes for fixing up stubs
     success_codes = [0, 1]
     session.run("prek", "run", "license-tools", "--files", *pyi_files, external=True, success_codes=success_codes)
     session.run("prek", "run", "ruff-check", "--files", *pyi_files, external=True, success_codes=success_codes)
     session.run("prek", "run", "ruff-format", "--files", *pyi_files, external=True, success_codes=success_codes)
 
-    # Finally, run ruff-check again to ensure everything is clean.
+    # Run ruff-check again to ensure everything is clean
     session.run("prek", "run", "ruff-check", "--files", *pyi_files, external=True)
 
 

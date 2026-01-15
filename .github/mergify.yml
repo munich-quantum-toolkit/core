@@ -1,0 +1,36 @@
+pull_request_rules:
+  - name: Backport changes to v3.x
+    conditions:
+      - label = backport-potential
+    actions:
+      backport:
+        body: |
+          {{ body }}
+
+          {% for c in commits %}
+          (cherry picked from commit {{ c.sha }})
+          {% endfor %}
+        merge_conflict_style: diff3
+        branches:
+          - v3.x
+
+  - name: Automatically merge backport PRs
+    conditions:
+      - author = mergify[bot]
+      - head ~= ^mergify/bp/
+      - base ~= ^v3\.x
+      - check-success = 🚦 Check
+    actions:
+      label:
+        add:
+          - backport
+      merge:
+        method: squash
+
+  - name: Warn on conflicts
+    conditions:
+      - conflict
+    actions:
+      label:
+        toggle:
+          - conflict
