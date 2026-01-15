@@ -27,7 +27,7 @@ inline Value constantFromScalar(OpBuilder& builder, const Location& loc,
 
 inline Value constantFromScalar(OpBuilder& builder, const Location& loc,
                                 int64_t v) {
-  return builder.create<arith::ConstantOp>(loc, builder.getI64IntegerAttr(v));
+  return builder.create<arith::ConstantOp>(loc, builder.getIndexAttr(v));
 }
 
 inline Value constantFromScalar(OpBuilder& builder, const Location& loc,
