@@ -368,7 +368,11 @@ void CtrlOp::getCanonicalizationPatterns(RewritePatternSet& results,
 }
 
 std::optional<Eigen::MatrixXcd> CtrlOp::getUnitaryMatrix() {
-  auto&& targetMatrix = getBodyUnitary().getUnitaryMatrix<Eigen::MatrixXcd>();
+  auto&& bodyUnitary = getBodyUnitary();
+  if (!bodyUnitary) {
+    return std::nullopt;
+  }
+  auto&& targetMatrix = bodyUnitary.getUnitaryMatrix<Eigen::MatrixXcd>();
   if (!targetMatrix) {
     return std::nullopt;
   }
