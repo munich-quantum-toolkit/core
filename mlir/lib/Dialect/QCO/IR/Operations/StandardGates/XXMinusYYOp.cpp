@@ -21,6 +21,7 @@
 #include <mlir/IR/OperationSupport.h>
 #include <mlir/IR/PatternMatch.h>
 #include <mlir/Support/LogicalResult.h>
+#include <numbers>
 #include <optional>
 #include <variant>
 
@@ -98,7 +99,7 @@ std::optional<Eigen::Matrix4cd> XXMinusYYOp::getUnitaryMatrix() {
       const auto mc = std::cos(*theta / 2.0) + 0i;
       const auto s = std::sin(*theta / 2.0);
       const auto msp = std::polar(s, -*beta);
-      const auto msm = std::polar(-s, *beta);
+      const auto msm = std::polar(s, *beta + std::numbers::pi);
       return Eigen::Matrix4cd{{mc, m0, m0, msm},  // row 0
                               {m0, m1, m0, m0},   // row 1
                               {m0, m0, m1, m0},   // row 2
