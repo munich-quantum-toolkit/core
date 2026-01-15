@@ -322,7 +322,6 @@ struct MergeRotationGates final
   using impl::MergeRotationGatesBase<
       MergeRotationGates>::MergeRotationGatesBase;
 
-  // TODO add flag for pass
   void runOnOperation() override {
     // Get the current operation being operated on.
     auto op = getOperation();
