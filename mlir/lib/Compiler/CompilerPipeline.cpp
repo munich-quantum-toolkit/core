@@ -162,12 +162,16 @@ QuantumCompilerPipeline::runPipeline(ModuleOp module,
 
   // Stage 5: Optimization passes
   // TODO: Add optimization passes
-  pm.addPass(mlir::qco::createMergeRotationGates());
 
-  addCleanupPasses(pm);
-  if (failed(pm.run(module))) {
-    return failure();
+  // quaternion gate merging pass
+  if (config_.mergeRotationGates) {
+    pm.addPass(mlir::qco::createMergeRotationGates());
+    if (failed(pm.run(module))) {
+      return failure();
+    }
+    pm.clear();
   }
+
   if (record != nullptr && config_.recordIntermediates) {
     record->afterOptimization = captureIR(module);
     if (config_.printIRAfterAllStages) {
@@ -175,7 +179,6 @@ QuantumCompilerPipeline::runPipeline(ModuleOp module,
                        totalStages);
     }
   }
-  pm.clear();
 
   // Stage 6: QCO canonicalization
   addCleanupPasses(pm);
