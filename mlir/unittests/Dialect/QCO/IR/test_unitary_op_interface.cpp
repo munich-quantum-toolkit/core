@@ -184,29 +184,29 @@ TEST_F(QcoUnitaryOpInterfaceTest, combine4x4UnitaryMatrices) {
   // use Qiskit to build same circuit (`qc`) and get unitary using
   // `qiskit.quantum_info.Operator(qc).data`:
   // qc = QuantumCircuit(2, 0)
-  // qc.rxx(1.1, 0, 1);
-  // qc.ryy(1.2, 0, 1);
-  // qc.swap(0, 1);
-  // qc.rzz(1.3, 0, 1);
-  // qc.rzx(1.4, 0, 1);
-  // qc.iswap(0, 1);
-  // qc.ecr(0, 1);
-  // qc.dcx(0, 1);
-  // qc.append(XXMinusYYGate(2.0, 2.1), [0, 1]);
-  // qc.append(XXPlusYYGate(2.2, 2.3), [0, 1]);
-  // qc.cx(0, 1);
-  // qc.crz(0.2, 0, 1);
+  // qc.rxx(1.1, 0, 1)
+  // qc.ryy(1.2, 0, 1)
+  // qc.swap(0, 1)
+  // qc.rzz(1.3, 0, 1)
+  // qc.rzx(1.4, 1, 0)
+  // qc.iswap(0, 1)
+  // qc.ecr(1, 0)
+  // qc.dcx(1, 0)
+  // qc.append(XXMinusYYGate(2.0, 2.1), [0, 1])
+  // qc.append(XXPlusYYGate(2.2, 2.3), [0, 1])
+  // qc.cx(1, 0)
+  // qc.ch(1, 0)
   // print(Operator(qc).data)
 
   const auto expectedValue =
-      Eigen::Matrix4cd{{-0.19081581 - 0.2947213i, -0.37097846 + 0.25410653i,
-                        0.20121632 - 0.46723087i, 0.01790367 + 0.64453107i},
-                       {0.52886313 + 0.11168466i, -0.38256759 + 0.30793566i,
-                        -0.06979467 + 0.54125643i, 0.30827692 + 0.2716312i},
-                       {0.22651995 - 0.64212905i, 0.23878723 + 0.02364174i,
-                        -0.62742798 + 0.05455965i, -0.24786847 + 0.14387256i},
-                       {-0.26601581 + 0.22394997i, 0.08948183 + 0.7007405i,
-                        -0.02323066 + 0.21493068i, -0.57690346 - 0.02202962i}};
+      Eigen::Matrix4cd{{-0.19081581 - 0.2947213i, 0.20121632 - 0.46723087i,
+                        -0.37097846 + 0.25410653i, 0.01790367 + 0.64453107i},
+                       {0.67932253 - 0.04649638i, -0.11526485 - 0.61915801i,
+                        -0.0866555 - 0.22376126i, 0.20493411 - 0.20034995i},
+                       {0.57996486 - 0.00202388i, -0.23429021 + 0.41790602i,
+                        0.20814033 + 0.16778316i, 0.06442165 + 0.5987283i},
+                       {0.14845576 + 0.23384873i, 0.05966105 + 0.33386807i,
+                        -0.78994584 + 0.21151491i, 0.33101926 - 0.17297858i}};
   auto moduleOp = buildQCOIR([](qco::QCOProgramBuilder& builder) {
     auto reg = builder.allocQubitRegister(2, "q");
 
@@ -221,9 +221,11 @@ TEST_F(QcoUnitaryOpInterfaceTest, combine4x4UnitaryMatrices) {
     std::tie(reg[0], reg[1]) = builder.xx_minus_yy(2.0, 2.1, reg[0], reg[1]);
     std::tie(reg[0], reg[1]) = builder.xx_plus_yy(2.2, 2.3, reg[0], reg[1]);
 
-    // implicit conversion of dynamic matrix to fixed-size matrix, if size matches
-    std::tie(reg[0], reg[1]) = builder.cx(reg[0], reg[1]);
-    std::tie(reg[0], reg[1]) = builder.crz(0.2, reg[0], reg[1]);
+    // implicit conversion of dynamic matrix to fixed-size matrix,
+    // if size matches; note: Qiskit respects qubit order, but QCO does not have
+    // concept of an "order" between qubits
+    std::tie(reg[0], reg[1]) = builder.cx(reg[1], reg[0]);
+    std::tie(reg[0], reg[1]) = builder.ch(reg[1], reg[0]);
   });
 
   auto&& moduleOps = moduleOp->getBody()->getOperations();
@@ -241,7 +243,10 @@ TEST_F(QcoUnitaryOpInterfaceTest, combine4x4UnitaryMatrices) {
   }
 
   EXPECT_TRUE(combinedMatrix.isApprox(expectedValue, 1e-8))
-      << "Combination of matrices does not match expected matrix";
+      << "Combination of matrices does not match expected matrix\nCombined:\n"
+      << combinedMatrix << "\nExpected:\n"
+      << expectedValue << "\nDifference:\n"
+      << combinedMatrix - expectedValue;
 }
 
 TEST_F(QcoUnitaryOpInterfaceTest, getDynamicUnitaryMatrix) {
