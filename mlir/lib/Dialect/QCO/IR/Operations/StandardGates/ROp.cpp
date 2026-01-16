@@ -87,8 +87,8 @@ void ROp::getCanonicalizationPatterns(RewritePatternSet& results,
 }
 
 std::optional<Eigen::Matrix2cd> ROp::getUnitaryMatrix() {
-  if (auto theta = utils::valueToDouble(getTheta())) {
-    if (auto phi = utils::valueToDouble(getPhi())) {
+  if (auto theta = valueToDouble(getTheta())) {
+    if (auto phi = valueToDouble(getPhi())) {
       const auto thetaSin = std::sin(*theta / 2.0);
       const auto m01 = std::polar(thetaSin, -*phi - (std::numbers::pi / 2));
       const auto m10 = std::polar(thetaSin, *phi - (std::numbers::pi / 2));

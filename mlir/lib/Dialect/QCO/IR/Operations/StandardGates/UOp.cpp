@@ -118,9 +118,9 @@ void UOp::getCanonicalizationPatterns(RewritePatternSet& results,
 std::optional<Eigen::Matrix2cd> UOp::getUnitaryMatrix() {
   using namespace std::complex_literals;
 
-  if (auto theta = utils::valueToDouble(getTheta())) {
-    if (auto phi = utils::valueToDouble(getPhi())) {
-      if (auto lambda = utils::valueToDouble(getLambda())) {
+  if (auto theta = valueToDouble(getTheta())) {
+    if (auto phi = valueToDouble(getPhi())) {
+      if (auto lambda = valueToDouble(getLambda())) {
         const auto c = std::cos(*theta / 2.0);
         const auto s = std::sin(*theta / 2.0);
         const auto m00 = c + 0i;

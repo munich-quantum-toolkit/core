@@ -14,6 +14,7 @@
 
 #include <Eigen/Core>
 #include <cmath>
+#include <complex>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OperationSupport.h>
@@ -67,7 +68,7 @@ void RYOp::getCanonicalizationPatterns(RewritePatternSet& results,
 }
 
 std::optional<Eigen::Matrix2cd> RYOp::getUnitaryMatrix() {
-  if (auto theta = utils::valueToDouble(getTheta())) {
+  if (auto theta = valueToDouble(getTheta())) {
     const auto m00 = std::complex<double>{std::cos(*theta / 2.0)};
     const auto m01 = std::complex<double>{-std::sin(*theta / 2.0)};
     return Eigen::Matrix2cd{{m00, m01}, {-m01, m00}};

@@ -61,7 +61,7 @@ void GPhaseOp::getCanonicalizationPatterns(RewritePatternSet& results,
 
 std::optional<Eigen::Matrix<std::complex<double>, 1, 1>>
 GPhaseOp::getUnitaryMatrix() {
-  if (auto theta = utils::valueToDouble(getTheta())) {
+  if (auto theta = valueToDouble(getTheta())) {
     return Eigen::Matrix<std::complex<double>, 1, 1>{std::polar(1.0, *theta)};
   }
   return std::nullopt;
