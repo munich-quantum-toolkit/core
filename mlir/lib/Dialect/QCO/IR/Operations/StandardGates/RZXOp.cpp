@@ -74,10 +74,10 @@ std::optional<Eigen::Matrix4cd> RZXOp::getUnitaryMatrix() {
     const auto m0 = 0i;
     const auto mc = std::complex<double>{std::cos(*theta / 2.0)};
     const auto ms = std::complex<double>{0.0, std::sin(*theta / 2.0)};
-    return Eigen::Matrix4cd{{mc, m0, -ms, m0}, // row 0
-                            {m0, mc, m0, ms}, // row 1
-                            {-ms, m0, mc, m0},  // row 2
-                            {m0, ms, m0, mc}}; // row 3
+    return Eigen::Matrix4cd{{mc, -ms, m0, m0}, // row 0
+                            {-ms, mc, m0, m0}, // row 1
+                            {m0, m0, mc, ms},  // row 2
+                            {m0, m0, ms, mc}}; // row 3
   }
   return std::nullopt;
 }

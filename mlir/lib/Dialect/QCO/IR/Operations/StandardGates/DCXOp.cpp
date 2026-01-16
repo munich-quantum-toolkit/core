@@ -17,7 +17,7 @@ using namespace mlir::qco;
 
 Eigen::Matrix4cd DCXOp::getUnitaryMatrix() {
   return Eigen::Matrix4cd{{1, 0, 0, 0},  // row 0
-                          {0, 0, 0, 1},  // row 1
-                          {0, 1, 0, 0},  // row 2
-                          {0, 0, 1, 0}}; // row 3
+                          {0, 0, 1, 0},  // row 1
+                          {0, 0, 0, 1},  // row 2
+                          {0, 1, 0, 0}}; // row 3
 }
