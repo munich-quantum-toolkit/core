@@ -92,8 +92,8 @@ void XXMinusYYOp::getCanonicalizationPatterns(RewritePatternSet& results,
 std::optional<Eigen::Matrix4cd> XXMinusYYOp::getUnitaryMatrix() {
   using namespace std::complex_literals;
 
-  if (auto theta = utils::valueToDouble(getTheta())) {
-    if (auto beta = utils::valueToDouble(getBeta())) {
+  if (auto theta = valueToDouble(getTheta())) {
+    if (auto beta = valueToDouble(getBeta())) {
       const auto m0 = 0.0 + 0i;
       const auto m1 = 1.0 + 0i;
       const auto mc = std::cos(*theta / 2.0) + 0i;

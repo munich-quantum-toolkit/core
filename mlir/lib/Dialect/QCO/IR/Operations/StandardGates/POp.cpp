@@ -67,7 +67,7 @@ void POp::getCanonicalizationPatterns(RewritePatternSet& results,
 }
 
 std::optional<Eigen::Matrix2cd> POp::getUnitaryMatrix() {
-  if (auto theta = utils::valueToDouble(getTheta())) {
+  if (auto theta = valueToDouble(getTheta())) {
     return Eigen::Matrix2cd{{1.0, 0.0}, {0.0, std::polar(1.0, *theta)}};
   }
   return std::nullopt;

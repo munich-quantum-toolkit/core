@@ -70,7 +70,7 @@ void RZXOp::getCanonicalizationPatterns(RewritePatternSet& results,
 std::optional<Eigen::Matrix4cd> RZXOp::getUnitaryMatrix() {
   using namespace std::complex_literals;
 
-  if (auto theta = utils::valueToDouble(getTheta())) {
+  if (auto theta = valueToDouble(getTheta())) {
     const auto m0 = 0i;
     const auto mc = std::complex<double>{std::cos(*theta / 2.0)};
     const auto ms = std::complex<double>{0.0, std::sin(*theta / 2.0)};

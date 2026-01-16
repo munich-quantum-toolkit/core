@@ -69,7 +69,7 @@ void RZZOp::getCanonicalizationPatterns(RewritePatternSet& results,
 std::optional<Eigen::Matrix4cd> RZZOp::getUnitaryMatrix() {
   using namespace std::complex_literals;
 
-  if (auto theta = utils::valueToDouble(getTheta())) {
+  if (auto theta = valueToDouble(getTheta())) {
     const auto m0 = 0i;
     const auto mp = std::polar(1.0, *theta / 2.0);
     const auto mm = std::polar(1.0, -*theta / 2.0);

@@ -13,6 +13,7 @@
 
 #include <Eigen/Core>
 #include <cmath>
+#include <complex>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OperationSupport.h>
@@ -114,8 +115,8 @@ void U2Op::getCanonicalizationPatterns(RewritePatternSet& results,
 std::optional<Eigen::Matrix2cd> U2Op::getUnitaryMatrix() {
   using namespace std::complex_literals;
 
-  if (auto phi = utils::valueToDouble(getPhi())) {
-    if (auto lambda = utils::valueToDouble(getLambda())) {
+  if (auto phi = valueToDouble(getPhi())) {
+    if (auto lambda = valueToDouble(getLambda())) {
       const auto m00 = 1.0 / std::numbers::sqrt2 + 0i;
       const auto m01 =
           std::polar(1.0 / std::numbers::sqrt2, *lambda + std::numbers::pi);

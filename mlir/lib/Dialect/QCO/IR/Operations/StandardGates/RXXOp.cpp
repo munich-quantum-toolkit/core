@@ -70,7 +70,7 @@ void RXXOp::getCanonicalizationPatterns(RewritePatternSet& results,
 std::optional<Eigen::Matrix4cd> RXXOp::getUnitaryMatrix() {
   using namespace std::complex_literals;
 
-  if (auto theta = utils::valueToDouble(getTheta())) {
+  if (auto theta = valueToDouble(getTheta())) {
     const auto m0 = 0i;
     const auto mc = std::cos(*theta / 2.0) + 0i;
     const auto ms = -1i * std::sin(*theta / 2.0);
