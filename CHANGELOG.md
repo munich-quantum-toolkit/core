@@ -25,6 +25,7 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 
 ### Removed
 
+- 🔥 Remove the density matrix support from the MQT Core DD package ([#1466]) ([**@burgholzer**])
 - 🔥 Remove `datastructures` (`ds`) (sub)library from MQT Core ([#1458]) ([**@burgholzer**])
 - 🔥 No longer actively type check Python code with `mypy` and solely rely on `ty` ([#1437]) ([**@burgholzer**])
 
@@ -314,6 +315,7 @@ _📚 Refer to the [GitHub Release Notes](https://github.com/munich-quantum-tool
 
 <!-- PR links -->
 
+[#1466]: https://github.com/munich-quantum-toolkit/core/pull/1466
 [#1465]: https://github.com/munich-quantum-toolkit/core/pull/1465
 [#1458]: https://github.com/munich-quantum-toolkit/core/pull/1458
 [#1453]: https://github.com/munich-quantum-toolkit/core/pull/1453

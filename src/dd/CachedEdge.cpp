@@ -33,11 +33,12 @@ namespace dd {
 ///-----------------------------------------------------------------------------
 
 template <class Node>
-template <typename T, isVector<T>>
 auto CachedEdge<Node>::normalize(Node* p,
                                  const std::array<CachedEdge, RADIX>& e,
                                  MemoryManager& mm, ComplexNumbers& cn)
-    -> CachedEdge {
+    -> CachedEdge
+  requires IsVector<Node>
+{
   assert(p != nullptr && "Node pointer passed to normalize is null.");
   const auto zero =
       std::array{e[0].w.approximatelyZero(), e[1].w.approximatelyZero()};
@@ -93,11 +94,12 @@ auto CachedEdge<Node>::normalize(Node* p,
 ///-----------------------------------------------------------------------------
 
 template <class Node>
-template <typename T, isMatrixVariant<T>>
 auto CachedEdge<Node>::normalize(Node* p,
                                  const std::array<CachedEdge, NEDGE>& e,
                                  MemoryManager& mm, ComplexNumbers& cn)
-    -> CachedEdge {
+    -> CachedEdge
+  requires IsMatrix<Node>
+{
   assert(p != nullptr && "Node pointer passed to normalize is null.");
   const auto zero =
       std::array{e[0].w.approximatelyZero(), e[1].w.approximatelyZero(),
@@ -157,22 +159,6 @@ auto CachedEdge<Node>::normalize(Node* p,
 
 template struct CachedEdge<vNode>;
 template struct CachedEdge<mNode>;
-template struct CachedEdge<dNode>;
-
-template auto
-CachedEdge<vNode>::normalize(vNode* p, const std::array<CachedEdge, RADIX>& e,
-                             MemoryManager& mm, ComplexNumbers& cn)
-    -> CachedEdge;
-
-template auto
-CachedEdge<mNode>::normalize(mNode* p, const std::array<CachedEdge, NEDGE>& e,
-                             MemoryManager& mm, ComplexNumbers& cn)
-    -> CachedEdge;
-
-template auto
-CachedEdge<dNode>::normalize(dNode* p, const std::array<CachedEdge, NEDGE>& e,
-                             MemoryManager& mm, ComplexNumbers& cn)
-    -> CachedEdge;
 
 } // namespace dd
 
@@ -187,5 +173,4 @@ auto hash<dd::CachedEdge<Node>>::operator()(
 
 template struct hash<dd::CachedEdge<dd::vNode>>;
 template struct hash<dd::CachedEdge<dd::mNode>>;
-template struct hash<dd::CachedEdge<dd::dNode>>;
 } // namespace std

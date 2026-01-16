@@ -28,8 +28,6 @@ static constexpr auto V_NODE_MEMORY_MIB =
     static_cast<double>(sizeof(vNode)) / static_cast<double>(1ULL << 20U);
 static constexpr auto M_NODE_MEMORY_MIB =
     static_cast<double>(sizeof(mNode)) / static_cast<double>(1ULL << 20U);
-static constexpr auto D_NODE_MEMORY_MIB =
-    static_cast<double>(sizeof(dNode)) / static_cast<double>(1ULL << 20U);
 static constexpr auto REAL_NUMBER_MEMORY_MIB =
     static_cast<double>(sizeof(RealNumber)) / static_cast<double>(1ULL << 20U);
 
@@ -37,27 +35,20 @@ static constexpr auto V_EDGE_MEMORY_MIB =
     static_cast<double>(sizeof(Edge<vNode>)) / static_cast<double>(1ULL << 20U);
 static constexpr auto M_EDGE_MEMORY_MIB =
     static_cast<double>(sizeof(Edge<mNode>)) / static_cast<double>(1ULL << 20U);
-static constexpr auto D_EDGE_MEMORY_MIB =
-    static_cast<double>(sizeof(Edge<dNode>)) / static_cast<double>(1ULL << 20U);
 
 double computeActiveMemoryMiB(Package& package) {
-  const auto [vectorNodes, matrixNodes, densityNodes, realNumbers] =
+  const auto [vectorNodes, matrixNodes, realNumbers] =
       package.computeActiveCounts();
   const auto vActiveEntries = static_cast<double>(vectorNodes);
   const auto mActiveEntries = static_cast<double>(matrixNodes);
-  const auto dActiveEntries = static_cast<double>(densityNodes);
 
   const auto vMemoryForNodes = vActiveEntries * V_NODE_MEMORY_MIB;
   const auto mMemoryForNodes = mActiveEntries * M_NODE_MEMORY_MIB;
-  const auto dMemoryForNodes = dActiveEntries * D_NODE_MEMORY_MIB;
-  const auto memoryForNodes =
-      vMemoryForNodes + mMemoryForNodes + dMemoryForNodes;
+  const auto memoryForNodes = vMemoryForNodes + mMemoryForNodes;
 
   const auto vMemoryForEdges = vActiveEntries * V_EDGE_MEMORY_MIB;
   const auto mMemoryForEdges = mActiveEntries * M_EDGE_MEMORY_MIB;
-  const auto dMemoryForEdges = dActiveEntries * D_EDGE_MEMORY_MIB;
-  const auto memoryForEdges =
-      vMemoryForEdges + mMemoryForEdges + dMemoryForEdges;
+  const auto memoryForEdges = vMemoryForEdges + mMemoryForEdges;
 
   const auto activeRealNumbers = static_cast<double>(realNumbers);
   const auto memoryForRealNumbers = activeRealNumbers * REAL_NUMBER_MEMORY_MIB;
@@ -70,20 +61,14 @@ double computePeakMemoryMiB(const Package& package) {
       static_cast<double>(package.vMemoryManager.getStats().peakNumUsed);
   const auto mPeakUsedEntries =
       static_cast<double>(package.mMemoryManager.getStats().peakNumUsed);
-  const auto dPeakUsedEntries =
-      static_cast<double>(package.dMemoryManager.getStats().peakNumUsed);
 
   const auto vMemoryForNodes = vPeakUsedEntries * V_NODE_MEMORY_MIB;
   const auto mMemoryForNodes = mPeakUsedEntries * M_NODE_MEMORY_MIB;
-  const auto dMemoryForNodes = dPeakUsedEntries * D_NODE_MEMORY_MIB;
-  const auto memoryForNodes =
-      vMemoryForNodes + mMemoryForNodes + dMemoryForNodes;
+  const auto memoryForNodes = vMemoryForNodes + mMemoryForNodes;
 
   const auto vMemoryForEdges = vPeakUsedEntries * V_EDGE_MEMORY_MIB;
   const auto mMemoryForEdges = mPeakUsedEntries * M_EDGE_MEMORY_MIB;
-  const auto dMemoryForEdges = dPeakUsedEntries * D_EDGE_MEMORY_MIB;
-  const auto memoryForEdges =
-      vMemoryForEdges + mMemoryForEdges + dMemoryForEdges;
+  const auto memoryForEdges = vMemoryForEdges + mMemoryForEdges;
 
   const auto peakRealNumbers =
       static_cast<double>(package.cMemoryManager.getStats().peakNumUsed);
@@ -98,8 +83,8 @@ nlohmann::basic_json<> getStatistics(Package& package,
 
   j["data_structure"] = getDataStructureStatistics();
 
-  const auto [activeVectorNodes, activeMatrixNodes, activeDensityNodes,
-              activeRealNumbers] = package.computeActiveCounts();
+  const auto [activeVectorNodes, activeMatrixNodes, activeRealNumbers] =
+      package.computeActiveCounts();
 
   auto& vector = j["vector"];
   auto& vectorUniqueTable = vector["unique_table"];
@@ -119,15 +104,6 @@ nlohmann::basic_json<> getStatistics(Package& package,
   }
   matrix["memory_manager"] = package.mMemoryManager.getStats().json();
 
-  auto& densityMatrix = j["density_matrix"];
-  auto& densityUniqueTable = densityMatrix["unique_table"];
-  densityUniqueTable =
-      package.dUniqueTable.getStatsJson(includeIndividualTables);
-  if (densityUniqueTable != "unused") {
-    densityUniqueTable["total"]["num_active_entries"] = activeDensityNodes;
-  }
-  densityMatrix["memory_manager"] = package.dMemoryManager.getStats().json();
-
   auto& realNumbers = j["real_numbers"];
   auto& realNumbersUniqueTable = realNumbers["unique_table"];
   realNumbersUniqueTable = package.cUniqueTable.getStats().json();
@@ -139,23 +115,16 @@ nlohmann::basic_json<> getStatistics(Package& package,
   auto& computeTables = j["compute_tables"];
   computeTables["vector_add"] = package.vectorAdd.getStats().json();
   computeTables["matrix_add"] = package.matrixAdd.getStats().json();
-  computeTables["density_matrix_add"] = package.densityAdd.getStats().json();
   computeTables["matrix_conjugate_transpose"] =
       package.conjugateMatrixTranspose.getStats().json();
   computeTables["matrix_vector_mult"] =
       package.matrixVectorMultiplication.getStats().json();
   computeTables["matrix_matrix_mult"] =
       package.matrixMatrixMultiplication.getStats().json();
-  computeTables["density_density_mult"] =
-      package.densityDensityMultiplication.getStats().json();
   computeTables["vector_kronecker"] = package.vectorKronecker.getStats().json();
   computeTables["matrix_kronecker"] = package.matrixKronecker.getStats().json();
   computeTables["vector_inner_product"] =
       package.vectorInnerProduct.getStats().json();
-  computeTables["stochastic_noise_operations"] =
-      package.stochasticNoiseOperationCache.getStats().json();
-  computeTables["density_noise_operations"] =
-      package.densityNoise.getStats().json();
 
   j["active_memory_mib"] = computeActiveMemoryMiB(package);
   j["peak_memory_mib"] = computePeakMemoryMiB(package);
@@ -180,10 +149,6 @@ nlohmann::basic_json<> getDataStructureStatistics() {
   matrixNode["size_B"] = sizeof(mNode);
   matrixNode["alignment_B"] = alignof(mNode);
 
-  auto& densityNode = j["dNode"];
-  densityNode["size_B"] = sizeof(dNode);
-  densityNode["alignment_B"] = alignof(dNode);
-
   auto& vectorEdge = j["vEdge"];
   vectorEdge["size_B"] = sizeof(Edge<vNode>);
   vectorEdge["alignment_B"] = alignof(Edge<vNode>);
@@ -191,10 +156,6 @@ nlohmann::basic_json<> getDataStructureStatistics() {
   auto& matrixEdge = j["mEdge"];
   matrixEdge["size_B"] = sizeof(Edge<mNode>);
   matrixEdge["alignment_B"] = alignof(Edge<mNode>);
-
-  auto& densityEdge = j["dEdge"];
-  densityEdge["size_B"] = sizeof(Edge<dNode>);
-  densityEdge["alignment_B"] = alignof(Edge<dNode>);
 
   auto& realNumber = j["RealNumber"];
   realNumber["size_B"] = sizeof(RealNumber);
@@ -225,11 +186,6 @@ nlohmann::basic_json<> getDataStructureStatistics() {
   matrixAdd["alignment_B"] =
       alignof(typename decltype(Package::matrixAdd)::Entry);
 
-  auto& densityAdd = ctEntries["density_add"];
-  densityAdd["size_B"] = sizeof(typename decltype(Package::densityAdd)::Entry);
-  densityAdd["alignment_B"] =
-      alignof(typename decltype(Package::densityAdd)::Entry);
-
   auto& conjugateMatrixTranspose = ctEntries["conjugate_matrix_transpose"];
   conjugateMatrixTranspose["size_B"] =
       sizeof(typename decltype(Package::conjugateMatrixTranspose)::Entry);
@@ -247,12 +203,6 @@ nlohmann::basic_json<> getDataStructureStatistics() {
       sizeof(typename decltype(Package::matrixMatrixMultiplication)::Entry);
   matrixMatrixMult["alignment_B"] =
       alignof(typename decltype(Package::matrixMatrixMultiplication)::Entry);
-
-  auto& densityDensityMult = ctEntries["density_density_mult"];
-  densityDensityMult["size_B"] =
-      sizeof(typename decltype(Package::densityDensityMultiplication)::Entry);
-  densityDensityMult["alignment_B"] =
-      alignof(typename decltype(Package::densityDensityMultiplication)::Entry);
 
   auto& vectorKronecker = ctEntries["vector_kronecker"];
   vectorKronecker["size_B"] =
