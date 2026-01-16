@@ -253,12 +253,22 @@ TEST_F(QcoUnitaryOpInterfaceTest, getDynamicUnitaryMatrix) {
   const auto expectedValues = std::array{
       Eigen::MatrixXcd{{1, 0}, {0, 1}},
       Eigen::MatrixXcd{{1, 0, 0, 0}, {0, 0, 1, 0}, {0, 1, 0, 0}, {0, 0, 0, 1}},
-      Eigen::MatrixXcd{{1, 0, 0, 0}, {0, 1, 0, 0}, {0, 0, 0, 1}, {0, 0, 1, 0}}};
+      Eigen::MatrixXcd{{1, 0, 0, 0}, {0, 1, 0, 0}, {0, 0, 0, 1}, {0, 0, 1, 0}},
+      Eigen::MatrixXcd{{1, 0, 0, 0, 0, 0, 0, 0},
+                       {0, 1, 0, 0, 0, 0, 0, 0},
+                       {0, 0, 1, 0, 0, 0, 0, 0},
+                       {0, 0, 0, 1, 0, 0, 0, 0},
+                       {0, 0, 0, 0, 1, 0, 0, 0},
+                       {0, 0, 0, 0, 0, 1, 0, 0},
+                       {0, 0, 0, 0, 0, 0, 0, 1},
+                       {0, 0, 0, 0, 0, 0, 1, 0}},
+  };
   auto moduleOp = buildQCOIR([](qco::QCOProgramBuilder& builder) {
-    auto reg = builder.allocQubitRegister(2, "q");
+    auto reg = builder.allocQubitRegister(3, "q");
     reg[0] = builder.id(reg[0]);
     std::tie(reg[0], reg[1]) = builder.swap(reg[0], reg[1]);
     std::tie(reg[0], reg[1]) = builder.cx(reg[0], reg[1]);
+    std::ignore = builder.mcx(std::array{reg[0], reg[1]}, reg[2]);
   });
 
   auto&& moduleOps = moduleOp->getBody()->getOperations();
