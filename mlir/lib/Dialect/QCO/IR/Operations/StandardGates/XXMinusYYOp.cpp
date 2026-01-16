@@ -98,8 +98,8 @@ std::optional<Eigen::Matrix4cd> XXMinusYYOp::getUnitaryMatrix() {
       const auto m1 = 1.0 + 0i;
       const auto mc = std::cos(*theta / 2.0) + 0i;
       const auto s = std::sin(*theta / 2.0);
-      const auto msp = std::polar(s, -*beta);
-      const auto msm = std::polar(s, *beta + std::numbers::pi);
+      const auto msp = std::polar(s, *beta - (std::numbers::pi / 2.));
+      const auto msm = std::polar(s, -*beta - (std::numbers::pi / 2.));
       return Eigen::Matrix4cd{{mc, m0, m0, msm},  // row 0
                               {m0, m1, m0, m0},   // row 1
                               {m0, m0, m1, m0},   // row 2
