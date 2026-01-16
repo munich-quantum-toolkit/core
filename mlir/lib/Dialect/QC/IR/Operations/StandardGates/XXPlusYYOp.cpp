@@ -23,7 +23,7 @@ void XXPlusYYOp::build(OpBuilder& builder, OperationState& state,
                        Value qubit0In, Value qubit1In,
                        const std::variant<double, Value>& theta,
                        const std::variant<double, Value>& beta) {
-  auto thetaOperand = variantToValue(builder, state, theta);
-  auto betaOperand = variantToValue(builder, state, beta);
+  auto thetaOperand = variantToValue(builder, state.location, theta);
+  auto betaOperand = variantToValue(builder, state.location, beta);
   build(builder, state, qubit0In, qubit1In, thetaOperand, betaOperand);
 }

@@ -54,7 +54,7 @@ struct RemoveTrivialRY final : OpRewritePattern<RYOp> {
 
 void RYOp::build(OpBuilder& builder, OperationState& state, Value qubitIn,
                  const std::variant<double, Value>& theta) {
-  auto thetaOperand = variantToValue(builder, state, theta);
+  auto thetaOperand = variantToValue(builder, state.location, theta);
   build(builder, state, qubitIn, thetaOperand);
 }
 
