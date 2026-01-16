@@ -21,15 +21,15 @@ namespace mlir::utils {
 constexpr auto TOLERANCE = 1e-15;
 
 inline Value constantFromScalar(OpBuilder& builder, Location loc, double v) {
-  return builder.create<arith::ConstantOp>(loc, builder.getF64FloatAttr(v));
+  return arith::ConstantOp::create(builder, loc, builder.getF64FloatAttr(v));
 }
 
 inline Value constantFromScalar(OpBuilder& builder, Location loc, int64_t v) {
-  return builder.create<arith::ConstantOp>(loc, builder.getIndexAttr(v));
+  return arith::ConstantOp::create(builder, loc, builder.getIndexAttr(v));
 }
 
 inline Value constantFromScalar(OpBuilder& builder, Location loc, bool v) {
-  return builder.create<arith::ConstantOp>(loc, builder.getBoolAttr(v));
+  return arith::ConstantOp::create(builder, loc, builder.getBoolAttr(v));
 }
 
 /**
