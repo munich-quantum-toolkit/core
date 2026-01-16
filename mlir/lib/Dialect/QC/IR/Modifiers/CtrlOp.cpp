@@ -109,12 +109,7 @@ struct CtrlInlineGPhase final : OpRewritePattern<CtrlOp> {
 } // namespace
 
 UnitaryOpInterface CtrlOp::getBodyUnitary() {
-  for (auto&& op : getBody()->getOperations()) {
-    if (auto&& unitaryOp = llvm::dyn_cast<UnitaryOpInterface>(&op)) {
-      return unitaryOp;
-    }
-  }
-  return nullptr;
+  return llvm::dyn_cast<UnitaryOpInterface>(&getBody()->front());
 }
 
 size_t CtrlOp::getNumQubits() { return getNumTargets() + getNumControls(); }
