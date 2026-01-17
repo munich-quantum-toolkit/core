@@ -221,3 +221,16 @@ TEST_F(QCOCtrlOpTest, ParserErrors) {
           .get(),
       nullptr);
 }
+
+TEST_F(QCOCtrlOpTest, bodyUnitaryWithParameter) {
+  auto reg = builder.allocQubitRegister(2);
+  builder.crx(1.0, reg[0], reg[1]);
+  auto ctrlOp = cast<CtrlOp>(builder.getBlock()->getOperations().back());
+  module = builder.finalize();
+
+  auto bodyUnitary = ctrlOp.getBodyUnitary();
+  // Test if a valid unitary operation is returned
+  ASSERT_TRUE(bodyUnitary);
+  // Ensure it contains the correct operation type
+  EXPECT_EQ(bodyUnitary.getBaseSymbol(), "rx");
+}
