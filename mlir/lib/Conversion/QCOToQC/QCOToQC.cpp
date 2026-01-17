@@ -854,7 +854,9 @@ struct ConvertQCOYieldOp final : OpConversionPattern<qco::YieldOp> {
  * is converted to
  * ```mlir
  * scf.if %cond {
- *   qc.x %q0 : !qc.qubit
+ *   qc.h %q0 : !qc.qubit
+ *   scf.yield
+ * } else {
  *   scf.yield
  * }
  * ```
@@ -894,11 +896,11 @@ struct ConvertQCOScfIfOp final : OpConversionPattern<scf::IfOp> {
  * @par Example:
  * ```mlir
  * %targets_out = scf.while (%arg0 = %q0) : (!qco.qubit) -> !qco.qubit {
- *   %q1 = qc.x %arg0 : !qco.qubit -> !qco.qubit
+ *   %q1 = qco.x %arg0 : !qco.qubit -> !qco.qubit
  *   scf.condition(%cond) %q1 : !qco.qubit
  * } do {
  * ^bb0(%arg0: !qco.qubit):
- *   %q1 = qc.x %arg0 : !qco.qubit -> !qco.qubit
+ *   %q1 = qco.x %arg0 : !qco.qubit -> !qco.qubit
  *   scf.yield %q1 : !qco.qubit
  * }
  * ```
@@ -954,9 +956,9 @@ struct ConvertQCOScfWhileOp final : OpConversionPattern<scf::WhileOp> {
  *
  * @par Example:
  * ```mlir
- * %targets_out = scf.for %iv = %lb to %ub step %step iter_args(%arg0 = q0) ->
+ * %targets_out = scf.for %iv = %lb to %ub step %step iter_args(%arg0 = %q0) ->
  * (!qco.qubit) {
- *   %q1 = qc.x %arg0 : !qco.qubit -> !qco.qubit
+ *   %q1 = qco.x %arg0 : !qco.qubit -> !qco.qubit
  *   scf.yield %q1 : !qco.qubit
  * }
  * ```
@@ -1058,7 +1060,6 @@ struct ConvertQCOScfConditionOp final : OpConversionPattern<scf::ConditionOp> {
  * @par Example:
  * ```mlir
  * %q1 = call @test(%q0) : (!qco.qubit) -> !qco.qubit
- * }
  * ```
  * is converted to
  * ```mlir
@@ -1091,7 +1092,7 @@ struct ConvertQCOFuncCallOp final : OpConversionPattern<func::CallOp> {
  * ```
  * is converted to
  * ```mlir
- * func.func @test(%arg0: !qc.qubit){
+ * func.func @test(%arg0: !qc.qubit) {
  * ...
  * }
  * ```

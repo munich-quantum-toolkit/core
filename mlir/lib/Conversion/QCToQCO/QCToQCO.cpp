@@ -1363,11 +1363,11 @@ struct ConvertQCScfIfOp final : StatefulOpConversionPattern<scf::IfOp> {
  * is converted to
  * ```mlir
  * %targets_out = scf.while (%arg0 = %q0) : (!qco.qubit) -> !qco.qubit {
- *   %q1 = qc.x %arg0 : !qco.qubit -> !qco.qubit
+ *   %q1 = qco.x %arg0 : !qco.qubit -> !qco.qubit
  *   scf.condition(%cond) %q1 : !qco.qubit
  * } do {
  * ^bb0(%arg0: !qco.qubit):
- *   %q1 = qc.x %arg0 : !qco.qubit -> !qco.qubit
+ *   %q1 = qco.x %arg0 : !qco.qubit -> !qco.qubit
  *   scf.yield %q1 : !qco.qubit
  * }
  * ```
@@ -1439,7 +1439,7 @@ struct ConvertQCScfWhileOp final : StatefulOpConversionPattern<scf::WhileOp> {
 };
 
 /**
- * @brief Converts scf.for with memory semantics to scf.while with value
+ * @brief Converts scf.for with memory semantics to scf.for with value
  * semantics for qubit values
  *
  * @par Example:
@@ -1451,10 +1451,10 @@ struct ConvertQCScfWhileOp final : StatefulOpConversionPattern<scf::WhileOp> {
  * ```
  * is converted to
  * ```mlir
- * %targets_out = scf.for %iv = %lb to %ub step %step iter_args(%arg0 = q0) ->
+ * %targets_out = scf.for %iv = %lb to %ub step %step iter_args(%arg0 = %q0) ->
  * (!qco.qubit) {
- * %q1 = qc.x %arg0 : !qco.qubit -> !qco.qubit
- * scf.yield %q1 : !qco.qubit
+ *   %q1 = qco.x %arg0 : !qco.qubit -> !qco.qubit
+ *   scf.yield %q1 : !qco.qubit
  * }
  * ```
  */
@@ -1604,7 +1604,7 @@ struct ConvertQCScfConditionOp final
  * ```
  * is converted to
  * ```mlir
- * %q1 = call @test(%q1) : (!qco.qubit) -> !qco.qubit
+ * %q1 = call @test(%q0) : (!qco.qubit) -> !qco.qubit
  * ```
  */
 struct ConvertQCFuncCallOp final : StatefulOpConversionPattern<func::CallOp> {
@@ -1649,13 +1649,13 @@ struct ConvertQCFuncCallOp final : StatefulOpConversionPattern<func::CallOp> {
  *
  * @par Example:
  * ```mlir
- * func.func @test(%arg0: !qc.qubit){
+ * func.func @test(%arg0: !qc.qubit) {
  * ...
  * }
  * ```
  * is converted to
  * ```mlir
- * func.func @test(%arg0: !qco.qubit) -> !qco.qubit{
+ * func.func @test(%arg0: !qco.qubit) -> !qco.qubit {
  * ...
  * }
  * ```
