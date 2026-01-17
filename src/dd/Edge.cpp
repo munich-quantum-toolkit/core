@@ -48,10 +48,6 @@ auto Edge<Node>::getValueByPath(const std::size_t numQubits,
   }
 
   auto r = *this;
-  if constexpr (std::is_same_v<Node, dNode>) {
-    Edge<dNode>::applyDmChangesToEdge(r);
-  }
-
   auto level = numQubits;
   while (level > 0U) {
     const auto tmp = static_cast<std::size_t>(decisions.at(level - 1U) - '0');
@@ -66,15 +62,8 @@ auto Edge<Node>::getValueByPath(const std::size_t numQubits,
     }
 
     // node is at the expected level
-    assert(tmp <= r.p->e.size());
-    if constexpr (std::is_same_v<Node, dNode>) {
-      auto e = r;
-      Edge<dNode>::applyDmChangesToEdge(r.p->e[tmp]);
-      r = r.p->e[tmp];
-      Edge<dNode>::revertDmChangesToEdge(e);
-    } else {
-      r = r.p->e[tmp];
-    }
+    assert(tmp < r.p->e.size());
+    r = r.p->e[tmp];
     c *= static_cast<std::complex<fp>>(r.w);
     --level;
   }
@@ -131,16 +120,17 @@ template <class Node> void Edge<Node>::unmark() const noexcept {
 ///-----------------------------------------------------------------------------
 
 template <class Node>
-template <typename T, isVector<T>>
 auto Edge<Node>::normalize(Node* p, const std::array<Edge, RADIX>& e,
-                           MemoryManager& mm, ComplexNumbers& cn) -> Edge {
+                           MemoryManager& mm, ComplexNumbers& cn) -> Edge
+  requires IsVector<Node>
+{
   assert(p != nullptr && "Node pointer passed to normalize is null.");
   const auto zero = std::array{e[0].w.exactlyZero(), e[1].w.exactlyZero()};
 
   if (zero[0]) {
     if (zero[1]) {
       mm.returnEntry(*p);
-      return Edge::zero();
+      return vEdge::zero();
     }
     p->e = e;
     vEdge r{p, e[1].w};
@@ -190,16 +180,16 @@ auto Edge<Node>::normalize(Node* p, const std::array<Edge, RADIX>& e,
   if (min.w.exactlyZero()) {
     assert(p->e[argMax].w.exactlyOne() &&
            "Edge weight should be one when minWeight is zero.");
-    min.p = Node::getTerminal();
+    min.p = vNode::getTerminal();
   }
 
   return r;
 }
 
 template <class Node>
-template <typename T, isVector<T>>
-auto Edge<Node>::getValueByIndex(const std::size_t i) const
-    -> std::complex<fp> {
+auto Edge<Node>::getValueByIndex(const std::size_t i) const -> std::complex<fp>
+  requires IsVector<Node>
+{
   auto bitwidth = static_cast<Qubit>(std::log2(i + 1U));
 
   if (!isTerminal()) {
@@ -217,8 +207,9 @@ auto Edge<Node>::getValueByIndex(const std::size_t i) const
 }
 
 template <class Node>
-template <typename T, isVector<T>>
-auto Edge<Node>::getVector(const fp threshold) const -> CVec {
+auto Edge<Node>::getVector(const fp threshold) const -> CVec
+  requires IsVector<Node>
+{
   if (isTerminal()) {
     return {static_cast<std::complex<fp>>(w)};
   }
@@ -233,8 +224,9 @@ auto Edge<Node>::getVector(const fp threshold) const -> CVec {
 }
 
 template <class Node>
-template <typename T, isVector<T>>
-auto Edge<Node>::getSparseVector(const fp threshold) const -> SparseCVec {
+auto Edge<Node>::getSparseVector(const fp threshold) const -> SparseCVec
+  requires IsVector<Node>
+{
   if (isTerminal()) {
     return {{0, static_cast<std::complex<fp>>(w)}};
   }
@@ -248,8 +240,9 @@ auto Edge<Node>::getSparseVector(const fp threshold) const -> SparseCVec {
 }
 
 template <class Node>
-template <typename T, isVector<T>>
-auto Edge<Node>::printVector() const -> void {
+auto Edge<Node>::printVector() const -> void
+  requires IsVector<Node>
+{
   constexpr auto precision = 3;
   const auto oldPrecision = std::cout.precision();
   std::cout << std::setprecision(precision);
@@ -272,8 +265,9 @@ auto Edge<Node>::printVector() const -> void {
 }
 
 template <class Node>
-template <typename T, isVector<T>>
-auto Edge<Node>::addToVector(CVec& amplitudes) const -> void {
+auto Edge<Node>::addToVector(CVec& amplitudes) const -> void
+  requires IsVector<Node>
+{
   if (isTerminal()) {
     amplitudes[0] += static_cast<std::complex<fp>>(w);
     return;
@@ -286,10 +280,11 @@ auto Edge<Node>::addToVector(CVec& amplitudes) const -> void {
 }
 
 template <class Node>
-template <typename T, isVector<T>>
 void Edge<Node>::traverseVector(const std::complex<fp>& amp,
                                 const std::size_t i, AmplitudeFunc f,
-                                const fp threshold) const {
+                                const fp threshold) const
+  requires IsVector<Node>
+{
   // calculate new accumulated amplitude
   const auto c = amp * static_cast<std::complex<fp>>(w);
 
@@ -315,9 +310,10 @@ void Edge<Node>::traverseVector(const std::complex<fp>& amp,
 ///                      \n Methods for matrix DDs \n
 ///-----------------------------------------------------------------------------
 template <class Node>
-template <typename T, isMatrixVariant<T>>
 auto Edge<Node>::normalize(Node* p, const std::array<Edge, NEDGE>& e,
-                           MemoryManager& mm, ComplexNumbers& cn) -> Edge {
+                           MemoryManager& mm, ComplexNumbers& cn) -> Edge
+  requires IsMatrix<Node>
+{
   assert(p != nullptr && "Node pointer passed to normalize is null.");
   const auto zero = std::array{e[0].w.exactlyZero(), e[1].w.exactlyZero(),
                                e[2].w.exactlyZero(), e[3].w.exactlyZero()};
@@ -374,10 +370,11 @@ auto Edge<Node>::normalize(Node* p, const std::array<Edge, NEDGE>& e,
 }
 
 template <class Node>
-template <typename T, isMatrixVariant<T>>
 auto Edge<Node>::getValueByIndex(const std::size_t numQubits,
                                  const std::size_t i, const std::size_t j) const
-    -> std::complex<fp> {
+    -> std::complex<fp>
+  requires IsMatrix<Node>
+{
   if (isTerminal()) {
     return static_cast<std::complex<fp>>(w);
   }
@@ -402,60 +399,47 @@ auto Edge<Node>::getValueByIndex(const std::size_t numQubits,
 }
 
 template <class Node>
-template <typename T, isMatrixVariant<T>>
 auto Edge<Node>::getMatrix(const std::size_t numQubits,
-                           const fp threshold) const -> CMat {
+                           const fp threshold) const -> CMat
+  requires IsMatrix<Node>
+{
   if (numQubits == 0U) {
     return CMat{1, {static_cast<std::complex<fp>>(w)}};
   }
 
-  auto r = *this;
-  if constexpr (std::is_same_v<Node, dNode>) {
-    Edge<dNode>::applyDmChangesToEdge(r);
-  }
   const std::size_t dim = 1ULL << numQubits;
   auto mat = CMat(dim, CVec(dim, 0.));
-  r.traverseMatrix(
+  traverseMatrix(
       1, 0ULL, 0ULL,
       [&mat](const std::size_t i, const std::size_t j,
              const std::complex<fp>& c) { mat.at(i).at(j) = c; },
       numQubits, threshold);
-  if constexpr (std::is_same_v<Node, dNode>) {
-    Edge<dNode>::revertDmChangesToEdge(r);
-  }
   return mat;
 }
 
 template <class Node>
-template <typename T, isMatrixVariant<T>>
 auto Edge<Node>::getSparseMatrix(const std::size_t numQubits,
-                                 const fp threshold) const -> SparseCMat {
+                                 const fp threshold) const -> SparseCMat
+  requires IsMatrix<Node>
+{
   if (numQubits == 0U) {
     return {{{0U, 0U}, static_cast<std::complex<fp>>(w)}};
   }
 
-  auto r = *this;
-  if constexpr (std::is_same_v<Node, dNode>) {
-    Edge<dNode>::applyDmChangesToEdge(r);
-  }
-
   auto mat = SparseCMat{};
-  r.traverseMatrix(
+  traverseMatrix(
       1, 0ULL, 0ULL,
       [&mat](const std::size_t i, const std::size_t j,
              const std::complex<fp>& c) { mat[{i, j}] = c; },
       numQubits, threshold);
 
-  if constexpr (std::is_same_v<Node, dNode>) {
-    Edge<dNode>::revertDmChangesToEdge(r);
-  }
-
   return mat;
 }
 
 template <class Node>
-template <typename T, isMatrixVariant<T>>
-auto Edge<Node>::printMatrix(const std::size_t numQubits) const -> void {
+auto Edge<Node>::printMatrix(const std::size_t numQubits) const -> void
+  requires IsMatrix<Node>
+{
   constexpr auto precision = 3;
   const auto oldPrecision = std::cout.precision();
   std::cout << std::setprecision(precision);
@@ -464,14 +448,8 @@ auto Edge<Node>::printMatrix(const std::size_t numQubits) const -> void {
     std::cout << static_cast<std::complex<fp>>(w) << "\n";
     return;
   }
-
-  auto r = *this;
-  if constexpr (std::is_same_v<Node, dNode>) {
-    Edge<dNode>::alignDensityEdge(r);
-  }
-
   // total number of qubits should not be lower than the highest qubit index
-  assert(r.isTerminal() || numQubits >= r.p->v);
+  assert(isTerminal() || numQubits > p->v);
   const std::size_t element = 1ULL << numQubits;
   for (auto i = 0ULL; i < element; ++i) {
     for (auto j = 0ULL; j < element; ++j) {
@@ -485,11 +463,12 @@ auto Edge<Node>::printMatrix(const std::size_t numQubits) const -> void {
 }
 
 template <class Node>
-template <typename T, isMatrixVariant<T>>
-auto Edge<Node>::traverseMatrix(const std::complex<fp>& amp,
+void Edge<Node>::traverseMatrix(const std::complex<fp>& amp,
                                 const std::size_t i, const std::size_t j,
                                 MatrixEntryFunc f, const std::size_t level,
-                                const fp threshold) const -> void {
+                                const fp threshold) const
+  requires IsMatrix<Node>
+{
   // calculate new accumulated amplitude
   const auto c = amp * static_cast<std::complex<fp>>(w);
 
@@ -516,97 +495,8 @@ auto Edge<Node>::traverseMatrix(const std::complex<fp>& amp,
   std::size_t k = 0U;
   for (const auto& [a, b] : coords) {
     if (auto& e = p->e[k++]; !e.w.exactlyZero()) {
-      if constexpr (std::is_same_v<Node, dNode>) {
-        Edge<dNode>::applyDmChangesToEdge(e);
-      }
       e.traverseMatrix(c, a, b, f, nextLevel, threshold);
-      if constexpr (std::is_same_v<Node, dNode>) {
-        Edge<dNode>::revertDmChangesToEdge(e);
-      }
     }
-  }
-}
-
-///-----------------------------------------------------------------------------
-///                   \n Methods for density matrix DDs \n
-///-----------------------------------------------------------------------------
-
-template <class Node>
-template <typename T, isDensityMatrix<T>>
-auto Edge<Node>::getSparseProbabilityVector(const std::size_t numQubits,
-                                            const fp threshold) const
-    -> SparsePVec {
-  if (numQubits == 0U) {
-    return {{0, static_cast<std::complex<fp>>(w).real()}};
-  }
-
-  auto e = *this;
-  Edge<dNode>::alignDensityEdge(e);
-
-  auto probabilities = SparsePVec{};
-  e.traverseDiagonal(
-      1, 0,
-      [&probabilities](const std::size_t i, const fp& prob) {
-        probabilities[i] = prob;
-      },
-      numQubits, threshold);
-  return probabilities;
-}
-
-template <class Node>
-template <typename T, isDensityMatrix<T>>
-auto Edge<Node>::getSparseProbabilityVectorStrKeys(const std::size_t numQubits,
-                                                   const fp threshold) const
-    -> SparsePVecStrKeys {
-  if (numQubits == 0U) {
-    return {{"0", static_cast<std::complex<fp>>(w).real()}};
-  }
-
-  auto e = *this;
-  Edge<dNode>::alignDensityEdge(e);
-  const auto nqubits = static_cast<std::size_t>(e.p->v) + 1U;
-
-  auto probabilities = SparsePVecStrKeys{};
-  e.traverseDiagonal(
-      1, 0,
-      [&probabilities, &nqubits](const std::size_t i, const fp& prob) {
-        probabilities[intToBinaryString(i, nqubits)] = prob;
-      },
-      numQubits, threshold);
-  return probabilities;
-}
-
-template <class Node>
-template <typename T, isDensityMatrix<T>>
-auto Edge<Node>::traverseDiagonal(const fp& prob, const std::size_t i,
-                                  ProbabilityFunc f, const std::size_t level,
-                                  const fp threshold) const -> void {
-  // calculate new accumulated probability
-  const auto c = static_cast<std::complex<fp>>(w);
-  const auto val = prob * c.real();
-
-  if (val < threshold) {
-    return;
-  }
-
-  if (level == 0) {
-    assert(isTerminal());
-    f(i, val);
-    return;
-  }
-
-  const auto nextLevel = static_cast<Qubit>(level - 1U);
-  if (isTerminal() || p->v < nextLevel) {
-    traverseDiagonal(prob, i, f, nextLevel, threshold);
-    traverseDiagonal(prob, i | (1ULL << nextLevel), f, nextLevel, threshold);
-    return;
-  }
-
-  if (auto& e = p->e[0]; !e.w.exactlyZero()) {
-    e.traverseDiagonal(val, i, f, nextLevel, threshold);
-  }
-  if (auto& e = p->e[3]; !e.w.exactlyZero()) {
-    e.traverseDiagonal(val, i | (1ULL << nextLevel), f, nextLevel, threshold);
   }
 }
 
@@ -616,61 +506,6 @@ auto Edge<Node>::traverseDiagonal(const fp& prob, const std::size_t i,
 
 template struct Edge<vNode>;
 template struct Edge<mNode>;
-template struct Edge<dNode>;
-
-template auto Edge<vNode>::normalize(vNode* p, const std::array<Edge, RADIX>& e,
-                                     MemoryManager& mm, ComplexNumbers& cn)
-    -> Edge;
-template auto Edge<vNode>::getValueByIndex(std::size_t i) const
-    -> std::complex<fp>;
-template auto Edge<vNode>::getVector(fp threshold) const -> CVec;
-template auto Edge<vNode>::getSparseVector(fp threshold) const -> SparseCVec;
-template auto Edge<vNode>::printVector() const -> void;
-template auto Edge<vNode>::addToVector(CVec& amplitudes) const -> void;
-template auto Edge<vNode>::traverseVector(const std::complex<fp>& amp,
-                                          std::size_t i, AmplitudeFunc f,
-                                          fp threshold) const -> void;
-
-template auto Edge<mNode>::normalize(mNode* p, const std::array<Edge, NEDGE>& e,
-                                     MemoryManager& mm, ComplexNumbers& cn)
-    -> Edge;
-template auto Edge<mNode>::getValueByIndex(std::size_t numQubits, std::size_t i,
-                                           std::size_t j) const
-    -> std::complex<fp>;
-template auto Edge<mNode>::getMatrix(std::size_t numQubits, fp threshold) const
-    -> CMat;
-template auto Edge<mNode>::getSparseMatrix(std::size_t numQubits,
-                                           fp threshold) const -> SparseCMat;
-template auto Edge<mNode>::printMatrix(std::size_t numQubits) const -> void;
-template auto Edge<mNode>::traverseMatrix(const std::complex<fp>& amp,
-                                          std::size_t i, std::size_t j,
-                                          MatrixEntryFunc f, std::size_t level,
-                                          fp threshold) const -> void;
-
-template auto Edge<dNode>::normalize(dNode* p, const std::array<Edge, NEDGE>& e,
-                                     MemoryManager& mm, ComplexNumbers& cn)
-    -> Edge;
-template auto Edge<dNode>::getMatrix(std::size_t numQubits, fp threshold) const
-    -> CMat;
-template auto Edge<dNode>::getSparseMatrix(std::size_t numQubits,
-                                           fp threshold) const -> SparseCMat;
-template auto Edge<dNode>::printMatrix(std::size_t numQubits) const -> void;
-template auto Edge<dNode>::getSparseProbabilityVector(std::size_t numQubits,
-                                                      fp threshold) const
-    -> SparsePVec;
-template auto Edge<dNode>::getSparseProbabilityVectorStrKeys(
-    std::size_t numQubits, fp threshold) const -> SparsePVecStrKeys;
-template auto Edge<dNode>::getValueByIndex<dNode, true>(std::size_t numQubits,
-                                                        std::size_t i,
-                                                        std::size_t j) const
-    -> std::complex<fp>;
-template auto Edge<dNode>::traverseMatrix<dNode, true>(
-    const std::complex<fp>& amp, std::size_t i, std::size_t j,
-    MatrixEntryFunc f, std::size_t level, fp threshold) const -> void;
-template auto Edge<dNode>::traverseDiagonal(const fp& prob, std::size_t i,
-                                            ProbabilityFunc f,
-                                            std::size_t level,
-                                            fp threshold) const -> void;
 
 } // namespace dd
 
@@ -684,19 +519,9 @@ auto hash<dd::Edge<Node>>::operator()(const dd::Edge<Node>& e) const noexcept
     -> std::size_t {
   const auto h1 = dd::murmur64(reinterpret_cast<std::size_t>(e.p));
   const auto h2 = std::hash<dd::Complex>{}(e.w);
-  auto h3 = qc::combineHash(h1, h2);
-  if constexpr (std::is_same_v<Node, dd::dNode>) {
-    if (e.isTerminal()) {
-      return h3;
-    }
-    assert(dd::dNode::isDensityMatrixTempFlagSet(e.p) == false);
-    const auto h4 = dd::dNode::getDensityMatrixTempFlags(e.p->flags);
-    h3 = qc::combineHash(h3, h4);
-  }
-  return h3;
+  return qc::combineHash(h1, h2);
 }
 
 template struct hash<dd::Edge<dd::vNode>>;
 template struct hash<dd::Edge<dd::mNode>>;
-template struct hash<dd::Edge<dd::dNode>>;
 } // namespace std

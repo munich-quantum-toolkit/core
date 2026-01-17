@@ -214,7 +214,7 @@ struct RealNumber final : LLBase {
 
   /// numerical tolerance to be used for floating point values
   // NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables)
-  static inline fp eps = std::numeric_limits<dd::fp>::epsilon() * 1024;
+  static inline fp eps = std::numeric_limits<fp>::epsilon() * 1024;
 };
 
 static_assert(sizeof(RealNumber) == 16);

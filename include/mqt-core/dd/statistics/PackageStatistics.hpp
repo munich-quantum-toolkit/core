@@ -39,14 +39,14 @@ namespace dd {
  */
 [[nodiscard]] double computePeakMemoryMiB(const Package& package);
 
-[[nodiscard]] nlohmann::basic_json<>
+[[nodiscard]] nlohmann::json
 getStatistics(Package& package, bool includeIndividualTables = false);
 
 /**
  * @brief Get some key statistics about data structures used by the DD package
  * @return A JSON representation of the statistics
  */
-[[nodiscard]] nlohmann::basic_json<> getDataStructureStatistics();
+[[nodiscard]] nlohmann::json getDataStructureStatistics();
 
 [[nodiscard]] std::string getStatisticsString(Package& package);
 

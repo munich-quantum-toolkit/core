@@ -17,23 +17,19 @@
 #include "dd/ComputeTable.hpp"
 #include "dd/DDDefinitions.hpp"
 #include "dd/DDpackageConfig.hpp"
-#include "dd/DensityNoiseTable.hpp"
 #include "dd/Edge.hpp"
 #include "dd/MemoryManager.hpp"
 #include "dd/Node.hpp"
 #include "dd/Package_fwd.hpp" // IWYU pragma: export
 #include "dd/RealNumber.hpp"
 #include "dd/RealNumberUniqueTable.hpp"
-#include "dd/StochasticNoiseOperationTable.hpp"
 #include "dd/UnaryComputeTable.hpp"
 #include "dd/UniqueTable.hpp"
 #include "ir/Definitions.hpp"
 #include "ir/Permutation.hpp"
 #include "ir/operations/Control.hpp"
 
-#include <algorithm>
 #include <array>
-#include <cassert>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
@@ -41,6 +37,7 @@
 #include <iostream>
 #include <limits>
 #include <random>
+#include <ranges>
 #include <regex>
 #include <stack>
 #include <stdexcept>
@@ -119,9 +116,6 @@ public:
   /// The memory manager for matrix nodes
   MemoryManager mMemoryManager{
       MemoryManager::create<mNode>(config_.utMatInitialAllocationSize)};
-  /// The memory manager for density matrix nodes
-  MemoryManager dMemoryManager{
-      MemoryManager::create<dNode>(config_.utDmInitialAllocationSize)};
   /**
    * @brief The memory manager for complex numbers
    * @note The real and imaginary part of complex numbers are treated
@@ -139,8 +133,6 @@ public:
       return vMemoryManager;
     } else if constexpr (std::is_same_v<T, mNode>) {
       return mMemoryManager;
-    } else if constexpr (std::is_same_v<T, dNode>) {
-      return dMemoryManager;
     } else if constexpr (std::is_same_v<T, RealNumber>) {
       return cMemoryManager;
     }
@@ -155,11 +147,11 @@ public:
   void resetMemoryManagers(bool resizeToTotal = false);
 
   /// The unique table used for vector nodes
-  UniqueTable vUniqueTable{vMemoryManager, {0U, config_.utVecNumBucket}};
+  UniqueTable vUniqueTable{vMemoryManager,
+                           {.nVars = 0U, .nBuckets = config_.utVecNumBucket}};
   /// The unique table used for matrix nodes
-  UniqueTable mUniqueTable{mMemoryManager, {0U, config_.utMatNumBucket}};
-  /// The unique table used for density matrix nodes
-  UniqueTable dUniqueTable{dMemoryManager, {0U, config_.utDmNumBucket}};
+  UniqueTable mUniqueTable{mMemoryManager,
+                           {.nVars = 0U, .nBuckets = config_.utMatNumBucket}};
   /**
    * @brief The unique table used for complex numbers
    * @note The table actually only stores real numbers in the interval [0, 1],
@@ -179,8 +171,6 @@ public:
       return vUniqueTable;
     } else if constexpr (std::is_same_v<T, mNode>) {
       return mUniqueTable;
-    } else if constexpr (std::is_same_v<T, dNode>) {
-      return dUniqueTable;
     } else if constexpr (std::is_same_v<T, RealNumber>) {
       return cUniqueTable;
     }
@@ -224,13 +214,12 @@ public:
 
 private:
   struct RootSetManager {
-  public:
     template <class Node>
     using RootSet = std::unordered_map<Edge<Node>, std::size_t>;
 
     /// @brief Add to respective root set.
     template <class Node> void addToRoots(const Edge<Node>& e) noexcept {
-      getRoots<Node>()[e]++;
+      ++(getRoots<Node>()[e]);
     }
 
     /// @brief Remove from respective root set.
@@ -257,20 +246,19 @@ private:
     void reset() {
       vRoots.clear();
       mRoots.clear();
-      dRoots.clear();
     }
 
   private:
     /// @brief Mark edges contained in @p roots.
     template <class Node> static void mark(const RootSet<Node>& roots) {
-      for (auto& [edge, _] : roots) {
+      for (auto& edge : roots | std::views::keys) {
         edge.mark();
       }
     }
 
     /// @brief Unmark edges contained in @p roots.
     template <class Node> static void unmark(const RootSet<Node>& roots) {
-      for (auto& [edge, _] : roots) {
+      for (auto& edge : roots | std::views::keys) {
         edge.unmark();
       }
     }
@@ -279,40 +267,32 @@ private:
     void mark() noexcept {
       RootSetManager::mark(vRoots);
       RootSetManager::mark(mRoots);
-      RootSetManager::mark(dRoots);
     }
 
     /// @brief Unmark edges contained in all root sets.
     void unmark() noexcept {
       RootSetManager::unmark(vRoots);
       RootSetManager::unmark(mRoots);
-      RootSetManager::unmark(dRoots);
     }
 
     /// @brief Return vector roots.
-    template <class Node,
-              std::enable_if_t<std::is_same_v<Node, vNode>, bool> = true>
-    auto& getRoots() noexcept {
+    template <class Node>
+    auto& getRoots() noexcept
+      requires(IsVector<Node>)
+    {
       return vRoots;
     }
 
     /// @brief Return matrix roots.
-    template <class Node,
-              std::enable_if_t<std::is_same_v<Node, mNode>, bool> = true>
-    auto& getRoots() noexcept {
+    template <class Node>
+    auto& getRoots() noexcept
+      requires(IsMatrix<Node>)
+    {
       return mRoots;
-    }
-
-    /// @brief Return density roots.
-    template <class Node,
-              std::enable_if_t<std::is_same_v<Node, dNode>, bool> = true>
-    auto& getRoots() noexcept {
-      return dRoots;
     }
 
     RootSet<vNode> vRoots;
     RootSet<mNode> mRoots;
-    RootSet<dNode> dRoots;
 
     template <class Node> friend auto& Package::getRootSet() noexcept;
   };
@@ -331,15 +311,14 @@ public:
    *
    * @param force Force garbage collect, regardless of whether any
    * table reports that it may need collecting.
-   * @returns Whether at least one vector, matrix, density-matrix node, or
-   *          any complex number was reclaimed.
+   * @returns Whether at least one vector, matrix, or any complex number was
+   * reclaimed.
    */
   bool garbageCollect(bool force = false);
 
   struct ActiveCounts {
     std::size_t vector = 0U;
     std::size_t matrix = 0U;
-    std::size_t density = 0U;
     std::size_t reals = 0U;
   };
   /**
@@ -347,18 +326,6 @@ public:
    * @note This traverses every currently tracked DD twice.
    */
   [[nodiscard]] ActiveCounts computeActiveCounts();
-
-  ///
-  /// Vector nodes, edges and quantum states
-  ///
-
-  /**
-   * @brief Construct the all-zero density operator
-            \f$|0...0\rangle\langle0...0|\f$
-   * @param n The number of qubits
-   * @return A decision diagram for the all-zero density operator
-   */
-  dEdge makeZeroDensityOperator(std::size_t n);
 
   ///
   /// Matrix nodes, edges and quantum gates
@@ -484,29 +451,23 @@ public:
    * @tparam EdgeType The type of the edge.
    * @param var The variable associated with the node.
    * @param edges The edges of the node.
-   * @param generateDensityMatrix Flag to indicate if a density matrix node
-   * should be generated.
    * @return An edge pointing to the normalized DD node.
    */
   template <class Node, template <class> class EdgeType>
   EdgeType<Node>
   makeDDNode(const Qubit var,
              const std::array<EdgeType<Node>,
-                              std::tuple_size_v<decltype(Node::e)>>& edges,
-             [[maybe_unused]] const bool generateDensityMatrix = false) {
+                              std::tuple_size_v<decltype(Node::e)>>& edges) {
     auto& memoryManager = getMemoryManager<Node>();
-    auto p = memoryManager.template get<Node>();
+    auto* p = memoryManager.template get<Node>();
 
     p->v = var;
-    if constexpr (std::is_same_v<Node, mNode> || std::is_same_v<Node, dNode>) {
+    if constexpr (IsMatrix<Node>) {
       p->flags = 0;
-      if constexpr (std::is_same_v<Node, dNode>) {
-        p->setDensityMatrixNodeFlag(generateDensityMatrix);
-      }
     }
 
     auto e = EdgeType<Node>::normalize(p, edges, memoryManager, cn);
-    if constexpr (std::is_same_v<Node, mNode> || std::is_same_v<Node, dNode>) {
+    if constexpr (IsMatrix<Node>) {
       if (!e.isTerminal()) {
         const auto& es = e.p->e;
         // Check if node resembles the identity. If so, skip it.
@@ -673,8 +634,6 @@ public:
   char measureOneCollapsing(vEdge& rootEdge, Qubit index, std::mt19937_64& mt,
                             fp epsilon = 0.001);
 
-  char measureOneCollapsing(dEdge& e, Qubit index, std::mt19937_64& mt);
-
   /**
    * @brief Performs a specific measurement on the given state vector decision
    * diagram. Collapses the state according to the measurement result.
@@ -695,8 +654,6 @@ public:
       config_.ctVecAddNumBucket};
   ComputeTable<mCachedEdge, mCachedEdge, mCachedEdge> matrixAdd{
       config_.ctMatAddNumBucket};
-  ComputeTable<dCachedEdge, dCachedEdge, dCachedEdge> densityAdd{
-      config_.ctDmAddNumBucket};
 
   /**
    * @brief Get the compute table for addition operations.
@@ -706,12 +663,10 @@ public:
    * type.
    */
   template <class Node> [[nodiscard]] auto& getAddComputeTable() {
-    if constexpr (std::is_same_v<Node, vNode>) {
+    if constexpr (IsVector<Node>) {
       return vectorAdd;
-    } else if constexpr (std::is_same_v<Node, mNode>) {
+    } else if constexpr (IsMatrix<Node>) {
       return matrixAdd;
-    } else if constexpr (std::is_same_v<Node, dNode>) {
-      return densityAdd;
     }
   }
 
@@ -728,9 +683,9 @@ public:
    * type.
    */
   template <class Node> [[nodiscard]] auto& getAddMagnitudesComputeTable() {
-    if constexpr (std::is_same_v<Node, vNode>) {
+    if constexpr (IsVector<Node>) {
       return vectorAddMagnitudes;
-    } else if constexpr (std::is_same_v<Node, mNode>) {
+    } else if constexpr (IsMatrix<Node>) {
       return matrixAddMagnitudes;
     }
   }
@@ -803,8 +758,7 @@ public:
     std::array<CachedEdge<Node>, n> edge{};
     for (std::size_t i = 0U; i < n; i++) {
       CachedEdge<Node> e1{};
-      if constexpr (std::is_same_v<Node, mNode> ||
-                    std::is_same_v<Node, dNode>) {
+      if constexpr (IsMatrix<Node>) {
         if (x.isIdentity() || x.p->v < var) {
           // [ 0 | 1 ]   [ x | 0 ]
           // --------- = ---------
@@ -827,8 +781,7 @@ public:
         }
       }
       CachedEdge<Node> e2{};
-      if constexpr (std::is_same_v<Node, mNode> ||
-                    std::is_same_v<Node, dNode>) {
+      if constexpr (IsMatrix<Node>) {
         if (y.isIdentity() || y.p->v < var) {
           // [ 0 | 1 ]   [ y | 0 ]
           // --------- = ---------
@@ -850,16 +803,7 @@ public:
           e2.w = y.w * ySuccessor.w;
         }
       }
-
-      if constexpr (std::is_same_v<Node, dNode>) {
-        dNode::applyDmChangesToNode(e1.p);
-        dNode::applyDmChangesToNode(e2.p);
-        edge[i] = add2(e1, e2, var - 1);
-        dNode::revertDmChangesToNode(e2.p);
-        dNode::revertDmChangesToNode(e1.p);
-      } else {
-        edge[i] = add2(e1, e2, var - 1);
-      }
+      edge[i] = add2(e1, e2, var - 1);
     }
     auto r = makeDDNode(var, edge);
     computeTable.insert(x, y, r);
@@ -906,8 +850,7 @@ public:
     std::array<CachedEdge<Node>, n> edge{};
     for (std::size_t i = 0U; i < n; i++) {
       CachedEdge<Node> e1{};
-      if constexpr (std::is_same_v<Node, mNode> ||
-                    std::is_same_v<Node, dNode>) {
+      if constexpr (IsMatrix<Node>) {
         if (x.isIdentity() || x.p->v < var) {
           if (i == 0 || i == 3) {
             e1 = x;
@@ -927,8 +870,7 @@ public:
         }
       }
       CachedEdge<Node> e2{};
-      if constexpr (std::is_same_v<Node, mNode> ||
-                    std::is_same_v<Node, dNode>) {
+      if constexpr (IsMatrix<Node>) {
         if (y.isIdentity() || y.p->v < var) {
           if (i == 0 || i == 3) {
             e2 = y;
@@ -1003,8 +945,6 @@ public:
       config_.ctMatVecMultNumBucket};
   ComputeTable<mNode*, mNode*, mCachedEdge> matrixMatrixMultiplication{
       config_.ctMatMatMultNumBucket};
-  ComputeTable<dNode*, dNode*, dCachedEdge> densityDensityMultiplication{
-      config_.ctDmDmMultNumBucket};
 
   /**
    * @brief Get the compute table for multiplication operations.
@@ -1019,8 +959,6 @@ public:
       return matrixVectorMultiplication;
     } else if constexpr (std::is_same_v<RightOperandNode, mNode>) {
       return matrixMatrixMultiplication;
-    } else if constexpr (std::is_same_v<RightOperandNode, dNode>) {
-      return densityDensityMultiplication;
     }
   }
 
@@ -1053,8 +991,6 @@ public:
   MatrixDD applyOperation(const MatrixDD& operation, const MatrixDD& e,
                           bool applyFromLeft = true);
 
-  dEdge applyOperationToDensity(dEdge& e, const mEdge& operation);
-
   /**
    * @brief Multiplies two decision diagrams.
    *
@@ -1062,8 +998,6 @@ public:
    * @tparam RightOperandNode The type of the right operand node.
    * @param x The left operand decision diagram.
    * @param y The right operand decision diagram.
-   * @param generateDensityMatrix Flag to indicate if a density matrix node
-   * should be generated.
    * @return The resulting decision diagram after multiplication.
    *
    * @details This function performs the multiplication of two decision diagrams
@@ -1076,44 +1010,20 @@ public:
    * canonical form.
    */
   template <class LeftOperandNode, class RightOperandNode>
-  Edge<RightOperandNode>
-  multiply(const Edge<LeftOperandNode>& x, const Edge<RightOperandNode>& y,
-           [[maybe_unused]] const bool generateDensityMatrix = false) {
-    using LEdge = Edge<LeftOperandNode>;
-    using REdge = Edge<RightOperandNode>;
-    static_assert(std::disjunction_v<std::is_same<LEdge, mEdge>,
-                                     std::is_same<LEdge, dEdge>>,
-                  "Left operand must be a matrix or density matrix");
-    static_assert(std::disjunction_v<std::is_same<REdge, vEdge>,
-                                     std::is_same<REdge, mEdge>,
-                                     std::is_same<REdge, dEdge>>,
-                  "Right operand must be a vector, matrix or density matrix");
+    requires IsMatrix<LeftOperandNode> &&
+             (IsVector<RightOperandNode> || IsMatrix<RightOperandNode>)
+  Edge<RightOperandNode> multiply(const Edge<LeftOperandNode>& x,
+                                  const Edge<RightOperandNode>& y) {
     Qubit var{};
-    if constexpr (std::is_same_v<LEdge, dEdge>) {
-      auto xCopy = x;
-      auto yCopy = y;
-      dEdge::applyDmChangesToEdges(xCopy, yCopy);
 
-      if (!xCopy.isTerminal()) {
-        var = xCopy.p->v;
-      }
-      if (!y.isTerminal() && yCopy.p->v > var) {
-        var = yCopy.p->v;
-      }
-
-      const auto e = multiply2(xCopy, yCopy, var, generateDensityMatrix);
-      dEdge::revertDmChangesToEdges(xCopy, yCopy);
-      return cn.lookup(e);
-    } else {
-      if (!x.isTerminal()) {
-        var = x.p->v;
-      }
-      if (!y.isTerminal() && y.p->v > var) {
-        var = y.p->v;
-      }
-      const auto e = multiply2(x, y, var);
-      return cn.lookup(e);
+    if (!x.isTerminal()) {
+      var = x.p->v;
     }
+    if (!y.isTerminal() && y.p->v > var) {
+      var = y.p->v;
+    }
+    const auto e = multiply2(x, y, var);
+    return cn.lookup(e);
   }
 
 private:
@@ -1128,15 +1038,12 @@ private:
    * @param x The left operand decision diagram.
    * @param y The right operand decision diagram.
    * @param var The variable associated with the current level of recursion.
-   * @param generateDensityMatrix Flag to indicate if a density matrix node
-   * should be generated.
    * @return The resulting DD after multiplication.
    */
   template <class LeftOperandNode, class RightOperandNode>
-  CachedEdge<RightOperandNode>
-  multiply2(const Edge<LeftOperandNode>& x, const Edge<RightOperandNode>& y,
-            const Qubit var,
-            [[maybe_unused]] const bool generateDensityMatrix = false) {
+  CachedEdge<RightOperandNode> multiply2(const Edge<LeftOperandNode>& x,
+                                         const Edge<RightOperandNode>& y,
+                                         const Qubit var) {
     using LEdge = Edge<LeftOperandNode>;
     using REdge = Edge<RightOperandNode>;
     using ResultEdge = CachedEdge<RightOperandNode>;
@@ -1149,39 +1056,17 @@ private:
     const auto yWeight = static_cast<ComplexValue>(y.w);
     const auto rWeight = xWeight * yWeight;
     if (x.isIdentity()) {
-      if constexpr (!std::is_same_v<RightOperandNode, dNode>) {
-        return {y.p, rWeight};
-      } else {
-        if (y.isIdentity() ||
-            (dNode::isDensityMatrixTempFlagSet(y.p->flags) &&
-             generateDensityMatrix) ||
-            (!dNode::isDensityMatrixTempFlagSet(y.p->flags) &&
-             !generateDensityMatrix)) {
-          return {y.p, rWeight};
-        }
-      }
+      return {y.p, rWeight};
     }
 
-    if constexpr (std::is_same_v<RightOperandNode, mNode> ||
-                  std::is_same_v<RightOperandNode, dNode>) {
+    if constexpr (std::is_same_v<RightOperandNode, mNode>) {
       if (y.isIdentity()) {
-        if constexpr (!std::is_same_v<LeftOperandNode, dNode>) {
-          return {x.p, rWeight};
-        } else {
-          if (x.isIdentity() ||
-              (dNode::isDensityMatrixTempFlagSet(x.p->flags) &&
-               generateDensityMatrix) ||
-              (!dNode::isDensityMatrixTempFlagSet(x.p->flags) &&
-               !generateDensityMatrix)) {
-            return {x.p, rWeight};
-          }
-        }
+        return {x.p, rWeight};
       }
     }
 
     auto& computeTable = getMultiplicationComputeTable<RightOperandNode>();
-    if (const auto* r = computeTable.lookup(x.p, y.p, generateDensityMatrix);
-        r != nullptr) {
+    if (const auto* r = computeTable.lookup(x.p, y.p); r != nullptr) {
       return {r->p, r->w * rWeight};
     }
 
@@ -1221,54 +1106,18 @@ private:
           }
 
           const auto v = static_cast<Qubit>(var - 1);
-          if constexpr (std::is_same_v<LeftOperandNode, dNode>) {
-            dCachedEdge m;
-            dEdge::applyDmChangesToEdges(e1, e2);
-            if (!generateDensityMatrix || idx == 1) {
-              // When generateDensityMatrix is false or I have the first edge I
-              // don't optimize anything and set generateDensityMatrix to false
-              // for all child edges
-              m = multiply2(e1, e2, v, false);
-            } else if (idx == 2) {
-              // When I have the second edge and generateDensityMatrix == false,
-              // then edge[2] == edge[1]
-              if (k == 0) {
-                if (edge[1].w.approximatelyZero()) {
-                  edge[2] = ResultEdge::zero();
-                } else {
-                  edge[2] = edge[1];
-                }
-              }
-              continue;
-            } else {
-              m = multiply2(e1, e2, v, generateDensityMatrix);
-            }
+          auto m = multiply2(e1, e2, v);
 
-            if (k == 0 || edge[idx].w.exactlyZero()) {
-              edge[idx] = m;
-            } else if (!m.w.exactlyZero()) {
-              dNode::applyDmChangesToNode(edge[idx].p);
-              dNode::applyDmChangesToNode(m.p);
-              edge[idx] = add2(edge[idx], m, v);
-              dNode::revertDmChangesToNode(m.p);
-              dNode::revertDmChangesToNode(edge[idx].p);
-            }
-            // Undo modifications on density matrices
-            dEdge::revertDmChangesToEdges(e1, e2);
-          } else {
-            auto m = multiply2(e1, e2, v);
-
-            if (k == 0 || edge[idx].w.exactlyZero()) {
-              edge[idx] = m;
-            } else if (!m.w.exactlyZero()) {
-              edge[idx] = add2(edge[idx], m, v);
-            }
+          if (k == 0 || edge[idx].w.exactlyZero()) {
+            edge[idx] = m;
+          } else if (!m.w.exactlyZero()) {
+            edge[idx] = add2(edge[idx], m, v);
           }
         }
       }
     }
 
-    auto e = makeDDNode(var, edge, generateDensityMatrix);
+    auto e = makeDDNode(var, edge);
     computeTable.insert(x.p, y.p, e);
 
     e.w = e.w * rWeight;
@@ -1389,7 +1238,7 @@ public:
    * type.
    */
   template <class Node> [[nodiscard]] auto& getKroneckerComputeTable() {
-    if constexpr (std::is_same_v<Node, vNode>) {
+    if constexpr (IsVector<Node>) {
       return vectorKronecker;
     } else {
       return matrixKronecker;
@@ -1407,17 +1256,10 @@ public:
    * decision diagram.
    * @return The resulting decision diagram after computing the Kronecker
    * product.
-   * @throws std::invalid_argument if the node type is `dNode` (density
-   * matrices).
    */
   template <class Node>
   Edge<Node> kronecker(const Edge<Node>& x, const Edge<Node>& y,
                        const std::size_t yNumQubits, const bool incIdx = true) {
-    if constexpr (std::is_same_v<Node, dNode>) {
-      throw std::invalid_argument(
-          "Kronecker is currently not supported for density matrices");
-    }
-
     const auto e = kronecker2(x, y, yNumQubits, incIdx);
     return cn.lookup(e);
   }
@@ -1462,7 +1304,7 @@ private:
       return {x.p, rWeight};
     }
 
-    if constexpr (std::is_same_v<Node, mNode> || std::is_same_v<Node, dNode>) {
+    if constexpr (IsMatrix<Node>) {
       if (x.isIdentity()) {
         return {y.p, rWeight};
       }
@@ -1491,8 +1333,7 @@ private:
     Qubit idx = x.p->v;
     if (incIdx) {
       // use the given number of qubits if y is an identity
-      if constexpr (std::is_same_v<Node, mNode> ||
-                    std::is_same_v<Node, dNode>) {
+      if constexpr (IsMatrix<Node>) {
         if (y.isIdentity()) {
           idx += static_cast<Qubit>(yNumQubits);
         } else {
@@ -1502,7 +1343,7 @@ private:
         idx += static_cast<Qubit>(y.p->v + 1U);
       }
     }
-    auto e = makeDDNode(idx, edge, true);
+    auto e = makeDDNode(idx, edge);
     computeTable.insert(x.p, y.p, {e.p, e.w});
     return {e.p, rWeight};
   }
@@ -1511,8 +1352,6 @@ private:
   /// (Partial) trace
   ///
 public:
-  UnaryComputeTable<dNode*, dCachedEdge> densityTrace{
-      config_.ctDmTraceNumBucket};
   UnaryComputeTable<mNode*, mCachedEdge> matrixTrace{
       config_.ctMatTraceNumBucket};
 
@@ -1523,13 +1362,7 @@ public:
    * @return A reference to the appropriate compute table for the given node
    * type.
    */
-  template <class Node> [[nodiscard]] auto& getTraceComputeTable() {
-    if constexpr (std::is_same_v<Node, mNode>) {
-      return matrixTrace;
-    } else {
-      return densityTrace;
-    }
-  }
+  [[nodiscard]] auto& getTraceComputeTable() { return matrixTrace; }
 
   /**
    * @brief Computes the partial trace of a matrix decision diagram.
@@ -1541,21 +1374,13 @@ public:
   mEdge partialTrace(const mEdge& a, const std::vector<bool>& eliminate);
 
   /**
-   * @brief Computes the trace of a decision diagram.
+   * @brief Computes the trace of a matrix decision diagram.
    *
-   * @tparam Node The type of the node.
    * @param a The decision diagram.
    * @param numQubits The number of qubits in the decision diagram.
    * @return The trace of the decision diagram as a complex value.
    */
-  template <class Node>
-  ComplexValue trace(const Edge<Node>& a, const std::size_t numQubits) {
-    if (a.isIdentity()) {
-      return static_cast<ComplexValue>(a.w);
-    }
-    const auto eliminate = std::vector<bool>(numQubits, true);
-    return trace(a, eliminate, numQubits).w;
-  }
+  ComplexValue trace(const mEdge& a, std::size_t numQubits);
 
   /**
    * @brief Checks if a given matrix is close to the identity matrix.
@@ -1589,80 +1414,9 @@ private:
    * For matrices, normalization is continuously applied, dividing by two at
    * each level marked for elimination, thereby ensuring that the result is
    * mapped to the interval [0,1] (as opposed to the interval [0,2^N]).
-   *
-   * For density matrices, such normalization is not applied as the trace of
-   * density matrices is always 1 by definition.
    */
-  template <class Node>
-  CachedEdge<Node> trace(const Edge<Node>& a,
-                         const std::vector<bool>& eliminate, std::size_t level,
-                         std::size_t alreadyEliminated = 0) {
-    const auto aWeight = static_cast<ComplexValue>(a.w);
-    if (aWeight.approximatelyZero()) {
-      return CachedEdge<Node>::zero();
-    }
-
-    // If `a` is the identity matrix or there is nothing left to eliminate,
-    // then simply return `a`
-    if (a.isIdentity() ||
-        std::none_of(eliminate.begin(),
-                     eliminate.begin() +
-                         static_cast<std::vector<bool>::difference_type>(level),
-                     [](bool v) { return v; })) {
-      return CachedEdge<Node>{a.p, aWeight};
-    }
-
-    const auto v = a.p->v;
-    if (eliminate[v]) {
-      // Lookup nodes marked for elimination in the compute table if all
-      // lower-level qubits are eliminated as well: if the trace has already
-      // been computed, return the result
-      const auto eliminateAll = std::all_of(
-          eliminate.begin(),
-          eliminate.begin() +
-              static_cast<std::vector<bool>::difference_type>(level),
-          [](bool e) { return e; });
-      if (eliminateAll) {
-        if (const auto* r = getTraceComputeTable<Node>().lookup(a.p);
-            r != nullptr) {
-          return {r->p, r->w * aWeight};
-        }
-      }
-
-      const auto elims = alreadyEliminated + 1;
-      auto r = add2(trace(a.p->e[0], eliminate, level - 1, elims),
-                    trace(a.p->e[3], eliminate, level - 1, elims), v - 1);
-
-      // The resulting weight is continuously normalized to the range [0,1] for
-      // matrix nodes
-      if constexpr (std::is_same_v<Node, mNode>) {
-        r.w = r.w / 2.0;
-      }
-
-      // Insert result into compute table if all lower-level qubits are
-      // eliminated as well
-      if (eliminateAll) {
-        getTraceComputeTable<Node>().insert(a.p, r);
-      }
-      r.w = r.w * aWeight;
-      return r;
-    }
-
-    std::array<CachedEdge<Node>, NEDGE> edge{};
-    std::transform(a.p->e.cbegin(), a.p->e.cend(), edge.begin(),
-                   [this, &eliminate, &alreadyEliminated,
-                    &level](const Edge<Node>& e) -> CachedEdge<Node> {
-                     return trace(e, eliminate, level - 1, alreadyEliminated);
-                   });
-    const auto adjustedV =
-        static_cast<Qubit>(static_cast<std::size_t>(a.p->v) -
-                           (static_cast<std::size_t>(std::count(
-                                eliminate.begin(), eliminate.end(), true)) -
-                            alreadyEliminated));
-    auto r = makeDDNode(adjustedV, edge);
-    r.w = r.w * aWeight;
-    return r;
-  }
+  mCachedEdge trace(const mEdge& a, const std::vector<bool>& eliminate,
+                    std::size_t level, std::size_t alreadyEliminated = 0);
 
   /**
    * @brief Recursively checks if a given matrix is close to the identity
@@ -1691,13 +1445,6 @@ public:
   static mEdge makeIdent();
 
   mEdge createInitialMatrix(const std::vector<bool>& ancillary);
-
-  ///
-  /// Noise Operations
-  ///
-  StochasticNoiseOperationTable<mEdge> stochasticNoiseOperationCache{
-      nqubits, config_.stochasticCacheOps};
-  DensityNoiseTable<dEdge, dEdge> densityNoise{config_.ctDmNoiseNumBucket};
 
   ///
   /// Ancillary and garbage reduction
@@ -1921,7 +1668,7 @@ public:
     } else {
       std::string version;
       std::getline(is, version);
-      if (std::stoi(version) != SERIALIZATION_VERSION) {
+      if (std::cmp_not_equal(std::stoi(version), SERIALIZATION_VERSION)) {
         throw std::runtime_error(
             "Wrong Version of serialization file version. version of file: " +
             version +
