@@ -146,30 +146,30 @@ Value CtrlOp::getParameter(const size_t i) {
   return getBodyUnitary().getParameter(i);
 }
 
-void CtrlOp::build(OpBuilder& odsBuilder, OperationState& odsState,
+void CtrlOp::build(OpBuilder& builder, OperationState& state,
                    ValueRange controls, UnitaryOpInterface bodyUnitary) {
-  const OpBuilder::InsertionGuard guard(odsBuilder);
-  odsState.addOperands(controls);
-  auto* region = odsState.addRegion();
+  const OpBuilder::InsertionGuard guard(builder);
+  state.addOperands(controls);
+  auto* region = state.addRegion();
   auto& block = region->emplaceBlock();
 
   // Move the unitary op into the block
-  odsBuilder.setInsertionPointToStart(&block);
-  odsBuilder.clone(*bodyUnitary.getOperation());
-  odsBuilder.create<YieldOp>(odsState.location);
+  builder.setInsertionPointToStart(&block);
+  builder.clone(*bodyUnitary.getOperation());
+  builder.create<YieldOp>(state.location);
 }
 
-void CtrlOp::build(OpBuilder& odsBuilder, OperationState& odsState,
+void CtrlOp::build(OpBuilder& builder, OperationState& state,
                    ValueRange controls,
                    const std::function<void()>& bodyBuilder) {
-  const OpBuilder::InsertionGuard guard(odsBuilder);
-  odsState.addOperands(controls);
-  auto* region = odsState.addRegion();
+  const OpBuilder::InsertionGuard guard(builder);
+  state.addOperands(controls);
+  auto* region = state.addRegion();
   auto& block = region->emplaceBlock();
 
-  odsBuilder.setInsertionPointToStart(&block);
+  builder.setInsertionPointToStart(&block);
   bodyBuilder();
-  odsBuilder.create<YieldOp>(odsState.location);
+  builder.create<YieldOp>(state.location);
 }
 
 LogicalResult CtrlOp::verify() {

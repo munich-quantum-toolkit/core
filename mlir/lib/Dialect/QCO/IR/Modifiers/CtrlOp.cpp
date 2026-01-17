@@ -235,42 +235,41 @@ Value CtrlOp::getParameter(const size_t i) {
   return getBodyUnitary().getParameter(i);
 }
 
-void CtrlOp::build(OpBuilder& odsBuilder, OperationState& odsState,
+void CtrlOp::build(OpBuilder& builder, OperationState& state,
                    ValueRange controls, ValueRange targets,
                    UnitaryOpInterface bodyUnitary) {
-  build(odsBuilder, odsState, controls, targets);
-  auto& block = odsState.regions.front()->emplaceBlock();
+  build(builder, state, controls, targets);
+  auto& block = state.regions.front()->emplaceBlock();
 
   // Create block arguments and map targets to them
   IRMapping mapping;
-  const auto qubitType = QubitType::get(odsBuilder.getContext());
+  const auto qubitType = QubitType::get(builder.getContext());
   for (const auto target : targets) {
-    mapping.map(target, block.addArgument(qubitType, odsState.location));
+    mapping.map(target, block.addArgument(qubitType, state.location));
   }
 
   // Clone the operation using the mapping
-  const OpBuilder::InsertionGuard guard(odsBuilder);
-  odsBuilder.setInsertionPointToStart(&block);
-  auto* op = odsBuilder.clone(*bodyUnitary.getOperation(), mapping);
-  YieldOp::create(odsBuilder, odsState.location, op->getResults());
+  const OpBuilder::InsertionGuard guard(builder);
+  builder.setInsertionPointToStart(&block);
+  auto* op = builder.clone(*bodyUnitary.getOperation(), mapping);
+  YieldOp::create(builder, state.location, op->getResults());
 }
 
 void CtrlOp::build(
-    OpBuilder& odsBuilder, OperationState& odsState, ValueRange controls,
+    OpBuilder& builder, OperationState& state, ValueRange controls,
     ValueRange targets,
     llvm::function_ref<llvm::SmallVector<Value>(ValueRange)> bodyBuilder) {
-  build(odsBuilder, odsState, controls, targets);
-  auto& block = odsState.regions.front()->emplaceBlock();
+  build(builder, state, controls, targets);
+  auto& block = state.regions.front()->emplaceBlock();
 
-  const auto qubitType = QubitType::get(odsBuilder.getContext());
+  const auto qubitType = QubitType::get(builder.getContext());
   for (size_t i = 0; i < targets.size(); ++i) {
-    block.addArgument(qubitType, odsState.location);
+    block.addArgument(qubitType, state.location);
   }
 
-  const OpBuilder::InsertionGuard guard(odsBuilder);
-  odsBuilder.setInsertionPointToStart(&block);
-  YieldOp::create(odsBuilder, odsState.location,
-                  bodyBuilder(block.getArguments()));
+  const OpBuilder::InsertionGuard guard(builder);
+  builder.setInsertionPointToStart(&block);
+  YieldOp::create(builder, state.location, bodyBuilder(block.getArguments()));
 }
 
 LogicalResult CtrlOp::verify() {
