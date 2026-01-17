@@ -1106,8 +1106,10 @@ struct ConvertQCOFuncFuncOp final : OpConversionPattern<func::FuncOp> {
       const SmallVector<Type> argumentTypes(
           op.front().getNumArguments(),
           qc::QubitType::get(rewriter.getContext()));
+      const auto qcType = qc::QubitType::get(rewriter.getContext());
+
       for (auto blockArg : op.front().getArguments()) {
-        blockArg.setType(qc::QubitType::get(rewriter.getContext()));
+        blockArg.setType(qcType);
       }
       auto newFuncType = rewriter.getFunctionType(argumentTypes, {});
       op.setFunctionType(newFuncType);
