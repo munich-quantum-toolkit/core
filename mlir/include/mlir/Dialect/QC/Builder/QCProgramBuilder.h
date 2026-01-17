@@ -919,7 +919,7 @@ public:
    * scf.while : () -> () {
    *   qc.h %q0 : !qc.qubit
    *   %res = qc.measure %q0 : !qc.qubit -> i1
-   *   scf.condition(%tres)
+   *   scf.condition(%res)
    * } do {
    *   qc.x %q0 : !qc.qubit
    *   scf.yield

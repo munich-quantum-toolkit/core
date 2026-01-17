@@ -948,7 +948,7 @@ struct ConvertQCOScfWhileOp final : OpConversionPattern<scf::WhileOp> {
 };
 
 /**
- * @brief Converts scf.for with value semantics to scf.while with memory
+ * @brief Converts scf.for with value semantics to scf.for with memory
  * semantics for qubit values. This currently assumes no mixed types as return
  * values.
  *
@@ -956,8 +956,8 @@ struct ConvertQCOScfWhileOp final : OpConversionPattern<scf::WhileOp> {
  * ```mlir
  * %targets_out = scf.for %iv = %lb to %ub step %step iter_args(%arg0 = q0) ->
  * (!qco.qubit) {
- * %q1 = qc.x %arg0 : !qco.qubit -> !qco.qubit
- * scf.yield %q1 : !qco.qubit
+ *   %q1 = qc.x %arg0 : !qco.qubit -> !qco.qubit
+ *   scf.yield %q1 : !qco.qubit
  * }
  * ```
  * is converted to
@@ -1036,7 +1036,6 @@ struct ConvertQCOScfYieldOp final : OpConversionPattern<scf::YieldOp> {
  * is converted to
  * ```mlir
  * scf.condition(%cond)
-
  * ```
  */
 struct ConvertQCOScfConditionOp final : OpConversionPattern<scf::ConditionOp> {
