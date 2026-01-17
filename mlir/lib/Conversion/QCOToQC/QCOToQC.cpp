@@ -1081,8 +1081,8 @@ struct ConvertQCOFuncCallOp final : OpConversionPattern<func::CallOp> {
 };
 
 /**
- * @brief Converts func.func with memory semantics to func.func with
- * value semantics for qubit values. This currently assumes no mixed types as
+ * @brief Converts func.func with value semantics to func.func with
+ * memory semantics for qubit values. This currently assumes no mixed types as
  * parameters/return values.
  *
  * @par Example:
