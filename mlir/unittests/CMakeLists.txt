@@ -7,11 +7,12 @@
 # Licensed under the MIT License
 
 add_subdirectory(pipeline)
-add_subdirectory(conversion)
+add_subdirectory(Conversion)
 add_subdirectory(Dialect)
 
 add_custom_target(mqt-core-mlir-unittests)
 
 add_dependencies(
-  mqt-core-mlir-unittests mqt-core-mlir-compiler-pipeline-test mqt-core-mlir-conversion-test
+  mqt-core-mlir-unittests mqt-core-mlir-compiler-pipeline-test
+  mqt-core-mlir-conversion-qc-to-qco-test mqt-core-mlir-conversion-qco-to-qc-test
   mqt-core-mlir-dialect-qco-ir-modifiers-test mqt-core-mlir-dialect-utils-test)
