@@ -62,7 +62,7 @@ auto Edge<Node>::getValueByPath(const std::size_t numQubits,
     }
 
     // node is at the expected level
-    assert(tmp <= r.p->e.size());
+    assert(tmp < r.p->e.size());
     r = r.p->e[tmp];
     c *= static_cast<std::complex<fp>>(r.w);
     --level;
@@ -449,7 +449,7 @@ auto Edge<Node>::printMatrix(const std::size_t numQubits) const -> void
     return;
   }
   // total number of qubits should not be lower than the highest qubit index
-  assert(isTerminal() || numQubits >= p->v);
+  assert(isTerminal() || numQubits > p->v);
   const std::size_t element = 1ULL << numQubits;
   for (auto i = 0ULL; i < element; ++i) {
     for (auto j = 0ULL; j < element; ++j) {
