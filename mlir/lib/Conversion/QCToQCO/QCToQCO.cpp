@@ -1293,9 +1293,9 @@ struct ConvertQCScfIfOp final : StatefulOpConversionPattern<scf::IfOp> {
         qcQubits.size(), qco::QubitType::get(rewriter.getContext()));
 
     // create new if operation
-    auto newIfOp = rewriter.create<scf::IfOp>(op->getLoc(), TypeRange{qcoTypes},
-                                              op.getCondition(),
-                                              op.getElseRegion().empty());
+    auto newIfOp =
+        scf::IfOp::create(rewriter, op->getLoc(), TypeRange{qcoTypes},
+                          op.getCondition(), op.getElseRegion().empty());
     auto& thenRegion = newIfOp.getThenRegion();
     auto& elseRegion = newIfOp.getElseRegion();
 
@@ -1312,7 +1312,7 @@ struct ConvertQCScfIfOp final : StatefulOpConversionPattern<scf::IfOp> {
       // create the yield operation if it does not exist yet
       rewriter.setInsertionPointToEnd(&elseRegion.front());
       const auto elseYield =
-          rewriter.create<scf::YieldOp>(op->getLoc(), qcValues);
+          scf::YieldOp::create(rewriter, op->getLoc(), qcValues);
       // mark the yield operation for conversion
       elseYield->setAttr("needChange",
                          StringAttr::get(rewriter.getContext(), "yes"));
@@ -1392,8 +1392,8 @@ struct ConvertQCScfWhileOp final : StatefulOpConversionPattern<scf::WhileOp> {
         qcQubits.size(), qco::QubitType::get(rewriter.getContext()));
 
     // create the new while operation
-    auto newWhileOp = rewriter.create<scf::WhileOp>(
-        op.getLoc(), TypeRange(qcoTypes), ValueRange(qcoQubits));
+    auto newWhileOp = scf::WhileOp::create(
+        rewriter, op.getLoc(), TypeRange(qcoTypes), ValueRange(qcoQubits));
     auto& newBeforeRegion = newWhileOp.getBefore();
     auto& newAfterRegion = newWhileOp.getAfter();
     const SmallVector<Location> locs(qcQubits.size(), op->getLoc());
@@ -1475,8 +1475,8 @@ struct ConvertQCScfForOp final : StatefulOpConversionPattern<scf::ForOp> {
     }
 
     // Create a new for-loop with qco qubits as iter_args
-    auto newFor = rewriter.create<scf::ForOp>(
-        op.getLoc(), adaptor.getLowerBound(), adaptor.getUpperBound(),
+    auto newFor = scf::ForOp::create(
+        rewriter, op.getLoc(), adaptor.getLowerBound(), adaptor.getUpperBound(),
         adaptor.getStep(), ValueRange(qcoQubits));
 
     // move the operations to the new block
@@ -1630,8 +1630,8 @@ struct ConvertQCFuncCallOp final : StatefulOpConversionPattern<func::CallOp> {
     const SmallVector<Type> qcoTypes(
         qcQubits.size(), qco::QubitType::get(rewriter.getContext()));
 
-    const auto callOp = rewriter.create<func::CallOp>(
-        op->getLoc(), adaptor.getCallee(), qcoTypes, qcoQubits);
+    const auto callOp = func::CallOp::create(
+        rewriter, op->getLoc(), adaptor.getCallee(), qcoTypes, qcoQubits);
 
     for (const auto& [qcQubit, qcoQubit] :
          llvm::zip_equal(qcQubits, callOp->getResults())) {

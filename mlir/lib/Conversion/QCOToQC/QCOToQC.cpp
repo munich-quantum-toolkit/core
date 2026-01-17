@@ -866,8 +866,8 @@ struct ConvertQCOScfIfOp final : OpConversionPattern<scf::IfOp> {
   matchAndRewrite(scf::IfOp op, OpAdaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
     // Create the new if operation
-    auto newIf = rewriter.create<scf::IfOp>(op.getLoc(), TypeRange{},
-                                            op.getCondition(), false);
+    auto newIf = scf::IfOp::create(rewriter, op.getLoc(), TypeRange{},
+                                   op.getCondition(), false);
     // Inline the regions
     rewriter.inlineRegionBefore(op.getThenRegion(), newIf.getThenRegion(),
                                 newIf.getThenRegion().end());
@@ -921,7 +921,7 @@ struct ConvertQCOScfWhileOp final : OpConversionPattern<scf::WhileOp> {
                   ConversionPatternRewriter& rewriter) const override {
     // Create the new while operation
     auto newWhileOp =
-        rewriter.create<scf::WhileOp>(op->getLoc(), TypeRange{}, ValueRange{});
+        scf::WhileOp::create(rewriter, op->getLoc(), TypeRange{}, ValueRange{});
 
     // Replace the uses of the blockarguments with the init values
     const auto& inits = adaptor.getInits();
@@ -975,8 +975,8 @@ struct ConvertQCOScfForOp final : OpConversionPattern<scf::ForOp> {
   matchAndRewrite(scf::ForOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
     // Create a new for-loop with no iter_args
-    auto newFor = rewriter.create<scf::ForOp>(
-        op.getLoc(), adaptor.getLowerBound(), adaptor.getUpperBound(),
+    auto newFor = scf::ForOp::create(
+        rewriter, op.getLoc(), adaptor.getLowerBound(), adaptor.getUpperBound(),
         adaptor.getStep(), ValueRange{});
 
     // Replace the uses of the previous iter_args
@@ -1071,8 +1071,8 @@ struct ConvertQCOFuncCallOp final : OpConversionPattern<func::CallOp> {
   LogicalResult
   matchAndRewrite(func::CallOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
-    rewriter.create<func::CallOp>(op->getLoc(), adaptor.getCallee(),
-                                  TypeRange{}, adaptor.getOperands());
+    func::CallOp::create(rewriter, op->getLoc(), adaptor.getCallee(),
+                         TypeRange{}, adaptor.getOperands());
     rewriter.replaceOp(op, adaptor.getOperands());
     return success();
   }
