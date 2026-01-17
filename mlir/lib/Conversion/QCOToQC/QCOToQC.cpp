@@ -988,10 +988,9 @@ struct ConvertQCOScfForOp final : OpConversionPattern<scf::ForOp> {
 
     // Move all the operations from the old block to the new block
     auto* newBlock = newFor.getBody();
-    // Erase the existing yield operation
-    rewriter.eraseOp(newBlock->getTerminator());
-    newBlock->getOperations().splice(newBlock->end(),
-                                     op.getBody()->getOperations());
+    auto& srcOps = op.getBody()->getOperations();
+    newBlock->getOperations().splice(newBlock->begin(), srcOps, srcOps.begin(),
+                                     std::prev(srcOps.end()));
 
     // Replace the result values with the init values
     rewriter.replaceOp(op, adaptor.getInitArgs());
