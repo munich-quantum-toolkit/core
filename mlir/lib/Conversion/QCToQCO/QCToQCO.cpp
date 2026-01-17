@@ -1284,6 +1284,7 @@ struct ConvertQCScfIfOp final : StatefulOpConversionPattern<scf::IfOp> {
   LogicalResult
   matchAndRewrite(scf::IfOp op, OpAdaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
+    auto& qubitMap = getState().qubitMap[op->getParentRegion()];
     auto& regionMap = getState().regionMap;
     const auto& qcQubits = regionMap[op];
     const SmallVector<Value> qcValues(qcQubits.begin(), qcQubits.end());
@@ -1318,21 +1319,16 @@ struct ConvertQCScfIfOp final : StatefulOpConversionPattern<scf::IfOp> {
                          StringAttr::get(rewriter.getContext(), "yes"));
     }
 
-    // create the qubit map for the regions
     auto& thenRegionQubitMap = getState().qubitMap[&thenRegion];
     auto& elseRegionQubitMap = getState().qubitMap[&elseRegion];
-    auto& qubitMap = getState().qubitMap[op->getParentRegion()];
 
-    for (const auto& qcQubit : qcQubits) {
+    // create the qubit map for the regions and update the qubit map for the
+    // current region
+    for (const auto& [qcQubit, qcoQubit] :
+         llvm::zip_equal(qcQubits, newIfOp->getResults())) {
       assert(qubitMap.contains(qcQubit) && "QC qubit not found");
       thenRegionQubitMap.try_emplace(qcQubit, qubitMap[qcQubit]);
       elseRegionQubitMap.try_emplace(qcQubit, qubitMap[qcQubit]);
-    }
-
-    // update the qubit map in the current region
-
-    for (const auto& [qcQubit, qcoQubit] :
-         llvm::zip_equal(qcQubits, newIfOp->getResults())) {
       qubitMap[qcQubit] = qcoQubit;
     }
 
@@ -1411,21 +1407,16 @@ struct ConvertQCScfWhileOp final : StatefulOpConversionPattern<scf::WhileOp> {
     newAfterBlock->getOperations().splice(newAfterBlock->end(),
                                           op.getAfterBody()->getOperations());
 
-    // create the qubit map for the new regions
     auto& newBeforeRegionMap = getState().qubitMap[&newWhileOp.getBefore()];
     auto& newAfterRegionMap = getState().qubitMap[&newWhileOp.getAfter()];
-    for (const auto& [qcQubit, qcoQubit] :
-         llvm::zip_equal(qcQubits, newWhileOp.getBeforeArguments())) {
-      newBeforeRegionMap.try_emplace(qcQubit, qcoQubit);
-    }
-    for (const auto& [qcQubit, qcoQubit] :
-         llvm::zip_equal(qcQubits, newWhileOp.getAfterArguments())) {
-      newAfterRegionMap.try_emplace(qcQubit, qcoQubit);
-    }
 
-    // update the qubit map in the current region
-    for (const auto& [qcQubit, qcoQubit] :
-         llvm::zip_equal(qcQubits, newWhileOp->getResults())) {
+    // create the qubit map for the new regions and  update the qubit map in the
+    // current region
+    for (const auto& [qcQubit, beforeArg, afterArg, qcoQubit] : llvm::zip_equal(
+             qcQubits, newWhileOp.getBeforeArguments(),
+             newWhileOp.getAfterArguments(), newWhileOp->getResults())) {
+      newBeforeRegionMap.try_emplace(qcQubit, beforeArg);
+      newAfterRegionMap.try_emplace(qcQubit, afterArg);
       qubitMap[qcQubit] = qcoQubit;
     }
 
@@ -1492,15 +1483,11 @@ struct ConvertQCScfForOp final : StatefulOpConversionPattern<scf::ForOp> {
     auto& newRegion = newFor.getRegion();
     auto& regionQubitMap = getState().qubitMap[&newRegion];
 
-    // create the qubitmap for the new region
-    for (const auto& [qcQubit, qcoQubit] :
-         llvm::zip_equal(qcQubits, newFor.getRegionIterArgs())) {
-      regionQubitMap.try_emplace(qcQubit, qcoQubit);
-    }
-
-    // update the qubitmap in the current region
-    for (const auto& [qcQubit, qcoQubit] :
-         llvm::zip_equal(qcQubits, newFor->getResults())) {
+    // create the qubitmap for the new region and update the qubitmap in the
+    // current region
+    for (const auto& [qcQubit, iterArg, qcoQubit] : llvm::zip_equal(
+             qcQubits, newFor.getRegionIterArgs(), newFor->getResults())) {
+      regionQubitMap.try_emplace(qcQubit, iterArg);
       qubitMap[qcQubit] = qcoQubit;
     }
 
