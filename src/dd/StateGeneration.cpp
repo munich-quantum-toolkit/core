@@ -275,7 +275,8 @@ VectorDD generateExponentialState(const std::size_t levels, Package& dd,
   std::vector<std::size_t> nodesPerLevel(levels); // [1, 2, 4, 8, ...]
   std::ranges::generate(nodesPerLevel,
                         [exp = 0]() mutable { return 1ULL << exp++; });
-  return generateRandomState(levels, nodesPerLevel, ROUNDROBIN, dd, seed);
+  return generateRandomState(levels, nodesPerLevel,
+                             GenerationWireStrategy::ROUNDROBIN, dd, seed);
 }
 
 VectorDD generateRandomState(const std::size_t levels,
@@ -324,12 +325,12 @@ VectorDD generateRandomState(const std::size_t levels,
 
     std::vector<std::size_t> indices(2 * n); // Indices for wireing.
     switch (strategy) {
-    case ROUNDROBIN: {
+    case GenerationWireStrategy::ROUNDROBIN: {
       std::ranges::generate(indices,
                             [&m, r = 0UL]() mutable { return (r++) % m; });
       break;
     }
-    case RANDOM: {
+    case GenerationWireStrategy::RANDOM: {
       IndexDistribution idxDist{0, m - 1};
 
       // Ensure that all the nodes below have a connection upwards.

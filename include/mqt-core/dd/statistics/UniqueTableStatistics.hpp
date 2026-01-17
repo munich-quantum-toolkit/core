@@ -17,7 +17,7 @@
 
 namespace dd {
 /// \brief A class for storing statistics of a unique table
-struct UniqueTableStatistics : public TableStatistics {
+struct UniqueTableStatistics : TableStatistics {
   /// The number of garbage collection runs
   std::size_t gcRuns = 0U;
 
