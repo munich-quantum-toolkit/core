@@ -239,7 +239,7 @@ def ResetOp : QCOOp<"reset", [Idempotent, SameOperandsAndResultType]> {
 //===----------------------------------------------------------------------===//
 
 class TargetAndParameterArityTrait<int T, int P>
-        : ParamNativeOpTrait<"TargetAndParameterArityTrait", !strconcat(!cast<string>(T), ",", !cast<string>(P))> {
+        : ParamNativeOpTrait<"TargetAndParameterArityTrait", !cast<string>(T) # ", " # !cast<string>(P)> {
     let cppNamespace = "::mlir::qco";
 }
 
@@ -271,7 +271,8 @@ def GPhaseOp : QCOOp<"gphase", traits = [UnitaryOpInterface, ZeroTargetOneParame
     let assemblyFormat = "`(` $theta `)` attr-dict";
 
     let extraClassDeclaration = [{
-        static StringRef getBaseSymbol() { return "gphase"; }
+        [[nodiscard]] static StringRef getBaseSymbol() { return "gphase"; }
+        [[nodiscard]] std::optional<Eigen::Matrix<std::complex<double>, 1, 1>> getUnitaryMatrix();
     }];
 
     let builders = [
@@ -297,7 +298,8 @@ def IdOp : QCOOp<"id", traits = [UnitaryOpInterface, OneTargetZeroParameter]> {
     let assemblyFormat = "$qubit_in attr-dict `:` type($qubit_in) `->` type($qubit_out)";
 
     let extraClassDeclaration = [{
-        static StringRef getBaseSymbol() { return "id"; }
+        [[nodiscard]] static StringRef getBaseSymbol() { return "id"; }
+        [[nodiscard]] static Eigen::Matrix2cd getUnitaryMatrix();
     }];
 
     let hasCanonicalizer = 1;
@@ -319,7 +321,8 @@ def XOp : QCOOp<"x", traits = [UnitaryOpInterface, OneTargetZeroParameter]> {
     let assemblyFormat = "$qubit_in attr-dict `:` type($qubit_in) `->` type($qubit_out)";
 
     let extraClassDeclaration = [{
-        static StringRef getBaseSymbol() { return "x"; }
+        [[nodiscard]] static StringRef getBaseSymbol() { return "x"; }
+        [[nodiscard]] static Eigen::Matrix2cd getUnitaryMatrix();
     }];
 
     let hasCanonicalizer = 1;
@@ -341,7 +344,8 @@ def YOp : QCOOp<"y", traits = [UnitaryOpInterface, OneTargetZeroParameter]> {
     let assemblyFormat = "$qubit_in attr-dict `:` type($qubit_in) `->` type($qubit_out)";
 
     let extraClassDeclaration = [{
-        static StringRef getBaseSymbol() { return "y"; }
+        [[nodiscard]] static StringRef getBaseSymbol() { return "y"; }
+        [[nodiscard]] static Eigen::Matrix2cd getUnitaryMatrix();
     }];
 
     let hasCanonicalizer = 1;
@@ -363,7 +367,8 @@ def ZOp : QCOOp<"z", traits = [UnitaryOpInterface, OneTargetZeroParameter]> {
     let assemblyFormat = "$qubit_in attr-dict `:` type($qubit_in) `->` type($qubit_out)";
 
     let extraClassDeclaration = [{
-        static StringRef getBaseSymbol() { return "z"; }
+        [[nodiscard]] static StringRef getBaseSymbol() { return "z"; }
+        [[nodiscard]] static Eigen::Matrix2cd getUnitaryMatrix();
     }];
 
     let hasCanonicalizer = 1;
@@ -385,7 +390,8 @@ def HOp : QCOOp<"h", traits = [UnitaryOpInterface, OneTargetZeroParameter]> {
     let assemblyFormat = "$qubit_in attr-dict `:` type($qubit_in) `->` type($qubit_out)";
 
     let extraClassDeclaration = [{
-        static StringRef getBaseSymbol() { return "h"; }
+        [[nodiscard]] static StringRef getBaseSymbol() { return "h"; }
+        [[nodiscard]] static Eigen::Matrix2cd getUnitaryMatrix();
     }];
 
     let hasCanonicalizer = 1;
@@ -407,7 +413,8 @@ def SOp : QCOOp<"s", traits = [UnitaryOpInterface, OneTargetZeroParameter]> {
     let assemblyFormat = "$qubit_in attr-dict `:` type($qubit_in) `->` type($qubit_out)";
 
     let extraClassDeclaration = [{
-        static StringRef getBaseSymbol() { return "s"; }
+        [[nodiscard]] static StringRef getBaseSymbol() { return "s"; }
+        [[nodiscard]] static Eigen::Matrix2cd getUnitaryMatrix();
     }];
 
     let hasCanonicalizer = 1;
@@ -429,7 +436,8 @@ def SdgOp : QCOOp<"sdg", traits = [UnitaryOpInterface, OneTargetZeroParameter]> 
     let assemblyFormat = "$qubit_in attr-dict `:` type($qubit_in) `->` type($qubit_out)";
 
     let extraClassDeclaration = [{
-        static StringRef getBaseSymbol() { return "sdg"; }
+        [[nodiscard]] static StringRef getBaseSymbol() { return "sdg"; }
+        [[nodiscard]] static Eigen::Matrix2cd getUnitaryMatrix();
     }];
 
     let hasCanonicalizer = 1;
@@ -451,7 +459,8 @@ def TOp : QCOOp<"t", traits = [UnitaryOpInterface, OneTargetZeroParameter]> {
     let assemblyFormat = "$qubit_in attr-dict `:` type($qubit_in) `->` type($qubit_out)";
 
     let extraClassDeclaration = [{
-        static StringRef getBaseSymbol() { return "t"; }
+        [[nodiscard]] static StringRef getBaseSymbol() { return "t"; }
+        [[nodiscard]] static Eigen::Matrix2cd getUnitaryMatrix();
     }];
 
     let hasCanonicalizer = 1;
@@ -473,7 +482,8 @@ def TdgOp : QCOOp<"tdg", traits = [UnitaryOpInterface, OneTargetZeroParameter]> 
     let assemblyFormat = "$qubit_in attr-dict `:` type($qubit_in) `->` type($qubit_out)";
 
     let extraClassDeclaration = [{
-        static StringRef getBaseSymbol() { return "tdg"; }
+        [[nodiscard]] static StringRef getBaseSymbol() { return "tdg"; }
+        [[nodiscard]] static Eigen::Matrix2cd getUnitaryMatrix();
     }];
 
     let hasCanonicalizer = 1;
@@ -495,7 +505,8 @@ def SXOp : QCOOp<"sx", traits = [UnitaryOpInterface, OneTargetZeroParameter]> {
     let assemblyFormat = "$qubit_in attr-dict `:` type($qubit_in) `->` type($qubit_out)";
 
     let extraClassDeclaration = [{
-        static StringRef getBaseSymbol() { return "sx"; }
+        [[nodiscard]] static StringRef getBaseSymbol() { return "sx"; }
+        [[nodiscard]] static Eigen::Matrix2cd getUnitaryMatrix();
     }];
 
     let hasCanonicalizer = 1;
@@ -517,7 +528,8 @@ def SXdgOp : QCOOp<"sxdg", traits = [UnitaryOpInterface, OneTargetZeroParameter]
     let assemblyFormat = "$qubit_in attr-dict `:` type($qubit_in) `->` type($qubit_out)";
 
     let extraClassDeclaration = [{
-        static StringRef getBaseSymbol() { return "sxdg"; }
+        [[nodiscard]] static StringRef getBaseSymbol() { return "sxdg"; }
+        [[nodiscard]] static Eigen::Matrix2cd getUnitaryMatrix();
     }];
 
     let hasCanonicalizer = 1;
@@ -540,7 +552,8 @@ def RXOp : QCOOp<"rx", traits = [UnitaryOpInterface, OneTargetOneParameter]> {
     let assemblyFormat = "`(` $theta `)` $qubit_in attr-dict `:` type($qubit_in) `->` type($qubit_out)";
 
     let extraClassDeclaration = [{
-        static StringRef getBaseSymbol() { return "rx"; }
+        [[nodiscard]] static StringRef getBaseSymbol() { return "rx"; }
+        [[nodiscard]] std::optional<Eigen::Matrix2cd> getUnitaryMatrix();
     }];
 
     let builders = [
@@ -567,7 +580,8 @@ def RYOp : QCOOp<"ry", traits = [UnitaryOpInterface, OneTargetOneParameter]> {
     let assemblyFormat = "`(` $theta `)` $qubit_in attr-dict `:` type($qubit_in) `->` type($qubit_out)";
 
     let extraClassDeclaration = [{
-        static StringRef getBaseSymbol() { return "ry"; }
+        [[nodiscard]] static StringRef getBaseSymbol() { return "ry"; }
+        [[nodiscard]] std::optional<Eigen::Matrix2cd> getUnitaryMatrix();
     }];
 
     let builders = [
@@ -594,7 +608,8 @@ def RZOp : QCOOp<"rz", traits = [UnitaryOpInterface, OneTargetOneParameter]> {
     let assemblyFormat = "`(` $theta `)` $qubit_in attr-dict `:` type($qubit_in) `->` type($qubit_out)";
 
     let extraClassDeclaration = [{
-        static StringRef getBaseSymbol() { return "rz"; }
+        [[nodiscard]] static StringRef getBaseSymbol() { return "rz"; }
+        [[nodiscard]] std::optional<Eigen::Matrix2cd> getUnitaryMatrix();
     }];
 
     let builders = [
@@ -621,7 +636,8 @@ def POp : QCOOp<"p", traits = [UnitaryOpInterface, OneTargetOneParameter]> {
     let assemblyFormat = "`(` $theta `)` $qubit_in attr-dict `:` type($qubit_in) `->` type($qubit_out)";
 
     let extraClassDeclaration = [{
-        static StringRef getBaseSymbol() { return "p"; }
+        [[nodiscard]] static StringRef getBaseSymbol() { return "p"; }
+        [[nodiscard]] std::optional<Eigen::Matrix2cd> getUnitaryMatrix();
     }];
 
     let builders = [
@@ -649,7 +665,8 @@ def ROp : QCOOp<"r", traits = [UnitaryOpInterface, OneTargetTwoParameter]> {
     let assemblyFormat = "`(` $theta `,` $phi `)` $qubit_in attr-dict `:` type($qubit_in) `->` type($qubit_out)";
 
     let extraClassDeclaration = [{
-        static StringRef getBaseSymbol() { return "r"; }
+        [[nodiscard]] static StringRef getBaseSymbol() { return "r"; }
+        [[nodiscard]] std::optional<Eigen::Matrix2cd> getUnitaryMatrix();
     }];
 
     let builders = [
@@ -677,7 +694,8 @@ def U2Op : QCOOp<"u2", traits = [UnitaryOpInterface, OneTargetTwoParameter]> {
     let assemblyFormat = "`(` $phi `,` $lambda `)` $qubit_in attr-dict `:` type($qubit_in) `->` type($qubit_out)";
 
     let extraClassDeclaration = [{
-        static StringRef getBaseSymbol() { return "u2"; }
+        [[nodiscard]] static StringRef getBaseSymbol() { return "u2"; }
+        [[nodiscard]] std::optional<Eigen::Matrix2cd> getUnitaryMatrix();
     }];
 
     let builders = [
@@ -706,7 +724,8 @@ def UOp : QCOOp<"u", traits = [UnitaryOpInterface, OneTargetThreeParameter]> {
     let assemblyFormat = "`(` $theta `,` $phi `,` $lambda `)` $qubit_in attr-dict `:` type($qubit_in) `->` type($qubit_out)";
 
     let extraClassDeclaration = [{
-        static StringRef getBaseSymbol() { return "u"; }
+        [[nodiscard]] static StringRef getBaseSymbol() { return "u"; }
+        [[nodiscard]] std::optional<Eigen::Matrix2cd> getUnitaryMatrix();
     }];
 
     let builders = [
@@ -733,7 +752,8 @@ def SWAPOp : QCOOp<"swap", traits = [UnitaryOpInterface, TwoTargetZeroParameter]
     let assemblyFormat = "$qubit0_in `,` $qubit1_in attr-dict `:` type($qubit0_in) `,` type($qubit1_in) `->` type($qubit0_out) `,` type($qubit1_out)";
 
     let extraClassDeclaration = [{
-        static StringRef getBaseSymbol() { return "swap"; }
+        [[nodiscard]] static StringRef getBaseSymbol() { return "swap"; }
+        [[nodiscard]] static Eigen::Matrix4cd getUnitaryMatrix();
     }];
 
     let hasCanonicalizer = 1;
@@ -756,7 +776,8 @@ def iSWAPOp : QCOOp<"iswap", traits = [UnitaryOpInterface, TwoTargetZeroParamete
     let assemblyFormat = "$qubit0_in `,` $qubit1_in attr-dict `:` type($qubit0_in) `,` type($qubit1_in) `->` type($qubit0_out) `,` type($qubit1_out)";
 
     let extraClassDeclaration = [{
-        static StringRef getBaseSymbol() { return "iswap"; }
+        [[nodiscard]] static StringRef getBaseSymbol() { return "iswap"; }
+        [[nodiscard]] static Eigen::Matrix4cd getUnitaryMatrix();
     }];
 }
 
@@ -777,7 +798,8 @@ def DCXOp : QCOOp<"dcx", traits = [UnitaryOpInterface, TwoTargetZeroParameter]> 
     let assemblyFormat = "$qubit0_in `,` $qubit1_in attr-dict `:` type($qubit0_in) `,` type($qubit1_in) `->` type($qubit0_out) `,` type($qubit1_out)";
 
     let extraClassDeclaration = [{
-        static StringRef getBaseSymbol() { return "dcx"; }
+        [[nodiscard]] static StringRef getBaseSymbol() { return "dcx"; }
+        [[nodiscard]] static Eigen::Matrix4cd getUnitaryMatrix();
     }];
 }
 
@@ -798,7 +820,8 @@ def ECROp : QCOOp<"ecr", traits = [UnitaryOpInterface, TwoTargetZeroParameter]> 
     let assemblyFormat = "$qubit0_in `,` $qubit1_in attr-dict `:` type($qubit0_in) `,` type($qubit1_in) `->` type($qubit0_out) `,` type($qubit1_out)";
 
     let extraClassDeclaration = [{
-        static StringRef getBaseSymbol() { return "ecr"; }
+        [[nodiscard]] static StringRef getBaseSymbol() { return "ecr"; }
+        [[nodiscard]] static Eigen::Matrix4cd getUnitaryMatrix();
     }];
 
     let hasCanonicalizer = 1;
@@ -822,7 +845,8 @@ def RXXOp : QCOOp<"rxx", traits = [UnitaryOpInterface, TwoTargetOneParameter]> {
     let assemblyFormat = "`(` $theta `)` $qubit0_in `,` $qubit1_in attr-dict `:` type($qubit0_in) `,` type($qubit1_in) `->` type($qubit0_out) `,` type($qubit1_out)";
 
     let extraClassDeclaration = [{
-        static StringRef getBaseSymbol() { return "rxx"; }
+        [[nodiscard]] static StringRef getBaseSymbol() { return "rxx"; }
+        [[nodiscard]] std::optional<Eigen::Matrix4cd> getUnitaryMatrix();
     }];
 
     let builders = [
@@ -850,7 +874,8 @@ def RYYOp : QCOOp<"ryy", traits = [UnitaryOpInterface, TwoTargetOneParameter]> {
     let assemblyFormat = "`(` $theta `)` $qubit0_in `,` $qubit1_in attr-dict `:` type($qubit0_in) `,` type($qubit1_in) `->` type($qubit0_out) `,` type($qubit1_out)";
 
     let extraClassDeclaration = [{
-        static StringRef getBaseSymbol() { return "ryy"; }
+        [[nodiscard]] static StringRef getBaseSymbol() { return "ryy"; }
+        [[nodiscard]] std::optional<Eigen::Matrix4cd> getUnitaryMatrix();
     }];
 
     let builders = [
@@ -878,7 +903,8 @@ def RZXOp : QCOOp<"rzx", traits = [UnitaryOpInterface, TwoTargetOneParameter]> {
     let assemblyFormat = "`(` $theta `)` $qubit0_in `,` $qubit1_in attr-dict `:` type($qubit0_in) `,` type($qubit1_in) `->` type($qubit0_out) `,` type($qubit1_out)";
 
     let extraClassDeclaration = [{
-        static StringRef getBaseSymbol() { return "rzx"; }
+        [[nodiscard]] static StringRef getBaseSymbol() { return "rzx"; }
+        [[nodiscard]] std::optional<Eigen::Matrix4cd> getUnitaryMatrix();
     }];
 
     let builders = [
@@ -906,7 +932,8 @@ def RZZOp : QCOOp<"rzz", traits = [UnitaryOpInterface, TwoTargetOneParameter]> {
     let assemblyFormat = "`(` $theta `)` $qubit0_in `,` $qubit1_in attr-dict `:` type($qubit0_in) `,` type($qubit1_in) `->` type($qubit0_out) `,` type($qubit1_out)";
 
     let extraClassDeclaration = [{
-        static StringRef getBaseSymbol() { return "rzz"; }
+        [[nodiscard]] static StringRef getBaseSymbol() { return "rzz"; }
+        [[nodiscard]] std::optional<Eigen::Matrix4cd> getUnitaryMatrix();
     }];
 
     let builders = [
@@ -935,7 +962,8 @@ def XXPlusYYOp : QCOOp<"xx_plus_yy", traits = [UnitaryOpInterface, TwoTargetTwoP
     let assemblyFormat = "`(` $theta `,` $beta `)` $qubit0_in `,` $qubit1_in attr-dict `:` type($qubit0_in) `,` type($qubit1_in) `->` type($qubit0_out) `,` type($qubit1_out)";
 
     let extraClassDeclaration = [{
-        static StringRef getBaseSymbol() { return "xx_plus_yy"; }
+        [[nodiscard]] static StringRef getBaseSymbol() { return "xx_plus_yy"; }
+        [[nodiscard]] std::optional<Eigen::Matrix4cd> getUnitaryMatrix();
     }];
 
     let builders = [
@@ -964,7 +992,8 @@ def XXMinusYYOp : QCOOp<"xx_minus_yy", traits = [UnitaryOpInterface, TwoTargetTw
     let assemblyFormat = "`(` $theta `,` $beta `)` $qubit0_in `,` $qubit1_in attr-dict `:` type($qubit0_in) `,` type($qubit1_in) `->` type($qubit0_out) `,` type($qubit1_out)";
 
     let extraClassDeclaration = [{
-        static StringRef getBaseSymbol() { return "xx_minus_yy"; }
+        [[nodiscard]] static StringRef getBaseSymbol() { return "xx_minus_yy"; }
+        [[nodiscard]] std::optional<Eigen::Matrix4cd> getUnitaryMatrix();
     }];
 
     let builders = [
@@ -1003,7 +1032,7 @@ def BarrierOp : QCOOp<"barrier", traits = [UnitaryOpInterface]> {
         Value getOutputForInput(Value input);
         static size_t getNumParams();
         static Value getParameter(size_t i);
-        static StringRef getBaseSymbol() { return "barrier"; }
+        [[nodiscard]] static StringRef getBaseSymbol() { return "barrier"; }
     }];
 
     let builders = [
@@ -1093,7 +1122,8 @@ def CtrlOp : QCOOp<"ctrl", traits =
         Value getOutputForInput(Value input);
         size_t getNumParams();
         Value getParameter(size_t i);
-        static StringRef getBaseSymbol() { return "ctrl"; }
+        [[nodiscard]] static StringRef getBaseSymbol() { return "ctrl"; }
+        [[nodiscard]] std::optional<Eigen::MatrixXcd> getUnitaryMatrix();
     }];
 
     let builders = [

@@ -22,6 +22,15 @@ if(BUILD_MQT_CORE_BINDINGS)
   find_package(nanobind CONFIG REQUIRED)
 endif()
 
+FetchContent_Declare(
+  Eigen
+  GIT_REPOSITORY https://gitlab.com/libeigen/eigen.git
+  GIT_TAG 5.0.1
+  GIT_SHALLOW TRUE
+  FIND_PACKAGE_ARGS 3.4.0 # minimum version for locally installed package
+)
+list(APPEND FETCH_PACKAGES Eigen)
+
 set(JSON_VERSION
     3.12.0
     CACHE STRING "nlohmann_json version")

@@ -11,13 +11,16 @@
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/Utils/Utils.h"
 
+#include <Eigen/Core>
 #include <cmath>
+#include <complex>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OperationSupport.h>
 #include <mlir/IR/PatternMatch.h>
 #include <mlir/Support/LogicalResult.h>
 #include <numbers>
+#include <optional>
 #include <variant>
 
 using namespace mlir;
@@ -110,4 +113,23 @@ void UOp::build(OpBuilder& builder, OperationState& state, Value qubitIn,
 void UOp::getCanonicalizationPatterns(RewritePatternSet& results,
                                       MLIRContext* context) {
   results.add<ReplaceUWithP, ReplaceUWithRX, ReplaceUWithRY>(context);
+}
+
+std::optional<Eigen::Matrix2cd> UOp::getUnitaryMatrix() {
+  using namespace std::complex_literals;
+
+  if (auto theta = valueToDouble(getTheta())) {
+    if (auto phi = valueToDouble(getPhi())) {
+      if (auto lambda = valueToDouble(getLambda())) {
+        const auto c = std::cos(*theta / 2.0);
+        const auto s = std::sin(*theta / 2.0);
+        const auto m00 = c + 0i;
+        const auto m01 = std::polar(s, *lambda + std::numbers::pi);
+        const auto m10 = std::polar(s, *phi);
+        const auto m11 = std::polar(c, *phi + *lambda);
+        return Eigen::Matrix2cd{{m00, m01}, {m10, m11}};
+      }
+    }
+  }
+  return std::nullopt;
 }

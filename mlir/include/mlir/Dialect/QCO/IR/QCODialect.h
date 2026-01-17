@@ -21,6 +21,7 @@
 #pragma clang diagnostic pop
 #endif
 
+#include <Eigen/Core>
 #include <mlir/Bytecode/BytecodeOpInterface.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/IR/Value.h>
@@ -48,6 +49,8 @@
 //===----------------------------------------------------------------------===//
 // Interfaces
 //===----------------------------------------------------------------------===//
+
+#include "mlir/Dialect/QCO/IR/QCOInterfaces.h.inc" // IWYU pragma: export
 
 namespace mlir::qco {
 
@@ -132,8 +135,6 @@ public:
 };
 
 } // namespace mlir::qco
-
-#include "mlir/Dialect/QCO/IR/QCOInterfaces.h.inc" // IWYU pragma: export
 
 //===----------------------------------------------------------------------===//
 // Operations

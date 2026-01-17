@@ -107,7 +107,66 @@ def UnitaryOpInterface : OpInterface<"UnitaryOpInterface"> {
             "Returns the base symbol/mnemonic of the operation.",
             "StringRef", "getBaseSymbol", (ins)
         >,
+
+        // Internal helper methods, should not be used by user
+        InterfaceMethod<
+            "Returns the unitary matrix definition of the operation.",
+            [{
+              std::variant<
+                std::nullopt_t,
+                Eigen::Matrix<std::complex<double>, 1, 1>,
+                Eigen::Matrix2cd,
+                Eigen::Matrix4cd,
+                Eigen::MatrixXcd
+              >
+            }],
+            "internalGetUnitaryVariant", (ins),
+            [{
+              if constexpr (requires { $_op.getUnitaryMatrix().has_value(); }) {
+                // is matrix in std::optional
+                if (auto&& matrix = $_op.getUnitaryMatrix()) {
+                  return *matrix;
+                }
+                return std::nullopt;
+              } else if constexpr (requires { $_op.getUnitaryMatrix(); }) {
+                // is static matrix
+                return $_op.getUnitaryMatrix();
+              } else {
+                llvm::reportFatalUsageError("Operation '" + $_op.getBaseSymbol() + "' has no unitary matrix definition!");
+              }
+            }]
+        >,
     ];
+
+    let extraClassDeclaration = [{
+      template<typename MatrixType>
+      std::optional<MatrixType> getUnitaryMatrix() {
+        auto&& matrix = this->internalGetUnitaryVariant();
+
+        if constexpr (std::is_same_v<std::remove_cvref_t<MatrixType>, Eigen::MatrixXcd>) {
+          // cast to Eigen::MatrixXcd via visitor pattern
+          auto&& visitor = [](auto&& m) -> std::optional<MatrixType> {
+            // implicit cast to Eigen::MatrixXcd if variant holds a matrix type;
+            // if variant holds std::nullopt_t, std::optional will be initialized with
+            // the std::nullopt_t instance, so std::nullopt
+            return m;
+          };
+          return std::visit(visitor, matrix);
+        } else {
+          // if an explicit size has been requested, use checked access to variant
+          // to try to return the correct type
+          if (auto* ptr = std::get_if<MatrixType>(&matrix)) {
+            return *ptr;
+          }
+          // if variant contains a dynamically-sized matrix, check if it is possible
+          // to convert it to the given fixed-size matrix
+          if (auto* ptr = std::get_if<Eigen::MatrixXcd>(&matrix); ptr && ptr->size() == Eigen::Matrix4cd::SizeAtCompileTime) {
+            return *ptr;
+          }
+          return std::nullopt;
+        }
+      }
+    }];
 }
 
 #endif // QCO_INTERFACES
