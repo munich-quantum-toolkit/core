@@ -12,33 +12,19 @@
 
 #include "dd/Complex.hpp"
 #include "dd/DDDefinitions.hpp"
+#include "dd/RealNumber.hpp"
 
 #include <array>
 #include <complex>
 #include <cstddef>
 #include <functional>
 #include <string>
-#include <type_traits>
 #include <unordered_set>
 
 namespace dd {
 
-struct vNode;
-struct mNode;
-struct dNode;
 class ComplexNumbers;
 class MemoryManager;
-
-template <typename T>
-using isVector = std::enable_if_t<std::is_same_v<T, vNode>, bool>;
-template <typename T>
-using isMatrix = std::enable_if_t<std::is_same_v<T, mNode>, bool>;
-template <typename T>
-using isDensityMatrix = std::enable_if_t<std::is_same_v<T, dNode>, bool>;
-template <typename T>
-using isMatrixVariant =
-    std::enable_if_t<std::is_same_v<T, mNode> || std::is_same_v<T, dNode>,
-                     bool>;
 
 using AmplitudeFunc = std::function<void(std::size_t, const std::complex<fp>&)>;
 using ProbabilityFunc = std::function<void(std::size_t, const fp&)>;
@@ -159,7 +145,6 @@ private:
 public:
   /**
    * @brief Get a normalized vector DD from a fresh node and a list of edges
-   * @tparam T template parameter to enable this function only for vNode
    * @param p the fresh node
    * @param e the list of edges that form the successor nodes
    * @param mm a reference to the memory manager (for returning unused nodes)
@@ -167,60 +152,55 @@ public:
    * complex numbers)
    * @return the normalized vector DD
    */
-  template <typename T = Node, isVector<T> = true>
   static auto normalize(Node* p, const std::array<Edge, RADIX>& e,
-                        MemoryManager& mm, ComplexNumbers& cn) -> Edge;
+                        MemoryManager& mm, ComplexNumbers& cn) -> Edge
+    requires IsVector<Node>;
 
   /**
    * @brief Get a single element of the vector represented by the DD
-   * @tparam T template parameter to enable this function only for vNode
    * @param i index of the element
    * @return the complex value of the amplitude
    */
-  template <typename T = Node, isVector<T> = true>
-  [[nodiscard]] std::complex<fp> getValueByIndex(std::size_t i) const;
+  [[nodiscard]] std::complex<fp> getValueByIndex(std::size_t i) const
+    requires IsVector<Node>;
 
   /**
    * @brief Get the vector represented by the DD
-   * @tparam T template parameter to enable this function only for vNode
    * @param threshold amplitudes with a magnitude below this threshold will be
    * ignored
    * @return the vector
    */
-  template <typename T = Node, isVector<T> = true>
-  [[nodiscard]] CVec getVector(fp threshold = 0.) const;
+  [[nodiscard]] CVec getVector(fp threshold = 0.) const
+    requires IsVector<Node>;
 
   /**
    * @brief Get the sparse vector represented by the DD
-   * @tparam T template parameter to enable this function only for vNode
    * @param threshold amplitudes with a magnitude below this threshold will be
    * ignored
    * @return the sparse vector
    */
-  template <typename T = Node, isVector<T> = true>
-  [[nodiscard]] SparseCVec getSparseVector(fp threshold = 0.) const;
+  [[nodiscard]] SparseCVec getSparseVector(fp threshold = 0.) const
+    requires IsVector<Node>;
 
   /**
    * @brief Print the vector represented by the DD
-   * @tparam T template parameter to enable this function only for vNode
    * @note This function scales exponentially with the number of qubits.
    */
-  template <typename T = Node, isVector<T> = true> void printVector() const;
+  void printVector() const
+    requires IsVector<Node>;
 
   /**
    * @brief Add the amplitudes of a vector DD to a vector
-   * @tparam T template parameter to enable this function only for vNode
    * @param amplitudes the vector to add to
    */
-  template <typename T = Node, isVector<T> = true>
-  void addToVector(CVec& amplitudes) const;
+  void addToVector(CVec& amplitudes) const
+    requires IsVector<Node>;
 
 private:
   /**
    * @brief Recursively traverse the DD and call a function for each non-zero
    * amplitude.
    * @details Scales with the number of non-zero amplitudes.
-   * @tparam T template parameter to enable this function only for vNode
    * @param amp the accumulated amplitude from previous traversals
    * @param i the current index in the vector
    * @param f This function is called for each non-zero amplitude with the
@@ -228,33 +208,32 @@ private:
    * @param threshold amplitude with a magnitude below this threshold will be
    * ignored
    */
-  template <typename T = Node, isVector<T> = true>
   void traverseVector(const std::complex<fp>& amp, std::size_t i,
-                      AmplitudeFunc f, fp threshold = 0.) const;
+                      AmplitudeFunc f, fp threshold = 0.) const
+    requires IsVector<Node>;
 
 public:
   /**
-   * @brief Get a normalized (density) matrix DD from a fresh node and a list
+   * @brief Get a normalized matrix DD from a fresh node and a list
    * of edges
-   * @tparam T template parameter to enable this function only for matrix nodes
    * @param p the fresh node
    * @param e the list of edges that form the successor nodes
    * @param mm a reference to the memory manager (for returning unused nodes)
    * @param cn a reference to the complex number manager (for adding new
    * complex numbers)
-   * @return the normalized (density) matrix DD
+   * @return the normalized matrix DD
    */
-  template <typename T = Node, isMatrixVariant<T> = true>
   static auto normalize(Node* p, const std::array<Edge, NEDGE>& e,
-                        MemoryManager& mm, ComplexNumbers& cn) -> Edge;
+                        MemoryManager& mm, ComplexNumbers& cn) -> Edge
+    requires IsMatrix<Node>;
 
   /**
    * @brief Check whether the matrix represented by the DD is the identity
-   * @tparam T template parameter to enable this function only for matrix nodes
    * @return whether the matrix is the identity
    */
-  template <typename T = Node, isMatrixVariant<T> = true>
-  [[nodiscard]] bool isIdentity(const bool upToGlobalPhase = true) const {
+  [[nodiscard]] bool isIdentity(const bool upToGlobalPhase = true) const
+    requires IsMatrix<Node>
+  {
     if (!isTerminal()) {
       return false;
     }
@@ -266,52 +245,47 @@ public:
 
   /**
    * @brief Get a single element of the matrix represented by the DD
-   * @tparam T template parameter to enable this function only for matrix nodes
    * @param numQubits number of qubits in the considered DD
    * @param i row index of the element
    * @param j column index of the element
    * @return the complex value of the entry
    */
-  template <typename T = Node, isMatrixVariant<T> = true>
   [[nodiscard]] std::complex<fp>
-  getValueByIndex(std::size_t numQubits, std::size_t i, std::size_t j) const;
+  getValueByIndex(std::size_t numQubits, std::size_t i, std::size_t j) const
+    requires IsMatrix<Node>;
 
   /**
    * @brief Get the matrix represented by the DD
-   * @tparam T template parameter to enable this function only for matrix nodes
    * @param numQubits number of qubits in the considered DD
    * @param threshold entries with a magnitude below this threshold will be
    * ignored
    * @return the matrix
    */
-  template <typename T = Node, isMatrixVariant<T> = true>
-  [[nodiscard]] CMat getMatrix(std::size_t numQubits, fp threshold = 0.) const;
+  [[nodiscard]] CMat getMatrix(std::size_t numQubits, fp threshold = 0.) const
+    requires IsMatrix<Node>;
 
   /**
    * @brief Get the sparse matrix represented by the DD
-   * @tparam T template parameter to enable this function only for matrix nodes
    * @param numQubits number of qubits in the considered DD
    * @param threshold entries with a magnitude below this threshold will be
    * ignored
    * @return the sparse matrix
    */
-  template <typename T = Node, isMatrixVariant<T> = true>
   [[nodiscard]] SparseCMat getSparseMatrix(std::size_t numQubits,
-                                           fp threshold = 0.) const;
+                                           fp threshold = 0.) const
+    requires IsMatrix<Node>;
 
   /**
    * @brief Print the matrix represented by the DD
-   * @tparam T template parameter to enable this function only for matrix nodes
    * @param numQubits number of qubits in the considered DD
    * @note This function scales exponentially with the number of qubits.
    */
-  template <typename T = Node, isMatrixVariant<T> = true>
-  void printMatrix(std::size_t numQubits) const;
+  void printMatrix(std::size_t numQubits) const
+    requires IsMatrix<Node>;
 
   /**
    * @brief Recursively traverse the DD and call a function for each non-zero
    * matrix entry.
-   * @tparam T template parameter to enable this function only for matrix nodes
    * @param amp the accumulated amplitude from previous traversals
    * @param i the current row index in the matrix
    * @param j the current column index in the matrix
@@ -322,92 +296,10 @@ public:
    * @param threshold entries with a magnitude below this threshold will be
    * ignored
    */
-  template <typename T = Node, isMatrixVariant<T> = true>
   void traverseMatrix(const std::complex<fp>& amp, std::size_t i, std::size_t j,
                       MatrixEntryFunc f, std::size_t level,
-                      fp threshold = 0.) const;
-
-  template <typename T = Node, isDensityMatrix<T> = true>
-  [[maybe_unused]] static void setDensityConjugateTrue(Edge& e) {
-    Node::setConjugateTempFlagTrue(e.p);
-  }
-
-  template <typename T = Node, isDensityMatrix<T> = true>
-  [[maybe_unused]] static void setFirstEdgeDensityPathTrue(Edge& e) {
-    Node::setNonReduceTempFlagTrue(e.p);
-  }
-
-  template <typename T = Node, isDensityMatrix<T> = true>
-  static void setDensityMatrixTrue(Edge& e) {
-    Node::setDensityMatTempFlagTrue(e.p);
-  }
-
-  template <typename T = Node, isDensityMatrix<T> = true>
-  static void alignDensityEdge(Edge& e) {
-    Node::alignDensityNode(e.p);
-  }
-
-  template <typename T = Node, isDensityMatrix<T> = true>
-  static void revertDmChangesToEdges(Edge& x, Edge& y) {
-    revertDmChangesToEdge(x);
-    revertDmChangesToEdge(y);
-  }
-
-  template <typename T = Node, isDensityMatrix<T> = true>
-  static void revertDmChangesToEdge(Edge& x) {
-    Node::revertDmChangesToNode(x.p);
-  }
-
-  template <typename T = Node, isDensityMatrix<T> = true>
-  static void applyDmChangesToEdges(Edge& x, Edge& y) {
-    applyDmChangesToEdge(x);
-    applyDmChangesToEdge(y);
-  }
-
-  template <typename T = Node, isDensityMatrix<T> = true>
-  static void applyDmChangesToEdge(Edge& x) {
-    Node::applyDmChangesToNode(x.p);
-  }
-
-  /**
-   * @brief Get the sparse probability vector for the underlying density matrix
-   * @tparam T template parameter to enable this function only for dNode
-   * @param numQubits number of qubits in the considered DD
-   * @param threshold probabilities below this threshold will be ignored
-   * @return the sparse probability vector
-   */
-  template <typename T = Node, isDensityMatrix<T> = true>
-  [[nodiscard]] SparsePVec getSparseProbabilityVector(std::size_t numQubits,
-                                                      fp threshold = 0.) const;
-
-  /**
-   * @brief Get the sparse probability vector for the underlying density matrix
-   * @tparam T template parameter to enable this function only for dNode
-   * @param numQubits number of qubits in the considered DD
-   * @param threshold probabilities below this threshold will be ignored
-   * @return the sparse probability vector (using strings as keys)
-   */
-  template <typename T = Node, isDensityMatrix<T> = true>
-  [[nodiscard]] SparsePVecStrKeys
-  getSparseProbabilityVectorStrKeys(std::size_t numQubits,
-                                    fp threshold = 0.) const;
-
-private:
-  /**
-   * @brief Recursively traverse diagonal of the DD and call a function for each
-   * non-zero entry.
-   * @tparam T template parameter to enable this function only for dNode
-   * @param prob the accumulated probability from previous traversals
-   * @param i the current diagonal index in the matrix
-   * @param f This function is called for each non-zero entry with the
-   * diagonal index and the probability as arguments.
-   * @param level the current level in the DD (ranges from 1 to n for regular
-   * nodes and is 0 for the terminal node)
-   * @param threshold probabilities below this threshold will be ignored
-   */
-  template <typename T = Node, isDensityMatrix<T> = true>
-  void traverseDiagonal(const fp& prob, std::size_t i, ProbabilityFunc f,
-                        std::size_t level, fp threshold = 0.) const;
+                      fp threshold = 0.) const
+    requires IsMatrix<Node>;
 };
 } // namespace dd
 

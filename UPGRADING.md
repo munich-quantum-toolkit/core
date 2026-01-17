@@ -24,6 +24,13 @@ Known limitations:
 - AppleClang 17+ is required to build MQT Core with MLIR enabled due to some C++20 features being used that are not yet properly supported by older versions.
 - Our pre-built distributions are compiled in Release mode. On Windows, this leads to ABI incompatibilities with debug builds. Either build in Release mode or build LLVM from source in Debug mode to resolve this.
 
+### Removal of the density matrix support from the DD package
+
+The density matrix support within the DD package has been removed.
+This change was made to reduce the maintenance burden of the package.
+Any libraries that depend on the density matrix functionality, such as [MQT DDSIM], need to implement it on their own or use an alternative solution.
+In a related fashion, this PR also removes the noise operations from the MQT Core IR as they no longer serve a purpose.
+
 ### Removal of the `datastructures` (sub)library
 
 The `datastructures` (sub)library has been removed from the MQT Core repository.

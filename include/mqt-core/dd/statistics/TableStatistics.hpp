@@ -18,7 +18,7 @@
 namespace dd {
 
 /// A utility class for storing statistics of a table
-struct TableStatistics : public Statistics {
+struct TableStatistics : Statistics {
   /// The size of a single entry
   std::size_t entrySize = 0U;
   /// The number of buckets in the table

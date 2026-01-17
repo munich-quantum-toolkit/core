@@ -57,12 +57,6 @@ HANDLE_OP_TYPE(31, Reset, OpTypeNone, "reset")
 // Control flow operations
 HANDLE_OP_TYPE(32, IfElse, OpTypeNone, "if_else")
 
-// Noise operations
-HANDLE_OP_TYPE(33, ATrue, 0, "a_true")
-HANDLE_OP_TYPE(34, AFalse, 0, "a_false")
-HANDLE_OP_TYPE(35, MultiATrue, 0, "multi_a_true")
-HANDLE_OP_TYPE(36, MultiAFalse, 0, "multi_a_false")
-
 // Neutral atom shuttling operations
 HANDLE_OP_TYPE(37, Move, 0, "move")
 HANDLE_OP_TYPE(42, Bridge, 0, "bridge")

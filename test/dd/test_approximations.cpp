@@ -29,7 +29,7 @@ namespace {
 /**
  * @brief Compare the elements of @p a and @p b with precision @p delta.
  */
-void vecNear(CVec a, CVec b, double delta = 1e-6) {
+void vecNear(const CVec& a, const CVec& b, const double delta = 1e-6) {
   for (std::size_t i = 0; i < b.size(); ++i) {
     EXPECT_NEAR(a[i].real(), b[i].real(), delta);
     EXPECT_NEAR(a[i].imag(), b[i].imag(), delta);
@@ -60,7 +60,7 @@ TEST(ApproximationTest, OneQubitKeepAllBudgetZero) {
   constexpr std::size_t nq = 1;
   constexpr double fidelity = 1;
 
-  auto dd = std::make_unique<dd::Package>(nq);
+  auto dd = std::make_unique<Package>(nq);
 
   qc::QuantumComputation qc(nq);
   qc.x(0);
@@ -93,7 +93,7 @@ TEST(ApproximationTest, OneQubitKeepAllBudgetTooSmall) {
   constexpr std::size_t nq = 1;
   constexpr double fidelity = 0.9;
 
-  auto dd = std::make_unique<dd::Package>(nq);
+  auto dd = std::make_unique<Package>(nq);
 
   qc::QuantumComputation qc(nq);
   qc.x(0);
@@ -126,7 +126,7 @@ TEST(ApproximationTest, OneQubitRemoveTerminalEdge) {
   constexpr std::size_t nq = 1;
   constexpr double fidelity = 1 - 0.25;
 
-  auto dd = std::make_unique<dd::Package>(nq);
+  auto dd = std::make_unique<Package>(nq);
 
   qc::QuantumComputation qc(nq);
   qc.ry(qc::PI / 3, 0);
@@ -163,7 +163,7 @@ TEST(ApproximationTest, TwoQubitRemoveNode) {
   constexpr std::size_t nq = 2;
   constexpr double fidelity = 1 - 0.2;
 
-  auto dd = std::make_unique<dd::Package>(nq);
+  auto dd = std::make_unique<Package>(nq);
 
   qc::QuantumComputation qc(nq);
   qc.h(0);
@@ -211,7 +211,7 @@ TEST(ApproximationTest, TwoQubitCorrectlyRebuilt) {
   constexpr std::size_t nq = 2;
   constexpr double fidelity = 1 - 0.25;
 
-  auto dd = std::make_unique<dd::Package>(nq);
+  auto dd = std::make_unique<Package>(nq);
 
   qc::QuantumComputation qc(nq);
   qc.rx(qc::PI, 0);
@@ -264,7 +264,7 @@ TEST(ApproximationTest, ThreeQubitRemoveNodeWithChildren) {
   constexpr std::size_t nq = 3;
   constexpr double fidelity = 1 - 0.25;
 
-  auto dd = std::make_unique<dd::Package>(nq);
+  auto dd = std::make_unique<Package>(nq);
 
   qc::QuantumComputation qc(nq);
   qc.rx(qc::PI, 0);
@@ -310,7 +310,7 @@ TEST(ApproximationTest, ThreeQubitRemoveUnconnected) {
   constexpr std::size_t nq = 3;
   constexpr double fidelity = 1 - 0.65;
 
-  auto dd = std::make_unique<dd::Package>(nq);
+  auto dd = std::make_unique<Package>(nq);
 
   qc::QuantumComputation qc(nq);
   qc.ry(2 * qc::PI / 3, 0);
@@ -339,7 +339,7 @@ TEST(ApproximationTest, NodesVisited) {
 
   for (std::size_t i = 0; i < n; ++i) {
     const std::size_t nq = qubits[i];
-    auto dd = std::make_unique<dd::Package>(nq);
+    auto dd = std::make_unique<Package>(nq);
     auto state = generateExponentialState(nq, *dd);
 
     const std::size_t preSize = state.size() - 1; // Minus terminal.
