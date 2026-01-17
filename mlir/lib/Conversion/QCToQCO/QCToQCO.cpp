@@ -130,6 +130,7 @@ collectUniqueQubits(Operation* op, LoweringState* state, MLIRContext* ctx) {
   // get the regions of the current operation
   const auto& regions = op->getRegions();
   SetVector<Value> uniqueQubits;
+  auto const qcType = qc::QubitType::get(ctx);
   for (auto& region : regions) {
     // skip empty regions e.g. empty else region of an If operation
     if (region.empty()) {
@@ -137,6 +138,13 @@ collectUniqueQubits(Operation* op, LoweringState* state, MLIRContext* ctx) {
     }
     // check that the region has only one block
     assert(region.hasOneBlock() && "Expected single-block region");
+
+    // collect qubits from the blockarguments
+    for (auto arg : region.front().getArguments()) {
+      if (arg.getType() == qcType) {
+        uniqueQubits.insert(arg);
+      }
+    }
 
     // iterate over all operations inside the region
     // currently assumes that each region only has one block
@@ -149,13 +157,13 @@ collectUniqueQubits(Operation* op, LoweringState* state, MLIRContext* ctx) {
       }
       // collect qubits form the operands
       for (const auto& operand : operation.getOperands()) {
-        if (operand.getType() == qc::QubitType::get(ctx)) {
+        if (operand.getType() == qcType) {
           uniqueQubits.insert(operand);
         }
       }
       // collect qubits from the results
       for (const auto& result : operation.getResults()) {
-        if (result.getType() == qc::QubitType::get(ctx)) {
+        if (result.getType() == qcType) {
           uniqueQubits.insert(result);
         }
       }
@@ -171,7 +179,7 @@ collectUniqueQubits(Operation* op, LoweringState* state, MLIRContext* ctx) {
       if (llvm::isa<func::ReturnOp>(operation)) {
         if (auto func = operation.getParentOfType<func::FuncOp>()) {
           if (!func.getArgumentTypes().empty() &&
-              func.getArgumentTypes().front() == qc::QubitType::get(ctx)) {
+              func.getArgumentTypes().front() == qcType) {
             operation.setAttr("needChange", StringAttr::get(ctx, "yes"));
             state->regionMap[func] = uniqueQubits;
           }
