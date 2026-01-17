@@ -465,7 +465,7 @@ QCProgramBuilder::scfFor(const std::variant<int64_t, Value>& lowerbound,
                        const OpBuilder::InsertionGuard guard(*this);
                        setInsertionPointToStart(b.getInsertionBlock());
                        body(iv);
-                       b.create<scf::YieldOp>(loc);
+                       scf::YieldOp::create(b, loc);
                      });
 
   return *this;
@@ -487,7 +487,7 @@ QCProgramBuilder::scfWhile(const std::function<void()>& beforeBody,
         const OpBuilder::InsertionGuard guard(*this);
         setInsertionPointToStart(b.getInsertionBlock());
         afterBody();
-        b.create<scf::YieldOp>(loc);
+        scf::YieldOp::create(b, loc);
       });
 
   return *this;
@@ -506,7 +506,7 @@ QCProgramBuilder::scfIf(const std::variant<bool, Value>& cond,
       const OpBuilder::InsertionGuard guard(*this);
       setInsertionPointToStart(b.getInsertionBlock());
       thenBody();
-      b.create<scf::YieldOp>(loc);
+      scf::YieldOp::create(b, loc);
     });
   } else {
     scf::IfOp::create(
@@ -515,13 +515,13 @@ QCProgramBuilder::scfIf(const std::variant<bool, Value>& cond,
           const OpBuilder::InsertionGuard guard(*this);
           setInsertionPointToStart(b.getInsertionBlock());
           thenBody();
-          b.create<scf::YieldOp>(loc);
+          scf::YieldOp::create(b, loc);
         },
         [&](OpBuilder& b, Location loc) {
           const OpBuilder::InsertionGuard guard(*this);
           setInsertionPointToStart(b.getInsertionBlock());
           (*elseBody)();
-          b.create<scf::YieldOp>(loc);
+          scf::YieldOp::create(b, loc);
         });
   }
   return *this;
