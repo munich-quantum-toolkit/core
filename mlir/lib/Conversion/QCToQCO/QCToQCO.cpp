@@ -1321,15 +1321,16 @@ struct ConvertQCScfIfOp final : StatefulOpConversionPattern<scf::IfOp> {
     // create the qubit map for the regions
     auto& thenRegionQubitMap = getState().qubitMap[&thenRegion];
     auto& elseRegionQubitMap = getState().qubitMap[&elseRegion];
+    auto& qubitMap = getState().qubitMap[op->getParentRegion()];
+
     for (const auto& qcQubit : qcQubits) {
-      thenRegionQubitMap.try_emplace(
-          qcQubit, getState().qubitMap[op->getParentRegion()][qcQubit]);
-      elseRegionQubitMap.try_emplace(
-          qcQubit, getState().qubitMap[op->getParentRegion()][qcQubit]);
+      assert(qubitMap.contains(qcQubit) && "QC qubit not found");
+      thenRegionQubitMap.try_emplace(qcQubit, qubitMap[qcQubit]);
+      elseRegionQubitMap.try_emplace(qcQubit, qubitMap[qcQubit]);
     }
 
     // update the qubit map in the current region
-    auto& qubitMap = getState().qubitMap[op->getParentRegion()];
+
     for (const auto& [qcQubit, qcoQubit] :
          llvm::zip_equal(qcQubits, newIfOp->getResults())) {
       qubitMap[qcQubit] = qcoQubit;
@@ -1385,6 +1386,7 @@ struct ConvertQCScfWhileOp final : StatefulOpConversionPattern<scf::WhileOp> {
     SmallVector<Value> qcoQubits;
     qcoQubits.reserve(qcQubits.size());
     for (const auto& qcQubit : qcQubits) {
+      assert(qubitMap.contains(qcQubit) && "QC qubit not found");
       qcoQubits.push_back(qubitMap[qcQubit]);
     }
     // create the result typerange
@@ -1471,6 +1473,7 @@ struct ConvertQCScfForOp final : StatefulOpConversionPattern<scf::ForOp> {
     SmallVector<Value> qcoQubits;
     qcoQubits.reserve(qcQubits.size());
     for (const auto& qcQubit : qcQubits) {
+      assert(qubitMap.contains(qcQubit) && "QC qubit not found");
       qcoQubits.push_back(qubitMap[qcQubit]);
     }
 
@@ -1624,6 +1627,7 @@ struct ConvertQCFuncCallOp final : StatefulOpConversionPattern<func::CallOp> {
     SmallVector<Value> qcoQubits;
     qcoQubits.reserve(qcQubits.size());
     for (const auto& qcQubit : qcQubits) {
+      assert(qubitMap.contains(qcQubit) && "QC qubit not found");
       qcoQubits.push_back(qubitMap[qcQubit]);
     }
     // create the result typerange
