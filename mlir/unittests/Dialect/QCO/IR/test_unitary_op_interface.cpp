@@ -9,10 +9,14 @@
  */
 
 #include "mlir/Dialect/QCO/Builder/QCOProgramBuilder.h"
+#include "mlir/Dialect/QCO/IR/QCODialect.h"
 
+#include <array>
 #include <complex>
+#include <cstddef>
 #include <functional>
 #include <gtest/gtest.h>
+#include <llvm/ADT/SmallVector.h>
 #include <llvm/Support/Casting.h>
 #include <llvm/Support/Error.h>
 #include <llvm/Support/raw_ostream.h>
@@ -27,6 +31,7 @@
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OwningOpRef.h>
 #include <string>
+#include <tuple>
 
 namespace {
 
