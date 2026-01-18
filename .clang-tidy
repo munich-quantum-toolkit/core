@@ -75,5 +75,3 @@ CheckOptions:
     value: CamelCase
   - key: readability-identifier-naming.VariableCase
     value: camelBack
-  - key: misc-include-cleaner.IgnoreHeaders
-    value: "Eigen/.*;unsupported/Eigen/.*"
