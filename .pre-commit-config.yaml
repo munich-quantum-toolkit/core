@@ -148,7 +148,7 @@ repos:
     hooks:
       - id: blacken-docs
         language: python
-        additional_dependencies: [black==25.*]
+        additional_dependencies: [black==26.*]
         priority: 2
 
   ## Static type checking using ty (needs to run after lockfile update/ruff format, and ruff lint)
