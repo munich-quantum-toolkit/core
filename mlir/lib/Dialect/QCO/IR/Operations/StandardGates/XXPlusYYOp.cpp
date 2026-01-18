@@ -71,13 +71,13 @@ struct MergeSubsequentXXPlusYY final : OpRewritePattern<XXPlusYYOp> {
 
 } // namespace
 
-void XXPlusYYOp::build(OpBuilder& builder, OperationState& state,
+void XXPlusYYOp::build(OpBuilder& odsBuilder, OperationState& odsState,
                        Value qubit0In, Value qubit1In,
                        const std::variant<double, Value>& theta,
                        const std::variant<double, Value>& beta) {
-  auto thetaOperand = variantToValue(builder, state.location, theta);
-  auto betaOperand = variantToValue(builder, state.location, beta);
-  build(builder, state, qubit0In, qubit1In, thetaOperand, betaOperand);
+  auto thetaOperand = variantToValue(odsBuilder, odsState.location, theta);
+  auto betaOperand = variantToValue(odsBuilder, odsState.location, beta);
+  build(odsBuilder, odsState, qubit0In, qubit1In, thetaOperand, betaOperand);
 }
 
 void XXPlusYYOp::getCanonicalizationPatterns(RewritePatternSet& results,

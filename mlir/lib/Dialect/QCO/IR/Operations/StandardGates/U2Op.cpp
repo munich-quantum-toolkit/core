@@ -96,12 +96,12 @@ struct ReplaceU2WithRY final : OpRewritePattern<U2Op> {
 
 } // namespace
 
-void U2Op::build(OpBuilder& builder, OperationState& state, Value qubitIn,
+void U2Op::build(OpBuilder& odsBuilder, OperationState& odsState, Value qubitIn,
                  const std::variant<double, Value>& phi,
                  const std::variant<double, Value>& lambda) {
-  auto phiOperand = variantToValue(builder, state.location, phi);
-  auto lambdaOperand = variantToValue(builder, state.location, lambda);
-  build(builder, state, qubitIn, phiOperand, lambdaOperand);
+  auto phiOperand = variantToValue(odsBuilder, odsState.location, phi);
+  auto lambdaOperand = variantToValue(odsBuilder, odsState.location, lambda);
+  build(odsBuilder, odsState, qubitIn, phiOperand, lambdaOperand);
 }
 
 void U2Op::getCanonicalizationPatterns(RewritePatternSet& results,
