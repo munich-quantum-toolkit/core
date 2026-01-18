@@ -56,10 +56,10 @@ struct RemoveTrivialRY final : OpRewritePattern<RYOp> {
 
 } // namespace
 
-void RYOp::build(OpBuilder& builder, OperationState& state, Value qubitIn,
+void RYOp::build(OpBuilder& odsBuilder, OperationState& odsState, Value qubitIn,
                  const std::variant<double, Value>& theta) {
-  auto thetaOperand = variantToValue(builder, state.location, theta);
-  build(builder, state, qubitIn, thetaOperand);
+  auto thetaOperand = variantToValue(odsBuilder, odsState.location, theta);
+  build(odsBuilder, odsState, qubitIn, thetaOperand);
 }
 
 void RYOp::getCanonicalizationPatterns(RewritePatternSet& results,

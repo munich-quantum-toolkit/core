@@ -6,7 +6,7 @@
 #
 # Licensed under the MIT License
 
-add_subdirectory(pipeline)
+add_subdirectory(Compiler)
 add_subdirectory(Dialect)
 
 add_custom_target(mqt-core-mlir-unittests)

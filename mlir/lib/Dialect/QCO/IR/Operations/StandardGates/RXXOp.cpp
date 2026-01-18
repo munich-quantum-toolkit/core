@@ -56,10 +56,11 @@ struct RemoveTrivialRXX final : OpRewritePattern<RXXOp> {
 
 } // namespace
 
-void RXXOp::build(OpBuilder& builder, OperationState& state, Value qubit0In,
-                  Value qubit1In, const std::variant<double, Value>& theta) {
-  auto thetaOperand = variantToValue(builder, state.location, theta);
-  build(builder, state, qubit0In, qubit1In, thetaOperand);
+void RXXOp::build(OpBuilder& odsBuilder, OperationState& odsState,
+                  Value qubit0In, Value qubit1In,
+                  const std::variant<double, Value>& theta) {
+  auto thetaOperand = variantToValue(odsBuilder, odsState.location, theta);
+  build(odsBuilder, odsState, qubit0In, qubit1In, thetaOperand);
 }
 
 void RXXOp::getCanonicalizationPatterns(RewritePatternSet& results,
