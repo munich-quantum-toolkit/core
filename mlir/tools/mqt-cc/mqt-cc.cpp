@@ -133,7 +133,11 @@ int main(int argc, char** argv) {
   const InitLLVM y(argc, argv);
 
   // Parse command-line options
-  cl::ParseCommandLineOptions(argc, argv, "MQT Core Compiler Driver\n");
+  if (!cl::ParseCommandLineOptions(argc, argv, "MQT Core Compiler Driver\n",
+                                   &errs())) {
+    // error message is printed to stderr via errs()
+    return -1;
+  }
 
   // Set up MLIR context with all required dialects
   mlir::DialectRegistry registry;
