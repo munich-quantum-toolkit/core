@@ -8,9 +8,12 @@
  * Licensed under the MIT License
  */
 
+#include "ir/QuantumComputation.hpp"
 #include "mlir/Compiler/CompilerPipeline.h"
 #include "mlir/Dialect/QC/IR/QCDialect.h"
+#include "mlir/Dialect/QC/Translation/TranslateQuantumComputationToQC.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
+#include "qasm3/Importer.hpp"
 
 #include <llvm/Support/CommandLine.h>
 #include <llvm/Support/InitLLVM.h>
@@ -32,7 +35,6 @@
 #include <utility>
 
 using namespace llvm;
-using namespace mlir;
 
 namespace {
 
@@ -44,6 +46,10 @@ const cl::opt<std::string> INPUT_FILENAME(cl::Positional,
 const cl::opt<std::string> OUTPUT_FILENAME("o", cl::desc("Output filename"),
                                            cl::value_desc("filename"),
                                            cl::init("-"));
+
+const cl::opt<bool> QASM_INPUT("qasm-input",
+                               cl::desc("Input files are read as OpenQASM"),
+                               cl::init(false));
 
 const cl::opt<bool> CONVERT_TO_QIR("emit-qir",
                                    cl::desc("Convert to QIR at the end"),
@@ -70,13 +76,31 @@ const cl::opt<bool>
 } // namespace
 
 /**
- * @brief Load and parse a .mlir file
+ * @brief Load and parse a .qasm file
  */
-static OwningOpRef<ModuleOp> loadMLIRFile(StringRef filename,
-                                          MLIRContext* context) {
+static mlir::OwningOpRef<mlir::ModuleOp>
+loadQASMFile(StringRef filename, mlir::MLIRContext* context) {
   // Set up the input file
   std::string errorMessage;
-  auto file = openInputFile(filename, &errorMessage);
+  auto file = mlir::openInputFile(filename, &errorMessage);
+  if (!file) {
+    errs() << errorMessage << "\n";
+    return nullptr;
+  }
+
+  // Parse the input QASM
+  qc::QuantumComputation qc = qasm3::Importer::importf(filename.str());
+  return mlir::translateQuantumComputationToQC(context, qc);
+}
+
+/**
+ * @brief Load and parse a .mlir file
+ */
+static mlir::OwningOpRef<mlir::ModuleOp>
+loadMLIRFile(StringRef filename, mlir::MLIRContext* context) {
+  // Set up the input file
+  std::string errorMessage;
+  auto file = mlir::openInputFile(filename, &errorMessage);
   if (!file) {
     errs() << errorMessage << "\n";
     return nullptr;
@@ -85,15 +109,16 @@ static OwningOpRef<ModuleOp> loadMLIRFile(StringRef filename,
   // Parse the input MLIR
   SourceMgr sourceMgr;
   sourceMgr.AddNewSourceBuffer(std::move(file), SMLoc());
-  return parseSourceFile<ModuleOp>(sourceMgr, context);
+  return parseSourceFile<mlir::ModuleOp>(sourceMgr, context);
 }
 
 /**
  * @brief Write the module to the output file
  */
-static mlir::LogicalResult writeOutput(ModuleOp module, StringRef filename) {
+static mlir::LogicalResult writeOutput(mlir::ModuleOp module,
+                                       StringRef filename) {
   std::string errorMessage;
-  const auto output = openOutputFile(filename, &errorMessage);
+  const auto output = mlir::openOutputFile(filename, &errorMessage);
   if (!output) {
     errs() << errorMessage << "\n";
     return mlir::failure();
@@ -111,27 +136,32 @@ int main(int argc, char** argv) {
   cl::ParseCommandLineOptions(argc, argv, "MQT Core Compiler Driver\n");
 
   // Set up MLIR context with all required dialects
-  DialectRegistry registry;
-  registry.insert<qc::QCDialect>();
-  registry.insert<qco::QCODialect>();
-  registry.insert<arith::ArithDialect>();
-  registry.insert<cf::ControlFlowDialect>();
-  registry.insert<func::FuncDialect>();
-  registry.insert<scf::SCFDialect>();
-  registry.insert<LLVM::LLVMDialect>();
+  mlir::DialectRegistry registry;
+  registry.insert<mlir::qc::QCDialect>();
+  registry.insert<mlir::qco::QCODialect>();
+  registry.insert<mlir::arith::ArithDialect>();
+  registry.insert<mlir::cf::ControlFlowDialect>();
+  registry.insert<mlir::func::FuncDialect>();
+  registry.insert<mlir::scf::SCFDialect>();
+  registry.insert<mlir::LLVM::LLVMDialect>();
 
-  MLIRContext context(registry);
+  mlir::MLIRContext context(registry);
   context.loadAllAvailableDialects();
 
   // Load the input .mlir file
-  const auto module = loadMLIRFile(INPUT_FILENAME, &context);
+  mlir::OwningOpRef<mlir::ModuleOp> module;
+  if (QASM_INPUT) {
+    module = loadQASMFile(INPUT_FILENAME, &context);
+  } else {
+    module = loadMLIRFile(INPUT_FILENAME, &context);
+  }
   if (!module) {
     errs() << "Failed to load input file: " << INPUT_FILENAME << "\n";
     return 1;
   }
 
   // Configure the compiler pipeline
-  QuantumCompilerConfig config;
+  mlir::QuantumCompilerConfig config;
   config.convertToQIR = CONVERT_TO_QIR;
   config.recordIntermediates = RECORD_INTERMEDIATES;
   config.enableTiming = ENABLE_TIMING;
@@ -139,8 +169,8 @@ int main(int argc, char** argv) {
   config.printIRAfterAllStages = PRINT_IR_AFTER_ALL_STAGES;
 
   // Run the compilation pipeline
-  CompilationRecord record;
-  if (const QuantumCompilerPipeline pipeline(config);
+  mlir::CompilationRecord record;
+  if (const mlir::QuantumCompilerPipeline pipeline(config);
       pipeline
           .runPipeline(module.get(), RECORD_INTERMEDIATES ? &record : nullptr)
           .failed()) {
