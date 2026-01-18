@@ -160,7 +160,7 @@ def UnitaryOpInterface : OpInterface<"UnitaryOpInterface"> {
           }
           // if variant contains a dynamically-sized matrix, check if it is possible
           // to convert it to the given fixed-size matrix
-          if (auto* ptr = std::get_if<Eigen::MatrixXcd>(&matrix); ptr && ptr->size() == Eigen::Matrix4cd::SizeAtCompileTime) {
+          if (auto* ptr = std::get_if<Eigen::MatrixXcd>(&matrix); ptr && ptr->size() == MatrixType::SizeAtCompileTime) {
             return *ptr;
           }
           return std::nullopt;
