@@ -70,12 +70,12 @@ struct ReplaceRWithRY final : OpRewritePattern<ROp> {
 
 } // namespace
 
-void ROp::build(OpBuilder& builder, OperationState& state, Value qubitIn,
+void ROp::build(OpBuilder& odsBuilder, OperationState& odsState, Value qubitIn,
                 const std::variant<double, Value>& theta,
                 const std::variant<double, Value>& phi) {
-  auto thetaOperand = variantToValue(builder, state.location, theta);
-  auto phiOperand = variantToValue(builder, state.location, phi);
-  build(builder, state, qubitIn, thetaOperand, phiOperand);
+  auto thetaOperand = variantToValue(odsBuilder, odsState.location, theta);
+  auto phiOperand = variantToValue(odsBuilder, odsState.location, phi);
+  build(odsBuilder, odsState, qubitIn, thetaOperand, phiOperand);
 }
 
 void ROp::getCanonicalizationPatterns(RewritePatternSet& results,

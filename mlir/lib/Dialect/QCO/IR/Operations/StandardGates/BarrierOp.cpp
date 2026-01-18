@@ -132,14 +132,14 @@ Value BarrierOp::getParameter(const size_t /*i*/) {
   llvm::reportFatalUsageError("BarrierOp has no parameters");
 }
 
-void BarrierOp::build(OpBuilder& builder, OperationState& state,
+void BarrierOp::build(OpBuilder& odsBuilder, OperationState& odsState,
                       ValueRange qubits) {
   SmallVector<Type> resultTypes;
   resultTypes.reserve(qubits.size());
   for (auto qubit : qubits) {
     resultTypes.push_back(qubit.getType());
   }
-  build(builder, state, resultTypes, qubits);
+  build(odsBuilder, odsState, resultTypes, qubits);
 }
 
 void BarrierOp::getCanonicalizationPatterns(RewritePatternSet& results,
