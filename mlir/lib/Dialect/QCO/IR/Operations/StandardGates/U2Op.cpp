@@ -115,15 +115,16 @@ void U2Op::getCanonicalizationPatterns(RewritePatternSet& results,
 std::optional<Eigen::Matrix2cd> U2Op::getUnitaryMatrix() {
   using namespace std::complex_literals;
 
-  if (auto phi = valueToDouble(getPhi())) {
-    if (auto lambda = valueToDouble(getLambda())) {
-      const auto m00 = 1.0 / std::numbers::sqrt2 + 0i;
-      const auto m01 =
-          std::polar(1.0 / std::numbers::sqrt2, *lambda + std::numbers::pi);
-      const auto m10 = std::polar(1.0 / std::numbers::sqrt2, *phi);
-      const auto m11 = std::polar(1.0 / std::numbers::sqrt2, *phi + *lambda);
-      return Eigen::Matrix2cd{{m00, m01}, {m10, m11}};
-    }
+  auto phi = valueToDouble(getPhi());
+  auto lambda = valueToDouble(getLambda());
+  if (!phi || !lambda) {
+    return std::nullopt;
   }
-  return std::nullopt;
+
+  const auto m00 = 1.0 / std::numbers::sqrt2 + 0i;
+  const auto m01 =
+      std::polar(1.0 / std::numbers::sqrt2, *lambda + std::numbers::pi);
+  const auto m10 = std::polar(1.0 / std::numbers::sqrt2, *phi);
+  const auto m11 = std::polar(1.0 / std::numbers::sqrt2, *phi + *lambda);
+  return Eigen::Matrix2cd{{m00, m01}, {m10, m11}};
 }

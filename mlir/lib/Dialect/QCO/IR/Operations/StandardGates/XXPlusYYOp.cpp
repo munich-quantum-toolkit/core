@@ -92,19 +92,20 @@ void XXPlusYYOp::getCanonicalizationPatterns(RewritePatternSet& results,
 std::optional<Eigen::Matrix4cd> XXPlusYYOp::getUnitaryMatrix() {
   using namespace std::complex_literals;
 
-  if (auto theta = valueToDouble(getTheta())) {
-    if (auto beta = valueToDouble(getBeta())) {
-      const auto m0 = 0.0 + 0i;
-      const auto m1 = 1.0 + 0i;
-      const auto mc = std::cos(*theta / 2.0) + 0i;
-      const auto s = std::sin(*theta / 2.0);
-      const auto msp = std::polar(s, *beta - (std::numbers::pi / 2));
-      const auto msm = std::polar(s, -*beta - (std::numbers::pi / 2));
-      return Eigen::Matrix4cd{{m1, m0, m0, m0},  // row 0
-                              {m0, mc, msm, m0}, // row 1
-                              {m0, msp, mc, m0}, // row 2
-                              {m0, m0, m0, m1}}; // row 3
-    }
+  auto theta = valueToDouble(getTheta());
+  auto beta = valueToDouble(getBeta());
+  if (!theta || !beta) {
+    return std::nullopt;
   }
-  return std::nullopt;
+
+  const auto m0 = 0.0 + 0i;
+  const auto m1 = 1.0 + 0i;
+  const auto mc = std::cos(*theta / 2.0) + 0i;
+  const auto s = std::sin(*theta / 2.0);
+  const auto msp = std::polar(s, *beta - (std::numbers::pi / 2));
+  const auto msm = std::polar(s, -*beta - (std::numbers::pi / 2));
+  return Eigen::Matrix4cd{{m1, m0, m0, m0},  // row 0
+                          {m0, mc, msm, m0}, // row 1
+                          {m0, msp, mc, m0}, // row 2
+                          {m0, m0, m0, m1}}; // row 3
 }
