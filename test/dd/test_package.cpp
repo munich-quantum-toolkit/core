@@ -1,6 +1,6 @@
 /*
- * Copyright (c) 2023 - 2025 Chair for Design Automation, TUM
- * Copyright (c) 2025 Munich Quantum Software Company GmbH
+ * Copyright (c) 2023 - 2026 Chair for Design Automation, TUM
+ * Copyright (c) 2025 - 2026 Munich Quantum Software Company GmbH
  * All rights reserved.
  *
  * SPDX-License-Identifier: MIT
@@ -9,7 +9,6 @@
  */
 
 #include "dd/DDDefinitions.hpp"
-#include "dd/DDpackageConfig.hpp"
 #include "dd/Export.hpp"
 #include "dd/GateMatrixDefinitions.hpp"
 #include "dd/MemoryManager.hpp"
@@ -381,7 +380,7 @@ TEST(DDPackageTest, TraceComplexity) {
   // instead of paths in the DD due to the usage of a compute table
   for (std::size_t numQubits = 1; numQubits <= 10; ++numQubits) {
     auto dd = std::make_unique<Package>(numQubits);
-    auto& computeTable = dd->getTraceComputeTable<mNode>();
+    auto& computeTable = dd->getTraceComputeTable();
     const auto hGate = getDD(qc::StandardOperation(0, qc::H), *dd);
     auto hKron = hGate;
     for (std::size_t i = 0; i < numQubits - 1; ++i) {
@@ -944,27 +943,22 @@ TEST(DDPackageTest, PackageReset) {
 TEST(DDPackageTest, ResetClearsRoots) {
   auto dd = std::make_unique<Package>(2);
 
-  auto& vRoots = dd->getRootSet<vNode>();
-  auto& mRoots = dd->getRootSet<mNode>();
-  auto& dRoots = dd->getRootSet<dNode>();
+  const auto& vRoots = dd->getRootSet<vNode>();
+  const auto& mRoots = dd->getRootSet<mNode>();
 
-  auto vec = dd::makeZeroState(2, *dd);
-  auto mat = getDD(qc::StandardOperation(0, qc::X), *dd);
-  auto dens = dd->makeZeroDensityOperator(2);
+  const auto vec = dd::makeZeroState(2, *dd);
+  const auto mat = getDD(qc::StandardOperation(0, qc::X), *dd);
 
   dd->incRef(vec);
   dd->incRef(mat);
-  dd->incRef(dens);
 
   EXPECT_EQ(vRoots.size(), 1U);
   EXPECT_EQ(mRoots.size(), 1U);
-  EXPECT_EQ(dRoots.size(), 1U);
 
   (*dd).reset();
 
   EXPECT_TRUE(vRoots.empty());
   EXPECT_TRUE(mRoots.empty());
-  EXPECT_TRUE(dRoots.empty());
 }
 
 TEST(DDPackageTest, DuplicatetrackDoesNotLeaveStaleRoot) {
@@ -972,7 +966,6 @@ TEST(DDPackageTest, DuplicatetrackDoesNotLeaveStaleRoot) {
 
   auto& vRoots = dd->getRootSet<vNode>();
   auto& mRoots = dd->getRootSet<mNode>();
-  auto& dRoots = dd->getRootSet<dNode>();
 
   // vector root
   auto vec = dd::makeZeroState(1, *dd);
@@ -996,17 +989,6 @@ TEST(DDPackageTest, DuplicatetrackDoesNotLeaveStaleRoot) {
   dd->decRef(mat);
   EXPECT_TRUE(mRoots.empty());
   EXPECT_THROW(dd->decRef(mat), std::invalid_argument);
-
-  // density root
-  auto dens = dd->makeZeroDensityOperator(1);
-  EXPECT_EQ(dRoots.size(), 1U);
-  dd->incRef(dens);
-  EXPECT_EQ(dRoots.at(dens), 2U);
-  dd->decRef(dens);
-  EXPECT_EQ(dRoots.at(dens), 1U);
-  dd->decRef(dens);
-  EXPECT_TRUE(dRoots.empty());
-  EXPECT_THROW(dd->decRef(dens), std::invalid_argument);
 }
 
 TEST(DDPackageTest, Inverse) {
@@ -1568,168 +1550,6 @@ TEST(DDPackageTest, CloseToIdentityWithGarbageInTheMiddle) {
                                     {true, false, true}, false));
 }
 
-TEST(DDPackageTest, dNodeMultiply) {
-  // Multiply dNode with mNode (MxMxM)
-  constexpr auto nrQubits = 3U;
-  const auto dd = std::make_unique<Package>(
-      nrQubits, DENSITY_MATRIX_SIMULATOR_DD_PACKAGE_CONFIG);
-  // Make zero density matrix
-  auto state = dd->makeZeroDensityOperator(dd->qubits());
-  std::vector<mEdge> operations = {};
-  operations.emplace_back(getDD(qc::StandardOperation(0, qc::H), *dd));
-  operations.emplace_back(getDD(qc::StandardOperation(1, qc::H), *dd));
-  operations.emplace_back(getDD(qc::StandardOperation(2, qc::H), *dd));
-  operations.emplace_back(getDD(qc::StandardOperation(2, qc::Z), *dd));
-
-  for (const auto& op : operations) {
-    dd->applyOperationToDensity(state, op);
-  }
-
-  const auto stateDensityMatrix = state.getMatrix(dd->qubits());
-
-  for (const auto& stateVector : stateDensityMatrix) {
-    for (const auto& cValue : stateVector) {
-      std::cout << "r:" << cValue.real() << " i:" << cValue.imag();
-    }
-    std::cout << "\n";
-  }
-
-  for (std::size_t i = 0; i < (1 << nrQubits); i++) {
-    for (std::size_t j = 0; j < (1 << nrQubits); j++) {
-      EXPECT_EQ(std::abs(stateDensityMatrix[i][j].imag()), 0);
-      if ((i < 4 && j < 4) || (i >= 4 && j >= 4)) {
-        EXPECT_TRUE(stateDensityMatrix[i][j].real() > 0);
-      } else {
-        EXPECT_TRUE(stateDensityMatrix[i][j].real() < 0);
-      }
-      EXPECT_TRUE(std::abs(std::abs(stateDensityMatrix[i][j]) - 0.125) <
-                  0.000001);
-    }
-  }
-
-  const auto probVector = state.getSparseProbabilityVector(nrQubits, 0.001);
-  for (const auto& [s, prob] : probVector) {
-    constexpr auto tolerance = 1e-10;
-    std::cout << s << ": " << prob << "\n";
-    EXPECT_NEAR(prob, 0.125, tolerance);
-  }
-}
-
-TEST(DDPackageTest, dNodeMultiply2) {
-  // Multiply dNode with mNode (MxMxM)
-  constexpr auto nrQubits = 3U;
-  const auto dd = std::make_unique<Package>(
-      nrQubits, DENSITY_MATRIX_SIMULATOR_DD_PACKAGE_CONFIG);
-  // Make zero density matrix
-  auto state = dd->makeZeroDensityOperator(dd->qubits());
-  std::vector<mEdge> operations = {};
-  operations.emplace_back(getDD(qc::StandardOperation(0, qc::H), *dd));
-  operations.emplace_back(getDD(qc::StandardOperation(1, qc::H), *dd));
-  operations.emplace_back(getDD(qc::StandardOperation(2, qc::H), *dd));
-  operations.emplace_back(getDD(qc::StandardOperation(2, qc::Z), *dd));
-
-  for (const auto& op : operations) {
-    dd->applyOperationToDensity(state, op);
-  }
-  operations[0].printMatrix(dd->qubits());
-
-  const auto stateDensityMatrix = state.getMatrix(dd->qubits());
-
-  for (std::size_t i = 0; i < (1 << nrQubits); i++) {
-    for (std::size_t j = 0; j < (1 << nrQubits); j++) {
-      EXPECT_TRUE(std::abs(stateDensityMatrix[i][j].imag()) == 0);
-      if ((i < 4 && j < 4) || (i >= 4 && j >= 4)) {
-        EXPECT_TRUE(stateDensityMatrix[i][j].real() > 0);
-      } else {
-        EXPECT_TRUE(stateDensityMatrix[i][j].real() < 0);
-      }
-      EXPECT_TRUE(std::abs(std::abs(stateDensityMatrix[i][j]) - 0.125) <
-                  0.000001);
-    }
-  }
-  const auto probVector = state.getSparseProbabilityVector(nrQubits, 0.001);
-  for (const auto& [s, prob] : probVector) {
-    constexpr double tolerance = 1e-10;
-    std::cout << s << ": " << prob << "\n";
-    EXPECT_NEAR(prob, 0.125, tolerance);
-  }
-}
-
-TEST(DDPackageTest, dNodeMulCache1) {
-  // Make caching test with dNodes
-  constexpr auto nrQubits = 1U;
-  const auto dd = std::make_unique<Package>(
-      nrQubits, DENSITY_MATRIX_SIMULATOR_DD_PACKAGE_CONFIG);
-  // Make zero density matrix
-  auto state = dd->makeZeroDensityOperator(nrQubits);
-
-  const auto operation = getDD(qc::StandardOperation(0, qc::H), *dd);
-  dd->applyOperationToDensity(state, operation);
-
-  state = dd->makeZeroDensityOperator(nrQubits);
-  auto& computeTable = dd->getMultiplicationComputeTable<dNode>();
-
-  const auto& densityMatrix0 =
-      densityFromMatrixEdge(dd->conjugateTranspose(operation));
-
-  const auto* cachedResult =
-      computeTable.lookup(state.p, densityMatrix0.p, false);
-  ASSERT_NE(cachedResult, nullptr);
-  ASSERT_NE(cachedResult->p, nullptr);
-  state = dd->multiply(state, densityMatrix0, false);
-  ASSERT_NE(state.p, nullptr);
-  ASSERT_EQ(state.p, cachedResult->p);
-
-  const auto densityMatrix1 = densityFromMatrixEdge(operation);
-  const auto* cachedResult1 =
-      computeTable.lookup(densityMatrix1.p, state.p, true);
-  ASSERT_NE(cachedResult1, nullptr);
-  ASSERT_NE(cachedResult1->p, nullptr);
-  const auto state2 = dd->multiply(densityMatrix1, state, true);
-  ASSERT_NE(state2.p, nullptr);
-  ASSERT_EQ(state2.p, cachedResult1->p);
-
-  // try a repeated lookup
-  const auto* cachedResult2 =
-      computeTable.lookup(densityMatrix1.p, state.p, true);
-  ASSERT_NE(cachedResult2, nullptr);
-  ASSERT_NE(cachedResult2->p, nullptr);
-  ASSERT_EQ(cachedResult2->p, cachedResult1->p);
-
-  computeTable.clear();
-  const auto* cachedResult3 =
-      computeTable.lookup(densityMatrix1.p, state.p, true);
-  ASSERT_EQ(cachedResult3, nullptr);
-}
-
-TEST(DDPackageTest, dNoiseCache) {
-  // Test the flags for dnode, vnode and mnodes
-  constexpr auto nrQubits = 1U;
-  const auto dd = std::make_unique<Package>(nrQubits);
-  // Make zero density matrix
-  const auto initialState = dd->makeZeroDensityOperator(nrQubits);
-
-  // nothing pre-cached
-  const std::vector<Qubit> target = {0};
-  const auto cachedNoise = dd->densityNoise.lookup(initialState, target);
-  ASSERT_EQ(cachedNoise.p, nullptr);
-
-  auto state = initialState;
-  const auto operation = getDD(qc::StandardOperation(0, qc::X), *dd);
-  dd->applyOperationToDensity(state, operation);
-  dd->densityNoise.insert(initialState, state, target);
-
-  // noise pre-cached
-  const auto cachedNoise1 = dd->densityNoise.lookup(initialState, target);
-  ASSERT_NE(cachedNoise1.p, nullptr);
-  ASSERT_EQ(cachedNoise1.p, state.p);
-
-  // no noise pre-cached after clear
-  dd->densityNoise.clear();
-  const auto cachedNoise2 = dd->densityNoise.lookup(initialState, target);
-  ASSERT_EQ(cachedNoise2.p, nullptr);
-}
-
 TEST(DDPackageTest, calCulpDistance) {
   constexpr auto nrQubits = 1U;
   auto dd = std::make_unique<Package>(nrQubits);
@@ -1737,46 +1557,6 @@ TEST(DDPackageTest, calCulpDistance) {
   const auto tmp1 = ulpDistance(1, 1);
   EXPECT_TRUE(tmp0 > 0);
   EXPECT_EQ(tmp1, 0);
-}
-
-TEST(DDPackageTest, dStochCache) {
-  constexpr auto nrQubits = 4U;
-  const auto dd = std::make_unique<Package>(
-      nrQubits, STOCHASTIC_NOISE_SIMULATOR_DD_PACKAGE_CONFIG);
-
-  std::vector<mEdge> operations = {};
-  operations.emplace_back(getDD(qc::StandardOperation(0, qc::X), *dd));
-  operations.emplace_back(getDD(qc::StandardOperation(1, qc::Z), *dd));
-  operations.emplace_back(getDD(qc::StandardOperation(2, qc::Y), *dd));
-  operations.emplace_back(getDD(qc::StandardOperation(3, qc::H), *dd));
-
-  dd->stochasticNoiseOperationCache.insert(
-      0, 0, operations[0]); // insert X operations with target 0
-  dd->stochasticNoiseOperationCache.insert(
-      1, 1, operations[1]); // insert Z operations with target 1
-  dd->stochasticNoiseOperationCache.insert(
-      2, 2, operations[2]); // insert Y operations with target 2
-  dd->stochasticNoiseOperationCache.insert(
-      3, 3, operations[3]); // insert H operations with target 3
-
-  for (std::uint8_t i = 0; i < 4; i++) {
-    for (Qubit j = 0; j < 4; j++) {
-      const auto* op = dd->stochasticNoiseOperationCache.lookup(i, j);
-      if (static_cast<Qubit>(i) == j) {
-        EXPECT_TRUE(op != nullptr && op->p == operations[i].p);
-      } else {
-        EXPECT_EQ(op, nullptr);
-      }
-    }
-  }
-
-  dd->stochasticNoiseOperationCache.clear();
-  for (std::uint8_t i = 0; i < 4; i++) {
-    for (Qubit j = 0; j < 4; j++) {
-      auto* op = dd->stochasticNoiseOperationCache.lookup(i, j);
-      EXPECT_EQ(op, nullptr);
-    }
-  }
 }
 
 TEST(DDPackageTest, stateFromVectorBell) {
@@ -2566,14 +2346,10 @@ TEST(DDPackageTest, DataStructureStatistics) {
   EXPECT_EQ(stats["vNode"]["alignment_B"], 8U);
   EXPECT_EQ(stats["mNode"]["size_B"], 112U);
   EXPECT_EQ(stats["mNode"]["alignment_B"], 8U);
-  EXPECT_EQ(stats["dNode"]["size_B"], 112U);
-  EXPECT_EQ(stats["dNode"]["alignment_B"], 8U);
   EXPECT_EQ(stats["vEdge"]["size_B"], 24U);
   EXPECT_EQ(stats["vEdge"]["alignment_B"], 8U);
   EXPECT_EQ(stats["mEdge"]["size_B"], 24U);
   EXPECT_EQ(stats["mEdge"]["alignment_B"], 8U);
-  EXPECT_EQ(stats["dEdge"]["size_B"], 24U);
-  EXPECT_EQ(stats["dEdge"]["alignment_B"], 8U);
   EXPECT_EQ(stats["RealNumber"]["size_B"], 16U);
   EXPECT_EQ(stats["RealNumber"]["alignment_B"], 8U);
 }
@@ -2588,7 +2364,6 @@ TEST(DDPackageTest, DDStatistics) {
   std::cout << stats.dump(2) << "\n";
   EXPECT_TRUE(stats.contains("vector"));
   ASSERT_TRUE(stats.contains("matrix"));
-  EXPECT_TRUE(stats.contains("density_matrix"));
   EXPECT_TRUE(stats.contains("real_numbers"));
   EXPECT_TRUE(stats.contains("compute_tables"));
   const auto& matrixStats = stats["matrix"];

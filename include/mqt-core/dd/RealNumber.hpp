@@ -1,6 +1,6 @@
 /*
- * Copyright (c) 2023 - 2025 Chair for Design Automation, TUM
- * Copyright (c) 2025 Munich Quantum Software Company GmbH
+ * Copyright (c) 2023 - 2026 Chair for Design Automation, TUM
+ * Copyright (c) 2025 - 2026 Munich Quantum Software Company GmbH
  * All rights reserved.
  *
  * SPDX-License-Identifier: MIT
@@ -214,7 +214,7 @@ struct RealNumber final : LLBase {
 
   /// numerical tolerance to be used for floating point values
   // NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables)
-  static inline fp eps = std::numeric_limits<dd::fp>::epsilon() * 1024;
+  static inline fp eps = std::numeric_limits<fp>::epsilon() * 1024;
 };
 
 static_assert(sizeof(RealNumber) == 16);

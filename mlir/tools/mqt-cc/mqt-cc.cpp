@@ -1,6 +1,6 @@
 /*
- * Copyright (c) 2023 - 2025 Chair for Design Automation, TUM
- * Copyright (c) 2025 Munich Quantum Software Company GmbH
+ * Copyright (c) 2023 - 2026 Chair for Design Automation, TUM
+ * Copyright (c) 2025 - 2026 Munich Quantum Software Company GmbH
  * All rights reserved.
  *
  * SPDX-License-Identifier: MIT
@@ -8,10 +8,15 @@
  * Licensed under the MIT License
  */
 
+#include "ir/QuantumComputation.hpp"
 #include "mlir/Compiler/CompilerPipeline.h"
 #include "mlir/Dialect/QC/IR/QCDialect.h"
+#include "mlir/Dialect/QC/Translation/TranslateQuantumComputationToQC.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
+#include "qasm3/Exception.hpp"
+#include "qasm3/Importer.hpp"
 
+#include <exception>
 #include <llvm/Support/CommandLine.h>
 #include <llvm/Support/InitLLVM.h>
 #include <llvm/Support/SourceMgr.h>
@@ -38,7 +43,7 @@ namespace {
 
 // Command-line options
 const cl::opt<std::string> INPUT_FILENAME(cl::Positional,
-                                          cl::desc("<input .mlir file>"),
+                                          cl::desc("<input .mlir/.qasm file>"),
                                           cl::init("-"));
 
 const cl::opt<std::string> OUTPUT_FILENAME("o", cl::desc("Output filename"),
@@ -70,6 +75,27 @@ const cl::opt<bool>
 } // namespace
 
 /**
+ * @brief Load and parse a .qasm file
+ */
+static OwningOpRef<ModuleOp> loadQASMFile(StringRef filename,
+                                          MLIRContext* context) {
+  try {
+    // Parse the input QASM file
+    const ::qc::QuantumComputation qc =
+        qasm3::Importer::importf(filename.str());
+    // Translate to MLIR dialect QC
+    return translateQuantumComputationToQC(context, qc);
+  } catch (const qasm3::CompilerError& exception) {
+    errs() << "Failed to parse QASM file '" << filename << "': '"
+           << exception.what() << "'\n";
+  } catch (const std::exception& exception) {
+    errs() << "Failed to load QASM file '" << filename << "': '"
+           << exception.what() << "'\n";
+  }
+  return nullptr;
+}
+
+/**
  * @brief Load and parse a .mlir file
  */
 static OwningOpRef<ModuleOp> loadMLIRFile(StringRef filename,
@@ -78,7 +104,8 @@ static OwningOpRef<ModuleOp> loadMLIRFile(StringRef filename,
   std::string errorMessage;
   auto file = openInputFile(filename, &errorMessage);
   if (!file) {
-    errs() << errorMessage << "\n";
+    errs() << "Failed to load file '" << filename << "': '" << errorMessage
+           << "'\n";
     return nullptr;
   }
 
@@ -107,12 +134,12 @@ static mlir::LogicalResult writeOutput(ModuleOp module, StringRef filename) {
 int main(int argc, char** argv) {
   const InitLLVM y(argc, argv);
 
-  // Parse command-line options
+  // Parse command-line options; exit on error and print to stderr
   cl::ParseCommandLineOptions(argc, argv, "MQT Core Compiler Driver\n");
 
   // Set up MLIR context with all required dialects
   DialectRegistry registry;
-  registry.insert<qc::QCDialect>();
+  registry.insert<mlir::qc::QCDialect>();
   registry.insert<qco::QCODialect>();
   registry.insert<arith::ArithDialect>();
   registry.insert<cf::ControlFlowDialect>();
@@ -124,9 +151,13 @@ int main(int argc, char** argv) {
   context.loadAllAvailableDialects();
 
   // Load the input .mlir file
-  const auto module = loadMLIRFile(INPUT_FILENAME, &context);
+  OwningOpRef<ModuleOp> module;
+  if (INPUT_FILENAME.getValue().ends_with(".qasm")) {
+    module = loadQASMFile(INPUT_FILENAME, &context);
+  } else {
+    module = loadMLIRFile(INPUT_FILENAME, &context);
+  }
   if (!module) {
-    errs() << "Failed to load input file: " << INPUT_FILENAME << "\n";
     return 1;
   }
 

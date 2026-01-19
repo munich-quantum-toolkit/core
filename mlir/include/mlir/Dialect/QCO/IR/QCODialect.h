@@ -1,6 +1,6 @@
 /*
- * Copyright (c) 2023 - 2025 Chair for Design Automation, TUM
- * Copyright (c) 2025 Munich Quantum Software Company GmbH
+ * Copyright (c) 2023 - 2026 Chair for Design Automation, TUM
+ * Copyright (c) 2025 - 2026 Munich Quantum Software Company GmbH
  * All rights reserved.
  *
  * SPDX-License-Identifier: MIT
@@ -12,19 +12,16 @@
 
 // Suppress warnings about ambiguous reversed operators in MLIR
 // (see https://github.com/llvm/llvm-project/issues/45853)
-#if defined(__clang__)
+#ifdef __clang__
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wambiguous-reversed-operator"
 #endif
 #include <mlir/Interfaces/InferTypeOpInterface.h>
-#if defined(__clang__)
+#ifdef __clang__
 #pragma clang diagnostic pop
 #endif
 
-#include "mlir/Dialect/Utils/MatrixUtils.h"
-
 #include <Eigen/Core>
-#include <Eigen/SparseCore>
 #include <mlir/Bytecode/BytecodeOpInterface.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/IR/Value.h>
@@ -126,26 +123,6 @@ public:
         llvm::reportFatalUsageError("Parameter index out of bounds");
       }
       return this->getOperation()->getOperand(T + i);
-    }
-
-    /**
-     * @brief Retrieve mlir::FloatAttr of static mlir::Value.
-     * @details The returned float attribute can be used to get the value of the
-     *          given parameter as a C++ type or perform other mlir operations.
-     */
-    [[nodiscard]] static FloatAttr getStaticParameter(Value param) {
-      auto constantOp = param.getDefiningOp<arith::ConstantOp>();
-      if (!constantOp) {
-        return nullptr;
-      }
-      return dyn_cast<FloatAttr>(constantOp.getValue());
-    }
-
-    [[nodiscard]] UnitaryMatrixType getUnitaryMatrixDefinition() const
-      requires(MatrixDefinition != nullptr)
-    {
-      const auto* op = this->getConstOperation();
-      return MatrixDefinition(llvm::dyn_cast<UnitaryOpInterface>(op));
     }
 
     Value getInputForOutput(Value output) {

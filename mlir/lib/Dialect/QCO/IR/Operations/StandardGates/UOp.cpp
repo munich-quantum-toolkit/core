@@ -1,6 +1,6 @@
 /*
- * Copyright (c) 2023 - 2025 Chair for Design Automation, TUM
- * Copyright (c) 2025 Munich Quantum Software Company GmbH
+ * Copyright (c) 2023 - 2026 Chair for Design Automation, TUM
+ * Copyright (c) 2025 - 2026 Munich Quantum Software Company GmbH
  * All rights reserved.
  *
  * SPDX-License-Identifier: MIT
@@ -11,14 +11,16 @@
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/Utils/Utils.h"
 
+#include <Eigen/Core>
 #include <cmath>
+#include <complex>
 #include <mlir/IR/Builders.h>
-#include <mlir/IR/BuiltinAttributes.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OperationSupport.h>
 #include <mlir/IR/PatternMatch.h>
 #include <mlir/Support/LogicalResult.h>
 #include <numbers>
+#include <optional>
 #include <variant>
 
 using namespace mlir;
@@ -35,15 +37,10 @@ struct ReplaceUWithP final : OpRewritePattern<UOp> {
 
   LogicalResult matchAndRewrite(UOp op,
                                 PatternRewriter& rewriter) const override {
-    const auto theta = UOp::getStaticParameter(op.getTheta());
-    const auto phi = UOp::getStaticParameter(op.getPhi());
-    if (!theta || !phi) {
-      return failure();
-    }
-
-    const auto thetaValue = theta.getValueAsDouble();
-    const auto phiValue = phi.getValueAsDouble();
-    if (std::abs(thetaValue) > TOLERANCE || std::abs(phiValue) > TOLERANCE) {
+    const auto theta = valueToDouble(op.getTheta());
+    const auto phi = valueToDouble(op.getPhi());
+    if (!theta || std::abs(*theta) > TOLERANCE || !phi ||
+        std::abs(*phi) > TOLERANCE) {
       return failure();
     }
 
@@ -63,16 +60,10 @@ struct ReplaceUWithRX final : OpRewritePattern<UOp> {
 
   LogicalResult matchAndRewrite(UOp op,
                                 PatternRewriter& rewriter) const override {
-    const auto phi = UOp::getStaticParameter(op.getPhi());
-    const auto lambda = UOp::getStaticParameter(op.getLambda());
-    if (!phi || !lambda) {
-      return failure();
-    }
-
-    const auto phiValue = phi.getValueAsDouble();
-    const auto lambdaValue = lambda.getValueAsDouble();
-    if (std::abs(phiValue + (std::numbers::pi / 2.0)) > TOLERANCE ||
-        std::abs(lambdaValue - (std::numbers::pi / 2.0)) > TOLERANCE) {
+    const auto phi = valueToDouble(op.getPhi());
+    const auto lambda = valueToDouble(op.getLambda());
+    if (!phi || std::abs(*phi + (std::numbers::pi / 2.0)) > TOLERANCE ||
+        !lambda || std::abs(*lambda - (std::numbers::pi / 2.0)) > TOLERANCE) {
       return failure();
     }
 
@@ -92,15 +83,10 @@ struct ReplaceUWithRY final : OpRewritePattern<UOp> {
 
   LogicalResult matchAndRewrite(UOp op,
                                 PatternRewriter& rewriter) const override {
-    const auto phi = UOp::getStaticParameter(op.getPhi());
-    const auto lambda = UOp::getStaticParameter(op.getLambda());
-    if (!phi || !lambda) {
-      return failure();
-    }
-
-    const auto phiValue = phi.getValueAsDouble();
-    const auto lambdaValue = lambda.getValueAsDouble();
-    if (std::abs(phiValue) > TOLERANCE || std::abs(lambdaValue) > TOLERANCE) {
+    const auto phi = valueToDouble(op.getPhi());
+    const auto lambda = valueToDouble(op.getLambda());
+    if (!phi || std::abs(*phi) > TOLERANCE || !lambda ||
+        std::abs(*lambda) > TOLERANCE) {
       return failure();
     }
 
@@ -114,17 +100,38 @@ struct ReplaceUWithRY final : OpRewritePattern<UOp> {
 
 } // namespace
 
-void UOp::build(OpBuilder& builder, OperationState& state, Value qubitIn,
+void UOp::build(OpBuilder& odsBuilder, OperationState& odsState, Value qubitIn,
                 const std::variant<double, Value>& theta,
                 const std::variant<double, Value>& phi,
                 const std::variant<double, Value>& lambda) {
-  auto thetaOperand = variantToValue(builder, state, theta);
-  auto phiOperand = variantToValue(builder, state, phi);
-  auto lambdaOperand = variantToValue(builder, state, lambda);
-  build(builder, state, qubitIn, thetaOperand, phiOperand, lambdaOperand);
+  const auto thetaOperand =
+      variantToValue(odsBuilder, odsState.location, theta);
+  const auto phiOperand = variantToValue(odsBuilder, odsState.location, phi);
+  const auto lambdaOperand =
+      variantToValue(odsBuilder, odsState.location, lambda);
+  build(odsBuilder, odsState, qubitIn, thetaOperand, phiOperand, lambdaOperand);
 }
 
 void UOp::getCanonicalizationPatterns(RewritePatternSet& results,
                                       MLIRContext* context) {
   results.add<ReplaceUWithP, ReplaceUWithRX, ReplaceUWithRY>(context);
+}
+
+std::optional<Eigen::Matrix2cd> UOp::getUnitaryMatrix() {
+  using namespace std::complex_literals;
+
+  const auto theta = valueToDouble(getTheta());
+  const auto phi = valueToDouble(getPhi());
+  const auto lambda = valueToDouble(getLambda());
+  if (!theta || !phi || !lambda) {
+    return std::nullopt;
+  }
+
+  const auto c = std::cos(*theta / 2.0);
+  const auto s = std::sin(*theta / 2.0);
+  const auto m00 = c + 0i;
+  const auto m01 = std::polar(s, *lambda + std::numbers::pi);
+  const auto m10 = std::polar(s, *phi);
+  const auto m11 = std::polar(c, *phi + *lambda);
+  return Eigen::Matrix2cd{{m00, m01}, {m10, m11}};
 }

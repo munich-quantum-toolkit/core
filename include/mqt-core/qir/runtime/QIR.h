@@ -1,6 +1,6 @@
 /*
- * Copyright (c) 2023 - 2025 Chair for Design Automation, TUM
- * Copyright (c) 2025 Munich Quantum Software Company GmbH
+ * Copyright (c) 2023 - 2026 Chair for Design Automation, TUM
+ * Copyright (c) 2025 - 2026 Munich Quantum Software Company GmbH
  * All rights reserved.
  *
  * SPDX-License-Identifier: MIT
@@ -70,7 +70,7 @@ Array* __quantum__rt__array_create_1d(int32_t, int64_t);
 int64_t __quantum__rt__array_get_size_1d(const Array*);
 
 /// Returns a pointer to the element of the array at the zero-based index given
-/// by the int64_t.
+/// by the int64_t. Returns nullptr if the index is out of bounds.
 int8_t* __quantum__rt__array_get_element_ptr_1d(Array*, int64_t);
 
 /// Adds the given integer value to the reference count for the array.

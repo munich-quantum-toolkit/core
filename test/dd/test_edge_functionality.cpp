@@ -1,6 +1,6 @@
 /*
- * Copyright (c) 2023 - 2025 Chair for Design Automation, TUM
- * Copyright (c) 2025 Munich Quantum Software Company GmbH
+ * Copyright (c) 2023 - 2026 Chair for Design Automation, TUM
+ * Copyright (c) 2025 - 2026 Munich Quantum Software Company GmbH
  * All rights reserved.
  *
  * SPDX-License-Identifier: MIT
@@ -10,20 +10,14 @@
 
 #include "dd/DDDefinitions.hpp"
 #include "dd/Node.hpp"
-#include "dd/Operations.hpp"
 #include "dd/Package.hpp"
 #include "dd/RealNumber.hpp"
 #include "dd/StateGeneration.hpp"
-#include "ir/operations/OpType.hpp"
-#include "ir/operations/StandardOperation.hpp"
 
 #include <cmath>
 #include <cstddef>
 #include <gtest/gtest.h>
-#include <iomanip>
 #include <memory>
-#include <numbers>
-#include <sstream>
 
 namespace dd {
 
@@ -358,115 +352,6 @@ TEST(MatrixFunctionality, SizeBellState) {
 
   const auto bell = dd->makeDDFromMatrix(mat);
   EXPECT_EQ(bell.size(), 3);
-}
-
-///-----------------------------------------------------------------------------
-///                \n Tests for density matrix DDs \n
-///-----------------------------------------------------------------------------
-
-TEST(DensityMatrixFunctionality, GetValueByPathTerminal) {
-  EXPECT_EQ(dEdge::zero().getValueByPath(0, "0"), 0.);
-  EXPECT_EQ(dEdge::one().getValueByPath(0, "0"), 1.);
-}
-
-TEST(DensityMatrixFunctionality, GetValueByIndexTerminal) {
-  EXPECT_EQ(dEdge::zero().getValueByIndex(0, 0, 0), 0.);
-  EXPECT_EQ(dEdge::one().getValueByIndex(0, 0, 0), 1.);
-}
-
-TEST(DensityMatrixFunctionality, GetValueByIndexProperDensityMatrix) {
-  const auto nqubits = 1U;
-  auto dd = std::make_unique<Package>(nqubits);
-  auto zero = dd->makeZeroDensityOperator(nqubits);
-  const auto op1 = getDD(qc::StandardOperation(0U, qc::H), *dd);
-  const auto op2 = getDD(qc::StandardOperation(0, qc::RZ, {PI_4}), *dd);
-  auto state = dd->applyOperationToDensity(zero, op1);
-  state = dd->applyOperationToDensity(state, op2);
-
-  const auto diagValRef = 0.5;
-  const auto offDiagValRef = 0.25 * std::numbers::sqrt2;
-
-  const CMat dmRef = {{{diagValRef, 0.}, {offDiagValRef, -offDiagValRef}},
-                      {{offDiagValRef, offDiagValRef}, {diagValRef, 0.}}};
-
-  const auto dm = state.getMatrix(nqubits);
-
-  for (std::size_t i = 0U; i < dm.size(); ++i) {
-    for (std::size_t j = 0U; j < dm.size(); ++j) {
-      const auto val = state.getValueByIndex(nqubits, i, j);
-      const auto ref = dmRef[i][j];
-      EXPECT_NEAR(ref.real(), val.real(), 1e-10);
-      EXPECT_NEAR(ref.imag(), val.imag(), 1e-10);
-    }
-  }
-}
-
-TEST(DensityMatrixFunctionality, GetSparseMatrixTerminal) {
-  const auto zero = SparseCMat{{{0, 0}, 0.}};
-  EXPECT_EQ(dEdge::zero().getSparseMatrix(0), zero);
-  const auto one = SparseCMat{{{0, 0}, 1.}};
-  EXPECT_EQ(dEdge::one().getSparseMatrix(0), one);
-}
-
-TEST(DensityMatrixFunctionality, GetSparseMatrixConsistency) {
-  const auto nqubits = 1U;
-  auto dd = std::make_unique<Package>(nqubits);
-  auto zero = dd->makeZeroDensityOperator(nqubits);
-  const auto op1 = getDD(qc::StandardOperation(0U, qc::H), *dd);
-  const auto op2 = getDD(qc::StandardOperation(0, qc::RZ, {PI_4}), *dd);
-  auto state = dd->applyOperationToDensity(zero, op1);
-  state = dd->applyOperationToDensity(state, op2);
-
-  const auto dm = state.getSparseMatrix(nqubits);
-  const auto dmDense = state.getMatrix(nqubits);
-
-  for (const auto& [index, value] : dm) {
-    const auto val = dmDense.at(index.first).at(index.second);
-    EXPECT_NEAR(value.real(), val.real(), 1e-10);
-    EXPECT_NEAR(value.imag(), val.imag(), 1e-10);
-  }
-}
-
-TEST(DensityMatrixFunctionality, PrintMatrixTerminal) {
-  testing::internal::CaptureStdout();
-  dEdge::zero().printMatrix(0);
-  const auto zeroStr = testing::internal::GetCapturedStdout();
-  EXPECT_EQ(zeroStr, "(0,0)\n");
-  testing::internal::CaptureStdout();
-  dEdge::one().printMatrix(0);
-  const auto oneStr = testing::internal::GetCapturedStdout();
-  EXPECT_EQ(oneStr, "(1,0)\n");
-}
-
-TEST(DensityMatrixFunctionality, PrintMatrix) {
-  const auto nqubits = 1U;
-  auto dd = std::make_unique<Package>(nqubits);
-  auto zero = dd->makeZeroDensityOperator(nqubits);
-  const auto op1 = getDD(qc::StandardOperation(0U, qc::H), *dd);
-  const auto op2 = getDD(qc::StandardOperation(0, qc::RZ, {PI_4}), *dd);
-  auto state = dd->applyOperationToDensity(zero, op1);
-  state = dd->applyOperationToDensity(state, op2);
-
-  const auto diagValRef = 0.5;
-  const auto offDiagValRef = 0.25 * std::numbers::sqrt2;
-
-  const CMat dmRef = {{{diagValRef, 0.}, {offDiagValRef, -offDiagValRef}},
-                      {{offDiagValRef, offDiagValRef}, {diagValRef, 0.}}};
-
-  testing::internal::CaptureStdout();
-  state.printMatrix(nqubits);
-  const auto matStr = testing::internal::GetCapturedStdout();
-
-  std::stringstream ss{};
-  constexpr auto prec = 3U;
-  for (std::size_t i = 0U; i < dmRef.size(); ++i) {
-    for (std::size_t j = 0U; j < dmRef.size(); ++j) {
-      ss << std::setprecision(prec) << dmRef[i][j] << " ";
-    }
-    ss << "\n";
-  }
-
-  EXPECT_EQ(matStr, ss.str());
 }
 
 } // namespace dd

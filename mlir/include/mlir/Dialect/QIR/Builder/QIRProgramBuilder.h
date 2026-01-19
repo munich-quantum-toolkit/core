@@ -1,6 +1,6 @@
 /*
- * Copyright (c) 2023 - 2025 Chair for Design Automation, TUM
- * Copyright (c) 2025 Munich Quantum Software Company GmbH
+ * Copyright (c) 2023 - 2026 Chair for Design Automation, TUM
+ * Copyright (c) 2025 - 2026 Munich Quantum Software Company GmbH
  * All rights reserved.
  *
  * SPDX-License-Identifier: MIT
@@ -70,7 +70,7 @@ namespace mlir::qir {
  * auto module = builder.finalize();
  * ```
  */
-class QIRProgramBuilder {
+class QIRProgramBuilder final : public ImplicitLocOpBuilder {
 public:
   /**
    * @brief Construct a new QIRProgramBuilder
@@ -138,7 +138,7 @@ public:
    */
   struct Bit {
     /// Name of the register containing this bit
-    std::string registerName;
+    llvm::StringRef registerName;
     /// Size of the register containing this bit
     int64_t registerSize{};
     /// Index of this bit within the register
@@ -811,10 +811,10 @@ public:
   OwningOpRef<ModuleOp> finalize();
 
 private:
-  OpBuilder builder;
+  /// The main module
   ModuleOp module;
-  Location loc;
 
+  /// The main function
   LLVM::LLVMFuncOp mainFunc;
 
   /// Allocator and StringSaver for stable StringRefs
@@ -841,6 +841,12 @@ private:
 
   /// Track qubit and result counts for QIR metadata
   QIRMetadata metadata_;
+
+  /// Helper variable for storing the LLVM pointer type
+  LLVM::LLVMPointerType ptrType;
+
+  /// Helper variable for storing the LLVM void type
+  LLVM::LLVMVoidType voidType;
 
   /**
    * @brief Helper to create a LLVM CallOp

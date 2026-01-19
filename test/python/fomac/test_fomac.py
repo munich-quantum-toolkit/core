@@ -1,5 +1,5 @@
-# Copyright (c) 2023 - 2025 Chair for Design Automation, TUM
-# Copyright (c) 2025 Munich Quantum Software Company GmbH
+# Copyright (c) 2023 - 2026 Chair for Design Automation, TUM
+# Copyright (c) 2025 - 2026 Munich Quantum Software Company GmbH
 # All rights reserved.
 #
 # SPDX-License-Identifier: MIT
@@ -10,14 +10,13 @@
 
 from __future__ import annotations
 
-import sys
 import tempfile
 from pathlib import Path
 from typing import cast
 
 import pytest
 
-from mqt.core.fomac import Device, Job, ProgramFormat, Session
+from mqt.core.fomac import Device, Job, ProgramFormat, Session, add_dynamic_device_library
 
 
 def _get_devices() -> list[Device]:
@@ -803,15 +802,7 @@ def test_session_multiple_instances() -> None:
     assert len(devices1) == len(devices2)
 
 
-if sys.platform != "win32":
-    from mqt.core import fomac
-
-    def test_add_dynamic_device_library_exists() -> None:
-        """Test that add_dynamic_device_library function exists on non-Windows platforms."""
-        assert hasattr(fomac, "add_dynamic_device_library")
-        assert callable(fomac.add_dynamic_device_library)
-
-    def test_add_dynamic_device_library_nonexistent_library() -> None:
-        """Test that loading a non-existent library raises an error."""
-        with pytest.raises(RuntimeError):
-            fomac.add_dynamic_device_library("/nonexistent/lib.so", "PREFIX")
+def test_add_dynamic_device_library_nonexistent_library() -> None:
+    """Test that loading a non-existent library raises an error."""
+    with pytest.raises(RuntimeError):
+        add_dynamic_device_library("/nonexistent/lib.so", "PREFIX")

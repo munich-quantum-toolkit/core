@@ -1,6 +1,6 @@
 /*
- * Copyright (c) 2023 - 2025 Chair for Design Automation, TUM
- * Copyright (c) 2025 Munich Quantum Software Company GmbH
+ * Copyright (c) 2023 - 2026 Chair for Design Automation, TUM
+ * Copyright (c) 2025 - 2026 Munich Quantum Software Company GmbH
  * All rights reserved.
  *
  * SPDX-License-Identifier: MIT
@@ -397,7 +397,8 @@ TEST(StateGenerationTest, GenerateRandomOneQubit) {
   const std::vector<std::size_t> nodesPerLevel{1};
 
   const auto dd = std::make_unique<Package>(nq);
-  const auto state = generateRandomState(nq, nodesPerLevel, ROUNDROBIN, *dd);
+  const auto state = generateRandomState(
+      nq, nodesPerLevel, GenerationWireStrategy::ROUNDROBIN, *dd);
 
   EXPECT_NEAR(norm(state.getVector()), 1., 1e-6);
   EXPECT_EQ(state.size(), 2); // Node plus Terminal.
@@ -425,7 +426,8 @@ TEST(StateGenerationTest, GenerateRandomRoundRobin) {
       std::accumulate(nodesPerLevel.begin(), nodesPerLevel.end(), 0UL);
 
   const auto dd = std::make_unique<Package>(nq);
-  const auto state = generateRandomState(nq, nodesPerLevel, ROUNDROBIN, *dd);
+  const auto state = generateRandomState(
+      nq, nodesPerLevel, GenerationWireStrategy::ROUNDROBIN, *dd);
   const auto rebuild = makeStateFromVector(state.getVector(), *dd);
 
   EXPECT_NEAR(norm(state.getVector()), 1., 1e-6);
@@ -457,8 +459,8 @@ TEST(StateGenerationTest, GenerateRandomRoundRobinWithSeed) {
       std::accumulate(nodesPerLevel.begin(), nodesPerLevel.end(), 0UL);
 
   const auto dd = std::make_unique<Package>(nq);
-  const auto state =
-      generateRandomState(nq, nodesPerLevel, ROUNDROBIN, *dd, 72U);
+  const auto state = generateRandomState(
+      nq, nodesPerLevel, GenerationWireStrategy::ROUNDROBIN, *dd, 72U);
   const auto rebuild = makeStateFromVector(state.getVector(), *dd);
 
   EXPECT_NEAR(norm(state.getVector()), 1., 1e-6);
@@ -489,7 +491,8 @@ TEST(StateGenerationTest, GenerateRandomRandom) {
       std::accumulate(nodesPerLevel.begin(), nodesPerLevel.end(), 0UL);
 
   const auto dd = std::make_unique<Package>(nq);
-  const auto state = generateRandomState(nq, nodesPerLevel, RANDOM, *dd);
+  const auto state = generateRandomState(nq, nodesPerLevel,
+                                         GenerationWireStrategy::RANDOM, *dd);
   const auto rebuild = makeStateFromVector(state.getVector(), *dd);
 
   EXPECT_NEAR(norm(state.getVector()), 1., 1e-6);
@@ -521,7 +524,8 @@ TEST(StateGenerationTest, GenerateRandomRandomWithSeed) {
       std::accumulate(nodesPerLevel.begin(), nodesPerLevel.end(), 0UL);
 
   const auto dd = std::make_unique<Package>(nq);
-  const auto state = generateRandomState(nq, nodesPerLevel, RANDOM, *dd, 1337U);
+  const auto state = generateRandomState(
+      nq, nodesPerLevel, GenerationWireStrategy::RANDOM, *dd, 1337U);
   const auto rebuild = makeStateFromVector(state.getVector(), *dd);
 
   EXPECT_NEAR(norm(state.getVector()), 1., 1e-6);
@@ -548,18 +552,29 @@ TEST(StateGenerationTest, GenerateRandomInvalidArguments) {
   auto dd = std::make_unique<Package>(nq);
 
   EXPECT_THROW(
-      { generateRandomState(nq + 1, {}, RANDOM, *dd, 1337U); },
+      {
+        generateRandomState(nq + 1, {}, GenerationWireStrategy::RANDOM, *dd,
+                            1337U);
+      },
       std::invalid_argument);
 
   EXPECT_THROW(
-      { generateRandomState(0, {0}, RANDOM, *dd, 1337U); },
+      {
+        generateRandomState(0, {0}, GenerationWireStrategy::RANDOM, *dd, 1337U);
+      },
       std::invalid_argument);
 
   EXPECT_THROW(
-      { generateRandomState(nq, {0}, RANDOM, *dd, 1337U); },
+      {
+        generateRandomState(nq, {0}, GenerationWireStrategy::RANDOM, *dd,
+                            1337U);
+      },
       std::invalid_argument);
 
   EXPECT_THROW(
-      { generateRandomState(nq, {1, 2, 5}, RANDOM, *dd, 1337U); },
+      {
+        generateRandomState(nq, {1, 2, 5}, GenerationWireStrategy::RANDOM, *dd,
+                            1337U);
+      },
       std::invalid_argument);
 }

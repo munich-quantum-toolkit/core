@@ -1,6 +1,6 @@
 /*
- * Copyright (c) 2023 - 2025 Chair for Design Automation, TUM
- * Copyright (c) 2025 Munich Quantum Software Company GmbH
+ * Copyright (c) 2023 - 2026 Chair for Design Automation, TUM
+ * Copyright (c) 2025 - 2026 Munich Quantum Software Company GmbH
  * All rights reserved.
  *
  * SPDX-License-Identifier: MIT
@@ -16,8 +16,6 @@
 #include <cstddef>
 #include <cstdint>
 #include <iostream>
-#include <stdexcept>
-#include <string>
 #include <vector>
 
 extern "C" {
@@ -71,13 +69,9 @@ int64_t __quantum__rt__array_get_size_1d(const Array* array) {
 }
 
 int8_t* __quantum__rt__array_get_element_ptr_1d(Array* array, const int64_t i) {
-  if (i < 0) {
-    throw std::out_of_range("Index out of bounds (negative): " +
-                            std::to_string(i));
-  }
-  if (const auto size = __quantum__rt__array_get_size_1d(array); i >= size) {
-    throw std::out_of_range("Index out of bounds (size: " +
-                            std::to_string(size) + "): " + std::to_string(i));
+  if (array == nullptr || i < 0 ||
+      i >= __quantum__rt__array_get_size_1d(array)) {
+    return nullptr;
   }
   return &array->data[static_cast<size_t>(array->elementSize * i)];
 }

@@ -1,5 +1,5 @@
-# Copyright (c) 2023 - 2025 Chair for Design Automation, TUM
-# Copyright (c) 2025 Munich Quantum Software Company GmbH
+# Copyright (c) 2023 - 2026 Chair for Design Automation, TUM
+# Copyright (c) 2025 - 2026 Munich Quantum Software Company GmbH
 # All rights reserved.
 #
 # SPDX-License-Identifier: MIT
@@ -363,9 +363,6 @@ def add_dynamic_device_library(
     """Load a dynamic device library into the QDMI driver.
 
     This function loads a shared library (.so, .dll, or .dylib) that implements a QDMI device interface and makes it available for use in sessions.
-
-    Note:
-        This function is only available on non-Windows platforms.
 
     Args:
         library_path: Path to the shared library file to load.

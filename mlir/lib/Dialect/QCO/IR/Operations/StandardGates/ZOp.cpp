@@ -1,6 +1,6 @@
 /*
- * Copyright (c) 2023 - 2025 Chair for Design Automation, TUM
- * Copyright (c) 2025 Munich Quantum Software Company GmbH
+ * Copyright (c) 2023 - 2026 Chair for Design Automation, TUM
+ * Copyright (c) 2025 - 2026 Munich Quantum Software Company GmbH
  * All rights reserved.
  *
  * SPDX-License-Identifier: MIT
@@ -11,6 +11,7 @@
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QCO/QCOUtils.h"
 
+#include <Eigen/Core>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OperationSupport.h>
 #include <mlir/IR/PatternMatch.h>
@@ -38,4 +39,9 @@ struct RemoveSubsequentZ final : OpRewritePattern<ZOp> {
 void ZOp::getCanonicalizationPatterns(RewritePatternSet& results,
                                       MLIRContext* context) {
   results.add<RemoveSubsequentZ>(context);
+}
+
+Eigen::Matrix2cd ZOp::getUnitaryMatrix() {
+  return Eigen::Matrix2cd{{1.0, 0.0},   // row 0
+                          {0.0, -1.0}}; // row 1
 }

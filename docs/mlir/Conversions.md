@@ -2,20 +2,16 @@
 
 ## Internal Conversions
 
-```{include} Conversions/MLIRMQTOptToMQTRef.md
+```{include} Conversions/MLIRQCToQCO.md
 
 ```
 
-```{include} Conversions/MLIRMQTRefToMQTOpt.md
+```{include} Conversions/MLIRQCOToQC.md
 
 ```
 
 ## QIR Conversions
 
-```{include} Conversions/MLIRMQTRefToQIR.md
-
-```
-
-```{include} Conversions/MLIRQIRToMQTRef.md
+```{include} Conversions/MLIRQCToQIR.md
 
 ```

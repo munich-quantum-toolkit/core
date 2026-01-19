@@ -1,6 +1,6 @@
 /*
- * Copyright (c) 2023 - 2025 Chair for Design Automation, TUM
- * Copyright (c) 2025 Munich Quantum Software Company GmbH
+ * Copyright (c) 2023 - 2026 Chair for Design Automation, TUM
+ * Copyright (c) 2025 - 2026 Munich Quantum Software Company GmbH
  * All rights reserved.
  *
  * SPDX-License-Identifier: MIT
@@ -328,11 +328,10 @@ TEST_F(DDFunctionality, BuildCircuit) {
   dd->decRef(dd2);
   dd->garbageCollect(true);
 
-  const auto counts = dd->computeActiveCounts();
-  EXPECT_EQ(counts.vector, 0);
-  EXPECT_EQ(counts.density, 0);
-  EXPECT_EQ(counts.matrix, 0);
-  EXPECT_EQ(counts.reals, 0);
+  const auto [vector, matrix, reals] = dd->computeActiveCounts();
+  EXPECT_EQ(vector, 0);
+  EXPECT_EQ(matrix, 0);
+  EXPECT_EQ(reals, 0);
 }
 
 TEST_F(DDFunctionality, NonUnitary) {
@@ -386,11 +385,10 @@ TEST_F(DDFunctionality, CircuitEquivalence) {
   dd->decRef(dd2);
   dd->garbageCollect(true);
 
-  const auto counts = dd->computeActiveCounts();
-  EXPECT_EQ(counts.vector, 0);
-  EXPECT_EQ(counts.density, 0);
-  EXPECT_EQ(counts.matrix, 0);
-  EXPECT_EQ(counts.reals, 0);
+  const auto [vector, matrix, reals] = dd->computeActiveCounts();
+  EXPECT_EQ(vector, 0);
+  EXPECT_EQ(matrix, 0);
+  EXPECT_EQ(reals, 0);
 }
 
 TEST_F(DDFunctionality, ChangePermutation) {
@@ -443,11 +441,10 @@ TEST_F(DDFunctionality, FuseTwoSingleQubitGates) {
   dd->decRef(optDD);
   dd->garbageCollect(true);
 
-  const auto counts = dd->computeActiveCounts();
-  EXPECT_EQ(counts.vector, 0);
-  EXPECT_EQ(counts.density, 0);
-  EXPECT_EQ(counts.matrix, 0);
-  EXPECT_EQ(counts.reals, 0);
+  const auto [vector, matrix, reals] = dd->computeActiveCounts();
+  EXPECT_EQ(vector, 0);
+  EXPECT_EQ(matrix, 0);
+  EXPECT_EQ(reals, 0);
 }
 
 TEST_F(DDFunctionality, FuseThreeSingleQubitGates) {
@@ -478,11 +475,10 @@ TEST_F(DDFunctionality, FuseThreeSingleQubitGates) {
   dd->decRef(optDD);
   dd->garbageCollect(true);
 
-  const auto counts = dd->computeActiveCounts();
-  EXPECT_EQ(counts.vector, 0);
-  EXPECT_EQ(counts.density, 0);
-  EXPECT_EQ(counts.matrix, 0);
-  EXPECT_EQ(counts.reals, 0);
+  const auto [vector, matrix, reals] = dd->computeActiveCounts();
+  EXPECT_EQ(vector, 0);
+  EXPECT_EQ(matrix, 0);
+  EXPECT_EQ(reals, 0);
 }
 
 TEST_F(DDFunctionality, FuseNoSingleQubitGates) {
@@ -513,11 +509,10 @@ TEST_F(DDFunctionality, FuseNoSingleQubitGates) {
   dd->decRef(optDD);
   dd->garbageCollect(true);
 
-  const auto counts = dd->computeActiveCounts();
-  EXPECT_EQ(counts.vector, 0);
-  EXPECT_EQ(counts.density, 0);
-  EXPECT_EQ(counts.matrix, 0);
-  EXPECT_EQ(counts.reals, 0);
+  const auto [vector, matrix, reals] = dd->computeActiveCounts();
+  EXPECT_EQ(vector, 0);
+  EXPECT_EQ(matrix, 0);
+  EXPECT_EQ(reals, 0);
 }
 
 TEST_F(DDFunctionality, FuseSingleQubitGatesAcrossOtherGates) {
@@ -547,11 +542,10 @@ TEST_F(DDFunctionality, FuseSingleQubitGatesAcrossOtherGates) {
   dd->decRef(optDD);
   dd->garbageCollect(true);
 
-  const auto counts = dd->computeActiveCounts();
-  EXPECT_EQ(counts.vector, 0);
-  EXPECT_EQ(counts.density, 0);
-  EXPECT_EQ(counts.matrix, 0);
-  EXPECT_EQ(counts.reals, 0);
+  const auto [vector, matrix, reals] = dd->computeActiveCounts();
+  EXPECT_EQ(vector, 0);
+  EXPECT_EQ(matrix, 0);
+  EXPECT_EQ(reals, 0);
 }
 
 TEST_F(DDFunctionality, IfElseOperationConditions) {
@@ -612,11 +606,10 @@ TEST_F(DDFunctionality, VectorKroneckerWithTerminal) {
   dd->decRef(zeroState);
   dd->garbageCollect(true);
 
-  const auto counts = dd->computeActiveCounts();
-  EXPECT_EQ(counts.vector, 0);
-  EXPECT_EQ(counts.density, 0);
-  EXPECT_EQ(counts.matrix, 0);
-  EXPECT_EQ(counts.reals, 0);
+  const auto [vector, matrix, reals] = dd->computeActiveCounts();
+  EXPECT_EQ(vector, 0);
+  EXPECT_EQ(matrix, 0);
+  EXPECT_EQ(reals, 0);
 }
 
 TEST_F(DDFunctionality, DynamicCircuitSimulationWithSWAP) {
