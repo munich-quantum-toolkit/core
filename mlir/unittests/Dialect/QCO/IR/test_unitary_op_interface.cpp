@@ -100,6 +100,33 @@ private:
 
 } // namespace
 
+TEST_F(QcoUnitaryOpInterfaceTest, getUnitaryMatrix1x1) {
+  using Matrix1cd = Eigen::Matrix<std::complex<double>, 1, 1>;
+  const auto expectedValue = Matrix1cd{{0.5486898605 + 0.8360259786i}};
+  auto moduleOp =
+      buildQCOIR([](qco::QCOProgramBuilder& builder) { builder.gphase(0.99); });
+
+  auto&& moduleOps = moduleOp->getBody()->getOperations();
+  ASSERT_FALSE(moduleOps.empty());
+  auto funcOp = llvm::dyn_cast<func::FuncOp>(*moduleOps.begin());
+
+  Matrix1cd actualValue = Matrix1cd::Zero();
+  for (auto&& op : funcOp.getOps()) {
+    auto unitaryOp = llvm::dyn_cast<qco::UnitaryOpInterface>(op);
+    if (unitaryOp) {
+      auto matrix = unitaryOp.getUnitaryMatrix<Matrix1cd>();
+      ASSERT_TRUE(matrix) << toString(*moduleOp)
+                          << "\nFailed to get matrix of gate";
+      actualValue = *matrix;
+    }
+  }
+
+  EXPECT_TRUE(actualValue.isApprox(expectedValue, 1e-8))
+      << actualValue << "\nExpected:\n"
+      << expectedValue << "\nDifference:\n"
+      << actualValue - expectedValue;
+}
+
 TEST_F(QcoUnitaryOpInterfaceTest, getUnitaryMatrix2x2) {
   const auto expectedValues = std::array{
       Eigen::Matrix2cd{{1, 0}, {0, 1}},

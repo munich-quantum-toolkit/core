@@ -31,6 +31,7 @@
 namespace {
 
 using namespace mlir;
+using namespace std::complex_literals;
 
 class QcoUnitaryMatrixTest : public testing::Test {
 protected:
@@ -129,6 +130,28 @@ TEST_F(QcoUnitaryMatrixTest, XOpMatrix) {
 
   const Eigen::Matrix2cd expectedValue{{0, 1}, {1, 0}};
   EXPECT_EQ(op.getUnitaryMatrix(), expectedValue);
+}
+
+/**
+ * @brief Test: U2 unitary matrix
+ *
+ * @details
+ * Ensure the correct gate definition is returned.
+ */
+TEST_F(QcoUnitaryMatrixTest, U2OpMatrix) {
+  auto moduleOp = buildQCOIR([](qco::QCOProgramBuilder& builder) {
+    auto reg = builder.allocQubitRegister(1, "q");
+    builder.u2(0.2, 0.8, reg[0]);
+  });
+  auto op = getFirstOp<qco::U2Op>(*moduleOp);
+  ASSERT_TRUE(op) << toString(*moduleOp);
+
+  const Eigen::Matrix2cd expectedValue{
+      {0.70710678 + 0.i, -0.49264604 - 0.50724736i},
+      {0.69301172 + 0.14048043i, 0.38205142 + 0.59500984i}};
+  const auto actualValue = op.getUnitaryMatrix();
+  ASSERT_TRUE(actualValue);
+  EXPECT_TRUE(actualValue->isApprox(expectedValue, 1e-8));
 }
 
 /**
