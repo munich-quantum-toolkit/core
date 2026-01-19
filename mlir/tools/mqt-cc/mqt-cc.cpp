@@ -102,7 +102,8 @@ loadMLIRFile(StringRef filename, mlir::MLIRContext* context) {
   std::string errorMessage;
   auto file = mlir::openInputFile(filename, &errorMessage);
   if (!file) {
-    errs() << "Failed to load file '" << filename << "': '" << errorMessage << "'\n";
+    errs() << "Failed to load file '" << filename << "': '" << errorMessage
+           << "'\n";
     return nullptr;
   }
 
