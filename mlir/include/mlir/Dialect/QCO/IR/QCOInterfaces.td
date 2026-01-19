@@ -66,11 +66,6 @@ def UnitaryOpInterface : OpInterface<"UnitaryOpInterface"> {
                                        TargetT::ColsAtCompileTime)) {
               out = std::forward<MatrixType>(m);
               return true;
-            } else {
-              // always fail this static_assert since this compile-time branch
-              // implies incompatible matrix sizes
-              static_assert(!sizeof(TargetT) && !sizeof(SourceT),
-                "Unable to process unitary matrix into given matriy type!");
             }
           }
           return false;
