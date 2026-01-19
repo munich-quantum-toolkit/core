@@ -11,13 +11,16 @@
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/Utils/Utils.h"
 
+#include <Eigen/Core>
 #include <cmath>
+#include <complex>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OperationSupport.h>
 #include <mlir/IR/PatternMatch.h>
 #include <mlir/Support/LogicalResult.h>
 #include <numbers>
+#include <optional>
 #include <variant>
 
 using namespace mlir;
@@ -99,12 +102,30 @@ struct ReplaceU2WithRY final : OpRewritePattern<U2Op> {
 void U2Op::build(OpBuilder& odsBuilder, OperationState& odsState, Value qubitIn,
                  const std::variant<double, Value>& phi,
                  const std::variant<double, Value>& lambda) {
-  auto phiOperand = variantToValue(odsBuilder, odsState.location, phi);
-  auto lambdaOperand = variantToValue(odsBuilder, odsState.location, lambda);
+  const auto phiOperand = variantToValue(odsBuilder, odsState.location, phi);
+  const auto lambdaOperand =
+      variantToValue(odsBuilder, odsState.location, lambda);
   build(odsBuilder, odsState, qubitIn, phiOperand, lambdaOperand);
 }
 
 void U2Op::getCanonicalizationPatterns(RewritePatternSet& results,
                                        MLIRContext* context) {
   results.add<ReplaceU2WithH, ReplaceU2WithRX, ReplaceU2WithRY>(context);
+}
+
+std::optional<Eigen::Matrix2cd> U2Op::getUnitaryMatrix() {
+  using namespace std::complex_literals;
+
+  const auto phi = valueToDouble(getPhi());
+  const auto lambda = valueToDouble(getLambda());
+  if (!phi || !lambda) {
+    return std::nullopt;
+  }
+
+  const auto m00 = 1.0 / std::numbers::sqrt2 + 0i;
+  const auto m01 =
+      std::polar(1.0 / std::numbers::sqrt2, *lambda + std::numbers::pi);
+  const auto m10 = std::polar(1.0 / std::numbers::sqrt2, *phi);
+  const auto m11 = std::polar(1.0 / std::numbers::sqrt2, *phi + *lambda);
+  return Eigen::Matrix2cd{{m00, m01}, {m10, m11}};
 }

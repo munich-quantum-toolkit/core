@@ -27,6 +27,7 @@ add_mlir_dialect_library(
   MLIRArithDialect
   MLIRInferTypeOpInterface
   MLIRSideEffectInterfaces
+  Eigen3::Eigen
   DISABLE_INSTALL)
 
 # collect header files

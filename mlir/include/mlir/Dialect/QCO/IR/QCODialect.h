@@ -21,6 +21,7 @@
 #pragma clang diagnostic pop
 #endif
 
+#include <Eigen/Core>
 #include <mlir/Bytecode/BytecodeOpInterface.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/IR/Value.h>

@@ -7,3 +7,7 @@ Checks: |
   -misc-use-anonymous-namespace,
   llvm-twine-local,
   -cppcoreguidelines-pro-bounds-avoid-unchecked-container-access
+
+CheckOptions:
+  - key: misc-include-cleaner.IgnoreHeaders
+    value: "Eigen/.*;unsupported/Eigen/.*"
