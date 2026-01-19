@@ -1,6 +1,6 @@
 /*
- * Copyright (c) 2023 - 2025 Chair for Design Automation, TUM
- * Copyright (c) 2025 Munich Quantum Software Company GmbH
+ * Copyright (c) 2023 - 2026 Chair for Design Automation, TUM
+ * Copyright (c) 2025 - 2026 Munich Quantum Software Company GmbH
  * All rights reserved.
  *
  * SPDX-License-Identifier: MIT
@@ -52,10 +52,10 @@ struct RemoveTrivialRZ final : OpRewritePattern<RZOp> {
 
 } // namespace
 
-void RZOp::build(OpBuilder& builder, OperationState& state, Value qubitIn,
+void RZOp::build(OpBuilder& odsBuilder, OperationState& odsState, Value qubitIn,
                  const std::variant<double, Value>& theta) {
-  auto thetaOperand = variantToValue(builder, state, theta);
-  build(builder, state, qubitIn, thetaOperand);
+  auto thetaOperand = variantToValue(odsBuilder, odsState.location, theta);
+  build(odsBuilder, odsState, qubitIn, thetaOperand);
 }
 
 void RZOp::getCanonicalizationPatterns(RewritePatternSet& results,

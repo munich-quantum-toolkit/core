@@ -1,6 +1,6 @@
 /*
- * Copyright (c) 2023 - 2025 Chair for Design Automation, TUM
- * Copyright (c) 2025 Munich Quantum Software Company GmbH
+ * Copyright (c) 2023 - 2026 Chair for Design Automation, TUM
+ * Copyright (c) 2025 - 2026 Munich Quantum Software Company GmbH
  * All rights reserved.
  *
  * SPDX-License-Identifier: MIT
@@ -66,28 +66,28 @@ public:
 
   [[nodiscard]] bool isControlled() const override { return false; }
 
-  [[nodiscard]] auto getThenOp() const { return thenOp.get(); }
+  [[nodiscard]] auto getThenOp() const { return thenOp_.get(); }
 
-  [[nodiscard]] auto getElseOp() const { return elseOp.get(); }
+  [[nodiscard]] auto getElseOp() const { return elseOp_.get(); }
 
   [[nodiscard]] const auto& getControlRegister() const noexcept {
-    return controlRegister;
+    return controlRegister_;
   }
 
   [[nodiscard]] const auto& getControlBit() const noexcept {
-    return controlBit;
+    return controlBit_;
   }
 
   [[nodiscard]] auto getExpectedValueRegister() const noexcept {
-    return expectedValueRegister;
+    return expectedValueRegister_;
   }
 
   [[nodiscard]] bool getExpectedValueBit() const noexcept {
-    return expectedValueBit;
+    return expectedValueBit_;
   }
 
   [[nodiscard]] auto getComparisonKind() const noexcept {
-    return comparisonKind;
+    return comparisonKind_;
   }
 
   [[nodiscard]] bool equals(const Operation& op, const Permutation& perm1,
@@ -109,27 +109,27 @@ public:
   }
 
   // Override invalid Operation setters
-  void setTargets(const Targets&) override {
+  void setTargets(const Targets& /*t*/) override {
     throw std::runtime_error("An IfElseOperation does not have a target.");
   }
 
-  void setControls(const Controls&) override {
+  void setControls(const Controls& /*c*/) override {
     throw std::runtime_error("An IfElseOperation cannot be controlled.");
   }
-  void addControl(Control) override {
+  void addControl(Control /*c*/) override {
     throw std::runtime_error("An IfElseOperation cannot be controlled.");
   }
   void clearControls() override {
     throw std::runtime_error("An IfElseOperation cannot be controlled.");
   }
-  void removeControl(Control) override {
+  void removeControl(Control /*c*/) override {
     throw std::runtime_error("An IfElseOperation cannot be controlled.");
   }
-  Controls::iterator removeControl(Controls::iterator) override {
+  Controls::iterator removeControl(Controls::iterator /*it*/) override {
     throw std::runtime_error("An IfElseOperation cannot be controlled.");
   }
 
-  void setGate(const OpType) override {
+  void setGate(const OpType /*g*/) override {
     throw std::runtime_error(
         "Cannot set operation type of an IfElseOperation.");
   }
@@ -139,13 +139,13 @@ public:
   }
 
 private:
-  std::unique_ptr<Operation> thenOp;
-  std::unique_ptr<Operation> elseOp;
-  std::optional<ClassicalRegister> controlRegister;
-  std::optional<Bit> controlBit;
-  std::uint64_t expectedValueRegister = 1U;
-  bool expectedValueBit = true;
-  ComparisonKind comparisonKind = Eq;
+  std::unique_ptr<Operation> thenOp_;
+  std::unique_ptr<Operation> elseOp_;
+  std::optional<ClassicalRegister> controlRegister_;
+  std::optional<Bit> controlBit_;
+  std::uint64_t expectedValueRegister_ = 1U;
+  bool expectedValueBit_ = true;
+  ComparisonKind comparisonKind_ = Eq;
 
   /**
    * @brief Canonicalizes the IfElseOperation
@@ -162,8 +162,6 @@ private:
 };
 } // namespace qc
 
-namespace std {
-template <> struct hash<qc::IfElseOperation> {
+template <> struct std::hash<qc::IfElseOperation> {
   std::size_t operator()(qc::IfElseOperation const& op) const noexcept;
-};
-} // namespace std
+}; // namespace std

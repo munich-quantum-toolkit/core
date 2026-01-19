@@ -1,6 +1,6 @@
 /*
- * Copyright (c) 2023 - 2025 Chair for Design Automation, TUM
- * Copyright (c) 2025 Munich Quantum Software Company GmbH
+ * Copyright (c) 2023 - 2026 Chair for Design Automation, TUM
+ * Copyright (c) 2025 - 2026 Munich Quantum Software Company GmbH
  * All rights reserved.
  *
  * SPDX-License-Identifier: MIT
@@ -13,33 +13,41 @@
 #include "ir/operations/OpType.hpp"
 #include "ir/operations/Operation.hpp"
 
-// These includes must be the first includes for any bindings code
-// clang-format off
-#include <pybind11/pybind11.h>
-#include <pybind11/stl.h> // NOLINT(misc-include-cleaner)
-
-#include <pybind11/cast.h>
-// clang-format on
-
+#include <nanobind/nanobind.h>
+#include <nanobind/stl/string.h> // NOLINT(misc-include-cleaner)
+#include <nanobind/stl/vector.h> // NOLINT(misc-include-cleaner)
 #include <sstream>
 #include <vector>
 
 namespace mqt {
 
-namespace py = pybind11;
-using namespace pybind11::literals;
+namespace nb = nanobind;
+using namespace nb::literals;
 
 // NOLINTNEXTLINE(misc-use-internal-linkage)
-void registerNonUnitaryOperation(const py::module& m) {
-  py::class_<qc::NonUnitaryOperation, qc::Operation>(m, "NonUnitaryOperation")
-      .def(py::init<std::vector<qc::Qubit>, std::vector<qc::Bit>>(),
+void registerNonUnitaryOperation(const nb::module_& m) {
+  nb::class_<qc::NonUnitaryOperation, qc::Operation>(m, "NonUnitaryOperation",
+                                                     R"pb(Non-unitary operation.
+
+This class is used to represent all non-unitary operations, i.e., operations that are not reversible.
+This includes measurements and resets.
+
+Args:
+    targets: The target qubit(s) of the operation.
+    classics: The classical bit(s) that are associated with the operation (only relevant for measurements).
+    op_type: The type of the operation.)pb")
+
+      .def(nb::init<std::vector<qc::Qubit>, std::vector<qc::Bit>>(),
            "targets"_a, "classics"_a)
-      .def(py::init<qc::Qubit, qc::Bit>(), "target"_a, "classic"_a)
-      .def(py::init<std::vector<qc::Qubit>, qc::OpType>(), "targets"_a,
+      .def(nb::init<qc::Qubit, qc::Bit>(), "target"_a, "classic"_a)
+      .def(nb::init<std::vector<qc::Qubit>, qc::OpType>(), "targets"_a,
            "op_type"_a = qc::OpType::Reset)
-      .def_property_readonly(
-          "classics", py::overload_cast<>(&qc::NonUnitaryOperation::getClassics,
-                                          py::const_))
+
+      .def_prop_ro("classics",
+                   nb::overload_cast<>(&qc::NonUnitaryOperation::getClassics,
+                                       nb::const_),
+                   "The classical bits that are associated with the operation.")
+
       .def("__repr__", [](const qc::NonUnitaryOperation& op) {
         std::stringstream ss;
         ss << "NonUnitaryOperation(";

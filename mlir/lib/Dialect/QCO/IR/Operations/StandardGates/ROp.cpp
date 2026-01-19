@@ -1,6 +1,6 @@
 /*
- * Copyright (c) 2023 - 2025 Chair for Design Automation, TUM
- * Copyright (c) 2025 Munich Quantum Software Company GmbH
+ * Copyright (c) 2023 - 2026 Chair for Design Automation, TUM
+ * Copyright (c) 2025 - 2026 Munich Quantum Software Company GmbH
  * All rights reserved.
  *
  * SPDX-License-Identifier: MIT
@@ -13,7 +13,6 @@
 
 #include <cmath>
 #include <mlir/IR/Builders.h>
-#include <mlir/IR/BuiltinAttributes.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OperationSupport.h>
 #include <mlir/IR/PatternMatch.h>
@@ -35,13 +34,8 @@ struct ReplaceRWithRX final : OpRewritePattern<ROp> {
 
   LogicalResult matchAndRewrite(ROp op,
                                 PatternRewriter& rewriter) const override {
-    const auto phi = ROp::getStaticParameter(op.getPhi());
-    if (!phi) {
-      return failure();
-    }
-
-    const auto phiValue = phi.getValueAsDouble();
-    if (std::abs(phiValue) > TOLERANCE) {
+    const auto phi = valueToDouble(op.getPhi());
+    if (!phi || std::abs(*phi) > TOLERANCE) {
       return failure();
     }
 
@@ -61,13 +55,8 @@ struct ReplaceRWithRY final : OpRewritePattern<ROp> {
 
   LogicalResult matchAndRewrite(ROp op,
                                 PatternRewriter& rewriter) const override {
-    const auto phi = ROp::getStaticParameter(op.getPhi());
-    if (!phi) {
-      return failure();
-    }
-
-    const auto phiValue = phi.getValueAsDouble();
-    if (std::abs(phiValue - (std::numbers::pi / 2.0)) > TOLERANCE) {
+    const auto phi = valueToDouble(op.getPhi());
+    if (!phi || std::abs(*phi - (std::numbers::pi / 2.0)) > TOLERANCE) {
       return failure();
     }
 
@@ -81,12 +70,12 @@ struct ReplaceRWithRY final : OpRewritePattern<ROp> {
 
 } // namespace
 
-void ROp::build(OpBuilder& builder, OperationState& state, Value qubitIn,
+void ROp::build(OpBuilder& odsBuilder, OperationState& odsState, Value qubitIn,
                 const std::variant<double, Value>& theta,
                 const std::variant<double, Value>& phi) {
-  auto thetaOperand = variantToValue(builder, state, theta);
-  auto phiOperand = variantToValue(builder, state, phi);
-  build(builder, state, qubitIn, thetaOperand, phiOperand);
+  auto thetaOperand = variantToValue(odsBuilder, odsState.location, theta);
+  auto phiOperand = variantToValue(odsBuilder, odsState.location, phi);
+  build(odsBuilder, odsState, qubitIn, thetaOperand, phiOperand);
 }
 
 void ROp::getCanonicalizationPatterns(RewritePatternSet& results,

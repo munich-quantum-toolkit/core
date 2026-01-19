@@ -1,5 +1,5 @@
-// Copyright (c) 2023 - 2025 Chair for Design Automation, TUM
-// Copyright (c) 2025 Munich Quantum Software Company GmbH
+// Copyright (c) 2023 - 2026 Chair for Design Automation, TUM
+// Copyright (c) 2025 - 2026 Munich Quantum Software Company GmbH
 // All rights reserved.
 //
 // SPDX-License-Identifier: MIT
@@ -948,8 +948,8 @@ def CtrlOp : QCOp<"ctrl",
     }];
 
     let arguments = (ins Arg<Variadic<QubitType>, "the control qubits", [MemRead, MemWrite]>:$controls);
-    let regions = (region SizedRegion<1>:$body);
-    let assemblyFormat = "`(` $controls `)` $body attr-dict `:` type($controls)";
+    let regions = (region SizedRegion<1>:$region);
+    let assemblyFormat = "`(` $controls `)` $region attr-dict `:` type($controls)";
 
     let extraClassDeclaration = [{
         [[nodiscard]] UnitaryOpInterface getBodyUnitary();
@@ -966,7 +966,7 @@ def CtrlOp : QCOp<"ctrl",
 
     let builders = [
         OpBuilder<(ins "ValueRange":$controls, "UnitaryOpInterface":$bodyUnitary)>,
-        OpBuilder<(ins "ValueRange":$controls, "const std::function<void(OpBuilder &)>&":$bodyBuilder)>
+        OpBuilder<(ins "ValueRange":$controls, "const std::function<void()>&":$bodyBuilder)>
     ];
 
     let hasCanonicalizer = 1;

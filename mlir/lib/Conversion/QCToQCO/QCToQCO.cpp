@@ -1,6 +1,6 @@
 /*
- * Copyright (c) 2023 - 2025 Chair for Design Automation, TUM
- * Copyright (c) 2025 Munich Quantum Software Company GmbH
+ * Copyright (c) 2023 - 2026 Chair for Design Automation, TUM
+ * Copyright (c) 2025 - 2026 Munich Quantum Software Company GmbH
  * All rights reserved.
  *
  * SPDX-License-Identifier: MIT
@@ -1106,7 +1106,7 @@ struct ConvertQCCtrlOp final : StatefulOpConversionPattern<qc::CtrlOp> {
 
     // Create qco.ctrl
     auto qcoOp =
-        rewriter.create<qco::CtrlOp>(op.getLoc(), qcoControls, qcoTargets);
+        qco::CtrlOp::create(rewriter, op.getLoc(), qcoControls, qcoTargets);
 
     // Update the state map if this is a top-level CtrlOp
     // Nested CtrlOps are managed via the targetsIn and targetsOut maps
@@ -1124,11 +1124,26 @@ struct ConvertQCCtrlOp final : StatefulOpConversionPattern<qc::CtrlOp> {
 
     // Update modifier information
     state.inCtrlOp++;
-    state.targetsIn.try_emplace(state.inCtrlOp, qcoTargets);
 
     // Clone body region from QC to QCO
-    auto& dstRegion = qcoOp.getBody();
-    rewriter.cloneRegionBefore(op.getBody(), dstRegion, dstRegion.end());
+    auto& dstRegion = qcoOp.getRegion();
+    rewriter.cloneRegionBefore(op.getRegion(), dstRegion, dstRegion.end());
+
+    // Create block arguments for target qubits and store them in
+    // `state.targetsIn`.
+    auto& entryBlock = dstRegion.front();
+    assert(entryBlock.getNumArguments() == 0 &&
+           "QC ctrl region unexpectedly has entry block arguments");
+    SmallVector<Value> qcoTargetAliases;
+    qcoTargetAliases.reserve(numTargets);
+    const auto qubitType = qco::QubitType::get(qcoOp.getContext());
+    const auto opLoc = op.getLoc();
+    rewriter.modifyOpInPlace(qcoOp, [&] {
+      for (auto i = 0UL; i < numTargets; i++) {
+        qcoTargetAliases.emplace_back(entryBlock.addArgument(qubitType, opLoc));
+      }
+    });
+    state.targetsIn[state.inCtrlOp] = std::move(qcoTargetAliases);
 
     rewriter.eraseOp(op);
     return success();

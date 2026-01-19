@@ -1,5 +1,5 @@
-# Copyright (c) 2023 - 2025 Chair for Design Automation, TUM
-# Copyright (c) 2025 Munich Quantum Software Company GmbH
+# Copyright (c) 2023 - 2026 Chair for Design Automation, TUM
+# Copyright (c) 2025 - 2026 Munich Quantum Software Company GmbH
 # All rights reserved.
 #
 # SPDX-License-Identifier: MIT
@@ -13,7 +13,7 @@ if(NOT TARGET ${TARGET_NAME})
   file(GLOB_RECURSE SOURCES **.cpp)
 
   # declare the Python module
-  add_mqt_python_binding(
+  add_mqt_python_binding_nanobind(
     CORE
     ${TARGET_NAME}
     ${SOURCES}
@@ -23,4 +23,12 @@ if(NOT TARGET ${TARGET_NAME})
     .
     LINK_LIBS
     MQT::CoreFoMaC)
+
+  # install the Python stub file in editable mode for better IDE support
+  if(SKBUILD_STATE STREQUAL "editable")
+    install(
+      FILES ${PROJECT_SOURCE_DIR}/python/mqt/core/fomac.pyi
+      DESTINATION .
+      COMPONENT ${MQT_CORE_TARGET_NAME}_Python)
+  endif()
 endif()

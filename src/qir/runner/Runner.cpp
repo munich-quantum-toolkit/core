@@ -1,6 +1,6 @@
 /*
- * Copyright (c) 2023 - 2025 Chair for Design Automation, TUM
- * Copyright (c) 2025 Munich Quantum Software Company GmbH
+ * Copyright (c) 2023 - 2026 Chair for Design Automation, TUM
+ * Copyright (c) 2025 - 2026 Munich Quantum Software Company GmbH
  * All rights reserved.
  *
  * SPDX-License-Identifier: MIT
@@ -17,7 +17,9 @@
 #include <llvm/ExecutionEngine/JITSymbol.h>
 #include <llvm/ExecutionEngine/Orc/AbsoluteSymbols.h>
 #include <llvm/ExecutionEngine/Orc/Core.h>
+#include <llvm/ExecutionEngine/Orc/CoreContainers.h>
 #include <llvm/ExecutionEngine/Orc/Debugging/DebuggerSupport.h>
+#include <llvm/ExecutionEngine/Orc/ExecutionUtils.h>
 #include <llvm/ExecutionEngine/Orc/JITTargetMachineBuilder.h>
 #include <llvm/ExecutionEngine/Orc/LLJIT.h>
 #include <llvm/ExecutionEngine/Orc/LazyReexports.h>
@@ -46,6 +48,7 @@
 #include <span>
 #include <string>
 #include <utility>
+#include <vector>
 
 #define DEBUG_TYPE "mqt-core-qir-runner"
 
@@ -63,6 +66,14 @@ const llvm::cl::list<std::string>
 
 // NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables)
 llvm::ExitOnError exitOnErr;
+
+// NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables)
+std::vector<std::pair<std::string, void*>> manualSymbols;
+
+#define REGISTER_SYMBOL(name)                                                  \
+  llvm::sys::DynamicLibrary::AddSymbol(#name,                                  \
+                                       reinterpret_cast<void*>(&(name)));      \
+  manualSymbols.emplace_back(#name, reinterpret_cast<void*>(&(name)));
 
 void exitOnLazyCallThroughFailure() { exit(1); }
 
@@ -167,6 +178,18 @@ int runOrcJIT() {
 
   const auto jit = exitOnErr(builder.create());
 
+  auto& jd = jit->getMainJITDylib();
+  llvm::orc::SymbolMap hostSymbols;
+  for (const auto& [name, ptr] : manualSymbols) {
+    hostSymbols[jit->mangleAndIntern(name)] = {
+        llvm::orc::ExecutorAddr::fromPtr(ptr), llvm::JITSymbolFlags::Exported};
+  }
+  exitOnErr(jd.define(llvm::orc::absoluteSymbols(hostSymbols)));
+
+  jit->getMainJITDylib().addGenerator(
+      exitOnErr(llvm::orc::DynamicLibrarySearchGenerator::GetForCurrentProcess(
+          jit->getDataLayout().getGlobalPrefix())));
+
   auto* objLayer = &jit->getObjLinkingLayer();
   if (auto* rtDyldObjLayer =
           dyn_cast<llvm::orc::RTDyldObjectLinkingLayer>(objLayer)) {
@@ -232,189 +255,67 @@ auto main(int argc, char* argv[]) -> int {
   llvm::cl::ParseCommandLineOptions(argc, argv,
                                     "qir interpreter & dynamic compiler\n");
 
-  llvm::sys::DynamicLibrary::AddSymbol(
-      "__quantum__rt__result_get_zero",
-      reinterpret_cast<void*>(&__quantum__rt__result_get_zero));
-  llvm::sys::DynamicLibrary::AddSymbol(
-      "__quantum__rt__result_get_one",
-      reinterpret_cast<void*>(&__quantum__rt__result_get_one));
-  llvm::sys::DynamicLibrary::AddSymbol(
-      "__quantum__rt__result_equal",
-      reinterpret_cast<void*>(&__quantum__rt__result_equal));
-  llvm::sys::DynamicLibrary::AddSymbol(
-      "__quantum__rt__result_update_reference_count",
-      reinterpret_cast<void*>(&__quantum__rt__result_update_reference_count));
-  llvm::sys::DynamicLibrary::AddSymbol(
-      "__quantum__rt__array_create_1d",
-      reinterpret_cast<void*>(&__quantum__rt__array_create_1d));
-  llvm::sys::DynamicLibrary::AddSymbol(
-      "__quantum__rt__array_get_size_1d",
-      reinterpret_cast<void*>(&__quantum__rt__array_get_size_1d));
-  llvm::sys::DynamicLibrary::AddSymbol(
-      "__quantum__rt__array_get_element_ptr_1d",
-      reinterpret_cast<void*>(&__quantum__rt__array_get_element_ptr_1d));
-  llvm::sys::DynamicLibrary::AddSymbol(
-      "__quantum__rt__array_update_reference_count",
-      reinterpret_cast<void*>(&__quantum__rt__array_update_reference_count));
-  llvm::sys::DynamicLibrary::AddSymbol(
-      "__quantum__rt__qubit_allocate",
-      reinterpret_cast<void*>(&__quantum__rt__qubit_allocate));
-  llvm::sys::DynamicLibrary::AddSymbol(
-      "__quantum__rt__qubit_allocate_array",
-      reinterpret_cast<void*>(&__quantum__rt__qubit_allocate_array));
-  llvm::sys::DynamicLibrary::AddSymbol(
-      "__quantum__rt__qubit_release",
-      reinterpret_cast<void*>(&__quantum__rt__qubit_release));
-  llvm::sys::DynamicLibrary::AddSymbol(
-      "__quantum__rt__qubit_release_array",
-      reinterpret_cast<void*>(&__quantum__rt__qubit_release_array));
-  llvm::sys::DynamicLibrary::AddSymbol(
-      "__quantum__qis__x__body",
-      reinterpret_cast<void*>(&__quantum__qis__x__body));
-  llvm::sys::DynamicLibrary::AddSymbol(
-      "__quantum__qis__y__body",
-      reinterpret_cast<void*>(&__quantum__qis__y__body));
-  llvm::sys::DynamicLibrary::AddSymbol(
-      "__quantum__qis__z__body",
-      reinterpret_cast<void*>(&__quantum__qis__z__body));
-  llvm::sys::DynamicLibrary::AddSymbol(
-      "__quantum__qis__h__body",
-      reinterpret_cast<void*>(&__quantum__qis__h__body));
-  llvm::sys::DynamicLibrary::AddSymbol(
-      "__quantum__qis__s__body",
-      reinterpret_cast<void*>(&__quantum__qis__s__body));
-  llvm::sys::DynamicLibrary::AddSymbol(
-      "__quantum__qis__sdg__body",
-      reinterpret_cast<void*>(&__quantum__qis__sdg__body));
-  llvm::sys::DynamicLibrary::AddSymbol(
-      "__quantum__qis__sx__body",
-      reinterpret_cast<void*>(&__quantum__qis__sx__body));
-  llvm::sys::DynamicLibrary::AddSymbol(
-      "__quantum__qis__sxdg__body",
-      reinterpret_cast<void*>(&__quantum__qis__sxdg__body));
-  llvm::sys::DynamicLibrary::AddSymbol(
-      "__quantum__qis__sqrtx__body",
-      reinterpret_cast<void*>(&__quantum__qis__sqrtx__body));
-  llvm::sys::DynamicLibrary::AddSymbol(
-      "__quantum__qis__sqrtxdg__body",
-      reinterpret_cast<void*>(&__quantum__qis__sqrtxdg__body));
-  llvm::sys::DynamicLibrary::AddSymbol(
-      "__quantum__qis__t__body",
-      reinterpret_cast<void*>(&__quantum__qis__t__body));
-  llvm::sys::DynamicLibrary::AddSymbol(
-      "__quantum__qis__tdg__body",
-      reinterpret_cast<void*>(&__quantum__qis__tdg__body));
-  llvm::sys::DynamicLibrary::AddSymbol(
-      "__quantum__qis__r__body",
-      reinterpret_cast<void*>(&__quantum__qis__r__body));
-  llvm::sys::DynamicLibrary::AddSymbol(
-      "__quantum__qis__prx__body",
-      reinterpret_cast<void*>(&__quantum__qis__prx__body));
-  llvm::sys::DynamicLibrary::AddSymbol(
-      "__quantum__qis__rx__body",
-      reinterpret_cast<void*>(&__quantum__qis__rx__body));
-  llvm::sys::DynamicLibrary::AddSymbol(
-      "__quantum__qis__ry__body",
-      reinterpret_cast<void*>(&__quantum__qis__ry__body));
-  llvm::sys::DynamicLibrary::AddSymbol(
-      "__quantum__qis__rz__body",
-      reinterpret_cast<void*>(&__quantum__qis__rz__body));
-  llvm::sys::DynamicLibrary::AddSymbol(
-      "__quantum__qis__p__body",
-      reinterpret_cast<void*>(&__quantum__qis__p__body));
-  llvm::sys::DynamicLibrary::AddSymbol(
-      "__quantum__qis__rxx__body",
-      reinterpret_cast<void*>(&__quantum__qis__rxx__body));
-  llvm::sys::DynamicLibrary::AddSymbol(
-      "__quantum__qis__ryy__body",
-      reinterpret_cast<void*>(&__quantum__qis__ryy__body));
-  llvm::sys::DynamicLibrary::AddSymbol(
-      "__quantum__qis__rzz__body",
-      reinterpret_cast<void*>(&__quantum__qis__rzz__body));
-  llvm::sys::DynamicLibrary::AddSymbol(
-      "__quantum__qis__rzx__body",
-      reinterpret_cast<void*>(&__quantum__qis__rzx__body));
-  llvm::sys::DynamicLibrary::AddSymbol(
-      "__quantum__qis__u__body",
-      reinterpret_cast<void*>(&__quantum__qis__u__body));
-  llvm::sys::DynamicLibrary::AddSymbol(
-      "__quantum__qis__u3__body",
-      reinterpret_cast<void*>(&__quantum__qis__u3__body));
-  llvm::sys::DynamicLibrary::AddSymbol(
-      "__quantum__qis__u2__body",
-      reinterpret_cast<void*>(&__quantum__qis__u2__body));
-  llvm::sys::DynamicLibrary::AddSymbol(
-      "__quantum__qis__u1__body",
-      reinterpret_cast<void*>(&__quantum__qis__u1__body));
-  llvm::sys::DynamicLibrary::AddSymbol(
-      "__quantum__qis__cu1__body",
-      reinterpret_cast<void*>(&__quantum__qis__cu1__body));
-  llvm::sys::DynamicLibrary::AddSymbol(
-      "__quantum__qis__cu3__body",
-      reinterpret_cast<void*>(&__quantum__qis__cu3__body));
-  llvm::sys::DynamicLibrary::AddSymbol(
-      "__quantum__qis__cnot__body",
-      reinterpret_cast<void*>(&__quantum__qis__cnot__body));
-  llvm::sys::DynamicLibrary::AddSymbol(
-      "__quantum__qis__cx__body",
-      reinterpret_cast<void*>(&__quantum__qis__cx__body));
-  llvm::sys::DynamicLibrary::AddSymbol(
-      "__quantum__qis__cy__body",
-      reinterpret_cast<void*>(&__quantum__qis__cy__body));
-  llvm::sys::DynamicLibrary::AddSymbol(
-      "__quantum__qis__cz__body",
-      reinterpret_cast<void*>(&__quantum__qis__cz__body));
-  llvm::sys::DynamicLibrary::AddSymbol(
-      "__quantum__qis__ch__body",
-      reinterpret_cast<void*>(&__quantum__qis__ch__body));
-  llvm::sys::DynamicLibrary::AddSymbol(
-      "__quantum__qis__swap__body",
-      reinterpret_cast<void*>(&__quantum__qis__swap__body));
-  llvm::sys::DynamicLibrary::AddSymbol(
-      "__quantum__qis__cswap__body",
-      reinterpret_cast<void*>(&__quantum__qis__cswap__body));
-  llvm::sys::DynamicLibrary::AddSymbol(
-      "__quantum__qis__crz__body",
-      reinterpret_cast<void*>(&__quantum__qis__crz__body));
-  llvm::sys::DynamicLibrary::AddSymbol(
-      "__quantum__qis__cry__body",
-      reinterpret_cast<void*>(&__quantum__qis__cry__body));
-  llvm::sys::DynamicLibrary::AddSymbol(
-      "__quantum__qis__crx__body",
-      reinterpret_cast<void*>(&__quantum__qis__crx__body));
-  llvm::sys::DynamicLibrary::AddSymbol(
-      "__quantum__qis__cp__body",
-      reinterpret_cast<void*>(&__quantum__qis__cp__body));
-  llvm::sys::DynamicLibrary::AddSymbol(
-      "__quantum__qis__ccx__body",
-      reinterpret_cast<void*>(&__quantum__qis__ccx__body));
-  llvm::sys::DynamicLibrary::AddSymbol(
-      "__quantum__qis__ccy__body",
-      reinterpret_cast<void*>(&__quantum__qis__ccy__body));
-  llvm::sys::DynamicLibrary::AddSymbol(
-      "__quantum__qis__ccz__body",
-      reinterpret_cast<void*>(&__quantum__qis__ccz__body));
-  llvm::sys::DynamicLibrary::AddSymbol(
-      "__quantum__qis__m__body",
-      reinterpret_cast<void*>(&__quantum__qis__m__body));
-  llvm::sys::DynamicLibrary::AddSymbol(
-      "__quantum__qis__measure__body",
-      reinterpret_cast<void*>(&__quantum__qis__measure__body));
-  llvm::sys::DynamicLibrary::AddSymbol(
-      "__quantum__qis__mz__body",
-      reinterpret_cast<void*>(&__quantum__qis__mz__body));
-  llvm::sys::DynamicLibrary::AddSymbol(
-      "__quantum__qis__reset__body",
-      reinterpret_cast<void*>(&__quantum__qis__reset__body));
-  llvm::sys::DynamicLibrary::AddSymbol(
-      "__quantum__rt__initialize",
-      reinterpret_cast<void*>(&__quantum__rt__initialize));
-  llvm::sys::DynamicLibrary::AddSymbol(
-      "__quantum__rt__read_result",
-      reinterpret_cast<void*>(&__quantum__rt__read_result));
-  llvm::sys::DynamicLibrary::AddSymbol(
-      "__quantum__rt__result_record_output",
-      reinterpret_cast<void*>(&__quantum__rt__result_record_output));
+  REGISTER_SYMBOL(__quantum__rt__result_get_zero);
+  REGISTER_SYMBOL(__quantum__rt__result_get_one);
+  REGISTER_SYMBOL(__quantum__rt__result_equal);
+  REGISTER_SYMBOL(__quantum__rt__result_update_reference_count);
+  REGISTER_SYMBOL(__quantum__rt__array_create_1d);
+  REGISTER_SYMBOL(__quantum__rt__array_get_size_1d);
+  REGISTER_SYMBOL(__quantum__rt__array_get_element_ptr_1d);
+  REGISTER_SYMBOL(__quantum__rt__array_update_reference_count);
+  REGISTER_SYMBOL(__quantum__rt__qubit_allocate);
+  REGISTER_SYMBOL(__quantum__rt__qubit_allocate_array);
+  REGISTER_SYMBOL(__quantum__rt__qubit_release);
+  REGISTER_SYMBOL(__quantum__rt__qubit_release_array);
+  REGISTER_SYMBOL(__quantum__qis__x__body);
+  REGISTER_SYMBOL(__quantum__qis__y__body);
+  REGISTER_SYMBOL(__quantum__qis__z__body);
+  REGISTER_SYMBOL(__quantum__qis__h__body);
+  REGISTER_SYMBOL(__quantum__qis__s__body);
+  REGISTER_SYMBOL(__quantum__qis__sdg__body);
+  REGISTER_SYMBOL(__quantum__qis__sx__body);
+  REGISTER_SYMBOL(__quantum__qis__sxdg__body);
+  REGISTER_SYMBOL(__quantum__qis__sqrtx__body);
+  REGISTER_SYMBOL(__quantum__qis__sqrtxdg__body);
+  REGISTER_SYMBOL(__quantum__qis__t__body);
+  REGISTER_SYMBOL(__quantum__qis__tdg__body);
+  REGISTER_SYMBOL(__quantum__qis__r__body);
+  REGISTER_SYMBOL(__quantum__qis__prx__body);
+  REGISTER_SYMBOL(__quantum__qis__rx__body);
+  REGISTER_SYMBOL(__quantum__qis__ry__body);
+  REGISTER_SYMBOL(__quantum__qis__rz__body);
+  REGISTER_SYMBOL(__quantum__qis__p__body);
+  REGISTER_SYMBOL(__quantum__qis__rxx__body);
+  REGISTER_SYMBOL(__quantum__qis__ryy__body);
+  REGISTER_SYMBOL(__quantum__qis__rzz__body);
+  REGISTER_SYMBOL(__quantum__qis__rzx__body);
+  REGISTER_SYMBOL(__quantum__qis__u__body);
+  REGISTER_SYMBOL(__quantum__qis__u3__body);
+  REGISTER_SYMBOL(__quantum__qis__u2__body);
+  REGISTER_SYMBOL(__quantum__qis__u1__body);
+  REGISTER_SYMBOL(__quantum__qis__cu1__body);
+  REGISTER_SYMBOL(__quantum__qis__cu3__body);
+  REGISTER_SYMBOL(__quantum__qis__cnot__body);
+  REGISTER_SYMBOL(__quantum__qis__cx__body);
+  REGISTER_SYMBOL(__quantum__qis__cy__body);
+  REGISTER_SYMBOL(__quantum__qis__cz__body);
+  REGISTER_SYMBOL(__quantum__qis__ch__body);
+  REGISTER_SYMBOL(__quantum__qis__swap__body);
+  REGISTER_SYMBOL(__quantum__qis__cswap__body);
+  REGISTER_SYMBOL(__quantum__qis__crz__body);
+  REGISTER_SYMBOL(__quantum__qis__cry__body);
+  REGISTER_SYMBOL(__quantum__qis__crx__body);
+  REGISTER_SYMBOL(__quantum__qis__cp__body);
+  REGISTER_SYMBOL(__quantum__qis__ccx__body);
+  REGISTER_SYMBOL(__quantum__qis__ccy__body);
+  REGISTER_SYMBOL(__quantum__qis__ccz__body);
+  REGISTER_SYMBOL(__quantum__qis__m__body);
+  REGISTER_SYMBOL(__quantum__qis__measure__body);
+  REGISTER_SYMBOL(__quantum__qis__mz__body);
+  REGISTER_SYMBOL(__quantum__qis__reset__body);
+  REGISTER_SYMBOL(__quantum__rt__initialize);
+  REGISTER_SYMBOL(__quantum__rt__read_result);
+  REGISTER_SYMBOL(__quantum__rt__result_record_output);
 
   return runOrcJIT();
 }

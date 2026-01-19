@@ -1,5 +1,5 @@
-# Copyright (c) 2023 - 2025 Chair for Design Automation, TUM
-# Copyright (c) 2025 Munich Quantum Software Company GmbH
+# Copyright (c) 2023 - 2026 Chair for Design Automation, TUM
+# Copyright (c) 2025 - 2026 Munich Quantum Software Company GmbH
 # All rights reserved.
 #
 # SPDX-License-Identifier: MIT
@@ -37,8 +37,7 @@ def test_loading_quantum_computation() -> None:
 def test_loading_file() -> None:
     """Test whether importing a simple QASM file works."""
     qasm = "qreg q[2];\ncreg c[2];\nh q[0];\ncx q[0], q[1];\nmeasure q -> c;\n"
-    with Path("test_1.qasm").open("w", encoding="utf-8") as f:
-        f.write(qasm)
+    Path("test_1.qasm").write_text(qasm, encoding="utf-8")
 
     # load the file
     qc = load("test_1.qasm")
@@ -58,8 +57,7 @@ def test_loading_file_from_path() -> None:
     """Test whether importing a simple QASM file works."""
     qasm = "qreg q[2];\ncreg c[2];\nh q[0];\ncx q[0], q[1];\nmeasure q -> c;\n"
     path = Path("test_2.qasm")
-    with path.open("w", encoding="utf-8") as f:
-        f.write(qasm)
+    path.write_text(qasm, encoding="utf-8")
 
     # load the file
     qc = load(path)

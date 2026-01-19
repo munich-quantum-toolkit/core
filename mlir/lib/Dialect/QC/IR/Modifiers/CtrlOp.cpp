@@ -1,6 +1,6 @@
 /*
- * Copyright (c) 2023 - 2025 Chair for Design Automation, TUM
- * Copyright (c) 2025 Munich Quantum Software Company GmbH
+ * Copyright (c) 2023 - 2026 Chair for Design Automation, TUM
+ * Copyright (c) 2025 - 2026 Munich Quantum Software Company GmbH
  * All rights reserved.
  *
  * SPDX-License-Identifier: MIT
@@ -97,8 +97,8 @@ struct CtrlInlineGPhase final : OpRewritePattern<CtrlOp> {
     SmallVector<Value> newControls(op.getControls());
     const auto newTarget = newControls.back();
     newControls.pop_back();
-    CtrlOp::create(rewriter, op.getLoc(), newControls, [&](OpBuilder& b) {
-      POp::create(b, op.getLoc(), newTarget, gPhaseOp.getTheta());
+    CtrlOp::create(rewriter, op.getLoc(), newControls, [&] {
+      POp::create(rewriter, op.getLoc(), newTarget, gPhaseOp.getTheta());
     });
     rewriter.eraseOp(op);
 
@@ -109,7 +109,7 @@ struct CtrlInlineGPhase final : OpRewritePattern<CtrlOp> {
 } // namespace
 
 UnitaryOpInterface CtrlOp::getBodyUnitary() {
-  return llvm::dyn_cast<UnitaryOpInterface>(&getBody().front().front());
+  return llvm::dyn_cast<UnitaryOpInterface>(&getBody()->front());
 }
 
 size_t CtrlOp::getNumQubits() { return getNumTargets() + getNumControls(); }
@@ -161,19 +161,19 @@ void CtrlOp::build(OpBuilder& odsBuilder, OperationState& odsState,
 
 void CtrlOp::build(OpBuilder& odsBuilder, OperationState& odsState,
                    ValueRange controls,
-                   const std::function<void(OpBuilder&)>& bodyBuilder) {
+                   const std::function<void()>& bodyBuilder) {
   const OpBuilder::InsertionGuard guard(odsBuilder);
   odsState.addOperands(controls);
   auto* region = odsState.addRegion();
   auto& block = region->emplaceBlock();
 
   odsBuilder.setInsertionPointToStart(&block);
-  bodyBuilder(odsBuilder);
+  bodyBuilder();
   odsBuilder.create<YieldOp>(odsState.location);
 }
 
 LogicalResult CtrlOp::verify() {
-  auto& block = getBody().front();
+  auto& block = *getBody();
   if (block.getOperations().size() != 2) {
     return emitOpError("body region must have exactly two operations");
   }

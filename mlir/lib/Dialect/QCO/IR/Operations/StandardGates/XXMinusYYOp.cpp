@@ -1,6 +1,6 @@
 /*
- * Copyright (c) 2023 - 2025 Chair for Design Automation, TUM
- * Copyright (c) 2025 Munich Quantum Software Company GmbH
+ * Copyright (c) 2023 - 2026 Chair for Design Automation, TUM
+ * Copyright (c) 2025 - 2026 Munich Quantum Software Company GmbH
  * All rights reserved.
  *
  * SPDX-License-Identifier: MIT
@@ -47,11 +47,10 @@ struct MergeSubsequentXXMinusYY final : OpRewritePattern<XXMinusYYOp> {
     }
 
     // Confirm betas are equal
-    auto beta = XXMinusYYOp::getStaticParameter(op.getBeta());
-    auto prevBeta = XXMinusYYOp::getStaticParameter(prevOp.getBeta());
+    auto beta = valueToDouble(op.getBeta());
+    auto prevBeta = valueToDouble(prevOp.getBeta());
     if (beta && prevBeta) {
-      if (std::abs(beta.getValueAsDouble() - prevBeta.getValueAsDouble()) >
-          TOLERANCE) {
+      if (std::abs(*beta - *prevBeta) > TOLERANCE) {
         return failure();
       }
     } else if (op.getBeta() != prevOp.getBeta()) {
@@ -72,13 +71,13 @@ struct MergeSubsequentXXMinusYY final : OpRewritePattern<XXMinusYYOp> {
 
 } // namespace
 
-void XXMinusYYOp::build(OpBuilder& builder, OperationState& state,
+void XXMinusYYOp::build(OpBuilder& odsBuilder, OperationState& odsState,
                         Value qubit0In, Value qubit1In,
                         const std::variant<double, Value>& theta,
                         const std::variant<double, Value>& beta) {
-  auto thetaOperand = variantToValue(builder, state, theta);
-  auto betaOperand = variantToValue(builder, state, beta);
-  build(builder, state, qubit0In, qubit1In, thetaOperand, betaOperand);
+  auto thetaOperand = variantToValue(odsBuilder, odsState.location, theta);
+  auto betaOperand = variantToValue(odsBuilder, odsState.location, beta);
+  build(odsBuilder, odsState, qubit0In, qubit1In, thetaOperand, betaOperand);
 }
 
 void XXMinusYYOp::getCanonicalizationPatterns(RewritePatternSet& results,

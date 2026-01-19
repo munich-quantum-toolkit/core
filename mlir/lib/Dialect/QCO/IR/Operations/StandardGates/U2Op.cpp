@@ -1,6 +1,6 @@
 /*
- * Copyright (c) 2023 - 2025 Chair for Design Automation, TUM
- * Copyright (c) 2025 Munich Quantum Software Company GmbH
+ * Copyright (c) 2023 - 2026 Chair for Design Automation, TUM
+ * Copyright (c) 2025 - 2026 Munich Quantum Software Company GmbH
  * All rights reserved.
  *
  * SPDX-License-Identifier: MIT
@@ -34,16 +34,10 @@ struct ReplaceU2WithH final : OpRewritePattern<U2Op> {
 
   LogicalResult matchAndRewrite(U2Op op,
                                 PatternRewriter& rewriter) const override {
-    const auto phi = U2Op::getStaticParameter(op.getPhi());
-    const auto lambda = U2Op::getStaticParameter(op.getLambda());
-    if (!phi || !lambda) {
-      return failure();
-    }
-
-    const auto phiValue = phi.getValueAsDouble();
-    const auto lambdaValue = lambda.getValueAsDouble();
-    if (std::abs(phiValue) > TOLERANCE ||
-        std::abs(lambdaValue - std::numbers::pi) > TOLERANCE) {
+    const auto phi = valueToDouble(op.getPhi());
+    const auto lambda = valueToDouble(op.getLambda());
+    if (!phi || std::abs(*phi) > TOLERANCE || !lambda ||
+        std::abs(*lambda - std::numbers::pi) > TOLERANCE) {
       return failure();
     }
 
@@ -62,16 +56,10 @@ struct ReplaceU2WithRX final : OpRewritePattern<U2Op> {
 
   LogicalResult matchAndRewrite(U2Op op,
                                 PatternRewriter& rewriter) const override {
-    const auto phi = U2Op::getStaticParameter(op.getPhi());
-    const auto lambda = U2Op::getStaticParameter(op.getLambda());
-    if (!phi || !lambda) {
-      return failure();
-    }
-
-    const auto phiValue = phi.getValueAsDouble();
-    const auto lambdaValue = lambda.getValueAsDouble();
-    if (std::abs(phiValue + (std::numbers::pi / 2.0)) > TOLERANCE ||
-        std::abs(lambdaValue - (std::numbers::pi / 2.0)) > TOLERANCE) {
+    const auto phi = valueToDouble(op.getPhi());
+    const auto lambda = valueToDouble(op.getLambda());
+    if (!phi || std::abs(*phi + (std::numbers::pi / 2.0)) > TOLERANCE ||
+        !lambda || std::abs(*lambda - (std::numbers::pi / 2.0)) > TOLERANCE) {
       return failure();
     }
 
@@ -91,15 +79,10 @@ struct ReplaceU2WithRY final : OpRewritePattern<U2Op> {
 
   LogicalResult matchAndRewrite(U2Op op,
                                 PatternRewriter& rewriter) const override {
-    const auto phi = U2Op::getStaticParameter(op.getPhi());
-    const auto lambda = U2Op::getStaticParameter(op.getLambda());
-    if (!phi || !lambda) {
-      return failure();
-    }
-
-    const auto phiValue = phi.getValueAsDouble();
-    const auto lambdaValue = lambda.getValueAsDouble();
-    if (std::abs(phiValue) > TOLERANCE || std::abs(lambdaValue) > TOLERANCE) {
+    const auto phi = valueToDouble(op.getPhi());
+    const auto lambda = valueToDouble(op.getLambda());
+    if (!phi || std::abs(*phi) > TOLERANCE || !lambda ||
+        std::abs(*lambda) > TOLERANCE) {
       return failure();
     }
 
@@ -113,12 +96,12 @@ struct ReplaceU2WithRY final : OpRewritePattern<U2Op> {
 
 } // namespace
 
-void U2Op::build(OpBuilder& builder, OperationState& state, Value qubitIn,
+void U2Op::build(OpBuilder& odsBuilder, OperationState& odsState, Value qubitIn,
                  const std::variant<double, Value>& phi,
                  const std::variant<double, Value>& lambda) {
-  auto phiOperand = variantToValue(builder, state, phi);
-  auto lambdaOperand = variantToValue(builder, state, lambda);
-  build(builder, state, qubitIn, phiOperand, lambdaOperand);
+  auto phiOperand = variantToValue(odsBuilder, odsState.location, phi);
+  auto lambdaOperand = variantToValue(odsBuilder, odsState.location, lambda);
+  build(odsBuilder, odsState, qubitIn, phiOperand, lambdaOperand);
 }
 
 void U2Op::getCanonicalizationPatterns(RewritePatternSet& results,

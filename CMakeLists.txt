@@ -1,5 +1,5 @@
-# Copyright (c) 2023 - 2025 Chair for Design Automation, TUM
-# Copyright (c) 2025 Munich Quantum Software Company GmbH
+# Copyright (c) 2023 - 2026 Chair for Design Automation, TUM
+# Copyright (c) 2025 - 2026 Munich Quantum Software Company GmbH
 # All rights reserved.
 #
 # SPDX-License-Identifier: MIT
@@ -7,7 +7,7 @@
 # Licensed under the MIT License
 
 # set required cmake version
-cmake_minimum_required(VERSION 3.24...4.0)
+cmake_minimum_required(VERSION 3.24...4.2)
 
 project(
   mqt-core
@@ -47,7 +47,8 @@ if(BUILD_MQT_CORE_BINDINGS)
   endif()
 
   # top-level call to find Python
-  find_package(Python 3.10 REQUIRED COMPONENTS Interpreter Development.Module)
+  find_package(Python 3.10 REQUIRED COMPONENTS Interpreter Development.Module
+                                               ${SKBUILD_SABI_COMPONENT})
 endif()
 
 # check if this is the master project or used via add_subdirectory
@@ -92,7 +93,29 @@ endif()
 
 set(MQT_CORE_TARGET_NAME "mqt-core")
 
-option(BUILD_MQT_CORE_MLIR "Build the MLIR submodule of the MQT Core project" OFF)
+option(BUILD_MQT_CORE_MLIR "Build the MLIR submodule of the MQT Core project" ON)
+if(APPLE AND CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+  set(BUILD_MQT_CORE_MLIR
+      OFF
+      CACHE BOOL
+            "Disable MLIR build on macOS with GCC to avoid ABI issues between STL and libstdc++"
+            FORCE)
+  message(
+    WARNING "Disabling MLIR build on macOS with GCC to avoid ABI issues between STL and libstdc++")
+endif()
+if(APPLE AND CMAKE_CXX_COMPILER_ID STREQUAL "AppleClang")
+  if(CMAKE_CXX_COMPILER_VERSION VERSION_LESS "17.0.0")
+    set(BUILD_MQT_CORE_MLIR
+        OFF
+        CACHE
+          BOOL
+          "Disable MLIR build on macOS with Apple Clang < 17 due to missing complete C++20 support"
+          FORCE)
+    message(
+      WARNING
+        "Disabling MLIR build on macOS with Apple Clang < 17 due to missing complete C++20 support")
+  endif()
+endif()
 if(BUILD_MQT_CORE_MLIR)
   include(SetupMLIR)
 endif()

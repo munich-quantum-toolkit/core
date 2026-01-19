@@ -1,6 +1,6 @@
 /*
- * Copyright (c) 2023 - 2025 Chair for Design Automation, TUM
- * Copyright (c) 2025 Munich Quantum Software Company GmbH
+ * Copyright (c) 2023 - 2026 Chair for Design Automation, TUM
+ * Copyright (c) 2025 - 2026 Munich Quantum Software Company GmbH
  * All rights reserved.
  *
  * SPDX-License-Identifier: MIT
@@ -75,9 +75,9 @@ IfElseOperation::IfElseOperation(std::unique_ptr<Operation>&& thenOp,
                                  const ClassicalRegister& controlRegister,
                                  const std::uint64_t expectedValue,
                                  const ComparisonKind kind)
-    : thenOp(std::move(thenOp)), elseOp(std::move(elseOp)),
-      controlRegister(controlRegister), expectedValueRegister(expectedValue),
-      comparisonKind(kind) {
+    : thenOp_(std::move(thenOp)), elseOp_(std::move(elseOp)),
+      controlRegister_(controlRegister), expectedValueRegister_(expectedValue),
+      comparisonKind_(kind) {
   name = "if_else";
   type = IfElse;
   canonicalize();
@@ -87,42 +87,42 @@ IfElseOperation::IfElseOperation(std::unique_ptr<Operation>&& thenOp,
                                  std::unique_ptr<Operation>&& elseOp,
                                  const Bit controlBit, const bool expectedValue,
                                  const ComparisonKind kind)
-    : thenOp(std::move(thenOp)), elseOp(std::move(elseOp)),
-      controlBit(controlBit), expectedValueBit(expectedValue),
-      comparisonKind(kind) {
+    : thenOp_(std::move(thenOp)), elseOp_(std::move(elseOp)),
+      controlBit_(controlBit), expectedValueBit_(expectedValue),
+      comparisonKind_(kind) {
   name = "if_else";
   type = IfElse;
   canonicalize();
 }
 
 IfElseOperation::IfElseOperation(const IfElseOperation& op)
-    : Operation(op), thenOp(op.thenOp ? op.thenOp->clone() : nullptr),
-      elseOp(op.elseOp ? op.elseOp->clone() : nullptr),
-      controlRegister(op.controlRegister), controlBit(op.controlBit),
-      expectedValueRegister(op.expectedValueRegister),
-      expectedValueBit(op.expectedValueBit), comparisonKind(op.comparisonKind) {
-}
+    : Operation(op), thenOp_(op.thenOp_ ? op.thenOp_->clone() : nullptr),
+      elseOp_(op.elseOp_ ? op.elseOp_->clone() : nullptr),
+      controlRegister_(op.controlRegister_), controlBit_(op.controlBit_),
+      expectedValueRegister_(op.expectedValueRegister_),
+      expectedValueBit_(op.expectedValueBit_),
+      comparisonKind_(op.comparisonKind_) {}
 
 IfElseOperation& IfElseOperation::operator=(const IfElseOperation& op) {
   if (this != &op) {
     Operation::operator=(op);
-    thenOp = op.thenOp ? op.thenOp->clone() : nullptr;
-    elseOp = op.elseOp ? op.elseOp->clone() : nullptr;
-    controlRegister = op.controlRegister;
-    controlBit = op.controlBit;
-    expectedValueRegister = op.expectedValueRegister;
-    expectedValueBit = op.expectedValueBit;
-    comparisonKind = op.comparisonKind;
+    thenOp_ = op.thenOp_ ? op.thenOp_->clone() : nullptr;
+    elseOp_ = op.elseOp_ ? op.elseOp_->clone() : nullptr;
+    controlRegister_ = op.controlRegister_;
+    controlBit_ = op.controlBit_;
+    expectedValueRegister_ = op.expectedValueRegister_;
+    expectedValueBit_ = op.expectedValueBit_;
+    comparisonKind_ = op.comparisonKind_;
   }
   return *this;
 }
 
 void IfElseOperation::apply(const Permutation& permutation) {
-  if (thenOp) {
-    thenOp->apply(permutation);
+  if (thenOp_) {
+    thenOp_->apply(permutation);
   }
-  if (elseOp) {
-    elseOp->apply(permutation);
+  if (elseOp_) {
+    elseOp_->apply(permutation);
   }
 }
 
@@ -130,33 +130,33 @@ bool IfElseOperation::equals(const Operation& operation,
                              const Permutation& perm1,
                              const Permutation& perm2) const {
   if (const auto* other = dynamic_cast<const IfElseOperation*>(&operation)) {
-    if (controlRegister != other->controlRegister) {
+    if (controlRegister_ != other->controlRegister_) {
       return false;
     }
-    if (controlBit != other->controlBit) {
+    if (controlBit_ != other->controlBit_) {
       return false;
     }
-    if (expectedValueRegister != other->expectedValueRegister) {
+    if (expectedValueRegister_ != other->expectedValueRegister_) {
       return false;
     }
-    if (expectedValueBit != other->expectedValueBit) {
+    if (expectedValueBit_ != other->expectedValueBit_) {
       return false;
     }
-    if (comparisonKind != other->comparisonKind) {
+    if (comparisonKind_ != other->comparisonKind_) {
       return false;
     }
-    if (thenOp && other->thenOp) {
-      if (!thenOp->equals(*other->thenOp, perm1, perm2)) {
+    if (thenOp_ && other->thenOp_) {
+      if (!thenOp_->equals(*other->thenOp_, perm1, perm2)) {
         return false;
       }
-    } else if (thenOp || other->thenOp) {
+    } else if (thenOp_ || other->thenOp_) {
       return false;
     }
-    if (elseOp && other->elseOp) {
-      if (!elseOp->equals(*other->elseOp, perm1, perm2)) {
+    if (elseOp_ && other->elseOp_) {
+      if (!elseOp_->equals(*other->elseOp_, perm1, perm2)) {
         return false;
       }
-    } else if (elseOp || other->elseOp) {
+    } else if (elseOp_ || other->elseOp_) {
       return false;
     }
     return true;
@@ -172,27 +172,27 @@ IfElseOperation::print(std::ostream& os, const Permutation& permutation,
 
   // print condition header line
   os << indent << "\033[1m\033[35m" << "if (";
-  if (controlRegister.has_value()) {
-    assert(!controlBit.has_value());
-    os << controlRegister->getName() << ' ' << comparisonKind << ' '
-       << expectedValueRegister;
-  } else if (controlBit.has_value()) {
-    assert(!controlRegister.has_value());
-    os << (!expectedValueBit ? "!" : "") << "c[" << controlBit.value() << "]";
+  if (controlRegister_.has_value()) {
+    assert(!controlBit_.has_value());
+    os << controlRegister_->getName() << ' ' << comparisonKind_ << ' '
+       << expectedValueRegister_;
+  } else if (controlBit_.has_value()) {
+    assert(!controlRegister_.has_value());
+    os << (!expectedValueBit_ ? "!" : "") << "c[" << controlBit_.value() << "]";
   }
   os << ") {\033[0m" << '\n'; // cyan brace
 
   // then-block
-  if (thenOp) {
+  if (thenOp_) {
     os << indent;
-    thenOp->print(os, permutation, prefixWidth, nqubits);
+    thenOp_->print(os, permutation, prefixWidth, nqubits);
   }
   os << '\n';
 
   // else-block (only if present)
-  if (elseOp) {
+  if (elseOp_) {
     os << indent << "  \033[1m\033[35m} else {\033[0m" << '\n' << indent;
-    elseOp->print(os, permutation, prefixWidth, nqubits);
+    elseOp_->print(os, permutation, prefixWidth, nqubits);
     os << '\n';
   }
 
@@ -209,41 +209,41 @@ void IfElseOperation::dumpOpenQASM(std::ostream& of,
                                    const bool openQASM3) const {
   of << std::string(indent * OUTPUT_INDENT_SIZE, ' ');
   of << "if (";
-  if (controlRegister.has_value()) {
-    assert(!controlBit.has_value());
-    of << controlRegister->getName() << ' ' << comparisonKind << ' '
-       << expectedValueRegister;
-  } else if (controlBit.has_value()) {
-    of << (!expectedValueBit ? "!" : "") << bitMap.at(*controlBit).second;
+  if (controlRegister_.has_value()) {
+    assert(!controlBit_.has_value());
+    of << controlRegister_->getName() << ' ' << comparisonKind_ << ' '
+       << expectedValueRegister_;
+  } else if (controlBit_.has_value()) {
+    of << (!expectedValueBit_ ? "!" : "") << bitMap.at(*controlBit_).second;
   }
   of << ") ";
   of << "{\n";
-  if (thenOp) {
-    thenOp->dumpOpenQASM(of, qubitMap, bitMap, indent + 1, openQASM3);
+  if (thenOp_) {
+    thenOp_->dumpOpenQASM(of, qubitMap, bitMap, indent + 1, openQASM3);
   }
-  if (!elseOp) {
+  if (!elseOp_) {
     of << "}\n";
     return;
   }
   of << "}";
   if (openQASM3) {
     of << " else {\n";
-    elseOp->dumpOpenQASM(of, qubitMap, bitMap, indent + 1, openQASM3);
+    elseOp_->dumpOpenQASM(of, qubitMap, bitMap, indent + 1, openQASM3);
   } else {
     of << '\n' << "if (";
-    if (controlRegister.has_value()) {
-      assert(!controlBit.has_value());
-      of << controlRegister->getName() << ' '
-         << getInvertedComparisonKind(comparisonKind) << ' '
-         << expectedValueRegister;
+    if (controlRegister_.has_value()) {
+      assert(!controlBit_.has_value());
+      of << controlRegister_->getName() << ' '
+         << getInvertedComparisonKind(comparisonKind_) << ' '
+         << expectedValueRegister_;
     }
-    if (controlBit.has_value()) {
-      assert(!controlRegister.has_value());
-      of << (expectedValueBit ? "!" : "") << bitMap.at(*controlBit).second;
+    if (controlBit_.has_value()) {
+      assert(!controlRegister_.has_value());
+      of << (expectedValueBit_ ? "!" : "") << bitMap.at(*controlBit_).second;
     }
     of << ") ";
     of << "{\n";
-    elseOp->dumpOpenQASM(of, qubitMap, bitMap, indent + 1, openQASM3);
+    elseOp_->dumpOpenQASM(of, qubitMap, bitMap, indent + 1, openQASM3);
   }
   of << "}\n";
 }
@@ -266,27 +266,27 @@ void IfElseOperation::dumpOpenQASM(std::ostream& of,
  */
 void IfElseOperation::canonicalize() {
   // If thenOp is null, swap thenOp and elseOp, and invert the comparison kind.
-  if (thenOp == nullptr) {
-    std::swap(thenOp, elseOp);
-    comparisonKind = getInvertedComparisonKind(comparisonKind);
+  if (thenOp_ == nullptr) {
+    std::swap(thenOp_, elseOp_);
+    comparisonKind_ = getInvertedComparisonKind(comparisonKind_);
   }
   // If control is a single bit, only equality comparisons are supported.
-  if (controlBit.has_value()) {
+  if (controlBit_.has_value()) {
     // Convert Neq to Eq by inverting expectedValueBit.
-    if (comparisonKind == Neq) {
-      comparisonKind = Eq;
-      expectedValueBit = !expectedValueBit;
+    if (comparisonKind_ == Neq) {
+      comparisonKind_ = Eq;
+      expectedValueBit_ = !expectedValueBit_;
     }
     // Throw if comparison is not Eq (after possible conversion above).
-    if (comparisonKind != Eq) {
+    if (comparisonKind_ != Eq) {
       throw std::invalid_argument(
           "Inequality comparisons on a single bit are not supported.");
     }
     // If expectedValueBit is false and elseOp exists, swap thenOp and elseOp,
     // and set expectedValueBit to true.
-    if (!expectedValueBit && elseOp != nullptr) {
-      std::swap(thenOp, elseOp);
-      expectedValueBit = true;
+    if (!expectedValueBit_ && elseOp_ != nullptr) {
+      std::swap(thenOp_, elseOp_);
+      expectedValueBit_ = true;
     }
   }
 }
