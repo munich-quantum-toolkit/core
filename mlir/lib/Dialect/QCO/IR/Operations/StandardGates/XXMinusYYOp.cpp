@@ -79,8 +79,9 @@ void XXMinusYYOp::build(OpBuilder& odsBuilder, OperationState& odsState,
                         Value qubit0In, Value qubit1In,
                         const std::variant<double, Value>& theta,
                         const std::variant<double, Value>& beta) {
-  auto thetaOperand = variantToValue(odsBuilder, odsState.location, theta);
-  auto betaOperand = variantToValue(odsBuilder, odsState.location, beta);
+  const auto thetaOperand =
+      variantToValue(odsBuilder, odsState.location, theta);
+  const auto betaOperand = variantToValue(odsBuilder, odsState.location, beta);
   build(odsBuilder, odsState, qubit0In, qubit1In, thetaOperand, betaOperand);
 }
 
@@ -92,8 +93,8 @@ void XXMinusYYOp::getCanonicalizationPatterns(RewritePatternSet& results,
 std::optional<Eigen::Matrix4cd> XXMinusYYOp::getUnitaryMatrix() {
   using namespace std::complex_literals;
 
-  auto theta = valueToDouble(getTheta());
-  auto beta = valueToDouble(getBeta());
+  const auto theta = valueToDouble(getTheta());
+  const auto beta = valueToDouble(getBeta());
   if (!theta || !beta) {
     return std::nullopt;
   }

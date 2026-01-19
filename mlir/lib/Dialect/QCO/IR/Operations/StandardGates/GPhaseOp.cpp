@@ -36,8 +36,8 @@ struct RemoveTrivialGPhase final : OpRewritePattern<GPhaseOp> {
 
   LogicalResult matchAndRewrite(GPhaseOp op,
                                 PatternRewriter& rewriter) const override {
-    const auto theta = valueToDouble(op.getTheta());
-    if (!theta || std::abs(*theta) > TOLERANCE) {
+    if (const auto theta = valueToDouble(op.getTheta());
+        !theta || std::abs(*theta) > TOLERANCE) {
       return failure();
     }
 
@@ -50,7 +50,8 @@ struct RemoveTrivialGPhase final : OpRewritePattern<GPhaseOp> {
 
 void GPhaseOp::build(OpBuilder& odsBuilder, OperationState& odsState,
                      const std::variant<double, Value>& theta) {
-  auto thetaOperand = variantToValue(odsBuilder, odsState.location, theta);
+  const auto thetaOperand =
+      variantToValue(odsBuilder, odsState.location, theta);
   build(odsBuilder, odsState, thetaOperand);
 }
 
@@ -61,7 +62,7 @@ void GPhaseOp::getCanonicalizationPatterns(RewritePatternSet& results,
 
 std::optional<Eigen::Matrix<std::complex<double>, 1, 1>>
 GPhaseOp::getUnitaryMatrix() {
-  if (auto theta = valueToDouble(getTheta())) {
+  if (const auto theta = valueToDouble(getTheta())) {
     return Eigen::Matrix<std::complex<double>, 1, 1>{std::polar(1.0, *theta)};
   }
   return std::nullopt;

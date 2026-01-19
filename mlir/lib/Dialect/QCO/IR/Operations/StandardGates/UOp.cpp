@@ -104,9 +104,11 @@ void UOp::build(OpBuilder& odsBuilder, OperationState& odsState, Value qubitIn,
                 const std::variant<double, Value>& theta,
                 const std::variant<double, Value>& phi,
                 const std::variant<double, Value>& lambda) {
-  auto thetaOperand = variantToValue(odsBuilder, odsState.location, theta);
-  auto phiOperand = variantToValue(odsBuilder, odsState.location, phi);
-  auto lambdaOperand = variantToValue(odsBuilder, odsState.location, lambda);
+  const auto thetaOperand =
+      variantToValue(odsBuilder, odsState.location, theta);
+  const auto phiOperand = variantToValue(odsBuilder, odsState.location, phi);
+  const auto lambdaOperand =
+      variantToValue(odsBuilder, odsState.location, lambda);
   build(odsBuilder, odsState, qubitIn, thetaOperand, phiOperand, lambdaOperand);
 }
 
@@ -118,9 +120,9 @@ void UOp::getCanonicalizationPatterns(RewritePatternSet& results,
 std::optional<Eigen::Matrix2cd> UOp::getUnitaryMatrix() {
   using namespace std::complex_literals;
 
-  auto theta = valueToDouble(getTheta());
-  auto phi = valueToDouble(getPhi());
-  auto lambda = valueToDouble(getLambda());
+  const auto theta = valueToDouble(getTheta());
+  const auto phi = valueToDouble(getPhi());
+  const auto lambda = valueToDouble(getLambda());
   if (!theta || !phi || !lambda) {
     return std::nullopt;
   }

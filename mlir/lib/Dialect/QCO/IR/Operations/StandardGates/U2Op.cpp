@@ -102,8 +102,9 @@ struct ReplaceU2WithRY final : OpRewritePattern<U2Op> {
 void U2Op::build(OpBuilder& odsBuilder, OperationState& odsState, Value qubitIn,
                  const std::variant<double, Value>& phi,
                  const std::variant<double, Value>& lambda) {
-  auto phiOperand = variantToValue(odsBuilder, odsState.location, phi);
-  auto lambdaOperand = variantToValue(odsBuilder, odsState.location, lambda);
+  const auto phiOperand = variantToValue(odsBuilder, odsState.location, phi);
+  const auto lambdaOperand =
+      variantToValue(odsBuilder, odsState.location, lambda);
   build(odsBuilder, odsState, qubitIn, phiOperand, lambdaOperand);
 }
 
@@ -115,8 +116,8 @@ void U2Op::getCanonicalizationPatterns(RewritePatternSet& results,
 std::optional<Eigen::Matrix2cd> U2Op::getUnitaryMatrix() {
   using namespace std::complex_literals;
 
-  auto phi = valueToDouble(getPhi());
-  auto lambda = valueToDouble(getLambda());
+  const auto phi = valueToDouble(getPhi());
+  const auto lambda = valueToDouble(getLambda());
   if (!phi || !lambda) {
     return std::nullopt;
   }

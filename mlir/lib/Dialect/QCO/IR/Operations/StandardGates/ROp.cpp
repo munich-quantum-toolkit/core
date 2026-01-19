@@ -76,8 +76,9 @@ struct ReplaceRWithRY final : OpRewritePattern<ROp> {
 void ROp::build(OpBuilder& odsBuilder, OperationState& odsState, Value qubitIn,
                 const std::variant<double, Value>& theta,
                 const std::variant<double, Value>& phi) {
-  auto thetaOperand = variantToValue(odsBuilder, odsState.location, theta);
-  auto phiOperand = variantToValue(odsBuilder, odsState.location, phi);
+  const auto thetaOperand =
+      variantToValue(odsBuilder, odsState.location, theta);
+  const auto phiOperand = variantToValue(odsBuilder, odsState.location, phi);
   build(odsBuilder, odsState, qubitIn, thetaOperand, phiOperand);
 }
 
@@ -87,8 +88,8 @@ void ROp::getCanonicalizationPatterns(RewritePatternSet& results,
 }
 
 std::optional<Eigen::Matrix2cd> ROp::getUnitaryMatrix() {
-  auto theta = valueToDouble(getTheta());
-  auto phi = valueToDouble(getPhi());
+  const auto theta = valueToDouble(getTheta());
+  const auto phi = valueToDouble(getPhi());
   if (!theta || !phi) {
     return std::nullopt;
   }

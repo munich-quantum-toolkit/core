@@ -57,7 +57,8 @@ struct RemoveTrivialRZ final : OpRewritePattern<RZOp> {
 
 void RZOp::build(OpBuilder& odsBuilder, OperationState& odsState, Value qubitIn,
                  const std::variant<double, Value>& theta) {
-  auto thetaOperand = variantToValue(odsBuilder, odsState.location, theta);
+  const auto thetaOperand =
+      variantToValue(odsBuilder, odsState.location, theta);
   build(odsBuilder, odsState, qubitIn, thetaOperand);
 }
 
@@ -69,7 +70,7 @@ void RZOp::getCanonicalizationPatterns(RewritePatternSet& results,
 std::optional<Eigen::Matrix2cd> RZOp::getUnitaryMatrix() {
   using namespace std::complex_literals;
 
-  if (auto theta = valueToDouble(getTheta())) {
+  if (const auto theta = valueToDouble(getTheta())) {
     const auto m00 = std::polar(1.0, -*theta / 2.0);
     const auto m01 = 0i;
     const auto m11 = std::polar(1.0, *theta / 2.0);

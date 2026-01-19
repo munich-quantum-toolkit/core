@@ -56,9 +56,7 @@ void SXdgOp::getCanonicalizationPatterns(RewritePatternSet& results,
 }
 
 Eigen::Matrix2cd SXdgOp::getUnitaryMatrix() {
-  using namespace std::complex_literals;
-
-  const auto m00 = (1.0 - 1i) / 2.0;
-  const auto m01 = (1.0 + 1i) / 2.0;
+  constexpr auto m00 = std::complex<double>{0.5, -0.5};
+  constexpr auto m01 = std::complex<double>{0.5, 0.5};
   return Eigen::Matrix2cd{{m00, m01}, {m01, m00}};
 }

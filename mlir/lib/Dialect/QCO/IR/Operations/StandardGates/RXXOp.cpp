@@ -59,7 +59,8 @@ struct RemoveTrivialRXX final : OpRewritePattern<RXXOp> {
 void RXXOp::build(OpBuilder& odsBuilder, OperationState& odsState,
                   Value qubit0In, Value qubit1In,
                   const std::variant<double, Value>& theta) {
-  auto thetaOperand = variantToValue(odsBuilder, odsState.location, theta);
+  const auto thetaOperand =
+      variantToValue(odsBuilder, odsState.location, theta);
   build(odsBuilder, odsState, qubit0In, qubit1In, thetaOperand);
 }
 
@@ -71,7 +72,7 @@ void RXXOp::getCanonicalizationPatterns(RewritePatternSet& results,
 std::optional<Eigen::Matrix4cd> RXXOp::getUnitaryMatrix() {
   using namespace std::complex_literals;
 
-  if (auto theta = valueToDouble(getTheta())) {
+  if (const auto theta = valueToDouble(getTheta())) {
     const auto m0 = 0i;
     const auto mc = std::cos(*theta / 2.0) + 0i;
     const auto ms = -1i * std::sin(*theta / 2.0);
