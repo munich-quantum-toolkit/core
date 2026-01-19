@@ -63,6 +63,7 @@ option(MQT_CORE_INSTALL "Generate installation instructions for MQT Core"
 option(BUILD_MQT_CORE_TESTS "Build tests for the MQT Core project" ${MQT_CORE_MASTER_PROJECT})
 option(BUILD_MQT_CORE_SHARED_LIBS "Build MQT Core libraries as shared libraries"
        ${BUILD_SHARED_LIBS})
+option(BUILD_MQT_CORE_MLIR "Build the MLIR submodule of the MQT Core project" ON)
 
 # try to determine the project version
 include(GetVersion)
@@ -93,7 +94,6 @@ endif()
 
 set(MQT_CORE_TARGET_NAME "mqt-core")
 
-option(BUILD_MQT_CORE_MLIR "Build the MLIR submodule of the MQT Core project" ON)
 if(APPLE AND CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
   set(BUILD_MQT_CORE_MLIR
       OFF
