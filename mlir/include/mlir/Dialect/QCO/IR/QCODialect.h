@@ -50,8 +50,6 @@
 // Interfaces
 //===----------------------------------------------------------------------===//
 
-#include "mlir/Dialect/QCO/IR/QCOInterfaces.h.inc" // IWYU pragma: export
-
 namespace mlir::qco {
 
 /**
@@ -135,6 +133,8 @@ public:
 };
 
 } // namespace mlir::qco
+
+#include "mlir/Dialect/QCO/IR/QCOInterfaces.h.inc" // IWYU pragma: export
 
 //===----------------------------------------------------------------------===//
 // Operations
