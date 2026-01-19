@@ -77,11 +77,12 @@ const cl::opt<bool>
 /**
  * @brief Load and parse a .qasm file
  */
-static OwningOpRef<ModuleOp>
-loadQASMFile(StringRef filename, MLIRContext* context) {
+static OwningOpRef<ModuleOp> loadQASMFile(StringRef filename,
+                                          MLIRContext* context) {
   try {
-    // Parse the input QASM using MQT-Core
-    const ::qc::QuantumComputation qc = qasm3::Importer::importf(filename.str());
+    // Parse the input QASM file
+    const ::qc::QuantumComputation qc =
+        qasm3::Importer::importf(filename.str());
     // Translate to MLIR dialect QC
     return translateQuantumComputationToQC(context, qc);
   } catch (const qasm3::CompilerError& exception) {
@@ -97,8 +98,8 @@ loadQASMFile(StringRef filename, MLIRContext* context) {
 /**
  * @brief Load and parse a .mlir file
  */
-static OwningOpRef<ModuleOp>
-loadMLIRFile(StringRef filename, MLIRContext* context) {
+static OwningOpRef<ModuleOp> loadMLIRFile(StringRef filename,
+                                          MLIRContext* context) {
   // Set up the input file
   std::string errorMessage;
   auto file = openInputFile(filename, &errorMessage);
@@ -117,8 +118,7 @@ loadMLIRFile(StringRef filename, MLIRContext* context) {
 /**
  * @brief Write the module to the output file
  */
-static LogicalResult writeOutput(ModuleOp module,
-                                       StringRef filename) {
+static LogicalResult writeOutput(ModuleOp module, StringRef filename) {
   std::string errorMessage;
   const auto output = openOutputFile(filename, &errorMessage);
   if (!output) {
@@ -134,12 +134,8 @@ static LogicalResult writeOutput(ModuleOp module,
 int main(int argc, char** argv) {
   const InitLLVM y(argc, argv);
 
-  // Parse command-line options
-  if (!cl::ParseCommandLineOptions(argc, argv, "MQT Core Compiler Driver\n",
-                                   &errs())) {
-    // error message is printed to stderr via errs()
-    return -1;
-  }
+  // Parse command-line options; exit on error and print to stderr
+  cl::ParseCommandLineOptions(argc, argv, "MQT Core Compiler Driver\n");
 
   // Set up MLIR context with all required dialects
   DialectRegistry registry;
