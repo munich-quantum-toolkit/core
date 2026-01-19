@@ -16,6 +16,7 @@
 #include "qasm3/Exception.hpp"
 #include "qasm3/Importer.hpp"
 
+#include <exception>
 #include <llvm/Support/CommandLine.h>
 #include <llvm/Support/InitLLVM.h>
 #include <llvm/Support/SourceMgr.h>
@@ -83,9 +84,11 @@ loadQASMFile(StringRef filename, mlir::MLIRContext* context) {
     // Translate to MLIR dialect QC
     return mlir::translateQuantumComputationToQC(context, qc);
   } catch (const qasm3::CompilerError& exception) {
-    errs() << "Failed to parse QASM file: '" << exception.what() << "'\n";
+    errs() << "Failed to parse QASM file '" << filename << "': '"
+           << exception.what() << "'\n";
   } catch (const std::exception& exception) {
-    errs() << "Failed to load QASM file: '" << exception.what() << "'\n";
+    errs() << "Failed to load QASM file '" << filename << "': '"
+           << exception.what() << "'\n";
   }
   return nullptr;
 }
@@ -99,7 +102,7 @@ loadMLIRFile(StringRef filename, mlir::MLIRContext* context) {
   std::string errorMessage;
   auto file = mlir::openInputFile(filename, &errorMessage);
   if (!file) {
-    errs() << errorMessage << "\n";
+    errs() << "Failed to load file '" << filename << "': '" << errorMessage << "'\n";
     return nullptr;
   }
 
@@ -157,7 +160,6 @@ int main(int argc, char** argv) {
     module = loadMLIRFile(INPUT_FILENAME, &context);
   }
   if (!module) {
-    errs() << "Failed to load input file: " << INPUT_FILENAME << "\n";
     return 1;
   }
 
