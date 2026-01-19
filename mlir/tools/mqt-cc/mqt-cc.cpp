@@ -37,6 +37,7 @@
 #include <utility>
 
 using namespace llvm;
+using namespace mlir;
 
 namespace {
 
@@ -76,13 +77,13 @@ const cl::opt<bool>
 /**
  * @brief Load and parse a .qasm file
  */
-static mlir::OwningOpRef<mlir::ModuleOp>
-loadQASMFile(StringRef filename, mlir::MLIRContext* context) {
+static OwningOpRef<ModuleOp>
+loadQASMFile(StringRef filename, MLIRContext* context) {
   try {
     // Parse the input QASM using MQT-Core
-    const qc::QuantumComputation qc = qasm3::Importer::importf(filename.str());
+    const ::qc::QuantumComputation qc = qasm3::Importer::importf(filename.str());
     // Translate to MLIR dialect QC
-    return mlir::translateQuantumComputationToQC(context, qc);
+    return translateQuantumComputationToQC(context, qc);
   } catch (const qasm3::CompilerError& exception) {
     errs() << "Failed to parse QASM file '" << filename << "': '"
            << exception.what() << "'\n";
@@ -96,11 +97,11 @@ loadQASMFile(StringRef filename, mlir::MLIRContext* context) {
 /**
  * @brief Load and parse a .mlir file
  */
-static mlir::OwningOpRef<mlir::ModuleOp>
-loadMLIRFile(StringRef filename, mlir::MLIRContext* context) {
+static OwningOpRef<ModuleOp>
+loadMLIRFile(StringRef filename, MLIRContext* context) {
   // Set up the input file
   std::string errorMessage;
-  auto file = mlir::openInputFile(filename, &errorMessage);
+  auto file = openInputFile(filename, &errorMessage);
   if (!file) {
     errs() << "Failed to load file '" << filename << "': '" << errorMessage
            << "'\n";
@@ -110,24 +111,24 @@ loadMLIRFile(StringRef filename, mlir::MLIRContext* context) {
   // Parse the input MLIR
   SourceMgr sourceMgr;
   sourceMgr.AddNewSourceBuffer(std::move(file), SMLoc());
-  return parseSourceFile<mlir::ModuleOp>(sourceMgr, context);
+  return parseSourceFile<ModuleOp>(sourceMgr, context);
 }
 
 /**
  * @brief Write the module to the output file
  */
-static mlir::LogicalResult writeOutput(mlir::ModuleOp module,
+static LogicalResult writeOutput(ModuleOp module,
                                        StringRef filename) {
   std::string errorMessage;
-  const auto output = mlir::openOutputFile(filename, &errorMessage);
+  const auto output = openOutputFile(filename, &errorMessage);
   if (!output) {
     errs() << errorMessage << "\n";
-    return mlir::failure();
+    return failure();
   }
 
   module.print(output->os());
   output->keep();
-  return mlir::success();
+  return success();
 }
 
 int main(int argc, char** argv) {
@@ -141,20 +142,20 @@ int main(int argc, char** argv) {
   }
 
   // Set up MLIR context with all required dialects
-  mlir::DialectRegistry registry;
+  DialectRegistry registry;
   registry.insert<mlir::qc::QCDialect>();
-  registry.insert<mlir::qco::QCODialect>();
-  registry.insert<mlir::arith::ArithDialect>();
-  registry.insert<mlir::cf::ControlFlowDialect>();
-  registry.insert<mlir::func::FuncDialect>();
-  registry.insert<mlir::scf::SCFDialect>();
-  registry.insert<mlir::LLVM::LLVMDialect>();
+  registry.insert<qco::QCODialect>();
+  registry.insert<arith::ArithDialect>();
+  registry.insert<cf::ControlFlowDialect>();
+  registry.insert<func::FuncDialect>();
+  registry.insert<scf::SCFDialect>();
+  registry.insert<LLVM::LLVMDialect>();
 
-  mlir::MLIRContext context(registry);
+  MLIRContext context(registry);
   context.loadAllAvailableDialects();
 
   // Load the input .mlir file
-  mlir::OwningOpRef<mlir::ModuleOp> module;
+  OwningOpRef<ModuleOp> module;
   if (INPUT_FILENAME.getValue().ends_with(".qasm")) {
     module = loadQASMFile(INPUT_FILENAME, &context);
   } else {
@@ -165,7 +166,7 @@ int main(int argc, char** argv) {
   }
 
   // Configure the compiler pipeline
-  mlir::QuantumCompilerConfig config;
+  QuantumCompilerConfig config;
   config.convertToQIR = CONVERT_TO_QIR;
   config.recordIntermediates = RECORD_INTERMEDIATES;
   config.enableTiming = ENABLE_TIMING;
@@ -173,8 +174,8 @@ int main(int argc, char** argv) {
   config.printIRAfterAllStages = PRINT_IR_AFTER_ALL_STAGES;
 
   // Run the compilation pipeline
-  mlir::CompilationRecord record;
-  if (const mlir::QuantumCompilerPipeline pipeline(config);
+  CompilationRecord record;
+  if (const QuantumCompilerPipeline pipeline(config);
       pipeline
           .runPipeline(module.get(), RECORD_INTERMEDIATES ? &record : nullptr)
           .failed()) {
