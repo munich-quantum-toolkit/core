@@ -29,25 +29,25 @@ def UnitaryOpInterface : OpInterface<"UnitaryOpInterface"> {
     let cppNamespace = "::mlir::qco";
 
     // Generic implementation body for getUnitaryMatrix methods
-    defvar methodBody = [{
+    defvar unitaryMatrixMethodBody = [{
       auto process = [&]<typename MatrixType>(MatrixType&& m) -> bool {
           using TargetT = std::remove_cvref_t<decltype(out)>;
           using SourceT = std::remove_cvref_t<MatrixType>;
 
-          constexpr bool targetDynamic =
+          constexpr bool isTargetDynamic =
               (TargetT::SizeAtCompileTime == Eigen::Dynamic);
-          constexpr bool sourceDynamic =
+          constexpr bool isSourceDynamic =
               (SourceT::SizeAtCompileTime == Eigen::Dynamic);
 
           // Case 1: Target is Dynamic. Always accepts source.
-          if constexpr (targetDynamic) {
+          if constexpr (isTargetDynamic) {
             out = std::forward<MatrixType>(m);
             return true;
           }
           // Case 2: Target is Fixed.
           else {
             // Case 2a: Source is Dynamic. Runtime dimension check required.
-            if constexpr (sourceDynamic) {
+            if constexpr (isSourceDynamic) {
               if (m.rows() == static_cast<Eigen::Index>(TargetT::RowsAtCompileTime) &&
                   m.cols() == static_cast<Eigen::Index>(TargetT::ColsAtCompileTime))
                   [[likely]] {
@@ -66,6 +66,11 @@ def UnitaryOpInterface : OpInterface<"UnitaryOpInterface"> {
                                        TargetT::ColsAtCompileTime)) {
               out = std::forward<MatrixType>(m);
               return true;
+            } else {
+              // always fail this static_assert since this compile-time branch
+              // implies incompatible matrix sizes
+              static_assert(!sizeof(TargetT) && !sizeof(SourceT),
+                "Unable to process unitary matrix into given matriy type!");
             }
           }
           return false;
@@ -164,28 +169,28 @@ def UnitaryOpInterface : OpInterface<"UnitaryOpInterface"> {
             "StringRef", "getBaseSymbol", (ins)
         >,
         InterfaceMethod<
-            "Populates the 1x1 unitary matrix.",
+            "Populates the given 1x1 unitary matrix if possible.",
             "bool", "getUnitaryMatrix1x1",
             (ins "Eigen::Matrix<std::complex<double>, 1, 1>&":$out),
-            methodBody
+            unitaryMatrixMethodBody
         >,
         InterfaceMethod<
-            "Populates the 2x2 unitary matrix.",
+            "Populates the given 2x2 unitary matrix if possible.",
             "bool", "getUnitaryMatrix2x2",
-            (ins "Eigen::Matrix<std::complex<double>, 2, 2>&":$out),
-            methodBody
+            (ins "Eigen::Matrix2cd&":$out),
+            unitaryMatrixMethodBody
         >,
         InterfaceMethod<
-            "Populates the 4x4 unitary matrix.",
+            "Populates the given 4x4 unitary matrix if possible.",
             "bool", "getUnitaryMatrix4x4",
-            (ins "Eigen::Matrix<std::complex<double>, 4, 4>&":$out),
-            methodBody
+            (ins "Eigen::Matrix4cd&":$out),
+            unitaryMatrixMethodBody
         >,
         InterfaceMethod<
-            "Populates the dynamic unitary matrix.",
+            "Populates the given dynamic unitary matrix.",
             "bool", "getUnitaryMatrixDynamic",
             (ins "Eigen::MatrixXcd&":$out),
-            methodBody
+            unitaryMatrixMethodBody
         >
     ];
 
