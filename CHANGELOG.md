@@ -12,6 +12,7 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 ### Added
 
 - ✨ Add initial infrastructure for new QC and QCO MLIR dialects ([#1264], [#1402], [#1428], [#1430], [#1436], [#1443], [#1446], [#1464], [#1465]) ([**@burgholzer**], [**@denialhaag**], [**@taminob**], [**@DRovara**], [**@li-mingbao**])
+- ✨ Add OpenQASM support to mqt-cc CLI tool ([#1470]) ([**@taminob**])
 
 ### Changed
 
@@ -315,6 +316,7 @@ _📚 Refer to the [GitHub Release Notes](https://github.com/munich-quantum-tool
 
 <!-- PR links -->
 
+[#1470]: https://github.com/munich-quantum-toolkit/core/pull/1470
 [#1466]: https://github.com/munich-quantum-toolkit/core/pull/1466
 [#1465]: https://github.com/munich-quantum-toolkit/core/pull/1465
 [#1464]: https://github.com/munich-quantum-toolkit/core/pull/1464
