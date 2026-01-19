@@ -80,16 +80,9 @@ const cl::opt<bool>
  */
 static mlir::OwningOpRef<mlir::ModuleOp>
 loadQASMFile(StringRef filename, mlir::MLIRContext* context) {
-  // Set up the input file
-  std::string errorMessage;
-  auto file = mlir::openInputFile(filename, &errorMessage);
-  if (!file) {
-    errs() << errorMessage << "\n";
-    return nullptr;
-  }
-
-  // Parse the input QASM
-  qc::QuantumComputation qc = qasm3::Importer::importf(filename.str());
+  // Parse the input QASM using MQT-Core
+  const qc::QuantumComputation qc = qasm3::Importer::importf(filename.str());
+  // Translate to MLIR dialect QC
   return mlir::translateQuantumComputationToQC(context, qc);
 }
 
