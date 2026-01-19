@@ -12,6 +12,7 @@
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 
 #include <Eigen/Core>
+#include <complex>
 #include <functional>
 #include <gtest/gtest.h>
 #include <llvm/Support/Casting.h>
@@ -148,7 +149,8 @@ TEST_F(QcoUnitaryMatrixTest, U2OpMatrix) {
 
   const Eigen::Matrix2cd expectedValue{
       {0.70710678 + 0.i, -0.49264604 - 0.50724736i},
-      {0.69301172 + 0.14048043i, 0.38205142 + 0.59500984i}};
+      {0.69301172 + 0.14048043i, // NOLINT(modernize-use-std-numbers)
+       0.38205142 + 0.59500984i}};
   const auto actualValue = op.getUnitaryMatrix();
   ASSERT_TRUE(actualValue);
   EXPECT_TRUE(actualValue->isApprox(expectedValue, 1e-8));
