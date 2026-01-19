@@ -13,6 +13,7 @@
 #include "mlir/Dialect/QC/IR/QCDialect.h"
 #include "mlir/Dialect/QC/Translation/TranslateQuantumComputationToQC.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
+#include "qasm3/Exception.hpp"
 #include "qasm3/Importer.hpp"
 
 #include <llvm/Support/CommandLine.h>
@@ -40,16 +41,12 @@ namespace {
 
 // Command-line options
 const cl::opt<std::string> INPUT_FILENAME(cl::Positional,
-                                          cl::desc("<input .mlir file>"),
+                                          cl::desc("<input .mlir/.qasm file>"),
                                           cl::init("-"));
 
 const cl::opt<std::string> OUTPUT_FILENAME("o", cl::desc("Output filename"),
                                            cl::value_desc("filename"),
                                            cl::init("-"));
-
-const cl::opt<bool> QASM_INPUT("qasm-input",
-                               cl::desc("Input files are read as OpenQASM"),
-                               cl::init(false));
 
 const cl::opt<bool> CONVERT_TO_QIR("emit-qir",
                                    cl::desc("Convert to QIR at the end"),
@@ -80,10 +77,17 @@ const cl::opt<bool>
  */
 static mlir::OwningOpRef<mlir::ModuleOp>
 loadQASMFile(StringRef filename, mlir::MLIRContext* context) {
-  // Parse the input QASM using MQT-Core
-  const qc::QuantumComputation qc = qasm3::Importer::importf(filename.str());
-  // Translate to MLIR dialect QC
-  return mlir::translateQuantumComputationToQC(context, qc);
+  try {
+    // Parse the input QASM using MQT-Core
+    const qc::QuantumComputation qc = qasm3::Importer::importf(filename.str());
+    // Translate to MLIR dialect QC
+    return mlir::translateQuantumComputationToQC(context, qc);
+  } catch (const qasm3::CompilerError& exception) {
+    errs() << "Failed to parse QASM file: '" << exception.what() << "'\n";
+  } catch (const std::exception& exception) {
+    errs() << "Failed to load QASM file: '" << exception.what() << "'\n";
+  }
+  return nullptr;
 }
 
 /**
@@ -147,7 +151,7 @@ int main(int argc, char** argv) {
 
   // Load the input .mlir file
   mlir::OwningOpRef<mlir::ModuleOp> module;
-  if (QASM_INPUT) {
+  if (INPUT_FILENAME.getValue().ends_with(".qasm")) {
     module = loadQASMFile(INPUT_FILENAME, &context);
   } else {
     module = loadMLIRFile(INPUT_FILENAME, &context);
