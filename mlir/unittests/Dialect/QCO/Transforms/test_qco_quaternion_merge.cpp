@@ -97,3 +97,103 @@ protected:
     return pm.run(module);
   }
 };
+
+//   Test Two Gates merge Successfully
+//   RX RY -> merges to U
+TEST_F(QCOQuaternionMergeTest, quaternionMergeRXRYGates) {
+  ASSERT_TRUE(testGateMerge({{rx, {1.}}, {ry, {1.}}}).succeeded());
+  EXPECT_EQ(countOps<UOp>(), 1);
+  EXPECT_EQ(countOps<RXOp>(), 0);
+  EXPECT_EQ(countOps<RYOp>(), 0);
+}
+
+//   RX RZ -> merges to U
+TEST_F(QCOQuaternionMergeTest, quaternionMergeRXRZGates) {
+  ASSERT_TRUE(testGateMerge({{rx, {1.}}, {rz, {1.}}}).succeeded());
+  EXPECT_EQ(countOps<UOp>(), 1);
+  EXPECT_EQ(countOps<RXOp>(), 0);
+  EXPECT_EQ(countOps<RZOp>(), 0);
+}
+
+//   RY RX -> merges to U
+TEST_F(QCOQuaternionMergeTest, quaternionMergeRYRXGates) {
+  ASSERT_TRUE(testGateMerge({{ry, {1.}}, {rx, {1.}}}).succeeded());
+  EXPECT_EQ(countOps<UOp>(), 1);
+  EXPECT_EQ(countOps<RYOp>(), 0);
+  EXPECT_EQ(countOps<RXOp>(), 0);
+}
+
+//   RY RZ -> merges to U
+TEST_F(QCOQuaternionMergeTest, quaternionMergeRYRZGates) {
+  ASSERT_TRUE(testGateMerge({{ry, {1.}}, {rz, {1.}}}).succeeded());
+  EXPECT_EQ(countOps<UOp>(), 1);
+  EXPECT_EQ(countOps<RYOp>(), 0);
+  EXPECT_EQ(countOps<RZOp>(), 0);
+}
+
+//   RZ RX -> merges to U
+TEST_F(QCOQuaternionMergeTest, quaternionMergeRZRXGates) {
+  ASSERT_TRUE(testGateMerge({{rz, {1.}}, {rx, {1.}}}).succeeded());
+  EXPECT_EQ(countOps<UOp>(), 1);
+  EXPECT_EQ(countOps<RZOp>(), 0);
+  EXPECT_EQ(countOps<RXOp>(), 0);
+}
+
+//   RZ RY -> merges to U
+TEST_F(QCOQuaternionMergeTest, quaternionMergeRZRYGates) {
+  ASSERT_TRUE(testGateMerge({{rz, {1.}}, {ry, {1.}}}).succeeded());
+  EXPECT_EQ(countOps<UOp>(), 1);
+  EXPECT_EQ(countOps<RZOp>(), 0);
+  EXPECT_EQ(countOps<RYOp>(), 0);
+}
+
+//   U  U  -> merges to U
+TEST_F(QCOQuaternionMergeTest, quaternionMergeUUGates) {
+  ASSERT_TRUE(
+      testGateMerge({{u, {1., 2., .3}}, {u, {4., 5., 6.}}}).succeeded());
+  EXPECT_EQ(countOps<UOp>(), 1);
+  EXPECT_EQ(countOps<RZOp>(), 0);
+  EXPECT_EQ(countOps<RYOp>(), 0);
+}
+
+//   U  RX -> merges to U
+TEST_F(QCOQuaternionMergeTest, quaternionMergeURXGates) {
+  ASSERT_TRUE(testGateMerge({{u, {1., 2., .3}}, {rx, {1.}}}).succeeded());
+  EXPECT_EQ(countOps<UOp>(), 1);
+  EXPECT_EQ(countOps<RXOp>(), 0);
+}
+
+//   U  RY -> merges to U
+TEST_F(QCOQuaternionMergeTest, quaternionMergeURYGates) {
+  ASSERT_TRUE(testGateMerge({{u, {1., 2., .3}}, {ry, {1.}}}).succeeded());
+  EXPECT_EQ(countOps<UOp>(), 1);
+  EXPECT_EQ(countOps<RYOp>(), 0);
+}
+
+//   U  RZ -> merges to U
+TEST_F(QCOQuaternionMergeTest, quaternionMergeURZGates) {
+  ASSERT_TRUE(testGateMerge({{u, {1., 2., .3}}, {rx, {1.}}}).succeeded());
+  EXPECT_EQ(countOps<UOp>(), 1);
+  EXPECT_EQ(countOps<RZOp>(), 0);
+}
+
+//   RX U  -> merges to U
+TEST_F(QCOQuaternionMergeTest, quaternionMergeRXUGates) {
+  ASSERT_TRUE(testGateMerge({{rx, {1.}}, {u, {1., 2., .3}}}).succeeded());
+  EXPECT_EQ(countOps<UOp>(), 1);
+  EXPECT_EQ(countOps<RXOp>(), 0);
+}
+
+//   RY U  -> merges to U
+TEST_F(QCOQuaternionMergeTest, quaternionMergeRYUGates) {
+  ASSERT_TRUE(testGateMerge({{ry, {1.}}, {u, {1., 2., .3}}}).succeeded());
+  EXPECT_EQ(countOps<UOp>(), 1);
+  EXPECT_EQ(countOps<RYOp>(), 0);
+}
+
+//   RZ U  -> merges to U
+TEST_F(QCOQuaternionMergeTest, quaternionMergeRZUGates) {
+  ASSERT_TRUE(testGateMerge({{rz, {1.}}, {u, {1., 2., .3}}}).succeeded());
+  EXPECT_EQ(countOps<UOp>(), 1);
+  EXPECT_EQ(countOps<RZOp>(), 0);
+}
