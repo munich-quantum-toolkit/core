@@ -379,6 +379,6 @@ TEST_F(QCOQuaternionMergeTest, noUsedGate) {
   EXPECT_EQ(countOps<RYOp>(), 1);
   EXPECT_EQ(countOps<UOp>(), 0);
 }
-  EXPECT_EQ(countOps<UOp>(), 1);
-  EXPECT_EQ(countOps<RZOp>(), 0);
+EXPECT_EQ(countOps<UOp>(), 1);
+EXPECT_EQ(countOps<RZOp>(), 0);
 }
