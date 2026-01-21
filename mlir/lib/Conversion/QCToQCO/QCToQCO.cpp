@@ -1645,7 +1645,6 @@ struct ConvertQCScfYieldOp final : StatefulOpConversionPattern<scf::YieldOp> {
     // get the latest qco qubit or the latest qco tensor from the qubitMap
     for (const auto& qcQubit : orderedQubits) {
       assert(qubitMap.contains(qcQubit) && "QC qubit not found");
-      const auto qcoQubit = qubitMap[qcQubit];
 
       // add an insert operation for every qubit that was extract from a
       // register
@@ -1658,9 +1657,9 @@ struct ConvertQCScfYieldOp final : StatefulOpConversionPattern<scf::YieldOp> {
             assert(qubitMap.contains(qubit) && "QC qubit not found");
 
             auto latestQcoQubit = qubitMap.lookup(qubit);
-            auto insertOp =
-                tensor::InsertOp::create(rewriter, op.getLoc(), latestQcoQubit,
-                                         qcoQubit, loadOp.getIndices());
+            auto insertOp = tensor::InsertOp::create(
+                rewriter, op.getLoc(), latestQcoQubit, qubitMap[qcQubit],
+                loadOp.getIndices());
             qubitMap[qcQubit] = insertOp.getResult();
           }
         }
