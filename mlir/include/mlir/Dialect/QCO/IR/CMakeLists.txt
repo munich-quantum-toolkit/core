@@ -7,6 +7,6 @@
 # Licensed under the MIT License
 
 add_mlir_dialect(QCOOps qco)
-add_mlir_interface(QCOInterfaces LINK_LIBS PUBLIC Eigen3::Eigen)
+add_mlir_interface(QCOInterfaces)
 add_mlir_doc(QCOOps MLIRQCODialect Dialects/ -gen-dialect-doc)
 add_mlir_doc(QCOInterfaces MLIRQCOInterfaces Dialects/ -gen-op-interface-docs -dialect=qco)

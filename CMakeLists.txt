@@ -23,18 +23,6 @@ include(PreventInSourceBuilds)
 include(PackageAddTest)
 include(Cache)
 include(AddMQTCoreLibrary)
-include(FetchContent)
-
-FetchContent_Declare(
-  Eigen
-  GIT_REPOSITORY https://gitlab.com/libeigen/eigen.git
-  GIT_TAG 3.4.1
-  GIT_SHALLOW TRUE)
-FetchContent_MakeAvailable(Eigen)
-if(WIN32 AND ${CMAKE_HOST_SYSTEM_PROCESSOR} STREQUAL ARM64)
-  message(STATUS "Enabling non-optimal vectorization in Eigen to avoid alignment issues")
-  add_compile_definitions(EIGEN_DONT_ALIGN_STATICALLY)
-endif()
 
 option(BUILD_MQT_CORE_BINDINGS "Build the MQT Core Python bindings" OFF)
 if(BUILD_MQT_CORE_BINDINGS)
