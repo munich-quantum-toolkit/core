@@ -21,7 +21,9 @@
 #include <llvm/Support/Casting.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/Func/Transforms/FuncConversions.h>
+#include <mlir/Dialect/MemRef/IR/MemRef.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
+#include <mlir/Dialect/Tensor/IR/Tensor.h>
 #include <mlir/IR/Block.h>
 #include <mlir/IR/BuiltinAttributes.h>
 #include <mlir/IR/MLIRContext.h>
@@ -116,6 +118,17 @@ private:
 
 } // namespace
 
+static bool isQubitType(Type type) {
+  if (!llvm::isa<qc::QubitType>(type)) {
+    auto memrefType = dyn_cast<MemRefType>(type);
+    if (memrefType) {
+      return llvm::isa<qc::QubitType>(memrefType.getElementType());
+    }
+    return false;
+  }
+  return true;
+}
+
 /**
  * @brief Recursively collects all the QC qubit references used by an
  * operation and store them in map
@@ -130,7 +143,6 @@ collectUniqueQubits(Operation* op, LoweringState* state, MLIRContext* ctx) {
   // get the regions of the current operation
   const auto& regions = op->getRegions();
   SetVector<Value> uniqueQubits;
-  auto const qcType = qc::QubitType::get(ctx);
   for (auto& region : regions) {
     // skip empty regions e.g. empty else region of an If operation
     if (region.empty()) {
@@ -141,7 +153,7 @@ collectUniqueQubits(Operation* op, LoweringState* state, MLIRContext* ctx) {
 
     // collect qubits from the blockarguments
     for (auto arg : region.front().getArguments()) {
-      if (arg.getType() == qcType) {
+      if (isQubitType(arg.getType())) {
         uniqueQubits.insert(arg);
       }
     }
@@ -157,13 +169,14 @@ collectUniqueQubits(Operation* op, LoweringState* state, MLIRContext* ctx) {
       }
       // collect qubits form the operands
       for (const auto& operand : operation.getOperands()) {
-        if (operand.getType() == qcType) {
+        if (isQubitType(operand.getType())) {
           uniqueQubits.insert(operand);
         }
       }
       // collect qubits from the results
       for (const auto& result : operation.getResults()) {
-        if (result.getType() == qcType) {
+        if (!llvm::isa<memref::LoadOp>(operation) &&
+            isQubitType(result.getType())) {
           uniqueQubits.insert(result);
         }
       }
@@ -179,7 +192,7 @@ collectUniqueQubits(Operation* op, LoweringState* state, MLIRContext* ctx) {
       if (llvm::isa<func::ReturnOp>(operation)) {
         if (auto func = operation.getParentOfType<func::FuncOp>()) {
           if (!func.getArgumentTypes().empty() &&
-              func.getArgumentTypes().front() == qcType) {
+              isQubitType(func.getArgumentTypes().front())) {
             operation.setAttr("needChange", StringAttr::get(ctx, "yes"));
             state->regionMap[func] = uniqueQubits;
           }
@@ -1265,6 +1278,65 @@ struct ConvertQCYieldOp final : StatefulOpConversionPattern<qc::YieldOp> {
   }
 };
 
+struct ConvertQCMemRefAllocOp final
+    : StatefulOpConversionPattern<memref::AllocOp> {
+  using StatefulOpConversionPattern::StatefulOpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(memref::AllocOp op, OpAdaptor /*adaptor*/,
+                  ConversionPatternRewriter& rewriter) const override {
+    auto& qubitMap = getState().qubitMap[op->getParentRegion()];
+
+    SmallVector<Value> qcoQubits;
+    for (auto* user : op->getUsers()) {
+      if (llvm::isa<memref::StoreOp>(user)) {
+        auto storeOp = dyn_cast<memref::StoreOp>(user);
+        qcoQubits.push_back(qubitMap[storeOp.getValue()]);
+      }
+    }
+    auto const qcoType = qco::QubitType::get(rewriter.getContext());
+    const auto tensorType = RankedTensorType::get(
+        {static_cast<int64_t>(qcoQubits.size())}, qcoType);
+    auto fromElements = tensor::FromElementsOp::create(rewriter, op->getLoc(),
+                                                       tensorType, qcoQubits);
+    qubitMap.try_emplace(op->getResult(0), fromElements->getResult(0));
+    rewriter.eraseOp(op);
+
+    return success();
+  }
+};
+
+struct ConvertQCMemRefStoreOp final
+    : StatefulOpConversionPattern<memref::StoreOp> {
+  using StatefulOpConversionPattern::StatefulOpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(memref::StoreOp op, OpAdaptor /*adaptor*/,
+                  ConversionPatternRewriter& rewriter) const override {
+    rewriter.eraseOp(op);
+    return success();
+  }
+};
+
+struct ConvertQCMemRefLoadOp final
+    : StatefulOpConversionPattern<memref::LoadOp> {
+  using StatefulOpConversionPattern::StatefulOpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(memref::LoadOp op, OpAdaptor /*adaptor*/,
+                  ConversionPatternRewriter& rewriter) const override {
+    auto& qubitMap = getState().qubitMap[op->getParentRegion()];
+    auto tensor = qubitMap[op.getMemRef()];
+    auto const qcoType = qco::QubitType::get(rewriter.getContext());
+
+    auto extractOp = tensor::ExtractOp::create(rewriter, op->getLoc(), qcoType,
+                                               tensor, {op.getIndices()});
+
+    qubitMap.try_emplace(op.getResult(), extractOp.getResult());
+    rewriter.eraseOp(op);
+    return success();
+  }
+};
 /**
  * @brief Converts scf.if with memory semantics to scf.if with value semantics
  * for qubit values
@@ -1771,9 +1843,10 @@ struct QCToQCO final : impl::QCToQCOBase<QCToQCO> {
     QCToQCOTypeConverter typeConverter(context);
 
     collectUniqueQubits(module, &state, context);
-    // Configure conversion target: QC illegal, QCO
+    // Configure conversion target: QC illegal, QCO and tensor
     // legal
     target.addIllegalDialect<QCDialect>();
+    target.addLegalDialect<tensor::TensorDialect>();
     target.addLegalDialect<QCODialect>();
 
     target.addDynamicallyLegalOp<scf::YieldOp>([&](scf::YieldOp op) {
@@ -1792,17 +1865,27 @@ struct QCToQCO final : impl::QCToQCOBase<QCToQCO> {
       return !(op->getAttrOfType<StringAttr>("needChange"));
     });
     target.addDynamicallyLegalOp<func::FuncOp>([&](func::FuncOp op) {
-      return !llvm::any_of(op.front().getArgumentTypes(), [&](Type type) {
-        return type == qc::QubitType::get(context);
-      });
+      return !llvm::any_of(op.front().getArgumentTypes(),
+                           [&](Type type) { return isQubitType(type); });
     });
     target.addDynamicallyLegalOp<func::CallOp>([&](func::CallOp op) {
-      return !llvm::any_of(op->getOperandTypes(), [&](Type type) {
-        return type == qc::QubitType::get(context);
-      });
+      return !llvm::any_of(op->getOperandTypes(),
+                           [&](Type type) { return isQubitType(type); });
     });
     target.addDynamicallyLegalOp<func::ReturnOp>([&](func::ReturnOp op) {
       return !op->getAttrOfType<StringAttr>("needChange");
+    });
+    target.addDynamicallyLegalOp<memref::AllocOp>([&](memref::AllocOp op) {
+      return !llvm::any_of(op->getResultTypes(),
+                           [&](Type type) { return isQubitType(type); });
+    });
+    target.addDynamicallyLegalOp<memref::StoreOp>([&](memref::StoreOp op) {
+      return !llvm::any_of(op.getOperandTypes(),
+                           [&](Type type) { return isQubitType(type); });
+    });
+    target.addDynamicallyLegalOp<memref::LoadOp>([&](memref::LoadOp op) {
+      return !llvm::any_of(op->getResultTypes(),
+                           [&](Type type) { return isQubitType(type); });
     });
     // Register operation conversion patterns with state
     // tracking
@@ -1817,7 +1900,8 @@ struct QCToQCO final : impl::QCToQCOBase<QCToQCO> {
              ConvertQCDCXOp, ConvertQCECROp, ConvertQCRXXOp, ConvertQCRYYOp,
              ConvertQCRZXOp, ConvertQCRZZOp, ConvertQCXXPlusYYOp,
              ConvertQCXXMinusYYOp, ConvertQCBarrierOp, ConvertQCCtrlOp,
-             ConvertQCYieldOp, ConvertQCScfIfOp, ConvertQCScfYieldOp,
+             ConvertQCYieldOp, ConvertQCMemRefAllocOp, ConvertQCMemRefStoreOp,
+             ConvertQCMemRefLoadOp, ConvertQCScfIfOp, ConvertQCScfYieldOp,
              ConvertQCScfWhileOp, ConvertQCScfConditionOp, ConvertQCScfForOp,
              ConvertQCFuncCallOp, ConvertQCFuncFuncOp, ConvertQCFuncReturnOp>(
             typeConverter, context, &state);
