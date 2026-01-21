@@ -84,10 +84,14 @@ struct GateDecompositionPattern final
     if (series.isSingleQubitSeries()) {
       // only a single-qubit series;
       // single-qubit euler decomposition is more efficient
-      const matrix2x2 unitaryMatrix = series.getSingleQubitUnitaryMatrix();
+      const auto unitaryMatrix = series.getSingleQubitUnitaryMatrix();
+      if (!unitaryMatrix) {
+        // cannot process decomposition without the matrix of the series
+        return mlir::failure();
+      }
       for (auto&& eulerBasis : decomposerEulerBases) {
         auto sequence = decomposition::EulerDecomposition::generateCircuit(
-            eulerBasis, unitaryMatrix, true, std::nullopt);
+            eulerBasis, *unitaryMatrix, true, std::nullopt);
         if (!bestSequence ||
             sequence.complexity() < bestSequence->complexity()) {
           bestSequence = sequence;
@@ -95,9 +99,13 @@ struct GateDecompositionPattern final
       }
     } else {
       // two-qubit series; perform two-qubit basis decomposition
-      const matrix4x4 unitaryMatrix = series.getUnitaryMatrix();
+      const auto unitaryMatrix = series.getUnitaryMatrix();
+      if (!unitaryMatrix) {
+        // cannot process decomposition without the matrix of the series
+        return mlir::failure();
+      }
       const auto targetDecomposition =
-          decomposition::TwoQubitWeylDecomposition::create(unitaryMatrix,
+          decomposition::TwoQubitWeylDecomposition::create(*unitaryMatrix,
                                                            DEFAULT_FIDELITY);
 
       for (const auto& decomposer : basisDecomposers) {
@@ -229,37 +237,45 @@ protected:
       return result;
     }
 
-    [[nodiscard]] matrix2x2 getSingleQubitUnitaryMatrix() {
+    [[nodiscard]] std::optional<matrix2x2> getSingleQubitUnitaryMatrix() {
       auto unitaryMatrix = decomposition::IDENTITY_GATE;
       for (auto&& gate : gates) {
-        // auto gateMatrix = gate.op.getFastUnitaryMatrix<matrix2x2>();
-        auto gateMatrix = gate.op.getUnitaryMatrix();
-        unitaryMatrix = gateMatrix * unitaryMatrix;
+        if (auto gateMatrix = gate.op.getUnitaryMatrix<matrix2x2>()) {
+          unitaryMatrix = *gateMatrix * unitaryMatrix;
+        } else {
+          return std::nullopt;
+        }
       }
 
       assert(helpers::isUnitaryMatrix(unitaryMatrix));
       return unitaryMatrix;
     }
 
-    [[nodiscard]] matrix4x4 getUnitaryMatrix() {
+    [[nodiscard]] std::optional<matrix4x4> getUnitaryMatrix() {
       matrix4x4 unitaryMatrix = helpers::kroneckerProduct(
           decomposition::IDENTITY_GATE, decomposition::IDENTITY_GATE);
+      matrix4x4 gateMatrix;
       for (auto&& gate : gates) {
-        auto gateMatrix = gate.op.getUnitaryMatrix();
         if (gate.op.isSingleQubit()) {
           assert(gate.qubitIds.size() == 1);
-          // TODO: use helpers::kroneckerProduct or Eigen::kroneckerProduct?
+          auto matrix = gate.op.getUnitaryMatrix<matrix2x2>();
+          if (!matrix) {
+            return std::nullopt;
+          }
           if (gate.qubitIds[0] == 0) {
-            gateMatrix = Eigen::kroneckerProduct(decomposition::IDENTITY_GATE,
-                                                 gateMatrix)
-                             .eval();
+            gateMatrix = helpers::kroneckerProduct(decomposition::IDENTITY_GATE,
+                                                   *matrix);
           } else if (gate.qubitIds[0] == 1) {
-            gateMatrix = Eigen::kroneckerProduct(gateMatrix,
-                                                 decomposition::IDENTITY_GATE)
-                             .eval();
+            gateMatrix = helpers::kroneckerProduct(
+                *matrix, decomposition::IDENTITY_GATE);
+          }
+        } else if (gate.op.isTwoQubit()) {
+          if (auto matrix = gate.op.getUnitaryMatrix<matrix4x4>()) {
+            gateMatrix = std::move(*matrix);
+          } else {
+            return std::nullopt;
           }
         }
-        // auto gateMatrix = gate.op.getFastUnitaryMatrix<matrix4x4>();
         unitaryMatrix = gateMatrix * unitaryMatrix;
       }
 
@@ -339,13 +355,14 @@ protected:
           return false;
         }
         // TODO: this only works because parameters are at end of operands;
-        // use future getInputQubits() instead
+        // use to-be-implemented getInputQubits() instead
         auto&& opInQubits = nextGate->getOperands();
         // iterator in the operation input of "old" qubit that already has
         // previous single-qubit gates in this series
         auto it2 = llvm::find(opInQubits, firstQubitIt != outQubits.end()
                                               ? *firstQubitIt
                                               : *secondQubitIt);
+        assert(it2 != opInQubits.end());
         // new qubit ID based on position in outQubits
         const QubitId newInQubitId = std::distance(outQubits.begin(), it);
         // position in operation input; since there are only two qubits, it must
@@ -498,7 +515,8 @@ protected:
       }
     }
     assert((unitaryMatrix * std::exp(IM * sequence.globalPhase))
-               .isApprox(series.getUnitaryMatrix(), SANITY_CHECK_PRECISION));
+               .isApprox(series.getUnitaryMatrix().value_or(matrix4x4::Zero()),
+                         SANITY_CHECK_PRECISION));
 
     if (series.isSingleQubitSeries()) {
       rewriter.replaceAllUsesWith(series.outQubits[0], inQubits[0]);
@@ -507,7 +525,7 @@ protected:
     }
     for (auto&& gate : llvm::reverse(series.gates)) {
       if (auto ctrlOp = llvm::dyn_cast<CtrlOp>(*gate.op)) {
-        rewriter.eraseBlock(&ctrlOp.getBody().front());
+        rewriter.eraseOp(ctrlOp.getBodyUnitary());
       }
       rewriter.eraseOp(gate.op);
     }
