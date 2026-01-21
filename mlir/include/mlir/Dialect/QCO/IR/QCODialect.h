@@ -80,6 +80,11 @@ public:
       }
       return this->getOperation()->getOperand(i);
     }
+    ValueRange getInputQubits() {
+      auto&& operands = this->getOperation()->getOperands();
+      assert(T < operands.size());
+      return operands.take_front(T);
+    }
     Value getOutputQubit(size_t i) {
       if constexpr (T == 0) {
         llvm::reportFatalUsageError("Operation does not have qubits");
@@ -88,6 +93,11 @@ public:
         llvm::reportFatalUsageError("Qubit index out of bounds");
       }
       return this->getOperation()->getResult(i);
+    }
+    ValueRange getOutputQubits() {
+      auto&& results = this->getOperation()->getResults();
+      assert(T == results.size());
+      return ValueRange{results};
     }
 
     Value getInputTarget(const size_t i) { return getInputQubit(i); }

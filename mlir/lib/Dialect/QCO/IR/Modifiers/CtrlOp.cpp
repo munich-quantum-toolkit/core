@@ -165,6 +165,14 @@ Value CtrlOp::getInputQubit(const size_t i) {
   llvm::reportFatalUsageError("Invalid qubit index");
 }
 
+ValueRange CtrlOp::getInputQubits() {
+  // TODO: needs to materialize into internal storage; I wasn't able to find a
+  // way to convert concat_range -> ValueRange; however: operations cannot
+  // define new data members
+  return llvm::concat<Value>(getBodyUnitary().getInputQubits(),
+                             ValueRange{getControlsIn()});
+}
+
 Value CtrlOp::getOutputQubit(const size_t i) {
   const auto numControls = getNumControls();
   if (i < numControls) {
@@ -174,6 +182,14 @@ Value CtrlOp::getOutputQubit(const size_t i) {
     return getBodyUnitary().getOutputQubit(i - numControls);
   }
   llvm::reportFatalUsageError("Invalid qubit index");
+}
+
+ValueRange CtrlOp::getOutputQubits() {
+  // TODO: needs to materialize into internal storage; I wasn't able to find a
+  // way to convert concat_range -> ValueRange; however: operations cannot
+  // define new data members
+  return llvm::concat<Value>(getBodyUnitary().getOutputQubits(),
+                             ValueRange{getControlsOut()});
 }
 
 Value CtrlOp::getInputTarget(const size_t i) {
