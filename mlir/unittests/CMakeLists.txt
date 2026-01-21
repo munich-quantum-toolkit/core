@@ -13,5 +13,6 @@ add_subdirectory(Dialect)
 add_custom_target(mqt-core-mlir-unittests)
 
 add_dependencies(
-  mqt-core-mlir-unittests mqt-core-mlir-decomposition-test mqt-core-mlir-compiler-pipeline-test mqt-core-mlir-qco-dialect-test
-  mqt-core-mlir-dialect-qco-ir-modifiers-test mqt-core-mlir-dialect-utils-test)
+  mqt-core-mlir-unittests mqt-core-mlir-decomposition-test mqt-core-mlir-compiler-pipeline-test
+  mqt-core-mlir-qco-dialect-test mqt-core-mlir-dialect-qco-ir-modifiers-test
+  mqt-core-mlir-dialect-utils-test)
