@@ -72,6 +72,10 @@ const cl::opt<bool>
                               cl::desc("Print IR after each compiler stage"),
                               cl::init(false));
 
+const cl::opt<bool> MERGE_ROTATION_GATES(
+    "mlir-merge-rotation-gates",
+    cl::desc("Enable quaternion-based rotation gate merging"), cl::init(false));
+
 } // namespace
 
 /**
@@ -168,6 +172,7 @@ int main(int argc, char** argv) {
   config.enableTiming = ENABLE_TIMING;
   config.enableStatistics = ENABLE_STATISTICS;
   config.printIRAfterAllStages = PRINT_IR_AFTER_ALL_STAGES;
+  config.mergeRotationGates = MERGE_ROTATION_GATES;
 
   // Run the compilation pipeline
   CompilationRecord record;

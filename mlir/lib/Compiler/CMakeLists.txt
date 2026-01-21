@@ -20,6 +20,7 @@ add_mlir_library(
   QCToQCO
   QCOToQC
   QCToQIR
+  MLIRQCOTransforms
   MQT::MLIRSupport
   MQT::ProjectOptions
   DISABLE_INSTALL)
