@@ -19,6 +19,7 @@
 #include <llvm/ADT/DenseMap.h>
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/Support/Casting.h>
+#include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/Func/Transforms/FuncConversions.h>
 #include <mlir/Dialect/MemRef/IR/MemRef.h>
@@ -26,6 +27,7 @@
 #include <mlir/Dialect/Tensor/IR/Tensor.h>
 #include <mlir/IR/Block.h>
 #include <mlir/IR/BuiltinAttributes.h>
+#include <mlir/IR/BuiltinTypes.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OperationSupport.h>
 #include <mlir/IR/PatternMatch.h>
@@ -169,14 +171,19 @@ collectUniqueQubits(Operation* op, LoweringState* state, MLIRContext* ctx) {
       }
       // collect qubits form the operands
       for (const auto& operand : operation.getOperands()) {
+        if (operand.getDefiningOp<memref::LoadOp>()) {
+          continue;
+        }
         if (isQubitType(operand.getType())) {
           uniqueQubits.insert(operand);
         }
       }
       // collect qubits from the results
       for (const auto& result : operation.getResults()) {
-        if (!llvm::isa<memref::LoadOp>(operation) &&
-            isQubitType(result.getType())) {
+        if (llvm::isa<memref::LoadOp>(operation)) {
+          break;
+        }
+        if (isQubitType(result.getType())) {
           uniqueQubits.insert(result);
         }
       }
@@ -204,6 +211,8 @@ collectUniqueQubits(Operation* op, LoweringState* state, MLIRContext* ctx) {
   if (!uniqueQubits.empty() &&
       (llvm::isa<scf::IfOp>(op) || (llvm::isa<scf::ForOp>(op)) ||
        llvm::isa<scf::WhileOp>(op))) {
+    if (llvm::isa<scf::ForOp>(op)) {
+    }
     state->regionMap[op] = uniqueQubits;
     op->setAttr("needChange", StringAttr::get(ctx, "yes"));
   }
@@ -1569,6 +1578,27 @@ struct ConvertQCScfForOp final : StatefulOpConversionPattern<scf::ForOp> {
              qcQubits, newFor.getRegionIterArgs(), newFor->getResults())) {
       regionQubitMap.try_emplace(qcQubit, iterArg);
       qubitMap[qcQubit] = qcoQubit;
+
+      // if the value of the qc qubit is a memref register, extract each value
+      // from the new tensor and update the qubitmap for each value
+      if (llvm::isa<MemRefType>(qcQubit.getType())) {
+        // get all the qubits that were stored in the memref register
+        for (const auto* user : qcQubit.getUsers()) {
+          if (auto storeOp = dyn_cast<memref::StoreOp>(user)) {
+            // get the qubit
+            const auto qubit = storeOp.getValueToStore();
+            auto const qcoType = qco::QubitType::get(rewriter.getContext());
+
+            // create the extract operation for each qubit from the resulting
+            // tensor of the scf.for operation
+            auto extractOp =
+                tensor::ExtractOp::create(rewriter, op->getLoc(), qcoType,
+                                          qcoQubit, {storeOp.getIndices()});
+            // update the qubit map for each of them
+            qubitMap[qubit] = extractOp.getResult();
+          }
+        }
+      }
     }
 
     // replace the old entry in the regionMap with the new operation
@@ -1601,24 +1631,45 @@ struct ConvertQCScfYieldOp final : StatefulOpConversionPattern<scf::YieldOp> {
   LogicalResult
   matchAndRewrite(scf::YieldOp op, OpAdaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
-    auto const qcType = qc::QubitType::get(rewriter.getContext());
     assert(llvm::all_of(op.getOperandTypes(),
-                        [&](Type type) { return type == qcType; }) &&
+                        [&](Type type) { return isQubitType(type); }) &&
            "Not all operands are qc qubits");
 
     const auto& parentRegion = op->getParentRegion();
-    const auto& qubitMap = getState().qubitMap[parentRegion];
+    auto& qubitMap = getState().qubitMap[parentRegion];
     const auto& orderedQubits =
         getState().regionMap[parentRegion->getParentOp()];
 
     SmallVector<Value> qcoQubits;
     qcoQubits.reserve(orderedQubits.size());
+    // get the latest qco qubit or the latest qco tensor from the qubitMap
     for (const auto& qcQubit : orderedQubits) {
       assert(qubitMap.contains(qcQubit) && "QC qubit not found");
-      qcoQubits.push_back(qubitMap.lookup(qcQubit));
+      const auto qcoQubit = qubitMap[qcQubit];
+
+      // add an insert operation for every qubit that was extract from a
+      // register
+      if (dyn_cast<MemRefType>(qcQubit.getType())) {
+        // find all extracted values of the register
+        for (const auto* user : qcQubit.getUsers()) {
+          if (auto loadOp = dyn_cast<memref::LoadOp>(user)) {
+            // get the latest qco qubit and add it back to the tensor
+            auto qubit = loadOp.getResult();
+            assert(qubitMap.contains(qubit) && "QC qubit not found");
+
+            auto latestQcoQubit = qubitMap.lookup(qubit);
+            auto insertOp =
+                tensor::InsertOp::create(rewriter, op.getLoc(), latestQcoQubit,
+                                         qcoQubit, loadOp.getIndices());
+            qubitMap[qcQubit] = insertOp.getResult();
+          }
+        }
+      }
+      qcoQubits.push_back(qubitMap[qcQubit]);
     }
 
     rewriter.replaceOpWithNewOp<scf::YieldOp>(op, qcoQubits);
+
     return success();
   }
 };
@@ -1848,6 +1899,7 @@ struct QCToQCO final : impl::QCToQCOBase<QCToQCO> {
     target.addIllegalDialect<QCDialect>();
     target.addLegalDialect<tensor::TensorDialect>();
     target.addLegalDialect<QCODialect>();
+    target.addLegalDialect<arith::ArithDialect>();
 
     target.addDynamicallyLegalOp<scf::YieldOp>([&](scf::YieldOp op) {
       return !(op->getAttrOfType<StringAttr>("needChange"));
