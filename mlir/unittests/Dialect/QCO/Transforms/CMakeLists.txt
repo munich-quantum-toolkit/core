@@ -12,12 +12,12 @@ target_link_libraries(
   mqt-core-mlir-dialect-qco-transforms-test
   # TODO figure out correct dependencies
   PRIVATE GTest::gtest_main
-          MQT::CoreIR
           MLIRQCOProgramBuilder
-          MLIRFuncDialect
+          MLIRQCOTransforms
           MLIRIR
-          MLIRParser
+          MLIRPass # for PassManager
           MLIRSupport
-          LLVMSupport)
+          LLVMSupport
+)
 
 gtest_discover_tests(mqt-core-mlir-dialect-qco-transforms-test)
