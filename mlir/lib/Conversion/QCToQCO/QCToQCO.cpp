@@ -1287,6 +1287,18 @@ struct ConvertQCYieldOp final : StatefulOpConversionPattern<qc::YieldOp> {
   }
 };
 
+/**
+ * @brief Converts memref.alloc to tensor.from_elements for qubits
+ *
+ * @par Example:
+ * ```mlir
+ * %alloc = memref.alloc() : memref<3x!qc.qubit>
+ * ```
+ * is converted to
+ * ```mlir
+ * %tensor = tensor.from_elements %q0, %q1, %q2 : tensore<3x!qco.qubit>
+ * ```
+ */
 struct ConvertQCMemRefAllocOp final
     : StatefulOpConversionPattern<memref::AllocOp> {
   using StatefulOpConversionPattern::StatefulOpConversionPattern;
@@ -1296,6 +1308,7 @@ struct ConvertQCMemRefAllocOp final
                   ConversionPatternRewriter& rewriter) const override {
     auto& qubitMap = getState().qubitMap[op->getParentRegion()];
 
+    // Get the qco qubits from the users
     SmallVector<Value> qcoQubits;
     const auto users = llvm::to_vector(op->getUsers());
     for (auto* user : llvm::reverse(users)) {
@@ -1307,15 +1320,29 @@ struct ConvertQCMemRefAllocOp final
     auto const qcoType = qco::QubitType::get(rewriter.getContext());
     const auto tensorType = RankedTensorType::get(
         {static_cast<int64_t>(qcoQubits.size())}, qcoType);
+    // Create the FromElements operation
     auto fromElements = tensor::FromElementsOp::create(rewriter, op->getLoc(),
                                                        tensorType, qcoQubits);
+    // Add them to the qubitMap
     qubitMap.try_emplace(op->getResult(0), fromElements->getResult(0));
-    rewriter.eraseOp(op);
 
+    // Erase the old operation
+    rewriter.eraseOp(op);
     return success();
   }
 };
 
+/**
+ * @brief Deletes the memref.store operation for qubits
+ *
+ * @par Example:
+ * ```mlir
+ * memref.store %q0, %alloc[%c0] : memref<3x!qc.qubit>
+ * ```
+ * is converted to
+ * ```mlir
+ * ```
+ */
 struct ConvertQCMemRefStoreOp final
     : StatefulOpConversionPattern<memref::StoreOp> {
   using StatefulOpConversionPattern::StatefulOpConversionPattern;
@@ -1328,6 +1355,18 @@ struct ConvertQCMemRefStoreOp final
   }
 };
 
+/**
+ * @brief Converts memref.load to tensor.extract for qubits
+ *
+ * @par Example:
+ * ```mlir
+ * %q0 = memref.load %memref[%c0] : memref<3x!qco.qubit>
+ * ```
+ * is converted to
+ * ```mlir
+ * %q0 = tensor.extract %tensor[%c0] : tensor<3x!qco.qubit>
+ * ```
+ */
 struct ConvertQCMemRefLoadOp final
     : StatefulOpConversionPattern<memref::LoadOp> {
   using StatefulOpConversionPattern::StatefulOpConversionPattern;
@@ -1336,13 +1375,15 @@ struct ConvertQCMemRefLoadOp final
   matchAndRewrite(memref::LoadOp op, OpAdaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
     auto& qubitMap = getState().qubitMap[op->getParentRegion()];
-    auto tensor = qubitMap[op.getMemRef()];
+    const auto tensor = qubitMap[op.getMemRef()];
     auto const qcoType = qco::QubitType::get(rewriter.getContext());
-
+    // Create the extract operation
     auto extractOp = tensor::ExtractOp::create(rewriter, op->getLoc(), qcoType,
                                                tensor, {op.getIndices()});
+    // Update the qubitMap
+    qubitMap[op.getResult()] = extractOp.getResult();
 
-    qubitMap.try_emplace(op.getResult(), extractOp.getResult());
+    // Erase the old operation
     rewriter.eraseOp(op);
     return success();
   }
@@ -1380,32 +1421,32 @@ struct ConvertQCScfIfOp final : StatefulOpConversionPattern<scf::IfOp> {
     const auto& qcQubits = regionMap[op];
     const SmallVector<Value> qcValues(qcQubits.begin(), qcQubits.end());
 
-    // create result typerange
+    // Create result typerange
     const SmallVector<Type> qcoTypes(
         qcQubits.size(), qco::QubitType::get(rewriter.getContext()));
 
-    // create new if operation
+    // Create new if operation
     auto newIfOp =
         scf::IfOp::create(rewriter, op->getLoc(), TypeRange{qcoTypes},
                           op.getCondition(), op.getElseRegion().empty());
     auto& thenRegion = newIfOp.getThenRegion();
     auto& elseRegion = newIfOp.getElseRegion();
 
-    // move the regions of the old operations inside the new operation
+    // Move the regions of the old operations inside the new operation
     rewriter.inlineRegionBefore(op.getThenRegion(), thenRegion,
                                 thenRegion.end());
-    // eliminate the empty block that was created during the initialization
+    // Eliminate the empty block that was created during the initialization
     rewriter.eraseBlock(&thenRegion.front());
 
     if (!op.getElseRegion().empty()) {
       rewriter.inlineRegionBefore(op.getElseRegion(), elseRegion,
                                   elseRegion.end());
     } else {
-      // create the yield operation if it does not exist yet
+      // Create the yield operation if it does not exist yet
       rewriter.setInsertionPointToEnd(&elseRegion.front());
       const auto elseYield =
           scf::YieldOp::create(rewriter, op->getLoc(), qcValues);
-      // mark the yield operation for conversion
+      // Mark the yield operation for conversion
       elseYield->setAttr("needChange",
                          StringAttr::get(rewriter.getContext(), "yes"));
     }
@@ -1413,7 +1454,7 @@ struct ConvertQCScfIfOp final : StatefulOpConversionPattern<scf::IfOp> {
     auto& thenRegionQubitMap = getState().qubitMap[&thenRegion];
     auto& elseRegionQubitMap = getState().qubitMap[&elseRegion];
 
-    // create the qubit map for the regions and update the qubit map for the
+    // Create the qubit map for the regions and update the qubit map for the
     // current region
     for (const auto& [qcQubit, qcoQubit] :
          llvm::zip_equal(qcQubits, newIfOp->getResults())) {
@@ -1423,7 +1464,7 @@ struct ConvertQCScfIfOp final : StatefulOpConversionPattern<scf::IfOp> {
       qubitMap[qcQubit] = qcoQubit;
     }
 
-    // replace the old entry in the regionMap with the new operation
+    // Replace the old entry in the regionMap with the new operation
     const auto& it = regionMap.find(op);
     const auto values = std::move(it->second);
     regionMap.erase(op);
@@ -1476,23 +1517,23 @@ struct ConvertQCScfWhileOp final : StatefulOpConversionPattern<scf::WhileOp> {
       assert(qubitMap.contains(qcQubit) && "QC qubit not found");
       qcoQubits.push_back(qubitMap[qcQubit]);
     }
-    // create the result typerange
+    // Create the result typerange
     const SmallVector<Type> qcoTypes(
         qcQubits.size(), qco::QubitType::get(rewriter.getContext()));
 
-    // create the new while operation
+    // Create the new while operation
     auto newWhileOp = scf::WhileOp::create(
         rewriter, op.getLoc(), TypeRange(qcoTypes), ValueRange(qcoQubits));
     auto& newBeforeRegion = newWhileOp.getBefore();
     auto& newAfterRegion = newWhileOp.getAfter();
     const SmallVector<Location> locs(qcQubits.size(), op->getLoc());
-    // create the new blocks
+    // Create the new blocks
     auto* newBeforeBlock =
         rewriter.createBlock(&newBeforeRegion, {}, qcoTypes, locs);
     auto* newAfterBlock =
         rewriter.createBlock(&newAfterRegion, {}, qcoTypes, locs);
 
-    // move the operations to the new blocks
+    // Move the operations to the new blocks
     newBeforeBlock->getOperations().splice(newBeforeBlock->end(),
                                            op.getBeforeBody()->getOperations());
     newAfterBlock->getOperations().splice(newAfterBlock->end(),
@@ -1501,7 +1542,7 @@ struct ConvertQCScfWhileOp final : StatefulOpConversionPattern<scf::WhileOp> {
     auto& newBeforeRegionMap = getState().qubitMap[&newWhileOp.getBefore()];
     auto& newAfterRegionMap = getState().qubitMap[&newWhileOp.getAfter()];
 
-    // create the qubit map for the new regions and  update the qubit map in the
+    // Create the qubit map for the new regions and  update the qubit map in the
     // current region
     for (const auto& [qcQubit, beforeArg, afterArg, qcoQubit] : llvm::zip_equal(
              qcQubits, newWhileOp.getBeforeArguments(),
@@ -1511,7 +1552,7 @@ struct ConvertQCScfWhileOp final : StatefulOpConversionPattern<scf::WhileOp> {
       qubitMap[qcQubit] = qcoQubit;
     }
 
-    // replace the old entry in the regionMap with the new operation
+    // Replace the old entry in the regionMap with the new operation
     const auto& it = regionMap.find(op);
     const auto values = std::move(it->second);
     regionMap.erase(op);
@@ -1564,7 +1605,7 @@ struct ConvertQCScfForOp final : StatefulOpConversionPattern<scf::ForOp> {
         rewriter, op.getLoc(), adaptor.getLowerBound(), adaptor.getUpperBound(),
         adaptor.getStep(), ValueRange(qcoQubits));
 
-    // move the operations to the new block
+    // Move the operations to the new block
     auto& srcBlock = op.getRegion().front();
     auto& dstBlock = newFor.getRegion().front();
 
@@ -1574,36 +1615,36 @@ struct ConvertQCScfForOp final : StatefulOpConversionPattern<scf::ForOp> {
     auto& newRegion = newFor.getRegion();
     auto& regionQubitMap = getState().qubitMap[&newRegion];
 
-    // create the qubitmap for the new region and update the qubitmap in the
+    // Create the qubitmap for the new region and update the qubitmap in the
     // current region
     for (const auto& [qcQubit, iterArg, qcoQubit] : llvm::zip_equal(
              qcQubits, newFor.getRegionIterArgs(), newFor->getResults())) {
       regionQubitMap.try_emplace(qcQubit, iterArg);
       qubitMap[qcQubit] = qcoQubit;
 
-      // if the value of the qc qubit is a memref register, extract each value
+      // If the value of the qc qubit is a memref register, extract each value
       // from the new tensor and update the qubitmap for each value
       if (llvm::isa<MemRefType>(qcQubit.getType())) {
-        // get all the qubits that were stored in the memref register
+        // Get all the qubits that were stored in the memref register
         for (const auto* user : qcQubit.getUsers()) {
           if (auto storeOp = dyn_cast<memref::StoreOp>(user)) {
-            // get the qubit
+            // gGet the qubit
             const auto qubit = storeOp.getValueToStore();
             auto const qcoType = qco::QubitType::get(rewriter.getContext());
 
-            // create the extract operation for each qubit from the resulting
+            // Create the extract operation for each qubit from the resulting
             // tensor of the scf.for operation
             auto extractOp =
                 tensor::ExtractOp::create(rewriter, op->getLoc(), qcoType,
                                           qcoQubit, {storeOp.getIndices()});
-            // update the qubit map for each of them
+            // Update the qubit map for each of them
             qubitMap[qubit] = extractOp.getResult();
           }
         }
       }
     }
 
-    // replace the old entry in the regionMap with the new operation
+    // Replace the old entry in the regionMap with the new operation
     const auto& it = regionMap.find(op);
     const auto values = std::move(it->second);
     regionMap.erase(op);
@@ -1894,6 +1935,7 @@ struct QCToQCO final : impl::QCToQCOBase<QCToQCO> {
     RewritePatternSet patterns(context);
     QCToQCOTypeConverter typeConverter(context);
 
+    // Collect the qubits for each region
     collectUniqueQubits(module, &state, context);
     // Configure conversion target: QC illegal, QCO and tensor
     // legal
@@ -1940,6 +1982,7 @@ struct QCToQCO final : impl::QCToQCOBase<QCToQCO> {
       return !llvm::any_of(op->getResultTypes(),
                            [&](Type type) { return isQubitType(type); });
     });
+
     // Register operation conversion patterns with state
     // tracking
     patterns

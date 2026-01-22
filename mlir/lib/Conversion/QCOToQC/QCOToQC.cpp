@@ -850,6 +850,21 @@ struct ConvertQCOYieldOp final : OpConversionPattern<qco::YieldOp> {
   }
 };
 
+/**
+ * @brief Converts tensor.from_elements to memref.alloc for qubits
+ *
+ * @par Example:
+ * ```mlir
+ * %tensor = tensor.from_elements %q0, %q1, %q2 : tensore<3x!qco.qubit>
+ * ```
+ * is converted to
+ * ```mlir
+ * %alloc = memref.alloc() : memref<3x!qc.qubit>
+ * memref.store %q0, %alloc[%c0] : memref<3x!qc.qubit>
+ * memref.store %q1, %alloc[%c1] : memref<3x!qc.qubit>
+ * memref.store %q2, %alloc[%c2] : memref<3x!qc.qubit>
+ * ```
+ */
 struct ConvertQCOTensorFromElementsOp final
     : OpConversionPattern<tensor::FromElementsOp> {
   using OpConversionPattern::OpConversionPattern;
@@ -857,29 +872,37 @@ struct ConvertQCOTensorFromElementsOp final
   LogicalResult
   matchAndRewrite(tensor::FromElementsOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
-
     const auto qcType = qc::QubitType::get(rewriter.getContext());
-
+    const auto loc = op.getLoc();
     auto memrefType = MemRefType::get(op.getType().getShape(), qcType);
+    // create the memref alloc operation
+    auto memrefAllocOp = rewriter.create<memref::AllocOp>(loc, memrefType);
 
-    auto memrefAllocOp =
-        rewriter.create<memref::AllocOp>(op.getLoc(), memrefType);
-
-    // Store each element
+    // store each qubit into the memref
     for (auto it : llvm::enumerate(adaptor.getElements())) {
-      Value idx =
-          rewriter.create<arith::ConstantIndexOp>(op.getLoc(), it.index());
-      rewriter.create<memref::StoreOp>(op.getLoc(), it.value(), memrefAllocOp,
-                                       idx);
+      Value idx = rewriter.create<arith::ConstantIndexOp>(loc, it.index());
+      rewriter.create<memref::StoreOp>(loc, it.value(), memrefAllocOp, idx);
     }
 
-    // Replace all uses of the tensor result with the memref
+    // replace all uses of the tensor result with the memref
     rewriter.replaceOp(op, memrefAllocOp);
 
     return success();
   }
 };
 
+/**
+ * @brief Converts tensor.extract to memref.load for qubits
+ *
+ * @par Example:
+ * ```mlir
+ * %q0 = tensor.extract %tensor[%c0] : tensor<3x!qco.qubit>
+ * ```
+ * is converted to
+ * ```mlir
+ * %q0 = memref.load %memref[%c0] : memref<3x!qco.qubit>
+ * ```
+ */
 struct ConvertQCOTensorExtractOp final
     : OpConversionPattern<tensor::ExtractOp> {
   using OpConversionPattern::OpConversionPattern;
@@ -887,25 +910,34 @@ struct ConvertQCOTensorExtractOp final
   LogicalResult
   matchAndRewrite(tensor::ExtractOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
-    const auto memref = adaptor.getTensor();
-    const auto loadOp = memref::LoadOp::create(rewriter, op.getLoc(), memref,
-                                               adaptor.getIndices());
-    rewriter.replaceOp(op, loadOp);
+    rewriter.replaceOpWithNewOp<memref::LoadOp>(op, adaptor.getTensor(),
+                                                adaptor.getIndices());
     return success();
   }
 };
 
+/**
+ * @brief Removes tensor.insert for qubits
+ *
+ * @par Example:
+ * ```mlir
+ * %new_tensor = tensor.insert %q0 into %tensor[%c0] : tensor<3x!qco.qubit>
+ * ```
+ * is converted to
+ * ```mlir
+ * ```
+ */
 struct ConvertQCOTensorInsertOp final : OpConversionPattern<tensor::InsertOp> {
   using OpConversionPattern::OpConversionPattern;
 
   LogicalResult
   matchAndRewrite(tensor::InsertOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
-
     rewriter.replaceOp(op, adaptor.getDest());
     return success();
   }
 };
+
 /**
  * @brief Converts scf.if with value semantics to scf.if with memory semantics
  * for qubit values. This currently assumes no mixed types as return values.
@@ -1020,7 +1052,7 @@ struct ConvertQCOScfWhileOp final : OpConversionPattern<scf::WhileOp> {
 /**
  * @brief Converts scf.for with value semantics to scf.for with memory
  * semantics for qubit values. This currently assumes no mixed types as return
- * values.
+ * values except for qco.qubits and tensors of qco.qubits.
  *
  * @par Example:
  * ```mlir
@@ -1049,7 +1081,7 @@ struct ConvertQCOScfForOp final : OpConversionPattern<scf::ForOp> {
         rewriter, op.getLoc(), adaptor.getLowerBound(), adaptor.getUpperBound(),
         adaptor.getStep(), ValueRange{});
 
-    // Replace the uses of the previous iter_args
+    // Replace the uses of the previous iter_args and the induction variable
     for (const auto& [qcoQubit, qcQubit] :
          llvm::zip_equal(op.getRegionIterArgs(), adaptor.getInitArgs())) {
       qcoQubit.replaceAllUsesWith(qcQubit);
@@ -1062,14 +1094,15 @@ struct ConvertQCOScfForOp final : OpConversionPattern<scf::ForOp> {
     newBlock->getOperations().splice(newBlock->begin(), srcOps, srcOps.begin(),
                                      std::prev(srcOps.end()));
 
-    // find the init args that are tensors
+    // Find the init args that are tensors
     for (auto initArg : llvm::enumerate(op.getInitArgs())) {
-      auto value = initArg.value();
+      const auto value = initArg.value();
       if (llvm::isa<TensorType>(value.getType())) {
-        // find the equivalent memref register from the adaptor
+        // Find the equivalent memref register from the adaptor
         const auto memref = adaptor.getInitArgs()[initArg.index()];
         SmallVector<Value> qcQubits;
-        // get the qc qubits from them
+
+        // Get the qc qubits from them
         const auto memrefUsers = llvm::to_vector(memref.getUsers());
         for (auto* user : llvm::reverse(memrefUsers)) {
           if (llvm::isa<memref::StoreOp>(user)) {
@@ -1077,18 +1110,23 @@ struct ConvertQCOScfForOp final : OpConversionPattern<scf::ForOp> {
             qcQubits.push_back(storeOp.getValueToStore());
           }
         }
-        // get the users of the returned tensor
+
+        // Get the users of the result tensor of the current operation
         const auto users =
             llvm::to_vector(op->getResult(initArg.index()).getUsers());
         for (auto user : llvm::enumerate(llvm::reverse(users))) {
-          if (llvm::isa<tensor::ExtractOp>(user.value())) {
-            rewriter.replaceAllUsesWith(user.value()->getResult(0),
+          auto* const extractOp = user.value();
+          if (llvm::isa<tensor::ExtractOp>(extractOp)) {
+            // Replace the extract operations with the values of the memref
+            // register and delete the extract operation
+            rewriter.replaceAllUsesWith(extractOp->getResult(0),
                                         qcQubits[user.index()]);
-            rewriter.eraseOp(user.value());
+            rewriter.eraseOp(extractOp);
           }
         }
       }
     }
+
     // Replace the result values with the init values
     rewriter.replaceOp(op, adaptor.getInitArgs());
     return success();
@@ -1277,6 +1315,12 @@ struct QCOToQC final : impl::QCOToQCBase<QCOToQC> {
     RewritePatternSet patterns(context);
     const QCOToQCTypeConverter typeConverter(context);
 
+    // Configure conversion target: QCO illegal, QC, Arith, MemRef legal
+    target.addIllegalDialect<QCODialect>();
+    target.addLegalDialect<QCDialect>();
+    target.addLegalDialect<arith::ArithDialect>();
+    target.addLegalDialect<memref::MemRefDialect>();
+
     target.addDynamicallyLegalOp<tensor::FromElementsOp>(
         [&](tensor::FromElementsOp op) {
           return !llvm::any_of(op.getOperandTypes(), [&](Type type) {
@@ -1338,11 +1382,7 @@ struct QCOToQC final : impl::QCOToQCBase<QCOToQC> {
                type == qc::QubitType::get(context);
       });
     });
-    // Configure conversion target: QCO illegal, QC legal
-    target.addIllegalDialect<QCODialect>();
-    target.addLegalDialect<QCDialect>();
-    target.addLegalDialect<arith::ArithDialect>();
-    target.addLegalDialect<memref::MemRefDialect>();
+
     // Register operation conversion patterns
     // Note: No state tracking needed - OpAdaptors handle type conversion
     patterns
