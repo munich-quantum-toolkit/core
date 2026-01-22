@@ -1297,7 +1297,8 @@ struct ConvertQCMemRefAllocOp final
     auto& qubitMap = getState().qubitMap[op->getParentRegion()];
 
     SmallVector<Value> qcoQubits;
-    for (auto* user : op->getUsers()) {
+    const auto users = llvm::to_vector(op->getUsers());
+    for (auto* user : llvm::reverse(users)) {
       if (llvm::isa<memref::StoreOp>(user)) {
         auto storeOp = dyn_cast<memref::StoreOp>(user);
         qcoQubits.push_back(qubitMap[storeOp.getValue()]);
@@ -1346,6 +1347,7 @@ struct ConvertQCMemRefLoadOp final
     return success();
   }
 };
+
 /**
  * @brief Converts scf.if with memory semantics to scf.if with value semantics
  * for qubit values
