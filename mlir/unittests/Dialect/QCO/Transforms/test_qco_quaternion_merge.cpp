@@ -24,6 +24,8 @@
 #include <utility>
 #include <vector>
 
+namespace {
+
 using namespace mlir;
 using namespace mlir::qco;
 
@@ -135,6 +137,8 @@ protected:
     return pm.run(module);
   }
 };
+
+} // namespace
 
 // ##################################################
 // # Two Gate Merging Tests
