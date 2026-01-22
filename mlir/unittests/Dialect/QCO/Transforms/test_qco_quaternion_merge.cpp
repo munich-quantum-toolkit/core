@@ -35,6 +35,10 @@ protected:
   QCOProgramBuilder builder;
   OwningOpRef<ModuleOp> module;
 
+  /**
+   * @brief Struct to easily construct a rotation gate inline.
+   *        opName uses the getOperationName() mnemonic.
+   */
   struct RotationGate {
     llvm::StringLiteral opName;
     std::vector<double> angles;
@@ -47,18 +51,22 @@ protected:
     context.loadDialect<func::FuncDialect>();
     context.loadDialect<arith::ArithDialect>();
 
-    // Setup Builder
     builder.initialize();
   }
 
-  // Counts the ammont of operations the current module/circuit contains
+  /**
+   * @brief Counts the amount of operations the current module/circuit
+   *        contains.
+   */
   template <typename OpTy> int countOps() {
     int count = 0;
     module->walk([&](OpTy) { ++count; });
     return count;
   }
 
-  // extract constant Floating Point Value from a mlir::Value
+  /**
+   * @brief Extract constant floating point value from a mlir::Value
+   */
   std::optional<double> toDouble(mlir::Value v) {
     if (auto constOp = v.getDefiningOp<mlir::arith::ConstantOp>()) {
       if (auto floatAttr =
@@ -69,7 +77,11 @@ protected:
     return std::nullopt;
   }
 
-  // Helper to extract U gate parameters
+  /**
+   * @brief Find the first occurance of a u-gate in the current module and get
+   *        the numeric value of its parameters. This assumes that parameters
+   *        are constant and can be extracted.
+   */
   std::optional<std::tuple<double, double, double>> getUGateParams() {
     UOp uOp = nullptr;
     module->walk([&](UOp op) {
@@ -93,21 +105,26 @@ protected:
     return std::make_tuple(*theta, *phi, *lambda);
   }
 
+  /**
+   * @brief Gets the first u-gate of a module and tests whether its
+   *        angle parameters are equal the the expected ones.
+   */
   void expectUGateParams(double expectedTheta, double expectedPhi,
                          double expectedLambda, double tolerance = 1e-8) {
     auto params = getUGateParams();
     ASSERT_TRUE(params.has_value());
 
     auto [theta, phi, lambda] = *params;
-    EXPECT_NEAR(theta, expectedTheta, tolerance) << "Theta mismatch";
-    EXPECT_NEAR(phi, expectedPhi, tolerance) << "Phi mismatch";
-    EXPECT_NEAR(lambda, expectedLambda, tolerance) << "Lambda mismatch";
+    EXPECT_NEAR(theta, expectedTheta, tolerance);
+    EXPECT_NEAR(phi, expectedPhi, tolerance);
+    EXPECT_NEAR(lambda, expectedLambda, tolerance);
   }
 
-  // TODO: create docstring
-  // testGateMerge takes a list of Rotation gates and uses the builder api to
-  // build a small quantum circuit, where a qubit is feed through all rotations
-  // in the list.
+  /**
+   * @brief Takes a list of rotation gates (rx, ry, rz and u) and uses the
+   * builder api to build a small quantum circuit, where a qubit is feed through
+   * all rotations in the list.
+   */
   LogicalResult testGateMerge(const std::vector<RotationGate>& rotations) {
 
     auto q = builder.allocQubitRegister(1);
@@ -131,6 +148,9 @@ protected:
     return runMergePass(module.get());
   }
 
+  /**
+   * @brief Adds the mergeRotationGates Pass to the current context and runs it.
+   */
   LogicalResult runMergePass(ModuleOp module) {
     PassManager pm(module.getContext());
     pm.addPass(qco::createMergeRotationGates());
@@ -143,9 +163,10 @@ protected:
 // ##################################################
 // # Two Gate Merging Tests
 // ##################################################
-//
 
-// RX->RY should merge into a single U gate
+/**
+ * @brief Test: RX->RY should merge into a single U gate
+ */
 TEST_F(QCOQuaternionMergeTest, quaternionMergeRXRYGates) {
   ASSERT_TRUE(testGateMerge({{RXOp::getOperationName(), {1.}},
                              {RYOp::getOperationName(), {1.}}})
@@ -155,7 +176,9 @@ TEST_F(QCOQuaternionMergeTest, quaternionMergeRXRYGates) {
   EXPECT_EQ(countOps<RYOp>(), 0);
 }
 
-// RX->RZ  should merge into a single U gate
+/**
+ * @brief Test: RX->RZ should merge into a single U gate
+ */
 TEST_F(QCOQuaternionMergeTest, quaternionMergeRXRZGates) {
   ASSERT_TRUE(testGateMerge({{RXOp::getOperationName(), {1.}},
                              {RZOp::getOperationName(), {1.}}})
@@ -165,7 +188,9 @@ TEST_F(QCOQuaternionMergeTest, quaternionMergeRXRZGates) {
   EXPECT_EQ(countOps<RZOp>(), 0);
 }
 
-// RY->RX should merge into a single U gate
+/**
+ * @brief Test: RY->RX should merge into a single U gate
+ */
 TEST_F(QCOQuaternionMergeTest, quaternionMergeRYRXGates) {
   ASSERT_TRUE(testGateMerge({{RYOp::getOperationName(), {1.}},
                              {RXOp::getOperationName(), {1.}}})
@@ -175,7 +200,9 @@ TEST_F(QCOQuaternionMergeTest, quaternionMergeRYRXGates) {
   EXPECT_EQ(countOps<RXOp>(), 0);
 }
 
-// RY->RZ should merge into a single U gate
+/**
+ * @brief Test: RY->RZ should merge into a single U gate
+ */
 TEST_F(QCOQuaternionMergeTest, quaternionMergeRYRZGates) {
   ASSERT_TRUE(testGateMerge({{RYOp::getOperationName(), {1.}},
                              {RZOp::getOperationName(), {1.}}})
@@ -185,7 +212,9 @@ TEST_F(QCOQuaternionMergeTest, quaternionMergeRYRZGates) {
   EXPECT_EQ(countOps<RZOp>(), 0);
 }
 
-// RZ->RX should merge into a single U gate
+/**
+ * @brief Test: RZ->RX should merge into a single U gate
+ */
 TEST_F(QCOQuaternionMergeTest, quaternionMergeRZRXGates) {
   ASSERT_TRUE(testGateMerge({{RZOp::getOperationName(), {1.}},
                              {RXOp::getOperationName(), {1.}}})
@@ -195,7 +224,9 @@ TEST_F(QCOQuaternionMergeTest, quaternionMergeRZRXGates) {
   EXPECT_EQ(countOps<RXOp>(), 0);
 }
 
-// RZ->RY should merge into a single U gate
+/**
+ * @brief Test: RZ->RY should merge into a single U gate
+ */
 TEST_F(QCOQuaternionMergeTest, quaternionMergeRZRYGates) {
   ASSERT_TRUE(testGateMerge({{RZOp::getOperationName(), {1.}},
                              {RYOp::getOperationName(), {1.}}})
@@ -205,7 +236,9 @@ TEST_F(QCOQuaternionMergeTest, quaternionMergeRZRYGates) {
   EXPECT_EQ(countOps<RYOp>(), 0);
 }
 
-// U->U should merge into a single U gate
+/**
+ * @brief Test: U->U should merge into a single U gate
+ */
 TEST_F(QCOQuaternionMergeTest, quaternionMergeUUGates) {
   ASSERT_TRUE(testGateMerge({{UOp::getOperationName(), {1., 2., .3}},
                              {UOp::getOperationName(), {4., 5., 6.}}})
@@ -213,7 +246,9 @@ TEST_F(QCOQuaternionMergeTest, quaternionMergeUUGates) {
   EXPECT_EQ(countOps<UOp>(), 1);
 }
 
-// U->RX should merge into a single U gate
+/**
+ * @brief Test: U->RX should merge into a single U gate
+ */
 TEST_F(QCOQuaternionMergeTest, quaternionMergeURXGates) {
   ASSERT_TRUE(testGateMerge({{UOp::getOperationName(), {1., 2., .3}},
                              {RXOp::getOperationName(), {1.}}})
@@ -222,7 +257,9 @@ TEST_F(QCOQuaternionMergeTest, quaternionMergeURXGates) {
   EXPECT_EQ(countOps<RXOp>(), 0);
 }
 
-// U->RY should merge into a single U gate
+/**
+ * @brief Test: U->RY should merge into a single U gate
+ */
 TEST_F(QCOQuaternionMergeTest, quaternionMergeURYGates) {
   ASSERT_TRUE(testGateMerge({{UOp::getOperationName(), {1., 2., .3}},
                              {RYOp::getOperationName(), {1.}}})
@@ -231,7 +268,9 @@ TEST_F(QCOQuaternionMergeTest, quaternionMergeURYGates) {
   EXPECT_EQ(countOps<RYOp>(), 0);
 }
 
-// U->RZ should merge into a single U gate
+/**
+ * @brief Test: U->RZ should merge into a single U gate
+ */
 TEST_F(QCOQuaternionMergeTest, quaternionMergeURZGates) {
   ASSERT_TRUE(testGateMerge({{UOp::getOperationName(), {1., 2., .3}},
                              {RZOp::getOperationName(), {1.}}})
@@ -240,7 +279,9 @@ TEST_F(QCOQuaternionMergeTest, quaternionMergeURZGates) {
   EXPECT_EQ(countOps<RZOp>(), 0);
 }
 
-// RX->U should merge into a single U gate
+/**
+ * @brief Test: RX->U should merge into a single U gate
+ */
 TEST_F(QCOQuaternionMergeTest, quaternionMergeRXUGates) {
   ASSERT_TRUE(testGateMerge({{RXOp::getOperationName(), {1.}},
                              {UOp::getOperationName(), {1., 2., .3}}})
@@ -249,7 +290,9 @@ TEST_F(QCOQuaternionMergeTest, quaternionMergeRXUGates) {
   EXPECT_EQ(countOps<UOp>(), 1);
 }
 
-// RY->U should merge into a single U gate
+/**
+ * @brief Test: RY->U should merge into a single U gate
+ */
 TEST_F(QCOQuaternionMergeTest, quaternionMergeRYUGates) {
   ASSERT_TRUE(testGateMerge({{RYOp::getOperationName(), {1.}},
                              {UOp::getOperationName(), {1., 2., .3}}})
@@ -258,7 +301,9 @@ TEST_F(QCOQuaternionMergeTest, quaternionMergeRYUGates) {
   EXPECT_EQ(countOps<UOp>(), 1);
 }
 
-// RZ->U should merge into a single U gate
+/**
+ * @brief Test: RZ->U should merge into a single U gate
+ */
 TEST_F(QCOQuaternionMergeTest, quaternionMergeRZUGates) {
   ASSERT_TRUE(testGateMerge({{RZOp::getOperationName(), {1.}},
                              {UOp::getOperationName(), {1., 2., .3}}})
@@ -271,7 +316,9 @@ TEST_F(QCOQuaternionMergeTest, quaternionMergeRZUGates) {
 // # Not Merging Tests
 // ##################################################
 
-// RX->RX should not merge
+/**
+ * @brief Test: RX->RX should not merge
+ */
 TEST_F(QCOQuaternionMergeTest, quaternionNoMergeRXRXGates) {
   ASSERT_TRUE(testGateMerge({{RXOp::getOperationName(), {1.}},
                              {RXOp::getOperationName(), {1.}}})
@@ -280,7 +327,9 @@ TEST_F(QCOQuaternionMergeTest, quaternionNoMergeRXRXGates) {
   EXPECT_EQ(countOps<RXOp>(), 2);
 }
 
-// RY->RY should not merge
+/**
+ * @brief Test: RY->RY should not merge
+ */
 TEST_F(QCOQuaternionMergeTest, quaternionNoMergeRYRYGates) {
   ASSERT_TRUE(testGateMerge({{RYOp::getOperationName(), {1.}},
                              {RYOp::getOperationName(), {1.}}})
@@ -289,7 +338,9 @@ TEST_F(QCOQuaternionMergeTest, quaternionNoMergeRYRYGates) {
   EXPECT_EQ(countOps<RYOp>(), 2);
 }
 
-// RZ->RZ should not merge
+/**
+ * @brief Test: RZ->RZ should not merge
+ */
 TEST_F(QCOQuaternionMergeTest, quaternionNoMergeRZRZGates) {
   ASSERT_TRUE(testGateMerge({{RZOp::getOperationName(), {1.}},
                              {RZOp::getOperationName(), {1.}}})
@@ -298,28 +349,36 @@ TEST_F(QCOQuaternionMergeTest, quaternionNoMergeRZRZGates) {
   EXPECT_EQ(countOps<RZOp>(), 2);
 }
 
-// single RX should not convert to U
+/**
+ * @brief Test: single RX should not convert to U
+ */
 TEST_F(QCOQuaternionMergeTest, quaternionNoMergeSingleRXGate) {
   ASSERT_TRUE(testGateMerge({{RXOp::getOperationName(), {1.}}}).succeeded());
   EXPECT_EQ(countOps<UOp>(), 0);
   EXPECT_EQ(countOps<RXOp>(), 1);
 }
 
-// single RY should not convert to U
+/**
+ * @brief Test: single RY should not convert to U
+ */
 TEST_F(QCOQuaternionMergeTest, quaternionNoMergeSingleRYGate) {
   ASSERT_TRUE(testGateMerge({{RYOp::getOperationName(), {1.}}}).succeeded());
   EXPECT_EQ(countOps<UOp>(), 0);
   EXPECT_EQ(countOps<RYOp>(), 1);
 }
 
-// single RZ should not convert to U
+/**
+ * @brief Test: single RZ should not convert to U
+ */
 TEST_F(QCOQuaternionMergeTest, quaternionNoMergeSingleRZGate) {
   ASSERT_TRUE(testGateMerge({{RZOp::getOperationName(), {1.}}}).succeeded());
   EXPECT_EQ(countOps<UOp>(), 0);
   EXPECT_EQ(countOps<RZOp>(), 1);
 }
 
-// Gates on different qubits should not merge
+/**
+ * @brief Test: Gates on different qubits should not merge
+ */
 TEST_F(QCOQuaternionMergeTest, dontMergeGatesFromDifferentQubits) {
   auto q = builder.allocQubitRegister(2);
 
@@ -333,7 +392,9 @@ TEST_F(QCOQuaternionMergeTest, dontMergeGatesFromDifferentQubits) {
   EXPECT_EQ(countOps<RXOp>(), 2);
 }
 
-// Non-consecutive gates should not merge
+/**
+ * @brief Test: Non-consecutive gates should not merge
+ */
 TEST_F(QCOQuaternionMergeTest, dontMergeNonConsecutiveGates) {
   auto q = builder.allocQubitRegister(1);
 
@@ -353,7 +414,9 @@ TEST_F(QCOQuaternionMergeTest, dontMergeNonConsecutiveGates) {
 // # Special Cases Tests
 // ##################################################
 
-// Consecutive gates with another gate in between should merge
+/**
+ * @brief Test: Consecutive gates with another gate in between should merge
+ */
 TEST_F(QCOQuaternionMergeTest, mergeConsecutiveWithGateInBetween) {
   auto q = builder.allocQubitRegister(2);
 
@@ -370,13 +433,16 @@ TEST_F(QCOQuaternionMergeTest, mergeConsecutiveWithGateInBetween) {
   EXPECT_EQ(countOps<UOp>(), 1);
 }
 
-// Gates with multiple uses should not be merged but pass should still succeed
+/**
+ * @brief Test: Gates with multiple uses should not be merged but pass should
+ * still succeed
+ */
 TEST_F(QCOQuaternionMergeTest, nonLinearCodeHandling) {
   // QCOProgramBuilder does not allow non-linear circuits,
   // so strings are used
   const char* mlirCode = R"(
       module {
-        func.func @multipleUsers() {
+        func.func @nonLinearCodeHandling() {
           %0 = qco.alloc : !qco.qubit
           %cst = arith.constant 1.000000e+00 : f64
           %1 = qco.ry(%cst) %0 : !qco.qubit -> !qco.qubit
@@ -393,7 +459,7 @@ TEST_F(QCOQuaternionMergeTest, nonLinearCodeHandling) {
     )";
 
   module = mlir::parseSourceString<mlir::ModuleOp>(mlirCode, &context);
-  ASSERT_TRUE(module) << "Failed to parse MLIR";
+  ASSERT_TRUE(module);
 
   ASSERT_TRUE(runMergePass(module.get()).succeeded());
 
@@ -403,14 +469,15 @@ TEST_F(QCOQuaternionMergeTest, nonLinearCodeHandling) {
   EXPECT_EQ(countOps<UOp>(), 0);
 }
 
-// Gates with no final users should still succeed
-// but will be removed by DCE from applyPatternsGreedily
+/**
+ * @brief Test: Gates with no final users should still succeed
+ *        but will be removed by dead code removal from
+ *        applyPatternsGreedily
+ */
 TEST_F(QCOQuaternionMergeTest, noUsedGate) {
-  // QCOProgramBuilder does not allow non-linear circuits,
-  // so strings are used
   const char* mlirCode = R"(
       module {
-        func.func @multipleUsers() {
+        func.func @noUsedGate() {
           %0 = qco.alloc : !qco.qubit
           %cst = arith.constant 1.000000e+00 : f64
           %1 = qco.ry(%cst) %0 : !qco.qubit -> !qco.qubit
@@ -421,7 +488,7 @@ TEST_F(QCOQuaternionMergeTest, noUsedGate) {
     )";
 
   module = mlir::parseSourceString<mlir::ModuleOp>(mlirCode, &context);
-  ASSERT_TRUE(module) << "Failed to parse MLIR";
+  ASSERT_TRUE(module);
 
   ASSERT_TRUE(runMergePass(module.get()).succeeded());
 
@@ -434,8 +501,10 @@ TEST_F(QCOQuaternionMergeTest, noUsedGate) {
 // # Numerical Correctness
 // ##################################################
 
-// RX(1)->RY(1) should merge into
-// U(0.495367289218673, 1.27455578230629, -1.07542903757622)
+/**
+ * @brief Test: RX(1)->RY(1) should merge into
+ *        U(0.495367289218673, 1.27455578230629, -1.07542903757622)
+ */
 TEST_F(QCOQuaternionMergeTest, numericalAccuracyRXRY) {
   ASSERT_TRUE(testGateMerge({{RXOp::getOperationName(), {1.}},
                              {RYOp::getOperationName(), {1.}}})
@@ -447,8 +516,10 @@ TEST_F(QCOQuaternionMergeTest, numericalAccuracyRXRY) {
   expectUGateParams(0.495367289218673, 1.27455578230629, -1.07542903757622);
 }
 
-// RX(1)->RZ(1) should merge into
-// U(1.57079632679490, 1.00000000000000, -0.570796326794897)
+/**
+ * @brief Test: RX(1)->RZ(1) should merge into
+ *        U(1.57079632679490, 1.00000000000000, -0.570796326794897)
+ */
 TEST_F(QCOQuaternionMergeTest, numericalAccuracyRXRZ) {
   ASSERT_TRUE(testGateMerge({{RXOp::getOperationName(), {1.}},
                              {RZOp::getOperationName(), {1.}}})
@@ -456,12 +527,14 @@ TEST_F(QCOQuaternionMergeTest, numericalAccuracyRXRZ) {
   EXPECT_EQ(countOps<UOp>(), 1);
   EXPECT_EQ(countOps<RXOp>(), 0);
   EXPECT_EQ(countOps<RZOp>(), 0);
+
   expectUGateParams(1.57079632679490, 1.00000000000000, -0.570796326794897);
-  ;
 }
 
-// RY(1)->RX(1) should merge into
-// U(1.07542903757622, 1.27455578230629, -0.495367289218673)
+/**
+ * @brief Test: RY(1)->RX(1) should merge into
+ *        U(1.07542903757622, 1.27455578230629, -0.495367289218673)
+ */
 TEST_F(QCOQuaternionMergeTest, numericalAccuracyRYRX) {
   ASSERT_TRUE(testGateMerge({{RYOp::getOperationName(), {1.}},
                              {RXOp::getOperationName(), {1.}}})
@@ -469,11 +542,14 @@ TEST_F(QCOQuaternionMergeTest, numericalAccuracyRYRX) {
   EXPECT_EQ(countOps<UOp>(), 1);
   EXPECT_EQ(countOps<RYOp>(), 0);
   EXPECT_EQ(countOps<RXOp>(), 0);
+
   expectUGateParams(1.07542903757622, 1.27455578230629, -0.495367289218673);
 }
 
-// RY(1)->RZ(1) should merge into
-// U(0, 1.00000000000000, 1.00000000000000)
+/**
+ * @brief Test: RY(1)->RZ(1) should merge into
+ *        U(0, 1.00000000000000, 1.00000000000000)
+ */
 TEST_F(QCOQuaternionMergeTest, numericalAccuracyRYRZ) {
   ASSERT_TRUE(testGateMerge({{RYOp::getOperationName(), {1.}},
                              {RZOp::getOperationName(), {1.}}})
@@ -481,11 +557,14 @@ TEST_F(QCOQuaternionMergeTest, numericalAccuracyRYRZ) {
   EXPECT_EQ(countOps<UOp>(), 1);
   EXPECT_EQ(countOps<RYOp>(), 0);
   EXPECT_EQ(countOps<RZOp>(), 0);
+
   expectUGateParams(0, 1.00000000000000, 1.00000000000000);
 }
 
-// RZ(1)->RX(1) should merge into
-// U(2.57079632679490, 1.00000000000000, -1.57079632679490)
+/**
+ * @brief Test: RZ(1)->RX(1) should merge into
+ *        U(2.57079632679490, 1.00000000000000, -1.57079632679490)
+ */
 TEST_F(QCOQuaternionMergeTest, numericalAccuracyRZRX) {
   ASSERT_TRUE(testGateMerge({{RZOp::getOperationName(), {1.}},
                              {RXOp::getOperationName(), {1.}}})
@@ -493,11 +572,14 @@ TEST_F(QCOQuaternionMergeTest, numericalAccuracyRZRX) {
   EXPECT_EQ(countOps<UOp>(), 1);
   EXPECT_EQ(countOps<RZOp>(), 0);
   EXPECT_EQ(countOps<RXOp>(), 0);
+
   expectUGateParams(2.57079632679490, 1.00000000000000, -1.57079632679490);
 }
 
-// RZ(1)->RY(1) should merge into
-// U(1.00000000000000, 1.00000000000000, 0)
+/**
+ * @brief Test: RZ(1)->RY(1) should merge into
+ *        U(1.00000000000000, 1.00000000000000, 0)
+ */
 TEST_F(QCOQuaternionMergeTest, numericalAccuracyRZRY) {
   ASSERT_TRUE(testGateMerge({{RZOp::getOperationName(), {1.}},
                              {RYOp::getOperationName(), {1.}}})
@@ -505,15 +587,19 @@ TEST_F(QCOQuaternionMergeTest, numericalAccuracyRZRY) {
   EXPECT_EQ(countOps<UOp>(), 1);
   EXPECT_EQ(countOps<RZOp>(), 0);
   EXPECT_EQ(countOps<RYOp>(), 0);
+
   expectUGateParams(1.00000000000000, 1.00000000000000, 0);
 }
 
-// U(1,2,3)->U(4,5,6) should merge into
-// U(0.154763313125030, 1.00116934013043, -5.77770904175559)
+/**
+ * @brief Test: U(1,2,3)->U(4,5,6) should merge into
+ *        U(0.154763313125030, 1.00116934013043, -5.77770904175559)
+ */
 TEST_F(QCOQuaternionMergeTest, numericalAccuracyUU) {
   ASSERT_TRUE(testGateMerge({{UOp::getOperationName(), {1., 2., 3.}},
                              {UOp::getOperationName(), {4., 5., 6.}}})
                   .succeeded());
   EXPECT_EQ(countOps<UOp>(), 1);
+
   expectUGateParams(0.154763313125030, 1.00116934013043, -5.77770904175559);
 }
