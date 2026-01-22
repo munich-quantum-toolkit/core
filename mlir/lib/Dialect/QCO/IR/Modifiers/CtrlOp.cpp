@@ -165,7 +165,9 @@ Value CtrlOp::getInputQubit(const size_t i) {
   llvm::reportFatalUsageError("Invalid qubit index");
 }
 
-ValueRange CtrlOp::getInputQubits() {
+std::invoke_result_t<decltype(llvm::concat<Value, ValueRange, ValueRange>),
+                     ValueRange, ValueRange>
+CtrlOp::getInputQubits() {
   // TODO: needs to materialize into internal storage; I wasn't able to find a
   // way to convert concat_range -> ValueRange; however: operations cannot
   // define new data members
@@ -184,7 +186,9 @@ Value CtrlOp::getOutputQubit(const size_t i) {
   llvm::reportFatalUsageError("Invalid qubit index");
 }
 
-ValueRange CtrlOp::getOutputQubits() {
+std::invoke_result_t<decltype(llvm::concat<Value, ValueRange, ValueRange>),
+                     ValueRange, ValueRange>
+CtrlOp::getOutputQubits() {
   // TODO: needs to materialize into internal storage; I wasn't able to find a
   // way to convert concat_range -> ValueRange; however: operations cannot
   // define new data members

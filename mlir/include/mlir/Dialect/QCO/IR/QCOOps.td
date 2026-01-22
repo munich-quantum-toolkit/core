@@ -1115,9 +1115,9 @@ def CtrlOp : QCOOp<"ctrl", traits =
         size_t getNumTargets();
         size_t getNumControls();
         Value getInputQubit(size_t i);
-        ValueRange getInputQubits();
+        [[nodiscard]] std::invoke_result_t<decltype(llvm::concat<Value, ValueRange, ValueRange>), ValueRange, ValueRange> getInputQubits();
         Value getOutputQubit(size_t i);
-        ValueRange getOutputQubits();
+        [[nodiscard]] std::invoke_result_t<decltype(llvm::concat<Value, ValueRange, ValueRange>), ValueRange, ValueRange> getOutputQubits();
         Value getInputTarget(size_t i);
         Value getOutputTarget(size_t i);
         Value getInputControl(size_t i);
