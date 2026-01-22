@@ -17,7 +17,6 @@ target_link_libraries(
           MLIRIR
           MLIRPass # for PassManager
           MLIRSupport
-          LLVMSupport
-)
+          LLVMSupport)
 
 gtest_discover_tests(mqt-core-mlir-dialect-qco-transforms-test)
