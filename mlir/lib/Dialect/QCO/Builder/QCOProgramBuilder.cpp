@@ -12,6 +12,7 @@
 
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/Utils/Utils.h"
+#include "mlir/IR/BuiltinTypes.h"
 
 #include <cstddef>
 #include <cstdint>
@@ -23,6 +24,7 @@
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
+#include <mlir/Dialect/Tensor/IR/Tensor.h>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/Location.h>
@@ -135,6 +137,7 @@ void QCOProgramBuilder::validateQubitValue(Value qubit, Region* region) const {
   auto qubits = validQubits.lookup(region);
 
   if (qubits.empty() || !qubits.contains(qubit)) {
+    qubit.print(llvm::outs());
     llvm::errs() << "Attempting to use an invalid qubit SSA value. "
                  << "The value may have been consumed by a previous operation "
                  << "or was never created through this builder.\n";
@@ -616,6 +619,62 @@ QCOProgramBuilder& QCOProgramBuilder::dealloc(Value qubit) {
 }
 
 //===----------------------------------------------------------------------===//
+// Tensor operations
+//===----------------------------------------------------------------------===//
+
+Value QCOProgramBuilder::tensorFromElements(ValueRange elements) {
+  checkFinalized();
+  auto const qcoType = qco::QubitType::get(ctx);
+  const auto tensorType =
+      RankedTensorType::get({static_cast<int64_t>(elements.size())}, qcoType);
+  // Create the FromElements operation
+  auto fromElements =
+      tensor::FromElementsOp::create(*this, tensorType, elements);
+  return fromElements.getResult();
+}
+
+Value QCOProgramBuilder::tensorExtract(
+    Value tensor, const std::variant<int64_t, Value>& index) {
+  checkFinalized();
+
+  auto const qcoType = qco::QubitType::get(ctx);
+  const auto indexValue = utils::variantToValue(*this, getLoc(), index);
+  auto extractOp =
+      tensor::ExtractOp::create(*this, qcoType, tensor, indexValue);
+  auto* const extractParentRegion = extractOp->getParentRegion();
+  if (auto scfFor = tensor.getDefiningOp<scf::ForOp>()) {
+    for (auto arg : scfFor.getInitArgs()) {
+      if (llvm::isa<TensorType>(arg.getType())) {
+        auto fromTensorOp = arg.getDefiningOp<tensor::FromElementsOp>();
+        int64_t val = 0;
+        if (std::holds_alternative<int64_t>(index)) {
+          val = std::get<int64_t>(index);
+        } else {
+          auto constantOp =
+              std::get<Value>(index).getDefiningOp<arith::ConstantOp>();
+          val = dyn_cast<IntegerAttr>(constantOp.getValue()).getInt();
+        }
+        updateQubitTracking(fromTensorOp.getElements()[val],
+                            extractOp.getResult(),
+                            extractOp->getParentRegion());
+      }
+    }
+  }
+  if (!llvm::isa<func::FuncOp>(extractParentRegion->getParentOp())) {
+    validQubits[extractOp->getParentRegion()].insert(extractOp);
+  }
+
+  return extractOp.getResult();
+}
+
+Value QCOProgramBuilder::tensorInsert(
+    Value element, Value tensor, const std::variant<int64_t, Value>& index) {
+  checkFinalized();
+  const auto indexValue = utils::variantToValue(*this, getLoc(), index);
+  auto insertOp = tensor::InsertOp::create(*this, element, tensor, indexValue);
+  return insertOp.getResult();
+}
+//===----------------------------------------------------------------------===//
 // SCF operations
 //===----------------------------------------------------------------------===//
 
@@ -653,7 +712,10 @@ ValueRange QCOProgramBuilder::scfFor(
   // Update the qubit tracking
   for (const auto& [initArg, result] :
        llvm::zip_equal(initArgs, forOp.getResults())) {
-    updateQubitTracking(initArg, result, forOp->getParentRegion());
+    if (!llvm::isa<TensorType>(initArg.getType())) {
+
+      updateQubitTracking(initArg, result, forOp->getParentRegion());
+    }
   }
 
   return forOp->getResults();

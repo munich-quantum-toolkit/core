@@ -1030,6 +1030,17 @@ public:
   QCOProgramBuilder& dealloc(Value qubit);
 
   //===--------------------------------------------------------------------===//
+  // Tensor operations
+  //===--------------------------------------------------------------------===//
+
+  Value tensorFromElements(ValueRange elements);
+
+  Value tensorExtract(Value tensor, const std::variant<int64_t, Value>& index);
+
+  Value tensorInsert(Value element, Value tensor,
+                     const std::variant<int64_t, Value>& index);
+
+  //===--------------------------------------------------------------------===//
   // SCF operations
   //===--------------------------------------------------------------------===//
 
