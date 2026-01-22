@@ -11,13 +11,17 @@
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/Utils/Utils.h"
 
+#include <Eigen/Core>
 #include <cmath>
+#include <complex>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OperationSupport.h>
 #include <mlir/IR/PatternMatch.h>
 #include <mlir/Support/LogicalResult.h>
+#include <numbers>
+#include <optional>
 #include <variant>
 
 using namespace mlir;
@@ -71,16 +75,38 @@ struct MergeSubsequentXXPlusYY final : OpRewritePattern<XXPlusYYOp> {
 
 } // namespace
 
-void XXPlusYYOp::build(OpBuilder& builder, OperationState& state,
+void XXPlusYYOp::build(OpBuilder& odsBuilder, OperationState& odsState,
                        Value qubit0In, Value qubit1In,
                        const std::variant<double, Value>& theta,
                        const std::variant<double, Value>& beta) {
-  auto thetaOperand = variantToValue(builder, state.location, theta);
-  auto betaOperand = variantToValue(builder, state.location, beta);
-  build(builder, state, qubit0In, qubit1In, thetaOperand, betaOperand);
+  const auto thetaOperand =
+      variantToValue(odsBuilder, odsState.location, theta);
+  const auto betaOperand = variantToValue(odsBuilder, odsState.location, beta);
+  build(odsBuilder, odsState, qubit0In, qubit1In, thetaOperand, betaOperand);
 }
 
 void XXPlusYYOp::getCanonicalizationPatterns(RewritePatternSet& results,
                                              MLIRContext* context) {
   results.add<MergeSubsequentXXPlusYY>(context);
+}
+
+std::optional<Eigen::Matrix4cd> XXPlusYYOp::getUnitaryMatrix() {
+  using namespace std::complex_literals;
+
+  const auto theta = valueToDouble(getTheta());
+  const auto beta = valueToDouble(getBeta());
+  if (!theta || !beta) {
+    return std::nullopt;
+  }
+
+  const auto m0 = 0.0 + 0i;
+  const auto m1 = 1.0 + 0i;
+  const auto mc = std::cos(*theta / 2.0) + 0i;
+  const auto s = std::sin(*theta / 2.0);
+  const auto msp = std::polar(s, *beta - (std::numbers::pi / 2));
+  const auto msm = std::polar(s, -*beta - (std::numbers::pi / 2));
+  return Eigen::Matrix4cd{{m1, m0, m0, m0},  // row 0
+                          {m0, mc, msm, m0}, // row 1
+                          {m0, msp, mc, m0}, // row 2
+                          {m0, m0, m0, m1}}; // row 3
 }

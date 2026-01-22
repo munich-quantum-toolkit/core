@@ -11,6 +11,7 @@
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QCO/QCOUtils.h"
 
+#include <Eigen/Core>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OperationSupport.h>
 #include <mlir/IR/PatternMatch.h>
@@ -38,4 +39,11 @@ struct RemoveSubsequentSWAP final : OpRewritePattern<SWAPOp> {
 void SWAPOp::getCanonicalizationPatterns(RewritePatternSet& results,
                                          MLIRContext* context) {
   results.add<RemoveSubsequentSWAP>(context);
+}
+
+Eigen::Matrix4cd SWAPOp::getUnitaryMatrix() {
+  return Eigen::Matrix4cd{{1, 0, 0, 0},  // row 0
+                          {0, 0, 1, 0},  // row 1
+                          {0, 1, 0, 0},  // row 2
+                          {0, 0, 0, 1}}; // row 3
 }

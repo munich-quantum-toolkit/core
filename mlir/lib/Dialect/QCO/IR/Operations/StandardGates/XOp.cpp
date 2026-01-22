@@ -11,6 +11,7 @@
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QCO/QCOUtils.h"
 
+#include <Eigen/Core>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OperationSupport.h>
 #include <mlir/IR/PatternMatch.h>
@@ -38,4 +39,8 @@ struct RemoveSubsequentX final : OpRewritePattern<XOp> {
 void XOp::getCanonicalizationPatterns(RewritePatternSet& results,
                                       MLIRContext* context) {
   results.add<RemoveSubsequentX>(context);
+}
+
+Eigen::Matrix2cd XOp::getUnitaryMatrix() {
+  return Eigen::Matrix2cd{{0, 1}, {1, 0}};
 }

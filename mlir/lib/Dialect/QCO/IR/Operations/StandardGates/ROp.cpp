@@ -11,13 +11,16 @@
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/Utils/Utils.h"
 
+#include <Eigen/Core>
 #include <cmath>
+#include <complex>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OperationSupport.h>
 #include <mlir/IR/PatternMatch.h>
 #include <mlir/Support/LogicalResult.h>
 #include <numbers>
+#include <optional>
 #include <variant>
 
 using namespace mlir;
@@ -70,15 +73,30 @@ struct ReplaceRWithRY final : OpRewritePattern<ROp> {
 
 } // namespace
 
-void ROp::build(OpBuilder& builder, OperationState& state, Value qubitIn,
+void ROp::build(OpBuilder& odsBuilder, OperationState& odsState, Value qubitIn,
                 const std::variant<double, Value>& theta,
                 const std::variant<double, Value>& phi) {
-  auto thetaOperand = variantToValue(builder, state.location, theta);
-  auto phiOperand = variantToValue(builder, state.location, phi);
-  build(builder, state, qubitIn, thetaOperand, phiOperand);
+  const auto thetaOperand =
+      variantToValue(odsBuilder, odsState.location, theta);
+  const auto phiOperand = variantToValue(odsBuilder, odsState.location, phi);
+  build(odsBuilder, odsState, qubitIn, thetaOperand, phiOperand);
 }
 
 void ROp::getCanonicalizationPatterns(RewritePatternSet& results,
                                       MLIRContext* context) {
   results.add<ReplaceRWithRX, ReplaceRWithRY>(context);
+}
+
+std::optional<Eigen::Matrix2cd> ROp::getUnitaryMatrix() {
+  const auto theta = valueToDouble(getTheta());
+  const auto phi = valueToDouble(getPhi());
+  if (!theta || !phi) {
+    return std::nullopt;
+  }
+
+  const auto thetaSin = std::sin(*theta / 2.0);
+  const auto m01 = std::polar(thetaSin, -*phi - (std::numbers::pi / 2));
+  const auto m10 = std::polar(thetaSin, *phi - (std::numbers::pi / 2));
+  const std::complex<double> thetaCos = std::cos(*theta / 2.0);
+  return Eigen::Matrix2cd{{thetaCos, m01}, {m10, thetaCos}};
 }

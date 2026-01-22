@@ -12,7 +12,6 @@
 
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/Utils/Utils.h"
-#include "mlir/IR/BuiltinTypes.h"
 
 #include <cstddef>
 #include <cstdint>
@@ -27,6 +26,7 @@
 #include <mlir/Dialect/Tensor/IR/Tensor.h>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/BuiltinOps.h>
+#include <mlir/IR/BuiltinTypes.h>
 #include <mlir/IR/Location.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OwningOpRef.h>
@@ -36,6 +36,8 @@
 #include <string>
 #include <utility>
 #include <variant>
+
+using namespace mlir::utils;
 
 namespace mlir::qco {
 
@@ -215,10 +217,11 @@ Value QCOProgramBuilder::reset(Value qubit) {
   Value QCOProgramBuilder::c##OP_NAME(                                         \
       const std::variant<double, Value>&(PARAM), Value control) {              \
     checkFinalized();                                                          \
+    auto param = variantToValue(*this, getLoc(), PARAM);                       \
     const auto controlsOut =                                                   \
         ctrl(control, {},                                                      \
              [&](ValueRange /*targets*/) -> llvm::SmallVector<Value> {         \
-               OP_NAME(PARAM);                                                 \
+               OP_NAME(param);                                                 \
                return {};                                                      \
              })                                                                \
             .first;                                                            \
@@ -227,10 +230,11 @@ Value QCOProgramBuilder::reset(Value qubit) {
   ValueRange QCOProgramBuilder::mc##OP_NAME(                                   \
       const std::variant<double, Value>&(PARAM), ValueRange controls) {        \
     checkFinalized();                                                          \
+    auto param = variantToValue(*this, getLoc(), PARAM);                       \
     const auto controlsOut =                                                   \
         ctrl(controls, {},                                                     \
              [&](ValueRange /*targets*/) -> llvm::SmallVector<Value> {         \
-               OP_NAME(PARAM);                                                 \
+               OP_NAME(param);                                                 \
                return {};                                                      \
              })                                                                \
             .first;                                                            \
@@ -300,9 +304,10 @@ DEFINE_ONE_TARGET_ZERO_PARAMETER(SXdgOp, sxdg)
       const std::variant<double, Value>&(PARAM), Value control,                \
       Value target) {                                                          \
     checkFinalized();                                                          \
+    auto param = variantToValue(*this, getLoc(), PARAM);                       \
     const auto [controlsOut, targetsOut] = ctrl(                               \
         control, target, [&](ValueRange targets) -> llvm::SmallVector<Value> { \
-          return {OP_NAME(PARAM, targets[0])};                                 \
+          return {OP_NAME(param, targets[0])};                                 \
         });                                                                    \
     return {controlsOut[0], targetsOut[0]};                                    \
   }                                                                            \
@@ -310,10 +315,11 @@ DEFINE_ONE_TARGET_ZERO_PARAMETER(SXdgOp, sxdg)
       const std::variant<double, Value>&(PARAM), ValueRange controls,          \
       Value target) {                                                          \
     checkFinalized();                                                          \
+    auto param = variantToValue(*this, getLoc(), PARAM);                       \
     const auto [controlsOut, targetsOut] =                                     \
         ctrl(controls, target,                                                 \
              [&](ValueRange targets) -> llvm::SmallVector<Value> {             \
-               return {OP_NAME(PARAM, targets[0])};                            \
+               return {OP_NAME(param, targets[0])};                            \
              });                                                               \
     return {controlsOut, targetsOut[0]};                                       \
   }
@@ -342,9 +348,11 @@ DEFINE_ONE_TARGET_ONE_PARAMETER(POp, p, phi)
       const std::variant<double, Value>&(PARAM2), Value control,               \
       Value target) {                                                          \
     checkFinalized();                                                          \
+    auto param1 = variantToValue(*this, getLoc(), PARAM1);                     \
+    auto param2 = variantToValue(*this, getLoc(), PARAM2);                     \
     const auto [controlsOut, targetsOut] = ctrl(                               \
         control, target, [&](ValueRange targets) -> llvm::SmallVector<Value> { \
-          return {OP_NAME(PARAM1, PARAM2, targets[0])};                        \
+          return {OP_NAME(param1, param2, targets[0])};                        \
         });                                                                    \
     return {controlsOut[0], targetsOut[0]};                                    \
   }                                                                            \
@@ -353,10 +361,12 @@ DEFINE_ONE_TARGET_ONE_PARAMETER(POp, p, phi)
       const std::variant<double, Value>&(PARAM2), ValueRange controls,         \
       Value target) {                                                          \
     checkFinalized();                                                          \
+    auto param1 = variantToValue(*this, getLoc(), PARAM1);                     \
+    auto param2 = variantToValue(*this, getLoc(), PARAM2);                     \
     const auto [controlsOut, targetsOut] =                                     \
         ctrl(controls, target,                                                 \
              [&](ValueRange targets) -> llvm::SmallVector<Value> {             \
-               return {OP_NAME(PARAM1, PARAM2, targets[0])};                   \
+               return {OP_NAME(param1, param2, targets[0])};                   \
              });                                                               \
     return {controlsOut, targetsOut[0]};                                       \
   }
@@ -386,9 +396,12 @@ DEFINE_ONE_TARGET_TWO_PARAMETER(U2Op, u2, phi, lambda)
       const std::variant<double, Value>&(PARAM3), Value control,               \
       Value target) {                                                          \
     checkFinalized();                                                          \
+    auto param1 = variantToValue(*this, getLoc(), PARAM1);                     \
+    auto param2 = variantToValue(*this, getLoc(), PARAM2);                     \
+    auto param3 = variantToValue(*this, getLoc(), PARAM3);                     \
     const auto [controlsOut, targetsOut] = ctrl(                               \
         control, target, [&](ValueRange targets) -> llvm::SmallVector<Value> { \
-          return {OP_NAME(PARAM1, PARAM2, PARAM3, targets[0])};                \
+          return {OP_NAME(param1, param2, param3, targets[0])};                \
         });                                                                    \
     return {controlsOut[0], targetsOut[0]};                                    \
   }                                                                            \
@@ -398,10 +411,13 @@ DEFINE_ONE_TARGET_TWO_PARAMETER(U2Op, u2, phi, lambda)
       const std::variant<double, Value>&(PARAM3), ValueRange controls,         \
       Value target) {                                                          \
     checkFinalized();                                                          \
+    auto param1 = variantToValue(*this, getLoc(), PARAM1);                     \
+    auto param2 = variantToValue(*this, getLoc(), PARAM2);                     \
+    auto param3 = variantToValue(*this, getLoc(), PARAM3);                     \
     const auto [controlsOut, targetsOut] =                                     \
         ctrl(controls, target,                                                 \
              [&](ValueRange targets) -> llvm::SmallVector<Value> {             \
-               return {OP_NAME(PARAM1, PARAM2, PARAM3, targets[0])};           \
+               return {OP_NAME(param1, param2, param3, targets[0])};           \
              });                                                               \
     return {controlsOut, targetsOut[0]};                                       \
   }
@@ -471,10 +487,11 @@ DEFINE_TWO_TARGET_ZERO_PARAMETER(ECROp, ecr)
       const std::variant<double, Value>&(PARAM), Value control, Value qubit0,  \
       Value qubit1) {                                                          \
     checkFinalized();                                                          \
+    auto param = variantToValue(*this, getLoc(), PARAM);                       \
     const auto [controlsOut, targetsOut] =                                     \
         ctrl(control, {qubit0, qubit1},                                        \
              [&](ValueRange targets) -> llvm::SmallVector<Value> {             \
-               auto [q0, q1] = OP_NAME(PARAM, targets[0], targets[1]);         \
+               auto [q0, q1] = OP_NAME(param, targets[0], targets[1]);         \
                return {q0, q1};                                                \
              });                                                               \
     return {controlsOut[0], {targetsOut[0], targetsOut[1]}};                   \
@@ -484,10 +501,11 @@ DEFINE_TWO_TARGET_ZERO_PARAMETER(ECROp, ecr)
           const std::variant<double, Value>&(PARAM), ValueRange controls,      \
           Value qubit0, Value qubit1) {                                        \
     checkFinalized();                                                          \
+    auto param = variantToValue(*this, getLoc(), PARAM);                       \
     const auto [controlsOut, targetsOut] =                                     \
         ctrl(controls, {qubit0, qubit1},                                       \
              [&](ValueRange targets) -> llvm::SmallVector<Value> {             \
-               auto [q0, q1] = OP_NAME(PARAM, targets[0], targets[1]);         \
+               auto [q0, q1] = OP_NAME(param, targets[0], targets[1]);         \
                return {q0, q1};                                                \
              });                                                               \
     return {controlsOut, {targetsOut[0], targetsOut[1]}};                      \
@@ -520,11 +538,13 @@ DEFINE_TWO_TARGET_ONE_PARAMETER(RZZOp, rzz, theta)
       const std::variant<double, Value>&(PARAM2), Value control, Value qubit0, \
       Value qubit1) {                                                          \
     checkFinalized();                                                          \
+    auto param1 = variantToValue(*this, getLoc(), PARAM1);                     \
+    auto param2 = variantToValue(*this, getLoc(), PARAM2);                     \
     const auto [controlsOut, targetsOut] =                                     \
         ctrl(control, {qubit0, qubit1},                                        \
              [&](ValueRange targets) -> llvm::SmallVector<Value> {             \
                auto [q0, q1] =                                                 \
-                   OP_NAME(PARAM1, PARAM2, targets[0], targets[1]);            \
+                   OP_NAME(param1, param2, targets[0], targets[1]);            \
                return {q0, q1};                                                \
              });                                                               \
     return {controlsOut[0], {targetsOut[0], targetsOut[1]}};                   \
@@ -535,11 +555,13 @@ DEFINE_TWO_TARGET_ONE_PARAMETER(RZZOp, rzz, theta)
           const std::variant<double, Value>&(PARAM2), ValueRange controls,     \
           Value qubit0, Value qubit1) {                                        \
     checkFinalized();                                                          \
+    auto param1 = variantToValue(*this, getLoc(), PARAM1);                     \
+    auto param2 = variantToValue(*this, getLoc(), PARAM2);                     \
     const auto [controlsOut, targetsOut] =                                     \
         ctrl(controls, {qubit0, qubit1},                                       \
              [&](ValueRange targets) -> llvm::SmallVector<Value> {             \
                auto [q0, q1] =                                                 \
-                   OP_NAME(PARAM1, PARAM2, targets[0], targets[1]);            \
+                   OP_NAME(param1, param2, targets[0], targets[1]);            \
                return {q0, q1};                                                \
              });                                                               \
     return {controlsOut, {targetsOut[0], targetsOut[1]}};                      \

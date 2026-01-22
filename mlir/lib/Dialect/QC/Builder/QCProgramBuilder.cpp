@@ -34,6 +34,8 @@
 #include <utility>
 #include <variant>
 
+using namespace mlir::utils;
+
 namespace mlir::qc {
 
 QCProgramBuilder::QCProgramBuilder(MLIRContext* context)
@@ -171,7 +173,8 @@ QCProgramBuilder& QCProgramBuilder::reset(Value qubit) {
   QCProgramBuilder& QCProgramBuilder::mc##OP_NAME(                             \
       const std::variant<double, Value>&(PARAM), ValueRange controls) {        \
     checkFinalized();                                                          \
-    CtrlOp::create(*this, controls, [&] { OP_CLASS::create(*this, PARAM); });  \
+    auto param = variantToValue(*this, getLoc(), PARAM);                       \
+    CtrlOp::create(*this, controls, [&] { OP_CLASS::create(*this, param); });  \
     return *this;                                                              \
   }
 
@@ -232,8 +235,9 @@ DEFINE_ONE_TARGET_ZERO_PARAMETER(SXdgOp, sxdg)
       const std::variant<double, Value>&(PARAM), ValueRange controls,          \
       Value target) {                                                          \
     checkFinalized();                                                          \
+    auto param = variantToValue(*this, getLoc(), PARAM);                       \
     CtrlOp::create(*this, controls,                                            \
-                   [&] { OP_CLASS::create(*this, target, PARAM); });           \
+                   [&] { OP_CLASS::create(*this, target, param); });           \
     return *this;                                                              \
   }
 
@@ -266,8 +270,10 @@ DEFINE_ONE_TARGET_ONE_PARAMETER(POp, p, theta)
       const std::variant<double, Value>&(PARAM2), ValueRange controls,         \
       Value target) {                                                          \
     checkFinalized();                                                          \
+    auto param1 = variantToValue(*this, getLoc(), PARAM1);                     \
+    auto param2 = variantToValue(*this, getLoc(), PARAM2);                     \
     CtrlOp::create(*this, controls,                                            \
-                   [&] { OP_CLASS::create(*this, target, PARAM1, PARAM2); });  \
+                   [&] { OP_CLASS::create(*this, target, param1, param2); });  \
     return *this;                                                              \
   }
 
@@ -302,8 +308,11 @@ DEFINE_ONE_TARGET_TWO_PARAMETER(U2Op, u2, phi, lambda)
       const std::variant<double, Value>&(PARAM3), ValueRange controls,         \
       Value target) {                                                          \
     checkFinalized();                                                          \
+    auto param1 = variantToValue(*this, getLoc(), PARAM1);                     \
+    auto param2 = variantToValue(*this, getLoc(), PARAM2);                     \
+    auto param3 = variantToValue(*this, getLoc(), PARAM3);                     \
     CtrlOp::create(*this, controls, [&] {                                      \
-      OP_CLASS::create(*this, target, PARAM1, PARAM2, PARAM3);                 \
+      OP_CLASS::create(*this, target, param1, param2, param3);                 \
     });                                                                        \
     return *this;                                                              \
   }
@@ -359,8 +368,9 @@ DEFINE_TWO_TARGET_ZERO_PARAMETER(ECROp, ecr)
       const std::variant<double, Value>&(PARAM), ValueRange controls,          \
       Value qubit0, Value qubit1) {                                            \
     checkFinalized();                                                          \
+    auto param = variantToValue(*this, getLoc(), PARAM);                       \
     CtrlOp::create(*this, controls,                                            \
-                   [&] { OP_CLASS::create(*this, qubit0, qubit1, PARAM); });   \
+                   [&] { OP_CLASS::create(*this, qubit0, qubit1, param); });   \
     return *this;                                                              \
   }
 
@@ -394,8 +404,10 @@ DEFINE_TWO_TARGET_ONE_PARAMETER(RZZOp, rzz, theta)
       const std::variant<double, Value>&(PARAM2), ValueRange controls,         \
       Value qubit0, Value qubit1) {                                            \
     checkFinalized();                                                          \
+    auto param1 = variantToValue(*this, getLoc(), PARAM1);                     \
+    auto param2 = variantToValue(*this, getLoc(), PARAM2);                     \
     CtrlOp::create(*this, controls, [&] {                                      \
-      OP_CLASS::create(*this, qubit0, qubit1, PARAM1, PARAM2);                 \
+      OP_CLASS::create(*this, qubit0, qubit1, param1, param2);                 \
     });                                                                        \
     return *this;                                                              \
   }

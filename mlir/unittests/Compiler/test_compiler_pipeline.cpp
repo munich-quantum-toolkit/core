@@ -154,6 +154,17 @@ static bool areOperationsEquivalent(Operation* lhs, Operation* rhs,
     }
   }
 
+  // Check LLVM::CallOp
+  if (auto lhsCall = llvm::dyn_cast<LLVM::CallOp>(lhs)) {
+    auto rhsCall = llvm::dyn_cast<LLVM::CallOp>(rhs);
+    if (!rhsCall) {
+      return false;
+    }
+    if (lhsCall.getCallee() != rhsCall.getCallee()) {
+      return false;
+    }
+  }
+
   // Check number of operands and results
   if (lhs->getNumOperands() != rhs->getNumOperands() ||
       lhs->getNumResults() != rhs->getNumResults() ||

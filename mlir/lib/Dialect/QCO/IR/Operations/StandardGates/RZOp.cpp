@@ -12,11 +12,14 @@
 #include "mlir/Dialect/QCO/QCOUtils.h"
 #include "mlir/Dialect/Utils/Utils.h"
 
+#include <Eigen/Core>
+#include <complex>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OperationSupport.h>
 #include <mlir/IR/PatternMatch.h>
 #include <mlir/Support/LogicalResult.h>
+#include <optional>
 #include <variant>
 
 using namespace mlir;
@@ -52,13 +55,26 @@ struct RemoveTrivialRZ final : OpRewritePattern<RZOp> {
 
 } // namespace
 
-void RZOp::build(OpBuilder& builder, OperationState& state, Value qubitIn,
+void RZOp::build(OpBuilder& odsBuilder, OperationState& odsState, Value qubitIn,
                  const std::variant<double, Value>& theta) {
-  auto thetaOperand = variantToValue(builder, state.location, theta);
-  build(builder, state, qubitIn, thetaOperand);
+  const auto thetaOperand =
+      variantToValue(odsBuilder, odsState.location, theta);
+  build(odsBuilder, odsState, qubitIn, thetaOperand);
 }
 
 void RZOp::getCanonicalizationPatterns(RewritePatternSet& results,
                                        MLIRContext* context) {
   results.add<MergeSubsequentRZ, RemoveTrivialRZ>(context);
+}
+
+std::optional<Eigen::Matrix2cd> RZOp::getUnitaryMatrix() {
+  using namespace std::complex_literals;
+
+  if (const auto theta = valueToDouble(getTheta())) {
+    const auto m00 = std::polar(1.0, -*theta / 2.0);
+    const auto m01 = 0i;
+    const auto m11 = std::polar(1.0, *theta / 2.0);
+    return Eigen::Matrix2cd{{m00, m01}, {m01, m11}};
+  }
+  return std::nullopt;
 }

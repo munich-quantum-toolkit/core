@@ -10,7 +10,9 @@
 
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 
+#include <cassert>
 #include <cstddef>
+#include <cstdint>
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/STLFunctionalExtras.h>
 #include <llvm/ADT/SmallVector.h>
@@ -24,6 +26,7 @@
 #include <mlir/IR/PatternMatch.h>
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/LogicalResult.h>
+#include <optional>
 
 using namespace mlir;
 using namespace mlir::qco;
@@ -362,4 +365,31 @@ void CtrlOp::getCanonicalizationPatterns(RewritePatternSet& results,
   results
       .add<MergeNestedCtrl, RemoveTrivialCtrl, CtrlInlineGPhase, CtrlInlineId>(
           context);
+}
+
+std::optional<Eigen::MatrixXcd> CtrlOp::getUnitaryMatrix() {
+  auto&& bodyUnitary = getBodyUnitary();
+  if (!bodyUnitary) {
+    return std::nullopt;
+  }
+  auto&& targetMatrix = bodyUnitary.getUnitaryMatrix<Eigen::MatrixXcd>();
+  if (!targetMatrix) {
+    return std::nullopt;
+  }
+
+  // get dimensions of target matrix
+  const auto targetDim = targetMatrix->cols();
+  assert(targetMatrix->cols() == targetMatrix->rows());
+
+  // define dimensions and type of output matrix
+  assert(getNumControls() < sizeof(unsigned long long) * 8);
+  const auto dim = static_cast<int64_t>((1ULL << getNumControls()) * targetDim);
+
+  // initialize result with identity
+  Eigen::MatrixXcd matrix = Eigen::MatrixXcd::Identity(dim, dim);
+
+  // apply target matrix
+  matrix.bottomRightCorner(targetDim, targetDim) = *targetMatrix;
+
+  return matrix;
 }

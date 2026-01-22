@@ -10,6 +10,7 @@
 
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 
+#include <Eigen/Core>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OperationSupport.h>
 #include <mlir/IR/PatternMatch.h>
@@ -38,4 +39,8 @@ struct RemoveId final : OpRewritePattern<IdOp> {
 void IdOp::getCanonicalizationPatterns(RewritePatternSet& results,
                                        MLIRContext* context) {
   results.add<RemoveId>(context);
+}
+
+Eigen::Matrix2cd IdOp::getUnitaryMatrix() {
+  return Eigen::Matrix2cd{{1, 0}, {0, 1}};
 }

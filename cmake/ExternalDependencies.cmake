@@ -22,6 +22,19 @@ if(BUILD_MQT_CORE_BINDINGS)
   find_package(nanobind CONFIG REQUIRED)
 endif()
 
+if(BUILD_MQT_CORE_MLIR)
+  set(Eigen_VERSION
+      5.0.1
+      CACHE STRING "Eigen version")
+  set(Eigen_URL
+      https://gitlab.com/libeigen/eigen/-/archive/${Eigen_VERSION}/eigen-${Eigen_VERSION}.tar.gz)
+  set(EIGEN_BUILD_TESTING
+      OFF
+      CACHE INTERNAL "Disable building Eigen tests")
+  FetchContent_Declare(Eigen URL ${Eigen_URL} FIND_PACKAGE_ARGS ${Eigen_VERSION})
+  list(APPEND FETCH_PACKAGES Eigen)
+endif()
+
 set(JSON_VERSION
     3.12.0
     CACHE STRING "nlohmann_json version")
