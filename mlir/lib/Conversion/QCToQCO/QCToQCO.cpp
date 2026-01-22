@@ -1379,7 +1379,7 @@ struct ConvertQCMemRefLoadOp final
     auto const qcoType = qco::QubitType::get(rewriter.getContext());
     // Create the extract operation
     auto extractOp = tensor::ExtractOp::create(rewriter, op->getLoc(), qcoType,
-                                               tensor, {op.getIndices()});
+                                               tensor, op.getIndices());
     // Update the qubitMap
     qubitMap[op.getResult()] = extractOp.getResult();
 
@@ -1592,6 +1592,7 @@ struct ConvertQCScfForOp final : StatefulOpConversionPattern<scf::ForOp> {
     auto& qubitMap = getState().qubitMap[op->getParentRegion()];
     auto& regionMap = getState().regionMap;
     const auto& qcQubits = regionMap[op];
+    const auto qcoType = qco::QubitType::get(rewriter.getContext());
 
     SmallVector<Value> qcoQubits;
     qcoQubits.reserve(qcQubits.size());
@@ -1626,11 +1627,11 @@ struct ConvertQCScfForOp final : StatefulOpConversionPattern<scf::ForOp> {
       // from the new tensor and update the qubitmap for each value
       if (llvm::isa<MemRefType>(qcQubit.getType())) {
         // Get all the qubits that were stored in the memref register
-        for (const auto* user : qcQubit.getUsers()) {
+        const auto qcQubitUsers = llvm::to_vector(qcQubit.getUsers());
+        for (const auto* user : llvm::reverse(qcQubitUsers)) {
           if (auto storeOp = dyn_cast<memref::StoreOp>(user)) {
             // gGet the qubit
             const auto qubit = storeOp.getValueToStore();
-            auto const qcoType = qco::QubitType::get(rewriter.getContext());
 
             // Create the extract operation for each qubit from the resulting
             // tensor of the scf.for operation
