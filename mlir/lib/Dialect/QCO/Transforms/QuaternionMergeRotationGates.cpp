@@ -23,7 +23,6 @@
 #include <mlir/IR/ValueRange.h>
 #include <mlir/Support/LogicalResult.h>
 #include <mlir/Transforms/GreedyPatternRewriteDriver.h>
-#include <stdexcept>
 #include <string_view>
 #include <utility>
 
@@ -158,7 +157,7 @@ struct MergeRotationGatesPattern final
     if (type == "rz") {
       return createAxisQuaternion(angle, RotationAxis::Z, loc, rewriter);
     }
-    throw std::runtime_error("Unsupported operation type: " + type);
+    llvm_unreachable("Unsupported operation type");
   }
 
   /**
