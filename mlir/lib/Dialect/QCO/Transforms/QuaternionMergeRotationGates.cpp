@@ -243,12 +243,12 @@ struct MergeRotationGatesPattern final
 
     // U gate uses ZYZ decomposition:
     // U(alpha, beta, gamma) = Rz(alpha) -> Ry(beta) -> Rz(gamma)
-    auto qAlpha =
-        createAxisQuaternion(op.getParameter(0), RotationAxis::Z, loc, rewriter);
-    auto qBeta =
-        createAxisQuaternion(op.getParameter(1), RotationAxis::Y, loc, rewriter);
-    auto qGamma =
-        createAxisQuaternion(op.getParameter(2), RotationAxis::Z, loc, rewriter);
+    auto qAlpha = createAxisQuaternion(op.getParameter(0), RotationAxis::Z, loc,
+                                       rewriter);
+    auto qBeta = createAxisQuaternion(op.getParameter(1), RotationAxis::Y, loc,
+                                      rewriter);
+    auto qGamma = createAxisQuaternion(op.getParameter(2), RotationAxis::Z, loc,
+                                       rewriter);
 
     // qGamma * qBeta * qAlpha (multiplication in reverse order!)
     auto temp = hamiltonProduct(qGamma, qBeta, op, rewriter);
