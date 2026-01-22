@@ -342,10 +342,12 @@ protected:
     bool appendTwoQubitGate(UnitaryOpInterface nextGate) {
       auto&& firstOperand = nextGate.getInputQubit(0);
       auto&& secondOperand = nextGate.getInputQubit(1);
+      assert(firstOperand != secondOperand);
       auto firstQubitIt = // NOLINT(readability-qualified-auto)
           llvm::find(outQubits, firstOperand);
       auto secondQubitIt = // NOLINT(readability-qualified-auto)
           llvm::find(outQubits, secondOperand);
+      assert(firstQubitIt != secondQubitIt);
       if (firstQubitIt == outQubits.end() || secondQubitIt == outQubits.end()) {
         // another qubit is involved, series is finished (except there only
         // has been one qubit so far)
@@ -356,7 +358,17 @@ protected:
         }
         // TODO: this only works because parameters are at end of operands;
         // use to-be-implemented getInputQubits() instead
-        auto&& opInQubits = nextGate->getOperands();
+        auto getInputQubits =
+            [](UnitaryOpInterface op) -> llvm::SmallVector<mlir::Value, 2> {
+          if (auto&& ctrlOp = llvm::dyn_cast<CtrlOp>(*op)) {
+            auto&& range =
+                llvm::concat<mlir::Value>(ctrlOp.getTargetsIn(),
+                                          ctrlOp.getControlsIn());
+            return {range.begin(), range.end()};
+          }
+          return op->getOperands();
+        };
+        auto&& opInQubits = getInputQubits(nextGate);
         // iterator in the operation input of "old" qubit that already has
         // previous single-qubit gates in this series
         auto it2 = llvm::find(opInQubits, firstQubitIt != outQubits.end()
