@@ -284,7 +284,7 @@ struct MergeRotationGatesPattern final
         createOpQuaternionMergedAngle(op, user, rewriter);
 
     // Replace user with newUser
-    rewriter.replaceOp(user, newUser->getResults());
+    rewriter.replaceOp(user, newUser);
 
     // Erase op
     rewriter.eraseOp(op);
