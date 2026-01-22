@@ -8,12 +8,12 @@
 
 include "mlir/Pass/PassBase.td"
 
-def MergeRotationGates : Pass<"qco-merge-rotation-gates",
+def MergeRotationGates : Pass<"merge-rotation-gates",
 "mlir::ModuleOp"> {
   let summary = "Merge rotation gates using quaternion-based fusion";
   let description = [{
     Merges consecutive rotation gates of different types (rx, ry, rz, u)
-    using quaternion representation and Hamilton product.
+    using quaternion representation and the Hamilton product.
   }];
 
   let dependentDialects = ["::mlir::math::MathDialect"];

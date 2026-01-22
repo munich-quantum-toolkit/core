@@ -78,7 +78,7 @@ protected:
   }
 
   /**
-   * @brief Find the first occurance of a u-gate in the current module and get
+   * @brief Find the first occurrence of a u-gate in the current module and get
    *        the numeric value of its parameters. This assumes that parameters
    *        are constant and can be extracted.
    */

@@ -23,7 +23,6 @@
 #include <mlir/IR/ValueRange.h>
 #include <mlir/Support/LogicalResult.h>
 #include <mlir/Transforms/GreedyPatternRewriteDriver.h>
-#include <stdexcept>
 #include <string_view>
 #include <utility>
 
@@ -33,7 +32,8 @@ namespace mlir::qco {
 #include "mlir/Dialect/QCO/Transforms/Passes.h.inc"
 
 /**
- * @brief This pattern attempts to merge consecutive rotation gates.
+ * @brief Pattern that merges consecutive rotation gates using quaternion
+ * multiplication.
  */
 struct MergeRotationGatesPattern final
     : mlir::OpInterfaceRewritePattern<UnitaryOpInterface> {
@@ -47,23 +47,31 @@ struct MergeRotationGatesPattern final
     mlir::Value z;
   };
 
+  enum class RotationAxis { X, Y, Z };
+
   static constexpr std::array<std::string_view, 4> MERGEABLE_GATES = {
       "u", "rx", "ry", "rz"};
 
+  /**
+   * @brief Checks if an operation is a mergeable rotation gate (rx, ry, rz, u).
+   *
+   * @param name Name of the operation to check
+   * @return True if mergeable, false otherwise
+   */
   static bool isMergeable(std::string_view name) {
     return std::ranges::find(MERGEABLE_GATES, name) != MERGEABLE_GATES.end();
   }
 
   /**
-   * @brief Checks if two gates can and should be merged with quaternions.
+   * @brief Checks if two gates require quaternion-based merging.
    *
-   * Merging with quaternions should be used when merging gates of different
-   * types, or when merging u-gates (which require quaternion multiplication).
+   * Returns true for different gate types (e.g., RX+RY) or two U-gates.
+   * Same-axis rotations (e.g., RX+RX) use angle addition and aren't handled
+   * here.
    *
-   * @param a The first gate.
-   * @param b The second gate.
-   * @return True if the gates should be merged using quaternions, false
-   * otherwise.
+   * @param a The first gate
+   * @param b The second gate
+   * @return True if quaternion-based merging should be used, false otherwise
    */
   [[nodiscard]] static bool areQuaternionMergeable(mlir::Operation& a,
                                                    mlir::Operation& b) {
@@ -76,7 +84,23 @@ struct MergeRotationGatesPattern final
     return (aName != bName) || (aName == "u" && bName == "u");
   }
 
-  static Quaternion createAxisQuaternion(mlir::Value angle, char axis,
+  /**
+   * @brief Converts a single-axis rotation to quaternion representation.
+   *
+   * Uses half-angle formulas:
+   *   RX(a) = Q(cos(a/2), sin(a/2), 0, 0)
+   *   RY(a) = Q(cos(a/2), 0, sin(a/2), 0)
+   *   RZ(a) = Q(cos(a/2), 0, 0, sin(a/2))
+   *
+   * @see
+   * https://en.wikipedia.org/wiki/Conversion_between_quaternions_and_Euler_angles
+   * @param angle The rotation angle
+   * @param axis The rotation axis (X, Y, or Z)
+   * @param loc Location in the IR
+   * @param rewriter Pattern rewriter for creating new operations
+   * @return Quaternion representing the rotation
+   */
+  static Quaternion createAxisQuaternion(mlir::Value angle, RotationAxis axis,
                                          mlir::Location loc,
                                          mlir::PatternRewriter& rewriter) {
     auto floatType = angle.getType();
@@ -96,17 +120,23 @@ struct MergeRotationGatesPattern final
     auto sin = rewriter.create<mlir::math::SinOp>(loc, floatType, half);
 
     switch (axis) {
-    case 'x':
+    case RotationAxis::X:
       return {.w = cos, .x = sin, .y = zero, .z = zero};
-    case 'y':
+    case RotationAxis::Y:
       return {.w = cos, .x = zero, .y = sin, .z = zero};
-    case 'z':
+    case RotationAxis::Z:
       return {.w = cos, .x = zero, .y = zero, .z = sin};
-    default:
-      throw std::runtime_error("Invalid rotation axis");
     }
   }
 
+  /**
+   * @brief Converts a rotation gate (RX, RY, RZ, or U) to quaternion
+   * representation.
+   *
+   * @param op The rotation gate to convert
+   * @param rewriter Pattern rewriter for creating new operations
+   * @return Quaternion representing the rotation gate
+   */
   static Quaternion quaternionFromRotation(UnitaryOpInterface op,
                                            mlir::PatternRewriter& rewriter) {
     auto const type = op->getName().stripDialect().str();
@@ -119,17 +149,34 @@ struct MergeRotationGatesPattern final
     auto angle = op.getParameter(0);
 
     if (type == "rx") {
-      return createAxisQuaternion(angle, 'x', loc, rewriter);
+      return createAxisQuaternion(angle, RotationAxis::X, loc, rewriter);
     }
     if (type == "ry") {
-      return createAxisQuaternion(angle, 'y', loc, rewriter);
+      return createAxisQuaternion(angle, RotationAxis::Y, loc, rewriter);
     }
     if (type == "rz") {
-      return createAxisQuaternion(angle, 'z', loc, rewriter);
+      return createAxisQuaternion(angle, RotationAxis::Z, loc, rewriter);
     }
-    throw std::runtime_error("Unsupported operation type: " + type);
+    llvm_unreachable("Unsupported operation type");
   }
 
+  /**
+   * @brief Computes the Hamilton product of two quaternions (q1 * q2).
+   *
+   * For q1 = w1 + x1*i + y1*j + z1*k and q2 = w2 + x2*i + y2*j + z2*k:
+   *
+   * q1 * q2 = (w1w2 - x1x2 - y1y2 - z1z2)
+   *         + (w1x2 + x1w2 + y1z2 - z1y2) * i
+   *         + (w1y2 - x1z2 + y1w2 + z1x2) * j
+   *         + (w1z2 + x1y2 - y1x2 + z1w2) * k
+   *
+   * @see https://en.wikipedia.org/wiki/Quaternion#Hamilton_product
+   * @param q1 First quaternion
+   * @param q2 Second quaternion
+   * @param op Current operation (used for location)
+   * @param rewriter Pattern rewriter for creating arithmetic operations
+   * @return The product quaternion
+   */
   static Quaternion hamiltonProduct(Quaternion q1, Quaternion q2,
                                     UnitaryOpInterface op,
                                     mlir::PatternRewriter& rewriter) {
@@ -174,27 +221,68 @@ struct MergeRotationGatesPattern final
     return {.w = wRes, .x = xRes, .y = yRes, .z = zRes};
   }
 
+  /**
+   * @brief Converts a u-gate to quaternion representation.
+   *
+   * U(alpha, beta, gamma) uses ZYZ decomposition: RZ(alpha) -> RY(beta) ->
+   * RZ(gamma).
+   *
+   * When composing rotations, quaternion multiplication follows matrix
+   * multiplication order (right-to-left), which is the reverse of the
+   * application sequence:
+   *   Sequential application: RZ(alpha), then RY(beta), then RZ(gamma)
+   *   Quaternion product:     Qgamma * Qbeta * Qalpha
+   *
+   * @param op The u-gate operation to convert
+   * @param rewriter Pattern rewriter for creating new operations
+   * @return Quaternion representing the u-gate
+   */
   static Quaternion quaternionFromUGate(UnitaryOpInterface op,
                                         mlir::PatternRewriter& rewriter) {
     auto loc = op->getLoc();
 
     // U gate uses ZYZ decomposition:
-    // U(alpha, beta, gamma) = Rz(alpha) * Ry(beta) * Rz(gamma)
-    auto qAlpha = createAxisQuaternion(op.getParameter(0), 'z', loc, rewriter);
-    auto qBeta = createAxisQuaternion(op.getParameter(1), 'y', loc, rewriter);
-    auto qGamma = createAxisQuaternion(op.getParameter(2), 'z', loc, rewriter);
+    // U(alpha, beta, gamma) = Rz(alpha) -> Ry(beta) -> Rz(gamma)
+    auto qAlpha = createAxisQuaternion(op.getParameter(0), RotationAxis::Z, loc,
+                                       rewriter);
+    auto qBeta = createAxisQuaternion(op.getParameter(1), RotationAxis::Y, loc,
+                                      rewriter);
+    auto qGamma = createAxisQuaternion(op.getParameter(2), RotationAxis::Z, loc,
+                                       rewriter);
 
     // qGamma * qBeta * qAlpha (multiplication in reverse order!)
     auto temp = hamiltonProduct(qGamma, qBeta, op, rewriter);
     return hamiltonProduct(temp, qAlpha, op, rewriter);
   }
 
+  /**
+   * @brief Converts a quaternion to a u-gate using ZYZ Euler angle extraction.
+   *
+   * For unit quaternion q = w + x*i + y*j + z*k, extracts u-gate parameters:
+   *   alpha = atan2(z, w) - atan2(-x, y)
+   *   beta  = acos(2 * (w^2 + z^2) - 1)
+   *   gamma = atan2(z, w) + atan2(-x, y)
+   *
+   * Based on Bernardes & Viollet (2022), simplified for unit quaternions and
+   * proper ZYZ Euler angles (Chapter 3.3):
+   * https://doi.org/10.1371/journal.pone.0276302
+   *
+   * Reference implementation:
+   * https://github.com/evbernardes/quaternion_to_euler
+   * SymPy also implements this paper:
+   * https://docs.sympy.org/latest/modules/algebras.html#sympy.algebras.Quaternion.to_euler
+   *
+   * @note Floating-point errors may accumulate when merging many gates.
+   * @param q The quaternion to convert
+   * @param op The current operation (used for location and type information)
+   * @param rewriter Pattern rewriter for creating new operations
+   * @return U-gate equivalent to the quaternion rotation
+   */
   static UnitaryOpInterface
   uGateFromQuaternion(Quaternion q, UnitaryOpInterface op,
                       mlir::PatternRewriter& rewriter) {
     auto loc = op->getLoc();
 
-    // convert back to zyz euler angles
     auto floatType = op.getParameter(0).getType();
     // constant 1.0
     auto oneAttr = rewriter.getFloatAttr(floatType, 1.0);
@@ -204,7 +292,7 @@ struct MergeRotationGatesPattern final
     auto two = rewriter.create<mlir::arith::ConstantOp>(loc, twoAttr);
 
     // calculate angle beta (for y-rotation)
-    // beta = acos(2 * (w**2 + z**2)-1)
+    // beta = acos(2 * (w^2 + z^2) - 1)
     auto ww = rewriter.create<mlir::arith::MulFOp>(loc, q.w, q.w);
     auto zz = rewriter.create<mlir::arith::MulFOp>(loc, q.z, q.z);
     auto bTemp1 = rewriter.create<mlir::arith::AddFOp>(loc, ww, zz);
@@ -234,16 +322,13 @@ struct MergeRotationGatesPattern final
   /**
    * @brief Creates a u-gate by merging two rotation gates.
    *
-   * The new  u-gate is created by converting the two
-   * rotation gates into quaternions. These quaternions are then
-   * multiplied/merged together by using the hamilton product. The order of
-   * multiplication needs to be the reverse order in which the gates appear in
-   * the circuit.
+   * Converts both gates to quaternions, multiplies them using the Hamilton
+   * product (in reverse circuit order), and converts back to a u-gate.
    *
-   * @param op The first instance of the rotation gate.
-   * @param user The second instance of the rotation gate.
-   * @param rewriter The pattern rewriter.
-   * @return A new rotation gate.
+   * @param op The first rotation gate
+   * @param user The second rotation gate
+   * @param rewriter Pattern rewriter for creating the merged gate
+   * @return A u-gate representing the merged rotation
    */
   static UnitaryOpInterface
   createOpQuaternionMergedAngle(UnitaryOpInterface op, UnitaryOpInterface user,
@@ -256,11 +341,21 @@ struct MergeRotationGatesPattern final
     return newUser;
   }
 
+  /**
+   * @brief Matches and merges consecutive rotation gates on the same qubit.
+   *
+   * Merges two gates using quaternion multiplication when the first gate has
+   * exactly one use, replacing both with an equivalent u-gate.
+   *
+   * @param op The rotation gate to match
+   * @param rewriter Pattern rewriter for applying transformations
+   * @return success() if gates were merged, failure() otherwise
+   */
   mlir::LogicalResult
   matchAndRewrite(UnitaryOpInterface op,
                   mlir::PatternRewriter& rewriter) const override {
-    // QCO operations cannot contain control qubits so we dont need to check for
-    // these
+    // QCO operations cannot contain control qubits, so no need to check for
+    // them
     if (!op->hasOneUse()) {
       return mlir::failure();
     }
@@ -272,13 +367,15 @@ struct MergeRotationGatesPattern final
       return mlir::failure();
     }
     auto user = mlir::dyn_cast<UnitaryOpInterface>(userOP);
+    if (!user) {
+      return mlir::failure();
+    }
 
-    // TODO: merge createOpQuaternionMergedAngle into here?
     UnitaryOpInterface newUser =
         createOpQuaternionMergedAngle(op, user, rewriter);
 
     // Replace user with newUser
-    rewriter.replaceOp(user, newUser->getResults());
+    rewriter.replaceOp(user, newUser);
 
     // Erase op
     rewriter.eraseOp(op);
@@ -289,7 +386,7 @@ struct MergeRotationGatesPattern final
 /**
  * @brief Populates the given pattern set with the `MergeRotationGatesPattern`.
  *
- * @param patterns The pattern set to populate.
+ * @param patterns The pattern set to populate
  */
 static void
 populateMergeRotationGatesPatterns(mlir::RewritePatternSet& patterns) {
@@ -297,8 +394,8 @@ populateMergeRotationGatesPatterns(mlir::RewritePatternSet& patterns) {
 }
 
 /**
- * @brief This pattern attempts to merge consecutive rotation gates by using
- * quaternions
+ * @brief Pass that merges consecutive rotation gates using quaternion
+ * multiplication.
  */
 struct MergeRotationGates final
     : impl::MergeRotationGatesBase<MergeRotationGates> {
