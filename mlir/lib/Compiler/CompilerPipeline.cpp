@@ -63,6 +63,7 @@ void QuantumCompilerPipeline::addCleanupPasses(PassManager& pm) {
   // Always run canonicalization and dead value removal
   pm.addPass(createCanonicalizerPass());
   pm.addPass(createRemoveDeadValuesPass());
+  pm.addPass(createSymbolDCEPass());
 }
 
 void QuantumCompilerPipeline::configurePassManager(PassManager& pm) const {
@@ -162,6 +163,11 @@ QuantumCompilerPipeline::runPipeline(ModuleOp module,
 
   // Stage 5: Optimization passes
   // TODO: Add optimization passes
+  pm.addPass(mlir::qco::createQuantumIPO());
+  if (failed(pm.run(module))) {
+    return failure();
+  }
+  pm.clear();
 
   // quaternion gate merging pass
   if (config_.mergeRotationGates) {

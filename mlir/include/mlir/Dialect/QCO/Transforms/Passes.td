@@ -18,3 +18,12 @@ def MergeRotationGates : Pass<"qco-merge-rotation-gates",
 
   let dependentDialects = ["::mlir::math::MathDialect"];
 }
+
+def QuantumIPO : Pass<"quantum-ipo", "mlir::ModuleOp"> {
+    let summary = "Quantum Interprocedural Optimization Pass";
+    let description = [{
+        Performs interprocedural optimizations on quantum functions.
+    }];
+
+    let dependentDialects = ["::mlir::func::FuncDialect", "::mlir::arith::ArithDialect"];
+}
