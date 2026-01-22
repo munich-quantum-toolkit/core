@@ -17,7 +17,6 @@ add_mlir_library(
   MLIRQCDialect
   MLIRQCODialect
   MLIRArithDialect
-  MLIRMemRefDialect
   MLIRFuncDialect
   MLIRTransforms
   MLIRFuncTransforms
