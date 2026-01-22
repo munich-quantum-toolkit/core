@@ -513,4 +513,3 @@ TEST_F(QCOQuaternionMergeTest, numericalAccuracyUU) {
   EXPECT_EQ(countOps<UOp>(), 1);
   expectUGateParams(0.154763313125030, 1.00116934013043, -5.77770904175559);
 }
-
