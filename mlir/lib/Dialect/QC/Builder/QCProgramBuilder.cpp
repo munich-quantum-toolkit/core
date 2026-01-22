@@ -10,6 +10,7 @@
 
 #include "mlir/Dialect/QC/Builder/QCProgramBuilder.h"
 
+#include "mlir/Dialect/MemRef/IR/MemRef.h"
 #include "mlir/Dialect/QC/IR/QCDialect.h"
 #include "mlir/Dialect/Utils/Utils.h"
 
@@ -442,6 +443,29 @@ QCProgramBuilder& QCProgramBuilder::dealloc(Value qubit) {
   DeallocOp::create(*this, qubit);
 
   return *this;
+}
+
+//===----------------------------------------------------------------------===//
+// MemRef operations
+//===----------------------------------------------------------------------===//
+Value QCProgramBuilder::memrefAlloc(ValueRange elements) {
+  const auto qcType = qc::QubitType::get(ctx);
+  const auto memType =
+      MemRefType::get({static_cast<int64_t>(elements.size())}, qcType);
+  auto allocOp = memref::AllocOp::create(*this, memType);
+  for (auto it : llvm::enumerate(elements)) {
+    Value idx = arith::ConstantOp::create(
+        *this, getIndexAttr(static_cast<int64_t>(it.index())));
+    memref::StoreOp::create(*this, it.value(), allocOp, idx);
+  }
+  return allocOp.getResult();
+}
+
+Value QCProgramBuilder::memrefLoad(Value memref,
+                                   const std::variant<int64_t, Value>& index) {
+  const auto indexValue = utils::variantToValue(*this, getLoc(), index);
+  const auto loadOp = memref::LoadOp::create(*this, memref, indexValue);
+  return loadOp->getResult(0);
 }
 
 //===----------------------------------------------------------------------===//

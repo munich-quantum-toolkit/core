@@ -870,6 +870,13 @@ public:
   QCProgramBuilder& dealloc(Value qubit);
 
   //===--------------------------------------------------------------------===//
+  // MemRef operations
+  //===--------------------------------------------------------------------===//
+  Value memrefAlloc(ValueRange elements);
+
+  Value memrefLoad(Value memref, const std::variant<int64_t, Value>& index);
+
+  //===--------------------------------------------------------------------===//
   // SCF operations
   //===--------------------------------------------------------------------===//
 
