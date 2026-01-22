@@ -47,6 +47,8 @@ struct MergeRotationGatesPattern final
     mlir::Value z;
   };
 
+  enum class RotationAxis { X, Y, Z };
+
   static constexpr std::array<std::string_view, 4> MERGEABLE_GATES = {
       "u", "rx", "ry", "rz"};
 
@@ -76,7 +78,7 @@ struct MergeRotationGatesPattern final
     return (aName != bName) || (aName == "u" && bName == "u");
   }
 
-  static Quaternion createAxisQuaternion(mlir::Value angle, char axis,
+  static Quaternion createAxisQuaternion(mlir::Value angle, RotationAxis axis,
                                          mlir::Location loc,
                                          mlir::PatternRewriter& rewriter) {
     auto floatType = angle.getType();
@@ -96,14 +98,12 @@ struct MergeRotationGatesPattern final
     auto sin = rewriter.create<mlir::math::SinOp>(loc, floatType, half);
 
     switch (axis) {
-    case 'x':
+    case RotationAxis::X:
       return {.w = cos, .x = sin, .y = zero, .z = zero};
-    case 'y':
+    case RotationAxis::Y:
       return {.w = cos, .x = zero, .y = sin, .z = zero};
-    case 'z':
+    case RotationAxis::Z:
       return {.w = cos, .x = zero, .y = zero, .z = sin};
-    default:
-      throw std::runtime_error("Invalid rotation axis");
     }
   }
 
@@ -119,13 +119,13 @@ struct MergeRotationGatesPattern final
     auto angle = op.getParameter(0);
 
     if (type == "rx") {
-      return createAxisQuaternion(angle, 'x', loc, rewriter);
+      return createAxisQuaternion(angle, RotationAxis::X, loc, rewriter);
     }
     if (type == "ry") {
-      return createAxisQuaternion(angle, 'y', loc, rewriter);
+      return createAxisQuaternion(angle, RotationAxis::Y, loc, rewriter);
     }
     if (type == "rz") {
-      return createAxisQuaternion(angle, 'z', loc, rewriter);
+      return createAxisQuaternion(angle, RotationAxis::Z, loc, rewriter);
     }
     throw std::runtime_error("Unsupported operation type: " + type);
   }
@@ -180,9 +180,12 @@ struct MergeRotationGatesPattern final
 
     // U gate uses ZYZ decomposition:
     // U(alpha, beta, gamma) = Rz(alpha) * Ry(beta) * Rz(gamma)
-    auto qAlpha = createAxisQuaternion(op.getParameter(0), 'z', loc, rewriter);
-    auto qBeta = createAxisQuaternion(op.getParameter(1), 'y', loc, rewriter);
-    auto qGamma = createAxisQuaternion(op.getParameter(2), 'z', loc, rewriter);
+    auto qAlpha =
+        createAxisQuaternion(op.getParameter(0), RotationAxis::Z, loc, rewriter);
+    auto qBeta =
+        createAxisQuaternion(op.getParameter(1), RotationAxis::Y, loc, rewriter);
+    auto qGamma =
+        createAxisQuaternion(op.getParameter(2), RotationAxis::Z, loc, rewriter);
 
     // qGamma * qBeta * qAlpha (multiplication in reverse order!)
     auto temp = hamiltonProduct(qGamma, qBeta, op, rewriter);
