@@ -71,6 +71,7 @@ protected:
     runCanonicalizationPass(module.get());
     return module;
   }
+
   [[nodiscard]] OwningOpRef<ModuleOp> buildQCOIR(
       const std::function<void(qco::QCOProgramBuilder&)>& buildFunc) const {
     qco::QCOProgramBuilder builder(context.get());
@@ -360,7 +361,7 @@ TEST_F(ConversionTest, ScfCtrlQCtoQCOTest) {
   ASSERT_EQ(outputString, checkString);
 }
 
-TEST_F(ConversionTest, ScfCtrlQCtoQCOTest2) {
+TEST_F(ConversionTest, ScfForRegisterQCtoQCOTest) {
   // Test conversion from qc to qco for scf.for operation with a memref register
   auto input = buildQCIR([](mlir::qc::QCProgramBuilder& b) {
     auto reg = b.allocQubitRegister(4);
@@ -403,8 +404,9 @@ TEST_F(ConversionTest, ScfCtrlQCtoQCOTest2) {
   ASSERT_EQ(outputString, checkString);
 }
 
-TEST_F(ConversionTest, ScfCtrlQCtoQCOTest3) {
-  // Test conversion from qc to qco for scf.for operation with a memref register
+TEST_F(ConversionTest, ScfForNestedRegisterQCtoQCOTest) {
+  // Test conversion from qc to qco for scf.for operation with a nested memref
+  // register
   auto input = buildQCIR([](mlir::qc::QCProgramBuilder& b) {
     auto reg0 = b.allocQubitRegister(4, "q0");
     auto reg1 = b.allocQubitRegister(4, "q1");

@@ -646,10 +646,11 @@ QCOProgramBuilder& QCOProgramBuilder::dealloc(Value qubit) {
 
 Value QCOProgramBuilder::tensorFromElements(ValueRange elements) {
   checkFinalized();
+
   auto const qcoType = qco::QubitType::get(ctx);
   const auto tensorType =
       RankedTensorType::get({static_cast<int64_t>(elements.size())}, qcoType);
-  // Create the FromElements operation
+
   auto fromElements =
       tensor::FromElementsOp::create(*this, tensorType, elements);
   return fromElements.getResult();
@@ -659,15 +660,21 @@ Value QCOProgramBuilder::tensorExtract(
     Value tensor, const std::variant<int64_t, Value>& index) {
   checkFinalized();
 
-  auto const qcoType = qco::QubitType::get(ctx);
+  const auto qcoType = qco::QubitType::get(ctx);
   const auto indexValue = utils::variantToValue(*this, getLoc(), index);
+  // Create the extract operation
   auto extractOp =
       tensor::ExtractOp::create(*this, qcoType, tensor, indexValue);
-  auto* const extractParentRegion = extractOp->getParentRegion();
+
+  // Check if the tensor stems from a scf.for operation
+  // These are the extract operations directly following the scf.for operation
   if (auto scfFor = tensor.getDefiningOp<scf::ForOp>()) {
+    // Find the initial qubit before it was inserted to the tensor
     for (auto arg : scfFor.getInitArgs()) {
       if (llvm::isa<TensorType>(arg.getType())) {
         auto fromTensorOp = arg.getDefiningOp<tensor::FromElementsOp>();
+
+        // Get the index as integer
         int64_t val = 0;
         if (std::holds_alternative<int64_t>(index)) {
           val = std::get<int64_t>(index);
@@ -676,13 +683,15 @@ Value QCOProgramBuilder::tensorExtract(
               std::get<Value>(index).getDefiningOp<arith::ConstantOp>();
           val = dyn_cast<IntegerAttr>(constantOp.getValue()).getInt();
         }
+        // Update the tracking of the qubit
         updateQubitTracking(fromTensorOp.getElements()[val],
                             extractOp.getResult(),
                             extractOp->getParentRegion());
       }
     }
   }
-  if (!llvm::isa<func::FuncOp>(extractParentRegion->getParentOp())) {
+  // Add the extracted Qubit to the qubit tracking if it is inside a loop
+  if (!llvm::isa<func::FuncOp>(extractOp->getParentRegion()->getParentOp())) {
     validQubits[extractOp->getParentRegion()].insert(extractOp);
   }
 
@@ -692,6 +701,7 @@ Value QCOProgramBuilder::tensorExtract(
 Value QCOProgramBuilder::tensorInsert(
     Value element, Value tensor, const std::variant<int64_t, Value>& index) {
   checkFinalized();
+
   const auto indexValue = utils::variantToValue(*this, getLoc(), index);
   auto insertOp = tensor::InsertOp::create(*this, element, tensor, indexValue);
   return insertOp.getResult();

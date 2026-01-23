@@ -460,11 +460,17 @@ QCProgramBuilder& QCProgramBuilder::dealloc(Value qubit) {
 //===----------------------------------------------------------------------===//
 // MemRef operations
 //===----------------------------------------------------------------------===//
+
 Value QCProgramBuilder::memrefAlloc(ValueRange elements) {
+  checkFinalized();
+
   const auto qcType = qc::QubitType::get(ctx);
   const auto memType =
       MemRefType::get({static_cast<int64_t>(elements.size())}, qcType);
+  // Create the alloc operation
   auto allocOp = memref::AllocOp::create(*this, memType);
+
+  // Iterate through all elements and create a store operation for each qubit
   for (auto it : llvm::enumerate(elements)) {
     Value idx = arith::ConstantOp::create(
         *this, getIndexAttr(static_cast<int64_t>(it.index())));
@@ -475,6 +481,8 @@ Value QCProgramBuilder::memrefAlloc(ValueRange elements) {
 
 Value QCProgramBuilder::memrefLoad(Value memref,
                                    const std::variant<int64_t, Value>& index) {
+  checkFinalized();
+
   const auto indexValue = utils::variantToValue(*this, getLoc(), index);
   const auto loadOp = memref::LoadOp::create(*this, memref, indexValue);
   return loadOp->getResult(0);
