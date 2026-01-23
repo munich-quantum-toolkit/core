@@ -226,7 +226,14 @@ collectUniqueQubits(Operation* op, LoweringState* state, MLIRContext* ctx) {
           if (!func.getArgumentTypes().empty() &&
               isQubitType(func.getArgumentTypes().front())) {
             operation.setAttr("needChange", StringAttr::get(ctx, "yes"));
-            state->regionMap[func] = uniqueQubits;
+            // Only add the arguments as qubits for the regionMap of func
+            llvm::SetVector<Value> argQubits;
+            for (auto arg : func.getArguments()) {
+              if (isQubitType(arg.getType())) {
+                argQubits.insert(arg);
+              }
+            }
+            state->regionMap[func] = argQubits;
           }
         }
       }
@@ -242,8 +249,6 @@ collectUniqueQubits(Operation* op, LoweringState* state, MLIRContext* ctx) {
   if (!uniqueQubits.empty() &&
       (llvm::isa<scf::IfOp>(op) || (llvm::isa<scf::ForOp>(op)) ||
        llvm::isa<scf::WhileOp>(op))) {
-    if (llvm::isa<scf::ForOp>(op)) {
-    }
     state->regionMap[op] = uniqueQubits;
     op->setAttr("needChange", StringAttr::get(ctx, "yes"));
   }
