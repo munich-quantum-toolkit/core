@@ -166,12 +166,35 @@ collectUniqueQubits(Operation* op, LoweringState* state, MLIRContext* ctx) {
       // check if the operation has an region, if yes recursively collect the
       // qubits
       if (operation.getNumRegions() > 0) {
-        const auto& qubits = collectUniqueQubits(&operation, state, ctx);
+        auto qubits = collectUniqueQubits(&operation, state, ctx);
+
+        qubits.remove_if([&](Value qubit) {
+          return llvm::isa<MemRefType>(qubit.getType()) ||
+                 (llvm::isa<memref::LoadOp>(qubit.getDefiningOp()) &&
+                  &region == qubit.getParentRegion());
+        });
+
         uniqueQubits.set_union(qubits);
+      }
+
+      if (llvm::isa<memref::AllocOp>(operation)) {
+        if (llvm::isa<scf::ForOp>(operation.getParentOp())) {
+          continue;
+        }
+      }
+      if (llvm::isa<memref::LoadOp>(operation)) {
+        auto loadOp = dyn_cast<memref::LoadOp>(operation);
+        uniqueQubits.insert(loadOp.getMemRef());
+        continue;
       }
       // collect qubits form the operands
       for (const auto& operand : operation.getOperands()) {
-        if (operand.getDefiningOp<memref::LoadOp>()) {
+        if ((operand.getDefiningOp<memref::StoreOp>() ||
+             operand.getDefiningOp<memref::AllocOp>())) {
+          continue;
+        }
+        if (operand.getDefiningOp<memref::LoadOp>() &&
+            llvm::isa<scf::ForOp>(op)) {
           continue;
         }
         if (isQubitType(operand.getType())) {
@@ -205,6 +228,18 @@ collectUniqueQubits(Operation* op, LoweringState* state, MLIRContext* ctx) {
           }
         }
       }
+    }
+  }
+  for (const auto& operand : op->getOperands()) {
+    if ((operand.getDefiningOp<memref::StoreOp>() ||
+         operand.getDefiningOp<memref::AllocOp>())) {
+      continue;
+    }
+    if (operand.getDefiningOp<memref::LoadOp>() && llvm::isa<scf::ForOp>(op)) {
+      continue;
+    }
+    if (isQubitType(operand.getType())) {
+      uniqueQubits.insert(operand);
     }
   }
   // mark scf operations that need to be changed afterwards
@@ -1198,6 +1233,7 @@ struct ConvertQCCtrlOp final : StatefulOpConversionPattern<qc::CtrlOp> {
     const auto& qcControls = op.getControls();
     SmallVector<Value> qcoControls;
     qcoControls.reserve(qcControls.size());
+
     for (const auto& qcControl : qcControls) {
       assert(qubitMap.contains(qcControl) && "QC qubit not found");
       qcoControls.push_back(qubitMap[qcControl]);
@@ -1616,11 +1652,16 @@ struct ConvertQCScfForOp final : StatefulOpConversionPattern<scf::ForOp> {
     auto& newRegion = newFor.getRegion();
     auto& regionQubitMap = getState().qubitMap[&newRegion];
 
+    // Copy the qubit Map into the region
+    for (const auto& [key, value] : qubitMap) {
+      regionQubitMap[key] = value;
+    }
+
     // Create the qubitmap for the new region and update the qubitmap in the
     // current region
     for (const auto& [qcQubit, iterArg, qcoQubit] : llvm::zip_equal(
              qcQubits, newFor.getRegionIterArgs(), newFor->getResults())) {
-      regionQubitMap.try_emplace(qcQubit, iterArg);
+      regionQubitMap[qcQubit] = iterArg;
       qubitMap[qcQubit] = qcoQubit;
 
       // If the value of the qc qubit is a memref register, extract each value
