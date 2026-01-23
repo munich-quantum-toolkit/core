@@ -27,7 +27,7 @@
 #include <mlir/Dialect/Tensor/IR/Tensor.h>
 #include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/DialectRegistry.h>
-#include <mlir/IR/OperationSupport.h>
+#include <mlir/IR/Operation.h>
 #include <mlir/IR/OwningOpRef.h>
 #include <mlir/IR/Value.h>
 #include <mlir/IR/ValueRange.h>
@@ -94,6 +94,11 @@ protected:
 
     moduleOp->walk([&](Operation* op) -> WalkResult {
       const auto* opDialect = op->getDialect();
+
+      // Ignore dealloc operations as the order does not matter
+      if (llvm::isa<qco::DeallocOp>(op)) {
+        return WalkResult::advance();
+      }
       // Only consider operations from the qco dialect and the scf dialect or
       // func.call or func.return op
       if (opDialect == qcoDialect || opDialect == scfDialect ||
@@ -287,7 +292,6 @@ TEST_F(ConversionTest, FuncFuncQCToQCOTest) {
       b.y(args[0]);
     });
   });
-
   PassManager pm(context.get());
   pm.addPass(createQCToQCO());
   if (failed(pm.run(input.get()))) {
@@ -365,6 +369,8 @@ TEST_F(ConversionTest, ScfCtrlQCtoQCOTest2) {
       auto extractedQubit = b.memrefLoad(memref, iv);
       b.h(extractedQubit);
     });
+    b.swap(reg[0], reg[1]);
+    b.swap(reg[2], reg[3]);
   });
 
   PassManager pm(context.get());
@@ -388,8 +394,74 @@ TEST_F(ConversionTest, ScfCtrlQCtoQCOTest2) {
     auto extractedq1 = b.tensorExtract(scfForRes[0], 1);
     auto extractedq2 = b.tensorExtract(scfForRes[0], 2);
     auto extractedq3 = b.tensorExtract(scfForRes[0], 3);
+    b.swap(extractedq0, extractedq1);
+    b.swap(extractedq2, extractedq3);
   });
 
+  const auto outputString = getOutputString(input);
+  const auto checkString = getOutputString(expectedOutput);
+  ASSERT_EQ(outputString, checkString);
+}
+
+TEST_F(ConversionTest, ScfCtrlQCtoQCOTest3) {
+  // Test conversion from qc to qco for scf.for operation with a memref register
+  auto input = buildQCIR([](mlir::qc::QCProgramBuilder& b) {
+    auto reg0 = b.allocQubitRegister(4, "q0");
+    auto reg1 = b.allocQubitRegister(4, "q1");
+    auto memref0 = b.memrefAlloc(reg0);
+    b.scfFor(0, 3, 1, [&](Value iv) {
+      auto extractedQubit = b.memrefLoad(memref0, iv);
+      b.x(extractedQubit);
+      auto memref1 = b.memrefAlloc(reg1);
+      b.scfFor(0, 3, 1, [&](Value iv2) {
+        auto q1 = b.memrefLoad(memref1, iv2);
+        b.cx(extractedQubit, q1);
+      });
+    });
+    b.swap(reg0[0], reg0[1]);
+    b.swap(reg0[2], reg0[3]);
+  });
+  PassManager pm(context.get());
+  pm.addPass(createQCToQCO());
+  if (failed(pm.run(input.get()))) {
+    FAIL() << "Conversion error during QC-QCO conversion for scf nested";
+  }
+
+  auto expectedOutput = buildQCOIR([](mlir::qco::QCOProgramBuilder& b) {
+    auto reg0 = b.allocQubitRegister(4, "q0");
+    auto reg1 = b.allocQubitRegister(4, "q1");
+    auto tensor0 = b.tensorFromElements(reg0);
+    auto scfForRes = b.scfFor(
+        0, 3, 1, {tensor0, reg1[0], reg1[1], reg1[2], reg1[3]},
+        [&](Value iv, ValueRange iterArgs) -> llvm::SmallVector<Value> {
+          auto extractedQubit = b.tensorExtract(iterArgs[0], iv);
+          auto outerQubit = b.x(extractedQubit);
+          auto tensor1 = b.tensorFromElements(
+              {iterArgs[1], iterArgs[2], iterArgs[3], iterArgs[4]});
+          auto innerResults = b.scfFor(
+              0, 3, 1, {tensor1, outerQubit},
+              [&](Value innerIv,
+                  ValueRange innerIterArgs) -> llvm::SmallVector<Value> {
+                auto innerQubit = b.tensorExtract(innerIterArgs[0], innerIv);
+                auto ctrlOp = b.cx(innerIterArgs[1], innerQubit);
+                auto innerTensor =
+                    b.tensorInsert(ctrlOp.second, innerIterArgs[0], innerIv);
+                return {innerTensor, ctrlOp.first};
+              });
+          auto extractedq0 = b.tensorExtract(innerResults[0], 0);
+          auto extractedq1 = b.tensorExtract(innerResults[0], 1);
+          auto extractedq2 = b.tensorExtract(innerResults[0], 2);
+          auto extractedq3 = b.tensorExtract(innerResults[0], 3);
+          auto tensor2 = b.tensorInsert(innerResults[1], iterArgs[0], iv);
+          return {tensor2, extractedq0, extractedq1, extractedq2, extractedq3};
+        });
+    auto extractedq0 = b.tensorExtract(scfForRes[0], 0);
+    auto extractedq1 = b.tensorExtract(scfForRes[0], 1);
+    auto extractedq2 = b.tensorExtract(scfForRes[0], 2);
+    auto extractedq3 = b.tensorExtract(scfForRes[0], 3);
+    b.swap(extractedq0, extractedq1);
+    b.swap(extractedq2, extractedq3);
+  });
   const auto outputString = getOutputString(input);
   const auto checkString = getOutputString(expectedOutput);
   ASSERT_EQ(outputString, checkString);
