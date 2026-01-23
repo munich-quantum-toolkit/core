@@ -910,8 +910,35 @@ struct ConvertQCOTensorExtractOp final
   LogicalResult
   matchAndRewrite(tensor::ExtractOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
-    rewriter.replaceOpWithNewOp<memref::LoadOp>(op, adaptor.getTensor(),
-                                                adaptor.getIndices());
+    // Remove the extract operations following a scf.for operation
+    if (!llvm::isa<MemRefType>(op.getOperand(0).getType())) {
+      // Find the memref register
+      const auto memref = adaptor.getTensor();
+      const auto memrefUsers = llvm::to_vector(memref.getUsers());
+      // Get the index  where the value was extracted
+      int64_t index = -1;
+      auto constantOp =
+          adaptor.getIndices().front().getDefiningOp<arith::ConstantOp>();
+      const auto indexToStore =
+          dyn_cast<IntegerAttr>(constantOp.getValue()).getInt();
+      // Find the appropriate store operation depending on the index to get the
+      // qubit
+      for (auto* user : llvm::reverse(memrefUsers)) {
+        if (llvm::isa<memref::StoreOp>(user)) {
+          index++;
+          if (index == indexToStore) {
+            auto storeOp = dyn_cast<memref::StoreOp>(user);
+            rewriter.replaceOp(op, storeOp.getValueToStore());
+          }
+        }
+      }
+    }
+    // Replace other extract operations with a memref.load operation
+    else {
+      rewriter.replaceOpWithNewOp<memref::LoadOp>(op, adaptor.getTensor(),
+                                                  adaptor.getIndices());
+    }
+
     return success();
   }
 };
@@ -1093,39 +1120,6 @@ struct ConvertQCOScfForOp final : OpConversionPattern<scf::ForOp> {
     auto& srcOps = op.getBody()->getOperations();
     newBlock->getOperations().splice(newBlock->begin(), srcOps, srcOps.begin(),
                                      std::prev(srcOps.end()));
-
-    // Find the init args that are tensors
-    for (auto initArg : llvm::enumerate(op.getInitArgs())) {
-      const auto value = initArg.value();
-      if (llvm::isa<TensorType>(value.getType())) {
-        // Find the equivalent memref register from the adaptor
-        const auto memref = adaptor.getInitArgs()[initArg.index()];
-        SmallVector<Value> qcQubits;
-
-        // Get the qc qubits from them
-        const auto memrefUsers = llvm::to_vector(memref.getUsers());
-        for (auto* user : llvm::reverse(memrefUsers)) {
-          if (llvm::isa<memref::StoreOp>(user)) {
-            auto storeOp = dyn_cast<memref::StoreOp>(user);
-            qcQubits.push_back(storeOp.getValueToStore());
-          }
-        }
-
-        // Get the users of the result tensor of the current operation
-        const auto users =
-            llvm::to_vector(op->getResult(initArg.index()).getUsers());
-        for (auto user : llvm::enumerate(llvm::reverse(users))) {
-          auto* const extractOp = user.value();
-          if (llvm::isa<tensor::ExtractOp>(extractOp)) {
-            // Replace the extract operations with the values of the memref
-            // register and delete the extract operation
-            rewriter.replaceAllUsesWith(extractOp->getResult(0),
-                                        qcQubits[user.index()]);
-            rewriter.eraseOp(extractOp);
-          }
-        }
-      }
-    }
 
     // Replace the result values with the init values
     rewriter.replaceOp(op, adaptor.getInitArgs());
@@ -1323,9 +1317,12 @@ struct QCOToQC final : impl::QCOToQCBase<QCOToQC> {
 
     target.addDynamicallyLegalOp<tensor::FromElementsOp>(
         [&](tensor::FromElementsOp op) {
-          return !llvm::any_of(op.getOperandTypes(), [&](Type type) {
-            return type == qco::QubitType::get(context);
-          });
+          return !llvm::any_of(op.getOperandTypes(),
+                               [&](Type type) {
+                                 return type == qco::QubitType::get(context);
+                               }) &&
+                 !(op.getType().getElementType() ==
+                   qco::QubitType::get(context));
         });
     target.addDynamicallyLegalOp<tensor::ExtractOp>([&](tensor::ExtractOp op) {
       return !llvm::any_of(op->getResultTypes(), [&](Type type) {
