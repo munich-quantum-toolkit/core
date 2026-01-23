@@ -294,7 +294,7 @@ struct MergeRotationGatesPattern final
     // constant 2.0
     auto twoAttr = rewriter.getFloatAttr(floatType, 2.0);
     auto two = rewriter.create<mlir::arith::ConstantOp>(loc, twoAttr);
-    // constant epsilon (boundry around gimbal lock positions)
+    // constant epsilon (boundary around gimbal lock positions)
     auto epsAttr = rewriter.getFloatAttr(floatType, 1e-7);
     auto eps = rewriter.create<mlir::arith::ConstantOp>(loc, epsAttr);
     // constant PI

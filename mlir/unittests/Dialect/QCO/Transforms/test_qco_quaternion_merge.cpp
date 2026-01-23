@@ -451,7 +451,7 @@ TEST_F(QCOQuaternionMergeTest, quaternionMergeManyGates) {
 
 /**
  * @brief Test: Many gates with one unmergeable in between
- * should merge into two U with the unmergable in between.
+ * should merge into two U with the unmergeable in between.
  */
 TEST_F(QCOQuaternionMergeTest, quaternionMergeManyWithUnmergeable) {
   auto q = builder.allocQubitRegister(1);
