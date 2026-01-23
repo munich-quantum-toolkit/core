@@ -142,18 +142,18 @@ static bool isQubitType(Type type) {
  */
 static llvm::SetVector<Value>
 collectUniqueQubits(Operation* op, LoweringState* state, MLIRContext* ctx) {
-  // get the regions of the current operation
+  // Get the regions of the current operation
   const auto& regions = op->getRegions();
   SetVector<Value> uniqueQubits;
   for (auto& region : regions) {
-    // skip empty regions e.g. empty else region of an If operation
+    // Skip empty regions e.g. empty else region of an If operation
     if (region.empty()) {
       continue;
     }
-    // check that the region has only one block
+    // Check that the region has only one block
     assert(region.hasOneBlock() && "Expected single-block region");
 
-    // collect qubits from the blockarguments
+    // Collect qubits from the blockarguments
     for (auto arg : region.front().getArguments()) {
       if (isQubitType(arg.getType())) {
         uniqueQubits.insert(arg);
@@ -167,32 +167,37 @@ collectUniqueQubits(Operation* op, LoweringState* state, MLIRContext* ctx) {
       // qubits
       if (operation.getNumRegions() > 0) {
         auto qubits = collectUniqueQubits(&operation, state, ctx);
-
-        qubits.remove_if([&](Value qubit) {
-          return llvm::isa<MemRefType>(qubit.getType()) ||
-                 (llvm::isa<memref::LoadOp>(qubit.getDefiningOp()) &&
-                  &region == qubit.getParentRegion());
-        });
-
+        // Remove the memref registers and exclude qubits from load operations
+        // in the same region in the set of unique qubits
+        if (!llvm::isa<func::FuncOp>(operation)) {
+          qubits.remove_if([&](Value qubit) {
+            return llvm::isa<MemRefType>(qubit.getType()) ||
+                   (llvm::isa<memref::LoadOp>(qubit.getDefiningOp()) &&
+                    &region == qubit.getParentRegion());
+          });
+        }
         uniqueQubits.set_union(qubits);
       }
-
+      // Ignore the alloc operations inside scf.for operations
       if (llvm::isa<memref::AllocOp>(operation)) {
         if (llvm::isa<scf::ForOp>(operation.getParentOp())) {
           continue;
         }
       }
+      // Only add the memref to the register when the load operation is matched
       if (llvm::isa<memref::LoadOp>(operation)) {
         auto loadOp = dyn_cast<memref::LoadOp>(operation);
         uniqueQubits.insert(loadOp.getMemRef());
         continue;
       }
-      // collect qubits form the operands
+      // Collect qubits form the operands
       for (const auto& operand : operation.getOperands()) {
+        // Ignore the values from memref store and alloc operations
         if ((operand.getDefiningOp<memref::StoreOp>() ||
              operand.getDefiningOp<memref::AllocOp>())) {
           continue;
         }
+        // Ignore the qubits that stems from load operations
         if (operand.getDefiningOp<memref::LoadOp>() &&
             llvm::isa<scf::ForOp>(op)) {
           continue;
@@ -201,23 +206,20 @@ collectUniqueQubits(Operation* op, LoweringState* state, MLIRContext* ctx) {
           uniqueQubits.insert(operand);
         }
       }
-      // collect qubits from the results
+      // Collect qubits from the results
       for (const auto& result : operation.getResults()) {
-        if (llvm::isa<memref::LoadOp>(operation)) {
-          break;
-        }
         if (isQubitType(result.getType())) {
           uniqueQubits.insert(result);
         }
       }
-      // mark scf terminator operations if they need to return a value after the
+      // Mark scf terminator operations if they need to return a value after the
       // conversion
       if ((llvm::isa<scf::YieldOp>(operation) ||
            llvm::isa<scf::ConditionOp>(operation)) &&
           !uniqueQubits.empty()) {
         operation.setAttr("needChange", StringAttr::get(ctx, "yes"));
       }
-      // mark func.return operation for functions that need to return a qubit
+      // Mark func.return operation for functions that need to return a qubit
       // value
       if (llvm::isa<func::ReturnOp>(operation)) {
         if (auto func = operation.getParentOfType<func::FuncOp>()) {
@@ -230,19 +232,13 @@ collectUniqueQubits(Operation* op, LoweringState* state, MLIRContext* ctx) {
       }
     }
   }
+  // Add the operands from the operation itself
   for (const auto& operand : op->getOperands()) {
-    if ((operand.getDefiningOp<memref::StoreOp>() ||
-         operand.getDefiningOp<memref::AllocOp>())) {
-      continue;
-    }
-    if (operand.getDefiningOp<memref::LoadOp>() && llvm::isa<scf::ForOp>(op)) {
-      continue;
-    }
     if (isQubitType(operand.getType())) {
       uniqueQubits.insert(operand);
     }
   }
-  // mark scf operations that need to be changed afterwards
+  // Mark scf operations that need to be changed afterwards
   if (!uniqueQubits.empty() &&
       (llvm::isa<scf::IfOp>(op) || (llvm::isa<scf::ForOp>(op)) ||
        llvm::isa<scf::WhileOp>(op))) {
