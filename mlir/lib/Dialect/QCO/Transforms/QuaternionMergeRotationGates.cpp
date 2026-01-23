@@ -13,16 +13,19 @@
 
 #include <algorithm>
 #include <array>
-#include <llvm/ADT/STLExtras.h>
+#include <cassert>
+#include <cmath>
+#include <cstdint>
+#include <llvm/Support/ErrorHandling.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Math/IR/Math.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/Operation.h>
 #include <mlir/IR/PatternMatch.h>
 #include <mlir/IR/Value.h>
-#include <mlir/IR/ValueRange.h>
-#include <mlir/Support/LogicalResult.h>
+#include <mlir/Support/LLVM.h>
 #include <mlir/Transforms/GreedyPatternRewriteDriver.h>
+#include <numbers>
 #include <string_view>
 #include <utility>
 
@@ -47,7 +50,7 @@ struct MergeRotationGatesPattern final
     mlir::Value z;
   };
 
-  enum class RotationAxis { X, Y, Z };
+  enum class RotationAxis : std::uint8_t { X, Y, Z };
 
   static constexpr std::array<std::string_view, 4> MERGEABLE_GATES = {
       "u", "rx", "ry", "rz"};
@@ -126,7 +129,7 @@ struct MergeRotationGatesPattern final
       return {.w = cos, .x = zero, .y = sin, .z = zero};
     case RotationAxis::Z:
       return {.w = cos, .x = zero, .y = zero, .z = sin};
-    }
+    } // NOLINT(bugprone-branch-clone): false positive, branches differ
   }
 
   /**
@@ -284,12 +287,21 @@ struct MergeRotationGatesPattern final
     auto loc = op->getLoc();
 
     auto floatType = op.getParameter(0).getType();
+    // constant 0.0
+    auto zeroAttr = rewriter.getFloatAttr(floatType, 0.0);
+    auto zero = rewriter.create<mlir::arith::ConstantOp>(loc, zeroAttr);
     // constant 1.0
     auto oneAttr = rewriter.getFloatAttr(floatType, 1.0);
     auto one = rewriter.create<mlir::arith::ConstantOp>(loc, oneAttr);
     // constant 2.0
     auto twoAttr = rewriter.getFloatAttr(floatType, 2.0);
     auto two = rewriter.create<mlir::arith::ConstantOp>(loc, twoAttr);
+    // constant epsilon (boundary around gimbal lock positions)
+    auto epsAttr = rewriter.getFloatAttr(floatType, 1e-7);
+    auto eps = rewriter.create<mlir::arith::ConstantOp>(loc, epsAttr);
+    // constant PI
+    auto piAttr = rewriter.getFloatAttr(floatType, std::numbers::pi);
+    auto pi = rewriter.create<mlir::arith::ConstantOp>(loc, piAttr);
 
     // calculate angle beta (for y-rotation)
     // beta = acos(2 * (w^2 + z^2) - 1)
@@ -300,6 +312,21 @@ struct MergeRotationGatesPattern final
     auto bTemp3 = rewriter.create<mlir::arith::SubFOp>(loc, bTemp2, one);
     auto beta = rewriter.create<mlir::math::AcosOp>(loc, bTemp3);
 
+    // intermediates to check for gimbal lock (|beta| and |beta - PI|)
+    auto absBeta = rewriter.create<mlir::math::AbsFOp>(loc, beta);
+    auto betaMinusPi = rewriter.create<mlir::arith::SubFOp>(loc, beta, pi);
+    auto absBetaMinusPi = rewriter.create<mlir::math::AbsFOp>(loc, betaMinusPi);
+
+    // safe1 = beta not within boundary eps around 0:
+    // |beta| >= eps
+    auto safe1 = rewriter.create<mlir::arith::CmpFOp>(
+        loc, mlir::arith::CmpFPredicate::OGE, absBeta, eps);
+    // safe2 = beta not within boundary eps around PI: |beta-pi| >= eps
+    auto safe2 = rewriter.create<mlir::arith::CmpFOp>(
+        loc, mlir::arith::CmpFPredicate::OGE, absBetaMinusPi, eps);
+    // is safe (not in gimbal lock) when both hold (safe1 AND safe2)
+    auto safe = rewriter.create<mlir::arith::AndIOp>(loc, safe1, safe2);
+
     // intermediate angles for z-rotations alpha and gamma
     // theta+ = atan2(z, w)
     // theta- = atan2(-x, y)
@@ -307,13 +334,37 @@ struct MergeRotationGatesPattern final
     auto thetaPlus = rewriter.create<mlir::math::Atan2Op>(loc, q.z, q.w);
     auto thetaMinus = rewriter.create<mlir::math::Atan2Op>(loc, xMinus, q.y);
 
-    // z-rotations alpha and gamma
-    // alpha = theta+ - theta-
-    // gamma = theta+ + theta-
-    auto alpha =
+    // intermediate angles for gimbal lock cases
+    // twoTheta+ = 2 * theta+
+    // twoTheta- = 2 * theta-
+    auto twoThetaPlus =
+        rewriter.create<mlir::arith::MulFOp>(loc, two, thetaPlus);
+    auto twoThetaMinus =
+        rewriter.create<mlir::arith::MulFOp>(loc, two, thetaMinus);
+
+    // Safe Case (no gimbal lock):
+    // alphaSafe = theta+ - theta-
+    // gammaSafe = theta+ + theta-
+    auto alphaSafe =
         rewriter.create<mlir::arith::SubFOp>(loc, thetaPlus, thetaMinus);
-    auto gamma =
+    auto gammaSafe =
         rewriter.create<mlir::arith::AddFOp>(loc, thetaPlus, thetaMinus);
+
+    // Unsafe Case (gimbal lock):
+    // when b = 0  then alpha = 2 * (atan2(z,w))
+    // when b = PI then alpha = 2 * (atan2(-z, y))
+    // gamma is set to zero in both cases
+    auto alphaUnsafe = rewriter.create<mlir::arith::SelectOp>(
+        loc, safe1, twoThetaMinus, twoThetaPlus);
+
+    // TODO: could add some normalization here for alpha and gamma otherwise
+    // they can be outside of [-PI, PI].
+
+    // choose correct alpha and gamma weather safe or not
+    auto alpha = rewriter.create<mlir::arith::SelectOp>(loc, safe, alphaSafe,
+                                                        alphaUnsafe);
+    auto gamma =
+        rewriter.create<mlir::arith::SelectOp>(loc, safe, gammaSafe, zero);
 
     return rewriter.create<UOp>(loc, op.getInputQubit(0), alpha.getResult(),
                                 beta.getResult(), gamma.getResult());
@@ -367,11 +418,10 @@ struct MergeRotationGatesPattern final
       return mlir::failure();
     }
     auto user = mlir::dyn_cast<UnitaryOpInterface>(userOP);
-    if (!user) {
-      return mlir::failure();
-    }
+    assert(user && "Cannot cast to UnitaryOpInterface, mergeable gates must "
+                   "implement UnitaryOpInterface");
 
-    UnitaryOpInterface newUser =
+    const UnitaryOpInterface newUser =
         createOpQuaternionMergedAngle(op, user, rewriter);
 
     // Replace user with newUser
