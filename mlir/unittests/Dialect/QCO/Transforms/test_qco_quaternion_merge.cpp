@@ -19,8 +19,11 @@
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/Math/IR/Math.h>
 #include <mlir/IR/BuiltinOps.h>
+#include <mlir/IR/Value.h>
 #include <mlir/Parser/Parser.h>
 #include <mlir/Pass/PassManager.h>
+#include <mlir/Support/WalkResult.h>
+#include <optional>
 #include <utility>
 #include <vector>
 
@@ -28,6 +31,16 @@ namespace {
 
 using namespace mlir;
 using namespace mlir::qco;
+
+/// A constant for the value of \f$\tau\f$.
+static constexpr auto TAU =
+    6.283185307179586476925286766559005768394338798750211641950L;
+/// A constant for the value of \f$\pi\f$.
+static constexpr double PI =
+    3.141592653589793238462643383279502884197169399375105820974L;
+/// A constant for the value of \f$\frac{\pi}{2}\f$.
+static constexpr double PI_2 =
+    1.570796326794896619231321691639751442098584699687552910487L;
 
 class QCOQuaternionMergeTest : public ::testing::Test {
 protected:
@@ -111,6 +124,7 @@ protected:
    */
   void expectUGateParams(double expectedTheta, double expectedPhi,
                          double expectedLambda, double tolerance = 1e-8) {
+    // TODO: maybe check angle equality modulo 2*PI
     auto params = getUGateParams();
     ASSERT_TRUE(params.has_value());
 
@@ -120,16 +134,8 @@ protected:
     EXPECT_NEAR(lambda, expectedLambda, tolerance);
   }
 
-  /**
-   * @brief Takes a list of rotation gates (rx, ry, rz and u) and uses the
-   * builder api to build a small quantum circuit, where a qubit is feed through
-   * all rotations in the list.
-   */
-  LogicalResult testGateMerge(const std::vector<RotationGate>& rotations) {
-
-    auto q = builder.allocQubitRegister(1);
-
-    Value qubit = q[0];
+  Value buildRotations(const std::vector<RotationGate>& rotations, Value& q) {
+    Value qubit = q;
 
     for (const auto& gate : rotations) {
       if (gate.opName == RXOp::getOperationName()) {
@@ -144,6 +150,19 @@ protected:
       }
     }
 
+    return qubit;
+  }
+
+  /**
+   * @brief Takes a list of rotation gates (rx, ry, rz and u) and uses the
+   * builder api to build a small quantum circuit, where a qubit is feed through
+   * all rotations in the list.
+   */
+  LogicalResult testGateMerge(const std::vector<RotationGate>& rotations) {
+
+    auto q = builder.allocQubitRegister(1);
+
+    buildRotations(rotations, q[0]);
     module = builder.finalize();
     return runMergePass(module.get());
   }
@@ -411,6 +430,54 @@ TEST_F(QCOQuaternionMergeTest, dontMergeNonConsecutiveGates) {
 }
 
 // ##################################################
+// # Greedy Merging Tests
+// ##################################################
+
+/**
+ * @brief Test: Many gates should greedily merge into one U
+ */
+TEST_F(QCOQuaternionMergeTest, quaternionMergeManyGates) {
+  ASSERT_TRUE(testGateMerge({{UOp::getOperationName(), {1., 2., .3}},
+                             {RXOp::getOperationName(), {1.}},
+                             {RYOp::getOperationName(), {2.}},
+                             {RZOp::getOperationName(), {3.}},
+                             {UOp::getOperationName(), {4., 5., 6.}}})
+                  .succeeded());
+  EXPECT_EQ(countOps<UOp>(), 1);
+  EXPECT_EQ(countOps<RXOp>(), 0);
+  EXPECT_EQ(countOps<RYOp>(), 0);
+  EXPECT_EQ(countOps<RZOp>(), 0);
+}
+
+/**
+ * @brief Test: Many gates with one unmergeable in between
+ * should merge into two U with the unmergable in between.
+ */
+TEST_F(QCOQuaternionMergeTest, quaternionMergeManyWithUnmergeable) {
+  auto q = builder.allocQubitRegister(1);
+  Value qubit = buildRotations({{UOp::getOperationName(), {1., 2., .3}},
+                                {RXOp::getOperationName(), {1.}},
+                                {RYOp::getOperationName(), {2.}},
+                                {RZOp::getOperationName(), {3.}}},
+                               q[0]);
+  qubit = builder.h(qubit);
+  qubit = buildRotations({{RZOp::getOperationName(), {4.}},
+                          {RYOp::getOperationName(), {5.}},
+                          {RXOp::getOperationName(), {6.}},
+                          {UOp::getOperationName(), {4., 5., 6.}}},
+                         qubit);
+
+  module = builder.finalize();
+
+  ASSERT_TRUE(runMergePass(module.get()).succeeded());
+  EXPECT_EQ(countOps<UOp>(), 2);
+  EXPECT_EQ(countOps<HOp>(), 1);
+  EXPECT_EQ(countOps<RXOp>(), 0);
+  EXPECT_EQ(countOps<RYOp>(), 0);
+  EXPECT_EQ(countOps<RZOp>(), 0);
+}
+
+// ##################################################
 // # Special Cases Tests
 // ##################################################
 
@@ -602,4 +669,20 @@ TEST_F(QCOQuaternionMergeTest, numericalAccuracyUU) {
   EXPECT_EQ(countOps<UOp>(), 1);
 
   expectUGateParams(0.154763313125030, 1.00116934013043, -5.77770904175559);
+}
+
+/**
+ * @brief Test: RZ(PI)->RY(PI)->RX(PI) should merge into
+ *        U(0, 0, 0) or U(2*PI, 0, 0)
+ */
+TEST_F(QCOQuaternionMergeTest, rotationIdentity) {
+  ASSERT_TRUE(testGateMerge({{RZOp::getOperationName(), {PI}},
+                             {RYOp::getOperationName(), {PI}},
+                             {RXOp::getOperationName(), {PI}}})
+                  .succeeded());
+  EXPECT_EQ(countOps<UOp>(), 1);
+  EXPECT_EQ(countOps<RYOp>(), 0);
+  EXPECT_EQ(countOps<RZOp>(), 0);
+
+  expectUGateParams(TAU, 0., 0.);
 }
