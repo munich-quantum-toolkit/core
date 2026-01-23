@@ -22,14 +22,18 @@
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/LLVMIR/LLVMDialect.h>
+#include <mlir/Dialect/MemRef/IR/MemRef.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
+#include <mlir/Dialect/Tensor/IR/Tensor.h>
 #include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/DialectRegistry.h>
+#include <mlir/IR/Operation.h>
 #include <mlir/IR/OwningOpRef.h>
 #include <mlir/IR/Value.h>
 #include <mlir/IR/ValueRange.h>
 #include <mlir/Pass/PassManager.h>
 #include <mlir/Support/LogicalResult.h>
+#include <mlir/Transforms/Passes.h>
 #include <string>
 
 using namespace mlir;
@@ -41,11 +45,19 @@ protected:
     // Register all dialects needed for the full compilation pipeline
     DialectRegistry registry;
     registry.insert<mlir::qc::QCDialect, qco::QCODialect, arith::ArithDialect,
-                    func::FuncDialect, scf::SCFDialect, LLVM::LLVMDialect>();
+                    func::FuncDialect, scf::SCFDialect, LLVM::LLVMDialect,
+                    tensor::TensorDialect, memref::MemRefDialect>();
 
     context = std::make_unique<MLIRContext>();
     context->appendDialectRegistry(registry);
     context->loadAllAvailableDialects();
+  }
+  static void runCanonicalizationPass(ModuleOp module) {
+    PassManager pm(module.getContext());
+    pm.addPass(createCanonicalizerPass());
+    if (pm.run(module).failed()) {
+      llvm::errs() << "Failed to run canonicalization passes.\n";
+    }
   }
 
   [[nodiscard]] OwningOpRef<ModuleOp> buildQCIR(
@@ -54,14 +66,17 @@ protected:
     builder.initialize();
     buildFunc(builder);
     auto module = builder.finalize();
+    runCanonicalizationPass(module.get());
     return module;
   }
+
   [[nodiscard]] OwningOpRef<ModuleOp> buildQCOIR(
       const std::function<void(qco::QCOProgramBuilder&)>& buildFunc) const {
     qco::QCOProgramBuilder builder(context.get());
     builder.initialize();
     buildFunc(builder);
     auto module = builder.finalize();
+    runCanonicalizationPass(module.get());
     return module;
   }
 };
@@ -69,7 +84,29 @@ protected:
 static std::string getOutputString(mlir::OwningOpRef<mlir::ModuleOp>& module) {
   std::string outputString;
   llvm::raw_string_ostream os(outputString);
-  module->print(os);
+
+  auto* moduleOp = module->getOperation();
+  const auto* qcoDialect =
+      moduleOp->getContext()->getLoadedDialect<qco::QCODialect>();
+  const auto* scfDialect =
+      moduleOp->getContext()->getLoadedDialect<scf::SCFDialect>();
+
+  moduleOp->walk([&](Operation* op) -> WalkResult {
+    const auto* opDialect = op->getDialect();
+
+    // Ignore dealloc operations as the order does not matter
+    if (llvm::isa<qco::DeallocOp>(op)) {
+      return WalkResult::advance();
+    }
+    // Only consider operations from the qco dialect and the scf dialect or
+    // func.call or func.return op
+    if (opDialect == qcoDialect || opDialect == scfDialect ||
+        llvm::isa<func::ReturnOp>(op) || llvm::isa<func::CallOp>(op)) {
+      op->print(os);
+    }
+    return WalkResult::advance();
+  });
+
   os.flush();
   return outputString;
 }
@@ -281,5 +318,119 @@ TEST_F(ConversionTest, ScfCtrlQCOtoQCTest) {
   const auto outputString = getOutputString(input);
   const auto checkString = getOutputString(expectedOutput);
 
+  ASSERT_EQ(outputString, checkString);
+}
+
+TEST_F(ConversionTest, ScfForTensorQCOtoQCTest) {
+  // Test conversion from qco to qc for scf.for operation with a tensor
+  auto input = buildQCOIR([](mlir::qco::QCOProgramBuilder& b) {
+    auto reg = b.allocQubitRegister(4);
+    auto tensor = b.tensorFromElements(reg);
+    auto scfForRes = b.scfFor(
+        0, 3, 1, {tensor},
+        [&](Value iv, ValueRange iterArgs) -> llvm::SmallVector<Value> {
+          auto extractedQubit = b.tensorExtract(iterArgs[0], iv);
+          auto q4 = b.h(extractedQubit);
+          auto newTensor = b.tensorInsert(q4, iterArgs[0], iv);
+          return {newTensor};
+        });
+    auto extractedq0 = b.tensorExtract(scfForRes[0], 0);
+    auto extractedq1 = b.tensorExtract(scfForRes[0], 1);
+    auto extractedq2 = b.tensorExtract(scfForRes[0], 2);
+    auto extractedq3 = b.tensorExtract(scfForRes[0], 3);
+    b.swap(extractedq0, extractedq1);
+    b.swap(extractedq2, extractedq3);
+  });
+
+  PassManager pm(context.get());
+  pm.addPass(createQCOToQC());
+  if (failed(pm.run(input.get()))) {
+    FAIL() << "Conversion error during QC-QCO conversion for scf nested";
+  }
+  auto expectedOutput = buildQCIR([](mlir::qc::QCProgramBuilder& b) {
+    auto reg = b.allocQubitRegister(4);
+    auto memref = b.memrefAlloc(reg);
+    b.scfFor(0, 3, 1, [&](Value iv) {
+      auto extractedQubit = b.memrefLoad(memref, iv);
+      b.h(extractedQubit);
+    });
+    b.swap(reg[0], reg[1]);
+    b.swap(reg[2], reg[3]);
+  });
+
+  const auto outputString = getOutputString(input);
+  const auto checkString = getOutputString(expectedOutput);
+  ASSERT_EQ(outputString, checkString);
+}
+
+TEST_F(ConversionTest, ScfForNestedTensorQCOtoQCTest) {
+  // Test conversion from qco to qc for scf.for operation with a nested tesnor
+  auto input = buildQCOIR([](mlir::qco::QCOProgramBuilder& b) {
+    auto reg0 = b.allocQubitRegister(4, "q0");
+    auto reg1 = b.allocQubitRegister(4, "q1");
+    auto tensor0 = b.tensorFromElements(reg0);
+    auto scfForRes = b.scfFor(
+        0, 3, 1, {tensor0, reg1[0], reg1[1], reg1[2], reg1[3]},
+        [&](Value iv, ValueRange iterArgs) -> llvm::SmallVector<Value> {
+          auto extractedQubit = b.tensorExtract(iterArgs[0], iv);
+          auto outerQubit = b.x(extractedQubit);
+          auto tensor1 = b.tensorFromElements(
+              {iterArgs[1], iterArgs[2], iterArgs[3], iterArgs[4]});
+          auto innerResults = b.scfFor(
+              0, 3, 1, {tensor1, outerQubit},
+              [&](Value innerIv,
+                  ValueRange innerIterArgs) -> llvm::SmallVector<Value> {
+                auto innerQubit = b.tensorExtract(innerIterArgs[0], innerIv);
+                auto ctrlOp = b.cx(innerIterArgs[1], innerQubit);
+                auto innerTensor =
+                    b.tensorInsert(ctrlOp.second, innerIterArgs[0], innerIv);
+                return {innerTensor, ctrlOp.first};
+              });
+          auto extractedq0 = b.tensorExtract(innerResults[0], 0);
+          auto extractedq1 = b.tensorExtract(innerResults[0], 1);
+          auto extractedq2 = b.tensorExtract(innerResults[0], 2);
+          auto extractedq3 = b.tensorExtract(innerResults[0], 3);
+          auto tensor2 = b.tensorInsert(innerResults[1], iterArgs[0], iv);
+          return {tensor2, extractedq0, extractedq1, extractedq2, extractedq3};
+        });
+    auto extractedq0 = b.tensorExtract(scfForRes[0], 0);
+    auto extractedq1 = b.tensorExtract(scfForRes[0], 1);
+    auto extractedq2 = b.tensorExtract(scfForRes[0], 2);
+    auto extractedq3 = b.tensorExtract(scfForRes[0], 3);
+    b.swap(extractedq0, extractedq1);
+    b.swap(extractedq2, extractedq3);
+  });
+
+  PassManager pm(context.get());
+  pm.addPass(createQCOToQC());
+  if (failed(pm.run(input.get()))) {
+    FAIL() << "Conversion error during QC-QCO conversion for scf nested";
+  }
+  // Run the canonicalizer again to remove the additional constants
+  pm.clear();
+  pm.addPass(createCanonicalizerPass());
+  if (failed(pm.run(input.get()))) {
+    FAIL() << "Error during canonicalization";
+  }
+
+  auto expectedOutput = buildQCIR([](mlir::qc::QCProgramBuilder& b) {
+    auto reg0 = b.allocQubitRegister(4, "q0");
+    auto reg1 = b.allocQubitRegister(4, "q1");
+    auto memref0 = b.memrefAlloc(reg0);
+    b.scfFor(0, 3, 1, [&](Value iv) {
+      auto extractedQubit = b.memrefLoad(memref0, iv);
+      b.x(extractedQubit);
+      auto memref1 = b.memrefAlloc(reg1);
+      b.scfFor(0, 3, 1, [&](Value iv2) {
+        auto q1 = b.memrefLoad(memref1, iv2);
+        b.cx(extractedQubit, q1);
+      });
+    });
+    b.swap(reg0[0], reg0[1]);
+    b.swap(reg0[2], reg0[3]);
+  });
+
+  const auto outputString = getOutputString(input);
+  const auto checkString = getOutputString(expectedOutput);
   ASSERT_EQ(outputString, checkString);
 }
