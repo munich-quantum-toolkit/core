@@ -1033,10 +1033,55 @@ public:
   // Tensor operations
   //===--------------------------------------------------------------------===//
 
+  /**
+   * @brief Constructs a tensor.from_elements operation with the given values
+   *
+   * @param elements The elements of the tensor
+   * @return The resulting tensor
+   *
+   * @par Example:
+   * ```c++
+   * builder.tensorFromElements(elements);
+   * ```
+   * ```mlir
+   * %tensor = tensor.from_elements %q0, %q1, %q2 : tensor<3x!qco.qubit>
+   * ```
+   */
   Value tensorFromElements(ValueRange elements);
 
+  /**
+   * @brief Constructs a tensor.extract operation at the given index
+   *
+   * @param tensor The tensor where the value is extracted
+   * @param index The index where the value is extracted
+   * @return The extracted value
+   *
+   * @par Example:
+   * ```c++
+   * q = builder.tensorExtract(tensor, iv);
+   * ```
+   * ```mlir
+   * %q = tensor.extract %tensor[%iv] : tensor<3x!qco.qubit>
+   * ```
+   */
   Value tensorExtract(Value tensor, const std::variant<int64_t, Value>& index);
 
+  /**
+   * @brief Constructs a tensor.insert operation at the given index
+   *
+   * @param element The inserted value
+   * @param tensor The tensor where the value is inserted
+   * @param index The index where the value is inserted
+   * @return The resulting tensor
+   *
+   * @par Example:
+   * ```c++
+   * newTensor = builder.tensorInsert(element, tensor, iv);
+   * ```
+   * ```mlir
+   * %newTensor = tensor.insert %q into %tensor[%iv] : tensor<3x!qco.qubit>
+   * ```
+   */
   Value tensorInsert(Value element, Value tensor,
                      const std::variant<int64_t, Value>& index);
 

@@ -872,8 +872,40 @@ public:
   //===--------------------------------------------------------------------===//
   // MemRef operations
   //===--------------------------------------------------------------------===//
+
+  /**
+   * @brief Allocates a memref register and insert the given values
+   *
+   * @param elements The stored elements
+   * @return The memref register
+   *
+   * @par Example:
+   * ```c++
+   * builder.memrefAlloc(elements);
+   * ```
+   * ```mlir
+   * %memref = memref.alloc() : memref<2x!qc.qubit>
+   * memref.store %q0, %memref[%c0] : memref<2x!qc.qubit>
+   * memref.store %q1, %memref[%c1] : memref<2x!qc.qubit>
+   * ```
+   */
   Value memrefAlloc(ValueRange elements);
 
+  /**
+   * @brief Loads a value from a memref register
+   *
+   * @param memref The memref register
+   * @param index The index where the value is extracted
+   * @return The extracted value
+   *
+   * @par Example:
+   * ```c++
+   * builder.memrefLoad(memref, index);
+   * ```
+   * ```mlir
+   * %q0 = memref.load %memref[%c0] : memref<2x!qc.qubit>
+   * ```
+   */
   Value memrefLoad(Value memref, const std::variant<int64_t, Value>& index);
 
   //===--------------------------------------------------------------------===//
