@@ -82,6 +82,9 @@ struct LoweringState {
   llvm::DenseMap<Region*, llvm::DenseMap<Value, Value>> qubitMap;
   /// Map each operation to its Set of QC qubit references
   llvm::DenseMap<Operation*, llvm::SetVector<Value>> regionMap;
+  /// Map each memref operation to its stored qubits and their index
+  llvm::DenseMap<Operation*, llvm::SmallVector<std::pair<Value, Value>>>
+      memrefMap;
 
   /// Modifier information
   int64_t inCtrlOp = 0;
@@ -1349,20 +1352,37 @@ struct ConvertQCMemRefAllocOp final
   matchAndRewrite(memref::AllocOp op, OpAdaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
     auto& qubitMap = getState().qubitMap[op->getParentRegion()];
-
-    // Get the qco qubits from the users
+    auto& memrefMap = getState().memrefMap[op];
     SmallVector<Value> qcoQubits;
-    const auto users = llvm::to_vector(op->getUsers());
-    for (auto* user : llvm::reverse(users)) {
-      if (llvm::isa<memref::StoreOp>(user)) {
-        auto storeOp = dyn_cast<memref::StoreOp>(user);
+    SmallVector<std::pair<Value, arith::ConstantIndexOp>> indexedQubits;
+    // Get all qubits that are stored in the memref register and find the qco
+    // qubits
+    for (const auto* user : op->getUsers()) {
+      if (auto storeOp = dyn_cast<memref::StoreOp>(user)) {
+        auto storeIndex = storeOp.getIndices()
+                              .front()
+                              .getDefiningOp<arith::ConstantIndexOp>();
+        assert(storeIndex && "Expected constant index for memref index");
         assert(qubitMap.contains(storeOp.getValue()) && "QC qubit not found");
-        qcoQubits.push_back(qubitMap[storeOp.getValue()]);
+
+        indexedQubits.emplace_back(storeOp.getValue(), storeIndex);
       }
     }
+    // Sort the list of users
+    llvm::sort(indexedQubits, [](auto& a, auto& b) {
+      return a.second.value() < b.second.value();
+    });
+
+    // Get the qco qubits and add values to the memref map
+    qcoQubits.reserve(indexedQubits.size());
+    for (auto& [qubit, index] : indexedQubits) {
+      memrefMap.emplace_back(qubit, index.getResult());
+      qcoQubits.push_back(qubitMap[qubit]);
+    }
+
     auto const qcoType = qco::QubitType::get(rewriter.getContext());
-    const auto tensorType = RankedTensorType::get(
-        {static_cast<int64_t>(qcoQubits.size())}, qcoType);
+    const auto tensorType =
+        RankedTensorType::get(op.getType().getShape(), qcoType);
     // Create the FromElements operation
     auto fromElements = tensor::FromElementsOp::create(rewriter, op->getLoc(),
                                                        tensorType, qcoQubits);
@@ -1672,24 +1692,20 @@ struct ConvertQCScfForOp final : StatefulOpConversionPattern<scf::ForOp> {
       regionQubitMap[qcQubit] = iterArg;
       qubitMap[qcQubit] = qcoQubit;
 
-      // If the value of the qc qubit is a memref register, extract each value
-      // from the new tensor and update the qubitmap for each value
+      // If the value of the qc qubit is a memref register, create an extract
+      // operation for each qubit afterwards and update the qubitmap
       if (llvm::isa<MemRefType>(qcQubit.getType())) {
-        // Get all the qubits that were stored in the memref register
-        const auto qcQubitUsers = llvm::to_vector(qcQubit.getUsers());
-        for (const auto* user : llvm::reverse(qcQubitUsers)) {
-          if (auto storeOp = dyn_cast<memref::StoreOp>(user)) {
-            // Get the qubit
-            const auto qubit = storeOp.getValueToStore();
+        // Get the memref map
+        auto& memrefMap = getState().memrefMap[qcQubit.getDefiningOp()];
 
-            // Create the extract operation for each qubit from the resulting
-            // tensor of the scf.for operation
-            auto extractOp =
-                tensor::ExtractOp::create(rewriter, op->getLoc(), qcoType,
-                                          qcoQubit, {storeOp.getIndices()});
-            // Update the qubit map for each of them
-            qubitMap[qubit] = extractOp.getResult();
-          }
+        // Iterate over all entries
+        for (const auto& [memrefQubit, index] : memrefMap) {
+          // Create the extract operation for each qubit from the resulting
+          // tensor of the scf.for operation
+          auto extractOp = tensor::ExtractOp::create(rewriter, op->getLoc(),
+                                                     qcoType, qcoQubit, index);
+          // Update the qubit map for each of them
+          qubitMap[memrefQubit] = extractOp.getResult();
         }
       }
     }
@@ -1735,21 +1751,21 @@ struct ConvertQCScfYieldOp final : StatefulOpConversionPattern<scf::YieldOp> {
 
     SmallVector<Value> qcoQubits;
     qcoQubits.reserve(orderedQubits.size());
-    // get the latest qco qubit or the latest qco tensor from the qubitMap
+    // Get the latest qco qubit or the latest qco tensor from the qubitMap
     for (const auto& qcQubit : orderedQubits) {
       assert(qubitMap.contains(qcQubit) && "QC qubit not found");
 
-      // add an insert operation for every qubit that was extract from a
+      // Add an insert operation for every qubit that was extract from a
       // register
-      if (dyn_cast<MemRefType>(qcQubit.getType())) {
-        // find all extracted values of the register
+      if (llvm::isa<MemRefType>(qcQubit.getType())) {
+        // Find all extracted values of the register
         for (const auto* user : qcQubit.getUsers()) {
           if (auto loadOp = dyn_cast<memref::LoadOp>(user)) {
-            // get the latest qco qubit and add it back to the tensor
+            // Get the latest qco qubit and add it back to the tensor
             auto qubit = loadOp.getResult();
             assert(qubitMap.contains(qubit) && "QC qubit not found");
 
-            auto latestQcoQubit = qubitMap.lookup(qubit);
+            auto latestQcoQubit = qubitMap[qubit];
             auto insertOp = tensor::InsertOp::create(
                 rewriter, op.getLoc(), latestQcoQubit, qubitMap[qcQubit],
                 loadOp.getIndices());
