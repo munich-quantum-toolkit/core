@@ -139,7 +139,6 @@ void QCOProgramBuilder::validateQubitValue(Value qubit, Region* region) const {
   auto qubits = validQubits.lookup(region);
 
   if (qubits.empty() || !qubits.contains(qubit)) {
-    qubit.print(llvm::outs());
     llvm::errs() << "Attempting to use an invalid qubit SSA value. "
                  << "The value may have been consumed by a previous operation "
                  << "or was never created through this builder.\n";
