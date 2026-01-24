@@ -345,7 +345,8 @@ TEST_F(ConversionTest, ScfForTensorQCOtoQCTest) {
   PassManager pm(context.get());
   pm.addPass(createQCOToQC());
   if (failed(pm.run(input.get()))) {
-    FAIL() << "Conversion error during QC-QCO conversion for scf nested";
+    FAIL()
+        << "Conversion error during QCO-QC conversion for scf.for with tensor";
   }
   auto expectedOutput = buildQCIR([](mlir::qc::QCProgramBuilder& b) {
     auto reg = b.allocQubitRegister(4);
@@ -364,7 +365,7 @@ TEST_F(ConversionTest, ScfForTensorQCOtoQCTest) {
 }
 
 TEST_F(ConversionTest, ScfForNestedTensorQCOtoQCTest) {
-  // Test conversion from qco to qc for scf.for operation with a nested tesnor
+  // Test conversion from qco to qc for scf.for operation with a nested tensor
   auto input = buildQCOIR([](mlir::qco::QCOProgramBuilder& b) {
     auto reg0 = b.allocQubitRegister(4, "q0");
     auto reg1 = b.allocQubitRegister(4, "q1");
@@ -404,7 +405,8 @@ TEST_F(ConversionTest, ScfForNestedTensorQCOtoQCTest) {
   PassManager pm(context.get());
   pm.addPass(createQCOToQC());
   if (failed(pm.run(input.get()))) {
-    FAIL() << "Conversion error during QC-QCO conversion for scf nested";
+    FAIL() << "Conversion error during QCO-QC Conversion for scf.for with "
+              "nested tensor";
   }
   // Run the canonicalizer again to remove the additional constants
   pm.clear();

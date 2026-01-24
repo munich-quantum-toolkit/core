@@ -377,7 +377,8 @@ TEST_F(ConversionTest, ScfForRegisterQCtoQCOTest) {
   PassManager pm(context.get());
   pm.addPass(createQCToQCO());
   if (failed(pm.run(input.get()))) {
-    FAIL() << "Conversion error during QC-QCO conversion for scf nested";
+    FAIL() << "Conversion error during QC-QCO conversion for scf.for with "
+              "memref register";
   }
 
   auto expectedOutput = buildQCOIR([](mlir::qco::QCOProgramBuilder& b) {
@@ -426,7 +427,8 @@ TEST_F(ConversionTest, ScfForNestedRegisterQCtoQCOTest) {
   PassManager pm(context.get());
   pm.addPass(createQCToQCO());
   if (failed(pm.run(input.get()))) {
-    FAIL() << "Conversion error during QC-QCO conversion for scf nested";
+    FAIL() << "Conversion error during QC-QCO conversion for scf.for with "
+              "nested memref register";
   }
 
   auto expectedOutput = buildQCOIR([](mlir::qco::QCOProgramBuilder& b) {

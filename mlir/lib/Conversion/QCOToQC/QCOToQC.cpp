@@ -14,8 +14,11 @@
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 
 #include <cstddef>
+#include <cstdint>
 #include <iterator>
 #include <llvm/ADT/STLExtras.h>
+#include <llvm/ADT/SmallVector.h>
+#include <llvm/Support/Casting.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/Func/Transforms/FuncConversions.h>
@@ -880,7 +883,7 @@ struct ConvertQCOTensorFromElementsOp final
 
     // store each qubit into the memref
     for (auto it : llvm::enumerate(adaptor.getElements())) {
-      Value idx = rewriter.create<arith::ConstantIndexOp>(loc, it.index());
+      const auto idx = rewriter.create<arith::ConstantIndexOp>(loc, it.index());
       rewriter.create<memref::StoreOp>(loc, it.value(), memrefAllocOp, idx);
     }
 
@@ -911,7 +914,7 @@ struct ConvertQCOTensorExtractOp final
   matchAndRewrite(tensor::ExtractOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
     // Remove the extract operations following a scf.for operation
-    if (!llvm::isa<MemRefType>(op.getOperand(0).getType())) {
+    if (!llvm::isa<MemRefType>(adaptor.getOperands().front().getType())) {
       // Find the memref register
       const auto memref = adaptor.getTensor();
       const auto memrefUsers = llvm::to_vector(memref.getUsers());
@@ -921,8 +924,8 @@ struct ConvertQCOTensorExtractOp final
           adaptor.getIndices().front().getDefiningOp<arith::ConstantOp>();
       const auto indexToStore =
           dyn_cast<IntegerAttr>(constantOp.getValue()).getInt();
-      // Find the appropriate store operation depending on the index to get the
-      // qubit
+      // Find the appropriate store operation depending on the index to get
+      // the qubit
       for (auto* user : llvm::reverse(memrefUsers)) {
         if (llvm::isa<memref::StoreOp>(user)) {
           index++;

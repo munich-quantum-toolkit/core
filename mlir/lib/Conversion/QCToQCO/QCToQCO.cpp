@@ -1351,6 +1351,7 @@ struct ConvertQCMemRefAllocOp final
     for (auto* user : llvm::reverse(users)) {
       if (llvm::isa<memref::StoreOp>(user)) {
         auto storeOp = dyn_cast<memref::StoreOp>(user);
+        assert(qubitMap.contains(storeOp.getValue()) && "QC qubit not found");
         qcoQubits.push_back(qubitMap[storeOp.getValue()]);
       }
     }
@@ -1412,6 +1413,7 @@ struct ConvertQCMemRefLoadOp final
   matchAndRewrite(memref::LoadOp op, OpAdaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
     auto& qubitMap = getState().qubitMap[op->getParentRegion()];
+    assert(qubitMap.contains(op.getMemRef()) && "QC memref not found");
     const auto tensor = qubitMap[op.getMemRef()];
     auto const qcoType = qco::QubitType::get(rewriter.getContext());
     // Create the extract operation
@@ -1672,7 +1674,7 @@ struct ConvertQCScfForOp final : StatefulOpConversionPattern<scf::ForOp> {
         const auto qcQubitUsers = llvm::to_vector(qcQubit.getUsers());
         for (const auto* user : llvm::reverse(qcQubitUsers)) {
           if (auto storeOp = dyn_cast<memref::StoreOp>(user)) {
-            // gGet the qubit
+            // Get the qubit
             const auto qubit = storeOp.getValueToStore();
 
             // Create the extract operation for each qubit from the resulting
