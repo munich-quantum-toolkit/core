@@ -632,8 +632,9 @@ std::pair<ValueRange, ValueRange> QCOProgramBuilder::ctrl(
 QCOProgramBuilder& QCOProgramBuilder::dealloc(Value qubit) {
   checkFinalized();
 
-  validateQubitValue(qubit, qubit.getParentRegion());
-  validQubits[qubit.getParentRegion()].erase(qubit);
+  auto* region = getInsertionBlock()->getParent();
+  validateQubitValue(qubit, region);
+  validQubits[region].erase(qubit);
 
   DeallocOp::create(*this, qubit);
 
