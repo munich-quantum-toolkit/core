@@ -169,11 +169,8 @@ Value CtrlOp::getInputQubit(const size_t i) {
 std::invoke_result_t<decltype(llvm::concat<Value, ValueRange, ValueRange>),
                      ValueRange, ValueRange>
 CtrlOp::getInputQubits() {
-  // TODO: needs to materialize into internal storage; I wasn't able to find a
-  // way to convert concat_range -> ValueRange; however: operations cannot
-  // define new data members
-  return llvm::concat<Value>(ValueRange{getTargetsIn()},
-                             ValueRange{getControlsIn()});
+  return llvm::concat<Value>(ValueRange{getControlsIn()},
+                             ValueRange{getTargetsIn()});
 }
 
 Value CtrlOp::getOutputQubit(const size_t i) {
@@ -190,11 +187,8 @@ Value CtrlOp::getOutputQubit(const size_t i) {
 std::invoke_result_t<decltype(llvm::concat<Value, ValueRange, ValueRange>),
                      ValueRange, ValueRange>
 CtrlOp::getOutputQubits() {
-  // TODO: needs to materialize into internal storage; I wasn't able to find a
-  // way to convert concat_range -> ValueRange; however: operations cannot
-  // define new data members
-  return llvm::concat<Value>(ValueRange{getTargetsOut()},
-                             ValueRange{getControlsOut()});
+  return llvm::concat<Value>(ValueRange{getControlsOut()},
+                             ValueRange{getTargetsOut()});
 }
 
 Value CtrlOp::getInputTarget(const size_t i) {

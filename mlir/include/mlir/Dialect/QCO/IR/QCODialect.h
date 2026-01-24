@@ -82,7 +82,7 @@ public:
     }
     ValueRange getInputQubits() {
       auto&& operands = this->getOperation()->getOperands();
-      assert(T < operands.size());
+      assert(T <= operands.size());
       return operands.take_front(T);
     }
     Value getOutputQubit(size_t i) {
