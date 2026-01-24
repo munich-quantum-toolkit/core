@@ -27,6 +27,7 @@
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/LogicalResult.h>
 #include <optional>
+#include <type_traits>
 
 using namespace mlir;
 using namespace mlir::qco;
