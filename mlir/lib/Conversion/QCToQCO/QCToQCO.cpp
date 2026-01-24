@@ -1338,7 +1338,7 @@ struct ConvertQCYieldOp final : StatefulOpConversionPattern<qc::YieldOp> {
  * ```
  * is converted to
  * ```mlir
- * %tensor = tensor.from_elements %q0, %q1, %q2 : tensore<3x!qco.qubit>
+ * %tensor = tensor.from_elements %q0, %q1, %q2 : tensor<3x!qco.qubit>
  * ```
  */
 struct ConvertQCMemRefAllocOp final
