@@ -14,10 +14,8 @@
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 
 #include <cstddef>
-#include <cstdint>
 #include <iterator>
 #include <llvm/ADT/STLExtras.h>
-#include <llvm/ADT/SmallVector.h>
 #include <llvm/Support/Casting.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
@@ -888,7 +886,7 @@ struct ConvertQCOYieldOp final : OpConversionPattern<qco::YieldOp> {
  *
  * @par Example:
  * ```mlir
- * %tensor = tensor.from_elements %q0, %q1, %q2 : tensore<3x!qco.qubit>
+ * %tensor = tensor.from_elements %q0, %q1, %q2 : tensor<3x!qco.qubit>
  * ```
  * is converted to
  * ```mlir
@@ -934,7 +932,7 @@ struct ConvertQCOTensorFromElementsOp final
  * ```
  * is converted to
  * ```mlir
- * %q0 = memref.load %memref[%c0] : memref<3x!qco.qubit>
+ * %q0 = memref.load %memref[%c0] : memref<3x!qc.qubit>
  * ```
  */
 struct ConvertQCOTensorExtractOp final
@@ -949,22 +947,24 @@ struct ConvertQCOTensorExtractOp final
     // if the region of the converted memref is the same as the extract
     // operation
     if (memref.getDefiningOp()->getParentRegion() == op->getParentRegion()) {
-      // get the users of the memref register
-      const auto memrefUsers = llvm::to_vector(memref.getUsers());
       // Get the index where the value was extracted
-      int64_t index = -1;
-      auto constantOp =
-          adaptor.getIndices().front().getDefiningOp<arith::ConstantOp>();
-      const auto indexToStore =
-          dyn_cast<IntegerAttr>(constantOp.getValue()).getInt();
-      // Find the appropriate store operation depending on the index to get
-      // the qubit
-      for (auto* user : llvm::reverse(memrefUsers)) {
-        if (llvm::isa<memref::StoreOp>(user)) {
-          index++;
-          if (index == indexToStore) {
-            auto storeOp = dyn_cast<memref::StoreOp>(user);
+      auto extractIndex =
+          adaptor.getIndices().front().getDefiningOp<arith::ConstantIndexOp>();
+      assert(extractIndex && "Expected constant index for tensor index");
+      const auto indexToStore = extractIndex.value();
+
+      // Find the store operation with the same index
+      for (const auto* user : memref.getUsers()) {
+        if (auto storeOp = dyn_cast<memref::StoreOp>(user)) {
+          auto memrefIndex = storeOp.getIndices()
+                                 .front()
+                                 .getDefiningOp<arith::ConstantIndexOp>();
+          assert(memrefIndex && "Expected constant index for memref index");
+
+          // Replace the extract op with the qubit value
+          if (indexToStore == memrefIndex.value()) {
             rewriter.replaceOp(op, storeOp.getValueToStore());
+            break;
           }
         }
       }
