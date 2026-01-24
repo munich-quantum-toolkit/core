@@ -1368,7 +1368,7 @@ struct ConvertQCMemRefAllocOp final
         indexedQubits.emplace_back(storeOp.getValue(), storeIndex);
       }
     }
-    // Sort the list of users
+    // Sort the list of qubits depending on their index
     llvm::sort(indexedQubits, [](auto& a, auto& b) {
       return a.second.value() < b.second.value();
     });
