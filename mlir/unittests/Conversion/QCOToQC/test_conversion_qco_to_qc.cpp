@@ -17,6 +17,7 @@
 #include <functional>
 #include <gtest/gtest.h>
 #include <llvm/ADT/SmallVector.h>
+#include <llvm/Support/Casting.h>
 #include <llvm/Support/raw_ostream.h>
 #include <memory>
 #include <mlir/Dialect/Arith/IR/Arith.h>
@@ -33,6 +34,7 @@
 #include <mlir/IR/ValueRange.h>
 #include <mlir/Pass/PassManager.h>
 #include <mlir/Support/LogicalResult.h>
+#include <mlir/Support/WalkResult.h>
 #include <mlir/Transforms/Passes.h>
 #include <string>
 
@@ -86,22 +88,25 @@ static std::string getOutputString(mlir::OwningOpRef<mlir::ModuleOp>& module) {
   llvm::raw_string_ostream os(outputString);
 
   auto* moduleOp = module->getOperation();
-  const auto* qcoDialect =
-      moduleOp->getContext()->getLoadedDialect<qco::QCODialect>();
+  const auto* qcDialect =
+      moduleOp->getContext()->getLoadedDialect<qc::QCDialect>();
   const auto* scfDialect =
       moduleOp->getContext()->getLoadedDialect<scf::SCFDialect>();
+  const auto* memrefDialect =
+      moduleOp->getContext()->getLoadedDialect<memref::MemRefDialect>();
 
   moduleOp->walk([&](Operation* op) -> WalkResult {
     const auto* opDialect = op->getDialect();
 
     // Ignore dealloc operations as the order does not matter
-    if (llvm::isa<qco::DeallocOp>(op)) {
+    if (llvm::isa<qc::DeallocOp>(op)) {
       return WalkResult::advance();
     }
-    // Only consider operations from the qco dialect and the scf dialect or
-    // func.call or func.return op
-    if (opDialect == qcoDialect || opDialect == scfDialect ||
-        llvm::isa<func::ReturnOp>(op) || llvm::isa<func::CallOp>(op)) {
+    // Only consider operations from the qc dialect, scf dialect or memref
+    // dialect or func.call or func.return op
+    if (opDialect == qcDialect || opDialect == scfDialect ||
+        opDialect == memrefDialect || llvm::isa<func::ReturnOp>(op) ||
+        llvm::isa<func::CallOp>(op)) {
       op->print(os);
     }
     return WalkResult::advance();
@@ -348,6 +353,13 @@ TEST_F(ConversionTest, ScfForTensorQCOtoQCTest) {
     FAIL()
         << "Conversion error during QCO-QC conversion for scf.for with tensor";
   }
+  // Run the canonicalizer again to remove the additional constants
+  pm.clear();
+  pm.addPass(createCanonicalizerPass());
+  if (failed(pm.run(input.get()))) {
+    FAIL() << "Error during canonicalization";
+  }
+
   auto expectedOutput = buildQCIR([](mlir::qc::QCProgramBuilder& b) {
     auto reg = b.allocQubitRegister(4);
     auto memref = b.memrefAlloc(reg);

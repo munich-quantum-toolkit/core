@@ -17,6 +17,7 @@
 #include <functional>
 #include <gtest/gtest.h>
 #include <llvm/ADT/SmallVector.h>
+#include <llvm/Support/Casting.h>
 #include <llvm/Support/raw_ostream.h>
 #include <memory>
 #include <mlir/Dialect/Arith/IR/Arith.h>
@@ -92,7 +93,8 @@ protected:
         moduleOp->getContext()->getLoadedDialect<qco::QCODialect>();
     const auto* scfDialect =
         moduleOp->getContext()->getLoadedDialect<scf::SCFDialect>();
-
+    const auto* tensorDialect =
+        moduleOp->getContext()->getLoadedDialect<tensor::TensorDialect>();
     moduleOp->walk([&](Operation* op) -> WalkResult {
       const auto* opDialect = op->getDialect();
 
@@ -100,10 +102,11 @@ protected:
       if (llvm::isa<qco::DeallocOp>(op)) {
         return WalkResult::advance();
       }
-      // Only consider operations from the qco dialect and the scf dialect or
-      // func.call or func.return op
+      // Only consider operations from the qco dialect, scf dialect,
+      // tensor dialect or func.call op or func.return op
       if (opDialect == qcoDialect || opDialect == scfDialect ||
-          llvm::isa<func::ReturnOp>(op) || llvm::isa<func::CallOp>(op)) {
+          opDialect == tensorDialect || llvm::isa<func::ReturnOp>(op) ||
+          llvm::isa<func::CallOp>(op)) {
         op->print(os);
       }
       return WalkResult::advance();
