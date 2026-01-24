@@ -64,7 +64,7 @@ struct GateDecompositionPattern final
    * @param eulerBasis Set of euler bases that should be used for the
    *                   decomposition of local single-qubit modifications. For
    *                   each necessary single-qubit operation, the optimal basis
-   *                   will be choosen from this set
+   *                   will be chosen from this set
    * @param singleQubitOnly If true, only perform single-qubit decompositions
    *                        and no two-qubit decompositions
    * @param forceApplication If true, always apply best decomposition, even if
