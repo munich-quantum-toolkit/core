@@ -94,10 +94,39 @@ inline matrix2x2 pMatrix(const fp lambda) {
   return matrix2x2{{1, 0}, {0, {std::cos(lambda), std::sin(lambda)}}};
 }
 const matrix2x2 IDENTITY_GATE = matrix2x2::Identity();
+const matrix4x4 SWAP_GATE{
+    {1, 0, 0, 0}, {0, 0, 1, 0}, {0, 1, 0, 0}, {0, 0, 0, 1}};
 const matrix2x2 H_GATE{{1.0 / SQRT2, 1.0 / SQRT2}, {1.0 / SQRT2, -1.0 / SQRT2}};
 const matrix2x2 IPZ{{IM, C_ZERO}, {C_ZERO, M_IM}};
 const matrix2x2 IPY{{C_ZERO, C_ONE}, {C_M_ONE, C_ZERO}};
 const matrix2x2 IPX{{C_ZERO, IM}, {IM, C_ZERO}};
+
+[[nodiscard]] inline matrix4x4
+expandToTwoQubits(const matrix2x2& singleQubitMatrix, QubitId qubitId) {
+  if (qubitId == 0) {
+    return helpers::kroneckerProduct(decomposition::IDENTITY_GATE,
+                                     singleQubitMatrix);
+  }
+  if (qubitId == 1) {
+    return helpers::kroneckerProduct(singleQubitMatrix,
+                                     decomposition::IDENTITY_GATE);
+  }
+  throw std::invalid_argument{"Invalid qubit id for single-qubit expansion"};
+}
+
+[[nodiscard]] inline matrix4x4
+fixTwoQubitMatrixQubitOrder(const matrix4x4& twoQubitMatrix,
+                            const llvm::SmallVector<QubitId, 2>& qubitIds) {
+  if (qubitIds == llvm::SmallVector<QubitId, 2>{1, 0}) {
+    // since UnitaryOpInterface::getUnitaryMatrix() does have a static
+    // qubit order, adjust if we need the other direction of the gate
+    return decomposition::SWAP_GATE * twoQubitMatrix * decomposition::SWAP_GATE;
+  }
+  if (qubitIds == llvm::SmallVector<QubitId, 2>{0, 1}) {
+    return twoQubitMatrix;
+  }
+  throw std::invalid_argument{"Invalid qubit IDs for fixing two-qubit matrix"};
+}
 
 inline matrix2x2 getSingleQubitMatrix(const Gate& gate) {
   if (gate.type == qc::SX) {
@@ -136,6 +165,7 @@ inline matrix2x2 getSingleQubitMatrix(const Gate& gate) {
       qc::toString(gate.type) + ")"};
 }
 
+// TODO: remove? only used for verification of circuit
 inline matrix4x4 getTwoQubitMatrix(const Gate& gate) {
   using helpers::kroneckerProduct;
 
@@ -143,13 +173,7 @@ inline matrix4x4 getTwoQubitMatrix(const Gate& gate) {
     return kroneckerProduct(IDENTITY_GATE, IDENTITY_GATE);
   }
   if (gate.qubitId.size() == 1) {
-    if (gate.qubitId[0] == 0) {
-      return kroneckerProduct(IDENTITY_GATE, getSingleQubitMatrix(gate));
-    }
-    if (gate.qubitId[0] == 1) {
-      return kroneckerProduct(getSingleQubitMatrix(gate), IDENTITY_GATE);
-    }
-    throw std::logic_error{"Invalid qubit ID in getTwoQubitMatrix"};
+    return expandToTwoQubits(getSingleQubitMatrix(gate), gate.qubitId[0]);
   }
   if (gate.qubitId.size() == 2) {
     if (gate.type == qc::X) {

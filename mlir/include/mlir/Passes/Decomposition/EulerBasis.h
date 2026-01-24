@@ -10,7 +10,10 @@
 
 #pragma once
 
+#include "ir/operations/OpType.hpp"
+
 #include <cstdint>
+#include <llvm/ADT/SmallVector.h>
 
 namespace mlir::qco::decomposition {
 /**
@@ -37,4 +40,37 @@ enum class EulerBasis : std::uint8_t {
   ZSXX = 10,
   ZSX = 11,
 };
+
+[[nodiscard]] inline llvm::SmallVector<qc::OpType, 3>
+getGateTypesForEulerBasis(EulerBasis eulerBasis) {
+  switch (eulerBasis) {
+  case EulerBasis::ZYZ:
+    return {qc::RZ, qc::RY};
+  case EulerBasis::ZXZ:
+    return {qc::RZ, qc::RX};
+  case EulerBasis::XZX:
+    return {qc::RX, qc::RZ};
+  case EulerBasis::XYX:
+    return {qc::RX, qc::RY};
+  case EulerBasis::U3:
+    [[fallthrough]];
+  case EulerBasis::U321:
+    [[fallthrough]];
+  case EulerBasis::U:
+    return {qc::U};
+  case EulerBasis::RR:
+    return {qc::R};
+  case EulerBasis::ZSXX:
+    [[fallthrough]];
+  case EulerBasis::ZSX:
+    return {qc::RZ, qc::X};
+  case EulerBasis::PSX:
+    [[fallthrough]];
+  case EulerBasis::U1X:
+    break;
+  }
+  throw std::invalid_argument{
+      "Unsupported euler basis for translation to gate types"};
+}
+
 } // namespace mlir::qco::decomposition

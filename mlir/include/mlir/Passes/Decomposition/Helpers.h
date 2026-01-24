@@ -27,7 +27,6 @@
 #include <mlir/IR/Value.h>
 #include <optional>
 #include <stdexcept>
-#include <string>
 #include <unsupported/Eigen/KroneckerProduct> // TODO: unstable, NOLINT(misc-include-cleaner)
 
 namespace mlir::qco {
@@ -148,8 +147,11 @@ getParameters(UnitaryOpInterface op) {
 
 [[nodiscard]] inline qc::OpType getQcType(UnitaryOpInterface op) {
   try {
-    const std::string type = op->getName().stripDialect().str();
-    return qc::opTypeFromString(type);
+    auto type = op.getBaseSymbol();
+    if (type == "ctrl") {
+      type = llvm::cast<CtrlOp>(op).getBodyUnitary().getBaseSymbol();
+    }
+    return qc::opTypeFromString(type.str());
   } catch (const std::invalid_argument& /*exception*/) {
     return qc::OpType::None;
   }

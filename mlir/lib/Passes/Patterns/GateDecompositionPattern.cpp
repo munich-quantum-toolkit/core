@@ -56,14 +56,32 @@ struct GateDecompositionPattern final
    * Initialize pattern with a set of basis gates and euler bases.
    * The best combination of (basis gate, euler basis) will be evaluated for
    * each decomposition.
+   *
+   * @param context MLIR context in which the pattern is applied
+   * @param basisGate Set of two-qubit gates that should be used in the
+   *                  decomposition. All two-qubit interactions will be
+   *                  represented by one of the gates in this set
+   * @param eulerBasis Set of euler bases that should be used for the
+   *                   decomposition of local single-qubit modifications. For
+   *                   each necessary single-qubit operation, the optimal basis
+   *                   will be choosen from this set
+   * @param singleQubitOnly If true, only perform single-qubit decompositions
+   *                        and no two-qubit decompositions
+   * @param forceApplication If true, always apply best decomposition, even if
+   *                         it is longer/more complex than the previous
+   *                         circuit. To prevent recursion, this will not apply
+   *                         a decomposition if the (sub)circuit only contains
+   *                         gates available as basis gates or euler bases
    */
   explicit GateDecompositionPattern(mlir::MLIRContext* context,
                                     llvm::SmallVector<Gate> basisGate,
-                                    llvm::SmallVector<EulerBasis> eulerBasis)
+                                    llvm::SmallVector<EulerBasis> eulerBasis,
+                                    bool singleQubitOnly, bool forceApplication)
       : OpInterfaceRewritePattern(context),
-        decomposerBasisGate{std::move(basisGate)},
-        decomposerEulerBases{std::move(eulerBasis)} {
-    for (auto&& basisGate : decomposerBasisGate) {
+        decomposerBasisGates{std::move(basisGate)},
+        decomposerEulerBases{std::move(eulerBasis)},
+        singleQubitOnly{singleQubitOnly}, forceApplication{forceApplication} {
+    for (auto&& basisGate : decomposerBasisGates) {
       basisDecomposers.push_back(decomposition::TwoQubitBasisDecomposer::create(
           basisGate, DEFAULT_FIDELITY));
     }
@@ -72,9 +90,20 @@ struct GateDecompositionPattern final
   mlir::LogicalResult
   matchAndRewrite(UnitaryOpInterface op,
                   mlir::PatternRewriter& rewriter) const override {
-    auto series = TwoQubitSeries::getTwoQubitSeries(op);
+    auto collectSeries = [](UnitaryOpInterface op, bool singleQubitOnly) {
+      if (singleQubitOnly) {
+        return TwoQubitSeries::getSingleQubitSeries(op);
+      }
+      return TwoQubitSeries::getTwoQubitSeries(op);
+    };
+    auto series = collectSeries(op, singleQubitOnly);
 
-    if (series.gates.size() < 3) {
+    auto&& [singleQubitGates, twoQubitGates] = getDecompositionGates();
+    auto containsForeignGates =
+        !series.containsOnlyGates(singleQubitGates, twoQubitGates);
+
+    if (series.gates.empty() || (series.gates.size() < 3 &&
+                                 (!forceApplication || containsForeignGates))) {
       // too short
       return mlir::failure();
     }
@@ -113,8 +142,11 @@ struct GateDecompositionPattern final
             targetDecomposition, decomposerEulerBases, DEFAULT_FIDELITY, false,
             std::nullopt);
         if (sequence) {
+          // decomposition successful
           if (!bestSequence ||
               sequence->complexity() < bestSequence->complexity()) {
+            // this decomposition is better than any successful decomposition
+            // before
             bestSequence = sequence;
           }
         }
@@ -136,7 +168,8 @@ struct GateDecompositionPattern final
     llvm::errs() << "\n";
     // only accept new sequence if it shortens existing series by more than two
     // gates; this prevents an oscillation with phase gates
-    if (bestSequence->complexity() + 2 >= series.complexity) {
+    if (bestSequence->complexity() + 2 >= series.complexity &&
+        (!forceApplication || !containsForeignGates)) {
       return mlir::failure();
     }
 
@@ -164,12 +197,10 @@ protected:
      * Qubits that are the input for the series.
      * First qubit will always be set, second qubit may be equal to
      * mlir::Value{} if the series consists of only single-qubit gates.
-     *
-     * All
      */
     std::array<mlir::Value, 2> inQubits{};
     /**
-     * Qubits that are the input for the series.
+     * Qubits that are the output for the series.
      * First qubit will always be set, second qubit may be equal to
      * mlir::Value{} if the series consists of only single-qubit gates.
      */
@@ -182,38 +213,29 @@ protected:
     llvm::SmallVector<MlirGate, 8> gates;
 
     [[nodiscard]] static TwoQubitSeries
+    getSingleQubitSeries(UnitaryOpInterface op) {
+      if (isBarrier(op) || !op.isSingleQubit()) {
+        return {};
+      }
+      TwoQubitSeries result(op);
+
+      while (auto user = getUser(result.outQubits[0],
+                                 &helpers::isSingleQubitOperation)) {
+        if (!result.appendSingleQubitGate(*user)) {
+          break;
+        }
+      }
+
+      assert(result.isSingleQubitSeries());
+      return result;
+    }
+
+    [[nodiscard]] static TwoQubitSeries
     getTwoQubitSeries(UnitaryOpInterface op) {
       if (isBarrier(op)) {
         return {};
       }
       TwoQubitSeries result(op);
-
-      auto getUser = [](mlir::Value qubit,
-                        auto&& filter) -> std::optional<UnitaryOpInterface> {
-        if (qubit) {
-          auto users = qubit.getUsers();
-          auto userIt = users.begin();
-          // qubit may have more than one use if it is in a ctrl block (one use
-          // for gate, one use for ctrl); we want to use the ctrl operation
-          // since it is relevant for the total unitary matrix of the circuit
-          assert(qubit.hasOneUse() || qubit.hasNUses(2));
-          if (!qubit.hasOneUse()) {
-            // TODO: use wire iterator for proper handling
-            while (!mlir::dyn_cast<CtrlOp>(*userIt)) {
-              ++userIt;
-              if (userIt == users.end()) {
-                // TODO: should not happen?
-                return std::nullopt;
-              }
-            }
-          }
-          auto user = mlir::dyn_cast<UnitaryOpInterface>(*userIt);
-          if (user && filter(user)) {
-            return user;
-          }
-        }
-        return std::nullopt;
-      };
 
       bool foundGate = true;
       while (foundGate) {
@@ -262,16 +284,12 @@ protected:
           if (!matrix) {
             return std::nullopt;
           }
-          if (gate.qubitIds[0] == 0) {
-            gateMatrix = helpers::kroneckerProduct(decomposition::IDENTITY_GATE,
-                                                   *matrix);
-          } else if (gate.qubitIds[0] == 1) {
-            gateMatrix = helpers::kroneckerProduct(
-                *matrix, decomposition::IDENTITY_GATE);
-          }
+          gateMatrix =
+              decomposition::expandToTwoQubits(*matrix, gate.qubitIds[0]);
         } else if (gate.op.isTwoQubit()) {
           if (auto matrix = gate.op.getUnitaryMatrix<matrix4x4>()) {
-            gateMatrix = std::move(*matrix);
+            gateMatrix = decomposition::fixTwoQubitMatrixQubitOrder(
+                *matrix, gate.qubitIds);
           } else {
             return std::nullopt;
           }
@@ -286,6 +304,17 @@ protected:
     [[nodiscard]] bool isSingleQubitSeries() const {
       return llvm::is_contained(inQubits, mlir::Value{}) ||
              llvm::is_contained(outQubits, mlir::Value{});
+    }
+
+    [[nodiscard]] bool
+    containsOnlyGates(const llvm::SetVector<qc::OpType>& singleQubitGates,
+                      const llvm::SetVector<qc::OpType>& twoQubitGates) {
+      return llvm::all_of(gates, [&](auto&& gate) {
+        auto&& gateType = helpers::getQcType(gate.op);
+        return (gate.qubitIds.size() == 1 &&
+                singleQubitGates.contains(gateType)) ||
+               (gate.qubitIds.size() == 2 && twoQubitGates.contains(gateType));
+      });
     }
 
   private:
@@ -340,6 +369,13 @@ protected:
      * @return true if series continues, otherwise false
      */
     bool appendTwoQubitGate(UnitaryOpInterface nextGate) {
+      if (isBarrier(nextGate)) {
+        // a barrier operation should not be crossed for a decomposition;
+        // ignore possitility to backtrack (if this is the first two-qubit gate)
+        // since two single-qubit decompositions are less expensive than one
+        // two-qubit decomposition
+        return false;
+      }
       auto&& firstOperand = nextGate.getInputQubit(0);
       auto&& secondOperand = nextGate.getInputQubit(1);
       assert(firstOperand != secondOperand);
@@ -361,9 +397,8 @@ protected:
         auto getInputQubits =
             [](UnitaryOpInterface op) -> llvm::SmallVector<mlir::Value, 2> {
           if (auto&& ctrlOp = llvm::dyn_cast<CtrlOp>(*op)) {
-            auto&& range =
-                llvm::concat<mlir::Value>(ctrlOp.getTargetsIn(),
-                                          ctrlOp.getControlsIn());
+            auto&& range = llvm::concat<mlir::Value>(ctrlOp.getTargetsIn(),
+                                                     ctrlOp.getControlsIn());
             return {range.begin(), range.end()};
           }
           return op->getOperands();
@@ -390,10 +425,6 @@ protected:
         // before proceeding as usual, see if backtracking on the "new" qubit is
         // possible to collect other single-qubit operations
         backtrackSingleQubitSeries(newInQubitId);
-      }
-      if (isBarrier(nextGate)) {
-        // a barrier operation should not be crossed for a decomposition
-        return false;
       }
       const QubitId firstQubitId =
           std::distance(outQubits.begin(), firstQubitIt);
@@ -436,6 +467,24 @@ protected:
     [[nodiscard]] static bool isBarrier(UnitaryOpInterface op) {
       return llvm::isa_and_nonnull<BarrierOp>(*op);
     }
+
+    /**
+     *
+     */
+    template <typename Func>
+    static std::optional<UnitaryOpInterface> getUser(mlir::Value qubit,
+                                                     Func&& filter) {
+      if (qubit) {
+        auto users = qubit.getUsers();
+        auto userIt = users.begin();
+        assert(qubit.hasOneUse());
+        auto user = mlir::dyn_cast<UnitaryOpInterface>(*userIt);
+        if (user && std::invoke(std::forward<Func>(filter), user)) {
+          return user;
+        }
+      }
+      return std::nullopt;
+    };
   };
 
   template <typename OpType, typename... Args>
@@ -494,33 +543,43 @@ protected:
     matrix4x4 unitaryMatrix = helpers::kroneckerProduct(
         decomposition::IDENTITY_GATE, decomposition::IDENTITY_GATE);
     for (auto&& gate : sequence.gates) {
-      auto gateMatrix = decomposition::getTwoQubitMatrix(gate);
-      unitaryMatrix = gateMatrix * unitaryMatrix;
-
       // TODO: need to add each basis gate we want to use
-      if (gate.type == qc::X) {
-        mlir::SmallVector<mlir::Value, 1> inCtrlQubits;
-        if (gate.qubitId.size() > 1) {
-          // controls come last
-          inCtrlQubits.push_back(inQubits[gate.qubitId[1]]);
-        }
-        auto newGate = createControlledGate<XOp>(
-            rewriter, location, inCtrlQubits, inQubits[gate.qubitId[0]]);
+      if (gate.type == qc::X && gate.qubitId.size() > 1) {
+        // X gate involving more than one qubit is a CX gate:
+        // qubit position 0 is target, 1 is control
+        auto newGate = createControlledGate<XOp>(rewriter, location,
+                                                 {inQubits[gate.qubitId[1]]},
+                                                 inQubits[gate.qubitId[0]]);
+        unitaryMatrix = decomposition::fixTwoQubitMatrixQubitOrder(
+                            newGate.getUnitaryMatrix().value(), gate.qubitId) *
+                        unitaryMatrix;
         updateInQubits(gate.qubitId, newGate);
       } else if (gate.type == qc::RX) {
         assert(gate.qubitId.size() == 1);
         auto newGate = createGate<RXOp>(
             rewriter, location, inQubits[gate.qubitId[0]], gate.parameter[0]);
+        unitaryMatrix =
+            decomposition::expandToTwoQubits(newGate.getUnitaryMatrix().value(),
+                                             gate.qubitId[0]) *
+            unitaryMatrix;
         updateInQubits(gate.qubitId, newGate);
       } else if (gate.type == qc::RY) {
         assert(gate.qubitId.size() == 1);
         auto newGate = createGate<RYOp>(
             rewriter, location, inQubits[gate.qubitId[0]], gate.parameter[0]);
+        unitaryMatrix =
+            decomposition::expandToTwoQubits(newGate.getUnitaryMatrix().value(),
+                                             gate.qubitId[0]) *
+            unitaryMatrix;
         updateInQubits(gate.qubitId, newGate);
       } else if (gate.type == qc::RZ) {
         assert(gate.qubitId.size() == 1);
         auto newGate = createGate<RZOp>(
             rewriter, location, inQubits[gate.qubitId[0]], gate.parameter[0]);
+        unitaryMatrix =
+            decomposition::expandToTwoQubits(newGate.getUnitaryMatrix().value(),
+                                             gate.qubitId[0]) *
+            unitaryMatrix;
         updateInQubits(gate.qubitId, newGate);
       } else {
         throw std::runtime_error{"Unknown gate type!"};
@@ -536,17 +595,30 @@ protected:
       rewriter.replaceAllUsesWith(series.outQubits, inQubits);
     }
     for (auto&& gate : llvm::reverse(series.gates)) {
-      if (auto ctrlOp = llvm::dyn_cast<CtrlOp>(*gate.op)) {
-        rewriter.eraseOp(ctrlOp.getBodyUnitary());
-      }
       rewriter.eraseOp(gate.op);
     }
   }
 
+  [[nodiscard]] std::array<llvm::SetVector<qc::OpType>, 2>
+  getDecompositionGates() const {
+    llvm::SetVector<qc::OpType> eulerBasesGates;
+    llvm::SetVector<qc::OpType> basisGates;
+    for (auto&& eulerBasis : decomposerEulerBases) {
+      eulerBasesGates.insert_range(
+          decomposition::getGateTypesForEulerBasis(eulerBasis));
+    }
+    for (auto&& basisGate : decomposerBasisGates) {
+      basisGates.insert(basisGate.type);
+    }
+    return {eulerBasesGates, basisGates};
+  }
+
 private:
-  llvm::SmallVector<Gate> decomposerBasisGate;
+  llvm::SmallVector<Gate> decomposerBasisGates;
   llvm::SmallVector<decomposition::TwoQubitBasisDecomposer, 0> basisDecomposers;
   llvm::SmallVector<EulerBasis> decomposerEulerBases;
+  bool singleQubitOnly;
+  bool forceApplication;
 };
 
 /**
@@ -562,7 +634,7 @@ void populateGateDecompositionPatterns(mlir::RewritePatternSet& patterns) {
   eulerBases.push_back(GateDecompositionPattern::EulerBasis::XYX);
   eulerBases.push_back(GateDecompositionPattern::EulerBasis::ZXZ);
   patterns.add<GateDecompositionPattern>(patterns.getContext(), basisGates,
-                                         eulerBases);
+                                         eulerBases, false, false);
 }
 
 } // namespace mlir::qco
