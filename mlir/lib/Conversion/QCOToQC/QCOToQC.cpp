@@ -944,12 +944,14 @@ struct ConvertQCOTensorExtractOp final
   LogicalResult
   matchAndRewrite(tensor::ExtractOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
+    const auto memref = adaptor.getTensor();
     // Remove the extract operations following a scf.for operation
-    if (!llvm::isa<MemRefType>(adaptor.getOperands().front().getType())) {
-      // Find the memref register
-      const auto memref = adaptor.getTensor();
+    // if the region of the converted memref is the same as the extract
+    // operation
+    if (memref.getDefiningOp()->getParentRegion() == op->getParentRegion()) {
+      // get the users of the memref register
       const auto memrefUsers = llvm::to_vector(memref.getUsers());
-      // Get the index  where the value was extracted
+      // Get the index where the value was extracted
       int64_t index = -1;
       auto constantOp =
           adaptor.getIndices().front().getDefiningOp<arith::ConstantOp>();
