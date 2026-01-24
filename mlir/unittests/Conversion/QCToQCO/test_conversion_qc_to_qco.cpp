@@ -59,7 +59,7 @@ protected:
     PassManager pm(module.getContext());
     pm.addPass(createCanonicalizerPass());
     if (pm.run(module).failed()) {
-      llvm::errs() << "Failed to run canonicalization passes.\n";
+      FAIL() << "Error during canonicalization";
     }
   }
 
