@@ -289,6 +289,36 @@ public:
 };
 
 /**
+ * @brief Helper function to check whether the type is a qco qubit type or a
+ * container that holds qco qubit types
+ *
+ * @param type The type that is checked
+ * @return Whether it is a qco type or not
+ */
+static bool isQCOQubitType(Type type) {
+  if (llvm::isa<qco::QubitType>(type)) {
+    return true;
+  }
+  auto tensor = dyn_cast<TensorType>(type);
+  return tensor && llvm::isa<qco::QubitType>(tensor.getElementType());
+}
+
+/**
+ * @brief Helper function to check whether the type is a qc qubit type or a
+ * container that holds qc qubit types
+ *
+ * @param type The type that is checked
+ * @return Whether it is a qc type or not
+ */
+static bool isQCQubitType(Type type) {
+  if (llvm::isa<qc::QubitType>(type)) {
+    return true;
+  }
+  auto memref = dyn_cast<MemRefType>(type);
+  return memref && llvm::isa<qc::QubitType>(memref.getElementType());
+}
+
+/**
  * @brief Converts qco.alloc to qc.alloc
  *
  * @details
@@ -883,7 +913,8 @@ struct ConvertQCOTensorFromElementsOp final
 
     // store each qubit into the memref
     for (auto it : llvm::enumerate(adaptor.getElements())) {
-      const auto idx = rewriter.create<arith::ConstantIndexOp>(loc, it.index());
+      const Value idx =
+          rewriter.create<arith::ConstantIndexOp>(loc, it.index());
       rewriter.create<memref::StoreOp>(loc, it.value(), memrefAllocOp, idx);
     }
 
@@ -1320,66 +1351,52 @@ struct QCOToQC final : impl::QCOToQCBase<QCOToQC> {
 
     target.addDynamicallyLegalOp<tensor::FromElementsOp>(
         [&](tensor::FromElementsOp op) {
-          return !llvm::any_of(op.getOperandTypes(),
-                               [&](Type type) {
-                                 return type == qco::QubitType::get(context);
-                               }) &&
-                 !(op.getType().getElementType() ==
-                   qco::QubitType::get(context));
+          return !llvm::any_of(op.getOperandTypes(), [&](Type type) {
+            return isQCOQubitType(type);
+          }) && !(isQCOQubitType(op.getType()));
         });
     target.addDynamicallyLegalOp<tensor::ExtractOp>([&](tensor::ExtractOp op) {
-      return !llvm::any_of(op->getResultTypes(), [&](Type type) {
-        return type == qco::QubitType::get(context);
-      });
+      return !llvm::any_of(op->getResultTypes(),
+                           [&](Type type) { return isQCOQubitType(type); });
     });
     target.addDynamicallyLegalOp<tensor::InsertOp>([&](tensor::InsertOp op) {
-      return !llvm::any_of(op.getOperandTypes(), [&](Type type) {
-        return type == qco::QubitType::get(context);
-      });
+      return !llvm::any_of(op.getOperandTypes(),
+                           [&](Type type) { return isQCOQubitType(type); });
     });
     target.addDynamicallyLegalOp<scf::IfOp>([&](scf::IfOp op) {
-      return !llvm::any_of(op->getResultTypes(), [&](Type type) {
-        return type == qco::QubitType::get(context);
-      });
+      return !llvm::any_of(op->getResultTypes(),
+                           [&](Type type) { return isQCOQubitType(type); });
     });
 
     target.addDynamicallyLegalOp<scf::YieldOp>([&](scf::YieldOp op) {
       return !llvm::any_of(op->getOperandTypes(), [&](Type type) {
-        return type == qco::QubitType::get(context) ||
-               type == qc::QubitType::get(context);
+        return isQCOQubitType(type) || isQCQubitType(type);
       });
     });
     target.addDynamicallyLegalOp<scf::WhileOp>([&](scf::WhileOp op) {
-      return !llvm::any_of(op->getResultTypes(), [&](Type type) {
-        return type == qco::QubitType::get(context);
-      });
+      return !llvm::any_of(op->getResultTypes(),
+                           [&](Type type) { return isQCOQubitType(type); });
     });
     target.addDynamicallyLegalOp<scf::ConditionOp>([&](scf::ConditionOp op) {
       return !llvm::any_of(op.getOperandTypes(), [&](Type type) {
-        return type == qco::QubitType::get(context) ||
-               type == qc::QubitType::get(context);
+        return isQCOQubitType(type) || isQCQubitType(type);
       });
     });
     target.addDynamicallyLegalOp<scf::ForOp>([&](scf::ForOp op) {
-      return !llvm::any_of(op->getResultTypes(), [&](Type type) {
-        return type == qco::QubitType::get(context) ||
-               llvm::isa<TensorType>(type);
-      });
+      return !llvm::any_of(op->getResultTypes(),
+                           [&](Type type) { return isQCOQubitType(type); });
     });
     target.addDynamicallyLegalOp<func::CallOp>([&](func::CallOp op) {
-      return !llvm::any_of(op->getResultTypes(), [&](Type type) {
-        return type == qco::QubitType::get(context);
-      });
+      return !llvm::any_of(op->getResultTypes(),
+                           [&](Type type) { return isQCOQubitType(type); });
     });
     target.addDynamicallyLegalOp<func::FuncOp>([&](func::FuncOp op) {
-      return !llvm::any_of(op.getArgumentTypes(), [&](Type type) {
-        return type == qco::QubitType::get(context);
-      });
+      return !llvm::any_of(op.getArgumentTypes(),
+                           [&](Type type) { return isQCOQubitType(type); });
     });
     target.addDynamicallyLegalOp<func::ReturnOp>([&](func::ReturnOp op) {
       return !llvm::any_of(op->getOperandTypes(), [&](Type type) {
-        return type == qco::QubitType::get(context) ||
-               type == qc::QubitType::get(context);
+        return isQCOQubitType(type) || isQCQubitType(type);
       });
     });
 

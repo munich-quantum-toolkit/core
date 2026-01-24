@@ -121,15 +121,19 @@ private:
 
 } // namespace
 
-static bool isQubitType(Type type) {
-  if (!llvm::isa<qc::QubitType>(type)) {
-    auto memrefType = dyn_cast<MemRefType>(type);
-    if (memrefType) {
-      return llvm::isa<qc::QubitType>(memrefType.getElementType());
-    }
-    return false;
+/**
+ * @brief Helper function to check whether the type is a qc qubit type or a
+ * container that holds qc qubit types
+ *
+ * @param type The type that is checked
+ * @return Whether it is a qc type or not
+ */
+static bool isQCQubitType(Type type) {
+  if (llvm::isa<qc::QubitType>(type)) {
+    return true;
   }
-  return true;
+  auto memref = dyn_cast<MemRefType>(type);
+  return memref && llvm::isa<qc::QubitType>(memref.getElementType());
 }
 
 /**
@@ -156,7 +160,7 @@ collectUniqueQubits(Operation* op, LoweringState* state, MLIRContext* ctx) {
 
     // Collect qubits from the blockarguments
     for (auto arg : region.front().getArguments()) {
-      if (isQubitType(arg.getType())) {
+      if (isQCQubitType(arg.getType())) {
         uniqueQubits.insert(arg);
       }
     }
@@ -203,13 +207,13 @@ collectUniqueQubits(Operation* op, LoweringState* state, MLIRContext* ctx) {
             llvm::isa<scf::ForOp>(op)) {
           continue;
         }
-        if (isQubitType(operand.getType())) {
+        if (isQCQubitType(operand.getType())) {
           uniqueQubits.insert(operand);
         }
       }
       // Collect qubits from the results
       for (const auto& result : operation.getResults()) {
-        if (isQubitType(result.getType())) {
+        if (isQCQubitType(result.getType())) {
           uniqueQubits.insert(result);
         }
       }
@@ -225,12 +229,12 @@ collectUniqueQubits(Operation* op, LoweringState* state, MLIRContext* ctx) {
       if (llvm::isa<func::ReturnOp>(operation)) {
         if (auto func = operation.getParentOfType<func::FuncOp>()) {
           if (!func.getArgumentTypes().empty() &&
-              isQubitType(func.getArgumentTypes().front())) {
+              isQCQubitType(func.getArgumentTypes().front())) {
             operation.setAttr("needChange", StringAttr::get(ctx, "yes"));
             // Only add the arguments as qubits for the regionMap of func
             llvm::SetVector<Value> argQubits;
             for (auto arg : func.getArguments()) {
-              if (isQubitType(arg.getType())) {
+              if (isQCQubitType(arg.getType())) {
                 argQubits.insert(arg);
               }
             }
@@ -242,7 +246,7 @@ collectUniqueQubits(Operation* op, LoweringState* state, MLIRContext* ctx) {
   }
   // Add the operands from the operation itself
   for (const auto& operand : op->getOperands()) {
-    if (isQubitType(operand.getType())) {
+    if (isQCQubitType(operand.getType())) {
       uniqueQubits.insert(operand);
     }
   }
@@ -1721,7 +1725,7 @@ struct ConvertQCScfYieldOp final : StatefulOpConversionPattern<scf::YieldOp> {
   matchAndRewrite(scf::YieldOp op, OpAdaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
     assert(llvm::all_of(op.getOperandTypes(),
-                        [&](Type type) { return isQubitType(type); }) &&
+                        [&](Type type) { return isQCQubitType(type); }) &&
            "Not all operands are qc qubits");
 
     const auto& parentRegion = op->getParentRegion();
@@ -2007,26 +2011,26 @@ struct QCToQCO final : impl::QCToQCOBase<QCToQCO> {
     });
     target.addDynamicallyLegalOp<func::FuncOp>([&](func::FuncOp op) {
       return !llvm::any_of(op.front().getArgumentTypes(),
-                           [&](Type type) { return isQubitType(type); });
+                           [&](Type type) { return isQCQubitType(type); });
     });
     target.addDynamicallyLegalOp<func::CallOp>([&](func::CallOp op) {
       return !llvm::any_of(op->getOperandTypes(),
-                           [&](Type type) { return isQubitType(type); });
+                           [&](Type type) { return isQCQubitType(type); });
     });
     target.addDynamicallyLegalOp<func::ReturnOp>([&](func::ReturnOp op) {
       return !op->getAttrOfType<StringAttr>("needChange");
     });
     target.addDynamicallyLegalOp<memref::AllocOp>([&](memref::AllocOp op) {
       return !llvm::any_of(op->getResultTypes(),
-                           [&](Type type) { return isQubitType(type); });
+                           [&](Type type) { return isQCQubitType(type); });
     });
     target.addDynamicallyLegalOp<memref::StoreOp>([&](memref::StoreOp op) {
       return !llvm::any_of(op.getOperandTypes(),
-                           [&](Type type) { return isQubitType(type); });
+                           [&](Type type) { return isQCQubitType(type); });
     });
     target.addDynamicallyLegalOp<memref::LoadOp>([&](memref::LoadOp op) {
       return !llvm::any_of(op->getResultTypes(),
-                           [&](Type type) { return isQubitType(type); });
+                           [&](Type type) { return isQCQubitType(type); });
     });
 
     // Register operation conversion patterns with state
