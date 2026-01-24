@@ -13,6 +13,7 @@
 #include "mlir/Dialect/QC/IR/QCDialect.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 
+#include <cassert>
 #include <cstddef>
 #include <iterator>
 #include <llvm/ADT/STLExtras.h>
