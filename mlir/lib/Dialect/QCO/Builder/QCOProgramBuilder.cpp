@@ -18,6 +18,7 @@
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/STLFunctionalExtras.h>
 #include <llvm/ADT/SmallVector.h>
+#include <llvm/Support/Casting.h>
 #include <llvm/Support/ErrorHandling.h>
 #include <llvm/Support/raw_ostream.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
@@ -673,6 +674,10 @@ Value QCOProgramBuilder::tensorExtract(
       if (llvm::isa<TensorType>(arg.getType())) {
         auto fromTensorOp = arg.getDefiningOp<tensor::FromElementsOp>();
 
+        if (!fromTensorOp) {
+          continue;
+        }
+
         // Get the index as integer
         int64_t val = 0;
         if (std::holds_alternative<int64_t>(index)) {
@@ -680,6 +685,9 @@ Value QCOProgramBuilder::tensorExtract(
         } else {
           auto constantOp =
               std::get<Value>(index).getDefiningOp<arith::ConstantOp>();
+          if (!constantOp) {
+            continue;
+          }
           val = dyn_cast<IntegerAttr>(constantOp.getValue()).getInt();
         }
         // Update the tracking of the qubit

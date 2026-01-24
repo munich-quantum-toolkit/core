@@ -472,7 +472,7 @@ Value QCProgramBuilder::memrefAlloc(ValueRange elements) {
 
   // Iterate through all elements and create a store operation for each qubit
   for (auto it : llvm::enumerate(elements)) {
-    Value idx = arith::ConstantOp::create(
+    const Value idx = arith::ConstantOp::create(
         *this, getIndexAttr(static_cast<int64_t>(it.index())));
     memref::StoreOp::create(*this, it.value(), allocOp, idx);
   }
