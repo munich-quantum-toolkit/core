@@ -279,7 +279,7 @@ public:
       return qc::QubitType::get(ctx);
     });
 
-    addConversion([&](RankedTensorType t) -> Type {
+    addConversion([ctx](RankedTensorType t) -> Type {
       if (t.getElementType() == qco::QubitType::get(ctx)) {
         return MemRefType::get(t.getShape(), qc::QubitType::get(ctx));
       }
