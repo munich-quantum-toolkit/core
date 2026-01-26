@@ -10,6 +10,7 @@
 
 #include "mlir/Dialect/QC/Builder/QCProgramBuilder.h"
 
+#include "mlir/Dialect/MemRef/IR/MemRef.h"
 #include "mlir/Dialect/QC/IR/QCDialect.h"
 #include "mlir/Dialect/Utils/Utils.h"
 
@@ -20,6 +21,7 @@
 #include <llvm/Support/ErrorHandling.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
+#include <mlir/Dialect/SCF/IR/SCF.h>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/Location.h>
@@ -27,6 +29,7 @@
 #include <mlir/IR/OwningOpRef.h>
 #include <mlir/IR/Value.h>
 #include <mlir/IR/ValueRange.h>
+#include <optional>
 #include <string>
 #include <utility>
 #include <variant>
@@ -451,6 +454,161 @@ QCProgramBuilder& QCProgramBuilder::dealloc(Value qubit) {
   // Create the DeallocOp
   DeallocOp::create(*this, qubit);
 
+  return *this;
+}
+
+//===----------------------------------------------------------------------===//
+// MemRef operations
+//===----------------------------------------------------------------------===//
+
+Value QCProgramBuilder::memrefAlloc(ValueRange elements) {
+  checkFinalized();
+
+  const auto qcType = qc::QubitType::get(ctx);
+  const auto memType =
+      MemRefType::get({static_cast<int64_t>(elements.size())}, qcType);
+  // Create the alloc operation
+  auto allocOp = memref::AllocOp::create(*this, memType);
+
+  // Iterate through all elements and create a store operation for each qubit
+  for (auto it : llvm::enumerate(elements)) {
+    const Value idx = arith::ConstantOp::create(
+        *this, getIndexAttr(static_cast<int64_t>(it.index())));
+    memref::StoreOp::create(*this, it.value(), allocOp, idx);
+  }
+  return allocOp.getResult();
+}
+
+Value QCProgramBuilder::memrefLoad(Value memref,
+                                   const std::variant<int64_t, Value>& index) {
+  checkFinalized();
+
+  const auto indexValue = utils::variantToValue(*this, getLoc(), index);
+  const auto loadOp = memref::LoadOp::create(*this, memref, indexValue);
+  return loadOp->getResult(0);
+}
+
+//===----------------------------------------------------------------------===//
+// SCF operations
+//===----------------------------------------------------------------------===//
+
+QCProgramBuilder&
+QCProgramBuilder::scfFor(const std::variant<int64_t, Value>& lowerbound,
+                         const std::variant<int64_t, Value>& upperbound,
+                         const std::variant<int64_t, Value>& step,
+                         const std::function<void(Value)>& body) {
+  checkFinalized();
+
+  const auto loc = getLoc();
+  const auto lb = utils::variantToValue(*this, loc, lowerbound);
+  const auto ub = utils::variantToValue(*this, loc, upperbound);
+  const auto stepSize = utils::variantToValue(*this, loc, step);
+
+  scf::ForOp::create(*this, lb, ub, stepSize, ValueRange{},
+                     [&](OpBuilder& b, Location, Value iv, ValueRange) {
+                       const OpBuilder::InsertionGuard guard(*this);
+                       setInsertionPointToStart(b.getInsertionBlock());
+                       body(iv);
+                       scf::YieldOp::create(b, loc);
+                     });
+
+  return *this;
+}
+
+QCProgramBuilder&
+QCProgramBuilder::scfWhile(const std::function<void()>& beforeBody,
+                           const std::function<void()>& afterBody) {
+  checkFinalized();
+
+  scf::WhileOp::create(
+      *this, TypeRange{}, ValueRange{},
+      [&](OpBuilder& b, Location, ValueRange) {
+        const OpBuilder::InsertionGuard guard(*this);
+        setInsertionPointToStart(b.getInsertionBlock());
+        beforeBody();
+      },
+      [&](OpBuilder& b, Location loc, ValueRange) {
+        const OpBuilder::InsertionGuard guard(*this);
+        setInsertionPointToStart(b.getInsertionBlock());
+        afterBody();
+        scf::YieldOp::create(b, loc);
+      });
+
+  return *this;
+}
+
+QCProgramBuilder&
+QCProgramBuilder::scfIf(const std::variant<bool, Value>& cond,
+                        const std::function<void()>& thenBody,
+                        std::optional<std::function<void()>> elseBody) {
+  checkFinalized();
+
+  const auto condition = utils::variantToValue(*this, getLoc(), cond);
+
+  if (!elseBody) {
+    scf::IfOp::create(*this, condition, [&](OpBuilder& b, Location loc) {
+      const OpBuilder::InsertionGuard guard(*this);
+      setInsertionPointToStart(b.getInsertionBlock());
+      thenBody();
+      scf::YieldOp::create(b, loc);
+    });
+  } else {
+    scf::IfOp::create(
+        *this, condition,
+        [&](OpBuilder& b, Location loc) {
+          const OpBuilder::InsertionGuard guard(*this);
+          setInsertionPointToStart(b.getInsertionBlock());
+          thenBody();
+          scf::YieldOp::create(b, loc);
+        },
+        [&](OpBuilder& b, Location loc) {
+          const OpBuilder::InsertionGuard guard(*this);
+          setInsertionPointToStart(b.getInsertionBlock());
+          (*elseBody)();
+          scf::YieldOp::create(b, loc);
+        });
+  }
+  return *this;
+}
+
+QCProgramBuilder& QCProgramBuilder::scfCondition(Value condition) {
+  checkFinalized();
+
+  scf::ConditionOp::create(*this, condition, ValueRange{});
+  return *this;
+}
+
+//===----------------------------------------------------------------------===//
+// Func operations
+//===----------------------------------------------------------------------===//
+
+QCProgramBuilder& QCProgramBuilder::funcCall(StringRef name,
+                                             ValueRange operands) {
+  checkFinalized();
+
+  func::CallOp::create(*this, name, TypeRange{}, operands);
+  return *this;
+}
+
+QCProgramBuilder&
+QCProgramBuilder::funcFunc(StringRef name, TypeRange argTypes,
+                           const std::function<void(ValueRange)>& body) {
+  checkFinalized();
+
+  // Set the insertionPoint
+  const OpBuilder::InsertionGuard guard(*this);
+  setInsertionPointToEnd(module.getBody());
+
+  // Create the empty func operation
+  const auto funcType = getFunctionType(argTypes, {});
+  auto funcOp = func::FuncOp::create(*this, name, funcType);
+  auto* entryBlock = funcOp.addEntryBlock();
+
+  setInsertionPointToStart(entryBlock);
+
+  // Build function body
+  body(entryBlock->getArguments());
+  func::ReturnOp::create(*this);
   return *this;
 }
 
