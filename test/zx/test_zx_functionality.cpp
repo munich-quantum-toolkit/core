@@ -220,7 +220,6 @@ TEST_F(ZXFunctionalityTest, Compound) {
 }
 
 TEST_F(ZXFunctionalityTest, CRZ) {
-  using namespace qc::literals;
   qc = qc::QuantumComputation(2);
   qc.crz(PI / 2, 0, 1);
 
