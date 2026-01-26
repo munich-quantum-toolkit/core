@@ -113,6 +113,18 @@ protected:
                const std::optional<double>& unconvertedBeta = std::nullopt);
   static void addCcx(ZXDiagram& diag, Qubit ctrl0, Qubit ctrl1, Qubit target,
                      std::vector<Vertex>& qubits);
+  static void addCcz(ZXDiagram& diag, Qubit ctrl0, Qubit ctrl1, Qubit target,
+                     std::vector<Vertex>& qubits);
+  static void addCrz(ZXDiagram& diag, const PiExpression& phase,
+                     const Qubit control, const Qubit target,
+                     std::vector<Vertex>& qubits);
+  static void addMcrz(ZXDiagram& diag, const PiExpression& phase,
+                      std::vector<Qubit> controls, const Qubit target,
+                      std::vector<Vertex>& qubits);
+  static void addMcx(ZXDiagram& diag, std::vector<Qubit> controls,
+                     const Qubit target, std::vector<Vertex>& qubits);
+  static void addMcz(ZXDiagram& diag, std::vector<Qubit> controls,
+                     const Qubit target, std::vector<Vertex>& qubits);
   static op_it parseOp(ZXDiagram& diag, op_it it, op_it end,
                        std::vector<Vertex>& qubits, const qc::Permutation& p);
   static op_it parseCompoundOp(ZXDiagram& diag, op_it it, op_it end,
