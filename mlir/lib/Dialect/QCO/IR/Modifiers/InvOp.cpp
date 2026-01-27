@@ -11,12 +11,16 @@
 #include "Eigen/Core"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 
+#include <cassert>
 #include <cstddef>
 #include <llvm/ADT/STLExtras.h>
+#include <llvm/ADT/TypeSwitch.h>
 #include <llvm/Support/Casting.h>
 #include <llvm/Support/ErrorHandling.h>
+#include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/BuiltinAttributes.h>
+#include <mlir/IR/IRMapping.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OperationSupport.h>
 #include <mlir/IR/PatternMatch.h>
@@ -28,6 +32,152 @@ using namespace mlir;
 using namespace mlir::qco;
 
 namespace {
+
+/**
+ * @brief Remove inverse modifiers around self-adjoint gates.
+ *
+ * For self-adjoint gates U (i.e., U = U†), inv(U) = U holds.
+ */
+struct InlineSelfAdjoint final : OpRewritePattern<InvOp> {
+  using OpRewritePattern::OpRewritePattern;
+
+  LogicalResult matchAndRewrite(InvOp op,
+                                PatternRewriter& rewriter) const override {
+    auto* innerOp = op.getBodyUnitary().getOperation();
+
+    if (!llvm::isa<IdOp, HOp, XOp, YOp, ZOp, SWAPOp>(innerOp)) {
+      return failure();
+    }
+
+    // Map block arguments to operation inputs
+    IRMapping mapping;
+    auto& block = *op.getBody();
+    for (size_t i = 0; i < op.getNumTargets(); ++i) {
+      mapping.map(block.getArgument(i), op.getInputTarget(i));
+    }
+
+    // Clone the inner operation using the mapping
+    auto* cloned = rewriter.clone(*innerOp, mapping);
+    rewriter.replaceOp(op, cloned->getResults());
+    return success();
+  }
+};
+
+/**
+ * @brief Replace inverse modifiers around gates where the inverse is a known
+ * gate by their known inverse.
+ *
+ * For example, for the T gate, inv(T) = Tdg holds.
+ */
+struct ReplaceWithKnownGates final : OpRewritePattern<InvOp> {
+  using OpRewritePattern::OpRewritePattern;
+
+  static Value negatedAngle(Value theta, PatternRewriter& rewriter,
+                            Location loc) {
+    auto type = theta.getType();
+    auto minusOne = rewriter.create<arith::ConstantOp>(
+        loc, type, rewriter.getFloatAttr(type, -1.0));
+    return rewriter.create<arith::MulFOp>(loc, theta, minusOne);
+  }
+
+  LogicalResult matchAndRewrite(InvOp op,
+                                PatternRewriter& rewriter) const override {
+    auto* innerOp = op.getBodyUnitary().getOperation();
+
+    return llvm::TypeSwitch<Operation*, LogicalResult>(innerOp)
+        .Case<TOp>([&](auto) {
+          rewriter.replaceOpWithNewOp<TdgOp>(op, op.getInputTarget(0));
+          return success();
+        })
+        .Case<TdgOp>([&](auto) {
+          rewriter.replaceOpWithNewOp<TOp>(op, op.getInputTarget(0));
+          return success();
+        })
+        .Case<SOp>([&](auto) {
+          rewriter.replaceOpWithNewOp<SdgOp>(op, op.getInputTarget(0));
+          return success();
+        })
+        .Case<SdgOp>([&](auto) {
+          rewriter.replaceOpWithNewOp<SOp>(op, op.getInputTarget(0));
+          return success();
+        })
+        .Case<SXOp>([&](auto) {
+          rewriter.replaceOpWithNewOp<SXdgOp>(op, op.getInputTarget(0));
+          return success();
+        })
+        .Case<SXdgOp>([&](auto) {
+          rewriter.replaceOpWithNewOp<SXOp>(op, op.getInputTarget(0));
+          return success();
+        })
+        .Case<POp>([&](auto p) {
+          auto negTheta = negatedAngle(p.getTheta(), rewriter, op.getLoc());
+          rewriter.replaceOpWithNewOp<POp>(op, op.getInputTarget(0), negTheta);
+          return success();
+        })
+        .Case<ROp>([&](auto r) {
+          auto negTheta = negatedAngle(r.getTheta(), rewriter, op.getLoc());
+          rewriter.replaceOpWithNewOp<ROp>(op, op.getInputTarget(0), negTheta,
+                                           r.getPhi());
+          return success();
+        })
+        .Case<RXOp>([&](auto rx) {
+          auto negTheta = negatedAngle(rx.getTheta(), rewriter, op.getLoc());
+          rewriter.replaceOpWithNewOp<RXOp>(op, op.getInputTarget(0), negTheta);
+          return success();
+        })
+        .Case<RXXOp>([&](auto rxx) {
+          auto negTheta = negatedAngle(rxx.getTheta(), rewriter, op.getLoc());
+          rewriter.replaceOpWithNewOp<RXXOp>(op, op.getInputTarget(0),
+                                             op.getInputTarget(1), negTheta);
+          return success();
+        })
+        .Case<RYOp>([&](auto ry) {
+          auto negTheta = negatedAngle(ry.getTheta(), rewriter, op.getLoc());
+          rewriter.replaceOpWithNewOp<RYOp>(op, op.getInputTarget(0), negTheta);
+          return success();
+        })
+        .Case<RYYOp>([&](auto ryy) {
+          auto negTheta = negatedAngle(ryy.getTheta(), rewriter, op.getLoc());
+          rewriter.replaceOpWithNewOp<RYYOp>(op, op.getInputTarget(0),
+                                             op.getInputTarget(1), negTheta);
+          return success();
+        })
+        .Case<RZOp>([&](auto rz) {
+          auto negTheta = negatedAngle(rz.getTheta(), rewriter, op.getLoc());
+          rewriter.replaceOpWithNewOp<RZOp>(op, op.getInputTarget(0), negTheta);
+          return success();
+        })
+        .Case<RZXOp>([&](auto rzx) {
+          auto negTheta = negatedAngle(rzx.getTheta(), rewriter, op.getLoc());
+          rewriter.replaceOpWithNewOp<RZXOp>(op, op.getInputTarget(0),
+                                             op.getInputTarget(1), negTheta);
+          return success();
+        })
+        .Case<RZZOp>([&](auto rzz) {
+          auto negTheta = negatedAngle(rzz.getTheta(), rewriter, op.getLoc());
+          rewriter.replaceOpWithNewOp<RZZOp>(op, op.getInputTarget(0),
+                                             op.getInputTarget(1), negTheta);
+          return success();
+        })
+        .Case<XXMinusYYOp>([&](auto xxminusyy) {
+          auto negTheta =
+              negatedAngle(xxminusyy.getTheta(), rewriter, op.getLoc());
+          rewriter.replaceOpWithNewOp<XXMinusYYOp>(
+              op, op.getInputTarget(0), op.getInputTarget(1), negTheta,
+              xxminusyy.getBeta());
+          return success();
+        })
+        .Case<XXPlusYYOp>([&](auto xxplusyy) {
+          auto negTheta =
+              negatedAngle(xxplusyy.getTheta(), rewriter, op.getLoc());
+          rewriter.replaceOpWithNewOp<XXPlusYYOp>(op, op.getInputTarget(0),
+                                                  op.getInputTarget(1),
+                                                  negTheta, xxplusyy.getBeta());
+          return success();
+        })
+        .Default([&](auto) { return failure(); });
+  }
+};
 
 /**
  * @brief Cancel nested inverse modifiers, i.e., `inv(inv(x)) => x`.
@@ -223,7 +373,7 @@ LogicalResult InvOp::verify() {
 
 void InvOp::getCanonicalizationPatterns(RewritePatternSet& results,
                                         MLIRContext* context) {
-  results.add<CancelNestedInv>(context);
+  results.add<InlineSelfAdjoint, ReplaceWithKnownGates>(context);
 }
 
 std::optional<Eigen::MatrixXcd> InvOp::getUnitaryMatrix() {
