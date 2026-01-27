@@ -27,6 +27,7 @@
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/LogicalResult.h>
 #include <optional>
+#include <type_traits>
 
 using namespace mlir;
 using namespace mlir::qco;
@@ -145,7 +146,9 @@ struct CtrlInlineId final : OpRewritePattern<CtrlOp> {
 } // namespace
 
 UnitaryOpInterface CtrlOp::getBodyUnitary() {
-  return llvm::dyn_cast<UnitaryOpInterface>(&getBody()->front());
+  auto bodyUnitary = llvm::dyn_cast<UnitaryOpInterface>(&getBody()->front());
+  assert(bodyUnitary);
+  return bodyUnitary;
 }
 
 size_t CtrlOp::getNumQubits() { return getNumTargets() + getNumControls(); }
@@ -160,9 +163,16 @@ Value CtrlOp::getInputQubit(const size_t i) {
     return getControlsIn()[i];
   }
   if (numControls <= i && i < getNumQubits()) {
-    return getBodyUnitary().getInputQubit(i - numControls);
+    return getTargetsIn()[i - numControls];
   }
   llvm::reportFatalUsageError("Invalid qubit index");
+}
+
+std::invoke_result_t<decltype(llvm::concat<Value, ValueRange, ValueRange>),
+                     ValueRange, ValueRange>
+CtrlOp::getInputQubits() {
+  return llvm::concat<Value>(ValueRange{getControlsIn()},
+                             ValueRange{getTargetsIn()});
 }
 
 Value CtrlOp::getOutputQubit(const size_t i) {
@@ -171,9 +181,16 @@ Value CtrlOp::getOutputQubit(const size_t i) {
     return getControlsOut()[i];
   }
   if (numControls <= i && i < getNumQubits()) {
-    return getBodyUnitary().getOutputQubit(i - numControls);
+    return getTargetsOut()[i - numControls];
   }
   llvm::reportFatalUsageError("Invalid qubit index");
+}
+
+std::invoke_result_t<decltype(llvm::concat<Value, ValueRange, ValueRange>),
+                     ValueRange, ValueRange>
+CtrlOp::getOutputQubits() {
+  return llvm::concat<Value>(ValueRange{getControlsOut()},
+                             ValueRange{getTargetsOut()});
 }
 
 Value CtrlOp::getInputTarget(const size_t i) {
