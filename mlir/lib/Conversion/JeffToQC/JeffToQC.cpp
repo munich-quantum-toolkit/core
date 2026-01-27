@@ -89,7 +89,7 @@ struct JeffToQC final : impl::JeffToQCBase<JeffToQC> {
 
     ConversionTarget target(*context);
     RewritePatternSet patterns(context);
-    JeffToQCTypeConverter typeConverter(context);
+    const JeffToQCTypeConverter typeConverter(context);
 
     // Configure conversion target: Jeff illegal, QC legal
     target.addIllegalDialect<jeff::JeffDialect>();
