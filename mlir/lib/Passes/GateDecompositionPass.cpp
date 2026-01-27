@@ -39,7 +39,11 @@ struct GateDecompositionPass final
 
     // Configure greedy driver
     mlir::GreedyRewriteConfig config;
+    // start at top of program to maximize collected sub-circuits
     config.setUseTopDownTraversal(true);
+    // only optimize existing operations to avoid unnecessary sub-circuit
+    // collections of already decomposed gates
+    config.setStrictness(GreedyRewriteStrictness::ExistingOps);
 
     // Apply patterns in an iterative and greedy manner.
     if (mlir::failed(

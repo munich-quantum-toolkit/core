@@ -90,6 +90,16 @@ struct GateDecompositionPattern final
   mlir::LogicalResult
   matchAndRewrite(UnitaryOpInterface op,
                   mlir::PatternRewriter& rewriter) const override {
+    if (op->getParentOfType<CtrlOp>()) {
+      // application of pattern might not work on gates inside a control
+      // modifier because rotation gates need to create new constants which are
+      // not allowed inside a control body; also, the foreign gate dection does
+      // not work and e.g. a CNOT will not be recognized as such and thus will
+      // be further decomposed into a RX gate inside the control body which is
+      // most likely undesired
+      return mlir::failure();
+    }
+
     auto collectSeries = [](UnitaryOpInterface op, bool singleQubitOnly) {
       if (singleQubitOnly) {
         return TwoQubitSeries::getSingleQubitSeries(op);
@@ -103,8 +113,8 @@ struct GateDecompositionPattern final
         !series.containsOnlyGates(singleQubitGates, twoQubitGates);
 
     if (series.gates.empty() || (series.gates.size() < 3 &&
-                                 (!forceApplication || containsForeignGates))) {
-      // too short
+                                 !(forceApplication && containsForeignGates))) {
+      // empty or too short and only contains valid gates anyway
       return mlir::failure();
     }
 
@@ -169,7 +179,7 @@ struct GateDecompositionPattern final
     // only accept new sequence if it shortens existing series by more than two
     // gates; this prevents an oscillation with phase gates
     if (bestSequence->complexity() + 2 >= series.complexity &&
-        (!forceApplication || !containsForeignGates)) {
+        !(forceApplication && containsForeignGates)) {
       return mlir::failure();
     }
 
@@ -245,6 +255,10 @@ protected:
           while (auto user = getUser(result.outQubits[i],
                                      &helpers::isSingleQubitOperation)) {
             foundGate = result.appendSingleQubitGate(*user);
+            if (!foundGate) {
+              // result.outQubits was not updated, prevent endless loop
+              break;
+            }
           }
         }
 
