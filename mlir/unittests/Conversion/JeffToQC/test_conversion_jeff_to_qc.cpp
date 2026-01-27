@@ -11,30 +11,16 @@
 #include "mlir/Conversion/JeffToQC/JeffToQC.h"
 #include "mlir/Dialect/QC/IR/QCDialect.h"
 
-#include <functional>
 #include <gtest/gtest.h>
 #include <jeff/IR/JeffDialect.h>
-#include <llvm/ADT/SmallVector.h>
-#include <llvm/Support/Casting.h>
 #include <llvm/Support/raw_ostream.h>
 #include <memory>
-#include <mlir/Dialect/Arith/IR/Arith.h>
-#include <mlir/Dialect/Func/IR/FuncOps.h>
-#include <mlir/Dialect/LLVMIR/LLVMDialect.h>
-#include <mlir/Dialect/MemRef/IR/MemRef.h>
-#include <mlir/Dialect/SCF/IR/SCF.h>
-#include <mlir/Dialect/Tensor/IR/Tensor.h>
 #include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/DialectRegistry.h>
-#include <mlir/IR/Operation.h>
 #include <mlir/IR/OwningOpRef.h>
-#include <mlir/IR/Value.h>
-#include <mlir/IR/ValueRange.h>
 #include <mlir/Parser/Parser.h>
 #include <mlir/Pass/PassManager.h>
 #include <mlir/Support/LogicalResult.h>
-#include <mlir/Support/WalkResult.h>
-#include <mlir/Transforms/Passes.h>
 #include <string>
 
 using namespace mlir;
@@ -52,18 +38,17 @@ protected:
     context->loadAllAvailableDialects();
   }
 
-  static std::string
-  getOutputString(mlir::OwningOpRef<mlir::ModuleOp>& module_) {
+  static std::string getOutputString(mlir::OwningOpRef<mlir::ModuleOp>& mod) {
     std::string outputString;
     llvm::raw_string_ostream outputStream(outputString);
-    module_->print(outputStream);
+    mod->print(outputStream);
     outputStream.flush();
     return outputString;
   }
 };
 
 TEST_F(ConversionTest, X) {
-  const auto inputString = R"(
+  const auto* const inputString = R"(
     %0 = jeff.qubit_alloc : !jeff.qubit
     %1 = jeff.x {is_adjoint = false, num_ctrls = 0 : i8, power = 1 : i8} %0 : !jeff.qubit
     %2 = jeff.x {is_adjoint = false, num_ctrls = 0 : i8, power = 1 : i8} %1 : !jeff.qubit

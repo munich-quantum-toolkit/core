@@ -14,8 +14,6 @@
 
 #include <jeff/IR/JeffDialect.h>
 #include <jeff/IR/JeffOps.h>
-#include <mlir/Dialect/Func/IR/FuncOps.h>
-#include <mlir/Dialect/Func/Transforms/FuncConversions.h>
 #include <mlir/IR/BuiltinTypeInterfaces.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OperationSupport.h>
@@ -60,7 +58,7 @@ struct ConvertQCAllocOpToJeff final : StatefulOpConversionPattern<qc::AllocOp> {
   using StatefulOpConversionPattern::StatefulOpConversionPattern;
 
   LogicalResult
-  matchAndRewrite(qc::AllocOp op, OpAdaptor adaptor,
+  matchAndRewrite(qc::AllocOp op, OpAdaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
     auto jeffOp = rewriter.replaceOpWithNewOp<jeff::QubitAllocOp>(op);
 
@@ -84,7 +82,7 @@ struct ConvertQCDeallocOpToJeff final
     auto qcQubit = op.getQubit();
 
     auto jeffQubit = qubitMap[qcQubit];
-    auto jeffOp = rewriter.replaceOpWithNewOp<jeff::QubitFreeOp>(op, jeffQubit);
+    rewriter.replaceOpWithNewOp<jeff::QubitFreeOp>(op, jeffQubit);
 
     // Erase qubit from map
     qubitMap.erase(qcQubit);

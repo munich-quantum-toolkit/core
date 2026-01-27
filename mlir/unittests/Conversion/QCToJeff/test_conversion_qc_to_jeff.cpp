@@ -16,25 +16,16 @@
 #include <gtest/gtest.h>
 #include <jeff/IR/JeffDialect.h>
 #include <llvm/ADT/SmallVector.h>
-#include <llvm/Support/Casting.h>
 #include <llvm/Support/raw_ostream.h>
 #include <memory>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
-#include <mlir/Dialect/LLVMIR/LLVMDialect.h>
-#include <mlir/Dialect/MemRef/IR/MemRef.h>
-#include <mlir/Dialect/SCF/IR/SCF.h>
-#include <mlir/Dialect/Tensor/IR/Tensor.h>
 #include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/DialectRegistry.h>
-#include <mlir/IR/Operation.h>
 #include <mlir/IR/OwningOpRef.h>
 #include <mlir/IR/Value.h>
-#include <mlir/IR/ValueRange.h>
 #include <mlir/Pass/PassManager.h>
 #include <mlir/Support/LogicalResult.h>
-#include <mlir/Support/WalkResult.h>
-#include <mlir/Transforms/Passes.h>
 #include <string>
 
 using namespace mlir;
@@ -62,11 +53,10 @@ protected:
     return module;
   }
 
-  static std::string
-  getOutputString(mlir::OwningOpRef<mlir::ModuleOp>& module_) {
+  static std::string getOutputString(mlir::OwningOpRef<mlir::ModuleOp>& mod) {
     std::string outputString;
     llvm::raw_string_ostream outputStream(outputString);
-    module_->print(outputStream);
+    mod->print(outputStream);
     outputStream.flush();
     return outputString;
   }
