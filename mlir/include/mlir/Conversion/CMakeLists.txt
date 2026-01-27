@@ -6,6 +6,8 @@
 #
 # Licensed under the MIT License
 
+add_subdirectory(JeffToQC)
 add_subdirectory(QCOToQC)
+add_subdirectory(QCToJeff)
 add_subdirectory(QCToQCO)
 add_subdirectory(QCToQIR)

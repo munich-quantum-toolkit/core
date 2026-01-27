@@ -6,8 +6,15 @@
 #
 # Licensed under the MIT License
 
-add_subdirectory(QCToQCO)
-add_subdirectory(QCToQIR)
-add_subdirectory(QCOToQC)
-add_subdirectory(JeffToQC)
-add_subdirectory(QCToJeff)
+file(GLOB CONVERSION_SOURCES *.cpp)
+
+add_mlir_library(
+  JeffToQC
+  ${CONVERSION_SOURCES}
+  DEPENDS
+  JeffToQCIncGen
+  LINK_LIBS
+  MLIRJeff
+  MLIRQCDialect
+  MLIRTransforms
+  DISABLE_INSTALL)
