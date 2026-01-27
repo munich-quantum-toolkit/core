@@ -1133,10 +1133,10 @@ def InvOp : QCOOp<"inv", traits =
 
     let arguments = (ins Arg<Variadic<QubitType>, "the target qubits", [MemRead]>:$targets_in);
     let results = (outs Variadic<QubitType>:$targets_out);
-    let regions = (region SizedRegion<1>:$body);
+    let regions = (region SizedRegion<1>:$region);
     let assemblyFormat = [{
-        $targets_in
-        $body attr-dict `:`
+        custom<TargetAliasing>($region, $targets_in)
+        attr-dict `:`
         `{` type($targets_in) `}`
         `->`
         `{` type($targets_out) `}`
@@ -1165,7 +1165,7 @@ def InvOp : QCOOp<"inv", traits =
            build($_builder, $_state, targets.getTypes(), targets);
         }]>,
         OpBuilder<(ins "ValueRange":$targets, "UnitaryOpInterface":$bodyUnitary)>,
-        OpBuilder<(ins "ValueRange":$targets, "const std::function<ValueRange(OpBuilder &, ValueRange)>&":$bodyBuilder)>
+        OpBuilder<(ins "ValueRange":$targets, "llvm::function_ref<llvm::SmallVector<Value>(ValueRange)>":$bodyBuilder)>
     ];
 
     let hasCanonicalizer = 1;

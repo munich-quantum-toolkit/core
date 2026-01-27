@@ -1,6 +1,6 @@
 /*
- * Copyright (c) 2023 - 2025 Chair for Design Automation, TUM
- * Copyright (c) 2025 Munich Quantum Software Company GmbH
+ * Copyright (c) 2023 - 2026 Chair for Design Automation, TUM
+ * Copyright (c) 2025 - 2026 Munich Quantum Software Company GmbH
  * All rights reserved.
  *
  * SPDX-License-Identifier: MIT
@@ -11,7 +11,6 @@
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 
 #include <cstddef>
-#include <functional>
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/Support/Casting.h>
 #include <llvm/Support/ErrorHandling.h>
@@ -54,7 +53,7 @@ struct CancelNestedInv final : OpRewritePattern<InvOp> {
 } // namespace
 
 UnitaryOpInterface InvOp::getBodyUnitary() {
-  return llvm::dyn_cast<UnitaryOpInterface>(&getBody().front().front());
+  return llvm::dyn_cast<UnitaryOpInterface>(&getBody()->front());
 }
 
 size_t InvOp::getNumQubits() { return getNumTargets() + getNumControls(); }
@@ -118,7 +117,7 @@ Value InvOp::getParameter(const size_t i) {
 }
 
 void InvOp::build(OpBuilder& odsBuilder, OperationState& odsState,
-                  const ValueRange targets, UnitaryOpInterface bodyUnitary) {
+                  ValueRange targets, UnitaryOpInterface bodyUnitary) {
   build(odsBuilder, odsState, targets);
   auto& block = odsState.regions.front()->emplaceBlock();
 
@@ -130,22 +129,38 @@ void InvOp::build(OpBuilder& odsBuilder, OperationState& odsState,
 }
 
 void InvOp::build(
-    OpBuilder& odsBuilder, OperationState& odsState, const ValueRange targets,
-    const std::function<ValueRange(OpBuilder&, ValueRange)>& bodyBuilder) {
+    OpBuilder& odsBuilder, OperationState& odsState, ValueRange targets,
+    llvm::function_ref<llvm::SmallVector<Value>(ValueRange)> bodyBuilder) {
   build(odsBuilder, odsState, targets);
   auto& block = odsState.regions.front()->emplaceBlock();
 
-  // Move the unitary op into the block
+  const auto qubitType = QubitType::get(odsBuilder.getContext());
+  for (size_t i = 0; i < targets.size(); ++i) {
+    block.addArgument(qubitType, odsState.location);
+  }
+
   const OpBuilder::InsertionGuard guard(odsBuilder);
   odsBuilder.setInsertionPointToStart(&block);
-  auto targetsOut = bodyBuilder(odsBuilder, targets);
-  YieldOp::create(odsBuilder, odsState.location, targetsOut);
+  YieldOp::create(odsBuilder, odsState.location,
+                  bodyBuilder(block.getArguments()));
 }
 
 LogicalResult InvOp::verify() {
-  auto& block = getBody().front();
+  auto& block = *getBody();
   if (block.getOperations().size() != 2) {
     return emitOpError("body region must have exactly two operations");
+  }
+  const auto numTargets = getNumTargets();
+  if (block.getArguments().size() != numTargets) {
+    return emitOpError(
+        "number of block arguments must match the number of targets");
+  }
+  const auto qubitType = QubitType::get(getContext());
+  for (size_t i = 0; i < numTargets; ++i) {
+    if (block.getArgument(i).getType() != qubitType) {
+      return emitOpError("block argument type at index ")
+             << i << " does not match target type";
+    }
   }
   if (!llvm::isa<UnitaryOpInterface>(block.front())) {
     return emitOpError(
@@ -155,20 +170,41 @@ LogicalResult InvOp::verify() {
     return emitOpError(
         "second operation in body region must be a yield operation");
   }
-  if (block.back().getNumOperands() != getNumTargets()) {
+  if (const auto numYieldOperands = block.back().getNumOperands();
+      numYieldOperands != numTargets) {
     return emitOpError("yield operation must yield ")
-           << getNumTargets() << " values, but found "
-           << block.back().getNumOperands();
+           << numTargets << " values, but found " << numYieldOperands;
   }
 
   SmallPtrSet<Value, 4> uniqueQubitsIn;
-  auto bodyUnitary = getBodyUnitary();
-  const auto numQubits = bodyUnitary.getNumQubits();
-  for (size_t i = 0; i < numQubits; i++) {
-    if (!uniqueQubitsIn.insert(bodyUnitary.getInputQubit(i)).second) {
-      return emitOpError("duplicate qubit found");
+  for (const auto& target : getTargetsIn()) {
+    if (!uniqueQubitsIn.insert(target).second) {
+      return emitOpError("duplicate target qubit found");
     }
   }
+
+  auto bodyUnitary = getBodyUnitary();
+  if (bodyUnitary.getNumQubits() != numTargets) {
+    return emitOpError("body unitary must operate on exactly ")
+           << numTargets << " target qubits, but found "
+           << bodyUnitary.getNumQubits();
+  }
+  const auto numQubits = bodyUnitary.getNumQubits();
+  for (size_t i = 0; i < numQubits; i++) {
+    if (bodyUnitary.getInputQubit(i) != block.getArgument(i)) {
+      return emitOpError("body unitary must use target alias block argument ")
+             << i << " (and not the original target operand)";
+    }
+  }
+
+  // Also require yield to forward the unitary's outputs in-order.
+  for (size_t i = 0; i < numTargets; ++i) {
+    if (block.back().getOperand(i) != bodyUnitary.getOutputQubit(i)) {
+      return emitOpError("yield operand ")
+             << i << " must be the body unitary output qubit " << i;
+    }
+  }
+
   SmallPtrSet<Value, 4> uniqueQubitsOut;
   for (size_t i = 0; i < numQubits; i++) {
     if (!uniqueQubitsOut.insert(bodyUnitary.getOutputQubit(i)).second) {
@@ -177,7 +213,7 @@ LogicalResult InvOp::verify() {
   }
 
   if (llvm::isa<BarrierOp>(bodyUnitary.getOperation())) {
-    return emitOpError("BarrierOp cannot be inverted");
+    return emitOpError("BarrierOp cannot be controlled");
   }
 
   return success();

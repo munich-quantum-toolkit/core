@@ -992,8 +992,8 @@ def InvOp : QCOp<"inv",
         ```
     }];
 
-    let regions = (region SizedRegion<1>:$body);
-    let assemblyFormat = "$body attr-dict";
+    let regions = (region SizedRegion<1>:$region);
+    let assemblyFormat = "$region attr-dict";
 
     let extraClassDeclaration = [{
         [[nodiscard]] UnitaryOpInterface getBodyUnitary();
@@ -1010,7 +1010,7 @@ def InvOp : QCOp<"inv",
 
     let builders = [
         OpBuilder<(ins "UnitaryOpInterface":$bodyUnitary)>,
-        OpBuilder<(ins "const std::function<void(OpBuilder &)>&":$bodyBuilder)>
+        OpBuilder<(ins "const std::function<void()>&":$bodyBuilder)>
     ];
 
     let hasCanonicalizer = 1;

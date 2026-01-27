@@ -853,7 +853,7 @@ public:
    *
    * @par Example:
    * ```c++
-   * builder.inv([&](auto& b) { b.s(q0); });
+   * builder.inv([&] { builder.s(q0); });
    * ```
    * ```mlir
    * qc.inv {
@@ -861,7 +861,7 @@ public:
    * }
    * ```
    */
-  QCProgramBuilder& inv(const std::function<void(OpBuilder&)>& body);
+  QCProgramBuilder& inv(const std::function<void()>& body);
 
   //===--------------------------------------------------------------------===//
   // Deallocation

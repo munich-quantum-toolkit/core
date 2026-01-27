@@ -1014,10 +1014,11 @@ public:
    *
    * @par Example:
    * ```c++
-   * targets_out = builder.inv(q0_in, [&](auto& b) {
-   *   auto q0_res = b.s(q0_in);
-   *   return {q0_res};
-   * });
+   * targets_out = builder.inv(q0_in,
+   *   [&](ValueRange targets) -> llvm::SmallVector<Value> {
+   *     return {builder.s(targets[0])};
+   *   }
+   * );
    * ```
    * ```mlir
    * %targets_out = qco.inv %q0_in {
@@ -1027,7 +1028,7 @@ public:
    * ```
    */
   ValueRange inv(ValueRange targets,
-                 const std::function<ValueRange(OpBuilder&, ValueRange)>& body);
+                 llvm::function_ref<llvm::SmallVector<Value>(ValueRange)> body);
 
   //===--------------------------------------------------------------------===//
   // Deallocation

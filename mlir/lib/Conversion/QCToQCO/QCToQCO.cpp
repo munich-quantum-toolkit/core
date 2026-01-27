@@ -1156,8 +1156,9 @@ struct ConvertQCCtrlOp final : StatefulOpConversionPattern<qc::CtrlOp> {
  * @par Example:
  * ```mlir
  * qc.inv {
- *   qc.s %q0
- * }
+ *   qc.s %q0 : !qc.qubit
+ *   qc.yield
+ * } : !qc.qubit
  * ```
  * is converted to
  * ```mlir
@@ -1204,8 +1205,24 @@ struct ConvertQCInvOp final : StatefulOpConversionPattern<qc::InvOp> {
     state.targetsIn.try_emplace(state.inCtrlOp, qcoTargets);
 
     // Clone body region from QC to QCO
-    auto& dstRegion = qcoOp.getBody();
-    rewriter.cloneRegionBefore(op.getBody(), dstRegion, dstRegion.end());
+    auto& dstRegion = qcoOp.getRegion();
+    rewriter.cloneRegionBefore(op.getRegion(), dstRegion, dstRegion.end());
+
+    // Create block arguments for target qubits and store them in
+    // `state.targetsIn`.
+    auto& entryBlock = dstRegion.front();
+    assert(entryBlock.getNumArguments() == 0 &&
+           "QC inv region unexpectedly has entry block arguments");
+    SmallVector<Value> qcoTargetAliases;
+    qcoTargetAliases.reserve(numTargets);
+    const auto qubitType = qco::QubitType::get(qcoOp.getContext());
+    const auto opLoc = op.getLoc();
+    rewriter.modifyOpInPlace(qcoOp, [&] {
+      for (auto i = 0UL; i < numTargets; i++) {
+        qcoTargetAliases.emplace_back(entryBlock.addArgument(qubitType, opLoc));
+      }
+    });
+    state.targetsIn[state.inCtrlOp] = std::move(qcoTargetAliases);
 
     rewriter.eraseOp(op);
     return success();

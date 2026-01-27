@@ -433,10 +433,9 @@ QCProgramBuilder& QCProgramBuilder::ctrl(ValueRange controls,
   return *this;
 }
 
-QCProgramBuilder&
-QCProgramBuilder::inv(const std::function<void(OpBuilder&)>& body) {
+QCProgramBuilder& QCProgramBuilder::inv(const std::function<void()>& body) {
   checkFinalized();
-  InvOp::create(*this, loc, body);
+  InvOp::create(*this, body);
   return *this;
 }
 
