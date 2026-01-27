@@ -101,13 +101,16 @@ struct ConvertQCXOpToJeff final : StatefulOpConversionPattern<qc::XOp> {
     auto qcQubit = op.getQubitIn();
 
     auto jeffQubit = qubitMap[qcQubit];
-    auto jeffOp = rewriter.replaceOpWithNewOp<jeff::XOp>(
-        op, jeffQubit, /*in_ctrl_qubits=*/ValueRange{}, /*num_ctrls=*/0,
-        /*is_adjoint=*/false,
-        /*power=*/1);
+    auto jeffOp = rewriter.create<jeff::XOp>(op.getLoc(), jeffQubit,
+                                             /*in_ctrl_qubits=*/ValueRange{},
+                                             /*num_ctrls=*/0,
+                                             /*is_adjoint=*/false,
+                                             /*power=*/1);
 
     // Update qubit map
     qubitMap[qcQubit] = jeffOp.getOutQubit();
+
+    rewriter.eraseOp(op);
 
     return success();
   }
