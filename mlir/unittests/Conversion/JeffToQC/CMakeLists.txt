@@ -8,7 +8,8 @@
 
 add_executable(mqt-core-mlir-conversion-jeff-to-qc-test test_conversion_jeff_to_qc.cpp)
 
-target_link_libraries(mqt-core-mlir-conversion-jeff-to-qc-test
-                      PRIVATE GTest::gtest_main MLIRParser MLIRPass MLIRTransforms JeffToQC)
+target_link_libraries(
+  mqt-core-mlir-conversion-jeff-to-qc-test PRIVATE GTest::gtest_main MLIRArithDialect MLIRParser
+                                                   MLIRPass MLIRTransforms JeffToQC)
 
 gtest_discover_tests(mqt-core-mlir-conversion-jeff-to-qc-test)
