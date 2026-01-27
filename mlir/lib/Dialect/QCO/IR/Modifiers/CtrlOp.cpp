@@ -146,7 +146,9 @@ struct CtrlInlineId final : OpRewritePattern<CtrlOp> {
 } // namespace
 
 UnitaryOpInterface CtrlOp::getBodyUnitary() {
-  return llvm::dyn_cast<UnitaryOpInterface>(&getBody()->front());
+  auto bodyUnitary = llvm::dyn_cast<UnitaryOpInterface>(&getBody()->front());
+  assert(bodyUnitary);
+  return bodyUnitary;
 }
 
 size_t CtrlOp::getNumQubits() { return getNumTargets() + getNumControls(); }
