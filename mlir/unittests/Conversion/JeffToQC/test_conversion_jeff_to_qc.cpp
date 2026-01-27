@@ -25,7 +25,7 @@
 
 using namespace mlir;
 
-class ConversionTest : public ::testing::Test {
+class JeffToQCConversionTest : public ::testing::Test {
 protected:
   std::unique_ptr<mlir::MLIRContext> context;
   void SetUp() override {
@@ -47,7 +47,7 @@ protected:
   }
 };
 
-TEST_F(ConversionTest, X) {
+TEST_F(JeffToQCConversionTest, X) {
   const auto* const inputString = R"(
     %0 = jeff.qubit_alloc : !jeff.qubit
     %1 = jeff.x {is_adjoint = false, num_ctrls = 0 : i8, power = 1 : i8} %0 : !jeff.qubit

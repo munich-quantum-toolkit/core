@@ -30,7 +30,7 @@
 
 using namespace mlir;
 
-class ConversionTest : public ::testing::Test {
+class QCToJeffConversionTest : public ::testing::Test {
 protected:
   std::unique_ptr<mlir::MLIRContext> context;
   void SetUp() override {
@@ -62,7 +62,7 @@ protected:
   }
 };
 
-TEST_F(ConversionTest, X) {
+TEST_F(QCToJeffConversionTest, X) {
   auto input = buildQCIR([](mlir::qc::QCProgramBuilder& b) {
     auto reg = b.allocQubitRegister(1, "q");
     const auto q = reg[0];
