@@ -8,6 +8,7 @@
  * Licensed under the MIT License
  */
 
+#include "Eigen/Core"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 
 #include <cstddef>
@@ -21,6 +22,7 @@
 #include <mlir/IR/PatternMatch.h>
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/LogicalResult.h>
+#include <optional>
 
 using namespace mlir;
 using namespace mlir::qco;
@@ -222,4 +224,19 @@ LogicalResult InvOp::verify() {
 void InvOp::getCanonicalizationPatterns(RewritePatternSet& results,
                                         MLIRContext* context) {
   results.add<CancelNestedInv>(context);
+}
+
+std::optional<Eigen::MatrixXcd> InvOp::getUnitaryMatrix() {
+  auto&& bodyUnitary = getBodyUnitary();
+  if (!bodyUnitary) {
+    return std::nullopt;
+  }
+  auto&& targetMatrix = bodyUnitary.getUnitaryMatrix<Eigen::MatrixXcd>();
+  if (!targetMatrix) {
+    return std::nullopt;
+  }
+
+  targetMatrix->adjointInPlace();
+
+  return targetMatrix;
 }

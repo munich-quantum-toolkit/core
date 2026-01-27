@@ -1187,7 +1187,8 @@ def InvOp : QCOOp<"inv", traits =
         Value getOutputForInput(Value input);
         size_t getNumParams();
         Value getParameter(size_t i);
-        static StringRef getBaseSymbol() { return "inv"; }
+        [[nodiscard]] static StringRef getBaseSymbol() { return "inv"; }
+        [[nodiscard]] std::optional<Eigen::MatrixXcd> getUnitaryMatrix();
     }];
 
     let builders = [
