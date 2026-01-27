@@ -12,11 +12,14 @@
 #include "mlir/Dialect/QCO/QCOUtils.h"
 #include "mlir/Dialect/Utils/Utils.h"
 
+#include <Eigen/Core>
+#include <complex>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OperationSupport.h>
 #include <mlir/IR/PatternMatch.h>
 #include <mlir/Support/LogicalResult.h>
+#include <optional>
 #include <variant>
 
 using namespace mlir;
@@ -54,11 +57,19 @@ struct RemoveTrivialP final : OpRewritePattern<POp> {
 
 void POp::build(OpBuilder& odsBuilder, OperationState& odsState, Value qubitIn,
                 const std::variant<double, Value>& theta) {
-  auto thetaOperand = variantToValue(odsBuilder, odsState.location, theta);
+  const auto thetaOperand =
+      variantToValue(odsBuilder, odsState.location, theta);
   build(odsBuilder, odsState, qubitIn, thetaOperand);
 }
 
 void POp::getCanonicalizationPatterns(RewritePatternSet& results,
                                       MLIRContext* context) {
   results.add<MergeSubsequentP, RemoveTrivialP>(context);
+}
+
+std::optional<Eigen::Matrix2cd> POp::getUnitaryMatrix() {
+  if (const auto theta = valueToDouble(getTheta())) {
+    return Eigen::Matrix2cd{{1.0, 0.0}, {0.0, std::polar(1.0, *theta)}};
+  }
+  return std::nullopt;
 }

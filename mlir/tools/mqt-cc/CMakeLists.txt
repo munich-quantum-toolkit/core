@@ -14,7 +14,11 @@ target_link_libraries(
           # Required for parsing .mlir files
           MLIRParser
           # Required for file I/O
-          MLIRSupport)
+          MLIRSupport
+          # Required for OpenQASM parsing
+          MQT::CoreQASM
+          MQT::CoreIR
+          MLIRQCTranslation)
 llvm_update_compile_flags(mqt-cc)
 mlir_check_all_link_libraries(mqt-cc)
 export_executable_symbols_for_plugins(mqt-cc)

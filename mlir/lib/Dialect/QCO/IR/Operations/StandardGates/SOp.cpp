@@ -11,6 +11,8 @@
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QCO/QCOUtils.h"
 
+#include <Eigen/Core>
+#include <complex>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OperationSupport.h>
 #include <mlir/IR/PatternMatch.h>
@@ -50,4 +52,11 @@ struct MergeSubsequentS final : OpRewritePattern<SOp> {
 void SOp::getCanonicalizationPatterns(RewritePatternSet& results,
                                       MLIRContext* context) {
   results.add<RemoveSAfterSdg, MergeSubsequentS>(context);
+}
+
+Eigen::Matrix2cd SOp::getUnitaryMatrix() {
+  using namespace std::complex_literals;
+
+  return Eigen::Matrix2cd{{1.0, 0.0}, // row 0
+                          {0.0, 1i}}; // row 1
 }
