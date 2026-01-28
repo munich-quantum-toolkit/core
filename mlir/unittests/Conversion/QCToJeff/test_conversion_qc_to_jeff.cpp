@@ -62,6 +62,26 @@ protected:
   }
 };
 
+TEST_F(QCToJeffConversionTest, Id) {
+  auto input = buildQCIR([](mlir::qc::QCProgramBuilder& b) {
+    auto reg = b.allocQubitRegister(1, "q");
+    const auto q = reg[0];
+    b.id(q);
+  });
+
+  PassManager pm(context.get());
+  pm.addPass(createQCToJeff());
+  if (failed(pm.run(input.get()))) {
+    FAIL() << "Error during QC-to-Jeff conversion";
+  }
+
+  const auto outputString = getOutputString(input);
+
+  // ASSERT_EQ(outputString, "test");
+
+  ASSERT_NE(outputString.find("jeff.i"), std::string::npos);
+}
+
 TEST_F(QCToJeffConversionTest, X) {
   auto input = buildQCIR([](mlir::qc::QCProgramBuilder& b) {
     auto reg = b.allocQubitRegister(1, "q");
@@ -83,11 +103,50 @@ TEST_F(QCToJeffConversionTest, X) {
   ASSERT_NE(outputString.find("jeff.x"), std::string::npos);
 }
 
+TEST_F(QCToJeffConversionTest, Y) {
+  auto input = buildQCIR([](mlir::qc::QCProgramBuilder& b) {
+    auto reg = b.allocQubitRegister(1, "q");
+    const auto q = reg[0];
+    b.y(q);
+  });
+
+  PassManager pm(context.get());
+  pm.addPass(createQCToJeff());
+  if (failed(pm.run(input.get()))) {
+    FAIL() << "Error during QC-to-Jeff conversion";
+  }
+
+  const auto outputString = getOutputString(input);
+
+  // ASSERT_EQ(outputString, "test");
+
+  ASSERT_NE(outputString.find("jeff.y"), std::string::npos);
+}
+
+TEST_F(QCToJeffConversionTest, Z) {
+  auto input = buildQCIR([](mlir::qc::QCProgramBuilder& b) {
+    auto reg = b.allocQubitRegister(1, "q");
+    const auto q = reg[0];
+    b.z(q);
+  });
+
+  PassManager pm(context.get());
+  pm.addPass(createQCToJeff());
+  if (failed(pm.run(input.get()))) {
+    FAIL() << "Error during QC-to-Jeff conversion";
+  }
+
+  const auto outputString = getOutputString(input);
+
+  // ASSERT_EQ(outputString, "test");
+
+  ASSERT_NE(outputString.find("jeff.z"), std::string::npos);
+}
+
 TEST_F(QCToJeffConversionTest, H) {
   auto input = buildQCIR([](mlir::qc::QCProgramBuilder& b) {
     auto reg = b.allocQubitRegister(1, "q");
     const auto q = reg[0];
-    b.h(q);
     b.h(q);
   });
 
@@ -102,6 +161,90 @@ TEST_F(QCToJeffConversionTest, H) {
   // ASSERT_EQ(outputString, "test");
 
   ASSERT_NE(outputString.find("jeff.h"), std::string::npos);
+}
+
+TEST_F(QCToJeffConversionTest, S) {
+  auto input = buildQCIR([](mlir::qc::QCProgramBuilder& b) {
+    auto reg = b.allocQubitRegister(1, "q");
+    const auto q = reg[0];
+    b.s(q);
+  });
+
+  PassManager pm(context.get());
+  pm.addPass(createQCToJeff());
+  if (failed(pm.run(input.get()))) {
+    FAIL() << "Error during QC-to-Jeff conversion";
+  }
+
+  const auto outputString = getOutputString(input);
+
+  // ASSERT_EQ(outputString, "test");
+
+  ASSERT_NE(outputString.find("jeff.s"), std::string::npos);
+  ASSERT_NE(outputString.find("is_adjoint = false"), std::string::npos);
+}
+
+TEST_F(QCToJeffConversionTest, Sdg) {
+  auto input = buildQCIR([](mlir::qc::QCProgramBuilder& b) {
+    auto reg = b.allocQubitRegister(1, "q");
+    const auto q = reg[0];
+    b.sdg(q);
+  });
+
+  PassManager pm(context.get());
+  pm.addPass(createQCToJeff());
+  if (failed(pm.run(input.get()))) {
+    FAIL() << "Error during QC-to-Jeff conversion";
+  }
+
+  const auto outputString = getOutputString(input);
+
+  // ASSERT_EQ(outputString, "test");
+
+  ASSERT_NE(outputString.find("jeff.s"), std::string::npos);
+  ASSERT_NE(outputString.find("is_adjoint = true"), std::string::npos);
+}
+
+TEST_F(QCToJeffConversionTest, T) {
+  auto input = buildQCIR([](mlir::qc::QCProgramBuilder& b) {
+    auto reg = b.allocQubitRegister(1, "q");
+    const auto q = reg[0];
+    b.t(q);
+  });
+
+  PassManager pm(context.get());
+  pm.addPass(createQCToJeff());
+  if (failed(pm.run(input.get()))) {
+    FAIL() << "Error during QC-to-Jeff conversion";
+  }
+
+  const auto outputString = getOutputString(input);
+
+  // ASSERT_EQ(outputString, "test");
+
+  ASSERT_NE(outputString.find("jeff.t"), std::string::npos);
+  ASSERT_NE(outputString.find("is_adjoint = false"), std::string::npos);
+}
+
+TEST_F(QCToJeffConversionTest, Tdg) {
+  auto input = buildQCIR([](mlir::qc::QCProgramBuilder& b) {
+    auto reg = b.allocQubitRegister(1, "q");
+    const auto q = reg[0];
+    b.tdg(q);
+  });
+
+  PassManager pm(context.get());
+  pm.addPass(createQCToJeff());
+  if (failed(pm.run(input.get()))) {
+    FAIL() << "Error during QC-to-Jeff conversion";
+  }
+
+  const auto outputString = getOutputString(input);
+
+  // ASSERT_EQ(outputString, "test");
+
+  ASSERT_NE(outputString.find("jeff.t"), std::string::npos);
+  ASSERT_NE(outputString.find("is_adjoint = true"), std::string::npos);
 }
 
 TEST_F(QCToJeffConversionTest, Bell) {

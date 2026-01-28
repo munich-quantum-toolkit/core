@@ -47,6 +47,31 @@ protected:
   }
 };
 
+TEST_F(JeffToQCConversionTest, Id) {
+  const auto* const inputString = R"(
+    %q0_0 = jeff.qubit_alloc : !jeff.qubit
+    %q0_1 = jeff.i {is_adjoint = false, num_ctrls = 0 : i8, power = 1 : i8} %q0_0 : !jeff.qubit
+    jeff.qubit_free %q0_1 : !jeff.qubit
+  )";
+
+  auto input = parseSourceString<ModuleOp>(inputString, context.get());
+  if (!input) {
+    FAIL() << "Failed to parse Jeff IR";
+  }
+
+  PassManager pm(context.get());
+  pm.addPass(createJeffToQC());
+  if (failed(pm.run(input.get()))) {
+    FAIL() << "Error during Jeff-to-QC conversion";
+  }
+
+  const auto outputString = getOutputString(input);
+
+  // ASSERT_EQ(outputString, "test");
+
+  ASSERT_NE(outputString.find("qc.id"), std::string::npos);
+}
+
 TEST_F(JeffToQCConversionTest, X) {
   const auto* const inputString = R"(
     %q0_0 = jeff.qubit_alloc : !jeff.qubit
@@ -73,12 +98,61 @@ TEST_F(JeffToQCConversionTest, X) {
   ASSERT_NE(outputString.find("qc.x"), std::string::npos);
 }
 
+TEST_F(JeffToQCConversionTest, Y) {
+  const auto* const inputString = R"(
+    %q0_0 = jeff.qubit_alloc : !jeff.qubit
+    %q0_1 = jeff.y {is_adjoint = false, num_ctrls = 0 : i8, power = 1 : i8} %q0_0 : !jeff.qubit
+    jeff.qubit_free %q0_1 : !jeff.qubit
+  )";
+
+  auto input = parseSourceString<ModuleOp>(inputString, context.get());
+  if (!input) {
+    FAIL() << "Failed to parse Jeff IR";
+  }
+
+  PassManager pm(context.get());
+  pm.addPass(createJeffToQC());
+  if (failed(pm.run(input.get()))) {
+    FAIL() << "Error during Jeff-to-QC conversion";
+  }
+
+  const auto outputString = getOutputString(input);
+
+  // ASSERT_EQ(outputString, "test");
+
+  ASSERT_NE(outputString.find("qc.y"), std::string::npos);
+}
+
+TEST_F(JeffToQCConversionTest, Z) {
+  const auto* const inputString = R"(
+    %q0_0 = jeff.qubit_alloc : !jeff.qubit
+    %q0_1 = jeff.z {is_adjoint = false, num_ctrls = 0 : i8, power = 1 : i8} %q0_0 : !jeff.qubit
+    jeff.qubit_free %q0_1 : !jeff.qubit
+  )";
+
+  auto input = parseSourceString<ModuleOp>(inputString, context.get());
+  if (!input) {
+    FAIL() << "Failed to parse Jeff IR";
+  }
+
+  PassManager pm(context.get());
+  pm.addPass(createJeffToQC());
+  if (failed(pm.run(input.get()))) {
+    FAIL() << "Error during Jeff-to-QC conversion";
+  }
+
+  const auto outputString = getOutputString(input);
+
+  // ASSERT_EQ(outputString, "test");
+
+  ASSERT_NE(outputString.find("qc.z"), std::string::npos);
+}
+
 TEST_F(JeffToQCConversionTest, H) {
   const auto* const inputString = R"(
     %q0_0 = jeff.qubit_alloc : !jeff.qubit
     %q0_1 = jeff.h {is_adjoint = false, num_ctrls = 0 : i8, power = 1 : i8} %q0_0 : !jeff.qubit
-    %q0_2 = jeff.h {is_adjoint = false, num_ctrls = 0 : i8, power = 1 : i8} %q0_1 : !jeff.qubit
-    jeff.qubit_free %q0_2 : !jeff.qubit
+    jeff.qubit_free %q0_1 : !jeff.qubit
   )";
 
   auto input = parseSourceString<ModuleOp>(inputString, context.get());
@@ -97,6 +171,106 @@ TEST_F(JeffToQCConversionTest, H) {
   // ASSERT_EQ(outputString, "test");
 
   ASSERT_NE(outputString.find("qc.h"), std::string::npos);
+}
+
+TEST_F(JeffToQCConversionTest, S) {
+  const auto* const inputString = R"(
+    %q0_0 = jeff.qubit_alloc : !jeff.qubit
+    %q0_1 = jeff.s {is_adjoint = false, num_ctrls = 0 : i8, power = 1 : i8} %q0_0 : !jeff.qubit
+    jeff.qubit_free %q0_1 : !jeff.qubit
+  )";
+
+  auto input = parseSourceString<ModuleOp>(inputString, context.get());
+  if (!input) {
+    FAIL() << "Failed to parse Jeff IR";
+  }
+
+  PassManager pm(context.get());
+  pm.addPass(createJeffToQC());
+  if (failed(pm.run(input.get()))) {
+    FAIL() << "Error during Jeff-to-QC conversion";
+  }
+
+  const auto outputString = getOutputString(input);
+
+  // ASSERT_EQ(outputString, "test");
+
+  ASSERT_NE(outputString.find("qc.s"), std::string::npos);
+}
+
+TEST_F(JeffToQCConversionTest, Sdg) {
+  const auto* const inputString = R"(
+    %q0_0 = jeff.qubit_alloc : !jeff.qubit
+    %q0_1 = jeff.s {is_adjoint = true, num_ctrls = 0 : i8, power = 1 : i8} %q0_0 : !jeff.qubit
+    jeff.qubit_free %q0_1 : !jeff.qubit
+  )";
+
+  auto input = parseSourceString<ModuleOp>(inputString, context.get());
+  if (!input) {
+    FAIL() << "Failed to parse Jeff IR";
+  }
+
+  PassManager pm(context.get());
+  pm.addPass(createJeffToQC());
+  if (failed(pm.run(input.get()))) {
+    FAIL() << "Error during Jeff-to-QC conversion";
+  }
+
+  const auto outputString = getOutputString(input);
+
+  // ASSERT_EQ(outputString, "test");
+
+  ASSERT_NE(outputString.find("qc.sdg"), std::string::npos);
+}
+
+TEST_F(JeffToQCConversionTest, T) {
+  const auto* const inputString = R"(
+    %q0_0 = jeff.qubit_alloc : !jeff.qubit
+    %q0_1 = jeff.t {is_adjoint = false, num_ctrls = 0 : i8, power = 1 : i8} %q0_0 : !jeff.qubit
+    jeff.qubit_free %q0_1 : !jeff.qubit
+  )";
+
+  auto input = parseSourceString<ModuleOp>(inputString, context.get());
+  if (!input) {
+    FAIL() << "Failed to parse Jeff IR";
+  }
+
+  PassManager pm(context.get());
+  pm.addPass(createJeffToQC());
+  if (failed(pm.run(input.get()))) {
+    FAIL() << "Error during Jeff-to-QC conversion";
+  }
+
+  const auto outputString = getOutputString(input);
+
+  // ASSERT_EQ(outputString, "test");
+
+  ASSERT_NE(outputString.find("qc.t"), std::string::npos);
+}
+
+TEST_F(JeffToQCConversionTest, Tdg) {
+  const auto* const inputString = R"(
+    %q0_0 = jeff.qubit_alloc : !jeff.qubit
+    %q0_1 = jeff.t {is_adjoint = true, num_ctrls = 0 : i8, power = 1 : i8} %q0_0 : !jeff.qubit
+    jeff.qubit_free %q0_1 : !jeff.qubit
+  )";
+
+  auto input = parseSourceString<ModuleOp>(inputString, context.get());
+  if (!input) {
+    FAIL() << "Failed to parse Jeff IR";
+  }
+
+  PassManager pm(context.get());
+  pm.addPass(createJeffToQC());
+  if (failed(pm.run(input.get()))) {
+    FAIL() << "Error during Jeff-to-QC conversion";
+  }
+
+  const auto outputString = getOutputString(input);
+
+  // ASSERT_EQ(outputString, "test");
+
+  ASSERT_NE(outputString.find("qc.tdg"), std::string::npos);
 }
 
 TEST_F(JeffToQCConversionTest, Bell) {

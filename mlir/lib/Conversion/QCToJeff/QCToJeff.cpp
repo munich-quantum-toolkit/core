@@ -59,6 +59,46 @@ private:
 
 } // namespace
 
+template <typename JeffOpType, typename QCOpType>
+static LogicalResult
+convertOneTargetZeroParameter(QCOpType& op, ConversionPatternRewriter& rewriter,
+                              LoweringState& state, bool isAdjoint) {
+  auto& qubitMap = state.qubitMap;
+  auto inCtrlOp = state.inCtrlOp;
+
+  auto qcTarget = op.getQubitIn();
+  auto jeffTarget = qubitMap[qcTarget];
+
+  SmallVector<Value> jeffControls{};
+  if (inCtrlOp != 0) {
+    for (auto qcControl : state.controls[inCtrlOp]) {
+      assert(qubitMap.contains(qcControl) && "QC qubit not found");
+      jeffControls.push_back(qubitMap[qcControl]);
+    }
+  }
+
+  auto jeffOp = rewriter.create<JeffOpType>(op.getLoc(), jeffTarget,
+                                            /*in_ctrl_qubits=*/jeffControls,
+                                            /*num_ctrls=*/jeffControls.size(),
+                                            /*is_adjoint=*/isAdjoint,
+                                            /*power=*/1);
+
+  // Update qubit map and modifier information
+  qubitMap[qcTarget] = jeffOp.getOutQubit();
+  if (inCtrlOp != 0) {
+    for (size_t i = 0; i < jeffControls.size(); ++i) {
+      auto qcControl = state.controls[inCtrlOp][i];
+      qubitMap[qcControl] = jeffOp.getOutCtrlQubits()[i];
+    }
+    state.controls.erase(inCtrlOp);
+    state.inCtrlOp--;
+  }
+
+  rewriter.eraseOp(op);
+
+  return success();
+}
+
 struct ConvertQCAllocOpToJeff final : StatefulOpConversionPattern<qc::AllocOp> {
   using StatefulOpConversionPattern::StatefulOpConversionPattern;
 
@@ -96,93 +136,33 @@ struct ConvertQCDeallocOpToJeff final
   }
 };
 
-struct ConvertQCXOpToJeff final : StatefulOpConversionPattern<qc::XOp> {
-  using StatefulOpConversionPattern::StatefulOpConversionPattern;
+// OneTargetZeroParameter
 
-  LogicalResult
-  matchAndRewrite(qc::XOp op, OpAdaptor /*adaptor*/,
-                  ConversionPatternRewriter& rewriter) const override {
-    auto& state = getState();
-    auto& qubitMap = state.qubitMap;
-    auto inCtrlOp = state.inCtrlOp;
+#define DEFINE_ONE_TARGET_ZERO_PARAMETER(OP_CLASS_QC, OP_CLASS_JEFF,           \
+                                         IS_ADJOINT)                           \
+  struct ConvertQC##OP_CLASS_QC##ToJeff final                                  \
+      : StatefulOpConversionPattern<qc::OP_CLASS_QC> {                         \
+    using StatefulOpConversionPattern::StatefulOpConversionPattern;            \
+                                                                               \
+    LogicalResult                                                              \
+    matchAndRewrite(qc::OP_CLASS_QC op, OpAdaptor /*adaptor*/,                 \
+                    ConversionPatternRewriter& rewriter) const override {      \
+      return convertOneTargetZeroParameter<jeff::OP_CLASS_JEFF>(               \
+          op, rewriter, getState(), IS_ADJOINT);                               \
+    }                                                                          \
+  };
 
-    auto qcTarget = op.getQubitIn();
-    auto jeffTarget = qubitMap[qcTarget];
+DEFINE_ONE_TARGET_ZERO_PARAMETER(IdOp, IOp, false)
+DEFINE_ONE_TARGET_ZERO_PARAMETER(XOp, XOp, false)
+DEFINE_ONE_TARGET_ZERO_PARAMETER(YOp, YOp, false)
+DEFINE_ONE_TARGET_ZERO_PARAMETER(ZOp, ZOp, false)
+DEFINE_ONE_TARGET_ZERO_PARAMETER(HOp, HOp, false)
+DEFINE_ONE_TARGET_ZERO_PARAMETER(SOp, SOp, false)
+DEFINE_ONE_TARGET_ZERO_PARAMETER(SdgOp, SOp, true)
+DEFINE_ONE_TARGET_ZERO_PARAMETER(TOp, TOp, false)
+DEFINE_ONE_TARGET_ZERO_PARAMETER(TdgOp, TOp, true)
 
-    SmallVector<Value> jeffControls{};
-    if (inCtrlOp != 0) {
-      for (auto qcControl : state.controls[inCtrlOp]) {
-        assert(qubitMap.contains(qcControl) && "QC qubit not found");
-        jeffControls.push_back(qubitMap[qcControl]);
-      }
-    }
-
-    auto jeffOp = rewriter.create<jeff::XOp>(op.getLoc(), jeffTarget,
-                                             /*in_ctrl_qubits=*/jeffControls,
-                                             /*num_ctrls=*/jeffControls.size(),
-                                             /*is_adjoint=*/false,
-                                             /*power=*/1);
-
-    // Update qubit map and modifier information
-    qubitMap[qcTarget] = jeffOp.getOutQubit();
-    if (inCtrlOp != 0) {
-      for (size_t i = 0; i < jeffControls.size(); ++i) {
-        auto qcControl = state.controls[inCtrlOp][i];
-        qubitMap[qcControl] = jeffOp.getOutCtrlQubits()[i];
-      }
-      state.controls.erase(inCtrlOp);
-      state.inCtrlOp--;
-    }
-
-    rewriter.eraseOp(op);
-
-    return success();
-  }
-};
-
-struct ConvertQCHOpToJeff final : StatefulOpConversionPattern<qc::HOp> {
-  using StatefulOpConversionPattern::StatefulOpConversionPattern;
-
-  LogicalResult
-  matchAndRewrite(qc::HOp op, OpAdaptor /*adaptor*/,
-                  ConversionPatternRewriter& rewriter) const override {
-    auto& state = getState();
-    auto& qubitMap = state.qubitMap;
-    auto inCtrlOp = state.inCtrlOp;
-
-    auto qcTarget = op.getQubitIn();
-    auto jeffTarget = qubitMap[qcTarget];
-
-    SmallVector<Value> jeffControls{};
-    if (inCtrlOp != 0) {
-      for (auto qcControl : state.controls[inCtrlOp]) {
-        assert(qubitMap.contains(qcControl) && "QC qubit not found");
-        jeffControls.push_back(qubitMap[qcControl]);
-      }
-    }
-
-    auto jeffOp = rewriter.create<jeff::HOp>(op.getLoc(), jeffTarget,
-                                             /*in_ctrl_qubits=*/jeffControls,
-                                             /*num_ctrls=*/jeffControls.size(),
-                                             /*is_adjoint=*/false,
-                                             /*power=*/1);
-
-    // Update qubit map and modifier information
-    qubitMap[qcTarget] = jeffOp.getOutQubit();
-    if (inCtrlOp != 0) {
-      for (size_t i = 0; i < jeffControls.size(); ++i) {
-        auto qcControl = state.controls[inCtrlOp][i];
-        qubitMap[qcControl] = jeffOp.getOutCtrlQubits()[i];
-      }
-      state.controls.erase(inCtrlOp);
-      state.inCtrlOp--;
-    }
-
-    rewriter.eraseOp(op);
-
-    return success();
-  }
-};
+#undef DEFINE_ONE_TARGET_ZERO_PARAMETER
 
 struct ConvertQCCtrlOpToJeff final : StatefulOpConversionPattern<qc::CtrlOp> {
   using StatefulOpConversionPattern::StatefulOpConversionPattern;
@@ -247,8 +227,11 @@ struct QCToJeff final : impl::QCToJeffBase<QCToJeff> {
 
     // Register operation conversion patterns
     patterns.add<ConvertQCAllocOpToJeff, ConvertQCDeallocOpToJeff,
-                 ConvertQCXOpToJeff, ConvertQCHOpToJeff, ConvertQCCtrlOpToJeff,
-                 ConvertQCYieldOpToJeff>(typeConverter, context, &state);
+                 ConvertQCIdOpToJeff, ConvertQCXOpToJeff, ConvertQCYOpToJeff,
+                 ConvertQCZOpToJeff, ConvertQCHOpToJeff, ConvertQCSOpToJeff,
+                 ConvertQCSdgOpToJeff, ConvertQCTOpToJeff, ConvertQCTdgOpToJeff,
+                 ConvertQCCtrlOpToJeff, ConvertQCYieldOpToJeff>(
+        typeConverter, context, &state);
 
     // Apply the conversion
     if (failed(applyPartialConversion(module, target, std::move(patterns)))) {
