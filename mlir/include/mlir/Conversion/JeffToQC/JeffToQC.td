@@ -9,7 +9,7 @@
 include "mlir/Pass/PassBase.td"
 
 def JeffToQC : Pass<"jeff-to-qc"> {
-  let summary = "TODO";
+  let summary = "Convert Jeff operations to QC operations";
 
   let description = [{
       TODO

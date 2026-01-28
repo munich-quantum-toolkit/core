@@ -34,8 +34,11 @@ using namespace qc;
 
 namespace {
 
+/**
+ * @brief State object for tracking Jeff qubit values during conversion
+ */
 struct LoweringState {
-  /// Map from QC qubit references to their Jeff qubit SSA values
+  /// Map from QC qubit references to their Jeff qubit values
   llvm::DenseMap<Value, Value> qubitMap;
 
   // Modifier information
@@ -43,6 +46,12 @@ struct LoweringState {
   DenseMap<int64_t, SmallVector<Value>> controls;
 };
 
+/**
+ * @brief Base class for conversion patterns that need access to the
+ * LoweringState
+ *
+ * @tparam OpType The QC operation type to convert
+ */
 template <typename OpType>
 class StatefulOpConversionPattern : public OpConversionPattern<OpType> {
 
@@ -60,6 +69,16 @@ private:
 
 } // namespace
 
+/**
+ * @brief Converts a one-target, zero-parameter QC operation to Jeff
+ *
+ * @tparam JeffOpType The operation type of the Jeff operation
+ * @tparam QCOpType The operation type of the QC operation
+ * @param op The QC operation instance to convert
+ * @param rewriter The pattern rewriter
+ * @param state The lowering state
+ * @return LogicalResult Success or failure of the conversion
+ */
 template <typename JeffOpType, typename QCOpType>
 static LogicalResult
 convertOneTargetZeroParameter(QCOpType& op, ConversionPatternRewriter& rewriter,
@@ -100,6 +119,16 @@ convertOneTargetZeroParameter(QCOpType& op, ConversionPatternRewriter& rewriter,
   return success();
 }
 
+/**
+ * @brief Converts a one-target, one-parameter QC operation to Jeff
+ *
+ * @tparam JeffOpType The operation type of the Jeff operation
+ * @tparam QCOpType The operation type of the QC operation
+ * @param op The QC operation instance to convert
+ * @param rewriter The pattern rewriter
+ * @param state The lowering state
+ * @return LogicalResult Success or failure of the conversion
+ */
 template <typename JeffOpType, typename QCOpType>
 static LogicalResult
 convertOneTargetOneParameter(QCOpType& op, ConversionPatternRewriter& rewriter,
@@ -141,6 +170,16 @@ convertOneTargetOneParameter(QCOpType& op, ConversionPatternRewriter& rewriter,
   return success();
 }
 
+/**
+ * @brief Converts a one-target, three-parameter QC operation to Jeff
+ *
+ * @tparam JeffOpType The operation type of the Jeff operation
+ * @tparam QCOpType The operation type of the QC operation
+ * @param op The QC operation instance to convert
+ * @param rewriter The pattern rewriter
+ * @param state The lowering state
+ * @return LogicalResult Success or failure of the conversion
+ */
 template <typename JeffOpType, typename QCOpType>
 static LogicalResult convertOneTargetThreeParameter(
     QCOpType& op, ConversionPatternRewriter& rewriter, LoweringState& state) {
@@ -182,6 +221,16 @@ static LogicalResult convertOneTargetThreeParameter(
   return success();
 }
 
+/**
+ * @brief Converts a two-target, zero-parameter QC operation to Jeff
+ *
+ * @tparam JeffOpType The operation type of the Jeff operation
+ * @tparam QCOpType The operation type of the QC operation
+ * @param op The QC operation instance to convert
+ * @param rewriter The pattern rewriter
+ * @param state The lowering state
+ * @return LogicalResult Success or failure of the conversion
+ */
 template <typename JeffOpType, typename QCOpType>
 static LogicalResult
 convertTwoTargetZeroParameter(QCOpType& op, ConversionPatternRewriter& rewriter,
@@ -226,6 +275,18 @@ convertTwoTargetZeroParameter(QCOpType& op, ConversionPatternRewriter& rewriter,
   return success();
 }
 
+/**
+ * @brief Converts qc.alloc to jeff.qubit_alloc
+ *
+ * @par Example:
+ * ```mlir
+ * %q = qc.alloc : !qc.qubit
+ * ```
+ * is converted to
+ * ```mlir
+ * %q = jeff.qubit_alloc : !jeff.qubit
+ * ```
+ */
 struct ConvertQCAllocOpToJeff final : StatefulOpConversionPattern<qc::AllocOp> {
   using StatefulOpConversionPattern::StatefulOpConversionPattern;
 
@@ -243,6 +304,18 @@ struct ConvertQCAllocOpToJeff final : StatefulOpConversionPattern<qc::AllocOp> {
   }
 };
 
+/**
+ * @brief Converts qc.dealloc to jeff.qubit_free
+ *
+ * @par Example:
+ * ```mlir
+ * qc.dealloc %q : !qc.qubit
+ * ```
+ * is converted to
+ * ```mlir
+ * jeff.qubit_free %q : !jeff.qubit
+ * ```
+ */
 struct ConvertQCDeallocOpToJeff final
     : StatefulOpConversionPattern<qc::DeallocOp> {
   using StatefulOpConversionPattern::StatefulOpConversionPattern;
@@ -264,6 +337,18 @@ struct ConvertQCDeallocOpToJeff final
   }
 };
 
+/**
+ * @brief Converts qc.measure to jeff.qubit_measure_nd
+ *
+ * @par Example:
+ * ```mlir
+ * %result = qc.measure %q : i1
+ * ```
+ * is converted to
+ * ```mlir
+ * %result, %q_out = jeff.qubit_measure_nd %q_in : i1, !jeff.qubit
+ * ```
+ */
 struct ConvertQCMeasureOpToJeff final
     : StatefulOpConversionPattern<qc::MeasureOp> {
   using StatefulOpConversionPattern::StatefulOpConversionPattern;
@@ -288,6 +373,18 @@ struct ConvertQCMeasureOpToJeff final
   }
 };
 
+/**
+ * @brief Converts qc.reset to jeff.qubit_reset
+ *
+ * @par Example:
+ * ```mlir
+ * %result = qc.reset %q : !qc.qubit
+ * ```
+ * is converted to
+ * ```mlir
+ * %q_out = jeff.qubit_reset %q_in : !jeff.qubit
+ * ```
+ */
 struct ConvertQCResetOpToJeff final : StatefulOpConversionPattern<qc::ResetOp> {
   using StatefulOpConversionPattern::StatefulOpConversionPattern;
 
@@ -310,6 +407,18 @@ struct ConvertQCResetOpToJeff final : StatefulOpConversionPattern<qc::ResetOp> {
   }
 };
 
+/**
+ * @brief Converts qc.gphase to jeff.gphase
+ *
+ * @par Example:
+ * ```mlir
+ * qc.gphase(%theta)
+ * ```
+ * is converted to
+ * ```mlir
+ * jeff.gphase(%theta) {is_adjoint = false, num_ctrls = 0 : i8, power = 1 : i8}
+ * ```
+ */
 struct ConvertQCGPhaseOpToJeff final
     : StatefulOpConversionPattern<qc::GPhaseOp> {
   using StatefulOpConversionPattern::StatefulOpConversionPattern;
@@ -440,6 +549,21 @@ DEFINE_TWO_TARGET_ZERO_PARAMETER(SWAPOp, SwapOp)
 
 #undef DEFINE_TWO_TARGET_ZERO_PARAMETER
 
+/**
+ * @brief Converts qc.ctrl to Jeff by inlining the region
+ *
+ * @par Example:
+ * ```mlir
+ * qc.ctrl(%contol) {
+ *   qc.x %target : !qc.qubit
+ * } : !qc.qubit
+ * ```
+ * is converted to
+ * ```mlir
+ * %target_out, %control_out = jeff.x {is_adjoint = false, num_ctrls = 1 : i8,
+ * power = 1 : i8} %target_in ctrls(%control_in) : !jeff.qubit ctrls !jeff.qubit
+ * ```
+ */
 struct ConvertQCCtrlOpToJeff final : StatefulOpConversionPattern<qc::CtrlOp> {
   using StatefulOpConversionPattern::StatefulOpConversionPattern;
 
@@ -461,6 +585,9 @@ struct ConvertQCCtrlOpToJeff final : StatefulOpConversionPattern<qc::CtrlOp> {
   }
 };
 
+/**
+ * @brief Erases qc.yield operation
+ */
 struct ConvertQCYieldOpToJeff final : StatefulOpConversionPattern<qc::YieldOp> {
   using StatefulOpConversionPattern::StatefulOpConversionPattern;
 
@@ -472,6 +599,12 @@ struct ConvertQCYieldOpToJeff final : StatefulOpConversionPattern<qc::YieldOp> {
   }
 };
 
+/**
+ * @brief Type converter for QC-to-Jeff conversion
+ *
+ * @details
+ * Converts `!qc.qubit` to `!jeff.qubit`.
+ */
 class QCToJeffTypeConverter final : public TypeConverter {
 public:
   explicit QCToJeffTypeConverter(MLIRContext* ctx) {
@@ -484,6 +617,12 @@ public:
   }
 };
 
+/**
+ * @brief Pass for converting QC operations to Jeff operations
+ *
+ * @details
+ * TODO
+ */
 struct QCToJeff final : impl::QCToJeffBase<QCToJeff> {
   using QCToJeffBase::QCToJeffBase;
 

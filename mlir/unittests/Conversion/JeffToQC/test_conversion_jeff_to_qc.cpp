@@ -412,7 +412,7 @@ TEST_F(JeffToQCConversionTest, RX) {
   const auto* const inputString = R"(
     %rotation = arith.constant 5.000000e-01 : f64
     %q0_0 = jeff.qubit_alloc : !jeff.qubit
-    %q0_1 = jeff.rx(%rotation) {is_adjoint = true, num_ctrls = 0 : i8, power = 1 : i8} %q0_0 : !jeff.qubit
+    %q0_1 = jeff.rx(%rotation) {is_adjoint = false, num_ctrls = 0 : i8, power = 1 : i8} %q0_0 : !jeff.qubit
     jeff.qubit_free %q0_1 : !jeff.qubit
   )";
 
@@ -439,7 +439,7 @@ TEST_F(JeffToQCConversionTest, CRX) {
     %rotation = arith.constant 5.000000e-01 : f64
     %q0_0 = jeff.qubit_alloc : !jeff.qubit
     %q1_0 = jeff.qubit_alloc : !jeff.qubit
-    %q0_1, %q1_1 = jeff.rx(%rotation) {is_adjoint = true, num_ctrls = 1 : i8, power = 1 : i8} %q0_0 ctrls(%q1_0) : !jeff.qubit ctrls !jeff.qubit
+    %q0_1, %q1_1 = jeff.rx(%rotation) {is_adjoint = false, num_ctrls = 1 : i8, power = 1 : i8} %q0_0 ctrls(%q1_0) : !jeff.qubit ctrls !jeff.qubit
     jeff.qubit_free %q0_1 : !jeff.qubit
     jeff.qubit_free %q1_1 : !jeff.qubit
   )";
@@ -467,7 +467,7 @@ TEST_F(JeffToQCConversionTest, RY) {
   const auto* const inputString = R"(
     %rotation = arith.constant 5.000000e-01 : f64
     %q0_0 = jeff.qubit_alloc : !jeff.qubit
-    %q0_1 = jeff.ry(%rotation) {is_adjoint = true, num_ctrls = 0 : i8, power = 1 : i8} %q0_0 : !jeff.qubit
+    %q0_1 = jeff.ry(%rotation) {is_adjoint = false, num_ctrls = 0 : i8, power = 1 : i8} %q0_0 : !jeff.qubit
     jeff.qubit_free %q0_1 : !jeff.qubit
   )";
 
@@ -493,7 +493,7 @@ TEST_F(JeffToQCConversionTest, RZ) {
   const auto* const inputString = R"(
     %rotation = arith.constant 5.000000e-01 : f64
     %q0_0 = jeff.qubit_alloc : !jeff.qubit
-    %q0_1 = jeff.rz(%rotation) {is_adjoint = true, num_ctrls = 0 : i8, power = 1 : i8} %q0_0 : !jeff.qubit
+    %q0_1 = jeff.rz(%rotation) {is_adjoint = false, num_ctrls = 0 : i8, power = 1 : i8} %q0_0 : !jeff.qubit
     jeff.qubit_free %q0_1 : !jeff.qubit
   )";
 
@@ -519,7 +519,7 @@ TEST_F(JeffToQCConversionTest, P) {
   const auto* const inputString = R"(
     %rotation = arith.constant 5.000000e-01 : f64
     %q0_0 = jeff.qubit_alloc : !jeff.qubit
-    %q0_1 = jeff.r1(%rotation) {is_adjoint = true, num_ctrls = 0 : i8, power = 1 : i8} %q0_0 : !jeff.qubit
+    %q0_1 = jeff.r1(%rotation) {is_adjoint = false, num_ctrls = 0 : i8, power = 1 : i8} %q0_0 : !jeff.qubit
     jeff.qubit_free %q0_1 : !jeff.qubit
   )";
 
@@ -547,7 +547,7 @@ TEST_F(JeffToQCConversionTest, U) {
     %phi = arith.constant 2.000000e-01 : f64
     %lambda = arith.constant 3.000000e-01 : f64
     %q0_0 = jeff.qubit_alloc : !jeff.qubit
-    %q0_1 = jeff.u(%theta, %phi, %lambda) {is_adjoint = true, num_ctrls = 0 : i8, power = 1 : i8} %q0_0 : !jeff.qubit
+    %q0_1 = jeff.u(%theta, %phi, %lambda) {is_adjoint = false, num_ctrls = 0 : i8, power = 1 : i8} %q0_0 : !jeff.qubit
     jeff.qubit_free %q0_1 : !jeff.qubit
   )";
 
@@ -576,7 +576,7 @@ TEST_F(JeffToQCConversionTest, CU) {
     %lambda = arith.constant 3.000000e-01 : f64
     %q0_0 = jeff.qubit_alloc : !jeff.qubit
     %q1_0 = jeff.qubit_alloc : !jeff.qubit
-    %q0_1, %q1_1 = jeff.u(%theta, %phi, %lambda) {is_adjoint = true, num_ctrls = 1 : i8, power = 1 : i8} %q0_0 ctrls(%q1_0) : !jeff.qubit ctrls !jeff.qubit
+    %q0_1, %q1_1 = jeff.u(%theta, %phi, %lambda) {is_adjoint = false, num_ctrls = 1 : i8, power = 1 : i8} %q0_0 ctrls(%q1_0) : !jeff.qubit ctrls !jeff.qubit
     jeff.qubit_free %q0_1 : !jeff.qubit
     jeff.qubit_free %q1_1 : !jeff.qubit
   )";
