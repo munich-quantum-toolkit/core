@@ -15,6 +15,7 @@
 #include <jeff/IR/JeffDialect.h>
 #include <llvm/Support/raw_ostream.h>
 #include <memory>
+#include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/DialectRegistry.h>
 #include <mlir/IR/OwningOpRef.h>
@@ -31,7 +32,8 @@ protected:
   void SetUp() override {
     // Register all dialects needed for the full compilation pipeline
     DialectRegistry registry;
-    registry.insert<jeff::JeffDialect, mlir::qc::QCDialect>();
+    registry
+        .insert<arith::ArithDialect, jeff::JeffDialect, mlir::qc::QCDialect>();
 
     context = std::make_unique<MLIRContext>();
     context->appendDialectRegistry(registry);
@@ -271,6 +273,110 @@ TEST_F(JeffToQCConversionTest, Tdg) {
   // ASSERT_EQ(outputString, "test");
 
   ASSERT_NE(outputString.find("qc.tdg"), std::string::npos);
+}
+
+TEST_F(JeffToQCConversionTest, RX) {
+  const auto* const inputString = R"(
+    %rotation = arith.constant 5.000000e-01 : f64
+    %q0_0 = jeff.qubit_alloc : !jeff.qubit
+    %q0_1 = jeff.rx(%rotation) {is_adjoint = true, num_ctrls = 0 : i8, power = 1 : i8} %q0_0 : !jeff.qubit
+    jeff.qubit_free %q0_1 : !jeff.qubit
+  )";
+
+  auto input = parseSourceString<ModuleOp>(inputString, context.get());
+  if (!input) {
+    FAIL() << "Failed to parse Jeff IR";
+  }
+
+  PassManager pm(context.get());
+  pm.addPass(createJeffToQC());
+  if (failed(pm.run(input.get()))) {
+    FAIL() << "Error during Jeff-to-QC conversion";
+  }
+
+  const auto outputString = getOutputString(input);
+
+  // ASSERT_EQ(outputString, "test");
+
+  ASSERT_NE(outputString.find("qc.rx"), std::string::npos);
+}
+
+TEST_F(JeffToQCConversionTest, RY) {
+  const auto* const inputString = R"(
+    %rotation = arith.constant 5.000000e-01 : f64
+    %q0_0 = jeff.qubit_alloc : !jeff.qubit
+    %q0_1 = jeff.ry(%rotation) {is_adjoint = true, num_ctrls = 0 : i8, power = 1 : i8} %q0_0 : !jeff.qubit
+    jeff.qubit_free %q0_1 : !jeff.qubit
+  )";
+
+  auto input = parseSourceString<ModuleOp>(inputString, context.get());
+  if (!input) {
+    FAIL() << "Failed to parse Jeff IR";
+  }
+
+  PassManager pm(context.get());
+  pm.addPass(createJeffToQC());
+  if (failed(pm.run(input.get()))) {
+    FAIL() << "Error during Jeff-to-QC conversion";
+  }
+
+  const auto outputString = getOutputString(input);
+
+  // ASSERT_EQ(outputString, "test");
+
+  ASSERT_NE(outputString.find("qc.ry"), std::string::npos);
+}
+
+TEST_F(JeffToQCConversionTest, RZ) {
+  const auto* const inputString = R"(
+    %rotation = arith.constant 5.000000e-01 : f64
+    %q0_0 = jeff.qubit_alloc : !jeff.qubit
+    %q0_1 = jeff.rz(%rotation) {is_adjoint = true, num_ctrls = 0 : i8, power = 1 : i8} %q0_0 : !jeff.qubit
+    jeff.qubit_free %q0_1 : !jeff.qubit
+  )";
+
+  auto input = parseSourceString<ModuleOp>(inputString, context.get());
+  if (!input) {
+    FAIL() << "Failed to parse Jeff IR";
+  }
+
+  PassManager pm(context.get());
+  pm.addPass(createJeffToQC());
+  if (failed(pm.run(input.get()))) {
+    FAIL() << "Error during Jeff-to-QC conversion";
+  }
+
+  const auto outputString = getOutputString(input);
+
+  // ASSERT_EQ(outputString, "test");
+
+  ASSERT_NE(outputString.find("qc.rz"), std::string::npos);
+}
+
+TEST_F(JeffToQCConversionTest, P) {
+  const auto* const inputString = R"(
+    %rotation = arith.constant 5.000000e-01 : f64
+    %q0_0 = jeff.qubit_alloc : !jeff.qubit
+    %q0_1 = jeff.r1(%rotation) {is_adjoint = true, num_ctrls = 0 : i8, power = 1 : i8} %q0_0 : !jeff.qubit
+    jeff.qubit_free %q0_1 : !jeff.qubit
+  )";
+
+  auto input = parseSourceString<ModuleOp>(inputString, context.get());
+  if (!input) {
+    FAIL() << "Failed to parse Jeff IR";
+  }
+
+  PassManager pm(context.get());
+  pm.addPass(createJeffToQC());
+  if (failed(pm.run(input.get()))) {
+    FAIL() << "Error during Jeff-to-QC conversion";
+  }
+
+  const auto outputString = getOutputString(input);
+
+  // ASSERT_EQ(outputString, "test");
+
+  ASSERT_NE(outputString.find("qc.p"), std::string::npos);
 }
 
 TEST_F(JeffToQCConversionTest, Bell) {

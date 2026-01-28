@@ -247,6 +247,86 @@ TEST_F(QCToJeffConversionTest, Tdg) {
   ASSERT_NE(outputString.find("is_adjoint = true"), std::string::npos);
 }
 
+TEST_F(QCToJeffConversionTest, RX) {
+  auto input = buildQCIR([](mlir::qc::QCProgramBuilder& b) {
+    auto reg = b.allocQubitRegister(1, "q");
+    const auto q = reg[0];
+    b.rx(0.5, q);
+  });
+
+  PassManager pm(context.get());
+  pm.addPass(createQCToJeff());
+  if (failed(pm.run(input.get()))) {
+    FAIL() << "Error during QC-to-Jeff conversion";
+  }
+
+  const auto outputString = getOutputString(input);
+
+  // ASSERT_EQ(outputString, "test");
+
+  ASSERT_NE(outputString.find("jeff.rx"), std::string::npos);
+}
+
+TEST_F(QCToJeffConversionTest, RY) {
+  auto input = buildQCIR([](mlir::qc::QCProgramBuilder& b) {
+    auto reg = b.allocQubitRegister(1, "q");
+    const auto q = reg[0];
+    b.ry(0.5, q);
+  });
+
+  PassManager pm(context.get());
+  pm.addPass(createQCToJeff());
+  if (failed(pm.run(input.get()))) {
+    FAIL() << "Error during QC-to-Jeff conversion";
+  }
+
+  const auto outputString = getOutputString(input);
+
+  // ASSERT_EQ(outputString, "test");
+
+  ASSERT_NE(outputString.find("jeff.ry"), std::string::npos);
+}
+
+TEST_F(QCToJeffConversionTest, RZ) {
+  auto input = buildQCIR([](mlir::qc::QCProgramBuilder& b) {
+    auto reg = b.allocQubitRegister(1, "q");
+    const auto q = reg[0];
+    b.rz(0.5, q);
+  });
+
+  PassManager pm(context.get());
+  pm.addPass(createQCToJeff());
+  if (failed(pm.run(input.get()))) {
+    FAIL() << "Error during QC-to-Jeff conversion";
+  }
+
+  const auto outputString = getOutputString(input);
+
+  // ASSERT_EQ(outputString, "test");
+
+  ASSERT_NE(outputString.find("jeff.rz"), std::string::npos);
+}
+
+TEST_F(QCToJeffConversionTest, P) {
+  auto input = buildQCIR([](mlir::qc::QCProgramBuilder& b) {
+    auto reg = b.allocQubitRegister(1, "q");
+    const auto q = reg[0];
+    b.p(0.5, q);
+  });
+
+  PassManager pm(context.get());
+  pm.addPass(createQCToJeff());
+  if (failed(pm.run(input.get()))) {
+    FAIL() << "Error during QC-to-Jeff conversion";
+  }
+
+  const auto outputString = getOutputString(input);
+
+  // ASSERT_EQ(outputString, "test");
+
+  ASSERT_NE(outputString.find("jeff.r1"), std::string::npos);
+}
+
 TEST_F(QCToJeffConversionTest, Bell) {
   auto input = buildQCIR([](mlir::qc::QCProgramBuilder& b) {
     auto reg = b.allocQubitRegister(2, "q");
