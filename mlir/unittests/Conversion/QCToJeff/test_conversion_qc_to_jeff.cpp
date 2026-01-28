@@ -82,6 +82,26 @@ TEST_F(QCToJeffConversionTest, Measure) {
   ASSERT_NE(outputString.find("jeff.qubit_measure_nd"), std::string::npos);
 }
 
+TEST_F(QCToJeffConversionTest, Reset) {
+  auto input = buildQCIR([](mlir::qc::QCProgramBuilder& b) {
+    auto reg = b.allocQubitRegister(1, "q");
+    const auto q = reg[0];
+    b.reset(q);
+  });
+
+  PassManager pm(context.get());
+  pm.addPass(createQCToJeff());
+  if (failed(pm.run(input.get()))) {
+    FAIL() << "Error during QC-to-Jeff conversion";
+  }
+
+  const auto outputString = getOutputString(input);
+
+  // ASSERT_EQ(outputString, "test");
+
+  ASSERT_NE(outputString.find("jeff.qubit_reset"), std::string::npos);
+}
+
 TEST_F(QCToJeffConversionTest, Id) {
   auto input = buildQCIR([](mlir::qc::QCProgramBuilder& b) {
     auto reg = b.allocQubitRegister(1, "q");
