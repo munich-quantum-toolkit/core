@@ -140,6 +140,50 @@ convertOneTargetOneParameter(QCOpType& op, ConversionPatternRewriter& rewriter,
   return success();
 }
 
+template <typename JeffOpType, typename QCOpType>
+static LogicalResult
+convertTwoTargetZeroParameter(QCOpType& op, ConversionPatternRewriter& rewriter,
+                              LoweringState& state) {
+  auto& qubitMap = state.qubitMap;
+  auto inCtrlOp = state.inCtrlOp;
+
+  auto qcTarget1 = op.getQubit0In();
+  auto qcTarget2 = op.getQubit1In();
+  auto jeffTarget1 = qubitMap[qcTarget1];
+  auto jeffTarget2 = qubitMap[qcTarget2];
+
+  SmallVector<Value> jeffControls{};
+  if (inCtrlOp != 0) {
+    for (auto qcControl : state.controls[inCtrlOp]) {
+      assert(qubitMap.contains(qcControl) && "QC qubit not found");
+      jeffControls.push_back(qubitMap[qcControl]);
+    }
+  }
+
+  auto jeffOp =
+      rewriter.create<JeffOpType>(op.getLoc(), jeffTarget1, jeffTarget2,
+                                  /*in_ctrl_qubits=*/jeffControls,
+                                  /*num_ctrls=*/jeffControls.size(),
+                                  /*is_adjoint=*/false,
+                                  /*power=*/1);
+
+  // Update qubit map and modifier information
+  qubitMap[qcTarget1] = jeffOp.getOutQubitOne();
+  qubitMap[qcTarget2] = jeffOp.getOutQubitTwo();
+  if (inCtrlOp != 0) {
+    for (size_t i = 0; i < jeffControls.size(); ++i) {
+      auto qcControl = state.controls[inCtrlOp][i];
+      qubitMap[qcControl] = jeffOp.getOutCtrlQubits()[i];
+    }
+    state.controls.erase(inCtrlOp);
+    state.inCtrlOp--;
+  }
+
+  rewriter.eraseOp(op);
+
+  return success();
+}
+
 struct ConvertQCAllocOpToJeff final : StatefulOpConversionPattern<qc::AllocOp> {
   using StatefulOpConversionPattern::StatefulOpConversionPattern;
 
@@ -274,6 +318,25 @@ DEFINE_ONE_TARGET_ONE_PARAMETER(POp, R1Op)
 
 #undef DEFINE_ONE_TARGET_ONE_PARAMETER
 
+// TwoTargetZeroParameter
+
+#define DEFINE_TWO_TARGET_ZERO_PARAMETER(OP_CLASS_QC, OP_CLASS_JEFF)           \
+  struct ConvertQC##OP_CLASS_QC##ToJeff final                                  \
+      : StatefulOpConversionPattern<qc::OP_CLASS_QC> {                         \
+    using StatefulOpConversionPattern::StatefulOpConversionPattern;            \
+                                                                               \
+    LogicalResult                                                              \
+    matchAndRewrite(qc::OP_CLASS_QC op, OpAdaptor /*adaptor*/,                 \
+                    ConversionPatternRewriter& rewriter) const override {      \
+      return convertTwoTargetZeroParameter<jeff::OP_CLASS_JEFF>(op, rewriter,  \
+                                                                getState());   \
+    }                                                                          \
+  };
+
+DEFINE_TWO_TARGET_ZERO_PARAMETER(SWAPOp, SwapOp)
+
+#undef DEFINE_TWO_TARGET_ZERO_PARAMETER
+
 struct ConvertQCCtrlOpToJeff final : StatefulOpConversionPattern<qc::CtrlOp> {
   using StatefulOpConversionPattern::StatefulOpConversionPattern;
 
@@ -336,15 +399,15 @@ struct QCToJeff final : impl::QCToJeffBase<QCToJeff> {
     target.addLegalDialect<jeff::JeffDialect>();
 
     // Register operation conversion patterns
-    patterns
-        .add<ConvertQCAllocOpToJeff, ConvertQCDeallocOpToJeff,
-             ConvertQCMeasureOpToJeff, ConvertQCResetOpToJeff,
-             ConvertQCIdOpToJeff, ConvertQCXOpToJeff, ConvertQCYOpToJeff,
-             ConvertQCZOpToJeff, ConvertQCHOpToJeff, ConvertQCSOpToJeff,
-             ConvertQCSdgOpToJeff, ConvertQCTOpToJeff, ConvertQCTdgOpToJeff,
-             ConvertQCRXOpToJeff, ConvertQCRYOpToJeff, ConvertQCRZOpToJeff,
-             ConvertQCPOpToJeff, ConvertQCCtrlOpToJeff, ConvertQCYieldOpToJeff>(
-            typeConverter, context, &state);
+    patterns.add<ConvertQCAllocOpToJeff, ConvertQCDeallocOpToJeff,
+                 ConvertQCMeasureOpToJeff, ConvertQCResetOpToJeff,
+                 ConvertQCIdOpToJeff, ConvertQCXOpToJeff, ConvertQCYOpToJeff,
+                 ConvertQCZOpToJeff, ConvertQCHOpToJeff, ConvertQCSOpToJeff,
+                 ConvertQCSdgOpToJeff, ConvertQCTOpToJeff, ConvertQCTdgOpToJeff,
+                 ConvertQCRXOpToJeff, ConvertQCRYOpToJeff, ConvertQCRZOpToJeff,
+                 ConvertQCPOpToJeff, ConvertQCSWAPOpToJeff,
+                 ConvertQCCtrlOpToJeff, ConvertQCYieldOpToJeff>(
+        typeConverter, context, &state);
 
     // Apply the conversion
     if (failed(applyPartialConversion(module, target, std::move(patterns)))) {

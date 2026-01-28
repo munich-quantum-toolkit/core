@@ -88,6 +88,37 @@ convertOneTargetOneParameter(JeffOpType& op, JeffOpAdaptorType& adaptor,
   return success();
 }
 
+template <typename QCOpType, typename JeffOpType, typename JeffOpAdaptorType>
+static LogicalResult
+convertTwoTargetZeroParameter(JeffOpType& op, JeffOpAdaptorType& adaptor,
+                              ConversionPatternRewriter& rewriter) {
+  if (op.getPower() != 1) {
+    return rewriter.notifyMatchFailure(
+        op, "Operations with power != 1 are not yet supported");
+  }
+
+  auto target1 = adaptor.getInQubitOne();
+  auto target2 = adaptor.getInQubitTwo();
+
+  if (op.getNumCtrls() != 0) {
+    auto controls = adaptor.getInCtrlQubits();
+    rewriter.create<qc::CtrlOp>(op.getLoc(), controls, [&] {
+      rewriter.create<QCOpType>(op.getLoc(), target1, target2);
+    });
+    SmallVector<Value> operands;
+    operands.reserve(2 + controls.size());
+    operands.push_back(target1);
+    operands.push_back(target2);
+    operands.append(controls.begin(), controls.end());
+    rewriter.replaceOp(op, operands);
+  } else {
+    rewriter.create<QCOpType>(op.getLoc(), target1, target2);
+    rewriter.replaceOp(op, {target1, target2});
+  }
+
+  return success();
+}
+
 struct ConvertJeffQubitAllocOpToQC final
     : OpConversionPattern<jeff::QubitAllocOp> {
   using OpConversionPattern::OpConversionPattern;
@@ -122,11 +153,7 @@ struct ConvertJeffQubitMeasureNDOpToQC final
                   ConversionPatternRewriter& rewriter) const override {
     auto qcQubit = adaptor.getInQubit();
     auto qcOp = rewriter.create<qc::MeasureOp>(op.getLoc(), qcQubit);
-    SmallVector<Value> operands;
-    operands.reserve(2);
-    operands.push_back(qcOp.getResult());
-    operands.push_back(qcQubit);
-    rewriter.replaceOp(op, operands);
+    rewriter.replaceOp(op, {qcOp.getResult(), qcQubit});
     return success();
   }
 };
@@ -177,7 +204,7 @@ DEFINE_ONE_TARGET_ZERO_PARAMETER(TOp, TOp, TdgOp)
 
 // OneTargetOneParameter
 
-#define DEFINE_ONE_TARGET_ZERO_PARAMETER(OP_CLASS_JEFF, OP_CLASS_QC)           \
+#define DEFINE_ONE_TARGET_ONE_PARAMETER(OP_CLASS_JEFF, OP_CLASS_QC)            \
   struct ConvertJeff##OP_CLASS_JEFF##ToQC final                                \
       : OpConversionPattern<jeff::OP_CLASS_JEFF> {                             \
     using OpConversionPattern::OpConversionPattern;                            \
@@ -190,12 +217,31 @@ DEFINE_ONE_TARGET_ZERO_PARAMETER(TOp, TOp, TdgOp)
     }                                                                          \
   };
 
-DEFINE_ONE_TARGET_ZERO_PARAMETER(RxOp, RXOp)
-DEFINE_ONE_TARGET_ZERO_PARAMETER(RyOp, RYOp)
-DEFINE_ONE_TARGET_ZERO_PARAMETER(RzOp, RZOp)
-DEFINE_ONE_TARGET_ZERO_PARAMETER(R1Op, POp)
+DEFINE_ONE_TARGET_ONE_PARAMETER(RxOp, RXOp)
+DEFINE_ONE_TARGET_ONE_PARAMETER(RyOp, RYOp)
+DEFINE_ONE_TARGET_ONE_PARAMETER(RzOp, RZOp)
+DEFINE_ONE_TARGET_ONE_PARAMETER(R1Op, POp)
 
-#undef DEFINE_ONE_TARGET_ZERO_PARAMETER
+#undef DEFINE_ONE_TARGET_ONE_PARAMETER
+
+// TwoTargetZeroParameter
+
+#define DEFINE_TWO_TARGET_ZERO_PARAMETER(OP_CLASS_JEFF, OP_CLASS_QC)           \
+  struct ConvertJeff##OP_CLASS_JEFF##ToQC final                                \
+      : OpConversionPattern<jeff::OP_CLASS_JEFF> {                             \
+    using OpConversionPattern::OpConversionPattern;                            \
+                                                                               \
+    LogicalResult                                                              \
+    matchAndRewrite(jeff::OP_CLASS_JEFF op, OpAdaptor adaptor,                 \
+                    ConversionPatternRewriter& rewriter) const override {      \
+      return convertTwoTargetZeroParameter<qc::OP_CLASS_QC>(op, adaptor,       \
+                                                            rewriter);         \
+    }                                                                          \
+  };
+
+DEFINE_TWO_TARGET_ZERO_PARAMETER(SwapOp, SWAPOp)
+
+#undef DEFINE_TWO_TARGET_ZERO_PARAMETER
 
 class JeffToQCTypeConverter final : public TypeConverter {
 public:
@@ -225,13 +271,14 @@ struct JeffToQC final : impl::JeffToQCBase<JeffToQC> {
     target.addLegalDialect<QCDialect>();
 
     // Register operation conversion patterns
-    patterns.add<ConvertJeffQubitAllocOpToQC, ConvertJeffQubitFreeOpToQC,
-                 ConvertJeffQubitMeasureNDOpToQC, ConvertJeffQubitResetOpToQC,
-                 ConvertJeffIOpToQC, ConvertJeffXOpToQC, ConvertJeffYOpToQC,
-                 ConvertJeffZOpToQC, ConvertJeffHOpToQC, ConvertJeffSOpToQC,
-                 ConvertJeffTOpToQC, ConvertJeffRxOpToQC, ConvertJeffRyOpToQC,
-                 ConvertJeffRzOpToQC, ConvertJeffR1OpToQC>(typeConverter,
-                                                           context);
+    patterns
+        .add<ConvertJeffQubitAllocOpToQC, ConvertJeffQubitFreeOpToQC,
+             ConvertJeffQubitMeasureNDOpToQC, ConvertJeffQubitResetOpToQC,
+             ConvertJeffIOpToQC, ConvertJeffXOpToQC, ConvertJeffYOpToQC,
+             ConvertJeffZOpToQC, ConvertJeffHOpToQC, ConvertJeffSOpToQC,
+             ConvertJeffTOpToQC, ConvertJeffRxOpToQC, ConvertJeffRyOpToQC,
+             ConvertJeffRzOpToQC, ConvertJeffR1OpToQC, ConvertJeffSwapOpToQC>(
+            typeConverter, context);
 
     // Apply the conversion
     if (failed(applyPartialConversion(module, target, std::move(patterns)))) {
