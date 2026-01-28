@@ -33,6 +33,21 @@ if(BUILD_MQT_CORE_MLIR)
       CACHE INTERNAL "Disable building Eigen tests")
   FetchContent_Declare(Eigen URL ${Eigen_URL} FIND_PACKAGE_ARGS ${Eigen_VERSION})
   list(APPEND FETCH_PACKAGES Eigen)
+
+  # Fetch jeff-mlir
+  FetchContent_Declare(
+    jeff_mlir
+    GIT_REPOSITORY https://github.com/PennyLaneAI/jeff-mlir.git
+    GIT_TAG main
+    GIT_SUBMODULES "" GIT_SUBMODULES_RECURSE FALSE)
+  FetchContent_MakeAvailable(jeff_mlir)
+
+  # Include jeff-mlir headers
+  include_directories(${jeff_mlir_SOURCE_DIR}/include)
+  include_directories(${jeff_mlir_BINARY_DIR}/include)
+
+  # Restore C++ standard changed by jeff-mlir
+  set(CMAKE_CXX_STANDARD 20)
 endif()
 
 set(JSON_VERSION

@@ -10,7 +10,7 @@
 
 #pragma once
 
-#include <mlir/Pass/Pass.h> // from @llvm-project
+#include <mlir/Pass/Pass.h>
 
 namespace mlir {
 #define GEN_PASS_DECL_QCOTOQC
