@@ -224,6 +224,42 @@ DEFINE_ONE_TARGET_ONE_PARAMETER(R1Op, POp)
 
 #undef DEFINE_ONE_TARGET_ONE_PARAMETER
 
+// OneTargetOneParameter
+
+struct ConvertJeffUOpToQC final : OpConversionPattern<jeff::UOp> {
+  using OpConversionPattern::OpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(jeff::UOp op, OpAdaptor adaptor,
+                  ConversionPatternRewriter& rewriter) const override {
+    if (op.getPower() != 1) {
+      return rewriter.notifyMatchFailure(
+          op, "Operations with power != 1 are not yet supported");
+    }
+
+    auto target = adaptor.getInQubit();
+
+    if (op.getNumCtrls() != 0) {
+      auto controls = adaptor.getInCtrlQubits();
+      rewriter.create<qc::CtrlOp>(op.getLoc(), controls, [&] {
+        rewriter.create<qc::UOp>(op.getLoc(), target, op.getTheta(),
+                                 op.getPhi(), op.getLambda());
+      });
+      SmallVector<Value> operands;
+      operands.reserve(1 + controls.size());
+      operands.push_back(target);
+      operands.append(controls.begin(), controls.end());
+      rewriter.replaceOp(op, operands);
+    } else {
+      rewriter.create<qc::UOp>(op.getLoc(), target, op.getTheta(), op.getPhi(),
+                               op.getLambda());
+      rewriter.replaceOp(op, target);
+    }
+
+    return success();
+  }
+};
+
 // TwoTargetZeroParameter
 
 #define DEFINE_TWO_TARGET_ZERO_PARAMETER(OP_CLASS_JEFF, OP_CLASS_QC)           \
@@ -271,14 +307,13 @@ struct JeffToQC final : impl::JeffToQCBase<JeffToQC> {
     target.addLegalDialect<QCDialect>();
 
     // Register operation conversion patterns
-    patterns
-        .add<ConvertJeffQubitAllocOpToQC, ConvertJeffQubitFreeOpToQC,
-             ConvertJeffQubitMeasureNDOpToQC, ConvertJeffQubitResetOpToQC,
-             ConvertJeffIOpToQC, ConvertJeffXOpToQC, ConvertJeffYOpToQC,
-             ConvertJeffZOpToQC, ConvertJeffHOpToQC, ConvertJeffSOpToQC,
-             ConvertJeffTOpToQC, ConvertJeffRxOpToQC, ConvertJeffRyOpToQC,
-             ConvertJeffRzOpToQC, ConvertJeffR1OpToQC, ConvertJeffSwapOpToQC>(
-            typeConverter, context);
+    patterns.add<ConvertJeffQubitAllocOpToQC, ConvertJeffQubitFreeOpToQC,
+                 ConvertJeffQubitMeasureNDOpToQC, ConvertJeffQubitResetOpToQC,
+                 ConvertJeffIOpToQC, ConvertJeffXOpToQC, ConvertJeffYOpToQC,
+                 ConvertJeffZOpToQC, ConvertJeffHOpToQC, ConvertJeffSOpToQC,
+                 ConvertJeffTOpToQC, ConvertJeffRxOpToQC, ConvertJeffRyOpToQC,
+                 ConvertJeffRzOpToQC, ConvertJeffR1OpToQC, ConvertJeffUOpToQC,
+                 ConvertJeffSwapOpToQC>(typeConverter, context);
 
     // Apply the conversion
     if (failed(applyPartialConversion(module, target, std::move(patterns)))) {

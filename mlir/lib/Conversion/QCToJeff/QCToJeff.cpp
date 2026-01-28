@@ -141,6 +141,47 @@ convertOneTargetOneParameter(QCOpType& op, ConversionPatternRewriter& rewriter,
 }
 
 template <typename JeffOpType, typename QCOpType>
+static LogicalResult convertOneTargetThreeParameter(
+    QCOpType& op, ConversionPatternRewriter& rewriter, LoweringState& state) {
+  auto& qubitMap = state.qubitMap;
+  auto inCtrlOp = state.inCtrlOp;
+
+  auto qcTarget = op.getQubitIn();
+  auto jeffTarget = qubitMap[qcTarget];
+
+  SmallVector<Value> jeffControls{};
+  if (inCtrlOp != 0) {
+    for (auto qcControl : state.controls[inCtrlOp]) {
+      assert(qubitMap.contains(qcControl) && "QC qubit not found");
+      jeffControls.push_back(qubitMap[qcControl]);
+    }
+  }
+
+  auto jeffOp =
+      rewriter.create<JeffOpType>(op.getLoc(), jeffTarget, op.getParameter(0),
+                                  op.getParameter(1), op.getParameter(2),
+                                  /*in_ctrl_qubits=*/jeffControls,
+                                  /*num_ctrls=*/jeffControls.size(),
+                                  /*is_adjoint=*/false,
+                                  /*power=*/1);
+
+  // Update qubit map and modifier information
+  qubitMap[qcTarget] = jeffOp.getOutQubit();
+  if (inCtrlOp != 0) {
+    for (size_t i = 0; i < jeffControls.size(); ++i) {
+      auto qcControl = state.controls[inCtrlOp][i];
+      qubitMap[qcControl] = jeffOp.getOutCtrlQubits()[i];
+    }
+    state.controls.erase(inCtrlOp);
+    state.inCtrlOp--;
+  }
+
+  rewriter.eraseOp(op);
+
+  return success();
+}
+
+template <typename JeffOpType, typename QCOpType>
 static LogicalResult
 convertTwoTargetZeroParameter(QCOpType& op, ConversionPatternRewriter& rewriter,
                               LoweringState& state) {
@@ -318,6 +359,25 @@ DEFINE_ONE_TARGET_ONE_PARAMETER(POp, R1Op)
 
 #undef DEFINE_ONE_TARGET_ONE_PARAMETER
 
+// OneTargetThreeParameter
+
+#define DEFINE_ONE_TARGET_THREE_PARAMETER(OP_CLASS_QC, OP_CLASS_JEFF)          \
+  struct ConvertQC##OP_CLASS_QC##ToJeff final                                  \
+      : StatefulOpConversionPattern<qc::OP_CLASS_QC> {                         \
+    using StatefulOpConversionPattern::StatefulOpConversionPattern;            \
+                                                                               \
+    LogicalResult                                                              \
+    matchAndRewrite(qc::OP_CLASS_QC op, OpAdaptor /*adaptor*/,                 \
+                    ConversionPatternRewriter& rewriter) const override {      \
+      return convertOneTargetThreeParameter<jeff::OP_CLASS_JEFF>(op, rewriter, \
+                                                                 getState());  \
+    }                                                                          \
+  };
+
+DEFINE_ONE_TARGET_THREE_PARAMETER(UOp, UOp)
+
+#undef DEFINE_ONE_TARGET_THREE_PARAMETER
+
 // TwoTargetZeroParameter
 
 #define DEFINE_TWO_TARGET_ZERO_PARAMETER(OP_CLASS_QC, OP_CLASS_JEFF)           \
@@ -405,7 +465,7 @@ struct QCToJeff final : impl::QCToJeffBase<QCToJeff> {
                  ConvertQCZOpToJeff, ConvertQCHOpToJeff, ConvertQCSOpToJeff,
                  ConvertQCSdgOpToJeff, ConvertQCTOpToJeff, ConvertQCTdgOpToJeff,
                  ConvertQCRXOpToJeff, ConvertQCRYOpToJeff, ConvertQCRZOpToJeff,
-                 ConvertQCPOpToJeff, ConvertQCSWAPOpToJeff,
+                 ConvertQCPOpToJeff, ConvertQCUOpToJeff, ConvertQCSWAPOpToJeff,
                  ConvertQCCtrlOpToJeff, ConvertQCYieldOpToJeff>(
         typeConverter, context, &state);
 
