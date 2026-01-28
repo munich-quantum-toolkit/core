@@ -113,6 +113,24 @@ struct ConvertJeffQubitFreeOpToQC final
   }
 };
 
+struct ConvertJeffQubitMeasureNDOpToQC final
+    : OpConversionPattern<jeff::QubitMeasureNDOp> {
+  using OpConversionPattern::OpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(jeff::QubitMeasureNDOp op, OpAdaptor adaptor,
+                  ConversionPatternRewriter& rewriter) const override {
+    auto qcQubit = adaptor.getInQubit();
+    auto qcOp = rewriter.create<qc::MeasureOp>(op.getLoc(), qcQubit);
+    SmallVector<Value> operands;
+    operands.reserve(2);
+    operands.push_back(qcOp.getResult());
+    operands.push_back(qcQubit);
+    rewriter.replaceOp(op, operands);
+    return success();
+  }
+};
+
 // OneTargetZeroParameter
 
 #define DEFINE_ONE_TARGET_ZERO_PARAMETER(OP_CLASS_JEFF, OP_CLASS_QC,           \
@@ -194,11 +212,11 @@ struct JeffToQC final : impl::JeffToQCBase<JeffToQC> {
 
     // Register operation conversion patterns
     patterns.add<ConvertJeffQubitAllocOpToQC, ConvertJeffQubitFreeOpToQC,
-                 ConvertJeffIOpToQC, ConvertJeffXOpToQC, ConvertJeffYOpToQC,
-                 ConvertJeffZOpToQC, ConvertJeffHOpToQC, ConvertJeffSOpToQC,
-                 ConvertJeffTOpToQC, ConvertJeffRxOpToQC, ConvertJeffRyOpToQC,
-                 ConvertJeffRzOpToQC, ConvertJeffR1OpToQC>(typeConverter,
-                                                           context);
+                 ConvertJeffQubitMeasureNDOpToQC, ConvertJeffIOpToQC,
+                 ConvertJeffXOpToQC, ConvertJeffYOpToQC, ConvertJeffZOpToQC,
+                 ConvertJeffHOpToQC, ConvertJeffSOpToQC, ConvertJeffTOpToQC,
+                 ConvertJeffRxOpToQC, ConvertJeffRyOpToQC, ConvertJeffRzOpToQC,
+                 ConvertJeffR1OpToQC>(typeConverter, context);
 
     // Apply the conversion
     if (failed(applyPartialConversion(module, target, std::move(patterns)))) {

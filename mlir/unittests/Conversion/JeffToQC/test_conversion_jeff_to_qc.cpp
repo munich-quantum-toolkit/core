@@ -49,6 +49,31 @@ protected:
   }
 };
 
+TEST_F(JeffToQCConversionTest, Measure) {
+  const auto* const inputString = R"(
+    %q0_0 = jeff.qubit_alloc : !jeff.qubit
+    %result, %q0_1 = jeff.qubit_measure_nd %q0_0 : i1, !jeff.qubit
+    jeff.qubit_free %q0_1 : !jeff.qubit
+  )";
+
+  auto input = parseSourceString<ModuleOp>(inputString, context.get());
+  if (!input) {
+    FAIL() << "Failed to parse Jeff IR";
+  }
+
+  PassManager pm(context.get());
+  pm.addPass(createJeffToQC());
+  if (failed(pm.run(input.get()))) {
+    FAIL() << "Error during Jeff-to-QC conversion";
+  }
+
+  const auto outputString = getOutputString(input);
+
+  // ASSERT_EQ(outputString, "test");
+
+  ASSERT_NE(outputString.find("qc.measure"), std::string::npos);
+}
+
 TEST_F(JeffToQCConversionTest, Id) {
   const auto* const inputString = R"(
     %q0_0 = jeff.qubit_alloc : !jeff.qubit
