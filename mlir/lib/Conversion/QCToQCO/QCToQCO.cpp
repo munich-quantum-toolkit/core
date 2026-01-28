@@ -1130,8 +1130,7 @@ struct ConvertQCCtrlOp final : StatefulOpConversionPattern<qc::CtrlOp> {
     auto& dstRegion = qcoOp.getRegion();
     rewriter.cloneRegionBefore(op.getRegion(), dstRegion, dstRegion.end());
 
-    // Create block arguments for target qubits and store them in
-    // `state.targetsIn`.
+    // Create block arguments for QCO targets
     auto& entryBlock = dstRegion.front();
     assert(entryBlock.getNumArguments() == 0 &&
            "QC ctrl region unexpectedly has entry block arguments");

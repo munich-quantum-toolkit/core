@@ -12,6 +12,7 @@
 
 #include "mlir/Dialect/QC/IR/QCDialect.h"
 
+#include <cassert>
 #include <jeff/IR/JeffDialect.h>
 #include <jeff/IR/JeffOps.h>
 #include <mlir/IR/BuiltinTypeInterfaces.h>
@@ -35,6 +36,10 @@ namespace {
 struct LoweringState {
   /// Map from QC qubit references to their Jeff qubit SSA values
   llvm::DenseMap<Value, Value> qubitMap;
+
+  // Modifier information
+  int64_t inCtrlOp = 0;
+  DenseMap<int64_t, SmallVector<Value>> controls;
 };
 
 template <typename OpType>
@@ -97,21 +102,116 @@ struct ConvertQCXOpToJeff final : StatefulOpConversionPattern<qc::XOp> {
   LogicalResult
   matchAndRewrite(qc::XOp op, OpAdaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
-    auto& qubitMap = getState().qubitMap;
-    auto qcQubit = op.getQubitIn();
+    auto& state = getState();
+    auto& qubitMap = state.qubitMap;
+    auto inCtrlOp = state.inCtrlOp;
 
-    auto jeffQubit = qubitMap[qcQubit];
-    auto jeffOp = rewriter.create<jeff::XOp>(op.getLoc(), jeffQubit,
-                                             /*in_ctrl_qubits=*/ValueRange{},
-                                             /*num_ctrls=*/0,
+    auto qcTarget = op.getQubitIn();
+    auto jeffTarget = qubitMap[qcTarget];
+
+    SmallVector<Value> jeffControls{};
+    if (inCtrlOp != 0) {
+      for (auto qcControl : state.controls[inCtrlOp]) {
+        assert(qubitMap.contains(qcControl) && "QC qubit not found");
+        jeffControls.push_back(qubitMap[qcControl]);
+      }
+    }
+
+    auto jeffOp = rewriter.create<jeff::XOp>(op.getLoc(), jeffTarget,
+                                             /*in_ctrl_qubits=*/jeffControls,
+                                             /*num_ctrls=*/jeffControls.size(),
                                              /*is_adjoint=*/false,
                                              /*power=*/1);
 
-    // Update qubit map
-    qubitMap[qcQubit] = jeffOp.getOutQubit();
+    // Update qubit map and modifier information
+    qubitMap[qcTarget] = jeffOp.getOutQubit();
+    if (inCtrlOp != 0) {
+      for (size_t i = 0; i < jeffControls.size(); ++i) {
+        auto qcControl = state.controls[inCtrlOp][i];
+        qubitMap[qcControl] = jeffOp.getOutCtrlQubits()[i];
+      }
+      state.controls.erase(inCtrlOp);
+      state.inCtrlOp--;
+    }
 
     rewriter.eraseOp(op);
 
+    return success();
+  }
+};
+
+struct ConvertQCHOpToJeff final : StatefulOpConversionPattern<qc::HOp> {
+  using StatefulOpConversionPattern::StatefulOpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(qc::HOp op, OpAdaptor /*adaptor*/,
+                  ConversionPatternRewriter& rewriter) const override {
+    auto& state = getState();
+    auto& qubitMap = state.qubitMap;
+    auto inCtrlOp = state.inCtrlOp;
+
+    auto qcTarget = op.getQubitIn();
+    auto jeffTarget = qubitMap[qcTarget];
+
+    SmallVector<Value> jeffControls{};
+    if (inCtrlOp != 0) {
+      for (auto qcControl : state.controls[inCtrlOp]) {
+        assert(qubitMap.contains(qcControl) && "QC qubit not found");
+        jeffControls.push_back(qubitMap[qcControl]);
+      }
+    }
+
+    auto jeffOp = rewriter.create<jeff::HOp>(op.getLoc(), jeffTarget,
+                                             /*in_ctrl_qubits=*/jeffControls,
+                                             /*num_ctrls=*/jeffControls.size(),
+                                             /*is_adjoint=*/false,
+                                             /*power=*/1);
+
+    // Update qubit map and modifier information
+    qubitMap[qcTarget] = jeffOp.getOutQubit();
+    if (inCtrlOp != 0) {
+      for (size_t i = 0; i < jeffControls.size(); ++i) {
+        auto qcControl = state.controls[inCtrlOp][i];
+        qubitMap[qcControl] = jeffOp.getOutCtrlQubits()[i];
+      }
+      state.controls.erase(inCtrlOp);
+      state.inCtrlOp--;
+    }
+
+    rewriter.eraseOp(op);
+
+    return success();
+  }
+};
+
+struct ConvertQCCtrlOpToJeff final : StatefulOpConversionPattern<qc::CtrlOp> {
+  using StatefulOpConversionPattern::StatefulOpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(qc::CtrlOp op, OpAdaptor /*adaptor*/,
+                  ConversionPatternRewriter& rewriter) const override {
+    // Update modifier information
+    auto& state = getState();
+    state.inCtrlOp++;
+    const SmallVector<Value> controls(op.getControls().begin(),
+                                      op.getControls().end());
+    state.controls[state.inCtrlOp] = controls;
+
+    // Inline region and remove operation
+    rewriter.inlineBlockBefore(&op.getRegion().front(), op->getBlock(),
+                               op->getIterator());
+    rewriter.eraseOp(op);
+    return success();
+  }
+};
+
+struct ConvertQCYieldOpToJeff final : StatefulOpConversionPattern<qc::YieldOp> {
+  using StatefulOpConversionPattern::StatefulOpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(qc::YieldOp op, OpAdaptor /*adaptor*/,
+                  ConversionPatternRewriter& rewriter) const override {
+    rewriter.eraseOp(op);
     return success();
   }
 };
@@ -147,7 +247,8 @@ struct QCToJeff final : impl::QCToJeffBase<QCToJeff> {
 
     // Register operation conversion patterns
     patterns.add<ConvertQCAllocOpToJeff, ConvertQCDeallocOpToJeff,
-                 ConvertQCXOpToJeff>(typeConverter, context, &state);
+                 ConvertQCXOpToJeff, ConvertQCHOpToJeff, ConvertQCCtrlOpToJeff,
+                 ConvertQCYieldOpToJeff>(typeConverter, context, &state);
 
     // Apply the conversion
     if (failed(applyPartialConversion(module, target, std::move(patterns)))) {

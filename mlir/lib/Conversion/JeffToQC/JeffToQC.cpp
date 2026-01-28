@@ -61,9 +61,60 @@ struct ConvertJeffXOpToQC final : OpConversionPattern<jeff::XOp> {
   LogicalResult
   matchAndRewrite(jeff::XOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
-    auto qcQubit = adaptor.getInQubit();
-    rewriter.create<qc::XOp>(op.getLoc(), qcQubit);
-    rewriter.replaceOp(op, qcQubit);
+    if (op.getPower() != 1) {
+      return rewriter.notifyMatchFailure(
+          op, "Operations with power != 1 are not yet supported");
+    }
+
+    auto target = adaptor.getInQubit();
+
+    if (op.getNumCtrls() != 0) {
+      auto controls = adaptor.getInCtrlQubits();
+      rewriter.create<qc::CtrlOp>(op.getLoc(), controls, [&] {
+        rewriter.create<qc::XOp>(op.getLoc(), target);
+      });
+      SmallVector<Value> operands;
+      operands.reserve(1 + controls.size());
+      operands.push_back(target);
+      operands.append(controls.begin(), controls.end());
+      rewriter.replaceOp(op, operands);
+    } else {
+      rewriter.create<qc::XOp>(op.getLoc(), target);
+      rewriter.replaceOp(op, target);
+    }
+
+    return success();
+  }
+};
+
+struct ConvertJeffHOpToQC final : OpConversionPattern<jeff::HOp> {
+  using OpConversionPattern::OpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(jeff::HOp op, OpAdaptor adaptor,
+                  ConversionPatternRewriter& rewriter) const override {
+    if (op.getPower() != 1) {
+      return rewriter.notifyMatchFailure(
+          op, "Operations with power != 1 are not yet supported");
+    }
+
+    auto target = adaptor.getInQubit();
+
+    if (op.getNumCtrls() != 0) {
+      auto controls = adaptor.getInCtrlQubits();
+      rewriter.create<qc::CtrlOp>(op.getLoc(), controls, [&] {
+        rewriter.create<qc::HOp>(op.getLoc(), target);
+      });
+      SmallVector<Value> operands;
+      operands.reserve(1 + controls.size());
+      operands.push_back(target);
+      operands.append(controls.begin(), controls.end());
+      rewriter.replaceOp(op, operands);
+    } else {
+      rewriter.create<qc::HOp>(op.getLoc(), target);
+      rewriter.replaceOp(op, target);
+    }
+
     return success();
   }
 };
@@ -97,7 +148,8 @@ struct JeffToQC final : impl::JeffToQCBase<JeffToQC> {
 
     // Register operation conversion patterns
     patterns.add<ConvertJeffQubitAllocOpToQC, ConvertJeffQubitFreeOpToQC,
-                 ConvertJeffXOpToQC>(typeConverter, context);
+                 ConvertJeffXOpToQC, ConvertJeffHOpToQC>(typeConverter,
+                                                         context);
 
     // Apply the conversion
     if (failed(applyPartialConversion(module, target, std::move(patterns)))) {
