@@ -310,6 +310,48 @@ struct ConvertQCResetOpToJeff final : StatefulOpConversionPattern<qc::ResetOp> {
   }
 };
 
+struct ConvertQCGPhaseOpToJeff final
+    : StatefulOpConversionPattern<qc::GPhaseOp> {
+  using StatefulOpConversionPattern::StatefulOpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(qc::GPhaseOp op, OpAdaptor /*adaptor*/,
+                  ConversionPatternRewriter& rewriter) const override {
+    auto& state = getState();
+    auto& qubitMap = state.qubitMap;
+    auto inCtrlOp = state.inCtrlOp;
+
+    SmallVector<Value> jeffControls{};
+    if (inCtrlOp != 0) {
+      for (auto qcControl : state.controls[inCtrlOp]) {
+        assert(qubitMap.contains(qcControl) && "QC qubit not found");
+        jeffControls.push_back(qubitMap[qcControl]);
+      }
+    }
+
+    auto jeffOp =
+        rewriter.create<jeff::GPhaseOp>(op.getLoc(), op.getParameter(0),
+                                        /*in_ctrl_qubits=*/jeffControls,
+                                        /*num_ctrls=*/jeffControls.size(),
+                                        /*is_adjoint=*/false,
+                                        /*power=*/1);
+
+    // Update qubit map and modifier information
+    if (inCtrlOp != 0) {
+      for (size_t i = 0; i < jeffControls.size(); ++i) {
+        auto qcControl = state.controls[inCtrlOp][i];
+        qubitMap[qcControl] = jeffOp.getOutCtrlQubits()[i];
+      }
+      state.controls.erase(inCtrlOp);
+      state.inCtrlOp--;
+    }
+
+    rewriter.eraseOp(op);
+
+    return success();
+  }
+};
+
 // OneTargetZeroParameter
 
 #define DEFINE_ONE_TARGET_ZERO_PARAMETER(OP_CLASS_QC, OP_CLASS_JEFF,           \
@@ -462,11 +504,12 @@ struct QCToJeff final : impl::QCToJeffBase<QCToJeff> {
     // Register operation conversion patterns
     patterns.add<ConvertQCAllocOpToJeff, ConvertQCDeallocOpToJeff,
                  ConvertQCMeasureOpToJeff, ConvertQCResetOpToJeff,
-                 ConvertQCIdOpToJeff, ConvertQCXOpToJeff, ConvertQCYOpToJeff,
-                 ConvertQCZOpToJeff, ConvertQCHOpToJeff, ConvertQCSOpToJeff,
-                 ConvertQCSdgOpToJeff, ConvertQCTOpToJeff, ConvertQCTdgOpToJeff,
-                 ConvertQCRXOpToJeff, ConvertQCRYOpToJeff, ConvertQCRZOpToJeff,
-                 ConvertQCPOpToJeff, ConvertQCUOpToJeff, ConvertQCSWAPOpToJeff,
+                 ConvertQCGPhaseOpToJeff, ConvertQCIdOpToJeff,
+                 ConvertQCXOpToJeff, ConvertQCYOpToJeff, ConvertQCZOpToJeff,
+                 ConvertQCHOpToJeff, ConvertQCSOpToJeff, ConvertQCSdgOpToJeff,
+                 ConvertQCTOpToJeff, ConvertQCTdgOpToJeff, ConvertQCRXOpToJeff,
+                 ConvertQCRYOpToJeff, ConvertQCRZOpToJeff, ConvertQCPOpToJeff,
+                 ConvertQCUOpToJeff, ConvertQCSWAPOpToJeff,
                  ConvertQCCtrlOpToJeff, ConvertQCYieldOpToJeff>(
         typeConverter, context, &state);
 
