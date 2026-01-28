@@ -1034,7 +1034,7 @@ public:
   //===--------------------------------------------------------------------===//
 
   /**
-   * @brief Constructs a tensor.from_elements operation with the given values
+   * @brief Construct a tensor.from_elements operation with the given values
    *
    * @param elements The elements of the tensor
    * @return The resulting tensor
@@ -1050,7 +1050,7 @@ public:
   Value tensorFromElements(ValueRange elements);
 
   /**
-   * @brief Constructs a tensor.extract operation at the given index
+   * @brief Construct a tensor.extract operation at the given index
    *
    * @param tensor The tensor where the value is extracted
    * @param index The index where the value is extracted
@@ -1067,7 +1067,7 @@ public:
   Value tensorExtract(Value tensor, const std::variant<int64_t, Value>& index);
 
   /**
-   * @brief Constructs a tensor.insert operation at the given index
+   * @brief Construct a tensor.insert operation at the given index
    *
    * @param element The inserted value
    * @param tensor The tensor where the value is inserted
@@ -1090,12 +1090,12 @@ public:
   //===--------------------------------------------------------------------===//
 
   /**
-   * @brief Constructs a scf.for operation with iterArgs
+   * @brief Construct a scf.for operation with iter args
    *
    * @param lowerbound Lowerbound of the loop
    * @param upperbound Upperbound of the loop
    * @param step Stepsize of the loop
-   * @param initArgs Initial arguments for the iterArgs
+   * @param initArgs Initial arguments for the iter args
    * @param body Function that builds the body of the for operation
    * @return ValueRange of the results
    *
@@ -1120,7 +1120,7 @@ public:
          const std::variant<int64_t, Value>& step, ValueRange initArgs,
          llvm::function_ref<llvm::SmallVector<Value>(Value, ValueRange)> body);
   /**
-   * @brief Constructs a scf.while operation with return values
+   * @brief Construct a scf.while operation with return values
    *
    * @param args Arguments for the while loop
    * @param beforeBody Function that builds the before body of the while
@@ -1158,7 +1158,7 @@ public:
            llvm::function_ref<llvm::SmallVector<Value>(ValueRange)> afterBody);
 
   /**
-   * @brief Constructs a scf.if operation with return values
+   * @brief Construct a scf.if operation with return values
    *
    * @param condition Condition for the if operation
    * @param qubits Qubits used in the if/else body
@@ -1193,7 +1193,7 @@ public:
                    llvm::function_ref<llvm::SmallVector<Value>()> elseBody);
 
   /**
-   * @brief Constructs a scf.condition operation with yielded values
+   * @brief Construct a scf.condition operation with yielded values
    *
    * @param condition Condition for condition operation
    * @param yieldedValues ValueRange of the yieldedValues
@@ -1214,7 +1214,7 @@ public:
   //===--------------------------------------------------------------------===//
 
   /**
-   * @brief Constructs a func.call operation with return values
+   * @brief Construct a func.call operation with return values
    *
    * @param name Name of the function that is called
    * @param operands ValueRange of the used operands
@@ -1231,7 +1231,7 @@ public:
   ValueRange funcCall(StringRef name, ValueRange operands);
 
   /**
-   * @brief Constructs a func.func operation with return values
+   * @brief Construct a func.func operation with return values
    *
    * @param name Name of the function that is called
    * @param argTypes TypeRange of the arguments

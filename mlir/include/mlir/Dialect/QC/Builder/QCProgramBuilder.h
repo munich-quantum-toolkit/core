@@ -874,7 +874,7 @@ public:
   //===--------------------------------------------------------------------===//
 
   /**
-   * @brief Allocates a memref register and insert the given values
+   * @brief Allocate a memref register and insert the given values
    *
    * @param elements The stored elements
    * @return The memref register
@@ -892,7 +892,7 @@ public:
   Value memrefAlloc(ValueRange elements);
 
   /**
-   * @brief Loads a value from a memref register
+   * @brief Load a value from a memref register
    *
    * @param memref The memref register
    * @param index The index where the value is extracted
@@ -913,7 +913,7 @@ public:
   //===--------------------------------------------------------------------===//
 
   /**
-   * @brief Constructs a scf.for operation without iter args
+   * @brief Construct a scf.for operation without iter args
    *
    * @param lowerbound Lowerbound of the loop
    * @param upperbound Upperbound of the loop
@@ -937,7 +937,7 @@ public:
                            const std::function<void(Value)>& body);
 
   /**
-   * @brief Constructs a scf.while operation without return values
+   * @brief Construct a scf.while operation without return values
    *
    * @param beforeBody Function that builds the before body of the while
    * operation
@@ -969,7 +969,7 @@ public:
                              const std::function<void()>& afterBody);
 
   /**
-   * @brief Constructs a scf.if operation without return values
+   * @brief Construct a scf.if operation without return values
    *
    * @param condition Condition for the if operation
    * @param thenBody Function that builds the then body of the if
@@ -999,7 +999,7 @@ public:
         std::optional<std::function<void()>> elseBody = std::nullopt);
 
   /**
-   * @brief Constructs a scf.condition operation without any additional Values
+   * @brief Construct a scf.condition operation without yielded values
    *
    * @param condition Condition for condition operation
    * @return Reference to this builder for method chaining
@@ -1019,7 +1019,7 @@ public:
   //===--------------------------------------------------------------------===//
 
   /**
-   * @brief Constructs a func.call operation without return values
+   * @brief Construct a func.call operation without return values
    *
    * @param name Name of the function that is called
    * @param operands ValueRange of the used operands
@@ -1035,7 +1035,7 @@ public:
   QCProgramBuilder& funcCall(StringRef name, ValueRange operands);
 
   /**
-   * @brief Constructs a func.func operation without return values
+   * @brief Construct a func.func operation without return values
    *
    * @param name Name of the function that is called
    * @param argTypes TypeRange of the arguments
