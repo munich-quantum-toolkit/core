@@ -143,6 +143,29 @@ TEST_F(QCToJeffConversionTest, X) {
   ASSERT_NE(outputString.find("jeff.x"), std::string::npos);
 }
 
+TEST_F(QCToJeffConversionTest, MCX) {
+  auto input = buildQCIR([](mlir::qc::QCProgramBuilder& b) {
+    auto reg = b.allocQubitRegister(3, "q");
+    auto q0 = reg[0];
+    auto q1 = reg[1];
+    auto q2 = reg[2];
+    b.mcx({q1, q2}, q0);
+  });
+
+  PassManager pm(context.get());
+  pm.addPass(createQCToJeff());
+  if (failed(pm.run(input.get()))) {
+    FAIL() << "Error during QC-to-Jeff conversion";
+  }
+
+  const auto outputString = getOutputString(input);
+
+  // ASSERT_EQ(outputString, "test");
+
+  ASSERT_NE(outputString.find("jeff.x"), std::string::npos);
+  ASSERT_NE(outputString.find("num_ctrls = 2"), std::string::npos);
+}
+
 TEST_F(QCToJeffConversionTest, Y) {
   auto input = buildQCIR([](mlir::qc::QCProgramBuilder& b) {
     auto reg = b.allocQubitRegister(1, "q");
@@ -307,6 +330,28 @@ TEST_F(QCToJeffConversionTest, RX) {
   ASSERT_NE(outputString.find("jeff.rx"), std::string::npos);
 }
 
+TEST_F(QCToJeffConversionTest, CRX) {
+  auto input = buildQCIR([](mlir::qc::QCProgramBuilder& b) {
+    auto reg = b.allocQubitRegister(2, "q");
+    auto q0 = reg[0];
+    auto q1 = reg[1];
+    b.crx(0.5, q0, q1);
+  });
+
+  PassManager pm(context.get());
+  pm.addPass(createQCToJeff());
+  if (failed(pm.run(input.get()))) {
+    FAIL() << "Error during QC-to-Jeff conversion";
+  }
+
+  const auto outputString = getOutputString(input);
+
+  // ASSERT_EQ(outputString, "test");
+
+  ASSERT_NE(outputString.find("jeff.rx"), std::string::npos);
+  ASSERT_NE(outputString.find("num_ctrls = 1"), std::string::npos);
+}
+
 TEST_F(QCToJeffConversionTest, RY) {
   auto input = buildQCIR([](mlir::qc::QCProgramBuilder& b) {
     auto reg = b.allocQubitRegister(1, "q");
@@ -387,6 +432,28 @@ TEST_F(QCToJeffConversionTest, U) {
   ASSERT_NE(outputString.find("jeff.u"), std::string::npos);
 }
 
+TEST_F(QCToJeffConversionTest, CU) {
+  auto input = buildQCIR([](mlir::qc::QCProgramBuilder& b) {
+    auto reg = b.allocQubitRegister(2, "q");
+    auto q0 = reg[0];
+    auto q1 = reg[1];
+    b.cu(0.1, 0.2, 0.3, q1, q0);
+  });
+
+  PassManager pm(context.get());
+  pm.addPass(createQCToJeff());
+  if (failed(pm.run(input.get()))) {
+    FAIL() << "Error during QC-to-Jeff conversion";
+  }
+
+  const auto outputString = getOutputString(input);
+
+  // ASSERT_EQ(outputString, "test");
+
+  ASSERT_NE(outputString.find("jeff.u"), std::string::npos);
+  ASSERT_NE(outputString.find("num_ctrls = 1"), std::string::npos);
+}
+
 TEST_F(QCToJeffConversionTest, SWAP) {
   auto input = buildQCIR([](mlir::qc::QCProgramBuilder& b) {
     auto reg = b.allocQubitRegister(2, "q");
@@ -406,6 +473,29 @@ TEST_F(QCToJeffConversionTest, SWAP) {
   // ASSERT_EQ(outputString, "test");
 
   ASSERT_NE(outputString.find("jeff.swap"), std::string::npos);
+}
+
+TEST_F(QCToJeffConversionTest, CSWAP) {
+  auto input = buildQCIR([](mlir::qc::QCProgramBuilder& b) {
+    auto reg = b.allocQubitRegister(3, "q");
+    auto q0 = reg[0];
+    auto q1 = reg[1];
+    auto q2 = reg[2];
+    b.cswap(q0, q1, q2);
+  });
+
+  PassManager pm(context.get());
+  pm.addPass(createQCToJeff());
+  if (failed(pm.run(input.get()))) {
+    FAIL() << "Error during QC-to-Jeff conversion";
+  }
+
+  const auto outputString = getOutputString(input);
+
+  // ASSERT_EQ(outputString, "test");
+
+  ASSERT_NE(outputString.find("jeff.swap"), std::string::npos);
+  ASSERT_NE(outputString.find("num_ctrls = 1"), std::string::npos);
 }
 
 TEST_F(QCToJeffConversionTest, Bell) {
