@@ -1287,6 +1287,7 @@ private:
   /**
    * @brief Validate that a qubit value is valid and unconsumed
    * @param qubit Qubit value to validate
+   * @param region Region that owns the qubit SSA value
    * @throws Aborts if qubit is not tracked (consumed or never created)
    */
   void validateQubitValue(Value qubit, Region* region) const;
@@ -1295,7 +1296,7 @@ private:
    * @brief Update tracking when an operation consumes and produces a qubit
    * @param inputQubit Input qubit being consumed (must be valid)
    * @param outputQubit New output qubit being produced
-   * @param region The Region in where the qubits are defined.
+   * @param region Region where the qubits are defined
    */
   void updateQubitTracking(Value inputQubit, Value outputQubit, Region* region);
 
