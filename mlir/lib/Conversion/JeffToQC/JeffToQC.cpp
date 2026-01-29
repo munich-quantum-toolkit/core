@@ -85,6 +85,11 @@ template <typename QCOpType, typename JeffOpType, typename JeffOpAdaptorType>
 static LogicalResult
 convertOneTargetOneParameter(JeffOpType& op, JeffOpAdaptorType& adaptor,
                              ConversionPatternRewriter& rewriter) {
+  if (op.getIsAdjoint()) {
+    return rewriter.notifyMatchFailure(
+        op, "Adjoint operations are not yet supported");
+  }
+
   if (op.getPower() != 1) {
     return rewriter.notifyMatchFailure(
         op, "Operations with power != 1 are not yet supported");
@@ -229,6 +234,11 @@ struct ConvertJeffGPhaseOpToQC final : OpConversionPattern<jeff::GPhaseOp> {
   LogicalResult
   matchAndRewrite(jeff::GPhaseOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
+    if (op.getIsAdjoint()) {
+      return rewriter.notifyMatchFailure(
+          op, "Adjoint operations are not yet supported");
+    }
+
     if (op.getPower() != 1) {
       return rewriter.notifyMatchFailure(
           op, "Operations with power != 1 are not yet supported");
@@ -320,6 +330,11 @@ struct ConvertJeffUOpToQC final : OpConversionPattern<jeff::UOp> {
   LogicalResult
   matchAndRewrite(jeff::UOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
+    if (op.getIsAdjoint()) {
+      return rewriter.notifyMatchFailure(
+          op, "Adjoint operations are not yet supported");
+    }
+
     if (op.getPower() != 1) {
       return rewriter.notifyMatchFailure(
           op, "Operations with power != 1 are not yet supported");
