@@ -73,10 +73,7 @@ struct ReplaceWithKnownGates final : OpRewritePattern<InvOp> {
 
   static Value negatedAngle(Value theta, PatternRewriter& rewriter,
                             Location loc) {
-    auto type = theta.getType();
-    auto minusOne = rewriter.create<arith::ConstantOp>(
-        loc, type, rewriter.getFloatAttr(type, -1.0));
-    return rewriter.create<arith::MulFOp>(loc, theta, minusOne);
+    return rewriter.create<arith::NegFOp>(loc, theta);
   }
 
   LogicalResult matchAndRewrite(InvOp op,
