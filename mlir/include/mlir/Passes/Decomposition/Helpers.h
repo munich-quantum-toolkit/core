@@ -217,7 +217,7 @@ template <typename T, int N, int M>
     return (numOfQubits - 1) * multiQubitFactor;
   }
   if (type == qc::GPhase) {
-    return 2;
+    return 0;
   }
   return 1;
 }

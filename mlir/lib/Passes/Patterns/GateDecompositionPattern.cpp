@@ -464,6 +464,7 @@ protected:
       auto prependSingleQubitGate = [&](UnitaryOpInterface op) {
         inQubits[qubitId] = op.getInputQubit(0);
         gates.insert(gates.begin(), {.op = op, .qubitIds = {qubitId}});
+        complexity += helpers::getComplexity(helpers::getQcType(op), 1);
         // outQubits do not need to be updated because the final out qubit is
         // already fixed
       };
