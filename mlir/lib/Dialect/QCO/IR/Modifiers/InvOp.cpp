@@ -25,6 +25,7 @@
 #include <mlir/IR/PatternMatch.h>
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/LogicalResult.h>
+#include <numbers>
 #include <optional>
 
 using namespace mlir;
@@ -71,9 +72,23 @@ struct InlineSelfAdjoint final : OpRewritePattern<InvOp> {
 struct ReplaceWithKnownGates final : OpRewritePattern<InvOp> {
   using OpRewritePattern::OpRewritePattern;
 
+  /**
+   * @brief Computes the negated value, i.e. f(x) = -x.
+   */
   static Value negatedAngle(Value theta, PatternRewriter& rewriter,
                             Location loc) {
     return rewriter.create<arith::NegFOp>(loc, theta);
+  }
+
+  /**
+   * @brief Computes the negated value shifted by minus pi, i.e. f(x) = -x - pi.
+   */
+  static Value negatedPiShiftedAngle(Value theta, PatternRewriter& rewriter,
+                                     Location loc) {
+    auto negated = negatedAngle(theta, rewriter, loc);
+    auto pi = rewriter.create<arith::ConstantOp>(
+        loc, rewriter.getF64FloatAttr(std::numbers::pi));
+    return rewriter.create<arith::SubFOp>(loc, negated, pi);
   }
 
   LogicalResult matchAndRewrite(InvOp op,
@@ -81,6 +96,11 @@ struct ReplaceWithKnownGates final : OpRewritePattern<InvOp> {
     auto* innerOp = op.getBodyUnitary().getOperation();
 
     return llvm::TypeSwitch<Operation*, LogicalResult>(innerOp)
+        .Case<GPhaseOp>([&](auto g) {
+          auto negTheta = negatedAngle(g.getTheta(), rewriter, op.getLoc());
+          rewriter.replaceOpWithNewOp<GPhaseOp>(op, negTheta);
+          return success();
+        })
         .Case<TOp>([&](auto) {
           rewriter.replaceOpWithNewOp<TdgOp>(op, op.getInputTarget(0));
           return success();
@@ -119,6 +139,29 @@ struct ReplaceWithKnownGates final : OpRewritePattern<InvOp> {
         .Case<RXOp>([&](auto rx) {
           auto negTheta = negatedAngle(rx.getTheta(), rewriter, op.getLoc());
           rewriter.replaceOpWithNewOp<RXOp>(op, op.getInputTarget(0), negTheta);
+          return success();
+        })
+        .Case<UOp>([&](auto u) {
+          auto newPhi =
+              negatedPiShiftedAngle(u.getLambda(), rewriter, op.getLoc());
+          auto newLambda =
+              negatedPiShiftedAngle(u.getPhi(), rewriter, op.getLoc());
+          rewriter.replaceOpWithNewOp<UOp>(op, op.getInputTarget(0),
+                                           u.getTheta(), newPhi, newLambda);
+          return success();
+        })
+        .Case<U2Op>([&](auto u) {
+          auto newPhi =
+              negatedPiShiftedAngle(u.getLambda(), rewriter, op.getLoc());
+          auto newLambda =
+              negatedPiShiftedAngle(u.getPhi(), rewriter, op.getLoc());
+          rewriter.replaceOpWithNewOp<U2Op>(op, op.getInputTarget(0), newPhi,
+                                            newLambda);
+          return success();
+        })
+        .Case<DCXOp>([&](auto) {
+          rewriter.replaceOpWithNewOp<DCXOp>(op, op.getInputTarget(1),
+                                             op.getInputTarget(0));
           return success();
         })
         .Case<RXXOp>([&](auto rxx) {
