@@ -1651,6 +1651,104 @@ TEST_F(CompilerPipelineTest, MCXTrivial) {
   });
 }
 
+TEST_F(CompilerPipelineTest, InvS) {
+  auto input = buildQCIR([](mlir::qc::QCProgramBuilder& b) {
+    auto reg = b.allocQubitRegister(1, "q");
+    b.inv([&] { b.s(reg[0]); });
+  });
+
+  ASSERT_TRUE(runPipeline(input.get()).succeeded());
+
+  const auto qcInit = buildQCIR([](mlir::qc::QCProgramBuilder& b) {
+    auto reg = b.allocQubitRegister(1, "q");
+    b.inv([&] { b.s(reg[0]); });
+  });
+  const auto qco = buildQCOIR([](qco::QCOProgramBuilder& b) {
+    auto reg = b.allocQubitRegister(1, "q");
+    b.sdg(reg[0]);
+  });
+  const auto qc = buildQCIR([](mlir::qc::QCProgramBuilder& b) {
+    auto reg = b.allocQubitRegister(1, "q");
+    b.sdg(reg[0]);
+  });
+  const auto qir = buildQIR([](qir::QIRProgramBuilder& b) {
+    auto reg = b.allocQubitRegister(1);
+    b.sdg(reg[0]);
+  });
+
+  verifyAllStages({
+      .qcImport = qcInit.get(),
+      .qcoConversion = qco.get(),
+      .optimization = qco.get(),
+      .qcConversion = qc.get(),
+      .qirConversion = qir.get(),
+  });
+}
+
+TEST_F(CompilerPipelineTest, InvRx) {
+  auto input = buildQCIR([](mlir::qc::QCProgramBuilder& b) {
+    auto reg = b.allocQubitRegister(1, "q");
+    b.inv([&] { b.rx(0.5, reg[0]); });
+  });
+
+  ASSERT_TRUE(runPipeline(input.get()).succeeded());
+
+  const auto qcInit = buildQCIR([](mlir::qc::QCProgramBuilder& b) {
+    auto reg = b.allocQubitRegister(1, "q");
+    b.inv([&] { b.rx(0.5, reg[0]); });
+  });
+  const auto qco = buildQCOIR([](qco::QCOProgramBuilder& b) {
+    auto reg = b.allocQubitRegister(1, "q");
+    b.rx(-0.5, reg[0]);
+  });
+  const auto qc = buildQCIR([](mlir::qc::QCProgramBuilder& b) {
+    auto reg = b.allocQubitRegister(1, "q");
+    b.rx(-0.5, reg[0]);
+  });
+  const auto qir = buildQIR([](qir::QIRProgramBuilder& b) {
+    auto reg = b.allocQubitRegister(1);
+    b.rx(-0.5, reg[0]);
+  });
+
+  verifyAllStages({
+      .qcImport = qcInit.get(),
+      .qcoConversion = qco.get(),
+      .optimization = qco.get(),
+      .qcConversion = qc.get(),
+      .qirConversion = qir.get(),
+  });
+}
+
+TEST_F(CompilerPipelineTest, NestedInvs) {
+  auto input = buildQCIR([](mlir::qc::QCProgramBuilder& b) {
+    auto reg = b.allocQubitRegister(2, "q");
+    b.inv([&] { b.inv([&] { b.iswap(reg[0], reg[1]); }); });
+  });
+
+  ASSERT_TRUE(runPipeline(input.get()).succeeded());
+
+  const auto qco = buildQCOIR([](qco::QCOProgramBuilder& b) {
+    auto reg = b.allocQubitRegister(2, "q");
+    b.iswap(reg[0], reg[1]);
+  });
+  const auto qc = buildQCIR([](mlir::qc::QCProgramBuilder& b) {
+    auto reg = b.allocQubitRegister(2, "q");
+    b.iswap(reg[0], reg[1]);
+  });
+  const auto qir = buildQIR([](qir::QIRProgramBuilder& b) {
+    auto reg = b.allocQubitRegister(2);
+    b.iswap(reg[0], reg[1]);
+  });
+
+  verifyAllStages({
+      .qcImport = qc.get(),
+      .qcoConversion = qco.get(),
+      .optimization = qco.get(),
+      .qcConversion = qc.get(),
+      .qirConversion = qir.get(),
+  });
+}
+
 TEST_F(CompilerPipelineTest, Y) {
   ::qc::QuantumComputation comp;
   comp.addQubitRegister(1, "q");
