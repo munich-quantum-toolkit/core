@@ -72,7 +72,7 @@ struct LoweringState {
   llvm::DenseMap<Value, Value> qubitMap;
 
   /// Modifier information
-  int64_t inCtrlOp = 0;
+  int64_t inNestedRegion = 0;
   DenseMap<int64_t, SmallVector<Value>> targetsIn;
   DenseMap<int64_t, SmallVector<Value>> targetsOut;
 };
@@ -123,7 +123,7 @@ template <typename QCOOpType, typename QCOpType>
 static LogicalResult
 convertZeroTargetOneParameter(QCOpType& op, ConversionPatternRewriter& rewriter,
                               LoweringState& state) {
-  const auto inCtrlOp = state.inCtrlOp;
+  const auto inCtrlOp = state.inNestedRegion;
 
   rewriter.create<QCOOpType>(op.getLoc(), op.getParameter(0));
 
@@ -154,7 +154,7 @@ static LogicalResult
 convertOneTargetZeroParameter(QCOpType& op, ConversionPatternRewriter& rewriter,
                               LoweringState& state) {
   auto& qubitMap = state.qubitMap;
-  const auto inCtrlOp = state.inCtrlOp;
+  const auto inCtrlOp = state.inNestedRegion;
 
   // Get the latest QCO qubit
   const auto& qcQubit = op.getQubitIn();
@@ -200,7 +200,7 @@ static LogicalResult
 convertOneTargetOneParameter(QCOpType& op, ConversionPatternRewriter& rewriter,
                              LoweringState& state) {
   auto& qubitMap = state.qubitMap;
-  const auto inCtrlOp = state.inCtrlOp;
+  const auto inCtrlOp = state.inNestedRegion;
 
   // Get the latest QCO qubit
   const auto& qcQubit = op.getQubitIn();
@@ -247,7 +247,7 @@ static LogicalResult
 convertOneTargetTwoParameter(QCOpType& op, ConversionPatternRewriter& rewriter,
                              LoweringState& state) {
   auto& qubitMap = state.qubitMap;
-  const auto inCtrlOp = state.inCtrlOp;
+  const auto inCtrlOp = state.inNestedRegion;
 
   // Get the latest QCO qubit
   const auto& qcQubit = op.getQubitIn();
@@ -293,7 +293,7 @@ template <typename QCOOpType, typename QCOpType>
 static LogicalResult convertOneTargetThreeParameter(
     QCOpType& op, ConversionPatternRewriter& rewriter, LoweringState& state) {
   auto& qubitMap = state.qubitMap;
-  const auto inCtrlOp = state.inCtrlOp;
+  const auto inCtrlOp = state.inNestedRegion;
 
   // Get the latest QCO qubit
   const auto& qcQubit = op.getQubitIn();
@@ -341,7 +341,7 @@ static LogicalResult
 convertTwoTargetZeroParameter(QCOpType& op, ConversionPatternRewriter& rewriter,
                               LoweringState& state) {
   auto& qubitMap = state.qubitMap;
-  const auto inCtrlOp = state.inCtrlOp;
+  const auto inCtrlOp = state.inNestedRegion;
 
   // Get the latest QCO qubits
   const auto& qcQubit0 = op.getQubit0In();
@@ -395,7 +395,7 @@ static LogicalResult
 convertTwoTargetOneParameter(QCOpType& op, ConversionPatternRewriter& rewriter,
                              LoweringState& state) {
   auto& qubitMap = state.qubitMap;
-  const auto inCtrlOp = state.inCtrlOp;
+  const auto inCtrlOp = state.inNestedRegion;
 
   // Get the latest QCO qubits
   const auto& qcQubit0 = op.getQubit0In();
@@ -450,7 +450,7 @@ static LogicalResult
 convertTwoTargetTwoParameter(QCOpType& op, ConversionPatternRewriter& rewriter,
                              LoweringState& state) {
   auto& qubitMap = state.qubitMap;
-  const auto inCtrlOp = state.inCtrlOp;
+  const auto inCtrlOp = state.inNestedRegion;
 
   // Get the latest QCO qubits
   const auto& qcQubit0 = op.getQubit0In();
@@ -1110,7 +1110,7 @@ struct ConvertQCCtrlOp final : StatefulOpConversionPattern<qc::CtrlOp> {
 
     // Update the state map if this is a top-level CtrlOp
     // Nested CtrlOps are managed via the targetsIn and targetsOut maps
-    if (state.inCtrlOp == 0) {
+    if (state.inNestedRegion == 0) {
       for (const auto& [qcControl, qcoControl] :
            llvm::zip(qcControls, qcoOp.getControlsOut())) {
         qubitMap[qcControl] = qcoControl;
@@ -1123,7 +1123,7 @@ struct ConvertQCCtrlOp final : StatefulOpConversionPattern<qc::CtrlOp> {
     }
 
     // Update modifier information
-    state.inCtrlOp++;
+    state.inNestedRegion++;
 
     // Clone body region from QC to QCO
     auto& dstRegion = qcoOp.getRegion();
@@ -1143,7 +1143,7 @@ struct ConvertQCCtrlOp final : StatefulOpConversionPattern<qc::CtrlOp> {
         qcoTargetAliases.emplace_back(entryBlock.addArgument(qubitType, opLoc));
       }
     });
-    state.targetsIn[state.inCtrlOp] = std::move(qcoTargetAliases);
+    state.targetsIn[state.inNestedRegion] = std::move(qcoTargetAliases);
 
     rewriter.eraseOp(op);
     return success();
@@ -1192,7 +1192,7 @@ struct ConvertQCInvOp final : StatefulOpConversionPattern<qc::InvOp> {
     auto qcoOp = qco::InvOp::create(rewriter, op.getLoc(), qcoTargets);
 
     // Update state map
-    if (state.inCtrlOp == 0) {
+    if (state.inNestedRegion == 0) {
       const auto targetsOut = qcoOp.getTargetsOut();
       for (size_t i = 0; i < numTargets; ++i) {
         const auto& qcTarget = op.getTarget(i);
@@ -1201,7 +1201,7 @@ struct ConvertQCInvOp final : StatefulOpConversionPattern<qc::InvOp> {
     }
 
     // Update modifier information
-    state.inCtrlOp++;
+    state.inNestedRegion++;
 
     // Clone body region from QC to QCO
     auto& dstRegion = qcoOp.getRegion();
@@ -1221,7 +1221,7 @@ struct ConvertQCInvOp final : StatefulOpConversionPattern<qc::InvOp> {
         qcoTargetAliases.emplace_back(entryBlock.addArgument(qubitType, opLoc));
       }
     });
-    state.targetsIn[state.inCtrlOp] = std::move(qcoTargetAliases);
+    state.targetsIn[state.inNestedRegion] = std::move(qcoTargetAliases);
 
     rewriter.eraseOp(op);
     return success();
@@ -1247,10 +1247,10 @@ struct ConvertQCYieldOp final : StatefulOpConversionPattern<qc::YieldOp> {
   matchAndRewrite(qc::YieldOp op, OpAdaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
     auto& state = getState();
-    const auto& targets = state.targetsOut[state.inCtrlOp];
+    const auto& targets = state.targetsOut[state.inNestedRegion];
     rewriter.replaceOpWithNewOp<qco::YieldOp>(op, targets);
-    state.targetsOut.erase(state.inCtrlOp);
-    state.inCtrlOp--;
+    state.targetsOut.erase(state.inNestedRegion);
+    state.inNestedRegion--;
     return success();
   }
 };
