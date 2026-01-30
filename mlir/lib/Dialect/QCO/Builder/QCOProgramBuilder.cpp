@@ -626,7 +626,7 @@ ValueRange QCOProgramBuilder::inv(
     llvm::function_ref<llvm::SmallVector<Value>(ValueRange)> body) {
   checkFinalized();
 
-  auto invOp = InvOp::create(*this, targets, body);
+  auto invOp = InvOp::create(*this, targets);
 
   // Add block arguments for all target qubits
   auto& block = invOp.getBodyRegion().emplaceBlock();
@@ -649,7 +649,8 @@ ValueRange QCOProgramBuilder::inv(
 
   // Update tracking
   const auto& targetsOut = invOp.getTargetsOut();
-  for (const auto& [target, targetOut] : llvm::zip(targets, targetsOut)) {
+  for (const auto& [target, targetOut] :
+       llvm::zip(innerTargetsOut, targetsOut)) {
     updateQubitTracking(target, targetOut);
   }
 
