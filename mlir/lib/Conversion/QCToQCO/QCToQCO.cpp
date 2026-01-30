@@ -1202,7 +1202,6 @@ struct ConvertQCInvOp final : StatefulOpConversionPattern<qc::InvOp> {
 
     // Update modifier information
     state.inCtrlOp++;
-    state.targetsIn.try_emplace(state.inCtrlOp, qcoTargets);
 
     // Clone body region from QC to QCO
     auto& dstRegion = qcoOp.getRegion();
