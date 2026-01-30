@@ -6,6 +6,8 @@
 #
 # Licensed under the MIT License
 
+"""MQT Core IR  - The MQT Core Intermediate Representation (IR) module."""
+
 import os
 from collections.abc import ItemsView, Iterable, Iterator, Mapping, MutableMapping, MutableSequence, Sequence
 from collections.abc import Set as AbstractSet

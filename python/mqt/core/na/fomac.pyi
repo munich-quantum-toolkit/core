@@ -6,6 +6,8 @@
 #
 # Licensed under the MIT License
 
+"""Reconstruction of NADevice from QDMI's Device class."""
+
 import mqt.core.fomac
 
 class Device(mqt.core.fomac.Device):

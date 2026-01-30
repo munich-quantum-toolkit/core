@@ -18,7 +18,7 @@ namespace nb = nanobind;
 void registerFomac(nb::module_& m);
 
 NB_MODULE(MQT_CORE_MODULE_NAME, m) {
-  m.doc() = R"pb(MQT Core NA - The MQT Core neutral atom module.
+  m.doc() = R"pb(MQT Core NA - The MQT Core Neutral Atom module.
 
 This module contains all neutral atom related functionality of MQT Core.)pb";
 
