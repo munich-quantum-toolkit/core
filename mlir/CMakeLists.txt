@@ -6,9 +6,11 @@
 #
 # Licensed under the MIT License
 
-set(CMAKE_CXX_STANDARD
-    20
-    CACHE STRING "C++ standard to conform to")
+if(NOT DEFINED CMAKE_CXX_STANDARD OR CMAKE_CXX_STANDARD LESS 20)
+  set(CMAKE_CXX_STANDARD
+      20
+      CACHE STRING "C++ standard to conform to")
+endif()
 
 if(MSVC)
   add_compile_definitions(_SILENCE_NONFLOATING_COMPLEX_DEPRECATION_WARNING)
