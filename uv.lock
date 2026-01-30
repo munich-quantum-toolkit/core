@@ -1647,13 +1647,13 @@ provides-extras = ["qiskit"]
 
 [package.metadata.requires-dev]
 build = [
-    { name = "nanobind", specifier = "==2.11.0" },
+    { name = "nanobind", specifier = "~=2.11.0" },
     { name = "scikit-build-core", specifier = ">=0.11.6" },
     { name = "setuptools-scm", specifier = ">=9.2.2" },
 ]
 dev = [
     { name = "lit", specifier = ">=18.1.8" },
-    { name = "nanobind", specifier = "==2.11.0" },
+    { name = "nanobind", specifier = "~=2.11.0" },
     { name = "nox", specifier = ">=2025.11.12" },
     { name = "numpy", marker = "python_full_version >= '3.13'", specifier = ">=2.1" },
     { name = "numpy", marker = "python_full_version >= '3.14'", specifier = ">=2.3.2" },
