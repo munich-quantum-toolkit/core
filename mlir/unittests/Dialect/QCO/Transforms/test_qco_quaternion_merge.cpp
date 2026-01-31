@@ -714,7 +714,7 @@ TEST_F(QCOQuaternionMergeTest, numericalAccuracyUU) {
  * @brief Test: RZ(PI)->RY(PI)->RX(PI) should merge into
  *        U(0, 0, 0) or U(2*PI, 0, 0)
  */
-TEST_F(QCOQuaternionMergeTest, rotationIdentity) {
+TEST_F(QCOQuaternionMergeTest, numericalRotationIdentity) {
   ASSERT_TRUE(testGateMerge({{RZOp::getOperationName(), {PI}},
                              {RYOp::getOperationName(), {PI}},
                              {RXOp::getOperationName(), {PI}}})
@@ -724,4 +724,51 @@ TEST_F(QCOQuaternionMergeTest, rotationIdentity) {
   EXPECT_EQ(countOps<RZOp>(), 0);
 
   expectUGateParams(TAU, 0., 0.);
+}
+
+/**
+ * @brief Test: RY(1)->RZ(1)->RY(-1)->RZ(-1) should merge into
+ *        U(0, 0, 0)
+ */
+TEST_F(QCOQuaternionMergeTest, numericalRotationIdentity2) {
+  ASSERT_TRUE(testGateMerge({{RYOp::getOperationName(), {1}},
+                             {RZOp::getOperationName(), {1}},
+                             {RZOp::getOperationName(), {-1}},
+                             {RYOp::getOperationName(), {-1}}})
+                  .succeeded());
+  EXPECT_EQ(countOps<UOp>(), 1);
+  EXPECT_EQ(countOps<RYOp>(), 0);
+  EXPECT_EQ(countOps<RZOp>(), 0);
+
+  expectUGateParams(0., 0., 0.);
+}
+
+/**
+ * @brief Test: RX(0.001)->RY(0.001) should merge into
+ *        U(0.785397913397407, 0.00141421344452194, -0.785398413397490)
+ */
+TEST_F(QCOQuaternionMergeTest, numericalSmallAngles) {
+  ASSERT_TRUE(testGateMerge({{RXOp::getOperationName(), {0.001}},
+                             {RYOp::getOperationName(), {0.001}}})
+                  .succeeded());
+  EXPECT_EQ(countOps<UOp>(), 1);
+  EXPECT_EQ(countOps<RXOp>(), 0);
+  EXPECT_EQ(countOps<RYOp>(), 0);
+
+  expectUGateParams(0.785397913397407, 0.00141421344452194, -0.785398413397490);
+}
+
+/**
+ * @brief Test: RX(PI)->RY(PI) should merge into
+ *        U(-PI, 0, 0)
+ */
+TEST_F(QCOQuaternionMergeTest, numericalGimbalLock) {
+  ASSERT_TRUE(testGateMerge({{RXOp::getOperationName(), {PI}},
+                             {RYOp::getOperationName(), {PI}}})
+                  .succeeded());
+  EXPECT_EQ(countOps<UOp>(), 1);
+  EXPECT_EQ(countOps<RXOp>(), 0);
+  EXPECT_EQ(countOps<RYOp>(), 0);
+
+  expectUGateParams(-PI, 0., 0.);
 }
