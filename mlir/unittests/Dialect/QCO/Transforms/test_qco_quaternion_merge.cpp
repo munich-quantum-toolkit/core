@@ -23,6 +23,7 @@
 #include <mlir/Parser/Parser.h>
 #include <mlir/Pass/PassManager.h>
 #include <mlir/Support/WalkResult.h>
+#include <numbers>
 #include <optional>
 #include <utility>
 #include <vector>
@@ -32,15 +33,11 @@ namespace {
 using namespace mlir;
 using namespace mlir::qco;
 
-/// A constant for the value of \f$\tau\f$.
-static constexpr auto TAU =
-    6.283185307179586476925286766559005768394338798750211641950L;
 /// A constant for the value of \f$\pi\f$.
-static constexpr double PI =
-    3.141592653589793238462643383279502884197169399375105820974L;
-/// A constant for the value of \f$\frac{\pi}{2}\f$.
-static constexpr double PI_2 =
-    1.570796326794896619231321691639751442098584699687552910487L;
+static constexpr double PI = std::numbers::pi;
+
+/// A constant for the value of \f$\tau\f$.
+static constexpr auto TAU = 2.0 * std::numbers::pi;
 
 class QCOQuaternionMergeTest : public ::testing::Test {
 protected:
