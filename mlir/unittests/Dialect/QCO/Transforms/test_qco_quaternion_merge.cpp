@@ -18,6 +18,7 @@
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/Math/IR/Math.h>
+#include <mlir/Dialect/SCF/IR/SCF.h>
 #include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/Value.h>
 #include <mlir/Parser/Parser.h>
@@ -160,6 +161,7 @@ protected:
     auto q = builder.allocQubitRegister(1);
 
     buildRotations(rotations, q[0]);
+
     module = builder.finalize();
     return runMergePass(module.get());
   }
@@ -530,6 +532,46 @@ TEST_F(QCOQuaternionMergeTest, nonLinearCodeHandling) {
   // Gates should remain unchanged (not merged) due to multiple uses
   EXPECT_EQ(countOps<RZOp>(), 2);
   EXPECT_EQ(countOps<RYOp>(), 1);
+  EXPECT_EQ(countOps<UOp>(), 0);
+}
+
+/**
+ * @brief Test: Gates with multiple uses should not be merged but pass should
+ * still succeed
+ */
+TEST_F(QCOQuaternionMergeTest, multipleUseInIf) {
+  const char* mlirCode = R"(
+      module {
+        func.func @scfIfTest(%cond: i1) {
+          %0 = qco.alloc : !qco.qubit
+          %cst = arith.constant 1.0 : f64
+          %1 = qco.ry(%cst) %0 : !qco.qubit -> !qco.qubit
+
+          // qubit %1 used in both branches - multiple uses
+          %2 = scf.if %cond -> !qco.qubit {
+            %t = qco.rz(%cst) %1 : !qco.qubit -> !qco.qubit
+            scf.yield %t : !qco.qubit
+          } else {
+            %e = qco.rx(%cst) %1 : !qco.qubit -> !qco.qubit
+            scf.yield %e : !qco.qubit
+          }
+
+          qco.dealloc %2 : !qco.qubit
+          return
+        }
+      }
+    )";
+
+  context.loadDialect<scf::SCFDialect>();
+  module = mlir::parseSourceString<mlir::ModuleOp>(mlirCode, &context);
+  ASSERT_TRUE(module);
+
+  ASSERT_TRUE(runMergePass(module.get()).succeeded());
+
+  // Gates should remain unchanged (not merged) due to multiple uses
+  EXPECT_EQ(countOps<RXOp>(), 1);
+  EXPECT_EQ(countOps<RYOp>(), 1);
+  EXPECT_EQ(countOps<RZOp>(), 1);
   EXPECT_EQ(countOps<UOp>(), 0);
 }
 
