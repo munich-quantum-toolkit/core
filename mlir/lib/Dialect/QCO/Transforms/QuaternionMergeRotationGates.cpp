@@ -421,7 +421,7 @@ struct MergeRotationGatesPattern final
     assert(user && "Cannot cast to UnitaryOpInterface, mergeable gates must "
                    "implement UnitaryOpInterface");
 
-    UnitaryOpInterface newUser =
+    const UnitaryOpInterface newUser =
         createOpQuaternionMergedAngle(op, user, rewriter);
 
     // Replace user with newUser

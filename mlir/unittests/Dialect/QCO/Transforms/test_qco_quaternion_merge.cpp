@@ -14,11 +14,10 @@
 
 #include <gtest/gtest.h>
 #include <llvm/ADT/StringRef.h>
-#include <llvm/Support/LogicalResult.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
-#include <mlir/Dialect/Math/IR/Math.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
+#include <mlir/IR/BuiltinAttributes.h>
 #include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/OwningOpRef.h>
 #include <mlir/IR/Value.h>
@@ -29,7 +28,6 @@
 #include <numbers>
 #include <optional>
 #include <tuple>
-#include <utility>
 #include <vector>
 
 namespace {
