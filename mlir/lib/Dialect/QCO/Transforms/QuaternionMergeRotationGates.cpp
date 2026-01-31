@@ -356,7 +356,7 @@ struct MergeRotationGatesPattern final
         loc, safe1, twoThetaMinus, twoThetaPlus);
 
     // TODO: could add some normalization here for alpha and gamma otherwise
-    // they can be larger than [-PI, PI].
+    // they can be outside of [-PI, PI].
 
     // choose correct alpha and gamma weather safe or not
     auto alpha = rewriter.create<mlir::arith::SelectOp>(loc, safe, alphaSafe,
