@@ -416,9 +416,8 @@ struct MergeRotationGatesPattern final
       return mlir::failure();
     }
     auto user = mlir::dyn_cast<UnitaryOpInterface>(userOP);
-    if (!user) {
-      return mlir::failure();
-    }
+    assert(user && "Cannot cast to UnitaryOpInterface, mergeable gates must "
+                   "implement UnitaryOpInterface");
 
     UnitaryOpInterface newUser =
         createOpQuaternionMergedAngle(op, user, rewriter);
