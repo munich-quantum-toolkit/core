@@ -20,12 +20,15 @@
 #include <mlir/Dialect/Math/IR/Math.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
 #include <mlir/IR/BuiltinOps.h>
+#include <mlir/IR/OwningOpRef.h>
 #include <mlir/IR/Value.h>
 #include <mlir/Parser/Parser.h>
 #include <mlir/Pass/PassManager.h>
+#include <mlir/Support/LLVM.h>
 #include <mlir/Support/WalkResult.h>
 #include <numbers>
 #include <optional>
+#include <tuple>
 #include <utility>
 #include <vector>
 
@@ -35,10 +38,10 @@ using namespace mlir;
 using namespace mlir::qco;
 
 /// A constant for the value of \f$\pi\f$.
-static constexpr double PI = std::numbers::pi;
+constexpr double PI = std::numbers::pi;
 
 /// A constant for the value of \f$\tau\f$.
-static constexpr auto TAU = 2.0 * std::numbers::pi;
+constexpr auto TAU = 2.0 * std::numbers::pi;
 
 class QCOQuaternionMergeTest : public ::testing::Test {
 protected:
@@ -78,7 +81,7 @@ protected:
   /**
    * @brief Extract constant floating point value from a mlir::Value
    */
-  std::optional<double> toDouble(mlir::Value v) {
+  static std::optional<double> toDouble(mlir::Value v) {
     if (auto constOp = v.getDefiningOp<mlir::arith::ConstantOp>()) {
       if (auto floatAttr =
               mlir::dyn_cast<mlir::FloatAttr>(constOp.getValue())) {
@@ -169,7 +172,7 @@ protected:
   /**
    * @brief Adds the mergeRotationGates Pass to the current context and runs it.
    */
-  LogicalResult runMergePass(ModuleOp module) {
+  static LogicalResult runMergePass(ModuleOp module) {
     PassManager pm(module.getContext());
     pm.addPass(qco::createMergeRotationGates());
     return pm.run(module);
@@ -400,8 +403,8 @@ TEST_F(QCOQuaternionMergeTest, quaternionNoMergeSingleRZGate) {
 TEST_F(QCOQuaternionMergeTest, dontMergeGatesFromDifferentQubits) {
   auto q = builder.allocQubitRegister(2);
 
-  Value qubit1 = q[0];
-  Value qubit2 = q[1];
+  const Value qubit1 = q[0];
+  const Value qubit2 = q[1];
   builder.rx(1.0, qubit1);
   builder.rx(1.0, qubit2);
   module = builder.finalize();

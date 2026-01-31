@@ -13,17 +13,19 @@
 
 #include <algorithm>
 #include <array>
+#include <cassert>
 #include <cmath>
-#include <llvm/ADT/STLExtras.h>
+#include <cstdint>
+#include <llvm/Support/ErrorHandling.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Math/IR/Math.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/Operation.h>
 #include <mlir/IR/PatternMatch.h>
 #include <mlir/IR/Value.h>
-#include <mlir/IR/ValueRange.h>
-#include <mlir/Support/LogicalResult.h>
+#include <mlir/Support/LLVM.h>
 #include <mlir/Transforms/GreedyPatternRewriteDriver.h>
+#include <numbers>
 #include <string_view>
 #include <utility>
 
@@ -48,7 +50,7 @@ struct MergeRotationGatesPattern final
     mlir::Value z;
   };
 
-  enum class RotationAxis { X, Y, Z };
+  enum class RotationAxis : std::uint8_t { X, Y, Z };
 
   static constexpr std::array<std::string_view, 4> MERGEABLE_GATES = {
       "u", "rx", "ry", "rz"};
@@ -127,7 +129,7 @@ struct MergeRotationGatesPattern final
       return {.w = cos, .x = zero, .y = sin, .z = zero};
     case RotationAxis::Z:
       return {.w = cos, .x = zero, .y = zero, .z = sin};
-    }
+    } // NOLINT(bugprone-branch-clone): false positive, branches differ
   }
 
   /**
@@ -298,7 +300,7 @@ struct MergeRotationGatesPattern final
     auto epsAttr = rewriter.getFloatAttr(floatType, 1e-7);
     auto eps = rewriter.create<mlir::arith::ConstantOp>(loc, epsAttr);
     // constant PI
-    auto piAttr = rewriter.getFloatAttr(floatType, M_PI);
+    auto piAttr = rewriter.getFloatAttr(floatType, std::numbers::pi);
     auto pi = rewriter.create<mlir::arith::ConstantOp>(loc, piAttr);
 
     // calculate angle beta (for y-rotation)
