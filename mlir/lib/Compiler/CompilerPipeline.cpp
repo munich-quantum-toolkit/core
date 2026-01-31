@@ -124,17 +124,17 @@ QuantumCompilerPipeline::runPipeline(ModuleOp module,
   }
 
   // Stage 2: QC canonicalization
-  addCleanupPasses(pm);
-  if (pm.run(module).failed()) {
-    return failure();
-  }
-  if (record != nullptr && config_.recordIntermediates) {
-    record->afterInitialCanon = captureIR(module);
-    if (config_.printIRAfterAllStages) {
-      prettyPrintStage(module, "Initial QC Canonicalization", ++currentStage,
-                       totalStages);
-    }
-  }
+  // addCleanupPasses(pm);
+  // if (pm.run(module).failed()) {
+  //   return failure();
+  // }
+  // if (record != nullptr && config_.recordIntermediates) {
+  //   record->afterInitialCanon = captureIR(module);
+  //   if (config_.printIRAfterAllStages) {
+  //     prettyPrintStage(module, "Initial QC Canonicalization", ++currentStage,
+  //                      totalStages);
+  //   }
+  // }
   pm.clear();
 
   // Stage 3: QC-to-QCO conversion
@@ -152,17 +152,17 @@ QuantumCompilerPipeline::runPipeline(ModuleOp module,
   pm.clear();
 
   // Stage 4: QCO canonicalization
-  addCleanupPasses(pm);
-  if (failed(pm.run(module))) {
-    return failure();
-  }
-  if (record != nullptr && config_.recordIntermediates) {
-    record->afterQCOCanon = captureIR(module);
-    if (config_.printIRAfterAllStages) {
-      prettyPrintStage(module, "Initial QCO Canonicalization", ++currentStage,
-                       totalStages);
-    }
-  }
+  // addCleanupPasses(pm);
+  // if (failed(pm.run(module))) {
+  //   return failure();
+  // }
+  // if (record != nullptr && config_.recordIntermediates) {
+  //   record->afterQCOCanon = captureIR(module);
+  //   if (config_.printIRAfterAllStages) {
+  //     prettyPrintStage(module, "Initial QCO Canonicalization", ++currentStage,
+  //                      totalStages);
+  //   }
+  // }
   pm.clear();
 
   // Stage 5: Optimization passes
@@ -181,17 +181,17 @@ QuantumCompilerPipeline::runPipeline(ModuleOp module,
   pm.clear();
 
   // Stage 6: QCO canonicalization
-  addCleanupPasses(pm);
-  if (failed(pm.run(module))) {
-    return failure();
-  }
-  if (record != nullptr && config_.recordIntermediates) {
-    record->afterOptimizationCanon = captureIR(module);
-    if (config_.printIRAfterAllStages) {
-      prettyPrintStage(module, "Final QCO Canonicalization", ++currentStage,
-                       totalStages);
-    }
-  }
+  // addCleanupPasses(pm);
+  // if (failed(pm.run(module))) {
+  //   return failure();
+  // }
+  // if (record != nullptr && config_.recordIntermediates) {
+  //   record->afterOptimizationCanon = captureIR(module);
+  //   if (config_.printIRAfterAllStages) {
+  //     prettyPrintStage(module, "Final QCO Canonicalization", ++currentStage,
+  //                      totalStages);
+  //   }
+  // }
   pm.clear();
 
   // Stage 7: QCO-to-QC conversion
@@ -209,17 +209,17 @@ QuantumCompilerPipeline::runPipeline(ModuleOp module,
   pm.clear();
 
   // Stage 8: QC canonicalization
-  addCleanupPasses(pm);
-  if (failed(pm.run(module))) {
-    return failure();
-  }
-  if (record != nullptr && config_.recordIntermediates) {
-    record->afterQCCanon = captureIR(module);
-    if (config_.printIRAfterAllStages) {
-      prettyPrintStage(module, "Final QC Canonicalization", ++currentStage,
-                       totalStages);
-    }
-  }
+  // addCleanupPasses(pm);
+  // if (failed(pm.run(module))) {
+  //   return failure();
+  // }
+  // if (record != nullptr && config_.recordIntermediates) {
+  //   record->afterQCCanon = captureIR(module);
+  //   if (config_.printIRAfterAllStages) {
+  //     prettyPrintStage(module, "Final QC Canonicalization", ++currentStage,
+  //                      totalStages);
+  //   }
+  // }
   pm.clear();
 
   // Stage 9: QC-to-QIR conversion (optional)
