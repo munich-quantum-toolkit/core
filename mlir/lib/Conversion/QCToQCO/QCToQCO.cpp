@@ -72,7 +72,7 @@ struct LoweringState {
   llvm::DenseMap<Value, Value> qubitMap;
 
   /// Modifier information
-  int64_t inCtrlOp = 0;
+  int64_t inNestedRegion = 0;
   DenseMap<int64_t, SmallVector<Value>> targetsIn;
   DenseMap<int64_t, SmallVector<Value>> targetsOut;
 };
@@ -123,7 +123,7 @@ template <typename QCOOpType, typename QCOpType>
 static LogicalResult
 convertZeroTargetOneParameter(QCOpType& op, ConversionPatternRewriter& rewriter,
                               LoweringState& state) {
-  const auto inCtrlOp = state.inCtrlOp;
+  const auto inCtrlOp = state.inNestedRegion;
 
   rewriter.create<QCOOpType>(op.getLoc(), op.getParameter(0));
 
@@ -154,7 +154,7 @@ static LogicalResult
 convertOneTargetZeroParameter(QCOpType& op, ConversionPatternRewriter& rewriter,
                               LoweringState& state) {
   auto& qubitMap = state.qubitMap;
-  const auto inCtrlOp = state.inCtrlOp;
+  const auto inCtrlOp = state.inNestedRegion;
 
   // Get the latest QCO qubit
   const auto& qcQubit = op.getQubitIn();
@@ -200,7 +200,7 @@ static LogicalResult
 convertOneTargetOneParameter(QCOpType& op, ConversionPatternRewriter& rewriter,
                              LoweringState& state) {
   auto& qubitMap = state.qubitMap;
-  const auto inCtrlOp = state.inCtrlOp;
+  const auto inCtrlOp = state.inNestedRegion;
 
   // Get the latest QCO qubit
   const auto& qcQubit = op.getQubitIn();
@@ -247,7 +247,7 @@ static LogicalResult
 convertOneTargetTwoParameter(QCOpType& op, ConversionPatternRewriter& rewriter,
                              LoweringState& state) {
   auto& qubitMap = state.qubitMap;
-  const auto inCtrlOp = state.inCtrlOp;
+  const auto inCtrlOp = state.inNestedRegion;
 
   // Get the latest QCO qubit
   const auto& qcQubit = op.getQubitIn();
@@ -293,7 +293,7 @@ template <typename QCOOpType, typename QCOpType>
 static LogicalResult convertOneTargetThreeParameter(
     QCOpType& op, ConversionPatternRewriter& rewriter, LoweringState& state) {
   auto& qubitMap = state.qubitMap;
-  const auto inCtrlOp = state.inCtrlOp;
+  const auto inCtrlOp = state.inNestedRegion;
 
   // Get the latest QCO qubit
   const auto& qcQubit = op.getQubitIn();
@@ -341,7 +341,7 @@ static LogicalResult
 convertTwoTargetZeroParameter(QCOpType& op, ConversionPatternRewriter& rewriter,
                               LoweringState& state) {
   auto& qubitMap = state.qubitMap;
-  const auto inCtrlOp = state.inCtrlOp;
+  const auto inCtrlOp = state.inNestedRegion;
 
   // Get the latest QCO qubits
   const auto& qcQubit0 = op.getQubit0In();
@@ -395,7 +395,7 @@ static LogicalResult
 convertTwoTargetOneParameter(QCOpType& op, ConversionPatternRewriter& rewriter,
                              LoweringState& state) {
   auto& qubitMap = state.qubitMap;
-  const auto inCtrlOp = state.inCtrlOp;
+  const auto inCtrlOp = state.inNestedRegion;
 
   // Get the latest QCO qubits
   const auto& qcQubit0 = op.getQubit0In();
@@ -450,7 +450,7 @@ static LogicalResult
 convertTwoTargetTwoParameter(QCOpType& op, ConversionPatternRewriter& rewriter,
                              LoweringState& state) {
   auto& qubitMap = state.qubitMap;
-  const auto inCtrlOp = state.inCtrlOp;
+  const auto inCtrlOp = state.inNestedRegion;
 
   // Get the latest QCO qubits
   const auto& qcQubit0 = op.getQubit0In();
@@ -1110,7 +1110,7 @@ struct ConvertQCCtrlOp final : StatefulOpConversionPattern<qc::CtrlOp> {
 
     // Update the state map if this is a top-level CtrlOp
     // Nested CtrlOps are managed via the targetsIn and targetsOut maps
-    if (state.inCtrlOp == 0) {
+    if (state.inNestedRegion == 0) {
       for (const auto& [qcControl, qcoControl] :
            llvm::zip(qcControls, qcoOp.getControlsOut())) {
         qubitMap[qcControl] = qcoControl;
@@ -1123,7 +1123,7 @@ struct ConvertQCCtrlOp final : StatefulOpConversionPattern<qc::CtrlOp> {
     }
 
     // Update modifier information
-    state.inCtrlOp++;
+    state.inNestedRegion++;
 
     // Clone body region from QC to QCO
     auto& dstRegion = qcoOp.getRegion();
@@ -1133,7 +1133,7 @@ struct ConvertQCCtrlOp final : StatefulOpConversionPattern<qc::CtrlOp> {
     // `state.targetsIn`.
     auto& entryBlock = dstRegion.front();
     assert(entryBlock.getNumArguments() == 0 &&
-           "QC ctrl region unexpectedly has entry block arguments");
+           "QCO ctrl region unexpectedly has entry block arguments");
     SmallVector<Value> qcoTargetAliases;
     qcoTargetAliases.reserve(numTargets);
     const auto qubitType = qco::QubitType::get(qcoOp.getContext());
@@ -1143,7 +1143,85 @@ struct ConvertQCCtrlOp final : StatefulOpConversionPattern<qc::CtrlOp> {
         qcoTargetAliases.emplace_back(entryBlock.addArgument(qubitType, opLoc));
       }
     });
-    state.targetsIn[state.inCtrlOp] = std::move(qcoTargetAliases);
+    state.targetsIn[state.inNestedRegion] = std::move(qcoTargetAliases);
+
+    rewriter.eraseOp(op);
+    return success();
+  }
+};
+
+/**
+ * @brief Converts qc.inv to qco.inv
+ *
+ * @par Example:
+ * ```mlir
+ * qc.inv {
+ *   qc.s %q0 : !qc.qubit
+ *   qc.yield
+ * } : !qc.qubit
+ * ```
+ * is converted to
+ * ```mlir
+ * %targets_out = qco.inv %q0_in {
+ *   %q0_res = qco.s %q0_in : !qco.qubit -> !qco.qubit
+ *   qco.yield %q0_res
+ * } : {!qco.qubit} -> {!qco.qubit}
+ * ```
+ */
+struct ConvertQCInvOp final : StatefulOpConversionPattern<qc::InvOp> {
+  using StatefulOpConversionPattern::StatefulOpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(qc::InvOp op, OpAdaptor /*adaptor*/,
+                  ConversionPatternRewriter& rewriter) const override {
+    auto& state = getState();
+    auto& qubitMap = state.qubitMap;
+
+    // Get QCO targets from state map
+    const auto numTargets = op.getNumTargets();
+    SmallVector<Value> qcoTargets;
+    qcoTargets.reserve(numTargets);
+    for (size_t i = 0; i < numTargets; ++i) {
+      const auto& qcTarget = op.getTarget(i);
+      assert(qubitMap.contains(qcTarget) && "QC qubit not found");
+      const auto& qcoTarget = qubitMap[qcTarget];
+      qcoTargets.push_back(qcoTarget);
+    }
+
+    // Create qco.inv
+    auto qcoOp = qco::InvOp::create(rewriter, op.getLoc(), qcoTargets);
+
+    // Update state map
+    if (state.inNestedRegion == 0) {
+      const auto targetsOut = qcoOp.getTargetsOut();
+      for (size_t i = 0; i < numTargets; ++i) {
+        const auto& qcTarget = op.getTarget(i);
+        qubitMap[qcTarget] = targetsOut[i];
+      }
+    }
+
+    // Update modifier information
+    state.inNestedRegion++;
+
+    // Clone body region from QC to QCO
+    auto& dstRegion = qcoOp.getRegion();
+    rewriter.cloneRegionBefore(op.getRegion(), dstRegion, dstRegion.end());
+
+    // Create block arguments for target qubits and store them in
+    // `state.targetsIn`.
+    auto& entryBlock = dstRegion.front();
+    assert(entryBlock.getNumArguments() == 0 &&
+           "QCO inv region unexpectedly has entry block arguments");
+    SmallVector<Value> qcoTargetAliases;
+    qcoTargetAliases.reserve(numTargets);
+    const auto qubitType = qco::QubitType::get(qcoOp.getContext());
+    const auto opLoc = op.getLoc();
+    rewriter.modifyOpInPlace(qcoOp, [&] {
+      for (auto i = 0UL; i < numTargets; i++) {
+        qcoTargetAliases.emplace_back(entryBlock.addArgument(qubitType, opLoc));
+      }
+    });
+    state.targetsIn[state.inNestedRegion] = std::move(qcoTargetAliases);
 
     rewriter.eraseOp(op);
     return success();
@@ -1169,10 +1247,10 @@ struct ConvertQCYieldOp final : StatefulOpConversionPattern<qc::YieldOp> {
   matchAndRewrite(qc::YieldOp op, OpAdaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
     auto& state = getState();
-    const auto& targets = state.targetsOut[state.inCtrlOp];
+    const auto& targets = state.targetsOut[state.inNestedRegion];
     rewriter.replaceOpWithNewOp<qco::YieldOp>(op, targets);
-    state.targetsOut.erase(state.inCtrlOp);
-    state.inCtrlOp--;
+    state.targetsOut.erase(state.inNestedRegion);
+    state.inNestedRegion--;
     return success();
   }
 };
@@ -1231,7 +1309,8 @@ struct QCToQCO final : impl::QCToQCOBase<QCToQCO> {
                  ConvertQCDCXOp, ConvertQCECROp, ConvertQCRXXOp, ConvertQCRYYOp,
                  ConvertQCRZXOp, ConvertQCRZZOp, ConvertQCXXPlusYYOp,
                  ConvertQCXXMinusYYOp, ConvertQCBarrierOp, ConvertQCCtrlOp,
-                 ConvertQCYieldOp>(typeConverter, context, &state);
+                 ConvertQCInvOp, ConvertQCYieldOp>(typeConverter, context,
+                                                   &state);
 
     // Conversion of qc types in func.func signatures
     // Note: This currently has limitations with signature
