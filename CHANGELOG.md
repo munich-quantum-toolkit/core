@@ -9,11 +9,14 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 
 ## [Unreleased]
 
+## [3.4.1] - 2026-02-01
+
 ### Changed
 
-- ⬆️ Update Boost version to 1.89.0 ([#1453]) ([**@burgholzer**])
+- ⬆️ Update `nanobind` to version 2.11.0 ([#1481]) ([**@denialhaag**])
+- ⬆️ Update Boost to version 1.89.0 ([#1453]) ([**@burgholzer**])
 - ⬆️ Update QDMI to latest version from stable v1.2.x branch ([#1453]) ([**@burgholzer**])
-- ⬆️ Bump spdlog to v1.17.0 ([#1453]) ([**@burgholzer**])
+- ⬆️ Update `spdlog` to version 1.17.0 ([#1453]) ([**@burgholzer**])
 - ♻️ Use `llc` instead of random `clang` for compiling QIR test circuits to improve robustness and handle opaque pointers correctly across LLVM versions ([#1447]) ([**@burgholzer**])
 - ♻️ Extract singleton pattern into reusable template base class for QDMI devices and driver ([#1444]) ([**@ystade**], [**@burgholzer**])
 - 🚚 Reorganize QDMI code structure by moving devices into dedicated subdirectories and separating driver and common utilities ([#1444]) ([**@ystade**])
@@ -292,7 +295,8 @@ _📚 Refer to the [GitHub Release Notes](https://github.com/munich-quantum-tool
 
 <!-- Version links -->
 
-[unreleased]: https://github.com/munich-quantum-toolkit/core/compare/v3.4.0...HEAD
+[unreleased]: https://github.com/munich-quantum-toolkit/core/compare/v3.4.1...HEAD
+[3.4.1]: https://github.com/munich-quantum-toolkit/core/releases/tag/v3.4.1
 [3.4.0]: https://github.com/munich-quantum-toolkit/core/releases/tag/v3.4.0
 [3.3.3]: https://github.com/munich-quantum-toolkit/core/releases/tag/v3.3.3
 [3.3.2]: https://github.com/munich-quantum-toolkit/core/releases/tag/v3.3.2
@@ -308,6 +312,7 @@ _📚 Refer to the [GitHub Release Notes](https://github.com/munich-quantum-tool
 
 <!-- PR links -->
 
+[#1481]: https://github.com/munich-quantum-toolkit/core/pull/1481
 [#1453]: https://github.com/munich-quantum-toolkit/core/pull/1453
 [#1447]: https://github.com/munich-quantum-toolkit/core/pull/1447
 [#1444]: https://github.com/munich-quantum-toolkit/core/pull/1444
