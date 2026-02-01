@@ -9,7 +9,7 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 
 ## [Unreleased]
 
-## [3.4.1] - 2026-02-02
+## [3.4.1] - 2026-02-01
 
 ### Changed
 
