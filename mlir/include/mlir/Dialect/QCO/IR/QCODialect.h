@@ -80,10 +80,8 @@ public:
       }
       return this->getOperation()->getOperand(i);
     }
-    ValueRange getInputQubits() {
-      auto&& operands = this->getOperation()->getOperands();
-      assert(T <= operands.size());
-      return operands.take_front(T);
+    OperandRange getInputQubits() {
+      return this->getOperation()->getOperands().slice(0, T);
     }
     Value getOutputQubit(size_t i) {
       if constexpr (T == 0) {
@@ -94,11 +92,7 @@ public:
       }
       return this->getOperation()->getResult(i);
     }
-    ValueRange getOutputQubits() {
-      auto&& results = this->getOperation()->getResults();
-      assert(T == results.size());
-      return ValueRange{results};
-    }
+    ResultRange getOutputQubits() { return this->getOperation()->getResults(); }
 
     Value getInputTarget(const size_t i) { return getInputQubit(i); }
     Value getOutputTarget(const size_t i) { return getOutputQubit(i); }

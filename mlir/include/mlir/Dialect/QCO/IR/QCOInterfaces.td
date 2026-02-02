@@ -104,15 +104,8 @@ def UnitaryOpInterface : OpInterface<"UnitaryOpInterface"> {
         >,
         InterfaceMethod<
             "Returns a range of all input qubits (targets + controls combined).",
-            "std::invoke_result_t<decltype(llvm::concat<Value, ValueRange, ValueRange>), ValueRange, ValueRange>",
-            "getInputQubits", (ins),
-            [{
-              if constexpr (std::is_same_v<decltype($_op.getInputQubits()), ValueRange>) {
-                return llvm::concat<Value>($_op.getInputQubits(), ValueRange{});
-              } else {
-                return $_op.getInputQubits();
-              }
-            }]
+            "OperandRange",
+            "getInputQubits", (ins)
         >,
         InterfaceMethod<
             "Returns the i-th output qubit (targets + controls combined).",
@@ -120,15 +113,8 @@ def UnitaryOpInterface : OpInterface<"UnitaryOpInterface"> {
         >,
         InterfaceMethod<
             "Returns a range of all output qubits (targets + controls combined).",
-            "std::invoke_result_t<decltype(llvm::concat<Value, ValueRange, ValueRange>), ValueRange, ValueRange>",
-            "getOutputQubits", (ins),
-            [{
-              if constexpr (std::is_same_v<decltype($_op.getOutputQubits()), ValueRange>) {
-                return llvm::concat<Value>($_op.getOutputQubits(), ValueRange{});
-              } else {
-                return $_op.getOutputQubits();
-              }
-            }]
+            "ResultRange",
+            "getOutputQubits", (ins)
         >,
         InterfaceMethod<
             "Returns the i-th target input qubit.",

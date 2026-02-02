@@ -146,9 +146,7 @@ struct CtrlInlineId final : OpRewritePattern<CtrlOp> {
 } // namespace
 
 UnitaryOpInterface CtrlOp::getBodyUnitary() {
-  auto bodyUnitary = llvm::dyn_cast<UnitaryOpInterface>(&getBody()->front());
-  assert(bodyUnitary);
-  return bodyUnitary;
+  return llvm::dyn_cast<UnitaryOpInterface>(&getBody()->front());
 }
 
 size_t CtrlOp::getNumQubits() { return getNumTargets() + getNumControls(); }
@@ -168,12 +166,7 @@ Value CtrlOp::getInputQubit(const size_t i) {
   llvm::reportFatalUsageError("Invalid qubit index");
 }
 
-std::invoke_result_t<decltype(llvm::concat<Value, ValueRange, ValueRange>),
-                     ValueRange, ValueRange>
-CtrlOp::getInputQubits() {
-  return llvm::concat<Value>(ValueRange{getControlsIn()},
-                             ValueRange{getTargetsIn()});
-}
+OperandRange CtrlOp::getInputQubits() { return this->getOperands(); }
 
 Value CtrlOp::getOutputQubit(const size_t i) {
   const auto numControls = getNumControls();
@@ -186,12 +179,7 @@ Value CtrlOp::getOutputQubit(const size_t i) {
   llvm::reportFatalUsageError("Invalid qubit index");
 }
 
-std::invoke_result_t<decltype(llvm::concat<Value, ValueRange, ValueRange>),
-                     ValueRange, ValueRange>
-CtrlOp::getOutputQubits() {
-  return llvm::concat<Value>(ValueRange{getControlsOut()},
-                             ValueRange{getTargetsOut()});
-}
+ResultRange CtrlOp::getOutputQubits() { return this->getResults(); }
 
 Value CtrlOp::getInputTarget(const size_t i) {
   if (i >= getNumTargets()) {
