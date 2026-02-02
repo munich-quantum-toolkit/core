@@ -102,7 +102,7 @@ for name in sorted(mqt_results.keys() & qiskit_results.keys()):
 
 names = []
 titles = {
-    "subCircuitComplexityChange": "Complexity Change after Decomposition",
+    "subCircuitComplexityChange": "Complexity Improvement after Decomposition",
     "successfulSingleQubitDecompositions": "Number of Successful Single-Qubit Decompositions",
     "successfulTwoQubitDecompositions": "Number of Successful Two-Qubit Decompositions",
     "timeInCircuitCollection": "Sub-Circuit Collection Time [µs]",
@@ -114,6 +114,7 @@ titles = {
     "totalTwoQubitDecompositions": "Total Number of Two-Qubit Decompositions",
     "timePerTwoQubitDecomposition": "Time / Two-Qubit Decomposition [µs]",
     "timePerSingleQubitDecomposition": "Time / Single-Qubit Decomposition [µs]",
+    "twoQubitCreationTime": "Time for Creation of Two-Qubit Basis Decomposers [µs]"
 }
 legend_positions = {
     "totalTouchedGates": "upper left",
@@ -123,10 +124,19 @@ legend_positions = {
     "totalTouchedGates": "upper left",
     "twoQubitCreationTime": "lower right",
 }
+# modifications = {
+#     "subCircuitComplexityChange": lambda value: -1.0 * value,
+# }
 for metric in x.keys():
     plt.title(titles.get(metric, metric))
     # x_values = x[metric] # use for benchmark names on x axis
     x_values = [str(i) for i in range(len(x[metric]))]
+
+    # if metric in modifications:
+    #     for y in y1[metric]:
+    #         y = modifications[metric](y)
+    #     for y in y2[metric]:
+    #         y = modifications[metric](y)
 
     DEFAULT_POINT_SIZE = 100
     scale1 = []
@@ -206,3 +216,7 @@ for i, name in enumerate(names):
         )
     else:
         print("UNKNOWN")
+
+for metric in x.keys():
+    print(f"Average MQT {metric}:", np.average(y1[metric]) if metric in y1 else "-")
+    print(f"Average Qiskit {metric}:", np.average(y2[metric]) if metric in y2 else "-")

@@ -128,7 +128,9 @@ def evaluate():
             if decomposed_circuit2:
                 after_complexity2 = circuit_complexity(decomposed_circuit2)
                 if after_complexity2 < after_complexity:
-                    print(f"Choose alternative decomposition ({after_complexity2} vs {after_complexity})!")
+                    print(
+                        f"Choose alternative decomposition ({after_complexity2} vs {after_complexity})!"
+                    )
                     decomposed_circuit = decomposed_circuit2
                     after_complexity = after_complexity2
 
@@ -148,12 +150,14 @@ def evaluate():
             "subCircuitComplexityChange": sum(complexity_changes),
             "totalTwoQubitDecompositions": num_two_qubit_decompositions,
             "totalSingleQubitDecompositions": num_single_qubit_decompositions,
+            "twoQubitCreationTime": creation_time_us,
         }
 
     print()
     print(stats)
     print(f"Total benchmarks: {len(stats)}")
     return stats
+
 
 if __name__ == "__main__":
     evaluate()
