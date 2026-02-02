@@ -34,7 +34,6 @@
     ".*\\.tex",
     "uv\\.lock",
     "py\\.typed",
-    ".*build.*",
-    "core_patterns.txt"
+    ".*build.*"
   ]
 }

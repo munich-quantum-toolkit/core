@@ -22,6 +22,9 @@ void registerSymbolic(const nb::module_& m);
 void registerQuantumComputation(const nb::module_& m);
 
 NB_MODULE(MQT_CORE_MODULE_NAME, m) {
+  m.doc() =
+      R"pb(MQT Core IR - The MQT Core Intermediate Representation (IR) module.)pb";
+
   registerPermutation(m);
 
   const nb::module_ symbolic = m.def_submodule("symbolic");

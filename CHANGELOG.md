@@ -15,18 +15,27 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 
 ### Changed
 
-- ⬆️ Update Boost version to 1.89.0 ([#1453]) ([**@burgholzer**])
-- ⬆️ Update QDMI to latest version from stable v1.2.x branch ([#1453]) ([**@burgholzer**])
-- ⬆️ Bump spdlog to v1.17.0 ([#1453]) ([**@burgholzer**])
-- ♻️ Use `llc` instead of random `clang` for compiling QIR test circuits to improve robustness and handle opaque pointers correctly across LLVM versions ([#1447]) ([**@burgholzer**])
-- ♻️ Extract singleton pattern into reusable template base class for QDMI devices and driver ([#1444]) ([**@ystade**], [**@burgholzer**])
-- 🚚 Reorganize QDMI code structure by moving devices into dedicated subdirectories and separating driver and common utilities ([#1444]) ([**@ystade**])
 - 📦 Build MLIR by default for C++ library builds ([#1356]) ([**@burgholzer**], [**@denialhaag**])
 
 ### Removed
 
 - 🔥 Remove the density matrix support from the MQT Core DD package ([#1466]) ([**@burgholzer**])
 - 🔥 Remove `datastructures` (`ds`) (sub)library from MQT Core ([#1458]) ([**@burgholzer**])
+
+## [3.4.1] - 2026-02-01
+
+### Changed
+
+- ⬆️ Update `nanobind` to version 2.11.0 ([#1481]) ([**@denialhaag**])
+- ⬆️ Update Boost to version 1.89.0 ([#1453]) ([**@burgholzer**])
+- ⬆️ Update QDMI to latest version from stable v1.2.x branch ([#1453]) ([**@burgholzer**])
+- ⬆️ Update `spdlog` to version 1.17.0 ([#1453]) ([**@burgholzer**])
+- ♻️ Use `llc` instead of random `clang` for compiling QIR test circuits to improve robustness and handle opaque pointers correctly across LLVM versions ([#1447]) ([**@burgholzer**])
+- ♻️ Extract singleton pattern into reusable template base class for QDMI devices and driver ([#1444]) ([**@ystade**], [**@burgholzer**])
+- 🚚 Reorganize QDMI code structure by moving devices into dedicated subdirectories and separating driver and common utilities ([#1444]) ([**@ystade**])
+
+### Removed
+
 - 🔥 No longer actively type check Python code with `mypy` and solely rely on `ty` ([#1437]) ([**@burgholzer**])
 
 ## [3.4.0] - 2026-01-08
@@ -299,7 +308,8 @@ _📚 Refer to the [GitHub Release Notes](https://github.com/munich-quantum-tool
 
 <!-- Version links -->
 
-[unreleased]: https://github.com/munich-quantum-toolkit/core/compare/v3.4.0...HEAD
+[unreleased]: https://github.com/munich-quantum-toolkit/core/compare/v3.4.1...HEAD
+[3.4.1]: https://github.com/munich-quantum-toolkit/core/releases/tag/v3.4.1
 [3.4.0]: https://github.com/munich-quantum-toolkit/core/releases/tag/v3.4.0
 [3.3.3]: https://github.com/munich-quantum-toolkit/core/releases/tag/v3.3.3
 [3.3.2]: https://github.com/munich-quantum-toolkit/core/releases/tag/v3.3.2
@@ -315,6 +325,7 @@ _📚 Refer to the [GitHub Release Notes](https://github.com/munich-quantum-tool
 
 <!-- PR links -->
 
+[#1481]: https://github.com/munich-quantum-toolkit/core/pull/1481
 [#1475]: https://github.com/munich-quantum-toolkit/core/pull/1475
 [#1472]: https://github.com/munich-quantum-toolkit/core/pull/1472
 [#1471]: https://github.com/munich-quantum-toolkit/core/pull/1471
@@ -349,6 +360,7 @@ _📚 Refer to the [GitHub Release Notes](https://github.com/munich-quantum-tool
 [#1375]: https://github.com/munich-quantum-toolkit/core/pull/1375
 [#1371]: https://github.com/munich-quantum-toolkit/core/pull/1371
 [#1359]: https://github.com/munich-quantum-toolkit/core/pull/1359
+[#1356]: https://github.com/munich-quantum-toolkit/core/pull/1356
 [#1355]: https://github.com/munich-quantum-toolkit/core/pull/1355
 [#1338]: https://github.com/munich-quantum-toolkit/core/pull/1338
 [#1336]: https://github.com/munich-quantum-toolkit/core/pull/1336
