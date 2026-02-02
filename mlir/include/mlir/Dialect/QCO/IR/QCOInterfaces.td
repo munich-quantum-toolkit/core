@@ -103,8 +103,18 @@ def UnitaryOpInterface : OpInterface<"UnitaryOpInterface"> {
             "Value", "getInputQubit", (ins "size_t":$i)
         >,
         InterfaceMethod<
+            "Returns a range of all input qubits (targets + controls combined).",
+            "OperandRange",
+            "getInputQubits", (ins)
+        >,
+        InterfaceMethod<
             "Returns the i-th output qubit (targets + controls combined).",
             "Value", "getOutputQubit", (ins "size_t":$i)
+        >,
+        InterfaceMethod<
+            "Returns a range of all output qubits (targets + controls combined).",
+            "ResultRange",
+            "getOutputQubits", (ins)
         >,
         InterfaceMethod<
             "Returns the i-th target input qubit.",
@@ -163,6 +173,8 @@ def UnitaryOpInterface : OpInterface<"UnitaryOpInterface"> {
             "Returns the base symbol/mnemonic of the operation.",
             "StringRef", "getBaseSymbol", (ins)
         >,
+
+        // Unitary matrix helpers
         InterfaceMethod<
             "Populates the given 1x1 unitary matrix if possible.",
             "bool", "getUnitaryMatrix1x1",

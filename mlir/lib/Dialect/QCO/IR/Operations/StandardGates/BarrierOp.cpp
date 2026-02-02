@@ -84,7 +84,11 @@ size_t BarrierOp::getNumControls() { return 0; }
 
 Value BarrierOp::getInputQubit(const size_t i) { return getInputTarget(i); }
 
+OperandRange BarrierOp::getInputQubits() { return getQubitsIn(); }
+
 Value BarrierOp::getOutputQubit(const size_t i) { return getOutputTarget(i); }
+
+ResultRange BarrierOp::getOutputQubits() { return getQubitsOut(); }
 
 Value BarrierOp::getInputTarget(const size_t i) {
   if (i < getNumTargets()) {

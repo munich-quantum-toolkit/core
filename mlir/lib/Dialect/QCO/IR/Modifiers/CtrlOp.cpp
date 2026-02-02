@@ -160,10 +160,12 @@ Value CtrlOp::getInputQubit(const size_t i) {
     return getControlsIn()[i];
   }
   if (numControls <= i && i < getNumQubits()) {
-    return getBodyUnitary().getInputQubit(i - numControls);
+    return getTargetsIn()[i - numControls];
   }
   llvm::reportFatalUsageError("Invalid qubit index");
 }
+
+OperandRange CtrlOp::getInputQubits() { return this->getOperands(); }
 
 Value CtrlOp::getOutputQubit(const size_t i) {
   const auto numControls = getNumControls();
@@ -171,10 +173,12 @@ Value CtrlOp::getOutputQubit(const size_t i) {
     return getControlsOut()[i];
   }
   if (numControls <= i && i < getNumQubits()) {
-    return getBodyUnitary().getOutputQubit(i - numControls);
+    return getTargetsOut()[i - numControls];
   }
   llvm::reportFatalUsageError("Invalid qubit index");
 }
+
+ResultRange CtrlOp::getOutputQubits() { return this->getResults(); }
 
 Value CtrlOp::getInputTarget(const size_t i) {
   if (i >= getNumTargets()) {
