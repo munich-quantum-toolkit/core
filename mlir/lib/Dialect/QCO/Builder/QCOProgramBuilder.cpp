@@ -18,17 +18,22 @@
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/STLFunctionalExtras.h>
 #include <llvm/ADT/SmallVector.h>
+#include <llvm/Support/Casting.h>
 #include <llvm/Support/ErrorHandling.h>
 #include <llvm/Support/raw_ostream.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
+#include <mlir/Dialect/SCF/IR/SCF.h>
+#include <mlir/Dialect/Tensor/IR/Tensor.h>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/BuiltinOps.h>
+#include <mlir/IR/BuiltinTypes.h>
 #include <mlir/IR/Location.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OwningOpRef.h>
 #include <mlir/IR/Value.h>
 #include <mlir/IR/ValueRange.h>
+#include <mlir/Support/LLVM.h>
 #include <string>
 #include <utility>
 #include <variant>
@@ -55,7 +60,6 @@ void QCOProgramBuilder::initialize() {
   // Add entry_point attribute to identify the main function
   auto entryPointAttr = getStringAttr("entry_point");
   mainFunc->setAttr("passthrough", getArrayAttr({entryPointAttr}));
-
   // Create entry block and set insertion point
   auto& entryBlock = mainFunc.getBody().emplaceBlock();
   setInsertionPointToStart(&entryBlock);
@@ -68,7 +72,7 @@ Value QCOProgramBuilder::allocQubit() {
   const auto qubit = allocOp.getResult();
 
   // Track the allocated qubit as valid
-  validQubits.insert(qubit);
+  validQubits[allocOp->getParentRegion()].insert(qubit);
 
   return qubit;
 }
@@ -85,7 +89,7 @@ Value QCOProgramBuilder::staticQubit(const int64_t index) {
   const auto qubit = staticOp.getQubit();
 
   // Track the static qubit as valid
-  validQubits.insert(qubit);
+  validQubits[staticOp->getParentRegion()].insert(qubit);
 
   return qubit;
 }
@@ -110,7 +114,7 @@ QCOProgramBuilder::allocQubitRegister(const int64_t size,
     auto allocOp = AllocOp::create(*this, nameAttr, sizeAttr, indexAttr);
     const auto& qubit = qubits.emplace_back(allocOp.getResult());
     // Track the allocated qubit as valid
-    validQubits.insert(qubit);
+    validQubits[allocOp->getParentRegion()].insert(qubit);
   }
 
   return qubits;
@@ -132,8 +136,10 @@ QCOProgramBuilder::allocClassicalBitRegister(const int64_t size,
 // Linear Type Tracking Helpers
 //===----------------------------------------------------------------------===//
 
-void QCOProgramBuilder::validateQubitValue(Value qubit) const {
-  if (!validQubits.contains(qubit)) {
+void QCOProgramBuilder::validateQubitValue(Value qubit, Region* region) const {
+  auto qubits = validQubits.lookup(region);
+
+  if (qubits.empty() || !qubits.contains(qubit)) {
     llvm::errs() << "Attempting to use an invalid qubit SSA value. "
                  << "The value may have been consumed by a previous operation "
                  << "or was never created through this builder.\n";
@@ -142,16 +148,14 @@ void QCOProgramBuilder::validateQubitValue(Value qubit) const {
   }
 }
 
-void QCOProgramBuilder::updateQubitTracking(Value inputQubit,
-                                            Value outputQubit) {
+void QCOProgramBuilder::updateQubitTracking(Value inputQubit, Value outputQubit,
+                                            Region* region) {
   // Validate the input qubit
-  validateQubitValue(inputQubit);
-
+  validateQubitValue(inputQubit, region);
   // Remove the input (consumed) value from tracking
-  validQubits.erase(inputQubit);
-
+  validQubits[region].erase(inputQubit);
   // Add the output (new) value to tracking
-  validQubits.insert(outputQubit);
+  validQubits[region].insert(outputQubit);
 }
 
 //===----------------------------------------------------------------------===//
@@ -166,7 +170,7 @@ std::pair<Value, Value> QCOProgramBuilder::measure(Value qubit) {
   auto result = measureOp.getResult();
 
   // Update tracking
-  updateQubitTracking(qubit, qubitOut);
+  updateQubitTracking(qubit, qubitOut, measureOp->getParentRegion());
 
   return {qubitOut, result};
 }
@@ -182,7 +186,7 @@ Value QCOProgramBuilder::measure(Value qubit, const Bit& bit) {
   const auto qubitOut = measureOp.getQubitOut();
 
   // Update tracking
-  updateQubitTracking(qubit, qubitOut);
+  updateQubitTracking(qubit, qubitOut, measureOp->getParentRegion());
 
   return qubitOut;
 }
@@ -194,7 +198,7 @@ Value QCOProgramBuilder::reset(Value qubit) {
   const auto qubitOut = resetOp.getQubitOut();
 
   // Update tracking
-  updateQubitTracking(qubit, qubitOut);
+  updateQubitTracking(qubit, qubitOut, resetOp->getParentRegion());
 
   return qubitOut;
 }
@@ -248,7 +252,7 @@ DEFINE_ZERO_TARGET_ONE_PARAMETER(GPhaseOp, gphase, theta)
     checkFinalized();                                                          \
     auto op = OP_CLASS::create(*this, qubit);                                  \
     const auto& qubitOut = op.getQubitOut();                                   \
-    updateQubitTracking(qubit, qubitOut);                                      \
+    updateQubitTracking(qubit, qubitOut, op->getParentRegion());               \
     return qubitOut;                                                           \
   }                                                                            \
   std::pair<Value, Value> QCOProgramBuilder::c##OP_NAME(Value control,         \
@@ -293,7 +297,7 @@ DEFINE_ONE_TARGET_ZERO_PARAMETER(SXdgOp, sxdg)
     checkFinalized();                                                          \
     auto op = OP_CLASS::create(*this, qubit, PARAM);                           \
     const auto& qubitOut = op.getQubitOut();                                   \
-    updateQubitTracking(qubit, qubitOut);                                      \
+    updateQubitTracking(qubit, qubitOut, op->getParentRegion());               \
     return qubitOut;                                                           \
   }                                                                            \
   std::pair<Value, Value> QCOProgramBuilder::c##OP_NAME(                       \
@@ -336,7 +340,7 @@ DEFINE_ONE_TARGET_ONE_PARAMETER(POp, p, phi)
     checkFinalized();                                                          \
     auto op = OP_CLASS::create(*this, qubit, PARAM1, PARAM2);                  \
     const auto& qubitOut = op.getQubitOut();                                   \
-    updateQubitTracking(qubit, qubitOut);                                      \
+    updateQubitTracking(qubit, qubitOut, op->getParentRegion());               \
     return qubitOut;                                                           \
   }                                                                            \
   std::pair<Value, Value> QCOProgramBuilder::c##OP_NAME(                       \
@@ -383,7 +387,7 @@ DEFINE_ONE_TARGET_TWO_PARAMETER(U2Op, u2, phi, lambda)
     checkFinalized();                                                          \
     auto op = OP_CLASS::create(*this, qubit, PARAM1, PARAM2, PARAM3);          \
     const auto& qubitOut = op.getQubitOut();                                   \
-    updateQubitTracking(qubit, qubitOut);                                      \
+    updateQubitTracking(qubit, qubitOut, op->getParentRegion());               \
     return qubitOut;                                                           \
   }                                                                            \
   std::pair<Value, Value> QCOProgramBuilder::c##OP_NAME(                       \
@@ -431,8 +435,8 @@ DEFINE_ONE_TARGET_THREE_PARAMETER(UOp, u, theta, phi, lambda)
     auto op = OP_CLASS::create(*this, qubit0, qubit1);                         \
     const auto& qubit0Out = op.getQubit0Out();                                 \
     const auto& qubit1Out = op.getQubit1Out();                                 \
-    updateQubitTracking(qubit0, qubit0Out);                                    \
-    updateQubitTracking(qubit1, qubit1Out);                                    \
+    updateQubitTracking(qubit0, qubit0Out, op->getParentRegion());             \
+    updateQubitTracking(qubit1, qubit1Out, op->getParentRegion());             \
     return {qubit0Out, qubit1Out};                                             \
   }                                                                            \
   std::pair<Value, std::pair<Value, Value>> QCOProgramBuilder::c##OP_NAME(     \
@@ -475,8 +479,8 @@ DEFINE_TWO_TARGET_ZERO_PARAMETER(ECROp, ecr)
     auto op = OP_CLASS::create(*this, qubit0, qubit1, PARAM);                  \
     const auto& qubit0Out = op.getQubit0Out();                                 \
     const auto& qubit1Out = op.getQubit1Out();                                 \
-    updateQubitTracking(qubit0, qubit0Out);                                    \
-    updateQubitTracking(qubit1, qubit1Out);                                    \
+    updateQubitTracking(qubit0, qubit0Out, op->getParentRegion());             \
+    updateQubitTracking(qubit1, qubit1Out, op->getParentRegion());             \
     return {qubit0Out, qubit1Out};                                             \
   }                                                                            \
   std::pair<Value, std::pair<Value, Value>> QCOProgramBuilder::c##OP_NAME(     \
@@ -525,8 +529,8 @@ DEFINE_TWO_TARGET_ONE_PARAMETER(RZZOp, rzz, theta)
     auto op = OP_CLASS::create(*this, qubit0, qubit1, PARAM1, PARAM2);         \
     const auto& qubit0Out = op.getQubit0Out();                                 \
     const auto& qubit1Out = op.getQubit1Out();                                 \
-    updateQubitTracking(qubit0, qubit0Out);                                    \
-    updateQubitTracking(qubit1, qubit1Out);                                    \
+    updateQubitTracking(qubit0, qubit0Out, op->getParentRegion());             \
+    updateQubitTracking(qubit1, qubit1Out, op->getParentRegion());             \
     return {qubit0Out, qubit1Out};                                             \
   }                                                                            \
   std::pair<Value, std::pair<Value, Value>> QCOProgramBuilder::c##OP_NAME(     \
@@ -576,7 +580,7 @@ ValueRange QCOProgramBuilder::barrier(ValueRange qubits) {
   auto op = BarrierOp::create(*this, qubits);
   const auto& qubitsOut = op.getQubitsOut();
   for (const auto& [inputQubit, outputQubit] : llvm::zip(qubits, qubitsOut)) {
-    updateQubitTracking(inputQubit, outputQubit);
+    updateQubitTracking(inputQubit, outputQubit, op->getParentRegion());
   }
   return qubitsOut;
 }
@@ -593,9 +597,10 @@ std::pair<ValueRange, ValueRange> QCOProgramBuilder::ctrl(
   auto ctrlOp = CtrlOp::create(*this, controls, targets);
   auto& block = ctrlOp.getBodyRegion().emplaceBlock();
   const auto qubitType = QubitType::get(getContext());
-  for (const auto target : targets) {
+  auto* region = block.getParent();
+  for (size_t i = 0; i < targets.size(); i++) {
     const auto arg = block.addArgument(qubitType, getLoc());
-    updateQubitTracking(target, arg);
+    validQubits[region].insert(arg);
   }
   const InsertionGuard guard(*this);
   setInsertionPointToStart(&block);
@@ -610,12 +615,11 @@ std::pair<ValueRange, ValueRange> QCOProgramBuilder::ctrl(
   // Update tracking
   const auto& controlsOut = ctrlOp.getControlsOut();
   for (const auto& [control, controlOut] : llvm::zip(controls, controlsOut)) {
-    updateQubitTracking(control, controlOut);
+    updateQubitTracking(control, controlOut, ctrlOp->getParentRegion());
   }
   const auto& targetsOut = ctrlOp.getTargetsOut();
-  for (const auto& [target, targetOut] :
-       llvm::zip(innerTargetsOut, targetsOut)) {
-    updateQubitTracking(target, targetOut);
+  for (const auto& [target, targetOut] : llvm::zip(targets, targetsOut)) {
+    updateQubitTracking(target, targetOut, ctrlOp->getParentRegion());
   }
 
   return {controlsOut, targetsOut};
@@ -628,10 +632,280 @@ std::pair<ValueRange, ValueRange> QCOProgramBuilder::ctrl(
 QCOProgramBuilder& QCOProgramBuilder::dealloc(Value qubit) {
   checkFinalized();
 
-  validateQubitValue(qubit);
-  validQubits.erase(qubit);
+  auto* region = getInsertionBlock()->getParent();
+  validateQubitValue(qubit, region);
+  validQubits[region].erase(qubit);
 
   DeallocOp::create(*this, qubit);
+
+  return *this;
+}
+
+//===----------------------------------------------------------------------===//
+// Tensor operations
+//===----------------------------------------------------------------------===//
+
+Value QCOProgramBuilder::tensorFromElements(ValueRange elements) {
+  checkFinalized();
+
+  auto const qcoType = qco::QubitType::get(ctx);
+  const auto tensorType =
+      RankedTensorType::get({static_cast<int64_t>(elements.size())}, qcoType);
+
+  auto fromElements =
+      tensor::FromElementsOp::create(*this, tensorType, elements);
+  return fromElements.getResult();
+}
+
+Value QCOProgramBuilder::tensorExtract(
+    Value tensor, const std::variant<int64_t, Value>& index) {
+  checkFinalized();
+
+  const auto qcoType = qco::QubitType::get(ctx);
+  const auto indexValue = utils::variantToValue(*this, getLoc(), index);
+  // Create the extract operation
+  auto extractOp =
+      tensor::ExtractOp::create(*this, qcoType, tensor, indexValue);
+
+  // Check if the tensor stems from a scf.for operation
+  // These are the extract operations directly following the scf.for operation
+  if (auto scfFor = tensor.getDefiningOp<scf::ForOp>()) {
+    // Find the initial qubit before it was inserted to the tensor
+    for (auto arg : scfFor.getInitArgs()) {
+      if (llvm::isa<TensorType>(arg.getType())) {
+        auto fromTensorOp = arg.getDefiningOp<tensor::FromElementsOp>();
+
+        if (!fromTensorOp) {
+          continue;
+        }
+
+        // Get the index as integer
+        int64_t val = 0;
+        if (std::holds_alternative<int64_t>(index)) {
+          val = std::get<int64_t>(index);
+        } else {
+          auto constantOp =
+              std::get<Value>(index).getDefiningOp<arith::ConstantOp>();
+          if (!constantOp) {
+            continue;
+          }
+          val = dyn_cast<IntegerAttr>(constantOp.getValue()).getInt();
+        }
+        // Update the tracking of the qubit
+        updateQubitTracking(fromTensorOp.getElements()[val],
+                            extractOp.getResult(),
+                            extractOp->getParentRegion());
+      }
+    }
+  }
+  // Add the extracted Qubit to the qubit tracking if it is inside a loop
+  if (!llvm::isa<func::FuncOp>(extractOp->getParentRegion()->getParentOp())) {
+    validQubits[extractOp->getParentRegion()].insert(extractOp);
+  }
+
+  return extractOp.getResult();
+}
+
+Value QCOProgramBuilder::tensorInsert(
+    Value element, Value tensor, const std::variant<int64_t, Value>& index) {
+  checkFinalized();
+
+  const auto indexValue = utils::variantToValue(*this, getLoc(), index);
+  auto insertOp = tensor::InsertOp::create(*this, element, tensor, indexValue);
+  return insertOp.getResult();
+}
+//===----------------------------------------------------------------------===//
+// SCF operations
+//===----------------------------------------------------------------------===//
+
+ValueRange QCOProgramBuilder::scfFor(
+    const std::variant<int64_t, Value>& lowerbound,
+    const std::variant<int64_t, Value>& upperbound,
+    const std::variant<int64_t, Value>& step, ValueRange initArgs,
+    llvm::function_ref<llvm::SmallVector<Value>(Value, ValueRange)> body) {
+  checkFinalized();
+
+  const auto loc = getLoc();
+  const auto lb = utils::variantToValue(*this, loc, lowerbound);
+  const auto ub = utils::variantToValue(*this, loc, upperbound);
+  const auto stepSize = utils::variantToValue(*this, loc, step);
+
+  // Create the empty for operation
+  auto forOp = scf::ForOp::create(*this, lb, ub, stepSize, initArgs);
+  auto* forBody = forOp.getBody();
+  const auto iv = forBody->getArgument(0);
+  const auto loopArgs = forBody->getArguments().drop_front();
+
+  // Set the insertionpoint
+  const OpBuilder::InsertionGuard guard(*this);
+  setInsertionPointToStart(forBody);
+
+  // Add the iterArgs to the validQubits
+  auto* bodyRegion = forBody->getParent();
+  for (const auto& arg : loopArgs) {
+    validQubits[bodyRegion].insert(arg);
+  }
+  // Build the body
+  const auto bodyResults = body(iv, loopArgs);
+  scf::YieldOp::create(*this, bodyResults);
+
+  // Update the qubit tracking
+  for (const auto& [initArg, result] :
+       llvm::zip_equal(initArgs, forOp.getResults())) {
+    if (!llvm::isa<TensorType>(initArg.getType())) {
+
+      updateQubitTracking(initArg, result, forOp->getParentRegion());
+    }
+  }
+
+  return forOp->getResults();
+}
+
+ValueRange QCOProgramBuilder::scfWhile(
+    ValueRange initArgs,
+    llvm::function_ref<llvm::SmallVector<Value>(ValueRange)> beforeBody,
+    llvm::function_ref<llvm::SmallVector<Value>(ValueRange)> afterBody) {
+  checkFinalized();
+
+  // Create the empty while operation
+  auto whileOp = scf::WhileOp::create(*this, initArgs.getTypes(), initArgs);
+  const SmallVector<Location> locs(initArgs.size(), getLoc());
+
+  const OpBuilder::InsertionGuard guard(*this);
+
+  // Construct the before block
+  auto* beforeBlock =
+      createBlock(&whileOp.getBefore(), {}, initArgs.getTypes(), locs);
+  auto beforeArgs = beforeBlock->getArguments();
+  auto* beforeRegion = beforeBlock->getParent();
+
+  // Set the insertionpoint
+  setInsertionPointToStart(beforeBlock);
+
+  // Add the beforeArgs to the validQubits
+  for (const auto& arg : beforeArgs) {
+    validQubits[beforeRegion].insert(arg);
+  }
+
+  beforeBody(beforeArgs);
+
+  // Construct the after block
+  auto* afterBlock =
+      createBlock(&whileOp.getAfter(), {}, initArgs.getTypes(), locs);
+  auto afterArgs = afterBlock->getArguments();
+  auto* afterRegion = afterBlock->getParent();
+
+  // Set the insertionpoint
+  setInsertionPointToStart(afterBlock);
+
+  // Add the afterArgs to the validQubits
+  for (const auto& arg : afterArgs) {
+    validQubits[afterRegion].insert(arg);
+  }
+
+  const auto afterResults = afterBody(afterArgs);
+  scf::YieldOp::create(*this, afterResults);
+
+  // Update the qubit tracking
+  for (const auto& [arg, result] :
+       llvm::zip_equal(initArgs, whileOp.getResults())) {
+    updateQubitTracking(arg, result, whileOp->getParentRegion());
+  }
+
+  return whileOp->getResults();
+}
+
+ValueRange QCOProgramBuilder::scfIf(
+    const std::variant<bool, Value>& cond, ValueRange qubits,
+    llvm::function_ref<llvm::SmallVector<Value>()> thenBody,
+    llvm::function_ref<llvm::SmallVector<Value>()> elseBody) {
+  checkFinalized();
+
+  const auto condition = utils::variantToValue(*this, getLoc(), cond);
+
+  // Create the empty while operation
+  auto ifOp = scf::IfOp::create(*this, qubits.getTypes(), condition,
+                                /*withElseRegion=*/true);
+  auto& thenBlock = ifOp.getThenRegion().front();
+  auto& elseBlock = ifOp.getElseRegion().front();
+  auto* thenRegion = thenBlock.getParent();
+  auto* elseRegion = elseBlock.getParent();
+
+  // Set the insertionpoint
+  const OpBuilder::InsertionGuard guard(*this);
+  setInsertionPointToStart(&thenBlock);
+
+  // Add the qubits to the validQubits of the then and else region
+  for (const auto& arg : qubits) {
+    validQubits[thenRegion].insert(arg);
+    validQubits[elseRegion].insert(arg);
+  }
+
+  // Build the then body
+  const auto thenResults = thenBody();
+  scf::YieldOp::create(*this, thenResults);
+  // Set the insertionpoint
+  setInsertionPointToStart(&elseBlock);
+
+  // Build the else body
+  const auto elseResults = elseBody();
+  scf::YieldOp::create(*this, elseResults);
+
+  // Update the qubit tracking
+  for (const auto& [arg, result] : llvm::zip_equal(qubits, ifOp.getResults())) {
+    updateQubitTracking(arg, result, ifOp->getParentRegion());
+  }
+
+  return ifOp->getResults();
+}
+
+QCOProgramBuilder& QCOProgramBuilder::scfCondition(Value condition,
+                                                   ValueRange yieldedValues) {
+  checkFinalized();
+
+  scf::ConditionOp::create(*this, condition, yieldedValues);
+  return *this;
+}
+
+//===----------------------------------------------------------------------===//
+// Func operations
+//===----------------------------------------------------------------------===//
+
+ValueRange QCOProgramBuilder::funcCall(StringRef name, ValueRange operands) {
+  checkFinalized();
+
+  const auto callOp =
+      func::CallOp::create(*this, name, operands.getTypes(), operands);
+  for (auto [arg, result] : llvm::zip_equal(operands, callOp->getResults())) {
+    updateQubitTracking(arg, result, callOp->getParentRegion());
+  }
+  return callOp->getResults();
+}
+
+QCOProgramBuilder& QCOProgramBuilder::funcFunc(
+    StringRef name, TypeRange argTypes, TypeRange resultTypes,
+    llvm::function_ref<llvm::SmallVector<Value>(ValueRange)> body) {
+  checkFinalized();
+
+  // Set the insertionPoint
+  const OpBuilder::InsertionGuard guard(*this);
+  setInsertionPointToEnd(module.getBody());
+
+  // Create the empty func operation
+  const auto funcType = getFunctionType(argTypes, resultTypes);
+  auto funcOp = func::FuncOp::create(*this, name, funcType);
+  auto* entryBlock = funcOp.addEntryBlock();
+  auto* region = entryBlock->getParent();
+  // Add the arguments to the validQubits
+  for (const auto& arg : entryBlock->getArguments()) {
+    validQubits[region].insert(arg);
+  }
+
+  setInsertionPointToStart(entryBlock);
+
+  // Build function body
+  const auto bodyResults = body(entryBlock->getArguments());
+  func::ReturnOp::create(*this, bodyResults);
 
   return *this;
 }
@@ -649,7 +923,6 @@ void QCOProgramBuilder::checkFinalized() const {
 
 OwningOpRef<ModuleOp> QCOProgramBuilder::finalize() {
   checkFinalized();
-
   // Ensure that main function exists and insertion point is valid
   auto* insertionBlock = getInsertionBlock();
   func::FuncOp mainFunc = nullptr;
@@ -670,7 +943,9 @@ OwningOpRef<ModuleOp> QCOProgramBuilder::finalize() {
 
   // Automatically deallocate all still-allocated qubits
   // Sort qubits for deterministic output
-  llvm::SmallVector<Value> sortedQubits(validQubits.begin(), validQubits.end());
+  llvm::SmallVector<Value> sortedQubits(
+      validQubits[&mainFunc->getRegion(0)].begin(),
+      validQubits[&mainFunc->getRegion(0)].end());
   llvm::sort(sortedQubits, [](Value a, Value b) {
     auto* opA = a.getDefiningOp();
     auto* opB = b.getDefiningOp();

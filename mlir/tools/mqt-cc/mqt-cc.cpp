@@ -26,7 +26,9 @@
 #include <mlir/Dialect/ControlFlow/IR/ControlFlow.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/LLVMIR/LLVMDialect.h>
+#include <mlir/Dialect/MemRef/IR/MemRef.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
+#include <mlir/Dialect/Tensor/IR/Tensor.h>
 #include <mlir/IR/AsmState.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OwningOpRef.h>
@@ -146,6 +148,8 @@ int main(int argc, char** argv) {
   registry.insert<func::FuncDialect>();
   registry.insert<scf::SCFDialect>();
   registry.insert<LLVM::LLVMDialect>();
+  registry.insert<memref::MemRefDialect>();
+  registry.insert<tensor::TensorDialect>();
 
   MLIRContext context(registry);
   context.loadAllAvailableDialects();

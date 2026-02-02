@@ -59,7 +59,7 @@ class QCOType<string name, string typeMnemonic, list<Trait> traits = []>
     let mnemonic = typeMnemonic;
 }
 
-def QubitType : QCOType<"Qubit", "qubit"> {
+def QubitType : QCOType<"Qubit", "qubit", [MemRefElementTypeInterface]> {
     let summary = "QCO qubit value type";
     let description = [{
         The `!qco.qubit` type represents an SSA value holding a quantum bit
