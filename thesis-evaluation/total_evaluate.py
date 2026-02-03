@@ -75,6 +75,10 @@ def define_division_metric(
     x[new_metric] = x.get(new_metric, []) + [benchmark_name]
 
 
+aliases_qiskit = {
+    "successfulSingleQubitDecompositions": "totalSingleQubitDecompositions",
+    "successfulTwoQubitDecompositions": "totalTwoQubitDecompositions",
+}
 for name in sorted(mqt_results.keys() & qiskit_results.keys()):
     m = mqt_results[name]
     q = qiskit_results[name]
@@ -84,6 +88,8 @@ for name in sorted(mqt_results.keys() & qiskit_results.keys()):
             y1[metric] = y1.get(metric, []) + [m[metric]]
         if metric in q:
             y2[metric] = y2.get(metric, []) + [q[metric]]
+        elif metric in aliases_qiskit:
+            y2[metric] = y2.get(metric, []) + [q[aliases_qiskit[metric]]]
 
         x[metric] = x.get(metric, []) + [name]
 
@@ -114,15 +120,23 @@ titles = {
     "totalTwoQubitDecompositions": "Total Number of Two-Qubit Decompositions",
     "timePerTwoQubitDecomposition": "Time / Two-Qubit Decomposition [µs]",
     "timePerSingleQubitDecomposition": "Time / Single-Qubit Decomposition [µs]",
-    "twoQubitCreationTime": "Time for Creation of Two-Qubit Basis Decomposers [µs]"
+    "twoQubitCreationTime": "Time for Creation of Two-Qubit Basis Decomposers [µs]",
 }
 legend_positions = {
     "totalTouchedGates": "upper left",
-    "timeInCircuitCollection": "upper left",
+    "timeInCircuitCollection": "upper right",
     "timePerSingleQubitDecomposition": "upper left",
     "timePerTwoQubitDecomposition": "lower right",
     "totalTouchedGates": "upper left",
     "twoQubitCreationTime": "lower right",
+}
+pruneFunctions = {
+    "timeInCircuitCollection": lambda value: np.isclose(value, 0),
+    "timeInSingleQubitDecomposition": lambda value: np.isclose(value, 0),
+    "timeInTwoQubitDecomposition": lambda value: np.isclose(value, 0),
+    "timePerTwoQubitDecomposition": lambda value: np.isclose(value, 0),
+    "timePerSingleQubitDecomposition": lambda value: np.isclose(value, 0),
+    "twoQubitCreationTime": lambda value: np.isclose(value, 0),
 }
 # modifications = {
 #     "subCircuitComplexityChange": lambda value: -1.0 * value,
@@ -151,8 +165,15 @@ for metric in x.keys():
             y2i = y2[metric][i - num_erased_y]
         else:
             y2i = None
-        if (not y1i and not y2i) or (
-            y1i and y2i and math.isnan(y1i) and math.isnan(y2i)
+        if (
+            (y1i == None and y2i == None)
+            or (y1i != None and y2i != None and math.isnan(y1i) and math.isnan(y2i))
+            or (
+                y1i != None
+                and y2i != None
+                and pruneFunctions.get(metric, lambda _: False)(y1i)
+                and pruneFunctions.get(metric, lambda _: False)(y2i)
+            )
         ):
             x_values.pop(i - num_erased_y)
             if metric in y1:
@@ -160,10 +181,18 @@ for metric in x.keys():
             if metric in y2:
                 y2[metric].pop(i - num_erased_y)
             num_erased_y += 1
-        elif not y1i or math.isnan(y1i):
+        elif (
+            y1i == None
+            or math.isnan(y1i)
+            or pruneFunctions.get(metric, lambda _: False)(y1i)
+        ):
             scale1.append(0)
             scale2.append(DEFAULT_POINT_SIZE)
-        elif not y2i or math.isnan(y2i):
+        elif (
+            y2i == None
+            or math.isnan(y2i)
+            or pruneFunctions.get(metric, lambda _: False)(y2i)
+        ):
             scale1.append(DEFAULT_POINT_SIZE)
             scale2.append(0)
         else:
@@ -218,5 +247,20 @@ for i, name in enumerate(names):
         print("UNKNOWN")
 
 for metric in x.keys():
-    print(f"Average MQT {metric}:", np.average(y1[metric]) if metric in y1 else "-")
-    print(f"Average Qiskit {metric}:", np.average(y2[metric]) if metric in y2 else "-")
+    print()
+    print(
+        f"Average MQT {metric}:",
+        np.average(np.ma.masked_invalid(y1[metric])) if metric in y1 else "-",
+    )
+    print(
+        f"Average Qiskit {metric}:",
+        np.average(np.ma.masked_invalid(y2[metric])) if metric in y2 else "-",
+    )
+    print(
+        f"Median MQT {metric}:",
+        np.median(np.ma.masked_invalid(y1[metric])) if metric in y1 else "-",
+    )
+    print(
+        f"Median Qiskit {metric}:",
+        np.median(np.ma.masked_invalid(y2[metric])) if metric in y2 else "-",
+    )

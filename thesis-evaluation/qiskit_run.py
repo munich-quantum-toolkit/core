@@ -92,7 +92,10 @@ def evaluate():
             continue
 
         # respect barriers
+        start_time = time.perf_counter_ns()
         subcircuits = split_by_barriers(qc)
+        end_time = time.perf_counter_ns()
+        collection_time_us = (end_time - start_time) / 1000
 
         decomposition_times_1q = []
         decomposition_times_2q = []
@@ -151,6 +154,7 @@ def evaluate():
             "totalTwoQubitDecompositions": num_two_qubit_decompositions,
             "totalSingleQubitDecompositions": num_single_qubit_decompositions,
             "twoQubitCreationTime": creation_time_us,
+            "timeInCircuitCollection": collection_time_us,
         }
 
     print()
