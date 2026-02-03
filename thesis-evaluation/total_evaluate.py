@@ -76,22 +76,26 @@ def define_division_metric(
 
 
 aliases_qiskit = {
-    "successfulSingleQubitDecompositions": "totalSingleQubitDecompositions",
-    "successfulTwoQubitDecompositions": "totalTwoQubitDecompositions",
+    "totalSingleQubitDecompositions": "successfulSingleQubitDecompositions",
+    "totalTwoQubitDecompositions": "successfulTwoQubitDecompositions",
 }
-for name in sorted(mqt_results.keys() & qiskit_results.keys()):
+aliases_mqt = {
+    "timeInCircuitCollection": "timeInCircuitCollectionStandalone",
+}
+names = sorted(mqt_results.keys() & qiskit_results.keys())
+for name in names:
     m = mqt_results[name]
     q = qiskit_results[name]
 
     for metric in m.keys() | q.keys():
         if metric in m:
             y1[metric] = y1.get(metric, []) + [m[metric]]
+        if metric in aliases_mqt:
+            y1[aliases_mqt[metric]] = y1.get(aliases_mqt[metric], []) + [m[metric]]
         if metric in q:
             y2[metric] = y2.get(metric, []) + [q[metric]]
-        elif metric in aliases_qiskit:
-            y2[metric] = y2.get(metric, []) + [q[aliases_qiskit[metric]]]
-
-        x[metric] = x.get(metric, []) + [name]
+        if metric in aliases_qiskit:
+            y2[aliases_qiskit[metric]] = y2.get(aliases_qiskit[metric], []) + [q[metric]]
 
     define_division_metric(
         "timePerSingleQubitDecomposition",
@@ -106,12 +110,15 @@ for name in sorted(mqt_results.keys() & qiskit_results.keys()):
         name,
     )
 
-names = []
+    for metric in y1.keys() | y2.keys():
+        x[metric] = names
+
 titles = {
     "subCircuitComplexityChange": "Complexity Improvement after Decomposition",
     "successfulSingleQubitDecompositions": "Number of Successful Single-Qubit Decompositions",
     "successfulTwoQubitDecompositions": "Number of Successful Two-Qubit Decompositions",
     "timeInCircuitCollection": "Sub-Circuit Collection Time [µs]",
+    "timeInCircuitCollectionStandalone": "Sub-Circuit Collection Time [µs]",
     "timeInSingleQubitDecomposition": "Total Time for Single-Qubit Decompositions [µs]",
     "timeInTwoQubitDecomposition": "Total Time for Two-Qubit Decompositions [µs]",
     "totalCircuitCollections": "Number of Sub-Circuit Collections",
@@ -125,6 +132,7 @@ titles = {
 legend_positions = {
     "totalTouchedGates": "upper left",
     "timeInCircuitCollection": "upper right",
+    "timeInCircuitCollectionStandalone": "upper left",
     "timePerSingleQubitDecomposition": "upper left",
     "timePerTwoQubitDecomposition": "lower right",
     "totalTouchedGates": "upper left",
@@ -132,6 +140,7 @@ legend_positions = {
 }
 pruneFunctions = {
     "timeInCircuitCollection": lambda value: np.isclose(value, 0),
+    "timeInCircuitCollectionStandalone": lambda value: np.isclose(value, 0),
     "timeInSingleQubitDecomposition": lambda value: np.isclose(value, 0),
     "timeInTwoQubitDecomposition": lambda value: np.isclose(value, 0),
     "timePerTwoQubitDecomposition": lambda value: np.isclose(value, 0),
@@ -224,7 +233,6 @@ for metric in x.keys():
         yint.append(int(each))
     plt.yticks(yint)
 
-    names = x[metric]
     leg = plt.legend(loc=legend_positions.get(metric, "best"))
     for handle in leg.legend_handles:
         handle.set_sizes([DEFAULT_POINT_SIZE])
