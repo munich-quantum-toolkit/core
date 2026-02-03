@@ -18,9 +18,12 @@
 
 #include <llvm/ADT/StringRef.h>
 #include <llvm/Support/raw_ostream.h>
+#include <mlir/Dialect/Arith/IR/Arith.h>
+#include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/IR/BuiltinOps.h>
 #include <mlir/Pass/PassManager.h>
 #include <mlir/Support/LogicalResult.h>
+#include <mlir/Transforms/InliningUtils.h>
 #include <mlir/Transforms/Passes.h>
 #include <string>
 
@@ -59,8 +62,14 @@ static void prettyPrintStage(ModuleOp module, const llvm::StringRef stageName,
   llvm::errs().flush();
 }
 
-void QuantumCompilerPipeline::addCleanupPasses(PassManager& pm) {
+void QuantumCompilerPipeline::addCleanupPasses(PassManager& pm,
+                                               bool doInlining) {
   // Always run canonicalization and dead value removal
+
+  if (doInlining) {
+    pm.addPass(createInlinerPass());
+  }
+
   pm.addPass(createCanonicalizerPass());
   pm.addPass(createRemoveDeadValuesPass());
   pm.addPass(createSymbolDCEPass());
@@ -120,7 +129,7 @@ QuantumCompilerPipeline::runPipeline(ModuleOp module,
   }
 
   // Stage 2: QC canonicalization
-  addCleanupPasses(pm);
+  addCleanupPasses(pm, config_.enableInlining);
   if (pm.run(module).failed()) {
     return failure();
   }

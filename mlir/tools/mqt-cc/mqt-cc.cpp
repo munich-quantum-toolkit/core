@@ -10,6 +10,7 @@
 
 #include "ir/QuantumComputation.hpp"
 #include "mlir/Compiler/CompilerPipeline.h"
+#include "mlir/Dialect/Func/Extensions/InlinerExtension.h"
 #include "mlir/Dialect/QC/IR/QCDialect.h"
 #include "mlir/Dialect/QC/Translation/TranslateQuantumComputationToQC.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
@@ -76,6 +77,9 @@ const cl::opt<bool> MERGE_ROTATION_GATES(
     "mlir-merge-rotation-gates",
     cl::desc("Enable quaternion-based rotation gate merging"), cl::init(false));
 
+const cl::opt<bool> ENABLE_INLINING("inline",
+                                    cl::desc("Enable function inlining"),
+                                    cl::init(false));
 } // namespace
 
 /**
@@ -150,7 +154,7 @@ int main(int argc, char** argv) {
   registry.insert<func::FuncDialect>();
   registry.insert<scf::SCFDialect>();
   registry.insert<LLVM::LLVMDialect>();
-
+  mlir::func::registerInlinerExtension(registry);
   MLIRContext context(registry);
   context.loadAllAvailableDialects();
 
@@ -173,6 +177,7 @@ int main(int argc, char** argv) {
   config.enableStatistics = ENABLE_STATISTICS;
   config.printIRAfterAllStages = PRINT_IR_AFTER_ALL_STAGES;
   config.mergeRotationGates = MERGE_ROTATION_GATES;
+  config.enableInlining = ENABLE_INLINING;
 
   // Run the compilation pipeline
   CompilationRecord record;

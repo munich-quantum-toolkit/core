@@ -42,6 +42,9 @@ struct QuantumCompilerConfig {
 
   /// Enable quaternion-based rotation gate merging
   bool mergeRotationGates = false;
+
+  // Enable function inlining during cleanup passes
+  bool enableInlining = false;
 };
 
 /**
@@ -120,7 +123,7 @@ private:
    * Always adds the standard MLIR canonicalization pass followed by dead
    * value removal.
    */
-  static void addCleanupPasses(PassManager& pm);
+  static void addCleanupPasses(PassManager& pm, bool doInlining = false);
 
   /**
    * @brief Configure PassManager with diagnostic options
