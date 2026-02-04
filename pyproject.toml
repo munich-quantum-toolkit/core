@@ -8,7 +8,7 @@
 
 [build-system]
 requires = [
-  "nanobind>=2.10.2",
+  "nanobind~=2.11.0",
   "scikit-build-core>=0.11.6",
   "setuptools-scm>=9.2.2",
 ]
@@ -323,7 +323,7 @@ exclude = [
 
 [dependency-groups]
 build = [
-  "nanobind>=2.10.2",
+  "nanobind~=2.11.0",
   "scikit-build-core>=0.11.6",
   "setuptools-scm>=9.2.2",
 ]
@@ -360,5 +360,5 @@ dev = [
   {include-group = "test"},
   "lit>=18.1.8",
   "nox>=2025.11.12",
-  "ty==0.0.13",
+  "ty==0.0.14",
 ]

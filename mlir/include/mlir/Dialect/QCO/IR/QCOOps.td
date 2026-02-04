@@ -1023,7 +1023,9 @@ def BarrierOp : QCOOp<"barrier", traits = [UnitaryOpInterface]> {
         size_t getNumTargets();
         static size_t getNumControls();
         Value getInputQubit(size_t i);
+        OperandRange getInputQubits();
         Value getOutputQubit(size_t i);
+        ResultRange getOutputQubits();
         Value getInputTarget(size_t i);
         Value getOutputTarget(size_t i);
         static Value getInputControl(size_t i);
@@ -1113,7 +1115,9 @@ def CtrlOp : QCOOp<"ctrl", traits =
         size_t getNumTargets();
         size_t getNumControls();
         Value getInputQubit(size_t i);
+        OperandRange getInputQubits();
         Value getOutputQubit(size_t i);
+        ResultRange getOutputQubits();
         Value getInputTarget(size_t i);
         Value getOutputTarget(size_t i);
         Value getInputControl(size_t i);

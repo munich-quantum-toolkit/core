@@ -6,6 +6,8 @@
 #
 # Licensed under the MIT License
 
+"""MQT Core DD  - The MQT Core Decision Diagram (DD) module."""
+
 import enum
 from collections.abc import Sequence
 from collections.abc import Set as AbstractSet
