@@ -404,7 +404,7 @@ LogicalResult InvOp::verify() {
   }
 
   if (llvm::isa<BarrierOp>(bodyUnitary.getOperation())) {
-    return emitOpError("BarrierOp cannot be controlled");
+    return emitOpError("BarrierOp cannot be inverted");
   }
 
   return success();
