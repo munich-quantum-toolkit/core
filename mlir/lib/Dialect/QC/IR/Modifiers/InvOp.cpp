@@ -27,6 +27,32 @@ using namespace mlir::qc;
 namespace {
 
 /**
+ * @brief Move nested control modifiers outside, i.e., `inv(ctrl(x)) =>
+ * ctrl(inv(x))`.
+ */
+struct MoveCtrlOutside final : OpRewritePattern<InvOp> {
+  using OpRewritePattern::OpRewritePattern;
+
+  LogicalResult matchAndRewrite(InvOp invOp,
+                                PatternRewriter& rewriter) const override {
+    auto bodyUnitary = invOp.getBodyUnitary();
+    auto innerCtrlOp = llvm::dyn_cast<CtrlOp>(bodyUnitary.getOperation());
+    if (!innerCtrlOp) {
+      return failure();
+    }
+
+    auto controls = innerCtrlOp.getControls();
+    rewriter.replaceOpWithNewOp<CtrlOp>(invOp, controls, [&] {
+      InvOp::create(rewriter, invOp.getLoc(), [&] {
+        rewriter.clone(*innerCtrlOp.getBodyUnitary().getOperation());
+      });
+    });
+
+    return success();
+  }
+};
+
+/**
  * @brief Cancel nested inverse modifiers, i.e., `inv(inv(x)) => x`.
  */
 struct CancelNestedInv final : OpRewritePattern<InvOp> {
@@ -128,5 +154,5 @@ LogicalResult InvOp::verify() {
 
 void InvOp::getCanonicalizationPatterns(RewritePatternSet& results,
                                         MLIRContext* context) {
-  results.add<CancelNestedInv>(context);
+  results.add<CancelNestedInv, MoveCtrlOutside>(context);
 }
