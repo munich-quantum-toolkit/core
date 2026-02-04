@@ -11,11 +11,10 @@
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QCO/Transforms/Passes.h"
 
-#include <algorithm>
-#include <array>
 #include <cassert>
 #include <cmath>
 #include <cstdint>
+#include <llvm/ADT/TypeSwitch.h>
 #include <llvm/Support/ErrorHandling.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Math/IR/Math.h>
@@ -26,7 +25,7 @@
 #include <mlir/Support/LLVM.h>
 #include <mlir/Transforms/GreedyPatternRewriteDriver.h>
 #include <numbers>
-#include <string_view>
+#include <optional>
 #include <utility>
 
 namespace mlir::qco {
@@ -52,17 +51,14 @@ struct MergeRotationGatesPattern final
 
   enum class RotationAxis : std::uint8_t { X, Y, Z };
 
-  static constexpr std::array<std::string_view, 4> MERGEABLE_GATES = {
-      "u", "rx", "ry", "rz"};
-
   /**
    * @brief Checks if an operation is a mergeable rotation gate (rx, ry, rz, u).
    *
-   * @param name Name of the operation to check
+   * @param op The operation to check
    * @return True if mergeable, false otherwise
    */
-  static bool isMergeable(std::string_view name) {
-    return std::ranges::find(MERGEABLE_GATES, name) != MERGEABLE_GATES.end();
+  static bool isMergeable(mlir::Operation* op) {
+    return mlir::isa<RXOp, RYOp, RZOp, UOp>(op);
   }
 
   /**
@@ -78,13 +74,28 @@ struct MergeRotationGatesPattern final
    */
   [[nodiscard]] static bool areQuaternionMergeable(mlir::Operation& a,
                                                    mlir::Operation& b) {
-    const auto aName = a.getName().stripDialect().str();
-    const auto bName = b.getName().stripDialect().str();
-
-    if (!(isMergeable(aName) && isMergeable(bName))) {
+    if (!isMergeable(&a) || !isMergeable(&b)) {
       return false;
     }
-    return (aName != bName) || (aName == "u" && bName == "u");
+
+    // Different gate types OR both are U gates
+    return (a.getName() != b.getName()) ||
+           (mlir::isa<UOp>(a) && mlir::isa<UOp>(b));
+  }
+
+  /**
+   * @brief Returns the rotation axis for a single-axis rotation gate.
+   *
+   * @param op The operation to query
+   * @return The rotation axis, or std::nullopt if the operation is not a
+   *         single-axis rotation gate (RX, RY, RZ)
+   */
+  static std::optional<RotationAxis> getRotationAxis(mlir::Operation* op) {
+    return llvm::TypeSwitch<mlir::Operation*, std::optional<RotationAxis>>(op)
+        .Case<RXOp>([](auto) { return RotationAxis::X; })
+        .Case<RYOp>([](auto) { return RotationAxis::Y; })
+        .Case<RZOp>([](auto) { return RotationAxis::Z; })
+        .Default([](auto) { return std::nullopt; });
   }
 
   /**
@@ -142,24 +153,15 @@ struct MergeRotationGatesPattern final
    */
   static Quaternion quaternionFromRotation(UnitaryOpInterface op,
                                            mlir::PatternRewriter& rewriter) {
-    auto const type = op->getName().stripDialect().str();
-
-    if (type == "u") {
+    if (mlir::isa<UOp>(op)) {
       return quaternionFromUGate(op, rewriter);
     }
 
-    auto loc = op->getLoc();
-    auto angle = op.getParameter(0);
+    if (auto axis = getRotationAxis(op.getOperation())) {
+      return createAxisQuaternion(op.getParameter(0), *axis, op->getLoc(),
+                                  rewriter);
+    }
 
-    if (type == "rx") {
-      return createAxisQuaternion(angle, RotationAxis::X, loc, rewriter);
-    }
-    if (type == "ry") {
-      return createAxisQuaternion(angle, RotationAxis::Y, loc, rewriter);
-    }
-    if (type == "rz") {
-      return createAxisQuaternion(angle, RotationAxis::Z, loc, rewriter);
-    }
     llvm_unreachable("Unsupported operation type");
   }
 
@@ -227,14 +229,14 @@ struct MergeRotationGatesPattern final
   /**
    * @brief Converts a u-gate to quaternion representation.
    *
-   * U(alpha, beta, gamma) uses ZYZ decomposition: RZ(alpha) -> RY(beta) ->
-   * RZ(gamma).
+   * U(theta, phi, lambda) uses ZYZ decomposition: RZ(lambda) -> RY(theta) ->
+   * RZ(phi).
    *
    * When composing rotations, quaternion multiplication follows matrix
    * multiplication order (right-to-left), which is the reverse of the
    * application sequence:
-   *   Sequential application: RZ(alpha), then RY(beta), then RZ(gamma)
-   *   Quaternion product:     Qgamma * Qbeta * Qalpha
+   *   Sequential application: RZ(lambda), then RY(theta), then RZ(phi)
+   *   Quaternion product:     qPhi * qTheta * qLambda
    *
    * @param op The u-gate operation to convert
    * @param rewriter Pattern rewriter for creating new operations
@@ -245,26 +247,27 @@ struct MergeRotationGatesPattern final
     auto loc = op->getLoc();
 
     // U gate uses ZYZ decomposition:
-    // U(alpha, beta, gamma) = Rz(alpha) -> Ry(beta) -> Rz(gamma)
-    auto qAlpha = createAxisQuaternion(op.getParameter(0), RotationAxis::Z, loc,
+    // U(theta, phi, lambda) uses ZYZ decomposition: RZ(lambda) -> RY(theta) ->
+    // RZ(phi)
+    auto qTheta = createAxisQuaternion(op.getParameter(0), RotationAxis::Y, loc,
                                        rewriter);
-    auto qBeta = createAxisQuaternion(op.getParameter(1), RotationAxis::Y, loc,
-                                      rewriter);
-    auto qGamma = createAxisQuaternion(op.getParameter(2), RotationAxis::Z, loc,
-                                       rewriter);
+    auto qPhi = createAxisQuaternion(op.getParameter(1), RotationAxis::Z, loc,
+                                     rewriter);
+    auto qLambda = createAxisQuaternion(op.getParameter(2), RotationAxis::Z,
+                                        loc, rewriter);
 
-    // qGamma * qBeta * qAlpha (multiplication in reverse order!)
-    auto temp = hamiltonProduct(qGamma, qBeta, op, rewriter);
-    return hamiltonProduct(temp, qAlpha, op, rewriter);
+    // qPhi * qTheta * qLambda (multiplication in reverse order!)
+    auto temp = hamiltonProduct(qPhi, qTheta, op, rewriter);
+    return hamiltonProduct(temp, qLambda, op, rewriter);
   }
 
   /**
    * @brief Converts a quaternion to a u-gate using ZYZ Euler angle extraction.
    *
    * For unit quaternion q = w + x*i + y*j + z*k, extracts u-gate parameters:
-   *   alpha = atan2(z, w) - atan2(-x, y)
+   *   alpha = atan2(z, w) + atan2(-x, y)
    *   beta  = acos(2 * (w^2 + z^2) - 1)
-   *   gamma = atan2(z, w) + atan2(-x, y)
+   *   gamma = atan2(z, w) - atan2(-x, y)
    *
    * Based on Bernardes & Viollet (2022), simplified for unit quaternions and
    * proper ZYZ Euler angles (Chapter 3.3):
@@ -343,16 +346,16 @@ struct MergeRotationGatesPattern final
         rewriter.create<mlir::arith::MulFOp>(loc, two, thetaMinus);
 
     // Safe Case (no gimbal lock):
-    // alphaSafe = theta+ - theta-
-    // gammaSafe = theta+ + theta-
+    // alphaSafe = theta+ + theta-
+    // gammaSafe = theta+ - theta-
     auto alphaSafe =
-        rewriter.create<mlir::arith::SubFOp>(loc, thetaPlus, thetaMinus);
-    auto gammaSafe =
         rewriter.create<mlir::arith::AddFOp>(loc, thetaPlus, thetaMinus);
+    auto gammaSafe =
+        rewriter.create<mlir::arith::SubFOp>(loc, thetaPlus, thetaMinus);
 
     // Unsafe Case (gimbal lock):
     // when b = 0  then alpha = 2 * (atan2(z,w))
-    // when b = PI then alpha = 2 * (atan2(-z, y))
+    // when b = PI then alpha = 2 * (atan2(-x, y))
     // gamma is set to zero in both cases
     auto alphaUnsafe = rewriter.create<mlir::arith::SelectOp>(
         loc, safe1, twoThetaMinus, twoThetaPlus);
@@ -360,14 +363,14 @@ struct MergeRotationGatesPattern final
     // TODO: could add some normalization here for alpha and gamma otherwise
     // they can be outside of [-PI, PI].
 
-    // choose correct alpha and gamma weather safe or not
+    // choose correct alpha and gamma whether safe or not
     auto alpha = rewriter.create<mlir::arith::SelectOp>(loc, safe, alphaSafe,
                                                         alphaUnsafe);
     auto gamma =
         rewriter.create<mlir::arith::SelectOp>(loc, safe, gammaSafe, zero);
 
-    return rewriter.create<UOp>(loc, op.getInputQubit(0), alpha.getResult(),
-                                beta.getResult(), gamma.getResult());
+    return rewriter.create<UOp>(loc, op.getInputQubit(0), beta.getResult(),
+                                alpha.getResult(), gamma.getResult());
   }
 
   /**

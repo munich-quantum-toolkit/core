@@ -62,6 +62,7 @@ protected:
     context.loadDialect<QCODialect>();
     context.loadDialect<func::FuncDialect>();
     context.loadDialect<arith::ArithDialect>();
+    context.loadDialect<scf::SCFDialect>();
 
     builder.initialize();
   }
@@ -154,7 +155,7 @@ protected:
 
   /**
    * @brief Takes a list of rotation gates (rx, ry, rz and u) and uses the
-   * builder api to build a small quantum circuit, where a qubit is feed through
+   * builder api to build a small quantum circuit, where a qubit is fed through
    * all rotations in the list.
    */
   LogicalResult testGateMerge(const std::vector<RotationGate>& rotations) {
@@ -563,7 +564,6 @@ TEST_F(QCOQuaternionMergeTest, multipleUseInIf) {
       }
     )";
 
-  context.loadDialect<scf::SCFDialect>();
   module = mlir::parseSourceString<mlir::ModuleOp>(mlirCode, &context);
   ASSERT_TRUE(module);
 
@@ -610,7 +610,7 @@ TEST_F(QCOQuaternionMergeTest, noUsedGate) {
 
 /**
  * @brief Test: RX(1)->RY(1) should merge into
- *        U(0.495367289218673, 1.27455578230629, -1.07542903757622)
+ *        U(1.27455578230629, -1.07542903757622, 0.495367289218673)
  */
 TEST_F(QCOQuaternionMergeTest, numericalAccuracyRXRY) {
   ASSERT_TRUE(testGateMerge({{RXOp::getOperationName(), {1.}},
@@ -620,12 +620,12 @@ TEST_F(QCOQuaternionMergeTest, numericalAccuracyRXRY) {
   EXPECT_EQ(countOps<RXOp>(), 0);
   EXPECT_EQ(countOps<RYOp>(), 0);
 
-  expectUGateParams(0.495367289218673, 1.27455578230629, -1.07542903757622);
+  expectUGateParams(1.27455578230629, -1.07542903757622, 0.495367289218673);
 }
 
 /**
  * @brief Test: RX(1)->RZ(1) should merge into
- *        U(1.57079632679490, 1.00000000000000, -0.570796326794897)
+ *        U(1.00000000000000, -0.570796326794897, 1.57079632679490)
  */
 TEST_F(QCOQuaternionMergeTest, numericalAccuracyRXRZ) {
   ASSERT_TRUE(testGateMerge({{RXOp::getOperationName(), {1.}},
@@ -635,12 +635,12 @@ TEST_F(QCOQuaternionMergeTest, numericalAccuracyRXRZ) {
   EXPECT_EQ(countOps<RXOp>(), 0);
   EXPECT_EQ(countOps<RZOp>(), 0);
 
-  expectUGateParams(1.57079632679490, 1.00000000000000, -0.570796326794897);
+  expectUGateParams(1.00000000000000, -0.570796326794897, 1.57079632679490);
 }
 
 /**
  * @brief Test: RY(1)->RX(1) should merge into
- *        U(1.07542903757622, 1.27455578230629, -0.495367289218673)
+ *        U(1.27455578230629, -0.495367289218673, 1.07542903757622)
  */
 TEST_F(QCOQuaternionMergeTest, numericalAccuracyRYRX) {
   ASSERT_TRUE(testGateMerge({{RYOp::getOperationName(), {1.}},
@@ -650,12 +650,12 @@ TEST_F(QCOQuaternionMergeTest, numericalAccuracyRYRX) {
   EXPECT_EQ(countOps<RYOp>(), 0);
   EXPECT_EQ(countOps<RXOp>(), 0);
 
-  expectUGateParams(1.07542903757622, 1.27455578230629, -0.495367289218673);
+  expectUGateParams(1.27455578230629, -0.495367289218673, 1.07542903757622);
 }
 
 /**
  * @brief Test: RY(1)->RZ(1) should merge into
- *        U(0, 1.00000000000000, 1.00000000000000)
+ *        U(1.00000000000000, 1.00000000000000, 0.)
  */
 TEST_F(QCOQuaternionMergeTest, numericalAccuracyRYRZ) {
   ASSERT_TRUE(testGateMerge({{RYOp::getOperationName(), {1.}},
@@ -665,12 +665,12 @@ TEST_F(QCOQuaternionMergeTest, numericalAccuracyRYRZ) {
   EXPECT_EQ(countOps<RYOp>(), 0);
   EXPECT_EQ(countOps<RZOp>(), 0);
 
-  expectUGateParams(0, 1.00000000000000, 1.00000000000000);
+  expectUGateParams(1.00000000000000, 1.00000000000000, 0.);
 }
 
 /**
  * @brief Test: RZ(1)->RX(1) should merge into
- *        U(2.57079632679490, 1.00000000000000, -1.57079632679490)
+ *        U(1.00000000000000, -1.57079632679490, 2.57079632679490)
  */
 TEST_F(QCOQuaternionMergeTest, numericalAccuracyRZRX) {
   ASSERT_TRUE(testGateMerge({{RZOp::getOperationName(), {1.}},
@@ -680,12 +680,12 @@ TEST_F(QCOQuaternionMergeTest, numericalAccuracyRZRX) {
   EXPECT_EQ(countOps<RZOp>(), 0);
   EXPECT_EQ(countOps<RXOp>(), 0);
 
-  expectUGateParams(2.57079632679490, 1.00000000000000, -1.57079632679490);
+  expectUGateParams(1.00000000000000, -1.57079632679490, 2.57079632679490);
 }
 
 /**
  * @brief Test: RZ(1)->RY(1) should merge into
- *        U(1.00000000000000, 1.00000000000000, 0)
+ *        U(1.00000000000000, 0, 1.00000000000000)
  */
 TEST_F(QCOQuaternionMergeTest, numericalAccuracyRZRY) {
   ASSERT_TRUE(testGateMerge({{RZOp::getOperationName(), {1.}},
@@ -695,12 +695,12 @@ TEST_F(QCOQuaternionMergeTest, numericalAccuracyRZRY) {
   EXPECT_EQ(countOps<RZOp>(), 0);
   EXPECT_EQ(countOps<RYOp>(), 0);
 
-  expectUGateParams(1.00000000000000, 1.00000000000000, 0);
+  expectUGateParams(1.00000000000000, 0., 1.00000000000000);
 }
 
 /**
  * @brief Test: U(1,2,3)->U(4,5,6) should merge into
- *        U(0.154763313125030, 1.00116934013043, -5.77770904175559)
+ *        U(2.03289042623884, 0.663830775701153, -5.43395386531173)
  */
 TEST_F(QCOQuaternionMergeTest, numericalAccuracyUU) {
   ASSERT_TRUE(testGateMerge({{UOp::getOperationName(), {1., 2., 3.}},
@@ -708,12 +708,12 @@ TEST_F(QCOQuaternionMergeTest, numericalAccuracyUU) {
                   .succeeded());
   EXPECT_EQ(countOps<UOp>(), 1);
 
-  expectUGateParams(0.154763313125030, 1.00116934013043, -5.77770904175559);
+  expectUGateParams(2.03289042623884, 0.663830775701153, -5.43395386531173);
 }
 
 /**
  * @brief Test: RZ(PI)->RY(PI)->RX(PI) should merge into
- *        U(0, 0, 0) or U(2*PI, 0, 0)
+ *        U(0, 0, 0) or U(PI, -PI, 0)
  */
 TEST_F(QCOQuaternionMergeTest, numericalRotationIdentity) {
   ASSERT_TRUE(testGateMerge({{RZOp::getOperationName(), {PI}},
@@ -724,7 +724,7 @@ TEST_F(QCOQuaternionMergeTest, numericalRotationIdentity) {
   EXPECT_EQ(countOps<RYOp>(), 0);
   EXPECT_EQ(countOps<RZOp>(), 0);
 
-  expectUGateParams(TAU, 0., 0.);
+  expectUGateParams(0, TAU, 0.);
 }
 
 /**
@@ -746,7 +746,7 @@ TEST_F(QCOQuaternionMergeTest, numericalRotationIdentity2) {
 
 /**
  * @brief Test: RX(0.001)->RY(0.001) should merge into
- *        U(0.785397913397407, 0.00141421344452194, -0.785398413397490)
+ *        U(0.00141421344452194, -0.785398413397490, 0.785397913397407)
  */
 TEST_F(QCOQuaternionMergeTest, numericalSmallAngles) {
   ASSERT_TRUE(testGateMerge({{RXOp::getOperationName(), {0.001}},
@@ -756,12 +756,12 @@ TEST_F(QCOQuaternionMergeTest, numericalSmallAngles) {
   EXPECT_EQ(countOps<RXOp>(), 0);
   EXPECT_EQ(countOps<RYOp>(), 0);
 
-  expectUGateParams(0.785397913397407, 0.00141421344452194, -0.785398413397490);
+  expectUGateParams(0.00141421344452194, -0.785398413397490, 0.785397913397407);
 }
 
 /**
  * @brief Test: RX(PI)->RY(PI) should merge into
- *        U(-PI, 0, 0)
+ *        U(0, -PI, 0.)
  */
 TEST_F(QCOQuaternionMergeTest, numericalGimbalLock) {
   ASSERT_TRUE(testGateMerge({{RXOp::getOperationName(), {PI}},
@@ -771,5 +771,5 @@ TEST_F(QCOQuaternionMergeTest, numericalGimbalLock) {
   EXPECT_EQ(countOps<RXOp>(), 0);
   EXPECT_EQ(countOps<RYOp>(), 0);
 
-  expectUGateParams(-PI, 0., 0.);
+  expectUGateParams(0, -PI, 0.);
 }

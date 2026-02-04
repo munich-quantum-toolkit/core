@@ -10,12 +10,11 @@ add_executable(mqt-core-mlir-dialect-qco-transforms-test test_qco_quaternion_mer
 
 target_link_libraries(
   mqt-core-mlir-dialect-qco-transforms-test
-  # TODO figure out correct dependencies
   PRIVATE GTest::gtest_main
           MLIRQCOProgramBuilder
           MLIRQCOTransforms
           MLIRIR
-          MLIRPass # for PassManager
+          MLIRPass
           MLIRSupport
           LLVMSupport)
 
