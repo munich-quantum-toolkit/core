@@ -227,19 +227,22 @@ public:
     fp actualBasisFidelity = getBasisFidelity();
     auto traces = this->traces(targetDecomposition);
     auto getDefaultNbasis = [&]() {
-      auto minValue = std::numeric_limits<fp>::min();
-      auto minIndex = -1;
+      // determine smallest number of basis gates required to fulfill given
+      // basis fidelity constraint
+      auto bestValue = std::numeric_limits<fp>::min();
+      auto bestIndex = -1;
       for (int i = 0; std::cmp_less(i, traces.size()); ++i) {
-        // lower fidelity means it becomes easier to choose a lower number of
-        // basis gates
+        // lower basis fidelity means it becomes easier to use fewer basis gates
+        // through a rougher approximation
         auto value = helpers::traceToFidelity(traces[i]) *
                      std::pow(actualBasisFidelity, i);
-        if (value > minValue) {
-          minIndex = i;
-          minValue = value;
+        if (value > bestValue) {
+          bestIndex = i;
+          bestValue = value;
         }
       }
-      return minIndex;
+      // index in traces equals number of basis gates
+      return bestIndex;
     };
     // number of basis gates that need to be used in the decomposition
     auto bestNbasis = numBasisGateUses.value_or(getDefaultNbasis());
