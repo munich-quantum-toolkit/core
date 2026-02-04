@@ -11,7 +11,7 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 
 ### Added
 
-- ✨ Add initial infrastructure for new QC and QCO MLIR dialects ([#1264], [#1402], [#1426], [#1428], [#1430], [#1436], [#1443], [#1446], [#1464], [#1465], [#1470], [#1471], [#1472], [#1474], [#1475]) ([**@burgholzer**], [**@denialhaag**], [**@taminob**], [**@DRovara**], [**@li-mingbao**])
+- ✨ Add initial infrastructure for new QC and QCO MLIR dialects ([#1264], [#1206], [#1402], [#1426], [#1428], [#1430], [#1436], [#1443], [#1446], [#1464], [#1465], [#1470], [#1471], [#1472], [#1474], [#1475]) ([**@burgholzer**], [**@denialhaag**], [**@taminob**], [**@DRovara**], [**@li-mingbao**])
 
 ### Changed
 
@@ -395,6 +395,7 @@ _📚 Refer to the [GitHub Release Notes](https://github.com/munich-quantum-tool
 [#1210]: https://github.com/munich-quantum-toolkit/core/pull/1210
 [#1209]: https://github.com/munich-quantum-toolkit/core/pull/1209
 [#1207]: https://github.com/munich-quantum-toolkit/core/pull/1207
+[#1206]: https://github.com/munich-quantum-toolkit/core/pull/1206
 [#1186]: https://github.com/munich-quantum-toolkit/core/pull/1186
 [#1181]: https://github.com/munich-quantum-toolkit/core/pull/1181
 [#1180]: https://github.com/munich-quantum-toolkit/core/pull/1180
