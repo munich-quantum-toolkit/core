@@ -16,5 +16,5 @@ def MergeRotationGates : Pass<"merge-rotation-gates",
     using quaternion representation and the Hamilton product.
   }];
 
-  let dependentDialects = ["::mlir::math::MathDialect"];
+  let dependentDialects = ["::mlir::arith::ArithDialect", "::mlir::math::MathDialect"];
 }

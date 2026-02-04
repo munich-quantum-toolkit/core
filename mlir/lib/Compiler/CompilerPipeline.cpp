@@ -162,6 +162,7 @@ QuantumCompilerPipeline::runPipeline(ModuleOp module,
 
   // Stage 5: Optimization passes
   // TODO: Add optimization passes
+  addCleanupPasses(pm);
 
   // quaternion gate merging pass
   if (config_.mergeRotationGates) {
@@ -169,7 +170,6 @@ QuantumCompilerPipeline::runPipeline(ModuleOp module,
     if (failed(pm.run(module))) {
       return failure();
     }
-    pm.clear();
   }
 
   if (record != nullptr && config_.recordIntermediates) {
@@ -179,6 +179,7 @@ QuantumCompilerPipeline::runPipeline(ModuleOp module,
                        totalStages);
     }
   }
+  pm.clear();
 
   // Stage 6: QCO canonicalization
   addCleanupPasses(pm);
