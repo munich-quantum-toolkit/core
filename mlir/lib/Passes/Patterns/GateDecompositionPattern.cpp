@@ -93,10 +93,10 @@ struct GateDecompositionPattern final
     if (op->getParentOfType<CtrlOp>()) {
       // application of pattern might not work on gates inside a control
       // modifier because rotation gates need to create new constants which are
-      // not allowed inside a control body; also, the foreign gate dection does
-      // not work and e.g. a CNOT will not be recognized as such and thus will
-      // be further decomposed into a RX gate inside the control body which is
-      // most likely undesired
+      // not allowed inside a control body; also, the foreign gate detection
+      // does not work and e.g. a CNOT will not be recognized as such and thus
+      // will be further decomposed into a RX gate inside the control body which
+      // is most likely undesired
       return mlir::failure();
     }
 
