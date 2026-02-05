@@ -165,7 +165,7 @@ inline matrix2x2 getSingleQubitMatrix(const Gate& gate) {
       qc::toString(gate.type) + ")"};
 }
 
-// TODO: remove? only used for verification of circuit
+// TODO: remove? only used for verification of circuit and in unittests
 inline matrix4x4 getTwoQubitMatrix(const Gate& gate) {
   using helpers::kroneckerProduct;
 
@@ -188,15 +188,12 @@ inline matrix4x4 getTwoQubitMatrix(const Gate& gate) {
       }
     }
     if (gate.type == qc::RXX) {
-      // TODO: check qubit order?
       return rxxMatrix(gate.parameter[0]);
     }
     if (gate.type == qc::RYY) {
-      // TODO: check qubit order?
       return ryyMatrix(gate.parameter[0]);
     }
     if (gate.type == qc::RZZ) {
-      // TODO: check qubit order?
       return rzzMatrix(gate.parameter[0]);
     }
     if (gate.type == qc::I) {

@@ -22,15 +22,8 @@
 #include <cmath>
 #include <complex>
 #include <llvm/ADT/STLExtras.h>
-#include <mlir/Dialect/Arith/IR/Arith.h>
-#include <mlir/IR/MLIRContext.h>
-#include <mlir/IR/Operation.h>
-#include <mlir/IR/PatternMatch.h>
-#include <mlir/IR/Value.h>
-#include <mlir/IR/ValueRange.h>
-#include <mlir/Support/LLVM.h>
-#include <mlir/Support/LogicalResult.h>
 #include <optional>
+#include <stdexcept>
 
 namespace mlir::qco::decomposition {
 
@@ -64,7 +57,6 @@ public:
       return decomposeKAK(theta, phi, lambda, phase, qc::RX, qc::RY, simplify,
                           atol);
     default:
-      // TODO: allow other bases
       throw std::invalid_argument{"Unsupported base for circuit generation!"};
     }
   }
@@ -168,6 +160,9 @@ private:
                qc::OpType aGate, bool simplify, std::optional<fp> atol) {
     fp angleZeroEpsilon = atol.value_or(DEFAULT_ATOL);
     if (!simplify) {
+      // setting atol to negative value to make all angle checks true; this will
+      // effectively disable the simplification since all rotations appear to be
+      // "necessary"
       angleZeroEpsilon = -1.0;
     }
 

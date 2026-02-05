@@ -36,7 +36,6 @@
 #include <optional>
 #include <random>
 #include <tuple>
-#include <unsupported/Eigen/MatrixFunctions> // TODO: unstable, NOLINT(misc-include-cleaner)
 #include <utility>
 
 namespace mlir::qco::decomposition {
@@ -172,7 +171,9 @@ struct TwoQubitWeylDecomposition {
     // verification
     matrix4x4 temp = dReal.asDiagonal();
     temp *= IM;
-    temp = temp.exp();
+    // since the matrix is diagonal, matrix exponental is equivalent to
+    // element-wise exponential function
+    temp.diagonal() = temp.diagonal().array().exp().matrix();
 
     // combined matrix k1 of 1q gates after canonical gate
     matrix4x4 k1 = uP * p * temp;
@@ -616,9 +617,6 @@ protected:
       // This gate binds 0 parameters, we make it canonical by setting:
       //
       // :math:`K2_l = Id` , :math:`K2_r = Id`.
-      a = qc::PI_4;
-      b = qc::PI_4;
-      c = qc::PI_4;
       if (c > 0.) {
         // unmodified global phase
         k1l = k1l * k2r;
@@ -634,6 +632,9 @@ protected:
         k2l = IDENTITY_GATE;
         k2r = IDENTITY_GATE;
       }
+      a = qc::PI_4;
+      b = qc::PI_4;
+      c = qc::PI_4;
     } else if (newSpecialization == Specialization::PartialSWAPEquiv) {
       // :math:`U \sim U_d(\alpha\pi/4, \alpha\pi/4, \alpha\pi/4)`
       // Thus, :math:`U \sim \text{SWAP}^\alpha`

@@ -230,7 +230,7 @@ protected:
       TwoQubitSeries result(op);
 
       while (auto user = getUser(result.outQubits[0],
-                                 &helpers::isSingleQubitOperation)) {
+                                 &UnitaryOpInterface::isSingleQubit)) {
         if (!result.appendSingleQubitGate(*user)) {
           break;
         }
@@ -253,7 +253,7 @@ protected:
         // collect all available single-qubit operations
         for (std::size_t i = 0; i < result.outQubits.size(); ++i) {
           while (auto user = getUser(result.outQubits[i],
-                                     &helpers::isSingleQubitOperation)) {
+                                     &UnitaryOpInterface::isSingleQubit)) {
             foundGate = result.appendSingleQubitGate(*user);
             if (!foundGate) {
               // result.outQubits was not updated, prevent endless loop
@@ -264,7 +264,7 @@ protected:
 
         for (std::size_t i = 0; i < result.outQubits.size(); ++i) {
           if (auto user =
-                  getUser(result.outQubits[i], &helpers::isTwoQubitOperation)) {
+                  getUser(result.outQubits[i], &UnitaryOpInterface::isTwoQubit)) {
             foundGate = result.appendTwoQubitGate(*user);
             break; // go back to single-qubit collection
           }
@@ -341,11 +341,11 @@ protected:
      * Initialize TwoQubitSeries instance with given first operation.
      */
     explicit TwoQubitSeries(UnitaryOpInterface initialOperation) {
-      if (helpers::isSingleQubitOperation(initialOperation)) {
+      if (initialOperation.isSingleQubit()) {
         inQubits = {initialOperation.getInputQubit(0), mlir::Value{}};
         outQubits = {initialOperation.getOutputQubit(0), mlir::Value{}};
         gates.push_back({.op = initialOperation, .qubitIds = {0}});
-      } else if (helpers::isTwoQubitOperation(initialOperation)) {
+      } else if (initialOperation.isTwoQubit()) {
         inQubits = {initialOperation.getInputQubit(0),
                     initialOperation.getInputQubit(1)};
         outQubits = {initialOperation.getOutputQubit(0),
@@ -470,7 +470,7 @@ protected:
       };
       while (auto* op = inQubits[qubitId].getDefiningOp()) {
         auto unitaryOp = mlir::dyn_cast<UnitaryOpInterface>(op);
-        if (unitaryOp && helpers::isSingleQubitOperation(unitaryOp) &&
+        if (unitaryOp && unitaryOp.isSingleQubit() &&
             !isBarrier(unitaryOp)) {
           prependSingleQubitGate(unitaryOp);
         } else {
