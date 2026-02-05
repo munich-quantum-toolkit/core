@@ -385,10 +385,6 @@ void FunctionalityConstruction::addMcx(ZXDiagram& diag,
           break;
         }
       }
-      if (!anc.has_value()) {
-        throw ZXException("No ancilla qubit available for MCX decomposition");
-      }
-
       controls.pop_back();
       second.push_back(*anc);
 
