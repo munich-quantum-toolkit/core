@@ -377,7 +377,7 @@ void FunctionalityConstruction::addMcx(ZXDiagram& diag,
 
     if (qubits.size() > controls.size() + 1) {
       std::vector<Qubit> blocked = controls;
-      blocked.push_back(target);
+      blocked.emplace_back(target);
       std::ranges::sort(blocked);
       std::ranges::sort(qubits);
       
@@ -385,7 +385,7 @@ void FunctionalityConstruction::addMcx(ZXDiagram& diag,
       available.reserve(qubits.size());
       std::ranges::set_difference(qubits, blocked, std::back_inserter(available));
 
-      second.push_back(available.front());
+      second.emplace_back(available.front());
 
       addMcx(diag, first, available.front(), qubits);
       addMcx(diag, second, target, qubits);
@@ -714,8 +714,9 @@ FunctionalityConstruction::parseOp(ZXDiagram& diag, op_it it, op_it end,
   } else if (op->getNtargets() == 1) {
     const auto target = static_cast<Qubit>(p.at(op->getTargets().front()));
     std::vector<Qubit> controls;
+    controls.reserve(op->getNcontrols());
     for (const auto& ctrl : op->getControls()) {
-      controls.push_back(static_cast<Qubit>(p.at(ctrl.qubit)));
+      controls.emplace_back(static_cast<Qubit>(p.at(ctrl.qubit)));
     }
     switch (op->getType()) {
     case qc::OpType::X:
