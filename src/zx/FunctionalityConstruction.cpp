@@ -376,22 +376,21 @@ void FunctionalityConstruction::addMcx(ZXDiagram& diag,
     std::vector<Qubit> second(controls.begin() + half, controls.end());
 
     if (qubits.size() > controls.size() + 1) {
-      controls.push_back(target);
-      std::optional<Qubit> anc{};
-      for (std::size_t q = 0; q < qubits.size(); ++q) {
-        const auto qb = static_cast<Qubit>(q);
-        if (std::ranges::find(controls, qb) == controls.end()) {
-          anc = qb;
-          break;
-        }
-      }
-      controls.pop_back();
-      second.push_back(*anc);
+      std::vector<Qubit> blocked = controls;
+      blocked.push_back(target);
+      std::ranges::sort(blocked);
+      std::ranges::sort(qubits);
+      
+      std::vector<Qubit> available;
+      available.reserve(qubits.size());
+      std::ranges::set_difference(qubits, blocked, std::back_inserter(available));
 
-      addMcx(diag, first, *anc, qubits);
+      second.push_back(available.front());
+
+      addMcx(diag, first, available.front(), qubits);
       addMcx(diag, second, target, qubits);
 
-      addMcx(diag, first, *anc, qubits);
+      addMcx(diag, first, available.front(), qubits);
       addMcx(diag, second, target, qubits);
     } else {
       addRx(diag, PiExpression(PiRational(1, 4)), target, qubits);
