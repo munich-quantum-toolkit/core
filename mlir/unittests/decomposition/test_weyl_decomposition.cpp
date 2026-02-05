@@ -177,7 +177,8 @@ TEST(WeylDecompositionEdgeCasesTest, IdentityMatrix) {
 
 TEST(WeylDecompositionEdgeCasesTest, CNOTGate) {
   // CNOT gate (controlled-X)
-  matrix4x4 originalMatrix{{1, 0, 0, 0}, {0, 1, 0, 0}, {0, 0, 0, 1}, {0, 0, 1, 0}};
+  matrix4x4 originalMatrix{
+      {1, 0, 0, 0}, {0, 1, 0, 0}, {0, 0, 0, 1}, {0, 0, 1, 0}};
   auto decomposition = TwoQubitWeylDecomposition::create(originalMatrix, 1.0);
   auto restoredMatrix = WeylDecompositionTest::restore(decomposition);
 
@@ -213,11 +214,8 @@ TEST(WeylDecompositionEdgeCasesTest, MaximalCanonicalParameters) {
 
 TEST(WeylDecompositionEdgeCasesTest, SingleParameterNonZero) {
   // Only one canonical parameter is non-zero
-  auto matrices = {
-    canonicalGate(0.5, 0.0, 0.0),
-    canonicalGate(0.0, 0.5, 0.0),
-    canonicalGate(0.0, 0.0, 0.5)
-  };
+  auto matrices = {canonicalGate(0.5, 0.0, 0.0), canonicalGate(0.0, 0.5, 0.0),
+                   canonicalGate(0.0, 0.0, 0.5)};
 
   for (const auto& originalMatrix : matrices) {
     auto decomposition = TwoQubitWeylDecomposition::create(originalMatrix, 1.0);

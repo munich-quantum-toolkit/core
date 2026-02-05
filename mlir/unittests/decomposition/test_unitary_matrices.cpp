@@ -8,9 +8,9 @@
  * Licensed under the MIT License
  */
 
+#include "mlir/Passes/Decomposition/Gate.h"
 #include "mlir/Passes/Decomposition/Helpers.h"
 #include "mlir/Passes/Decomposition/UnitaryMatrices.h"
-#include "mlir/Passes/Decomposition/Gate.h"
 
 #include <Eigen/Core>
 #include <cmath>

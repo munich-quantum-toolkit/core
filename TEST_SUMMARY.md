@@ -1,16 +1,19 @@
 # Comprehensive Test Suite Enhancement Summary
 
 ## Overview
+
 This document summarizes the comprehensive test enhancements made to the MQT Core MLIR infrastructure, specifically focusing on the quantum gate decomposition functionality and compiler pipeline.
 
 ## Test Coverage Added
 
 ### 1. BasisDecomposer Tests (test_basis_decomposer.cpp)
+
 **Original Tests**: 3 test cases (via parameterized tests)
 **New Tests Added**: 9 additional edge case tests
 **Total New Test Cases**: 12
 
 #### New Edge Cases Covered:
+
 - Zero angle rotations (near-identity transformations)
 - Maximally entangling gates
 - Negative angles
@@ -22,16 +25,19 @@ This document summarizes the comprehensive test enhancements made to the MQT Cor
 - Complex product of rotations
 
 **Key Benefits**:
+
 - Ensures decomposer handles boundary conditions
 - Tests numerical stability at precision limits
 - Validates qubit ordering consistency
 
 ### 2. EulerDecomposition Tests (test_euler_decomposition.cpp)
+
 **Original Tests**: 4 test cases (via parameterized tests)
 **New Tests Added**: 13 additional edge case tests
 **Total New Test Cases**: 16
 
 #### New Edge Cases Covered:
+
 - Zero rotation (identity)
 - Pi rotations around all axes
 - Pi/2 rotations (Hadamard-like gates)
@@ -46,16 +52,19 @@ This document summarizes the comprehensive test enhancements made to the MQT Cor
 - Custom tolerance levels
 
 **Key Benefits**:
+
 - Comprehensive coverage of all Euler basis types
 - Tests all standard single-qubit gates
 - Validates simplification and tolerance handling
 
 ### 3. WeylDecomposition Tests (test_weyl_decomposition.cpp)
+
 **Original Tests**: 11 test cases (via parameterized tests)
 **New Tests Added**: 8 additional edge case tests
 **Total New Test Cases**: 11 (in addition to 11 original parameterized tests)
 
 #### New Edge Cases Covered:
+
 - Identity matrix specialization
 - CNOT gate specialization
 - Zero canonical parameters
@@ -66,15 +75,18 @@ This document summarizes the comprehensive test enhancements made to the MQT Cor
 - K1/K2 unitarity verification
 
 **Key Benefits**:
+
 - Tests all specialization types
 - Validates decomposition correctness
 - Ensures unitary preservation
 
 ### 4. Helper Functions Tests (test_helpers.cpp)
+
 **New File Created**: 26 comprehensive tests
 **Total New Test Cases**: 26
 
 #### Functions Tested:
+
 - `remEuclid()` - Euclidean remainder with positive/negative/zero values
 - `mod2pi()` - Angle wrapping with positive/negative/large angles
 - `traceToFidelity()` - Fidelity calculation for various trace values
@@ -84,15 +96,18 @@ This document summarizes the comprehensive test enhancements made to the MQT Cor
 - `selfAdjointEvd()` - Eigenvalue decomposition
 
 **Key Benefits**:
+
 - Full coverage of mathematical utility functions
 - Tests edge cases for numerical functions
 - Validates matrix operations
 
 ### 5. Unitary Matrices Tests (test_unitary_matrices.cpp)
+
 **New File Created**: 40 comprehensive tests
 **Total New Test Cases**: 40
 
 #### Functions Tested:
+
 - Rotation matrices (RX, RY, RZ, RXX, RYY, RZZ)
 - Phase matrix (P)
 - General unitary matrix (U, U2)
@@ -103,34 +118,38 @@ This document summarizes the comprehensive test enhancements made to the MQT Cor
 - Gate matrix retrieval functions
 
 **Key Benefits**:
+
 - Comprehensive coverage of all gate types
 - Tests zero angles, pi angles, and pi/2 angles
 - Validates unitarity of all matrices
 - Tests negative angles
 
 ### 6. CompilerPipeline Tests (test_compiler_pipeline.cpp)
+
 **Status**: Already has 76 comprehensive tests
 **Action Taken**: Verified existing comprehensive coverage
 
 ## Summary Statistics
 
-| Test File | Original Tests | New Tests | Total Tests |
-|-----------|---------------|-----------|-------------|
-| test_basis_decomposer.cpp | 3 | 9 | 12 |
-| test_euler_decomposition.cpp | 4 | 13 | 16 |
-| test_weyl_decomposition.cpp | 11 | 8 | 19 |
-| test_helpers.cpp | 0 | 26 | 26 |
-| test_unitary_matrices.cpp | 0 | 40 | 40 |
-| test_compiler_pipeline.cpp | 76 | 0 | 76 |
-| **TOTAL** | **94** | **96** | **189** |
+| Test File                    | Original Tests | New Tests | Total Tests |
+| ---------------------------- | -------------- | --------- | ----------- |
+| test_basis_decomposer.cpp    | 3              | 9         | 12          |
+| test_euler_decomposition.cpp | 4              | 13        | 16          |
+| test_weyl_decomposition.cpp  | 11             | 8         | 19          |
+| test_helpers.cpp             | 0              | 26        | 26          |
+| test_unitary_matrices.cpp    | 0              | 40        | 40          |
+| test_compiler_pipeline.cpp   | 76             | 0         | 76          |
+| **TOTAL**                    | **94**         | **96**    | **189**     |
 
 ## Test Categories
 
 ### Regression Tests
+
 - Random matrix tests with time-based iterations
 - Existing functionality preservation
 
 ### Boundary Tests
+
 - Zero angles
 - Pi angles
 - Very small angles
@@ -138,12 +157,14 @@ This document summarizes the comprehensive test enhancements made to the MQT Cor
 - Negative angles
 
 ### Numerical Stability Tests
+
 - Near-precision limits
 - Complex numbers
 - Global phases
 - Fidelity calculations
 
 ### Edge Case Tests
+
 - Identity operations
 - SWAP operations
 - Maximally entangling gates
@@ -151,6 +172,7 @@ This document summarizes the comprehensive test enhancements made to the MQT Cor
 - Multi-qubit expansions
 
 ### Integration Tests
+
 - Matrix composition
 - Gate sequence reconstruction
 - Decomposition round-trips
@@ -159,6 +181,7 @@ This document summarizes the comprehensive test enhancements made to the MQT Cor
 ## Quality Assurance
 
 ### Testing Best Practices Followed:
+
 1. ✅ **Comprehensive Coverage**: All major functions and edge cases covered
 2. ✅ **Parameterized Tests**: Used for systematic variation testing
 3. ✅ **Numerical Precision**: Appropriate tolerances (1e-12) for floating-point comparisons
@@ -168,6 +191,7 @@ This document summarizes the comprehensive test enhancements made to the MQT Cor
 7. ✅ **Negative Tests**: Tests that verify error conditions and edge cases
 
 ### Code Quality:
+
 - All tests follow existing project conventions
 - Consistent formatting and style
 - Proper copyright headers
@@ -176,11 +200,13 @@ This document summarizes the comprehensive test enhancements made to the MQT Cor
 ## Compilation Notes
 
 The test suite is integrated into the existing CMake build system:
+
 - Tests are auto-discovered via `GLOB_RECURSE` in CMakeLists.txt
 - Linked against GTest framework
 - Dependencies: MLIRPass, MLIRTransforms, MQTCompilerPipeline, MQT::CoreIR, Eigen3
 
 To build and run tests (when build environment is available):
+
 ```bash
 mkdir build && cd build
 cmake .. -DBUILD_MQT_CORE_TESTS=ON

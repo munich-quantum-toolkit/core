@@ -296,8 +296,9 @@ TEST(BasisDecomposerEdgeCasesTest, ControlledGateWithPhase) {
   const llvm::SmallVector<EulerBasis> eulerBases = {EulerBasis::ZYZ};
 
   // Test controlled gate with additional phase gates
-  auto target = getTwoQubitMatrix({.type = qc::X, .parameter = {}, .qubitId = {0, 1}}) *
-                helpers::kroneckerProduct(pMatrix(qc::PI / 4.0), pMatrix(qc::PI / 3.0));
+  auto target =
+      getTwoQubitMatrix({.type = qc::X, .parameter = {}, .qubitId = {0, 1}}) *
+      helpers::kroneckerProduct(pMatrix(qc::PI / 4.0), pMatrix(qc::PI / 3.0));
   auto targetDecomposition = TwoQubitWeylDecomposition::create(target, 1.0);
   auto decomposer = TwoQubitBasisDecomposer::create(basisGate, 1.0);
   auto decomposedSequence = decomposer.twoQubitDecompose(
@@ -326,7 +327,8 @@ TEST(BasisDecomposerEdgeCasesTest, ReversedQubitOrder) {
 
 TEST(BasisDecomposerEdgeCasesTest, ComplexProductOfRotations) {
   const Gate basisGate{.type = qc::X, .parameter = {}, .qubitId = {0, 1}};
-  const llvm::SmallVector<EulerBasis> eulerBases = {EulerBasis::ZXZ, EulerBasis::XYX};
+  const llvm::SmallVector<EulerBasis> eulerBases = {EulerBasis::ZXZ,
+                                                    EulerBasis::XYX};
 
   // Test complex product of rotations
   auto target = rzzMatrix(0.7) * ryyMatrix(1.2) * rxxMatrix(0.5) *

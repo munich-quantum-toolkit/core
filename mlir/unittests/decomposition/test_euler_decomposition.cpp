@@ -152,7 +152,8 @@ TEST(EulerDecompositionEdgeCasesTest, PiOverTwoRotations) {
 
   for (auto eulerBasis : eulerBases) {
     // Pi/2 rotations (important for Hadamard-like gates)
-    auto matrices = {rxMatrix(qc::PI_2), ryMatrix(qc::PI_2), rzMatrix(qc::PI_2)};
+    auto matrices = {rxMatrix(qc::PI_2), ryMatrix(qc::PI_2),
+                     rzMatrix(qc::PI_2)};
 
     for (auto originalMatrix : matrices) {
       auto decomposition = EulerDecomposition::generateCircuit(
@@ -288,7 +289,8 @@ TEST(EulerDecompositionEdgeCasesTest, CompositeRotations) {
 
   for (auto eulerBasis : eulerBases) {
     // Composite rotation: Rz(pi/3) * Ry(pi/4) * Rx(pi/6)
-    auto originalMatrix = rzMatrix(qc::PI / 3.0) * ryMatrix(qc::PI / 4.0) * rxMatrix(qc::PI / 6.0);
+    auto originalMatrix = rzMatrix(qc::PI / 3.0) * ryMatrix(qc::PI / 4.0) *
+                          rxMatrix(qc::PI / 6.0);
     auto decomposition = EulerDecomposition::generateCircuit(
         eulerBasis, originalMatrix, true, std::nullopt);
     auto restoredMatrix = EulerDecompositionTest::restore(decomposition);
@@ -304,7 +306,8 @@ TEST(EulerDecompositionEdgeCasesTest, GlobalPhaseOnly) {
 
   for (auto eulerBasis : eulerBases) {
     // Identity with global phase
-    auto originalMatrix = std::exp(qfp(0, qc::PI / 4.0)) * matrix2x2::Identity();
+    auto originalMatrix =
+        std::exp(qfp(0, qc::PI / 4.0)) * matrix2x2::Identity();
     auto decomposition = EulerDecomposition::generateCircuit(
         eulerBasis, originalMatrix, true, std::nullopt);
     auto restoredMatrix = EulerDecompositionTest::restore(decomposition);
@@ -335,18 +338,20 @@ TEST(EulerDecompositionEdgeCasesTest, SimplificationDisabled) {
 }
 
 TEST(EulerDecompositionEdgeCasesTest, CustomTolerance) {
-  auto originalMatrix = rxMatrix(1e-7);  // Small rotation
+  auto originalMatrix = rxMatrix(1e-7); // Small rotation
 
   // Test with tight tolerance
   auto decompositionTight = EulerDecomposition::generateCircuit(
       EulerBasis::ZYZ, originalMatrix, true, 1e-8);
-  auto restoredMatrixTight = EulerDecompositionTest::restore(decompositionTight);
+  auto restoredMatrixTight =
+      EulerDecompositionTest::restore(decompositionTight);
   EXPECT_TRUE(restoredMatrixTight.isApprox(originalMatrix, 1e-8));
 
   // Test with loose tolerance
   auto decompositionLoose = EulerDecomposition::generateCircuit(
       EulerBasis::ZYZ, originalMatrix, true, 1e-6);
-  auto restoredMatrixLoose = EulerDecompositionTest::restore(decompositionLoose);
+  auto restoredMatrixLoose =
+      EulerDecompositionTest::restore(decompositionLoose);
   EXPECT_TRUE(restoredMatrixLoose.isApprox(originalMatrix, 1e-6));
 
   // Loose tolerance should result in fewer gates
