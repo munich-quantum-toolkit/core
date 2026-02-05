@@ -380,10 +380,11 @@ void FunctionalityConstruction::addMcx(ZXDiagram& diag,
       blocked.emplace_back(target);
       std::ranges::sort(blocked);
       std::ranges::sort(qubits);
-      
+
       std::vector<Qubit> available;
       available.reserve(qubits.size());
-      std::ranges::set_difference(qubits, blocked, std::back_inserter(available));
+      std::ranges::set_difference(qubits, blocked,
+                                  std::back_inserter(available));
 
       second.emplace_back(available.front());
 

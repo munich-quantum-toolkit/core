@@ -35,10 +35,12 @@ public:
   qc::QuantumComputation qc;
 };
 
-void checkEquivalence(const qc::QuantumComputation& qc1, const qc::QuantumComputation& qc2, const std::vector<std::size_t>& qubits) {
+void checkEquivalence(const qc::QuantumComputation& qc1,
+                      const qc::QuantumComputation& qc2,
+                      const std::vector<std::size_t>& qubits) {
   EXPECT_TRUE(FunctionalityConstruction::transformableToZX(&qc1));
   EXPECT_TRUE(FunctionalityConstruction::transformableToZX(&qc2));
-  auto d1 = FunctionalityConstruction::buildFunctionality(&qc1);  
+  auto d1 = FunctionalityConstruction::buildFunctionality(&qc1);
   auto d2 = FunctionalityConstruction::buildFunctionality(&qc2);
   d1.concat(d2.invert());
   fullReduce(d1);
@@ -201,7 +203,7 @@ TEST_F(ZXFunctionalityTest, nestedCompoundGate) {
 }
 
 TEST_F(ZXFunctionalityTest, Phase) {
-  
+
   qc = qc::QuantumComputation(2);
   qc.p(PI / 4, 0);
   qc.cp(PI / 4, 1, 0);
@@ -248,7 +250,7 @@ TEST_F(ZXFunctionalityTest, CRZ) {
 }
 
 TEST_F(ZXFunctionalityTest, CCZ) {
-  
+
   qc = qc::QuantumComputation(3);
   qc.mcz({1, 2}, 0);
 
@@ -261,7 +263,7 @@ TEST_F(ZXFunctionalityTest, CCZ) {
 }
 
 TEST_F(ZXFunctionalityTest, MultiControlX) {
-  
+
   qc = qc::QuantumComputation(4);
   qc.mcx({1, 2, 3}, 0);
 
@@ -272,7 +274,7 @@ TEST_F(ZXFunctionalityTest, MultiControlX) {
 }
 
 TEST_F(ZXFunctionalityTest, MultiControlXLarger) {
-  
+
   qc = qc::QuantumComputation(5);
   qc.mcx({1, 2, 3}, 0);
 
@@ -286,7 +288,7 @@ TEST_F(ZXFunctionalityTest, MultiControlXLarger) {
 }
 
 TEST_F(ZXFunctionalityTest, MultiControlX0) {
-  
+
   qc = qc::QuantumComputation(1);
   qc.mcx({}, 0);
 
@@ -297,7 +299,7 @@ TEST_F(ZXFunctionalityTest, MultiControlX0) {
 }
 
 TEST_F(ZXFunctionalityTest, MultiControlX1) {
-  
+
   qc = qc::QuantumComputation(2);
   qc.mcx({1}, 0);
 
@@ -309,7 +311,7 @@ TEST_F(ZXFunctionalityTest, MultiControlX1) {
 }
 
 TEST_F(ZXFunctionalityTest, MultiControlZ) {
-  
+
   qc = qc::QuantumComputation(4);
   qc.mcz({1, 2, 3}, 0);
 
@@ -320,7 +322,7 @@ TEST_F(ZXFunctionalityTest, MultiControlZ) {
 }
 
 TEST_F(ZXFunctionalityTest, MultiControlZ0) {
-  
+
   qc = qc::QuantumComputation(1);
   qc.mcz({}, 0);
 
@@ -331,7 +333,7 @@ TEST_F(ZXFunctionalityTest, MultiControlZ0) {
 }
 
 TEST_F(ZXFunctionalityTest, MultiControlZ1) {
-  
+
   qc = qc::QuantumComputation(2);
   qc.mcz({1}, 0);
 
@@ -342,7 +344,7 @@ TEST_F(ZXFunctionalityTest, MultiControlZ1) {
 }
 
 TEST_F(ZXFunctionalityTest, MultiControlZ2) {
-  
+
   qc = qc::QuantumComputation(4);
   qc.mcz({1, 2}, 0);
 
@@ -350,12 +352,12 @@ TEST_F(ZXFunctionalityTest, MultiControlZ2) {
   qcPrime.h(0);
   qcPrime.mcx({1, 2}, 0);
   qcPrime.h(0);
-  
+
   checkEquivalence(qc, qcPrime, {0, 1, 2, 3});
 }
 
 TEST_F(ZXFunctionalityTest, MultiControlRZ) {
-  
+
   qc = qc::QuantumComputation(3);
   qc.mcrz(PI / 4, {1, 2}, 0);
 
@@ -366,18 +368,18 @@ TEST_F(ZXFunctionalityTest, MultiControlRZ) {
 }
 
 TEST_F(ZXFunctionalityTest, MultiControlRZ0) {
-  
+
   qc = qc::QuantumComputation(1);
   qc.mcrz(PI / 4, {}, 0);
 
   auto qcPrime = qc::QuantumComputation(1);
   qcPrime.rz(PI / 4, 0);
 
-    checkEquivalence(qc, qcPrime, {0});
+  checkEquivalence(qc, qcPrime, {0});
 }
 
 TEST_F(ZXFunctionalityTest, MultiControlRZ1) {
-  
+
   qc = qc::QuantumComputation(2);
   qc.mcrz(PI / 4, {1}, 0);
 
@@ -388,7 +390,7 @@ TEST_F(ZXFunctionalityTest, MultiControlRZ1) {
 }
 
 TEST_F(ZXFunctionalityTest, UnsupportedControl) {
-  
+
   qc = qc::QuantumComputation(2);
   qc.cy(1, 0);
   EXPECT_FALSE(FunctionalityConstruction::transformableToZX(&qc));
@@ -398,7 +400,7 @@ TEST_F(ZXFunctionalityTest, UnsupportedControl) {
 }
 
 TEST_F(ZXFunctionalityTest, UnsupportedControl2) {
-  
+
   qc = qc::QuantumComputation(3);
   qc.mcy({1, 2}, 0);
   EXPECT_FALSE(FunctionalityConstruction::transformableToZX(&qc));
@@ -447,7 +449,7 @@ TEST_F(ZXFunctionalityTest, RZ) {
 }
 
 TEST_F(ZXFunctionalityTest, ISWAP) {
-  
+
   qc = qc::QuantumComputation(2);
   qc.iswap(0, 1);
 
