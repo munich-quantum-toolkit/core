@@ -829,7 +829,7 @@ FunctionalityConstruction::parseOp(ZXDiagram& diag, op_it it, op_it end,
       const auto& phase = parseParam(op.get(), 0);
       addZSpider(diag, target, qubits, PiExpression(), EdgeType::Hadamard);
       addZSpider(diag, target2, qubits, PiExpression(), EdgeType::Hadamard);
-      if (phase.isConstant()) { 
+      if (phase.isConstant()) {
         addMcrzz(diag, phase, controls, target, target2, qubits,
                  op->getParameter().at(0));
       } else {
