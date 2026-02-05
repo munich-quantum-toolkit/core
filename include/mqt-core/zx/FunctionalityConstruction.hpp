@@ -85,8 +85,14 @@ protected:
                       EdgeType type = EdgeType::Simple);
   static void addCphase(ZXDiagram& diag, const PiExpression& phase, Qubit ctrl,
                         Qubit target, std::vector<Vertex>& qubits);
+  static void addMcphase(ZXDiagram& diag, const PiExpression& phase,
+                           const std::vector<Qubit>& controls, Qubit target,
+                           std::vector<Vertex>& qubits);
   static void addSwap(ZXDiagram& diag, Qubit target, Qubit target2,
                       std::vector<Vertex>& qubits);
+  static void addMcswap(ZXDiagram& diag, const std::vector<Qubit>& controls,
+                        Qubit target, Qubit target2,                     
+                        std::vector<Vertex>& qubits);
   static void
   addRzz(ZXDiagram& diag, const PiExpression& phase, Qubit target,
          Qubit target2, std::vector<Vertex>& qubits,
@@ -99,6 +105,11 @@ protected:
   addRzx(ZXDiagram& diag, const PiExpression& phase, Qubit target,
          Qubit target2, std::vector<Vertex>& qubits,
          const std::optional<double>& unconvertedPhase = std::nullopt);
+  static void
+  addMcrzz(ZXDiagram& diag, const PiExpression& phase,
+             const std::vector<Qubit>& controls, const Qubit target,
+             const Qubit target2, std::vector<Vertex>& qubits,
+             const std::optional<double>& unconvertedPhase = std::nullopt);
   static void addDcx(ZXDiagram& diag, Qubit qubit1, Qubit qubit2,
                      std::vector<Vertex>& qubits);
   static void
@@ -115,6 +126,12 @@ protected:
                      std::vector<Vertex>& qubits);
   static void addCcz(ZXDiagram& diag, Qubit ctrl0, Qubit ctrl1, Qubit target,
                      std::vector<Vertex>& qubits);
+  static void addCrx(ZXDiagram& diag, const PiExpression& phase,
+                     const Qubit control, const Qubit target,
+                     std::vector<Vertex>& qubits);
+  static void addMcrx(ZXDiagram& diag, const PiExpression& phase,
+                      std::vector<Qubit> controls, const Qubit target,
+                      std::vector<Vertex>& qubits);
   static void addCrz(ZXDiagram& diag, const PiExpression& phase,
                      const Qubit control, const Qubit target,
                      std::vector<Vertex>& qubits);
