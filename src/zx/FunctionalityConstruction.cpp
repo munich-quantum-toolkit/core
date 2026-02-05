@@ -697,10 +697,6 @@ FunctionalityConstruction::parseOp(ZXDiagram& diag, op_it it, op_it end,
         ctrl1 = static_cast<Qubit>(p.at(ctrl.qubit));
       }
     }
-    std::vector<Qubit> controls;
-    for (const auto& ctrl : op->getControls()) {
-      controls.push_back(static_cast<Qubit>(p.at(ctrl.qubit)));
-    }
     switch (op->getType()) {
     case qc::OpType::X:
       addCcx(diag, ctrl0, ctrl1, target, qubits);
@@ -709,7 +705,7 @@ FunctionalityConstruction::parseOp(ZXDiagram& diag, op_it it, op_it end,
       addCcz(diag, ctrl0, ctrl1, target, qubits);
       break;
     case qc::OpType::RZ:
-      addMcrz(diag, parseParam(op.get(), 0), controls, target, qubits);
+      addMcrz(diag, parseParam(op.get(), 0), {ctrl0, ctrl1}, target, qubits);
       break;
     default:
       throw ZXException("Unsupported Multi-control operation: " +
