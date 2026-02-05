@@ -24,8 +24,6 @@ static constexpr auto DEFAULT_ATOL = 1e-12;
 
 /**
  * EulerBasis for a euler decomposition.
- *
- * @note only the following bases are supported for now: ZYZ, ZXZ and XZX
  */
 enum class EulerBasis : std::uint8_t {
   U3 = 0,

@@ -14,6 +14,8 @@
 #include "Helpers.h"
 #include "ir/operations/OpType.hpp"
 
+#include <unsupported/Eigen/KroneckerProduct>
+
 namespace mlir::qco::decomposition {
 
 inline constexpr auto SQRT2 =
@@ -21,7 +23,7 @@ inline constexpr auto SQRT2 =
 inline constexpr auto FRAC1_SQRT2 = static_cast<fp>(
     0.707106781186547524400844362104849039284835937688474036588L);
 
-[[nodiscard]] inline matrix2x2 uMatrix(const fp lambda, const fp phi,
+[[nodiscard]] constexpr matrix2x2 uMatrix(const fp lambda, const fp phi,
                                        const fp theta) {
   return matrix2x2{{{{std::cos(theta / 2.), 0.},
                      {-std::cos(lambda) * std::sin(theta / 2.),
@@ -32,7 +34,7 @@ inline constexpr auto FRAC1_SQRT2 = static_cast<fp>(
                       std::sin(lambda + phi) * std::cos(theta / 2.)}}}};
 }
 
-[[nodiscard]] inline matrix2x2 u2Matrix(const fp lambda, const fp phi) {
+[[nodiscard]] constexpr matrix2x2 u2Matrix(const fp lambda, const fp phi) {
   return matrix2x2{
       {FRAC1_SQRT2,
        {-std::cos(lambda) * FRAC1_SQRT2, -std::sin(lambda) * FRAC1_SQRT2}},
@@ -41,26 +43,26 @@ inline constexpr auto FRAC1_SQRT2 = static_cast<fp>(
         std::sin(lambda + phi) * FRAC1_SQRT2}}};
 }
 
-inline matrix2x2 rxMatrix(fp theta) {
+[[nodiscard]] constexpr matrix2x2 rxMatrix(fp theta) {
   auto halfTheta = theta / 2.;
   auto cos = qfp(std::cos(halfTheta), 0.);
   auto isin = qfp(0., -std::sin(halfTheta));
   return matrix2x2{{cos, isin}, {isin, cos}};
 }
 
-inline matrix2x2 ryMatrix(fp theta) {
+[[nodiscard]] constexpr matrix2x2 ryMatrix(fp theta) {
   auto halfTheta = theta / 2.;
   auto cos = qfp(std::cos(halfTheta), 0.);
   auto sin = qfp(std::sin(halfTheta), 0.);
   return matrix2x2{{cos, -sin}, {sin, cos}};
 }
 
-inline matrix2x2 rzMatrix(fp theta) {
+[[nodiscard]] constexpr matrix2x2 rzMatrix(fp theta) {
   return matrix2x2{{qfp{std::cos(theta / 2.), -std::sin(theta / 2.)}, 0},
                    {0, qfp{std::cos(theta / 2.), std::sin(theta / 2.)}}};
 }
 
-inline matrix4x4 rxxMatrix(const fp theta) {
+[[nodiscard]] constexpr matrix4x4 rxxMatrix(const fp theta) {
   const auto cosTheta = std::cos(theta / 2.);
   const auto sinTheta = std::sin(theta / 2.);
 
@@ -70,7 +72,7 @@ inline matrix4x4 rxxMatrix(const fp theta) {
                    {{0., -sinTheta}, C_ZERO, C_ZERO, cosTheta}};
 }
 
-inline matrix4x4 ryyMatrix(const fp theta) {
+[[nodiscard]] constexpr matrix4x4 ryyMatrix(const fp theta) {
   const auto cosTheta = std::cos(theta / 2.);
   const auto sinTheta = std::sin(theta / 2.);
 
@@ -80,7 +82,7 @@ inline matrix4x4 ryyMatrix(const fp theta) {
                     {{0., sinTheta}, 0, 0, cosTheta}}};
 }
 
-inline matrix4x4 rzzMatrix(const fp theta) {
+[[nodiscard]] constexpr matrix4x4 rzzMatrix(const fp theta) {
   const auto cosTheta = std::cos(theta / 2.);
   const auto sinTheta = std::sin(theta / 2.);
 
@@ -90,26 +92,24 @@ inline matrix4x4 rzzMatrix(const fp theta) {
                    {C_ZERO, C_ZERO, C_ZERO, {cosTheta, -sinTheta}}};
 }
 
-inline matrix2x2 pMatrix(const fp lambda) {
+[[nodiscard]] constexpr matrix2x2 pMatrix(const fp lambda) {
   return matrix2x2{{1, 0}, {0, {std::cos(lambda), std::sin(lambda)}}};
 }
-const matrix2x2 IDENTITY_GATE = matrix2x2::Identity();
-const matrix4x4 SWAP_GATE{
+constexpr matrix4x4 SWAP_GATE{
     {1, 0, 0, 0}, {0, 0, 1, 0}, {0, 1, 0, 0}, {0, 0, 0, 1}};
-const matrix2x2 H_GATE{{1.0 / SQRT2, 1.0 / SQRT2}, {1.0 / SQRT2, -1.0 / SQRT2}};
-const matrix2x2 IPZ{{IM, C_ZERO}, {C_ZERO, M_IM}};
-const matrix2x2 IPY{{C_ZERO, C_ONE}, {C_M_ONE, C_ZERO}};
-const matrix2x2 IPX{{C_ZERO, IM}, {IM, C_ZERO}};
+constexpr matrix2x2 H_GATE{{1.0 / SQRT2, 1.0 / SQRT2},
+                           {1.0 / SQRT2, -1.0 / SQRT2}};
+constexpr matrix2x2 IPZ{{IM, C_ZERO}, {C_ZERO, M_IM}};
+constexpr matrix2x2 IPY{{C_ZERO, C_ONE}, {C_M_ONE, C_ZERO}};
+constexpr matrix2x2 IPX{{C_ZERO, IM}, {IM, C_ZERO}};
 
 [[nodiscard]] inline matrix4x4
 expandToTwoQubits(const matrix2x2& singleQubitMatrix, QubitId qubitId) {
   if (qubitId == 0) {
-    return helpers::kroneckerProduct(decomposition::IDENTITY_GATE,
-                                     singleQubitMatrix);
+    return Eigen::kroneckerProduct(matrix2x2::Identity(), singleQubitMatrix);
   }
   if (qubitId == 1) {
-    return helpers::kroneckerProduct(singleQubitMatrix,
-                                     decomposition::IDENTITY_GATE);
+    return Eigen::kroneckerProduct(singleQubitMatrix, matrix2x2::Identity());
   }
   throw std::invalid_argument{"Invalid qubit id for single-qubit expansion"};
 }
@@ -146,7 +146,7 @@ inline matrix2x2 getSingleQubitMatrix(const Gate& gate) {
     return matrix2x2{{0, 1}, {1, 0}};
   }
   if (gate.type == qc::I) {
-    return IDENTITY_GATE;
+    return matrix2x2::Identity();
   }
   if (gate.type == qc::P) {
     return pMatrix(gate.parameter[0]);
@@ -158,7 +158,7 @@ inline matrix2x2 getSingleQubitMatrix(const Gate& gate) {
     return u2Matrix(gate.parameter[0], gate.parameter[1]);
   }
   if (gate.type == qc::H) {
-    return matrix2x2{{FRAC1_SQRT2, FRAC1_SQRT2}, {FRAC1_SQRT2, -FRAC1_SQRT2}};
+    return H_GATE;
   }
   throw std::invalid_argument{
       "unsupported gate type for single qubit matrix (" +
@@ -167,10 +167,8 @@ inline matrix2x2 getSingleQubitMatrix(const Gate& gate) {
 
 // TODO: remove? only used for verification of circuit and in unittests
 inline matrix4x4 getTwoQubitMatrix(const Gate& gate) {
-  using helpers::kroneckerProduct;
-
   if (gate.qubitId.empty()) {
-    return kroneckerProduct(IDENTITY_GATE, IDENTITY_GATE);
+    return matrix4x4::Identity();
   }
   if (gate.qubitId.size() == 1) {
     return expandToTwoQubits(getSingleQubitMatrix(gate), gate.qubitId[0]);
@@ -197,7 +195,7 @@ inline matrix4x4 getTwoQubitMatrix(const Gate& gate) {
       return rzzMatrix(gate.parameter[0]);
     }
     if (gate.type == qc::I) {
-      return kroneckerProduct(IDENTITY_GATE, IDENTITY_GATE);
+      return matrix4x4::Identity();
     }
     throw std::invalid_argument{"unsupported gate type for two qubit matrix (" +
                                 qc::toString(gate.type) + ")"};

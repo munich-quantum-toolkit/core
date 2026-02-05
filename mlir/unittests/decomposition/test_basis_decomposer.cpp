@@ -27,6 +27,7 @@
 #include <llvm/ADT/SmallVector.h>
 #include <optional>
 #include <tuple>
+#include <unsupported/Eigen/KroneckerProduct>
 
 using namespace mlir::qco;
 using namespace mlir::qco::decomposition;
@@ -161,10 +162,10 @@ INSTANTIATE_TEST_CASE_P(
                             EulerBasis::XZX},
                         llvm::SmallVector<EulerBasis>{EulerBasis::XZX}),
         // targets to be decomposed
-        testing::Values(helpers::kroneckerProduct(IDENTITY_GATE, IDENTITY_GATE),
-                        helpers::kroneckerProduct(rzMatrix(1.0), ryMatrix(3.1)),
-                        helpers::kroneckerProduct(IDENTITY_GATE,
-                                                  rxMatrix(0.1)))));
+        testing::Values(matrix4x4::Identity(),
+                        Eigen::kroneckerProduct(rzMatrix(1.0), ryMatrix(3.1)),
+                        Eigen::kroneckerProduct(matrix2x2::Identity(),
+                                                rxMatrix(0.1)))));
 
 INSTANTIATE_TEST_CASE_P(
     TwoQubitMatrices, BasisDecomposerTest,
@@ -183,11 +184,11 @@ INSTANTIATE_TEST_CASE_P(
         ::testing::Values(
             rzzMatrix(2.0), ryyMatrix(1.0) * rzzMatrix(3.0) * rxxMatrix(2.0),
             canonicalGate(1.5, -0.2, 0.0) *
-                helpers::kroneckerProduct(rxMatrix(1.0), IDENTITY_GATE),
-            helpers::kroneckerProduct(rxMatrix(1.0), ryMatrix(1.0)) *
+                Eigen::kroneckerProduct(rxMatrix(1.0), matrix2x2::Identity()),
+            Eigen::kroneckerProduct(rxMatrix(1.0), ryMatrix(1.0)) *
                 canonicalGate(1.1, 0.2, 3.0) *
-                helpers::kroneckerProduct(rxMatrix(1.0), IDENTITY_GATE),
-            helpers::kroneckerProduct(H_GATE, IPZ) *
+                Eigen::kroneckerProduct(rxMatrix(1.0), matrix2x2::Identity()),
+            Eigen::kroneckerProduct(H_GATE, IPZ) *
                 getTwoQubitMatrix(
                     {.type = qc::X, .parameter = {}, .qubitId = {0, 1}}) *
-                helpers::kroneckerProduct(IPX, IPY))));
+                Eigen::kroneckerProduct(IPX, IPY))));

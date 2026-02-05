@@ -500,7 +500,7 @@ protected:
       auto circuit = EulerDecomposition::generateCircuit(
           targetBasis, unitaryMat, simplify, atol);
       assert(circuit.getUnitaryMatrix().isApprox(
-          helpers::kroneckerProduct(IDENTITY_GATE, unitaryMat),
+          Eigen::kroneckerProduct(matrix2x2::Identity(), unitaryMat),
           SANITY_CHECK_PRECISION));
       auto error = calculateError(circuit);
       if (error < minError) {

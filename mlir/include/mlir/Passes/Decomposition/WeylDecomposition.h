@@ -36,6 +36,7 @@
 #include <optional>
 #include <random>
 #include <tuple>
+#include <unsupported/Eigen/KroneckerProduct>
 #include <utility>
 
 namespace mlir::qco::decomposition {
@@ -198,10 +199,10 @@ struct TwoQubitWeylDecomposition {
     auto [K1l, K1r, phase_l] = decomposeTwoQubitProductGate(k1);
     // decompose k2 = K2l ⊗ K2r
     auto [K2l, K2r, phase_r] = decomposeTwoQubitProductGate(k2);
-    assert(helpers::kroneckerProduct(K1l, K1r).isApprox(
-        k1, SANITY_CHECK_PRECISION));
-    assert(helpers::kroneckerProduct(K2l, K2r).isApprox(
-        k2, SANITY_CHECK_PRECISION));
+    assert(
+        Eigen::kroneckerProduct(K1l, K1r).isApprox(k1, SANITY_CHECK_PRECISION));
+    assert(
+        Eigen::kroneckerProduct(K2l, K2r).isApprox(k2, SANITY_CHECK_PRECISION));
     // accumulate global phase
     globalPhase += phase_l + phase_r;
 
@@ -278,9 +279,9 @@ struct TwoQubitWeylDecomposition {
         .unitaryMatrix = unitaryMatrix,
     };
     // make sure decomposition is equal to input
-    assert((helpers::kroneckerProduct(K1l, K1r) *
+    assert((Eigen::kroneckerProduct(K1l, K1r) *
             decomposition.getCanonicalMatrix() *
-            helpers::kroneckerProduct(K2l, K2r) * std::exp(IM * globalPhase))
+            Eigen::kroneckerProduct(K2l, K2r) * std::exp(IM * globalPhase))
                .isApprox(unitaryMatrix, SANITY_CHECK_PRECISION));
 
     // determine actual specialization of canonical gate so that the 1q
@@ -314,9 +315,9 @@ struct TwoQubitWeylDecomposition {
     decomposition.globalPhase += std::arg(trace);
 
     // final check if decomposition is still valid after specialization
-    assert((helpers::kroneckerProduct(decomposition.k1l, decomposition.k1r) *
+    assert((Eigen::kroneckerProduct(decomposition.k1l, decomposition.k1r) *
             decomposition.getCanonicalMatrix() *
-            helpers::kroneckerProduct(decomposition.k2l, decomposition.k2r) *
+            Eigen::kroneckerProduct(decomposition.k2l, decomposition.k2r) *
             std::exp(IM * decomposition.globalPhase))
                .isApprox(unitaryMatrix, SANITY_CHECK_PRECISION));
 
@@ -496,7 +497,7 @@ protected:
     // transpose with complex conjugate of each element
     const matrix2x2 rTConj = r.transpose().conjugate();
 
-    auto temp = helpers::kroneckerProduct(IDENTITY_GATE, rTConj);
+    matrix4x4 temp = Eigen::kroneckerProduct(matrix2x2::Identity(), rTConj);
     temp = specialUnitary * temp;
 
     // [[a, b, c, d],
@@ -607,9 +608,9 @@ protected:
       c = 0.;
       // unmodified global phase
       k1l = k1l * k2l;
-      k2l = IDENTITY_GATE;
+      k2l = matrix2x2::Identity();
       k1r = k1r * k2r;
-      k2r = IDENTITY_GATE;
+      k2r = matrix2x2::Identity();
     } else if (newSpecialization == Specialization::SWAPEquiv) {
       // :math:`U \sim U_d(\pi/4, \pi/4, \pi/4) \sim U(\pi/4, \pi/4, -\pi/4)`
       // Thus, :math:`U \sim \text{SWAP}`
@@ -621,16 +622,16 @@ protected:
         // unmodified global phase
         k1l = k1l * k2r;
         k1r = k1r * k2l;
-        k2l = IDENTITY_GATE;
-        k2r = IDENTITY_GATE;
+        k2l = matrix2x2::Identity();
+        k2r = matrix2x2::Identity();
       } else {
         flippedFromOriginal = true;
 
         globalPhase += qc::PI_2;
         k1l = k1l * IPZ * k2r;
         k1r = k1r * IPZ * k2l;
-        k2l = IDENTITY_GATE;
-        k2r = IDENTITY_GATE;
+        k2l = matrix2x2::Identity();
+        k2r = matrix2x2::Identity();
       }
       a = qc::PI_4;
       b = qc::PI_4;
@@ -652,7 +653,7 @@ protected:
       k1l = k1l * k2l;
       k1r = k1r * k2l;
       k2r = k2lDagger * k2r;
-      k2l = IDENTITY_GATE;
+      k2l = matrix2x2::Identity();
     } else if (newSpecialization == Specialization::PartialSWAPFlipEquiv) {
       // :math:`U \sim U_d(\alpha\pi/4, \alpha\pi/4, -\alpha\pi/4)`
       // Thus, :math:`U \sim \text{SWAP}^\alpha`
@@ -673,7 +674,7 @@ protected:
       k1l = k1l * k2l;
       k1r = k1r * IPZ * k2l * IPZ;
       k2r = IPZ * k2lDagger * IPZ * k2r;
-      k2l = IDENTITY_GATE;
+      k2l = matrix2x2::Identity();
     } else if (newSpecialization == Specialization::ControlledEquiv) {
       // :math:`U \sim U_d(\alpha, 0, 0)`
       // Thus, :math:`U \sim \text{Ctrl-U}`

@@ -74,8 +74,7 @@ struct QubitGateSequence {
    * Calculate overall unitary matrix of the sequence.
    */
   [[nodiscard]] matrix4x4 getUnitaryMatrix() const {
-    matrix4x4 unitaryMatrix =
-        helpers::kroneckerProduct(IDENTITY_GATE, IDENTITY_GATE);
+    matrix4x4 unitaryMatrix = matrix4x4::Identity();
     for (auto&& gate : gates) {
       auto gateMatrix = getTwoQubitMatrix(gate);
       unitaryMatrix = gateMatrix * unitaryMatrix;

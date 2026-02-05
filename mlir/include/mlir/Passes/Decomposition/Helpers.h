@@ -64,12 +64,6 @@ namespace mlir::qco::helpers {
 }
 
 // NOLINTBEGIN(misc-include-cleaner)
-template <typename T>
-[[nodiscard]] inline Eigen::Matrix4<T>
-kroneckerProduct(const Eigen::Matrix2<T>& lhs, const Eigen::Matrix2<T>& rhs) {
-  return Eigen::kroneckerProduct(lhs, rhs);
-}
-
 template <typename T, int N, int M>
 [[nodiscard]] inline auto selfAdjointEvd(Eigen::Matrix<T, N, M> a) {
   Eigen::SelfAdjointEigenSolver<decltype(a)> s;

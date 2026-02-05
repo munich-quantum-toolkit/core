@@ -30,6 +30,9 @@ namespace mlir::qco::decomposition {
 /**
  * Decomposition of single-qubit matrices into rotation gates using a KAK
  * decomposition.
+ *
+ * @note only the following euler bases are supported for now:
+ *       ZYZ, ZXZ, XYX and XZX
  */
 class EulerDecomposition {
 public:

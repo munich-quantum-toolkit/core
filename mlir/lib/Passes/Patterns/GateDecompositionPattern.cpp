@@ -274,7 +274,7 @@ protected:
     }
 
     [[nodiscard]] std::optional<matrix2x2> getSingleQubitUnitaryMatrix() {
-      auto unitaryMatrix = decomposition::IDENTITY_GATE;
+      matrix2x2 unitaryMatrix = matrix2x2::Identity();
       for (auto&& gate : gates) {
         if (auto gateMatrix = gate.op.getUnitaryMatrix<matrix2x2>()) {
           unitaryMatrix = *gateMatrix * unitaryMatrix;
@@ -288,8 +288,7 @@ protected:
     }
 
     [[nodiscard]] std::optional<matrix4x4> getUnitaryMatrix() {
-      matrix4x4 unitaryMatrix = helpers::kroneckerProduct(
-          decomposition::IDENTITY_GATE, decomposition::IDENTITY_GATE);
+      matrix4x4 unitaryMatrix = matrix4x4::Identity();
       matrix4x4 gateMatrix;
       for (auto&& gate : gates) {
         if (gate.op.isSingleQubit()) {
@@ -555,8 +554,7 @@ protected:
       createGate<GPhaseOp>(rewriter, location, sequence.globalPhase);
     }
 
-    matrix4x4 unitaryMatrix = helpers::kroneckerProduct(
-        decomposition::IDENTITY_GATE, decomposition::IDENTITY_GATE);
+    matrix4x4 unitaryMatrix = matrix4x4::Identity();
     for (auto&& gate : sequence.gates) {
       // TODO: need to add each basis gate we want to use
       if (gate.type == qc::X && gate.qubitId.size() > 1) {

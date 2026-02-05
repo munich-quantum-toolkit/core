@@ -107,5 +107,5 @@ INSTANTIATE_TEST_CASE_P(
     SingleQubitMatrices, EulerDecompositionTest,
     testing::Combine(testing::Values(EulerBasis::XYX, EulerBasis::XZX,
                                      EulerBasis::ZYZ, EulerBasis::ZXZ),
-                     testing::Values(IDENTITY_GATE, ryMatrix(2.0),
+                     testing::Values(matrix2x2::Identity(), ryMatrix(2.0),
                                      rxMatrix(0.5), rzMatrix(3.14), H_GATE)));
