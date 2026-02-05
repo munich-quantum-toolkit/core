@@ -405,18 +405,7 @@ protected:
         if (it == outQubits.end()) {
           return false;
         }
-        // TODO: this only works because parameters are at end of operands;
-        // use to-be-implemented getInputQubits() instead
-        auto getInputQubits =
-            [](UnitaryOpInterface op) -> llvm::SmallVector<mlir::Value, 2> {
-          if (auto&& ctrlOp = llvm::dyn_cast<CtrlOp>(*op)) {
-            auto&& range = llvm::concat<mlir::Value>(ctrlOp.getTargetsIn(),
-                                                     ctrlOp.getControlsIn());
-            return {range.begin(), range.end()};
-          }
-          return op->getOperands();
-        };
-        auto&& opInQubits = getInputQubits(nextGate);
+        auto&& opInQubits = nextGate.getInputQubits();
         // iterator in the operation input of "old" qubit that already has
         // previous single-qubit gates in this series
         auto it2 = llvm::find(opInQubits, firstQubitIt != outQubits.end()

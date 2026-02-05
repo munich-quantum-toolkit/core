@@ -347,15 +347,6 @@ struct TwoQubitWeylDecomposition {
   }
 
 protected:
-  static constexpr fp SANITY_CHECK_PRECISION = 1e-12;
-
-  // https://docs.rs/faer/latest/faer/mat/generic/struct.Mat.html#method.self_adjoint_eigen
-  template <typename T> static auto selfAdjointEigenLower(T&& a) {
-    auto [U, S] = helpers::selfAdjointEvd(std::forward<T>(a));
-
-    return std::make_pair(U, S);
-  }
-
   enum class MagicBasisTransform : std::uint8_t {
     Into,
     OutOf,
@@ -438,7 +429,7 @@ protected:
         randB = dist(state);
       }
       const rmatrix4x4 m2Real = randA * m.real() + randB * m.imag();
-      const rmatrix4x4 pReal = selfAdjointEigenLower(m2Real).first;
+      const rmatrix4x4 pReal = helpers::selfAdjointEvd(m2Real).first;
       const matrix4x4 p = pReal;
       const diagonal4x4 d = (p.transpose() * m * p).diagonal();
 

@@ -67,7 +67,7 @@ namespace mlir::qco::helpers {
 template <typename T, int N, int M>
 [[nodiscard]] inline auto selfAdjointEvd(Eigen::Matrix<T, N, M> a) {
   Eigen::SelfAdjointEigenSolver<decltype(a)> s;
-  s.compute(a); // TODO: computeDirect is faster
+  s.compute(a);
   auto vecs = s.eigenvectors().eval();
   auto vals = s.eigenvalues();
   return std::make_pair(vecs, vals);

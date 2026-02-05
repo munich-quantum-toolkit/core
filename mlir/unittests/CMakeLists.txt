@@ -6,7 +6,7 @@
 #
 # Licensed under the MIT License
 
-add_subdirectory(decomposition)
+add_subdirectory(Passes)
 add_subdirectory(Compiler)
 add_subdirectory(Dialect)
 

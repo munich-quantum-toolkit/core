@@ -128,7 +128,7 @@ fixTwoQubitMatrixQubitOrder(const matrix4x4& twoQubitMatrix,
   throw std::invalid_argument{"Invalid qubit IDs for fixing two-qubit matrix"};
 }
 
-inline matrix2x2 getSingleQubitMatrix(const Gate& gate) {
+[[nodiscard]] inline matrix2x2 getSingleQubitMatrix(const Gate& gate) {
   if (gate.type == qc::SX) {
     return matrix2x2{{qfp{0.5, 0.5}, qfp{0.5, -0.5}},
                      {qfp{0.5, -0.5}, qfp{0.5, 0.5}}};
@@ -166,7 +166,7 @@ inline matrix2x2 getSingleQubitMatrix(const Gate& gate) {
 }
 
 // TODO: remove? only used for verification of circuit and in unittests
-inline matrix4x4 getTwoQubitMatrix(const Gate& gate) {
+[[nodiscard]] inline matrix4x4 getTwoQubitMatrix(const Gate& gate) {
   if (gate.qubitId.empty()) {
     return matrix4x4::Identity();
   }
