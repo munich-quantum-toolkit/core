@@ -18,7 +18,6 @@
 #include <array>
 #include <cassert>
 #include <chrono>
-#include <cmath>
 #include <cstdlib>
 #include <gtest/gtest.h>
 #include <iostream>
@@ -48,13 +47,14 @@ namespace {
 class EulerDecompositionTest
     : public testing::TestWithParam<std::tuple<EulerBasis, Eigen::Matrix2cd>> {
 public:
-  [[nodiscard]] static Eigen::Matrix2cd restore(const TwoQubitGateSequence& sequence) {
+  [[nodiscard]] static Eigen::Matrix2cd
+  restore(const TwoQubitGateSequence& sequence) {
     Eigen::Matrix2cd matrix = Eigen::Matrix2cd::Identity();
     for (auto&& gate : sequence.gates) {
       matrix = getSingleQubitMatrix(gate) * matrix;
     }
 
-    matrix *= std::exp(C_IM * sequence.globalPhase);
+    matrix *= helpers::globalPhaseFactor(sequence.globalPhase);
     return matrix;
   }
 
@@ -107,5 +107,6 @@ INSTANTIATE_TEST_CASE_P(
     SingleQubitMatrices, EulerDecompositionTest,
     testing::Combine(testing::Values(EulerBasis::XYX, EulerBasis::XZX,
                                      EulerBasis::ZYZ, EulerBasis::ZXZ),
-                     testing::Values(Eigen::Matrix2cd::Identity(), ryMatrix(2.0),
-                                     rxMatrix(0.5), rzMatrix(3.14), H_GATE)));
+                     testing::Values(Eigen::Matrix2cd::Identity(),
+                                     ryMatrix(2.0), rxMatrix(0.5),
+                                     rzMatrix(3.14), H_GATE)));

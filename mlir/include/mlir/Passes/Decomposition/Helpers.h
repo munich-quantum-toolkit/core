@@ -27,15 +27,6 @@
 #include <stdexcept>
 #include <unsupported/Eigen/KroneckerProduct> // NOLINT(misc-include-cleaner)
 
-namespace mlir::qco {
-constexpr std::complex<double> C_ZERO{0., 0.};
-constexpr std::complex<double> C_ONE{1., 0.};
-constexpr std::complex<double> C_M_ONE{-1., 0.};
-constexpr std::complex<double> C_IM{0., 1.};
-constexpr std::complex<double> C_M_IM{0., -1.};
-
-} // namespace mlir::qco
-
 namespace mlir::qco::helpers {
 
 [[nodiscard]] inline qc::OpType getQcType(UnitaryOpInterface op) {
@@ -74,7 +65,8 @@ template <typename T, int N, int M>
 
 // Wrap angle into interval [-π,π). If within atol of the endpoint, clamp
 // to -π
-[[nodiscard]] inline double mod2pi(double angle, double angleZeroEpsilon = 1e-13) {
+[[nodiscard]] inline double mod2pi(double angle,
+                                   double angleZeroEpsilon = 1e-13) {
   // remEuclid() isn't exactly the same as Python's % operator, but
   // because the RHS here is a constant and positive it is effectively
   // equivalent for this case
@@ -100,6 +92,11 @@ template <typename T, int N, int M>
     return 0;
   }
   return 1;
+}
+
+[[nodiscard]] inline std::complex<double>
+globalPhaseFactor(double globalPhase) {
+  return std::exp(std::complex<double>{0, 1} * globalPhase);
 }
 
 } // namespace mlir::qco::helpers

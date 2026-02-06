@@ -23,8 +23,6 @@
 #include <Eigen/Core>
 #include <array>
 #include <cassert>
-#include <cmath>
-#include <complex>
 #include <cstddef>
 #include <iterator>
 #include <llvm/ADT/STLExtras.h>
@@ -587,7 +585,7 @@ protected:
         throw std::runtime_error{"Unknown gate type!"};
       }
     }
-    assert((unitaryMatrix * std::exp(C_IM * sequence.globalPhase))
+    assert((unitaryMatrix * helpers::globalPhaseFactor(sequence.globalPhase))
                .isApprox(
                    series.getUnitaryMatrix().value_or(Eigen::Matrix4cd::Zero()),
                    SANITY_CHECK_PRECISION));

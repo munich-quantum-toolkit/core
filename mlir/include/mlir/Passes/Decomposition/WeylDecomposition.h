@@ -106,7 +106,7 @@ struct TwoQubitWeylDecomposition {
                                           std::optional<double> fidelity) {
     auto u = unitaryMatrix;
     auto detU = u.determinant();
-    auto detPow = std::pow(detU, static_cast<double>(-0.25));
+    auto detPow = std::pow(detU, -0.25);
     u *= detPow; // remove global phase from unitary matrix
     auto globalPhase = std::arg(detU) / 4.;
 
@@ -132,7 +132,7 @@ struct TwoQubitWeylDecomposition {
     Eigen::Vector3d cs;
     Eigen::Vector4d dReal = -1.0 * d.cwiseArg() / 2.0;
     dReal(3) = -dReal(0) - dReal(1) - dReal(2);
-    for (int i = 0; i < static_cast<int>(cs.size()); ++i) {
+    for (int i = 0; i < cs.size(); ++i) {
       assert(i < dReal.size());
       cs[i] = helpers::remEuclid((dReal(i) + dReal(3)) / 2.0, qc::TAU);
     }
@@ -171,7 +171,7 @@ struct TwoQubitWeylDecomposition {
     // parameters of the canonical gate which is later used in the
     // verification
     Eigen::Matrix4cd temp = dReal.asDiagonal();
-    temp *= C_IM;
+    temp *= std::complex<double>{0, 1};
     // since the matrix is diagonal, matrix exponental is equivalent to
     // element-wise exponential function
     temp.diagonal() = temp.diagonal().array().exp().matrix();
@@ -281,7 +281,8 @@ struct TwoQubitWeylDecomposition {
     // make sure decomposition is equal to input
     assert((Eigen::kroneckerProduct(K1l, K1r) *
             decomposition.getCanonicalMatrix() *
-            Eigen::kroneckerProduct(K2l, K2r) * std::exp(C_IM * globalPhase))
+            Eigen::kroneckerProduct(K2l, K2r) *
+            helpers::globalPhaseFactor(globalPhase))
                .isApprox(unitaryMatrix, SANITY_CHECK_PRECISION));
 
     // determine actual specialization of canonical gate so that the 1q
@@ -318,7 +319,7 @@ struct TwoQubitWeylDecomposition {
     assert((Eigen::kroneckerProduct(decomposition.k1l, decomposition.k1r) *
             decomposition.getCanonicalMatrix() *
             Eigen::kroneckerProduct(decomposition.k2l, decomposition.k2r) *
-            std::exp(C_IM * decomposition.globalPhase))
+            helpers::globalPhaseFactor(decomposition.globalPhase))
                .isApprox(unitaryMatrix, SANITY_CHECK_PRECISION));
 
     return decomposition;
@@ -354,18 +355,19 @@ protected:
 
   static Eigen::Matrix4cd magicBasisTransform(const Eigen::Matrix4cd& unitary,
                                               MagicBasisTransform direction) {
+    using namespace std::complex_literals;
     const Eigen::Matrix4cd bNonNormalized{
-        {C_ONE, C_IM, C_ZERO, C_ZERO},
-        {C_ZERO, C_ZERO, C_IM, C_ONE},
-        {C_ZERO, C_ZERO, C_IM, C_M_ONE},
-        {C_ONE, C_M_IM, C_ZERO, C_ZERO},
+        {1, 1i, 0, 0},
+        {0, 0, 1i, 1},
+        {0, 0, 1i, -1},
+        {1, -1i, 0, 0},
     };
 
     const Eigen::Matrix4cd bNonNormalizedDagger{
-        {{0.5, 0.}, C_ZERO, C_ZERO, {0.5, 0.}},
-        {{0., -0.5}, C_ZERO, C_ZERO, {0., 0.5}},
-        {C_ZERO, {0., -0.5}, {0., -0.5}, C_ZERO},
-        {C_ZERO, {0.5, 0.}, {-0.5, 0.}, C_ZERO},
+        {0.5, 0, 0, 0.5},
+        {-0.5i, 0, 0, 0.5i},
+        {0, -0.5i, -0.5i, 0},
+        {0, 0.5, -0.5, 0},
     };
     if (direction == MagicBasisTransform::OutOf) {
       return bNonNormalizedDagger * unitary * bNonNormalized;
@@ -515,7 +517,7 @@ protected:
     auto da = a - ap;
     auto db = b - bp;
     auto dc = c - cp;
-    return static_cast<double>(4.) *
+    return 4. *
            std::complex<double>{std::cos(da) * std::cos(db) * std::cos(dc),
                                 std::sin(da) * std::sin(db) * std::sin(dc)};
   }

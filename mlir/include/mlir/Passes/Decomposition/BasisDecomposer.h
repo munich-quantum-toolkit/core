@@ -57,6 +57,8 @@ public:
    */
   static TwoQubitBasisDecomposer create(const Gate& basisGate,
                                         double basisFidelity) {
+    using namespace std::complex_literals;
+
     auto relativeEq = [](auto&& lhs, auto&& rhs, auto&& epsilon,
                          auto&& maxRelative) {
       // Handle same infinities
@@ -84,8 +86,8 @@ public:
       return absDiff <= absLhs * maxRelative;
     };
     const Eigen::Matrix2cd k12RArr{
-        {{0., FRAC1_SQRT2}, {FRAC1_SQRT2, 0.}},
-        {{-FRAC1_SQRT2, 0.}, {0., -FRAC1_SQRT2}},
+        {1i * FRAC1_SQRT2, FRAC1_SQRT2},
+        {-FRAC1_SQRT2, -1i * FRAC1_SQRT2},
     };
     const Eigen::Matrix2cd k12LArr{
         {{0.5, 0.5}, {0.5, 0.5}},
@@ -104,26 +106,21 @@ public:
     auto b = basisDecomposer.b;
     std::complex<double> temp{0.5, -0.5};
     const Eigen::Matrix2cd k11l{
-        {temp * (C_M_IM * std::exp(std::complex<double>{0., -b})),
-         temp * std::exp(std::complex<double>{0., -b})},
-        {temp * (C_M_IM * std::exp(std::complex<double>{0., b})),
-         temp * -std::exp(std::complex<double>{0., b})}};
-    const Eigen::Matrix2cd k11r{
-        {FRAC1_SQRT2 * (C_IM * std::exp(std::complex<double>{0., -b})),
-         FRAC1_SQRT2 * -std::exp(std::complex<double>{0., -b})},
-        {FRAC1_SQRT2 * std::exp(std::complex<double>{0., b}),
-         FRAC1_SQRT2 * (C_M_IM * std::exp(std::complex<double>{0., b}))}};
+        {temp * (-1i * std::exp(-1i * b)), temp * std::exp(-1i * b)},
+        {temp * (-1i * std::exp(1i * b)), temp * -std::exp(1i * b)}};
+    const Eigen::Matrix2cd k11r{{FRAC1_SQRT2 * (1i * std::exp(-1i * b)),
+                                 FRAC1_SQRT2 * -std::exp(-1i * b)},
+                                {FRAC1_SQRT2 * std::exp(1i * b),
+                                 FRAC1_SQRT2 * (-1i * std::exp(1i * b))}};
     const Eigen::Matrix2cd k32lK21l{
         {FRAC1_SQRT2 * std::complex<double>{1., std::cos(2. * b)},
-         FRAC1_SQRT2 * (C_IM * std::sin(2. * b))},
-        {FRAC1_SQRT2 * (C_IM * std::sin(2. * b)),
+         FRAC1_SQRT2 * (1i * std::sin(2. * b))},
+        {FRAC1_SQRT2 * (1i * std::sin(2. * b)),
          FRAC1_SQRT2 * std::complex<double>{1., -std::cos(2. * b)}}};
     temp = std::complex<double>{0.5, 0.5};
     const Eigen::Matrix2cd k21r{
-        {temp * (C_M_IM * std::exp(std::complex<double>{0., -2. * b})),
-         temp * std::exp(std::complex<double>{0., -2. * b})},
-        {temp * (C_IM * std::exp(std::complex<double>{0., 2. * b})),
-         temp * std::exp(std::complex<double>{0., 2. * b})},
+        {temp * (-1i * std::exp(-2i * b)), temp * std::exp(-2i * b)},
+        {temp * (1i * std::exp(2i * b)), temp * std::exp(2i * b)},
     };
     const Eigen::Matrix2cd k22l{
         {FRAC1_SQRT2, -FRAC1_SQRT2},
@@ -131,21 +128,17 @@ public:
     };
     const Eigen::Matrix2cd k22r{{0, 1}, {-1, 0}};
     const Eigen::Matrix2cd k31l{
-        {FRAC1_SQRT2 * std::exp(std::complex<double>{0., -b}),
-         FRAC1_SQRT2 * std::exp(std::complex<double>{0., -b})},
-        {FRAC1_SQRT2 * -std::exp(std::complex<double>{0., b}),
-         FRAC1_SQRT2 * std::exp(std::complex<double>{0., b})},
+        {FRAC1_SQRT2 * std::exp(-1i * b), FRAC1_SQRT2 * std::exp(-1i * b)},
+        {FRAC1_SQRT2 * -std::exp(1i * b), FRAC1_SQRT2 * std::exp(1i * b)},
     };
     const Eigen::Matrix2cd k31r{
-        {C_IM * std::exp(std::complex<double>{0., b}), C_ZERO},
-        {C_ZERO, C_M_IM * std::exp(std::complex<double>{0., -b})},
+        {1i * std::exp(1i * b), 0},
+        {0, -1i * std::exp(-1i * b)},
     };
     temp = std::complex<double>{0.5, 0.5};
     const Eigen::Matrix2cd k32r{
-        {temp * std::exp(std::complex<double>{0., b}),
-         temp * -std::exp(std::complex<double>{0., -b})},
-        {temp * (C_M_IM * std::exp(std::complex<double>{0., b})),
-         temp * (C_M_IM * std::exp(std::complex<double>{0., -b}))},
+        {temp * std::exp(1i * b), temp * -std::exp(-1i * b)},
+        {temp * (-1i * std::exp(1i * b)), temp * (-1i * std::exp(-1i * b))},
     };
     auto k1lDagger = basisDecomposer.k1l.transpose().conjugate();
     auto k1rDagger = basisDecomposer.k1r.transpose().conjugate();

@@ -60,7 +60,7 @@ public:
 
   [[nodiscard]] static std::complex<double>
   globalPhaseFactor(const TwoQubitWeylDecomposition& decomposition) {
-    return std::exp(C_IM * decomposition.globalPhase);
+    return helpers::globalPhaseFactor(decomposition.globalPhase);
   }
   [[nodiscard]] static Eigen::Matrix4cd
   can(const TwoQubitWeylDecomposition& decomposition) {

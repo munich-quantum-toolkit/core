@@ -68,13 +68,14 @@ public:
     targetDecomposition = TwoQubitWeylDecomposition::create(target, 1.0);
   }
 
-  [[nodiscard]] static Eigen::Matrix4cd restore(const TwoQubitGateSequence& sequence) {
+  [[nodiscard]] static Eigen::Matrix4cd
+  restore(const TwoQubitGateSequence& sequence) {
     Eigen::Matrix4cd matrix = Eigen::Matrix4cd::Identity();
     for (auto&& gate : sequence.gates) {
       matrix = getTwoQubitMatrix(gate) * matrix;
     }
 
-    matrix *= std::exp(C_IM * sequence.globalPhase);
+    matrix *= helpers::globalPhaseFactor(sequence.globalPhase);
     return matrix;
   }
 
@@ -150,22 +151,23 @@ TEST(BasisDecomposerTest, Random) {
 
 TEST(BasisDecomposerTest, Crash) {
   using namespace std::complex_literals;
-  Eigen::Matrix4cd originalMatrix{{-0.23104450537689214 + -0.44268488901708902i,
-                            -0.60656504798621003 + -0.27756198294119977i,
-                            -0.2168858251642842 + -0.27845819247692827i,
-                            -0.42430958159720128 + 0.032705758031399738i},
-                           {0.12891961731437976 + -0.2577139933400836i,
-                            0.059033561840284507 + 0.051774294297249751i,
-                            0.58205201943239671 + -0.20399736896613216i,
-                            -0.027126130902642431 + 0.72777907642808048i},
-                           {0.60297884333102469 + 0.35765188950245741i,
-                            -0.59087990913607613 + 0.22062558535485413i,
-                            0.077633311362340196 + -0.28085102069787549i,
-                            0.13707024540895657 + -0.083632801340620747i},
-                           {-0.22282692851707037 + 0.3556143358154254i,
-                            0.3014101239694616 + 0.24537699657586307i,
-                            0.10077337125619777 + -0.63242595993554396i,
-                            -0.48930698747658014 + -0.1526088977163027i}};
+  Eigen::Matrix4cd originalMatrix{
+      {-0.23104450537689214 + -0.44268488901708902i,
+       -0.60656504798621003 + -0.27756198294119977i,
+       -0.2168858251642842 + -0.27845819247692827i,
+       -0.42430958159720128 + 0.032705758031399738i},
+      {0.12891961731437976 + -0.2577139933400836i,
+       0.059033561840284507 + 0.051774294297249751i,
+       0.58205201943239671 + -0.20399736896613216i,
+       -0.027126130902642431 + 0.72777907642808048i},
+      {0.60297884333102469 + 0.35765188950245741i,
+       -0.59087990913607613 + 0.22062558535485413i,
+       0.077633311362340196 + -0.28085102069787549i,
+       0.13707024540895657 + -0.083632801340620747i},
+      {-0.22282692851707037 + 0.3556143358154254i,
+       0.3014101239694616 + 0.24537699657586307i,
+       0.10077337125619777 + -0.63242595993554396i,
+       -0.48930698747658014 + -0.1526088977163027i}};
 
   const Gate basisGate{.type = qc::X, .parameter = {}, .qubitId = {0, 1}};
   const llvm::SmallVector<EulerBasis> eulerBases = {EulerBasis::XYX,
@@ -224,10 +226,12 @@ INSTANTIATE_TEST_CASE_P(
         ::testing::Values(
             rzzMatrix(2.0), ryyMatrix(1.0) * rzzMatrix(3.0) * rxxMatrix(2.0),
             canonicalGate(1.5, -0.2, 0.0) *
-                Eigen::kroneckerProduct(rxMatrix(1.0), Eigen::Matrix2cd::Identity()),
+                Eigen::kroneckerProduct(rxMatrix(1.0),
+                                        Eigen::Matrix2cd::Identity()),
             Eigen::kroneckerProduct(rxMatrix(1.0), ryMatrix(1.0)) *
                 canonicalGate(1.1, 0.2, 3.0) *
-                Eigen::kroneckerProduct(rxMatrix(1.0), Eigen::Matrix2cd::Identity()),
+                Eigen::kroneckerProduct(rxMatrix(1.0),
+                                        Eigen::Matrix2cd::Identity()),
             Eigen::kroneckerProduct(H_GATE, IPZ) *
                 getTwoQubitMatrix(
                     {.type = qc::X, .parameter = {}, .qubitId = {0, 1}}) *
