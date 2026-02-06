@@ -468,7 +468,8 @@ protected:
     auto state = std::mt19937{2023};
     std::normal_distribution<double> dist;
 
-    for (int i = 0; i < 100; ++i) {
+    constexpr auto maxDiagonalizationAttempts = 100;
+    for (int i = 0; i < maxDiagonalizationAttempts; ++i) {
       double randA{};
       double randB{};
       // For debugging the algorithm use the same RNG values as the
@@ -503,7 +504,8 @@ protected:
       }
     }
     llvm::reportFatalInternalError(
-        "TwoQubitWeylDecomposition: failed to diagonalize M2.");
+        "TwoQubitWeylDecomposition: failed to diagonalize M2 (" +
+        llvm::Twine(maxDiagonalizationAttempts) + " iterations).");
   }
 
   /**

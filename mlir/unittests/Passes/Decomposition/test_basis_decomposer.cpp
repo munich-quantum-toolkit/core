@@ -112,18 +112,34 @@ TEST(BasisDecomposerTest, Random) {
   auto stopTime = std::chrono::steady_clock::now() + std::chrono::seconds{3};
   auto iterations = 0;
 
-  const Gate basisGate{.type = qc::X, .parameter = {}, .qubitId = {0, 1}};
-  const llvm::SmallVector<EulerBasis> eulerBases = {EulerBasis::XYX,
-                                                    EulerBasis::ZXZ};
+  const llvm::SmallVector<Gate, 2> basisGates{
+      {.type = qc::X, .parameter = {}, .qubitId = {0, 1}},
+      {.type = qc::X, .parameter = {}, .qubitId = {1, 0}}};
+  const llvm::SmallVector<EulerBasis, 4> eulerBases = {
+      EulerBasis::XYX, EulerBasis::ZXZ, EulerBasis::ZYZ, EulerBasis::XZX};
+  std::mt19937 rng{123456UL};
+  std::uniform_int_distribution<std::size_t> distBasisGate{
+      0, basisGates.size() - 1};
+  std::uniform_int_distribution<std::size_t> distEulerBases{
+      1, eulerBases.size() - 1};
+
+  auto selectRandomEulerBases = [&]() {
+    auto tmp = eulerBases;
+    llvm::shuffle(tmp.begin(), tmp.end(), rng);
+    tmp.resize(distEulerBases(rng));
+    return tmp;
+  };
+  auto selectRandomBasisGate = [&]() { return basisGates[distBasisGate(rng)]; };
 
   while (std::chrono::steady_clock::now() < stopTime) {
     auto originalMatrix = randomUnitaryMatrix();
 
     auto targetDecomposition =
         TwoQubitWeylDecomposition::create(originalMatrix, 1.0);
-    auto decomposer = TwoQubitBasisDecomposer::create(basisGate, 1.0);
+    auto decomposer =
+        TwoQubitBasisDecomposer::create(selectRandomBasisGate(), 1.0);
     auto decomposedSequence = decomposer.twoQubitDecompose(
-        targetDecomposition, eulerBases, 1.0, true, std::nullopt);
+        targetDecomposition, selectRandomEulerBases(), 1.0, true, std::nullopt);
 
     ASSERT_TRUE(decomposedSequence.has_value());
 

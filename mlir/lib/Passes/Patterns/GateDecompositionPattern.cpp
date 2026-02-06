@@ -57,9 +57,9 @@ struct GateDecompositionPattern final
    * each decomposition.
    *
    * @param context MLIR context in which the pattern is applied
-   * @param basisGate Set of two-qubit gates that should be used in the
-   *                  decomposition. All two-qubit interactions will be
-   *                  represented by one of the gates in this set
+   * @param basisGates Set of two-qubit gates that should be used in the
+   *                   decomposition. All two-qubit interactions will be
+   *                   represented by one of the gates in this set
    * @param eulerBasis Set of euler bases that should be used for the
    *                   decomposition of local single-qubit modifications. For
    *                   each necessary single-qubit operation, the optimal basis
@@ -73,11 +73,11 @@ struct GateDecompositionPattern final
    *                         gates available as basis gates or euler bases
    */
   explicit GateDecompositionPattern(mlir::MLIRContext* context,
-                                    llvm::SmallVector<Gate> basisGate,
+                                    llvm::SmallVector<Gate> basisGates,
                                     llvm::SmallVector<EulerBasis> eulerBasis,
                                     bool singleQubitOnly, bool forceApplication)
       : OpInterfaceRewritePattern(context),
-        decomposerBasisGates{std::move(basisGate)},
+        decomposerBasisGates{std::move(basisGates)},
         decomposerEulerBases{std::move(eulerBasis)},
         singleQubitOnly{singleQubitOnly}, forceApplication{forceApplication} {
     for (auto&& basisGate : decomposerBasisGates) {
@@ -445,9 +445,10 @@ protected:
      * in the series.
      */
     void backtrackSingleQubitSeries(QubitId qubitId) {
+      llvm::SmallVector<MlirGate, 4> backtrackedGates;
       auto prependSingleQubitGate = [&](UnitaryOpInterface op) {
         inQubits[qubitId] = op.getInputQubit(0);
-        gates.insert(gates.begin(), {.op = op, .qubitIds = {qubitId}});
+        backtrackedGates.push_back({.op = op, .qubitIds = {qubitId}});
         complexity += helpers::getComplexity(helpers::getQcType(op), 1);
         // outQubits do not need to be updated because the final out qubit is
         // already fixed
@@ -460,6 +461,10 @@ protected:
           break;
         }
       }
+
+      gates.insert(gates.begin(),
+                   std::make_move_iterator(backtrackedGates.rbegin()),
+                   std::make_move_iterator(backtrackedGates.rend()));
     }
 
     [[nodiscard]] static bool isBarrier(UnitaryOpInterface op) {
@@ -475,7 +480,10 @@ protected:
       if (qubit) {
         auto users = qubit.getUsers();
         auto userIt = users.begin();
-        assert(qubit.hasOneUse());
+        if (!qubit.hasOneUse()) {
+          llvm::reportFatalUsageError("Qubit has more than one use - unable to "
+                                      "collect gate series for decomposition!");
+        }
         auto user = mlir::dyn_cast<UnitaryOpInterface>(*userIt);
         if (user && std::invoke(std::forward<Func>(filter), user)) {
           return user;
