@@ -16,6 +16,7 @@
 
 #include <Eigen/QR>
 #include <cassert>
+#include <complex>
 #include <gtest/gtest.h>
 #include <unsupported/Eigen/KroneckerProduct>
 

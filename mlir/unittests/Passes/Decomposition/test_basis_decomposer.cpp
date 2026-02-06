@@ -22,8 +22,11 @@
 #include <cassert>
 #include <cstdlib>
 #include <gtest/gtest.h>
+#include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/SmallVector.h>
+#include <memory>
 #include <optional>
+#include <random>
 #include <tuple>
 #include <unsupported/Eigen/KroneckerProduct>
 

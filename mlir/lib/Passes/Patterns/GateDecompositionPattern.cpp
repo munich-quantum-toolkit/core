@@ -25,10 +25,10 @@
 #include <cassert>
 #include <cstddef>
 #include <iterator>
+#include <limits>
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/Support/Casting.h>
 #include <llvm/Support/ErrorHandling.h>
-#include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/Operation.h>
 #include <mlir/IR/PatternMatch.h>
@@ -37,6 +37,7 @@
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/LogicalResult.h>
 #include <optional>
+#include <type_traits>
 #include <utility>
 
 namespace mlir::qco {

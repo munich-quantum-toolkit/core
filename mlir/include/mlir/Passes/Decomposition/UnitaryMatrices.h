@@ -13,6 +13,10 @@
 #include "Gate.h"
 #include "ir/operations/OpType.hpp"
 
+#include <Eigen/Core>
+#include <cassert>
+#include <cmath>
+#include <complex>
 #include <llvm/ADT/StringRef.h>
 #include <llvm/Support/ErrorHandling.h>
 #include <unsupported/Eigen/KroneckerProduct>
