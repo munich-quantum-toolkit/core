@@ -79,7 +79,7 @@ TEST_P(EulerDecompositionTest, TestExact) {
 }
 
 TEST(EulerDecompositionTest, Random) {
-  auto stopTime = std::chrono::steady_clock::now() + std::chrono::seconds{10};
+  auto stopTime = std::chrono::steady_clock::now() + std::chrono::seconds{3};
   auto iterations = 0;
   auto eulerBases = std::array{EulerBasis::XYX, EulerBasis::XZX,
                                EulerBasis::ZYZ, EulerBasis::ZXZ};

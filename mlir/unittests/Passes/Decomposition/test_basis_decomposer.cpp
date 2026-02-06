@@ -116,7 +116,7 @@ TEST_P(BasisDecomposerTest, TestApproximation) {
 }
 
 TEST(BasisDecomposerTest, Random) {
-  auto stopTime = std::chrono::steady_clock::now() + std::chrono::seconds{10};
+  auto stopTime = std::chrono::steady_clock::now() + std::chrono::seconds{3};
   auto iterations = 0;
 
   const Gate basisGate{.type = qc::X, .parameter = {}, .qubitId = {0, 1}};

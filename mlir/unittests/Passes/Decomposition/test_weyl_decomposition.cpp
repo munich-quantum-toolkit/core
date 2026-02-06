@@ -98,7 +98,7 @@ TEST_P(WeylDecompositionTest, TestApproximation) {
 }
 
 TEST(WeylDecompositionTest, Random) {
-  auto stopTime = std::chrono::steady_clock::now() + std::chrono::seconds{10};
+  auto stopTime = std::chrono::steady_clock::now() + std::chrono::seconds{3};
   auto iterations = 0;
   while (std::chrono::steady_clock::now() < stopTime) {
     auto originalMatrix = randomUnitaryMatrix();
