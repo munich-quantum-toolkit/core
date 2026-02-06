@@ -253,13 +253,13 @@ size_t InvOp::getNumTargets() { return getTargetsIn().size(); }
 
 size_t InvOp::getNumControls() { return getBodyUnitary().getNumControls(); }
 
-Value InvOp::getInputQubit(const size_t i) {
-  return getBodyUnitary().getInputQubit(i);
-}
+Value InvOp::getInputQubit(const size_t i) { return getTargetsIn()[i]; }
 
-Value InvOp::getOutputQubit(const size_t i) {
-  return getBodyUnitary().getOutputQubit(i);
-}
+OperandRange InvOp::getInputQubits() { return this->getOperands(); }
+
+Value InvOp::getOutputQubit(const size_t i) { return getTargetsOut()[i]; }
+
+ResultRange InvOp::getOutputQubits() { return this->getResults(); }
 
 Value InvOp::getInputTarget(const size_t i) {
   if (i >= getNumTargets()) {

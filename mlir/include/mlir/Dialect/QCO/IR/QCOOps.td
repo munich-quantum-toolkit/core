@@ -1182,7 +1182,9 @@ def InvOp : QCOOp<"inv", traits =
         size_t getNumTargets();
         size_t getNumControls();
         Value getInputQubit(size_t i);
+        OperandRange getInputQubits();
         Value getOutputQubit(size_t i);
+        ResultRange getOutputQubits();
         Value getInputTarget(size_t i);
         Value getOutputTarget(size_t i);
         Value getInputControl(size_t i);
