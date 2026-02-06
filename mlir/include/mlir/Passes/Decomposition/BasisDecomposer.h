@@ -499,9 +499,10 @@ protected:
     for (auto targetBasis : targetBasisList) {
       auto circuit = EulerDecomposition::generateCircuit(
           targetBasis, unitaryMat, simplify, atol);
-      assert(circuit.getUnitaryMatrix().isApprox(
-          Eigen::kroneckerProduct(matrix2x2::Identity(), unitaryMat),
-          SANITY_CHECK_PRECISION));
+      // check top-left 2x2 matrix of generated circuit since the circuit
+      // operates only on one qubit
+      assert((circuit.getUnitaryMatrix().block<2, 2>(0, 0).isApprox(
+          unitaryMat, SANITY_CHECK_PRECISION)));
       auto error = calculateError(circuit);
       if (error < minError) {
         bestCircuit = circuit;
