@@ -8,13 +8,13 @@
  * Licensed under the MIT License
  */
 
+#pragma once
+
 #include "mlir/Passes/Decomposition/Helpers.h"
 
 #include <Eigen/QR>
 #include <cassert>
 #include <cstdlib>
-#include <gtest/gtest.h>
-#include <unsupported/Eigen/KroneckerProduct>
 
 template <typename MatrixType> [[nodiscard]] MatrixType randomUnitaryMatrix() {
   [[maybe_unused]] static auto initializeRandom = []() {

@@ -310,13 +310,13 @@ public:
    */
   [[nodiscard]] double a() const { return a_; }
   /**
-   * First parameter of canonical gate.
+   * Second parameter of canonical gate.
    *
    * @note must be multiplied by -2.0 for rotation angle of RYY gate
    */
   [[nodiscard]] double b() const { return b_; }
   /**
-   * First parameter of canonical gate.
+   * Third parameter of canonical gate.
    *
    * @note must be multiplied by -2.0 for rotation angle of RZZ gate
    */

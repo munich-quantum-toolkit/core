@@ -19,17 +19,8 @@
 #include <Eigen/Core>
 #include <cassert>
 #include <cmath>
-#include <complex>
 #include <cstddef>
-#include <llvm/ADT/STLExtras.h>
-#include <mlir/Dialect/Arith/IR/Arith.h>
-#include <mlir/IR/MLIRContext.h>
-#include <mlir/IR/Operation.h>
-#include <mlir/IR/PatternMatch.h>
-#include <mlir/IR/Value.h>
-#include <mlir/IR/ValueRange.h>
-#include <mlir/Support/LLVM.h>
-#include <mlir/Support/LogicalResult.h>
+#include <llvm/ADT/SmallVector.h>
 
 namespace mlir::qco::decomposition {
 /**

@@ -30,7 +30,7 @@ class EulerDecompositionTest
     : public testing::TestWithParam<std::tuple<EulerBasis, Eigen::Matrix2cd>> {
 public:
   [[nodiscard]] static Eigen::Matrix2cd
-  restore(const TwoQubitGateSequence& sequence) {
+  restore(const OneQubitGateSequence& sequence) {
     Eigen::Matrix2cd matrix = Eigen::Matrix2cd::Identity();
     for (auto&& gate : sequence.gates) {
       matrix = getSingleQubitMatrix(gate) * matrix;

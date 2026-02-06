@@ -267,6 +267,7 @@ public:
       llvm::reportFatalInternalError(
           "Invalid number of basis gates to use in basis decomposition (" +
           llvm::Twine(bestNbasis) + ")!");
+      llvm_unreachable("");
     };
     auto decomposition = chooseDecomposition();
     llvm::SmallVector<std::optional<TwoQubitGateSequence>, 8>
