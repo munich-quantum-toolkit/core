@@ -56,7 +56,7 @@ public:
    * basis gate).
    */
   static TwoQubitBasisDecomposer create(const Gate& basisGate,
-                                        fp basisFidelity) {
+                                        double basisFidelity) {
     auto relativeEq = [](auto&& lhs, auto&& rhs, auto&& epsilon,
                          auto&& maxRelative) {
       // Handle same infinities
@@ -83,13 +83,13 @@ public:
       }
       return absDiff <= absLhs * maxRelative;
     };
-    const matrix2x2 k12RArr{
-        {qfp(0., FRAC1_SQRT2), qfp(FRAC1_SQRT2, 0.)},
-        {qfp(-FRAC1_SQRT2, 0.), qfp(0., -FRAC1_SQRT2)},
+    const Eigen::Matrix2cd k12RArr{
+        {{0., FRAC1_SQRT2}, {FRAC1_SQRT2, 0.}},
+        {{-FRAC1_SQRT2, 0.}, {0., -FRAC1_SQRT2}},
     };
-    const matrix2x2 k12LArr{
-        {qfp(0.5, 0.5), qfp(0.5, 0.5)},
-        {qfp(-0.5, 0.5), qfp(0.5, -0.5)},
+    const Eigen::Matrix2cd k12LArr{
+        {{0.5, 0.5}, {0.5, 0.5}},
+        {{-0.5, 0.5}, {0.5, -0.5}},
     };
 
     const auto basisDecomposer =
@@ -102,45 +102,50 @@ public:
     // Create some useful matrices U1, U2, U3 are equivalent to the basis,
     // expand as Ui = Ki1.Ubasis.Ki2
     auto b = basisDecomposer.b;
-    auto temp = qfp(0.5, -0.5);
-    const matrix2x2 k11l{
-        {temp * (C_M_IM * std::exp(qfp(0., -b))), temp * std::exp(qfp(0., -b))},
-        {temp * (C_M_IM * std::exp(qfp(0., b))), temp * -std::exp(qfp(0., b))}};
-    const matrix2x2 k11r{{FRAC1_SQRT2 * (C_IM * std::exp(qfp(0., -b))),
-                          FRAC1_SQRT2 * -std::exp(qfp(0., -b))},
-                         {FRAC1_SQRT2 * std::exp(qfp(0., b)),
-                          FRAC1_SQRT2 * (C_M_IM * std::exp(qfp(0., b)))}};
-    const matrix2x2 k32lK21l{{FRAC1_SQRT2 * qfp(1., std::cos(2. * b)),
-                              FRAC1_SQRT2 * (C_IM * std::sin(2. * b))},
-                             {FRAC1_SQRT2 * (C_IM * std::sin(2. * b)),
-                              FRAC1_SQRT2 * qfp(1., -std::cos(2. * b))}};
-    temp = qfp(0.5, 0.5);
-    const matrix2x2 k21r{
-        {temp * (C_M_IM * std::exp(qfp(0., -2. * b))),
-         temp * std::exp(qfp(0., -2. * b))},
-        {temp * (C_IM * std::exp(qfp(0., 2. * b))),
-         temp * std::exp(qfp(0., 2. * b))},
+    std::complex<double> temp{0.5, -0.5};
+    const Eigen::Matrix2cd k11l{
+        {temp * (C_M_IM * std::exp(std::complex<double>{0., -b})),
+         temp * std::exp(std::complex<double>{0., -b})},
+        {temp * (C_M_IM * std::exp(std::complex<double>{0., b})),
+         temp * -std::exp(std::complex<double>{0., b})}};
+    const Eigen::Matrix2cd k11r{
+        {FRAC1_SQRT2 * (C_IM * std::exp(std::complex<double>{0., -b})),
+         FRAC1_SQRT2 * -std::exp(std::complex<double>{0., -b})},
+        {FRAC1_SQRT2 * std::exp(std::complex<double>{0., b}),
+         FRAC1_SQRT2 * (C_M_IM * std::exp(std::complex<double>{0., b}))}};
+    const Eigen::Matrix2cd k32lK21l{
+        {FRAC1_SQRT2 * std::complex<double>{1., std::cos(2. * b)},
+         FRAC1_SQRT2 * (C_IM * std::sin(2. * b))},
+        {FRAC1_SQRT2 * (C_IM * std::sin(2. * b)),
+         FRAC1_SQRT2 * std::complex<double>{1., -std::cos(2. * b)}}};
+    temp = std::complex<double>{0.5, 0.5};
+    const Eigen::Matrix2cd k21r{
+        {temp * (C_M_IM * std::exp(std::complex<double>{0., -2. * b})),
+         temp * std::exp(std::complex<double>{0., -2. * b})},
+        {temp * (C_IM * std::exp(std::complex<double>{0., 2. * b})),
+         temp * std::exp(std::complex<double>{0., 2. * b})},
     };
-    const matrix2x2 k22l{
-        {qfp(FRAC1_SQRT2, 0.), qfp(-FRAC1_SQRT2, 0.)},
-        {qfp(FRAC1_SQRT2, 0.), qfp(FRAC1_SQRT2, 0.)},
+    const Eigen::Matrix2cd k22l{
+        {FRAC1_SQRT2, -FRAC1_SQRT2},
+        {FRAC1_SQRT2, FRAC1_SQRT2},
     };
-    const matrix2x2 k22r{{C_ZERO, C_ONE}, {C_M_ONE, C_ZERO}};
-    const matrix2x2 k31l{
-        {FRAC1_SQRT2 * std::exp(qfp(0., -b)),
-         FRAC1_SQRT2 * std::exp(qfp(0., -b))},
-        {FRAC1_SQRT2 * -std::exp(qfp(0., b)),
-         FRAC1_SQRT2 * std::exp(qfp(0., b))},
+    const Eigen::Matrix2cd k22r{{0, 1}, {-1, 0}};
+    const Eigen::Matrix2cd k31l{
+        {FRAC1_SQRT2 * std::exp(std::complex<double>{0., -b}),
+         FRAC1_SQRT2 * std::exp(std::complex<double>{0., -b})},
+        {FRAC1_SQRT2 * -std::exp(std::complex<double>{0., b}),
+         FRAC1_SQRT2 * std::exp(std::complex<double>{0., b})},
     };
-    const matrix2x2 k31r{
-        {C_IM * std::exp(qfp(0., b)), C_ZERO},
-        {C_ZERO, C_M_IM * std::exp(qfp(0., -b))},
+    const Eigen::Matrix2cd k31r{
+        {C_IM * std::exp(std::complex<double>{0., b}), C_ZERO},
+        {C_ZERO, C_M_IM * std::exp(std::complex<double>{0., -b})},
     };
-    temp = qfp(0.5, 0.5);
-    const matrix2x2 k32r{
-        {temp * std::exp(qfp(0., b)), temp * -std::exp(qfp(0., -b))},
-        {temp * (C_M_IM * std::exp(qfp(0., b))),
-         temp * (C_M_IM * std::exp(qfp(0., -b)))},
+    temp = std::complex<double>{0.5, 0.5};
+    const Eigen::Matrix2cd k32r{
+        {temp * std::exp(std::complex<double>{0., b}),
+         temp * -std::exp(std::complex<double>{0., -b})},
+        {temp * (C_M_IM * std::exp(std::complex<double>{0., b})),
+         temp * (C_M_IM * std::exp(std::complex<double>{0., -b}))},
     };
     auto k1lDagger = basisDecomposer.k1l.transpose().conjugate();
     auto k1rDagger = basisDecomposer.k1r.transpose().conjugate();
@@ -216,20 +221,20 @@ public:
   [[nodiscard]] std::optional<TwoQubitGateSequence> twoQubitDecompose(
       const decomposition::TwoQubitWeylDecomposition& targetDecomposition,
       const llvm::SmallVector<EulerBasis>& target1qEulerBases,
-      std::optional<fp> basisFidelity, bool approximate,
+      std::optional<double> basisFidelity, bool approximate,
       std::optional<std::uint8_t> numBasisGateUses) const {
     auto getBasisFidelity = [&]() {
       if (approximate) {
         return basisFidelity.value_or(this->basisFidelity);
       }
-      return static_cast<fp>(1.0);
+      return 1.0;
     };
-    fp actualBasisFidelity = getBasisFidelity();
+    double actualBasisFidelity = getBasisFidelity();
     auto traces = this->traces(targetDecomposition);
     auto getDefaultNbasis = [&]() {
       // determine smallest number of basis gates required to fulfill given
       // basis fidelity constraint
-      auto bestValue = std::numeric_limits<fp>::min();
+      auto bestValue = std::numeric_limits<double>::min();
       auto bestIndex = -1;
       for (int i = 0; std::cmp_less(i, traces.size()); ++i) {
         // lower basis fidelity means it becomes easier to use fewer basis gates
@@ -325,15 +330,18 @@ protected:
    * Constructs decomposer instance.
    */
   TwoQubitBasisDecomposer(
-      Gate basisGate, fp basisFidelity,
+      Gate basisGate, double basisFidelity,
       const decomposition::TwoQubitWeylDecomposition& basisDecomposer,
-      bool isSuperControlled, const matrix2x2& u0l, const matrix2x2& u0r,
-      const matrix2x2& u1l, const matrix2x2& u1ra, const matrix2x2& u1rb,
-      const matrix2x2& u2la, const matrix2x2& u2lb, const matrix2x2& u2ra,
-      const matrix2x2& u2rb, const matrix2x2& u3l, const matrix2x2& u3r,
-      const matrix2x2& q0l, const matrix2x2& q0r, const matrix2x2& q1la,
-      const matrix2x2& q1lb, const matrix2x2& q1ra, const matrix2x2& q1rb,
-      const matrix2x2& q2l, const matrix2x2& q2r)
+      bool isSuperControlled, const Eigen::Matrix2cd& u0l,
+      const Eigen::Matrix2cd& u0r, const Eigen::Matrix2cd& u1l,
+      const Eigen::Matrix2cd& u1ra, const Eigen::Matrix2cd& u1rb,
+      const Eigen::Matrix2cd& u2la, const Eigen::Matrix2cd& u2lb,
+      const Eigen::Matrix2cd& u2ra, const Eigen::Matrix2cd& u2rb,
+      const Eigen::Matrix2cd& u3l, const Eigen::Matrix2cd& u3r,
+      const Eigen::Matrix2cd& q0l, const Eigen::Matrix2cd& q0r,
+      const Eigen::Matrix2cd& q1la, const Eigen::Matrix2cd& q1lb,
+      const Eigen::Matrix2cd& q1ra, const Eigen::Matrix2cd& q1rb,
+      const Eigen::Matrix2cd& q2l, const Eigen::Matrix2cd& q2r)
       : basisGate{std::move(basisGate)}, basisFidelity{basisFidelity},
         basisDecomposer{basisDecomposer}, isSuperControlled{isSuperControlled},
         u0l{u0l}, u0r{u0r}, u1l{u1l}, u1ra{u1ra}, u1rb{u1rb}, u2la{u2la},
@@ -355,7 +363,7 @@ protected:
    *
    * which is optimal for all targets and bases
    */
-  [[nodiscard]] static llvm::SmallVector<matrix2x2>
+  [[nodiscard]] static llvm::SmallVector<Eigen::Matrix2cd>
   decomp0(const decomposition::TwoQubitWeylDecomposition& target) {
     return {
         target.k1r * target.k2r,
@@ -377,7 +385,7 @@ protected:
    *
    * which is optimal for all targets and bases with ``z==0`` or ``c==0``.
    */
-  [[nodiscard]] llvm::SmallVector<matrix2x2>
+  [[nodiscard]] llvm::SmallVector<Eigen::Matrix2cd>
   decomp1(const decomposition::TwoQubitWeylDecomposition& target) const {
     // may not work for z != 0 and c != 0 (not always in Weyl chamber)
     return {
@@ -411,7 +419,7 @@ protected:
    * and target :math:`\sim U_d(x, y, 0)`. No guarantees for
    * non-supercontrolled basis.
    */
-  [[nodiscard]] llvm::SmallVector<matrix2x2> decomp2Supercontrolled(
+  [[nodiscard]] llvm::SmallVector<Eigen::Matrix2cd> decomp2Supercontrolled(
       const decomposition::TwoQubitWeylDecomposition& target) const {
     if (!isSuperControlled) {
       llvm::reportFatalInternalError(
@@ -437,7 +445,7 @@ protected:
    * :math:`\sim U_d(\pi/4, b, 0)`, all b, and any target. No guarantees for
    * non-supercontrolled basis.
    */
-  [[nodiscard]] llvm::SmallVector<matrix2x2> decomp3Supercontrolled(
+  [[nodiscard]] llvm::SmallVector<Eigen::Matrix2cd> decomp3Supercontrolled(
       const decomposition::TwoQubitWeylDecomposition& target) const {
     if (!isSuperControlled) {
       llvm::reportFatalInternalError(
@@ -462,20 +470,21 @@ protected:
    * This can be used to determine the smallest number of basis gates that are
    * necessary to construct an equivalent to the canonical gate.
    */
-  [[nodiscard]] std::array<qfp, 4>
+  [[nodiscard]] std::array<std::complex<double>, 4>
   traces(const decomposition::TwoQubitWeylDecomposition& target) const {
     return {
-        static_cast<fp>(4.) *
-            qfp(std::cos(target.a) * std::cos(target.b) * std::cos(target.c),
-                std::sin(target.a) * std::sin(target.b) * std::sin(target.c)),
-        static_cast<fp>(4.) *
-            qfp(std::cos(qc::PI_4 - target.a) *
-                    std::cos(basisDecomposer.b - target.b) * std::cos(target.c),
-                std::sin(qc::PI_4 - target.a) *
-                    std::sin(basisDecomposer.b - target.b) *
-                    std::sin(target.c)),
-        qfp(4. * std::cos(target.c), 0.),
-        qfp(4., 0.),
+        4. *
+            std::complex<double>{
+                std::cos(target.a) * std::cos(target.b) * std::cos(target.c),
+                std::sin(target.a) * std::sin(target.b) * std::sin(target.c)},
+        4. * std::complex<double>{std::cos(qc::PI_4 - target.a) *
+                                      std::cos(basisDecomposer.b - target.b) *
+                                      std::cos(target.c),
+                                  std::sin(qc::PI_4 - target.a) *
+                                      std::sin(basisDecomposer.b - target.b) *
+                                      std::sin(target.c)},
+        std::complex<double>{4. * std::cos(target.c), 0.},
+        std::complex<double>{4., 0.},
     };
   }
 
@@ -485,16 +494,16 @@ protected:
    * least complexity will be chosen.
    */
   [[nodiscard]] static OneQubitGateSequence unitaryToGateSequenceInner(
-      const matrix2x2& unitaryMat,
+      const Eigen::Matrix2cd& unitaryMat,
       const llvm::SmallVector<EulerBasis>& targetBasisList, QubitId /*qubit*/,
       // TODO: add error map here: per qubit a mapping of operation to error
       // value for better calculateError()
-      bool simplify, std::optional<fp> atol) {
-    auto calculateError = [](const OneQubitGateSequence& sequence) -> fp {
-      return static_cast<fp>(sequence.complexity());
+      bool simplify, std::optional<double> atol) {
+    auto calculateError = [](const OneQubitGateSequence& sequence) -> double {
+      return static_cast<double>(sequence.complexity());
     };
 
-    auto minError = std::numeric_limits<fp>::max();
+    auto minError = std::numeric_limits<double>::max();
     OneQubitGateSequence bestCircuit;
     for (auto targetBasis : targetBasisList) {
       auto circuit = EulerDecomposition::generateCircuit(
@@ -516,34 +525,34 @@ private:
   // basis gate of this decomposer instance
   Gate basisGate{};
   // fidelity with which the basis gate decomposition has been calculated
-  fp basisFidelity;
+  double basisFidelity;
   // cached decomposition for basis gate
   decomposition::TwoQubitWeylDecomposition basisDecomposer;
   // true if basis gate is super-controlled
   bool isSuperControlled;
 
   // pre-built components for decomposition with 3 basis gates
-  matrix2x2 u0l;
-  matrix2x2 u0r;
-  matrix2x2 u1l;
-  matrix2x2 u1ra;
-  matrix2x2 u1rb;
-  matrix2x2 u2la;
-  matrix2x2 u2lb;
-  matrix2x2 u2ra;
-  matrix2x2 u2rb;
-  matrix2x2 u3l;
-  matrix2x2 u3r;
+  Eigen::Matrix2cd u0l;
+  Eigen::Matrix2cd u0r;
+  Eigen::Matrix2cd u1l;
+  Eigen::Matrix2cd u1ra;
+  Eigen::Matrix2cd u1rb;
+  Eigen::Matrix2cd u2la;
+  Eigen::Matrix2cd u2lb;
+  Eigen::Matrix2cd u2ra;
+  Eigen::Matrix2cd u2rb;
+  Eigen::Matrix2cd u3l;
+  Eigen::Matrix2cd u3r;
 
   // pre-built components for decomposition with 2 basis gates
-  matrix2x2 q0l;
-  matrix2x2 q0r;
-  matrix2x2 q1la;
-  matrix2x2 q1lb;
-  matrix2x2 q1ra;
-  matrix2x2 q1rb;
-  matrix2x2 q2l;
-  matrix2x2 q2r;
+  Eigen::Matrix2cd q0l;
+  Eigen::Matrix2cd q0r;
+  Eigen::Matrix2cd q1la;
+  Eigen::Matrix2cd q1lb;
+  Eigen::Matrix2cd q1ra;
+  Eigen::Matrix2cd q1rb;
+  Eigen::Matrix2cd q2l;
+  Eigen::Matrix2cd q2r;
 };
 
 } // namespace mlir::qco::decomposition

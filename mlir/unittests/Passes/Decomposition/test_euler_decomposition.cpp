@@ -29,27 +29,27 @@ using namespace mlir::qco;
 using namespace mlir::qco::decomposition;
 
 namespace {
-[[nodiscard]] matrix2x2 randomUnitaryMatrix() {
+[[nodiscard]] Eigen::Matrix2cd randomUnitaryMatrix() {
   [[maybe_unused]] static auto initializeRandom = []() {
     // Eigen uses std::rand() internally, use fixed seed for deterministic
     // testing behavior
     std::srand(123456UL);
     return true;
   }();
-  const matrix2x2 randomMatrix = matrix2x2::Random();
-  Eigen::HouseholderQR<matrix2x2> qr{}; // NOLINT(misc-include-cleaner)
+  const Eigen::Matrix2cd randomMatrix = Eigen::Matrix2cd::Random();
+  Eigen::HouseholderQR<Eigen::Matrix2cd> qr{}; // NOLINT(misc-include-cleaner)
   qr.compute(randomMatrix);
-  const matrix2x2 unitaryMatrix = qr.householderQ();
+  const Eigen::Matrix2cd unitaryMatrix = qr.householderQ();
   assert(helpers::isUnitaryMatrix(unitaryMatrix));
   return unitaryMatrix;
 }
 } // namespace
 
 class EulerDecompositionTest
-    : public testing::TestWithParam<std::tuple<EulerBasis, matrix2x2>> {
+    : public testing::TestWithParam<std::tuple<EulerBasis, Eigen::Matrix2cd>> {
 public:
-  [[nodiscard]] static matrix2x2 restore(const TwoQubitGateSequence& sequence) {
-    matrix2x2 matrix = matrix2x2::Identity();
+  [[nodiscard]] static Eigen::Matrix2cd restore(const TwoQubitGateSequence& sequence) {
+    Eigen::Matrix2cd matrix = Eigen::Matrix2cd::Identity();
     for (auto&& gate : sequence.gates) {
       matrix = getSingleQubitMatrix(gate) * matrix;
     }
@@ -64,7 +64,7 @@ public:
   }
 
 protected:
-  matrix2x2 originalMatrix;
+  Eigen::Matrix2cd originalMatrix;
   EulerBasis eulerBasis{};
 };
 
@@ -107,5 +107,5 @@ INSTANTIATE_TEST_CASE_P(
     SingleQubitMatrices, EulerDecompositionTest,
     testing::Combine(testing::Values(EulerBasis::XYX, EulerBasis::XZX,
                                      EulerBasis::ZYZ, EulerBasis::ZXZ),
-                     testing::Values(matrix2x2::Identity(), ryMatrix(2.0),
+                     testing::Values(Eigen::Matrix2cd::Identity(), ryMatrix(2.0),
                                      rxMatrix(0.5), rzMatrix(3.14), H_GATE)));

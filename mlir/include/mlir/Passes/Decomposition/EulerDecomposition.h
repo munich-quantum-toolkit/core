@@ -41,8 +41,8 @@ public:
    * given euler basis.
    */
   [[nodiscard]] static OneQubitGateSequence
-  generateCircuit(EulerBasis targetBasis, const matrix2x2& unitaryMatrix,
-                  bool simplify, std::optional<fp> atol) {
+  generateCircuit(EulerBasis targetBasis, const Eigen::Matrix2cd& unitaryMatrix,
+                  bool simplify, std::optional<double> atol) {
     auto [theta, phi, lambda, phase] =
         anglesFromUnitary(unitaryMatrix, targetBasis);
 
@@ -70,8 +70,8 @@ public:
    *
    * @return array containing (theta, phi, lambda, phase) in this order
    */
-  static std::array<fp, 4> anglesFromUnitary(const matrix2x2& matrix,
-                                             EulerBasis basis) {
+  static std::array<double, 4> anglesFromUnitary(const Eigen::Matrix2cd& matrix,
+                                                 EulerBasis basis) {
     if (basis == EulerBasis::XYX) {
       return paramsXyxInner(matrix);
     }
@@ -88,7 +88,7 @@ public:
   }
 
 private:
-  static std::array<fp, 4> paramsZyzInner(const matrix2x2& matrix) {
+  static std::array<double, 4> paramsZyzInner(const Eigen::Matrix2cd& matrix) {
     const auto detArg = std::arg(matrix.determinant());
     const auto phase = 0.5 * detArg;
     const auto theta =
@@ -100,21 +100,17 @@ private:
     return {theta, phi, lam, phase};
   }
 
-  static std::array<fp, 4> paramsZxzInner(const matrix2x2& matrix) {
+  static std::array<double, 4> paramsZxzInner(const Eigen::Matrix2cd& matrix) {
     const auto [theta, phi, lam, phase] = paramsZyzInner(matrix);
     return {theta, phi + (qc::PI / 2.), lam - (qc::PI / 2.), phase};
   }
 
-  static std::array<fp, 4> paramsXyxInner(const matrix2x2& matrix) {
-    const matrix2x2 matZyz{
-        {static_cast<fp>(0.5) *
-             (matrix(0, 0) + matrix(0, 1) + matrix(1, 0) + matrix(1, 1)),
-         static_cast<fp>(0.5) *
-             (matrix(0, 0) - matrix(0, 1) + matrix(1, 0) - matrix(1, 1))},
-        {static_cast<fp>(0.5) *
-             (matrix(0, 0) + matrix(0, 1) - matrix(1, 0) - matrix(1, 1)),
-         static_cast<fp>(0.5) *
-             (matrix(0, 0) - matrix(0, 1) - matrix(1, 0) + matrix(1, 1))},
+  static std::array<double, 4> paramsXyxInner(const Eigen::Matrix2cd& matrix) {
+    const Eigen::Matrix2cd matZyz{
+        {0.5 * (matrix(0, 0) + matrix(0, 1) + matrix(1, 0) + matrix(1, 1)),
+         0.5 * (matrix(0, 0) - matrix(0, 1) + matrix(1, 0) - matrix(1, 1))},
+        {0.5 * (matrix(0, 0) + matrix(0, 1) - matrix(1, 0) - matrix(1, 1)),
+         0.5 * (matrix(0, 0) - matrix(0, 1) - matrix(1, 0) + matrix(1, 1))},
     };
     auto [theta, phi, lam, phase] = paramsZyzInner(matZyz);
     auto newPhi = helpers::mod2pi(phi + qc::PI, 0.);
@@ -127,11 +123,11 @@ private:
     };
   }
 
-  static std::array<fp, 4> paramsXzxInner(const matrix2x2& matrix) {
+  static std::array<double, 4> paramsXzxInner(const Eigen::Matrix2cd& matrix) {
     auto det = matrix.determinant();
     auto phase = std::imag(std::log(det)) / 2.0;
     auto sqrtDet = std::sqrt(det);
-    const matrix2x2 matZyz{
+    const Eigen::Matrix2cd matZyz{
         {
             {(matrix(0, 0) / sqrtDet).real(), (matrix(1, 0) / sqrtDet).imag()},
             {(matrix(1, 0) / sqrtDet).real(), (matrix(0, 0) / sqrtDet).imag()},
@@ -159,9 +155,10 @@ private:
    *       indicating that they have been altered from the originals.
    */
   [[nodiscard]] static OneQubitGateSequence
-  decomposeKAK(fp theta, fp phi, fp lambda, fp phase, qc::OpType kGate,
-               qc::OpType aGate, bool simplify, std::optional<fp> atol) {
-    fp angleZeroEpsilon = atol.value_or(DEFAULT_ATOL);
+  decomposeKAK(double theta, double phi, double lambda, double phase,
+               qc::OpType kGate, qc::OpType aGate, bool simplify,
+               std::optional<double> atol) {
+    double angleZeroEpsilon = atol.value_or(DEFAULT_ATOL);
     if (!simplify) {
       // setting atol to negative value to make all angle checks true; this will
       // effectively disable the simplification since all rotations appear to be

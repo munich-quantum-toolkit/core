@@ -28,21 +28,11 @@
 #include <unsupported/Eigen/KroneckerProduct> // NOLINT(misc-include-cleaner)
 
 namespace mlir::qco {
-using fp = qc::fp;
-using qfp = std::complex<fp>;
-// NOLINTBEGIN(misc-include-cleaner)
-using matrix2x2 = Eigen::Matrix2<qfp>;
-using matrix4x4 = Eigen::Matrix4<qfp>;
-using rmatrix4x4 = Eigen::Matrix4<fp>;
-using diagonal4x4 = Eigen::Vector<qfp, 4>;
-using rdiagonal4x4 = Eigen::Vector<fp, 4>;
-// NOLINTEND(misc-include-cleaner)
-
-constexpr qfp C_ZERO{0., 0.};
-constexpr qfp C_ONE{1., 0.};
-constexpr qfp C_M_ONE{-1., 0.};
-constexpr qfp C_IM{0., 1.};
-constexpr qfp C_M_IM{0., -1.};
+constexpr std::complex<double> C_ZERO{0., 0.};
+constexpr std::complex<double> C_ONE{1., 0.};
+constexpr std::complex<double> C_M_ONE{-1., 0.};
+constexpr std::complex<double> C_IM{0., 1.};
+constexpr std::complex<double> C_M_IM{0., -1.};
 
 } // namespace mlir::qco
 
@@ -72,19 +62,19 @@ template <typename T, int N, int M>
 
 template <typename T, int N, int M>
 [[nodiscard]] bool isUnitaryMatrix(const Eigen::Matrix<T, N, M>& matrix,
-                                   fp tolerance = 1e-12) {
+                                   double tolerance = 1e-12) {
   return (matrix.transpose().conjugate() * matrix).isIdentity(tolerance);
 }
 // NOLINTEND(misc-include-cleaner)
 
-[[nodiscard]] inline fp remEuclid(fp a, fp b) {
+[[nodiscard]] inline double remEuclid(double a, double b) {
   auto r = std::fmod(a, b);
   return (r < 0.0) ? r + std::abs(b) : r;
 }
 
 // Wrap angle into interval [-π,π). If within atol of the endpoint, clamp
 // to -π
-[[nodiscard]] inline fp mod2pi(fp angle, fp angleZeroEpsilon = 1e-13) {
+[[nodiscard]] inline double mod2pi(double angle, double angleZeroEpsilon = 1e-13) {
   // remEuclid() isn't exactly the same as Python's % operator, but
   // because the RHS here is a constant and positive it is effectively
   // equivalent for this case
@@ -95,7 +85,7 @@ template <typename T, int N, int M>
   return wrapped;
 }
 
-[[nodiscard]] inline fp traceToFidelity(const qfp& x) {
+[[nodiscard]] inline double traceToFidelity(const std::complex<double>& x) {
   auto xAbs = std::abs(x);
   return (4.0 + xAbs * xAbs) / 20.0;
 }

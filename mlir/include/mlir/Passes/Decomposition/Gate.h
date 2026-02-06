@@ -10,7 +10,6 @@
 
 #pragma once
 
-#include "Helpers.h"
 #include "ir/operations/OpType.hpp"
 
 #include <llvm/ADT/SmallVector.h>
@@ -25,7 +24,7 @@ using QubitId = std::size_t;
  */
 struct Gate {
   qc::OpType type{qc::I};
-  llvm::SmallVector<fp, 3> parameter;
+  llvm::SmallVector<double, 3> parameter;
   llvm::SmallVector<QubitId, 2> qubitId = {0};
 };
 

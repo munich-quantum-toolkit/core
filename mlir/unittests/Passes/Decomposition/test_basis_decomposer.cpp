@@ -33,22 +33,22 @@ using namespace mlir::qco;
 using namespace mlir::qco::decomposition;
 
 namespace {
-[[nodiscard]] matrix4x4 randomUnitaryMatrix() {
+[[nodiscard]] Eigen::Matrix4cd randomUnitaryMatrix() {
   [[maybe_unused]] static auto initializeRandom = []() {
     // Eigen uses std::rand() internally, use fixed seed for deterministic
     // testing behavior
     std::srand(123456UL);
     return true;
   }();
-  const matrix4x4 randomMatrix = matrix4x4::Random();
-  Eigen::HouseholderQR<matrix4x4> qr{}; // NOLINT(misc-include-cleaner)
+  const Eigen::Matrix4cd randomMatrix = Eigen::Matrix4cd::Random();
+  Eigen::HouseholderQR<Eigen::Matrix4cd> qr{}; // NOLINT(misc-include-cleaner)
   qr.compute(randomMatrix);
-  const matrix4x4 unitaryMatrix = qr.householderQ();
+  const Eigen::Matrix4cd unitaryMatrix = qr.householderQ();
   assert(helpers::isUnitaryMatrix(unitaryMatrix));
   return unitaryMatrix;
 }
 
-[[nodiscard]] matrix4x4 canonicalGate(fp a, fp b, fp c) {
+[[nodiscard]] Eigen::Matrix4cd canonicalGate(double a, double b, double c) {
   TwoQubitWeylDecomposition tmp{};
   tmp.a = a;
   tmp.b = b;
@@ -59,7 +59,7 @@ namespace {
 
 class BasisDecomposerTest
     : public testing::TestWithParam<
-          std::tuple<Gate, llvm::SmallVector<EulerBasis>, matrix4x4>> {
+          std::tuple<Gate, llvm::SmallVector<EulerBasis>, Eigen::Matrix4cd>> {
 public:
   void SetUp() override {
     basisGate = std::get<0>(GetParam());
@@ -68,8 +68,8 @@ public:
     targetDecomposition = TwoQubitWeylDecomposition::create(target, 1.0);
   }
 
-  [[nodiscard]] static matrix4x4 restore(const TwoQubitGateSequence& sequence) {
-    matrix4x4 matrix = matrix4x4::Identity();
+  [[nodiscard]] static Eigen::Matrix4cd restore(const TwoQubitGateSequence& sequence) {
+    Eigen::Matrix4cd matrix = Eigen::Matrix4cd::Identity();
     for (auto&& gate : sequence.gates) {
       matrix = getTwoQubitMatrix(gate) * matrix;
     }
@@ -79,7 +79,7 @@ public:
   }
 
 protected:
-  matrix4x4 target;
+  Eigen::Matrix4cd target;
   Gate basisGate;
   llvm::SmallVector<EulerBasis> eulerBases;
   TwoQubitWeylDecomposition targetDecomposition;
@@ -150,7 +150,7 @@ TEST(BasisDecomposerTest, Random) {
 
 TEST(BasisDecomposerTest, Crash) {
   using namespace std::complex_literals;
-  matrix4x4 originalMatrix{{-0.23104450537689214 + -0.44268488901708902i,
+  Eigen::Matrix4cd originalMatrix{{-0.23104450537689214 + -0.44268488901708902i,
                             -0.60656504798621003 + -0.27756198294119977i,
                             -0.2168858251642842 + -0.27845819247692827i,
                             -0.42430958159720128 + 0.032705758031399738i},
@@ -202,9 +202,9 @@ INSTANTIATE_TEST_CASE_P(
                             EulerBasis::XZX},
                         llvm::SmallVector<EulerBasis>{EulerBasis::XZX}),
         // targets to be decomposed
-        testing::Values(matrix4x4::Identity(),
+        testing::Values(Eigen::Matrix4cd::Identity(),
                         Eigen::kroneckerProduct(rzMatrix(1.0), ryMatrix(3.1)),
-                        Eigen::kroneckerProduct(matrix2x2::Identity(),
+                        Eigen::kroneckerProduct(Eigen::Matrix2cd::Identity(),
                                                 rxMatrix(0.1)))));
 
 INSTANTIATE_TEST_CASE_P(
@@ -224,10 +224,10 @@ INSTANTIATE_TEST_CASE_P(
         ::testing::Values(
             rzzMatrix(2.0), ryyMatrix(1.0) * rzzMatrix(3.0) * rxxMatrix(2.0),
             canonicalGate(1.5, -0.2, 0.0) *
-                Eigen::kroneckerProduct(rxMatrix(1.0), matrix2x2::Identity()),
+                Eigen::kroneckerProduct(rxMatrix(1.0), Eigen::Matrix2cd::Identity()),
             Eigen::kroneckerProduct(rxMatrix(1.0), ryMatrix(1.0)) *
                 canonicalGate(1.1, 0.2, 3.0) *
-                Eigen::kroneckerProduct(rxMatrix(1.0), matrix2x2::Identity()),
+                Eigen::kroneckerProduct(rxMatrix(1.0), Eigen::Matrix2cd::Identity()),
             Eigen::kroneckerProduct(H_GATE, IPZ) *
                 getTwoQubitMatrix(
                     {.type = qc::X, .parameter = {}, .qubitId = {0, 1}}) *

@@ -44,7 +44,7 @@ struct QubitGateSequence {
   /**
    * Global phase adjustment required for the sequence.
    */
-  fp globalPhase{};
+  double globalPhase{};
   /**
    * @return true if the global phase adjustment is not zero.
    */
@@ -73,8 +73,8 @@ struct QubitGateSequence {
   /**
    * Calculate overall unitary matrix of the sequence.
    */
-  [[nodiscard]] matrix4x4 getUnitaryMatrix() const {
-    matrix4x4 unitaryMatrix = matrix4x4::Identity();
+  [[nodiscard]] Eigen::Matrix4cd getUnitaryMatrix() const {
+    Eigen::Matrix4cd unitaryMatrix = Eigen::Matrix4cd::Identity();
     for (auto&& gate : gates) {
       auto gateMatrix = getTwoQubitMatrix(gate);
       unitaryMatrix = gateMatrix * unitaryMatrix;

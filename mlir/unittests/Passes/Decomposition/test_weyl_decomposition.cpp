@@ -26,22 +26,22 @@ using namespace mlir::qco;
 using namespace mlir::qco::decomposition;
 
 namespace {
-[[nodiscard]] matrix4x4 randomUnitaryMatrix() {
+[[nodiscard]] Eigen::Matrix4cd randomUnitaryMatrix() {
   [[maybe_unused]] static auto initializeRandom = []() {
     // Eigen uses std::rand() internally, use fixed seed for deterministic
     // testing behavior
     std::srand(123456UL);
     return true;
   }();
-  const matrix4x4 randomMatrix = matrix4x4::Random();
-  Eigen::HouseholderQR<matrix4x4> qr{}; // NOLINT(misc-include-cleaner)
+  const Eigen::Matrix4cd randomMatrix = Eigen::Matrix4cd::Random();
+  Eigen::HouseholderQR<Eigen::Matrix4cd> qr{}; // NOLINT(misc-include-cleaner)
   qr.compute(randomMatrix);
-  const matrix4x4 unitaryMatrix = qr.householderQ();
+  const Eigen::Matrix4cd unitaryMatrix = qr.householderQ();
   assert(helpers::isUnitaryMatrix(unitaryMatrix));
   return unitaryMatrix;
 }
 
-[[nodiscard]] matrix4x4 canonicalGate(fp a, fp b, fp c) {
+[[nodiscard]] Eigen::Matrix4cd canonicalGate(double a, double b, double c) {
   TwoQubitWeylDecomposition tmp{};
   tmp.a = a;
   tmp.b = b;
@@ -50,27 +50,27 @@ namespace {
 }
 } // namespace
 
-class WeylDecompositionTest : public testing::TestWithParam<matrix4x4> {
+class WeylDecompositionTest : public testing::TestWithParam<Eigen::Matrix4cd> {
 public:
-  [[nodiscard]] static matrix4x4
+  [[nodiscard]] static Eigen::Matrix4cd
   restore(const TwoQubitWeylDecomposition& decomposition) {
     return k1(decomposition) * can(decomposition) * k2(decomposition) *
            globalPhaseFactor(decomposition);
   }
 
-  [[nodiscard]] static qfp
+  [[nodiscard]] static std::complex<double>
   globalPhaseFactor(const TwoQubitWeylDecomposition& decomposition) {
     return std::exp(C_IM * decomposition.globalPhase);
   }
-  [[nodiscard]] static matrix4x4
+  [[nodiscard]] static Eigen::Matrix4cd
   can(const TwoQubitWeylDecomposition& decomposition) {
     return decomposition.getCanonicalMatrix();
   }
-  [[nodiscard]] static matrix4x4
+  [[nodiscard]] static Eigen::Matrix4cd
   k1(const TwoQubitWeylDecomposition& decomposition) {
     return Eigen::kroneckerProduct(decomposition.k1l, decomposition.k1r);
   }
-  [[nodiscard]] static matrix4x4
+  [[nodiscard]] static Eigen::Matrix4cd
   k2(const TwoQubitWeylDecomposition& decomposition) {
     return Eigen::kroneckerProduct(decomposition.k2l, decomposition.k2r);
   }
@@ -120,24 +120,27 @@ TEST(WeylDecompositionTest, Random) {
 
 INSTANTIATE_TEST_CASE_P(
     SingleQubitMatrices, WeylDecompositionTest,
-    ::testing::Values(matrix4x4::Identity(),
+    ::testing::Values(Eigen::Matrix4cd::Identity(),
                       Eigen::kroneckerProduct(rzMatrix(1.0), ryMatrix(3.1)),
-                      Eigen::kroneckerProduct(matrix2x2::Identity(),
+                      Eigen::kroneckerProduct(Eigen::Matrix2cd::Identity(),
                                               rxMatrix(0.1))));
 
 INSTANTIATE_TEST_CASE_P(
     TwoQubitMatrices, WeylDecompositionTest,
-    ::testing::Values(
-        rzzMatrix(2.0), ryyMatrix(1.0) * rzzMatrix(3.0) * rxxMatrix(2.0),
-        canonicalGate(1.5, -0.2, 0.0) *
-            Eigen::kroneckerProduct(rxMatrix(1.0), matrix2x2::Identity()),
-        Eigen::kroneckerProduct(rxMatrix(1.0), ryMatrix(1.0)) *
-            canonicalGate(1.1, 0.2, 3.0) *
-            Eigen::kroneckerProduct(rxMatrix(1.0), matrix2x2::Identity()),
-        Eigen::kroneckerProduct(H_GATE, IPZ) *
-            getTwoQubitMatrix(
-                {.type = qc::X, .parameter = {}, .qubitId = {0, 1}}) *
-            Eigen::kroneckerProduct(IPX, IPY)));
+    ::testing::Values(rzzMatrix(2.0),
+                      ryyMatrix(1.0) * rzzMatrix(3.0) * rxxMatrix(2.0),
+                      canonicalGate(1.5, -0.2, 0.0) *
+                          Eigen::kroneckerProduct(rxMatrix(1.0),
+                                                  Eigen::Matrix2cd::Identity()),
+                      Eigen::kroneckerProduct(rxMatrix(1.0), ryMatrix(1.0)) *
+                          canonicalGate(1.1, 0.2, 3.0) *
+                          Eigen::kroneckerProduct(rxMatrix(1.0),
+                                                  Eigen::Matrix2cd::Identity()),
+                      Eigen::kroneckerProduct(H_GATE, IPZ) *
+                          getTwoQubitMatrix({.type = qc::X,
+                                             .parameter = {},
+                                             .qubitId = {0, 1}}) *
+                          Eigen::kroneckerProduct(IPX, IPY)));
 
 INSTANTIATE_TEST_CASE_P(
     SpecializedMatrices, WeylDecompositionTest,
