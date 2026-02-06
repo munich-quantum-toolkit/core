@@ -172,7 +172,7 @@ struct TwoQubitWeylDecomposition {
     // verification
     Eigen::Matrix4cd temp = dReal.asDiagonal();
     temp *= std::complex<double>{0, 1};
-    // since the matrix is diagonal, matrix exponental is equivalent to
+    // since the matrix is diagonal, matrix exponential is equivalent to
     // element-wise exponential function
     temp.diagonal() = temp.diagonal().array().exp().matrix();
 
