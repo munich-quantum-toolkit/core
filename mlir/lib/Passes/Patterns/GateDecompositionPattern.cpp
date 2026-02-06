@@ -117,7 +117,9 @@ struct GateDecompositionPattern final
       return mlir::failure();
     }
 
-    std::optional<decomposition::TwoQubitGateSequence> bestSequence;
+    // sequence and cached complexity to avoid repeated recomputations
+    auto bestSequence = std::make_pair(decomposition::TwoQubitGateSequence{},
+                                       std::numeric_limits<std::size_t>::max());
 
     if (series.isSingleQubitSeries()) {
       // only a single-qubit series;
@@ -130,9 +132,10 @@ struct GateDecompositionPattern final
       for (auto&& eulerBasis : decomposerEulerBases) {
         auto sequence = decomposition::EulerDecomposition::generateCircuit(
             eulerBasis, *unitaryMatrix, true, std::nullopt);
-        if (!bestSequence ||
-            sequence.complexity() < bestSequence->complexity()) {
-          bestSequence = sequence;
+
+        auto newComplexity = sequence.complexity();
+        if (newComplexity < bestSequence.second) {
+          bestSequence = std::make_pair(sequence, newComplexity);
         }
       }
     } else {
@@ -152,37 +155,30 @@ struct GateDecompositionPattern final
             std::nullopt);
         if (sequence) {
           // decomposition successful
-          if (!bestSequence ||
-              sequence->complexity() < bestSequence->complexity()) {
+          auto newComplexity = sequence->complexity();
+          if (newComplexity < bestSequence.second) {
             // this decomposition is better than any successful decomposition
             // before
-            bestSequence = sequence;
+            bestSequence = std::make_pair(*sequence, newComplexity);
           }
         }
       }
     }
 
-    llvm::errs() << "Found series (" << series.complexity << "): ";
-    for (auto&& gate : series.gates) {
-      llvm::errs() << gate.op->getName().stripDialect().str() << ", ";
-    }
-
-    if (!bestSequence) {
+    if (bestSequence.second == std::numeric_limits<std::size_t>::max()) {
+      // unable to decompose series
       return mlir::failure();
     }
-    llvm::errs() << "\nDecomposition (" << bestSequence->complexity() << "): ";
-    for (auto&& gate : bestSequence->gates) {
-      llvm::errs() << qc::toString(gate.type) << ", ";
-    }
-    llvm::errs() << "\n";
-    // only accept new sequence if it shortens existing series by more than two
-    // gates; this prevents an oscillation with phase gates
-    if (bestSequence->complexity() + 2 >= series.complexity &&
+    if (bestSequence.second >= series.complexity &&
         !(forceApplication && containsForeignGates)) {
+      // decomposition is longer/more complex than input series; result will
+      // always be used (even if more complex) if forceApplication is set and
+      // the input series contained at least one gate unavailable for the
+      // decomposition
       return mlir::failure();
     }
 
-    applySeries(rewriter, series, *bestSequence);
+    applySeries(rewriter, series, bestSequence.first);
 
     return mlir::success();
   }

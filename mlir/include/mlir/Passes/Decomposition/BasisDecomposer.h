@@ -234,7 +234,7 @@ public:
     auto getDefaultNbasis = [&]() {
       // determine smallest number of basis gates required to fulfill given
       // basis fidelity constraint
-      auto bestValue = std::numeric_limits<double>::min();
+      auto bestValue = std::numeric_limits<double>::lowest();
       auto bestIndex = -1;
       for (int i = 0; std::cmp_less(i, traces.size()); ++i) {
         // lower basis fidelity means it becomes easier to use fewer basis gates
@@ -273,8 +273,8 @@ public:
         eulerDecompositions;
     for (auto&& decomp : decomposition) {
       assert(helpers::isUnitaryMatrix(decomp));
-      auto eulerDecomp = unitaryToGateSequenceInner(decomp, target1qEulerBases,
-                                                    0, true, std::nullopt);
+      auto eulerDecomp = unitaryToGateSequence(decomp, target1qEulerBases, 0,
+                                               true, std::nullopt);
       eulerDecompositions.push_back(eulerDecomp);
     }
     TwoQubitGateSequence gates{
@@ -495,12 +495,15 @@ protected:
    * sequence. Multiple euler bases may be specified and the one with the
    * least complexity will be chosen.
    */
-  [[nodiscard]] static OneQubitGateSequence unitaryToGateSequenceInner(
-      const Eigen::Matrix2cd& unitaryMat,
-      const llvm::SmallVector<EulerBasis>& targetBasisList, QubitId /*qubit*/,
-      // TODO: add error map here: per qubit a mapping of operation to error
-      // value for better calculateError()
-      bool simplify, std::optional<double> atol) {
+  [[nodiscard]] static OneQubitGateSequence
+  unitaryToGateSequence(const Eigen::Matrix2cd& unitaryMat,
+                        const llvm::SmallVector<EulerBasis>& targetBasisList,
+                        QubitId /*qubit*/,
+                        // TODO: add error map here: per qubit a mapping of
+                        // operation to error value for better calculateError()
+                        bool simplify, std::optional<double> atol) {
+    assert(!targetBasisList.empty());
+
     auto calculateError = [](const OneQubitGateSequence& sequence) -> double {
       return static_cast<double>(sequence.complexity());
     };

@@ -56,9 +56,6 @@ struct QubitGateSequence {
    * Calculate complexity of sequence according to getComplexity().
    */
   [[nodiscard]] std::size_t complexity() const {
-    // TODO: add more sophisticated metric to determine complexity of
-    // series/sequence
-    // TODO: caching mechanism
     std::size_t c{};
     for (auto&& gate : gates) {
       c += helpers::getComplexity(gate.type, gate.qubitId.size());

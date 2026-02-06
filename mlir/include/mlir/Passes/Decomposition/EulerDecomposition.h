@@ -129,7 +129,7 @@ private:
     auto det = matrix.determinant();
     auto phase = std::imag(std::log(det)) / 2.0;
     auto sqrtDet = std::sqrt(det);
-    const Eigen::Matrix2cd matZyz{
+    const Eigen::Matrix2cd matZxz{
         {
             {(matrix(0, 0) / sqrtDet).real(), (matrix(1, 0) / sqrtDet).imag()},
             {(matrix(1, 0) / sqrtDet).real(), (matrix(0, 0) / sqrtDet).imag()},
@@ -139,7 +139,7 @@ private:
             {(matrix(0, 0) / sqrtDet).real(), -(matrix(1, 0) / sqrtDet).imag()},
         },
     };
-    auto [theta, phi, lam, phase_zxz] = paramsZxzInner(matZyz);
+    auto [theta, phi, lam, phase_zxz] = paramsZxzInner(matZxz);
     return {theta, phi, lam, phase + phase_zxz};
   }
 
