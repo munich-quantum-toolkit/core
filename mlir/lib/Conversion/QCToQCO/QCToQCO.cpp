@@ -1133,7 +1133,7 @@ struct ConvertQCCtrlOp final : StatefulOpConversionPattern<qc::CtrlOp> {
     // `state.targetsIn`.
     auto& entryBlock = dstRegion.front();
     assert(entryBlock.getNumArguments() == 0 &&
-           "QCO ctrl region unexpectedly has entry block arguments");
+           "QC ctrl region unexpectedly has entry block arguments");
     SmallVector<Value> qcoTargetAliases;
     qcoTargetAliases.reserve(numTargets);
     const auto qubitType = qco::QubitType::get(qcoOp.getContext());
@@ -1211,7 +1211,7 @@ struct ConvertQCInvOp final : StatefulOpConversionPattern<qc::InvOp> {
     // `state.targetsIn`.
     auto& entryBlock = dstRegion.front();
     assert(entryBlock.getNumArguments() == 0 &&
-           "QCO inv region unexpectedly has entry block arguments");
+           "QC inv region unexpectedly has entry block arguments");
     SmallVector<Value> qcoTargetAliases;
     qcoTargetAliases.reserve(numTargets);
     const auto qubitType = qco::QubitType::get(qcoOp.getContext());
