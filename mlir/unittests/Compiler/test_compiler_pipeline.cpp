@@ -1749,6 +1749,42 @@ TEST_F(CompilerPipelineTest, NestedInvs) {
   });
 }
 
+TEST_F(CompilerPipelineTest, NestedInvCtrlS) {
+  auto input = buildQCIR([](mlir::qc::QCProgramBuilder& b) {
+    auto reg = b.allocQubitRegister(2, "q");
+    b.inv([&] { b.ctrl(reg[0], [&] { b.s(reg[1]); }); });
+  });
+
+  ASSERT_TRUE(runPipeline(input.get()).succeeded());
+
+  auto qcInit = buildQCIR([](mlir::qc::QCProgramBuilder& b) {
+    auto reg = b.allocQubitRegister(2, "q");
+    b.ctrl(reg[0], [&] { b.inv([&] { b.s(reg[1]); }); });
+  });
+  const auto qco = buildQCOIR([](qco::QCOProgramBuilder& b) {
+    auto reg = b.allocQubitRegister(2, "q");
+    b.ctrl(reg[0], reg[1], [&](auto targets) -> llvm::SmallVector<Value> {
+      return {b.sdg(targets[0])};
+    });
+  });
+  const auto qc = buildQCIR([](mlir::qc::QCProgramBuilder& b) {
+    auto reg = b.allocQubitRegister(2, "q");
+    b.ctrl(reg[0], [&] { b.sdg(reg[1]); });
+  });
+  const auto qir = buildQIR([](qir::QIRProgramBuilder& b) {
+    auto reg = b.allocQubitRegister(2);
+    b.csdg(reg[0], reg[1]);
+  });
+
+  verifyAllStages({
+      .qcImport = qcInit.get(),
+      .qcoConversion = qco.get(),
+      .optimization = qco.get(),
+      .qcConversion = qc.get(),
+      .qirConversion = qir.get(),
+  });
+}
+
 TEST_F(CompilerPipelineTest, Y) {
   ::qc::QuantumComputation comp;
   comp.addQubitRegister(1, "q");
