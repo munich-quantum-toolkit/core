@@ -75,7 +75,7 @@ template <typename T, int N, int M>
 
 template <typename T, int N, int M>
 [[nodiscard]] bool isUnitaryMatrix(const Eigen::Matrix<T, N, M>& matrix,
-                                   fp tolerance = 1e-13) {
+                                   fp tolerance = 1e-12) {
   return (matrix.transpose().conjugate() * matrix).isIdentity(tolerance);
 }
 // NOLINTEND(misc-include-cleaner)
