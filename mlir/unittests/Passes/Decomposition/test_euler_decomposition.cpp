@@ -13,36 +13,18 @@
 #include "mlir/Passes/Decomposition/GateSequence.h"
 #include "mlir/Passes/Decomposition/Helpers.h"
 #include "mlir/Passes/Decomposition/UnitaryMatrices.h"
+#include "utils.h"
 
 #include <Eigen/QR>
 #include <array>
 #include <cassert>
-#include <chrono>
 #include <cstdlib>
 #include <gtest/gtest.h>
-#include <iostream>
 #include <optional>
 #include <tuple>
 
 using namespace mlir::qco;
 using namespace mlir::qco::decomposition;
-
-namespace {
-[[nodiscard]] Eigen::Matrix2cd randomUnitaryMatrix() {
-  [[maybe_unused]] static auto initializeRandom = []() {
-    // Eigen uses std::rand() internally, use fixed seed for deterministic
-    // testing behavior
-    std::srand(123456UL);
-    return true;
-  }();
-  const Eigen::Matrix2cd randomMatrix = Eigen::Matrix2cd::Random();
-  Eigen::HouseholderQR<Eigen::Matrix2cd> qr{}; // NOLINT(misc-include-cleaner)
-  qr.compute(randomMatrix);
-  const Eigen::Matrix2cd unitaryMatrix = qr.householderQ();
-  assert(helpers::isUnitaryMatrix(unitaryMatrix));
-  return unitaryMatrix;
-}
-} // namespace
 
 class EulerDecompositionTest
     : public testing::TestWithParam<std::tuple<EulerBasis, Eigen::Matrix2cd>> {
@@ -79,13 +61,12 @@ TEST_P(EulerDecompositionTest, TestExact) {
 }
 
 TEST(EulerDecompositionTest, Random) {
-  auto stopTime = std::chrono::steady_clock::now() + std::chrono::seconds{3};
-  auto iterations = 0;
+  constexpr auto maxIterations = 10000;
   auto eulerBases = std::array{EulerBasis::XYX, EulerBasis::XZX,
                                EulerBasis::ZYZ, EulerBasis::ZXZ};
   std::size_t currentEulerBase = 0;
-  while (std::chrono::steady_clock::now() < stopTime) {
-    auto originalMatrix = randomUnitaryMatrix();
+  for (int i = 0; i < maxIterations; ++i) {
+    auto originalMatrix = randomUnitaryMatrix<Eigen::Matrix2cd>();
     auto eulerBasis = eulerBases[currentEulerBase++ % eulerBases.size()];
     auto decomposition = EulerDecomposition::generateCircuit(
         eulerBasis, originalMatrix, true, std::nullopt);
@@ -96,11 +77,7 @@ TEST(EulerDecompositionTest, Random) {
         << originalMatrix << '\n'
         << "RESULT:\n"
         << restoredMatrix << '\n';
-    ++iterations;
   }
-
-  RecordProperty("iterations", iterations);
-  std::cerr << "Iterations: " << iterations << '\n';
 }
 
 INSTANTIATE_TEST_CASE_P(

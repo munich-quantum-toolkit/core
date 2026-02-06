@@ -12,34 +12,15 @@
 #include "mlir/Passes/Decomposition/Helpers.h"
 #include "mlir/Passes/Decomposition/UnitaryMatrices.h"
 #include "mlir/Passes/Decomposition/WeylDecomposition.h"
+#include "utils.h"
 
 #include <Eigen/QR>
 #include <cassert>
-#include <chrono>
-#include <cstdlib>
 #include <gtest/gtest.h>
-#include <iostream>
 #include <unsupported/Eigen/KroneckerProduct>
 
 using namespace mlir::qco;
 using namespace mlir::qco::decomposition;
-
-namespace {
-[[nodiscard]] Eigen::Matrix4cd randomUnitaryMatrix() {
-  [[maybe_unused]] static auto initializeRandom = []() {
-    // Eigen uses std::rand() internally, use fixed seed for deterministic
-    // testing behavior
-    std::srand(123456UL);
-    return true;
-  }();
-  const Eigen::Matrix4cd randomMatrix = Eigen::Matrix4cd::Random();
-  Eigen::HouseholderQR<Eigen::Matrix4cd> qr{}; // NOLINT(misc-include-cleaner)
-  qr.compute(randomMatrix);
-  const Eigen::Matrix4cd unitaryMatrix = qr.householderQ();
-  assert(helpers::isUnitaryMatrix(unitaryMatrix));
-  return unitaryMatrix;
-}
-} // namespace
 
 class WeylDecompositionTest : public testing::TestWithParam<Eigen::Matrix4cd> {
 public:
@@ -89,10 +70,9 @@ TEST_P(WeylDecompositionTest, TestApproximation) {
 }
 
 TEST(WeylDecompositionTest, Random) {
-  auto stopTime = std::chrono::steady_clock::now() + std::chrono::seconds{3};
-  auto iterations = 0;
-  while (std::chrono::steady_clock::now() < stopTime) {
-    auto originalMatrix = randomUnitaryMatrix();
+  constexpr auto maxIterations = 5000;
+  for (int i = 0; i < maxIterations; ++i) {
+    auto originalMatrix = randomUnitaryMatrix<Eigen::Matrix4cd>();
     auto decomposition =
         TwoQubitWeylDecomposition::create(originalMatrix, 1.0 - 1e-12);
     auto restoredMatrix = WeylDecompositionTest::restore(decomposition);
@@ -102,21 +82,17 @@ TEST(WeylDecompositionTest, Random) {
         << originalMatrix << '\n'
         << "RESULT:\n"
         << restoredMatrix << '\n';
-    ++iterations;
   }
-
-  RecordProperty("iterations", iterations);
-  std::cerr << "Iterations: " << iterations << '\n';
 }
 
-INSTANTIATE_TEST_CASE_P(
+INSTANTIATE_TEST_SUITE_P(
     SingleQubitMatrices, WeylDecompositionTest,
     ::testing::Values(Eigen::Matrix4cd::Identity(),
                       Eigen::kroneckerProduct(rzMatrix(1.0), ryMatrix(3.1)),
                       Eigen::kroneckerProduct(Eigen::Matrix2cd::Identity(),
                                               rxMatrix(0.1))));
 
-INSTANTIATE_TEST_CASE_P(
+INSTANTIATE_TEST_SUITE_P(
     TwoQubitMatrices, WeylDecompositionTest,
     ::testing::Values(
         rzzMatrix(2.0), ryyMatrix(1.0) * rzzMatrix(3.0) * rxxMatrix(2.0),
@@ -132,7 +108,7 @@ INSTANTIATE_TEST_CASE_P(
                 {.type = qc::X, .parameter = {}, .qubitId = {0, 1}}) *
             Eigen::kroneckerProduct(IPX, IPY)));
 
-INSTANTIATE_TEST_CASE_P(
+INSTANTIATE_TEST_SUITE_P(
     SpecializedMatrices, WeylDecompositionTest,
     ::testing::Values(
         // id + controlled + general already covered by other parametrizations

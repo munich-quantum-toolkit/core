@@ -475,16 +475,18 @@ protected:
   [[nodiscard]] std::array<std::complex<double>, 4>
   traces(const decomposition::TwoQubitWeylDecomposition& target) const {
     return {
+        4. * std::complex<double>{std::cos(target.a()) * std::cos(target.b()) *
+                                      std::cos(target.c()),
+                                  std::sin(target.a()) * std::sin(target.b()) *
+                                      std::sin(target.c())},
         4. *
             std::complex<double>{
-                std::cos(target.a()) * std::cos(target.b()) * std::cos(target.c()),
-                std::sin(target.a()) * std::sin(target.b()) * std::sin(target.c())},
-        4. * std::complex<double>{std::cos(qc::PI_4 - target.a()) *
-                                      std::cos(basisDecomposer.b() - target.b()) *
-                                      std::cos(target.c()),
-                                  std::sin(qc::PI_4 - target.a()) *
-                                      std::sin(basisDecomposer.b() - target.b()) *
-                                      std::sin(target.c())},
+                std::cos(qc::PI_4 - target.a()) *
+                    std::cos(basisDecomposer.b() - target.b()) *
+                    std::cos(target.c()),
+                std::sin(qc::PI_4 - target.a()) *
+                    std::sin(basisDecomposer.b() - target.b()) *
+                    std::sin(target.c())},
         std::complex<double>{4. * std::cos(target.c()), 0.},
         std::complex<double>{4., 0.},
     };

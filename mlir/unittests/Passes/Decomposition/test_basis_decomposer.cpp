@@ -16,13 +16,12 @@
 #include "mlir/Passes/Decomposition/Helpers.h"
 #include "mlir/Passes/Decomposition/UnitaryMatrices.h"
 #include "mlir/Passes/Decomposition/WeylDecomposition.h"
+#include "utils.h"
 
 #include <Eigen/QR>
 #include <cassert>
-#include <chrono>
 #include <cstdlib>
 #include <gtest/gtest.h>
-#include <iostream>
 #include <llvm/ADT/SmallVector.h>
 #include <optional>
 #include <tuple>
@@ -30,23 +29,6 @@
 
 using namespace mlir::qco;
 using namespace mlir::qco::decomposition;
-
-namespace {
-[[nodiscard]] Eigen::Matrix4cd randomUnitaryMatrix() {
-  [[maybe_unused]] static auto initializeRandom = []() {
-    // Eigen uses std::rand() internally, use fixed seed for deterministic
-    // testing behavior
-    std::srand(123456UL);
-    return true;
-  }();
-  const Eigen::Matrix4cd randomMatrix = Eigen::Matrix4cd::Random();
-  Eigen::HouseholderQR<Eigen::Matrix4cd> qr{}; // NOLINT(misc-include-cleaner)
-  qr.compute(randomMatrix);
-  const Eigen::Matrix4cd unitaryMatrix = qr.householderQ();
-  assert(helpers::isUnitaryMatrix(unitaryMatrix));
-  return unitaryMatrix;
-}
-} // namespace
 
 class BasisDecomposerTest
     : public testing::TestWithParam<
@@ -109,8 +91,7 @@ TEST_P(BasisDecomposerTest, TestApproximation) {
 }
 
 TEST(BasisDecomposerTest, Random) {
-  auto stopTime = std::chrono::steady_clock::now() + std::chrono::seconds{3};
-  auto iterations = 0;
+  constexpr auto maxIterations = 2000;
 
   const llvm::SmallVector<Gate, 2> basisGates{
       {.type = qc::X, .parameter = {}, .qubitId = {0, 1}},
@@ -131,8 +112,8 @@ TEST(BasisDecomposerTest, Random) {
   };
   auto selectRandomBasisGate = [&]() { return basisGates[distBasisGate(rng)]; };
 
-  while (std::chrono::steady_clock::now() < stopTime) {
-    auto originalMatrix = randomUnitaryMatrix();
+  for (int i = 0; i < maxIterations; ++i) {
+    auto originalMatrix = randomUnitaryMatrix<Eigen::Matrix4cd>();
 
     auto targetDecomposition =
         TwoQubitWeylDecomposition::create(originalMatrix, 1.0);
@@ -150,14 +131,10 @@ TEST(BasisDecomposerTest, Random) {
         << originalMatrix << '\n'
         << "RESULT:\n"
         << restoredMatrix << '\n';
-    ++iterations;
   }
-
-  RecordProperty("iterations", iterations);
-  std::cerr << "Iterations: " << iterations << '\n';
 }
 
-INSTANTIATE_TEST_CASE_P(
+INSTANTIATE_TEST_SUITE_P(
     SingleQubitMatrices, BasisDecomposerTest,
     testing::Combine(
         // basis gates
@@ -176,7 +153,7 @@ INSTANTIATE_TEST_CASE_P(
                         Eigen::kroneckerProduct(Eigen::Matrix2cd::Identity(),
                                                 rxMatrix(0.1)))));
 
-INSTANTIATE_TEST_CASE_P(
+INSTANTIATE_TEST_SUITE_P(
     TwoQubitMatrices, BasisDecomposerTest,
     testing::Combine(
         // basis gates
