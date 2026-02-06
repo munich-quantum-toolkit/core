@@ -27,6 +27,7 @@
 #include <cstdint>
 #include <limits>
 #include <llvm/ADT/STLExtras.h>
+#include <llvm/Support/ErrorHandling.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/Operation.h>
@@ -216,6 +217,12 @@ public:
       const llvm::SmallVector<EulerBasis>& target1qEulerBases,
       std::optional<double> basisFidelity, bool approximate,
       std::optional<std::uint8_t> numBasisGateUses) const {
+    if (target1qEulerBases.empty()) {
+      llvm::reportFatalUsageError(
+          "Unable to perform two-qubit basis decomposition without at least "
+          "one euler basis!");
+    }
+
     auto getBasisFidelity = [&]() {
       if (approximate) {
         return basisFidelity.value_or(this->basisFidelity);
@@ -257,7 +264,9 @@ public:
       if (bestNbasis == 3) {
         return decomp3Supercontrolled(targetDecomposition);
       }
-      throw std::logic_error{"Invalid basis to use"};
+      llvm::reportFatalInternalError(
+          "Invalid number of basis gates to use in basis decomposition (" +
+          llvm::Twine(bestNbasis) + ")!");
     };
     auto decomposition = chooseDecomposition();
     llvm::SmallVector<std::optional<TwoQubitGateSequence>, 8>

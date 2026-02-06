@@ -27,6 +27,7 @@
 #include <iterator>
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/Support/Casting.h>
+#include <llvm/Support/ErrorHandling.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/Operation.h>
@@ -366,8 +367,8 @@ protected:
       // NOLINTNEXTLINE(readability-qualified-auto)
       auto it = llvm::find(outQubits, operand);
       if (it == outQubits.end()) {
-        throw std::logic_error{"Operand of single-qubit op and user of "
-                               "qubit is not in current outQubits"};
+        llvm::reportFatalInternalError("Operand of single-qubit op and user of "
+                                       "qubit is not in current outQubits");
       }
       QubitId qubitId = std::distance(outQubits.begin(), it);
       *it = nextGate->getResult(0);
@@ -533,7 +534,9 @@ protected:
           } else if (qubitIds.size() == 1) {
             inQubits[qubitIds[0]] = newGate.getOutputQubit(0);
           } else {
-            throw std::logic_error{"Invalid number of qubit IDs!"};
+            llvm::reportFatalInternalError(
+                "Invalid number of qubit IDs while trying to apply "
+                "decomposition result to MLIR!");
           }
         };
 
@@ -582,7 +585,8 @@ protected:
             unitaryMatrix;
         updateInQubits(gate.qubitId, newGate);
       } else {
-        throw std::runtime_error{"Unknown gate type!"};
+        llvm::reportFatalInternalError("Unsupported gate type in decomposition "
+                                       "while applying result to MLIR!");
       }
     }
     assert((unitaryMatrix * helpers::globalPhaseFactor(sequence.globalPhase))

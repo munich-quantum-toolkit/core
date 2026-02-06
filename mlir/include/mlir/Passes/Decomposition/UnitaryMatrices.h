@@ -11,9 +11,9 @@
 #pragma once
 
 #include "Gate.h"
-#include "Helpers.h"
 #include "ir/operations/OpType.hpp"
 
+#include <llvm/Support/ErrorHandling.h>
 #include <unsupported/Eigen/KroneckerProduct>
 
 namespace mlir::qco::decomposition {
@@ -113,7 +113,7 @@ expandToTwoQubits(const Eigen::Matrix2cd& singleQubitMatrix, QubitId qubitId) {
     return Eigen::kroneckerProduct(singleQubitMatrix,
                                    Eigen::Matrix2cd::Identity());
   }
-  throw std::invalid_argument{"Invalid qubit id for single-qubit expansion"};
+  llvm::reportFatalInternalError("Invalid qubit id for single-qubit expansion");
 }
 
 [[nodiscard]] inline Eigen::Matrix4cd
@@ -127,7 +127,8 @@ fixTwoQubitMatrixQubitOrder(const Eigen::Matrix4cd& twoQubitMatrix,
   if (qubitIds == llvm::SmallVector<QubitId, 2>{0, 1}) {
     return twoQubitMatrix;
   }
-  throw std::invalid_argument{"Invalid qubit IDs for fixing two-qubit matrix"};
+  llvm::reportFatalInternalError(
+      "Invalid qubit IDs for fixing two-qubit matrix");
 }
 
 [[nodiscard]] inline Eigen::Matrix2cd getSingleQubitMatrix(const Gate& gate) {
@@ -163,9 +164,9 @@ fixTwoQubitMatrixQubitOrder(const Eigen::Matrix4cd& twoQubitMatrix,
   if (gate.type == qc::H) {
     return H_GATE;
   }
-  throw std::invalid_argument{
-      "unsupported gate type for single qubit matrix (" +
-      qc::toString(gate.type) + ")"};
+  llvm::reportFatalInternalError(
+      llvm::StringRef("unsupported gate type for single qubit matrix (" +
+                      qc::toString(gate.type) + ")"));
 }
 
 // TODO: remove? only used for verification of circuit and in unittests
@@ -200,10 +201,12 @@ fixTwoQubitMatrixQubitOrder(const Eigen::Matrix4cd& twoQubitMatrix,
     if (gate.type == qc::I) {
       return Eigen::Matrix4cd::Identity();
     }
-    throw std::invalid_argument{"unsupported gate type for two qubit matrix (" +
-                                qc::toString(gate.type) + ")"};
+    llvm::reportFatalInternalError(
+        llvm::StringRef("unsupported gate type for two qubit matrix (" +
+                        qc::toString(gate.type) + ")"));
   }
-  throw std::logic_error{"Invalid number of qubit IDs in compute_unitary"};
+  llvm::reportFatalInternalError(
+      "Invalid number of qubit IDs in compute_unitary");
 }
 
 } // namespace mlir::qco::decomposition

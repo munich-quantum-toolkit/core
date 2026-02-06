@@ -14,7 +14,7 @@
 
 #include <cstdint>
 #include <llvm/ADT/SmallVector.h>
-#include <stdexcept>
+#include <llvm/Support/ErrorHandling.h>
 
 namespace mlir::qco::decomposition {
 /**
@@ -68,8 +68,8 @@ getGateTypesForEulerBasis(EulerBasis eulerBasis) {
   case EulerBasis::U1X:
     return {qc::RZ, qc::P};
   }
-  throw std::invalid_argument{
-      "Unsupported euler basis for translation to gate types"};
+  llvm::reportFatalInternalError(
+      "Unsupported euler basis for translation to gate types");
 }
 
 } // namespace mlir::qco::decomposition

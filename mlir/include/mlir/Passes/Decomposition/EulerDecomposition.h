@@ -22,8 +22,8 @@
 #include <cmath>
 #include <complex>
 #include <llvm/ADT/STLExtras.h>
+#include <llvm/Support/ErrorHandling.h>
 #include <optional>
-#include <stdexcept>
 
 namespace mlir::qco::decomposition {
 
@@ -60,7 +60,8 @@ public:
       return decomposeKAK(theta, phi, lambda, phase, qc::RX, qc::RY, simplify,
                           atol);
     default:
-      throw std::invalid_argument{"Unsupported base for circuit generation!"};
+      llvm::reportFatalInternalError("Unsupported euler basis for circuit "
+                                     "generation in decomposition!");
     }
   }
 
@@ -84,7 +85,8 @@ public:
     if (basis == EulerBasis::ZXZ) {
       return paramsZxzInner(matrix);
     }
-    throw std::invalid_argument{"Unknown EulerBasis for angles_from_unitary"};
+    llvm::reportFatalInternalError(
+        "Unsupported euler basis for angle computation in decomposition!");
   }
 
 private:

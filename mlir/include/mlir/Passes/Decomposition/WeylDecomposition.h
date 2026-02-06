@@ -25,6 +25,7 @@
 #include <complex>
 #include <cstdint>
 #include <llvm/ADT/STLExtras.h>
+#include <llvm/Support/ErrorHandling.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/Operation.h>
@@ -308,9 +309,9 @@ struct TwoQubitWeylDecomposition {
     if (decomposition.requestedFidelity) {
       if (decomposition.calculatedFidelity + 1.0e-13 <
           *decomposition.requestedFidelity) {
-        throw std::runtime_error{
+        llvm::reportFatalInternalError(
             "TwoQubitWeylDecomposition: Calculated fidelity of "
-            "specialization is worse than requested fidelity!"};
+            "specialization is worse than requested fidelity!");
       }
     }
     decomposition.globalPhase += std::arg(trace);
@@ -375,7 +376,7 @@ protected:
     if (direction == MagicBasisTransform::Into) {
       return bNonNormalized * unitary * bNonNormalizedDagger;
     }
-    throw std::logic_error{"Unknown MagicBasisTransform direction!"};
+    llvm::reportFatalInternalError("Unknown MagicBasisTransform direction!");
   }
 
   static double closestPartialSwap(double a, double b, double c) {
@@ -449,8 +450,8 @@ protected:
         return std::make_pair(p, d);
       }
     }
-    throw std::runtime_error{
-        "TwoQubitWeylDecomposition: failed to diagonalize M2."};
+    llvm::reportFatalInternalError(
+        "TwoQubitWeylDecomposition: failed to diagonalize M2.");
   }
 
   /**
@@ -481,8 +482,8 @@ protected:
       detR = r.determinant();
     }
     if (std::abs(detR) < 0.1) {
-      throw std::runtime_error{
-          "decompose_two_qubit_product_gate: unable to decompose: det_r < 0.1"};
+      llvm::reportFatalInternalError(
+          "decompose_two_qubit_product_gate: unable to decompose: det_r < 0.1");
     }
     r /= std::sqrt(detR);
     // transpose with complex conjugate of each element
@@ -499,8 +500,8 @@ protected:
     Eigen::Matrix2cd l{{temp(0, 0), temp(0, 2)}, {temp(2, 0), temp(2, 2)}};
     auto detL = l.determinant();
     if (std::abs(detL) < 0.9) {
-      throw std::runtime_error{
-          "decompose_two_qubit_product_gate: unable to decompose: detL < 0.9"};
+      llvm::reportFatalInternalError(
+          "decompose_two_qubit_product_gate: unable to decompose: detL < 0.9");
     }
     l /= std::sqrt(detL);
     auto phase = std::arg(detL) / 2.;
@@ -575,8 +576,9 @@ protected:
    */
   bool applySpecialization() {
     if (specialization != Specialization::General) {
-      throw std::logic_error{"Application of specialization only works on "
-                             "general decomposition!"};
+      llvm::reportFatalInternalError(
+          "Application of specialization only works on "
+          "general Weyl decompositions!");
     }
     bool flippedFromOriginal = false;
     auto newSpecialization = bestSpecialization();
@@ -771,7 +773,8 @@ protected:
       k2r = IPZ * rxMatrix(-k2lphi) * IPZ * k2r;
       defaultEulerBasis = eulerBasis;
     } else {
-      throw std::logic_error{"Unknown specialization"};
+      llvm::reportFatalInternalError(
+          "Unknown specialization for Weyl decomposition!");
     }
     return flippedFromOriginal;
   }
