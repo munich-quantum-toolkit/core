@@ -171,7 +171,7 @@ struct TwoQubitWeylDecomposition {
     // parameters of the canonical gate which is later used in the
     // verification
     matrix4x4 temp = dReal.asDiagonal();
-    temp *= IM;
+    temp *= C_IM;
     // since the matrix is diagonal, matrix exponental is equivalent to
     // element-wise exponential function
     temp.diagonal() = temp.diagonal().array().exp().matrix();
@@ -281,7 +281,7 @@ struct TwoQubitWeylDecomposition {
     // make sure decomposition is equal to input
     assert((Eigen::kroneckerProduct(K1l, K1r) *
             decomposition.getCanonicalMatrix() *
-            Eigen::kroneckerProduct(K2l, K2r) * std::exp(IM * globalPhase))
+            Eigen::kroneckerProduct(K2l, K2r) * std::exp(C_IM * globalPhase))
                .isApprox(unitaryMatrix, SANITY_CHECK_PRECISION));
 
     // determine actual specialization of canonical gate so that the 1q
@@ -318,7 +318,7 @@ struct TwoQubitWeylDecomposition {
     assert((Eigen::kroneckerProduct(decomposition.k1l, decomposition.k1r) *
             decomposition.getCanonicalMatrix() *
             Eigen::kroneckerProduct(decomposition.k2l, decomposition.k2r) *
-            std::exp(IM * decomposition.globalPhase))
+            std::exp(C_IM * decomposition.globalPhase))
                .isApprox(unitaryMatrix, SANITY_CHECK_PRECISION));
 
     return decomposition;
@@ -355,10 +355,10 @@ protected:
   static matrix4x4 magicBasisTransform(const matrix4x4& unitary,
                                        MagicBasisTransform direction) {
     const matrix4x4 bNonNormalized{
-        {C_ONE, IM, C_ZERO, C_ZERO},
-        {C_ZERO, C_ZERO, IM, C_ONE},
-        {C_ZERO, C_ZERO, IM, C_M_ONE},
-        {C_ONE, M_IM, C_ZERO, C_ZERO},
+        {C_ONE, C_IM, C_ZERO, C_ZERO},
+        {C_ZERO, C_ZERO, C_IM, C_ONE},
+        {C_ZERO, C_ZERO, C_IM, C_M_ONE},
+        {C_ONE, C_M_IM, C_ZERO, C_ZERO},
     };
 
     const matrix4x4 bNonNormalizedDagger{

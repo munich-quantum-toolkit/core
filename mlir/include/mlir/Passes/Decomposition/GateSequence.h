@@ -79,7 +79,7 @@ struct QubitGateSequence {
       auto gateMatrix = getTwoQubitMatrix(gate);
       unitaryMatrix = gateMatrix * unitaryMatrix;
     }
-    unitaryMatrix *= std::exp(IM * globalPhase);
+    unitaryMatrix *= std::exp(C_IM * globalPhase);
     assert(helpers::isUnitaryMatrix(unitaryMatrix));
     return unitaryMatrix;
   }

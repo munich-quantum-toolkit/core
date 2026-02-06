@@ -54,7 +54,7 @@ public:
       matrix = getSingleQubitMatrix(gate) * matrix;
     }
 
-    matrix *= std::exp(IM * sequence.globalPhase);
+    matrix *= std::exp(C_IM * sequence.globalPhase);
     return matrix;
   }
 

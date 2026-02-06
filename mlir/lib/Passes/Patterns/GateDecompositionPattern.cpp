@@ -587,7 +587,7 @@ protected:
         throw std::runtime_error{"Unknown gate type!"};
       }
     }
-    assert((unitaryMatrix * std::exp(IM * sequence.globalPhase))
+    assert((unitaryMatrix * std::exp(C_IM * sequence.globalPhase))
                .isApprox(series.getUnitaryMatrix().value_or(matrix4x4::Zero()),
                          SANITY_CHECK_PRECISION));
 

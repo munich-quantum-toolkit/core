@@ -60,7 +60,7 @@ public:
 
   [[nodiscard]] static qfp
   globalPhaseFactor(const TwoQubitWeylDecomposition& decomposition) {
-    return std::exp(IM * decomposition.globalPhase);
+    return std::exp(C_IM * decomposition.globalPhase);
   }
   [[nodiscard]] static matrix4x4
   can(const TwoQubitWeylDecomposition& decomposition) {

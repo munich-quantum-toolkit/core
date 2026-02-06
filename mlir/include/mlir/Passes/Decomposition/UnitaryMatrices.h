@@ -99,9 +99,9 @@ constexpr matrix4x4 SWAP_GATE{
     {1, 0, 0, 0}, {0, 0, 1, 0}, {0, 1, 0, 0}, {0, 0, 0, 1}};
 constexpr matrix2x2 H_GATE{{1.0 / SQRT2, 1.0 / SQRT2},
                            {1.0 / SQRT2, -1.0 / SQRT2}};
-constexpr matrix2x2 IPZ{{IM, C_ZERO}, {C_ZERO, M_IM}};
+constexpr matrix2x2 IPZ{{C_IM, C_ZERO}, {C_ZERO, C_M_IM}};
 constexpr matrix2x2 IPY{{C_ZERO, C_ONE}, {C_M_ONE, C_ZERO}};
-constexpr matrix2x2 IPX{{C_ZERO, IM}, {IM, C_ZERO}};
+constexpr matrix2x2 IPX{{C_ZERO, C_IM}, {C_IM, C_ZERO}};
 
 [[nodiscard]] inline matrix4x4
 expandToTwoQubits(const matrix2x2& singleQubitMatrix, QubitId qubitId) {

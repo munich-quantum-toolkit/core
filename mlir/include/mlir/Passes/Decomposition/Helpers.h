@@ -16,17 +16,14 @@
 
 #include <Eigen/Core>        // NOLINT(misc-include-cleaner)
 #include <Eigen/Eigenvalues> // NOLINT(misc-include-cleaner)
-#include <algorithm>
 #include <cmath>
 #include <complex>
-#include <functional>
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/Support/Casting.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/IR/BuiltinAttributes.h>
 #include <mlir/IR/Operation.h>
 #include <mlir/IR/Value.h>
-#include <optional>
 #include <stdexcept>
 #include <unsupported/Eigen/KroneckerProduct> // NOLINT(misc-include-cleaner)
 
@@ -44,8 +41,8 @@ using rdiagonal4x4 = Eigen::Vector<fp, 4>;
 constexpr qfp C_ZERO{0., 0.};
 constexpr qfp C_ONE{1., 0.};
 constexpr qfp C_M_ONE{-1., 0.};
-constexpr qfp IM{0., 1.};
-constexpr qfp M_IM{0., -1.};
+constexpr qfp C_IM{0., 1.};
+constexpr qfp C_M_IM{0., -1.};
 
 } // namespace mlir::qco
 

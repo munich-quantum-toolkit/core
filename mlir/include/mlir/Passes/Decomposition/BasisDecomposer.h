@@ -104,21 +104,21 @@ public:
     auto b = basisDecomposer.b;
     auto temp = qfp(0.5, -0.5);
     const matrix2x2 k11l{
-        {temp * (M_IM * std::exp(qfp(0., -b))), temp * std::exp(qfp(0., -b))},
-        {temp * (M_IM * std::exp(qfp(0., b))), temp * -std::exp(qfp(0., b))}};
-    const matrix2x2 k11r{{FRAC1_SQRT2 * (IM * std::exp(qfp(0., -b))),
+        {temp * (C_M_IM * std::exp(qfp(0., -b))), temp * std::exp(qfp(0., -b))},
+        {temp * (C_M_IM * std::exp(qfp(0., b))), temp * -std::exp(qfp(0., b))}};
+    const matrix2x2 k11r{{FRAC1_SQRT2 * (C_IM * std::exp(qfp(0., -b))),
                           FRAC1_SQRT2 * -std::exp(qfp(0., -b))},
                          {FRAC1_SQRT2 * std::exp(qfp(0., b)),
-                          FRAC1_SQRT2 * (M_IM * std::exp(qfp(0., b)))}};
+                          FRAC1_SQRT2 * (C_M_IM * std::exp(qfp(0., b)))}};
     const matrix2x2 k32lK21l{{FRAC1_SQRT2 * qfp(1., std::cos(2. * b)),
-                              FRAC1_SQRT2 * (IM * std::sin(2. * b))},
-                             {FRAC1_SQRT2 * (IM * std::sin(2. * b)),
+                              FRAC1_SQRT2 * (C_IM * std::sin(2. * b))},
+                             {FRAC1_SQRT2 * (C_IM * std::sin(2. * b)),
                               FRAC1_SQRT2 * qfp(1., -std::cos(2. * b))}};
     temp = qfp(0.5, 0.5);
     const matrix2x2 k21r{
-        {temp * (M_IM * std::exp(qfp(0., -2. * b))),
+        {temp * (C_M_IM * std::exp(qfp(0., -2. * b))),
          temp * std::exp(qfp(0., -2. * b))},
-        {temp * (IM * std::exp(qfp(0., 2. * b))),
+        {temp * (C_IM * std::exp(qfp(0., 2. * b))),
          temp * std::exp(qfp(0., 2. * b))},
     };
     const matrix2x2 k22l{
@@ -133,14 +133,14 @@ public:
          FRAC1_SQRT2 * std::exp(qfp(0., b))},
     };
     const matrix2x2 k31r{
-        {IM * std::exp(qfp(0., b)), C_ZERO},
-        {C_ZERO, M_IM * std::exp(qfp(0., -b))},
+        {C_IM * std::exp(qfp(0., b)), C_ZERO},
+        {C_ZERO, C_M_IM * std::exp(qfp(0., -b))},
     };
     temp = qfp(0.5, 0.5);
     const matrix2x2 k32r{
         {temp * std::exp(qfp(0., b)), temp * -std::exp(qfp(0., -b))},
-        {temp * (M_IM * std::exp(qfp(0., b))),
-         temp * (M_IM * std::exp(qfp(0., -b)))},
+        {temp * (C_M_IM * std::exp(qfp(0., b))),
+         temp * (C_M_IM * std::exp(qfp(0., -b)))},
     };
     auto k1lDagger = basisDecomposer.k1l.transpose().conjugate();
     auto k1rDagger = basisDecomposer.k1r.transpose().conjugate();
