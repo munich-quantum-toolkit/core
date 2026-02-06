@@ -36,6 +36,8 @@ template <pyClass T> [[nodiscard]] auto repr(T c) -> std::string {
 
 // NOLINTNEXTLINE(misc-use-internal-linkage)
 void registerFomac(nb::module_& m) {
+  m.doc() = R"pb(Reconstruction of NADevice from QDMI's Device class.)pb";
+
   nb::module_::import_("mqt.core.fomac");
 
   auto device = nb::class_<na::Session::Device, fomac::Session::Device>(
