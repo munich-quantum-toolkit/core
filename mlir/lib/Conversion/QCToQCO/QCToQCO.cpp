@@ -1180,12 +1180,18 @@ struct ConvertQCInvOp final : StatefulOpConversionPattern<qc::InvOp> {
     // Get QCO targets from state map
     const auto numTargets = op.getNumTargets();
     SmallVector<Value> qcoTargets;
-    qcoTargets.reserve(numTargets);
-    for (size_t i = 0; i < numTargets; ++i) {
-      const auto& qcTarget = op.getTarget(i);
-      assert(qubitMap.contains(qcTarget) && "QC qubit not found");
-      const auto& qcoTarget = qubitMap[qcTarget];
-      qcoTargets.push_back(qcoTarget);
+    if (state.inNestedRegion == 0) {
+      qcoTargets.reserve(numTargets);
+      for (size_t i = 0; i < numTargets; ++i) {
+        const auto& qcTarget = op.getTarget(i);
+        assert(qubitMap.contains(qcTarget) && "QC qubit not found");
+        const auto& qcoTarget = qubitMap[qcTarget];
+        qcoTargets.push_back(qcoTarget);
+      }
+    } else {
+      assert(state.targetsIn[state.inNestedRegion].size() == numTargets &&
+             "Invalid number of input targets");
+      qcoTargets = state.targetsIn[state.inNestedRegion];
     }
 
     // Create qco.inv
@@ -1198,6 +1204,9 @@ struct ConvertQCInvOp final : StatefulOpConversionPattern<qc::InvOp> {
         const auto& qcTarget = op.getTarget(i);
         qubitMap[qcTarget] = targetsOut[i];
       }
+    } else {
+      state.targetsIn.erase(state.inNestedRegion);
+      state.targetsOut.try_emplace(state.inNestedRegion, qcoOp.getTargetsOut());
     }
 
     // Update modifier information
