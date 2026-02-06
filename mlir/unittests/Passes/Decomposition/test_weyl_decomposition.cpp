@@ -16,7 +16,6 @@
 #include <Eigen/QR>
 #include <cassert>
 #include <chrono>
-#include <cmath>
 #include <cstdlib>
 #include <gtest/gtest.h>
 #include <iostream>
@@ -40,14 +39,6 @@ namespace {
   assert(helpers::isUnitaryMatrix(unitaryMatrix));
   return unitaryMatrix;
 }
-
-[[nodiscard]] Eigen::Matrix4cd canonicalGate(double a, double b, double c) {
-  TwoQubitWeylDecomposition tmp{};
-  tmp.a = a;
-  tmp.b = b;
-  tmp.c = c;
-  return tmp.getCanonicalMatrix();
-}
 } // namespace
 
 class WeylDecompositionTest : public testing::TestWithParam<Eigen::Matrix4cd> {
@@ -60,7 +51,7 @@ public:
 
   [[nodiscard]] static std::complex<double>
   globalPhaseFactor(const TwoQubitWeylDecomposition& decomposition) {
-    return helpers::globalPhaseFactor(decomposition.globalPhase);
+    return helpers::globalPhaseFactor(decomposition.globalPhase());
   }
   [[nodiscard]] static Eigen::Matrix4cd
   can(const TwoQubitWeylDecomposition& decomposition) {
@@ -68,11 +59,11 @@ public:
   }
   [[nodiscard]] static Eigen::Matrix4cd
   k1(const TwoQubitWeylDecomposition& decomposition) {
-    return Eigen::kroneckerProduct(decomposition.k1l, decomposition.k1r);
+    return Eigen::kroneckerProduct(decomposition.k1l(), decomposition.k1r());
   }
   [[nodiscard]] static Eigen::Matrix4cd
   k2(const TwoQubitWeylDecomposition& decomposition) {
-    return Eigen::kroneckerProduct(decomposition.k2l, decomposition.k2r);
+    return Eigen::kroneckerProduct(decomposition.k2l(), decomposition.k2r());
   }
 };
 
@@ -127,20 +118,19 @@ INSTANTIATE_TEST_CASE_P(
 
 INSTANTIATE_TEST_CASE_P(
     TwoQubitMatrices, WeylDecompositionTest,
-    ::testing::Values(rzzMatrix(2.0),
-                      ryyMatrix(1.0) * rzzMatrix(3.0) * rxxMatrix(2.0),
-                      canonicalGate(1.5, -0.2, 0.0) *
-                          Eigen::kroneckerProduct(rxMatrix(1.0),
-                                                  Eigen::Matrix2cd::Identity()),
-                      Eigen::kroneckerProduct(rxMatrix(1.0), ryMatrix(1.0)) *
-                          canonicalGate(1.1, 0.2, 3.0) *
-                          Eigen::kroneckerProduct(rxMatrix(1.0),
-                                                  Eigen::Matrix2cd::Identity()),
-                      Eigen::kroneckerProduct(H_GATE, IPZ) *
-                          getTwoQubitMatrix({.type = qc::X,
-                                             .parameter = {},
-                                             .qubitId = {0, 1}}) *
-                          Eigen::kroneckerProduct(IPX, IPY)));
+    ::testing::Values(
+        rzzMatrix(2.0), ryyMatrix(1.0) * rzzMatrix(3.0) * rxxMatrix(2.0),
+        TwoQubitWeylDecomposition::getCanonicalMatrix(1.5, -0.2, 0.0) *
+            Eigen::kroneckerProduct(rxMatrix(1.0),
+                                    Eigen::Matrix2cd::Identity()),
+        Eigen::kroneckerProduct(rxMatrix(1.0), ryMatrix(1.0)) *
+            TwoQubitWeylDecomposition::getCanonicalMatrix(1.1, 0.2, 3.0) *
+            Eigen::kroneckerProduct(rxMatrix(1.0),
+                                    Eigen::Matrix2cd::Identity()),
+        Eigen::kroneckerProduct(H_GATE, IPZ) *
+            getTwoQubitMatrix(
+                {.type = qc::X, .parameter = {}, .qubitId = {0, 1}}) *
+            Eigen::kroneckerProduct(IPX, IPY)));
 
 INSTANTIATE_TEST_CASE_P(
     SpecializedMatrices, WeylDecompositionTest,
@@ -153,16 +143,16 @@ INSTANTIATE_TEST_CASE_P(
             getTwoQubitMatrix(
                 {.type = qc::X, .parameter = {}, .qubitId = {0, 1}}),
         // partial swap equiv
-        canonicalGate(0.5, 0.5, 0.5),
+        TwoQubitWeylDecomposition::getCanonicalMatrix(0.5, 0.5, 0.5),
         // partial swap equiv (flipped)
-        canonicalGate(0.5, 0.5, -0.5),
+        TwoQubitWeylDecomposition::getCanonicalMatrix(0.5, 0.5, -0.5),
         // mirror controlled equiv
         getTwoQubitMatrix({.type = qc::X, .parameter = {}, .qubitId = {0, 1}}) *
             getTwoQubitMatrix(
                 {.type = qc::X, .parameter = {}, .qubitId = {1, 0}}),
         // sim aab equiv
-        canonicalGate(0.5, 0.5, 0.1),
+        TwoQubitWeylDecomposition::getCanonicalMatrix(0.5, 0.5, 0.1),
         // sim abb equiv
-        canonicalGate(0.5, 0.1, 0.1),
+        TwoQubitWeylDecomposition::getCanonicalMatrix(0.5, 0.1, 0.1),
         // sim ab-b equiv
-        canonicalGate(0.5, 0.1, -0.1)));
+        TwoQubitWeylDecomposition::getCanonicalMatrix(0.5, 0.1, -0.1)));

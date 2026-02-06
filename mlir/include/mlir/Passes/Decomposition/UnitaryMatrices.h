@@ -13,6 +13,7 @@
 #include "Gate.h"
 #include "ir/operations/OpType.hpp"
 
+#include <llvm/ADT/StringRef.h>
 #include <llvm/Support/ErrorHandling.h>
 #include <unsupported/Eigen/KroneckerProduct>
 
@@ -95,13 +96,14 @@ uMatrix(const double lambda, const double phi, const double theta) {
 [[nodiscard]] constexpr Eigen::Matrix2cd pMatrix(const double lambda) {
   return Eigen::Matrix2cd{{1, 0}, {0, {std::cos(lambda), std::sin(lambda)}}};
 }
-constexpr Eigen::Matrix4cd SWAP_GATE{
+
+inline constexpr Eigen::Matrix4cd SWAP_GATE{
     {1, 0, 0, 0}, {0, 0, 1, 0}, {0, 1, 0, 0}, {0, 0, 0, 1}};
-constexpr Eigen::Matrix2cd H_GATE{{1.0 / SQRT2, 1.0 / SQRT2},
-                                  {1.0 / SQRT2, -1.0 / SQRT2}};
-constexpr Eigen::Matrix2cd IPZ{{{0, 1}, 0}, {0, {0, -1}}};
-constexpr Eigen::Matrix2cd IPY{{0, 1}, {-1, 0}};
-constexpr Eigen::Matrix2cd IPX{{0, {0, 1}}, {{0, 1}, 0}};
+inline constexpr Eigen::Matrix2cd H_GATE{{1.0 / SQRT2, 1.0 / SQRT2},
+                                         {1.0 / SQRT2, -1.0 / SQRT2}};
+inline constexpr Eigen::Matrix2cd IPZ{{{0, 1}, 0}, {0, {0, -1}}};
+inline constexpr Eigen::Matrix2cd IPY{{0, 1}, {-1, 0}};
+inline constexpr Eigen::Matrix2cd IPX{{0, {0, 1}}, {{0, 1}, 0}};
 
 [[nodiscard]] inline Eigen::Matrix4cd
 expandToTwoQubits(const Eigen::Matrix2cd& singleQubitMatrix, QubitId qubitId) {
@@ -138,12 +140,15 @@ fixTwoQubitMatrixQubitOrder(const Eigen::Matrix4cd& twoQubitMatrix,
         {std::complex<double>{0.5, -0.5}, std::complex<double>{0.5, 0.5}}};
   }
   if (gate.type == qc::RX) {
+    assert(gate.parameter.size() == 1);
     return rxMatrix(gate.parameter[0]);
   }
   if (gate.type == qc::RY) {
+    assert(gate.parameter.size() == 1);
     return ryMatrix(gate.parameter[0]);
   }
   if (gate.type == qc::RZ) {
+    assert(gate.parameter.size() == 1);
     return rzMatrix(gate.parameter[0]);
   }
   if (gate.type == qc::X) {
@@ -153,12 +158,15 @@ fixTwoQubitMatrixQubitOrder(const Eigen::Matrix4cd& twoQubitMatrix,
     return Eigen::Matrix2cd::Identity();
   }
   if (gate.type == qc::P) {
+    assert(gate.parameter.size() == 1);
     return pMatrix(gate.parameter[0]);
   }
   if (gate.type == qc::U) {
+    assert(gate.parameter.size() == 3);
     return uMatrix(gate.parameter[0], gate.parameter[1], gate.parameter[2]);
   }
   if (gate.type == qc::U2) {
+    assert(gate.parameter.size() == 2);
     return u2Matrix(gate.parameter[0], gate.parameter[1]);
   }
   if (gate.type == qc::H) {
@@ -188,21 +196,25 @@ fixTwoQubitMatrixQubitOrder(const Eigen::Matrix4cd& twoQubitMatrix,
         return Eigen::Matrix4cd{
             {1, 0, 0, 0}, {0, 0, 0, 1}, {0, 0, 1, 0}, {0, 1, 0, 0}};
       }
+      llvm::reportFatalInternalError("Invalid qubit IDs for CX gate");
     }
     if (gate.type == qc::RXX) {
+      assert(gate.parameter.size() == 1);
       return rxxMatrix(gate.parameter[0]);
     }
     if (gate.type == qc::RYY) {
+      assert(gate.parameter.size() == 1);
       return ryyMatrix(gate.parameter[0]);
     }
     if (gate.type == qc::RZZ) {
+      assert(gate.parameter.size() == 1);
       return rzzMatrix(gate.parameter[0]);
     }
     if (gate.type == qc::I) {
       return Eigen::Matrix4cd::Identity();
     }
     llvm::reportFatalInternalError(
-        llvm::StringRef("unsupported gate type for two qubit matrix (" +
+        llvm::StringRef("Unsupported gate type for two qubit matrix (" +
                         qc::toString(gate.type) + ")"));
   }
   llvm::reportFatalInternalError(

@@ -99,12 +99,12 @@ public:
         decomposition::TwoQubitWeylDecomposition::create(
             getTwoQubitMatrix(basisGate), basisFidelity);
     const auto isSuperControlled =
-        relativeEq(basisDecomposer.a, qc::PI_4, 1e-13, 1e-09) &&
-        relativeEq(basisDecomposer.c, 0.0, 1e-13, 1e-09);
+        relativeEq(basisDecomposer.a(), qc::PI_4, 1e-13, 1e-09) &&
+        relativeEq(basisDecomposer.c(), 0.0, 1e-13, 1e-09);
 
     // Create some useful matrices U1, U2, U3 are equivalent to the basis,
     // expand as Ui = Ki1.Ubasis.Ki2
-    auto b = basisDecomposer.b;
+    auto b = basisDecomposer.b();
     std::complex<double> temp{0.5, -0.5};
     const Eigen::Matrix2cd k11l{
         {temp * (-1i * std::exp(-1i * b)), temp * std::exp(-1i * b)},
@@ -141,10 +141,10 @@ public:
         {temp * std::exp(1i * b), temp * -std::exp(-1i * b)},
         {temp * (-1i * std::exp(1i * b)), temp * (-1i * std::exp(-1i * b))},
     };
-    auto k1lDagger = basisDecomposer.k1l.transpose().conjugate();
-    auto k1rDagger = basisDecomposer.k1r.transpose().conjugate();
-    auto k2lDagger = basisDecomposer.k2l.transpose().conjugate();
-    auto k2rDagger = basisDecomposer.k2r.transpose().conjugate();
+    auto k1lDagger = basisDecomposer.k1l().transpose().conjugate();
+    auto k1rDagger = basisDecomposer.k1r().transpose().conjugate();
+    auto k2lDagger = basisDecomposer.k2l().transpose().conjugate();
+    auto k2rDagger = basisDecomposer.k2r().transpose().conjugate();
     // Pre-build the fixed parts of the matrices used in 3-part
     // decomposition
     auto u0l = k31l * k1lDagger;
@@ -279,7 +279,7 @@ public:
     }
     TwoQubitGateSequence gates{
         .gates = {},
-        .globalPhase = targetDecomposition.globalPhase,
+        .globalPhase = targetDecomposition.globalPhase(),
     };
     // Worst case length is 5x 1q gates for each 1q decomposition + 1x 2q
     // gate We might overallocate a bit if the euler basis is different but
@@ -289,7 +289,7 @@ public:
     // QuantumCircuit or DAGCircuit when we return to Python space.
     constexpr auto twoQubitSequenceDefaultCapacity = 21;
     gates.gates.reserve(twoQubitSequenceDefaultCapacity);
-    gates.globalPhase -= bestNbasis * basisDecomposer.globalPhase;
+    gates.globalPhase -= bestNbasis * basisDecomposer.globalPhase();
     if (bestNbasis == 2) {
       gates.globalPhase += qc::PI;
     }
@@ -368,8 +368,8 @@ protected:
   [[nodiscard]] static llvm::SmallVector<Eigen::Matrix2cd>
   decomp0(const decomposition::TwoQubitWeylDecomposition& target) {
     return {
-        target.k1r * target.k2r,
-        target.k1l * target.k2l,
+        target.k1r() * target.k2r(),
+        target.k1l() * target.k2l(),
     };
   }
 
@@ -391,10 +391,10 @@ protected:
   decomp1(const decomposition::TwoQubitWeylDecomposition& target) const {
     // may not work for z != 0 and c != 0 (not always in Weyl chamber)
     return {
-        basisDecomposer.k2r.transpose().conjugate() * target.k2r,
-        basisDecomposer.k2l.transpose().conjugate() * target.k2l,
-        target.k1r * basisDecomposer.k1r.transpose().conjugate(),
-        target.k1l * basisDecomposer.k1l.transpose().conjugate(),
+        basisDecomposer.k2r().transpose().conjugate() * target.k2r(),
+        basisDecomposer.k2l().transpose().conjugate() * target.k2l(),
+        target.k1r() * basisDecomposer.k1r().transpose().conjugate(),
+        target.k1l() * basisDecomposer.k1l().transpose().conjugate(),
     };
   }
 
@@ -429,12 +429,12 @@ protected:
           "- no guarantee for exact decomposition with two basis gates");
     }
     return {
-        q2r * target.k2r,
-        q2l * target.k2l,
-        q1ra * rzMatrix(2. * target.b) * q1rb,
-        q1la * rzMatrix(-2. * target.a) * q1lb,
-        target.k1r * q0r,
-        target.k1l * q0l,
+        q2r * target.k2r(),
+        q2l * target.k2l(),
+        q1ra * rzMatrix(2. * target.b()) * q1rb,
+        q1la * rzMatrix(-2. * target.a()) * q1lb,
+        target.k1r() * q0r,
+        target.k1l() * q0l,
     };
   }
 
@@ -455,14 +455,14 @@ protected:
           "- no guarantee for exact decomposition with three basis gates");
     }
     return {
-        u3r * target.k2r,
-        u3l * target.k2l,
-        u2ra * rzMatrix(2. * target.b) * u2rb,
-        u2la * rzMatrix(-2. * target.a) * u2lb,
-        u1ra * rzMatrix(-2. * target.c) * u1rb,
+        u3r * target.k2r(),
+        u3l * target.k2l(),
+        u2ra * rzMatrix(2. * target.b()) * u2rb,
+        u2la * rzMatrix(-2. * target.a()) * u2lb,
+        u1ra * rzMatrix(-2. * target.c()) * u1rb,
         u1l,
-        target.k1r * u0r,
-        target.k1l * u0l,
+        target.k1r() * u0r,
+        target.k1l() * u0l,
     };
   }
 
@@ -477,15 +477,15 @@ protected:
     return {
         4. *
             std::complex<double>{
-                std::cos(target.a) * std::cos(target.b) * std::cos(target.c),
-                std::sin(target.a) * std::sin(target.b) * std::sin(target.c)},
-        4. * std::complex<double>{std::cos(qc::PI_4 - target.a) *
-                                      std::cos(basisDecomposer.b - target.b) *
-                                      std::cos(target.c),
-                                  std::sin(qc::PI_4 - target.a) *
-                                      std::sin(basisDecomposer.b - target.b) *
-                                      std::sin(target.c)},
-        std::complex<double>{4. * std::cos(target.c), 0.},
+                std::cos(target.a()) * std::cos(target.b()) * std::cos(target.c()),
+                std::sin(target.a()) * std::sin(target.b()) * std::sin(target.c())},
+        4. * std::complex<double>{std::cos(qc::PI_4 - target.a()) *
+                                      std::cos(basisDecomposer.b() - target.b()) *
+                                      std::cos(target.c()),
+                                  std::sin(qc::PI_4 - target.a()) *
+                                      std::sin(basisDecomposer.b() - target.b()) *
+                                      std::sin(target.c())},
+        std::complex<double>{4. * std::cos(target.c()), 0.},
         std::complex<double>{4., 0.},
     };
   }

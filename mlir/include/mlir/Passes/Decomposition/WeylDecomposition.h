@@ -26,6 +26,7 @@
 #include <cstdint>
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/Support/ErrorHandling.h>
+#include <llvm/Support/FormatVariadic.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/Operation.h>
@@ -54,45 +55,8 @@ constexpr double SANITY_CHECK_PRECISION = 1e-12;
  * decomposed using a single-qubit decomposition into e.g. rotation gates and
  * the canonical gate is RXX(-2 * a), RYY(-2 * b), RZZ (-2 * c).
  */
-struct TwoQubitWeylDecomposition {
-  enum class Specialization : std::uint8_t {
-    General,               // canonical gate has no special symmetry.
-    IdEquiv,               // canonical gate is identity.
-    SWAPEquiv,             // canonical gate is SWAP.
-    PartialSWAPEquiv,      // canonical gate is partial SWAP.
-    PartialSWAPFlipEquiv,  // canonical gate is flipped partial SWAP.
-    ControlledEquiv,       // canonical gate is a controlled gate.
-    MirrorControlledEquiv, // canonical gate is swap + controlled gate.
-
-    // These next 3 gates use the definition of fSim from eq (1) in:
-    // https://arxiv.org/pdf/2001.08343.pdf
-    FSimaabEquiv,  // parameters a=b & a!=c
-    FSimabbEquiv,  // parameters a!=b & b=c
-    FSimabmbEquiv, // parameters a!=b!=c & -b=c
-  };
-
-  // a, b, c are the parameters of the canonical gate (CAN)
-  double a;           // rotation of RXX gate in CAN (must be taken times -2.0)
-  double b;           // rotation of RYY gate in CAN (must be taken times -2.0)
-  double c;           // rotation of RZZ gate in CAN (must be taken times -2.0)
-  double globalPhase; // global phase adjustment
-  /**
-   * q1 - k2r - C - k1r -
-   *            A
-   * q0 - k2l - N - k1l -
-   */
-  Eigen::Matrix2cd k1l;           // "left" qubit after canonical gate
-  Eigen::Matrix2cd k2l;           // "left" qubit before canonical gate
-  Eigen::Matrix2cd k1r;           // "right" qubit after canonical gate
-  Eigen::Matrix2cd k2r;           // "right" qubit before canonical gate
-  Specialization specialization;  // detected symmetries in the matrix
-  EulerBasis defaultEulerBasis;   // recommended euler basis for k1l/k2l/k1r/k2r
-  std::optional<double>           // desired fidelity;
-      requestedFidelity;          // if set to std::nullopt, no automatic
-                                  // specialization will be applied
-  double calculatedFidelity;      // actual fidelity of decomposition
-  Eigen::Matrix4cd unitaryMatrix; // original matrix for this decomposition
-
+class TwoQubitWeylDecomposition {
+public:
   /**
    * Create Weyl decomposition.
    *
@@ -263,22 +227,22 @@ struct TwoQubitWeylDecomposition {
     // bind weyl coordinates as parameters of canonical gate
     auto [a, b, c] = std::tie(cs[1], cs[0], cs[2]);
 
-    TwoQubitWeylDecomposition decomposition{
-        .a = a,
-        .b = b,
-        .c = c,
-        .globalPhase = globalPhase,
-        .k1l = K1l,
-        .k2l = K2l,
-        .k1r = K1r,
-        .k2r = K2r,
-        .specialization = Specialization::General,
-        .defaultEulerBasis = EulerBasis::ZYZ,
-        .requestedFidelity = fidelity,
-        // will be calculated if a specialization is used, set to -1 for now
-        .calculatedFidelity = -1.0,
-        .unitaryMatrix = unitaryMatrix,
-    };
+    TwoQubitWeylDecomposition decomposition;
+    decomposition.a_ = a;
+    decomposition.b_ = b;
+    decomposition.c_ = c;
+    decomposition.globalPhase_ = globalPhase;
+    decomposition.k1l_ = K1l;
+    decomposition.k2l_ = K2l;
+    decomposition.k1r_ = K1r;
+    decomposition.k2r_ = K2r;
+    decomposition.specialization = Specialization::General;
+    decomposition.defaultEulerBasis = EulerBasis::ZYZ;
+    decomposition.requestedFidelity = fidelity;
+    // will be calculated if a specialization is used; set to -1 for now
+    decomposition.calculatedFidelity = -1.0;
+    decomposition.unitaryMatrix = unitaryMatrix;
+
     // make sure decomposition is equal to input
     assert((Eigen::kroneckerProduct(K1l, K1r) *
             decomposition.getCanonicalMatrix() *
@@ -293,11 +257,11 @@ struct TwoQubitWeylDecomposition {
     auto getTrace = [&]() {
       if (flippedFromOriginal) {
         return TwoQubitWeylDecomposition::getTrace(
-            qc::PI_2 - a, b, -c, decomposition.a, decomposition.b,
-            decomposition.c);
+            qc::PI_2 - a, b, -c, decomposition.a_, decomposition.b_,
+            decomposition.c_);
       }
       return TwoQubitWeylDecomposition::getTrace(
-          a, b, c, decomposition.a, decomposition.b, decomposition.c);
+          a, b, c, decomposition.a_, decomposition.b_, decomposition.c_);
     };
     // use trace to calculate fidelity of applied specialization and
     // adjust global phase
@@ -306,30 +270,100 @@ struct TwoQubitWeylDecomposition {
     // final check if specialization is close enough to the original matrix to
     // satisfy the requested fidelity; since no forced specialization is
     // allowed, this should never fail
-    if (decomposition.requestedFidelity) {
-      if (decomposition.calculatedFidelity + 1.0e-13 <
-          *decomposition.requestedFidelity) {
-        llvm::reportFatalInternalError(
-            "TwoQubitWeylDecomposition: Calculated fidelity of "
-            "specialization is worse than requested fidelity!");
-      }
+    if (decomposition.requestedFidelity &&
+        decomposition.calculatedFidelity + 1.0e-13 <
+            *decomposition.requestedFidelity) {
+      llvm::reportFatalInternalError(llvm::formatv(
+          "TwoQubitWeylDecomposition: Calculated fidelity of "
+          "specialization is worse than requested fidelity ({0:F4} vs {1:F4})!",
+          decomposition.calculatedFidelity, *decomposition.requestedFidelity));
     }
-    decomposition.globalPhase += std::arg(trace);
+    decomposition.globalPhase_ += std::arg(trace);
 
     // final check if decomposition is still valid after specialization
-    assert((Eigen::kroneckerProduct(decomposition.k1l, decomposition.k1r) *
+    assert((Eigen::kroneckerProduct(decomposition.k1l_, decomposition.k1r_) *
             decomposition.getCanonicalMatrix() *
-            Eigen::kroneckerProduct(decomposition.k2l, decomposition.k2r) *
-            helpers::globalPhaseFactor(decomposition.globalPhase))
+            Eigen::kroneckerProduct(decomposition.k2l_, decomposition.k2r_) *
+            helpers::globalPhaseFactor(decomposition.globalPhase_))
                .isApprox(unitaryMatrix, SANITY_CHECK_PRECISION));
 
     return decomposition;
   }
 
+  TwoQubitWeylDecomposition(const TwoQubitWeylDecomposition&) = default;
+  TwoQubitWeylDecomposition(TwoQubitWeylDecomposition&&) = default;
+  TwoQubitWeylDecomposition&
+  operator=(const TwoQubitWeylDecomposition&) = default;
+  TwoQubitWeylDecomposition& operator=(TwoQubitWeylDecomposition&&) = default;
+
   /**
    * Calculate matrix of canonical gate based on its parameters a, b, c.
    */
   [[nodiscard]] Eigen::Matrix4cd getCanonicalMatrix() const {
+    return getCanonicalMatrix(a_, b_, c_);
+  }
+
+  /**
+   * First parameter of canonical gate.
+   *
+   * @note must be multiplied by -2.0 for rotation angle of RXX gate
+   */
+  [[nodiscard]] double a() const { return a_; }
+  /**
+   * First parameter of canonical gate.
+   *
+   * @note must be multiplied by -2.0 for rotation angle of RYY gate
+   */
+  [[nodiscard]] double b() const { return b_; }
+  /**
+   * First parameter of canonical gate.
+   *
+   * @note must be multiplied by -2.0 for rotation angle of RZZ gate
+   */
+  [[nodiscard]] double c() const { return c_; }
+  /**
+   * Necessary global phase adjustment after applying decomposition.
+   */
+  [[nodiscard]] double globalPhase() const { return globalPhase_; }
+
+  /**
+   * "Left" qubit after canonical gate.
+   *
+   * q1 - k2r - C -  k1r  -
+   *            A
+   * q0 - k2l - N - *k1l* -
+   */
+  [[nodiscard]] const Eigen::Matrix2cd& k1l() const { return k1l_; }
+  /**
+   * "Left" qubit before canonical gate.
+   *
+   * q1 -  k2r  - C - k1r -
+   *              A
+   * q0 - *k2l* - N - k1l -
+   */
+  [[nodiscard]] const Eigen::Matrix2cd& k2l() const { return k2l_; }
+  /**
+   * "Right" qubit after canonical gate.
+   *
+   * q1 - k2r - C - *k1r* -
+   *            A
+   * q0 - k2l - N -  k1l  -
+   */
+  [[nodiscard]] const Eigen::Matrix2cd& k1r() const { return k1r_; }
+  /**
+   * "Right" qubit before canonical gate.
+   *
+   * q1 - *k2r* - C - k1r -
+   *              A
+   * q0 -  k2l  - N - k1l -
+   */
+  [[nodiscard]] const Eigen::Matrix2cd& k2r() const { return k2r_; }
+
+  /**
+   * Calculate matrix of canonical gate based on given parameters a, b, c.
+   */
+  [[nodiscard]] static Eigen::Matrix4cd getCanonicalMatrix(double a, double b,
+                                                           double c) {
     auto xx = getTwoQubitMatrix({
         .type = qc::RXX,
         .parameter = {-2.0 * a},
@@ -349,10 +383,28 @@ struct TwoQubitWeylDecomposition {
   }
 
 protected:
+  enum class Specialization : std::uint8_t {
+    General,               // canonical gate has no special symmetry.
+    IdEquiv,               // canonical gate is identity.
+    SWAPEquiv,             // canonical gate is SWAP.
+    PartialSWAPEquiv,      // canonical gate is partial SWAP.
+    PartialSWAPFlipEquiv,  // canonical gate is flipped partial SWAP.
+    ControlledEquiv,       // canonical gate is a controlled gate.
+    MirrorControlledEquiv, // canonical gate is swap + controlled gate.
+
+    // These next 3 gates use the definition of fSim from eq (1) in:
+    // https://arxiv.org/pdf/2001.08343.pdf
+    FSimaabEquiv,  // parameters a=b & a!=c
+    FSimabbEquiv,  // parameters a!=b & b=c
+    FSimabmbEquiv, // parameters a!=b!=c & -b=c
+  };
+
   enum class MagicBasisTransform : std::uint8_t {
     Into,
     OutOf,
   };
+
+  TwoQubitWeylDecomposition() = default;
 
   static Eigen::Matrix4cd magicBasisTransform(const Eigen::Matrix4cd& unitary,
                                               MagicBasisTransform direction) {
@@ -530,15 +582,15 @@ protected:
    */
   [[nodiscard]] Specialization bestSpecialization() const {
     auto isClose = [this](double ap, double bp, double cp) -> bool {
-      auto tr = getTrace(a, b, c, ap, bp, cp);
+      auto tr = getTrace(a_, b_, c_, ap, bp, cp);
       if (requestedFidelity) {
         return helpers::traceToFidelity(tr) >= *requestedFidelity;
       }
       return false;
     };
 
-    auto closestAbc = closestPartialSwap(a, b, c);
-    auto closestAbMinusC = closestPartialSwap(a, b, -c);
+    auto closestAbc = closestPartialSwap(a_, b_, c_);
+    auto closestAbMinusC = closestPartialSwap(a_, b_, -c_);
 
     if (isClose(0., 0., 0.)) {
       return Specialization::IdEquiv;
@@ -553,19 +605,19 @@ protected:
     if (isClose(closestAbMinusC, closestAbMinusC, -closestAbMinusC)) {
       return Specialization::PartialSWAPFlipEquiv;
     }
-    if (isClose(a, 0., 0.)) {
+    if (isClose(a_, 0., 0.)) {
       return Specialization::ControlledEquiv;
     }
-    if (isClose(qc::PI_4, qc::PI_4, c)) {
+    if (isClose(qc::PI_4, qc::PI_4, c_)) {
       return Specialization::MirrorControlledEquiv;
     }
-    if (isClose((a + b) / 2., (a + b) / 2., c)) {
+    if (isClose((a_ + b_) / 2., (a_ + b_) / 2., c_)) {
       return Specialization::FSimaabEquiv;
     }
-    if (isClose(a, (b + c) / 2., (b + c) / 2.)) {
+    if (isClose(a_, (b_ + c_) / 2., (b_ + c_) / 2.)) {
       return Specialization::FSimabbEquiv;
     }
-    if (isClose(a, (b - c) / 2., (c - b) / 2.)) {
+    if (isClose(a_, (b_ - c_) / 2., (c_ - b_) / 2.)) {
       return Specialization::FSimabmbEquiv;
     }
     return Specialization::General;
@@ -598,14 +650,14 @@ protected:
       // This gate binds 0 parameters, we make it canonical by setting:
       //
       // :math:`K2_l = Id` , :math:`K2_r = Id`.
-      a = 0.;
-      b = 0.;
-      c = 0.;
+      a_ = 0.;
+      b_ = 0.;
+      c_ = 0.;
       // unmodified global phase
-      k1l = k1l * k2l;
-      k2l = Eigen::Matrix2cd::Identity();
-      k1r = k1r * k2r;
-      k2r = Eigen::Matrix2cd::Identity();
+      k1l_ = k1l_ * k2l_;
+      k2l_ = Eigen::Matrix2cd::Identity();
+      k1r_ = k1r_ * k2r_;
+      k2r_ = Eigen::Matrix2cd::Identity();
     } else if (newSpecialization == Specialization::SWAPEquiv) {
       // :math:`U \sim U_d(\pi/4, \pi/4, \pi/4) \sim U(\pi/4, \pi/4, -\pi/4)`
       // Thus, :math:`U \sim \text{SWAP}`
@@ -613,24 +665,24 @@ protected:
       // This gate binds 0 parameters, we make it canonical by setting:
       //
       // :math:`K2_l = Id` , :math:`K2_r = Id`.
-      if (c > 0.) {
+      if (c_ > 0.) {
         // unmodified global phase
-        k1l = k1l * k2r;
-        k1r = k1r * k2l;
-        k2l = Eigen::Matrix2cd::Identity();
-        k2r = Eigen::Matrix2cd::Identity();
+        k1l_ = k1l_ * k2r_;
+        k1r_ = k1r_ * k2l_;
+        k2l_ = Eigen::Matrix2cd::Identity();
+        k2r_ = Eigen::Matrix2cd::Identity();
       } else {
         flippedFromOriginal = true;
 
-        globalPhase += qc::PI_2;
-        k1l = k1l * IPZ * k2r;
-        k1r = k1r * IPZ * k2l;
-        k2l = Eigen::Matrix2cd::Identity();
-        k2r = Eigen::Matrix2cd::Identity();
+        globalPhase_ += qc::PI_2;
+        k1l_ = k1l_ * IPZ * k2r_;
+        k1r_ = k1r_ * IPZ * k2l_;
+        k2l_ = Eigen::Matrix2cd::Identity();
+        k2r_ = Eigen::Matrix2cd::Identity();
       }
-      a = qc::PI_4;
-      b = qc::PI_4;
-      c = qc::PI_4;
+      a_ = qc::PI_4;
+      b_ = qc::PI_4;
+      c_ = qc::PI_4;
     } else if (newSpecialization == Specialization::PartialSWAPEquiv) {
       // :math:`U \sim U_d(\alpha\pi/4, \alpha\pi/4, \alpha\pi/4)`
       // Thus, :math:`U \sim \text{SWAP}^\alpha`
@@ -638,17 +690,17 @@ protected:
       // This gate binds 3 parameters, we make it canonical by setting:
       //
       // :math:`K2_l = Id`.
-      auto closest = closestPartialSwap(a, b, c);
-      auto k2lDagger = k2l.transpose().conjugate();
+      auto closest = closestPartialSwap(a_, b_, c_);
+      auto k2lDagger = k2l_.transpose().conjugate();
 
-      a = closest;
-      b = closest;
-      c = closest;
+      a_ = closest;
+      b_ = closest;
+      c_ = closest;
       // unmodified global phase
-      k1l = k1l * k2l;
-      k1r = k1r * k2l;
-      k2r = k2lDagger * k2r;
-      k2l = Eigen::Matrix2cd::Identity();
+      k1l_ = k1l_ * k2l_;
+      k1r_ = k1r_ * k2l_;
+      k2r_ = k2lDagger * k2r_;
+      k2l_ = Eigen::Matrix2cd::Identity();
     } else if (newSpecialization == Specialization::PartialSWAPFlipEquiv) {
       // :math:`U \sim U_d(\alpha\pi/4, \alpha\pi/4, -\alpha\pi/4)`
       // Thus, :math:`U \sim \text{SWAP}^\alpha`
@@ -659,17 +711,17 @@ protected:
       // This gate binds 3 parameters, we make it canonical by setting:
       //
       // :math:`K2_l = Id`
-      auto closest = closestPartialSwap(a, b, -c);
-      auto k2lDagger = k2l.transpose().conjugate();
+      auto closest = closestPartialSwap(a_, b_, -c_);
+      auto k2lDagger = k2l_.transpose().conjugate();
 
-      a = closest;
-      b = closest;
-      c = -closest;
+      a_ = closest;
+      b_ = closest;
+      c_ = -closest;
       // unmodified global phase
-      k1l = k1l * k2l;
-      k1r = k1r * IPZ * k2l * IPZ;
-      k2r = IPZ * k2lDagger * IPZ * k2r;
-      k2l = Eigen::Matrix2cd::Identity();
+      k1l_ = k1l_ * k2l_;
+      k1r_ = k1r_ * IPZ * k2l_ * IPZ;
+      k2r_ = IPZ * k2lDagger * IPZ * k2r_;
+      k2l_ = Eigen::Matrix2cd::Identity();
     } else if (newSpecialization == Specialization::ControlledEquiv) {
       // :math:`U \sim U_d(\alpha, 0, 0)`
       // Thus, :math:`U \sim \text{Ctrl-U}`
@@ -680,18 +732,18 @@ protected:
       // :math:`K2_r = Ry(\theta_r) Rx(\lambda_r)`
       auto eulerBasis = EulerBasis::XYX;
       auto [k2ltheta, k2lphi, k2llambda, k2lphase] =
-          EulerDecomposition::anglesFromUnitary(k2l, eulerBasis);
+          EulerDecomposition::anglesFromUnitary(k2l_, eulerBasis);
       auto [k2rtheta, k2rphi, k2rlambda, k2rphase] =
-          EulerDecomposition::anglesFromUnitary(k2r, eulerBasis);
+          EulerDecomposition::anglesFromUnitary(k2r_, eulerBasis);
 
       // unmodified parameter a
-      b = 0.;
-      c = 0.;
-      globalPhase = globalPhase + k2lphase + k2rphase;
-      k1l = k1l * rxMatrix(k2lphi);
-      k2l = ryMatrix(k2ltheta) * rxMatrix(k2llambda);
-      k1r = k1r * rxMatrix(k2rphi);
-      k2r = ryMatrix(k2rtheta) * rxMatrix(k2rlambda);
+      b_ = 0.;
+      c_ = 0.;
+      globalPhase_ = globalPhase_ + k2lphase + k2rphase;
+      k1l_ = k1l_ * rxMatrix(k2lphi);
+      k2l_ = ryMatrix(k2ltheta) * rxMatrix(k2llambda);
+      k1r_ = k1r_ * rxMatrix(k2rphi);
+      k2r_ = ryMatrix(k2rtheta) * rxMatrix(k2rlambda);
       defaultEulerBasis = eulerBasis;
     } else if (newSpecialization == Specialization::MirrorControlledEquiv) {
       // :math:`U \sim U_d(\pi/4, \pi/4, \alpha)`
@@ -702,18 +754,18 @@ protected:
       // :math:`K2_l = Ry(\theta_l)\cdot Rz(\lambda_l)`
       // :math:`K2_r = Ry(\theta_r)\cdot Rz(\lambda_r)`
       auto [k2ltheta, k2lphi, k2llambda, k2lphase] =
-          EulerDecomposition::anglesFromUnitary(k2l, EulerBasis::ZYZ);
+          EulerDecomposition::anglesFromUnitary(k2l_, EulerBasis::ZYZ);
       auto [k2rtheta, k2rphi, k2rlambda, k2rphase] =
-          EulerDecomposition::anglesFromUnitary(k2r, EulerBasis::ZYZ);
+          EulerDecomposition::anglesFromUnitary(k2r_, EulerBasis::ZYZ);
 
-      a = qc::PI_4;
-      b = qc::PI_4;
+      a_ = qc::PI_4;
+      b_ = qc::PI_4;
       // unmodified parameter c
-      globalPhase = globalPhase + k2lphase + k2rphase;
-      k1l = k1l * rzMatrix(k2rphi);
-      k2l = ryMatrix(k2ltheta) * rzMatrix(k2llambda);
-      k1r = k1r * rzMatrix(k2lphi);
-      k2r = ryMatrix(k2rtheta) * rzMatrix(k2rlambda);
+      globalPhase_ = globalPhase_ + k2lphase + k2rphase;
+      k1l_ = k1l_ * rzMatrix(k2rphi);
+      k2l_ = ryMatrix(k2ltheta) * rzMatrix(k2llambda);
+      k1r_ = k1r_ * rzMatrix(k2lphi);
+      k2r_ = ryMatrix(k2rtheta) * rzMatrix(k2rlambda);
     } else if (newSpecialization == Specialization::FSimaabEquiv) {
       // :math:`U \sim U_d(\alpha, \alpha, \beta), \alpha \geq |\beta|`
       //
@@ -721,17 +773,17 @@ protected:
       //
       // :math:`K2_l = Ry(\theta_l)\cdot Rz(\lambda_l)`.
       auto [k2ltheta, k2lphi, k2llambda, k2lphase] =
-          EulerDecomposition::anglesFromUnitary(k2l, EulerBasis::ZYZ);
-      auto ab = (a + b) / 2.;
+          EulerDecomposition::anglesFromUnitary(k2l_, EulerBasis::ZYZ);
+      auto ab = (a_ + b_) / 2.;
 
-      a = ab;
-      b = ab;
+      a_ = ab;
+      b_ = ab;
       // unmodified parameter c
-      globalPhase = globalPhase + k2lphase;
-      k1l = k1l * rzMatrix(k2lphi);
-      k2l = ryMatrix(k2ltheta) * rzMatrix(k2llambda);
-      k1r = k1r * rzMatrix(k2lphi);
-      k2r = rzMatrix(-k2lphi) * k2r;
+      globalPhase_ = globalPhase_ + k2lphase;
+      k1l_ = k1l_ * rzMatrix(k2lphi);
+      k2l_ = ryMatrix(k2ltheta) * rzMatrix(k2llambda);
+      k1r_ = k1r_ * rzMatrix(k2lphi);
+      k2r_ = rzMatrix(-k2lphi) * k2r_;
     } else if (newSpecialization == Specialization::FSimabbEquiv) {
       // :math:`U \sim U_d(\alpha, \beta, -\beta), \alpha \geq \beta \geq 0`
       //
@@ -740,17 +792,17 @@ protected:
       // :math:`K2_l = Ry(\theta_l)Rx(\lambda_l)`
       auto eulerBasis = EulerBasis::XYX;
       auto [k2ltheta, k2lphi, k2llambda, k2lphase] =
-          EulerDecomposition::anglesFromUnitary(k2l, eulerBasis);
-      auto bc = (b + c) / 2.;
+          EulerDecomposition::anglesFromUnitary(k2l_, eulerBasis);
+      auto bc = (b_ + c_) / 2.;
 
       // unmodified parameter a
-      b = bc;
-      c = bc;
-      globalPhase = globalPhase + k2lphase;
-      k1l = k1l * rxMatrix(k2lphi);
-      k2l = ryMatrix(k2ltheta) * rxMatrix(k2llambda);
-      k1r = k1r * rxMatrix(k2lphi);
-      k2r = rxMatrix(-k2lphi) * k2r;
+      b_ = bc;
+      c_ = bc;
+      globalPhase_ = globalPhase_ + k2lphase;
+      k1l_ = k1l_ * rxMatrix(k2lphi);
+      k2l_ = ryMatrix(k2ltheta) * rxMatrix(k2llambda);
+      k1r_ = k1r_ * rxMatrix(k2lphi);
+      k2r_ = rxMatrix(-k2lphi) * k2r_;
       defaultEulerBasis = eulerBasis;
     } else if (newSpecialization == Specialization::FSimabmbEquiv) {
       // :math:`U \sim U_d(\alpha, \beta, -\beta), \alpha \geq \beta \geq 0`
@@ -760,17 +812,17 @@ protected:
       // :math:`K2_l = Ry(\theta_l)Rx(\lambda_l)`
       auto eulerBasis = EulerBasis::XYX;
       auto [k2ltheta, k2lphi, k2llambda, k2lphase] =
-          EulerDecomposition::anglesFromUnitary(k2l, eulerBasis);
-      auto bc = (b - c) / 2.;
+          EulerDecomposition::anglesFromUnitary(k2l_, eulerBasis);
+      auto bc = (b_ - c_) / 2.;
 
       // unmodified parameter a
-      b = bc;
-      c = -bc;
-      globalPhase = globalPhase + k2lphase;
-      k1l = k1l * rxMatrix(k2lphi);
-      k2l = ryMatrix(k2ltheta) * rxMatrix(k2llambda);
-      k1r = k1r * IPZ * rxMatrix(k2lphi) * IPZ;
-      k2r = IPZ * rxMatrix(-k2lphi) * IPZ * k2r;
+      b_ = bc;
+      c_ = -bc;
+      globalPhase_ = globalPhase_ + k2lphase;
+      k1l_ = k1l_ * rxMatrix(k2lphi);
+      k2l_ = ryMatrix(k2ltheta) * rxMatrix(k2llambda);
+      k1r_ = k1r_ * IPZ * rxMatrix(k2lphi) * IPZ;
+      k2r_ = IPZ * rxMatrix(-k2lphi) * IPZ * k2r_;
       defaultEulerBasis = eulerBasis;
     } else {
       llvm::reportFatalInternalError(
@@ -778,5 +830,30 @@ protected:
     }
     return flippedFromOriginal;
   }
+
+private:
+  // a, b, c are the parameters of the canonical gate (CAN)
+  double a_{}; // rotation of RXX gate in CAN (must be taken times -2.0)
+  double b_{}; // rotation of RYY gate in CAN (must be taken times -2.0)
+  double c_{}; // rotation of RZZ gate in CAN (must be taken times -2.0)
+  double globalPhase_{}; // global phase adjustment
+  /**
+   * q1 - k2r - C - k1r -
+   *            A
+   * q0 - k2l - N - k1l -
+   */
+  Eigen::Matrix2cd k1l_; // "left" qubit after canonical gate
+  Eigen::Matrix2cd k2l_; // "left" qubit before canonical gate
+  Eigen::Matrix2cd k1r_; // "right" qubit after canonical gate
+  Eigen::Matrix2cd k2r_; // "right" qubit before canonical gate
+  Specialization specialization{
+      Specialization::General}; // detected symmetries in the matrix
+  EulerBasis defaultEulerBasis{
+      EulerBasis::U3};            // recommended euler basis for k1l/k2l/k1r/k2r
+  std::optional<double>           // desired fidelity;
+      requestedFidelity;          // if set to std::nullopt, no automatic
+                                  // specialization will be applied
+  double calculatedFidelity{};    // actual fidelity of decomposition
+  Eigen::Matrix4cd unitaryMatrix; // original matrix for this decomposition
 };
 } // namespace mlir::qco::decomposition

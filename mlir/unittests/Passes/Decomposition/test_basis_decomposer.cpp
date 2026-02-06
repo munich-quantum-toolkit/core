@@ -20,7 +20,6 @@
 #include <Eigen/QR>
 #include <cassert>
 #include <chrono>
-#include <cmath>
 #include <cstdlib>
 #include <gtest/gtest.h>
 #include <iostream>
@@ -47,14 +46,6 @@ namespace {
   assert(helpers::isUnitaryMatrix(unitaryMatrix));
   return unitaryMatrix;
 }
-
-[[nodiscard]] Eigen::Matrix4cd canonicalGate(double a, double b, double c) {
-  TwoQubitWeylDecomposition tmp{};
-  tmp.a = a;
-  tmp.b = b;
-  tmp.c = c;
-  return tmp.getCanonicalMatrix();
-}
 } // namespace
 
 class BasisDecomposerTest
@@ -65,7 +56,8 @@ public:
     basisGate = std::get<0>(GetParam());
     eulerBases = std::get<1>(GetParam());
     target = std::get<2>(GetParam());
-    targetDecomposition = TwoQubitWeylDecomposition::create(target, 1.0);
+    targetDecomposition = std::make_unique<TwoQubitWeylDecomposition>(
+        TwoQubitWeylDecomposition::create(target, 1.0));
   }
 
   [[nodiscard]] static Eigen::Matrix4cd
@@ -83,14 +75,14 @@ protected:
   Eigen::Matrix4cd target;
   Gate basisGate;
   llvm::SmallVector<EulerBasis> eulerBases;
-  TwoQubitWeylDecomposition targetDecomposition;
+  std::unique_ptr<TwoQubitWeylDecomposition> targetDecomposition;
 };
 
 TEST_P(BasisDecomposerTest, TestExact) {
   const auto& originalMatrix = target;
   auto decomposer = TwoQubitBasisDecomposer::create(basisGate, 1.0);
   auto decomposedSequence = decomposer.twoQubitDecompose(
-      targetDecomposition, eulerBases, 1.0, false, std::nullopt);
+      *targetDecomposition, eulerBases, 1.0, false, std::nullopt);
 
   ASSERT_TRUE(decomposedSequence.has_value());
 
@@ -105,7 +97,7 @@ TEST_P(BasisDecomposerTest, TestApproximation) {
   const auto& originalMatrix = target;
   auto decomposer = TwoQubitBasisDecomposer::create(basisGate, 1.0 - 1e-12);
   auto decomposedSequence = decomposer.twoQubitDecompose(
-      targetDecomposition, eulerBases, 1.0 - 1e-12, true, std::nullopt);
+      *targetDecomposition, eulerBases, 1.0 - 1e-12, true, std::nullopt);
 
   ASSERT_TRUE(decomposedSequence.has_value());
 
@@ -184,11 +176,11 @@ INSTANTIATE_TEST_CASE_P(
         // targets to be decomposed
         ::testing::Values(
             rzzMatrix(2.0), ryyMatrix(1.0) * rzzMatrix(3.0) * rxxMatrix(2.0),
-            canonicalGate(1.5, -0.2, 0.0) *
+            TwoQubitWeylDecomposition::getCanonicalMatrix(1.5, -0.2, 0.0) *
                 Eigen::kroneckerProduct(rxMatrix(1.0),
                                         Eigen::Matrix2cd::Identity()),
             Eigen::kroneckerProduct(rxMatrix(1.0), ryMatrix(1.0)) *
-                canonicalGate(1.1, 0.2, 3.0) *
+                TwoQubitWeylDecomposition::getCanonicalMatrix(1.1, 0.2, 3.0) *
                 Eigen::kroneckerProduct(rxMatrix(1.0),
                                         Eigen::Matrix2cd::Identity()),
             Eigen::kroneckerProduct(H_GATE, IPZ) *

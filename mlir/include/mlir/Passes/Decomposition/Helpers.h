@@ -43,7 +43,7 @@ namespace mlir::qco::helpers {
 
 // NOLINTBEGIN(misc-include-cleaner)
 template <typename T, int N, int M>
-[[nodiscard]] inline auto selfAdjointEvd(const Eigen::Matrix<T, N, M>& a) {
+[[nodiscard]] auto selfAdjointEvd(const Eigen::Matrix<T, N, M>& a) {
   Eigen::SelfAdjointEigenSolver<std::remove_cvref_t<decltype(a)>> s;
   s.compute(a);
   auto vecs = s.eigenvectors().eval();
