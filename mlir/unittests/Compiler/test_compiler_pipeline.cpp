@@ -1651,29 +1651,29 @@ TEST_F(CompilerPipelineTest, MCXTrivial) {
   });
 }
 
-TEST_F(CompilerPipelineTest, InvS) {
+TEST_F(CompilerPipelineTest, InvX) {
   auto input = buildQCIR([](mlir::qc::QCProgramBuilder& b) {
     auto reg = b.allocQubitRegister(1, "q");
-    b.inv([&] { b.s(reg[0]); });
+    b.inv([&] { b.x(reg[0]); });
   });
 
   ASSERT_TRUE(runPipeline(input.get()).succeeded());
 
   const auto qcInit = buildQCIR([](mlir::qc::QCProgramBuilder& b) {
     auto reg = b.allocQubitRegister(1, "q");
-    b.inv([&] { b.s(reg[0]); });
+    b.inv([&] { b.x(reg[0]); });
   });
   const auto qco = buildQCOIR([](qco::QCOProgramBuilder& b) {
     auto reg = b.allocQubitRegister(1, "q");
-    b.sdg(reg[0]);
+    b.x(reg[0]);
   });
   const auto qc = buildQCIR([](mlir::qc::QCProgramBuilder& b) {
     auto reg = b.allocQubitRegister(1, "q");
-    b.sdg(reg[0]);
+    b.x(reg[0]);
   });
   const auto qir = buildQIR([](qir::QIRProgramBuilder& b) {
     auto reg = b.allocQubitRegister(1);
-    b.sdg(reg[0]);
+    b.x(reg[0]);
   });
 
   verifyAllStages({
