@@ -22,8 +22,8 @@ inline constexpr double SQRT2 = 1.414213562373095048801688724209698079L;
 inline constexpr double FRAC1_SQRT2 =
     0.707106781186547524400844362104849039284835937688474036588L;
 
-[[nodiscard]] constexpr Eigen::Matrix2cd
-uMatrix(double lambda, double phi, double theta) {
+[[nodiscard]] constexpr Eigen::Matrix2cd uMatrix(double lambda, double phi,
+                                                 double theta) {
   return Eigen::Matrix2cd{{{{std::cos(theta / 2.), 0.},
                             {-std::cos(lambda) * std::sin(theta / 2.),
                              -std::sin(lambda) * std::sin(theta / 2.)}},
@@ -33,8 +33,7 @@ uMatrix(double lambda, double phi, double theta) {
                              std::sin(lambda + phi) * std::cos(theta / 2.)}}}};
 }
 
-[[nodiscard]] constexpr Eigen::Matrix2cd u2Matrix(double lambda,
-                                                  double phi) {
+[[nodiscard]] constexpr Eigen::Matrix2cd u2Matrix(double lambda, double phi) {
   return Eigen::Matrix2cd{
       {FRAC1_SQRT2,
        {-std::cos(lambda) * FRAC1_SQRT2, -std::sin(lambda) * FRAC1_SQRT2}},
