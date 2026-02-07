@@ -327,7 +327,7 @@ protected:
 
     [[nodiscard]] bool
     containsOnlyGates(const llvm::SetVector<qc::OpType>& singleQubitGates,
-                      const llvm::SetVector<qc::OpType>& twoQubitGates) {
+                      const llvm::SetVector<qc::OpType>& twoQubitGates) const {
       return llvm::all_of(gates, [&](auto&& gate) {
         auto&& gateType = helpers::getQcType(gate.op);
         return (gate.qubitIds.size() == 1 &&
@@ -407,7 +407,7 @@ protected:
     bool appendTwoQubitGate(UnitaryOpInterface nextGate) {
       if (isBarrier(nextGate)) {
         // a barrier operation should not be crossed for a decomposition;
-        // ignore possitility to backtrack (if this is the first two-qubit gate)
+        // ignore possibility to backtrack (if this is the first two-qubit gate)
         // since two single-qubit decompositions are less expensive than one
         // two-qubit decomposition
         return false;
