@@ -340,7 +340,7 @@ protected:
     /**
      * Initialize TwoQubitSeries instance with given first operation.
      * If the operation is not valid for a one- or two-qubit series,
-     * leave in/out qubits unitialized and the gate list empty.
+     * leave in/out qubits uninitialized and the gate list empty.
      */
     explicit TwoQubitSeries(UnitaryOpInterface initialOperation) {
       if (isBarrier(initialOperation)) {
