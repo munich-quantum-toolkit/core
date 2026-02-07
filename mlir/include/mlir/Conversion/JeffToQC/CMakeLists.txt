@@ -6,8 +6,8 @@
 #
 # Licensed under the MIT License
 
-add_subdirectory(JeffToQC)
-add_subdirectory(QCOToQC)
-add_subdirectory(QCToJeff)
-add_subdirectory(QCToQCO)
-add_subdirectory(QCToQIR)
+set(LLVM_TARGET_DEFINITIONS JeffToQC.td)
+mlir_tablegen(JeffToQC.h.inc -gen-pass-decls -name JeffToQC)
+add_public_tablegen_target(JeffToQCIncGen)
+
+add_mlir_doc(JeffToQC MLIRJeffToQC Conversions/ -gen-pass-doc)
