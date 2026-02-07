@@ -27,7 +27,8 @@ using namespace mlir::qco;
 using namespace mlir::qco::decomposition;
 
 class EulerDecompositionTest
-    : public testing::TestWithParam<std::tuple<EulerBasis, Eigen::Matrix2cd>> {
+    : public testing::TestWithParam<
+          std::tuple<EulerBasis, Eigen::Matrix2cd (*)()>> {
 public:
   [[nodiscard]] static Eigen::Matrix2cd
   restore(const OneQubitGateSequence& sequence) {
@@ -42,7 +43,7 @@ public:
 
   void SetUp() override {
     eulerBasis = std::get<0>(GetParam());
-    originalMatrix = std::get<1>(GetParam());
+    originalMatrix = std::get<1>(GetParam())();
   }
 
 protected:
@@ -84,6 +85,11 @@ INSTANTIATE_TEST_CASE_P(
     SingleQubitMatrices, EulerDecompositionTest,
     testing::Combine(testing::Values(EulerBasis::XYX, EulerBasis::XZX,
                                      EulerBasis::ZYZ, EulerBasis::ZXZ),
-                     testing::Values(Eigen::Matrix2cd::Identity(),
-                                     ryMatrix(2.0), rxMatrix(0.5),
-                                     rzMatrix(3.14), H_GATE)));
+                     testing::Values(
+                         []() -> Eigen::Matrix2cd {
+                           return Eigen::Matrix2cd::Identity();
+                         },
+                         []() -> Eigen::Matrix2cd { return ryMatrix(2.0); },
+                         []() -> Eigen::Matrix2cd { return rxMatrix(0.5); },
+                         []() -> Eigen::Matrix2cd { return rzMatrix(3.14); },
+                         []() -> Eigen::Matrix2cd { return H_GATE; })));

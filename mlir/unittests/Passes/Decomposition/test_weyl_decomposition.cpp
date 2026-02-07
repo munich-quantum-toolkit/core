@@ -23,7 +23,8 @@
 using namespace mlir::qco;
 using namespace mlir::qco::decomposition;
 
-class WeylDecompositionTest : public testing::TestWithParam<Eigen::Matrix4cd> {
+class WeylDecompositionTest
+    : public testing::TestWithParam<Eigen::Matrix4cd (*)()> {
 public:
   [[nodiscard]] static Eigen::Matrix4cd
   restore(const TwoQubitWeylDecomposition& decomposition) {
@@ -50,7 +51,7 @@ public:
 };
 
 TEST_P(WeylDecompositionTest, TestExact) {
-  const auto& originalMatrix = GetParam();
+  const auto& originalMatrix = GetParam()();
   auto decomposition = TwoQubitWeylDecomposition::create(originalMatrix, 1.0);
   auto restoredMatrix = restore(decomposition);
 
@@ -60,7 +61,7 @@ TEST_P(WeylDecompositionTest, TestExact) {
 }
 
 TEST_P(WeylDecompositionTest, TestApproximation) {
-  const auto& originalMatrix = GetParam();
+  const auto& originalMatrix = GetParam()();
   auto decomposition =
       TwoQubitWeylDecomposition::create(originalMatrix, 1.0 - 1e-12);
   auto restoredMatrix = restore(decomposition);
@@ -88,48 +89,78 @@ TEST(WeylDecompositionTest, Random) {
 
 INSTANTIATE_TEST_SUITE_P(
     SingleQubitMatrices, WeylDecompositionTest,
-    ::testing::Values(Eigen::Matrix4cd::Identity(),
-                      Eigen::kroneckerProduct(rzMatrix(1.0), ryMatrix(3.1)),
-                      Eigen::kroneckerProduct(Eigen::Matrix2cd::Identity(),
-                                              rxMatrix(0.1))));
+    ::testing::Values(
+        []() -> Eigen::Matrix4cd { return Eigen::Matrix4cd::Identity(); },
+        []() -> Eigen::Matrix4cd {
+          return Eigen::kroneckerProduct(rzMatrix(1.0), ryMatrix(3.1));
+        },
+        []() -> Eigen::Matrix4cd {
+          return Eigen::kroneckerProduct(Eigen::Matrix2cd::Identity(),
+                                         rxMatrix(0.1));
+        }));
 
 INSTANTIATE_TEST_SUITE_P(
     TwoQubitMatrices, WeylDecompositionTest,
     ::testing::Values(
-        rzzMatrix(2.0), ryyMatrix(1.0) * rzzMatrix(3.0) * rxxMatrix(2.0),
-        TwoQubitWeylDecomposition::getCanonicalMatrix(1.5, -0.2, 0.0) *
-            Eigen::kroneckerProduct(rxMatrix(1.0),
-                                    Eigen::Matrix2cd::Identity()),
-        Eigen::kroneckerProduct(rxMatrix(1.0), ryMatrix(1.0)) *
-            TwoQubitWeylDecomposition::getCanonicalMatrix(1.1, 0.2, 3.0) *
-            Eigen::kroneckerProduct(rxMatrix(1.0),
-                                    Eigen::Matrix2cd::Identity()),
-        Eigen::kroneckerProduct(H_GATE, IPZ) *
-            getTwoQubitMatrix(
-                {.type = qc::X, .parameter = {}, .qubitId = {0, 1}}) *
-            Eigen::kroneckerProduct(IPX, IPY)));
+        []() -> Eigen::Matrix4cd { return rzzMatrix(2.0); },
+        []() -> Eigen::Matrix4cd {
+          return ryyMatrix(1.0) * rzzMatrix(3.0) * rxxMatrix(2.0);
+        },
+        []() -> Eigen::Matrix4cd {
+          return TwoQubitWeylDecomposition::getCanonicalMatrix(1.5, -0.2, 0.0) *
+                 Eigen::kroneckerProduct(rxMatrix(1.0),
+                                         Eigen::Matrix2cd::Identity());
+        },
+        []() -> Eigen::Matrix4cd {
+          return Eigen::kroneckerProduct(rxMatrix(1.0), ryMatrix(1.0)) *
+                 TwoQubitWeylDecomposition::getCanonicalMatrix(1.1, 0.2, 3.0) *
+                 Eigen::kroneckerProduct(rxMatrix(1.0),
+                                         Eigen::Matrix2cd::Identity());
+        },
+        []() -> Eigen::Matrix4cd {
+          return Eigen::kroneckerProduct(H_GATE, IPZ) *
+                 getTwoQubitMatrix(
+                     {.type = qc::X, .parameter = {}, .qubitId = {0, 1}}) *
+                 Eigen::kroneckerProduct(IPX, IPY);
+        }));
 
 INSTANTIATE_TEST_SUITE_P(
     SpecializedMatrices, WeylDecompositionTest,
     ::testing::Values(
         // id + controlled + general already covered by other parametrizations
         // swap equiv
-        getTwoQubitMatrix({.type = qc::X, .parameter = {}, .qubitId = {0, 1}}) *
-            getTwoQubitMatrix(
-                {.type = qc::X, .parameter = {}, .qubitId = {1, 0}}) *
-            getTwoQubitMatrix(
-                {.type = qc::X, .parameter = {}, .qubitId = {0, 1}}),
+        []() -> Eigen::Matrix4cd {
+          return getTwoQubitMatrix(
+                     {.type = qc::X, .parameter = {}, .qubitId = {0, 1}}) *
+                 getTwoQubitMatrix(
+                     {.type = qc::X, .parameter = {}, .qubitId = {1, 0}}) *
+                 getTwoQubitMatrix(
+                     {.type = qc::X, .parameter = {}, .qubitId = {0, 1}});
+        },
         // partial swap equiv
-        TwoQubitWeylDecomposition::getCanonicalMatrix(0.5, 0.5, 0.5),
+        []() -> Eigen::Matrix4cd {
+          return TwoQubitWeylDecomposition::getCanonicalMatrix(0.5, 0.5, 0.5);
+        },
         // partial swap equiv (flipped)
-        TwoQubitWeylDecomposition::getCanonicalMatrix(0.5, 0.5, -0.5),
+        []() -> Eigen::Matrix4cd {
+          return TwoQubitWeylDecomposition::getCanonicalMatrix(0.5, 0.5, -0.5);
+        },
         // mirror controlled equiv
-        getTwoQubitMatrix({.type = qc::X, .parameter = {}, .qubitId = {0, 1}}) *
-            getTwoQubitMatrix(
-                {.type = qc::X, .parameter = {}, .qubitId = {1, 0}}),
+        []() -> Eigen::Matrix4cd {
+          return getTwoQubitMatrix(
+                     {.type = qc::X, .parameter = {}, .qubitId = {0, 1}}) *
+                 getTwoQubitMatrix(
+                     {.type = qc::X, .parameter = {}, .qubitId = {1, 0}});
+        },
         // sim aab equiv
-        TwoQubitWeylDecomposition::getCanonicalMatrix(0.5, 0.5, 0.1),
+        []() -> Eigen::Matrix4cd {
+          return TwoQubitWeylDecomposition::getCanonicalMatrix(0.5, 0.5, 0.1);
+        },
         // sim abb equiv
-        TwoQubitWeylDecomposition::getCanonicalMatrix(0.5, 0.1, 0.1),
+        []() -> Eigen::Matrix4cd {
+          return TwoQubitWeylDecomposition::getCanonicalMatrix(0.5, 0.1, 0.1);
+        },
         // sim ab-b equiv
-        TwoQubitWeylDecomposition::getCanonicalMatrix(0.5, 0.1, -0.1)));
+        []() -> Eigen::Matrix4cd {
+          return TwoQubitWeylDecomposition::getCanonicalMatrix(0.5, 0.1, -0.1);
+        }));
