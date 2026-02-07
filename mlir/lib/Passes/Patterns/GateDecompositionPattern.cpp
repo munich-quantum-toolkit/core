@@ -194,6 +194,9 @@ protected:
       decomposition::SANITY_CHECK_PRECISION;
 
   using QubitId = decomposition::QubitId;
+  /**
+   * Qubit series of MLIR operations involving up to two qubits.
+   */
   struct TwoQubitSeries {
     /**
      * Complexity of series using getComplexity() for each gate.
@@ -367,8 +370,11 @@ protected:
     }
 
     /**
+     * Add a single-qubit operation to the series.
+     *
+     * @param nextGate Gate to be added, must have exactly one qubit
+     *
      * @return true if series continues, otherwise false
-     *         (will always return true)
      */
     bool appendSingleQubitGate(UnitaryOpInterface nextGate) {
       if (isBarrier(nextGate)) {
@@ -390,6 +396,10 @@ protected:
     }
 
     /**
+     * Add a two-qubit operation to the series.
+     *
+     * @param nextGate Gate to be added, must have exactly two qubits
+     *
      * @return true if series continues, otherwise false
      */
     bool appendTwoQubitGate(UnitaryOpInterface nextGate) {
@@ -483,11 +493,13 @@ protected:
     }
 
     [[nodiscard]] static bool isBarrier(UnitaryOpInterface op) {
-      return llvm::isa_and_nonnull<BarrierOp>(*op);
+      return llvm::isa_and_present<BarrierOp>(op);
     }
 
     /**
-     *
+     * Get user (should only be one due to dialect's one-use policy) of given
+     * qubit. If the filter returns false for this user, std::nullopt will be
+     * returned instead.
      */
     template <typename Func>
     static std::optional<UnitaryOpInterface> getUser(mlir::Value qubit,
@@ -508,14 +520,15 @@ protected:
     };
   };
 
-  template <typename OpType, typename... Args>
-  static OpType createGate(mlir::PatternRewriter& rewriter,
-                           mlir::Location location,
-                           Args&&... inQubitsAndParams) {
-    return rewriter.create<OpType>(location,
-                                   std::forward<Args>(inQubitsAndParams)...);
-  }
-
+  /**
+   * Create controlled version of given gate operation type.
+   *
+   * @param rewriter Rewriter instance to apply modifications
+   * @param location Location for the created operations
+   * @param ctrlQubits Qubits that serve as controls
+   * @param inQubitsAndParams Qubits and parameters for inner gate
+   *                          (as required by the builder of the gate)
+   */
   template <typename OpType, typename... Args>
   static CtrlOp createControlledGate(mlir::PatternRewriter& rewriter,
                                      mlir::Location location,
@@ -532,10 +545,16 @@ protected:
     (collectInQubits(inQubitsAndParams), ...);
     return rewriter.create<CtrlOp>(
         location, ctrlQubits, mlir::ValueRange{inQubits},
-        createGate<OpType>(rewriter, location,
-                           std::forward<Args>(inQubitsAndParams)...));
+        rewriter.create<OpType>(location,
+                                std::forward<Args>(inQubitsAndParams)...));
   }
 
+  /**
+   * Replace given series by given sequence.
+   * This is done using the rewriter to create the MLIR operations described by
+   * the sequence between the input and output qubits of the series and then
+   * deleting all gates of the series.
+   */
   static void applySeries(mlir::PatternRewriter& rewriter,
                           TwoQubitSeries& series,
                           const decomposition::TwoQubitGateSequence& sequence) {
@@ -560,7 +579,7 @@ protected:
         };
 
     if (sequence.hasGlobalPhase()) {
-      createGate<GPhaseOp>(rewriter, location, sequence.globalPhase);
+      rewriter.create<GPhaseOp>(location, sequence.globalPhase);
     }
 
 #ifndef NDEBUG
@@ -582,8 +601,8 @@ protected:
         updateInQubits(gate.qubitId, newGate);
       } else if (gate.type == qc::RX) {
         assert(gate.qubitId.size() == 1);
-        auto newGate = createGate<RXOp>(
-            rewriter, location, inQubits[gate.qubitId[0]], gate.parameter[0]);
+        auto newGate = rewriter.create<RXOp>(
+            location, inQubits[gate.qubitId[0]], gate.parameter[0]);
 #ifndef NDEBUG
         unitaryMatrix =
             decomposition::expandToTwoQubits(newGate.getUnitaryMatrix().value(),
@@ -593,8 +612,8 @@ protected:
         updateInQubits(gate.qubitId, newGate);
       } else if (gate.type == qc::RY) {
         assert(gate.qubitId.size() == 1);
-        auto newGate = createGate<RYOp>(
-            rewriter, location, inQubits[gate.qubitId[0]], gate.parameter[0]);
+        auto newGate = rewriter.create<RYOp>(
+            location, inQubits[gate.qubitId[0]], gate.parameter[0]);
 #ifndef NDEBUG
         unitaryMatrix =
             decomposition::expandToTwoQubits(newGate.getUnitaryMatrix().value(),
@@ -604,8 +623,8 @@ protected:
         updateInQubits(gate.qubitId, newGate);
       } else if (gate.type == qc::RZ) {
         assert(gate.qubitId.size() == 1);
-        auto newGate = createGate<RZOp>(
-            rewriter, location, inQubits[gate.qubitId[0]], gate.parameter[0]);
+        auto newGate = rewriter.create<RZOp>(
+            location, inQubits[gate.qubitId[0]], gate.parameter[0]);
 #ifndef NDEBUG
         unitaryMatrix =
             decomposition::expandToTwoQubits(newGate.getUnitaryMatrix().value(),
@@ -633,6 +652,14 @@ protected:
     }
   }
 
+  /**
+   * Get all gates that are potentially in the circuit after the decomposition.
+   * This is based on the euler bases and basis gates passed to the constructor.
+   *
+   * @return Array with the following two elements:
+   *          * All possible single-qubit gate types
+   *          * All possible two-qubit gate types
+   */
   [[nodiscard]] std::array<llvm::SetVector<qc::OpType>, 2>
   getDecompositionGates() const {
     llvm::SetVector<qc::OpType> eulerBasesGates;

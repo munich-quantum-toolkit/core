@@ -183,6 +183,9 @@ protected:
                         // operation to error value for better calculateError()
                         bool simplify, std::optional<double> atol);
 
+  [[nodiscard]] static bool relativeEq(double lhs, double rhs, double epsilon,
+                                       double maxRelative);
+
 private:
   // basis gate of this decomposer instance
   Gate basisGate{};

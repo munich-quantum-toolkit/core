@@ -57,8 +57,7 @@ TwoQubitWeylDecomposition::create(const Eigen::Matrix4cd& unitaryMatrix,
   // p is used to calculate K1/K2 (and thus the single-qubit gates
   // surrounding the canonical gate); d is is used to determine the weyl
   // coordinates and thus the parameters of the canonical gate
-  // TODO: it may be possible to lower the precision
-  auto [p, d] = diagonalizeComplexSymmetric(m2, 1e-13);
+  auto [p, d] = diagonalizeComplexSymmetric(m2, DIAGONALIZATION_PRECISION);
 
   // extract Weyl coordinates from eigenvalues, map to [0, 2*pi)
   // NOLINTNEXTLINE(misc-include-cleaner)

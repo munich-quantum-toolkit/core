@@ -147,12 +147,18 @@ protected:
     OutOf,
   };
 
+  /**
+   * Threshold for imprecision in computation of diagonalization.
+   */
+  static constexpr auto DIAGONALIZATION_PRECISION = 1e-13;
+
   TwoQubitWeylDecomposition() = default;
 
-  static Eigen::Matrix4cd magicBasisTransform(const Eigen::Matrix4cd& unitary,
-                                              MagicBasisTransform direction);
+  [[nodiscard]] static Eigen::Matrix4cd
+  magicBasisTransform(const Eigen::Matrix4cd& unitary,
+                      MagicBasisTransform direction);
 
-  static double closestPartialSwap(double a, double b, double c);
+  [[nodiscard]] static double closestPartialSwap(double a, double b, double c);
 
   /**
    * Diagonalize given complex symmetric matrix M into (P, d) using a

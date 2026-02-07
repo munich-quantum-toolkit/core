@@ -37,32 +37,6 @@ TwoQubitBasisDecomposer TwoQubitBasisDecomposer::create(const Gate& basisGate,
                                                         double basisFidelity) {
   using namespace std::complex_literals;
 
-  auto relativeEq = [](auto&& lhs, auto&& rhs, auto&& epsilon,
-                       auto&& maxRelative) {
-    // Handle same infinities
-    if (lhs == rhs) {
-      return true;
-    }
-
-    // Handle remaining infinities
-    if (std::isinf(lhs) || std::isinf(rhs)) {
-      return false;
-    }
-
-    auto absDiff = std::abs(lhs - rhs);
-
-    // For when the numbers are really close together
-    if (absDiff <= epsilon) {
-      return true;
-    }
-
-    auto absLhs = std::abs(lhs);
-    auto absRhs = std::abs(rhs);
-    if (absRhs > absLhs) {
-      return absDiff <= absRhs * maxRelative;
-    }
-    return absDiff <= absLhs * maxRelative;
-  };
   const Eigen::Matrix2cd k12RArr{
       {1i * FRAC1_SQRT2, FRAC1_SQRT2},
       {-FRAC1_SQRT2, -1i * FRAC1_SQRT2},
@@ -390,6 +364,33 @@ OneQubitGateSequence TwoQubitBasisDecomposer::unitaryToGateSequence(
     }
   }
   return bestCircuit;
+}
+
+bool TwoQubitBasisDecomposer::relativeEq(double lhs, double rhs, double epsilon,
+                                         double maxRelative) {
+  // Handle same infinities
+  if (lhs == rhs) {
+    return true;
+  }
+
+  // Handle remaining infinities
+  if (std::isinf(lhs) || std::isinf(rhs)) {
+    return false;
+  }
+
+  auto absDiff = std::abs(lhs - rhs);
+
+  // For when the numbers are really close together
+  if (absDiff <= epsilon) {
+    return true;
+  }
+
+  auto absLhs = std::abs(lhs);
+  auto absRhs = std::abs(rhs);
+  if (absRhs > absLhs) {
+    return absDiff <= absRhs * maxRelative;
+  }
+  return absDiff <= absLhs * maxRelative;
 }
 
 } // namespace mlir::qco::decomposition
