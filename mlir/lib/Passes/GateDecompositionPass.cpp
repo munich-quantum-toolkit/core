@@ -1,0 +1,56 @@
+/*
+ * Copyright (c) 2023 - 2026 Chair for Design Automation, TUM
+ * Copyright (c) 2025 - 2026 Munich Quantum Software Company GmbH
+ * All rights reserved.
+ *
+ * SPDX-License-Identifier: MIT
+ *
+ * Licensed under the MIT License
+ */
+
+#include "mlir/Passes/Passes.h"
+
+#include <mlir/IR/PatternMatch.h>
+#include <mlir/Support/LLVM.h>
+#include <mlir/Transforms/GreedyPatternRewriteDriver.h>
+#include <utility>
+
+namespace mlir::qco {
+
+#define GEN_PASS_DEF_GATEDECOMPOSITIONPASS
+#include "mlir/Passes/Passes.h.inc"
+
+/**
+ * @brief This pass attempts to collect as many operations as possible into a
+ *        4x4 unitary matrix and then decompose it into 1q rotations and 2q
+ *        basis gates.
+ */
+struct GateDecompositionPass final
+    : impl::GateDecompositionPassBase<GateDecompositionPass> {
+
+  void runOnOperation() override {
+    // Get the current operation being operated on.
+    auto op = getOperation();
+    auto* ctx = &getContext();
+
+    // Define the set of patterns to use.
+    mlir::RewritePatternSet patterns(ctx);
+    populateGateDecompositionPatterns(patterns);
+
+    // Configure greedy driver
+    mlir::GreedyRewriteConfig config;
+    // start at top of program to maximize collected sub-circuits
+    config.setUseTopDownTraversal(true);
+    // only optimize existing operations to avoid unnecessary sub-circuit
+    // collections of already decomposed gates
+    config.setStrictness(GreedyRewriteStrictness::ExistingOps);
+
+    // Apply patterns in an iterative and greedy manner.
+    if (mlir::failed(
+            mlir::applyPatternsGreedily(op, std::move(patterns), config))) {
+      signalPassFailure();
+    }
+  }
+};
+
+} // namespace mlir::qco
