@@ -1142,4 +1142,36 @@ def CtrlOp : QCOOp<"ctrl", traits =
     let hasVerifier = 1;
 }
 
+//===----------------------------------------------------------------------===//
+// Scf operations
+//===----------------------------------------------------------------------===//
+
+def IfOp : QCOOp<"if"> {
+
+    let summary = "TODO";
+    let description = [{TODO}];
+
+    let arguments = (ins I1:$condition,  Variadic<AnyType>:$inputs);
+    let results = (outs Variadic<AnyType>:$results);
+    let regions = (region SizedRegion<1>:$thenRegion,
+                         SizedRegion<1>:$elseRegion);
+
+    let assemblyFormat = [{
+    $condition `targets` `(` $inputs `:` type($inputs) `)`
+    attr-dict `->` type($results)
+    $thenRegion
+    `else` $elseRegion
+    }];
+
+    let builders = [
+        OpBuilder<(ins "Value":$condition, "ValueRange":$inputs), [{
+           build($_builder, $_state, inputs.getTypes(), condition, inputs);
+        }]>,
+        OpBuilder<(ins "Value":$condition, "ValueRange":$inputs, "llvm::function_ref<llvm::SmallVector<Value>(ValueRange)>":$thenBuilder,
+        "llvm::function_ref<llvm::SmallVector<Value>(ValueRange)>":$elseBuilder )>
+    ];
+
+    let hasVerifier = 1;
+}
+
 #endif // QCOOPS
