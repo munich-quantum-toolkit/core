@@ -35,6 +35,22 @@ public:
   qc::QuantumComputation qc;
 };
 
+void checkEquivalence(const qc::QuantumComputation& qc1,
+                      const qc::QuantumComputation& qc2,
+                      const std::vector<std::size_t>& qubits) {
+  EXPECT_TRUE(FunctionalityConstruction::transformableToZX(&qc1));
+  EXPECT_TRUE(FunctionalityConstruction::transformableToZX(&qc2));
+  auto d1 = FunctionalityConstruction::buildFunctionality(&qc1);
+  auto d2 = FunctionalityConstruction::buildFunctionality(&qc2);
+  d1.concat(d2.invert());
+  fullReduce(d1);
+  EXPECT_TRUE(d1.isIdentity());
+  EXPECT_TRUE(d1.globalPhaseIsZero());
+  for (std::size_t i = 0; i < qc1.getNqubits(); ++i) {
+    EXPECT_TRUE(d1.connected(d1.getInput(i), d1.getOutput(i)));
+  }
+}
+
 TEST_F(ZXFunctionalityTest, parseQasm) {
   const std::string testfile = "OPENQASM 2.0;"
                                "include \"qelib1.inc\";"
@@ -91,70 +107,29 @@ TEST_F(ZXFunctionalityTest, complexCircuit) {
   std::stringstream ss{};
   ss << "// i 1 0 2\n"
      << "// o 0 1 2\n"
-     << "OPENQASM 2.0;"
-     << "include \"qelib1.inc\";"
-     << "qreg q[3];"
-     << "sx q[0];"
-     << "sxdg q[0];"
-     << "h q[0];"
-     << "cx q[0],q[1];"
-     << "z q[1];"
-     << "x q[2];"
-     << "y q[0];"
-     << "rx(pi/4) q[0];"
-     << "rz(0.1) q[1];"
-     << "p(0.1) q[1];"
-     << "ry(pi/4) q[2];"
-     << "t q[0];"
-     << "s q[2];"
-     << "u2(pi/4, pi/4) q[1];"
-     << "u3(pi/4, pi/4, pi/4) q[2];"
-     << "barrier q[0],q[1],q[2];"
-     << "swap q[0],q[1];"
-     << "cz q[1],q[2];"
-     << "cp(pi/4) q[0],q[1];"
-     << "ctrl(2) @ x q[0],q[1],q[2];"
-     << "ctrl(2) @ z q[1],q[2],q[0];"
-     << "cp(pi/2) q[0], q[1];"
-     << "cp(pi/4) q[0], q[1];"
-     << "cp(pi/8) q[0], q[1];"
-     << "rzz(pi/4) q[0], q[1];"
-     << "rxx(pi/4) q[0], q[1];"
-     << "ryy(pi/4) q[0], q[1];"
-     << "rzx(pi/4) q[0], q[1];"
-     << "ecr q[0], q[1];"
-     << "dcx q[0], q[1];"
-     << "r(pi/8, pi/4) q[2];"
-     << "r(-pi/8, pi/4) q[2];"
-     << "dcx q[1], q[0];"
-     << "ecr q[0], q[1];"
-     << "rzx(-pi/4) q[0], q[1];"
-     << "ryy(-pi/4) q[0], q[1];"
-     << "rxx(-pi/4) q[0], q[1];"
-     << "rzz(-pi/4) q[0], q[1];"
-     << "cp(-pi/8) q[0], q[1];"
-     << "cp(-pi/4) q[0], q[1];"
-     << "cp(-pi/2) q[0], q[1];"
-     << "ctrl(2) @ z q[1],q[2],q[0];"
-     << "ctrl(2) @ x q[0],q[1],q[2];"
-     << "cp(-pi/4) q[0],q[1];"
-     << "cz q[1],q[2];"
-     << "cx q[1],q[0];"
-     << "cx q[0],q[1];"
-     << "cx q[1],q[0];"
-     << "u3(-pi/4,-pi/4,-pi/4) q[2];"
-     << "u2(-5*pi/4,3*pi/4) q[1];"
-     << "sdg q[2];"
-     << "tdg q[0];"
-     << "ry(-pi/4) q[2];"
-     << "p(-0.1) q[1];"
-     << "rz(-0.1) q[1];"
-     << "rx(-pi/4) q[0];"
-     << "y q[0];"
-     << "x q[2];"
-     << "z q[1];"
-     << "cx q[0],q[1];"
-     << "h q[0];\n";
+     << "OPENQASM 2.0;" << "include \"qelib1.inc\";" << "qreg q[3];"
+     << "sx q[0];" << "sxdg q[0];" << "h q[0];" << "cx q[0],q[1];" << "z q[1];"
+     << "x q[2];" << "y q[0];" << "rx(pi/4) q[0];" << "rz(0.1) q[1];"
+     << "p(0.1) q[1];" << "ry(pi/4) q[2];" << "t q[0];" << "s q[2];"
+     << "u2(pi/4, pi/4) q[1];" << "u3(pi/4, pi/4, pi/4) q[2];"
+     << "barrier q[0],q[1],q[2];" << "swap q[0],q[1];" << "cz q[1],q[2];"
+     << "cp(pi/4) q[0],q[1];" << "ctrl(2) @ x q[0],q[1],q[2];"
+     << "ctrl(2) @ z q[1],q[2],q[0];" << "cp(pi/2) q[0], q[1];"
+     << "cp(pi/4) q[0], q[1];" << "cp(pi/8) q[0], q[1];"
+     << "rzz(pi/4) q[0], q[1];" << "rxx(pi/4) q[0], q[1];"
+     << "ryy(pi/4) q[0], q[1];" << "rzx(pi/4) q[0], q[1];" << "ecr q[0], q[1];"
+     << "dcx q[0], q[1];" << "r(pi/8, pi/4) q[2];" << "r(-pi/8, pi/4) q[2];"
+     << "dcx q[1], q[0];" << "ecr q[0], q[1];" << "rzx(-pi/4) q[0], q[1];"
+     << "ryy(-pi/4) q[0], q[1];" << "rxx(-pi/4) q[0], q[1];"
+     << "rzz(-pi/4) q[0], q[1];" << "cp(-pi/8) q[0], q[1];"
+     << "cp(-pi/4) q[0], q[1];" << "cp(-pi/2) q[0], q[1];"
+     << "ctrl(2) @ z q[1],q[2],q[0];" << "ctrl(2) @ x q[0],q[1],q[2];"
+     << "cp(-pi/4) q[0],q[1];" << "cz q[1],q[2];" << "cx q[1],q[0];"
+     << "cx q[0],q[1];" << "cx q[1],q[0];" << "u3(-pi/4,-pi/4,-pi/4) q[2];"
+     << "u2(-5*pi/4,3*pi/4) q[1];" << "sdg q[2];" << "tdg q[0];"
+     << "ry(-pi/4) q[2];" << "p(-0.1) q[1];" << "rz(-0.1) q[1];"
+     << "rx(-pi/4) q[0];" << "y q[0];" << "x q[2];" << "z q[1];"
+     << "cx q[0],q[1];" << "h q[0];\n";
   qc = qasm3::Importer::import(ss);
 
   EXPECT_TRUE(FunctionalityConstruction::transformableToZX(&qc));
@@ -187,7 +162,7 @@ TEST_F(ZXFunctionalityTest, nestedCompoundGate) {
 }
 
 TEST_F(ZXFunctionalityTest, Phase) {
-  using namespace qc::literals;
+
   qc = qc::QuantumComputation(2);
   qc.p(PI / 4, 0);
   qc.cp(PI / 4, 1, 0);
@@ -219,18 +194,162 @@ TEST_F(ZXFunctionalityTest, Compound) {
   EXPECT_TRUE(diag.isIdentity());
 }
 
-TEST_F(ZXFunctionalityTest, UnsupportedMultiControl) {
-  using namespace qc::literals;
+TEST_F(ZXFunctionalityTest, CRZ) {
+  qc = qc::QuantumComputation(2);
+  qc.crz(PI / 2, 0, 1);
+
+  auto qcPrime = qc::QuantumComputation(2);
+
+  qcPrime.cx(0, 1);
+  qcPrime.rz(-PI / 4, 1);
+  qcPrime.cx(0, 1);
+  qcPrime.rz(PI / 4, 1);
+
+  checkEquivalence(qc, qcPrime, {0, 1});
+}
+
+TEST_F(ZXFunctionalityTest, CCZ) {
+
+  qc = qc::QuantumComputation(3);
+  qc.mcz({1, 2}, 0);
+
+  auto qcPrime = qc::QuantumComputation(3);
+  qcPrime.h(0);
+  qcPrime.mcx({1, 2}, 0);
+  qcPrime.h(0);
+
+  checkEquivalence(qc, qcPrime, {0, 1, 2});
+}
+
+TEST_F(ZXFunctionalityTest, MultiControlX) {
+
   qc = qc::QuantumComputation(4);
   qc.mcx({1, 2, 3}, 0);
-  EXPECT_FALSE(FunctionalityConstruction::transformableToZX(&qc));
-  EXPECT_THROW(const ZXDiagram diag =
-                   FunctionalityConstruction::buildFunctionality(&qc),
-               ZXException);
+
+  auto qcPrime = qc::QuantumComputation(4);
+  qcPrime.mcx({1, 2, 3}, 0);
+
+  checkEquivalence(qc, qcPrime, {0, 1, 2, 3});
+}
+
+TEST_F(ZXFunctionalityTest, MultiControlXLarger) {
+
+  qc = qc::QuantumComputation(5);
+  qc.mcx({1, 2, 3}, 0);
+
+  auto qcPrime = qc::QuantumComputation(5);
+  qcPrime.mcx({1, 2}, 4);
+  qcPrime.mcx({3, 4}, 0);
+  qcPrime.mcx({1, 2}, 4);
+  qcPrime.mcx({3, 4}, 0);
+
+  checkEquivalence(qc, qcPrime, {0, 1, 2, 3, 4});
+}
+
+TEST_F(ZXFunctionalityTest, MultiControlX0) {
+
+  qc = qc::QuantumComputation(1);
+  qc.mcx({}, 0);
+
+  auto qcPrime = qc::QuantumComputation(1);
+
+  qcPrime.x(0);
+  checkEquivalence(qc, qcPrime, {0});
+}
+
+TEST_F(ZXFunctionalityTest, MultiControlX1) {
+
+  qc = qc::QuantumComputation(2);
+  qc.mcx({1}, 0);
+
+  auto qcPrime = qc::QuantumComputation(2);
+
+  qcPrime.cx(1, 0);
+
+  checkEquivalence(qc, qcPrime, {0, 1});
+}
+
+TEST_F(ZXFunctionalityTest, MultiControlZ) {
+
+  qc = qc::QuantumComputation(4);
+  qc.mcz({1, 2, 3}, 0);
+
+  auto qcPrime = qc::QuantumComputation(4);
+  qcPrime.mcz({1, 2, 3}, 0);
+
+  checkEquivalence(qc, qcPrime, {0, 1, 2, 3});
+}
+
+TEST_F(ZXFunctionalityTest, MultiControlZ0) {
+
+  qc = qc::QuantumComputation(1);
+  qc.mcz({}, 0);
+
+  auto qcPrime = qc::QuantumComputation(1);
+  qcPrime.z(0);
+
+  checkEquivalence(qc, qcPrime, {0});
+}
+
+TEST_F(ZXFunctionalityTest, MultiControlZ1) {
+
+  qc = qc::QuantumComputation(2);
+  qc.mcz({1}, 0);
+
+  auto qcPrime = qc::QuantumComputation(2);
+  qcPrime.cz(1, 0);
+
+  checkEquivalence(qc, qcPrime, {0, 1});
+}
+
+TEST_F(ZXFunctionalityTest, MultiControlZ2) {
+
+  qc = qc::QuantumComputation(4);
+  qc.mcz({1, 2}, 0);
+
+  auto qcPrime = qc::QuantumComputation(4);
+  qcPrime.h(0);
+  qcPrime.mcx({1, 2}, 0);
+  qcPrime.h(0);
+
+  checkEquivalence(qc, qcPrime, {0, 1, 2, 3});
+}
+
+TEST_F(ZXFunctionalityTest, MultiControlRZ) {
+
+  qc = qc::QuantumComputation(3);
+  qc.mcrz(PI / 4, {1, 2}, 0);
+
+  auto qcPrime = qc::QuantumComputation(3);
+  qcPrime.mcrz(PI / 4, {1, 2}, 0);
+
+  checkEquivalence(qc, qcPrime, {0, 1, 2});
+}
+
+TEST_F(ZXFunctionalityTest, MultiControlRZ0) {
+
+  qc = qc::QuantumComputation(1);
+  qc.mcrz(PI / 4, {}, 0);
+
+  auto qcPrime = qc::QuantumComputation(1);
+  qcPrime.rz(PI / 4, 0);
+
+  checkEquivalence(qc, qcPrime, {0});
+}
+
+TEST_F(ZXFunctionalityTest, MultiControlRZ1) {
+
+  qc = qc::QuantumComputation(2);
+  qc.mcrz(PI / 4, {1}, 0);
+
+  auto qcPrime = qc::QuantumComputation(2);
+  qcPrime.crz(PI / 4, 1, 0);
+
+  checkEquivalence(qc, qcPrime, {0, 1});
 }
 
 TEST_F(ZXFunctionalityTest, UnsupportedControl) {
-  using namespace qc::literals;
+
   qc = qc::QuantumComputation(2);
   qc.cy(1, 0);
   EXPECT_FALSE(FunctionalityConstruction::transformableToZX(&qc));
@@ -240,7 +359,7 @@ TEST_F(ZXFunctionalityTest, UnsupportedControl) {
 }
 
 TEST_F(ZXFunctionalityTest, UnsupportedControl2) {
-  using namespace qc::literals;
+
   qc = qc::QuantumComputation(3);
   qc.mcy({1, 2}, 0);
   EXPECT_FALSE(FunctionalityConstruction::transformableToZX(&qc));
@@ -262,13 +381,7 @@ TEST_F(ZXFunctionalityTest, InitialLayout) {
   qcPrime.x(1);
   qcPrime.z(0);
 
-  auto d = FunctionalityConstruction::buildFunctionality(&qc);
-  auto dPrime = FunctionalityConstruction::buildFunctionality(&qcPrime);
-
-  d.concat(dPrime);
-
-  fullReduce(d);
-  EXPECT_TRUE(d.isIdentity());
+  checkEquivalence(qc, qcPrime, {0, 1});
 }
 
 TEST_F(ZXFunctionalityTest, FromSymbolic) {
@@ -289,21 +402,13 @@ TEST_F(ZXFunctionalityTest, RZ) {
   qc.rz(PI / 8, 0);
 
   auto qcPrime = qc::QuantumComputation(1);
-  qcPrime.p(PI / 8, 0);
+  qcPrime.rz(PI / 8, 0);
 
-  auto d = FunctionalityConstruction::buildFunctionality(&qc);
-  auto dPrime = FunctionalityConstruction::buildFunctionality(&qcPrime);
-
-  d.concat(dPrime.invert());
-
-  fullReduce(d);
-  EXPECT_FALSE(d.isIdentity());
-  EXPECT_FALSE(d.globalPhaseIsZero());
-  EXPECT_TRUE(d.connected(d.getInput(0), d.getOutput(0)));
+  checkEquivalence(qc, qcPrime, {0});
 }
 
 TEST_F(ZXFunctionalityTest, ISWAP) {
-  using namespace qc::literals;
+
   qc = qc::QuantumComputation(2);
   qc.iswap(0, 1);
 
@@ -315,15 +420,7 @@ TEST_F(ZXFunctionalityTest, ISWAP) {
   qcPrime.cx(1, 0);
   qc.h(1);
 
-  auto d = FunctionalityConstruction::buildFunctionality(&qc);
-  auto dPrime = FunctionalityConstruction::buildFunctionality(&qcPrime);
-
-  d.concat(dPrime.invert());
-
-  fullReduce(d);
-  EXPECT_TRUE(d.isIdentity());
-  EXPECT_TRUE(d.globalPhaseIsZero());
-  EXPECT_TRUE(d.connected(d.getInput(0), d.getOutput(0)));
+  checkEquivalence(qc, qcPrime, {0, 1});
 }
 
 TEST_F(ZXFunctionalityTest, XXplusYY) {
@@ -349,17 +446,7 @@ TEST_F(ZXFunctionalityTest, XXplusYY) {
   qcPrime.rz(qc::PI_2, 0);
   qcPrime.rz(-beta, 1);
 
-  auto d = FunctionalityConstruction::buildFunctionality(&qc);
-
-  auto dPrime = FunctionalityConstruction::buildFunctionality(&qcPrime);
-
-  d.concat(dPrime.invert());
-
-  fullReduce(d);
-
-  EXPECT_TRUE(d.isIdentity());
-  EXPECT_TRUE(d.globalPhaseIsZero());
-  EXPECT_TRUE(d.connected(d.getInput(0), d.getOutput(0)));
+  checkEquivalence(qc, qcPrime, {0, 1});
 }
 
 TEST_F(ZXFunctionalityTest, XXminusYY) {
@@ -385,16 +472,6 @@ TEST_F(ZXFunctionalityTest, XXminusYY) {
   qcPrime.rz(qc::PI_2, 0);
   qcPrime.rz(beta, 1);
 
-  auto d = FunctionalityConstruction::buildFunctionality(&qc);
-
-  auto dPrime = FunctionalityConstruction::buildFunctionality(&qcPrime);
-
-  d.concat(dPrime.invert());
-
-  fullReduce(d);
-
-  EXPECT_TRUE(d.isIdentity());
-  EXPECT_TRUE(d.globalPhaseIsZero());
-  EXPECT_TRUE(d.connected(d.getInput(0), d.getOutput(0)));
+  checkEquivalence(qc, qcPrime, {0, 1});
 }
 } // namespace zx
