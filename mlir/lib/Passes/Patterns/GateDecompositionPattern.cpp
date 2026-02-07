@@ -85,6 +85,9 @@ struct GateDecompositionPattern final
       basisDecomposers.push_back(decomposition::TwoQubitBasisDecomposer::create(
           basisGate, DEFAULT_FIDELITY));
     }
+    auto&& [singleQubitGates, twoQubitGates] = getDecompositionGates();
+    availableSingleQubitGates = std::move(singleQubitGates);
+    availableTwoQubitGates = std::move(twoQubitGates);
   }
 
   mlir::LogicalResult
@@ -108,9 +111,8 @@ struct GateDecompositionPattern final
     };
     auto series = collectSeries(op, singleQubitOnly);
 
-    auto&& [singleQubitGates, twoQubitGates] = getDecompositionGates();
-    auto containsForeignGates =
-        !series.containsOnlyGates(singleQubitGates, twoQubitGates);
+    auto containsForeignGates = !series.containsOnlyGates(
+        availableSingleQubitGates, availableTwoQubitGates);
 
     if (series.gates.empty() || (series.gates.size() < 3 &&
                                  !(forceApplication && containsForeignGates))) {
@@ -424,19 +426,23 @@ protected:
         auto it = // NOLINT(readability-qualified-auto)
             llvm::find(outQubits, mlir::Value{});
         if (it == outQubits.end()) {
+          // series already has two qubits, thus it is finished because of this
+          // new qubit
           return false;
         }
         auto&& opInQubits = nextGate.getInputQubits();
-        // iterator in the operation input of "old" qubit that already has
-        // previous single-qubit gates in this series
+        // iterator in the operation input of nextGate to "old" qubit that
+        // already has previous single-qubit gates in this series
         auto it2 = llvm::find(opInQubits, firstQubitIt != outQubits.end()
                                               ? *firstQubitIt
                                               : *secondQubitIt);
+        // operation is a user of the "old" qubit since it was found this way;
+        // thus should always succeed
         assert(it2 != opInQubits.end());
         // new qubit ID based on position in outQubits
         const QubitId newInQubitId = std::distance(outQubits.begin(), it);
-        // position in operation input; since there are only two qubits, it must
-        // be the "not old" one
+        // position in operation input; since there are only two qubits, the
+        // other in qubit must be the "not old" one
         const QubitId newOpInQubitId =
             1 - std::distance(opInQubits.begin(), it2);
 
@@ -527,7 +533,9 @@ protected:
    * @param location Location for the created operations
    * @param ctrlQubits Qubits that serve as controls
    * @param inQubitsAndParams Qubits and parameters for inner gate
-   *                          (as required by the builder of the gate)
+   *                          (as required by the builder of the gate);
+   *                          all qubits must be of type mlir::Value
+   *                          and all parameters must have another type
    */
   template <typename OpType, typename... Args>
   static CtrlOp createControlledGate(mlir::PatternRewriter& rewriter,
@@ -675,9 +683,19 @@ protected:
   }
 
 private:
+  // available basis gates
   llvm::SmallVector<Gate> decomposerBasisGates;
-  llvm::SmallVector<decomposition::TwoQubitBasisDecomposer, 0> basisDecomposers;
+  // available euler bases
   llvm::SmallVector<EulerBasis> decomposerEulerBases;
+
+  // cached basis decomposers; one for each basis gate
+  llvm::SmallVector<decomposition::TwoQubitBasisDecomposer, 0> basisDecomposers;
+
+  // cached result of getDecompositionGates()
+  llvm::SetVector<qc::OpType> availableSingleQubitGates;
+  llvm::SetVector<qc::OpType> availableTwoQubitGates;
+
+  // configuration of pattern
   bool singleQubitOnly;
   bool forceApplication;
 };

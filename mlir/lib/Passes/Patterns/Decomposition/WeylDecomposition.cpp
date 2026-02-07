@@ -360,7 +360,7 @@ TwoQubitWeylDecomposition::diagonalizeComplexSymmetric(
     const Eigen::Matrix4d m2Real = randA * m.real() + randB * m.imag();
     auto&& pReal = helpers::selfAdjointEvd(m2Real).first;
     const Eigen::Matrix4cd p = pReal;
-    auto&& d = (p.transpose() * m * p).diagonal();
+    const Eigen::Vector4cd d = (p.transpose() * m * p).diagonal();
 
     auto&& compare = p * d.asDiagonal() * p.transpose();
     if (compare.isApprox(m, precision)) {
