@@ -675,11 +675,11 @@ ValueRange QCOProgramBuilder::qcoIf(
     updateQubitTracking(input, controlOut);
   }
 
-  // Remove the blockarguments as valid qubits
-  for (const auto& [thenArg, elseArg] :
-       llvm::zip_equal(thenBlock.getArguments(), elseBlock.getArguments())) {
-    validQubits.erase(thenArg);
-    validQubits.erase(elseArg);
+  // Remove the inner qubits as valid qubits
+  for (const auto& [thenOut, elseOut] :
+       llvm::zip_equal(thenResult, elseResult)) {
+    validQubits.erase(thenOut);
+    validQubits.erase(elseOut);
   }
   return ifResults;
 }
