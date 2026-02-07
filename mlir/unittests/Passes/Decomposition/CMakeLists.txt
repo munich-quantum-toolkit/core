@@ -22,7 +22,8 @@ if(NOT TARGET ${testname})
             MLIRTransforms
             MQTCompilerPipeline
             MQT::CoreIR
-            Eigen3::Eigen)
+            Eigen3::Eigen
+            QcoPasses)
   # discover tests
   gtest_discover_tests(${testname} DISCOVERY_TIMEOUT 60)
   set_target_properties(${testname} PROPERTIES FOLDER unittests)

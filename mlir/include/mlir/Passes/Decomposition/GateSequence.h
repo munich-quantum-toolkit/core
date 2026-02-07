@@ -10,15 +10,9 @@
 
 #pragma once
 
-#include "EulerBasis.h"
 #include "Gate.h"
-#include "Helpers.h"
-#include "UnitaryMatrices.h"
-#include "ir/operations/OpType.hpp"
 
 #include <Eigen/Core>
-#include <cassert>
-#include <cmath>
 #include <cstddef>
 #include <llvm/ADT/SmallVector.h>
 
@@ -39,38 +33,17 @@ struct QubitGateSequence {
   /**
    * @return true if the global phase adjustment is not zero.
    */
-  [[nodiscard]] bool hasGlobalPhase() const {
-    return std::abs(globalPhase) > DEFAULT_ATOL;
-  }
+  [[nodiscard]] bool hasGlobalPhase() const;
 
   /**
    * Calculate complexity of sequence according to getComplexity().
    */
-  [[nodiscard]] std::size_t complexity() const {
-    std::size_t c{};
-    for (auto&& gate : gates) {
-      c += helpers::getComplexity(gate.type, gate.qubitId.size());
-    }
-    if (hasGlobalPhase()) {
-      // need to add a global phase gate if a global phase needs to be applied
-      c += helpers::getComplexity(qc::GPhase, 0);
-    }
-    return c;
-  }
+  [[nodiscard]] std::size_t complexity() const;
 
   /**
    * Calculate overall unitary matrix of the sequence.
    */
-  [[nodiscard]] Eigen::Matrix4cd getUnitaryMatrix() const {
-    Eigen::Matrix4cd unitaryMatrix = Eigen::Matrix4cd::Identity();
-    for (auto&& gate : gates) {
-      auto gateMatrix = getTwoQubitMatrix(gate);
-      unitaryMatrix = gateMatrix * unitaryMatrix;
-    }
-    unitaryMatrix *= helpers::globalPhaseFactor(globalPhase);
-    assert(helpers::isUnitaryMatrix(unitaryMatrix));
-    return unitaryMatrix;
-  }
+  [[nodiscard]] Eigen::Matrix4cd getUnitaryMatrix() const;
 };
 /**
  * Helper type to show that a gate sequence is supposed to only contain

@@ -40,36 +40,11 @@ enum class EulerBasis : std::uint8_t {
   ZSX = 11,
 };
 
-[[nodiscard]] inline llvm::SmallVector<qc::OpType, 3>
-getGateTypesForEulerBasis(EulerBasis eulerBasis) {
-  switch (eulerBasis) {
-  case EulerBasis::ZYZ:
-    return {qc::RZ, qc::RY};
-  case EulerBasis::ZXZ:
-    return {qc::RZ, qc::RX};
-  case EulerBasis::XZX:
-    return {qc::RX, qc::RZ};
-  case EulerBasis::XYX:
-    return {qc::RX, qc::RY};
-  case EulerBasis::U3:
-    [[fallthrough]];
-  case EulerBasis::U321:
-    [[fallthrough]];
-  case EulerBasis::U:
-    return {qc::U};
-  case EulerBasis::RR:
-    return {qc::R};
-  case EulerBasis::ZSXX:
-    [[fallthrough]];
-  case EulerBasis::ZSX:
-    return {qc::RZ, qc::SX};
-  case EulerBasis::PSX:
-    [[fallthrough]];
-  case EulerBasis::U1X:
-    return {qc::RZ, qc::P};
-  }
-  llvm::reportFatalInternalError(
-      "Unsupported euler basis for translation to gate types");
-}
+/**
+ * Get list of gates potentially involved in euler basis after euler
+ * decomposition.
+ */
+[[nodiscard]] llvm::SmallVector<qc::OpType, 3>
+getGateTypesForEulerBasis(EulerBasis eulerBasis);
 
 } // namespace mlir::qco::decomposition
