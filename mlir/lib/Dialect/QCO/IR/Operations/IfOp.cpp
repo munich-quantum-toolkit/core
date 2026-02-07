@@ -10,13 +10,26 @@
 
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 
+#include <llvm/Support/Casting.h>
+#include <mlir/IR/BuiltinTypes.h>
 #include <mlir/Support/LogicalResult.h>
 
 using namespace mlir;
 using namespace mlir::qco;
 
 LogicalResult IfOp::verify() {
-  getResults();
+  for (const auto& type : getInputs().getTypes()) {
+    if (llvm::isa<QubitType>(type)) {
+      continue;
+    }
+    auto tensor = dyn_cast<TensorType>(type);
+    if (tensor && llvm::isa<QubitType>(tensor.getElementType())) {
+      continue;
+    }
+    return emitOpError(
+        "Types of inputs must be qubit type or tensor of qubit type!");
+  }
+
   return success();
 }
 
@@ -45,3 +58,8 @@ void IfOp::build(
   qco::YieldOp::create(odsBuilder, odsState.location,
                        elseBuilder(elseBlock.getArguments()));
 }
+
+Block* IfOp::thenBlock() { return &getThenRegion().back(); }
+YieldOp IfOp::thenYield() { return cast<YieldOp>(&thenBlock()->back()); }
+Block* IfOp::elseBlock() { return &getElseRegion().back(); }
+YieldOp IfOp::elseYield() { return cast<YieldOp>(&elseBlock()->back()); }

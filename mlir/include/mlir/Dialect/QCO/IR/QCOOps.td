@@ -14,6 +14,7 @@ include "mlir/IR/BuiltinTypeInterfaces.td"
 include "mlir/IR/DialectBase.td"
 include "mlir/IR/EnumAttr.td"
 include "mlir/IR/OpBase.td"
+include "mlir/Interfaces/ControlFlowInterfaces.td"
 include "mlir/Interfaces/InferTypeOpInterface.td"
 include "mlir/Interfaces/SideEffectInterfaces.td"
 
@@ -1146,7 +1147,8 @@ def CtrlOp : QCOOp<"ctrl", traits =
 // Scf operations
 //===----------------------------------------------------------------------===//
 
-def IfOp : QCOOp<"if"> {
+def IfOp : QCOOp<"if", traits= [SingleBlock,
+                RecursiveMemoryEffects]> {
 
     let summary = "TODO";
     let description = [{TODO}];
@@ -1157,10 +1159,10 @@ def IfOp : QCOOp<"if"> {
                          SizedRegion<1>:$elseRegion);
 
     let assemblyFormat = [{
-    $condition `targets` `(` $inputs `:` type($inputs) `)`
-    attr-dict `->` type($results)
-    $thenRegion
-    `else` $elseRegion
+        $condition `targets` `(` $inputs `:` type($inputs) `)`
+        attr-dict `->` type($results)
+        $thenRegion
+        `else` $elseRegion
     }];
 
     let builders = [
@@ -1168,8 +1170,15 @@ def IfOp : QCOOp<"if"> {
            build($_builder, $_state, inputs.getTypes(), condition, inputs);
         }]>,
         OpBuilder<(ins "Value":$condition, "ValueRange":$inputs, "llvm::function_ref<llvm::SmallVector<Value>(ValueRange)>":$thenBuilder,
-        "llvm::function_ref<llvm::SmallVector<Value>(ValueRange)>":$elseBuilder )>
+        "llvm::function_ref<llvm::SmallVector<Value>(ValueRange)>":$elseBuilder)>
     ];
+
+    let extraClassDeclaration = [{
+        Block* thenBlock();
+        YieldOp thenYield();
+        Block* elseBlock();
+        YieldOp elseYield();
+    }];
 
     let hasVerifier = 1;
 }
