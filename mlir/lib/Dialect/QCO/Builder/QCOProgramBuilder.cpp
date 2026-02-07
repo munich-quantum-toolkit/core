@@ -637,6 +637,54 @@ QCOProgramBuilder& QCOProgramBuilder::dealloc(Value qubit) {
 }
 
 //===----------------------------------------------------------------------===//
+// SCF Operations
+//===----------------------------------------------------------------------===//
+
+ValueRange QCOProgramBuilder::ifOp(
+    Value input, ValueRange inputs,
+    llvm::function_ref<llvm::SmallVector<Value>(ValueRange)> thenBody,
+    llvm::function_ref<llvm::SmallVector<Value>(ValueRange)> elseBody) {
+  checkFinalized();
+
+  auto ifOp = IfOp::create(*this, input, inputs);
+  // Create the then and else block
+  auto& thenBlock = ifOp->getRegion(0).emplaceBlock();
+  auto& elseBlock = ifOp->getRegion(1).emplaceBlock();
+
+  // Create the blockarguments and add them as valid qubits
+  const auto qubitType = QubitType::get(getContext());
+  for (size_t i = 0; i < inputs.size(); i++) {
+    const auto thenArg = thenBlock.addArgument(qubitType, getLoc());
+    const auto elseArg = elseBlock.addArgument(qubitType, getLoc());
+    validQubits.insert(thenArg);
+    validQubits.insert(elseArg);
+  }
+
+  // Construct the bodies of the regions
+  const InsertionGuard guard(*this);
+  setInsertionPointToStart(&thenBlock);
+  const auto thenResult = thenBody(thenBlock.getArguments());
+  YieldOp::create(*this, thenResult);
+  setInsertionPointToStart(&elseBlock);
+  const auto elseResult = elseBody(elseBlock.getArguments());
+  YieldOp::create(*this, elseResult);
+
+  // Update qubit tracking
+  const auto& ifResults = ifOp->getResults();
+  for (const auto& [input, controlOut] : llvm::zip(inputs, ifResults)) {
+    updateQubitTracking(input, controlOut);
+  }
+
+  // Remove the blockarguments as valid qubits
+  for (const auto& [thenArg, elseArg] :
+       llvm::zip_equal(thenBlock.getArguments(), elseBlock.getArguments())) {
+    validQubits.erase(thenArg);
+    validQubits.erase(elseArg);
+  }
+  return ifResults;
+}
+
+//===----------------------------------------------------------------------===//
 // Finalization
 //===----------------------------------------------------------------------===//
 

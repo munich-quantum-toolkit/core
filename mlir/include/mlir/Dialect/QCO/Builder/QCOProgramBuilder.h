@@ -1030,6 +1030,15 @@ public:
   QCOProgramBuilder& dealloc(Value qubit);
 
   //===--------------------------------------------------------------------===//
+  // SCF operations
+  //===--------------------------------------------------------------------===//
+
+  ValueRange
+  ifOp(Value input, ValueRange inputs,
+       llvm::function_ref<llvm::SmallVector<Value>(ValueRange)> thenBody,
+       llvm::function_ref<llvm::SmallVector<Value>(ValueRange)> elseBody);
+
+  //===--------------------------------------------------------------------===//
   // Finalization
   //===--------------------------------------------------------------------===//
 
