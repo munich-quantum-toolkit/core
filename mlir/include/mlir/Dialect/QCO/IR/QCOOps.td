@@ -1180,6 +1180,7 @@ def IfOp : QCOOp<"if", traits= [SingleBlock,
         YieldOp elseYield();
     }];
 
+    let hasCanonicalizer = 1;
     let hasVerifier = 1;
 }
 

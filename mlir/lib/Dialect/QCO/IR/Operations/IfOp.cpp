@@ -10,8 +10,11 @@
 
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 
+#include <cassert>
 #include <llvm/Support/Casting.h>
 #include <mlir/IR/BuiltinTypes.h>
+#include <mlir/IR/Matchers.h>
+#include <mlir/IR/PatternMatch.h>
 #include <mlir/Support/LogicalResult.h>
 
 using namespace mlir;
@@ -63,3 +66,46 @@ Block* IfOp::thenBlock() { return &getThenRegion().back(); }
 YieldOp IfOp::thenYield() { return cast<YieldOp>(&thenBlock()->back()); }
 Block* IfOp::elseBlock() { return &getElseRegion().back(); }
 YieldOp IfOp::elseYield() { return cast<YieldOp>(&elseBlock()->back()); }
+
+// Copied from
+// https://github.com/llvm/llvm-project/blob/llvmorg-21.1.7/mlir/lib/Dialect/SCF/IR/SCF.cpp
+
+/// Replaces the given op with the contents of the given single-block region,
+/// using the operands of the block terminator to replace operation results.
+static void replaceOpWithRegion(PatternRewriter& rewriter, Operation* op,
+                                Region& region, ValueRange blockArgs = {}) {
+  assert(llvm::hasSingleElement(region) && "expected single-region block");
+  Block* block = &region.front();
+  Operation* terminator = block->getTerminator();
+  ValueRange results = terminator->getOperands();
+  rewriter.inlineBlockBefore(block, op, blockArgs);
+  rewriter.replaceOp(op, results);
+  rewriter.eraseOp(terminator);
+}
+
+struct RemoveStaticCondition : public OpRewritePattern<IfOp> {
+  using OpRewritePattern<IfOp>::OpRewritePattern;
+
+  LogicalResult matchAndRewrite(IfOp op,
+                                PatternRewriter& rewriter) const override {
+    BoolAttr condition;
+    if (!matchPattern(op.getCondition(), m_Constant(&condition))) {
+      return failure();
+    }
+
+    if (condition.getValue()) {
+      replaceOpWithRegion(rewriter, op, op.getThenRegion(), op.getInputs());
+    } else if (!op.getElseRegion().empty()) {
+      replaceOpWithRegion(rewriter, op, op.getElseRegion(), op.getInputs());
+    } else {
+      rewriter.eraseOp(op);
+    }
+
+    return success();
+  }
+};
+
+void IfOp::getCanonicalizationPatterns(RewritePatternSet& results,
+                                       MLIRContext* context) {
+  results.add<RemoveStaticCondition>(context);
+}
