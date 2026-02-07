@@ -21,7 +21,6 @@
 #include <cassert>
 #include <cmath>
 #include <complex>
-#include <llvm/ADT/STLExtras.h>
 #include <llvm/Support/ErrorHandling.h>
 #include <optional>
 
@@ -113,7 +112,7 @@ EulerDecomposition::paramsXyx(const Eigen::Matrix2cd& matrix) {
 std::array<double, 4>
 EulerDecomposition::paramsXzx(const Eigen::Matrix2cd& matrix) {
   auto det = matrix.determinant();
-  auto phase = std::imag(std::log(det)) / 2.0;
+  auto phase = 0.5 * std::arg(det);
   auto sqrtDet = std::sqrt(det);
   const Eigen::Matrix2cd matZxz{
       {

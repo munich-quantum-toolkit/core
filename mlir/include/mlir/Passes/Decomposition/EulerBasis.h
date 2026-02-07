@@ -14,13 +14,12 @@
 
 #include <cstdint>
 #include <llvm/ADT/SmallVector.h>
-#include <llvm/Support/ErrorHandling.h>
 
 namespace mlir::qco::decomposition {
 /**
  * Largest number that will be assumed as zero for the euler decompositions.
  */
-static constexpr auto DEFAULT_ATOL = 1e-12;
+inline constexpr auto DEFAULT_ATOL = 1e-12;
 
 /**
  * EulerBasis for a euler decomposition.

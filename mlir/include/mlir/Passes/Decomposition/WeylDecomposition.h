@@ -49,6 +49,7 @@ public:
   static TwoQubitWeylDecomposition create(const Eigen::Matrix4cd& unitaryMatrix,
                                           std::optional<double> fidelity);
 
+  ~TwoQubitWeylDecomposition() = default;
   TwoQubitWeylDecomposition(const TwoQubitWeylDecomposition&) = default;
   TwoQubitWeylDecomposition(TwoQubitWeylDecomposition&&) = default;
   TwoQubitWeylDecomposition&
@@ -192,7 +193,7 @@ protected:
   getTrace(double a, double b, double c, double ap, double bp, double cp);
 
   /**
-   * Choose the best specialization for the for the canonical gate.
+   * Choose the best specialization for the canonical gate.
    * This will use the requestedFidelity to determine if a specialization is
    * close enough to the actual canonical gate matrix.
    */

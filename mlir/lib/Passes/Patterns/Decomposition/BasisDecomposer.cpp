@@ -13,6 +13,7 @@
 #include "ir/Definitions.hpp"
 #include "mlir/Passes/Decomposition/EulerBasis.h"
 #include "mlir/Passes/Decomposition/EulerDecomposition.h"
+#include "mlir/Passes/Decomposition/Gate.h"
 #include "mlir/Passes/Decomposition/GateSequence.h"
 #include "mlir/Passes/Decomposition/Helpers.h"
 #include "mlir/Passes/Decomposition/UnitaryMatrices.h"
@@ -26,16 +27,8 @@
 #include <cstddef>
 #include <cstdint>
 #include <limits>
-#include <llvm/ADT/STLExtras.h>
 #include <llvm/Support/ErrorHandling.h>
-#include <mlir/Dialect/Arith/IR/Arith.h>
-#include <mlir/IR/MLIRContext.h>
-#include <mlir/IR/Operation.h>
-#include <mlir/IR/PatternMatch.h>
-#include <mlir/IR/Value.h>
-#include <mlir/IR/ValueRange.h>
 #include <mlir/Support/LLVM.h>
-#include <mlir/Support/LogicalResult.h>
 #include <optional>
 #include <utility>
 
@@ -198,7 +191,7 @@ std::optional<TwoQubitGateSequence> TwoQubitBasisDecomposer::twoQubitDecompose(
   };
   double actualBasisFidelity = getBasisFidelity();
   auto traces = this->traces(targetDecomposition);
-  auto getDefaultNbasis = [&]() {
+  auto getDefaultNbasis = [&]() -> std::uint8_t {
     // determine smallest number of basis gates required to fulfill given
     // basis fidelity constraint
     auto bestValue = std::numeric_limits<double>::lowest();
@@ -213,8 +206,9 @@ std::optional<TwoQubitGateSequence> TwoQubitBasisDecomposer::twoQubitDecompose(
         bestValue = value;
       }
     }
-    // index in traces equals number of basis gates
-    return bestIndex;
+    // index in traces equals number of basis gates; return -1/255 if no
+    // matching number of basis gates was found (should never happen)
+    return static_cast<std::uint8_t>(bestIndex);
   };
   // number of basis gates that need to be used in the decomposition
   auto bestNbasis = numBasisGateUses.value_or(getDefaultNbasis());

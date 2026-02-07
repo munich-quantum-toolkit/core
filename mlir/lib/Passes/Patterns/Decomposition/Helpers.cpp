@@ -15,6 +15,7 @@
 
 #include <cmath>
 #include <complex>
+#include <cstddef>
 #include <llvm/Support/Casting.h>
 #include <numbers>
 #include <stdexcept>

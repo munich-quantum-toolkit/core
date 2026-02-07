@@ -339,8 +339,15 @@ protected:
     TwoQubitSeries() = default;
     /**
      * Initialize TwoQubitSeries instance with given first operation.
+     * If the operation is not valid for a one- or two-qubit series,
+     * leave in/out qubits unitialized and the gate list empty.
      */
     explicit TwoQubitSeries(UnitaryOpInterface initialOperation) {
+      if (isBarrier(initialOperation)) {
+        // not a valid single- or two-qubit series
+        // (barrier cannot be decomposed)
+        return;
+      }
       if (initialOperation.isSingleQubit()) {
         inQubits = {initialOperation.getInputQubit(0), mlir::Value{}};
         outQubits = {initialOperation.getOutputQubit(0), mlir::Value{}};
@@ -351,6 +358,9 @@ protected:
         outQubits = {initialOperation.getOutputQubit(0),
                      initialOperation.getOutputQubit(1)};
         gates.push_back({.op = initialOperation, .qubitIds = {0, 1}});
+      } else {
+        // not a valid single- or two-qubit series (more than two qubits)
+        return;
       }
       complexity += helpers::getComplexity(helpers::getQcType(initialOperation),
                                            initialOperation.getNumQubits());

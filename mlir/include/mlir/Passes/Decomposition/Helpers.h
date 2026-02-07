@@ -16,6 +16,7 @@
 #include <Eigen/Core>
 #include <Eigen/Eigenvalues>
 #include <complex>
+#include <type_traits>
 
 namespace mlir::qco::helpers {
 

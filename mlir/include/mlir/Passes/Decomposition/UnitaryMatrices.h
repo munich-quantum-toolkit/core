@@ -97,8 +97,8 @@ inline constexpr double FRAC1_SQRT2 =
 
 inline constexpr Eigen::Matrix4cd SWAP_GATE{
     {1, 0, 0, 0}, {0, 0, 1, 0}, {0, 1, 0, 0}, {0, 0, 0, 1}};
-inline constexpr Eigen::Matrix2cd H_GATE{{1.0 / SQRT2, 1.0 / SQRT2},
-                                         {1.0 / SQRT2, -1.0 / SQRT2}};
+inline constexpr Eigen::Matrix2cd H_GATE{{FRAC1_SQRT2, FRAC1_SQRT2},
+                                         {FRAC1_SQRT2, -FRAC1_SQRT2}};
 inline constexpr Eigen::Matrix2cd IPZ{{{0, 1}, 0}, {0, {0, -1}}};
 inline constexpr Eigen::Matrix2cd IPY{{0, 1}, {-1, 0}};
 inline constexpr Eigen::Matrix2cd IPX{{0, {0, 1}}, {{0, 1}, 0}};
