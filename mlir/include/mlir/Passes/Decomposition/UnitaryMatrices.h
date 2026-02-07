@@ -95,13 +95,13 @@ inline constexpr double FRAC1_SQRT2 =
   return Eigen::Matrix2cd{{1, 0}, {0, {std::cos(lambda), std::sin(lambda)}}};
 }
 
-inline constexpr Eigen::Matrix4cd SWAP_GATE{
+inline const Eigen::Matrix4cd SWAP_GATE{
     {1, 0, 0, 0}, {0, 0, 1, 0}, {0, 1, 0, 0}, {0, 0, 0, 1}};
-inline constexpr Eigen::Matrix2cd H_GATE{{FRAC1_SQRT2, FRAC1_SQRT2},
-                                         {FRAC1_SQRT2, -FRAC1_SQRT2}};
-inline constexpr Eigen::Matrix2cd IPZ{{{0, 1}, 0}, {0, {0, -1}}};
-inline constexpr Eigen::Matrix2cd IPY{{0, 1}, {-1, 0}};
-inline constexpr Eigen::Matrix2cd IPX{{0, {0, 1}}, {{0, 1}, 0}};
+inline const Eigen::Matrix2cd H_GATE{{FRAC1_SQRT2, FRAC1_SQRT2},
+                                     {FRAC1_SQRT2, -FRAC1_SQRT2}};
+inline const Eigen::Matrix2cd IPZ{{{0, 1}, 0}, {0, {0, -1}}};
+inline const Eigen::Matrix2cd IPY{{0, 1}, {-1, 0}};
+inline const Eigen::Matrix2cd IPX{{0, {0, 1}}, {{0, 1}, 0}};
 
 [[nodiscard]] Eigen::Matrix4cd
 expandToTwoQubits(const Eigen::Matrix2cd& singleQubitMatrix, QubitId qubitId);
