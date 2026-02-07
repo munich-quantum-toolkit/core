@@ -1005,6 +1005,31 @@ public:
   ctrl(ValueRange controls, ValueRange targets,
        llvm::function_ref<llvm::SmallVector<Value>(ValueRange)> body);
 
+  /**
+   * @brief Apply an inverse operation
+   *
+   * @param targets Target qubits
+   * @param body Function that builds the body containing the target operation
+   * @return Output target qubits
+   *
+   * @par Example:
+   * ```c++
+   * targets_out = builder.inv(q0_in,
+   *   [&](ValueRange targets) -> llvm::SmallVector<Value> {
+   *     return {builder.s(targets[0])};
+   *   }
+   * );
+   * ```
+   * ```mlir
+   * %targets_out = qco.inv %q0_in {
+   *   %q0_res = qco.s %q0_in : !qco.qubit -> !qco.qubit
+   *   qco.yield %q0_res
+   * } : {!qco.qubit} -> {!qco.qubit}
+   * ```
+   */
+  ValueRange inv(ValueRange targets,
+                 llvm::function_ref<llvm::SmallVector<Value>(ValueRange)> body);
+
   //===--------------------------------------------------------------------===//
   // Deallocation
   //===--------------------------------------------------------------------===//

@@ -11,6 +11,8 @@
 #include "mlir/Dialect/QCO/Builder/QCOProgramBuilder.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 
+#include "llvm/ADT/SmallVector.h"
+
 #include <Eigen/Core>
 #include <complex>
 #include <functional>
@@ -203,4 +205,28 @@ TEST_F(QcoUnitaryMatrixTest, CtrlX10OpMatrix) {
   EXPECT_EQ(op01.getUnitaryMatrix(), cxMatrix);
   EXPECT_EQ(op10.getUnitaryMatrix(), cxMatrix);
   EXPECT_EQ(op10.getUnitaryMatrix(), op01.getUnitaryMatrix());
+}
+
+/**
+ * @brief Test: Inverse Iswap unitary matrix
+ *
+ * @details
+ * Ensure the correct gate definition is returned.
+ */
+TEST_F(QcoUnitaryMatrixTest, InvIswapOpMatrix) {
+  using namespace std::complex_literals;
+  auto moduleOp = buildQCOIR([](qco::QCOProgramBuilder& builder) {
+    auto reg = builder.allocQubitRegister(2, "q");
+    builder.inv(reg, [&](auto qubits) -> llvm::SmallVector<Value> {
+      auto [q0, q1] = builder.iswap(qubits[0], qubits[1]);
+      return {q0, q1};
+    });
+  });
+  auto op = getFirstOp<qco::InvOp>(*moduleOp);
+  ASSERT_TRUE(op) << toString(*moduleOp);
+
+  const Eigen::MatrixXcd invIswapMatrix = Eigen::Matrix4cd{
+      {{1, 0, 0, 0}, {0, 0, -1i, 0}, {0, -1i, 0, 0}, {0, 0, 0, 1}}};
+
+  EXPECT_EQ(op.getUnitaryMatrix(), invIswapMatrix);
 }
