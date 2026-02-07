@@ -1034,9 +1034,9 @@ public:
   //===--------------------------------------------------------------------===//
 
   ValueRange
-  ifOp(Value input, ValueRange inputs,
-       llvm::function_ref<llvm::SmallVector<Value>(ValueRange)> thenBody,
-       llvm::function_ref<llvm::SmallVector<Value>(ValueRange)> elseBody);
+  qcoIf(Value condition, ValueRange targets,
+        llvm::function_ref<llvm::SmallVector<Value>(ValueRange)> thenBody,
+        llvm::function_ref<llvm::SmallVector<Value>(ValueRange)> elseBody);
 
   //===--------------------------------------------------------------------===//
   // Finalization
