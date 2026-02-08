@@ -22,6 +22,7 @@
 #include <cstdlib>
 #include <gtest/gtest.h>
 #include <optional>
+#include <random>
 #include <tuple>
 
 using namespace mlir::qco;

@@ -18,6 +18,7 @@
 #include <cassert>
 #include <complex>
 #include <gtest/gtest.h>
+#include <random>
 #include <unsupported/Eigen/KroneckerProduct>
 
 using namespace mlir::qco;

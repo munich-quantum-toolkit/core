@@ -19,7 +19,6 @@ add_mlir_library(
   Eigen3::Eigen
   PRIVATE
   ${dialect_libs}
-  PRIVATE
   DEPENDS
   QcoPassesIncGen)
 

@@ -620,7 +620,9 @@ protected:
     };
 
     for (auto&& gate : sequence.gates) {
-      // TODO: need to add each basis gate we want to use
+      // these if branches should handle all gates in availableSingleQubitGates
+      // and availableTwoQubitGates; additional gates will need to be added when
+      // using new euler bases or basis gates
       if (gate.type == qc::X && gate.qubitId.size() > 1) {
         // X gate involving more than one qubit is a CX gate:
         // qubit position 0 is target, 1 is control
