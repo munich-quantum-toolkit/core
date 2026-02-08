@@ -261,7 +261,7 @@ std::optional<TwoQubitGateSequence> TwoQubitBasisDecomposer::twoQubitDecompose(
   return gates;
 }
 
-llvm::SmallVector<Eigen::Matrix2cd>
+llvm::SmallVector<Eigen::Matrix2cd, 0>
 TwoQubitBasisDecomposer::decomp0(const TwoQubitWeylDecomposition& target) {
   return {
       target.k1r() * target.k2r(),
@@ -269,7 +269,7 @@ TwoQubitBasisDecomposer::decomp0(const TwoQubitWeylDecomposition& target) {
   };
 }
 
-llvm::SmallVector<Eigen::Matrix2cd> TwoQubitBasisDecomposer::decomp1(
+llvm::SmallVector<Eigen::Matrix2cd, 0> TwoQubitBasisDecomposer::decomp1(
     const TwoQubitWeylDecomposition& target) const {
   // may not work for z != 0 and c != 0 (not always in Weyl chamber)
   return {
@@ -280,7 +280,7 @@ llvm::SmallVector<Eigen::Matrix2cd> TwoQubitBasisDecomposer::decomp1(
   };
 }
 
-llvm::SmallVector<Eigen::Matrix2cd>
+llvm::SmallVector<Eigen::Matrix2cd, 0>
 TwoQubitBasisDecomposer::decomp2Supercontrolled(
     const TwoQubitWeylDecomposition& target) const {
   if (!isSuperControlled) {
@@ -298,7 +298,7 @@ TwoQubitBasisDecomposer::decomp2Supercontrolled(
   };
 }
 
-llvm::SmallVector<Eigen::Matrix2cd>
+llvm::SmallVector<Eigen::Matrix2cd, 0>
 TwoQubitBasisDecomposer::decomp3Supercontrolled(
     const TwoQubitWeylDecomposition& target) const {
   if (!isSuperControlled) {

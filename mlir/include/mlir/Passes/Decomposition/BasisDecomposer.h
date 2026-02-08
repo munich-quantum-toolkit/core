@@ -103,8 +103,11 @@ protected:
    *     4\Big\vert (\cos(x)\cos(y)\cos(z)+ j \sin(x)\sin(y)\sin(z)\Big\vert
    *
    * which is optimal for all targets and bases
+   *
+   * @note The inline storage of llvm::SmallVector must be set to 0 to ensure
+   *       correct Eigen alignment via heap allocation
    */
-  [[nodiscard]] static llvm::SmallVector<Eigen::Matrix2cd>
+  [[nodiscard]] static llvm::SmallVector<Eigen::Matrix2cd, 0>
   decomp0(const decomposition::TwoQubitWeylDecomposition& target);
 
   /**
@@ -120,8 +123,11 @@ protected:
    *     \sin(x-a)\sin(y-b)\sin(z-c)\Big\vert
    *
    * which is optimal for all targets and bases with ``z==0`` or ``c==0``.
+   *
+   * @note The inline storage of llvm::SmallVector must be set to 0 to ensure
+   *       correct Eigen alignment via heap allocation
    */
-  [[nodiscard]] llvm::SmallVector<Eigen::Matrix2cd>
+  [[nodiscard]] llvm::SmallVector<Eigen::Matrix2cd, 0>
   decomp1(const decomposition::TwoQubitWeylDecomposition& target) const;
 
   /**
@@ -146,8 +152,11 @@ protected:
    * decomposition). This is an exact decomposition for supercontrolled basis
    * and target :math:`\sim U_d(x, y, 0)`. No guarantees for
    * non-supercontrolled basis.
+   *
+   * @note The inline storage of llvm::SmallVector must be set to 0 to ensure
+   *       correct Eigen alignment via heap allocation
    */
-  [[nodiscard]] llvm::SmallVector<Eigen::Matrix2cd> decomp2Supercontrolled(
+  [[nodiscard]] llvm::SmallVector<Eigen::Matrix2cd, 0> decomp2Supercontrolled(
       const decomposition::TwoQubitWeylDecomposition& target) const;
 
   /**
@@ -158,8 +167,11 @@ protected:
    * This is an exact decomposition for supercontrolled basis
    * :math:`\sim U_d(\pi/4, b, 0)`, all b, and any target. No guarantees for
    * non-supercontrolled basis.
+   *
+   * @note The inline storage of llvm::SmallVector must be set to 0 to ensure
+   *       correct Eigen alignment via heap allocation
    */
-  [[nodiscard]] llvm::SmallVector<Eigen::Matrix2cd> decomp3Supercontrolled(
+  [[nodiscard]] llvm::SmallVector<Eigen::Matrix2cd, 0> decomp3Supercontrolled(
       const decomposition::TwoQubitWeylDecomposition& target) const;
 
   /**

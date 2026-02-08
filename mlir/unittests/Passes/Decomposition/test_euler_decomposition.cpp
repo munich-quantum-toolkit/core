@@ -15,6 +15,7 @@
 #include "mlir/Passes/Decomposition/UnitaryMatrices.h"
 #include "utils.h"
 
+#include <Eigen/Core>
 #include <Eigen/QR>
 #include <array>
 #include <cassert>
