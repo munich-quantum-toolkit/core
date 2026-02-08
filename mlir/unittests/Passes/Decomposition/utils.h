@@ -17,8 +17,8 @@
 #include <complex>
 #include <random>
 
-template <typename MatrixType> [[nodiscard]] MatrixType randomUnitaryMatrix() {
-  [[maybe_unused]] static auto rng = []() { return std::mt19937{123456UL}; }();
+template <typename MatrixType>
+[[nodiscard]] MatrixType randomUnitaryMatrix(std::mt19937& rng) {
   // NOLINTNEXTLINE(misc-const-correctness)
   std::uniform_real_distribution<double> dist(-1.0, 1.0);
   MatrixType randomMatrix;

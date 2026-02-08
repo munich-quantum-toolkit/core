@@ -73,8 +73,10 @@ TEST_P(WeylDecompositionTest, TestApproximation) {
 
 TEST(WeylDecompositionTest, Random) {
   constexpr auto maxIterations = 5000;
+  std::mt19937 rng{1234567UL};
+
   for (int i = 0; i < maxIterations; ++i) {
-    auto originalMatrix = randomUnitaryMatrix<Eigen::Matrix4cd>();
+    auto originalMatrix = randomUnitaryMatrix<Eigen::Matrix4cd>(rng);
     auto decomposition =
         TwoQubitWeylDecomposition::create(originalMatrix, 1.0 - 1e-12);
     auto restoredMatrix = WeylDecompositionTest::restore(decomposition);

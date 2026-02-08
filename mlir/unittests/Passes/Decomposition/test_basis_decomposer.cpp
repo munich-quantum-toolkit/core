@@ -95,13 +95,13 @@ TEST_P(BasisDecomposerTest, TestApproximation) {
 
 TEST(BasisDecomposerTest, Random) {
   constexpr auto maxIterations = 2000;
+  std::mt19937 rng{123456UL};
 
   const llvm::SmallVector<Gate, 2> basisGates{
       {.type = qc::X, .parameter = {}, .qubitId = {0, 1}},
       {.type = qc::X, .parameter = {}, .qubitId = {1, 0}}};
   const llvm::SmallVector<EulerBasis, 4> eulerBases = {
       EulerBasis::XYX, EulerBasis::ZXZ, EulerBasis::ZYZ, EulerBasis::XZX};
-  std::mt19937 rng{123456UL};
   std::uniform_int_distribution<std::size_t> distBasisGate{
       0, basisGates.size() - 1};
   std::uniform_int_distribution<std::size_t> distEulerBases{
@@ -116,7 +116,7 @@ TEST(BasisDecomposerTest, Random) {
   auto selectRandomBasisGate = [&]() { return basisGates[distBasisGate(rng)]; };
 
   for (int i = 0; i < maxIterations; ++i) {
-    auto originalMatrix = randomUnitaryMatrix<Eigen::Matrix4cd>();
+    auto originalMatrix = randomUnitaryMatrix<Eigen::Matrix4cd>(rng);
 
     auto targetDecomposition =
         TwoQubitWeylDecomposition::create(originalMatrix, 1.0);

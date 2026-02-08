@@ -64,11 +64,13 @@ TEST_P(EulerDecompositionTest, TestExact) {
 
 TEST(EulerDecompositionTest, Random) {
   constexpr auto maxIterations = 10000;
+  std::mt19937 rng{12345678UL};
+
   auto eulerBases = std::array{EulerBasis::XYX, EulerBasis::XZX,
                                EulerBasis::ZYZ, EulerBasis::ZXZ};
   std::size_t currentEulerBase = 0;
   for (int i = 0; i < maxIterations; ++i) {
-    auto originalMatrix = randomUnitaryMatrix<Eigen::Matrix2cd>();
+    auto originalMatrix = randomUnitaryMatrix<Eigen::Matrix2cd>(rng);
     auto eulerBasis = eulerBases[currentEulerBase++ % eulerBases.size()];
     auto decomposition = EulerDecomposition::generateCircuit(
         eulerBasis, originalMatrix, true, std::nullopt);
