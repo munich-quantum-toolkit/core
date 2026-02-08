@@ -606,6 +606,9 @@ protected:
       } else if (gate.type == qc::RZ) {
         newGate = rewriter.create<RZOp>(location, inQubits[gate.qubitId[0]],
                                         gate.parameter[0]);
+      } else {
+        llvm::reportFatalInternalError(
+            "Unknown single-qubit rotation gate while applying decomposition!");
       }
 #ifndef NDEBUG
       unitaryMatrix = decomposition::expandToTwoQubits(

@@ -186,6 +186,11 @@ std::optional<TwoQubitGateSequence> TwoQubitBasisDecomposer::twoQubitDecompose(
   };
   // number of basis gates that need to be used in the decomposition
   auto bestNbasis = numBasisGateUses.value_or(getDefaultNbasis());
+  if (bestNbasis > 1 && !isSuperControlled) {
+    // cannot reliably decompose with more than one basis gate and a
+    // non-super-controlled basis gate
+    return std::nullopt;
+  }
   auto chooseDecomposition = [&]() {
     if (bestNbasis == 0) {
       return decomp0(targetDecomposition);

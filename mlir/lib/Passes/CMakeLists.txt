@@ -6,17 +6,19 @@
 #
 # Licensed under the MIT License
 
-get_property(dialect_libs GLOBAL PROPERTY MLIR_DIALECT_LIBS)
-set(LIBRARIES ${dialect_libs} MQT::CoreIR Eigen3::Eigen)
-
 file(GLOB_RECURSE PASSES_SOURCES *.cpp)
+
+get_property(dialect_libs GLOBAL PROPERTY MLIR_DIALECT_LIBS)
 
 add_mlir_library(
   QcoPasses
   ${PASSES_SOURCES}
   LINK_LIBS
   PUBLIC
-  ${LIBRARIES}
+  MQT::CoreIR Eigen3::Eigen
+  PRIVATE
+  ${dialect_libs}
+  PRIVATE
   DEPENDS
   QcoPassesIncGen)
 
