@@ -14,16 +14,15 @@
 
 #include <Eigen/QR>
 #include <cassert>
-#include <cstdlib>
+#include <random>
 
 template <typename MatrixType> [[nodiscard]] MatrixType randomUnitaryMatrix() {
-  [[maybe_unused]] static auto initializeRandom = []() {
-    // Eigen uses std::rand() internally, use fixed seed for deterministic
-    // testing behavior
-    std::srand(123456UL);
-    return true;
-  }();
-  const MatrixType randomMatrix = MatrixType::Random();
+  [[maybe_unused]] static auto rng = []() { return std::mt19937{123456UL}; }();
+  std::uniform_real_distribution<double> dist(-1.0, 1.0);
+  MatrixType randomMatrix;
+  for (auto& x : randomMatrix.reshaped()) {
+    x = std::complex<double>(dist(rng), dist(rng));
+  }
   Eigen::HouseholderQR<MatrixType> qr{}; // NOLINT(misc-include-cleaner)
   qr.compute(randomMatrix);
   const MatrixType unitaryMatrix = qr.householderQ();
