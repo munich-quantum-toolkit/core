@@ -25,9 +25,7 @@ if(NOT TARGET ${testname})
             Eigen3::Eigen
             QcoPasses)
   # fix alignment issues for stack-allocated fixed-size matrices
-  target_compile_definitions(
-    ${testname}
-    PRIVATE EIGEN_MAX_STATIC_ALIGN_BYTES=16)
+  target_compile_definitions(${testname} PRIVATE EIGEN_MAX_STATIC_ALIGN_BYTES=16)
   # discover tests
   gtest_discover_tests(${testname} DISCOVERY_TIMEOUT 60)
   set_target_properties(${testname} PROPERTIES FOLDER unittests)

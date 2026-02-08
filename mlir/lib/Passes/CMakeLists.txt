@@ -42,6 +42,4 @@ target_sources(
          ${PASSES_HEADERS_BUILD})
 
 # fix alignment issues for stack-allocated fixed-size matrices
-target_compile_definitions(
-  QcoPasses
-  PUBLIC EIGEN_MAX_STATIC_ALIGN_BYTES=16)
+target_compile_definitions(QcoPasses PUBLIC EIGEN_MAX_STATIC_ALIGN_BYTES=16)
