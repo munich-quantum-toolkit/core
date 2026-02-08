@@ -138,7 +138,7 @@ struct GateDecompositionPattern final
 
         auto newComplexity = sequence.complexity();
         if (newComplexity < bestSequence.second) {
-          bestSequence = std::make_pair(sequence, newComplexity);
+          bestSequence = std::make_pair(std::move(sequence), newComplexity);
         }
       }
     } else {
@@ -593,6 +593,29 @@ protected:
 #ifndef NDEBUG
     Eigen::Matrix4cd unitaryMatrix = Eigen::Matrix4cd::Identity();
 #endif // NDEBUG
+
+    auto addSingleQubitRotationGate = [&](auto&& gate) {
+      assert(gate.qubitId.size() == 1);
+      UnitaryOpInterface newGate;
+      if (gate.type == qc::RX) {
+        newGate = rewriter.create<RXOp>(location, inQubits[gate.qubitId[0]],
+                                        gate.parameter[0]);
+      } else if (gate.type == qc::RY) {
+        newGate = rewriter.create<RYOp>(location, inQubits[gate.qubitId[0]],
+                                        gate.parameter[0]);
+      } else if (gate.type == qc::RZ) {
+        newGate = rewriter.create<RZOp>(location, inQubits[gate.qubitId[0]],
+                                        gate.parameter[0]);
+      }
+#ifndef NDEBUG
+      unitaryMatrix = decomposition::expandToTwoQubits(
+                          newGate.getUnitaryMatrix<Eigen::Matrix2cd>().value(),
+                          gate.qubitId[0]) *
+                      unitaryMatrix;
+#endif // NDEBUG
+      return newGate;
+    };
+
     for (auto&& gate : sequence.gates) {
       // TODO: need to add each basis gate we want to use
       if (gate.type == qc::X && gate.qubitId.size() > 1) {
@@ -607,38 +630,9 @@ protected:
                         unitaryMatrix;
 #endif // NDEBUG
         updateInQubits(gate.qubitId, newGate);
-      } else if (gate.type == qc::RX) {
-        assert(gate.qubitId.size() == 1);
-        auto newGate = rewriter.create<RXOp>(
-            location, inQubits[gate.qubitId[0]], gate.parameter[0]);
-#ifndef NDEBUG
-        unitaryMatrix =
-            decomposition::expandToTwoQubits(newGate.getUnitaryMatrix().value(),
-                                             gate.qubitId[0]) *
-            unitaryMatrix;
-#endif // NDEBUG
-        updateInQubits(gate.qubitId, newGate);
-      } else if (gate.type == qc::RY) {
-        assert(gate.qubitId.size() == 1);
-        auto newGate = rewriter.create<RYOp>(
-            location, inQubits[gate.qubitId[0]], gate.parameter[0]);
-#ifndef NDEBUG
-        unitaryMatrix =
-            decomposition::expandToTwoQubits(newGate.getUnitaryMatrix().value(),
-                                             gate.qubitId[0]) *
-            unitaryMatrix;
-#endif // NDEBUG
-        updateInQubits(gate.qubitId, newGate);
-      } else if (gate.type == qc::RZ) {
-        assert(gate.qubitId.size() == 1);
-        auto newGate = rewriter.create<RZOp>(
-            location, inQubits[gate.qubitId[0]], gate.parameter[0]);
-#ifndef NDEBUG
-        unitaryMatrix =
-            decomposition::expandToTwoQubits(newGate.getUnitaryMatrix().value(),
-                                             gate.qubitId[0]) *
-            unitaryMatrix;
-#endif // NDEBUG
+      } else if (gate.type == qc::RX || gate.type == qc::RY ||
+                 gate.type == qc::RZ) {
+        auto newGate = addSingleQubitRotationGate(gate);
         updateInQubits(gate.qubitId, newGate);
       } else {
         llvm::reportFatalInternalError("Unsupported gate type in decomposition "

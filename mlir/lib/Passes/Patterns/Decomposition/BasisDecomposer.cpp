@@ -205,7 +205,7 @@ std::optional<TwoQubitGateSequence> TwoQubitBasisDecomposer::twoQubitDecompose(
     llvm_unreachable("");
   };
   auto decomposition = chooseDecomposition();
-  llvm::SmallVector<std::optional<TwoQubitGateSequence>, 8> eulerDecompositions;
+  llvm::SmallVector<TwoQubitGateSequence, 8> eulerDecompositions;
   for (auto&& decomp : decomposition) {
     assert(helpers::isUnitaryMatrix(decomp));
     auto eulerDecomp = unitaryToGateSequence(decomp, target1qEulerBases, 0,
@@ -230,14 +230,13 @@ std::optional<TwoQubitGateSequence> TwoQubitBasisDecomposer::twoQubitDecompose(
   }
 
   auto addEulerDecomposition = [&](std::size_t index, QubitId qubitId) {
-    if (auto&& eulerDecomp = eulerDecompositions[index]) {
-      for (auto&& gate : eulerDecomp->gates) {
-        gates.gates.push_back({.type = gate.type,
-                               .parameter = gate.parameter,
-                               .qubitId = {qubitId}});
-      }
-      gates.globalPhase += eulerDecomp->globalPhase;
+    auto&& eulerDecomp = eulerDecompositions[index];
+    for (auto&& gate : eulerDecomp.gates) {
+      gates.gates.push_back({.type = gate.type,
+                             .parameter = gate.parameter,
+                             .qubitId = {qubitId}});
     }
+    gates.globalPhase += eulerDecomp.globalPhase;
   };
 
   for (std::size_t i = 0; i < bestNbasis; ++i) {

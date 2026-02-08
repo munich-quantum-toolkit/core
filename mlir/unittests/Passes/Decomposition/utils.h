@@ -14,10 +14,12 @@
 
 #include <Eigen/QR>
 #include <cassert>
+#include <complex>
 #include <random>
 
 template <typename MatrixType> [[nodiscard]] MatrixType randomUnitaryMatrix() {
   [[maybe_unused]] static auto rng = []() { return std::mt19937{123456UL}; }();
+  // NOLINTNEXTLINE(misc-const-correctness)
   std::uniform_real_distribution<double> dist(-1.0, 1.0);
   MatrixType randomMatrix;
   for (auto& x : randomMatrix.reshaped()) {
