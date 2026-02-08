@@ -49,3 +49,8 @@ target_sources(
          ${MQT_MLIR_BUILD_INCLUDE_DIR}
          FILES
          ${IR_HEADERS_BUILD})
+
+# fix alignment issues for stack-allocated fixed-size matrices
+target_compile_definitions(
+  MLIRQCODialect
+  PUBLIC EIGEN_MAX_STATIC_ALIGN_BYTES=16)
