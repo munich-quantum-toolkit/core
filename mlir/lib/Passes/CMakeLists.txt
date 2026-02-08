@@ -15,7 +15,8 @@ add_mlir_library(
   ${PASSES_SOURCES}
   LINK_LIBS
   PUBLIC
-  MQT::CoreIR Eigen3::Eigen
+  MQT::CoreIR
+  Eigen3::Eigen
   PRIVATE
   ${dialect_libs}
   PRIVATE
