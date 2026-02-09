@@ -162,12 +162,9 @@ def test_estimator_broadcasting(backend_with_mock_jobs: QDMIBackend) -> None:
     # 2 Observables
     ops = [SparsePauliOp("Z"), SparsePauliOp("X")]
 
-    # 3 Parameter sets
-    # Broadcast: 2 observables x 3 parameters.
-    # To test broadcasting, we reshape to make them compatible for outer product.
-    # Params: shape (3, 1) (via bindings array reshape or just repeating ops)
-    # But EstimatorPub.coerce is strict.
-    # Let's align shapes to (2,) for simplicity in this test
+    # 2 Parameter sets (shape (2,) / two values)
+    # Test asserts broadcasting for 2 observables x 2 parameter sets
+    # We align shapes to (2,) so they broadcast element-wise.
     vals = [[0.0], [np.pi]]
 
     pub = EstimatorPub.coerce((qc, ops, vals))  # type: ignore[arg-type]
@@ -175,6 +172,7 @@ def test_estimator_broadcasting(backend_with_mock_jobs: QDMIBackend) -> None:
     result = job.result()
 
     data = cast("Any", result[0].data)
+    # Shape expectations: (2,) result from broadcasting
     assert data.evs.shape == (2,)
     assert data.stds.shape == (2,)
 
