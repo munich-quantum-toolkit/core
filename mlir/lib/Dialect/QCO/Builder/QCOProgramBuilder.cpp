@@ -621,6 +621,42 @@ std::pair<ValueRange, ValueRange> QCOProgramBuilder::ctrl(
   return {controlsOut, targetsOut};
 }
 
+ValueRange QCOProgramBuilder::inv(
+    ValueRange qubits,
+    llvm::function_ref<llvm::SmallVector<Value>(ValueRange)> body) {
+  checkFinalized();
+
+  auto invOp = InvOp::create(*this, qubits);
+
+  // Add block arguments for all qubits
+  auto& block = invOp.getBodyRegion().emplaceBlock();
+  const auto qubitType = QubitType::get(getContext());
+  for (const auto qubit : qubits) {
+    const auto arg = block.addArgument(qubitType, getLoc());
+    updateQubitTracking(qubit, arg);
+  }
+
+  // Create the final yield operation
+  const InsertionGuard guard(*this);
+  setInsertionPointToStart(&block);
+  const auto innerTargetsOut = body(block.getArguments());
+  YieldOp::create(*this, innerTargetsOut);
+
+  if (innerTargetsOut.size() != qubits.size()) {
+    llvm::reportFatalUsageError(
+        "Inv body must return exactly one output qubit per target");
+  }
+
+  // Update tracking
+  const auto& targetsOut = invOp.getQubitsOut();
+  for (const auto& [target, targetOut] :
+       llvm::zip(innerTargetsOut, targetsOut)) {
+    updateQubitTracking(target, targetOut);
+  }
+
+  return targetsOut;
+}
+
 //===----------------------------------------------------------------------===//
 // Deallocation
 //===----------------------------------------------------------------------===//

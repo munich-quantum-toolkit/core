@@ -433,6 +433,12 @@ QCProgramBuilder& QCProgramBuilder::ctrl(ValueRange controls,
   return *this;
 }
 
+QCProgramBuilder& QCProgramBuilder::inv(const std::function<void()>& body) {
+  checkFinalized();
+  InvOp::create(*this, body);
+  return *this;
+}
+
 //===----------------------------------------------------------------------===//
 // Deallocation
 //===----------------------------------------------------------------------===//
