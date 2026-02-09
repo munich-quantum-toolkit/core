@@ -927,6 +927,7 @@ struct ConvertQCOYieldOp final : OpConversionPattern<qco::YieldOp> {
 struct QCOToQC final : impl::QCOToQCBase<QCOToQC> {
   using QCOToQCBase::QCOToQCBase;
 
+protected:
   void runOnOperation() override {
     MLIRContext* context = &getContext();
     auto* module = getOperation();
