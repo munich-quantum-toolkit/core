@@ -209,12 +209,6 @@ inline void inverseIdentity(mlir::qc::QCProgramBuilder& b) {
   b.inv([&]() { b.id(q[0]); });
 }
 
-/// Canonicalized version of `inverseIdentity`.
-inline void inverseIdentityCanonicalized(mlir::qc::QCProgramBuilder& b) {
-  auto q = b.allocQubitRegister(1);
-  b.id(q[0]);
-}
-
 // --- XOp ------------------------------------------------------------------ //
 
 /// Creates a circuit with just an X gate.
@@ -253,23 +247,10 @@ inline void inverseX(mlir::qc::QCProgramBuilder& b) {
   b.inv([&]() { b.x(q[0]); });
 }
 
-/// Canonicalized version of `inverseX`.
-inline void inverseXCanonicalized(mlir::qc::QCProgramBuilder& b) {
-  auto q = b.allocQubitRegister(1);
-  b.x(q[0]);
-}
-
 /// Creates a circuit with an inverse modifier applied to a controlled X gate.
 inline void inverseMultipleControlledX(mlir::qc::QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
   b.inv([&]() { b.mcx({q[0], q[1]}, q[2]); });
-}
-
-/// Canonicalized version of `inverseMultipleControlledX`.
-inline void
-inverseMultipleControlledXCanonicalized(mlir::qc::QCProgramBuilder& b) {
-  auto q = b.allocQubitRegister(3);
-  b.mcx({q[0], q[1]}, q[2]);
 }
 
 // --- YOp ------------------------------------------------------------------ //
@@ -310,23 +291,10 @@ inline void inverseY(mlir::qc::QCProgramBuilder& b) {
   b.inv([&]() { b.y(q[0]); });
 }
 
-/// Canonicalized version of `inverseY`.
-inline void inverseYCanonicalized(mlir::qc::QCProgramBuilder& b) {
-  auto q = b.allocQubitRegister(1);
-  b.y(q[0]);
-}
-
 /// Creates a circuit with an inverse modifier applied to a controlled Y gate.
 inline void inverseMultipleControlledY(mlir::qc::QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
   b.inv([&]() { b.mcy({q[0], q[1]}, q[2]); });
-}
-
-/// Canonicalized version of `inverseMultipleControlledY`.
-inline void
-inverseMultipleControlledYCanonicalized(mlir::qc::QCProgramBuilder& b) {
-  auto q = b.allocQubitRegister(3);
-  b.mcy({q[0], q[1]}, q[2]);
 }
 
 // --- ZOp ------------------------------------------------------------------ //
@@ -367,21 +335,8 @@ inline void inverseZ(mlir::qc::QCProgramBuilder& b) {
   b.inv([&]() { b.z(q[0]); });
 }
 
-/// Canonicalized version of `inverseZ`.
-inline void inverseZCanonicalized(mlir::qc::QCProgramBuilder& b) {
-  auto q = b.allocQubitRegister(1);
-  b.z(q[0]);
-}
-
 /// Creates a circuit with an inverse modifier applied to a controlled Z gate.
 inline void inverseMultipleControlledZ(mlir::qc::QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
   b.inv([&]() { b.mcz({q[0], q[1]}, q[2]); });
-}
-
-/// Canonicalized version of `inverseMultipleControlledZ`.
-inline void
-inverseMultipleControlledZCanonicalized(mlir::qc::QCProgramBuilder& b) {
-  auto q = b.allocQubitRegister(3);
-  b.mcz({q[0], q[1]}, q[2]);
 }

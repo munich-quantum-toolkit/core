@@ -22,7 +22,7 @@ INSTANTIATE_TEST_SUITE_P(
                    multipleControlledY},
         QCTestCase{"NestedControlledY", nestedControlledY, multipleControlledY},
         QCTestCase{"TrivialControlledY", trivialControlledY, y},
-        QCTestCase{"InverseY", inverseY, inverseYCanonicalized},
+        QCTestCase{"InverseY", inverseY, y},
         QCTestCase{"InverseMultipleControlledY", inverseMultipleControlledY,
-                   inverseMultipleControlledYCanonicalized}),
+                   multipleControlledY}),
     printTestName);

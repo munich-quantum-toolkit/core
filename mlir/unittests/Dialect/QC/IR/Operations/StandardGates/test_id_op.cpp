@@ -22,6 +22,5 @@ INSTANTIATE_TEST_SUITE_P(
                     QCTestCase{"MultipleControlledIdentity",
                                multipleControlledIdentity,
                                multipleControlledIdentityCanonicalized},
-                    QCTestCase{"InverseIdentity", inverseIdentity,
-                               inverseIdentityCanonicalized}),
+                    QCTestCase{"InverseIdentity", inverseIdentity, identity}),
     printTestName);
