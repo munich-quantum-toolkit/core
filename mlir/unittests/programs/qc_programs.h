@@ -271,3 +271,60 @@ inverseMultipleControlledXCanonicalized(mlir::qc::QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
   b.mcx({q[0], q[1]}, q[2]);
 }
+
+// --- YOp ------------------------------------------------------------------ //
+
+/// Creates a circuit with just a Y gate.
+inline void y(mlir::qc::QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  b.y(q[0]);
+}
+
+/// Creates a circuit with a single controlled Y gate.
+inline void singleControlledY(mlir::qc::QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(2);
+  b.cy(q[0], q[1]);
+}
+
+/// Creates a circuit with a multi-controlled Y gate.
+inline void multipleControlledY(mlir::qc::QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(3);
+  b.mcy({q[0], q[1]}, q[2]);
+}
+
+/// Creates a circuit with a nested controlled Y gate.
+inline void nestedControlledY(mlir::qc::QCProgramBuilder& b) {
+  auto reg = b.allocQubitRegister(3);
+  b.ctrl(reg[0], [&] { b.cy(reg[1], reg[2]); });
+}
+
+/// Creates a circuit with a trivial controlled Y gate.
+inline void trivialControlledY(mlir::qc::QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  b.mcy({}, q[0]);
+}
+
+/// Creates a circuit with an inverse modifier applied to a Y gate.
+inline void inverseY(mlir::qc::QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  b.inv([&]() { b.y(q[0]); });
+}
+
+/// Canonicalized version of `inverseY`.
+inline void inverseYCanonicalized(mlir::qc::QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  b.y(q[0]);
+}
+
+/// Creates a circuit with an inverse modifier applied to a controlled Y gate.
+inline void inverseMultipleControlledY(mlir::qc::QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(3);
+  b.inv([&]() { b.mcy({q[0], q[1]}, q[2]); });
+}
+
+/// Canonicalized version of `inverseMultipleControlledY`.
+inline void
+inverseMultipleControlledYCanonicalized(mlir::qc::QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(3);
+  b.mcy({q[0], q[1]}, q[2]);
+}
