@@ -1729,7 +1729,13 @@ TEST_F(CompilerPipelineTest, NestedInvs) {
 
   const auto qco = buildQCOIR([](qco::QCOProgramBuilder& b) {
     auto reg = b.allocQubitRegister(2, "q");
-    b.iswap(reg[0], reg[1]);
+    // The following will be canonicalized to eliminate the nested invs.
+    b.inv({reg[0], reg[1]}, [&](ValueRange outerQubits) {
+      return SmallVector<Value>{b.inv(outerQubits, [&](ValueRange innerQubits) {
+        auto [q0, q1] = b.iswap(innerQubits[0], innerQubits[1]);
+        return llvm::SmallVector<Value>{q0, q1};
+      })};
+    });
   });
   const auto qc = buildQCIR([](mlir::qc::QCProgramBuilder& b) {
     auto reg = b.allocQubitRegister(2, "q");
