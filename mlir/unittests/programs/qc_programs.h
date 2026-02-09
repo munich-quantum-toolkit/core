@@ -1,0 +1,213 @@
+/*
+ * Copyright (c) 2023 - 2026 Chair for Design Automation, TUM
+ * Copyright (c) 2025 - 2026 Munich Quantum Software Company GmbH
+ * All rights reserved.
+ *
+ * SPDX-License-Identifier: MIT
+ *
+ * Licensed under the MIT License
+ */
+
+#pragma once
+
+#include "mlir/Dialect/QC/Builder/QCProgramBuilder.h"
+
+// --- Qubit Management ----------------------------------------------------- //
+
+/// Allocates a single qubit.
+inline void allocQubit(mlir::qc::QCProgramBuilder& b) { b.allocQubit(); }
+
+/// Allocates a qubit register of size `2`.
+inline void allocQubitRegister(mlir::qc::QCProgramBuilder& b) {
+  b.allocQubitRegister(2);
+}
+
+/// Allocates two qubit registers of size `2` and `3`.
+inline void allocMultipleQubitRegisters(mlir::qc::QCProgramBuilder& b) {
+  b.allocQubitRegister(2, "reg0");
+  b.allocQubitRegister(3, "reg1");
+}
+
+/// Allocates a large qubit register.
+inline void allocLargeRegister(mlir::qc::QCProgramBuilder& b) {
+  b.allocQubitRegister(100);
+}
+
+/// Allocates two inline qubits.
+inline void staticQubits(mlir::qc::QCProgramBuilder& b) {
+  b.staticQubit(0);
+  b.staticQubit(1);
+}
+
+// --- MeasureOp ------------------------------------------------------------ //
+
+/// Measures a single qubit into a single classical bit.
+inline void singleMeasurementToSingleBit(mlir::qc::QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  const auto& c = b.allocClassicalBitRegister(1);
+  b.measure(q[0], c[0]);
+}
+
+/// Repeatedly measures a single qubit into the same classical bit.
+inline void repeatedMeasurementToSameBit(mlir::qc::QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  const auto& c = b.allocClassicalBitRegister(1);
+  b.measure(q[0], c[0]);
+  b.measure(q[0], c[0]);
+  b.measure(q[0], c[0]);
+}
+
+/// Repeatedly measures a single qubit into different classical bits.
+inline void repeatedMeasurementToDifferentBits(mlir::qc::QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  const auto& c = b.allocClassicalBitRegister(3);
+  b.measure(q[0], c[0]);
+  b.measure(q[0], c[1]);
+  b.measure(q[0], c[2]);
+}
+
+/// Measures multiple qubits into multiple classical bits.
+inline void
+multipleClassicalRegistersAndMeasurements(mlir::qc::QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(3);
+  const auto& c0 = b.allocClassicalBitRegister(1, "c0");
+  const auto& c1 = b.allocClassicalBitRegister(2, "c1");
+  b.measure(q[0], c0[0]);
+  b.measure(q[1], c1[0]);
+  b.measure(q[2], c1[1]);
+}
+
+// --- ResetOp -------------------------------------------------------------- //
+
+/// Resets a single qubit without any operations being applied.
+inline void resetQubitWithoutOp(mlir::qc::QCProgramBuilder& b) {
+  auto q = b.allocQubit();
+  b.reset(q);
+}
+
+/// Resets multiple qubits without any operations being applied.
+inline void resetMultipleQubitsWithoutOp(mlir::qc::QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(2);
+  b.reset(q[0]);
+  b.reset(q[1]);
+}
+
+/// Repeatedly resets a single qubit without any operations being applied.
+inline void repeatedResetWithoutOp(mlir::qc::QCProgramBuilder& b) {
+  auto q = b.allocQubit();
+  b.reset(q);
+  b.reset(q);
+  b.reset(q);
+}
+
+/// Resets a single qubit after a single operation.
+inline void resetQubitAfterSingleOp(mlir::qc::QCProgramBuilder& b) {
+  auto q = b.allocQubit();
+  b.h(q);
+  b.reset(q);
+}
+
+/// Resets multiple qubits after a single operation.
+inline void resetMultipleQubitsAfterSingleOp(mlir::qc::QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(2);
+  b.h(q[0]);
+  b.reset(q[0]);
+  b.h(q[1]);
+  b.reset(q[1]);
+}
+
+/// Repeatedly resets a single qubit after a single operation.
+inline void repeatedResetAfterSingleOp(mlir::qc::QCProgramBuilder& b) {
+  auto q = b.allocQubit();
+  b.h(q);
+  b.reset(q);
+  b.reset(q);
+  b.reset(q);
+}
+
+// --- GPhaseOp ------------------------------------------------------------- //
+
+/// Creates a circuit with just a global phase.
+inline void globalPhase(mlir::qc::QCProgramBuilder& b) { b.gphase(1.23); }
+
+/// Creates a controlled global phase gate with a single control qubit.
+inline void singleControlledGlobalPhase(mlir::qc::QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  b.cgphase(0.123, q[0]);
+}
+
+/// Canonicalized version of `singleControlledGlobalPhase`.
+inline void
+singleControlledGlobalPhaseCanonicalized(mlir::qc::QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  b.p(0.123, q[0]);
+}
+
+/// Creates a multi-controlled global phase gate with multiple control qubits.
+inline void multipleControlledGlobalPhase(mlir::qc::QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(3);
+  b.mcgphase(0.123, {q[0], q[1], q[2]});
+}
+
+/// Canonicalized version of `multipleControlledGlobalPhase`.
+inline void
+multipleControlledGlobalPhaseCanonicalized(mlir::qc::QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(3);
+  b.mcp(0.123, {q[0], q[1]}, q[2]);
+}
+
+/// Creates a circuit with an inverse modifier applied to a global phase gate.
+inline void inverseGlobalPhase(mlir::qc::QCProgramBuilder& b) {
+  b.inv([&]() { b.gphase(1.23); });
+}
+
+/// Canonicalized version of `inverseGlobalPhase`.
+inline void inverseGlobalPhaseCanonicalized(mlir::qc::QCProgramBuilder& b) {
+  b.gphase(-1.23);
+}
+
+// --- IdOp ----------------------------------------------------------------- //
+
+/// Creates a circuit with just an identity gate.
+inline void identity(mlir::qc::QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  b.id(q[0]);
+}
+
+/// Creates a controlled identity gate with a single control qubit.
+inline void singleControlledIdentity(mlir::qc::QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(2);
+  b.cid(q[0], q[1]);
+}
+
+/// Canonicalized version of `singleControlledIdentity`.
+inline void
+singleControlledIdentityCanonicalized(mlir::qc::QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(2);
+  b.id(q[1]);
+}
+
+/// Creates a multi-controlled identity gate with multiple control qubits.
+inline void multipleControlledIdentity(mlir::qc::QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(3);
+  b.mcid({q[0], q[1]}, q[2]);
+}
+
+/// Canonicalized version of `multipleControlledIdentity`.
+inline void
+multipleControlledIdentityCanonicalized(mlir::qc::QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(3);
+  b.id(q[2]);
+}
+
+/// Creates a circuit with an inverse modifier applied to an identity gate.
+inline void inverseIdentity(mlir::qc::QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  b.inv([&]() { b.id(q[0]); });
+}
+
+/// Canonicalized version of `inverseIdentity`.
+inline void inverseIdentityCanonicalized(mlir::qc::QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  b.id(q[0]);
+}
