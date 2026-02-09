@@ -72,32 +72,14 @@ struct InlineSelfAdjoint final : OpRewritePattern<InvOp> {
 struct ReplaceWithKnownGates final : OpRewritePattern<InvOp> {
   using OpRewritePattern::OpRewritePattern;
 
-  /**
-   * @brief Computes the negated value, i.e. f(x) = -x.
-   */
-  static Value negatedAngle(Value theta, PatternRewriter& rewriter,
-                            Location loc) {
-    return rewriter.create<arith::NegFOp>(loc, theta);
-  }
-
-  /**
-   * @brief Computes the negated value shifted by minus pi, i.e. f(x) = -x - pi.
-   */
-  static Value negatedPiShiftedAngle(Value theta, PatternRewriter& rewriter,
-                                     Location loc) {
-    auto negated = negatedAngle(theta, rewriter, loc);
-    auto pi = rewriter.create<arith::ConstantOp>(
-        loc, rewriter.getF64FloatAttr(std::numbers::pi));
-    return rewriter.create<arith::SubFOp>(loc, negated, pi);
-  }
-
   LogicalResult matchAndRewrite(InvOp op,
                                 PatternRewriter& rewriter) const override {
     auto* innerOp = op.getBodyUnitary().getOperation();
 
     return llvm::TypeSwitch<Operation*, LogicalResult>(innerOp)
         .Case<GPhaseOp>([&](auto g) {
-          auto negTheta = negatedAngle(g.getTheta(), rewriter, op.getLoc());
+          Value negTheta =
+              arith::NegFOp::create(rewriter, op.getLoc(), g.getTheta());
           rewriter.replaceOpWithNewOp<GPhaseOp>(op, negTheta);
           return success();
         })
@@ -126,18 +108,21 @@ struct ReplaceWithKnownGates final : OpRewritePattern<InvOp> {
           return success();
         })
         .Case<POp>([&](auto p) {
-          auto negTheta = negatedAngle(p.getTheta(), rewriter, op.getLoc());
+          Value negTheta =
+              arith::NegFOp::create(rewriter, op.getLoc(), p.getTheta());
           rewriter.replaceOpWithNewOp<POp>(op, op.getInputTarget(0), negTheta);
           return success();
         })
         .Case<ROp>([&](auto r) {
-          auto negTheta = negatedAngle(r.getTheta(), rewriter, op.getLoc());
+          Value negTheta =
+              arith::NegFOp::create(rewriter, op.getLoc(), r.getTheta());
           rewriter.replaceOpWithNewOp<ROp>(op, op.getInputTarget(0), negTheta,
                                            r.getPhi());
           return success();
         })
         .Case<RXOp>([&](auto rx) {
-          auto negTheta = negatedAngle(rx.getTheta(), rewriter, op.getLoc());
+          Value negTheta =
+              arith::NegFOp::create(rewriter, op.getLoc(), rx.getTheta());
           rewriter.replaceOpWithNewOp<RXOp>(op, op.getInputTarget(0), negTheta);
           return success();
         })
@@ -173,50 +158,56 @@ struct ReplaceWithKnownGates final : OpRewritePattern<InvOp> {
           return success();
         })
         .Case<RXXOp>([&](auto rxx) {
-          auto negTheta = negatedAngle(rxx.getTheta(), rewriter, op.getLoc());
+          Value negTheta =
+              arith::NegFOp::create(rewriter, op.getLoc(), rxx.getTheta());
           rewriter.replaceOpWithNewOp<RXXOp>(op, op.getInputTarget(0),
                                              op.getInputTarget(1), negTheta);
           return success();
         })
         .Case<RYOp>([&](auto ry) {
-          auto negTheta = negatedAngle(ry.getTheta(), rewriter, op.getLoc());
+          Value negTheta =
+              arith::NegFOp::create(rewriter, op.getLoc(), ry.getTheta());
           rewriter.replaceOpWithNewOp<RYOp>(op, op.getInputTarget(0), negTheta);
           return success();
         })
         .Case<RYYOp>([&](auto ryy) {
-          auto negTheta = negatedAngle(ryy.getTheta(), rewriter, op.getLoc());
+          Value negTheta =
+              arith::NegFOp::create(rewriter, op.getLoc(), ryy.getTheta());
           rewriter.replaceOpWithNewOp<RYYOp>(op, op.getInputTarget(0),
                                              op.getInputTarget(1), negTheta);
           return success();
         })
         .Case<RZOp>([&](auto rz) {
-          auto negTheta = negatedAngle(rz.getTheta(), rewriter, op.getLoc());
+          Value negTheta =
+              arith::NegFOp::create(rewriter, op.getLoc(), rz.getTheta());
           rewriter.replaceOpWithNewOp<RZOp>(op, op.getInputTarget(0), negTheta);
           return success();
         })
         .Case<RZXOp>([&](auto rzx) {
-          auto negTheta = negatedAngle(rzx.getTheta(), rewriter, op.getLoc());
+          Value negTheta =
+              arith::NegFOp::create(rewriter, op.getLoc(), rzx.getTheta());
           rewriter.replaceOpWithNewOp<RZXOp>(op, op.getInputTarget(0),
                                              op.getInputTarget(1), negTheta);
           return success();
         })
         .Case<RZZOp>([&](auto rzz) {
-          auto negTheta = negatedAngle(rzz.getTheta(), rewriter, op.getLoc());
+          Value negTheta =
+              arith::NegFOp::create(rewriter, op.getLoc(), rzz.getTheta());
           rewriter.replaceOpWithNewOp<RZZOp>(op, op.getInputTarget(0),
                                              op.getInputTarget(1), negTheta);
           return success();
         })
         .Case<XXMinusYYOp>([&](auto xxminusyy) {
-          auto negTheta =
-              negatedAngle(xxminusyy.getTheta(), rewriter, op.getLoc());
+          Value negTheta = arith::NegFOp::create(rewriter, op.getLoc(),
+                                                 xxminusyy.getTheta());
           rewriter.replaceOpWithNewOp<XXMinusYYOp>(
               op, op.getInputTarget(0), op.getInputTarget(1), negTheta,
               xxminusyy.getBeta());
           return success();
         })
         .Case<XXPlusYYOp>([&](auto xxplusyy) {
-          auto negTheta =
-              negatedAngle(xxplusyy.getTheta(), rewriter, op.getLoc());
+          Value negTheta =
+              arith::NegFOp::create(rewriter, op.getLoc(), xxplusyy.getTheta());
           rewriter.replaceOpWithNewOp<XXPlusYYOp>(op, op.getInputTarget(0),
                                                   op.getInputTarget(1),
                                                   negTheta, xxplusyy.getBeta());
