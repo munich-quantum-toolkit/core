@@ -21,7 +21,7 @@ using namespace mlir;
 using namespace mlir::qco;
 
 LogicalResult IfOp::verify() {
-  for (const auto& type : getInputs().getTypes()) {
+  for (const auto& type : getQubits().getTypes()) {
     if (llvm::isa<QubitType>(type)) {
       continue;
     }
@@ -38,25 +38,25 @@ LogicalResult IfOp::verify() {
 
 void IfOp::build(
     OpBuilder& odsBuilder, OperationState& odsState, Value condition,
-    ValueRange inputs,
+    ValueRange qubits,
     llvm::function_ref<llvm::SmallVector<Value>(ValueRange)> thenBuilder,
     llvm::function_ref<llvm::SmallVector<Value>(ValueRange)> elseBuilder) {
 
-  build(odsBuilder, odsState, inputs.getTypes(), condition, inputs);
+  build(odsBuilder, odsState, qubits.getTypes(), condition, qubits);
 
   auto& thenBlock = odsState.regions.front()->emplaceBlock();
   auto& elseBlock = odsState.regions.back()->emplaceBlock();
 
   thenBlock.addArguments(
-      inputs.getTypes(),
-      SmallVector<Location>(inputs.size(), odsState.location));
+      qubits.getTypes(),
+      SmallVector<Location>(qubits.size(), odsState.location));
   odsBuilder.setInsertionPointToStart(&thenBlock);
-
   qco::YieldOp::create(odsBuilder, odsState.location,
                        thenBuilder(thenBlock.getArguments()));
+
   elseBlock.addArguments(
-      inputs.getTypes(),
-      SmallVector<Location>(inputs.size(), odsState.location));
+      qubits.getTypes(),
+      SmallVector<Location>(qubits.size(), odsState.location));
   odsBuilder.setInsertionPointToStart(&elseBlock);
   qco::YieldOp::create(odsBuilder, odsState.location,
                        elseBuilder(elseBlock.getArguments()));
@@ -69,6 +69,57 @@ YieldOp IfOp::elseYield() { return cast<YieldOp>(&elseBlock()->back()); }
 
 // Copied from
 // https://github.com/llvm/llvm-project/blob/llvmorg-21.1.7/mlir/lib/Dialect/SCF/IR/SCF.cpp
+
+void IfOp::getSuccessorRegions(RegionBranchPoint point,
+                               SmallVectorImpl<RegionSuccessor>& regions) {
+  // The `then` and the `else` region branch back to the parent operation.
+  if (!point.isParent()) {
+    regions.push_back(RegionSuccessor(getResults()));
+    return;
+  }
+
+  regions.push_back(RegionSuccessor(&getThenRegion()));
+
+  // Don't consider the else region if it is empty.
+  Region* elseRegion = &this->getElseRegion();
+  if (elseRegion->empty()) {
+    regions.push_back(RegionSuccessor());
+  } else {
+    regions.push_back(RegionSuccessor(elseRegion));
+  }
+}
+
+void IfOp::getEntrySuccessorRegions(ArrayRef<Attribute> operands,
+                                    SmallVectorImpl<RegionSuccessor>& regions) {
+  FoldAdaptor adaptor(operands, *this);
+  auto boolAttr = dyn_cast_or_null<BoolAttr>(adaptor.getCondition());
+  if (!boolAttr || boolAttr.getValue()) {
+    regions.emplace_back(&getThenRegion());
+  }
+
+  // If the else region is empty, execution continues after the parent op.
+  if (!boolAttr || !boolAttr.getValue()) {
+    if (!getElseRegion().empty()) {
+      regions.emplace_back(&getElseRegion());
+    } else {
+      regions.emplace_back(getResults());
+    }
+  }
+}
+
+void IfOp::getRegionInvocationBounds(
+    ArrayRef<Attribute> operands,
+    SmallVectorImpl<InvocationBounds>& invocationBounds) {
+  if (auto cond = llvm::dyn_cast_or_null<BoolAttr>(operands[0])) {
+    // If the condition is known, then one region is known to be executed once
+    // and the other zero times.
+    invocationBounds.emplace_back(0, cond.getValue() ? 1 : 0);
+    invocationBounds.emplace_back(0, cond.getValue() ? 0 : 1);
+  } else {
+    // Non-constant condition. Each region may be executed 0 or 1 times.
+    invocationBounds.assign(2, {0, 1});
+  }
+}
 
 /// Replaces the given op with the contents of the given single-block region,
 /// using the operands of the block terminator to replace operation results.
@@ -94,9 +145,9 @@ struct RemoveStaticCondition : public OpRewritePattern<IfOp> {
     }
 
     if (condition.getValue()) {
-      replaceOpWithRegion(rewriter, op, op.getThenRegion(), op.getInputs());
+      replaceOpWithRegion(rewriter, op, op.getThenRegion(), op.getQubits());
     } else if (!op.getElseRegion().empty()) {
-      replaceOpWithRegion(rewriter, op, op.getElseRegion(), op.getInputs());
+      replaceOpWithRegion(rewriter, op, op.getElseRegion(), op.getQubits());
     } else {
       rewriter.eraseOp(op);
     }

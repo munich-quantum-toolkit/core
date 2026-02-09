@@ -1049,7 +1049,7 @@ def BarrierOp : QCOOp<"barrier", traits = [UnitaryOpInterface]> {
 // Modifiers
 //===----------------------------------------------------------------------===//
 
-def YieldOp : QCOOp<"yield", traits = [Terminator]> {
+def YieldOp : QCOOp<"yield", traits = [Terminator, ReturnLike]> {
     let summary = "Yield from a modifier region";
     let description = [{
         Terminates a modifier region, yielding the transformed target qubits back to the enclosing modifier operation.
@@ -1147,29 +1147,35 @@ def CtrlOp : QCOOp<"ctrl", traits =
 // Scf operations
 //===----------------------------------------------------------------------===//
 
-def IfOp : QCOOp<"if", traits= [SingleBlock,
-                RecursiveMemoryEffects]> {
+def IfOp : QCOOp<"if", traits=
+            [
+                DeclareOpInterfaceMethods<RegionBranchOpInterface, [
+                "getNumRegionInvocations", "getRegionInvocationBounds",
+                "getEntrySuccessorRegions"]>,
+                SingleBlock,
+                RecursiveMemoryEffects
+            ]> {
 
     let summary = "TODO";
     let description = [{TODO}];
 
-    let arguments = (ins I1:$condition,  Variadic<AnyType>:$inputs);
+    let arguments = (ins I1:$condition,  Variadic<AnyType>:$qubits);
     let results = (outs Variadic<AnyType>:$results);
     let regions = (region SizedRegion<1>:$thenRegion,
                          SizedRegion<1>:$elseRegion);
 
     let assemblyFormat = [{
-        $condition `targets` `(` $inputs `:` type($inputs) `)`
+        $condition `qubits` `(` $qubits `:` type($qubits) `)`
         attr-dict `->` type($results)
         $thenRegion
         `else` $elseRegion
     }];
 
     let builders = [
-        OpBuilder<(ins "Value":$condition, "ValueRange":$inputs), [{
-           build($_builder, $_state, inputs.getTypes(), condition, inputs);
+        OpBuilder<(ins "Value":$condition, "ValueRange":$qubits), [{
+           build($_builder, $_state, qubits.getTypes(), condition, qubits);
         }]>,
-        OpBuilder<(ins "Value":$condition, "ValueRange":$inputs, "llvm::function_ref<llvm::SmallVector<Value>(ValueRange)>":$thenBuilder,
+        OpBuilder<(ins "Value":$condition, "ValueRange":$qubits, "llvm::function_ref<llvm::SmallVector<Value>(ValueRange)>":$thenBuilder,
         "llvm::function_ref<llvm::SmallVector<Value>(ValueRange)>":$elseBuilder)>
     ];
 
