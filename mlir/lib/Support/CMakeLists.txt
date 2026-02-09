@@ -17,6 +17,9 @@ add_mlir_library(
   PUBLIC
   MLIRSupport
   MLIRIR
+  MLIRPass
+  MLIRTransforms
+  MLIRTransformUtils
   MLIRLLVMDialect
   MLIRFuncDialect
   MLIRArithDialect
