@@ -644,4 +644,13 @@ OwningOpRef<ModuleOp> QIRProgramBuilder::finalize() {
   return module;
 }
 
+OwningOpRef<ModuleOp> QIRProgramBuilder::build(
+    MLIRContext* context,
+    const llvm::function_ref<void(QIRProgramBuilder&)>& buildFunc) {
+  QIRProgramBuilder builder(context);
+  builder.initialize();
+  buildFunc(builder);
+  return builder.finalize();
+}
+
 } // namespace mlir::qir

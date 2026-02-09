@@ -230,11 +230,9 @@ protected:
    * @brief Build expected QC IR programmatically and run canonicalization
    */
   [[nodiscard]] OwningOpRef<ModuleOp> buildQCIR(
-      const std::function<void(mlir::qc::QCProgramBuilder&)>& buildFunc) const {
-    mlir::qc::QCProgramBuilder builder(context.get());
-    builder.initialize();
-    buildFunc(builder);
-    auto module = builder.finalize();
+      const llvm::function_ref<void(mlir::qc::QCProgramBuilder&)>& buildFunc)
+      const {
+    auto module = mlir::qc::QCProgramBuilder::build(context.get(), buildFunc);
     runCanonicalizationPasses(module.get());
     return module;
   }
@@ -242,12 +240,10 @@ protected:
   /**
    * @brief Build expected QCO IR programmatically and run canonicalization
    */
-  [[nodiscard]] OwningOpRef<ModuleOp> buildQCOIR(
-      const std::function<void(qco::QCOProgramBuilder&)>& buildFunc) const {
-    qco::QCOProgramBuilder builder(context.get());
-    builder.initialize();
-    buildFunc(builder);
-    auto module = builder.finalize();
+  [[nodiscard]] OwningOpRef<ModuleOp>
+  buildQCOIR(const llvm::function_ref<void(qco::QCOProgramBuilder&)>& buildFunc)
+      const {
+    auto module = qco::QCOProgramBuilder::build(context.get(), buildFunc);
     runCanonicalizationPasses(module.get());
     return module;
   }
@@ -255,12 +251,10 @@ protected:
   /**
    * @brief Build expected QIR programmatically and run canonicalization
    */
-  [[nodiscard]] OwningOpRef<ModuleOp> buildQIR(
-      const std::function<void(qir::QIRProgramBuilder&)>& buildFunc) const {
-    qir::QIRProgramBuilder builder(context.get());
-    builder.initialize();
-    buildFunc(builder);
-    auto module = builder.finalize();
+  [[nodiscard]] OwningOpRef<ModuleOp>
+  buildQIR(const llvm::function_ref<void(qir::QIRProgramBuilder&)>& buildFunc)
+      const {
+    auto module = qir::QIRProgramBuilder::build(context.get(), buildFunc);
     runCanonicalizationPasses(module.get());
     return module;
   }
