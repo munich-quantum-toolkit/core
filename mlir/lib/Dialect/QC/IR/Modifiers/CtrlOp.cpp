@@ -105,6 +105,31 @@ struct CtrlInlineGPhase final : OpRewritePattern<CtrlOp> {
   }
 };
 
+/**
+ * @brief Inline controlled Identity operations.
+ */
+struct CtrlInlineIdentity final : OpRewritePattern<CtrlOp> {
+  using OpRewritePattern::OpRewritePattern;
+
+  LogicalResult matchAndRewrite(CtrlOp op,
+                                PatternRewriter& rewriter) const override {
+    // Require at least one positive control
+    // Trivial case is handled by RemoveTrivialCtrl
+    if (op.getNumControls() == 0) {
+      return failure();
+    }
+
+    auto identityOp = llvm::dyn_cast<IdOp>(op.getBodyUnitary().getOperation());
+    if (!identityOp) {
+      return failure();
+    }
+
+    rewriter.moveOpBefore(identityOp, op);
+    rewriter.replaceOp(op, identityOp->getResults());
+    return success();
+  };
+};
+
 } // namespace
 
 UnitaryOpInterface CtrlOp::getBodyUnitary() {
@@ -208,5 +233,6 @@ LogicalResult CtrlOp::verify() {
 
 void CtrlOp::getCanonicalizationPatterns(RewritePatternSet& results,
                                          MLIRContext* context) {
-  results.add<MergeNestedCtrl, RemoveTrivialCtrl, CtrlInlineGPhase>(context);
+  results.add<MergeNestedCtrl, RemoveTrivialCtrl, CtrlInlineGPhase,
+              CtrlInlineIdentity>(context);
 }
