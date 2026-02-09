@@ -817,8 +817,8 @@ struct ConvertQCOCtrlOp final : OpConversionPattern<qco::CtrlOp> {
  *
  * @par Example:
  * ```mlir
- * %targets_out = qco.inv %q0_in {
- *   %q0_res = qco.s %q0_in : !qco.qubit -> !qco.qubit
+ * %q0_out = qco.inv (%q0 = %q0_in) {
+ *   %q0_res = qco.s %q0 : !qco.qubit -> !qco.qubit
  *   qco.yield %q0_res
  * } : {!qco.qubit} -> {!qco.qubit}
  * ```

@@ -1162,8 +1162,8 @@ struct ConvertQCCtrlOp final : StatefulOpConversionPattern<qc::CtrlOp> {
  * ```
  * is converted to
  * ```mlir
- * %targets_out = qco.inv %q0_in {
- *   %q0_res = qco.s %q0_in : !qco.qubit -> !qco.qubit
+ * %q0_out = qco.inv (%q0 = %q0_in) {
+ *   %q0_res = qco.s %q0 : !qco.qubit -> !qco.qubit
  *   qco.yield %q0_res
  * } : {!qco.qubit} -> {!qco.qubit}
  * ```
@@ -1174,43 +1174,41 @@ struct ConvertQCInvOp final : StatefulOpConversionPattern<qc::InvOp> {
   LogicalResult
   matchAndRewrite(qc::InvOp op, OpAdaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
-    auto& state = getState();
-    auto& qubitMap = state.qubitMap;
+    auto& [qubitMap, inNestedRegion, targetsIn, targetsOut] = getState();
 
     // Get QCO targets from state map
     const auto numTargets = op.getNumTargets();
     SmallVector<Value> qcoTargets;
-    if (state.inNestedRegion == 0) {
+    if (inNestedRegion == 0) {
       qcoTargets.reserve(numTargets);
       for (size_t i = 0; i < numTargets; ++i) {
         const auto& qcTarget = op.getTarget(i);
         assert(qubitMap.contains(qcTarget) && "QC qubit not found");
-        const auto& qcoTarget = qubitMap[qcTarget];
-        qcoTargets.push_back(qcoTarget);
+        qcoTargets.emplace_back(qubitMap[qcTarget]);
       }
     } else {
-      assert(state.targetsIn[state.inNestedRegion].size() == numTargets &&
+      assert(targetsIn[inNestedRegion].size() == numTargets &&
              "Invalid number of input targets");
-      qcoTargets = state.targetsIn[state.inNestedRegion];
+      qcoTargets = targetsIn[inNestedRegion];
     }
 
     // Create qco.inv
     auto qcoOp = qco::InvOp::create(rewriter, op.getLoc(), qcoTargets);
 
     // Update state map
-    if (state.inNestedRegion == 0) {
-      const auto targetsOut = qcoOp.getQubitsOut();
+    if (inNestedRegion == 0) {
+      const auto qubitsOut = qcoOp.getQubitsOut();
       for (size_t i = 0; i < numTargets; ++i) {
         const auto& qcTarget = op.getTarget(i);
-        qubitMap[qcTarget] = targetsOut[i];
+        qubitMap[qcTarget] = qubitsOut[i];
       }
     } else {
-      state.targetsIn.erase(state.inNestedRegion);
-      state.targetsOut.try_emplace(state.inNestedRegion, qcoOp.getQubitsOut());
+      targetsIn.erase(inNestedRegion);
+      targetsOut.try_emplace(inNestedRegion, qcoOp.getQubitsOut());
     }
 
     // Update modifier information
-    state.inNestedRegion++;
+    inNestedRegion++;
 
     // Clone body region from QC to QCO
     auto& dstRegion = qcoOp.getRegion();
@@ -1230,7 +1228,7 @@ struct ConvertQCInvOp final : StatefulOpConversionPattern<qc::InvOp> {
         qcoTargetAliases.emplace_back(entryBlock.addArgument(qubitType, opLoc));
       }
     });
-    state.targetsIn[state.inNestedRegion] = std::move(qcoTargetAliases);
+    targetsIn[inNestedRegion] = std::move(qcoTargetAliases);
 
     rewriter.eraseOp(op);
     return success();
