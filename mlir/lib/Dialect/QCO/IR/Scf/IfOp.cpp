@@ -181,6 +181,10 @@ LogicalResult IfOp::verify() {
     return emitOpError(
         "Both regions must have the same number of qubits as arguments.");
   }
+  if (numThenArgs != numInputQubits) {
+    return emitOpError("Both regions must have the same number of qubits as "
+                       "arguments as the number of input qubits");
+  }
   if (numInputQubits != numOutputQubits) {
     return emitOpError("Operation must return the same number of qubits as the "
                        "number of input qubits.");
