@@ -247,40 +247,40 @@ UnitaryOpInterface InvOp::getBodyUnitary() {
   return llvm::dyn_cast<UnitaryOpInterface>(&getBody()->front());
 }
 
-size_t InvOp::getNumQubits() { return getNumTargets() + getNumControls(); }
+size_t InvOp::getNumQubits() { return getNumTargets(); }
 
-size_t InvOp::getNumTargets() { return getTargetsIn().size(); }
+size_t InvOp::getNumTargets() { return getQubitsIn().size(); }
 
-size_t InvOp::getNumControls() { return getBodyUnitary().getNumControls(); }
+size_t InvOp::getNumControls() { return 0; }
 
-Value InvOp::getInputQubit(const size_t i) { return getTargetsIn()[i]; }
+Value InvOp::getInputQubit(const size_t i) {
+  if (i >= getNumTargets()) {
+    llvm::reportFatalUsageError("Qubit index out of bounds");
+  }
+  return getQubitsIn()[i];
+}
 
 OperandRange InvOp::getInputQubits() { return this->getOperands(); }
 
-Value InvOp::getOutputQubit(const size_t i) { return getTargetsOut()[i]; }
+Value InvOp::getOutputQubit(const size_t i) {
+  if (i >= getNumTargets()) {
+    llvm::reportFatalUsageError("Qubit index out of bounds");
+  }
+  return getQubitsOut()[i];
+}
 
 ResultRange InvOp::getOutputQubits() { return this->getResults(); }
 
-Value InvOp::getInputTarget(const size_t i) {
-  if (i >= getNumTargets()) {
-    llvm::reportFatalUsageError("Target index out of bounds");
-  }
-  return getTargetsIn()[i];
+Value InvOp::getInputTarget(const size_t i) { return getInputQubit(i); }
+
+Value InvOp::getOutputTarget(const size_t i) { return getOutputQubit(i); }
+
+Value InvOp::getInputControl([[maybe_unused]] const size_t i) {
+  llvm::reportFatalUsageError("Operation does not have controls");
 }
 
-Value InvOp::getOutputTarget(const size_t i) {
-  if (i >= getNumTargets()) {
-    llvm::reportFatalUsageError("Target index out of bounds");
-  }
-  return getTargetsOut()[i];
-}
-
-Value InvOp::getInputControl(const size_t i) {
-  return getBodyUnitary().getInputControl(i);
-}
-
-Value InvOp::getOutputControl(const size_t i) {
-  return getBodyUnitary().getOutputControl(i);
+Value InvOp::getOutputControl([[maybe_unused]] const size_t i) {
+  llvm::reportFatalUsageError("Operation does not have controls");
 }
 
 Value InvOp::getInputForOutput(Value output) {
