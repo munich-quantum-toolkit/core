@@ -23,12 +23,12 @@ from qiskit.primitives.containers import (
 from qiskit.primitives.containers.sampler_pub import SamplerPub
 from qiskit.primitives.primitive_job import PrimitiveJob
 
-from .backend import QDMIBackend
-
 if TYPE_CHECKING:
     from collections.abc import Iterable
 
     from qiskit.primitives.containers import SamplerPubLike
+
+    from .backend import QDMIBackend
 
 
 class QDMISampler(BaseSamplerV2):
@@ -77,31 +77,42 @@ class QDMISampler(BaseSamplerV2):
 
         # Use PrimitiveJob to handle asynchronous execution
         job = PrimitiveJob(self._run, coerced_pubs)
-        job._submit()
+        job._submit()  # noqa: SLF001
         return job
 
     def _run(self, pubs: list[SamplerPub]) -> PrimitiveResult[SamplerPubResult]:
-        """Execute the validated pubs."""
+        """Execute the validated pubs.
+
+        Args:
+            pubs: The list of sampler pubs to execute.
+
+        Returns:
+            The execution results.
+        """
         results = [self._run_pub(pub) for pub in pubs]
         return PrimitiveResult(results, metadata={"version": 2})
 
     def _run_pub(self, pub: SamplerPub) -> SamplerPubResult:
-        """Execute a single PUB."""
+        """Execute a single PUB.
+
+        Args:
+            pub: The sampler pub to execute.
+
+        Returns:
+            The execution result.
+        """
         circuit = pub.circuit
         parameter_values = pub.parameter_values
         shots = pub.shots
 
         # Bind parameters
         bound_circuits = parameter_values.bind_all(circuit)
-        
+
         # Flatten structure to a list of circuits for backend execution
         bound_circuits_flat = np.ravel(bound_circuits).tolist()
 
         if not bound_circuits_flat:
-             return SamplerPubResult(
-                 DataBin(shape=pub.shape),
-                 metadata={"shots": shots}
-             )
+            return SamplerPubResult(DataBin(shape=pub.shape), metadata={"shots": shots})
 
         # Run all circuits in batch on the backend
         job = self._backend.run(bound_circuits_flat, shots=shots)
@@ -121,23 +132,28 @@ class QDMISampler(BaseSamplerV2):
         # Restructure counts into the shape of pub.shape for each classical register
         cregs = circuit.cregs
         bit_arrays = self._get_bit_arrays(cregs, all_counts, pub.shape)
-        
+
         return SamplerPubResult(
             DataBin(**bit_arrays, shape=pub.shape),
             metadata={"shots": shots, "circuit_metadata": circuit.metadata},
         )
 
     @staticmethod
-    def _get_bit_arrays(
-        cregs: list[Any],
-        counts: list[dict[str, int]],
-        shape: tuple[int, ...]
-    ) -> dict[str, BitArray]:
-        """Convert counts to BitArrays for each creg."""
+    def _get_bit_arrays(cregs: list[Any], counts: list[dict[str, int]], shape: tuple[int, ...]) -> dict[str, BitArray]:
+        """Convert counts to BitArrays for each creg.
+
+        Args:
+            cregs: The classical registers to process.
+            counts: The list of counts dictionaries.
+            shape: The shape of the output.
+
+        Returns:
+            The raw bit arrays.
+        """
         bit_arrays = {}
-        
+
         # Qiskit bitstrings are concatenated in reverse order of register declaration: "cn ... c1 c0"
-        
+
         start_index = 0
         for creg in cregs:
             # Prepare list of counts for this specific register
@@ -146,21 +162,21 @@ class QDMISampler(BaseSamplerV2):
                 new_dict = {}
                 for key, val in count_dict.items():
                     clean_key = key.replace(" ", "")
-                    
+
                     # Slice the bitstring corresponding to the current register (from right to left)
                     end = start_index if start_index != 0 else None
                     start = start_index - creg.size
-                    
-                    sliced_key = clean_key[start:end] if end is None else clean_key[start:end]
+
+                    sliced_key = clean_key[start:end]
                     new_dict[sliced_key] = new_dict.get(sliced_key, 0) + val
                 creg_counts.append(new_dict)
-            
+
             # Create BitArray and reshape
-            ba = BitArray.from_counts(creg_counts, creg.size)
+            array = BitArray.from_counts(creg_counts, creg.size)
             if shape:
-                 ba = ba.reshape(shape)
-            bit_arrays[creg.name] = ba
-            
+                array = array.reshape(shape)
+            bit_arrays[creg.name] = array
+
             start_index -= creg.size
-            
+
         return bit_arrays
