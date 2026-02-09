@@ -79,7 +79,7 @@ UnitaryOpInterface InvOp::getBodyUnitary() {
   return llvm::dyn_cast<UnitaryOpInterface>(&getBody()->front());
 }
 
-size_t InvOp::getNumQubits() { return getNumTargets() + getNumControls(); }
+size_t InvOp::getNumQubits() { return getBodyUnitary().getNumQubits(); }
 
 size_t InvOp::getNumTargets() { return getBodyUnitary().getNumTargets(); }
 
