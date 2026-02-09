@@ -142,19 +142,27 @@ struct ReplaceWithKnownGates final : OpRewritePattern<InvOp> {
           return success();
         })
         .Case<UOp>([&](auto u) {
-          auto newPhi =
-              negatedPiShiftedAngle(u.getLambda(), rewriter, op.getLoc());
-          auto newLambda =
-              negatedPiShiftedAngle(u.getPhi(), rewriter, op.getLoc());
-          rewriter.replaceOpWithNewOp<UOp>(op, op.getInputTarget(0),
-                                           u.getTheta(), newPhi, newLambda);
+          Value newPhi =
+              arith::NegFOp::create(rewriter, op.getLoc(), u.getLambda());
+          Value newLambda =
+              arith::NegFOp::create(rewriter, op.getLoc(), u.getPhi());
+          Value newTheta =
+              arith::NegFOp::create(rewriter, op.getLoc(), u.getTheta());
+          rewriter.replaceOpWithNewOp<UOp>(op, op.getInputTarget(0), newTheta,
+                                           newPhi, newLambda);
           return success();
         })
         .Case<U2Op>([&](auto u) {
-          auto newPhi =
-              negatedPiShiftedAngle(u.getLambda(), rewriter, op.getLoc());
-          auto newLambda =
-              negatedPiShiftedAngle(u.getPhi(), rewriter, op.getLoc());
+          auto pi = arith::ConstantOp::create(
+              rewriter, op.getLoc(),
+              rewriter.getF64FloatAttr(std::numbers::pi));
+          Value newPhi =
+              arith::NegFOp::create(rewriter, op.getLoc(), u.getLambda());
+          newPhi = arith::SubFOp::create(rewriter, op.getLoc(), newPhi, pi);
+          Value newLambda =
+              arith::NegFOp::create(rewriter, op.getLoc(), u.getPhi());
+          newLambda =
+              arith::AddFOp::create(rewriter, op.getLoc(), newLambda, pi);
           rewriter.replaceOpWithNewOp<U2Op>(op, op.getInputTarget(0), newPhi,
                                             newLambda);
           return success();
