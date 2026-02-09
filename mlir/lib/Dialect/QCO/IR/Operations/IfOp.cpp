@@ -20,40 +20,25 @@
 using namespace mlir;
 using namespace mlir::qco;
 
-LogicalResult IfOp::verify() {
-  for (const auto& type : getQubits().getTypes()) {
-    if (llvm::isa<QubitType>(type)) {
-      continue;
-    }
-    auto tensor = dyn_cast<TensorType>(type);
-    if (tensor && llvm::isa<QubitType>(tensor.getElementType())) {
-      continue;
-    }
-    return emitOpError(
-        "Types of inputs must be qubit type or tensor of qubit type!");
-  }
-
-  return success();
-}
-
 void IfOp::build(
     OpBuilder& odsBuilder, OperationState& odsState, Value condition,
     ValueRange qubits,
     llvm::function_ref<llvm::SmallVector<Value>(ValueRange)> thenBuilder,
     llvm::function_ref<llvm::SmallVector<Value>(ValueRange)> elseBuilder) {
-
+  // Build the empty operation
   build(odsBuilder, odsState, qubits.getTypes(), condition, qubits);
 
+  // Add the blocks to the regions
   auto& thenBlock = odsState.regions.front()->emplaceBlock();
   auto& elseBlock = odsState.regions.back()->emplaceBlock();
 
+  // Add the block arguments and insert the yield operation
   thenBlock.addArguments(
       qubits.getTypes(),
       SmallVector<Location>(qubits.size(), odsState.location));
   odsBuilder.setInsertionPointToStart(&thenBlock);
   qco::YieldOp::create(odsBuilder, odsState.location,
                        thenBuilder(thenBlock.getArguments()));
-
   elseBlock.addArguments(
       qubits.getTypes(),
       SmallVector<Location>(qubits.size(), odsState.location));
@@ -159,4 +144,48 @@ struct RemoveStaticCondition : public OpRewritePattern<IfOp> {
 void IfOp::getCanonicalizationPatterns(RewritePatternSet& results,
                                        MLIRContext* context) {
   results.add<RemoveStaticCondition>(context);
+}
+
+LogicalResult IfOp::verify() {
+  const auto& inputQubits = getQubits();
+  const auto numInputQubits = inputQubits.size();
+  const auto& outputQubits = getResults();
+  const auto numOutputQubits = outputQubits.size();
+
+  for (const auto& type : inputQubits.getTypes()) {
+    if (llvm::isa<QubitType>(type)) {
+      continue;
+    }
+    auto tensor = dyn_cast<TensorType>(type);
+    if (tensor && llvm::isa<QubitType>(tensor.getElementType())) {
+      continue;
+    }
+    return emitOpError("Inputs must be qubit type or tensor of qubit type!");
+  }
+  const auto numThenArgs = thenBlock()->getNumArguments();
+  const auto numElseArgs = elseBlock()->getNumArguments();
+
+  if (numThenArgs != numElseArgs) {
+    return emitOpError(
+        "Both regions must have the same number of qubits as arguments.");
+  }
+  if (numInputQubits != numOutputQubits) {
+    return emitOpError("Operation must return the same number of qubits as the "
+                       "number of input qubits.");
+  }
+  for (const auto& [inputQubitType, outputQubitType] :
+       llvm::zip_equal(inputQubits.getTypes(), outputQubits.getTypes())) {
+    if (inputQubitType != outputQubitType) {
+      return emitOpError("Operation must return the same qubit types as its "
+                         "input qubit types.");
+    }
+  }
+  SmallPtrSet<Value, 4> uniqueQubitsIn;
+  for (const auto& qubit : inputQubits) {
+    if (!uniqueQubitsIn.insert(qubit).second) {
+      return emitOpError("Input qubits must be unique.");
+    }
+  }
+
+  return success();
 }
