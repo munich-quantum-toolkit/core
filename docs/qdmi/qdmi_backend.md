@@ -395,7 +395,7 @@ qc.cx(0, 1)
 qc.measure_all()
 
 # Run the sampler
-job = sampler.run([(qc,)], shots=1024)
+job = sampler.run([qc], shots=1024)
 result = job.result()
 
 # Get results for the first pub (Primitive Unified Bloc)
@@ -522,7 +522,7 @@ The backend builds its {py:class}`~qiskit.transpiler.Target` by:
 The Qiskit Primitives are implemented as lightweight wrappers around the backend execution:
 
 - **Sampler**: Submits circuits to the backend and reshapes the resulting bitstrings into the requested structure (PubResult).
-- **Estimator**: Decomposes observables into Pauli terms, appends necessary basis rotations and measurements to the verification circuits, and submits them to the backend. It then reconstructs expectation values and standard deviations from the measurement counts of each term based on the provided precision or shots.
+- **Estimator**: Decomposes observables into Pauli terms, appends necessary basis rotations and measurements to the provided circuits, and submits them to the backend. It then reconstructs expectation values and standard deviations from the measurement counts of each term based on the provided precision or shots.
 
 ## API Reference
 
