@@ -411,7 +411,8 @@ LogicalResult InvOp::verify() {
 
 void InvOp::getCanonicalizationPatterns(RewritePatternSet& results,
                                         MLIRContext* context) {
-  results.add<InlineSelfAdjoint, ReplaceWithKnownGates>(context);
+  results.add<InlineSelfAdjoint, ReplaceWithKnownGates, CancelNestedInv>(
+      context);
 }
 
 std::optional<Eigen::MatrixXcd> InvOp::getUnitaryMatrix() {
