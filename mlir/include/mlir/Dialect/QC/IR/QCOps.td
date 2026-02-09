@@ -999,10 +999,10 @@ def InvOp : QCOp<"inv",
         [[nodiscard]] UnitaryOpInterface getBodyUnitary();
         size_t getNumQubits();
         size_t getNumTargets();
-        size_t getNumControls();
+        static size_t getNumControls();
         Value getQubit(size_t i);
         Value getTarget(size_t i);
-        Value getControl(size_t i);
+        static Value getControl(size_t i);
         size_t getNumParams();
         Value getParameter(size_t i);
         static StringRef getBaseSymbol() { return "inv"; }

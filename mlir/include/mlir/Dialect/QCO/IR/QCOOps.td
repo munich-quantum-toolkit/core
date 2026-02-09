@@ -1180,15 +1180,15 @@ def InvOp : QCOOp<"inv", traits =
         UnitaryOpInterface getBodyUnitary();
         size_t getNumQubits();
         size_t getNumTargets();
-        size_t getNumControls();
+        static size_t getNumControls();
         Value getInputQubit(size_t i);
         OperandRange getInputQubits();
         Value getOutputQubit(size_t i);
         ResultRange getOutputQubits();
         Value getInputTarget(size_t i);
         Value getOutputTarget(size_t i);
-        Value getInputControl(size_t i);
-        Value getOutputControl(size_t i);
+        static Value getInputControl(size_t i);
+        static Value getOutputControl(size_t i);
         Value getInputForOutput(Value output);
         Value getOutputForInput(Value input);
         size_t getNumParams();
