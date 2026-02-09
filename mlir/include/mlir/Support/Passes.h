@@ -10,7 +10,9 @@
 
 #pragma once
 
-#include <mlir/IR/BuiltinOps.h>
+namespace mlir {
+class ModuleOp;
+}
 
 /**
  * @brief Run canonicalization and dead value removal on the given module.
