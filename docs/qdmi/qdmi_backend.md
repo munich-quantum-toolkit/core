@@ -370,6 +370,96 @@ for qc in circuits:
     results.append(result)
 ```
 
+## Qiskit Primitives
+
+The backend provides implementations of Qiskit's [Primitives V2](https://docs.quantum.ibm.com/api/qiskit/primitives) interfaces:
+{py:class}`~mqt.core.plugins.qiskit.QDMISampler` and {py:class}`~mqt.core.plugins.qiskit.QDMIEstimator`.
+These primitives allow for a simplified execution workflow for sampling bitstrings and estimating expectation values.
+
+### Sampler
+
+The {py:class}`~mqt.core.plugins.qiskit.QDMISampler` implements the `BaseSamplerV2` interface.
+It is used to sample quantum circuits and obtain bitstrings (quasi-distributions).
+
+```{code-cell} ipython3
+from mqt.core.plugins.qiskit import QDMISampler
+from qiskit import QuantumCircuit
+
+# Initialize sampler with the backend
+sampler = QDMISampler(backend)
+
+# Create a circuit
+qc = QuantumCircuit(2)
+qc.h(0)
+qc.cx(0, 1)
+qc.measure_all()
+
+# Run the sampler
+job = sampler.run([(qc,)], shots=1024)
+result = job.result()
+
+# Get results for the first pub (Primitive Unified Bloc)
+pub_result = result[0]
+counts = pub_result.data.meas.get_counts()
+
+print(f"Sampler results: {counts}")
+```
+
+### Estimator
+
+The {py:class}`~mqt.core.plugins.qiskit.QDMIEstimator` implements the `BaseEstimatorV2` interface.
+It is used to calculate expectation values of observables.
+
+```{code-cell} ipython3
+from mqt.core.plugins.qiskit import QDMIEstimator
+from qiskit import QuantumCircuit
+from qiskit.quantum_info import SparsePauliOp
+import numpy as np
+
+# Initialize estimator
+estimator = QDMIEstimator(backend)
+
+# Create a circuit and observable
+qc = QuantumCircuit(2)
+qc.h(0)
+qc.cx(0, 1)
+
+observable = SparsePauliOp("ZZ")
+
+# Run the estimator
+job = estimator.run([(qc, observable)])
+result = job.result()
+
+# Get the expectation value
+pub_result = result[0]
+ev = pub_result.data.evs
+std = pub_result.data.stds
+
+print(f"Expectation value: {ev}")
+print(f"Standard deviation: {std}")
+```
+
+You can also use parameterized circuits with the estimator:
+
+```{code-cell} ipython3
+from qiskit.circuit import Parameter
+
+# Parameterized circuit
+theta = Parameter("theta")
+qc_param = QuantumCircuit(1)
+qc_param.rx(theta, 0)
+
+op = SparsePauliOp("Z")
+
+# Run with specific parameter values
+# Format: (circuit, observable, parameter_values)
+vals = [0.0, np.pi/2, np.pi]
+job = estimator.run([(qc_param, op, vals)])
+result = job.result()
+
+print(f"Expectation values: {result[0].data.evs}")
+```
+
 ## Error Handling
 
 The module provides specific exceptions for different error conditions:
@@ -427,6 +517,13 @@ The backend builds its {py:class}`~qiskit.transpiler.Target` by:
 3. Determining qubit connectivity from the device's coupling map
 4. Including operation properties (duration, fidelity) if available
 
+### Primitives Implementation
+
+The Qiskit Primitives are implemented as lightweight wrappers around the backend execution:
+
+- **Sampler**: Submits circuits to the backend and reshapes the resulting bitstrings into the requested structure (PubResult).
+- **Estimator**: Decomposes observables into Pauli terms, appends necessary basis rotations and measurements to the verification circuits, and submits them to the backend. It then reconstructs expectation values and standard deviations from the measurement counts of each term based on the provided precision or shots.
+
 ## API Reference
 
 For complete API documentation, see:
@@ -434,4 +531,6 @@ For complete API documentation, see:
 - {py:class}`~mqt.core.plugins.qiskit.QDMIProvider` — Device provider interface
 - {py:class}`~mqt.core.plugins.qiskit.QDMIBackend` — BackendV2 implementation
 - {py:class}`~mqt.core.plugins.qiskit.QDMIJob` — Job wrapper and result handling
+- {py:class}`~mqt.core.plugins.qiskit.QDMIEstimator` — EstimatorV2 primitive implementation
+- {py:class}`~mqt.core.plugins.qiskit.QDMISampler` — SamplerV2 primitive implementation
 - {py:mod}`~mqt.core.plugins.qiskit.exceptions` — Exception types
