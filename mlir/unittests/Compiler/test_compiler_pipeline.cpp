@@ -17,6 +17,7 @@
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QIR/Builder/QIRProgramBuilder.h"
 #include "mlir/Support/IRVerification.h"
+#include "mlir/Support/Passes.h"
 #include "mlir/Support/PrettyPrinting.h"
 
 #include <cstddef>
@@ -39,7 +40,6 @@
 #include <mlir/IR/OperationSupport.h>
 #include <mlir/IR/OwningOpRef.h>
 #include <mlir/Parser/Parser.h>
-#include <mlir/Pass/PassManager.h>
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/LogicalResult.h>
 #include <mlir/Transforms/Passes.h>
@@ -225,18 +225,6 @@ protected:
   //===--------------------------------------------------------------------===//
   // Expected IR Builder Methods
   //===--------------------------------------------------------------------===//
-
-  /**
-   * @brief Run canonicalization
-   */
-  static void runCanonicalizationPasses(ModuleOp module) {
-    PassManager pm(module.getContext());
-    pm.addPass(createCanonicalizerPass());
-    pm.addPass(createRemoveDeadValuesPass());
-    if (pm.run(module).failed()) {
-      llvm::errs() << "Failed to run canonicalization passes.\n";
-    }
-  }
 
   /**
    * @brief Build expected QC IR programmatically and run canonicalization
