@@ -1008,26 +1008,26 @@ public:
   /**
    * @brief Apply an inverse operation
    *
-   * @param targets Target qubits
+   * @param qubits Qubits involved in the operation
    * @param body Function that builds the body containing the target operation
-   * @return Output target qubits
+   * @return Output qubits
    *
    * @par Example:
    * ```c++
-   * targets_out = builder.inv(q0_in,
-   *   [&](ValueRange targets) -> llvm::SmallVector<Value> {
-   *     return {builder.s(targets[0])};
+   * qubits_out = builder.inv(q0_in,
+   *   [&](ValueRange qubits) -> llvm::SmallVector<Value> {
+   *     return {builder.s(qubits[0])};
    *   }
    * );
    * ```
    * ```mlir
-   * %targets_out = qco.inv (%a = %q0_in) {
-   *   %q0_res = qco.s %a : !qco.qubit -> !qco.qubit
-   *   qco.yield %q0_res
+   * %qubits_out = qco.inv (%q = %q0_in) {
+   *   %q_res = qco.s %q : !qco.qubit -> !qco.qubit
+   *   qco.yield %q_res
    * } : {!qco.qubit} -> {!qco.qubit}
    * ```
    */
-  ValueRange inv(ValueRange targets,
+  ValueRange inv(ValueRange qubits,
                  llvm::function_ref<llvm::SmallVector<Value>(ValueRange)> body);
 
   //===--------------------------------------------------------------------===//

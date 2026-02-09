@@ -284,8 +284,8 @@ Value InvOp::getOutputControl([[maybe_unused]] const size_t i) {
 
 Value InvOp::getInputForOutput(Value output) {
   for (size_t i = 0; i < getNumTargets(); ++i) {
-    if (output == getTargetsOut()[i]) {
-      return getTargetsIn()[i];
+    if (output == getQubitsOut()[i]) {
+      return getQubitsIn()[i];
     }
   }
   llvm::reportFatalUsageError("Given qubit is not an output of the operation");
@@ -293,8 +293,8 @@ Value InvOp::getInputForOutput(Value output) {
 
 Value InvOp::getOutputForInput(Value input) {
   for (size_t i = 0; i < getNumTargets(); ++i) {
-    if (input == getTargetsIn()[i]) {
-      return getTargetsOut()[i];
+    if (input == getQubitsIn()[i]) {
+      return getQubitsOut()[i];
     }
   }
   llvm::reportFatalUsageError("Given qubit is not an input of the operation");
@@ -307,8 +307,8 @@ Value InvOp::getParameter(const size_t i) {
 }
 
 void InvOp::build(OpBuilder& odsBuilder, OperationState& odsState,
-                  ValueRange targets, UnitaryOpInterface bodyUnitary) {
-  build(odsBuilder, odsState, targets);
+                  ValueRange qubits, UnitaryOpInterface bodyUnitary) {
+  build(odsBuilder, odsState, qubits);
   auto& block = odsState.regions.front()->emplaceBlock();
 
   // Move the unitary op into the block
@@ -319,13 +319,13 @@ void InvOp::build(OpBuilder& odsBuilder, OperationState& odsState,
 }
 
 void InvOp::build(
-    OpBuilder& odsBuilder, OperationState& odsState, ValueRange targets,
+    OpBuilder& odsBuilder, OperationState& odsState, ValueRange qubits,
     llvm::function_ref<llvm::SmallVector<Value>(ValueRange)> bodyBuilder) {
-  build(odsBuilder, odsState, targets);
+  build(odsBuilder, odsState, qubits);
   auto& block = odsState.regions.front()->emplaceBlock();
 
   const auto qubitType = QubitType::get(odsBuilder.getContext());
-  for (size_t i = 0; i < targets.size(); ++i) {
+  for (size_t i = 0; i < qubits.size(); ++i) {
     block.addArgument(qubitType, odsState.location);
   }
 
@@ -367,7 +367,7 @@ LogicalResult InvOp::verify() {
   }
 
   SmallPtrSet<Value, 4> uniqueQubitsIn;
-  for (const auto& target : getTargetsIn()) {
+  for (const auto& target : getQubitsIn()) {
     if (!uniqueQubitsIn.insert(target).second) {
       return emitOpError("duplicate target qubit found");
     }

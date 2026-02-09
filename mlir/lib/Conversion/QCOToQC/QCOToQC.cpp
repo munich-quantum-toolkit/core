@@ -844,10 +844,10 @@ struct ConvertQCOInvOp final : OpConversionPattern<qco::InvOp> {
 
     auto& entryBlock = dstRegion.front();
     const auto numArgs = entryBlock.getNumArguments();
-    if (adaptor.getTargetsIn().size() != numArgs) {
+    if (adaptor.getQubitsIn().size() != numArgs) {
       return op.emitOpError() << "qco.inv: entry block args (" << numArgs
                               << ") must match number of target operands ("
-                              << adaptor.getTargetsIn().size() << ")";
+                              << adaptor.getQubitsIn().size() << ")";
     }
 
     // Remove all block arguments in the cloned region
@@ -856,7 +856,7 @@ struct ConvertQCOInvOp final : OpConversionPattern<qco::InvOp> {
       // We iterate 0..N using indices since the block args are still stable
       // here.
       for (auto i = 0UL; i < numArgs; ++i) {
-        entryBlock.getArgument(i).replaceAllUsesWith(adaptor.getTargetsIn()[i]);
+        entryBlock.getArgument(i).replaceAllUsesWith(adaptor.getQubitsIn()[i]);
       }
 
       // 2. Erase all block arguments

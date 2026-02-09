@@ -1199,14 +1199,14 @@ struct ConvertQCInvOp final : StatefulOpConversionPattern<qc::InvOp> {
 
     // Update state map
     if (state.inNestedRegion == 0) {
-      const auto targetsOut = qcoOp.getTargetsOut();
+      const auto targetsOut = qcoOp.getQubitsOut();
       for (size_t i = 0; i < numTargets; ++i) {
         const auto& qcTarget = op.getTarget(i);
         qubitMap[qcTarget] = targetsOut[i];
       }
     } else {
       state.targetsIn.erase(state.inNestedRegion);
-      state.targetsOut.try_emplace(state.inNestedRegion, qcoOp.getTargetsOut());
+      state.targetsOut.try_emplace(state.inNestedRegion, qcoOp.getQubitsOut());
     }
 
     // Update modifier information

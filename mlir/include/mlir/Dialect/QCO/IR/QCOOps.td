@@ -1153,27 +1153,27 @@ def InvOp : QCOOp<"inv", traits =
     let summary = "Invert a unitary operation";
     let description = [{
         A modifier operation that inverts the unitary operation defined in its body
-        region. The operation takes a variadic number of target qubits as inputs and
+        region. The operation takes a variadic number of qubits as inputs and
         produces corresponding output qubits.
 
         Example:
         ```mlir
-        %targets_out = qco.inv (%a = %targets_in) {
-            %a1 = qco.s %a : !qco.qubit -> !qco.qubit
-            qco.yield %a1
+        %q_out = qco.inv (%q = %q_in) {
+            %q_1 = qco.s %q : !qco.qubit -> !qco.qubit
+            qco.yield %q_1
         } : {!qco.qubit} -> {!qco.qubit}
         ```
     }];
 
-    let arguments = (ins Arg<Variadic<QubitType>, "the target qubits", [MemRead]>:$targets_in);
-    let results = (outs Variadic<QubitType>:$targets_out);
+    let arguments = (ins Arg<Variadic<QubitType>, "the qubits involved in the operation", [MemRead]>:$qubits_in);
+    let results = (outs Variadic<QubitType>:$qubits_out);
     let regions = (region SizedRegion<1>:$region);
     let assemblyFormat = [{
-        custom<TargetAliasing>($region, $targets_in)
+        custom<TargetAliasing>($region, $qubits_in)
         attr-dict `:`
-        `{` type($targets_in) `}`
+        `{` type($qubits_in) `}`
         `->`
-        `{` type($targets_out) `}`
+        `{` type($qubits_out) `}`
     }];
 
     let extraClassDeclaration = [{
@@ -1198,11 +1198,11 @@ def InvOp : QCOOp<"inv", traits =
     }];
 
     let builders = [
-        OpBuilder<(ins "ValueRange":$targets), [{
-           build($_builder, $_state, targets.getTypes(), targets);
+        OpBuilder<(ins "ValueRange":$qubits), [{
+           build($_builder, $_state, qubits.getTypes(), qubits);
         }]>,
-        OpBuilder<(ins "ValueRange":$targets, "UnitaryOpInterface":$bodyUnitary)>,
-        OpBuilder<(ins "ValueRange":$targets, "llvm::function_ref<llvm::SmallVector<Value>(ValueRange)>":$bodyBuilder)>
+        OpBuilder<(ins "ValueRange":$qubits, "UnitaryOpInterface":$bodyUnitary)>,
+        OpBuilder<(ins "ValueRange":$qubits, "llvm::function_ref<llvm::SmallVector<Value>(ValueRange)>":$bodyBuilder)>
     ];
 
     let hasCanonicalizer = 1;
