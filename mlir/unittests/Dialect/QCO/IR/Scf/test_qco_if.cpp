@@ -22,7 +22,6 @@
 #include <mlir/IR/Value.h>
 #include <mlir/IR/ValueRange.h>
 #include <mlir/IR/Verifier.h>
-#include <mlir/Parser/Parser.h>
 #include <mlir/Pass/PassManager.h>
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/WalkResult.h>
@@ -144,9 +143,7 @@ TEST_F(QCOIfOpTest, TestConstantCondition) {
   PassManager pm(&context);
   auto* moduleOp = module->getOperation();
   pm.addPass(createCanonicalizerPass());
-  if (pm.run(moduleOp).failed()) {
-    llvm::errs() << "Failed to run canonicalization passes.\n";
-  }
+  ASSERT_TRUE(pm.run(moduleOp).succeeded());
 
   bool hasIf = false;
   bool hasHOp = false;
