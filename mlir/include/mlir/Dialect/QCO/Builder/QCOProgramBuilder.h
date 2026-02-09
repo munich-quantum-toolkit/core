@@ -1021,8 +1021,8 @@ public:
    * );
    * ```
    * ```mlir
-   * %targets_out = qco.inv %q0_in {
-   *   %q0_res = qco.s %q0_in : !qco.qubit -> !qco.qubit
+   * %targets_out = qco.inv (%a = %q0_in) {
+   *   %q0_res = qco.s %a : !qco.qubit -> !qco.qubit
    *   qco.yield %q0_res
    * } : {!qco.qubit} -> {!qco.qubit}
    * ```

@@ -1158,9 +1158,9 @@ def InvOp : QCOOp<"inv", traits =
 
         Example:
         ```mlir
-        %targets_out = qco.inv %targets_in {
-            %targets_res = qco.s %targets_in : !qco.qubit -> !qco.qubit
-            qco.yield %targets_res : !qco.qubit
+        %targets_out = qco.inv (%a = %targets_in) {
+            %a1 = qco.s %a : !qco.qubit -> !qco.qubit
+            qco.yield %a1
         } : {!qco.qubit} -> {!qco.qubit}
         ```
     }];
