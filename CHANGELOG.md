@@ -11,6 +11,7 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 
 ### Added
 
+- ✨ Add Sampler and Estimator Primitives to the QDMI-Qiskit Interface ([#1507]) ([**@marcelwa**])
 - ✨ Add initial infrastructure for new QC and QCO MLIR dialects ([#1264], [#1402], [#1428], [#1430], [#1436], [#1443], [#1446], [#1464], [#1465], [#1470], [#1471], [#1472], [#1474], [#1475]) ([**@burgholzer**], [**@denialhaag**], [**@taminob**], [**@DRovara**], [**@li-mingbao**])
 
 ### Changed
@@ -325,6 +326,7 @@ _📚 Refer to the [GitHub Release Notes](https://github.com/munich-quantum-tool
 
 <!-- PR links -->
 
+[#1507]: https://github.com/munich-quantum-toolkit/core/pull/1507
 [#1481]: https://github.com/munich-quantum-toolkit/core/pull/1481
 [#1475]: https://github.com/munich-quantum-toolkit/core/pull/1475
 [#1474]: https://github.com/munich-quantum-toolkit/core/pull/1474
