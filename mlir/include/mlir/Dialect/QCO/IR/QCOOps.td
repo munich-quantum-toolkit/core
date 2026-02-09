@@ -1074,7 +1074,7 @@ def CtrlOp : QCOOp<"ctrl", traits =
                 AttrSizedResultSegments,
                 SameOperandsAndResultType,
                 SameOperandsAndResultShape,
-                SingleBlock,
+                SingleBlockImplicitTerminator<"::mlir::qco::YieldOp">,
                 RecursiveMemoryEffects
             ]> {
     let summary = "Add control qubits to a unitary operation";
@@ -1147,7 +1147,7 @@ def InvOp : QCOOp<"inv", traits =
                 UnitaryOpInterface,
                 SameOperandsAndResultType,
                 SameOperandsAndResultShape,
-                SingleBlock,
+                SingleBlockImplicitTerminator<"::mlir::qco::YieldOp">,
                 RecursiveMemoryEffects
             ]> {
     let summary = "Invert a unitary operation";
