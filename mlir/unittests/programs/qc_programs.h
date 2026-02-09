@@ -214,3 +214,60 @@ inline void inverseIdentityCanonicalized(mlir::qc::QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   b.id(q[0]);
 }
+
+// --- XOp ------------------------------------------------------------------ //
+
+/// Creates a circuit with just an X gate.
+inline void x(mlir::qc::QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  b.x(q[0]);
+}
+
+/// Creates a circuit with a single controlled X gate.
+inline void singleControlledX(mlir::qc::QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(2);
+  b.cx(q[0], q[1]);
+}
+
+/// Creates a circuit with a multi-controlled X gate.
+inline void multipleControlledX(mlir::qc::QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(3);
+  b.mcx({q[0], q[1]}, q[2]);
+}
+
+/// Creates a circuit with a nested controlled X gate.
+inline void nestedControlledX(mlir::qc::QCProgramBuilder& b) {
+  auto reg = b.allocQubitRegister(3);
+  b.ctrl(reg[0], [&] { b.cx(reg[1], reg[2]); });
+}
+
+/// Creates a circuit with a trivial controlled X gate.
+inline void trivialControlledX(mlir::qc::QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  b.mcx({}, q[0]);
+}
+
+/// Creates a circuit with an inverse modifier applied to an X gate.
+inline void inverseX(mlir::qc::QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  b.inv([&]() { b.x(q[0]); });
+}
+
+/// Canonicalized version of `inverseX`.
+inline void inverseXCanonicalized(mlir::qc::QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  b.x(q[0]);
+}
+
+/// Creates a circuit with an inverse modifier applied to a controlled X gate.
+inline void inverseMultipleControlledX(mlir::qc::QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(3);
+  b.inv([&]() { b.mcx({q[0], q[1]}, q[2]); });
+}
+
+/// Canonicalized version of `inverseMultipleControlledX`.
+inline void
+inverseMultipleControlledXCanonicalized(mlir::qc::QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(3);
+  b.mcx({q[0], q[1]}, q[2]);
+}
