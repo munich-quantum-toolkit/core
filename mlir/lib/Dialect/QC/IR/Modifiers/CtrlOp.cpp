@@ -46,7 +46,7 @@ struct MergeNestedCtrl final : OpRewritePattern<CtrlOp> {
       newControls.push_back(control);
     }
 
-    rewriter.replaceOpWithNewOp<CtrlOp>(op, newControls,
+    rewriter.replaceOpWithNewOp<CtrlOp>(op, std::move(newControls),
                                         bodyCtrlOp.getBodyUnitary());
 
     return success();
