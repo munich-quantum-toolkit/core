@@ -379,7 +379,7 @@ These primitives allow for a simplified execution workflow for sampling bitstrin
 ### Sampler
 
 The {py:class}`~mqt.core.plugins.qiskit.QDMISampler` implements the `BaseSamplerV2` interface.
-It is used to sample quantum circuits and obtain bitstrings (quasi-distributions).
+It is used to sample quantum circuits and obtain measurement counts (bitstrings).
 
 ```{code-cell} ipython3
 from mqt.core.plugins.qiskit import QDMISampler

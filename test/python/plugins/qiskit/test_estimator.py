@@ -185,6 +185,30 @@ def test_estimator_no_circuits(backend_with_mock_jobs: QDMIBackend) -> None:
     assert len(result) == 0
 
 
+def test_estimator_mismatched_qubits(backend_with_mock_jobs: QDMIBackend) -> None:
+    """Test estimator run with mismatched observable vs circuit qubit count."""
+    estimator = QDMIEstimator(backend_with_mock_jobs)
+    qc = QuantumCircuit(1)  # 1 qubit
+    op = SparsePauliOp("XX")  # 2 qubits
+
+    # Should raise ValueError because EstimatorPub validation checks dimensions
+    with pytest.raises(ValueError, match="number of qubits"):
+        estimator.run([(qc, op)])
+
+
+def test_estimator_invalid_precision(backend_with_mock_jobs: QDMIBackend) -> None:
+    """Test estimator run with invalid precision."""
+    estimator = QDMIEstimator(backend_with_mock_jobs)
+    qc = QuantumCircuit(1)
+    op = SparsePauliOp("Z")
+
+    # Qiskit's EstimatorPub.coerce checks for precision validation if validate=True (default)
+    # Negative precision should raise ValueError
+    with pytest.raises(ValueError, match="precision"):
+        # The run method calls EstimatorPub.coerce(pub, precision)
+        estimator.run([(qc, op)], precision=-0.1)
+
+
 def test_estimator_identity_observable_only(backend_with_mock_jobs: QDMIBackend) -> None:
     """Test case where no measurement circuits are needed (Identity)."""
     estimator = QDMIEstimator(backend_with_mock_jobs)
