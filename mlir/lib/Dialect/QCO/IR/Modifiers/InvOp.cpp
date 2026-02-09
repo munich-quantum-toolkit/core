@@ -233,7 +233,12 @@ struct CancelNestedInv final : OpRewritePattern<InvOp> {
 
     // Remove both inverse operations
     auto innerInnerUnitary = innerInvOp.getBodyUnitary();
-    auto* clonedOp = rewriter.clone(*innerInnerUnitary.getOperation());
+    IRMapping mapping;
+    auto& innerBlock = *innerInvOp.getBody();
+    for (size_t i = 0; i < op.getNumTargets(); ++i) {
+      mapping.map(innerBlock.getArgument(i), op.getInputTarget(i));
+    }
+    auto* clonedOp = rewriter.clone(*innerInnerUnitary.getOperation(), mapping);
     rewriter.replaceOp(op, clonedOp->getResults());
 
     return success();
