@@ -671,8 +671,8 @@ ValueRange QCOProgramBuilder::qcoIf(
 
   // Update qubit tracking
   const auto& ifResults = ifOp->getResults();
-  for (const auto& [input, controlOut] : llvm::zip(qubits, ifResults)) {
-    updateQubitTracking(input, controlOut);
+  for (const auto& [input, output] : llvm::zip(qubits, ifResults)) {
+    updateQubitTracking(input, output);
   }
 
   // Remove the inner qubits as valid qubits
