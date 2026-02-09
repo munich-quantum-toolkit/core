@@ -1147,7 +1147,7 @@ def CtrlOp : QCOOp<"ctrl", traits =
 // Scf operations
 //===----------------------------------------------------------------------===//
 
-def IfOp : QCOOp<"if", traits=
+def IfOp : QCOOp<"if", traits =
             [
                 DeclareOpInterfaceMethods<RegionBranchOpInterface, [
                 "getNumRegionInvocations", "getRegionInvocationBounds",
@@ -1158,10 +1158,11 @@ def IfOp : QCOOp<"if", traits=
 
     let summary = "If then else operation for qubit types";
     let description = [{
-        The `qco.if` operation is a if-then-else construct similar to the existing standard scf.if operation.
-        In addition to the condition the operation takes a variadic number of qubits (qubit type or tensor of qubits)
-        as input that are used in the bodies of the two branches. These qubits are passed to the individual regions
-        as block arguments. The operation must return the same number of results and types as the input qubit operands.
+        The `qco.if` operation is an if-then-else construct similar to the existing scf.if operation.
+        In addition to the condition, the operation takes a variadic number of qubits (qubit type or tensor of qubit types)
+        as input that are required in the bodies of both branches. These qubits are passed down to the individual regions
+        as block arguments. The number of results and the type of the results must be equivalent to the number and types
+        of the input qubits.
     }];
 
     let arguments = (ins I1:$condition,  Variadic<AnyType>:$qubits);
