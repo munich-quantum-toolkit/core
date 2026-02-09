@@ -11,7 +11,9 @@
 #include "mlir/Support/PrettyPrinting.h"
 
 #include <cstddef>
+#include <llvm/ADT/StringRef.h>
 #include <llvm/Support/raw_ostream.h>
+#include <mlir/IR/BuiltinOps.h>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -264,6 +266,23 @@ void printBoxText(const std::string& text, const int indent,
   while (std::getline(stream, line)) {
     printBoxLine(line, indent, os);
   }
+}
+
+void printProgram(ModuleOp module, const llvm::StringRef header,
+                  llvm::raw_ostream& os) {
+  printBoxTop(os);
+  printBoxLine(std::string(header), 0, os);
+  printBoxMiddle(os);
+  // Capture the IR to a string so we can wrap it in box lines
+  std::string irString;
+  llvm::raw_string_ostream irStream(irString);
+  module.print(irStream);
+
+  // Print the IR with box lines and wrapping
+  printBoxText(irString, 0, os);
+
+  printBoxBottom(os);
+  os.flush();
 }
 
 } // namespace mlir
