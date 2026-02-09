@@ -54,6 +54,7 @@ TEST_P(QCTest, ProgramEquivalence) {
 
   program = mlir::qc::QCProgramBuilder::build(context.get(), programBuilder);
   ASSERT_TRUE(program);
+  EXPECT_TRUE(mlir::verify(*program).succeeded());
 
   canonicalizedProgram = program.get().clone();
   runCanonicalizationPasses(canonicalizedProgram.get());
@@ -63,6 +64,7 @@ TEST_P(QCTest, ProgramEquivalence) {
   reference =
       mlir::qc::QCProgramBuilder::build(context.get(), referenceBuilder);
   ASSERT_TRUE(reference);
+  EXPECT_TRUE(mlir::verify(*reference).succeeded());
 
   canonicalizedReference = reference.get().clone();
   runCanonicalizationPasses(canonicalizedReference.get());
