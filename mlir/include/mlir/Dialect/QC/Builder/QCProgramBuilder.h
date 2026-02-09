@@ -904,6 +904,19 @@ public:
    */
   OwningOpRef<ModuleOp> finalize();
 
+  /**
+   * @brief Convenience method for building quantum programs
+   * @param context The MLIR context to use for building the program
+   * @param buildFunc A function that takes a reference to a QCProgramBuilder
+   * and uses it to build the desired quantum program. The builder will be
+   * properly initialized before calling this function, and the resulting module
+   * will be finalized and returned after this function completes.
+   * @return The module containing the quantum program built by buildFunc.
+   */
+  static OwningOpRef<ModuleOp>
+  build(MLIRContext* context,
+        const llvm::function_ref<void(QCProgramBuilder&)>& buildFunc);
+
 private:
   MLIRContext* ctx{};
   ModuleOp module;
