@@ -13,7 +13,6 @@
 #include "mlir/Dialect/QC/IR/QCDialect.h"
 
 #include <cstdint>
-#include <functional>
 #include <llvm/ADT/DenseSet.h>
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/Support/ErrorHandling.h>
@@ -842,7 +841,7 @@ public:
    * ```
    */
   QCProgramBuilder& ctrl(ValueRange controls,
-                         const std::function<void()>& body);
+                         const llvm::function_ref<void()>& body);
 
   /**
    * @brief Apply an inverse (i.e., adjoint) operation.
@@ -861,7 +860,7 @@ public:
    * }
    * ```
    */
-  QCProgramBuilder& inv(const std::function<void()>& body);
+  QCProgramBuilder& inv(const llvm::function_ref<void()>& body);
 
   //===--------------------------------------------------------------------===//
   // Deallocation

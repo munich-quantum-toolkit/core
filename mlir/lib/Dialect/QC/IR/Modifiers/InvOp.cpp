@@ -11,7 +11,7 @@
 #include "mlir/Dialect/QC/IR/QCDialect.h"
 
 #include <cstddef>
-#include <functional>
+#include <llvm/ADT/TypeSwitch.h>
 #include <llvm/Support/Casting.h>
 #include <llvm/Support/ErrorHandling.h>
 #include <mlir/IR/Builders.h>
@@ -113,7 +113,7 @@ void InvOp::build(OpBuilder& odsBuilder, OperationState& odsState,
 }
 
 void InvOp::build(OpBuilder& odsBuilder, OperationState& odsState,
-                  const std::function<void()>& bodyBuilder) {
+                  const llvm::function_ref<void()>& bodyBuilder) {
   const OpBuilder::InsertionGuard guard(odsBuilder);
   auto* region = odsState.addRegion();
   auto& block = region->emplaceBlock();
