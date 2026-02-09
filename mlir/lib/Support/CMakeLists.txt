@@ -8,6 +8,7 @@
 
 add_mlir_library(
   MLIRSupportMQT
+  IRVerification.cpp
   PrettyPrinting.cpp
   ADDITIONAL_HEADER_DIRS
   ${MQT_MLIR_SOURCE_INCLUDE_DIR}/mlir/Support
@@ -15,6 +16,9 @@ add_mlir_library(
   PUBLIC
   MLIRSupport
   MLIRIR
+  MLIRLLVMDialect
+  MLIRFuncDialect
+  MLIRArithDialect
   DISABLE_INSTALL)
 
 # add library alias
