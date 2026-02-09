@@ -126,16 +126,16 @@ class QDMIEstimator(BaseEstimatorV2):
 
         # Flatten all combinations of bound circuits and measurement preparations
         total_circuits_to_run = []
-        metadata_map = []  # type: list[tuple[tuple[int, ...], complex]]
+        metadata_map = []  # type: list[tuple[tuple[int, ...], complex, NDArray[np.int_]]]
 
         for index in np.ndindex(*bc_bound_circuits.shape):
             bound_circuit = bc_bound_circuits[index]
-            obs_coeffs, meas_circuits = bc_observable_circuits[index]
+            obs_coeffs, meas_circuits, term_indices_list = bc_observable_circuits[index]
 
-            for coeff, meas_circ in zip(obs_coeffs, meas_circuits, strict=True):
+            for coeff, meas_circ, indices in zip(obs_coeffs, meas_circuits, term_indices_list, strict=True):
                 full_circ = bound_circuit.compose(meas_circ)
                 total_circuits_to_run.append(full_circ)
-                metadata_map.append((index, coeff))
+                metadata_map.append((index, coeff, indices))
 
         if not total_circuits_to_run:
             return PubResult(DataBin(evs=evs, stds=stds, shape=evs.shape))
@@ -154,14 +154,22 @@ class QDMIEstimator(BaseEstimatorV2):
         # index points to the broadcasted shape of parameters/observables
         temp_results = {}  # index -> {"ev": float, "var": float}
 
-        for i, (index, coeff) in enumerate(metadata_map):
+        for i, (index, coeff, indices) in enumerate(metadata_map):
             counts = all_counts[i]
 
             # Calculate expectation value for this Pauli term
             exp_val = 0.0
             for bitstring, count in counts.items():
                 clean_bitstring = bitstring.replace(" ", "")
-                parity = clean_bitstring.count("1")
+
+                # Calculate parity only for the qubits involved in this Pauli term
+                parity = 0
+                for bit_idx in indices:
+                    # Map bit_idx to string position (right-to-left 0-indexed)
+                    # bitstring is like "cn...c1c0"
+                    if clean_bitstring[-1 - bit_idx] == "1":
+                        parity += 1
+
                 sign = -1 if parity % 2 else 1
                 exp_val += sign * count
 
@@ -218,12 +226,17 @@ class QDMIEstimator(BaseEstimatorV2):
 
             # Create a list of circuits (one per Pauli term)
             term_circuits = []
+            term_indices = []
 
             for pauli in paulis:
                 qc = self._create_measurement_circuit(pauli, num_qubits)
                 term_circuits.append(qc)
 
-            observable_circuits[index] = (coeffs, term_circuits)
+                # Store indices of qubits that are part of the Pauli term (non-identity)
+                active = np.logical_or(pauli.x, pauli.z)
+                term_indices.append(np.flatnonzero(active))
+
+            observable_circuits[index] = (coeffs, term_circuits, term_indices)
 
         return observable_circuits
 
