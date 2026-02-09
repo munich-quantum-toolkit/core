@@ -173,8 +173,7 @@ class QDMISampler(BaseSamplerV2):
 
             # Create BitArray and reshape
             array = BitArray.from_counts(creg_counts, creg.size)
-            if shape:
-                array = array.reshape(shape)
+            array = array.reshape(shape)
             bit_arrays[creg.name] = array
 
             start_index -= creg.size

@@ -163,8 +163,6 @@ def test_estimator_broadcasting(backend_with_mock_jobs: QDMIBackend) -> None:
     ops = [SparsePauliOp("Z"), SparsePauliOp("X")]
 
     # 3 Parameter sets
-    vals = [[0.0], [np.pi / 2], [np.pi]]
-
     # Broadcast: 2 observables x 3 parameters.
     # To test broadcasting, we reshape to make them compatible for outer product.
     # Params: shape (3, 1) (via bindings array reshape or just repeating ops)

@@ -57,6 +57,7 @@ def test_sampler_run_simple_circuit(backend_with_mock_jobs: QDMIBackend) -> None
     bit_array = data.meas
     assert bit_array.num_shots == 100
     assert bit_array.num_bits == 2
+    assert bit_array.shape == ()
 
     # Check that we got some counts (mock backend returns random distribution)
     counts = bit_array.get_counts()
