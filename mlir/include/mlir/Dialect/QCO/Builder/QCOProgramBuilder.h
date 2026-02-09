@@ -1034,7 +1034,7 @@ public:
   //===--------------------------------------------------------------------===//
 
   /**
-   * @brief Construct an if operation with return values
+   * @brief Construct an if operation for qubits with linear typing
    *
    * @details
    * Constructs an if operation that takes bool attribute and a range of qubit
