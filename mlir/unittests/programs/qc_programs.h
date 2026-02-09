@@ -158,7 +158,10 @@ multipleControlledGlobalPhaseCanonicalized(mlir::qc::QCProgramBuilder& b) {
 
 /// Creates a circuit with an inverse modifier applied to a global phase gate.
 inline void inverseGlobalPhase(mlir::qc::QCProgramBuilder& b) {
-  b.inv([&]() { b.gphase(1.23); });
+  // The angle needs to be created outside of the `inv` block to avoid failing
+  // the verifier for the `inv` block that must only contain two operations.
+  auto angle = b.doubleConstant(1.23);
+  b.inv([&]() { b.gphase(angle); });
 }
 
 /// Canonicalized version of `inverseGlobalPhase`.
