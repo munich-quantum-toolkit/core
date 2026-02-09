@@ -17,6 +17,7 @@ target_link_libraries(
           MLIRQCOProgramBuilder
           MLIRQIRProgramBuilder
           MLIRParser
+          MLIRSupportMQT
           MQT::CoreIR)
 
 gtest_discover_tests(mqt-core-mlir-compiler-pipeline-test)
