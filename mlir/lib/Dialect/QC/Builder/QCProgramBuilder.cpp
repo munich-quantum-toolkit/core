@@ -426,14 +426,16 @@ QCProgramBuilder& QCProgramBuilder::barrier(ValueRange qubits) {
 // Modifiers
 //===----------------------------------------------------------------------===//
 
-QCProgramBuilder& QCProgramBuilder::ctrl(ValueRange controls,
-                                         const std::function<void()>& body) {
+QCProgramBuilder&
+QCProgramBuilder::ctrl(ValueRange controls,
+                       const llvm::function_ref<void()>& body) {
   checkFinalized();
   CtrlOp::create(*this, controls, body);
   return *this;
 }
 
-QCProgramBuilder& QCProgramBuilder::inv(const std::function<void()>& body) {
+QCProgramBuilder&
+QCProgramBuilder::inv(const llvm::function_ref<void()>& body) {
   checkFinalized();
   InvOp::create(*this, body);
   return *this;

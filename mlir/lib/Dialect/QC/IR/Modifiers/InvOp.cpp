@@ -113,7 +113,7 @@ void InvOp::build(OpBuilder& odsBuilder, OperationState& odsState,
 }
 
 void InvOp::build(OpBuilder& odsBuilder, OperationState& odsState,
-                  const std::function<void()>& bodyBuilder) {
+                  const llvm::function_ref<void()>& bodyBuilder) {
   const OpBuilder::InsertionGuard guard(odsBuilder);
   auto* region = odsState.addRegion();
   auto& block = region->emplaceBlock();

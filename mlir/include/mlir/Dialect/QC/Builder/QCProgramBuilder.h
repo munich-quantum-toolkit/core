@@ -842,7 +842,7 @@ public:
    * ```
    */
   QCProgramBuilder& ctrl(ValueRange controls,
-                         const std::function<void()>& body);
+                         const llvm::function_ref<void()>& body);
 
   /**
    * @brief Apply an inverse (i.e., adjoint) operation.
@@ -861,7 +861,7 @@ public:
    * }
    * ```
    */
-  QCProgramBuilder& inv(const std::function<void()>& body);
+  QCProgramBuilder& inv(const llvm::function_ref<void()>& body);
 
   //===--------------------------------------------------------------------===//
   // Deallocation

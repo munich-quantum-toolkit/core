@@ -161,7 +161,7 @@ void CtrlOp::build(OpBuilder& odsBuilder, OperationState& odsState,
 
 void CtrlOp::build(OpBuilder& odsBuilder, OperationState& odsState,
                    ValueRange controls,
-                   const std::function<void()>& bodyBuilder) {
+                   const llvm::function_ref<void()>& bodyBuilder) {
   const OpBuilder::InsertionGuard guard(odsBuilder);
   odsState.addOperands(controls);
   auto* region = odsState.addRegion();
