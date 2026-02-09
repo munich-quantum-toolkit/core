@@ -11,11 +11,15 @@
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 
 #include <cassert>
+#include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/STLFunctionalExtras.h>
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/Support/Casting.h>
+#include <mlir/IR/Attributes.h>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/BuiltinTypes.h>
+#include <mlir/IR/Location.h>
+#include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/Matchers.h>
 #include <mlir/IR/OperationSupport.h>
 #include <mlir/IR/PatternMatch.h>
@@ -121,7 +125,7 @@ static void replaceOpWithRegion(PatternRewriter& rewriter, Operation* op,
   assert(llvm::hasSingleElement(region) && "expected single-region block");
   Block* block = &region.front();
   Operation* terminator = block->getTerminator();
-  ValueRange results = terminator->getOperands();
+  const auto results = terminator->getOperands();
   rewriter.inlineBlockBefore(block, op, blockArgs);
   rewriter.replaceOp(op, results);
   rewriter.eraseOp(terminator);
