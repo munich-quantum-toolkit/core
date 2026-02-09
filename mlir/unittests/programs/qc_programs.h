@@ -209,8 +209,134 @@ inline void inverseIdentity(mlir::qc::QCProgramBuilder& b) {
   b.inv([&]() { b.id(q[0]); });
 }
 
-/// Canonicalized version of `inverseIdentity`.
-inline void inverseIdentityCanonicalized(mlir::qc::QCProgramBuilder& b) {
+// --- XOp ------------------------------------------------------------------ //
+
+/// Creates a circuit with just an X gate.
+inline void x(mlir::qc::QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
-  b.id(q[0]);
+  b.x(q[0]);
+}
+
+/// Creates a circuit with a single controlled X gate.
+inline void singleControlledX(mlir::qc::QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(2);
+  b.cx(q[0], q[1]);
+}
+
+/// Creates a circuit with a multi-controlled X gate.
+inline void multipleControlledX(mlir::qc::QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(3);
+  b.mcx({q[0], q[1]}, q[2]);
+}
+
+/// Creates a circuit with a nested controlled X gate.
+inline void nestedControlledX(mlir::qc::QCProgramBuilder& b) {
+  auto reg = b.allocQubitRegister(3);
+  b.ctrl(reg[0], [&] { b.cx(reg[1], reg[2]); });
+}
+
+/// Creates a circuit with a trivial controlled X gate.
+inline void trivialControlledX(mlir::qc::QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  b.mcx({}, q[0]);
+}
+
+/// Creates a circuit with an inverse modifier applied to an X gate.
+inline void inverseX(mlir::qc::QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  b.inv([&]() { b.x(q[0]); });
+}
+
+/// Creates a circuit with an inverse modifier applied to a controlled X gate.
+inline void inverseMultipleControlledX(mlir::qc::QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(3);
+  b.inv([&]() { b.mcx({q[0], q[1]}, q[2]); });
+}
+
+// --- YOp ------------------------------------------------------------------ //
+
+/// Creates a circuit with just a Y gate.
+inline void y(mlir::qc::QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  b.y(q[0]);
+}
+
+/// Creates a circuit with a single controlled Y gate.
+inline void singleControlledY(mlir::qc::QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(2);
+  b.cy(q[0], q[1]);
+}
+
+/// Creates a circuit with a multi-controlled Y gate.
+inline void multipleControlledY(mlir::qc::QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(3);
+  b.mcy({q[0], q[1]}, q[2]);
+}
+
+/// Creates a circuit with a nested controlled Y gate.
+inline void nestedControlledY(mlir::qc::QCProgramBuilder& b) {
+  auto reg = b.allocQubitRegister(3);
+  b.ctrl(reg[0], [&] { b.cy(reg[1], reg[2]); });
+}
+
+/// Creates a circuit with a trivial controlled Y gate.
+inline void trivialControlledY(mlir::qc::QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  b.mcy({}, q[0]);
+}
+
+/// Creates a circuit with an inverse modifier applied to a Y gate.
+inline void inverseY(mlir::qc::QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  b.inv([&]() { b.y(q[0]); });
+}
+
+/// Creates a circuit with an inverse modifier applied to a controlled Y gate.
+inline void inverseMultipleControlledY(mlir::qc::QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(3);
+  b.inv([&]() { b.mcy({q[0], q[1]}, q[2]); });
+}
+
+// --- ZOp ------------------------------------------------------------------ //
+
+/// Creates a circuit with just a Z gate.
+inline void z(mlir::qc::QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  b.z(q[0]);
+}
+
+/// Creates a circuit with a single controlled Z gate.
+inline void singleControlledZ(mlir::qc::QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(2);
+  b.cz(q[0], q[1]);
+}
+
+/// Creates a circuit with a multi-controlled Z gate.
+inline void multipleControlledZ(mlir::qc::QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(3);
+  b.mcz({q[0], q[1]}, q[2]);
+}
+
+/// Creates a circuit with a nested controlled Z gate.
+inline void nestedControlledZ(mlir::qc::QCProgramBuilder& b) {
+  auto reg = b.allocQubitRegister(3);
+  b.ctrl(reg[0], [&] { b.cz(reg[1], reg[2]); });
+}
+
+/// Creates a circuit with a trivial controlled Z gate.
+inline void trivialControlledZ(mlir::qc::QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  b.mcz({}, q[0]);
+}
+
+/// Creates a circuit with an inverse modifier applied to a Z gate.
+inline void inverseZ(mlir::qc::QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  b.inv([&]() { b.z(q[0]); });
+}
+
+/// Creates a circuit with an inverse modifier applied to a controlled Z gate.
+inline void inverseMultipleControlledZ(mlir::qc::QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(3);
+  b.inv([&]() { b.mcz({q[0], q[1]}, q[2]); });
 }
