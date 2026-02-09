@@ -66,7 +66,7 @@ def test_estimator_run_parameterized_observable(backend_with_mock_jobs: QDMIBack
 
     # Run with 2 parameters using explicit EstimatorPub via coerce
     pub = EstimatorPub.coerce((qc, op, [0.0, np.pi]))  # type: ignore[arg-type]
-    job = estimator.run(cast("Any", [pub]))
+    job = estimator.run([pub])
     result = job.result()
 
     pub_result = result[0]
