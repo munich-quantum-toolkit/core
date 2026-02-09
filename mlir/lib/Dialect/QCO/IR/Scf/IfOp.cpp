@@ -11,10 +11,18 @@
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 
 #include <cassert>
+#include <llvm/ADT/STLFunctionalExtras.h>
+#include <llvm/ADT/SmallVector.h>
 #include <llvm/Support/Casting.h>
+#include <mlir/IR/Builders.h>
 #include <mlir/IR/BuiltinTypes.h>
 #include <mlir/IR/Matchers.h>
+#include <mlir/IR/OperationSupport.h>
 #include <mlir/IR/PatternMatch.h>
+#include <mlir/IR/Value.h>
+#include <mlir/IR/ValueRange.h>
+#include <mlir/Interfaces/ControlFlowInterfaces.h>
+#include <mlir/Support/LLVM.h>
 #include <mlir/Support/LogicalResult.h>
 
 using namespace mlir;
@@ -48,9 +56,9 @@ void IfOp::build(
 }
 
 Block* IfOp::thenBlock() { return &getThenRegion().back(); }
-YieldOp IfOp::thenYield() { return cast<YieldOp>(&thenBlock()->back()); }
+YieldOp IfOp::thenYield() { return dyn_cast<YieldOp>(&thenBlock()->back()); }
 Block* IfOp::elseBlock() { return &getElseRegion().back(); }
-YieldOp IfOp::elseYield() { return cast<YieldOp>(&elseBlock()->back()); }
+YieldOp IfOp::elseYield() { return dyn_cast<YieldOp>(&elseBlock()->back()); }
 
 // Copied from
 // https://github.com/llvm/llvm-project/blob/llvmorg-21.1.7/mlir/lib/Dialect/SCF/IR/SCF.cpp
