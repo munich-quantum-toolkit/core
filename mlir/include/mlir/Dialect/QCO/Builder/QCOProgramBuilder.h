@@ -1033,8 +1033,48 @@ public:
   // SCF operations
   //===--------------------------------------------------------------------===//
 
+  /**
+   * @brief Construct an if operation with return values
+   *
+   * @details
+   * Constructs an if operation that takes bool attribute and a range of qubit
+   * Values (either qubit type or tensor of qubit types) that are used in the
+   * then/else region of this operation. The qubit values are passed down as
+   * blockarguments to each region.
+   *
+   * @param condition Bool condition
+   * @param qubits Input qubits
+   * @param thenBody Function that builds the then body of the if
+   * operation
+   * @param elseBody Function that builds the else body of the if
+   * operation
+   * @return ValueRange of the results (must be the same types as the input
+   * qubits)
+   *
+   * @par Example:
+   * ```c++
+   * auto result =
+   *   builder.qcoIf(condition, q0,
+   *     [&](ValueRange args) -> llvm::SmallVector<Value> {
+   *       auto q1 = builder.h(args[0]);
+   *       return {q1};
+   *     }, [&](ValueRange args) -> llvm::SmallVector<Value> {
+   *       return args;
+   *   });
+   * ```
+   * ```mlir
+   * %q2 = qco.if %condition qubits(%q0 : !qco.qubit) -> !qco.qubit {
+   *   ^bb0(%arg0 : !qco.qubit) :
+   *      %q1 = qco.h %arg0 : !qco.qubit -> !qco.qubit
+   *      qco.yield %q1
+   * } else {
+   *   ^bb0(%arg0 : !qco.qubit) :
+   *      qco.yield %arg0
+   }
+   * ```
+   */
   ValueRange
-  qcoIf(Value condition, ValueRange targets,
+  qcoIf(Value condition, ValueRange qubits,
         llvm::function_ref<llvm::SmallVector<Value>(ValueRange)> thenBody,
         llvm::function_ref<llvm::SmallVector<Value>(ValueRange)> elseBody);
 

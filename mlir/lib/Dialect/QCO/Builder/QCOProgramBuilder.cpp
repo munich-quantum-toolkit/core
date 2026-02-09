@@ -641,19 +641,19 @@ QCOProgramBuilder& QCOProgramBuilder::dealloc(Value qubit) {
 //===----------------------------------------------------------------------===//
 
 ValueRange QCOProgramBuilder::qcoIf(
-    Value condition, ValueRange targets,
+    Value condition, ValueRange qubits,
     llvm::function_ref<llvm::SmallVector<Value>(ValueRange)> thenBody,
     llvm::function_ref<llvm::SmallVector<Value>(ValueRange)> elseBody) {
   checkFinalized();
 
-  auto ifOp = IfOp::create(*this, condition, targets);
+  auto ifOp = IfOp::create(*this, condition, qubits);
   // Create the then and else block
   auto& thenBlock = ifOp->getRegion(0).emplaceBlock();
   auto& elseBlock = ifOp->getRegion(1).emplaceBlock();
 
   // Create the blockarguments and add them as valid qubits
   const auto qubitType = QubitType::get(getContext());
-  for (size_t i = 0; i < targets.size(); i++) {
+  for (size_t i = 0; i < qubits.size(); i++) {
     const auto thenArg = thenBlock.addArgument(qubitType, getLoc());
     const auto elseArg = elseBlock.addArgument(qubitType, getLoc());
     validQubits.insert(thenArg);
@@ -671,7 +671,7 @@ ValueRange QCOProgramBuilder::qcoIf(
 
   // Update qubit tracking
   const auto& ifResults = ifOp->getResults();
-  for (const auto& [input, controlOut] : llvm::zip(targets, ifResults)) {
+  for (const auto& [input, controlOut] : llvm::zip(qubits, ifResults)) {
     updateQubitTracking(input, controlOut);
   }
 
