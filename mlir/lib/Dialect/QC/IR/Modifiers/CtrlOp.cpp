@@ -136,7 +136,12 @@ struct CtrlInlineIdentity final : OpRewritePattern<CtrlOp> {
 } // namespace
 
 UnitaryOpInterface CtrlOp::getBodyUnitary() {
-  return llvm::dyn_cast<UnitaryOpInterface>(&getBody()->front());
+  // In principle, the body region should only contain exactly two operations,
+  // the actual unitary operation and a yield operation. However, the region may
+  // also contain constants and arithmetic operations, e.g., created as part of
+  // canonicalization. Thus, the only safe way to access the unitary operation
+  // is to get the second operation from the back of the region.
+  return llvm::dyn_cast<UnitaryOpInterface>(*(++getBody()->rbegin()));
 }
 
 size_t CtrlOp::getNumQubits() { return getNumTargets() + getNumControls(); }
@@ -201,16 +206,22 @@ void CtrlOp::build(OpBuilder& odsBuilder, OperationState& odsState,
 
 LogicalResult CtrlOp::verify() {
   auto& block = *getBody();
-  if (block.getOperations().size() != 2) {
-    return emitOpError("body region must have exactly two operations");
-  }
-  if (!llvm::isa<UnitaryOpInterface>(block.front())) {
-    return emitOpError(
-        "first operation in body region must be a unitary operation");
+  if (block.getOperations().size() < 2) {
+    return emitOpError("body region must have at least two operations");
   }
   if (!llvm::isa<YieldOp>(block.back())) {
     return emitOpError(
-        "second operation in body region must be a yield operation");
+        "last operation in body region must be a yield operation");
+  }
+  auto iter = ++block.rbegin();
+  if (!llvm::isa<UnitaryOpInterface>(*(iter))) {
+    return emitOpError(
+        "second to last operation in body region must be a unitary operation");
+  }
+  for (auto it = ++iter; it != block.rend(); ++it) {
+    if (llvm::isa<UnitaryOpInterface>(*it)) {
+      return emitOpError("body region may only contain a single unitary op");
+    }
   }
 
   llvm::SmallPtrSet<Value, 4> uniqueQubits;

@@ -254,7 +254,12 @@ struct CancelNestedInv final : OpRewritePattern<InvOp> {
 } // namespace
 
 UnitaryOpInterface InvOp::getBodyUnitary() {
-  return llvm::dyn_cast<UnitaryOpInterface>(&getBody()->front());
+  // In principle, the body region should only contain exactly two operations,
+  // the actual unitary operation and a yield operation. However, the region may
+  // also contain constants and arithmetic operations, e.g., created as part of
+  // canonicalization. Thus, the only safe way to access the unitary operation
+  // is to get the second operation from the back of the region.
+  return llvm::dyn_cast<UnitaryOpInterface>(*(++getBody()->rbegin()));
 }
 
 size_t InvOp::getNumQubits() { return getBodyUnitary().getNumQubits(); }
@@ -302,24 +307,21 @@ void InvOp::build(OpBuilder& odsBuilder, OperationState& odsState,
 
 LogicalResult InvOp::verify() {
   auto& block = *getBody();
-  if (block.getOperations().size() != 2) {
-    return emitOpError("body region must have exactly two operations");
-  }
-  if (!llvm::isa<UnitaryOpInterface>(block.front())) {
-    return emitOpError(
-        "first operation in body region must be a unitary operation");
+  if (block.getOperations().size() < 2) {
+    return emitOpError("body region must have at least two operations");
   }
   if (!llvm::isa<YieldOp>(block.back())) {
     return emitOpError(
-        "second operation in body region must be a yield operation");
+        "last operation in body region must be a yield operation");
   }
-
-  llvm::SmallPtrSet<Value, 4> uniqueQubits;
-  auto bodyUnitary = getBodyUnitary();
-  const auto numQubits = bodyUnitary.getNumQubits();
-  for (size_t i = 0; i < numQubits; i++) {
-    if (!uniqueQubits.insert(bodyUnitary.getQubit(i)).second) {
-      return emitOpError("duplicate qubit found");
+  auto iter = ++block.rbegin();
+  if (!llvm::isa<UnitaryOpInterface>(*(iter))) {
+    return emitOpError(
+        "second to last operation in body region must be a unitary operation");
+  }
+  for (auto it = ++iter; it != block.rend(); ++it) {
+    if (llvm::isa<UnitaryOpInterface>(*it)) {
+      return emitOpError("body region may only contain a single unitary op");
     }
   }
   return success();
