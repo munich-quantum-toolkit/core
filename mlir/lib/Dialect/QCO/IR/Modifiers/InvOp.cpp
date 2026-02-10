@@ -45,20 +45,13 @@ struct InlineSelfAdjoint final : OpRewritePattern<InvOp> {
                                 PatternRewriter& rewriter) const override {
     auto* innerOp = op.getBodyUnitary().getOperation();
 
-    if (!llvm::isa<IdOp, HOp, XOp, YOp, ZOp, SWAPOp>(innerOp)) {
+    if (!llvm::isa<IdOp, HOp, XOp, YOp, ZOp, SWAPOp, BarrierOp>(innerOp)) {
       return failure();
     }
 
-    // Map block arguments to operation inputs
-    IRMapping mapping;
-    auto& block = *op.getBody();
-    for (size_t i = 0; i < op.getNumTargets(); ++i) {
-      mapping.map(block.getArgument(i), op.getInputTarget(i));
-    }
-
-    // Clone the inner operation using the mapping
-    auto* cloned = rewriter.clone(*innerOp, mapping);
-    rewriter.replaceOp(op, cloned->getResults());
+    rewriter.moveOpBefore(innerOp, op);
+    innerOp->setOperands(0, op.getNumQubits(), op.getInputQubits());
+    rewriter.replaceOp(op, innerOp->getResults());
     return success();
   }
 };
@@ -220,21 +213,16 @@ struct CancelNestedInv final : OpRewritePattern<InvOp> {
 
   LogicalResult matchAndRewrite(InvOp op,
                                 PatternRewriter& rewriter) const override {
-    auto innerUnitary = op.getBodyUnitary();
-    auto innerInvOp = llvm::dyn_cast<InvOp>(innerUnitary.getOperation());
+    auto innerUnitary = op.getBodyUnitary().getOperation();
+    auto innerInvOp = llvm::dyn_cast<InvOp>(innerUnitary);
     if (!innerInvOp) {
       return failure();
     }
 
-    // Remove both inverse operations
-    auto innerInnerUnitary = innerInvOp.getBodyUnitary();
-    IRMapping mapping;
-    auto& innerBlock = *innerInvOp.getBody();
-    for (size_t i = 0; i < op.getNumTargets(); ++i) {
-      mapping.map(innerBlock.getArgument(i), op.getInputTarget(i));
-    }
-    auto* clonedOp = rewriter.clone(*innerInnerUnitary.getOperation(), mapping);
-    rewriter.replaceOp(op, clonedOp->getResults());
+    auto innerInnerUnitary = innerInvOp.getBodyUnitary().getOperation();
+    rewriter.moveOpBefore(innerInnerUnitary, op);
+    innerInnerUnitary->setOperands(0, op.getNumQubits(), op.getInputQubits());
+    rewriter.replaceOp(op, innerInnerUnitary->getResults());
 
     return success();
   }

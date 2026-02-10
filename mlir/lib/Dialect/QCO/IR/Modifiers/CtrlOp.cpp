@@ -64,79 +64,51 @@ struct MergeNestedCtrl final : OpRewritePattern<CtrlOp> {
 };
 
 /**
- * @brief Remove control modifiers without controls.
+ * @brief Reduce controls for well-known gates.
+ * @details Removes empty control ops and handles controlled IdOp, GPhaseOp and
+ * BarrierOp.
  */
-struct RemoveTrivialCtrl final : OpRewritePattern<CtrlOp> {
+struct ReduceCtrl final : OpRewritePattern<CtrlOp> {
   using OpRewritePattern::OpRewritePattern;
-
   LogicalResult matchAndRewrite(CtrlOp op,
                                 PatternRewriter& rewriter) const override {
-    if (op.getNumControls() > 0) {
-      return failure();
+    auto bodyUnitary = op.getBodyUnitary().getOperation();
+    // Inline ops from empty control modifiers, IdOp and BarrierOp
+    if (op.getNumControls() == 0 || llvm::isa<IdOp, BarrierOp>(bodyUnitary)) {
+      rewriter.moveOpBefore(bodyUnitary, op);
+      bodyUnitary->setOperands(0, op.getNumTargets(), op.getTargetsIn());
+      rewriter.replaceAllUsesWith(op.getControlsOut(), op.getControlsIn());
+      rewriter.replaceAllUsesWith(op.getTargetsOut(),
+                                  bodyUnitary->getResults());
+      rewriter.eraseOp(op);
+      return success();
     }
 
-    const OpBuilder::InsertionGuard guard(rewriter);
-    rewriter.setInsertionPoint(op);
-
-    auto* clonedBody = rewriter.clone(*op.getBodyUnitary().getOperation());
-    rewriter.replaceOp(op, clonedBody->getResults());
-
-    return success();
-  }
-};
-
-/**
- * @brief Inline controlled GPhase operations.
- */
-struct CtrlInlineGPhase final : OpRewritePattern<CtrlOp> {
-  using OpRewritePattern::OpRewritePattern;
-
-  LogicalResult matchAndRewrite(CtrlOp op,
-                                PatternRewriter& rewriter) const override {
-    // Require at least one positive control
-    // Trivial case is handled by RemoveTrivialCtrl
-    if (op.getNumControls() == 0) {
-      return failure();
-    }
-
-    auto gPhaseOp =
-        llvm::dyn_cast<GPhaseOp>(op.getBodyUnitary().getOperation());
+    // The remaining code explicitly handles GPhaseOp and nothing else
+    auto gPhaseOp = llvm::dyn_cast<GPhaseOp>(bodyUnitary);
     if (!gPhaseOp) {
       return failure();
     }
 
-    const auto controls = op.getControlsIn();
+    // Special case for single control: replace with a single POp
+    if (op.getNumControls() == 1) {
+      rewriter.replaceOpWithNewOp<POp>(op, op.getInputControl(0),
+                                       gPhaseOp.getTheta());
+      return success();
+    }
+
+    // Remove the last control and replace with a single POp with the removed
+    // control as target
+    auto controls = op.getControlsIn();
+    auto target = controls.back();
+    controls = controls.drop_back();
     rewriter.replaceOpWithNewOp<CtrlOp>(
-        op, controls.drop_back(), controls.back(),
+        op, controls, target,
         [&](ValueRange targets) -> llvm::SmallVector<Value> {
           auto pOp = POp::create(rewriter, op.getLoc(), targets[0],
                                  gPhaseOp.getTheta());
           return {pOp.getQubitOut()};
         });
-
-    return success();
-  }
-};
-
-/**
- * @brief Inline controlled identity operations.
- */
-struct CtrlInlineId final : OpRewritePattern<CtrlOp> {
-  using OpRewritePattern::OpRewritePattern;
-
-  LogicalResult matchAndRewrite(CtrlOp op,
-                                PatternRewriter& rewriter) const override {
-    // Require at least one positive control
-    // Trivial case is handled by RemoveTrivialCtrl
-    if (op.getNumControls() == 0 ||
-        !llvm::isa<IdOp>(op.getBodyUnitary().getOperation())) {
-      return failure();
-    }
-
-    auto idOp = IdOp::create(rewriter, op.getLoc(), op.getTargetsIn().front());
-
-    rewriter.replaceOp(op, llvm::to_vector(llvm::concat<Value>(
-                               op.getControlsIn(), idOp->getResults())));
 
     return success();
   }
@@ -373,9 +345,7 @@ LogicalResult CtrlOp::verify() {
 
 void CtrlOp::getCanonicalizationPatterns(RewritePatternSet& results,
                                          MLIRContext* context) {
-  results
-      .add<MergeNestedCtrl, RemoveTrivialCtrl, CtrlInlineGPhase, CtrlInlineId>(
-          context);
+  results.add<MergeNestedCtrl, ReduceCtrl>(context);
 }
 
 std::optional<Eigen::MatrixXcd> CtrlOp::getUnitaryMatrix() {
