@@ -31,8 +31,6 @@ void QCTest::SetUp() {
   context = std::make_unique<MLIRContext>();
   context->appendDialectRegistry(registry);
   context->loadAllAvailableDialects();
-
-  emptyQC = mlir::qc::QCProgramBuilder::build(context.get(), [](auto& b) {});
 }
 
 std::string printTestName(const testing::TestParamInfo<QCTestCase>& info) {
