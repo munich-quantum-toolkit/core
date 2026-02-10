@@ -34,8 +34,6 @@ protected:
   mlir::OwningOpRef<mlir::ModuleOp> emptyQC;
 
   void SetUp() override;
-
-  void TearDown() override;
 };
 
 std::string printTestName(const testing::TestParamInfo<QCTestCase>& info);

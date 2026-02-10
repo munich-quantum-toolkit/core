@@ -35,40 +35,37 @@ void QCTest::SetUp() {
   emptyQC = mlir::qc::QCProgramBuilder::build(context.get(), [](auto& b) {});
 }
 
-void QCTest::TearDown() {
-  const auto name = " (" + GetParam().name + ")";
-  printProgram(program.get(), "Original QC IR" + name, llvm::errs());
-  printProgram(canonicalizedProgram.get(), "Canonicalized QC IR" + name,
-               llvm::errs());
-  printProgram(reference.get(), "Reference QC IR" + name, llvm::errs());
-  printProgram(canonicalizedReference.get(),
-               "Canonicalized Reference QC IR" + name, llvm::errs());
-}
-
 std::string printTestName(const testing::TestParamInfo<QCTestCase>& info) {
   return info.param.name;
 }
 
 TEST_P(QCTest, ProgramEquivalence) {
   auto& [_, programBuilder, referenceBuilder] = GetParam();
+  const auto name = " (" + GetParam().name + ")";
 
   program = mlir::qc::QCProgramBuilder::build(context.get(), programBuilder);
   ASSERT_TRUE(program);
+  printProgram(program.get(), "Original QC IR" + name, llvm::errs());
   EXPECT_TRUE(mlir::verify(*program).succeeded());
 
   canonicalizedProgram = program.get().clone();
   runCanonicalizationPasses(canonicalizedProgram.get());
   ASSERT_TRUE(canonicalizedProgram);
+  printProgram(canonicalizedProgram.get(), "Canonicalized QC IR" + name,
+               llvm::errs());
   EXPECT_TRUE(mlir::verify(*canonicalizedProgram).succeeded());
 
   reference =
       mlir::qc::QCProgramBuilder::build(context.get(), referenceBuilder);
   ASSERT_TRUE(reference);
+  printProgram(reference.get(), "Reference QC IR" + name, llvm::errs());
   EXPECT_TRUE(mlir::verify(*reference).succeeded());
 
   canonicalizedReference = reference.get().clone();
   runCanonicalizationPasses(canonicalizedReference.get());
   ASSERT_TRUE(canonicalizedReference);
+  printProgram(canonicalizedReference.get(),
+               "Canonicalized Reference QC IR" + name, llvm::errs());
   EXPECT_TRUE(mlir::verify(*canonicalizedReference).succeeded());
 
   EXPECT_TRUE(areModulesEquivalentWithPermutations(
