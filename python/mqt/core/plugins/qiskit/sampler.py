@@ -18,8 +18,20 @@ from qiskit.primitives.containers import (
     BitArray,
     DataBin,
     PrimitiveResult,
-    SamplerPubResult,
 )
+
+try:
+    # For Qiskit versions >= 1.1
+    from qiskit.primitives.containers import SamplerPubResult, make_data_bin
+except ImportError:
+    # For Qiskit versions < 1.1
+    from qiskit.primitives.containers import (
+        PubResult as SamplerPubResult,
+    )
+    from qiskit.primitives.containers import (
+        make_data_bin,
+    )
+
 from qiskit.primitives.containers.sampler_pub import SamplerPub
 from qiskit.primitives.primitive_job import PrimitiveJob
 
@@ -133,8 +145,12 @@ class QDMISampler(BaseSamplerV2):
         cregs = circuit.cregs
         bit_arrays = self._get_bit_arrays(cregs, all_counts, pub.shape)
 
+        fields = [(name, type(val)) for name, val in bit_arrays.items()]
+        cls = make_data_bin(fields, shape=pub.shape)
+        data = cls(**bit_arrays)  # ty: ignore[invalid-argument-type]
+
         return SamplerPubResult(
-            DataBin(**bit_arrays, shape=pub.shape),
+            data,
             metadata={"shots": shots, "circuit_metadata": circuit.metadata},
         )
 

@@ -16,6 +16,16 @@ import numpy as np
 from qiskit.circuit import QuantumCircuit
 from qiskit.primitives.base import BaseEstimatorV2
 from qiskit.primitives.containers import DataBin, PrimitiveResult, PubResult
+
+try:
+    # For Qiskit versions >= 1.1
+    from qiskit.primitives.containers import make_data_bin
+except ImportError:
+    # For Qiskit versions < 1.1
+    from qiskit.primitives.containers.data_bin import (
+        _make_data_bin as make_data_bin,  # noqa: PLC2701 # ty: ignore[unresolved-import]
+    )
+
 from qiskit.primitives.containers.estimator_pub import EstimatorPub
 from qiskit.primitives.primitive_job import PrimitiveJob
 from qiskit.quantum_info import SparsePauliOp
@@ -193,7 +203,10 @@ class QDMIEstimator(BaseEstimatorV2):
             evs[index] = res["ev"].real
             stds[index] = np.sqrt(res["var"]).real
 
-        return PubResult(DataBin(evs=evs, stds=stds, shape=evs.shape), metadata={"shots": shots})
+        cls = make_data_bin([("evs", np.ndarray), ("stds", np.ndarray)], shape=evs.shape)
+        data = cls(evs=evs, stds=stds)
+
+        return PubResult(data, metadata={"shots": shots})
 
     def _get_observable_circuits(
         self,

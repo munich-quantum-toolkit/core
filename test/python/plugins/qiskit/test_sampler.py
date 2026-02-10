@@ -10,6 +10,7 @@
 
 from __future__ import annotations
 
+from collections import Counter
 from typing import TYPE_CHECKING, Any, cast
 
 import numpy as np
@@ -88,8 +89,19 @@ def test_sampler_run_parameterized_circuit(backend_with_mock_jobs: QDMIBackend) 
     assert bit_array.num_bits == 1
 
     # Check individual results
-    counts0 = bit_array[0].get_counts()
-    counts1 = bit_array[1].get_counts()
+    try:
+        # For Qiskit versions >=2.3
+        counts0 = bit_array[0].get_counts()
+        counts1 = bit_array[1].get_counts()
+    except TypeError:
+        # For Qiskit versions <2.3
+        bitstrings = bit_array.get_bitstrings()
+        # The bitstrings are interleaved for the two parameter sets. We take every second one.
+        bitstrings0 = bitstrings[0::2]
+        bitstrings1 = bitstrings[1::2]
+        counts0 = Counter(bitstrings0)
+        counts1 = Counter(bitstrings1)
+
     assert sum(counts0.values()) == 100
     assert sum(counts1.values()) == 100
 
