@@ -65,7 +65,7 @@ struct InlineSelfAdjoint final : OpRewritePattern<InvOp> {
                                 PatternRewriter& rewriter) const override {
     auto* innerOp = op.getBodyUnitary().getOperation();
 
-    if (!llvm::isa<IdOp, HOp, XOp, YOp, ZOp, SWAPOp>(innerOp)) {
+    if (!llvm::isa<IdOp, HOp, XOp, YOp, ZOp, SWAPOp, BarrierOp>(innerOp)) {
       return failure();
     }
 
@@ -321,11 +321,6 @@ LogicalResult InvOp::verify() {
       return emitOpError("duplicate qubit found");
     }
   }
-
-  if (llvm::isa<BarrierOp>(bodyUnitary.getOperation())) {
-    return emitOpError("BarrierOp cannot be inverted");
-  }
-
   return success();
 }
 
