@@ -152,11 +152,6 @@ struct ReplaceWithKnownGates final : OpRewritePattern<InvOp> {
                                             newLambda);
           return success();
         })
-        .Case<DCXOp>([&](auto) {
-          rewriter.replaceOpWithNewOp<DCXOp>(op, op.getInputTarget(1),
-                                             op.getInputTarget(0));
-          return success();
-        })
         .Case<RXXOp>([&](auto rxx) {
           Value negTheta =
               arith::NegFOp::create(rewriter, op.getLoc(), rxx.getTheta());
