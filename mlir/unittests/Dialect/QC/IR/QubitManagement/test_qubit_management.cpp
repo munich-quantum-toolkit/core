@@ -21,5 +21,6 @@ INSTANTIATE_TEST_SUITE_P(
         QCTestCase{"AllocMultipleQubitRegisters", allocMultipleQubitRegisters,
                    emptyQC},
         QCTestCase{"AllocLargeRegister", allocLargeRegister, emptyQC},
-        QCTestCase{"StaticQubits", staticQubits, emptyQC}),
+        QCTestCase{"StaticQubits", staticQubits, emptyQC},
+        QCTestCase{"AllocDeallocPair", allocDeallocPair, emptyQC}),
     printTestName);

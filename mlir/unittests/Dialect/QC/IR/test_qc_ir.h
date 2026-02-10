@@ -31,8 +31,6 @@ protected:
   mlir::OwningOpRef<mlir::ModuleOp> reference;
   mlir::OwningOpRef<mlir::ModuleOp> canonicalizedReference;
 
-  mlir::OwningOpRef<mlir::ModuleOp> emptyQC;
-
   void SetUp() override;
 };
 

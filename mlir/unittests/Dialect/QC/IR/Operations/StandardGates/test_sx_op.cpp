@@ -1,0 +1,30 @@
+/*
+ * Copyright (c) 2023 - 2026 Chair for Design Automation, TUM
+ * Copyright (c) 2025 - 2026 Munich Quantum Software Company GmbH
+ * All rights reserved.
+ *
+ * SPDX-License-Identifier: MIT
+ *
+ * Licensed under the MIT License
+ */
+
+#include "qc_programs.h"
+#include "test_qc_ir.h"
+
+using namespace mlir::qc;
+
+INSTANTIATE_TEST_SUITE_P(
+    QCSXOpTest, QCTest,
+    testing::Values(QCTestCase{"SX", sx, sx},
+                    QCTestCase{"SingleControlledSX", singleControlledSx,
+                               singleControlledSx},
+                    QCTestCase{"MultipleControlledSX", multipleControlledSx,
+                               multipleControlledSx},
+                    QCTestCase{"NestedControlledSX", nestedControlledSx,
+                               multipleControlledSx},
+                    QCTestCase{"TrivialControlledSX", trivialControlledSx, sx},
+                    QCTestCase{"InverseSX", inverseSx, sxdg},
+                    QCTestCase{"InverseMultipleControlledSX",
+                               inverseMultipleControlledSx,
+                               multipleControlledSxdg}),
+    printTestName);

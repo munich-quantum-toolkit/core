@@ -15,13 +15,17 @@ using namespace mlir::qc;
 
 INSTANTIATE_TEST_SUITE_P(
     QCGPhaseOpTest, QCTest,
-    testing::Values(QCTestCase{"GlobalPhase", globalPhase, globalPhase},
-                    QCTestCase{"SingleControlledGlobalPhase",
-                               singleControlledGlobalPhase,
-                               singleControlledGlobalPhaseCanonicalized},
-                    QCTestCase{"MultipleControlledGlobalPhase",
-                               multipleControlledGlobalPhase,
-                               multipleControlledGlobalPhaseCanonicalized},
-                    QCTestCase{"InverseGlobalPhase", inverseGlobalPhase,
-                               inverseGlobalPhaseCanonicalized}),
+    testing::Values(
+        QCTestCase{"GlobalPhase", globalPhase, globalPhase},
+        QCTestCase{"SingleControlledGlobalPhase", singleControlledGlobalPhase,
+                   p},
+        QCTestCase{"MultipleControlledGlobalPhase",
+                   multipleControlledGlobalPhase, multipleControlledP},
+        QCTestCase{"NestedControlledGlobalPhase", nestedControlledGlobalPhase,
+                   singleControlledP},
+        QCTestCase{"TrivialControlledGlobalPhase", trivialControlledGlobalPhase,
+                   globalPhase},
+        QCTestCase{"InverseGlobalPhase", inverseGlobalPhase, globalPhase},
+        QCTestCase{"InverseMultipleControlledGlobalPhase",
+                   inverseMultipleControlledGlobalPhase, multipleControlledP}),
     printTestName);
