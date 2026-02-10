@@ -45,6 +45,9 @@ struct QuantumCompilerConfig {
 
   // Enable function inlining during cleanup passes
   bool enableInlining = false;
+
+  // Enable interprocedural optimizations
+  bool enableIpo = false;
 };
 
 /**

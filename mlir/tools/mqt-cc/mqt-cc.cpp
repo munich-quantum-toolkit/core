@@ -80,6 +80,9 @@ const cl::opt<bool> MERGE_ROTATION_GATES(
 const cl::opt<bool> ENABLE_INLINING("inline",
                                     cl::desc("Enable function inlining"),
                                     cl::init(false));
+
+const cl::opt<bool> ENABLE_IPO("ipo", cl::desc("Enable quantum IPO"),
+                               cl::init(false));
 } // namespace
 
 /**
@@ -178,6 +181,7 @@ int main(int argc, char** argv) {
   config.printIRAfterAllStages = PRINT_IR_AFTER_ALL_STAGES;
   config.mergeRotationGates = MERGE_ROTATION_GATES;
   config.enableInlining = ENABLE_INLINING;
+  config.enableIpo = ENABLE_IPO;
 
   // Run the compilation pipeline
   CompilationRecord record;
