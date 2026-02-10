@@ -10,6 +10,9 @@
 
 #pragma once
 
+#include "mlir/IR/BuiltinOps.h"
+
+#include <mlir/IR/SymbolTable.h>
 #include <mlir/Pass/Pass.h> // from @llvm-project
 
 namespace mlir::qco {
@@ -18,4 +21,7 @@ namespace mlir::qco {
 
 #define GEN_PASS_REGISTRATION
 #include "mlir/Dialect/QCO/Transforms/Passes.h.inc" // IWYU pragma: export
+
+void runQuantumArgumentPromotion(ModuleOp module, SymbolTable& symbolTable);
+
 } // namespace mlir::qco

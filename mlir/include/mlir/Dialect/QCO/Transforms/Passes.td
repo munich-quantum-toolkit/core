@@ -25,5 +25,5 @@ def QuantumIPO : Pass<"quantum-ipo", "mlir::ModuleOp"> {
         Performs interprocedural optimizations on quantum functions.
     }];
 
-    let dependentDialects = ["::mlir::func::FuncDialect", "::mlir::arith::ArithDialect"];
+    let dependentDialects = ["::mlir::func::FuncDialect", "::mlir::arith::ArithDialect", "::mlir::tensor::TensorDialect"];
 }

@@ -21,6 +21,7 @@
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/Math/IR/Math.h>
+#include <mlir/Dialect/Tensor/IR/Tensor.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/Operation.h>
 #include <mlir/IR/PatternMatch.h>
@@ -267,6 +268,8 @@ struct QuantumIPO final : impl::QuantumIPOBase<QuantumIPO> {
     if (mlir::failed(mlir::applyPatternsGreedily(op, std::move(patterns)))) {
       signalPassFailure();
     }
+
+    runQuantumArgumentPromotion(op, symbolTable);
   }
 };
 
