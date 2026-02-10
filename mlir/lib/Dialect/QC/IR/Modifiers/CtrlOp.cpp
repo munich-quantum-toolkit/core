@@ -35,102 +35,70 @@ struct MergeNestedCtrl final : OpRewritePattern<CtrlOp> {
   using OpRewritePattern::OpRewritePattern;
   LogicalResult matchAndRewrite(CtrlOp op,
                                 PatternRewriter& rewriter) const override {
-    auto bodyUnitary = op.getBodyUnitary();
-    auto bodyCtrlOp = llvm::dyn_cast<CtrlOp>(bodyUnitary.getOperation());
+    auto bodyUnitary = op.getBodyUnitary().getOperation();
+    auto bodyCtrlOp = llvm::dyn_cast<CtrlOp>(bodyUnitary);
     if (!bodyCtrlOp) {
       return failure();
     }
 
-    llvm::SmallVector<Value> newControls(op.getControls());
-    for (const auto control : bodyCtrlOp.getControls()) {
-      newControls.push_back(control);
-    }
+    // add the inner controls as operands to the outer one
+    op->insertOperands(op.getNumOperands(), bodyCtrlOp.getControls());
 
-    rewriter.replaceOpWithNewOp<CtrlOp>(op, std::move(newControls),
-                                        bodyCtrlOp.getBodyUnitary());
-
-    return success();
-  }
-};
-
-/**
- * @brief Remove control modifiers without controls.
- */
-struct RemoveTrivialCtrl final : OpRewritePattern<CtrlOp> {
-  using OpRewritePattern::OpRewritePattern;
-  LogicalResult matchAndRewrite(CtrlOp op,
-                                PatternRewriter& rewriter) const override {
-    if (op.getNumControls() > 0) {
-      return failure();
-    }
-
+    // Move the inner unitary op into the outer one's body region and replace
+    // the outer one with the inner one's results
     const OpBuilder::InsertionGuard guard(rewriter);
-    rewriter.setInsertionPoint(op);
-
-    rewriter.clone(*op.getBodyUnitary().getOperation());
-    rewriter.eraseOp(op);
+    rewriter.setInsertionPoint(bodyUnitary);
+    auto innerUnitaryOp = bodyCtrlOp.getBodyUnitary().getOperation();
+    rewriter.moveOpBefore(innerUnitaryOp, bodyUnitary);
+    rewriter.replaceOp(bodyUnitary, innerUnitaryOp->getResults());
 
     return success();
   }
 };
 
 /**
- * @brief Inline controlled GPhase operations.
+ * @brief Reduce controls for well-known gates.
+ * @details Removes empty control ops and handles controlled IdOp, GPhaseOp and
+ * BarrierOp.
  */
-struct CtrlInlineGPhase final : OpRewritePattern<CtrlOp> {
+struct ReduceCtrl final : OpRewritePattern<CtrlOp> {
   using OpRewritePattern::OpRewritePattern;
-
   LogicalResult matchAndRewrite(CtrlOp op,
                                 PatternRewriter& rewriter) const override {
-    // Require at least one positive control
-    // Trivial case is handled by RemoveTrivialCtrl
-    if (op.getNumControls() == 0) {
-      return failure();
+    auto bodyUnitary = op.getBodyUnitary().getOperation();
+    // Inline ops from empty control modifiers, IdOp and BarrierOp
+    if (op.getNumControls() == 0 || llvm::isa<IdOp, BarrierOp>(bodyUnitary)) {
+      rewriter.moveOpBefore(bodyUnitary, op);
+      rewriter.replaceOp(op, bodyUnitary->getResults());
+      return success();
     }
 
-    auto gPhaseOp =
-        llvm::dyn_cast<GPhaseOp>(op.getBodyUnitary().getOperation());
+    // The remaining code explicitly handles GPhaseOp and nothing else
+    auto gPhaseOp = llvm::dyn_cast<GPhaseOp>(bodyUnitary);
     if (!gPhaseOp) {
       return failure();
     }
 
-    auto controls = op.getControls();
-    if (controls.size() == 1) {
-      rewriter.replaceOpWithNewOp<POp>(op, controls[0], gPhaseOp.getTheta());
+    // Special case for single control: replace with a single POp
+    if (op.getNumControls() == 1) {
+      rewriter.replaceOpWithNewOp<POp>(op, op.getControl(0),
+                                       gPhaseOp.getTheta());
       return success();
     }
+
+    // Remove the last control and replace with a single POp with the removed
+    // control as target
+    auto controls = op.getControls();
     auto target = controls.back();
     controls = controls.drop_back();
-    rewriter.replaceOpWithNewOp<CtrlOp>(op, controls, [&] {
-      POp::create(rewriter, op.getLoc(), target, gPhaseOp.getTheta());
-    });
+    op->setOperands(controls);
+
+    const OpBuilder::InsertionGuard guard(rewriter);
+    rewriter.setInsertionPoint(gPhaseOp);
+    rewriter.replaceOpWithNewOp<POp>(gPhaseOp, target, gPhaseOp.getTheta());
+
     return success();
   }
-};
-
-/**
- * @brief Inline controlled Identity operations.
- */
-struct CtrlInlineIdentity final : OpRewritePattern<CtrlOp> {
-  using OpRewritePattern::OpRewritePattern;
-
-  LogicalResult matchAndRewrite(CtrlOp op,
-                                PatternRewriter& rewriter) const override {
-    // Require at least one positive control
-    // Trivial case is handled by RemoveTrivialCtrl
-    if (op.getNumControls() == 0) {
-      return failure();
-    }
-
-    auto identityOp = llvm::dyn_cast<IdOp>(op.getBodyUnitary().getOperation());
-    if (!identityOp) {
-      return failure();
-    }
-
-    rewriter.moveOpBefore(identityOp, op);
-    rewriter.replaceOp(op, identityOp->getResults());
-    return success();
-  };
 };
 
 } // namespace
@@ -238,15 +206,10 @@ LogicalResult CtrlOp::verify() {
     }
   }
 
-  if (llvm::isa<BarrierOp>(bodyUnitary.getOperation())) {
-    return emitOpError("BarrierOp cannot be controlled");
-  }
-
   return success();
 }
 
 void CtrlOp::getCanonicalizationPatterns(RewritePatternSet& results,
                                          MLIRContext* context) {
-  results.add<MergeNestedCtrl, RemoveTrivialCtrl, CtrlInlineGPhase,
-              CtrlInlineIdentity>(context);
+  results.add<MergeNestedCtrl, ReduceCtrl>(context);
 }
