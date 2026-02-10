@@ -10,18 +10,23 @@
 
 #include "mlir/Support/IRVerification.h"
 
+#include <algorithm>
+#include <cmath>
 #include <llvm/ADT/DenseMap.h>
 #include <llvm/ADT/DenseSet.h>
 #include <llvm/ADT/Hashing.h>
+#include <llvm/ADT/STLExtras.h>
 #include <llvm/Support/Casting.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/LLVMIR/LLVMDialect.h>
 #include <mlir/IR/Block.h>
+#include <mlir/IR/BuiltinAttributes.h>
 #include <mlir/IR/Region.h>
 #include <mlir/IR/SymbolTable.h>
 #include <mlir/IR/Value.h>
 #include <mlir/Interfaces/SideEffectInterfaces.h>
+#include <tuple>
 #include <unordered_map>
 
 namespace {
@@ -80,11 +85,73 @@ struct OperationStructuralEquality {
 
 /// Map to track value equivalence between two modules.
 using ValueEquivalenceMap = llvm::DenseMap<mlir::Value, mlir::Value>;
+} // namespace
+
+static bool areFloatValuesNear(const llvm::APFloat& lhs,
+                               const llvm::APFloat& rhs, const unsigned width) {
+  if (lhs.isNaN() || rhs.isNaN()) {
+    return lhs.isNaN() && rhs.isNaN();
+  }
+  if (lhs.isInfinity() || rhs.isInfinity()) {
+    return lhs.isInfinity() && rhs.isInfinity() &&
+           lhs.isNegative() == rhs.isNegative();
+  }
+
+  const double lhsVal = lhs.convertToDouble();
+  const double rhsVal = rhs.convertToDouble();
+  const double absDiff = std::fabs(lhsVal - rhsVal);
+  const double absLhs = std::fabs(lhsVal);
+  const double absRhs = std::fabs(rhsVal);
+  const double scale = std::max(absLhs, absRhs);
+
+  double relTol = 1e-12;
+  double absTol = 1e-15;
+  if (width <= 16) {
+    relTol = 1e-3;
+    absTol = 1e-6;
+  } else if (width <= 32) {
+    relTol = 1e-9;
+    absTol = 1e-12;
+  }
+  return absDiff <= absTol + (relTol * scale);
+}
+
+static bool areConstantAttributesEquivalent(const Attribute& lhs,
+                                            const Attribute& rhs) {
+  if (lhs == rhs) {
+    return true;
+  }
+
+  if (auto lhsFloat = llvm::dyn_cast<FloatAttr>(lhs)) {
+    auto rhsFloat = llvm::dyn_cast<FloatAttr>(rhs);
+    if (!rhsFloat) {
+      return false;
+    }
+    return areFloatValuesNear(lhsFloat.getValue(), rhsFloat.getValue(),
+                              lhsFloat.getType().getIntOrFloatBitWidth());
+  }
+
+  if (auto lhsDenseFP = llvm::dyn_cast<DenseFPElementsAttr>(lhs)) {
+    auto rhsDenseFP = llvm::dyn_cast<DenseFPElementsAttr>(rhs);
+    if (!rhsDenseFP) {
+      return false;
+    }
+    const unsigned width = lhsDenseFP.getElementType().getIntOrFloatBitWidth();
+    auto lhsValues = lhsDenseFP.getValues<llvm::APFloat>();
+    auto rhsValues = rhsDenseFP.getValues<llvm::APFloat>();
+    return llvm::all_of(llvm::zip(lhsValues, rhsValues), [width](
+                                                             const auto& pair) {
+      return areFloatValuesNear(std::get<0>(pair), std::get<1>(pair), width);
+    });
+  }
+
+  return false;
+}
 
 /// Compare two operations for structural equivalence.
 /// Updates valueMap to track corresponding SSA values.
-bool areOperationsEquivalent(Operation* lhs, Operation* rhs,
-                             ValueEquivalenceMap& valueMap) {
+static bool areOperationsEquivalent(Operation* lhs, Operation* rhs,
+                                    ValueEquivalenceMap& valueMap) {
   // Check operation name
   if (lhs->getName() != rhs->getName()) {
     return false;
@@ -96,8 +163,9 @@ bool areOperationsEquivalent(Operation* lhs, Operation* rhs,
     if (!rhsConst) {
       return false;
     }
-    // NOLINTNEXTLINE(cppcoreguidelines-slicing)
-    if (lhsConst.getValue() != rhsConst.getValue()) {
+
+    if (!areConstantAttributesEquivalent(lhsConst.getValue(),
+                                         rhsConst.getValue())) {
       return false;
     }
   }
@@ -108,7 +176,8 @@ bool areOperationsEquivalent(Operation* lhs, Operation* rhs,
     if (!rhsConst) {
       return false;
     }
-    if (lhsConst.getValue() != rhsConst.getValue()) {
+    if (!areConstantAttributesEquivalent(lhsConst.getValue(),
+                                         rhsConst.getValue())) {
       return false;
     }
   }
@@ -162,11 +231,12 @@ bool areOperationsEquivalent(Operation* lhs, Operation* rhs,
 }
 
 /// Forward declaration for mutual recursion.
-bool areBlocksEquivalent(Block& lhs, Block& rhs, ValueEquivalenceMap& valueMap);
+static bool areBlocksEquivalent(Block& lhs, Block& rhs,
+                                ValueEquivalenceMap& valueMap);
 
 /// Compare two regions for structural equivalence.
-bool areRegionsEquivalent(Region& lhs, Region& rhs,
-                          ValueEquivalenceMap& valueMap) {
+static bool areRegionsEquivalent(Region& lhs, Region& rhs,
+                                 ValueEquivalenceMap& valueMap) {
   if (lhs.getBlocks().size() != rhs.getBlocks().size()) {
     return false;
   }
@@ -182,7 +252,7 @@ bool areRegionsEquivalent(Region& lhs, Region& rhs,
 
 /// Check if an operation has memory effects or control flow side effects
 /// that would prevent reordering.
-bool hasOrderingConstraints(Operation* op) {
+static bool hasOrderingConstraints(Operation* op) {
   // Terminators must maintain their position
   if (op->hasTrait<OpTrait::IsTerminator>()) {
     return true;
@@ -219,8 +289,10 @@ bool hasOrderingConstraints(Operation* op) {
 
 /// Build a dependence graph for operations.
 /// Returns a map from each operation to the set of operations it depends on.
-llvm::DenseMap<Operation*, llvm::DenseSet<Operation*>>
-buildDependenceGraph(ArrayRef<Operation*> ops) {
+llvm::DenseMap<
+    Operation*,
+    llvm::DenseSet<Operation*>> static buildDependenceGraph(ArrayRef<Operation*>
+                                                                ops) {
   llvm::DenseMap<Operation*, llvm::DenseSet<Operation*>> dependsOn;
   llvm::DenseMap<Value, Operation*> valueProducers;
 
@@ -246,8 +318,8 @@ buildDependenceGraph(ArrayRef<Operation*> ops) {
 
 /// Partition operations into groups that can be compared as multisets.
 /// Operations in the same group are independent and can be reordered.
-std::vector<llvm::SmallVector<Operation*>>
-partitionIndependentGroups(ArrayRef<Operation*> ops) {
+std::vector<llvm::SmallVector<Operation*>> static partitionIndependentGroups(
+    ArrayRef<Operation*> ops) {
   std::vector<llvm::SmallVector<Operation*>> groups;
   if (ops.empty()) {
     return groups;
@@ -298,8 +370,8 @@ partitionIndependentGroups(ArrayRef<Operation*> ops) {
 }
 
 /// Compare two groups of independent operations using multiset equivalence.
-bool areIndependentGroupsEquivalent(ArrayRef<Operation*> lhsOps,
-                                    ArrayRef<Operation*> rhsOps) {
+static bool areIndependentGroupsEquivalent(ArrayRef<Operation*> lhsOps,
+                                           ArrayRef<Operation*> rhsOps) {
   if (lhsOps.size() != rhsOps.size()) {
     return false;
   }
@@ -338,8 +410,8 @@ bool areIndependentGroupsEquivalent(ArrayRef<Operation*> lhsOps,
 
 /// Compare two blocks for structural equivalence, allowing permutations
 /// of independent operations.
-bool areBlocksEquivalent(Block& lhs, Block& rhs,
-                         ValueEquivalenceMap& valueMap) {
+static bool areBlocksEquivalent(Block& lhs, Block& rhs,
+                                ValueEquivalenceMap& valueMap) {
   // Check block arguments
   if (lhs.getNumArguments() != rhs.getNumArguments()) {
     return false;
@@ -425,8 +497,6 @@ bool areBlocksEquivalent(Block& lhs, Block& rhs,
 
   return true;
 }
-
-} // namespace
 
 bool areModulesEquivalentWithPermutations(ModuleOp lhs, ModuleOp rhs) {
   ValueEquivalenceMap valueMap;
