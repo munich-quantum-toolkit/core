@@ -15,6 +15,7 @@
 #include <cstdint>
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/STLFunctionalExtras.h>
+#include <llvm/ADT/SmallPtrSet.h>
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/Support/Casting.h>
 #include <llvm/Support/ErrorHandling.h>
@@ -53,12 +54,67 @@ struct MergeNestedCtrl final : OpRewritePattern<CtrlOp> {
       return failure();
     }
 
-    // Merge controls
-    const auto newControls = llvm::to_vector(
-        llvm::concat<Value>(op.getControlsIn(), bodyCtrlOp.getControlsIn()));
-    rewriter.replaceOpWithNewOp<CtrlOp>(op, newControls, op.getTargetsIn(),
-                                        bodyCtrlOp.getBodyUnitary());
+    auto* outerBlock = op.getBody();
+    const auto outerTargets = op.getTargetsIn();
 
+    llvm::SmallVector<Value> newControls(op.getControlsIn().begin(),
+                                         op.getControlsIn().end());
+    llvm::SmallPtrSet<BlockArgument, 4> innerControlArgs;
+
+    for (const auto control : bodyCtrlOp.getControlsIn()) {
+      auto arg = llvm::dyn_cast<BlockArgument>(control);
+      if (!arg || arg.getOwner() != outerBlock) {
+        return failure();
+      }
+      innerControlArgs.insert(arg);
+      newControls.push_back(outerTargets[arg.getArgNumber()]);
+    }
+
+    if (innerControlArgs.empty()) {
+      return failure();
+    }
+
+    llvm::SmallVector<Value> newTargets;
+    llvm::SmallVector<int, 4> outerToNewIndex(outerTargets.size(), -1);
+    for (size_t i = 0, newIdx = 0; i < outerTargets.size(); ++i) {
+      if (innerControlArgs.contains(outerBlock->getArgument(i))) {
+        continue;
+      }
+      outerToNewIndex[i] = static_cast<int>(newIdx++);
+      newTargets.push_back(outerTargets[i]);
+    }
+
+    llvm::SmallVector<int, 4> innerTargetToNewIndex(bodyCtrlOp.getNumTargets(),
+                                                    -1);
+    for (size_t i = 0; i < bodyCtrlOp.getNumTargets(); ++i) {
+      auto outerArg =
+          llvm::dyn_cast<BlockArgument>(bodyCtrlOp.getTargetsIn()[i]);
+      if (!outerArg || outerArg.getOwner() != outerBlock) {
+        return failure();
+      }
+      const auto mappedIndex = outerToNewIndex[outerArg.getArgNumber()];
+      if (mappedIndex < 0) {
+        return failure();
+      }
+      innerTargetToNewIndex[i] = mappedIndex;
+    }
+
+    auto newCtrl = CtrlOp::create(
+        rewriter, op.getLoc(), newControls, newTargets,
+        [&](ValueRange newTargetArgs) -> llvm::SmallVector<Value> {
+          IRMapping mapping;
+          auto* innerBody = bodyCtrlOp.getBody();
+          for (size_t i = 0; i < bodyCtrlOp.getNumTargets(); ++i) {
+            mapping.map(innerBody->getArgument(i),
+                        newTargetArgs[innerTargetToNewIndex[i]]);
+          }
+
+          auto* cloned = rewriter.clone(
+              *bodyCtrlOp.getBodyUnitary().getOperation(), mapping);
+          return cloned->getResults();
+        });
+
+    rewriter.replaceOp(op, newCtrl.getResults());
     return success();
   }
 };
@@ -78,7 +134,14 @@ struct RemoveTrivialCtrl final : OpRewritePattern<CtrlOp> {
     const OpBuilder::InsertionGuard guard(rewriter);
     rewriter.setInsertionPoint(op);
 
-    auto* clonedBody = rewriter.clone(*op.getBodyUnitary().getOperation());
+    IRMapping mapping;
+    auto* body = op.getBody();
+    for (size_t i = 0; i < op.getNumTargets(); ++i) {
+      mapping.map(body->getArgument(i), op.getTargetsIn()[i]);
+    }
+
+    auto* clonedBody =
+        rewriter.clone(*op.getBodyUnitary().getOperation(), mapping);
     rewriter.replaceOp(op, clonedBody->getResults());
 
     return success();

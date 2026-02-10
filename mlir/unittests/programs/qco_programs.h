@@ -12,23 +12,8 @@
 
 #include "mlir/Dialect/QCO/Builder/QCOProgramBuilder.h"
 
+#include <llvm/ADT/STLExtras.h>
 #include <numbers>
-
-inline llvm::SmallVector<mlir::Value>
-concatControlsAndTarget(mlir::ValueRange controls, mlir::Value target) {
-  llvm::SmallVector<mlir::Value> out(controls.begin(), controls.end());
-  out.push_back(target);
-  return out;
-}
-
-inline llvm::SmallVector<mlir::Value>
-concatControlsAndTargets(mlir::ValueRange controls, mlir::Value target0,
-                         mlir::Value target1) {
-  llvm::SmallVector<mlir::Value> out(controls.begin(), controls.end());
-  out.push_back(target0);
-  out.push_back(target1);
-  return out;
-}
 
 // --- Qubit Management ----------------------------------------------------- //
 
@@ -211,13 +196,13 @@ inline void multipleControlledIdentity(mlir::qco::QCOProgramBuilder& b) {
 /// Creates a circuit with a nested controlled identity gate.
 inline void nestedControlledIdentity(mlir::qco::QCOProgramBuilder& b) {
   auto reg = b.allocQubitRegister(3);
-  b.ctrl({reg[0]}, {reg[1]}, [&](mlir::ValueRange targets) {
-    auto inner =
-        b.ctrl({reg[2]}, {targets[0]}, [&](mlir::ValueRange innerTargets) {
+  b.ctrl({reg[0]}, {reg[1], reg[2]}, [&](mlir::ValueRange targets) {
+    const auto& [innerControlsOut, innerTargetsOut] =
+        b.ctrl({targets[0]}, {targets[1]}, [&](mlir::ValueRange innerTargets) {
           return llvm::SmallVector<mlir::Value>{b.id(innerTargets[0])};
         });
-    (void)inner.first;
-    return llvm::SmallVector<mlir::Value>{inner.second.front()};
+    return llvm::to_vector(
+        llvm::concat<mlir::Value>(innerControlsOut, innerTargetsOut));
   });
 }
 
@@ -239,10 +224,11 @@ inline void inverseIdentity(mlir::qco::QCOProgramBuilder& b) {
 /// gate.
 inline void inverseMultipleControlledIdentity(mlir::qco::QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
-  b.inv({q[2], q[1], q[0]}, [&](mlir::ValueRange qubits) {
-    llvm::SmallVector<mlir::Value> controls{qubits[0], qubits[1]};
-    auto res = b.mcid(controls, qubits[2]);
-    return concatControlsAndTarget(res.first, res.second);
+  b.inv({q[0], q[1], q[2]}, [&](mlir::ValueRange qubits) {
+    const auto& [controlsOut, targetOut] =
+        b.mcid({qubits[0], qubits[1]}, qubits[2]);
+    return llvm::to_vector(
+        llvm::concat<mlir::Value>(controlsOut, mlir::ValueRange{targetOut}));
   });
 }
 
@@ -269,13 +255,13 @@ inline void multipleControlledX(mlir::qco::QCOProgramBuilder& b) {
 /// Creates a circuit with a nested controlled X gate.
 inline void nestedControlledX(mlir::qco::QCOProgramBuilder& b) {
   auto reg = b.allocQubitRegister(3);
-  b.ctrl({reg[0]}, {reg[1]}, [&](mlir::ValueRange targets) {
-    auto inner =
-        b.ctrl({reg[2]}, {targets[0]}, [&](mlir::ValueRange innerTargets) {
+  b.ctrl({reg[0]}, {reg[1], reg[2]}, [&](mlir::ValueRange targets) {
+    const auto& [innerControlsOut, innerTargetsOut] =
+        b.ctrl({targets[0]}, {targets[1]}, [&](mlir::ValueRange innerTargets) {
           return llvm::SmallVector<mlir::Value>{b.x(innerTargets[0])};
         });
-    (void)inner.first;
-    return llvm::SmallVector<mlir::Value>{inner.second.front()};
+    return llvm::to_vector(
+        llvm::concat<mlir::Value>(innerControlsOut, innerTargetsOut));
   });
 }
 
@@ -297,9 +283,10 @@ inline void inverseX(mlir::qco::QCOProgramBuilder& b) {
 inline void inverseMultipleControlledX(mlir::qco::QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
   b.inv({q[0], q[1], q[2]}, [&](mlir::ValueRange qubits) {
-    llvm::SmallVector<mlir::Value> controls{qubits[0], qubits[1]};
-    auto res = b.mcx(controls, qubits[2]);
-    return concatControlsAndTarget(res.first, res.second);
+    const auto& [controlsOut, targetOut] =
+        b.mcx({qubits[0], qubits[1]}, qubits[2]);
+    return llvm::to_vector(
+        llvm::concat<mlir::Value>(controlsOut, mlir::ValueRange{targetOut}));
   });
 }
 
@@ -326,13 +313,13 @@ inline void multipleControlledY(mlir::qco::QCOProgramBuilder& b) {
 /// Creates a circuit with a nested controlled Y gate.
 inline void nestedControlledY(mlir::qco::QCOProgramBuilder& b) {
   auto reg = b.allocQubitRegister(3);
-  b.ctrl({reg[0]}, {reg[1]}, [&](mlir::ValueRange targets) {
-    auto inner =
-        b.ctrl({reg[2]}, {targets[0]}, [&](mlir::ValueRange innerTargets) {
+  b.ctrl({reg[0]}, {reg[1], reg[2]}, [&](mlir::ValueRange targets) {
+    const auto& [innerControlsOut, innerTargetsOut] =
+        b.ctrl({targets[0]}, {targets[1]}, [&](mlir::ValueRange innerTargets) {
           return llvm::SmallVector<mlir::Value>{b.y(innerTargets[0])};
         });
-    (void)inner.first;
-    return llvm::SmallVector<mlir::Value>{inner.second.front()};
+    return llvm::to_vector(
+        llvm::concat<mlir::Value>(innerControlsOut, innerTargetsOut));
   });
 }
 
@@ -354,9 +341,10 @@ inline void inverseY(mlir::qco::QCOProgramBuilder& b) {
 inline void inverseMultipleControlledY(mlir::qco::QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
   b.inv({q[0], q[1], q[2]}, [&](mlir::ValueRange qubits) {
-    llvm::SmallVector<mlir::Value> controls{qubits[0], qubits[1]};
-    auto res = b.mcy(controls, qubits[2]);
-    return concatControlsAndTarget(res.first, res.second);
+    const auto& [controlsOut, targetOut] =
+        b.mcy({qubits[0], qubits[1]}, qubits[2]);
+    return llvm::to_vector(
+        llvm::concat<mlir::Value>(controlsOut, mlir::ValueRange{targetOut}));
   });
 }
 
@@ -383,13 +371,13 @@ inline void multipleControlledZ(mlir::qco::QCOProgramBuilder& b) {
 /// Creates a circuit with a nested controlled Z gate.
 inline void nestedControlledZ(mlir::qco::QCOProgramBuilder& b) {
   auto reg = b.allocQubitRegister(3);
-  b.ctrl({reg[0]}, {reg[1]}, [&](mlir::ValueRange targets) {
-    auto inner =
-        b.ctrl({reg[2]}, {targets[0]}, [&](mlir::ValueRange innerTargets) {
+  b.ctrl({reg[0]}, {reg[1], reg[2]}, [&](mlir::ValueRange targets) {
+    const auto& [innerControlsOut, innerTargetsOut] =
+        b.ctrl({targets[0]}, {targets[1]}, [&](mlir::ValueRange innerTargets) {
           return llvm::SmallVector<mlir::Value>{b.z(innerTargets[0])};
         });
-    (void)inner.first;
-    return llvm::SmallVector<mlir::Value>{inner.second.front()};
+    return llvm::to_vector(
+        llvm::concat<mlir::Value>(innerControlsOut, innerTargetsOut));
   });
 }
 
@@ -411,9 +399,10 @@ inline void inverseZ(mlir::qco::QCOProgramBuilder& b) {
 inline void inverseMultipleControlledZ(mlir::qco::QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
   b.inv({q[0], q[1], q[2]}, [&](mlir::ValueRange qubits) {
-    llvm::SmallVector<mlir::Value> controls{qubits[0], qubits[1]};
-    auto res = b.mcz(controls, qubits[2]);
-    return concatControlsAndTarget(res.first, res.second);
+    const auto& [controlsOut, targetOut] =
+        b.mcz({qubits[0], qubits[1]}, qubits[2]);
+    return llvm::to_vector(
+        llvm::concat<mlir::Value>(controlsOut, mlir::ValueRange{targetOut}));
   });
 }
 
@@ -440,13 +429,13 @@ inline void multipleControlledH(mlir::qco::QCOProgramBuilder& b) {
 /// Creates a circuit with a nested controlled H gate.
 inline void nestedControlledH(mlir::qco::QCOProgramBuilder& b) {
   auto reg = b.allocQubitRegister(3);
-  b.ctrl({reg[0]}, {reg[1]}, [&](mlir::ValueRange targets) {
-    auto inner =
-        b.ctrl({reg[2]}, {targets[0]}, [&](mlir::ValueRange innerTargets) {
+  b.ctrl({reg[0]}, {reg[1], reg[2]}, [&](mlir::ValueRange targets) {
+    const auto& [innerControlsOut, innerTargetsOut] =
+        b.ctrl({targets[0]}, {targets[1]}, [&](mlir::ValueRange innerTargets) {
           return llvm::SmallVector<mlir::Value>{b.h(innerTargets[0])};
         });
-    (void)inner.first;
-    return llvm::SmallVector<mlir::Value>{inner.second.front()};
+    return llvm::to_vector(
+        llvm::concat<mlir::Value>(innerControlsOut, innerTargetsOut));
   });
 }
 
@@ -468,9 +457,10 @@ inline void inverseH(mlir::qco::QCOProgramBuilder& b) {
 inline void inverseMultipleControlledH(mlir::qco::QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
   b.inv({q[0], q[1], q[2]}, [&](mlir::ValueRange qubits) {
-    llvm::SmallVector<mlir::Value> controls{qubits[0], qubits[1]};
-    auto res = b.mch(controls, qubits[2]);
-    return concatControlsAndTarget(res.first, res.second);
+    const auto& [controlsOut, targetOut] =
+        b.mch({qubits[0], qubits[1]}, qubits[2]);
+    return llvm::to_vector(
+        llvm::concat<mlir::Value>(controlsOut, mlir::ValueRange{targetOut}));
   });
 }
 
@@ -497,13 +487,13 @@ inline void multipleControlledS(mlir::qco::QCOProgramBuilder& b) {
 /// Creates a circuit with a nested controlled S gate.
 inline void nestedControlledS(mlir::qco::QCOProgramBuilder& b) {
   auto reg = b.allocQubitRegister(3);
-  b.ctrl({reg[0]}, {reg[1]}, [&](mlir::ValueRange targets) {
-    auto inner =
-        b.ctrl({reg[2]}, {targets[0]}, [&](mlir::ValueRange innerTargets) {
+  b.ctrl({reg[0]}, {reg[1], reg[2]}, [&](mlir::ValueRange targets) {
+    const auto& [innerControlsOut, innerTargetsOut] =
+        b.ctrl({targets[0]}, {targets[1]}, [&](mlir::ValueRange innerTargets) {
           return llvm::SmallVector<mlir::Value>{b.s(innerTargets[0])};
         });
-    (void)inner.first;
-    return llvm::SmallVector<mlir::Value>{inner.second.front()};
+    return llvm::to_vector(
+        llvm::concat<mlir::Value>(innerControlsOut, innerTargetsOut));
   });
 }
 
@@ -525,9 +515,10 @@ inline void inverseS(mlir::qco::QCOProgramBuilder& b) {
 inline void inverseMultipleControlledS(mlir::qco::QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
   b.inv({q[0], q[1], q[2]}, [&](mlir::ValueRange qubits) {
-    llvm::SmallVector<mlir::Value> controls{qubits[0], qubits[1]};
-    auto res = b.mcs(controls, qubits[2]);
-    return concatControlsAndTarget(res.first, res.second);
+    const auto& [controlsOut, targetOut] =
+        b.mcs({qubits[0], qubits[1]}, qubits[2]);
+    return llvm::to_vector(
+        llvm::concat<mlir::Value>(controlsOut, mlir::ValueRange{targetOut}));
   });
 }
 
@@ -554,13 +545,13 @@ inline void multipleControlledSdg(mlir::qco::QCOProgramBuilder& b) {
 /// Creates a circuit with a nested controlled Sdg gate.
 inline void nestedControlledSdg(mlir::qco::QCOProgramBuilder& b) {
   auto reg = b.allocQubitRegister(3);
-  b.ctrl({reg[0]}, {reg[1]}, [&](mlir::ValueRange targets) {
-    auto inner =
-        b.ctrl({reg[2]}, {targets[0]}, [&](mlir::ValueRange innerTargets) {
+  b.ctrl({reg[0]}, {reg[1], reg[2]}, [&](mlir::ValueRange targets) {
+    const auto& [innerControlsOut, innerTargetsOut] =
+        b.ctrl({targets[0]}, {targets[1]}, [&](mlir::ValueRange innerTargets) {
           return llvm::SmallVector<mlir::Value>{b.sdg(innerTargets[0])};
         });
-    (void)inner.first;
-    return llvm::SmallVector<mlir::Value>{inner.second.front()};
+    return llvm::to_vector(
+        llvm::concat<mlir::Value>(innerControlsOut, innerTargetsOut));
   });
 }
 
@@ -582,9 +573,10 @@ inline void inverseSdg(mlir::qco::QCOProgramBuilder& b) {
 inline void inverseMultipleControlledSdg(mlir::qco::QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
   b.inv({q[0], q[1], q[2]}, [&](mlir::ValueRange qubits) {
-    llvm::SmallVector<mlir::Value> controls{qubits[0], qubits[1]};
-    auto res = b.mcsdg(controls, qubits[2]);
-    return concatControlsAndTarget(res.first, res.second);
+    const auto& [controlsOut, targetOut] =
+        b.mcsdg({qubits[0], qubits[1]}, qubits[2]);
+    return llvm::to_vector(
+        llvm::concat<mlir::Value>(controlsOut, mlir::ValueRange{targetOut}));
   });
 }
 
@@ -611,13 +603,13 @@ inline void multipleControlledT(mlir::qco::QCOProgramBuilder& b) {
 /// Creates a circuit with a nested controlled T gate.
 inline void nestedControlledT(mlir::qco::QCOProgramBuilder& b) {
   auto reg = b.allocQubitRegister(3);
-  b.ctrl({reg[0]}, {reg[1]}, [&](mlir::ValueRange targets) {
-    auto inner =
-        b.ctrl({reg[2]}, {targets[0]}, [&](mlir::ValueRange innerTargets) {
+  b.ctrl({reg[0]}, {reg[1], reg[2]}, [&](mlir::ValueRange targets) {
+    const auto& [innerControlsOut, innerTargetsOut] =
+        b.ctrl({targets[0]}, {targets[1]}, [&](mlir::ValueRange innerTargets) {
           return llvm::SmallVector<mlir::Value>{b.t(innerTargets[0])};
         });
-    (void)inner.first;
-    return llvm::SmallVector<mlir::Value>{inner.second.front()};
+    return llvm::to_vector(
+        llvm::concat<mlir::Value>(innerControlsOut, innerTargetsOut));
   });
 }
 
@@ -639,9 +631,10 @@ inline void inverseT(mlir::qco::QCOProgramBuilder& b) {
 inline void inverseMultipleControlledT(mlir::qco::QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
   b.inv({q[0], q[1], q[2]}, [&](mlir::ValueRange qubits) {
-    llvm::SmallVector<mlir::Value> controls{qubits[0], qubits[1]};
-    auto res = b.mct(controls, qubits[2]);
-    return concatControlsAndTarget(res.first, res.second);
+    const auto& [controlsOut, targetOut] =
+        b.mct({qubits[0], qubits[1]}, qubits[2]);
+    return llvm::to_vector(
+        llvm::concat<mlir::Value>(controlsOut, mlir::ValueRange{targetOut}));
   });
 }
 
@@ -668,13 +661,13 @@ inline void multipleControlledTdg(mlir::qco::QCOProgramBuilder& b) {
 /// Creates a circuit with a nested controlled Tdg gate.
 inline void nestedControlledTdg(mlir::qco::QCOProgramBuilder& b) {
   auto reg = b.allocQubitRegister(3);
-  b.ctrl({reg[0]}, {reg[1]}, [&](mlir::ValueRange targets) {
-    auto inner =
-        b.ctrl({reg[2]}, {targets[0]}, [&](mlir::ValueRange innerTargets) {
+  b.ctrl({reg[0]}, {reg[1], reg[2]}, [&](mlir::ValueRange targets) {
+    const auto& [innerControlsOut, innerTargetsOut] =
+        b.ctrl({targets[0]}, {targets[1]}, [&](mlir::ValueRange innerTargets) {
           return llvm::SmallVector<mlir::Value>{b.tdg(innerTargets[0])};
         });
-    (void)inner.first;
-    return llvm::SmallVector<mlir::Value>{inner.second.front()};
+    return llvm::to_vector(
+        llvm::concat<mlir::Value>(innerControlsOut, innerTargetsOut));
   });
 }
 
@@ -696,9 +689,10 @@ inline void inverseTdg(mlir::qco::QCOProgramBuilder& b) {
 inline void inverseMultipleControlledTdg(mlir::qco::QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
   b.inv({q[0], q[1], q[2]}, [&](mlir::ValueRange qubits) {
-    llvm::SmallVector<mlir::Value> controls{qubits[0], qubits[1]};
-    auto res = b.mctdg(controls, qubits[2]);
-    return concatControlsAndTarget(res.first, res.second);
+    const auto& [controlsOut, targetOut] =
+        b.mctdg({qubits[0], qubits[1]}, qubits[2]);
+    return llvm::to_vector(
+        llvm::concat<mlir::Value>(controlsOut, mlir::ValueRange{targetOut}));
   });
 }
 
@@ -725,13 +719,13 @@ inline void multipleControlledSx(mlir::qco::QCOProgramBuilder& b) {
 /// Creates a circuit with a nested controlled SX gate.
 inline void nestedControlledSx(mlir::qco::QCOProgramBuilder& b) {
   auto reg = b.allocQubitRegister(3);
-  b.ctrl({reg[0]}, {reg[1]}, [&](mlir::ValueRange targets) {
-    auto inner =
-        b.ctrl({reg[2]}, {targets[0]}, [&](mlir::ValueRange innerTargets) {
+  b.ctrl({reg[0]}, {reg[1], reg[2]}, [&](mlir::ValueRange targets) {
+    const auto& [innerControlsOut, innerTargetsOut] =
+        b.ctrl({targets[0]}, {targets[1]}, [&](mlir::ValueRange innerTargets) {
           return llvm::SmallVector<mlir::Value>{b.sx(innerTargets[0])};
         });
-    (void)inner.first;
-    return llvm::SmallVector<mlir::Value>{inner.second.front()};
+    return llvm::to_vector(
+        llvm::concat<mlir::Value>(innerControlsOut, innerTargetsOut));
   });
 }
 
@@ -753,9 +747,10 @@ inline void inverseSx(mlir::qco::QCOProgramBuilder& b) {
 inline void inverseMultipleControlledSx(mlir::qco::QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
   b.inv({q[0], q[1], q[2]}, [&](mlir::ValueRange qubits) {
-    llvm::SmallVector<mlir::Value> controls{qubits[0], qubits[1]};
-    auto res = b.mcsx(controls, qubits[2]);
-    return concatControlsAndTarget(res.first, res.second);
+    const auto& [controlsOut, targetOut] =
+        b.mcsx({qubits[0], qubits[1]}, qubits[2]);
+    return llvm::to_vector(
+        llvm::concat<mlir::Value>(controlsOut, mlir::ValueRange{targetOut}));
   });
 }
 
@@ -782,13 +777,13 @@ inline void multipleControlledSxdg(mlir::qco::QCOProgramBuilder& b) {
 /// Creates a circuit with a nested controlled SXdg gate.
 inline void nestedControlledSxdg(mlir::qco::QCOProgramBuilder& b) {
   auto reg = b.allocQubitRegister(3);
-  b.ctrl({reg[0]}, {reg[1]}, [&](mlir::ValueRange targets) {
-    auto inner =
-        b.ctrl({reg[2]}, {targets[0]}, [&](mlir::ValueRange innerTargets) {
+  b.ctrl({reg[0]}, {reg[1], reg[2]}, [&](mlir::ValueRange targets) {
+    const auto& [innerControlsOut, innerTargetsOut] =
+        b.ctrl({targets[0]}, {targets[1]}, [&](mlir::ValueRange innerTargets) {
           return llvm::SmallVector<mlir::Value>{b.sxdg(innerTargets[0])};
         });
-    (void)inner.first;
-    return llvm::SmallVector<mlir::Value>{inner.second.front()};
+    return llvm::to_vector(
+        llvm::concat<mlir::Value>(innerControlsOut, innerTargetsOut));
   });
 }
 
@@ -811,9 +806,10 @@ inline void inverseSxdg(mlir::qco::QCOProgramBuilder& b) {
 inline void inverseMultipleControlledSxdg(mlir::qco::QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
   b.inv({q[0], q[1], q[2]}, [&](mlir::ValueRange qubits) {
-    llvm::SmallVector<mlir::Value> controls{qubits[0], qubits[1]};
-    auto res = b.mcsxdg(controls, qubits[2]);
-    return concatControlsAndTarget(res.first, res.second);
+    const auto& [controlsOut, targetOut] =
+        b.mcsxdg({qubits[0], qubits[1]}, qubits[2]);
+    return llvm::to_vector(
+        llvm::concat<mlir::Value>(controlsOut, mlir::ValueRange{targetOut}));
   });
 }
 
@@ -840,13 +836,13 @@ inline void multipleControlledRx(mlir::qco::QCOProgramBuilder& b) {
 /// Creates a circuit with a nested controlled RX gate.
 inline void nestedControlledRx(mlir::qco::QCOProgramBuilder& b) {
   auto reg = b.allocQubitRegister(3);
-  b.ctrl({reg[0]}, {reg[1]}, [&](mlir::ValueRange targets) {
-    auto inner =
-        b.ctrl({reg[2]}, {targets[0]}, [&](mlir::ValueRange innerTargets) {
+  b.ctrl({reg[0]}, {reg[1], reg[2]}, [&](mlir::ValueRange targets) {
+    const auto& [innerControlsOut, innerTargetsOut] =
+        b.ctrl({targets[0]}, {targets[1]}, [&](mlir::ValueRange innerTargets) {
           return llvm::SmallVector<mlir::Value>{b.rx(0.123, innerTargets[0])};
         });
-    (void)inner.first;
-    return llvm::SmallVector<mlir::Value>{inner.second.front()};
+    return llvm::to_vector(
+        llvm::concat<mlir::Value>(innerControlsOut, innerTargetsOut));
   });
 }
 
@@ -868,9 +864,10 @@ inline void inverseRx(mlir::qco::QCOProgramBuilder& b) {
 inline void inverseMultipleControlledRx(mlir::qco::QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
   b.inv({q[0], q[1], q[2]}, [&](mlir::ValueRange qubits) {
-    llvm::SmallVector<mlir::Value> controls{qubits[0], qubits[1]};
-    auto res = b.mcrx(0.123, controls, qubits[2]);
-    return concatControlsAndTarget(res.first, res.second);
+    const auto& [controlsOut, targetOut] =
+        b.mcrx(0.123, {qubits[0], qubits[1]}, qubits[2]);
+    return llvm::to_vector(
+        llvm::concat<mlir::Value>(controlsOut, mlir::ValueRange{targetOut}));
   });
 }
 
@@ -897,13 +894,13 @@ inline void multipleControlledRy(mlir::qco::QCOProgramBuilder& b) {
 /// Creates a circuit with a nested controlled RY gate.
 inline void nestedControlledRy(mlir::qco::QCOProgramBuilder& b) {
   auto reg = b.allocQubitRegister(3);
-  b.ctrl({reg[0]}, {reg[1]}, [&](mlir::ValueRange targets) {
-    auto inner =
-        b.ctrl({reg[2]}, {targets[0]}, [&](mlir::ValueRange innerTargets) {
+  b.ctrl({reg[0]}, {reg[1], reg[2]}, [&](mlir::ValueRange targets) {
+    const auto& [innerControlsOut, innerTargetsOut] =
+        b.ctrl({targets[0]}, {targets[1]}, [&](mlir::ValueRange innerTargets) {
           return llvm::SmallVector<mlir::Value>{b.ry(0.456, innerTargets[0])};
         });
-    (void)inner.first;
-    return llvm::SmallVector<mlir::Value>{inner.second.front()};
+    return llvm::to_vector(
+        llvm::concat<mlir::Value>(innerControlsOut, innerTargetsOut));
   });
 }
 
@@ -925,9 +922,10 @@ inline void inverseRy(mlir::qco::QCOProgramBuilder& b) {
 inline void inverseMultipleControlledRy(mlir::qco::QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
   b.inv({q[0], q[1], q[2]}, [&](mlir::ValueRange qubits) {
-    llvm::SmallVector<mlir::Value> controls{qubits[0], qubits[1]};
-    auto res = b.mcry(0.456, controls, qubits[2]);
-    return concatControlsAndTarget(res.first, res.second);
+    const auto& [controlsOut, targetOut] =
+        b.mcry(0.456, {qubits[0], qubits[1]}, qubits[2]);
+    return llvm::to_vector(
+        llvm::concat<mlir::Value>(controlsOut, mlir::ValueRange{targetOut}));
   });
 }
 
@@ -954,13 +952,13 @@ inline void multipleControlledRz(mlir::qco::QCOProgramBuilder& b) {
 /// Creates a circuit with a nested controlled RZ gate.
 inline void nestedControlledRz(mlir::qco::QCOProgramBuilder& b) {
   auto reg = b.allocQubitRegister(3);
-  b.ctrl({reg[0]}, {reg[1]}, [&](mlir::ValueRange targets) {
-    auto inner =
-        b.ctrl({reg[2]}, {targets[0]}, [&](mlir::ValueRange innerTargets) {
+  b.ctrl({reg[0]}, {reg[1], reg[2]}, [&](mlir::ValueRange targets) {
+    const auto& [innerControlsOut, innerTargetsOut] =
+        b.ctrl({targets[0]}, {targets[1]}, [&](mlir::ValueRange innerTargets) {
           return llvm::SmallVector<mlir::Value>{b.rz(0.789, innerTargets[0])};
         });
-    (void)inner.first;
-    return llvm::SmallVector<mlir::Value>{inner.second.front()};
+    return llvm::to_vector(
+        llvm::concat<mlir::Value>(innerControlsOut, innerTargetsOut));
   });
 }
 
@@ -982,9 +980,10 @@ inline void inverseRz(mlir::qco::QCOProgramBuilder& b) {
 inline void inverseMultipleControlledRz(mlir::qco::QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
   b.inv({q[0], q[1], q[2]}, [&](mlir::ValueRange qubits) {
-    llvm::SmallVector<mlir::Value> controls{qubits[0], qubits[1]};
-    auto res = b.mcrz(0.789, controls, qubits[2]);
-    return concatControlsAndTarget(res.first, res.second);
+    const auto& [controlsOut, targetOut] =
+        b.mcrz(0.789, {qubits[0], qubits[1]}, qubits[2]);
+    return llvm::to_vector(
+        llvm::concat<mlir::Value>(controlsOut, mlir::ValueRange{targetOut}));
   });
 }
 
@@ -1011,13 +1010,13 @@ inline void multipleControlledP(mlir::qco::QCOProgramBuilder& b) {
 /// Creates a circuit with a nested controlled P gate.
 inline void nestedControlledP(mlir::qco::QCOProgramBuilder& b) {
   auto reg = b.allocQubitRegister(3);
-  b.ctrl({reg[0]}, {reg[1]}, [&](mlir::ValueRange targets) {
-    auto inner =
-        b.ctrl({reg[2]}, {targets[0]}, [&](mlir::ValueRange innerTargets) {
+  b.ctrl({reg[0]}, {reg[1], reg[2]}, [&](mlir::ValueRange targets) {
+    const auto& [innerControlsOut, innerTargetsOut] =
+        b.ctrl({targets[0]}, {targets[1]}, [&](mlir::ValueRange innerTargets) {
           return llvm::SmallVector<mlir::Value>{b.p(0.123, innerTargets[0])};
         });
-    (void)inner.first;
-    return llvm::SmallVector<mlir::Value>{inner.second.front()};
+    return llvm::to_vector(
+        llvm::concat<mlir::Value>(innerControlsOut, innerTargetsOut));
   });
 }
 
@@ -1039,9 +1038,10 @@ inline void inverseP(mlir::qco::QCOProgramBuilder& b) {
 inline void inverseMultipleControlledP(mlir::qco::QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
   b.inv({q[0], q[1], q[2]}, [&](mlir::ValueRange qubits) {
-    llvm::SmallVector<mlir::Value> controls{qubits[0], qubits[1]};
-    auto res = b.mcp(0.123, controls, qubits[2]);
-    return concatControlsAndTarget(res.first, res.second);
+    const auto& [controlsOut, targetOut] =
+        b.mcp(0.123, {qubits[0], qubits[1]}, qubits[2]);
+    return llvm::to_vector(
+        llvm::concat<mlir::Value>(controlsOut, mlir::ValueRange{targetOut}));
   });
 }
 
@@ -1068,14 +1068,14 @@ inline void multipleControlledR(mlir::qco::QCOProgramBuilder& b) {
 /// Creates a circuit with a nested controlled R gate.
 inline void nestedControlledR(mlir::qco::QCOProgramBuilder& b) {
   auto reg = b.allocQubitRegister(3);
-  b.ctrl({reg[0]}, {reg[1]}, [&](mlir::ValueRange targets) {
-    auto inner =
-        b.ctrl({reg[2]}, {targets[0]}, [&](mlir::ValueRange innerTargets) {
+  b.ctrl({reg[0]}, {reg[1], reg[2]}, [&](mlir::ValueRange targets) {
+    const auto& [innerControlsOut, innerTargetsOut] =
+        b.ctrl({targets[0]}, {targets[1]}, [&](mlir::ValueRange innerTargets) {
           return llvm::SmallVector<mlir::Value>{
               b.r(0.123, 0.456, innerTargets[0])};
         });
-    (void)inner.first;
-    return llvm::SmallVector<mlir::Value>{inner.second.front()};
+    return llvm::to_vector(
+        llvm::concat<mlir::Value>(innerControlsOut, innerTargetsOut));
   });
 }
 
@@ -1097,9 +1097,10 @@ inline void inverseR(mlir::qco::QCOProgramBuilder& b) {
 inline void inverseMultipleControlledR(mlir::qco::QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
   b.inv({q[0], q[1], q[2]}, [&](mlir::ValueRange qubits) {
-    llvm::SmallVector<mlir::Value> controls{qubits[0], qubits[1]};
-    auto res = b.mcr(0.123, 0.456, controls, qubits[2]);
-    return concatControlsAndTarget(res.first, res.second);
+    const auto& [controlsOut, targetOut] =
+        b.mcr(0.123, 0.456, {qubits[0], qubits[1]}, qubits[2]);
+    return llvm::to_vector(
+        llvm::concat<mlir::Value>(controlsOut, mlir::ValueRange{targetOut}));
   });
 }
 
@@ -1126,14 +1127,14 @@ inline void multipleControlledU2(mlir::qco::QCOProgramBuilder& b) {
 /// Creates a circuit with a nested controlled U2 gate.
 inline void nestedControlledU2(mlir::qco::QCOProgramBuilder& b) {
   auto reg = b.allocQubitRegister(3);
-  b.ctrl({reg[0]}, {reg[1]}, [&](mlir::ValueRange targets) {
-    auto inner =
-        b.ctrl({reg[2]}, {targets[0]}, [&](mlir::ValueRange innerTargets) {
+  b.ctrl({reg[0]}, {reg[1], reg[2]}, [&](mlir::ValueRange targets) {
+    const auto& [innerControlsOut, innerTargetsOut] =
+        b.ctrl({targets[0]}, {targets[1]}, [&](mlir::ValueRange innerTargets) {
           return llvm::SmallVector<mlir::Value>{
               b.u2(0.234, 0.567, innerTargets[0])};
         });
-    (void)inner.first;
-    return llvm::SmallVector<mlir::Value>{inner.second.front()};
+    return llvm::to_vector(
+        llvm::concat<mlir::Value>(innerControlsOut, innerTargetsOut));
   });
 }
 
@@ -1155,9 +1156,10 @@ inline void inverseU2(mlir::qco::QCOProgramBuilder& b) {
 inline void inverseMultipleControlledU2(mlir::qco::QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
   b.inv({q[0], q[1], q[2]}, [&](mlir::ValueRange qubits) {
-    llvm::SmallVector<mlir::Value> controls{qubits[0], qubits[1]};
-    auto res = b.mcu2(0.234, 0.567, controls, qubits[2]);
-    return concatControlsAndTarget(res.first, res.second);
+    const auto& [controlsOut, targetOut] =
+        b.mcu2(0.234, 0.567, {qubits[0], qubits[1]}, qubits[2]);
+    return llvm::to_vector(
+        llvm::concat<mlir::Value>(controlsOut, mlir::ValueRange{targetOut}));
   });
 }
 
@@ -1184,14 +1186,14 @@ inline void multipleControlledU(mlir::qco::QCOProgramBuilder& b) {
 /// Creates a circuit with a nested controlled U gate.
 inline void nestedControlledU(mlir::qco::QCOProgramBuilder& b) {
   auto reg = b.allocQubitRegister(3);
-  b.ctrl({reg[0]}, {reg[1]}, [&](mlir::ValueRange targets) {
-    auto inner =
-        b.ctrl({reg[2]}, {targets[0]}, [&](mlir::ValueRange innerTargets) {
+  b.ctrl({reg[0]}, {reg[1], reg[2]}, [&](mlir::ValueRange targets) {
+    const auto& [innerControlsOut, innerTargetsOut] =
+        b.ctrl({targets[0]}, {targets[1]}, [&](mlir::ValueRange innerTargets) {
           return llvm::SmallVector<mlir::Value>{
               b.u(0.1, 0.2, 0.3, innerTargets[0])};
         });
-    (void)inner.first;
-    return llvm::SmallVector<mlir::Value>{inner.second.front()};
+    return llvm::to_vector(
+        llvm::concat<mlir::Value>(innerControlsOut, innerTargetsOut));
   });
 }
 
@@ -1213,9 +1215,10 @@ inline void inverseU(mlir::qco::QCOProgramBuilder& b) {
 inline void inverseMultipleControlledU(mlir::qco::QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
   b.inv({q[0], q[1], q[2]}, [&](mlir::ValueRange qubits) {
-    llvm::SmallVector<mlir::Value> controls{qubits[0], qubits[1]};
-    auto res = b.mcu(0.1, 0.2, 0.3, controls, qubits[2]);
-    return concatControlsAndTarget(res.first, res.second);
+    const auto& [controlsOut, targetOut] =
+        b.mcu(0.1, 0.2, 0.3, {qubits[0], qubits[1]}, qubits[2]);
+    return llvm::to_vector(
+        llvm::concat<mlir::Value>(controlsOut, mlir::ValueRange{targetOut}));
   });
 }
 
@@ -1242,11 +1245,15 @@ inline void multipleControlledSwap(mlir::qco::QCOProgramBuilder& b) {
 /// Creates a circuit with a nested controlled SWAP gate.
 inline void nestedControlledSwap(mlir::qco::QCOProgramBuilder& b) {
   auto reg = b.allocQubitRegister(4);
-  b.ctrl({reg[0]}, {reg[1], reg[2]}, [&](mlir::ValueRange targets) {
-    auto inner = b.cswap(reg[3], targets[0], targets[1]);
-    (void)inner.first;
-    return llvm::SmallVector<mlir::Value>{inner.second.first,
-                                          inner.second.second};
+  b.ctrl({reg[0]}, {reg[1], reg[2], reg[3]}, [&](mlir::ValueRange targets) {
+    const auto& [innerControlsOut, innerTargetsOut] =
+        b.ctrl({targets[0]}, {targets[1], targets[2]},
+               [&](mlir::ValueRange innerTargets) {
+                 auto res = b.swap(innerTargets[0], innerTargets[1]);
+                 return llvm::SmallVector<mlir::Value>{res.first, res.second};
+               });
+    return llvm::to_vector(
+        llvm::concat<mlir::Value>(innerControlsOut, innerTargetsOut));
   });
 }
 
@@ -1270,10 +1277,11 @@ inline void inverseSwap(mlir::qco::QCOProgramBuilder& b) {
 inline void inverseMultipleControlledSwap(mlir::qco::QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(4);
   b.inv({q[0], q[1], q[2], q[3]}, [&](mlir::ValueRange qubits) {
-    llvm::SmallVector<mlir::Value> controls{qubits[0], qubits[1]};
-    auto res = b.mcswap(controls, qubits[2], qubits[3]);
-    return concatControlsAndTargets(res.first, res.second.first,
-                                    res.second.second);
+    const auto& [controlsOut, targetsOut] =
+        b.mcswap({qubits[0], qubits[1]}, qubits[2], qubits[3]);
+    llvm::SmallVector<mlir::Value, 2> targets{targetsOut.first,
+                                              targetsOut.second};
+    return llvm::to_vector(llvm::concat<mlir::Value>(controlsOut, targets));
   });
 }
 
@@ -1300,11 +1308,15 @@ inline void multipleControlledIswap(mlir::qco::QCOProgramBuilder& b) {
 /// Creates a circuit with a nested controlled iSWAP gate.
 inline void nestedControlledIswap(mlir::qco::QCOProgramBuilder& b) {
   auto reg = b.allocQubitRegister(4);
-  b.ctrl({reg[0]}, {reg[1], reg[2]}, [&](mlir::ValueRange targets) {
-    auto inner = b.ciswap(reg[3], targets[0], targets[1]);
-    (void)inner.first;
-    return llvm::SmallVector<mlir::Value>{inner.second.first,
-                                          inner.second.second};
+  b.ctrl({reg[0]}, {reg[1], reg[2], reg[3]}, [&](mlir::ValueRange targets) {
+    const auto& [innerControlsOut, innerTargetsOut] =
+        b.ctrl({targets[0]}, {targets[1], targets[2]},
+               [&](mlir::ValueRange innerTargets) {
+                 auto res = b.iswap(innerTargets[0], innerTargets[1]);
+                 return llvm::SmallVector<mlir::Value>{res.first, res.second};
+               });
+    return llvm::to_vector(
+        llvm::concat<mlir::Value>(innerControlsOut, innerTargetsOut));
   });
 }
 
@@ -1328,10 +1340,11 @@ inline void inverseIswap(mlir::qco::QCOProgramBuilder& b) {
 inline void inverseMultipleControlledIswap(mlir::qco::QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(4);
   b.inv({q[0], q[1], q[2], q[3]}, [&](mlir::ValueRange qubits) {
-    llvm::SmallVector<mlir::Value> controls{qubits[0], qubits[1]};
-    auto res = b.mciswap(controls, qubits[2], qubits[3]);
-    return concatControlsAndTargets(res.first, res.second.first,
-                                    res.second.second);
+    const auto& [controlsOut, targetsOut] =
+        b.mciswap({qubits[0], qubits[1]}, qubits[2], qubits[3]);
+    llvm::SmallVector<mlir::Value, 2> targets{targetsOut.first,
+                                              targetsOut.second};
+    return llvm::to_vector(llvm::concat<mlir::Value>(controlsOut, targets));
   });
 }
 
@@ -1358,11 +1371,15 @@ inline void multipleControlledDcx(mlir::qco::QCOProgramBuilder& b) {
 /// Creates a circuit with a nested controlled DCX gate.
 inline void nestedControlledDcx(mlir::qco::QCOProgramBuilder& b) {
   auto reg = b.allocQubitRegister(4);
-  b.ctrl({reg[0]}, {reg[1], reg[2]}, [&](mlir::ValueRange targets) {
-    auto inner = b.cdcx(reg[3], targets[0], targets[1]);
-    (void)inner.first;
-    return llvm::SmallVector<mlir::Value>{inner.second.first,
-                                          inner.second.second};
+  b.ctrl({reg[0]}, {reg[1], reg[2], reg[3]}, [&](mlir::ValueRange targets) {
+    const auto& [innerControlsOut, innerTargetsOut] =
+        b.ctrl({targets[0]}, {targets[1], targets[2]},
+               [&](mlir::ValueRange innerTargets) {
+                 auto res = b.dcx(innerTargets[0], innerTargets[1]);
+                 return llvm::SmallVector<mlir::Value>{res.first, res.second};
+               });
+    return llvm::to_vector(
+        llvm::concat<mlir::Value>(innerControlsOut, innerTargetsOut));
   });
 }
 
@@ -1385,10 +1402,11 @@ inline void inverseDcx(mlir::qco::QCOProgramBuilder& b) {
 inline void inverseMultipleControlledDcx(mlir::qco::QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(4);
   b.inv({q[0], q[1], q[2], q[3]}, [&](mlir::ValueRange qubits) {
-    llvm::SmallVector<mlir::Value> controls{qubits[0], qubits[1]};
-    auto res = b.mcdcx(controls, qubits[2], qubits[3]);
-    return concatControlsAndTargets(res.first, res.second.first,
-                                    res.second.second);
+    const auto& [controlsOut, targetsOut] =
+        b.mcdcx({qubits[0], qubits[1]}, qubits[2], qubits[3]);
+    llvm::SmallVector<mlir::Value, 2> targets{targetsOut.first,
+                                              targetsOut.second};
+    return llvm::to_vector(llvm::concat<mlir::Value>(controlsOut, targets));
   });
 }
 
@@ -1415,11 +1433,15 @@ inline void multipleControlledEcr(mlir::qco::QCOProgramBuilder& b) {
 /// Creates a circuit with a nested controlled ECR gate.
 inline void nestedControlledEcr(mlir::qco::QCOProgramBuilder& b) {
   auto reg = b.allocQubitRegister(4);
-  b.ctrl({reg[0]}, {reg[1], reg[2]}, [&](mlir::ValueRange targets) {
-    auto inner = b.cecr(reg[3], targets[0], targets[1]);
-    (void)inner.first;
-    return llvm::SmallVector<mlir::Value>{inner.second.first,
-                                          inner.second.second};
+  b.ctrl({reg[0]}, {reg[1], reg[2], reg[3]}, [&](mlir::ValueRange targets) {
+    const auto& [innerControlsOut, innerTargetsOut] =
+        b.ctrl({targets[0]}, {targets[1], targets[2]},
+               [&](mlir::ValueRange innerTargets) {
+                 auto res = b.ecr(innerTargets[0], innerTargets[1]);
+                 return llvm::SmallVector<mlir::Value>{res.first, res.second};
+               });
+    return llvm::to_vector(
+        llvm::concat<mlir::Value>(innerControlsOut, innerTargetsOut));
   });
 }
 
@@ -1442,10 +1464,11 @@ inline void inverseEcr(mlir::qco::QCOProgramBuilder& b) {
 inline void inverseMultipleControlledEcr(mlir::qco::QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(4);
   b.inv({q[0], q[1], q[2], q[3]}, [&](mlir::ValueRange qubits) {
-    llvm::SmallVector<mlir::Value> controls{qubits[0], qubits[1]};
-    auto res = b.mcecr(controls, qubits[2], qubits[3]);
-    return concatControlsAndTargets(res.first, res.second.first,
-                                    res.second.second);
+    const auto& [controlsOut, targetsOut] =
+        b.mcecr({qubits[0], qubits[1]}, qubits[2], qubits[3]);
+    llvm::SmallVector<mlir::Value, 2> targets{targetsOut.first,
+                                              targetsOut.second};
+    return llvm::to_vector(llvm::concat<mlir::Value>(controlsOut, targets));
   });
 }
 
@@ -1472,11 +1495,15 @@ inline void multipleControlledRxx(mlir::qco::QCOProgramBuilder& b) {
 /// Creates a circuit with a nested controlled RXX gate.
 inline void nestedControlledRxx(mlir::qco::QCOProgramBuilder& b) {
   auto reg = b.allocQubitRegister(4);
-  b.ctrl({reg[0]}, {reg[1], reg[2]}, [&](mlir::ValueRange targets) {
-    auto inner = b.crxx(0.123, reg[3], targets[0], targets[1]);
-    (void)inner.first;
-    return llvm::SmallVector<mlir::Value>{inner.second.first,
-                                          inner.second.second};
+  b.ctrl({reg[0]}, {reg[1], reg[2], reg[3]}, [&](mlir::ValueRange targets) {
+    const auto& [innerControlsOut, innerTargetsOut] =
+        b.ctrl({targets[0]}, {targets[1], targets[2]},
+               [&](mlir::ValueRange innerTargets) {
+                 auto res = b.rxx(0.123, innerTargets[0], innerTargets[1]);
+                 return llvm::SmallVector<mlir::Value>{res.first, res.second};
+               });
+    return llvm::to_vector(
+        llvm::concat<mlir::Value>(innerControlsOut, innerTargetsOut));
   });
 }
 
@@ -1499,10 +1526,11 @@ inline void inverseRxx(mlir::qco::QCOProgramBuilder& b) {
 inline void inverseMultipleControlledRxx(mlir::qco::QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(4);
   b.inv({q[0], q[1], q[2], q[3]}, [&](mlir::ValueRange qubits) {
-    llvm::SmallVector<mlir::Value> controls{qubits[0], qubits[1]};
-    auto res = b.mcrxx(0.123, controls, qubits[2], qubits[3]);
-    return concatControlsAndTargets(res.first, res.second.first,
-                                    res.second.second);
+    const auto& [controlsOut, targetsOut] =
+        b.mcrxx(0.123, {qubits[0], qubits[1]}, qubits[2], qubits[3]);
+    llvm::SmallVector<mlir::Value, 2> targets{targetsOut.first,
+                                              targetsOut.second};
+    return llvm::to_vector(llvm::concat<mlir::Value>(controlsOut, targets));
   });
 }
 
@@ -1535,11 +1563,15 @@ inline void multipleControlledRyy(mlir::qco::QCOProgramBuilder& b) {
 /// Creates a circuit with a nested controlled RYY gate.
 inline void nestedControlledRyy(mlir::qco::QCOProgramBuilder& b) {
   auto reg = b.allocQubitRegister(4);
-  b.ctrl({reg[0]}, {reg[1], reg[2]}, [&](mlir::ValueRange targets) {
-    auto inner = b.cryy(0.123, reg[3], targets[0], targets[1]);
-    (void)inner.first;
-    return llvm::SmallVector<mlir::Value>{inner.second.first,
-                                          inner.second.second};
+  b.ctrl({reg[0]}, {reg[1], reg[2], reg[3]}, [&](mlir::ValueRange targets) {
+    const auto& [innerControlsOut, innerTargetsOut] =
+        b.ctrl({targets[0]}, {targets[1], targets[2]},
+               [&](mlir::ValueRange innerTargets) {
+                 auto res = b.ryy(0.123, innerTargets[0], innerTargets[1]);
+                 return llvm::SmallVector<mlir::Value>{res.first, res.second};
+               });
+    return llvm::to_vector(
+        llvm::concat<mlir::Value>(innerControlsOut, innerTargetsOut));
   });
 }
 
@@ -1562,10 +1594,11 @@ inline void inverseRyy(mlir::qco::QCOProgramBuilder& b) {
 inline void inverseMultipleControlledRyy(mlir::qco::QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(4);
   b.inv({q[0], q[1], q[2], q[3]}, [&](mlir::ValueRange qubits) {
-    llvm::SmallVector<mlir::Value> controls{qubits[0], qubits[1]};
-    auto res = b.mcryy(0.123, controls, qubits[2], qubits[3]);
-    return concatControlsAndTargets(res.first, res.second.first,
-                                    res.second.second);
+    const auto& [controlsOut, targetsOut] =
+        b.mcryy(0.123, {qubits[0], qubits[1]}, qubits[2], qubits[3]);
+    llvm::SmallVector<mlir::Value, 2> targets{targetsOut.first,
+                                              targetsOut.second};
+    return llvm::to_vector(llvm::concat<mlir::Value>(controlsOut, targets));
   });
 }
 
@@ -1592,11 +1625,15 @@ inline void multipleControlledRzx(mlir::qco::QCOProgramBuilder& b) {
 /// Creates a circuit with a nested controlled RZX gate.
 inline void nestedControlledRzx(mlir::qco::QCOProgramBuilder& b) {
   auto reg = b.allocQubitRegister(4);
-  b.ctrl({reg[0]}, {reg[1], reg[2]}, [&](mlir::ValueRange targets) {
-    auto inner = b.crzx(0.123, reg[3], targets[0], targets[1]);
-    (void)inner.first;
-    return llvm::SmallVector<mlir::Value>{inner.second.first,
-                                          inner.second.second};
+  b.ctrl({reg[0]}, {reg[1], reg[2], reg[3]}, [&](mlir::ValueRange targets) {
+    const auto& [innerControlsOut, innerTargetsOut] =
+        b.ctrl({targets[0]}, {targets[1], targets[2]},
+               [&](mlir::ValueRange innerTargets) {
+                 auto res = b.rzx(0.123, innerTargets[0], innerTargets[1]);
+                 return llvm::SmallVector<mlir::Value>{res.first, res.second};
+               });
+    return llvm::to_vector(
+        llvm::concat<mlir::Value>(innerControlsOut, innerTargetsOut));
   });
 }
 
@@ -1619,10 +1656,11 @@ inline void inverseRzx(mlir::qco::QCOProgramBuilder& b) {
 inline void inverseMultipleControlledRzx(mlir::qco::QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(4);
   b.inv({q[0], q[1], q[2], q[3]}, [&](mlir::ValueRange qubits) {
-    llvm::SmallVector<mlir::Value> controls{qubits[0], qubits[1]};
-    auto res = b.mcrzx(0.123, controls, qubits[2], qubits[3]);
-    return concatControlsAndTargets(res.first, res.second.first,
-                                    res.second.second);
+    const auto& [controlsOut, targetsOut] =
+        b.mcrzx(0.123, {qubits[0], qubits[1]}, qubits[2], qubits[3]);
+    llvm::SmallVector<mlir::Value, 2> targets{targetsOut.first,
+                                              targetsOut.second};
+    return llvm::to_vector(llvm::concat<mlir::Value>(controlsOut, targets));
   });
 }
 
@@ -1649,11 +1687,15 @@ inline void multipleControlledRzz(mlir::qco::QCOProgramBuilder& b) {
 /// Creates a circuit with a nested controlled RZZ gate.
 inline void nestedControlledRzz(mlir::qco::QCOProgramBuilder& b) {
   auto reg = b.allocQubitRegister(4);
-  b.ctrl({reg[0]}, {reg[1], reg[2]}, [&](mlir::ValueRange targets) {
-    auto inner = b.crzz(0.123, reg[3], targets[0], targets[1]);
-    (void)inner.first;
-    return llvm::SmallVector<mlir::Value>{inner.second.first,
-                                          inner.second.second};
+  b.ctrl({reg[0]}, {reg[1], reg[2], reg[3]}, [&](mlir::ValueRange targets) {
+    const auto& [innerControlsOut, innerTargetsOut] =
+        b.ctrl({targets[0]}, {targets[1], targets[2]},
+               [&](mlir::ValueRange innerTargets) {
+                 auto res = b.rzz(0.123, innerTargets[0], innerTargets[1]);
+                 return llvm::SmallVector<mlir::Value>{res.first, res.second};
+               });
+    return llvm::to_vector(
+        llvm::concat<mlir::Value>(innerControlsOut, innerTargetsOut));
   });
 }
 
@@ -1676,10 +1718,11 @@ inline void inverseRzz(mlir::qco::QCOProgramBuilder& b) {
 inline void inverseMultipleControlledRzz(mlir::qco::QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(4);
   b.inv({q[0], q[1], q[2], q[3]}, [&](mlir::ValueRange qubits) {
-    llvm::SmallVector<mlir::Value> controls{qubits[0], qubits[1]};
-    auto res = b.mcrzz(0.123, controls, qubits[2], qubits[3]);
-    return concatControlsAndTargets(res.first, res.second.first,
-                                    res.second.second);
+    const auto& [controlsOut, targetsOut] =
+        b.mcrzz(0.123, {qubits[0], qubits[1]}, qubits[2], qubits[3]);
+    llvm::SmallVector<mlir::Value, 2> targets{targetsOut.first,
+                                              targetsOut.second};
+    return llvm::to_vector(llvm::concat<mlir::Value>(controlsOut, targets));
   });
 }
 
@@ -1706,11 +1749,16 @@ inline void multipleControlledXxPlusYY(mlir::qco::QCOProgramBuilder& b) {
 /// Creates a circuit with a nested controlled XXPlusYY gate.
 inline void nestedControlledXxPlusYY(mlir::qco::QCOProgramBuilder& b) {
   auto reg = b.allocQubitRegister(4);
-  b.ctrl({reg[0]}, {reg[1], reg[2]}, [&](mlir::ValueRange targets) {
-    auto inner = b.cxx_plus_yy(0.123, 0.456, reg[3], targets[0], targets[1]);
-    (void)inner.first;
-    return llvm::SmallVector<mlir::Value>{inner.second.first,
-                                          inner.second.second};
+  b.ctrl({reg[0]}, {reg[1], reg[2], reg[3]}, [&](mlir::ValueRange targets) {
+    const auto& [innerControlsOut, innerTargetsOut] =
+        b.ctrl({targets[0]}, {targets[1], targets[2]},
+               [&](mlir::ValueRange innerTargets) {
+                 auto res = b.xx_plus_yy(0.123, 0.456, innerTargets[0],
+                                         innerTargets[1]);
+                 return llvm::SmallVector<mlir::Value>{res.first, res.second};
+               });
+    return llvm::to_vector(
+        llvm::concat<mlir::Value>(innerControlsOut, innerTargetsOut));
   });
 }
 
@@ -1734,10 +1782,11 @@ inline void inverseXxPlusYY(mlir::qco::QCOProgramBuilder& b) {
 inline void inverseMultipleControlledXxPlusYY(mlir::qco::QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(4);
   b.inv({q[0], q[1], q[2], q[3]}, [&](mlir::ValueRange qubits) {
-    llvm::SmallVector<mlir::Value> controls{qubits[0], qubits[1]};
-    auto res = b.mcxx_plus_yy(0.123, 0.456, controls, qubits[2], qubits[3]);
-    return concatControlsAndTargets(res.first, res.second.first,
-                                    res.second.second);
+    const auto& [controlsOut, targetsOut] = b.mcxx_plus_yy(
+        0.123, 0.456, {qubits[0], qubits[1]}, qubits[2], qubits[3]);
+    llvm::SmallVector<mlir::Value, 2> targets{targetsOut.first,
+                                              targetsOut.second};
+    return llvm::to_vector(llvm::concat<mlir::Value>(controlsOut, targets));
   });
 }
 
@@ -1764,11 +1813,16 @@ inline void multipleControlledXxMinusYY(mlir::qco::QCOProgramBuilder& b) {
 /// Creates a circuit with a nested controlled XXMinusYY gate.
 inline void nestedControlledXxMinusYY(mlir::qco::QCOProgramBuilder& b) {
   auto reg = b.allocQubitRegister(4);
-  b.ctrl({reg[0]}, {reg[1], reg[2]}, [&](mlir::ValueRange targets) {
-    auto inner = b.cxx_minus_yy(0.123, 0.456, reg[3], targets[0], targets[1]);
-    (void)inner.first;
-    return llvm::SmallVector<mlir::Value>{inner.second.first,
-                                          inner.second.second};
+  b.ctrl({reg[0]}, {reg[1], reg[2], reg[3]}, [&](mlir::ValueRange targets) {
+    const auto& [innerControlsOut, innerTargetsOut] =
+        b.ctrl({targets[0]}, {targets[1], targets[2]},
+               [&](mlir::ValueRange innerTargets) {
+                 auto res = b.xx_minus_yy(0.123, 0.456, innerTargets[0],
+                                          innerTargets[1]);
+                 return llvm::SmallVector<mlir::Value>{res.first, res.second};
+               });
+    return llvm::to_vector(
+        llvm::concat<mlir::Value>(innerControlsOut, innerTargetsOut));
   });
 }
 
@@ -1793,10 +1847,11 @@ inline void
 inverseMultipleControlledXxMinusYY(mlir::qco::QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(4);
   b.inv({q[0], q[1], q[2], q[3]}, [&](mlir::ValueRange qubits) {
-    llvm::SmallVector<mlir::Value> controls{qubits[0], qubits[1]};
-    auto res = b.mcxx_minus_yy(0.123, 0.456, controls, qubits[2], qubits[3]);
-    return concatControlsAndTargets(res.first, res.second.first,
-                                    res.second.second);
+    const auto& [controlsOut, targetsOut] = b.mcxx_minus_yy(
+        0.123, 0.456, {qubits[0], qubits[1]}, qubits[2], qubits[3]);
+    llvm::SmallVector<mlir::Value, 2> targets{targetsOut.first,
+                                              targetsOut.second};
+    return llvm::to_vector(llvm::concat<mlir::Value>(controlsOut, targets));
   });
 }
 
@@ -1834,11 +1889,15 @@ inline void trivialCtrl(mlir::qco::QCOProgramBuilder& b) {
 /// Creates a circuit with nested ctrl modifiers.
 inline void nestedCtrl(mlir::qco::QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(4);
-  b.ctrl({q[0]}, {q[1], q[2]}, [&](mlir::ValueRange targets) {
-    auto inner = b.crxx(0.123, q[3], targets[0], targets[1]);
-    (void)inner.first;
-    return llvm::SmallVector<mlir::Value>{inner.second.first,
-                                          inner.second.second};
+  b.ctrl({q[0]}, {q[1], q[2], q[3]}, [&](mlir::ValueRange targets) {
+    const auto& [innerControlsOut, innerTargetsOut] =
+        b.ctrl({targets[0]}, {targets[1], targets[2]},
+               [&](mlir::ValueRange innerTargets) {
+                 auto res = b.rxx(0.123, innerTargets[0], innerTargets[1]);
+                 return llvm::SmallVector<mlir::Value>{res.first, res.second};
+               });
+    return llvm::to_vector(
+        llvm::concat<mlir::Value>(innerControlsOut, innerTargetsOut));
   });
 }
 
