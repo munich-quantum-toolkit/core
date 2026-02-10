@@ -150,7 +150,7 @@ UnitaryOpInterface CtrlOp::getBodyUnitary() {
   // also contain constants and arithmetic operations, e.g., created as part of
   // canonicalization. Thus, the only safe way to access the unitary operation
   // is to get the second operation from the back of the region.
-  return llvm::dyn_cast<UnitaryOpInterface>(*(++getBody()->rbegin()));
+  return llvm::cast<UnitaryOpInterface>(*(++getBody()->rbegin()));
 }
 
 size_t CtrlOp::getNumQubits() { return getNumTargets() + getNumControls(); }
