@@ -23,5 +23,6 @@ namespace mlir::qco {
 #include "mlir/Dialect/QCO/Transforms/Passes.h.inc" // IWYU pragma: export
 
 void runQuantumArgumentPromotion(ModuleOp module, SymbolTable& symbolTable);
+void runAncillaHoisting(ModuleOp module, SymbolTable& symbolTable);
 
 } // namespace mlir::qco

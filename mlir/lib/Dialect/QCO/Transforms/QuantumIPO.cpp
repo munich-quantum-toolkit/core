@@ -72,9 +72,13 @@ struct ContextSensitiveSpecializationPattern final
   constexpr static const auto ANGLES_TO_SPECIALIZE =
       std::array<double, 5>{0.0, M_PI, M_PI_2, M_PI_2 + M_PI, 2 * M_PI};
 
-  static bool operationIsNopOnZero(mlir::Operation* op) {
-    return mlir::isa<qco::CtrlOp>(op) || mlir::isa<qco::ZOp>(op) ||
-           mlir::isa<qco::SOp>(op) ||
+  static bool operationIsNopOnZero(mlir::Operation* op,
+                                   mlir::Value zeroArgument) {
+    if (auto ctrl = mlir::dyn_cast<qco::CtrlOp>(op)) {
+      return std::find(ctrl.getControlsIn().begin(), ctrl.getControlsIn().end(),
+                       zeroArgument) != ctrl.getControlsIn().end();
+    }
+    return mlir::isa<qco::ZOp>(op) || mlir::isa<qco::SOp>(op) ||
            mlir::isa<qco::ResetOp>(op); // TODO more ops?
   }
 
@@ -146,7 +150,7 @@ struct ContextSensitiveSpecializationPattern final
     if (!parameter.hasOneUse()) {
       return false;
     }
-    if (!operationIsNopOnZero(*parameter.getUsers().begin())) {
+    if (!operationIsNopOnZero(*parameter.getUsers().begin(), parameter)) {
       return false;
     }
 
@@ -158,7 +162,7 @@ struct ContextSensitiveSpecializationPattern final
 
     auto newParameter = newFunc.getArgument(operand);
     while (newParameter.hasOneUse() &&
-           operationIsNopOnZero(*newParameter.getUsers().begin())) {
+           operationIsNopOnZero(*newParameter.getUsers().begin(), parameter)) {
       auto newUser = mlir::dyn_cast<qco::UnitaryOpInterface>(
           *newParameter.getUsers().begin());
       for (auto i = 0U; i < newUser.getNumQubits(); ++i) {
@@ -270,6 +274,7 @@ struct QuantumIPO final : impl::QuantumIPOBase<QuantumIPO> {
     }
 
     runQuantumArgumentPromotion(op, symbolTable);
+    runAncillaHoisting(op, symbolTable);
   }
 };
 

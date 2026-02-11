@@ -80,6 +80,10 @@ static tensor::InsertOp findInsertForExtract(tensor::ExtractOp extract) {
       currentVal = unitaryOp.getOutputForInput(currentVal);
       continue;
     }
+    if (auto measureOp = dyn_cast<mlir::qco::MeasureOp>(user)) {
+      currentVal = measureOp.getQubitOut();
+      continue;
+    }
     if (user->getNumResults() != 1) {
       // Multiple results, should not happen.
       return nullptr;
