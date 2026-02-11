@@ -11,6 +11,8 @@
 #include "qc_programs.h"
 #include "test_qc_ir.h"
 
+#include <gtest/gtest.h>
+
 using namespace mlir::qc;
 
 INSTANTIATE_TEST_SUITE_P(

@@ -11,6 +11,8 @@
 #include "qco_programs.h"
 #include "test_qco_ir.h"
 
+#include <gtest/gtest.h>
+
 using namespace mlir::qco;
 
 INSTANTIATE_TEST_SUITE_P(
