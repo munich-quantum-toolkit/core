@@ -42,8 +42,9 @@ struct MergeNestedCtrl final : OpRewritePattern<CtrlOp> {
   LogicalResult matchAndRewrite(CtrlOp op,
                                 PatternRewriter& rewriter) const override {
     // Require at least one positive control
-    // Trivial case is handled by RemoveTrivialCtrl
-    if (op.getNumControls() == 0) {
+    // Trivial case is handled by ReduceCtrl
+    const auto numOuterControls = op.getNumControls();
+    if (numOuterControls == 0) {
       return failure();
     }
 
@@ -52,13 +53,27 @@ struct MergeNestedCtrl final : OpRewritePattern<CtrlOp> {
     if (!bodyCtrlOp) {
       return failure();
     }
+    const auto numInnerControls = bodyCtrlOp.getNumControls();
+    auto outerControls = op.getControlsIn();
+    auto outerTargets = op.getTargetsIn();
+    auto newAdditionalControls = outerTargets.take_front(numInnerControls);
+    auto newTargets = outerTargets.drop_front(numInnerControls);
+    auto newControls = llvm::to_vector(
+        llvm::concat<Value>(outerControls, newAdditionalControls));
 
-    // Merge controls
-    const auto newControls = llvm::to_vector(
-        llvm::concat<Value>(op.getControlsIn(), bodyCtrlOp.getControlsIn()));
-    rewriter.replaceOpWithNewOp<CtrlOp>(op, newControls, op.getTargetsIn(),
-                                        bodyCtrlOp.getBodyUnitary());
+    rewriter.replaceOpWithNewOp<CtrlOp>(
+        op, newControls, newTargets,
+        [&](ValueRange newTargetArgs) -> llvm::SmallVector<Value> {
+          IRMapping mapping;
+          auto* innerBody = bodyCtrlOp.getBody();
+          for (size_t i = 0; i < bodyCtrlOp.getNumTargets(); ++i) {
+            mapping.map(innerBody->getArgument(i), newTargetArgs[i]);
+          }
 
+          return rewriter
+              .clone(*bodyCtrlOp.getBodyUnitary().getOperation(), mapping)
+              ->getResults();
+        });
     return success();
   }
 };
