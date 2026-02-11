@@ -13,6 +13,7 @@
 
 #include <cstddef>
 #include <llvm/ADT/STLFunctionalExtras.h>
+#include <llvm/ADT/SmallVector.h>
 #include <llvm/ADT/TypeSwitch.h>
 #include <llvm/Support/Casting.h>
 #include <llvm/Support/ErrorHandling.h>
@@ -32,6 +33,51 @@ using namespace mlir;
 using namespace mlir::qco;
 
 namespace {
+
+/**
+ * @brief Move nested control modifiers outside, i.e., `inv(ctrl(x)) =>
+ * ctrl(inv(x))`.
+ */
+struct MoveCtrlOutside final : OpRewritePattern<InvOp> {
+  using OpRewritePattern::OpRewritePattern;
+
+  LogicalResult matchAndRewrite(InvOp invOp,
+                                PatternRewriter& rewriter) const override {
+    auto bodyUnitary = invOp.getBodyUnitary();
+    auto innerCtrlOp = llvm::dyn_cast<CtrlOp>(bodyUnitary.getOperation());
+    if (!innerCtrlOp) {
+      return failure();
+    }
+
+    const auto numControls = innerCtrlOp.getNumControls();
+    const auto numTargets = innerCtrlOp.getNumTargets();
+    auto invTargets = invOp.getInputQubits();
+    auto controls = invTargets.take_front(numControls);
+    auto targets = invTargets.take_back(numTargets);
+
+    rewriter.replaceOpWithNewOp<CtrlOp>(
+        invOp, controls, targets,
+        [&](ValueRange newTargetArgs) -> llvm::SmallVector<Value> {
+          return InvOp::create(
+                     rewriter, invOp.getLoc(), newTargetArgs,
+                     [&](ValueRange invArgs) -> llvm::SmallVector<Value> {
+                       IRMapping mapping;
+                       auto* innerBody = innerCtrlOp.getBody();
+                       for (size_t i = 0; i < innerCtrlOp.getNumTargets();
+                            ++i) {
+                         mapping.map(innerBody->getArgument(i), invArgs[i]);
+                       }
+                       auto* cloned = rewriter.clone(
+                           *innerCtrlOp.getBodyUnitary().getOperation(),
+                           mapping);
+                       return cloned->getResults();
+                     })
+              .getResults();
+        });
+
+    return success();
+  }
+};
 
 /**
  * @brief Remove inverse modifiers around self-adjoint gates.
@@ -399,8 +445,8 @@ LogicalResult InvOp::verify() {
 
 void InvOp::getCanonicalizationPatterns(RewritePatternSet& results,
                                         MLIRContext* context) {
-  results.add<InlineSelfAdjoint, ReplaceWithKnownGates, CancelNestedInv>(
-      context);
+  results.add<MoveCtrlOutside, InlineSelfAdjoint, ReplaceWithKnownGates,
+              CancelNestedInv>(context);
 }
 
 std::optional<Eigen::MatrixXcd> InvOp::getUnitaryMatrix() {
