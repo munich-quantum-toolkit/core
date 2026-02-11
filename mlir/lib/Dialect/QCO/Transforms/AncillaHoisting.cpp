@@ -201,7 +201,6 @@ void runAncillaHoisting(ModuleOp module, SymbolTable& symbolTable) {
   for (auto& func : hoistingCandidates) {
     tryAncillaHoisting(func, symbolTable);
   }
-  symbolTable.lookup("main")->dump();
 }
 
 } // namespace mlir::qco

@@ -24,5 +24,7 @@ namespace mlir::qco {
 
 void runQuantumArgumentPromotion(ModuleOp module, SymbolTable& symbolTable);
 void runAncillaHoisting(ModuleOp module, SymbolTable& symbolTable);
+void runQuantumFunctionBoundaryCommutation(ModuleOp module,
+                                           SymbolTable& symbolTable);
 
 } // namespace mlir::qco
