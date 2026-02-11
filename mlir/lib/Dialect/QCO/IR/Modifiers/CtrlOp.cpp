@@ -112,18 +112,32 @@ struct ReduceCtrl final : OpRewritePattern<CtrlOp> {
       return success();
     }
 
-    // Remove the last control and replace with a single POp with the removed
-    // control as target
-    auto controls = op.getControlsIn();
-    auto target = controls.back();
-    controls = controls.drop_back();
-    rewriter.replaceOpWithNewOp<CtrlOp>(
-        op, controls, target,
-        [&](ValueRange targets) -> llvm::SmallVector<Value> {
-          auto pOp = POp::create(rewriter, op.getLoc(), targets[0],
-                                 gPhaseOp.getTheta());
-          return {pOp.getQubitOut()};
-        });
+    // Adjust the segment sizes of the control and target operands
+    const auto opSegmentsAttrName = op.getOperandSegmentSizeAttr();
+    auto segmentsAttr =
+        op->getAttrOfType<DenseI32ArrayAttr>(opSegmentsAttrName);
+    auto newSegments = DenseI32ArrayAttr::get(
+        rewriter.getContext(), {segmentsAttr[0] - 1, segmentsAttr[1] + 1});
+    op->setAttr(opSegmentsAttrName, newSegments);
+    const auto opResultSegmentsAttrName = op.getResultSegmentSizeAttr();
+    op->setAttr(opResultSegmentsAttrName, newSegments);
+
+    // Add a block argument for the target qubit
+    auto arg = op.getBody()->addArgument(QubitType::get(rewriter.getContext()),
+                                         op.getLoc());
+
+    // Replace the current GPhaseOp with a PhaseOp
+    const OpBuilder::InsertionGuard guard(rewriter);
+    rewriter.setInsertionPoint(gPhaseOp);
+    auto pOp =
+        rewriter.create<POp>(gPhaseOp.getLoc(), arg, gPhaseOp.getTheta());
+
+    // Add the results of the POp to the yield operation
+    auto yieldOp = llvm::cast<YieldOp>(op.getBody()->back());
+    yieldOp->setOperands(pOp->getResults());
+
+    // erase the GPhaseOp
+    rewriter.eraseOp(gPhaseOp);
 
     return success();
   }
