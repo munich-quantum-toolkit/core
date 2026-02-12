@@ -103,7 +103,7 @@ void IfOp::getEntrySuccessorRegions(ArrayRef<Attribute> operands,
     }
   }
 }
-
+// NOLINTNEXTLINE
 void IfOp::getRegionInvocationBounds(
     ArrayRef<Attribute> operands,
     SmallVectorImpl<InvocationBounds>& invocationBounds) {
