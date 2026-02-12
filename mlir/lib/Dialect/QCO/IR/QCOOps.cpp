@@ -10,6 +10,8 @@
 
 #include "mlir/Dialect/QCO/IR/QCODialect.h" // IWYU pragma: associated
 
+#include <llvm/ADT/DenseSet.h>
+#include <llvm/ADT/STLExtras.h>
 #include <mlir/IR/Block.h>
 #include <mlir/IR/OpImplementation.h>
 #include <mlir/IR/Operation.h>
@@ -111,6 +113,40 @@ static void printTargetAliasing(OpAsmPrinter& printer, Operation* /*op*/,
   printer << ") ";
 
   printer.printRegion(region, false);
+}
+
+static ParseResult
+parseIfOpAliasing(OpAsmParser& parser, Region& thenRegion, Region& elseRegion,
+                  SmallVectorImpl<OpAsmParser::UnresolvedOperand>& operands) {
+  // Parse the then region
+  if (parseTargetAliasing(parser, thenRegion, operands)) {
+    return failure();
+  }
+
+  // Parse the else keyword
+  if (parser.parseKeyword("else")) {
+    return failure();
+  }
+
+  // Parse the else region
+  if (parseTargetAliasing(parser, elseRegion, operands)) {
+    return failure();
+  }
+
+  // Remove duplicate operands
+  llvm::DenseSet<llvm::StringRef> seen;
+  llvm::erase_if(operands,
+                 [&](const auto& op) { return !seen.insert(op.name).second; });
+
+  return success();
+}
+
+static void printIfOpAliasing(OpAsmPrinter& printer, Operation* op,
+                              Region& thenRegion, Region& elseRegion,
+                              OperandRange qubits) {
+  printTargetAliasing(printer, op, thenRegion, qubits);
+  printer << " else ";
+  printTargetAliasing(printer, op, elseRegion, qubits);
 }
 
 //===----------------------------------------------------------------------===//

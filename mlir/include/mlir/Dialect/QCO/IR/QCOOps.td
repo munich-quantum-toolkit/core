@@ -1238,10 +1238,12 @@ def IfOp : QCOOp<"if", traits =
                           SizedRegion<1>:$elseRegion);
 
     let assemblyFormat = [{
-        $condition `qubits` `(` $qubits `:` type($qubits) `)`
-        attr-dict `->` type($results)
-        $thenRegion
-        `else` $elseRegion
+        $condition
+         custom<IfOpAliasing>($thenRegion, $elseRegion, $qubits)
+         attr-dict `:`
+        `{` type($qubits) `}`
+        `->`
+        `{` type($results) `}`
     }];
 
     let builders = [
