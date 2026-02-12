@@ -1075,7 +1075,7 @@ def CtrlOp : QCOOp<"ctrl", traits =
                 AttrSizedResultSegments,
                 SameOperandsAndResultType,
                 SameOperandsAndResultShape,
-                SingleBlock,
+                SingleBlockImplicitTerminator<"::mlir::qco::YieldOp">,
                 RecursiveMemoryEffects
             ]> {
     let summary = "Add control qubits to a unitary operation";
@@ -1143,6 +1143,73 @@ def CtrlOp : QCOOp<"ctrl", traits =
     let hasVerifier = 1;
 }
 
+def InvOp : QCOOp<"inv", traits =
+            [
+                UnitaryOpInterface,
+                SameOperandsAndResultType,
+                SameOperandsAndResultShape,
+                SingleBlockImplicitTerminator<"::mlir::qco::YieldOp">,
+                RecursiveMemoryEffects
+            ]> {
+    let summary = "Invert a unitary operation";
+    let description = [{
+        A modifier operation that inverts the unitary operation defined in its body
+        region. The operation takes a variadic number of qubits as inputs and
+        produces corresponding output qubits.
+
+        Example:
+        ```mlir
+        %q_out = qco.inv (%q = %q_in) {
+            %q_1 = qco.s %q : !qco.qubit -> !qco.qubit
+            qco.yield %q_1
+        } : {!qco.qubit} -> {!qco.qubit}
+        ```
+    }];
+
+    let arguments = (ins Arg<Variadic<QubitType>, "the qubits involved in the operation", [MemRead]>:$qubits_in);
+    let results = (outs Variadic<QubitType>:$qubits_out);
+    let regions = (region SizedRegion<1>:$region);
+    let assemblyFormat = [{
+        custom<TargetAliasing>($region, $qubits_in)
+        attr-dict `:`
+        `{` type($qubits_in) `}`
+        `->`
+        `{` type($qubits_out) `}`
+    }];
+
+    let extraClassDeclaration = [{
+        UnitaryOpInterface getBodyUnitary();
+        size_t getNumQubits();
+        size_t getNumTargets();
+        static size_t getNumControls();
+        Value getInputQubit(size_t i);
+        OperandRange getInputQubits();
+        Value getOutputQubit(size_t i);
+        ResultRange getOutputQubits();
+        Value getInputTarget(size_t i);
+        Value getOutputTarget(size_t i);
+        static Value getInputControl(size_t i);
+        static Value getOutputControl(size_t i);
+        Value getInputForOutput(Value output);
+        Value getOutputForInput(Value input);
+        size_t getNumParams();
+        Value getParameter(size_t i);
+        [[nodiscard]] static StringRef getBaseSymbol() { return "inv"; }
+        [[nodiscard]] std::optional<Eigen::MatrixXcd> getUnitaryMatrix();
+    }];
+
+    let builders = [
+        OpBuilder<(ins "ValueRange":$qubits), [{
+           build($_builder, $_state, qubits.getTypes(), qubits);
+        }]>,
+        OpBuilder<(ins "ValueRange":$qubits, "UnitaryOpInterface":$bodyUnitary)>,
+        OpBuilder<(ins "ValueRange":$qubits, "llvm::function_ref<llvm::SmallVector<Value>(ValueRange)>":$bodyBuilder)>
+    ];
+
+    let hasCanonicalizer = 1;
+    let hasVerifier = 1;
+}
+
 //===----------------------------------------------------------------------===//
 // Scf operations
 //===----------------------------------------------------------------------===//
@@ -1168,7 +1235,7 @@ def IfOp : QCOOp<"if", traits =
     let arguments = (ins I1:$condition,  Variadic<AnyType>:$qubits);
     let results = (outs Variadic<AnyType>:$results);
     let regions = (region SizedRegion<1>:$thenRegion,
-                         SizedRegion<1>:$elseRegion);
+                          SizedRegion<1>:$elseRegion);
 
     let assemblyFormat = [{
         $condition `qubits` `(` $qubits `:` type($qubits) `)`
