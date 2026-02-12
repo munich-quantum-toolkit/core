@@ -1,0 +1,34 @@
+/*
+ * Copyright (c) 2023 - 2026 Chair for Design Automation, TUM
+ * Copyright (c) 2025 - 2026 Munich Quantum Software Company GmbH
+ * All rights reserved.
+ *
+ * SPDX-License-Identifier: MIT
+ *
+ * Licensed under the MIT License
+ */
+
+#include "qc_programs.h"
+#include "qco_programs.h"
+#include "test_qc_to_qco.h"
+
+#include <gtest/gtest.h>
+
+using namespace mlir::qc;
+
+INSTANTIATE_TEST_SUITE_P(
+    QCYOpTest, QCToQCOTest,
+    testing::Values(
+        QCToQCOTestCase{"Y", qc::y, qco::y},
+        QCToQCOTestCase{"SingleControlledY", qc::singleControlledY,
+                        qco::singleControlledY},
+        QCToQCOTestCase{"MultipleControlledY", qc::multipleControlledY,
+                        qco::multipleControlledY},
+        QCToQCOTestCase{"NestedControlledY", qc::nestedControlledY,
+                        qco::multipleControlledY},
+        QCToQCOTestCase{"TrivialControlledY", qc::trivialControlledY, qco::y},
+        QCToQCOTestCase{"InverseY", qc::inverseY, qco::y},
+        QCToQCOTestCase{"InverseMultipleControlledY",
+                        qc::inverseMultipleControlledY,
+                        qco::multipleControlledY}),
+    printTestName);

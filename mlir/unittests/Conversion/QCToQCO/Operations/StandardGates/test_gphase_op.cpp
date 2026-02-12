@@ -1,0 +1,41 @@
+/*
+ * Copyright (c) 2023 - 2026 Chair for Design Automation, TUM
+ * Copyright (c) 2025 - 2026 Munich Quantum Software Company GmbH
+ * All rights reserved.
+ *
+ * SPDX-License-Identifier: MIT
+ *
+ * Licensed under the MIT License
+ */
+
+#include "qc_programs.h"
+#include "qco_programs.h"
+#include "test_qc_to_qco.h"
+
+#include <gtest/gtest.h>
+
+using namespace mlir::qc;
+
+// TODO: QCO program suite lacks explicit nested/trivial controlled global phase
+// builders, so these cases are checked against canonical equivalents.
+
+INSTANTIATE_TEST_SUITE_P(
+    QCGPhaseOpTest, QCToQCOTest,
+    testing::Values(
+        QCToQCOTestCase{"GlobalPhase", qc::globalPhase, qco::globalPhase},
+        QCToQCOTestCase{"SingleControlledGlobalPhase",
+                        qc::singleControlledGlobalPhase, qco::p},
+        QCToQCOTestCase{"MultipleControlledGlobalPhase",
+                        qc::multipleControlledGlobalPhase,
+                        qco::multipleControlledP},
+        QCToQCOTestCase{"NestedControlledGlobalPhase",
+                        qc::nestedControlledGlobalPhase,
+                        qco::singleControlledP},
+        QCToQCOTestCase{"TrivialControlledGlobalPhase",
+                        qc::trivialControlledGlobalPhase, qco::globalPhase},
+        QCToQCOTestCase{"InverseGlobalPhase", qc::inverseGlobalPhase,
+                        qco::globalPhase},
+        QCToQCOTestCase{"InverseMultipleControlledGlobalPhase",
+                        qc::inverseMultipleControlledGlobalPhase,
+                        qco::multipleControlledP}),
+    printTestName);
