@@ -47,8 +47,19 @@ protected:
     builder.initialize();
   }
 
+  /**
+   * @brief Counts the amount of operations the current module/circuit
+   *        contains.
+   */
+  template <typename OpTy> int countOps() {
+    int count = 0;
+    module->walk([&](OpTy) { ++count; });
+    return count;
+  }
+  /**
+   * @brief Build a basic program with 2 qubits and an if operation.
+   */
   IfOp buildOp() {
-    // Build a basic program with 2 qubits and an if operation
     const auto q = builder.allocQubitRegister(2);
     auto [qubit, measureResult] = builder.measure(q[0]);
 
@@ -62,6 +73,16 @@ protected:
     auto ifOp = cast<IfOp>(builder.getBlock()->getOperations().back());
     module = builder.finalize();
     return ifOp;
+  }
+
+  /**
+   * @brief Run the canonicalizer on the module and return if it succeeded.
+   */
+  bool canonicalize() {
+    PassManager pm(&context);
+    auto* moduleOp = module->getOperation();
+    pm.addPass(createCanonicalizerPass());
+    return pm.run(moduleOp).succeeded();
   }
 };
 
@@ -79,7 +100,7 @@ TEST_F(QCOIfOpTest, TestBuilder) {
   EXPECT_EQ(ifOp->getResultTypes(), ifOp.thenBlock()->getArgumentTypes());
 
   // Verify operation
-  ASSERT_TRUE(mlir::verify(ifOp).succeeded());
+  ASSERT_TRUE(verify(ifOp).succeeded());
 }
 
 TEST_F(QCOIfOpTest, TestWrongType) {
@@ -88,7 +109,7 @@ TEST_F(QCOIfOpTest, TestWrongType) {
   auto* block = ifOp.thenBlock();
   block->getArgument(0).setType(builder.getI1Type());
   // Verify operation
-  ASSERT_TRUE(mlir::verify(ifOp).failed());
+  ASSERT_TRUE(verify(ifOp).failed());
 }
 
 TEST_F(QCOIfOpTest, TestSameNumberOfBlockArgs) {
@@ -122,7 +143,7 @@ TEST_F(QCOIfOpTest, TestSameNumberOfOperandQubitsAndResult) {
   auto* elseBlock = ifOp.elseBlock();
   elseBlock->addArgument(qcoType, builder.getUnknownLoc());
   // Verify operation
-  ASSERT_TRUE(mlir::verify(ifOp).failed());
+  ASSERT_TRUE(verify(ifOp).failed());
 }
 
 TEST_F(QCOIfOpTest, TestConstantCondition) {
@@ -140,26 +161,37 @@ TEST_F(QCOIfOpTest, TestConstantCondition) {
   module = builder.finalize();
 
   // Run canonicalizer
-  PassManager pm(&context);
-  auto* moduleOp = module->getOperation();
-  pm.addPass(createCanonicalizerPass());
-  ASSERT_TRUE(pm.run(moduleOp).succeeded());
+  ASSERT_TRUE(canonicalize());
 
-  bool hasIf = false;
-  bool hasHOp = false;
-  // Check that the qco.if operation is removed and the qco.h operation is still
-  // there
-  moduleOp->walk([&](Operation* op) {
-    if (isa<IfOp>(op)) {
-      hasIf = true;
-      return WalkResult::interrupt();
-    }
-    if (isa<HOp>(op)) {
-      hasHOp = true;
-    }
-    return WalkResult::advance();
-  });
+  EXPECT_EQ(countOps<HOp>(), 1);
+  EXPECT_EQ(countOps<IfOp>(), 0);
+}
 
-  EXPECT_FALSE(hasIf);
-  EXPECT_TRUE(hasHOp);
+TEST_F(QCOIfOpTest, TestConditionPropagation) {
+  // Test to check if the condition is propagated into the regions
+  const auto q = builder.allocQubitRegister(2);
+  auto [qubitOut, measureResult] = builder.measure(q[0]);
+  builder.qcoIf(
+      measureResult, {qubitOut, q[1]},
+      [&](ValueRange args) -> SmallVector<Value> {
+        auto innerIf = builder.qcoIf(
+            measureResult, args,
+            [&](ValueRange innerArgs) -> SmallVector<Value> {
+              auto q2 = builder.h(innerArgs[0]);
+              return {q2, innerArgs[1]};
+            },
+            [&](ValueRange innerArgs) -> SmallVector<Value> {
+              return innerArgs;
+            });
+        return innerIf;
+      },
+      [&](ValueRange args) -> SmallVector<Value> { return args; });
+
+  module = builder.finalize();
+
+  // Run canonicalizer
+  ASSERT_TRUE(canonicalize());
+
+  EXPECT_EQ(countOps<HOp>(), 1);
+  EXPECT_EQ(countOps<IfOp>(), 1);
 }
