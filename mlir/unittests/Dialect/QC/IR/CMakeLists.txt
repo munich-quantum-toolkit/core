@@ -10,8 +10,8 @@ file(GLOB_RECURSE TEST_SOURCES "*.cpp")
 
 set(target_name mqt-core-mlir-unittest-qc-ir)
 add_executable(${target_name} ${TEST_SOURCES} test_qc_ir.h)
-target_link_libraries(${target_name} PRIVATE MLIRParser MLIRSupportMQT GTest::gtest_main
-                                             MLIRQCProgramBuilder)
-target_include_directories(${target_name} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}
-                                                  ${CMAKE_CURRENT_SOURCE_DIR}/../../../programs)
+target_link_libraries(
+  ${target_name} PRIVATE MLIRParser MLIRSupportMQT GTest::gtest_main MLIRQCProgramBuilder
+                         MLIRQCPrograms MQT::ProjectOptions)
+target_include_directories(${target_name} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 gtest_discover_tests(${target_name})

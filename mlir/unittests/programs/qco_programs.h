@@ -10,2004 +10,773 @@
 
 #pragma once
 
-#include "mlir/Dialect/QCO/Builder/QCOProgramBuilder.h"
-
-#include <llvm/ADT/STLExtras.h>
-#include <numbers>
-
 namespace mlir::qco {
+class QCOProgramBuilder;
+
 // --- Qubit Management ----------------------------------------------------- //
 
 /// Allocates a single qubit.
-inline void allocQubit(QCOProgramBuilder& b) { b.allocQubit(); }
+void allocQubit(QCOProgramBuilder& b);
 
 /// Allocates a qubit register of size `2`.
-inline void allocQubitRegister(QCOProgramBuilder& b) {
-  b.allocQubitRegister(2);
-}
+void allocQubitRegister(QCOProgramBuilder& b);
 
 /// Allocates two qubit registers of size `2` and `3`.
-inline void allocMultipleQubitRegisters(QCOProgramBuilder& b) {
-  b.allocQubitRegister(2, "reg0");
-  b.allocQubitRegister(3, "reg1");
-}
+void allocMultipleQubitRegisters(QCOProgramBuilder& b);
 
 /// Allocates a large qubit register.
-inline void allocLargeRegister(QCOProgramBuilder& b) {
-  b.allocQubitRegister(100);
-}
+void allocLargeRegister(QCOProgramBuilder& b);
 
 /// Allocates two inline qubits.
-inline void staticQubits(QCOProgramBuilder& b) {
-  b.staticQubit(0);
-  b.staticQubit(1);
-}
+void staticQubits(QCOProgramBuilder& b);
 
 /// Allocates and explicitly deallocates a single qubit.
-inline void allocDeallocPair(QCOProgramBuilder& b) {
-  auto q = b.allocQubit();
-  b.dealloc(q);
-}
+void allocDeallocPair(QCOProgramBuilder& b);
 
 // --- MeasureOp ------------------------------------------------------------ //
 
 /// Measures a single qubit into a single classical bit.
-inline void singleMeasurementToSingleBit(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(1);
-  const auto& c = b.allocClassicalBitRegister(1);
-  q[0] = b.measure(q[0], c[0]);
-}
+void singleMeasurementToSingleBit(QCOProgramBuilder& b);
 
 /// Repeatedly measures a single qubit into the same classical bit.
-inline void repeatedMeasurementToSameBit(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(1);
-  const auto& c = b.allocClassicalBitRegister(1);
-  q[0] = b.measure(q[0], c[0]);
-  q[0] = b.measure(q[0], c[0]);
-  q[0] = b.measure(q[0], c[0]);
-}
+void repeatedMeasurementToSameBit(QCOProgramBuilder& b);
 
 /// Repeatedly measures a single qubit into different classical bits.
-inline void repeatedMeasurementToDifferentBits(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(1);
-  const auto& c = b.allocClassicalBitRegister(3);
-  q[0] = b.measure(q[0], c[0]);
-  q[0] = b.measure(q[0], c[1]);
-  q[0] = b.measure(q[0], c[2]);
-}
+void repeatedMeasurementToDifferentBits(QCOProgramBuilder& b);
 
 /// Measures multiple qubits into multiple classical bits.
-inline void multipleClassicalRegistersAndMeasurements(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(3);
-  const auto& c0 = b.allocClassicalBitRegister(1, "c0");
-  const auto& c1 = b.allocClassicalBitRegister(2, "c1");
-  b.measure(q[0], c0[0]);
-  b.measure(q[1], c1[0]);
-  b.measure(q[2], c1[1]);
-}
+void multipleClassicalRegistersAndMeasurements(QCOProgramBuilder& b);
 
 // --- ResetOp -------------------------------------------------------------- //
 
 /// Resets a single qubit without any operations being applied.
-inline void resetQubitWithoutOp(QCOProgramBuilder& b) {
-  auto q = b.allocQubit();
-  q = b.reset(q);
-}
+void resetQubitWithoutOp(QCOProgramBuilder& b);
 
 /// Resets multiple qubits without any operations being applied.
-inline void resetMultipleQubitsWithoutOp(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(2);
-  q[0] = b.reset(q[0]);
-  q[1] = b.reset(q[1]);
-}
+void resetMultipleQubitsWithoutOp(QCOProgramBuilder& b);
 
 /// Repeatedly resets a single qubit without any operations being applied.
-inline void repeatedResetWithoutOp(QCOProgramBuilder& b) {
-  auto q = b.allocQubit();
-  q = b.reset(q);
-  q = b.reset(q);
-  q = b.reset(q);
-}
+void repeatedResetWithoutOp(QCOProgramBuilder& b);
 
 /// Resets a single qubit after a single operation.
-inline void resetQubitAfterSingleOp(QCOProgramBuilder& b) {
-  auto q = b.allocQubit();
-  q = b.h(q);
-  q = b.reset(q);
-}
+void resetQubitAfterSingleOp(QCOProgramBuilder& b);
 
 /// Resets multiple qubits after a single operation.
-inline void resetMultipleQubitsAfterSingleOp(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(2);
-  q[0] = b.h(q[0]);
-  q[0] = b.reset(q[0]);
-  q[1] = b.h(q[1]);
-  q[1] = b.reset(q[1]);
-}
+void resetMultipleQubitsAfterSingleOp(QCOProgramBuilder& b);
 
 /// Repeatedly resets a single qubit after a single operation.
-inline void repeatedResetAfterSingleOp(QCOProgramBuilder& b) {
-  auto q = b.allocQubit();
-  q = b.h(q);
-  q = b.reset(q);
-  q = b.reset(q);
-  q = b.reset(q);
-}
+void repeatedResetAfterSingleOp(QCOProgramBuilder& b);
 
 // --- GPhaseOp ------------------------------------------------------------- //
 
 /// Creates a circuit with just a global phase.
-inline void globalPhase(QCOProgramBuilder& b) { b.gphase(0.123); }
+void globalPhase(QCOProgramBuilder& b);
 
 /// Creates a controlled global phase gate with a single control qubit.
-inline void singleControlledGlobalPhase(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(1);
-  b.cgphase(0.123, q[0]);
-}
+void singleControlledGlobalPhase(QCOProgramBuilder& b);
 
 /// Creates a multi-controlled global phase gate with multiple control qubits.
-inline void multipleControlledGlobalPhase(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(3);
-  b.mcgphase(0.123, {q[0], q[1], q[2]});
-}
+void multipleControlledGlobalPhase(QCOProgramBuilder& b);
 
 /// Creates a circuit with an inverse modifier applied to a global phase gate.
-inline void inverseGlobalPhase(QCOProgramBuilder& b) {
-  b.inv({}, [&](mlir::ValueRange /*qubits*/) {
-    b.gphase(-0.123);
-    return llvm::SmallVector<mlir::Value>{};
-  });
-}
+void inverseGlobalPhase(QCOProgramBuilder& b);
 
 /// Creates a circuit with an inverse modifier applied to a controlled global
 /// phase gate.
-inline void inverseMultipleControlledGlobalPhase(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(3);
-  b.inv({q[0], q[1], q[2]}, [&](mlir::ValueRange qubits) {
-    llvm::SmallVector<mlir::Value> controls{qubits[0], qubits[1], qubits[2]};
-    auto controlsOut = b.mcgphase(-0.123, controls);
-    return llvm::SmallVector<mlir::Value>(controlsOut.begin(),
-                                          controlsOut.end());
-  });
-}
+void inverseMultipleControlledGlobalPhase(QCOProgramBuilder& b);
 
 // --- IdOp ----------------------------------------------------------------- //
 
 /// Creates a circuit with just an identity gate.
-inline void identity(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(1);
-  b.id(q[0]);
-}
+void identity(QCOProgramBuilder& b);
 
 /// Creates a controlled identity gate with a single control qubit.
-inline void singleControlledIdentity(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(2);
-  b.cid(q[1], q[0]);
-}
+void singleControlledIdentity(QCOProgramBuilder& b);
 
 /// Creates a multi-controlled identity gate with multiple control qubits.
-inline void multipleControlledIdentity(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(3);
-  b.mcid({q[2], q[1]}, q[0]);
-}
+void multipleControlledIdentity(QCOProgramBuilder& b);
 
 /// Creates a circuit with a nested controlled identity gate.
-inline void nestedControlledIdentity(QCOProgramBuilder& b) {
-  auto reg = b.allocQubitRegister(3);
-  b.ctrl({reg[0]}, {reg[1], reg[2]}, [&](mlir::ValueRange targets) {
-    const auto& [innerControlsOut, innerTargetsOut] =
-        b.ctrl({targets[0]}, {targets[1]}, [&](mlir::ValueRange innerTargets) {
-          return llvm::SmallVector<mlir::Value>{b.id(innerTargets[0])};
-        });
-    return llvm::to_vector(
-        llvm::concat<mlir::Value>(innerControlsOut, innerTargetsOut));
-  });
-}
+void nestedControlledIdentity(QCOProgramBuilder& b);
 
 /// Creates a circuit with a trivial controlled identity gate.
-inline void trivialControlledIdentity(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(1);
-  b.mcid({}, q[0]);
-}
+void trivialControlledIdentity(QCOProgramBuilder& b);
 
 /// Creates a circuit with an inverse modifier applied to an identity gate.
-inline void inverseIdentity(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(1);
-  b.inv({q[0]}, [&](mlir::ValueRange qubits) {
-    return llvm::SmallVector<mlir::Value>{b.id(qubits[0])};
-  });
-}
+void inverseIdentity(QCOProgramBuilder& b);
 
 /// Creates a circuit with an inverse modifier applied to a controlled identity
 /// gate.
-inline void inverseMultipleControlledIdentity(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(3);
-  b.inv({q[0], q[1], q[2]}, [&](mlir::ValueRange qubits) {
-    const auto& [controlsOut, targetOut] =
-        b.mcid({qubits[0], qubits[1]}, qubits[2]);
-    return llvm::to_vector(
-        llvm::concat<mlir::Value>(controlsOut, mlir::ValueRange{targetOut}));
-  });
-}
+void inverseMultipleControlledIdentity(QCOProgramBuilder& b);
 
 // --- XOp ------------------------------------------------------------------ //
 
 /// Creates a circuit with just an X gate.
-inline void x(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(1);
-  b.x(q[0]);
-}
+void x(QCOProgramBuilder& b);
 
 /// Creates a circuit with a single controlled X gate.
-inline void singleControlledX(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(2);
-  b.cx(q[0], q[1]);
-}
+void singleControlledX(QCOProgramBuilder& b);
 
 /// Creates a circuit with a multi-controlled X gate.
-inline void multipleControlledX(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(3);
-  b.mcx({q[0], q[1]}, q[2]);
-}
+void multipleControlledX(QCOProgramBuilder& b);
 
 /// Creates a circuit with a nested controlled X gate.
-inline void nestedControlledX(QCOProgramBuilder& b) {
-  auto reg = b.allocQubitRegister(3);
-  b.ctrl({reg[0]}, {reg[1], reg[2]}, [&](mlir::ValueRange targets) {
-    const auto& [innerControlsOut, innerTargetsOut] =
-        b.ctrl({targets[0]}, {targets[1]}, [&](mlir::ValueRange innerTargets) {
-          return llvm::SmallVector<mlir::Value>{b.x(innerTargets[0])};
-        });
-    return llvm::to_vector(
-        llvm::concat<mlir::Value>(innerControlsOut, innerTargetsOut));
-  });
-}
+void nestedControlledX(QCOProgramBuilder& b);
 
 /// Creates a circuit with a trivial controlled X gate.
-inline void trivialControlledX(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(1);
-  b.mcx({}, q[0]);
-}
+void trivialControlledX(QCOProgramBuilder& b);
 
 /// Creates a circuit with an inverse modifier applied to an X gate.
-inline void inverseX(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(1);
-  b.inv({q[0]}, [&](mlir::ValueRange qubits) {
-    return llvm::SmallVector<mlir::Value>{b.x(qubits[0])};
-  });
-}
+void inverseX(QCOProgramBuilder& b);
 
 /// Creates a circuit with an inverse modifier applied to a controlled X gate.
-inline void inverseMultipleControlledX(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(3);
-  b.inv({q[0], q[1], q[2]}, [&](mlir::ValueRange qubits) {
-    const auto& [controlsOut, targetOut] =
-        b.mcx({qubits[0], qubits[1]}, qubits[2]);
-    return llvm::to_vector(
-        llvm::concat<mlir::Value>(controlsOut, mlir::ValueRange{targetOut}));
-  });
-}
+void inverseMultipleControlledX(QCOProgramBuilder& b);
 
 // --- YOp ------------------------------------------------------------------ //
 
 /// Creates a circuit with just a Y gate.
-inline void y(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(1);
-  b.y(q[0]);
-}
+void y(QCOProgramBuilder& b);
 
 /// Creates a circuit with a single controlled Y gate.
-inline void singleControlledY(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(2);
-  b.cy(q[0], q[1]);
-}
+void singleControlledY(QCOProgramBuilder& b);
 
 /// Creates a circuit with a multi-controlled Y gate.
-inline void multipleControlledY(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(3);
-  b.mcy({q[0], q[1]}, q[2]);
-}
+void multipleControlledY(QCOProgramBuilder& b);
 
 /// Creates a circuit with a nested controlled Y gate.
-inline void nestedControlledY(QCOProgramBuilder& b) {
-  auto reg = b.allocQubitRegister(3);
-  b.ctrl({reg[0]}, {reg[1], reg[2]}, [&](mlir::ValueRange targets) {
-    const auto& [innerControlsOut, innerTargetsOut] =
-        b.ctrl({targets[0]}, {targets[1]}, [&](mlir::ValueRange innerTargets) {
-          return llvm::SmallVector<mlir::Value>{b.y(innerTargets[0])};
-        });
-    return llvm::to_vector(
-        llvm::concat<mlir::Value>(innerControlsOut, innerTargetsOut));
-  });
-}
+void nestedControlledY(QCOProgramBuilder& b);
 
 /// Creates a circuit with a trivial controlled Y gate.
-inline void trivialControlledY(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(1);
-  b.mcy({}, q[0]);
-}
+void trivialControlledY(QCOProgramBuilder& b);
 
 /// Creates a circuit with an inverse modifier applied to a Y gate.
-inline void inverseY(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(1);
-  b.inv({q[0]}, [&](mlir::ValueRange qubits) {
-    return llvm::SmallVector<mlir::Value>{b.y(qubits[0])};
-  });
-}
+void inverseY(QCOProgramBuilder& b);
 
 /// Creates a circuit with an inverse modifier applied to a controlled Y gate.
-inline void inverseMultipleControlledY(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(3);
-  b.inv({q[0], q[1], q[2]}, [&](mlir::ValueRange qubits) {
-    const auto& [controlsOut, targetOut] =
-        b.mcy({qubits[0], qubits[1]}, qubits[2]);
-    return llvm::to_vector(
-        llvm::concat<mlir::Value>(controlsOut, mlir::ValueRange{targetOut}));
-  });
-}
+void inverseMultipleControlledY(QCOProgramBuilder& b);
 
 // --- ZOp ------------------------------------------------------------------ //
 
 /// Creates a circuit with just a Z gate.
-inline void z(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(1);
-  b.z(q[0]);
-}
+void z(QCOProgramBuilder& b);
 
 /// Creates a circuit with a single controlled Z gate.
-inline void singleControlledZ(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(2);
-  b.cz(q[0], q[1]);
-}
+void singleControlledZ(QCOProgramBuilder& b);
 
 /// Creates a circuit with a multi-controlled Z gate.
-inline void multipleControlledZ(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(3);
-  b.mcz({q[0], q[1]}, q[2]);
-}
+void multipleControlledZ(QCOProgramBuilder& b);
 
 /// Creates a circuit with a nested controlled Z gate.
-inline void nestedControlledZ(QCOProgramBuilder& b) {
-  auto reg = b.allocQubitRegister(3);
-  b.ctrl({reg[0]}, {reg[1], reg[2]}, [&](mlir::ValueRange targets) {
-    const auto& [innerControlsOut, innerTargetsOut] =
-        b.ctrl({targets[0]}, {targets[1]}, [&](mlir::ValueRange innerTargets) {
-          return llvm::SmallVector<mlir::Value>{b.z(innerTargets[0])};
-        });
-    return llvm::to_vector(
-        llvm::concat<mlir::Value>(innerControlsOut, innerTargetsOut));
-  });
-}
+void nestedControlledZ(QCOProgramBuilder& b);
 
 /// Creates a circuit with a trivial controlled Z gate.
-inline void trivialControlledZ(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(1);
-  b.mcz({}, q[0]);
-}
+void trivialControlledZ(QCOProgramBuilder& b);
 
 /// Creates a circuit with an inverse modifier applied to a Z gate.
-inline void inverseZ(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(1);
-  b.inv({q[0]}, [&](mlir::ValueRange qubits) {
-    return llvm::SmallVector<mlir::Value>{b.z(qubits[0])};
-  });
-}
+void inverseZ(QCOProgramBuilder& b);
 
 /// Creates a circuit with an inverse modifier applied to a controlled Z gate.
-inline void inverseMultipleControlledZ(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(3);
-  b.inv({q[0], q[1], q[2]}, [&](mlir::ValueRange qubits) {
-    const auto& [controlsOut, targetOut] =
-        b.mcz({qubits[0], qubits[1]}, qubits[2]);
-    return llvm::to_vector(
-        llvm::concat<mlir::Value>(controlsOut, mlir::ValueRange{targetOut}));
-  });
-}
+void inverseMultipleControlledZ(QCOProgramBuilder& b);
 
 // --- HOp ------------------------------------------------------------------ //
 
 /// Creates a circuit with just an H gate.
-inline void h(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(1);
-  b.h(q[0]);
-}
+void h(QCOProgramBuilder& b);
 
 /// Creates a circuit with a single controlled H gate.
-inline void singleControlledH(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(2);
-  b.ch(q[0], q[1]);
-}
+void singleControlledH(QCOProgramBuilder& b);
 
 /// Creates a circuit with a multi-controlled H gate.
-inline void multipleControlledH(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(3);
-  b.mch({q[0], q[1]}, q[2]);
-}
+void multipleControlledH(QCOProgramBuilder& b);
 
 /// Creates a circuit with a nested controlled H gate.
-inline void nestedControlledH(QCOProgramBuilder& b) {
-  auto reg = b.allocQubitRegister(3);
-  b.ctrl({reg[0]}, {reg[1], reg[2]}, [&](mlir::ValueRange targets) {
-    const auto& [innerControlsOut, innerTargetsOut] =
-        b.ctrl({targets[0]}, {targets[1]}, [&](mlir::ValueRange innerTargets) {
-          return llvm::SmallVector<mlir::Value>{b.h(innerTargets[0])};
-        });
-    return llvm::to_vector(
-        llvm::concat<mlir::Value>(innerControlsOut, innerTargetsOut));
-  });
-}
+void nestedControlledH(QCOProgramBuilder& b);
 
 /// Creates a circuit with a trivial controlled H gate.
-inline void trivialControlledH(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(1);
-  b.mch({}, q[0]);
-}
+void trivialControlledH(QCOProgramBuilder& b);
 
 /// Creates a circuit with an inverse modifier applied to an H gate.
-inline void inverseH(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(1);
-  b.inv({q[0]}, [&](mlir::ValueRange qubits) {
-    return llvm::SmallVector<mlir::Value>{b.h(qubits[0])};
-  });
-}
+void inverseH(QCOProgramBuilder& b);
 
 /// Creates a circuit with an inverse modifier applied to a controlled H gate.
-inline void inverseMultipleControlledH(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(3);
-  b.inv({q[0], q[1], q[2]}, [&](mlir::ValueRange qubits) {
-    const auto& [controlsOut, targetOut] =
-        b.mch({qubits[0], qubits[1]}, qubits[2]);
-    return llvm::to_vector(
-        llvm::concat<mlir::Value>(controlsOut, mlir::ValueRange{targetOut}));
-  });
-}
+void inverseMultipleControlledH(QCOProgramBuilder& b);
 
 // --- SOp ------------------------------------------------------------------ //
 
 /// Creates a circuit with just an S gate.
-inline void s(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(1);
-  b.s(q[0]);
-}
+void s(QCOProgramBuilder& b);
 
 /// Creates a circuit with a single controlled S gate.
-inline void singleControlledS(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(2);
-  b.cs(q[0], q[1]);
-}
+void singleControlledS(QCOProgramBuilder& b);
 
 /// Creates a circuit with a multi-controlled S gate.
-inline void multipleControlledS(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(3);
-  b.mcs({q[0], q[1]}, q[2]);
-}
+void multipleControlledS(QCOProgramBuilder& b);
 
 /// Creates a circuit with a nested controlled S gate.
-inline void nestedControlledS(QCOProgramBuilder& b) {
-  auto reg = b.allocQubitRegister(3);
-  b.ctrl({reg[0]}, {reg[1], reg[2]}, [&](mlir::ValueRange targets) {
-    const auto& [innerControlsOut, innerTargetsOut] =
-        b.ctrl({targets[0]}, {targets[1]}, [&](mlir::ValueRange innerTargets) {
-          return llvm::SmallVector<mlir::Value>{b.s(innerTargets[0])};
-        });
-    return llvm::to_vector(
-        llvm::concat<mlir::Value>(innerControlsOut, innerTargetsOut));
-  });
-}
+void nestedControlledS(QCOProgramBuilder& b);
 
 /// Creates a circuit with a trivial controlled S gate.
-inline void trivialControlledS(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(1);
-  b.mcs({}, q[0]);
-}
+void trivialControlledS(QCOProgramBuilder& b);
 
 /// Creates a circuit with an inverse modifier applied to an S gate.
-inline void inverseS(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(1);
-  b.inv({q[0]}, [&](mlir::ValueRange qubits) {
-    return llvm::SmallVector<mlir::Value>{b.s(qubits[0])};
-  });
-}
+void inverseS(QCOProgramBuilder& b);
 
 /// Creates a circuit with an inverse modifier applied to a controlled S gate.
-inline void inverseMultipleControlledS(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(3);
-  b.inv({q[0], q[1], q[2]}, [&](mlir::ValueRange qubits) {
-    const auto& [controlsOut, targetOut] =
-        b.mcs({qubits[0], qubits[1]}, qubits[2]);
-    return llvm::to_vector(
-        llvm::concat<mlir::Value>(controlsOut, mlir::ValueRange{targetOut}));
-  });
-}
+void inverseMultipleControlledS(QCOProgramBuilder& b);
 
 // --- SdgOp ---------------------------------------------------------------- //
 
 /// Creates a circuit with just an Sdg gate.
-inline void sdg(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(1);
-  b.sdg(q[0]);
-}
+void sdg(QCOProgramBuilder& b);
 
 /// Creates a circuit with a single controlled Sdg gate.
-inline void singleControlledSdg(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(2);
-  b.csdg(q[0], q[1]);
-}
+void singleControlledSdg(QCOProgramBuilder& b);
 
 /// Creates a circuit with a multi-controlled Sdg gate.
-inline void multipleControlledSdg(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(3);
-  b.mcsdg({q[0], q[1]}, q[2]);
-}
+void multipleControlledSdg(QCOProgramBuilder& b);
 
 /// Creates a circuit with a nested controlled Sdg gate.
-inline void nestedControlledSdg(QCOProgramBuilder& b) {
-  auto reg = b.allocQubitRegister(3);
-  b.ctrl({reg[0]}, {reg[1], reg[2]}, [&](mlir::ValueRange targets) {
-    const auto& [innerControlsOut, innerTargetsOut] =
-        b.ctrl({targets[0]}, {targets[1]}, [&](mlir::ValueRange innerTargets) {
-          return llvm::SmallVector<mlir::Value>{b.sdg(innerTargets[0])};
-        });
-    return llvm::to_vector(
-        llvm::concat<mlir::Value>(innerControlsOut, innerTargetsOut));
-  });
-}
+void nestedControlledSdg(QCOProgramBuilder& b);
 
 /// Creates a circuit with a trivial controlled Sdg gate.
-inline void trivialControlledSdg(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(1);
-  b.mcsdg({}, q[0]);
-}
+void trivialControlledSdg(QCOProgramBuilder& b);
 
 /// Creates a circuit with an inverse modifier applied to an Sdg gate.
-inline void inverseSdg(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(1);
-  b.inv({q[0]}, [&](mlir::ValueRange qubits) {
-    return llvm::SmallVector<mlir::Value>{b.sdg(qubits[0])};
-  });
-}
+void inverseSdg(QCOProgramBuilder& b);
 
 /// Creates a circuit with an inverse modifier applied to a controlled Sdg gate.
-inline void inverseMultipleControlledSdg(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(3);
-  b.inv({q[0], q[1], q[2]}, [&](mlir::ValueRange qubits) {
-    const auto& [controlsOut, targetOut] =
-        b.mcsdg({qubits[0], qubits[1]}, qubits[2]);
-    return llvm::to_vector(
-        llvm::concat<mlir::Value>(controlsOut, mlir::ValueRange{targetOut}));
-  });
-}
+void inverseMultipleControlledSdg(QCOProgramBuilder& b);
 
 // --- TOp ------------------------------------------------------------------ //
 
 /// Creates a circuit with just a T gate.
-inline void t_(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(1);
-  b.t(q[0]);
-}
+void t_(QCOProgramBuilder& b); // NOLINT(*-identifier-naming)
 
 /// Creates a circuit with a single controlled T gate.
-inline void singleControlledT(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(2);
-  b.ct(q[0], q[1]);
-}
+void singleControlledT(QCOProgramBuilder& b);
 
 /// Creates a circuit with a multi-controlled T gate.
-inline void multipleControlledT(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(3);
-  b.mct({q[0], q[1]}, q[2]);
-}
+void multipleControlledT(QCOProgramBuilder& b);
 
 /// Creates a circuit with a nested controlled T gate.
-inline void nestedControlledT(QCOProgramBuilder& b) {
-  auto reg = b.allocQubitRegister(3);
-  b.ctrl({reg[0]}, {reg[1], reg[2]}, [&](mlir::ValueRange targets) {
-    const auto& [innerControlsOut, innerTargetsOut] =
-        b.ctrl({targets[0]}, {targets[1]}, [&](mlir::ValueRange innerTargets) {
-          return llvm::SmallVector<mlir::Value>{b.t(innerTargets[0])};
-        });
-    return llvm::to_vector(
-        llvm::concat<mlir::Value>(innerControlsOut, innerTargetsOut));
-  });
-}
+void nestedControlledT(QCOProgramBuilder& b);
 
 /// Creates a circuit with a trivial controlled T gate.
-inline void trivialControlledT(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(1);
-  b.mct({}, q[0]);
-}
+void trivialControlledT(QCOProgramBuilder& b);
 
 /// Creates a circuit with an inverse modifier applied to a T gate.
-inline void inverseT(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(1);
-  b.inv({q[0]}, [&](mlir::ValueRange qubits) {
-    return llvm::SmallVector<mlir::Value>{b.t(qubits[0])};
-  });
-}
+void inverseT(QCOProgramBuilder& b);
 
 /// Creates a circuit with an inverse modifier applied to a controlled T gate.
-inline void inverseMultipleControlledT(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(3);
-  b.inv({q[0], q[1], q[2]}, [&](mlir::ValueRange qubits) {
-    const auto& [controlsOut, targetOut] =
-        b.mct({qubits[0], qubits[1]}, qubits[2]);
-    return llvm::to_vector(
-        llvm::concat<mlir::Value>(controlsOut, mlir::ValueRange{targetOut}));
-  });
-}
+void inverseMultipleControlledT(QCOProgramBuilder& b);
 
 // --- TdgOp ---------------------------------------------------------------- //
 
 /// Creates a circuit with just a Tdg gate.
-inline void tdg(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(1);
-  b.tdg(q[0]);
-}
+void tdg(QCOProgramBuilder& b);
 
 /// Creates a circuit with a single controlled Tdg gate.
-inline void singleControlledTdg(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(2);
-  b.ctdg(q[0], q[1]);
-}
+void singleControlledTdg(QCOProgramBuilder& b);
 
 /// Creates a circuit with a multi-controlled Tdg gate.
-inline void multipleControlledTdg(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(3);
-  b.mctdg({q[0], q[1]}, q[2]);
-}
+void multipleControlledTdg(QCOProgramBuilder& b);
 
 /// Creates a circuit with a nested controlled Tdg gate.
-inline void nestedControlledTdg(QCOProgramBuilder& b) {
-  auto reg = b.allocQubitRegister(3);
-  b.ctrl({reg[0]}, {reg[1], reg[2]}, [&](mlir::ValueRange targets) {
-    const auto& [innerControlsOut, innerTargetsOut] =
-        b.ctrl({targets[0]}, {targets[1]}, [&](mlir::ValueRange innerTargets) {
-          return llvm::SmallVector<mlir::Value>{b.tdg(innerTargets[0])};
-        });
-    return llvm::to_vector(
-        llvm::concat<mlir::Value>(innerControlsOut, innerTargetsOut));
-  });
-}
+void nestedControlledTdg(QCOProgramBuilder& b);
 
 /// Creates a circuit with a trivial controlled Tdg gate.
-inline void trivialControlledTdg(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(1);
-  b.mctdg({}, q[0]);
-}
+void trivialControlledTdg(QCOProgramBuilder& b);
 
 /// Creates a circuit with an inverse modifier applied to a Tdg gate.
-inline void inverseTdg(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(1);
-  b.inv({q[0]}, [&](mlir::ValueRange qubits) {
-    return llvm::SmallVector<mlir::Value>{b.tdg(qubits[0])};
-  });
-}
+void inverseTdg(QCOProgramBuilder& b);
 
 /// Creates a circuit with an inverse modifier applied to a controlled Tdg gate.
-inline void inverseMultipleControlledTdg(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(3);
-  b.inv({q[0], q[1], q[2]}, [&](mlir::ValueRange qubits) {
-    const auto& [controlsOut, targetOut] =
-        b.mctdg({qubits[0], qubits[1]}, qubits[2]);
-    return llvm::to_vector(
-        llvm::concat<mlir::Value>(controlsOut, mlir::ValueRange{targetOut}));
-  });
-}
+void inverseMultipleControlledTdg(QCOProgramBuilder& b);
 
 // --- SXOp ----------------------------------------------------------------- //
 
 /// Creates a circuit with just an SX gate.
-inline void sx(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(1);
-  b.sx(q[0]);
-}
+void sx(QCOProgramBuilder& b);
 
 /// Creates a circuit with a single controlled SX gate.
-inline void singleControlledSx(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(2);
-  b.csx(q[0], q[1]);
-}
+void singleControlledSx(QCOProgramBuilder& b);
 
 /// Creates a circuit with a multi-controlled SX gate.
-inline void multipleControlledSx(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(3);
-  b.mcsx({q[0], q[1]}, q[2]);
-}
+void multipleControlledSx(QCOProgramBuilder& b);
 
 /// Creates a circuit with a nested controlled SX gate.
-inline void nestedControlledSx(QCOProgramBuilder& b) {
-  auto reg = b.allocQubitRegister(3);
-  b.ctrl({reg[0]}, {reg[1], reg[2]}, [&](mlir::ValueRange targets) {
-    const auto& [innerControlsOut, innerTargetsOut] =
-        b.ctrl({targets[0]}, {targets[1]}, [&](mlir::ValueRange innerTargets) {
-          return llvm::SmallVector<mlir::Value>{b.sx(innerTargets[0])};
-        });
-    return llvm::to_vector(
-        llvm::concat<mlir::Value>(innerControlsOut, innerTargetsOut));
-  });
-}
+void nestedControlledSx(QCOProgramBuilder& b);
 
 /// Creates a circuit with a trivial controlled SX gate.
-inline void trivialControlledSx(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(1);
-  b.mcsx({}, q[0]);
-}
+void trivialControlledSx(QCOProgramBuilder& b);
 
 /// Creates a circuit with an inverse modifier applied to an SX gate.
-inline void inverseSx(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(1);
-  b.inv({q[0]}, [&](mlir::ValueRange qubits) {
-    return llvm::SmallVector<mlir::Value>{b.sx(qubits[0])};
-  });
-}
+void inverseSx(QCOProgramBuilder& b);
 
 /// Creates a circuit with an inverse modifier applied to a controlled SX gate.
-inline void inverseMultipleControlledSx(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(3);
-  b.inv({q[0], q[1], q[2]}, [&](mlir::ValueRange qubits) {
-    const auto& [controlsOut, targetOut] =
-        b.mcsx({qubits[0], qubits[1]}, qubits[2]);
-    return llvm::to_vector(
-        llvm::concat<mlir::Value>(controlsOut, mlir::ValueRange{targetOut}));
-  });
-}
+void inverseMultipleControlledSx(QCOProgramBuilder& b);
 
 // --- SXdgOp --------------------------------------------------------------- //
 
 /// Creates a circuit with just an SXdg gate.
-inline void sxdg(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(1);
-  b.sxdg(q[0]);
-}
+void sxdg(QCOProgramBuilder& b);
 
 /// Creates a circuit with a single controlled SXdg gate.
-inline void singleControlledSxdg(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(2);
-  b.csxdg(q[0], q[1]);
-}
+void singleControlledSxdg(QCOProgramBuilder& b);
 
 /// Creates a circuit with a multi-controlled SXdg gate.
-inline void multipleControlledSxdg(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(3);
-  b.mcsxdg({q[0], q[1]}, q[2]);
-}
+void multipleControlledSxdg(QCOProgramBuilder& b);
 
 /// Creates a circuit with a nested controlled SXdg gate.
-inline void nestedControlledSxdg(QCOProgramBuilder& b) {
-  auto reg = b.allocQubitRegister(3);
-  b.ctrl({reg[0]}, {reg[1], reg[2]}, [&](mlir::ValueRange targets) {
-    const auto& [innerControlsOut, innerTargetsOut] =
-        b.ctrl({targets[0]}, {targets[1]}, [&](mlir::ValueRange innerTargets) {
-          return llvm::SmallVector<mlir::Value>{b.sxdg(innerTargets[0])};
-        });
-    return llvm::to_vector(
-        llvm::concat<mlir::Value>(innerControlsOut, innerTargetsOut));
-  });
-}
+void nestedControlledSxdg(QCOProgramBuilder& b);
 
 /// Creates a circuit with a trivial controlled SXdg gate.
-inline void trivialControlledSxdg(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(1);
-  b.mcsxdg({}, q[0]);
-}
+void trivialControlledSxdg(QCOProgramBuilder& b);
 
 /// Creates a circuit with an inverse modifier applied to an SXdg gate.
-inline void inverseSxdg(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(1);
-  b.inv({q[0]}, [&](mlir::ValueRange qubits) {
-    return llvm::SmallVector<mlir::Value>{b.sxdg(qubits[0])};
-  });
-}
+void inverseSxdg(QCOProgramBuilder& b);
 
 /// Creates a circuit with an inverse modifier applied to a controlled SXdg
 /// gate.
-inline void inverseMultipleControlledSxdg(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(3);
-  b.inv({q[0], q[1], q[2]}, [&](mlir::ValueRange qubits) {
-    const auto& [controlsOut, targetOut] =
-        b.mcsxdg({qubits[0], qubits[1]}, qubits[2]);
-    return llvm::to_vector(
-        llvm::concat<mlir::Value>(controlsOut, mlir::ValueRange{targetOut}));
-  });
-}
+void inverseMultipleControlledSxdg(QCOProgramBuilder& b);
 
 // --- RXOp ----------------------------------------------------------------- //
 
 /// Creates a circuit with just an RX gate.
-inline void rx(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(1);
-  b.rx(0.123, q[0]);
-}
+void rx(QCOProgramBuilder& b);
 
 /// Creates a circuit with a single controlled RX gate.
-inline void singleControlledRx(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(2);
-  b.crx(0.123, q[0], q[1]);
-}
+void singleControlledRx(QCOProgramBuilder& b);
 
 /// Creates a circuit with a multi-controlled RX gate.
-inline void multipleControlledRx(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(3);
-  b.mcrx(0.123, {q[0], q[1]}, q[2]);
-}
+void multipleControlledRx(QCOProgramBuilder& b);
 
 /// Creates a circuit with a nested controlled RX gate.
-inline void nestedControlledRx(QCOProgramBuilder& b) {
-  auto reg = b.allocQubitRegister(3);
-  b.ctrl({reg[0]}, {reg[1], reg[2]}, [&](mlir::ValueRange targets) {
-    const auto& [innerControlsOut, innerTargetsOut] =
-        b.ctrl({targets[0]}, {targets[1]}, [&](mlir::ValueRange innerTargets) {
-          return llvm::SmallVector<mlir::Value>{b.rx(0.123, innerTargets[0])};
-        });
-    return llvm::to_vector(
-        llvm::concat<mlir::Value>(innerControlsOut, innerTargetsOut));
-  });
-}
+void nestedControlledRx(QCOProgramBuilder& b);
 
 /// Creates a circuit with a trivial controlled RX gate.
-inline void trivialControlledRx(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(1);
-  b.mcrx(0.123, {}, q[0]);
-}
+void trivialControlledRx(QCOProgramBuilder& b);
 
 /// Creates a circuit with an inverse modifier applied to an RX gate.
-inline void inverseRx(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(1);
-  b.inv({q[0]}, [&](mlir::ValueRange qubits) {
-    return llvm::SmallVector<mlir::Value>{b.rx(-0.123, qubits[0])};
-  });
-}
+void inverseRx(QCOProgramBuilder& b);
 
 /// Creates a circuit with an inverse modifier applied to a controlled RX gate.
-inline void inverseMultipleControlledRx(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(3);
-  b.inv({q[0], q[1], q[2]}, [&](mlir::ValueRange qubits) {
-    const auto& [controlsOut, targetOut] =
-        b.mcrx(-0.123, {qubits[0], qubits[1]}, qubits[2]);
-    return llvm::to_vector(
-        llvm::concat<mlir::Value>(controlsOut, mlir::ValueRange{targetOut}));
-  });
-}
+void inverseMultipleControlledRx(QCOProgramBuilder& b);
 
 // --- RYOp ----------------------------------------------------------------- //
 
 /// Creates a circuit with just an RY gate.
-inline void ry(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(1);
-  b.ry(0.456, q[0]);
-}
+void ry(QCOProgramBuilder& b);
 
 /// Creates a circuit with a single controlled RY gate.
-inline void singleControlledRy(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(2);
-  b.cry(0.456, q[0], q[1]);
-}
+void singleControlledRy(QCOProgramBuilder& b);
 
 /// Creates a circuit with a multi-controlled RY gate.
-inline void multipleControlledRy(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(3);
-  b.mcry(0.456, {q[0], q[1]}, q[2]);
-}
+void multipleControlledRy(QCOProgramBuilder& b);
 
 /// Creates a circuit with a nested controlled RY gate.
-inline void nestedControlledRy(QCOProgramBuilder& b) {
-  auto reg = b.allocQubitRegister(3);
-  b.ctrl({reg[0]}, {reg[1], reg[2]}, [&](mlir::ValueRange targets) {
-    const auto& [innerControlsOut, innerTargetsOut] =
-        b.ctrl({targets[0]}, {targets[1]}, [&](mlir::ValueRange innerTargets) {
-          return llvm::SmallVector<mlir::Value>{b.ry(0.456, innerTargets[0])};
-        });
-    return llvm::to_vector(
-        llvm::concat<mlir::Value>(innerControlsOut, innerTargetsOut));
-  });
-}
+void nestedControlledRy(QCOProgramBuilder& b);
 
 /// Creates a circuit with a trivial controlled RY gate.
-inline void trivialControlledRy(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(1);
-  b.mcry(0.456, {}, q[0]);
-}
+void trivialControlledRy(QCOProgramBuilder& b);
 
 /// Creates a circuit with an inverse modifier applied to an RY gate.
-inline void inverseRy(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(1);
-  b.inv({q[0]}, [&](mlir::ValueRange qubits) {
-    return llvm::SmallVector<mlir::Value>{b.ry(-0.456, qubits[0])};
-  });
-}
+void inverseRy(QCOProgramBuilder& b);
 
 /// Creates a circuit with an inverse modifier applied to a controlled RY gate.
-inline void inverseMultipleControlledRy(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(3);
-  b.inv({q[0], q[1], q[2]}, [&](mlir::ValueRange qubits) {
-    const auto& [controlsOut, targetOut] =
-        b.mcry(-0.456, {qubits[0], qubits[1]}, qubits[2]);
-    return llvm::to_vector(
-        llvm::concat<mlir::Value>(controlsOut, mlir::ValueRange{targetOut}));
-  });
-}
+void inverseMultipleControlledRy(QCOProgramBuilder& b);
 
 // --- RZOp ----------------------------------------------------------------- //
 
 /// Creates a circuit with just an RZ gate.
-inline void rz(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(1);
-  b.rz(0.789, q[0]);
-}
+void rz(QCOProgramBuilder& b);
 
 /// Creates a circuit with a single controlled RZ gate.
-inline void singleControlledRz(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(2);
-  b.crz(0.789, q[0], q[1]);
-}
+void singleControlledRz(QCOProgramBuilder& b);
 
 /// Creates a circuit with a multi-controlled RZ gate.
-inline void multipleControlledRz(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(3);
-  b.mcrz(0.789, {q[0], q[1]}, q[2]);
-}
+void multipleControlledRz(QCOProgramBuilder& b);
 
 /// Creates a circuit with a nested controlled RZ gate.
-inline void nestedControlledRz(QCOProgramBuilder& b) {
-  auto reg = b.allocQubitRegister(3);
-  b.ctrl({reg[0]}, {reg[1], reg[2]}, [&](mlir::ValueRange targets) {
-    const auto& [innerControlsOut, innerTargetsOut] =
-        b.ctrl({targets[0]}, {targets[1]}, [&](mlir::ValueRange innerTargets) {
-          return llvm::SmallVector<mlir::Value>{b.rz(0.789, innerTargets[0])};
-        });
-    return llvm::to_vector(
-        llvm::concat<mlir::Value>(innerControlsOut, innerTargetsOut));
-  });
-}
+void nestedControlledRz(QCOProgramBuilder& b);
 
 /// Creates a circuit with a trivial controlled RZ gate.
-inline void trivialControlledRz(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(1);
-  b.mcrz(0.789, {}, q[0]);
-}
+void trivialControlledRz(QCOProgramBuilder& b);
 
 /// Creates a circuit with an inverse modifier applied to an RZ gate.
-inline void inverseRz(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(1);
-  b.inv({q[0]}, [&](mlir::ValueRange qubits) {
-    return llvm::SmallVector<mlir::Value>{b.rz(-0.789, qubits[0])};
-  });
-}
+void inverseRz(QCOProgramBuilder& b);
 
 /// Creates a circuit with an inverse modifier applied to a controlled RZ gate.
-inline void inverseMultipleControlledRz(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(3);
-  b.inv({q[0], q[1], q[2]}, [&](mlir::ValueRange qubits) {
-    const auto& [controlsOut, targetOut] =
-        b.mcrz(-0.789, {qubits[0], qubits[1]}, qubits[2]);
-    return llvm::to_vector(
-        llvm::concat<mlir::Value>(controlsOut, mlir::ValueRange{targetOut}));
-  });
-}
+void inverseMultipleControlledRz(QCOProgramBuilder& b);
 
 // --- POp ------------------------------------------------------------------ //
 
 /// Creates a circuit with just a P gate.
-inline void p(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(1);
-  b.p(0.123, q[0]);
-}
+void p(QCOProgramBuilder& b);
 
 /// Creates a circuit with a single controlled P gate.
-inline void singleControlledP(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(2);
-  b.cp(0.123, q[0], q[1]);
-}
+void singleControlledP(QCOProgramBuilder& b);
 
 /// Creates a circuit with a multi-controlled P gate.
-inline void multipleControlledP(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(3);
-  b.mcp(0.123, {q[0], q[1]}, q[2]);
-}
+void multipleControlledP(QCOProgramBuilder& b);
 
 /// Creates a circuit with a nested controlled P gate.
-inline void nestedControlledP(QCOProgramBuilder& b) {
-  auto reg = b.allocQubitRegister(3);
-  b.ctrl({reg[0]}, {reg[1], reg[2]}, [&](mlir::ValueRange targets) {
-    const auto& [innerControlsOut, innerTargetsOut] =
-        b.ctrl({targets[0]}, {targets[1]}, [&](mlir::ValueRange innerTargets) {
-          return llvm::SmallVector<mlir::Value>{b.p(0.123, innerTargets[0])};
-        });
-    return llvm::to_vector(
-        llvm::concat<mlir::Value>(innerControlsOut, innerTargetsOut));
-  });
-}
+void nestedControlledP(QCOProgramBuilder& b);
 
 /// Creates a circuit with a trivial controlled P gate.
-inline void trivialControlledP(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(1);
-  b.mcp(0.123, {}, q[0]);
-}
+void trivialControlledP(QCOProgramBuilder& b);
 
 /// Creates a circuit with an inverse modifier applied to a P gate.
-inline void inverseP(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(1);
-  b.inv({q[0]}, [&](mlir::ValueRange qubits) {
-    return llvm::SmallVector<mlir::Value>{b.p(-0.123, qubits[0])};
-  });
-}
+void inverseP(QCOProgramBuilder& b);
 
 /// Creates a circuit with an inverse modifier applied to a controlled P gate.
-inline void inverseMultipleControlledP(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(3);
-  b.inv({q[0], q[1], q[2]}, [&](mlir::ValueRange qubits) {
-    const auto& [controlsOut, targetOut] =
-        b.mcp(-0.123, {qubits[0], qubits[1]}, qubits[2]);
-    return llvm::to_vector(
-        llvm::concat<mlir::Value>(controlsOut, mlir::ValueRange{targetOut}));
-  });
-}
+void inverseMultipleControlledP(QCOProgramBuilder& b);
 
 // --- ROp ------------------------------------------------------------------ //
 
 /// Creates a circuit with just an R gate.
-inline void r(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(1);
-  b.r(0.123, 0.456, q[0]);
-}
+void r(QCOProgramBuilder& b);
 
 /// Creates a circuit with a single controlled R gate.
-inline void singleControlledR(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(2);
-  b.cr(0.123, 0.456, q[0], q[1]);
-}
+void singleControlledR(QCOProgramBuilder& b);
 
 /// Creates a circuit with a multi-controlled R gate.
-inline void multipleControlledR(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(3);
-  b.mcr(0.123, 0.456, {q[0], q[1]}, q[2]);
-}
+void multipleControlledR(QCOProgramBuilder& b);
 
 /// Creates a circuit with a nested controlled R gate.
-inline void nestedControlledR(QCOProgramBuilder& b) {
-  auto reg = b.allocQubitRegister(3);
-  b.ctrl({reg[0]}, {reg[1], reg[2]}, [&](mlir::ValueRange targets) {
-    const auto& [innerControlsOut, innerTargetsOut] =
-        b.ctrl({targets[0]}, {targets[1]}, [&](mlir::ValueRange innerTargets) {
-          return llvm::SmallVector<mlir::Value>{
-              b.r(0.123, 0.456, innerTargets[0])};
-        });
-    return llvm::to_vector(
-        llvm::concat<mlir::Value>(innerControlsOut, innerTargetsOut));
-  });
-}
+void nestedControlledR(QCOProgramBuilder& b);
 
 /// Creates a circuit with a trivial controlled R gate.
-inline void trivialControlledR(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(1);
-  b.mcr(0.123, 0.456, {}, q[0]);
-}
+void trivialControlledR(QCOProgramBuilder& b);
 
 /// Creates a circuit with an inverse modifier applied to an R gate.
-inline void inverseR(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(1);
-  b.inv({q[0]}, [&](mlir::ValueRange qubits) {
-    return llvm::SmallVector<mlir::Value>{b.r(-0.123, 0.456, qubits[0])};
-  });
-}
+void inverseR(QCOProgramBuilder& b);
 
 /// Creates a circuit with an inverse modifier applied to a controlled R gate.
-inline void inverseMultipleControlledR(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(3);
-  b.inv({q[0], q[1], q[2]}, [&](mlir::ValueRange qubits) {
-    const auto& [controlsOut, targetOut] =
-        b.mcr(-0.123, 0.456, {qubits[0], qubits[1]}, qubits[2]);
-    return llvm::to_vector(
-        llvm::concat<mlir::Value>(controlsOut, mlir::ValueRange{targetOut}));
-  });
-}
+void inverseMultipleControlledR(QCOProgramBuilder& b);
 
 // --- U2Op ----------------------------------------------------------------- //
 
 /// Creates a circuit with just a U2 gate.
-inline void u2(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(1);
-  b.u2(0.234, 0.567, q[0]);
-}
+void u2(QCOProgramBuilder& b);
 
 /// Creates a circuit with a single controlled U2 gate.
-inline void singleControlledU2(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(2);
-  b.cu2(0.234, 0.567, q[0], q[1]);
-}
+void singleControlledU2(QCOProgramBuilder& b);
 
 /// Creates a circuit with a multi-controlled U2 gate.
-inline void multipleControlledU2(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(3);
-  b.mcu2(0.234, 0.567, {q[0], q[1]}, q[2]);
-}
+void multipleControlledU2(QCOProgramBuilder& b);
 
 /// Creates a circuit with a nested controlled U2 gate.
-inline void nestedControlledU2(QCOProgramBuilder& b) {
-  auto reg = b.allocQubitRegister(3);
-  b.ctrl({reg[0]}, {reg[1], reg[2]}, [&](mlir::ValueRange targets) {
-    const auto& [innerControlsOut, innerTargetsOut] =
-        b.ctrl({targets[0]}, {targets[1]}, [&](mlir::ValueRange innerTargets) {
-          return llvm::SmallVector<mlir::Value>{
-              b.u2(0.234, 0.567, innerTargets[0])};
-        });
-    return llvm::to_vector(
-        llvm::concat<mlir::Value>(innerControlsOut, innerTargetsOut));
-  });
-}
+void nestedControlledU2(QCOProgramBuilder& b);
 
 /// Creates a circuit with a trivial controlled U2 gate.
-inline void trivialControlledU2(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(1);
-  b.mcu2(0.234, 0.567, {}, q[0]);
-}
+void trivialControlledU2(QCOProgramBuilder& b);
 
 /// Creates a circuit with an inverse modifier applied to a U2 gate.
-inline void inverseU2(QCOProgramBuilder& b) {
-  constexpr double pi = std::numbers::pi;
-  auto q = b.allocQubitRegister(1);
-  b.inv({q[0]}, [&](mlir::ValueRange qubits) {
-    return llvm::SmallVector<mlir::Value>{
-        b.u2(-0.567 + pi, -0.234 - pi, qubits[0])};
-  });
-}
+void inverseU2(QCOProgramBuilder& b);
 
 /// Creates a circuit with an inverse modifier applied to a controlled U2 gate.
-inline void inverseMultipleControlledU2(QCOProgramBuilder& b) {
-  constexpr double pi = std::numbers::pi;
-  auto q = b.allocQubitRegister(3);
-  b.inv({q[0], q[1], q[2]}, [&](mlir::ValueRange qubits) {
-    const auto& [controlsOut, targetOut] =
-        b.mcu2(-0.567 + pi, -0.234 - pi, {qubits[0], qubits[1]}, qubits[2]);
-    return llvm::to_vector(
-        llvm::concat<mlir::Value>(controlsOut, mlir::ValueRange{targetOut}));
-  });
-}
+void inverseMultipleControlledU2(QCOProgramBuilder& b);
 
 // --- UOp ------------------------------------------------------------------ //
 
 /// Creates a circuit with just a U gate.
-inline void u(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(1);
-  b.u(0.1, 0.2, 0.3, q[0]);
-}
+void u(QCOProgramBuilder& b);
 
 /// Creates a circuit with a single controlled U gate.
-inline void singleControlledU(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(2);
-  b.cu(0.1, 0.2, 0.3, q[0], q[1]);
-}
+void singleControlledU(QCOProgramBuilder& b);
 
 /// Creates a circuit with a multi-controlled U gate.
-inline void multipleControlledU(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(3);
-  b.mcu(0.1, 0.2, 0.3, {q[0], q[1]}, q[2]);
-}
+void multipleControlledU(QCOProgramBuilder& b);
 
 /// Creates a circuit with a nested controlled U gate.
-inline void nestedControlledU(QCOProgramBuilder& b) {
-  auto reg = b.allocQubitRegister(3);
-  b.ctrl({reg[0]}, {reg[1], reg[2]}, [&](mlir::ValueRange targets) {
-    const auto& [innerControlsOut, innerTargetsOut] =
-        b.ctrl({targets[0]}, {targets[1]}, [&](mlir::ValueRange innerTargets) {
-          return llvm::SmallVector<mlir::Value>{
-              b.u(0.1, 0.2, 0.3, innerTargets[0])};
-        });
-    return llvm::to_vector(
-        llvm::concat<mlir::Value>(innerControlsOut, innerTargetsOut));
-  });
-}
+void nestedControlledU(QCOProgramBuilder& b);
 
 /// Creates a circuit with a trivial controlled U gate.
-inline void trivialControlledU(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(1);
-  b.mcu(0.1, 0.2, 0.3, {}, q[0]);
-}
+void trivialControlledU(QCOProgramBuilder& b);
 
 /// Creates a circuit with an inverse modifier applied to a U gate.
-inline void inverseU(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(1);
-  b.inv({q[0]}, [&](mlir::ValueRange qubits) {
-    return llvm::SmallVector<mlir::Value>{b.u(-0.1, -0.3, -0.2, qubits[0])};
-  });
-}
+void inverseU(QCOProgramBuilder& b);
 
 /// Creates a circuit with an inverse modifier applied to a controlled U gate.
-inline void inverseMultipleControlledU(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(3);
-  b.inv({q[0], q[1], q[2]}, [&](mlir::ValueRange qubits) {
-    const auto& [controlsOut, targetOut] =
-        b.mcu(-0.1, -0.3, -0.2, {qubits[0], qubits[1]}, qubits[2]);
-    return llvm::to_vector(
-        llvm::concat<mlir::Value>(controlsOut, mlir::ValueRange{targetOut}));
-  });
-}
+void inverseMultipleControlledU(QCOProgramBuilder& b);
 
 // --- SWAPOp --------------------------------------------------------------- //
 
 /// Creates a circuit with just a SWAP gate.
-inline void swap(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(2);
-  b.swap(q[0], q[1]);
-}
+void swap(QCOProgramBuilder& b);
 
 /// Creates a circuit with a single controlled SWAP gate.
-inline void singleControlledSwap(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(3);
-  b.cswap(q[0], q[1], q[2]);
-}
+void singleControlledSwap(QCOProgramBuilder& b);
 
 /// Creates a circuit with a multi-controlled SWAP gate.
-inline void multipleControlledSwap(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(4);
-  b.mcswap({q[0], q[1]}, q[2], q[3]);
-}
+void multipleControlledSwap(QCOProgramBuilder& b);
 
 /// Creates a circuit with a nested controlled SWAP gate.
-inline void nestedControlledSwap(QCOProgramBuilder& b) {
-  auto reg = b.allocQubitRegister(4);
-  b.ctrl({reg[0]}, {reg[1], reg[2], reg[3]}, [&](mlir::ValueRange targets) {
-    const auto& [innerControlsOut, innerTargetsOut] =
-        b.ctrl({targets[0]}, {targets[1], targets[2]},
-               [&](mlir::ValueRange innerTargets) {
-                 auto res = b.swap(innerTargets[0], innerTargets[1]);
-                 return llvm::SmallVector<mlir::Value>{res.first, res.second};
-               });
-    return llvm::to_vector(
-        llvm::concat<mlir::Value>(innerControlsOut, innerTargetsOut));
-  });
-}
+void nestedControlledSwap(QCOProgramBuilder& b);
 
 /// Creates a circuit with a trivial controlled SWAP gate.
-inline void trivialControlledSwap(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(2);
-  b.mcswap({}, q[0], q[1]);
-}
+void trivialControlledSwap(QCOProgramBuilder& b);
 
 /// Creates a circuit with an inverse modifier applied to a SWAP gate.
-inline void inverseSwap(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(2);
-  b.inv({q[0], q[1]}, [&](mlir::ValueRange qubits) {
-    auto res = b.swap(qubits[0], qubits[1]);
-    return llvm::SmallVector<mlir::Value>{res.first, res.second};
-  });
-}
+void inverseSwap(QCOProgramBuilder& b);
 
 /// Creates a circuit with an inverse modifier applied to a controlled SWAP
 /// gate.
-inline void inverseMultipleControlledSwap(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(4);
-  b.inv({q[0], q[1], q[2], q[3]}, [&](mlir::ValueRange qubits) {
-    const auto& [controlsOut, targetsOut] =
-        b.mcswap({qubits[0], qubits[1]}, qubits[2], qubits[3]);
-    llvm::SmallVector<mlir::Value, 2> targets{targetsOut.first,
-                                              targetsOut.second};
-    return llvm::to_vector(llvm::concat<mlir::Value>(controlsOut, targets));
-  });
-}
+void inverseMultipleControlledSwap(QCOProgramBuilder& b);
 
 // --- iSWAPOp -------------------------------------------------------------- //
 
 /// Creates a circuit with just an iSWAP gate.
-inline void iswap(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(2);
-  b.iswap(q[0], q[1]);
-}
+void iswap(QCOProgramBuilder& b);
 
 /// Creates a circuit with a single controlled iSWAP gate.
-inline void singleControlledIswap(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(3);
-  b.ciswap(q[0], q[1], q[2]);
-}
+void singleControlledIswap(QCOProgramBuilder& b);
 
 /// Creates a circuit with a multi-controlled iSWAP gate.
-inline void multipleControlledIswap(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(4);
-  b.mciswap({q[0], q[1]}, q[2], q[3]);
-}
+void multipleControlledIswap(QCOProgramBuilder& b);
 
 /// Creates a circuit with a nested controlled iSWAP gate.
-inline void nestedControlledIswap(QCOProgramBuilder& b) {
-  auto reg = b.allocQubitRegister(4);
-  b.ctrl({reg[0]}, {reg[1], reg[2], reg[3]}, [&](mlir::ValueRange targets) {
-    const auto& [innerControlsOut, innerTargetsOut] =
-        b.ctrl({targets[0]}, {targets[1], targets[2]},
-               [&](mlir::ValueRange innerTargets) {
-                 auto res = b.iswap(innerTargets[0], innerTargets[1]);
-                 return llvm::SmallVector<mlir::Value>{res.first, res.second};
-               });
-    return llvm::to_vector(
-        llvm::concat<mlir::Value>(innerControlsOut, innerTargetsOut));
-  });
-}
+void nestedControlledIswap(QCOProgramBuilder& b);
 
 /// Creates a circuit with a trivial controlled iSWAP gate.
-inline void trivialControlledIswap(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(2);
-  b.mciswap({}, q[0], q[1]);
-}
+void trivialControlledIswap(QCOProgramBuilder& b);
 
 /// Creates a circuit with an inverse modifier applied to an iSWAP gate.
-inline void inverseIswap(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(2);
-  b.inv({q[0], q[1]}, [&](mlir::ValueRange qubits) {
-    auto res = b.iswap(qubits[0], qubits[1]);
-    return llvm::SmallVector<mlir::Value>{res.first, res.second};
-  });
-}
+void inverseIswap(QCOProgramBuilder& b);
 
 /// Creates a circuit with an inverse modifier applied to a controlled iSWAP
 /// gate.
-inline void inverseMultipleControlledIswap(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(4);
-  b.inv({q[0], q[1], q[2], q[3]}, [&](mlir::ValueRange qubits) {
-    const auto& [controlsOut, targetsOut] =
-        b.mciswap({qubits[0], qubits[1]}, qubits[2], qubits[3]);
-    llvm::SmallVector<mlir::Value, 2> targets{targetsOut.first,
-                                              targetsOut.second};
-    return llvm::to_vector(llvm::concat<mlir::Value>(controlsOut, targets));
-  });
-}
+void inverseMultipleControlledIswap(QCOProgramBuilder& b);
 
 // --- DCXOp ---------------------------------------------------------------- //
 
 /// Creates a circuit with just a DCX gate.
-inline void dcx(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(2);
-  b.dcx(q[0], q[1]);
-}
+void dcx(QCOProgramBuilder& b);
 
 /// Creates a circuit with a single controlled DCX gate.
-inline void singleControlledDcx(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(3);
-  b.cdcx(q[0], q[1], q[2]);
-}
+void singleControlledDcx(QCOProgramBuilder& b);
 
 /// Creates a circuit with a multi-controlled DCX gate.
-inline void multipleControlledDcx(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(4);
-  b.mcdcx({q[0], q[1]}, q[2], q[3]);
-}
+void multipleControlledDcx(QCOProgramBuilder& b);
 
 /// Creates a circuit with a nested controlled DCX gate.
-inline void nestedControlledDcx(QCOProgramBuilder& b) {
-  auto reg = b.allocQubitRegister(4);
-  b.ctrl({reg[0]}, {reg[1], reg[2], reg[3]}, [&](mlir::ValueRange targets) {
-    const auto& [innerControlsOut, innerTargetsOut] =
-        b.ctrl({targets[0]}, {targets[1], targets[2]},
-               [&](mlir::ValueRange innerTargets) {
-                 auto res = b.dcx(innerTargets[0], innerTargets[1]);
-                 return llvm::SmallVector<mlir::Value>{res.first, res.second};
-               });
-    return llvm::to_vector(
-        llvm::concat<mlir::Value>(innerControlsOut, innerTargetsOut));
-  });
-}
+void nestedControlledDcx(QCOProgramBuilder& b);
 
 /// Creates a circuit with a trivial controlled DCX gate.
-inline void trivialControlledDcx(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(2);
-  b.mcdcx({}, q[0], q[1]);
-}
+void trivialControlledDcx(QCOProgramBuilder& b);
 
 /// Creates a circuit with an inverse modifier applied to a DCX gate.
-inline void inverseDcx(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(2);
-  b.inv({q[1], q[0]}, [&](mlir::ValueRange qubits) {
-    auto res = b.dcx(qubits[0], qubits[1]);
-    return llvm::SmallVector<mlir::Value>{res.first, res.second};
-  });
-}
+void inverseDcx(QCOProgramBuilder& b);
 
 /// Creates a circuit with an inverse modifier applied to a controlled DCX gate.
-inline void inverseMultipleControlledDcx(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(4);
-  b.inv({q[0], q[1], q[3], q[2]}, [&](mlir::ValueRange qubits) {
-    const auto& [controlsOut, targetsOut] =
-        b.mcdcx({qubits[0], qubits[1]}, qubits[2], qubits[3]);
-    llvm::SmallVector<mlir::Value, 2> targets{targetsOut.first,
-                                              targetsOut.second};
-    return llvm::to_vector(llvm::concat<mlir::Value>(controlsOut, targets));
-  });
-}
+void inverseMultipleControlledDcx(QCOProgramBuilder& b);
 
 // --- ECROp ---------------------------------------------------------------- //
 
 /// Creates a circuit with just an ECR gate.
-inline void ecr(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(2);
-  b.ecr(q[0], q[1]);
-}
+void ecr(QCOProgramBuilder& b);
 
 /// Creates a circuit with a single controlled ECR gate.
-inline void singleControlledEcr(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(3);
-  b.cecr(q[0], q[1], q[2]);
-}
+void singleControlledEcr(QCOProgramBuilder& b);
 
 /// Creates a circuit with a multi-controlled ECR gate.
-inline void multipleControlledEcr(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(4);
-  b.mcecr({q[0], q[1]}, q[2], q[3]);
-}
+void multipleControlledEcr(QCOProgramBuilder& b);
 
 /// Creates a circuit with a nested controlled ECR gate.
-inline void nestedControlledEcr(QCOProgramBuilder& b) {
-  auto reg = b.allocQubitRegister(4);
-  b.ctrl({reg[0]}, {reg[1], reg[2], reg[3]}, [&](mlir::ValueRange targets) {
-    const auto& [innerControlsOut, innerTargetsOut] =
-        b.ctrl({targets[0]}, {targets[1], targets[2]},
-               [&](mlir::ValueRange innerTargets) {
-                 auto res = b.ecr(innerTargets[0], innerTargets[1]);
-                 return llvm::SmallVector<mlir::Value>{res.first, res.second};
-               });
-    return llvm::to_vector(
-        llvm::concat<mlir::Value>(innerControlsOut, innerTargetsOut));
-  });
-}
+void nestedControlledEcr(QCOProgramBuilder& b);
 
 /// Creates a circuit with a trivial controlled ECR gate.
-inline void trivialControlledEcr(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(2);
-  b.mcecr({}, q[0], q[1]);
-}
+void trivialControlledEcr(QCOProgramBuilder& b);
 
 /// Creates a circuit with an inverse modifier applied to an ECR gate.
-inline void inverseEcr(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(2);
-  b.inv({q[0], q[1]}, [&](mlir::ValueRange qubits) {
-    auto res = b.ecr(qubits[0], qubits[1]);
-    return llvm::SmallVector<mlir::Value>{res.first, res.second};
-  });
-}
+void inverseEcr(QCOProgramBuilder& b);
 
 /// Creates a circuit with an inverse modifier applied to a controlled ECR gate.
-inline void inverseMultipleControlledEcr(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(4);
-  b.inv({q[0], q[1], q[2], q[3]}, [&](mlir::ValueRange qubits) {
-    const auto& [controlsOut, targetsOut] =
-        b.mcecr({qubits[0], qubits[1]}, qubits[2], qubits[3]);
-    llvm::SmallVector<mlir::Value, 2> targets{targetsOut.first,
-                                              targetsOut.second};
-    return llvm::to_vector(llvm::concat<mlir::Value>(controlsOut, targets));
-  });
-}
+void inverseMultipleControlledEcr(QCOProgramBuilder& b);
 
 // --- RXXOp ---------------------------------------------------------------- //
 
 /// Creates a circuit with just an RXX gate.
-inline void rxx(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(2);
-  b.rxx(0.123, q[0], q[1]);
-}
+void rxx(QCOProgramBuilder& b);
 
 /// Creates a circuit with a single controlled RXX gate.
-inline void singleControlledRxx(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(3);
-  b.crxx(0.123, q[0], q[1], q[2]);
-}
+void singleControlledRxx(QCOProgramBuilder& b);
 
 /// Creates a circuit with a multi-controlled RXX gate.
-inline void multipleControlledRxx(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(4);
-  b.mcrxx(0.123, {q[0], q[1]}, q[2], q[3]);
-}
+void multipleControlledRxx(QCOProgramBuilder& b);
 
 /// Creates a circuit with a nested controlled RXX gate.
-inline void nestedControlledRxx(QCOProgramBuilder& b) {
-  auto reg = b.allocQubitRegister(4);
-  b.ctrl({reg[0]}, {reg[1], reg[2], reg[3]}, [&](mlir::ValueRange targets) {
-    const auto& [innerControlsOut, innerTargetsOut] =
-        b.ctrl({targets[0]}, {targets[1], targets[2]},
-               [&](mlir::ValueRange innerTargets) {
-                 auto res = b.rxx(0.123, innerTargets[0], innerTargets[1]);
-                 return llvm::SmallVector<mlir::Value>{res.first, res.second};
-               });
-    return llvm::to_vector(
-        llvm::concat<mlir::Value>(innerControlsOut, innerTargetsOut));
-  });
-}
+void nestedControlledRxx(QCOProgramBuilder& b);
 
 /// Creates a circuit with a trivial controlled RXX gate.
-inline void trivialControlledRxx(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(2);
-  b.mcrxx(0.123, {}, q[0], q[1]);
-}
+void trivialControlledRxx(QCOProgramBuilder& b);
 
 /// Creates a circuit with an inverse modifier applied to an RXX gate.
-inline void inverseRxx(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(2);
-  b.inv({q[0], q[1]}, [&](mlir::ValueRange qubits) {
-    auto res = b.rxx(-0.123, qubits[0], qubits[1]);
-    return llvm::SmallVector<mlir::Value>{res.first, res.second};
-  });
-}
+void inverseRxx(QCOProgramBuilder& b);
 
 /// Creates a circuit with an inverse modifier applied to a controlled RXX gate.
-inline void inverseMultipleControlledRxx(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(4);
-  b.inv({q[0], q[1], q[2], q[3]}, [&](mlir::ValueRange qubits) {
-    const auto& [controlsOut, targetsOut] =
-        b.mcrxx(-0.123, {qubits[0], qubits[1]}, qubits[2], qubits[3]);
-    llvm::SmallVector<mlir::Value, 2> targets{targetsOut.first,
-                                              targetsOut.second};
-    return llvm::to_vector(llvm::concat<mlir::Value>(controlsOut, targets));
-  });
-}
+void inverseMultipleControlledRxx(QCOProgramBuilder& b);
 
 /// Creates a circuit with a triple-controlled RXX gate.
-inline void tripleControlledRxx(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(5);
-  b.mcrxx(0.123, {q[0], q[1], q[2]}, q[3], q[4]);
-}
+void tripleControlledRxx(QCOProgramBuilder& b);
 
 // --- RYYOp ---------------------------------------------------------------- //
 
 /// Creates a circuit with just an RYY gate.
-inline void ryy(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(2);
-  b.ryy(0.123, q[0], q[1]);
-}
+void ryy(QCOProgramBuilder& b);
 
 /// Creates a circuit with a single controlled RYY gate.
-inline void singleControlledRyy(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(3);
-  b.cryy(0.123, q[0], q[1], q[2]);
-}
+void singleControlledRyy(QCOProgramBuilder& b);
 
 /// Creates a circuit with a multi-controlled RYY gate.
-inline void multipleControlledRyy(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(4);
-  b.mcryy(0.123, {q[0], q[1]}, q[2], q[3]);
-}
+void multipleControlledRyy(QCOProgramBuilder& b);
 
 /// Creates a circuit with a nested controlled RYY gate.
-inline void nestedControlledRyy(QCOProgramBuilder& b) {
-  auto reg = b.allocQubitRegister(4);
-  b.ctrl({reg[0]}, {reg[1], reg[2], reg[3]}, [&](mlir::ValueRange targets) {
-    const auto& [innerControlsOut, innerTargetsOut] =
-        b.ctrl({targets[0]}, {targets[1], targets[2]},
-               [&](mlir::ValueRange innerTargets) {
-                 auto res = b.ryy(0.123, innerTargets[0], innerTargets[1]);
-                 return llvm::SmallVector<mlir::Value>{res.first, res.second};
-               });
-    return llvm::to_vector(
-        llvm::concat<mlir::Value>(innerControlsOut, innerTargetsOut));
-  });
-}
+void nestedControlledRyy(QCOProgramBuilder& b);
 
 /// Creates a circuit with a trivial controlled RYY gate.
-inline void trivialControlledRyy(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(2);
-  b.mcryy(0.123, {}, q[0], q[1]);
-}
+void trivialControlledRyy(QCOProgramBuilder& b);
 
 /// Creates a circuit with an inverse modifier applied to an RYY gate.
-inline void inverseRyy(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(2);
-  b.inv({q[0], q[1]}, [&](mlir::ValueRange qubits) {
-    auto res = b.ryy(-0.123, qubits[0], qubits[1]);
-    return llvm::SmallVector<mlir::Value>{res.first, res.second};
-  });
-}
+void inverseRyy(QCOProgramBuilder& b);
 
 /// Creates a circuit with an inverse modifier applied to a controlled RYY gate.
-inline void inverseMultipleControlledRyy(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(4);
-  b.inv({q[0], q[1], q[2], q[3]}, [&](mlir::ValueRange qubits) {
-    const auto& [controlsOut, targetsOut] =
-        b.mcryy(-0.123, {qubits[0], qubits[1]}, qubits[2], qubits[3]);
-    llvm::SmallVector<mlir::Value, 2> targets{targetsOut.first,
-                                              targetsOut.second};
-    return llvm::to_vector(llvm::concat<mlir::Value>(controlsOut, targets));
-  });
-}
+void inverseMultipleControlledRyy(QCOProgramBuilder& b);
 
 // --- RZXOp ---------------------------------------------------------------- //
 
 /// Creates a circuit with just an RZX gate.
-inline void rzx(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(2);
-  b.rzx(0.123, q[0], q[1]);
-}
+void rzx(QCOProgramBuilder& b);
 
 /// Creates a circuit with a single controlled RZX gate.
-inline void singleControlledRzx(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(3);
-  b.crzx(0.123, q[0], q[1], q[2]);
-}
+void singleControlledRzx(QCOProgramBuilder& b);
 
 /// Creates a circuit with a multi-controlled RZX gate.
-inline void multipleControlledRzx(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(4);
-  b.mcrzx(0.123, {q[0], q[1]}, q[2], q[3]);
-}
+void multipleControlledRzx(QCOProgramBuilder& b);
 
 /// Creates a circuit with a nested controlled RZX gate.
-inline void nestedControlledRzx(QCOProgramBuilder& b) {
-  auto reg = b.allocQubitRegister(4);
-  b.ctrl({reg[0]}, {reg[1], reg[2], reg[3]}, [&](mlir::ValueRange targets) {
-    const auto& [innerControlsOut, innerTargetsOut] =
-        b.ctrl({targets[0]}, {targets[1], targets[2]},
-               [&](mlir::ValueRange innerTargets) {
-                 auto res = b.rzx(0.123, innerTargets[0], innerTargets[1]);
-                 return llvm::SmallVector<mlir::Value>{res.first, res.second};
-               });
-    return llvm::to_vector(
-        llvm::concat<mlir::Value>(innerControlsOut, innerTargetsOut));
-  });
-}
+void nestedControlledRzx(QCOProgramBuilder& b);
 
 /// Creates a circuit with a trivial controlled RZX gate.
-inline void trivialControlledRzx(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(2);
-  b.mcrzx(0.123, {}, q[0], q[1]);
-}
+void trivialControlledRzx(QCOProgramBuilder& b);
 
 /// Creates a circuit with an inverse modifier applied to an RZX gate.
-inline void inverseRzx(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(2);
-  b.inv({q[0], q[1]}, [&](mlir::ValueRange qubits) {
-    auto res = b.rzx(-0.123, qubits[0], qubits[1]);
-    return llvm::SmallVector<mlir::Value>{res.first, res.second};
-  });
-}
+void inverseRzx(QCOProgramBuilder& b);
 
 /// Creates a circuit with an inverse modifier applied to a controlled RZX gate.
-inline void inverseMultipleControlledRzx(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(4);
-  b.inv({q[0], q[1], q[2], q[3]}, [&](mlir::ValueRange qubits) {
-    const auto& [controlsOut, targetsOut] =
-        b.mcrzx(-0.123, {qubits[0], qubits[1]}, qubits[2], qubits[3]);
-    llvm::SmallVector<mlir::Value, 2> targets{targetsOut.first,
-                                              targetsOut.second};
-    return llvm::to_vector(llvm::concat<mlir::Value>(controlsOut, targets));
-  });
-}
+void inverseMultipleControlledRzx(QCOProgramBuilder& b);
 
 // --- RZZOp ---------------------------------------------------------------- //
 
 /// Creates a circuit with just an RZZ gate.
-inline void rzz(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(2);
-  b.rzz(0.123, q[0], q[1]);
-}
+void rzz(QCOProgramBuilder& b);
 
 /// Creates a circuit with a single controlled RZZ gate.
-inline void singleControlledRzz(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(3);
-  b.crzz(0.123, q[0], q[1], q[2]);
-}
+void singleControlledRzz(QCOProgramBuilder& b);
 
 /// Creates a circuit with a multi-controlled RZZ gate.
-inline void multipleControlledRzz(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(4);
-  b.mcrzz(0.123, {q[0], q[1]}, q[2], q[3]);
-}
+void multipleControlledRzz(QCOProgramBuilder& b);
 
 /// Creates a circuit with a nested controlled RZZ gate.
-inline void nestedControlledRzz(QCOProgramBuilder& b) {
-  auto reg = b.allocQubitRegister(4);
-  b.ctrl({reg[0]}, {reg[1], reg[2], reg[3]}, [&](mlir::ValueRange targets) {
-    const auto& [innerControlsOut, innerTargetsOut] =
-        b.ctrl({targets[0]}, {targets[1], targets[2]},
-               [&](mlir::ValueRange innerTargets) {
-                 auto res = b.rzz(0.123, innerTargets[0], innerTargets[1]);
-                 return llvm::SmallVector<mlir::Value>{res.first, res.second};
-               });
-    return llvm::to_vector(
-        llvm::concat<mlir::Value>(innerControlsOut, innerTargetsOut));
-  });
-}
+void nestedControlledRzz(QCOProgramBuilder& b);
 
 /// Creates a circuit with a trivial controlled RZZ gate.
-inline void trivialControlledRzz(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(2);
-  b.mcrzz(0.123, {}, q[0], q[1]);
-}
+void trivialControlledRzz(QCOProgramBuilder& b);
 
 /// Creates a circuit with an inverse modifier applied to an RZZ gate.
-inline void inverseRzz(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(2);
-  b.inv({q[0], q[1]}, [&](mlir::ValueRange qubits) {
-    auto res = b.rzz(-0.123, qubits[0], qubits[1]);
-    return llvm::SmallVector<mlir::Value>{res.first, res.second};
-  });
-}
+void inverseRzz(QCOProgramBuilder& b);
 
 /// Creates a circuit with an inverse modifier applied to a controlled RZZ gate.
-inline void inverseMultipleControlledRzz(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(4);
-  b.inv({q[0], q[1], q[2], q[3]}, [&](mlir::ValueRange qubits) {
-    const auto& [controlsOut, targetsOut] =
-        b.mcrzz(-0.123, {qubits[0], qubits[1]}, qubits[2], qubits[3]);
-    llvm::SmallVector<mlir::Value, 2> targets{targetsOut.first,
-                                              targetsOut.second};
-    return llvm::to_vector(llvm::concat<mlir::Value>(controlsOut, targets));
-  });
-}
+void inverseMultipleControlledRzz(QCOProgramBuilder& b);
 
 // --- XXPlusYYOp ----------------------------------------------------------- //
 
 /// Creates a circuit with just an XXPlusYY gate.
-inline void xxPlusYY(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(2);
-  b.xx_plus_yy(0.123, 0.456, q[0], q[1]);
-}
+void xxPlusYY(QCOProgramBuilder& b);
 
 /// Creates a circuit with a single controlled XXPlusYY gate.
-inline void singleControlledXxPlusYY(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(3);
-  b.cxx_plus_yy(0.123, 0.456, q[0], q[1], q[2]);
-}
+void singleControlledXxPlusYY(QCOProgramBuilder& b);
 
 /// Creates a circuit with a multi-controlled XXPlusYY gate.
-inline void multipleControlledXxPlusYY(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(4);
-  b.mcxx_plus_yy(0.123, 0.456, {q[0], q[1]}, q[2], q[3]);
-}
+void multipleControlledXxPlusYY(QCOProgramBuilder& b);
 
 /// Creates a circuit with a nested controlled XXPlusYY gate.
-inline void nestedControlledXxPlusYY(QCOProgramBuilder& b) {
-  auto reg = b.allocQubitRegister(4);
-  b.ctrl({reg[0]}, {reg[1], reg[2], reg[3]}, [&](mlir::ValueRange targets) {
-    const auto& [innerControlsOut, innerTargetsOut] =
-        b.ctrl({targets[0]}, {targets[1], targets[2]},
-               [&](mlir::ValueRange innerTargets) {
-                 auto res = b.xx_plus_yy(0.123, 0.456, innerTargets[0],
-                                         innerTargets[1]);
-                 return llvm::SmallVector<mlir::Value>{res.first, res.second};
-               });
-    return llvm::to_vector(
-        llvm::concat<mlir::Value>(innerControlsOut, innerTargetsOut));
-  });
-}
+void nestedControlledXxPlusYY(QCOProgramBuilder& b);
 
 /// Creates a circuit with a trivial controlled XXPlusYY gate.
-inline void trivialControlledXxPlusYY(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(2);
-  b.mcxx_plus_yy(0.123, 0.456, {}, q[0], q[1]);
-}
+void trivialControlledXxPlusYY(QCOProgramBuilder& b);
 
 /// Creates a circuit with an inverse modifier applied to an XXPlusYY gate.
-inline void inverseXxPlusYY(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(2);
-  b.inv({q[0], q[1]}, [&](mlir::ValueRange qubits) {
-    auto res = b.xx_plus_yy(-0.123, 0.456, qubits[0], qubits[1]);
-    return llvm::SmallVector<mlir::Value>{res.first, res.second};
-  });
-}
+void inverseXxPlusYY(QCOProgramBuilder& b);
 
 /// Creates a circuit with an inverse modifier applied to a controlled XXPlusYY
 /// gate.
-inline void inverseMultipleControlledXxPlusYY(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(4);
-  b.inv({q[0], q[1], q[2], q[3]}, [&](mlir::ValueRange qubits) {
-    const auto& [controlsOut, targetsOut] = b.mcxx_plus_yy(
-        -0.123, 0.456, {qubits[0], qubits[1]}, qubits[2], qubits[3]);
-    llvm::SmallVector<mlir::Value, 2> targets{targetsOut.first,
-                                              targetsOut.second};
-    return llvm::to_vector(llvm::concat<mlir::Value>(controlsOut, targets));
-  });
-}
+void inverseMultipleControlledXxPlusYY(QCOProgramBuilder& b);
 
 // --- XXMinusYYOp ---------------------------------------------------------- //
 
 /// Creates a circuit with just an XXMinusYY gate.
-inline void xxMinusYY(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(2);
-  b.xx_minus_yy(0.123, 0.456, q[0], q[1]);
-}
+void xxMinusYY(QCOProgramBuilder& b);
 
 /// Creates a circuit with a single controlled XXMinusYY gate.
-inline void singleControlledXxMinusYY(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(3);
-  b.cxx_minus_yy(0.123, 0.456, q[0], q[1], q[2]);
-}
+void singleControlledXxMinusYY(QCOProgramBuilder& b);
 
 /// Creates a circuit with a multi-controlled XXMinusYY gate.
-inline void multipleControlledXxMinusYY(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(4);
-  b.mcxx_minus_yy(0.123, 0.456, {q[0], q[1]}, q[2], q[3]);
-}
+void multipleControlledXxMinusYY(QCOProgramBuilder& b);
 
 /// Creates a circuit with a nested controlled XXMinusYY gate.
-inline void nestedControlledXxMinusYY(QCOProgramBuilder& b) {
-  auto reg = b.allocQubitRegister(4);
-  b.ctrl({reg[0]}, {reg[1], reg[2], reg[3]}, [&](mlir::ValueRange targets) {
-    const auto& [innerControlsOut, innerTargetsOut] =
-        b.ctrl({targets[0]}, {targets[1], targets[2]},
-               [&](mlir::ValueRange innerTargets) {
-                 auto res = b.xx_minus_yy(0.123, 0.456, innerTargets[0],
-                                          innerTargets[1]);
-                 return llvm::SmallVector<mlir::Value>{res.first, res.second};
-               });
-    return llvm::to_vector(
-        llvm::concat<mlir::Value>(innerControlsOut, innerTargetsOut));
-  });
-}
+void nestedControlledXxMinusYY(QCOProgramBuilder& b);
 
 /// Creates a circuit with a trivial controlled XXMinusYY gate.
-inline void trivialControlledXxMinusYY(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(2);
-  b.mcxx_minus_yy(0.123, 0.456, {}, q[0], q[1]);
-}
+void trivialControlledXxMinusYY(QCOProgramBuilder& b);
 
 /// Creates a circuit with an inverse modifier applied to an XXMinusYY gate.
-inline void inverseXxMinusYY(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(2);
-  b.inv({q[0], q[1]}, [&](mlir::ValueRange qubits) {
-    auto res = b.xx_minus_yy(-0.123, 0.456, qubits[0], qubits[1]);
-    return llvm::SmallVector<mlir::Value>{res.first, res.second};
-  });
-}
+void inverseXxMinusYY(QCOProgramBuilder& b);
 
 /// Creates a circuit with an inverse modifier applied to a controlled XXMinusYY
 /// gate.
-inline void inverseMultipleControlledXxMinusYY(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(4);
-  b.inv({q[0], q[1], q[2], q[3]}, [&](mlir::ValueRange qubits) {
-    const auto& [controlsOut, targetsOut] = b.mcxx_minus_yy(
-        -0.123, 0.456, {qubits[0], qubits[1]}, qubits[2], qubits[3]);
-    llvm::SmallVector<mlir::Value, 2> targets{targetsOut.first,
-                                              targetsOut.second};
-    return llvm::to_vector(llvm::concat<mlir::Value>(controlsOut, targets));
-  });
-}
+void inverseMultipleControlledXxMinusYY(QCOProgramBuilder& b);
 
 // --- BarrierOp ------------------------------------------------------------ //
 
 /// Creates a circuit with a barrier.
-inline void barrier(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(1);
-  b.barrier(q[0]);
-}
+void barrier(QCOProgramBuilder& b);
 
 /// Creates a circuit with a barrier on two qubits.
-inline void barrierTwoQubits(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(2);
-  b.barrier({q[0], q[1]});
-}
+void barrierTwoQubits(QCOProgramBuilder& b);
 
 /// Creates a circuit with a barrier on multiple qubits.
-inline void barrierMultipleQubits(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(3);
-  b.barrier({q[0], q[1], q[2]});
-}
+void barrierMultipleQubits(QCOProgramBuilder& b);
 
 /// Creates a circuit with a single controlled barrier.
-inline void singleControlledBarrier(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(2);
-  b.ctrl({q[1]}, {q[0]}, [&](mlir::ValueRange targets) {
-    return llvm::SmallVector<mlir::Value>{b.barrier(targets[0])};
-  });
-}
+void singleControlledBarrier(QCOProgramBuilder& b);
 
 /// Creates a circuit with an inverse modifier applied to a barrier.
-inline void inverseBarrier(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(1);
-  b.inv({q[0]}, [&](mlir::ValueRange qubits) {
-    return llvm::SmallVector<mlir::Value>{b.barrier(qubits[0])};
-  });
-}
+void inverseBarrier(QCOProgramBuilder& b);
 
 // --- CtrlOp --------------------------------------------------------------- //
 
 /// Creates a circuit with a trivial ctrl modifier.
-inline void trivialCtrl(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(2);
-  b.ctrl({}, {q[0], q[1]}, [&](mlir::ValueRange targets) {
-    auto [q0, q1] = b.rxx(0.123, targets[0], targets[1]);
-    return llvm::SmallVector<mlir::Value>{q0, q1};
-  });
-}
+void trivialCtrl(QCOProgramBuilder& b);
 
 /// Creates a circuit with nested ctrl modifiers.
-inline void nestedCtrl(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(4);
-  b.ctrl({q[0]}, {q[1], q[2], q[3]}, [&](mlir::ValueRange targets) {
-    const auto& [innerControlsOut, innerTargetsOut] =
-        b.ctrl({targets[0]}, {targets[1], targets[2]},
-               [&](mlir::ValueRange innerTargets) {
-                 auto [q0, q1] = b.rxx(0.123, innerTargets[0], innerTargets[1]);
-                 return llvm::SmallVector<mlir::Value>{q0, q1};
-               });
-    return llvm::to_vector(
-        llvm::concat<mlir::Value>(innerControlsOut, innerTargetsOut));
-  });
-}
+void nestedCtrl(QCOProgramBuilder& b);
 
 /// Creates a circuit with triple nested ctrl modifiers.
-inline void tripleNestedCtrl(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(5);
-  b.ctrl({q[0]}, {q[1], q[2], q[3], q[4]}, [&](mlir::ValueRange targets) {
-    const auto& [innerControlsOut, innerTargetsOut] = b.ctrl(
-        {targets[0]}, {targets[1], targets[2], targets[3]},
-        [&](mlir::ValueRange innerTargets) {
-          const auto& [innerInnerControlsOut, innerInnerTargetsOut] =
-              b.ctrl({innerTargets[0]}, {innerTargets[1], innerTargets[2]},
-                     [&](mlir::ValueRange innerInnerTargets) {
-                       auto [q0, q1] = b.rxx(0.123, innerInnerTargets[0],
-                                             innerInnerTargets[1]);
-                       return llvm::SmallVector<mlir::Value>{q0, q1};
-                     });
-          return llvm::to_vector(llvm::concat<mlir::Value>(
-              innerInnerControlsOut, innerInnerTargetsOut));
-        });
-    return llvm::to_vector(
-        llvm::concat<mlir::Value>(innerControlsOut, innerTargetsOut));
-  });
-}
+void tripleNestedCtrl(QCOProgramBuilder& b);
 
 /// Creates a circuit with control modifiers interleaved by an inverse modifier.
-inline void ctrlInvSandwich(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(4);
-  b.ctrl({q[0]}, {q[1], q[2], q[3]}, [&](mlir::ValueRange targets) {
-    auto inner = b.inv(
-        {targets[0], targets[1], targets[2]},
-        [&](mlir::ValueRange innerTargets) {
-          auto [innerControlsOut, innerTargetsOut] =
-              b.ctrl({innerTargets[0]}, {innerTargets[1], innerTargets[2]},
-                     [&](mlir::ValueRange innerInnerTargets) {
-                       auto [q0, q1] = b.rxx(-0.123, innerInnerTargets[0],
-                                             innerInnerTargets[1]);
-                       return llvm::SmallVector<mlir::Value>{q0, q1};
-                     });
-          return llvm::to_vector(
-              llvm::concat<mlir::Value>(innerControlsOut, innerTargetsOut));
-        });
-    return llvm::SmallVector<mlir::Value>{inner};
-  });
-}
+void ctrlInvSandwich(QCOProgramBuilder& b);
 
 // --- InvOp ---------------------------------------------------------------- //
 
 /// Creates a circuit with nested inverse modifiers.
-inline void nestedInv(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(2);
-  b.inv({q[0], q[1]}, [&](mlir::ValueRange qubits) {
-    auto inner =
-        b.inv({qubits[0], qubits[1]}, [&](mlir::ValueRange innerQubits) {
-          auto [q0, q1] = b.rxx(0.123, innerQubits[0], innerQubits[1]);
-          return llvm::SmallVector<mlir::Value>{q0, q1};
-        });
-    return llvm::SmallVector<mlir::Value>{inner};
-  });
-}
+void nestedInv(QCOProgramBuilder& b);
 
 /// Creates a circuit with triple nested inverse modifiers.
-inline void tripleNestedInv(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(2);
-  b.inv({q[0], q[1]}, [&](mlir::ValueRange qubits) {
-    auto inner1 =
-        b.inv({qubits[0], qubits[1]}, [&](mlir::ValueRange innerQubits) {
-          auto inner2 = b.inv({innerQubits[0], innerQubits[1]},
-                              [&](mlir::ValueRange innerInnerQubbits) {
-                                auto [q0, q1] =
-                                    b.rxx(-0.123, innerInnerQubbits[0],
-                                          innerInnerQubbits[1]);
-                                return llvm::SmallVector<mlir::Value>{q0, q1};
-                              });
-          return llvm::SmallVector<mlir::Value>{inner2};
-        });
-    return llvm::SmallVector<mlir::Value>{inner1};
-  });
-}
+void tripleNestedInv(QCOProgramBuilder& b);
 
 /// Creates a circuit with inverse modifiers interleaved by a control modifier.
-inline void invCtrlSandwich(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(3);
-  b.inv({q[0], q[1], q[2]}, [&](mlir::ValueRange qubits) {
-    const auto& [controlsOut, targetsOut] = b.ctrl(
-        {qubits[0]}, {qubits[1], qubits[2]}, [&](mlir::ValueRange targets) {
-          auto inner = b.inv(
-              {targets[0], targets[1]}, [&](mlir::ValueRange innerQubits) {
-                auto [q0, q1] = b.rxx(0.123, innerQubits[0], innerQubits[1]);
-                return llvm::SmallVector<mlir::Value>{q0, q1};
-              });
-          return llvm::SmallVector<mlir::Value>{inner};
-        });
-    return llvm::to_vector(llvm::concat<mlir::Value>(controlsOut, targetsOut));
-  });
-}
+void invCtrlSandwich(QCOProgramBuilder& b);
 } // namespace mlir::qco
