@@ -24,7 +24,6 @@
 #include <mlir/IR/Verifier.h>
 #include <mlir/Pass/PassManager.h>
 #include <mlir/Support/LLVM.h>
-#include <mlir/Support/WalkResult.h>
 #include <mlir/Transforms/Passes.h>
 
 using namespace mlir;
@@ -90,7 +89,7 @@ protected:
 TEST_F(QCOIfOpTest, TestQCOIfBuilder) {
   // Test If construction with QCO builder
   auto ifOp = buildOp();
-
+  module->print(llvm::outs());
   // Verify the operation structure
   EXPECT_EQ(ifOp.getQubits().size(), 2);
   EXPECT_EQ(ifOp.getResults().size(), 2);
