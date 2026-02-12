@@ -118,6 +118,11 @@ static void printTargetAliasing(OpAsmPrinter& printer, Operation* /*op*/,
 static ParseResult
 parseIfOpAliasing(OpAsmParser& parser, Region& thenRegion, Region& elseRegion,
                   SmallVectorImpl<OpAsmParser::UnresolvedOperand>& operands) {
+  // Parse the qubits keyword
+  if (parser.parseKeyword("qubits")) {
+    return failure();
+  }
+
   // Parse the then region
   if (parseTargetAliasing(parser, thenRegion, operands)) {
     return failure();
@@ -125,6 +130,11 @@ parseIfOpAliasing(OpAsmParser& parser, Region& thenRegion, Region& elseRegion,
 
   // Parse the else keyword
   if (parser.parseKeyword("else")) {
+    return failure();
+  }
+
+  // Parse the qubits keyword
+  if (parser.parseKeyword("qubits")) {
     return failure();
   }
 
@@ -144,8 +154,10 @@ parseIfOpAliasing(OpAsmParser& parser, Region& thenRegion, Region& elseRegion,
 static void printIfOpAliasing(OpAsmPrinter& printer, Operation* op,
                               Region& thenRegion, Region& elseRegion,
                               OperandRange qubits) {
+  printer << "qubits";
   printTargetAliasing(printer, op, thenRegion, qubits);
   printer << " else ";
+  printer << "qubits";
   printTargetAliasing(printer, op, elseRegion, qubits);
 }
 
