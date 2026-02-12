@@ -44,6 +44,7 @@ void IfOp::build(
   auto& thenBlock = odsState.regions.front()->emplaceBlock();
   auto& elseBlock = odsState.regions.back()->emplaceBlock();
 
+  const OpBuilder::InsertionGuard guard(odsBuilder);
   // Add the block arguments and insert the yield operation
   thenBlock.addArguments(
       qubits.getTypes(),
