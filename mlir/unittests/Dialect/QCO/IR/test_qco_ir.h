@@ -27,9 +27,7 @@ class QCOTest : public testing::TestWithParam<QCOTestCase> {
 protected:
   std::unique_ptr<mlir::MLIRContext> context;
   mlir::OwningOpRef<mlir::ModuleOp> program;
-  mlir::OwningOpRef<mlir::ModuleOp> canonicalizedProgram;
   mlir::OwningOpRef<mlir::ModuleOp> reference;
-  mlir::OwningOpRef<mlir::ModuleOp> canonicalizedReference;
 
   void SetUp() override;
 };

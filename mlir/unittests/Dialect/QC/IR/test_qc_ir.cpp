@@ -46,12 +46,9 @@ TEST_P(QCTest, ProgramEquivalence) {
   printProgram(program.get(), "Original QC IR" + name, llvm::errs());
   EXPECT_TRUE(mlir::verify(*program).succeeded());
 
-  canonicalizedProgram = program.get().clone();
-  runCanonicalizationPasses(canonicalizedProgram.get());
-  ASSERT_TRUE(canonicalizedProgram);
-  printProgram(canonicalizedProgram.get(), "Canonicalized QC IR" + name,
-               llvm::errs());
-  EXPECT_TRUE(mlir::verify(*canonicalizedProgram).succeeded());
+  runCanonicalizationPasses(program.get());
+  printProgram(program.get(), "Canonicalized QC IR" + name, llvm::errs());
+  EXPECT_TRUE(mlir::verify(*program).succeeded());
 
   reference =
       mlir::qc::QCProgramBuilder::build(context.get(), referenceBuilder);
@@ -59,13 +56,11 @@ TEST_P(QCTest, ProgramEquivalence) {
   printProgram(reference.get(), "Reference QC IR" + name, llvm::errs());
   EXPECT_TRUE(mlir::verify(*reference).succeeded());
 
-  canonicalizedReference = reference.get().clone();
-  runCanonicalizationPasses(canonicalizedReference.get());
-  ASSERT_TRUE(canonicalizedReference);
-  printProgram(canonicalizedReference.get(),
-               "Canonicalized Reference QC IR" + name, llvm::errs());
-  EXPECT_TRUE(mlir::verify(*canonicalizedReference).succeeded());
+  runCanonicalizationPasses(reference.get());
+  printProgram(reference.get(), "Canonicalized Reference QC IR" + name,
+               llvm::errs());
+  EXPECT_TRUE(mlir::verify(*reference).succeeded());
 
-  EXPECT_TRUE(areModulesEquivalentWithPermutations(
-      canonicalizedProgram.get(), canonicalizedReference.get()));
+  EXPECT_TRUE(
+      areModulesEquivalentWithPermutations(program.get(), reference.get()));
 }
