@@ -89,7 +89,7 @@ protected:
 TEST_F(QCOIfOpTest, TestQCOIfBuilder) {
   // Test If construction with QCO builder
   auto ifOp = buildOp();
-  module->print(llvm::outs());
+
   // Verify the operation structure
   EXPECT_EQ(ifOp.getQubits().size(), 2);
   EXPECT_EQ(ifOp.getResults().size(), 2);
