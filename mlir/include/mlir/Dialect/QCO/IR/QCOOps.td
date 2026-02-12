@@ -1241,7 +1241,7 @@ def IfOp : QCOOp<"if", traits =
         $condition
          custom<IfOpAliasing>($thenRegion, $elseRegion, $qubits)
          attr-dict `:`
-        `{` type($qubits) `}`
+        `{` type($condition) `,` type($qubits) `}`
         `->`
         `{` type($results) `}`
     }];
