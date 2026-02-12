@@ -57,7 +57,8 @@ protected:
     return count;
   }
   /**
-   * @brief Build a basic program with 2 qubits and an if operation.
+   * @brief Build a basic qco program with 2 qubits and an if operation with QCO
+   * builder.
    */
   IfOp buildOp() {
     const auto q = builder.allocQubitRegister(2);
@@ -86,7 +87,8 @@ protected:
   }
 };
 
-TEST_F(QCOIfOpTest, TestBuilder) {
+TEST_F(QCOIfOpTest, TestQCOIfBuilder) {
+  // Test If construction with QCO builder
   auto ifOp = buildOp();
 
   // Verify the operation structure
@@ -94,6 +96,30 @@ TEST_F(QCOIfOpTest, TestBuilder) {
   EXPECT_EQ(ifOp.getResults().size(), 2);
   EXPECT_EQ(ifOp.thenYield()->getNumOperands(), 2);
   EXPECT_EQ(ifOp.elseYield()->getNumOperands(), 2);
+  EXPECT_EQ(ifOp.thenBlock()->getArgumentTypes(),
+            ifOp.elseBlock()->getArgumentTypes());
+  EXPECT_EQ(ifOp->getResultTypes(), ifOp.getQubits().getTypes());
+  EXPECT_EQ(ifOp->getResultTypes(), ifOp.thenBlock()->getArgumentTypes());
+
+  // Verify operation
+  ASSERT_TRUE(verify(ifOp).succeeded());
+}
+
+TEST_F(QCOIfOpTest, TestIfBuilder) {
+  // Test If construction directly
+  const auto q = builder.allocQubit();
+  auto constantBool =
+      arith::ConstantOp::create(builder, builder.getBoolAttr(true));
+  auto ifOp = IfOp::create(
+      builder, constantBool, q,
+      [&](ValueRange args) -> SmallVector<Value> { return args; },
+      [&](ValueRange args) -> SmallVector<Value> { return args; });
+
+  // Verify the operation structure
+  EXPECT_EQ(ifOp.getQubits().size(), 1);
+  EXPECT_EQ(ifOp.getResults().size(), 1);
+  EXPECT_EQ(ifOp.thenYield()->getNumOperands(), 1);
+  EXPECT_EQ(ifOp.elseYield()->getNumOperands(), 1);
   EXPECT_EQ(ifOp.thenBlock()->getArgumentTypes(),
             ifOp.elseBlock()->getArgumentTypes());
   EXPECT_EQ(ifOp->getResultTypes(), ifOp.getQubits().getTypes());
@@ -113,18 +139,7 @@ TEST_F(QCOIfOpTest, TestWrongType) {
 }
 
 TEST_F(QCOIfOpTest, TestSameNumberOfBlockArgs) {
-  const auto q = builder.allocQubitRegister(2);
-  auto [qubit, measureResult] = builder.measure(q[0]);
-
-  builder.qcoIf(
-      measureResult, {qubit, q[1]},
-      [&](ValueRange args) -> SmallVector<Value> {
-        auto q2 = builder.h(args[0]);
-        return {q2, args[1]};
-      },
-      [&](ValueRange args) -> SmallVector<Value> { return args; });
-  auto ifOp = cast<IfOp>(builder.getBlock()->getOperations().back());
-  module = builder.finalize();
+  auto ifOp = buildOp();
 
   // Add an additional block argument in the then block
   auto* block = ifOp.thenBlock();
