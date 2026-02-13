@@ -36,5 +36,3 @@ protected:
 };
 
 std::string printTestName(const testing::TestParamInfo<QCTestCase>& info);
-
-inline void emptyQC([[maybe_unused]] mlir::qc::QCProgramBuilder& builder) {}

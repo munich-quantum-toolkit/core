@@ -14,6 +14,8 @@
 
 namespace mlir::qir {
 
+void emptyQIR([[maybe_unused]] QIRProgramBuilder& builder) {}
+
 void allocQubit(QIRProgramBuilder& b) { b.allocQubitRegister(1); }
 
 void allocQubitRegister(QIRProgramBuilder& b) { b.allocQubitRegister(2); }

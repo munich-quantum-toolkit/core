@@ -13,6 +13,9 @@
 namespace mlir::qco {
 class QCOProgramBuilder;
 
+/// Creates an empty QCO program.
+void emptyQCO(QCOProgramBuilder& builder);
+
 // --- Qubit Management ----------------------------------------------------- //
 
 /// Allocates a single qubit.

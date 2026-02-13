@@ -36,5 +36,3 @@ protected:
 };
 
 std::string printTestName(const testing::TestParamInfo<QIRTestCase>& info);
-
-inline void emptyQIR([[maybe_unused]] mlir::qir::QIRProgramBuilder& builder) {}

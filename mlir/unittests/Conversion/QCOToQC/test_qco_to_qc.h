@@ -40,7 +40,3 @@ protected:
 };
 
 std::string printTestName(const testing::TestParamInfo<QCOToQCTestCase>& info);
-
-inline void emptyQC([[maybe_unused]] qc::QCProgramBuilder& builder) {}
-
-inline void emptyQCO([[maybe_unused]] qco::QCOProgramBuilder& builder) {}

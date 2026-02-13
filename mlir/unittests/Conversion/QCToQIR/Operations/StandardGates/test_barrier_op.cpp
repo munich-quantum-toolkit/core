@@ -15,6 +15,7 @@
 #include <gtest/gtest.h>
 
 using namespace mlir::qc;
+using namespace mlir::qir;
 
 INSTANTIATE_TEST_SUITE_P(
     QCToQIRBarrierOpTest, QCToQIRTest,

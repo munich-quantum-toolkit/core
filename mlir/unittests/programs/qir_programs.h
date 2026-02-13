@@ -13,6 +13,9 @@
 namespace mlir::qir {
 class QIRProgramBuilder;
 
+/// Creates an empty QIR program.
+void emptyQIR(QIRProgramBuilder& builder);
+
 // --- Qubit Management ----------------------------------------------------- //
 
 /// Allocates a single qubit.

@@ -16,6 +16,8 @@
 
 namespace mlir::qc {
 
+void emptyQC([[maybe_unused]] QCProgramBuilder& builder) {}
+
 void allocQubit(QCProgramBuilder& b) { b.allocQubit(); }
 
 void allocQubitRegister(QCProgramBuilder& b) { b.allocQubitRegister(2); }
