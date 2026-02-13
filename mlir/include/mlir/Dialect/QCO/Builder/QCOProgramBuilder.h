@@ -1094,7 +1094,7 @@ public:
    * } else {
    *   ^bb0(%arg0 : !qco.qubit) :
    *      qco.yield %arg0
-   }
+   * }
    * ```
    */
   ValueRange
