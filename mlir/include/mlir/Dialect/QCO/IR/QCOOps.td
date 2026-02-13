@@ -1230,6 +1230,16 @@ def IfOp : QCOOp<"if", traits =
         as input that are required in the bodies of both branches. These qubits are passed down to the individual regions
         as block arguments. The number of results and the type of the results must be equivalent to the number and types
         of the input qubits.
+
+        Example:
+        ```mlir
+        %result = qco.if %condition qubits(%arg0 = %q0) {
+            %q1 = qco.h %arg0 : !qco.qubit -> !qco.qubit
+            qco.yield %q1
+         } else qubits(%arg0 = %q0) {
+            qco.yield %arg0
+        } : {i1, !qco.qubit} -> {!qco.qubit}
+        ```
     }];
 
     let arguments = (ins I1:$condition,  Variadic<AnyType>:$qubits);
