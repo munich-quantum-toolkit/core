@@ -1087,14 +1087,12 @@ public:
    *   });
    * ```
    * ```mlir
-   * %q2 = qco.if %condition qubits(%q0 : !qco.qubit) -> !qco.qubit {
-   *   ^bb0(%arg0 : !qco.qubit) :
+   * %q2 = qco.if %condition qubits(%arg0 = %q0) {
    *      %q1 = qco.h %arg0 : !qco.qubit -> !qco.qubit
    *      qco.yield %q1
-   * } else {
-   *   ^bb0(%arg0 : !qco.qubit) :
+   * } else qubits(%arg0 = %q0) {
    *      qco.yield %arg0
-   * }
+   * } : {i1, !qco.qubit} -> {!qco.qubit}
    * ```
    */
   ValueRange
