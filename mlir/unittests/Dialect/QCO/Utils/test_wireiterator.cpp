@@ -14,6 +14,7 @@
 
 #include <gtest/gtest.h>
 #include <iterator>
+#include <llvm/Support/Debug.h>
 #include <memory>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/ControlFlow/IR/ControlFlow.h>
@@ -52,6 +53,7 @@ TEST(WireIteratorTest, MixedUse) {
   auto alloc = *(entry.getBody().getOps<qco::AllocOp>().begin());
   auto qubit = alloc.getResult();
   qco::WireIterator it(qubit);
+  qco::WireIterator begin(it);
 
   //
   // Test: Forward Iteration
@@ -84,4 +86,50 @@ TEST(WireIteratorTest, MixedUse) {
 
   ++it;
   ASSERT_EQ(it, std::default_sentinel);
+
+  --it;
+  ASSERT_EQ(it.operation(), *(q04.getUsers().begin())); // qco.dealloc
+  ASSERT_EQ(it.qubit(), q04);
+
+  --it;
+  ASSERT_EQ(it.operation(), q04.getDefiningOp()); // qco.reset
+  ASSERT_EQ(it.qubit(), q03);
+
+  --it;
+  ASSERT_EQ(it.operation(), q03.getDefiningOp()); // qco.measure
+  ASSERT_EQ(it.qubit(), q02);
+
+  --it;
+  ASSERT_EQ(it.operation(), q02.getDefiningOp()); // qco.ctrl
+  ASSERT_EQ(it.qubit(), q01);
+
+  --it;
+  ASSERT_EQ(it.operation(), q01.getDefiningOp()); // qco.h
+  ASSERT_EQ(it.qubit(), q00);
+
+  --it;
+  ASSERT_EQ(it.operation(), q00.getDefiningOp()); // qco.alloc
+  ASSERT_EQ(it.qubit(), q00);
+  ASSERT_EQ(begin, it);
+
+  --it;
+  ASSERT_EQ(it.operation(), q00.getDefiningOp()); // qco.alloc
+  ASSERT_EQ(it.qubit(), q00);
+  ASSERT_EQ(begin, it);
+
+  for (; it != std::default_sentinel; ++it) {
+    llvm::dbgs() << **it << '\n'; /// Keep for debugging purposes.
+  }
+  ASSERT_EQ(it, std::default_sentinel);
+
+  --it;
+  ASSERT_EQ(it.operation(), *(q04.getUsers().begin())); // qco.dealloc
+  ASSERT_EQ(it.qubit(), q04);
+
+  for (; it != begin; --it) {
+    llvm::dbgs() << **it << '\n'; /// Keep for debugging purposes.
+  }
+  ASSERT_EQ(begin, it);
+  ASSERT_EQ(it.operation(), q00.getDefiningOp()); // qco.alloc
+  ASSERT_EQ(it.qubit(), q00);
 }
