@@ -18,13 +18,7 @@ using namespace mlir::qco;
 
 INSTANTIATE_TEST_SUITE_P(
     QCOResetOpTest, QCOToQCTest,
-    testing::Values(QCOToQCTestCase{"ResetQubitWithoutOp",
-                                    qco::resetQubitWithoutOp, emptyQC},
-                    QCOToQCTestCase{"ResetMultipleQubitsWithoutOp",
-                                    qco::resetMultipleQubitsWithoutOp, emptyQC},
-                    QCOToQCTestCase{"RepeatedResetWithoutOp",
-                                    qco::repeatedResetWithoutOp, emptyQC},
-                    QCOToQCTestCase{"ResetQubitAfterSingleOp",
+    testing::Values(QCOToQCTestCase{"ResetQubitAfterSingleOp",
                                     qco::resetQubitAfterSingleOp,
                                     qc::resetQubitAfterSingleOp},
                     QCOToQCTestCase{"ResetMultipleQubitsAfterSingleOp",

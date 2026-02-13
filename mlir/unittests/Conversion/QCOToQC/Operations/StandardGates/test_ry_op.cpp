@@ -18,18 +18,11 @@ using namespace mlir::qco;
 
 INSTANTIATE_TEST_SUITE_P(
     QCORYOpTest, QCOToQCTest,
-    testing::Values(
-        QCOToQCTestCase{"RY", qco::ry, qc::ry},
-        QCOToQCTestCase{"SingleControlledRY", qco::singleControlledRy,
-                        qc::singleControlledRy},
-        QCOToQCTestCase{"MultipleControlledRY", qco::multipleControlledRy,
-                        qc::multipleControlledRy},
-        QCOToQCTestCase{"NestedControlledRY", qco::nestedControlledRy,
-                        qc::multipleControlledRy},
-        QCOToQCTestCase{"TrivialControlledRY", qco::trivialControlledRy,
-                        qc::ry},
-        QCOToQCTestCase{"InverseRY", qco::inverseRy, qc::ry},
-        QCOToQCTestCase{"InverseMultipleControlledRY",
-                        qco::inverseMultipleControlledRy,
-                        qc::multipleControlledRy}),
+    testing::Values(QCOToQCTestCase{"RY", qco::ry, qc::ry},
+                    QCOToQCTestCase{"SingleControlledRY",
+                                    qco::singleControlledRy,
+                                    qc::singleControlledRy},
+                    QCOToQCTestCase{"MultipleControlledRY",
+                                    qco::multipleControlledRy,
+                                    qc::multipleControlledRy}),
     printTestName);

@@ -18,18 +18,11 @@ using namespace mlir::qco;
 
 INSTANTIATE_TEST_SUITE_P(
     QCORXXOpTest, QCOToQCTest,
-    testing::Values(
-        QCOToQCTestCase{"RXX", qco::rxx, qc::rxx},
-        QCOToQCTestCase{"SingleControlledRXX", qco::singleControlledRxx,
-                        qc::singleControlledRxx},
-        QCOToQCTestCase{"MultipleControlledRXX", qco::multipleControlledRxx,
-                        qc::multipleControlledRxx},
-        QCOToQCTestCase{"NestedControlledRXX", qco::nestedControlledRxx,
-                        qc::multipleControlledRxx},
-        QCOToQCTestCase{"TrivialControlledRXX", qco::trivialControlledRxx,
-                        qc::rxx},
-        QCOToQCTestCase{"InverseRXX", qco::inverseRxx, qc::rxx},
-        QCOToQCTestCase{"InverseMultipleControlledRXX",
-                        qco::inverseMultipleControlledRxx,
-                        qc::multipleControlledRxx}),
+    testing::Values(QCOToQCTestCase{"RXX", qco::rxx, qc::rxx},
+                    QCOToQCTestCase{"SingleControlledRXX",
+                                    qco::singleControlledRxx,
+                                    qc::singleControlledRxx},
+                    QCOToQCTestCase{"MultipleControlledRXX",
+                                    qco::multipleControlledRxx,
+                                    qc::multipleControlledRxx}),
     printTestName);

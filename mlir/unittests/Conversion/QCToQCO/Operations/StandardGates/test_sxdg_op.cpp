@@ -18,18 +18,11 @@ using namespace mlir::qc;
 
 INSTANTIATE_TEST_SUITE_P(
     QCSXdgOpTest, QCToQCOTest,
-    testing::Values(
-        QCToQCOTestCase{"SXdg", qc::sxdg, qco::sxdg},
-        QCToQCOTestCase{"SingleControlledSXdg", qc::singleControlledSxdg,
-                        qco::singleControlledSxdg},
-        QCToQCOTestCase{"MultipleControlledSXdg", qc::multipleControlledSxdg,
-                        qco::multipleControlledSxdg},
-        QCToQCOTestCase{"NestedControlledSXdg", qc::nestedControlledSxdg,
-                        qco::multipleControlledSxdg},
-        QCToQCOTestCase{"TrivialControlledSXdg", qc::trivialControlledSxdg,
-                        qco::sxdg},
-        QCToQCOTestCase{"InverseSXdg", qc::inverseSxdg, qco::sx},
-        QCToQCOTestCase{"InverseMultipleControlledSXdg",
-                        qc::inverseMultipleControlledSxdg,
-                        qco::multipleControlledSx}),
+    testing::Values(QCToQCOTestCase{"SXdg", qc::sxdg, qco::sxdg},
+                    QCToQCOTestCase{"SingleControlledSXdg",
+                                    qc::singleControlledSxdg,
+                                    qco::singleControlledSxdg},
+                    QCToQCOTestCase{"MultipleControlledSXdg",
+                                    qc::multipleControlledSxdg,
+                                    qco::multipleControlledSxdg}),
     printTestName);

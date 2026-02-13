@@ -26,5 +26,9 @@ INSTANTIATE_TEST_SUITE_P(
                                     qir::repeatedMeasurementToSameBit},
                     QCToQIRTestCase{"RepeatedMeasurementToDifferentBits",
                                     qc::repeatedMeasurementToDifferentBits,
-                                    qir::repeatedMeasurementToDifferentBits}),
+                                    qir::repeatedMeasurementToDifferentBits},
+                    QCToQIRTestCase{
+                        "MultipleClassicalRegistersAndMeasurements",
+                        qc::multipleClassicalRegistersAndMeasurements,
+                        qir::multipleClassicalRegistersAndMeasurements}),
     printTestName);

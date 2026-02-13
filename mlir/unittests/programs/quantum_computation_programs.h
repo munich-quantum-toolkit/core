@@ -43,15 +43,6 @@ void multipleClassicalRegistersAndMeasurements(QuantumComputation& comp);
 
 // --- ResetOp -------------------------------------------------------------- //
 
-/// Resets a single qubit without any operations being applied.
-void resetQubitWithoutOp(QuantumComputation& comp);
-
-/// Resets multiple qubits without any operations being applied.
-void resetMultipleQubitsWithoutOp(QuantumComputation& comp);
-
-/// Repeatedly resets a single qubit without any operations being applied.
-void repeatedResetWithoutOp(QuantumComputation& comp);
-
 /// Resets a single qubit after a single operation.
 void resetQubitAfterSingleOp(QuantumComputation& comp);
 

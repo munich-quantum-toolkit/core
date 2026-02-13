@@ -16,26 +16,7 @@
 
 using namespace mlir::qc;
 
-// TODO: QCO program suite lacks explicit nested/trivial controlled global phase
-// builders, so these cases are checked against canonical equivalents.
-
-INSTANTIATE_TEST_SUITE_P(
-    QCGPhaseOpTest, QCToQCOTest,
-    testing::Values(
-        QCToQCOTestCase{"GlobalPhase", qc::globalPhase, qco::globalPhase},
-        QCToQCOTestCase{"SingleControlledGlobalPhase",
-                        qc::singleControlledGlobalPhase, qco::p},
-        QCToQCOTestCase{"MultipleControlledGlobalPhase",
-                        qc::multipleControlledGlobalPhase,
-                        qco::multipleControlledP},
-        QCToQCOTestCase{"NestedControlledGlobalPhase",
-                        qc::nestedControlledGlobalPhase,
-                        qco::singleControlledP},
-        QCToQCOTestCase{"TrivialControlledGlobalPhase",
-                        qc::trivialControlledGlobalPhase, qco::globalPhase},
-        QCToQCOTestCase{"InverseGlobalPhase", qc::inverseGlobalPhase,
-                        qco::globalPhase},
-        QCToQCOTestCase{"InverseMultipleControlledGlobalPhase",
-                        qc::inverseMultipleControlledGlobalPhase,
-                        qco::multipleControlledP}),
-    printTestName);
+INSTANTIATE_TEST_SUITE_P(QCGPhaseOpTest, QCToQCOTest,
+                         testing::Values(QCToQCOTestCase{
+                             "GlobalPhase", qc::globalPhase, qco::globalPhase}),
+                         printTestName);

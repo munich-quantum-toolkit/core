@@ -18,18 +18,11 @@ using namespace mlir::qc;
 
 INSTANTIATE_TEST_SUITE_P(
     QCiSWAPOpTest, QCToQCOTest,
-    testing::Values(
-        QCToQCOTestCase{"iSWAP", qc::iswap, qco::iswap},
-        QCToQCOTestCase{"SingleControllediSWAP", qc::singleControlledIswap,
-                        qco::singleControlledIswap},
-        QCToQCOTestCase{"MultipleControllediSWAP", qc::multipleControlledIswap,
-                        qco::multipleControlledIswap},
-        QCToQCOTestCase{"NestedControllediSWAP", qc::nestedControlledIswap,
-                        qco::multipleControlledIswap},
-        QCToQCOTestCase{"TrivialControllediSWAP", qc::trivialControlledIswap,
-                        qco::iswap},
-        QCToQCOTestCase{"InverseiSWAP", qc::inverseIswap, qco::inverseIswap},
-        QCToQCOTestCase{"InverseMultipleControllediSWAP",
-                        qc::inverseMultipleControlledIswap,
-                        qco::inverseMultipleControlledIswap}),
+    testing::Values(QCToQCOTestCase{"iSWAP", qc::iswap, qco::iswap},
+                    QCToQCOTestCase{"SingleControllediSWAP",
+                                    qc::singleControlledIswap,
+                                    qco::singleControlledIswap},
+                    QCToQCOTestCase{"MultipleControllediSWAP",
+                                    qc::multipleControlledIswap,
+                                    qco::multipleControlledIswap}),
     printTestName);

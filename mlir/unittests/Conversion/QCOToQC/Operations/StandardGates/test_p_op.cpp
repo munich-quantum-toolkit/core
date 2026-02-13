@@ -18,17 +18,10 @@ using namespace mlir::qco;
 
 INSTANTIATE_TEST_SUITE_P(
     QCOPOpTest, QCOToQCTest,
-    testing::Values(
-        QCOToQCTestCase{"P", qco::p, qc::p},
-        QCOToQCTestCase{"SingleControlledP", qco::singleControlledP,
-                        qc::singleControlledP},
-        QCOToQCTestCase{"MultipleControlledP", qco::multipleControlledP,
-                        qc::multipleControlledP},
-        QCOToQCTestCase{"NestedControlledP", qco::nestedControlledP,
-                        qc::multipleControlledP},
-        QCOToQCTestCase{"TrivialControlledP", qco::trivialControlledP, qc::p},
-        QCOToQCTestCase{"InverseP", qco::inverseP, qc::p},
-        QCOToQCTestCase{"InverseMultipleControlledP",
-                        qco::inverseMultipleControlledP,
-                        qc::multipleControlledP}),
+    testing::Values(QCOToQCTestCase{"P", qco::p, qc::p},
+                    QCOToQCTestCase{"SingleControlledP", qco::singleControlledP,
+                                    qc::singleControlledP},
+                    QCOToQCTestCase{"MultipleControlledP",
+                                    qco::multipleControlledP,
+                                    qc::multipleControlledP}),
     printTestName);

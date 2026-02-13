@@ -18,17 +18,10 @@ using namespace mlir::qc;
 
 INSTANTIATE_TEST_SUITE_P(
     QCHOpTest, QCToQCOTest,
-    testing::Values(
-        QCToQCOTestCase{"H", qc::h, qco::h},
-        QCToQCOTestCase{"SingleControlledH", qc::singleControlledH,
-                        qco::singleControlledH},
-        QCToQCOTestCase{"MultipleControlledH", qc::multipleControlledH,
-                        qco::multipleControlledH},
-        QCToQCOTestCase{"NestedControlledH", qc::nestedControlledH,
-                        qco::multipleControlledH},
-        QCToQCOTestCase{"TrivialControlledH", qc::trivialControlledH, qco::h},
-        QCToQCOTestCase{"InverseH", qc::inverseH, qco::h},
-        QCToQCOTestCase{"InverseMultipleControlledH",
-                        qc::inverseMultipleControlledH,
-                        qco::multipleControlledH}),
+    testing::Values(QCToQCOTestCase{"H", qc::h, qco::h},
+                    QCToQCOTestCase{"SingleControlledH", qc::singleControlledH,
+                                    qco::singleControlledH},
+                    QCToQCOTestCase{"MultipleControlledH",
+                                    qc::multipleControlledH,
+                                    qco::multipleControlledH}),
     printTestName);

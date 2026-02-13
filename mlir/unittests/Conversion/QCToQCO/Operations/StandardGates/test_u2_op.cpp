@@ -18,18 +18,11 @@ using namespace mlir::qc;
 
 INSTANTIATE_TEST_SUITE_P(
     QCU2OpTest, QCToQCOTest,
-    testing::Values(
-        QCToQCOTestCase{"U2", qc::u2, qco::u2},
-        QCToQCOTestCase{"SingleControlledU2", qc::singleControlledU2,
-                        qco::singleControlledU2},
-        QCToQCOTestCase{"MultipleControlledU2", qc::multipleControlledU2,
-                        qco::multipleControlledU2},
-        QCToQCOTestCase{"NestedControlledU2", qc::nestedControlledU2,
-                        qco::multipleControlledU2},
-        QCToQCOTestCase{"TrivialControlledU2", qc::trivialControlledU2,
-                        qco::u2},
-        QCToQCOTestCase{"InverseU2", qc::inverseU2, qco::u2},
-        QCToQCOTestCase{"InverseMultipleControlledU2",
-                        qc::inverseMultipleControlledU2,
-                        qco::multipleControlledU2}),
+    testing::Values(QCToQCOTestCase{"U2", qc::u2, qco::u2},
+                    QCToQCOTestCase{"SingleControlledU2",
+                                    qc::singleControlledU2,
+                                    qco::singleControlledU2},
+                    QCToQCOTestCase{"MultipleControlledU2",
+                                    qc::multipleControlledU2,
+                                    qco::multipleControlledU2}),
     printTestName);

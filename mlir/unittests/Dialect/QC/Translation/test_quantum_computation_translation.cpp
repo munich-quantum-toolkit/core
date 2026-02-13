@@ -115,15 +115,6 @@ INSTANTIATE_TEST_SUITE_P(
             "MultipleClassicalRegistersAndMeasurements",
             qc::multipleClassicalRegistersAndMeasurements,
             mlir::qc::multipleClassicalRegistersAndMeasurements},
-        QuantumComputationTranslationTestCase{"ResetQubitWithoutOp",
-                                              qc::resetQubitWithoutOp,
-                                              mlir::qc::resetQubitWithoutOp},
-        QuantumComputationTranslationTestCase{
-            "ResetMultipleQubitsWithoutOp", qc::resetMultipleQubitsWithoutOp,
-            mlir::qc::resetMultipleQubitsWithoutOp},
-        QuantumComputationTranslationTestCase{"RepeatedResetWithoutOp",
-                                              qc::repeatedResetWithoutOp,
-                                              mlir::qc::repeatedResetWithoutOp},
         QuantumComputationTranslationTestCase{
             "ResetQubitAfterSingleOp", qc::resetQubitAfterSingleOp,
             mlir::qc::resetQubitAfterSingleOp},

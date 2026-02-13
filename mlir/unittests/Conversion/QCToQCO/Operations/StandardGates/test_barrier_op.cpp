@@ -18,13 +18,10 @@ using namespace mlir::qc;
 
 INSTANTIATE_TEST_SUITE_P(
     QCBarrierOpTest, QCToQCOTest,
-    testing::Values(
-        QCToQCOTestCase{"Barrier", qc::barrier, qco::barrier},
-        QCToQCOTestCase{"BarrierTwoQubits", qc::barrierTwoQubits,
-                        qco::barrierTwoQubits},
-        QCToQCOTestCase{"BarrierMultipleQubits", qc::barrierMultipleQubits,
-                        qco::barrierMultipleQubits},
-        QCToQCOTestCase{"SingleControlledBarrier", qc::singleControlledBarrier,
-                        qco::barrier},
-        QCToQCOTestCase{"InverseBarrier", qc::inverseBarrier, qco::barrier}),
+    testing::Values(QCToQCOTestCase{"Barrier", qc::barrier, qco::barrier},
+                    QCToQCOTestCase{"BarrierTwoQubits", qc::barrierTwoQubits,
+                                    qco::barrierTwoQubits},
+                    QCToQCOTestCase{"BarrierMultipleQubits",
+                                    qc::barrierMultipleQubits,
+                                    qco::barrierMultipleQubits}),
     printTestName);

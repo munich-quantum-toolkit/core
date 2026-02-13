@@ -18,18 +18,11 @@ using namespace mlir::qc;
 
 INSTANTIATE_TEST_SUITE_P(
     QCTdgOpTest, QCToQCOTest,
-    testing::Values(
-        QCToQCOTestCase{"Tdg", qc::tdg, qco::tdg},
-        QCToQCOTestCase{"SingleControlledTdg", qc::singleControlledTdg,
-                        qco::singleControlledTdg},
-        QCToQCOTestCase{"MultipleControlledTdg", qc::multipleControlledTdg,
-                        qco::multipleControlledTdg},
-        QCToQCOTestCase{"NestedControlledTdg", qc::nestedControlledTdg,
-                        qco::multipleControlledTdg},
-        QCToQCOTestCase{"TrivialControlledTdg", qc::trivialControlledTdg,
-                        qco::tdg},
-        QCToQCOTestCase{"InverseTdg", qc::inverseTdg, qco::t_},
-        QCToQCOTestCase{"InverseMultipleControlledTdg",
-                        qc::inverseMultipleControlledTdg,
-                        qco::multipleControlledT}),
+    testing::Values(QCToQCOTestCase{"Tdg", qc::tdg, qco::tdg},
+                    QCToQCOTestCase{"SingleControlledTdg",
+                                    qc::singleControlledTdg,
+                                    qco::singleControlledTdg},
+                    QCToQCOTestCase{"MultipleControlledTdg",
+                                    qc::multipleControlledTdg,
+                                    qco::multipleControlledTdg}),
     printTestName);

@@ -18,9 +18,15 @@ using namespace mlir::qc;
 
 INSTANTIATE_TEST_SUITE_P(
     QCInvOpTest, QCToQCOTest,
-    testing::Values(QCToQCOTestCase{"NestedInv", qc::nestedInv, qco::rxx},
-                    QCToQCOTestCase{"TripleNestedInv", qc::tripleNestedInv,
-                                    qco::rxx},
-                    QCToQCOTestCase{"InvControlSandwich", qc::invCtrlSandwich,
-                                    qco::singleControlledRxx}),
+    testing::Values(
+        // ECR cannot be inverted with current canonicalization
+        QCToQCOTestCase{"InverseECR", qc::inverseEcr, qco::inverseEcr},
+        QCToQCOTestCase{"InverseMultipleControlledECR",
+                        qc::inverseMultipleControlledEcr,
+                        qco::inverseMultipleControlledEcr},
+        // ECR cannot be inverted with current canonicalization
+        QCToQCOTestCase{"InverseiSWAP", qc::inverseIswap, qco::inverseIswap},
+        QCToQCOTestCase{"InverseMultipleControllediSWAP",
+                        qc::inverseMultipleControlledIswap,
+                        qco::inverseMultipleControlledIswap}),
     printTestName);

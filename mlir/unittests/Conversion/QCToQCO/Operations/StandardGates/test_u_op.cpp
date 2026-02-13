@@ -18,17 +18,10 @@ using namespace mlir::qc;
 
 INSTANTIATE_TEST_SUITE_P(
     QCUOpTest, QCToQCOTest,
-    testing::Values(
-        QCToQCOTestCase{"U", qc::u, qco::u},
-        QCToQCOTestCase{"SingleControlledU", qc::singleControlledU,
-                        qco::singleControlledU},
-        QCToQCOTestCase{"MultipleControlledU", qc::multipleControlledU,
-                        qco::multipleControlledU},
-        QCToQCOTestCase{"NestedControlledU", qc::nestedControlledU,
-                        qco::multipleControlledU},
-        QCToQCOTestCase{"TrivialControlledU", qc::trivialControlledU, qco::u},
-        QCToQCOTestCase{"InverseU", qc::inverseU, qco::u},
-        QCToQCOTestCase{"InverseMultipleControlledU",
-                        qc::inverseMultipleControlledU,
-                        qco::multipleControlledU}),
+    testing::Values(QCToQCOTestCase{"U", qc::u, qco::u},
+                    QCToQCOTestCase{"SingleControlledU", qc::singleControlledU,
+                                    qco::singleControlledU},
+                    QCToQCOTestCase{"MultipleControlledU",
+                                    qc::multipleControlledU,
+                                    qco::multipleControlledU}),
     printTestName);

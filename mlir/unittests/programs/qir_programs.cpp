@@ -56,8 +56,8 @@ void repeatedMeasurementToDifferentBits(QIRProgramBuilder& b) {
 
 void multipleClassicalRegistersAndMeasurements(QIRProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
-  const auto c0 = b.allocClassicalBitRegister(1, "c0");
-  const auto c1 = b.allocClassicalBitRegister(2, "c1");
+  const auto& c0 = b.allocClassicalBitRegister(1, "c0");
+  const auto& c1 = b.allocClassicalBitRegister(2, "c1");
   b.measure(q[0], c0[0]);
   b.measure(q[1], c1[0]);
   b.measure(q[2], c1[1]);
