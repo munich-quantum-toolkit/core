@@ -269,6 +269,11 @@ INSTANTIATE_TEST_SUITE_P(
         QuantumComputationTranslationTestCase{
             "MultipleControllediSWAP", qc::multipleControlledIswap,
             mlir::qc::multipleControlledIswap},
+        QuantumComputationTranslationTestCase{"InverseISWAP", qc::inverseIswap,
+                                              mlir::qc::inverseIswap},
+        QuantumComputationTranslationTestCase{
+            "InverseMultiControlledISWAP", qc::inverseMultipleControlledIswap,
+            mlir::qc::inverseMultipleControlledIswap},
         QuantumComputationTranslationTestCase{"DCX", qc::dcx, mlir::qc::dcx},
         QuantumComputationTranslationTestCase{"SingleControlledDCX",
                                               qc::singleControlledDcx,

@@ -384,6 +384,16 @@ void multipleControlledIswap(QuantumComputation& comp) {
   comp.mciswap({0, 1}, 2, 3);
 }
 
+void inverseIswap(QuantumComputation& comp) {
+  comp.addQubitRegister(2, "q");
+  comp.iswapdg(0, 1);
+}
+
+void inverseMultipleControlledIswap(QuantumComputation& comp) {
+  comp.addQubitRegister(4, "q");
+  comp.mciswapdg({0, 1}, 2, 3);
+}
+
 void dcx(QuantumComputation& comp) {
   comp.addQubitRegister(2, "q");
   comp.dcx(0, 1);

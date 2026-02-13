@@ -277,6 +277,12 @@ void singleControlledIswap(QuantumComputation& comp);
 /// Creates a circuit with a multi-controlled iSWAP gate.
 void multipleControlledIswap(QuantumComputation& comp);
 
+/// Creates a circuit with an iSWAPdg gate.
+void inverseIswap(QuantumComputation& comp);
+
+/// Creates a circuit with a multi-controlled iSWAPdg gate.
+void inverseMultipleControlledIswap(QuantumComputation& comp);
+
 // --- DCXOp ---------------------------------------------------------------- //
 
 /// Creates a circuit with just a DCX gate.
