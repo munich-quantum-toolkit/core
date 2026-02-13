@@ -14,10 +14,12 @@ target_link_libraries(
           MQTCompilerPipeline
           MLIRQCTranslation
           MLIRQCProgramBuilder
-          MLIRQCOProgramBuilder
           MLIRQIRProgramBuilder
           MLIRParser
           MLIRSupportMQT
+          MLIRQCPrograms
+          MLIRQIRPrograms
+          MLIRQuantumComputationPrograms
           MQT::CoreIR)
 
 gtest_discover_tests(mqt-core-mlir-compiler-pipeline-test)
