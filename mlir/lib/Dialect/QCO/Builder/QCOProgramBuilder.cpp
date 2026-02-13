@@ -709,6 +709,10 @@ ValueRange QCOProgramBuilder::qcoIf(
   for (const auto& [input, output] : llvm::zip(qubits, ifResults)) {
     updateQubitTracking(input, output);
   }
+  if (thenResult.size() != elseResult.size()) {
+    llvm::reportFatalUsageError(
+        "Then and else body must return the same amount of qubits!");
+  }
 
   // Remove the inner qubits as valid qubits
   for (const auto& [thenOut, elseOut] :

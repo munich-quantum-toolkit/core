@@ -132,7 +132,7 @@ static void replaceOpWithRegion(PatternRewriter& rewriter, Operation* op,
   rewriter.replaceOp(op, results);
   rewriter.eraseOp(terminator);
 }
-
+namespace {
 struct RemoveStaticCondition : public OpRewritePattern<IfOp> {
   using OpRewritePattern<IfOp>::OpRewritePattern;
 
@@ -148,6 +148,8 @@ struct RemoveStaticCondition : public OpRewritePattern<IfOp> {
     } else if (!op.getElseRegion().empty()) {
       replaceOpWithRegion(rewriter, op, op.getElseRegion(), op.getQubits());
     } else {
+      assert(op.getNumResults() == 0 &&
+             "cannot erase if-op with results and no else region");
       rewriter.eraseOp(op);
     }
 
@@ -216,6 +218,7 @@ struct ConditionPropagation : public OpRewritePattern<IfOp> {
     return success(changed);
   }
 };
+} // namespace
 
 void IfOp::getCanonicalizationPatterns(RewritePatternSet& results,
                                        MLIRContext* context) {
