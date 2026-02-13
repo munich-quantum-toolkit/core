@@ -107,7 +107,7 @@ private:
     }
 
     // Finally, find the user-operation of the qubit SSA value.
-    assert(qubit.getNumUses() == 1);
+    assert(qubit_.getNumUses() == 1);
     op_ = *(qubit_.getUsers().begin());
   }
 
