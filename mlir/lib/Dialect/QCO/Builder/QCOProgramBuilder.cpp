@@ -688,8 +688,7 @@ ValueRange QCOProgramBuilder::qcoIf(
   auto& elseBlock = ifOp->getRegion(1).emplaceBlock();
 
   // Create the blockarguments and add them as valid qubits
-  const auto qubitType = QubitType::get(getContext());
-  for (size_t i = 0; i < qubits.size(); i++) {
+  for (const auto& qubitType : qubits.getTypes()) {
     const auto thenArg = thenBlock.addArgument(qubitType, getLoc());
     const auto elseArg = elseBlock.addArgument(qubitType, getLoc());
     validQubits.insert(thenArg);

@@ -109,6 +109,7 @@ TEST_F(QCOIfOpTest, TestIfBuilder) {
   const auto q = builder.allocQubit();
   auto constantBool =
       arith::ConstantOp::create(builder, builder.getBoolAttr(true));
+
   auto ifOp = IfOp::create(
       builder, constantBool, q,
       [&](ValueRange args) -> SmallVector<Value> { return args; },
@@ -130,9 +131,11 @@ TEST_F(QCOIfOpTest, TestIfBuilder) {
 
 TEST_F(QCOIfOpTest, TestWrongType) {
   auto ifOp = buildOp();
+
   // Change the block argument type to a non-qubit
   auto* block = ifOp.thenBlock();
   block->getArgument(0).setType(builder.getI1Type());
+
   // Verify operation
   ASSERT_TRUE(verify(ifOp).failed());
 }
@@ -143,6 +146,7 @@ TEST_F(QCOIfOpTest, TestSameNumberOfBlockArgs) {
   // Add an additional block argument in the then block
   auto* block = ifOp.thenBlock();
   block->addArgument(QubitType::get(&context), builder.getUnknownLoc());
+
   // Verify operation
   ASSERT_TRUE(mlir::verify(ifOp).failed());
 }
@@ -156,6 +160,7 @@ TEST_F(QCOIfOpTest, TestSameNumberOfOperandQubitsAndResult) {
   thenBlock->addArgument(qcoType, builder.getUnknownLoc());
   auto* elseBlock = ifOp.elseBlock();
   elseBlock->addArgument(qcoType, builder.getUnknownLoc());
+
   // Verify operation
   ASSERT_TRUE(verify(ifOp).failed());
 }
@@ -185,6 +190,7 @@ TEST_F(QCOIfOpTest, TestConditionPropagation) {
   // Test to check if the condition is propagated into the regions
   const auto q = builder.allocQubitRegister(2);
   auto [qubitOut, measureResult] = builder.measure(q[0]);
+
   builder.qcoIf(
       measureResult, {qubitOut, q[1]},
       [&](ValueRange args) -> SmallVector<Value> {

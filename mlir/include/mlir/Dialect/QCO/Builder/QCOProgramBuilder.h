@@ -1062,7 +1062,7 @@ public:
    * @brief Construct an if operation for qubits with linear typing
    *
    * @details
-   * Constructs an if operation that takes a bool attribute and a range of qubit
+   * Constructs an if operation that takes a bool Value and a range of qubit
    * Values (either qubit type or tensor of qubit types) that are used in the
    * then/else region of this operation. The qubit values are passed down as
    * blockarguments to each region.
