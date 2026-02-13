@@ -78,7 +78,7 @@ private:
       return;
     }
 
-    // For dynamic qubits, a deallocation op defines the end of the qubit wire.
+    // A deallocation op defines the end of the qubit wire (dynamic and static).
     if (mlir::isa<qco::DeallocOp>(op_)) {
       isSentinel_ = true;
       return;
@@ -98,13 +98,6 @@ private:
             report_fatal_error("unknown op in def-use chain: " +
                                op->getName().getStringRef());
           });
-    }
-
-    // For static qubits, if there are no more uses of the qubit SSA value, the
-    // end of the qubit wire is reached.
-    if (qubit_.use_empty()) {
-      isSentinel_ = true;
-      return;
     }
 
     // Finally, find the user-operation of the qubit SSA value.
