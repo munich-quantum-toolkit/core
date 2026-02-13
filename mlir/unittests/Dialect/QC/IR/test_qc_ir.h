@@ -13,8 +13,11 @@
 #include "mlir/Dialect/QC/Builder/QCProgramBuilder.h"
 
 #include <gtest/gtest.h>
+#include <llvm/ADT/STLFunctionalExtras.h>
 #include <memory>
 #include <mlir/IR/BuiltinOps.h>
+#include <mlir/IR/MLIRContext.h>
+#include <mlir/IR/OwningOpRef.h>
 #include <string>
 
 struct QCTestCase {
