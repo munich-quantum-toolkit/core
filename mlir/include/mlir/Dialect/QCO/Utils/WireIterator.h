@@ -77,14 +77,14 @@ private:
       return;
     }
 
-    // For dynamic qubits, a deallocation operation defines the end of the qubit
-    // wire.
+    // For dynamic qubits, a deallocation op defines the end of the qubit wire.
     if (mlir::isa<qco::DeallocOp>(op_)) {
       isSentinel_ = true;
       return;
     }
 
     if (!(mlir::isa<qco::AllocOp>(op_) || mlir::isa<qco::StaticOp>(op_))) {
+      // Find output from input qubit SSA value.
       mlir::TypeSwitch<mlir::Operation*>(op_)
           .Case<qco::UnitaryOpInterface>([&](qco::UnitaryOpInterface op) {
             qubit_ = op.getOutputForInput(qubit_);
@@ -112,7 +112,40 @@ private:
   }
 
   /// @brief Move to the previous operation on the qubit wire.
-  void backward() {}
+  void backward() {
+    // If the iterator is a sentinel, reactivate the iterator.
+    if (isSentinel_) {
+      isSentinel_ = false;
+      return;
+    }
+
+    // Get the operation that produces the qubit value.
+    op_ = qubit_.getDefiningOp();
+
+    // If the current qubit SSA value is a BlockArgument (no defining op), stop.
+    if (op_ == nullptr) {
+      return;
+    }
+
+    // Allocations or static definitions define the start of the qubit wire.
+    // Consequently, stop and early exit.
+    if (mlir::isa<qco::AllocOp>(op_) || mlir::isa<qco::StaticOp>(op_)) {
+      return;
+    }
+
+    // Find input from output qubit SSA value.
+    mlir::TypeSwitch<mlir::Operation*>(op_)
+        .Case<qco::UnitaryOpInterface>([&](qco::UnitaryOpInterface op) {
+          qubit_ = op.getInputForOutput(qubit_);
+        })
+        .Case<qco::MeasureOp>(
+            [&](qco::MeasureOp op) { qubit_ = op.getQubitIn(); })
+        .Case<qco::ResetOp>([&](qco::ResetOp op) { qubit_ = op.getQubitIn(); })
+        .Default([&](mlir::Operation* op) {
+          report_fatal_error("unknown op in def-use chain: " +
+                             op->getName().getStringRef());
+        });
+  }
 
   mlir::Operation* op_;
   mlir::Value qubit_;
