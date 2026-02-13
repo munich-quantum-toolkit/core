@@ -1,0 +1,28 @@
+/*
+ * Copyright (c) 2023 - 2026 Chair for Design Automation, TUM
+ * Copyright (c) 2025 - 2026 Munich Quantum Software Company GmbH
+ * All rights reserved.
+ *
+ * SPDX-License-Identifier: MIT
+ *
+ * Licensed under the MIT License
+ */
+
+#include "qc_programs.h"
+#include "qir_programs.h"
+#include "test_qc_to_qir.h"
+
+#include <gtest/gtest.h>
+
+using namespace mlir::qc;
+
+INSTANTIATE_TEST_SUITE_P(
+    QCToQIRBarrierOpTest, QCToQIRTest,
+    testing::Values(QCToQIRTestCase{"Barrier", qc::barrier, emptyQIR},
+                    QCToQIRTestCase{"BarrierTwoQubits", qc::barrierTwoQubits,
+                                    emptyQIR},
+                    QCToQIRTestCase{"BarrierMultipleQubits",
+                                    qc::barrierMultipleQubits, emptyQIR},
+                    QCToQIRTestCase{"SingleControlledBarrier",
+                                    qc::singleControlledBarrier, emptyQIR}),
+    printTestName);

@@ -22,4 +22,7 @@ add_dependencies(
   mqt-core-mlir-unittest-qc-ir
   mqt-core-mlir-unittest-qco-ir
   mqt-core-mlir-unittest-qc-to-qco
-  mqt-core-mlir-unittest-qco-to-qc)
+  mqt-core-mlir-unittest-qco-to-qc
+  mqt-core-mlir-unittest-qir-ir
+  mqt-core-mlir-unittest-qc-to-qir
+  mqt-core-mlir-unittest-quantum-computation-translation)

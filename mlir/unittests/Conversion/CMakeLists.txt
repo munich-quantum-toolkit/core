@@ -7,4 +7,5 @@
 # Licensed under the MIT License
 
 add_subdirectory(QCToQCO)
+add_subdirectory(QCToQIR)
 add_subdirectory(QCOToQC)
