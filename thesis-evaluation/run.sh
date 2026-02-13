@@ -2,7 +2,7 @@
 
 OUTPUT_DIR="tmp-output"
 
-MQT_CORE_ROOT_DIR=..
+MQT_CORE_BUILD_DIR="../build.release"
 MQT_BENCH_BENCHMARK_DIR="../../mqt-bench/generated_benchmarks/v3_qasm3"
 MQT_BENCH_PATTERN="*.qasm"
 
@@ -16,7 +16,7 @@ for benchmark_path in ${MQT_BENCH_BENCHMARK_DIR}/${MQT_BENCH_PATTERN}; do
   i=$((i + 1))
   benchmark="$(basename "${benchmark_path}")"
   echo "${i}/${benchmark_count}: ${benchmark}"
-  result="$("${MQT_CORE_ROOT_DIR}/build/mlir/tools/mqt-cc/mqt-cc" --mlir-timing --mlir-statistics "${benchmark_path}" 2>&1)"
+  result="$("${MQT_CORE_BUILD_DIR}/mlir/tools/mqt-cc/mqt-cc" --mlir-timing --mlir-statistics "${benchmark_path}" 2>&1)"
   if [ "${?}" -eq 0 ]; then
     echo "${result}" | rg 'Total Execution Time' -A 8 >"${OUTPUT_DIR}/${benchmark}.timing"
     echo "${result}" | rg '\(S\) ' >"${OUTPUT_DIR}/${benchmark}.statistic"

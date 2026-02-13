@@ -13,46 +13,72 @@ OUT_DIR = "./figures"
 if not os.path.exists(OUT_DIR):
     os.makedirs(OUT_DIR, exist_ok=True)
 
-CACHE_FILE = "./evaluate_cache.json"
-if os.path.exists(CACHE_FILE):
-    with open(CACHE_FILE, "r") as f:
-        cache = json.load(f)
-        mqt_results = cache["mqt"]
-        qiskit_results = cache["qiskit"]
+QISKIT_CACHE_FILE = "./evaluate_cache_qiskit.json"
+QISKIT_RUST_CACHE_FILE = "./evaluate_cache_qiskit-rust.json"
+MQT_CACHE_FILE = "./evaluate_cache_mqt.json"
+
+
+def average_results(
+    all_results: list[dict[str, dict[str, int | float]]],
+) -> dict[str, dict[str, int | float]]:
+    result = {}
+    for r in all_results:
+        for benchmark_name, measurements in r.items():
+            if not benchmark_name in result:
+                result[benchmark_name] = {}
+            for metric_name, value in measurements.items():
+                if not metric_name in result[benchmark_name]:
+                    result[benchmark_name][metric_name] = 0.0
+                result[benchmark_name][metric_name] += value / ITERATIONS
+    return result
+
+
+if os.path.exists(QISKIT_CACHE_FILE):
+    with open(QISKIT_CACHE_FILE, "r") as f:
+        qiskit_results = json.load(f)
 else:
     ITERATIONS = 20
-    all_mqt_results = []
-    all_qiskit_results = []
+    all_results = []
+    for _ in range(ITERATIONS):
+        all_results.append(qiskit_run.evaluate())
+
+    # [benchmark_name -> [metric_name -> value]]
+    qiskit_results = average_results(all_results)
+
+    with open(QISKIT_CACHE_FILE, "w") as f:
+        json.dump(qiskit_results, f)
+
+if os.path.exists(MQT_CACHE_FILE):
+    with open(MQT_CACHE_FILE, "r") as f:
+        mqt_results = json.load(f)
+else:
+    ITERATIONS = 20
+    all_results = []
     for _ in range(ITERATIONS):
         # evaluate.evalue() will only process statistics files; need to re-run mqt-cc using run.sh
         subprocess.run(["./run.sh"]).check_returncode()
-        all_mqt_results.append(evaluate.evaluate())
-        all_qiskit_results.append(qiskit_run.evaluate())
-
-    def average_results(
-        all_results: list[dict[str, dict[str, int | float]]],
-    ) -> dict[str, dict[str, int | float]]:
-        result = {}
-        for r in all_results:
-            for benchmark_name, measurements in r.items():
-                if not benchmark_name in result:
-                    result[benchmark_name] = {}
-                for metric_name, value in measurements.items():
-                    if not metric_name in result[benchmark_name]:
-                        result[benchmark_name][metric_name] = 0.0
-                    result[benchmark_name][metric_name] += value / ITERATIONS
-        return result
+        all_results.append(evaluate.evaluate())
 
     # [benchmark_name -> [metric_name -> value]]
-    mqt_results = average_results(all_mqt_results)
-    qiskit_results = average_results(all_qiskit_results)
+    mqt_results = average_results(all_results)
 
-    with open(CACHE_FILE, "w") as f:
-        cache = {
-            "mqt": mqt_results,
-            "qiskit": qiskit_results,
-        }
-        json.dump(cache, f)
+    with open(MQT_CACHE_FILE, "w") as f:
+        json.dump(mqt_results, f)
+
+if os.path.exists(QISKIT_RUST_CACHE_FILE):
+    with open(QISKIT_RUST_CACHE_FILE, "r") as f:
+        qiskit_rust_results = json.load(f)
+else:
+    ITERATIONS = 20
+    all_results = []
+    for _ in range(ITERATIONS):
+        all_results.append(qiskit_run.evaluate(evaluate_rust_timings=True))
+
+    # [benchmark_name -> [metric_name -> value]]
+    qiskit_rust_results = average_results(all_results)
+
+    with open(QISKIT_RUST_CACHE_FILE, "w") as f:
+        json.dump(qiskit_rust_results, f)
 
 print("In MQT, but not Qiskit: ", mqt_results.keys() - qiskit_results.keys())
 print("In Qiskit, but not MQT: ", qiskit_results.keys() - mqt_results.keys())
@@ -85,7 +111,8 @@ aliases_mqt = {
 names = sorted(mqt_results.keys() & qiskit_results.keys())
 for name in names:
     m = mqt_results[name]
-    q = qiskit_results[name]
+    # q = qiskit_results[name]
+    q = qiskit_rust_results[name]
 
     for metric in m.keys() | q.keys():
         if metric in m:
@@ -95,7 +122,9 @@ for name in names:
         if metric in q:
             y2[metric] = y2.get(metric, []) + [q[metric]]
         if metric in aliases_qiskit:
-            y2[aliases_qiskit[metric]] = y2.get(aliases_qiskit[metric], []) + [q[metric]]
+            y2[aliases_qiskit[metric]] = y2.get(aliases_qiskit[metric], []) + [
+                q[metric]
+            ]
 
     define_division_metric(
         "timePerSingleQubitDecomposition",
@@ -223,6 +252,7 @@ for metric in x.keys():
         ymin = min(ymin, min(y2[metric]))
 
     # plt.xticks(x_values) # does not work for strings
+    plt.xticks(rotation=45)
     if ymin > 0:
         # let matplotlib handle non-positive values automatically
         plt.ylim(bottom=0)
@@ -239,7 +269,7 @@ for metric in x.keys():
     plt.savefig(
         f"{OUT_DIR}/{metric}.pdf", format="pdf", bbox_inches="tight", pad_inches=0
     )
-    # plt.show()
+    #plt.show()
     plt.clf()
 
 for i, name in enumerate(names):
