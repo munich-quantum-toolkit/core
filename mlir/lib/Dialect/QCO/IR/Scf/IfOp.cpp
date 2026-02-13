@@ -132,6 +132,7 @@ static void replaceOpWithRegion(PatternRewriter& rewriter, Operation* op,
   rewriter.replaceOp(op, results);
   rewriter.eraseOp(terminator);
 }
+
 namespace {
 struct RemoveStaticCondition : public OpRewritePattern<IfOp> {
   using OpRewritePattern<IfOp>::OpRewritePattern;
@@ -232,14 +233,9 @@ LogicalResult IfOp::verify() {
   const auto numOutputQubits = outputQubits.size();
 
   for (const auto& type : inputQubits.getTypes()) {
-    if (llvm::isa<QubitType>(type)) {
-      continue;
+    if (!llvm::isa<QubitType>(type)) {
+      return emitOpError("Inputs must be qubit type!");
     }
-    auto tensor = dyn_cast<TensorType>(type);
-    if (tensor && llvm::isa<QubitType>(tensor.getElementType())) {
-      continue;
-    }
-    return emitOpError("Inputs must be qubit type or tensor of qubit type!");
   }
   const auto numThenArgs = thenBlock()->getNumArguments();
   const auto numElseArgs = elseBlock()->getNumArguments();

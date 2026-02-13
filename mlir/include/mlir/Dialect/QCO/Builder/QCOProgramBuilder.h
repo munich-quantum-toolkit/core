@@ -1063,9 +1063,8 @@ public:
    *
    * @details
    * Constructs an if operation that takes a bool Value and a range of qubit
-   * Values (either qubit type or tensor of qubit types) that are used in the
-   * then/else region of this operation. The qubit values are passed down as
-   * blockarguments to each region.
+   * Values that are used in the then/else region of this operation. The qubit
+   * values are passed down as blockarguments to each region.
    *
    * @param condition Bool condition
    * @param qubits Input qubits
