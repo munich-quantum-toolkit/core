@@ -12,6 +12,7 @@
 
 #include <iterator>
 #include <llvm/ADT/TypeSwitch.h>
+#include <llvm/Support/Debug.h>
 #include <llvm/Support/ErrorHandling.h>
 #include <mlir/IR/Operation.h>
 #include <mlir/Support/LLVM.h>

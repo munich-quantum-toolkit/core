@@ -23,19 +23,29 @@
 #include <mlir/Dialect/SCF/IR/SCF.h>
 #include <mlir/IR/DialectRegistry.h>
 #include <mlir/IR/MLIRContext.h>
+#include <utility>
 
 using namespace mlir;
 
-TEST(WireIteratorTest, MixedUse) {
-  // Setup context.
-  DialectRegistry registry;
-  registry.insert<qco::QCODialect, arith::ArithDialect, cf::ControlFlowDialect,
-                  func::FuncDialect, scf::SCFDialect, LLVM::LLVMDialect>();
+namespace {
+class WireIteratorTest : public testing::Test {
+protected:
+  void SetUp() override {
+    DialectRegistry registry;
+    registry
+        .insert<qco::QCODialect, arith::ArithDialect, cf::ControlFlowDialect,
+                func::FuncDialect, scf::SCFDialect, LLVM::LLVMDialect>();
 
-  auto context = std::make_unique<MLIRContext>();
-  context->appendDialectRegistry(registry);
-  context->loadAllAvailableDialects();
+    context = std::make_unique<MLIRContext>();
+    context->appendDialectRegistry(registry);
+    context->loadAllAvailableDialects();
+  }
 
+  std::unique_ptr<MLIRContext> context;
+};
+} // namespace
+
+TEST_F(WireIteratorTest, MixedUseDynamic) {
   // Build circuit.
   qco::QCOProgramBuilder builder(context.get());
   builder.initialize();
@@ -46,6 +56,7 @@ TEST(WireIteratorTest, MixedUse) {
   const auto [q03, c0] = builder.measure(q02);
   const auto q04 = builder.reset(q03);
   builder.dealloc(q04);
+  builder.dealloc(q11);
 
   // Setup WireIterator.
   auto module = builder.finalize();
@@ -87,6 +98,10 @@ TEST(WireIteratorTest, MixedUse) {
   ++it;
   ASSERT_EQ(it, std::default_sentinel);
 
+  //
+  // Test: Backward Iteration
+  //
+
   --it;
   ASSERT_EQ(it.operation(), *(q04.getUsers().begin())); // qco.dealloc
   ASSERT_EQ(it.qubit(), q04);
@@ -117,6 +132,10 @@ TEST(WireIteratorTest, MixedUse) {
   ASSERT_EQ(it.qubit(), q00);
   ASSERT_EQ(begin, it);
 
+  //
+  // Test: Forward and Backward Iteration (+ Loops)
+  //
+
   for (; it != std::default_sentinel; ++it) {
     llvm::dbgs() << **it << '\n'; /// Keep for debugging purposes.
   }
@@ -131,5 +150,111 @@ TEST(WireIteratorTest, MixedUse) {
   }
   ASSERT_EQ(begin, it);
   ASSERT_EQ(it.operation(), q00.getDefiningOp()); // qco.alloc
+  ASSERT_EQ(it.qubit(), q00);
+}
+
+TEST_F(WireIteratorTest, MixedUseStatic) {
+  // Build circuit.
+  qco::QCOProgramBuilder builder(context.get());
+  builder.initialize();
+  const auto q00 = builder.staticQubit(0);
+  const auto q10 = builder.staticQubit(1);
+  const auto q01 = builder.h(q00);
+  const auto [q02, q11] = builder.cx(q01, q10);
+  const auto [q03, c0] = builder.measure(q02);
+  const auto q04 = builder.reset(q03);
+
+  // Setup WireIterator.
+  auto module = builder.finalize();
+  auto entry = *(module->getOps<func::FuncOp>().begin());
+  auto staticOp = *(entry.getBody().getOps<qco::StaticOp>().begin());
+  auto qubit = staticOp.getQubit();
+  qco::WireIterator it(qubit);
+  qco::WireIterator begin(it);
+
+  //
+  // Test: Forward Iteration
+  //
+  ASSERT_EQ(it.operation(), q00.getDefiningOp()); // qco.static
+  ASSERT_EQ(it.qubit(), q00);
+
+  ++it;
+  ASSERT_EQ(it.operation(), q01.getDefiningOp()); // qco.h
+  ASSERT_EQ(it.qubit(), q00);
+
+  ++it;
+  ASSERT_EQ(it.operation(), q02.getDefiningOp()); // qco.ctrl
+  ASSERT_EQ(it.qubit(), q01);
+
+  ++it;
+  ASSERT_EQ(it.operation(), q03.getDefiningOp()); // qco.measure
+  ASSERT_EQ(it.qubit(), q02);
+
+  ++it;
+  ASSERT_EQ(it.operation(), q04.getDefiningOp()); // qco.reset
+  ASSERT_EQ(it.qubit(), q03);
+
+  ++it;
+  ASSERT_EQ(it.operation(), *(q04.getUsers().begin())); // qco.dealloc
+  ASSERT_EQ(it.qubit(), q04);
+
+  ++it;
+  ASSERT_EQ(it, std::default_sentinel);
+
+  ++it;
+  ASSERT_EQ(it, std::default_sentinel);
+
+  //
+  // Test: Backward Iteration
+  //
+
+  --it;
+  ASSERT_EQ(it.operation(), *(q04.getUsers().begin())); // qco.dealloc
+  ASSERT_EQ(it.qubit(), q04);
+
+  --it;
+  ASSERT_EQ(it.operation(), q04.getDefiningOp()); // qco.reset
+  ASSERT_EQ(it.qubit(), q03);
+
+  --it;
+  ASSERT_EQ(it.operation(), q03.getDefiningOp()); // qco.measure
+  ASSERT_EQ(it.qubit(), q02);
+
+  --it;
+  ASSERT_EQ(it.operation(), q02.getDefiningOp()); // qco.ctrl
+  ASSERT_EQ(it.qubit(), q01);
+
+  --it;
+  ASSERT_EQ(it.operation(), q01.getDefiningOp()); // qco.h
+  ASSERT_EQ(it.qubit(), q00);
+
+  --it;
+  ASSERT_EQ(it.operation(), q00.getDefiningOp()); // qco.static
+  ASSERT_EQ(it.qubit(), q00);
+  ASSERT_EQ(begin, it);
+
+  --it;
+  ASSERT_EQ(it.operation(), q00.getDefiningOp()); // qco.static
+  ASSERT_EQ(it.qubit(), q00);
+  ASSERT_EQ(begin, it);
+
+  //
+  // Test: Forward and Backward Iteration (+ Loops)
+  //
+
+  for (; it != std::default_sentinel; ++it) {
+    llvm::dbgs() << **it << '\n'; /// Keep for debugging purposes.
+  }
+  ASSERT_EQ(it, std::default_sentinel);
+
+  --it;
+  ASSERT_EQ(it.operation(), *(q04.getUsers().begin())); // qco.dealloc
+  ASSERT_EQ(it.qubit(), q04);
+
+  for (; it != begin; --it) {
+    llvm::dbgs() << **it << '\n'; /// Keep for debugging purposes.
+  }
+  ASSERT_EQ(begin, it);
+  ASSERT_EQ(it.operation(), q00.getDefiningOp()); // qco.static
   ASSERT_EQ(it.qubit(), q00);
 }
