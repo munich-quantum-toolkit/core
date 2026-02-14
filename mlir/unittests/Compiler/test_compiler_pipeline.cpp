@@ -111,6 +111,7 @@ protected:
     mlir::QuantumCompilerConfig config;
     config.convertToQIR = convertToQIR;
     config.recordIntermediates = true;
+    config.printIRAfterAllStages = true;
 
     mlir::QuantumCompilerPipeline pipeline(config);
     ASSERT_TRUE(pipeline.runPipeline(module, &record).succeeded());
