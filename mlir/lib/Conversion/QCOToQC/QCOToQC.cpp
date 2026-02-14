@@ -761,7 +761,7 @@ struct ConvertQCOBarrierOp final : OpConversionPattern<qco::BarrierOp> {
  * ```mlir
  * qc.ctrl(%q0) {
  *   qc.x %q1 : !qc.qubit
- * }
+ * } : !qc.qubit
  * ```
  */
 struct ConvertQCOCtrlOp final : OpConversionPattern<qco::CtrlOp> {
