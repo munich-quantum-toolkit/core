@@ -1182,6 +1182,21 @@ void inverseMultipleControlledU(QCOProgramBuilder& b) {
   });
 }
 
+void canonicalizeUToP(QCOProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  b.u(0., 0., 0.123, q[0]);
+}
+
+void canonicalizeUToRx(QCOProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  b.u(0.123, -std::numbers::pi / 2, std::numbers::pi / 2, q[0]);
+}
+
+void canonicalizeUToRy(QCOProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  b.u(0.456, 0., 0., q[0]);
+}
+
 void swap(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   b.swap(q[0], q[1]);

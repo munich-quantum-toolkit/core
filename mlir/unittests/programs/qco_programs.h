@@ -585,6 +585,15 @@ void inverseU(QCOProgramBuilder& b);
 /// Creates a circuit with an inverse modifier applied to a controlled U gate.
 void inverseMultipleControlledU(QCOProgramBuilder& b);
 
+/// Creates a circuit with a U gate that can be canonicalized to a P gate.
+void canonicalizeUToP(QCOProgramBuilder& b);
+
+/// Creates a circuit with a U gate that can be canonicalized to an RX gate.
+void canonicalizeUToRx(QCOProgramBuilder& b);
+
+/// Creates a circuit with a U gate that can be canonicalized to an RY gate.
+void canonicalizeUToRy(QCOProgramBuilder& b);
+
 // --- SWAPOp --------------------------------------------------------------- //
 
 /// Creates a circuit with just a SWAP gate.
