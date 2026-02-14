@@ -875,6 +875,9 @@ void singleControlledBarrier(QCOProgramBuilder& b);
 /// Creates a circuit with an inverse modifier applied to a barrier.
 void inverseBarrier(QCOProgramBuilder& b);
 
+/// Creates a circuit with two barriers in a row with overlapping qubits.
+void twoBarrier(QCOProgramBuilder& b);
+
 // --- CtrlOp --------------------------------------------------------------- //
 
 /// Creates a circuit with a trivial ctrl modifier.

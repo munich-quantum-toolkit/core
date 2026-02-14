@@ -30,4 +30,6 @@ INSTANTIATE_TEST_SUITE_P(
                                 MQT_NAMED_BUILDER(barrier)},
                     QCOTestCase{"InverseBarrier",
                                 MQT_NAMED_BUILDER(inverseBarrier),
-                                MQT_NAMED_BUILDER(barrier)}));
+                                MQT_NAMED_BUILDER(barrier)},
+                    QCOTestCase{"TwoBarrier", MQT_NAMED_BUILDER(twoBarrier),
+                                MQT_NAMED_BUILDER(barrierTwoQubits)}));

@@ -1816,6 +1816,14 @@ void inverseBarrier(QCOProgramBuilder& b) {
   });
 }
 
+void twoBarrier(QCOProgramBuilder& b) {
+  auto q = b.allocQubitRegister(2);
+  auto b1 = b.barrier({q[0], q[1]});
+  q[0] = b1[0];
+  q[1] = b1[1];
+  b.barrier({q[0], q[1]});
+}
+
 void trivialCtrl(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   b.ctrl({}, {q[0], q[1]}, [&](mlir::ValueRange targets) {
