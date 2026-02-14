@@ -33,6 +33,18 @@ constexpr double SANITY_CHECK_PRECISION = 1e-12;
  * three parameters for a canonical gate (a, b, c). The matrices can then be
  * decomposed using a single-qubit decomposition into e.g. rotation gates and
  * the canonical gate is RXX(-2 * a), RYY(-2 * b), RZZ (-2 * c).
+ *
+ * @note Adapted from TwoQubitWeylDecomposition in the IBM Qiskit framework.
+ *       (C) Copyright IBM 2023
+ *
+ *       This code is licensed under the Apache License, Version 2.0. You may
+ *       obtain a copy of this license in the LICENSE.txt file in the root
+ *       directory of this source tree or at
+ *       http://www.apache.org/licenses/LICENSE-2.0.
+ *
+ *       Any modifications or derivative works of this code must retain this
+ *       copyright notice, and modified files need to carry a notice
+ *       indicating that they have been altered from the originals.
  */
 class TwoQubitWeylDecomposition {
 public:
