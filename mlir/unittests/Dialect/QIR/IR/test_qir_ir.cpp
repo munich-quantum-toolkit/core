@@ -10,17 +10,20 @@
 
 #include "test_qir_ir.h"
 
+#include "TestCaseUtils.h"
+#include "mlir/Dialect/QIR/Builder/QIRProgramBuilder.h"
 #include "mlir/Support/IRVerification.h"
 #include "mlir/Support/Passes.h"
 #include "mlir/Support/PrettyPrinting.h"
 
 #include <gtest/gtest.h>
 #include <iosfwd>
+#include <llvm/Support/raw_ostream.h>
 #include <memory>
 #include <mlir/Dialect/LLVMIR/LLVMDialect.h>
 #include <mlir/IR/DialectRegistry.h>
+#include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/Verifier.h>
-#include <string>
 
 using namespace mlir;
 

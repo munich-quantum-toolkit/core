@@ -8,6 +8,8 @@
  * Licensed under the MIT License
  */
 
+#include "TestCaseUtils.h"
+#include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "qco_programs.h"
 #include "test_qco_ir.h"
 

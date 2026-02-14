@@ -15,6 +15,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <llvm/ADT/STLExtras.h>
+#include <llvm/ADT/STLFunctionalExtras.h>
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/ADT/StringMap.h>
 #include <llvm/Support/ErrorHandling.h>

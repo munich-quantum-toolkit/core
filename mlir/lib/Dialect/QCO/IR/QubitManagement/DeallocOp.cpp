@@ -31,7 +31,7 @@ struct RemoveAllocDeallocPair final : OpRewritePattern<DeallocOp> {
   LogicalResult matchAndRewrite(DeallocOp op,
                                 PatternRewriter& rewriter) const override {
     // Check if the predecessor is an AllocOp or a StaticOp
-    auto defOp = op.getQubit().getDefiningOp();
+    auto* defOp = op.getQubit().getDefiningOp();
     if (!llvm::isa<AllocOp, StaticOp>(defOp)) {
       return failure();
     }

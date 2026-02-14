@@ -10,6 +10,7 @@
 
 #include "test_qc_ir.h"
 
+#include "TestCaseUtils.h"
 #include "mlir/Dialect/QC/Builder/QCProgramBuilder.h"
 #include "mlir/Dialect/QC/IR/QCDialect.h"
 #include "mlir/Support/IRVerification.h"
@@ -18,12 +19,13 @@
 
 #include <gtest/gtest.h>
 #include <iosfwd>
+#include <llvm/Support/raw_ostream.h>
 #include <memory>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/IR/DialectRegistry.h>
+#include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/Verifier.h>
-#include <string>
 
 using namespace mlir;
 

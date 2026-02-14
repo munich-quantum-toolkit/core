@@ -8,6 +8,7 @@
  * Licensed under the MIT License
  */
 
+#include "TestCaseUtils.h"
 #include "qir_programs.h"
 #include "test_qir_ir.h"
 

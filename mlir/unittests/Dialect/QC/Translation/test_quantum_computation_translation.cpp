@@ -20,15 +20,15 @@
 #include "quantum_computation_programs.h"
 
 #include <gtest/gtest.h>
+#include <llvm/Support/raw_ostream.h>
 #include <memory>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/IR/DialectRegistry.h>
+#include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/Verifier.h>
 #include <ostream>
 #include <string>
-
-namespace {
 
 struct QuantumComputationTranslationTestCase {
   std::string name;
@@ -409,5 +409,3 @@ INSTANTIATE_TEST_SUITE_P(
             "BarrierMultipleQubits",
             MQT_NAMED_BUILDER(qc::barrierMultipleQubits),
             MQT_NAMED_BUILDER(mlir::qc::barrierMultipleQubits)}));
-
-} // namespace

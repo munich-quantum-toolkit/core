@@ -8,14 +8,18 @@
  * Licensed under the MIT License
  */
 
+#include "TestCaseUtils.h"
 #include "dd/Operations.hpp"
+#include "dd/Package.hpp"
 #include "ir/operations/OpType.hpp"
 #include "ir/operations/StandardOperation.hpp"
+#include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "qco_programs.h"
 #include "test_qco_ir.h"
 
 #include <Eigen/Core>
 #include <gtest/gtest.h>
+#include <memory>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 
 using namespace mlir::qco;

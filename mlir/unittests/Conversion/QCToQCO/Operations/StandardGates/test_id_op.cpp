@@ -8,6 +8,7 @@
  * Licensed under the MIT License
  */
 
+#include "TestCaseUtils.h"
 #include "qc_programs.h"
 #include "qco_programs.h"
 #include "test_qc_to_qco.h"

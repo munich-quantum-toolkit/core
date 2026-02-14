@@ -14,6 +14,7 @@
 #include <cmath>
 #include <cstddef>
 #include <llvm/ADT/APFloat.h>
+#include <llvm/ADT/ArrayRef.h>
 #include <llvm/ADT/DenseMap.h>
 #include <llvm/ADT/DenseSet.h>
 #include <llvm/ADT/Hashing.h>
@@ -34,6 +35,8 @@
 #include <mlir/IR/Value.h>
 #include <mlir/Interfaces/SideEffectInterfaces.h>
 #include <unordered_map>
+#include <utility>
+#include <vector>
 
 namespace {
 using namespace mlir;
@@ -297,8 +300,9 @@ static bool hasOrderingConstraints(Operation* op) {
 /// Returns a map from each operation to the set of operations it depends on.
 llvm::DenseMap<
     Operation*,
-    llvm::DenseSet<Operation*>> static buildDependenceGraph(ArrayRef<Operation*>
-                                                                ops) {
+    llvm::DenseSet<
+        Operation*>> static buildDependenceGraph(llvm::ArrayRef<Operation*>
+                                                     ops) {
   llvm::DenseMap<Operation*, llvm::DenseSet<Operation*>> dependsOn;
   llvm::DenseMap<Value, Operation*> valueProducers;
 
@@ -325,7 +329,7 @@ llvm::DenseMap<
 /// Partition operations into groups that can be compared as multisets.
 /// Operations in the same group are independent and can be reordered.
 std::vector<llvm::SmallVector<Operation*>> static partitionIndependentGroups(
-    ArrayRef<Operation*> ops) {
+    llvm::ArrayRef<Operation*> ops) {
   std::vector<llvm::SmallVector<Operation*>> groups;
   if (ops.empty()) {
     return groups;
@@ -376,8 +380,8 @@ std::vector<llvm::SmallVector<Operation*>> static partitionIndependentGroups(
 }
 
 /// Compare two groups of independent operations using multiset equivalence.
-static bool areIndependentGroupsEquivalent(ArrayRef<Operation*> lhsOps,
-                                           ArrayRef<Operation*> rhsOps) {
+static bool areIndependentGroupsEquivalent(llvm::ArrayRef<Operation*> lhsOps,
+                                           llvm::ArrayRef<Operation*> rhsOps) {
   if (lhsOps.size() != rhsOps.size()) {
     return false;
   }

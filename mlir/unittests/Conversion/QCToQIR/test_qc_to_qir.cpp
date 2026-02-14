@@ -10,6 +10,7 @@
 
 #include "test_qc_to_qir.h"
 
+#include "TestCaseUtils.h"
 #include "mlir/Conversion/QCToQIR/QCToQIR.h"
 #include "mlir/Dialect/QC/Builder/QCProgramBuilder.h"
 #include "mlir/Dialect/QC/IR/QCDialect.h"
@@ -20,6 +21,7 @@
 
 #include <gtest/gtest.h>
 #include <iosfwd>
+#include <llvm/Support/raw_ostream.h>
 #include <memory>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
@@ -28,7 +30,6 @@
 #include <mlir/IR/Verifier.h>
 #include <mlir/Pass/PassManager.h>
 #include <mlir/Support/LogicalResult.h>
-#include <string>
 
 using namespace mlir;
 

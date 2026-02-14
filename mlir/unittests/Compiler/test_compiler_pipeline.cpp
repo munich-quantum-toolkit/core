@@ -25,6 +25,7 @@
 
 #include <gtest/gtest.h>
 #include <iosfwd>
+#include <llvm/Support/raw_ostream.h>
 #include <memory>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/ControlFlow/IR/ControlFlow.h>

@@ -8,8 +8,10 @@
  * Licensed under the MIT License
  */
 
+#include "TestCaseUtils.h"
 #include "dd/GateMatrixDefinitions.hpp"
 #include "ir/operations/OpType.hpp"
+#include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "qco_programs.h"
 #include "test_qco_ir.h"
 

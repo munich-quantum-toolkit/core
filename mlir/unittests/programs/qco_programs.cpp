@@ -16,6 +16,7 @@
 #include "llvm/ADT/SmallVector.h"
 
 #include <numbers>
+#include <tuple>
 
 namespace mlir::qco {
 

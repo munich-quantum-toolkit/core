@@ -12,6 +12,7 @@
 
 #include <cstddef>
 #include <llvm/ADT/STLExtras.h>
+#include <llvm/ADT/STLFunctionalExtras.h>
 #include <llvm/Support/Casting.h>
 #include <llvm/Support/ErrorHandling.h>
 #include <mlir/IR/Builders.h>
@@ -47,7 +48,7 @@ struct MergeNestedCtrl final : OpRewritePattern<CtrlOp> {
     // the outer one with the inner one's results
     const OpBuilder::InsertionGuard guard(rewriter);
     rewriter.setInsertionPoint(bodyUnitary);
-    auto innerUnitaryOp = bodyCtrlOp.getBodyUnitary().getOperation();
+    auto* innerUnitaryOp = bodyCtrlOp.getBodyUnitary().getOperation();
     rewriter.moveOpBefore(innerUnitaryOp, bodyUnitary);
     rewriter.replaceOp(bodyUnitary, innerUnitaryOp->getResults());
 
