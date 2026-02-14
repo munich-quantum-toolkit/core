@@ -8,9 +8,9 @@
  * Licensed under the MIT License
  */
 
-#include "Eigen/Core"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 
+#include <Eigen/Core>
 #include <cstddef>
 #include <llvm/ADT/STLFunctionalExtras.h>
 #include <llvm/ADT/SmallVector.h>
@@ -259,13 +259,13 @@ struct CancelNestedInv final : OpRewritePattern<InvOp> {
 
   LogicalResult matchAndRewrite(InvOp op,
                                 PatternRewriter& rewriter) const override {
-    auto innerUnitary = op.getBodyUnitary().getOperation();
+    auto* innerUnitary = op.getBodyUnitary().getOperation();
     auto innerInvOp = llvm::dyn_cast<InvOp>(innerUnitary);
     if (!innerInvOp) {
       return failure();
     }
 
-    auto innerInnerUnitary = innerInvOp.getBodyUnitary().getOperation();
+    auto* innerInnerUnitary = innerInvOp.getBodyUnitary().getOperation();
     rewriter.moveOpBefore(innerInnerUnitary, op);
     innerInnerUnitary->setOperands(0, op.getNumQubits(), op.getInputQubits());
     rewriter.replaceOp(op, innerInnerUnitary->getResults());

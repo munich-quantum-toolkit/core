@@ -114,13 +114,13 @@ struct ReduceCtrl final : OpRewritePattern<CtrlOp> {
     }
 
     // Adjust the segment sizes of the control and target operands
-    const auto opSegmentsAttrName = op.getOperandSegmentSizeAttr();
+    const auto opSegmentsAttrName = CtrlOp::getOperandSegmentSizeAttr();
     auto segmentsAttr =
         op->getAttrOfType<DenseI32ArrayAttr>(opSegmentsAttrName);
     auto newSegments = DenseI32ArrayAttr::get(
         rewriter.getContext(), {segmentsAttr[0] - 1, segmentsAttr[1] + 1});
     op->setAttr(opSegmentsAttrName, newSegments);
-    const auto opResultSegmentsAttrName = op.getResultSegmentSizeAttr();
+    const auto opResultSegmentsAttrName = CtrlOp::getResultSegmentSizeAttr();
     op->setAttr(opResultSegmentsAttrName, newSegments);
 
     // Add a block argument for the target qubit

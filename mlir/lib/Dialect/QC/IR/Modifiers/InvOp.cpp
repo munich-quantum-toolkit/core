@@ -22,6 +22,7 @@
 #include <mlir/IR/PatternMatch.h>
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/LogicalResult.h>
+#include <numbers>
 
 using namespace mlir;
 using namespace mlir::qc;
@@ -243,7 +244,7 @@ struct CancelNestedInv final : OpRewritePattern<InvOp> {
       return failure();
     }
 
-    auto innerInnerUnitary = innerInvOp.getBodyUnitary().getOperation();
+    auto* innerInnerUnitary = innerInvOp.getBodyUnitary().getOperation();
     rewriter.moveOpBefore(innerInnerUnitary, invOp);
     rewriter.replaceOp(invOp, innerInnerUnitary->getResults());
 
