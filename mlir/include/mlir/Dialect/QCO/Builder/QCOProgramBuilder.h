@@ -82,6 +82,25 @@ public:
   void initialize();
 
   //===--------------------------------------------------------------------===//
+  // Constants
+  //===--------------------------------------------------------------------===//
+
+  /**
+   * @brief Create a constant integer value
+   * @param value The value to store in the constant
+   * @return The value produced by the constant operation
+   *
+   * @par Example:
+   * ```c++
+   * auto c = builder.intConstant(1);
+   * ```
+   * ```mlir
+   * %c = arith.constant 1 : i64
+   * ```
+   */
+  Value intConstant(int64_t value);
+
+  //===--------------------------------------------------------------------===//
   // Memory Management
   //===--------------------------------------------------------------------===//
 

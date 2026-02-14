@@ -59,11 +59,6 @@ void QCProgramBuilder::initialize() {
   setInsertionPointToStart(&entryBlock);
 }
 
-Value QCProgramBuilder::doubleConstant(const double value) {
-  checkFinalized();
-  return arith::ConstantOp::create(*this, getF64FloatAttr(value)).getResult();
-}
-
 Value QCProgramBuilder::intConstant(const int64_t value) {
   checkFinalized();
   return arith::ConstantOp::create(*this, getI64IntegerAttr(value)).getResult();

@@ -93,6 +93,40 @@ public:
   void initialize();
 
   //===--------------------------------------------------------------------===//
+  // Constants
+  //===--------------------------------------------------------------------===//
+
+  /**
+   * @brief Create a constant integer value
+   * @param value The value to store in the constant
+   * @return The value produced by the constant operation
+   *
+   * @par Example:
+   * ```c++
+   * auto c = builder.intConstant(1);
+   * ```
+   * ```mlir
+   * %c = arith.constant 1 : i64
+   * ```
+   */
+  Value intConstant(int64_t value);
+
+  /**
+   * @brief Create a constant double value
+   * @param value The value to store in the constant
+   * @return The value produced by the constant operation
+   *
+   * @par Example:
+   * ```c++
+   * auto c = builder.doubleConstant(0.5);
+   * ```
+   * ```mlir
+   * %c = arith.constant 0.5 : f64
+   * ```
+   */
+  Value doubleConstant(double value);
+
+  //===--------------------------------------------------------------------===//
   // Memory Management
   //===--------------------------------------------------------------------===//
 
@@ -844,7 +878,7 @@ private:
   Block* outputBlock{};
 
   /// Exit code constant (created in entry block, used in output block)
-  LLVM::ConstantOp exitCode;
+  Value exitCode;
 
   /// Cache static pointers for reuse
   llvm::DenseMap<int64_t, Value> ptrCache;

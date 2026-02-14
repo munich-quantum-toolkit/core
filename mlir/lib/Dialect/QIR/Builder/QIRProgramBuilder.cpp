@@ -67,11 +67,11 @@ void QIRProgramBuilder::initialize() {
   // QIR initialization call in entry block (after exit code constant)
   setInsertionPointToStart(entryBlock);
   auto zeroOp = LLVM::ZeroOp::create(*this, ptrType);
-  exitCode = LLVM::ConstantOp::create(*this, getI64IntegerAttr(0));
+  exitCode = intConstant(0);
   const auto initType = LLVM::LLVMFunctionType::get(voidType, ptrType);
   auto initFunc =
       getOrCreateFunctionDeclaration(*this, module, QIR_INITIALIZE, initType);
-  LLVM::CallOp::create(*this, initFunc, ValueRange{zeroOp.getResult()});
+  LLVM::CallOp::create(*this, initFunc, zeroOp.getResult());
 
   // Add unconditional branches between blocks
   setInsertionPointToEnd(entryBlock);
@@ -85,10 +85,20 @@ void QIRProgramBuilder::initialize() {
 
   // Return the exit code (success) in output block
   setInsertionPointToEnd(outputBlock);
-  LLVM::ReturnOp::create(*this, ValueRange{exitCode.getResult()});
+  LLVM::ReturnOp::create(*this, exitCode);
 
   // Set insertion point to body block for user operations
   setInsertionPointToStart(bodyBlock);
+}
+
+Value QIRProgramBuilder::intConstant(const int64_t value) {
+  checkFinalized();
+  return LLVM::ConstantOp::create(*this, getI64IntegerAttr(value)).getResult();
+}
+
+Value QIRProgramBuilder::doubleConstant(double value) {
+  checkFinalized();
+  return LLVM::ConstantOp::create(*this, getF64FloatAttr(value)).getResult();
 }
 
 Value QIRProgramBuilder::staticQubit(const int64_t index) {
@@ -283,10 +293,7 @@ void QIRProgramBuilder::createCallOp(
   for (const auto& parameter : parameters) {
     Value parameterOperand;
     if (std::holds_alternative<double>(parameter)) {
-      parameterOperand =
-          LLVM::ConstantOp::create(*this,
-                                   getF64FloatAttr(std::get<double>(parameter)))
-              .getResult();
+      parameterOperand = doubleConstant(std::get<double>(parameter));
     } else {
       parameterOperand = std::get<Value>(parameter);
     }
@@ -612,12 +619,10 @@ void QIRProgramBuilder::generateOutputRecording() {
 
     const auto arraySize = measurements.size();
     auto arrayLabelOp = createResultLabel(*this, module, registerName);
-    auto arraySizeConst = create<LLVM::ConstantOp>(
-        getI64IntegerAttr(static_cast<int64_t>(arraySize)));
+    auto arraySizeConst = intConstant(static_cast<int64_t>(arraySize));
 
-    LLVM::CallOp::create(
-        *this, arrayRecordDecl,
-        ValueRange{arraySizeConst.getResult(), arrayLabelOp.getResult()});
+    LLVM::CallOp::create(*this, arrayRecordDecl,
+                         ValueRange{arraySizeConst, arrayLabelOp.getResult()});
 
     for (const auto& [regIdx, resultPtr] : measurements) {
       // Create label for result: "{registerName}{regIdx}r"
