@@ -36,7 +36,11 @@ INSTANTIATE_TEST_SUITE_P(
                     MQT_NAMED_BUILDER(r)},
         QCOTestCase{"InverseMultipleControlledR",
                     MQT_NAMED_BUILDER(inverseMultipleControlledR),
-                    MQT_NAMED_BUILDER(multipleControlledR)}));
+                    MQT_NAMED_BUILDER(multipleControlledR)},
+        QCOTestCase{"CanonicalizeRToRx", MQT_NAMED_BUILDER(canonicalizeRToRx),
+                    MQT_NAMED_BUILDER(rx)},
+        QCOTestCase{"CanonicalizeRToRy", MQT_NAMED_BUILDER(canonicalizeRToRy),
+                    MQT_NAMED_BUILDER(ry)}));
 
 TEST_F(QCOTest, ROpMatrix) {
   auto moduleOp = QCOProgramBuilder::build(context.get(), r);

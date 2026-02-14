@@ -524,6 +524,12 @@ void inverseR(QCOProgramBuilder& b);
 /// Creates a circuit with an inverse modifier applied to a controlled R gate.
 void inverseMultipleControlledR(QCOProgramBuilder& b);
 
+/// Creates a circuit with an R gate that can be canonicalized to an RX gate.
+void canonicalizeRToRx(QCOProgramBuilder& b);
+
+/// Creates a circuit with an R gate that can be canonicalized to an RY gate.
+void canonicalizeRToRy(QCOProgramBuilder& b);
+
 // --- U2Op ----------------------------------------------------------------- //
 
 /// Creates a circuit with just a U2 gate.

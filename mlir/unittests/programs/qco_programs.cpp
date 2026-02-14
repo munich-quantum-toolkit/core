@@ -1056,6 +1056,16 @@ void inverseMultipleControlledR(QCOProgramBuilder& b) {
   });
 }
 
+void canonicalizeRToRx(QCOProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  q[0] = b.r(0.123, 0., q[0]);
+}
+
+void canonicalizeRToRy(QCOProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  q[0] = b.r(0.456, std::numbers::pi / 2, q[0]);
+}
+
 void u2(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   b.u2(0.234, 0.567, q[0]);
