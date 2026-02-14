@@ -8,6 +8,8 @@
  * Licensed under the MIT License
  */
 
+#pragma once
+
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 
 #include <iterator>
@@ -31,7 +33,7 @@ public:
   using difference_type = std::ptrdiff_t;
   using value_type = mlir::Operation*;
 
-  explicit WireIterator() : op_(nullptr), qubit_(nullptr), isSentinel_(false) {}
+  WireIterator() : op_(nullptr), qubit_(nullptr), isSentinel_(false) {}
   explicit WireIterator(mlir::Value qubit)
       : op_(qubit.getDefiningOp()), qubit_(qubit), isSentinel_(false) {}
 
@@ -149,4 +151,4 @@ private:
 static_assert(std::bidirectional_iterator<WireIterator>);
 static_assert(std::sentinel_for<std::default_sentinel_t, WireIterator>,
               "std::default_sentinel_t must be a sentinel for WireIterator.");
-}; // namespace mlir::qco
+} // namespace mlir::qco

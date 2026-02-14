@@ -165,7 +165,7 @@ TEST_F(WireIteratorTest, MixedUseStatic) {
   const auto q04 = builder.reset(q03);
 
   // Setup WireIterator.
-  auto module = builder.finalize();
+  auto module = builder.finalize(); // Automatically adds qco.dealloc ops.
   auto entry = *(module->getOps<func::FuncOp>().begin());
   auto staticOp = *(entry.getBody().getOps<qco::StaticOp>().begin());
   auto qubit = staticOp.getQubit();
