@@ -13,4 +13,4 @@ target_link_libraries(mqt-core-mlir-unittests-dialect-utils
 
 mqt_mlir_target_use_project_options(mqt-core-mlir-unittests-dialect-utils)
 
-gtest_discover_tests(mqt-core-mlir-unittests-dialect-utils)
+gtest_discover_tests(mqt-core-mlir-unittests-dialect-utils PROPERTIES LABELS mqt-mlir-unittests)

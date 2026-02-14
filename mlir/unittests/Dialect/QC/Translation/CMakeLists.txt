@@ -23,4 +23,4 @@ target_link_libraries(
           MQT::CoreIR
           MQT::ProjectOptions)
 
-gtest_discover_tests(${target_name})
+gtest_discover_tests(${target_name} PROPERTIES LABELS mqt-mlir-unittests)

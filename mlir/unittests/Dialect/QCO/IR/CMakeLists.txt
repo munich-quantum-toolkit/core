@@ -16,4 +16,4 @@ target_include_directories(${qco_ir_target} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 
 mqt_mlir_target_use_project_options(${qco_ir_target})
 
-gtest_discover_tests(${qco_ir_target})
+gtest_discover_tests(${qco_ir_target} PROPERTIES LABELS mqt-mlir-unittests)

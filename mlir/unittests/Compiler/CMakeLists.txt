@@ -24,4 +24,4 @@ target_link_libraries(
 
 mqt_mlir_target_use_project_options(mqt-core-mlir-unittests-compiler)
 
-gtest_discover_tests(mqt-core-mlir-unittests-compiler)
+gtest_discover_tests(mqt-core-mlir-unittests-compiler PROPERTIES LABELS mqt-mlir-unittests)
