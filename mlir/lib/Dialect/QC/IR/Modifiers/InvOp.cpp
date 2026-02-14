@@ -284,18 +284,6 @@ Value InvOp::getParameter(const size_t i) {
 }
 
 void InvOp::build(OpBuilder& odsBuilder, OperationState& odsState,
-                  UnitaryOpInterface bodyUnitary) {
-  const OpBuilder::InsertionGuard guard(odsBuilder);
-  auto* region = odsState.addRegion();
-  auto& block = region->emplaceBlock();
-
-  // Move the unitary op into the block
-  odsBuilder.setInsertionPointToStart(&block);
-  odsBuilder.clone(*bodyUnitary.getOperation());
-  YieldOp::create(odsBuilder, odsState.location);
-}
-
-void InvOp::build(OpBuilder& odsBuilder, OperationState& odsState,
                   const llvm::function_ref<void()>& bodyBuilder) {
   const OpBuilder::InsertionGuard guard(odsBuilder);
   auto* region = odsState.addRegion();

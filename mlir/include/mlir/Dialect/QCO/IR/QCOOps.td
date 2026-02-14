@@ -1134,7 +1134,6 @@ def CtrlOp : QCOOp<"ctrl", traits =
         OpBuilder<(ins "ValueRange":$controls, "ValueRange":$targets), [{
            build($_builder, $_state, controls.getTypes(), targets.getTypes(), controls, targets);
         }]>,
-        OpBuilder<(ins "ValueRange":$controls, "ValueRange":$targets, "UnitaryOpInterface":$bodyUnitary)>,
         OpBuilder<(ins "ValueRange":$controls, "ValueRange":$targets, "llvm::function_ref<llvm::SmallVector<Value>(ValueRange)>":$bodyBuilder)>
     ];
 
@@ -1199,7 +1198,6 @@ def InvOp : QCOOp<"inv",
         OpBuilder<(ins "ValueRange":$qubits), [{
            build($_builder, $_state, qubits.getTypes(), qubits);
         }]>,
-        OpBuilder<(ins "ValueRange":$qubits, "UnitaryOpInterface":$bodyUnitary)>,
         OpBuilder<(ins "ValueRange":$qubits, "llvm::function_ref<llvm::SmallVector<Value>(ValueRange)>":$bodyBuilder)>
     ];
 

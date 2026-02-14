@@ -249,26 +249,6 @@ Value CtrlOp::getParameter(const size_t i) {
   return getBodyUnitary().getParameter(i);
 }
 
-void CtrlOp::build(OpBuilder& odsBuilder, OperationState& odsState,
-                   ValueRange controls, ValueRange targets,
-                   UnitaryOpInterface bodyUnitary) {
-  build(odsBuilder, odsState, controls, targets);
-  auto& block = odsState.regions.front()->emplaceBlock();
-
-  // Create block arguments and map targets to them
-  IRMapping mapping;
-  const auto qubitType = QubitType::get(odsBuilder.getContext());
-  for (const auto target : targets) {
-    mapping.map(target, block.addArgument(qubitType, odsState.location));
-  }
-
-  // Clone the operation using the mapping
-  const OpBuilder::InsertionGuard guard(odsBuilder);
-  odsBuilder.setInsertionPointToStart(&block);
-  auto* op = odsBuilder.clone(*bodyUnitary.getOperation(), mapping);
-  YieldOp::create(odsBuilder, odsState.location, op->getResults());
-}
-
 void CtrlOp::build(
     OpBuilder& odsBuilder, OperationState& odsState, ValueRange controls,
     ValueRange targets,

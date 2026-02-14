@@ -345,25 +345,6 @@ Value InvOp::getParameter(const size_t i) {
   return getBodyUnitary().getParameter(i);
 }
 
-void InvOp::build(OpBuilder& odsBuilder, OperationState& odsState,
-                  ValueRange qubits, UnitaryOpInterface bodyUnitary) {
-  build(odsBuilder, odsState, qubits);
-  auto& block = odsState.regions.front()->emplaceBlock();
-
-  // Create block arguments and map targets to them
-  IRMapping mapping;
-  const auto qubitType = QubitType::get(odsBuilder.getContext());
-  for (const auto target : qubits) {
-    mapping.map(target, block.addArgument(qubitType, odsState.location));
-  }
-
-  // Move the unitary op into the block
-  const OpBuilder::InsertionGuard guard(odsBuilder);
-  odsBuilder.setInsertionPointToStart(&block);
-  auto* op = odsBuilder.clone(*bodyUnitary.getOperation(), mapping);
-  YieldOp::create(odsBuilder, odsState.location, op->getResults());
-}
-
 void InvOp::build(
     OpBuilder& odsBuilder, OperationState& odsState, ValueRange qubits,
     llvm::function_ref<llvm::SmallVector<Value>(ValueRange)> bodyBuilder) {

@@ -965,7 +965,6 @@ def CtrlOp : QCOp<"ctrl",
     }];
 
     let builders = [
-        OpBuilder<(ins "ValueRange":$controls, "UnitaryOpInterface":$bodyUnitary)>,
         OpBuilder<(ins "ValueRange":$controls, "const llvm::function_ref<void()>&":$bodyBuilder)>
     ];
 
@@ -1009,7 +1008,6 @@ def InvOp : QCOp<"inv",
     }];
 
     let builders = [
-        OpBuilder<(ins "UnitaryOpInterface":$bodyUnitary)>,
         OpBuilder<(ins "const llvm::function_ref<void()>&":$bodyBuilder)>
     ];
 
