@@ -116,6 +116,25 @@ list(APPEND FETCH_PACKAGES spdlog)
 # Make all declared dependencies available.
 FetchContent_MakeAvailable(${FETCH_PACKAGES})
 
+# Treat Eigen headers as system headers to avoid surfacing third-party warnings.
+set(_eigen_target "")
+if(TARGET Eigen3::Eigen)
+  set(_eigen_target Eigen3::Eigen)
+elseif(TARGET Eigen::Eigen)
+  set(_eigen_target Eigen::Eigen)
+endif()
+if(_eigen_target)
+  get_target_property(_eigen_alias_target ${_eigen_target} ALIASED_TARGET)
+  if(_eigen_alias_target)
+    set(_eigen_target ${_eigen_alias_target})
+  endif()
+  get_target_property(_eigen_includes ${_eigen_target} INTERFACE_INCLUDE_DIRECTORIES)
+  if(_eigen_includes)
+    set_target_properties(${_eigen_target} PROPERTIES INTERFACE_SYSTEM_INCLUDE_DIRECTORIES
+                                                      "${_eigen_includes}")
+  endif()
+endif()
+
 # Ensure external shared libraries end up in a common lib layout used by our RUNPATH
 if(TARGET spdlog)
   set_target_properties(

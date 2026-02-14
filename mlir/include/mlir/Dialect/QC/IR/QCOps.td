@@ -966,7 +966,7 @@ def CtrlOp : QCOp<"ctrl",
 
     let builders = [
         OpBuilder<(ins "ValueRange":$controls, "UnitaryOpInterface":$bodyUnitary)>,
-        OpBuilder<(ins "ValueRange":$controls, "const std::function<void()>&":$bodyBuilder)>
+        OpBuilder<(ins "ValueRange":$controls, "const llvm::function_ref<void()>&":$bodyBuilder)>
     ];
 
     let hasCanonicalizer = 1;
@@ -1010,7 +1010,7 @@ def InvOp : QCOp<"inv",
 
     let builders = [
         OpBuilder<(ins "UnitaryOpInterface":$bodyUnitary)>,
-        OpBuilder<(ins "const std::function<void()>&":$bodyBuilder)>
+        OpBuilder<(ins "const llvm::function_ref<void()>&":$bodyBuilder)>
     ];
 
     let hasCanonicalizer = 1;

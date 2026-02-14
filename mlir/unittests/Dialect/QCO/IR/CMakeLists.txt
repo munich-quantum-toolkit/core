@@ -6,11 +6,12 @@
 #
 # Licensed under the MIT License
 
-add_executable(mqt-core-mlir-qco-dialect-test test_unitary_matrix.cpp test_unitary_op_interface.cpp)
+file(GLOB_RECURSE QCO_IR_TEST_SOURCES "*.cpp")
 
-target_link_libraries(mqt-core-mlir-qco-dialect-test PRIVATE GTest::gtest_main MLIRQCODialect
-                                                             MLIRLLVMDialect MLIRQCOProgramBuilder)
+set(qco_ir_target mqt-core-mlir-unittest-qco-ir)
+add_executable(${qco_ir_target} ${QCO_IR_TEST_SOURCES} test_qco_ir.h)
+target_link_libraries(${qco_ir_target} PRIVATE MLIRParser MLIRSupportMQT GTest::gtest_main
+                                               MLIRQCOProgramBuilder MLIRQCOPrograms MQT::CoreDD)
+mqt_mlir_configure_unittest_target(${qco_ir_target})
 
-gtest_discover_tests(mqt-core-mlir-qco-dialect-test)
-
-add_subdirectory(Modifiers)
+gtest_discover_tests(${qco_ir_target} PROPERTIES LABELS mqt-mlir-unittests)

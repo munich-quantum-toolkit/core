@@ -106,7 +106,7 @@ std::optional<Eigen::Matrix4cd> XXPlusYYOp::getUnitaryMatrix() {
   const auto msp = std::polar(s, *beta - (std::numbers::pi / 2));
   const auto msm = std::polar(s, -*beta - (std::numbers::pi / 2));
   return Eigen::Matrix4cd{{m1, m0, m0, m0},  // row 0
-                          {m0, mc, msm, m0}, // row 1
-                          {m0, msp, mc, m0}, // row 2
+                          {m0, mc, msp, m0}, // row 1
+                          {m0, msm, mc, m0}, // row 2
                           {m0, m0, m0, m1}}; // row 3
 }

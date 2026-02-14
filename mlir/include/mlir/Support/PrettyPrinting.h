@@ -16,6 +16,8 @@
 
 namespace mlir {
 
+class ModuleOp;
+
 /**
  * @brief Calculate UTF-8 display width of a string
  *
@@ -91,6 +93,16 @@ void printBoxLine(const std::string& text, int indent = 0,
  * @param os Output stream to write to
  */
 void printBoxText(const std::string& text, int indent = 0,
+                  llvm::raw_ostream& os = llvm::errs());
+
+/**
+ * @brief Pretty print an MLIR module with a header and box formatting
+ *
+ * @param module The MLIR module to print
+ * @param header Optional header text to display above the module
+ * @param os Output stream to write to
+ */
+void printProgram(ModuleOp module, llvm::StringRef header = "",
                   llvm::raw_ostream& os = llvm::errs());
 
 } // namespace mlir

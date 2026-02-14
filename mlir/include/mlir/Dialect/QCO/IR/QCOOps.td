@@ -1142,11 +1142,9 @@ def CtrlOp : QCOOp<"ctrl", traits =
     let hasVerifier = 1;
 }
 
-def InvOp : QCOOp<"inv", traits =
-            [
+def InvOp : QCOOp<"inv",
+            traits = [
                 UnitaryOpInterface,
-                SameOperandsAndResultType,
-                SameOperandsAndResultShape,
                 SingleBlockImplicitTerminator<"::mlir::qco::YieldOp">,
                 RecursiveMemoryEffects
             ]> {

@@ -566,6 +566,19 @@ translateOperations(QCProgramBuilder& builder,
       ADD_OP_CASE(XXplusYY)
       ADD_OP_CASE(XXminusYY)
       ADD_OP_CASE(Barrier)
+    case ::qc::OpType::iSWAPdg: {
+      const auto& target0 = qubits[operation->getTargets()[0]];
+      const auto& target1 = qubits[operation->getTargets()[1]];
+      if (const auto& controls = getControls(*operation, qubits);
+          controls.empty()) {
+        builder.inv([&] { builder.iswap(target0, target1); });
+      } else {
+        builder.ctrl(controls, [&] {
+          builder.inv([&] { builder.iswap(target0, target1); });
+        });
+      }
+      break;
+    }
     default:
       llvm::errs() << operation->getName() << " cannot be translated to QC\n";
       return failure();

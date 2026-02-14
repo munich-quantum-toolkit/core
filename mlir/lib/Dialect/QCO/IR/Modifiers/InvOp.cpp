@@ -8,11 +8,12 @@
  * Licensed under the MIT License
  */
 
-#include "Eigen/Core"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 
+#include <Eigen/Core>
 #include <cstddef>
 #include <llvm/ADT/STLFunctionalExtras.h>
+#include <llvm/ADT/SmallVector.h>
 #include <llvm/ADT/TypeSwitch.h>
 #include <llvm/Support/Casting.h>
 #include <llvm/Support/ErrorHandling.h>
@@ -34,6 +35,51 @@ using namespace mlir::qco;
 namespace {
 
 /**
+ * @brief Move nested control modifiers outside, i.e., `inv(ctrl(x)) =>
+ * ctrl(inv(x))`.
+ */
+struct MoveCtrlOutside final : OpRewritePattern<InvOp> {
+  using OpRewritePattern::OpRewritePattern;
+
+  LogicalResult matchAndRewrite(InvOp invOp,
+                                PatternRewriter& rewriter) const override {
+    auto bodyUnitary = invOp.getBodyUnitary();
+    auto innerCtrlOp = llvm::dyn_cast<CtrlOp>(bodyUnitary.getOperation());
+    if (!innerCtrlOp) {
+      return failure();
+    }
+
+    const auto numControls = innerCtrlOp.getNumControls();
+    const auto numTargets = innerCtrlOp.getNumTargets();
+    auto invTargets = invOp.getInputQubits();
+    auto controls = invTargets.take_front(numControls);
+    auto targets = invTargets.take_back(numTargets);
+
+    rewriter.replaceOpWithNewOp<CtrlOp>(
+        invOp, controls, targets,
+        [&](ValueRange newTargetArgs) -> llvm::SmallVector<Value> {
+          return InvOp::create(
+                     rewriter, invOp.getLoc(), newTargetArgs,
+                     [&](ValueRange invArgs) -> llvm::SmallVector<Value> {
+                       IRMapping mapping;
+                       auto* innerBody = innerCtrlOp.getBody();
+                       for (size_t i = 0; i < innerCtrlOp.getNumTargets();
+                            ++i) {
+                         mapping.map(innerBody->getArgument(i), invArgs[i]);
+                       }
+                       auto* cloned = rewriter.clone(
+                           *innerCtrlOp.getBodyUnitary().getOperation(),
+                           mapping);
+                       return cloned->getResults();
+                     })
+              .getResults();
+        });
+
+    return success();
+  }
+};
+
+/**
  * @brief Remove inverse modifiers around self-adjoint gates.
  *
  * For self-adjoint gates U (i.e., U = U†), inv(U) = U holds.
@@ -45,20 +91,13 @@ struct InlineSelfAdjoint final : OpRewritePattern<InvOp> {
                                 PatternRewriter& rewriter) const override {
     auto* innerOp = op.getBodyUnitary().getOperation();
 
-    if (!llvm::isa<IdOp, HOp, XOp, YOp, ZOp, SWAPOp>(innerOp)) {
+    if (!llvm::isa<IdOp, HOp, XOp, YOp, ZOp, SWAPOp, BarrierOp>(innerOp)) {
       return failure();
     }
 
-    // Map block arguments to operation inputs
-    IRMapping mapping;
-    auto& block = *op.getBody();
-    for (size_t i = 0; i < op.getNumTargets(); ++i) {
-      mapping.map(block.getArgument(i), op.getInputTarget(i));
-    }
-
-    // Clone the inner operation using the mapping
-    auto* cloned = rewriter.clone(*innerOp, mapping);
-    rewriter.replaceOp(op, cloned->getResults());
+    rewriter.moveOpBefore(innerOp, op);
+    innerOp->setOperands(0, op.getNumQubits(), op.getInputQubits());
+    rewriter.replaceOp(op, innerOp->getResults());
     return success();
   }
 };
@@ -152,11 +191,6 @@ struct ReplaceWithKnownGates final : OpRewritePattern<InvOp> {
                                             newLambda);
           return success();
         })
-        .Case<DCXOp>([&](auto) {
-          rewriter.replaceOpWithNewOp<DCXOp>(op, op.getInputTarget(1),
-                                             op.getInputTarget(0));
-          return success();
-        })
         .Case<RXXOp>([&](auto rxx) {
           Value negTheta =
               arith::NegFOp::create(rewriter, op.getLoc(), rxx.getTheta());
@@ -225,21 +259,16 @@ struct CancelNestedInv final : OpRewritePattern<InvOp> {
 
   LogicalResult matchAndRewrite(InvOp op,
                                 PatternRewriter& rewriter) const override {
-    auto innerUnitary = op.getBodyUnitary();
-    auto innerInvOp = llvm::dyn_cast<InvOp>(innerUnitary.getOperation());
+    auto* innerUnitary = op.getBodyUnitary().getOperation();
+    auto innerInvOp = llvm::dyn_cast<InvOp>(innerUnitary);
     if (!innerInvOp) {
       return failure();
     }
 
-    // Remove both inverse operations
-    auto innerInnerUnitary = innerInvOp.getBodyUnitary();
-    IRMapping mapping;
-    auto& innerBlock = *innerInvOp.getBody();
-    for (size_t i = 0; i < op.getNumTargets(); ++i) {
-      mapping.map(innerBlock.getArgument(i), op.getInputTarget(i));
-    }
-    auto* clonedOp = rewriter.clone(*innerInnerUnitary.getOperation(), mapping);
-    rewriter.replaceOp(op, clonedOp->getResults());
+    auto* innerInnerUnitary = innerInvOp.getBodyUnitary().getOperation();
+    rewriter.moveOpBefore(innerInnerUnitary, op);
+    innerInnerUnitary->setOperands(0, op.getNumQubits(), op.getInputQubits());
+    rewriter.replaceOp(op, innerInnerUnitary->getResults());
 
     return success();
   }
@@ -248,7 +277,12 @@ struct CancelNestedInv final : OpRewritePattern<InvOp> {
 } // namespace
 
 UnitaryOpInterface InvOp::getBodyUnitary() {
-  return llvm::dyn_cast<UnitaryOpInterface>(&getBody()->front());
+  // In principle, the body region should only contain exactly two operations,
+  // the actual unitary operation and a yield operation. However, the region may
+  // also contain constants and arithmetic operations, e.g., created as part of
+  // canonicalization. Thus, the only safe way to access the unitary operation
+  // is to get the second operation from the back of the region.
+  return llvm::cast<UnitaryOpInterface>(*(++getBody()->rbegin()));
 }
 
 size_t InvOp::getNumQubits() { return getNumTargets(); }
@@ -349,8 +383,8 @@ void InvOp::build(
 
 LogicalResult InvOp::verify() {
   auto& block = *getBody();
-  if (block.getOperations().size() != 2) {
-    return emitOpError("body region must have exactly two operations");
+  if (block.getOperations().size() < 2) {
+    return emitOpError("body region must have at least two operations");
   }
   const auto numTargets = getNumTargets();
   if (block.getArguments().size() != numTargets) {
@@ -364,24 +398,23 @@ LogicalResult InvOp::verify() {
              << i << " does not match target type";
     }
   }
-  if (!llvm::isa<UnitaryOpInterface>(block.front())) {
-    return emitOpError(
-        "first operation in body region must be a unitary operation");
-  }
   if (!llvm::isa<YieldOp>(block.back())) {
     return emitOpError(
-        "second operation in body region must be a yield operation");
+        "last operation in body region must be a yield operation");
   }
   if (const auto numYieldOperands = block.back().getNumOperands();
       numYieldOperands != numTargets) {
     return emitOpError("yield operation must yield ")
            << numTargets << " values, but found " << numYieldOperands;
   }
-
-  SmallPtrSet<Value, 4> uniqueQubitsIn;
-  for (const auto& target : getQubitsIn()) {
-    if (!uniqueQubitsIn.insert(target).second) {
-      return emitOpError("duplicate target qubit found");
+  auto iter = ++block.rbegin();
+  if (!llvm::isa<UnitaryOpInterface>(*(iter))) {
+    return emitOpError(
+        "second to last operation in body region must be a unitary operation");
+  }
+  for (auto it = ++iter; it != block.rend(); ++it) {
+    if (llvm::isa<UnitaryOpInterface>(*it)) {
+      return emitOpError("body region may only contain a single unitary op");
     }
   }
 
@@ -407,24 +440,13 @@ LogicalResult InvOp::verify() {
     }
   }
 
-  SmallPtrSet<Value, 4> uniqueQubitsOut;
-  for (size_t i = 0; i < numQubits; i++) {
-    if (!uniqueQubitsOut.insert(bodyUnitary.getOutputQubit(i)).second) {
-      return emitOpError("duplicate qubit found");
-    }
-  }
-
-  if (llvm::isa<BarrierOp>(bodyUnitary.getOperation())) {
-    return emitOpError("BarrierOp cannot be inverted");
-  }
-
   return success();
 }
 
 void InvOp::getCanonicalizationPatterns(RewritePatternSet& results,
                                         MLIRContext* context) {
-  results.add<InlineSelfAdjoint, ReplaceWithKnownGates, CancelNestedInv>(
-      context);
+  results.add<MoveCtrlOutside, InlineSelfAdjoint, ReplaceWithKnownGates,
+              CancelNestedInv>(context);
 }
 
 std::optional<Eigen::MatrixXcd> InvOp::getUnitaryMatrix() {
