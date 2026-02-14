@@ -19,13 +19,7 @@ using namespace mlir::qco;
 INSTANTIATE_TEST_SUITE_P(
     QCOInvOpTest, QCOToQCTest,
     testing::Values(
-        // ECR cannot be inverted with current canonicalization
-        QCOToQCTestCase{"InverseECR", MQT_NAMED_BUILDER(qco::inverseEcr),
-                        MQT_NAMED_BUILDER(qc::inverseEcr)},
-        QCOToQCTestCase{"InverseMultipleControlledECR",
-                        MQT_NAMED_BUILDER(qco::inverseMultipleControlledEcr),
-                        MQT_NAMED_BUILDER(qc::inverseMultipleControlledEcr)},
-        // ECR cannot be inverted with current canonicalization
+        // iSWAP cannot be inverted with current canonicalization
         QCOToQCTestCase{"InverseiSWAP", MQT_NAMED_BUILDER(qco::inverseIswap),
                         MQT_NAMED_BUILDER(qc::inverseIswap)},
         QCOToQCTestCase{"InverseMultipleControllediSWAP",

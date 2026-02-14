@@ -91,7 +91,8 @@ struct InlineSelfAdjoint final : OpRewritePattern<InvOp> {
                                 PatternRewriter& rewriter) const override {
     auto* innerOp = op.getBodyUnitary().getOperation();
 
-    if (!llvm::isa<IdOp, HOp, XOp, YOp, ZOp, SWAPOp, BarrierOp>(innerOp)) {
+    if (!llvm::isa<IdOp, HOp, XOp, YOp, ZOp, ECROp, SWAPOp, BarrierOp>(
+            innerOp)) {
       return failure();
     }
 
