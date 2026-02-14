@@ -832,6 +832,11 @@ void twoRxOppositePhase(QCOProgramBuilder& b) {
   q[0] = b.rx(-0.123, q[0]);
 }
 
+void rxPiOver2(QCOProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  b.rx(std::numbers::pi / 2, q[0]);
+}
+
 void ry(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   b.ry(0.456, q[0]);
@@ -884,6 +889,11 @@ void twoRyOppositePhase(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   q[0] = b.ry(0.456, q[0]);
   q[0] = b.ry(-0.456, q[0]);
+}
+
+void ryPiOver2(QCOProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  b.ry(std::numbers::pi / 2, q[0]);
 }
 
 void rz(QCOProgramBuilder& b) {
@@ -1097,6 +1107,19 @@ void inverseMultipleControlledU2(QCOProgramBuilder& b) {
     return llvm::to_vector(
         llvm::concat<mlir::Value>(controlsOut, mlir::ValueRange{targetOut}));
   });
+}
+void canonicalizeU2ToH(QCOProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  b.u2(0., std::numbers::pi, q[0]);
+}
+
+void canonicalizeU2ToRx(QCOProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  b.u2(-std::numbers::pi / 2, std::numbers::pi / 2, q[0]);
+}
+void canonicalizeU2ToRy(QCOProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  b.u2(0., 0., q[0]);
 }
 
 void u(QCOProgramBuilder& b) {

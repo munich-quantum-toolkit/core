@@ -37,7 +37,13 @@ INSTANTIATE_TEST_SUITE_P(
                     MQT_NAMED_BUILDER(u2)},
         QCOTestCase{"InverseMultipleControlledU2",
                     MQT_NAMED_BUILDER(inverseMultipleControlledU2),
-                    MQT_NAMED_BUILDER(multipleControlledU2)}));
+                    MQT_NAMED_BUILDER(multipleControlledU2)},
+        QCOTestCase{"CanonicalizeU2ToH", MQT_NAMED_BUILDER(canonicalizeU2ToH),
+                    MQT_NAMED_BUILDER(h)},
+        QCOTestCase{"CanonicalizeU2ToRx", MQT_NAMED_BUILDER(canonicalizeU2ToRx),
+                    MQT_NAMED_BUILDER(rxPiOver2)},
+        QCOTestCase{"CanonicalizeU2ToRy", MQT_NAMED_BUILDER(canonicalizeU2ToRy),
+                    MQT_NAMED_BUILDER(ryPiOver2)}));
 
 TEST_F(QCOTest, U2OpMatrix) {
   auto moduleOp = QCOProgramBuilder::build(context.get(), u2);

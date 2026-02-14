@@ -417,6 +417,9 @@ void inverseMultipleControlledRx(QCOProgramBuilder& b);
 /// Creates a circuit with two RX gates in a row with opposite phases.
 void twoRxOppositePhase(QCOProgramBuilder& b);
 
+/// Creates a circuit with an RX gate with an angle of pi/2.
+void rxPiOver2(QCOProgramBuilder& b);
+
 // --- RYOp ----------------------------------------------------------------- //
 
 /// Creates a circuit with just an RY gate.
@@ -442,6 +445,9 @@ void inverseMultipleControlledRy(QCOProgramBuilder& b);
 
 /// Creates a circuit with two RY gates in a row with opposite phases.
 void twoRyOppositePhase(QCOProgramBuilder& b);
+
+/// Creates a circuit with an RY gate with an angle of pi/2.
+void ryPiOver2(QCOProgramBuilder& b);
 
 // --- RZOp ----------------------------------------------------------------- //
 
@@ -540,6 +546,15 @@ void inverseU2(QCOProgramBuilder& b);
 
 /// Creates a circuit with an inverse modifier applied to a controlled U2 gate.
 void inverseMultipleControlledU2(QCOProgramBuilder& b);
+
+/// Creates a circuit with a U2 gate that can be canonicalized to an H gate.
+void canonicalizeU2ToH(QCOProgramBuilder& b);
+
+/// Creates a circuit with a U2 gate that can be canonicalized to an RX gate.
+void canonicalizeU2ToRx(QCOProgramBuilder& b);
+
+/// Creates a circuit with a U2 gate that can be canonicalized to an RY gate.
+void canonicalizeU2ToRy(QCOProgramBuilder& b);
 
 // --- UOp ------------------------------------------------------------------ //
 
