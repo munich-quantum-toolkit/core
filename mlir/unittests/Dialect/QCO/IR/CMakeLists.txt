@@ -11,6 +11,8 @@ add_executable(mqt-core-mlir-qco-dialect-test test_unitary_matrix.cpp test_unita
 target_link_libraries(mqt-core-mlir-qco-dialect-test PRIVATE GTest::gtest_main MLIRQCODialect
                                                              MLIRLLVMDialect MLIRQCOProgramBuilder)
 
+mqt_mlir_target_use_project_options(mqt-core-mlir-qco-dialect-test)
+
 gtest_discover_tests(mqt-core-mlir-qco-dialect-test)
 
 file(
@@ -25,10 +27,12 @@ file(
 
 set(qco_ir_target mqt-core-mlir-unittest-qco-ir)
 add_executable(${qco_ir_target} ${QCO_IR_TEST_SOURCES} test_qco_ir.h)
-target_link_libraries(
-  ${qco_ir_target} PRIVATE MLIRParser MLIRSupportMQT GTest::gtest_main MLIRQCOProgramBuilder
-                           MLIRQCOPrograms MQT::ProjectOptions)
+target_link_libraries(${qco_ir_target} PRIVATE MLIRParser MLIRSupportMQT GTest::gtest_main
+                                               MLIRQCOProgramBuilder MLIRQCOPrograms MQT::CoreDD)
 target_include_directories(${qco_ir_target} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+
+mqt_mlir_target_use_project_options(${qco_ir_target})
+
 gtest_discover_tests(${qco_ir_target})
 
 add_subdirectory(Modifiers)

@@ -22,4 +22,6 @@ target_link_libraries(
           MLIRQuantumComputationPrograms
           MQT::CoreIR)
 
+mqt_mlir_target_use_project_options(mqt-core-mlir-compiler-pipeline-test)
+
 gtest_discover_tests(mqt-core-mlir-compiler-pipeline-test)

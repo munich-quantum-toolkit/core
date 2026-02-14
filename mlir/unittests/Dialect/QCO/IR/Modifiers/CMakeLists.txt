@@ -19,4 +19,6 @@ target_link_libraries(
           MLIRSupport
           LLVMSupport)
 
+mqt_mlir_target_use_project_options(mqt-core-mlir-dialect-qco-ir-modifiers-test)
+
 gtest_discover_tests(mqt-core-mlir-dialect-qco-ir-modifiers-test)

@@ -25,6 +25,8 @@ add_mlir_library(
   MLIRArithDialect
   DISABLE_INSTALL)
 
+mqt_mlir_target_use_project_options(MLIRSupportMQT)
+
 # add library alias
 add_library(MQT::MLIRSupport ALIAS MLIRSupportMQT)
 
