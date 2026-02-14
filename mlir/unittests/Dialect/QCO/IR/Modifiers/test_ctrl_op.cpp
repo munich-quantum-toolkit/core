@@ -26,7 +26,9 @@ INSTANTIATE_TEST_SUITE_P(
         QCOTestCase{"TrivialCtrl", trivialCtrl, rxx},
         QCOTestCase{"NestedCtrl", nestedCtrl, multipleControlledRxx},
         QCOTestCase{"TripleNestedCtrl", tripleNestedCtrl, tripleControlledRxx},
-        QCOTestCase{"CtrlInvSandwich", ctrlInvSandwich, multipleControlledRxx}),
+        QCOTestCase{"CtrlInvSandwich", ctrlInvSandwich, multipleControlledRxx},
+        QCOTestCase{"DoubleNestedCtrlTwoQubits", doubleNestedCtrlTwoQubits,
+                    fourControlledRxx}),
     printTestName);
 
 TEST_F(QCOTest, CXOpMatrix) {

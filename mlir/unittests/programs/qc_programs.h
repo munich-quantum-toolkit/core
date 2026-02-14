@@ -630,6 +630,9 @@ void inverseMultipleControlledRxx(QCProgramBuilder& b);
 /// Creates a circuit with a triple-controlled RXX gate.
 void tripleControlledRxx(QCProgramBuilder& b);
 
+/// Creates a circuit with a four-controlled RXX gate.
+void fourControlledRxx(QCProgramBuilder& b);
+
 // --- RYYOp ---------------------------------------------------------------- //
 
 /// Creates a circuit with just an RYY gate.
@@ -774,6 +777,9 @@ void nestedCtrl(QCProgramBuilder& b);
 
 /// Creates a circuit with triple nested ctrl modifiers.
 void tripleNestedCtrl(QCProgramBuilder& b);
+
+/// Creates a circuit with double nested ctrl modifiers with two qubits each.
+void doubleNestedCtrlTwoQubits(QCProgramBuilder& b);
 
 /// Creates a circuit with control modifiers interleaved by an inverse modifier.
 void ctrlInvSandwich(QCProgramBuilder& b);

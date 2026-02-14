@@ -952,6 +952,10 @@ void tripleControlledRxx(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(5);
   b.mcrxx(0.123, {q[0], q[1], q[2]}, q[3], q[4]);
 }
+void fourControlledRxx(QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(6);
+  b.mcrxx(0.123, {q[0], q[1], q[2], q[3]}, q[4], q[5]);
+}
 
 void ryy(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
@@ -1168,6 +1172,12 @@ void tripleNestedCtrl(QCProgramBuilder& b) {
   b.ctrl(q[0], [&]() {
     b.ctrl(q[1], [&]() { b.ctrl(q[2], [&]() { b.rxx(0.123, q[3], q[4]); }); });
   });
+}
+
+void doubleNestedCtrlTwoQubits(QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(6);
+  b.ctrl({q[0], q[1]},
+         [&]() { b.ctrl({q[2], q[3]}, [&]() { b.rxx(0.123, q[4], q[5]); }); });
 }
 
 void ctrlInvSandwich(QCProgramBuilder& b) {

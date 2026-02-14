@@ -21,5 +21,7 @@ INSTANTIATE_TEST_SUITE_P(
         QCTestCase{"TrivialCtrl", trivialCtrl, rxx},
         QCTestCase{"NestedCtrl", nestedCtrl, multipleControlledRxx},
         QCTestCase{"TripleNestedCtrl", tripleNestedCtrl, tripleControlledRxx},
-        QCTestCase{"CtrlInvSandwich", ctrlInvSandwich, multipleControlledRxx}),
+        QCTestCase{"CtrlInvSandwich", ctrlInvSandwich, multipleControlledRxx},
+        QCTestCase{"DoubleNestedCtrlTwoQubits", doubleNestedCtrlTwoQubits,
+                   fourControlledRxx}),
     printTestName);

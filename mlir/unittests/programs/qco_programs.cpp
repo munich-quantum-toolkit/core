@@ -1300,6 +1300,11 @@ void tripleControlledRxx(QCOProgramBuilder& b) {
   b.mcrxx(0.123, {q[0], q[1], q[2]}, q[3], q[4]);
 }
 
+void fourControlledRxx(QCOProgramBuilder& b) {
+  auto q = b.allocQubitRegister(6);
+  b.mcrxx(0.123, {q[0], q[1], q[2], q[3]}, q[4], q[5]);
+}
+
 void ryy(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   b.ryy(0.123, q[0], q[1]);
@@ -1634,6 +1639,20 @@ void tripleNestedCtrl(QCOProgramBuilder& b) {
           return llvm::to_vector(llvm::concat<mlir::Value>(
               innerInnerControlsOut, innerInnerTargetsOut));
         });
+    return llvm::to_vector(
+        llvm::concat<mlir::Value>(innerControlsOut, innerTargetsOut));
+  });
+}
+
+void doubleNestedCtrlTwoQubits(QCOProgramBuilder& b) {
+  auto q = b.allocQubitRegister(6);
+  b.ctrl({q[0], q[1]}, {q[2], q[3], q[4], q[5]}, [&](mlir::ValueRange targets) {
+    const auto& [innerControlsOut, innerTargetsOut] =
+        b.ctrl({targets[0], targets[1]}, {targets[2], targets[3]},
+               [&](mlir::ValueRange innerTargets) {
+                 auto [q0, q1] = b.rxx(0.123, innerTargets[0], innerTargets[1]);
+                 return llvm::SmallVector<mlir::Value>{q0, q1};
+               });
     return llvm::to_vector(
         llvm::concat<mlir::Value>(innerControlsOut, innerTargetsOut));
   });
