@@ -20,7 +20,8 @@ target_link_libraries(
           MLIRQCTranslation
           MLIRQCPrograms
           MLIRQuantumComputationPrograms
-          MQT::CoreIR
-          MQT::ProjectOptions)
+          MQT::CoreIR)
+
+mqt_mlir_configure_unittest_target(${target_name})
 
 gtest_discover_tests(${target_name} PROPERTIES LABELS mqt-mlir-unittests)

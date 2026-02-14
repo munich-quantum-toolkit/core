@@ -20,9 +20,8 @@ target_link_libraries(
           MLIRQCOProgramBuilder
           MLIRQCPrograms
           MLIRQCOPrograms
-          QCOToQC
-          MQT::ProjectOptions)
+          QCOToQC)
 
-target_include_directories(${target_name} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+mqt_mlir_configure_unittest_target(${target_name})
 
 gtest_discover_tests(${target_name} PROPERTIES LABELS mqt-mlir-unittests)

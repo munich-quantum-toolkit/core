@@ -11,6 +11,6 @@ add_executable(mqt-core-mlir-unittests-dialect-utils test_utils.cpp)
 target_link_libraries(mqt-core-mlir-unittests-dialect-utils
                       PRIVATE GTest::gtest_main MLIRArithDialect MLIRIR MLIRSupport LLVMSupport)
 
-mqt_mlir_target_use_project_options(mqt-core-mlir-unittests-dialect-utils)
+mqt_mlir_configure_unittest_target(mqt-core-mlir-unittests-dialect-utils)
 
 gtest_discover_tests(mqt-core-mlir-unittests-dialect-utils PROPERTIES LABELS mqt-mlir-unittests)

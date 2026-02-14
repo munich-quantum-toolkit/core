@@ -12,8 +12,6 @@ set(qco_ir_target mqt-core-mlir-unittest-qco-ir)
 add_executable(${qco_ir_target} ${QCO_IR_TEST_SOURCES} test_qco_ir.h)
 target_link_libraries(${qco_ir_target} PRIVATE MLIRParser MLIRSupportMQT GTest::gtest_main
                                                MLIRQCOProgramBuilder MLIRQCOPrograms MQT::CoreDD)
-target_include_directories(${qco_ir_target} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
-
-mqt_mlir_target_use_project_options(${qco_ir_target})
+mqt_mlir_configure_unittest_target(${qco_ir_target})
 
 gtest_discover_tests(${qco_ir_target} PROPERTIES LABELS mqt-mlir-unittests)

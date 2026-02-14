@@ -11,10 +11,9 @@ file(GLOB_RECURSE TEST_SOURCES "*.cpp")
 set(target_name mqt-core-mlir-unittest-qir-ir)
 add_executable(${target_name} ${TEST_SOURCES} test_qir_ir.h)
 
-target_link_libraries(
-  ${target_name} PRIVATE MLIRParser MLIRSupportMQT GTest::gtest_main MLIRQIRProgramBuilder
-                         MLIRQIRPrograms MQT::ProjectOptions)
+target_link_libraries(${target_name} PRIVATE MLIRParser MLIRSupportMQT GTest::gtest_main
+                                             MLIRQIRProgramBuilder MLIRQIRPrograms)
 
-target_include_directories(${target_name} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+mqt_mlir_configure_unittest_target(${target_name})
 
 gtest_discover_tests(${target_name} PROPERTIES LABELS mqt-mlir-unittests DISCOVERY_TIMEOUT 60)
