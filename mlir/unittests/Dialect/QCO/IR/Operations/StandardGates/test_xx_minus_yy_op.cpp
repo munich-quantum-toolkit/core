@@ -22,20 +22,25 @@ using namespace mlir::qco;
 INSTANTIATE_TEST_SUITE_P(
     QCOXXMinusYYOpTest, QCOTest,
     testing::Values(
-        QCOTestCase{"XXMinusYY", xxMinusYY, xxMinusYY},
-        QCOTestCase{"SingleControlledXXMinusYY", singleControlledXxMinusYY,
-                    singleControlledXxMinusYY},
-        QCOTestCase{"MultipleControlledXXMinusYY", multipleControlledXxMinusYY,
-                    multipleControlledXxMinusYY},
-        QCOTestCase{"NestedControlledXXMinusYY", nestedControlledXxMinusYY,
-                    multipleControlledXxMinusYY},
-        QCOTestCase{"TrivialControlledXXMinusYY", trivialControlledXxMinusYY,
-                    xxMinusYY},
-        QCOTestCase{"InverseXXMinusYY", inverseXxMinusYY, xxMinusYY},
+        QCOTestCase{"XXMinusYY", MQT_NAMED_BUILDER(xxMinusYY),
+                    MQT_NAMED_BUILDER(xxMinusYY)},
+        QCOTestCase{"SingleControlledXXMinusYY",
+                    MQT_NAMED_BUILDER(singleControlledXxMinusYY),
+                    MQT_NAMED_BUILDER(singleControlledXxMinusYY)},
+        QCOTestCase{"MultipleControlledXXMinusYY",
+                    MQT_NAMED_BUILDER(multipleControlledXxMinusYY),
+                    MQT_NAMED_BUILDER(multipleControlledXxMinusYY)},
+        QCOTestCase{"NestedControlledXXMinusYY",
+                    MQT_NAMED_BUILDER(nestedControlledXxMinusYY),
+                    MQT_NAMED_BUILDER(multipleControlledXxMinusYY)},
+        QCOTestCase{"TrivialControlledXXMinusYY",
+                    MQT_NAMED_BUILDER(trivialControlledXxMinusYY),
+                    MQT_NAMED_BUILDER(xxMinusYY)},
+        QCOTestCase{"InverseXXMinusYY", MQT_NAMED_BUILDER(inverseXxMinusYY),
+                    MQT_NAMED_BUILDER(xxMinusYY)},
         QCOTestCase{"InverseMultipleControlledXXMinusYY",
-                    inverseMultipleControlledXxMinusYY,
-                    multipleControlledXxMinusYY}),
-    printTestName);
+                    MQT_NAMED_BUILDER(inverseMultipleControlledXxMinusYY),
+                    MQT_NAMED_BUILDER(multipleControlledXxMinusYY)}));
 
 TEST_F(QCOTest, XXMinusYYOpMatrix) {
   auto moduleOp = QCOProgramBuilder::build(context.get(), xxMinusYY);

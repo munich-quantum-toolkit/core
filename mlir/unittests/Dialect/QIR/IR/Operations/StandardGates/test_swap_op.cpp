@@ -15,12 +15,13 @@
 
 using namespace mlir::qir;
 
-INSTANTIATE_TEST_SUITE_P(QIRSWAPOpTest, QIRTest,
-                         testing::Values(QIRTestCase{"SWAP", swap, swap},
-                                         QIRTestCase{"SingleControlledSWAP",
-                                                     singleControlledSwap,
-                                                     singleControlledSwap},
-                                         QIRTestCase{"MultipleControlledSWAP",
-                                                     multipleControlledSwap,
-                                                     multipleControlledSwap}),
-                         printTestName);
+INSTANTIATE_TEST_SUITE_P(
+    QIRSWAPOpTest, QIRTest,
+    testing::Values(QIRTestCase{"SWAP", MQT_NAMED_BUILDER(swap),
+                                MQT_NAMED_BUILDER(swap)},
+                    QIRTestCase{"SingleControlledSWAP",
+                                MQT_NAMED_BUILDER(singleControlledSwap),
+                                MQT_NAMED_BUILDER(singleControlledSwap)},
+                    QIRTestCase{"MultipleControlledSWAP",
+                                MQT_NAMED_BUILDER(multipleControlledSwap),
+                                MQT_NAMED_BUILDER(multipleControlledSwap)}));

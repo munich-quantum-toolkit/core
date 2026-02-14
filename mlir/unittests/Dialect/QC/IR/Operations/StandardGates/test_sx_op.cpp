@@ -17,16 +17,20 @@ using namespace mlir::qc;
 
 INSTANTIATE_TEST_SUITE_P(
     QCSXOpTest, QCTest,
-    testing::Values(QCTestCase{"SX", sx, sx},
-                    QCTestCase{"SingleControlledSX", singleControlledSx,
-                               singleControlledSx},
-                    QCTestCase{"MultipleControlledSX", multipleControlledSx,
-                               multipleControlledSx},
-                    QCTestCase{"NestedControlledSX", nestedControlledSx,
-                               multipleControlledSx},
-                    QCTestCase{"TrivialControlledSX", trivialControlledSx, sx},
-                    QCTestCase{"InverseSX", inverseSx, sxdg},
-                    QCTestCase{"InverseMultipleControlledSX",
-                               inverseMultipleControlledSx,
-                               multipleControlledSxdg}),
-    printTestName);
+    testing::Values(
+        QCTestCase{"SX", MQT_NAMED_BUILDER(sx), MQT_NAMED_BUILDER(sx)},
+        QCTestCase{"SingleControlledSX", MQT_NAMED_BUILDER(singleControlledSx),
+                   MQT_NAMED_BUILDER(singleControlledSx)},
+        QCTestCase{"MultipleControlledSX",
+                   MQT_NAMED_BUILDER(multipleControlledSx),
+                   MQT_NAMED_BUILDER(multipleControlledSx)},
+        QCTestCase{"NestedControlledSX", MQT_NAMED_BUILDER(nestedControlledSx),
+                   MQT_NAMED_BUILDER(multipleControlledSx)},
+        QCTestCase{"TrivialControlledSX",
+                   MQT_NAMED_BUILDER(trivialControlledSx),
+                   MQT_NAMED_BUILDER(sx)},
+        QCTestCase{"InverseSX", MQT_NAMED_BUILDER(inverseSx),
+                   MQT_NAMED_BUILDER(sxdg)},
+        QCTestCase{"InverseMultipleControlledSX",
+                   MQT_NAMED_BUILDER(inverseMultipleControlledSx),
+                   MQT_NAMED_BUILDER(multipleControlledSxdg)}));

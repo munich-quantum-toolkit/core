@@ -17,13 +17,13 @@ using namespace mlir::qir;
 
 INSTANTIATE_TEST_SUITE_P(
     QIRMeasureOpTest, QIRTest,
-    testing::Values(QIRTestCase{"SingleMeasurementToSingleBit",
-                                singleMeasurementToSingleBit,
-                                singleMeasurementToSingleBit},
-                    QIRTestCase{"RepeatedMeasurementToSameBit",
-                                repeatedMeasurementToSameBit,
-                                repeatedMeasurementToSameBit},
-                    QIRTestCase{"RepeatedMeasurementToDifferentBits",
-                                repeatedMeasurementToDifferentBits,
-                                repeatedMeasurementToDifferentBits}),
-    printTestName);
+    testing::Values(
+        QIRTestCase{"SingleMeasurementToSingleBit",
+                    MQT_NAMED_BUILDER(singleMeasurementToSingleBit),
+                    MQT_NAMED_BUILDER(singleMeasurementToSingleBit)},
+        QIRTestCase{"RepeatedMeasurementToSameBit",
+                    MQT_NAMED_BUILDER(repeatedMeasurementToSameBit),
+                    MQT_NAMED_BUILDER(repeatedMeasurementToSameBit)},
+        QIRTestCase{"RepeatedMeasurementToDifferentBits",
+                    MQT_NAMED_BUILDER(repeatedMeasurementToDifferentBits),
+                    MQT_NAMED_BUILDER(repeatedMeasurementToDifferentBits)}));

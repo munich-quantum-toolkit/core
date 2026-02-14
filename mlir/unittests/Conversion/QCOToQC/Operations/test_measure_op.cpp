@@ -18,18 +18,18 @@ using namespace mlir::qco;
 
 INSTANTIATE_TEST_SUITE_P(
     QCOMeasureOpTest, QCOToQCTest,
-    testing::Values(QCOToQCTestCase{"SingleMeasurementToSingleBit",
-                                    qco::singleMeasurementToSingleBit,
-                                    qc::singleMeasurementToSingleBit},
-                    QCOToQCTestCase{"RepeatedMeasurementToSameBit",
-                                    qco::repeatedMeasurementToSameBit,
-                                    qc::repeatedMeasurementToSameBit},
-                    QCOToQCTestCase{"RepeatedMeasurementToDifferentBits",
-                                    qco::repeatedMeasurementToDifferentBits,
-                                    qc::repeatedMeasurementToDifferentBits},
-                    QCOToQCTestCase{
-                        "MultipleClassicalRegistersAndMeasurements",
-                        qco::multipleClassicalRegistersAndMeasurements,
-                        qc::multipleClassicalRegistersAndMeasurements,
-                    }),
-    printTestName);
+    testing::Values(
+        QCOToQCTestCase{"SingleMeasurementToSingleBit",
+                        MQT_NAMED_BUILDER(qco::singleMeasurementToSingleBit),
+                        MQT_NAMED_BUILDER(qc::singleMeasurementToSingleBit)},
+        QCOToQCTestCase{"RepeatedMeasurementToSameBit",
+                        MQT_NAMED_BUILDER(qco::repeatedMeasurementToSameBit),
+                        MQT_NAMED_BUILDER(qc::repeatedMeasurementToSameBit)},
+        QCOToQCTestCase{
+            "RepeatedMeasurementToDifferentBits",
+            MQT_NAMED_BUILDER(qco::repeatedMeasurementToDifferentBits),
+            MQT_NAMED_BUILDER(qc::repeatedMeasurementToDifferentBits)},
+        QCOToQCTestCase{
+            "MultipleClassicalRegistersAndMeasurements",
+            MQT_NAMED_BUILDER(qco::multipleClassicalRegistersAndMeasurements),
+            MQT_NAMED_BUILDER(qc::multipleClassicalRegistersAndMeasurements)}));

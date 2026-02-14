@@ -18,11 +18,12 @@ using namespace mlir::qco;
 
 INSTANTIATE_TEST_SUITE_P(
     QCOSdgOpTest, QCOToQCTest,
-    testing::Values(QCOToQCTestCase{"Sdg", qco::sdg, qc::sdg},
+    testing::Values(QCOToQCTestCase{"Sdg", MQT_NAMED_BUILDER(qco::sdg),
+                                    MQT_NAMED_BUILDER(qc::sdg)},
                     QCOToQCTestCase{"SingleControlledSdg",
-                                    qco::singleControlledSdg,
-                                    qc::singleControlledSdg},
-                    QCOToQCTestCase{"MultipleControlledSdg",
-                                    qco::multipleControlledSdg,
-                                    qc::multipleControlledSdg}),
-    printTestName);
+                                    MQT_NAMED_BUILDER(qco::singleControlledSdg),
+                                    MQT_NAMED_BUILDER(qc::singleControlledSdg)},
+                    QCOToQCTestCase{
+                        "MultipleControlledSdg",
+                        MQT_NAMED_BUILDER(qco::multipleControlledSdg),
+                        MQT_NAMED_BUILDER(qc::multipleControlledSdg)}));

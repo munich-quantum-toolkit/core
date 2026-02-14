@@ -21,17 +21,21 @@ using namespace mlir::qco;
 INSTANTIATE_TEST_SUITE_P(
     QCOTOpTest, QCOTest,
     testing::Values(
-        QCOTestCase{"T", t_, t_},
-        QCOTestCase{"SingleControlledT", singleControlledT, singleControlledT},
-        QCOTestCase{"MultipleControlledT", multipleControlledT,
-                    multipleControlledT},
-        QCOTestCase{"NestedControlledT", nestedControlledT,
-                    multipleControlledT},
-        QCOTestCase{"TrivialControlledT", trivialControlledT, t_},
-        QCOTestCase{"InverseT", inverseT, tdg},
-        QCOTestCase{"InverseMultipleControlledT", inverseMultipleControlledT,
-                    multipleControlledTdg}),
-    printTestName);
+        QCOTestCase{"T", MQT_NAMED_BUILDER(t_), MQT_NAMED_BUILDER(t_)},
+        QCOTestCase{"SingleControlledT", MQT_NAMED_BUILDER(singleControlledT),
+                    MQT_NAMED_BUILDER(singleControlledT)},
+        QCOTestCase{"MultipleControlledT",
+                    MQT_NAMED_BUILDER(multipleControlledT),
+                    MQT_NAMED_BUILDER(multipleControlledT)},
+        QCOTestCase{"NestedControlledT", MQT_NAMED_BUILDER(nestedControlledT),
+                    MQT_NAMED_BUILDER(multipleControlledT)},
+        QCOTestCase{"TrivialControlledT", MQT_NAMED_BUILDER(trivialControlledT),
+                    MQT_NAMED_BUILDER(t_)},
+        QCOTestCase{"InverseT", MQT_NAMED_BUILDER(inverseT),
+                    MQT_NAMED_BUILDER(tdg)},
+        QCOTestCase{"InverseMultipleControlledT",
+                    MQT_NAMED_BUILDER(inverseMultipleControlledT),
+                    MQT_NAMED_BUILDER(multipleControlledTdg)}));
 
 TEST_F(QCOTest, TOpMatrix) {
   // Get the (static) matrix from the operation

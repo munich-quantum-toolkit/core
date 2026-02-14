@@ -18,11 +18,16 @@ using namespace mlir::qc;
 INSTANTIATE_TEST_SUITE_P(
     QCQubitManagementTest, QCTest,
     testing::Values(
-        QCTestCase{"AllocQubit", allocQubit, emptyQC},
-        QCTestCase{"AllocQubitRegister", allocQubitRegister, emptyQC},
-        QCTestCase{"AllocMultipleQubitRegisters", allocMultipleQubitRegisters,
-                   emptyQC},
-        QCTestCase{"AllocLargeRegister", allocLargeRegister, emptyQC},
-        QCTestCase{"StaticQubits", staticQubits, emptyQC},
-        QCTestCase{"AllocDeallocPair", allocDeallocPair, emptyQC}),
-    printTestName);
+        QCTestCase{"AllocQubit", MQT_NAMED_BUILDER(allocQubit),
+                   MQT_NAMED_BUILDER(emptyQC)},
+        QCTestCase{"AllocQubitRegister", MQT_NAMED_BUILDER(allocQubitRegister),
+                   MQT_NAMED_BUILDER(emptyQC)},
+        QCTestCase{"AllocMultipleQubitRegisters",
+                   MQT_NAMED_BUILDER(allocMultipleQubitRegisters),
+                   MQT_NAMED_BUILDER(emptyQC)},
+        QCTestCase{"AllocLargeRegister", MQT_NAMED_BUILDER(allocLargeRegister),
+                   MQT_NAMED_BUILDER(emptyQC)},
+        QCTestCase{"StaticQubits", MQT_NAMED_BUILDER(staticQubits),
+                   MQT_NAMED_BUILDER(emptyQC)},
+        QCTestCase{"AllocDeallocPair", MQT_NAMED_BUILDER(allocDeallocPair),
+                   MQT_NAMED_BUILDER(emptyQC)}));

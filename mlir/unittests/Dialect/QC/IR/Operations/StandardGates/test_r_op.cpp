@@ -18,13 +18,18 @@ using namespace mlir::qc;
 INSTANTIATE_TEST_SUITE_P(
     QCROpTest, QCTest,
     testing::Values(
-        QCTestCase{"R", r, r},
-        QCTestCase{"SingleControlledR", singleControlledR, singleControlledR},
-        QCTestCase{"MultipleControlledR", multipleControlledR,
-                   multipleControlledR},
-        QCTestCase{"NestedControlledR", nestedControlledR, multipleControlledR},
-        QCTestCase{"TrivialControlledR", trivialControlledR, r},
-        QCTestCase{"InverseR", inverseR, r},
-        QCTestCase{"InverseMultipleControlledR", inverseMultipleControlledR,
-                   multipleControlledR}),
-    printTestName);
+        QCTestCase{"R", MQT_NAMED_BUILDER(r), MQT_NAMED_BUILDER(r)},
+        QCTestCase{"SingleControlledR", MQT_NAMED_BUILDER(singleControlledR),
+                   MQT_NAMED_BUILDER(singleControlledR)},
+        QCTestCase{"MultipleControlledR",
+                   MQT_NAMED_BUILDER(multipleControlledR),
+                   MQT_NAMED_BUILDER(multipleControlledR)},
+        QCTestCase{"NestedControlledR", MQT_NAMED_BUILDER(nestedControlledR),
+                   MQT_NAMED_BUILDER(multipleControlledR)},
+        QCTestCase{"TrivialControlledR", MQT_NAMED_BUILDER(trivialControlledR),
+                   MQT_NAMED_BUILDER(r)},
+        QCTestCase{"InverseR", MQT_NAMED_BUILDER(inverseR),
+                   MQT_NAMED_BUILDER(r)},
+        QCTestCase{"InverseMultipleControlledR",
+                   MQT_NAMED_BUILDER(inverseMultipleControlledR),
+                   MQT_NAMED_BUILDER(multipleControlledR)}));

@@ -12,19 +12,23 @@
 
 #include "mlir/Conversion/QCToQIR/QCToQIR.h"
 #include "mlir/Dialect/QC/Builder/QCProgramBuilder.h"
+#include "mlir/Dialect/QC/IR/QCDialect.h"
 #include "mlir/Dialect/QIR/Builder/QIRProgramBuilder.h"
 #include "mlir/Support/IRVerification.h"
 #include "mlir/Support/Passes.h"
 #include "mlir/Support/PrettyPrinting.h"
 
 #include <gtest/gtest.h>
+#include <iosfwd>
 #include <memory>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/LLVMIR/LLVMDialect.h>
+#include <mlir/IR/DialectRegistry.h>
 #include <mlir/IR/Verifier.h>
 #include <mlir/Pass/PassManager.h>
 #include <mlir/Support/LogicalResult.h>
+#include <string>
 
 using namespace mlir;
 
@@ -37,8 +41,11 @@ void QCToQIRTest::SetUp() {
   context->loadAllAvailableDialects();
 }
 
-std::string printTestName(const testing::TestParamInfo<QCToQIRTestCase>& info) {
-  return info.param.name;
+std::ostream& operator<<(std::ostream& os, const QCToQIRTestCase& info) {
+  return os << "QCToQIR{" << info.name
+            << ", original=" << mqt::test::displayName(info.programBuilder.name)
+            << ", reference="
+            << mqt::test::displayName(info.referenceBuilder.name) << "}";
 }
 
 static LogicalResult runQCToQIRConversion(ModuleOp module) {
@@ -48,10 +55,10 @@ static LogicalResult runQCToQIRConversion(ModuleOp module) {
 }
 
 TEST_P(QCToQIRTest, ProgramEquivalence) {
-  auto& [_, programBuilder, referenceBuilder] = GetParam();
+  const auto& [_, programBuilder, referenceBuilder] = GetParam();
   const auto name = " (" + GetParam().name + ")";
 
-  program = qc::QCProgramBuilder::build(context.get(), programBuilder);
+  auto program = qc::QCProgramBuilder::build(context.get(), programBuilder.fn);
   ASSERT_TRUE(program);
   printProgram(program.get(), "Original QC IR" + name, llvm::errs());
   EXPECT_TRUE(mlir::verify(*program).succeeded());
@@ -69,7 +76,8 @@ TEST_P(QCToQIRTest, ProgramEquivalence) {
                llvm::errs());
   EXPECT_TRUE(mlir::verify(*program).succeeded());
 
-  reference = qir::QIRProgramBuilder::build(context.get(), referenceBuilder);
+  auto reference =
+      qir::QIRProgramBuilder::build(context.get(), referenceBuilder.fn);
   ASSERT_TRUE(reference);
   printProgram(reference.get(), "Reference QIR IR" + name, llvm::errs());
   EXPECT_TRUE(mlir::verify(*reference).succeeded());

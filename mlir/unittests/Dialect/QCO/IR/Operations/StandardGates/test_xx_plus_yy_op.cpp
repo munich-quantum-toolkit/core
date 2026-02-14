@@ -22,20 +22,25 @@ using namespace mlir::qco;
 INSTANTIATE_TEST_SUITE_P(
     QCOXXPlusYYOpTest, QCOTest,
     testing::Values(
-        QCOTestCase{"XXPlusYY", xxPlusYY, xxPlusYY},
-        QCOTestCase{"SingleControlledXXPlusYY", singleControlledXxPlusYY,
-                    singleControlledXxPlusYY},
-        QCOTestCase{"MultipleControlledXXPlusYY", multipleControlledXxPlusYY,
-                    multipleControlledXxPlusYY},
-        QCOTestCase{"NestedControlledXXPlusYY", nestedControlledXxPlusYY,
-                    multipleControlledXxPlusYY},
-        QCOTestCase{"TrivialControlledXXPlusYY", trivialControlledXxPlusYY,
-                    xxPlusYY},
-        QCOTestCase{"InverseXXPlusYY", inverseXxPlusYY, xxPlusYY},
+        QCOTestCase{"XXPlusYY", MQT_NAMED_BUILDER(xxPlusYY),
+                    MQT_NAMED_BUILDER(xxPlusYY)},
+        QCOTestCase{"SingleControlledXXPlusYY",
+                    MQT_NAMED_BUILDER(singleControlledXxPlusYY),
+                    MQT_NAMED_BUILDER(singleControlledXxPlusYY)},
+        QCOTestCase{"MultipleControlledXXPlusYY",
+                    MQT_NAMED_BUILDER(multipleControlledXxPlusYY),
+                    MQT_NAMED_BUILDER(multipleControlledXxPlusYY)},
+        QCOTestCase{"NestedControlledXXPlusYY",
+                    MQT_NAMED_BUILDER(nestedControlledXxPlusYY),
+                    MQT_NAMED_BUILDER(multipleControlledXxPlusYY)},
+        QCOTestCase{"TrivialControlledXXPlusYY",
+                    MQT_NAMED_BUILDER(trivialControlledXxPlusYY),
+                    MQT_NAMED_BUILDER(xxPlusYY)},
+        QCOTestCase{"InverseXXPlusYY", MQT_NAMED_BUILDER(inverseXxPlusYY),
+                    MQT_NAMED_BUILDER(xxPlusYY)},
         QCOTestCase{"InverseMultipleControlledXXPlusYY",
-                    inverseMultipleControlledXxPlusYY,
-                    multipleControlledXxPlusYY}),
-    printTestName);
+                    MQT_NAMED_BUILDER(inverseMultipleControlledXxPlusYY),
+                    MQT_NAMED_BUILDER(multipleControlledXxPlusYY)}));
 
 TEST_F(QCOTest, XXPlusYYOp) {
   auto moduleOp = QCOProgramBuilder::build(context.get(), xxPlusYY);

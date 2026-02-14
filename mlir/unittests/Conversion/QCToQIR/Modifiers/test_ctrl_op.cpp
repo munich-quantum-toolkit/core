@@ -18,9 +18,11 @@ using namespace mlir::qc;
 
 INSTANTIATE_TEST_SUITE_P(
     QCToQIRCtrlOpTest, QCToQIRTest,
-    testing::Values(QCToQIRTestCase{"TrivialCtrl", qc::trivialCtrl, qir::rxx},
-                    QCToQIRTestCase{"NestedCtrl", qc::nestedCtrl,
-                                    qir::multipleControlledRxx},
-                    QCToQIRTestCase{"TripleNestedCtrl", qc::tripleNestedCtrl,
-                                    qir::tripleControlledRxx}),
-    printTestName);
+    testing::Values(
+        QCToQIRTestCase{"TrivialCtrl", MQT_NAMED_BUILDER(qc::trivialCtrl),
+                        MQT_NAMED_BUILDER(qir::rxx)},
+        QCToQIRTestCase{"NestedCtrl", MQT_NAMED_BUILDER(qc::nestedCtrl),
+                        MQT_NAMED_BUILDER(qir::multipleControlledRxx)},
+        QCToQIRTestCase{"TripleNestedCtrl",
+                        MQT_NAMED_BUILDER(qc::tripleNestedCtrl),
+                        MQT_NAMED_BUILDER(qir::tripleControlledRxx)}));

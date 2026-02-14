@@ -16,6 +16,6 @@
 using namespace mlir::qir;
 
 INSTANTIATE_TEST_SUITE_P(QIRGPhaseOpTest, QIRTest,
-                         testing::Values(QIRTestCase{"GlobalPhase", globalPhase,
-                                                     globalPhase}),
-                         printTestName);
+                         testing::Values(QIRTestCase{
+                             "GlobalPhase", MQT_NAMED_BUILDER(globalPhase),
+                             MQT_NAMED_BUILDER(globalPhase)}));

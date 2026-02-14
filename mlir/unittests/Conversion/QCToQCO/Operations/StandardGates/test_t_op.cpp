@@ -18,10 +18,12 @@ using namespace mlir::qc;
 
 INSTANTIATE_TEST_SUITE_P(
     QCTOpTest, QCToQCOTest,
-    testing::Values(QCToQCOTestCase{"T", qc::t_, qco::t_},
-                    QCToQCOTestCase{"SingleControlledT", qc::singleControlledT,
-                                    qco::singleControlledT},
-                    QCToQCOTestCase{"MultipleControlledT",
-                                    qc::multipleControlledT,
-                                    qco::multipleControlledT}),
-    printTestName);
+    testing::Values(QCToQCOTestCase{"T", MQT_NAMED_BUILDER(qc::t_),
+                                    MQT_NAMED_BUILDER(qco::t_)},
+                    QCToQCOTestCase{"SingleControlledT",
+                                    MQT_NAMED_BUILDER(qc::singleControlledT),
+                                    MQT_NAMED_BUILDER(qco::singleControlledT)},
+                    QCToQCOTestCase{
+                        "MultipleControlledT",
+                        MQT_NAMED_BUILDER(qc::multipleControlledT),
+                        MQT_NAMED_BUILDER(qco::multipleControlledT)}));

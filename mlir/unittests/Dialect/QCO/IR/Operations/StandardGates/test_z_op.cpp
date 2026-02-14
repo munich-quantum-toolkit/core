@@ -21,17 +21,21 @@ using namespace mlir::qco;
 INSTANTIATE_TEST_SUITE_P(
     QCOZOpTest, QCOTest,
     testing::Values(
-        QCOTestCase{"Z", z, z},
-        QCOTestCase{"SingleControlledZ", singleControlledZ, singleControlledZ},
-        QCOTestCase{"MultipleControlledZ", multipleControlledZ,
-                    multipleControlledZ},
-        QCOTestCase{"NestedControlledZ", nestedControlledZ,
-                    multipleControlledZ},
-        QCOTestCase{"TrivialControlledZ", trivialControlledZ, z},
-        QCOTestCase{"InverseZ", inverseZ, z},
-        QCOTestCase{"InverseMultipleControlledZ", inverseMultipleControlledZ,
-                    multipleControlledZ}),
-    printTestName);
+        QCOTestCase{"Z", MQT_NAMED_BUILDER(z), MQT_NAMED_BUILDER(z)},
+        QCOTestCase{"SingleControlledZ", MQT_NAMED_BUILDER(singleControlledZ),
+                    MQT_NAMED_BUILDER(singleControlledZ)},
+        QCOTestCase{"MultipleControlledZ",
+                    MQT_NAMED_BUILDER(multipleControlledZ),
+                    MQT_NAMED_BUILDER(multipleControlledZ)},
+        QCOTestCase{"NestedControlledZ", MQT_NAMED_BUILDER(nestedControlledZ),
+                    MQT_NAMED_BUILDER(multipleControlledZ)},
+        QCOTestCase{"TrivialControlledZ", MQT_NAMED_BUILDER(trivialControlledZ),
+                    MQT_NAMED_BUILDER(z)},
+        QCOTestCase{"InverseZ", MQT_NAMED_BUILDER(inverseZ),
+                    MQT_NAMED_BUILDER(z)},
+        QCOTestCase{"InverseMultipleControlledZ",
+                    MQT_NAMED_BUILDER(inverseMultipleControlledZ),
+                    MQT_NAMED_BUILDER(multipleControlledZ)}));
 
 TEST_F(QCOTest, ZOpMatrix) {
   // Get the (static) matrix from the operation

@@ -20,19 +20,25 @@ using namespace mlir::qco;
 
 INSTANTIATE_TEST_SUITE_P(
     QCOSdgOpTest, QCOTest,
-    testing::Values(
-        QCOTestCase{"Sdg", sdg, sdg},
-        QCOTestCase{"SingleControlledSdg", singleControlledSdg,
-                    singleControlledSdg},
-        QCOTestCase{"MultipleControlledSdg", multipleControlledSdg,
-                    multipleControlledSdg},
-        QCOTestCase{"NestedControlledSdg", nestedControlledSdg,
-                    multipleControlledSdg},
-        QCOTestCase{"TrivialControlledSdg", trivialControlledSdg, sdg},
-        QCOTestCase{"InverseSdg", inverseSdg, s},
-        QCOTestCase{"InverseMultipleControlledSdg",
-                    inverseMultipleControlledSdg, multipleControlledS}),
-    printTestName);
+    testing::Values(QCOTestCase{"Sdg", MQT_NAMED_BUILDER(sdg),
+                                MQT_NAMED_BUILDER(sdg)},
+                    QCOTestCase{"SingleControlledSdg",
+                                MQT_NAMED_BUILDER(singleControlledSdg),
+                                MQT_NAMED_BUILDER(singleControlledSdg)},
+                    QCOTestCase{"MultipleControlledSdg",
+                                MQT_NAMED_BUILDER(multipleControlledSdg),
+                                MQT_NAMED_BUILDER(multipleControlledSdg)},
+                    QCOTestCase{"NestedControlledSdg",
+                                MQT_NAMED_BUILDER(nestedControlledSdg),
+                                MQT_NAMED_BUILDER(multipleControlledSdg)},
+                    QCOTestCase{"TrivialControlledSdg",
+                                MQT_NAMED_BUILDER(trivialControlledSdg),
+                                MQT_NAMED_BUILDER(sdg)},
+                    QCOTestCase{"InverseSdg", MQT_NAMED_BUILDER(inverseSdg),
+                                MQT_NAMED_BUILDER(s)},
+                    QCOTestCase{"InverseMultipleControlledSdg",
+                                MQT_NAMED_BUILDER(inverseMultipleControlledSdg),
+                                MQT_NAMED_BUILDER(multipleControlledS)}));
 
 TEST_F(QCOTest, SdgOpMatrix) {
   // Get the (static) matrix from the operation

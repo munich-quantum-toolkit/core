@@ -17,9 +17,11 @@ using namespace mlir::qir;
 
 INSTANTIATE_TEST_SUITE_P(
     QIRECROpTest, QIRTest,
-    testing::Values(QIRTestCase{"ECR", ecr, ecr},
-                    QIRTestCase{"SingleControlledECR", singleControlledEcr,
-                                singleControlledEcr},
-                    QIRTestCase{"MultipleControlledECR", multipleControlledEcr,
-                                multipleControlledEcr}),
-    printTestName);
+    testing::Values(QIRTestCase{"ECR", MQT_NAMED_BUILDER(ecr),
+                                MQT_NAMED_BUILDER(ecr)},
+                    QIRTestCase{"SingleControlledECR",
+                                MQT_NAMED_BUILDER(singleControlledEcr),
+                                MQT_NAMED_BUILDER(singleControlledEcr)},
+                    QIRTestCase{"MultipleControlledECR",
+                                MQT_NAMED_BUILDER(multipleControlledEcr),
+                                MQT_NAMED_BUILDER(multipleControlledEcr)}));

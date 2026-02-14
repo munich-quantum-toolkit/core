@@ -18,5 +18,5 @@ using namespace mlir::qc;
 
 INSTANTIATE_TEST_SUITE_P(QCGPhaseOpTest, QCToQCOTest,
                          testing::Values(QCToQCOTestCase{
-                             "GlobalPhase", qc::globalPhase, qco::globalPhase}),
-                         printTestName);
+                             "GlobalPhase", MQT_NAMED_BUILDER(qc::globalPhase),
+                             MQT_NAMED_BUILDER(qco::globalPhase)}));

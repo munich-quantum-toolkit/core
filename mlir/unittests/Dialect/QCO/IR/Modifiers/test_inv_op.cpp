@@ -22,11 +22,14 @@ using namespace mlir::qco;
 
 INSTANTIATE_TEST_SUITE_P(
     QCOInvOpTest, QCOTest,
-    testing::Values(QCOTestCase{"NestedInv", nestedInv, rxx},
-                    QCOTestCase{"TripleNestedInv", tripleNestedInv, rxx},
-                    QCOTestCase{"InvControlSandwich", invCtrlSandwich,
-                                singleControlledRxx}),
-    printTestName);
+    testing::Values(QCOTestCase{"NestedInv", MQT_NAMED_BUILDER(nestedInv),
+                                MQT_NAMED_BUILDER(rxx)},
+                    QCOTestCase{"TripleNestedInv",
+                                MQT_NAMED_BUILDER(tripleNestedInv),
+                                MQT_NAMED_BUILDER(rxx)},
+                    QCOTestCase{"InvControlSandwich",
+                                MQT_NAMED_BUILDER(invCtrlSandwich),
+                                MQT_NAMED_BUILDER(singleControlledRxx)}));
 
 TEST_F(QCOTest, InverseIswapOpMatrix) {
   auto moduleOp = QCOProgramBuilder::build(context.get(), inverseIswap);

@@ -19,5 +19,5 @@ using namespace mlir::qco;
 
 INSTANTIATE_TEST_SUITE_P(QCIDOpTest, QCToQCOTest,
                          testing::Values(QCToQCOTestCase{
-                             "Identity", qc::identity, emptyQCO}),
-                         printTestName);
+                             "Identity", MQT_NAMED_BUILDER(qc::identity),
+                             MQT_NAMED_BUILDER(emptyQCO)}));

@@ -17,16 +17,20 @@ using namespace mlir::qc;
 
 INSTANTIATE_TEST_SUITE_P(
     QCRZOpTest, QCTest,
-    testing::Values(QCTestCase{"RZ", rz, rz},
-                    QCTestCase{"SingleControlledRZ", singleControlledRz,
-                               singleControlledRz},
-                    QCTestCase{"MultipleControlledRZ", multipleControlledRz,
-                               multipleControlledRz},
-                    QCTestCase{"NestedControlledRZ", nestedControlledRz,
-                               multipleControlledRz},
-                    QCTestCase{"TrivialControlledRZ", trivialControlledRz, rz},
-                    QCTestCase{"InverseRZ", inverseRz, rz},
-                    QCTestCase{"InverseMultipleControlledRZ",
-                               inverseMultipleControlledRz,
-                               multipleControlledRz}),
-    printTestName);
+    testing::Values(
+        QCTestCase{"RZ", MQT_NAMED_BUILDER(rz), MQT_NAMED_BUILDER(rz)},
+        QCTestCase{"SingleControlledRZ", MQT_NAMED_BUILDER(singleControlledRz),
+                   MQT_NAMED_BUILDER(singleControlledRz)},
+        QCTestCase{"MultipleControlledRZ",
+                   MQT_NAMED_BUILDER(multipleControlledRz),
+                   MQT_NAMED_BUILDER(multipleControlledRz)},
+        QCTestCase{"NestedControlledRZ", MQT_NAMED_BUILDER(nestedControlledRz),
+                   MQT_NAMED_BUILDER(multipleControlledRz)},
+        QCTestCase{"TrivialControlledRZ",
+                   MQT_NAMED_BUILDER(trivialControlledRz),
+                   MQT_NAMED_BUILDER(rz)},
+        QCTestCase{"InverseRZ", MQT_NAMED_BUILDER(inverseRz),
+                   MQT_NAMED_BUILDER(rz)},
+        QCTestCase{"InverseMultipleControlledRZ",
+                   MQT_NAMED_BUILDER(inverseMultipleControlledRz),
+                   MQT_NAMED_BUILDER(multipleControlledRz)}));

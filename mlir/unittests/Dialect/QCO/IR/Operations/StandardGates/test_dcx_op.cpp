@@ -20,20 +20,25 @@ using namespace mlir::qco;
 
 INSTANTIATE_TEST_SUITE_P(
     QCODCXOpTest, QCOTest,
-    testing::Values(QCOTestCase{"DCX", dcx, dcx},
-                    QCOTestCase{"SingleControlledDCX", singleControlledDcx,
-                                singleControlledDcx},
-                    QCOTestCase{"MultipleControlledDCX", multipleControlledDcx,
-                                multipleControlledDcx},
-                    QCOTestCase{"NestedControlledDCX", nestedControlledDcx,
-                                multipleControlledDcx},
-                    QCOTestCase{"TrivialControlledDCX", trivialControlledDcx,
-                                dcx},
-                    QCOTestCase{"InverseDCX", inverseDcx, inverseDcx},
-                    QCOTestCase{"InverseMultipleControlledDCX",
-                                inverseMultipleControlledDcx,
-                                inverseMultipleControlledDcx}),
-    printTestName);
+    testing::Values(
+        QCOTestCase{"DCX", MQT_NAMED_BUILDER(dcx), MQT_NAMED_BUILDER(dcx)},
+        QCOTestCase{"SingleControlledDCX",
+                    MQT_NAMED_BUILDER(singleControlledDcx),
+                    MQT_NAMED_BUILDER(singleControlledDcx)},
+        QCOTestCase{"MultipleControlledDCX",
+                    MQT_NAMED_BUILDER(multipleControlledDcx),
+                    MQT_NAMED_BUILDER(multipleControlledDcx)},
+        QCOTestCase{"NestedControlledDCX",
+                    MQT_NAMED_BUILDER(nestedControlledDcx),
+                    MQT_NAMED_BUILDER(multipleControlledDcx)},
+        QCOTestCase{"TrivialControlledDCX",
+                    MQT_NAMED_BUILDER(trivialControlledDcx),
+                    MQT_NAMED_BUILDER(dcx)},
+        QCOTestCase{"InverseDCX", MQT_NAMED_BUILDER(inverseDcx),
+                    MQT_NAMED_BUILDER(inverseDcx)},
+        QCOTestCase{"InverseMultipleControlledDCX",
+                    MQT_NAMED_BUILDER(inverseMultipleControlledDcx),
+                    MQT_NAMED_BUILDER(inverseMultipleControlledDcx)}));
 
 TEST_F(QCOTest, DCXOpMatrix) {
   // Get the (static) matrix from the operation

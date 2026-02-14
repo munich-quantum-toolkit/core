@@ -18,11 +18,12 @@ using namespace mlir::qco;
 
 INSTANTIATE_TEST_SUITE_P(
     QCOECROpTest, QCOToQCTest,
-    testing::Values(QCOToQCTestCase{"ECR", qco::ecr, qc::ecr},
+    testing::Values(QCOToQCTestCase{"ECR", MQT_NAMED_BUILDER(qco::ecr),
+                                    MQT_NAMED_BUILDER(qc::ecr)},
                     QCOToQCTestCase{"SingleControlledECR",
-                                    qco::singleControlledEcr,
-                                    qc::singleControlledEcr},
-                    QCOToQCTestCase{"MultipleControlledECR",
-                                    qco::multipleControlledEcr,
-                                    qc::multipleControlledEcr}),
-    printTestName);
+                                    MQT_NAMED_BUILDER(qco::singleControlledEcr),
+                                    MQT_NAMED_BUILDER(qc::singleControlledEcr)},
+                    QCOToQCTestCase{
+                        "MultipleControlledECR",
+                        MQT_NAMED_BUILDER(qco::multipleControlledEcr),
+                        MQT_NAMED_BUILDER(qc::multipleControlledEcr)}));

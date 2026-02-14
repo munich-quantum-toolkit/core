@@ -18,11 +18,12 @@ using namespace mlir::qc;
 
 INSTANTIATE_TEST_SUITE_P(
     QCToQIRXXMinusYYOpTest, QCToQIRTest,
-    testing::Values(QCToQIRTestCase{"XXMinusYY", qc::xxMinusYY, qir::xxMinusYY},
-                    QCToQIRTestCase{"SingleControlledXXMinusYY",
-                                    qc::singleControlledXxMinusYY,
-                                    qir::singleControlledXxMinusYY},
-                    QCToQIRTestCase{"MultipleControlledXXMinusYY",
-                                    qc::multipleControlledXxMinusYY,
-                                    qir::multipleControlledXxMinusYY}),
-    printTestName);
+    testing::Values(
+        QCToQIRTestCase{"XXMinusYY", MQT_NAMED_BUILDER(qc::xxMinusYY),
+                        MQT_NAMED_BUILDER(qir::xxMinusYY)},
+        QCToQIRTestCase{"SingleControlledXXMinusYY",
+                        MQT_NAMED_BUILDER(qc::singleControlledXxMinusYY),
+                        MQT_NAMED_BUILDER(qir::singleControlledXxMinusYY)},
+        QCToQIRTestCase{"MultipleControlledXXMinusYY",
+                        MQT_NAMED_BUILDER(qc::multipleControlledXxMinusYY),
+                        MQT_NAMED_BUILDER(qir::multipleControlledXxMinusYY)}));

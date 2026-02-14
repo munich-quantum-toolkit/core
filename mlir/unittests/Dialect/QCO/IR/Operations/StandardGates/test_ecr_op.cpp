@@ -20,20 +20,25 @@ using namespace mlir::qco;
 
 INSTANTIATE_TEST_SUITE_P(
     QCOECROpTest, QCOTest,
-    testing::Values(QCOTestCase{"ECR", ecr, ecr},
-                    QCOTestCase{"SingleControlledECR", singleControlledEcr,
-                                singleControlledEcr},
-                    QCOTestCase{"MultipleControlledECR", multipleControlledEcr,
-                                multipleControlledEcr},
-                    QCOTestCase{"NestedControlledECR", nestedControlledEcr,
-                                multipleControlledEcr},
-                    QCOTestCase{"TrivialControlledECR", trivialControlledEcr,
-                                ecr},
-                    QCOTestCase{"InverseECR", inverseEcr, inverseEcr},
-                    QCOTestCase{"InverseMultipleControlledECR",
-                                inverseMultipleControlledEcr,
-                                inverseMultipleControlledEcr}),
-    printTestName);
+    testing::Values(
+        QCOTestCase{"ECR", MQT_NAMED_BUILDER(ecr), MQT_NAMED_BUILDER(ecr)},
+        QCOTestCase{"SingleControlledECR",
+                    MQT_NAMED_BUILDER(singleControlledEcr),
+                    MQT_NAMED_BUILDER(singleControlledEcr)},
+        QCOTestCase{"MultipleControlledECR",
+                    MQT_NAMED_BUILDER(multipleControlledEcr),
+                    MQT_NAMED_BUILDER(multipleControlledEcr)},
+        QCOTestCase{"NestedControlledECR",
+                    MQT_NAMED_BUILDER(nestedControlledEcr),
+                    MQT_NAMED_BUILDER(multipleControlledEcr)},
+        QCOTestCase{"TrivialControlledECR",
+                    MQT_NAMED_BUILDER(trivialControlledEcr),
+                    MQT_NAMED_BUILDER(ecr)},
+        QCOTestCase{"InverseECR", MQT_NAMED_BUILDER(inverseEcr),
+                    MQT_NAMED_BUILDER(inverseEcr)},
+        QCOTestCase{"InverseMultipleControlledECR",
+                    MQT_NAMED_BUILDER(inverseMultipleControlledEcr),
+                    MQT_NAMED_BUILDER(inverseMultipleControlledEcr)}));
 
 TEST_F(QCOTest, ECROpMatrix) {
   // Get the (static) matrix from the operation

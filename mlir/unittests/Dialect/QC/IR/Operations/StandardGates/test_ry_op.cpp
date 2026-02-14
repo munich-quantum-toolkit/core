@@ -17,16 +17,20 @@ using namespace mlir::qc;
 
 INSTANTIATE_TEST_SUITE_P(
     QCRYOpTest, QCTest,
-    testing::Values(QCTestCase{"RY", ry, ry},
-                    QCTestCase{"SingleControlledRY", singleControlledRy,
-                               singleControlledRy},
-                    QCTestCase{"MultipleControlledRY", multipleControlledRy,
-                               multipleControlledRy},
-                    QCTestCase{"NestedControlledRY", nestedControlledRy,
-                               multipleControlledRy},
-                    QCTestCase{"TrivialControlledRY", trivialControlledRy, ry},
-                    QCTestCase{"InverseRY", inverseRy, ry},
-                    QCTestCase{"InverseMultipleControlledRY",
-                               inverseMultipleControlledRy,
-                               multipleControlledRy}),
-    printTestName);
+    testing::Values(
+        QCTestCase{"RY", MQT_NAMED_BUILDER(ry), MQT_NAMED_BUILDER(ry)},
+        QCTestCase{"SingleControlledRY", MQT_NAMED_BUILDER(singleControlledRy),
+                   MQT_NAMED_BUILDER(singleControlledRy)},
+        QCTestCase{"MultipleControlledRY",
+                   MQT_NAMED_BUILDER(multipleControlledRy),
+                   MQT_NAMED_BUILDER(multipleControlledRy)},
+        QCTestCase{"NestedControlledRY", MQT_NAMED_BUILDER(nestedControlledRy),
+                   MQT_NAMED_BUILDER(multipleControlledRy)},
+        QCTestCase{"TrivialControlledRY",
+                   MQT_NAMED_BUILDER(trivialControlledRy),
+                   MQT_NAMED_BUILDER(ry)},
+        QCTestCase{"InverseRY", MQT_NAMED_BUILDER(inverseRy),
+                   MQT_NAMED_BUILDER(ry)},
+        QCTestCase{"InverseMultipleControlledRY",
+                   MQT_NAMED_BUILDER(inverseMultipleControlledRy),
+                   MQT_NAMED_BUILDER(multipleControlledRy)}));

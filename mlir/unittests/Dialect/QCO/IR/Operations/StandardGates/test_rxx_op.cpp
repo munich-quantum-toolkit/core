@@ -21,19 +21,25 @@ using namespace mlir::qco;
 
 INSTANTIATE_TEST_SUITE_P(
     QCORXXOpTest, QCOTest,
-    testing::Values(
-        QCOTestCase{"RXX", rxx, rxx},
-        QCOTestCase{"SingleControlledRXX", singleControlledRxx,
-                    singleControlledRxx},
-        QCOTestCase{"MultipleControlledRXX", multipleControlledRxx,
-                    multipleControlledRxx},
-        QCOTestCase{"NestedControlledRXX", nestedControlledRxx,
-                    multipleControlledRxx},
-        QCOTestCase{"TrivialControlledRXX", trivialControlledRxx, rxx},
-        QCOTestCase{"InverseRXX", inverseRxx, rxx},
-        QCOTestCase{"InverseMultipleControlledRXX",
-                    inverseMultipleControlledRxx, multipleControlledRxx}),
-    printTestName);
+    testing::Values(QCOTestCase{"RXX", MQT_NAMED_BUILDER(rxx),
+                                MQT_NAMED_BUILDER(rxx)},
+                    QCOTestCase{"SingleControlledRXX",
+                                MQT_NAMED_BUILDER(singleControlledRxx),
+                                MQT_NAMED_BUILDER(singleControlledRxx)},
+                    QCOTestCase{"MultipleControlledRXX",
+                                MQT_NAMED_BUILDER(multipleControlledRxx),
+                                MQT_NAMED_BUILDER(multipleControlledRxx)},
+                    QCOTestCase{"NestedControlledRXX",
+                                MQT_NAMED_BUILDER(nestedControlledRxx),
+                                MQT_NAMED_BUILDER(multipleControlledRxx)},
+                    QCOTestCase{"TrivialControlledRXX",
+                                MQT_NAMED_BUILDER(trivialControlledRxx),
+                                MQT_NAMED_BUILDER(rxx)},
+                    QCOTestCase{"InverseRXX", MQT_NAMED_BUILDER(inverseRxx),
+                                MQT_NAMED_BUILDER(rxx)},
+                    QCOTestCase{"InverseMultipleControlledRXX",
+                                MQT_NAMED_BUILDER(inverseMultipleControlledRxx),
+                                MQT_NAMED_BUILDER(multipleControlledRxx)}));
 
 TEST_F(QCOTest, RXXOpMatrix) {
   auto moduleOp = QCOProgramBuilder::build(context.get(), rxx);

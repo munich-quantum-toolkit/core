@@ -11,15 +11,19 @@
 #include "test_qco_ir.h"
 
 #include "mlir/Dialect/QCO/Builder/QCOProgramBuilder.h"
+#include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Support/IRVerification.h"
 #include "mlir/Support/Passes.h"
 #include "mlir/Support/PrettyPrinting.h"
 
 #include <gtest/gtest.h>
+#include <iosfwd>
 #include <memory>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
+#include <mlir/IR/DialectRegistry.h>
 #include <mlir/IR/Verifier.h>
+#include <string>
 
 using namespace mlir;
 
@@ -33,15 +37,19 @@ void QCOTest::SetUp() {
   context->loadAllAvailableDialects();
 }
 
-std::string printTestName(const testing::TestParamInfo<QCOTestCase>& info) {
-  return info.param.name;
+std::ostream& operator<<(std::ostream& os, const QCOTestCase& info) {
+  return os << "QCO{" << info.name
+            << ", original=" << mqt::test::displayName(info.programBuilder.name)
+            << ", reference="
+            << mqt::test::displayName(info.referenceBuilder.name) << "}";
 }
 
 TEST_P(QCOTest, ProgramEquivalence) {
-  auto& [_, programBuilder, referenceBuilder] = GetParam();
+  const auto& [_, programBuilder, referenceBuilder] = GetParam();
   const auto name = " (" + GetParam().name + ")";
 
-  program = mlir::qco::QCOProgramBuilder::build(context.get(), programBuilder);
+  auto program =
+      mlir::qco::QCOProgramBuilder::build(context.get(), programBuilder.fn);
   ASSERT_TRUE(program);
   printProgram(program.get(), "Original QCO IR" + name, llvm::errs());
   EXPECT_TRUE(mlir::verify(*program).succeeded());
@@ -50,8 +58,8 @@ TEST_P(QCOTest, ProgramEquivalence) {
   printProgram(program.get(), "Canonicalized QCO IR" + name, llvm::errs());
   EXPECT_TRUE(mlir::verify(*program).succeeded());
 
-  reference =
-      mlir::qco::QCOProgramBuilder::build(context.get(), referenceBuilder);
+  auto reference =
+      mlir::qco::QCOProgramBuilder::build(context.get(), referenceBuilder.fn);
   ASSERT_TRUE(reference);
   printProgram(reference.get(), "Reference QCO IR" + name, llvm::errs());
   EXPECT_TRUE(mlir::verify(*reference).succeeded());

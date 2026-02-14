@@ -17,8 +17,11 @@ using namespace mlir::qc;
 
 INSTANTIATE_TEST_SUITE_P(
     QCInvOpTest, QCTest,
-    testing::Values(QCTestCase{"NestedInv", nestedInv, rxx},
-                    QCTestCase{"TripleNestedInv", tripleNestedInv, rxx},
-                    QCTestCase{"InvControlSandwich", invCtrlSandwich,
-                               singleControlledRxx}),
-    printTestName);
+    testing::Values(QCTestCase{"NestedInv", MQT_NAMED_BUILDER(nestedInv),
+                               MQT_NAMED_BUILDER(rxx)},
+                    QCTestCase{"TripleNestedInv",
+                               MQT_NAMED_BUILDER(tripleNestedInv),
+                               MQT_NAMED_BUILDER(rxx)},
+                    QCTestCase{"InvControlSandwich",
+                               MQT_NAMED_BUILDER(invCtrlSandwich),
+                               MQT_NAMED_BUILDER(singleControlledRxx)}));

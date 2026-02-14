@@ -17,13 +17,16 @@ using namespace mlir::qir;
 
 INSTANTIATE_TEST_SUITE_P(
     QIRQubitManagementTest, QIRTest,
-    testing::Values(QIRTestCase{"AllocQubit", allocQubit, allocQubit},
-                    QIRTestCase{"AllocQubitRegister", allocQubitRegister,
-                                allocQubitRegister},
+    testing::Values(QIRTestCase{"AllocQubit", MQT_NAMED_BUILDER(allocQubit),
+                                MQT_NAMED_BUILDER(allocQubit)},
+                    QIRTestCase{"AllocQubitRegister",
+                                MQT_NAMED_BUILDER(allocQubitRegister),
+                                MQT_NAMED_BUILDER(allocQubitRegister)},
                     QIRTestCase{"AllocMultipleQubitRegisters",
-                                allocMultipleQubitRegisters,
-                                allocMultipleQubitRegisters},
-                    QIRTestCase{"AllocLargeRegister", allocLargeRegister,
-                                allocLargeRegister},
-                    QIRTestCase{"StaticQubits", staticQubits, staticQubits}),
-    printTestName);
+                                MQT_NAMED_BUILDER(allocMultipleQubitRegisters),
+                                MQT_NAMED_BUILDER(allocMultipleQubitRegisters)},
+                    QIRTestCase{"AllocLargeRegister",
+                                MQT_NAMED_BUILDER(allocLargeRegister),
+                                MQT_NAMED_BUILDER(allocLargeRegister)},
+                    QIRTestCase{"StaticQubits", MQT_NAMED_BUILDER(staticQubits),
+                                MQT_NAMED_BUILDER(staticQubits)}));

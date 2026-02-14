@@ -12,7 +12,9 @@
 
 #include "mlir/Conversion/QCOToQC/QCOToQC.h"
 #include "mlir/Dialect/QC/Builder/QCProgramBuilder.h"
+#include "mlir/Dialect/QC/IR/QCDialect.h"
 #include "mlir/Dialect/QCO/Builder/QCOProgramBuilder.h"
+#include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Support/IRVerification.h"
 #include "mlir/Support/Passes.h"
 #include "mlir/Support/PrettyPrinting.h"
@@ -21,9 +23,12 @@
 #include <memory>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
+#include <mlir/IR/DialectRegistry.h>
 #include <mlir/IR/Verifier.h>
 #include <mlir/Pass/PassManager.h>
 #include <mlir/Support/LogicalResult.h>
+#include <ostream>
+#include <string>
 
 using namespace mlir;
 
@@ -37,8 +42,11 @@ void QCOToQCTest::SetUp() {
   context->loadAllAvailableDialects();
 }
 
-std::string printTestName(const testing::TestParamInfo<QCOToQCTestCase>& info) {
-  return info.param.name;
+std::ostream& operator<<(std::ostream& os, const QCOToQCTestCase& info) {
+  return os << "QCOToQC{" << info.name
+            << ", original=" << mqt::test::displayName(info.programBuilder.name)
+            << ", reference="
+            << mqt::test::displayName(info.referenceBuilder.name) << "}";
 }
 
 static LogicalResult runQCOToQCConversion(ModuleOp module) {
@@ -48,10 +56,11 @@ static LogicalResult runQCOToQCConversion(ModuleOp module) {
 }
 
 TEST_P(QCOToQCTest, ProgramEquivalence) {
-  auto& [_, programBuilder, referenceBuilder] = GetParam();
-  const auto name = " (" + GetParam().name + ")";
+  const auto& [nameStr, programBuilder, referenceBuilder] = GetParam();
+  const auto name = " (" + nameStr + ")";
 
-  program = mlir::qco::QCOProgramBuilder::build(context.get(), programBuilder);
+  auto program =
+      mlir::qco::QCOProgramBuilder::build(context.get(), programBuilder.fn);
   ASSERT_TRUE(program);
   printProgram(program.get(), "Original QCO IR" + name, llvm::errs());
   EXPECT_TRUE(mlir::verify(*program).succeeded());
@@ -69,8 +78,8 @@ TEST_P(QCOToQCTest, ProgramEquivalence) {
                llvm::errs());
   EXPECT_TRUE(mlir::verify(*program).succeeded());
 
-  reference =
-      mlir::qc::QCProgramBuilder::build(context.get(), referenceBuilder);
+  auto reference =
+      mlir::qc::QCProgramBuilder::build(context.get(), referenceBuilder.fn);
   ASSERT_TRUE(reference);
   printProgram(reference.get(), "Reference QC IR" + name, llvm::errs());
   EXPECT_TRUE(mlir::verify(*reference).succeeded());

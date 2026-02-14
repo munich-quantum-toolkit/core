@@ -21,19 +21,23 @@ using namespace mlir::qco;
 
 INSTANTIATE_TEST_SUITE_P(
     QCORXOpTest, QCOTest,
-    testing::Values(QCOTestCase{"RX", rx, rx},
-                    QCOTestCase{"SingleControlledRX", singleControlledRx,
-                                singleControlledRx},
-                    QCOTestCase{"MultipleControlledRX", multipleControlledRx,
-                                multipleControlledRx},
-                    QCOTestCase{"NestedControlledRX", nestedControlledRx,
-                                multipleControlledRx},
-                    QCOTestCase{"TrivialControlledRX", trivialControlledRx, rx},
-                    QCOTestCase{"InverseRX", inverseRx, rx},
-                    QCOTestCase{"InverseMultipleControlledRX",
-                                inverseMultipleControlledRx,
-                                multipleControlledRx}),
-    printTestName);
+    testing::Values(
+        QCOTestCase{"RX", MQT_NAMED_BUILDER(rx), MQT_NAMED_BUILDER(rx)},
+        QCOTestCase{"SingleControlledRX", MQT_NAMED_BUILDER(singleControlledRx),
+                    MQT_NAMED_BUILDER(singleControlledRx)},
+        QCOTestCase{"MultipleControlledRX",
+                    MQT_NAMED_BUILDER(multipleControlledRx),
+                    MQT_NAMED_BUILDER(multipleControlledRx)},
+        QCOTestCase{"NestedControlledRX", MQT_NAMED_BUILDER(nestedControlledRx),
+                    MQT_NAMED_BUILDER(multipleControlledRx)},
+        QCOTestCase{"TrivialControlledRX",
+                    MQT_NAMED_BUILDER(trivialControlledRx),
+                    MQT_NAMED_BUILDER(rx)},
+        QCOTestCase{"InverseRX", MQT_NAMED_BUILDER(inverseRx),
+                    MQT_NAMED_BUILDER(rx)},
+        QCOTestCase{"InverseMultipleControlledRX",
+                    MQT_NAMED_BUILDER(inverseMultipleControlledRx),
+                    MQT_NAMED_BUILDER(multipleControlledRx)}));
 
 TEST_F(QCOTest, RXOpMatrix) {
   auto moduleOp = QCOProgramBuilder::build(context.get(), rx);

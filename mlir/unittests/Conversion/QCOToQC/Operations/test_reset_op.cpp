@@ -18,13 +18,14 @@ using namespace mlir::qco;
 
 INSTANTIATE_TEST_SUITE_P(
     QCOResetOpTest, QCOToQCTest,
-    testing::Values(QCOToQCTestCase{"ResetQubitAfterSingleOp",
-                                    qco::resetQubitAfterSingleOp,
-                                    qc::resetQubitAfterSingleOp},
-                    QCOToQCTestCase{"ResetMultipleQubitsAfterSingleOp",
-                                    qco::resetMultipleQubitsAfterSingleOp,
-                                    qc::resetMultipleQubitsAfterSingleOp},
-                    QCOToQCTestCase{"RepeatedResetAfterSingleOp",
-                                    qco::repeatedResetAfterSingleOp,
-                                    qc::resetQubitAfterSingleOp}),
-    printTestName);
+    testing::Values(
+        QCOToQCTestCase{"ResetQubitAfterSingleOp",
+                        MQT_NAMED_BUILDER(qco::resetQubitAfterSingleOp),
+                        MQT_NAMED_BUILDER(qc::resetQubitAfterSingleOp)},
+        QCOToQCTestCase{
+            "ResetMultipleQubitsAfterSingleOp",
+            MQT_NAMED_BUILDER(qco::resetMultipleQubitsAfterSingleOp),
+            MQT_NAMED_BUILDER(qc::resetMultipleQubitsAfterSingleOp)},
+        QCOToQCTestCase{"RepeatedResetAfterSingleOp",
+                        MQT_NAMED_BUILDER(qco::repeatedResetAfterSingleOp),
+                        MQT_NAMED_BUILDER(qc::resetQubitAfterSingleOp)}));

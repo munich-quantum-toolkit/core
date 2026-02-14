@@ -17,18 +17,22 @@ using namespace mlir::qc;
 
 INSTANTIATE_TEST_SUITE_P(
     QCResetOpTest, QCTest,
-    testing::Values(
-        QCTestCase{"ResetQubitWithoutOp", resetQubitWithoutOp,
-                   resetQubitWithoutOp},
-        QCTestCase{"ResetMultipleQubitsWithoutOp", resetMultipleQubitsWithoutOp,
-                   resetMultipleQubitsWithoutOp},
-        QCTestCase{"RepeatedResetWithoutOp", repeatedResetWithoutOp,
-                   repeatedResetWithoutOp},
-        QCTestCase{"ResetQubitAfterSingleOp", resetQubitAfterSingleOp,
-                   resetQubitAfterSingleOp},
-        QCTestCase{"ResetMultipleQubitsAfterSingleOp",
-                   resetMultipleQubitsAfterSingleOp,
-                   resetMultipleQubitsAfterSingleOp},
-        QCTestCase{"RepeatedResetAfterSingleOp", repeatedResetAfterSingleOp,
-                   repeatedResetAfterSingleOp}),
-    printTestName);
+    testing::Values(QCTestCase{"ResetQubitWithoutOp",
+                               MQT_NAMED_BUILDER(resetQubitWithoutOp),
+                               MQT_NAMED_BUILDER(resetQubitWithoutOp)},
+                    QCTestCase{"ResetMultipleQubitsWithoutOp",
+                               MQT_NAMED_BUILDER(resetMultipleQubitsWithoutOp),
+                               MQT_NAMED_BUILDER(resetMultipleQubitsWithoutOp)},
+                    QCTestCase{"RepeatedResetWithoutOp",
+                               MQT_NAMED_BUILDER(repeatedResetWithoutOp),
+                               MQT_NAMED_BUILDER(repeatedResetWithoutOp)},
+                    QCTestCase{"ResetQubitAfterSingleOp",
+                               MQT_NAMED_BUILDER(resetQubitAfterSingleOp),
+                               MQT_NAMED_BUILDER(resetQubitAfterSingleOp)},
+                    QCTestCase{
+                        "ResetMultipleQubitsAfterSingleOp",
+                        MQT_NAMED_BUILDER(resetMultipleQubitsAfterSingleOp),
+                        MQT_NAMED_BUILDER(resetMultipleQubitsAfterSingleOp)},
+                    QCTestCase{"RepeatedResetAfterSingleOp",
+                               MQT_NAMED_BUILDER(repeatedResetAfterSingleOp),
+                               MQT_NAMED_BUILDER(repeatedResetAfterSingleOp)}));

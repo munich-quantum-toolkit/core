@@ -18,13 +18,18 @@ using namespace mlir::qc;
 INSTANTIATE_TEST_SUITE_P(
     QCHOpTest, QCTest,
     testing::Values(
-        QCTestCase{"H", h, h},
-        QCTestCase{"SingleControlledH", singleControlledH, singleControlledH},
-        QCTestCase{"MultipleControlledH", multipleControlledH,
-                   multipleControlledH},
-        QCTestCase{"NestedControlledH", nestedControlledH, multipleControlledH},
-        QCTestCase{"TrivialControlledH", trivialControlledH, h},
-        QCTestCase{"InverseH", inverseH, h},
-        QCTestCase{"InverseMultipleControlledH", inverseMultipleControlledH,
-                   multipleControlledH}),
-    printTestName);
+        QCTestCase{"H", MQT_NAMED_BUILDER(h), MQT_NAMED_BUILDER(h)},
+        QCTestCase{"SingleControlledH", MQT_NAMED_BUILDER(singleControlledH),
+                   MQT_NAMED_BUILDER(singleControlledH)},
+        QCTestCase{"MultipleControlledH",
+                   MQT_NAMED_BUILDER(multipleControlledH),
+                   MQT_NAMED_BUILDER(multipleControlledH)},
+        QCTestCase{"NestedControlledH", MQT_NAMED_BUILDER(nestedControlledH),
+                   MQT_NAMED_BUILDER(multipleControlledH)},
+        QCTestCase{"TrivialControlledH", MQT_NAMED_BUILDER(trivialControlledH),
+                   MQT_NAMED_BUILDER(h)},
+        QCTestCase{"InverseH", MQT_NAMED_BUILDER(inverseH),
+                   MQT_NAMED_BUILDER(h)},
+        QCTestCase{"InverseMultipleControlledH",
+                   MQT_NAMED_BUILDER(inverseMultipleControlledH),
+                   MQT_NAMED_BUILDER(multipleControlledH)}));

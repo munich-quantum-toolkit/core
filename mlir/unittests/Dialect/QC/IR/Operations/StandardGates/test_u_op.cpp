@@ -18,13 +18,18 @@ using namespace mlir::qc;
 INSTANTIATE_TEST_SUITE_P(
     QCUOpTest, QCTest,
     testing::Values(
-        QCTestCase{"U", u, u},
-        QCTestCase{"SingleControlledU", singleControlledU, singleControlledU},
-        QCTestCase{"MultipleControlledU", multipleControlledU,
-                   multipleControlledU},
-        QCTestCase{"NestedControlledU", nestedControlledU, multipleControlledU},
-        QCTestCase{"TrivialControlledU", trivialControlledU, u},
-        QCTestCase{"InverseU", inverseU, u},
-        QCTestCase{"InverseMultipleControlledU", inverseMultipleControlledU,
-                   multipleControlledU}),
-    printTestName);
+        QCTestCase{"U", MQT_NAMED_BUILDER(u), MQT_NAMED_BUILDER(u)},
+        QCTestCase{"SingleControlledU", MQT_NAMED_BUILDER(singleControlledU),
+                   MQT_NAMED_BUILDER(singleControlledU)},
+        QCTestCase{"MultipleControlledU",
+                   MQT_NAMED_BUILDER(multipleControlledU),
+                   MQT_NAMED_BUILDER(multipleControlledU)},
+        QCTestCase{"NestedControlledU", MQT_NAMED_BUILDER(nestedControlledU),
+                   MQT_NAMED_BUILDER(multipleControlledU)},
+        QCTestCase{"TrivialControlledU", MQT_NAMED_BUILDER(trivialControlledU),
+                   MQT_NAMED_BUILDER(u)},
+        QCTestCase{"InverseU", MQT_NAMED_BUILDER(inverseU),
+                   MQT_NAMED_BUILDER(u)},
+        QCTestCase{"InverseMultipleControlledU",
+                   MQT_NAMED_BUILDER(inverseMultipleControlledU),
+                   MQT_NAMED_BUILDER(multipleControlledU)}));

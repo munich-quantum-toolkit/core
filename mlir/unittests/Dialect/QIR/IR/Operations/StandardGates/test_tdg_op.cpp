@@ -17,9 +17,11 @@ using namespace mlir::qir;
 
 INSTANTIATE_TEST_SUITE_P(
     QIRTdgOpTest, QIRTest,
-    testing::Values(QIRTestCase{"Tdg", tdg, tdg},
-                    QIRTestCase{"SingleControlledTdg", singleControlledTdg,
-                                singleControlledTdg},
-                    QIRTestCase{"MultipleControlledTdg", multipleControlledTdg,
-                                multipleControlledTdg}),
-    printTestName);
+    testing::Values(QIRTestCase{"Tdg", MQT_NAMED_BUILDER(tdg),
+                                MQT_NAMED_BUILDER(tdg)},
+                    QIRTestCase{"SingleControlledTdg",
+                                MQT_NAMED_BUILDER(singleControlledTdg),
+                                MQT_NAMED_BUILDER(singleControlledTdg)},
+                    QIRTestCase{"MultipleControlledTdg",
+                                MQT_NAMED_BUILDER(multipleControlledTdg),
+                                MQT_NAMED_BUILDER(multipleControlledTdg)}));

@@ -17,11 +17,12 @@ using namespace mlir::qir;
 
 INSTANTIATE_TEST_SUITE_P(
     QIRXXPlusYYOpTest, QIRTest,
-    testing::Values(QIRTestCase{"XXPlusYY", xxPlusYY, xxPlusYY},
+    testing::Values(QIRTestCase{"XXPlusYY", MQT_NAMED_BUILDER(xxPlusYY),
+                                MQT_NAMED_BUILDER(xxPlusYY)},
                     QIRTestCase{"SingleControlledXXPlusYY",
-                                singleControlledXxPlusYY,
-                                singleControlledXxPlusYY},
-                    QIRTestCase{"MultipleControlledXXPlusYY",
-                                multipleControlledXxPlusYY,
-                                multipleControlledXxPlusYY}),
-    printTestName);
+                                MQT_NAMED_BUILDER(singleControlledXxPlusYY),
+                                MQT_NAMED_BUILDER(singleControlledXxPlusYY)},
+                    QIRTestCase{
+                        "MultipleControlledXXPlusYY",
+                        MQT_NAMED_BUILDER(multipleControlledXxPlusYY),
+                        MQT_NAMED_BUILDER(multipleControlledXxPlusYY)}));

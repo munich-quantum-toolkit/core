@@ -15,9 +15,12 @@
 #include "mlir/Support/PrettyPrinting.h"
 
 #include <gtest/gtest.h>
+#include <iosfwd>
 #include <memory>
 #include <mlir/Dialect/LLVMIR/LLVMDialect.h>
+#include <mlir/IR/DialectRegistry.h>
 #include <mlir/IR/Verifier.h>
+#include <string>
 
 using namespace mlir;
 
@@ -29,15 +32,19 @@ void QIRTest::SetUp() {
   context->loadAllAvailableDialects();
 }
 
-std::string printTestName(const testing::TestParamInfo<QIRTestCase>& info) {
-  return info.param.name;
+std::ostream& operator<<(std::ostream& os, const QIRTestCase& info) {
+  return os << "QIR{" << info.name
+            << ", original=" << mqt::test::displayName(info.programBuilder.name)
+            << ", reference="
+            << mqt::test::displayName(info.referenceBuilder.name) << "}";
 }
 
 TEST_P(QIRTest, ProgramEquivalence) {
-  auto& [_, programBuilder, referenceBuilder] = GetParam();
+  const auto& [_, programBuilder, referenceBuilder] = GetParam();
   const auto name = " (" + GetParam().name + ")";
 
-  program = mlir::qir::QIRProgramBuilder::build(context.get(), programBuilder);
+  auto program =
+      mlir::qir::QIRProgramBuilder::build(context.get(), programBuilder.fn);
   ASSERT_TRUE(program);
   printProgram(program.get(), "Original QIR IR" + name, llvm::errs());
   EXPECT_TRUE(mlir::verify(*program).succeeded());
@@ -46,8 +53,8 @@ TEST_P(QIRTest, ProgramEquivalence) {
   printProgram(program.get(), "Canonicalized QIR IR" + name, llvm::errs());
   EXPECT_TRUE(mlir::verify(*program).succeeded());
 
-  reference =
-      mlir::qir::QIRProgramBuilder::build(context.get(), referenceBuilder);
+  auto reference =
+      mlir::qir::QIRProgramBuilder::build(context.get(), referenceBuilder.fn);
   ASSERT_TRUE(reference);
   printProgram(reference.get(), "Reference QIR IR" + name, llvm::errs());
   EXPECT_TRUE(mlir::verify(*reference).succeeded());

@@ -19,11 +19,15 @@ using namespace mlir::qir;
 
 INSTANTIATE_TEST_SUITE_P(
     QCToQIRBarrierOpTest, QCToQIRTest,
-    testing::Values(QCToQIRTestCase{"Barrier", qc::barrier, emptyQIR},
-                    QCToQIRTestCase{"BarrierTwoQubits", qc::barrierTwoQubits,
-                                    emptyQIR},
-                    QCToQIRTestCase{"BarrierMultipleQubits",
-                                    qc::barrierMultipleQubits, emptyQIR},
-                    QCToQIRTestCase{"SingleControlledBarrier",
-                                    qc::singleControlledBarrier, emptyQIR}),
-    printTestName);
+    testing::Values(
+        QCToQIRTestCase{"Barrier", MQT_NAMED_BUILDER(qc::barrier),
+                        MQT_NAMED_BUILDER(emptyQIR)},
+        QCToQIRTestCase{"BarrierTwoQubits",
+                        MQT_NAMED_BUILDER(qc::barrierTwoQubits),
+                        MQT_NAMED_BUILDER(emptyQIR)},
+        QCToQIRTestCase{"BarrierMultipleQubits",
+                        MQT_NAMED_BUILDER(qc::barrierMultipleQubits),
+                        MQT_NAMED_BUILDER(emptyQIR)},
+        QCToQIRTestCase{"SingleControlledBarrier",
+                        MQT_NAMED_BUILDER(qc::singleControlledBarrier),
+                        MQT_NAMED_BUILDER(emptyQIR)}));

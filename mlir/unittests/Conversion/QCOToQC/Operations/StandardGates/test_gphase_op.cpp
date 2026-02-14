@@ -16,18 +16,7 @@
 
 using namespace mlir::qco;
 
-INSTANTIATE_TEST_SUITE_P(
-    QCOGPhaseOpTest, QCOToQCTest,
-    testing::Values(QCOToQCTestCase{"GlobalPhase", qco::globalPhase,
-                                    qc::globalPhase},
-                    QCOToQCTestCase{"SingleControlledGlobalPhase",
-                                    qco::singleControlledGlobalPhase, qc::p},
-                    QCOToQCTestCase{"MultipleControlledGlobalPhase",
-                                    qco::multipleControlledGlobalPhase,
-                                    qc::multipleControlledP},
-                    QCOToQCTestCase{"InverseGlobalPhase",
-                                    qco::inverseGlobalPhase, qc::globalPhase},
-                    QCOToQCTestCase{"InverseMultipleControlledGlobalPhase",
-                                    qco::inverseMultipleControlledGlobalPhase,
-                                    qc::multipleControlledGlobalPhase}),
-    printTestName);
+INSTANTIATE_TEST_SUITE_P(QCOGPhaseOpTest, QCOToQCTest,
+                         testing::Values(QCOToQCTestCase{
+                             "GlobalPhase", MQT_NAMED_BUILDER(qco::globalPhase),
+                             MQT_NAMED_BUILDER(qc::globalPhase)}));

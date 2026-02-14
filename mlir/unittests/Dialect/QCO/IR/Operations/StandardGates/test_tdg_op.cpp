@@ -20,19 +20,25 @@ using namespace mlir::qco;
 
 INSTANTIATE_TEST_SUITE_P(
     QCOTdgOpTest, QCOTest,
-    testing::Values(
-        QCOTestCase{"Tdg", tdg, tdg},
-        QCOTestCase{"SingleControlledTdg", singleControlledTdg,
-                    singleControlledTdg},
-        QCOTestCase{"MultipleControlledTdg", multipleControlledTdg,
-                    multipleControlledTdg},
-        QCOTestCase{"NestedControlledTdg", nestedControlledTdg,
-                    multipleControlledTdg},
-        QCOTestCase{"TrivialControlledTdg", trivialControlledTdg, tdg},
-        QCOTestCase{"InverseTdg", inverseTdg, t_},
-        QCOTestCase{"InverseMultipleControlledTdg",
-                    inverseMultipleControlledTdg, multipleControlledT}),
-    printTestName);
+    testing::Values(QCOTestCase{"Tdg", MQT_NAMED_BUILDER(tdg),
+                                MQT_NAMED_BUILDER(tdg)},
+                    QCOTestCase{"SingleControlledTdg",
+                                MQT_NAMED_BUILDER(singleControlledTdg),
+                                MQT_NAMED_BUILDER(singleControlledTdg)},
+                    QCOTestCase{"MultipleControlledTdg",
+                                MQT_NAMED_BUILDER(multipleControlledTdg),
+                                MQT_NAMED_BUILDER(multipleControlledTdg)},
+                    QCOTestCase{"NestedControlledTdg",
+                                MQT_NAMED_BUILDER(nestedControlledTdg),
+                                MQT_NAMED_BUILDER(multipleControlledTdg)},
+                    QCOTestCase{"TrivialControlledTdg",
+                                MQT_NAMED_BUILDER(trivialControlledTdg),
+                                MQT_NAMED_BUILDER(tdg)},
+                    QCOTestCase{"InverseTdg", MQT_NAMED_BUILDER(inverseTdg),
+                                MQT_NAMED_BUILDER(t_)},
+                    QCOTestCase{"InverseMultipleControlledTdg",
+                                MQT_NAMED_BUILDER(inverseMultipleControlledTdg),
+                                MQT_NAMED_BUILDER(multipleControlledT)}));
 
 TEST_F(QCOTest, TdgOpMatrix) {
   // Get the (static) matrix from the operation

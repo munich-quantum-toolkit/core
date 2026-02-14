@@ -21,18 +21,24 @@ using namespace mlir::qco;
 INSTANTIATE_TEST_SUITE_P(
     QCOSWAPOpTest, QCOTest,
     testing::Values(
-        QCOTestCase{"SWAP", swap, swap},
-        QCOTestCase{"SingleControlledSWAP", singleControlledSwap,
-                    singleControlledSwap},
-        QCOTestCase{"MultipleControlledSWAP", multipleControlledSwap,
-                    multipleControlledSwap},
-        QCOTestCase{"NestedControlledSWAP", nestedControlledSwap,
-                    multipleControlledSwap},
-        QCOTestCase{"TrivialControlledSWAP", trivialControlledSwap, swap},
-        QCOTestCase{"InverseSWAP", inverseSwap, swap},
+        QCOTestCase{"SWAP", MQT_NAMED_BUILDER(swap), MQT_NAMED_BUILDER(swap)},
+        QCOTestCase{"SingleControlledSWAP",
+                    MQT_NAMED_BUILDER(singleControlledSwap),
+                    MQT_NAMED_BUILDER(singleControlledSwap)},
+        QCOTestCase{"MultipleControlledSWAP",
+                    MQT_NAMED_BUILDER(multipleControlledSwap),
+                    MQT_NAMED_BUILDER(multipleControlledSwap)},
+        QCOTestCase{"NestedControlledSWAP",
+                    MQT_NAMED_BUILDER(nestedControlledSwap),
+                    MQT_NAMED_BUILDER(multipleControlledSwap)},
+        QCOTestCase{"TrivialControlledSWAP",
+                    MQT_NAMED_BUILDER(trivialControlledSwap),
+                    MQT_NAMED_BUILDER(swap)},
+        QCOTestCase{"InverseSWAP", MQT_NAMED_BUILDER(inverseSwap),
+                    MQT_NAMED_BUILDER(swap)},
         QCOTestCase{"InverseMultipleControlledSWAP",
-                    inverseMultipleControlledSwap, multipleControlledSwap}),
-    printTestName);
+                    MQT_NAMED_BUILDER(inverseMultipleControlledSwap),
+                    MQT_NAMED_BUILDER(multipleControlledSwap)}));
 
 TEST_F(QCOTest, SWAPOpMatrix) {
   // Get the (static) matrix from the operation

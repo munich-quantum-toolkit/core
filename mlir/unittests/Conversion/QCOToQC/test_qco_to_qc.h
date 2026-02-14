@@ -10,15 +10,14 @@
 
 #pragma once
 
+#include "TestCaseUtils.h"
 #include "mlir/Dialect/QC/Builder/QCProgramBuilder.h"
 #include "mlir/Dialect/QCO/Builder/QCOProgramBuilder.h"
 
 #include <gtest/gtest.h>
-#include <llvm/ADT/STLFunctionalExtras.h>
+#include <iosfwd>
 #include <memory>
-#include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/MLIRContext.h>
-#include <mlir/IR/OwningOpRef.h>
 #include <string>
 
 namespace qc = mlir::qc;
@@ -26,17 +25,16 @@ namespace qco = mlir::qco;
 
 struct QCOToQCTestCase {
   std::string name;
-  llvm::function_ref<void(qco::QCOProgramBuilder&)> programBuilder;
-  llvm::function_ref<void(qc::QCProgramBuilder&)> referenceBuilder;
+  mqt::test::NamedBuilder<qco::QCOProgramBuilder> programBuilder;
+  mqt::test::NamedBuilder<qc::QCProgramBuilder> referenceBuilder;
+
+  friend std::ostream& operator<<(std::ostream& os,
+                                  const QCOToQCTestCase& info);
 };
 
 class QCOToQCTest : public testing::TestWithParam<QCOToQCTestCase> {
 protected:
   std::unique_ptr<mlir::MLIRContext> context;
-  mlir::OwningOpRef<mlir::ModuleOp> program;
-  mlir::OwningOpRef<mlir::ModuleOp> reference;
 
   void SetUp() override;
 };
-
-std::string printTestName(const testing::TestParamInfo<QCOToQCTestCase>& info);

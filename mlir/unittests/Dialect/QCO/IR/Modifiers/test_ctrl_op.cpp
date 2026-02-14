@@ -22,14 +22,19 @@ using namespace mlir::qco;
 
 INSTANTIATE_TEST_SUITE_P(
     QCOCtrlOpTest, QCOTest,
-    testing::Values(
-        QCOTestCase{"TrivialCtrl", trivialCtrl, rxx},
-        QCOTestCase{"NestedCtrl", nestedCtrl, multipleControlledRxx},
-        QCOTestCase{"TripleNestedCtrl", tripleNestedCtrl, tripleControlledRxx},
-        QCOTestCase{"CtrlInvSandwich", ctrlInvSandwich, multipleControlledRxx},
-        QCOTestCase{"DoubleNestedCtrlTwoQubits", doubleNestedCtrlTwoQubits,
-                    fourControlledRxx}),
-    printTestName);
+    testing::Values(QCOTestCase{"TrivialCtrl", MQT_NAMED_BUILDER(trivialCtrl),
+                                MQT_NAMED_BUILDER(rxx)},
+                    QCOTestCase{"NestedCtrl", MQT_NAMED_BUILDER(nestedCtrl),
+                                MQT_NAMED_BUILDER(multipleControlledRxx)},
+                    QCOTestCase{"TripleNestedCtrl",
+                                MQT_NAMED_BUILDER(tripleNestedCtrl),
+                                MQT_NAMED_BUILDER(tripleControlledRxx)},
+                    QCOTestCase{"CtrlInvSandwich",
+                                MQT_NAMED_BUILDER(ctrlInvSandwich),
+                                MQT_NAMED_BUILDER(multipleControlledRxx)},
+                    QCOTestCase{"DoubleNestedCtrlTwoQubits",
+                                MQT_NAMED_BUILDER(doubleNestedCtrlTwoQubits),
+                                MQT_NAMED_BUILDER(fourControlledRxx)}));
 
 TEST_F(QCOTest, CXOpMatrix) {
   auto moduleOp = QCOProgramBuilder::build(context.get(), singleControlledX);

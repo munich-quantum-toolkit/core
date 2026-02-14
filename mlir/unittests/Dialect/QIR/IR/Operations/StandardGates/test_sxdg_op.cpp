@@ -15,12 +15,13 @@
 
 using namespace mlir::qir;
 
-INSTANTIATE_TEST_SUITE_P(QIRSXdgOpTest, QIRTest,
-                         testing::Values(QIRTestCase{"SXdg", sxdg, sxdg},
-                                         QIRTestCase{"SingleControlledSXdg",
-                                                     singleControlledSxdg,
-                                                     singleControlledSxdg},
-                                         QIRTestCase{"MultipleControlledSXdg",
-                                                     multipleControlledSxdg,
-                                                     multipleControlledSxdg}),
-                         printTestName);
+INSTANTIATE_TEST_SUITE_P(
+    QIRSXdgOpTest, QIRTest,
+    testing::Values(QIRTestCase{"SXdg", MQT_NAMED_BUILDER(sxdg),
+                                MQT_NAMED_BUILDER(sxdg)},
+                    QIRTestCase{"SingleControlledSXdg",
+                                MQT_NAMED_BUILDER(singleControlledSxdg),
+                                MQT_NAMED_BUILDER(singleControlledSxdg)},
+                    QIRTestCase{"MultipleControlledSXdg",
+                                MQT_NAMED_BUILDER(multipleControlledSxdg),
+                                MQT_NAMED_BUILDER(multipleControlledSxdg)}));

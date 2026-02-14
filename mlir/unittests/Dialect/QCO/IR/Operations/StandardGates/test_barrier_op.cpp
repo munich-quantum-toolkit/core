@@ -17,12 +17,17 @@ using namespace mlir::qco;
 
 INSTANTIATE_TEST_SUITE_P(
     QCOBarrierOpTest, QCOTest,
-    testing::Values(QCOTestCase{"Barrier", barrier, barrier},
-                    QCOTestCase{"BarrierTwoQubits", barrierTwoQubits,
-                                barrierTwoQubits},
-                    QCOTestCase{"BarrierMultipleQubits", barrierMultipleQubits,
-                                barrierMultipleQubits},
+    testing::Values(QCOTestCase{"Barrier", MQT_NAMED_BUILDER(barrier),
+                                MQT_NAMED_BUILDER(barrier)},
+                    QCOTestCase{"BarrierTwoQubits",
+                                MQT_NAMED_BUILDER(barrierTwoQubits),
+                                MQT_NAMED_BUILDER(barrierTwoQubits)},
+                    QCOTestCase{"BarrierMultipleQubits",
+                                MQT_NAMED_BUILDER(barrierMultipleQubits),
+                                MQT_NAMED_BUILDER(barrierMultipleQubits)},
                     QCOTestCase{"SingleControlledBarrier",
-                                singleControlledBarrier, barrier},
-                    QCOTestCase{"InverseBarrier", inverseBarrier, barrier}),
-    printTestName);
+                                MQT_NAMED_BUILDER(singleControlledBarrier),
+                                MQT_NAMED_BUILDER(barrier)},
+                    QCOTestCase{"InverseBarrier",
+                                MQT_NAMED_BUILDER(inverseBarrier),
+                                MQT_NAMED_BUILDER(barrier)}));

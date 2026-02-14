@@ -17,11 +17,12 @@ using namespace mlir::qir;
 
 INSTANTIATE_TEST_SUITE_P(
     QIRIDOpTest, QIRTest,
-    testing::Values(QIRTestCase{"Identity", identity, identity},
+    testing::Values(QIRTestCase{"Identity", MQT_NAMED_BUILDER(identity),
+                                MQT_NAMED_BUILDER(identity)},
                     QIRTestCase{"SingleControlledIdentity",
-                                singleControlledIdentity,
-                                singleControlledIdentity},
-                    QIRTestCase{"MultipleControlledIdentity",
-                                multipleControlledIdentity,
-                                multipleControlledIdentity}),
-    printTestName);
+                                MQT_NAMED_BUILDER(singleControlledIdentity),
+                                MQT_NAMED_BUILDER(singleControlledIdentity)},
+                    QIRTestCase{
+                        "MultipleControlledIdentity",
+                        MQT_NAMED_BUILDER(multipleControlledIdentity),
+                        MQT_NAMED_BUILDER(multipleControlledIdentity)}));

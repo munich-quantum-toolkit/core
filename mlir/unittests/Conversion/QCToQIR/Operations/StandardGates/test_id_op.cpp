@@ -18,11 +18,12 @@ using namespace mlir::qc;
 
 INSTANTIATE_TEST_SUITE_P(
     QCToQIRIDOpTest, QCToQIRTest,
-    testing::Values(QCToQIRTestCase{"Identity", qc::identity, qir::identity},
-                    QCToQIRTestCase{"SingleControlledIdentity",
-                                    qc::singleControlledIdentity,
-                                    qir::identity},
-                    QCToQIRTestCase{"MultipleControlledIdentity",
-                                    qc::multipleControlledIdentity,
-                                    qir::identity}),
-    printTestName);
+    testing::Values(
+        QCToQIRTestCase{"Identity", MQT_NAMED_BUILDER(qc::identity),
+                        MQT_NAMED_BUILDER(qir::identity)},
+        QCToQIRTestCase{"SingleControlledIdentity",
+                        MQT_NAMED_BUILDER(qc::singleControlledIdentity),
+                        MQT_NAMED_BUILDER(qir::identity)},
+        QCToQIRTestCase{"MultipleControlledIdentity",
+                        MQT_NAMED_BUILDER(qc::multipleControlledIdentity),
+                        MQT_NAMED_BUILDER(qir::identity)}));

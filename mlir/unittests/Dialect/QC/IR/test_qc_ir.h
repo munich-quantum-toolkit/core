@@ -10,29 +10,26 @@
 
 #pragma once
 
+#include "TestCaseUtils.h"
 #include "mlir/Dialect/QC/Builder/QCProgramBuilder.h"
 
 #include <gtest/gtest.h>
-#include <llvm/ADT/STLFunctionalExtras.h>
+#include <iosfwd>
 #include <memory>
-#include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/MLIRContext.h>
-#include <mlir/IR/OwningOpRef.h>
 #include <string>
 
 struct QCTestCase {
   std::string name;
-  llvm::function_ref<void(mlir::qc::QCProgramBuilder&)> programBuilder;
-  llvm::function_ref<void(mlir::qc::QCProgramBuilder&)> referenceBuilder;
+  mqt::test::NamedBuilder<mlir::qc::QCProgramBuilder> programBuilder;
+  mqt::test::NamedBuilder<mlir::qc::QCProgramBuilder> referenceBuilder;
+
+  friend std::ostream& operator<<(std::ostream& os, const QCTestCase& info);
 };
 
 class QCTest : public testing::TestWithParam<QCTestCase> {
 protected:
   std::unique_ptr<mlir::MLIRContext> context;
-  mlir::OwningOpRef<mlir::ModuleOp> program;
-  mlir::OwningOpRef<mlir::ModuleOp> reference;
 
   void SetUp() override;
 };
-
-std::string printTestName(const testing::TestParamInfo<QCTestCase>& info);

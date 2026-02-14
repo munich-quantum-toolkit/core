@@ -17,18 +17,17 @@ using namespace mlir::qco;
 
 INSTANTIATE_TEST_SUITE_P(
     QCOMeasureOpTest, QCOTest,
-    testing::Values(QCOTestCase{"SingleMeasurementToSingleBit",
-                                singleMeasurementToSingleBit,
-                                singleMeasurementToSingleBit},
-                    QCOTestCase{"RepeatedMeasurementToSameBit",
-                                repeatedMeasurementToSameBit,
-                                repeatedMeasurementToSameBit},
-                    QCOTestCase{"RepeatedMeasurementToDifferentBits",
-                                repeatedMeasurementToDifferentBits,
-                                repeatedMeasurementToDifferentBits},
-                    QCOTestCase{
-                        "MultipleClassicalRegistersAndMeasurements",
-                        multipleClassicalRegistersAndMeasurements,
-                        multipleClassicalRegistersAndMeasurements,
-                    }),
-    printTestName);
+    testing::Values(
+        QCOTestCase{"SingleMeasurementToSingleBit",
+                    MQT_NAMED_BUILDER(singleMeasurementToSingleBit),
+                    MQT_NAMED_BUILDER(singleMeasurementToSingleBit)},
+        QCOTestCase{"RepeatedMeasurementToSameBit",
+                    MQT_NAMED_BUILDER(repeatedMeasurementToSameBit),
+                    MQT_NAMED_BUILDER(repeatedMeasurementToSameBit)},
+        QCOTestCase{"RepeatedMeasurementToDifferentBits",
+                    MQT_NAMED_BUILDER(repeatedMeasurementToDifferentBits),
+                    MQT_NAMED_BUILDER(repeatedMeasurementToDifferentBits)},
+        QCOTestCase{
+            "MultipleClassicalRegistersAndMeasurements",
+            MQT_NAMED_BUILDER(multipleClassicalRegistersAndMeasurements),
+            MQT_NAMED_BUILDER(multipleClassicalRegistersAndMeasurements)}));

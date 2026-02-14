@@ -17,9 +17,11 @@ using namespace mlir::qir;
 
 INSTANTIATE_TEST_SUITE_P(
     QIRRYYOpTest, QIRTest,
-    testing::Values(QIRTestCase{"RYY", ryy, ryy},
-                    QIRTestCase{"SingleControlledRYY", singleControlledRyy,
-                                singleControlledRyy},
-                    QIRTestCase{"MultipleControlledRYY", multipleControlledRyy,
-                                multipleControlledRyy}),
-    printTestName);
+    testing::Values(QIRTestCase{"RYY", MQT_NAMED_BUILDER(ryy),
+                                MQT_NAMED_BUILDER(ryy)},
+                    QIRTestCase{"SingleControlledRYY",
+                                MQT_NAMED_BUILDER(singleControlledRyy),
+                                MQT_NAMED_BUILDER(singleControlledRyy)},
+                    QIRTestCase{"MultipleControlledRYY",
+                                MQT_NAMED_BUILDER(multipleControlledRyy),
+                                MQT_NAMED_BUILDER(multipleControlledRyy)}));

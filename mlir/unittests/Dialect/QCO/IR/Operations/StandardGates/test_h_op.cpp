@@ -21,17 +21,21 @@ using namespace mlir::qco;
 INSTANTIATE_TEST_SUITE_P(
     QCOHOpTest, QCOTest,
     testing::Values(
-        QCOTestCase{"H", h, h},
-        QCOTestCase{"SingleControlledH", singleControlledH, singleControlledH},
-        QCOTestCase{"MultipleControlledH", multipleControlledH,
-                    multipleControlledH},
-        QCOTestCase{"NestedControlledH", nestedControlledH,
-                    multipleControlledH},
-        QCOTestCase{"TrivialControlledH", trivialControlledH, h},
-        QCOTestCase{"InverseH", inverseH, h},
-        QCOTestCase{"InverseMultipleControlledH", inverseMultipleControlledH,
-                    multipleControlledH}),
-    printTestName);
+        QCOTestCase{"H", MQT_NAMED_BUILDER(h), MQT_NAMED_BUILDER(h)},
+        QCOTestCase{"SingleControlledH", MQT_NAMED_BUILDER(singleControlledH),
+                    MQT_NAMED_BUILDER(singleControlledH)},
+        QCOTestCase{"MultipleControlledH",
+                    MQT_NAMED_BUILDER(multipleControlledH),
+                    MQT_NAMED_BUILDER(multipleControlledH)},
+        QCOTestCase{"NestedControlledH", MQT_NAMED_BUILDER(nestedControlledH),
+                    MQT_NAMED_BUILDER(multipleControlledH)},
+        QCOTestCase{"TrivialControlledH", MQT_NAMED_BUILDER(trivialControlledH),
+                    MQT_NAMED_BUILDER(h)},
+        QCOTestCase{"InverseH", MQT_NAMED_BUILDER(inverseH),
+                    MQT_NAMED_BUILDER(h)},
+        QCOTestCase{"InverseMultipleControlledH",
+                    MQT_NAMED_BUILDER(inverseMultipleControlledH),
+                    MQT_NAMED_BUILDER(multipleControlledH)}));
 
 TEST_F(QCOTest, HOpMatrix) {
   // Get the (static) matrix from the operation

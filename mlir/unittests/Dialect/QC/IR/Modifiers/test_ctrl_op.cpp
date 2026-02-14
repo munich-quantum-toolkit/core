@@ -17,11 +17,16 @@ using namespace mlir::qc;
 
 INSTANTIATE_TEST_SUITE_P(
     QCCtrlOpTest, QCTest,
-    testing::Values(
-        QCTestCase{"TrivialCtrl", trivialCtrl, rxx},
-        QCTestCase{"NestedCtrl", nestedCtrl, multipleControlledRxx},
-        QCTestCase{"TripleNestedCtrl", tripleNestedCtrl, tripleControlledRxx},
-        QCTestCase{"CtrlInvSandwich", ctrlInvSandwich, multipleControlledRxx},
-        QCTestCase{"DoubleNestedCtrlTwoQubits", doubleNestedCtrlTwoQubits,
-                   fourControlledRxx}),
-    printTestName);
+    testing::Values(QCTestCase{"TrivialCtrl", MQT_NAMED_BUILDER(trivialCtrl),
+                               MQT_NAMED_BUILDER(rxx)},
+                    QCTestCase{"NestedCtrl", MQT_NAMED_BUILDER(nestedCtrl),
+                               MQT_NAMED_BUILDER(multipleControlledRxx)},
+                    QCTestCase{"TripleNestedCtrl",
+                               MQT_NAMED_BUILDER(tripleNestedCtrl),
+                               MQT_NAMED_BUILDER(tripleControlledRxx)},
+                    QCTestCase{"CtrlInvSandwich",
+                               MQT_NAMED_BUILDER(ctrlInvSandwich),
+                               MQT_NAMED_BUILDER(multipleControlledRxx)},
+                    QCTestCase{"DoubleNestedCtrlTwoQubits",
+                               MQT_NAMED_BUILDER(doubleNestedCtrlTwoQubits),
+                               MQT_NAMED_BUILDER(fourControlledRxx)}));

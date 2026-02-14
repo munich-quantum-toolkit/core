@@ -20,19 +20,26 @@ using namespace mlir::qco;
 
 INSTANTIATE_TEST_SUITE_P(
     QCOIDOpTest, QCOTest,
-    testing::Values(QCOTestCase{"Identity", identity, emptyQCO},
-                    QCOTestCase{"SingleControlledIdentity",
-                                singleControlledIdentity, emptyQCO},
-                    QCOTestCase{"MultipleControlledIdentity",
-                                multipleControlledIdentity, emptyQCO},
-                    QCOTestCase{"NestedControlledIdentity",
-                                nestedControlledIdentity, emptyQCO},
-                    QCOTestCase{"TrivialControlledIdentity",
-                                trivialControlledIdentity, emptyQCO},
-                    QCOTestCase{"InverseIdentity", inverseIdentity, emptyQCO},
-                    QCOTestCase{"InverseMultipleControlledIdentity",
-                                inverseMultipleControlledIdentity, emptyQCO}),
-    printTestName);
+    testing::Values(
+        QCOTestCase{"Identity", MQT_NAMED_BUILDER(identity),
+                    MQT_NAMED_BUILDER(emptyQCO)},
+        QCOTestCase{"SingleControlledIdentity",
+                    MQT_NAMED_BUILDER(singleControlledIdentity),
+                    MQT_NAMED_BUILDER(emptyQCO)},
+        QCOTestCase{"MultipleControlledIdentity",
+                    MQT_NAMED_BUILDER(multipleControlledIdentity),
+                    MQT_NAMED_BUILDER(emptyQCO)},
+        QCOTestCase{"NestedControlledIdentity",
+                    MQT_NAMED_BUILDER(nestedControlledIdentity),
+                    MQT_NAMED_BUILDER(emptyQCO)},
+        QCOTestCase{"TrivialControlledIdentity",
+                    MQT_NAMED_BUILDER(trivialControlledIdentity),
+                    MQT_NAMED_BUILDER(emptyQCO)},
+        QCOTestCase{"InverseIdentity", MQT_NAMED_BUILDER(inverseIdentity),
+                    MQT_NAMED_BUILDER(emptyQCO)},
+        QCOTestCase{"InverseMultipleControlledIdentity",
+                    MQT_NAMED_BUILDER(inverseMultipleControlledIdentity),
+                    MQT_NAMED_BUILDER(emptyQCO)}));
 
 TEST_F(QCOTest, IdOpMatrix) {
   // Get the (static) matrix from the operation

@@ -21,19 +21,25 @@ using namespace mlir::qco;
 
 INSTANTIATE_TEST_SUITE_P(
     QCORYYOpTest, QCOTest,
-    testing::Values(
-        QCOTestCase{"RYY", ryy, ryy},
-        QCOTestCase{"SingleControlledRYY", singleControlledRyy,
-                    singleControlledRyy},
-        QCOTestCase{"MultipleControlledRYY", multipleControlledRyy,
-                    multipleControlledRyy},
-        QCOTestCase{"NestedControlledRYY", nestedControlledRyy,
-                    multipleControlledRyy},
-        QCOTestCase{"TrivialControlledRYY", trivialControlledRyy, ryy},
-        QCOTestCase{"InverseRYY", inverseRyy, ryy},
-        QCOTestCase{"InverseMultipleControlledRYY",
-                    inverseMultipleControlledRyy, multipleControlledRyy}),
-    printTestName);
+    testing::Values(QCOTestCase{"RYY", MQT_NAMED_BUILDER(ryy),
+                                MQT_NAMED_BUILDER(ryy)},
+                    QCOTestCase{"SingleControlledRYY",
+                                MQT_NAMED_BUILDER(singleControlledRyy),
+                                MQT_NAMED_BUILDER(singleControlledRyy)},
+                    QCOTestCase{"MultipleControlledRYY",
+                                MQT_NAMED_BUILDER(multipleControlledRyy),
+                                MQT_NAMED_BUILDER(multipleControlledRyy)},
+                    QCOTestCase{"NestedControlledRYY",
+                                MQT_NAMED_BUILDER(nestedControlledRyy),
+                                MQT_NAMED_BUILDER(multipleControlledRyy)},
+                    QCOTestCase{"TrivialControlledRYY",
+                                MQT_NAMED_BUILDER(trivialControlledRyy),
+                                MQT_NAMED_BUILDER(ryy)},
+                    QCOTestCase{"InverseRYY", MQT_NAMED_BUILDER(inverseRyy),
+                                MQT_NAMED_BUILDER(ryy)},
+                    QCOTestCase{"InverseMultipleControlledRYY",
+                                MQT_NAMED_BUILDER(inverseMultipleControlledRyy),
+                                MQT_NAMED_BUILDER(multipleControlledRyy)}));
 
 TEST_F(QCOTest, RYYOpMatrix) {
   auto moduleOp = QCOProgramBuilder::build(context.get(), ryy);

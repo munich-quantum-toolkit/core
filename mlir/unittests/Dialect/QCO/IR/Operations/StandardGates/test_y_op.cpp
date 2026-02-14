@@ -21,17 +21,21 @@ using namespace mlir::qco;
 INSTANTIATE_TEST_SUITE_P(
     QCOYOpTest, QCOTest,
     testing::Values(
-        QCOTestCase{"Y", y, y},
-        QCOTestCase{"SingleControlledY", singleControlledY, singleControlledY},
-        QCOTestCase{"MultipleControlledY", multipleControlledY,
-                    multipleControlledY},
-        QCOTestCase{"NestedControlledY", nestedControlledY,
-                    multipleControlledY},
-        QCOTestCase{"TrivialControlledY", trivialControlledY, y},
-        QCOTestCase{"InverseY", inverseY, y},
-        QCOTestCase{"InverseMultipleControlledY", inverseMultipleControlledY,
-                    multipleControlledY}),
-    printTestName);
+        QCOTestCase{"Y", MQT_NAMED_BUILDER(y), MQT_NAMED_BUILDER(y)},
+        QCOTestCase{"SingleControlledY", MQT_NAMED_BUILDER(singleControlledY),
+                    MQT_NAMED_BUILDER(singleControlledY)},
+        QCOTestCase{"MultipleControlledY",
+                    MQT_NAMED_BUILDER(multipleControlledY),
+                    MQT_NAMED_BUILDER(multipleControlledY)},
+        QCOTestCase{"NestedControlledY", MQT_NAMED_BUILDER(nestedControlledY),
+                    MQT_NAMED_BUILDER(multipleControlledY)},
+        QCOTestCase{"TrivialControlledY", MQT_NAMED_BUILDER(trivialControlledY),
+                    MQT_NAMED_BUILDER(y)},
+        QCOTestCase{"InverseY", MQT_NAMED_BUILDER(inverseY),
+                    MQT_NAMED_BUILDER(y)},
+        QCOTestCase{"InverseMultipleControlledY",
+                    MQT_NAMED_BUILDER(inverseMultipleControlledY),
+                    MQT_NAMED_BUILDER(multipleControlledY)}));
 
 TEST_F(QCOTest, YOpMatrix) {
   // Get the (static) matrix from the operation

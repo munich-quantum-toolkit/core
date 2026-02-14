@@ -20,18 +20,20 @@ INSTANTIATE_TEST_SUITE_P(
     QCOInvOpTest, QCOToQCTest,
     testing::Values(
         // ECR cannot be inverted with current canonicalization
-        QCOToQCTestCase{"InverseECR", qco::inverseEcr, qc::inverseEcr},
+        QCOToQCTestCase{"InverseECR", MQT_NAMED_BUILDER(qco::inverseEcr),
+                        MQT_NAMED_BUILDER(qc::inverseEcr)},
         QCOToQCTestCase{"InverseMultipleControlledECR",
-                        qco::inverseMultipleControlledEcr,
-                        qc::inverseMultipleControlledEcr},
+                        MQT_NAMED_BUILDER(qco::inverseMultipleControlledEcr),
+                        MQT_NAMED_BUILDER(qc::inverseMultipleControlledEcr)},
         // ECR cannot be inverted with current canonicalization
-        QCOToQCTestCase{"InverseiSWAP", qco::inverseIswap, qc::inverseIswap},
+        QCOToQCTestCase{"InverseiSWAP", MQT_NAMED_BUILDER(qco::inverseIswap),
+                        MQT_NAMED_BUILDER(qc::inverseIswap)},
         QCOToQCTestCase{"InverseMultipleControllediSWAP",
-                        qco::inverseMultipleControlledIswap,
-                        qc::inverseMultipleControlledIswap},
+                        MQT_NAMED_BUILDER(qco::inverseMultipleControlledIswap),
+                        MQT_NAMED_BUILDER(qc::inverseMultipleControlledIswap)},
         // Inverse DCX is not canonicalized in QCO
-        QCOToQCTestCase{"InverseDCX", qco::inverseDcx, qc::dcx},
+        QCOToQCTestCase{"InverseDCX", MQT_NAMED_BUILDER(qco::inverseDcx),
+                        MQT_NAMED_BUILDER(qc::dcx)},
         QCOToQCTestCase{"InverseMultipleControlledDCX",
-                        qco::inverseMultipleControlledDcx,
-                        qc::multipleControlledDcx}),
-    printTestName);
+                        MQT_NAMED_BUILDER(qco::inverseMultipleControlledDcx),
+                        MQT_NAMED_BUILDER(qc::multipleControlledDcx)}));

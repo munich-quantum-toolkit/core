@@ -20,13 +20,15 @@ INSTANTIATE_TEST_SUITE_P(
     QCInvOpTest, QCToQCOTest,
     testing::Values(
         // ECR cannot be inverted with current canonicalization
-        QCToQCOTestCase{"InverseECR", qc::inverseEcr, qco::inverseEcr},
+        QCToQCOTestCase{"InverseECR", MQT_NAMED_BUILDER(qc::inverseEcr),
+                        MQT_NAMED_BUILDER(qco::inverseEcr)},
         QCToQCOTestCase{"InverseMultipleControlledECR",
-                        qc::inverseMultipleControlledEcr,
-                        qco::inverseMultipleControlledEcr},
+                        MQT_NAMED_BUILDER(qc::inverseMultipleControlledEcr),
+                        MQT_NAMED_BUILDER(qco::inverseMultipleControlledEcr)},
         // ECR cannot be inverted with current canonicalization
-        QCToQCOTestCase{"InverseiSWAP", qc::inverseIswap, qco::inverseIswap},
-        QCToQCOTestCase{"InverseMultipleControllediSWAP",
-                        qc::inverseMultipleControlledIswap,
-                        qco::inverseMultipleControlledIswap}),
-    printTestName);
+        QCToQCOTestCase{"InverseiSWAP", MQT_NAMED_BUILDER(qc::inverseIswap),
+                        MQT_NAMED_BUILDER(qco::inverseIswap)},
+        QCToQCOTestCase{
+            "InverseMultipleControllediSWAP",
+            MQT_NAMED_BUILDER(qc::inverseMultipleControlledIswap),
+            MQT_NAMED_BUILDER(qco::inverseMultipleControlledIswap)}));

@@ -21,17 +21,21 @@ using namespace mlir::qco;
 INSTANTIATE_TEST_SUITE_P(
     QCOSOpTest, QCOTest,
     testing::Values(
-        QCOTestCase{"S", s, s},
-        QCOTestCase{"SingleControlledS", singleControlledS, singleControlledS},
-        QCOTestCase{"MultipleControlledS", multipleControlledS,
-                    multipleControlledS},
-        QCOTestCase{"NestedControlledS", nestedControlledS,
-                    multipleControlledS},
-        QCOTestCase{"TrivialControlledS", trivialControlledS, s},
-        QCOTestCase{"InverseS", inverseS, sdg},
-        QCOTestCase{"InverseMultipleControlledS", inverseMultipleControlledS,
-                    multipleControlledSdg}),
-    printTestName);
+        QCOTestCase{"S", MQT_NAMED_BUILDER(s), MQT_NAMED_BUILDER(s)},
+        QCOTestCase{"SingleControlledS", MQT_NAMED_BUILDER(singleControlledS),
+                    MQT_NAMED_BUILDER(singleControlledS)},
+        QCOTestCase{"MultipleControlledS",
+                    MQT_NAMED_BUILDER(multipleControlledS),
+                    MQT_NAMED_BUILDER(multipleControlledS)},
+        QCOTestCase{"NestedControlledS", MQT_NAMED_BUILDER(nestedControlledS),
+                    MQT_NAMED_BUILDER(multipleControlledS)},
+        QCOTestCase{"TrivialControlledS", MQT_NAMED_BUILDER(trivialControlledS),
+                    MQT_NAMED_BUILDER(s)},
+        QCOTestCase{"InverseS", MQT_NAMED_BUILDER(inverseS),
+                    MQT_NAMED_BUILDER(sdg)},
+        QCOTestCase{"InverseMultipleControlledS",
+                    MQT_NAMED_BUILDER(inverseMultipleControlledS),
+                    MQT_NAMED_BUILDER(multipleControlledSdg)}));
 
 TEST_F(QCOTest, SOpMatrix) {
   // Get the (static) matrix from the operation

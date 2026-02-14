@@ -20,11 +20,19 @@ using namespace mlir::qir;
 INSTANTIATE_TEST_SUITE_P(
     QCToQIRQubitManagementTest, QCToQIRTest,
     testing::Values(
-        QCToQIRTestCase{"AllocQubit", qc::allocQubit, emptyQIR},
-        QCToQIRTestCase{"AllocQubitRegister", qc::allocQubitRegister, emptyQIR},
+        QCToQIRTestCase{"AllocQubit", MQT_NAMED_BUILDER(qc::allocQubit),
+                        MQT_NAMED_BUILDER(emptyQIR)},
+        QCToQIRTestCase{"AllocQubitRegister",
+                        MQT_NAMED_BUILDER(qc::allocQubitRegister),
+                        MQT_NAMED_BUILDER(emptyQIR)},
         QCToQIRTestCase{"AllocMultipleQubitRegisters",
-                        qc::allocMultipleQubitRegisters, emptyQIR},
-        QCToQIRTestCase{"AllocLargeRegister", qc::allocLargeRegister, emptyQIR},
-        QCToQIRTestCase{"StaticQubits", qc::staticQubits, emptyQIR},
-        QCToQIRTestCase{"AllocDeallocPair", qc::allocDeallocPair, emptyQIR}),
-    printTestName);
+                        MQT_NAMED_BUILDER(qc::allocMultipleQubitRegisters),
+                        MQT_NAMED_BUILDER(emptyQIR)},
+        QCToQIRTestCase{"AllocLargeRegister",
+                        MQT_NAMED_BUILDER(qc::allocLargeRegister),
+                        MQT_NAMED_BUILDER(emptyQIR)},
+        QCToQIRTestCase{"StaticQubits", MQT_NAMED_BUILDER(qc::staticQubits),
+                        MQT_NAMED_BUILDER(emptyQIR)},
+        QCToQIRTestCase{"AllocDeallocPair",
+                        MQT_NAMED_BUILDER(qc::allocDeallocPair),
+                        MQT_NAMED_BUILDER(emptyQIR)}));

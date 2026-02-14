@@ -18,11 +18,12 @@ using namespace mlir::qc;
 
 INSTANTIATE_TEST_SUITE_P(
     QCDCXOpTest, QCToQCOTest,
-    testing::Values(QCToQCOTestCase{"DCX", qc::dcx, qco::dcx},
-                    QCToQCOTestCase{"SingleControlledDCX",
-                                    qc::singleControlledDcx,
-                                    qco::singleControlledDcx},
-                    QCToQCOTestCase{"MultipleControlledDCX",
-                                    qc::multipleControlledDcx,
-                                    qco::multipleControlledDcx}),
-    printTestName);
+    testing::Values(
+        QCToQCOTestCase{"DCX", MQT_NAMED_BUILDER(qc::dcx),
+                        MQT_NAMED_BUILDER(qco::dcx)},
+        QCToQCOTestCase{"SingleControlledDCX",
+                        MQT_NAMED_BUILDER(qc::singleControlledDcx),
+                        MQT_NAMED_BUILDER(qco::singleControlledDcx)},
+        QCToQCOTestCase{"MultipleControlledDCX",
+                        MQT_NAMED_BUILDER(qc::multipleControlledDcx),
+                        MQT_NAMED_BUILDER(qco::multipleControlledDcx)}));

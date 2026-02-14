@@ -20,20 +20,26 @@ using namespace mlir::qco;
 
 INSTANTIATE_TEST_SUITE_P(
     QCOiSWAPOpTest, QCOTest,
-    testing::Values(
-        QCOTestCase{"iSWAP", iswap, iswap},
-        QCOTestCase{"SingleControllediSWAP", singleControlledIswap,
-                    singleControlledIswap},
-        QCOTestCase{"MultipleControllediSWAP", multipleControlledIswap,
-                    multipleControlledIswap},
-        QCOTestCase{"NestedControllediSWAP", nestedControlledIswap,
-                    multipleControlledIswap},
-        QCOTestCase{"TrivialControllediSWAP", trivialControlledIswap, iswap},
-        QCOTestCase{"InverseiSWAP", inverseIswap, inverseIswap},
-        QCOTestCase{"InverseMultipleControllediSWAP",
-                    inverseMultipleControlledIswap,
-                    inverseMultipleControlledIswap}),
-    printTestName);
+    testing::Values(QCOTestCase{"iSWAP", MQT_NAMED_BUILDER(iswap),
+                                MQT_NAMED_BUILDER(iswap)},
+                    QCOTestCase{"SingleControllediSWAP",
+                                MQT_NAMED_BUILDER(singleControlledIswap),
+                                MQT_NAMED_BUILDER(singleControlledIswap)},
+                    QCOTestCase{"MultipleControllediSWAP",
+                                MQT_NAMED_BUILDER(multipleControlledIswap),
+                                MQT_NAMED_BUILDER(multipleControlledIswap)},
+                    QCOTestCase{"NestedControllediSWAP",
+                                MQT_NAMED_BUILDER(nestedControlledIswap),
+                                MQT_NAMED_BUILDER(multipleControlledIswap)},
+                    QCOTestCase{"TrivialControllediSWAP",
+                                MQT_NAMED_BUILDER(trivialControlledIswap),
+                                MQT_NAMED_BUILDER(iswap)},
+                    QCOTestCase{"InverseiSWAP", MQT_NAMED_BUILDER(inverseIswap),
+                                MQT_NAMED_BUILDER(inverseIswap)},
+                    QCOTestCase{
+                        "InverseMultipleControllediSWAP",
+                        MQT_NAMED_BUILDER(inverseMultipleControlledIswap),
+                        MQT_NAMED_BUILDER(inverseMultipleControlledIswap)}));
 
 TEST_F(QCOTest, iSWAPOpMatrix) {
   // Get the (static) matrix from the operation

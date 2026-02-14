@@ -22,17 +22,21 @@ using namespace mlir::qco;
 INSTANTIATE_TEST_SUITE_P(
     QCOUOpTest, QCOTest,
     testing::Values(
-        QCOTestCase{"U", u, u},
-        QCOTestCase{"SingleControlledU", singleControlledU, singleControlledU},
-        QCOTestCase{"MultipleControlledU", multipleControlledU,
-                    multipleControlledU},
-        QCOTestCase{"NestedControlledU", nestedControlledU,
-                    multipleControlledU},
-        QCOTestCase{"TrivialControlledU", trivialControlledU, u},
-        QCOTestCase{"InverseU", inverseU, u},
-        QCOTestCase{"InverseMultipleControlledU", inverseMultipleControlledU,
-                    multipleControlledU}),
-    printTestName);
+        QCOTestCase{"U", MQT_NAMED_BUILDER(u), MQT_NAMED_BUILDER(u)},
+        QCOTestCase{"SingleControlledU", MQT_NAMED_BUILDER(singleControlledU),
+                    MQT_NAMED_BUILDER(singleControlledU)},
+        QCOTestCase{"MultipleControlledU",
+                    MQT_NAMED_BUILDER(multipleControlledU),
+                    MQT_NAMED_BUILDER(multipleControlledU)},
+        QCOTestCase{"NestedControlledU", MQT_NAMED_BUILDER(nestedControlledU),
+                    MQT_NAMED_BUILDER(multipleControlledU)},
+        QCOTestCase{"TrivialControlledU", MQT_NAMED_BUILDER(trivialControlledU),
+                    MQT_NAMED_BUILDER(u)},
+        QCOTestCase{"InverseU", MQT_NAMED_BUILDER(inverseU),
+                    MQT_NAMED_BUILDER(u)},
+        QCOTestCase{"InverseMultipleControlledU",
+                    MQT_NAMED_BUILDER(inverseMultipleControlledU),
+                    MQT_NAMED_BUILDER(multipleControlledU)}));
 
 TEST_F(QCOTest, UOpMatrix) {
   auto moduleOp = QCOProgramBuilder::build(context.get(), u);

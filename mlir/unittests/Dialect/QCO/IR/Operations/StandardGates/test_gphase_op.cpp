@@ -18,13 +18,16 @@ using namespace mlir::qco;
 INSTANTIATE_TEST_SUITE_P(
     QCOGPhaseOpTest, QCOTest,
     testing::Values(
-        QCOTestCase{"GlobalPhase", globalPhase, globalPhase},
-        QCOTestCase{"SingleControlledGlobalPhase", singleControlledGlobalPhase,
-                    p},
+        QCOTestCase{"GlobalPhase", MQT_NAMED_BUILDER(globalPhase),
+                    MQT_NAMED_BUILDER(globalPhase)},
+        QCOTestCase{"SingleControlledGlobalPhase",
+                    MQT_NAMED_BUILDER(singleControlledGlobalPhase),
+                    MQT_NAMED_BUILDER(p)},
         QCOTestCase{"MultipleControlledGlobalPhase",
-                    multipleControlledGlobalPhase, multipleControlledP},
-        QCOTestCase{"InverseGlobalPhase", inverseGlobalPhase, globalPhase},
+                    MQT_NAMED_BUILDER(multipleControlledGlobalPhase),
+                    MQT_NAMED_BUILDER(multipleControlledP)},
+        QCOTestCase{"InverseGlobalPhase", MQT_NAMED_BUILDER(inverseGlobalPhase),
+                    MQT_NAMED_BUILDER(globalPhase)},
         QCOTestCase{"InverseMultipleControlledGlobalPhase",
-                    inverseMultipleControlledGlobalPhase,
-                    multipleControlledGlobalPhase}),
-    printTestName);
+                    MQT_NAMED_BUILDER(inverseMultipleControlledGlobalPhase),
+                    MQT_NAMED_BUILDER(multipleControlledGlobalPhase)}));
