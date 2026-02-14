@@ -240,6 +240,12 @@ void inverseMultipleControlledX(QCOProgramBuilder& b) {
   });
 }
 
+void twoX(QCOProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  q[0] = b.x(q[0]);
+  q[0] = b.x(q[0]);
+}
+
 void y(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   b.y(q[0]);
@@ -287,6 +293,12 @@ void inverseMultipleControlledY(QCOProgramBuilder& b) {
     return llvm::to_vector(
         llvm::concat<mlir::Value>(controlsOut, mlir::ValueRange{targetOut}));
   });
+}
+
+void twoY(QCOProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  q[0] = b.y(q[0]);
+  q[0] = b.y(q[0]);
 }
 
 void z(QCOProgramBuilder& b) {
@@ -338,6 +350,12 @@ void inverseMultipleControlledZ(QCOProgramBuilder& b) {
   });
 }
 
+void twoZ(QCOProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  q[0] = b.z(q[0]);
+  q[0] = b.z(q[0]);
+}
+
 void h(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   b.h(q[0]);
@@ -385,6 +403,12 @@ void inverseMultipleControlledH(QCOProgramBuilder& b) {
     return llvm::to_vector(
         llvm::concat<mlir::Value>(controlsOut, mlir::ValueRange{targetOut}));
   });
+}
+
+void twoH(QCOProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  q[0] = b.h(q[0]);
+  q[0] = b.h(q[0]);
 }
 
 void s(QCOProgramBuilder& b) {
@@ -436,6 +460,18 @@ void inverseMultipleControlledS(QCOProgramBuilder& b) {
   });
 }
 
+void sThenSdg(QCOProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  q[0] = b.s(q[0]);
+  q[0] = b.sdg(q[0]);
+}
+
+void twoS(QCOProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  q[0] = b.s(q[0]);
+  q[0] = b.s(q[0]);
+}
+
 void sdg(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   b.sdg(q[0]);
@@ -483,6 +519,18 @@ void inverseMultipleControlledSdg(QCOProgramBuilder& b) {
     return llvm::to_vector(
         llvm::concat<mlir::Value>(controlsOut, mlir::ValueRange{targetOut}));
   });
+}
+
+void sdgThenS(QCOProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  q[0] = b.sdg(q[0]);
+  q[0] = b.s(q[0]);
+}
+
+void twoSdg(QCOProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  q[0] = b.sdg(q[0]);
+  q[0] = b.sdg(q[0]);
 }
 
 void t_(QCOProgramBuilder& b) {
@@ -534,6 +582,18 @@ void inverseMultipleControlledT(QCOProgramBuilder& b) {
   });
 }
 
+void tThenTdg(QCOProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  q[0] = b.t(q[0]);
+  q[0] = b.tdg(q[0]);
+}
+
+void twoT(QCOProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  q[0] = b.t(q[0]);
+  q[0] = b.t(q[0]);
+}
+
 void tdg(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   b.tdg(q[0]);
@@ -581,6 +641,18 @@ void inverseMultipleControlledTdg(QCOProgramBuilder& b) {
     return llvm::to_vector(
         llvm::concat<mlir::Value>(controlsOut, mlir::ValueRange{targetOut}));
   });
+}
+
+void tdgThenT(QCOProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  q[0] = b.tdg(q[0]);
+  q[0] = b.t(q[0]);
+}
+
+void twoTdg(QCOProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  q[0] = b.tdg(q[0]);
+  q[0] = b.tdg(q[0]);
 }
 
 void sx(QCOProgramBuilder& b) {
@@ -632,6 +704,18 @@ void inverseMultipleControlledSx(QCOProgramBuilder& b) {
   });
 }
 
+void sxThenSxdg(QCOProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  q[0] = b.sx(q[0]);
+  q[0] = b.sxdg(q[0]);
+}
+
+void twoSx(QCOProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  q[0] = b.sx(q[0]);
+  q[0] = b.sx(q[0]);
+}
+
 void sxdg(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   b.sxdg(q[0]);
@@ -679,6 +763,18 @@ void inverseMultipleControlledSxdg(QCOProgramBuilder& b) {
     return llvm::to_vector(
         llvm::concat<mlir::Value>(controlsOut, mlir::ValueRange{targetOut}));
   });
+}
+
+void sxdgThenSx(QCOProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  q[0] = b.sxdg(q[0]);
+  q[0] = b.sx(q[0]);
+}
+
+void twoSxdg(QCOProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  q[0] = b.sxdg(q[0]);
+  q[0] = b.sxdg(q[0]);
 }
 
 void rx(QCOProgramBuilder& b) {
@@ -730,6 +826,12 @@ void inverseMultipleControlledRx(QCOProgramBuilder& b) {
   });
 }
 
+void twoRxOppositePhase(QCOProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  q[0] = b.rx(0.123, q[0]);
+  q[0] = b.rx(-0.123, q[0]);
+}
+
 void ry(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   b.ry(0.456, q[0]);
@@ -777,6 +879,11 @@ void inverseMultipleControlledRy(QCOProgramBuilder& b) {
     return llvm::to_vector(
         llvm::concat<mlir::Value>(controlsOut, mlir::ValueRange{targetOut}));
   });
+}
+void twoRyOppositePhase(QCOProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  q[0] = b.ry(0.456, q[0]);
+  q[0] = b.ry(-0.456, q[0]);
 }
 
 void rz(QCOProgramBuilder& b) {
@@ -828,6 +935,12 @@ void inverseMultipleControlledRz(QCOProgramBuilder& b) {
   });
 }
 
+void twoRzOppositePhase(QCOProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  q[0] = b.rz(0.789, q[0]);
+  q[0] = b.rz(-0.789, q[0]);
+}
+
 void p(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   b.p(0.123, q[0]);
@@ -875,6 +988,12 @@ void inverseMultipleControlledP(QCOProgramBuilder& b) {
     return llvm::to_vector(
         llvm::concat<mlir::Value>(controlsOut, mlir::ValueRange{targetOut}));
   });
+}
+
+void twoPOppositePhase(QCOProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  q[0] = b.p(0.123, q[0]);
+  q[0] = b.p(-0.123, q[0]);
 }
 
 void r(QCOProgramBuilder& b) {
@@ -1083,6 +1202,12 @@ void inverseMultipleControlledSwap(QCOProgramBuilder& b) {
   });
 }
 
+void twoSwap(QCOProgramBuilder& b) {
+  auto q = b.allocQubitRegister(2);
+  std::tie(q[0], q[1]) = b.swap(q[0], q[1]);
+  std::tie(q[0], q[1]) = b.swap(q[0], q[1]);
+}
+
 void iswap(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   b.iswap(q[0], q[1]);
@@ -1242,6 +1367,12 @@ void inverseMultipleControlledEcr(QCOProgramBuilder& b) {
   });
 }
 
+void twoEcr(QCOProgramBuilder& b) {
+  auto q = b.allocQubitRegister(2);
+  std::tie(q[0], q[1]) = b.ecr(q[0], q[1]);
+  std::tie(q[0], q[1]) = b.ecr(q[0], q[1]);
+}
+
 void rxx(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   b.rxx(0.123, q[0], q[1]);
@@ -1305,6 +1436,12 @@ void fourControlledRxx(QCOProgramBuilder& b) {
   b.mcrxx(0.123, {q[0], q[1], q[2], q[3]}, q[4], q[5]);
 }
 
+void twoRxxOppositePhase(QCOProgramBuilder& b) {
+  auto q = b.allocQubitRegister(2);
+  std::tie(q[0], q[1]) = b.rxx(0.123, q[0], q[1]);
+  std::tie(q[0], q[1]) = b.rxx(-0.123, q[0], q[1]);
+}
+
 void ryy(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   b.ryy(0.123, q[0], q[1]);
@@ -1356,6 +1493,12 @@ void inverseMultipleControlledRyy(QCOProgramBuilder& b) {
                                               targetsOut.second};
     return llvm::to_vector(llvm::concat<mlir::Value>(controlsOut, targets));
   });
+}
+
+void twoRyyOppositePhase(QCOProgramBuilder& b) {
+  auto q = b.allocQubitRegister(2);
+  std::tie(q[0], q[1]) = b.ryy(0.123, q[0], q[1]);
+  std::tie(q[0], q[1]) = b.ryy(-0.123, q[0], q[1]);
 }
 
 void rzx(QCOProgramBuilder& b) {
@@ -1411,6 +1554,12 @@ void inverseMultipleControlledRzx(QCOProgramBuilder& b) {
   });
 }
 
+void twoRzxOppositePhase(QCOProgramBuilder& b) {
+  auto q = b.allocQubitRegister(2);
+  std::tie(q[0], q[1]) = b.rzx(0.123, q[0], q[1]);
+  std::tie(q[0], q[1]) = b.rzx(-0.123, q[0], q[1]);
+}
+
 void rzz(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   b.rzz(0.123, q[0], q[1]);
@@ -1462,6 +1611,12 @@ void inverseMultipleControlledRzz(QCOProgramBuilder& b) {
                                               targetsOut.second};
     return llvm::to_vector(llvm::concat<mlir::Value>(controlsOut, targets));
   });
+}
+
+void twoRzzOppositePhase(QCOProgramBuilder& b) {
+  auto q = b.allocQubitRegister(2);
+  std::tie(q[0], q[1]) = b.rzz(0.123, q[0], q[1]);
+  std::tie(q[0], q[1]) = b.rzz(-0.123, q[0], q[1]);
 }
 
 void xxPlusYY(QCOProgramBuilder& b) {

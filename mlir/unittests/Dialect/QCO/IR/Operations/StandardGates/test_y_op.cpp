@@ -35,7 +35,9 @@ INSTANTIATE_TEST_SUITE_P(
                     MQT_NAMED_BUILDER(y)},
         QCOTestCase{"InverseMultipleControlledY",
                     MQT_NAMED_BUILDER(inverseMultipleControlledY),
-                    MQT_NAMED_BUILDER(multipleControlledY)}));
+                    MQT_NAMED_BUILDER(multipleControlledY)},
+        QCOTestCase{"TwoY", MQT_NAMED_BUILDER(twoY),
+                    MQT_NAMED_BUILDER(emptyQCO)}));
 
 TEST_F(QCOTest, YOpMatrix) {
   // Get the (static) matrix from the operation

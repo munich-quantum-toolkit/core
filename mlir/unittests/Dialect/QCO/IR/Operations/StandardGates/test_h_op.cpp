@@ -35,7 +35,9 @@ INSTANTIATE_TEST_SUITE_P(
                     MQT_NAMED_BUILDER(h)},
         QCOTestCase{"InverseMultipleControlledH",
                     MQT_NAMED_BUILDER(inverseMultipleControlledH),
-                    MQT_NAMED_BUILDER(multipleControlledH)}));
+                    MQT_NAMED_BUILDER(multipleControlledH)},
+        QCOTestCase{"TwoH", MQT_NAMED_BUILDER(twoH),
+                    MQT_NAMED_BUILDER(emptyQCO)}));
 
 TEST_F(QCOTest, HOpMatrix) {
   // Get the (static) matrix from the operation

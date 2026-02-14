@@ -35,7 +35,9 @@ INSTANTIATE_TEST_SUITE_P(
                     MQT_NAMED_BUILDER(x)},
         QCOTestCase{"InverseMultipleControlledX",
                     MQT_NAMED_BUILDER(inverseMultipleControlledX),
-                    MQT_NAMED_BUILDER(multipleControlledX)}));
+                    MQT_NAMED_BUILDER(multipleControlledX)},
+        QCOTestCase{"TwoX", MQT_NAMED_BUILDER(twoX),
+                    MQT_NAMED_BUILDER(emptyQCO)}));
 
 TEST_F(QCOTest, XOpMatrix) {
   // Get the (static) matrix from the operation

@@ -39,7 +39,10 @@ INSTANTIATE_TEST_SUITE_P(
                                 MQT_NAMED_BUILDER(rzz)},
                     QCOTestCase{"InverseMultipleControlledRZZ",
                                 MQT_NAMED_BUILDER(inverseMultipleControlledRzz),
-                                MQT_NAMED_BUILDER(multipleControlledRzz)}));
+                                MQT_NAMED_BUILDER(multipleControlledRzz)},
+                    QCOTestCase{"TwoRZZOppositePhase",
+                                MQT_NAMED_BUILDER(twoRzzOppositePhase),
+                                MQT_NAMED_BUILDER(emptyQCO)}));
 
 TEST_F(QCOTest, RZZOpMatrix) {
   auto moduleOp = QCOProgramBuilder::build(context.get(), rzz);

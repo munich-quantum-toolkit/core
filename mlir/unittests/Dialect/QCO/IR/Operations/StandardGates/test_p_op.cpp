@@ -36,7 +36,9 @@ INSTANTIATE_TEST_SUITE_P(
                     MQT_NAMED_BUILDER(p)},
         QCOTestCase{"InverseMultipleControlledP",
                     MQT_NAMED_BUILDER(inverseMultipleControlledP),
-                    MQT_NAMED_BUILDER(multipleControlledP)}));
+                    MQT_NAMED_BUILDER(multipleControlledP)},
+        QCOTestCase{"TwoPOppositePhase", MQT_NAMED_BUILDER(twoPOppositePhase),
+                    MQT_NAMED_BUILDER(emptyQCO)}));
 
 TEST_F(QCOTest, POpMatrix) {
   auto moduleOp = QCOProgramBuilder::build(context.get(), p);

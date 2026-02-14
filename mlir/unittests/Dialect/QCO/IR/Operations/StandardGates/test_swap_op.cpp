@@ -38,7 +38,9 @@ INSTANTIATE_TEST_SUITE_P(
                     MQT_NAMED_BUILDER(swap)},
         QCOTestCase{"InverseMultipleControlledSWAP",
                     MQT_NAMED_BUILDER(inverseMultipleControlledSwap),
-                    MQT_NAMED_BUILDER(multipleControlledSwap)}));
+                    MQT_NAMED_BUILDER(multipleControlledSwap)},
+        QCOTestCase{"TwoSWAP", MQT_NAMED_BUILDER(twoSwap),
+                    MQT_NAMED_BUILDER(emptyQCO)}));
 
 TEST_F(QCOTest, SWAPOpMatrix) {
   // Get the (static) matrix from the operation

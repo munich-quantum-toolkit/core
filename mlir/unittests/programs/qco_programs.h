@@ -135,6 +135,9 @@ void inverseX(QCOProgramBuilder& b);
 /// Creates a circuit with an inverse modifier applied to a controlled X gate.
 void inverseMultipleControlledX(QCOProgramBuilder& b);
 
+/// Creates a circuit with two X gates in a row.
+void twoX(QCOProgramBuilder& b);
+
 // --- YOp ------------------------------------------------------------------ //
 
 /// Creates a circuit with just a Y gate.
@@ -157,6 +160,9 @@ void inverseY(QCOProgramBuilder& b);
 
 /// Creates a circuit with an inverse modifier applied to a controlled Y gate.
 void inverseMultipleControlledY(QCOProgramBuilder& b);
+
+/// Creates a circuit with two Y gates in a row.
+void twoY(QCOProgramBuilder& b);
 
 // --- ZOp ------------------------------------------------------------------ //
 
@@ -181,6 +187,9 @@ void inverseZ(QCOProgramBuilder& b);
 /// Creates a circuit with an inverse modifier applied to a controlled Z gate.
 void inverseMultipleControlledZ(QCOProgramBuilder& b);
 
+/// Creates a circuit with two Z gates in a row.
+void twoZ(QCOProgramBuilder& b);
+
 // --- HOp ------------------------------------------------------------------ //
 
 /// Creates a circuit with just an H gate.
@@ -203,6 +212,9 @@ void inverseH(QCOProgramBuilder& b);
 
 /// Creates a circuit with an inverse modifier applied to a controlled H gate.
 void inverseMultipleControlledH(QCOProgramBuilder& b);
+
+/// Creates a circuit with two H gates in a row.
+void twoH(QCOProgramBuilder& b);
 
 // --- SOp ------------------------------------------------------------------ //
 
@@ -227,6 +239,12 @@ void inverseS(QCOProgramBuilder& b);
 /// Creates a circuit with an inverse modifier applied to a controlled S gate.
 void inverseMultipleControlledS(QCOProgramBuilder& b);
 
+/// Creates a circuit with an S gate followed by an Sdg gate.
+void sThenSdg(QCOProgramBuilder& b);
+
+/// Creates a circuit with two S gates in a row.
+void twoS(QCOProgramBuilder& b);
+
 // --- SdgOp ---------------------------------------------------------------- //
 
 /// Creates a circuit with just an Sdg gate.
@@ -249,6 +267,12 @@ void inverseSdg(QCOProgramBuilder& b);
 
 /// Creates a circuit with an inverse modifier applied to a controlled Sdg gate.
 void inverseMultipleControlledSdg(QCOProgramBuilder& b);
+
+/// Creates a circuit with an Sdg gate followed an S gate.
+void sdgThenS(QCOProgramBuilder& b);
+
+/// Creates a circuit with two Sdg gates in a row.
+void twoSdg(QCOProgramBuilder& b);
 
 // --- TOp ------------------------------------------------------------------ //
 
@@ -273,6 +297,12 @@ void inverseT(QCOProgramBuilder& b);
 /// Creates a circuit with an inverse modifier applied to a controlled T gate.
 void inverseMultipleControlledT(QCOProgramBuilder& b);
 
+/// Creates a circuit with a T gate followed by a Tdg gate.
+void tThenTdg(QCOProgramBuilder& b);
+
+/// Creates a circuit with two T gates in a row.
+void twoT(QCOProgramBuilder& b);
+
 // --- TdgOp ---------------------------------------------------------------- //
 
 /// Creates a circuit with just a Tdg gate.
@@ -296,6 +326,12 @@ void inverseTdg(QCOProgramBuilder& b);
 /// Creates a circuit with an inverse modifier applied to a controlled Tdg gate.
 void inverseMultipleControlledTdg(QCOProgramBuilder& b);
 
+/// Creates a circuit with a Tdg gate followed by a T gate.
+void tdgThenT(QCOProgramBuilder& b);
+
+/// Creates a circuit with two Tdg gates in a row.
+void twoTdg(QCOProgramBuilder& b);
+
 // --- SXOp ----------------------------------------------------------------- //
 
 /// Creates a circuit with just an SX gate.
@@ -318,6 +354,12 @@ void inverseSx(QCOProgramBuilder& b);
 
 /// Creates a circuit with an inverse modifier applied to a controlled SX gate.
 void inverseMultipleControlledSx(QCOProgramBuilder& b);
+
+/// Creates a circuit with an SX gate followed by an SXdg gate.
+void sxThenSxdg(QCOProgramBuilder& b);
+
+/// Creates a circuit with two SX gates in a row.
+void twoSx(QCOProgramBuilder& b);
 
 // --- SXdgOp --------------------------------------------------------------- //
 
@@ -343,6 +385,12 @@ void inverseSxdg(QCOProgramBuilder& b);
 /// gate.
 void inverseMultipleControlledSxdg(QCOProgramBuilder& b);
 
+/// Creates a circuit with an SXdg gate followed by an SX gate.
+void sxdgThenSx(QCOProgramBuilder& b);
+
+/// Creates a circuit with two SXdg gates in a row.
+void twoSxdg(QCOProgramBuilder& b);
+
 // --- RXOp ----------------------------------------------------------------- //
 
 /// Creates a circuit with just an RX gate.
@@ -365,6 +413,9 @@ void inverseRx(QCOProgramBuilder& b);
 
 /// Creates a circuit with an inverse modifier applied to a controlled RX gate.
 void inverseMultipleControlledRx(QCOProgramBuilder& b);
+
+/// Creates a circuit with two RX gates in a row with opposite phases.
+void twoRxOppositePhase(QCOProgramBuilder& b);
 
 // --- RYOp ----------------------------------------------------------------- //
 
@@ -389,6 +440,9 @@ void inverseRy(QCOProgramBuilder& b);
 /// Creates a circuit with an inverse modifier applied to a controlled RY gate.
 void inverseMultipleControlledRy(QCOProgramBuilder& b);
 
+/// Creates a circuit with two RY gates in a row with opposite phases.
+void twoRyOppositePhase(QCOProgramBuilder& b);
+
 // --- RZOp ----------------------------------------------------------------- //
 
 /// Creates a circuit with just an RZ gate.
@@ -412,6 +466,9 @@ void inverseRz(QCOProgramBuilder& b);
 /// Creates a circuit with an inverse modifier applied to a controlled RZ gate.
 void inverseMultipleControlledRz(QCOProgramBuilder& b);
 
+/// Creates a circuit with two RZ gates in a row with opposite phases.
+void twoRzOppositePhase(QCOProgramBuilder& b);
+
 // --- POp ------------------------------------------------------------------ //
 
 /// Creates a circuit with just a P gate.
@@ -434,6 +491,9 @@ void inverseP(QCOProgramBuilder& b);
 
 /// Creates a circuit with an inverse modifier applied to a controlled P gate.
 void inverseMultipleControlledP(QCOProgramBuilder& b);
+
+/// Creates a circuit with two P gates in a row with opposite phases.
+void twoPOppositePhase(QCOProgramBuilder& b);
 
 // --- ROp ------------------------------------------------------------------ //
 
@@ -528,6 +588,9 @@ void inverseSwap(QCOProgramBuilder& b);
 /// gate.
 void inverseMultipleControlledSwap(QCOProgramBuilder& b);
 
+/// Creates a circuit with two SWAP gates in a row.
+void twoSwap(QCOProgramBuilder& b);
+
 // --- iSWAPOp -------------------------------------------------------------- //
 
 /// Creates a circuit with just an iSWAP gate.
@@ -598,6 +661,9 @@ void inverseEcr(QCOProgramBuilder& b);
 /// Creates a circuit with an inverse modifier applied to a controlled ECR gate.
 void inverseMultipleControlledEcr(QCOProgramBuilder& b);
 
+/// Creates a circuit with two ECR gates in a row.
+void twoEcr(QCOProgramBuilder& b);
+
 // --- RXXOp ---------------------------------------------------------------- //
 
 /// Creates a circuit with just an RXX gate.
@@ -627,6 +693,9 @@ void tripleControlledRxx(QCOProgramBuilder& b);
 /// Creates a circuit with a four-controlled RXX gate.
 void fourControlledRxx(QCOProgramBuilder& b);
 
+/// Creates a circuit with two RXX gates in a row with opposite phases.
+void twoRxxOppositePhase(QCOProgramBuilder& b);
+
 // --- RYYOp ---------------------------------------------------------------- //
 
 /// Creates a circuit with just an RYY gate.
@@ -649,6 +718,9 @@ void inverseRyy(QCOProgramBuilder& b);
 
 /// Creates a circuit with an inverse modifier applied to a controlled RYY gate.
 void inverseMultipleControlledRyy(QCOProgramBuilder& b);
+
+/// Creates a circuit with two RYY gates in a row with opposite phases.
+void twoRyyOppositePhase(QCOProgramBuilder& b);
 
 // --- RZXOp ---------------------------------------------------------------- //
 
@@ -673,6 +745,9 @@ void inverseRzx(QCOProgramBuilder& b);
 /// Creates a circuit with an inverse modifier applied to a controlled RZX gate.
 void inverseMultipleControlledRzx(QCOProgramBuilder& b);
 
+/// Creates a circuit with two RZX gates in a row with opposite phases.
+void twoRzxOppositePhase(QCOProgramBuilder& b);
+
 // --- RZZOp ---------------------------------------------------------------- //
 
 /// Creates a circuit with just an RZZ gate.
@@ -695,6 +770,9 @@ void inverseRzz(QCOProgramBuilder& b);
 
 /// Creates a circuit with an inverse modifier applied to a controlled RZZ gate.
 void inverseMultipleControlledRzz(QCOProgramBuilder& b);
+
+/// Creates a circuit with two RZZ gates in a row with opposite phases.
+void twoRzzOppositePhase(QCOProgramBuilder& b);
 
 // --- XXPlusYYOp ----------------------------------------------------------- //
 
