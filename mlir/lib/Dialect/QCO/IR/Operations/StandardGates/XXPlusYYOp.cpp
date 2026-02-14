@@ -9,6 +9,7 @@
  */
 
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
+#include "mlir/Dialect/QCO/QCOUtils.h"
 #include "mlir/Dialect/Utils/Utils.h"
 
 #include <Eigen/Core>
@@ -73,6 +74,18 @@ struct MergeSubsequentXXPlusYY final : OpRewritePattern<XXPlusYYOp> {
   }
 };
 
+/**
+ * @brief Remove trivial XXPlusYY operations.
+ */
+struct RemoveTrivialXXPlusYY final : OpRewritePattern<XXPlusYYOp> {
+  using OpRewritePattern::OpRewritePattern;
+
+  LogicalResult matchAndRewrite(XXPlusYYOp op,
+                                PatternRewriter& rewriter) const override {
+    return removeTrivialTwoTargetOneParameter(op, rewriter);
+  }
+};
+
 } // namespace
 
 void XXPlusYYOp::build(OpBuilder& odsBuilder, OperationState& odsState,
@@ -87,7 +100,7 @@ void XXPlusYYOp::build(OpBuilder& odsBuilder, OperationState& odsState,
 
 void XXPlusYYOp::getCanonicalizationPatterns(RewritePatternSet& results,
                                              MLIRContext* context) {
-  results.add<MergeSubsequentXXPlusYY>(context);
+  results.add<MergeSubsequentXXPlusYY, RemoveTrivialXXPlusYY>(context);
 }
 
 std::optional<Eigen::Matrix4cd> XXPlusYYOp::getUnitaryMatrix() {
