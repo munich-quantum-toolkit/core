@@ -286,12 +286,6 @@ UnitaryOpInterface InvOp::getBodyUnitary() {
   return llvm::cast<UnitaryOpInterface>(*(++getBody()->rbegin()));
 }
 
-size_t InvOp::getNumQubits() { return getNumTargets(); }
-
-size_t InvOp::getNumTargets() { return getQubitsIn().size(); }
-
-size_t InvOp::getNumControls() { return 0; }
-
 Value InvOp::getInputQubit(const size_t i) {
   if (i >= getNumTargets()) {
     llvm::reportFatalUsageError("Qubit index out of bounds");
@@ -299,27 +293,11 @@ Value InvOp::getInputQubit(const size_t i) {
   return getQubitsIn()[i];
 }
 
-OperandRange InvOp::getInputQubits() { return this->getOperands(); }
-
 Value InvOp::getOutputQubit(const size_t i) {
   if (i >= getNumTargets()) {
     llvm::reportFatalUsageError("Qubit index out of bounds");
   }
   return getQubitsOut()[i];
-}
-
-ResultRange InvOp::getOutputQubits() { return this->getResults(); }
-
-Value InvOp::getInputTarget(const size_t i) { return getInputQubit(i); }
-
-Value InvOp::getOutputTarget(const size_t i) { return getOutputQubit(i); }
-
-Value InvOp::getInputControl([[maybe_unused]] const size_t i) {
-  llvm::reportFatalUsageError("Operation does not have controls");
-}
-
-Value InvOp::getOutputControl([[maybe_unused]] const size_t i) {
-  llvm::reportFatalUsageError("Operation does not have controls");
 }
 
 Value InvOp::getInputForOutput(Value output) {
@@ -338,12 +316,6 @@ Value InvOp::getOutputForInput(Value input) {
     }
   }
   llvm::reportFatalUsageError("Given qubit is not an input of the operation");
-}
-
-size_t InvOp::getNumParams() { return getBodyUnitary().getNumParams(); }
-
-Value InvOp::getParameter(const size_t i) {
-  return getBodyUnitary().getParameter(i);
 }
 
 void InvOp::build(

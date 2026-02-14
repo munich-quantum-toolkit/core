@@ -264,26 +264,6 @@ UnitaryOpInterface InvOp::getBodyUnitary() {
   return llvm::cast<UnitaryOpInterface>(*(++getBody()->rbegin()));
 }
 
-size_t InvOp::getNumQubits() { return getBodyUnitary().getNumQubits(); }
-
-size_t InvOp::getNumTargets() { return getNumQubits(); }
-
-size_t InvOp::getNumControls() { return 0; }
-
-Value InvOp::getQubit(const size_t i) { return getBodyUnitary().getQubit(i); }
-
-Value InvOp::getTarget(const size_t i) { return getQubit(i); }
-
-Value InvOp::getControl([[maybe_unused]] const size_t i) {
-  llvm::reportFatalUsageError("Operation does not have controls");
-}
-
-size_t InvOp::getNumParams() { return getBodyUnitary().getNumParams(); }
-
-Value InvOp::getParameter(const size_t i) {
-  return getBodyUnitary().getParameter(i);
-}
-
 void InvOp::build(OpBuilder& odsBuilder, OperationState& odsState,
                   const llvm::function_ref<void()>& bodyBuilder) {
   const OpBuilder::InsertionGuard guard(odsBuilder);

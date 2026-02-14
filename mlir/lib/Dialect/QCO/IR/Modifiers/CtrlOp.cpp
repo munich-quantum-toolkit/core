@@ -155,12 +155,6 @@ UnitaryOpInterface CtrlOp::getBodyUnitary() {
   return llvm::cast<UnitaryOpInterface>(*(++getBody()->rbegin()));
 }
 
-size_t CtrlOp::getNumQubits() { return getNumTargets() + getNumControls(); }
-
-size_t CtrlOp::getNumTargets() { return getTargetsIn().size(); }
-
-size_t CtrlOp::getNumControls() { return getControlsIn().size(); }
-
 Value CtrlOp::getInputQubit(const size_t i) {
   const auto numControls = getNumControls();
   if (i < numControls) {
@@ -172,8 +166,6 @@ Value CtrlOp::getInputQubit(const size_t i) {
   llvm::reportFatalUsageError("Invalid qubit index");
 }
 
-OperandRange CtrlOp::getInputQubits() { return this->getOperands(); }
-
 Value CtrlOp::getOutputQubit(const size_t i) {
   const auto numControls = getNumControls();
   if (i < numControls) {
@@ -184,8 +176,6 @@ Value CtrlOp::getOutputQubit(const size_t i) {
   }
   llvm::reportFatalUsageError("Invalid qubit index");
 }
-
-ResultRange CtrlOp::getOutputQubits() { return this->getResults(); }
 
 Value CtrlOp::getInputTarget(const size_t i) {
   if (i >= getNumTargets()) {
@@ -241,12 +231,6 @@ Value CtrlOp::getOutputForInput(Value input) {
     }
   }
   llvm::reportFatalUsageError("Given qubit is not an input of the operation");
-}
-
-size_t CtrlOp::getNumParams() { return getBodyUnitary().getNumParams(); }
-
-Value CtrlOp::getParameter(const size_t i) {
-  return getBodyUnitary().getParameter(i);
 }
 
 void CtrlOp::build(
