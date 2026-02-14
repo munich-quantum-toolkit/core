@@ -11,7 +11,10 @@
 #include "qco_programs.h"
 #include "test_qco_ir.h"
 
+#include <Eigen/Core>
+#include <complex>
 #include <gtest/gtest.h>
+#include <mlir/Dialect/Func/IR/FuncOps.h>
 
 using namespace mlir::qco;
 
@@ -31,3 +34,23 @@ INSTANTIATE_TEST_SUITE_P(
         QCOTestCase{"InverseMultipleControlledGlobalPhase",
                     MQT_NAMED_BUILDER(inverseMultipleControlledGlobalPhase),
                     MQT_NAMED_BUILDER(multipleControlledGlobalPhase)}));
+
+TEST_F(QCOTest, GPhaseOpMatrix) {
+  auto moduleOp = QCOProgramBuilder::build(context.get(), globalPhase);
+  ASSERT_TRUE(moduleOp);
+
+  // Get the operation from the module
+  auto funcOp = *moduleOp->getBody()->getOps<mlir::func::FuncOp>().begin();
+  auto gPhaseOp = *funcOp.getBody().getOps<GPhaseOp>().begin();
+  const auto matrix = *gPhaseOp.getUnitaryMatrix();
+
+  // Get the definition
+  const auto definition = std::polar(1.0, 0.123); // e^(i*0.123)
+
+  // Convert it to an Eigen matrix
+  Eigen::Matrix<std::complex<double>, 1, 1> eigenDefinition;
+  eigenDefinition << definition;
+
+  // Check if the matrices are equal
+  ASSERT_TRUE(matrix.isApprox(eigenDefinition));
+}
