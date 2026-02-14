@@ -43,11 +43,7 @@ struct ReplaceUWithP final : OpRewritePattern<UOp> {
         std::abs(*phi) > TOLERANCE) {
       return failure();
     }
-
-    auto pOp =
-        rewriter.create<POp>(op.getLoc(), op.getInputQubit(0), op.getLambda());
-    rewriter.replaceOp(op, pOp.getResult());
-
+    rewriter.replaceOpWithNewOp<POp>(op, op.getInputQubit(0), op.getLambda());
     return success();
   }
 };
@@ -66,11 +62,7 @@ struct ReplaceUWithRX final : OpRewritePattern<UOp> {
         !lambda || std::abs(*lambda - (std::numbers::pi / 2.0)) > TOLERANCE) {
       return failure();
     }
-
-    auto rxOp =
-        rewriter.create<RXOp>(op.getLoc(), op.getInputQubit(0), op.getTheta());
-    rewriter.replaceOp(op, rxOp.getResult());
-
+    rewriter.replaceOpWithNewOp<RXOp>(op, op.getInputQubit(0), op.getTheta());
     return success();
   }
 };
@@ -89,11 +81,7 @@ struct ReplaceUWithRY final : OpRewritePattern<UOp> {
         std::abs(*lambda) > TOLERANCE) {
       return failure();
     }
-
-    auto ryOp =
-        rewriter.create<RYOp>(op.getLoc(), op.getInputQubit(0), op.getTheta());
-    rewriter.replaceOp(op, ryOp.getResult());
-
+    rewriter.replaceOpWithNewOp<RYOp>(op, op.getInputQubit(0), op.getTheta());
     return success();
   }
 };
