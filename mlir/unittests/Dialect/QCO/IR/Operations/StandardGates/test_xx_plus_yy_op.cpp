@@ -40,7 +40,10 @@ INSTANTIATE_TEST_SUITE_P(
                     MQT_NAMED_BUILDER(xxPlusYY)},
         QCOTestCase{"InverseMultipleControlledXXPlusYY",
                     MQT_NAMED_BUILDER(inverseMultipleControlledXxPlusYY),
-                    MQT_NAMED_BUILDER(multipleControlledXxPlusYY)}));
+                    MQT_NAMED_BUILDER(multipleControlledXxPlusYY)},
+        QCOTestCase{"TwoXXPlusYYOppositePhase",
+                    MQT_NAMED_BUILDER(twoXxPlusYYOppositePhase),
+                    MQT_NAMED_BUILDER(emptyQCO)}));
 
 TEST_F(QCOTest, XXPlusYYOp) {
   auto moduleOp = QCOProgramBuilder::build(context.get(), xxPlusYY);

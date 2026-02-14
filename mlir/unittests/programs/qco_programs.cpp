@@ -1696,6 +1696,12 @@ void inverseMultipleControlledXxPlusYY(QCOProgramBuilder& b) {
   });
 }
 
+void twoXxPlusYYOppositePhase(QCOProgramBuilder& b) {
+  auto q = b.allocQubitRegister(2);
+  std::tie(q[0], q[1]) = b.xx_plus_yy(0.123, 0.456, q[0], q[1]);
+  std::tie(q[0], q[1]) = b.xx_plus_yy(-0.123, 0.456, q[0], q[1]);
+}
+
 void xxMinusYY(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   b.xx_minus_yy(0.123, 0.456, q[0], q[1]);
@@ -1748,6 +1754,12 @@ void inverseMultipleControlledXxMinusYY(QCOProgramBuilder& b) {
                                               targetsOut.second};
     return llvm::to_vector(llvm::concat<mlir::Value>(controlsOut, targets));
   });
+}
+
+void twoXxMinusYYOppositePhase(QCOProgramBuilder& b) {
+  auto q = b.allocQubitRegister(2);
+  std::tie(q[0], q[1]) = b.xx_minus_yy(0.123, 0.456, q[0], q[1]);
+  std::tie(q[0], q[1]) = b.xx_minus_yy(-0.123, 0.456, q[0], q[1]);
 }
 
 void barrier(QCOProgramBuilder& b) {

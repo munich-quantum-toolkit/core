@@ -813,6 +813,9 @@ void inverseXxPlusYY(QCOProgramBuilder& b);
 /// gate.
 void inverseMultipleControlledXxPlusYY(QCOProgramBuilder& b);
 
+/// Creates a circuit with two XXPlusYY gates in a row with opposite phases.
+void twoXxPlusYYOppositePhase(QCOProgramBuilder& b);
+
 // --- XXMinusYYOp ---------------------------------------------------------- //
 
 /// Creates a circuit with just an XXMinusYY gate.
@@ -836,6 +839,9 @@ void inverseXxMinusYY(QCOProgramBuilder& b);
 /// Creates a circuit with an inverse modifier applied to a controlled XXMinusYY
 /// gate.
 void inverseMultipleControlledXxMinusYY(QCOProgramBuilder& b);
+
+/// Creates a circuit with two XXMinusYY gates in a row with opposite phases.
+void twoXxMinusYYOppositePhase(QCOProgramBuilder& b);
 
 // --- BarrierOp ------------------------------------------------------------ //
 
