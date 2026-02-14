@@ -801,6 +801,7 @@ void populateGateDecompositionPatterns(
   basisGates.push_back({.type = qc::X, .parameter = {}, .qubitId = {1, 0}});
   eulerBases.push_back(GateDecompositionPattern::EulerBasis::ZYZ);
   eulerBases.push_back(GateDecompositionPattern::EulerBasis::XYX);
+  eulerBases.push_back(GateDecompositionPattern::EulerBasis::XZX);
   eulerBases.push_back(GateDecompositionPattern::EulerBasis::ZXZ);
   patterns.add<GateDecompositionPattern>(
       patterns.getContext(), basisGates, eulerBases, false, true,
