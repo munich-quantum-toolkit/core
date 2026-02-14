@@ -673,6 +673,57 @@ QCOProgramBuilder& QCOProgramBuilder::dealloc(Value qubit) {
 }
 
 //===----------------------------------------------------------------------===//
+// SCF Operations
+//===----------------------------------------------------------------------===//
+
+ValueRange QCOProgramBuilder::qcoIf(
+    Value condition, ValueRange qubits,
+    llvm::function_ref<llvm::SmallVector<Value>(ValueRange)> thenBody,
+    llvm::function_ref<llvm::SmallVector<Value>(ValueRange)> elseBody) {
+  checkFinalized();
+
+  auto ifOp = IfOp::create(*this, condition, qubits);
+  // Create the then and else block
+  auto& thenBlock = ifOp->getRegion(0).emplaceBlock();
+  auto& elseBlock = ifOp->getRegion(1).emplaceBlock();
+
+  // Create the blockarguments and add them as valid qubits
+  for (const auto& qubitType : qubits.getTypes()) {
+    const auto thenArg = thenBlock.addArgument(qubitType, getLoc());
+    const auto elseArg = elseBlock.addArgument(qubitType, getLoc());
+    validQubits.insert(thenArg);
+    validQubits.insert(elseArg);
+  }
+
+  // Construct the bodies of the regions
+  const InsertionGuard guard(*this);
+  setInsertionPointToStart(&thenBlock);
+  const auto thenResult = thenBody(thenBlock.getArguments());
+  YieldOp::create(*this, thenResult);
+  setInsertionPointToStart(&elseBlock);
+  const auto elseResult = elseBody(elseBlock.getArguments());
+  YieldOp::create(*this, elseResult);
+
+  // Update qubit tracking
+  const auto& ifResults = ifOp->getResults();
+  for (const auto& [input, output] : llvm::zip(qubits, ifResults)) {
+    updateQubitTracking(input, output);
+  }
+  if (thenResult.size() != elseResult.size()) {
+    llvm::reportFatalUsageError(
+        "Then and else body must return the same amount of qubits!");
+  }
+
+  // Remove the inner qubits as valid qubits
+  for (const auto& [thenOut, elseOut] :
+       llvm::zip_equal(thenResult, elseResult)) {
+    validQubits.erase(thenOut);
+    validQubits.erase(elseOut);
+  }
+  return ifResults;
+}
+
+//===----------------------------------------------------------------------===//
 // Finalization
 //===----------------------------------------------------------------------===//
 
