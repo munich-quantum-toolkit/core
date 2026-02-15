@@ -14,7 +14,6 @@
 
 #include <iterator>
 #include <llvm/ADT/TypeSwitch.h>
-#include <llvm/Support/Debug.h>
 #include <llvm/Support/ErrorHandling.h>
 #include <mlir/IR/Operation.h>
 #include <mlir/Support/LLVM.h>
@@ -37,8 +36,19 @@ public:
   explicit WireIterator(mlir::Value qubit)
       : op_(qubit.getDefiningOp()), qubit_(qubit), isSentinel_(false) {}
 
-  [[nodiscard]] mlir::Value qubit() const { return qubit_; }
+  /// @returns the qubit the iterator points to.
+  [[nodiscard]] mlir::Value qubit() const {
+    // A deallocation doesn't have an OpResult.
+    if (mlir::isa<qco::DeallocOp>(op_)) {
+      return nullptr;
+    }
+    return qubit_;
+  }
+
+  /// @returns the operation the iterator points to.
   [[nodiscard]] mlir::Operation* operation() const { return op_; }
+
+  /// @returns the operation the iterator points to.
   [[nodiscard]] mlir::Operation* operator*() const { return operation(); }
 
   WireIterator& operator++() {
@@ -80,14 +90,18 @@ private:
       return;
     }
 
+    // Find the user-operation of the qubit SSA value.
+    assert(qubit_.getNumUses() == 1 && "expected linear typing");
+    op_ = *(qubit_.getUsers().begin());
+
     // A deallocation op defines the end of the qubit wire (dynamic and static).
     if (mlir::isa<qco::DeallocOp>(op_)) {
       isSentinel_ = true;
       return;
     }
 
-    if (!(mlir::isa<qco::AllocOp>(op_) || mlir::isa<qco::StaticOp>(op_))) {
-      // Find output from input qubit SSA value.
+    if (!(mlir::isa<qco::AllocOp, qco::StaticOp>(op_))) {
+      // Find the output from the input qubit SSA value.
       mlir::TypeSwitch<mlir::Operation*>(op_)
           .Case<qco::UnitaryOpInterface>([&](qco::UnitaryOpInterface op) {
             qubit_ = op.getOutputForInput(qubit_);
@@ -101,10 +115,6 @@ private:
                                op->getName().getStringRef());
           });
     }
-
-    // Finally, find the user-operation of the qubit SSA value.
-    assert(qubit_.getNumUses() == 1);
-    op_ = *(qubit_.getUsers().begin());
   }
 
   /// @brief Move to the previous operation on the qubit wire.
@@ -115,21 +125,19 @@ private:
       return;
     }
 
-    // Get the operation that produces the qubit value.
-    op_ = qubit_.getDefiningOp();
-
-    // If the current qubit SSA value is a BlockArgument (no defining op), stop.
-    if (op_ == nullptr) {
+    // For deallocations, qubit_ is an OpOperand. Hence, only get the def-op.
+    if (mlir::isa<DeallocOp>(op_)) {
+      op_ = qubit_.getDefiningOp();
       return;
     }
 
     // Allocations or static definitions define the start of the qubit wire.
     // Consequently, stop and early exit.
-    if (mlir::isa<qco::AllocOp>(op_) || mlir::isa<qco::StaticOp>(op_)) {
+    if (mlir::isa<qco::AllocOp, StaticOp>(op_)) {
       return;
     }
 
-    // Find input from output qubit SSA value.
+    // Find the input from the output qubit SSA value.
     mlir::TypeSwitch<mlir::Operation*>(op_)
         .Case<qco::UnitaryOpInterface>([&](qco::UnitaryOpInterface op) {
           qubit_ = op.getInputForOutput(qubit_);
@@ -141,6 +149,13 @@ private:
           report_fatal_error("unknown op in def-use chain: " +
                              op->getName().getStringRef());
         });
+
+    // Get the operation that produces the qubit value.
+    // If the current qubit SSA value is a BlockArgument (no defining op), stop.
+    op_ = qubit_.getDefiningOp();
+    if (op_ == nullptr) {
+      return;
+    }
   }
 
   mlir::Operation* op_;
