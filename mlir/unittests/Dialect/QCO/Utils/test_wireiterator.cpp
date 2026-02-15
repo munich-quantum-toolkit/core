@@ -14,7 +14,6 @@
 
 #include <gtest/gtest.h>
 #include <iterator>
-#include <llvm/Support/Debug.h>
 #include <memory>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/ControlFlow/IR/ControlFlow.h>
@@ -59,9 +58,9 @@ TEST_P(WireIteratorTest, MixedUse) {
   const auto q04 = builder.reset(q03);
   builder.dealloc(q04);
   builder.dealloc(q11);
+  builder.finalize();
 
   // Setup WireIterator.
-  auto module = builder.finalize();
   qco::WireIterator it(q00);
 
   //

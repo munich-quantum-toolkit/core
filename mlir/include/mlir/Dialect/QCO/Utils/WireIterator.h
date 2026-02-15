@@ -39,7 +39,7 @@ public:
   /// @returns the qubit the iterator points to.
   [[nodiscard]] mlir::Value qubit() const {
     // A deallocation doesn't have an OpResult.
-    if (mlir::isa<qco::DeallocOp>(op_)) {
+    if (op_ != nullptr && mlir::isa<qco::DeallocOp>(op_)) {
       return nullptr;
     }
     return qubit_;
