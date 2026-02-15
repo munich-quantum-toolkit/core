@@ -123,6 +123,10 @@ TEST_P(WireIteratorTest, MixedUse) {
   --it;
   ASSERT_EQ(it.operation(), q00.getDefiningOp()); // qco.alloc or qco.static
   ASSERT_EQ(it.qubit(), q00);
+
+  --it;
+  ASSERT_EQ(it.operation(), q00.getDefiningOp()); // qco.alloc or qco.static
+  ASSERT_EQ(it.qubit(), q00);
 }
 
 INSTANTIATE_TEST_SUITE_P(DynamicAndStatic, WireIteratorTest, ::testing::Bool(),
