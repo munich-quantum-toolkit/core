@@ -27,20 +27,7 @@ namespace mlir::qco {
 #define GEN_PASS_DECL
 #include "mlir/Passes/Passes.h.inc" // IWYU pragma: export
 
-void populateGateDecompositionPatterns(
-    mlir::RewritePatternSet& patterns,
-    llvm::Statistic& twoQubitCreationTime,
-    llvm::Statistic& numberOfTwoQubitCreations,
-    llvm::Statistic& successfulSingleQubitDecompositions,
-    llvm::Statistic& totalSingleQubitDecompositions,
-    llvm::Statistic& successfulTwoQubitDecompositions,
-    llvm::Statistic& totalTwoQubitDecompositions,
-    llvm::Statistic& totalCircuitCollections,
-    llvm::Statistic& totalTouchedGates,
-    llvm::Statistic& subCircuitComplexityChange,
-    llvm::Statistic& timeInCircuitCollection,
-    llvm::Statistic& timeInSingleQubitDecomposition,
-    llvm::Statistic& timeInTwoQubitDecomposition);
+void populateGateDecompositionPatterns(mlir::RewritePatternSet& patterns);
 
 //===----------------------------------------------------------------------===//
 // Registration

@@ -73,49 +73,18 @@ struct GateDecompositionPattern final
    *                         a decomposition if the (sub)circuit only contains
    *                         gates available as basis gates or euler bases
    */
-  explicit GateDecompositionPattern(
-      mlir::MLIRContext* context, llvm::SmallVector<Gate> basisGates,
-      llvm::SmallVector<EulerBasis> eulerBasis, bool singleQubitOnly,
-      bool forceApplication, llvm::Statistic& twoQubitCreationTime,
-      llvm::Statistic& numberOfTwoQubitCreations,
-      llvm::Statistic& successfulSingleQubitDecompositions,
-      llvm::Statistic& totalSingleQubitDecompositions,
-      llvm::Statistic& successfulTwoQubitDecompositions,
-      llvm::Statistic& totalTwoQubitDecompositions,
-      llvm::Statistic& totalCircuitCollections,
-      llvm::Statistic& totalTouchedGates,
-      llvm::Statistic& subCircuitComplexityChange,
-      llvm::Statistic& timeInCircuitCollection,
-      llvm::Statistic& timeInSingleQubitDecomposition,
-      llvm::Statistic& timeInTwoQubitDecomposition)
+  explicit GateDecompositionPattern(mlir::MLIRContext* context,
+                                    llvm::SmallVector<Gate> basisGates,
+                                    llvm::SmallVector<EulerBasis> eulerBasis,
+                                    bool singleQubitOnly, bool forceApplication)
       : OpInterfaceRewritePattern(context),
         decomposerBasisGates{std::move(basisGates)},
         decomposerEulerBases{std::move(eulerBasis)},
-        singleQubitOnly{singleQubitOnly}, forceApplication{forceApplication},
-        twoQubitCreationTime{twoQubitCreationTime},
-        numberOfTwoQubitCreations{numberOfTwoQubitCreations},
-        successfulSingleQubitDecompositions{
-            successfulSingleQubitDecompositions},
-        totalSingleQubitDecompositions{totalSingleQubitDecompositions},
-        successfulTwoQubitDecompositions{successfulTwoQubitDecompositions},
-        totalTwoQubitDecompositions{totalTwoQubitDecompositions},
-        totalCircuitCollections{totalCircuitCollections},
-        totalTouchedGates{totalTouchedGates},
-        subCircuitComplexityChange{subCircuitComplexityChange},
-        timeInCircuitCollection{timeInCircuitCollection},
-        timeInSingleQubitDecomposition{timeInSingleQubitDecomposition},
-        timeInTwoQubitDecomposition{timeInTwoQubitDecomposition} {
-    ++numberOfTwoQubitCreations;
-    auto startTime = std::chrono::steady_clock::now();
+        singleQubitOnly{singleQubitOnly}, forceApplication{forceApplication} {
     for (auto&& basisGate : decomposerBasisGates) {
       basisDecomposers.push_back(decomposition::TwoQubitBasisDecomposer::create(
           basisGate, DEFAULT_FIDELITY));
     }
-    auto endTime = std::chrono::steady_clock::now();
-    twoQubitCreationTime +=
-        std::chrono::duration_cast<std::chrono::microseconds>(endTime -
-                                                              startTime)
-            .count();
     auto&& [singleQubitGates, twoQubitGates] = getDecompositionGates();
     availableSingleQubitGates = std::move(singleQubitGates);
     availableTwoQubitGates = std::move(twoQubitGates);
@@ -134,23 +103,13 @@ struct GateDecompositionPattern final
       return mlir::failure();
     }
 
-    auto collectSeries = [this](UnitaryOpInterface op, bool singleQubitOnly) {
-      ++totalCircuitCollections;
+    auto collectSeries = [](UnitaryOpInterface op, bool singleQubitOnly) {
       if (singleQubitOnly) {
         return TwoQubitSeries::getSingleQubitSeries(op);
       }
       return TwoQubitSeries::getTwoQubitSeries(op);
     };
-    auto startTime = std::chrono::steady_clock::now();
     auto series = collectSeries(op, singleQubitOnly);
-    auto endTime = std::chrono::steady_clock::now();
-    timeInCircuitCollection +=
-        std::chrono::duration_cast<std::chrono::microseconds>(endTime -
-                                                              startTime)
-            .count();
-    // not really accurate since it neglects the "past the series" gates that
-    // terminated the series
-    totalTouchedGates += series.gates.size();
 
     auto containsForeignGates = !series.containsOnlyGates(
         availableSingleQubitGates, availableTwoQubitGates);
@@ -173,10 +132,6 @@ struct GateDecompositionPattern final
         // cannot process decomposition without the matrix of the series
         return mlir::failure();
       }
-      // only count the multiple decompositions as "one" since the number of
-      // euler bases is constant
-      ++totalSingleQubitDecompositions;
-      startTime = std::chrono::steady_clock::now();
       for (auto&& eulerBasis : decomposerEulerBases) {
         auto sequence = decomposition::EulerDecomposition::generateCircuit(
             eulerBasis, *unitaryMatrix, true, std::nullopt);
@@ -186,11 +141,6 @@ struct GateDecompositionPattern final
           bestSequence = std::make_pair(std::move(sequence), newComplexity);
         }
       }
-      endTime = std::chrono::steady_clock::now();
-      timeInSingleQubitDecomposition +=
-          std::chrono::duration_cast<std::chrono::microseconds>(endTime -
-                                                                startTime)
-              .count();
     } else {
       // two-qubit series; perform two-qubit basis decomposition
       const auto unitaryMatrix = series.getUnitaryMatrix();
@@ -202,13 +152,9 @@ struct GateDecompositionPattern final
           decomposition::TwoQubitWeylDecomposition::create(*unitaryMatrix,
                                                            DEFAULT_FIDELITY);
 
-      // only count the multiple decompositions as "one" since the number of
-      // euler bases is constant
-      ++totalTwoQubitDecompositions;
-      startTime = std::chrono::steady_clock::now();
       for (const auto& decomposer : basisDecomposers) {
         auto sequence = decomposer.twoQubitDecompose(
-            targetDecomposition, decomposerEulerBases, DEFAULT_FIDELITY, true,
+            targetDecomposition, decomposerEulerBases, DEFAULT_FIDELITY, false,
             std::nullopt);
         if (sequence) {
           // decomposition successful
@@ -220,11 +166,6 @@ struct GateDecompositionPattern final
           }
         }
       }
-      endTime = std::chrono::steady_clock::now();
-      timeInTwoQubitDecomposition +=
-          std::chrono::duration_cast<std::chrono::microseconds>(endTime -
-                                                                startTime)
-              .count();
     }
 
     if (bestSequence.second == std::numeric_limits<std::size_t>::max()) {
@@ -239,13 +180,6 @@ struct GateDecompositionPattern final
       // decomposition
       return mlir::failure();
     }
-
-    if (series.isSingleQubitSeries()) {
-      ++successfulSingleQubitDecompositions;
-    } else {
-      ++successfulTwoQubitDecompositions;
-    }
-    subCircuitComplexityChange += series.complexity - bestSequence.second;
 
     applySeries(rewriter, series, bestSequence.first);
 
@@ -763,38 +697,13 @@ private:
   // configuration of pattern
   bool singleQubitOnly;
   bool forceApplication;
-
-  llvm::Statistic& twoQubitCreationTime;
-  llvm::Statistic& numberOfTwoQubitCreations;
-  llvm::Statistic& successfulSingleQubitDecompositions;
-  llvm::Statistic& totalSingleQubitDecompositions;
-  llvm::Statistic& successfulTwoQubitDecompositions;
-  llvm::Statistic& totalTwoQubitDecompositions;
-  llvm::Statistic& totalCircuitCollections;
-  llvm::Statistic& totalTouchedGates;
-  llvm::Statistic& subCircuitComplexityChange;
-  llvm::Statistic& timeInCircuitCollection;
-  llvm::Statistic& timeInSingleQubitDecomposition;
-  llvm::Statistic& timeInTwoQubitDecomposition;
 };
 
 /**
  * @brief Populates the given pattern set with patterns for gate
  * decomposition.
  */
-void populateGateDecompositionPatterns(
-    mlir::RewritePatternSet& patterns, llvm::Statistic& twoQubitCreationTime,
-    llvm::Statistic& numberOfTwoQubitCreations,
-    llvm::Statistic& successfulSingleQubitDecompositions,
-    llvm::Statistic& totalSingleQubitDecompositions,
-    llvm::Statistic& successfulTwoQubitDecompositions,
-    llvm::Statistic& totalTwoQubitDecompositions,
-    llvm::Statistic& totalCircuitCollections,
-    llvm::Statistic& totalTouchedGates,
-    llvm::Statistic& subCircuitComplexityChange,
-    llvm::Statistic& timeInCircuitCollection,
-    llvm::Statistic& timeInSingleQubitDecomposition,
-    llvm::Statistic& timeInTwoQubitDecomposition) {
+void populateGateDecompositionPatterns(mlir::RewritePatternSet& patterns) {
   llvm::SmallVector<GateDecompositionPattern::Gate> basisGates;
   llvm::SmallVector<GateDecompositionPattern::EulerBasis> eulerBases;
   basisGates.push_back({.type = qc::X, .parameter = {}, .qubitId = {0, 1}});
@@ -803,14 +712,8 @@ void populateGateDecompositionPatterns(
   eulerBases.push_back(GateDecompositionPattern::EulerBasis::XYX);
   eulerBases.push_back(GateDecompositionPattern::EulerBasis::XZX);
   eulerBases.push_back(GateDecompositionPattern::EulerBasis::ZXZ);
-  patterns.add<GateDecompositionPattern>(
-      patterns.getContext(), basisGates, eulerBases, false, true,
-      twoQubitCreationTime, numberOfTwoQubitCreations,
-      successfulSingleQubitDecompositions, totalSingleQubitDecompositions,
-      successfulTwoQubitDecompositions, totalTwoQubitDecompositions,
-      totalCircuitCollections, totalTouchedGates, subCircuitComplexityChange,
-      timeInCircuitCollection, timeInSingleQubitDecomposition,
-      timeInTwoQubitDecomposition);
+  patterns.add<GateDecompositionPattern>(patterns.getContext(), basisGates,
+                                         eulerBases, false, false);
 }
 
 } // namespace mlir::qco
