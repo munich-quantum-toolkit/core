@@ -1220,6 +1220,7 @@ def IfOp : QCOOp<"if", traits =
                 "getNumRegionInvocations", "getRegionInvocationBounds",
                 "getEntrySuccessorRegions"]>,
                 SingleBlock,
+                SingleBlockImplicitTerminator<"::mlir::qco::YieldOp">,
                 RecursiveMemoryEffects
             ]> {
 

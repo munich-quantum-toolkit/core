@@ -85,9 +85,12 @@ void IfOp::getEntrySuccessorRegions(ArrayRef<Attribute> operands,
                                     SmallVectorImpl<RegionSuccessor>& regions) {
   FoldAdaptor adaptor(operands, *this);
   auto boolAttr = dyn_cast_or_null<BoolAttr>(adaptor.getCondition());
-  if (!boolAttr || boolAttr.getValue()) {
+  if (!boolAttr) {
     regions.emplace_back(&getThenRegion());
     regions.emplace_back(&getElseRegion());
+  } else {
+    regions.emplace_back(boolAttr.getValue() ? &getThenRegion()
+                                             : &getElseRegion());
   }
 }
 // NOLINTNEXTLINE(readability-convert-member-functions-to-static)

@@ -712,15 +712,17 @@ ValueRange QCOProgramBuilder::qcoIf(
     YieldOp::create(*this, elseBlock.getArguments());
   }
 
+  if (thenResult.size() != qubits.size() ||
+      thenResult.size() != elseResult.size()) {
+    llvm::reportFatalUsageError(
+        "Then and else body must return the same amount of qubits as the "
+        "number of input qubits!");
+  }
+
   // Update qubit tracking
   const auto& ifResults = ifOp->getResults();
-  for (auto [input, output] : llvm::zip(qubits, ifResults)) {
+  for (auto [input, output] : llvm::zip_equal(qubits, ifResults)) {
     updateQubitTracking(input, output);
-  }
-  if (ifOp.thenYield()->getNumOperands() !=
-      ifOp.elseYield()->getNumOperands()) {
-    llvm::reportFatalUsageError(
-        "Then and else body must return the same amount of qubits!");
   }
 
   // Remove the inner qubits as valid qubits
