@@ -133,7 +133,8 @@ uv run ty check
 ### C++
 
 - Formatting: LLVM-based (see `.clang-format`)
-- Linting: clang-tidy (see `.clang-tidy`)
+- Linting: clang-tidy (see `.clang-tidy`).
+  To include nanobind bindings in clang-tidy analysis, configure with `-DBUILD_MQT_CORE_BINDINGS=ON`.
 - Naming: `camelBack` for functions, methods, variables, parameters; `CamelCase` for classes, structs, enums; `UPPER_CASE` for global/static constants; `lower_case` for namespaces
 - Indentation: 2 spaces
 - Header guards: `#pragma once`
