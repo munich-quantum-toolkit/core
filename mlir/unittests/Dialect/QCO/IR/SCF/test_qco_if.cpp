@@ -63,13 +63,11 @@ protected:
     const auto q = builder.allocQubitRegister(2);
     auto [qubit, measureResult] = builder.measure(q[0]);
 
-    builder.qcoIf(
-        measureResult, {qubit, q[1]},
-        [&](ValueRange args) -> SmallVector<Value> {
-          auto q2 = builder.h(args[0]);
-          return {q2, args[1]};
-        },
-        [&](ValueRange args) -> SmallVector<Value> { return args; });
+    builder.qcoIf(measureResult, {qubit, q[1]},
+                  [&](ValueRange args) -> SmallVector<Value> {
+                    auto q2 = builder.h(args[0]);
+                    return {q2, args[1]};
+                  });
     auto ifOp = cast<IfOp>(builder.getBlock()->getOperations().back());
     module = builder.finalize();
     return ifOp;
@@ -169,13 +167,11 @@ TEST_F(QCOIfOpTest, TestConstantCondition) {
   // Build a qco.if with a constant condition
   const auto q = builder.allocQubitRegister(2);
 
-  builder.qcoIf(
-      arith::ConstantOp::create(builder, builder.getBoolAttr(true)), q,
-      [&](ValueRange args) -> SmallVector<Value> {
-        auto q2 = builder.h(args[0]);
-        return {q2, args[1]};
-      },
-      [&](ValueRange args) -> SmallVector<Value> { return args; });
+  builder.qcoIf(arith::ConstantOp::create(builder, builder.getBoolAttr(true)),
+                q, [&](ValueRange args) -> SmallVector<Value> {
+                  auto q2 = builder.h(args[0]);
+                  return {q2, args[1]};
+                });
 
   module = builder.finalize();
 
@@ -191,21 +187,16 @@ TEST_F(QCOIfOpTest, TestConditionPropagation) {
   const auto q = builder.allocQubitRegister(2);
   auto [qubitOut, measureResult] = builder.measure(q[0]);
 
-  builder.qcoIf(
-      measureResult, {qubitOut, q[1]},
-      [&](ValueRange args) -> SmallVector<Value> {
-        auto innerIf = builder.qcoIf(
-            measureResult, args,
-            [&](ValueRange innerArgs) -> SmallVector<Value> {
-              auto q2 = builder.h(innerArgs[0]);
-              return {q2, innerArgs[1]};
-            },
-            [&](ValueRange innerArgs) -> SmallVector<Value> {
-              return innerArgs;
-            });
-        return innerIf;
-      },
-      [&](ValueRange args) -> SmallVector<Value> { return args; });
+  builder.qcoIf(measureResult, {qubitOut, q[1]},
+                [&](ValueRange args) -> SmallVector<Value> {
+                  auto innerIf = builder.qcoIf(
+                      measureResult, args,
+                      [&](ValueRange innerArgs) -> SmallVector<Value> {
+                        auto q2 = builder.h(innerArgs[0]);
+                        return {q2, innerArgs[1]};
+                      });
+                  return innerIf;
+                });
 
   module = builder.finalize();
 
