@@ -220,7 +220,9 @@ Components: `ir` (intermediate representation), `dd` (decision diagrams), `zx` (
 - **Operating systems**: Linux (Ubuntu 24.04), macOS (14, 15), Windows (2022, 2025)
 - **Architectures**: x86_64 and arm64
 - **C++ compilers**: GCC 14+, Clang 20+, MSVC (latest), AppleClang 17+
-- **CI**: GitHub Actions with reusable workflows from `munich-quantum-toolkit/workflows`
+- **CI**: GitHub Actions with reusable workflows from `munich-quantum-toolkit/workflows`.
+  Regular CI runs a subset of the matrix (Ubuntu/GCC, macOS/AppleClang, Windows/MSVC).
+  The full compiler/OS matrix is tested when a PR has the `extensive-cpp-ci` label.
 
 ## Important Notes
 
