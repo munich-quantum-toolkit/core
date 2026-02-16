@@ -78,14 +78,7 @@ void IfOp::getSuccessorRegions(RegionBranchPoint point,
   }
 
   regions.push_back(RegionSuccessor(&getThenRegion()));
-
-  // Don't consider the else region if it is empty.
-  Region* elseRegion = &this->getElseRegion();
-  if (elseRegion->empty()) {
-    regions.push_back(RegionSuccessor());
-  } else {
-    regions.push_back(RegionSuccessor(elseRegion));
-  }
+  regions.push_back(RegionSuccessor(&getElseRegion()));
 }
 
 void IfOp::getEntrySuccessorRegions(ArrayRef<Attribute> operands,
@@ -94,15 +87,7 @@ void IfOp::getEntrySuccessorRegions(ArrayRef<Attribute> operands,
   auto boolAttr = dyn_cast_or_null<BoolAttr>(adaptor.getCondition());
   if (!boolAttr || boolAttr.getValue()) {
     regions.emplace_back(&getThenRegion());
-  }
-
-  // If the else region is empty, execution continues after the parent op.
-  if (!boolAttr || !boolAttr.getValue()) {
-    if (!getElseRegion().empty()) {
-      regions.emplace_back(&getElseRegion());
-    } else {
-      regions.emplace_back(getResults());
-    }
+    regions.emplace_back(&getElseRegion());
   }
 }
 // NOLINTNEXTLINE(readability-convert-member-functions-to-static)
@@ -146,12 +131,8 @@ struct RemoveStaticCondition : public OpRewritePattern<IfOp> {
 
     if (condition.getValue()) {
       replaceOpWithRegion(rewriter, op, op.getThenRegion(), op.getQubits());
-    } else if (!op.getElseRegion().empty()) {
-      replaceOpWithRegion(rewriter, op, op.getElseRegion(), op.getQubits());
     } else {
-      assert(op.getNumResults() == 0 &&
-             "cannot erase if-op with results and no else region");
-      rewriter.eraseOp(op);
+      replaceOpWithRegion(rewriter, op, op.getElseRegion(), op.getQubits());
     }
 
     return success();
