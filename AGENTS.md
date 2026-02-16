@@ -4,23 +4,23 @@ MQT Core is the backbone of the [Munich Quantum Toolkit (MQT)](https://mqt.readt
 
 ## Tech Stack
 
-| Area | Tool | Notes |
-|---|---|---|
-| C++ standard | C++20 | Minimum required |
-| Build system | CMake 3.24+ | Up to 4.2 supported |
-| Python | 3.10+ | Supports 3.10 through 3.14 |
-| MLIR/LLVM | 21+ | Required only when `BUILD_MQT_CORE_MLIR=ON` |
-| Python package manager | **uv** (>=0.5.20) | NEVER use pip |
-| Python build backend | scikit-build-core | With nanobind for bindings |
-| Python linter/formatter | **ruff** | NEVER use pylint, black, flake8, or isort |
-| Python type checker | **ty** | NEVER use mypy |
-| Python bindings | **nanobind** (~2.11.0) | NOT pybind11 |
-| C++ formatter | clang-format (LLVM style) | |
-| C++ linter | clang-tidy | |
-| CMake formatter | cmake-format | |
-| C++ test framework | Google Test | |
-| Python test framework | pytest | With pytest-xdist for parallelism |
-| Pre-commit runner | prek | Wraps pre-commit hooks |
+| Area                    | Tool                      | Notes                                       |
+| ----------------------- | ------------------------- | ------------------------------------------- |
+| C++ standard            | C++20                     | Minimum required                            |
+| Build system            | CMake 3.24+               | Up to 4.2 supported                         |
+| Python                  | 3.10+                     | Supports 3.10 through 3.14                  |
+| MLIR/LLVM               | 21+                       | Required only when `BUILD_MQT_CORE_MLIR=ON` |
+| Python package manager  | **uv** (>=0.5.20)         | NEVER use pip                               |
+| Python build backend    | scikit-build-core         | With nanobind for bindings                  |
+| Python linter/formatter | **ruff**                  | NEVER use pylint, black, flake8, or isort   |
+| Python type checker     | **ty**                    | NEVER use mypy                              |
+| Python bindings         | **nanobind** (~2.11.0)    | NOT pybind11                                |
+| C++ formatter           | clang-format (LLVM style) |                                             |
+| C++ linter              | clang-tidy                |                                             |
+| CMake formatter         | cmake-format              |                                             |
+| C++ test framework      | Google Test               |                                             |
+| Python test framework   | pytest                    | With pytest-xdist for parallelism           |
+| Pre-commit runner       | prek                      | Wraps pre-commit hooks                      |
 
 ## Building the C++ Library
 
@@ -36,14 +36,14 @@ cmake --build build
 
 Key CMake options:
 
-| Option | Default | Description |
-|---|---|---|
-| `BUILD_MQT_CORE_TESTS` | ON (if master project) | Build C++ test suite |
-| `BUILD_MQT_CORE_BINDINGS` | OFF | Build Python bindings via nanobind |
-| `BUILD_MQT_CORE_MLIR` | ON | Build MLIR quantum compilation dialects (requires LLVM 21) |
-| `BUILD_MQT_CORE_SHARED_LIBS` | OFF | Build as shared libraries |
-| `BUILD_MQT_CORE_BENCHMARKS` | OFF | Build evaluation benchmarks |
-| `ENABLE_COVERAGE` | OFF | Enable code coverage instrumentation |
+| Option                       | Default                | Description                                                |
+| ---------------------------- | ---------------------- | ---------------------------------------------------------- |
+| `BUILD_MQT_CORE_TESTS`       | ON (if master project) | Build C++ test suite                                       |
+| `BUILD_MQT_CORE_BINDINGS`    | OFF                    | Build Python bindings via nanobind                         |
+| `BUILD_MQT_CORE_MLIR`        | ON                     | Build MLIR quantum compilation dialects (requires LLVM 21) |
+| `BUILD_MQT_CORE_SHARED_LIBS` | OFF                    | Build as shared libraries                                  |
+| `BUILD_MQT_CORE_BENCHMARKS`  | OFF                    | Build evaluation benchmarks                                |
+| `ENABLE_COVERAGE`            | OFF                    | Enable code coverage instrumentation                       |
 
 In-source builds are prevented. External dependencies (nlohmann_json, Boost.Multiprecision, Google Test, spdlog, QDMI, Eigen) are fetched automatically via CMake FetchContent if not found on the system.
 
