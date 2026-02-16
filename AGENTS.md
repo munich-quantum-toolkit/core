@@ -190,7 +190,7 @@ Stub files (`.pyi`) in `python/mqt/core/` are **auto-generated** by nanobind's s
 
 ## Project Layout
 
-```
+```text
 include/mqt-core/     C++ public headers (organized by component)
 src/                   C++ source files (mirrors include/ structure)
 python/mqt/core/       Python package and auto-generated .pyi stubs
