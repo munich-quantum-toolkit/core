@@ -253,9 +253,17 @@ for metric in x.keys():
 
     # plt.xticks(x_values) # does not work for strings
     plt.xticks(rotation=45)
-    if ymin > 0:
+    if ymin >= 0:
         # let matplotlib handle non-positive values automatically
-        plt.ylim(bottom=0)
+        # plt.ylim(bottom=0)
+        # plt.margins(y=0.1)
+        ax = plt.gca()
+        ticks = ax.get_yticks()
+        if not np.any(np.isclose(ticks, 0)):
+            # ensure y axis starts at zero
+            plt.ylim(bottom=0)
+        else:
+            ax.set_yticks(ticks[ticks >= 0])
 
     yint = []
     locs, labels = plt.yticks()
@@ -302,3 +310,12 @@ for metric in x.keys():
         f"Median Qiskit {metric}:",
         np.median(np.ma.masked_invalid(y2[metric])) if metric in y2 else "-",
     )
+
+print(
+    "Num of improved circuits (MQT): ",
+    len(list(filter(lambda x: x > 0, y1["subCircuitComplexityChange"]))),
+)
+print(
+    "Num of improved circuits (Qiskit): ",
+    len(list(filter(lambda x: x > 0, y2["subCircuitComplexityChange"]))),
+)
