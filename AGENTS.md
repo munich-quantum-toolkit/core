@@ -1,6 +1,7 @@
 # MQT Core
 
-MQT Core is the backbone of the [Munich Quantum Toolkit (MQT)](https://mqt.readthedocs.io/) — a C++20 and Python library providing core data structures and algorithms for quantum computing design automation. Key components include an intermediate representation (IR) for quantum computations, a state-of-the-art decision diagram (DD) package, a ZX-calculus engine, an OpenQASM 3.0 parser, MLIR-based quantum compilation dialects, and a quantum device management interface (QDMI).
+MQT Core is the backbone of the [Munich Quantum Toolkit (MQT)](https://mqt.readthedocs.io/) — a C++20 and Python library providing core data structures and algorithms for quantum computing design automation.
+Key components include an intermediate representation (IR) for quantum computations, a state-of-the-art decision diagram (DD) package, a ZX-calculus engine, an OpenQASM 3.0 parser, MLIR-based quantum compilation dialects, and implementations of the [quantum device management interface (QDMI)](https://github.com/Munich-Quantum-Software-Stack/QDMI).
 
 ## Tech Stack
 
@@ -45,7 +46,8 @@ Key CMake options:
 | `BUILD_MQT_CORE_BENCHMARKS`  | OFF                    | Build evaluation benchmarks                                |
 | `ENABLE_COVERAGE`            | OFF                    | Enable code coverage instrumentation                       |
 
-In-source builds are prevented. External dependencies (nlohmann_json, Boost.Multiprecision, Google Test, spdlog, QDMI, Eigen) are fetched automatically via CMake FetchContent if not found on the system.
+In-source builds are prevented.
+External dependencies (nlohmann_json, Boost.Multiprecision, Google Test, spdlog, QDMI, Eigen) are fetched automatically via CMake FetchContent if not found on the system.
 
 ## Running C++ Tests
 
@@ -54,7 +56,7 @@ In-source builds are prevented. External dependencies (nlohmann_json, Boost.Mult
 ctest --test-dir build
 
 # Run a single test by name (regex match)
-ctest --test-dir build -R test_dd_package
+ctest --test-dir build -R mqt-core-dd-test
 
 # Run with verbose output on failure
 ctest --test-dir build --output-on-failure
@@ -63,7 +65,9 @@ ctest --test-dir build --output-on-failure
 ./build/test/dd/mqt-core-dd-test
 ```
 
-Tests are organized by component under `test/`: `algorithms/`, `circuit_optimizer/`, `dd/`, `ir/` (includes QASM3 parser tests), `na/`, `zx/`, `qdmi/`, `qir/`, `fomac/`. Prefer running targeted tests over the full suite during development.
+Tests are organized by component under `test/`: `algorithms/`, `circuit_optimizer/`, `dd/`, `ir/` (includes QASM3 parser tests), `na/`, `zx/`, `qdmi/`, `qir/`, `fomac/`.
+MLIR tests are located at `mlir/unittests/`.
+Prefer running targeted tests over the full suite during development.
 
 ## Building the Python Package
 
@@ -75,9 +79,11 @@ uv sync
 uv build
 ```
 
-Build artifacts are placed in `build/{wheel_tag}/{build_type}/`. The Python package uses scikit-build-core as its build backend with nanobind for C++ bindings.
+Build artifacts are placed in `build/{wheel_tag}/{build_type}/`.
+The Python package uses scikit-build-core as its build backend with nanobind for C++ bindings.
 
-IMPORTANT: Always use `uv` for dependency management. Never use `pip install`, `pip install -e .`, or any pip-based workflow.
+IMPORTANT: Always use `uv` for dependency management.
+Never use `pip install`, `pip install -e .`, or any pip-based workflow.
 
 ## Running Python Tests
 
@@ -89,7 +95,7 @@ uvx nox -s tests
 uv run pytest test/python/dd/test_dd_package.py
 
 # Single test function
-uv run pytest test/python/dd/test_dd_package.py::test_function_name
+uv run pytest test/python/dd/test_dd_package.py::test_sample_simple_circuit
 
 # With coverage
 uvx nox -s tests -- --cov
@@ -101,9 +107,10 @@ uvx nox -s minimums
 uvx nox -s qiskit
 ```
 
-Python tests live in `test/python/` and use pytest with parallel execution (pytest-xdist). Prefer running individual test files during development.
+Python tests live in `test/python/` and use pytest with parallel execution (pytest-xdist).
+Prefer running individual test files during development.
 
-## Linting and Formatting
+## Linting, Formatting, and Code Style
 
 ```bash
 # Run ALL pre-commit checks (recommended before committing)
@@ -123,44 +130,10 @@ uv run ty check
 3. **Linting**: ruff check (Python)
 4. **Type checking**: ty check (Python)
 
-### Ruff configuration
-
-The ruff config in `pyproject.toml` uses `select = ["ALL"]` — **all rules are enabled by default**. Only a small set of rules are selectively disabled. Do not add new rules; only disable specific ones if necessary and document why. Line length is 120. Google-style docstrings are enforced.
-
-### C++ formatting and linting
-
-- clang-format uses LLVM base style with `PointerAlignment: Left` and C++20 standard
-- clang-tidy enforces extensive checks from bugprone, cppcoreguidelines, google, misc, modernize, performance, portability, and readability categories
-
-## Documentation
-
-```bash
-# Build and serve docs locally (requires doxygen installed)
-uvx nox -s docs
-
-# Build without serving (non-interactive)
-uvx nox --non-interactive -s docs
-
-# Check links
-uvx nox -s docs -- -b linkcheck
-```
-
-Documentation uses Sphinx with MyST (Markdown) and the furo theme. Source files are in `docs/`. C++ API docs require doxygen and are integrated via Breathe. MLIR docs are auto-generated from tablegen during the build.
-
-## Type Stubs
-
-```bash
-# Regenerate Python type stubs from nanobind bindings
-uvx nox -s stubs
-```
-
-Stub files (`.pyi`) in `python/mqt/core/` are **auto-generated** by nanobind's stubgen. NEVER edit `.pyi` files manually — they will be overwritten. If bindings change, regenerate stubs and commit the updated `.pyi` files.
-
-## Code Style
-
 ### C++
 
 - Formatting: LLVM-based (see `.clang-format`)
+- Linting: clang-tidy (see `.clang-tidy`)
 - Naming: `camelBack` for functions, methods, variables, parameters; `CamelCase` for classes, structs, enums; `UPPER_CASE` for global/static constants; `lower_case` for namespaces
 - Indentation: 2 spaces
 - Header guards: `#pragma once`
@@ -173,6 +146,12 @@ Stub files (`.pyi`) in `python/mqt/core/` are **auto-generated** by nanobind's s
 - Docstrings: Google style
 - Indentation: 4 spaces
 - Imports: sorted by ruff (isort rules), `from __future__ import annotations` enforced
+
+The ruff config in `pyproject.toml` uses `select = ["ALL"]` — **all rules are enabled by default**.
+Only a small set of rules are selectively disabled.
+Do not add new rules; only disable specific ones if necessary and document why.
+Line length is 120.
+Google-style docstrings are enforced.
 
 ### CMake
 
@@ -188,20 +167,49 @@ Stub files (`.pyi`) in `python/mqt/core/` are **auto-generated** by nanobind's s
 - Trailing whitespace: trimmed (except Markdown)
 - Final newline: required
 
+## Documentation
+
+```bash
+# Build and serve docs locally (requires doxygen installed)
+uvx nox -s docs
+
+# Build without serving (non-interactive)
+uvx nox --non-interactive -s docs
+
+# Check links
+uvx nox -s docs -- -b linkcheck
+```
+
+Documentation uses Sphinx with MyST (Markdown) and the furo theme.
+Source files are in `docs/`.
+C++ API docs require doxygen and are integrated via Breathe.
+MLIR docs are auto-generated from tablegen during the build.
+
+## Type Stubs
+
+```bash
+# Regenerate Python type stubs from nanobind bindings
+uvx nox -s stubs
+```
+
+Stub files (`.pyi`) in `python/mqt/core/` are **auto-generated** by nanobind's stubgen.
+NEVER edit `.pyi` files manually — they will be overwritten.
+If bindings change, regenerate stubs and commit the updated `.pyi` files.
+
 ## Project Layout
 
 ```text
-include/mqt-core/     C++ public headers (organized by component)
-src/                   C++ source files (mirrors include/ structure)
-python/mqt/core/       Python package and auto-generated .pyi stubs
-bindings/              nanobind C++ → Python bindings
-test/                  C++ tests (Google Test)
-test/python/           Python tests (pytest)
-cmake/                 CMake modules and helpers
-docs/                  Sphinx documentation source
-mlir/                  MLIR quantum compilation dialects (QC, QCO, QIR)
-eval/                  Benchmarking and evaluation
-json/                  Device configuration files (NA, SC)
+include/mqt-core/       C++ public headers (organized by component)
+src/                    C++ source files (mirrors include/ structure)
+python/mqt/core/        Python package and auto-generated .pyi stubs
+bindings/               nanobind C++ → Python bindings
+test/                   C++ tests (Google Test)
+test/python/            Python tests (pytest)
+cmake/                  CMake modules and helpers
+docs/                   Sphinx documentation source
+mlir/                   MLIR quantum compilation dialects (QC, QCO) and QIR builder
+eval/                   Benchmarking and evaluation
+json/                   Device configuration files (NA, SC)
 ```
 
 Components: `ir` (intermediate representation), `dd` (decision diagrams), `zx` (ZX-calculus), `algorithms`, `circuit_optimizer`, `qasm3` (OpenQASM 3.0 parser), `na` (neutral atoms), `qdmi` (device management), `qir` (QIR runtime), `fomac` (formal methods), `mlir` (MLIR dialects).
@@ -215,10 +223,20 @@ Components: `ir` (intermediate representation), `dd` (decision diagrams), `zx` (
 
 ## Important Notes
 
-- **License headers are required** on all source files: MIT license, SPDX identifier. Managed by `mz-lictools`. The license-tools pre-commit hook will fail if headers are missing.
-- **Capitalization matters**: use the exact capitalizations "nanobind", "CMake", "ccache", "GitHub", "NumPy", "pytest", "MQT", and "TUM". A pre-commit hook (`disallow-caps`) enforces this and will reject common misspellings.
+- **License headers are required** on all source files: MIT license, SPDX identifier.
+  Managed by `mz-lictools`.
+  The license-tools pre-commit hook will fail if headers are missing.
+- **Capitalization matters**: use the exact capitalizations "nanobind", "CMake", "ccache", "GitHub", "NumPy", "pytest", "MQT", and "TUM".
+  A pre-commit hook (`disallow-caps`) enforces this and will reject common misspellings.
 - **MLIR caveats**: MLIR is disabled automatically on macOS with GCC (ABI incompatibility) and with AppleClang < 17 (incomplete C++20 support).
-- **Stub files**: Never edit `.pyi` files by hand. Always regenerate with `uvx nox -s stubs`.
-- **uv lockfile**: The `uv.lock` file must stay in sync. The pre-commit hook `uv-lock` checks this. Run `uv lock` if you change dependencies in `pyproject.toml`.
-- **Pre-commit hooks must pass** before submitting pull requests. Run `uvx prek run -a` to check locally.
-- **Test your changes**: all changes must be tested. Write C++ tests with Google Test in `test/`, Python tests with pytest in `test/python/`.
+- **Stub files**: Never edit `.pyi` files by hand.
+  Always regenerate with `uvx nox -s stubs`.
+- **uv lockfile**: The `uv.lock` file must stay in sync.
+  The pre-commit hook `uv-lock` checks this.
+  Run `uv lock` if you change dependencies in `pyproject.toml`.
+- **Templated files**: Some files are generated by the [templating action](https://github.com/munich-quantum-toolkit/templates) and must not be edited directly, as changes will be overwritten.
+  These files are marked by an initial comment such as `# This file has been generated from an external template. Please do not modify it directly.`
+- **Pre-commit hooks must pass** before submitting pull requests.
+  Run `uvx prek run -a` to check locally.
+- **Test your changes**: all changes must be tested.
+  Write C++ tests with Google Test in `test/`, Python tests with pytest in `test/python/`.
