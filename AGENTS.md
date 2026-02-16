@@ -216,7 +216,7 @@ Components: `ir` (intermediate representation), `dd` (decision diagrams), `zx` (
 ## Important Notes
 
 - **License headers are required** on all source files: MIT license, SPDX identifier. Managed by `mz-lictools`. The license-tools pre-commit hook will fail if headers are missing.
-- **Capitalization matters**: use "nanobind" (not "Nanobind"), "CMake" (not "Cmake"), "ccache" (not "CCache"), "GitHub" (not "Github"), "NumPy" (not "Numpy"), "pytest" (not "PyTest"), "MQT" (not "Mqt"), "TUM" (not "Tum"). A pre-commit hook enforces this.
+- **Capitalization matters**: use the exact capitalizations "nanobind", "CMake", "ccache", "GitHub", "NumPy", "pytest", "MQT", and "TUM". A pre-commit hook (`disallow-caps`) enforces this and will reject common misspellings.
 - **MLIR caveats**: MLIR is disabled automatically on macOS with GCC (ABI incompatibility) and with AppleClang < 17 (incomplete C++20 support).
 - **Stub files**: Never edit `.pyi` files by hand. Always regenerate with `uvx nox -s stubs`.
 - **uv lockfile**: The `uv.lock` file must stay in sync. The pre-commit hook `uv-lock` checks this. Run `uv lock` if you change dependencies in `pyproject.toml`.
