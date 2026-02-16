@@ -232,7 +232,7 @@ LogicalResult IfOp::verify() {
   const auto& outputQubits = getResults();
   const auto numOutputQubits = outputQubits.size();
 
-  for (const auto& type : inputQubits.getTypes()) {
+  for (auto type : inputQubits.getTypes()) {
     if (!llvm::isa<QubitType>(type)) {
       return emitOpError("Inputs must be qubit type!");
     }
@@ -260,7 +260,7 @@ LogicalResult IfOp::verify() {
     return emitOpError("Operation must return the same number of qubits as the "
                        "number of input qubits.");
   }
-  for (const auto& [inputQubitType, outputQubitType] :
+  for (auto [inputQubitType, outputQubitType] :
        llvm::zip_equal(inputQubits.getTypes(), outputQubits.getTypes())) {
     if (inputQubitType != outputQubitType) {
       return emitOpError("Operation must return the same qubit types as its "
@@ -268,7 +268,7 @@ LogicalResult IfOp::verify() {
     }
   }
   SmallPtrSet<Value, 4> uniqueQubitsIn;
-  for (const auto& qubit : inputQubits) {
+  for (auto qubit : inputQubits) {
     if (!uniqueQubitsIn.insert(qubit).second) {
       return emitOpError("Input qubits must be unique.");
     }

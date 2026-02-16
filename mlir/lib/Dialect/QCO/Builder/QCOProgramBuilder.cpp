@@ -690,7 +690,7 @@ ValueRange QCOProgramBuilder::qcoIf(
   auto& elseBlock = ifOp->getRegion(1).emplaceBlock();
 
   // Create the blockarguments and add them as valid qubits
-  for (const auto& qubitType : qubits.getTypes()) {
+  for (auto qubitType : qubits.getTypes()) {
     const auto thenArg = thenBlock.addArgument(qubitType, getLoc());
     const auto elseArg = elseBlock.addArgument(qubitType, getLoc());
     validQubits.insert(thenArg);
@@ -714,7 +714,7 @@ ValueRange QCOProgramBuilder::qcoIf(
 
   // Update qubit tracking
   const auto& ifResults = ifOp->getResults();
-  for (const auto& [input, output] : llvm::zip(qubits, ifResults)) {
+  for (auto [input, output] : llvm::zip(qubits, ifResults)) {
     updateQubitTracking(input, output);
   }
   if (ifOp.thenYield()->getNumOperands() !=
@@ -724,8 +724,7 @@ ValueRange QCOProgramBuilder::qcoIf(
   }
 
   // Remove the inner qubits as valid qubits
-  for (const auto& [thenOut, elseOut] :
-       llvm::zip_equal(thenResult, elseResult)) {
+  for (auto [thenOut, elseOut] : llvm::zip_equal(thenResult, elseResult)) {
     validQubits.erase(thenOut);
     validQubits.erase(elseOut);
   }
