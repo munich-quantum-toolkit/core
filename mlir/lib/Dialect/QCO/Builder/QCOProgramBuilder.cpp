@@ -29,6 +29,7 @@
 #include <mlir/IR/OwningOpRef.h>
 #include <mlir/IR/Value.h>
 #include <mlir/IR/ValueRange.h>
+#include <optional>
 #include <string>
 #include <utility>
 #include <variant>
@@ -679,7 +680,8 @@ QCOProgramBuilder& QCOProgramBuilder::dealloc(Value qubit) {
 ValueRange QCOProgramBuilder::qcoIf(
     Value condition, ValueRange qubits,
     llvm::function_ref<llvm::SmallVector<Value>(ValueRange)> thenBody,
-    llvm::function_ref<llvm::SmallVector<Value>(ValueRange)> elseBody) {
+    std::optional<llvm::function_ref<llvm::SmallVector<Value>(ValueRange)>>
+        elseBody) {
   checkFinalized();
 
   auto ifOp = IfOp::create(*this, condition, qubits);
@@ -701,15 +703,22 @@ ValueRange QCOProgramBuilder::qcoIf(
   const auto thenResult = thenBody(thenBlock.getArguments());
   YieldOp::create(*this, thenResult);
   setInsertionPointToStart(&elseBlock);
-  const auto elseResult = elseBody(elseBlock.getArguments());
-  YieldOp::create(*this, elseResult);
+  ValueRange elseResult;
+  if (elseBody) {
+    elseResult = (*elseBody)(elseBlock.getArguments());
+    YieldOp::create(*this, elseResult);
+  } else {
+    elseResult = elseBlock.getArguments();
+    YieldOp::create(*this, elseBlock.getArguments());
+  }
 
   // Update qubit tracking
   const auto& ifResults = ifOp->getResults();
   for (const auto& [input, output] : llvm::zip(qubits, ifResults)) {
     updateQubitTracking(input, output);
   }
-  if (thenResult.size() != elseResult.size()) {
+  if (ifOp.thenYield()->getNumOperands() !=
+      ifOp.elseYield()->getNumOperands()) {
     llvm::reportFatalUsageError(
         "Then and else body must return the same amount of qubits!");
   }

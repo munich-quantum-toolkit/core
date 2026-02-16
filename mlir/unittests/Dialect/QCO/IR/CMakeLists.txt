@@ -14,4 +14,4 @@ target_link_libraries(mqt-core-mlir-qco-dialect-test PRIVATE GTest::gtest_main M
 gtest_discover_tests(mqt-core-mlir-qco-dialect-test)
 
 add_subdirectory(Modifiers)
-add_subdirectory(Scf)
+add_subdirectory(SCF)

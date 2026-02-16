@@ -13,7 +13,6 @@
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 
 #include <cstdint>
-#include <functional>
 #include <llvm/ADT/DenseSet.h>
 #include <llvm/ADT/STLFunctionalExtras.h>
 #include <llvm/ADT/SmallVector.h>
@@ -24,6 +23,7 @@
 #include <mlir/IR/OwningOpRef.h>
 #include <mlir/IR/Value.h>
 #include <mlir/IR/ValueRange.h>
+#include <optional>
 #include <string>
 #include <utility>
 #include <variant>
@@ -1082,9 +1082,7 @@ public:
    *     [&](ValueRange args) -> llvm::SmallVector<Value> {
    *       auto q1 = builder.h(args[0]);
    *       return {q1};
-   *     }, [&](ValueRange args) -> llvm::SmallVector<Value> {
-   *       return args;
-   *   });
+   *     });
    * ```
    * ```mlir
    * %q2 = qco.if %condition qubits(%arg0 = %q0) {
@@ -1098,7 +1096,8 @@ public:
   ValueRange
   qcoIf(Value condition, ValueRange qubits,
         llvm::function_ref<llvm::SmallVector<Value>(ValueRange)> thenBody,
-        llvm::function_ref<llvm::SmallVector<Value>(ValueRange)> elseBody);
+        std::optional<llvm::function_ref<llvm::SmallVector<Value>(ValueRange)>>
+            elseBody = std::nullopt);
 
   //===--------------------------------------------------------------------===//
   // Finalization
