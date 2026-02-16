@@ -110,10 +110,7 @@ TEST_F(QCOIfOpTest, TestIfBuilder) {
 
   auto ifOp = IfOp::create(
       builder, constantBool, q,
-      [&](ValueRange args) -> SmallVector<Value> {
-        auto q1 = builder.h(args[0]);
-        return {q1};
-      },
+      [&](ValueRange args) -> SmallVector<Value> { return args; },
       [&](ValueRange args) -> SmallVector<Value> { return args; });
 
   // Verify the operation structure
