@@ -23,7 +23,6 @@
 #include <mlir/IR/OwningOpRef.h>
 #include <mlir/IR/Value.h>
 #include <mlir/IR/ValueRange.h>
-#include <optional>
 #include <string>
 #include <utility>
 #include <variant>
@@ -1064,7 +1063,7 @@ public:
    * @details
    * Constructs an if operation that takes a bool Value and a range of qubit
    * Values that are used in the then/else region of this operation. The qubit
-   * values are passed down as blockarguments to each region.
+   * values are passed down as block arguments to each region.
    *
    * @param condition Bool condition
    * @param qubits Input qubits
@@ -1096,8 +1095,8 @@ public:
   ValueRange
   qcoIf(Value condition, ValueRange qubits,
         llvm::function_ref<llvm::SmallVector<Value>(ValueRange)> thenBody,
-        std::optional<llvm::function_ref<llvm::SmallVector<Value>(ValueRange)>>
-            elseBody = std::nullopt);
+        llvm::function_ref<llvm::SmallVector<Value>(ValueRange)> elseBody =
+            nullptr);
 
   //===--------------------------------------------------------------------===//
   // Finalization

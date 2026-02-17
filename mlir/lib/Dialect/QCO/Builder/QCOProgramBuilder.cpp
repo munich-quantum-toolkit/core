@@ -680,8 +680,7 @@ QCOProgramBuilder& QCOProgramBuilder::dealloc(Value qubit) {
 ValueRange QCOProgramBuilder::qcoIf(
     Value condition, ValueRange qubits,
     llvm::function_ref<llvm::SmallVector<Value>(ValueRange)> thenBody,
-    std::optional<llvm::function_ref<llvm::SmallVector<Value>(ValueRange)>>
-        elseBody) {
+    llvm::function_ref<llvm::SmallVector<Value>(ValueRange)> elseBody) {
   checkFinalized();
 
   auto ifOp = IfOp::create(*this, condition, qubits);
@@ -689,7 +688,7 @@ ValueRange QCOProgramBuilder::qcoIf(
   auto& thenBlock = ifOp->getRegion(0).emplaceBlock();
   auto& elseBlock = ifOp->getRegion(1).emplaceBlock();
 
-  // Create the blockarguments and add them as valid qubits
+  // Create the block arguments and add them as valid qubits
   for (auto qubitType : qubits.getTypes()) {
     const auto thenArg = thenBlock.addArgument(qubitType, getLoc());
     const auto elseArg = elseBlock.addArgument(qubitType, getLoc());
@@ -705,7 +704,7 @@ ValueRange QCOProgramBuilder::qcoIf(
   setInsertionPointToStart(&elseBlock);
   ValueRange elseResult;
   if (elseBody) {
-    elseResult = (*elseBody)(elseBlock.getArguments());
+    elseResult = elseBody(elseBlock.getArguments());
     YieldOp::create(*this, elseResult);
   } else {
     elseResult = elseBlock.getArguments();

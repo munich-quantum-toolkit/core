@@ -1211,7 +1211,7 @@ def InvOp : QCOOp<"inv", traits =
 }
 
 //===----------------------------------------------------------------------===//
-// Scf operations
+// SCF operations
 //===----------------------------------------------------------------------===//
 
 def IfOp : QCOOp<"if", traits =
@@ -1224,9 +1224,9 @@ def IfOp : QCOOp<"if", traits =
                 RecursiveMemoryEffects
             ]> {
 
-    let summary = "If-then-else operation for qubit types";
+    let summary = "If-then-else operation for linear (qubit) types";
     let description = [{
-        The `qco.if` operation is an if-then-else construct similar to the existing scf.if operation.
+        The `qco.if` operation is an if-then-else construct similar to the standard scf.if operation.
         In addition to the condition, the operation takes a variadic number of qubits as inputs that are
         required in the bodies of both branches. These qubits are passed down to the individual regions
         as block arguments. The number of results and the type of the results must be equivalent to the
