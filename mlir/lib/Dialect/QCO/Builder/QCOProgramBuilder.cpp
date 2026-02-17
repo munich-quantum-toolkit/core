@@ -724,10 +724,13 @@ ValueRange QCOProgramBuilder::qcoIf(
   }
 
   // Remove the inner qubits as valid qubits
-  for (auto [thenOut, elseOut] : llvm::zip_equal(thenResult, elseResult)) {
+  for (auto thenOut : thenResult) {
     validQubits.erase(thenOut);
+  }
+  for (auto elseOut : elseResult) {
     validQubits.erase(elseOut);
   }
+
   return ifResults;
 }
 
