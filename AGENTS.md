@@ -8,7 +8,7 @@ MQT Core is the backbone of the [Munich Quantum Toolkit](https://mqt.readthedocs
 - Run `uv pip install -e . --no-build-isolation` to build the Python package in development mode.
 - Check `build/{wheel_tag}/{build_type}` for Python build artifacts.
 - To build Python bindings in debug mode, use `uv pip install -e . --no-build-isolation --config-settings=cmake.build-type=Debug`.
-- For C++ only: `cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DBUILD_MQT_CORE_TESTS=ON -DBUILD_MQT_CORE_BINDINGS=ON`, then `cmake --build build --parallel`.
+- For C++ only: `cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DBUILD_MQT_CORE_TESTS=ON`, then `cmake --build build`.
 - For C++ debug builds: pass `-DCMAKE_BUILD_TYPE=Debug` instead.
 - C++ build artifacts land in `build/src/` (libraries) and `build/test/` (test executables).
 - We require **C++20**, **CMake 3.24+**, **Python 3.10+**, and **LLVM 21+**.
