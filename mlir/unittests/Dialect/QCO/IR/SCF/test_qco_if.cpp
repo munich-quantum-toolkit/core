@@ -163,16 +163,22 @@ TEST_F(QCOIfOpTest, TestSameNumberOfOperandQubitsAndResult) {
   ASSERT_TRUE(verify(ifOp).failed());
 }
 
-TEST_F(QCOIfOpTest, TestConstantCondition) {
-  // Build a qco.if with a constant condition
-  const auto q = builder.allocQubitRegister(1);
+TEST_F(QCOIfOpTest, TestConstantTrueCondition) {
+  // Build a qco.if with a constant true condition
+  const auto q = builder.allocQubitRegister(2);
   auto constantBool =
       arith::ConstantOp::create(builder, builder.getBoolAttr(true));
 
-  builder.qcoIf(constantBool, q, [&](ValueRange args) -> SmallVector<Value> {
-    auto q1 = builder.h(args[0]);
-    return {q1};
-  });
+  builder.qcoIf(
+      constantBool, q,
+      [&](ValueRange args) -> SmallVector<Value> {
+        auto q1 = builder.h(args[0]);
+        return {q1, args[1]};
+      },
+      [&](ValueRange args) -> SmallVector<Value> {
+        auto q1 = builder.x(args[1]);
+        return {args[0], q1};
+      });
 
   module = builder.finalize();
 
@@ -181,6 +187,34 @@ TEST_F(QCOIfOpTest, TestConstantCondition) {
 
   EXPECT_EQ(countOps<HOp>(), 1);
   EXPECT_EQ(countOps<IfOp>(), 0);
+  EXPECT_EQ(countOps<XOp>(), 0);
+}
+
+TEST_F(QCOIfOpTest, TestConstantFalseCondition) {
+  // Build a qco.if with a constant false condition
+  const auto q = builder.allocQubitRegister(2);
+  auto constantBool =
+      arith::ConstantOp::create(builder, builder.getBoolAttr(false));
+
+  builder.qcoIf(
+      constantBool, q,
+      [&](ValueRange args) -> SmallVector<Value> {
+        auto q1 = builder.h(args[0]);
+        return {q1, args[1]};
+      },
+      [&](ValueRange args) -> SmallVector<Value> {
+        auto q1 = builder.x(args[1]);
+        return {args[0], q1};
+      });
+
+  module = builder.finalize();
+
+  // Run canonicalizer
+  ASSERT_TRUE(canonicalize());
+
+  EXPECT_EQ(countOps<HOp>(), 0);
+  EXPECT_EQ(countOps<IfOp>(), 0);
+  EXPECT_EQ(countOps<XOp>(), 1);
 }
 
 TEST_F(QCOIfOpTest, TestConditionPropagation) {
