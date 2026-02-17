@@ -48,7 +48,7 @@
 - Locate documentation output in `docs/_build/html`.
 - Generate type stubs: `uvx nox -s stubs`.
 - Note: Stub files (`.pyi`) must **never** be edited manually.
-- Consult [contributing.md](docs/contributing.md) for comprehensive PR workflows and testing philosophies.
+- Check [contributing.md](docs/contributing.md) for comprehensive PR workflows and testing philosophies.
 
 ## Tools
 - Use **C++20** and **Python 3.10+** as the strict minimum language versions.
