@@ -38,7 +38,8 @@ MQT Core is the backbone of the [Munich Quantum Toolkit](https://mqt.readthedocs
 ## Docs instructions
 
 - Run `nox -s docs` to build the documentation.
-- Use `nox -s docs -- -b html` to build and serve the docs locally for preview.
+- Use `nox -s docs -- -b html` to build the HTML docs locally for preview.
+- (Optional) Serve locally via `python -m http.server` from `docs/_build/html`.
 - Find generated HTML files in `docs/_build/html`.
 - Documentation entry point is [`docs/index.md`](docs/index.md).
 
