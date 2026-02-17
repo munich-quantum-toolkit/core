@@ -701,12 +701,13 @@ ValueRange QCOProgramBuilder::qcoIf(
   const auto thenResult = thenBody(thenBlock.getArguments());
   YieldOp::create(*this, thenResult);
   setInsertionPointToStart(&elseBlock);
-  ValueRange elseResult;
+  llvm::SmallVector<Value> elseResult;
   if (elseBody) {
     elseResult = elseBody(elseBlock.getArguments());
     YieldOp::create(*this, elseResult);
   } else {
-    elseResult = elseBlock.getArguments();
+    elseResult.assign(elseBlock.getArguments().begin(),
+                      elseBlock.getArguments().end());
     YieldOp::create(*this, elseBlock.getArguments());
   }
 
