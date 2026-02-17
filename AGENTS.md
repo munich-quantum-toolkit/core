@@ -36,8 +36,8 @@ The C++ library lives in `src/` and `include/`, Python bindings in `python/`, te
 - We use `ruff` for Python linting and formatting — not pylint, black, or isort.
   Our config enables **ALL** rules by default and only selectively disables some in [`pyproject.toml`](pyproject.toml).
 - We use `ty` for static type checking — not mypy.
-- We use `clang-format` and `clang-tidy` for C++ formatting and linting.
-- We use `typos` for spell checking across the codebase.
+- C++ code uses `clang-format` and `clang-tidy` for formatting and linting.
+- Spell checking across the codebase is handled by `typos`.
 - Do NOT edit `.pyi` stub files manually; regenerate them with `uvx nox -s stubs`.
 
 ## Docs instructions
