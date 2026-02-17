@@ -61,11 +61,6 @@ void IfOp::build(
                        elseBuilder(elseBlock.getArguments()));
 }
 
-Block* IfOp::thenBlock() { return &getThenRegion().back(); }
-YieldOp IfOp::thenYield() { return dyn_cast<YieldOp>(&thenBlock()->back()); }
-Block* IfOp::elseBlock() { return &getElseRegion().back(); }
-YieldOp IfOp::elseYield() { return dyn_cast<YieldOp>(&elseBlock()->back()); }
-
 // Adjusted from
 // https://github.com/llvm/llvm-project/blob/llvmorg-21.1.8/mlir/lib/Dialect/SCF/IR/SCF.cpp
 
@@ -118,7 +113,7 @@ void IfOp::getRegionInvocationBounds(
  * @param rewriter The used rewriter
  * @param op The operation that is replcaed
  * @param region The region with the replacement content
- * @param blockargs The block arguments of the region
+ * @param blockArgs The block arguments of the region
  *
  */
 static void replaceOpWithRegion(PatternRewriter& rewriter, Operation* op,
@@ -197,8 +192,7 @@ struct ConditionPropagation : public OpRewritePattern<IfOp> {
     Value constantTrue = nullptr;
     Value constantFalse = nullptr;
 
-    for (OpOperand& use :
-         llvm::make_early_inc_range(op.getCondition().getUses())) {
+    for (auto& use : llvm::make_early_inc_range(op.getCondition().getUses())) {
       if (op.getThenRegion().isAncestor(use.getOwner()->getParentRegion())) {
         changed = true;
 

@@ -1266,10 +1266,23 @@ def IfOp : QCOOp<"if", traits =
     ];
 
     let extraClassDeclaration = [{
-        Block* thenBlock();
+        Block *thenBlock() {
+           return &getThenRegion().back();
+        }
         YieldOp thenYield();
-        Block* elseBlock();
+        Block* elseBlock() {
+           return &getElseRegion().back();
+        }
         YieldOp elseYield();
+    }];
+
+    let extraClassDefinition = [{
+        YieldOp $cppClass::thenYield() {
+           return cast<YieldOp>(&thenBlock()->back());
+        }
+        YieldOp $cppClass::elseYield() {
+           return cast<YieldOp>(&elseBlock()->back());
+        }
     }];
 
     let hasCanonicalizer = 1;
