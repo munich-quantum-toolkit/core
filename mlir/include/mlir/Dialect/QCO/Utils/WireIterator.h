@@ -69,7 +69,7 @@ public:
 
   WireIterator operator--(int) {
     auto tmp = *this;
-    operator--;
+    operator--();
     return tmp;
   }
 
