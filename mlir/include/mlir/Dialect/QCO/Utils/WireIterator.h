@@ -58,7 +58,7 @@ public:
 
   WireIterator operator++(int) {
     auto tmp = *this;
-    ++*this;
+    operator++();
     return tmp;
   }
 
@@ -69,7 +69,7 @@ public:
 
   WireIterator operator--(int) {
     auto tmp = *this;
-    --*this;
+    operator--;
     return tmp;
   }
 

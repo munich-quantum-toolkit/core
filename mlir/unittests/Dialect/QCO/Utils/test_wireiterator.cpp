@@ -58,7 +58,7 @@ TEST_P(WireIteratorTest, MixedUse) {
   const auto q04 = builder.reset(q03);
   builder.dealloc(q04);
   builder.dealloc(q11);
-  [[maybe_unused]] auto module = builder.finalize();
+  std::ignore = builder.finalize();
 
   // Setup WireIterator.
   qco::WireIterator it(q00);
