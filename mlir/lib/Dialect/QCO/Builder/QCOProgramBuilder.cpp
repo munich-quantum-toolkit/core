@@ -29,7 +29,6 @@
 #include <mlir/IR/OwningOpRef.h>
 #include <mlir/IR/Value.h>
 #include <mlir/IR/ValueRange.h>
-#include <optional>
 #include <string>
 #include <utility>
 #include <variant>
