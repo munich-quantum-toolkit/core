@@ -1,67 +1,91 @@
 # MQT Core
+- Acts as the high-performance backbone for the [Munich Quantum Toolkit (MQT)](https://mqt.readthedocs.io/).
+- Provides core data structures and algorithms (IR, DD, ZX, QASM 3.0, MLIR) for quantum design automation.
+- Distinguishes between **circuit qubits** (logical/virtual) and **device qubits** (physical) to avoid ambiguity.
+- Maintains a C++20 core with an architecturally separate Python extension layer.
+- Locates C++ sources in `src/` and `include/`, Python bindings in `python/`, tests in `test/`, and documentation in `docs/`.
+- Refer to [index.md](docs/index.md) for the complete documentation entry point.
 
-MQT Core is the backbone of the [Munich Quantum Toolkit](https://mqt.readthedocs.io/).
-It provides the core data structures, algorithms, and Python bindings for quantum computing applications.
-The C++ library lives in `src/` and `include/`, Python bindings in `python/`, tests in `test/`, and documentation in `docs/`.
+## Environment & Capabilities
+- **Platform**: Operating in a Linux environment with support for x86_64 (amd64) and arm64.
+- **Python Context**: Version 3.10–3.14 managed via **uv** for strict isolation.
+- **C++ Context**: C++20 standard required; **LLVM 21.1+** mandatory for MLIR dialects.
+- **Tooling Access**: Full access to `cmake`, `ctest`, `pytest`, `ruff`, and `nox`.
+- **Constraint**: Avoid network-dependent tasks during builds; rely on `uv` lockfiles and pre-synced dependencies.
 
-## Dev environment tips
+## Repository Mapping
+- `include/mqt/core/`: C++ header files (Internal & Public interfaces).
+- `src/mqt/core/`: C++ implementation logic.
+- `python/mqt/core/`: Python package foundation.
+- `python/mqt/core/ir/`: Public Python bindings package for Circuit IR.
+- `python/mqt/core/dd.pyi`: Public Python bindings module for Decision Diagrams.
+- `python/mqt/core/na/`: Public Python bindings package for Neutral Atom logic.
+- `test/`: Comprehensive test suites (C++ and Python).
+- `docs/`: Knowledge base for installation, contribution, and technical references.
 
-- Use `uv sync --all-extras` to install dependencies and lock the environment.
-  **Do not use pip or venv manually.**
-- Run `uv pip install -e . --no-build-isolation` to build the Python package in development mode.
-- Check `build/{wheel_tag}/{build_type}` for Python build artifacts.
-- To build Python bindings in debug mode, use `uv pip install -e . --no-build-isolation --config-settings=cmake.build-type=Debug`.
-- For C++ only: `cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DBUILD_MQT_CORE_TESTS=ON`, then `cmake --build build`.
-- For C++ debug builds: pass `-DCMAKE_BUILD_TYPE=Debug` instead.
-- C++ build artifacts land in `build/src/` (libraries) and `build/test/` (test executables).
-- We require **C++20**, **CMake 3.24+**, **Python 3.10+**, and **LLVM 21+**.
-- We support Linux, macOS, and Windows (x86 & arm64).
-  Ensure changes work cross-platform.
-- See [`docs/contributing.md`](docs/contributing.md) for the full contributor guide and [`docs/installation.md`](docs/installation.md) for setup details.
+## Tasks
 
-## Testing instructions
+### C++ Workflows
+- Configure Release build: `cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DBUILD_MQT_CORE_TESTS=ON`.
+- Configure Debug build: `cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug -DBUILD_MQT_CORE_TESTS=ON`.
+- Build the library: `cmake --build build --parallel`.
+- Run C++ tests: `ctest --test-dir build -C Release --output-on-failure`.
+- Run a single C++ test: `ctest --test-dir build -C Release -R <test_name>`.
+- Locate C++ artifacts in `build/src/` (libraries) and `build/test/` (test executables).
 
-- Run `uvx nox -s tests` to execute the full Python test suite.
-- To focus on one test: `uvx nox -s tests -- -k "<test_name>"`.
-- Run `uvx nox -s minimums` to test with the lowest supported dependency versions.
-- Run `uvx nox -s qiskit` to verify compatibility with the latest Qiskit.
-- For C++ tests, run `ctest -C Release --test-dir build` from the project root after building.
-- To run a single C++ test: `ctest -C Release --test-dir build -R <test_name>`.
-- Ensure `BUILD_MQT_CORE_BINDINGS=ON` and `BUILD_MQT_CORE_TESTS=ON` were set during CMake configuration.
-- Add or update tests for the code you change, even if nobody asked.
+### Python Workflows
+- Build the Python package: `uv build`.
+- Locate Python build artifacts in `build/{wheel_tag}/{build_type}` or the project `build/` folder.
+- Execute full test suite: `uvx nox -s tests`.
+- Run targeted tests: `uv run pytest test/python/dd/`.
+- Filter Python tests: `uvx nox -s tests -- -k "<test_name>"`.
+- Test minimum dependency versions: `uvx nox -s minimums`.
+- Verify Qiskit compatibility: `uvx nox -s qiskit`.
 
-## Linting and formatting
+### Quality, Docs & Stubs
+- Run pre-commit checks: `uvx prek run -a` or `uvx nox -s lint`.
+- Build documentation (Doxygen + Sphinx + MLIR): `uvx nox -s docs`.
+- Locate documentation output in `docs/_build/html`.
+- Generate type stubs: `uvx nox -s stubs`.
+- Note: Stub files (`.pyi`) must **never** be edited manually.
+- Consult [contributing.md](docs/contributing.md) for comprehensive PR workflows and testing philosophies.
 
-- Always run `uvx nox -s lint` (or equivalently `uvx prek run -a`) before committing.
-- We use `ruff` for Python linting and formatting — not pylint, black, or isort.
-  Our config enables **ALL** rules by default and only selectively disables some in [`pyproject.toml`](pyproject.toml).
-- We use `ty` for static type checking — not mypy.
-- We use `clang-format` and `clang-tidy` for C++ formatting and linting.
-- We use `typos` for spell checking across the codebase.
-- Do NOT edit `.pyi` stub files manually; regenerate them with `uvx nox -s stubs`.
+## Tools
+- Use **C++20** and **Python 3.10+** as the strict minimum language versions.
+- Use **CMake 3.24+** and **scikit-build-core** for the build system.
+- Use **uv** as the mandatory package manager; never use `pip` or manual `venv`.
+- Use **nanobind** (~2.11.0) for Python bindings; do not use `pybind11`.
+- Use **ruff** for linting and formatting, with `ALL` rules enabled by default.
+- Use **ty** for static type checking as the mandatory replacement for `mypy`.
+- Use **LLVM 21.1+** for MLIR-based compilation dialects.
+- Use **clang-format** and **typos** for C++ style and project-wide spell checking.
 
-## Docs instructions
-
-- Run `uvx nox -s docs` to build the documentation.
-- Use `uvx nox -s docs -- -b html` to build the HTML docs locally for preview.
-- (Optional) Serve locally via `python -m http.server` from `docs/_build/html`.
-- Find generated HTML files in `docs/_build/html`.
-- Documentation entry point is [`docs/index.md`](docs/index.md).
-
-## Development guidelines
-
-- All changes must be tested.
-  If you're not testing your changes, you're not done.
-- Follow existing code style.
-  Check neighboring files for patterns.
-- Prefer C++20 `std::` features over custom implementations.
-  Avoid unnecessary complexity.
-- Python code must be fully typed and pass `ty` static analysis.
+## Development Guidelines
+- Always prioritize C++20 `std::` features over custom implementations.
 - Use Google-style docstrings for Python and Doxygen comments for C++.
-- Always run `uvx prek run -a` at the end of a task.
+- Ensure Python code is fully typed and passes `ty` static analysis.
+- Follow existing code style by checking neighboring files for patterns.
+- Add or update tests for every code change, even if not explicitly requested.
+- Review [CHANGELOG.md](docs/CHANGELOG.md) and [UPGRADING.md](docs/UPGRADING.md) before making breaking changes.
 
-## PR instructions
+## Documentation Reference
+- Deep dive into the Internal Representation: [mqt_core_ir.md](docs/mqt_core_ir.md).
+- Understand Decision Diagram internals: [dd_package.md](docs/dd_package.md).
+- Explore ZX-calculus algorithms: [zx_package.md](docs/zx_package.md).
+- Access the online API reference: [MQT Core Docs](https://mqt.readthedocs.io/projects/core/en/latest/).
 
-- Always run `uvx nox -s lint` and the relevant test suite before committing.
-- If `uvx nox -s lint` fails, your code is not ready.
-  Fix formatting and types first.
+## Self-Review Checklist
+- Did you run `uvx nox -s lint` and ensure all checks (ruff, typos, ty) pass?
+- Did you verify all your changes with at least one automated test (pytest or ctest)?
+- Did you update/add tests for new functionality to maintain coverage?
+- Did you use exact terminology (**circuit qubits** vs **device qubits**)?
+- Did you regenerate Python stubs via `uvx nox -s stubs` if bindings were modified?
+- Did you check for manual changes to `.pyi` files (which are forbidden)?
+- Did you include the correct license headers and SPDX identifiers?
+
+## Rules
+- Adhere to the ruff philosophy: Start with `ALL` rules and selectively disable in `pyproject.toml`.
+- Enforce term capitalization: `nanobind`, `CMake`, `ccache`, `GitHub`, `NumPy`, `pytest`, `MQT`, and `TUM`.
+- Include MIT license and SPDX headers in every source file.
+- Avoid modifying templated files locally; contribute to [MQT templates](https://github.com/munich-quantum-toolkit/templates).
+- Verify all CI checks locally; if `uvx nox -s lint` fails, the code is not ready for PR.
