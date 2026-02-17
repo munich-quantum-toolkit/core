@@ -66,8 +66,8 @@ YieldOp IfOp::thenYield() { return dyn_cast<YieldOp>(&thenBlock()->back()); }
 Block* IfOp::elseBlock() { return &getElseRegion().back(); }
 YieldOp IfOp::elseYield() { return dyn_cast<YieldOp>(&elseBlock()->back()); }
 
-// Copied from
-// https://github.com/llvm/llvm-project/blob/llvmorg-21.1.7/mlir/lib/Dialect/SCF/IR/SCF.cpp
+// Adjusted from
+// https://github.com/llvm/llvm-project/blob/llvmorg-21.1.8/mlir/lib/Dialect/SCF/IR/SCF.cpp
 
 void IfOp::getSuccessorRegions(RegionBranchPoint point,
                                SmallVectorImpl<RegionSuccessor>& regions) {
@@ -108,8 +108,19 @@ void IfOp::getRegionInvocationBounds(
   }
 }
 
-/// Replaces the given op with the contents of the given single-block region,
-/// using the operands of the block terminator to replace operation results.
+/**
+ * @brief Replace operation with the contents of a region
+ *
+ * @details
+ * Replaces the given op with the contents of the given single-block region,
+ * using the operands of the block terminator to replace operation results.
+ *
+ * @param rewriter The used rewriter
+ * @param op The operation that is replcaed
+ * @param region The region with the replacement content
+ * @param blockargs The block arguments of the region
+ *
+ */
 static void replaceOpWithRegion(PatternRewriter& rewriter, Operation* op,
                                 Region& region, ValueRange blockArgs = {}) {
   assert(llvm::hasSingleElement(region) && "expected single-region block");
@@ -122,6 +133,15 @@ static void replaceOpWithRegion(PatternRewriter& rewriter, Operation* op,
 }
 
 namespace {
+
+/**
+ * @brief Remove static conditions
+ *
+ * @details
+ * Removes a qco.if operation with a static condition and replace it with the
+ * contents of the selected branch.
+ *
+ */
 struct RemoveStaticCondition : public OpRewritePattern<IfOp> {
   using OpRewritePattern<IfOp>::OpRewritePattern;
 
@@ -142,19 +162,22 @@ struct RemoveStaticCondition : public OpRewritePattern<IfOp> {
   }
 };
 
-/// Allow the true region of an if to assume the condition is true
-/// and vice versa. For example:
-///
-///   scf.if %cmp {
-///      print(%cmp)
-///   }
-///
-///  becomes
-///
-///   scf.if %cmp {
-///      print(true)
-///   }
-///
+/**
+ * @brief Propagate the condition into the branches
+ *
+ * @details
+ * Allow the true region of an if to assume the condition is true
+ * and vice versa. For example:
+ *
+ *   qco.if %cmp qubits(%arg0 = %q0) {
+ *      print(true)
+ *      ...
+ *   } else (%arg = %q0) {
+ *      print(false)
+ *      ...
+ *   }
+ *
+ */
 struct ConditionPropagation : public OpRewritePattern<IfOp> {
   using OpRewritePattern<IfOp>::OpRewritePattern;
 
@@ -180,8 +203,8 @@ struct ConditionPropagation : public OpRewritePattern<IfOp> {
         changed = true;
 
         if (!constantTrue) {
-          constantTrue = rewriter.create<arith::ConstantOp>(
-              op.getLoc(), i1Ty, rewriter.getIntegerAttr(i1Ty, 1));
+          constantTrue = arith::ConstantOp::create(
+              rewriter, op.getLoc(), i1Ty, rewriter.getIntegerAttr(i1Ty, 1));
         }
 
         rewriter.modifyOpInPlace(use.getOwner(),
@@ -191,8 +214,8 @@ struct ConditionPropagation : public OpRewritePattern<IfOp> {
         changed = true;
 
         if (!constantFalse) {
-          constantFalse = rewriter.create<arith::ConstantOp>(
-              op.getLoc(), i1Ty, rewriter.getIntegerAttr(i1Ty, 0));
+          constantFalse = arith::ConstantOp::create(
+              rewriter, op.getLoc(), i1Ty, rewriter.getIntegerAttr(i1Ty, 0));
         }
 
         rewriter.modifyOpInPlace(use.getOwner(),
