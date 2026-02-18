@@ -13,7 +13,6 @@
 // The following headers are needed for some template instantiations.
 // IWYU pragma: begin_keep
 #include <llvm/ADT/TypeSwitch.h>
-#include <mlir/IR/Builders.h>
 #include <mlir/IR/DialectImplementation.h>
 // IWYU pragma: end_keep
 
