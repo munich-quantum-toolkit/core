@@ -10,8 +10,6 @@
 
 #pragma once
 
-#include "mlir/Dialect/QCO/IR/QCODialect.h"
-
 #include <cstdint>
 #include <functional>
 #include <llvm/ADT/DenseSet.h>

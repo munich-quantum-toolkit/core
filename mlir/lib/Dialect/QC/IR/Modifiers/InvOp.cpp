@@ -8,7 +8,7 @@
  * Licensed under the MIT License
  */
 
-#include "mlir/Dialect/QC/IR/QCDialect.h"
+#include "mlir/Dialect/QC/IR/QCOps.h"
 
 #include <llvm/ADT/STLFunctionalExtras.h>
 #include <llvm/ADT/TypeSwitch.h>

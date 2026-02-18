@@ -10,8 +10,8 @@
 
 #include "mlir/Conversion/QCOToQC/QCOToQC.h"
 
-#include "mlir/Dialect/QC/IR/QCDialect.h"
-#include "mlir/Dialect/QCO/IR/QCODialect.h"
+#include "mlir/Dialect/QC/IR/QCOps.h"
+#include "mlir/Dialect/QCO/IR/QCOOps.h"
 
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/Func/Transforms/FuncConversions.h>

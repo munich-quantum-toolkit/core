@@ -13,7 +13,8 @@
 #include "dd/Package.hpp"
 #include "ir/operations/OpType.hpp"
 #include "ir/operations/StandardOperation.hpp"
-#include "mlir/Dialect/QCO/IR/QCODialect.h"
+#include "mlir/Dialect/QCO/Builder/QCOProgramBuilder.h"
+#include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "qco_programs.h"
 #include "test_qco_ir.h"
 

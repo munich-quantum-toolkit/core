@@ -10,7 +10,7 @@
 
 #pragma once
 
-#include "mlir/Dialect/QIR/Utils/QIRUtils.h"
+#include "mlir/Dialect/QIR/Utils/QIRMetadata.h"
 
 #include <cstdint>
 #include <llvm/ADT/DenseMap.h>
@@ -20,17 +20,21 @@
 #include <llvm/Support/Allocator.h>
 #include <llvm/Support/ErrorHandling.h>
 #include <llvm/Support/StringSaver.h>
-#include <mlir/Dialect/LLVMIR/LLVMDialect.h>
-#include <mlir/IR/Block.h>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OwningOpRef.h>
+#include <mlir/IR/Types.h>
 #include <mlir/IR/Value.h>
 #include <mlir/IR/ValueRange.h>
 #include <string>
 #include <utility>
 #include <variant>
+
+namespace mlir {
+class Block;
+class Operation;
+} // namespace mlir
 
 namespace mlir::qir {
 
@@ -863,7 +867,7 @@ private:
   ModuleOp module;
 
   /// The main function
-  LLVM::LLVMFuncOp mainFunc;
+  Operation* mainFunc{};
 
   /// Allocator and StringSaver for stable StringRefs
   llvm::BumpPtrAllocator allocator;
@@ -891,10 +895,10 @@ private:
   QIRMetadata metadata_;
 
   /// Helper variable for storing the LLVM pointer type
-  LLVM::LLVMPointerType ptrType;
+  Type ptrType;
 
   /// Helper variable for storing the LLVM void type
-  LLVM::LLVMVoidType voidType;
+  Type voidType;
 
   /**
    * @brief Helper to create a LLVM CallOp

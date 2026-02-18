@@ -51,18 +51,19 @@ void QIRProgramBuilder::initialize() {
 
   // Create main function: () -> i64
   auto funcType = LLVM::LLVMFunctionType::get(getI64Type(), {});
-  mainFunc = LLVM::LLVMFuncOp::create(*this, "main", funcType);
+  auto mainFuncOp = LLVM::LLVMFuncOp::create(*this, "main", funcType);
+  mainFunc = mainFuncOp.getOperation();
 
   // Add entry_point attribute to identify the main function
   auto entryPointAttr = StringAttr::get(getContext(), "entry_point");
-  mainFunc->setAttr("passthrough",
-                    ArrayAttr::get(getContext(), {entryPointAttr}));
+  mainFuncOp->setAttr("passthrough",
+                      ArrayAttr::get(getContext(), {entryPointAttr}));
 
   // Create the 4-block structure for QIR Base Profile
-  entryBlock = mainFunc.addEntryBlock(*this);
-  bodyBlock = mainFunc.addBlock();
-  measurementsBlock = mainFunc.addBlock();
-  outputBlock = mainFunc.addBlock();
+  entryBlock = mainFuncOp.addEntryBlock(*this);
+  bodyBlock = mainFuncOp.addBlock();
+  measurementsBlock = mainFuncOp.addBlock();
+  outputBlock = mainFuncOp.addBlock();
 
   // Create exit code constant in entry block (where constants belong) and add
   // QIR initialization call in entry block (after exit code constant)
@@ -643,7 +644,8 @@ OwningOpRef<ModuleOp> QIRProgramBuilder::finalize() {
   // Generate output recording in the output block
   generateOutputRecording();
 
-  setQIRAttributes(mainFunc, metadata_);
+  auto mainFuncOp = llvm::cast<LLVM::LLVMFuncOp>(mainFunc);
+  setQIRAttributes(mainFuncOp, metadata_);
 
   isFinalized = true;
 

@@ -10,22 +10,10 @@
 
 #pragma once
 
-// Suppress warnings about ambiguous reversed operators in MLIR
-// (see https://github.com/llvm/llvm-project/issues/45853)
-#ifdef __clang__
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wambiguous-reversed-operator"
-#endif
-#include <mlir/Interfaces/InferTypeOpInterface.h>
-#ifdef __clang__
-#pragma clang diagnostic pop
-#endif
-
-#include <mlir/Bytecode/BytecodeOpInterface.h>
-#include <mlir/Dialect/Arith/IR/Arith.h>
+#include <cstddef>
+#include <mlir/IR/Dialect.h>
+#include <mlir/IR/OpDefinition.h>
 #include <mlir/IR/Value.h>
-#include <mlir/IR/ValueRange.h>
-#include <mlir/Interfaces/SideEffectInterfaces.h>
 #include <optional>
 #include <string>
 #include <variant>
@@ -36,14 +24,14 @@
 // Dialect
 //===----------------------------------------------------------------------===//
 
-#include "mlir/Dialect/QC/IR/QCOpsDialect.h.inc"
+#include "mlir/Dialect/QC/IR/QCOpsDialect.h.inc" // IWYU pragma: export
 
 //===----------------------------------------------------------------------===//
 // Types
 //===----------------------------------------------------------------------===//
 
 #define GET_TYPEDEF_CLASSES
-#include "mlir/Dialect/QC/IR/QCOpsTypes.h.inc"
+#include "mlir/Dialect/QC/IR/QCOpsTypes.h.inc" // IWYU pragma: export
 
 //===----------------------------------------------------------------------===//
 // Interfaces
@@ -105,12 +93,3 @@ public:
 };
 
 } // namespace mlir::qc
-
-#include "mlir/Dialect/QC/IR/QCInterfaces.h.inc" // IWYU pragma: export
-
-//===----------------------------------------------------------------------===//
-// Operations
-//===----------------------------------------------------------------------===//
-
-#define GET_OP_CLASSES
-#include "mlir/Dialect/QC/IR/QCOps.h.inc" // IWYU pragma: export

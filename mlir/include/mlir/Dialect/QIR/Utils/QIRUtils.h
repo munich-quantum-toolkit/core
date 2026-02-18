@@ -10,11 +10,24 @@
 
 #pragma once
 
+#include "mlir/Dialect/QIR/Utils/QIRMetadata.h"
+
 #include <cstddef>
 #include <cstdint>
+#include <llvm/ADT/StringRef.h>
 #include <llvm/Support/ErrorHandling.h>
-#include <mlir/Dialect/LLVMIR/LLVMDialect.h>
-#include <mlir/IR/Operation.h>
+#include <mlir/IR/Location.h>
+#include <mlir/IR/Types.h>
+#include <mlir/IR/Value.h>
+
+namespace mlir {
+class OpBuilder;
+class Operation;
+namespace LLVM {
+class AddressOfOp;
+class LLVMFuncOp;
+} // namespace LLVM
+} // namespace mlir
 
 namespace mlir::qir {
 
@@ -126,25 +139,6 @@ DEFINE_GETTER(XXPLUSYY)
 DEFINE_GETTER(XXMINUSYY)
 
 #undef DEFINE_GETTER
-
-/**
- * @brief State object for tracking QIR metadata during conversion
- *
- * @details
- * This struct maintains metadata about the QIR program being built:
- * - Qubit and result counts for QIR metadata
- * - Whether dynamic memory management is needed
- */
-struct QIRMetadata {
-  /// Number of qubits used in the module
-  size_t numQubits{0};
-  /// Number of measurement results stored in the module
-  size_t numResults{0};
-  /// Whether the module uses dynamic qubit management
-  bool useDynamicQubit{false};
-  /// Whether the module uses dynamic result management
-  bool useDynamicResult{false};
-};
 
 /**
  * @brief Find the main LLVM function with entry_point attribute
