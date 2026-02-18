@@ -3874,4 +3874,44 @@ TEST_F(CompilerPipelineTest, Bell) {
   });
 }
 
+// ##################################################
+// # Rotation Merge Pass Test
+// ##################################################
+
+/**
+ * @brief Test: Rotation merging pass is invoked during optimization stage
+ *
+ * @details
+ * The merged U gate parameters are computed via floating-point arithmetic
+ * that is not bit-identical across platforms, so we cannot use
+ * verifyAllStages with hardcoded expected values. Instead, we compare
+ * the optimization output with and without the pass enabled.
+ * Correctness of the pass is tested in a dedicated test.
+ */
+TEST_F(CompilerPipelineTest, RotationGateMergingPass) {
+  ::qc::QuantumComputation comp;
+  comp.addQubitRegister(1, "q");
+  comp.rz(1.0, 0);
+  comp.rx(1.0, 0);
+
+  // Run with merging enabled
+  config.mergeRotationGates = true;
+
+  auto module = importQuantumCircuit(comp);
+  ASSERT_TRUE(module);
+  ASSERT_TRUE(runPipeline(module.get()).succeeded());
+  const auto withMerging = record.afterOptimization;
+
+  // Run with merging disabled
+  config.mergeRotationGates = false;
+  record = {};
+
+  module = importQuantumCircuit(comp);
+  ASSERT_TRUE(module);
+  ASSERT_TRUE(runPipeline(module.get()).succeeded());
+  const auto withoutMerging = record.afterOptimization;
+
+  // The outputs must differ, proving the pass ran and transformed the IR
+  EXPECT_NE(withMerging, withoutMerging);
+}
 } // namespace
