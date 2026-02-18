@@ -10,28 +10,18 @@
 
 #include "mlir/Support/PrettyPrinting.h"
 
-#include <cstddef>
+#include <llvm/ADT/SmallString.h>
+#include <llvm/ADT/SmallVector.h>
 #include <llvm/ADT/StringRef.h>
 #include <llvm/Support/raw_ostream.h>
 #include <mlir/IR/BuiltinOps.h>
-#include <sstream>
-#include <string>
-#include <vector>
 
 namespace mlir {
-
-/**
- * @brief Trim trailing whitespace from a string
- */
-static std::string trimTrailingWhitespace(const std::string& str) {
-  const size_t end = str.find_last_not_of(" \t\r\n");
-  return (end == std::string::npos) ? "" : str.substr(0, end + 1);
-}
 
 constexpr auto TOTAL_WIDTH = 120;
 constexpr auto BORDER_WIDTH = 2; // "║ " on each side
 
-int calculateDisplayWidth(const std::string& str) {
+int calculateDisplayWidth(llvm::StringRef str) {
   auto displayWidth = 0;
   for (size_t i = 0; i < str.size();) {
     if (const unsigned char c = str[i]; (c & 0x80) == 0) {
@@ -58,13 +48,12 @@ int calculateDisplayWidth(const std::string& str) {
   return displayWidth;
 }
 
-std::vector<std::string> wrapLine(const std::string& line, const int maxWidth,
-                                  const int indent) {
-  std::vector<std::string> wrapped;
-
+void wrapLine(llvm::StringRef line, const int maxWidth,
+              llvm::SmallVectorImpl<llvm::SmallString<128>>& result,
+              const int indent) {
   if (line.empty()) {
-    wrapped.emplace_back("");
-    return wrapped;
+    result.emplace_back("");
+    return;
   }
 
   // Detect leading whitespace (indentation) in the original line
@@ -80,10 +69,10 @@ std::vector<std::string> wrapLine(const std::string& line, const int maxWidth,
   }
 
   // Extract the content without leading whitespace
-  std::string content = line.substr(line.find_first_not_of(" \t"));
+  llvm::StringRef content = line.substr(line.find_first_not_of(" \t"));
   if (content.empty()) {
-    wrapped.emplace_back(line);
-    return wrapped;
+    result.emplace_back(line.str());
+    return;
   }
 
   // Calculate available width accounting for indentation and wrap indicators
@@ -96,15 +85,16 @@ std::vector<std::string> wrapLine(const std::string& line, const int maxWidth,
 
   if (firstLineWidth <= 10 || contLineWidth <= 10) {
     // Not enough space to wrap intelligently, just return original
-    wrapped.emplace_back(line);
-    return wrapped;
+    result.emplace_back(line.str());
+    return;
   }
 
-  std::string currentLine;
-  std::string currentWord;
+  llvm::SmallString<128> currentLine;
+  llvm::SmallString<64> currentWord;
   auto currentWidth = 0;
   auto isFirstLine = true;
-  auto addWord = [&](const std::string& word) {
+
+  auto addWord = [&](llvm::StringRef word) {
     const int wordWidth = calculateDisplayWidth(word);
     const int spaceWidth = currentLine.empty() ? 0 : 1;
     const int effectiveWidth = isFirstLine ? firstLineWidth : contLineWidth;
@@ -133,17 +123,18 @@ std::vector<std::string> wrapLine(const std::string& line, const int maxWidth,
           // Word doesn't fit - finalize current line and start new one
           if (!currentLine.empty()) {
             // Add wrap indicator to the end
-            std::string lineWithIndent(leadingSpaces, ' ');
+            llvm::SmallString<128> lineWithIndent;
+            lineWithIndent.append(leadingSpaces, ' ');
             lineWithIndent += currentLine;
             if (!isFirstLine || (i < content.size() - 1)) {
               lineWithIndent += " →";
             }
-            wrapped.push_back(lineWithIndent);
+            result.emplace_back(lineWithIndent.str().str());
           }
 
           // Start new continuation line
           currentLine = currentWord;
-          currentWidth = calculateDisplayWidth(currentWord);
+          currentWidth = calculateDisplayWidth(llvm::StringRef(currentWord));
           isFirstLine = false;
         }
         currentWord.clear();
@@ -158,45 +149,53 @@ std::vector<std::string> wrapLine(const std::string& line, const int maxWidth,
     if (!addWord(currentWord)) {
       // Finalize current line
       if (!currentLine.empty()) {
-        std::string lineWithIndent(leadingSpaces, ' ');
-        lineWithIndent += currentLine + " →";
-        wrapped.push_back(lineWithIndent);
+        llvm::SmallString<128> lineWithIndent;
+        lineWithIndent.append(leadingSpaces, ' ');
+        lineWithIndent += currentLine;
+        lineWithIndent += " →";
+        result.emplace_back(lineWithIndent.str().str());
       }
 
       // Add word on new line
-      std::string lineWithIndent(leadingSpaces, ' ');
-      lineWithIndent = "↳ " + lineWithIndent + currentWord;
-      wrapped.push_back(lineWithIndent);
+      llvm::SmallString<128> lineWithIndent;
+      lineWithIndent.append(leadingSpaces, ' ');
+      llvm::SmallString<128> contLine("↳ ");
+      contLine.append(leadingSpaces, ' ');
+      contLine += currentWord;
+      result.emplace_back(contLine.str().str());
       isFirstLine = false;
     } else {
       // Word fit, add the final line
       if (!currentLine.empty()) {
-        std::string lineWithIndent(leadingSpaces, ' ');
+        llvm::SmallString<128> lineWithIndent;
+        lineWithIndent.append(leadingSpaces, ' ');
         lineWithIndent += currentLine;
-        wrapped.push_back(lineWithIndent);
+        result.emplace_back(lineWithIndent.str().str());
       }
     }
   } else if (!currentLine.empty()) {
     // Add the final line
-    std::string lineWithIndent(leadingSpaces, ' ');
+    llvm::SmallString<128> lineWithIndent;
+    lineWithIndent.append(leadingSpaces, ' ');
     lineWithIndent += currentLine;
-    wrapped.push_back(lineWithIndent);
+    result.emplace_back(lineWithIndent.str().str());
   }
 
   // If we didn't wrap anything, return the original line
-  if (wrapped.empty()) {
-    wrapped.push_back(line);
-  } else if (wrapped.size() > 1) {
+  if (result.empty()) {
+    result.emplace_back(line.str());
+  } else if (result.size() > 1) {
     // Add continuation indicator to all but the first and last lines
-    for (size_t i = 1; i < wrapped.size(); ++i) {
-      if (wrapped[i].find("↳") == std::string::npos) {
-        const std::string indentStr(leadingSpaces, ' ');
-        wrapped[i] = "↳ " + indentStr + wrapped[i].substr(leadingSpaces);
+    for (size_t i = 1; i < result.size(); ++i) {
+      llvm::StringRef lineRef = result[i];
+      if (lineRef.find("↳") == llvm::StringRef::npos) {
+        llvm::SmallString<128> newLine("↳ ");
+        newLine.append(leadingSpaces, ' ');
+        newLine += lineRef.substr(leadingSpaces);
+        result[i] = newLine.str().str();
       }
     }
   }
-
-  return wrapped;
 }
 
 void printBoxTop(llvm::raw_ostream& os) {
@@ -223,7 +222,7 @@ void printBoxBottom(llvm::raw_ostream& os) {
   os << "╝\n";
 }
 
-void printBoxLine(const std::string& text, const int indent,
+void printBoxLine(llvm::StringRef text, const int indent,
                   llvm::raw_ostream& os) {
   // Content width = Total width - left border (2 chars) - right border (2
   // chars)
@@ -231,11 +230,13 @@ void printBoxLine(const std::string& text, const int indent,
       TOTAL_WIDTH - (2 * BORDER_WIDTH); // "║ " and " ║"
 
   // Trim trailing whitespace before processing
-  const std::string trimmedText = trimTrailingWhitespace(text);
+  auto trimmedText = text.rtrim();
 
   // Wrap the line if needed
-  for (const auto wrappedLines = wrapLine(trimmedText, contentWidth, indent);
-       const auto& line : wrappedLines) {
+  llvm::SmallVector<llvm::SmallString<128>, 4> wrappedLines;
+  wrapLine(trimmedText, contentWidth, wrappedLines, indent);
+
+  for (const auto& line : wrappedLines) {
     const int displayWidth = calculateDisplayWidth(line);
     const int padding = contentWidth - indent - displayWidth;
 
@@ -251,19 +252,16 @@ void printBoxLine(const std::string& text, const int indent,
   }
 }
 
-void printBoxText(const std::string& text, const int indent,
+void printBoxText(llvm::StringRef text, const int indent,
                   llvm::raw_ostream& os) {
   // Trim trailing newlines from the entire text
-  std::string trimmedText = text;
-  while (!trimmedText.empty() &&
-         (trimmedText.back() == '\n' || trimmedText.back() == '\r')) {
-    trimmedText.pop_back();
-  }
+  llvm::StringRef trimmedText = text.rtrim();
 
-  std::istringstream stream(trimmedText);
-  std::string line;
+  // Split the text by newlines and process each line
+  llvm::SmallVector<llvm::StringRef, 16> lines;
+  trimmedText.split(lines, '\n', -1, false);
 
-  while (std::getline(stream, line)) {
+  for (const auto& line : lines) {
     printBoxLine(line, indent, os);
   }
 }
@@ -271,11 +269,12 @@ void printBoxText(const std::string& text, const int indent,
 void printProgram(ModuleOp module, const llvm::StringRef header,
                   llvm::raw_ostream& os) {
   printBoxTop(os);
-  printBoxLine(std::string(header), 0, os);
+  printBoxLine(header, 0, os);
   printBoxMiddle(os);
   // Capture the IR to a string so we can wrap it in box lines
-  std::string irString;
-  llvm::raw_string_ostream irStream(irString);
+
+  llvm::SmallString<1024> irString;
+  llvm::raw_svector_ostream irStream(irString);
   module.print(irStream);
 
   // Print the IR with box lines and wrapping

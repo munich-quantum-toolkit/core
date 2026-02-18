@@ -10,9 +10,10 @@
 
 #pragma once
 
+#include <llvm/ADT/SmallString.h>
+#include <llvm/ADT/SmallVector.h>
+#include <llvm/ADT/StringRef.h>
 #include <llvm/Support/raw_ostream.h>
-#include <string>
-#include <vector>
 
 namespace mlir {
 
@@ -28,7 +29,7 @@ class ModuleOp;
  * @param str The string to measure
  * @return The display width in columns
  */
-int calculateDisplayWidth(const std::string& str);
+int calculateDisplayWidth(llvm::StringRef str);
 
 /**
  * @brief Wrap a long line into multiple lines that fit within the box
@@ -42,10 +43,11 @@ int calculateDisplayWidth(const std::string& str);
  * @param maxWidth Maximum width for each line (excluding box borders and
  * indent)
  * @param indent Number of spaces to indent wrapped lines
- * @return Vector of wrapped lines
+ * @param result Output vector to store wrapped lines
  */
-std::vector<std::string> wrapLine(const std::string& line, int maxWidth,
-                                  int indent = 0);
+void wrapLine(llvm::StringRef line, int maxWidth,
+              llvm::SmallVectorImpl<llvm::SmallString<128>>& result,
+              int indent = 0);
 
 /**
  * @brief Print top border of a box
@@ -78,7 +80,7 @@ void printBoxBottom(llvm::raw_ostream& os = llvm::errs());
  * @param indent Number of spaces to indent the text (0 for left-aligned)
  * @param os Output stream to write to
  */
-void printBoxLine(const std::string& text, int indent = 0,
+void printBoxLine(llvm::StringRef text, int indent = 0,
                   llvm::raw_ostream& os = llvm::errs());
 
 /**
@@ -92,7 +94,7 @@ void printBoxLine(const std::string& text, int indent = 0,
  * @param indent Number of spaces to indent the text
  * @param os Output stream to write to
  */
-void printBoxText(const std::string& text, int indent = 0,
+void printBoxText(llvm::StringRef text, int indent = 0,
                   llvm::raw_ostream& os = llvm::errs());
 
 /**
