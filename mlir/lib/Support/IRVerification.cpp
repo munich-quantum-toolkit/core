@@ -10,9 +10,7 @@
 
 #include "mlir/Support/IRVerification.h"
 
-#include <algorithm>
 #include <cmath>
-#include <cstddef>
 #include <llvm/ADT/APFloat.h>
 #include <llvm/ADT/ArrayRef.h>
 #include <llvm/ADT/DenseMap.h>
@@ -34,12 +32,11 @@
 #include <mlir/IR/SymbolTable.h>
 #include <mlir/IR/Value.h>
 #include <mlir/Interfaces/SideEffectInterfaces.h>
-#include <unordered_map>
 #include <utility>
-#include <vector>
+
+using namespace mlir;
 
 namespace {
-using namespace mlir;
 
 /// Compute a structural hash for an operation (excluding SSA value identities).
 /// This hash is based on operation name, types, and attributes only.
@@ -92,9 +89,64 @@ struct OperationStructuralEquality {
   }
 };
 
+/// Wrapper for Operation* with structural comparison semantics
+struct StructuralOperationKey {
+  Operation* op;
+
+  explicit StructuralOperationKey(Operation* operation = nullptr)
+      : op(operation) {}
+
+  bool operator==(const StructuralOperationKey& other) const {
+    if (op == other.op) {
+      return true;
+    }
+    if (op == nullptr || other.op == nullptr) {
+      return false;
+    }
+    return OperationStructuralEquality{}(op, other.op);
+  }
+
+  bool operator!=(const StructuralOperationKey& other) const {
+    return !(*this == other);
+  }
+};
+
 /// Map to track value equivalence between two modules.
 using ValueEquivalenceMap = llvm::DenseMap<mlir::Value, mlir::Value>;
 } // namespace
+
+/// DenseMapInfo specialization for StructuralOperationKey
+template <> struct llvm::DenseMapInfo<StructuralOperationKey> {
+  static StructuralOperationKey getEmptyKey() {
+    return StructuralOperationKey(DenseMapInfo<Operation*>::getEmptyKey());
+  }
+
+  static StructuralOperationKey getTombstoneKey() {
+    return StructuralOperationKey(DenseMapInfo<Operation*>::getTombstoneKey());
+  }
+
+  static unsigned getHashValue(const StructuralOperationKey& key) {
+    if (key.op == getEmptyKey().op || key.op == getTombstoneKey().op) {
+      return DenseMapInfo<Operation*>::getHashValue(key.op);
+    }
+    return OperationStructuralHash{}(key.op);
+  }
+
+  static bool isEqual(const StructuralOperationKey& lhs,
+                      const StructuralOperationKey& rhs) {
+    // Handle special keys
+    if (lhs.op == getEmptyKey().op) {
+      return rhs.op == getEmptyKey().op;
+    }
+    if (lhs.op == getTombstoneKey().op) {
+      return rhs.op == getTombstoneKey().op;
+    }
+    if (rhs.op == getEmptyKey().op || rhs.op == getTombstoneKey().op) {
+      return false;
+    }
+    return lhs == rhs;
+  }
+};
 
 static bool areFloatValuesNear(const llvm::APFloat& lhs,
                                const llvm::APFloat& rhs, const unsigned width) {
@@ -328,9 +380,10 @@ llvm::DenseMap<
 
 /// Partition operations into groups that can be compared as multisets.
 /// Operations in the same group are independent and can be reordered.
-std::vector<llvm::SmallVector<Operation*>> static partitionIndependentGroups(
-    llvm::ArrayRef<Operation*> ops) {
-  std::vector<llvm::SmallVector<Operation*>> groups;
+llvm::SmallVector<llvm::SmallVector<
+    Operation*>> static partitionIndependentGroups(llvm::ArrayRef<Operation*>
+                                                       ops) {
+  llvm::SmallVector<llvm::SmallVector<Operation*>> groups;
   if (ops.empty()) {
     return groups;
   }
@@ -387,19 +440,15 @@ static bool areIndependentGroupsEquivalent(llvm::ArrayRef<Operation*> lhsOps,
   }
 
   // Build frequency maps for both groups
-  std::unordered_map<Operation*, size_t, OperationStructuralHash,
-                     OperationStructuralEquality>
-      lhsFrequencyMap;
-  std::unordered_map<Operation*, size_t, OperationStructuralHash,
-                     OperationStructuralEquality>
-      rhsFrequencyMap;
+  llvm::DenseMap<StructuralOperationKey, size_t> lhsFrequencyMap;
+  llvm::DenseMap<StructuralOperationKey, size_t> rhsFrequencyMap;
 
   for (auto* op : lhsOps) {
-    lhsFrequencyMap[op]++;
+    lhsFrequencyMap[StructuralOperationKey(op)]++;
   }
 
   for (auto* op : rhsOps) {
-    rhsFrequencyMap[op]++;
+    rhsFrequencyMap[StructuralOperationKey(op)]++;
   }
 
   // Check structural equivalence
@@ -408,8 +457,8 @@ static bool areIndependentGroupsEquivalent(llvm::ArrayRef<Operation*> lhsOps,
   }
 
   // NOLINTNEXTLINE(bugprone-nondeterministic-pointer-iteration-order)
-  for (const auto& [lhsOp, lhsCount] : lhsFrequencyMap) {
-    auto it = rhsFrequencyMap.find(lhsOp);
+  for (const auto& [lhsKey, lhsCount] : lhsFrequencyMap) {
+    auto it = rhsFrequencyMap.find(lhsKey);
     if (it == rhsFrequencyMap.end() || it->second != lhsCount) {
       return false;
     }

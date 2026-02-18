@@ -10,7 +10,9 @@
 
 #pragma once
 
-#include <mlir/IR/BuiltinOps.h>
+namespace mlir {
+class ModuleOp;
+}
 
 /// Compare two MLIR modules for structural equivalence, allowing permutations
 /// of speculatable operations.
