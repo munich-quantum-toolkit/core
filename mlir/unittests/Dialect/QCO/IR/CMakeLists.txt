@@ -14,4 +14,4 @@ target_link_libraries(${qco_ir_target} PRIVATE MLIRParser MLIRSupportMQT GTest::
                                                MLIRQCOProgramBuilder MLIRQCOPrograms MQT::CoreDD)
 mqt_mlir_configure_unittest_target(${qco_ir_target})
 
-gtest_discover_tests(${qco_ir_target} PROPERTIES LABELS mqt-mlir-unittests)
+gtest_discover_tests(${qco_ir_target} PROPERTIES LABELS mqt-mlir-unittests DISCOVERY_TIMEOUT 60)
