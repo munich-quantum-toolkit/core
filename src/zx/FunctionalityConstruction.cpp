@@ -240,7 +240,7 @@ void FunctionalityConstruction::addMcrzz(
     const std::optional<double>& unconvertedPhase) {
   addRzz(diag, phase, target, target2, qubits, unconvertedPhase);
   addMcx(diag, controls, target, qubits);
-  addRzz(diag, -phase, target, target2, qubits, unconvertedPhase);
+  addRzz(diag, -phase, target, target2, qubits, unconvertedPhase.has_value() ? std::optional<double>(-unconvertedPhase.value()) : std::nullopt);
   addMcx(diag, controls, target, qubits);
 }
 
@@ -387,7 +387,7 @@ void FunctionalityConstruction::addCrx(ZXDiagram& diag,
                                        const Qubit control, const Qubit target,
                                        std::vector<Vertex>& qubits) {
   addZSpider(diag, target, qubits, PiExpression(), EdgeType::Hadamard);
-  addCrz(diag, phase / 2, control, target, qubits);
+  addCrz(diag, phase, control, target, qubits);
   addZSpider(diag, target, qubits, PiExpression(), EdgeType::Hadamard);
 }
 
@@ -768,6 +768,16 @@ FunctionalityConstruction::parseOp(ZXDiagram& diag, op_it it, op_it end,
     case qc::OpType::Z:
       addCcz(diag, ctrl0, ctrl1, target, qubits);
       break;
+    case qc::OpType::P:
+      addMcphase(diag, parseParam(op.get(), 0), {ctrl0, ctrl1}, target, qubits);
+      break;
+    case qc::OpType::T:
+      addMcphase(diag, PiExpression{PiRational(1, 4)}, {ctrl0, ctrl1}, target,
+                 qubits);
+      break;
+    case qc::OpType::S:
+      addMcphase(diag, PiExpression{PiRational(1, 2)}, {ctrl0, ctrl1}, target, qubits);
+      break;
     case qc::OpType::RZ:
       addMcrz(diag, parseParam(op.get(), 0), {ctrl0, ctrl1}, target, qubits);
       break;
@@ -791,6 +801,15 @@ FunctionalityConstruction::parseOp(ZXDiagram& diag, op_it it, op_it end,
       break;
     case qc::OpType::Z:
       addMcz(diag, controls, target, qubits);
+      break;
+    case qc::OpType::P:
+      addMcphase(diag, parseParam(op.get(), 0), controls, target, qubits);
+      break;
+    case qc::OpType::T:
+      addMcphase(diag, PiExpression{PiRational(1, 4)}, controls, target, qubits);
+      break;
+    case qc::OpType::S:
+      addMcphase(diag, PiExpression{PiRational(1, 2)}, controls, target, qubits);
       break;
     case qc::OpType::RZ:
       addMcrz(diag, parseParam(op.get(), 0), controls, target, qubits);
@@ -970,6 +989,9 @@ bool FunctionalityConstruction::transformableToZX(const qc::Operation* op) {
     switch (op->getType()) {
     case qc::OpType::X:
     case qc::OpType::Z:
+    case qc::OpType::P:
+    case qc::OpType::T:
+    case qc::OpType::S:
     case qc::OpType::RZ:
     case qc::OpType::RX:
       return true;
