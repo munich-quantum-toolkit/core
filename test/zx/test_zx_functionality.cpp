@@ -224,7 +224,7 @@ TEST_F(ZXFunctionalityTest, CCZ) {
   checkEquivalence(qc, qcPrime, {0, 1, 2});
 }
 
-TEST_F(ZXFunctionalityTest, MultiControlX) {
+TEST_F(ZXFunctionalityTest, MCX) {
 
   qc = qc::QuantumComputation(4);
   qc.mcx({1, 2, 3}, 0);
@@ -235,7 +235,7 @@ TEST_F(ZXFunctionalityTest, MultiControlX) {
   checkEquivalence(qc, qcPrime, {0, 1, 2, 3});
 }
 
-TEST_F(ZXFunctionalityTest, MultiControlX0) {
+TEST_F(ZXFunctionalityTest, MCX0) {
 
   qc = qc::QuantumComputation(1);
   qc.mcx({}, 0);
@@ -246,7 +246,7 @@ TEST_F(ZXFunctionalityTest, MultiControlX0) {
   checkEquivalence(qc, qcPrime, {0});
 }
 
-TEST_F(ZXFunctionalityTest, MultiControlX1) {
+TEST_F(ZXFunctionalityTest, MCX1) {
 
   qc = qc::QuantumComputation(2);
   qc.mcx({1}, 0);
@@ -258,7 +258,7 @@ TEST_F(ZXFunctionalityTest, MultiControlX1) {
   checkEquivalence(qc, qcPrime, {0, 1});
 }
 
-TEST_F(ZXFunctionalityTest, MultiControlZ) {
+TEST_F(ZXFunctionalityTest, MCZ) {
 
   qc = qc::QuantumComputation(4);
   qc.mcz({1, 2, 3}, 0);
@@ -269,7 +269,7 @@ TEST_F(ZXFunctionalityTest, MultiControlZ) {
   checkEquivalence(qc, qcPrime, {0, 1, 2, 3});
 }
 
-TEST_F(ZXFunctionalityTest, MultiControlZ0) {
+TEST_F(ZXFunctionalityTest, MCZ0) {
 
   qc = qc::QuantumComputation(1);
   qc.mcz({}, 0);
@@ -280,7 +280,7 @@ TEST_F(ZXFunctionalityTest, MultiControlZ0) {
   checkEquivalence(qc, qcPrime, {0});
 }
 
-TEST_F(ZXFunctionalityTest, MultiControlZ1) {
+TEST_F(ZXFunctionalityTest, MCZ1) {
 
   qc = qc::QuantumComputation(2);
   qc.mcz({1}, 0);
@@ -291,7 +291,7 @@ TEST_F(ZXFunctionalityTest, MultiControlZ1) {
   checkEquivalence(qc, qcPrime, {0, 1});
 }
 
-TEST_F(ZXFunctionalityTest, MultiControlZ2) {
+TEST_F(ZXFunctionalityTest, MCZ2) {
 
   qc = qc::QuantumComputation(4);
   qc.mcz({1, 2}, 0);
@@ -304,19 +304,19 @@ TEST_F(ZXFunctionalityTest, MultiControlZ2) {
   checkEquivalence(qc, qcPrime, {0, 1, 2, 3});
 }
 
-TEST_F(ZXFunctionalityTest, MultiControlRZ) {
+TEST_F(ZXFunctionalityTest, MCRZ) {
 
-  qc = qc::QuantumComputation(3);
-  qc.mcrz(PI / 4, {1, 2}, 0);
+  qc = qc::QuantumComputation(4);
+  qc.mcrz(PI / 4, {1, 2, 3}, 0);
 
-  auto qcPrime = qc::QuantumComputation(3);
+  auto qcPrime = qc::QuantumComputation(4);
   qcPrime.h(0);
-  qcPrime.mcrx(PI / 4, {1, 2}, 0);
+  qcPrime.mcrx(PI / 4, {1, 2, 3}, 0);
   qcPrime.h(0);
-  checkEquivalence(qc, qcPrime, {0, 1, 2});
+  checkEquivalence(qc, qcPrime, {0, 1, 2, 3});
 }
 
-TEST_F(ZXFunctionalityTest, MultiControlRZ0) {
+TEST_F(ZXFunctionalityTest, MCRZ0) {
 
   qc = qc::QuantumComputation(1);
   qc.mcrz(PI / 4, {}, 0);
@@ -327,7 +327,7 @@ TEST_F(ZXFunctionalityTest, MultiControlRZ0) {
   checkEquivalence(qc, qcPrime, {0});
 }
 
-TEST_F(ZXFunctionalityTest, MultiControlRZ1) {
+TEST_F(ZXFunctionalityTest, MCRZ1) {
 
   qc = qc::QuantumComputation(2);
   qc.mcrz(PI / 4, {1}, 0);
@@ -503,7 +503,8 @@ TEST_F(ZXFunctionalityTest, MCSWAP) {
 
 TEST_F(ZXFunctionalityTest, MCRzz) {
   qc = qc::QuantumComputation(4);
-  qc.mcrzz(qc::PI_2 / 3, {0, 1}, 2, 3);
+  qc.mcrzz(qc::PI_2/3, {0, 1}, 2, 3);
+  qc.mcrzz(2*qc::PI, {0, 1}, 2, 3);
 
   auto qcPrime = qc::QuantumComputation(4);
   qcPrime.mcrzz(qc::PI_2 / 3, {0, 1}, 2, 3);
@@ -514,6 +515,7 @@ TEST_F(ZXFunctionalityTest, MCRzz) {
 TEST_F(ZXFunctionalityTest, MCRxx) {
   qc = qc::QuantumComputation(4);
   qc.mcrxx(qc::PI_2, {0, 1}, 2, 3);
+  qc.mcrzx(2*qc::PI, {0, 1}, 2, 3);
 
   auto qcPrime = qc::QuantumComputation(4);
   qcPrime.mcrxx(qc::PI_2, {0, 1}, 2, 3);
@@ -524,6 +526,7 @@ TEST_F(ZXFunctionalityTest, MCRxx) {
 TEST_F(ZXFunctionalityTest, MCRzx) {
   qc = qc::QuantumComputation(4);
   qc.mcrzx(qc::PI_2, {0, 1}, 2, 3);
+  qc.mcrzx(2*qc::PI, {0, 1}, 2, 3);
 
   auto qcPrime = qc::QuantumComputation(4);
   qcPrime.mcrzx(qc::PI_2, {0, 1}, 2, 3);
@@ -531,13 +534,42 @@ TEST_F(ZXFunctionalityTest, MCRzx) {
   checkEquivalence(qc, qcPrime, {0, 1, 2, 3});
 }
 
-TEST_F(ZXFunctionalityTest, MCRx) {
+TEST_F(ZXFunctionalityTest, MCRx0) {
+  qc = qc::QuantumComputation(1);
+  qc.mcrx(PI / 4, {}, 0);
+
+  auto qcPrime = qc::QuantumComputation(1);
+  qcPrime.mcrx(PI / 4, {}, 0);
+  checkEquivalence(qc, qcPrime, {0});
+}
+
+
+TEST_F(ZXFunctionalityTest, MCRx1) {
+  qc = qc::QuantumComputation(2);
+  qc.mcrx(PI / 4, {0}, 1);
+
+  auto qcPrime = qc::QuantumComputation(2);
+  qcPrime.mcrx(PI / 4, {0}, 1);
+  checkEquivalence(qc, qcPrime, {0, 1});
+}
+
+
+TEST_F(ZXFunctionalityTest, MCRx2) {
   qc = qc::QuantumComputation(3);
   qc.mcrx(PI / 4, {0, 1}, 2);
 
   auto qcPrime = qc::QuantumComputation(3);
   qcPrime.mcrx(PI / 4, {0, 1}, 2);
   checkEquivalence(qc, qcPrime, {0, 1, 2});
+}
+
+TEST_F(ZXFunctionalityTest, MCRx3) {
+  qc = qc::QuantumComputation(4);
+  qc.mcrx(PI / 4, {0, 1, 2}, 3);
+
+  auto qcPrime = qc::QuantumComputation(4);
+  qcPrime.mcrx(PI / 4, {0, 1, 2}, 3);
+  checkEquivalence(qc, qcPrime, {0, 1, 2, 3});
 }
 
 TEST_F(ZXFunctionalityTest, MCPhase) {
@@ -568,5 +600,35 @@ TEST_F(ZXFunctionalityTest, MCT) {
   qcPrime.mct({0, 1, 2}, 3);
 
   checkEquivalence(qc, qcPrime, {0, 1, 2, 3});
+}
+
+TEST_F(ZXFunctionalityTest, MCPhase2) {
+  qc = qc::QuantumComputation(3);
+  qc.mcp(PI / 2, {0, 1}, 2);
+
+  auto qcPrime = qc::QuantumComputation(3);
+  qcPrime.mcp(PI / 2, {0, 1}, 2);
+
+  checkEquivalence(qc, qcPrime, {0, 1, 2});
+}
+
+TEST_F(ZXFunctionalityTest, MCS2) {
+  qc = qc::QuantumComputation(3);
+  qc.mcs({0, 1}, 2);
+
+  auto qcPrime = qc::QuantumComputation(3);
+  qcPrime.mcs({0, 1}, 2);
+
+  checkEquivalence(qc, qcPrime, {0, 1, 2});
+}
+
+TEST_F(ZXFunctionalityTest, MCT2) {
+  qc = qc::QuantumComputation(3);
+  qc.mct({0, 1}, 2);
+
+  auto qcPrime = qc::QuantumComputation(3);
+  qcPrime.mct({0, 1}, 2);
+
+  checkEquivalence(qc, qcPrime, {0, 1, 2});
 }
 } // namespace zx

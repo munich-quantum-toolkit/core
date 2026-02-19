@@ -986,6 +986,7 @@ bool FunctionalityConstruction::transformableToZX(const qc::Operation* op) {
     case qc::OpType::S:
     case qc::OpType::Tdg:
     case qc::OpType::Sdg:
+    case qc::OpType::RX:
     case qc::OpType::RZ:
       return true;
     default:
