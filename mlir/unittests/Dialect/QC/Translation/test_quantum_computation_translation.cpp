@@ -15,12 +15,10 @@
 #include "mlir/Dialect/QC/Translation/TranslateQuantumComputationToQC.h"
 #include "mlir/Support/IRVerification.h"
 #include "mlir/Support/Passes.h"
-#include "mlir/Support/PrettyPrinting.h"
 #include "qc_programs.h"
 #include "quantum_computation_programs.h"
 
 #include <gtest/gtest.h>
-#include <llvm/Support/raw_ostream.h>
 #include <memory>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
@@ -63,29 +61,28 @@ protected:
 TEST_P(QuantumComputationTranslationTest, ProgramEquivalence) {
   const auto& [_, programBuilder, referenceBuilder] = GetParam();
   const auto name = " (" + GetParam().name + ")";
+  mqt::test::DeferredPrinter printer;
 
   ::qc::QuantumComputation comp;
   programBuilder.fn(comp);
 
   auto translated = mlir::translateQuantumComputationToQC(context.get(), comp);
   ASSERT_TRUE(translated);
-  mlir::printProgram(translated.get(), "Translated QC IR" + name, llvm::errs());
+  printer.record(translated.get(), "Translated QC IR" + name);
   EXPECT_TRUE(mlir::verify(*translated).succeeded());
 
   runCanonicalizationPasses(translated.get());
-  mlir::printProgram(translated.get(), "Canonicalized Translated QC IR" + name,
-                     llvm::errs());
+  printer.record(translated.get(), "Canonicalized Translated QC IR" + name);
   EXPECT_TRUE(mlir::verify(*translated).succeeded());
 
   auto reference =
       mlir::qc::QCProgramBuilder::build(context.get(), referenceBuilder.fn);
   ASSERT_TRUE(reference);
-  mlir::printProgram(reference.get(), "Reference QC IR" + name, llvm::errs());
+  printer.record(reference.get(), "Reference QC IR" + name);
   EXPECT_TRUE(mlir::verify(*reference).succeeded());
 
   runCanonicalizationPasses(reference.get());
-  mlir::printProgram(reference.get(), "Canonicalized Reference QC IR" + name,
-                     llvm::errs());
+  printer.record(reference.get(), "Canonicalized Reference QC IR" + name);
   EXPECT_TRUE(mlir::verify(*reference).succeeded());
 
   EXPECT_TRUE(

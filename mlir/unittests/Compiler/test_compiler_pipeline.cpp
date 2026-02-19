@@ -18,14 +18,12 @@
 #include "mlir/Dialect/QIR/Builder/QIRProgramBuilder.h"
 #include "mlir/Support/IRVerification.h"
 #include "mlir/Support/Passes.h"
-#include "mlir/Support/PrettyPrinting.h"
 #include "qc_programs.h"
 #include "qir_programs.h"
 #include "quantum_computation_programs.h"
 
 #include <gtest/gtest.h>
 #include <iosfwd>
-#include <llvm/Support/raw_ostream.h>
 #include <memory>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/ControlFlow/IR/ControlFlow.h>
@@ -112,7 +110,7 @@ protected:
     mlir::QuantumCompilerConfig config;
     config.convertToQIR = convertToQIR;
     config.recordIntermediates = true;
-    config.printIRAfterAllStages = true;
+    config.printIRAfterAllStages = irPrintingForced();
 
     mlir::QuantumCompilerPipeline pipeline(config);
     ASSERT_TRUE(pipeline.runPipeline(module, &record).succeeded());
@@ -131,6 +129,7 @@ protected:
 TEST_P(CompilerPipelineTest, EndToEndPipeline) {
   const auto& testCase = GetParam();
   const auto name = " (" + testCase.name + ")";
+  DeferredPrinter printer;
 
   mlir::OwningOpRef<mlir::ModuleOp> module;
   if (testCase.startFromQuantumComputation) {
@@ -140,13 +139,13 @@ TEST_P(CompilerPipelineTest, EndToEndPipeline) {
 
     module = mlir::translateQuantumComputationToQC(context.get(), comp);
     ASSERT_TRUE(module);
-    mlir::printProgram(module.get(), "QC Import" + name, llvm::errs());
+    printer.record(module.get(), "QC Import" + name);
   } else {
     ASSERT_TRUE(testCase.qcProgramBuilder);
     module = mlir::qc::QCProgramBuilder::build(context.get(),
                                                testCase.qcProgramBuilder.fn);
     ASSERT_TRUE(module);
-    mlir::printProgram(module.get(), "QC Input" + name, llvm::errs());
+    printer.record(module.get(), "QC Input" + name);
   }
   EXPECT_TRUE(mlir::verify(*module).succeeded());
 
@@ -156,25 +155,24 @@ TEST_P(CompilerPipelineTest, EndToEndPipeline) {
   ASSERT_TRUE(testCase.qcReferenceBuilder);
   auto qcReference = buildQCReference(testCase.qcReferenceBuilder);
   ASSERT_TRUE(qcReference);
-  mlir::printProgram(qcReference.get(), "Reference QC IR" + name, llvm::errs());
+  printer.record(qcReference.get(), "Reference QC IR" + name);
 
   expectEquivalent("Final QC", record.afterQCCanon, qcReference.get());
   auto finalQC = parseRecordedModule(record.afterQCCanon);
   ASSERT_TRUE(finalQC);
-  mlir::printProgram(finalQC.get(), "Final QC IR" + name, llvm::errs());
+  printer.record(finalQC.get(), "Final QC IR" + name);
 
   if (testCase.convertToQIR) {
     ASSERT_TRUE(testCase.qirReferenceBuilder);
 
     auto qirReference = buildQIRReference(testCase.qirReferenceBuilder);
     ASSERT_TRUE(qirReference);
-    mlir::printProgram(qirReference.get(), "Reference QIR IR" + name,
-                       llvm::errs());
+    printer.record(qirReference.get(), "Reference QIR IR" + name);
 
     expectEquivalent("Final QIR", record.afterQIRCanon, qirReference.get());
     auto finalQIR = parseRecordedModule(record.afterQIRCanon);
     ASSERT_TRUE(finalQIR);
-    mlir::printProgram(finalQIR.get(), "Final QIR IR" + name, llvm::errs());
+    printer.record(finalQIR.get(), "Final QIR IR" + name);
   }
 }
 

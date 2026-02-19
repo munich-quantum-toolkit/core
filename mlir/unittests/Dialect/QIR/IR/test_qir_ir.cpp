@@ -12,12 +12,10 @@
 #include "mlir/Dialect/QIR/Builder/QIRProgramBuilder.h"
 #include "mlir/Support/IRVerification.h"
 #include "mlir/Support/Passes.h"
-#include "mlir/Support/PrettyPrinting.h"
 #include "qir_programs.h"
 
 #include <gtest/gtest.h>
 #include <iosfwd>
-#include <llvm/Support/raw_ostream.h>
 #include <memory>
 #include <mlir/Dialect/LLVMIR/LLVMDialect.h>
 #include <mlir/IR/DialectRegistry.h>
@@ -60,24 +58,24 @@ std::ostream& operator<<(std::ostream& os, const QIRTestCase& info) {
 TEST_P(QIRTest, ProgramEquivalence) {
   const auto& [_, programBuilder, referenceBuilder] = GetParam();
   const auto name = " (" + GetParam().name + ")";
+  mqt::test::DeferredPrinter printer;
 
   auto program = QIRProgramBuilder::build(context.get(), programBuilder.fn);
   ASSERT_TRUE(program);
-  printProgram(program.get(), "Original QIR IR" + name, llvm::errs());
+  printer.record(program.get(), "Original QIR IR" + name);
   EXPECT_TRUE(verify(*program).succeeded());
 
   runCanonicalizationPasses(program.get());
-  printProgram(program.get(), "Canonicalized QIR IR" + name, llvm::errs());
+  printer.record(program.get(), "Canonicalized QIR IR" + name);
   EXPECT_TRUE(verify(*program).succeeded());
 
   auto reference = QIRProgramBuilder::build(context.get(), referenceBuilder.fn);
   ASSERT_TRUE(reference);
-  printProgram(reference.get(), "Reference QIR IR" + name, llvm::errs());
+  printer.record(reference.get(), "Reference QIR IR" + name);
   EXPECT_TRUE(verify(*reference).succeeded());
 
   runCanonicalizationPasses(reference.get());
-  printProgram(reference.get(), "Canonicalized Reference QIR IR" + name,
-               llvm::errs());
+  printer.record(reference.get(), "Canonicalized Reference QIR IR" + name);
   EXPECT_TRUE(verify(*reference).succeeded());
 
   EXPECT_TRUE(

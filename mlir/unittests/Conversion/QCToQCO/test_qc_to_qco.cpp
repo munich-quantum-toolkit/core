@@ -16,12 +16,10 @@
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Support/IRVerification.h"
 #include "mlir/Support/Passes.h"
-#include "mlir/Support/PrettyPrinting.h"
 #include "qc_programs.h"
 #include "qco_programs.h"
 
 #include <gtest/gtest.h>
-#include <llvm/Support/raw_ostream.h>
 #include <memory>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
@@ -75,34 +73,33 @@ static LogicalResult runQCToQCOConversion(ModuleOp module) {
 TEST_P(QCToQCOTest, ProgramEquivalence) {
   const auto& [_, programBuilder, referenceBuilder] = GetParam();
   const auto name = " (" + GetParam().name + ")";
+  mqt::test::DeferredPrinter printer;
 
   auto program = qc::QCProgramBuilder::build(context.get(), programBuilder.fn);
   ASSERT_TRUE(program);
-  printProgram(program.get(), "Original QC IR" + name, llvm::errs());
+  printer.record(program.get(), "Original QC IR" + name);
   EXPECT_TRUE(verify(*program).succeeded());
 
   runCanonicalizationPasses(program.get());
-  printProgram(program.get(), "Canonicalized QC IR" + name, llvm::errs());
+  printer.record(program.get(), "Canonicalized QC IR" + name);
   EXPECT_TRUE(verify(*program).succeeded());
 
   EXPECT_TRUE(succeeded(runQCToQCOConversion(program.get())));
-  printProgram(program.get(), "Converted QCO IR" + name, llvm::errs());
+  printer.record(program.get(), "Converted QCO IR" + name);
   EXPECT_TRUE(verify(*program).succeeded());
 
   runCanonicalizationPasses(program.get());
-  printProgram(program.get(), "Canonicalized Converted QCO IR" + name,
-               llvm::errs());
+  printer.record(program.get(), "Canonicalized Converted QCO IR" + name);
   EXPECT_TRUE(verify(*program).succeeded());
 
   auto reference =
       qco::QCOProgramBuilder::build(context.get(), referenceBuilder.fn);
   ASSERT_TRUE(reference);
-  printProgram(reference.get(), "Reference QCO IR" + name, llvm::errs());
+  printer.record(reference.get(), "Reference QCO IR" + name);
   EXPECT_TRUE(verify(*reference).succeeded());
 
   runCanonicalizationPasses(reference.get());
-  printProgram(reference.get(), "Canonicalized Reference QCO IR" + name,
-               llvm::errs());
+  printer.record(reference.get(), "Canonicalized Reference QCO IR" + name);
   EXPECT_TRUE(verify(*reference).succeeded());
 
   EXPECT_TRUE(
