@@ -400,7 +400,7 @@ void FunctionalityConstruction::addMcrx(ZXDiagram& diag,
                                         const Qubit target,
                                         std::vector<Vertex>& qubits) {
   addZSpider(diag, target, qubits, PiExpression(), EdgeType::Hadamard);
-  addMcrz(diag, phase, controls, target, qubits);
+  addMcrz(diag, phase, std::move(controls), target, qubits);
   addZSpider(diag, target, qubits, PiExpression(), EdgeType::Hadamard);
 }
 
@@ -448,7 +448,7 @@ void FunctionalityConstruction::addMcx(ZXDiagram& diag,
   default:
     const auto half = static_cast<std::ptrdiff_t>((controls.size() + 1) / 2);
     const std::vector<Qubit> first(controls.begin(), controls.begin() + half);
-    std::vector<Qubit> second(controls.begin() + half, controls.end());
+    const std::vector<Qubit> second(controls.begin() + half, controls.end());
 
     addRx(diag, PiExpression(PiRational(1, 4)), target, qubits);
     addZSpider(diag, target, qubits, PiExpression(), EdgeType::Hadamard);
@@ -478,7 +478,7 @@ void FunctionalityConstruction::addMcz(ZXDiagram& diag,
                                        const Qubit target,
                                        std::vector<Vertex>& qubits) {
   addZSpider(diag, target, qubits, PiExpression(), EdgeType::Hadamard);
-  addMcx(diag, controls, target, qubits);
+  addMcx(diag, std::move(controls), target, qubits);
   addZSpider(diag, target, qubits, PiExpression(), EdgeType::Hadamard);
 }
 
@@ -828,7 +828,9 @@ FunctionalityConstruction::parseOp(ZXDiagram& diag, op_it it, op_it end,
                         std::to_string(op->getNcontrols()) + " ctrls)" +
                         qc::toString(op->getType()));
     }
-  } else {
+  } else if (op->getNtargets() == 2) {
+    // At this point, op must have getNtargets() >= 2 (all 1-target cases
+    // handled above)
     const auto target = static_cast<Qubit>(p.at(op->getTargets().front()));
     const auto target2 = static_cast<Qubit>(p.at(op->getTargets()[1]));
     std::vector<Qubit> controls;
@@ -881,6 +883,10 @@ FunctionalityConstruction::parseOp(ZXDiagram& diag, op_it it, op_it end,
                         std::to_string(op->getNcontrols()) + " ctrls)" +
                         qc::toString(op->getType()));
     }
+  } else {
+    throw ZXException("Unsupported Multi-control operation (" +
+                      std::to_string(op->getNcontrols()) + " ctrls)" +
+                      qc::toString(op->getType()));
   }
   return it + 1;
 }
