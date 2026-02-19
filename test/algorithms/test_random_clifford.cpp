@@ -14,6 +14,7 @@
 #include "dd/Simulation.hpp"
 #include "dd/StateGeneration.hpp"
 #include "ir/Definitions.hpp"
+#include "ir/QuantumComputation.hpp"
 
 #include <cstddef>
 #include <gtest/gtest.h>

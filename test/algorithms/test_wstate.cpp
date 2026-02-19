@@ -11,6 +11,7 @@
 #include "algorithms/WState.hpp"
 #include "dd/Simulation.hpp"
 #include "ir/Definitions.hpp"
+#include "ir/QuantumComputation.hpp"
 
 #include <cstddef>
 #include <gtest/gtest.h>
