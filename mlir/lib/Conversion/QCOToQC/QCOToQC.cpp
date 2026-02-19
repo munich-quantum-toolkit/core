@@ -1,6 +1,6 @@
 /*
- * Copyright (c) 2023 - 2025 Chair for Design Automation, TUM
- * Copyright (c) 2025 Munich Quantum Software Company GmbH
+ * Copyright (c) 2023 - 2026 Chair for Design Automation, TUM
+ * Copyright (c) 2025 - 2026 Munich Quantum Software Company GmbH
  * All rights reserved.
  *
  * SPDX-License-Identifier: MIT
@@ -774,11 +774,98 @@ struct ConvertQCOCtrlOp final : OpConversionPattern<qco::CtrlOp> {
     const auto& qcControls = adaptor.getControlsIn();
 
     // Create qc.ctrl operation
-    auto qcoOp = rewriter.create<qc::CtrlOp>(op.getLoc(), qcControls);
+    auto qcOp = qc::CtrlOp::create(rewriter, op.getLoc(), qcControls);
 
     // Clone body region from QCO to QC
-    auto& dstRegion = qcoOp.getBody();
-    rewriter.cloneRegionBefore(op.getBody(), dstRegion, dstRegion.end());
+    auto& dstRegion = qcOp.getRegion();
+    rewriter.cloneRegionBefore(op.getRegion(), dstRegion, dstRegion.end());
+
+    auto& entryBlock = dstRegion.front();
+    const auto numArgs = entryBlock.getNumArguments();
+    if (adaptor.getTargetsIn().size() != numArgs) {
+      return op.emitOpError() << "qco.ctrl: entry block args (" << numArgs
+                              << ") must match number of target operands ("
+                              << adaptor.getTargetsIn().size() << ")";
+    }
+
+    // Remove all block arguments in the cloned region
+    rewriter.modifyOpInPlace(qcOp, [&] {
+      // 1. Replace uses (Must be done BEFORE erasing)
+      // We iterate 0..N using indices since the block args are still stable
+      // here.
+      for (auto i = 0UL; i < numArgs; ++i) {
+        entryBlock.getArgument(i).replaceAllUsesWith(adaptor.getTargetsIn()[i]);
+      }
+
+      // 2. Erase all block arguments
+      // Now that they have no uses, we can safely wipe them.
+      // We use a bulk erase for efficiency (start index 0, count N).
+      if (numArgs > 0) {
+        entryBlock.eraseArguments(0, numArgs);
+      }
+    });
+
+    // Replace the output qubits with the same QC references
+    rewriter.replaceOp(op, adaptor.getOperands());
+
+    return success();
+  }
+};
+
+/**
+ * @brief Converts qco.inv to qc.inv
+ *
+ * @par Example:
+ * ```mlir
+ * %q0_out = qco.inv (%q0 = %q0_in) {
+ *   %q0_res = qco.s %q0 : !qco.qubit -> !qco.qubit
+ *   qco.yield %q0_res
+ * } : {!qco.qubit} -> {!qco.qubit}
+ * ```
+ * is converted to
+ * ```mlir
+ * qc.inv {
+ *   qc.s %q0 : !qc.qubit
+ * }
+ * ```
+ */
+struct ConvertQCOInvOp final : OpConversionPattern<qco::InvOp> {
+  using OpConversionPattern::OpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(qco::InvOp op, OpAdaptor adaptor,
+                  ConversionPatternRewriter& rewriter) const override {
+    // Create qc.inv operation
+    auto qcOp = qc::InvOp::create(rewriter, op.getLoc());
+
+    // Clone body region from QCO to QC
+    auto& dstRegion = qcOp.getRegion();
+    rewriter.cloneRegionBefore(op.getRegion(), dstRegion, dstRegion.end());
+
+    auto& entryBlock = dstRegion.front();
+    const auto numArgs = entryBlock.getNumArguments();
+    if (adaptor.getQubitsIn().size() != numArgs) {
+      return op.emitOpError() << "qco.inv: entry block args (" << numArgs
+                              << ") must match number of target operands ("
+                              << adaptor.getQubitsIn().size() << ")";
+    }
+
+    // Remove all block arguments in the cloned region
+    rewriter.modifyOpInPlace(qcOp, [&] {
+      // 1. Replace uses (Must be done BEFORE erasing)
+      // We iterate 0..N using indices since the block args are still stable
+      // here.
+      for (auto i = 0UL; i < numArgs; ++i) {
+        entryBlock.getArgument(i).replaceAllUsesWith(adaptor.getQubitsIn()[i]);
+      }
+
+      // 2. Erase all block arguments
+      // Now that they have no uses, we can safely wipe them.
+      // We use a bulk erase for efficiency (start index 0, count N).
+      if (numArgs > 0) {
+        entryBlock.eraseArguments(0, numArgs);
+      }
+    });
 
     // Replace the output qubits with the same QC references
     rewriter.replaceOp(op, adaptor.getOperands());
@@ -840,6 +927,7 @@ struct ConvertQCOYieldOp final : OpConversionPattern<qco::YieldOp> {
 struct QCOToQC final : impl::QCOToQCBase<QCOToQC> {
   using QCOToQCBase::QCOToQCBase;
 
+protected:
   void runOnOperation() override {
     MLIRContext* context = &getContext();
     auto* module = getOperation();
@@ -854,18 +942,18 @@ struct QCOToQC final : impl::QCOToQCBase<QCOToQC> {
 
     // Register operation conversion patterns
     // Note: No state tracking needed - OpAdaptors handle type conversion
-    patterns.add<ConvertQCOAllocOp, ConvertQCODeallocOp, ConvertQCOStaticOp,
-                 ConvertQCOMeasureOp, ConvertQCOResetOp, ConvertQCOGPhaseOp,
-                 ConvertQCOIdOp, ConvertQCOXOp, ConvertQCOYOp, ConvertQCOZOp,
-                 ConvertQCOHOp, ConvertQCOSOp, ConvertQCOSdgOp, ConvertQCOTOp,
-                 ConvertQCOTdgOp, ConvertQCOSXOp, ConvertQCOSXdgOp,
-                 ConvertQCORXOp, ConvertQCORYOp, ConvertQCORZOp, ConvertQCOPOp,
-                 ConvertQCOROp, ConvertQCOU2Op, ConvertQCOUOp, ConvertQCOSWAPOp,
-                 ConvertQCOiSWAPOp, ConvertQCODCXOp, ConvertQCOECROp,
-                 ConvertQCORXXOp, ConvertQCORYYOp, ConvertQCORZXOp,
-                 ConvertQCORZZOp, ConvertQCOXXPlusYYOp, ConvertQCOXXMinusYYOp,
-                 ConvertQCOBarrierOp, ConvertQCOCtrlOp, ConvertQCOYieldOp>(
-        typeConverter, context);
+    patterns
+        .add<ConvertQCOAllocOp, ConvertQCODeallocOp, ConvertQCOStaticOp,
+             ConvertQCOMeasureOp, ConvertQCOResetOp, ConvertQCOGPhaseOp,
+             ConvertQCOIdOp, ConvertQCOXOp, ConvertQCOYOp, ConvertQCOZOp,
+             ConvertQCOHOp, ConvertQCOSOp, ConvertQCOSdgOp, ConvertQCOTOp,
+             ConvertQCOTdgOp, ConvertQCOSXOp, ConvertQCOSXdgOp, ConvertQCORXOp,
+             ConvertQCORYOp, ConvertQCORZOp, ConvertQCOPOp, ConvertQCOROp,
+             ConvertQCOU2Op, ConvertQCOUOp, ConvertQCOSWAPOp, ConvertQCOiSWAPOp,
+             ConvertQCODCXOp, ConvertQCOECROp, ConvertQCORXXOp, ConvertQCORYYOp,
+             ConvertQCORZXOp, ConvertQCORZZOp, ConvertQCOXXPlusYYOp,
+             ConvertQCOXXMinusYYOp, ConvertQCOBarrierOp, ConvertQCOCtrlOp,
+             ConvertQCOInvOp, ConvertQCOYieldOp>(typeConverter, context);
 
     // Conversion of qco types in func.func signatures
     // Note: This currently has limitations with signature changes

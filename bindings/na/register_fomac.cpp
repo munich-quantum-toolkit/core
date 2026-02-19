@@ -1,6 +1,6 @@
 /*
- * Copyright (c) 2023 - 2025 Chair for Design Automation, TUM
- * Copyright (c) 2025 Munich Quantum Software Company GmbH
+ * Copyright (c) 2023 - 2026 Chair for Design Automation, TUM
+ * Copyright (c) 2025 - 2026 Munich Quantum Software Company GmbH
  * All rights reserved.
  *
  * SPDX-License-Identifier: MIT
@@ -10,7 +10,7 @@
 
 #include "fomac/FoMaC.hpp"
 #include "na/fomac/Device.hpp"
-#include "qdmi/na/Generator.hpp"
+#include "qdmi/devices/na/Generator.hpp"
 
 #include <nanobind/nanobind.h>
 #include <nanobind/operators.h>
@@ -36,6 +36,8 @@ template <pyClass T> [[nodiscard]] auto repr(T c) -> std::string {
 
 // NOLINTNEXTLINE(misc-use-internal-linkage)
 void registerFomac(nb::module_& m) {
+  m.doc() = R"pb(Reconstruction of NADevice from QDMI's Device class.)pb";
+
   nb::module_::import_("mqt.core.fomac");
 
   auto device = nb::class_<na::Session::Device, fomac::Session::Device>(

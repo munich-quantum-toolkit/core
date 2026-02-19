@@ -11,7 +11,39 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 
 ### Added
 
-- ✨ Add initial infrastructure for new QC and QCO MLIR dialects ([#1264], [#1402]) ([**@burgholzer**], [**@denialhaag**])
+- ✨ Add initial infrastructure for new QC and QCO MLIR dialects
+  ([#1264], [#1330], [#1402], [#1428], [#1430], [#1436], [#1443], [#1446], [#1464], [#1465], [#1470], [#1471], [#1472], [#1474], [#1475])
+  ([**@burgholzer**], [**@denialhaag**], [**@taminob**], [**@DRovara**], [**@li-mingbao**], [**@Ectras**])
+
+### Changed
+
+- 📦 Build MLIR by default for C++ library builds ([#1356]) ([**@burgholzer**], [**@denialhaag**])
+
+### Removed
+
+- 🔥 Remove the density matrix support from the MQT Core DD package ([#1466]) ([**@burgholzer**])
+- 🔥 Remove `datastructures` (`ds`) (sub)library from MQT Core ([#1458]) ([**@burgholzer**])
+
+## [3.4.1] - 2026-02-01
+
+### Changed
+
+- ⬆️ Update `nanobind` to version 2.11.0 ([#1481]) ([**@denialhaag**])
+- ⬆️ Update Boost to version 1.89.0 ([#1453]) ([**@burgholzer**])
+- ⬆️ Update QDMI to latest version from stable v1.2.x branch ([#1453]) ([**@burgholzer**])
+- ⬆️ Update `spdlog` to version 1.17.0 ([#1453]) ([**@burgholzer**])
+- ♻️ Use `llc` instead of random `clang` for compiling QIR test circuits to improve robustness and handle opaque pointers correctly across LLVM versions ([#1447]) ([**@burgholzer**])
+- ♻️ Extract singleton pattern into reusable template base class for QDMI devices and driver ([#1444]) ([**@ystade**], [**@burgholzer**])
+- 🚚 Reorganize QDMI code structure by moving devices into dedicated subdirectories and separating driver and common utilities ([#1444]) ([**@ystade**])
+
+### Removed
+
+- 🔥 No longer actively type check Python code with `mypy` and solely rely on `ty` ([#1437]) ([**@burgholzer**])
+
+## [3.4.0] - 2026-01-08
+
+### Added
+
 - ✨ Return device handle from `add_dynamic_device_library` for direct backend creation ([#1381]) ([**@marcelwa**])
 - ✨ Add IQM JSON support for job submission in Qiskit-QDMI Backend ([#1375], [#1382]) ([**@marcelwa**], [**@burgholzer**])
 - ✨ Add authentication support for QDMI sessions with token, username/password, auth file, auth URL, and project ID parameters ([#1355]) ([**@marcelwa**])
@@ -25,7 +57,6 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 
 ### Changed
 
-- 📦 Build MLIR by default for C++ library builds ([#1356]) ([**@burgholzer**], [**@denialhaag**])
 - 📦🏁 Build Windows x86 wheels on windows-2025 runner for newer compiler ([#1415]) ([**@burgholzer**])
 - 👷 Build on `macos-15`/`windows-2025` by default and `macos-14`/`windows-2022` for extensive tests ([#1414]) ([**@burgholzer**])
 - 📦🍎 Build macOS arm64 wheels on macos-15 runner for newer compiler ([#1413]) ([**@burgholzer**])
@@ -279,7 +310,9 @@ _📚 Refer to the [GitHub Release Notes](https://github.com/munich-quantum-tool
 
 <!-- Version links -->
 
-[unreleased]: https://github.com/munich-quantum-toolkit/core/compare/v3.3.3...HEAD
+[unreleased]: https://github.com/munich-quantum-toolkit/core/compare/v3.4.1...HEAD
+[3.4.1]: https://github.com/munich-quantum-toolkit/core/releases/tag/v3.4.1
+[3.4.0]: https://github.com/munich-quantum-toolkit/core/releases/tag/v3.4.0
 [3.3.3]: https://github.com/munich-quantum-toolkit/core/releases/tag/v3.3.3
 [3.3.2]: https://github.com/munich-quantum-toolkit/core/releases/tag/v3.3.2
 [3.3.1]: https://github.com/munich-quantum-toolkit/core/releases/tag/v3.3.1
@@ -294,6 +327,25 @@ _📚 Refer to the [GitHub Release Notes](https://github.com/munich-quantum-tool
 
 <!-- PR links -->
 
+[#1481]: https://github.com/munich-quantum-toolkit/core/pull/1481
+[#1475]: https://github.com/munich-quantum-toolkit/core/pull/1475
+[#1474]: https://github.com/munich-quantum-toolkit/core/pull/1474
+[#1472]: https://github.com/munich-quantum-toolkit/core/pull/1472
+[#1471]: https://github.com/munich-quantum-toolkit/core/pull/1471
+[#1470]: https://github.com/munich-quantum-toolkit/core/pull/1470
+[#1466]: https://github.com/munich-quantum-toolkit/core/pull/1466
+[#1465]: https://github.com/munich-quantum-toolkit/core/pull/1465
+[#1464]: https://github.com/munich-quantum-toolkit/core/pull/1464
+[#1458]: https://github.com/munich-quantum-toolkit/core/pull/1458
+[#1453]: https://github.com/munich-quantum-toolkit/core/pull/1453
+[#1447]: https://github.com/munich-quantum-toolkit/core/pull/1447
+[#1446]: https://github.com/munich-quantum-toolkit/core/pull/1446
+[#1444]: https://github.com/munich-quantum-toolkit/core/pull/1444
+[#1443]: https://github.com/munich-quantum-toolkit/core/pull/1443
+[#1437]: https://github.com/munich-quantum-toolkit/core/pull/1437
+[#1436]: https://github.com/munich-quantum-toolkit/core/pull/1436
+[#1430]: https://github.com/munich-quantum-toolkit/core/pull/1430
+[#1428]: https://github.com/munich-quantum-toolkit/core/pull/1428
 [#1415]: https://github.com/munich-quantum-toolkit/core/pull/1415
 [#1414]: https://github.com/munich-quantum-toolkit/core/pull/1414
 [#1413]: https://github.com/munich-quantum-toolkit/core/pull/1413
@@ -311,9 +363,11 @@ _📚 Refer to the [GitHub Release Notes](https://github.com/munich-quantum-tool
 [#1375]: https://github.com/munich-quantum-toolkit/core/pull/1375
 [#1371]: https://github.com/munich-quantum-toolkit/core/pull/1371
 [#1359]: https://github.com/munich-quantum-toolkit/core/pull/1359
+[#1356]: https://github.com/munich-quantum-toolkit/core/pull/1356
 [#1355]: https://github.com/munich-quantum-toolkit/core/pull/1355
 [#1338]: https://github.com/munich-quantum-toolkit/core/pull/1338
 [#1336]: https://github.com/munich-quantum-toolkit/core/pull/1336
+[#1330]: https://github.com/munich-quantum-toolkit/core/pull/1330
 [#1328]: https://github.com/munich-quantum-toolkit/core/pull/1328
 [#1327]: https://github.com/munich-quantum-toolkit/core/pull/1327
 [#1310]: https://github.com/munich-quantum-toolkit/core/pull/1310
@@ -451,6 +505,7 @@ _📚 Refer to the [GitHub Release Notes](https://github.com/munich-quantum-tool
 [**@lsschmid**]: https://github.com/lsschmid
 [**@marcelwa**]: https://github.com/marcelwa
 [**@lirem101**]: https://github.com/lirem101
+[**@Ectras**]: https://github.com/Ectras
 
 <!-- General links -->
 

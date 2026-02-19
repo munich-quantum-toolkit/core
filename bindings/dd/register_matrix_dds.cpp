@@ -1,6 +1,6 @@
 /*
- * Copyright (c) 2023 - 2025 Chair for Design Automation, TUM
- * Copyright (c) 2025 Munich Quantum Software Company GmbH
+ * Copyright (c) 2023 - 2026 Chair for Design Automation, TUM
+ * Copyright (c) 2025 - 2026 Munich Quantum Software Company GmbH
  * All rights reserved.
  *
  * SPDX-License-Identifier: MIT
@@ -74,8 +74,7 @@ void registerMatrixDDs(const nb::module_& m) {
   mat.def("is_zero_terminal", &dd::mEdge::isZeroTerminal,
           "Check if the DD is a zero terminal node.");
 
-  mat.def("is_identity", &dd::mEdge::isIdentity<>,
-          "up_to_global_phase"_a = true,
+  mat.def("is_identity", &dd::mEdge::isIdentity, "up_to_global_phase"_a = true,
           R"pb(Check if the DD represents the identity matrix.
 
 Args:
@@ -87,8 +86,11 @@ Returns:
   mat.def("size", nb::overload_cast<>(&dd::mEdge::size, nb::const_),
           "Get the size of the DD by traversing it once.");
 
-  mat.def("get_entry", &dd::mEdge::getValueByIndex<>, "num_qubits"_a, "row"_a,
-          "col"_a, "Get the entry of the matrix by row and column index.");
+  mat.def("get_entry",
+          nb::overload_cast<size_t, size_t, size_t>(&dd::mEdge::getValueByIndex,
+                                                    nb::const_),
+          "num_qubits"_a, "row"_a, "col"_a,
+          "Get the entry of the matrix by row and column index.");
 
   mat.def("get_entry_by_path", &dd::mEdge::getValueByPath, "num_qubits"_a,
           "decisions"_a, R"pb(Get the entry of the matrix by decisions.

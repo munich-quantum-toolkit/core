@@ -1,6 +1,6 @@
 /*
- * Copyright (c) 2023 - 2025 Chair for Design Automation, TUM
- * Copyright (c) 2025 Munich Quantum Software Company GmbH
+ * Copyright (c) 2023 - 2026 Chair for Design Automation, TUM
+ * Copyright (c) 2025 - 2026 Munich Quantum Software Company GmbH
  * All rights reserved.
  *
  * SPDX-License-Identifier: MIT
@@ -37,7 +37,7 @@ struct Complex {
    * @return A complex number with real and imaginary part equal to zero.
    */
   static constexpr Complex zero() noexcept {
-    return {&constants::zero, &constants::zero};
+    return {.r = &constants::zero, .i = &constants::zero};
   }
 
   /**
@@ -46,7 +46,7 @@ struct Complex {
    * equal to zero.
    */
   static constexpr Complex one() noexcept {
-    return {&constants::one, &constants::zero};
+    return {.r = &constants::one, .i = &constants::zero};
   }
 
   /**

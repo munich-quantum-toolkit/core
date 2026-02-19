@@ -1,6 +1,6 @@
 /*
- * Copyright (c) 2023 - 2025 Chair for Design Automation, TUM
- * Copyright (c) 2025 Munich Quantum Software Company GmbH
+ * Copyright (c) 2023 - 2026 Chair for Design Automation, TUM
+ * Copyright (c) 2025 - 2026 Munich Quantum Software Company GmbH
  * All rights reserved.
  *
  * SPDX-License-Identifier: MIT
@@ -15,6 +15,7 @@
 #include <cstdint>
 #include <functional>
 #include <llvm/ADT/DenseSet.h>
+#include <llvm/ADT/STLFunctionalExtras.h>
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/Support/ErrorHandling.h>
 #include <mlir/IR/Builders.h>
@@ -59,7 +60,7 @@ namespace mlir::qco {
  * auto module = builder.finalize();
  * ```
  */
-class QCOProgramBuilder final : public OpBuilder {
+class QCOProgramBuilder final : public ImplicitLocOpBuilder {
 public:
   /**
    * @brief Construct a new QCOProgramBuilder
@@ -988,21 +989,46 @@ public:
    * @par Example:
    * ```c++
    * {controls_out, targets_out} =
-   *   builder.ctrl(q0_in, q1_in, [&](ValueRange targets) {
-   *     auto q1_res = builder.x(targets[0]);
-   *     return {q1_res};
+   *   builder.ctrl(q0_in, q1_in,
+   *     [&](ValueRange targets) -> llvm::SmallVector<Value> {
+   *       return {builder.x(targets[0])};
    *   });
    * ```
    * ```mlir
-   * %controls_out, %targets_out = qco.ctrl(%q0_in) %q1_in {
-   *   %q1_res = qco.x %q1_in : !qco.qubit -> !qco.qubit
+   * %controls_out, %targets_out = qco.ctrl(%q0_in) targets(%t = %q1_in) {
+   *   %q1_res = qco.x %t : !qco.qubit -> !qco.qubit
    *   qco.yield %q1_res
    * } : ({!qco.qubit}, {!qco.qubit}) -> ({!qco.qubit}, {!qco.qubit})
    * ```
    */
   std::pair<ValueRange, ValueRange>
   ctrl(ValueRange controls, ValueRange targets,
-       const std::function<ValueRange(ValueRange)>& body);
+       llvm::function_ref<llvm::SmallVector<Value>(ValueRange)> body);
+
+  /**
+   * @brief Apply an inverse operation
+   *
+   * @param qubits Qubits involved in the operation
+   * @param body Function that builds the body containing the target operation
+   * @return Output qubits
+   *
+   * @par Example:
+   * ```c++
+   * qubits_out = builder.inv(q0_in,
+   *   [&](ValueRange qubits) -> llvm::SmallVector<Value> {
+   *     return {builder.s(qubits[0])};
+   *   }
+   * );
+   * ```
+   * ```mlir
+   * %qubits_out = qco.inv (%q = %q0_in) {
+   *   %q_res = qco.s %q : !qco.qubit -> !qco.qubit
+   *   qco.yield %q_res
+   * } : {!qco.qubit} -> {!qco.qubit}
+   * ```
+   */
+  ValueRange inv(ValueRange qubits,
+                 llvm::function_ref<llvm::SmallVector<Value>(ValueRange)> body);
 
   //===--------------------------------------------------------------------===//
   // Deallocation
@@ -1047,7 +1073,6 @@ public:
 
 private:
   MLIRContext* ctx{};
-  Location loc;
   ModuleOp module;
 
   /// Check if the builder has been finalized

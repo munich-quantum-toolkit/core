@@ -1,6 +1,6 @@
 /*
- * Copyright (c) 2023 - 2025 Chair for Design Automation, TUM
- * Copyright (c) 2025 Munich Quantum Software Company GmbH
+ * Copyright (c) 2023 - 2026 Chair for Design Automation, TUM
+ * Copyright (c) 2025 - 2026 Munich Quantum Software Company GmbH
  * All rights reserved.
  *
  * SPDX-License-Identifier: MIT
@@ -11,13 +11,15 @@
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/Utils/Utils.h"
 
+#include <Eigen/Core>
 #include <cmath>
+#include <complex>
 #include <mlir/IR/Builders.h>
-#include <mlir/IR/BuiltinAttributes.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OperationSupport.h>
 #include <mlir/IR/PatternMatch.h>
 #include <mlir/Support/LogicalResult.h>
+#include <optional>
 #include <variant>
 
 using namespace mlir;
@@ -34,13 +36,8 @@ struct RemoveTrivialGPhase final : OpRewritePattern<GPhaseOp> {
 
   LogicalResult matchAndRewrite(GPhaseOp op,
                                 PatternRewriter& rewriter) const override {
-    const auto thetaAttr = GPhaseOp::getStaticParameter(op.getTheta());
-    if (!thetaAttr) {
-      return failure();
-    }
-
-    const auto thetaValue = thetaAttr.getValueAsDouble();
-    if (std::abs(thetaValue) > TOLERANCE) {
+    if (const auto theta = valueToDouble(op.getTheta());
+        !theta || std::abs(*theta) > TOLERANCE) {
       return failure();
     }
 
@@ -51,13 +48,22 @@ struct RemoveTrivialGPhase final : OpRewritePattern<GPhaseOp> {
 
 } // namespace
 
-void GPhaseOp::build(OpBuilder& builder, OperationState& state,
+void GPhaseOp::build(OpBuilder& odsBuilder, OperationState& odsState,
                      const std::variant<double, Value>& theta) {
-  auto thetaOperand = variantToValue(builder, state, theta);
-  build(builder, state, thetaOperand);
+  const auto thetaOperand =
+      variantToValue(odsBuilder, odsState.location, theta);
+  build(odsBuilder, odsState, thetaOperand);
 }
 
 void GPhaseOp::getCanonicalizationPatterns(RewritePatternSet& results,
                                            MLIRContext* context) {
   results.add<RemoveTrivialGPhase>(context);
+}
+
+std::optional<Eigen::Matrix<std::complex<double>, 1, 1>>
+GPhaseOp::getUnitaryMatrix() {
+  if (const auto theta = valueToDouble(getTheta())) {
+    return Eigen::Matrix<std::complex<double>, 1, 1>{std::polar(1.0, *theta)};
+  }
+  return std::nullopt;
 }

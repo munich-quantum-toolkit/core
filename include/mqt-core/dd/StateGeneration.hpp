@@ -1,6 +1,6 @@
 /*
- * Copyright (c) 2023 - 2025 Chair for Design Automation, TUM
- * Copyright (c) 2025 Munich Quantum Software Company GmbH
+ * Copyright (c) 2023 - 2026 Chair for Design Automation, TUM
+ * Copyright (c) 2025 - 2026 Munich Quantum Software Company GmbH
  * All rights reserved.
  *
  * SPDX-License-Identifier: MIT
@@ -10,6 +10,7 @@
 
 #pragma once
 
+#include "dd/DDDefinitions.hpp"
 #include "dd/Node.hpp"
 #include "dd/Package.hpp"
 
@@ -87,7 +88,7 @@ VectorDD makeWState(std::size_t n, Package& dd);
 VectorDD makeStateFromVector(const CVec& vec, Package& dd);
 
 /// @brief The strategy to wire two layers.
-enum GenerationWireStrategy : std::uint8_t {
+enum class GenerationWireStrategy : std::uint8_t {
   ROUNDROBIN, // Choose nodes in the next layer in a round-robin fashion.
   RANDOM      // Randomly choose nodes in the next layer.
 };

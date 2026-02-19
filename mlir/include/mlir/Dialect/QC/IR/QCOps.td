@@ -1,5 +1,5 @@
-// Copyright (c) 2023 - 2025 Chair for Design Automation, TUM
-// Copyright (c) 2025 Munich Quantum Software Company GmbH
+// Copyright (c) 2023 - 2026 Chair for Design Automation, TUM
+// Copyright (c) 2025 - 2026 Munich Quantum Software Company GmbH
 // All rights reserved.
 //
 // SPDX-License-Identifier: MIT
@@ -948,8 +948,8 @@ def CtrlOp : QCOp<"ctrl",
     }];
 
     let arguments = (ins Arg<Variadic<QubitType>, "the control qubits", [MemRead, MemWrite]>:$controls);
-    let regions = (region SizedRegion<1>:$body);
-    let assemblyFormat = "`(` $controls `)` $body attr-dict `:` type($controls)";
+    let regions = (region SizedRegion<1>:$region);
+    let assemblyFormat = "`(` $controls `)` $region attr-dict `:` type($controls)";
 
     let extraClassDeclaration = [{
         [[nodiscard]] UnitaryOpInterface getBodyUnitary();
@@ -967,6 +967,50 @@ def CtrlOp : QCOp<"ctrl",
     let builders = [
         OpBuilder<(ins "ValueRange":$controls, "UnitaryOpInterface":$bodyUnitary)>,
         OpBuilder<(ins "ValueRange":$controls, "const std::function<void()>&":$bodyBuilder)>
+    ];
+
+    let hasCanonicalizer = 1;
+    let hasVerifier = 1;
+}
+
+def InvOp : QCOp<"inv",
+            traits = [
+                UnitaryOpInterface,
+                SingleBlockImplicitTerminator<"::mlir::qc::YieldOp">,
+                RecursiveMemoryEffects
+            ]> {
+    let summary = "Invert a unitary operation";
+    let description = [{
+        A modifier operation that inverts the unitary operation defined in its body
+        region.
+
+        Example:
+        ```mlir
+        qc.inv {
+          qc.s %q0 : !qc.qubit
+        }
+        ```
+    }];
+
+    let regions = (region SizedRegion<1>:$region);
+    let assemblyFormat = "$region attr-dict";
+
+    let extraClassDeclaration = [{
+        [[nodiscard]] UnitaryOpInterface getBodyUnitary();
+        size_t getNumQubits();
+        size_t getNumTargets();
+        static size_t getNumControls();
+        Value getQubit(size_t i);
+        Value getTarget(size_t i);
+        static Value getControl(size_t i);
+        size_t getNumParams();
+        Value getParameter(size_t i);
+        static StringRef getBaseSymbol() { return "inv"; }
+    }];
+
+    let builders = [
+        OpBuilder<(ins "UnitaryOpInterface":$bodyUnitary)>,
+        OpBuilder<(ins "const std::function<void()>&":$bodyBuilder)>
     ];
 
     let hasCanonicalizer = 1;

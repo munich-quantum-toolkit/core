@@ -1,6 +1,6 @@
 /*
- * Copyright (c) 2023 - 2025 Chair for Design Automation, TUM
- * Copyright (c) 2025 Munich Quantum Software Company GmbH
+ * Copyright (c) 2023 - 2026 Chair for Design Automation, TUM
+ * Copyright (c) 2025 - 2026 Munich Quantum Software Company GmbH
  * All rights reserved.
  *
  * SPDX-License-Identifier: MIT
@@ -26,6 +26,7 @@
 #include <functional>
 #include <iostream>
 #include <nlohmann/json.hpp>
+#include <ranges>
 #include <type_traits>
 #include <vector>
 
@@ -89,11 +90,7 @@ public:
 
   template <class Node>
   [[nodiscard]] static bool nodesAreEqual(const Node& p, const Node& q) {
-    if constexpr (std::is_same_v<Node, dNode>) {
-      return (p.e == q.e && (p.flags == q.flags));
-    } else {
-      return p.e == q.e;
-    }
+    return p.e == q.e;
   }
 
   // Lookup a node in the unique table for the appropriate variable and insert
@@ -158,10 +155,8 @@ public:
     static_assert(std::is_base_of_v<NodeBase, Node>,
                   "Node must be derived from NodeBase");
     auto q = cfg.nVars - 1U;
-    for (auto it = tables.rbegin(); it != tables.rend(); ++it) {
-      auto& table = *it;
-      std::cout << "\tq" << q << ":"
-                << "\n";
+    for (const auto& table : std::ranges::reverse_view(tables)) {
+      std::cout << "\tq" << q << ":" << "\n";
       for (std::size_t key = 0; key < table.size(); ++key) {
         auto* p = static_cast<Node*>(table[key]);
         if (p != nullptr) {

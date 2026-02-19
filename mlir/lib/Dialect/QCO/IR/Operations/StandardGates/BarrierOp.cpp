@@ -1,6 +1,6 @@
 /*
- * Copyright (c) 2023 - 2025 Chair for Design Automation, TUM
- * Copyright (c) 2025 Munich Quantum Software Company GmbH
+ * Copyright (c) 2023 - 2026 Chair for Design Automation, TUM
+ * Copyright (c) 2025 - 2026 Munich Quantum Software Company GmbH
  * All rights reserved.
  *
  * SPDX-License-Identifier: MIT
@@ -84,7 +84,11 @@ size_t BarrierOp::getNumControls() { return 0; }
 
 Value BarrierOp::getInputQubit(const size_t i) { return getInputTarget(i); }
 
+OperandRange BarrierOp::getInputQubits() { return getQubitsIn(); }
+
 Value BarrierOp::getOutputQubit(const size_t i) { return getOutputTarget(i); }
+
+ResultRange BarrierOp::getOutputQubits() { return getQubitsOut(); }
 
 Value BarrierOp::getInputTarget(const size_t i) {
   if (i < getNumTargets()) {
@@ -132,14 +136,14 @@ Value BarrierOp::getParameter(const size_t /*i*/) {
   llvm::reportFatalUsageError("BarrierOp has no parameters");
 }
 
-void BarrierOp::build(OpBuilder& builder, OperationState& state,
+void BarrierOp::build(OpBuilder& odsBuilder, OperationState& odsState,
                       ValueRange qubits) {
   SmallVector<Type> resultTypes;
   resultTypes.reserve(qubits.size());
   for (auto qubit : qubits) {
     resultTypes.push_back(qubit.getType());
   }
-  build(builder, state, resultTypes, qubits);
+  build(odsBuilder, odsState, resultTypes, qubits);
 }
 
 void BarrierOp::getCanonicalizationPatterns(RewritePatternSet& results,

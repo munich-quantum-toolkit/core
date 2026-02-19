@@ -1,6 +1,6 @@
 /*
- * Copyright (c) 2023 - 2025 Chair for Design Automation, TUM
- * Copyright (c) 2025 Munich Quantum Software Company GmbH
+ * Copyright (c) 2023 - 2026 Chair for Design Automation, TUM
+ * Copyright (c) 2025 - 2026 Munich Quantum Software Company GmbH
  * All rights reserved.
  *
  * SPDX-License-Identifier: MIT
@@ -17,14 +17,12 @@
 #include "dd/ComputeTable.hpp"
 #include "dd/DDDefinitions.hpp"
 #include "dd/DDpackageConfig.hpp"
-#include "dd/DensityNoiseTable.hpp"
 #include "dd/Edge.hpp"
 #include "dd/GateMatrixDefinitions.hpp"
 #include "dd/MemoryManager.hpp"
 #include "dd/Node.hpp"
 #include "dd/RealNumber.hpp"
 #include "dd/RealNumberUniqueTable.hpp"
-#include "dd/StochasticNoiseOperationTable.hpp"
 #include "dd/UnaryComputeTable.hpp"
 #include "dd/UniqueTable.hpp"
 #include "ir/Definitions.hpp"
@@ -68,8 +66,6 @@ void Package::resize(const std::size_t nq) {
   nqubits = nq;
   vUniqueTable.resize(nqubits);
   mUniqueTable.resize(nqubits);
-  dUniqueTable.resize(nqubits);
-  stochasticNoiseOperationCache.resize(nqubits);
 }
 
 void Package::reset() {
@@ -82,24 +78,21 @@ void Package::reset() {
 void Package::resetMemoryManagers(const bool resizeToTotal) {
   vMemoryManager.reset(resizeToTotal);
   mMemoryManager.reset(resizeToTotal);
-  dMemoryManager.reset(resizeToTotal);
   cMemoryManager.reset(resizeToTotal);
 }
 
 void Package::clearUniqueTables() {
   vUniqueTable.clear();
   mUniqueTable.clear();
-  dUniqueTable.clear();
   cUniqueTable.clear();
 }
 
 bool Package::garbageCollect(bool force) {
-  using flags = std::tuple<bool, bool, bool, bool>;
+  using flags = std::tuple<bool, bool, bool>;
 
   // return immediately if no table needs collection
   if (!force && !vUniqueTable.possiblyNeedsCollection() &&
       !mUniqueTable.possiblyNeedsCollection() &&
-      !dUniqueTable.possiblyNeedsCollection() &&
       !cUniqueTable.possiblyNeedsCollection()) {
     return false;
   }
@@ -109,11 +102,10 @@ bool Package::garbageCollect(bool force) {
     force |= invC;
     const bool invV = vUniqueTable.garbageCollect(force) > 0;
     const bool invM = mUniqueTable.garbageCollect(force) > 0;
-    const bool invD = dUniqueTable.garbageCollect(force) > 0;
-    return {invC, invV, invM, invD};
+    return {invC, invV, invM};
   };
 
-  const auto [invC, invV, invM, invD] = roots.execute<flags>(sweep);
+  const auto [invC, invV, invM] = roots.execute<flags>(sweep);
 
   // invalidate all compute tables involving vectors if any vector node has
   // been collected
@@ -132,15 +124,6 @@ bool Package::garbageCollect(bool force) {
     matrixTrace.clear();
     matrixVectorMultiplication.clear();
     matrixMatrixMultiplication.clear();
-    stochasticNoiseOperationCache.clear();
-  }
-  // invalidate all compute tables involving density matrices if any density
-  // matrix node has been collected
-  if (invD) {
-    densityAdd.clear();
-    densityDensityMultiplication.clear();
-    densityNoise.clear();
-    densityTrace.clear();
   }
   // invalidate all compute tables where any component of the entry contains
   // numbers from the complex table if any complex numbers were collected
@@ -152,33 +135,17 @@ bool Package::garbageCollect(bool force) {
     vectorKronecker.clear();
     matrixKronecker.clear();
     matrixTrace.clear();
-    stochasticNoiseOperationCache.clear();
-    densityAdd.clear();
-    densityDensityMultiplication.clear();
-    densityNoise.clear();
-    densityTrace.clear();
   }
-  return invC || invV || invM || invD;
+  return invC || invV || invM;
 }
 
 Package::ActiveCounts Package::computeActiveCounts() {
   const auto count = [this]() -> ActiveCounts {
     return {.vector = vUniqueTable.countMarkedEntries(),
             .matrix = mUniqueTable.countMarkedEntries(),
-            .density = dUniqueTable.countMarkedEntries(),
             .reals = cUniqueTable.countMarkedEntries()};
   };
   return roots.execute<ActiveCounts>(count);
-}
-
-dEdge Package::makeZeroDensityOperator(const std::size_t n) {
-  auto f = dEdge::one();
-  for (std::size_t p = 0; p < n; p++) {
-    f = makeDDNode(static_cast<Qubit>(p),
-                   std::array{f, dEdge::zero(), dEdge::zero(), dEdge::zero()});
-  }
-  incRef(f);
-  return f;
 }
 
 mEdge Package::makeGateDD(const GateMatrix& mat, const qc::Qubit target) {
@@ -437,12 +404,6 @@ void Package::clearComputeTables() {
   vectorKronecker.clear();
   matrixKronecker.clear();
   matrixTrace.clear();
-
-  stochasticNoiseOperationCache.clear();
-  densityAdd.clear();
-  densityDensityMultiplication.clear();
-  densityNoise.clear();
-  densityTrace.clear();
 }
 std::string Package::measureAll(vEdge& rootEdge, const bool collapse,
                                 std::mt19937_64& mt, const fp epsilon) {
@@ -605,39 +566,6 @@ char Package::measureOneCollapsing(vEdge& rootEdge, const Qubit index,
   performCollapsingMeasurement(rootEdge, index, pone, false);
   return '1';
 }
-char Package::measureOneCollapsing(dEdge& e, const Qubit index,
-                                   std::mt19937_64& mt) {
-  char measuredResult = '0';
-  dEdge::alignDensityEdge(e);
-  const auto nrQubits = e.p->v + 1U;
-  dEdge::setDensityMatrixTrue(e);
-
-  auto const measZeroDd = makeGateDD(MEAS_ZERO_MAT, index);
-
-  auto tmp0 = conjugateTranspose(measZeroDd);
-  auto tmp1 = multiply(e, densityFromMatrixEdge(tmp0), false);
-  auto tmp2 = multiply(densityFromMatrixEdge(measZeroDd), tmp1, true);
-  auto densityMatrixTrace = trace(tmp2, nrQubits);
-
-  std::uniform_real_distribution<fp> dist(0., 1.);
-  if (const auto threshold = dist(mt); threshold > densityMatrixTrace.r) {
-    auto const measOneDd = makeGateDD(MEAS_ONE_MAT, index);
-    tmp0 = conjugateTranspose(measOneDd);
-    tmp1 = multiply(e, densityFromMatrixEdge(tmp0), false);
-    tmp2 = multiply(densityFromMatrixEdge(measOneDd), tmp1, true);
-    measuredResult = '1';
-    densityMatrixTrace = trace(tmp2, nrQubits);
-  }
-
-  dEdge::alignDensityEdge(e);
-  tmp2.w = cn.lookup(e.w / densityMatrixTrace); // Normalize density matrix
-  incRef(tmp2);
-  decRef(e);
-  e = tmp2;
-  dEdge::setDensityMatrixTrue(e);
-
-  return measuredResult;
-}
 void Package::performCollapsingMeasurement(vEdge& rootEdge, const Qubit index,
                                            const fp probability,
                                            const bool measureZero) {
@@ -724,17 +652,6 @@ MatrixDD Package::applyOperation(const MatrixDD& operation, const MatrixDD& e,
   decRef(e);
   garbageCollect();
   return tmp;
-}
-dEdge Package::applyOperationToDensity(dEdge& e, const mEdge& operation) {
-  const auto tmp0 = conjugateTranspose(operation);
-  const auto tmp1 = multiply(e, densityFromMatrixEdge(tmp0), false);
-  const auto tmp2 = multiply(densityFromMatrixEdge(operation), tmp1, true);
-  incRef(tmp2);
-  dEdge::alignDensityEdge(e);
-  decRef(e);
-  e = tmp2;
-  dEdge::setDensityMatrixTrue(e);
-  return e;
 }
 ComplexValue Package::innerProduct(const vEdge& x, const vEdge& y) {
   if (x.isTerminal() || y.isTerminal() || x.w.approximatelyZero() ||
@@ -857,12 +774,84 @@ mEdge Package::partialTrace(const mEdge& a,
   auto r = trace(a, eliminate, eliminate.size());
   return {r.p, cn.lookup(r.w)};
 }
+ComplexValue Package::trace(const mEdge& a, const std::size_t numQubits) {
+  if (a.isIdentity()) {
+    return static_cast<ComplexValue>(a.w);
+  }
+  const auto eliminate = std::vector<bool>(numQubits, true);
+  return trace(a, eliminate, numQubits).w;
+}
 bool Package::isCloseToIdentity(const mEdge& m, const fp tol,
                                 const std::vector<bool>& garbage,
                                 const bool checkCloseToOne) const {
   std::unordered_set<decltype(m.p)> visited{};
   visited.reserve(mUniqueTable.getNumEntries());
   return isCloseToIdentityRecursive(m, visited, tol, garbage, checkCloseToOne);
+}
+mCachedEdge Package::trace(const mEdge& a, const std::vector<bool>& eliminate,
+                           std::size_t level, std::size_t alreadyEliminated) {
+  const auto aWeight = static_cast<ComplexValue>(a.w);
+  if (aWeight.approximatelyZero()) {
+    return mCachedEdge::zero();
+  }
+
+  // If `a` is the identity matrix or there is nothing left to eliminate,
+  // then simply return `a`
+  if (a.isIdentity() ||
+      std::none_of(eliminate.begin(),
+                   eliminate.begin() +
+                       static_cast<std::vector<bool>::difference_type>(level),
+                   [](bool v) { return v; })) {
+    return mCachedEdge{a.p, aWeight};
+  }
+
+  const auto v = a.p->v;
+  if (eliminate[v]) {
+    // Lookup nodes marked for elimination in the compute table if all
+    // lower-level qubits are eliminated as well: if the trace has already
+    // been computed, return the result
+    const auto eliminateAll =
+        std::all_of(eliminate.begin(),
+                    eliminate.begin() +
+                        static_cast<std::vector<bool>::difference_type>(level),
+                    [](bool e) { return e; });
+    if (eliminateAll) {
+      if (const auto* r = getTraceComputeTable().lookup(a.p); r != nullptr) {
+        return {r->p, r->w * aWeight};
+      }
+    }
+
+    const auto elims = alreadyEliminated + 1;
+    auto r = add2(trace(a.p->e[0], eliminate, level - 1, elims),
+                  trace(a.p->e[3], eliminate, level - 1, elims), v - 1);
+
+    // The resulting weight is continuously normalized to the range [0,1] for
+    // matrix nodes
+    r.w = r.w / 2.0;
+
+    // Insert result into compute table if all lower-level qubits are
+    // eliminated as well
+    if (eliminateAll) {
+      getTraceComputeTable().insert(a.p, r);
+    }
+    r.w = r.w * aWeight;
+    return r;
+  }
+
+  std::array<mCachedEdge, NEDGE> edge{};
+  std::ranges::transform(std::as_const(a.p->e), edge.begin(),
+                         [this, &eliminate, &alreadyEliminated,
+                          &level](const mEdge& e) -> mCachedEdge {
+                           return trace(e, eliminate, level - 1,
+                                        alreadyEliminated);
+                         });
+  const auto adjustedV = static_cast<Qubit>(
+      static_cast<std::size_t>(a.p->v) -
+      (static_cast<std::size_t>(std::ranges::count(eliminate, true)) -
+       alreadyEliminated));
+  auto r = makeDDNode(adjustedV, edge);
+  r.w = r.w * aWeight;
+  return r;
 }
 bool Package::isCloseToIdentityRecursive(
     const mEdge& m, std::unordered_set<decltype(m.p)>& visited, const fp tol,

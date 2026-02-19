@@ -1,6 +1,6 @@
 /*
- * Copyright (c) 2023 - 2025 Chair for Design Automation, TUM
- * Copyright (c) 2025 Munich Quantum Software Company GmbH
+ * Copyright (c) 2023 - 2026 Chair for Design Automation, TUM
+ * Copyright (c) 2025 - 2026 Munich Quantum Software Company GmbH
  * All rights reserved.
  *
  * SPDX-License-Identifier: MIT
@@ -41,6 +41,8 @@ using Matrix = nb::ndarray<nb::numpy, std::complex<dd::fp>, nb::ndim<2>>;
 Matrix getMatrix(const dd::mEdge& m, size_t numQubits, dd::fp threshold = 0.);
 
 NB_MODULE(MQT_CORE_MODULE_NAME, m) {
+  m.doc() = R"pb(MQT Core DD  - The MQT Core Decision Diagram (DD) module.)pb";
+
   nb::module_::import_("mqt.core.ir");
 
   // Vector Decision Diagrams

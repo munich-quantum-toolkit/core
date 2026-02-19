@@ -1,5 +1,5 @@
-# Copyright (c) 2023 - 2025 Chair for Design Automation, TUM
-# Copyright (c) 2025 Munich Quantum Software Company GmbH
+# Copyright (c) 2023 - 2026 Chair for Design Automation, TUM
+# Copyright (c) 2025 - 2026 Munich Quantum Software Company GmbH
 # All rights reserved.
 #
 # SPDX-License-Identifier: MIT
@@ -63,6 +63,29 @@ option(MQT_CORE_INSTALL "Generate installation instructions for MQT Core"
 option(BUILD_MQT_CORE_TESTS "Build tests for the MQT Core project" ${MQT_CORE_MASTER_PROJECT})
 option(BUILD_MQT_CORE_SHARED_LIBS "Build MQT Core libraries as shared libraries"
        ${BUILD_SHARED_LIBS})
+option(BUILD_MQT_CORE_MLIR "Build the MLIR submodule of the MQT Core project" ON)
+if(APPLE AND CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+  set(BUILD_MQT_CORE_MLIR
+      OFF
+      CACHE BOOL
+            "Disable MLIR build on macOS with GCC to avoid ABI issues between STL and libstdc++"
+            FORCE)
+  message(
+    WARNING "Disabling MLIR build on macOS with GCC to avoid ABI issues between STL and libstdc++")
+endif()
+if(APPLE AND CMAKE_CXX_COMPILER_ID STREQUAL "AppleClang")
+  if(CMAKE_CXX_COMPILER_VERSION VERSION_LESS "17.0.0")
+    set(BUILD_MQT_CORE_MLIR
+        OFF
+        CACHE
+          BOOL
+          "Disable MLIR build on macOS with Apple Clang < 17 due to missing complete C++20 support"
+          FORCE)
+    message(
+      WARNING
+        "Disabling MLIR build on macOS with Apple Clang < 17 due to missing complete C++20 support")
+  endif()
+endif()
 
 # try to determine the project version
 include(GetVersion)
@@ -93,29 +116,6 @@ endif()
 
 set(MQT_CORE_TARGET_NAME "mqt-core")
 
-option(BUILD_MQT_CORE_MLIR "Build the MLIR submodule of the MQT Core project" ON)
-if(APPLE AND CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
-  set(BUILD_MQT_CORE_MLIR
-      OFF
-      CACHE BOOL
-            "Disable MLIR build on macOS with GCC to avoid ABI issues between STL and libstdc++"
-            FORCE)
-  message(
-    WARNING "Disabling MLIR build on macOS with GCC to avoid ABI issues between STL and libstdc++")
-endif()
-if(APPLE AND CMAKE_CXX_COMPILER_ID STREQUAL "AppleClang")
-  if(CMAKE_CXX_COMPILER_VERSION VERSION_LESS "17.0.0")
-    set(BUILD_MQT_CORE_MLIR
-        OFF
-        CACHE
-          BOOL
-          "Disable MLIR build on macOS with Apple Clang < 17 due to missing complete C++20 support"
-          FORCE)
-    message(
-      WARNING
-        "Disabling MLIR build on macOS with Apple Clang < 17 due to missing complete C++20 support")
-  endif()
-endif()
 if(BUILD_MQT_CORE_MLIR)
   include(SetupMLIR)
 endif()

@@ -1,6 +1,6 @@
 /*
- * Copyright (c) 2023 - 2025 Chair for Design Automation, TUM
- * Copyright (c) 2025 Munich Quantum Software Company GmbH
+ * Copyright (c) 2023 - 2026 Chair for Design Automation, TUM
+ * Copyright (c) 2025 - 2026 Munich Quantum Software Company GmbH
  * All rights reserved.
  *
  * SPDX-License-Identifier: MIT
@@ -21,6 +21,7 @@
 #pragma clang diagnostic pop
 #endif
 
+#include <Eigen/Core>
 #include <mlir/Bytecode/BytecodeOpInterface.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/IR/Value.h>
@@ -79,6 +80,9 @@ public:
       }
       return this->getOperation()->getOperand(i);
     }
+    OperandRange getInputQubits() {
+      return this->getOperation()->getOperands().slice(0, T);
+    }
     Value getOutputQubit(size_t i) {
       if constexpr (T == 0) {
         llvm::reportFatalUsageError("Operation does not have qubits");
@@ -88,6 +92,7 @@ public:
       }
       return this->getOperation()->getResult(i);
     }
+    ResultRange getOutputQubits() { return this->getOperation()->getResults(); }
 
     Value getInputTarget(const size_t i) { return getInputQubit(i); }
     Value getOutputTarget(const size_t i) { return getOutputQubit(i); }
@@ -106,14 +111,6 @@ public:
         llvm::reportFatalUsageError("Parameter index out of bounds");
       }
       return this->getOperation()->getOperand(T + i);
-    }
-
-    [[nodiscard]] static FloatAttr getStaticParameter(Value param) {
-      auto constantOp = param.getDefiningOp<arith::ConstantOp>();
-      if (!constantOp) {
-        return nullptr;
-      }
-      return dyn_cast<FloatAttr>(constantOp.getValue());
     }
 
     Value getInputForOutput(Value output) {

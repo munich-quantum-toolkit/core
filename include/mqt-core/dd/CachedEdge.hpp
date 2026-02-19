@@ -1,6 +1,6 @@
 /*
- * Copyright (c) 2023 - 2025 Chair for Design Automation, TUM
- * Copyright (c) 2025 Munich Quantum Software Company GmbH
+ * Copyright (c) 2023 - 2026 Chair for Design Automation, TUM
+ * Copyright (c) 2025 - 2026 Munich Quantum Software Company GmbH
  * All rights reserved.
  *
  * SPDX-License-Identifier: MIT
@@ -18,24 +18,11 @@
 #include <complex>
 #include <cstddef>
 #include <functional>
-#include <type_traits>
 
 namespace dd {
 
-struct vNode; // NOLINT(readability-identifier-naming)
-struct mNode; // NOLINT(readability-identifier-naming)
-struct dNode; // NOLINT(readability-identifier-naming)
 class ComplexNumbers;
 class MemoryManager;
-
-template <typename T>
-using isVector = std::enable_if_t<std::is_same_v<T, vNode>, bool>;
-template <typename T>
-using isMatrix = std::enable_if_t<std::is_same_v<T, mNode>, bool>;
-template <typename T>
-using isMatrixVariant =
-    std::enable_if_t<std::is_same_v<T, mNode> || std::is_same_v<T, dNode>,
-                     bool>;
 
 /**
  * @brief A DD node with a cached edge weight
@@ -116,7 +103,6 @@ template <typename Node> struct CachedEdge {
 
   /**
    * @brief Get a normalized vector DD from a fresh node and a list of edges.
-   * @tparam T template parameter to enable this method only for vNode
    * @param p the fresh node
    * @param e the list of edges that form the successor nodes
    * @param mm a reference to the memory manager (for returning unused nodes)
@@ -124,32 +110,31 @@ template <typename Node> struct CachedEdge {
    * complex numbers)
    * @return the normalized vector DD
    */
-  template <typename T = Node, isVector<T> = true>
   static auto normalize(Node* p, const std::array<CachedEdge, RADIX>& e,
-                        MemoryManager& mm, ComplexNumbers& cn) -> CachedEdge;
+                        MemoryManager& mm, ComplexNumbers& cn) -> CachedEdge
+    requires IsVector<Node>;
 
   /**
-   * @brief Get a normalized (density) matrix) DD from a fresh node and a list
+   * @brief Get a normalized matrix DD from a fresh node and a list
    * of edges.
-   * @tparam T template parameter to enable this method only for matrix nodes
    * @param p the fresh node
    * @param e the list of edges that form the successor nodes
    * @param mm a reference to the memory manager (for returning unused nodes)
    * @param cn a reference to the complex number manager (for adding new
    * complex numbers)
-   * @return the normalized (density) matrix DD
+   * @return the normalized matrix DD
    */
-  template <typename T = Node, isMatrixVariant<T> = true>
   static auto normalize(Node* p, const std::array<CachedEdge, NEDGE>& e,
-                        MemoryManager& mm, ComplexNumbers& cn) -> CachedEdge;
+                        MemoryManager& mm, ComplexNumbers& cn) -> CachedEdge
+    requires IsMatrix<Node>;
 
   /**
    * @brief Check whether the matrix represented by the DD is the identity.
-   * @tparam T template parameter to enable this function only for matrix nodes
    * @return whether the matrix is the identity
    */
-  template <typename T = Node, isMatrixVariant<T> = true>
-  [[nodiscard]] bool isIdentity(const bool upToGlobalPhase = true) const {
+  [[nodiscard]] bool isIdentity(const bool upToGlobalPhase = true) const
+    requires IsMatrix<Node>
+  {
     if (!isTerminal()) {
       return false;
     }

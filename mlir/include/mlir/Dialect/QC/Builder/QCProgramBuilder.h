@@ -1,6 +1,6 @@
 /*
- * Copyright (c) 2023 - 2025 Chair for Design Automation, TUM
- * Copyright (c) 2025 Munich Quantum Software Company GmbH
+ * Copyright (c) 2023 - 2026 Chair for Design Automation, TUM
+ * Copyright (c) 2025 - 2026 Munich Quantum Software Company GmbH
  * All rights reserved.
  *
  * SPDX-License-Identifier: MIT
@@ -51,7 +51,7 @@ namespace mlir::qc {
  * auto module = builder.finalize();
  * ```
  */
-class QCProgramBuilder final : public OpBuilder {
+class QCProgramBuilder final : public ImplicitLocOpBuilder {
 public:
   /**
    * @brief Construct a new QCProgramBuilder
@@ -844,6 +844,25 @@ public:
   QCProgramBuilder& ctrl(ValueRange controls,
                          const std::function<void()>& body);
 
+  /**
+   * @brief Apply an inverse (i.e., adjoint) operation.
+   *
+   * @param body Function that builds the body containing the operation to
+   * invert
+   * @return Reference to this builder for method chaining
+   *
+   * @par Example:
+   * ```c++
+   * builder.inv([&] { builder.s(q0); });
+   * ```
+   * ```mlir
+   * qc.inv {
+   *   qc.s %q0 : !qc.qubit
+   * }
+   * ```
+   */
+  QCProgramBuilder& inv(const std::function<void()>& body);
+
   //===--------------------------------------------------------------------===//
   // Deallocation
   //===--------------------------------------------------------------------===//
@@ -887,7 +906,6 @@ public:
 
 private:
   MLIRContext* ctx{};
-  Location loc;
   ModuleOp module;
 
   /// Track allocated qubits for automatic deallocation

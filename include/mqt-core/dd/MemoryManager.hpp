@@ -1,6 +1,6 @@
 /*
- * Copyright (c) 2023 - 2025 Chair for Design Automation, TUM
- * Copyright (c) 2025 Munich Quantum Software Company GmbH
+ * Copyright (c) 2023 - 2026 Chair for Design Automation, TUM
+ * Copyright (c) 2025 - 2026 Munich Quantum Software Company GmbH
  * All rights reserved.
  *
  * SPDX-License-Identifier: MIT
@@ -13,8 +13,8 @@
 #include "dd/statistics/MemoryManagerStatistics.hpp"
 
 #include <cassert>
+#include <concepts>
 #include <cstddef>
-#include <type_traits>
 #include <vector>
 
 namespace dd {
@@ -86,9 +86,9 @@ public:
    * @tparam T The type of the entry.
    * @return A pointer to an entry.
    */
-  template <class T> [[nodiscard]] T* get() {
-    static_assert(std::is_base_of_v<LLBase, T>,
-                  "T must be derived from LLBase");
+  template <class T>
+    requires std::derived_from<T, LLBase>
+  [[nodiscard]] T* get() {
     assert(sizeof(T) == entrySize_ && "Cannot get entry of different size");
 
     return static_cast<T*>(get());

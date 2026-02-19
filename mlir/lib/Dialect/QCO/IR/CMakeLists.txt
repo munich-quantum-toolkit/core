@@ -1,5 +1,5 @@
-# Copyright (c) 2023 - 2025 Chair for Design Automation, TUM
-# Copyright (c) 2025 Munich Quantum Software Company GmbH
+# Copyright (c) 2023 - 2026 Chair for Design Automation, TUM
+# Copyright (c) 2025 - 2026 Munich Quantum Software Company GmbH
 # All rights reserved.
 #
 # SPDX-License-Identifier: MIT
@@ -27,6 +27,7 @@ add_mlir_dialect_library(
   MLIRArithDialect
   MLIRInferTypeOpInterface
   MLIRSideEffectInterfaces
+  Eigen3::Eigen
   DISABLE_INSTALL)
 
 # collect header files
