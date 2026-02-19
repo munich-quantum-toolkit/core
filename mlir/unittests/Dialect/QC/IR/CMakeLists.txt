@@ -6,10 +6,8 @@
 #
 # Licensed under the MIT License
 
-file(GLOB_RECURSE TEST_SOURCES "*.cpp")
-
 set(target_name mqt-core-mlir-unittest-qc-ir)
-add_executable(${target_name} ${TEST_SOURCES} test_qc_ir.h)
+add_executable(${target_name} test_qc_ir.cpp)
 target_link_libraries(${target_name} PRIVATE MLIRParser MLIRSupportMQT GTest::gtest_main
                                              MLIRQCProgramBuilder MLIRQCPrograms)
 mqt_mlir_configure_unittest_target(${target_name})

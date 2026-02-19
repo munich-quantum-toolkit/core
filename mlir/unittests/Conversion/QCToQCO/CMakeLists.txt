@@ -6,10 +6,8 @@
 #
 # Licensed under the MIT License
 
-file(GLOB_RECURSE TEST_SOURCES "*.cpp")
-
 set(target_name mqt-core-mlir-unittest-qc-to-qco)
-add_executable(${target_name} ${TEST_SOURCES} test_qc_to_qco.h)
+add_executable(${target_name} test_qc_to_qco.cpp)
 
 target_link_libraries(
   ${target_name}

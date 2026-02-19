@@ -12,7 +12,6 @@ function(mqt_mlir_configure_unittest_target target_name)
   target_include_directories(${target_name} PRIVATE ${MQT_MLIR_UNITTESTS_DIR}
                                                     ${CMAKE_CURRENT_SOURCE_DIR})
   mqt_mlir_target_use_project_options(${target_name})
-  set_target_properties(${target_name} PROPERTIES UNITY_BUILD ON)
 endfunction()
 
 add_subdirectory(programs)
