@@ -28,13 +28,14 @@
 #include <sstream>
 #include <string>
 #include <utility>
+#include <vector>
 
 namespace zx {
 class ZXFunctionalityTest : public ::testing::Test {
 public:
   qc::QuantumComputation qc;
 };
-
+namespace {
 static void checkEquivalence(const qc::QuantumComputation& qc1,
                              const qc::QuantumComputation& qc2,
                              const std::vector<qc::Qubit>& qubits) {
@@ -53,6 +54,7 @@ static void checkEquivalence(const qc::QuantumComputation& qc1,
     EXPECT_TRUE(d1.connected(d1.getInput(q), d1.getOutput(q)));
   }
 }
+} // namespace
 
 TEST_F(ZXFunctionalityTest, parseQasm) {
   const std::string testfile = "OPENQASM 2.0;"
