@@ -240,7 +240,10 @@ void FunctionalityConstruction::addMcrzz(
     const std::optional<double>& unconvertedPhase) {
   addRzz(diag, phase, target, target2, qubits, unconvertedPhase);
   addMcx(diag, controls, target, qubits);
-  addRzz(diag, -phase, target, target2, qubits, unconvertedPhase.has_value() ? std::optional<double>(-unconvertedPhase.value()) : std::nullopt);
+  addRzz(diag, -phase, target, target2, qubits,
+         unconvertedPhase.has_value()
+             ? std::optional<double>(-unconvertedPhase.value())
+             : std::nullopt);
   addMcx(diag, controls, target, qubits);
 }
 
@@ -776,7 +779,8 @@ FunctionalityConstruction::parseOp(ZXDiagram& diag, op_it it, op_it end,
                  qubits);
       break;
     case qc::OpType::S:
-      addMcphase(diag, PiExpression{PiRational(1, 2)}, {ctrl0, ctrl1}, target, qubits);
+      addMcphase(diag, PiExpression{PiRational(1, 2)}, {ctrl0, ctrl1}, target,
+                 qubits);
       break;
     case qc::OpType::RZ:
       addMcrz(diag, parseParam(op.get(), 0), {ctrl0, ctrl1}, target, qubits);
@@ -806,10 +810,12 @@ FunctionalityConstruction::parseOp(ZXDiagram& diag, op_it it, op_it end,
       addMcphase(diag, parseParam(op.get(), 0), controls, target, qubits);
       break;
     case qc::OpType::T:
-      addMcphase(diag, PiExpression{PiRational(1, 4)}, controls, target, qubits);
+      addMcphase(diag, PiExpression{PiRational(1, 4)}, controls, target,
+                 qubits);
       break;
     case qc::OpType::S:
-      addMcphase(diag, PiExpression{PiRational(1, 2)}, controls, target, qubits);
+      addMcphase(diag, PiExpression{PiRational(1, 2)}, controls, target,
+                 qubits);
       break;
     case qc::OpType::RZ:
       addMcrz(diag, parseParam(op.get(), 0), controls, target, qubits);

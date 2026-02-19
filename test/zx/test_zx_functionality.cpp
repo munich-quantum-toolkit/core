@@ -37,7 +37,7 @@ public:
 
 static void checkEquivalence(const qc::QuantumComputation& qc1,
                              const qc::QuantumComputation& qc2,
-                              const std::vector<qc::Qubit>& qubits) {
+                             const std::vector<qc::Qubit>& qubits) {
   EXPECT_TRUE(FunctionalityConstruction::transformableToZX(&qc1));
   EXPECT_TRUE(FunctionalityConstruction::transformableToZX(&qc2));
   EXPECT_EQ(qc1.getNqubits(), qc2.getNqubits());
@@ -503,10 +503,10 @@ TEST_F(ZXFunctionalityTest, MCSWAP) {
 
 TEST_F(ZXFunctionalityTest, MCRzz) {
   qc = qc::QuantumComputation(4);
-  qc.mcrzz(qc::PI_2/3, {0, 1}, 2, 3);
+  qc.mcrzz(qc::PI_2 / 3, {0, 1}, 2, 3);
 
   auto qcPrime = qc::QuantumComputation(4);
-  qcPrime.mcrzz(qc::PI_2/3, {0, 1}, 2, 3);
+  qcPrime.mcrzz(qc::PI_2 / 3, {0, 1}, 2, 3);
 
   checkEquivalence(qc, qcPrime, {0, 1, 2, 3});
 }
