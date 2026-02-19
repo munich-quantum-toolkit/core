@@ -20,29 +20,50 @@ namespace mlir {
 
 constexpr auto TOTAL_WIDTH = 120;
 constexpr auto BORDER_WIDTH = 2; // "║ " on each side
+constexpr int CONTENT_WIDTH = TOTAL_WIDTH - (2 * BORDER_WIDTH);
+
+// Pre-built strings, initialised once on first call. Each UTF-8 "═" is 3
+// bytes. BORDER_SEP is the "═" run between box corners; SPACES is used for
+// padding.
+static llvm::StringRef getBorderSep() {
+  static const std::string BORDER_SEP = [] {
+    std::string s;
+    s.reserve(static_cast<size_t>(TOTAL_WIDTH - 2) * 3U);
+    for (auto i = 0; i < TOTAL_WIDTH - 2; ++i) {
+      s += "═";
+    }
+    return s;
+  }();
+  return BORDER_SEP;
+}
+
+static llvm::StringRef getSpaces() {
+  static const std::string SPACES(static_cast<size_t>(CONTENT_WIDTH), ' ');
+  return SPACES;
+}
 
 int calculateDisplayWidth(llvm::StringRef str) {
   auto displayWidth = 0;
   for (size_t i = 0; i < str.size();) {
     if (const unsigned char c = str[i]; (c & 0x80) == 0) {
       // ASCII character (1 byte)
-      displayWidth++;
-      i++;
+      ++displayWidth;
+      ++i;
     } else if ((c & 0xE0) == 0xC0) {
       // 2-byte UTF-8 character
-      displayWidth++;
+      ++displayWidth;
       i += 2;
     } else if ((c & 0xF0) == 0xE0) {
       // 3-byte UTF-8 character (like → and ✓)
-      displayWidth++;
+      ++displayWidth;
       i += 3;
     } else if ((c & 0xF8) == 0xF0) {
-      // 4-byte UTF-8 character
-      displayWidth += 2; // Most emojis take 2 display columns
+      // 4-byte UTF-8 character (most emojis take 2 display columns)
+      displayWidth += 2;
       i += 4;
     } else {
       // Invalid UTF-8, skip
-      i++;
+      ++i;
     }
   }
   return displayWidth;
@@ -60,7 +81,7 @@ void wrapLine(llvm::StringRef line, const int maxWidth,
   size_t leadingSpaces = 0;
   for (const char c : line) {
     if (c == ' ') {
-      leadingSpaces++;
+      ++leadingSpaces;
     } else if (c == '\t') {
       leadingSpaces += 4; // Count tabs as 4 spaces
     } else {
@@ -69,9 +90,9 @@ void wrapLine(llvm::StringRef line, const int maxWidth,
   }
 
   // Extract the content without leading whitespace
-  llvm::StringRef content = line.substr(line.find_first_not_of(" \t"));
+  const llvm::StringRef content = line.substr(line.find_first_not_of(" \t"));
   if (content.empty()) {
-    result.emplace_back(line.str());
+    result.emplace_back(line);
     return;
   }
 
@@ -85,7 +106,7 @@ void wrapLine(llvm::StringRef line, const int maxWidth,
 
   if (firstLineWidth <= 10 || contLineWidth <= 10) {
     // Not enough space to wrap intelligently, just return original
-    result.emplace_back(line.str());
+    result.emplace_back(line);
     return;
   }
 
@@ -94,7 +115,19 @@ void wrapLine(llvm::StringRef line, const int maxWidth,
   auto currentWidth = 0;
   auto isFirstLine = true;
 
-  auto addWord = [&](llvm::StringRef word) {
+  // Helper: build and emit a completed line with proper indent prefix.
+  // `addArrow` appends " →" to signal the line continues.
+  auto flushLine = [&](const bool addArrow, const bool lastLine) {
+    llvm::SmallString<128> lineWithIndent;
+    lineWithIndent.append(leadingSpaces, ' ');
+    lineWithIndent += currentLine;
+    if (addArrow && (!isFirstLine || !lastLine)) {
+      lineWithIndent += " →";
+    }
+    result.emplace_back(std::move(lineWithIndent));
+  };
+
+  auto addWord = [&](llvm::StringRef word) -> bool {
     const int wordWidth = calculateDisplayWidth(word);
     const int spaceWidth = currentLine.empty() ? 0 : 1;
     const int effectiveWidth = isFirstLine ? firstLineWidth : contLineWidth;
@@ -103,7 +136,7 @@ void wrapLine(llvm::StringRef line, const int maxWidth,
       // Word fits on current line
       if (!currentLine.empty()) {
         currentLine += ' ';
-        currentWidth++;
+        ++currentWidth;
       }
       currentLine += word;
       currentWidth += wordWidth;
@@ -122,16 +155,8 @@ void wrapLine(llvm::StringRef line, const int maxWidth,
         if (!addWord(currentWord)) {
           // Word doesn't fit - finalize current line and start new one
           if (!currentLine.empty()) {
-            // Add wrap indicator to the end
-            llvm::SmallString<128> lineWithIndent;
-            lineWithIndent.append(leadingSpaces, ' ');
-            lineWithIndent += currentLine;
-            if (!isFirstLine || (i < content.size() - 1)) {
-              lineWithIndent += " →";
-            }
-            result.emplace_back(lineWithIndent.str().str());
+            flushLine(/*addArrow=*/true, /*lastLine=*/false);
           }
-
           // Start new continuation line
           currentLine = currentWord;
           currentWidth = calculateDisplayWidth(llvm::StringRef(currentWord));
@@ -149,120 +174,100 @@ void wrapLine(llvm::StringRef line, const int maxWidth,
     if (!addWord(currentWord)) {
       // Finalize current line
       if (!currentLine.empty()) {
-        llvm::SmallString<128> lineWithIndent;
-        lineWithIndent.append(leadingSpaces, ' ');
-        lineWithIndent += currentLine;
-        lineWithIndent += " →";
-        result.emplace_back(lineWithIndent.str().str());
+        flushLine(/*addArrow=*/true, /*lastLine=*/false);
       }
-
-      // Add word on new line
-      llvm::SmallString<128> lineWithIndent;
-      lineWithIndent.append(leadingSpaces, ' ');
+      // Add word on new continuation line (no arrow — this is the last line)
       llvm::SmallString<128> contLine("↳ ");
       contLine.append(leadingSpaces, ' ');
       contLine += currentWord;
-      result.emplace_back(contLine.str().str());
+      result.emplace_back(std::move(contLine));
       isFirstLine = false;
     } else {
-      // Word fit, add the final line
+      // Word fit: emit final line (no arrow)
       if (!currentLine.empty()) {
-        llvm::SmallString<128> lineWithIndent;
-        lineWithIndent.append(leadingSpaces, ' ');
-        lineWithIndent += currentLine;
-        result.emplace_back(lineWithIndent.str().str());
+        flushLine(/*addArrow=*/false, /*lastLine=*/true);
       }
     }
   } else if (!currentLine.empty()) {
-    // Add the final line
-    llvm::SmallString<128> lineWithIndent;
-    lineWithIndent.append(leadingSpaces, ' ');
-    lineWithIndent += currentLine;
-    result.emplace_back(lineWithIndent.str().str());
+    // No remaining word: emit the last line (no arrow)
+    flushLine(/*addArrow=*/false, /*lastLine=*/true);
   }
 
-  // If we didn't wrap anything, return the original line
+  // Safety net: if we somehow produced nothing, return the original line
   if (result.empty()) {
-    result.emplace_back(line.str());
-  } else if (result.size() > 1) {
-    // Add continuation indicator to all but the first and last lines
-    for (size_t i = 1; i < result.size(); ++i) {
-      llvm::StringRef lineRef = result[i];
-      if (lineRef.find("↳") == llvm::StringRef::npos) {
-        llvm::SmallString<128> newLine("↳ ");
-        newLine.append(leadingSpaces, ' ');
-        newLine += lineRef.substr(leadingSpaces);
-        result[i] = newLine.str().str();
-      }
+    result.emplace_back(line);
+    return;
+  }
+
+  // Prepend "↳ " to all continuation lines (index >= 1) that don't have it yet
+  for (size_t i = 1; i < result.size(); ++i) {
+    if (!llvm::StringRef(result[i]).contains("↳")) {
+      llvm::SmallString<128> newLine("↳ ");
+      const llvm::StringRef lineRef = result[i];
+      newLine += lineRef.substr(leadingSpaces);
+      result[i] = std::move(newLine);
     }
   }
 }
 
 void printBoxTop(llvm::raw_ostream& os) {
-  os << "╔";
-  for (auto i = 0; i < TOTAL_WIDTH - 2; ++i) {
-    os << "═";
-  }
-  os << "╗\n";
+  os << "╔" << getBorderSep() << "╗\n";
 }
 
 void printBoxMiddle(llvm::raw_ostream& os) {
-  os << "╠";
-  for (auto i = 0; i < TOTAL_WIDTH - 2; ++i) {
-    os << "═";
-  }
-  os << "╣\n";
+  os << "╠" << getBorderSep() << "╣\n";
 }
 
 void printBoxBottom(llvm::raw_ostream& os) {
-  os << "╚";
-  for (auto i = 0; i < TOTAL_WIDTH - 2; ++i) {
-    os << "═";
+  os << "╚" << getBorderSep() << "╝\n";
+}
+
+// Internal helper: emit one already-wrapped line inside the box with padding.
+static void emitBoxedLine(llvm::StringRef line, const int indent,
+                          llvm::raw_ostream& os) {
+  const int displayWidth = calculateDisplayWidth(line);
+  const int padding = CONTENT_WIDTH - indent - displayWidth;
+
+  os << "║ ";
+  os.indent(static_cast<unsigned>(indent));
+  os << line;
+  // Write padding as a single slice of the pre-built spaces string
+  if (padding > 0) {
+    os << getSpaces().substr(0, static_cast<size_t>(padding));
   }
-  os << "╝\n";
+  os << " ║\n";
 }
 
 void printBoxLine(llvm::StringRef text, const int indent,
                   llvm::raw_ostream& os) {
-  // Content width = Total width - left border (2 chars) - right border (2
-  // chars)
-  constexpr int contentWidth =
-      TOTAL_WIDTH - (2 * BORDER_WIDTH); // "║ " and " ║"
-
   // Trim trailing whitespace before processing
-  auto trimmedText = text.rtrim();
+  const auto trimmedText = text.rtrim();
 
-  // Wrap the line if needed
+  // Fast path: if the line fits without wrapping, skip wrapLine entirely
+  const int displayWidth = calculateDisplayWidth(trimmedText);
+  if (displayWidth <= CONTENT_WIDTH - indent) {
+    emitBoxedLine(trimmedText, indent, os);
+    return;
+  }
+
+  // Wrap the line
   llvm::SmallVector<llvm::SmallString<128>, 4> wrappedLines;
-  wrapLine(trimmedText, contentWidth, wrappedLines, indent);
+  wrapLine(trimmedText, CONTENT_WIDTH, wrappedLines, indent);
 
   for (const auto& line : wrappedLines) {
-    const int displayWidth = calculateDisplayWidth(line);
-    const int padding = contentWidth - indent - displayWidth;
-
-    os << "║ ";
-    for (auto i = 0; i < indent; ++i) {
-      os << " ";
-    }
-    os << line;
-    for (auto i = 0; i < padding; ++i) {
-      os << " ";
-    }
-    os << " ║\n";
+    emitBoxedLine(line, indent, os);
   }
 }
 
 void printBoxText(llvm::StringRef text, const int indent,
                   llvm::raw_ostream& os) {
-  // Trim trailing newlines from the entire text
-  llvm::StringRef trimmedText = text.rtrim();
+  // Trim trailing newlines from the entire text, then iterate line-by-line
+  llvm::StringRef remaining = text.rtrim();
 
-  // Split the text by newlines and process each line
-  llvm::SmallVector<llvm::StringRef, 16> lines;
-  trimmedText.split(lines, '\n', -1, false);
-
-  for (const auto& line : lines) {
-    printBoxLine(line, indent, os);
+  while (!remaining.empty()) {
+    auto [lineStr, rest] = remaining.split('\n');
+    remaining = rest;
+    printBoxLine(lineStr, indent, os);
   }
 }
 
@@ -271,9 +276,9 @@ void printProgram(ModuleOp module, const llvm::StringRef header,
   printBoxTop(os);
   printBoxLine(header, 0, os);
   printBoxMiddle(os);
-  // Capture the IR to a string so we can wrap it in box lines
 
-  llvm::SmallString<1024> irString;
+  // Capture the IR to a string so we can wrap it in box lines.
+  llvm::SmallString<4096> irString;
   llvm::raw_svector_ostream irStream(irString);
   module.print(irStream);
 
