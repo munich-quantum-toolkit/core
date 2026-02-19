@@ -36,9 +36,9 @@ public:
   qc::QuantumComputation qc;
 };
 namespace {
-static void checkEquivalence(const qc::QuantumComputation& qc1,
-                             const qc::QuantumComputation& qc2,
-                             const std::vector<qc::Qubit>& qubits) {
+void checkEquivalence(const qc::QuantumComputation& qc1,
+                      const qc::QuantumComputation& qc2,
+                      const std::vector<qc::Qubit>& qubits) {
   EXPECT_TRUE(FunctionalityConstruction::transformableToZX(&qc1));
   EXPECT_TRUE(FunctionalityConstruction::transformableToZX(&qc2));
   EXPECT_EQ(qc1.getNqubits(), qc2.getNqubits());
