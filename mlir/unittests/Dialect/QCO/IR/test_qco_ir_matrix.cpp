@@ -20,6 +20,7 @@
 #include "qco_programs.h"
 
 #include <Eigen/Core>
+#include <complex>
 #include <gtest/gtest.h>
 #include <iosfwd>
 #include <memory>

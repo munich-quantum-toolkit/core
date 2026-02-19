@@ -8,7 +8,9 @@
  * Licensed under the MIT License
  */
 
-#include "mlir/Dialect/QC/IR/QCOps.h" // IWYU pragma: associated
+#include "mlir/Dialect/QC/IR/QCOps.h"
+
+#include "mlir/Dialect/QC/IR/QCDialect.h" // IWYU pragma: associated
 
 // The following headers are needed for some template instantiations.
 // IWYU pragma: begin_keep

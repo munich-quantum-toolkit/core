@@ -11,9 +11,11 @@
 #include "mlir/Support/IRVerification.h"
 
 #include <cmath>
+#include <cstddef>
 #include <llvm/ADT/APFloat.h>
 #include <llvm/ADT/ArrayRef.h>
 #include <llvm/ADT/DenseMap.h>
+#include <llvm/ADT/DenseMapInfo.h>
 #include <llvm/ADT/DenseSet.h>
 #include <llvm/ADT/Hashing.h>
 #include <llvm/ADT/STLExtras.h>
@@ -163,7 +165,7 @@ static bool areFloatValuesNear(const llvm::APFloat& lhs,
   const double absDiff = std::fabs(lhsVal - rhsVal);
   const double absLhs = std::fabs(lhsVal);
   const double absRhs = std::fabs(rhsVal);
-  const double scale = std::max(absLhs, absRhs);
+  const double scale = absLhs > absRhs ? absLhs : absRhs;
 
   double relTol = 1e-12;
   double absTol = 1e-15;
@@ -190,20 +192,6 @@ static bool areConstantAttributesEquivalent(const Attribute& lhs,
     }
     return areFloatValuesNear(lhsFloat.getValue(), rhsFloat.getValue(),
                               lhsFloat.getType().getIntOrFloatBitWidth());
-  }
-
-  if (auto lhsDenseFP = llvm::dyn_cast<DenseFPElementsAttr>(lhs)) {
-    auto rhsDenseFP = llvm::dyn_cast<DenseFPElementsAttr>(rhs);
-    if (!rhsDenseFP) {
-      return false;
-    }
-    const unsigned width = lhsDenseFP.getElementType().getIntOrFloatBitWidth();
-    auto lhsValues = lhsDenseFP.getValues<llvm::APFloat>();
-    auto rhsValues = rhsDenseFP.getValues<llvm::APFloat>();
-    return llvm::all_of(llvm::zip(lhsValues, rhsValues), [width](
-                                                             const auto& pair) {
-      return areFloatValuesNear(std::get<0>(pair), std::get<1>(pair), width);
-    });
   }
 
   return false;

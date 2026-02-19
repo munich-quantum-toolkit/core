@@ -10,11 +10,14 @@
 
 #include "mlir/Support/PrettyPrinting.h"
 
+#include <cstddef>
 #include <llvm/ADT/SmallString.h>
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/ADT/StringRef.h>
 #include <llvm/Support/raw_ostream.h>
 #include <mlir/IR/BuiltinOps.h>
+#include <string>
+#include <utility>
 
 namespace mlir {
 
@@ -146,9 +149,7 @@ void wrapLine(llvm::StringRef line, const int maxWidth,
   };
 
   // Process the content word by word
-  for (size_t i = 0; i < content.size(); ++i) {
-    const char c = content[i];
-
+  for (const auto& c : content) {
     if (c == ' ' || c == '\t') {
       // End of word - try to add it to current line
       if (!currentWord.empty()) {

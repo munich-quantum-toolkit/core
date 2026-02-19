@@ -10,6 +10,10 @@
 
 #pragma once
 
+#include <mlir/IR/Dialect.h>
+#include <mlir/IR/MLIRContext.h>
+#include <mlir/IR/OpDefinition.h>
+
 #define DIALECT_NAME_QCO "qco"
 
 //===----------------------------------------------------------------------===//

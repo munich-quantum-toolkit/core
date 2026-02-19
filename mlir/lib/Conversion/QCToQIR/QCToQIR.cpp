@@ -10,7 +10,9 @@
 
 #include "mlir/Conversion/QCToQIR/QCToQIR.h"
 
+#include "mlir/Dialect/QC/IR/QCDialect.h"
 #include "mlir/Dialect/QC/IR/QCOps.h"
+#include "mlir/Dialect/QIR/Utils/QIRMetadata.h"
 #include "mlir/Dialect/QIR/Utils/QIRUtils.h"
 
 #include <cassert>

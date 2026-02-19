@@ -8,7 +8,9 @@
  * Licensed under the MIT License
  */
 
-#include "mlir/Dialect/QCO/IR/QCOOps.h" // IWYU pragma: associated
+#include "mlir/Dialect/QCO/IR/QCOOps.h"
+
+#include "mlir/Dialect/QCO/IR/QCODialect.h" // IWYU pragma: associated
 
 #include <mlir/IR/Block.h>
 #include <mlir/IR/OpImplementation.h>

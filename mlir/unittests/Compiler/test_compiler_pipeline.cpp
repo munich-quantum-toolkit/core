@@ -22,6 +22,7 @@
 #include "qir_programs.h"
 #include "quantum_computation_programs.h"
 
+#include <cstdlib>
 #include <gtest/gtest.h>
 #include <iosfwd>
 #include <memory>
@@ -110,7 +111,7 @@ protected:
     mlir::QuantumCompilerConfig config;
     config.convertToQIR = convertToQIR;
     config.recordIntermediates = true;
-    config.printIRAfterAllStages = irPrintingForced();
+    config.printIRAfterAllStages = true;
 
     mlir::QuantumCompilerPipeline pipeline(config);
     ASSERT_TRUE(pipeline.runPipeline(module, &record).succeeded());
