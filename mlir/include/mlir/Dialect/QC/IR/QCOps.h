@@ -26,6 +26,7 @@
 
 #include <mlir/Bytecode/BytecodeOpInterface.h>
 #include <mlir/Interfaces/SideEffectInterfaces.h>
+#include <variant>
 
 #define GET_OP_CLASSES
 #include "mlir/Dialect/QC/IR/QCOps.h.inc" // IWYU pragma: export
