@@ -1040,7 +1040,7 @@ struct ConvertQCBarrierOp final : StatefulOpConversionPattern<qc::BarrierOp> {
     auto qcQubits = op.getQubits();
     SmallVector<Value> qcoQubits;
     qcoQubits.reserve(qcQubits.size());
-    for (auto qcQubit : qcQubits) {
+    for (const auto& qcQubit : qcQubits) {
       assert(qubitMap.contains(qcQubit) && "QC qubit not found");
       qcoQubits.push_back(qubitMap[qcQubit]);
     }
@@ -1049,7 +1049,7 @@ struct ConvertQCBarrierOp final : StatefulOpConversionPattern<qc::BarrierOp> {
     auto qcoOp = rewriter.create<qco::BarrierOp>(op.getLoc(), qcoQubits);
 
     // Update the state map
-    for (auto [qcQubit, qcoQubitOut] :
+    for (const auto& [qcQubit, qcoQubitOut] :
          llvm::zip(qcQubits, qcoOp.getQubitsOut())) {
       qubitMap[qcQubit] = qcoQubitOut;
     }
@@ -1089,7 +1089,7 @@ struct ConvertQCCtrlOp final : StatefulOpConversionPattern<qc::CtrlOp> {
     auto qcControls = op.getControls();
     SmallVector<Value> qcoControls;
     qcoControls.reserve(qcControls.size());
-    for (auto qcControl : qcControls) {
+    for (const auto& qcControl : qcControls) {
       assert(qubitMap.contains(qcControl) && "QC qubit not found");
       qcoControls.push_back(qubitMap[qcControl]);
     }
@@ -1112,7 +1112,7 @@ struct ConvertQCCtrlOp final : StatefulOpConversionPattern<qc::CtrlOp> {
     // Update the state map if this is a top-level CtrlOp
     // Nested CtrlOps are managed via the targetsIn and targetsOut maps
     if (state.inNestedRegion == 0) {
-      for (auto [qcControl, qcoControl] :
+      for (const auto& [qcControl, qcoControl] :
            llvm::zip(qcControls, qcoOp.getControlsOut())) {
         qubitMap[qcControl] = qcoControl;
       }
