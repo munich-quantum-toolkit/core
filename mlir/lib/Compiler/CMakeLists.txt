@@ -22,6 +22,7 @@ add_mlir_library(
   QCToQIR
   MQT::MLIRSupport
   MQT::ProjectOptions
+  QcoPasses
   DISABLE_INSTALL)
 
 # collect header files
