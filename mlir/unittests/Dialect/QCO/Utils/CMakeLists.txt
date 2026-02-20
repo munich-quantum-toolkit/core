@@ -6,10 +6,10 @@
 #
 # Licensed under the MIT License
 
-add_executable(mqt-core-mlir-qco-dialect-utils-test test_wireiterator.cpp)
+set(qco_utils_target mqt-core-mlir-unittest-qco-utils)
+add_executable(${qco_utils_target} test_wireiterator.cpp)
+target_link_libraries(${qco_utils_target} PRIVATE GTest::gtest_main MLIRQCODialect MLIRLLVMDialect
+                                                  MLIRQCOProgramBuilder)
+mqt_mlir_configure_unittest_target(${qco_utils_target})
 
-target_link_libraries(
-  mqt-core-mlir-qco-dialect-utils-test PRIVATE GTest::gtest_main MLIRQCODialect MLIRLLVMDialect
-                                               MLIRQCOProgramBuilder)
-
-gtest_discover_tests(mqt-core-mlir-qco-dialect-utils-test)
+gtest_discover_tests(${qco_utils_target} PROPERTIES LABELS mqt-mlir-unittests DISCOVERY_TIMEOUT 60)

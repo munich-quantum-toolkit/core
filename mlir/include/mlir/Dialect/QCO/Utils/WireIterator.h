@@ -10,7 +10,7 @@
 
 #pragma once
 
-#include "mlir/Dialect/QCO/IR/QCODialect.h"
+#include "mlir/Dialect/QCO/IR/QCOOps.h"
 
 #include <iterator>
 #include <llvm/ADT/TypeSwitch.h>
@@ -39,7 +39,7 @@ public:
   /// @returns the qubit the iterator points to.
   [[nodiscard]] mlir::Value qubit() const {
     // A deallocation doesn't have an OpResult.
-    if (op_ != nullptr && mlir::isa<qco::DeallocOp>(op_)) {
+    if (op_ != nullptr && mlir::isa<DeallocOp>(op_)) {
       return nullptr;
     }
     return qubit_;
@@ -95,21 +95,19 @@ private:
     op_ = *(qubit_.getUsers().begin());
 
     // A deallocation op defines the end of the qubit wire (dynamic and static).
-    if (mlir::isa<qco::DeallocOp>(op_)) {
+    if (mlir::isa<DeallocOp>(op_)) {
       isSentinel_ = true;
       return;
     }
 
-    if (!(mlir::isa<qco::AllocOp, qco::StaticOp>(op_))) {
+    if (!(mlir::isa<AllocOp, StaticOp>(op_))) {
       // Find the output from the input qubit SSA value.
       mlir::TypeSwitch<mlir::Operation*>(op_)
-          .Case<qco::UnitaryOpInterface>([&](qco::UnitaryOpInterface op) {
+          .Case<UnitaryOpInterface>([&](UnitaryOpInterface op) {
             qubit_ = op.getOutputForInput(qubit_);
           })
-          .Case<qco::MeasureOp>(
-              [&](qco::MeasureOp op) { qubit_ = op.getQubitOut(); })
-          .Case<qco::ResetOp>(
-              [&](qco::ResetOp op) { qubit_ = op.getQubitOut(); })
+          .Case<MeasureOp>([&](MeasureOp op) { qubit_ = op.getQubitOut(); })
+          .Case<ResetOp>([&](ResetOp op) { qubit_ = op.getQubitOut(); })
           .Default([&](mlir::Operation* op) {
             report_fatal_error("unknown op in def-use chain: " +
                                op->getName().getStringRef());
@@ -133,18 +131,17 @@ private:
 
     // Allocations or static definitions define the start of the qubit wire.
     // Consequently, stop and early exit.
-    if (mlir::isa<qco::AllocOp, StaticOp>(op_)) {
+    if (mlir::isa<AllocOp, StaticOp>(op_)) {
       return;
     }
 
     // Find the input from the output qubit SSA value.
     mlir::TypeSwitch<mlir::Operation*>(op_)
-        .Case<qco::UnitaryOpInterface>([&](qco::UnitaryOpInterface op) {
+        .Case<UnitaryOpInterface>([&](UnitaryOpInterface op) {
           qubit_ = op.getInputForOutput(qubit_);
         })
-        .Case<qco::MeasureOp>(
-            [&](qco::MeasureOp op) { qubit_ = op.getQubitIn(); })
-        .Case<qco::ResetOp>([&](qco::ResetOp op) { qubit_ = op.getQubitIn(); })
+        .Case<MeasureOp>([&](MeasureOp op) { qubit_ = op.getQubitIn(); })
+        .Case<ResetOp>([&](ResetOp op) { qubit_ = op.getQubitIn(); })
         .Default([&](mlir::Operation* op) {
           report_fatal_error("unknown op in def-use chain: " +
                              op->getName().getStringRef());

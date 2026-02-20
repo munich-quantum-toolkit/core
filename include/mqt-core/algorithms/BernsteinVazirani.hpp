@@ -11,12 +11,13 @@
 #pragma once
 
 #include "ir/Definitions.hpp"
-#include "ir/QuantumComputation.hpp"
 
 #include <bitset>
 #include <cstddef>
 
 namespace qc {
+
+class QuantumComputation;
 
 using BVBitString = std::bitset<4096>;
 
