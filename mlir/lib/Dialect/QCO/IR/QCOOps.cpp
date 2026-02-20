@@ -127,6 +127,7 @@ parseIfOpAliasing(OpAsmParser& parser, Region& thenRegion, Region& elseRegion,
   if (parseTargetAliasing(parser, thenRegion, operands)) {
     return failure();
   }
+  const auto thenCount = operands.size();
 
   // Parse the else keyword
   if (parser.parseKeyword("else")) {
@@ -141,6 +142,21 @@ parseIfOpAliasing(OpAsmParser& parser, Region& thenRegion, Region& elseRegion,
   // Parse the else region
   if (parseTargetAliasing(parser, elseRegion, operands)) {
     return failure();
+  }
+
+  const auto elseCount = operands.size() - thenCount;
+
+  if (thenCount != elseCount) {
+    return parser.emitError(
+        parser.getCurrentLocation(),
+        "then/else qubit aliasing lists must be the same length");
+  }
+  for (unsigned i = 0; i < thenCount; ++i) {
+    if (operands[i].name != operands[thenCount + i].name) {
+      return parser.emitError(
+          parser.getCurrentLocation(),
+          "then/else qubit aliasing lists must match in order");
+    }
   }
 
   // Remove duplicate operands
