@@ -25,7 +25,7 @@
 #include <cstdint>
 #include <functional>
 #include <iostream>
-#include <nlohmann/json.hpp>
+#include <nlohmann/json_fwd.hpp>
 #include <ranges>
 #include <type_traits>
 #include <vector>

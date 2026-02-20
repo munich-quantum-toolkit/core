@@ -11,7 +11,9 @@
 #include "mlir/Conversion/QCToQCO/QCToQCO.h"
 
 #include "mlir/Dialect/QC/IR/QCDialect.h"
+#include "mlir/Dialect/QC/IR/QCOps.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
+#include "mlir/Dialect/QCO/IR/QCOOps.h"
 
 #include <cassert>
 #include <cstddef>
