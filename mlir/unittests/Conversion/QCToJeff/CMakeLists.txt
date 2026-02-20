@@ -6,10 +6,20 @@
 #
 # Licensed under the MIT License
 
-add_executable(mqt-core-mlir-conversion-qc-to-jeff-test test_conversion_qc_to_jeff.cpp)
+set(target_name mqt-core-mlir-unittest-qc-to-jeff)
+add_executable(${target_name} test_qc_to_jeff.cpp)
 
 target_link_libraries(
-  mqt-core-mlir-conversion-qc-to-jeff-test PRIVATE GTest::gtest_main MLIRPass MLIRQCProgramBuilder
-                                                   MLIRTransforms QCToJeff)
+  ${target_name}
+  PRIVATE GTest::gtest_main
+          MLIRArithDialect
+          MLIRParser
+          MLIRSupportMQT
+          MLIRPass
+          MLIRQCProgramBuilder
+          MLIRTransforms
+          QCToJeff)
 
-gtest_discover_tests(mqt-core-mlir-conversion-qc-to-jeff-test)
+mqt_mlir_configure_unittest_target(${target_name})
+
+gtest_discover_tests(${target_name} PROPERTIES LABELS mqt-mlir-unittests DISCOVERY_TIMEOUT 60)

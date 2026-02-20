@@ -11,6 +11,7 @@
 #include "mlir/Conversion/JeffToQC/JeffToQC.h"
 
 #include "mlir/Dialect/QC/IR/QCDialect.h"
+#include "mlir/Dialect/QC/IR/QCOps.h"
 
 #include <jeff/IR/JeffDialect.h>
 #include <jeff/IR/JeffOps.h>

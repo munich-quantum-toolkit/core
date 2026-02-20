@@ -11,6 +11,7 @@
 #include "mlir/Conversion/QCToJeff/QCToJeff.h"
 
 #include "mlir/Dialect/QC/IR/QCDialect.h"
+#include "mlir/Dialect/QC/IR/QCOps.h"
 
 #include <cassert>
 #include <cstddef>
