@@ -5,22 +5,22 @@ Key components include an intermediate representation (IR) for quantum computati
 
 ## Tech Stack
 
-| Area                    | Tool                    | Notes                                                            |
-| ----------------------- | ----------------------- | ---------------------------------------------------------------- |
-| C++ standard            | C++20                   | Minimum required                                                 |
-| Build system            | CMake 3.24+             | Up to 4.2 supported                                             |
-| Python                  | 3.10+                   | 3.10–3.14; free-threading supported on 3.14                     |
-| MLIR/LLVM               | 21+                     |                                                                  |
-| Python package manager  | **uv** (>=0.5.20)       | NEVER use pip                                                    |
-| Python build backend    | scikit-build-core       | Stable ABI wheels targeting Python 3.12+ via nanobind            |
-| Python linter/formatter | **ruff**                | NEVER use pylint, black, flake8, or isort                        |
-| Python type checker     | **ty**                  | NEVER use mypy                                                   |
-| Python bindings         | **nanobind**            | NOT pybind11                                                     |
-| C++ formatter           | clang-format            | Config in `.clang-format`; LLVM-based style                      |
-| C++ linter              | clang-tidy              | Config in `.clang-tidy`, `bindings/.clang-tidy`, `mlir/.clang-tidy` |
-| C++ test framework      | Google Test             |                                                                  |
-| Python test framework   | pytest                  | With pytest-xdist for parallelism                                |
-| Pre-commit runner       | prek                    | Wraps pre-commit hooks                                           |
+| Area                    | Tool              | Notes                                                               |
+| ----------------------- | ----------------- | ------------------------------------------------------------------- |
+| C++ standard            | C++20             | Minimum required                                                    |
+| Build system            | CMake 3.24+       | Up to 4.2 supported                                                 |
+| Python                  | 3.10+             | 3.10–3.14; free-threading supported on 3.14                         |
+| MLIR/LLVM               | 21+               |                                                                     |
+| Python package manager  | **uv** (>=0.5.20) | NEVER use pip                                                       |
+| Python build backend    | scikit-build-core | Stable ABI wheels targeting Python 3.12+ via nanobind               |
+| Python linter/formatter | **ruff**          | NEVER use pylint, black, flake8, or isort                           |
+| Python type checker     | **ty**            | NEVER use mypy                                                      |
+| Python bindings         | **nanobind**      | NOT pybind11                                                        |
+| C++ formatter           | clang-format      | Config in `.clang-format`; LLVM-based style                         |
+| C++ linter              | clang-tidy        | Config in `.clang-tidy`, `bindings/.clang-tidy`, `mlir/.clang-tidy` |
+| C++ test framework      | Google Test       |                                                                     |
+| Python test framework   | pytest            | With pytest-xdist for parallelism                                   |
+| Pre-commit runner       | prek              | Wraps pre-commit hooks                                              |
 
 ## Building the C++ Library
 
@@ -40,13 +40,13 @@ cmake --build build
 
 Key CMake options:
 
-| Option                        | Default                | Description                                                    |
-| ----------------------------- | ---------------------- | -------------------------------------------------------------- |
-| `BUILD_MQT_CORE_TESTS`       | ON (if master project) | Build C++ test suite                                           |
-| `BUILD_MQT_CORE_BINDINGS`    | OFF                    | Build Python bindings via nanobind                             |
+| Option                       | Default                | Description                                                   |
+| ---------------------------- | ---------------------- | ------------------------------------------------------------- |
+| `BUILD_MQT_CORE_TESTS`       | ON (if master project) | Build C++ test suite                                          |
+| `BUILD_MQT_CORE_BINDINGS`    | OFF                    | Build Python bindings via nanobind                            |
 | `BUILD_MQT_CORE_MLIR`        | ON                     | Build MLIR quantum compiler infrastructure (requires LLVM 21) |
-| `BUILD_MQT_CORE_SHARED_LIBS` | OFF                    | Build as shared libraries                                      |
-| `ENABLE_COVERAGE`             | OFF                    | Enable code coverage instrumentation                           |
+| `BUILD_MQT_CORE_SHARED_LIBS` | OFF                    | Build as shared libraries                                     |
+| `ENABLE_COVERAGE`            | OFF                    | Enable code coverage instrumentation                          |
 
 ### C++ Dependencies
 
