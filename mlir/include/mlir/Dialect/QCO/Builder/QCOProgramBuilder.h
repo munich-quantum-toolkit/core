@@ -1110,7 +1110,7 @@ public:
    * ```
    */
   ValueRange
-  qcoIf(Value condition, ValueRange qubits,
+  qcoIf(const std::variant<bool, Value>& condition, ValueRange qubits,
         llvm::function_ref<llvm::SmallVector<Value>(ValueRange)> thenBody,
         llvm::function_ref<llvm::SmallVector<Value>(ValueRange)> elseBody =
             nullptr);

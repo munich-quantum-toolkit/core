@@ -683,12 +683,14 @@ QCOProgramBuilder& QCOProgramBuilder::dealloc(Value qubit) {
 //===----------------------------------------------------------------------===//
 
 ValueRange QCOProgramBuilder::qcoIf(
-    Value condition, ValueRange qubits,
+    const std::variant<bool, Value>& condition, ValueRange qubits,
     llvm::function_ref<llvm::SmallVector<Value>(ValueRange)> thenBody,
     llvm::function_ref<llvm::SmallVector<Value>(ValueRange)> elseBody) {
   checkFinalized();
 
-  auto ifOp = IfOp::create(*this, condition, qubits);
+  auto conditionValue = utils::variantToValue(*this, getLoc(), condition);
+
+  auto ifOp = IfOp::create(*this, conditionValue, qubits);
   // Create the then and else block
   auto& thenBlock = ifOp->getRegion(0).emplaceBlock();
   auto& elseBlock = ifOp->getRegion(1).emplaceBlock();
