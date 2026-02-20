@@ -2024,7 +2024,6 @@ void nestedTrueIf(QCOProgramBuilder& b) {
           return llvm::SmallVector<mlir::Value>{innerQubit};
         });
     return llvm::to_vector(innerResult);
-    ;
   });
 }
 
