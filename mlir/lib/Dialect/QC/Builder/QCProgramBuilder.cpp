@@ -11,11 +11,12 @@
 #include "mlir/Dialect/QC/Builder/QCProgramBuilder.h"
 
 #include "mlir/Dialect/QC/IR/QCDialect.h"
+#include "mlir/Dialect/QC/IR/QCOps.h"
 #include "mlir/Dialect/Utils/Utils.h"
 
 #include <cstdint>
-#include <functional>
 #include <llvm/ADT/STLExtras.h>
+#include <llvm/ADT/STLFunctionalExtras.h>
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/Support/ErrorHandling.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
@@ -57,6 +58,11 @@ void QCProgramBuilder::initialize() {
   // Create entry block and set insertion point
   auto& entryBlock = mainFunc.getBody().emplaceBlock();
   setInsertionPointToStart(&entryBlock);
+}
+
+Value QCProgramBuilder::intConstant(const int64_t value) {
+  checkFinalized();
+  return arith::ConstantOp::create(*this, getI64IntegerAttr(value)).getResult();
 }
 
 Value QCProgramBuilder::allocQubit() {
@@ -426,14 +432,16 @@ QCProgramBuilder& QCProgramBuilder::barrier(ValueRange qubits) {
 // Modifiers
 //===----------------------------------------------------------------------===//
 
-QCProgramBuilder& QCProgramBuilder::ctrl(ValueRange controls,
-                                         const std::function<void()>& body) {
+QCProgramBuilder&
+QCProgramBuilder::ctrl(ValueRange controls,
+                       const llvm::function_ref<void()>& body) {
   checkFinalized();
   CtrlOp::create(*this, controls, body);
   return *this;
 }
 
-QCProgramBuilder& QCProgramBuilder::inv(const std::function<void()>& body) {
+QCProgramBuilder&
+QCProgramBuilder::inv(const llvm::function_ref<void()>& body) {
   checkFinalized();
   InvOp::create(*this, body);
   return *this;
@@ -511,16 +519,25 @@ OwningOpRef<ModuleOp> QCProgramBuilder::finalize() {
   allocatedQubits.clear();
 
   // Create constant 0 for successful exit code
-  auto exitCode = arith::ConstantOp::create(*this, getI64IntegerAttr(0));
+  auto exitCode = intConstant(0);
 
   // Add return statement with exit code 0 to the main function
-  func::ReturnOp::create(*this, ValueRange{exitCode});
+  func::ReturnOp::create(*this, exitCode);
 
   // Invalidate context to prevent use-after-finalize
   ctx = nullptr;
 
   // Transfer ownership to the caller
   return module;
+}
+
+OwningOpRef<ModuleOp> QCProgramBuilder::build(
+    MLIRContext* context,
+    const llvm::function_ref<void(QCProgramBuilder&)>& buildFunc) {
+  QCProgramBuilder builder(context);
+  builder.initialize();
+  buildFunc(builder);
+  return builder.finalize();
 }
 
 } // namespace mlir::qc

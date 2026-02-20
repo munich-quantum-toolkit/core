@@ -11,11 +11,12 @@
 #pragma once
 
 #include "ir/Definitions.hpp"
-#include "ir/QuantumComputation.hpp"
 
 #include <cstddef>
 
 namespace qc {
+class QuantumComputation;
+
 [[nodiscard]] auto createQPE(Qubit nq, bool exact = true, std::size_t seed = 0)
     -> QuantumComputation;
 
