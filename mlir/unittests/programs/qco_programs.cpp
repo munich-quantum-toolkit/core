@@ -2023,7 +2023,8 @@ void nestedTrueIf(QCOProgramBuilder& b) {
           auto innerQubit = b.h(innerQubits[0]);
           return llvm::SmallVector<mlir::Value>{innerQubit};
         });
-    return llvm::SmallVector<mlir::Value>{innerResult};
+    return llvm::to_vector(innerResult);
+    ;
   });
 }
 
@@ -2040,13 +2041,13 @@ void nestedFalseIf(QCOProgramBuilder& b) {
         auto innerResult = b.qcoIf(
             measureResult, outerQubits,
             [&](mlir::ValueRange innerQubits) {
-              return llvm::SmallVector<mlir::Value>{innerQubits};
+              return llvm::to_vector(innerQubits);
             },
             [&](mlir::ValueRange innerQubits) {
               auto innerQubit = b.x(innerQubits[0]);
               return llvm::SmallVector<mlir::Value>{innerQubit};
             });
-        return llvm::SmallVector<mlir::Value>{innerResult};
+        return llvm::to_vector(innerResult);
       });
 }
 } // namespace mlir::qco
