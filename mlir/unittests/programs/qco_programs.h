@@ -909,7 +909,10 @@ void invCtrlSandwich(QCOProgramBuilder& b);
 // --- IfOp ---------------------------------------------------------------- //
 
 /// Creates a circuit with a simple if operation with one qubit.
-void singleQubitIf(QCOProgramBuilder& b);
+void simpleIf(QCOProgramBuilder& b);
+
+/// Creates a circuit with an if operation with two qubits.
+void ifTwoQubits(QCOProgramBuilder& b);
 
 /// Creates a circuit with an if operation that uses a constant true as
 /// condition.

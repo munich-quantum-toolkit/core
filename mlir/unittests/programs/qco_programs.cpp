@@ -1947,13 +1947,28 @@ void invCtrlSandwich(QCOProgramBuilder& b) {
   });
 }
 
-void singleQubitIf(QCOProgramBuilder& b) {
+void simpleIf(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   auto [measuredQubit, measureResult] = b.measure(q[0]);
   b.qcoIf(measureResult, measuredQubit, [&](mlir::ValueRange qubits) {
     auto innerQubit = b.h(qubits[0]);
     return llvm::SmallVector<mlir::Value>{innerQubit};
   });
+}
+
+void ifTwoQubits(QCOProgramBuilder& b) {
+  auto q = b.allocQubitRegister(2);
+  auto [measuredQubit, measureResult] = b.measure(q[0]);
+  b.qcoIf(
+      measureResult, {measuredQubit, q[1]},
+      [&](mlir::ValueRange qubits) {
+        auto innerQubit = b.x(qubits[0]);
+        return llvm::SmallVector<mlir::Value>{innerQubit, qubits[1]};
+      },
+      [&](mlir::ValueRange qubits) {
+        auto innerQubit = b.x(qubits[1]);
+        return llvm::SmallVector<mlir::Value>{qubits[0], innerQubit};
+      });
 }
 
 void constantTrueIf(QCOProgramBuilder& b) {
@@ -1983,6 +1998,7 @@ void constantFalseIf(QCOProgramBuilder& b) {
         return llvm::SmallVector<mlir::Value>{innerQubit};
       });
 }
+
 void nestedIf(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   auto [measuredQubit, measureResult] = b.measure(q[0]);

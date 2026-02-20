@@ -89,8 +89,10 @@ TEST_P(QCOTest, ProgramEquivalence) {
 /// @{
 INSTANTIATE_TEST_SUITE_P(
     QCOIflOpTest, QCOTest,
-    testing::Values(QCOTestCase{"Simple If", MQT_NAMED_BUILDER(singleQubitIf),
-                                MQT_NAMED_BUILDER(singleQubitIf)},
+    testing::Values(QCOTestCase{"SimpleIf", MQT_NAMED_BUILDER(simpleIf),
+                                MQT_NAMED_BUILDER(simpleIf)},
+                    QCOTestCase{"TwoQubitIf", MQT_NAMED_BUILDER(ifTwoQubits),
+                                MQT_NAMED_BUILDER(ifTwoQubits)},
                     QCOTestCase{"ConstantTrueIf",
                                 MQT_NAMED_BUILDER(constantTrueIf),
                                 MQT_NAMED_BUILDER(h)},
@@ -98,7 +100,7 @@ INSTANTIATE_TEST_SUITE_P(
                                 MQT_NAMED_BUILDER(constantFalseIf),
                                 MQT_NAMED_BUILDER(x)},
                     QCOTestCase{"NestedIf", MQT_NAMED_BUILDER(nestedIf),
-                                MQT_NAMED_BUILDER(singleQubitIf)}));
+                                MQT_NAMED_BUILDER(simpleIf)}));
 /// @}
 
 /// \name QCO/Modifiers/CtrlOp.cpp
