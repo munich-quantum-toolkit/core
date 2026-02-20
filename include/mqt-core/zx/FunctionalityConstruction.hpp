@@ -24,7 +24,7 @@
 namespace zx {
 
 /**
- * @brief Static class to construct ZX-diagrams from a Quantumcomputation
+ * @brief Static class to construct ZX-diagrams from a QuantumComputation
  */
 class FunctionalityConstruction {
   using op_it = qc::QuantumComputation::const_iterator;

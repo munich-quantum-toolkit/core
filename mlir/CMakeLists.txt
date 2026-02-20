@@ -16,10 +16,30 @@ if(MSVC)
   add_compile_definitions(_SILENCE_NONFLOATING_COMPLEX_DEPRECATION_WARNING)
 endif()
 
-if(ENABLE_COVERAGE)
-  add_compile_options(--coverage -O0)
-  add_link_options(--coverage)
-endif()
+function(mqt_mlir_apply_target_options target_name)
+  target_link_libraries(${target_name} PRIVATE MQT::ProjectOptions)
+
+  include(CheckCXXCompilerFlag)
+  check_cxx_compiler_flag("-Wno-cast-qual" COMPILER_SUPPORTS_WNO_CAST_QUAL)
+
+  if(COMPILER_SUPPORTS_WNO_CAST_QUAL)
+    target_compile_options(${target_name} PRIVATE -Wno-cast-qual)
+  endif()
+endfunction()
+
+function(mqt_mlir_target_use_project_options target_name)
+  if(NOT TARGET MQT::ProjectOptions)
+    message(FATAL_ERROR "MQT::ProjectOptions must be defined before using mlir targets.")
+  endif()
+
+  if(TARGET ${target_name})
+    mqt_mlir_apply_target_options(${target_name})
+  endif()
+
+  if(TARGET obj.${target_name})
+    mqt_mlir_apply_target_options(obj.${target_name})
+  endif()
+endfunction()
 
 # add main library code
 add_subdirectory(include)

@@ -8,7 +8,7 @@
  * Licensed under the MIT License
  */
 
-#include "mlir/Dialect/QC/IR/QCDialect.h"
+#include "mlir/Dialect/QC/IR/QCOps.h"
 #include "mlir/Dialect/Utils/Utils.h"
 
 #include <mlir/IR/Builders.h>
