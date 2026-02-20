@@ -85,6 +85,22 @@ TEST_P(QCOTest, ProgramEquivalence) {
       areModulesEquivalentWithPermutations(program.get(), reference.get()));
 }
 
+/// \name QCO/SCF/IfOp.cpp
+/// @{
+INSTANTIATE_TEST_SUITE_P(
+    QCOIflOpTest, QCOTest,
+    testing::Values(QCOTestCase{"Simple If", MQT_NAMED_BUILDER(singleQubitIf),
+                                MQT_NAMED_BUILDER(singleQubitIf)},
+                    QCOTestCase{"ConstantTrueIf",
+                                MQT_NAMED_BUILDER(constantTrueIf),
+                                MQT_NAMED_BUILDER(h)},
+                    QCOTestCase{"ConstantFalseIf",
+                                MQT_NAMED_BUILDER(constantFalseIf),
+                                MQT_NAMED_BUILDER(x)},
+                    QCOTestCase{"NestedIf", MQT_NAMED_BUILDER(nestedIf),
+                                MQT_NAMED_BUILDER(singleQubitIf)}));
+/// @}
+
 /// \name QCO/Modifiers/CtrlOp.cpp
 /// @{
 INSTANTIATE_TEST_SUITE_P(

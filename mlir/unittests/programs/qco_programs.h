@@ -905,4 +905,20 @@ void tripleNestedInv(QCOProgramBuilder& b);
 
 /// Creates a circuit with inverse modifiers interleaved by a control modifier.
 void invCtrlSandwich(QCOProgramBuilder& b);
+
+// --- IfOp ---------------------------------------------------------------- //
+
+/// Creates a circuit with a simple if operation with one qubit.
+void singleQubitIf(QCOProgramBuilder& b);
+
+/// Creates a circuit with an if operation that uses a constant true as
+/// condition.
+void constantTrueIf(QCOProgramBuilder& b);
+
+/// Creates a circuit with an if operation that uses a constant false as
+/// condition.
+void constantFalseIf(QCOProgramBuilder& b);
+
+/// Creates a circuit with a nested if operation that uses the same condition.
+void nestedIf(QCOProgramBuilder& b);
 } // namespace mlir::qco
