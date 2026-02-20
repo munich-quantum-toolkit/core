@@ -10,8 +10,6 @@
 
 #pragma once
 
-#include "mlir/Dialect/QCO/IR/QCODialect.h"
-
 #include <cstdint>
 #include <llvm/ADT/DenseSet.h>
 #include <llvm/ADT/STLFunctionalExtras.h>
@@ -79,6 +77,25 @@ public:
    * before adding operations.
    */
   void initialize();
+
+  //===--------------------------------------------------------------------===//
+  // Constants
+  //===--------------------------------------------------------------------===//
+
+  /**
+   * @brief Create a constant integer value
+   * @param value The value to store in the constant
+   * @return The value produced by the constant operation
+   *
+   * @par Example:
+   * ```c++
+   * auto c = builder.intConstant(1);
+   * ```
+   * ```mlir
+   * %c = arith.constant 1 : i64
+   * ```
+   */
+  Value intConstant(int64_t value);
 
   //===--------------------------------------------------------------------===//
   // Memory Management
@@ -1114,6 +1131,19 @@ public:
    * @return OwningOpRef containing the constructed quantum program module
    */
   OwningOpRef<ModuleOp> finalize();
+
+  /**
+   * @brief Convenience method for building quantum programs
+   * @param context The MLIR context to use for building the program
+   * @param buildFunc A function that takes a reference to a QCOProgramBuilder
+   * and uses it to build the desired quantum program. The builder will be
+   * properly initialized before calling this function, and the resulting module
+   * will be finalized and returned after this function completes.
+   * @return The module containing the quantum program built by buildFunc.
+   */
+  static OwningOpRef<ModuleOp>
+  build(MLIRContext* context,
+        const llvm::function_ref<void(QCOProgramBuilder&)>& buildFunc);
 
 private:
   MLIRContext* ctx{};

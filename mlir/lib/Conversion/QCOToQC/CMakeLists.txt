@@ -21,3 +21,5 @@ add_mlir_library(
   MLIRTransforms
   MLIRFuncTransforms
   DISABLE_INSTALL)
+
+mqt_mlir_target_use_project_options(QCOToQC)

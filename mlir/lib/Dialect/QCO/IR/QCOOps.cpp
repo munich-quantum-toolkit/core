@@ -8,6 +8,8 @@
  * Licensed under the MIT License
  */
 
+#include "mlir/Dialect/QCO/IR/QCOOps.h"
+
 #include "mlir/Dialect/QCO/IR/QCODialect.h" // IWYU pragma: associated
 
 #include <llvm/ADT/DenseSet.h>
@@ -23,9 +25,7 @@
 // The following headers are needed for some template instantiations.
 // IWYU pragma: begin_keep
 #include <llvm/ADT/TypeSwitch.h>
-#include <mlir/IR/Builders.h>
 #include <mlir/IR/DialectImplementation.h>
-#include <mlir/IR/PatternMatch.h>
 // IWYU pragma: end_keep
 
 using namespace mlir;
