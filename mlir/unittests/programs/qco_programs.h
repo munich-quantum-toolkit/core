@@ -914,6 +914,9 @@ void simpleIf(QCOProgramBuilder& b);
 /// Creates a circuit with an if operation with two qubits.
 void ifTwoQubits(QCOProgramBuilder& b);
 
+/// Creates a circuit with an if operation with an else branch.
+void ifElse(QCOProgramBuilder& b);
+
 /// Creates a circuit with an if operation that uses a constant true as
 /// condition.
 void constantTrueIf(QCOProgramBuilder& b);
@@ -922,6 +925,11 @@ void constantTrueIf(QCOProgramBuilder& b);
 /// condition.
 void constantFalseIf(QCOProgramBuilder& b);
 
-/// Creates a circuit with a nested if operation that uses the same condition.
-void nestedIf(QCOProgramBuilder& b);
+/// Creates a circuit with a nested if operation in the then branch that uses
+/// the same condition.
+void nestedTrueIf(QCOProgramBuilder& b);
+
+/// Creates a circuit with a nested if operation in the else branch that uses
+/// the same condition.
+void nestedFalseIf(QCOProgramBuilder& b);
 } // namespace mlir::qco

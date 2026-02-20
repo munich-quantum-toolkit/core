@@ -89,18 +89,21 @@ TEST_P(QCOTest, ProgramEquivalence) {
 /// @{
 INSTANTIATE_TEST_SUITE_P(
     QCOIflOpTest, QCOTest,
-    testing::Values(QCOTestCase{"SimpleIf", MQT_NAMED_BUILDER(simpleIf),
-                                MQT_NAMED_BUILDER(simpleIf)},
-                    QCOTestCase{"TwoQubitIf", MQT_NAMED_BUILDER(ifTwoQubits),
-                                MQT_NAMED_BUILDER(ifTwoQubits)},
-                    QCOTestCase{"ConstantTrueIf",
-                                MQT_NAMED_BUILDER(constantTrueIf),
-                                MQT_NAMED_BUILDER(h)},
-                    QCOTestCase{"ConstantFalseIf",
-                                MQT_NAMED_BUILDER(constantFalseIf),
-                                MQT_NAMED_BUILDER(x)},
-                    QCOTestCase{"NestedIf", MQT_NAMED_BUILDER(nestedIf),
-                                MQT_NAMED_BUILDER(simpleIf)}));
+    testing::Values(
+        QCOTestCase{"SimpleIf", MQT_NAMED_BUILDER(simpleIf),
+                    MQT_NAMED_BUILDER(simpleIf)},
+        QCOTestCase{"TwoQubitIf", MQT_NAMED_BUILDER(ifTwoQubits),
+                    MQT_NAMED_BUILDER(ifTwoQubits)},
+        QCOTestCase{"IfElse", MQT_NAMED_BUILDER(ifElse),
+                    MQT_NAMED_BUILDER(ifElse)},
+        QCOTestCase{"ConstantTrueIf", MQT_NAMED_BUILDER(constantTrueIf),
+                    MQT_NAMED_BUILDER(h)},
+        QCOTestCase{"ConstantFalseIf", MQT_NAMED_BUILDER(constantFalseIf),
+                    MQT_NAMED_BUILDER(x)},
+        QCOTestCase{"NestedTrueIf", MQT_NAMED_BUILDER(nestedTrueIf),
+                    MQT_NAMED_BUILDER(simpleIf)},
+        QCOTestCase{"NestedFalseIf", MQT_NAMED_BUILDER(nestedFalseIf),
+                    MQT_NAMED_BUILDER(ifElse)}));
 /// @}
 
 /// \name QCO/Modifiers/CtrlOp.cpp
