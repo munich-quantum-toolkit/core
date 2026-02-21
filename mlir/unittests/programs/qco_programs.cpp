@@ -1969,11 +1969,11 @@ void ifTwoQubits(QCOProgramBuilder& b) {
 }
 
 void ifElse(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(2);
+  auto q = b.allocQubitRegister(1);
   auto q0 = b.h(q[0]);
   auto [measuredQubit, measureResult] = b.measure(q0);
   b.qcoIf(
-      measureResult, {q[1]},
+      measureResult, {measuredQubit},
       [&](mlir::ValueRange qubits) {
         auto innerQubit = b.x(qubits[0]);
         return llvm::SmallVector<mlir::Value>{innerQubit};
