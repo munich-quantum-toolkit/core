@@ -1258,7 +1258,7 @@ def IfOp : QCOOp<"if", traits =
            build($_builder, $_state, qubits.getTypes(), condition, qubits);
         }]>,
         OpBuilder<(ins "Value":$condition, "ValueRange":$qubits, "llvm::function_ref<llvm::SmallVector<Value>(ValueRange)>":$thenBuilder,
-        "llvm::function_ref<llvm::SmallVector<Value>(ValueRange)>":$elseBuilder)>
+        CArg<"llvm::function_ref<llvm::SmallVector<Value>(ValueRange)>","nullptr">:$elseBuilder)>
     ];
 
     let extraClassDeclaration = [{

@@ -58,8 +58,13 @@ void IfOp::build(
       qubits.getTypes(),
       SmallVector<Location>(qubits.size(), odsState.location));
   odsBuilder.setInsertionPointToStart(&elseBlock);
-  qco::YieldOp::create(odsBuilder, odsState.location,
-                       elseBuilder(elseBlock.getArguments()));
+  if (elseBuilder) {
+    qco::YieldOp::create(odsBuilder, odsState.location,
+                         elseBuilder(elseBlock.getArguments()));
+  } else {
+    qco::YieldOp::create(odsBuilder, odsState.location,
+                         elseBlock.getArguments());
+  }
 }
 
 // Adjusted from
