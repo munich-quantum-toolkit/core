@@ -37,26 +37,12 @@ namespace mlir {
 static void prettyPrintStage(ModuleOp module, const llvm::StringRef stageName,
                              const int stageNumber, const int totalStages) {
   llvm::errs() << "\n";
-  printBoxTop();
 
   // Build the stage header
   const std::string stageHeader = "Stage " + std::to_string(stageNumber) + "/" +
                                   std::to_string(totalStages) + ": " +
                                   stageName.str();
-  printBoxLine(stageHeader);
-
-  printBoxMiddle();
-
-  // Capture the IR to a string so we can wrap it in box lines
-  std::string irString;
-  llvm::raw_string_ostream irStream(irString);
-  module.print(irStream);
-
-  // Print the IR with box lines and wrapping
-  printBoxText(irString);
-
-  printBoxBottom();
-  llvm::errs().flush();
+  printProgram(module, stageHeader, llvm::errs());
 }
 
 void QuantumCompilerPipeline::addCleanupPasses(PassManager& pm) {

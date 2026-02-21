@@ -6,17 +6,23 @@
 #
 # Licensed under the MIT License
 
-add_executable(mqt-core-mlir-compiler-pipeline-test test_compiler_pipeline.cpp)
+add_executable(mqt-core-mlir-unittests-compiler test_compiler_pipeline.cpp)
 
 target_link_libraries(
-  mqt-core-mlir-compiler-pipeline-test
+  mqt-core-mlir-unittests-compiler
   PRIVATE GTest::gtest_main
           MQTCompilerPipeline
           MLIRQCTranslation
           MLIRQCProgramBuilder
-          MLIRQCOProgramBuilder
           MLIRQIRProgramBuilder
           MLIRParser
+          MLIRSupportMQT
+          MLIRQCPrograms
+          MLIRQIRPrograms
+          MLIRQuantumComputationPrograms
           MQT::CoreIR)
 
-gtest_discover_tests(mqt-core-mlir-compiler-pipeline-test)
+mqt_mlir_configure_unittest_target(mqt-core-mlir-unittests-compiler)
+
+gtest_discover_tests(mqt-core-mlir-unittests-compiler PROPERTIES LABELS mqt-mlir-unittests
+                                                                 DISCOVERY_TIMEOUT 60)

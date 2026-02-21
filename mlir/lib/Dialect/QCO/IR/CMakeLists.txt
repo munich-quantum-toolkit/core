@@ -30,6 +30,8 @@ add_mlir_dialect_library(
   Eigen3::Eigen
   DISABLE_INSTALL)
 
+mqt_mlir_target_use_project_options(MLIRQCODialect)
+
 # collect header files
 file(GLOB_RECURSE IR_HEADERS_SOURCE "${MQT_MLIR_SOURCE_INCLUDE_DIR}/mlir/Dialect/QCO/IR/*.h")
 file(GLOB_RECURSE IR_HEADERS_BUILD "${MQT_MLIR_BUILD_INCLUDE_DIR}/mlir/Dialect/QCO/IR/*.inc")

@@ -17,6 +17,8 @@ add_mlir_library(
   MLIRIR
   DISABLE_INSTALL)
 
+mqt_mlir_target_use_project_options(MLIRQIRUtils)
+
 file(GLOB_RECURSE QIR_UTILS_HEADERS_SOURCE
      ${MQT_MLIR_SOURCE_INCLUDE_DIR}/mlir/Dialect/QIR/Utils/*.h)
 

@@ -1019,21 +1019,21 @@ def BarrierOp : QCOOp<"barrier", traits = [UnitaryOpInterface]> {
     let assemblyFormat = "$qubits_in attr-dict `:` type($qubits_in) `->` type($qubits_out)";
 
     let extraClassDeclaration = [{
-        size_t getNumQubits();
-        size_t getNumTargets();
-        static size_t getNumControls();
-        Value getInputQubit(size_t i);
-        OperandRange getInputQubits();
-        Value getOutputQubit(size_t i);
-        ResultRange getOutputQubits();
+        size_t getNumQubits() { return getNumTargets(); }
+        size_t getNumTargets() { return getQubitsIn().size(); }
+        static size_t getNumControls() { return 0; }
+        Value getInputQubit(size_t i) { return getInputTarget(i); }
+        OperandRange getInputQubits() { return getQubitsIn(); }
+        Value getOutputQubit(size_t i) { return getOutputTarget(i); }
+        ResultRange getOutputQubits() { return getQubitsOut(); }
         Value getInputTarget(size_t i);
         Value getOutputTarget(size_t i);
-        static Value getInputControl(size_t i);
-        static Value getOutputControl(size_t i);
+        static Value getInputControl(size_t i) { llvm::reportFatalUsageError("BarrierOp cannot be controlled"); }
+        static Value getOutputControl(size_t i) { llvm::reportFatalUsageError("BarrierOp cannot be controlled"); }
         Value getInputForOutput(Value output);
         Value getOutputForInput(Value input);
-        static size_t getNumParams();
-        static Value getParameter(size_t i);
+        static size_t getNumParams() { return 0; }
+        static Value getParameter(size_t i) { llvm::reportFatalUsageError("BarrierOp has no parameters"); }
         [[nodiscard]] static StringRef getBaseSymbol() { return "barrier"; }
     }];
 
@@ -1111,21 +1111,21 @@ def CtrlOp : QCOOp<"ctrl", traits =
 
     let extraClassDeclaration = [{
         UnitaryOpInterface getBodyUnitary();
-        size_t getNumQubits();
-        size_t getNumTargets();
-        size_t getNumControls();
+        size_t getNumQubits() { return getNumControls() + getNumTargets(); }
+        size_t getNumTargets() { return getTargetsIn().size(); }
+        size_t getNumControls() { return getControlsIn().size(); }
         Value getInputQubit(size_t i);
-        OperandRange getInputQubits();
+        OperandRange getInputQubits() { return getOperands(); }
         Value getOutputQubit(size_t i);
-        ResultRange getOutputQubits();
+        ResultRange getOutputQubits() { return getResults(); }
         Value getInputTarget(size_t i);
         Value getOutputTarget(size_t i);
         Value getInputControl(size_t i);
         Value getOutputControl(size_t i);
         Value getInputForOutput(Value output);
         Value getOutputForInput(Value input);
-        size_t getNumParams();
-        Value getParameter(size_t i);
+        size_t getNumParams() { return getBodyUnitary().getNumParams(); }
+        Value getParameter(size_t i) { return getBodyUnitary().getParameter(i); }
         [[nodiscard]] static StringRef getBaseSymbol() { return "ctrl"; }
         [[nodiscard]] std::optional<Eigen::MatrixXcd> getUnitaryMatrix();
     }];
@@ -1134,7 +1134,6 @@ def CtrlOp : QCOOp<"ctrl", traits =
         OpBuilder<(ins "ValueRange":$controls, "ValueRange":$targets), [{
            build($_builder, $_state, controls.getTypes(), targets.getTypes(), controls, targets);
         }]>,
-        OpBuilder<(ins "ValueRange":$controls, "ValueRange":$targets, "UnitaryOpInterface":$bodyUnitary)>,
         OpBuilder<(ins "ValueRange":$controls, "ValueRange":$targets, "llvm::function_ref<llvm::SmallVector<Value>(ValueRange)>":$bodyBuilder)>
     ];
 
@@ -1142,11 +1141,9 @@ def CtrlOp : QCOOp<"ctrl", traits =
     let hasVerifier = 1;
 }
 
-def InvOp : QCOOp<"inv", traits =
-            [
+def InvOp : QCOOp<"inv",
+            traits = [
                 UnitaryOpInterface,
-                SameOperandsAndResultType,
-                SameOperandsAndResultShape,
                 SingleBlockImplicitTerminator<"::mlir::qco::YieldOp">,
                 RecursiveMemoryEffects
             ]> {
@@ -1178,21 +1175,21 @@ def InvOp : QCOOp<"inv", traits =
 
     let extraClassDeclaration = [{
         UnitaryOpInterface getBodyUnitary();
-        size_t getNumQubits();
-        size_t getNumTargets();
-        static size_t getNumControls();
+        size_t getNumQubits() { return getNumTargets(); }
+        size_t getNumTargets() { return getQubitsIn().size(); }
+        static size_t getNumControls() { return 0; }
         Value getInputQubit(size_t i);
-        OperandRange getInputQubits();
+        OperandRange getInputQubits() { return getOperands(); }
         Value getOutputQubit(size_t i);
-        ResultRange getOutputQubits();
-        Value getInputTarget(size_t i);
-        Value getOutputTarget(size_t i);
-        static Value getInputControl(size_t i);
-        static Value getOutputControl(size_t i);
+        ResultRange getOutputQubits() { return getResults(); }
+        Value getInputTarget(size_t i) { return getInputQubit(i); }
+        Value getOutputTarget(size_t i) { return getOutputQubit(i); }
+        static Value getInputControl(size_t i) { llvm::reportFatalUsageError("Operation does not have controls"); }
+        static Value getOutputControl(size_t i) { llvm::reportFatalUsageError("Operation does not have controls"); }
         Value getInputForOutput(Value output);
         Value getOutputForInput(Value input);
-        size_t getNumParams();
-        Value getParameter(size_t i);
+        size_t getNumParams() { return getBodyUnitary().getNumParams(); }
+        Value getParameter(size_t i) { return getBodyUnitary().getParameter(i); }
         [[nodiscard]] static StringRef getBaseSymbol() { return "inv"; }
         [[nodiscard]] std::optional<Eigen::MatrixXcd> getUnitaryMatrix();
     }];
@@ -1201,7 +1198,6 @@ def InvOp : QCOOp<"inv", traits =
         OpBuilder<(ins "ValueRange":$qubits), [{
            build($_builder, $_state, qubits.getTypes(), qubits);
         }]>,
-        OpBuilder<(ins "ValueRange":$qubits, "UnitaryOpInterface":$bodyUnitary)>,
         OpBuilder<(ins "ValueRange":$qubits, "llvm::function_ref<llvm::SmallVector<Value>(ValueRange)>":$bodyBuilder)>
     ];
 

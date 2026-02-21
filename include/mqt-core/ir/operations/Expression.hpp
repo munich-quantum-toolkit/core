@@ -12,7 +12,6 @@
 
 #include "ir/Definitions.hpp"
 
-#include <algorithm>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
@@ -405,11 +404,10 @@ public:
     auto t = rhs.begin();
 
     while (t != rhs.end()) {
-      const auto insertPos =
-          std::lower_bound(terms.begin(), terms.end(), *t,
-                           [&](const Term<T>& lhs, const Term<T>& r) {
-                             return lhs.getVar() < r.getVar();
-                           });
+      auto insertPos = terms.begin();
+      while (insertPos != terms.end() && insertPos->getVar() < t->getVar()) {
+        ++insertPos;
+      }
       if (insertPos != terms.end() && insertPos->getVar() == t->getVar()) {
         if (std::abs(insertPos->getCoeff() + t->getCoeff()) < TOLERANCE) {
           terms.erase(insertPos);
@@ -491,7 +489,9 @@ public:
       constant = U{T{0}};
       return *this;
     }
-    std::for_each(terms.begin(), terms.end(), [&](auto& term) { term *= rhs; });
+    for (auto& term : terms) {
+      term *= rhs;
+    }
     constant = U{double{constant} * double{rhs}};
     return *this;
   }
@@ -503,8 +503,9 @@ public:
       constant = U{T{0}};
       return *this;
     }
-    std::for_each(terms.begin(), terms.end(),
-                  [&](auto& term) { term *= T{rhs}; });
+    for (auto& term : terms) {
+      term *= T{rhs};
+    }
     constant *= rhs;
     return *this;
   }
@@ -522,7 +523,9 @@ public:
     if (std::abs(static_cast<double>(T{rhs})) < TOLERANCE) {
       throw std::runtime_error("Trying to divide expression by 0!");
     }
-    std::for_each(terms.begin(), terms.end(), [&](auto& term) { term /= rhs; });
+    for (auto& term : terms) {
+      term /= rhs;
+    }
     constant = U{double{constant} / double{rhs}};
     return *this;
   }
@@ -532,8 +535,9 @@ public:
     if (std::abs(static_cast<double>(T{rhs})) < TOLERANCE) {
       throw std::runtime_error("Trying to divide expression by 0!");
     }
-    std::for_each(terms.begin(), terms.end(),
-                  [&](auto& term) { term /= T{rhs}; });
+    for (auto& term : terms) {
+      term /= T{rhs};
+    }
     constant /= rhs;
     return *this;
   }
@@ -542,8 +546,9 @@ public:
     if (rhs == 0) {
       throw std::runtime_error("Trying to divide expression by 0!");
     }
-    std::for_each(terms.begin(), terms.end(),
-                  [&](auto& term) { term /= T{static_cast<double>(rhs)}; });
+    for (auto& term : terms) {
+      term /= T{static_cast<double>(rhs)};
+    }
     constant = U{double{constant} / static_cast<double>(rhs)};
     return *this;
   }
@@ -637,10 +642,13 @@ private:
   U constant{T{0.0}};
 
   void sortTerms() {
-    std::sort(terms.begin(), terms.end(),
-              [&](const Term<T>& lhs, const Term<T>& rhs) {
-                return lhs.getVar() < rhs.getVar();
-              });
+    for (auto it = terms.begin(); it != terms.end(); ++it) {
+      for (auto jt = std::next(it); jt != terms.end(); ++jt) {
+        if (jt->getVar() < it->getVar()) {
+          std::swap(*it, *jt);
+        }
+      }
+    }
   }
 
   void aggregateEqualTerms() {
@@ -817,8 +825,9 @@ std::ostream& operator<<(std::ostream& os, const Term<T>& term) {
 
 template <typename T, typename U>
 std::ostream& operator<<(std::ostream& os, const Expression<T, U>& expr) {
-  std::for_each(expr.begin(), expr.end(),
-                [&](const auto& term) { os << term << " + "; });
+  for (const auto& term : expr) {
+    os << term << " + ";
+  }
   os << expr.getConst();
   return os;
 }
