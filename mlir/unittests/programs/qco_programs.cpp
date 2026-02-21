@@ -12,9 +12,8 @@
 
 #include "mlir/Dialect/QCO/Builder/QCOProgramBuilder.h"
 
-#include "llvm/ADT/STLExtras.h"
-#include "llvm/ADT/SmallVector.h"
-
+#include <llvm/ADT/STLExtras.h>
+#include <llvm/ADT/SmallVector.h>
 #include <numbers>
 #include <tuple>
 
@@ -1948,4 +1947,106 @@ void invCtrlSandwich(QCOProgramBuilder& b) {
   });
 }
 
+void simpleIf(QCOProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  auto q0 = b.h(q[0]);
+  auto [measuredQubit, measureResult] = b.measure(q0);
+  b.qcoIf(measureResult, measuredQubit, [&](mlir::ValueRange qubits) {
+    auto innerQubit = b.x(qubits[0]);
+    return llvm::SmallVector<mlir::Value>{innerQubit};
+  });
+}
+
+void ifTwoQubits(QCOProgramBuilder& b) {
+  auto q = b.allocQubitRegister(2);
+  auto q0 = b.h(q[0]);
+  auto [measuredQubit, measureResult] = b.measure(q0);
+  b.qcoIf(measureResult, {measuredQubit, q[1]}, [&](mlir::ValueRange qubits) {
+    auto innerQubit0 = b.x(qubits[0]);
+    auto innerQubit1 = b.x(qubits[1]);
+    return llvm::SmallVector<mlir::Value>{innerQubit0, innerQubit1};
+  });
+}
+
+void ifElse(QCOProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  auto q0 = b.h(q[0]);
+  auto [measuredQubit, measureResult] = b.measure(q0);
+  b.qcoIf(
+      measureResult, {measuredQubit},
+      [&](mlir::ValueRange qubits) {
+        auto innerQubit = b.x(qubits[0]);
+        return llvm::SmallVector<mlir::Value>{innerQubit};
+      },
+      [&](mlir::ValueRange qubits) {
+        auto innerQubit = b.z(qubits[0]);
+        return llvm::SmallVector<mlir::Value>{innerQubit};
+      });
+}
+
+void constantTrueIf(QCOProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  b.qcoIf(
+      true, q,
+      [&](mlir::ValueRange qubits) {
+        auto innerQubit = b.x(qubits[0]);
+        return llvm::SmallVector<mlir::Value>{innerQubit};
+      },
+      [&](mlir::ValueRange qubits) {
+        auto innerQubit = b.z(qubits[0]);
+        return llvm::SmallVector<mlir::Value>{innerQubit};
+      });
+}
+
+void constantFalseIf(QCOProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  b.qcoIf(
+      false, q,
+      [&](mlir::ValueRange qubits) {
+        auto innerQubit = b.x(qubits[0]);
+        return llvm::SmallVector<mlir::Value>{innerQubit};
+      },
+      [&](mlir::ValueRange qubits) {
+        auto innerQubit = b.z(qubits[0]);
+        return llvm::SmallVector<mlir::Value>{innerQubit};
+      });
+}
+
+void nestedTrueIf(QCOProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  auto q0 = b.h(q[0]);
+  auto [measuredQubit, measureResult] = b.measure(q0);
+  b.qcoIf(measureResult, measuredQubit, [&](mlir::ValueRange outerQubits) {
+    auto innerResult =
+        b.qcoIf(measureResult, outerQubits, [&](mlir::ValueRange innerQubits) {
+          auto innerQubit = b.x(innerQubits[0]);
+          return llvm::SmallVector<mlir::Value>{innerQubit};
+        });
+    return llvm::to_vector(innerResult);
+  });
+}
+
+void nestedFalseIf(QCOProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  auto q0 = b.h(q[0]);
+  auto [measuredQubit, measureResult] = b.measure(q0);
+  b.qcoIf(
+      measureResult, measuredQubit,
+      [&](mlir::ValueRange qubits) {
+        auto innerQubit = b.x(qubits[0]);
+        return llvm::SmallVector<mlir::Value>{innerQubit};
+      },
+      [&](mlir::ValueRange outerQubits) {
+        auto innerResult = b.qcoIf(
+            measureResult, outerQubits,
+            [&](mlir::ValueRange innerQubits) {
+              return llvm::to_vector(innerQubits);
+            },
+            [&](mlir::ValueRange innerQubits) {
+              auto innerQubit = b.z(innerQubits[0]);
+              return llvm::SmallVector<mlir::Value>{innerQubit};
+            });
+        return llvm::to_vector(innerResult);
+      });
+}
 } // namespace mlir::qco

@@ -25,6 +25,7 @@
 #include "mlir/Dialect/QCO/IR/QCOInterfaces.h"
 
 #include <mlir/Bytecode/BytecodeOpInterface.h>
+#include <mlir/Interfaces/ControlFlowInterfaces.h>
 #include <mlir/Interfaces/SideEffectInterfaces.h>
 #include <variant>
 
