@@ -82,8 +82,4 @@ private:
   mlir::Value qubit_;
   bool isSentinel_;
 };
-
-static_assert(std::bidirectional_iterator<WireIterator>);
-static_assert(std::sentinel_for<std::default_sentinel_t, WireIterator>,
-              "std::default_sentinel_t must be a sentinel for WireIterator.");
 } // namespace mlir::qco

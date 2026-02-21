@@ -14,6 +14,7 @@
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 
 #include <cassert>
+#include <iterator>
 #include <llvm/ADT/TypeSwitch.h>
 #include <llvm/Support/ErrorHandling.h>
 #include <mlir/IR/Operation.h>
@@ -97,4 +98,8 @@ void WireIterator::backward() {
     return;
   }
 }
+
+static_assert(std::bidirectional_iterator<WireIterator>);
+static_assert(std::sentinel_for<std::default_sentinel_t, WireIterator>,
+              "std::default_sentinel_t must be a sentinel for WireIterator.");
 } // namespace mlir::qco
