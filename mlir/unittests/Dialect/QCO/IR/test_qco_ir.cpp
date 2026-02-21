@@ -18,6 +18,7 @@
 
 #include <gtest/gtest.h>
 #include <iosfwd>
+#include <llvm/ADT/SmallVector.h>
 #include <memory>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
@@ -94,7 +95,7 @@ TEST_F(QCOTest, DirectIfBuilder) {
   auto measureOp = MeasureOp::create(builder, q1);
   auto ifOp =
       IfOp::create(builder, measureOp.getResult(), measureOp.getQubitOut(),
-                   [&](ValueRange qubits) -> SmallVector<Value> {
+                   [&](ValueRange qubits) -> llvm::SmallVector<Value> {
                      auto innerQubit = XOp::create(builder, qubits[0]);
                      return llvm::SmallVector<mlir::Value>{innerQubit};
                    });
