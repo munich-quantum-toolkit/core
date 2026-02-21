@@ -121,7 +121,7 @@ TEST_F(QCOTest, DirectIfBuilder) {
 /// \name QCO/SCF/IfOp.cpp
 /// @{
 INSTANTIATE_TEST_SUITE_P(
-    QCOIflOpTest, QCOTest,
+    QCOIfOpTest, QCOTest,
     testing::Values(
         QCOTestCase{"SimpleIf", MQT_NAMED_BUILDER(simpleIf),
                     MQT_NAMED_BUILDER(simpleIf)},

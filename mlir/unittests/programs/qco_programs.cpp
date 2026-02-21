@@ -1973,14 +1973,14 @@ void ifElse(QCOProgramBuilder& b) {
   auto q0 = b.h(q[0]);
   auto [measuredQubit, measureResult] = b.measure(q0);
   b.qcoIf(
-      measureResult, {measuredQubit, q[1]},
+      measureResult, {q[1]},
       [&](mlir::ValueRange qubits) {
         auto innerQubit = b.x(qubits[0]);
-        return llvm::SmallVector<mlir::Value>{innerQubit, qubits[1]};
+        return llvm::SmallVector<mlir::Value>{innerQubit};
       },
       [&](mlir::ValueRange qubits) {
-        auto innerQubit = b.z(qubits[1]);
-        return llvm::SmallVector<mlir::Value>{qubits[0], innerQubit};
+        auto innerQubit = b.z(qubits[0]);
+        return llvm::SmallVector<mlir::Value>{innerQubit};
       });
 }
 
@@ -2031,10 +2031,10 @@ void nestedFalseIf(QCOProgramBuilder& b) {
   auto q0 = b.h(q[0]);
   auto [measuredQubit, measureResult] = b.measure(q0);
   b.qcoIf(
-      measureResult, {measuredQubit, q[1]},
+      measureResult, q[1],
       [&](mlir::ValueRange qubits) {
         auto innerQubit = b.x(qubits[0]);
-        return llvm::SmallVector<mlir::Value>{innerQubit, qubits[1]};
+        return llvm::SmallVector<mlir::Value>{innerQubit};
       },
       [&](mlir::ValueRange outerQubits) {
         auto innerResult = b.qcoIf(
@@ -2043,8 +2043,8 @@ void nestedFalseIf(QCOProgramBuilder& b) {
               return llvm::to_vector(innerQubits);
             },
             [&](mlir::ValueRange innerQubits) {
-              auto innerQubit = b.z(innerQubits[1]);
-              return llvm::SmallVector<mlir::Value>{innerQubits[0], innerQubit};
+              auto innerQubit = b.z(innerQubits[0]);
+              return llvm::SmallVector<mlir::Value>{innerQubit};
             });
         return llvm::to_vector(innerResult);
       });
