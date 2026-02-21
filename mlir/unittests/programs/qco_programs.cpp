@@ -1949,16 +1949,29 @@ void invCtrlSandwich(QCOProgramBuilder& b) {
 
 void simpleIf(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
-  auto [measuredQubit, measureResult] = b.measure(q[0]);
+  auto q0 = b.h(q[0]);
+  auto [measuredQubit, measureResult] = b.measure(q0);
   b.qcoIf(measureResult, measuredQubit, [&](mlir::ValueRange qubits) {
-    auto innerQubit = b.h(qubits[0]);
+    auto innerQubit = b.x(qubits[0]);
     return llvm::SmallVector<mlir::Value>{innerQubit};
   });
 }
 
 void ifTwoQubits(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
-  auto [measuredQubit, measureResult] = b.measure(q[0]);
+  auto q0 = b.h(q[0]);
+  auto [measuredQubit, measureResult] = b.measure(q0);
+  b.qcoIf(measureResult, {measuredQubit, q[1]}, [&](mlir::ValueRange qubits) {
+    auto innerQubit0 = b.x(qubits[0]);
+    auto innerQubit1 = b.x(qubits[1]);
+    return llvm::SmallVector<mlir::Value>{innerQubit0, innerQubit1};
+  });
+}
+
+void ifElse(QCOProgramBuilder& b) {
+  auto q = b.allocQubitRegister(2);
+  auto q0 = b.h(q[0]);
+  auto [measuredQubit, measureResult] = b.measure(q0);
   b.qcoIf(
       measureResult, {measuredQubit, q[1]},
       [&](mlir::ValueRange qubits) {
@@ -1966,23 +1979,8 @@ void ifTwoQubits(QCOProgramBuilder& b) {
         return llvm::SmallVector<mlir::Value>{innerQubit, qubits[1]};
       },
       [&](mlir::ValueRange qubits) {
-        auto innerQubit = b.x(qubits[1]);
+        auto innerQubit = b.z(qubits[1]);
         return llvm::SmallVector<mlir::Value>{qubits[0], innerQubit};
-      });
-}
-
-void ifElse(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(1);
-  auto [measuredQubit, measureResult] = b.measure(q[0]);
-  b.qcoIf(
-      measureResult, measuredQubit,
-      [&](mlir::ValueRange qubits) {
-        auto innerQubit = b.h(qubits[0]);
-        return llvm::SmallVector<mlir::Value>{innerQubit};
-      },
-      [&](mlir::ValueRange qubits) {
-        auto innerQubit = b.x(qubits[0]);
-        return llvm::SmallVector<mlir::Value>{innerQubit};
       });
 }
 
@@ -1991,11 +1989,11 @@ void constantTrueIf(QCOProgramBuilder& b) {
   b.qcoIf(
       true, q,
       [&](mlir::ValueRange qubits) {
-        auto innerQubit = b.h(qubits[0]);
+        auto innerQubit = b.x(qubits[0]);
         return llvm::SmallVector<mlir::Value>{innerQubit};
       },
       [&](mlir::ValueRange qubits) {
-        auto innerQubit = b.x(qubits[0]);
+        auto innerQubit = b.z(qubits[0]);
         return llvm::SmallVector<mlir::Value>{innerQubit};
       });
 }
@@ -2005,22 +2003,23 @@ void constantFalseIf(QCOProgramBuilder& b) {
   b.qcoIf(
       false, q,
       [&](mlir::ValueRange qubits) {
-        auto innerQubit = b.h(qubits[0]);
+        auto innerQubit = b.x(qubits[0]);
         return llvm::SmallVector<mlir::Value>{innerQubit};
       },
       [&](mlir::ValueRange qubits) {
-        auto innerQubit = b.x(qubits[0]);
+        auto innerQubit = b.z(qubits[0]);
         return llvm::SmallVector<mlir::Value>{innerQubit};
       });
 }
 
 void nestedTrueIf(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
-  auto [measuredQubit, measureResult] = b.measure(q[0]);
+  auto q0 = b.h(q[0]);
+  auto [measuredQubit, measureResult] = b.measure(q0);
   b.qcoIf(measureResult, measuredQubit, [&](mlir::ValueRange outerQubits) {
     auto innerResult =
         b.qcoIf(measureResult, outerQubits, [&](mlir::ValueRange innerQubits) {
-          auto innerQubit = b.h(innerQubits[0]);
+          auto innerQubit = b.x(innerQubits[0]);
           return llvm::SmallVector<mlir::Value>{innerQubit};
         });
     return llvm::to_vector(innerResult);
@@ -2028,13 +2027,14 @@ void nestedTrueIf(QCOProgramBuilder& b) {
 }
 
 void nestedFalseIf(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(1);
-  auto [measuredQubit, measureResult] = b.measure(q[0]);
+  auto q = b.allocQubitRegister(2);
+  auto q0 = b.h(q[0]);
+  auto [measuredQubit, measureResult] = b.measure(q0);
   b.qcoIf(
-      measureResult, measuredQubit,
+      measureResult, {measuredQubit, q[1]},
       [&](mlir::ValueRange qubits) {
-        auto innerQubit = b.h(qubits[0]);
-        return llvm::SmallVector<mlir::Value>{innerQubit};
+        auto innerQubit = b.x(qubits[0]);
+        return llvm::SmallVector<mlir::Value>{innerQubit, qubits[1]};
       },
       [&](mlir::ValueRange outerQubits) {
         auto innerResult = b.qcoIf(
@@ -2043,8 +2043,8 @@ void nestedFalseIf(QCOProgramBuilder& b) {
               return llvm::to_vector(innerQubits);
             },
             [&](mlir::ValueRange innerQubits) {
-              auto innerQubit = b.x(innerQubits[0]);
-              return llvm::SmallVector<mlir::Value>{innerQubit};
+              auto innerQubit = b.z(innerQubits[1]);
+              return llvm::SmallVector<mlir::Value>{innerQubits[0], innerQubit};
             });
         return llvm::to_vector(innerResult);
       });
