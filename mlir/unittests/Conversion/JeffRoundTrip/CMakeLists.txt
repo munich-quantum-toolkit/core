@@ -6,18 +6,20 @@
 #
 # Licensed under the MIT License
 
-set(target_name mqt-core-mlir-unittest-qc-to-jeff)
-add_executable(${target_name} test_qc_to_jeff.cpp)
+set(target_name mqt-core-mlir-unittest-jeff-round-trip)
+add_executable(${target_name} test_jeff_round_trip.cpp)
 
 target_link_libraries(
   ${target_name}
   PRIVATE GTest::gtest_main
           MLIRArithDialect
           MLIRParser
-          MLIRSupportMQT
           MLIRPass
+          MLIRQCPrograms
           MLIRQCProgramBuilder
+          MLIRSupportMQT
           MLIRTransforms
+          JeffToQC
           QCToJeff)
 
 mqt_mlir_configure_unittest_target(${target_name})
