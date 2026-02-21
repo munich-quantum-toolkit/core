@@ -18,7 +18,7 @@ add_mlir_dialect_library(
   MLIRQCOInterfacesIncGen
   LINK_LIBS
   PUBLIC
-  Eigen3::Eigen
+  MLIRQCODialect
   DISABLE_INSTALL)
 
 mqt_mlir_target_use_project_options(MLIRQCOUtils)
