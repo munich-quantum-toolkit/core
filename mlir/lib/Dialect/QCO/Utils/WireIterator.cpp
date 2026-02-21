@@ -10,11 +10,14 @@
 
 #include "mlir/Dialect/QCO/Utils/WireIterator.h"
 
+#include "mlir/Dialect/QCO/IR/QCOInterfaces.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 
+#include <cassert>
 #include <llvm/ADT/TypeSwitch.h>
 #include <llvm/Support/ErrorHandling.h>
 #include <mlir/IR/Operation.h>
+#include <mlir/IR/Value.h>
 #include <mlir/Support/LLVM.h>
 
 namespace mlir::qco {
