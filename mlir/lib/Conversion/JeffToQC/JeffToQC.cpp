@@ -141,7 +141,7 @@ struct ConvertJeffQubitAllocOpToQC final
 };
 
 /**
- * @brief Converts jeff.qubit_free to qc.dealloc
+ * @brief Converts jeff.qubit_free to qc.reset + qc.dealloc
  *
  * @par Example:
  * ```mlir
@@ -149,6 +149,7 @@ struct ConvertJeffQubitAllocOpToQC final
  * ```
  * is converted to
  * ```mlir
+ * qc.reset %q : !qc.qubit
  * qc.dealloc %q : !qc.qubit
  * ```
  */
@@ -158,6 +159,32 @@ struct ConvertJeffQubitFreeOpToQC final
 
   LogicalResult
   matchAndRewrite(jeff::QubitFreeOp op, OpAdaptor adaptor,
+                  ConversionPatternRewriter& rewriter) const override {
+    auto qcQubit = adaptor.getInQubit();
+    rewriter.create<qc::ResetOp>(op.getLoc(), qcQubit);
+    rewriter.replaceOpWithNewOp<qc::DeallocOp>(op, qcQubit);
+    return success();
+  }
+};
+
+/**
+ * @brief Converts jeff.qubit_free_zero to qc.dealloc
+ *
+ * @par Example:
+ * ```mlir
+ * jeff.qubit_free_zero %q : !jeff.qubit
+ * ```
+ * is converted to
+ * ```mlir
+ * qc.dealloc %q : !qc.qubit
+ * ```
+ */
+struct ConvertJeffQubitFreeZeroOpToQC final
+    : OpConversionPattern<jeff::QubitFreeZeroOp> {
+  using OpConversionPattern::OpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(jeff::QubitFreeZeroOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
     auto qcQubit = adaptor.getInQubit();
     rewriter.replaceOpWithNewOp<qc::DeallocOp>(op, qcQubit);
@@ -453,12 +480,13 @@ struct JeffToQC final : impl::JeffToQCBase<JeffToQC> {
     // Register operation conversion patterns
     patterns
         .add<ConvertJeffQubitAllocOpToQC, ConvertJeffQubitFreeOpToQC,
-             ConvertJeffQubitMeasureNDOpToQC, ConvertJeffQubitResetOpToQC,
-             ConvertJeffGPhaseOpToQC, ConvertJeffIOpToQC, ConvertJeffXOpToQC,
-             ConvertJeffYOpToQC, ConvertJeffZOpToQC, ConvertJeffHOpToQC,
-             ConvertJeffSOpToQC, ConvertJeffTOpToQC, ConvertJeffRxOpToQC,
-             ConvertJeffRyOpToQC, ConvertJeffRzOpToQC, ConvertJeffR1OpToQC,
-             ConvertJeffUOpToQC, ConvertJeffSwapOpToQC>(typeConverter, context);
+             ConvertJeffQubitFreeZeroOpToQC, ConvertJeffQubitMeasureNDOpToQC,
+             ConvertJeffQubitResetOpToQC, ConvertJeffGPhaseOpToQC,
+             ConvertJeffIOpToQC, ConvertJeffXOpToQC, ConvertJeffYOpToQC,
+             ConvertJeffZOpToQC, ConvertJeffHOpToQC, ConvertJeffSOpToQC,
+             ConvertJeffTOpToQC, ConvertJeffRxOpToQC, ConvertJeffRyOpToQC,
+             ConvertJeffRzOpToQC, ConvertJeffR1OpToQC, ConvertJeffUOpToQC,
+             ConvertJeffSwapOpToQC>(typeConverter, context);
 
     // Apply the conversion
     if (failed(applyPartialConversion(module, target, std::move(patterns)))) {

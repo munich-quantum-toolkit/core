@@ -306,7 +306,7 @@ struct ConvertQCAllocOpToJeff final : StatefulOpConversionPattern<qc::AllocOp> {
 };
 
 /**
- * @brief Converts qc.dealloc to jeff.qubit_free
+ * @brief Converts qc.dealloc to jeff.qubit_free_zero
  *
  * @par Example:
  * ```mlir
@@ -314,7 +314,7 @@ struct ConvertQCAllocOpToJeff final : StatefulOpConversionPattern<qc::AllocOp> {
  * ```
  * is converted to
  * ```mlir
- * jeff.qubit_free %q : !jeff.qubit
+ * jeff.qubit_free_zero %q : !jeff.qubit
  * ```
  */
 struct ConvertQCDeallocOpToJeff final
@@ -329,7 +329,7 @@ struct ConvertQCDeallocOpToJeff final
     auto qcQubit = op.getQubit();
     auto jeffQubit = qubitMap[qcQubit];
 
-    rewriter.replaceOpWithNewOp<jeff::QubitFreeOp>(op, jeffQubit);
+    rewriter.replaceOpWithNewOp<jeff::QubitFreeZeroOp>(op, jeffQubit);
 
     // Erase qubit from map
     qubitMap.erase(qcQubit);
