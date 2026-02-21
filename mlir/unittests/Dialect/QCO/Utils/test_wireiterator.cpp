@@ -16,10 +16,7 @@
 #include <iterator>
 #include <memory>
 #include <mlir/Dialect/Arith/IR/Arith.h>
-#include <mlir/Dialect/ControlFlow/IR/ControlFlow.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
-#include <mlir/Dialect/LLVMIR/LLVMDialect.h>
-#include <mlir/Dialect/SCF/IR/SCF.h>
 #include <mlir/IR/DialectRegistry.h>
 #include <mlir/IR/MLIRContext.h>
 #include <utility>
@@ -31,9 +28,7 @@ class WireIteratorTest : public testing::TestWithParam<bool> {
 protected:
   void SetUp() override {
     DialectRegistry registry;
-    registry
-        .insert<qco::QCODialect, arith::ArithDialect, cf::ControlFlowDialect,
-                func::FuncDialect, scf::SCFDialect, LLVM::LLVMDialect>();
+    registry.insert<qco::QCODialect, arith::ArithDialect, func::FuncDialect>();
 
     context = std::make_unique<MLIRContext>();
     context->appendDialectRegistry(registry);

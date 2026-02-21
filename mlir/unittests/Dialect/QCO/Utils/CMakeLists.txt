@@ -8,7 +8,7 @@
 
 set(qco_utils_target mqt-core-mlir-unittest-qco-utils)
 add_executable(${qco_utils_target} test_wireiterator.cpp)
-target_link_libraries(${qco_utils_target} PRIVATE GTest::gtest_main MLIRQCODialect MLIRLLVMDialect
+target_link_libraries(${qco_utils_target} PRIVATE GTest::gtest_main MLIRQCODialect
                                                   MLIRQCOProgramBuilder)
 mqt_mlir_configure_unittest_target(${qco_utils_target})
 
