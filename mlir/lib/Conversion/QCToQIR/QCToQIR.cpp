@@ -85,7 +85,7 @@ struct LoweringState : QIRMetadata {
 
   /// Modifier information
   int64_t inCtrlOp = 0;
-  DenseMap<int64_t, SmallVector<Value>> posCtrls;
+  DenseMap<int64_t, SmallVector<Value>> controls;
 };
 
 /**
@@ -139,9 +139,9 @@ convertUnitaryToCallOp(QCOpType& op, QCOpAdaptorType& adaptor,
                        size_t numTargets, size_t numParams) {
   // Query state for modifier information
   const auto inCtrlOp = state.inCtrlOp;
-  const SmallVector<Value> posCtrls =
-      inCtrlOp != 0 ? state.posCtrls[inCtrlOp] : SmallVector<Value>{};
-  const size_t numCtrls = posCtrls.size();
+  const SmallVector<Value> controls =
+      inCtrlOp != 0 ? state.controls[inCtrlOp] : SmallVector<Value>{};
+  const size_t numCtrls = controls.size();
 
   // Define argument types
   SmallVector<Type> argumentTypes;
@@ -171,12 +171,12 @@ convertUnitaryToCallOp(QCOpType& op, QCOpAdaptorType& adaptor,
 
   SmallVector<Value> operands;
   operands.reserve(numParams + numCtrls + numTargets);
-  operands.append(posCtrls.begin(), posCtrls.end());
+  operands.append(controls.begin(), controls.end());
   operands.append(adaptor.getOperands().begin(), adaptor.getOperands().end());
 
   // Clean up modifier information
   if (inCtrlOp != 0) {
-    state.posCtrls.erase(inCtrlOp);
+    state.controls.erase(inCtrlOp);
     state.inCtrlOp--;
   }
 
@@ -555,7 +555,7 @@ struct ConvertQCGPhaseOpQIR final : StatefulOpConversionPattern<GPhaseOp> {
       auto& state = getState();                                                \
       const auto inCtrlOp = state.inCtrlOp;                                    \
       const size_t numCtrls =                                                  \
-          inCtrlOp != 0 ? state.posCtrls[inCtrlOp].size() : 0;                 \
+          inCtrlOp != 0 ? state.controls[inCtrlOp].size() : 0;                 \
       const auto fnName = getFnName##OP_NAME_BIG(numCtrls);                    \
       return convertUnitaryToCallOp(op, adaptor, rewriter, getContext(),       \
                                     state, fnName, 1, 0);                      \
@@ -603,7 +603,7 @@ DEFINE_ONE_TARGET_ZERO_PARAMETER(SXdgOp, SXDG, sxdg, sxdg)
       auto& state = getState();                                                \
       const auto inCtrlOp = state.inCtrlOp;                                    \
       const size_t numCtrls =                                                  \
-          inCtrlOp != 0 ? state.posCtrls[inCtrlOp].size() : 0;                 \
+          inCtrlOp != 0 ? state.controls[inCtrlOp].size() : 0;                 \
       const auto fnName = getFnName##OP_NAME_BIG(numCtrls);                    \
       return convertUnitaryToCallOp(op, adaptor, rewriter, getContext(),       \
                                     state, fnName, 1, 1);                      \
@@ -644,7 +644,7 @@ DEFINE_ONE_TARGET_ONE_PARAMETER(POp, P, p, p, theta)
       auto& state = getState();                                                \
       const auto inCtrlOp = state.inCtrlOp;                                    \
       const size_t numCtrls =                                                  \
-          inCtrlOp != 0 ? state.posCtrls[inCtrlOp].size() : 0;                 \
+          inCtrlOp != 0 ? state.controls[inCtrlOp].size() : 0;                 \
       const auto fnName = getFnName##OP_NAME_BIG(numCtrls);                    \
       return convertUnitaryToCallOp(op, adaptor, rewriter, getContext(),       \
                                     state, fnName, 1, 2);                      \
@@ -683,7 +683,7 @@ DEFINE_ONE_TARGET_TWO_PARAMETER(U2Op, U2, u2, u2, phi, lambda)
       auto& state = getState();                                                \
       const auto inCtrlOp = state.inCtrlOp;                                    \
       const size_t numCtrls =                                                  \
-          inCtrlOp != 0 ? state.posCtrls[inCtrlOp].size() : 0;                 \
+          inCtrlOp != 0 ? state.controls[inCtrlOp].size() : 0;                 \
       const auto fnName = getFnName##OP_NAME_BIG(numCtrls);                    \
       return convertUnitaryToCallOp<OP_CLASS>(                                 \
           op, adaptor, rewriter, getContext(), state, fnName, 1, 3);           \
@@ -721,7 +721,7 @@ DEFINE_ONE_TARGET_THREE_PARAMETER(UOp, U, u, u3)
       auto& state = getState();                                                \
       const auto inCtrlOp = state.inCtrlOp;                                    \
       const size_t numCtrls =                                                  \
-          inCtrlOp != 0 ? state.posCtrls[inCtrlOp].size() : 0;                 \
+          inCtrlOp != 0 ? state.controls[inCtrlOp].size() : 0;                 \
       const auto fnName = getFnName##OP_NAME_BIG(numCtrls);                    \
       return convertUnitaryToCallOp(op, adaptor, rewriter, getContext(),       \
                                     state, fnName, 2, 0);                      \
@@ -762,7 +762,7 @@ DEFINE_TWO_TARGET_ZERO_PARAMETER(ECROp, ECR, ecr, ecr)
       auto& state = getState();                                                \
       const auto inCtrlOp = state.inCtrlOp;                                    \
       const size_t numCtrls =                                                  \
-          inCtrlOp != 0 ? state.posCtrls[inCtrlOp].size() : 0;                 \
+          inCtrlOp != 0 ? state.controls[inCtrlOp].size() : 0;                 \
       const auto fnName = getFnName##OP_NAME_BIG(numCtrls);                    \
       return convertUnitaryToCallOp(op, adaptor, rewriter, getContext(),       \
                                     state, fnName, 2, 1);                      \
@@ -804,7 +804,7 @@ DEFINE_TWO_TARGET_ONE_PARAMETER(RZZOp, RZZ, rzz, rzz, theta)
       auto& state = getState();                                                \
       const auto inCtrlOp = state.inCtrlOp;                                    \
       const size_t numCtrls =                                                  \
-          inCtrlOp != 0 ? state.posCtrls[inCtrlOp].size() : 0;                 \
+          inCtrlOp != 0 ? state.controls[inCtrlOp].size() : 0;                 \
       const auto fnName = getFnName##OP_NAME_BIG(numCtrls);                    \
       return convertUnitaryToCallOp(op, adaptor, rewriter, getContext(),       \
                                     state, fnName, 2, 2);                      \
@@ -846,9 +846,9 @@ struct ConvertQCCtrlQIR final : StatefulOpConversionPattern<CtrlOp> {
     // Update modifier information
     auto& state = getState();
     state.inCtrlOp++;
-    const SmallVector<Value> posCtrls(adaptor.getControls().begin(),
+    const SmallVector<Value> controls(adaptor.getControls().begin(),
                                       adaptor.getControls().end());
-    state.posCtrls[state.inCtrlOp] = posCtrls;
+    state.controls[state.inCtrlOp] = controls;
 
     // Inline region and remove operation
     rewriter.inlineBlockBefore(&op.getRegion().front(), op->getBlock(),

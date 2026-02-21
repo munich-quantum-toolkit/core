@@ -943,7 +943,7 @@ def CtrlOp : QCOp<"ctrl",
         ```mlir
         qc.ctrl(%q0) {
           qc.x %q1 : !qc.qubit
-        }
+        } : !qc.qubit
         ```
     }];
 
