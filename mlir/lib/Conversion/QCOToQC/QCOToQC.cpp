@@ -11,7 +11,9 @@
 #include "mlir/Conversion/QCOToQC/QCOToQC.h"
 
 #include "mlir/Dialect/QC/IR/QCDialect.h"
+#include "mlir/Dialect/QC/IR/QCOps.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
+#include "mlir/Dialect/QCO/IR/QCOOps.h"
 
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/Func/Transforms/FuncConversions.h>
@@ -66,7 +68,7 @@ static LogicalResult
 convertOneTargetZeroParameter(QCOOpType& op, QCOOpAdaptorType& adaptor,
                               ConversionPatternRewriter& rewriter) {
   // OpAdaptor provides the already type-converted input qubit
-  const auto& qcQubit = adaptor.getQubitIn();
+  auto qcQubit = adaptor.getQubitIn();
 
   // Create the QC operation (in-place, no result)
   rewriter.create<QCOpType>(op.getLoc(), qcQubit);
@@ -93,7 +95,7 @@ static LogicalResult
 convertOneTargetOneParameter(QCOOpType& op, QCOOpAdaptorType& adaptor,
                              ConversionPatternRewriter& rewriter) {
   // OpAdaptor provides the already type-converted input qubit
-  const auto& qcQubit = adaptor.getQubitIn();
+  auto qcQubit = adaptor.getQubitIn();
 
   // Create the QC operation (in-place, no result)
   rewriter.create<QCOpType>(op.getLoc(), qcQubit, op.getParameter(0));
@@ -120,7 +122,7 @@ static LogicalResult
 convertOneTargetTwoParameter(QCOOpType& op, QCOOpAdaptorType& adaptor,
                              ConversionPatternRewriter& rewriter) {
   // OpAdaptor provides the already type-converted input qubit
-  const auto& qcQubit = adaptor.getQubitIn();
+  auto qcQubit = adaptor.getQubitIn();
 
   // Create the QC operation (in-place, no result)
   rewriter.create<QCOpType>(op.getLoc(), qcQubit, op.getParameter(0),
@@ -148,7 +150,7 @@ static LogicalResult
 convertOneTargetThreeParameter(QCOOpType& op, QCOOpAdaptorType& adaptor,
                                ConversionPatternRewriter& rewriter) {
   // OpAdaptor provides the already type-converted input qubit
-  const auto& qcQubit = adaptor.getQubitIn();
+  auto qcQubit = adaptor.getQubitIn();
 
   // Create the QC operation (in-place, no result)
   rewriter.create<QCOpType>(op.getLoc(), qcQubit, op.getParameter(0),
@@ -176,8 +178,8 @@ static LogicalResult
 convertTwoTargetZeroParameter(QCOOpType& op, QCOOpAdaptorType& adaptor,
                               ConversionPatternRewriter& rewriter) {
   // OpAdaptor provides the already type-converted input qubits
-  const auto& qcQubit0 = adaptor.getQubit0In();
-  const auto& qcQubit1 = adaptor.getQubit1In();
+  auto qcQubit0 = adaptor.getQubit0In();
+  auto qcQubit1 = adaptor.getQubit1In();
 
   // Create the QC operation (in-place, no result)
   rewriter.create<QCOpType>(op.getLoc(), qcQubit0, qcQubit1);
@@ -204,8 +206,8 @@ static LogicalResult
 convertTwoTargetOneParameter(QCOOpType& op, QCOOpAdaptorType& adaptor,
                              ConversionPatternRewriter& rewriter) {
   // OpAdaptor provides the already type-converted input qubits
-  const auto& qcQubit0 = adaptor.getQubit0In();
-  const auto& qcQubit1 = adaptor.getQubit1In();
+  auto qcQubit0 = adaptor.getQubit0In();
+  auto qcQubit1 = adaptor.getQubit1In();
 
   // Create the QC operation (in-place, no result)
   rewriter.create<QCOpType>(op.getLoc(), qcQubit0, qcQubit1,
@@ -233,8 +235,8 @@ static LogicalResult
 convertTwoTargetTwoParameter(QCOOpType& op, QCOOpAdaptorType& adaptor,
                              ConversionPatternRewriter& rewriter) {
   // OpAdaptor provides the already type-converted input qubits
-  const auto& qcQubit0 = adaptor.getQubit0In();
-  const auto& qcQubit1 = adaptor.getQubit1In();
+  auto qcQubit0 = adaptor.getQubit0In();
+  auto qcQubit1 = adaptor.getQubit1In();
 
   // Create the QC operation (in-place, no result)
   rewriter.create<QCOpType>(op.getLoc(), qcQubit0, qcQubit1, op.getParameter(0),
@@ -390,7 +392,7 @@ struct ConvertQCOMeasureOp final : OpConversionPattern<qco::MeasureOp> {
   matchAndRewrite(qco::MeasureOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
     // OpAdaptor provides the already type-converted input qubit
-    const auto& qcQubit = adaptor.getQubitIn();
+    auto qcQubit = adaptor.getQubitIn();
 
     // Create qc.measure (in-place operation, returns only bit)
     // Preserve register metadata for output recording
@@ -435,7 +437,7 @@ struct ConvertQCOResetOp final : OpConversionPattern<qco::ResetOp> {
   matchAndRewrite(qco::ResetOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
     // OpAdaptor provides the already type-converted input qubit
-    const auto& qcQubit = adaptor.getQubitIn();
+    auto qcQubit = adaptor.getQubitIn();
 
     // Create qc.reset (in-place operation, no result)
     rewriter.create<qc::ResetOp>(op.getLoc(), qcQubit);
@@ -735,7 +737,7 @@ struct ConvertQCOBarrierOp final : OpConversionPattern<qco::BarrierOp> {
   matchAndRewrite(qco::BarrierOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
     // OpAdaptor provides the already type-converted qubits
-    const auto& qcQubits = adaptor.getQubitsIn();
+    auto qcQubits = adaptor.getQubitsIn();
 
     // Create qc.barrier operation
     rewriter.create<qc::BarrierOp>(op.getLoc(), qcQubits);
@@ -761,7 +763,7 @@ struct ConvertQCOBarrierOp final : OpConversionPattern<qco::BarrierOp> {
  * ```mlir
  * qc.ctrl(%q0) {
  *   qc.x %q1 : !qc.qubit
- * }
+ * } : !qc.qubit
  * ```
  */
 struct ConvertQCOCtrlOp final : OpConversionPattern<qco::CtrlOp> {
@@ -771,7 +773,7 @@ struct ConvertQCOCtrlOp final : OpConversionPattern<qco::CtrlOp> {
   matchAndRewrite(qco::CtrlOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
     // Get QC controls
-    const auto& qcControls = adaptor.getControlsIn();
+    auto qcControls = adaptor.getControlsIn();
 
     // Create qc.ctrl operation
     auto qcOp = qc::CtrlOp::create(rewriter, op.getLoc(), qcControls);
@@ -795,6 +797,68 @@ struct ConvertQCOCtrlOp final : OpConversionPattern<qco::CtrlOp> {
       // here.
       for (auto i = 0UL; i < numArgs; ++i) {
         entryBlock.getArgument(i).replaceAllUsesWith(adaptor.getTargetsIn()[i]);
+      }
+
+      // 2. Erase all block arguments
+      // Now that they have no uses, we can safely wipe them.
+      // We use a bulk erase for efficiency (start index 0, count N).
+      if (numArgs > 0) {
+        entryBlock.eraseArguments(0, numArgs);
+      }
+    });
+
+    // Replace the output qubits with the same QC references
+    rewriter.replaceOp(op, adaptor.getOperands());
+
+    return success();
+  }
+};
+
+/**
+ * @brief Converts qco.inv to qc.inv
+ *
+ * @par Example:
+ * ```mlir
+ * %q0_out = qco.inv (%q0 = %q0_in) {
+ *   %q0_res = qco.s %q0 : !qco.qubit -> !qco.qubit
+ *   qco.yield %q0_res
+ * } : {!qco.qubit} -> {!qco.qubit}
+ * ```
+ * is converted to
+ * ```mlir
+ * qc.inv {
+ *   qc.s %q0 : !qc.qubit
+ * }
+ * ```
+ */
+struct ConvertQCOInvOp final : OpConversionPattern<qco::InvOp> {
+  using OpConversionPattern::OpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(qco::InvOp op, OpAdaptor adaptor,
+                  ConversionPatternRewriter& rewriter) const override {
+    // Create qc.inv operation
+    auto qcOp = qc::InvOp::create(rewriter, op.getLoc());
+
+    // Clone body region from QCO to QC
+    auto& dstRegion = qcOp.getRegion();
+    rewriter.cloneRegionBefore(op.getRegion(), dstRegion, dstRegion.end());
+
+    auto& entryBlock = dstRegion.front();
+    const auto numArgs = entryBlock.getNumArguments();
+    if (adaptor.getQubitsIn().size() != numArgs) {
+      return op.emitOpError() << "qco.inv: entry block args (" << numArgs
+                              << ") must match number of target operands ("
+                              << adaptor.getQubitsIn().size() << ")";
+    }
+
+    // Remove all block arguments in the cloned region
+    rewriter.modifyOpInPlace(qcOp, [&] {
+      // 1. Replace uses (Must be done BEFORE erasing)
+      // We iterate 0..N using indices since the block args are still stable
+      // here.
+      for (auto i = 0UL; i < numArgs; ++i) {
+        entryBlock.getArgument(i).replaceAllUsesWith(adaptor.getQubitsIn()[i]);
       }
 
       // 2. Erase all block arguments
@@ -865,6 +929,7 @@ struct ConvertQCOYieldOp final : OpConversionPattern<qco::YieldOp> {
 struct QCOToQC final : impl::QCOToQCBase<QCOToQC> {
   using QCOToQCBase::QCOToQCBase;
 
+protected:
   void runOnOperation() override {
     MLIRContext* context = &getContext();
     auto* module = getOperation();
@@ -879,18 +944,18 @@ struct QCOToQC final : impl::QCOToQCBase<QCOToQC> {
 
     // Register operation conversion patterns
     // Note: No state tracking needed - OpAdaptors handle type conversion
-    patterns.add<ConvertQCOAllocOp, ConvertQCODeallocOp, ConvertQCOStaticOp,
-                 ConvertQCOMeasureOp, ConvertQCOResetOp, ConvertQCOGPhaseOp,
-                 ConvertQCOIdOp, ConvertQCOXOp, ConvertQCOYOp, ConvertQCOZOp,
-                 ConvertQCOHOp, ConvertQCOSOp, ConvertQCOSdgOp, ConvertQCOTOp,
-                 ConvertQCOTdgOp, ConvertQCOSXOp, ConvertQCOSXdgOp,
-                 ConvertQCORXOp, ConvertQCORYOp, ConvertQCORZOp, ConvertQCOPOp,
-                 ConvertQCOROp, ConvertQCOU2Op, ConvertQCOUOp, ConvertQCOSWAPOp,
-                 ConvertQCOiSWAPOp, ConvertQCODCXOp, ConvertQCOECROp,
-                 ConvertQCORXXOp, ConvertQCORYYOp, ConvertQCORZXOp,
-                 ConvertQCORZZOp, ConvertQCOXXPlusYYOp, ConvertQCOXXMinusYYOp,
-                 ConvertQCOBarrierOp, ConvertQCOCtrlOp, ConvertQCOYieldOp>(
-        typeConverter, context);
+    patterns
+        .add<ConvertQCOAllocOp, ConvertQCODeallocOp, ConvertQCOStaticOp,
+             ConvertQCOMeasureOp, ConvertQCOResetOp, ConvertQCOGPhaseOp,
+             ConvertQCOIdOp, ConvertQCOXOp, ConvertQCOYOp, ConvertQCOZOp,
+             ConvertQCOHOp, ConvertQCOSOp, ConvertQCOSdgOp, ConvertQCOTOp,
+             ConvertQCOTdgOp, ConvertQCOSXOp, ConvertQCOSXdgOp, ConvertQCORXOp,
+             ConvertQCORYOp, ConvertQCORZOp, ConvertQCOPOp, ConvertQCOROp,
+             ConvertQCOU2Op, ConvertQCOUOp, ConvertQCOSWAPOp, ConvertQCOiSWAPOp,
+             ConvertQCODCXOp, ConvertQCOECROp, ConvertQCORXXOp, ConvertQCORYYOp,
+             ConvertQCORZXOp, ConvertQCORZZOp, ConvertQCOXXPlusYYOp,
+             ConvertQCOXXMinusYYOp, ConvertQCOBarrierOp, ConvertQCOCtrlOp,
+             ConvertQCOInvOp, ConvertQCOYieldOp>(typeConverter, context);
 
     // Conversion of qco types in func.func signatures
     // Note: This currently has limitations with signature changes

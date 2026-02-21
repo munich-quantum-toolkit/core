@@ -11,7 +11,9 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 
 ### Added
 
-- ✨ Add initial infrastructure for new QC and QCO MLIR dialects ([#1264], [#1206], [#1402], [#1426], [#1428], [#1430], [#1436], [#1443], [#1446], [#1464], [#1465], [#1470], [#1471], [#1472], [#1474], [#1475]) ([**@burgholzer**], [**@denialhaag**], [**@taminob**], [**@DRovara**], [**@li-mingbao**])
+- ✨ Add initial infrastructure for new QC and QCO MLIR dialects
+  ([#1264], [#1206], [#1330], [#1402], [#1426], [#1428], [#1430], [#1436], [#1443], [#1446], [#1464], [#1465], [#1470], [#1471], [#1472], [#1474], [#1475], [#1510], [#1513], [#1521])
+  ([**@burgholzer**], [**@denialhaag**], [**@taminob**], [**@DRovara**], [**@li-mingbao**], [**@Ectras**], [**@MatthiasReumann**])
 
 ### Changed
 
@@ -325,6 +327,9 @@ _📚 Refer to the [GitHub Release Notes](https://github.com/munich-quantum-tool
 
 <!-- PR links -->
 
+[#1521]: https://github.com/munich-quantum-toolkit/core/pull/1521
+[#1513]: https://github.com/munich-quantum-toolkit/core/pull/1513
+[#1510]: https://github.com/munich-quantum-toolkit/core/pull/1510
 [#1481]: https://github.com/munich-quantum-toolkit/core/pull/1481
 [#1475]: https://github.com/munich-quantum-toolkit/core/pull/1475
 [#1474]: https://github.com/munich-quantum-toolkit/core/pull/1474
@@ -366,6 +371,7 @@ _📚 Refer to the [GitHub Release Notes](https://github.com/munich-quantum-tool
 [#1355]: https://github.com/munich-quantum-toolkit/core/pull/1355
 [#1338]: https://github.com/munich-quantum-toolkit/core/pull/1338
 [#1336]: https://github.com/munich-quantum-toolkit/core/pull/1336
+[#1330]: https://github.com/munich-quantum-toolkit/core/pull/1330
 [#1328]: https://github.com/munich-quantum-toolkit/core/pull/1328
 [#1327]: https://github.com/munich-quantum-toolkit/core/pull/1327
 [#1310]: https://github.com/munich-quantum-toolkit/core/pull/1310
@@ -504,6 +510,7 @@ _📚 Refer to the [GitHub Release Notes](https://github.com/munich-quantum-tool
 [**@lsschmid**]: https://github.com/lsschmid
 [**@marcelwa**]: https://github.com/marcelwa
 [**@lirem101**]: https://github.com/lirem101
+[**@Ectras**]: https://github.com/Ectras
 
 <!-- General links -->
 

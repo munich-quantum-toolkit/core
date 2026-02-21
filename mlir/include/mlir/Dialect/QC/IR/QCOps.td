@@ -898,14 +898,14 @@ def BarrierOp : QCOp<"barrier", traits = [UnitaryOpInterface]> {
     let assemblyFormat = "$qubits attr-dict `:` type($qubits)";
 
     let extraClassDeclaration = [{
-        size_t getNumQubits();
-        size_t getNumTargets();
-        static size_t getNumControls();
-        Value getQubit(size_t i);
+        size_t getNumQubits() { return getNumTargets(); }
+        size_t getNumTargets() { return getQubits().size(); }
+        static size_t getNumControls() { return 0; }
+        Value getQubit(size_t i) { return getTarget(i); }
         Value getTarget(size_t i);
-        static Value getControl(size_t i);
-        static size_t getNumParams();
-        static Value getParameter(size_t i);
+        static Value getControl(size_t i) { llvm::reportFatalUsageError("BarrierOp cannot be controlled"); }
+        static size_t getNumParams() { return 0; }
+        static Value getParameter(size_t i) { llvm::reportFatalUsageError("BarrierOp does not have parameters"); }
         static StringRef getBaseSymbol() { return "barrier"; }
     }];
 }
@@ -943,7 +943,7 @@ def CtrlOp : QCOp<"ctrl",
         ```mlir
         qc.ctrl(%q0) {
           qc.x %q1 : !qc.qubit
-        }
+        } : !qc.qubit
         ```
     }];
 
@@ -953,20 +953,62 @@ def CtrlOp : QCOp<"ctrl",
 
     let extraClassDeclaration = [{
         [[nodiscard]] UnitaryOpInterface getBodyUnitary();
-        size_t getNumQubits();
-        size_t getNumTargets();
-        size_t getNumControls();
+        size_t getNumQubits() { return getNumTargets() + getNumControls(); }
+        size_t getNumTargets() { return getBodyUnitary().getNumTargets(); }
+        size_t getNumControls() { return getControls().size(); }
         Value getQubit(size_t i);
-        Value getTarget(size_t i);
+        Value getTarget(size_t i) { return getBodyUnitary().getTarget(i); }
         Value getControl(size_t i);
-        size_t getNumParams();
-        Value getParameter(size_t i);
+        size_t getNumParams() { return getBodyUnitary().getNumParams(); }
+        Value getParameter(size_t i) { return getBodyUnitary().getParameter(i); }
         static StringRef getBaseSymbol() { return "ctrl"; }
     }];
 
     let builders = [
-        OpBuilder<(ins "ValueRange":$controls, "UnitaryOpInterface":$bodyUnitary)>,
-        OpBuilder<(ins "ValueRange":$controls, "const std::function<void()>&":$bodyBuilder)>
+        OpBuilder<(ins "ValueRange":$controls, "const llvm::function_ref<void()>&":$bodyBuilder)>
+    ];
+
+    let hasCanonicalizer = 1;
+    let hasVerifier = 1;
+}
+
+def InvOp : QCOp<"inv",
+            traits = [
+                UnitaryOpInterface,
+                SingleBlockImplicitTerminator<"::mlir::qc::YieldOp">,
+                RecursiveMemoryEffects
+            ]> {
+    let summary = "Invert a unitary operation";
+    let description = [{
+        A modifier operation that inverts the unitary operation defined in its body
+        region.
+
+        Example:
+        ```mlir
+        qc.inv {
+          qc.s %q0 : !qc.qubit
+        }
+        ```
+    }];
+
+    let regions = (region SizedRegion<1>:$region);
+    let assemblyFormat = "$region attr-dict";
+
+    let extraClassDeclaration = [{
+        [[nodiscard]] UnitaryOpInterface getBodyUnitary();
+        size_t getNumQubits() { return getBodyUnitary().getNumQubits(); }
+        size_t getNumTargets() { return getNumQubits(); }
+        static size_t getNumControls() { return 0; }
+        Value getQubit(size_t i) { return getBodyUnitary().getQubit(i); }
+        Value getTarget(size_t i) { return getQubit(i); }
+        static Value getControl(size_t i) { llvm::reportFatalUsageError("Operation does not have controls"); }
+        size_t getNumParams() { return getBodyUnitary().getNumParams(); }
+        Value getParameter(size_t i) { return getBodyUnitary().getParameter(i); }
+        static StringRef getBaseSymbol() { return "inv"; }
+    }];
+
+    let builders = [
+        OpBuilder<(ins "const llvm::function_ref<void()>&":$bodyBuilder)>
     ];
 
     let hasCanonicalizer = 1;

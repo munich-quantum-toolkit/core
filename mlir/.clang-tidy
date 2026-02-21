@@ -6,7 +6,8 @@ Checks: |
   llvm-prefer-static-over-anonymous-namespace,
   -misc-use-anonymous-namespace,
   llvm-twine-local,
-  -cppcoreguidelines-pro-bounds-avoid-unchecked-container-access
+  -cppcoreguidelines-pro-bounds-avoid-unchecked-container-access,
+  -*-const-correctness,
 
 CheckOptions:
   - key: misc-include-cleaner.IgnoreHeaders

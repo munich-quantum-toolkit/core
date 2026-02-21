@@ -6,13 +6,16 @@
 #
 # Licensed under the MIT License
 
-add_subdirectory(Passes)
+set(MQT_MLIR_UNITTESTS_DIR ${CMAKE_CURRENT_SOURCE_DIR})
+
+function(mqt_mlir_configure_unittest_target target_name)
+  target_include_directories(${target_name} PRIVATE ${MQT_MLIR_UNITTESTS_DIR}
+                                                    ${CMAKE_CURRENT_SOURCE_DIR})
+  mqt_mlir_target_use_project_options(${target_name})
+endfunction()
+
+add_subdirectory(programs)
 add_subdirectory(Compiler)
 add_subdirectory(Dialect)
-
-add_custom_target(mqt-core-mlir-unittests)
-
-add_dependencies(
-  mqt-core-mlir-unittests mqt-core-mlir-decomposition-test mqt-core-mlir-compiler-pipeline-test
-  mqt-core-mlir-qco-dialect-test mqt-core-mlir-dialect-qco-ir-modifiers-test
-  mqt-core-mlir-dialect-utils-test)
+add_subdirectory(Conversion)
+add_subdirectory(Passes)

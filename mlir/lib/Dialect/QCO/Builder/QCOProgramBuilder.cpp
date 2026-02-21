@@ -11,6 +11,7 @@
 #include "mlir/Dialect/QCO/Builder/QCOProgramBuilder.h"
 
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
+#include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/Utils/Utils.h"
 
 #include <cstddef>
@@ -59,6 +60,11 @@ void QCOProgramBuilder::initialize() {
   // Create entry block and set insertion point
   auto& entryBlock = mainFunc.getBody().emplaceBlock();
   setInsertionPointToStart(&entryBlock);
+}
+
+Value QCOProgramBuilder::intConstant(const int64_t value) {
+  checkFinalized();
+  return arith::ConstantOp::create(*this, getI64IntegerAttr(value)).getResult();
 }
 
 Value QCOProgramBuilder::allocQubit() {
@@ -621,6 +627,42 @@ std::pair<ValueRange, ValueRange> QCOProgramBuilder::ctrl(
   return {controlsOut, targetsOut};
 }
 
+ValueRange QCOProgramBuilder::inv(
+    ValueRange qubits,
+    llvm::function_ref<llvm::SmallVector<Value>(ValueRange)> body) {
+  checkFinalized();
+
+  auto invOp = InvOp::create(*this, qubits);
+
+  // Add block arguments for all qubits
+  auto& block = invOp.getBodyRegion().emplaceBlock();
+  const auto qubitType = QubitType::get(getContext());
+  for (const auto qubit : qubits) {
+    const auto arg = block.addArgument(qubitType, getLoc());
+    updateQubitTracking(qubit, arg);
+  }
+
+  // Create the final yield operation
+  const InsertionGuard guard(*this);
+  setInsertionPointToStart(&block);
+  const auto innerTargetsOut = body(block.getArguments());
+  YieldOp::create(*this, innerTargetsOut);
+
+  if (innerTargetsOut.size() != qubits.size()) {
+    llvm::reportFatalUsageError(
+        "Inv body must return exactly one output qubit per target");
+  }
+
+  // Update tracking
+  const auto& targetsOut = invOp.getQubitsOut();
+  for (const auto& [target, targetOut] :
+       llvm::zip(innerTargetsOut, targetsOut)) {
+    updateQubitTracking(target, targetOut);
+  }
+
+  return targetsOut;
+}
+
 //===----------------------------------------------------------------------===//
 // Deallocation
 //===----------------------------------------------------------------------===//
@@ -686,15 +728,24 @@ OwningOpRef<ModuleOp> QCOProgramBuilder::finalize() {
   validQubits.clear();
 
   // Create constant 0 for successful exit code
-  auto exitCode = arith::ConstantOp::create(*this, getI64IntegerAttr(0));
+  auto exitCode = intConstant(0);
 
   // Add return statement with exit code 0 to the main function
-  func::ReturnOp::create(*this, ValueRange{exitCode});
+  func::ReturnOp::create(*this, exitCode);
 
   // Invalidate context to prevent use-after-finalize
   ctx = nullptr;
 
   return module;
+}
+
+OwningOpRef<ModuleOp> QCOProgramBuilder::build(
+    MLIRContext* context,
+    const llvm::function_ref<void(QCOProgramBuilder&)>& buildFunc) {
+  QCOProgramBuilder builder(context);
+  builder.initialize();
+  buildFunc(builder);
+  return builder.finalize();
 }
 
 } // namespace mlir::qco

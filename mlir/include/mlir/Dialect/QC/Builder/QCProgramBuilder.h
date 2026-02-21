@@ -10,11 +10,9 @@
 
 #pragma once
 
-#include "mlir/Dialect/QC/IR/QCDialect.h"
-
 #include <cstdint>
-#include <functional>
 #include <llvm/ADT/DenseSet.h>
+#include <llvm/ADT/STLFunctionalExtras.h>
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/Support/ErrorHandling.h>
 #include <mlir/IR/Builders.h>
@@ -71,6 +69,25 @@ public:
    * before adding operations.
    */
   void initialize();
+
+  //===--------------------------------------------------------------------===//
+  // Constants
+  //===--------------------------------------------------------------------===//
+
+  /**
+   * @brief Create a constant integer value
+   * @param value The value to store in the constant
+   * @return The value produced by the constant operation
+   *
+   * @par Example:
+   * ```c++
+   * auto c = builder.intConstant(1);
+   * ```
+   * ```mlir
+   * %c = arith.constant 1 : i64
+   * ```
+   */
+  Value intConstant(int64_t value);
 
   //===--------------------------------------------------------------------===//
   // Memory Management
@@ -842,7 +859,26 @@ public:
    * ```
    */
   QCProgramBuilder& ctrl(ValueRange controls,
-                         const std::function<void()>& body);
+                         const llvm::function_ref<void()>& body);
+
+  /**
+   * @brief Apply an inverse (i.e., adjoint) operation.
+   *
+   * @param body Function that builds the body containing the operation to
+   * invert
+   * @return Reference to this builder for method chaining
+   *
+   * @par Example:
+   * ```c++
+   * builder.inv([&] { builder.s(q0); });
+   * ```
+   * ```mlir
+   * qc.inv {
+   *   qc.s %q0 : !qc.qubit
+   * }
+   * ```
+   */
+  QCProgramBuilder& inv(const llvm::function_ref<void()>& body);
 
   //===--------------------------------------------------------------------===//
   // Deallocation
@@ -884,6 +920,19 @@ public:
    * @return OwningOpRef containing the constructed quantum program module
    */
   OwningOpRef<ModuleOp> finalize();
+
+  /**
+   * @brief Convenience method for building quantum programs
+   * @param context The MLIR context to use for building the program
+   * @param buildFunc A function that takes a reference to a QCProgramBuilder
+   * and uses it to build the desired quantum program. The builder will be
+   * properly initialized before calling this function, and the resulting module
+   * will be finalized and returned after this function completes.
+   * @return The module containing the quantum program built by buildFunc.
+   */
+  static OwningOpRef<ModuleOp>
+  build(MLIRContext* context,
+        const llvm::function_ref<void(QCProgramBuilder&)>& buildFunc);
 
 private:
   MLIRContext* ctx{};

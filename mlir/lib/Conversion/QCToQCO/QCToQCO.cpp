@@ -11,7 +11,9 @@
 #include "mlir/Conversion/QCToQCO/QCToQCO.h"
 
 #include "mlir/Dialect/QC/IR/QCDialect.h"
+#include "mlir/Dialect/QC/IR/QCOps.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
+#include "mlir/Dialect/QCO/IR/QCOOps.h"
 
 #include <cassert>
 #include <cstddef>
@@ -72,7 +74,7 @@ struct LoweringState {
   llvm::DenseMap<Value, Value> qubitMap;
 
   /// Modifier information
-  int64_t inCtrlOp = 0;
+  int64_t inNestedRegion = 0;
   DenseMap<int64_t, SmallVector<Value>> targetsIn;
   DenseMap<int64_t, SmallVector<Value>> targetsOut;
 };
@@ -123,15 +125,15 @@ template <typename QCOOpType, typename QCOpType>
 static LogicalResult
 convertZeroTargetOneParameter(QCOpType& op, ConversionPatternRewriter& rewriter,
                               LoweringState& state) {
-  const auto inCtrlOp = state.inCtrlOp;
+  const auto inNestedRegion = state.inNestedRegion;
 
   rewriter.create<QCOOpType>(op.getLoc(), op.getParameter(0));
 
   // Update the state
-  if (inCtrlOp != 0) {
-    state.targetsIn.erase(inCtrlOp);
+  if (inNestedRegion != 0) {
+    state.targetsIn.erase(inNestedRegion);
     const SmallVector<Value> targetsOut;
-    state.targetsOut.try_emplace(inCtrlOp, targetsOut);
+    state.targetsOut.try_emplace(inNestedRegion, targetsOut);
   }
 
   rewriter.eraseOp(op);
@@ -154,30 +156,30 @@ static LogicalResult
 convertOneTargetZeroParameter(QCOpType& op, ConversionPatternRewriter& rewriter,
                               LoweringState& state) {
   auto& qubitMap = state.qubitMap;
-  const auto inCtrlOp = state.inCtrlOp;
+  const auto inNestedRegion = state.inNestedRegion;
 
   // Get the latest QCO qubit
-  const auto& qcQubit = op.getQubitIn();
+  auto qcQubit = op.getQubitIn();
   Value qcoQubit;
-  if (inCtrlOp == 0) {
+  if (inNestedRegion == 0) {
     assert(qubitMap.contains(qcQubit) && "QC qubit not found");
     qcoQubit = qubitMap[qcQubit];
   } else {
-    assert(state.targetsIn[inCtrlOp].size() == 1 &&
+    assert(state.targetsIn[inNestedRegion].size() == 1 &&
            "Invalid number of input targets");
-    qcoQubit = state.targetsIn[inCtrlOp].front();
+    qcoQubit = state.targetsIn[inNestedRegion].front();
   }
 
   // Create the QCO operation (consumes input, produces output)
   auto qcoOp = rewriter.create<QCOOpType>(op.getLoc(), qcoQubit);
 
   // Update the state map
-  if (inCtrlOp == 0) {
+  if (inNestedRegion == 0) {
     qubitMap[qcQubit] = qcoOp.getQubitOut();
   } else {
-    state.targetsIn.erase(inCtrlOp);
+    state.targetsIn.erase(inNestedRegion);
     const SmallVector<Value> targetsOut({qcoOp.getQubitOut()});
-    state.targetsOut.try_emplace(inCtrlOp, targetsOut);
+    state.targetsOut.try_emplace(inNestedRegion, targetsOut);
   }
 
   rewriter.eraseOp(op);
@@ -200,18 +202,18 @@ static LogicalResult
 convertOneTargetOneParameter(QCOpType& op, ConversionPatternRewriter& rewriter,
                              LoweringState& state) {
   auto& qubitMap = state.qubitMap;
-  const auto inCtrlOp = state.inCtrlOp;
+  const auto inNestedRegion = state.inNestedRegion;
 
   // Get the latest QCO qubit
-  const auto& qcQubit = op.getQubitIn();
+  auto qcQubit = op.getQubitIn();
   Value qcoQubit;
-  if (inCtrlOp == 0) {
+  if (inNestedRegion == 0) {
     assert(qubitMap.contains(qcQubit) && "QC qubit not found");
     qcoQubit = qubitMap[qcQubit];
   } else {
-    assert(state.targetsIn[inCtrlOp].size() == 1 &&
+    assert(state.targetsIn[inNestedRegion].size() == 1 &&
            "Invalid number of input targets");
-    qcoQubit = state.targetsIn[inCtrlOp].front();
+    qcoQubit = state.targetsIn[inNestedRegion].front();
   }
 
   // Create the QCO operation (consumes input, produces output)
@@ -219,12 +221,12 @@ convertOneTargetOneParameter(QCOpType& op, ConversionPatternRewriter& rewriter,
       rewriter.create<QCOOpType>(op.getLoc(), qcoQubit, op.getParameter(0));
 
   // Update the state map
-  if (inCtrlOp == 0) {
+  if (inNestedRegion == 0) {
     qubitMap[qcQubit] = qcoOp.getQubitOut();
   } else {
-    state.targetsIn.erase(inCtrlOp);
+    state.targetsIn.erase(inNestedRegion);
     const SmallVector<Value> targetsOut({qcoOp.getQubitOut()});
-    state.targetsOut.try_emplace(inCtrlOp, targetsOut);
+    state.targetsOut.try_emplace(inNestedRegion, targetsOut);
   }
 
   rewriter.eraseOp(op);
@@ -247,18 +249,18 @@ static LogicalResult
 convertOneTargetTwoParameter(QCOpType& op, ConversionPatternRewriter& rewriter,
                              LoweringState& state) {
   auto& qubitMap = state.qubitMap;
-  const auto inCtrlOp = state.inCtrlOp;
+  const auto inNestedRegion = state.inNestedRegion;
 
   // Get the latest QCO qubit
-  const auto& qcQubit = op.getQubitIn();
+  auto qcQubit = op.getQubitIn();
   Value qcoQubit;
-  if (inCtrlOp == 0) {
+  if (inNestedRegion == 0) {
     assert(qubitMap.contains(qcQubit) && "QC qubit not found");
     qcoQubit = qubitMap[qcQubit];
   } else {
-    assert(state.targetsIn[inCtrlOp].size() == 1 &&
+    assert(state.targetsIn[inNestedRegion].size() == 1 &&
            "Invalid number of input targets");
-    qcoQubit = state.targetsIn[inCtrlOp].front();
+    qcoQubit = state.targetsIn[inNestedRegion].front();
   }
 
   // Create the QCO operation (consumes input, produces output)
@@ -266,12 +268,12 @@ convertOneTargetTwoParameter(QCOpType& op, ConversionPatternRewriter& rewriter,
       op.getLoc(), qcoQubit, op.getParameter(0), op.getParameter(1));
 
   // Update the state map
-  if (inCtrlOp == 0) {
+  if (inNestedRegion == 0) {
     qubitMap[qcQubit] = qcoOp.getQubitOut();
   } else {
-    state.targetsIn.erase(inCtrlOp);
+    state.targetsIn.erase(inNestedRegion);
     const SmallVector<Value> targetsOut({qcoOp.getQubitOut()});
-    state.targetsOut.try_emplace(inCtrlOp, targetsOut);
+    state.targetsOut.try_emplace(inNestedRegion, targetsOut);
   }
 
   rewriter.eraseOp(op);
@@ -293,18 +295,18 @@ template <typename QCOOpType, typename QCOpType>
 static LogicalResult convertOneTargetThreeParameter(
     QCOpType& op, ConversionPatternRewriter& rewriter, LoweringState& state) {
   auto& qubitMap = state.qubitMap;
-  const auto inCtrlOp = state.inCtrlOp;
+  const auto inNestedRegion = state.inNestedRegion;
 
   // Get the latest QCO qubit
-  const auto& qcQubit = op.getQubitIn();
+  auto qcQubit = op.getQubitIn();
   Value qcoQubit;
-  if (inCtrlOp == 0) {
+  if (inNestedRegion == 0) {
     assert(qubitMap.contains(qcQubit) && "QC qubit not found");
     qcoQubit = qubitMap[qcQubit];
   } else {
-    assert(state.targetsIn[inCtrlOp].size() == 1 &&
+    assert(state.targetsIn[inNestedRegion].size() == 1 &&
            "Invalid number of input targets");
-    qcoQubit = state.targetsIn[inCtrlOp].front();
+    qcoQubit = state.targetsIn[inNestedRegion].front();
   }
 
   // Create the QCO operation (consumes input, produces output)
@@ -313,12 +315,12 @@ static LogicalResult convertOneTargetThreeParameter(
                                  op.getParameter(1), op.getParameter(2));
 
   // Update the state map
-  if (inCtrlOp == 0) {
+  if (inNestedRegion == 0) {
     qubitMap[qcQubit] = qcoOp.getQubitOut();
   } else {
-    state.targetsIn.erase(inCtrlOp);
+    state.targetsIn.erase(inNestedRegion);
     const SmallVector<Value> targetsOut({qcoOp.getQubitOut()});
-    state.targetsOut.try_emplace(inCtrlOp, targetsOut);
+    state.targetsOut.try_emplace(inNestedRegion, targetsOut);
   }
 
   rewriter.eraseOp(op);
@@ -341,22 +343,22 @@ static LogicalResult
 convertTwoTargetZeroParameter(QCOpType& op, ConversionPatternRewriter& rewriter,
                               LoweringState& state) {
   auto& qubitMap = state.qubitMap;
-  const auto inCtrlOp = state.inCtrlOp;
+  const auto inNestedRegion = state.inNestedRegion;
 
   // Get the latest QCO qubits
-  const auto& qcQubit0 = op.getQubit0In();
-  const auto& qcQubit1 = op.getQubit1In();
+  auto qcQubit0 = op.getQubit0In();
+  auto qcQubit1 = op.getQubit1In();
   Value qcoQubit0;
   Value qcoQubit1;
-  if (inCtrlOp == 0) {
+  if (inNestedRegion == 0) {
     assert(qubitMap.contains(qcQubit0) && "QC qubit not found");
     assert(qubitMap.contains(qcQubit1) && "QC qubit not found");
     qcoQubit0 = qubitMap[qcQubit0];
     qcoQubit1 = qubitMap[qcQubit1];
   } else {
-    assert(state.targetsIn[inCtrlOp].size() == 2 &&
+    assert(state.targetsIn[inNestedRegion].size() == 2 &&
            "Invalid number of input targets");
-    const auto& targetsIn = state.targetsIn[inCtrlOp];
+    const auto& targetsIn = state.targetsIn[inNestedRegion];
     qcoQubit0 = targetsIn[0];
     qcoQubit1 = targetsIn[1];
   }
@@ -365,14 +367,14 @@ convertTwoTargetZeroParameter(QCOpType& op, ConversionPatternRewriter& rewriter,
   auto qcoOp = rewriter.create<QCOOpType>(op.getLoc(), qcoQubit0, qcoQubit1);
 
   // Update the state map
-  if (inCtrlOp == 0) {
+  if (inNestedRegion == 0) {
     qubitMap[qcQubit0] = qcoOp.getQubit0Out();
     qubitMap[qcQubit1] = qcoOp.getQubit1Out();
   } else {
-    state.targetsIn.erase(inCtrlOp);
+    state.targetsIn.erase(inNestedRegion);
     const SmallVector<Value> targetsOut(
         {qcoOp.getQubit0Out(), qcoOp.getQubit1Out()});
-    state.targetsOut.try_emplace(inCtrlOp, targetsOut);
+    state.targetsOut.try_emplace(inNestedRegion, targetsOut);
   }
 
   rewriter.eraseOp(op);
@@ -395,22 +397,22 @@ static LogicalResult
 convertTwoTargetOneParameter(QCOpType& op, ConversionPatternRewriter& rewriter,
                              LoweringState& state) {
   auto& qubitMap = state.qubitMap;
-  const auto inCtrlOp = state.inCtrlOp;
+  const auto inNestedRegion = state.inNestedRegion;
 
   // Get the latest QCO qubits
-  const auto& qcQubit0 = op.getQubit0In();
-  const auto& qcQubit1 = op.getQubit1In();
+  auto qcQubit0 = op.getQubit0In();
+  auto qcQubit1 = op.getQubit1In();
   Value qcoQubit0;
   Value qcoQubit1;
-  if (inCtrlOp == 0) {
+  if (inNestedRegion == 0) {
     assert(qubitMap.contains(qcQubit0) && "QC qubit not found");
     assert(qubitMap.contains(qcQubit1) && "QC qubit not found");
     qcoQubit0 = qubitMap[qcQubit0];
     qcoQubit1 = qubitMap[qcQubit1];
   } else {
-    assert(state.targetsIn[inCtrlOp].size() == 2 &&
+    assert(state.targetsIn[inNestedRegion].size() == 2 &&
            "Invalid number of input targets");
-    const auto& targetsIn = state.targetsIn[inCtrlOp];
+    const auto& targetsIn = state.targetsIn[inNestedRegion];
     qcoQubit0 = targetsIn[0];
     qcoQubit1 = targetsIn[1];
   }
@@ -420,14 +422,14 @@ convertTwoTargetOneParameter(QCOpType& op, ConversionPatternRewriter& rewriter,
                                           op.getParameter(0));
 
   // Update the state map
-  if (inCtrlOp == 0) {
+  if (inNestedRegion == 0) {
     qubitMap[qcQubit0] = qcoOp.getQubit0Out();
     qubitMap[qcQubit1] = qcoOp.getQubit1Out();
   } else {
-    state.targetsIn.erase(inCtrlOp);
+    state.targetsIn.erase(inNestedRegion);
     const SmallVector<Value> targetsOut(
         {qcoOp.getQubit0Out(), qcoOp.getQubit1Out()});
-    state.targetsOut.try_emplace(inCtrlOp, targetsOut);
+    state.targetsOut.try_emplace(inNestedRegion, targetsOut);
   }
 
   rewriter.eraseOp(op);
@@ -450,22 +452,22 @@ static LogicalResult
 convertTwoTargetTwoParameter(QCOpType& op, ConversionPatternRewriter& rewriter,
                              LoweringState& state) {
   auto& qubitMap = state.qubitMap;
-  const auto inCtrlOp = state.inCtrlOp;
+  const auto inNestedRegion = state.inNestedRegion;
 
   // Get the latest QCO qubits
-  const auto& qcQubit0 = op.getQubit0In();
-  const auto& qcQubit1 = op.getQubit1In();
+  auto qcQubit0 = op.getQubit0In();
+  auto qcQubit1 = op.getQubit1In();
   Value qcoQubit0;
   Value qcoQubit1;
-  if (inCtrlOp == 0) {
+  if (inNestedRegion == 0) {
     assert(qubitMap.contains(qcQubit0) && "QC qubit not found");
     assert(qubitMap.contains(qcQubit1) && "QC qubit not found");
     qcoQubit0 = qubitMap[qcQubit0];
     qcoQubit1 = qubitMap[qcQubit1];
   } else {
-    assert(state.targetsIn[inCtrlOp].size() == 2 &&
+    assert(state.targetsIn[inNestedRegion].size() == 2 &&
            "Invalid number of input targets");
-    const auto& targetsIn = state.targetsIn[inCtrlOp];
+    const auto& targetsIn = state.targetsIn[inNestedRegion];
     qcoQubit0 = targetsIn[0];
     qcoQubit1 = targetsIn[1];
   }
@@ -476,14 +478,14 @@ convertTwoTargetTwoParameter(QCOpType& op, ConversionPatternRewriter& rewriter,
                                  op.getParameter(0), op.getParameter(1));
 
   // Update the state map
-  if (inCtrlOp == 0) {
+  if (inNestedRegion == 0) {
     qubitMap[qcQubit0] = qcoOp.getQubit0Out();
     qubitMap[qcQubit1] = qcoOp.getQubit1Out();
   } else {
-    state.targetsIn.erase(inCtrlOp);
+    state.targetsIn.erase(inNestedRegion);
     const SmallVector<Value> targetsOut(
         {qcoOp.getQubit0Out(), qcoOp.getQubit1Out()});
-    state.targetsOut.try_emplace(inCtrlOp, targetsOut);
+    state.targetsOut.try_emplace(inNestedRegion, targetsOut);
   }
 
   rewriter.eraseOp(op);
@@ -540,14 +542,14 @@ struct ConvertQCAllocOp final : StatefulOpConversionPattern<qc::AllocOp> {
   matchAndRewrite(qc::AllocOp op, OpAdaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
     auto& qubitMap = getState().qubitMap;
-    const auto& qcQubit = op.getResult();
+    auto qcQubit = op.getResult();
 
     // Create the qco.alloc operation with preserved register metadata
     auto qcoOp = rewriter.replaceOpWithNewOp<qco::AllocOp>(
         op, op.getRegisterNameAttr(), op.getRegisterSizeAttr(),
         op.getRegisterIndexAttr());
 
-    const auto& qcoQubit = qcoOp.getResult();
+    auto qcoQubit = qcoOp.getResult();
 
     // Establish initial mapping: this QC qubit reference now corresponds
     // to this QCO SSA value
@@ -579,11 +581,11 @@ struct ConvertQCDeallocOp final : StatefulOpConversionPattern<qc::DeallocOp> {
   matchAndRewrite(qc::DeallocOp op, OpAdaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
     auto& qubitMap = getState().qubitMap;
-    const auto& qcQubit = op.getQubit();
+    auto qcQubit = op.getQubit();
 
     // Look up the latest QCO value for this QC qubit
     assert(qubitMap.contains(qcQubit) && "QC qubit not found");
-    const auto& qcoQubit = qubitMap[qcQubit];
+    auto qcoQubit = qubitMap[qcQubit];
 
     // Create the dealloc operation
     rewriter.replaceOpWithNewOp<qco::DeallocOp>(op, qcoQubit);
@@ -617,13 +619,13 @@ struct ConvertQCStaticOp final : StatefulOpConversionPattern<qc::StaticOp> {
   matchAndRewrite(qc::StaticOp op, OpAdaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
     auto& qubitMap = getState().qubitMap;
-    const auto& qcQubit = op.getQubit();
+    auto qcQubit = op.getQubit();
 
     // Create new qco.static operation with the same index
     auto qcoOp = rewriter.create<qco::StaticOp>(op.getLoc(), op.getIndex());
 
     // Collect QCO qubit SSA value
-    const auto& qcoQubit = qcoOp.getQubit();
+    auto qcoQubit = qcoOp.getQubit();
 
     // Establish mapping from QC reference to QCO value
     qubitMap[qcQubit] = qcoQubit;
@@ -665,22 +667,22 @@ struct ConvertQCMeasureOp final : StatefulOpConversionPattern<qc::MeasureOp> {
   matchAndRewrite(qc::MeasureOp op, OpAdaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
     auto& qubitMap = getState().qubitMap;
-    const auto& qcQubit = op.getQubit();
+    auto qcQubit = op.getQubit();
 
     // Get the latest QCO qubit value from the state map
     assert(qubitMap.contains(qcQubit) && "QC qubit not found");
-    const auto& qcoQubit = qubitMap[qcQubit];
+    auto qcoQubit = qubitMap[qcQubit];
 
     // Create qco.measure (returns both output qubit and bit result)
     auto qcoOp = rewriter.create<qco::MeasureOp>(
         op.getLoc(), qcoQubit, op.getRegisterNameAttr(),
         op.getRegisterSizeAttr(), op.getRegisterIndexAttr());
 
-    const auto& outQCOQubit = qcoOp.getQubitOut();
-    const auto& newBit = qcoOp.getResult();
+    auto outQcoQubit = qcoOp.getQubitOut();
+    auto newBit = qcoOp.getResult();
 
     // Update mapping: the QC qubit now corresponds to the output qubit
-    qubitMap[qcQubit] = outQCOQubit;
+    qubitMap[qcQubit] = outQcoQubit;
 
     // Replace the QC operation's bit result with the QCO bit result
     rewriter.replaceOp(op, newBit);
@@ -716,11 +718,11 @@ struct ConvertQCResetOp final : StatefulOpConversionPattern<qc::ResetOp> {
   matchAndRewrite(qc::ResetOp op, OpAdaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
     auto& qubitMap = getState().qubitMap;
-    const auto& qcQubit = op.getQubit();
+    auto qcQubit = op.getQubit();
 
     // Get the latest QCO qubit value from the state map
     assert(qubitMap.contains(qcQubit) && "QC qubit not found");
-    const auto& qcoQubit = qubitMap[qcQubit];
+    auto qcoQubit = qubitMap[qcQubit];
 
     // Create qco.reset (consumes input, produces output)
     auto qcoOp = rewriter.create<qco::ResetOp>(op.getLoc(), qcoQubit);
@@ -1035,7 +1037,7 @@ struct ConvertQCBarrierOp final : StatefulOpConversionPattern<qc::BarrierOp> {
     auto& qubitMap = state.qubitMap;
 
     // Get QCO qubits from state map
-    const auto& qcQubits = op.getQubits();
+    auto qcQubits = op.getQubits();
     SmallVector<Value> qcoQubits;
     qcoQubits.reserve(qcQubits.size());
     for (const auto& qcQubit : qcQubits) {
@@ -1064,7 +1066,6 @@ struct ConvertQCBarrierOp final : StatefulOpConversionPattern<qc::BarrierOp> {
  * ```mlir
  * qc.ctrl(%q0) {
  *   qc.x %q1 : !qc.qubit
- *   qc.yield
  * } : !qc.qubit
  * ```
  * is converted to
@@ -1085,7 +1086,7 @@ struct ConvertQCCtrlOp final : StatefulOpConversionPattern<qc::CtrlOp> {
     auto& qubitMap = state.qubitMap;
 
     // Get QCO controls from state map
-    const auto& qcControls = op.getControls();
+    auto qcControls = op.getControls();
     SmallVector<Value> qcoControls;
     qcoControls.reserve(qcControls.size());
     for (const auto& qcControl : qcControls) {
@@ -1098,9 +1099,9 @@ struct ConvertQCCtrlOp final : StatefulOpConversionPattern<qc::CtrlOp> {
     SmallVector<Value> qcoTargets;
     qcoTargets.reserve(numTargets);
     for (size_t i = 0; i < numTargets; ++i) {
-      const auto& qcTarget = op.getTarget(i);
+      auto qcTarget = op.getTarget(i);
       assert(qubitMap.contains(qcTarget) && "QC qubit not found");
-      const auto& qcoTarget = qubitMap[qcTarget];
+      auto qcoTarget = qubitMap[qcTarget];
       qcoTargets.push_back(qcoTarget);
     }
 
@@ -1110,20 +1111,20 @@ struct ConvertQCCtrlOp final : StatefulOpConversionPattern<qc::CtrlOp> {
 
     // Update the state map if this is a top-level CtrlOp
     // Nested CtrlOps are managed via the targetsIn and targetsOut maps
-    if (state.inCtrlOp == 0) {
+    if (state.inNestedRegion == 0) {
       for (const auto& [qcControl, qcoControl] :
            llvm::zip(qcControls, qcoOp.getControlsOut())) {
         qubitMap[qcControl] = qcoControl;
       }
-      const auto& targetsOut = qcoOp.getTargetsOut();
+      auto qcoTargetsOut = qcoOp.getTargetsOut();
       for (size_t i = 0; i < numTargets; ++i) {
-        const auto& qcTarget = op.getTarget(i);
-        qubitMap[qcTarget] = targetsOut[i];
+        auto qcTarget = op.getTarget(i);
+        qubitMap[qcTarget] = qcoTargetsOut[i];
       }
     }
 
     // Update modifier information
-    state.inCtrlOp++;
+    state.inNestedRegion++;
 
     // Clone body region from QC to QCO
     auto& dstRegion = qcoOp.getRegion();
@@ -1143,7 +1144,91 @@ struct ConvertQCCtrlOp final : StatefulOpConversionPattern<qc::CtrlOp> {
         qcoTargetAliases.emplace_back(entryBlock.addArgument(qubitType, opLoc));
       }
     });
-    state.targetsIn[state.inCtrlOp] = std::move(qcoTargetAliases);
+    state.targetsIn[state.inNestedRegion] = std::move(qcoTargetAliases);
+
+    rewriter.eraseOp(op);
+    return success();
+  }
+};
+
+/**
+ * @brief Converts qc.inv to qco.inv
+ *
+ * @par Example:
+ * ```mlir
+ * qc.inv {
+ *   qc.s %q0 : !qc.qubit
+ * } : !qc.qubit
+ * ```
+ * is converted to
+ * ```mlir
+ * %q0_out = qco.inv (%q0 = %q0_in) {
+ *   %q0_res = qco.s %q0 : !qco.qubit -> !qco.qubit
+ *   qco.yield %q0_res
+ * } : {!qco.qubit} -> {!qco.qubit}
+ * ```
+ */
+struct ConvertQCInvOp final : StatefulOpConversionPattern<qc::InvOp> {
+  using StatefulOpConversionPattern::StatefulOpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(qc::InvOp op, OpAdaptor /*adaptor*/,
+                  ConversionPatternRewriter& rewriter) const override {
+    auto& [qubitMap, inNestedRegion, targetsIn, targetsOut] = getState();
+
+    // Get QCO targets from state map
+    const auto numTargets = op.getNumTargets();
+    SmallVector<Value> qcoTargets;
+    if (inNestedRegion == 0) {
+      qcoTargets.reserve(numTargets);
+      for (size_t i = 0; i < numTargets; ++i) {
+        auto qcTarget = op.getTarget(i);
+        assert(qubitMap.contains(qcTarget) && "QC qubit not found");
+        qcoTargets.emplace_back(qubitMap[qcTarget]);
+      }
+    } else {
+      assert(targetsIn[inNestedRegion].size() == numTargets &&
+             "Invalid number of input targets");
+      qcoTargets = targetsIn[inNestedRegion];
+    }
+
+    // Create qco.inv
+    auto qcoOp = qco::InvOp::create(rewriter, op.getLoc(), qcoTargets);
+
+    // Update state map
+    if (inNestedRegion == 0) {
+      const auto qubitsOut = qcoOp.getQubitsOut();
+      for (size_t i = 0; i < numTargets; ++i) {
+        auto qcTarget = op.getTarget(i);
+        qubitMap[qcTarget] = qubitsOut[i];
+      }
+    } else {
+      targetsIn.erase(inNestedRegion);
+      targetsOut.try_emplace(inNestedRegion, qcoOp.getQubitsOut());
+    }
+
+    // Update modifier information
+    inNestedRegion++;
+
+    // Clone body region from QC to QCO
+    auto& dstRegion = qcoOp.getRegion();
+    rewriter.cloneRegionBefore(op.getRegion(), dstRegion, dstRegion.end());
+
+    // Create block arguments for target qubits and store them in
+    // `state.targetsIn`.
+    auto& entryBlock = dstRegion.front();
+    assert(entryBlock.getNumArguments() == 0 &&
+           "QC inv region unexpectedly has entry block arguments");
+    SmallVector<Value> qcoTargetAliases;
+    qcoTargetAliases.reserve(numTargets);
+    const auto qubitType = qco::QubitType::get(qcoOp.getContext());
+    const auto opLoc = op.getLoc();
+    rewriter.modifyOpInPlace(qcoOp, [&] {
+      for (auto i = 0UL; i < numTargets; i++) {
+        qcoTargetAliases.emplace_back(entryBlock.addArgument(qubitType, opLoc));
+      }
+    });
+    targetsIn[inNestedRegion] = std::move(qcoTargetAliases);
 
     rewriter.eraseOp(op);
     return success();
@@ -1169,10 +1254,10 @@ struct ConvertQCYieldOp final : StatefulOpConversionPattern<qc::YieldOp> {
   matchAndRewrite(qc::YieldOp op, OpAdaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
     auto& state = getState();
-    const auto& targets = state.targetsOut[state.inCtrlOp];
+    const auto& targets = state.targetsOut[state.inNestedRegion];
     rewriter.replaceOpWithNewOp<qco::YieldOp>(op, targets);
-    state.targetsOut.erase(state.inCtrlOp);
-    state.inCtrlOp--;
+    state.targetsOut.erase(state.inNestedRegion);
+    state.inNestedRegion--;
     return success();
   }
 };
@@ -1203,6 +1288,7 @@ struct ConvertQCYieldOp final : StatefulOpConversionPattern<qc::YieldOp> {
 struct QCToQCO final : impl::QCToQCOBase<QCToQCO> {
   using QCToQCOBase::QCToQCOBase;
 
+protected:
   void runOnOperation() override {
     MLIRContext* context = &getContext();
     auto* module = getOperation();
@@ -1231,7 +1317,8 @@ struct QCToQCO final : impl::QCToQCOBase<QCToQCO> {
                  ConvertQCDCXOp, ConvertQCECROp, ConvertQCRXXOp, ConvertQCRYYOp,
                  ConvertQCRZXOp, ConvertQCRZZOp, ConvertQCXXPlusYYOp,
                  ConvertQCXXMinusYYOp, ConvertQCBarrierOp, ConvertQCCtrlOp,
-                 ConvertQCYieldOp>(typeConverter, context, &state);
+                 ConvertQCInvOp, ConvertQCYieldOp>(typeConverter, context,
+                                                   &state);
 
     // Conversion of qc types in func.func signatures
     // Note: This currently has limitations with signature
