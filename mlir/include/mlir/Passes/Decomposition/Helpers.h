@@ -11,7 +11,7 @@
 #pragma once
 
 #include "ir/operations/OpType.hpp"
-#include "mlir/Dialect/QCO/IR/QCODialect.h"
+#include "mlir/Dialect/QCO/IR/QCOInterfaces.h"
 
 #include <Eigen/Core>
 #include <Eigen/Eigenvalues>

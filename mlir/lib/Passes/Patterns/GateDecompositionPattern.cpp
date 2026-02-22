@@ -9,7 +9,8 @@
  */
 
 #include "ir/operations/OpType.hpp"
-#include "mlir/Dialect/QCO/IR/QCODialect.h"
+#include "mlir/Dialect/QCO/IR/QCOInterfaces.h"
+#include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Passes/Decomposition/BasisDecomposer.h"
 #include "mlir/Passes/Decomposition/EulerBasis.h"
 #include "mlir/Passes/Decomposition/EulerDecomposition.h"
@@ -553,8 +554,9 @@ protected:
     (collectInQubits(inQubitsAndParams), ...);
     return rewriter.create<CtrlOp>(
         location, ctrlQubits, mlir::ValueRange{inQubits},
-        rewriter.create<OpType>(location,
-                                std::forward<Args>(inQubitsAndParams)...));
+        [&](auto&& in) -> llvm::SmallVector<mlir::Value> {
+          return rewriter.create<OpType>(location, in)->getResults();
+        });
   }
 
   /**

@@ -11,7 +11,8 @@
 #include "mlir/Passes/Decomposition/Helpers.h"
 
 #include "ir/operations/OpType.hpp"
-#include "mlir/Dialect/QCO/IR/QCODialect.h"
+#include "mlir/Dialect/QCO/IR/QCOInterfaces.h"
+#include "mlir/Dialect/QCO/IR/QCOOps.h"
 
 #include <cmath>
 #include <complex>
