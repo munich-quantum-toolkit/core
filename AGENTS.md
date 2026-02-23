@@ -33,31 +33,31 @@
 
 ### C++ Workflows
 
-- Configure Release build — `cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DBUILD_MQT_CORE_TESTS=ON`.
-- Configure Debug build — `cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug -DBUILD_MQT_CORE_TESTS=ON`.
-- Build the library — run `cmake --build build --parallel <jobs>` (or configure with `-G Ninja`, which handles parallel builds automatically).
+- Configure Release build: `cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DBUILD_MQT_CORE_TESTS=ON`.
+- Configure Debug build: `cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug -DBUILD_MQT_CORE_TESTS=ON`.
+- Build the library: `cmake --build build --parallel <jobs>`.
+  Alternatively, configure with `-G Ninja`, which handles parallel builds automatically.
 - Run C++ tests: `ctest --test-dir build -C Release --output-on-failure`.
 - Run MLIR unit tests: `ctest --test-dir build -C Release -L mqt-mlir-unittests --output-on-failure`.
 - Run a single C++ test: `ctest --test-dir build -C Release -R <test_name>`.
-- Locate C++ artifacts in `build/src/` (libraries), `build/test/` (test executables), and `build/mlir/` (MLIR build output).
+- C++ artifacts are located in `build/src/` (libraries), `build/test/` (test executables), and `build/mlir/` (MLIR build output).
 
 ### Python Workflows
 
-- Build the Python package: `uv sync`.
-- Locate Python build artifacts in `build/` folder.
-- Execute full test suite: `uvx nox -s tests-3.13` (or `uvx nox -s tests` for all versions).
+- Sync the Python environment: `uv sync`.
+- Run the full test suite: `uvx nox -s tests`.
 - Run targeted tests: `uv run pytest test/python/dd/`.
-- Filter Python tests: `uvx nox -s tests-3.13 -- -k "<test_name>"` (or `uvx nox -s tests -- -k "<test_name>"` for all versions).
+- Filter Python tests: `uvx nox -s tests -- -k "<test_name>"`.
 - Test minimum dependency versions: `uvx nox -s minimums`.
 - Verify Qiskit compatibility: `uvx nox -s qiskit`.
 
 ### Quality, Docs & Stubs
 
-- Run prek checks: `uvx nox -s lint`.
+- Run all lint checks: `uvx nox -s lint`.
 - Build documentation (Doxygen + Sphinx + MLIR): `uvx nox -s docs`.
-- Locate documentation output in `docs/_build/html`.
+- Documentation output is located in `docs/_build/html`.
 - Generate type stubs: `uvx nox -s stubs`.
-- Note: Stub files (`.pyi`) must **never** be edited manually.
+- Never edit `.pyi` stub files manually.
 - Check [contributing.md](docs/contributing.md) for comprehensive PR workflows and testing philosophies.
 
 ## Tools
@@ -73,25 +73,26 @@
 
 ## Development Guidelines
 
-- Always prioritize C++20 `std::` features over custom implementations.
+- Prioritize C++20 `std::` features over custom implementations.
 - Use Google-style docstrings for Python and Doxygen comments for C++.
-- Run `uvx nox -s lint` after performing changes and ensure all checks (ruff, typos, ty) pass.
-- Verify all changes with at least one automated test (pytest or ctest).
+- Run `uvx nox -s lint` after every change; all checks (ruff, typos, ty) must pass before submitting.
+- Add or update tests for every code change, even if not explicitly requested.
 - Follow existing code style by checking neighboring files for patterns.
-- Review [CHANGELOG.md](docs/CHANGELOG.md) and [UPGRADING.md](docs/UPGRADING.md) before making breaking changes; update them accordingly.
+- Review [CHANGELOG.md](docs/CHANGELOG.md) and [UPGRADING.md](docs/UPGRADING.md) for every change; update them with any noteworthy additions, fixes, or breaking changes.
 
 ## Self-Review Checklist
 
-- Did you run `uvx nox -s lint` and ensure all checks (ruff, typos, ty) pass?
-- Did you verify all your changes with at least one automated test (pytest or ctest)?
-- Did you regenerate Python stubs via `uvx nox -s stubs` if bindings were modified?
-- Did you check for manual changes to `.pyi` files (which are forbidden)?
-- Did you include the correct license headers and SPDX identifiers?
-- Did you review [CHANGELOG.md](docs/CHANGELOG.md) and [UPGRADING.md](docs/UPGRADING.md) and update them accordingly?
+- Did `uvx nox -s lint` pass without errors?
+- Are all changes covered by at least one automated test (pytest or ctest)?
+- Did you use exact terminology (**circuit qubits** vs **device qubits**)?
+- Were Python stubs regenerated via `uvx nox -s stubs` if bindings were modified?
+- Are there any manual edits to `.pyi` files (which are forbidden)?
+- Do all source files include the MIT license and SPDX headers?
+- Are [CHANGELOG.md](docs/CHANGELOG.md) and [UPGRADING.md](docs/UPGRADING.md) updated if needed?
 
 ## Rules
 
-- Adhere to the ruff philosophy: Start with `ALL` rules and selectively disable in `pyproject.toml`.
+- Use `ALL` ruff rules and selectively disable in `pyproject.toml`.
 - Enforce term capitalization: `nanobind`, `CMake`, `ccache`, `GitHub`, `NumPy`, `pytest`, `MQT`, and `TUM`.
 - Include MIT license and SPDX headers in every source file.
-- Avoid modifying templated files locally; contribute to [MQT templates](https://github.com/munich-quantum-toolkit/templates).
+- Do not modify templated files locally; contribute changes to [MQT templates](https://github.com/munich-quantum-toolkit/templates).
