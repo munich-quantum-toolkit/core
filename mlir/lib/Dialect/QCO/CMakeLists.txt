@@ -8,3 +8,4 @@
 
 add_subdirectory(Builder)
 add_subdirectory(IR)
+add_subdirectory(Utils)

@@ -11,12 +11,14 @@
 #include "TestCaseUtils.h"
 #include "mlir/Dialect/QCO/Builder/QCOProgramBuilder.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
+#include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Support/IRVerification.h"
 #include "mlir/Support/Passes.h"
 #include "qco_programs.h"
 
 #include <gtest/gtest.h>
 #include <iosfwd>
+#include <llvm/ADT/SmallVector.h>
 #include <memory>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
@@ -67,7 +69,6 @@ TEST_P(QCOTest, ProgramEquivalence) {
   ASSERT_TRUE(program);
   printer.record(program.get(), "Original QCO IR" + name);
   EXPECT_TRUE(verify(*program).succeeded());
-
   runCanonicalizationPasses(program.get());
   printer.record(program.get(), "Canonicalized QCO IR" + name);
   EXPECT_TRUE(verify(*program).succeeded());
@@ -84,6 +85,59 @@ TEST_P(QCOTest, ProgramEquivalence) {
   EXPECT_TRUE(
       areModulesEquivalentWithPermutations(program.get(), reference.get()));
 }
+
+TEST_F(QCOTest, DirectIfBuilder) {
+  // Test If construction directly
+  qco::QCOProgramBuilder builder(context.get());
+  builder.initialize();
+  auto q0 = AllocOp::create(builder);
+  auto q1 = HOp::create(builder, q0);
+  auto measureOp = MeasureOp::create(builder, q1);
+  auto ifOp =
+      IfOp::create(builder, measureOp.getResult(), measureOp.getQubitOut(),
+                   [&](ValueRange qubits) -> llvm::SmallVector<Value> {
+                     auto innerQubit = XOp::create(builder, qubits[0]);
+                     return llvm::SmallVector<mlir::Value>{innerQubit};
+                   });
+  DeallocOp::create(builder, ifOp.getResult(0));
+
+  auto directBuilder = builder.finalize();
+  ASSERT_TRUE(directBuilder);
+  EXPECT_TRUE(verify(*directBuilder).succeeded());
+  runCanonicalizationPasses(directBuilder.get());
+  EXPECT_TRUE(verify(*directBuilder).succeeded());
+
+  auto refBuilder =
+      QCOProgramBuilder::build(context.get(), MQT_NAMED_BUILDER(simpleIf).fn);
+  ASSERT_TRUE(refBuilder);
+  EXPECT_TRUE(verify(*refBuilder).succeeded());
+  runCanonicalizationPasses(refBuilder.get());
+  EXPECT_TRUE(verify(*refBuilder).succeeded());
+
+  EXPECT_TRUE(areModulesEquivalentWithPermutations(directBuilder.get(),
+                                                   refBuilder.get()));
+}
+
+/// \name QCO/SCF/IfOp.cpp
+/// @{
+INSTANTIATE_TEST_SUITE_P(
+    QCOIfOpTest, QCOTest,
+    testing::Values(
+        QCOTestCase{"SimpleIf", MQT_NAMED_BUILDER(simpleIf),
+                    MQT_NAMED_BUILDER(simpleIf)},
+        QCOTestCase{"TwoQubitIf", MQT_NAMED_BUILDER(ifTwoQubits),
+                    MQT_NAMED_BUILDER(ifTwoQubits)},
+        QCOTestCase{"IfElse", MQT_NAMED_BUILDER(ifElse),
+                    MQT_NAMED_BUILDER(ifElse)},
+        QCOTestCase{"ConstantTrueIf", MQT_NAMED_BUILDER(constantTrueIf),
+                    MQT_NAMED_BUILDER(x)},
+        QCOTestCase{"ConstantFalseIf", MQT_NAMED_BUILDER(constantFalseIf),
+                    MQT_NAMED_BUILDER(z)},
+        QCOTestCase{"NestedTrueIf", MQT_NAMED_BUILDER(nestedTrueIf),
+                    MQT_NAMED_BUILDER(simpleIf)},
+        QCOTestCase{"NestedFalseIf", MQT_NAMED_BUILDER(nestedFalseIf),
+                    MQT_NAMED_BUILDER(ifElse)}));
+/// @}
 
 /// \name QCO/Modifiers/CtrlOp.cpp
 /// @{
