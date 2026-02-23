@@ -74,12 +74,6 @@
 - Add or update tests for every code change, even if not explicitly requested.
 - Review [CHANGELOG.md](docs/CHANGELOG.md) and [UPGRADING.md](docs/UPGRADING.md) before making breaking changes.
 
-## Documentation Reference
-
-- Deep dive into the Internal Representation: [mqt_core_ir.md](docs/mqt_core_ir.md).
-- Understand Decision Diagram internals: [dd_package.md](docs/dd_package.md).
-- Explore ZX-calculus algorithms: [zx_package.md](docs/zx_package.md).
-- Access the online API reference: [MQT Core Docs](https://mqt.readthedocs.io/projects/core/en/latest/).
 
 ## Self-Review Checklist
 
