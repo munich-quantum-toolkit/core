@@ -8,7 +8,7 @@
 ## Environment & Capabilities
 
 - **Platform**: Operating in a Linux environment with support for x86_64 (amd64) and arm64.
-- **Python Context**: Version 3.10+ managed via **uv** for strict isolation.
+- **Python Context**: Version 3.10+ managed via **uv**.
 - **C++ Context**: C++20 standard required; **LLVM 21.1+** mandatory for MLIR infrastructure.
 - **Tooling Access**: Full access to `cmake`, `ctest`, `pytest`, `ruff`, and `nox`.
 - **Constraint**: Avoid network-dependent tasks during builds; rely on `uv` lockfiles and pre-synced dependencies.
