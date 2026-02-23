@@ -2,7 +2,6 @@
 
 - Acts as the high-performance backbone for the [Munich Quantum Toolkit (MQT)](https://mqt.readthedocs.io/).
 - Provides tools and methods (IRs, DD, ZX, OpenQASM, MLIR, QIR, QDMI, NA, Qiskit, etc.) for quantum design automation, including simulation, compilation, verification as well as HPCQC integration.
-- Distinguishes between **circuit qubits** (logical/virtual) and **device qubits** (physical) to avoid ambiguity.
 - Maintains a C++20 core with an architecturally separate Python extension layer.
 - Locates C++ sources in `src/` and `include/`, Python bindings in `python/`, tests in `test/`, and documentation in `docs/`.
 - Refer to [index.md](docs/index.md) for the complete documentation entry point.
