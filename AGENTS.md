@@ -88,7 +88,6 @@
 - Did you update/add tests for new functionality to maintain coverage?
 - Did you regenerate Python stubs via `uvx nox -s stubs` if bindings were modified?
 - Did you check for manual changes to `.pyi` files (which are forbidden)?
-- Did you include the correct license headers and SPDX identifiers?
 
 ## Rules
 
