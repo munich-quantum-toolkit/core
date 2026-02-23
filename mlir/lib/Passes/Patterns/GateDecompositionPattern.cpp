@@ -551,7 +551,7 @@ protected:
         inQubits.push_back(std::forward<decltype(x)>(x));
       }
     };
-    (collectInQubits(inQubitsAndParams), ...);
+    (collectInQubits(std::forward<Args>(inQubitsAndParams)), ...);
     return rewriter.create<CtrlOp>(
         location, ctrlQubits, mlir::ValueRange{inQubits},
         [&](auto&& in) -> llvm::SmallVector<mlir::Value> {
