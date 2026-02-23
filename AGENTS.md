@@ -7,7 +7,7 @@
 
 ## Environment & Capabilities
 
-- **Platform**: Operating in a Linux environment with support for x86_64 (amd64) and arm64.
+- **Platform**: Target Linux, macOS, and Windows for x86_64 (amd64) and arm64.
 - **Python Context**: Version 3.10+ managed via **uv**.
 - **C++ Context**: C++20 standard required; **LLVM 21.1+** mandatory for MLIR infrastructure.
 - **Tooling Access**: Full access to `cmake`, `ctest`, `uv`, and `nox`.
