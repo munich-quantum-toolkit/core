@@ -47,7 +47,7 @@
 
 ### Quality, Docs & Stubs
 
-- Run pre-commit checks: `uvx prek run -a` or `uvx nox -s lint`.
+- Run prek checks: `uvx nox -s lint`.
 - Build documentation (Doxygen + Sphinx + MLIR): `uvx nox -s docs`.
 - Locate documentation output in `docs/_build/html`.
 - Generate type stubs: `uvx nox -s stubs`.
