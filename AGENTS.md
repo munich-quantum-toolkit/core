@@ -84,7 +84,7 @@
 ## Self-Review Checklist
 
 - Did you run `uvx nox -s lint` and ensure all checks (ruff, typos, ty) pass?
-- Did you verify all your changes with at least one automated test (pytest or ctest)?
+- Did you verify all your changes with at least one automated test (pytest or googletest)?
 - Did you update/add tests for new functionality to maintain coverage?
 - Did you use exact terminology (**circuit qubits** vs **device qubits**)?
 - Did you regenerate Python stubs via `uvx nox -s stubs` if bindings were modified?
