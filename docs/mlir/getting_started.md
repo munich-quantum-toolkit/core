@@ -302,7 +302,8 @@ module {
         scf.yield %q_iter : !qco.qubit
       }
 
-      %cond_new = arith.xori %cond_iter, arith.constant 1 : i1
+      %c_true = arith.constant 1 : i1
+      %cond_new = arith.xori %cond_iter, %c_true : i1
 
       scf.yield %q_new, %cond_new : !qco.qubit, i1
     }
