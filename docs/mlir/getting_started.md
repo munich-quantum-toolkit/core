@@ -245,8 +245,8 @@ module {
     %one  = arith.constant 1 : index
 
     %q_final = scf.for %i = %zero to %n step %one
-                iter_args(%q_iter = %q0 : !qco.qubit)
-                -> !qco.qubit {
+                iter_args(%q_iter = %q0)
+                -> (!qco.qubit) {
       %q_next = qco.h %q_iter : !qco.qubit -> !qco.qubit
       scf.yield %q_next : !qco.qubit
     }
