@@ -59,7 +59,7 @@
 - Use **C++20** and **Python 3.10+** as the strict minimum language versions.
 - Use **CMake 3.24+** and **scikit-build-core** for the build system.
 - Use **uv** as the mandatory package manager; never use `pip` or manual `venv`.
-- Use **nanobind** (~2.11.0) for Python bindings; do not use `pybind11`.
+- Use **nanobind** for Python bindings; do not use `pybind11`.
 - Use **ruff** for linting and formatting, with `ALL` rules enabled by default.
 - Use **ty** for static type checking as the mandatory replacement for `mypy`.
 - Use **LLVM 21.1+** for MLIR-based compilation dialects.
