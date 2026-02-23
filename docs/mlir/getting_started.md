@@ -50,7 +50,7 @@ module {
 **Reading the IR:** `qc.alloc` creates a qubit; `qc.h` and `qc.x` take a qubit and modify it in place (no new SSA value). `qc.measure` returns a classical `i1`; `qc.dealloc` releases the qubit. The same `%q` is used for every gate—that's reference semantics.
 
 :::{tip}
-In QC, one name can refer to the same qubit across many operations. The compiler tracks the *state* of that qubit as it flows through the circuit.
+In QC, one name can refer to the same qubit across many operations. The compiler tracks the _state_ of that qubit as it flows through the circuit.
 :::
 
 ### From one qubit to a Bell state
@@ -87,12 +87,12 @@ module {
 
 The same quantum operations can be represented in two ways in MLIR:
 
-| | QC | QCO |
-|---:|:---|:---|
-| **Semantics** | Reference: gates modify qubits in place | Value: each op consumes inputs, produces new qubit values |
-| **Type** | `!qc.qubit` | `!qco.qubit` |
-| **Use case** | Import/export, human-readable circuits | Optimizations, DAG-style analysis |
-| **SSA** | One name can be reused along the circuit | Every gate introduces new SSA values |
+|               | QC                                       | QCO                                                       |
+| ------------: | :--------------------------------------- | :-------------------------------------------------------- |
+| **Semantics** | Reference: gates modify qubits in place  | Value: each op consumes inputs, produces new qubit values |
+|      **Type** | `!qc.qubit`                              | `!qco.qubit`                                              |
+|  **Use case** | Import/export, human-readable circuits   | Optimizations, DAG-style analysis                         |
+|       **SSA** | One name can be reused along the circuit | Every gate introduces new SSA values                      |
 
 QC is described in {doc}`QC <QC>`, QCO in {doc}`QCO <QCO>`. The compiler converts QC → QCO so that optimization passes see explicit dataflow; then it can convert back or lower to QIR. Conceptually the pipeline looks like this:
 
@@ -111,7 +111,7 @@ QC is described in {doc}`QC <QC>`, QCO in {doc}`QCO <QCO>`. The compiler convert
 
 ### Same Bell state in QC (reference style)
 
-We already wrote this above; here it is again so you can compare. Notice `%q0` and `%q1` are used repeatedly—the *same* references are updated by each gate.
+We already wrote this above; here it is again so you can compare. Notice `%q0` and `%q1` are used repeatedly—the _same_ references are updated by each gate.
 
 ```text
 func.func @bell_qc() {
