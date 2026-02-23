@@ -8,7 +8,7 @@
  * Licensed under the MIT License
  */
 
-#include "mlir/Dialect/QCO/IR/QCODialect.h"
+#include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/Utils/Utils.h"
 
 #include <Eigen/Core>
@@ -37,15 +37,11 @@ struct ReplaceRWithRX final : OpRewritePattern<ROp> {
 
   LogicalResult matchAndRewrite(ROp op,
                                 PatternRewriter& rewriter) const override {
-    const auto phi = valueToDouble(op.getPhi());
-    if (!phi || std::abs(*phi) > TOLERANCE) {
+    if (const auto phi = valueToDouble(op.getPhi());
+        !phi || std::abs(*phi) > TOLERANCE) {
       return failure();
     }
-
-    auto rxOp =
-        rewriter.create<RXOp>(op.getLoc(), op.getInputQubit(0), op.getTheta());
-    rewriter.replaceOp(op, rxOp.getResult());
-
+    rewriter.replaceOpWithNewOp<RXOp>(op, op.getInputQubit(0), op.getTheta());
     return success();
   }
 };
@@ -58,15 +54,11 @@ struct ReplaceRWithRY final : OpRewritePattern<ROp> {
 
   LogicalResult matchAndRewrite(ROp op,
                                 PatternRewriter& rewriter) const override {
-    const auto phi = valueToDouble(op.getPhi());
-    if (!phi || std::abs(*phi - (std::numbers::pi / 2.0)) > TOLERANCE) {
+    if (const auto phi = valueToDouble(op.getPhi());
+        !phi || std::abs(*phi - (std::numbers::pi / 2.0)) > TOLERANCE) {
       return failure();
     }
-
-    auto ryOp =
-        rewriter.create<RYOp>(op.getLoc(), op.getInputQubit(0), op.getTheta());
-    rewriter.replaceOp(op, ryOp.getResult());
-
+    rewriter.replaceOpWithNewOp<RYOp>(op, op.getInputQubit(0), op.getTheta());
     return success();
   }
 };
