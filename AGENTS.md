@@ -74,7 +74,6 @@
 - Add or update tests for every code change, even if not explicitly requested.
 - Review [CHANGELOG.md](docs/CHANGELOG.md) and [UPGRADING.md](docs/UPGRADING.md) before making breaking changes.
 
-
 ## Self-Review Checklist
 
 - Did you run `uvx nox -s lint` and ensure all checks (ruff, typos, ty) pass?
