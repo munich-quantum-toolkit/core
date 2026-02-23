@@ -67,7 +67,7 @@
 
 ## Development Guidelines
 
-- Always prioritize C++20 `std::` features over custom implementations.
+- Always prioritize C++20 STL features over custom implementations.
 - Use Google-style docstrings for Python and Doxygen comments for C++.
 - Ensure Python code is fully typed and passes `ty` static analysis.
 - Follow existing code style by checking neighboring files for patterns.
