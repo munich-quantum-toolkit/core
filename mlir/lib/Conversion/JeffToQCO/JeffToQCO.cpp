@@ -8,10 +8,10 @@
  * Licensed under the MIT License
  */
 
-#include "mlir/Conversion/JeffToQC/JeffToQC.h"
+#include "mlir/Conversion/JeffToQCO/JeffToQCO.h"
 
-#include "mlir/Dialect/QC/IR/QCDialect.h"
-#include "mlir/Dialect/QC/IR/QCOps.h"
+#include "mlir/Dialect/QCO/IR/QCODialect.h"
+#include "mlir/Dialect/QCO/IR/QCOOps.h"
 
 #include <jeff/IR/JeffDialect.h>
 #include <jeff/IR/JeffOps.h>
@@ -26,15 +26,15 @@
 #include <utility>
 
 namespace mlir {
-using namespace qc;
+using namespace qco;
 
-#define GEN_PASS_DEF_JEFFTOQC
-#include "mlir/Conversion/JeffToQC/JeffToQC.h.inc"
+#define GEN_PASS_DEF_JEFFTOQCO
+#include "mlir/Conversion/JeffToQCO/JeffToQCO.h.inc"
 
 /**
- * @brief Converts a one-target, zero-parameter Jeff operation to QC
+ * @brief Converts a one-target, zero-parameter Jeff operation to QCO
  *
- * @tparam QCOpType The operation type of the QC operation
+ * @tparam QCOOpType The operation type of the QCO operation
  * @tparam JeffOpType The operation type of the Jeff operation
  * @tparam JeffOpAdaptorType The OpAdaptor type of the Jeff operation
  * @param op The Jeff operation instance to convert
@@ -42,7 +42,7 @@ using namespace qc;
  * @param rewriter The pattern rewriter
  * @return LogicalResult Success or failure of the conversion
  */
-template <typename QCOpType, typename JeffOpType, typename JeffOpAdaptorType>
+template <typename QCOOpType, typename JeffOpType, typename JeffOpAdaptorType>
 static LogicalResult
 convertOneTargetZeroParameter(JeffOpType& op, JeffOpAdaptorType& adaptor,
                               ConversionPatternRewriter& rewriter) {
@@ -51,30 +51,31 @@ convertOneTargetZeroParameter(JeffOpType& op, JeffOpAdaptorType& adaptor,
         op, "Operations with power != 1 are not yet supported");
   }
 
-  auto target = adaptor.getInQubit();
-
   if (op.getNumCtrls() != 0) {
     auto controls = adaptor.getInCtrlQubits();
-    rewriter.create<qc::CtrlOp>(op.getLoc(), controls, [&] {
-      rewriter.create<QCOpType>(op.getLoc(), target);
-    });
-    SmallVector<Value> operands;
-    operands.reserve(1 + controls.size());
-    operands.push_back(target);
-    operands.append(controls.begin(), controls.end());
-    rewriter.replaceOp(op, operands);
+    auto ctrlOp = rewriter.create<qco::CtrlOp>(
+        op.getLoc(), adaptor.getInCtrlQubits(), adaptor.getInQubit(),
+        [&](ValueRange targets) -> llvm::SmallVector<Value> {
+          auto qcoOp = rewriter.create<QCOOpType>(op.getLoc(), targets[0]);
+          return {qcoOp.getQubitOut()};
+        });
+    llvm::SmallVector<Value> results;
+    results.append(ctrlOp.getTargetsOut().begin(),
+                   ctrlOp.getTargetsOut().end());
+    results.append(ctrlOp.getControlsOut().begin(),
+                   ctrlOp.getControlsOut().end());
+    rewriter.replaceOp(op, results);
   } else {
-    rewriter.create<QCOpType>(op.getLoc(), target);
-    rewriter.replaceOp(op, target);
+    rewriter.replaceOpWithNewOp<QCOOpType>(op, adaptor.getInQubit());
   }
 
   return success();
 }
 
 /**
- * @brief Converts a one-target, one-parameter Jeff operation to QC
+ * @brief Converts a one-target, one-parameter Jeff operation to QCO
  *
- * @tparam QCOpType The operation type of the QC operation
+ * @tparam QCOOpType The operation type of the QCO operation
  * @tparam JeffOpType The operation type of the Jeff operation
  * @tparam JeffOpAdaptorType The OpAdaptor type of the Jeff operation
  * @param op The Jeff operation instance to convert
@@ -82,7 +83,7 @@ convertOneTargetZeroParameter(JeffOpType& op, JeffOpAdaptorType& adaptor,
  * @param rewriter The pattern rewriter
  * @return LogicalResult Success or failure of the conversion
  */
-template <typename QCOpType, typename JeffOpType, typename JeffOpAdaptorType>
+template <typename QCOOpType, typename JeffOpType, typename JeffOpAdaptorType>
 static LogicalResult
 convertOneTargetOneParameter(JeffOpType& op, JeffOpAdaptorType& adaptor,
                              ConversionPatternRewriter& rewriter) {
@@ -96,28 +97,30 @@ convertOneTargetOneParameter(JeffOpType& op, JeffOpAdaptorType& adaptor,
         op, "Operations with power != 1 are not yet supported");
   }
 
-  auto target = adaptor.getInQubit();
-
   if (op.getNumCtrls() != 0) {
-    auto controls = adaptor.getInCtrlQubits();
-    rewriter.create<qc::CtrlOp>(op.getLoc(), controls, [&] {
-      rewriter.create<QCOpType>(op.getLoc(), target, op.getRotation());
-    });
-    SmallVector<Value> operands;
-    operands.reserve(1 + controls.size());
-    operands.push_back(target);
-    operands.append(controls.begin(), controls.end());
-    rewriter.replaceOp(op, operands);
+    auto ctrlOp = rewriter.create<qco::CtrlOp>(
+        op.getLoc(), adaptor.getInCtrlQubits(), adaptor.getInQubit(),
+        [&](ValueRange targets) -> llvm::SmallVector<Value> {
+          auto qcoOp = rewriter.create<QCOOpType>(op.getLoc(), targets[0],
+                                                  op.getRotation());
+          return {qcoOp.getQubitOut()};
+        });
+    llvm::SmallVector<Value> results;
+    results.append(ctrlOp.getTargetsOut().begin(),
+                   ctrlOp.getTargetsOut().end());
+    results.append(ctrlOp.getControlsOut().begin(),
+                   ctrlOp.getControlsOut().end());
+    rewriter.replaceOp(op, results);
   } else {
-    rewriter.create<QCOpType>(op.getLoc(), target, op.getRotation());
-    rewriter.replaceOp(op, target);
+    rewriter.replaceOpWithNewOp<QCOOpType>(op, adaptor.getInQubit(),
+                                           op.getRotation());
   }
 
   return success();
 }
 
 /**
- * @brief Converts jeff.qubit_alloc to qc.alloc
+ * @brief Converts jeff.qubit_alloc to qco.alloc
  *
  * @par Example:
  * ```mlir
@@ -125,23 +128,23 @@ convertOneTargetOneParameter(JeffOpType& op, JeffOpAdaptorType& adaptor,
  * ```
  * is converted to
  * ```mlir
- * %q = qc.alloc : !qc.qubit
+ * %q = qco.alloc : !qco.qubit
  * ```
  */
-struct ConvertJeffQubitAllocOpToQC final
+struct ConvertJeffQubitAllocOpToQCO final
     : OpConversionPattern<jeff::QubitAllocOp> {
   using OpConversionPattern::OpConversionPattern;
 
   LogicalResult
   matchAndRewrite(jeff::QubitAllocOp op, OpAdaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
-    rewriter.replaceOpWithNewOp<qc::AllocOp>(op);
+    rewriter.replaceOpWithNewOp<qco::AllocOp>(op);
     return success();
   }
 };
 
 /**
- * @brief Converts jeff.qubit_free to qc.reset + qc.dealloc
+ * @brief Converts jeff.qubit_free to qco.reset + qco.dealloc
  *
  * @par Example:
  * ```mlir
@@ -149,26 +152,26 @@ struct ConvertJeffQubitAllocOpToQC final
  * ```
  * is converted to
  * ```mlir
- * qc.reset %q : !qc.qubit
- * qc.dealloc %q : !qc.qubit
+ * %q_out = qco.reset %q_in : !qco.qubit
+ * qco.dealloc %q_out : !qco.qubit
  * ```
  */
-struct ConvertJeffQubitFreeOpToQC final
+struct ConvertJeffQubitFreeOpToQCO final
     : OpConversionPattern<jeff::QubitFreeOp> {
   using OpConversionPattern::OpConversionPattern;
 
   LogicalResult
   matchAndRewrite(jeff::QubitFreeOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
-    auto qcQubit = adaptor.getInQubit();
-    rewriter.create<qc::ResetOp>(op.getLoc(), qcQubit);
-    rewriter.replaceOpWithNewOp<qc::DeallocOp>(op, qcQubit);
+    auto resetOp =
+        rewriter.create<qco::ResetOp>(op.getLoc(), adaptor.getInQubit());
+    rewriter.replaceOpWithNewOp<qco::DeallocOp>(op, resetOp.getQubitOut());
     return success();
   }
 };
 
 /**
- * @brief Converts jeff.qubit_free_zero to qc.dealloc
+ * @brief Converts jeff.qubit_free_zero to qco.dealloc
  *
  * @par Example:
  * ```mlir
@@ -176,78 +179,75 @@ struct ConvertJeffQubitFreeOpToQC final
  * ```
  * is converted to
  * ```mlir
- * qc.dealloc %q : !qc.qubit
+ * qco.dealloc %q : !qco.qubit
  * ```
  */
-struct ConvertJeffQubitFreeZeroOpToQC final
+struct ConvertJeffQubitFreeZeroOpToQCO final
     : OpConversionPattern<jeff::QubitFreeZeroOp> {
   using OpConversionPattern::OpConversionPattern;
 
   LogicalResult
   matchAndRewrite(jeff::QubitFreeZeroOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
-    auto qcQubit = adaptor.getInQubit();
-    rewriter.replaceOpWithNewOp<qc::DeallocOp>(op, qcQubit);
+    rewriter.replaceOpWithNewOp<qco::DeallocOp>(op, adaptor.getInQubit());
     return success();
   }
 };
 
 /**
- * @brief Converts jeff.qubit_measure to qc.measure + qc.dealloc
+ * @brief Converts jeff.qubit_measure to qco.measure + qco.dealloc
  *
  * @par Example:
  * ```mlir
- * %result = jeff.qubit_measure %q : i1
+ * %result = jeff.qubit_measure %q_in : !i1
  * ```
  * is converted to
  * ```mlir
- * %result = qc.measure %q : i1
- * qc.dealloc %q : !qc.qubit
+ * %q_out, %result = qco.measure %q_in : !qco.qubit
+ * qco.dealloc %q_out : !qco.qubit
  * ```
  */
-struct ConvertJeffQubitMeasureOpToQC final
+struct ConvertJeffQubitMeasureOpToQCO final
     : OpConversionPattern<jeff::QubitMeasureOp> {
   using OpConversionPattern::OpConversionPattern;
 
   LogicalResult
   matchAndRewrite(jeff::QubitMeasureOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
-    auto qcQubit = adaptor.getInQubit();
-    auto qcOp = rewriter.create<qc::MeasureOp>(op.getLoc(), qcQubit);
-    rewriter.replaceOp(op, qcOp.getResult());
-    rewriter.create<qc::DeallocOp>(qcOp.getLoc(), qcQubit);
+    auto measureOp =
+        rewriter.replaceOpWithNewOp<qco::MeasureOp>(op, adaptor.getInQubit());
+    rewriter.create<qco::DeallocOp>(measureOp.getLoc(),
+                                    measureOp.getQubitOut());
     return success();
   }
 };
 
 /**
- * @brief Converts jeff.qubit_measure_nd to qc.measure
+ * @brief Converts jeff.qubit_measure_nd to qco.measure
  *
  * @par Example:
  * ```mlir
- * %result, %q_out = jeff.qubit_measure_nd %q_in : i1, !jeff.qubit
+ * %q_out, %result = jeff.qubit_measure_nd %q_in : !jeff.qubit, i1
  * ```
  * is converted to
  * ```mlir
- * %result = qc.measure %q : i1
+ * %q_out, %result = qco.measure %q_in : !qco.qubit
  * ```
  */
-struct ConvertJeffQubitMeasureNDOpToQC final
+struct ConvertJeffQubitMeasureNDOpToQCO final
     : OpConversionPattern<jeff::QubitMeasureNDOp> {
   using OpConversionPattern::OpConversionPattern;
 
   LogicalResult
   matchAndRewrite(jeff::QubitMeasureNDOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
-    auto qcQubit = adaptor.getInQubit();
-    auto qcOp = rewriter.create<qc::MeasureOp>(op.getLoc(), qcQubit);
-    rewriter.replaceOp(op, {qcOp.getResult(), qcQubit});
+    rewriter.replaceOpWithNewOp<qco::MeasureOp>(op, adaptor.getInQubit());
     return success();
   }
 };
 
 /**
- * @brief Converts jeff.reset to qc.qubit_reset
+ * @brief Converts jeff.reset to qco.qubit_reset
  *
  * @par Example:
  * ```mlir
@@ -255,25 +255,23 @@ struct ConvertJeffQubitMeasureNDOpToQC final
  * ```
  * is converted to
  * ```mlir
- * %result = qc.reset %q : !qc.qubit
+ * %q_out = qco.reset %q_in : !qco.qubit
  * ```
  */
-struct ConvertJeffQubitResetOpToQC final
+struct ConvertJeffQubitResetOpToQCO final
     : OpConversionPattern<jeff::QubitResetOp> {
   using OpConversionPattern::OpConversionPattern;
 
   LogicalResult
   matchAndRewrite(jeff::QubitResetOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
-    auto qcQubit = adaptor.getInQubit();
-    rewriter.create<qc::ResetOp>(op.getLoc(), qcQubit);
-    rewriter.replaceOp(op, qcQubit);
+    rewriter.replaceOpWithNewOp<qco::ResetOp>(op, adaptor.getInQubit());
     return success();
   }
 };
 
 /**
- * @brief Converts jeff.gphase to qc.gphase
+ * @brief Converts jeff.gphase to qco.gphase
  *
  * @par Example:
  * ```mlir
@@ -281,10 +279,10 @@ struct ConvertJeffQubitResetOpToQC final
  * ```
  * is converted to
  * ```mlir
- * qc.gphase(%theta)
+ * qco.gphase(%theta)
  * ```
  */
-struct ConvertJeffGPhaseOpToQC final : OpConversionPattern<jeff::GPhaseOp> {
+struct ConvertJeffGPhaseOpToQCO final : OpConversionPattern<jeff::GPhaseOp> {
   using OpConversionPattern::OpConversionPattern;
 
   LogicalResult
@@ -301,14 +299,18 @@ struct ConvertJeffGPhaseOpToQC final : OpConversionPattern<jeff::GPhaseOp> {
     }
 
     if (op.getNumCtrls() != 0) {
-      auto controls = adaptor.getInCtrlQubits();
-      rewriter.create<qc::CtrlOp>(op.getLoc(), controls, [&] {
-        rewriter.create<qc::GPhaseOp>(op.getLoc(), op.getRotation());
-      });
-      rewriter.replaceOp(op, controls);
+      auto ctrlOp = rewriter.create<qco::CtrlOp>(
+          op.getLoc(), adaptor.getInCtrlQubits(), ValueRange{},
+          [&](ValueRange targets) -> llvm::SmallVector<Value> {
+            rewriter.create<qco::GPhaseOp>(op.getLoc(), op.getRotation());
+            return {};
+          });
+      llvm::SmallVector<Value> results;
+      results.append(ctrlOp.getControlsOut().begin(),
+                     ctrlOp.getControlsOut().end());
+      rewriter.replaceOp(op, results);
     } else {
-      rewriter.create<qc::GPhaseOp>(op.getLoc(), op.getRotation());
-      rewriter.eraseOp(op);
+      rewriter.replaceOpWithNewOp<qco::GPhaseOp>(op, op.getRotation());
     }
 
     return success();
@@ -317,9 +319,9 @@ struct ConvertJeffGPhaseOpToQC final : OpConversionPattern<jeff::GPhaseOp> {
 
 // OneTargetZeroParameter
 
-#define DEFINE_ONE_TARGET_ZERO_PARAMETER(OP_CLASS_JEFF, OP_CLASS_QC,           \
-                                         OP_CLASS_QC_ADJOINT)                  \
-  struct ConvertJeff##OP_CLASS_JEFF##ToQC final                                \
+#define DEFINE_ONE_TARGET_ZERO_PARAMETER(OP_CLASS_JEFF, OP_CLASS_QCO,          \
+                                         OP_CLASS_QCO_ADJOINT)                 \
+  struct ConvertJeff##OP_CLASS_JEFF##ToQCO final                               \
       : OpConversionPattern<jeff::OP_CLASS_JEFF> {                             \
     using OpConversionPattern::OpConversionPattern;                            \
                                                                                \
@@ -327,11 +329,11 @@ struct ConvertJeffGPhaseOpToQC final : OpConversionPattern<jeff::GPhaseOp> {
     matchAndRewrite(jeff::OP_CLASS_JEFF op, OpAdaptor adaptor,                 \
                     ConversionPatternRewriter& rewriter) const override {      \
       if (op.getIsAdjoint()) {                                                 \
-        return convertOneTargetZeroParameter<qc::OP_CLASS_QC_ADJOINT>(         \
+        return convertOneTargetZeroParameter<qco::OP_CLASS_QCO_ADJOINT>(       \
             op, adaptor, rewriter);                                            \
       }                                                                        \
-      return convertOneTargetZeroParameter<qc::OP_CLASS_QC>(op, adaptor,       \
-                                                            rewriter);         \
+      return convertOneTargetZeroParameter<qco::OP_CLASS_QCO>(op, adaptor,     \
+                                                              rewriter);       \
     }                                                                          \
   };
 
@@ -347,16 +349,16 @@ DEFINE_ONE_TARGET_ZERO_PARAMETER(TOp, TOp, TdgOp)
 
 // OneTargetOneParameter
 
-#define DEFINE_ONE_TARGET_ONE_PARAMETER(OP_CLASS_JEFF, OP_CLASS_QC)            \
-  struct ConvertJeff##OP_CLASS_JEFF##ToQC final                                \
+#define DEFINE_ONE_TARGET_ONE_PARAMETER(OP_CLASS_JEFF, OP_CLASS_QCO)           \
+  struct ConvertJeff##OP_CLASS_JEFF##ToQCO final                               \
       : OpConversionPattern<jeff::OP_CLASS_JEFF> {                             \
     using OpConversionPattern::OpConversionPattern;                            \
                                                                                \
     LogicalResult                                                              \
     matchAndRewrite(jeff::OP_CLASS_JEFF op, OpAdaptor adaptor,                 \
                     ConversionPatternRewriter& rewriter) const override {      \
-      return convertOneTargetOneParameter<qc::OP_CLASS_QC>(op, adaptor,        \
-                                                           rewriter);          \
+      return convertOneTargetOneParameter<qco::OP_CLASS_QCO>(op, adaptor,      \
+                                                             rewriter);        \
     }                                                                          \
   };
 
@@ -368,7 +370,7 @@ DEFINE_ONE_TARGET_ONE_PARAMETER(R1Op, POp)
 #undef DEFINE_ONE_TARGET_ONE_PARAMETER
 
 /**
- * @brief Converts jeff.u to qc.u
+ * @brief Converts jeff.u to qco.u
  *
  * @par Example:
  * ```mlir
@@ -377,10 +379,10 @@ DEFINE_ONE_TARGET_ONE_PARAMETER(R1Op, POp)
  * ```
  * is converted to
  * ```mlir
- * qc.u(%theta, %phi, %lambda) %q : !qc.qubit
+ * %q_out = qco.u(%theta, %phi, %lambda) %q_in : !qco.qubit
  * ```
  */
-struct ConvertJeffUOpToQC final : OpConversionPattern<jeff::UOp> {
+struct ConvertJeffUOpToQCO final : OpConversionPattern<jeff::UOp> {
   using OpConversionPattern::OpConversionPattern;
 
   LogicalResult
@@ -396,23 +398,24 @@ struct ConvertJeffUOpToQC final : OpConversionPattern<jeff::UOp> {
           op, "Operations with power != 1 are not yet supported");
     }
 
-    auto target = adaptor.getInQubit();
-
     if (op.getNumCtrls() != 0) {
-      auto controls = adaptor.getInCtrlQubits();
-      rewriter.create<qc::CtrlOp>(op.getLoc(), controls, [&] {
-        rewriter.create<qc::UOp>(op.getLoc(), target, op.getTheta(),
-                                 op.getPhi(), op.getLambda());
-      });
-      SmallVector<Value> operands;
-      operands.reserve(1 + controls.size());
-      operands.push_back(target);
-      operands.append(controls.begin(), controls.end());
-      rewriter.replaceOp(op, operands);
+      auto ctrlOp = rewriter.create<qco::CtrlOp>(
+          op.getLoc(), adaptor.getInCtrlQubits(), adaptor.getInQubit(),
+          [&](ValueRange targets) -> llvm::SmallVector<Value> {
+            auto qcoOp = rewriter.create<qco::UOp>(op.getLoc(), targets[0],
+                                                   op.getTheta(), op.getPhi(),
+                                                   op.getLambda());
+            return {qcoOp.getQubitOut()};
+          });
+      llvm::SmallVector<Value> results;
+      results.append(ctrlOp.getTargetsOut().begin(),
+                     ctrlOp.getTargetsOut().end());
+      results.append(ctrlOp.getControlsOut().begin(),
+                     ctrlOp.getControlsOut().end());
+      rewriter.replaceOp(op, results);
     } else {
-      rewriter.create<qc::UOp>(op.getLoc(), target, op.getTheta(), op.getPhi(),
-                               op.getLambda());
-      rewriter.replaceOp(op, target);
+      rewriter.replaceOpWithNewOp<qco::UOp>(
+          op, adaptor.getInQubit(), op.getTheta(), op.getPhi(), op.getLambda());
     }
 
     return success();
@@ -420,7 +423,7 @@ struct ConvertJeffUOpToQC final : OpConversionPattern<jeff::UOp> {
 };
 
 /**
- * @brief Converts jeff.swap to qc.swap
+ * @brief Converts jeff.swap to qco.swap
  *
  * @par Example:
  * ```mlir
@@ -429,10 +432,10 @@ struct ConvertJeffUOpToQC final : OpConversionPattern<jeff::UOp> {
  * ```
  * is converted to
  * ```mlir
- * qc.swap %q0, %q1 : !qc.qubit, !qc.qubit
+ * %q0_out, %q1_out = qco.swap %q0_in, %q1_in : !qco.qubit, !qco.qubit
  * ```
  */
-struct ConvertJeffSwapOpToQC final : OpConversionPattern<jeff::SwapOp> {
+struct ConvertJeffSwapOpToQCO final : OpConversionPattern<jeff::SwapOp> {
   using OpConversionPattern::OpConversionPattern;
 
   LogicalResult
@@ -443,23 +446,24 @@ struct ConvertJeffSwapOpToQC final : OpConversionPattern<jeff::SwapOp> {
           op, "Operations with power != 1 are not yet supported");
     }
 
-    auto target1 = adaptor.getInQubitOne();
-    auto target2 = adaptor.getInQubitTwo();
-
     if (op.getNumCtrls() != 0) {
-      auto controls = adaptor.getInCtrlQubits();
-      rewriter.create<qc::CtrlOp>(op.getLoc(), controls, [&] {
-        rewriter.create<qc::SWAPOp>(op.getLoc(), target1, target2);
-      });
-      SmallVector<Value> operands;
-      operands.reserve(2 + controls.size());
-      operands.push_back(target1);
-      operands.push_back(target2);
-      operands.append(controls.begin(), controls.end());
-      rewriter.replaceOp(op, operands);
+      auto ctrlOp = rewriter.create<qco::CtrlOp>(
+          op.getLoc(), adaptor.getInCtrlQubits(),
+          ValueRange{adaptor.getInQubitOne(), adaptor.getInQubitTwo()},
+          [&](ValueRange targets) -> llvm::SmallVector<Value> {
+            auto qcoOp = rewriter.create<qco::SWAPOp>(op.getLoc(), targets[0],
+                                                      targets[1]);
+            return {qcoOp.getQubit0Out(), qcoOp.getQubit1Out()};
+          });
+      llvm::SmallVector<Value> results;
+      results.append(ctrlOp.getTargetsOut().begin(),
+                     ctrlOp.getTargetsOut().end());
+      results.append(ctrlOp.getControlsOut().begin(),
+                     ctrlOp.getControlsOut().end());
+      rewriter.replaceOp(op, results);
     } else {
-      rewriter.create<qc::SWAPOp>(op.getLoc(), target1, target2);
-      rewriter.replaceOp(op, {target1, target2});
+      rewriter.replaceOpWithNewOp<qco::SWAPOp>(op, adaptor.getInQubitOne(),
+                                               adaptor.getInQubitTwo());
     }
 
     return success();
@@ -467,31 +471,31 @@ struct ConvertJeffSwapOpToQC final : OpConversionPattern<jeff::SwapOp> {
 };
 
 /**
- * @brief Type converter for Jeff-to-QC conversion
+ * @brief Type converter for Jeff-to-QCO conversion
  *
  * @details
- * Converts `!jeff.qubit` to `!qc.qubit`.
+ * Converts `!jeff.qubit` to `!qco.qubit`.
  */
-class JeffToQCTypeConverter final : public TypeConverter {
+class JeffToQCOTypeConverter final : public TypeConverter {
 public:
-  explicit JeffToQCTypeConverter(MLIRContext* ctx) {
+  explicit JeffToQCOTypeConverter(MLIRContext* ctx) {
     // Identity conversion for all types by default
     addConversion([](Type type) { return type; });
 
     addConversion([ctx](jeff::QubitType /*type*/) -> Type {
-      return qc::QubitType::get(ctx);
+      return qco::QubitType::get(ctx);
     });
   }
 };
 
 /**
- * @brief Pass for converting Jeff operations to QC operations
+ * @brief Pass for converting Jeff operations to QCO operations
  *
  * @details
  * TODO
  */
-struct JeffToQC final : impl::JeffToQCBase<JeffToQC> {
-  using JeffToQCBase::JeffToQCBase;
+struct JeffToQCO final : impl::JeffToQCOBase<JeffToQCO> {
+  using JeffToQCOBase::JeffToQCOBase;
 
   void runOnOperation() override {
     MLIRContext* context = &getContext();
@@ -499,22 +503,23 @@ struct JeffToQC final : impl::JeffToQCBase<JeffToQC> {
 
     ConversionTarget target(*context);
     RewritePatternSet patterns(context);
-    const JeffToQCTypeConverter typeConverter(context);
+    const JeffToQCOTypeConverter typeConverter(context);
 
-    // Configure conversion target: Jeff illegal, QC legal
+    // Configure conversion target: Jeff illegal, QCO legal
     target.addIllegalDialect<jeff::JeffDialect>();
-    target.addLegalDialect<QCDialect>();
+    target.addLegalDialect<QCODialect>();
 
     // Register operation conversion patterns
     patterns
-        .add<ConvertJeffQubitAllocOpToQC, ConvertJeffQubitFreeOpToQC,
-             ConvertJeffQubitFreeZeroOpToQC, ConvertJeffQubitMeasureOpToQC,
-             ConvertJeffQubitMeasureNDOpToQC, ConvertJeffQubitResetOpToQC,
-             ConvertJeffGPhaseOpToQC, ConvertJeffIOpToQC, ConvertJeffXOpToQC,
-             ConvertJeffYOpToQC, ConvertJeffZOpToQC, ConvertJeffHOpToQC,
-             ConvertJeffSOpToQC, ConvertJeffTOpToQC, ConvertJeffRxOpToQC,
-             ConvertJeffRyOpToQC, ConvertJeffRzOpToQC, ConvertJeffR1OpToQC,
-             ConvertJeffUOpToQC, ConvertJeffSwapOpToQC>(typeConverter, context);
+        .add<ConvertJeffQubitAllocOpToQCO, ConvertJeffQubitFreeOpToQCO,
+             ConvertJeffQubitFreeZeroOpToQCO, ConvertJeffQubitMeasureOpToQCO,
+             ConvertJeffQubitMeasureNDOpToQCO, ConvertJeffQubitResetOpToQCO,
+             ConvertJeffGPhaseOpToQCO, ConvertJeffIOpToQCO, ConvertJeffXOpToQCO,
+             ConvertJeffYOpToQCO, ConvertJeffZOpToQCO, ConvertJeffHOpToQCO,
+             ConvertJeffSOpToQCO, ConvertJeffTOpToQCO, ConvertJeffRxOpToQCO,
+             ConvertJeffRyOpToQCO, ConvertJeffRzOpToQCO, ConvertJeffR1OpToQCO,
+             ConvertJeffUOpToQCO, ConvertJeffSwapOpToQCO>(typeConverter,
+                                                          context);
 
     // Apply the conversion
     if (failed(applyPartialConversion(module, target, std::move(patterns)))) {

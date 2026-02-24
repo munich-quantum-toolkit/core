@@ -8,8 +8,8 @@
 
 include "mlir/Pass/PassBase.td"
 
-def QCToJeff : Pass<"qc-to-jeff"> {
-  let summary = "Convert QC operations to Jeff operations";
+def JeffToQCO : Pass<"jeff-to-qco"> {
+  let summary = "Convert Jeff operations to QCO operations";
 
   let description = [{
       TODO
@@ -17,6 +17,6 @@ def QCToJeff : Pass<"qc-to-jeff"> {
 
   let dependentDialects = [
      "jeff::JeffDialect",
-     "mlir::QCDialect",
+     "mlir::QCODialect",
   ];
 }

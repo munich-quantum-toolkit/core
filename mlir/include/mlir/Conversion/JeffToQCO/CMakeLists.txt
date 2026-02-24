@@ -6,15 +6,8 @@
 #
 # Licensed under the MIT License
 
-file(GLOB CONVERSION_SOURCES *.cpp)
+set(LLVM_TARGET_DEFINITIONS JeffToQCO.td)
+mlir_tablegen(JeffToQCO.h.inc -gen-pass-decls -name JeffToQCO)
+add_public_tablegen_target(JeffToQCOIncGen)
 
-add_mlir_library(
-  JeffToQC
-  ${CONVERSION_SOURCES}
-  DEPENDS
-  JeffToQCIncGen
-  LINK_LIBS
-  MLIRJeff
-  MLIRQCDialect
-  MLIRTransforms
-  DISABLE_INSTALL)
+add_mlir_doc(JeffToQCO MLIRJeffToQCO Conversions/ -gen-pass-doc)

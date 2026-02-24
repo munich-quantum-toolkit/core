@@ -15,12 +15,12 @@ target_link_libraries(
           MLIRArithDialect
           MLIRParser
           MLIRPass
-          MLIRQCPrograms
-          MLIRQCProgramBuilder
+          MLIRQCOPrograms
+          MLIRQCOProgramBuilder
           MLIRSupportMQT
           MLIRTransforms
-          JeffToQC
-          QCToJeff)
+          JeffToQCO
+          QCOToJeff)
 
 mqt_mlir_configure_unittest_target(${target_name})
 

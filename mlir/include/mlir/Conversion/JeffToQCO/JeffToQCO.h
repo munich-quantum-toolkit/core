@@ -13,9 +13,9 @@
 #include <mlir/Pass/Pass.h>
 
 namespace mlir {
-#define GEN_PASS_DECL_JEFFTOQC
-#include "mlir/Conversion/JeffToQC/JeffToQC.h.inc"
+#define GEN_PASS_DECL_JEFFTOQCO
+#include "mlir/Conversion/JeffToQCO/JeffToQCO.h.inc"
 
 #define GEN_PASS_REGISTRATION
-#include "mlir/Conversion/JeffToQC/JeffToQC.h.inc"
+#include "mlir/Conversion/JeffToQCO/JeffToQCO.h.inc"
 } // namespace mlir

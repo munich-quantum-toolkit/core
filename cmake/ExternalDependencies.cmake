@@ -38,7 +38,7 @@ if(BUILD_MQT_CORE_MLIR)
   FetchContent_Declare(
     jeff_mlir
     GIT_REPOSITORY https://github.com/PennyLaneAI/jeff-mlir.git
-    GIT_TAG main
+    GIT_TAG deserialization
     GIT_SUBMODULES "" GIT_SUBMODULES_RECURSE FALSE)
   FetchContent_MakeAvailable(jeff_mlir)
 
