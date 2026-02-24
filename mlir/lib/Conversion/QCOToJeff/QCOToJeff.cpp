@@ -505,7 +505,7 @@ struct ConvertQCOCtrlOpToJeff final : StatefulOpConversionPattern<qco::CtrlOp> {
 
     // Inline region
     rewriter.inlineBlockBefore(&op.getRegion().front(), op->getBlock(),
-                               op->getIterator());
+                               op->getIterator(), targets);
 
     return success();
   }
