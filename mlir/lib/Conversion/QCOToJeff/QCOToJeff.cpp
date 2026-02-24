@@ -17,6 +17,7 @@
 #include <cstdint>
 #include <jeff/IR/JeffDialect.h>
 #include <jeff/IR/JeffOps.h>
+#include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/IR/BuiltinTypeInterfaces.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OperationSupport.h>
@@ -24,6 +25,7 @@
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/LogicalResult.h>
 #include <mlir/Transforms/DialectConversion.h>
+#include <numbers>
 #include <utility>
 
 namespace mlir {
@@ -85,7 +87,7 @@ static LogicalResult
 convertOneTargetZeroParameter(QCOOpType& op, QCOOpAdaptorType& adaptor,
                               ConversionPatternRewriter& rewriter,
                               LoweringState& state, bool isAdjoint) {
-  auto inCtrlOp = state.inCtrlOp;
+  const auto inCtrlOp = state.inCtrlOp;
 
   Value target;
   if (inCtrlOp != 0) {
@@ -127,7 +129,7 @@ static LogicalResult
 convertOneTargetOneParameter(QCOOpType& op, QCOOpAdaptorType& adaptor,
                              ConversionPatternRewriter& rewriter,
                              LoweringState& state) {
-  auto inCtrlOp = state.inCtrlOp;
+  const auto inCtrlOp = state.inCtrlOp;
 
   Value target;
   if (inCtrlOp != 0) {
@@ -169,7 +171,7 @@ static LogicalResult
 convertOneTargetThreeParameter(QCOOpType& op, QCOOpAdaptorType& adaptor,
                                ConversionPatternRewriter& rewriter,
                                LoweringState& state) {
-  auto inCtrlOp = state.inCtrlOp;
+  const auto inCtrlOp = state.inCtrlOp;
 
   Value target;
   if (inCtrlOp != 0) {
@@ -212,7 +214,7 @@ static LogicalResult
 convertTwoTargetZeroParameter(QCOOpType& op, QCOOpAdaptorType& adaptor,
                               ConversionPatternRewriter& rewriter,
                               LoweringState& state) {
-  auto inCtrlOp = state.inCtrlOp;
+  const auto inCtrlOp = state.inCtrlOp;
 
   Value target0;
   Value target1;
@@ -241,6 +243,32 @@ convertTwoTargetZeroParameter(QCOOpType& op, QCOOpAdaptorType& adaptor,
   }
 
   return success();
+}
+
+template <typename QCOOpType, typename QCOOpAdaptorType>
+static void createCustomOp(QCOOpType& op, QCOOpAdaptorType& adaptor,
+                           ConversionPatternRewriter& rewriter,
+                           LoweringState& state,
+                           llvm::SmallVector<Value> targets,
+                           llvm::SmallVector<Value> params, bool isAdjoint,
+                           StringRef name) {
+  const auto inCtrlOp = state.inCtrlOp;
+
+  auto jeffOp = rewriter.create<jeff::CustomOp>(
+      op.getLoc(), targets,
+      /*in_ctrl_qubits=*/state.controlsIn[inCtrlOp], /*params=*/params,
+      /*num_ctrls=*/state.controlsIn[inCtrlOp].size(),
+      /*is_adjoint=*/isAdjoint,
+      /*power=*/1, /*name=*/name, /*num_targets=*/targets.size(),
+      /*num_params=*/params.size());
+
+  if (state.inCtrlOp != 0) {
+    rewriter.eraseOp(op);
+    state.controlsOut[inCtrlOp] = jeffOp.getOutCtrlQubits();
+    state.targetsOut[inCtrlOp] = jeffOp.getOutQubits();
+  } else {
+    rewriter.replaceOp(op, jeffOp.getOutQubits());
+  }
 }
 
 /**
@@ -361,7 +389,7 @@ struct ConvertQCOGPhaseOpToJeff final
   matchAndRewrite(qco::GPhaseOp op, OpAdaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
     auto& state = getState();
-    auto inCtrlOp = state.inCtrlOp;
+    const auto inCtrlOp = state.inCtrlOp;
 
     auto jeffOp = rewriter.create<jeff::GPhaseOp>(
         op.getLoc(), op.getParameter(0),
@@ -409,6 +437,50 @@ DEFINE_ONE_TARGET_ZERO_PARAMETER(TdgOp, TOp, true)
 
 #undef DEFINE_ONE_TARGET_ZERO_PARAMETER
 
+struct ConvertQCOSXOpToJeff final : StatefulOpConversionPattern<qco::SXOp> {
+  using StatefulOpConversionPattern::StatefulOpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(qco::SXOp op, OpAdaptor adaptor,
+                  ConversionPatternRewriter& rewriter) const override {
+    auto& state = getState();
+    const auto inCtrlOp = state.inCtrlOp;
+
+    Value target;
+    if (inCtrlOp != 0) {
+      target = state.targetsIn[inCtrlOp][0];
+    } else {
+      target = adaptor.getQubitIn();
+    }
+
+    createCustomOp(op, adaptor, rewriter, state, {target}, {}, false, "sx");
+
+    return success();
+  }
+};
+
+struct ConvertQCOSXdgOpToJeff final : StatefulOpConversionPattern<qco::SXdgOp> {
+  using StatefulOpConversionPattern::StatefulOpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(qco::SXdgOp op, OpAdaptor adaptor,
+                  ConversionPatternRewriter& rewriter) const override {
+    auto& state = getState();
+    const auto inCtrlOp = state.inCtrlOp;
+
+    Value target;
+    if (inCtrlOp != 0) {
+      target = state.targetsIn[inCtrlOp][0];
+    } else {
+      target = adaptor.getQubitIn();
+    }
+
+    createCustomOp(op, adaptor, rewriter, state, {target}, {}, true, "sx");
+
+    return success();
+  }
+};
+
 // OneTargetOneParameter
 
 #define DEFINE_ONE_TARGET_ONE_PARAMETER(OP_CLASS_QCO, OP_CLASS_JEFF)           \
@@ -430,6 +502,68 @@ DEFINE_ONE_TARGET_ONE_PARAMETER(RZOp, RzOp)
 DEFINE_ONE_TARGET_ONE_PARAMETER(POp, R1Op)
 
 #undef DEFINE_ONE_TARGET_ONE_PARAMETER
+
+// OneTargetTwoParameter
+
+struct ConvertQCOU2OpToJeff final : StatefulOpConversionPattern<qco::U2Op> {
+  using StatefulOpConversionPattern::StatefulOpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(qco::U2Op op, OpAdaptor adaptor,
+                  ConversionPatternRewriter& rewriter) const override {
+    auto& state = getState();
+    const auto inCtrlOp = state.inCtrlOp;
+
+    Value target;
+    if (inCtrlOp != 0) {
+      target = state.targetsIn[inCtrlOp][0];
+    } else {
+      target = adaptor.getQubitIn();
+    }
+
+    auto loc = op.getLoc();
+    auto theta = rewriter.create<arith::ConstantOp>(
+        loc, rewriter.getF64FloatAttr(std::numbers::pi / 2));
+    auto jeffOp = rewriter.create<jeff::UOp>(
+        loc, target, theta.getResult(), op.getParameter(0), op.getParameter(1),
+        /*in_ctrl_qubits=*/state.controlsIn[inCtrlOp],
+        /*num_ctrls=*/state.controlsIn[inCtrlOp].size(),
+        /*is_adjoint=*/false, /*power=*/1);
+
+    if (inCtrlOp != 0) {
+      rewriter.eraseOp(op);
+      state.controlsOut[inCtrlOp] = jeffOp.getOutCtrlQubits();
+      state.targetsOut[inCtrlOp] = {jeffOp.getOutQubit()};
+    } else {
+      rewriter.replaceOp(op, jeffOp.getOutQubit());
+    }
+
+    return success();
+  }
+};
+
+struct ConvertQCOROpToJeff final : StatefulOpConversionPattern<qco::ROp> {
+  using StatefulOpConversionPattern::StatefulOpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(qco::ROp op, OpAdaptor adaptor,
+                  ConversionPatternRewriter& rewriter) const override {
+    auto& state = getState();
+    const auto inCtrlOp = state.inCtrlOp;
+
+    Value target;
+    if (inCtrlOp != 0) {
+      target = state.targetsIn[inCtrlOp][0];
+    } else {
+      target = adaptor.getQubitIn();
+    }
+
+    createCustomOp(op, adaptor, rewriter, state, {target},
+                   {op.getParameter(0), op.getParameter(1)}, false, "r");
+
+    return success();
+  }
+};
 
 // OneTargetThreeParameter
 
@@ -468,6 +602,151 @@ DEFINE_ONE_TARGET_THREE_PARAMETER(UOp, UOp)
 DEFINE_TWO_TARGET_ZERO_PARAMETER(SWAPOp, SwapOp)
 
 #undef DEFINE_TWO_TARGET_ZERO_PARAMETER
+
+struct ConvertQCOiSWAPOpToJeff final
+    : StatefulOpConversionPattern<qco::iSWAPOp> {
+  using StatefulOpConversionPattern::StatefulOpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(qco::iSWAPOp op, OpAdaptor adaptor,
+                  ConversionPatternRewriter& rewriter) const override {
+    auto& state = getState();
+    const auto inCtrlOp = state.inCtrlOp;
+
+    llvm::SmallVector<Value> targets;
+    if (inCtrlOp != 0) {
+      targets.push_back(state.targetsIn[inCtrlOp][0]);
+      targets.push_back(state.targetsIn[inCtrlOp][1]);
+    } else {
+      targets.push_back(adaptor.getQubit0In());
+      targets.push_back(adaptor.getQubit1In());
+    }
+
+    createCustomOp(op, adaptor, rewriter, state, targets, {}, false, "iswap");
+
+    return success();
+  }
+};
+
+struct ConvertQCOECROpToJeff final : StatefulOpConversionPattern<qco::ECROp> {
+  using StatefulOpConversionPattern::StatefulOpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(qco::ECROp op, OpAdaptor adaptor,
+                  ConversionPatternRewriter& rewriter) const override {
+    auto& state = getState();
+    const auto inCtrlOp = state.inCtrlOp;
+
+    llvm::SmallVector<Value> targets;
+    if (inCtrlOp != 0) {
+      targets.push_back(state.targetsIn[inCtrlOp][0]);
+      targets.push_back(state.targetsIn[inCtrlOp][1]);
+    } else {
+      targets.push_back(adaptor.getQubit0In());
+      targets.push_back(adaptor.getQubit1In());
+    }
+
+    createCustomOp(op, adaptor, rewriter, state, targets, {}, false, "ecr");
+
+    return success();
+  }
+};
+
+struct ConvertQCODCXOpToJeff final : StatefulOpConversionPattern<qco::DCXOp> {
+  using StatefulOpConversionPattern::StatefulOpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(qco::DCXOp op, OpAdaptor adaptor,
+                  ConversionPatternRewriter& rewriter) const override {
+    auto& state = getState();
+    const auto inCtrlOp = state.inCtrlOp;
+
+    llvm::SmallVector<Value> targets;
+    if (inCtrlOp != 0) {
+      targets.push_back(state.targetsIn[inCtrlOp][0]);
+      targets.push_back(state.targetsIn[inCtrlOp][1]);
+    } else {
+      targets.push_back(adaptor.getQubit0In());
+      targets.push_back(adaptor.getQubit1In());
+    }
+
+    createCustomOp(op, adaptor, rewriter, state, targets, {}, false, "dcx");
+
+    return success();
+  }
+};
+
+// TwoTargetTwoParameter
+
+struct ConvertQCOXXMinusYYOpToJeff final
+    : StatefulOpConversionPattern<qco::XXMinusYYOp> {
+  using StatefulOpConversionPattern::StatefulOpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(qco::XXMinusYYOp op, OpAdaptor adaptor,
+                  ConversionPatternRewriter& rewriter) const override {
+    auto& state = getState();
+    const auto inCtrlOp = state.inCtrlOp;
+
+    llvm::SmallVector<Value> targets;
+    if (inCtrlOp != 0) {
+      targets.push_back(state.targetsIn[inCtrlOp][0]);
+      targets.push_back(state.targetsIn[inCtrlOp][1]);
+    } else {
+      targets.push_back(adaptor.getQubit0In());
+      targets.push_back(adaptor.getQubit1In());
+    }
+
+    createCustomOp(op, adaptor, rewriter, state, targets,
+                   {op.getParameter(0), op.getParameter(1)}, false,
+                   "xx_minus_yy");
+
+    return success();
+  }
+};
+
+struct ConvertQCOXXPlusYYOpToJeff final
+    : StatefulOpConversionPattern<qco::XXPlusYYOp> {
+  using StatefulOpConversionPattern::StatefulOpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(qco::XXPlusYYOp op, OpAdaptor adaptor,
+                  ConversionPatternRewriter& rewriter) const override {
+    auto& state = getState();
+    const auto inCtrlOp = state.inCtrlOp;
+
+    llvm::SmallVector<Value> targets;
+    if (inCtrlOp != 0) {
+      targets.push_back(state.targetsIn[inCtrlOp][0]);
+      targets.push_back(state.targetsIn[inCtrlOp][1]);
+    } else {
+      targets.push_back(adaptor.getQubit0In());
+      targets.push_back(adaptor.getQubit1In());
+    }
+
+    createCustomOp(op, adaptor, rewriter, state, targets,
+                   {op.getParameter(0), op.getParameter(1)}, false,
+                   "xx_plus_yy");
+
+    return success();
+  }
+};
+
+struct ConvertQCOBarrierOpToJeff final
+    : StatefulOpConversionPattern<qco::BarrierOp> {
+  using StatefulOpConversionPattern::StatefulOpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(qco::BarrierOp op, OpAdaptor adaptor,
+                  ConversionPatternRewriter& rewriter) const override {
+    auto& state = getState();
+
+    createCustomOp(op, adaptor, rewriter, state, adaptor.getQubitsIn(), {},
+                   false, "barrier");
+
+    return success();
+  }
+};
 
 /**
  * @brief Converts qco.ctrl to Jeff by inlining the region
@@ -594,9 +873,13 @@ struct QCOToJeff final : impl::QCOToJeffBase<QCOToJeff> {
              ConvertQCOGPhaseOpToJeff, ConvertQCOIdOpToJeff,
              ConvertQCOXOpToJeff, ConvertQCOYOpToJeff, ConvertQCOZOpToJeff,
              ConvertQCOHOpToJeff, ConvertQCOSOpToJeff, ConvertQCOSdgOpToJeff,
-             ConvertQCOTOpToJeff, ConvertQCOTdgOpToJeff, ConvertQCORXOpToJeff,
-             ConvertQCORYOpToJeff, ConvertQCORZOpToJeff, ConvertQCOPOpToJeff,
-             ConvertQCOUOpToJeff, ConvertQCOSWAPOpToJeff,
+             ConvertQCOTOpToJeff, ConvertQCOTdgOpToJeff, ConvertQCOSXOpToJeff,
+             ConvertQCOSXdgOpToJeff, ConvertQCORXOpToJeff, ConvertQCORYOpToJeff,
+             ConvertQCORZOpToJeff, ConvertQCOPOpToJeff, ConvertQCOROpToJeff,
+             ConvertQCOU2OpToJeff, ConvertQCOUOpToJeff, ConvertQCOSWAPOpToJeff,
+             ConvertQCOiSWAPOpToJeff, ConvertQCOECROpToJeff,
+             ConvertQCODCXOpToJeff, ConvertQCOXXMinusYYOpToJeff,
+             ConvertQCOXXPlusYYOpToJeff, ConvertQCOBarrierOpToJeff,
              ConvertQCOCtrlOpToJeff, ConvertQCOYieldOpToJeff>(typeConverter,
                                                               context, &state);
 

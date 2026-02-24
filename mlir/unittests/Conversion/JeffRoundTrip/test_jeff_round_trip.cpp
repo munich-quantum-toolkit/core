@@ -108,6 +108,51 @@ TEST_P(JeffRoundTripTest, ProgramEquivalence) {
       areModulesEquivalentWithPermutations(program.get(), reference.get()));
 }
 
+/// \name JeffRoundTrip/Operations/StandardGates/BarrierOp.cpp
+/// @{
+INSTANTIATE_TEST_SUITE_P(
+    QCOBarrierOpTest, JeffRoundTripTest,
+    testing::Values(
+        JeffRoundTripTestCase{"Barrier", MQT_NAMED_BUILDER(qco::barrier),
+                              MQT_NAMED_BUILDER(qco::barrier)},
+        JeffRoundTripTestCase{"BarrierTwoQubits",
+                              MQT_NAMED_BUILDER(qco::barrierTwoQubits),
+                              MQT_NAMED_BUILDER(qco::barrierTwoQubits)},
+        JeffRoundTripTestCase{"BarrierMultipleQubits",
+                              MQT_NAMED_BUILDER(qco::barrierMultipleQubits),
+                              MQT_NAMED_BUILDER(qco::barrierMultipleQubits)}));
+/// @}
+
+/// \name JeffRoundTrip/Operations/StandardGates/DcxOp.cpp
+/// @{
+INSTANTIATE_TEST_SUITE_P(
+    QCODCXOpTest, JeffRoundTripTest,
+    testing::Values(
+        JeffRoundTripTestCase{"DCX", MQT_NAMED_BUILDER(qco::dcx),
+                              MQT_NAMED_BUILDER(qco::dcx)},
+        JeffRoundTripTestCase{"SingleControlledDCX",
+                              MQT_NAMED_BUILDER(qco::singleControlledDcx),
+                              MQT_NAMED_BUILDER(qco::singleControlledDcx)},
+        JeffRoundTripTestCase{"MultipleControlledDCX",
+                              MQT_NAMED_BUILDER(qco::multipleControlledDcx),
+                              MQT_NAMED_BUILDER(qco::multipleControlledDcx)}));
+/// @}
+
+/// \name JeffRoundTrip/Operations/StandardGates/EcrOp.cpp
+/// @{
+INSTANTIATE_TEST_SUITE_P(
+    QCOECROpTest, JeffRoundTripTest,
+    testing::Values(
+        JeffRoundTripTestCase{"ECR", MQT_NAMED_BUILDER(qco::ecr),
+                              MQT_NAMED_BUILDER(qco::ecr)},
+        JeffRoundTripTestCase{"SingleControlledECR",
+                              MQT_NAMED_BUILDER(qco::singleControlledEcr),
+                              MQT_NAMED_BUILDER(qco::singleControlledEcr)},
+        JeffRoundTripTestCase{"MultipleControlledECR",
+                              MQT_NAMED_BUILDER(qco::multipleControlledEcr),
+                              MQT_NAMED_BUILDER(qco::multipleControlledEcr)}));
+/// @}
+
 /// \name JeffRoundTrip/Operations/StandardGates/GphaseOp.cpp
 /// @{
 INSTANTIATE_TEST_SUITE_P(QCOGPhaseOpTest, JeffRoundTripTest,
@@ -131,6 +176,22 @@ INSTANTIATE_TEST_SUITE_P(
                               MQT_NAMED_BUILDER(qco::multipleControlledH)}));
 /// @}
 
+/// \name JeffRoundTrip/Operations/StandardGates/IswapOp.cpp
+/// @{
+INSTANTIATE_TEST_SUITE_P(
+    QCOiSWAPOpTest, JeffRoundTripTest,
+    testing::Values(
+        JeffRoundTripTestCase{"iSWAP", MQT_NAMED_BUILDER(qco::iswap),
+                              MQT_NAMED_BUILDER(qco::iswap)},
+        JeffRoundTripTestCase{"SingleControllediSWAP",
+                              MQT_NAMED_BUILDER(qco::singleControlledIswap),
+                              MQT_NAMED_BUILDER(qco::singleControlledIswap)},
+        JeffRoundTripTestCase{
+            "MultipleControllediSWAP",
+            MQT_NAMED_BUILDER(qco::multipleControlledIswap),
+            MQT_NAMED_BUILDER(qco::multipleControlledIswap)}));
+/// @}
+
 /// \name JeffRoundTrip/Operations/StandardGates/IdOp.cpp
 /// @{
 INSTANTIATE_TEST_SUITE_P(QCOIdOpTest, JeffRoundTripTest,
@@ -152,6 +213,21 @@ INSTANTIATE_TEST_SUITE_P(
         JeffRoundTripTestCase{"MultipleControlledP",
                               MQT_NAMED_BUILDER(qco::multipleControlledP),
                               MQT_NAMED_BUILDER(qco::multipleControlledP)}));
+/// @}
+
+/// \name JeffRoundTrip/Operations/StandardGates/ROp.cpp
+/// @{
+INSTANTIATE_TEST_SUITE_P(
+    DISABLED_QCOROpTest, JeffRoundTripTest,
+    testing::Values(
+        JeffRoundTripTestCase{"R", MQT_NAMED_BUILDER(qco::r),
+                              MQT_NAMED_BUILDER(qco::r)},
+        JeffRoundTripTestCase{"SingleControlledR",
+                              MQT_NAMED_BUILDER(qco::singleControlledR),
+                              MQT_NAMED_BUILDER(qco::singleControlledR)},
+        JeffRoundTripTestCase{"MultipleControlledR",
+                              MQT_NAMED_BUILDER(qco::multipleControlledR),
+                              MQT_NAMED_BUILDER(qco::multipleControlledR)}));
 /// @}
 
 /// \name JeffRoundTrip/Operations/StandardGates/RxOp.cpp
@@ -244,6 +320,36 @@ INSTANTIATE_TEST_SUITE_P(
                               MQT_NAMED_BUILDER(qco::multipleControlledSwap)}));
 /// @}
 
+/// \name JeffRoundTrip/Operations/StandardGates/SxOp.cpp
+/// @{
+INSTANTIATE_TEST_SUITE_P(
+    QCOSXOpTest, JeffRoundTripTest,
+    testing::Values(
+        JeffRoundTripTestCase{"SX", MQT_NAMED_BUILDER(qco::sx),
+                              MQT_NAMED_BUILDER(qco::sx)},
+        JeffRoundTripTestCase{"SingleControlledSX",
+                              MQT_NAMED_BUILDER(qco::singleControlledSx),
+                              MQT_NAMED_BUILDER(qco::singleControlledSx)},
+        JeffRoundTripTestCase{"MultipleControlledSX",
+                              MQT_NAMED_BUILDER(qco::multipleControlledSx),
+                              MQT_NAMED_BUILDER(qco::multipleControlledSx)}));
+/// @}
+
+/// \name JeffRoundTrip/Operations/StandardGates/SxdgOp.cpp
+/// @{
+INSTANTIATE_TEST_SUITE_P(
+    QCOSXdgOpTest, JeffRoundTripTest,
+    testing::Values(
+        JeffRoundTripTestCase{"SXdg", MQT_NAMED_BUILDER(qco::sxdg),
+                              MQT_NAMED_BUILDER(qco::sxdg)},
+        JeffRoundTripTestCase{"SingleControlledSXdg",
+                              MQT_NAMED_BUILDER(qco::singleControlledSxdg),
+                              MQT_NAMED_BUILDER(qco::singleControlledSxdg)},
+        JeffRoundTripTestCase{"MultipleControlledSXdg",
+                              MQT_NAMED_BUILDER(qco::multipleControlledSxdg),
+                              MQT_NAMED_BUILDER(qco::multipleControlledSxdg)}));
+/// @}
+
 /// \name JeffRoundTrip/Operations/StandardGates/TOp.cpp
 /// @{
 INSTANTIATE_TEST_SUITE_P(
@@ -274,6 +380,21 @@ INSTANTIATE_TEST_SUITE_P(
                               MQT_NAMED_BUILDER(qco::multipleControlledTdg)}));
 /// @}
 
+/// \name JeffRoundTrip/Operations/StandardGates/U2Op.cpp
+/// @{
+INSTANTIATE_TEST_SUITE_P(
+    DISABLED_QCOU2OpTest, JeffRoundTripTest,
+    testing::Values(
+        JeffRoundTripTestCase{"U2", MQT_NAMED_BUILDER(qco::u2),
+                              MQT_NAMED_BUILDER(qco::u2)},
+        JeffRoundTripTestCase{"SingleControlledU2",
+                              MQT_NAMED_BUILDER(qco::singleControlledU2),
+                              MQT_NAMED_BUILDER(qco::singleControlledU2)},
+        JeffRoundTripTestCase{"MultipleControlledU2",
+                              MQT_NAMED_BUILDER(qco::multipleControlledU2),
+                              MQT_NAMED_BUILDER(qco::multipleControlledU2)}));
+/// @}
+
 /// \name JeffRoundTrip/Operations/StandardGates/UOp.cpp
 /// @{
 INSTANTIATE_TEST_SUITE_P(
@@ -302,6 +423,39 @@ INSTANTIATE_TEST_SUITE_P(
         JeffRoundTripTestCase{"MultipleControlledX",
                               MQT_NAMED_BUILDER(qco::multipleControlledX),
                               MQT_NAMED_BUILDER(qco::multipleControlledX)}));
+/// @}
+
+/// \name JeffRoundTrip/Operations/StandardGates/XxMinusYyOp.cpp
+/// @{
+INSTANTIATE_TEST_SUITE_P(
+    DISABLED_QCOXXMinusYYOpTest, JeffRoundTripTest,
+    testing::Values(JeffRoundTripTestCase{"XXMinusYY",
+                                          MQT_NAMED_BUILDER(qco::xxMinusYY),
+                                          MQT_NAMED_BUILDER(qco::xxMinusYY)},
+                    JeffRoundTripTestCase{
+                        "SingleControlledXXMinusYY",
+                        MQT_NAMED_BUILDER(qco::singleControlledXxMinusYY),
+                        MQT_NAMED_BUILDER(qco::singleControlledXxMinusYY)},
+                    JeffRoundTripTestCase{
+                        "MultipleControlledXXMinusYY",
+                        MQT_NAMED_BUILDER(qco::multipleControlledXxMinusYY),
+                        MQT_NAMED_BUILDER(qco::multipleControlledXxMinusYY)}));
+/// @}
+
+/// \name JeffRoundTrip/Operations/StandardGates/XxPlusYyOp.cpp
+/// @{
+INSTANTIATE_TEST_SUITE_P(
+    DISABLED_QCOXXPlusYYOpTest, JeffRoundTripTest,
+    testing::Values(
+        JeffRoundTripTestCase{"XXPlusYY", MQT_NAMED_BUILDER(qco::xxPlusYY),
+                              MQT_NAMED_BUILDER(qco::xxPlusYY)},
+        JeffRoundTripTestCase{"SingleControlledXXPlusYY",
+                              MQT_NAMED_BUILDER(qco::singleControlledXxPlusYY),
+                              MQT_NAMED_BUILDER(qco::singleControlledXxPlusYY)},
+        JeffRoundTripTestCase{
+            "MultipleControlledXXPlusYY",
+            MQT_NAMED_BUILDER(qco::multipleControlledXxPlusYY),
+            MQT_NAMED_BUILDER(qco::multipleControlledXxPlusYY)}));
 /// @}
 
 /// \name JeffRoundTrip/Operations/StandardGates/YOp.cpp
@@ -371,538 +525,3 @@ INSTANTIATE_TEST_SUITE_P(
             MQT_NAMED_BUILDER(qco::resetMultipleQubitsAfterSingleOp),
             MQT_NAMED_BUILDER(qco::resetMultipleQubitsAfterSingleOp)}));
 /// @}
-
-// class QCOToJeffConversionTest : public ::testing::Test {
-// protected:
-//   std::unique_ptr<mlir::MLIRContext> context;
-//   void SetUp() override {
-//     // Register all dialects needed for the full compilation pipeline
-//     DialectRegistry registry;
-//     registry.insert<arith::ArithDialect, func::FuncDialect,
-//     jeff::JeffDialect,
-//                     mlir::qco::QCODialect>();
-
-//     context = std::make_unique<MLIRContext>();
-//     context->appendDialectRegistry(registry);
-//     context->loadAllAvailableDialects();
-//   }
-
-//   [[nodiscard]] OwningOpRef<ModuleOp> buildQCOIR(
-//       const std::function<void(mlir::qco::QCOProgramBuilder&)>& buildFunc)
-//       const {
-//     mlir::qco::QCOProgramBuilder builder(context.get());
-//     builder.initialize();
-//     buildFunc(builder);
-//     auto module = builder.finalize();
-//     return module;
-//   }
-
-//   static std::string getOutputString(mlir::OwningOpRef<mlir::ModuleOp>& mod)
-//   {
-//     std::string outputString;
-//     llvm::raw_string_ostream outputStream(outputString);
-//     mod->print(outputStream);
-//     outputStream.flush();
-//     return outputString;
-//   }
-// };
-
-// TEST_F(QCOToJeffConversionTest, Measure) {
-//   auto input = buildQCOIR([](mlir::qco::QCOProgramBuilder& b) {
-//     auto reg = b.allocQubitRegister(1, "q");
-//     auto q = reg[0];
-//     b.measure(q);
-//   });
-
-//   PassManager pm(context.get());
-//   pm.addPass(createQCOToJeff());
-//   if (failed(pm.run(input.get()))) {
-//     FAIL() << "Error during QCO-to-Jeff conversion";
-//   }
-
-//   const auto outputString = getOutputString(input);
-
-//   // ASSERT_EQ(outputString, "test");
-
-//   ASSERT_NE(outputString.find("jeff.qubit_measure_nd"), std::string::npos);
-// }
-
-// TEST_F(QCOToJeffConversionTest, Reset) {
-//   auto input = buildQCOIR([](mlir::qco::QCOProgramBuilder& b) {
-//     auto reg = b.allocQubitRegister(1, "q");
-//     auto q = reg[0];
-//     b.reset(q);
-//   });
-
-//   PassManager pm(context.get());
-//   pm.addPass(createQCOToJeff());
-//   if (failed(pm.run(input.get()))) {
-//     FAIL() << "Error during QCO-to-Jeff conversion";
-//   }
-
-//   const auto outputString = getOutputString(input);
-
-//   // ASSERT_EQ(outputString, "test");
-
-//   ASSERT_NE(outputString.find("jeff.qubit_reset"), std::string::npos);
-// }
-
-// TEST_F(QCOToJeffConversionTest, GPhase) {
-//   auto input = buildQCOIR([](mlir::qco::QCOProgramBuilder& b) {
-//     auto reg = b.allocQubitRegister(1, "q");
-//     b.gphase(0.5);
-//   });
-
-//   PassManager pm(context.get());
-//   pm.addPass(createQCOToJeff());
-//   if (failed(pm.run(input.get()))) {
-//     FAIL() << "Error during QCO-to-Jeff conversion";
-//   }
-
-//   const auto outputString = getOutputString(input);
-
-//   // ASSERT_EQ(outputString, "test");
-
-//   ASSERT_NE(outputString.find("jeff.gphase"), std::string::npos);
-// }
-
-// TEST_F(QCOToJeffConversionTest, CGPhase) {
-//   auto input = buildQCOIR([](mlir::qco::QCOProgramBuilder& b) {
-//     auto reg = b.allocQubitRegister(1, "q");
-//     auto q = reg[0];
-//     b.cgphase(0.5, q);
-//   });
-
-//   PassManager pm(context.get());
-//   pm.addPass(createQCOToJeff());
-//   if (failed(pm.run(input.get()))) {
-//     FAIL() << "Error during QCO-to-Jeff conversion";
-//   }
-
-//   const auto outputString = getOutputString(input);
-
-//   // ASSERT_EQ(outputString, "test");
-
-//   ASSERT_NE(outputString.find("jeff.gphase"), std::string::npos);
-//   ASSERT_NE(outputString.find("num_ctrls = 1"), std::string::npos);
-// }
-
-// TEST_F(QCOToJeffConversionTest, Id) {
-//   auto input = buildQCOIR([](mlir::qco::QCOProgramBuilder& b) {
-//     auto reg = b.allocQubitRegister(1, "q");
-//     auto q = reg[0];
-//     b.id(q);
-//   });
-
-//   PassManager pm(context.get());
-//   pm.addPass(createQCOToJeff());
-//   if (failed(pm.run(input.get()))) {
-//     FAIL() << "Error during QCO-to-Jeff conversion";
-//   }
-
-//   const auto outputString = getOutputString(input);
-
-//   // ASSERT_EQ(outputString, "test");
-
-//   ASSERT_NE(outputString.find("jeff.i"), std::string::npos);
-// }
-
-// TEST_F(QCOToJeffConversionTest, X) {
-//   auto input = buildQCOIR([](mlir::qco::QCOProgramBuilder& b) {
-//     auto reg = b.allocQubitRegister(1, "q");
-//     auto q = reg[0];
-//     b.x(q);
-//     b.x(q);
-//   });
-
-//   PassManager pm(context.get());
-//   pm.addPass(createQCOToJeff());
-//   if (failed(pm.run(input.get()))) {
-//     FAIL() << "Error during QCO-to-Jeff conversion";
-//   }
-
-//   const auto outputString = getOutputString(input);
-
-//   // ASSERT_EQ(outputString, "test");
-
-//   ASSERT_NE(outputString.find("jeff.x"), std::string::npos);
-// }
-
-// TEST_F(QCOToJeffConversionTest, MCX) {
-//   auto input = buildQCOIR([](mlir::qco::QCOProgramBuilder& b) {
-//     auto reg = b.allocQubitRegister(3, "q");
-//     auto q0 = reg[0];
-//     auto q1 = reg[1];
-//     auto q2 = reg[2];
-//     b.mcx({q1, q2}, q0);
-//   });
-
-//   PassManager pm(context.get());
-//   pm.addPass(createQCOToJeff());
-//   if (failed(pm.run(input.get()))) {
-//     FAIL() << "Error during QCO-to-Jeff conversion";
-//   }
-
-//   const auto outputString = getOutputString(input);
-
-//   // ASSERT_EQ(outputString, "test");
-
-//   ASSERT_NE(outputString.find("jeff.x"), std::string::npos);
-//   ASSERT_NE(outputString.find("num_ctrls = 2"), std::string::npos);
-// }
-
-// TEST_F(QCOToJeffConversionTest, Y) {
-//   auto input = buildQCOIR([](mlir::qco::QCOProgramBuilder& b) {
-//     auto reg = b.allocQubitRegister(1, "q");
-//     auto q = reg[0];
-//     b.y(q);
-//   });
-
-//   PassManager pm(context.get());
-//   pm.addPass(createQCOToJeff());
-//   if (failed(pm.run(input.get()))) {
-//     FAIL() << "Error during QCO-to-Jeff conversion";
-//   }
-
-//   const auto outputString = getOutputString(input);
-
-//   // ASSERT_EQ(outputString, "test");
-
-//   ASSERT_NE(outputString.find("jeff.y"), std::string::npos);
-// }
-
-// TEST_F(QCOToJeffConversionTest, Z) {
-//   auto input = buildQCOIR([](mlir::qco::QCOProgramBuilder& b) {
-//     auto reg = b.allocQubitRegister(1, "q");
-//     auto q = reg[0];
-//     b.z(q);
-//   });
-
-//   PassManager pm(context.get());
-//   pm.addPass(createQCOToJeff());
-//   if (failed(pm.run(input.get()))) {
-//     FAIL() << "Error during QCO-to-Jeff conversion";
-//   }
-
-//   const auto outputString = getOutputString(input);
-
-//   // ASSERT_EQ(outputString, "test");
-
-//   ASSERT_NE(outputString.find("jeff.z"), std::string::npos);
-// }
-
-// TEST_F(QCOToJeffConversionTest, H) {
-//   auto input = buildQCOIR([](mlir::qco::QCOProgramBuilder& b) {
-//     auto reg = b.allocQubitRegister(1, "q");
-//     auto q = reg[0];
-//     b.h(q);
-//   });
-
-//   PassManager pm(context.get());
-//   pm.addPass(createQCOToJeff());
-//   if (failed(pm.run(input.get()))) {
-//     FAIL() << "Error during QCO-to-Jeff conversion";
-//   }
-
-//   const auto outputString = getOutputString(input);
-
-//   // ASSERT_EQ(outputString, "test");
-
-//   ASSERT_NE(outputString.find("jeff.h"), std::string::npos);
-// }
-
-// TEST_F(QCOToJeffConversionTest, S) {
-//   auto input = buildQCOIR([](mlir::qco::QCOProgramBuilder& b) {
-//     auto reg = b.allocQubitRegister(1, "q");
-//     auto q = reg[0];
-//     b.s(q);
-//   });
-
-//   PassManager pm(context.get());
-//   pm.addPass(createQCOToJeff());
-//   if (failed(pm.run(input.get()))) {
-//     FAIL() << "Error during QCO-to-Jeff conversion";
-//   }
-
-//   const auto outputString = getOutputString(input);
-
-//   // ASSERT_EQ(outputString, "test");
-
-//   ASSERT_NE(outputString.find("jeff.s"), std::string::npos);
-//   ASSERT_NE(outputString.find("is_adjoint = false"), std::string::npos);
-// }
-
-// TEST_F(QCOToJeffConversionTest, Sdg) {
-//   auto input = buildQCOIR([](mlir::qco::QCOProgramBuilder& b) {
-//     auto reg = b.allocQubitRegister(1, "q");
-//     auto q = reg[0];
-//     b.sdg(q);
-//   });
-
-//   PassManager pm(context.get());
-//   pm.addPass(createQCOToJeff());
-//   if (failed(pm.run(input.get()))) {
-//     FAIL() << "Error during QCO-to-Jeff conversion";
-//   }
-
-//   const auto outputString = getOutputString(input);
-
-//   // ASSERT_EQ(outputString, "test");
-
-//   ASSERT_NE(outputString.find("jeff.s"), std::string::npos);
-//   ASSERT_NE(outputString.find("is_adjoint = true"), std::string::npos);
-// }
-
-// TEST_F(QCOToJeffConversionTest, T) {
-//   auto input = buildQCOIR([](mlir::qco::QCOProgramBuilder& b) {
-//     auto reg = b.allocQubitRegister(1, "q");
-//     auto q = reg[0];
-//     b.t(q);
-//   });
-
-//   PassManager pm(context.get());
-//   pm.addPass(createQCOToJeff());
-//   if (failed(pm.run(input.get()))) {
-//     FAIL() << "Error during QCO-to-Jeff conversion";
-//   }
-
-//   const auto outputString = getOutputString(input);
-
-//   // ASSERT_EQ(outputString, "test");
-
-//   ASSERT_NE(outputString.find("jeff.t"), std::string::npos);
-//   ASSERT_NE(outputString.find("is_adjoint = false"), std::string::npos);
-// }
-
-// TEST_F(QCOToJeffConversionTest, Tdg) {
-//   auto input = buildQCOIR([](mlir::qco::QCOProgramBuilder& b) {
-//     auto reg = b.allocQubitRegister(1, "q");
-//     auto q = reg[0];
-//     b.tdg(q);
-//   });
-
-//   PassManager pm(context.get());
-//   pm.addPass(createQCOToJeff());
-//   if (failed(pm.run(input.get()))) {
-//     FAIL() << "Error during QCO-to-Jeff conversion";
-//   }
-
-//   const auto outputString = getOutputString(input);
-
-//   // ASSERT_EQ(outputString, "test");
-
-//   ASSERT_NE(outputString.find("jeff.t"), std::string::npos);
-//   ASSERT_NE(outputString.find("is_adjoint = true"), std::string::npos);
-// }
-
-// TEST_F(QCOToJeffConversionTest, RX) {
-//   auto input = buildQCOIR([](mlir::qco::QCOProgramBuilder& b) {
-//     auto reg = b.allocQubitRegister(1, "q");
-//     auto q = reg[0];
-//     b.rx(0.5, q);
-//   });
-
-//   PassManager pm(context.get());
-//   pm.addPass(createQCOToJeff());
-//   if (failed(pm.run(input.get()))) {
-//     FAIL() << "Error during QCO-to-Jeff conversion";
-//   }
-
-//   const auto outputString = getOutputString(input);
-
-//   // ASSERT_EQ(outputString, "test");
-
-//   ASSERT_NE(outputString.find("jeff.rx"), std::string::npos);
-// }
-
-// TEST_F(QCOToJeffConversionTest, CRX) {
-//   auto input = buildQCOIR([](mlir::qco::QCOProgramBuilder& b) {
-//     auto reg = b.allocQubitRegister(2, "q");
-//     auto q0 = reg[0];
-//     auto q1 = reg[1];
-//     b.crx(0.5, q0, q1);
-//   });
-
-//   PassManager pm(context.get());
-//   pm.addPass(createQCOToJeff());
-//   if (failed(pm.run(input.get()))) {
-//     FAIL() << "Error during QCO-to-Jeff conversion";
-//   }
-
-//   const auto outputString = getOutputString(input);
-
-//   // ASSERT_EQ(outputString, "test");
-
-//   ASSERT_NE(outputString.find("jeff.rx"), std::string::npos);
-//   ASSERT_NE(outputString.find("num_ctrls = 1"), std::string::npos);
-// }
-
-// TEST_F(QCOToJeffConversionTest, RY) {
-//   auto input = buildQCOIR([](mlir::qco::QCOProgramBuilder& b) {
-//     auto reg = b.allocQubitRegister(1, "q");
-//     auto q = reg[0];
-//     b.ry(0.5, q);
-//   });
-
-//   PassManager pm(context.get());
-//   pm.addPass(createQCOToJeff());
-//   if (failed(pm.run(input.get()))) {
-//     FAIL() << "Error during QCO-to-Jeff conversion";
-//   }
-
-//   const auto outputString = getOutputString(input);
-
-//   // ASSERT_EQ(outputString, "test");
-
-//   ASSERT_NE(outputString.find("jeff.ry"), std::string::npos);
-// }
-
-// TEST_F(QCOToJeffConversionTest, RZ) {
-//   auto input = buildQCOIR([](mlir::qco::QCOProgramBuilder& b) {
-//     auto reg = b.allocQubitRegister(1, "q");
-//     auto q = reg[0];
-//     b.rz(0.5, q);
-//   });
-
-//   PassManager pm(context.get());
-//   pm.addPass(createQCOToJeff());
-//   if (failed(pm.run(input.get()))) {
-//     FAIL() << "Error during QCO-to-Jeff conversion";
-//   }
-
-//   const auto outputString = getOutputString(input);
-
-//   // ASSERT_EQ(outputString, "test");
-
-//   ASSERT_NE(outputString.find("jeff.rz"), std::string::npos);
-// }
-
-// TEST_F(QCOToJeffConversionTest, P) {
-//   auto input = buildQCOIR([](mlir::qco::QCOProgramBuilder& b) {
-//     auto reg = b.allocQubitRegister(1, "q");
-//     auto q = reg[0];
-//     b.p(0.5, q);
-//   });
-
-//   PassManager pm(context.get());
-//   pm.addPass(createQCOToJeff());
-//   if (failed(pm.run(input.get()))) {
-//     FAIL() << "Error during QCO-to-Jeff conversion";
-//   }
-
-//   const auto outputString = getOutputString(input);
-
-//   // ASSERT_EQ(outputString, "test");
-
-//   ASSERT_NE(outputString.find("jeff.r1"), std::string::npos);
-// }
-
-// TEST_F(QCOToJeffConversionTest, U) {
-//   auto input = buildQCOIR([](mlir::qco::QCOProgramBuilder& b) {
-//     auto reg = b.allocQubitRegister(1, "q");
-//     auto q = reg[0];
-//     b.u(0.1, 0.2, 0.3, q);
-//   });
-
-//   PassManager pm(context.get());
-//   pm.addPass(createQCOToJeff());
-//   if (failed(pm.run(input.get()))) {
-//     FAIL() << "Error during QCO-to-Jeff conversion";
-//   }
-
-//   const auto outputString = getOutputString(input);
-
-//   // ASSERT_EQ(outputString, "test");
-
-//   ASSERT_NE(outputString.find("jeff.u"), std::string::npos);
-// }
-
-// TEST_F(QCOToJeffConversionTest, CU) {
-//   auto input = buildQCOIR([](mlir::qco::QCOProgramBuilder& b) {
-//     auto reg = b.allocQubitRegister(2, "q");
-//     auto q0 = reg[0];
-//     auto q1 = reg[1];
-//     b.cu(0.1, 0.2, 0.3, q1, q0);
-//   });
-
-//   PassManager pm(context.get());
-//   pm.addPass(createQCOToJeff());
-//   if (failed(pm.run(input.get()))) {
-//     FAIL() << "Error during QCO-to-Jeff conversion";
-//   }
-
-//   const auto outputString = getOutputString(input);
-
-//   // ASSERT_EQ(outputString, "test");
-
-//   ASSERT_NE(outputString.find("jeff.u"), std::string::npos);
-//   ASSERT_NE(outputString.find("num_ctrls = 1"), std::string::npos);
-// }
-
-// TEST_F(QCOToJeffConversionTest, SWAP) {
-//   auto input = buildQCOIR([](mlir::qco::QCOProgramBuilder& b) {
-//     auto reg = b.allocQubitRegister(2, "q");
-//     auto q0 = reg[0];
-//     auto q1 = reg[1];
-//     b.swap(q0, q1);
-//   });
-
-//   PassManager pm(context.get());
-//   pm.addPass(createQCOToJeff());
-//   if (failed(pm.run(input.get()))) {
-//     FAIL() << "Error during QCO-to-Jeff conversion";
-//   }
-
-//   const auto outputString = getOutputString(input);
-
-//   // ASSERT_EQ(outputString, "test");
-
-//   ASSERT_NE(outputString.find("jeff.swap"), std::string::npos);
-// }
-
-// TEST_F(QCOToJeffConversionTest, CSWAP) {
-//   auto input = buildQCOIR([](mlir::qco::QCOProgramBuilder& b) {
-//     auto reg = b.allocQubitRegister(3, "q");
-//     auto q0 = reg[0];
-//     auto q1 = reg[1];
-//     auto q2 = reg[2];
-//     b.cswap(q0, q1, q2);
-//   });
-
-//   PassManager pm(context.get());
-//   pm.addPass(createQCOToJeff());
-//   if (failed(pm.run(input.get()))) {
-//     FAIL() << "Error during QCO-to-Jeff conversion";
-//   }
-
-//   const auto outputString = getOutputString(input);
-
-//   // ASSERT_EQ(outputString, "test");
-
-//   ASSERT_NE(outputString.find("jeff.swap"), std::string::npos);
-//   ASSERT_NE(outputString.find("num_ctrls = 1"), std::string::npos);
-// }
-
-// TEST_F(QCOToJeffConversionTest, Bell) {
-//   auto input = buildQCOIR([](mlir::qco::QCOProgramBuilder& b) {
-//     auto reg = b.allocQubitRegister(2, "q");
-//     auto q0 = reg[0];
-//     auto q1 = reg[1];
-//     b.h(q0);
-//     b.cx(q0, q1);
-//   });
-
-//   PassManager pm(context.get());
-//   pm.addPass(createQCOToJeff());
-//   if (failed(pm.run(input.get()))) {
-//     FAIL() << "Error during QCO-to-Jeff conversion";
-//   }
-
-//   const auto outputString = getOutputString(input);
-
-//   // ASSERT_EQ(outputString, "test");
-
-//   ASSERT_NE(outputString.find("jeff.h"), std::string::npos);
-//   ASSERT_NE(outputString.find("jeff.x"), std::string::npos);
-//   ASSERT_NE(outputString.find("num_ctrls = 1"), std::string::npos);
-// }
