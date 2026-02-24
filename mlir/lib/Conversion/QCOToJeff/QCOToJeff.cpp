@@ -14,7 +14,6 @@
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 
 #include <cassert>
-#include <cstddef>
 #include <cstdint>
 #include <jeff/IR/JeffDialect.h>
 #include <jeff/IR/JeffOps.h>

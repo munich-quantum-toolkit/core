@@ -52,7 +52,6 @@ convertOneTargetZeroParameter(JeffOpType& op, JeffOpAdaptorType& adaptor,
   }
 
   if (op.getNumCtrls() != 0) {
-    auto controls = adaptor.getInCtrlQubits();
     auto ctrlOp = rewriter.create<qco::CtrlOp>(
         op.getLoc(), adaptor.getInCtrlQubits(), adaptor.getInQubit(),
         [&](ValueRange targets) -> llvm::SmallVector<Value> {
@@ -303,7 +302,7 @@ struct ConvertJeffGPhaseOpToQCO final : OpConversionPattern<jeff::GPhaseOp> {
     if (op.getNumCtrls() != 0) {
       auto ctrlOp = rewriter.create<qco::CtrlOp>(
           op.getLoc(), adaptor.getInCtrlQubits(), ValueRange{},
-          [&](ValueRange targets) -> llvm::SmallVector<Value> {
+          [&](ValueRange /*targets*/) -> llvm::SmallVector<Value> {
             rewriter.create<qco::GPhaseOp>(op.getLoc(), op.getRotation());
             return {};
           });
