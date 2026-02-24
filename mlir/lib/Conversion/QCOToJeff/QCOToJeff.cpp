@@ -301,7 +301,7 @@ struct ConvertQCODeallocOpToJeff final
  * ```
  * is converted to
  * ```mlir
- * %q_out, %result = jeff.qubit_measure_nd %q_in : !jeff.qubit, i1
+ * %result, %q_out = jeff.qubit_measure_nd %q_in : i1, !jeff.qubit
  * ```
  */
 struct ConvertQCOMeasureOpToJeff final
@@ -311,8 +311,9 @@ struct ConvertQCOMeasureOpToJeff final
   LogicalResult
   matchAndRewrite(qco::MeasureOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
-    rewriter.replaceOpWithNewOp<jeff::QubitMeasureNDOp>(op,
-                                                        adaptor.getQubitIn());
+    auto jeffOp = rewriter.create<jeff::QubitMeasureNDOp>(op.getLoc(),
+                                                          adaptor.getQubitIn());
+    rewriter.replaceOp(op, {jeffOp.getOutQubit(), jeffOp.getResult()});
     return success();
   }
 };

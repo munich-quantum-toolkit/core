@@ -227,7 +227,7 @@ struct ConvertJeffQubitMeasureOpToQCO final
  *
  * @par Example:
  * ```mlir
- * %q_out, %result = jeff.qubit_measure_nd %q_in : !jeff.qubit, i1
+ * %result, %q_out = jeff.qubit_measure_nd %q_in : i1, !jeff.qubit
  * ```
  * is converted to
  * ```mlir
@@ -241,7 +241,9 @@ struct ConvertJeffQubitMeasureNDOpToQCO final
   LogicalResult
   matchAndRewrite(jeff::QubitMeasureNDOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
-    rewriter.replaceOpWithNewOp<qco::MeasureOp>(op, adaptor.getInQubit());
+    auto qcoOp =
+        rewriter.create<qco::MeasureOp>(op.getLoc(), adaptor.getInQubit());
+    rewriter.replaceOp(op, {qcoOp.getResult(), qcoOp.getQubitOut()});
     return success();
   }
 };
