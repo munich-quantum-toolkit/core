@@ -245,13 +245,12 @@ convertTwoTargetZeroParameter(QCOOpType& op, QCOOpAdaptorType& adaptor,
   return success();
 }
 
-template <typename QCOOpType, typename QCOOpAdaptorType>
-static void createCustomOp(QCOOpType& op, QCOOpAdaptorType& adaptor,
-                           ConversionPatternRewriter& rewriter,
+template <typename QCOOpType>
+static void createCustomOp(QCOOpType& op, ConversionPatternRewriter& rewriter,
                            LoweringState& state,
-                           llvm::SmallVector<Value> targets,
-                           llvm::SmallVector<Value> params, bool isAdjoint,
-                           StringRef name) {
+                           const llvm::SmallVector<Value>& targets,
+                           const llvm::SmallVector<Value>& params,
+                           bool isAdjoint, StringRef name) {
   const auto inCtrlOp = state.inCtrlOp;
 
   auto jeffOp = rewriter.create<jeff::CustomOp>(
@@ -453,7 +452,7 @@ struct ConvertQCOSXOpToJeff final : StatefulOpConversionPattern<qco::SXOp> {
       target = adaptor.getQubitIn();
     }
 
-    createCustomOp(op, adaptor, rewriter, state, {target}, {}, false, "sx");
+    createCustomOp(op, rewriter, state, {target}, {}, false, "sx");
 
     return success();
   }
@@ -475,7 +474,7 @@ struct ConvertQCOSXdgOpToJeff final : StatefulOpConversionPattern<qco::SXdgOp> {
       target = adaptor.getQubitIn();
     }
 
-    createCustomOp(op, adaptor, rewriter, state, {target}, {}, true, "sx");
+    createCustomOp(op, rewriter, state, {target}, {}, true, "sx");
 
     return success();
   }
@@ -558,7 +557,7 @@ struct ConvertQCOROpToJeff final : StatefulOpConversionPattern<qco::ROp> {
       target = adaptor.getQubitIn();
     }
 
-    createCustomOp(op, adaptor, rewriter, state, {target},
+    createCustomOp(op, rewriter, state, {target},
                    {op.getParameter(0), op.getParameter(1)}, false, "r");
 
     return success();
@@ -622,7 +621,7 @@ struct ConvertQCOiSWAPOpToJeff final
       targets.push_back(adaptor.getQubit1In());
     }
 
-    createCustomOp(op, adaptor, rewriter, state, targets, {}, false, "iswap");
+    createCustomOp(op, rewriter, state, targets, {}, false, "iswap");
 
     return success();
   }
@@ -646,7 +645,7 @@ struct ConvertQCOECROpToJeff final : StatefulOpConversionPattern<qco::ECROp> {
       targets.push_back(adaptor.getQubit1In());
     }
 
-    createCustomOp(op, adaptor, rewriter, state, targets, {}, false, "ecr");
+    createCustomOp(op, rewriter, state, targets, {}, false, "ecr");
 
     return success();
   }
@@ -670,7 +669,7 @@ struct ConvertQCODCXOpToJeff final : StatefulOpConversionPattern<qco::DCXOp> {
       targets.push_back(adaptor.getQubit1In());
     }
 
-    createCustomOp(op, adaptor, rewriter, state, targets, {}, false, "dcx");
+    createCustomOp(op, rewriter, state, targets, {}, false, "dcx");
 
     return success();
   }
@@ -697,7 +696,7 @@ struct ConvertQCOXXMinusYYOpToJeff final
       targets.push_back(adaptor.getQubit1In());
     }
 
-    createCustomOp(op, adaptor, rewriter, state, targets,
+    createCustomOp(op, rewriter, state, targets,
                    {op.getParameter(0), op.getParameter(1)}, false,
                    "xx_minus_yy");
 
@@ -724,7 +723,7 @@ struct ConvertQCOXXPlusYYOpToJeff final
       targets.push_back(adaptor.getQubit1In());
     }
 
-    createCustomOp(op, adaptor, rewriter, state, targets,
+    createCustomOp(op, rewriter, state, targets,
                    {op.getParameter(0), op.getParameter(1)}, false,
                    "xx_plus_yy");
 
@@ -741,8 +740,8 @@ struct ConvertQCOBarrierOpToJeff final
                   ConversionPatternRewriter& rewriter) const override {
     auto& state = getState();
 
-    createCustomOp(op, adaptor, rewriter, state, adaptor.getQubitsIn(), {},
-                   false, "barrier");
+    createCustomOp(op, rewriter, state, adaptor.getQubitsIn(), {}, false,
+                   "barrier");
 
     return success();
   }

@@ -569,12 +569,7 @@ static void createTwoTargetTwoParameter(jeff::CustomOp& op,
 
 static void createBarrierOp(jeff::CustomOp& op, jeff::CustomOpAdaptor& adaptor,
                             ConversionPatternRewriter& rewriter) {
-  if (op.getNumCtrls() != 0) {
-    rewriter.notifyMatchFailure(
-        op, "Barrier operations with controls are not supported");
-  } else {
-    rewriter.replaceOpWithNewOp<qco::BarrierOp>(op, adaptor.getInQubits());
-  }
+  rewriter.replaceOpWithNewOp<qco::BarrierOp>(op, adaptor.getInQubits());
 }
 
 struct ConvertJeffCustomOpToQCO final : OpConversionPattern<jeff::CustomOp> {
@@ -588,7 +583,8 @@ struct ConvertJeffCustomOpToQCO final : OpConversionPattern<jeff::CustomOp> {
           op, "Operations with power != 1 are not yet supported");
     }
 
-    if (op.getName() == "sx") {
+    const auto& name = op.getName();
+    if (name == "sx") {
       if (op.getIsAdjoint()) {
         createOneTargetZeroParameter<qco::SXdgOp>(op, adaptor, rewriter);
       } else {
@@ -597,23 +593,27 @@ struct ConvertJeffCustomOpToQCO final : OpConversionPattern<jeff::CustomOp> {
     } else if (op.getIsAdjoint()) {
       return rewriter.notifyMatchFailure(
           op, "Adjoint operations are not yet supported");
-    } else if (op.getName() == "r") {
+    } else if (name == "r") {
       createOneTargetTwoParameter<qco::ROp>(op, adaptor, rewriter);
-    } else if (op.getName() == "iswap") {
+    } else if (name == "iswap") {
       createTwoTargetZeroParameter<qco::iSWAPOp>(op, adaptor, rewriter);
-    } else if (op.getName() == "dcx") {
+    } else if (name == "dcx") {
       createTwoTargetZeroParameter<qco::DCXOp>(op, adaptor, rewriter);
-    } else if (op.getName() == "ecr") {
+    } else if (name == "ecr") {
       createTwoTargetZeroParameter<qco::ECROp>(op, adaptor, rewriter);
-    } else if (op.getName() == "xx_minus_yy") {
+    } else if (name == "xx_minus_yy") {
       createTwoTargetTwoParameter<qco::XXMinusYYOp>(op, adaptor, rewriter);
-    } else if (op.getName() == "xx_plus_yy") {
+    } else if (name == "xx_plus_yy") {
       createTwoTargetTwoParameter<qco::XXPlusYYOp>(op, adaptor, rewriter);
-    } else if (op.getName() == "barrier") {
+    } else if (name == "barrier") {
+      if (op.getNumCtrls() != 0) {
+        return rewriter.notifyMatchFailure(
+            op, "Barrier operations with controls are not supported");
+      }
       createBarrierOp(op, adaptor, rewriter);
     } else {
       return rewriter.notifyMatchFailure(op, "Unsupported custom operation: " +
-                                                 op.getName());
+                                                 name);
     }
 
     return success();
