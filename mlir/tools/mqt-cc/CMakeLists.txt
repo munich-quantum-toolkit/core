@@ -19,6 +19,8 @@ target_link_libraries(
           MQT::CoreQASM
           MQT::CoreIR
           MLIRQCTranslation)
+
+mqt_mlir_target_use_project_options(mqt-cc)
 llvm_update_compile_flags(mqt-cc)
 mlir_check_all_link_libraries(mqt-cc)
 export_executable_symbols_for_plugins(mqt-cc)

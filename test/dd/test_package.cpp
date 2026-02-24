@@ -35,6 +35,7 @@
 #include <iostream>
 #include <limits>
 #include <memory>
+#include <nlohmann/json.hpp>
 #include <random>
 #include <sstream>
 #include <stdexcept>

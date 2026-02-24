@@ -10,10 +10,7 @@
 
 #pragma once
 
-#include "mlir/Dialect/QCO/IR/QCODialect.h"
-
 #include <cstdint>
-#include <functional>
 #include <llvm/ADT/DenseSet.h>
 #include <llvm/ADT/STLFunctionalExtras.h>
 #include <llvm/ADT/SmallVector.h>
@@ -80,6 +77,25 @@ public:
    * before adding operations.
    */
   void initialize();
+
+  //===--------------------------------------------------------------------===//
+  // Constants
+  //===--------------------------------------------------------------------===//
+
+  /**
+   * @brief Create a constant integer value
+   * @param value The value to store in the constant
+   * @return The value produced by the constant operation
+   *
+   * @par Example:
+   * ```c++
+   * auto c = builder.intConstant(1);
+   * ```
+   * ```mlir
+   * %c = arith.constant 1 : i64
+   * ```
+   */
+  Value intConstant(int64_t value);
 
   //===--------------------------------------------------------------------===//
   // Memory Management
@@ -1055,6 +1071,51 @@ public:
   QCOProgramBuilder& dealloc(Value qubit);
 
   //===--------------------------------------------------------------------===//
+  // SCF operations
+  //===--------------------------------------------------------------------===//
+
+  /**
+   * @brief Construct an if operation for qubits with linear typing
+   *
+   * @details
+   * Constructs an if operation that takes a bool Value and a range of qubit
+   * values that are used in the then/else region of this operation. The qubit
+   * values are passed down as block arguments to each region.
+   *
+   * @param condition Bool condition
+   * @param qubits Input qubits
+   * @param thenBody Function that builds the then body of the if
+   * operation
+   * @param elseBody Function that builds the else body of the if
+   * operation
+   * @return ValueRange of the results (must be the same types as the input
+   * qubits)
+   *
+   * @par Example:
+   * ```c++
+   * auto result =
+   *   builder.qcoIf(condition, q0,
+   *     [&](ValueRange args) -> llvm::SmallVector<Value> {
+   *       auto q1 = builder.h(args[0]);
+   *       return {q1};
+   *     });
+   * ```
+   * ```mlir
+   * %q2 = qco.if %condition qubits(%arg0 = %q0) {
+   *      %q1 = qco.h %arg0 : !qco.qubit -> !qco.qubit
+   *      qco.yield %q1
+   * } else qubits(%arg0 = %q0) {
+   *      qco.yield %arg0
+   * } : {i1, !qco.qubit} -> {!qco.qubit}
+   * ```
+   */
+  ValueRange
+  qcoIf(const std::variant<bool, Value>& condition, ValueRange qubits,
+        llvm::function_ref<llvm::SmallVector<Value>(ValueRange)> thenBody,
+        llvm::function_ref<llvm::SmallVector<Value>(ValueRange)> elseBody =
+            nullptr);
+
+  //===--------------------------------------------------------------------===//
   // Finalization
   //===--------------------------------------------------------------------===//
 
@@ -1070,6 +1131,19 @@ public:
    * @return OwningOpRef containing the constructed quantum program module
    */
   OwningOpRef<ModuleOp> finalize();
+
+  /**
+   * @brief Convenience method for building quantum programs
+   * @param context The MLIR context to use for building the program
+   * @param buildFunc A function that takes a reference to a QCOProgramBuilder
+   * and uses it to build the desired quantum program. The builder will be
+   * properly initialized before calling this function, and the resulting module
+   * will be finalized and returned after this function completes.
+   * @return The module containing the quantum program built by buildFunc.
+   */
+  static OwningOpRef<ModuleOp>
+  build(MLIRContext* context,
+        const llvm::function_ref<void(QCOProgramBuilder&)>& buildFunc);
 
 private:
   MLIRContext* ctx{};

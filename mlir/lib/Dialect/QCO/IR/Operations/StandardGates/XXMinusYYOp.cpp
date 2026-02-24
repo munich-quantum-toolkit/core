@@ -8,12 +8,14 @@
  * Licensed under the MIT License
  */
 
-#include "mlir/Dialect/QCO/IR/QCODialect.h"
+#include "mlir/Dialect/QCO/IR/QCOOps.h"
+#include "mlir/Dialect/QCO/QCOUtils.h"
 #include "mlir/Dialect/Utils/Utils.h"
 
 #include <Eigen/Core>
 #include <cmath>
 #include <complex>
+#include <llvm/Support/Casting.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/BuiltinAttributes.h>
@@ -40,36 +42,49 @@ struct MergeSubsequentXXMinusYY final : OpRewritePattern<XXMinusYYOp> {
 
   LogicalResult matchAndRewrite(XXMinusYYOp op,
                                 PatternRewriter& rewriter) const override {
-    auto prevOp = op.getInputQubit(0).getDefiningOp<XXMinusYYOp>();
-    if (!prevOp) {
+    // Check if the successor is the same operation
+    auto nextOp =
+        llvm::dyn_cast<XXMinusYYOp>(*op.getOutputQubit(0).user_begin());
+    if (!nextOp) {
       return failure();
     }
 
-    // Confirm operations act on same qubits
-    if (op.getInputQubit(1) != prevOp.getOutputQubit(1)) {
+    // Confirm operations act on the same qubits
+    if (op.getOutputQubit(1) != nextOp.getInputQubit(1)) {
       return failure();
     }
 
     // Confirm betas are equal
-    auto beta = valueToDouble(op.getBeta());
-    auto prevBeta = valueToDouble(prevOp.getBeta());
-    if (beta && prevBeta) {
-      if (std::abs(*beta - *prevBeta) > TOLERANCE) {
+    const auto beta = valueToDouble(op.getBeta());
+    const auto nextBeta = valueToDouble(nextOp.getBeta());
+    if (beta && nextBeta) {
+      if (std::abs(*beta - *nextBeta) > TOLERANCE) {
         return failure();
       }
-    } else if (op.getBeta() != prevOp.getBeta()) {
+    } else if (op.getBeta() != nextOp.getBeta()) {
       return failure();
     }
 
     // Compute and set new theta, which has index 2
-    auto newParameter = rewriter.create<arith::AddFOp>(
-        op.getLoc(), op.getOperand(2), prevOp.getOperand(2));
+    auto newParameter = arith::AddFOp::create(
+        rewriter, op.getLoc(), op.getOperand(2), nextOp.getOperand(2));
     op->setOperand(2, newParameter.getResult());
 
-    // Trivialize predecessor
-    rewriter.replaceOp(prevOp,
-                       {prevOp.getInputQubit(0), prevOp.getInputQubit(1)});
+    // Replace the second operation with the result of the first operation
+    rewriter.replaceOp(nextOp, op.getResults());
     return success();
+  }
+};
+
+/**
+ * @brief Remove trivial XXMinusYY operations.
+ */
+struct RemoveTrivialXXMinusYY final : OpRewritePattern<XXMinusYYOp> {
+  using OpRewritePattern::OpRewritePattern;
+
+  LogicalResult matchAndRewrite(XXMinusYYOp op,
+                                PatternRewriter& rewriter) const override {
+    return removeTrivialTwoTargetOneParameter(op, rewriter);
   }
 };
 
@@ -87,7 +102,7 @@ void XXMinusYYOp::build(OpBuilder& odsBuilder, OperationState& odsState,
 
 void XXMinusYYOp::getCanonicalizationPatterns(RewritePatternSet& results,
                                               MLIRContext* context) {
-  results.add<MergeSubsequentXXMinusYY>(context);
+  results.add<MergeSubsequentXXMinusYY, RemoveTrivialXXMinusYY>(context);
 }
 
 std::optional<Eigen::Matrix4cd> XXMinusYYOp::getUnitaryMatrix() {
