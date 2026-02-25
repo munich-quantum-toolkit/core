@@ -475,7 +475,7 @@ static void createOneTargetZeroParameter(jeff::CustomOp& op,
                                          ConversionPatternRewriter& rewriter) {
   if (op.getNumCtrls() != 0) {
     auto ctrlOp = rewriter.create<qco::CtrlOp>(
-        op.getLoc(), adaptor.getInCtrlQubits(), adaptor.getInQubits()[0],
+        op.getLoc(), adaptor.getInCtrlQubits(), adaptor.getInTargetQubits()[0],
         [&](ValueRange targets) -> llvm::SmallVector<Value> {
           auto qcoOp = rewriter.create<QCOOpType>(op.getLoc(), targets[0]);
           return {qcoOp.getQubitOut()};
@@ -487,7 +487,7 @@ static void createOneTargetZeroParameter(jeff::CustomOp& op,
                    ctrlOp.getControlsOut().end());
     rewriter.replaceOp(op, results);
   } else {
-    rewriter.replaceOpWithNewOp<QCOOpType>(op, adaptor.getInQubits()[0]);
+    rewriter.replaceOpWithNewOp<QCOOpType>(op, adaptor.getInTargetQubits()[0]);
   }
 }
 
@@ -497,7 +497,7 @@ static void createOneTargetTwoParameter(jeff::CustomOp& op,
                                         ConversionPatternRewriter& rewriter) {
   if (op.getNumCtrls() != 0) {
     auto ctrlOp = rewriter.create<qco::CtrlOp>(
-        op.getLoc(), adaptor.getInCtrlQubits(), adaptor.getInQubits()[0],
+        op.getLoc(), adaptor.getInCtrlQubits(), adaptor.getInTargetQubits()[0],
         [&](ValueRange targets) -> llvm::SmallVector<Value> {
           auto qcoOp = rewriter.create<QCOOpType>(
               op.getLoc(), targets[0], op.getParams()[0], op.getParams()[1]);
@@ -510,8 +510,9 @@ static void createOneTargetTwoParameter(jeff::CustomOp& op,
                    ctrlOp.getControlsOut().end());
     rewriter.replaceOp(op, results);
   } else {
-    rewriter.replaceOpWithNewOp<QCOOpType>(
-        op, adaptor.getInQubits()[0], op.getParams()[0], op.getParams()[1]);
+    rewriter.replaceOpWithNewOp<QCOOpType>(op, adaptor.getInTargetQubits()[0],
+                                           op.getParams()[0],
+                                           op.getParams()[1]);
   }
 }
 
@@ -521,7 +522,7 @@ static void createTwoTargetZeroParameter(jeff::CustomOp& op,
                                          ConversionPatternRewriter& rewriter) {
   if (op.getNumCtrls() != 0) {
     auto ctrlOp = rewriter.create<qco::CtrlOp>(
-        op.getLoc(), adaptor.getInCtrlQubits(), adaptor.getInQubits(),
+        op.getLoc(), adaptor.getInCtrlQubits(), adaptor.getInTargetQubits(),
         [&](ValueRange targets) -> llvm::SmallVector<Value> {
           auto qcoOp =
               rewriter.create<QCOOpType>(op.getLoc(), targets[0], targets[1]);
@@ -534,8 +535,8 @@ static void createTwoTargetZeroParameter(jeff::CustomOp& op,
                    ctrlOp.getControlsOut().end());
     rewriter.replaceOp(op, results);
   } else {
-    rewriter.replaceOpWithNewOp<QCOOpType>(op, adaptor.getInQubits()[0],
-                                           adaptor.getInQubits()[1]);
+    rewriter.replaceOpWithNewOp<QCOOpType>(op, adaptor.getInTargetQubits()[0],
+                                           adaptor.getInTargetQubits()[1]);
   }
 }
 
@@ -545,7 +546,7 @@ static void createTwoTargetTwoParameter(jeff::CustomOp& op,
                                         ConversionPatternRewriter& rewriter) {
   if (op.getNumCtrls() != 0) {
     auto ctrlOp = rewriter.create<qco::CtrlOp>(
-        op.getLoc(), adaptor.getInCtrlQubits(), adaptor.getInQubits(),
+        op.getLoc(), adaptor.getInCtrlQubits(), adaptor.getInTargetQubits(),
         [&](ValueRange targets) -> llvm::SmallVector<Value> {
           auto qcoOp =
               rewriter.create<QCOOpType>(op.getLoc(), targets[0], targets[1],
@@ -560,14 +561,14 @@ static void createTwoTargetTwoParameter(jeff::CustomOp& op,
     rewriter.replaceOp(op, results);
   } else {
     rewriter.replaceOpWithNewOp<QCOOpType>(
-        op, adaptor.getInQubits()[0], adaptor.getInQubits()[1],
+        op, adaptor.getInTargetQubits()[0], adaptor.getInTargetQubits()[1],
         op.getParams()[0], op.getParams()[1]);
   }
 }
 
 static void createBarrierOp(jeff::CustomOp& op, jeff::CustomOpAdaptor& adaptor,
                             ConversionPatternRewriter& rewriter) {
-  rewriter.replaceOpWithNewOp<qco::BarrierOp>(op, adaptor.getInQubits());
+  rewriter.replaceOpWithNewOp<qco::BarrierOp>(op, adaptor.getInTargetQubits());
 }
 
 struct ConvertJeffCustomOpToQCO final : OpConversionPattern<jeff::CustomOp> {

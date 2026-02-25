@@ -218,7 +218,7 @@ INSTANTIATE_TEST_SUITE_P(
 /// \name JeffRoundTrip/Operations/StandardGates/ROp.cpp
 /// @{
 INSTANTIATE_TEST_SUITE_P(
-    DISABLED_QCOROpTest, JeffRoundTripTest,
+    QCOROpTest, JeffRoundTripTest,
     testing::Values(
         JeffRoundTripTestCase{"R", MQT_NAMED_BUILDER(qco::r),
                               MQT_NAMED_BUILDER(qco::r)},
@@ -428,7 +428,7 @@ INSTANTIATE_TEST_SUITE_P(
 /// \name JeffRoundTrip/Operations/StandardGates/XxMinusYyOp.cpp
 /// @{
 INSTANTIATE_TEST_SUITE_P(
-    DISABLED_QCOXXMinusYYOpTest, JeffRoundTripTest,
+    QCOXXMinusYYOpTest, JeffRoundTripTest,
     testing::Values(JeffRoundTripTestCase{"XXMinusYY",
                                           MQT_NAMED_BUILDER(qco::xxMinusYY),
                                           MQT_NAMED_BUILDER(qco::xxMinusYY)},
@@ -445,7 +445,7 @@ INSTANTIATE_TEST_SUITE_P(
 /// \name JeffRoundTrip/Operations/StandardGates/XxPlusYyOp.cpp
 /// @{
 INSTANTIATE_TEST_SUITE_P(
-    DISABLED_QCOXXPlusYYOpTest, JeffRoundTripTest,
+    QCOXXPlusYYOpTest, JeffRoundTripTest,
     testing::Values(
         JeffRoundTripTestCase{"XXPlusYY", MQT_NAMED_BUILDER(qco::xxPlusYY),
                               MQT_NAMED_BUILDER(qco::xxPlusYY)},

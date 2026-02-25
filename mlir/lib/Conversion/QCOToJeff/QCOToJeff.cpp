@@ -264,9 +264,9 @@ static void createCustomOp(QCOOpType& op, ConversionPatternRewriter& rewriter,
   if (state.inCtrlOp != 0) {
     rewriter.eraseOp(op);
     state.controlsOut[inCtrlOp] = jeffOp.getOutCtrlQubits();
-    state.targetsOut[inCtrlOp] = jeffOp.getOutQubits();
+    state.targetsOut[inCtrlOp] = jeffOp.getOutTargetQubits();
   } else {
-    rewriter.replaceOp(op, jeffOp.getOutQubits());
+    rewriter.replaceOp(op, jeffOp.getOutTargetQubits());
   }
 }
 
