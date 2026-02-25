@@ -24,60 +24,65 @@ Key components include an intermediate representation (IR) for quantum computati
 
 ## Building the C++ Library
 
-Configure and build in Release mode:
+Configure and build:
 
 ```bash
-cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DBUILD_MQT_CORE_TESTS=ON
-cmake --build build
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+cmake --build build --config Release
 ```
 
-For a Debug build:
-
-```bash
-cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug -DBUILD_MQT_CORE_TESTS=ON
-cmake --build build
-```
+The `--config` flag is required for multi-configuration generators (e.g., MSVC) and is ignored by single-configuration generators.
 
 Key CMake options:
 
-| Option                       | Default                | Description                                                   |
-| ---------------------------- | ---------------------- | ------------------------------------------------------------- |
-| `BUILD_MQT_CORE_TESTS`       | ON (if master project) | Build C++ test suite                                          |
-| `BUILD_MQT_CORE_BINDINGS`    | OFF                    | Build Python bindings via nanobind                            |
-| `BUILD_MQT_CORE_MLIR`        | ON                     | Build MLIR quantum compiler infrastructure (requires LLVM 21) |
-| `BUILD_MQT_CORE_SHARED_LIBS` | OFF                    | Build as shared libraries                                     |
-| `ENABLE_COVERAGE`            | OFF                    | Enable code coverage instrumentation                          |
+| Option                        | Default                | Description                                                                          |
+| ----------------------------- | ---------------------- | ------------------------------------------------------------------------------------ |
+| `BUILD_MQT_CORE_TESTS`       | ON (if master project) | Build C++ test suite                                                                 |
+| `BUILD_MQT_CORE_BINDINGS`    | OFF                    | Build Python bindings via nanobind                                                   |
+| `BUILD_MQT_CORE_MLIR`        | ON                     | Build MLIR quantum compiler infrastructure (requires LLVM 21)                        |
+| `BUILD_MQT_CORE_SHARED_LIBS` | OFF                    | Build as shared libraries (used internally for Python packaging; not for direct use) |
+| `ENABLE_COVERAGE`             | OFF                    | Enable code coverage instrumentation                                                 |
 
 ### C++ Dependencies
 
-C++ dependencies are managed via CMake's `FetchContent` (configured in `cmake/ExternalDependencies.cmake`).
-Each dependency is first searched on the system via `find_package`; if not found, it is automatically fetched from its upstream source.
-Dependencies include nlohmann_json, Boost.Multiprecision, Google Test, spdlog, QDMI, and Eigen (MLIR only).
+C++ dependencies are managed via CMake's `FetchContent` (configured in `cmake/ExternalDependencies.cmake`):
+
+| Dependency                                                              | Condition                  |
+| ----------------------------------------------------------------------- | -------------------------- |
+| [nlohmann/json](https://github.com/nlohmann/json)                      | Always                     |
+| [Boost.Multiprecision](https://github.com/boostorg/multiprecision)     | Always (fetched by default; set `USE_SYSTEM_BOOST=ON` to use system install) |
+| [spdlog](https://github.com/gabime/spdlog)                             | Always                     |
+| [QDMI](https://github.com/Munich-Quantum-Software-Stack/qdmi)          | Always                     |
+| [Google Test](https://github.com/google/googletest)                     | `BUILD_MQT_CORE_TESTS=ON` |
+| [Eigen](https://gitlab.com/libeigen/eigen)                             | `BUILD_MQT_CORE_MLIR=ON`  |
+| [nanobind](https://github.com/wjakob/nanobind)                         | `BUILD_MQT_CORE_BINDINGS=ON` (found via `find_package`, not fetched) |
 
 ## Running C++ Tests
 
 Run the full C++ test suite:
 
 ```bash
-ctest --test-dir build
+ctest --test-dir build -C Release
 ```
+
+The `-C` flag selects the configuration on multi-configuration generators (e.g., MSVC) and is ignored by single-configuration generators.
 
 Run a single test by name (regex match):
 
 ```bash
-ctest --test-dir build -R mqt-core-dd-test
+ctest --test-dir build -C Release -R mqt-core-dd-test
 ```
 
 Run with verbose output on failure:
 
 ```bash
-ctest --test-dir build --output-on-failure
+ctest --test-dir build -C Release --output-on-failure
 ```
 
-Run tests by label (e.g., all MLIR unit tests):
+Run tests by label (e.g., all MLIR unit tests in `mlir/unittests/`):
 
 ```bash
-ctest --test-dir build -L mqt-mlir-unittests
+ctest --test-dir build -C Release -L mqt-mlir-unittests
 ```
 
 Run a specific test binary directly:
@@ -86,7 +91,6 @@ Run a specific test binary directly:
 ./build/test/dd/mqt-core-dd-test
 ```
 
-MLIR tests are located at `mlir/unittests/`.
 Prefer running targeted tests over the full suite during development.
 All C++ tests use Google Test. Write new tests in `test/` (or `mlir/unittests/` for MLIR).
 
@@ -98,7 +102,7 @@ Install all dev dependencies and build the package:
 uv sync
 ```
 
-Build artifacts are placed in `build/{wheel_tag}/{build_type}/`.
+Build artifacts are placed in `build/{wheel_tag}/{build_type}/`, where `{wheel_tag}` is a PEP 425 tag (e.g., `cp312-cp312-linux_x86_64`) and `{build_type}` is the CMake build type (e.g., `Release`).
 
 ## Running Python Tests
 
@@ -108,13 +112,13 @@ Full test suite via nox (handles environment setup):
 uvx nox -s tests
 ```
 
-Run tests for a specific Python version:
+Run tests for a specific Python version (preferred during iteration):
 
 ```bash
 uvx nox -s tests-3.12
 ```
 
-Single test file (if environment is already set up via `uv sync`):
+Run a single test file (`uv run` automatically syncs the environment):
 
 ```bash
 uv run pytest test/python/dd/test_dd_package.py
@@ -135,21 +139,21 @@ uvx nox -s tests -- --cov
 Test with minimum dependency versions:
 
 ```bash
-uvx nox -s minimums
+uvx nox -s minimums-3.12
 ```
 
 Test against latest Qiskit from git:
 
 ```bash
-uvx nox -s qiskit
+uvx nox -s qiskit-3.12
 ```
 
-Prefer running individual test files during development.
+During iteration, prefer running a single Python version (e.g., `tests-3.12`, `minimums-3.12`). Run the full command across all versions for final checks.
 Write new Python tests with pytest in `test/python/`.
 
 ## Linting, Formatting, and Code Style
 
-Run all pre-commit checks (auto-fixes formatting and linting issues):
+Run all pre-commit checks (auto-fixes formatting issues and reports linting problems):
 
 ```bash
 uvx nox -s lint
@@ -164,24 +168,19 @@ uvx nox -s lint -- ty-check
 ### C++
 
 - Formatting and naming conventions are enforced by clang-format and clang-tidy; see `.clang-format` and `.clang-tidy` for the full configuration.
-- To include nanobind bindings in clang-tidy analysis, configure with `-DBUILD_MQT_CORE_BINDINGS=ON`.
+- To include nanobind bindings in clang-tidy analysis, configure with `-DBUILD_MQT_CORE_BINDINGS=ON`. This requires a virtual environment with nanobind installed (e.g., via `uv sync` or minimally `uv sync --only-group build`).
 - Header guards: `#pragma once`
 
 ### Python
 
 Ruff is configured in `pyproject.toml` with `select = ["ALL"]` — all rules are enabled by default, with a small set selectively disabled.
-Do not add new ignore rules without documenting why.
+Prefer fixing reported warnings over suppressing them with `# noqa` comments. Only add ignore rules when necessary and document why.
+The same applies to ty type checking — fix reported issues before adding `# type: ignore` comments. Type ignores are sometimes necessary for incompletely typed libraries (e.g., Qiskit).
 Google-style docstrings are enforced.
 
 ## Documentation
 
-Build and serve docs locally (requires doxygen):
-
-```bash
-uvx nox -s docs
-```
-
-Build without serving (non-interactive):
+Build docs locally (requires doxygen):
 
 ```bash
 uvx nox --non-interactive -s docs
@@ -208,34 +207,12 @@ uvx nox -s stubs
 
 Stub files (`.pyi`) in `python/mqt/core/` are **auto-generated** by nanobind's stubgen.
 NEVER edit `.pyi` files manually — they will be overwritten.
-If bindings change, regenerate stubs and commit the updated `.pyi` files.
-
-## Project Layout
-
-```text
-include/mqt-core/       C++ public headers (organized by component)
-src/                    C++ source files (mirrors include/ structure)
-python/mqt/core/        Python package and auto-generated .pyi stubs
-bindings/               nanobind C++ → Python bindings
-test/                   C++ tests (Google Test)
-test/python/            Python tests (pytest)
-cmake/                  CMake modules and helpers
-docs/                   Sphinx documentation source
-mlir/                   MLIR quantum compiler infrastructure and QIR builder
-eval/                   Benchmarking and evaluation
-json/                   Device configuration files (NA, SC)
-```
-
-Components: `ir` (intermediate representation), `dd` (decision diagrams), `zx` (ZX-calculus), `algorithms`, `circuit_optimizer`, `qasm3` (OpenQASM 3.0 parser), `na` (neutral atoms), `qdmi` (device management), `qir` (QIR runtime and runner), `fomac` (formal methods), `mlir` (MLIR dialects and mqt-cc compiler).
+If C++ bindings are added or modified (files in `bindings/`), stubs need to be regenerated.
 
 ## Platform Support
 
-- **Operating systems**: Linux (Ubuntu 24.04), macOS (14, 15), Windows (2022, 2025)
-- **Architectures**: x86_64 and arm64
-- **C++ compilers**: GCC 14+, Clang 20+, MSVC (latest), AppleClang 17+
-- **Python**: 3.10–3.14 tested across all supported OS/architecture combinations. Wheels are built for Linux, macOS, and Windows on x86_64 and arm64 (Stable ABI, targeting Python 3.12+). Free-threading wheels are built for Python 3.14.
-- **CI**: GitHub Actions with reusable workflows from `munich-quantum-toolkit/workflows`.
-  Regular CI runs a subset of the matrix. The full C++ compiler/OS matrix is tested with the `extensive-cpp-ci` label; the full Python matrix with the `extensive-python-ci` label.
+Pre-built Python wheels are available for Linux (glibc 2.17+, x86_64/arm64), macOS (11.0+, x86_64/arm64), and Windows (x86_64/arm64).
+Wheels target the Python 3.12 Stable ABI. Free-threading wheels are built for Python 3.14.
 
 ## Important Notes
 
