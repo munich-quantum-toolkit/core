@@ -221,4 +221,4 @@ def test_estimator_identity_observable_only(backend_with_mock_jobs: QDMIBackend)
     data = cast("Any", result[0].data)
     # Expectation of I is always 1
     # Result should be a scalar array 1.0
-    assert float(data.evs) == 1.0
+    assert float(data.evs) == pytest.approx(1.0)
