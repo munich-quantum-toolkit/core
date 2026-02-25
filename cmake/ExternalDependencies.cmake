@@ -41,12 +41,11 @@ if(BUILD_MQT_CORE_MLIR)
     GIT_TAG deserialization
     GIT_SUBMODULES "" GIT_SUBMODULES_RECURSE FALSE)
   FetchContent_MakeAvailable(jeff_mlir)
-
-  # Include jeff-mlir headers
+  set(BUILD_JEFF_MLIR_TRANSLATION
+      OFF
+      CACHE BOOL "Disable building the translation submodule of jeff-mlir" FORCE)
   include_directories(${jeff_mlir_SOURCE_DIR}/include)
   include_directories(${jeff_mlir_BINARY_DIR}/include)
-
-  # Restore C++ standard changed by jeff-mlir
   set(CMAKE_CXX_STANDARD 20)
 endif()
 
