@@ -35,27 +35,27 @@ The `--config` flag is required for multi-configuration generators (e.g., MSVC) 
 
 Key CMake options:
 
-| Option                        | Default                | Description                                                                          |
-| ----------------------------- | ---------------------- | ------------------------------------------------------------------------------------ |
+| Option                       | Default                | Description                                                                          |
+| ---------------------------- | ---------------------- | ------------------------------------------------------------------------------------ |
 | `BUILD_MQT_CORE_TESTS`       | ON (if master project) | Build C++ test suite                                                                 |
 | `BUILD_MQT_CORE_BINDINGS`    | OFF                    | Build Python bindings via nanobind                                                   |
 | `BUILD_MQT_CORE_MLIR`        | ON                     | Build MLIR quantum compiler infrastructure (requires LLVM 21)                        |
 | `BUILD_MQT_CORE_SHARED_LIBS` | OFF                    | Build as shared libraries (used internally for Python packaging; not for direct use) |
-| `ENABLE_COVERAGE`             | OFF                    | Enable code coverage instrumentation                                                 |
+| `ENABLE_COVERAGE`            | OFF                    | Enable code coverage instrumentation                                                 |
 
 ### C++ Dependencies
 
 C++ dependencies are managed via CMake's `FetchContent` (configured in `cmake/ExternalDependencies.cmake`):
 
-| Dependency                                                              | Condition                  |
-| ----------------------------------------------------------------------- | -------------------------- |
-| [nlohmann/json](https://github.com/nlohmann/json)                      | Always                     |
-| [Boost.Multiprecision](https://github.com/boostorg/multiprecision)     | Always (fetched by default; set `USE_SYSTEM_BOOST=ON` to use system install) |
-| [spdlog](https://github.com/gabime/spdlog)                             | Always                     |
-| [QDMI](https://github.com/Munich-Quantum-Software-Stack/qdmi)          | Always                     |
-| [Google Test](https://github.com/google/googletest)                     | `BUILD_MQT_CORE_TESTS=ON` |
-| [Eigen](https://gitlab.com/libeigen/eigen)                             | `BUILD_MQT_CORE_MLIR=ON`  |
-| [nanobind](https://github.com/wjakob/nanobind)                         | `BUILD_MQT_CORE_BINDINGS=ON` (found via `find_package`, not fetched) |
+| Dependency                                                         | Condition                                                                    |
+| ------------------------------------------------------------------ | ---------------------------------------------------------------------------- |
+| [nlohmann/json](https://github.com/nlohmann/json)                  | Always                                                                       |
+| [Boost.Multiprecision](https://github.com/boostorg/multiprecision) | Always (fetched by default; set `USE_SYSTEM_BOOST=ON` to use system install) |
+| [spdlog](https://github.com/gabime/spdlog)                         | Always                                                                       |
+| [QDMI](https://github.com/Munich-Quantum-Software-Stack/qdmi)      | Always                                                                       |
+| [Google Test](https://github.com/google/googletest)                | `BUILD_MQT_CORE_TESTS=ON`                                                    |
+| [Eigen](https://gitlab.com/libeigen/eigen)                         | `BUILD_MQT_CORE_MLIR=ON`                                                     |
+| [nanobind](https://github.com/wjakob/nanobind)                     | `BUILD_MQT_CORE_BINDINGS=ON` (found via `find_package`, not fetched)         |
 
 ## Running C++ Tests
 
