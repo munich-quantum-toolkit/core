@@ -41,6 +41,3 @@ target_sources(
          ${MQT_MLIR_BUILD_INCLUDE_DIR}
          FILES
          ${PASSES_HEADERS_BUILD})
-
-# fix alignment issues for stack-allocated fixed-size matrices
-target_compile_definitions(QcoPasses PUBLIC EIGEN_MAX_STATIC_ALIGN_BYTES=16)
