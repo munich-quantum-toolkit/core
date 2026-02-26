@@ -18,6 +18,7 @@
 #include <iterator>
 #include <llvm/ADT/ArrayRef.h>
 #include <llvm/ADT/STLExtras.h>
+#include <llvm/ADT/Sequence.h>
 #include <llvm/ADT/TypeSwitch.h>
 #include <llvm/Support/Casting.h>
 #include <llvm/Support/Debug.h>
@@ -26,6 +27,8 @@
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/IR/Block.h>
 #include <mlir/IR/BuiltinOps.h>
+#include <mlir/IR/Location.h>
+#include <mlir/IR/Operation.h>
 #include <mlir/IR/PatternMatch.h>
 #include <mlir/IR/Value.h>
 #include <mlir/Support/LLVM.h>
@@ -467,8 +470,6 @@ public:
   using HeuristicMappingPassBase::HeuristicMappingPassBase;
 
   void runOnOperation() override {
-    IRRewriter rewriter(&getContext());
-
     // TODO: Hardcoded architecture.
     Architecture arch("RigettiNovera", 9,
                       {{0, 3}, {3, 0}, {0, 1}, {1, 0}, {1, 4}, {4, 1},
@@ -525,10 +526,9 @@ public:
 
       //// ---- TODO: Add a nice description what happens here.
 
-      place(dynQubits, layout, rewriter);
-      const auto statQubits =
-          map_range(region.getOps<StaticOp>(),
-                    [](StaticOp op) { return op.getResult(); });
+      IRRewriter rewriter(&getContext());
+      rewriter.setInsertionPointToStart(&region.front());
+      const auto statQubits = place(dynQubits, layout, rewriter);
 
       //// ----
     }
@@ -605,21 +605,44 @@ private:
     return layers;
   }
 
-  static void place(ArrayRef<QubitValue> dynQubits, Layout& layout,
-                    IRRewriter& rewriter) {
+  static SmallVector<QubitValue>
+  place(const ArrayRef<const QubitValue> dynQubits, const Layout& layout,
+        IRRewriter& rewriter) {
+    SmallVector<QubitValue> statQubits;
+    statQubits.reserve(layout.getNumQubits());
+
+    // 1. Replace existing dynamic allocations with mapped static ones.
     for (const auto [prog, q] : llvm::enumerate(dynQubits)) {
       const auto hw = layout.getHardwareIndex(prog);
-      rewriter.setInsertionPoint(q.getDefiningOp());
-      rewriter.replaceOpWithNewOp<StaticOp>(q.getDefiningOp(), hw);
+      Operation* op = q.getDefiningOp();
+
+      rewriter.setInsertionPoint(op);
+      auto staticOp = rewriter.replaceOpWithNewOp<StaticOp>(op, hw);
+      statQubits.push_back(staticOp.getQubit());
     }
+
+    // Ensure subsequent insertions happen after the last replaced op.
+    if (!statQubits.empty()) {
+      rewriter.setInsertionPointAfter(statQubits.back().getDefiningOp());
+    }
+
+    // 2. Create static qubits for the remaining (unused) hardware indices.
+    for (std::size_t prog = dynQubits.size(); prog < layout.getNumQubits();
+         ++prog) {
+      const auto hw = layout.getHardwareIndex(prog);
+      auto staticOp = rewriter.create<StaticOp>(rewriter.getUnknownLoc(), hw);
+      statQubits.push_back(staticOp.getQubit());
+    }
+
+    return statQubits;
   }
 
-  // TODO: Naming.
+  /// TODO: Naming.
   static void process(ArrayRef<const Layer> layers,
                       const AStarSearchEngine& engine, const Architecture& arch,
                       Layout& layout) {
     for (const auto& layer : layers) {
-      // TODO: Check optional.
+      /// TODO: Check optional.
       const auto swaps = engine.route({layer}, layout, arch);
       for (const auto [hw0, hw1] : *swaps) {
         const auto [prog0, prog1] = layout.getProgramIndices(hw0, hw1);
