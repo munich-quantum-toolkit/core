@@ -16,7 +16,7 @@ include "mlir/Pass/PassBase.td"
 //===----------------------------------------------------------------------===//
 
 def HeuristicMappingPass : Pass<"map", "mlir::ModuleOp"> {
-  let dependentDialects = [ "mlir::qco::QCODialect" ];
+  let dependentDialects = ["mlir::qco::QCODialect"];
   let summary = "This pass ensures that a program meets the connectivity constraints of a given architecture.";
   let description = [{
     This pass inserts SWAP operations to ensure two-qubit gates are executable on a given target architecture.

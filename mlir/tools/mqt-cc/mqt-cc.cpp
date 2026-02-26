@@ -140,7 +140,7 @@ int main(int argc, char** argv) {
   // Set up MLIR context with all required dialects
   DialectRegistry registry;
   registry.insert<mlir::qc::QCDialect>();
-  registry.insert<qco::QCODialect>();
+  registry.insert<mlir::qco::QCODialect>();
   registry.insert<arith::ArithDialect>();
   registry.insert<cf::ControlFlowDialect>();
   registry.insert<func::FuncDialect>();
