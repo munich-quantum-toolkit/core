@@ -41,6 +41,23 @@ namespace mlir::qco {
 struct HeuristicMappingPass
     : impl::HeuristicMappingPassBase<HeuristicMappingPass> {
 private:
+  struct Layer {
+    /// @brief Set of two-qubit gates.
+    DenseSet<std::pair<std::size_t, std::size_t>> gates;
+
+#ifndef NDEBUG
+    LLVM_DUMP_METHOD void dump(llvm::raw_ostream& os = llvm::dbgs()) const {
+      os << "gates= ";
+      for (const auto [i1, i2] : gates) {
+        os << "(" << i1 << ", " << i2 << ") ";
+      }
+      os << "\n";
+    }
+#endif
+  };
+
+  enum Direction : std::uint8_t { Forward, Backward };
+
   /**
    * @brief A quantum accelerator's architecture.
    * @details Computes all-shortest paths at construction.
@@ -270,6 +287,20 @@ private:
       return programToHardware_.size();
     }
 
+#ifndef NDEBUG
+    LLVM_DUMP_METHOD void dump(llvm::raw_ostream& os = llvm::dbgs()) const {
+      os << "prog= ";
+      for (std::size_t i = 0; i < getNumQubits(); ++i) {
+        os << i << " ";
+      }
+      os << "\nhw=   ";
+      for (std::size_t i = 0; i < getNumQubits(); ++i) {
+        os << programToHardware_[i] << " ";
+      }
+      os << "\n";
+    }
+#endif
+
   protected:
     /**
      * @brief Maps a program qubit index to its hardware index.
@@ -280,6 +311,160 @@ private:
      * @brief Maps a hardware qubit index to its program index.
      */
     mlir::SmallVector<uint32_t> hardwareToProgram_;
+  };
+
+  class AStarSearchEngine {
+  public:
+    explicit AStarSearchEngine(float alpha) { params_.alpha = alpha; }
+
+  private:
+    struct Parameters {
+      float alpha{};
+    };
+
+    struct Node {
+      SmallVector<std::pair<std::size_t, std::size_t>> sequence;
+      ThinLayout layout;
+      float f;
+
+      /**
+       * @brief Construct a root node with the given layout. Initialize the
+       * sequence with an empty vector and set the cost to zero.
+       */
+      explicit Node(ThinLayout layout) : layout(std::move(layout)), f(0) {}
+
+      /**
+       * @brief Construct a non-root node from its parent node. Apply the given
+       * swap to the layout of the parent node and evaluate the cost.
+       */
+      Node(const Node& parent, std::pair<std::size_t, std::size_t> swap,
+           const Layer& layer, const Architecture& arch,
+           const Parameters& params)
+          : sequence(parent.sequence), layout(parent.layout), f(0) {
+        /// Apply node-specific swap to given layout.
+        layout.swap(layout.getProgramIndex(swap.first),
+                    layout.getProgramIndex(swap.second));
+
+        // Add swap to sequence.
+        sequence.push_back(swap);
+
+        // Evaluate cost function.
+        f = g(params.alpha) + h(layer, arch); // NOLINT
+      }
+
+      /**
+       * @brief Return true if the current sequence of SWAPs makes all gates
+       * executable.
+       */
+      [[nodiscard]] bool isGoal(Layer layer, const Architecture& arch) const {
+        return llvm::all_of(
+            layer.gates, [&](const std::pair<std::size_t, std::size_t> gate) {
+              return arch.areAdjacent(layout.getHardwareIndex(gate.first),
+                                      layout.getHardwareIndex(gate.second));
+            });
+      }
+
+      /**
+       * @returns The depth in the search tree.
+       */
+      [[nodiscard]] std::size_t depth() const { return sequence.size(); }
+
+      [[nodiscard]] bool operator>(const Node& rhs) const { return f > rhs.f; }
+
+    private:
+      /**
+       * @brief Calculate the path cost for the A* search algorithm.
+       *
+       * The path cost function is the weighted sum of the currently required
+       * SWAPs.
+       */
+      [[nodiscard]] float g(float alpha) const {
+        return (alpha * static_cast<float>(depth()));
+      }
+
+      /**
+       * @brief Calculate the heuristic cost for the A* search algorithm.
+       *
+       * Computes the minimal number of SWAPs required to route each gate in
+       * each layer. For each gate, this is determined by the shortest distance
+       * between its hardware qubits. Intuitively, this is the number of SWAPs
+       * that a naive router would insert to route the layers.
+       */
+      [[nodiscard]] float h(const Layer& layer,
+                            const Architecture& arch) const {
+        float costs{0};
+        for (const auto [prog0, prog1] : layer.gates) {
+          const auto [hw0, hw1] = layout.getHardwareIndices(prog0, prog1);
+          const std::size_t nswaps = arch.distanceBetween(hw0, hw1) - 1;
+          costs += static_cast<float>(nswaps);
+        }
+        return costs;
+      }
+    };
+
+    using MinQueue =
+        std::priority_queue<Node, std::vector<Node>, std::greater<>>;
+
+  public:
+    [[nodiscard]] std::optional<
+        SmallVector<std::pair<std::size_t, std::size_t>>>
+    route(const Layer& layer, const ThinLayout& layout,
+          const Architecture& arch) const {
+      Node root(layout);
+
+      /// Early exit. No SWAPs required:
+      if (root.isGoal(layer, arch)) {
+        return SmallVector<std::pair<std::size_t, std::size_t>>{};
+      }
+
+      /// Initialize queue.
+      MinQueue frontier{};
+      frontier.emplace(root);
+
+      /// Iterative searching and expanding.
+      while (!frontier.empty()) {
+        Node curr = frontier.top();
+        frontier.pop();
+
+        if (curr.isGoal(layer, arch)) {
+          return curr.sequence;
+        }
+
+        /// Expand frontier with all neighbouring SWAPs in the current front.
+        expand(frontier, curr, layer, arch);
+      }
+
+      return std::nullopt;
+    }
+
+  private:
+    /// @brief Expand frontier with all neighbouring SWAPs in the current front.
+    void expand(MinQueue& frontier, const Node& parent, const Layer& layer,
+                const Architecture& arch) const {
+      DenseSet<std::pair<std::size_t, std::size_t>> expansionSet{};
+
+      if (!parent.sequence.empty()) {
+        expansionSet.insert(parent.sequence.back());
+      }
+
+      for (const std::pair<std::size_t, std::size_t> gate : layer.gates) {
+        for (const auto prog : {gate.first, gate.second}) {
+          const auto hw0 = parent.layout.getHardwareIndex(prog);
+          for (const auto hw1 : arch.neighboursOf(hw0)) {
+            /// Ensure consistent hashing/comparison.
+            const std::pair<std::size_t, std::size_t> swap =
+                std::minmax(hw0, hw1);
+            if (!expansionSet.insert(swap).second) {
+              continue;
+            }
+
+            frontier.emplace(parent, swap, layer, arch, params_);
+          }
+        }
+      }
+    }
+
+    Parameters params_;
   };
 
   struct Circuit {
@@ -342,11 +527,15 @@ public:
   void runOnOperation() override {
     IRRewriter rewriter(&getContext());
 
+    // TODO: Hardcoded architecture.
     static const Architecture::CouplingSet COUPLING{
-        {0, 1}, {1, 0}, {0, 2}, {2, 0}, {1, 3}, {3, 1}, {2, 3},
-        {3, 2}, {2, 4}, {4, 2}, {3, 5}, {5, 3}, {4, 5}, {5, 4}};
+        {0, 3}, {3, 0}, {0, 1}, {1, 0}, {1, 4}, {4, 1}, {1, 2}, {2, 1},
+        {2, 5}, {5, 2}, {3, 6}, {6, 3}, {3, 4}, {4, 3}, {4, 7}, {7, 4},
+        {4, 5}, {5, 4}, {5, 8}, {8, 5}, {6, 7}, {7, 6}, {7, 8}, {8, 7}};
 
     Architecture arch("RigettiNovera", 9, COUPLING);
+
+    AStarSearchEngine engine(0.5);
 
     for (auto func : getOperation().getOps<func::FuncOp>()) {
       Region& region = func.getFunctionBody();
@@ -387,20 +576,18 @@ public:
         llvm::dbgs() << " --- layer end ---\n";
       }
 
-      ThinLayout layout(8);
-
-      // Apply identity layout.
-      for (std::size_t i = 0; i < circ.size(); ++i) {
-        layout.add(i, i);
-      }
+      // TODO: More initial layout methods.
+      auto layout = getIdentityLayout(arch);
 
       // Stage 2: Recomputing starting program-to-hardware mapping by
       // repeating forwards and backwards traversals.
-      const std::size_t repeats = 1;
+      const std::size_t repeats = 10;
       for (std::size_t i = 0; i < repeats; ++i) {
-        // forward(circ, arch, layout);
-        // mapping = backward(mapping)
+        process(forwardLayers, engine, arch, layout);
+        process(backwardLayers, engine, arch, layout);
       }
+
+      layout.dump();
 
       // Stage 3: Apply mapping and final traversal.
       // circ.staticize(mapping, rewriter);
@@ -409,23 +596,6 @@ public:
   }
 
 private:
-  struct Layer {
-    /// @brief Set of two-qubit gates.
-    DenseSet<std::pair<std::size_t, std::size_t>> gates;
-
-#ifndef NDEBUG
-    LLVM_DUMP_METHOD void dump(llvm::raw_ostream& os = llvm::dbgs()) const {
-      os << "gates= ";
-      for (const auto [i1, i2] : gates) {
-        os << "(" << i1 << ", " << i2 << ") ";
-      }
-      os << "\n";
-    }
-#endif
-  };
-
-  enum Direction : std::uint8_t { Forward, Backward };
-
   template <Direction d, typename EndCheckF>
   [[nodiscard]] static SmallVector<Layer>
   getLayers(MutableArrayRef<WireIterator> wires, EndCheckF endCheck) {
@@ -497,14 +667,25 @@ private:
   }
 
   static ThinLayout getIdentityLayout(const Architecture& arch) {
-    ThinLayout layout(8);
+    ThinLayout layout(arch.nqubits());
     for (std::size_t i = 0; i < arch.nqubits(); ++i) {
       layout.add(i, i);
     }
     return layout;
   }
 
-  static void forward(const Circuit& circ, const Architecture& arch,
-                      ThinLayout layout) {}
+  // TODO: Naming.
+  static void process(ArrayRef<const Layer> layers,
+                      const AStarSearchEngine& engine, const Architecture& arch,
+                      ThinLayout& layout) {
+    for (const auto& layer : layers) {
+      const auto swaps =
+          engine.route({layer}, layout, arch); // TODO: Check optional.
+      for (const auto [hw0, hw1] : *swaps) {
+        const auto [prog0, prog1] = layout.getProgramIndices(hw0, hw1);
+        layout.swap(prog0, prog1);
+      }
+    }
+  }
 };
 } // namespace mlir::qco
