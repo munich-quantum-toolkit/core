@@ -41,6 +41,8 @@ namespace mlir::qco {
 struct HeuristicMappingPass
     : impl::HeuristicMappingPassBase<HeuristicMappingPass> {
 private:
+  using QubitValue = TypedValue<QubitType>;
+
   struct Layer {
     /// @brief Set of two-qubit gates.
     DenseSet<std::pair<std::size_t, std::size_t>> gates;
@@ -204,9 +206,17 @@ private:
    * because "virtual" (opposed to physical) and "static" (opposed to dynamic)
    * are C++ keywords.
    */
-  class [[nodiscard]] ThinLayout {
+  class [[nodiscard]] Layout {
   public:
-    explicit ThinLayout(const std::size_t nqubits)
+    static Layout identity(const std::size_t nqubits) {
+      Layout layout(nqubits);
+      for (std::size_t i = 0; i < nqubits; ++i) {
+        layout.add(i, i);
+      }
+      return layout;
+    }
+
+    explicit Layout(const std::size_t nqubits)
         : programToHardware_(nqubits), hardwareToProgram_(nqubits) {}
 
     /**
@@ -287,20 +297,6 @@ private:
       return programToHardware_.size();
     }
 
-#ifndef NDEBUG
-    LLVM_DUMP_METHOD void dump(llvm::raw_ostream& os = llvm::dbgs()) const {
-      os << "prog= ";
-      for (std::size_t i = 0; i < getNumQubits(); ++i) {
-        os << i << " ";
-      }
-      os << "\nhw=   ";
-      for (std::size_t i = 0; i < getNumQubits(); ++i) {
-        os << programToHardware_[i] << " ";
-      }
-      os << "\n";
-    }
-#endif
-
   protected:
     /**
      * @brief Maps a program qubit index to its hardware index.
@@ -324,14 +320,14 @@ private:
 
     struct Node {
       SmallVector<std::pair<std::size_t, std::size_t>> sequence;
-      ThinLayout layout;
+      Layout layout;
       float f;
 
       /**
        * @brief Construct a root node with the given layout. Initialize the
        * sequence with an empty vector and set the cost to zero.
        */
-      explicit Node(ThinLayout layout) : layout(std::move(layout)), f(0) {}
+      explicit Node(Layout layout) : layout(std::move(layout)), f(0) {}
 
       /**
        * @brief Construct a non-root node from its parent node. Apply the given
@@ -408,7 +404,7 @@ private:
   public:
     [[nodiscard]] std::optional<
         SmallVector<std::pair<std::size_t, std::size_t>>>
-    route(const Layer& layer, const ThinLayout& layout,
+    route(const Layer& layer, const Layout& layout,
           const Architecture& arch) const {
       Node root(layout);
 
@@ -467,60 +463,6 @@ private:
     Parameters params_;
   };
 
-  struct Circuit {
-  public:
-    Circuit() = default;
-
-    void extend(TypedValue<QubitType> q) { qubits_.emplace_back(q); }
-
-    template <typename Range> void extend(Range&& range) {
-      llvm::append_range(qubits_, std::forward<Range>(range));
-    }
-
-    /// @returns the i-th qubit of the circuit.
-    [[nodiscard]] TypedValue<QubitType> qubit(std::size_t i) const {
-      return qubits_[i];
-    }
-
-    /// @returns the number of qubits the circuit contains.
-    [[nodiscard]] std::size_t size() const { return qubits_.size(); }
-
-    /// @brief Assign hardware index to qubit.
-    void setHardwareIndex(const TypedValue<QubitType> q,
-                          const std::size_t hwIndex) {
-      mapping_.try_emplace(q, hwIndex);
-    }
-
-    /// @returns the hardware index associated with the qubit value.
-    [[nodiscard]] std::size_t
-    getHardwareIndex(const TypedValue<QubitType> q) const {
-      return mapping_.at(q);
-    }
-
-    /// @returns a view of the qubits.
-    [[nodiscard]] ArrayRef<TypedValue<QubitType>> qubits() const {
-      return qubits_;
-    }
-
-    /// @brief Replace dynamic qubits with static qubits.
-    // void staticize(const SmallVector<QubitMapping>& mapping,
-    //                IRRewriter& rewriter) {
-    //   for (const auto [i, m] : llvm::enumerate(mapping)) {
-    //     Operation* alloc = m.qubit().getDefiningOp();
-    //     assert(llvm::isa<AllocOp>(alloc));
-
-    //     rewriter.setInsertionPoint(alloc);
-    //     qubits_[i] = rewriter.replaceOpWithNewOp<StaticOp>(alloc, m.index());
-    //   }
-    // }
-
-  private:
-    /// @brief The qubits of the circuit.
-    SmallVector<TypedValue<QubitType>, 32> qubits_;
-    /// @brief Maps qubit values to hardware indices.
-    DenseMap<TypedValue<QubitType>, std::size_t> mapping_;
-  };
-
 public:
   using HeuristicMappingPassBase::HeuristicMappingPassBase;
 
@@ -528,31 +470,23 @@ public:
     IRRewriter rewriter(&getContext());
 
     // TODO: Hardcoded architecture.
-    static const Architecture::CouplingSet COUPLING{
-        {0, 3}, {3, 0}, {0, 1}, {1, 0}, {1, 4}, {4, 1}, {1, 2}, {2, 1},
-        {2, 5}, {5, 2}, {3, 6}, {6, 3}, {3, 4}, {4, 3}, {4, 7}, {7, 4},
-        {4, 5}, {5, 4}, {5, 8}, {8, 5}, {6, 7}, {7, 6}, {7, 8}, {8, 7}};
-
-    Architecture arch("RigettiNovera", 9, COUPLING);
-
+    Architecture arch("RigettiNovera", 9,
+                      {{0, 3}, {3, 0}, {0, 1}, {1, 0}, {1, 4}, {4, 1},
+                       {1, 2}, {2, 1}, {2, 5}, {5, 2}, {3, 6}, {6, 3},
+                       {3, 4}, {4, 3}, {4, 7}, {7, 4}, {4, 5}, {5, 4},
+                       {5, 8}, {8, 5}, {6, 7}, {7, 6}, {7, 8}, {8, 7}});
     AStarSearchEngine engine(0.5);
 
     for (auto func : getOperation().getOps<func::FuncOp>()) {
       Region& region = func.getFunctionBody();
 
-      // Stage 1: Apply initial program-to-hardware mapping strategy.
+      SmallVector<QubitValue> dynQubits(map_range(
+          region.getOps<AllocOp>(), [](AllocOp op) { return op.getResult(); }));
 
-      // Find circuit qubits (via their allocations).
-      Circuit circ;
-      circ.extend(map_range(region.getOps<AllocOp>(),
-                            [](AllocOp op) { return op.getResult(); }));
+      //// ---- TODO: Add a nice description what happens here.
 
-      // Compute layers.
-      SmallVector<WireIterator> wires;
-      wires.reserve(circ.size());
-      for (const auto q : circ.qubits()) {
-        wires.emplace_back(q);
-      }
+      SmallVector<WireIterator> wires(
+          llvm::map_range(dynQubits, [](auto q) { return WireIterator(q); }));
       SmallVector<WireIterator> wireStarts(wires);
 
       const auto forwardLayers =
@@ -563,6 +497,8 @@ public:
           wires, [&](std::size_t idx, const WireIterator& it) {
             return it != wireStarts[idx];
           });
+
+      //// ----
 
       llvm::dbgs() << "forward:\n";
       for (const auto& layer : forwardLayers) {
@@ -576,22 +512,25 @@ public:
         llvm::dbgs() << " --- layer end ---\n";
       }
 
-      // TODO: More initial layout methods.
-      auto layout = getIdentityLayout(arch);
+      //// ---- TODO: Add a nice description what happens here.
 
-      // Stage 2: Recomputing starting program-to-hardware mapping by
-      // repeating forwards and backwards traversals.
+      auto layout = Layout::identity(arch.nqubits());
       const std::size_t repeats = 10;
       for (std::size_t i = 0; i < repeats; ++i) {
         process(forwardLayers, engine, arch, layout);
         process(backwardLayers, engine, arch, layout);
       }
 
-      layout.dump();
+      //// ----
 
-      // Stage 3: Apply mapping and final traversal.
-      // circ.staticize(mapping, rewriter);
-      // forward(circ, arch, true);
+      //// ---- TODO: Add a nice description what happens here.
+
+      place(dynQubits, layout, rewriter);
+      const auto statQubits =
+          map_range(region.getOps<StaticOp>(),
+                    [](StaticOp op) { return op.getResult(); });
+
+      //// ----
     }
   }
 
@@ -606,7 +545,7 @@ private:
 
     while (true) {
       Layer l;
-      // SetVector<TypedValue<QubitType>> ssaFront;
+      // SetVector<QubitValue ssaFront;
 
       for (const auto [index, it] : llvm::enumerate(wires)) {
         while (endCheck(index, it)) {
@@ -621,7 +560,7 @@ private:
                     }
 
                     // ssaFront.insert(
-                    //     cast<TypedValue<QubitType>>(std::prev(it).qubit()));
+                    //     cast<QubitValue(std::prev(it).qubit()));
 
                     if (occ.contains(op)) {
                       const auto otherIndex = occ[op];
@@ -666,21 +605,22 @@ private:
     return layers;
   }
 
-  static ThinLayout getIdentityLayout(const Architecture& arch) {
-    ThinLayout layout(arch.nqubits());
-    for (std::size_t i = 0; i < arch.nqubits(); ++i) {
-      layout.add(i, i);
+  static void place(ArrayRef<QubitValue> dynQubits, Layout& layout,
+                    IRRewriter& rewriter) {
+    for (const auto [prog, q] : llvm::enumerate(dynQubits)) {
+      const auto hw = layout.getHardwareIndex(prog);
+      rewriter.setInsertionPoint(q.getDefiningOp());
+      rewriter.replaceOpWithNewOp<StaticOp>(q.getDefiningOp(), hw);
     }
-    return layout;
   }
 
   // TODO: Naming.
   static void process(ArrayRef<const Layer> layers,
                       const AStarSearchEngine& engine, const Architecture& arch,
-                      ThinLayout& layout) {
+                      Layout& layout) {
     for (const auto& layer : layers) {
-      const auto swaps =
-          engine.route({layer}, layout, arch); // TODO: Check optional.
+      // TODO: Check optional.
+      const auto swaps = engine.route({layer}, layout, arch);
       for (const auto [hw0, hw1] : *swaps) {
         const auto [prog0, prog1] = layout.getProgramIndices(hw0, hw1);
         layout.swap(prog0, prog1);
