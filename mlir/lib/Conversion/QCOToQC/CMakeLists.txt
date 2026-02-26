@@ -16,9 +16,11 @@ add_mlir_library(
   LINK_LIBS
   MLIRQCDialect
   MLIRQCODialect
+  MLIRQTensorDialect
   MLIRArithDialect
   MLIRFuncDialect
   MLIRTransforms
+  MLIRViewLikeInterface
   MLIRFuncTransforms
   DISABLE_INSTALL)
 
