@@ -31,6 +31,7 @@ cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build --config Release
 ```
 
+Replace `Release` with `Debug` for a debug build.
 The `--config` flag is required for multi-configuration generators (e.g., MSVC) and is ignored by single-configuration generators.
 
 Key CMake options:
@@ -47,15 +48,15 @@ Key CMake options:
 
 C++ dependencies are managed via CMake's `FetchContent` (configured in `cmake/ExternalDependencies.cmake`):
 
-| Dependency                                                         | Condition                                                                    |
-| ------------------------------------------------------------------ | ---------------------------------------------------------------------------- |
-| [nlohmann/json](https://github.com/nlohmann/json)                  | Always                                                                       |
-| [Boost.Multiprecision](https://github.com/boostorg/multiprecision) | Always (fetched by default; set `USE_SYSTEM_BOOST=ON` to use system install) |
-| [spdlog](https://github.com/gabime/spdlog)                         | Always                                                                       |
-| [QDMI](https://github.com/Munich-Quantum-Software-Stack/qdmi)      | Always                                                                       |
-| [Google Test](https://github.com/google/googletest)                | `BUILD_MQT_CORE_TESTS=ON`                                                    |
-| [Eigen](https://gitlab.com/libeigen/eigen)                         | `BUILD_MQT_CORE_MLIR=ON`                                                     |
-| [nanobind](https://github.com/wjakob/nanobind)                     | `BUILD_MQT_CORE_BINDINGS=ON` (found via `find_package`, not fetched)         |
+| Dependency                                                         | Version | Condition                                                                    |
+| ------------------------------------------------------------------ | ------- | ---------------------------------------------------------------------------- |
+| [nlohmann/json](https://github.com/nlohmann/json)                  | 3.12.0  | Always                                                                       |
+| [Boost.Multiprecision](https://github.com/boostorg/multiprecision) | 1.89.0  | Always (fetched by default; set `USE_SYSTEM_BOOST=ON` to use system install) |
+| [spdlog](https://github.com/gabime/spdlog)                         | 1.17.0  | Always                                                                       |
+| [QDMI](https://github.com/Munich-Quantum-Software-Stack/qdmi)      | 1.2.1   | Always                                                                       |
+| [Google Test](https://github.com/google/googletest)                | 1.17.0  | `BUILD_MQT_CORE_TESTS=ON`                                                    |
+| [Eigen](https://gitlab.com/libeigen/eigen)                         | 5.0.1   | `BUILD_MQT_CORE_MLIR=ON`                                                     |
+| [nanobind](https://github.com/wjakob/nanobind)                     |         | `BUILD_MQT_CORE_BINDINGS=ON` (found via `find_package`, not fetched)         |
 
 ## Running C++ Tests
 
@@ -65,7 +66,7 @@ Run the full C++ test suite:
 ctest --test-dir build -C Release
 ```
 
-The `-C` flag selects the configuration on multi-configuration generators (e.g., MSVC) and is ignored by single-configuration generators.
+The `-C` flag selects the configuration on multi-configuration generators (e.g., MSVC) and is ignored by single-configuration generators. Replace `Release` with `Debug` for debug builds.
 
 Run a single test by name (regex match):
 
@@ -115,7 +116,7 @@ uvx nox -s tests
 Run tests for a specific Python version (preferred during iteration):
 
 ```bash
-uvx nox -s tests-3.12
+uvx nox -s tests-3.14
 ```
 
 Run a single test file (`uv run` automatically syncs the environment):
@@ -139,21 +140,21 @@ uvx nox -s tests -- --cov
 Test with minimum dependency versions:
 
 ```bash
-uvx nox -s minimums-3.12
+uvx nox -s minimums-3.14
 ```
 
 Test against latest Qiskit from git:
 
 ```bash
-uvx nox -s qiskit-3.12
+uvx nox -s qiskit-3.14
 ```
 
-During iteration, prefer running a single Python version (e.g., `tests-3.12`, `minimums-3.12`). Run the full command across all versions for final checks.
+During iteration, prefer running a single Python version (e.g., `tests-3.14`, `minimums-3.14`). Run the full command across all versions for final checks.
 Write new Python tests with pytest in `test/python/`.
 
 ## Linting, Formatting, and Code Style
 
-Run all pre-commit checks (auto-fixes formatting issues and reports linting problems):
+Run all pre-commit checks (auto-fixes formatting and some linting issues, and reports remaining problems):
 
 ```bash
 uvx nox -s lint
@@ -175,7 +176,7 @@ uvx nox -s lint -- ty-check
 
 Ruff is configured in `pyproject.toml` with `select = ["ALL"]` — all rules are enabled by default, with a small set selectively disabled.
 Prefer fixing reported warnings over suppressing them with `# noqa` comments. Only add ignore rules when necessary and document why.
-The same applies to ty type checking — fix reported issues before adding `# type: ignore` comments. Type ignores are sometimes necessary for incompletely typed libraries (e.g., Qiskit).
+The same applies to ty type checking — fix reported issues before adding suppression comments. ty uses `# ty: ignore[code]` for fine-grained suppression (see [ty suppression docs](https://docs.astral.sh/ty/suppression/)). Suppressions are sometimes necessary for incompletely typed libraries (e.g., Qiskit).
 Google-style docstrings are enforced.
 
 ## Documentation
@@ -211,7 +212,9 @@ If C++ bindings are added or modified (files in `bindings/`), stubs need to be r
 
 ## Platform Support
 
-Pre-built Python wheels are available for Linux (glibc 2.17+, x86_64/arm64), macOS (11.0+, x86_64/arm64), and Windows (x86_64/arm64).
+The C++ library requires a compiler with C++20 support. It is regularly tested with GCC, Clang, AppleClang, and MSVC.
+
+Pre-built Python wheels are available for Linux (x86_64/arm64), macOS (11.0+, x86_64/arm64), and Windows (x86_64/arm64).
 Wheels target the Python 3.12 Stable ABI. Free-threading wheels are built for Python 3.14.
 
 ## Important Notes
