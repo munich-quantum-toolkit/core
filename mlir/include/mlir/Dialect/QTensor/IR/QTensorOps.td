@@ -231,4 +231,129 @@ def QTensor_ExtractSliceOp : QTensorOpWithOffsetSizesAndStrides<"extract_slice",
   let hasVerifier = 1;
 }
 
+def QTensor_FromElementsOp : QTensorOp<"from_elements", [
+    Pure,
+    TypesMatchWith<"operand types match result element type",
+                   "result", "elements", "SmallVector<Type, 2>("
+                   "::llvm::cast<RankedTensorType>($_self).getNumElements(), "
+                   "::llvm::cast<RankedTensorType>($_self).getElementType())">
+  ]> {
+  let summary = "tensor from elements operation.";
+  let description = [{
+    Create a N-D tensor from a range of same-type arguments. The number of
+    provided `elements` should equal to the number of the elements in the
+    result type. The `elements` correspond to a flattened tensor.
+
+    Example:
+
+    ```mlir
+    tensor.from_elements %a, %b, %c, %d, %e, %f :  tensor<2x3xindex>
+    ```
+
+    will result in a tensor
+
+    [[%a, %b, %c]
+     [%d, %e, %f]]
+  }];
+
+  let arguments = (ins Variadic<AnyType>:$elements);
+  let results = (outs AnyStaticShapeTensor:$result);
+
+  let assemblyFormat = "$elements attr-dict `:` type($result)";
+
+  let builders = [
+    // Special case builder for when `elements` has size >=1.
+    OpBuilder<(ins "ValueRange":$elements)>
+  ];
+
+  let hasCanonicalizer = 1;
+}
+
+def QTensor_InsertOp : QTensorOp<"insert", [
+    Pure,
+    TypesMatchWith<"result type matches type of dest",
+                   "dest", "result",
+                   "$_self">,
+    TypesMatchWith<"scalar type matches element type of dest",
+                   "dest", "scalar",
+                   "::llvm::cast<TensorType>($_self).getElementType()">]> {
+  let summary = "element insertion operation";
+  let description = [{
+  }];
+
+  let arguments = (ins AnyType:$scalar,
+                       AnyRankedTensor:$dest,
+                       Variadic<Index>:$indices);
+  let results = (outs AnyRankedTensor:$result);
+  let assemblyFormat = [{
+    $scalar `into` $dest `[` $indices `]` attr-dict `:` type($dest)
+  }];
+
+  let hasCanonicalizer = 1;
+}
+
+def QTensor_InsertSliceOp : QTensorOp<"insert_slice", [
+    AttrSizedOperandSegments,
+    Pure,
+    TypesMatchWith<"expected result type to match dest type",
+                   "dest", "result", "$_self">
+  ]> {
+  let summary = "insert_slice operation";
+  let description = [{
+  }];
+
+  let arguments = (ins
+    AnyRankedTensor:$source,
+    AnyRankedTensor:$dest,
+    Variadic<Index>:$offsets,
+    Variadic<Index>:$sizes,
+    Variadic<Index>:$strides,
+    DenseI64ArrayAttr:$static_offsets,
+    DenseI64ArrayAttr:$static_sizes,
+    DenseI64ArrayAttr:$static_strides
+  );
+  let results = (outs AnyRankedTensor:$result);
+
+  let assemblyFormat = [{
+    $source `into` $dest ``
+    custom<DynamicIndexList>($offsets, $static_offsets)
+    custom<DynamicIndexList>($sizes, $static_sizes)
+    custom<DynamicIndexList>($strides, $static_strides)
+    attr-dict `:` type($source) `into` type($dest)
+  }];
+
+  let builders = [
+    // Build a InsertSliceOp with mixed static and dynamic entries and inferred
+    // result type.
+    OpBuilder<(ins "Value":$source, "Value":$dest,
+      "ArrayRef<OpFoldResult>":$offsets, "ArrayRef<OpFoldResult>":$sizes,
+      "ArrayRef<OpFoldResult>":$strides,
+      CArg<"ArrayRef<NamedAttribute>", "{}">:$attrs)>,
+    // Build a InsertSliceOp with dynamic entries and inferred result type.
+    OpBuilder<(ins "Value":$source, "Value":$dest,
+      "ValueRange":$offsets, "ValueRange":$sizes, "ValueRange":$strides,
+      CArg<"ArrayRef<NamedAttribute>", "{}">:$attrs)>,
+    // Build an InsertSliceOp with mixed static and dynamic entries packed in
+    // a Range vector and inferred result type.
+    OpBuilder<(ins "Value":$source, "Value":$dest,
+      "ArrayRef<Range>":$ranges,
+      CArg<"ArrayRef<NamedAttribute>", "{}">:$attrs)>,
+    // Build an InsertSliceOp with mixed static and dynamic sizes, offsets set
+    // to 0, strides set to 1 and inferred result type.
+    OpBuilder<(ins "Value":$source, "Value":$dest,
+      "ArrayRef<OpFoldResult>":$sizes,
+      CArg<"ArrayRef<NamedAttribute>", "{}">:$attrs)>,
+  ];
+
+  let hasCanonicalizer = 1;
+}
+
+def QTensor_DeallocOp : QTensorOp<"dealloc", [MemoryEffects<[MemFree]>]> {
+    let summary = "Deallocate a tensor";
+    let description = [{
+    }];
+
+    let arguments = (ins AnyRankedTensor:$tensor);
+    let assemblyFormat = "$tensor attr-dict `:` type($tensor)";
+}
 #endif // TENSOR_OPS

@@ -635,6 +635,151 @@ void QTensorDialect::getCanonicalizationPatterns(
     RewritePatternSet& results) const {
   // results.add<FoldTensorCastProducerOp>(getContext());
 }
+
+//===----------------------------------------------------------------------===//
+// FromElementsOp
+//===----------------------------------------------------------------------===//
+
+void FromElementsOp::build(OpBuilder& builder, OperationState& result,
+                           ValueRange elements) {
+  assert(!elements.empty() && "expected at least one element");
+  Type resultType = RankedTensorType::get(
+      {static_cast<int64_t>(elements.size())}, elements.front().getType());
+  build(builder, result, resultType, elements);
+}
+namespace {
+
+struct ConvertFromElementsOpToTensorOp
+    : public OpRewritePattern<qtensor::FromElementsOp> {
+  using OpRewritePattern<qtensor::FromElementsOp>::OpRewritePattern;
+
+  LogicalResult matchAndRewrite(qtensor::FromElementsOp fromElementsOp,
+                                PatternRewriter& rewriter) const final {
+
+    rewriter.replaceOpWithNewOp<tensor::FromElementsOp>(
+        fromElementsOp, fromElementsOp.getElements());
+
+    return success();
+  }
+};
+
+} // namespace
+
+void FromElementsOp::getCanonicalizationPatterns(RewritePatternSet& results,
+                                                 MLIRContext* context) {
+  results.add<ConvertFromElementsOpToTensorOp>(context);
+}
+
+//===----------------------------------------------------------------------===//
+// InsertOp
+//===----------------------------------------------------------------------===//
+
+namespace {
+
+struct ConvertInsertOpToTensorOp : public OpRewritePattern<qtensor::InsertOp> {
+  using OpRewritePattern<qtensor::InsertOp>::OpRewritePattern;
+
+  LogicalResult matchAndRewrite(qtensor::InsertOp insertOp,
+                                PatternRewriter& rewriter) const final {
+    rewriter.replaceOpWithNewOp<tensor::InsertOp>(
+        insertOp, insertOp.getScalar(), insertOp.getDest(),
+        insertOp.getIndices());
+    return success();
+  }
+};
+
+} // namespace
+
+void InsertOp::getCanonicalizationPatterns(RewritePatternSet& results,
+                                           MLIRContext* context) {
+  results.add<ConvertInsertOpToTensorOp>(context);
+}
+
+//===----------------------------------------------------------------------===//
+// InsertSliceOp
+//===----------------------------------------------------------------------===//
+
+// Build a InsertSliceOp with mixed static and dynamic entries.
+void InsertSliceOp::build(OpBuilder& b, OperationState& result, Value source,
+                          Value dest, ArrayRef<OpFoldResult> offsets,
+                          ArrayRef<OpFoldResult> sizes,
+                          ArrayRef<OpFoldResult> strides,
+                          ArrayRef<NamedAttribute> attrs) {
+  SmallVector<int64_t> staticOffsets;
+  SmallVector<int64_t> staticSizes;
+  SmallVector<int64_t> staticStrides;
+  SmallVector<Value> dynamicOffsets;
+  SmallVector<Value> dynamicSizes;
+  SmallVector<Value> dynamicStrides;
+  dispatchIndexOpFoldResults(offsets, dynamicOffsets, staticOffsets);
+  dispatchIndexOpFoldResults(sizes, dynamicSizes, staticSizes);
+  dispatchIndexOpFoldResults(strides, dynamicStrides, staticStrides);
+  result.addAttributes(attrs);
+  build(b, result, dest.getType(), source, dest, dynamicOffsets, dynamicSizes,
+        dynamicStrides, b.getDenseI64ArrayAttr(staticOffsets),
+        b.getDenseI64ArrayAttr(staticSizes),
+        b.getDenseI64ArrayAttr(staticStrides));
+}
+
+/// Build an InsertSliceOp with mixed static and dynamic entries packed into a
+/// Range vector.
+void InsertSliceOp::build(OpBuilder& b, OperationState& result, Value source,
+                          Value dest, ArrayRef<Range> ranges,
+                          ArrayRef<NamedAttribute> attrs) {
+  auto [offsets, sizes, strides] = getOffsetsSizesAndStrides(ranges);
+  build(b, result, source, dest, offsets, sizes, strides, attrs);
+}
+
+// Build a InsertSliceOp with dynamic entries.
+void InsertSliceOp::build(OpBuilder& b, OperationState& result, Value source,
+                          Value dest, ValueRange offsets, ValueRange sizes,
+                          ValueRange strides, ArrayRef<NamedAttribute> attrs) {
+  SmallVector<OpFoldResult> offsetValues = llvm::to_vector<4>(
+      llvm::map_range(offsets, [](Value v) -> OpFoldResult { return v; }));
+  SmallVector<OpFoldResult> sizeValues = llvm::to_vector<4>(
+      llvm::map_range(sizes, [](Value v) -> OpFoldResult { return v; }));
+  SmallVector<OpFoldResult> strideValues = llvm::to_vector<4>(
+      llvm::map_range(strides, [](Value v) -> OpFoldResult { return v; }));
+  build(b, result, source, dest, offsetValues, sizeValues, strideValues);
+}
+
+void InsertSliceOp::build(OpBuilder& b, OperationState& result, Value source,
+                          Value dest, ArrayRef<OpFoldResult> sizes,
+                          ArrayRef<NamedAttribute> attrs) {
+  Attribute zeroIdxAttr = b.getIndexAttr(0);
+  Attribute oneIdxAttr = b.getIndexAttr(1);
+  SmallVector<OpFoldResult> writeStrides(sizes.size(), oneIdxAttr);
+  SmallVector<OpFoldResult> writeOffsets(sizes.size(), zeroIdxAttr);
+  build(b, result, source, dest, writeOffsets, sizes, writeStrides, attrs);
+}
+
+namespace {
+
+struct ConvertInsertSliceOpToTensorOp
+    : public OpRewritePattern<qtensor::InsertSliceOp> {
+  using OpRewritePattern<qtensor::InsertSliceOp>::OpRewritePattern;
+
+  LogicalResult matchAndRewrite(qtensor::InsertSliceOp insertSliceOp,
+                                PatternRewriter& rewriter) const final {
+    rewriter.replaceOpWithNewOp<tensor::InsertSliceOp>(
+        insertSliceOp,
+        insertSliceOp.getResult().getType(), // explicit result type
+        insertSliceOp.getSource(), insertSliceOp.getDest(),
+        insertSliceOp.getOffsets(), insertSliceOp.getSizes(),
+        insertSliceOp.getStrides(),
+        insertSliceOp.getStaticOffsets(), // static integer attrs
+        insertSliceOp.getStaticSizes(), insertSliceOp.getStaticStrides());
+    return success();
+  }
+};
+
+} // namespace
+
+void InsertSliceOp::getCanonicalizationPatterns(RewritePatternSet& results,
+                                                MLIRContext* context) {
+  results.add<ConvertInsertSliceOpToTensorOp>(context);
+}
+
 //===----------------------------------------------------------------------===//
 // Dialect
 //===----------------------------------------------------------------------===//
