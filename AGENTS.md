@@ -16,7 +16,7 @@
 
 - `include/mqt-core/`: public C++ header files.
 - `src/mqt/core/`: core C++ implementation logic.
-- `bindings/`: C++ sources used by the Python binding layer (nanobind glue).
+- `bindings/`: C++ sources used by the Python binding layer (nanobind).
 - `python/mqt/core/`: Python package foundation containing helpers and entry points.
 - `python/mqt/core/ir/`: public Python bindings package for the Circuit IR.
 - `python/mqt/core/dd.pyi`: public Python bindings module for Decision Diagrams.
