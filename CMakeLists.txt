@@ -97,6 +97,10 @@ project(
   VERSION ${MQT_CORE_VERSION}
   DESCRIPTION "MQT Core - The Backbone of the Munich Quantum Toolkit")
 
+if(BUILD_MQT_CORE_MLIR)
+  include(SetupMLIR)
+endif()
+
 include(cmake/ExternalDependencies.cmake)
 
 # set the include directory for the build tree
@@ -116,9 +120,6 @@ endif()
 
 set(MQT_CORE_TARGET_NAME "mqt-core")
 
-if(BUILD_MQT_CORE_MLIR)
-  include(SetupMLIR)
-endif()
 cmake_dependent_option(BUILD_MQT_CORE_QIR_RUNNER "Build the QIR runner of the MQT Core project" ON
                        "BUILD_MQT_CORE_MLIR" OFF)
 
@@ -145,13 +146,16 @@ endif()
 if(BUILD_MQT_CORE_MLIR)
   add_subdirectory(mlir)
 
-  # copy generated MLIR documentation add_custom_command( TARGET mlir-doc POST_BUILD COMMAND
-  # ${CMAKE_COMMAND} -E copy_directory ${CMAKE_CURRENT_BINARY_DIR}/docs/
-  # ${CMAKE_CURRENT_SOURCE_DIR}/docs/mlir/ COMMAND ${CMAKE_COMMAND} -D
-  # DOCS_DIR:PATH=${CMAKE_CURRENT_SOURCE_DIR}/docs/mlir -P
-  # ${CMAKE_CURRENT_SOURCE_DIR}/cmake/CleanMLIRDocs.cmake COMMENT "Copying and cleaning up generated
-  # MLIR documentation" VERBATIM)
-
+  # copy generated MLIR documentation
+  add_custom_command(
+    TARGET mlir-doc
+    POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_directory ${CMAKE_CURRENT_BINARY_DIR}/docs/
+            ${CMAKE_CURRENT_SOURCE_DIR}/docs/mlir/
+    COMMAND ${CMAKE_COMMAND} -D DOCS_DIR:PATH=${CMAKE_CURRENT_SOURCE_DIR}/docs/mlir -P
+            ${CMAKE_CURRENT_SOURCE_DIR}/cmake/CleanMLIRDocs.cmake
+    COMMENT "Copying and cleaning up generated MLIR documentation"
+    VERBATIM)
 endif()
 
 if(MQT_CORE_MASTER_PROJECT)

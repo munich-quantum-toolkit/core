@@ -19,3 +19,6 @@ add_mlir_library(
   MLIRQCODialect
   MLIRTransforms
   DISABLE_INSTALL)
+
+target_include_directories(QCOToJeff PRIVATE ${jeff-mlir_SOURCE_DIR}/include
+                                             ${jeff-mlir_BINARY_DIR}/include)

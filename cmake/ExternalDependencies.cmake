@@ -39,13 +39,11 @@ if(BUILD_MQT_CORE_MLIR)
       OFF
       CACHE BOOL "Disable building the translation submodule of jeff-mlir" FORCE)
   FetchContent_Declare(
-    jeff_mlir
+    jeff-mlir
     GIT_REPOSITORY https://github.com/PennyLaneAI/jeff-mlir.git
     GIT_TAG deserialization
     GIT_SUBMODULES "" GIT_SUBMODULES_RECURSE FALSE)
-  FetchContent_MakeAvailable(jeff_mlir)
-  include_directories(${jeff_mlir_SOURCE_DIR}/include)
-  include_directories(${jeff_mlir_BINARY_DIR}/include)
+  list(APPEND FETCH_PACKAGES jeff-mlir)
   set(CMAKE_CXX_STANDARD 20)
 endif()
 
