@@ -17,10 +17,7 @@
 - `include/mqt-core/`: public C++ header files.
 - `src/mqt/core/`: core C++ implementation logic.
 - `bindings/`: C++ sources used by the Python binding layer (nanobind).
-- `python/mqt/core/`: Python package foundation containing helpers and entry points.
-- `python/mqt/core/ir/`: public Python bindings package for the Circuit IR.
-- `python/mqt/core/dd.pyi`: public Python bindings module for Decision Diagrams.
-- `python/mqt/core/na/`: public Python bindings package for Neutral Atom logic.
+- `python/mqt/core/`: The mqt-core Python package.
 - `test/`: comprehensive C++ and Python test suites.
 - `docs/`: documentation sources, examples, and Sphinx/Doxygen configuration.
 - `cmake/`: reusable CMake modules and build infrastructure.
