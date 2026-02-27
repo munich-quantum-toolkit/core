@@ -10,7 +10,7 @@
 - **Platform**: Target Linux, macOS, and Windows for x86_64 (amd64) and arm64.
 - **Python Context**: Version 3.10+ managed via **uv**.
 - **C++ Context**: C++20 standard required; **LLVM 21.1+** mandatory for MLIR infrastructure.
-- **Tooling Access**: Full access to `cmake`, `ctest`, `uv`, and `nox`.
+- **Tooling Access**: Full access to `uv`. `cmake`, `nox`, and further tools are available through `uv` (via `uvx <tool>`)
 
 ## Repository Mapping
 
