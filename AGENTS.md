@@ -14,7 +14,7 @@
 
 ## Repository Mapping
 
-- `include/mqt/core/`: public and internal C++ header files.
+- `include/mqt-core/`: public C++ header files.
 - `src/mqt/core/`: core C++ implementation logic.
 - `bindings/`: C++ sources used by the Python binding layer (nanobind glue).
 - `python/mqt/core/`: Python package foundation containing helpers and entry points.
