@@ -8,8 +8,9 @@
  * Licensed under the MIT License
  */
 
-#include "mlir/Dialect/QCO/IR/QCODialect.h"
+#include "mlir/Dialect/QCO/IR/QCOOps.h"
 
+#include <llvm/Support/Casting.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OperationSupport.h>
 #include <mlir/IR/PatternMatch.h>
@@ -29,15 +30,15 @@ struct RemoveAllocDeallocPair final : OpRewritePattern<DeallocOp> {
 
   LogicalResult matchAndRewrite(DeallocOp op,
                                 PatternRewriter& rewriter) const override {
-    // Check if the predecessor is an AllocOp
-    auto allocOp = op.getQubit().getDefiningOp<AllocOp>();
-    if (!allocOp) {
+    // Check if the predecessor is an AllocOp or a StaticOp
+    auto* defOp = op.getQubit().getDefiningOp();
+    if (!llvm::isa<AllocOp, StaticOp>(defOp)) {
       return failure();
     }
 
-    // Remove the AllocOp and the DeallocOp
+    // Remove the AllocOp/StaticOp and the DeallocOp
     rewriter.eraseOp(op);
-    rewriter.eraseOp(allocOp);
+    rewriter.eraseOp(defOp);
     return success();
   }
 };

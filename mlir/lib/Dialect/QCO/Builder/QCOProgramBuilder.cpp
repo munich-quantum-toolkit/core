@@ -11,6 +11,7 @@
 #include "mlir/Dialect/QCO/Builder/QCOProgramBuilder.h"
 
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
+#include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/Utils/Utils.h"
 
 #include <cstddef>
@@ -59,6 +60,11 @@ void QCOProgramBuilder::initialize() {
   // Create entry block and set insertion point
   auto& entryBlock = mainFunc.getBody().emplaceBlock();
   setInsertionPointToStart(&entryBlock);
+}
+
+Value QCOProgramBuilder::intConstant(const int64_t value) {
+  checkFinalized();
+  return arith::ConstantOp::create(*this, getI64IntegerAttr(value)).getResult();
 }
 
 Value QCOProgramBuilder::allocQubit() {
@@ -673,6 +679,71 @@ QCOProgramBuilder& QCOProgramBuilder::dealloc(Value qubit) {
 }
 
 //===----------------------------------------------------------------------===//
+// SCF Operations
+//===----------------------------------------------------------------------===//
+
+ValueRange QCOProgramBuilder::qcoIf(
+    const std::variant<bool, Value>& condition, ValueRange qubits,
+    llvm::function_ref<llvm::SmallVector<Value>(ValueRange)> thenBody,
+    llvm::function_ref<llvm::SmallVector<Value>(ValueRange)> elseBody) {
+  checkFinalized();
+
+  auto conditionValue = utils::variantToValue(*this, getLoc(), condition);
+
+  auto ifOp = IfOp::create(*this, conditionValue, qubits);
+  // Create the then and else block
+  auto& thenBlock = ifOp->getRegion(0).emplaceBlock();
+  auto& elseBlock = ifOp->getRegion(1).emplaceBlock();
+
+  // Create the block arguments and add them as valid qubits
+  for (auto qubitType : qubits.getTypes()) {
+    const auto thenArg = thenBlock.addArgument(qubitType, getLoc());
+    const auto elseArg = elseBlock.addArgument(qubitType, getLoc());
+    validQubits.insert(thenArg);
+    validQubits.insert(elseArg);
+  }
+
+  // Construct the bodies of the regions
+  const InsertionGuard guard(*this);
+  setInsertionPointToStart(&thenBlock);
+  const auto thenResult = thenBody(thenBlock.getArguments());
+  YieldOp::create(*this, thenResult);
+  setInsertionPointToStart(&elseBlock);
+  llvm::SmallVector<Value> elseResult;
+  if (elseBody) {
+    elseResult = elseBody(elseBlock.getArguments());
+    YieldOp::create(*this, elseResult);
+  } else {
+    elseResult.assign(elseBlock.getArguments().begin(),
+                      elseBlock.getArguments().end());
+    YieldOp::create(*this, elseBlock.getArguments());
+  }
+
+  if (thenResult.size() != qubits.size() ||
+      thenResult.size() != elseResult.size()) {
+    llvm::reportFatalUsageError(
+        "Then and else body must return the same amount of qubits as the "
+        "number of input qubits!");
+  }
+
+  // Update qubit tracking
+  const auto& ifResults = ifOp->getResults();
+  for (auto [input, output] : llvm::zip_equal(qubits, ifResults)) {
+    updateQubitTracking(input, output);
+  }
+
+  // Remove the inner qubits as valid qubits
+  for (auto thenOut : thenResult) {
+    validQubits.erase(thenOut);
+  }
+  for (auto elseOut : elseResult) {
+    validQubits.erase(elseOut);
+  }
+
+  return ifResults;
+}
+
+//===----------------------------------------------------------------------===//
 // Finalization
 //===----------------------------------------------------------------------===//
 
@@ -722,15 +793,24 @@ OwningOpRef<ModuleOp> QCOProgramBuilder::finalize() {
   validQubits.clear();
 
   // Create constant 0 for successful exit code
-  auto exitCode = arith::ConstantOp::create(*this, getI64IntegerAttr(0));
+  auto exitCode = intConstant(0);
 
   // Add return statement with exit code 0 to the main function
-  func::ReturnOp::create(*this, ValueRange{exitCode});
+  func::ReturnOp::create(*this, exitCode);
 
   // Invalidate context to prevent use-after-finalize
   ctx = nullptr;
 
   return module;
+}
+
+OwningOpRef<ModuleOp> QCOProgramBuilder::build(
+    MLIRContext* context,
+    const llvm::function_ref<void(QCOProgramBuilder&)>& buildFunc) {
+  QCOProgramBuilder builder(context);
+  builder.initialize();
+  buildFunc(builder);
+  return builder.finalize();
 }
 
 } // namespace mlir::qco

@@ -11,8 +11,9 @@
 #pragma once
 
 #include "ir/Definitions.hpp"
-#include "ir/QuantumComputation.hpp"
 
 namespace qc {
+class QuantumComputation;
+
 [[nodiscard]] auto createGHZState(Qubit nq) -> QuantumComputation;
 } // namespace qc

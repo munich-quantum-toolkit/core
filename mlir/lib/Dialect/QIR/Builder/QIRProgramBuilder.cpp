@@ -15,8 +15,10 @@
 #include <cstddef>
 #include <cstdint>
 #include <llvm/ADT/STLExtras.h>
+#include <llvm/ADT/STLFunctionalExtras.h>
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/ADT/StringMap.h>
+#include <llvm/Support/Casting.h>
 #include <llvm/Support/ErrorHandling.h>
 #include <mlir/Dialect/LLVMIR/LLVMDialect.h>
 #include <mlir/Dialect/LLVMIR/LLVMTypes.h>
@@ -50,28 +52,29 @@ void QIRProgramBuilder::initialize() {
 
   // Create main function: () -> i64
   auto funcType = LLVM::LLVMFunctionType::get(getI64Type(), {});
-  mainFunc = LLVM::LLVMFuncOp::create(*this, "main", funcType);
+  auto mainFuncOp = LLVM::LLVMFuncOp::create(*this, "main", funcType);
+  mainFunc = mainFuncOp.getOperation();
 
   // Add entry_point attribute to identify the main function
   auto entryPointAttr = StringAttr::get(getContext(), "entry_point");
-  mainFunc->setAttr("passthrough",
-                    ArrayAttr::get(getContext(), {entryPointAttr}));
+  mainFuncOp->setAttr("passthrough",
+                      ArrayAttr::get(getContext(), {entryPointAttr}));
 
   // Create the 4-block structure for QIR Base Profile
-  entryBlock = mainFunc.addEntryBlock(*this);
-  bodyBlock = mainFunc.addBlock();
-  measurementsBlock = mainFunc.addBlock();
-  outputBlock = mainFunc.addBlock();
+  entryBlock = mainFuncOp.addEntryBlock(*this);
+  bodyBlock = mainFuncOp.addBlock();
+  measurementsBlock = mainFuncOp.addBlock();
+  outputBlock = mainFuncOp.addBlock();
 
   // Create exit code constant in entry block (where constants belong) and add
   // QIR initialization call in entry block (after exit code constant)
   setInsertionPointToStart(entryBlock);
   auto zeroOp = LLVM::ZeroOp::create(*this, ptrType);
-  exitCode = LLVM::ConstantOp::create(*this, getI64IntegerAttr(0));
+  exitCode = intConstant(0);
   const auto initType = LLVM::LLVMFunctionType::get(voidType, ptrType);
   auto initFunc =
       getOrCreateFunctionDeclaration(*this, module, QIR_INITIALIZE, initType);
-  LLVM::CallOp::create(*this, initFunc, ValueRange{zeroOp.getResult()});
+  LLVM::CallOp::create(*this, initFunc, zeroOp.getResult());
 
   // Add unconditional branches between blocks
   setInsertionPointToEnd(entryBlock);
@@ -85,10 +88,20 @@ void QIRProgramBuilder::initialize() {
 
   // Return the exit code (success) in output block
   setInsertionPointToEnd(outputBlock);
-  LLVM::ReturnOp::create(*this, ValueRange{exitCode.getResult()});
+  LLVM::ReturnOp::create(*this, exitCode);
 
   // Set insertion point to body block for user operations
   setInsertionPointToStart(bodyBlock);
+}
+
+Value QIRProgramBuilder::intConstant(const int64_t value) {
+  checkFinalized();
+  return LLVM::ConstantOp::create(*this, getI64IntegerAttr(value)).getResult();
+}
+
+Value QIRProgramBuilder::doubleConstant(double value) {
+  checkFinalized();
+  return LLVM::ConstantOp::create(*this, getF64FloatAttr(value)).getResult();
 }
 
 Value QIRProgramBuilder::staticQubit(const int64_t index) {
@@ -283,10 +296,7 @@ void QIRProgramBuilder::createCallOp(
   for (const auto& parameter : parameters) {
     Value parameterOperand;
     if (std::holds_alternative<double>(parameter)) {
-      parameterOperand =
-          LLVM::ConstantOp::create(*this,
-                                   getF64FloatAttr(std::get<double>(parameter)))
-              .getResult();
+      parameterOperand = doubleConstant(std::get<double>(parameter));
     } else {
       parameterOperand = std::get<Value>(parameter);
     }
@@ -612,12 +622,10 @@ void QIRProgramBuilder::generateOutputRecording() {
 
     const auto arraySize = measurements.size();
     auto arrayLabelOp = createResultLabel(*this, module, registerName);
-    auto arraySizeConst = create<LLVM::ConstantOp>(
-        getI64IntegerAttr(static_cast<int64_t>(arraySize)));
+    auto arraySizeConst = intConstant(static_cast<int64_t>(arraySize));
 
-    LLVM::CallOp::create(
-        *this, arrayRecordDecl,
-        ValueRange{arraySizeConst.getResult(), arrayLabelOp.getResult()});
+    LLVM::CallOp::create(*this, arrayRecordDecl,
+                         ValueRange{arraySizeConst, arrayLabelOp.getResult()});
 
     for (const auto& [regIdx, resultPtr] : measurements) {
       // Create label for result: "{registerName}{regIdx}r"
@@ -637,11 +645,21 @@ OwningOpRef<ModuleOp> QIRProgramBuilder::finalize() {
   // Generate output recording in the output block
   generateOutputRecording();
 
-  setQIRAttributes(mainFunc, metadata_);
+  auto mainFuncOp = llvm::cast<LLVM::LLVMFuncOp>(mainFunc);
+  setQIRAttributes(mainFuncOp, metadata_);
 
   isFinalized = true;
 
   return module;
+}
+
+OwningOpRef<ModuleOp> QIRProgramBuilder::build(
+    MLIRContext* context,
+    const llvm::function_ref<void(QIRProgramBuilder&)>& buildFunc) {
+  QIRProgramBuilder builder(context);
+  builder.initialize();
+  buildFunc(builder);
+  return builder.finalize();
 }
 
 } // namespace mlir::qir

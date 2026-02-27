@@ -13,6 +13,7 @@
 #include "dd/Package.hpp"
 #include "dd/Simulation.hpp"
 #include "dd/StateGeneration.hpp"
+#include "ir/QuantumComputation.hpp"
 
 #include <cstddef>
 #include <cstdint>
