@@ -84,7 +84,6 @@
 
 - Did `uvx nox -s lint` pass without errors?
 - Are all changes covered by at least one automated test (pytest or ctest)?
-- Did you use exact terminology (**circuit qubits** vs **device qubits**)?
 - Were Python stubs regenerated via `uvx nox -s stubs` if bindings were modified?
 - Are there any manual edits to `.pyi` files (which are forbidden)?
 - Do all source files include the MIT license and SPDX headers?
