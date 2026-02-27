@@ -679,6 +679,71 @@ QCOProgramBuilder& QCOProgramBuilder::dealloc(Value qubit) {
 }
 
 //===----------------------------------------------------------------------===//
+// SCF Operations
+//===----------------------------------------------------------------------===//
+
+ValueRange QCOProgramBuilder::qcoIf(
+    const std::variant<bool, Value>& condition, ValueRange qubits,
+    llvm::function_ref<llvm::SmallVector<Value>(ValueRange)> thenBody,
+    llvm::function_ref<llvm::SmallVector<Value>(ValueRange)> elseBody) {
+  checkFinalized();
+
+  auto conditionValue = utils::variantToValue(*this, getLoc(), condition);
+
+  auto ifOp = IfOp::create(*this, conditionValue, qubits);
+  // Create the then and else block
+  auto& thenBlock = ifOp->getRegion(0).emplaceBlock();
+  auto& elseBlock = ifOp->getRegion(1).emplaceBlock();
+
+  // Create the block arguments and add them as valid qubits
+  for (auto qubitType : qubits.getTypes()) {
+    const auto thenArg = thenBlock.addArgument(qubitType, getLoc());
+    const auto elseArg = elseBlock.addArgument(qubitType, getLoc());
+    validQubits.insert(thenArg);
+    validQubits.insert(elseArg);
+  }
+
+  // Construct the bodies of the regions
+  const InsertionGuard guard(*this);
+  setInsertionPointToStart(&thenBlock);
+  const auto thenResult = thenBody(thenBlock.getArguments());
+  YieldOp::create(*this, thenResult);
+  setInsertionPointToStart(&elseBlock);
+  llvm::SmallVector<Value> elseResult;
+  if (elseBody) {
+    elseResult = elseBody(elseBlock.getArguments());
+    YieldOp::create(*this, elseResult);
+  } else {
+    elseResult.assign(elseBlock.getArguments().begin(),
+                      elseBlock.getArguments().end());
+    YieldOp::create(*this, elseBlock.getArguments());
+  }
+
+  if (thenResult.size() != qubits.size() ||
+      thenResult.size() != elseResult.size()) {
+    llvm::reportFatalUsageError(
+        "Then and else body must return the same amount of qubits as the "
+        "number of input qubits!");
+  }
+
+  // Update qubit tracking
+  const auto& ifResults = ifOp->getResults();
+  for (auto [input, output] : llvm::zip_equal(qubits, ifResults)) {
+    updateQubitTracking(input, output);
+  }
+
+  // Remove the inner qubits as valid qubits
+  for (auto thenOut : thenResult) {
+    validQubits.erase(thenOut);
+  }
+  for (auto elseOut : elseResult) {
+    validQubits.erase(elseOut);
+  }
+
+  return ifResults;
+}
+
+//===----------------------------------------------------------------------===//
 // Finalization
 //===----------------------------------------------------------------------===//
 
