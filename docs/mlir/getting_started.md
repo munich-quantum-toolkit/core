@@ -47,6 +47,7 @@ Follow the {doc}`installation guide <../installation>`, specifically the "Buildi
 The default CMake configuration builds the MLIR pipeline and the compiler unit tests.
 Run `cmake --build build` to get binaries and tests.
 
+(run-compiler-tests)=
 To run the compiler test suite from the project root, use CTest (with a regex to filter for the compiler tests):
 
 ```console
@@ -303,17 +304,7 @@ The full pipeline does the following:
 **Next steps:**
 
 - Run the pipeline yourself: The source file `mlir/unittests/Compiler/test_compiler_pipeline.cpp` contains tests that run the compiler on a wide variety of programs and compare results to reference QC and QIR output.
-  Execute these built tests from the project root using CTest:
-
-  ```console
-  $ ctest --test-dir build -R "mqt-core-mlir-unittests-compiler"
-  ```
-
-  Or run the test binary directly from the project root:
-
-  ```console
-  $ ./build/mlir/unittests/Compiler/mqt-core-mlir-unittests-compiler
-  ```
+  Execute these built tests from the project root using CTest as shown in the [](#run-compiler-tests) section.
 
   Use the `.cpp` source file as a template to feed your own QC modules through the pipeline and inspect the IR after each stage.
 
