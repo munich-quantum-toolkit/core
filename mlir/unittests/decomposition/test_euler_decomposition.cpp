@@ -1,0 +1,359 @@
+/*
+ * Copyright (c) 2023 - 2026 Chair for Design Automation, TUM
+ * Copyright (c) 2025 - 2026 Munich Quantum Software Company GmbH
+ * All rights reserved.
+ *
+ * SPDX-License-Identifier: MIT
+ *
+ * Licensed under the MIT License
+ */
+
+#include "mlir/Passes/Decomposition/EulerBasis.h"
+#include "mlir/Passes/Decomposition/EulerDecomposition.h"
+#include "mlir/Passes/Decomposition/GateSequence.h"
+#include "mlir/Passes/Decomposition/Helpers.h"
+#include "mlir/Passes/Decomposition/UnitaryMatrices.h"
+
+#include <Eigen/QR>
+#include <array>
+#include <cassert>
+#include <chrono>
+#include <cmath>
+#include <cstdlib>
+#include <gtest/gtest.h>
+#include <iostream>
+#include <optional>
+#include <tuple>
+
+using namespace mlir::qco;
+using namespace mlir::qco::decomposition;
+
+namespace {
+[[nodiscard]] matrix2x2 randomUnitaryMatrix() {
+  [[maybe_unused]] static auto initializeRandom = []() {
+    // Eigen uses std::rand() internally, use fixed seed for deterministic
+    // testing behavior
+    std::srand(123456UL);
+    return true;
+  }();
+  const matrix2x2 randomMatrix = matrix2x2::Random();
+  Eigen::HouseholderQR<matrix2x2> qr{}; // NOLINT(misc-include-cleaner)
+  qr.compute(randomMatrix);
+  const matrix2x2 unitaryMatrix = qr.householderQ();
+  assert(helpers::isUnitaryMatrix(unitaryMatrix));
+  return unitaryMatrix;
+}
+} // namespace
+
+class EulerDecompositionTest
+    : public testing::TestWithParam<std::tuple<EulerBasis, matrix2x2>> {
+public:
+  [[nodiscard]] static matrix2x2 restore(const TwoQubitGateSequence& sequence) {
+    matrix2x2 matrix = matrix2x2::Identity();
+    for (auto&& gate : sequence.gates) {
+      matrix = getSingleQubitMatrix(gate) * matrix;
+    }
+
+    matrix *= std::exp(IM * sequence.globalPhase);
+    return matrix;
+  }
+
+  void SetUp() override {
+    eulerBasis = std::get<0>(GetParam());
+    originalMatrix = std::get<1>(GetParam());
+  }
+
+protected:
+  matrix2x2 originalMatrix;
+  EulerBasis eulerBasis{};
+};
+
+TEST_P(EulerDecompositionTest, TestExact) {
+  auto decomposition = EulerDecomposition::generateCircuit(
+      eulerBasis, originalMatrix, false, 0.0);
+  auto restoredMatrix = restore(decomposition);
+
+  EXPECT_TRUE(restoredMatrix.isApprox(originalMatrix))
+      << "RESULT:\n"
+      << restoredMatrix << '\n';
+}
+
+TEST(EulerDecompositionTest, Random) {
+  auto stopTime = std::chrono::steady_clock::now() + std::chrono::seconds{10};
+  auto iterations = 0;
+  auto eulerBases = std::array{EulerBasis::XYX, EulerBasis::XZX,
+                               EulerBasis::ZYZ, EulerBasis::ZXZ};
+  std::size_t currentEulerBase = 0;
+  while (std::chrono::steady_clock::now() < stopTime) {
+    auto originalMatrix = randomUnitaryMatrix();
+    auto eulerBasis = eulerBases[currentEulerBase++ % eulerBases.size()];
+    auto decomposition = EulerDecomposition::generateCircuit(
+        eulerBasis, originalMatrix, true, std::nullopt);
+    auto restoredMatrix = EulerDecompositionTest::restore(decomposition);
+
+    EXPECT_TRUE(restoredMatrix.isApprox(originalMatrix))
+        << "ORIGINAL:\n"
+        << originalMatrix << '\n'
+        << "RESULT:\n"
+        << restoredMatrix << '\n';
+    ++iterations;
+  }
+
+  RecordProperty("iterations", iterations);
+  std::cerr << "Iterations: " << iterations << '\n';
+}
+
+INSTANTIATE_TEST_CASE_P(
+    SingleQubitMatrices, EulerDecompositionTest,
+    testing::Combine(testing::Values(EulerBasis::XYX, EulerBasis::XZX,
+                                     EulerBasis::ZYZ, EulerBasis::ZXZ),
+                     testing::Values(IDENTITY_GATE, ryMatrix(2.0),
+                                     rxMatrix(0.5), rzMatrix(3.14), H_GATE)));
+
+// Additional edge case tests for EulerDecomposition
+TEST(EulerDecompositionEdgeCasesTest, ZeroRotation) {
+  auto eulerBases = std::array{EulerBasis::XYX, EulerBasis::XZX,
+                               EulerBasis::ZYZ, EulerBasis::ZXZ};
+
+  for (auto eulerBasis : eulerBases) {
+    // Identity matrix (zero rotation)
+    auto originalMatrix = matrix2x2::Identity();
+    auto decomposition = EulerDecomposition::generateCircuit(
+        eulerBasis, originalMatrix, true, std::nullopt);
+    auto restoredMatrix = EulerDecompositionTest::restore(decomposition);
+
+    EXPECT_TRUE(restoredMatrix.isApprox(originalMatrix, 1e-12))
+        << "Failed for EulerBasis with zero rotation";
+  }
+}
+
+TEST(EulerDecompositionEdgeCasesTest, PiRotations) {
+  auto eulerBases = std::array{EulerBasis::XYX, EulerBasis::XZX,
+                               EulerBasis::ZYZ, EulerBasis::ZXZ};
+
+  for (auto eulerBasis : eulerBases) {
+    // Pi rotations around different axes
+    auto matrices = {rxMatrix(qc::PI), ryMatrix(qc::PI), rzMatrix(qc::PI)};
+
+    for (auto originalMatrix : matrices) {
+      auto decomposition = EulerDecomposition::generateCircuit(
+          eulerBasis, originalMatrix, true, std::nullopt);
+      auto restoredMatrix = EulerDecompositionTest::restore(decomposition);
+
+      EXPECT_TRUE(restoredMatrix.isApprox(originalMatrix, 1e-12))
+          << "Failed for pi rotation";
+    }
+  }
+}
+
+TEST(EulerDecompositionEdgeCasesTest, PiOverTwoRotations) {
+  auto eulerBases = std::array{EulerBasis::XYX, EulerBasis::XZX,
+                               EulerBasis::ZYZ, EulerBasis::ZXZ};
+
+  for (auto eulerBasis : eulerBases) {
+    // Pi/2 rotations (important for Hadamard-like gates)
+    auto matrices = {rxMatrix(qc::PI_2), ryMatrix(qc::PI_2),
+                     rzMatrix(qc::PI_2)};
+
+    for (auto originalMatrix : matrices) {
+      auto decomposition = EulerDecomposition::generateCircuit(
+          eulerBasis, originalMatrix, true, std::nullopt);
+      auto restoredMatrix = EulerDecompositionTest::restore(decomposition);
+
+      EXPECT_TRUE(restoredMatrix.isApprox(originalMatrix, 1e-12))
+          << "Failed for pi/2 rotation";
+    }
+  }
+}
+
+TEST(EulerDecompositionEdgeCasesTest, VerySmallAngles) {
+  auto eulerBases = std::array{EulerBasis::XYX, EulerBasis::XZX,
+                               EulerBasis::ZYZ, EulerBasis::ZXZ};
+
+  for (auto eulerBasis : eulerBases) {
+    // Very small angles near numerical precision
+    auto originalMatrix = rxMatrix(1e-10) * ryMatrix(1e-11);
+    auto decomposition = EulerDecomposition::generateCircuit(
+        eulerBasis, originalMatrix, true, std::nullopt);
+    auto restoredMatrix = EulerDecompositionTest::restore(decomposition);
+
+    EXPECT_TRUE(restoredMatrix.isApprox(originalMatrix, 1e-10))
+        << "Failed for very small angles";
+  }
+}
+
+TEST(EulerDecompositionEdgeCasesTest, NegativeAngles) {
+  auto eulerBases = std::array{EulerBasis::XYX, EulerBasis::XZX,
+                               EulerBasis::ZYZ, EulerBasis::ZXZ};
+
+  for (auto eulerBasis : eulerBases) {
+    // Negative angles
+    auto originalMatrix = rxMatrix(-1.5) * ryMatrix(-0.7) * rzMatrix(-2.3);
+    auto decomposition = EulerDecomposition::generateCircuit(
+        eulerBasis, originalMatrix, true, std::nullopt);
+    auto restoredMatrix = EulerDecompositionTest::restore(decomposition);
+
+    EXPECT_TRUE(restoredMatrix.isApprox(originalMatrix, 1e-12))
+        << "Failed for negative angles";
+  }
+}
+
+TEST(EulerDecompositionEdgeCasesTest, PauliX) {
+  auto eulerBases = std::array{EulerBasis::XYX, EulerBasis::XZX,
+                               EulerBasis::ZYZ, EulerBasis::ZXZ};
+
+  // Pauli X gate
+  matrix2x2 originalMatrix{{0, 1}, {1, 0}};
+
+  for (auto eulerBasis : eulerBases) {
+    auto decomposition = EulerDecomposition::generateCircuit(
+        eulerBasis, originalMatrix, true, std::nullopt);
+    auto restoredMatrix = EulerDecompositionTest::restore(decomposition);
+
+    EXPECT_TRUE(restoredMatrix.isApprox(originalMatrix, 1e-12))
+        << "Failed for Pauli X";
+  }
+}
+
+TEST(EulerDecompositionEdgeCasesTest, PauliY) {
+  auto eulerBases = std::array{EulerBasis::XYX, EulerBasis::XZX,
+                               EulerBasis::ZYZ, EulerBasis::ZXZ};
+
+  // Pauli Y gate
+  matrix2x2 originalMatrix{{0, qfp(0, -1)}, {qfp(0, 1), 0}};
+
+  for (auto eulerBasis : eulerBases) {
+    auto decomposition = EulerDecomposition::generateCircuit(
+        eulerBasis, originalMatrix, true, std::nullopt);
+    auto restoredMatrix = EulerDecompositionTest::restore(decomposition);
+
+    EXPECT_TRUE(restoredMatrix.isApprox(originalMatrix, 1e-12))
+        << "Failed for Pauli Y";
+  }
+}
+
+TEST(EulerDecompositionEdgeCasesTest, PauliZ) {
+  auto eulerBases = std::array{EulerBasis::XYX, EulerBasis::XZX,
+                               EulerBasis::ZYZ, EulerBasis::ZXZ};
+
+  // Pauli Z gate
+  matrix2x2 originalMatrix{{1, 0}, {0, -1}};
+
+  for (auto eulerBasis : eulerBases) {
+    auto decomposition = EulerDecomposition::generateCircuit(
+        eulerBasis, originalMatrix, true, std::nullopt);
+    auto restoredMatrix = EulerDecompositionTest::restore(decomposition);
+
+    EXPECT_TRUE(restoredMatrix.isApprox(originalMatrix, 1e-12))
+        << "Failed for Pauli Z";
+  }
+}
+
+TEST(EulerDecompositionEdgeCasesTest, SGate) {
+  auto eulerBases = std::array{EulerBasis::XYX, EulerBasis::XZX,
+                               EulerBasis::ZYZ, EulerBasis::ZXZ};
+
+  // S gate (phase gate)
+  matrix2x2 originalMatrix{{1, 0}, {0, qfp(0, 1)}};
+
+  for (auto eulerBasis : eulerBases) {
+    auto decomposition = EulerDecomposition::generateCircuit(
+        eulerBasis, originalMatrix, true, std::nullopt);
+    auto restoredMatrix = EulerDecompositionTest::restore(decomposition);
+
+    EXPECT_TRUE(restoredMatrix.isApprox(originalMatrix, 1e-12))
+        << "Failed for S gate";
+  }
+}
+
+TEST(EulerDecompositionEdgeCasesTest, TGate) {
+  auto eulerBases = std::array{EulerBasis::XYX, EulerBasis::XZX,
+                               EulerBasis::ZYZ, EulerBasis::ZXZ};
+
+  // T gate (pi/8 gate)
+  matrix2x2 originalMatrix{{1, 0}, {0, std::exp(qfp(0, qc::PI / 4.0))}};
+
+  for (auto eulerBasis : eulerBases) {
+    auto decomposition = EulerDecomposition::generateCircuit(
+        eulerBasis, originalMatrix, true, std::nullopt);
+    auto restoredMatrix = EulerDecompositionTest::restore(decomposition);
+
+    EXPECT_TRUE(restoredMatrix.isApprox(originalMatrix, 1e-12))
+        << "Failed for T gate";
+  }
+}
+
+TEST(EulerDecompositionEdgeCasesTest, CompositeRotations) {
+  auto eulerBases = std::array{EulerBasis::XYX, EulerBasis::XZX,
+                               EulerBasis::ZYZ, EulerBasis::ZXZ};
+
+  for (auto eulerBasis : eulerBases) {
+    // Composite rotation: Rz(pi/3) * Ry(pi/4) * Rx(pi/6)
+    auto originalMatrix = rzMatrix(qc::PI / 3.0) * ryMatrix(qc::PI / 4.0) *
+                          rxMatrix(qc::PI / 6.0);
+    auto decomposition = EulerDecomposition::generateCircuit(
+        eulerBasis, originalMatrix, true, std::nullopt);
+    auto restoredMatrix = EulerDecompositionTest::restore(decomposition);
+
+    EXPECT_TRUE(restoredMatrix.isApprox(originalMatrix, 1e-12))
+        << "Failed for composite rotation";
+  }
+}
+
+TEST(EulerDecompositionEdgeCasesTest, GlobalPhaseOnly) {
+  auto eulerBases = std::array{EulerBasis::XYX, EulerBasis::XZX,
+                               EulerBasis::ZYZ, EulerBasis::ZXZ};
+
+  for (auto eulerBasis : eulerBases) {
+    // Identity with global phase
+    auto originalMatrix =
+        std::exp(qfp(0, qc::PI / 4.0)) * matrix2x2::Identity();
+    auto decomposition = EulerDecomposition::generateCircuit(
+        eulerBasis, originalMatrix, true, std::nullopt);
+    auto restoredMatrix = EulerDecompositionTest::restore(decomposition);
+
+    EXPECT_TRUE(restoredMatrix.isApprox(originalMatrix, 1e-12))
+        << "Failed for global phase";
+  }
+}
+
+TEST(EulerDecompositionEdgeCasesTest, SimplificationDisabled) {
+  auto eulerBases = std::array{EulerBasis::XYX, EulerBasis::XZX,
+                               EulerBasis::ZYZ, EulerBasis::ZXZ};
+
+  for (auto eulerBasis : eulerBases) {
+    // Test with simplification disabled
+    auto originalMatrix = H_GATE;
+    auto decomposition = EulerDecomposition::generateCircuit(
+        eulerBasis, originalMatrix, false, 0.0);
+    auto restoredMatrix = EulerDecompositionTest::restore(decomposition);
+
+    EXPECT_TRUE(restoredMatrix.isApprox(originalMatrix, 1e-12))
+        << "Failed with simplification disabled";
+
+    // Should have exactly 3 gates (no simplification)
+    EXPECT_EQ(decomposition.gates.size(), 3UL)
+        << "Expected 3 gates when simplification is disabled";
+  }
+}
+
+TEST(EulerDecompositionEdgeCasesTest, CustomTolerance) {
+  auto originalMatrix = rxMatrix(1e-7); // Small rotation
+
+  // Test with tight tolerance
+  auto decompositionTight = EulerDecomposition::generateCircuit(
+      EulerBasis::ZYZ, originalMatrix, true, 1e-8);
+  auto restoredMatrixTight =
+      EulerDecompositionTest::restore(decompositionTight);
+  EXPECT_TRUE(restoredMatrixTight.isApprox(originalMatrix, 1e-8));
+
+  // Test with loose tolerance
+  auto decompositionLoose = EulerDecomposition::generateCircuit(
+      EulerBasis::ZYZ, originalMatrix, true, 1e-6);
+  auto restoredMatrixLoose =
+      EulerDecompositionTest::restore(decompositionLoose);
+  EXPECT_TRUE(restoredMatrixLoose.isApprox(originalMatrix, 1e-6));
+
+  // Loose tolerance should result in fewer gates
+  EXPECT_LE(decompositionLoose.gates.size(), decompositionTight.gates.size());
+}
