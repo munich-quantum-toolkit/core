@@ -316,5 +316,6 @@ The full pipeline does the following:
   ```
 
   Use the `.cpp` source file as a template to feed your own QC modules through the pipeline and inspect the IR after each stage.
+
 - Read the dialect references: {doc}`QC <QC>` and {doc}`QCO <QCO>` list every operation and type; {doc}`Conversions <Conversions>` documents the conversion passes.
 - Try modifying the examples in this guide (e.g. add a gate) and run them through the compiler to see how QC and QCO change.
