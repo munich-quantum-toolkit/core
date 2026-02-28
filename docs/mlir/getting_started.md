@@ -44,8 +44,20 @@ More detail on both dialects is available in the {doc}`MLIR in the MQT index <in
 
 To work with MLIR in MQT Core (run the pipeline, run tests, or inspect IR), you need to build from source.
 Follow the {doc}`installation guide <../installation>`, specifically the "Building from Source for Performance" and "Development Setup" sections.
-The default CMake configuration builds the MLIR pipeline and the compiler unit tests (e.g. the executable in `mlir/unittests/Compiler/`).
+The default CMake configuration builds the MLIR pipeline and the compiler unit tests.
 Run `cmake --build build` to get binaries and tests.
+
+To run the compiler test suite from the project root, use CTest (with a regex to filter for the compiler tests):
+
+```console
+$ ctest --test-dir build -R "mqt-core-mlir-unittests-compiler"
+```
+
+Alternatively, run the built test binary directly from the project root:
+
+```console
+$ ./build/mlir/unittests/Compiler/mqt-core-mlir-unittests-compiler
+```
 
 The {doc}`MLIR in the MQT index <index>` explains how QC, QCO, and conversions (e.g. to QIR) fit together.
 This tutorial is the hands-on companion: we write IR and reason about it; the reference docs define every operation in detail.
@@ -290,7 +302,19 @@ The full pipeline does the following:
 
 **Next steps:**
 
-- Run the pipeline yourself: `mlir/unittests/Compiler/test_compiler_pipeline.cpp` runs the compiler on a wide variety of programs and compares results to reference QC and QIR output.
-  Use it as a template to feed your own QC modules through the pipeline and inspect the IR after each stage.
+- Run the pipeline yourself: The source file `mlir/unittests/Compiler/test_compiler_pipeline.cpp` contains tests that run the compiler on a wide variety of programs and compare results to reference QC and QIR output.
+  Execute these built tests from the project root using CTest:
+
+  ```console
+  $ ctest --test-dir build -R "mqt-core-mlir-unittests-compiler"
+  ```
+
+  Or run the test binary directly from the project root:
+
+  ```console
+  $ ./build/mlir/unittests/Compiler/mqt-core-mlir-unittests-compiler
+  ```
+
+  Use the `.cpp` source file as a template to feed your own QC modules through the pipeline and inspect the IR after each stage.
 - Read the dialect references: {doc}`QC <QC>` and {doc}`QCO <QCO>` list every operation and type; {doc}`Conversions <Conversions>` documents the conversion passes.
 - Try modifying the examples in this guide (e.g. add a gate) and run them through the compiler to see how QC and QCO change.
