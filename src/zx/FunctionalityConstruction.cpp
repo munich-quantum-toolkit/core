@@ -140,6 +140,32 @@ void FunctionalityConstruction::addCphase(ZXDiagram& diag,
   addZSpider(diag, target, qubits, newPhase);
 }
 
+void FunctionalityConstruction::addMcphase(ZXDiagram& diag,
+                                           const PiExpression& phase,
+                                           const std::vector<Qubit>& controls,
+                                           const Qubit target,
+                                           std::vector<Vertex>& qubits) {
+  auto newConst = phase.getConst() / 2;
+  auto newPhase = phase / 2.0;
+  newPhase.setConst(newConst);
+  addZSpider(diag, target, qubits, newPhase);
+  addMcx(diag, controls, target, qubits);
+  addZSpider(diag, target, qubits, -newPhase);
+  addMcx(diag, controls, target, qubits);
+  switch (controls.size()) {
+  case 1:
+    addZSpider(diag, controls[0], qubits, newPhase);
+    return;
+  case 2:
+    addCphase(diag, newPhase, controls[0], controls[1], qubits);
+    return;
+  default:
+    addMcphase(diag, newPhase,
+               std::vector<Qubit>(controls.begin(), controls.end() - 1),
+               controls.back(), qubits);
+  }
+}
+
 void FunctionalityConstruction::addRzz(
     ZXDiagram& diag, const PiExpression& phase, const Qubit target,
     const Qubit target2, std::vector<Vertex>& qubits,
@@ -205,6 +231,20 @@ void FunctionalityConstruction::addRzx(
   } else {
     diag.addGlobalPhase(-(phase / 2));
   }
+}
+
+void FunctionalityConstruction::addMcrzz(
+    ZXDiagram& diag, const PiExpression& phase,
+    const std::vector<Qubit>& controls, const Qubit target, const Qubit target2,
+    std::vector<Vertex>& qubits,
+    const std::optional<double>& unconvertedPhase) {
+  addRzz(diag, phase, target, target2, qubits, unconvertedPhase);
+  addMcx(diag, controls, target, qubits);
+  addRzz(diag, -phase, target, target2, qubits,
+         unconvertedPhase.has_value()
+             ? std::optional<double>(-unconvertedPhase.value())
+             : std::nullopt);
+  addMcx(diag, controls, target, qubits);
 }
 
 void FunctionalityConstruction::addDcx(ZXDiagram& diag, const Qubit qubit1,
@@ -286,6 +326,22 @@ void FunctionalityConstruction::addSwap(ZXDiagram& diag, const Qubit target,
   qubits[c] = t1;
 }
 
+void FunctionalityConstruction::addMcswap(ZXDiagram& diag,
+                                          const std::vector<Qubit>& controls,
+                                          const Qubit target,
+                                          const Qubit target2,
+                                          std::vector<Vertex>& qubits) {
+  std::vector controls1 = controls;
+  std::vector controls2 = controls;
+
+  controls1.emplace_back(target);
+  controls2.emplace_back(target2);
+
+  addMcx(diag, controls1, target2, qubits);
+  addMcx(diag, controls2, target, qubits);
+  addMcx(diag, controls1, target2, qubits);
+}
+
 void FunctionalityConstruction::addCcx(ZXDiagram& diag, const Qubit ctrl0,
                                        const Qubit ctrl1, const Qubit target,
                                        std::vector<Vertex>& qubits) {
@@ -305,6 +361,125 @@ void FunctionalityConstruction::addCcx(ZXDiagram& diag, const Qubit ctrl0,
   addZSpider(diag, target, qubits, PiExpression(PiRational(0, 1)),
              EdgeType::Hadamard);
   addCnot(diag, ctrl0, ctrl1, qubits);
+}
+
+void FunctionalityConstruction::addCcz(ZXDiagram& diag, const Qubit ctrl0,
+                                       const Qubit ctrl1, const Qubit target,
+                                       std::vector<Vertex>& qubits) {
+
+  addCnot(diag, ctrl1, target, qubits);
+  addZSpider(diag, target, qubits, PiExpression(PiRational(-1, 4)));
+  addCnot(diag, ctrl0, target, qubits);
+  addZSpider(diag, target, qubits, PiExpression(PiRational(1, 4)));
+  addCnot(diag, ctrl1, target, qubits);
+  addZSpider(diag, ctrl1, qubits, PiExpression(PiRational(1, 4)));
+  addZSpider(diag, target, qubits, PiExpression(PiRational(-1, 4)));
+  addCnot(diag, ctrl0, target, qubits);
+  addZSpider(diag, target, qubits, PiExpression(PiRational(1, 4)));
+  addCnot(diag, ctrl0, ctrl1, qubits);
+  addZSpider(diag, ctrl0, qubits, PiExpression(PiRational(1, 4)));
+  addZSpider(diag, ctrl1, qubits, PiExpression(PiRational(-1, 4)));
+  addZSpider(diag, target, qubits, PiExpression(PiRational(0, 1)),
+             EdgeType::Hadamard);
+  addCnot(diag, ctrl0, ctrl1, qubits);
+  addZSpider(diag, target, qubits, PiExpression(), EdgeType::Hadamard);
+}
+
+void FunctionalityConstruction::addCrx(ZXDiagram& diag,
+                                       const PiExpression& phase,
+                                       const Qubit control, const Qubit target,
+                                       std::vector<Vertex>& qubits) {
+  addZSpider(diag, target, qubits, PiExpression(), EdgeType::Hadamard);
+  addCrz(diag, phase, control, target, qubits);
+  addZSpider(diag, target, qubits, PiExpression(), EdgeType::Hadamard);
+}
+
+void FunctionalityConstruction::addMcrx(ZXDiagram& diag,
+                                        const PiExpression& phase,
+                                        std::vector<Qubit> controls,
+                                        const Qubit target,
+                                        std::vector<Vertex>& qubits) {
+  addZSpider(diag, target, qubits, PiExpression(), EdgeType::Hadamard);
+  addMcrz(diag, phase, std::move(controls), target, qubits);
+  addZSpider(diag, target, qubits, PiExpression(), EdgeType::Hadamard);
+}
+
+void FunctionalityConstruction::addCrz(ZXDiagram& diag,
+                                       const PiExpression& phase,
+                                       const Qubit q0, const Qubit q1,
+                                       std::vector<Vertex>& qubits) {
+  // CRZ decomposition uses reversed CNOT direction
+  addCnot(diag, q1, q0, qubits);
+  addZSpider(diag, q0, qubits, -phase / 2);
+  addZSpider(diag, q1, qubits, phase / 2);
+  addCnot(diag, q1, q0, qubits);
+}
+
+void FunctionalityConstruction::addMcrz(ZXDiagram& diag,
+                                        const PiExpression& phase,
+                                        std::vector<Qubit> controls,
+                                        const Qubit target,
+                                        std::vector<Vertex>& qubits) {
+
+  const Qubit nextControl = controls.back();
+  controls.pop_back();
+
+  addCrz(diag, phase / 2, nextControl, target, qubits);
+  addMcx(diag, controls, target, qubits);
+  addCrz(diag, -phase / 2, nextControl, target, qubits);
+  addMcx(diag, controls, target, qubits);
+}
+
+void FunctionalityConstruction::addMcx(ZXDiagram& diag,
+                                       std::vector<Qubit> controls,
+                                       const Qubit target,
+                                       std::vector<Vertex>& qubits) {
+
+  switch (controls.size()) {
+  case 0:
+    addXSpider(diag, target, qubits, PiExpression(PiRational(1, 1)));
+    return;
+  case 1:
+    addCnot(diag, controls.front(), target, qubits);
+    return;
+  case 2:
+    addCcx(diag, controls.front(), controls.back(), target, qubits);
+    return;
+  default:
+    const auto half = static_cast<std::ptrdiff_t>((controls.size() + 1) / 2);
+    const std::vector<Qubit> first(controls.begin(), controls.begin() + half);
+    const std::vector<Qubit> second(controls.begin() + half, controls.end());
+
+    addRx(diag, PiExpression(PiRational(1, 4)), target, qubits);
+    addZSpider(diag, target, qubits, PiExpression(), EdgeType::Hadamard);
+    addMcx(diag, first, target, qubits);
+    addZSpider(diag, target, qubits, PiExpression(), EdgeType::Hadamard);
+    addRx(diag, PiExpression(-PiRational(1, 4)), target, qubits);
+    addZSpider(diag, target, qubits, PiExpression(), EdgeType::Hadamard);
+    addMcx(diag, second, target, qubits);
+    addZSpider(diag, target, qubits, PiExpression(), EdgeType::Hadamard);
+    addRx(diag, PiExpression(PiRational(1, 4)), target, qubits);
+    addZSpider(diag, target, qubits, PiExpression(), EdgeType::Hadamard);
+    addMcx(diag, first, target, qubits);
+    addZSpider(diag, target, qubits, PiExpression(), EdgeType::Hadamard);
+    addRx(diag, PiExpression(-PiRational(1, 4)), target, qubits);
+    addZSpider(diag, target, qubits, PiExpression(), EdgeType::Hadamard);
+    addMcx(diag, second, target, qubits);
+    addZSpider(diag, target, qubits, PiExpression(), EdgeType::Hadamard);
+    const Qubit lastControl = controls.back();
+    controls.pop_back();
+    addMcphase(diag, PiExpression(PiRational(1, 2)), controls, lastControl,
+               qubits);
+  }
+}
+
+void FunctionalityConstruction::addMcz(ZXDiagram& diag,
+                                       std::vector<Qubit> controls,
+                                       const Qubit target,
+                                       std::vector<Vertex>& qubits) {
+  addZSpider(diag, target, qubits, PiExpression(), EdgeType::Hadamard);
+  addMcx(diag, std::move(controls), target, qubits);
+  addZSpider(diag, target, qubits, PiExpression(), EdgeType::Hadamard);
 }
 
 FunctionalityConstruction::op_it
@@ -429,21 +604,27 @@ FunctionalityConstruction::parseOp(ZXDiagram& diag, op_it it, op_it end,
     case qc::OpType::RXX: {
       const auto target2 = static_cast<Qubit>(p.at(op->getTargets()[1]));
       const auto& phase = parseParam(op.get(), 0);
+      addZSpider(diag, target, qubits, PiExpression(), EdgeType::Hadamard);
+      addZSpider(diag, target2, qubits, PiExpression(), EdgeType::Hadamard);
       if (phase.isConstant()) {
         addRxx(diag, phase, target, target2, qubits, op->getParameter().at(0));
       } else {
         addRxx(diag, phase, target, target2, qubits);
       }
+      addZSpider(diag, target, qubits, PiExpression(), EdgeType::Hadamard);
+      addZSpider(diag, target2, qubits, PiExpression(), EdgeType::Hadamard);
       break;
     }
     case qc::OpType::RZX: {
       const auto target2 = static_cast<Qubit>(p.at(op->getTargets()[1]));
       const auto& phase = parseParam(op.get(), 0);
+      addZSpider(diag, target2, qubits, PiExpression(), EdgeType::Hadamard);
       if (phase.isConstant()) {
         addRzx(diag, phase, target, target2, qubits, op->getParameter().at(0));
       } else {
         addRzx(diag, phase, target, target2, qubits);
       }
+      addZSpider(diag, target2, qubits, PiExpression(), EdgeType::Hadamard);
       break;
     }
     case qc::OpType::RYY: {
@@ -538,10 +719,15 @@ FunctionalityConstruction::parseOp(ZXDiagram& diag, op_it it, op_it end,
                    qubits[static_cast<std::size_t>(target)],
                    EdgeType::Hadamard);
       break;
-
-    case qc::OpType::I:
+    case qc::OpType::RZ:
+      addCrz(diag, parseParam(op.get(), 0), ctrl, target, qubits);
       break;
 
+    case qc::OpType::RX:
+      addCrx(diag, parseParam(op.get(), 0), ctrl, target, qubits);
+      break;
+    case qc::OpType::I:
+      break;
     case qc::OpType::P:
       addCphase(diag, parseParam(op.get(), 0), ctrl, target, qubits);
       break;
@@ -565,7 +751,7 @@ FunctionalityConstruction::parseOp(ZXDiagram& diag, op_it it, op_it end,
       throw ZXException("Unsupported Controlled Operation: " +
                         qc::toString(op->getType()));
     }
-  } else if (op->getNcontrols() == 2) {
+  } else if (op->getNcontrols() == 2 && op->getNtargets() == 1) {
     // three-qubit controlled gates (ccx or ccz)
     Qubit ctrl0 = 0;
     Qubit ctrl1 = 0;
@@ -582,14 +768,119 @@ FunctionalityConstruction::parseOp(ZXDiagram& diag, op_it it, op_it end,
     case qc::OpType::X:
       addCcx(diag, ctrl0, ctrl1, target, qubits);
       break;
-
     case qc::OpType::Z:
-      addZSpider(diag, target, qubits, PiExpression(), EdgeType::Hadamard);
-      addCcx(diag, ctrl0, ctrl1, target, qubits);
-      addZSpider(diag, target, qubits, PiExpression(), EdgeType::Hadamard);
+      addCcz(diag, ctrl0, ctrl1, target, qubits);
+      break;
+    case qc::OpType::P:
+      addMcphase(diag, parseParam(op.get(), 0), {ctrl0, ctrl1}, target, qubits);
+      break;
+    case qc::OpType::T:
+      addMcphase(diag, PiExpression{PiRational(1, 4)}, {ctrl0, ctrl1}, target,
+                 qubits);
+      break;
+    case qc::OpType::S:
+      addMcphase(diag, PiExpression{PiRational(1, 2)}, {ctrl0, ctrl1}, target,
+                 qubits);
+      break;
+    case qc::OpType::RZ:
+      addMcrz(diag, parseParam(op.get(), 0), {ctrl0, ctrl1}, target, qubits);
+      break;
+    case qc::OpType::RX:
+      addMcrx(diag, parseParam(op.get(), 0), {ctrl0, ctrl1}, target, qubits);
       break;
     default:
       throw ZXException("Unsupported Multi-control operation: " +
+                        qc::toString(op->getType()));
+    }
+  } else if (op->getNtargets() == 1) {
+    const auto target = static_cast<Qubit>(p.at(op->getTargets().front()));
+    std::vector<Qubit> controls;
+    controls.reserve(op->getNcontrols());
+    for (const auto& ctrl : op->getControls()) {
+      controls.emplace_back(static_cast<Qubit>(p.at(ctrl.qubit)));
+    }
+    switch (op->getType()) {
+    case qc::OpType::X:
+      addMcx(diag, controls, target, qubits);
+      break;
+    case qc::OpType::Z:
+      addMcz(diag, controls, target, qubits);
+      break;
+    case qc::OpType::P:
+      addMcphase(diag, parseParam(op.get(), 0), controls, target, qubits);
+      break;
+    case qc::OpType::T:
+      addMcphase(diag, PiExpression{PiRational(1, 4)}, controls, target,
+                 qubits);
+      break;
+    case qc::OpType::S:
+      addMcphase(diag, PiExpression{PiRational(1, 2)}, controls, target,
+                 qubits);
+      break;
+    case qc::OpType::RZ:
+      addMcrz(diag, parseParam(op.get(), 0), controls, target, qubits);
+      break;
+    case qc::OpType::RX:
+      addMcrx(diag, parseParam(op.get(), 0), controls, target, qubits);
+      break;
+    default:
+      throw ZXException("Unsupported Multi-control operation (" +
+                        std::to_string(op->getNcontrols()) + " ctrls)" +
+                        qc::toString(op->getType()));
+    }
+  } else if (op->getNtargets() == 2) {
+    // At this point, op must have getNtargets() >= 2 (all 1-target cases
+    // handled above)
+    const auto target = static_cast<Qubit>(p.at(op->getTargets().front()));
+    const auto target2 = static_cast<Qubit>(p.at(op->getTargets()[1]));
+    std::vector<Qubit> controls;
+    controls.reserve(op->getNcontrols());
+    for (const auto& ctrl : op->getControls()) {
+      controls.emplace_back(static_cast<Qubit>(p.at(ctrl.qubit)));
+    }
+    switch (op->getType()) {
+    case qc::OpType::SWAP:
+      addMcswap(diag, controls, target, target2, qubits);
+      break;
+    case qc::OpType::RZZ: {
+      const auto& phase = parseParam(op.get(), 0);
+      if (phase.isConstant()) {
+        addMcrzz(diag, phase, controls, target, target2, qubits,
+                 op->getParameter().at(0));
+      } else {
+        addMcrzz(diag, phase, controls, target, target2, qubits);
+      }
+      break;
+    }
+    case qc::OpType::RXX: {
+      const auto& phase = parseParam(op.get(), 0);
+      addZSpider(diag, target, qubits, PiExpression(), EdgeType::Hadamard);
+      addZSpider(diag, target2, qubits, PiExpression(), EdgeType::Hadamard);
+      if (phase.isConstant()) {
+        addMcrzz(diag, phase, controls, target, target2, qubits,
+                 op->getParameter().at(0));
+      } else {
+        addMcrzz(diag, phase, controls, target, target2, qubits);
+      }
+      addZSpider(diag, target2, qubits, PiExpression(), EdgeType::Hadamard);
+      addZSpider(diag, target, qubits, PiExpression(), EdgeType::Hadamard);
+      break;
+    }
+    case qc::OpType::RZX: {
+      const auto& phase = parseParam(op.get(), 0);
+      addZSpider(diag, target2, qubits, PiExpression(), EdgeType::Hadamard);
+      if (phase.isConstant()) {
+        addMcrzz(diag, phase, controls, target, target2, qubits,
+                 op->getParameter().at(0));
+      } else {
+        addMcrzz(diag, phase, controls, target, target2, qubits);
+      }
+      addZSpider(diag, target2, qubits, PiExpression(), EdgeType::Hadamard);
+      break;
+    }
+    default:
+      throw ZXException("Unsupported Multi-control operation (" +
+                        std::to_string(op->getNcontrols()) + " ctrls)" +
                         qc::toString(op->getType()));
     }
   } else {
@@ -701,15 +992,31 @@ bool FunctionalityConstruction::transformableToZX(const qc::Operation* op) {
     case qc::OpType::S:
     case qc::OpType::Tdg:
     case qc::OpType::Sdg:
+    case qc::OpType::RX:
+    case qc::OpType::RZ:
       return true;
-
     default:
       return false;
     }
-  } else if (op->getNcontrols() == 2) {
+  } else if (op->getNtargets() == 1) {
     switch (op->getType()) {
     case qc::OpType::X:
     case qc::OpType::Z:
+    case qc::OpType::P:
+    case qc::OpType::T:
+    case qc::OpType::S:
+    case qc::OpType::RZ:
+    case qc::OpType::RX:
+      return true;
+    default:
+      return false;
+    }
+  } else if (op->getNtargets() == 2) {
+    switch (op->getType()) {
+    case qc::OpType::SWAP:
+    case qc::OpType::RZZ:
+    case qc::OpType::RXX:
+    case qc::OpType::RZX:
       return true;
     default:
       return false;
