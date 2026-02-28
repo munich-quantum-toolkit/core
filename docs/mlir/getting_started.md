@@ -16,7 +16,7 @@ Inspecting the IR at each stage is one of the most powerful tools for understand
 ## MLIR in MQT Core
 
 MQT Core includes an evolving MLIR-based submodule for representing and compiling quantum programs.
-This submodule is separate from the rest of MQT Core and is not yet used outside of the `mlir/` directory.
+This submodule is separate from the rest of MQT Core and is not yet used outside the `mlir/` directory.
 
 Two custom dialects are defined:
 
