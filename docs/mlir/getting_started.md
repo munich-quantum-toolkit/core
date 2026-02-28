@@ -4,7 +4,7 @@
 
 Do you know how many levels of abstraction a quantum program passes through before it reaches hardware—high-level intent, gate sequences, hardware-specific pulses—and how each level needs its own operations and types?
 Building a separate IR for each level, and keeping them all consistent, is painful and error-prone.
-**MLIR** (Multi-Level Intermediate Representation) solves exactly this: it is a single extensible framework—developed as part of the LLVM project—in which you define your own *dialects* (modular vocabularies of operations and types) and compose them freely inside one module.
+**MLIR** (Multi-Level Intermediate Representation) solves exactly this: it is a single extensible framework—developed as part of the LLVM project—in which you define your own _dialects_ (modular vocabularies of operations and types) and compose them freely inside one module.
 
 The core concept in MLIR is the **dialect**: a named collection of operations, types, and attributes that together define one level of abstraction in a compiler pipeline.
 For example, a dialect might represent high-level quantum circuits, a lower-level gate-level IR, or even classical control flow.
@@ -20,11 +20,11 @@ This submodule is separate from the rest of MQT Core and is not yet used outside
 
 Two custom dialects are defined:
 
-- **QC** (Quantum Circuit): uses *reference semantics*.
+- **QC** (Quantum Circuit): uses _reference semantics_.
   A qubit is a `!qc.qubit` reference; gates like `qc.h` or `qc.x` modify the qubit in place without returning a new value.
   QC is the import/export dialect—it is the natural representation when translating from Qiskit, OpenQASM, or the MQT Core `QuantumComputation` type.
 
-- **QCO** (Quantum Circuit Optimized): uses *value semantics*.
+- **QCO** (Quantum Circuit Optimized): uses _value semantics_.
   Every gate consumes its qubit operands and produces new qubit values, making dataflow explicit.
   QCO is designed for optimization passes that benefit from a static single-assignment (SSA) dataflow graph.
 
@@ -91,7 +91,7 @@ The same `%q` is used for every gate—that is reference semantics.
 
 :::{tip}
 In QC, one name can refer to the same qubit across many operations.
-The compiler tracks the *state* of that qubit as it flows through the circuit.
+The compiler tracks the _state_ of that qubit as it flows through the circuit.
 :::
 
 ### From one qubit to a Bell state
@@ -135,7 +135,7 @@ The same quantum operations can be represented in two ways in MLIR:
 |               | QC                                       | QCO                                                       |
 | ------------: | :--------------------------------------- | :-------------------------------------------------------- |
 | **Semantics** | Reference: gates modify qubits in place  | Value: each op consumes inputs, produces new qubit values |
-|      **Type** | `!qc.qubit`                              | `!qco.qubit`                                             |
+|      **Type** | `!qc.qubit`                              | `!qco.qubit`                                              |
 |  **Use case** | Import/export, human-readable circuits   | Optimizations, DAG-style analysis                         |
 |       **SSA** | One name can be reused along the circuit | Every gate introduces new SSA values                      |
 
