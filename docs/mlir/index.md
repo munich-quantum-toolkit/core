@@ -13,9 +13,12 @@ Both dialects define various canonicalization and transformations that enable th
 For intercompatibility, we provide {doc}`conversions <Conversions>` between dialects.
 So far, this comprises conversions between QC and QCO as well as from QC to QIR.
 
+New to MLIR here? Start with the {doc}`Getting Started with MLIR <getting_started>` tutorial.
+
 ```{toctree}
 :maxdepth: 2
 
+getting_started
 QC
 QCO
 Conversions
