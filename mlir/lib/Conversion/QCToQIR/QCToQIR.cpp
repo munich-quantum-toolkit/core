@@ -15,7 +15,6 @@
 #include "mlir/Dialect/QIR/Utils/QIRMetadata.h"
 #include "mlir/Dialect/QIR/Utils/QIRUtils.h"
 
-#include <cassert>
 #include <cstddef>
 #include <cstdint>
 #include <iterator>

@@ -6,7 +6,8 @@
 #
 # Licensed under the MIT License
 
-add_subdirectory(QCToQCO)
-add_subdirectory(QCToQIR)
-add_subdirectory(QCOToQC)
-add_subdirectory(JeffRoundTrip)
+set(LLVM_TARGET_DEFINITIONS JeffToQCO.td)
+mlir_tablegen(JeffToQCO.h.inc -gen-pass-decls -name JeffToQCO)
+add_public_tablegen_target(JeffToQCOIncGen)
+
+add_mlir_doc(JeffToQCO MLIRJeffToQCO Conversions/ -gen-pass-doc)

@@ -1130,8 +1130,7 @@ struct ConvertQCCtrlOp final : StatefulOpConversionPattern<qc::CtrlOp> {
     auto& dstRegion = qcoOp.getRegion();
     rewriter.cloneRegionBefore(op.getRegion(), dstRegion, dstRegion.end());
 
-    // Create block arguments for target qubits and store them in
-    // `state.targetsIn`.
+    // Create block arguments for QCO targets
     auto& entryBlock = dstRegion.front();
     assert(entryBlock.getNumArguments() == 0 &&
            "QC ctrl region unexpectedly has entry block arguments");
@@ -1266,24 +1265,19 @@ struct ConvertQCYieldOp final : StatefulOpConversionPattern<qc::YieldOp> {
  * @brief Pass implementation for QC-to-QCO conversion
  *
  * @details
- * This pass converts QC dialect operations (reference
- * semantics) to QCO dialect operations (value semantics).
- * The conversion is essential for enabling optimization
- * passes that rely on SSA form and explicit dataflow
- * analysis.
+ * This pass converts QC dialect operations (reference semantics) to QCO dialect
+ * operations (value semantics). The conversion is essential for enabling
+ * optimization passes that rely on SSA form and explicit dataflow analysis.
  *
  * The pass operates in several phases:
  * 1. Type conversion: !qc.qubit -> !qco.qubit
- * 2. Operation conversion: Each QC op is converted to
- * its QCO equivalent
- * 3. State tracking: A LoweringState maintains qubit value
- * mappings
- * 4. Function/control-flow adaptation: Function signatures
- * and control flow are updated to use QCO types
+ * 2. Operation conversion: Each QC op is converted to its QCO equivalent
+ * 3. State tracking: A LoweringState maintains qubit value mappings
+ * 4. Function/control-flow adaptation: Function signatures and control flow are
+ * updated to use QCO types
  *
- * The conversion maintains semantic equivalence while
- * transforming the representation from imperative
- * (mutation-based) to functional (SSA-based).
+ * The conversion maintains semantic equivalence while transforming the
+ * representation from imperative (mutation-based) to functional (SSA-based).
  */
 struct QCToQCO final : impl::QCToQCOBase<QCToQCO> {
   using QCToQCOBase::QCToQCOBase;
@@ -1300,13 +1294,11 @@ protected:
     RewritePatternSet patterns(context);
     QCToQCOTypeConverter typeConverter(context);
 
-    // Configure conversion target: QC illegal, QCO
-    // legal
+    // Configure conversion target: QC illegal, QCO legal
     target.addIllegalDialect<QCDialect>();
     target.addLegalDialect<QCODialect>();
 
-    // Register operation conversion patterns with state
-    // tracking
+    // Register operation conversion patterns with state tracking
     patterns.add<ConvertQCAllocOp, ConvertQCDeallocOp, ConvertQCStaticOp,
                  ConvertQCMeasureOp, ConvertQCResetOp, ConvertQCGPhaseOp,
                  ConvertQCIdOp, ConvertQCXOp, ConvertQCYOp, ConvertQCZOp,
@@ -1321,8 +1313,7 @@ protected:
                                                    &state);
 
     // Conversion of qc types in func.func signatures
-    // Note: This currently has limitations with signature
-    // changes
+    // Note: This currently has limitations with signature changes
     populateFunctionOpInterfaceTypeConversionPattern<func::FuncOp>(
         patterns, typeConverter);
     target.addDynamicallyLegalOp<func::FuncOp>([&](func::FuncOp op) {
@@ -1340,8 +1331,7 @@ protected:
     target.addDynamicallyLegalOp<func::CallOp>(
         [&](const func::CallOp op) { return typeConverter.isLegal(op); });
 
-    // Conversion of qc types in control-flow ops (e.g.,
-    // cf.br, cf.cond_br)
+    // Conversion of qc types in control-flow ops (e.g., cf.br, cf.cond_br)
     populateBranchOpInterfaceTypeConversionPattern(patterns, typeConverter);
 
     // Apply the conversion
