@@ -285,7 +285,8 @@ RankedTensorType ExtractSliceOp::inferCanonicalRankReducedResultType(
 /// Build an ExtractSliceOp with mixed static and dynamic entries and custom
 /// result type. If the type passed is nullptr, it is inferred.
 void ExtractSliceOp::build(OpBuilder& b, OperationState& result,
-                           RankedTensorType resultType, Value source,
+                           RankedTensorType resultType,
+                           RankedTensorType outSourceType, Value source,
                            ArrayRef<OpFoldResult> offsets,
                            ArrayRef<OpFoldResult> sizes,
                            ArrayRef<OpFoldResult> strides,
@@ -306,10 +307,19 @@ void ExtractSliceOp::build(OpBuilder& b, OperationState& result,
         sourceRankedTensorType, staticOffsets, staticSizes, staticStrides));
   }
   result.addAttributes(attrs);
-  build(b, result, resultType, source, dynamicOffsets, dynamicSizes,
-        dynamicStrides, b.getDenseI64ArrayAttr(staticOffsets),
+  build(b, result, {resultType, outSourceType}, source, dynamicOffsets,
+        dynamicSizes, dynamicStrides, b.getDenseI64ArrayAttr(staticOffsets),
         b.getDenseI64ArrayAttr(staticSizes),
         b.getDenseI64ArrayAttr(staticStrides));
+}
+void ExtractSliceOp::build(OpBuilder& b, OperationState& result,
+                           RankedTensorType resultType, Value source,
+                           ArrayRef<OpFoldResult> offsets,
+                           ArrayRef<OpFoldResult> sizes,
+                           ArrayRef<OpFoldResult> strides,
+                           ArrayRef<NamedAttribute> attrs) {
+  build(b, result, resultType, cast<RankedTensorType>(source.getType()), source,
+        offsets, sizes, strides, attrs);
 }
 
 /// Build an ExtractSliceOp with mixed static and dynamic entries and inferred
@@ -319,7 +329,8 @@ void ExtractSliceOp::build(OpBuilder& b, OperationState& result, Value source,
                            ArrayRef<OpFoldResult> sizes,
                            ArrayRef<OpFoldResult> strides,
                            ArrayRef<NamedAttribute> attrs) {
-  build(b, result, RankedTensorType(), source, offsets, sizes, strides, attrs);
+  build(b, result, RankedTensorType(), cast<RankedTensorType>(source.getType()),
+        source, offsets, sizes, strides, attrs);
 }
 
 /// Build an ExtractSliceOp with mixed static and dynamic entries packed into
@@ -328,13 +339,15 @@ void ExtractSliceOp::build(OpBuilder& b, OperationState& result, Value source,
                            ArrayRef<Range> ranges,
                            ArrayRef<NamedAttribute> attrs) {
   auto [offsets, sizes, strides] = getOffsetsSizesAndStrides(ranges);
-  build(b, result, RankedTensorType(), source, offsets, sizes, strides, attrs);
+  build(b, result, RankedTensorType(), cast<RankedTensorType>(source.getType()),
+        source, offsets, sizes, strides, attrs);
 }
 
 /// Build an ExtractSliceOp with dynamic entries and custom result type. If
 /// the type passed is nullptr, it is inferred.
 void ExtractSliceOp::build(OpBuilder& b, OperationState& result,
-                           RankedTensorType resultType, Value source,
+                           RankedTensorType resultType,
+                           RankedTensorType outSourceType, Value source,
                            ValueRange offsets, ValueRange sizes,
                            ValueRange strides, ArrayRef<NamedAttribute> attrs) {
   SmallVector<OpFoldResult> offsetValues = llvm::to_vector<4>(
@@ -343,14 +356,23 @@ void ExtractSliceOp::build(OpBuilder& b, OperationState& result,
       llvm::map_range(sizes, [](Value v) -> OpFoldResult { return v; }));
   SmallVector<OpFoldResult> strideValues = llvm::to_vector<4>(
       llvm::map_range(strides, [](Value v) -> OpFoldResult { return v; }));
-  build(b, result, resultType, source, offsetValues, sizeValues, strideValues);
+  build(b, result, resultType, outSourceType, source, offsetValues, sizeValues,
+        strideValues);
+}
+void ExtractSliceOp::build(OpBuilder& b, OperationState& result,
+                           RankedTensorType resultType, Value source,
+                           ValueRange offsets, ValueRange sizes,
+                           ValueRange strides, ArrayRef<NamedAttribute> attrs) {
+  build(b, result, resultType, resultType, source, offsets, sizes, strides,
+        attrs);
 }
 
 /// Build an ExtractSliceOp with dynamic entries and inferred result type.
 void ExtractSliceOp::build(OpBuilder& b, OperationState& result, Value source,
                            ValueRange offsets, ValueRange sizes,
                            ValueRange strides, ArrayRef<NamedAttribute> attrs) {
-  build(b, result, RankedTensorType(), source, offsets, sizes, strides, attrs);
+  build(b, result, RankedTensorType(), cast<RankedTensorType>(source.getType()),
+        source, offsets, sizes, strides, attrs);
 }
 
 static LogicalResult produceSliceErrorMsg(SliceVerificationResult result,
@@ -546,11 +568,12 @@ struct SliceCanonicalizer {
   void operator()(PatternRewriter& rewriter, ExtractSliceOp op,
                   ExtractSliceOp newOp) {
     Value replacement = newOp.getResult();
+    Value outSource = newOp.getOutSource();
     if (replacement.getType() != op.getType()) {
       replacement = rewriter.create<tensor::CastOp>(op.getLoc(), op.getType(),
                                                     replacement);
     }
-    rewriter.replaceOp(op, replacement);
+    rewriter.replaceOp(op, {replacement, outSource});
   }
 };
 
@@ -610,10 +633,12 @@ LogicalResult ExtractSliceOp::fold(FoldAdaptor adaptor,
   if (getSourceType() == getType() &&
       succeeded(foldIdentityOffsetSizeAndStrideOpInterface(*this, getType()))) {
     results.push_back(this->getSource());
+    results.push_back(getSource());
     return success();
   }
   if (Value slice = foldExtractAfterInsertSlice(*this)) {
     results.push_back(slice);
+    results.push_back(getSource());
     return success();
   }
 

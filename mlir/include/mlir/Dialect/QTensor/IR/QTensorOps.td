@@ -132,6 +132,10 @@ def QTensor_ExtractSliceOp : QTensorOpWithOffsetSizesAndStrides<"extract_slice",
       CArg<"ArrayRef<NamedAttribute>", "{}">:$attrs)>,
     // Build an ExtractSliceOp with mixed static and dynamic entries and custom
     // result type. If the type passed is nullptr, it is inferred.
+    OpBuilder<(ins "RankedTensorType":$resultType, "RankedTensorType":$outSourceType, "Value":$source,
+      "ArrayRef<OpFoldResult>":$offsets, "ArrayRef<OpFoldResult>":$sizes,
+      "ArrayRef<OpFoldResult>":$strides,
+      CArg<"ArrayRef<NamedAttribute>", "{}">:$attrs)>,
     OpBuilder<(ins "RankedTensorType":$resultType, "Value":$source,
       "ArrayRef<OpFoldResult>":$offsets, "ArrayRef<OpFoldResult>":$sizes,
       "ArrayRef<OpFoldResult>":$strides,
@@ -142,7 +146,10 @@ def QTensor_ExtractSliceOp : QTensorOpWithOffsetSizesAndStrides<"extract_slice",
       "ValueRange":$sizes, "ValueRange":$strides,
       CArg<"ArrayRef<NamedAttribute>", "{}">:$attrs)>,
     // Build an ExtractSliceOp with dynamic entries and inferred result type.
-    OpBuilder<(ins "RankedTensorType":$resultType, "Value":$source,
+    OpBuilder<(ins "RankedTensorType":$resultType, "RankedTensorType":$outSourceType, "Value":$source,
+      "ValueRange":$offsets, "ValueRange":$sizes, "ValueRange":$strides,
+      CArg<"ArrayRef<NamedAttribute>", "{}">:$attrs)>,
+      OpBuilder<(ins "RankedTensorType":$resultType, "Value":$source,
       "ValueRange":$offsets, "ValueRange":$sizes, "ValueRange":$strides,
       CArg<"ArrayRef<NamedAttribute>", "{}">:$attrs)>,
     // Build an ExtractSliceOp with mixed static and dynamic entries packed in
