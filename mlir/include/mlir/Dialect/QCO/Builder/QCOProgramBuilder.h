@@ -202,6 +202,28 @@ public:
   [[nodiscard]] ClassicalRegister
   allocClassicalBitRegister(int64_t size, std::string name = "c") const;
 
+  Value allocateTensor(int64_t size);
+
+  Value fromElements(ValueRange elements);
+
+  std::pair<Value, Value> extract(Value tensor,
+                                  const std::variant<int64_t, Value>& index);
+
+  std::pair<Value, Value>
+  extractSlice(Value tensor, const std::variant<int64_t, Value>& offset,
+               const std::variant<int64_t, Value>& sizes,
+               const std::variant<int64_t, Value>& strides);
+
+  Value insert(Value scalar, Value tensor,
+               const std::variant<int64_t, Value>& index);
+
+  Value insertSlice(Value sourceTensor, Value destTensor,
+                    const std::variant<int64_t, Value>& offset,
+                    const std::variant<int64_t, Value>& sizes,
+                    const std::variant<int64_t, Value>& strides);
+
+  QCOProgramBuilder& deallocTensor(Value tensor);
+
   //===--------------------------------------------------------------------===//
   // Measurement and Reset
   //===--------------------------------------------------------------------===//

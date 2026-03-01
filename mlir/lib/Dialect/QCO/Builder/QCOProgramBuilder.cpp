@@ -12,6 +12,8 @@
 
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
+#include "mlir/Dialect/QTensor/IR/QTensorDialect.h"
+#include "mlir/Dialect/QTensor/IR/QTensorOps.h"
 #include "mlir/Dialect/Utils/Utils.h"
 
 #include <cstddef>
@@ -134,6 +136,108 @@ QCOProgramBuilder::allocClassicalBitRegister(const int64_t size,
   return {.name = std::move(name), .size = size};
 }
 
+Value QCOProgramBuilder::allocateTensor(int64_t size) {
+  checkFinalized();
+
+  if (size <= 0) {
+    llvm::reportFatalUsageError("Size must be positive");
+  }
+
+  llvm::SmallVector<Value> qubits;
+  qubits.reserve(static_cast<size_t>(size));
+  for (int64_t i = 0; i < size; ++i) {
+    auto allocOp = AllocOp::create(*this);
+    qubits.emplace_back(allocOp);
+  }
+  auto fromElementsOp = qtensor::FromElementsOp::create(*this, qubits);
+  validQubits.insert(fromElementsOp);
+  return fromElementsOp.getResult();
+}
+Value QCOProgramBuilder::fromElements(ValueRange elements) {
+  auto fromElementsOp = qtensor::FromElementsOp::create(*this, elements);
+  validQubits.insert(fromElementsOp);
+  return fromElementsOp.getResult();
+}
+
+std::pair<Value, Value>
+QCOProgramBuilder::extract(Value tensor,
+                           const std::variant<int64_t, Value>& index) {
+  checkFinalized();
+
+  auto indexValue = utils::variantToValue(*this, getLoc(), index);
+  auto extractOp = qtensor::ExtractOp::create(*this, tensor, indexValue);
+  auto qubit = extractOp.getResult();
+  auto outTensor = extractOp.getOutTensor();
+
+  validQubits.insert(qubit);
+  updateQubitTracking(tensor, outTensor);
+
+  return {qubit, outTensor};
+}
+
+std::pair<Value, Value>
+QCOProgramBuilder::extractSlice(Value tensor,
+                                const std::variant<int64_t, Value>& offset,
+                                const std::variant<int64_t, Value>& sizes,
+                                const std::variant<int64_t, Value>& strides) {
+  checkFinalized();
+
+  auto offsetValue = utils::variantToValue(*this, getLoc(), offset);
+  auto sizesValue = utils::variantToValue(*this, getLoc(), sizes);
+  auto stridesValue = utils::variantToValue(*this, getLoc(), strides);
+  auto extractSliceOp = qtensor::ExtractSliceOp::create(
+      *this, tensor, offsetValue, sizesValue, stridesValue);
+  auto slicedTensor = extractSliceOp.getResult();
+  auto outTensor = extractSliceOp.getOutSource();
+
+  validQubits.insert(slicedTensor);
+  updateQubitTracking(tensor, outTensor);
+
+  return {slicedTensor, outTensor};
+}
+
+Value QCOProgramBuilder::insert(Value scalar, Value tensor,
+                                const std::variant<int64_t, Value>& index) {
+  checkFinalized();
+
+  auto indexValue = utils::variantToValue(*this, getLoc(), index);
+  auto insertOp = qtensor::InsertOp::create(*this, scalar, tensor, indexValue);
+
+  auto outTensor = insertOp.getResult();
+
+  validQubits.erase(scalar);
+  updateQubitTracking(tensor, outTensor);
+  return outTensor;
+}
+
+Value QCOProgramBuilder::insertSlice(
+    Value source, Value dest, const std::variant<int64_t, Value>& offset,
+    const std::variant<int64_t, Value>& sizes,
+    const std::variant<int64_t, Value>& strides) {
+  checkFinalized();
+
+  auto offsetValue = utils::variantToValue(*this, getLoc(), offset);
+  auto sizesValue = utils::variantToValue(*this, getLoc(), sizes);
+  auto stridesValue = utils::variantToValue(*this, getLoc(), strides);
+  auto insertSliceOp = qtensor::InsertSliceOp::create(
+      *this, source, dest, offsetValue, sizesValue, stridesValue);
+
+  auto outTensor = insertSliceOp.getResult();
+
+  validQubits.erase(source);
+  updateQubitTracking(dest, outTensor);
+
+  return outTensor;
+}
+
+QCOProgramBuilder& QCOProgramBuilder::deallocTensor(Value tensor) {
+  checkFinalized();
+
+  qtensor::DeallocOp::create(*this, tensor);
+
+  validQubits.erase(tensor);
+  return *this;
+}
 //===----------------------------------------------------------------------===//
 // Linear Type Tracking Helpers
 //===----------------------------------------------------------------------===//
@@ -787,7 +891,11 @@ OwningOpRef<ModuleOp> QCOProgramBuilder::finalize() {
     return opA->isBeforeInBlock(opB);
   });
   for (auto qubit : sortedQubits) {
-    DeallocOp::create(*this, qubit);
+    if (llvm::isa<QubitType>(qubit.getType())) {
+      DeallocOp::create(*this, qubit);
+    } else {
+      qtensor::DeallocOp::create(*this, qubit);
+    }
   }
 
   validQubits.clear();
