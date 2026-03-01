@@ -36,7 +36,7 @@ jobs:
       compiler: ${{ matrix.compiler }}
       config: ${{ matrix.config }}
       setup-mlir: true
-      llvm-version: 21.1.8
+      llvm-version: 22.1.0
 
   cpp-tests-macos:
     name: 🇨‌ Test 🍎
@@ -59,7 +59,7 @@ jobs:
       config: ${{ matrix.config }}
       cmake-args: -DMQT_CORE_WITH_GMP=ON
       setup-mlir: true
-      llvm-version: 21.1.8
+      llvm-version: 22.1.0
 
   cpp-tests-windows:
     name: 🇨‌ Test 🏁
@@ -81,7 +81,7 @@ jobs:
       compiler: ${{ matrix.compiler }}
       config: ${{ matrix.config }}
       setup-mlir: true
-      llvm-version: 21.1.8
+      llvm-version: 22.1.0
 
   # run extensive C++ tests on PRs labeled with the `extensive-cpp-ci` label
   cpp-tests-extensive-ubuntu:
@@ -100,7 +100,7 @@ jobs:
       compiler: ${{ matrix.compiler }}
       config: ${{ matrix.config }}
       setup-mlir: true
-      llvm-version: 21.1.8
+      llvm-version: 22.1.0
 
   # run extensive C++ tests on PRs labeled with the `extensive-cpp-ci` label
   cpp-tests-extensive-macos:
@@ -120,7 +120,7 @@ jobs:
       config: ${{ matrix.config }}
       cmake-args: -DMQT_CORE_WITH_GMP=ON
       setup-mlir: true
-      llvm-version: 21.1.8
+      llvm-version: 22.1.0
 
   # run extensive C++ tests on PRs labeled with the `extensive-cpp-ci` label
   cpp-tests-extensive-windows:
@@ -139,7 +139,7 @@ jobs:
       compiler: ${{ matrix.compiler }}
       config: ${{ matrix.config }}
       setup-mlir: true
-      llvm-version: 21.1.8
+      llvm-version: 22.1.0
 
   cpp-coverage:
     name: 🇨‌ Coverage
@@ -148,7 +148,7 @@ jobs:
     uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-cpp-coverage.yml@1ebbafc839b73f2edc0559d5456bfb8f848043fd # v1.17.14
     with:
       setup-mlir: true
-      llvm-version: 21.1.8
+      llvm-version: 22.1.0
     permissions:
       contents: read
       id-token: write
@@ -167,7 +167,7 @@ jobs:
       install-pkgs: "nanobind==2.11.0"
       cpp-linter-extra-args: "-std=c++20"
       setup-mlir: true
-      llvm-version: 21.1.8
+      llvm-version: 22.1.0
 
   python-tests:
     name: 🐍 Test
