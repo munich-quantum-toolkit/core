@@ -132,6 +132,23 @@ LogicalResult ExtractOp::verify() {
   }
   return success();
 }
+struct ExtractFromTensorCast : public OpRewritePattern<ExtractOp> {
+  using OpRewritePattern<ExtractOp>::OpRewritePattern;
+
+  LogicalResult matchAndRewrite(ExtractOp extract,
+                                PatternRewriter& rewriter) const final {
+    auto tensorCast = extract.getTensor().getDefiningOp<tensor::CastOp>();
+    if (!tensorCast) {
+      return failure();
+    }
+    if (!llvm::isa<RankedTensorType>(tensorCast.getSource().getType())) {
+      return failure();
+    }
+    rewriter.replaceOpWithNewOp<ExtractOp>(extract, tensorCast.getSource(),
+                                           extract.getIndices());
+    return success();
+  }
+};
 
 /// If we have an ExtractOp consuming an InsertOp with the same
 /// indices, we can return the InsertOp's scalar directly.
@@ -194,6 +211,10 @@ LogicalResult ExtractOp::fold(FoldAdaptor adaptor,
   return failure();
 }
 
+void ExtractOp::getCanonicalizationPatterns(RewritePatternSet& results,
+                                            MLIRContext* context) {
+  results.add<ExtractFromTensorCast>(context);
+}
 //===----------------------------------------------------------------------===//
 // ExtractSliceOp
 //===----------------------------------------------------------------------===//

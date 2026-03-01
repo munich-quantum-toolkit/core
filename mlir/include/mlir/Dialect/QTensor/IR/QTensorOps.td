@@ -84,6 +84,7 @@ def QTensor_ExtractOp : QTensorOp<"extract", [
 
   let hasFolder = 1;
   let hasVerifier = 1;
+  let hasCanonicalizer = 1;
 }
 
 
