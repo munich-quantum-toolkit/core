@@ -300,14 +300,19 @@ def QTensor_InsertOp : QTensorOp<"insert", [
   let hasCanonicalizer = 1;
 }
 
-def QTensor_InsertSliceOp : QTensorOp<"insert_slice", [
+def QTensor_InsertSliceOp : QTensorOpWithOffsetSizesAndStrides<"insert_slice", [
+    DeclareOpInterfaceMethods<OpAsmOpInterface, ["getAsmResultNames"]>,
+    DeclareOpInterfaceMethods<ReifyRankedShapedTypeOpInterface>,
     AttrSizedOperandSegments,
+    DestinationStyleOpInterface,
     Pure,
+    OffsetSizeAndStrideOpInterface,
     TypesMatchWith<"expected result type to match dest type",
                    "dest", "result", "$_self">
   ]> {
   let summary = "insert_slice operation";
   let description = [{
+
   }];
 
   let arguments = (ins
@@ -345,15 +350,42 @@ def QTensor_InsertSliceOp : QTensorOp<"insert_slice", [
     // a Range vector and inferred result type.
     OpBuilder<(ins "Value":$source, "Value":$dest,
       "ArrayRef<Range>":$ranges,
-      CArg<"ArrayRef<NamedAttribute>", "{}">:$attrs)>,
-    // Build an InsertSliceOp with mixed static and dynamic sizes, offsets set
-    // to 0, strides set to 1 and inferred result type.
-    OpBuilder<(ins "Value":$source, "Value":$dest,
-      "ArrayRef<OpFoldResult>":$sizes,
-      CArg<"ArrayRef<NamedAttribute>", "{}">:$attrs)>,
+      CArg<"ArrayRef<NamedAttribute>", "{}">:$attrs)>
   ];
 
+  let extraClassDeclaration = extraBaseClassDeclaration # [{
+    /// The result of a insert_slice is always a tensor.
+    // TODO: Deprecate this method.
+    RankedTensorType getType() {
+      return getResultType();
+    }
+
+    /// The `dest` type is the same as the result type.
+    RankedTensorType getDestType() {
+      return getResultType();
+    }
+
+    /// Return the expected rank of each of the`static_offsets`, `static_sizes`
+    /// and `static_strides` attributes.
+    std::array<unsigned, 3> getArrayAttrMaxRanks() {
+      unsigned rank = getResultType().getRank();
+      return {rank, rank, rank};
+    }
+
+    /// Return the dimensions of the dest that are omitted to insert a source
+    /// when the result is rank-extended.
+    llvm::SmallBitVector getDroppedDims();
+
+    /// Return the number of leading operands before the `offsets`, `sizes` and
+    /// and `strides` operands.
+    static unsigned getOffsetSizeAndStrideStartOperandIndex() { return 2; }
+
+    MutableOperandRange getDpsInitsMutable() { return getDestMutable(); }
+  }];
+
   let hasCanonicalizer = 1;
+  let hasFolder = 1;
+  let hasVerifier = 1;
 }
 
 def QTensor_DeallocOp : QTensorOp<"dealloc", [MemoryEffects<[MemFree]>]> {

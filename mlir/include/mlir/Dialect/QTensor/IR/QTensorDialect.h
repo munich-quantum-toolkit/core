@@ -10,26 +10,13 @@
 
 #pragma once
 
-#include "mlir/Dialect/QTensor/IR/QTensorOps.h"
-#include "mlir/IR/Dialect.h"
-#include "mlir/IR/OpDefinition.h"
-#include "mlir/Interfaces/ViewLikeInterface.h"
+#include <mlir/Dialect/Tensor/IR/Tensor.h>
+#include <mlir/IR/Dialect.h>
+#include <mlir/IR/OpDefinition.h>
+#include <mlir/Interfaces/DestinationStyleOpInterface.h>
+#include <mlir/Interfaces/ViewLikeInterface.h>
 
 #define DIALECT_NAME_QTensor "qtensor"
-
-//===----------------------------------------------------------------------===//
-// QTensor Dialect Helpers
-//===----------------------------------------------------------------------===//
-
-namespace mlir {
-
-/// Return the list of Range (i.e. offset, size, stride). Each Range
-/// entry contains either the dynamic value or a ConstantIndexOp constructed
-/// with `b` at location `loc`.
-SmallVector<Range, 8> getOrCreateRanges(OffsetSizeAndStrideOpInterface op,
-                                        OpBuilder& b, Location loc);
-
-} // namespace mlir
 
 //===----------------------------------------------------------------------===//
 // QTensor Dialect
