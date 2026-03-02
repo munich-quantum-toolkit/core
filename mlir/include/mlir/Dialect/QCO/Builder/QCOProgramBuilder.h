@@ -202,26 +202,136 @@ public:
   [[nodiscard]] ClassicalRegister
   allocClassicalBitRegister(int64_t size, std::string name = "c") const;
 
+  //===--------------------------------------------------------------------===//
+  // QTensor operations
+  //===--------------------------------------------------------------------===//
+
+  /**
+   * @brief Allocate a qubit tensor
+   * @param size Number of qubits (must be positive)
+   * @return The allocated tensor
+   *
+   * @par Example:
+   * ```c++
+   * auto tensor = builder.allocateTensor(3);
+   * ```
+   * ```mlir
+   * %q0 = qco.alloc : !qco.qubit
+   * %q1 = qco.alloc : !qco.qubit
+   * %q2 = qco.alloc : !qco.qubit
+   * %tensor = qtensor.from_elements %q0, %q1, %q2 : tensor<3x!qco.qubit>
+   * ```
+   */
   Value allocateTensor(int64_t size);
 
+  /**
+   * @brief Allocate a qubit tensor from a list of qubit values
+   * @param elements Inserted Qubits
+   * @return The allocated tensor
+   *
+   * @par Example:
+   * ```c++
+   * auto tensor = builder.fromElements({q0, q1, q2});
+   * ```
+   * ```mlir
+   * %tensor = qtensor.from_elements %q0, %q1, %q2 : tensor<3x!qco.qubit>
+   * ```
+   */
   Value fromElements(ValueRange elements);
 
+  /**
+   * @brief Extract a qubit from a tensor
+   * @param tensor Source tensor
+   * @param index The index from where the qubit is extracted
+   * @return Pair of (extractedQubit, outTensor)
+   *
+   * @par Example:
+   * ```c++
+   * auto [q0, outTensor] = builder.extract(tensor, 0);
+   * ```
+   * ```mlir
+   * %q0, %outTensor = qtensor.extract %tensor[%c0]: tensor<3x!qco.qubit>
+   * ```
+   */
   std::pair<Value, Value> extract(Value tensor,
                                   const std::variant<int64_t, Value>& index);
 
+  /**
+   * @brief Extract a qubit slice from a tensor
+   * @param tensor Source tensor
+   * @param offset The offset from where the slice is extracted
+   * @param size The size of the extracted slice
+   * @param strides The strides from where the values are extracted
+   * @return Pair of (extractedSlice, outTensor)
+   *
+   * @par Example:
+   * ```c++
+   * auto [extractedSlice, outTensor] = builder.extract_slice(tensor, 0, 2, 1);
+   * ```
+   * ```mlir
+   * %extractedSlice, %outTensor = qtensor.extract_slice %tensor[%c0][%c2][%c1]
+   * : tensor<3x!qco.qubit> to tensor<2x!qco.qubit>
+   * ```
+   */
   std::pair<Value, Value>
   extractSlice(Value tensor, const std::variant<int64_t, Value>& offset,
                const std::variant<int64_t, Value>& sizes,
                const std::variant<int64_t, Value>& strides);
 
+  /**
+   * @brief insert a qubit into a tensor
+   * @param scalar The scalar qubit that is inserted
+   * @param tensor The tensor where the qubit is inserted
+   * @param index The index into where the qubit is inserted
+   * @return The output tensor
+   *
+   * @par Example:
+   * ```c++
+   * auto outTensor = builder.insert(q0, tensor, 0);
+   * ```
+   * ```mlir
+   * %outTensor = qtensor.insert %q0 into %tensor[%c0] : tensor<3x!qco.qubit>
+   * ```
+   */
   Value insert(Value scalar, Value tensor,
                const std::variant<int64_t, Value>& index);
 
+  /**
+   * @brief insert a qubit slice into a tensor
+   * @param scalar The slice that is inserted
+   * @param tensor The tensor where the slice is inserted
+   * @param offset The offset into where the slice is inserted
+   * @param size The size of the inserted slice
+   * @param strides The strides into where the values are inserted
+   * @return The output tensor
+   *
+   * @par Example:
+   * ```c++
+   * auto outTensor = builder.insert_slice(slicedTensor, tensor, 0, 2, 1);
+   * ```
+   * ```mlir
+   * %outTensor = qtensor.insert_slice %slicedTensor into %tensor[%c0][%c2][%c1]
+   * : tensor<2x!qco.qubit> into tensor<3x!qco.qubit>
+   * ```
+   */
   Value insertSlice(Value sourceTensor, Value destTensor,
                     const std::variant<int64_t, Value>& offset,
                     const std::variant<int64_t, Value>& sizes,
                     const std::variant<int64_t, Value>& strides);
 
+  /**
+   * @brief Explicitly deallocate a tensor
+   * @param tensor Tensor to deallocate (must be valid/unconsumed)
+   * @return Reference to this builder for method chaining
+   *
+   * @par Example:
+   * ```c++
+   * builder.deallocTensor(tensor);
+   * ```
+   * ```mlir
+   * qtensor.dealloc %tensor : tensor<3x!qco.qubit>
+   * ```
+   */
   QCOProgramBuilder& deallocTensor(Value tensor);
 
   //===--------------------------------------------------------------------===//
