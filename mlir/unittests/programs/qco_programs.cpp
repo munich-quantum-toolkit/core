@@ -2049,4 +2049,44 @@ void nestedFalseIf(QCOProgramBuilder& b) {
         return llvm::to_vector(innerResult);
       });
 }
+
+void allocTensor(QCOProgramBuilder& b) { b.allocateTensor(3); }
+
+void allocDeallocTensor(QCOProgramBuilder& b) {
+  auto qtensor = b.allocateTensor(3);
+  b.deallocTensor(qtensor);
+}
+
+void extractTensor(QCOProgramBuilder& b) {
+  auto qtensor = b.allocateTensor(3);
+  // does not work for now
+  // b.extract(qtensor, 0);
+}
+
+void insertTensor(QCOProgramBuilder& b) {
+  auto qtensor = b.allocateTensor(3);
+  auto [q0, extractOutTensor] = b.extract(qtensor, 0);
+  auto q1 = b.h(q0);
+  b.insert(q1, extractOutTensor, 0);
+}
+
+void extractSliceTensor(QCOProgramBuilder& b) {
+  auto qtensor = b.allocateTensor(3);
+  b.extractSlice(qtensor, 0, 2, 1);
+}
+
+void insertSliceTensor(QCOProgramBuilder& b) {
+  auto qtensor = b.allocateTensor(3);
+  auto [slicedTensor, extractSliceOutTensor] = b.extractSlice(qtensor, 0, 2, 1);
+  auto [q0, extractOutTensor] = b.extract(slicedTensor, 0);
+  auto q1 = b.h(q0);
+  auto insertOutTensor = b.insert(q1, extractOutTensor, 0);
+  b.insertSlice(insertOutTensor, extractSliceOutTensor, 0, 2, 1);
+}
+
+void extractInsertTensor(QCOProgramBuilder& b) {
+  auto qtensor = b.allocateTensor(3);
+  auto [q0, extractOutTensor] = b.extract(qtensor, 0);
+  b.insert(q0, extractOutTensor, 0);
+}
 } // namespace mlir::qco
