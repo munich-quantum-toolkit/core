@@ -47,9 +47,10 @@
 - Set up environment with build and test dependencies `uv sync --inexact --only-group build --only-group test`
 - Install the package without build isolation for fast rebuilds `uv sync --inexact --no-dev --no-build-isolation-package mqt-core`
 - Run the tests `uv run --no-sync pytest`
-- Shortcut for running tests `uvx nox -s tests` or `uvx nox -s tests-3.14`
-- Shortcut for running tests with minimal version dependency resolution `uvx nox -s minimums` or `uvx nox -s minimums-3.14`
-- Shortcut for running against the upstream Qiskit package `uvx nox -s qiskit` or `uvx nox -s qiskit-3.14`
+- Shortcut for running tests `uvx nox -s tests`
+- Shortcut for running tests with minimal version dependency resolution `uvx nox -s minimums`
+- Shortcut for running against the upstream Qiskit package `uvx nox -s qiskit`
+- To target Python 3.14 specifically, use the `-3.14` variants instead: `uvx nox -s tests-3.14`, `uvx nox -s minimums-3.14`, `uvx nox -s qiskit-3.14`.
 
 ## Documentation
 
@@ -70,7 +71,7 @@
 - Prefer running targeted tests over the full test suite during development.
 - Prefer running a single Python version over the full test suite during development.
 - Follow the existing code style by checking neighboring files for patterns.
-- Review @file:CHANGELOG.md and @file:UPGRADING.md for every change; update them with any noteworthy additions, fixes, or breaking changes.
+- Update @file:CHANGELOG.md and @file:UPGRADING.md when changes are user-facing, breaking, or otherwise noteworthy.
 - Stub files (`.pyi`) in `python/mqt/core/` are **auto-generated** by nanobind's stubgen. NEVER edit `.pyi` files manually.
 - If C++ bindings are added or modified (files in `bindings/`), stubs need to be regenerated via `uvx nox -s stubs`.
 - Never modify files that start with "This file has been generated from an external template. Please do not modify it directly."
@@ -83,4 +84,4 @@
 - Did `uvx nox -s lint` pass without errors?
 - Are all changes covered by at least one automated test (Python or C++)?
 - Were Python stubs regenerated via `uvx nox -s stubs` if bindings were modified?
-- Are @file:CHANGELOG.md and @file:UPGRADING.md updated?
+- Are @file:CHANGELOG.md and @file:UPGRADING.md updated when changes are user-facing, breaking, or otherwise noteworthy?
