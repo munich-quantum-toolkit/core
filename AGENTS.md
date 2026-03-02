@@ -74,7 +74,7 @@
 - Update @file:CHANGELOG.md and @file:UPGRADING.md when changes are user-facing, breaking, or otherwise noteworthy.
 - Stub files (`.pyi`) in `python/mqt/core/` are **auto-generated** by nanobind's stubgen. NEVER edit `.pyi` files manually.
 - If C++ bindings are added or modified (files in `bindings/`), stubs need to be regenerated via `uvx nox -s stubs`.
-- Never modify files that start with "This file has been generated from an external template. Please do not modify it directly."
+- Never modify files that start with "This file has been generated from an external template. Please do not modify it directly." These files are managed by [the MQT templates action](https://github.com/munich-quantum-toolkit/templates) and changes will be overwritten.
 - Prefer fixing reported warnings over suppressing them (e.g., with `# noqa` comments for ruff). Only add ignore rules when necessary and document why.
 - Prefer fixing typing issues reported by `ty` before adding suppression comments (`# ty: ignore[code]`). Suppressions are sometimes necessary for incompletely typed libraries (e.g., Qiskit).
 - Ruff is configured in `pyproject.toml` with `select = ["ALL"]`. All rules are enabled by default, with a small set selectively disabled.
