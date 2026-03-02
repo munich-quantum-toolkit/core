@@ -611,7 +611,7 @@ foldIdentityOffsetSizeAndStrideOpInterface(OffsetSizeAndStrideOpInterface op,
 // TODO: This only checks the immediate producer; extend to go up the
 // insert/extract chain if the slices are disjoint.
 static Value foldExtractAfterInsertSlice(ExtractSliceOp extractOp) {
-  auto insertOp = extractOp.getSource().getDefiningOp<tensor::InsertSliceOp>();
+  auto insertOp = extractOp.getSource().getDefiningOp<InsertSliceOp>();
 
   auto isSame = [](OpFoldResult a, OpFoldResult b) { return a == b; };
   if (insertOp && insertOp.getSource().getType() == extractOp.getType() &&
