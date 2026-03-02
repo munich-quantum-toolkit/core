@@ -2089,4 +2089,19 @@ void extractInsertTensor(QCOProgramBuilder& b) {
   auto [q0, extractOutTensor] = b.extract(qtensor, 0);
   b.insert(q0, extractOutTensor, 0);
 }
+
+void extractSliceInsertSliceTensor(QCOProgramBuilder& b) {
+  auto qtensor = b.allocateTensor(3);
+  auto [slicedTensor, extractSliceOutTensor] = b.extractSlice(qtensor, 0, 2, 1);
+  b.insertSlice(slicedTensor, extractSliceOutTensor, 0, 2, 1);
+}
+
+void extractSliceExtractInsertInsertSliceTensor(QCOProgramBuilder& b) {
+  auto qtensor = b.allocateTensor(3);
+  auto [slicedTensor, extractSliceOutTensor] = b.extractSlice(qtensor, 0, 2, 1);
+  auto [q0, extractOutTensor] = b.extract(slicedTensor, 0);
+  auto insertOutTensor = b.insert(q0, extractOutTensor, 0);
+  b.insertSlice(insertOutTensor, extractSliceOutTensor, 0, 2, 1);
+}
+
 } // namespace mlir::qco

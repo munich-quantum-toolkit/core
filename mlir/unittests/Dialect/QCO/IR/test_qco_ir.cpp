@@ -1042,5 +1042,12 @@ INSTANTIATE_TEST_SUITE_P(
         QCOTestCase{"InsertSliceTensor", MQT_NAMED_BUILDER(insertSliceTensor),
                     MQT_NAMED_BUILDER(insertSliceTensor)},
         QCOTestCase{"ExtractInsert", MQT_NAMED_BUILDER(extractInsertTensor),
-                    MQT_NAMED_BUILDER(allocTensor)}));
+                    MQT_NAMED_BUILDER(allocTensor)},
+        QCOTestCase{"ExtractSliceInsertSlice",
+                    MQT_NAMED_BUILDER(extractSliceInsertSliceTensor),
+                    MQT_NAMED_BUILDER(allocTensor)},
+        QCOTestCase{
+            "ExtractSliceExtractInsertInsertSliceTensor",
+            MQT_NAMED_BUILDER(extractSliceExtractInsertInsertSliceTensor),
+            MQT_NAMED_BUILDER(allocTensor)}));
 /// @}
