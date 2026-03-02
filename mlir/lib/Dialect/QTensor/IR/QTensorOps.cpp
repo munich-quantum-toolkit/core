@@ -8,45 +8,29 @@
  * Licensed under the MIT License
  */
 
-//===----------------------------------------------------------------------===//
-//
-// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
-// See https://llvm.org/LICENSE.txt for license information.
-// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
-//
-//===----------------------------------------------------------------------===//
-
 #include "mlir/Dialect/QTensor/IR/QTensorOps.h"
 
-#include "mlir/Dialect/Affine/IR/AffineOps.h" // for affine::AffineDialect
-#include "mlir/Dialect/Arith/IR/Arith.h"      // for arith::ArithDialect
-#include "mlir/Dialect/Complex/IR/Complex.h"  // for complex::ComplexDialect
 #include "mlir/Dialect/QTensor/IR/QTensorDialect.h" // IWYU pragma: associated
-#include "mlir/Dialect/Utils/StaticValueUtils.h"
-#include "mlir/IR/Builders.h"
-#include "mlir/IR/BuiltinAttributeInterfaces.h"
-#include "mlir/IR/BuiltinTypeInterfaces.h"
-#include "mlir/IR/BuiltinTypes.h"
-#include "mlir/IR/OpDefinition.h"
-#include "mlir/IR/PatternMatch.h"
-#include "mlir/IR/TypeUtilities.h"
-#include "mlir/Interfaces/DestinationStyleOpInterface.h"
-#include "mlir/Interfaces/InferIntRangeInterface.h"
-#include "mlir/Interfaces/LoopLikeInterface.h"
-#include "mlir/Interfaces/Utils/InferIntRangeCommon.h"
-#include "mlir/Interfaces/ViewLikeInterface.h"
-#include "mlir/Support/LLVM.h"
 
-#include "llvm/ADT/DenseSet.h"
-#include "llvm/ADT/STLExtras.h"
-#include "llvm/ADT/SmallBitVector.h"
-#include "llvm/ADT/StringRef.h"
-#include "llvm/Support/Casting.h"
-#include "llvm/Support/MathExtras.h"
-
+#include <llvm/ADT/STLExtras.h>
+#include <llvm/ADT/SmallBitVector.h>
 #include <llvm/ADT/SmallVector.h>
+#include <llvm/ADT/StringRef.h>
+#include <llvm/Support/Casting.h>
+#include <mlir/Dialect/Affine/IR/AffineOps.h> // for affine::AffineDialect
+#include <mlir/Dialect/Arith/IR/Arith.h>      // for arith::ArithDialect
 #include <mlir/Dialect/Arith/Utils/Utils.h>
+#include <mlir/Dialect/Complex/IR/Complex.h> // for complex::ComplexDialect
 #include <mlir/Dialect/Tensor/IR/Tensor.h>
+#include <mlir/Dialect/Utils/StaticValueUtils.h>
+#include <mlir/IR/Builders.h>
+#include <mlir/IR/BuiltinTypeInterfaces.h>
+#include <mlir/IR/BuiltinTypes.h>
+#include <mlir/IR/OpDefinition.h>
+#include <mlir/IR/PatternMatch.h>
+#include <mlir/IR/TypeUtilities.h>
+#include <mlir/Interfaces/ViewLikeInterface.h>
+#include <mlir/Support/LLVM.h>
 #include <optional>
 
 // The following headers are needed for some template instantiations.
@@ -176,30 +160,6 @@ LogicalResult ExtractOp::fold(FoldAdaptor adaptor,
       return failure();
     }
     indices.push_back(llvm::cast<IntegerAttr>(indice).getInt());
-  }
-
-  // Fold extract(from_elements(...)).
-  if (auto fromElementsOp =
-          getTensor().getDefiningOp<tensor::FromElementsOp>()) {
-    auto tensorType = llvm::cast<RankedTensorType>(fromElementsOp.getType());
-    auto rank = tensorType.getRank();
-    assert(static_cast<int64_t>(indices.size()) == tensorType.getRank() &&
-           "rank mismatch");
-    int flatIndex = 0;
-    int stride = 1;
-    for (int i = rank - 1; i >= 0; --i) {
-      flatIndex += indices[i] * stride;
-      stride *= tensorType.getDimSize(i);
-    }
-    // Prevent out of bounds accesses. This can happen in invalid code that
-    // will never execute.
-    if (static_cast<int>(fromElementsOp.getElements().size()) <= flatIndex ||
-        flatIndex < 0) {
-      return failure();
-    }
-    results.push_back(fromElementsOp.getElements()[flatIndex]);
-    results.push_back(getTensor());
-    return success();
   }
 
   if (Value result = foldExtractAfterInsert(*this)) {
@@ -464,7 +424,7 @@ ExtractSliceOp::rankReduceIfNeeded(OpBuilder& b, Location loc, Value value,
 }
 
 LogicalResult ExtractSliceOp::reifyResultShapes(
-    OpBuilder& builder, ReifiedRankedShapedTypeDims& reifiedReturnShapes) {
+    OpBuilder& /*builder*/, ReifiedRankedShapedTypeDims& reifiedReturnShapes) {
   reifiedReturnShapes.resize(1);
   reifiedReturnShapes[0].reserve(getType().getRank());
   SmallVector<OpFoldResult> mixedSizes = getMixedSizes();
@@ -541,10 +501,10 @@ public:
 /// numbers of elements to stride in the original values for each dimension.
 /// The output values can be used to construct a DenseElementsAttr.
 template <typename IterTy, typename ElemTy>
-static void sliceElements(IterTy values, ArrayRef<int64_t> counts,
-                          ArrayRef<int64_t> offsets, ArrayRef<int64_t> sizes,
-                          ArrayRef<int64_t> strides,
-                          llvm::SmallVectorImpl<ElemTy>* outValues) {
+void sliceElements(IterTy values, ArrayRef<int64_t> counts,
+                   ArrayRef<int64_t> offsets, ArrayRef<int64_t> sizes,
+                   ArrayRef<int64_t> strides,
+                   llvm::SmallVectorImpl<ElemTy>* outValues) {
   assert(offsets.size() == sizes.size());
   assert(offsets.size() == strides.size());
   if (offsets.empty()) {
@@ -734,11 +694,33 @@ struct ConvertInsertOpToTensorOp : public OpRewritePattern<qtensor::InsertOp> {
   }
 };
 
+struct InsertFromExtractOp : public OpRewritePattern<InsertOp> {
+  using OpRewritePattern<InsertOp>::OpRewritePattern;
+
+  LogicalResult matchAndRewrite(InsertOp insertOp,
+                                PatternRewriter& rewriter) const final {
+    auto extractOp = insertOp.getScalar().getDefiningOp<qtensor::ExtractOp>();
+    if (!extractOp) {
+      return failure();
+    }
+    if (insertOp.getDest() != extractOp.getOutTensor()) {
+      return failure();
+    }
+    if (insertOp.getIndices() != extractOp.getIndices()) {
+      return failure();
+    }
+
+    rewriter.replaceOp(insertOp, extractOp.getTensor());
+    rewriter.eraseOp(extractOp);
+    return success();
+  }
+};
+
 } // namespace
 
 void InsertOp::getCanonicalizationPatterns(RewritePatternSet& results,
                                            MLIRContext* context) {
-  results.add<ConvertInsertOpToTensorOp>(context);
+  results.add<InsertFromExtractOp, ConvertInsertOpToTensorOp>(context);
 }
 
 //===----------------------------------------------------------------------===//
