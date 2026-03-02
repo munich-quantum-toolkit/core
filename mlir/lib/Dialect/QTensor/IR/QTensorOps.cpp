@@ -21,6 +21,7 @@
 #include <mlir/Dialect/Arith/IR/Arith.h>      // for arith::ArithDialect
 #include <mlir/Dialect/Arith/Utils/Utils.h>
 #include <mlir/Dialect/Complex/IR/Complex.h> // for complex::ComplexDialect
+#include <mlir/Dialect/Linalg/IR/RelayoutOpInterface.h>
 #include <mlir/Dialect/Tensor/IR/Tensor.h>
 #include <mlir/Dialect/Utils/StaticValueUtils.h>
 #include <mlir/IR/Builders.h>
@@ -176,6 +177,7 @@ void ExtractOp::getCanonicalizationPatterns(RewritePatternSet& results,
                                             MLIRContext* context) {
   results.add<ExtractFromTensorCast>(context);
 }
+
 //===----------------------------------------------------------------------===//
 // ExtractSliceOp
 //===----------------------------------------------------------------------===//
@@ -189,8 +191,8 @@ void ExtractSliceOp::getAsmResultNames(
 /// rank-reduced, from the source type and the static representation of
 /// offsets, sizes and strides. Special sentinels encode the dynamic case.
 RankedTensorType ExtractSliceOp::inferResultType(
-    RankedTensorType sourceTensorType, ArrayRef<int64_t> staticOffsets,
-    ArrayRef<int64_t> staticSizes, ArrayRef<int64_t> staticStrides) {
+    RankedTensorType sourceTensorType, ArrayRef<int64_t> /*staticOffsets*/,
+    ArrayRef<int64_t> staticSizes, ArrayRef<int64_t> /*staticStrides*/) {
   // An extract_slice op may specify only a leading subset of offset/sizes/
   // strides in which case we complete with offset=0, sizes from memref type
   // and strides=1.
@@ -202,8 +204,8 @@ RankedTensorType ExtractSliceOp::inferResultType(
 }
 
 RankedTensorType ExtractSliceOp::inferResultType(
-    RankedTensorType sourceTensorType, ArrayRef<OpFoldResult> offsets,
-    ArrayRef<OpFoldResult> sizes, ArrayRef<OpFoldResult> strides) {
+    RankedTensorType sourceTensorType, ArrayRef<OpFoldResult> /*offsets*/,
+    ArrayRef<OpFoldResult> sizes, ArrayRef<OpFoldResult> /*strides*/) {
   SmallVector<int64_t> staticSizes;
   std::tie(staticSizes, std::ignore) = decomposeMixedValues(sizes);
   assert(static_cast<int64_t>(staticSizes.size()) ==
@@ -441,21 +443,31 @@ LogicalResult ExtractSliceOp::reifyResultShapes(
 }
 
 namespace {
-/// Pattern to rewrite an extract_slice op with tensor::Cast arguments.
-/// This essentially pushes memref_cast past its consuming slice when
-/// `canFoldIntoConsumerOp` is true.
-///
-/// Example:
-/// ```
-///   %0 = tensor.cast %V : tensor<16x16xf32> to tensor<?x?xf32>
-///   %1 = tensor.extract_slice %0[0, 0][3, 4][1, 1] : tensor<?x?xf32> to
-///   tensor<3x4xf32>
-/// ```
-/// is rewritten into:
-/// ```
-///   %0 = tensor.extract_slice %V[0, 0][3, 4][1, 1] : tensor<16x16xf32> to
-///   tensor<3x4xf32> %1 = tensor.cast %0: tensor<3x4xf32> to tensor<3x4xf32>
-/// ```
+/**
+ * @brief Rewrite pattern that pushes tensor.cast past tensor.extract_slice.
+ *
+ * @details
+ * This pattern rewrites a `qtensor.extract_slice` operation whose source
+ * operand is produced by a `tensor.cast`. When `canFoldIntoConsumerOp`
+ * evaluates to true, the cast operation is moved after the slice operation.
+ *
+ * Conceptually, the slice is applied to the original tensor before the
+ * cast, avoiding unnecessary intermediate casts.
+ *
+ * Example:
+ *   %0 = tensor.cast %V : tensor<3x!qco.qubit> to tensor<?x!qco.qubit>
+ *   %1, %2 = tensor.extract_slice %0[0][2][1]
+ *        : tensor<?x!qco.qubit> to tensor<2x!qco.qubit>
+ *
+ * is rewritten into:
+ *
+ *   %0, %1 = tensor.extract_slice %V[0][2][1]
+ *        : tensor<3x!qco.qubit> to tensor<2x!qco.qubit>
+ *   %2 = tensor.cast %0 : tensor<2x!qco.qubit> to tensor<2x!qco.qubit>
+ *
+ * This effectively folds the cast into the consumer operation and enables
+ * further canonicalization opportunities.
+ */
 class ExtractSliceOpCastFolder final : public OpRewritePattern<ExtractSliceOp> {
 public:
   using OpRewritePattern<ExtractSliceOp>::OpRewritePattern;
@@ -639,11 +651,6 @@ Value mlir::tensor::createCanonicalRankReducingExtractSliceOp(
                                                 offsets, sizes, strides);
 }
 
-void QTensorDialect::getCanonicalizationPatterns(
-    RewritePatternSet& results) const {
-  // results.add<FoldTensorCastProducerOp>(getContext());
-}
-
 //===----------------------------------------------------------------------===//
 // FromElementsOp
 //===----------------------------------------------------------------------===//
@@ -655,6 +662,7 @@ void FromElementsOp::build(OpBuilder& builder, OperationState& result,
       {static_cast<int64_t>(elements.size())}, elements.front().getType());
   build(builder, result, resultType, elements);
 }
+
 namespace {
 
 struct ConvertFromElementsOpToTensorOp
@@ -1155,6 +1163,69 @@ Value mlir::tensor::createCanonicalRankReducingInsertSliceOp(OpBuilder& b,
   SmallVector<OpFoldResult> strides(rank, b.getIndexAttr(1));
   return b.createOrFold<tensor::InsertSliceOp>(loc, tensor, dest, offsets,
                                                sizes, strides);
+}
+
+//===----------------------------------------------------------------------===//
+// Common Canonicalizers and Folders.
+//===----------------------------------------------------------------------===//
+
+namespace {
+
+bool foldTensorCastPrecondition(DestinationStyleOpInterface op) {
+  // 1. InsertSliceOp has its own logic about folding tensor.cast ops.
+  // 2. Exclude DPS ops that are also LoopLike from this interface as they
+  // might need special handling of attached regions.
+  if (isa<InsertSliceOp>(op.getOperation()) ||
+      isa<LoopLikeOpInterface>(op.getOperation())) {
+    return false;
+  }
+
+  return mlir::tensor::hasFoldableTensorCastOperand(op);
+}
+} // namespace
+
+struct FoldTensorCastProducerOp
+    : public OpInterfaceRewritePattern<DestinationStyleOpInterface> {
+  using OpInterfaceRewritePattern<
+      DestinationStyleOpInterface>::OpInterfaceRewritePattern;
+
+  LogicalResult matchAndRewrite(DestinationStyleOpInterface op,
+                                PatternRewriter& rewriter) const override {
+
+    // Reject PackOp/UnpackOp (i.e. RelayoutOps) - there are dedicated patterns
+    // for that instead.
+    if (!foldTensorCastPrecondition(op) ||
+        isa<linalg::RelayoutOpInterface>(*op)) {
+      return failure();
+    }
+
+    SmallVector<Type> newResultTypes(op->getResultTypes());
+    SmallVector<Value> newOperands =
+        mlir::tensor::getUpdatedOperandsAfterCastOpFolding(op, newResultTypes);
+
+    // Clone op
+    auto newOp = clone(rewriter, op, newResultTypes, newOperands);
+
+    SmallVector<Value, 4> replacements;
+    replacements.reserve(newOp->getNumResults());
+    for (auto [oldResult, newResult] :
+         llvm::zip(op->getResults(), newOp->getResults())) {
+      if (newResult.getType() != oldResult.getType()) {
+        replacements.push_back(rewriter.create<tensor::CastOp>(
+            op->getLoc(), oldResult.getType(), newResult));
+      } else {
+        replacements.push_back(newResult);
+      }
+    }
+    rewriter.replaceOp(op, replacements);
+
+    return success();
+  }
+};
+
+void QTensorDialect::getCanonicalizationPatterns(
+    RewritePatternSet& results) const {
+  results.add<FoldTensorCastProducerOp>(getContext());
 }
 
 //===----------------------------------------------------------------------===//
