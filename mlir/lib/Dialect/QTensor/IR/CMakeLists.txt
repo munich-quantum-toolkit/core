@@ -6,9 +6,12 @@
 #
 # Licensed under the MIT License
 
+file(GLOB_RECURSE OPERATIONS "${CMAKE_CURRENT_SOURCE_DIR}/Operations/*.cpp")
+
 add_mlir_dialect_library(
   MLIRQTensorDialect
   QTensorOps.cpp
+  ${OPERATIONS}
   ADDITIONAL_HEADER_DIRS
   ${PROJECT_SOURCE_DIR}/mlir/include/mlir/Dialect/QTensor
   DEPENDS
