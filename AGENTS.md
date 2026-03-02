@@ -17,7 +17,7 @@
 - Targets Linux (glibc 2.28+), macOS (11.0+), and Windows on x86_64 and arm64 architectures
 - C++20
 - CMake 3.24+
-- Python 3.10+ (free-threading supported with 3.14+)
+- Python 3.10+ (free-threading supported with 3.14+; Stable ABI wheels built for 3.12+ via nanobind)
 - LLVM 21.1+ for building MLIR compiler infrastructure
 - GoogleTest for C++ unit tests (located in `test/` and `mlir/unittests/`)
 - `pytest` for Python unit tests (located in `test/python/`)
