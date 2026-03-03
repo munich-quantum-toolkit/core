@@ -56,6 +56,28 @@ struct MoveCtrlOutside final : OpRewritePattern<InvOp> {
 };
 
 /**
+ * @brief Reorder inv around pow, i.e., `inv(pow(p, g)) => pow(p, inv(g))`.
+ */
+struct MovePowOutside final : OpRewritePattern<InvOp> {
+  using OpRewritePattern::OpRewritePattern;
+  LogicalResult matchAndRewrite(InvOp invOp,
+                                PatternRewriter& rewriter) const override {
+    auto innerPow =
+        llvm::dyn_cast<PowOp>(invOp.getBodyUnitary().getOperation());
+    if (!innerPow) {
+      return failure();
+    }
+    const double exponent = innerPow.getExponentValue();
+    rewriter.replaceOpWithNewOp<PowOp>(invOp, exponent, [&] {
+      InvOp::create(rewriter, invOp.getLoc(), [&] {
+        rewriter.clone(*innerPow.getBodyUnitary().getOperation());
+      });
+    });
+    return success();
+  }
+};
+
+/**
  * @brief Remove inverse modifiers around self-adjoint gates.
  *
  * For self-adjoint gates U (i.e., U = U†), inv(U) = U holds.
@@ -299,6 +321,6 @@ LogicalResult InvOp::verify() {
 
 void InvOp::getCanonicalizationPatterns(RewritePatternSet& results,
                                         MLIRContext* context) {
-  results.add<CancelNestedInv, MoveCtrlOutside, InlineSelfAdjoint,
-              ReplaceWithKnownGates>(context);
+  results.add<CancelNestedInv, MoveCtrlOutside, MovePowOutside,
+              InlineSelfAdjoint, ReplaceWithKnownGates>(context);
 }
