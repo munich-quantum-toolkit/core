@@ -256,14 +256,14 @@ private:
     }
 
     /**
-     * @brief Swap the mapping to hardware indices of two program indices.
+     * @brief Swap the mapping to program indices of two hardware indices.
      */
-    void swap(const uint32_t prog0, const uint32_t prog1) {
-      const uint32_t hw0 = programToHardware_[prog0];
-      const uint32_t hw1 = programToHardware_[prog1];
+    void swap(const uint32_t hw0, const uint32_t hw1) {
+      const uint32_t prog0 = hardwareToProgram_[hw0];
+      const uint32_t prog1 = hardwareToProgram_[hw1];
 
-      std::swap(programToHardware_[prog0], programToHardware_[prog1]);
       std::swap(hardwareToProgram_[hw0], hardwareToProgram_[hw1]);
+      std::swap(programToHardware_[prog0], programToHardware_[prog1]);
     }
 
     /**
@@ -337,8 +337,7 @@ private:
            const Architecture& arch, const Weights& w)
           : sequence(parent.sequence), layout(parent.layout), f(0) {
         /// Apply node-specific swap to given layout.
-        layout.swap(layout.getProgramIndex(swap.first),
-                    layout.getProgramIndex(swap.second));
+        layout.swap(swap.first, swap.second);
 
         // Add swap to sequence.
         sequence.push_back(swap);
@@ -459,7 +458,7 @@ public:
 
   void runOnOperation() override {
     constexpr std::size_t repeats = 10;
-    constexpr std::size_t nlookahead = 2;
+    constexpr std::size_t nlookahead = 3;
 
     // TODO: Hardcoded architecture.
     Architecture arch("RigettiNovera", 9,
@@ -468,10 +467,9 @@ public:
                        {3, 4}, {4, 3}, {4, 7}, {7, 4}, {4, 5}, {5, 4},
                        {5, 8}, {8, 5}, {6, 7}, {7, 6}, {7, 8}, {8, 7}});
 
-    AStarSearchEngine engine(0.5, 0.8, nlookahead, arch);
-
     IRRewriter rewriter(&getContext());
 
+    AStarSearchEngine engine(0.5, 0.8, nlookahead, arch);
     for (auto func : getOperation().getOps<func::FuncOp>()) {
       const auto dyn = collectDynamicQubits(func.getFunctionBody());
       const auto [ltr, rtl] = computeBidirectionalLayers(dyn);
@@ -572,9 +570,9 @@ private:
       if (failed(swaps)) {
         return llvm::failure();
       }
+
       for (const auto [hw0, hw1] : *swaps) {
-        const auto [prog0, prog1] = layout.getProgramIndices(hw0, hw1);
-        layout.swap(prog0, prog1);
+        layout.swap(hw0, hw1);
       }
     }
 
@@ -593,56 +591,56 @@ private:
                                 ArrayRef<QubitValue> statics,
                                 AStarSearchEngine& engine,
                                 IRRewriter& rewriter) {
-    auto wires = toWires(statics);
-
-    for (std::size_t i = 0; i < ltr.size(); ++i) {
-      for (auto& it : wires) {
-        while (true) {
-          auto next = std::next(it);
-          if (isa<DeallocOp>(next.operation())) {
-            break;
-          }
-
-          if (auto op = dyn_cast<UnitaryOpInterface>(next.operation())) {
-            if (op.getNumQubits() > 1) {
-              break;
-            }
-          }
-
-          ++it;
+    constexpr auto advanceFront = [](WireIterator& it) {
+      while (true) {
+        const auto next = std::next(it);
+        if (isa<DeallocOp>(next.operation())) {
+          break;
         }
-      }
 
-      const std::size_t len = std::min(1 + nlookahead, ltr.size() - i);
+        auto op = dyn_cast<UnitaryOpInterface>(next.operation());
+        if (op && op.getNumQubits() > 1) {
+          break;
+        }
+
+        std::ranges::advance(it, 1);
+      }
+    };
+
+    auto wires = toWires(statics);
+    for (const auto [i, layer] : llvm::enumerate(ltr)) {
+      llvm::for_each(wires, advanceFront);
+
+      const auto len = std::min(1 + nlookahead, ltr.size() - i);
       const auto window = ltr.slice(i, len);
       const auto swaps = engine.search(window, layout);
       if (failed(swaps)) {
         return llvm::failure();
       }
 
+      const auto unknown = rewriter.getUnknownLoc();
       for (const auto [hw0, hw1] : *swaps) {
-        const auto [prog0, prog1] = layout.getProgramIndices(hw0, hw1);
-
         const auto in0 = wires[hw0].qubit();
         const auto in1 = wires[hw1].qubit();
 
-        auto swapOp =
-            rewriter.create<SWAPOp>(rewriter.getUnknownLoc(), in0, in1);
-        const auto out0 = swapOp.getQubit0Out();
-        const auto out1 = swapOp.getQubit1Out();
+        auto op = rewriter.create<SWAPOp>(unknown, in0, in1);
+        const auto out0 = op.getQubit0Out();
+        const auto out1 = op.getQubit1Out();
 
-        rewriter.replaceAllUsesExcept(in0, out1, swapOp);
-        rewriter.replaceAllUsesExcept(in1, out0, swapOp);
+        rewriter.replaceAllUsesExcept(in0, out1, op);
+        rewriter.replaceAllUsesExcept(in1, out0, op);
 
-        ++wires[hw0];
-        ++wires[hw1];
+        // Jump over the SWAPOp.
+        std::ranges::advance(wires[hw0], 1);
+        std::ranges::advance(wires[hw1], 1);
 
-        layout.swap(prog0, prog1);
+        layout.swap(hw0, hw1);
       }
 
-      for (const auto [prog0, prog1] : ltr[i]) {
-        ++wires[layout.getHardwareIndex(prog0)];
-        ++wires[layout.getHardwareIndex(prog1)];
+      // Jump over two-qubit gates contained in the layer.
+      for (const auto [prog0, prog1] : layer) {
+        std::ranges::advance(wires[layout.getHardwareIndex(prog0)], 1);
+        std::ranges::advance(wires[layout.getHardwareIndex(prog1)], 1);
       }
     }
 
