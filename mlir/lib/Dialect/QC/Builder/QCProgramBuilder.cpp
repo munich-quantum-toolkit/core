@@ -444,6 +444,14 @@ QCProgramBuilder::inv(const llvm::function_ref<void()>& body) {
   return *this;
 }
 
+QCProgramBuilder&
+QCProgramBuilder::pow(double exponent,
+                      const llvm::function_ref<void()>& body) {
+  checkFinalized();
+  PowOp::create(*this, exponent, body);
+  return *this;
+}
+
 //===----------------------------------------------------------------------===//
 // Deallocation
 //===----------------------------------------------------------------------===//

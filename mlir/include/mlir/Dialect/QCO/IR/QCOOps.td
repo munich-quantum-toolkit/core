@@ -1209,6 +1209,74 @@ def InvOp
   let hasVerifier = 1;
 }
 
+def PowOp
+    : QCOOp<"pow",
+            traits = [UnitaryOpInterface,
+                      SingleBlockImplicitTerminator<"::mlir::qco::YieldOp">,
+                      RecursiveMemoryEffects]> {
+  let summary = "Raise a unitary operation to a power";
+  let description = [{
+        A modifier operation that raises the unitary operation defined in its body
+        region to the given floating-point exponent. The operation takes a variadic
+        number of qubits as inputs and produces corresponding output qubits.
+
+        Example:
+        ```mlir
+        %q_out = qco.pow (0.5) (%q = %q_in) {
+            %q_1 = qco.s %q : !qco.qubit -> !qco.qubit
+            qco.yield %q_1
+        } : {!qco.qubit} -> {!qco.qubit}
+        ```
+    }];
+
+  let arguments =
+      (ins F64Attr:$exponent,
+           Arg<Variadic<QubitType>,
+               "the qubits involved in the operation", [MemRead]>:$qubits_in);
+  let results = (outs Variadic<QubitType>:$qubits_out);
+  let regions = (region SizedRegion<1>:$region);
+  let assemblyFormat = [{
+        `(` $exponent `)` custom<TargetAliasing>($region, $qubits_in)
+        attr-dict `:`
+        `{` type($qubits_in) `}`
+        `->`
+        `{` type($qubits_out) `}`
+    }];
+
+  let extraClassDeclaration = [{
+        UnitaryOpInterface getBodyUnitary();
+        size_t getNumQubits() { return getNumTargets(); }
+        size_t getNumTargets() { return getQubitsIn().size(); }
+        static size_t getNumControls() { return 0; }
+        Value getInputQubit(size_t i);
+        OperandRange getInputQubits() { return getQubitsIn(); }
+        Value getOutputQubit(size_t i);
+        ResultRange getOutputQubits() { return getResults(); }
+        Value getInputTarget(size_t i) { return getInputQubit(i); }
+        Value getOutputTarget(size_t i) { return getOutputQubit(i); }
+        static Value getInputControl(size_t i) { llvm::reportFatalUsageError("Operation does not have controls"); }
+        static Value getOutputControl(size_t i) { llvm::reportFatalUsageError("Operation does not have controls"); }
+        Value getInputForOutput(Value output);
+        Value getOutputForInput(Value input);
+        size_t getNumParams() { return getBodyUnitary().getNumParams(); }
+        Value getParameter(size_t i) { return getBodyUnitary().getParameter(i); }
+        double getExponentValue() { return getExponentAttr().getValueAsDouble(); }
+        [[nodiscard]] static StringRef getBaseSymbol() { return "pow"; }
+        [[nodiscard]] std::optional<Eigen::MatrixXcd> getUnitaryMatrix();
+    }];
+
+  let builders = [OpBuilder<(ins "ValueRange":$qubits, "double":$exponent), [{
+           build($_builder, $_state, qubits.getTypes(),
+                 $_builder.getF64FloatAttr(exponent), qubits);
+        }]>,
+                  OpBuilder<(ins "ValueRange":$qubits, "double":$exponent,
+                      "llvm::function_ref<llvm::SmallVector<Value>(ValueRange)"
+                      ">":$bodyBuilder)>];
+
+  let hasCanonicalizer = 1;
+  let hasVerifier = 1;
+}
+
 //===----------------------------------------------------------------------===//
 // SCF operations
 //===----------------------------------------------------------------------===//
