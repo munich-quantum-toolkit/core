@@ -10,26 +10,11 @@
 
 #include "mlir/Dialect/QTensor/IR/QTensorOps.h"
 
-#include <llvm/ADT/STLExtras.h>
-#include <llvm/ADT/SmallBitVector.h>
-#include <llvm/ADT/SmallVector.h>
-#include <llvm/ADT/StringRef.h>
-#include <llvm/Support/Casting.h>
-#include <mlir/Dialect/Affine/IR/AffineOps.h> // for affine::AffineDialect
-#include <mlir/Dialect/Arith/IR/Arith.h>      // for arith::ArithDialect
-#include <mlir/Dialect/Arith/Utils/Utils.h>
-#include <mlir/Dialect/Complex/IR/Complex.h> // for complex::ComplexDialect
-#include <mlir/Dialect/Linalg/IR/RelayoutOpInterface.h>
 #include <mlir/Dialect/Tensor/IR/Tensor.h>
-#include <mlir/Dialect/Utils/StaticValueUtils.h>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/BuiltinTypeInterfaces.h>
 #include <mlir/IR/BuiltinTypes.h>
-#include <mlir/IR/OpDefinition.h>
 #include <mlir/IR/PatternMatch.h>
-#include <mlir/IR/TypeUtilities.h>
-#include <mlir/Interfaces/DestinationStyleOpInterface.h>
-#include <mlir/Interfaces/ViewLikeInterface.h>
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/LogicalResult.h>
 
