@@ -64,9 +64,14 @@ std::ostream& operator<<(std::ostream& os, const JeffRoundTripTestCase& info) {
             << mqt::test::displayName(info.referenceBuilder.name) << "}";
 }
 
-static LogicalResult runJeffRoundTrip(ModuleOp module) {
+static LogicalResult convertQCOToJeff(ModuleOp module) {
   PassManager pm(module.getContext());
   pm.addPass(createQCOToJeff());
+  return pm.run(module);
+}
+
+static LogicalResult convertJeffToQCO(ModuleOp module) {
+  PassManager pm(module.getContext());
   pm.addPass(createJeffToQCO());
   return pm.run(module);
 }
@@ -86,7 +91,11 @@ TEST_P(JeffRoundTripTest, ProgramEquivalence) {
   printer.record(program.get(), "Canonicalized QCO IR" + name);
   EXPECT_TRUE(verify(*program).succeeded());
 
-  EXPECT_TRUE(succeeded(runJeffRoundTrip(program.get())));
+  EXPECT_TRUE(succeeded(convertQCOToJeff(program.get())));
+  printer.record(program.get(), "Converted Jeff IR" + name);
+  EXPECT_TRUE(verify(*program).succeeded());
+
+  EXPECT_TRUE(succeeded(convertJeffToQCO(program.get())));
   printer.record(program.get(), "Converted QCO IR" + name);
   EXPECT_TRUE(verify(*program).succeeded());
 
@@ -443,7 +452,7 @@ INSTANTIATE_TEST_SUITE_P(
 /// \name JeffRoundTrip/Operations/StandardGates/U2Op.cpp
 /// @{
 INSTANTIATE_TEST_SUITE_P(
-    DISABLED_QCOU2OpTest, JeffRoundTripTest,
+    QCOU2OpTest, JeffRoundTripTest,
     testing::Values(
         JeffRoundTripTestCase{"U2", MQT_NAMED_BUILDER(qco::u2),
                               MQT_NAMED_BUILDER(qco::u2)},

@@ -17,7 +17,6 @@
 #include <cstdint>
 #include <jeff/IR/JeffDialect.h>
 #include <jeff/IR/JeffOps.h>
-#include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/IR/BuiltinTypeInterfaces.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OperationSupport.h>
@@ -520,7 +519,7 @@ struct ConvertQCOU2OpToJeff final : StatefulOpConversionPattern<qco::U2Op> {
     }
 
     auto loc = op.getLoc();
-    auto theta = rewriter.create<arith::ConstantOp>(
+    auto theta = rewriter.create<jeff::FloatConst64Op>(
         loc, rewriter.getF64FloatAttr(std::numbers::pi / 2));
     auto jeffOp = rewriter.create<jeff::UOp>(
         loc, target, theta.getResult(), op.getParameter(0), op.getParameter(1),

@@ -1197,6 +1197,11 @@ void canonicalizeUToRy(QCOProgramBuilder& b) {
   b.u(0.456, 0., 0., q[0]);
 }
 
+void canonicalizeUToU2(QCOProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  b.u(std::numbers::pi / 2, 0.234, 0.567, q[0]);
+}
+
 void swap(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   b.swap(q[0], q[1]);

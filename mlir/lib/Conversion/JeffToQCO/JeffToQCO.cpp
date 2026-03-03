@@ -15,6 +15,7 @@
 
 #include <jeff/IR/JeffDialect.h>
 #include <jeff/IR/JeffOps.h>
+#include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/IR/BuiltinTypeInterfaces.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OperationSupport.h>
@@ -698,6 +699,20 @@ public:
   }
 };
 
+struct ConvertJeffFloatConst64OpToArith final
+    : OpConversionPattern<jeff::FloatConst64Op> {
+  using OpConversionPattern::OpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(jeff::FloatConst64Op op, OpAdaptor /*adaptor*/,
+                  ConversionPatternRewriter& rewriter) const override {
+    auto floatType = rewriter.getF64Type();
+    auto floatAttr = rewriter.getF64FloatAttr(op.getVal().convertToDouble());
+    rewriter.replaceOpWithNewOp<arith::ConstantOp>(op, floatType, floatAttr);
+    return success();
+  }
+};
+
 /**
  * @brief Pass for converting Jeff operations to QCO operations
  *
@@ -718,19 +733,20 @@ struct JeffToQCO final : impl::JeffToQCOBase<JeffToQCO> {
     // Configure conversion target: Jeff illegal, QCO legal
     target.addIllegalDialect<jeff::JeffDialect>();
     target.addLegalDialect<QCODialect>();
+    target.addLegalDialect<arith::ArithDialect>();
 
     // Register operation conversion patterns
-    patterns
-        .add<ConvertJeffQubitAllocOpToQCO, ConvertJeffQubitFreeOpToQCO,
-             ConvertJeffQubitFreeZeroOpToQCO, ConvertJeffQubitMeasureOpToQCO,
-             ConvertJeffQubitMeasureNDOpToQCO, ConvertJeffQubitResetOpToQCO,
-             ConvertJeffGPhaseOpToQCO, ConvertJeffIOpToQCO, ConvertJeffXOpToQCO,
-             ConvertJeffYOpToQCO, ConvertJeffZOpToQCO, ConvertJeffHOpToQCO,
-             ConvertJeffSOpToQCO, ConvertJeffTOpToQCO, ConvertJeffRxOpToQCO,
-             ConvertJeffRyOpToQCO, ConvertJeffRzOpToQCO, ConvertJeffR1OpToQCO,
-             ConvertJeffUOpToQCO, ConvertJeffSwapOpToQCO,
-             ConvertJeffCustomOpToQCO, ConvertJeffPPROpToQCO>(typeConverter,
-                                                              context);
+    patterns.add<
+        ConvertJeffQubitAllocOpToQCO, ConvertJeffQubitFreeOpToQCO,
+        ConvertJeffQubitFreeZeroOpToQCO, ConvertJeffQubitMeasureOpToQCO,
+        ConvertJeffQubitMeasureNDOpToQCO, ConvertJeffQubitResetOpToQCO,
+        ConvertJeffGPhaseOpToQCO, ConvertJeffIOpToQCO, ConvertJeffXOpToQCO,
+        ConvertJeffYOpToQCO, ConvertJeffZOpToQCO, ConvertJeffHOpToQCO,
+        ConvertJeffSOpToQCO, ConvertJeffTOpToQCO, ConvertJeffRxOpToQCO,
+        ConvertJeffRyOpToQCO, ConvertJeffRzOpToQCO, ConvertJeffR1OpToQCO,
+        ConvertJeffUOpToQCO, ConvertJeffSwapOpToQCO, ConvertJeffCustomOpToQCO,
+        ConvertJeffPPROpToQCO, ConvertJeffFloatConst64OpToArith>(typeConverter,
+                                                                 context);
 
     // Apply the conversion
     if (failed(applyPartialConversion(module, target, std::move(patterns)))) {
