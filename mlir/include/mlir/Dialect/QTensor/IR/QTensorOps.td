@@ -17,7 +17,7 @@
 #ifndef QTENSOROPS
 #define QTENSOROPS
 
-include "mlir/Dialect/QTensor/IR/QTensorBase.td"
+include "mlir/IR/OpBase.td"
 include "mlir/Interfaces/CastInterfaces.td"
 include "mlir/Interfaces/ControlFlowInterfaces.td"
 include "mlir/Interfaces/DestinationStyleOpInterface.td"
@@ -29,6 +29,31 @@ include "mlir/Interfaces/SideEffectInterfaces.td"
 include "mlir/Interfaces/TilingInterface.td"
 include "mlir/Interfaces/ViewLikeInterface.td"
 include "mlir/IR/OpAsmInterface.td"
+
+//===----------------------------------------------------------------------===//
+// Dialect
+//===----------------------------------------------------------------------===//
+
+def QTensorDialect : Dialect {
+  let name = "qtensor";
+  let cppNamespace = "::mlir::qtensor";
+
+  let description = [{
+  TODO
+  }];
+
+  let hasCanonicalizer = 1;
+  let hasConstantMaterializer = 1;
+  let dependentDialects = [
+    "affine::AffineDialect",
+    "arith::ArithDialect",
+    "complex::ComplexDialect",
+  ];
+}
+
+//===----------------------------------------------------------------------===//
+// Base Operation Classes
+//===----------------------------------------------------------------------===//
 
 class QTensorOp<string mnemonic, list<Trait> traits = []>
     : Op<QTensorDialect, mnemonic, traits>;
@@ -54,6 +79,11 @@ class QTensorOpWithOffsetSizesAndStrides<string mnemonic,
 
   }];
 }
+
+//===----------------------------------------------------------------------===//
+// Operations
+//===----------------------------------------------------------------------===//
+
 def QTensor_ExtractOp : QTensorOp<"extract", [
     DeclareOpInterfaceMethods<OpAsmOpInterface, ["getAsmResultNames"]>,
     Pure,
