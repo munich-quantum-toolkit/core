@@ -52,11 +52,31 @@ convertOneTargetZeroParameter(JeffOpType& op, JeffOpAdaptorType& adaptor,
         op, "Operations with power != 1 are not yet supported");
   }
 
-  if (op.getNumCtrls() != 0) {
+  auto loc = op.getLoc();
+
+  if (op.getNumCtrls() != 0 && op.getIsAdjoint()) {
     auto ctrlOp = rewriter.create<qco::CtrlOp>(
-        op.getLoc(), adaptor.getInCtrlQubits(), adaptor.getInQubit(),
+        loc, adaptor.getInCtrlQubits(), adaptor.getInQubit(),
+        [&](ValueRange ctrlTargets) -> llvm::SmallVector<Value> {
+          auto invOp = rewriter.create<qco::InvOp>(
+              loc, ctrlTargets,
+              [&](ValueRange invTargets) -> llvm::SmallVector<Value> {
+                auto qcoOp = rewriter.create<QCOOpType>(loc, invTargets[0]);
+                return {qcoOp.getQubitOut()};
+              });
+          return invOp.getQubitsOut();
+        });
+    llvm::SmallVector<Value> results;
+    results.append(ctrlOp.getTargetsOut().begin(),
+                   ctrlOp.getTargetsOut().end());
+    results.append(ctrlOp.getControlsOut().begin(),
+                   ctrlOp.getControlsOut().end());
+    rewriter.replaceOp(op, results);
+  } else if (op.getNumCtrls() != 0 && !op.getIsAdjoint()) {
+    auto ctrlOp = rewriter.create<qco::CtrlOp>(
+        loc, adaptor.getInCtrlQubits(), adaptor.getInQubit(),
         [&](ValueRange targets) -> llvm::SmallVector<Value> {
-          auto qcoOp = rewriter.create<QCOOpType>(op.getLoc(), targets[0]);
+          auto qcoOp = rewriter.create<QCOOpType>(loc, targets[0]);
           return {qcoOp.getQubitOut()};
         });
     llvm::SmallVector<Value> results;
@@ -65,6 +85,14 @@ convertOneTargetZeroParameter(JeffOpType& op, JeffOpAdaptorType& adaptor,
     results.append(ctrlOp.getControlsOut().begin(),
                    ctrlOp.getControlsOut().end());
     rewriter.replaceOp(op, results);
+  } else if (op.getNumCtrls() == 0 && op.getIsAdjoint()) {
+    auto invOp = rewriter.create<qco::InvOp>(
+        loc, adaptor.getInQubit(),
+        [&](ValueRange targets) -> llvm::SmallVector<Value> {
+          auto qcoOp = rewriter.create<QCOOpType>(loc, targets[0]);
+          return {qcoOp.getQubitOut()};
+        });
+    rewriter.replaceOp(op, invOp.getQubitsOut());
   } else {
     rewriter.replaceOpWithNewOp<QCOOpType>(op, adaptor.getInQubit());
   }
@@ -87,22 +115,38 @@ template <typename QCOOpType, typename JeffOpType, typename JeffOpAdaptorType>
 static LogicalResult
 convertOneTargetOneParameter(JeffOpType& op, JeffOpAdaptorType& adaptor,
                              ConversionPatternRewriter& rewriter) {
-  if (op.getIsAdjoint()) {
-    return rewriter.notifyMatchFailure(
-        op, "Adjoint operations are not yet supported");
-  }
-
   if (op.getPower() != 1) {
     return rewriter.notifyMatchFailure(
         op, "Operations with power != 1 are not yet supported");
   }
 
-  if (op.getNumCtrls() != 0) {
+  auto loc = op.getLoc();
+
+  if (op.getNumCtrls() != 0 && op.getIsAdjoint()) {
     auto ctrlOp = rewriter.create<qco::CtrlOp>(
-        op.getLoc(), adaptor.getInCtrlQubits(), adaptor.getInQubit(),
+        loc, adaptor.getInCtrlQubits(), adaptor.getInQubit(),
+        [&](ValueRange ctrlTargets) -> llvm::SmallVector<Value> {
+          auto invOp = rewriter.create<qco::InvOp>(
+              loc, ctrlTargets,
+              [&](ValueRange invTargets) -> llvm::SmallVector<Value> {
+                auto qcoOp = rewriter.create<QCOOpType>(loc, invTargets[0],
+                                                        op.getRotation());
+                return {qcoOp.getQubitOut()};
+              });
+          return invOp.getQubitsOut();
+        });
+    llvm::SmallVector<Value> results;
+    results.append(ctrlOp.getTargetsOut().begin(),
+                   ctrlOp.getTargetsOut().end());
+    results.append(ctrlOp.getControlsOut().begin(),
+                   ctrlOp.getControlsOut().end());
+    rewriter.replaceOp(op, results);
+  } else if (op.getNumCtrls() != 0 && !op.getIsAdjoint()) {
+    auto ctrlOp = rewriter.create<qco::CtrlOp>(
+        loc, adaptor.getInCtrlQubits(), adaptor.getInQubit(),
         [&](ValueRange targets) -> llvm::SmallVector<Value> {
-          auto qcoOp = rewriter.create<QCOOpType>(op.getLoc(), targets[0],
-                                                  op.getRotation());
+          auto qcoOp =
+              rewriter.create<QCOOpType>(loc, targets[0], op.getRotation());
           return {qcoOp.getQubitOut()};
         });
     llvm::SmallVector<Value> results;
@@ -111,6 +155,15 @@ convertOneTargetOneParameter(JeffOpType& op, JeffOpAdaptorType& adaptor,
     results.append(ctrlOp.getControlsOut().begin(),
                    ctrlOp.getControlsOut().end());
     rewriter.replaceOp(op, results);
+  } else if (op.getNumCtrls() == 0 && op.getIsAdjoint()) {
+    auto invOp = rewriter.create<qco::InvOp>(
+        loc, adaptor.getInQubit(),
+        [&](ValueRange targets) -> llvm::SmallVector<Value> {
+          auto qcoOp =
+              rewriter.create<QCOOpType>(loc, targets[0], op.getRotation());
+          return {qcoOp.getQubitOut()};
+        });
+    rewriter.replaceOp(op, invOp.getQubitsOut());
   } else {
     rewriter.replaceOpWithNewOp<QCOOpType>(op, adaptor.getInQubit(),
                                            op.getRotation());
@@ -288,27 +341,47 @@ struct ConvertJeffGPhaseOpToQCO final : OpConversionPattern<jeff::GPhaseOp> {
   LogicalResult
   matchAndRewrite(jeff::GPhaseOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
-    if (op.getIsAdjoint()) {
-      return rewriter.notifyMatchFailure(
-          op, "Adjoint operations are not yet supported");
-    }
-
     if (op.getPower() != 1) {
       return rewriter.notifyMatchFailure(
           op, "Operations with power != 1 are not yet supported");
     }
 
-    if (op.getNumCtrls() != 0) {
+    auto loc = op.getLoc();
+
+    if (op.getNumCtrls() != 0 && op.getIsAdjoint()) {
       auto ctrlOp = rewriter.create<qco::CtrlOp>(
-          op.getLoc(), adaptor.getInCtrlQubits(), ValueRange{},
+          loc, adaptor.getInCtrlQubits(), ValueRange{},
           [&](ValueRange /*targets*/) -> llvm::SmallVector<Value> {
-            rewriter.create<qco::GPhaseOp>(op.getLoc(), op.getRotation());
+            rewriter.create<qco::InvOp>(
+                loc, ValueRange{},
+                [&](ValueRange /*targets*/) -> llvm::SmallVector<Value> {
+                  rewriter.create<qco::GPhaseOp>(loc, op.getRotation());
+                  return {};
+                });
             return {};
           });
       llvm::SmallVector<Value> results;
       results.append(ctrlOp.getControlsOut().begin(),
                      ctrlOp.getControlsOut().end());
       rewriter.replaceOp(op, results);
+    } else if (op.getNumCtrls() != 0 && !op.getIsAdjoint()) {
+      auto ctrlOp = rewriter.create<qco::CtrlOp>(
+          loc, adaptor.getInCtrlQubits(), ValueRange{},
+          [&](ValueRange /*targets*/) -> llvm::SmallVector<Value> {
+            rewriter.create<qco::GPhaseOp>(loc, op.getRotation());
+            return {};
+          });
+      llvm::SmallVector<Value> results;
+      results.append(ctrlOp.getControlsOut().begin(),
+                     ctrlOp.getControlsOut().end());
+      rewriter.replaceOp(op, results);
+    } else if (op.getNumCtrls() == 0 && op.getIsAdjoint()) {
+      rewriter.create<qco::InvOp>(
+          loc, ValueRange{},
+          [&](ValueRange /*targets*/) -> llvm::SmallVector<Value> {
+            rewriter.create<qco::GPhaseOp>(loc, op.getRotation());
+            return {};
+          });
     } else {
       rewriter.replaceOpWithNewOp<qco::GPhaseOp>(op, op.getRotation());
     }
@@ -319,8 +392,7 @@ struct ConvertJeffGPhaseOpToQCO final : OpConversionPattern<jeff::GPhaseOp> {
 
 // OneTargetZeroParameter
 
-#define DEFINE_ONE_TARGET_ZERO_PARAMETER(OP_CLASS_JEFF, OP_CLASS_QCO,          \
-                                         OP_CLASS_QCO_ADJOINT)                 \
+#define DEFINE_ONE_TARGET_ZERO_PARAMETER(OP_CLASS_JEFF, OP_CLASS_QCO)          \
   struct ConvertJeff##OP_CLASS_JEFF##ToQCO final                               \
       : OpConversionPattern<jeff::OP_CLASS_JEFF> {                             \
     using OpConversionPattern::OpConversionPattern;                            \
@@ -328,22 +400,18 @@ struct ConvertJeffGPhaseOpToQCO final : OpConversionPattern<jeff::GPhaseOp> {
     LogicalResult                                                              \
     matchAndRewrite(jeff::OP_CLASS_JEFF op, OpAdaptor adaptor,                 \
                     ConversionPatternRewriter& rewriter) const override {      \
-      if (op.getIsAdjoint()) {                                                 \
-        return convertOneTargetZeroParameter<qco::OP_CLASS_QCO_ADJOINT>(       \
-            op, adaptor, rewriter);                                            \
-      }                                                                        \
       return convertOneTargetZeroParameter<qco::OP_CLASS_QCO>(op, adaptor,     \
                                                               rewriter);       \
     }                                                                          \
   };
 
-DEFINE_ONE_TARGET_ZERO_PARAMETER(IOp, IdOp, IdOp)
-DEFINE_ONE_TARGET_ZERO_PARAMETER(XOp, XOp, XOp)
-DEFINE_ONE_TARGET_ZERO_PARAMETER(YOp, YOp, YOp)
-DEFINE_ONE_TARGET_ZERO_PARAMETER(ZOp, ZOp, ZOp)
-DEFINE_ONE_TARGET_ZERO_PARAMETER(HOp, HOp, HOp)
-DEFINE_ONE_TARGET_ZERO_PARAMETER(SOp, SOp, SdgOp)
-DEFINE_ONE_TARGET_ZERO_PARAMETER(TOp, TOp, TdgOp)
+DEFINE_ONE_TARGET_ZERO_PARAMETER(IOp, IdOp)
+DEFINE_ONE_TARGET_ZERO_PARAMETER(XOp, XOp)
+DEFINE_ONE_TARGET_ZERO_PARAMETER(YOp, YOp)
+DEFINE_ONE_TARGET_ZERO_PARAMETER(ZOp, ZOp)
+DEFINE_ONE_TARGET_ZERO_PARAMETER(HOp, HOp)
+DEFINE_ONE_TARGET_ZERO_PARAMETER(SOp, SOp)
+DEFINE_ONE_TARGET_ZERO_PARAMETER(TOp, TOp)
 
 #undef DEFINE_ONE_TARGET_ZERO_PARAMETER
 
@@ -388,23 +456,39 @@ struct ConvertJeffUOpToQCO final : OpConversionPattern<jeff::UOp> {
   LogicalResult
   matchAndRewrite(jeff::UOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
-    if (op.getIsAdjoint()) {
-      return rewriter.notifyMatchFailure(
-          op, "Adjoint operations are not yet supported");
-    }
-
     if (op.getPower() != 1) {
       return rewriter.notifyMatchFailure(
           op, "Operations with power != 1 are not yet supported");
     }
 
-    if (op.getNumCtrls() != 0) {
+    auto loc = op.getLoc();
+
+    if (op.getNumCtrls() != 0 && op.getIsAdjoint()) {
       auto ctrlOp = rewriter.create<qco::CtrlOp>(
-          op.getLoc(), adaptor.getInCtrlQubits(), adaptor.getInQubit(),
+          loc, adaptor.getInCtrlQubits(), adaptor.getInQubit(),
+          [&](ValueRange ctrlTargets) -> llvm::SmallVector<Value> {
+            auto invOp = rewriter.create<qco::InvOp>(
+                loc, ctrlTargets,
+                [&](ValueRange invTargets) -> llvm::SmallVector<Value> {
+                  auto qcoOp = rewriter.create<qco::UOp>(
+                      loc, invTargets[0], op.getTheta(), op.getPhi(),
+                      op.getLambda());
+                  return {qcoOp.getQubitOut()};
+                });
+            return invOp.getQubitsOut();
+          });
+      llvm::SmallVector<Value> results;
+      results.append(ctrlOp.getTargetsOut().begin(),
+                     ctrlOp.getTargetsOut().end());
+      results.append(ctrlOp.getControlsOut().begin(),
+                     ctrlOp.getControlsOut().end());
+      rewriter.replaceOp(op, results);
+    } else if (op.getNumCtrls() != 0 && !op.getIsAdjoint()) {
+      auto ctrlOp = rewriter.create<qco::CtrlOp>(
+          loc, adaptor.getInCtrlQubits(), adaptor.getInQubit(),
           [&](ValueRange targets) -> llvm::SmallVector<Value> {
-            auto qcoOp = rewriter.create<qco::UOp>(op.getLoc(), targets[0],
-                                                   op.getTheta(), op.getPhi(),
-                                                   op.getLambda());
+            auto qcoOp = rewriter.create<qco::UOp>(
+                loc, targets[0], op.getTheta(), op.getPhi(), op.getLambda());
             return {qcoOp.getQubitOut()};
           });
       llvm::SmallVector<Value> results;
@@ -413,6 +497,15 @@ struct ConvertJeffUOpToQCO final : OpConversionPattern<jeff::UOp> {
       results.append(ctrlOp.getControlsOut().begin(),
                      ctrlOp.getControlsOut().end());
       rewriter.replaceOp(op, results);
+    } else if (op.getNumCtrls() == 0 && op.getIsAdjoint()) {
+      auto invOp = rewriter.create<qco::InvOp>(
+          loc, adaptor.getInQubit(),
+          [&](ValueRange targets) -> llvm::SmallVector<Value> {
+            auto qcoOp = rewriter.create<qco::UOp>(
+                loc, targets[0], op.getTheta(), op.getPhi(), op.getLambda());
+            return {qcoOp.getQubitOut()};
+          });
+      rewriter.replaceOp(op, invOp.getQubitsOut());
     } else {
       rewriter.replaceOpWithNewOp<qco::UOp>(
           op, adaptor.getInQubit(), op.getTheta(), op.getPhi(), op.getLambda());
@@ -446,13 +539,35 @@ struct ConvertJeffSwapOpToQCO final : OpConversionPattern<jeff::SwapOp> {
           op, "Operations with power != 1 are not yet supported");
     }
 
-    if (op.getNumCtrls() != 0) {
+    auto loc = op.getLoc();
+
+    if (op.getNumCtrls() != 0 && op.getIsAdjoint()) {
       auto ctrlOp = rewriter.create<qco::CtrlOp>(
-          op.getLoc(), adaptor.getInCtrlQubits(),
+          loc, adaptor.getInCtrlQubits(),
+          ValueRange{adaptor.getInQubitOne(), adaptor.getInQubitTwo()},
+          [&](ValueRange ctrlTargets) -> llvm::SmallVector<Value> {
+            auto invOp = rewriter.create<qco::InvOp>(
+                loc, ctrlTargets,
+                [&](ValueRange invTargets) -> llvm::SmallVector<Value> {
+                  auto qcoOp = rewriter.create<qco::SWAPOp>(loc, invTargets[0],
+                                                            invTargets[1]);
+                  return {qcoOp.getQubit0Out(), qcoOp.getQubit1Out()};
+                });
+            return invOp.getQubitsOut();
+          });
+      llvm::SmallVector<Value> results;
+      results.append(ctrlOp.getTargetsOut().begin(),
+                     ctrlOp.getTargetsOut().end());
+      results.append(ctrlOp.getControlsOut().begin(),
+                     ctrlOp.getControlsOut().end());
+      rewriter.replaceOp(op, results);
+    } else if (op.getNumCtrls() != 0 && !op.getIsAdjoint()) {
+      auto ctrlOp = rewriter.create<qco::CtrlOp>(
+          loc, adaptor.getInCtrlQubits(),
           ValueRange{adaptor.getInQubitOne(), adaptor.getInQubitTwo()},
           [&](ValueRange targets) -> llvm::SmallVector<Value> {
-            auto qcoOp = rewriter.create<qco::SWAPOp>(op.getLoc(), targets[0],
-                                                      targets[1]);
+            auto qcoOp =
+                rewriter.create<qco::SWAPOp>(loc, targets[0], targets[1]);
             return {qcoOp.getQubit0Out(), qcoOp.getQubit1Out()};
           });
       llvm::SmallVector<Value> results;
@@ -461,6 +576,15 @@ struct ConvertJeffSwapOpToQCO final : OpConversionPattern<jeff::SwapOp> {
       results.append(ctrlOp.getControlsOut().begin(),
                      ctrlOp.getControlsOut().end());
       rewriter.replaceOp(op, results);
+    } else if (op.getNumCtrls() == 0 && op.getIsAdjoint()) {
+      auto invOp = rewriter.create<qco::InvOp>(
+          loc, adaptor.getInQubitOne(),
+          [&](ValueRange targets) -> llvm::SmallVector<Value> {
+            auto qcoOp =
+                rewriter.create<qco::SWAPOp>(loc, targets[0], targets[1]);
+            return {qcoOp.getQubit0Out(), qcoOp.getQubit1Out()};
+          });
+      rewriter.replaceOp(op, invOp.getQubitsOut());
     } else {
       rewriter.replaceOpWithNewOp<qco::SWAPOp>(op, adaptor.getInQubitOne(),
                                                adaptor.getInQubitTwo());
@@ -474,7 +598,26 @@ template <typename QCOOpType>
 static void createOneTargetZeroParameter(jeff::CustomOp& op,
                                          jeff::CustomOpAdaptor& adaptor,
                                          ConversionPatternRewriter& rewriter) {
-  if (op.getNumCtrls() != 0) {
+  auto loc = op.getLoc();
+  if (op.getNumCtrls() != 0 && op.getIsAdjoint()) {
+    auto ctrlOp = rewriter.create<qco::CtrlOp>(
+        loc, adaptor.getInCtrlQubits(), adaptor.getInTargetQubits()[0],
+        [&](ValueRange ctrlTargets) -> llvm::SmallVector<Value> {
+          auto invOp = rewriter.create<qco::InvOp>(
+              loc, ctrlTargets,
+              [&](ValueRange invTargets) -> llvm::SmallVector<Value> {
+                auto qcoOp = rewriter.create<QCOOpType>(loc, invTargets[0]);
+                return {qcoOp.getQubitOut()};
+              });
+          return invOp.getQubitsOut();
+        });
+    llvm::SmallVector<Value> results;
+    results.append(ctrlOp.getTargetsOut().begin(),
+                   ctrlOp.getTargetsOut().end());
+    results.append(ctrlOp.getControlsOut().begin(),
+                   ctrlOp.getControlsOut().end());
+    rewriter.replaceOp(op, results);
+  } else if (op.getNumCtrls() != 0 && !op.getIsAdjoint()) {
     auto ctrlOp = rewriter.create<qco::CtrlOp>(
         op.getLoc(), adaptor.getInCtrlQubits(), adaptor.getInTargetQubits()[0],
         [&](ValueRange targets) -> llvm::SmallVector<Value> {
@@ -487,6 +630,14 @@ static void createOneTargetZeroParameter(jeff::CustomOp& op,
     results.append(ctrlOp.getControlsOut().begin(),
                    ctrlOp.getControlsOut().end());
     rewriter.replaceOp(op, results);
+  } else if (op.getNumCtrls() == 0 && op.getIsAdjoint()) {
+    auto invOp = rewriter.create<qco::InvOp>(
+        op.getLoc(), adaptor.getInTargetQubits()[0],
+        [&](ValueRange targets) -> llvm::SmallVector<Value> {
+          auto qcoOp = rewriter.create<QCOOpType>(op.getLoc(), targets[0]);
+          return {qcoOp.getQubitOut()};
+        });
+    rewriter.replaceOp(op, invOp.getQubitsOut());
   } else {
     rewriter.replaceOpWithNewOp<QCOOpType>(op, adaptor.getInTargetQubits()[0]);
   }
@@ -496,7 +647,27 @@ template <typename QCOOpType>
 static void createOneTargetTwoParameter(jeff::CustomOp& op,
                                         jeff::CustomOpAdaptor& adaptor,
                                         ConversionPatternRewriter& rewriter) {
-  if (op.getNumCtrls() != 0) {
+  auto loc = op.getLoc();
+  if (op.getNumCtrls() != 0 && op.getIsAdjoint()) {
+    auto ctrlOp = rewriter.create<qco::CtrlOp>(
+        loc, adaptor.getInCtrlQubits(), adaptor.getInTargetQubits()[0],
+        [&](ValueRange ctrlTargets) -> llvm::SmallVector<Value> {
+          auto invOp = rewriter.create<qco::InvOp>(
+              loc, ctrlTargets,
+              [&](ValueRange invTargets) -> llvm::SmallVector<Value> {
+                auto qcoOp = rewriter.create<QCOOpType>(
+                    loc, invTargets[0], op.getParams()[0], op.getParams()[1]);
+                return {qcoOp.getQubitOut()};
+              });
+          return invOp.getQubitsOut();
+        });
+    llvm::SmallVector<Value> results;
+    results.append(ctrlOp.getTargetsOut().begin(),
+                   ctrlOp.getTargetsOut().end());
+    results.append(ctrlOp.getControlsOut().begin(),
+                   ctrlOp.getControlsOut().end());
+    rewriter.replaceOp(op, results);
+  } else if (op.getNumCtrls() != 0 && !op.getIsAdjoint()) {
     auto ctrlOp = rewriter.create<qco::CtrlOp>(
         op.getLoc(), adaptor.getInCtrlQubits(), adaptor.getInTargetQubits()[0],
         [&](ValueRange targets) -> llvm::SmallVector<Value> {
@@ -510,6 +681,15 @@ static void createOneTargetTwoParameter(jeff::CustomOp& op,
     results.append(ctrlOp.getControlsOut().begin(),
                    ctrlOp.getControlsOut().end());
     rewriter.replaceOp(op, results);
+  } else if (op.getNumCtrls() == 0 && op.getIsAdjoint()) {
+    auto invOp = rewriter.create<qco::InvOp>(
+        op.getLoc(), adaptor.getInTargetQubits()[0],
+        [&](ValueRange targets) -> llvm::SmallVector<Value> {
+          auto qcoOp = rewriter.create<QCOOpType>(
+              op.getLoc(), targets[0], op.getParams()[0], op.getParams()[1]);
+          return {qcoOp.getQubitOut()};
+        });
+    rewriter.replaceOp(op, invOp.getQubitsOut());
   } else {
     rewriter.replaceOpWithNewOp<QCOOpType>(op, adaptor.getInTargetQubits()[0],
                                            op.getParams()[0],
@@ -521,7 +701,27 @@ template <typename QCOOpType>
 static void createTwoTargetZeroParameter(jeff::CustomOp& op,
                                          jeff::CustomOpAdaptor& adaptor,
                                          ConversionPatternRewriter& rewriter) {
-  if (op.getNumCtrls() != 0) {
+  auto loc = op.getLoc();
+  if (op.getNumCtrls() != 0 && op.getIsAdjoint()) {
+    auto ctrlOp = rewriter.create<qco::CtrlOp>(
+        loc, adaptor.getInCtrlQubits(), adaptor.getInTargetQubits(),
+        [&](ValueRange ctrlTargets) -> llvm::SmallVector<Value> {
+          auto invOp = rewriter.create<qco::InvOp>(
+              loc, ctrlTargets,
+              [&](ValueRange invTargets) -> llvm::SmallVector<Value> {
+                auto qcoOp = rewriter.create<QCOOpType>(loc, invTargets[0],
+                                                        invTargets[1]);
+                return {qcoOp.getQubit0Out(), qcoOp.getQubit1Out()};
+              });
+          return invOp.getQubitsOut();
+        });
+    llvm::SmallVector<Value> results;
+    results.append(ctrlOp.getTargetsOut().begin(),
+                   ctrlOp.getTargetsOut().end());
+    results.append(ctrlOp.getControlsOut().begin(),
+                   ctrlOp.getControlsOut().end());
+    rewriter.replaceOp(op, results);
+  } else if (op.getNumCtrls() != 0 && !op.getIsAdjoint()) {
     auto ctrlOp = rewriter.create<qco::CtrlOp>(
         op.getLoc(), adaptor.getInCtrlQubits(), adaptor.getInTargetQubits(),
         [&](ValueRange targets) -> llvm::SmallVector<Value> {
@@ -535,6 +735,15 @@ static void createTwoTargetZeroParameter(jeff::CustomOp& op,
     results.append(ctrlOp.getControlsOut().begin(),
                    ctrlOp.getControlsOut().end());
     rewriter.replaceOp(op, results);
+  } else if (op.getNumCtrls() == 0 && op.getIsAdjoint()) {
+    auto invOp = rewriter.create<qco::InvOp>(
+        op.getLoc(), adaptor.getInTargetQubits(),
+        [&](ValueRange targets) -> llvm::SmallVector<Value> {
+          auto qcoOp =
+              rewriter.create<QCOOpType>(op.getLoc(), targets[0], targets[1]);
+          return {qcoOp.getQubit0Out(), qcoOp.getQubit1Out()};
+        });
+    rewriter.replaceOp(op, invOp.getQubitsOut());
   } else {
     rewriter.replaceOpWithNewOp<QCOOpType>(op, adaptor.getInTargetQubits()[0],
                                            adaptor.getInTargetQubits()[1]);
@@ -545,7 +754,27 @@ template <typename QCOOpType>
 static void createTwoTargetOneParameter(jeff::PPROp& op,
                                         jeff::PPROpAdaptor& adaptor,
                                         ConversionPatternRewriter& rewriter) {
-  if (op.getNumCtrls() != 0) {
+  auto loc = op.getLoc();
+  if (op.getNumCtrls() != 0 && op.getIsAdjoint()) {
+    auto ctrlOp = rewriter.create<qco::CtrlOp>(
+        loc, adaptor.getInCtrlQubits(), adaptor.getInQubits(),
+        [&](ValueRange ctrlTargets) -> llvm::SmallVector<Value> {
+          auto invOp = rewriter.create<qco::InvOp>(
+              loc, ctrlTargets,
+              [&](ValueRange invTargets) -> llvm::SmallVector<Value> {
+                auto qcoOp = rewriter.create<QCOOpType>(
+                    loc, invTargets[0], invTargets[1], op.getRotation());
+                return {qcoOp.getQubit0Out(), qcoOp.getQubit1Out()};
+              });
+          return invOp.getQubitsOut();
+        });
+    llvm::SmallVector<Value> results;
+    results.append(ctrlOp.getTargetsOut().begin(),
+                   ctrlOp.getTargetsOut().end());
+    results.append(ctrlOp.getControlsOut().begin(),
+                   ctrlOp.getControlsOut().end());
+    rewriter.replaceOp(op, results);
+  } else if (op.getNumCtrls() != 0 && !op.getIsAdjoint()) {
     auto ctrlOp = rewriter.create<qco::CtrlOp>(
         op.getLoc(), adaptor.getInCtrlQubits(), adaptor.getInQubits(),
         [&](ValueRange targets) -> llvm::SmallVector<Value> {
@@ -559,6 +788,15 @@ static void createTwoTargetOneParameter(jeff::PPROp& op,
     results.append(ctrlOp.getControlsOut().begin(),
                    ctrlOp.getControlsOut().end());
     rewriter.replaceOp(op, results);
+  } else if (op.getNumCtrls() == 0 && op.getIsAdjoint()) {
+    auto invOp = rewriter.create<qco::InvOp>(
+        op.getLoc(), adaptor.getInQubits(),
+        [&](ValueRange targets) -> llvm::SmallVector<Value> {
+          auto qcoOp = rewriter.create<QCOOpType>(op.getLoc(), targets[0],
+                                                  targets[1], op.getRotation());
+          return {qcoOp.getQubit0Out(), qcoOp.getQubit1Out()};
+        });
+    rewriter.replaceOp(op, invOp.getQubitsOut());
   } else {
     rewriter.replaceOpWithNewOp<QCOOpType>(op, adaptor.getInQubits()[0],
                                            adaptor.getInQubits()[1],
@@ -570,7 +808,28 @@ template <typename QCOOpType>
 static void createTwoTargetTwoParameter(jeff::CustomOp& op,
                                         jeff::CustomOpAdaptor& adaptor,
                                         ConversionPatternRewriter& rewriter) {
-  if (op.getNumCtrls() != 0) {
+  auto loc = op.getLoc();
+  if (op.getNumCtrls() != 0 && op.getIsAdjoint()) {
+    auto ctrlOp = rewriter.create<qco::CtrlOp>(
+        loc, adaptor.getInCtrlQubits(), adaptor.getInTargetQubits(),
+        [&](ValueRange ctrlTargets) -> llvm::SmallVector<Value> {
+          auto invOp = rewriter.create<qco::InvOp>(
+              loc, ctrlTargets,
+              [&](ValueRange invTargets) -> llvm::SmallVector<Value> {
+                auto qcoOp = rewriter.create<QCOOpType>(
+                    loc, invTargets[0], invTargets[1], op.getParams()[0],
+                    op.getParams()[1]);
+                return {qcoOp.getQubit0Out(), qcoOp.getQubit1Out()};
+              });
+          return invOp.getQubitsOut();
+        });
+    llvm::SmallVector<Value> results;
+    results.append(ctrlOp.getTargetsOut().begin(),
+                   ctrlOp.getTargetsOut().end());
+    results.append(ctrlOp.getControlsOut().begin(),
+                   ctrlOp.getControlsOut().end());
+    rewriter.replaceOp(op, results);
+  } else if (op.getNumCtrls() != 0 && !op.getIsAdjoint()) {
     auto ctrlOp = rewriter.create<qco::CtrlOp>(
         op.getLoc(), adaptor.getInCtrlQubits(), adaptor.getInTargetQubits(),
         [&](ValueRange targets) -> llvm::SmallVector<Value> {
@@ -585,6 +844,16 @@ static void createTwoTargetTwoParameter(jeff::CustomOp& op,
     results.append(ctrlOp.getControlsOut().begin(),
                    ctrlOp.getControlsOut().end());
     rewriter.replaceOp(op, results);
+  } else if (op.getNumCtrls() == 0 && op.getIsAdjoint()) {
+    auto invOp = rewriter.create<qco::InvOp>(
+        op.getLoc(), adaptor.getInTargetQubits(),
+        [&](ValueRange targets) -> llvm::SmallVector<Value> {
+          auto qcoOp =
+              rewriter.create<QCOOpType>(op.getLoc(), targets[0], targets[1],
+                                         op.getParams()[0], op.getParams()[1]);
+          return {qcoOp.getQubit0Out(), qcoOp.getQubit1Out()};
+        });
+    rewriter.replaceOp(op, invOp.getQubitsOut());
   } else {
     rewriter.replaceOpWithNewOp<QCOOpType>(
         op, adaptor.getInTargetQubits()[0], adaptor.getInTargetQubits()[1],
@@ -610,14 +879,7 @@ struct ConvertJeffCustomOpToQCO final : OpConversionPattern<jeff::CustomOp> {
 
     auto name = op.getName();
     if (name == "sx") {
-      if (op.getIsAdjoint()) {
-        createOneTargetZeroParameter<qco::SXdgOp>(op, adaptor, rewriter);
-      } else {
-        createOneTargetZeroParameter<qco::SXOp>(op, adaptor, rewriter);
-      }
-    } else if (op.getIsAdjoint()) {
-      return rewriter.notifyMatchFailure(
-          op, "Adjoint operations are not yet supported");
+      createOneTargetZeroParameter<qco::SXOp>(op, adaptor, rewriter);
     } else if (name == "r") {
       createOneTargetTwoParameter<qco::ROp>(op, adaptor, rewriter);
     } else if (name == "iswap") {
@@ -651,11 +913,6 @@ struct ConvertJeffPPROpToQCO final : OpConversionPattern<jeff::PPROp> {
   LogicalResult
   matchAndRewrite(jeff::PPROp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
-    if (op.getIsAdjoint()) {
-      return rewriter.notifyMatchFailure(
-          op, "Adjoint operations are not yet supported");
-    }
-
     if (op.getPower() != 1) {
       return rewriter.notifyMatchFailure(
           op, "Operations with power != 1 are not yet supported");

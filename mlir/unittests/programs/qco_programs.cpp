@@ -1924,10 +1924,10 @@ void tripleNestedInv(QCOProgramBuilder& b) {
     auto inner1 =
         b.inv({qubits[0], qubits[1]}, [&](mlir::ValueRange innerQubits) {
           auto inner2 = b.inv({innerQubits[0], innerQubits[1]},
-                              [&](mlir::ValueRange innerInnerQubbits) {
+                              [&](mlir::ValueRange innerInnerQubits) {
                                 auto [q0, q1] =
-                                    b.rxx(-0.123, innerInnerQubbits[0],
-                                          innerInnerQubbits[1]);
+                                    b.rxx(-0.123, innerInnerQubits[0],
+                                          innerInnerQubits[1]);
                                 return llvm::SmallVector<mlir::Value>{q0, q1};
                               });
           return llvm::SmallVector<mlir::Value>{inner2};

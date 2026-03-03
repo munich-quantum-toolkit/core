@@ -117,6 +117,26 @@ TEST_P(JeffRoundTripTest, ProgramEquivalence) {
       areModulesEquivalentWithPermutations(program.get(), reference.get()));
 }
 
+/// \name JeffRoundTrip/Modifiers/InvOp.cpp
+/// @{
+INSTANTIATE_TEST_SUITE_P(
+    QCOInvOpTest, JeffRoundTripTest,
+    testing::Values(JeffRoundTripTestCase{"InverseiSWAP",
+                                          MQT_NAMED_BUILDER(qco::inverseIswap),
+                                          MQT_NAMED_BUILDER(qco::inverseIswap)},
+                    JeffRoundTripTestCase{
+                        "InverseMultipleControllediSWAP",
+                        MQT_NAMED_BUILDER(qco::inverseMultipleControlledIswap),
+                        MQT_NAMED_BUILDER(qco::inverseMultipleControlledIswap)},
+                    JeffRoundTripTestCase{"InverseDCX",
+                                          MQT_NAMED_BUILDER(qco::inverseDcx),
+                                          MQT_NAMED_BUILDER(qco::inverseDcx)},
+                    JeffRoundTripTestCase{
+                        "InverseMultipleControlledDCX",
+                        MQT_NAMED_BUILDER(qco::inverseMultipleControlledDcx),
+                        MQT_NAMED_BUILDER(qco::inverseMultipleControlledDcx)}));
+/// @}
+
 /// \name JeffRoundTrip/Operations/StandardGates/BarrierOp.cpp
 /// @{
 INSTANTIATE_TEST_SUITE_P(
