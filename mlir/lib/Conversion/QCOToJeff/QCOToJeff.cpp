@@ -884,6 +884,17 @@ struct ConvertQCOCtrlOpToJeff final : StatefulOpConversionPattern<qco::CtrlOp> {
                   ConversionPatternRewriter& rewriter) const override {
     auto& state = getState();
 
+    if (state.inCtrlOp) {
+      return rewriter.notifyMatchFailure(
+          op, "Nested control operations are not supported");
+    }
+
+    if (state.inInvOp) {
+      return rewriter.notifyMatchFailure(
+          op,
+          "Control operations inside inversion operations are not supported");
+    }
+
     // Set modifier information
     state.inCtrlOp = true;
     state.ctrlOp = op;
@@ -909,6 +920,11 @@ struct ConvertQCOInvOpToJeff final : StatefulOpConversionPattern<qco::InvOp> {
   matchAndRewrite(qco::InvOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
     auto& state = getState();
+
+    if (state.inInvOp) {
+      return rewriter.notifyMatchFailure(
+          op, "Nested inversion operations are not supported");
+    }
 
     // Set modifier information
     state.inInvOp = true;
