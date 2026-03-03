@@ -59,6 +59,9 @@ private:
   using IndexGateSet = DenseSet<IndexGate>;
   using Layer = SetVector<IndexGate>;
 
+  /**
+   * @brief Specifies the layering direction.
+   */
   enum class Direction : std::uint8_t { Forward, Backward };
 
   /**
@@ -297,161 +300,95 @@ private:
     SmallVector<uint32_t> hardwareToProgram_;
   };
 
-  class [[nodiscard]] AStarSearchEngine {
-  public:
-    explicit AStarSearchEngine(const float alpha, const float lambda,
-                               const std::size_t nlookahead, Architecture& arch)
-        : w_(alpha, lambda, nlookahead), arch_(&arch) {}
-
-  private:
-    struct Weights {
-      Weights(const float alpha, const float lambda,
-              const std::size_t nlookahead)
-          : alpha(alpha), decay(1 + nlookahead) {
-        decay[0] = 1.;
-        for (std::size_t i = 1; i < decay.size(); ++i) {
-          decay[i] = decay[i - 1] * lambda;
-        }
-      }
-
-      float alpha;
-      SmallVector<float> decay;
-    };
-
-    struct Node {
-      SmallVector<IndexGate> sequence;
-      Layout layout;
-      float f;
-
-      /**
-       * @brief Construct a root node with the given layout. Initialize the
-       * sequence with an empty vector and set the cost to zero.
-       */
-      explicit Node(Layout layout) : layout(std::move(layout)), f(0) {}
-
-      /**
-       * @brief Construct a non-root node from its parent node. Apply the given
-       * swap to the layout of the parent node and evaluate the cost.
-       */
-      Node(const Node& parent, IndexGate swap, ArrayRef<Layer> layers,
-           const Architecture& arch, const Weights& w)
-          : sequence(parent.sequence), layout(parent.layout), f(0) {
-        /// Apply node-specific swap to given layout.
-        layout.swap(swap.first, swap.second);
-
-        // Add swap to sequence.
-        sequence.push_back(swap);
-
-        // Evaluate cost function.
-        f = g(w.alpha) + h(layers, arch, w); // NOLINT
-      }
-
-      /**
-       * @returns true if the current sequence of SWAPs makes all gates
-       * executable.
-       */
-      [[nodiscard]] bool isGoal(const Layer& layer,
-                                const Architecture& arch) const {
-        return llvm::all_of(layer, [&](const IndexGate gate) {
-          return arch.areAdjacent(layout.getHardwareIndex(gate.first),
-                                  layout.getHardwareIndex(gate.second));
-        });
-      }
-
-      [[nodiscard]] bool operator>(const Node& rhs) const { return f > rhs.f; }
-
-    private:
-      /**
-       * @brief Calculate the path cost for the A* search algorithm.
-       *
-       * The path cost function is the weighted sum of the currently required
-       * SWAPs.
-       */
-      [[nodiscard]] float g(float alpha) const {
-        return alpha * static_cast<float>(sequence.size());
-      }
-
-      /**
-       * @brief Calculate the heuristic cost for the A* search algorithm.
-       *
-       * Computes the minimal number of SWAPs required to route each gate in
-       * each layer. For each gate, this is determined by the shortest distance
-       * between its hardware qubits. Intuitively, this is the number of SWAPs
-       * that a naive router would insert to route the layers.
-       */
-      [[nodiscard]] float h(ArrayRef<Layer> layers, const Architecture& arch,
-                            const Weights& w) const {
-        float costs{0};
-        for (const auto [i, layer] : llvm::enumerate(layers)) {
-          for (const auto [prog0, prog1] : layer) {
-            const auto [hw0, hw1] = layout.getHardwareIndices(prog0, prog1);
-            const std::size_t nswaps = arch.distanceBetween(hw0, hw1) - 1;
-            costs += w.decay[i] * static_cast<float>(nswaps);
-          }
-        }
-        return costs;
-      }
-    };
-
-    using MinQueue =
-        std::priority_queue<Node, std::vector<Node>, std::greater<>>;
-
-  public:
-    [[nodiscard]] llvm::FailureOr<SmallVector<IndexGate>>
-    search(ArrayRef<Layer> layers, const Layout& layout) {
-      Node root(layout);
-
-      // Early exit. No SWAPs required:
-      if (root.isGoal(layers.front(), *arch_)) {
-        return SmallVector<IndexGate>{};
-      }
-
-      // Initialize queue.
-      MinQueue frontier{};
-      frontier.emplace(root);
-
-      // Iterative searching and expanding.
-      while (!frontier.empty()) {
-        Node curr = frontier.top();
-        frontier.pop();
-
-        if (curr.isGoal(layers.front(), *arch_)) {
-          return curr.sequence;
-        }
-
-        expand(frontier, curr, layers);
-      }
-
-      return llvm::failure();
-    }
-
-  private:
-    void expand(MinQueue& frontier, const Node& node, ArrayRef<Layer> layers) {
-      expansionSet_.clear();
-
-      if (!node.sequence.empty()) {
-        expansionSet_.insert(node.sequence.back());
-      }
-
-      for (const IndexGate& gate : layers.front()) {
-        for (const auto prog : {gate.first, gate.second}) {
-          const auto hw0 = node.layout.getHardwareIndex(prog);
-          for (const auto hw1 : arch_->neighboursOf(hw0)) {
-            /// Ensure consistent hashing/comparison.
-            const IndexGate swap = std::minmax(hw0, hw1);
-            if (!expansionSet_.insert(swap).second) {
-              continue;
-            }
-
-            frontier.emplace(node, swap, layers, *arch_, w_);
-          }
-        }
+  struct Weights {
+    Weights(const float alpha, const float lambda, const std::size_t nlookahead)
+        : alpha(alpha), decay(1 + nlookahead) {
+      decay[0] = 1.;
+      for (std::size_t i = 1; i < decay.size(); ++i) {
+        decay[i] = decay[i - 1] * lambda;
       }
     }
-    Weights w_;
-    Architecture* arch_;
-    DenseSet<IndexGate> expansionSet_;
+
+    float alpha;
+    SmallVector<float> decay;
   };
+
+  struct Node {
+    SmallVector<IndexGate> sequence;
+    Layout layout;
+    float f;
+
+    /**
+     * @brief Construct a root node with the given layout. Initialize the
+     * sequence with an empty vector and set the cost to zero.
+     */
+    explicit Node(Layout layout) : layout(std::move(layout)), f(0) {}
+
+    /**
+     * @brief Construct a non-root node from its parent node. Apply the given
+     * swap to the layout of the parent node and evaluate the cost.
+     */
+    Node(const Node& parent, IndexGate swap, ArrayRef<Layer> layers,
+         const Architecture& arch, const Weights& w)
+        : sequence(parent.sequence), layout(parent.layout), f(0) {
+      /// Apply node-specific swap to given layout.
+      layout.swap(swap.first, swap.second);
+
+      // Add swap to sequence.
+      sequence.push_back(swap);
+
+      // Evaluate cost function.
+      f = g(w.alpha) + h(layers, arch, w); // NOLINT
+    }
+
+    /**
+     * @returns true if the current sequence of SWAPs makes all gates
+     * executable.
+     */
+    [[nodiscard]] bool isGoal(const Layer& layer,
+                              const Architecture& arch) const {
+      return llvm::all_of(layer, [&](const IndexGate gate) {
+        return arch.areAdjacent(layout.getHardwareIndex(gate.first),
+                                layout.getHardwareIndex(gate.second));
+      });
+    }
+
+    [[nodiscard]] bool operator>(const Node& rhs) const { return f > rhs.f; }
+
+  private:
+    /**
+     * @brief Calculate the path cost for the A* search algorithm.
+     *
+     * The path cost function is the weighted sum of the currently required
+     * SWAPs.
+     */
+    [[nodiscard]] float g(float alpha) const {
+      return alpha * static_cast<float>(sequence.size());
+    }
+
+    /**
+     * @brief Calculate the heuristic cost for the A* search algorithm.
+     *
+     * Computes the minimal number of SWAPs required to route each gate in
+     * each layer. For each gate, this is determined by the shortest distance
+     * between its hardware qubits. Intuitively, this is the number of SWAPs
+     * that a naive router would insert to route the layers.
+     */
+    [[nodiscard]] float h(ArrayRef<Layer> layers, const Architecture& arch,
+                          const Weights& w) const {
+      float costs{0};
+      for (const auto [i, layer] : llvm::enumerate(layers)) {
+        for (const auto [prog0, prog1] : layer) {
+          const auto [hw0, hw1] = layout.getHardwareIndices(prog0, prog1);
+          const std::size_t nswaps = arch.distanceBetween(hw0, hw1) - 1;
+          costs += w.decay[i] * static_cast<float>(nswaps);
+        }
+      }
+      return costs;
+    }
+  };
+
+  using MinQueue = std::priority_queue<Node, std::vector<Node>, std::greater<>>;
 
 public:
   using HeuristicMappingPassBase::HeuristicMappingPassBase;
@@ -469,7 +406,7 @@ public:
 
     IRRewriter rewriter(&getContext());
 
-    AStarSearchEngine engine(0.5, 0.8, nlookahead, arch);
+    Weights weights(0.5, 0.8, nlookahead); /// TODO: Pass Options
     for (auto func : getOperation().getOps<func::FuncOp>()) {
       const auto dyn = collectDynamicQubits(func.getFunctionBody());
       const auto [ltr, rtl] = computeBidirectionalLayers(dyn);
@@ -480,11 +417,11 @@ public:
 
       Layout layout = Layout::identity(arch.nqubits());
       for (std::size_t r = 0; r < repeats; ++r) {
-        if (failed(routeCold(ltr, layout, nlookahead, engine))) {
+        if (failed(routeCold(ltr, layout, arch, weights, nlookahead))) {
           signalPassFailure();
           return;
         }
-        if (failed(routeCold(ltr, layout, nlookahead, engine))) {
+        if (failed(routeCold(ltr, layout, arch, weights, nlookahead))) {
           signalPassFailure();
           return;
         }
@@ -495,7 +432,8 @@ public:
       // qubits ("placement") and hot-route the circuit layer-by-layer.
 
       const auto stat = place(dyn, layout, func.getFunctionBody(), rewriter);
-      if (failed(routeHot(ltr, layout, nlookahead, stat, engine, rewriter))) {
+      if (failed(routeHot(ltr, layout, nlookahead, stat, arch, weights,
+                          rewriter))) {
         signalPassFailure();
         return;
       };
@@ -526,6 +464,13 @@ private:
     return std::make_pair(ltr, rtl);
   }
 
+  /**
+   * @brief Perform placement.
+   * @details Replaces dynamic with static qubits. Extends the computation with
+   * as many static qubits the architecture supports.
+   * @returns vector of SSA values produced by qco.static operations, ordered by
+   * the static index s.t. [i] = qco.static i.
+   */
   [[nodiscard]] static SmallVector<QubitValue>
   place(const ArrayRef<QubitValue> dynQubits, const Layout& layout,
         Region& funcBody, IRRewriter& rewriter) {
@@ -553,6 +498,60 @@ private:
   }
 
   /**
+   * @brief Perform A* search to find a sequence of SWAPs that makes the layer
+   * executable.
+   * @details TODO
+   * @returns a vector of hardware-index pairs (each denoting a SWAP) or
+   * llvm::failure() if A* fails.
+   */
+  [[nodiscard]] static llvm::FailureOr<SmallVector<IndexGate>>
+  search(ArrayRef<Layer> layers, const Layout& layout, const Architecture& arch,
+         const Weights& weights) {
+
+    Node root(layout);
+    if (root.isGoal(layers.front(), arch)) {
+      return SmallVector<IndexGate>{};
+    }
+
+    MinQueue frontier{};
+    frontier.emplace(root);
+    DenseSet<IndexGate> expansionSet;
+
+    while (!frontier.empty()) {
+      Node curr = frontier.top();
+      frontier.pop();
+
+      if (curr.isGoal(layers.front(), arch)) {
+        return curr.sequence;
+      }
+
+      // TODO: Explain expansion strategy.
+
+      expansionSet.clear();
+      if (!curr.sequence.empty()) {
+        expansionSet.insert(curr.sequence.back());
+      }
+
+      for (const IndexGate& gate : layers.front()) {
+        for (const auto prog : {gate.first, gate.second}) {
+          const auto hw0 = curr.layout.getHardwareIndex(prog);
+          for (const auto hw1 : arch.neighboursOf(hw0)) {
+            /// Ensure consistent hashing/comparison.
+            const IndexGate swap = std::minmax(hw0, hw1);
+            if (!expansionSet.insert(swap).second) {
+              continue;
+            }
+
+            frontier.emplace(curr, swap, layers, arch, weights);
+          }
+        }
+      }
+    }
+
+    return llvm::failure();
+  }
+
+  /**
    * @brief "Cold" routing of the given layers.
    * @details Iterates over a sliding window of layers and uses the A* search
    * engine to find a sequence of SWAPs that makes that layer executable.
@@ -561,12 +560,13 @@ private:
    * @returns llvm::failure() if A* search isn't able to find a solution.
    */
   static llvm::LogicalResult routeCold(ArrayRef<Layer> layers, Layout& layout,
-                                       const std::size_t nlookahead,
-                                       AStarSearchEngine& engine) {
+                                       const Architecture& arch,
+                                       const Weights& weights,
+                                       const std::size_t nlookahead) {
     for (std::size_t i = 0; i < layers.size(); ++i) {
       const std::size_t len = std::min(1 + nlookahead, layers.size() - i);
       const auto window = layers.slice(i, len);
-      const auto swaps = engine.search(window, layout);
+      const auto swaps = search(window, layout, arch, weights);
       if (failed(swaps)) {
         return llvm::failure();
       }
@@ -589,8 +589,8 @@ private:
   static LogicalResult routeHot(ArrayRef<Layer> ltr, Layout& layout,
                                 const std::size_t nlookahead,
                                 ArrayRef<QubitValue> statics,
-                                AStarSearchEngine& engine,
-                                IRRewriter& rewriter) {
+                                const Architecture& arch,
+                                const Weights& weights, IRRewriter& rewriter) {
     constexpr auto advanceFront = [](WireIterator& it) {
       while (true) {
         const auto next = std::next(it);
@@ -613,7 +613,7 @@ private:
 
       const auto len = std::min(1 + nlookahead, ltr.size() - i);
       const auto window = ltr.slice(i, len);
-      const auto swaps = engine.search(window, layout);
+      const auto swaps = search(window, layout, arch, weights);
       if (failed(swaps)) {
         return llvm::failure();
       }
