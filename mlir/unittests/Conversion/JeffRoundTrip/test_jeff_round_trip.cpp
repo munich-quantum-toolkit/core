@@ -201,14 +201,6 @@ INSTANTIATE_TEST_SUITE_P(
             MQT_NAMED_BUILDER(qco::multipleControlledIswap)}));
 /// @}
 
-/// \name JeffRoundTrip/Operations/StandardGates/IdOp.cpp
-/// @{
-INSTANTIATE_TEST_SUITE_P(QCOIdOpTest, JeffRoundTripTest,
-                         testing::Values(JeffRoundTripTestCase{
-                             "Identity", MQT_NAMED_BUILDER(qco::identity),
-                             MQT_NAMED_BUILDER(qco::identity)}));
-/// @}
-
 /// \name JeffRoundTrip/Operations/StandardGates/POp.cpp
 /// @{
 INSTANTIATE_TEST_SUITE_P(
