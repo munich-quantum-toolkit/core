@@ -17,6 +17,7 @@
 #include <cstdint>
 #include <jeff/IR/JeffDialect.h>
 #include <jeff/IR/JeffOps.h>
+#include <mlir/IR/BuiltinAttributes.h>
 #include <mlir/IR/BuiltinTypeInterfaces.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OperationSupport.h>
@@ -26,7 +27,6 @@
 #include <mlir/Transforms/DialectConversion.h>
 #include <numbers>
 #include <utility>
-#include <variant>
 
 namespace mlir {
 using namespace qco;
@@ -50,7 +50,7 @@ struct LoweringState {
   SmallVector<Value> targetsIn;
   SmallVector<Value> targetsOut;
 
-  bool inModifier() const { return inCtrlOp || inInvOp; }
+  [[nodiscard]] bool inModifier() const { return inCtrlOp || inInvOp; }
 };
 
 /**

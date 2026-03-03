@@ -15,6 +15,7 @@
 
 #include <jeff/IR/JeffDialect.h>
 #include <jeff/IR/JeffOps.h>
+#include <llvm/ADT/STLFunctionalExtras.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/IR/BuiltinTypeInterfaces.h>
 #include <mlir/IR/MLIRContext.h>
@@ -35,7 +36,8 @@ using namespace qco;
 template <typename QCOOpType, typename JeffOpType>
 static void createModified(
     JeffOpType& op, ConversionPatternRewriter& rewriter,
-    llvm::SmallVector<Value> controlQubits, llvm::SmallVector<Value> targets,
+    const llvm::SmallVector<Value>& controlQubits,
+    const llvm::SmallVector<Value>& targets,
     llvm::function_ref<llvm::SmallVector<Value>(ValueRange)> lambda) {
   auto loc = op.getLoc();
   if (op.getNumCtrls() != 0) {
@@ -64,10 +66,9 @@ static void createModified(
 }
 
 template <typename QCOOpType, typename JeffOpType>
-static void createOneTargetZeroParameter(JeffOpType& op,
-                                         ConversionPatternRewriter& rewriter,
-                                         llvm::SmallVector<Value> controlQubits,
-                                         Value target) {
+static void createOneTargetZeroParameter(
+    JeffOpType& op, ConversionPatternRewriter& rewriter,
+    const llvm::SmallVector<Value>& controlQubits, Value target) {
   if (op.getNumCtrls() == 0 && !op.getIsAdjoint()) {
     rewriter.replaceOpWithNewOp<QCOOpType>(op, target);
   } else {
@@ -81,11 +82,9 @@ static void createOneTargetZeroParameter(JeffOpType& op,
 }
 
 template <typename QCOOpType, typename JeffOpType>
-static void createOneTargetOneParameter(JeffOpType& op,
-                                        ConversionPatternRewriter& rewriter,
-                                        Value parameter,
-                                        llvm::SmallVector<Value> controlQubits,
-                                        Value target) {
+static void createOneTargetOneParameter(
+    JeffOpType& op, ConversionPatternRewriter& rewriter, Value parameter,
+    const llvm::SmallVector<Value>& controlQubits, Value target) {
   if (op.getNumCtrls() == 0 && !op.getIsAdjoint()) {
     rewriter.replaceOpWithNewOp<QCOOpType>(op, target, parameter);
   } else {
@@ -100,11 +99,11 @@ static void createOneTargetOneParameter(JeffOpType& op,
 }
 
 template <typename QCOOpType, typename JeffOpType>
-static void createOneTargetTwoParameter(JeffOpType& op,
-                                        ConversionPatternRewriter& rewriter,
-                                        llvm::SmallVector<Value> parameters,
-                                        llvm::SmallVector<Value> controlQubits,
-                                        Value target) {
+static void
+createOneTargetTwoParameter(JeffOpType& op, ConversionPatternRewriter& rewriter,
+                            const llvm::SmallVector<Value>& parameters,
+                            const llvm::SmallVector<Value>& controlQubits,
+                            Value target) {
   if (op.getNumCtrls() == 0 && !op.getIsAdjoint()) {
     rewriter.replaceOpWithNewOp<QCOOpType>(op, target, parameters[0],
                                            parameters[1]);
@@ -122,8 +121,8 @@ static void createOneTargetTwoParameter(JeffOpType& op,
 template <typename QCOOpType, typename JeffOpType>
 static void createOneTargetThreeParameter(
     JeffOpType& op, ConversionPatternRewriter& rewriter,
-    llvm::SmallVector<Value> parameters, llvm::SmallVector<Value> controlQubits,
-    Value target) {
+    const llvm::SmallVector<Value>& parameters,
+    const llvm::SmallVector<Value>& controlQubits, Value target) {
   if (op.getNumCtrls() == 0 && !op.getIsAdjoint()) {
     rewriter.replaceOpWithNewOp<QCOOpType>(op, target, parameters[0],
                                            parameters[1], parameters[2]);
@@ -140,10 +139,11 @@ static void createOneTargetThreeParameter(
 }
 
 template <typename QCOOpType, typename JeffOpType>
-static void createTwoTargetZeroParameter(JeffOpType& op,
-                                         ConversionPatternRewriter& rewriter,
-                                         llvm::SmallVector<Value> controlQubits,
-                                         llvm::SmallVector<Value> targets) {
+static void
+createTwoTargetZeroParameter(JeffOpType& op,
+                             ConversionPatternRewriter& rewriter,
+                             const llvm::SmallVector<Value>& controlQubits,
+                             const llvm::SmallVector<Value>& targets) {
   if (op.getNumCtrls() == 0 && !op.getIsAdjoint()) {
     rewriter.replaceOpWithNewOp<QCOOpType>(op, targets[0], targets[1]);
   } else {
@@ -158,11 +158,11 @@ static void createTwoTargetZeroParameter(JeffOpType& op,
 }
 
 template <typename QCOOpType, typename JeffOpType>
-static void createTwoTargetOneParameter(JeffOpType& op,
-                                        ConversionPatternRewriter& rewriter,
-                                        Value parameter,
-                                        llvm::SmallVector<Value> controlQubits,
-                                        llvm::SmallVector<Value> targets) {
+static void
+createTwoTargetOneParameter(JeffOpType& op, ConversionPatternRewriter& rewriter,
+                            Value parameter,
+                            const llvm::SmallVector<Value>& controlQubits,
+                            const llvm::SmallVector<Value>& targets) {
   if (op.getNumCtrls() == 0 && !op.getIsAdjoint()) {
     rewriter.replaceOpWithNewOp<QCOOpType>(op, targets[0], targets[1],
                                            parameter);
@@ -178,11 +178,11 @@ static void createTwoTargetOneParameter(JeffOpType& op,
 }
 
 template <typename QCOOpType, typename JeffOpType>
-static void createTwoTargetTwoParameter(JeffOpType& op,
-                                        ConversionPatternRewriter& rewriter,
-                                        llvm::SmallVector<Value> parameters,
-                                        llvm::SmallVector<Value> controlQubits,
-                                        llvm::SmallVector<Value> targets) {
+static void
+createTwoTargetTwoParameter(JeffOpType& op, ConversionPatternRewriter& rewriter,
+                            const llvm::SmallVector<Value>& parameters,
+                            const llvm::SmallVector<Value>& controlQubits,
+                            const llvm::SmallVector<Value>& targets) {
   if (op.getNumCtrls() == 0 && !op.getIsAdjoint()) {
     rewriter.replaceOpWithNewOp<QCOOpType>(op, targets[0], targets[1],
                                            parameters[0], parameters[1]);
@@ -623,7 +623,8 @@ struct ConvertJeffPPROpToQCO final : OpConversionPattern<jeff::PPROp> {
     if (pauliGates.size() != 2) {
       return rewriter.notifyMatchFailure(
           op, "Only PPR operations with exactly 2 Pauli gates are supported");
-    } else if (pauliGates[0] == 1 && pauliGates[1] == 1) {
+    }
+    if (pauliGates[0] == 1 && pauliGates[1] == 1) {
       createTwoTargetOneParameter<qco::RXXOp>(op, rewriter, op.getRotation(),
                                               adaptor.getInCtrlQubits(),
                                               adaptor.getInQubits());
