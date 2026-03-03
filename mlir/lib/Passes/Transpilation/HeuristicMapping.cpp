@@ -23,7 +23,6 @@
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/ADT/TypeSwitch.h>
-#include <llvm/Support/Casting.h>
 #include <llvm/Support/Debug.h>
 #include <llvm/Support/ErrorHandling.h>
 #include <llvm/Support/LogicalResult.h>
@@ -37,7 +36,6 @@
 #include <mlir/IR/Value.h>
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/WalkResult.h>
-#include <optional>
 #include <queue>
 #include <stdexcept>
 #include <string>
@@ -400,7 +398,7 @@ private:
         std::priority_queue<Node, std::vector<Node>, std::greater<>>;
 
   public:
-    [[nodiscard]] std::optional<SmallVector<IndexGate>>
+    [[nodiscard]] llvm::FailureOr<SmallVector<IndexGate>>
     search(ArrayRef<Layer> layers, const Layout& layout) {
       Node root(layout);
 
@@ -422,34 +420,35 @@ private:
           return curr.sequence;
         }
 
-        // Expand frontier with all neighbouring SWAPs in the current front.
-
-        expansionSet_.clear();
-
-        if (!curr.sequence.empty()) {
-          expansionSet_.insert(curr.sequence.back());
-        }
-
-        for (const IndexGate& gate : layers.front()) {
-          for (const auto prog : {gate.first, gate.second}) {
-            const auto hw0 = curr.layout.getHardwareIndex(prog);
-            for (const auto hw1 : arch_->neighboursOf(hw0)) {
-              /// Ensure consistent hashing/comparison.
-              const IndexGate swap = std::minmax(hw0, hw1);
-              if (!expansionSet_.insert(swap).second) {
-                continue;
-              }
-
-              frontier.emplace(curr, swap, layers, *arch_, w_);
-            }
-          }
-        }
+        expand(frontier, curr, layers);
       }
 
-      return std::nullopt;
+      return llvm::failure();
     }
 
   private:
+    void expand(MinQueue& frontier, const Node& node, ArrayRef<Layer> layers) {
+      expansionSet_.clear();
+
+      if (!node.sequence.empty()) {
+        expansionSet_.insert(node.sequence.back());
+      }
+
+      for (const IndexGate& gate : layers.front()) {
+        for (const auto prog : {gate.first, gate.second}) {
+          const auto hw0 = node.layout.getHardwareIndex(prog);
+          for (const auto hw1 : arch_->neighboursOf(hw0)) {
+            /// Ensure consistent hashing/comparison.
+            const IndexGate swap = std::minmax(hw0, hw1);
+            if (!expansionSet_.insert(swap).second) {
+              continue;
+            }
+
+            frontier.emplace(node, swap, layers, *arch_, w_);
+          }
+        }
+      }
+    }
     Weights w_;
     Architecture* arch_;
     DenseSet<IndexGate> expansionSet_;
@@ -472,42 +471,33 @@ public:
     AStarSearchEngine engine(0.5, 0.8, nlookahead, arch);
 
     IRRewriter rewriter(&getContext());
+
     for (auto func : getOperation().getOps<func::FuncOp>()) {
-      rewriter.setInsertionPointToStart(&func.getFunctionBody().front());
+      const auto dyn = collectDynamicQubits(func.getFunctionBody());
+      const auto [ltr, rtl] = computeBidirectionalLayers(dyn);
 
-      SmallVector<QubitValue> dynamics(
-          map_range(func.getFunctionBody().getOps<AllocOp>(),
-                    [](AllocOp op) { return op.getResult(); }));
-
-      auto wires = toWires(dynamics);
-      const auto fLayers = collectLayers<Direction::Forward>(wires);
-      const auto bLayers = collectLayers<Direction::Backward>(wires);
-
-      //
-      // Compute initial layout by routing the forward and backward layers.
-      //
+      // Use the SABRE Approach to improve the initial layout choice (here:
+      // identity): Traverse the layers from left-to-right-to-left and
+      // cold-route along the way. Repeat this procedure "repeats" times.
 
       Layout layout = Layout::identity(arch.nqubits());
       for (std::size_t r = 0; r < repeats; ++r) {
-        if (route(fLayers, layout, nlookahead, engine, arch).failed()) {
+        if (failed(routeCold(ltr, layout, nlookahead, engine))) {
           signalPassFailure();
           return;
         }
-        if (route(bLayers, layout, nlookahead, engine, arch).failed()) {
+        if (failed(routeCold(ltr, layout, nlookahead, engine))) {
           signalPassFailure();
           return;
         }
       }
       layout.dump();
 
-      //
-      // Apply layout (place) and insert SWAPs (route) afterwards.
-      //
+      // Once the initial layout is found, replace the dynamic with static
+      // qubits ("placement") and hot-route the circuit layer-by-layer.
 
-      const auto statics =
-          place(dynamics, layout, func.getFunctionBody(), rewriter);
-      if (route(fLayers, layout, nlookahead, statics, rewriter, engine, arch)
-              .failed()) {
+      const auto stat = place(dyn, layout, func.getFunctionBody(), rewriter);
+      if (failed(routeHot(ltr, layout, nlookahead, stat, engine, rewriter))) {
         signalPassFailure();
         return;
       };
@@ -516,30 +506,31 @@ public:
   }
 
 private:
-  static llvm::LogicalResult route(ArrayRef<Layer> layers, Layout& layout,
-                                   const std::size_t nlookahead,
-                                   AStarSearchEngine& engine,
-                                   const Architecture& arch) {
+  /**
+   * @brief Collect dynamic qubits contained in the given function body.
+   * @returns a vector of SSA values produced by qco.alloc operations.
+   */
+  [[nodiscard]] static SmallVector<QubitValue>
+  collectDynamicQubits(Region& funcBody) {
+    return SmallVector<QubitValue>(map_range(
+        funcBody.getOps<AllocOp>(), [](AllocOp op) { return op.getResult(); }));
+  }
 
-    for (std::size_t i = 0; i < layers.size(); ++i) {
-      const std::size_t len = std::min(1 + nlookahead, layers.size() - i);
-      const auto window = layers.slice(i, len);
-      const auto swaps = engine.search(window, layout);
-      if (!swaps) {
-        return llvm::failure();
-      }
-      for (const auto [hw0, hw1] : *swaps) {
-        const auto [prog0, prog1] = layout.getProgramIndices(hw0, hw1);
-        layout.swap(prog0, prog1);
-      }
-    }
-
-    return llvm::success();
+  /**
+   * @brief Computes forwards and backwards layers.
+   * @returns a pair of vectors of layers, where [0]=forward and [1]=backward.
+   */
+  [[nodiscard]] static std::pair<SmallVector<Layer>, SmallVector<Layer>>
+  computeBidirectionalLayers(ArrayRef<QubitValue> dyn) {
+    auto wires = toWires(dyn);
+    const auto ltr = collectLayers<Direction::Forward>(wires);
+    const auto rtl = collectLayers<Direction::Backward>(wires);
+    return std::make_pair(ltr, rtl);
   }
 
   [[nodiscard]] static SmallVector<QubitValue>
   place(const ArrayRef<QubitValue> dynQubits, const Layout& layout,
-        Region& functionBody, IRRewriter& rewriter) {
+        Region& funcBody, IRRewriter& rewriter) {
     SmallVector<QubitValue> statics(layout.getNumQubits());
 
     // 1. Replace existing dynamic allocations with mapped static ones.
@@ -552,10 +543,10 @@ private:
 
     // 2. Create static qubits for the remaining (unused) hardware indices.
     for (std::size_t p = dynQubits.size(); p < layout.getNumQubits(); ++p) {
-      rewriter.setInsertionPointToStart(&functionBody.front());
+      rewriter.setInsertionPointToStart(&funcBody.front());
       const auto hw = layout.getHardwareIndex(p);
       auto op = rewriter.create<StaticOp>(rewriter.getUnknownLoc(), hw);
-      rewriter.setInsertionPoint(functionBody.back().getTerminator());
+      rewriter.setInsertionPoint(funcBody.back().getTerminator());
       rewriter.create<DeallocOp>(rewriter.getUnknownLoc(), op.getQubit());
       statics[hw] = op.getQubit();
     }
@@ -563,13 +554,48 @@ private:
     return statics;
   }
 
-  static LogicalResult route(ArrayRef<Layer> layers, Layout& layout,
-                             const std::size_t nlookahead,
-                             ArrayRef<QubitValue> statics, IRRewriter& rewriter,
-                             AStarSearchEngine& engine,
-                             const Architecture& arch) {
-    auto wires = toWires(statics);
+  /**
+   * @brief "Cold" routing of the given layers.
+   * @details Iterates over a sliding window of layers and uses the A* search
+   * engine to find a sequence of SWAPs that makes that layer executable.
+   * Instead of inserted these SWAPs into the IR, this function only updates the
+   * layout.
+   * @returns llvm::failure() if A* search isn't able to find a solution.
+   */
+  static llvm::LogicalResult routeCold(ArrayRef<Layer> layers, Layout& layout,
+                                       const std::size_t nlookahead,
+                                       AStarSearchEngine& engine) {
     for (std::size_t i = 0; i < layers.size(); ++i) {
+      const std::size_t len = std::min(1 + nlookahead, layers.size() - i);
+      const auto window = layers.slice(i, len);
+      const auto swaps = engine.search(window, layout);
+      if (failed(swaps)) {
+        return llvm::failure();
+      }
+      for (const auto [hw0, hw1] : *swaps) {
+        const auto [prog0, prog1] = layout.getProgramIndices(hw0, hw1);
+        layout.swap(prog0, prog1);
+      }
+    }
+
+    return llvm::success();
+  }
+
+  /**
+   * @brief "Hot" routing of the given layers.
+   * @details Iterates over a sliding window of layers and uses the A* search
+   * engine to find a sequence of SWAPs that makes that layer executable.
+   * This function inserts SWAP ops.
+   * @returns llvm::failure() if A* search isn't able to find a solution.
+   */
+  static LogicalResult routeHot(ArrayRef<Layer> ltr, Layout& layout,
+                                const std::size_t nlookahead,
+                                ArrayRef<QubitValue> statics,
+                                AStarSearchEngine& engine,
+                                IRRewriter& rewriter) {
+    auto wires = toWires(statics);
+
+    for (std::size_t i = 0; i < ltr.size(); ++i) {
       for (auto& it : wires) {
         while (true) {
           auto next = std::next(it);
@@ -587,10 +613,10 @@ private:
         }
       }
 
-      const std::size_t len = std::min(1 + nlookahead, layers.size() - i);
-      const auto window = layers.slice(i, len);
+      const std::size_t len = std::min(1 + nlookahead, ltr.size() - i);
+      const auto window = ltr.slice(i, len);
       const auto swaps = engine.search(window, layout);
-      if (!swaps) {
+      if (failed(swaps)) {
         return llvm::failure();
       }
 
@@ -614,7 +640,7 @@ private:
         layout.swap(prog0, prog1);
       }
 
-      for (const auto [prog0, prog1] : layers[i]) {
+      for (const auto [prog0, prog1] : ltr[i]) {
         ++wires[layout.getHardwareIndex(prog0)];
         ++wires[layout.getHardwareIndex(prog1)];
       }
@@ -623,6 +649,10 @@ private:
     return llvm::success();
   }
 
+  /**
+   * @brief Transform a range of qubit values to a vector of wire iterators.
+   * @returns a vector of wire iterators.
+   */
   template <typename QubitRange>
   static SmallVector<WireIterator> toWires(QubitRange qubits) {
     return SmallVector<WireIterator>(
@@ -630,7 +660,7 @@ private:
   }
 
   template <Direction d>
-  SmallVector<Layer> collectLayers(MutableArrayRef<WireIterator> wires) {
+  static SmallVector<Layer> collectLayers(MutableArrayRef<WireIterator> wires) {
     constexpr std::size_t step = d == Direction::Forward ? 1 : -1;
     const auto stop = [](const WireIterator& it) {
       if constexpr (d == Direction::Forward) {
