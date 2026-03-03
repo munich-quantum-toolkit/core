@@ -245,6 +245,21 @@ INSTANTIATE_TEST_SUITE_P(
                               MQT_NAMED_BUILDER(qco::multipleControlledRx)}));
 /// @}
 
+/// \name JeffRoundTrip/Operations/StandardGates/RxxOp.cpp
+/// @{
+INSTANTIATE_TEST_SUITE_P(
+    QCORXXOpTest, JeffRoundTripTest,
+    testing::Values(
+        JeffRoundTripTestCase{"RXX", MQT_NAMED_BUILDER(qco::rxx),
+                              MQT_NAMED_BUILDER(qco::rxx)},
+        JeffRoundTripTestCase{"SingleControlledRXX",
+                              MQT_NAMED_BUILDER(qco::singleControlledRxx),
+                              MQT_NAMED_BUILDER(qco::singleControlledRxx)},
+        JeffRoundTripTestCase{"MultipleControlledRXX",
+                              MQT_NAMED_BUILDER(qco::multipleControlledRxx),
+                              MQT_NAMED_BUILDER(qco::multipleControlledRxx)}));
+/// @}
+
 /// \name JeffRoundTrip/Operations/StandardGates/RyOp.cpp
 /// @{
 INSTANTIATE_TEST_SUITE_P(
@@ -260,6 +275,21 @@ INSTANTIATE_TEST_SUITE_P(
                               MQT_NAMED_BUILDER(qco::multipleControlledRy)}));
 /// @}
 
+/// \name JeffRoundTrip/Operations/StandardGates/RyyOp.cpp
+/// @{
+INSTANTIATE_TEST_SUITE_P(
+    QCORYYOpTest, JeffRoundTripTest,
+    testing::Values(
+        JeffRoundTripTestCase{"RYY", MQT_NAMED_BUILDER(qco::ryy),
+                              MQT_NAMED_BUILDER(qco::ryy)},
+        JeffRoundTripTestCase{"SingleControlledRYY",
+                              MQT_NAMED_BUILDER(qco::singleControlledRyy),
+                              MQT_NAMED_BUILDER(qco::singleControlledRyy)},
+        JeffRoundTripTestCase{"MultipleControlledRYY",
+                              MQT_NAMED_BUILDER(qco::multipleControlledRyy),
+                              MQT_NAMED_BUILDER(qco::multipleControlledRyy)}));
+/// @}
+
 /// \name JeffRoundTrip/Operations/StandardGates/RzOp.cpp
 /// @{
 INSTANTIATE_TEST_SUITE_P(
@@ -273,6 +303,36 @@ INSTANTIATE_TEST_SUITE_P(
         JeffRoundTripTestCase{"MultipleControlledRZ",
                               MQT_NAMED_BUILDER(qco::multipleControlledRz),
                               MQT_NAMED_BUILDER(qco::multipleControlledRz)}));
+/// @}
+
+/// \name JeffRoundTrip/Operations/StandardGates/RzxOp.cpp
+/// @{
+INSTANTIATE_TEST_SUITE_P(
+    QCORZXOpTest, JeffRoundTripTest,
+    testing::Values(
+        JeffRoundTripTestCase{"RZX", MQT_NAMED_BUILDER(qco::rzx),
+                              MQT_NAMED_BUILDER(qco::rzx)},
+        JeffRoundTripTestCase{"SingleControlledRZX",
+                              MQT_NAMED_BUILDER(qco::singleControlledRzx),
+                              MQT_NAMED_BUILDER(qco::singleControlledRzx)},
+        JeffRoundTripTestCase{"MultipleControlledRZX",
+                              MQT_NAMED_BUILDER(qco::multipleControlledRzx),
+                              MQT_NAMED_BUILDER(qco::multipleControlledRzx)}));
+/// @}
+
+/// \name JeffRoundTrip/Operations/StandardGates/RzzOp.cpp
+/// @{
+INSTANTIATE_TEST_SUITE_P(
+    QCORZZOpTest, JeffRoundTripTest,
+    testing::Values(
+        JeffRoundTripTestCase{"RZZ", MQT_NAMED_BUILDER(qco::rzz),
+                              MQT_NAMED_BUILDER(qco::rzz)},
+        JeffRoundTripTestCase{"SingleControlledRZZ",
+                              MQT_NAMED_BUILDER(qco::singleControlledRzz),
+                              MQT_NAMED_BUILDER(qco::singleControlledRzz)},
+        JeffRoundTripTestCase{"MultipleControlledRZZ",
+                              MQT_NAMED_BUILDER(qco::multipleControlledRzz),
+                              MQT_NAMED_BUILDER(qco::multipleControlledRzz)}));
 /// @}
 
 /// \name JeffRoundTrip/Operations/StandardGates/SOp.cpp

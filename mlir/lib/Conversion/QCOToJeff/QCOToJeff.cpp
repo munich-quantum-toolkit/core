@@ -674,6 +674,131 @@ struct ConvertQCODCXOpToJeff final : StatefulOpConversionPattern<qco::DCXOp> {
   }
 };
 
+// TwoTargetOneParameter
+
+template <typename QCOOpType>
+static void createPPROp(QCOOpType& op, ConversionPatternRewriter& rewriter,
+                        LoweringState& state,
+                        const llvm::SmallVector<Value>& targets,
+                        const llvm::SmallVector<int32_t>& pauliGates) {
+  const auto inCtrlOp = state.inCtrlOp;
+
+  auto pauliGatesAttr =
+      mlir::DenseI32ArrayAttr::get(rewriter.getContext(), pauliGates);
+
+  auto jeffOp = rewriter.create<jeff::PPROp>(
+      op.getLoc(), targets,
+      /*in_ctrl_qubits=*/state.controlsIn[inCtrlOp],
+      /*rotation=*/op.getParameter(0),
+      /*num_ctrls=*/state.controlsIn[inCtrlOp].size(),
+      /*is_adjoint=*/false,
+      /*power=*/1, /*pauli_gates=*/pauliGatesAttr);
+
+  if (state.inCtrlOp != 0) {
+    rewriter.eraseOp(op);
+    state.controlsOut[inCtrlOp] = jeffOp.getOutCtrlQubits();
+    state.targetsOut[inCtrlOp] = jeffOp.getOutQubits();
+  } else {
+    rewriter.replaceOp(op, jeffOp.getOutQubits());
+  }
+}
+
+struct ConvertQCORXXOpToJeff final : StatefulOpConversionPattern<qco::RXXOp> {
+  using StatefulOpConversionPattern::StatefulOpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(qco::RXXOp op, OpAdaptor adaptor,
+                  ConversionPatternRewriter& rewriter) const override {
+    auto& state = getState();
+    const auto inCtrlOp = state.inCtrlOp;
+
+    llvm::SmallVector<Value> targets;
+    if (inCtrlOp != 0) {
+      targets.push_back(state.targetsIn[inCtrlOp][0]);
+      targets.push_back(state.targetsIn[inCtrlOp][1]);
+    } else {
+      targets.push_back(adaptor.getQubit0In());
+      targets.push_back(adaptor.getQubit1In());
+    }
+
+    createPPROp(op, rewriter, state, targets, {1, 1});
+
+    return success();
+  }
+};
+
+struct ConvertQCORYYOpToJeff final : StatefulOpConversionPattern<qco::RYYOp> {
+  using StatefulOpConversionPattern::StatefulOpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(qco::RYYOp op, OpAdaptor adaptor,
+                  ConversionPatternRewriter& rewriter) const override {
+    auto& state = getState();
+    const auto inCtrlOp = state.inCtrlOp;
+
+    llvm::SmallVector<Value> targets;
+    if (inCtrlOp != 0) {
+      targets.push_back(state.targetsIn[inCtrlOp][0]);
+      targets.push_back(state.targetsIn[inCtrlOp][1]);
+    } else {
+      targets.push_back(adaptor.getQubit0In());
+      targets.push_back(adaptor.getQubit1In());
+    }
+
+    createPPROp(op, rewriter, state, targets, {2, 2});
+
+    return success();
+  }
+};
+
+struct ConvertQCORZXOpToJeff final : StatefulOpConversionPattern<qco::RZXOp> {
+  using StatefulOpConversionPattern::StatefulOpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(qco::RZXOp op, OpAdaptor adaptor,
+                  ConversionPatternRewriter& rewriter) const override {
+    auto& state = getState();
+    const auto inCtrlOp = state.inCtrlOp;
+
+    llvm::SmallVector<Value> targets;
+    if (inCtrlOp != 0) {
+      targets.push_back(state.targetsIn[inCtrlOp][0]);
+      targets.push_back(state.targetsIn[inCtrlOp][1]);
+    } else {
+      targets.push_back(adaptor.getQubit0In());
+      targets.push_back(adaptor.getQubit1In());
+    }
+
+    createPPROp(op, rewriter, state, targets, {3, 1});
+
+    return success();
+  }
+};
+
+struct ConvertQCORZZOpToJeff final : StatefulOpConversionPattern<qco::RZZOp> {
+  using StatefulOpConversionPattern::StatefulOpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(qco::RZZOp op, OpAdaptor adaptor,
+                  ConversionPatternRewriter& rewriter) const override {
+    auto& state = getState();
+    const auto inCtrlOp = state.inCtrlOp;
+
+    llvm::SmallVector<Value> targets;
+    if (inCtrlOp != 0) {
+      targets.push_back(state.targetsIn[inCtrlOp][0]);
+      targets.push_back(state.targetsIn[inCtrlOp][1]);
+    } else {
+      targets.push_back(adaptor.getQubit0In());
+      targets.push_back(adaptor.getQubit1In());
+    }
+
+    createPPROp(op, rewriter, state, targets, {3, 3});
+
+    return success();
+  }
+};
+
 // TwoTargetTwoParameter
 
 struct ConvertQCOXXMinusYYOpToJeff final
@@ -865,21 +990,21 @@ struct QCOToJeff final : impl::QCOToJeffBase<QCOToJeff> {
     target.addLegalDialect<jeff::JeffDialect>();
 
     // Register operation conversion patterns
-    patterns
-        .add<ConvertQCOAllocOpToJeff, ConvertQCODeallocOpToJeff,
-             ConvertQCOMeasureOpToJeff, ConvertQCOResetOpToJeff,
-             ConvertQCOGPhaseOpToJeff, ConvertQCOIdOpToJeff,
-             ConvertQCOXOpToJeff, ConvertQCOYOpToJeff, ConvertQCOZOpToJeff,
-             ConvertQCOHOpToJeff, ConvertQCOSOpToJeff, ConvertQCOSdgOpToJeff,
-             ConvertQCOTOpToJeff, ConvertQCOTdgOpToJeff, ConvertQCOSXOpToJeff,
-             ConvertQCOSXdgOpToJeff, ConvertQCORXOpToJeff, ConvertQCORYOpToJeff,
-             ConvertQCORZOpToJeff, ConvertQCOPOpToJeff, ConvertQCOROpToJeff,
-             ConvertQCOU2OpToJeff, ConvertQCOUOpToJeff, ConvertQCOSWAPOpToJeff,
-             ConvertQCOiSWAPOpToJeff, ConvertQCOECROpToJeff,
-             ConvertQCODCXOpToJeff, ConvertQCOXXMinusYYOpToJeff,
-             ConvertQCOXXPlusYYOpToJeff, ConvertQCOBarrierOpToJeff,
-             ConvertQCOCtrlOpToJeff, ConvertQCOYieldOpToJeff>(typeConverter,
-                                                              context, &state);
+    patterns.add<
+        ConvertQCOAllocOpToJeff, ConvertQCODeallocOpToJeff,
+        ConvertQCOMeasureOpToJeff, ConvertQCOResetOpToJeff,
+        ConvertQCOGPhaseOpToJeff, ConvertQCOIdOpToJeff, ConvertQCOXOpToJeff,
+        ConvertQCOYOpToJeff, ConvertQCOZOpToJeff, ConvertQCOHOpToJeff,
+        ConvertQCOSOpToJeff, ConvertQCOSdgOpToJeff, ConvertQCOTOpToJeff,
+        ConvertQCOTdgOpToJeff, ConvertQCOSXOpToJeff, ConvertQCOSXdgOpToJeff,
+        ConvertQCORXOpToJeff, ConvertQCORYOpToJeff, ConvertQCORZOpToJeff,
+        ConvertQCOPOpToJeff, ConvertQCOROpToJeff, ConvertQCOU2OpToJeff,
+        ConvertQCOUOpToJeff, ConvertQCOSWAPOpToJeff, ConvertQCOiSWAPOpToJeff,
+        ConvertQCOECROpToJeff, ConvertQCODCXOpToJeff, ConvertQCORXXOpToJeff,
+        ConvertQCORYYOpToJeff, ConvertQCORZXOpToJeff, ConvertQCORZZOpToJeff,
+        ConvertQCOXXMinusYYOpToJeff, ConvertQCOXXPlusYYOpToJeff,
+        ConvertQCOBarrierOpToJeff, ConvertQCOCtrlOpToJeff,
+        ConvertQCOYieldOpToJeff>(typeConverter, context, &state);
 
     // Apply the conversion
     if (failed(applyPartialConversion(module, target, std::move(patterns)))) {

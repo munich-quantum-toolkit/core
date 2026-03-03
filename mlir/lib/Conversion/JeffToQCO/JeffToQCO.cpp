@@ -541,6 +541,31 @@ static void createTwoTargetZeroParameter(jeff::CustomOp& op,
 }
 
 template <typename QCOOpType>
+static void createTwoTargetOneParameter(jeff::PPROp& op,
+                                        jeff::PPROpAdaptor& adaptor,
+                                        ConversionPatternRewriter& rewriter) {
+  if (op.getNumCtrls() != 0) {
+    auto ctrlOp = rewriter.create<qco::CtrlOp>(
+        op.getLoc(), adaptor.getInCtrlQubits(), adaptor.getInQubits(),
+        [&](ValueRange targets) -> llvm::SmallVector<Value> {
+          auto qcoOp = rewriter.create<QCOOpType>(op.getLoc(), targets[0],
+                                                  targets[1], op.getRotation());
+          return {qcoOp.getQubit0Out(), qcoOp.getQubit1Out()};
+        });
+    llvm::SmallVector<Value> results;
+    results.append(ctrlOp.getTargetsOut().begin(),
+                   ctrlOp.getTargetsOut().end());
+    results.append(ctrlOp.getControlsOut().begin(),
+                   ctrlOp.getControlsOut().end());
+    rewriter.replaceOp(op, results);
+  } else {
+    rewriter.replaceOpWithNewOp<QCOOpType>(op, adaptor.getInQubits()[0],
+                                           adaptor.getInQubits()[1],
+                                           op.getRotation());
+  }
+}
+
+template <typename QCOOpType>
 static void createTwoTargetTwoParameter(jeff::CustomOp& op,
                                         jeff::CustomOpAdaptor& adaptor,
                                         ConversionPatternRewriter& rewriter) {
@@ -582,7 +607,7 @@ struct ConvertJeffCustomOpToQCO final : OpConversionPattern<jeff::CustomOp> {
           op, "Operations with power != 1 are not yet supported");
     }
 
-    const auto& name = op.getName();
+    auto name = op.getName();
     if (name == "sx") {
       if (op.getIsAdjoint()) {
         createOneTargetZeroParameter<qco::SXdgOp>(op, adaptor, rewriter);
@@ -613,6 +638,42 @@ struct ConvertJeffCustomOpToQCO final : OpConversionPattern<jeff::CustomOp> {
     } else {
       return rewriter.notifyMatchFailure(op, "Unsupported custom operation: " +
                                                  name);
+    }
+
+    return success();
+  }
+};
+
+struct ConvertJeffPPROpToQCO final : OpConversionPattern<jeff::PPROp> {
+  using OpConversionPattern::OpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(jeff::PPROp op, OpAdaptor adaptor,
+                  ConversionPatternRewriter& rewriter) const override {
+    if (op.getIsAdjoint()) {
+      return rewriter.notifyMatchFailure(
+          op, "Adjoint operations are not yet supported");
+    }
+
+    if (op.getPower() != 1) {
+      return rewriter.notifyMatchFailure(
+          op, "Operations with power != 1 are not yet supported");
+    }
+
+    auto pauliGates = op.getPauliGates();
+    if (pauliGates.size() != 2) {
+      return rewriter.notifyMatchFailure(
+          op, "Only PPR operations with exactly 2 Pauli gates are supported");
+    } else if (pauliGates[0] == 1 && pauliGates[1] == 1) {
+      createTwoTargetOneParameter<qco::RXXOp>(op, adaptor, rewriter);
+    } else if (pauliGates[0] == 2 && pauliGates[1] == 2) {
+      createTwoTargetOneParameter<qco::RYYOp>(op, adaptor, rewriter);
+    } else if (pauliGates[0] == 3 && pauliGates[1] == 1) {
+      createTwoTargetOneParameter<qco::RZXOp>(op, adaptor, rewriter);
+    } else if (pauliGates[0] == 3 && pauliGates[1] == 3) {
+      createTwoTargetOneParameter<qco::RZZOp>(op, adaptor, rewriter);
+    } else {
+      return rewriter.notifyMatchFailure(op, "Unsupported PPR operation");
     }
 
     return success();
@@ -668,7 +729,8 @@ struct JeffToQCO final : impl::JeffToQCOBase<JeffToQCO> {
              ConvertJeffSOpToQCO, ConvertJeffTOpToQCO, ConvertJeffRxOpToQCO,
              ConvertJeffRyOpToQCO, ConvertJeffRzOpToQCO, ConvertJeffR1OpToQCO,
              ConvertJeffUOpToQCO, ConvertJeffSwapOpToQCO,
-             ConvertJeffCustomOpToQCO>(typeConverter, context);
+             ConvertJeffCustomOpToQCO, ConvertJeffPPROpToQCO>(typeConverter,
+                                                              context);
 
     // Apply the conversion
     if (failed(applyPartialConversion(module, target, std::move(patterns)))) {
