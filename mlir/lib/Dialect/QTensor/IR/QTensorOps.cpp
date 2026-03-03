@@ -14,10 +14,10 @@
 
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/Support/Casting.h>
-#include <mlir/Dialect/Affine/IR/AffineOps.h> // for affine::AffineDialect
-#include <mlir/Dialect/Arith/IR/Arith.h>      // for arith::ArithDialect
+#include <mlir/Dialect/Affine/IR/AffineOps.h>
+#include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Arith/Utils/Utils.h>
-#include <mlir/Dialect/Complex/IR/Complex.h> // for complex::ComplexDialect
+#include <mlir/Dialect/Complex/IR/Complex.h>
 #include <mlir/Dialect/Linalg/IR/RelayoutOpInterface.h>
 #include <mlir/Dialect/Tensor/IR/Tensor.h>
 #include <mlir/Dialect/Utils/StaticValueUtils.h>
@@ -60,7 +60,7 @@ namespace mlir::qtensor {
 llvm::SmallBitVector getDroppedDims(ArrayRef<int64_t> reducedShape,
                                     ArrayRef<OpFoldResult> mixedSizes) {
   llvm::SmallBitVector droppedDims(mixedSizes.size());
-  int64_t shapePos = reducedShape.size() - 1;
+  int64_t shapePos = static_cast<int64_t>(reducedShape.size()) - 1;
 
   for (const auto& size : enumerate(llvm::reverse(mixedSizes))) {
     size_t idx = mixedSizes.size() - size.index() - 1;

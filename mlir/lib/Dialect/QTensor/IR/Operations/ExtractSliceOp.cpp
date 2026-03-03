@@ -78,7 +78,7 @@ RankedTensorType ExtractSliceOp::inferCanonicalRankReducedResultType(
   // Type inferred in the absence of rank-reducing behavior.
   auto inferredType = llvm::cast<RankedTensorType>(
       inferResultType(sourceRankedTensorType, offsets, sizes, strides));
-  int rankDiff = inferredType.getRank() - desiredResultRank;
+  int64_t rankDiff = inferredType.getRank() - desiredResultRank;
   if (rankDiff > 0) {
     auto shape = inferredType.getShape();
     llvm::SmallBitVector dimsToProject =
