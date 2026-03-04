@@ -12,8 +12,6 @@
 
 #include "mlir/Dialect/QIR/Utils/QIRUtils.h"
 
-#include <cstddef>
-#include <cstdint>
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/STLFunctionalExtras.h>
 #include <llvm/ADT/SmallVector.h>
@@ -31,6 +29,9 @@
 #include <mlir/IR/Types.h>
 #include <mlir/IR/Value.h>
 #include <mlir/Support/LLVM.h>
+
+#include <cstddef>
+#include <cstdint>
 #include <string>
 #include <utility>
 #include <variant>

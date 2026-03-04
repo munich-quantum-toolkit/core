@@ -10,13 +10,14 @@
 
 #include "qdmi/devices/sc/Generator.hpp"
 
+#include <spdlog/spdlog.h>
+
 #include <cstddef>
 #include <cstdint>
 #include <exception>
 #include <iostream>
 #include <optional>
 #include <span>
-#include <spdlog/spdlog.h>
 #include <stdexcept>
 #include <string>
 #include <tuple>

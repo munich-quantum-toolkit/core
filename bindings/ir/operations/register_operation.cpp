@@ -17,6 +17,7 @@
 #include <nanobind/stl/string.h>     // NOLINT(misc-include-cleaner)
 #include <nanobind/stl/unique_ptr.h> // NOLINT(misc-include-cleaner)
 #include <nanobind/stl/vector.h>     // NOLINT(misc-include-cleaner)
+
 #include <sstream>
 
 namespace mqt {

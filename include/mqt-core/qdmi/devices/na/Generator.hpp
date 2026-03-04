@@ -18,6 +18,7 @@
 #include <istream>
 // NOLINTNEXTLINE(misc-include-cleaner)
 #include <nlohmann/json.hpp>
+
 #include <ostream>
 #include <sstream>
 #include <stdexcept>

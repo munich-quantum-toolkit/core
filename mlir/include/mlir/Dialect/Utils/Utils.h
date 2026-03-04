@@ -14,6 +14,7 @@
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/Location.h>
 #include <mlir/IR/Value.h>
+
 #include <variant>
 
 namespace mlir::utils {

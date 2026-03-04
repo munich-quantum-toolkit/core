@@ -15,15 +15,16 @@
 #include "mqt_sc_qdmi/device.h"
 #include "qdmi/common/Common.hpp"
 
+#include <qdmi/client.h>
+#include <qdmi/device.h>
+#include <spdlog/spdlog.h>
+
 #include <cassert>
 #include <cstddef>
 #include <cstring>
 #include <exception>
 #include <memory>
 #include <optional>
-#include <qdmi/client.h>
-#include <qdmi/device.h>
-#include <spdlog/spdlog.h>
 #include <sstream>
 #include <stdexcept>
 #include <string>

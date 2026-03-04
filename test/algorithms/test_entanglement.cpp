@@ -18,6 +18,7 @@
 #include "ir/QuantumComputation.hpp"
 
 #include <gtest/gtest.h>
+
 #include <memory>
 #include <sstream>
 #include <string>

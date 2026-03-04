@@ -22,10 +22,11 @@
 #include "ir/operations/SymbolicOperation.hpp"
 #include "qasm3/Importer.hpp"
 
+#include <gtest/gtest.h>
+
 #include <algorithm>
 #include <array>
 #include <cstddef>
-#include <gtest/gtest.h>
 #include <iostream>
 #include <memory>
 #include <optional>

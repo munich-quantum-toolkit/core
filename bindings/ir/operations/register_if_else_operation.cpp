@@ -13,11 +13,12 @@
 #include "ir/operations/IfElseOperation.hpp"
 #include "ir/operations/Operation.hpp"
 
-#include <cstdint>
-#include <memory>
 #include <nanobind/nanobind.h>
 #include <nanobind/stl/optional.h> // NOLINT(misc-include-cleaner)
 #include <nanobind/stl/string.h>   // NOLINT(misc-include-cleaner)
+
+#include <cstdint>
+#include <memory>
 #include <sstream>
 #include <utility>
 

@@ -8,9 +8,10 @@
  * Licensed under the MIT License
  */
 
+#include <gtest/gtest.h>
+
 #include <array>
 #include <cstdio>
-#include <gtest/gtest.h>
 #include <iostream>
 #include <sstream>
 #include <string>

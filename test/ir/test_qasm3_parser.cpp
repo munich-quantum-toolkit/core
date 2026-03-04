@@ -19,9 +19,10 @@
 #include "qasm3/Token.hpp"
 #include "qasm3/passes/ConstEvalPass.hpp"
 
+#include <gtest/gtest.h>
+
 #include <cmath>
 #include <cstddef>
-#include <gtest/gtest.h>
 #include <memory>
 #include <numbers>
 #include <sstream>

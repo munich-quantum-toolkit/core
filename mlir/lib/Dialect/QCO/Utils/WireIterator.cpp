@@ -13,13 +13,14 @@
 #include "mlir/Dialect/QCO/IR/QCOInterfaces.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 
-#include <cassert>
-#include <iterator>
 #include <llvm/ADT/TypeSwitch.h>
 #include <llvm/Support/ErrorHandling.h>
 #include <mlir/IR/Operation.h>
 #include <mlir/IR/Value.h>
 #include <mlir/Support/LLVM.h>
+
+#include <cassert>
+#include <iterator>
 
 namespace mlir::qco {
 mlir::Value WireIterator::qubit() const {

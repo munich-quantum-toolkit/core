@@ -11,15 +11,17 @@
 #include "mqt_na_qdmi/device.h"
 #include "qdmi/devices/na/Generator.hpp"
 
+#include <gmock/gmock-matchers.h>
+#include <gtest/gtest.h>
+
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <fstream>
 #include <functional>
-#include <gmock/gmock-matchers.h>
-#include <gtest/gtest.h>
 // NOLINTNEXTLINE(misc-include-cleaner)
 #include <nlohmann/json.hpp>
+
 #include <sstream>
 #include <stdexcept>
 #include <string>

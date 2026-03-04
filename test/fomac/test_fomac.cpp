@@ -11,15 +11,16 @@
 #include "fomac/FoMaC.hpp"
 #include "qdmi/common/Common.hpp"
 
+#include <gmock/gmock-matchers.h>
+#include <gtest/gtest.h>
+#include <qdmi/client.h>
+
 #include <algorithm>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
-#include <gmock/gmock-matchers.h>
-#include <gtest/gtest.h>
 #include <new>
 #include <numbers>
-#include <qdmi/client.h>
 #include <ranges>
 #include <stdexcept>
 #include <string>

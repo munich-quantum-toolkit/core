@@ -16,13 +16,14 @@
 #include "qc_programs.h"
 
 #include <gtest/gtest.h>
-#include <iosfwd>
-#include <memory>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/IR/DialectRegistry.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/Verifier.h>
+
+#include <iosfwd>
+#include <memory>
 #include <ostream>
 #include <string>
 
