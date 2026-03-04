@@ -37,7 +37,7 @@ repos:
 
   ## Check JSON schemata
   - repo: https://github.com/python-jsonschema/check-jsonschema
-    rev: 0.36.2
+    rev: 0.37.0
     hooks:
       - id: check-github-workflows
         priority: 0
@@ -56,7 +56,7 @@ repos:
 
   ## Check for spelling
   - repo: https://github.com/adhtruong/mirrors-typos
-    rev: v1.43.5
+    rev: v1.44.0
     hooks:
       - id: typos
         priority: 0
@@ -78,7 +78,7 @@ repos:
 
   ## Ensure uv lock file is up-to-date
   - repo: https://github.com/astral-sh/uv-pre-commit
-    rev: 0.10.4
+    rev: 0.10.7
     hooks:
       - id: uv-lock
         priority: 0
@@ -106,7 +106,7 @@ repos:
 
   ## Clang-format the C++ part of the code base automatically
   - repo: https://github.com/pre-commit/mirrors-clang-format
-    rev: v21.1.8
+    rev: v22.1.0
     hooks:
       - id: clang-format
         types_or: [c++, c, cuda]
@@ -132,7 +132,7 @@ repos:
 
   ## Python linting using ruff
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.15.2
+    rev: v0.15.4
     hooks:
       - id: ruff-format
         priority: 1

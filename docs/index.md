@@ -63,6 +63,7 @@ dd_package_evaluation
 :hidden:
 
 contributing
+tooling
 support
 ```
 ````
