@@ -23,7 +23,6 @@ add_mlir_dialect_library(
   MLIRViewLikeInterface
   MLIRInferTypeOpInterface
   MLIRSideEffectInterfaces
-  Eigen3::Eigen
   DISABLE_INSTALL)
 
 mqt_mlir_target_use_project_options(MLIRQTensorDialect)

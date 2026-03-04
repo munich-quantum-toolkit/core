@@ -960,4 +960,5 @@ void extractSliceInsertSliceTensor(QCOProgramBuilder& b);
 /// Extracts a slice of qubits, a qubit from the slice, insert the qubit back to
 /// the slice and the slice back to the tensor immediately.
 void extractSliceExtractInsertInsertSliceTensor(QCOProgramBuilder& b);
+
 } // namespace mlir::qco
