@@ -10,7 +10,7 @@
 
 #include "qasm3/Token.hpp"
 
-#include <ir/Definitions.hpp>
+#include "ir/Definitions.hpp"
 
 #include <ostream>
 #include <sstream>

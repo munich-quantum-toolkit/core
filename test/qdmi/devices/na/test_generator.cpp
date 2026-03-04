@@ -11,12 +11,9 @@
 #include "qdmi/devices/na/Generator.hpp"
 
 #include <gtest/gtest.h>
+#include <nlohmann/json.hpp> // NOLINT(misc-include-cleaner)
 
 #include <sstream>
-// clang-tidy wants to include the forward header, but we need the full
-// NOLINTNEXTLINE(misc-include-cleaner)
-#include <nlohmann/json.hpp>
-
 #include <stdexcept>
 #include <utility>
 

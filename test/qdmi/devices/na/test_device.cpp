@@ -13,15 +13,13 @@
 
 #include <gmock/gmock-matchers.h>
 #include <gtest/gtest.h>
+#include <nlohmann/json.hpp> // NOLINT(misc-include-cleaner)
 
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <fstream>
 #include <functional>
-// NOLINTNEXTLINE(misc-include-cleaner)
-#include <nlohmann/json.hpp>
-
 #include <sstream>
 #include <stdexcept>
 #include <string>

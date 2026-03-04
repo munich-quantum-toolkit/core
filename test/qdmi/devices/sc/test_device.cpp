@@ -12,11 +12,9 @@
 
 #include <gmock/gmock-matchers.h>
 #include <gtest/gtest.h>
+#include <nlohmann/json.hpp> // NOLINT(misc-include-cleaner)
 
 #include <cstddef>
-// NOLINTNEXTLINE(misc-include-cleaner)
-#include <nlohmann/json.hpp>
-
 #include <stdexcept>
 #include <string>
 #include <vector>
