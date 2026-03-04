@@ -60,7 +60,7 @@ class QCType<string name, string typeMnemonic, list<Trait> traits = []>
     let mnemonic = typeMnemonic;
 }
 
-def QubitType : QCType<"Qubit", "qubit", [MemRefElementTypeInterface]> {
+def QubitType : QCType<"Qubit", "qubit"> {
     let summary = "QC qubit reference type";
     let description = [{
         The `!qc.qubit` type represents a reference to a quantum bit in the
