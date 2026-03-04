@@ -21,6 +21,16 @@ def HeuristicMappingPass : Pass<"map", "mlir::ModuleOp"> {
   let description = [{
     This pass inserts SWAP operations to ensure two-qubit gates are executable on a given target architecture.
   }];
+  let options = [
+    Option<"archName", "arch", "std::string", "",
+           "The name of the targeted architecture.">,
+    Option<"nlookahead", "nlookahead", "std::size_t", "1",
+           "The number of lookahead steps.">,
+    Option<"alpha", "alpha", "float", "1.0F",
+           "The alpha factor in the cost function.">,
+    Option<"lambda", "lambda", "float", "0.5F",
+           "The lambda factor in the cost function.">
+  ];
 }
 
 #endif // QCO_PASSES
