@@ -29,7 +29,9 @@ def HeuristicMappingPass : Pass<"map", "mlir::ModuleOp"> {
     Option<"alpha", "alpha", "float", "1.0F",
            "The alpha factor in the cost function.">,
     Option<"lambda", "lambda", "float", "0.5F",
-           "The lambda factor in the cost function.">
+           "The lambda factor in the cost function.">,
+    Option<"repeats", "repeats", "std::size_t", "2",
+           "The number of forwards and backwards traversal to improve the initial layout.">
   ];
 }
 

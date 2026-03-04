@@ -410,8 +410,6 @@ public:
   using HeuristicMappingPassBase::HeuristicMappingPassBase;
 
   void runOnOperation() override {
-    constexpr std::size_t repeats = 10;
-
     Parameters weights(this->alpha, this->lambda, this->nlookahead);
     // TODO: Hardcoded architecture.
     Architecture arch("RigettiNovera", 9,
@@ -430,7 +428,7 @@ public:
       // cold-route along the way. Repeat this procedure "repeats" times.
 
       Layout layout = Layout::identity(arch.nqubits());
-      for (std::size_t r = 0; r < repeats; ++r) {
+      for (std::size_t r = 0; r < this->repeats; ++r) {
         if (failed(routeCold(ltr, layout, arch, weights))) {
           signalPassFailure();
           return;
