@@ -8,9 +8,9 @@
  * Licensed under the MIT License
  */
 
-#include <gtest/gtest.h>
 #include "na/fomac/Device.hpp"
 
+#include <gtest/gtest.h>
 #include <nlohmann/json.hpp>
 
 #include <fstream>
