@@ -445,16 +445,3 @@ void InsertSliceOp::getCanonicalizationPatterns(RewritePatternSet& results,
               InsertSliceOpCastFolder<InsertSliceOp>,
               InsertSliceOpSourceCastInserter<InsertSliceOp>>(context);
 }
-
-Value mlir::tensor::createCanonicalRankReducingInsertSliceOp(OpBuilder& b,
-                                                             Location loc,
-                                                             Value tensor,
-                                                             Value dest) {
-  auto rankedTensorType = llvm::cast<RankedTensorType>(dest.getType());
-  unsigned rank = rankedTensorType.getRank();
-  SmallVector<OpFoldResult> offsets(rank, b.getIndexAttr(0));
-  SmallVector<OpFoldResult> sizes = getMixedSizes(b, loc, dest);
-  SmallVector<OpFoldResult> strides(rank, b.getIndexAttr(1));
-  return b.createOrFold<tensor::InsertSliceOp>(loc, tensor, dest, offsets,
-                                               sizes, strides);
-}

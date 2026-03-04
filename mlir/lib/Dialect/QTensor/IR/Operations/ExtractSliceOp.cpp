@@ -236,25 +236,6 @@ llvm::SmallBitVector ExtractSliceOp::getDroppedDims() {
   return ::getDroppedDims(getType().getShape(), getMixedSizes());
 }
 
-FailureOr<Value>
-ExtractSliceOp::rankReduceIfNeeded(OpBuilder& b, Location loc, Value value,
-                                   ArrayRef<int64_t> desiredShape) {
-  auto sourceTensorType = llvm::dyn_cast<RankedTensorType>(value.getType());
-  assert(sourceTensorType && "not a ranked tensor type");
-  auto sourceShape = sourceTensorType.getShape();
-  if (sourceShape.equals(desiredShape)) {
-    return value;
-  }
-  auto maybeRankReductionMask =
-      mlir::computeRankReductionMask(sourceShape, desiredShape);
-  if (!maybeRankReductionMask) {
-    return failure();
-  }
-  return tensor::createCanonicalRankReducingExtractSliceOp(
-      b, loc, value,
-      RankedTensorType::Builder(sourceTensorType).setShape(desiredShape));
-}
-
 LogicalResult ExtractSliceOp::reifyResultShapes(
     OpBuilder& /*builder*/, ReifiedRankedShapedTypeDims& reifiedReturnShapes) {
   reifiedReturnShapes.resize(1);
@@ -440,15 +421,4 @@ LogicalResult ExtractSliceOp::fold(FoldAdaptor /*adaptor*/,
   }
 
   return failure();
-}
-
-Value mlir::tensor::createCanonicalRankReducingExtractSliceOp(
-    OpBuilder& b, Location loc, Value tensor, RankedTensorType targetType) {
-  auto rankedTensorType = llvm::cast<RankedTensorType>(tensor.getType());
-  unsigned rank = rankedTensorType.getRank();
-  SmallVector<OpFoldResult> offsets(rank, b.getIndexAttr(0));
-  SmallVector<OpFoldResult> sizes = getMixedSizes(b, loc, tensor);
-  SmallVector<OpFoldResult> strides(rank, b.getIndexAttr(1));
-  return b.createOrFold<tensor::ExtractSliceOp>(loc, targetType, tensor,
-                                                offsets, sizes, strides);
 }
