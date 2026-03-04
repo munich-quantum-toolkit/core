@@ -12,6 +12,7 @@
 #include "mlir/Dialect/QCO/IR/QCOInterfaces.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QCO/Utils/WireIterator.h"
+#include "mlir/Passes/Mapping/Architecture.h"
 #include "mlir/Passes/Passes.h"
 
 #include <algorithm>
@@ -25,7 +26,6 @@
 #include <llvm/ADT/TypeSwitch.h>
 #include <llvm/Support/Debug.h>
 #include <llvm/Support/ErrorHandling.h>
-#include <llvm/Support/LogicalResult.h>
 #include <mlir/Analysis/TopologicalSortUtils.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/IR/Block.h>
@@ -63,116 +63,6 @@ private:
    * @brief Specifies the layering direction.
    */
   enum class Direction : std::uint8_t { Forward, Backward };
-
-  /**
-   * @brief A quantum accelerator's architecture.
-   */
-  class [[nodiscard]] Architecture {
-  public:
-    using CouplingSet = DenseSet<std::pair<std::size_t, std::size_t>>;
-    using NeighbourVector = SmallVector<SmallVector<std::size_t, 4>>;
-
-    explicit Architecture(std::string name, std::size_t nqubits,
-                          CouplingSet couplingSet)
-        : name_(std::move(name)), nqubits_(nqubits),
-          couplingSet_(std::move(couplingSet)), neighbours_(nqubits),
-          dist_(nqubits, SmallVector<std::size_t>(nqubits, UINT64_MAX)),
-          prev_(nqubits, SmallVector<std::size_t>(nqubits, UINT64_MAX)) {
-      floydWarshallWithPathReconstruction();
-      collectNeighbours();
-    }
-
-    /**
-     * @brief Return the architecture's name.
-     */
-    [[nodiscard]] constexpr std::string_view name() const { return name_; }
-
-    /**
-     * @brief Return the architecture's number of qubits.
-     */
-    [[nodiscard]] constexpr std::size_t nqubits() const { return nqubits_; }
-
-    /**
-     * @brief Return true if @p u and @p v are adjacent.
-     */
-    [[nodiscard]] bool areAdjacent(std::size_t u, std::size_t v) const {
-      return couplingSet_.contains({u, v});
-    }
-
-    /**
-     * @brief Return the length of the shortest path between @p u and @p v.
-     */
-    [[nodiscard]] std::size_t distanceBetween(std::size_t u,
-                                              std::size_t v) const {
-      if (dist_[u][v] == UINT64_MAX) {
-        report_fatal_error("Floyd-warshall failed to compute the distance "
-                           "between qubits " +
-                           Twine(u) + " and " + Twine(v));
-      }
-      return dist_[u][v];
-    }
-
-    /**
-     * @brief Collect all neighbours of @p u.
-     */
-    [[nodiscard]] SmallVector<std::size_t, 4>
-    neighboursOf(std::size_t u) const {
-      return neighbours_[u];
-    }
-
-  private:
-    using Matrix = SmallVector<SmallVector<std::size_t, 0>, 0>;
-
-    /**
-     * @brief Find all shortest paths in the coupling map between two qubits.
-     * @details Vertices are the qubits. Edges connected two qubits. Has a time
-     * and memory complexity of O(nqubits^3) and O(nqubits^2), respectively.
-     * @link Adapted from https://en.wikipedia.org/wiki/Floyd–Warshall_algorithm
-     */
-    void floydWarshallWithPathReconstruction() {
-      for (const auto& [u, v] : couplingSet_) {
-        dist_[u][v] = 1;
-        prev_[u][v] = u;
-      }
-      for (std::size_t v = 0; v < nqubits(); ++v) {
-        dist_[v][v] = 0;
-        prev_[v][v] = v;
-      }
-
-      for (std::size_t k = 0; k < nqubits(); ++k) {
-        for (std::size_t i = 0; i < nqubits(); ++i) {
-          for (std::size_t j = 0; j < nqubits(); ++j) {
-            if (dist_[i][k] == UINT64_MAX || dist_[k][j] == UINT64_MAX) {
-              continue; // Avoid overflow with "infinite" distances.
-            }
-            const std::size_t sum = dist_[i][k] + dist_[k][j];
-            if (dist_[i][j] > sum) {
-              dist_[i][j] = sum;
-              prev_[i][j] = prev_[k][j];
-            }
-          }
-        }
-      }
-    }
-
-    /**
-     * @brief Collect the neighbours of all qubits.
-     * @details Has a time complexity of O(nqubits)
-     */
-    void collectNeighbours() {
-      for (const auto& [u, v] : couplingSet_) {
-        neighbours_[u].push_back(v);
-      }
-    }
-
-    std::string name_;
-    std::size_t nqubits_;
-    CouplingSet couplingSet_;
-    NeighbourVector neighbours_;
-
-    Matrix dist_;
-    Matrix prev_;
-  };
 
   /**
    * @brief A qubit layout that maps program and hardware indices without

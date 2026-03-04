@@ -148,7 +148,6 @@ QuantumCompilerPipeline::runPipeline(ModuleOp module,
 
   // Stage 5: Optimization passes
   // TODO: Add optimization passes
-  pm.addPass(qco::createHeuristicMappingPass());
   addCleanupPasses(pm);
   if (failed(pm.run(module))) {
     return failure();
