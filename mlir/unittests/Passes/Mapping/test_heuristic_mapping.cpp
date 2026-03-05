@@ -64,6 +64,10 @@ public:
     bool executable = true;
     std::ignore = module->walk([&](qc::UnitaryOpInterface op) {
       if (op.getNumQubits() > 1) {
+        assert(op.getNumQubits() == 2 &&
+               "Expected only 2-qubit gates after decomposition");
+        assert(mappings.contains(op.getQubit(0)) && "Qubit 0 not in mapping");
+        assert(mappings.contains(op.getQubit(1)) && "Qubit 1 not in mapping");
         const auto i0 = mappings[op.getQubit(0)];
         const auto i1 = mappings[op.getQubit(1)];
         if (!arch.areAdjacent(i0, i1)) {
