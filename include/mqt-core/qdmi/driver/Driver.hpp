@@ -12,12 +12,13 @@
 
 #include "qdmi/common/Common.hpp"
 
+#include <qdmi/client.h>
+#include <qdmi/device.h>
+
 #include <cstddef>
 #include <cstdint>
 #include <memory>
 #include <optional>
-#include <qdmi/client.h>
-#include <qdmi/device.h>
 #include <string>
 #include <unordered_map>
 #include <vector>

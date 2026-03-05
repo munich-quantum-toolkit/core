@@ -13,8 +13,9 @@
 #include "zx/ZXDefinitions.hpp"
 #include "zx/ZXDiagram.hpp"
 
-#include <cstddef>
 #include <gtest/gtest.h>
+
+#include <cstddef>
 #include <utility>
 #include <vector>
 

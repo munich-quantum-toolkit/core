@@ -10,12 +10,13 @@
 
 #include "mlir/Support/PrettyPrinting.h"
 
-#include <cstddef>
 #include <llvm/ADT/SmallString.h>
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/ADT/StringRef.h>
 #include <llvm/Support/raw_ostream.h>
 #include <mlir/IR/BuiltinOps.h>
+
+#include <cstddef>
 #include <string>
 #include <utility>
 

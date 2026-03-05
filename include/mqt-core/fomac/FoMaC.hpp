@@ -12,6 +12,8 @@
 
 #include "qdmi/common/Common.hpp"
 
+#include <qdmi/client.h>
+
 #include <algorithm>
 #include <complex>
 #include <concepts>
@@ -22,7 +24,6 @@
 #include <map>
 #include <mutex>
 #include <optional>
-#include <qdmi/client.h>
 #include <ranges>
 #include <string>
 #include <type_traits>

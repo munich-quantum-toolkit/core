@@ -16,6 +16,7 @@
 #include "ir/operations/SymbolicOperation.hpp"
 
 #include <gtest/gtest.h>
+
 #include <memory>
 #include <stdexcept>
 #include <tuple>

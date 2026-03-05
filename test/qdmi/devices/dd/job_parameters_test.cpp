@@ -15,10 +15,11 @@
 #include "helpers/test_utils.hpp"
 #include "mqt_ddsim_qdmi/device.h"
 
-#include <cstddef>
-#include <cstring>
 #include <gtest/gtest.h>
 #include <qdmi/constants.h>
+
+#include <cstddef>
+#include <cstring>
 #include <string>
 
 TEST(JobParameters, SetAndQueryBasics) {

@@ -10,7 +10,8 @@
 
 #include "mlir/Dialect/QIR/Utils/QIRUtils.h"
 
-#include <cstdint>
+#include "mlir/Dialect/QIR/Utils/QIRMetadata.h"
+
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/Support/ErrorHandling.h>
@@ -24,6 +25,8 @@
 #include <mlir/IR/SymbolTable.h>
 #include <mlir/IR/Value.h>
 #include <mlir/Support/LLVM.h>
+
+#include <cstdint>
 #include <string>
 
 namespace mlir::qir {

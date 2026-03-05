@@ -14,9 +14,10 @@
 #include "dd/RealNumber.hpp"
 #include "dd/StateGeneration.hpp"
 
+#include <gtest/gtest.h>
+
 #include <cmath>
 #include <cstddef>
-#include <gtest/gtest.h>
 #include <memory>
 
 namespace dd {
