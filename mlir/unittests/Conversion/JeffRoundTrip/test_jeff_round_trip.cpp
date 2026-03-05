@@ -96,6 +96,10 @@ TEST_P(JeffRoundTripTest, ProgramEquivalence) {
   printer.record(program.get(), "Converted Jeff IR" + name);
   EXPECT_TRUE(verify(*program).succeeded());
 
+  runCanonicalizationPasses(program.get());
+  printer.record(program.get(), "Canonicalized Converted Jeff IR" + name);
+  EXPECT_TRUE(verify(*program).succeeded());
+
   EXPECT_TRUE(succeeded(convertJeffToQCO(program.get())));
   printer.record(program.get(), "Converted QCO IR" + name);
   EXPECT_TRUE(verify(*program).succeeded());

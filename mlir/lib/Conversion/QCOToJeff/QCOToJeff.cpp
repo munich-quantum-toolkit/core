@@ -15,6 +15,8 @@
 
 #include <jeff/IR/JeffDialect.h>
 #include <jeff/IR/JeffOps.h>
+#include <llvm/ADT/SmallVector.h>
+#include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/IR/BuiltinAttributes.h>
 #include <mlir/IR/BuiltinTypeInterfaces.h>
 #include <mlir/IR/MLIRContext.h>
@@ -46,12 +48,15 @@ struct LoweringState {
   bool inInvOp = false;
   qco::CtrlOp ctrlOp;
   qco::InvOp invOp;
-  SmallVector<Value> controlsIn;
-  SmallVector<Value> controlsOut;
-  SmallVector<Value> targetsIn;
-  SmallVector<Value> targetsOut;
+  llvm::SmallVector<Value> controlsIn;
+  llvm::SmallVector<Value> controlsOut;
+  llvm::SmallVector<Value> targetsIn;
+  llvm::SmallVector<Value> targetsOut;
 
   [[nodiscard]] bool inModifier() const { return inCtrlOp || inInvOp; }
+
+  // Module information
+  llvm::SmallVector<std::string> strings;
 };
 
 /**
@@ -255,6 +260,8 @@ static void createCustomOp(QCOOpType& op, ConversionPatternRewriter& rewriter,
                            const llvm::SmallVector<Value>& targets,
                            const llvm::SmallVector<Value>& params,
                            bool isAdjoint, StringRef name) {
+  state.strings.push_back(name.str());
+
   auto jeffOp = rewriter.create<jeff::CustomOp>(
       op.getLoc(), targets,
       /*in_ctrl_qubits=*/state.controlsIn, /*params=*/params,
@@ -1007,6 +1014,91 @@ public:
   }
 };
 
+static LogicalResult cleanUpMain(func::FuncOp main) {
+  if (main.getBlocks().size() != 1) {
+    return failure();
+  }
+  auto* block = &main.getBlocks().front();
+
+  auto ctx = main.getContext();
+  auto loc = main.getLoc();
+  OpBuilder builder(ctx);
+
+  // Remove passthrough attribute
+  main->removeAttr("passthrough");
+
+  // Remove return operation
+  auto returnOp = block->getTerminator();
+  if (!llvm::isa<func::ReturnOp>(returnOp)) {
+    return failure();
+  }
+  returnOp->erase();
+
+  // Add trivial return operation
+  builder.setInsertionPointToEnd(block);
+  func::ReturnOp::create(builder, loc);
+
+  // Fix return type
+  main.setType(FunctionType::get(ctx, {}, {}));
+
+  return success();
+}
+
+static LogicalResult cleanUp(Operation* op, LoweringState& state) {
+  auto module = llvm::dyn_cast<ModuleOp>(op);
+  if (!module) {
+    return failure();
+  }
+
+  bool mainFound = false;
+  uint16_t entryPoint = 0;
+  for (auto funcOp : module.getOps<func::FuncOp>()) {
+    state.strings.push_back(funcOp.getSymName().str());
+    auto passthrough = funcOp->getAttrOfType<ArrayAttr>("passthrough");
+    if (!passthrough) {
+      continue;
+    }
+    if (llvm::any_of(passthrough, [](Attribute attr) {
+          const auto strAttr = dyn_cast<StringAttr>(attr);
+          return strAttr && strAttr.getValue() == "entry_point";
+        })) {
+      mainFound = true;
+      entryPoint = state.strings.size() - 1;
+      if (cleanUpMain(funcOp).failed()) {
+        return failure();
+      }
+      break;
+    }
+  }
+
+  if (!mainFound) {
+    return failure();
+  }
+
+  // Set module attributes
+  OpBuilder builder(module.getContext());
+  auto uint16Type = builder.getIntegerType(16, false);
+
+  module->setAttr("jeff.entrypoint",
+                  builder.getIntegerAttr(uint16Type, entryPoint));
+
+  llvm::SmallVector<llvm::StringRef> stringRefs;
+  stringRefs.reserve(state.strings.size());
+  for (const auto& str : state.strings) {
+    stringRefs.push_back(str);
+  }
+  module->setAttr("jeff.strings", builder.getStrArrayAttr(stringRefs));
+
+  module->setAttr("jeff.tool", builder.getStringAttr("mqt-cc"));
+  module->setAttr("jeff.toolVersion", builder.getStringAttr("4.0.0"));
+
+  module->setAttr("jeff.version", builder.getIntegerAttr(uint16Type, 0));
+  module->setAttr("jeff.versionMinor", builder.getIntegerAttr(uint16Type, 1));
+  module->setAttr("jeff.versionPatch", builder.getIntegerAttr(uint16Type, 0));
+
+  return success();
+}
+
 /**
  * @brief Pass for converting QCO operations to Jeff operations
  *
@@ -1049,8 +1141,13 @@ struct QCOToJeff final : impl::QCOToJeffBase<QCOToJeff> {
                                                         &state);
 
     // Apply the conversion
-    if (failed(applyPartialConversion(module, target, std::move(patterns)))) {
+    if (applyPartialConversion(module, target, std::move(patterns)).failed()) {
       signalPassFailure();
+    }
+
+    if (cleanUp(module, state).failed()) {
+      signalPassFailure();
+      return;
     }
   }
 };

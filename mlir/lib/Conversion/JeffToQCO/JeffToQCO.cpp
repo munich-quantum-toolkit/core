@@ -17,6 +17,7 @@
 #include <jeff/IR/JeffOps.h>
 #include <llvm/ADT/STLFunctionalExtras.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
+#include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/IR/BuiltinTypeInterfaces.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OperationSupport.h>
@@ -681,6 +682,79 @@ struct ConvertJeffFloatConst64OpToArith final
   }
 };
 
+static LogicalResult cleanUpMain(func::FuncOp main) {
+  if (main.getBlocks().size() != 1) {
+    return failure();
+  }
+  auto* block = &main.getBlocks().front();
+
+  auto ctx = main.getContext();
+  auto loc = main.getLoc();
+  OpBuilder builder(ctx);
+
+  // Add passthrough attribute
+  auto entryPointAttr = StringAttr::get(ctx, "entry_point");
+  main->setAttr("passthrough", ArrayAttr::get(ctx, {entryPointAttr}));
+
+  // Remove trivial return operation
+  auto returnOp = block->getTerminator();
+  if (!llvm::isa<func::ReturnOp>(returnOp)) {
+    return failure();
+  }
+  returnOp->erase();
+
+  // Add return operation
+  builder.setInsertionPointToStart(block);
+  auto constOp =
+      arith::ConstantOp::create(builder, loc, builder.getI64IntegerAttr(0));
+
+  builder.setInsertionPointToEnd(block);
+  func::ReturnOp::create(builder, loc, constOp.getResult());
+
+  // Fix return type
+  main.setType(FunctionType::get(ctx, {}, {builder.getI64Type()}));
+
+  return success();
+}
+
+static LogicalResult cleanUp(Operation* op) {
+  auto module = llvm::dyn_cast<ModuleOp>(op);
+  if (!module) {
+    return failure();
+  }
+
+  auto entrypoint =
+      llvm::cast<mlir::IntegerAttr>(module->getAttr("jeff.entrypoint"))
+          .getUInt();
+  auto strings = llvm::cast<mlir::ArrayAttr>(module->getAttr("jeff.strings"));
+  auto mainName = llvm::cast<mlir::StringAttr>(strings[entrypoint]).getValue();
+
+  bool mainFound = false;
+  for (auto funcOp : module.getOps<func::FuncOp>()) {
+    if (funcOp.getSymName() == mainName) {
+      mainFound = true;
+      if (cleanUpMain(funcOp).failed()) {
+        return failure();
+      }
+    }
+  }
+
+  if (!mainFound) {
+    return failure();
+  }
+
+  // Remove module attributes
+  module->removeAttr("jeff.entrypoint");
+  module->removeAttr("jeff.strings");
+  module->removeAttr("jeff.tool");
+  module->removeAttr("jeff.toolVersion");
+  module->removeAttr("jeff.version");
+  module->removeAttr("jeff.versionMinor");
+  module->removeAttr("jeff.versionPatch");
+
+  return success();
+}
+
 /**
  * @brief Pass for converting Jeff operations to QCO operations
  *
@@ -717,7 +791,12 @@ struct JeffToQCO final : impl::JeffToQCOBase<JeffToQCO> {
                                                                  context);
 
     // Apply the conversion
-    if (failed(applyPartialConversion(module, target, std::move(patterns)))) {
+    if (applyPartialConversion(module, target, std::move(patterns)).failed()) {
+      signalPassFailure();
+      return;
+    }
+
+    if (cleanUp(module).failed()) {
       signalPassFailure();
     }
   }
