@@ -13,23 +13,31 @@
 #include "mlir/Dialect/QTensor/IR/QTensorDialect.h" // IWYU pragma: associated
 
 #include <llvm/ADT/STLExtras.h>
+#include <llvm/ADT/SmallBitVector.h>
 #include <llvm/Support/Casting.h>
-#include <mlir/Dialect/Affine/IR/AffineOps.h>
+#include <llvm/Support/ErrorHandling.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
-#include <mlir/Dialect/Arith/Utils/Utils.h>
 #include <mlir/Dialect/Complex/IR/Complex.h>
 #include <mlir/Dialect/Linalg/IR/RelayoutOpInterface.h>
 #include <mlir/Dialect/Tensor/IR/Tensor.h>
 #include <mlir/Dialect/Utils/StaticValueUtils.h>
+#include <mlir/Dialect/Utils/StructuredOpsUtils.h>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/BuiltinTypeInterfaces.h>
 #include <mlir/IR/BuiltinTypes.h>
+#include <mlir/IR/Location.h>
 #include <mlir/IR/OpDefinition.h>
+#include <mlir/IR/Operation.h>
 #include <mlir/IR/PatternMatch.h>
 #include <mlir/IR/TypeUtilities.h>
 #include <mlir/Interfaces/DestinationStyleOpInterface.h>
+#include <mlir/Interfaces/LoopLikeInterface.h>
 #include <mlir/Interfaces/ViewLikeInterface.h>
 #include <mlir/Support/LLVM.h>
+
+#include <cassert>
+#include <cstddef>
+#include <cstdint>
 
 // The following headers are needed for some template instantiations.
 // IWYU pragma: begin_keep
@@ -160,7 +168,6 @@ bool foldTensorCastPrecondition(DestinationStyleOpInterface op) {
 
   return mlir::tensor::hasFoldableTensorCastOperand(op);
 }
-} // namespace
 
 struct FoldTensorCastProducerOp
     : public OpInterfaceRewritePattern<DestinationStyleOpInterface> {
@@ -200,6 +207,7 @@ struct FoldTensorCastProducerOp
     return success();
   }
 };
+} // namespace
 
 void QTensorDialect::getCanonicalizationPatterns(
     RewritePatternSet& results) const {

@@ -8,6 +8,7 @@
  * Licensed under the MIT License
  */
 
+#include "mlir/Dialect/QTensor/IR/QTensorDialect.h"
 #include "mlir/Dialect/QTensor/IR/QTensorOps.h"
 
 #include <llvm/ADT/STLExtras.h>
@@ -20,12 +21,18 @@
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/BuiltinTypeInterfaces.h>
 #include <mlir/IR/BuiltinTypes.h>
+#include <mlir/IR/Matchers.h>
 #include <mlir/IR/OpDefinition.h>
 #include <mlir/IR/PatternMatch.h>
 #include <mlir/IR/TypeUtilities.h>
+#include <mlir/Interfaces/InferTypeOpInterface.h>
 #include <mlir/Interfaces/ViewLikeInterface.h>
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/LogicalResult.h>
+
+#include <cstdint>
+#include <optional>
+#include <type_traits>
 
 using namespace mlir;
 using namespace mlir::qtensor;
@@ -346,7 +353,7 @@ struct InsertSliceOpCastFolder final : public OpRewritePattern<InsertOpTy> {
 
     // In the parallel case there is no result and so nothing to cast.
     bool isParallelInsert =
-        std::is_same<InsertOpTy, tensor::ParallelInsertSliceOp>::value;
+        std::is_same_v<InsertOpTy, tensor::ParallelInsertSliceOp>;
     if (!isParallelInsert && dst.getType() != insertSliceOp.getDestType()) {
       replacement = rewriter.create<tensor::CastOp>(insertSliceOp.getLoc(),
                                                     insertSliceOp.getDestType(),

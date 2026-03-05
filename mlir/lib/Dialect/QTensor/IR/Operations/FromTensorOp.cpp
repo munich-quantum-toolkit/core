@@ -18,6 +18,8 @@
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/LogicalResult.h>
 
+#include <cstdint>
+
 using namespace mlir;
 using namespace mlir::qtensor;
 

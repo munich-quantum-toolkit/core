@@ -8,10 +8,9 @@
  * Licensed under the MIT License
  */
 
+#include "mlir/Dialect/QTensor/IR/QTensorDialect.h"
 #include "mlir/Dialect/QTensor/IR/QTensorOps.h"
 
-#include <cassert>
-#include <cstdint>
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/SmallBitVector.h>
 #include <llvm/ADT/SmallVector.h>
@@ -29,6 +28,9 @@
 #include <mlir/Interfaces/ViewLikeInterface.h>
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/LogicalResult.h>
+
+#include <cassert>
+#include <cstdint>
 #include <tuple>
 
 using namespace mlir;

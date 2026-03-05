@@ -11,9 +11,10 @@
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QTensor/IR/QTensorOps.h"
 
-#include <cstdint>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/BuiltinTypes.h>
+
+#include <cstdint>
 
 using namespace mlir;
 using namespace mlir::qtensor;
