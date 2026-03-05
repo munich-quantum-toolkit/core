@@ -18,9 +18,13 @@
 #include "mlir/Passes/Mapping/Architecture.h"
 #include "mlir/Passes/Passes.h"
 
+#include <cassert>
+#include <cstddef>
+#include <functional>
 #include <gtest/gtest.h>
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/Support/LogicalResult.h>
+#include <memory>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/IR/BuiltinOps.h>
@@ -30,10 +34,6 @@
 #include <mlir/Pass/PassManager.h>
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/WalkResult.h>
-
-#include <cstddef>
-#include <functional>
-#include <memory>
 #include <string>
 #include <tuple>
 
@@ -105,7 +105,8 @@ protected:
   static void runHeuristicMapping(OwningOpRef<ModuleOp>& module) {
     PassManager pm(module->getContext());
     pm.addPass(createQCToQCO());
-    pm.addPass(qco::createHeuristicMappingPass());
+    pm.addPass(qco::createHeuristicMappingPass(qco::HeuristicMappingPassOptions{
+        .nlookahead = 5, .alpha = 1, .lambda = 0.85, .repeats = 2}));
     pm.addPass(createQCOToQC());
     auto res = pm.run(*module);
     ASSERT_FALSE(failed(res));
