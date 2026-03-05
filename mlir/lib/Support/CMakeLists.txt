@@ -19,6 +19,7 @@ add_mlir_library(
   MLIRIR
   MLIRPass
   MLIRTransforms
+  MLIRControlFlowInterfaces
   MLIRTransformUtils
   MLIRLLVMDialect
   MLIRFuncDialect

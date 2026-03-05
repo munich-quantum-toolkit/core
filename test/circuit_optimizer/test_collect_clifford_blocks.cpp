@@ -12,6 +12,7 @@
 #include "ir/QuantumComputation.hpp"
 
 #include <gtest/gtest.h>
+
 #include <iostream>
 
 namespace qc {

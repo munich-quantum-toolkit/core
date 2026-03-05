@@ -10,8 +10,9 @@
 
 #pragma once
 
-#include <iterator>
 #include <mlir/IR/Operation.h>
+
+#include <iterator>
 
 namespace mlir::qco {
 

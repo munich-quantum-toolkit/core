@@ -10,7 +10,6 @@
 
 #include "qir/runtime/QIR.h"
 
-#include <cstdlib>
 #include <llvm/ADT/StringExtras.h>
 #include <llvm/CodeGen/CommandFlags.h>
 #include <llvm/ExecutionEngine/JITEventListener.h>
@@ -43,6 +42,8 @@
 #include <llvm/Support/TargetSelect.h>
 #include <llvm/Support/raw_ostream.h>
 #include <llvm/TargetParser/Triple.h>
+
+#include <cstdlib>
 #include <memory>
 #include <optional>
 #include <span>

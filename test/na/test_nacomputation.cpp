@@ -22,6 +22,7 @@
 #include "na/operations/StoreOp.hpp"
 
 #include <gtest/gtest.h>
+
 #include <sstream>
 #include <stdexcept>
 #include <tuple>

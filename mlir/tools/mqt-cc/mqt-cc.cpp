@@ -16,7 +16,6 @@
 #include "qasm3/Exception.hpp"
 #include "qasm3/Importer.hpp"
 
-#include <exception>
 #include <llvm/Support/CommandLine.h>
 #include <llvm/Support/InitLLVM.h>
 #include <llvm/Support/SourceMgr.h>
@@ -33,6 +32,8 @@
 #include <mlir/Parser/Parser.h>
 #include <mlir/Support/FileUtilities.h>
 #include <mlir/Support/LogicalResult.h>
+
+#include <exception>
 #include <string>
 #include <utility>
 

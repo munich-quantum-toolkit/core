@@ -15,6 +15,7 @@
 
 // NOLINTNEXTLINE(misc-include-cleaner)
 #include <nlohmann/json.hpp>
+
 #include <optional>
 #include <vector>
 

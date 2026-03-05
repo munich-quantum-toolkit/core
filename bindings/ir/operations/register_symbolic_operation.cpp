@@ -21,6 +21,7 @@
 #include <nanobind/stl/unordered_map.h> // NOLINT(misc-include-cleaner)
 #include <nanobind/stl/variant.h>       // NOLINT(misc-include-cleaner)
 #include <nanobind/stl/vector.h>        // NOLINT(misc-include-cleaner)
+
 #include <vector>
 
 namespace mqt {

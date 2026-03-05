@@ -11,12 +11,13 @@
 #include "ir/Definitions.hpp"
 #include "qir/runtime/QIR.h"
 
+#include <gmock/gmock-matchers.h>
+#include <gtest/gtest.h>
+
 #include <algorithm>
 #include <array>
 #include <cstdlib>
 #include <filesystem>
-#include <gmock/gmock-matchers.h>
-#include <gtest/gtest.h>
 #include <iostream>
 #include <sstream>
 #include <streambuf>

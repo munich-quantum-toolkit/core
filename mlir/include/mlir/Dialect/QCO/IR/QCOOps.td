@@ -14,6 +14,7 @@ include "mlir/IR/BuiltinTypeInterfaces.td"
 include "mlir/IR/DialectBase.td"
 include "mlir/IR/EnumAttr.td"
 include "mlir/IR/OpBase.td"
+include "mlir/Interfaces/ControlFlowInterfaces.td"
 include "mlir/Interfaces/InferTypeOpInterface.td"
 include "mlir/Interfaces/SideEffectInterfaces.td"
 
@@ -1048,7 +1049,7 @@ def BarrierOp : QCOOp<"barrier", traits = [UnitaryOpInterface]> {
 // Modifiers
 //===----------------------------------------------------------------------===//
 
-def YieldOp : QCOOp<"yield", traits = [Terminator]> {
+def YieldOp : QCOOp<"yield", traits = [Terminator, ReturnLike]> {
     let summary = "Yield from a modifier region";
     let description = [{
         Terminates a modifier region, yielding the transformed target qubits back to the enclosing modifier operation.
@@ -1200,6 +1201,85 @@ def InvOp : QCOOp<"inv",
         }]>,
         OpBuilder<(ins "ValueRange":$qubits, "llvm::function_ref<llvm::SmallVector<Value>(ValueRange)>":$bodyBuilder)>
     ];
+
+    let hasCanonicalizer = 1;
+    let hasVerifier = 1;
+}
+
+//===----------------------------------------------------------------------===//
+// SCF operations
+//===----------------------------------------------------------------------===//
+
+def IfOp : QCOOp<"if", traits =
+            [
+                DeclareOpInterfaceMethods<RegionBranchOpInterface, [
+                "getNumRegionInvocations", "getRegionInvocationBounds",
+                "getEntrySuccessorRegions"]>,
+                SingleBlock,
+                SingleBlockImplicitTerminator<"::mlir::qco::YieldOp">,
+                RecursiveMemoryEffects
+            ]> {
+
+    let summary = "If-then-else operation for linear (qubit) types";
+    let description = [{
+        The `qco.if` operation is an if-then-else construct similar to the standard scf.if operation.
+        In addition to the condition, the operation takes a variadic number of qubits as inputs that are
+        required in the bodies of both branches. These qubits are passed down to the individual regions
+        as block arguments. The number of results and the type of the results must be equivalent to the
+        number and types of the input qubits.
+
+        Example:
+        ```mlir
+        %result = qco.if %condition qubits(%arg0 = %q0) {
+            %q1 = qco.h %arg0 : !qco.qubit -> !qco.qubit
+            qco.yield %q1
+         } else qubits(%arg0 = %q0) {
+            qco.yield %arg0
+        } : {i1, !qco.qubit} -> {!qco.qubit}
+        ```
+    }];
+
+    let arguments = (ins I1:$condition,  Variadic<QubitType>:$qubits);
+    let results = (outs Variadic<QubitType>:$results);
+    let regions = (region SizedRegion<1>:$thenRegion,
+                          SizedRegion<1>:$elseRegion);
+
+    let assemblyFormat = [{
+        $condition
+         custom<IfOpAliasing>($thenRegion, $elseRegion, $qubits)
+         attr-dict `:`
+        `{` type($condition) `,` type($qubits) `}`
+        `->`
+        `{` type($results) `}`
+    }];
+
+    let builders = [
+        OpBuilder<(ins "Value":$condition, "ValueRange":$qubits), [{
+           build($_builder, $_state, qubits.getTypes(), condition, qubits);
+        }]>,
+        OpBuilder<(ins "Value":$condition, "ValueRange":$qubits, "llvm::function_ref<llvm::SmallVector<Value>(ValueRange)>":$thenBuilder,
+        CArg<"llvm::function_ref<llvm::SmallVector<Value>(ValueRange)>","nullptr">:$elseBuilder)>
+    ];
+
+    let extraClassDeclaration = [{
+        Block *thenBlock() {
+           return &getThenRegion().back();
+        }
+        YieldOp thenYield();
+        Block* elseBlock() {
+           return &getElseRegion().back();
+        }
+        YieldOp elseYield();
+    }];
+
+    let extraClassDefinition = [{
+        YieldOp $cppClass::thenYield() {
+           return cast<YieldOp>(&thenBlock()->back());
+        }
+        YieldOp $cppClass::elseYield() {
+           return cast<YieldOp>(&elseBlock()->back());
+        }
+    }];
 
     let hasCanonicalizer = 1;
     let hasVerifier = 1;

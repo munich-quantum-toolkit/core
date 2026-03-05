@@ -13,12 +13,13 @@
 #include "mlir/Dialect/QCO/Utils/WireIterator.h"
 
 #include <gtest/gtest.h>
-#include <iterator>
-#include <memory>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/IR/DialectRegistry.h>
 #include <mlir/IR/MLIRContext.h>
+
+#include <iterator>
+#include <memory>
 #include <utility>
 
 using namespace mlir;
