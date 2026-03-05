@@ -10,7 +10,6 @@
 
 #include "mlir/Dialect/QTensor/IR/QTensorOps.h"
 
-#include <mlir/Dialect/Linalg/IR/RelayoutOpInterface.h>
 #include <mlir/Dialect/Tensor/IR/Tensor.h>
 #include <mlir/IR/BuiltinTypeInterfaces.h>
 #include <mlir/IR/PatternMatch.h>

@@ -18,13 +18,17 @@
 #include <mlir/Dialect/Arith/Utils/Utils.h>
 #include <mlir/Dialect/Tensor/IR/Tensor.h>
 #include <mlir/Dialect/Utils/StaticValueUtils.h>
+#include <mlir/IR/Attributes.h>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/BuiltinTypeInterfaces.h>
 #include <mlir/IR/BuiltinTypes.h>
+#include <mlir/IR/Location.h>
+#include <mlir/IR/Matchers.h>
 #include <mlir/IR/OpDefinition.h>
 #include <mlir/IR/OperationSupport.h>
 #include <mlir/IR/PatternMatch.h>
 #include <mlir/IR/TypeUtilities.h>
+#include <mlir/Interfaces/InferTypeOpInterface.h>
 #include <mlir/Interfaces/ViewLikeInterface.h>
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/LogicalResult.h>

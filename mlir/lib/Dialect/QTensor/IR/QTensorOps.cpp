@@ -155,9 +155,7 @@ foldIdentityOffsetSizeAndStrideOpInterface(OffsetSizeAndStrideOpInterface op,
 // Common Canonicalizers and Folders.
 //===----------------------------------------------------------------------===//
 
-namespace {
-
-bool foldTensorCastPrecondition(DestinationStyleOpInterface op) {
+static bool foldTensorCastPrecondition(DestinationStyleOpInterface op) {
   // 1. InsertSliceOp has its own logic about folding tensor.cast ops.
   // 2. Exclude DPS ops that are also LoopLike from this interface as they
   // might need special handling of attached regions.
@@ -169,6 +167,7 @@ bool foldTensorCastPrecondition(DestinationStyleOpInterface op) {
   return mlir::tensor::hasFoldableTensorCastOperand(op);
 }
 
+namespace {
 struct FoldTensorCastProducerOp
     : public OpInterfaceRewritePattern<DestinationStyleOpInterface> {
   using OpInterfaceRewritePattern<
