@@ -301,7 +301,7 @@ public:
   using HeuristicMappingPassBase::HeuristicMappingPassBase;
 
   void runOnOperation() override {
-    Parameters weights(this->alpha, this->lambda, this->nlookahead);
+    Parameters params(this->alpha, this->lambda, this->nlookahead);
     // TODO: Hardcoded architecture.
     Architecture arch("RigettiNovera", 9,
                       {{0, 3}, {3, 0}, {0, 1}, {1, 0}, {1, 4}, {4, 1},
@@ -327,11 +327,11 @@ public:
 
       Layout layout = Layout::identity(arch.nqubits());
       for (std::size_t r = 0; r < this->repeats; ++r) {
-        if (failed(routeCold(ltr, layout, arch, weights))) {
+        if (failed(routeCold(ltr, layout, arch, params))) {
           signalPassFailure();
           return;
         }
-        if (failed(routeCold(rtl, layout, arch, weights))) {
+        if (failed(routeCold(rtl, layout, arch, params))) {
           signalPassFailure();
           return;
         }
@@ -341,11 +341,10 @@ public:
       // qubits ("placement") and hot-route the circuit layer-by-layer.
 
       const auto stat = place(dyn, layout, func.getFunctionBody(), rewriter);
-      if (failed(routeHot(ltr, layout, stat, arch, weights, rewriter))) {
+      if (failed(routeHot(ltr, layout, stat, arch, params, rewriter))) {
         signalPassFailure();
         return;
       };
-      sortTopologically(&func.getFunctionBody().front());
     }
   }
 
@@ -413,7 +412,7 @@ private:
    */
   [[nodiscard]] static FailureOr<SmallVector<IndexGate>>
   search(ArrayRef<Layer> layers, const Layout& layout, const Architecture& arch,
-         const Parameters& weights) {
+         const Parameters& params) {
 
     Node root(layout);
     if (root.isGoal(layers.front(), arch)) {
@@ -450,7 +449,7 @@ private:
               continue;
             }
 
-            frontier.emplace(curr, swap, layers, arch, weights);
+            frontier.emplace(curr, swap, layers, arch, params);
           }
         }
       }
@@ -559,11 +558,11 @@ private:
    * @returns failure() if A* search isn't able to find a solution.
    */
   LogicalResult routeCold(ArrayRef<Layer> layers, Layout& layout,
-                          const Architecture& arch, const Parameters& weights) {
+                          const Architecture& arch, const Parameters& params) {
     for (std::size_t i = 0; i < layers.size(); ++i) {
       const std::size_t len = std::min(1 + nlookahead, layers.size() - i);
       const auto window = layers.slice(i, len);
-      const auto swaps = search(window, layout, arch, weights);
+      const auto swaps = search(window, layout, arch, params);
       if (failed(swaps)) {
         return failure();
       }
@@ -585,8 +584,7 @@ private:
    */
   LogicalResult routeHot(ArrayRef<Layer> ltr, Layout& layout,
                          ArrayRef<QubitValue> statics, const Architecture& arch,
-                         const Parameters& weights, IRRewriter& rewriter) {
-
+                         const Parameters& params, IRRewriter& rewriter) {
     // Helper function that advances the iterator to the input qubit (the
     // operation producing it) of a deallocation or two-qubit op.
     const auto advFront = [](WireIterator& it) {
@@ -614,15 +612,26 @@ private:
       // Collect window and use A* to find and insert a sequence of swaps.
       const auto len = std::min(1 + this->nlookahead, ltr.size() - i);
       const auto window = ltr.slice(i, len);
-      const auto swaps = search(window, layout, arch, weights);
+      const auto swaps = search(window, layout, arch, params);
       if (failed(swaps)) {
         return failure();
       }
 
       const auto unknown = rewriter.getUnknownLoc();
       for (const auto [hw0, hw1] : *swaps) {
+        Operation* op0 = wires[hw0].operation();
+        Operation* op1 = wires[hw1].operation();
         const auto in0 = wires[hw0].qubit();
         const auto in1 = wires[hw1].qubit();
+
+        // Reorder to avoid SSA dominance issues.
+        assert(op0->getBlock()->isOpOrderValid() &&
+               "An invalid op order leads to a significant runtime overhead.");
+        if (op0->isBeforeInBlock(op1)) {
+          rewriter.setInsertionPointAfterValue(in1);
+        } else {
+          rewriter.setInsertionPointAfterValue(in0);
+        }
 
         auto op = rewriter.create<SWAPOp>(unknown, in0, in1);
         const auto out0 = op.getQubit0Out();
