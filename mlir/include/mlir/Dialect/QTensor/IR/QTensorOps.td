@@ -76,6 +76,22 @@ class QTensorOpWithOffsetSizesAndStrides<string mnemonic,
 // Operations
 //===----------------------------------------------------------------------===//
 
+def QTensor_AllocOp : QTensorOp<"alloc", [
+    Pure,]> {
+  let summary = "Tensor alloc operation";
+  let description = [{
+  TODO
+  }];
+
+  let arguments = (ins ConfinedAttr<I64Attr, [IntPositive]>:$size);
+  let results = (outs AnyStaticShapeTensor:$result);
+  let assemblyFormat = "`(`$size`)` attr-dict `:` type($result)";
+
+  let builders = [
+     OpBuilder<(ins "int64_t":$size)>
+  ];
+}
+
 def QTensor_ExtractOp : QTensorOp<"extract", [
     DeclareOpInterfaceMethods<OpAsmOpInterface, ["getAsmResultNames"]>,
     Pure,

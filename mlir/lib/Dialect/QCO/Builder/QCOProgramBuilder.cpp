@@ -12,7 +12,6 @@
 
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
-#include "mlir/Dialect/QTensor/IR/QTensorDialect.h"
 #include "mlir/Dialect/QTensor/IR/QTensorOps.h"
 #include "mlir/Dialect/Utils/Utils.h"
 
@@ -166,24 +165,13 @@ void QCOProgramBuilder::updateQubitTracking(Value inputQubit,
 // QTensor Operations
 //===----------------------------------------------------------------------===//
 
-Value QCOProgramBuilder::allocateTensor(int64_t size) {
+Value QCOProgramBuilder::allocTensor(int64_t size) {
   checkFinalized();
-
-  if (size <= 0) {
-    llvm::reportFatalUsageError("Size must be positive");
-  }
-
-  llvm::SmallVector<Value> qubits;
-  qubits.reserve(static_cast<size_t>(size));
-  for (int64_t i = 0; i < size; ++i) {
-    auto allocOp = AllocOp::create(*this);
-    qubits.emplace_back(allocOp);
-  }
-
-  auto fromElementsOp = qtensor::FromElementsOp::create(*this, qubits);
-  validQubits.insert(fromElementsOp);
-  return fromElementsOp.getResult();
+  auto allocOp = qtensor::AllocOp::create(*this, size);
+  validQubits.insert(allocOp);
+  return allocOp.getResult();
 }
+
 Value QCOProgramBuilder::fromElements(ValueRange elements) {
   checkFinalized();
 

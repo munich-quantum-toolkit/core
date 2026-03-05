@@ -222,7 +222,7 @@ public:
    * %tensor = qtensor.from_elements %q0, %q1, %q2 : tensor<3x!qco.qubit>
    * ```
    */
-  Value allocateTensor(int64_t size);
+  Value allocTensor(int64_t size);
 
   /**
    * @brief Allocate a qubit tensor from a list of qubit values
