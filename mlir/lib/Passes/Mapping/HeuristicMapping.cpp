@@ -15,6 +15,12 @@
 #include "mlir/Passes/Mapping/Architecture.h"
 #include "mlir/Passes/Passes.h"
 
+#include <algorithm>
+#include <cassert>
+#include <cstddef>
+#include <cstdint>
+#include <functional>
+#include <iterator>
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/ADT/TypeSwitch.h>
@@ -31,13 +37,6 @@
 #include <mlir/IR/Value.h>
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/WalkResult.h>
-
-#include <algorithm>
-#include <cassert>
-#include <cstddef>
-#include <cstdint>
-#include <functional>
-#include <iterator>
 #include <queue>
 #include <string>
 #include <string_view>
@@ -314,9 +313,10 @@ public:
     for (auto func : getOperation().getOps<func::FuncOp>()) {
       const auto dyn = collectDynamicQubits(func.getFunctionBody());
       if (dyn.size() > arch.nqubits()) {
-        func.emitError() << "the targeted architecture supports"
+        func.emitError() << "the targeted architecture supports "
                          << arch.nqubits() << " qubits, got " << dyn.size();
         signalPassFailure();
+        return;
       }
 
       const auto [ltr, rtl] = computeBidirectionalLayers(dyn);
