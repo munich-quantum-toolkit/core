@@ -16,6 +16,8 @@
 #include <jeff/IR/JeffDialect.h>
 #include <jeff/IR/JeffOps.h>
 #include <llvm/ADT/SmallVector.h>
+#include <llvm/ADT/TypeSwitch.h>
+#include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/IR/BuiltinAttributes.h>
 #include <mlir/IR/BuiltinTypeInterfaces.h>
@@ -996,6 +998,50 @@ struct ConvertQCOYieldOpToJeff final
   }
 };
 
+struct ConvertArithConstOpToJeff final
+    : StatefulOpConversionPattern<arith::ConstantOp> {
+  using StatefulOpConversionPattern::StatefulOpConversionPattern;
+  LogicalResult
+  matchAndRewrite(arith::ConstantOp op, OpAdaptor /*adaptor*/,
+                  ConversionPatternRewriter& rewriter) const override {
+    auto value = op.getValue();
+    return llvm::TypeSwitch<Type, LogicalResult>(op.getType())
+        .Case<FloatType>([&](auto type) -> LogicalResult {
+          auto floatAttr = llvm::dyn_cast<FloatAttr>(value);
+          if (!floatAttr) {
+            return rewriter.notifyMatchFailure(op, "Expected float attribute");
+          }
+          switch (type.getWidth()) {
+          case 64:
+            rewriter.replaceOpWithNewOp<jeff::FloatConst64Op>(op, floatAttr);
+            return success();
+          default:
+            return rewriter.notifyMatchFailure(op, "Unsupported type");
+          }
+        })
+        .Case<IntegerType>([&](auto type) -> LogicalResult {
+          auto intAttr = llvm::dyn_cast<IntegerAttr>(value);
+          if (!intAttr) {
+            return rewriter.notifyMatchFailure(op,
+                                               "Expected integer attribute");
+          }
+          switch (type.getWidth()) {
+          case 1:
+            rewriter.replaceOpWithNewOp<jeff::IntConst1Op>(op, intAttr);
+            return success();
+          case 64:
+            rewriter.replaceOpWithNewOp<jeff::IntConst64Op>(op, intAttr);
+            return success();
+          default:
+            return rewriter.notifyMatchFailure(op, "Unsupported type");
+          }
+        })
+        .Default([&](auto) -> LogicalResult {
+          return rewriter.notifyMatchFailure(op, "Unsupported type");
+        });
+  }
+};
+
 /**
  * @brief Type converter for QCO-to-Jeff conversion
  *
@@ -1059,7 +1105,7 @@ static LogicalResult cleanUp(Operation* op, LoweringState& state) {
       continue;
     }
     if (llvm::any_of(passthrough, [](Attribute attr) {
-          const auto strAttr = dyn_cast<StringAttr>(attr);
+          const auto strAttr = llvm::dyn_cast<StringAttr>(attr);
           return strAttr && strAttr.getValue() == "entry_point";
         })) {
       mainFound = true;
@@ -1118,8 +1164,8 @@ struct QCOToJeff final : impl::QCOToJeffBase<QCOToJeff> {
 
     LoweringState state;
 
-    // Configure conversion target: QCO illegal, Jeff legal
-    target.addIllegalDialect<QCODialect>();
+    // Configure conversion target
+    target.addIllegalDialect<QCODialect, arith::ArithDialect>();
     target.addLegalDialect<jeff::JeffDialect>();
 
     // Register operation conversion patterns
@@ -1137,17 +1183,17 @@ struct QCOToJeff final : impl::QCOToJeffBase<QCOToJeff> {
         ConvertQCORYYOpToJeff, ConvertQCORZXOpToJeff, ConvertQCORZZOpToJeff,
         ConvertQCOXXMinusYYOpToJeff, ConvertQCOXXPlusYYOpToJeff,
         ConvertQCOBarrierOpToJeff, ConvertQCOCtrlOpToJeff,
-        ConvertQCOInvOpToJeff, ConvertQCOYieldOpToJeff>(typeConverter, context,
-                                                        &state);
+        ConvertQCOInvOpToJeff, ConvertQCOYieldOpToJeff,
+        ConvertArithConstOpToJeff>(typeConverter, context, &state);
 
     // Apply the conversion
     if (applyPartialConversion(module, target, std::move(patterns)).failed()) {
       signalPassFailure();
+      return;
     }
 
     if (cleanUp(module, state).failed()) {
       signalPassFailure();
-      return;
     }
   }
 };
