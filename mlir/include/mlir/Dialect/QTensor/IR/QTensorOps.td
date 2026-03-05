@@ -433,5 +433,7 @@ def QTensor_DeallocOp : QTensorOp<"dealloc", [MemoryEffects<[MemFree]>]> {
 
     let arguments = (ins AnyRankedTensor:$tensor);
     let assemblyFormat = "$tensor attr-dict `:` type($tensor)";
+
+    let hasCanonicalizer = 1;
 }
 #endif // TENSOR_OPS
