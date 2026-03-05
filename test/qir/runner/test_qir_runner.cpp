@@ -8,9 +8,10 @@
  * Licensed under the MIT License
  */
 
+#include <gtest/gtest.h>
+
 #include <cstdlib>
 #include <filesystem>
-#include <gtest/gtest.h>
 #include <sstream>
 
 namespace qir {

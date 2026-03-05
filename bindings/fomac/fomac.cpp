@@ -20,8 +20,9 @@
 #include <nanobind/stl/pair.h>     // NOLINT(misc-include-cleaner)
 #include <nanobind/stl/string.h>   // NOLINT(misc-include-cleaner)
 #include <nanobind/stl/vector.h>   // NOLINT(misc-include-cleaner)
-#include <optional>
 #include <qdmi/client.h>
+
+#include <optional>
 #include <string>
 #include <utility>
 #include <vector>

@@ -18,9 +18,6 @@
 #include "ir/operations/Operation.hpp"
 #include "mlir/Dialect/QC/Builder/QCProgramBuilder.h"
 
-#include <algorithm>
-#include <cstddef>
-#include <cstdint>
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/Support/ErrorHandling.h>
 #include <llvm/Support/raw_ostream.h>
@@ -31,6 +28,10 @@
 #include <mlir/IR/Value.h>
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/LogicalResult.h>
+
+#include <algorithm>
+#include <cstddef>
+#include <cstdint>
 #include <ranges>
 #include <utility>
 

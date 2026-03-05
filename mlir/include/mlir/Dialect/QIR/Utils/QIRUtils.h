@@ -12,13 +12,14 @@
 
 #include "mlir/Dialect/QIR/Utils/QIRMetadata.h"
 
-#include <cstddef>
-#include <cstdint>
 #include <llvm/ADT/StringRef.h>
 #include <llvm/Support/ErrorHandling.h>
 #include <mlir/IR/Location.h>
 #include <mlir/IR/Types.h>
 #include <mlir/IR/Value.h>
+
+#include <cstddef>
+#include <cstdint>
 
 namespace mlir {
 class OpBuilder;

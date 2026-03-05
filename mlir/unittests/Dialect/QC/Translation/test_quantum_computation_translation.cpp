@@ -19,12 +19,13 @@
 #include "quantum_computation_programs.h"
 
 #include <gtest/gtest.h>
-#include <memory>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/IR/DialectRegistry.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/Verifier.h>
+
+#include <memory>
 #include <ostream>
 #include <string>
 

@@ -16,8 +16,9 @@
 #include "ir/Definitions.hpp"
 #include "ir/QuantumComputation.hpp"
 
-#include <cstddef>
 #include <gtest/gtest.h>
+
+#include <cstddef>
 #include <iostream>
 #include <memory>
 #include <sstream>

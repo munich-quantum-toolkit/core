@@ -23,8 +23,9 @@
 #include "ir/operations/SymbolicOperation.hpp"
 #include "qasm3/Importer.hpp"
 
-#include <cstdint>
 #include <gtest/gtest.h>
+
+#include <cstdint>
 #include <sstream>
 #include <stdexcept>
 #include <string>

@@ -10,10 +10,11 @@
 
 #pragma once
 
-#include <cstddef>
 #include <llvm/ADT/StringRef.h>
 #include <mlir/IR/OpDefinition.h>
 #include <mlir/IR/Value.h>
+
+#include <cstddef>
 
 // clang-format:off
 #include "mlir/Dialect/QC/IR/QCInterfaces.h.inc" // IWYU pragma: export

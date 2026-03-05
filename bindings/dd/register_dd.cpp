@@ -16,13 +16,14 @@
 #include "dd/StateGeneration.hpp"
 #include "ir/QuantumComputation.hpp"
 
-#include <complex>
-#include <cstddef>
-#include <memory>
 #include <nanobind/nanobind.h>
 #include <nanobind/ndarray.h>
 #include <nanobind/stl/map.h>    // NOLINT(misc-include-cleaner)
 #include <nanobind/stl/string.h> // NOLINT(misc-include-cleaner)
+
+#include <complex>
+#include <cstddef>
+#include <memory>
 
 namespace mqt {
 

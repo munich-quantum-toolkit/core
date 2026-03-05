@@ -14,6 +14,8 @@
 #include "ir/Definitions.hpp"
 #include "qdmi/devices/na/Generator.hpp"
 
+#include <spdlog/spdlog.h>
+
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -27,7 +29,6 @@
 #include <queue>
 #include <ranges>
 #include <regex>
-#include <spdlog/spdlog.h>
 #include <string>
 #include <tuple>
 #include <unordered_map>

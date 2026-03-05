@@ -12,7 +12,6 @@
 
 #include "mlir/Dialect/QIR/Utils/QIRMetadata.h"
 
-#include <cstdint>
 #include <llvm/ADT/DenseMap.h>
 #include <llvm/ADT/STLFunctionalExtras.h>
 #include <llvm/ADT/SmallVector.h>
@@ -27,6 +26,8 @@
 #include <mlir/IR/Types.h>
 #include <mlir/IR/Value.h>
 #include <mlir/IR/ValueRange.h>
+
+#include <cstdint>
 #include <string>
 #include <utility>
 #include <variant>

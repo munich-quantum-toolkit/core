@@ -16,10 +16,11 @@
 #include "ir/Definitions.hpp"
 #include "ir/QuantumComputation.hpp"
 
+#include <gtest/gtest.h>
+
 #include <array>
 #include <cstddef>
 #include <cstdlib>
-#include <gtest/gtest.h>
 #include <memory>
 #include <numeric>
 

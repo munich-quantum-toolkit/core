@@ -13,9 +13,10 @@
 #include "dd/MemoryManager.hpp"
 #include "dd/Node.hpp"
 
+#include <nlohmann/json.hpp>
+
 #include <algorithm>
 #include <cstddef>
-#include <nlohmann/json.hpp>
 #include <numeric>
 #include <string>
 

@@ -12,6 +12,9 @@
 
 #include "qdmi/common/Common.hpp"
 
+#include <qdmi/client.h>
+#include <spdlog/spdlog.h>
+
 #include <algorithm>
 #include <complex>
 #include <cstddef>
@@ -20,9 +23,7 @@
 #include <iterator>
 #include <map>
 #include <optional>
-#include <qdmi/client.h>
 #include <regex>
-#include <spdlog/spdlog.h>
 #include <sstream>
 #include <stdexcept>
 #include <string>

@@ -10,14 +10,14 @@
 
 #pragma once
 
+#include <nlohmann/json.hpp> // NOLINT(misc-include-cleaner)
+
 #include <algorithm>
 #include <array>
 #include <cstddef>
 #include <cstdint>
 #include <functional>
 #include <istream>
-// NOLINTNEXTLINE(misc-include-cleaner)
-#include <nlohmann/json.hpp>
 #include <ostream>
 #include <sstream>
 #include <stdexcept>

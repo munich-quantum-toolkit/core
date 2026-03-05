@@ -25,6 +25,8 @@
 #include "ir/Definitions.hpp"
 #include "ir/QuantumComputation.hpp"
 
+#include <nlohmann/json.hpp>
+
 #include <array>
 #include <bitset>
 #include <chrono>
@@ -34,7 +36,6 @@
 #include <fstream>
 #include <iostream>
 #include <memory>
-#include <nlohmann/json.hpp>
 #include <string>
 #include <utility>
 

@@ -12,8 +12,9 @@
 
 #include "dd/statistics/Statistics.hpp"
 
-#include <algorithm>
 #include <nlohmann/json.hpp>
+
+#include <algorithm>
 
 namespace dd {
 
