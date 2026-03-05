@@ -41,7 +41,7 @@ if(BUILD_MQT_CORE_MLIR)
   FetchContent_Declare(
     jeff-mlir
     GIT_REPOSITORY https://github.com/PennyLaneAI/jeff-mlir.git
-    GIT_TAG deserialization
+    GIT_TAG 7960f4e83e9bbc48c6d6bf203ebe5250945d9de3
     GIT_SUBMODULES "" GIT_SUBMODULES_RECURSE FALSE)
   list(APPEND FETCH_PACKAGES jeff-mlir)
   set(CMAKE_CXX_STANDARD 20)
