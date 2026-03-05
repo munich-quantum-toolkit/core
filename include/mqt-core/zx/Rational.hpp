@@ -22,6 +22,7 @@ using BigInt = boost::multiprecision::cpp_int;
 #endif
 
 #include <boost/multiprecision/rational_adaptor.hpp>
+
 #include <cmath>
 #include <cstdint>
 #include <cstdlib>

@@ -22,10 +22,7 @@
 #include "qir_programs.h"
 #include "quantum_computation_programs.h"
 
-#include <cstdlib>
 #include <gtest/gtest.h>
-#include <iosfwd>
-#include <memory>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/ControlFlow/IR/ControlFlow.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
@@ -37,6 +34,10 @@
 #include <mlir/IR/OwningOpRef.h>
 #include <mlir/IR/Verifier.h>
 #include <mlir/Parser/Parser.h>
+
+#include <cstdlib>
+#include <iosfwd>
+#include <memory>
 #include <string>
 
 namespace mqt::test::compiler {

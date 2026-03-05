@@ -14,6 +14,7 @@
 #include "zx/ZXDefinitions.hpp"
 
 #include <gtest/gtest.h>
+
 #include <iostream>
 #include <stdexcept>
 

@@ -15,10 +15,6 @@
 #include "mlir/Dialect/QIR/Utils/QIRMetadata.h"
 #include "mlir/Dialect/QIR/Utils/QIRUtils.h"
 
-#include <cassert>
-#include <cstddef>
-#include <cstdint>
-#include <iterator>
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/ADT/StringMap.h>
@@ -48,6 +44,11 @@
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/LogicalResult.h>
 #include <mlir/Transforms/DialectConversion.h>
+
+#include <cassert>
+#include <cstddef>
+#include <cstdint>
+#include <iterator>
 #include <string>
 #include <utility>
 

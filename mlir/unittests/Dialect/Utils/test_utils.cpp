@@ -10,13 +10,10 @@
 
 #include "mlir/Dialect/Utils/Utils.h"
 
-#include <cstdint>
 #include <gtest/gtest.h>
-#include <limits>
 #include <llvm/ADT/APInt.h>
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/Support/Casting.h>
-#include <memory>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/BuiltinOps.h>
@@ -25,6 +22,10 @@
 #include <mlir/IR/Operation.h>
 #include <mlir/IR/OwningOpRef.h>
 #include <mlir/IR/Value.h>
+
+#include <cstdint>
+#include <limits>
+#include <memory>
 
 using namespace mlir;
 

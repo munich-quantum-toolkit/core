@@ -21,11 +21,12 @@
 #include "dd/statistics/UniqueTableStatistics.hpp"
 #include "ir/Definitions.hpp"
 
+#include <nlohmann/json_fwd.hpp>
+
 #include <cstddef>
 #include <cstdint>
 #include <functional>
 #include <iostream>
-#include <nlohmann/json_fwd.hpp>
 #include <ranges>
 #include <type_traits>
 #include <vector>

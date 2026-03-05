@@ -10,10 +10,11 @@
 
 #include "mlir/Dialect/QC/IR/QCOps.h"
 
-#include <cstddef>
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/Support/ErrorHandling.h>
 #include <mlir/IR/OperationSupport.h>
+
+#include <cstddef>
 
 using namespace mlir;
 using namespace mlir::qc;
