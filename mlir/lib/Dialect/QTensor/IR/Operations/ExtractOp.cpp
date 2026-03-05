@@ -10,6 +10,7 @@
 
 #include "mlir/Dialect/QTensor/IR/QTensorOps.h"
 
+#include <cstdint>
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/Support/Casting.h>
 #include <mlir/Dialect/Tensor/IR/Tensor.h>
