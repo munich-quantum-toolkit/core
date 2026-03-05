@@ -326,39 +326,6 @@ public:
   }
 };
 
-/// Slice elements from `values` into `outValues`. `counts` represents the
-/// numbers of elements to stride in the original values for each dimension.
-/// The output values can be used to construct a DenseElementsAttr.
-template <typename IterTy, typename ElemTy>
-void sliceElements(IterTy values, ArrayRef<int64_t> counts,
-                   ArrayRef<int64_t> offsets, ArrayRef<int64_t> sizes,
-                   ArrayRef<int64_t> strides,
-                   llvm::SmallVectorImpl<ElemTy>* outValues) {
-  assert(offsets.size() == sizes.size());
-  assert(offsets.size() == strides.size());
-  if (offsets.empty()) {
-    return;
-  }
-
-  int64_t offset = offsets.front();
-  int64_t size = sizes.front();
-  int64_t stride = strides.front();
-  if (offsets.size() == 1) {
-    for (int64_t i = 0; i < size; ++i, offset += stride) {
-      outValues->push_back(*(values + offset));
-    }
-
-    return;
-  }
-
-  for (int64_t i = 0; i < size; ++i, offset += stride) {
-    auto begin = values + offset * counts.front();
-    sliceElements<IterTy, ElemTy>(begin, counts.drop_front(),
-                                  offsets.drop_front(), sizes.drop_front(),
-                                  strides.drop_front(), outValues);
-  }
-}
-
 } // namespace
 
 /// Return the canonical type of the result of an extract_slice op.
