@@ -15,6 +15,12 @@
 #include "mlir/Passes/Mapping/Architecture.h"
 #include "mlir/Passes/Passes.h"
 
+#include <algorithm>
+#include <cassert>
+#include <cstddef>
+#include <cstdint>
+#include <functional>
+#include <iterator>
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/ADT/TypeSwitch.h>
@@ -31,13 +37,6 @@
 #include <mlir/IR/Value.h>
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/WalkResult.h>
-
-#include <algorithm>
-#include <cassert>
-#include <cstddef>
-#include <cstdint>
-#include <functional>
-#include <iterator>
 #include <queue>
 #include <string>
 #include <string_view>
@@ -409,7 +408,6 @@ private:
   /**
    * @brief Perform A* search to find a sequence of SWAPs that makes the
    * two-qubit operations inside the first layer (the front) executable.
-   * @details TODO
    * @returns a vector of hardware-index pairs (each denoting a SWAP) or
    * failure() if A* fails.
    */
@@ -434,7 +432,8 @@ private:
         return curr.sequence;
       }
 
-      // TODO: Explain expansion strategy.
+      // Given a layout, create child-nodes for each possible SWAP between
+      // two neighbouring hardware qubits.
 
       expansionSet.clear();
       if (!curr.sequence.empty()) {
@@ -587,7 +586,10 @@ private:
   LogicalResult routeHot(ArrayRef<Layer> ltr, Layout& layout,
                          ArrayRef<QubitValue> statics, const Architecture& arch,
                          const Parameters& weights, IRRewriter& rewriter) {
-    constexpr auto advanceFront = [](WireIterator& it) {
+
+    // Helper function that advances the iterator to the input qubit (the
+    // operation producing it) of a deallocation or two-qubit op.
+    const auto advFront = [](WireIterator& it) {
       while (true) {
         const auto next = std::next(it);
         if (isa<DeallocOp>(next.operation())) {
@@ -605,8 +607,11 @@ private:
 
     auto wires = toWires(statics);
     for (const auto [i, layer] : enumerate(ltr)) {
-      for_each(wires, advanceFront);
+      // Advance all wires to the next front of one-qubit outputs (the SSA
+      // values).
+      for_each(wires, advFront);
 
+      // Collect window and use A* to find and insert a sequence of swaps.
       const auto len = std::min(1 + this->nlookahead, ltr.size() - i);
       const auto window = ltr.slice(i, len);
       const auto swaps = search(window, layout, arch, weights);
