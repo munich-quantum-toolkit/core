@@ -19,7 +19,6 @@
 
 #include <gtest/gtest.h>
 #include <jeff/IR/JeffDialect.h>
-#include <memory>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/IR/BuiltinOps.h>
@@ -28,6 +27,8 @@
 #include <mlir/IR/Verifier.h>
 #include <mlir/Pass/PassManager.h>
 #include <mlir/Support/LogicalResult.h>
+
+#include <memory>
 #include <ostream>
 #include <string>
 

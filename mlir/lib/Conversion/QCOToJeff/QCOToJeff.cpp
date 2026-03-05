@@ -13,8 +13,6 @@
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 
-#include <cassert>
-#include <cstdint>
 #include <jeff/IR/JeffDialect.h>
 #include <jeff/IR/JeffOps.h>
 #include <mlir/IR/BuiltinAttributes.h>
@@ -25,6 +23,9 @@
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/LogicalResult.h>
 #include <mlir/Transforms/DialectConversion.h>
+
+#include <cassert>
+#include <cstdint>
 #include <numbers>
 #include <utility>
 
