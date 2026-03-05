@@ -18,12 +18,9 @@
 #include "mlir/Passes/Mapping/Architecture.h"
 #include "mlir/Passes/Passes.h"
 
-#include <cstddef>
-#include <functional>
 #include <gtest/gtest.h>
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/Support/LogicalResult.h>
-#include <memory>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/IR/BuiltinOps.h>
@@ -33,6 +30,10 @@
 #include <mlir/Pass/PassManager.h>
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/WalkResult.h>
+
+#include <cstddef>
+#include <functional>
+#include <memory>
 #include <string>
 #include <tuple>
 
