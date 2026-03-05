@@ -20,7 +20,6 @@ add_mlir_library(
   QCToQCO
   QCOToQC
   QCToQIR
-  QcoPasses
   MQT::MLIRSupport
   DISABLE_INSTALL)
 

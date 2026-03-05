@@ -131,8 +131,6 @@ TEST_P(HeuristicMappingPassTest, GHZ) {
   auto module = builder.finalize();
   runHeuristicMapping(module);
   EXPECT_TRUE(isExecutable(module, arch));
-
-  module->dump();
 }
 
 TEST_P(HeuristicMappingPassTest, Sabre) {
@@ -181,8 +179,6 @@ TEST_P(HeuristicMappingPassTest, Sabre) {
   auto module = builder.finalize();
   runHeuristicMapping(module);
   EXPECT_TRUE(isExecutable(module, arch));
-
-  module->dump();
 }
 
 INSTANTIATE_TEST_SUITE_P(

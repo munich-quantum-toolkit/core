@@ -30,6 +30,7 @@
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/IR/Block.h>
 #include <mlir/IR/BuiltinOps.h>
+#include <mlir/IR/Diagnostics.h>
 #include <mlir/IR/Location.h>
 #include <mlir/IR/Operation.h>
 #include <mlir/IR/PatternMatch.h>
@@ -311,6 +312,12 @@ public:
     IRRewriter rewriter(&getContext());
     for (auto func : getOperation().getOps<func::FuncOp>()) {
       const auto dyn = collectDynamicQubits(func.getFunctionBody());
+      if (dyn.size() > arch.nqubits()) {
+        func.emitError() << "the targeted architecture supports"
+                         << arch.nqubits() << " qubits, got " << dyn.size();
+        signalPassFailure();
+      }
+
       const auto [ltr, rtl] = computeBidirectionalLayers(dyn);
 
       // Use the SABRE Approach to improve the initial layout choice (here:
@@ -328,7 +335,6 @@ public:
           return;
         }
       }
-      layout.dump();
 
       // Once the initial layout is found, replace the dynamic with static
       // qubits ("placement") and hot-route the circuit layer-by-layer.
@@ -475,7 +481,7 @@ private:
    */
   template <Direction d>
   static SmallVector<Layer> collectLayers(MutableArrayRef<WireIterator> wires) {
-    constexpr std::size_t step = d == Direction::Forward ? 1 : -1;
+    constexpr auto step = d == Direction::Forward ? 1 : -1;
     const auto stop = [](const WireIterator& it) {
       if constexpr (d == Direction::Forward) {
         return it != std::default_sentinel;
