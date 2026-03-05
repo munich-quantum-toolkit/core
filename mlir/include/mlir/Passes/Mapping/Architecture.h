@@ -10,12 +10,13 @@
 
 #pragma once
 
-#include <cstddef>
 #include <llvm/ADT/DenseSet.h>
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/ADT/Twine.h>
 #include <llvm/Support/ErrorHandling.h>
 #include <mlir/Support/LLVM.h>
+
+#include <cstddef>
 #include <string>
 #include <utility>
 

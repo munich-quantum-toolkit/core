@@ -10,10 +10,11 @@
 
 #include "mlir/Passes/Mapping/Architecture.h"
 
-#include <cstddef>
-#include <cstdint>
 #include <llvm/Support/ErrorHandling.h>
 #include <mlir/Support/LLVM.h>
+
+#include <cstddef>
+#include <cstdint>
 #include <string_view>
 #include <utility>
 
