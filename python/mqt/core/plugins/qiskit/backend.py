@@ -126,6 +126,7 @@ class QDMIBackend(BackendV2):
         "r": {"prx"},  # R gate can also be called 'prx' (IQM naming)
         "u": {"u3"},  # U and U3 are the same gate
         "cx": {"cnot"},  # CX and CNOT are the same gate
+        "global_phase": {"gphase"},  # Global phase gate can also be called 'gphase'
     }
 
     _QISKIT_TO_QDMI_GATE_MAP: ClassVar[dict[str, set[str]]]
