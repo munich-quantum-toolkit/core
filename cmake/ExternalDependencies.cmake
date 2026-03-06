@@ -37,7 +37,7 @@ if(BUILD_MQT_CORE_MLIR)
   # Fetch jeff-mlir
   set(BUILD_JEFF_MLIR_TRANSLATION
       OFF
-      CACHE BOOL "Disable building the translation submodule of jeff-mlir" FORCE)
+      CACHE BOOL "Disable building the translation submodule of jeff-mlir")
   FetchContent_Declare(
     jeff-mlir
     GIT_REPOSITORY https://github.com/PennyLaneAI/jeff-mlir.git

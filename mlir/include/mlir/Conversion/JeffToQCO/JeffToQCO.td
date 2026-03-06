@@ -19,7 +19,7 @@ def JeffToQCO : Pass<"jeff-to-qco"> {
    }];
 
   let dependentDialects = [
-     "jeff::JeffDialect",
-     "mlir::QCODialect",
+     "mlir::jeff::JeffDialect",
+     "mlir::qco::QCODialect",
   ];
 }

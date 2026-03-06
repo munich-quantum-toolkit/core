@@ -48,7 +48,7 @@ using namespace qco;
 namespace {
 
 /**
- * @brief State object for tracking moifier information
+ * @brief State object for tracking modifier information
  */
 struct LoweringState {
   // Modifier information
@@ -1436,7 +1436,7 @@ struct QCOToJeff final : impl::QCOToJeffBase<QCOToJeff> {
     LoweringState state;
 
     // Configure conversion target
-    target.addIllegalDialect<QCODialect, arith::ArithDialect>();
+    target.addIllegalDialect<QCODialect>();
     target.addLegalDialect<jeff::JeffDialect>();
 
     // Register operation conversion patterns

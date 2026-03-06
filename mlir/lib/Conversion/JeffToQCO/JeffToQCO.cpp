@@ -417,11 +417,22 @@ static LogicalResult cleanUp(Operation* op) {
     return failure();
   }
 
-  auto entrypoint =
-      llvm::cast<mlir::IntegerAttr>(module->getAttr("jeff.entrypoint"))
-          .getUInt();
-  auto strings = llvm::cast<mlir::ArrayAttr>(module->getAttr("jeff.strings"));
-  auto mainName = llvm::cast<mlir::StringAttr>(strings[entrypoint]).getValue();
+  auto entryPointAttr = module->getAttr("jeff.entrypoint");
+  if (!entryPointAttr) {
+    return failure();
+  }
+  auto entryPoint = llvm::cast<IntegerAttr>(entryPointAttr).getUInt();
+
+  auto stringsAttr = module->getAttr("jeff.strings");
+  if (!stringsAttr) {
+    return failure();
+  }
+  auto strings = llvm::cast<ArrayAttr>(stringsAttr);
+
+  if (entryPoint >= strings.size()) {
+    return failure();
+  }
+  auto mainName = llvm::cast<mlir::StringAttr>(strings[entryPoint]).getValue();
 
   bool mainFound = false;
   for (auto funcOp : module.getOps<func::FuncOp>()) {
