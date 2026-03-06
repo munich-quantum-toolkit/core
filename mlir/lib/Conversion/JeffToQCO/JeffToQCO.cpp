@@ -40,21 +40,32 @@ using namespace qco;
 #define GEN_PASS_DEF_JEFFTOQCO
 #include "mlir/Conversion/JeffToQCO/JeffToQCO.h.inc"
 
+/**
+ * @brief Creates a modified QCO operation from a Jeff operation
+ *
+ * @tparam QCOOpType The operation type of the QCO operation
+ * @tparam JeffOpType The operation type of the Jeff operation
+ * @param op The Jeff operation instance to convert
+ * @param rewriter The pattern rewriter
+ * @param controls The control qubits of the operation
+ * @param targets The target qubits of the operation
+ * @param lambda A lambda function that creates the inner QCO operation and
+ * returns its results
+ */
 template <typename QCOOpType, typename JeffOpType>
 static void createModified(
     JeffOpType& op, ConversionPatternRewriter& rewriter,
-    const llvm::SmallVector<Value>& controlQubits,
+    const llvm::SmallVector<Value>& controls,
     const llvm::SmallVector<Value>& targets,
     llvm::function_ref<llvm::SmallVector<Value>(ValueRange)> lambda) {
   auto loc = op.getLoc();
   if (op.getNumCtrls() != 0) {
     qco::CtrlOp ctrlOp;
     if (!op.getIsAdjoint()) {
-      ctrlOp =
-          rewriter.create<qco::CtrlOp>(loc, controlQubits, targets, lambda);
+      ctrlOp = rewriter.create<qco::CtrlOp>(loc, controls, targets, lambda);
     } else {
       ctrlOp = rewriter.create<qco::CtrlOp>(
-          loc, controlQubits, targets,
+          loc, controls, targets,
           [&](ValueRange ctrlTargets) -> llvm::SmallVector<Value> {
             auto invOp = rewriter.create<qco::InvOp>(loc, ctrlTargets, lambda);
             return invOp.getQubitsOut();
@@ -72,6 +83,16 @@ static void createModified(
   }
 }
 
+/**
+ * @brief Creates a one-target, zero-parameter QCO operation from a Jeff
+ * operation
+ *
+ * @tparam QCOOpType The operation type of the QCO operation
+ * @tparam JeffOpType The operation type of the Jeff operation
+ * @param op The Jeff operation instance to convert
+ * @param rewriter The pattern rewriter
+ * @param target The target qubit of the operation
+ */
 template <typename QCOOpType, typename JeffOpType>
 static void createOneTargetZeroParameter(
     JeffOpType& op, ConversionPatternRewriter& rewriter,
@@ -88,6 +109,17 @@ static void createOneTargetZeroParameter(
   }
 }
 
+/**
+ * @brief Creates a one-target, one-parameter QCO operation from a Jeff
+ * operation
+ *
+ * @tparam QCOOpType The operation type of the QCO operation
+ * @tparam JeffOpType The operation type of the Jeff operation
+ * @param op The Jeff operation instance to convert
+ * @param rewriter The pattern rewriter
+ * @param target The target qubit of the operation
+ * @param parameter The parameter of the operation
+ */
 template <typename QCOOpType, typename JeffOpType>
 static void createOneTargetOneParameter(
     JeffOpType& op, ConversionPatternRewriter& rewriter, Value parameter,
@@ -105,6 +137,17 @@ static void createOneTargetOneParameter(
   }
 }
 
+/**
+ * @brief Creates a one-target, two-parameter QCO operation from a Jeff
+ * operation
+ *
+ * @tparam QCOOpType The operation type of the QCO operation
+ * @tparam JeffOpType The operation type of the Jeff operation
+ * @param op The Jeff operation instance to convert
+ * @param rewriter The pattern rewriter
+ * @param target The target qubit of the operation
+ * @param parameters The parameters of the operation
+ */
 template <typename QCOOpType, typename JeffOpType>
 static void
 createOneTargetTwoParameter(JeffOpType& op, ConversionPatternRewriter& rewriter,
@@ -125,6 +168,17 @@ createOneTargetTwoParameter(JeffOpType& op, ConversionPatternRewriter& rewriter,
   }
 }
 
+/**
+ * @brief Creates a one-target, three-parameter QCO operation from a Jeff
+ * operation
+ *
+ * @tparam QCOOpType The operation type of the QCO operation
+ * @tparam JeffOpType The operation type of the Jeff operation
+ * @param op The Jeff operation instance to convert
+ * @param rewriter The pattern rewriter
+ * @param target The target qubit of the operation
+ * @param parameters The parameters of the operation
+ */
 template <typename QCOOpType, typename JeffOpType>
 static void createOneTargetThreeParameter(
     JeffOpType& op, ConversionPatternRewriter& rewriter,
@@ -145,6 +199,16 @@ static void createOneTargetThreeParameter(
   }
 }
 
+/**
+ * @brief Creates a two-target, zero-parameter QCO operation from a Jeff
+ * operation
+ *
+ * @tparam QCOOpType The operation type of the QCO operation
+ * @tparam JeffOpType The operation type of the Jeff operation
+ * @param op The Jeff operation instance to convert
+ * @param rewriter The pattern rewriter
+ * @param targets The target qubits of the operation
+ */
 template <typename QCOOpType, typename JeffOpType>
 static void
 createTwoTargetZeroParameter(JeffOpType& op,
@@ -164,6 +228,17 @@ createTwoTargetZeroParameter(JeffOpType& op,
   }
 }
 
+/**
+ * @brief Creates a two-target, one-parameter QCO operation from a Jeff
+ * operation
+ *
+ * @tparam QCOOpType The operation type of the QCO operation
+ * @tparam JeffOpType The operation type of the Jeff operation
+ * @param op The Jeff operation instance to convert
+ * @param rewriter The pattern rewriter
+ * @param targets The target qubits of the operation
+ * @param parameter The parameter of the operation
+ */
 template <typename QCOOpType, typename JeffOpType>
 static void
 createTwoTargetOneParameter(JeffOpType& op, ConversionPatternRewriter& rewriter,
@@ -184,6 +259,17 @@ createTwoTargetOneParameter(JeffOpType& op, ConversionPatternRewriter& rewriter,
   }
 }
 
+/**
+ * @brief Creates a two-target, two-parameter QCO operation from a Jeff
+ * operation
+ *
+ * @tparam QCOOpType The operation type of the QCO operation
+ * @tparam JeffOpType The operation type of the Jeff operation
+ * @param op The Jeff operation instance to convert
+ * @param rewriter The pattern rewriter
+ * @param targets The target qubits of the operation
+ * @param parameters The parameters of the operation
+ */
 template <typename QCOOpType, typename JeffOpType>
 static void
 createTwoTargetTwoParameter(JeffOpType& op, ConversionPatternRewriter& rewriter,
@@ -254,6 +340,111 @@ convertOneTargetOneParameter(JeffOpType& op, JeffOpAdaptorType& adaptor,
   createOneTargetOneParameter<QCOOpType>(op, rewriter, op.getRotation(),
                                          adaptor.getInCtrlQubits(),
                                          adaptor.getInQubit());
+
+  return success();
+}
+
+/**
+ * @brief Creates a qco.barrier operation from a jeff.custom operation
+ *
+ * @param op The jeff.custom operation instance to convert
+ * @param adaptor The OpAdaptor of the jeff.custom operation
+ * @param rewriter The pattern rewriter
+ */
+static void createBarrierOp(jeff::CustomOp& op, jeff::CustomOpAdaptor& adaptor,
+                            ConversionPatternRewriter& rewriter) {
+  rewriter.replaceOpWithNewOp<qco::BarrierOp>(op, adaptor.getInTargetQubits());
+}
+
+/**
+ * @brief Cleans up the main function after conversion
+ *
+ * @details
+ * The `passthrough` attribute is added, the trivial return operation is
+ * replaced, and the function type is fixed.
+ *
+ * @param main The main function to clean up
+ * @return LogicalResult Success or failure of the cleanup
+ */
+static LogicalResult cleanUpMain(func::FuncOp main) {
+  if (main.getBlocks().size() != 1) {
+    return failure();
+  }
+  auto* block = &main.getBlocks().front();
+
+  auto* ctx = main.getContext();
+  auto loc = main.getLoc();
+  OpBuilder builder(ctx);
+
+  // Add passthrough attribute
+  auto entryPointAttr = StringAttr::get(ctx, "entry_point");
+  main->setAttr("passthrough", ArrayAttr::get(ctx, {entryPointAttr}));
+
+  // Remove trivial return operation
+  auto* returnOp = block->getTerminator();
+  if (!llvm::isa<func::ReturnOp>(returnOp)) {
+    return failure();
+  }
+  returnOp->erase();
+
+  // Add return operation
+  builder.setInsertionPointToStart(block);
+  auto constOp =
+      arith::ConstantOp::create(builder, loc, builder.getI64IntegerAttr(0));
+
+  builder.setInsertionPointToEnd(block);
+  func::ReturnOp::create(builder, loc, constOp.getResult());
+
+  // Fix return type
+  main.setType(FunctionType::get(ctx, {}, {builder.getI64Type()}));
+
+  return success();
+}
+
+/**
+ * @brief Cleans up the module after conversion
+ *
+ * @details
+ * The main function is identified and cleaned up, and module attributes are
+ * removed.
+ *
+ * @param op The module operation to clean up
+ * @return LogicalResult Success or failure of the cleanup
+ */
+static LogicalResult cleanUp(Operation* op) {
+  auto module = llvm::dyn_cast<ModuleOp>(op);
+  if (!module) {
+    return failure();
+  }
+
+  auto entrypoint =
+      llvm::cast<mlir::IntegerAttr>(module->getAttr("jeff.entrypoint"))
+          .getUInt();
+  auto strings = llvm::cast<mlir::ArrayAttr>(module->getAttr("jeff.strings"));
+  auto mainName = llvm::cast<mlir::StringAttr>(strings[entrypoint]).getValue();
+
+  bool mainFound = false;
+  for (auto funcOp : module.getOps<func::FuncOp>()) {
+    if (funcOp.getSymName() == mainName) {
+      mainFound = true;
+      if (cleanUpMain(funcOp).failed()) {
+        return failure();
+      }
+    }
+  }
+
+  if (!mainFound) {
+    return failure();
+  }
+
+  // Remove module attributes
+  module->removeAttr("jeff.entrypoint");
+  module->removeAttr("jeff.strings");
+  module->removeAttr("jeff.tool");
+  module->removeAttr("jeff.toolVersion");
+  module->removeAttr("jeff.version");
+  module->removeAttr("jeff.versionMinor");
+  module->removeAttr("jeff.versionPatch");
 
   return success();
 }
@@ -558,11 +749,20 @@ struct ConvertJeffSwapOpToQCO final : OpConversionPattern<jeff::SwapOp> {
   }
 };
 
-static void createBarrierOp(jeff::CustomOp& op, jeff::CustomOpAdaptor& adaptor,
-                            ConversionPatternRewriter& rewriter) {
-  rewriter.replaceOpWithNewOp<qco::BarrierOp>(op, adaptor.getInTargetQubits());
-}
-
+/**
+ * @brief Converts jeff.custom to the corresponding QCO operation
+ *
+ * @par Example:
+ * ```mlir
+ * %q_out:2 = jeff.custom "iswap"() {is_adjoint = false, num_ctrls = 0 : i8,
+ * power = 1 : i8} %q0_in, %q1_in : !jeff.qubit, !jeff.qubit
+ * ```
+ * is converted to
+ * ```mlir
+ * %q0_out, %q1_out = qco.iswap %q0_in, %q1_in : !qco.qubit, !qco.qubit ->
+ * !qco.qubit, !qco.qubit
+ * ```
+ */
 struct ConvertJeffCustomOpToQCO final : OpConversionPattern<jeff::CustomOp> {
   using OpConversionPattern::OpConversionPattern;
 
@@ -615,6 +815,20 @@ struct ConvertJeffCustomOpToQCO final : OpConversionPattern<jeff::CustomOp> {
   }
 };
 
+/**
+ * @brief Converts jeff.ppr to the corresponding QCO operation
+ *
+ * @par Example:
+ * ```mlir
+ * %q_out:2 = jeff.ppr(%theta, [1, 1]) {is_adjoint = false, num_ctrls = 0 : i8,
+ * power = 1 : i8} %q0_in, %q1_in : !jeff.qubit, !jeff.qubit
+ * ```
+ * is converted to
+ * ```mlir
+ * %q0_out, %q1_out = qco.rxx(%theta) %q0_in, %q1_in : !qco.qubit, !qco.qubit ->
+ * !qco.qubit, !qco.qubit
+ * ```
+ */
 struct ConvertJeffPPROpToQCO final : OpConversionPattern<jeff::PPROp> {
   using OpConversionPattern::OpConversionPattern;
 
@@ -656,6 +870,78 @@ struct ConvertJeffPPROpToQCO final : OpConversionPattern<jeff::PPROp> {
 };
 
 /**
+ * @brief Converts jeff.int_const1 to arith.constant
+ *
+ * @par Example:
+ * ```mlir
+ * %0 = jeff.int_const1(true) : i1
+ * ```
+ * is converted to
+ * ```mlir
+ * %0 = arith.constant true : i1
+ * ```
+ */
+struct ConvertJeffIntConst1OpToArith final
+    : OpConversionPattern<jeff::IntConst1Op> {
+  using OpConversionPattern::OpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(jeff::IntConst1Op op, OpAdaptor /*adaptor*/,
+                  ConversionPatternRewriter& rewriter) const override {
+    rewriter.replaceOpWithNewOp<arith::ConstantOp>(op, op.getValAttr());
+    return success();
+  }
+};
+
+/**
+ * @brief Converts jeff.int_const64 to arith.constant
+ *
+ * @par Example:
+ * ```mlir
+ * %0 = jeff.int_const64(3) : i64
+ * ```
+ * is converted to
+ * ```mlir
+ * %0 = arith.constant 3 : i64
+ * ```
+ */
+struct ConvertJeffIntConst64OpToArith final
+    : OpConversionPattern<jeff::IntConst64Op> {
+  using OpConversionPattern::OpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(jeff::IntConst64Op op, OpAdaptor /*adaptor*/,
+                  ConversionPatternRewriter& rewriter) const override {
+    rewriter.replaceOpWithNewOp<arith::ConstantOp>(op, op.getValAttr());
+    return success();
+  }
+};
+
+/**
+ * @brief Converts jeff.float_const64 to arith.constant
+ *
+ * @par Example:
+ * ```mlir
+ * %0 = jeff.float_const64(0.3) : f64
+ * ```
+ * is converted to
+ * ```mlir
+ * %0 = arith.constant 0.3 : f64
+ * ```
+ */
+struct ConvertJeffFloatConst64OpToArith final
+    : OpConversionPattern<jeff::FloatConst64Op> {
+  using OpConversionPattern::OpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(jeff::FloatConst64Op op, OpAdaptor /*adaptor*/,
+                  ConversionPatternRewriter& rewriter) const override {
+    rewriter.replaceOpWithNewOp<arith::ConstantOp>(op, op.getValAttr());
+    return success();
+  }
+};
+
+/**
  * @brief Type converter for Jeff-to-QCO conversion
  *
  * @details
@@ -673,120 +959,8 @@ public:
   }
 };
 
-struct ConvertJeffIntConst1OpToArith final
-    : OpConversionPattern<jeff::IntConst1Op> {
-  using OpConversionPattern::OpConversionPattern;
-
-  LogicalResult
-  matchAndRewrite(jeff::IntConst1Op op, OpAdaptor /*adaptor*/,
-                  ConversionPatternRewriter& rewriter) const override {
-    rewriter.replaceOpWithNewOp<arith::ConstantOp>(op, op.getValAttr());
-    return success();
-  }
-};
-
-struct ConvertJeffIntConst64OpToArith final
-    : OpConversionPattern<jeff::IntConst64Op> {
-  using OpConversionPattern::OpConversionPattern;
-
-  LogicalResult
-  matchAndRewrite(jeff::IntConst64Op op, OpAdaptor /*adaptor*/,
-                  ConversionPatternRewriter& rewriter) const override {
-    rewriter.replaceOpWithNewOp<arith::ConstantOp>(op, op.getValAttr());
-    return success();
-  }
-};
-
-struct ConvertJeffFloatConst64OpToArith final
-    : OpConversionPattern<jeff::FloatConst64Op> {
-  using OpConversionPattern::OpConversionPattern;
-
-  LogicalResult
-  matchAndRewrite(jeff::FloatConst64Op op, OpAdaptor /*adaptor*/,
-                  ConversionPatternRewriter& rewriter) const override {
-    rewriter.replaceOpWithNewOp<arith::ConstantOp>(op, op.getValAttr());
-    return success();
-  }
-};
-
-static LogicalResult cleanUpMain(func::FuncOp main) {
-  if (main.getBlocks().size() != 1) {
-    return failure();
-  }
-  auto* block = &main.getBlocks().front();
-
-  auto* ctx = main.getContext();
-  auto loc = main.getLoc();
-  OpBuilder builder(ctx);
-
-  // Add passthrough attribute
-  auto entryPointAttr = StringAttr::get(ctx, "entry_point");
-  main->setAttr("passthrough", ArrayAttr::get(ctx, {entryPointAttr}));
-
-  // Remove trivial return operation
-  auto* returnOp = block->getTerminator();
-  if (!llvm::isa<func::ReturnOp>(returnOp)) {
-    return failure();
-  }
-  returnOp->erase();
-
-  // Add return operation
-  builder.setInsertionPointToStart(block);
-  auto constOp =
-      arith::ConstantOp::create(builder, loc, builder.getI64IntegerAttr(0));
-
-  builder.setInsertionPointToEnd(block);
-  func::ReturnOp::create(builder, loc, constOp.getResult());
-
-  // Fix return type
-  main.setType(FunctionType::get(ctx, {}, {builder.getI64Type()}));
-
-  return success();
-}
-
-static LogicalResult cleanUp(Operation* op) {
-  auto module = llvm::dyn_cast<ModuleOp>(op);
-  if (!module) {
-    return failure();
-  }
-
-  auto entrypoint =
-      llvm::cast<mlir::IntegerAttr>(module->getAttr("jeff.entrypoint"))
-          .getUInt();
-  auto strings = llvm::cast<mlir::ArrayAttr>(module->getAttr("jeff.strings"));
-  auto mainName = llvm::cast<mlir::StringAttr>(strings[entrypoint]).getValue();
-
-  bool mainFound = false;
-  for (auto funcOp : module.getOps<func::FuncOp>()) {
-    if (funcOp.getSymName() == mainName) {
-      mainFound = true;
-      if (cleanUpMain(funcOp).failed()) {
-        return failure();
-      }
-    }
-  }
-
-  if (!mainFound) {
-    return failure();
-  }
-
-  // Remove module attributes
-  module->removeAttr("jeff.entrypoint");
-  module->removeAttr("jeff.strings");
-  module->removeAttr("jeff.tool");
-  module->removeAttr("jeff.toolVersion");
-  module->removeAttr("jeff.version");
-  module->removeAttr("jeff.versionMinor");
-  module->removeAttr("jeff.versionPatch");
-
-  return success();
-}
-
 /**
  * @brief Pass for converting Jeff operations to QCO operations
- *
- * @details
- * TODO
  */
 struct JeffToQCO final : impl::JeffToQCOBase<JeffToQCO> {
   using JeffToQCOBase::JeffToQCOBase;

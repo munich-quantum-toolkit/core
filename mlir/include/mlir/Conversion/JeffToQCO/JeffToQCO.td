@@ -12,7 +12,10 @@ def JeffToQCO : Pass<"jeff-to-qco"> {
   let summary = "Convert Jeff operations to QCO operations";
 
   let description = [{
-      TODO
+      This pass converts all operations from the Jeff dialect to their equivalent operations in the QCO dialect.
+      It ensures that the returned module is a valid QCO module.
+
+      Note that this pass is still in development as QCO and Jeff do not have full feature parity yet.
    }];
 
   let dependentDialects = [
