@@ -932,4 +932,33 @@ void nestedTrueIf(QCOProgramBuilder& b);
 /// Creates a circuit with a nested if operation in the else branch that uses
 /// the same condition.
 void nestedFalseIf(QCOProgramBuilder& b);
+
+/// Allocates a tensor of size `3`.
+void allocTensor(QCOProgramBuilder& b);
+
+/// Allocates and explicitly deallocates a tensor.
+void allocDeallocTensor(QCOProgramBuilder& b);
+
+/// Extracts a qubit from a tensor.
+void extractTensor(QCOProgramBuilder& b);
+
+/// Inserts a qubit in a tensor.
+void insertTensor(QCOProgramBuilder& b);
+
+/// Extracts a slice from a tensor.
+void extractSliceTensor(QCOProgramBuilder& b);
+
+/// Inserts a slice from a tensor.
+void insertSliceTensor(QCOProgramBuilder& b);
+
+/// Extracts a qubit from a tensor and insert it immediately.
+void extractInsertTensor(QCOProgramBuilder& b);
+
+/// Extracts a slice of qubits from a tensor and insert it immediately.
+void extractSliceInsertSliceTensor(QCOProgramBuilder& b);
+
+/// Extracts a slice of qubits, a qubit from the slice, insert the qubit back to
+/// the slice and the slice back to the tensor immediately.
+void extractSliceExtractInsertInsertSliceTensor(QCOProgramBuilder& b);
+
 } // namespace mlir::qco

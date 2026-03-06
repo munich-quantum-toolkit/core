@@ -12,6 +12,7 @@
 
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
+#include "mlir/Dialect/QTensor/IR/QTensorOps.h"
 #include "mlir/Dialect/Utils/Utils.h"
 
 #include <llvm/ADT/STLExtras.h>
@@ -159,6 +160,166 @@ void QCOProgramBuilder::updateQubitTracking(Value inputQubit,
 
   // Add the output (new) value to tracking
   validQubits.insert(outputQubit);
+}
+
+//===----------------------------------------------------------------------===//
+// QTensor Operations
+//===----------------------------------------------------------------------===//
+
+Value QCOProgramBuilder::allocTensor(int64_t size) {
+  checkFinalized();
+  auto allocOp = qtensor::AllocOp::create(*this, size);
+  validQubits.insert(allocOp);
+  return allocOp.getResult();
+}
+
+Value QCOProgramBuilder::fromElements(ValueRange elements) {
+  checkFinalized();
+
+  for (auto element : elements) {
+    if (!llvm::isa<QubitType>(element.getType())) {
+      llvm::reportFatalUsageError("Elements must be QubitType!");
+    }
+    validQubits.erase(element);
+  }
+
+  auto fromElementsOp = qtensor::FromElementsOp::create(*this, elements);
+  validQubits.insert(fromElementsOp);
+  return fromElementsOp.getResult();
+}
+
+std::pair<Value, Value>
+QCOProgramBuilder::extract(Value tensor,
+                           const std::variant<int64_t, Value>& index) {
+  checkFinalized();
+
+  auto rankedTensorType = llvm::dyn_cast<RankedTensorType>(tensor.getType());
+
+  if (!rankedTensorType) {
+    llvm::reportFatalUsageError("Tensor must be of RankedTensorType!");
+  }
+  if (!llvm::isa<QubitType>(rankedTensorType.getElementType())) {
+    llvm::reportFatalUsageError("Elements must be of QubitType!");
+  }
+
+  auto indexValue = utils::variantToValue(*this, getLoc(), index);
+  auto extractOp = qtensor::ExtractOp::create(*this, tensor, indexValue);
+  auto qubit = extractOp.getResult();
+  auto outTensor = extractOp.getOutTensor();
+
+  validQubits.insert(qubit);
+  updateQubitTracking(tensor, outTensor);
+
+  return {qubit, outTensor};
+}
+
+std::pair<Value, Value>
+QCOProgramBuilder::extractSlice(Value tensor,
+                                const std::variant<int64_t, Value>& offset,
+                                const std::variant<int64_t, Value>& sizes,
+                                const std::variant<int64_t, Value>& strides) {
+  checkFinalized();
+
+  auto tensorType = llvm::dyn_cast<RankedTensorType>(tensor.getType());
+
+  if (!tensorType) {
+    llvm::reportFatalUsageError("Tensor must be of RankedTensorType!");
+  }
+  if (!llvm::isa<QubitType>(tensorType.getElementType())) {
+    llvm::reportFatalUsageError("Elements must be of QubitType!");
+  }
+
+  auto offsetValue = utils::variantToValue(*this, getLoc(), offset);
+  auto sizesValue = utils::variantToValue(*this, getLoc(), sizes);
+  auto stridesValue = utils::variantToValue(*this, getLoc(), strides);
+  auto extractSliceOp = qtensor::ExtractSliceOp::create(
+      *this, tensor, offsetValue, sizesValue, stridesValue);
+  auto slicedTensor = extractSliceOp.getResult();
+  auto outTensor = extractSliceOp.getOutSource();
+
+  validQubits.insert(slicedTensor);
+  updateQubitTracking(tensor, outTensor);
+
+  return {slicedTensor, outTensor};
+}
+
+Value QCOProgramBuilder::insert(Value scalar, Value tensor,
+                                const std::variant<int64_t, Value>& index) {
+  checkFinalized();
+
+  auto tensorType = llvm::dyn_cast<RankedTensorType>(tensor.getType());
+
+  if (!tensorType) {
+    llvm::reportFatalUsageError("Tensor must be of RankedTensorType!");
+  }
+  if (!llvm::isa<QubitType>(tensorType.getElementType())) {
+    llvm::reportFatalUsageError("Elements must be of QubitType!");
+  }
+
+  auto indexValue = utils::variantToValue(*this, getLoc(), index);
+  auto insertOp = qtensor::InsertOp::create(*this, scalar, tensor, indexValue);
+
+  auto outTensor = insertOp.getResult();
+
+  validQubits.erase(scalar);
+  updateQubitTracking(tensor, outTensor);
+  return outTensor;
+}
+
+Value QCOProgramBuilder::insertSlice(
+    Value source, Value dest, const std::variant<int64_t, Value>& offset,
+    const std::variant<int64_t, Value>& sizes,
+    const std::variant<int64_t, Value>& strides) {
+  checkFinalized();
+
+  auto sourceTensorType = llvm::dyn_cast<RankedTensorType>(source.getType());
+
+  if (!sourceTensorType) {
+    llvm::reportFatalUsageError("Source must be of RankedTensorType!");
+  }
+  if (!llvm::isa<QubitType>(sourceTensorType.getElementType())) {
+    llvm::reportFatalUsageError("Source elements must be of QubitType!");
+  }
+
+  auto destTensorType = llvm::dyn_cast<RankedTensorType>(source.getType());
+
+  if (!destTensorType) {
+    llvm::reportFatalUsageError("Dest must be of RankedTensorType!");
+  }
+  if (!llvm::isa<QubitType>(destTensorType.getElementType())) {
+    llvm::reportFatalUsageError("Dest elements must be of QubitType!");
+  }
+
+  auto offsetValue = utils::variantToValue(*this, getLoc(), offset);
+  auto sizesValue = utils::variantToValue(*this, getLoc(), sizes);
+  auto stridesValue = utils::variantToValue(*this, getLoc(), strides);
+  auto insertSliceOp = qtensor::InsertSliceOp::create(
+      *this, source, dest, offsetValue, sizesValue, stridesValue);
+
+  auto outTensor = insertSliceOp.getResult();
+
+  validQubits.erase(source);
+  updateQubitTracking(dest, outTensor);
+
+  return outTensor;
+}
+
+QCOProgramBuilder& QCOProgramBuilder::deallocTensor(Value tensor) {
+  checkFinalized();
+
+  auto tensorType = llvm::dyn_cast<RankedTensorType>(tensor.getType());
+
+  if (!tensorType) {
+    llvm::reportFatalUsageError("Tensor must be of RankedTensorType!");
+  }
+  if (!llvm::isa<QubitType>(tensorType.getElementType())) {
+    llvm::reportFatalUsageError("Elements must be of QubitType!");
+  }
+
+  qtensor::DeallocOp::create(*this, tensor);
+
+  validQubits.erase(tensor);
+  return *this;
 }
 
 //===----------------------------------------------------------------------===//
@@ -788,7 +949,11 @@ OwningOpRef<ModuleOp> QCOProgramBuilder::finalize() {
     return opA->isBeforeInBlock(opB);
   });
   for (auto qubit : sortedQubits) {
-    DeallocOp::create(*this, qubit);
+    if (llvm::isa<QubitType>(qubit.getType())) {
+      DeallocOp::create(*this, qubit);
+    } else {
+      qtensor::DeallocOp::create(*this, qubit);
+    }
   }
 
   validQubits.clear();

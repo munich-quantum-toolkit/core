@@ -12,6 +12,7 @@
 #include "mlir/Dialect/QCO/Builder/QCOProgramBuilder.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
+#include "mlir/Dialect/QTensor/IR/QTensorDialect.h"
 #include "mlir/Support/IRVerification.h"
 #include "mlir/Support/Passes.h"
 #include "qco_programs.h"
@@ -20,6 +21,7 @@
 #include <llvm/ADT/SmallVector.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
+#include <mlir/Dialect/Tensor/IR/Tensor.h>
 #include <mlir/IR/DialectRegistry.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/Verifier.h>
@@ -47,7 +49,8 @@ protected:
   void SetUp() override {
     // Register all necessary dialects
     DialectRegistry registry;
-    registry.insert<QCODialect, arith::ArithDialect, func::FuncDialect>();
+    registry.insert<QCODialect, arith::ArithDialect, func::FuncDialect,
+                    qtensor::QTensorDialect, tensor::TensorDialect>();
     context = std::make_unique<MLIRContext>();
     context->appendDialectRegistry(registry);
     context->loadAllAvailableDialects();
@@ -1020,4 +1023,32 @@ INSTANTIATE_TEST_SUITE_P(
                     MQT_NAMED_BUILDER(emptyQCO)},
         QCOTestCase{"AllocDeallocPair", MQT_NAMED_BUILDER(allocDeallocPair),
                     MQT_NAMED_BUILDER(emptyQCO)}));
+/// @}
+
+/// \name QTensor/QTensor.cpp
+/// @{
+INSTANTIATE_TEST_SUITE_P(
+    QTensorTest, QCOTest,
+    testing::Values(
+        QCOTestCase{"AllocTensor", MQT_NAMED_BUILDER(allocTensor),
+                    MQT_NAMED_BUILDER(allocTensor)},
+        QCOTestCase{"AllocDeallocTensor", MQT_NAMED_BUILDER(allocDeallocTensor),
+                    MQT_NAMED_BUILDER(allocTensor)},
+        QCOTestCase{"ExtractTensor", MQT_NAMED_BUILDER(extractTensor),
+                    MQT_NAMED_BUILDER(extractTensor)},
+        QCOTestCase{"InsertTensor", MQT_NAMED_BUILDER(insertTensor),
+                    MQT_NAMED_BUILDER(insertTensor)},
+        QCOTestCase{"ExtractSliceTensor", MQT_NAMED_BUILDER(extractSliceTensor),
+                    MQT_NAMED_BUILDER(extractSliceTensor)},
+        QCOTestCase{"InsertSliceTensor", MQT_NAMED_BUILDER(insertSliceTensor),
+                    MQT_NAMED_BUILDER(insertSliceTensor)},
+        QCOTestCase{"ExtractInsert", MQT_NAMED_BUILDER(extractInsertTensor),
+                    MQT_NAMED_BUILDER(allocTensor)},
+        QCOTestCase{"ExtractSliceInsertSlice",
+                    MQT_NAMED_BUILDER(extractSliceInsertSliceTensor),
+                    MQT_NAMED_BUILDER(allocTensor)},
+        QCOTestCase{
+            "ExtractSliceExtractInsertInsertSliceTensor",
+            MQT_NAMED_BUILDER(extractSliceExtractInsertInsertSliceTensor),
+            MQT_NAMED_BUILDER(allocTensor)}));
 /// @}
