@@ -121,6 +121,11 @@ private:
   static void addCleanupPasses(PassManager& pm);
 
   /**
+   * @brief Add all available optimization passes
+   */
+  static void addOptimizationPasses(PassManager& pm);
+
+  /**
    * @brief Configure PassManager with diagnostic options
    *
    * @details
