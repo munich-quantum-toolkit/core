@@ -91,6 +91,7 @@ static void createModified(
  * @tparam JeffOpType The operation type of the Jeff operation
  * @param op The Jeff operation instance to convert
  * @param rewriter The pattern rewriter
+ * @param controlQubits The control qubits of the operation
  * @param target The target qubit of the operation
  */
 template <typename QCOOpType, typename JeffOpType>
@@ -119,6 +120,7 @@ static void createOneTargetZeroParameter(
  * @param rewriter The pattern rewriter
  * @param target The target qubit of the operation
  * @param parameter The parameter of the operation
+ * @param controlQubits The control qubits of the operation
  */
 template <typename QCOOpType, typename JeffOpType>
 static void createOneTargetOneParameter(
@@ -147,6 +149,7 @@ static void createOneTargetOneParameter(
  * @param rewriter The pattern rewriter
  * @param target The target qubit of the operation
  * @param parameters The parameters of the operation
+ * @param controlQubits The control qubits of the operation
  */
 template <typename QCOOpType, typename JeffOpType>
 static void
@@ -178,6 +181,7 @@ createOneTargetTwoParameter(JeffOpType& op, ConversionPatternRewriter& rewriter,
  * @param rewriter The pattern rewriter
  * @param target The target qubit of the operation
  * @param parameters The parameters of the operation
+ * @param controlQubits The control qubits of the operation
  */
 template <typename QCOOpType, typename JeffOpType>
 static void createOneTargetThreeParameter(
@@ -207,6 +211,7 @@ static void createOneTargetThreeParameter(
  * @tparam JeffOpType The operation type of the Jeff operation
  * @param op The Jeff operation instance to convert
  * @param rewriter The pattern rewriter
+ * @param controlQubits The control qubits of the operation
  * @param targets The target qubits of the operation
  */
 template <typename QCOOpType, typename JeffOpType>
@@ -238,6 +243,7 @@ createTwoTargetZeroParameter(JeffOpType& op,
  * @param rewriter The pattern rewriter
  * @param targets The target qubits of the operation
  * @param parameter The parameter of the operation
+ * @param controlQubits The control qubits of the operation
  */
 template <typename QCOOpType, typename JeffOpType>
 static void
@@ -269,6 +275,7 @@ createTwoTargetOneParameter(JeffOpType& op, ConversionPatternRewriter& rewriter,
  * @param rewriter The pattern rewriter
  * @param targets The target qubits of the operation
  * @param parameters The parameters of the operation
+ * @param controlQubits The control qubits of the operation
  */
 template <typename QCOOpType, typename JeffOpType>
 static void
@@ -984,6 +991,7 @@ public:
 struct JeffToQCO final : impl::JeffToQCOBase<JeffToQCO> {
   using JeffToQCOBase::JeffToQCOBase;
 
+protected:
   void runOnOperation() override {
     MLIRContext* context = &getContext();
     auto* module = getOperation();
