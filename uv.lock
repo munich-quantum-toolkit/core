@@ -1656,7 +1656,7 @@ provides-extras = ["qiskit"]
 [package.metadata.requires-dev]
 build = [
     { name = "nanobind", specifier = "~=2.12.0" },
-    { name = "scikit-build-core", specifier = ">=0.11.6" },
+    { name = "scikit-build-core", specifier = ">=0.12.2" },
     { name = "setuptools-scm", specifier = ">=9.2.2" },
 ]
 dev = [
@@ -1671,7 +1671,7 @@ dev = [
     { name = "pytest-sugar", specifier = ">=1.1.1" },
     { name = "pytest-xdist", specifier = ">=3.8.0" },
     { name = "qiskit", extras = ["qasm3-import"], specifier = ">=1.0.0" },
-    { name = "scikit-build-core", specifier = ">=0.11.6" },
+    { name = "scikit-build-core", specifier = ">=0.12.2" },
     { name = "setuptools-scm", specifier = ">=9.2.2" },
     { name = "ty", specifier = "==0.0.19" },
 ]
@@ -2202,7 +2202,7 @@ name = "pexpect"
 version = "4.9.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "ptyprocess" },
+    { name = "ptyprocess", marker = "(python_full_version < '3.11' and sys_platform == 'emscripten') or (python_full_version < '3.11' and sys_platform == 'win32') or (sys_platform != 'emscripten' and sys_platform != 'win32')" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/42/92/cc564bf6381ff43ce1f4d06852fc19a2f11d180f23dc32d9588bee2f149d/pexpect-4.9.0.tar.gz", hash = "sha256:ee7d41123f3c9911050ea2c2dac107568dc43b2d3b0c7557a33212c398ead30f", size = 166450, upload-time = "2023-11-25T09:07:26.339Z" }
 wheels = [
@@ -2932,7 +2932,7 @@ wheels = [
 
 [[package]]
 name = "scikit-build-core"
-version = "0.12.1"
+version = "0.12.2"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "exceptiongroup", marker = "python_full_version < '3.11'" },
@@ -2941,9 +2941,9 @@ dependencies = [
     { name = "tomli", marker = "python_full_version < '3.11'" },
     { name = "typing-extensions", marker = "python_full_version < '3.11'" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/ed/15/9045d60554e2efe07baf66974f96862e3aa237ecd6bf6ce5ef4c71f883cb/scikit_build_core-0.12.1.tar.gz", hash = "sha256:bb663e71116bcd23d208ef30e5b94aa14f225f3704794d9429017ea9b461b0da", size = 302856, upload-time = "2026-02-26T23:54:23.661Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/28/cd/9ebb50029b6d8a3ee9e38cdce514ebd70190ec1edf28ab0a1f66d0b84670/scikit_build_core-0.12.2.tar.gz", hash = "sha256:562e0bbc9de1a354c87825ccf732080268d6582a0200f648e8c4a2dcb1e3736d", size = 303553, upload-time = "2026-03-05T18:25:57.666Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/7f/cf/821507c2785e4c52ccddf10f6bf70336577558ddb3e783c0dd2a85636843/scikit_build_core-0.12.1-py3-none-any.whl", hash = "sha256:21377eacbafa1ecad6110de3d9929b60c6ce95c05d43c954a131b412b941ea56", size = 192613, upload-time = "2026-02-26T23:54:22.287Z" },
+    { url = "https://files.pythonhosted.org/packages/07/49/b2f0fbe3165d55c02e7f9eec6a10685d518af0ef6e919ff2f589c2d15c85/scikit_build_core-0.12.2-py3-none-any.whl", hash = "sha256:6ea4730da400f9a998ec3287bd3ebc1d751fe45ad0a93451bead8618adbc02b1", size = 192625, upload-time = "2026-03-05T18:25:56.207Z" },
 ]
 
 [[package]]
