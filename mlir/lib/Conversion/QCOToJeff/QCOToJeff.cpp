@@ -97,15 +97,17 @@ private:
  * @tparam QCOOpType The operation type of the QCO operation
  * @tparam QCOOpAdaptorType The OpAdaptor type of the QCO operation
  * @param op The QCO operation instance to convert
+ * @param adaptor The OpAdaptor instance for the QCO operation
  * @param rewriter The pattern rewriter
  * @param state The lowering state
+ * @param isAdjoint Whether the operation is an adjoint operation
  * @return LogicalResult Success or failure of the conversion
  */
 template <typename JeffOpType, typename QCOOpType, typename QCOOpAdaptorType>
 static LogicalResult
 convertOneTargetZeroParameter(QCOOpType& op, QCOOpAdaptorType& adaptor,
                               ConversionPatternRewriter& rewriter,
-                              LoweringState& state, bool isAdjoint) {
+                              LoweringState& state, const bool isAdjoint) {
   Value target;
   if (!state.inModifier()) {
     target = adaptor.getQubitIn();
@@ -140,6 +142,7 @@ convertOneTargetZeroParameter(QCOOpType& op, QCOOpAdaptorType& adaptor,
  * @tparam QCOOpType The operation type of the QCO operation
  * @tparam QCOOpAdaptorType The OpAdaptor type of the QCO operation
  * @param op The QCO operation instance to convert
+ * @param adaptor The OpAdaptor instance for the QCO operation
  * @param rewriter The pattern rewriter
  * @param state The lowering state
  * @return LogicalResult Success or failure of the conversion
@@ -183,6 +186,7 @@ convertOneTargetOneParameter(QCOOpType& op, QCOOpAdaptorType& adaptor,
  * @tparam QCOOpType The operation type of the QCO operation
  * @tparam QCOOpAdaptorType The OpAdaptor type of the QCO operation
  * @param op The QCO operation instance to convert
+ * @param adaptor The OpAdaptor instance for the QCO operation
  * @param rewriter The pattern rewriter
  * @param state The lowering state
  * @return LogicalResult Success or failure of the conversion
@@ -227,6 +231,7 @@ convertOneTargetThreeParameter(QCOOpType& op, QCOOpAdaptorType& adaptor,
  * @tparam QCOOpType The operation type of the QCO operation
  * @tparam QCOOpAdaptorType The OpAdaptor type of the QCO operation
  * @param op The QCO operation instance to convert
+ * @param adaptor The OpAdaptor instance for the QCO operation
  * @param rewriter The pattern rewriter
  * @param state The lowering state
  * @return LogicalResult Success or failure of the conversion
@@ -283,8 +288,8 @@ static void createCustomOp(QCOOpType& op, ConversionPatternRewriter& rewriter,
                            LoweringState& state,
                            const llvm::SmallVector<Value>& targets,
                            const llvm::SmallVector<Value>& params,
-                           bool isAdjoint, StringRef name) {
-  state.strings.push_back(name.str());
+                           const bool isAdjoint, StringRef name) {
+  state.strings.emplace_back(name);
 
   auto jeffOp = rewriter.create<jeff::CustomOp>(
       op.getLoc(), targets,
@@ -321,7 +326,7 @@ static void createPPROp(QCOOpType& op, ConversionPatternRewriter& rewriter,
                         const llvm::SmallVector<Value>& targets,
                         const llvm::SmallVector<int32_t>& pauliGates) {
   auto pauliGatesAttr =
-      mlir::DenseI32ArrayAttr::get(rewriter.getContext(), pauliGates);
+      DenseI32ArrayAttr::get(rewriter.getContext(), pauliGates);
 
   auto jeffOp =
       rewriter.create<jeff::PPROp>(op.getLoc(), targets,
@@ -362,7 +367,7 @@ static LogicalResult cleanUpMain(func::FuncOp main) {
   auto loc = main.getLoc();
   OpBuilder builder(ctx);
 
-  // Remove passthrough attribute
+  // Remove the passthrough attribute
   main->removeAttr("passthrough");
 
   // Remove return operation
@@ -402,7 +407,7 @@ static LogicalResult cleanUp(Operation* op, LoweringState& state) {
   bool mainFound = false;
   uint16_t entryPoint = 0;
   for (auto funcOp : module.getOps<func::FuncOp>()) {
-    state.strings.push_back(funcOp.getSymName().str());
+    state.strings.emplace_back(funcOp.getSymName());
     auto passthrough = funcOp->getAttrOfType<ArrayAttr>("passthrough");
     if (!passthrough) {
       continue;
@@ -434,7 +439,7 @@ static LogicalResult cleanUp(Operation* op, LoweringState& state) {
   llvm::SmallVector<llvm::StringRef> stringRefs;
   stringRefs.reserve(state.strings.size());
   for (const auto& str : state.strings) {
-    stringRefs.push_back(str);
+    stringRefs.emplace_back(str);
   }
   module->setAttr("jeff.strings", builder.getStrArrayAttr(stringRefs));
 
@@ -1425,6 +1430,7 @@ public:
 struct QCOToJeff final : impl::QCOToJeffBase<QCOToJeff> {
   using QCOToJeffBase::QCOToJeffBase;
 
+protected:
   void runOnOperation() override {
     MLIRContext* context = &getContext();
     auto* module = getOperation();
