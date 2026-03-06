@@ -16,12 +16,17 @@
 #include <jeff/IR/JeffDialect.h>
 #include <jeff/IR/JeffOps.h>
 #include <llvm/ADT/STLFunctionalExtras.h>
+#include <llvm/Support/Casting.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
+#include <mlir/IR/Builders.h>
+#include <mlir/IR/BuiltinAttributes.h>
+#include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/BuiltinTypeInterfaces.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OperationSupport.h>
 #include <mlir/IR/PatternMatch.h>
+#include <mlir/IR/Types.h>
 #include <mlir/IR/ValueRange.h>
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/LogicalResult.h>
@@ -675,8 +680,7 @@ struct ConvertJeffIntConst1OpToArith final
   LogicalResult
   matchAndRewrite(jeff::IntConst1Op op, OpAdaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
-    auto attr = rewriter.getBoolAttr(op.getVal());
-    rewriter.replaceOpWithNewOp<arith::ConstantOp>(op, attr);
+    rewriter.replaceOpWithNewOp<arith::ConstantOp>(op, op.getValAttr());
     return success();
   }
 };
@@ -688,8 +692,7 @@ struct ConvertJeffIntConst64OpToArith final
   LogicalResult
   matchAndRewrite(jeff::IntConst64Op op, OpAdaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
-    auto attr = rewriter.getI64IntegerAttr(op.getVal());
-    rewriter.replaceOpWithNewOp<arith::ConstantOp>(op, attr);
+    rewriter.replaceOpWithNewOp<arith::ConstantOp>(op, op.getValAttr());
     return success();
   }
 };
@@ -701,8 +704,7 @@ struct ConvertJeffFloatConst64OpToArith final
   LogicalResult
   matchAndRewrite(jeff::FloatConst64Op op, OpAdaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
-    auto attr = rewriter.getF64FloatAttr(op.getVal().convertToDouble());
-    rewriter.replaceOpWithNewOp<arith::ConstantOp>(op, attr);
+    rewriter.replaceOpWithNewOp<arith::ConstantOp>(op, op.getValAttr());
     return success();
   }
 };
@@ -713,7 +715,7 @@ static LogicalResult cleanUpMain(func::FuncOp main) {
   }
   auto* block = &main.getBlocks().front();
 
-  auto ctx = main.getContext();
+  auto* ctx = main.getContext();
   auto loc = main.getLoc();
   OpBuilder builder(ctx);
 
@@ -722,7 +724,7 @@ static LogicalResult cleanUpMain(func::FuncOp main) {
   main->setAttr("passthrough", ArrayAttr::get(ctx, {entryPointAttr}));
 
   // Remove trivial return operation
-  auto returnOp = block->getTerminator();
+  auto* returnOp = block->getTerminator();
   if (!llvm::isa<func::ReturnOp>(returnOp)) {
     return failure();
   }

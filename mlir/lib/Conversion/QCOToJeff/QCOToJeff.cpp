@@ -15,15 +15,20 @@
 
 #include <jeff/IR/JeffDialect.h>
 #include <jeff/IR/JeffOps.h>
+#include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/ADT/TypeSwitch.h>
+#include <llvm/Support/Casting.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
+#include <mlir/IR/Builders.h>
 #include <mlir/IR/BuiltinAttributes.h>
+#include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/BuiltinTypeInterfaces.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OperationSupport.h>
 #include <mlir/IR/PatternMatch.h>
+#include <mlir/IR/Types.h>
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/LogicalResult.h>
 #include <mlir/Transforms/DialectConversion.h>
@@ -31,6 +36,7 @@
 #include <cassert>
 #include <cstdint>
 #include <numbers>
+#include <string>
 #include <utility>
 
 namespace mlir {
@@ -1066,7 +1072,7 @@ static LogicalResult cleanUpMain(func::FuncOp main) {
   }
   auto* block = &main.getBlocks().front();
 
-  auto ctx = main.getContext();
+  auto* ctx = main.getContext();
   auto loc = main.getLoc();
   OpBuilder builder(ctx);
 
@@ -1074,7 +1080,7 @@ static LogicalResult cleanUpMain(func::FuncOp main) {
   main->removeAttr("passthrough");
 
   // Remove return operation
-  auto returnOp = block->getTerminator();
+  auto* returnOp = block->getTerminator();
   if (!llvm::isa<func::ReturnOp>(returnOp)) {
     return failure();
   }
