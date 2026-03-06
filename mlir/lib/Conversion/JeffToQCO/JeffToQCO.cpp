@@ -555,10 +555,10 @@ struct ConvertJeffQubitMeasureOpToQCO final
   LogicalResult
   matchAndRewrite(jeff::QubitMeasureOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
-    auto measureOp =
-        rewriter.replaceOpWithNewOp<qco::MeasureOp>(op, adaptor.getInQubit());
-    rewriter.create<qco::DeallocOp>(measureOp.getLoc(),
-                                    measureOp.getQubitOut());
+    auto loc = op.getLoc();
+    auto measureOp = rewriter.create<qco::MeasureOp>(loc, adaptor.getInQubit());
+    rewriter.create<qco::DeallocOp>(loc, measureOp.getQubitOut());
+    rewriter.replaceOp(op, measureOp.getResult());
     return success();
   }
 };
@@ -787,10 +787,18 @@ struct ConvertJeffCustomOpToQCO final : OpConversionPattern<jeff::CustomOp> {
 
     auto name = op.getName();
     if (name == "sx") {
+      if (op.getInTargetQubits().size() != 1) {
+        return rewriter.notifyMatchFailure(
+            op, "Custom SX operations must have exactly one target qubit");
+      }
       createOneTargetZeroParameter<qco::SXOp>(op, rewriter,
                                               adaptor.getInCtrlQubits(),
                                               adaptor.getInTargetQubits()[0]);
     } else if (name == "r") {
+      if (op.getInTargetQubits().size() != 1) {
+        return rewriter.notifyMatchFailure(
+            op, "Custom R operations must have exactly one target qubit");
+      }
       createOneTargetTwoParameter<qco::ROp>(op, rewriter, op.getParams(),
                                             adaptor.getInCtrlQubits(),
                                             adaptor.getInTargetQubits()[0]);
