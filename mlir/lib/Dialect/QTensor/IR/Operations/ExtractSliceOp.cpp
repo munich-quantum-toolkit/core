@@ -40,11 +40,6 @@
 using namespace mlir;
 using namespace mlir::qtensor;
 
-void ExtractSliceOp::getAsmResultNames(
-    function_ref<void(Value, StringRef)> setNameFn) {
-  setNameFn(getResult(), "q_extracted_slice");
-}
-
 /**
  * @brief Infers the result type of an extract_slice operation when it is
  * not rank-reduced.

@@ -154,7 +154,6 @@ def QTensor_FromElementsOp : QTensorOp<"from_elements", [
 }
 
 def QTensor_ExtractOp : QTensorOp<"extract", [
-    DeclareOpInterfaceMethods<OpAsmOpInterface, ["getAsmResultNames"]>,
     Pure,
     TypesMatchWith<"result type matches element type of tensor",
                    "tensor", "result",
@@ -184,7 +183,6 @@ def QTensor_ExtractOp : QTensorOp<"extract", [
 }
 
 def QTensor_ExtractSliceOp : QTensorOpWithOffsetSizesAndStrides<"extract_slice", [
-    DeclareOpInterfaceMethods<OpAsmOpInterface, ["getAsmResultNames"]>,
     DeclareOpInterfaceMethods<ReifyRankedShapedTypeOpInterface>,
     AttrSizedOperandSegments,
     Pure,
@@ -383,7 +381,6 @@ def QTensor_InsertOp : QTensorOp<"insert", [
 }
 
 def QTensor_InsertSliceOp : QTensorOpWithOffsetSizesAndStrides<"insert_slice", [
-    DeclareOpInterfaceMethods<OpAsmOpInterface, ["getAsmResultNames"]>,
     DeclareOpInterfaceMethods<ReifyRankedShapedTypeOpInterface>,
     AttrSizedOperandSegments,
     DestinationStyleOpInterface,

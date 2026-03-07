@@ -39,11 +39,6 @@
 using namespace mlir;
 using namespace mlir::qtensor;
 
-void InsertSliceOp::getAsmResultNames(
-    function_ref<void(Value, StringRef)> setNameFn) {
-  setNameFn(getResult(), "inserted_slice");
-}
-
 // Build a InsertSliceOp with mixed static and dynamic entries.
 void InsertSliceOp::build(OpBuilder& b, OperationState& result, Value source,
                           Value dest, ArrayRef<OpFoldResult> offsets,
