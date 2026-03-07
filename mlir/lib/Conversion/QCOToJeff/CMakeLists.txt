@@ -22,3 +22,5 @@ add_mlir_library(
 
 target_include_directories(QCOToJeff PRIVATE ${jeff-mlir_SOURCE_DIR}/include
                                              ${jeff-mlir_BINARY_DIR}/include)
+
+target_compile_definitions(obj.QCOToJeff PRIVATE MQT_CORE_VERSION="${MQT_CORE_VERSION}")

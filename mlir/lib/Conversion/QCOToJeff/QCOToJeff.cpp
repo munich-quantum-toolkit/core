@@ -442,7 +442,7 @@ static LogicalResult cleanUp(Operation* op, LoweringState& state) {
   module->setAttr("jeff.strings", builder.getStrArrayAttr(stringRefs));
 
   module->setAttr("jeff.tool", builder.getStringAttr("mqt-cc"));
-  module->setAttr("jeff.toolVersion", builder.getStringAttr("4.0.0"));
+  module->setAttr("jeff.toolVersion", builder.getStringAttr(MQT_CORE_VERSION));
 
   module->setAttr("jeff.version", builder.getIntegerAttr(uint16Type, 0));
   module->setAttr("jeff.versionMinor", builder.getIntegerAttr(uint16Type, 1));
