@@ -360,7 +360,17 @@ convertOneTargetOneParameter(JeffOpType& op, JeffOpAdaptorType& adaptor,
  */
 static void createBarrierOp(jeff::CustomOp& op, jeff::CustomOpAdaptor& adaptor,
                             ConversionPatternRewriter& rewriter) {
-  rewriter.replaceOpWithNewOp<qco::BarrierOp>(op, adaptor.getInTargetQubits());
+  auto targets = adaptor.getInTargetQubits();
+  if (op.getNumCtrls() == 0 && !op.getIsAdjoint()) {
+    rewriter.replaceOpWithNewOp<qco::BarrierOp>(op, targets);
+  } else {
+    auto lambda = [&](ValueRange innerTargets) -> llvm::SmallVector<Value> {
+      auto qcoOp = qco::BarrierOp::create(rewriter, op.getLoc(), innerTargets);
+      return qcoOp.getQubitsOut();
+    };
+    createModified<qco::BarrierOp>(op, rewriter, adaptor.getInCtrlQubits(),
+                                   targets, lambda);
+  }
 }
 
 /**
@@ -828,10 +838,6 @@ struct ConvertJeffCustomOpToQCO final : OpConversionPattern<jeff::CustomOp> {
                                                    adaptor.getInCtrlQubits(),
                                                    adaptor.getInTargetQubits());
     } else if (name == "barrier") {
-      if (op.getNumCtrls() != 0) {
-        return rewriter.notifyMatchFailure(
-            op, "Controlled barrier operations are not supported");
-      }
       createBarrierOp(op, adaptor, rewriter);
     } else {
       return rewriter.notifyMatchFailure(op, "Unsupported custom operation: " +
@@ -868,26 +874,24 @@ struct ConvertJeffPPROpToQCO final : OpConversionPattern<jeff::PPROp> {
     }
 
     auto pauliGates = op.getPauliGates();
-    if (pauliGates.size() != 2) {
+    auto targets = adaptor.getInQubits();
+    auto controls = adaptor.getInCtrlQubits();
+    if (pauliGates.size() != 2 || targets.size() != 2) {
       return rewriter.notifyMatchFailure(
           op, "Only PPR operations with exactly 2 Pauli gates are supported");
     }
     if (pauliGates[0] == 1 && pauliGates[1] == 1) {
       createTwoTargetOneParameter<qco::RXXOp>(op, rewriter, op.getRotation(),
-                                              adaptor.getInCtrlQubits(),
-                                              adaptor.getInQubits());
+                                              controls, targets);
     } else if (pauliGates[0] == 2 && pauliGates[1] == 2) {
       createTwoTargetOneParameter<qco::RYYOp>(op, rewriter, op.getRotation(),
-                                              adaptor.getInCtrlQubits(),
-                                              adaptor.getInQubits());
+                                              controls, targets);
     } else if (pauliGates[0] == 3 && pauliGates[1] == 1) {
       createTwoTargetOneParameter<qco::RZXOp>(op, rewriter, op.getRotation(),
-                                              adaptor.getInCtrlQubits(),
-                                              adaptor.getInQubits());
+                                              controls, targets);
     } else if (pauliGates[0] == 3 && pauliGates[1] == 3) {
       createTwoTargetOneParameter<qco::RZZOp>(op, rewriter, op.getRotation(),
-                                              adaptor.getInCtrlQubits(),
-                                              adaptor.getInQubits());
+                                              controls, targets);
     } else {
       return rewriter.notifyMatchFailure(op, "Unsupported PPR operation");
     }

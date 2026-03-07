@@ -1197,8 +1197,14 @@ struct ConvertQCOBarrierOpToJeff final
                   ConversionPatternRewriter& rewriter) const override {
     auto& state = getState();
 
-    createCustomOp(op, rewriter, state, adaptor.getQubitsIn(), {}, false,
-                   "barrier");
+    llvm::SmallVector<Value> targets;
+    if (!state.inModifier()) {
+      targets = adaptor.getQubitsIn();
+    } else {
+      targets = state.targetsIn;
+    }
+
+    createCustomOp(op, rewriter, state, targets, {}, false, "barrier");
 
     return success();
   }
