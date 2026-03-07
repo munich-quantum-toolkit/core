@@ -91,14 +91,16 @@ void InsertSliceOp::build(OpBuilder& b, OperationState& result, Value source,
 
 /// Rank-reducing type verification for both InsertSliceOp and
 /// ParallelInsertSliceOp.
-static SliceVerificationResult verifyInsertSliceOp(
-    RankedTensorType srcType, RankedTensorType dstType,
-    ArrayRef<int64_t> staticOffsets, ArrayRef<int64_t> staticSizes,
-    ArrayRef<int64_t> staticStrides, RankedTensorType* expectedType = nullptr) {
+static SliceVerificationResult
+verifyInsertSliceOp(RankedTensorType srcType, RankedTensorType dstType,
+                    ArrayRef<int64_t> /*staticOffsets*/,
+                    ArrayRef<int64_t> staticSizes,
+                    ArrayRef<int64_t> /*staticStrides*/,
+                    RankedTensorType* expectedType = nullptr) {
   // insert_slice is the inverse of extract_slice, use the same type
   // inference.
-  RankedTensorType expected = ExtractSliceOp::inferResultType(
-      dstType, staticOffsets, staticSizes, staticStrides);
+  RankedTensorType expected =
+      ExtractSliceOp::inferResultType(dstType, staticSizes);
   if (expectedType != nullptr) {
     *expectedType = expected;
   }
@@ -235,18 +237,16 @@ public:
     // Create the new op in canonical form.
     auto sourceType = ExtractSliceOp::inferCanonicalRankReducedResultType(
         insertSliceOp.getSourceType().getRank(), insertSliceOp.getDestType(),
-        mixedOffsets, mixedSizes, mixedStrides);
+        mixedSizes);
     Value toInsert = insertSliceOp.getSource();
     if (sourceType != insertSliceOp.getSourceType()) {
       OpBuilder::InsertionGuard g(rewriter);
       // The only difference between InsertSliceOp and ParallelInsertSliceOp
-      // is that the insertion point is just before the ParallelCombiningOp in
+      // is that the insertion point is just before the InParallelOp in
       // the parallel case.
-      if (std::is_same_v<InsertOpTy, tensor::ParallelInsertSliceOp>) {
-        rewriter.setInsertionPoint(insertSliceOp->getParentOp());
-      }
-      toInsert = rewriter.create<tensor::CastOp>(insertSliceOp.getLoc(),
-                                                 sourceType, toInsert);
+
+      toInsert = tensor::CastOp::create(rewriter, insertSliceOp.getLoc(),
+                                        sourceType, toInsert);
     }
     rewriter.replaceOpWithNewOp<InsertOpTy>(
         insertSliceOp, toInsert, insertSliceOp.getDest(), mixedOffsets,
@@ -349,17 +349,18 @@ struct InsertSliceOpCastFolder final : public OpRewritePattern<InsertOpTy> {
       return failure();
     }
 
-    Operation* replacement = rewriter.create<InsertOpTy>(
-        insertSliceOp.getLoc(), src, dst, insertSliceOp.getMixedOffsets(),
-        mixedSizes, insertSliceOp.getMixedStrides());
+    Operation* replacement =
+        InsertOpTy::create(rewriter, insertSliceOp.getLoc(), src, dst,
+                           insertSliceOp.getMixedOffsets(), mixedSizes,
+                           insertSliceOp.getMixedStrides());
 
     // In the parallel case there is no result and so nothing to cast.
     bool isParallelInsert =
-        std::is_same_v<InsertOpTy, tensor::ParallelInsertSliceOp>;
+        std::is_same<InsertOpTy, tensor::ParallelInsertSliceOp>::value;
     if (!isParallelInsert && dst.getType() != insertSliceOp.getDestType()) {
-      replacement = rewriter.create<tensor::CastOp>(insertSliceOp.getLoc(),
-                                                    insertSliceOp.getDestType(),
-                                                    replacement->getResult(0));
+      replacement = tensor::CastOp::create(rewriter, insertSliceOp.getLoc(),
+                                           insertSliceOp.getDestType(),
+                                           replacement->getResult(0));
     }
     rewriter.replaceOp(insertSliceOp, replacement->getResults());
     return success();

@@ -165,7 +165,7 @@ def QTensor_ExtractSliceOp : QTensorOpWithOffsetSizesAndStrides<"extract_slice",
   let builders = [
     // Build an ExtractSliceOp with mixed static and dynamic entries and
     // inferred result type.
-    OpBuilder<(ins "Value":$source, "ArrayRef<OpFoldResult>":$offsets,
+     OpBuilder<(ins "Value":$source, "ArrayRef<OpFoldResult>":$offsets,
       "ArrayRef<OpFoldResult>":$sizes, "ArrayRef<OpFoldResult>":$strides,
       CArg<"ArrayRef<NamedAttribute>", "{}">:$attrs)>,
     // Build an ExtractSliceOp with mixed static and dynamic entries and custom
@@ -187,12 +187,17 @@ def QTensor_ExtractSliceOp : QTensorOpWithOffsetSizesAndStrides<"extract_slice",
     OpBuilder<(ins "RankedTensorType":$resultType, "RankedTensorType":$outSourceType, "Value":$source,
       "ValueRange":$offsets, "ValueRange":$sizes, "ValueRange":$strides,
       CArg<"ArrayRef<NamedAttribute>", "{}">:$attrs)>,
-      OpBuilder<(ins "RankedTensorType":$resultType, "Value":$source,
+    OpBuilder<(ins "RankedTensorType":$resultType, "Value":$source,
       "ValueRange":$offsets, "ValueRange":$sizes, "ValueRange":$strides,
       CArg<"ArrayRef<NamedAttribute>", "{}">:$attrs)>,
     // Build an ExtractSliceOp with mixed static and dynamic entries packed in
     // a Range vector.
     OpBuilder<(ins "Value":$source, "ArrayRef<Range>":$ranges,
+      CArg<"ArrayRef<NamedAttribute>", "{}">:$attrs)>,
+    // Build an ExtractSliceOp with mixed static and dynamic sizes, inferred
+    // result type, offsets set to 0 and strides set to 1.
+    OpBuilder<(ins "RankedTensorType":$resultType, "Value":$source,
+      "ArrayRef<OpFoldResult>":$sizes,
       CArg<"ArrayRef<NamedAttribute>", "{}">:$attrs)>,
   ];
 
@@ -213,17 +218,13 @@ def QTensor_ExtractSliceOp : QTensorOpWithOffsetSizesAndStrides<"extract_slice",
 
     /// An extract_slice result type can be inferred, when it is not
     /// rank-reduced, from the source type and the static representation of
-    /// offsets, sizes and strides. Special sentinels encode the dynamic case.
+    /// sizes. Special sentinels encode the dynamic case.
     static RankedTensorType inferResultType(
       RankedTensorType sourceTensorType,
-      ArrayRef<int64_t> staticOffsets,
-      ArrayRef<int64_t> staticSizes,
-      ArrayRef<int64_t> staticStrides);
+      ArrayRef<int64_t> staticSizes);
     static RankedTensorType inferResultType(
       RankedTensorType sourceTensorType,
-      ArrayRef<OpFoldResult> staticOffsets,
-      ArrayRef<OpFoldResult> staticSizes,
-      ArrayRef<OpFoldResult> staticStrides);
+      ArrayRef<OpFoldResult> staticSizes);
 
     /// If the rank is reduced (i.e. the desiredResultRank is smaller than the
     /// number of sizes), drop as many size 1 as needed to produce an inferred type
@@ -236,15 +237,11 @@ def QTensor_ExtractSliceOp : QTensorOpWithOffsetSizesAndStrides<"extract_slice",
     static RankedTensorType inferCanonicalRankReducedResultType(
       unsigned resultRank,
       RankedTensorType sourceRankedTensorType,
-      ArrayRef<int64_t> staticOffsets,
-      ArrayRef<int64_t> staticSizes,
-      ArrayRef<int64_t> staticStrides);
+      ArrayRef<int64_t> staticSizes);
     static RankedTensorType inferCanonicalRankReducedResultType(
       unsigned resultRank,
       RankedTensorType sourceRankedTensorType,
-      ArrayRef<OpFoldResult> staticOffsets,
-      ArrayRef<OpFoldResult> staticSizes,
-      ArrayRef<OpFoldResult> staticStrides);
+      ArrayRef<OpFoldResult> staticSizes);
 
     /// Return the expected rank of each of the`static_offsets`, `static_sizes`
     /// and `static_strides` attributes.
