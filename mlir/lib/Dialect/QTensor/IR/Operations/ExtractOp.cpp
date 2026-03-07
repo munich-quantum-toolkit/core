@@ -28,10 +28,6 @@
 using namespace mlir;
 using namespace mlir::qtensor;
 
-//===----------------------------------------------------------------------===//
-// ExtractOp
-//===----------------------------------------------------------------------===//
-
 void ExtractOp::getAsmResultNames(
     function_ref<void(Value, StringRef)> setNameFn) {
   setNameFn(getResult(), "q_extracted");
@@ -63,10 +59,10 @@ struct ExtractFromTensorCast : public OpRewritePattern<ExtractOp> {
   }
 };
 
-/// If we have an ExtractOp consuming an InsertOp with the same
-/// indices, we can return the InsertOp's scalar directly.
-// TODO: This only checks the immediate producer; extend to go up the
-// insert/extract chain if the slices are disjoint.
+/**
+ * @brief If an ExtractOp consumes an InsertOp with identical indices,
+ * return the scalar from the InsertOp directly.
+ */
 static Value foldExtractAfterInsert(ExtractOp extractOp) {
   auto insertOp = extractOp.getTensor().getDefiningOp<tensor::InsertOp>();
 

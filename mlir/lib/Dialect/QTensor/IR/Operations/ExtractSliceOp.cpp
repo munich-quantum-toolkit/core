@@ -49,10 +49,14 @@ void ExtractSliceOp::getAsmResultNames(
  * @brief Infers the result type of an extract_slice operation when it is
  * not rank-reduced.
  *
+ * @details
+ * The result type can be inferred from the source tensor type and the
+ * static representation of offsets, sizes, and strides. Special sentinel
+ * values are used to encode dynamic entries.
+ *
  * @param sourceTensorType The ranked source tensor type.
- * @param staticOffsets The static offsets (sentinel values indicate dynamic).
- * @param staticSizes The static sizes (sentinel values indicate dynamic).
- * @param staticStrides The static strides (sentinel values indicate dynamic).
+ * @param staticSizes The static sizes of the slice (sentinel values
+ * indicate dynamic sizes).
  * @return The inferred RankedTensorType for the resulting slice.
  */
 RankedTensorType
@@ -68,20 +72,6 @@ ExtractSliceOp::inferResultType(RankedTensorType sourceTensorType,
                                sourceTensorType.getEncoding());
 }
 
-/**
- * @brief Infers the result type of an extract_slice operation when it is
- * not rank-reduced, using mixed static/dynamic offsets, sizes, and strides.
- *
- * Static sizes are extracted from the `sizes` parameter. Dynamic values
- * are represented using sentinels in `OpFoldResult`. The function asserts
- * that the number of static sizes matches the rank of the source tensor.
- *
- * @param sourceTensorType The ranked source tensor type.
- * @param offsets The mixed static/dynamic offsets.
- * @param sizes The mixed static/dynamic sizes.
- * @param strides The mixed static/dynamic strides.
- * @return The inferred RankedTensorType for the resulting slice.
- */
 RankedTensorType
 ExtractSliceOp::inferResultType(RankedTensorType sourceTensorType,
                                 ArrayRef<OpFoldResult> sizes) {
@@ -95,14 +85,19 @@ ExtractSliceOp::inferResultType(RankedTensorType sourceTensorType,
                                sourceTensorType.getEncoding());
 }
 
-/// If the rank is reduced (i.e. the desiredResultRank is smaller than the
-/// number of sizes), drop as many size 1 as needed to produce an inferred
-/// type with the desired rank.
-///
-/// Note that there may be multiple ways to compute this rank-reduced type:
-///   e.g. 1x6x1 can rank-reduce to either 1x6 or 6x1 2-D tensors.
-///
-/// To disambiguate, this function always drops the first 1 sizes occurrences.
+/**
+ * @brief Computes the rank-reduced result type.
+ *
+ * @details
+ * If the desired result rank is smaller than the number of slice sizes,
+ * rank reduction is performed by dropping dimensions of size 1 until the
+ * desired rank is reached.
+ *
+ * Multiple rank-reduced shapes may be possible. For example, a tensor of
+ * shape 1x6x1 can be reduced to either 1x6 or 6x1. To ensure deterministic
+ * behavior, this function always drops the first occurrences of size-1
+ * dimensions.
+ */
 RankedTensorType ExtractSliceOp::inferCanonicalRankReducedResultType(
     unsigned desiredResultRank, RankedTensorType sourceRankedTensorType,
     ArrayRef<int64_t> sizes) {
@@ -245,6 +240,7 @@ void ExtractSliceOp::build(OpBuilder& b, OperationState& result,
   build(b, result, resultType, cast<RankedTensorType>(source.getType()), source,
         readOffsets, sizes, readStrides, attrs);
 }
+
 /// Verifier for ExtractSliceOp.
 LogicalResult ExtractSliceOp::verify() {
   RankedTensorType sourceType = getSourceType();
@@ -347,10 +343,11 @@ public:
 
     // Create folded extract.
     Location loc = sliceOp.getLoc();
-    auto newResult = rewriter.create<ExtractSliceOp>(
-        loc, sliceOp.getType(), castOp.getSource(), sliceOp.getOffsets(),
-        sliceOp.getSizes(), sliceOp.getStrides(), sliceOp.getStaticOffsets(),
-        sliceOp.getStaticSizes(), sliceOp.getStaticStrides());
+    auto newResult = ExtractSliceOp::create(
+        rewriter, loc, sliceOp.getType(), castOp.getSource(),
+        sliceOp.getOffsets(), sliceOp.getSizes(), sliceOp.getStrides(),
+        sliceOp.getStaticOffsets(), sliceOp.getStaticSizes(),
+        sliceOp.getStaticStrides());
     rewriter.replaceOp(sliceOp, newResult->getResult(0));
     rewriter.replaceOp(castOp, newResult->getResult(1));
     return success();
@@ -377,8 +374,8 @@ struct SliceCanonicalizer {
     Value replacement = newOp.getResult();
     Value outSource = newOp.getOutSource();
     if (replacement.getType() != op.getType()) {
-      replacement = rewriter.create<tensor::CastOp>(op.getLoc(), op.getType(),
-                                                    replacement);
+      replacement = tensor::CastOp::create(rewriter, op.getLoc(), op.getType(),
+                                           replacement);
     }
     rewriter.replaceOp(op, {replacement, outSource});
   }
@@ -392,10 +389,6 @@ void ExtractSliceOp::getCanonicalizationPatterns(RewritePatternSet& results,
       ExtractSliceOpCastFolder>(context);
 }
 
-/// If we have an ExtractSliceOp consuming an InsertSliceOp with the same
-/// slice, we can return the InsertSliceOp's source directly.
-// TODO: This only checks the immediate producer; extend to go up the
-// insert/extract chain if the slices are disjoint.
 static Value foldExtractAfterInsertSlice(ExtractSliceOp extractOp) {
   auto insertOp = extractOp.getSource().getDefiningOp<InsertSliceOp>();
 

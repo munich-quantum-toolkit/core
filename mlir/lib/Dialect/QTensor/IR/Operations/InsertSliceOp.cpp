@@ -130,23 +130,27 @@ LogicalResult InsertSliceOp::verify() {
   return success();
 }
 
-/// If we have two consecutive InsertSliceOp writing to the same slice, we
-/// can mutate the second InsertSliceOp's destination to the first one's.
-///
-/// Example:
-///
-/// ```mlir
-///   %0 = tensor.insert_slice %slice0 into %input[0, 0] [64, 64] [1, 1]
-///   %1 = tensor.insert_slice %slice1 into %0[0, 0] [64, 64] [1, 1]
-/// ```
-///
-/// folds into:
-///
-/// ```mlir
-///   %1 = tensor.insert_slice %slice1 into %input[0, 0] [64, 64] [1, 1]
-/// ```
-///
-/// This pattern works with both InsertSliceOp and ParallelInsertSliceOp.
+/**
+ * @brief Folds consecutive InsertSliceOp operations writing to the same slice.
+ *
+ * @details
+ * If two consecutive InsertSliceOp operations write to the same slice,
+ * the destination of the second InsertSliceOp can be updated to the
+ * destination of the first one, eliminating the intermediate operation.
+ *
+ * Example:
+ *
+ * ```mlir
+ *   %0 = qtensor.insert_slice %slice0 into %input[0][2][1]
+ *   %1 = qtensor.insert_slice %slice1 into %0[0][2][1]
+ * ```
+ *
+ * This folds into:
+ *
+ * ```mlir
+ *   %1 = qtensor.insert_slice %slice1 into %input[0][2][1]
+ * ```
+ */
 static LogicalResult foldInsertAfterInsertSlice(InsertSliceOp insertOp) {
   auto prevInsertOp = insertOp.getDest().getDefiningOp<InsertSliceOp>();
 
@@ -161,13 +165,24 @@ static LogicalResult foldInsertAfterInsertSlice(InsertSliceOp insertOp) {
   return success();
 }
 
-/// Folds round-trip extract/insert slice op pairs.
-/// Example:
-/// ```mlir
-/// %0 = tensor.extract_slice %val[0, 0, 0, 0] [1, 1, 2, 4] [1, 1, 1, 1]
-/// %1 = tensor.insert_slice %0 into %val[0, 0, 0, 0] [1, 1, 2, 4] [1, 1, 1, 1]
-/// ```
-/// can be folded into %val.
+/**
+ * @brief Folds round-trip extract/insert slice operation pairs.
+ *
+ * @details
+ * Detects patterns where a slice is extracted from a tensor and then
+ * inserted back into the same tensor at the same offsets, sizes, and
+ * strides. In such cases, the pair of operations forms a no-op and can
+ * be folded to the original tensor value.
+ *
+ * Example:
+ *
+ * ```mlir
+ * %0 = qtensor.extract_slice %val[0][2][1]
+ * %1 = qtensor.insert_slice %0 into %val[0][2][1]
+ * ```
+ *
+ * This can be folded into `%val`.
+ */
 static Value foldInsertAfterExtractSlice(InsertSliceOp insertOp) {
   auto extractOp = insertOp.getSource().getDefiningOp<ExtractSliceOp>();
   auto isSame = [](OpFoldResult a, OpFoldResult b) { return a == b; };
@@ -204,9 +219,7 @@ LogicalResult InsertSliceOp::reifyResultShapes(
 }
 
 namespace {
-/// Pattern to rewrite a insert_slice op with constant arguments.
-///
-/// This pattern works with both InsertSliceOp and ParallelInsertSliceOp.
+
 template <typename InsertOpTy>
 class InsertSliceOpConstantArgumentFolder final
     : public OpRewritePattern<InsertOpTy> {
@@ -255,26 +268,30 @@ public:
   }
 };
 
-/// Fold tensor_casts with insert_slice operations. If the source or
-/// destination tensor is a tensor_cast that removes static type information,
-/// the cast is folded into the insert_slice operation. E.g.:
-///
-/// ```mlir
-///   %1 = tensor.cast %0 : tensor<8x16xf32> to tensor<?x?xf32>
-///   %2 = tensor.insert_slice %1 into ... : tensor<?x?xf32> into ...
-/// ```
-///
-/// folds into:
-///
-/// ```mlir
-///   %2 = tensor.insert_slice %0 into ... : tensor<8x16xf32> into ...
-/// ```
-///
-/// Note: When folding a cast on the destination tensor, the result of the
-/// insert_slice operation is casted to ensure that the type of the result did
-/// not change.
-///
-/// This pattern works with both InsertSliceOp and ParallelInsertSliceOp.
+/**
+ * @brief Folds tensor.cast operations with insert_slice.
+ *
+ * @details
+ * If the source or destination tensor of an insert_slice operation is
+ * produced by a tensor.cast that removes static type information, the
+ * cast can be folded into the insert_slice operation.
+ *
+ * Example:
+ *
+ * ```mlir
+ *   %1 = tensor.cast %0 : tensor<3!qco.qubit> to tensor<?x!qco.qubit>
+ *   %2 = qtensor.insert_slice %1 into ... : tensor<?x!qco.qubit> into ...
+ * ```
+ *
+ * This folds into:
+ *
+ * ```mlir
+ *   %2 = qtensor.insert_slice %0 into ... : tensor<3!qco.qubit> into ...
+ * ```
+ *
+ * When folding a cast on the destination tensor, the result of the
+ * insert_slice operation is cast to preserve the original result type.
+ */
 template <typename InsertOpTy>
 struct InsertSliceOpCastFolder final : public OpRewritePattern<InsertOpTy> {
   using OpRewritePattern<InsertOpTy>::OpRewritePattern;
@@ -356,7 +373,7 @@ struct InsertSliceOpCastFolder final : public OpRewritePattern<InsertOpTy> {
 
     // In the parallel case there is no result and so nothing to cast.
     bool isParallelInsert =
-        std::is_same<InsertOpTy, tensor::ParallelInsertSliceOp>::value;
+        std::is_same_v<InsertOpTy, tensor::ParallelInsertSliceOp>;
     if (!isParallelInsert && dst.getType() != insertSliceOp.getDestType()) {
       replacement = tensor::CastOp::create(rewriter, insertSliceOp.getLoc(),
                                            insertSliceOp.getDestType(),
@@ -367,27 +384,32 @@ struct InsertSliceOpCastFolder final : public OpRewritePattern<InsertOpTy> {
   }
 };
 
-/// If additional static type information can be deduced from a insert_slice's
-/// size operands, insert an explicit cast of the op's source operand. This
-/// enables other canonicalization patterns that are matching for tensor_cast
-/// ops such as `ForOpTensorCastFolder` in SCF.
-///
-/// Example:
-///
-/// ```mlir
-///   %r = tensor.insert_slice %0 into %1[...] [64, 64] [1, 1]
-///       : tensor<?x?xf32> into ...
-/// ```
-///
-/// folds into:
-///
-/// ```mlir
-///   %tmp = tensor.cast %0 : tensor<?x?xf32> to tensor<64x64xf32>
-///   %r = tensor.insert_slice %tmp into %1[...] [64, 64] [1, 1]
-///       : tensor<64x64xf32> into ...
-/// ```
-///
-/// This patterns works with both InsertSliceOp and ParallelInsertSliceOp.
+/**
+ * @brief Inserts a tensor.cast before insert_slice when additional static
+ * type information can be inferred from the slice sizes.
+ *
+ * @details
+ * If the size operands of an insert_slice operation provide additional
+ * static shape information, an explicit tensor.cast is inserted on the
+ * source operand to refine its type. This enables further canonicalization
+ * patterns that match tensor.cast operations, such as
+ * `ForOpTensorCastFolder` in the SCF dialect.
+ *
+ * Example:
+ *
+ * ```mlir
+ *   %r = qtensor.insert_slice %0 into %1[...] [3] [1]
+ *       : tensor<?x!qco.qubit> into ...
+ * ```
+ *
+ * This folds into:
+ *
+ * ```mlir
+ *   %tmp = tensor.cast %0 : tensor<?x!qco.qubit> to tensor<3x!qco.qubit>
+ *   %r = qtensor.insert_slice %tmp into %1[...] [3] [1]
+ *       : tensor<3x!qco.qubit> into ...
+ * ```
+ */
 template <typename InsertOpTy>
 struct InsertSliceOpSourceCastInserter final
     : public OpRewritePattern<InsertOpTy> {
@@ -428,14 +450,8 @@ struct InsertSliceOpSourceCastInserter final
     //   3) Cast-compatible with srcType.
     // Insert the cast.
     OpBuilder::InsertionGuard g(rewriter);
-    // The only difference between InsertSliceOp and ParallelInsertSliceOp is
-    // that the insertion point is just before the ParallelCombiningOp in the
-    // parallel case.
-    if (std::is_same_v<InsertOpTy, tensor::ParallelInsertSliceOp>) {
-      rewriter.setInsertionPoint(insertSliceOp->getParentOp());
-    }
-    Value cast = rewriter.create<tensor::CastOp>(
-        insertSliceOp.getLoc(), newSrcType, insertSliceOp.getSource());
+    Value cast = tensor::CastOp::create(rewriter, insertSliceOp.getLoc(),
+                                        newSrcType, insertSliceOp.getSource());
     rewriter.replaceOpWithNewOp<InsertOpTy>(
         insertSliceOp, cast, insertSliceOp.getDest(),
         insertSliceOp.getMixedOffsets(), insertSliceOp.getMixedSizes(),

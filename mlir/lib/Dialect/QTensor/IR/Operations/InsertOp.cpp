@@ -33,12 +33,16 @@ struct ConvertInsertOpToTensorOp : public OpRewritePattern<qtensor::InsertOp> {
   }
 };
 
+/**
+ * @brief If an InsertOp consumes an ExtractOp with identical indices,
+ * return the tensor from the extractOp directly.
+ */
 struct InsertFromExtractOp : public OpRewritePattern<InsertOp> {
   using OpRewritePattern<InsertOp>::OpRewritePattern;
 
   LogicalResult matchAndRewrite(InsertOp insertOp,
                                 PatternRewriter& rewriter) const final {
-    auto extractOp = insertOp.getScalar().getDefiningOp<qtensor::ExtractOp>();
+    auto extractOp = insertOp.getScalar().getDefiningOp<ExtractOp>();
     if (!extractOp) {
       return failure();
     }
