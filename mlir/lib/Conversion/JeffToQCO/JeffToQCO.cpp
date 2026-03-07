@@ -91,13 +91,13 @@ static void createModified(
  * @tparam JeffOpType The operation type of the Jeff operation
  * @param op The Jeff operation instance to convert
  * @param rewriter The pattern rewriter
- * @param controlQubits The control qubits of the operation
+ * @param controls The control qubits of the operation
  * @param target The target qubit of the operation
  */
 template <typename QCOOpType, typename JeffOpType>
 static void createOneTargetZeroParameter(
     JeffOpType& op, ConversionPatternRewriter& rewriter,
-    const llvm::SmallVector<Value>& controlQubits, Value target) {
+    const llvm::SmallVector<Value>& controls, Value target) {
   if (op.getNumCtrls() == 0 && !op.getIsAdjoint()) {
     rewriter.replaceOpWithNewOp<QCOOpType>(op, target);
   } else {
@@ -105,7 +105,7 @@ static void createOneTargetZeroParameter(
       auto qcoOp = QCOOpType::create(rewriter, op.getLoc(), innerTargets[0]);
       return {qcoOp.getQubitOut()};
     };
-    createModified<QCOOpType, JeffOpType>(op, rewriter, controlQubits, {target},
+    createModified<QCOOpType, JeffOpType>(op, rewriter, controls, {target},
                                           lambda);
   }
 }
@@ -120,12 +120,12 @@ static void createOneTargetZeroParameter(
  * @param rewriter The pattern rewriter
  * @param target The target qubit of the operation
  * @param parameter The parameter of the operation
- * @param controlQubits The control qubits of the operation
+ * @param controls The control qubits of the operation
  */
 template <typename QCOOpType, typename JeffOpType>
 static void createOneTargetOneParameter(
     JeffOpType& op, ConversionPatternRewriter& rewriter, Value parameter,
-    const llvm::SmallVector<Value>& controlQubits, Value target) {
+    const llvm::SmallVector<Value>& controls, Value target) {
   if (op.getNumCtrls() == 0 && !op.getIsAdjoint()) {
     rewriter.replaceOpWithNewOp<QCOOpType>(op, target, parameter);
   } else {
@@ -134,7 +134,7 @@ static void createOneTargetOneParameter(
           QCOOpType::create(rewriter, op.getLoc(), innerTargets[0], parameter);
       return {qcoOp.getQubitOut()};
     };
-    createModified<QCOOpType, JeffOpType>(op, rewriter, controlQubits, {target},
+    createModified<QCOOpType, JeffOpType>(op, rewriter, controls, {target},
                                           lambda);
   }
 }
@@ -149,13 +149,13 @@ static void createOneTargetOneParameter(
  * @param rewriter The pattern rewriter
  * @param target The target qubit of the operation
  * @param parameters The parameters of the operation
- * @param controlQubits The control qubits of the operation
+ * @param controls The control qubits of the operation
  */
 template <typename QCOOpType, typename JeffOpType>
 static void
 createOneTargetTwoParameter(JeffOpType& op, ConversionPatternRewriter& rewriter,
                             const llvm::SmallVector<Value>& parameters,
-                            const llvm::SmallVector<Value>& controlQubits,
+                            const llvm::SmallVector<Value>& controls,
                             Value target) {
   if (op.getNumCtrls() == 0 && !op.getIsAdjoint()) {
     rewriter.replaceOpWithNewOp<QCOOpType>(op, target, parameters[0],
@@ -166,7 +166,7 @@ createOneTargetTwoParameter(JeffOpType& op, ConversionPatternRewriter& rewriter,
                                      parameters[0], parameters[1]);
       return {qcoOp.getQubitOut()};
     };
-    createModified<QCOOpType, JeffOpType>(op, rewriter, controlQubits, {target},
+    createModified<QCOOpType, JeffOpType>(op, rewriter, controls, {target},
                                           lambda);
   }
 }
@@ -181,13 +181,13 @@ createOneTargetTwoParameter(JeffOpType& op, ConversionPatternRewriter& rewriter,
  * @param rewriter The pattern rewriter
  * @param target The target qubit of the operation
  * @param parameters The parameters of the operation
- * @param controlQubits The control qubits of the operation
+ * @param controls The control qubits of the operation
  */
 template <typename QCOOpType, typename JeffOpType>
 static void createOneTargetThreeParameter(
     JeffOpType& op, ConversionPatternRewriter& rewriter,
     const llvm::SmallVector<Value>& parameters,
-    const llvm::SmallVector<Value>& controlQubits, Value target) {
+    const llvm::SmallVector<Value>& controls, Value target) {
   if (op.getNumCtrls() == 0 && !op.getIsAdjoint()) {
     rewriter.replaceOpWithNewOp<QCOOpType>(op, target, parameters[0],
                                            parameters[1], parameters[2]);
@@ -198,7 +198,7 @@ static void createOneTargetThreeParameter(
                             parameters[0], parameters[1], parameters[2]);
       return {qcoOp.getQubitOut()};
     };
-    createModified<QCOOpType, JeffOpType>(op, rewriter, controlQubits, {target},
+    createModified<QCOOpType, JeffOpType>(op, rewriter, controls, {target},
                                           lambda);
   }
 }
@@ -211,14 +211,14 @@ static void createOneTargetThreeParameter(
  * @tparam JeffOpType The operation type of the Jeff operation
  * @param op The Jeff operation instance to convert
  * @param rewriter The pattern rewriter
- * @param controlQubits The control qubits of the operation
+ * @param controls The control qubits of the operation
  * @param targets The target qubits of the operation
  */
 template <typename QCOOpType, typename JeffOpType>
 static void
 createTwoTargetZeroParameter(JeffOpType& op,
                              ConversionPatternRewriter& rewriter,
-                             const llvm::SmallVector<Value>& controlQubits,
+                             const llvm::SmallVector<Value>& controls,
                              const llvm::SmallVector<Value>& targets) {
   if (op.getNumCtrls() == 0 && !op.getIsAdjoint()) {
     rewriter.replaceOpWithNewOp<QCOOpType>(op, targets[0], targets[1]);
@@ -228,7 +228,7 @@ createTwoTargetZeroParameter(JeffOpType& op,
                                      innerTargets[1]);
       return {qcoOp.getQubit0Out(), qcoOp.getQubit1Out()};
     };
-    createModified<QCOOpType, JeffOpType>(op, rewriter, controlQubits, targets,
+    createModified<QCOOpType, JeffOpType>(op, rewriter, controls, targets,
                                           lambda);
   }
 }
@@ -243,13 +243,13 @@ createTwoTargetZeroParameter(JeffOpType& op,
  * @param rewriter The pattern rewriter
  * @param targets The target qubits of the operation
  * @param parameter The parameter of the operation
- * @param controlQubits The control qubits of the operation
+ * @param controls The control qubits of the operation
  */
 template <typename QCOOpType, typename JeffOpType>
 static void
 createTwoTargetOneParameter(JeffOpType& op, ConversionPatternRewriter& rewriter,
                             Value parameter,
-                            const llvm::SmallVector<Value>& controlQubits,
+                            const llvm::SmallVector<Value>& controls,
                             const llvm::SmallVector<Value>& targets) {
   if (op.getNumCtrls() == 0 && !op.getIsAdjoint()) {
     rewriter.replaceOpWithNewOp<QCOOpType>(op, targets[0], targets[1],
@@ -260,7 +260,7 @@ createTwoTargetOneParameter(JeffOpType& op, ConversionPatternRewriter& rewriter,
                                      innerTargets[1], parameter);
       return {qcoOp.getQubit0Out(), qcoOp.getQubit1Out()};
     };
-    createModified<QCOOpType, JeffOpType>(op, rewriter, controlQubits, targets,
+    createModified<QCOOpType, JeffOpType>(op, rewriter, controls, targets,
                                           lambda);
   }
 }
@@ -275,13 +275,13 @@ createTwoTargetOneParameter(JeffOpType& op, ConversionPatternRewriter& rewriter,
  * @param rewriter The pattern rewriter
  * @param targets The target qubits of the operation
  * @param parameters The parameters of the operation
- * @param controlQubits The control qubits of the operation
+ * @param controls The control qubits of the operation
  */
 template <typename QCOOpType, typename JeffOpType>
 static void
 createTwoTargetTwoParameter(JeffOpType& op, ConversionPatternRewriter& rewriter,
                             const llvm::SmallVector<Value>& parameters,
-                            const llvm::SmallVector<Value>& controlQubits,
+                            const llvm::SmallVector<Value>& controls,
                             const llvm::SmallVector<Value>& targets) {
   if (op.getNumCtrls() == 0 && !op.getIsAdjoint()) {
     rewriter.replaceOpWithNewOp<QCOOpType>(op, targets[0], targets[1],
@@ -293,7 +293,7 @@ createTwoTargetTwoParameter(JeffOpType& op, ConversionPatternRewriter& rewriter,
                             innerTargets[1], parameters[0], parameters[1]);
       return {qcoOp.getQubit0Out(), qcoOp.getQubit1Out()};
     };
-    createModified<QCOOpType, JeffOpType>(op, rewriter, controlQubits, targets,
+    createModified<QCOOpType, JeffOpType>(op, rewriter, controls, targets,
                                           lambda);
   }
 }
