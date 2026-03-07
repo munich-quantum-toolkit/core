@@ -57,16 +57,8 @@ if(BUILD_MQT_CORE_BINDINGS)
                                                ${SKBUILD_SABI_COMPONENT})
 endif()
 
-# check if this is the master project or used via add_subdirectory
-if(CMAKE_PROJECT_NAME STREQUAL PROJECT_NAME)
-  set(MQT_CORE_MASTER_PROJECT ON)
-else()
-  set(MQT_CORE_MASTER_PROJECT OFF)
-endif()
-
-option(MQT_CORE_INSTALL "Generate installation instructions for MQT Core"
-       ${MQT_CORE_MASTER_PROJECT})
-option(BUILD_MQT_CORE_TESTS "Build tests for the MQT Core project" ${MQT_CORE_MASTER_PROJECT})
+option(MQT_CORE_INSTALL "Generate installation instructions for MQT Core" ${PROJECT_IS_TOP_LEVEL})
+option(BUILD_MQT_CORE_TESTS "Build tests for the MQT Core project" ${PROJECT_IS_TOP_LEVEL})
 option(BUILD_MQT_CORE_SHARED_LIBS "Build MQT Core libraries as shared libraries"
        ${BUILD_SHARED_LIBS})
 option(BUILD_MQT_CORE_MLIR "Build the MLIR submodule of the MQT Core project" ON)
@@ -164,7 +156,7 @@ if(BUILD_MQT_CORE_MLIR)
     VERBATIM)
 endif()
 
-if(MQT_CORE_MASTER_PROJECT)
+if(PROJECT_IS_TOP_LEVEL)
   if(NOT TARGET mqt-core-uninstall)
     configure_file(${CMAKE_CURRENT_SOURCE_DIR}/cmake/cmake_uninstall.cmake.in
                    ${CMAKE_CURRENT_BINARY_DIR}/cmake_uninstall.cmake IMMEDIATE @ONLY)
