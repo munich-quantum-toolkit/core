@@ -824,7 +824,9 @@ INSTANTIATE_TEST_SUITE_P(
         QCOTestCase{"CanonicalizeUToRx", MQT_NAMED_BUILDER(canonicalizeUToRx),
                     MQT_NAMED_BUILDER(rx)},
         QCOTestCase{"CanonicalizeUToRy", MQT_NAMED_BUILDER(canonicalizeUToRy),
-                    MQT_NAMED_BUILDER(ry)}));
+                    MQT_NAMED_BUILDER(ry)},
+        QCOTestCase{"CanonicalizeUToU2", MQT_NAMED_BUILDER(canonicalizeUToU2),
+                    MQT_NAMED_BUILDER(u2)}));
 /// @}
 
 /// \name QCO/Operations/StandardGates/XOp.cpp

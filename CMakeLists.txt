@@ -97,6 +97,10 @@ project(
   VERSION ${MQT_CORE_VERSION}
   DESCRIPTION "MQT Core - The Backbone of the Munich Quantum Toolkit")
 
+if(BUILD_MQT_CORE_MLIR)
+  include(SetupMLIR)
+endif()
+
 include(cmake/ExternalDependencies.cmake)
 
 # set the include directory for the build tree
@@ -116,9 +120,6 @@ endif()
 
 set(MQT_CORE_TARGET_NAME "mqt-core")
 
-if(BUILD_MQT_CORE_MLIR)
-  include(SetupMLIR)
-endif()
 cmake_dependent_option(BUILD_MQT_CORE_QIR_RUNNER "Build the QIR runner of the MQT Core project" ON
                        "BUILD_MQT_CORE_MLIR" OFF)
 
@@ -155,7 +156,6 @@ if(BUILD_MQT_CORE_MLIR)
             ${CMAKE_CURRENT_SOURCE_DIR}/cmake/CleanMLIRDocs.cmake
     COMMENT "Copying and cleaning up generated MLIR documentation"
     VERBATIM)
-
 endif()
 
 if(MQT_CORE_MASTER_PROJECT)
