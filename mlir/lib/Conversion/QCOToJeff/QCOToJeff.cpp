@@ -115,12 +115,11 @@ convertOneTargetZeroParameter(QCOOpType& op, QCOOpAdaptorType& adaptor,
     target = state.targetsIn[0];
   }
 
-  auto jeffOp =
-      rewriter.create<JeffOpType>(op.getLoc(), target,
-                                  /*in_ctrl_qubits=*/state.controlsIn,
-                                  /*num_ctrls=*/state.controlsIn.size(),
-                                  /*is_adjoint=*/state.inInvOp ^ isAdjoint,
-                                  /*power=*/1);
+  auto jeffOp = JeffOpType::create(rewriter, op.getLoc(), target,
+                                   /*in_ctrl_qubits=*/state.controlsIn,
+                                   /*num_ctrls=*/state.controlsIn.size(),
+                                   /*is_adjoint=*/state.inInvOp ^ isAdjoint,
+                                   /*power=*/1);
 
   if (!state.inModifier()) {
     rewriter.replaceOp(op, jeffOp.getOutQubit());
@@ -160,11 +159,11 @@ convertOneTargetOneParameter(QCOOpType& op, QCOOpAdaptorType& adaptor,
   }
 
   auto jeffOp =
-      rewriter.create<JeffOpType>(op.getLoc(), target, op.getParameter(0),
-                                  /*in_ctrl_qubits=*/state.controlsIn,
-                                  /*num_ctrls=*/state.controlsIn.size(),
-                                  /*is_adjoint=*/state.inInvOp,
-                                  /*power=*/1);
+      JeffOpType::create(rewriter, op.getLoc(), target, op.getParameter(0),
+                         /*in_ctrl_qubits=*/state.controlsIn,
+                         /*num_ctrls=*/state.controlsIn.size(),
+                         /*is_adjoint=*/state.inInvOp,
+                         /*power=*/1);
 
   if (!state.inModifier()) {
     rewriter.replaceOp(op, jeffOp.getOutQubit());
@@ -204,12 +203,12 @@ convertOneTargetThreeParameter(QCOOpType& op, QCOOpAdaptorType& adaptor,
   }
 
   auto jeffOp =
-      rewriter.create<JeffOpType>(op.getLoc(), target, op.getParameter(0),
-                                  op.getParameter(1), op.getParameter(2),
-                                  /*in_ctrl_qubits=*/state.controlsIn,
-                                  /*num_ctrls=*/state.controlsIn.size(),
-                                  /*is_adjoint=*/state.inInvOp,
-                                  /*power=*/1);
+      JeffOpType::create(rewriter, op.getLoc(), target, op.getParameter(0),
+                         op.getParameter(1), op.getParameter(2),
+                         /*in_ctrl_qubits=*/state.controlsIn,
+                         /*num_ctrls=*/state.controlsIn.size(),
+                         /*is_adjoint=*/state.inInvOp,
+                         /*power=*/1);
 
   if (!state.inModifier()) {
     rewriter.replaceOp(op, jeffOp.getOutQubit());
@@ -251,12 +250,11 @@ convertTwoTargetZeroParameter(QCOOpType& op, QCOOpAdaptorType& adaptor,
     target1 = state.targetsIn[1];
   }
 
-  auto jeffOp =
-      rewriter.create<JeffOpType>(op.getLoc(), target0, target1,
-                                  /*in_ctrl_qubits=*/state.controlsIn,
-                                  /*num_ctrls=*/state.controlsIn.size(),
-                                  /*is_adjoint=*/state.inInvOp,
-                                  /*power=*/1);
+  auto jeffOp = JeffOpType::create(rewriter, op.getLoc(), target0, target1,
+                                   /*in_ctrl_qubits=*/state.controlsIn,
+                                   /*num_ctrls=*/state.controlsIn.size(),
+                                   /*is_adjoint=*/state.inInvOp,
+                                   /*power=*/1);
 
   if (!state.inModifier()) {
     rewriter.replaceOp(op, {jeffOp.getOutQubitOne(), jeffOp.getOutQubitTwo()});
@@ -291,8 +289,8 @@ static void createCustomOp(QCOOpType& op, ConversionPatternRewriter& rewriter,
                            const bool isAdjoint, StringRef name) {
   state.strings.emplace_back(name);
 
-  auto jeffOp = rewriter.create<jeff::CustomOp>(
-      op.getLoc(), targets,
+  auto jeffOp = jeff::CustomOp::create(
+      rewriter, op.getLoc(), targets,
       /*in_ctrl_qubits=*/state.controlsIn, /*params=*/params,
       /*num_ctrls=*/state.controlsIn.size(),
       /*is_adjoint=*/state.inInvOp ^ isAdjoint,
@@ -329,12 +327,12 @@ static void createPPROp(QCOOpType& op, ConversionPatternRewriter& rewriter,
       DenseI32ArrayAttr::get(rewriter.getContext(), pauliGates);
 
   auto jeffOp =
-      rewriter.create<jeff::PPROp>(op.getLoc(), targets,
-                                   /*in_ctrl_qubits=*/state.controlsIn,
-                                   /*rotation=*/op.getParameter(0),
-                                   /*num_ctrls=*/state.controlsIn.size(),
-                                   /*is_adjoint=*/state.inInvOp,
-                                   /*power=*/1, /*pauli_gates=*/pauliGatesAttr);
+      jeff::PPROp::create(rewriter, op.getLoc(), targets,
+                          /*in_ctrl_qubits=*/state.controlsIn,
+                          /*rotation=*/op.getParameter(0),
+                          /*num_ctrls=*/state.controlsIn.size(),
+                          /*is_adjoint=*/state.inInvOp,
+                          /*power=*/1, /*pauli_gates=*/pauliGatesAttr);
 
   if (!state.inModifier()) {
     rewriter.replaceOp(op, jeffOp.getOutQubits());
@@ -572,11 +570,11 @@ struct ConvertQCOGPhaseOpToJeff final
     auto& state = getState();
 
     auto jeffOp =
-        rewriter.create<jeff::GPhaseOp>(op.getLoc(), op.getParameter(0),
-                                        /*in_ctrl_qubits=*/state.controlsIn,
-                                        /*num_ctrls=*/state.controlsIn.size(),
-                                        /*is_adjoint=*/state.inInvOp,
-                                        /*power=*/1);
+        jeff::GPhaseOp::create(rewriter, op.getLoc(), op.getParameter(0),
+                               /*in_ctrl_qubits=*/state.controlsIn,
+                               /*num_ctrls=*/state.controlsIn.size(),
+                               /*is_adjoint=*/state.inInvOp,
+                               /*power=*/1);
 
     rewriter.eraseOp(op);
     if (state.inCtrlOp) {
@@ -737,13 +735,13 @@ struct ConvertQCOU2OpToJeff final : StatefulOpConversionPattern<qco::U2Op> {
     }
 
     auto loc = op.getLoc();
-    auto theta = rewriter.create<jeff::FloatConst64Op>(
-        loc, rewriter.getF64FloatAttr(std::numbers::pi / 2));
-    auto jeffOp = rewriter.create<jeff::UOp>(
-        loc, target, theta.getResult(), op.getParameter(0), op.getParameter(1),
-        /*in_ctrl_qubits=*/state.controlsIn,
-        /*num_ctrls=*/state.controlsIn.size(),
-        /*is_adjoint=*/state.inInvOp, /*power=*/1);
+    auto theta = jeff::FloatConst64Op::create(
+        rewriter, loc, rewriter.getF64FloatAttr(std::numbers::pi / 2));
+    auto jeffOp = jeff::UOp::create(rewriter, loc, target, theta.getResult(),
+                                    op.getParameter(0), op.getParameter(1),
+                                    /*in_ctrl_qubits=*/state.controlsIn,
+                                    /*num_ctrls=*/state.controlsIn.size(),
+                                    /*is_adjoint=*/state.inInvOp, /*power=*/1);
 
     if (!state.inModifier()) {
       rewriter.replaceOp(op, jeffOp.getOutQubit());

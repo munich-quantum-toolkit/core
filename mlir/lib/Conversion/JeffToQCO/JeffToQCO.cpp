@@ -62,12 +62,12 @@ static void createModified(
   if (op.getNumCtrls() != 0) {
     qco::CtrlOp ctrlOp;
     if (!op.getIsAdjoint()) {
-      ctrlOp = rewriter.create<qco::CtrlOp>(loc, controls, targets, lambda);
+      ctrlOp = qco::CtrlOp::create(rewriter, loc, controls, targets, lambda);
     } else {
-      ctrlOp = rewriter.create<qco::CtrlOp>(
-          loc, controls, targets,
+      ctrlOp = qco::CtrlOp::create(
+          rewriter, loc, controls, targets,
           [&](ValueRange ctrlTargets) -> llvm::SmallVector<Value> {
-            auto invOp = rewriter.create<qco::InvOp>(loc, ctrlTargets, lambda);
+            auto invOp = qco::InvOp::create(rewriter, loc, ctrlTargets, lambda);
             return invOp.getQubitsOut();
           });
     }
@@ -78,7 +78,7 @@ static void createModified(
                    ctrlOp.getControlsOut().end());
     rewriter.replaceOp(op, results);
   } else if (op.getIsAdjoint()) {
-    auto invOp = rewriter.create<qco::InvOp>(loc, targets, lambda);
+    auto invOp = qco::InvOp::create(rewriter, loc, targets, lambda);
     rewriter.replaceOp(op, invOp.getQubitsOut());
   }
 }
@@ -102,7 +102,7 @@ static void createOneTargetZeroParameter(
     rewriter.replaceOpWithNewOp<QCOOpType>(op, target);
   } else {
     auto lambda = [&](ValueRange innerTargets) -> llvm::SmallVector<Value> {
-      auto qcoOp = rewriter.create<QCOOpType>(op.getLoc(), innerTargets[0]);
+      auto qcoOp = QCOOpType::create(rewriter, op.getLoc(), innerTargets[0]);
       return {qcoOp.getQubitOut()};
     };
     createModified<QCOOpType, JeffOpType>(op, rewriter, controlQubits, {target},
@@ -131,7 +131,7 @@ static void createOneTargetOneParameter(
   } else {
     auto lambda = [&](ValueRange innerTargets) -> llvm::SmallVector<Value> {
       auto qcoOp =
-          rewriter.create<QCOOpType>(op.getLoc(), innerTargets[0], parameter);
+          QCOOpType::create(rewriter, op.getLoc(), innerTargets[0], parameter);
       return {qcoOp.getQubitOut()};
     };
     createModified<QCOOpType, JeffOpType>(op, rewriter, controlQubits, {target},
@@ -162,8 +162,8 @@ createOneTargetTwoParameter(JeffOpType& op, ConversionPatternRewriter& rewriter,
                                            parameters[1]);
   } else {
     auto lambda = [&](ValueRange innerTargets) -> llvm::SmallVector<Value> {
-      auto qcoOp = rewriter.create<QCOOpType>(op.getLoc(), innerTargets[0],
-                                              parameters[0], parameters[1]);
+      auto qcoOp = QCOOpType::create(rewriter, op.getLoc(), innerTargets[0],
+                                     parameters[0], parameters[1]);
       return {qcoOp.getQubitOut()};
     };
     createModified<QCOOpType, JeffOpType>(op, rewriter, controlQubits, {target},
@@ -193,9 +193,9 @@ static void createOneTargetThreeParameter(
                                            parameters[1], parameters[2]);
   } else {
     auto lambda = [&](ValueRange innerTargets) -> llvm::SmallVector<Value> {
-      auto qcoOp = rewriter.create<QCOOpType>(op.getLoc(), innerTargets[0],
-                                              parameters[0], parameters[1],
-                                              parameters[2]);
+      auto qcoOp =
+          QCOOpType::create(rewriter, op.getLoc(), innerTargets[0],
+                            parameters[0], parameters[1], parameters[2]);
       return {qcoOp.getQubitOut()};
     };
     createModified<QCOOpType, JeffOpType>(op, rewriter, controlQubits, {target},
@@ -224,8 +224,8 @@ createTwoTargetZeroParameter(JeffOpType& op,
     rewriter.replaceOpWithNewOp<QCOOpType>(op, targets[0], targets[1]);
   } else {
     auto lambda = [&](ValueRange innerTargets) -> llvm::SmallVector<Value> {
-      auto qcoOp = rewriter.create<QCOOpType>(op.getLoc(), innerTargets[0],
-                                              innerTargets[1]);
+      auto qcoOp = QCOOpType::create(rewriter, op.getLoc(), innerTargets[0],
+                                     innerTargets[1]);
       return {qcoOp.getQubit0Out(), qcoOp.getQubit1Out()};
     };
     createModified<QCOOpType, JeffOpType>(op, rewriter, controlQubits, targets,
@@ -256,8 +256,8 @@ createTwoTargetOneParameter(JeffOpType& op, ConversionPatternRewriter& rewriter,
                                            parameter);
   } else {
     auto lambda = [&](ValueRange innerTargets) -> llvm::SmallVector<Value> {
-      auto qcoOp = rewriter.create<QCOOpType>(op.getLoc(), innerTargets[0],
-                                              innerTargets[1], parameter);
+      auto qcoOp = QCOOpType::create(rewriter, op.getLoc(), innerTargets[0],
+                                     innerTargets[1], parameter);
       return {qcoOp.getQubit0Out(), qcoOp.getQubit1Out()};
     };
     createModified<QCOOpType, JeffOpType>(op, rewriter, controlQubits, targets,
@@ -288,9 +288,9 @@ createTwoTargetTwoParameter(JeffOpType& op, ConversionPatternRewriter& rewriter,
                                            parameters[0], parameters[1]);
   } else {
     auto lambda = [&](ValueRange innerTargets) -> llvm::SmallVector<Value> {
-      auto qcoOp = rewriter.create<QCOOpType>(op.getLoc(), innerTargets[0],
-                                              innerTargets[1], parameters[0],
-                                              parameters[1]);
+      auto qcoOp =
+          QCOOpType::create(rewriter, op.getLoc(), innerTargets[0],
+                            innerTargets[1], parameters[0], parameters[1]);
       return {qcoOp.getQubit0Out(), qcoOp.getQubit1Out()};
     };
     createModified<QCOOpType, JeffOpType>(op, rewriter, controlQubits, targets,
@@ -512,7 +512,7 @@ struct ConvertJeffQubitFreeOpToQCO final
   matchAndRewrite(jeff::QubitFreeOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
     auto resetOp =
-        rewriter.create<qco::ResetOp>(op.getLoc(), adaptor.getInQubit());
+        qco::ResetOp::create(rewriter, op.getLoc(), adaptor.getInQubit());
     rewriter.replaceOpWithNewOp<qco::DeallocOp>(op, resetOp.getQubitOut());
     return success();
   }
@@ -563,8 +563,9 @@ struct ConvertJeffQubitMeasureOpToQCO final
   matchAndRewrite(jeff::QubitMeasureOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
     auto loc = op.getLoc();
-    auto measureOp = rewriter.create<qco::MeasureOp>(loc, adaptor.getInQubit());
-    rewriter.create<qco::DeallocOp>(loc, measureOp.getQubitOut());
+    auto measureOp =
+        qco::MeasureOp::create(rewriter, loc, adaptor.getInQubit());
+    qco::DeallocOp::create(rewriter, loc, measureOp.getQubitOut());
     rewriter.replaceOp(op, measureOp.getResult());
     return success();
   }
@@ -645,7 +646,7 @@ struct ConvertJeffGPhaseOpToQCO final : OpConversionPattern<jeff::GPhaseOp> {
       rewriter.replaceOpWithNewOp<qco::GPhaseOp>(op, op.getRotation());
     } else {
       auto lambda = [&](ValueRange /*targets*/) -> llvm::SmallVector<Value> {
-        rewriter.create<qco::GPhaseOp>(op.getLoc(), op.getRotation());
+        qco::GPhaseOp::create(rewriter, op.getLoc(), op.getRotation());
         return {};
       };
       createModified<qco::GPhaseOp, jeff::GPhaseOp>(
