@@ -374,56 +374,37 @@ static void createBarrierOp(jeff::CustomOp& op, jeff::CustomOpAdaptor& adaptor,
 }
 
 /**
- * @brief Cleans up the main function after conversion
- *
- * @details
- * The `passthrough` attribute is added, the trivial return operation is
- * replaced, and the function type is fixed.
- *
- * @param main The main function to clean up
- * @return LogicalResult Success or failure of the cleanup
+ * @brief Gets the name of the entry point from the module attributes
  */
-static LogicalResult cleanUpMain(func::FuncOp main) {
-  if (main.getBlocks().size() != 1) {
-    return failure();
+llvm::StringRef getEntryPointName(Operation* op) {
+  auto module = llvm::dyn_cast<ModuleOp>(op);
+  if (!module) {
+    llvm::reportFatalInternalError("Expected a module operation");
   }
-  auto* block = &main.getBlocks().front();
 
-  auto* ctx = main.getContext();
-  auto loc = main.getLoc();
-  OpBuilder builder(ctx);
-
-  // Add passthrough attribute
-  auto entryPointAttr = StringAttr::get(ctx, "entry_point");
-  main->setAttr("passthrough", ArrayAttr::get(ctx, {entryPointAttr}));
-
-  // Remove trivial return operation
-  auto* returnOp = block->getTerminator();
-  if (!llvm::isa<func::ReturnOp>(returnOp)) {
-    return failure();
+  auto entryPointAttr = module->getAttr("jeff.entrypoint");
+  if (!entryPointAttr) {
+    llvm::reportFatalInternalError(
+        "Module is missing 'jeff.entrypoint' attribute");
   }
-  returnOp->erase();
+  auto entryPoint = llvm::cast<IntegerAttr>(entryPointAttr).getUInt();
 
-  // Add return operation
-  builder.setInsertionPointToStart(block);
-  auto constOp =
-      arith::ConstantOp::create(builder, loc, builder.getI64IntegerAttr(0));
+  auto stringsAttr = module->getAttr("jeff.strings");
+  if (!stringsAttr) {
+    llvm::reportFatalInternalError(
+        "Module is missing 'jeff.strings' attribute");
+  }
+  auto strings = llvm::cast<ArrayAttr>(stringsAttr);
 
-  builder.setInsertionPointToEnd(block);
-  func::ReturnOp::create(builder, loc, constOp.getResult());
+  if (entryPoint >= strings.size()) {
+    llvm::reportFatalInternalError("Entry point index is out of bounds");
+  }
 
-  // Fix return type
-  main.setType(FunctionType::get(ctx, {}, {builder.getI64Type()}));
-
-  return success();
+  return llvm::cast<mlir::StringAttr>(strings[entryPoint]).getValue();
 }
 
 /**
  * @brief Cleans up the module after conversion
- *
- * @details
- * The main function is identified and cleaned up, and module attributes are
- * removed.
  *
  * @param op The module operation to clean up
  * @return LogicalResult Success or failure of the cleanup
@@ -431,37 +412,6 @@ static LogicalResult cleanUpMain(func::FuncOp main) {
 static LogicalResult cleanUp(Operation* op) {
   auto module = llvm::dyn_cast<ModuleOp>(op);
   if (!module) {
-    return failure();
-  }
-
-  auto entryPointAttr = module->getAttr("jeff.entrypoint");
-  if (!entryPointAttr) {
-    return failure();
-  }
-  auto entryPoint = llvm::cast<IntegerAttr>(entryPointAttr).getUInt();
-
-  auto stringsAttr = module->getAttr("jeff.strings");
-  if (!stringsAttr) {
-    return failure();
-  }
-  auto strings = llvm::cast<ArrayAttr>(stringsAttr);
-
-  if (entryPoint >= strings.size()) {
-    return failure();
-  }
-  auto mainName = llvm::cast<mlir::StringAttr>(strings[entryPoint]).getValue();
-
-  bool mainFound = false;
-  for (auto funcOp : module.getOps<func::FuncOp>()) {
-    if (funcOp.getSymName() == mainName) {
-      mainFound = true;
-      if (cleanUpMain(funcOp).failed()) {
-        return failure();
-      }
-    }
-  }
-
-  if (!mainFound) {
     return failure();
   }
 
@@ -901,6 +851,65 @@ struct ConvertJeffPPROpToQCO final : OpConversionPattern<jeff::PPROp> {
 };
 
 /**
+ * @brief Converts the Jeff-style main function to a QCO-style main function
+ *
+ * @par Example:
+ * ```mlir
+ * func.func @main() -> () {
+ *   return
+ * }
+ * ```
+ * is converted to
+ * ```mlir
+ * func.func @main() -> i64 attributes {passthrough = ["entry_point"]} {
+ *   %0 = arith.constant 0 : i64
+ *   return %0
+ * }
+ * ```
+ */
+struct ConvertJeffMainToQCO final : OpConversionPattern<func::FuncOp> {
+  using OpConversionPattern::OpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(func::FuncOp op, OpAdaptor /*adaptor*/,
+                  ConversionPatternRewriter& rewriter) const override {
+    if (op.getSymName() != getEntryPointName(op->getParentOfType<ModuleOp>())) {
+      return failure();
+    }
+
+    // Update function signature and add passthrough attribute
+    rewriter.startOpModification(op);
+    auto* ctx = rewriter.getContext();
+    op.setType(FunctionType::get(ctx, {}, {rewriter.getI64Type()}));
+    auto entryPointAttr = StringAttr::get(ctx, "entry_point");
+    op->setAttr("passthrough", ArrayAttr::get(ctx, {entryPointAttr}));
+    rewriter.finalizeOpModification(op);
+
+    // Replace return operation
+    if (op.getBlocks().size() != 1) {
+      return failure();
+    }
+    auto* block = &op.getBlocks().front();
+
+    auto* returnOp = block->getTerminator();
+    if (!llvm::isa<func::ReturnOp>(returnOp)) {
+      return failure();
+    }
+
+    rewriter.setInsertionPointToStart(block);
+    auto constOp = arith::ConstantOp::create(rewriter, op.getLoc(),
+                                             rewriter.getI64IntegerAttr(0));
+
+    rewriter.setInsertionPointToEnd(block);
+    func::ReturnOp::create(rewriter, op.getLoc(), constOp.getResult());
+
+    rewriter.eraseOp(returnOp);
+
+    return success();
+  }
+};
+
+/**
  * @brief Converts jeff.int_const1 to arith.constant
  *
  * @par Example:
@@ -1009,6 +1018,12 @@ protected:
     target.addIllegalDialect<jeff::JeffDialect>();
     target.addLegalDialect<QCODialect, arith::ArithDialect>();
 
+    target.addDynamicallyLegalOp<func::FuncOp>([&](func::FuncOp op) {
+      return !(op.getSymName() == getEntryPointName(module) &&
+               op.getFunctionType().getResults().empty());
+    });
+    target.addLegalOp<func::ReturnOp>();
+
     // Register operation conversion patterns
     patterns
         .add<ConvertJeffQubitAllocOpToQCO, ConvertJeffQubitFreeOpToQCO,
@@ -1020,8 +1035,9 @@ protected:
              ConvertJeffRyOpToQCO, ConvertJeffRzOpToQCO, ConvertJeffR1OpToQCO,
              ConvertJeffUOpToQCO, ConvertJeffSwapOpToQCO,
              ConvertJeffCustomOpToQCO, ConvertJeffPPROpToQCO,
-             ConvertJeffIntConst1OpToArith, ConvertJeffIntConst64OpToArith,
-             ConvertJeffFloatConst64OpToArith>(typeConverter, context);
+             ConvertJeffMainToQCO, ConvertJeffIntConst1OpToArith,
+             ConvertJeffIntConst64OpToArith, ConvertJeffFloatConst64OpToArith>(
+            typeConverter, context);
 
     // Apply the conversion
     if (applyPartialConversion(module, target, std::move(patterns)).failed()) {

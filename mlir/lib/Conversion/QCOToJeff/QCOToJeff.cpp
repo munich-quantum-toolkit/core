@@ -65,6 +65,7 @@ struct LoweringState {
 
   // Module information
   llvm::SmallVector<std::string> strings;
+  std::string entryPointName;
 };
 
 /**
@@ -346,86 +347,34 @@ static void createPPROp(QCOOpType& op, ConversionPatternRewriter& rewriter,
 }
 
 /**
- * @brief Cleans up the main function after conversion
- *
- * @details
- * The `passthrough` attribute is removed, the return operation is replaced with
- * a trivial one, and the function type is fixed.
- *
- * @param main The main function to clean up
- * @return LogicalResult Success or failure of the cleanup
- */
-static LogicalResult cleanUpMain(func::FuncOp main) {
-  if (main.getBlocks().size() != 1) {
-    return failure();
-  }
-  auto* block = &main.getBlocks().front();
-
-  auto* ctx = main.getContext();
-  auto loc = main.getLoc();
-  OpBuilder builder(ctx);
-
-  // Remove the passthrough attribute
-  main->removeAttr("passthrough");
-
-  // Remove return operation
-  auto* returnOp = block->getTerminator();
-  if (!llvm::isa<func::ReturnOp>(returnOp)) {
-    return failure();
-  }
-  returnOp->erase();
-
-  // Add trivial return operation
-  builder.setInsertionPointToEnd(block);
-  func::ReturnOp::create(builder, loc);
-
-  // Fix return type
-  main.setType(FunctionType::get(ctx, {}, {}));
-
-  return success();
-}
-
-/**
  * @brief Cleans up the module after conversion
- *
- * @details
- * The main function is identified and cleaned up, and module attributes are
- * set.
  *
  * @param op The module operation to clean up
  * @param state The lowering state
  * @return LogicalResult Success or failure of the cleanup
  */
 static LogicalResult cleanUp(Operation* op, LoweringState& state) {
+  if (state.entryPointName.empty()) {
+    llvm::errs() << "Entry point not found\n";
+    return failure();
+  }
+
   auto module = llvm::dyn_cast<ModuleOp>(op);
   if (!module) {
     return failure();
   }
 
-  bool mainFound = false;
-  uint16_t entryPoint = 0;
   for (auto funcOp : module.getOps<func::FuncOp>()) {
     state.strings.emplace_back(funcOp.getSymName());
-    auto passthrough = funcOp->getAttrOfType<ArrayAttr>("passthrough");
-    if (!passthrough) {
-      continue;
-    }
-    if (llvm::any_of(passthrough, [](Attribute attr) {
-          const auto strAttr = llvm::dyn_cast<StringAttr>(attr);
-          return strAttr && strAttr.getValue() == "entry_point";
-        })) {
-      mainFound = true;
-      entryPoint = state.strings.size() - 1;
-      if (cleanUpMain(funcOp).failed()) {
-        return failure();
-      }
-      break;
-    }
   }
 
-  if (!mainFound) {
+  const auto it = llvm::find(state.strings, state.entryPointName);
+  if (it == state.strings.end()) {
     return failure();
   }
+
+  const auto entryPoint =
+      static_cast<uint16_t>(std::distance(state.strings.begin(), it));
 
   // Set module attributes
   OpBuilder builder(module.getContext());
@@ -1357,6 +1306,68 @@ struct ConvertQCOYieldOpToJeff final
 };
 
 /**
+ * @brief Converts the QCO-style main function to a Jeff-style main function
+ *
+ * @par Example:
+ * ```mlir
+ * func.func @main() -> i64 attributes {passthrough = ["entry_point"]} {
+ *   %0 = arith.constant 0 : i64
+ *   return %0
+ * }
+ * ```
+ * is converted to
+ * ```mlir
+ * func.func @main() -> () {
+ *   return
+ * }
+ * ```
+ */
+struct ConvertQCOMainToJeff final : StatefulOpConversionPattern<func::FuncOp> {
+  using StatefulOpConversionPattern::StatefulOpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(func::FuncOp op, OpAdaptor /*adaptor*/,
+                  ConversionPatternRewriter& rewriter) const override {
+    auto passthrough = op->getAttrOfType<ArrayAttr>("passthrough");
+    if (!passthrough) {
+      return failure();
+    }
+
+    if (!llvm::any_of(passthrough, [](Attribute attr) {
+          const auto strAttr = llvm::dyn_cast<StringAttr>(attr);
+          return strAttr && strAttr.getValue() == "entry_point";
+        })) {
+      return failure();
+    }
+
+    getState().entryPointName = op.getSymName();
+
+    // Update function signature and remove passthrough attribute
+    rewriter.startOpModification(op);
+    op.setType(FunctionType::get(rewriter.getContext(), {}, {}));
+    op->removeAttr("passthrough");
+    rewriter.finalizeOpModification(op);
+
+    // Replace return operation
+    if (op.getBlocks().size() != 1) {
+      return failure();
+    }
+    auto* block = &op.getBlocks().front();
+
+    auto* returnOp = block->getTerminator();
+    if (!llvm::isa<func::ReturnOp>(returnOp)) {
+      return failure();
+    }
+
+    rewriter.setInsertionPointToEnd(block);
+    func::ReturnOp::create(rewriter, returnOp->getLoc());
+    rewriter.eraseOp(returnOp);
+
+    return success();
+  }
+};
+
+/**
  * @brief Converts arith.constant to Jeff
  *
  * @par Example:
@@ -1371,6 +1382,7 @@ struct ConvertQCOYieldOpToJeff final
 struct ConvertArithConstOpToJeff final
     : StatefulOpConversionPattern<arith::ConstantOp> {
   using StatefulOpConversionPattern::StatefulOpConversionPattern;
+
   LogicalResult
   matchAndRewrite(arith::ConstantOp op, OpAdaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
@@ -1451,6 +1463,10 @@ protected:
     target.addIllegalDialect<QCODialect>();
     target.addLegalDialect<jeff::JeffDialect>();
 
+    target.addDynamicallyLegalOp<func::FuncOp>(
+        [](func::FuncOp op) { return !op->hasAttr("passthrough"); });
+    target.addLegalOp<func::ReturnOp>();
+
     // Register operation conversion patterns
     patterns.add<
         ConvertQCOAllocOpToJeff, ConvertQCODeallocOpToJeff,
@@ -1466,7 +1482,7 @@ protected:
         ConvertQCORYYOpToJeff, ConvertQCORZXOpToJeff, ConvertQCORZZOpToJeff,
         ConvertQCOXXMinusYYOpToJeff, ConvertQCOXXPlusYYOpToJeff,
         ConvertQCOBarrierOpToJeff, ConvertQCOCtrlOpToJeff,
-        ConvertQCOInvOpToJeff, ConvertQCOYieldOpToJeff,
+        ConvertQCOInvOpToJeff, ConvertQCOYieldOpToJeff, ConvertQCOMainToJeff,
         ConvertArithConstOpToJeff>(typeConverter, context, &state);
 
     // Apply the conversion
