@@ -31,7 +31,7 @@ void AllocOp::build(OpBuilder& builder, OperationState& result, int64_t size) {
 }
 
 LogicalResult AllocOp::verify() {
-  auto resultType = dyn_cast<RankedTensorType>(getResult().getType());
+  auto resultType = getResult().getType();
   if (!resultType) {
     return emitOpError("Result must be a ranked tensor");
   }
