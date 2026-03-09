@@ -174,6 +174,11 @@ void QCOProgramBuilder::updateQubitTracking(Value inputQubit,
 
 Value QCOProgramBuilder::allocTensor(int64_t size) {
   checkFinalized();
+
+  if (size <= 0) {
+    llvm::reportFatalUsageError("Size must be positive");
+  }
+
   auto allocOp = qtensor::AllocOp::create(*this, size);
   validQubits.insert(allocOp);
   return allocOp.getResult();
@@ -186,6 +191,7 @@ Value QCOProgramBuilder::fromElements(ValueRange elements) {
     if (!llvm::isa<QubitType>(element.getType())) {
       llvm::reportFatalUsageError("Elements must be QubitType!");
     }
+    validateQubitValue(element);
     validQubits.erase(element);
   }
 
@@ -267,6 +273,7 @@ Value QCOProgramBuilder::insert(Value scalar, Value tensor,
 
   auto outTensor = insertOp.getResult();
 
+  validateQubitValue(scalar);
   validQubits.erase(scalar);
   updateQubitTracking(tensor, outTensor);
   return outTensor;
@@ -304,6 +311,7 @@ Value QCOProgramBuilder::insertSlice(
 
   auto outTensor = insertSliceOp.getResult();
 
+  validateQubitValue(source);
   validQubits.erase(source);
   updateQubitTracking(dest, outTensor);
 
@@ -324,6 +332,7 @@ QCOProgramBuilder& QCOProgramBuilder::deallocTensor(Value tensor) {
 
   qtensor::DeallocOp::create(*this, tensor);
 
+  validateQubitValue(tensor);
   validQubits.erase(tensor);
   return *this;
 }

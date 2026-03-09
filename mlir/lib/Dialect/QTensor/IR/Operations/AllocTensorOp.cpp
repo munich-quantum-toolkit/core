@@ -11,9 +11,12 @@
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QTensor/IR/QTensorOps.h"
 
+#include <llvm/Support/Casting.h>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/BuiltinTypes.h>
+#include <mlir/IR/OpDefinition.h>
 #include <mlir/IR/OperationSupport.h>
+#include <mlir/Support/LogicalResult.h>
 
 #include <cstdint>
 
@@ -25,4 +28,28 @@ void AllocOp::build(OpBuilder& builder, OperationState& result, int64_t size) {
       RankedTensorType::get({size}, qco::QubitType::get(builder.getContext()));
   build(builder, result, resultType,
         IntegerAttr::get(builder.getIntegerType(64), size));
+}
+
+LogicalResult AllocOp::verify() {
+  auto resultType = dyn_cast<RankedTensorType>(getResult().getType());
+  if (!resultType) {
+    return emitOpError("Result must be a ranked tensor");
+  }
+
+  if (!llvm::isa<qco::QubitType>(resultType.getElementType())) {
+    return emitOpError("Result element type must be of qubit type");
+  }
+
+  auto size = static_cast<int64_t>(getSize());
+
+  if (resultType.getRank() != 1) {
+    return emitOpError("Result must be a 1-D tensor");
+  }
+
+  if (resultType.getShape()[0] != size) {
+    return emitOpError("Tensor length must match size operand (")
+           << size << "), but got " << resultType.getShape()[0];
+  }
+
+  return success();
 }

@@ -320,7 +320,7 @@ public:
    *
    * @par Example:
    * ```c++
-   * auto outTensor = builder.insert_slice(slicedTensor, tensor, 0, 2, 1);
+   * auto outTensor = builder.insertSlice(slicedTensor, tensor, 0, 2, 1);
    * ```
    * ```mlir
    * %outTensor = qtensor.insert_slice %slicedTensor into %tensor[%0][%c2][%c1]

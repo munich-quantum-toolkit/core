@@ -97,6 +97,8 @@ def QTensor_AllocOp : QTensorOp<"alloc", [
     let builders = [
         OpBuilder<(ins "int64_t":$size)>
     ];
+
+    let hasVerifier = 1;
 }
 
 def QTensor_DeallocOp : QTensorOp<"dealloc", [MemoryEffects<[MemFree]>]> {

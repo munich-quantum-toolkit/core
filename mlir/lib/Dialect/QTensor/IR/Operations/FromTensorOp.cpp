@@ -39,6 +39,10 @@ void FromElementsOp::build(OpBuilder& builder, OperationState& result,
 }
 
 LogicalResult FromElementsOp::verify() {
+  if (!llvm::isa<qco::QubitType>(getResult().getType().getElementType())) {
+    return emitOpError("result tensor must have qubit element type");
+  }
+
   for (auto type : getElements().getTypes()) {
     if (!llvm::isa<qco::QubitType>(type)) {
       return emitOpError("Elements of ValueRange must be of qubit type");

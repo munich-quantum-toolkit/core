@@ -22,11 +22,15 @@ using namespace mlir;
 using namespace mlir::qtensor;
 
 LogicalResult InsertOp::verify() {
+  auto destType = getDest().getType();
   if (!llvm::isa<qco::QubitType>(getScalar().getType())) {
     return emitOpError("Scalar must be of qubit type");
   }
-  if (!llvm::isa<qco::QubitType>(getDest().getType().getElementType())) {
+  if (!llvm::isa<qco::QubitType>(destType.getElementType())) {
     return emitOpError("Elements of dest tensor must be of qubit type");
+  }
+  if (destType.getRank() != static_cast<int64_t>(getIndices().size())) {
+    return emitOpError("incorrect number of indices for insert");
   }
   return success();
 }
