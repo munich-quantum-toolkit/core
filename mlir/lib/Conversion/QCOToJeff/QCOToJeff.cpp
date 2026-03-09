@@ -35,6 +35,7 @@
 
 #include <cassert>
 #include <cstdint>
+#include <iterator>
 #include <numbers>
 #include <string>
 #include <utility>
@@ -355,7 +356,6 @@ static void createPPROp(QCOOpType& op, ConversionPatternRewriter& rewriter,
  */
 static LogicalResult cleanUp(Operation* op, LoweringState& state) {
   if (state.entryPointName.empty()) {
-    llvm::errs() << "Entry point not found\n";
     return failure();
   }
 
@@ -368,7 +368,7 @@ static LogicalResult cleanUp(Operation* op, LoweringState& state) {
     state.strings.emplace_back(funcOp.getSymName());
   }
 
-  const auto it = llvm::find(state.strings, state.entryPointName);
+  auto* const it = llvm::find(state.strings, state.entryPointName);
   if (it == state.strings.end()) {
     return failure();
   }

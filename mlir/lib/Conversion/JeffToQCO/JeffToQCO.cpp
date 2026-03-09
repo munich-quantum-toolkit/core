@@ -17,6 +17,7 @@
 #include <jeff/IR/JeffOps.h>
 #include <llvm/ADT/STLFunctionalExtras.h>
 #include <llvm/Support/Casting.h>
+#include <llvm/Support/ErrorHandling.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/IR/Builders.h>
@@ -376,7 +377,7 @@ static void createBarrierOp(jeff::CustomOp& op, jeff::CustomOpAdaptor& adaptor,
 /**
  * @brief Gets the name of the entry point from the module attributes
  */
-llvm::StringRef getEntryPointName(Operation* op) {
+static llvm::StringRef getEntryPointName(Operation* op) {
   auto module = llvm::dyn_cast<ModuleOp>(op);
   if (!module) {
     llvm::reportFatalInternalError("Expected a module operation");
