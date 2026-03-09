@@ -16,8 +16,6 @@
 #include <llvm/ADT/SmallBitVector.h>
 #include <llvm/Support/Casting.h>
 #include <llvm/Support/ErrorHandling.h>
-#include <mlir/Dialect/Arith/IR/Arith.h>
-#include <mlir/Dialect/Complex/IR/Complex.h>
 #include <mlir/Dialect/Linalg/IR/RelayoutOpInterface.h>
 #include <mlir/Dialect/Tensor/IR/Tensor.h>
 #include <mlir/Dialect/Utils/StaticValueUtils.h>
@@ -25,7 +23,6 @@
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/BuiltinTypeInterfaces.h>
 #include <mlir/IR/BuiltinTypes.h>
-#include <mlir/IR/Location.h>
 #include <mlir/IR/OpDefinition.h>
 #include <mlir/IR/Operation.h>
 #include <mlir/IR/PatternMatch.h>

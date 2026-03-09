@@ -42,10 +42,6 @@ def QTensorDialect : Dialect {
   let hasCanonicalizer = 1;
 
   let cppNamespace = "::mlir::qtensor";
-  let dependentDialects = [
-    "arith::ArithDialect",
-    "complex::ComplexDialect",
-  ];
 }
 
 //===----------------------------------------------------------------------===//
