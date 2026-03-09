@@ -19,32 +19,36 @@ def MappingPass : Pass<"place-and-route", "mlir::ModuleOp"> {
   let dependentDialects = ["mlir::qco::QCODialect"];
   let summary = "This pass ensures that a program meets the connectivity constraints of a target architecture.";
   let description = [{
-    This pass initially assigns static qubits to the dynamically allocated ones ("placement")
-    by creating an initial dynamic-to-static mapping (the initial "layout"). Consequently, it
-    traverses the circuit and inserts `SWAP` operations such that all two-qubit operations are
-    executable on the target architecture ("routing").
+    This pass maps the dynamically allocated qubits in a quantum program to the static qubits of a target architecture.
+    The pass performs both placement and routing of the qubits to ensure that all two-qubit operations in the program
+    can be executed on the target architecture.
 
-    For routing, the pass first divides the circuit into layers. A layer is a set of
-    independently executable two-qubit operations. Subsequently, the pass performs an A*
-    search for each layer to find and insert a sequence of `SWAP` operations that makes these
-    two-qubit operations executable. The A* search also considers the subsequent `nlookahead`
-    layers.
+    First, the pass assigns static qubits to the dynamically allocated ones by creating an initial dynamic-to-static
+    mapping, which is referred to as the initial layout. Then, it traverses the circuit and inserts `SWAP` operations to
+    ensure that all two-qubit operations are executable on the target architecture, a process known as routing.
+
+    For routing, the pass first divides the circuit into layers. A layer is a set of independently executable (sequences
+    or blocks of) two-qubit operations. Subsequently, the pass performs an A* search for each layer to find and insert a
+    sequence of `SWAP` operations that makes these two-qubit operations executable. The A* search also considers
+    subsequent layers, which are determined by the `nlookahead` parameter.
 
     The cost function of the A* search is defined as follows:
 
     * `f(n) = g(n) + h(n)`
     * `g(n) = alpha * depth(n)`
-    * `h(n) = sum(pow(lambda, i) * h(L, pi) for [i, L] in enumerate(layers))`
+    * `h(n) = sum(pow(lambda, i) * h(L, p) for [i, L] in enumerate(layers))`
 
     Where:
-    * `pi` is the dynamic-to-static mapping associated with search node `n`.
+    * `p` is the dynamic-to-static mapping associated with search node `n`.
     * `layers` is an array of layers with size `1 + nlookahead`.
     * `depth(n)` returns the distance from the node `n` to the root node.
     * `dist(i, j)` returns the distance between the qubits `i` and `j` on the target's coupling graph.
-    * `h(L, pi) := sum(dist(pi[gate.first], pi[gate.second]) for gate in L)`
+    * `h(L, pi) := sum(dist(p[gate.first], p[gate.second]) for gate in L)`
 
-    To improve on the chosen initial layout, the pass iteratively performs `iterations` forward and
-    backward routing traversals.
+    To iteratively refine the mapping, the pass performs multiple forward and backward traversals of the circuit. In
+    each traversal, the pass routes the circuit and updates the dynamic-to-static mapping based on the routing decisions
+    made during that traversal. By performing multiple traversals, the pass can iteratively refine the mapping and
+    potentially find a more optimal solution. This is behavior is controlled by the `iterations` parameter.
   }];
   let options = [
     Option<"nlookahead", "nlookahead", "std::size_t", "1",
