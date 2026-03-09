@@ -45,9 +45,8 @@ struct ArchitectureParam {
   Architecture (*factory)();
 };
 
-class HeuristicMappingPassTest
-    : public testing::Test,
-      public testing::WithParamInterface<ArchitectureParam> {
+class MappingPassTest : public testing::Test,
+                        public testing::WithParamInterface<ArchitectureParam> {
 public:
   /**
    * @brief Walks the IR and validates if each two-qubit op is executable on the
@@ -105,8 +104,8 @@ protected:
   static void runHeuristicMapping(OwningOpRef<ModuleOp>& module) {
     PassManager pm(module->getContext());
     pm.addPass(createQCToQCO());
-    pm.addPass(qco::createHeuristicMappingPass(qco::HeuristicMappingPassOptions{
-        .nlookahead = 5, .alpha = 1, .lambda = 0.85, .repeats = 2}));
+    pm.addPass(qco::createMappingPass(qco::MappingPassOptions{
+        .nlookahead = 5, .alpha = 1, .lambda = 0.85, .iterations = 2}));
     pm.addPass(createQCOToQC());
     auto res = pm.run(*module);
     ASSERT_FALSE(failed(res));
@@ -116,7 +115,7 @@ protected:
 };
 }; // namespace
 
-TEST_P(HeuristicMappingPassTest, GHZ) {
+TEST_P(MappingPassTest, GHZ) {
   auto arch = GetParam().factory();
 
   qc::QCProgramBuilder builder(context.get());
@@ -139,7 +138,7 @@ TEST_P(HeuristicMappingPassTest, GHZ) {
   EXPECT_TRUE(isExecutable(module, arch));
 }
 
-TEST_P(HeuristicMappingPassTest, Sabre) {
+TEST_P(MappingPassTest, Sabre) {
   auto arch = GetParam().factory();
 
   qc::QCProgramBuilder builder(context.get());
@@ -188,9 +187,9 @@ TEST_P(HeuristicMappingPassTest, Sabre) {
 }
 
 INSTANTIATE_TEST_SUITE_P(
-    Architectures, HeuristicMappingPassTest,
-    testing::Values(ArchitectureParam{
-        "RigettiNovera", &HeuristicMappingPassTest::getRigettiNovera}),
+    Architectures, MappingPassTest,
+    testing::Values(ArchitectureParam{"RigettiNovera",
+                                      &MappingPassTest::getRigettiNovera}),
     [](const testing::TestParamInfo<ArchitectureParam>& info) {
       return info.param.name;
     });

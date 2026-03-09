@@ -15,7 +15,7 @@ include "mlir/Pass/PassBase.td"
 // Transpilation Passes
 //===----------------------------------------------------------------------===//
 
-def HeuristicMappingPass : Pass<"map", "mlir::ModuleOp"> {
+def MappingPass : Pass<"place-and-route", "mlir::ModuleOp"> {
   let dependentDialects = ["mlir::qco::QCODialect"];
   let summary = "This pass ensures that a program meets the connectivity constraints of a given architecture.";
   let description = [{
@@ -28,7 +28,7 @@ def HeuristicMappingPass : Pass<"map", "mlir::ModuleOp"> {
            "The alpha factor in the cost function.">,
     Option<"lambda", "lambda", "float", "0.5F",
            "The lambda factor in the cost function.">,
-    Option<"repeats", "repeats", "std::size_t", "2",
+    Option<"iterations", "iterations", "std::size_t", "2",
            "The number of forwards and backwards traversal to improve the initial layout.">
   ];
 }

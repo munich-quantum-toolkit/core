@@ -44,15 +44,14 @@
 #include <utility>
 #include <vector>
 
-#define DEBUG_TYPE "heuristic-mapping-pass"
+#define DEBUG_TYPE "mapping-pass"
 
 namespace mlir::qco {
 
-#define GEN_PASS_DEF_HEURISTICMAPPINGPASS
+#define GEN_PASS_DEF_MAPPINGPASS
 #include "mlir/Passes/Passes.h.inc"
 
-struct HeuristicMappingPass
-    : impl::HeuristicMappingPassBase<HeuristicMappingPass> {
+struct MappingPass : impl::MappingPassBase<MappingPass> {
 private:
   using QubitValue = TypedValue<QubitType>;
   using IndexType = std::size_t;
@@ -237,7 +236,7 @@ private:
       layout.swap(swap.first, swap.second);
 
       // Add swap to sequence.
-      sequence.push_back(swap);
+      sequence.emplace_back(swap);
 
       // Evaluate cost function.
       f = g(params.alpha) + h(layers, arch, params); // NOLINT
@@ -298,7 +297,7 @@ private:
   using MinQueue = std::priority_queue<Node, std::vector<Node>, std::greater<>>;
 
 public:
-  using HeuristicMappingPassBase::HeuristicMappingPassBase;
+  using MappingPassBase::MappingPassBase;
 
   void runOnOperation() override {
     Parameters params(this->alpha, this->lambda, this->nlookahead);
@@ -323,10 +322,10 @@ public:
 
       // Use the SABRE Approach to improve the initial layout choice (here:
       // identity): Traverse the layers from left-to-right-to-left and
-      // cold-route along the way. Repeat this procedure "repeats" times.
+      // cold-route along the way. Repeat this procedure "iterations" times.
 
       Layout layout = Layout::identity(arch.nqubits());
-      for (std::size_t r = 0; r < this->repeats; ++r) {
+      for (std::size_t r = 0; r < this->iterations; ++r) {
         if (failed(routeCold(ltr, layout, arch, params))) {
           signalPassFailure();
           return;
@@ -482,7 +481,7 @@ private:
   template <Direction d>
   static SmallVector<Layer> collectLayers(MutableArrayRef<WireIterator> wires) {
     constexpr auto step = d == Direction::Forward ? 1 : -1;
-    const auto stop = [](const WireIterator& it) {
+    const auto shouldContinue = [](const WireIterator& it) {
       if constexpr (d == Direction::Forward) {
         return it != std::default_sentinel;
       } else {
@@ -496,7 +495,7 @@ private:
     while (true) {
       Layer layer{};
       for (const auto [index, it] : enumerate(wires)) {
-        while (stop(it)) {
+        while (shouldContinue(it)) {
           const auto res =
               TypeSwitch<Operation*, WalkResult>(it.operation())
                   .Case<UnitaryOpInterface>([&](UnitaryOpInterface op) {
@@ -553,8 +552,8 @@ private:
    * @brief "Cold" routing of the given layers.
    * @details Iterates over a sliding window of layers and uses the A* search
    * engine to find a sequence of SWAPs that makes that layer executable.
-   * Instead of inserted these SWAPs into the IR, this function only updates the
-   * layout.
+   * Instead of inserting these SWAPs into the IR, this function only updates
+   * the layout.
    * @returns failure() if A* search isn't able to find a solution.
    */
   LogicalResult routeCold(ArrayRef<Layer> layers, Layout& layout,
