@@ -8,6 +8,7 @@
  * Licensed under the MIT License
  */
 
+#include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QTensor/IR/QTensorOps.h"
 
 #include <llvm/ADT/STLExtras.h>
@@ -34,11 +35,15 @@ using namespace mlir::qtensor;
 LogicalResult ExtractOp::verify() {
   // Verify the # indices match if we have a ranked type.
   auto tensorType = llvm::cast<RankedTensorType>(getTensor().getType());
+  if (!llvm::isa<qco::QubitType>(tensorType.getElementType())) {
+    return emitOpError("Elements of tensor must be of qubit type");
+  }
   if (tensorType.getRank() != static_cast<int64_t>(getIndices().size())) {
     return emitOpError("incorrect number of indices for extract_element");
   }
   return success();
 }
+
 struct ExtractFromTensorCast : public OpRewritePattern<ExtractOp> {
   using OpRewritePattern<ExtractOp>::OpRewritePattern;
 
@@ -74,17 +79,8 @@ static Value foldExtractAfterInsert(ExtractOp extractOp) {
   return {};
 }
 
-LogicalResult ExtractOp::fold(FoldAdaptor adaptor,
+LogicalResult ExtractOp::fold(FoldAdaptor /*adaptor*/,
                               SmallVectorImpl<OpFoldResult>& results) {
-  // Collect the constant indices into the tensor.
-  SmallVector<uint64_t, 8> indices;
-  for (Attribute indice : adaptor.getIndices()) {
-    if (!indice || !llvm::isa<IntegerAttr>(indice)) {
-      return failure();
-    }
-    indices.push_back(llvm::cast<IntegerAttr>(indice).getInt());
-  }
-
   if (Value result = foldExtractAfterInsert(*this)) {
     results.push_back(result);
     results.push_back(getTensor());

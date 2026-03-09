@@ -8,6 +8,7 @@
  * Licensed under the MIT License
  */
 
+#include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QTensor/IR/QTensorOps.h"
 
 #include <mlir/Dialect/Tensor/IR/Tensor.h>
@@ -18,6 +19,16 @@
 
 using namespace mlir;
 using namespace mlir::qtensor;
+
+LogicalResult InsertOp::verify() {
+  if (!llvm::isa<qco::QubitType>(getScalar().getType())) {
+    return emitOpError("Scalar must be of qubit type");
+  }
+  if (!llvm::isa<qco::QubitType>(getDest().getType().getElementType())) {
+    return emitOpError("Elements of dest tensor must be of qubit type");
+  }
+  return success();
+}
 
 namespace {
 
@@ -46,6 +57,7 @@ struct InsertFromExtractOp : public OpRewritePattern<InsertOp> {
     if (!extractOp) {
       return failure();
     }
+
     if (insertOp.getDest() != extractOp.getOutTensor()) {
       return failure();
     }

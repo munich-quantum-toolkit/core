@@ -279,7 +279,7 @@ public:
    *
    * @par Example:
    * ```c++
-   * auto [extractedSlice, outTensor] = builder.extract_slice(tensor, 0, 2, 1);
+   * auto [extractedSlice, outTensor] = builder.extractSlice(tensor, 0, 2, 1);
    * ```
    * ```mlir
    * %extractedSlice, %outTensor = qtensor.extract_slice %tensor[%c0][%c2][%c1]
@@ -311,8 +311,8 @@ public:
 
   /**
    * @brief Insert a qubit slice into a tensor
-   * @param scalar The slice that is inserted
-   * @param tensor The tensor where the slice is inserted
+   * @param sourceTensor The slice that is inserted
+   * @param destTensor The tensor where the slice is inserted
    * @param offset The offset into where the slice is inserted
    * @param size The size of the inserted slice
    * @param strides The strides of where the qubits are inserted

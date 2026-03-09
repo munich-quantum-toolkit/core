@@ -8,6 +8,7 @@
  * Licensed under the MIT License
  */
 
+#include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QTensor/IR/QTensorOps.h"
 
 #include <mlir/Dialect/Tensor/IR/Tensor.h>
@@ -36,6 +37,15 @@ void FromElementsOp::build(OpBuilder& builder, OperationState& result,
   build(builder, result, resultType, elements);
 }
 
+LogicalResult FromElementsOp::verify() {
+  for (auto type : getElements().getTypes()) {
+    if (!llvm::isa<qco::QubitType>(type)) {
+      return emitOpError("Elements of ValueRange must be of qubit type");
+    }
+  }
+  return success();
+}
+
 namespace {
 
 struct ConvertFromElementsOpToTensorOp
@@ -44,9 +54,8 @@ struct ConvertFromElementsOpToTensorOp
 
   LogicalResult matchAndRewrite(qtensor::FromElementsOp fromElementsOp,
                                 PatternRewriter& rewriter) const final {
-
     rewriter.replaceOpWithNewOp<tensor::FromElementsOp>(
-        fromElementsOp, fromElementsOp.getElements());
+        fromElementsOp, fromElementsOp.getType(), fromElementsOp.getElements());
 
     return success();
   }

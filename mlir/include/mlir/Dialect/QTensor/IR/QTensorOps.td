@@ -113,6 +113,7 @@ def QTensor_DeallocOp : QTensorOp<"dealloc", [MemoryEffects<[MemFree]>]> {
     let arguments = (ins AnyRankedTensor:$tensor);
     let assemblyFormat = "$tensor attr-dict `:` type($tensor)";
 
+    let hasVerifier = 1;
     let hasCanonicalizer = 1;
 }
 
@@ -145,6 +146,7 @@ def QTensor_FromElementsOp : QTensorOp<"from_elements", [
         OpBuilder<(ins "ValueRange":$elements)>
     ];
 
+    let hasVerifier = 1;
     let hasCanonicalizer = 1;
 }
 
@@ -178,7 +180,6 @@ def QTensor_ExtractOp : QTensorOp<"extract", [
 }
 
 def QTensor_ExtractSliceOp : QTensorOpWithOffsetSizesAndStrides<"extract_slice", [
-    DeclareOpInterfaceMethods<ReifyRankedShapedTypeOpInterface>,
     AttrSizedOperandSegments,
     Pure,
     OffsetSizeAndStrideOpInterface,
@@ -372,11 +373,11 @@ def QTensor_InsertOp : QTensorOp<"insert", [
         $scalar `into` $dest `[` $indices `]` attr-dict `:` type($dest)
     }];
 
+    let hasVerifier = 1;
     let hasCanonicalizer = 1;
 }
 
 def QTensor_InsertSliceOp : QTensorOpWithOffsetSizesAndStrides<"insert_slice", [
-    DeclareOpInterfaceMethods<ReifyRankedShapedTypeOpInterface>,
     AttrSizedOperandSegments,
     DestinationStyleOpInterface,
     Pure,

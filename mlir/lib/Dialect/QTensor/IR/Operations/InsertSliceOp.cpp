@@ -8,6 +8,7 @@
  * Licensed under the MIT License
  */
 
+#include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QTensor/IR/QTensorDialect.h"
 #include "mlir/Dialect/QTensor/IR/QTensorOps.h"
 
@@ -76,15 +77,14 @@ void InsertSliceOp::build(OpBuilder& b, OperationState& result, Value source,
 // Build a InsertSliceOp with dynamic entries.
 void InsertSliceOp::build(OpBuilder& b, OperationState& result, Value source,
                           Value dest, ValueRange offsets, ValueRange sizes,
-                          ValueRange strides,
-                          ArrayRef<NamedAttribute> /*attrs*/) {
+                          ValueRange strides, ArrayRef<NamedAttribute> attrs) {
   SmallVector<OpFoldResult> offsetValues = llvm::to_vector<4>(
       llvm::map_range(offsets, [](Value v) -> OpFoldResult { return v; }));
   SmallVector<OpFoldResult> sizeValues = llvm::to_vector<4>(
       llvm::map_range(sizes, [](Value v) -> OpFoldResult { return v; }));
   SmallVector<OpFoldResult> strideValues = llvm::to_vector<4>(
       llvm::map_range(strides, [](Value v) -> OpFoldResult { return v; }));
-  build(b, result, source, dest, offsetValues, sizeValues, strideValues);
+  build(b, result, source, dest, offsetValues, sizeValues, strideValues, attrs);
 }
 
 /// Rank-reducing type verification for both InsertSliceOp and
@@ -109,6 +109,14 @@ verifyInsertSliceOp(RankedTensorType srcType, RankedTensorType dstType,
 LogicalResult InsertSliceOp::verify() {
   // Verify result type against inferred type.
   RankedTensorType expectedType;
+
+  if (!llvm::isa<qco::QubitType>(getSourceType().getElementType())) {
+    return emitOpError("Elements of source tensor must be of qubit type");
+  }
+  if (!llvm::isa<qco::QubitType>(getDestType().getElementType())) {
+    return emitOpError("Elements of dest tensor must be of qubit type");
+  }
+
   SliceVerificationResult result =
       verifyInsertSliceOp(getSourceType(), getType(), getStaticOffsets(),
                           getStaticSizes(), getStaticStrides(), &expectedType);
@@ -207,13 +215,6 @@ OpFoldResult InsertSliceOp::fold(FoldAdaptor /*adaptor*/) {
     return getDest();
   }
   return {};
-}
-
-LogicalResult InsertSliceOp::reifyResultShapes(
-    OpBuilder& builder, ReifiedRankedShapedTypeDims& reifiedReturnShapes) {
-  reifiedReturnShapes.resize(1, SmallVector<OpFoldResult>(getType().getRank()));
-  reifiedReturnShapes[0] = tensor::getMixedSizes(builder, getLoc(), getDest());
-  return success();
 }
 
 namespace {

@@ -287,7 +287,7 @@ Value QCOProgramBuilder::insertSlice(
     llvm::reportFatalUsageError("Source elements must be of QubitType!");
   }
 
-  auto destTensorType = llvm::dyn_cast<RankedTensorType>(source.getType());
+  auto destTensorType = llvm::dyn_cast<RankedTensorType>(dest.getType());
 
   if (!destTensorType) {
     llvm::reportFatalUsageError("Dest must be of RankedTensorType!");

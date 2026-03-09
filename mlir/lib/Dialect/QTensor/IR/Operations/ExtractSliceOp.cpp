@@ -8,6 +8,7 @@
  * Licensed under the MIT License
  */
 
+#include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QTensor/IR/QTensorDialect.h"
 #include "mlir/Dialect/QTensor/IR/QTensorOps.h"
 
@@ -198,8 +199,7 @@ void ExtractSliceOp::build(OpBuilder& b, OperationState& result,
                            RankedTensorType resultType,
                            RankedTensorType outSourceType, Value source,
                            ValueRange offsets, ValueRange sizes,
-                           ValueRange strides,
-                           ArrayRef<NamedAttribute> /*attrs*/) {
+                           ValueRange strides, ArrayRef<NamedAttribute> attrs) {
   SmallVector<OpFoldResult> offsetValues = llvm::to_vector<4>(
       llvm::map_range(offsets, [](Value v) -> OpFoldResult { return v; }));
   SmallVector<OpFoldResult> sizeValues = llvm::to_vector<4>(
@@ -207,7 +207,7 @@ void ExtractSliceOp::build(OpBuilder& b, OperationState& result,
   SmallVector<OpFoldResult> strideValues = llvm::to_vector<4>(
       llvm::map_range(strides, [](Value v) -> OpFoldResult { return v; }));
   build(b, result, resultType, outSourceType, source, offsetValues, sizeValues,
-        strideValues);
+        strideValues, attrs);
 }
 void ExtractSliceOp::build(OpBuilder& b, OperationState& result,
                            RankedTensorType resultType, Value source,
@@ -243,6 +243,9 @@ void ExtractSliceOp::build(OpBuilder& b, OperationState& result,
 LogicalResult ExtractSliceOp::verify() {
   RankedTensorType sourceType = getSourceType();
 
+  if (!llvm::isa<qco::QubitType>(sourceType.getElementType())) {
+    return emitOpError("Elements of tensor must be of qubit type");
+  }
   // Verify result type against inferred type.
   RankedTensorType expectedType =
       ExtractSliceOp::inferResultType(sourceType, getMixedSizes());
@@ -265,21 +268,6 @@ LogicalResult ExtractSliceOp::verify() {
 
 llvm::SmallBitVector ExtractSliceOp::getDroppedDims() {
   return ::getDroppedDims(getType().getShape(), getMixedSizes());
-}
-
-LogicalResult ExtractSliceOp::reifyResultShapes(
-    OpBuilder& /*builder*/, ReifiedRankedShapedTypeDims& reifiedReturnShapes) {
-  reifiedReturnShapes.resize(1);
-  reifiedReturnShapes[0].reserve(getType().getRank());
-  SmallVector<OpFoldResult> mixedSizes = getMixedSizes();
-  llvm::SmallBitVector droppedDims = getDroppedDims();
-  for (const auto& size : enumerate(mixedSizes)) {
-    if (droppedDims.test(size.index())) {
-      continue;
-    }
-    reifiedReturnShapes[0].push_back(size.value());
-  }
-  return success();
 }
 
 namespace {
@@ -346,8 +334,15 @@ public:
         sliceOp.getOffsets(), sliceOp.getSizes(), sliceOp.getStrides(),
         sliceOp.getStaticOffsets(), sliceOp.getStaticSizes(),
         sliceOp.getStaticStrides());
-    rewriter.replaceOp(sliceOp, newResult->getResult(0));
-    rewriter.replaceOp(castOp, newResult->getResult(1));
+    Value newOutSource = newResult->getResult(1);
+    if (newOutSource.getType() != sliceOp.getOutSource().getType()) {
+      newOutSource = tensor::CastOp::create(
+          rewriter, loc, sliceOp.getOutSource().getType(), newOutSource);
+    }
+    rewriter.replaceOp(sliceOp, {newResult->getResult(0), newOutSource});
+    if (castOp->use_empty()) {
+      rewriter.eraseOp(castOp);
+    }
     return success();
   }
 };
@@ -402,12 +397,6 @@ static Value foldExtractAfterInsertSlice(ExtractSliceOp extractOp) {
 LogicalResult ExtractSliceOp::fold(FoldAdaptor /*adaptor*/,
                                    SmallVectorImpl<OpFoldResult>& results) {
 
-  if (getSourceType() == getType() &&
-      succeeded(foldIdentityOffsetSizeAndStrideOpInterface(*this, getType()))) {
-    results.push_back(this->getSource());
-    results.push_back(getSource());
-    return success();
-  }
   if (Value slice = foldExtractAfterInsertSlice(*this)) {
     results.push_back(slice);
     results.push_back(getSource());
