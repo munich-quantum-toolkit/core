@@ -43,7 +43,7 @@ def MappingPass : Pass<"place-and-route", "mlir::ModuleOp"> {
     * `layers` is an array of layers with size `1 + nlookahead`.
     * `depth(n)` returns the distance from the node `n` to the root node.
     * `dist(i, j)` returns the distance between the qubits `i` and `j` on the target's coupling graph.
-    * `h(L, pi) := sum(dist(p[gate.first], p[gate.second]) for gate in L)`
+    * `h(L, p) := sum(dist(p[gate.first], p[gate.second]) for gate in L)`
 
     To iteratively refine the mapping, the pass performs multiple forward and backward traversals of the circuit. In
     each traversal, the pass routes the circuit and updates the dynamic-to-static mapping based on the routing decisions
