@@ -939,6 +939,9 @@ void allocTensor(QCOProgramBuilder& b);
 /// Allocates and explicitly deallocates a tensor.
 void allocDeallocTensor(QCOProgramBuilder& b);
 
+/// Constructs a tensor with from_elements.
+void fromElements(QCOProgramBuilder& b);
+
 /// Extracts a qubit from a tensor.
 void extractTensor(QCOProgramBuilder& b);
 

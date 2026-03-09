@@ -1034,6 +1034,8 @@ INSTANTIATE_TEST_SUITE_P(
                     MQT_NAMED_BUILDER(allocTensor)},
         QCOTestCase{"AllocDeallocTensor", MQT_NAMED_BUILDER(allocDeallocTensor),
                     MQT_NAMED_BUILDER(allocTensor)},
+        QCOTestCase{"FromElements", MQT_NAMED_BUILDER(fromElements),
+                    MQT_NAMED_BUILDER(fromElements)},
         QCOTestCase{"ExtractTensor", MQT_NAMED_BUILDER(extractTensor),
                     MQT_NAMED_BUILDER(extractTensor)},
         QCOTestCase{"InsertTensor", MQT_NAMED_BUILDER(insertTensor),
