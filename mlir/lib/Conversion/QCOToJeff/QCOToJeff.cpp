@@ -721,7 +721,7 @@ struct ConvertQCOU2OpToJeff final : StatefulOpConversionPattern<qco::U2Op> {
  * ```
  * is converted to
  * ```mlir
- * %q_out = jeff.custom "r"(%theta, %phi) {is_adjoint = true, num_ctrls = 0 :
+ * %q_out = jeff.custom "r"(%theta, %phi) {is_adjoint = false, num_ctrls = 0 :
  * i8, power = 1 : i8} %q_in : !jeff.qubit
  * ```
  */
