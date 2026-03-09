@@ -35,12 +35,11 @@ def QTensorDialect : Dialect {
   The Qtensor dialect is an adjusted variant of the standard tensor dialect
   of MLIR that supports linear typing for tensor types. The extract operations
   of this dialect are modified so that they also return the updated input tensor
-  as return value. In addition, the alloc/dealloc operation is added to the dialect
+  as return value. In addition, the alloc/dealloc operations are added to the dialect
   to support the bulk allocation and deallocation of tensors with linear types.
   }];
 
   let hasCanonicalizer = 1;
-  let hasConstantMaterializer = 1;
 
   let cppNamespace = "::mlir::qtensor";
   let dependentDialects = [
