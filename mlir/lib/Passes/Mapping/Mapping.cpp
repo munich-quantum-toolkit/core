@@ -322,10 +322,10 @@ public:
 
       // Use the SABRE Approach to improve the initial layout choice (here:
       // identity): Traverse the layers from left-to-right-to-left and
-      // cold-route along the way. Repeat this procedure "iterations" times.
+      // cold-route along the way. Repeat this procedure "niterations" times.
 
       Layout layout = Layout::identity(arch.nqubits());
-      for (std::size_t r = 0; r < this->iterations; ++r) {
+      for (std::size_t r = 0; r < this->niterations; ++r) {
         if (failed(routeCold(ltr, layout, arch, params))) {
           signalPassFailure();
           return;

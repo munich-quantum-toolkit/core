@@ -48,7 +48,7 @@ def MappingPass : Pass<"place-and-route", "mlir::ModuleOp"> {
     To iteratively refine the mapping, the pass performs multiple forward and backward traversals of the circuit. In
     each traversal, the pass routes the circuit and updates the dynamic-to-static mapping based on the routing decisions
     made during that traversal. By performing multiple traversals, the pass can iteratively refine the mapping and
-    potentially find a more optimal solution. This is behavior is controlled by the `iterations` parameter.
+    potentially find a more optimal solution. This is behavior is controlled by the `niterations` parameter.
   }];
   let options = [
     Option<"nlookahead", "nlookahead", "std::size_t", "1",
@@ -57,7 +57,7 @@ def MappingPass : Pass<"place-and-route", "mlir::ModuleOp"> {
            "The alpha factor in the cost function. Must be > 0.">,
     Option<"lambda", "lambda", "float", "0.5F",
            "The lambda factor in the cost function.">,
-    Option<"iterations", "iterations", "std::size_t", "2",
+    Option<"niterations", "niterations", "std::size_t", "2",
            "The number of forwards and backwards traversal to improve the initial layout.">
   ];
 }

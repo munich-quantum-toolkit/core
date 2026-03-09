@@ -105,7 +105,7 @@ protected:
     PassManager pm(moduleOp->getContext());
     pm.addPass(createQCToQCO());
     pm.addPass(qco::createMappingPass(qco::MappingPassOptions{
-        .nlookahead = 5, .alpha = 1, .lambda = 0.85, .iterations = 2}));
+        .nlookahead = 5, .alpha = 1, .lambda = 0.85, .niterations = 2}));
     pm.addPass(createQCOToQC());
     auto res = pm.run(*moduleOp);
     ASSERT_TRUE(succeeded(res));
