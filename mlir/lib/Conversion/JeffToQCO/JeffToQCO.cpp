@@ -878,15 +878,6 @@ struct ConvertJeffMainToQCO final : OpConversionPattern<func::FuncOp> {
       return failure();
     }
 
-    // Update function signature and add passthrough attribute
-    rewriter.startOpModification(op);
-    auto* ctx = rewriter.getContext();
-    op.setType(FunctionType::get(ctx, {}, {rewriter.getI64Type()}));
-    auto entryPointAttr = StringAttr::get(ctx, "entry_point");
-    op->setAttr("passthrough", ArrayAttr::get(ctx, {entryPointAttr}));
-    rewriter.finalizeOpModification(op);
-
-    // Replace return operation
     if (op.getBlocks().size() != 1) {
       return failure();
     }
@@ -897,6 +888,15 @@ struct ConvertJeffMainToQCO final : OpConversionPattern<func::FuncOp> {
       return failure();
     }
 
+    // Update function signature and add passthrough attribute
+    rewriter.startOpModification(op);
+    auto* ctx = rewriter.getContext();
+    op.setType(FunctionType::get(ctx, {}, {rewriter.getI64Type()}));
+    auto entryPointAttr = StringAttr::get(ctx, "entry_point");
+    op->setAttr("passthrough", ArrayAttr::get(ctx, {entryPointAttr}));
+    rewriter.finalizeOpModification(op);
+
+    // Replace return operation
     rewriter.setInsertionPointToStart(block);
     auto constOp = arith::ConstantOp::create(rewriter, op.getLoc(),
                                              rewriter.getI64IntegerAttr(0));

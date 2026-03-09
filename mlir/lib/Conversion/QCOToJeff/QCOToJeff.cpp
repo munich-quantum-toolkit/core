@@ -36,6 +36,7 @@
 #include <cassert>
 #include <cstdint>
 #include <iterator>
+#include <limits>
 #include <numbers>
 #include <string>
 #include <utility>
@@ -289,7 +290,10 @@ static void createCustomOp(QCOOpType& op, ConversionPatternRewriter& rewriter,
                            const llvm::SmallVector<Value>& targets,
                            const llvm::SmallVector<Value>& params,
                            const bool isAdjoint, StringRef name) {
-  state.strings.emplace_back(name);
+  auto it = llvm::find(state.strings, name);
+  if (it == state.strings.end()) {
+    state.strings.emplace_back(name);
+  }
 
   auto jeffOp = jeff::CustomOp::create(
       rewriter, op.getLoc(), targets,
@@ -372,9 +376,11 @@ static LogicalResult cleanUp(Operation* op, LoweringState& state) {
   if (it == state.strings.end()) {
     return failure();
   }
-
-  const auto entryPoint =
-      static_cast<uint16_t>(std::distance(state.strings.begin(), it));
+  const auto distance = std::distance(state.strings.begin(), it);
+  if (distance > std::numeric_limits<uint16_t>::max()) {
+    return failure();
+  }
+  const auto entryPoint = static_cast<uint16_t>(distance);
 
   // Set module attributes
   OpBuilder builder(module.getContext());
@@ -1340,15 +1346,6 @@ struct ConvertQCOMainToJeff final : StatefulOpConversionPattern<func::FuncOp> {
       return failure();
     }
 
-    getState().entryPointName = op.getSymName();
-
-    // Update function signature and remove passthrough attribute
-    rewriter.startOpModification(op);
-    op.setType(FunctionType::get(rewriter.getContext(), {}, {}));
-    op->removeAttr("passthrough");
-    rewriter.finalizeOpModification(op);
-
-    // Replace return operation
     if (op.getBlocks().size() != 1) {
       return failure();
     }
@@ -1359,6 +1356,15 @@ struct ConvertQCOMainToJeff final : StatefulOpConversionPattern<func::FuncOp> {
       return failure();
     }
 
+    getState().entryPointName = op.getSymName();
+
+    // Update function signature and remove passthrough attribute
+    rewriter.startOpModification(op);
+    op.setType(FunctionType::get(rewriter.getContext(), {}, {}));
+    op->removeAttr("passthrough");
+    rewriter.finalizeOpModification(op);
+
+    // Replace return operation
     rewriter.setInsertionPointToEnd(block);
     func::ReturnOp::create(rewriter, returnOp->getLoc());
     rewriter.eraseOp(returnOp);
