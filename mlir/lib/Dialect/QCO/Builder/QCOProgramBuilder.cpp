@@ -168,6 +168,28 @@ void QCOProgramBuilder::updateQubitTracking(Value inputQubit,
   validQubits.insert(outputQubit);
 }
 
+void QCOProgramBuilder::validateTensorValue(Value tensor) const {
+  if (!validTensors.contains(tensor)) {
+    llvm::errs() << "Attempting to use an invalid tensor SSA value. "
+                 << "The value may have been consumed by a previous operation "
+                 << "or was never created through this builder.\n";
+    llvm::reportFatalUsageError(
+        "Invalid tensor value used (either consumed or not tracked)");
+  }
+}
+
+void QCOProgramBuilder::updateTensorTracking(Value inputTensor,
+                                             Value outputTensor) {
+  // Validate the input tensor
+  validateTensorValue(inputTensor);
+
+  // Remove the input (consumed) value from tracking
+  validTensors.erase(inputTensor);
+
+  // Add the output (new) value to tracking
+  validTensors.insert(outputTensor);
+}
+
 //===----------------------------------------------------------------------===//
 // QTensor Operations
 //===----------------------------------------------------------------------===//
@@ -180,7 +202,7 @@ Value QCOProgramBuilder::allocTensor(int64_t size) {
   }
 
   auto allocOp = qtensor::AllocOp::create(*this, size);
-  validQubits.insert(allocOp);
+  validTensors.insert(allocOp);
   return allocOp.getResult();
 }
 
@@ -196,7 +218,7 @@ Value QCOProgramBuilder::fromElements(ValueRange elements) {
   }
 
   auto fromElementsOp = qtensor::FromElementsOp::create(*this, elements);
-  validQubits.insert(fromElementsOp);
+  validTensors.insert(fromElementsOp);
   return fromElementsOp.getResult();
 }
 
@@ -220,7 +242,7 @@ QCOProgramBuilder::extract(Value tensor,
   auto outTensor = extractOp.getOutTensor();
 
   validQubits.insert(qubit);
-  updateQubitTracking(tensor, outTensor);
+  updateTensorTracking(tensor, outTensor);
 
   return {qubit, outTensor};
 }
@@ -249,8 +271,8 @@ QCOProgramBuilder::extractSlice(Value tensor,
   auto slicedTensor = extractSliceOp.getResult();
   auto outTensor = extractSliceOp.getOutSource();
 
-  validQubits.insert(slicedTensor);
-  updateQubitTracking(tensor, outTensor);
+  validTensors.insert(slicedTensor);
+  updateTensorTracking(tensor, outTensor);
 
   return {slicedTensor, outTensor};
 }
@@ -275,7 +297,7 @@ Value QCOProgramBuilder::insert(Value scalar, Value tensor,
 
   validateQubitValue(scalar);
   validQubits.erase(scalar);
-  updateQubitTracking(tensor, outTensor);
+  updateTensorTracking(tensor, outTensor);
   return outTensor;
 }
 
@@ -311,9 +333,9 @@ Value QCOProgramBuilder::insertSlice(
 
   auto outTensor = insertSliceOp.getResult();
 
-  validateQubitValue(source);
-  validQubits.erase(source);
-  updateQubitTracking(dest, outTensor);
+  validateTensorValue(source);
+  validTensors.erase(source);
+  updateTensorTracking(dest, outTensor);
 
   return outTensor;
 }
@@ -332,8 +354,8 @@ QCOProgramBuilder& QCOProgramBuilder::deallocTensor(Value tensor) {
 
   qtensor::DeallocOp::create(*this, tensor);
 
-  validateQubitValue(tensor);
-  validQubits.erase(tensor);
+  validateTensorValue(tensor);
+  validTensors.erase(tensor);
   return *this;
 }
 
@@ -964,14 +986,27 @@ OwningOpRef<ModuleOp> QCOProgramBuilder::finalize() {
     return opA->isBeforeInBlock(opB);
   });
   for (auto qubit : sortedQubits) {
-    if (llvm::isa<QubitType>(qubit.getType())) {
-      DeallocOp::create(*this, qubit);
-    } else {
-      qtensor::DeallocOp::create(*this, qubit);
+    DeallocOp::create(*this, qubit);
+  }
+
+  // Automatically deallocate all still-allocated tensors
+  // Sort tensors for deterministic output
+  llvm::SmallVector<Value> sortedTensors(validTensors.begin(),
+                                         validTensors.end());
+  llvm::sort(sortedTensors, [](Value a, Value b) {
+    auto* opA = a.getDefiningOp();
+    auto* opB = b.getDefiningOp();
+    if (!opA || !opB || opA->getBlock() != opB->getBlock()) {
+      return a.getAsOpaquePointer() < b.getAsOpaquePointer();
     }
+    return opA->isBeforeInBlock(opB);
+  });
+  for (auto tensor : sortedTensors) {
+    qtensor::DeallocOp::create(*this, tensor);
   }
 
   validQubits.clear();
+  validTensors.clear();
 
   // Create constant 0 for successful exit code
   auto exitCode = intConstant(0);

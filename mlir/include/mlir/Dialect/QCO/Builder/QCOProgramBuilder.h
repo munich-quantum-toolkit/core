@@ -1320,5 +1320,25 @@ private:
   /// When an operation consumes a qubit and produces a new one, the old value
   /// is removed and the new output is added.
   llvm::DenseSet<Value> validQubits;
+
+  /**
+   * @brief Validate that a tensor value is valid and unconsumed
+   * @param tensor Tensor value to validate
+   * @throws Aborts if tensor is not tracked (consumed or never created)
+   */
+  void validateTensorValue(Value tensor) const;
+
+  /**
+   * @brief Update tracking when an operation consumes and produces a tensor
+   * @param inputTensor Input tensor being consumed (must be valid)
+   * @param outputTensor New output tensor being produced
+   */
+  void updateTensorTracking(Value inputTensor, Value outputTensor);
+
+  /// Track valid (unconsumed) tensor SSA values for linear type enforcement.
+  /// Only values present in this set are valid for use in operations.
+  /// When an operation consumes a tensor and produces a new one, the old value
+  /// is removed and the new output is added.
+  llvm::DenseSet<Value> validTensors;
 };
 } // namespace mlir::qco
