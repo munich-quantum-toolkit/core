@@ -283,8 +283,8 @@ private:
     [[nodiscard]] float h(ArrayRef<Layer> layers, const Architecture& arch,
                           const Parameters& params) const {
       float costs{0};
-      for (const auto [decay, layer] : zip(params.decay, layers)) {
-        for (const auto [prog0, prog1] : layer) {
+      for (const auto& [decay, layer] : zip(params.decay, layers)) {
+        for (const auto& [prog0, prog1] : layer) {
           const auto [hw0, hw1] = layout.getHardwareIndices(prog0, prog1);
           const std::size_t nswaps = arch.distanceBetween(hw0, hw1) - 1;
           costs += decay * static_cast<float>(nswaps);
@@ -566,7 +566,7 @@ private:
         return failure();
       }
 
-      for (const auto [hw0, hw1] : *swaps) {
+      for (const auto& [hw0, hw1] : *swaps) {
         layout.swap(hw0, hw1);
       }
     }
@@ -617,7 +617,7 @@ private:
       }
 
       const auto unknown = rewriter.getUnknownLoc();
-      for (const auto [hw0, hw1] : *swaps) {
+      for (const auto& [hw0, hw1] : *swaps) {
         Operation* op0 = wires[hw0].operation();
         Operation* op1 = wires[hw1].operation();
         const auto in0 = wires[hw0].qubit();
@@ -647,7 +647,7 @@ private:
       }
 
       // Jump over two-qubit gates contained in the layer.
-      for (const auto [prog0, prog1] : layer) {
+      for (const auto& [prog0, prog1] : layer) {
         std::ranges::advance(wires[layout.getHardwareIndex(prog0)], 1);
         std::ranges::advance(wires[layout.getHardwareIndex(prog1)], 1);
       }
