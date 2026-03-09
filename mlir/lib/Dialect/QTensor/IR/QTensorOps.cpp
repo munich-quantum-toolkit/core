@@ -48,21 +48,6 @@
 using namespace mlir;
 using namespace mlir::qtensor;
 
-/// Materialize a single constant operation from a given attribute value with
-/// the desired resultant type.
-Operation* QTensorDialect::materializeConstant(OpBuilder& builder,
-                                               Attribute value, Type type,
-                                               Location loc) {
-  if (auto op = arith::ConstantOp::materialize(builder, value, type, loc)) {
-    return op;
-  }
-  if (complex::ConstantOp::isBuildableWith(value, type)) {
-    return builder.create<complex::ConstantOp>(loc, type,
-                                               llvm::cast<ArrayAttr>(value));
-  }
-  return nullptr;
-}
-
 namespace mlir::qtensor {
 
 llvm::SmallBitVector getDroppedDims(ArrayRef<int64_t> reducedShape,

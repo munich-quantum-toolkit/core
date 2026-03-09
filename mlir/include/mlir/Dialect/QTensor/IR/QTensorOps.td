@@ -137,7 +137,7 @@ def QTensor_FromElementsOp : QTensorOp<"from_elements", [
         Example:
 
         ```mlir
-        %tensor = tensor.from_elements %q0, %q1, %q2 :  tensor<3x!qco.qubit>
+        %tensor = qtensor.from_elements %q0, %q1, %q2 :  tensor<3x!qco.qubit>
         ```
     }];
 
@@ -365,7 +365,7 @@ def QTensor_InsertOp : QTensorOp<"insert", [
         Example:
 
           ```mlir
-          %newTensor = tensor.insert %q0 into %tensor[%c0] : tensor<3x!qco.qubit>
+          %newTensor = qtensor.insert %q0 into %tensor[%c0] : tensor<3x!qco.qubit>
           ```
     }];
 
