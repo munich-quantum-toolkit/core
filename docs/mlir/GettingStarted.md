@@ -8,6 +8,14 @@ This tutorial attempts to cut through the noise. We draw from past experience to
 
 ## "Hello World"
 
+```mlir
+module {
+    func.func @main() { attributes = ["entry_point"] }{
+
+    }
+}
+```
+
 ## The Optimization Dialect
 
 ## Advanced Concepts
