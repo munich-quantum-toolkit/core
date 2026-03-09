@@ -11,7 +11,7 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 
 ### Added
 
-- ✨ Add mapping pass for the QCO dialect ([#1537]) ([**@MatthiasReumann**])
+- ✨ Add a `place-and-route` pass for mapping circuits to architectures with restricted topologies ([#1537]) ([**@MatthiasReumann**])
 - ✨ Add initial infrastructure for new QC and QCO MLIR dialects
   ([#1264], [#1330], [#1402], [#1428], [#1430], [#1436], [#1443], [#1446], [#1464], [#1465], [#1470], [#1471], [#1472], [#1474], [#1475], [#1506], [#1510], [#1513], [#1521])
   ([**@burgholzer**], [**@denialhaag**], [**@taminob**], [**@DRovara**], [**@li-mingbao**], [**@Ectras**], [**@MatthiasReumann**])
