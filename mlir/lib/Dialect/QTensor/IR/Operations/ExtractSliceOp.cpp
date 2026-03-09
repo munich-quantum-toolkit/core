@@ -40,6 +40,9 @@
 using namespace mlir;
 using namespace mlir::qtensor;
 
+// Adjusted from
+// https://github.com/llvm/llvm-project/blob/llvmorg-22.1.0/mlir/lib/Dialect/Tensor/IR/TensorOps.cpp
+
 /**
  * @brief Infers the result type of an extract_slice operation when it is
  * not rank-reduced.

@@ -25,6 +25,9 @@
 using namespace mlir;
 using namespace mlir::qtensor;
 
+// Adjusted from
+// https://github.com/llvm/llvm-project/blob/llvmorg-22.1.0/mlir/lib/Dialect/Tensor/IR/TensorOps.cpp
+
 void FromElementsOp::build(OpBuilder& builder, OperationState& result,
                            ValueRange elements) {
   assert(!elements.empty() && "expected at least one element");

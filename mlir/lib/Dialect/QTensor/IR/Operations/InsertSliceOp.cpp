@@ -39,6 +39,9 @@
 using namespace mlir;
 using namespace mlir::qtensor;
 
+// Adjusted from
+// https://github.com/llvm/llvm-project/blob/llvmorg-22.1.0/mlir/lib/Dialect/Tensor/IR/TensorOps.cpp
+
 // Build a InsertSliceOp with mixed static and dynamic entries.
 void InsertSliceOp::build(OpBuilder& b, OperationState& result, Value source,
                           Value dest, ArrayRef<OpFoldResult> offsets,

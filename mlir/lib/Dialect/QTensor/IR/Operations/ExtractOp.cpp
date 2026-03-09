@@ -28,6 +28,9 @@
 using namespace mlir;
 using namespace mlir::qtensor;
 
+// Adjusted from
+// https://github.com/llvm/llvm-project/blob/llvmorg-22.1.0/mlir/lib/Dialect/Tensor/IR/TensorOps.cpp
+
 LogicalResult ExtractOp::verify() {
   // Verify the # indices match if we have a ranked type.
   auto tensorType = llvm::cast<RankedTensorType>(getTensor().getType());
