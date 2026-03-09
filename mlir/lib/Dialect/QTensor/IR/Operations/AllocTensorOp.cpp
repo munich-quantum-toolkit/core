@@ -18,12 +18,15 @@
 #include <mlir/IR/OperationSupport.h>
 #include <mlir/Support/LogicalResult.h>
 
+#include <cassert>
 #include <cstdint>
 
 using namespace mlir;
 using namespace mlir::qtensor;
 
 void AllocOp::build(OpBuilder& builder, OperationState& result, int64_t size) {
+  assert(size > 0 && "qtensor.alloc size must be positive");
+
   auto resultType =
       RankedTensorType::get({size}, qco::QubitType::get(builder.getContext()));
   build(builder, result, resultType,
