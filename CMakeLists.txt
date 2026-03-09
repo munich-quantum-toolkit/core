@@ -17,7 +17,7 @@ project(
 if(NOT DEFINED CMAKE_CXX_STANDARD OR CMAKE_CXX_STANDARD LESS 20)
   set(CMAKE_CXX_STANDARD
       20
-      CACHE STRING "C++ standard to conform to")
+      CACHE STRING "C++ standard to conform to" FORCE)
 endif()
 
 # Add path for custom modules
