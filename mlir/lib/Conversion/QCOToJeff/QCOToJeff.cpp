@@ -290,7 +290,7 @@ static void createCustomOp(QCOOpType& op, ConversionPatternRewriter& rewriter,
                            const llvm::SmallVector<Value>& targets,
                            const llvm::SmallVector<Value>& params,
                            const bool isAdjoint, StringRef name) {
-  auto it = llvm::find(state.strings, name);
+  auto* const it = llvm::find(state.strings, name);
   if (it == state.strings.end()) {
     state.strings.emplace_back(name);
   }
@@ -377,7 +377,7 @@ static LogicalResult cleanUp(Operation* op, LoweringState& state) {
     return failure();
   }
   const auto distance = std::distance(state.strings.begin(), it);
-  if (distance > std::numeric_limits<uint16_t>::max()) {
+  if (std::cmp_greater(distance, std::numeric_limits<uint16_t>::max())) {
     return failure();
   }
   const auto entryPoint = static_cast<uint16_t>(distance);
