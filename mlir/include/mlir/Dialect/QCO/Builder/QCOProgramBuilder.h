@@ -323,7 +323,7 @@ public:
    * auto outTensor = builder.insertSlice(slicedTensor, tensor, 0, 2, 1);
    * ```
    * ```mlir
-   * %outTensor = qtensor.insert_slice %slicedTensor into %tensor[%0][%c2][%c1]
+   * %outTensor = qtensor.insert_slice %slicedTensor into %tensor[%c0][%c2][%c1]
    * : tensor<2x!qco.qubit> into tensor<3x!qco.qubit>
    * ```
    */
