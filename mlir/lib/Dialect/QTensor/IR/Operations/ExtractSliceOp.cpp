@@ -266,7 +266,7 @@ LogicalResult ExtractSliceOp::verify() {
 }
 
 llvm::SmallBitVector ExtractSliceOp::getDroppedDims() {
-  return ::getDroppedDims(getType().getShape(), getMixedSizes());
+  return mlir::qtensor::getDroppedDims(getType().getShape(), getMixedSizes());
 }
 
 namespace {
@@ -381,24 +381,24 @@ void ExtractSliceOp::getCanonicalizationPatterns(RewritePatternSet& results,
       ExtractSliceOpCastFolder>(context);
 }
 
-static Value foldExtractAfterInsertSlice(ExtractSliceOp extractOp) {
+static InsertSliceOp foldExtractAfterInsertSlice(ExtractSliceOp extractOp) {
   auto insertOp = extractOp.getSource().getDefiningOp<InsertSliceOp>();
 
   auto isSame = [](OpFoldResult a, OpFoldResult b) { return a == b; };
   if (insertOp && insertOp.getSource().getType() == extractOp.getType() &&
       insertOp.isSameAs(extractOp, isSame)) {
-    return insertOp.getSource();
+    return insertOp;
   }
 
-  return {};
+  return nullptr;
 }
 
 LogicalResult ExtractSliceOp::fold(FoldAdaptor /*adaptor*/,
                                    SmallVectorImpl<OpFoldResult>& results) {
 
-  if (Value slice = foldExtractAfterInsertSlice(*this)) {
-    results.push_back(slice);
-    results.push_back(getSource());
+  if (auto insertOp = foldExtractAfterInsertSlice(*this)) {
+    results.push_back(insertOp.getSource());
+    results.push_back(insertOp.getDest());
     return success();
   }
 

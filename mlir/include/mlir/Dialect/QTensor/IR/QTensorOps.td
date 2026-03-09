@@ -78,7 +78,7 @@ class QTensorOpWithOffsetSizesAndStrides<string mnemonic,
 //===----------------------------------------------------------------------===//
 
 def QTensor_AllocOp : QTensorOp<"alloc", [
-    Pure,]> {
+    MemoryEffects<[MemAlloc]>]> {
     let summary = "Tensor alloc operation";
     let description = [{
         Allocates a qubit tensor with the given size and returns the allocated tensor.

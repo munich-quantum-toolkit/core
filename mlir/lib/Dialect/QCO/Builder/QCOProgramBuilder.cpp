@@ -209,6 +209,10 @@ Value QCOProgramBuilder::allocTensor(int64_t size) {
 Value QCOProgramBuilder::fromElements(ValueRange elements) {
   checkFinalized();
 
+  if (elements.empty()) {
+    llvm::reportFatalUsageError("Elements must contain at least one qubit");
+  }
+
   for (auto element : elements) {
     if (!llvm::isa<QubitType>(element.getType())) {
       llvm::reportFatalUsageError("Elements must be QubitType!");

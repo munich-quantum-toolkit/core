@@ -232,7 +232,7 @@ public:
    * auto tensor = builder.allocTensor(3);
    * ```
    * ```mlir
-   * %tensor = qtensor.alloc : tensor<3x!qco.qubit>
+   * %tensor = qtensor.alloc(3) : tensor<3x!qco.qubit>
    * ```
    */
   Value allocTensor(int64_t size);
