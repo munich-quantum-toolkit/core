@@ -2077,6 +2077,14 @@ void insertTensor(QCOProgramBuilder& b) {
   b.insert(q1, extractOutTensor, 0);
 }
 
+void dynamicInsertTensor(QCOProgramBuilder& b) {
+  auto c0 = b.indexConstant(0);
+  auto qtensor = b.allocTensor(3);
+  auto [q0, extractOutTensor] = b.extract(qtensor, c0);
+  auto q1 = b.h(q0);
+  b.insert(q1, extractOutTensor, c0);
+}
+
 void extractSliceTensor(QCOProgramBuilder& b) {
   auto qtensor = b.allocTensor(3);
   b.extractSlice(qtensor, 0, 2, 1);
@@ -2089,6 +2097,19 @@ void insertSliceTensor(QCOProgramBuilder& b) {
   auto q1 = b.h(q0);
   auto insertOutTensor = b.insert(q1, extractOutTensor, 0);
   b.insertSlice(insertOutTensor, extractSliceOutTensor, 0, 2, 1);
+}
+
+void dynamicInsertSliceTensor(QCOProgramBuilder& b) {
+  auto c0 = b.indexConstant(0);
+  auto c1 = b.indexConstant(1);
+  auto c2 = b.indexConstant(2);
+  auto qtensor = b.allocTensor(3);
+  auto [slicedTensor, extractSliceOutTensor] =
+      b.extractSlice(qtensor, c0, c2, c1);
+  auto [q0, extractOutTensor] = b.extract(slicedTensor, c0);
+  auto q1 = b.h(q0);
+  auto insertOutTensor = b.insert(q1, extractOutTensor, c0);
+  b.insertSlice(insertOutTensor, extractSliceOutTensor, c0, c2, c1);
 }
 
 void extractInsertTensor(QCOProgramBuilder& b) {

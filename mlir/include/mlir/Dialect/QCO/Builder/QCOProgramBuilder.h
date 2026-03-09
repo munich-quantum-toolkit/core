@@ -98,6 +98,21 @@ public:
    */
   Value intConstant(int64_t value);
 
+  /**
+   * @brief Create a constant index value
+   * @param value The value to store in the constant
+   * @return The value produced by the constant operation
+   *
+   * @par Example:
+   * ```c++
+   * auto c = builder.indexConstant(1);
+   * ```
+   * ```mlir
+   * %c = arith.constant 1 : index
+   * ```
+   */
+  Value indexConstant(int64_t value);
+
   //===--------------------------------------------------------------------===//
   // Memory Management
   //===--------------------------------------------------------------------===//
@@ -214,13 +229,10 @@ public:
    *
    * @par Example:
    * ```c++
-   * auto tensor = builder.allocateTensor(3);
+   * auto tensor = builder.allocTensor(3);
    * ```
    * ```mlir
-   * %q0 = qco.alloc : !qco.qubit
-   * %q1 = qco.alloc : !qco.qubit
-   * %q2 = qco.alloc : !qco.qubit
-   * %tensor = qtensor.from_elements %q0, %q1, %q2 : tensor<3x!qco.qubit>
+   * %tensor = qtensor.alloc : tensor<3x!qco.qubit>
    * ```
    */
   Value allocTensor(int64_t size);
@@ -280,7 +292,7 @@ public:
                const std::variant<int64_t, Value>& strides);
 
   /**
-   * @brief insert a qubit into a tensor
+   * @brief Insert a qubit into a tensor
    * @param scalar The scalar qubit that is inserted
    * @param tensor The tensor where the qubit is inserted
    * @param index The index into where the qubit is inserted
@@ -298,12 +310,12 @@ public:
                const std::variant<int64_t, Value>& index);
 
   /**
-   * @brief insert a qubit slice into a tensor
+   * @brief Insert a qubit slice into a tensor
    * @param scalar The slice that is inserted
    * @param tensor The tensor where the slice is inserted
    * @param offset The offset into where the slice is inserted
    * @param size The size of the inserted slice
-   * @param strides The strides into where the values are inserted
+   * @param strides The strides of where the qubits are inserted
    * @return The output tensor
    *
    * @par Example:
@@ -311,7 +323,7 @@ public:
    * auto outTensor = builder.insert_slice(slicedTensor, tensor, 0, 2, 1);
    * ```
    * ```mlir
-   * %outTensor = qtensor.insert_slice %slicedTensor into %tensor[%c0][%c2][%c1]
+   * %outTensor = qtensor.insert_slice %slicedTensor into %tensor[%0][%c2][%c1]
    * : tensor<2x!qco.qubit> into tensor<3x!qco.qubit>
    * ```
    */

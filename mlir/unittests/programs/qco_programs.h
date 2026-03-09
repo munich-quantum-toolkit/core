@@ -948,11 +948,17 @@ void extractTensor(QCOProgramBuilder& b);
 /// Inserts a qubit in a tensor.
 void insertTensor(QCOProgramBuilder& b);
 
+/// Inserts a qubit in a tensor with dynamic index.
+void dynamicInsertTensor(QCOProgramBuilder& b);
+
 /// Extracts a slice from a tensor.
 void extractSliceTensor(QCOProgramBuilder& b);
 
 /// Inserts a slice from a tensor.
 void insertSliceTensor(QCOProgramBuilder& b);
+
+/// Inserts a slice from a tensor with dynamic indices.
+void dynamicInsertSliceTensor(QCOProgramBuilder& b);
 
 /// Extracts a qubit from a tensor and insert it immediately.
 void extractInsertTensor(QCOProgramBuilder& b);
