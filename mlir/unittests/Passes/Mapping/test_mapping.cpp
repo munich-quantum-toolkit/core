@@ -53,16 +53,16 @@ public:
    * given architecture.
    * @returns true iff. all two-qubit gates are executable on the architecture.
    */
-  static bool isExecutable(OwningOpRef<ModuleOp>& module,
+  static bool isExecutable(OwningOpRef<ModuleOp>& moduleOp,
                            const Architecture& arch) {
-    auto entry = *(module->getOps<func::FuncOp>().begin());
+    auto entry = *(moduleOp->getOps<func::FuncOp>().begin());
     DenseMap<Value, std::size_t> mappings;
     for_each(entry.getOps<qc::StaticOp>(), [&](qc::StaticOp op) {
       mappings.try_emplace(op.getQubit(), op.getIndex());
     });
 
     bool executable = true;
-    std::ignore = module->walk([&](qc::UnitaryOpInterface op) {
+    std::ignore = moduleOp->walk([&](qc::UnitaryOpInterface op) {
       if (op.getNumQubits() > 1) {
         assert(op.getNumQubits() == 2 &&
                "Expected only 2-qubit gates after decomposition");
@@ -101,14 +101,14 @@ protected:
     context->loadAllAvailableDialects();
   }
 
-  static void runHeuristicMapping(OwningOpRef<ModuleOp>& module) {
-    PassManager pm(module->getContext());
+  static void runHeuristicMapping(OwningOpRef<ModuleOp>& moduleOp) {
+    PassManager pm(moduleOp->getContext());
     pm.addPass(createQCToQCO());
     pm.addPass(qco::createMappingPass(qco::MappingPassOptions{
         .nlookahead = 5, .alpha = 1, .lambda = 0.85, .iterations = 2}));
     pm.addPass(createQCOToQC());
-    auto res = pm.run(*module);
-    ASSERT_FALSE(failed(res));
+    auto res = pm.run(*moduleOp);
+    ASSERT_TRUE(succeeded(res));
   }
 
   std::unique_ptr<MLIRContext> context;
@@ -133,9 +133,9 @@ TEST_P(MappingPassTest, GHZ) {
   builder.dealloc(q1);
   builder.dealloc(q2);
 
-  auto module = builder.finalize();
-  runHeuristicMapping(module);
-  EXPECT_TRUE(isExecutable(module, arch));
+  auto moduleOp = builder.finalize();
+  runHeuristicMapping(moduleOp);
+  EXPECT_TRUE(isExecutable(moduleOp, arch));
 }
 
 TEST_P(MappingPassTest, Sabre) {
@@ -181,9 +181,9 @@ TEST_P(MappingPassTest, Sabre) {
   builder.dealloc(q4);
   builder.dealloc(q5);
 
-  auto module = builder.finalize();
-  runHeuristicMapping(module);
-  EXPECT_TRUE(isExecutable(module, arch));
+  auto moduleOp = builder.finalize();
+  runHeuristicMapping(moduleOp);
+  EXPECT_TRUE(isExecutable(moduleOp, arch));
 }
 
 INSTANTIATE_TEST_SUITE_P(
