@@ -32,9 +32,6 @@ void AllocOp::build(OpBuilder& builder, OperationState& result, int64_t size) {
 
 LogicalResult AllocOp::verify() {
   auto resultType = getResult().getType();
-  if (!resultType) {
-    return emitOpError("Result must be a ranked tensor");
-  }
 
   if (!llvm::isa<qco::QubitType>(resultType.getElementType())) {
     return emitOpError("Result element type must be of qubit type");

@@ -202,8 +202,9 @@ Value QCOProgramBuilder::allocTensor(int64_t size) {
   }
 
   auto allocOp = qtensor::AllocOp::create(*this, size);
-  validTensors.insert(allocOp);
-  return allocOp.getResult();
+  auto result = allocOp.getResult();
+  validTensors.insert(result);
+  return result;
 }
 
 Value QCOProgramBuilder::fromElements(ValueRange elements) {
@@ -222,8 +223,9 @@ Value QCOProgramBuilder::fromElements(ValueRange elements) {
   }
 
   auto fromElementsOp = qtensor::FromElementsOp::create(*this, elements);
-  validTensors.insert(fromElementsOp);
-  return fromElementsOp.getResult();
+  auto result = fromElementsOp.getResult();
+  validTensors.insert(result);
+  return result;
 }
 
 std::pair<Value, Value>
@@ -356,10 +358,10 @@ QCOProgramBuilder& QCOProgramBuilder::deallocTensor(Value tensor) {
     llvm::reportFatalUsageError("Elements must be of QubitType!");
   }
 
-  qtensor::DeallocOp::create(*this, tensor);
-
   validateTensorValue(tensor);
   validTensors.erase(tensor);
+  qtensor::DeallocOp::create(*this, tensor);
+
   return *this;
 }
 
