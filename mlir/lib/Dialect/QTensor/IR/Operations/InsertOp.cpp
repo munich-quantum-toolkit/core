@@ -11,6 +11,7 @@
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QTensor/IR/QTensorOps.h"
 
+#include <llvm/Support/Casting.h>
 #include <mlir/Dialect/Tensor/IR/Tensor.h>
 #include <mlir/IR/BuiltinTypeInterfaces.h>
 #include <mlir/IR/PatternMatch.h>
