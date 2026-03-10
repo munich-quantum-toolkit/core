@@ -183,8 +183,8 @@ struct ConvertQCOMeasureOp final : OpConversionPattern<qco::MeasureOp> {
 
     // Create qc.measure (in-place operation, returns only bit)
     // Preserve register metadata for output recording
-    auto qcOp = rewriter.create<qc::MeasureOp>(
-        op.getLoc(), qcQubit, op.getRegisterNameAttr(),
+    auto qcOp = qc::MeasureOp::create(
+        rewriter, op.getLoc(), qcQubit, op.getRegisterNameAttr(),
         op.getRegisterSizeAttr(), op.getRegisterIndexAttr());
 
     auto measureBit = qcOp.getResult();
@@ -227,7 +227,7 @@ struct ConvertQCOResetOp final : OpConversionPattern<qco::ResetOp> {
     auto qcQubit = adaptor.getQubitIn();
 
     // Create qc.reset (in-place operation, no result)
-    rewriter.create<qc::ResetOp>(op.getLoc(), qcQubit);
+    qc::ResetOp::create(rewriter, op.getLoc(), qcQubit);
 
     // Replace the output qubit with the same qc reference
     rewriter.replaceOp(op, qcQubit);
@@ -259,7 +259,7 @@ struct ConvertQCOZeroTargetOneParameterToQC final
   LogicalResult
   matchAndRewrite(QCOOpType op, typename QCOOpType::Adaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
-    rewriter.create<QCOpType>(op.getLoc(), op.getParameter(0));
+    QCOpType::create(rewriter, op.getLoc(), op.getParameter(0));
     rewriter.eraseOp(op);
     return success();
   }
@@ -292,7 +292,7 @@ struct ConvertQCOOneTargetZeroParameterToQC final
     auto qcQubit = adaptor.getQubitIn();
 
     // Create the QC operation (in-place, no result)
-    rewriter.create<QCOpType>(op.getLoc(), qcQubit);
+    QCOpType::create(rewriter, op.getLoc(), qcQubit);
 
     // Replace the output qubit with the same QC reference
     rewriter.replaceOp(op, qcQubit);
@@ -328,7 +328,7 @@ struct ConvertQCOOneTargetOneParameterToQC final
     auto qcQubit = adaptor.getQubitIn();
 
     // Create the QC operation (in-place, no result)
-    rewriter.create<QCOpType>(op.getLoc(), qcQubit, op.getParameter(0));
+    QCOpType::create(rewriter, op.getLoc(), qcQubit, op.getParameter(0));
 
     // Replace the output qubit with the same QC reference
     rewriter.replaceOp(op, qcQubit);
@@ -364,8 +364,8 @@ struct ConvertQCOOneTargetTwoParameterToQC final
     auto qcQubit = adaptor.getQubitIn();
 
     // Create the QC operation (in-place, no result)
-    rewriter.create<QCOpType>(op.getLoc(), qcQubit, op.getParameter(0),
-                              op.getParameter(1));
+    QCOpType::create(rewriter, op.getLoc(), qcQubit, op.getParameter(0),
+                     op.getParameter(1));
 
     // Replace the output qubit with the same QC reference
     rewriter.replaceOp(op, qcQubit);
@@ -401,8 +401,8 @@ struct ConvertQCOOneTargetThreeParameterToQC final
     auto qcQubit = adaptor.getQubitIn();
 
     // Create the QC operation (in-place, no result)
-    rewriter.create<QCOpType>(op.getLoc(), qcQubit, op.getParameter(0),
-                              op.getParameter(1), op.getParameter(2));
+    QCOpType::create(rewriter, op.getLoc(), qcQubit, op.getParameter(0),
+                     op.getParameter(1), op.getParameter(2));
 
     // Replace the output qubit with the same QC reference
     rewriter.replaceOp(op, qcQubit);
@@ -440,7 +440,7 @@ struct ConvertQCOTwoTargetZeroParameterToQC final
     auto qcQubit1 = adaptor.getQubit1In();
 
     // Create the QC operation (in-place, no result)
-    rewriter.create<QCOpType>(op.getLoc(), qcQubit0, qcQubit1);
+    QCOpType::create(rewriter, op.getLoc(), qcQubit0, qcQubit1);
 
     // Replace the output qubits with the same QC references
     rewriter.replaceOp(op, {qcQubit0, qcQubit1});
@@ -478,8 +478,8 @@ struct ConvertQCOTwoTargetOneParameterToQC final
     auto qcQubit1 = adaptor.getQubit1In();
 
     // Create the QC operation (in-place, no result)
-    rewriter.create<QCOpType>(op.getLoc(), qcQubit0, qcQubit1,
-                              op.getParameter(0));
+    QCOpType::create(rewriter, op.getLoc(), qcQubit0, qcQubit1,
+                     op.getParameter(0));
 
     // Replace the output qubits with the same QC references
     rewriter.replaceOp(op, {qcQubit0, qcQubit1});
@@ -517,8 +517,8 @@ struct ConvertQCOTwoTargetTwoParameterToQC final
     auto qcQubit1 = adaptor.getQubit1In();
 
     // Create the QC operation (in-place, no result)
-    rewriter.create<QCOpType>(op.getLoc(), qcQubit0, qcQubit1,
-                              op.getParameter(0), op.getParameter(1));
+    QCOpType::create(rewriter, op.getLoc(), qcQubit0, qcQubit1,
+                     op.getParameter(0), op.getParameter(1));
 
     // Replace the output qubits with the same QC references
     rewriter.replaceOp(op, {qcQubit0, qcQubit1});
@@ -550,7 +550,7 @@ struct ConvertQCOBarrierOp final : OpConversionPattern<qco::BarrierOp> {
     auto qcQubits = adaptor.getQubitsIn();
 
     // Create qc.barrier operation
-    rewriter.create<qc::BarrierOp>(op.getLoc(), qcQubits);
+    qc::BarrierOp::create(rewriter, op.getLoc(), qcQubits);
 
     // Replace the output qubits with the same qc references
     rewriter.replaceOp(op, qcQubits);

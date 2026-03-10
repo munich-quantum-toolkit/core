@@ -394,9 +394,9 @@ private:
     for (std::size_t p = dynQubits.size(); p < layout.nqubits(); ++p) {
       rewriter.setInsertionPointToStart(&funcBody.front());
       const auto hw = layout.getHardwareIndex(p);
-      auto op = rewriter.create<StaticOp>(rewriter.getUnknownLoc(), hw);
+      auto op = StaticOp::create(rewriter, rewriter.getUnknownLoc(), hw);
       rewriter.setInsertionPoint(funcBody.back().getTerminator());
-      rewriter.create<DeallocOp>(rewriter.getUnknownLoc(), op.getQubit());
+      DeallocOp::create(rewriter, rewriter.getUnknownLoc(), op.getQubit());
       statics[hw] = op.getQubit();
     }
 
@@ -616,7 +616,6 @@ private:
         return failure();
       }
 
-      const auto unknown = rewriter.getUnknownLoc();
       for (const auto& [hw0, hw1] : *swaps) {
         Operation* op0 = wires[hw0].operation();
         Operation* op1 = wires[hw1].operation();
@@ -632,7 +631,7 @@ private:
           rewriter.setInsertionPointAfterValue(in0);
         }
 
-        auto op = rewriter.create<SWAPOp>(unknown, in0, in1);
+        auto op = SWAPOp::create(rewriter, rewriter.getUnknownLoc(), in0, in1);
         const auto out0 = op.getQubit0Out();
         const auto out1 = op.getQubit1Out();
 

@@ -241,7 +241,7 @@ struct ConvertQCStaticOp final : StatefulOpConversionPattern<qc::StaticOp> {
     auto qcQubit = op.getQubit();
 
     // Create new qco.static operation with the same index
-    auto qcoOp = rewriter.create<qco::StaticOp>(op.getLoc(), op.getIndex());
+    auto qcoOp = qco::StaticOp::create(rewriter, op.getLoc(), op.getIndex());
 
     // Collect QCO qubit SSA value
     auto qcoQubit = qcoOp.getQubit();
@@ -293,8 +293,8 @@ struct ConvertQCMeasureOp final : StatefulOpConversionPattern<qc::MeasureOp> {
     auto qcoQubit = qubitMap[qcQubit];
 
     // Create qco.measure (returns both output qubit and bit result)
-    auto qcoOp = rewriter.create<qco::MeasureOp>(
-        op.getLoc(), qcoQubit, op.getRegisterNameAttr(),
+    auto qcoOp = qco::MeasureOp::create(
+        rewriter, op.getLoc(), qcoQubit, op.getRegisterNameAttr(),
         op.getRegisterSizeAttr(), op.getRegisterIndexAttr());
 
     auto outQcoQubit = qcoOp.getQubitOut();
@@ -344,7 +344,7 @@ struct ConvertQCResetOp final : StatefulOpConversionPattern<qc::ResetOp> {
     auto qcoQubit = qubitMap[qcQubit];
 
     // Create qco.reset (consumes input, produces output)
-    auto qcoOp = rewriter.create<qco::ResetOp>(op.getLoc(), qcoQubit);
+    auto qcoOp = qco::ResetOp::create(rewriter, op.getLoc(), qcoQubit);
 
     // Update mapping: the QC qubit now corresponds to the reset output
     qubitMap[qcQubit] = qcoOp.getQubitOut();
@@ -382,7 +382,7 @@ struct ConvertQCZeroTargetOneParameterToQCO final
     auto& state = this->getState();
     const auto inNestedRegion = state.inNestedRegion;
 
-    rewriter.create<QCOOpType>(op.getLoc(), op.getParameter(0));
+    QCOOpType::create(rewriter, op.getLoc(), op.getParameter(0));
 
     // Update the state
     if (inNestedRegion != 0) {
@@ -437,7 +437,7 @@ struct ConvertQCOneTargetZeroParameterToQCO final
     }
 
     // Create the QCO operation (consumes input, produces output)
-    auto qcoOp = rewriter.create<QCOOpType>(op.getLoc(), qcoQubit);
+    auto qcoOp = QCOOpType::create(rewriter, op.getLoc(), qcoQubit);
 
     // Update the state map
     if (inNestedRegion == 0) {
@@ -495,7 +495,7 @@ struct ConvertQCOneTargetOneParameterToQCO final
 
     // Create the QCO operation (consumes input, produces output)
     auto qcoOp =
-        rewriter.create<QCOOpType>(op.getLoc(), qcoQubit, op.getParameter(0));
+        QCOOpType::create(rewriter, op.getLoc(), qcoQubit, op.getParameter(0));
 
     // Update the state map
     if (inNestedRegion == 0) {
@@ -552,8 +552,8 @@ struct ConvertQCOneTargetTwoParameterToQCO final
     }
 
     // Create the QCO operation (consumes input, produces output)
-    auto qcoOp = rewriter.create<QCOOpType>(
-        op.getLoc(), qcoQubit, op.getParameter(0), op.getParameter(1));
+    auto qcoOp = QCOOpType::create(rewriter, op.getLoc(), qcoQubit,
+                                   op.getParameter(0), op.getParameter(1));
 
     // Update the state map
     if (inNestedRegion == 0) {
@@ -611,8 +611,8 @@ struct ConvertQCOneTargetThreeParameterToQCO final
 
     // Create the QCO operation (consumes input, produces output)
     auto qcoOp =
-        rewriter.create<QCOOpType>(op.getLoc(), qcoQubit, op.getParameter(0),
-                                   op.getParameter(1), op.getParameter(2));
+        QCOOpType::create(rewriter, op.getLoc(), qcoQubit, op.getParameter(0),
+                          op.getParameter(1), op.getParameter(2));
 
     // Update the state map
     if (inNestedRegion == 0) {
@@ -676,7 +676,7 @@ struct ConvertQCTwoTargetZeroParameterToQCO final
     }
 
     // Create the QCO operation (consumes input, produces output)
-    auto qcoOp = rewriter.create<QCOOpType>(op.getLoc(), qcoQubit0, qcoQubit1);
+    auto qcoOp = QCOOpType::create(rewriter, op.getLoc(), qcoQubit0, qcoQubit1);
 
     // Update the state map
     if (inNestedRegion == 0) {
@@ -742,8 +742,8 @@ struct ConvertQCTwoTargetOneParameterToQCO final
     }
 
     // Create the QCO operation (consumes input, produces output)
-    auto qcoOp = rewriter.create<QCOOpType>(op.getLoc(), qcoQubit0, qcoQubit1,
-                                            op.getParameter(0));
+    auto qcoOp = QCOOpType::create(rewriter, op.getLoc(), qcoQubit0, qcoQubit1,
+                                   op.getParameter(0));
 
     // Update the state map
     if (inNestedRegion == 0) {
@@ -809,8 +809,7 @@ struct ConvertQCTwoTargetTwoParameterToQCO final
     }
 
     // Create the QCO operation (consumes input, produces output)
-    auto qcoOp =
-        rewriter.create<QCOOpType>(op.getLoc(), qcoQubit0, qcoQubit1,
+    auto qcoOp = QCOOpType::create(rewriter, op.getLoc(), qcoQubit0, qcoQubit1,
                                    op.getParameter(0), op.getParameter(1));
 
     // Update the state map
@@ -862,7 +861,7 @@ struct ConvertQCBarrierOp final : StatefulOpConversionPattern<qc::BarrierOp> {
     }
 
     // Create qco.barrier
-    auto qcoOp = rewriter.create<qco::BarrierOp>(op.getLoc(), qcoQubits);
+    auto qcoOp = qco::BarrierOp::create(rewriter, op.getLoc(), qcoQubits);
 
     // Update the state map
     for (const auto& [qcQubit, qcoQubitOut] :
