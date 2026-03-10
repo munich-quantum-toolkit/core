@@ -24,4 +24,4 @@ add_mlir_conversion_library(
   MLIRReconcileUnrealizedCasts
   DISABLE_INSTALL)
 
-mqt_mlir_target_use_project_options(QCToQIR)
+mqt_mlir_target_use_project_options(MLIRQCToQIR)
