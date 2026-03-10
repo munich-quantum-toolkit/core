@@ -205,7 +205,7 @@ TEST_F(CompilerPipelineTest, RotationGateMergingPass) {
 
   module = mlir::translateQuantumComputationToQC(context.get(), comp);
   ASSERT_TRUE(module);
-  runPipeline(module.get(), false, true, recordWithout);
+  runPipeline(module.get(), false, false, recordWithout);
 
   // The outputs must differ, proving the pass ran and transformed the IR
   EXPECT_NE(recordWith.afterOptimization, recordWithout.afterOptimization);
