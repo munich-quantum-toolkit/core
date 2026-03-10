@@ -19,8 +19,8 @@ target_link_libraries(
           MLIRQCOProgramBuilder
           MLIRSupportMQT
           MLIRTransforms
-          JeffToQCO
-          QCOToJeff)
+          MLIRJeffToQCO
+          MLIRQCOToJeff)
 
 target_include_directories(${target_name} PRIVATE ${jeff-mlir_SOURCE_DIR}/include
                                                   ${jeff-mlir_BINARY_DIR}/include)

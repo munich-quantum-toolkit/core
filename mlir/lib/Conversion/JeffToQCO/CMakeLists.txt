@@ -8,8 +8,8 @@
 
 file(GLOB CONVERSION_SOURCES *.cpp)
 
-add_mlir_library(
-  JeffToQCO
+add_mlir_conversion_library(
+  MLIRJeffToQCO
   ${CONVERSION_SOURCES}
   DEPENDS
   JeffToQCOIncGen
@@ -19,5 +19,5 @@ add_mlir_library(
   MLIRTransforms
   DISABLE_INSTALL)
 
-target_include_directories(JeffToQCO PRIVATE ${jeff-mlir_SOURCE_DIR}/include
-                                             ${jeff-mlir_BINARY_DIR}/include)
+target_include_directories(MLIRJeffToQCO PRIVATE ${jeff-mlir_SOURCE_DIR}/include
+                                                 ${jeff-mlir_BINARY_DIR}/include)

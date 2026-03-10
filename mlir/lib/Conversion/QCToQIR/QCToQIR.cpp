@@ -456,8 +456,8 @@ struct ConvertQCMeasureQIR final : StatefulOpConversionPattern<MeasureOp> {
         getOrCreateFunctionDeclaration(rewriter, op, QIR_MEASURE, fnSignature);
 
     // Create CallOp and replace qc.measure with result pointer
-    rewriter.create<LLVM::CallOp>(op.getLoc(), fnDecl,
-                                  ValueRange{adaptor.getQubit(), resultValue});
+    LLVM::CallOp::create(rewriter, op.getLoc(), fnDecl,
+                         ValueRange{adaptor.getQubit(), resultValue});
     rewriter.replaceOp(op, resultValue);
     return success();
   }
