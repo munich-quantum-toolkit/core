@@ -66,7 +66,7 @@ struct ExtractFromTensorCast : public OpRewritePattern<ExtractOp> {
  * @brief If an ExtractOp consumes an InsertOp with identical indices,
  * return the scalar from the InsertOp directly.
  */
-static Value foldExtractAfterInsert(ExtractOp extractOp) {
+static InsertOp foldExtractAfterInsert(ExtractOp extractOp) {
   auto insertOp = extractOp.getTensor().getDefiningOp<InsertOp>();
 
   auto isSame = [](Value a, Value b) {
@@ -74,17 +74,16 @@ static Value foldExtractAfterInsert(ExtractOp extractOp) {
   };
   if (insertOp && insertOp.getScalar().getType() == extractOp.getType(0) &&
       llvm::equal(insertOp.getIndices(), extractOp.getIndices(), isSame)) {
-    return insertOp.getScalar();
+    return insertOp;
   }
-  return {};
+  return nullptr;
 }
 
 LogicalResult ExtractOp::fold(FoldAdaptor /*adaptor*/,
                               SmallVectorImpl<OpFoldResult>& results) {
-  if (Value result = foldExtractAfterInsert(*this)) {
-    results.push_back(result);
-    results.push_back(getTensor());
-    return success();
+  if (auto insertOp = foldExtractAfterInsert(*this)) {
+    results.push_back(insertOp.getScalar());
+    results.push_back(insertOp.getDest());
   }
 
   return failure();

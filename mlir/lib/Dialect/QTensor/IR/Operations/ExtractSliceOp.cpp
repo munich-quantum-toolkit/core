@@ -117,7 +117,8 @@ RankedTensorType ExtractSliceOp::inferCanonicalRankReducedResultType(
       }
     }
     inferredType =
-        RankedTensorType::get(projectedShape, inferredType.getElementType());
+        RankedTensorType::get(projectedShape, inferredType.getElementType(),
+                              inferredType.getEncoding());
   }
   return inferredType;
 }
