@@ -94,6 +94,32 @@ private:
 } // namespace
 
 /**
+ * @brief Handles the results of a gate conversion
+ *
+ * @details
+ * The original QCO operation is replaced or erased, and the state is updated.
+ *
+ * @param op The original QCO operation
+ * @param rewriter The pattern rewriter
+ * @param state The lowering state
+ * @param targetsOut The target qubits produced by the new operation
+ * @param controlsOut The control qubits produced by the new operation
+ */
+static void handleResult(Operation* op, ConversionPatternRewriter& rewriter,
+                         LoweringState& state, ValueRange targetsOut,
+                         ValueRange controlsOut) {
+  if (!state.inModifier()) {
+    rewriter.replaceOp(op, targetsOut);
+  } else {
+    rewriter.eraseOp(op);
+    state.targetsOut = llvm::to_vector(targetsOut);
+  }
+  if (state.inCtrlOp) {
+    state.controlsOut = llvm::to_vector(controlsOut);
+  }
+}
+
+/**
  * @brief Converts an arbitrary QCO operation to a jeff.custom operation
  *
  * @tparam QCOOpType The operation type of the QCO operation
@@ -124,15 +150,8 @@ static void createCustomOp(QCOOpType& op, ConversionPatternRewriter& rewriter,
       /*power=*/1, /*name=*/name, /*num_targets=*/targets.size(),
       /*num_params=*/params.size());
 
-  if (!state.inModifier()) {
-    rewriter.replaceOp(op, jeffOp.getOutTargetQubits());
-  } else {
-    rewriter.eraseOp(op);
-    state.targetsOut = jeffOp.getOutTargetQubits();
-  }
-  if (state.inCtrlOp) {
-    state.controlsOut = jeffOp.getOutCtrlQubits();
-  }
+  handleResult(op, rewriter, state, jeffOp.getOutTargetQubits(),
+               jeffOp.getOutCtrlQubits());
 }
 
 /**
@@ -161,15 +180,8 @@ static void createPPROp(QCOOpType& op, ConversionPatternRewriter& rewriter,
                           /*is_adjoint=*/state.inInvOp,
                           /*power=*/1, /*pauli_gates=*/pauliGatesAttr);
 
-  if (!state.inModifier()) {
-    rewriter.replaceOp(op, jeffOp.getOutQubits());
-  } else {
-    rewriter.eraseOp(op);
-    state.targetsOut = jeffOp.getOutQubits();
-  }
-  if (state.inCtrlOp) {
-    state.controlsOut = jeffOp.getOutCtrlQubits();
-  }
+  handleResult(op, rewriter, state, jeffOp.getOutQubits(),
+               jeffOp.getOutCtrlQubits());
 }
 
 /**
@@ -403,15 +415,8 @@ struct ConvertQCOOneTargetZeroParameterToJeff final
                                      /*is_adjoint=*/state.inInvOp ^ isAdjoint,
                                      /*power=*/1);
 
-    if (!state.inModifier()) {
-      rewriter.replaceOp(op, jeffOp.getOutQubit());
-    } else {
-      rewriter.eraseOp(op);
-      state.targetsOut = {jeffOp.getOutQubit()};
-    }
-    if (state.inCtrlOp) {
-      state.controlsOut = jeffOp.getOutCtrlQubits();
-    }
+    handleResult(op, rewriter, state, jeffOp.getOutQubit(),
+                 jeffOp.getOutCtrlQubits());
 
     return success();
   }
@@ -527,15 +532,8 @@ struct ConvertQCOOneTargetOneParameterToJeff final
                            /*is_adjoint=*/state.inInvOp,
                            /*power=*/1);
 
-    if (!state.inModifier()) {
-      rewriter.replaceOp(op, jeffOp.getOutQubit());
-    } else {
-      rewriter.eraseOp(op);
-      state.targetsOut = {jeffOp.getOutQubit()};
-    }
-    if (state.inCtrlOp) {
-      state.controlsOut = jeffOp.getOutCtrlQubits();
-    }
+    handleResult(op, rewriter, state, jeffOp.getOutQubit(),
+                 jeffOp.getOutCtrlQubits());
 
     return success();
   }
@@ -581,15 +579,8 @@ struct ConvertQCOU2OpToJeff final : StatefulOpConversionPattern<qco::U2Op> {
                                     /*num_ctrls=*/state.controlsIn.size(),
                                     /*is_adjoint=*/state.inInvOp, /*power=*/1);
 
-    if (!state.inModifier()) {
-      rewriter.replaceOp(op, jeffOp.getOutQubit());
-    } else {
-      rewriter.eraseOp(op);
-      state.targetsOut = {jeffOp.getOutQubit()};
-    }
-    if (state.inCtrlOp) {
-      state.controlsOut = jeffOp.getOutCtrlQubits();
-    }
+    handleResult(op, rewriter, state, jeffOp.getOutQubit(),
+                 jeffOp.getOutCtrlQubits());
 
     return success();
   }
@@ -673,15 +664,8 @@ struct ConvertQCOOneTargetThreeParameterToJeff final
                            /*is_adjoint=*/state.inInvOp,
                            /*power=*/1);
 
-    if (!state.inModifier()) {
-      rewriter.replaceOp(op, jeffOp.getOutQubit());
-    } else {
-      rewriter.eraseOp(op);
-      state.targetsOut = {jeffOp.getOutQubit()};
-    }
-    if (state.inCtrlOp) {
-      state.controlsOut = jeffOp.getOutCtrlQubits();
-    }
+    handleResult(op, rewriter, state, jeffOp.getOutQubit(),
+                 jeffOp.getOutCtrlQubits());
 
     return success();
   }
@@ -732,16 +716,9 @@ struct ConvertQCOTwoTargetZeroParameterToJeff final
                                      /*is_adjoint=*/state.inInvOp,
                                      /*power=*/1);
 
-    if (!state.inModifier()) {
-      rewriter.replaceOp(op,
-                         {jeffOp.getOutQubitOne(), jeffOp.getOutQubitTwo()});
-    } else {
-      rewriter.eraseOp(op);
-      state.targetsOut = {jeffOp.getOutQubitOne(), jeffOp.getOutQubitTwo()};
-    }
-    if (state.inCtrlOp) {
-      state.controlsOut = jeffOp.getOutCtrlQubits();
-    }
+    handleResult(op, rewriter, state,
+                 {jeffOp.getOutQubitOne(), jeffOp.getOutQubitTwo()},
+                 jeffOp.getOutCtrlQubits());
 
     return success();
   }
