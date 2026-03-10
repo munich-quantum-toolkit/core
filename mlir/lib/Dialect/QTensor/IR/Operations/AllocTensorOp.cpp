@@ -47,7 +47,7 @@ LogicalResult AllocOp::verify() {
   }
 
   if (resultType.getShape()[0] != size) {
-    return emitOpError("Tensor length must match size operand (")
+    return emitOpError("Tensor length must match size attribute (")
            << size << "), but got " << resultType.getShape()[0];
   }
 
