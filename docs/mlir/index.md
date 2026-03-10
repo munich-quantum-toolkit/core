@@ -8,7 +8,7 @@ We define multiple dialects, each with its dedicated purpose:
 
 - The {doc}`QCO dialect <QCO>` uses value semantics and is mainly designed for running optimizations.
 
-- The {doc}`QTensor dialect <Qtensor` adds support for tensors with linear typing and is used in the QCO to represent registers.
+- The {doc}`QTensor dialect <Qtensor` adds support for tensors with linear typing and is used in the QCO dialect to represent registers.
 
 Both dialects define various canonicalization and transformations that enable the compilation of quantum programs to native quantum hardware.
 
