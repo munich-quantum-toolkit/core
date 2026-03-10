@@ -12,6 +12,6 @@ tocdepth: 3
 
 ## Passes
 
-```{include} Passes/MLIRMQTOptPasses.md
+```{include} Passes/MLIRQCOTransforms.md
 
 ```
