@@ -16,6 +16,14 @@ def JeffToQCO : Pass<"jeff-to-qco"> {
       It ensures that the returned module is a valid QCO module.
 
       Note that this pass is still in development as QCO and Jeff do not have full feature parity yet.
+
+      Known limitations:
+
+      - Gates with a non-trivial power are currently not supported
+      - Only specific `CustomOp`s are currently supported
+      - Only specific `PPROp`s are currently supported
+      - `Qureg_Op`s are currently not supported
+      - `SCF_Op`s are currently not supported
    }];
 
   let dependentDialects = [
