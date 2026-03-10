@@ -177,8 +177,8 @@ struct FoldTensorCastProducerOp
     for (auto [oldResult, newResult] :
          llvm::zip(op->getResults(), newOp->getResults())) {
       if (newResult.getType() != oldResult.getType()) {
-        replacements.push_back(rewriter.create<tensor::CastOp>(
-            op->getLoc(), oldResult.getType(), newResult));
+        replacements.push_back(tensor::CastOp::create(
+            rewriter, op->getLoc(), oldResult.getType(), newResult));
       } else {
         replacements.push_back(newResult);
       }
