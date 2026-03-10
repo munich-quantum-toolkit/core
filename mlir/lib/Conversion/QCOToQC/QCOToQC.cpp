@@ -36,220 +36,6 @@ using namespace qc;
 #include "mlir/Conversion/QCOToQC/QCOToQC.h.inc"
 
 /**
- * @brief Converts a zero-target, one-parameter QCO operation to QC
- *
- * @tparam QCOpType The operation type of the QC operation
- * @tparam QCOOpType The operation type of the QCO operation
- * @param op The QCO operation instance to convert
- * @param rewriter The pattern rewriter
- * @return LogicalResult Success or failure of the conversion
- */
-template <typename QCOpType, typename QCOOpType>
-static LogicalResult
-convertZeroTargetOneParameter(QCOOpType& op,
-                              ConversionPatternRewriter& rewriter) {
-  rewriter.create<QCOpType>(op.getLoc(), op.getParameter(0));
-  rewriter.eraseOp(op);
-  return success();
-}
-
-/**
- * @brief Converts a one-target, zero-parameter QCO operation to QC
- *
- * @tparam QCOpType The operation type of the QC operation
- * @tparam QCOOpType The operation type of the QCO operation
- * @tparam QCOOpAdaptorType The OpAdaptor type of the QCO operation
- * @param op The QCO operation instance to convert
- * @param adaptor The OpAdaptor of the QCO operation
- * @param rewriter The pattern rewriter
- * @return LogicalResult Success or failure of the conversion
- */
-template <typename QCOpType, typename QCOOpType, typename QCOOpAdaptorType>
-static LogicalResult
-convertOneTargetZeroParameter(QCOOpType& op, QCOOpAdaptorType& adaptor,
-                              ConversionPatternRewriter& rewriter) {
-  // OpAdaptor provides the already type-converted input qubit
-  auto qcQubit = adaptor.getQubitIn();
-
-  // Create the QC operation (in-place, no result)
-  rewriter.create<QCOpType>(op.getLoc(), qcQubit);
-
-  // Replace the output qubit with the same QC reference
-  rewriter.replaceOp(op, qcQubit);
-
-  return success();
-}
-
-/**
- * @brief Converts a one-target, one-parameter QCO operation to QC
- *
- * @tparam QCOpType The operation type of the QC operation
- * @tparam QCOOpType The operation type of the QCO operation
- * @tparam QCOOpAdaptorType The OpAdaptor type of the QCO operation
- * @param op The QCO operation instance to convert
- * @param adaptor The OpAdaptor of the QCO operation
- * @param rewriter The pattern rewriter
- * @return LogicalResult Success or failure of the conversion
- */
-template <typename QCOpType, typename QCOOpType, typename QCOOpAdaptorType>
-static LogicalResult
-convertOneTargetOneParameter(QCOOpType& op, QCOOpAdaptorType& adaptor,
-                             ConversionPatternRewriter& rewriter) {
-  // OpAdaptor provides the already type-converted input qubit
-  auto qcQubit = adaptor.getQubitIn();
-
-  // Create the QC operation (in-place, no result)
-  rewriter.create<QCOpType>(op.getLoc(), qcQubit, op.getParameter(0));
-
-  // Replace the output qubit with the same QC reference
-  rewriter.replaceOp(op, qcQubit);
-
-  return success();
-}
-
-/**
- * @brief Converts a one-target, two-parameter QCO operation to QC
- *
- * @tparam QCOpType The operation type of the QC operation
- * @tparam QCOOpType The operation type of the QCO operation
- * @tparam QCOOpAdaptorType The OpAdaptor type of the QCO operation
- * @param op The QCO operation instance to convert
- * @param adaptor The OpAdaptor of the QCO operation
- * @param rewriter The pattern rewriter
- * @return LogicalResult Success or failure of the conversion
- */
-template <typename QCOpType, typename QCOOpType, typename QCOOpAdaptorType>
-static LogicalResult
-convertOneTargetTwoParameter(QCOOpType& op, QCOOpAdaptorType& adaptor,
-                             ConversionPatternRewriter& rewriter) {
-  // OpAdaptor provides the already type-converted input qubit
-  auto qcQubit = adaptor.getQubitIn();
-
-  // Create the QC operation (in-place, no result)
-  rewriter.create<QCOpType>(op.getLoc(), qcQubit, op.getParameter(0),
-                            op.getParameter(1));
-
-  // Replace the output qubit with the same QC reference
-  rewriter.replaceOp(op, qcQubit);
-
-  return success();
-}
-
-/**
- * @brief Converts a one-target, three-parameter QCO operation to QC
- *
- * @tparam QCOpType The operation type of the QC operation
- * @tparam QCOOpType The operation type of the QCO operation
- * @tparam QCOOpAdaptorType The OpAdaptor type of the QCO operation
- * @param op The QCO operation instance to convert
- * @param adaptor The OpAdaptor of the QCO operation
- * @param rewriter The pattern rewriter
- * @return LogicalResult Success or failure of the conversion
- */
-template <typename QCOpType, typename QCOOpType, typename QCOOpAdaptorType>
-static LogicalResult
-convertOneTargetThreeParameter(QCOOpType& op, QCOOpAdaptorType& adaptor,
-                               ConversionPatternRewriter& rewriter) {
-  // OpAdaptor provides the already type-converted input qubit
-  auto qcQubit = adaptor.getQubitIn();
-
-  // Create the QC operation (in-place, no result)
-  rewriter.create<QCOpType>(op.getLoc(), qcQubit, op.getParameter(0),
-                            op.getParameter(1), op.getParameter(2));
-
-  // Replace the output qubit with the same QC reference
-  rewriter.replaceOp(op, qcQubit);
-
-  return success();
-}
-
-/**
- * @brief Converts a two-target, zero-parameter QCO operation to QC
- *
- * @tparam QCOpType The operation type of the QC operation
- * @tparam QCOOpType The operation type of the QCO operation
- * @tparam QCOOpAdaptorType The OpAdaptor type of the QCO operation
- * @param op The QCO operation instance to convert
- * @param adaptor The OpAdaptor of the QCO operation
- * @param rewriter The pattern rewriter
- * @return LogicalResult Success or failure of the conversion
- */
-template <typename QCOpType, typename QCOOpType, typename QCOOpAdaptorType>
-static LogicalResult
-convertTwoTargetZeroParameter(QCOOpType& op, QCOOpAdaptorType& adaptor,
-                              ConversionPatternRewriter& rewriter) {
-  // OpAdaptor provides the already type-converted input qubits
-  auto qcQubit0 = adaptor.getQubit0In();
-  auto qcQubit1 = adaptor.getQubit1In();
-
-  // Create the QC operation (in-place, no result)
-  rewriter.create<QCOpType>(op.getLoc(), qcQubit0, qcQubit1);
-
-  // Replace the output qubits with the same QC references
-  rewriter.replaceOp(op, {qcQubit0, qcQubit1});
-
-  return success();
-}
-
-/**
- * @brief Converts a two-target, one-parameter QCO operation to QC
- *
- * @tparam QCOpType The operation type of the QC operation
- * @tparam QCOOpType The operation type of the QCO operation
- * @tparam QCOOpAdaptorType The OpAdaptor type of the QCO operation
- * @param op The QCO operation instance to convert
- * @param adaptor The OpAdaptor of the QCO operation
- * @param rewriter The pattern rewriter
- * @return LogicalResult Success or failure of the conversion
- */
-template <typename QCOpType, typename QCOOpType, typename QCOOpAdaptorType>
-static LogicalResult
-convertTwoTargetOneParameter(QCOOpType& op, QCOOpAdaptorType& adaptor,
-                             ConversionPatternRewriter& rewriter) {
-  // OpAdaptor provides the already type-converted input qubits
-  auto qcQubit0 = adaptor.getQubit0In();
-  auto qcQubit1 = adaptor.getQubit1In();
-
-  // Create the QC operation (in-place, no result)
-  rewriter.create<QCOpType>(op.getLoc(), qcQubit0, qcQubit1,
-                            op.getParameter(0));
-
-  // Replace the output qubits with the same QC references
-  rewriter.replaceOp(op, {qcQubit0, qcQubit1});
-
-  return success();
-}
-
-/**
- * @brief Converts a two-target, two-parameter QCO operation to QC
- *
- * @tparam QCOpType The operation type of the QC operation
- * @tparam QCOOpType The operation type of the QCO operation
- * @tparam QCOOpAdaptorType The OpAdaptor type of the QCO operation
- * @param op The QCO operation instance to convert
- * @param adaptor The OpAdaptor of the QCO operation
- * @param rewriter The pattern rewriter
- * @return LogicalResult Success or failure of the conversion
- */
-template <typename QCOpType, typename QCOOpType, typename QCOOpAdaptorType>
-static LogicalResult
-convertTwoTargetTwoParameter(QCOOpType& op, QCOOpAdaptorType& adaptor,
-                             ConversionPatternRewriter& rewriter) {
-  // OpAdaptor provides the already type-converted input qubits
-  auto qcQubit0 = adaptor.getQubit0In();
-  auto qcQubit1 = adaptor.getQubit1In();
-
-  // Create the QC operation (in-place, no result)
-  rewriter.create<QCOpType>(op.getLoc(), qcQubit0, qcQubit1, op.getParameter(0),
-                            op.getParameter(1));
-
-  // Replace the output qubits with the same QC references
-  rewriter.replaceOp(op, {qcQubit0, qcQubit1});
-
-  return success();
-}
-
-/**
  * @brief Type converter for QCO-to-QC conversion
  *
  * @details
@@ -450,273 +236,296 @@ struct ConvertQCOResetOp final : OpConversionPattern<qco::ResetOp> {
   }
 };
 
-// ZeroTargetOneParameter
+/**
+ * @brief Converts a zero-target, one-parameter QCO gate to QC
+ *
+ * @tparam QCOOpType The operation type of the QCO gate
+ * @tparam QCOpType The operation type of the QC gate
+ *
+ * @par Example:
+ * ```mlir
+ * qco.gphase(%theta)
+ * ```
+ * is converted to
+ * ```mlir
+ * qc.gphase(%theta)
+ * ```
+ */
+template <typename QCOOpType, typename QCOpType>
+struct ConvertQCOZeroTargetOneParameterToQC final
+    : OpConversionPattern<QCOOpType> {
+  using OpConversionPattern<QCOOpType>::OpConversionPattern;
 
-#define DEFINE_ZERO_TARGET_ONE_PARAMETER(OP_CLASS, OP_NAME, PARAM)             \
-  /**                                                                          \
-   * @brief Converts qco.OP_NAME to qc.OP_NAME                                 \
-   *                                                                           \
-   * @par Example:                                                             \
-   * ```mlir                                                                   \
-   * qco.OP_NAME(%PARAM)                                                       \
-   * ```                                                                       \
-   * is converted to                                                           \
-   * ```mlir                                                                   \
-   * qc.OP_NAME(%PARAM)                                                        \
-   * ```                                                                       \
-   */                                                                          \
-  struct ConvertQCO##OP_CLASS final : OpConversionPattern<qco::OP_CLASS> {     \
-    using OpConversionPattern::OpConversionPattern;                            \
-                                                                               \
-    LogicalResult                                                              \
-    matchAndRewrite(qco::OP_CLASS op, OpAdaptor /*adaptor*/,                   \
-                    ConversionPatternRewriter& rewriter) const override {      \
-      return convertZeroTargetOneParameter<qc::OP_CLASS>(op, rewriter);        \
-    }                                                                          \
-  };
+  LogicalResult
+  matchAndRewrite(QCOOpType op, typename QCOOpType::Adaptor adaptor,
+                  ConversionPatternRewriter& rewriter) const override {
+    rewriter.create<QCOpType>(op.getLoc(), op.getParameter(0));
+    rewriter.eraseOp(op);
+    return success();
+  }
+};
 
-DEFINE_ZERO_TARGET_ONE_PARAMETER(GPhaseOp, gphase, theta)
+/**
+ * @brief Converts a one-target, zero-parameter QCO gate to QC
+ *
+ * @tparam QCOOpType The operation type of the QCO gate
+ * @tparam QCOpType The operation type of the QC gate
+ *
+ * @par Example:
+ * ```mlir
+ * %q_out = qco.x %q_in : !qco.qubit -> !qco.qubit
+ * ```
+ * is converted to
+ * ```mlir
+ * qc.x %q : !qc.qubit
+ * ```
+ */
+template <typename QCOOpType, typename QCOpType>
+struct ConvertQCOOneTargetZeroParameterToQC final
+    : OpConversionPattern<QCOOpType> {
+  using OpConversionPattern<QCOOpType>::OpConversionPattern;
 
-#undef DEFINE_ZERO_TARGET_ONE_PARAMETER
+  LogicalResult
+  matchAndRewrite(QCOOpType op, typename QCOOpType::Adaptor adaptor,
+                  ConversionPatternRewriter& rewriter) const override {
+    // OpAdaptor provides the already type-converted input qubit
+    auto qcQubit = adaptor.getQubitIn();
 
-// OneTargetZeroParameter
+    // Create the QC operation (in-place, no result)
+    rewriter.create<QCOpType>(op.getLoc(), qcQubit);
 
-#define DEFINE_ONE_TARGET_ZERO_PARAMETER(OP_CLASS, OP_NAME)                    \
-  /**                                                                          \
-   * @brief Converts qco.OP_NAME to qc.OP_NAME                                 \
-   *                                                                           \
-   * @par Example:                                                             \
-   * ```mlir                                                                   \
-   * %q_out = qco.OP_NAME %q_in : !qco.qubit -> !qco.qubit                     \
-   * ```                                                                       \
-   * is converted to                                                           \
-   * ```mlir                                                                   \
-   * qc.OP_NAME %q : !qc.qubit                                                 \
-   * ```                                                                       \
-   */                                                                          \
-  struct ConvertQCO##OP_CLASS final : OpConversionPattern<qco::OP_CLASS> {     \
-    using OpConversionPattern::OpConversionPattern;                            \
-                                                                               \
-    LogicalResult                                                              \
-    matchAndRewrite(qco::OP_CLASS op, OpAdaptor adaptor,                       \
-                    ConversionPatternRewriter& rewriter) const override {      \
-      return convertOneTargetZeroParameter<qc::OP_CLASS>(op, adaptor,          \
-                                                         rewriter);            \
-    }                                                                          \
-  };
+    // Replace the output qubit with the same QC reference
+    rewriter.replaceOp(op, qcQubit);
 
-DEFINE_ONE_TARGET_ZERO_PARAMETER(IdOp, id)
-DEFINE_ONE_TARGET_ZERO_PARAMETER(XOp, x)
-DEFINE_ONE_TARGET_ZERO_PARAMETER(YOp, y)
-DEFINE_ONE_TARGET_ZERO_PARAMETER(ZOp, z)
-DEFINE_ONE_TARGET_ZERO_PARAMETER(HOp, h)
-DEFINE_ONE_TARGET_ZERO_PARAMETER(SOp, s)
-DEFINE_ONE_TARGET_ZERO_PARAMETER(SdgOp, sdg)
-DEFINE_ONE_TARGET_ZERO_PARAMETER(TOp, t)
-DEFINE_ONE_TARGET_ZERO_PARAMETER(TdgOp, tdg)
-DEFINE_ONE_TARGET_ZERO_PARAMETER(SXOp, sx)
-DEFINE_ONE_TARGET_ZERO_PARAMETER(SXdgOp, sxdg)
+    return success();
+  }
+};
 
-#undef DEFINE_ONE_TARGET_ZERO_PARAMETER
+/**
+ * @brief Converts a one-target, one-parameter QCO gate to QC
+ *
+ * @tparam QCOOpType The operation type of the QCO gate
+ * @tparam QCOpType The operation type of the QC gate
+ *
+ * @par Example:
+ * ```mlir
+ * %q_out = qco.rx(%theta) %q_in : !qco.qubit -> !qco.qubit
+ * ```
+ * is converted to
+ * ```mlir
+ * qc.rx(%theta) %q : !qc.qubit
+ * ```
+ */
+template <typename QCOOpType, typename QCOpType>
+struct ConvertQCOOneTargetOneParameterToQC final
+    : OpConversionPattern<QCOOpType> {
+  using OpConversionPattern<QCOOpType>::OpConversionPattern;
 
-// OneTargetOneParameter
+  LogicalResult
+  matchAndRewrite(QCOOpType op, typename QCOOpType::Adaptor adaptor,
+                  ConversionPatternRewriter& rewriter) const override {
+    // OpAdaptor provides the already type-converted input qubit
+    auto qcQubit = adaptor.getQubitIn();
 
-#define DEFINE_ONE_TARGET_ONE_PARAMETER(OP_CLASS, OP_NAME, PARAM)              \
-  /**                                                                          \
-   * @brief Converts qco.OP_NAME to qc.OP_NAME                                 \
-   *                                                                           \
-   * @par Example:                                                             \
-   * ```mlir                                                                   \
-   * %q_out = qco.OP_NAME(%PARAM) %q_in : !qco.qubit -> !qco.qubit             \
-   * ```                                                                       \
-   * is converted to                                                           \
-   * ```mlir                                                                   \
-   * qc.OP_NAME(%PARAM) %q : !qc.qubit                                         \
-   * ```                                                                       \
-   */                                                                          \
-  struct ConvertQCO##OP_CLASS final : OpConversionPattern<qco::OP_CLASS> {     \
-    using OpConversionPattern::OpConversionPattern;                            \
-                                                                               \
-    LogicalResult                                                              \
-    matchAndRewrite(qco::OP_CLASS op, OpAdaptor adaptor,                       \
-                    ConversionPatternRewriter& rewriter) const override {      \
-      return convertOneTargetOneParameter<qc::OP_CLASS>(op, adaptor,           \
-                                                        rewriter);             \
-    }                                                                          \
-  };
+    // Create the QC operation (in-place, no result)
+    rewriter.create<QCOpType>(op.getLoc(), qcQubit, op.getParameter(0));
 
-DEFINE_ONE_TARGET_ONE_PARAMETER(RXOp, rx, theta)
-DEFINE_ONE_TARGET_ONE_PARAMETER(RYOp, ry, theta)
-DEFINE_ONE_TARGET_ONE_PARAMETER(RZOp, rz, theta)
-DEFINE_ONE_TARGET_ONE_PARAMETER(POp, p, theta)
+    // Replace the output qubit with the same QC reference
+    rewriter.replaceOp(op, qcQubit);
 
-#undef DEFINE_ONE_TARGET_ONE_PARAMETER
+    return success();
+  }
+};
 
-// OneTargetTwoParameter
+/**
+ * @brief Converts a one-target, two-parameter QCO gate to QC
+ *
+ * @tparam QCOOpType The operation type of the QCO gate
+ * @tparam QCOpType The operation type of the QC gate
+ *
+ * @par Example:
+ * ```mlir
+ * %q_out = qco.r(%theta, %phi) %q_in : !qco.qubit -> !qco.qubit
+ * ```
+ * is converted to
+ * ```mlir
+ * qc.r(%theta, %phi) %q : !qc.qubit
+ * ```
+ */
+template <typename QCOOpType, typename QCOpType>
+struct ConvertQCOOneTargetTwoParameterToQC final
+    : OpConversionPattern<QCOOpType> {
+  using OpConversionPattern<QCOOpType>::OpConversionPattern;
 
-#define DEFINE_ONE_TARGET_TWO_PARAMETER(OP_CLASS, OP_NAME, PARAM1, PARAM2)     \
-  /**                                                                          \
-   * @brief Converts qco.OP_NAME to qc.OP_NAME                                 \
-   *                                                                           \
-   * @par Example:                                                             \
-   * ```mlir                                                                   \
-   * %q_out = qco.OP_NAME(%PARAM1, %PARAM2) %q_in : !qco.qubit ->              \
-   * !qco.qubit                                                                \
-   * ```                                                                       \
-   * is converted to                                                           \
-   * ```mlir                                                                   \
-   * qc.OP_NAME(%PARAM1, %PARAM2) %q : !qc.qubit                               \
-   * ```                                                                       \
-   */                                                                          \
-  struct ConvertQCO##OP_CLASS final : OpConversionPattern<qco::OP_CLASS> {     \
-    using OpConversionPattern::OpConversionPattern;                            \
-                                                                               \
-    LogicalResult                                                              \
-    matchAndRewrite(qco::OP_CLASS op, OpAdaptor adaptor,                       \
-                    ConversionPatternRewriter& rewriter) const override {      \
-      return convertOneTargetTwoParameter<qc::OP_CLASS>(op, adaptor,           \
-                                                        rewriter);             \
-    }                                                                          \
-  };
+  LogicalResult
+  matchAndRewrite(QCOOpType op, typename QCOOpType::Adaptor adaptor,
+                  ConversionPatternRewriter& rewriter) const override {
+    // OpAdaptor provides the already type-converted input qubit
+    auto qcQubit = adaptor.getQubitIn();
 
-DEFINE_ONE_TARGET_TWO_PARAMETER(ROp, r, theta, phi)
-DEFINE_ONE_TARGET_TWO_PARAMETER(U2Op, u2, phi, lambda)
+    // Create the QC operation (in-place, no result)
+    rewriter.create<QCOpType>(op.getLoc(), qcQubit, op.getParameter(0),
+                              op.getParameter(1));
 
-#undef DEFINE_ONE_TARGET_TWO_PARAMETER
+    // Replace the output qubit with the same QC reference
+    rewriter.replaceOp(op, qcQubit);
 
-// OneTargetThreeParameter
+    return success();
+  }
+};
 
-#define DEFINE_ONE_TARGET_THREE_PARAMETER(OP_CLASS, OP_NAME, PARAM1, PARAM2,   \
-                                          PARAM3)                              \
-  /**                                                                          \
-   * @brief Converts qco.OP_NAME to qc.OP_NAME                                 \
-   *                                                                           \
-   * @par Example:                                                             \
-   * ```mlir                                                                   \
-   * %q_out = qco.OP_NAME(%PARAM1, %PARAM2, %PARAM3) %q_in : !qco.qubit        \
-   * -> !qco.qubit                                                             \
-   * ```                                                                       \
-   * is converted to                                                           \
-   * ```mlir                                                                   \
-   * qc.OP_NAME(%PARAM1, %PARAM2, %PARAM3) %q : !qc.qubit                      \
-   * ```                                                                       \
-   */                                                                          \
-  struct ConvertQCO##OP_CLASS final : OpConversionPattern<qco::OP_CLASS> {     \
-    using OpConversionPattern::OpConversionPattern;                            \
-                                                                               \
-    LogicalResult                                                              \
-    matchAndRewrite(qco::OP_CLASS op, OpAdaptor adaptor,                       \
-                    ConversionPatternRewriter& rewriter) const override {      \
-      return convertOneTargetThreeParameter<qc::OP_CLASS>(op, adaptor,         \
-                                                          rewriter);           \
-    }                                                                          \
-  };
+/**
+ * @brief Converts a one-target, three-parameter QCO gate to QC
+ *
+ * @tparam QCOOpType The operation type of the QCO gate
+ * @tparam QCOpType The operation type of the QC gate
+ *
+ * @par Example:
+ * ```mlir
+ * %q_out = qco.u(%theta, %phi, %lambda) %q_in : !qco.qubit -> !qco.qubit
+ * ```
+ * is converted to
+ * ```mlir
+ * qc.u(%theta, %phi, %lambda) %q : !qc.qubit
+ * ```
+ */
+template <typename QCOOpType, typename QCOpType>
+struct ConvertQCOOneTargetThreeParameterToQC final
+    : OpConversionPattern<QCOOpType> {
+  using OpConversionPattern<QCOOpType>::OpConversionPattern;
 
-DEFINE_ONE_TARGET_THREE_PARAMETER(UOp, u, theta, phi, lambda)
+  LogicalResult
+  matchAndRewrite(QCOOpType op, typename QCOOpType::Adaptor adaptor,
+                  ConversionPatternRewriter& rewriter) const override {
+    // OpAdaptor provides the already type-converted input qubit
+    auto qcQubit = adaptor.getQubitIn();
 
-#undef DEFINE_ONE_TARGET_THREE_PARAMETER
+    // Create the QC operation (in-place, no result)
+    rewriter.create<QCOpType>(op.getLoc(), qcQubit, op.getParameter(0),
+                              op.getParameter(1), op.getParameter(2));
 
-// TwoTargetZeroParameter
+    // Replace the output qubit with the same QC reference
+    rewriter.replaceOp(op, qcQubit);
 
-#define DEFINE_TWO_TARGET_ZERO_PARAMETER(OP_CLASS, OP_NAME)                    \
-  /**                                                                          \
-   * @brief Converts qco.OP_NAME to qc.OP_NAME                                 \
-   *                                                                           \
-   * @par Example:                                                             \
-   * ```mlir                                                                   \
-   * %q0_out, %q1_out = qco.OP_NAME %q0_in, %q1_in : !qco.qubit, !qco.qubit    \
-   * -> !qco.qubit, !qco.qubit                                                 \
-   * ```                                                                       \
-   * is converted to                                                           \
-   * ```mlir                                                                   \
-   * qc.OP_NAME %q0, %q1 : !qc.qubit, !qc.qubit                                \
-   * ```                                                                       \
-   */                                                                          \
-  struct ConvertQCO##OP_CLASS final : OpConversionPattern<qco::OP_CLASS> {     \
-    using OpConversionPattern::OpConversionPattern;                            \
-                                                                               \
-    LogicalResult                                                              \
-    matchAndRewrite(qco::OP_CLASS op, OpAdaptor adaptor,                       \
-                    ConversionPatternRewriter& rewriter) const override {      \
-      return convertTwoTargetZeroParameter<qc::OP_CLASS>(op, adaptor,          \
-                                                         rewriter);            \
-    }                                                                          \
-  };
+    return success();
+  }
+};
 
-DEFINE_TWO_TARGET_ZERO_PARAMETER(SWAPOp, swap)
-DEFINE_TWO_TARGET_ZERO_PARAMETER(iSWAPOp, iswap)
-DEFINE_TWO_TARGET_ZERO_PARAMETER(DCXOp, dcx)
-DEFINE_TWO_TARGET_ZERO_PARAMETER(ECROp, ecr)
+/**
+ * @brief Converts a two-target, zero-parameter QCO gate to QC
+ *
+ * @tparam QCOOpType The operation type of the QCO gate
+ * @tparam QCOpType The operation type of the QC gate
+ *
+ * @par Example:
+ * ```mlir
+ * %q0_out, %q1_out = qco.swap %q0_in, %q1_in : !qco.qubit, !qco.qubit ->
+ * !qco.qubit, !qco.qubit
+ * ```
+ * is converted to
+ * ```mlir
+ * qc.swap %q0, %q1 : !qc.qubit, !qc.qubit
+ * ```
+ */
+template <typename QCOOpType, typename QCOpType>
+struct ConvertQCOTwoTargetZeroParameterToQC final
+    : OpConversionPattern<QCOOpType> {
+  using OpConversionPattern<QCOOpType>::OpConversionPattern;
 
-#undef DEFINE_TWO_TARGET_ZERO_PARAMETER
+  LogicalResult
+  matchAndRewrite(QCOOpType op, typename QCOOpType::Adaptor adaptor,
+                  ConversionPatternRewriter& rewriter) const override {
+    // OpAdaptor provides the already type-converted input qubits
+    auto qcQubit0 = adaptor.getQubit0In();
+    auto qcQubit1 = adaptor.getQubit1In();
 
-// TwoTargetOneParameter
+    // Create the QC operation (in-place, no result)
+    rewriter.create<QCOpType>(op.getLoc(), qcQubit0, qcQubit1);
 
-#define DEFINE_TWO_TARGET_ONE_PARAMETER(OP_CLASS, OP_NAME, PARAM)              \
-  /**                                                                          \
-   * @brief Converts qco.OP_NAME to qc.OP_NAME                                 \
-   *                                                                           \
-   * @par Example:                                                             \
-   * ```mlir                                                                   \
-   * %q0_out, %q1_out = qco.OP_NAME(%PARAM) %q0_in, %q1_in : !qco.qubit,       \
-   * !qco.qubit -> !qco.qubit, !qco.qubit                                      \
-   * ```                                                                       \
-   * is converted to                                                           \
-   * ```mlir                                                                   \
-   * qc.OP_NAME(%PARAM) %q0, %q1 : !qc.qubit, !qc.qubit                        \
-   * ```                                                                       \
-   */                                                                          \
-  struct ConvertQCO##OP_CLASS final : OpConversionPattern<qco::OP_CLASS> {     \
-    using OpConversionPattern::OpConversionPattern;                            \
-                                                                               \
-    LogicalResult                                                              \
-    matchAndRewrite(qco::OP_CLASS op, OpAdaptor adaptor,                       \
-                    ConversionPatternRewriter& rewriter) const override {      \
-      return convertTwoTargetOneParameter<qc::OP_CLASS>(op, adaptor,           \
-                                                        rewriter);             \
-    }                                                                          \
-  };
+    // Replace the output qubits with the same QC references
+    rewriter.replaceOp(op, {qcQubit0, qcQubit1});
 
-DEFINE_TWO_TARGET_ONE_PARAMETER(RXXOp, rxx, theta)
-DEFINE_TWO_TARGET_ONE_PARAMETER(RYYOp, ryy, theta)
-DEFINE_TWO_TARGET_ONE_PARAMETER(RZXOp, rzx, theta)
-DEFINE_TWO_TARGET_ONE_PARAMETER(RZZOp, rzz, theta)
+    return success();
+  }
+};
 
-#undef DEFINE_TWO_TARGET_ONE_PARAMETER
+/**
+ * @brief Converts a two-target, one-parameter QCO gate to QC
+ *
+ * @tparam QCOOpType The operation type of the QCO gate
+ * @tparam QCOpType The operation type of the QC gate
+ *
+ * @par Example:
+ * ```mlir
+ * %q0_out, %q1_out = qco.rxx(%theta) %q0_in, %q1_in : !qco.qubit, !qco.qubit ->
+ * !qco.qubit, !qco.qubit
+ * ```
+ * is converted to
+ * ```mlir
+ * qc.rxx(%theta) %q0, %q1 : !qc.qubit, !qc.qubit
+ * ```
+ */
+template <typename QCOOpType, typename QCOpType>
+struct ConvertQCOTwoTargetOneParameterToQC final
+    : OpConversionPattern<QCOOpType> {
+  using OpConversionPattern<QCOOpType>::OpConversionPattern;
 
-// TwoTargetTwoParameter
+  LogicalResult
+  matchAndRewrite(QCOOpType op, typename QCOOpType::Adaptor adaptor,
+                  ConversionPatternRewriter& rewriter) const override {
+    // OpAdaptor provides the already type-converted input qubits
+    auto qcQubit0 = adaptor.getQubit0In();
+    auto qcQubit1 = adaptor.getQubit1In();
 
-#define DEFINE_TWO_TARGET_TWO_PARAMETER(OP_CLASS, OP_NAME, PARAM1, PARAM2)     \
-  /**                                                                          \
-   * @brief Converts qco.OP_NAME to qc.OP_NAME                                 \
-   *                                                                           \
-   * @par Example:                                                             \
-   * ```mlir                                                                   \
-   * %q0_out, %q1_out = qco.OP_NAME(%PARAM1, %PARAM2) %q0_in, %q1_in :         \
-   * !qco.qubit, !qco.qubit -> !qco.qubit, !qco.qubit                          \
-   * ```                                                                       \
-   * is converted to                                                           \
-   * ```mlir                                                                   \
-   * qc.OP_NAME(%PARAM1, %PARAM2) %q0, %q1 : !qc.qubit, !qc.qubit              \
-   * ```                                                                       \
-   */                                                                          \
-  struct ConvertQCO##OP_CLASS final : OpConversionPattern<qco::OP_CLASS> {     \
-    using OpConversionPattern::OpConversionPattern;                            \
-                                                                               \
-    LogicalResult                                                              \
-    matchAndRewrite(qco::OP_CLASS op, OpAdaptor adaptor,                       \
-                    ConversionPatternRewriter& rewriter) const override {      \
-      return convertTwoTargetTwoParameter<qc::OP_CLASS>(op, adaptor,           \
-                                                        rewriter);             \
-    }                                                                          \
-  };
+    // Create the QC operation (in-place, no result)
+    rewriter.create<QCOpType>(op.getLoc(), qcQubit0, qcQubit1,
+                              op.getParameter(0));
 
-DEFINE_TWO_TARGET_TWO_PARAMETER(XXPlusYYOp, xx_plus_yy, theta, beta)
-DEFINE_TWO_TARGET_TWO_PARAMETER(XXMinusYYOp, xx_minus_yy, theta, beta)
+    // Replace the output qubits with the same QC references
+    rewriter.replaceOp(op, {qcQubit0, qcQubit1});
 
-#undef DEFINE_TWO_TARGET_TWO_PARAMETER
+    return success();
+  }
+};
 
-// BarrierOp
+/**
+ * @brief Converts a two-target, two-parameter QCO gate to QC
+ *
+ * @tparam QCOOpType The operation type of the QCO gate
+ * @tparam QCOpType The operation type of the QC gate
+ *
+ * @par Example:
+ * ```mlir
+ * %q0_out, %q1_out = qco.xx_minus_yy(%theta, %beta) %q0_in, %q1_in :
+ * !qco.qubit, !qco.qubit -> !qco.qubit, !qco.qubit
+ * ```
+ * is converted to
+ * ```mlir
+ * qc.xx_minus_yy(%theta, %beta) %q0, %q1 : !qc.qubit, !qc.qubit
+ * ```
+ */
+template <typename QCOOpType, typename QCOpType>
+struct ConvertQCOTwoTargetTwoParameterToQC final
+    : OpConversionPattern<QCOOpType> {
+  using OpConversionPattern<QCOOpType>::OpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(QCOOpType op, typename QCOOpType::Adaptor adaptor,
+                  ConversionPatternRewriter& rewriter) const override {
+    // OpAdaptor provides the already type-converted input qubits
+    auto qcQubit0 = adaptor.getQubit0In();
+    auto qcQubit1 = adaptor.getQubit1In();
+
+    // Create the QC operation (in-place, no result)
+    rewriter.create<QCOpType>(op.getLoc(), qcQubit0, qcQubit1,
+                              op.getParameter(0), op.getParameter(1));
+
+    // Replace the output qubits with the same QC references
+    rewriter.replaceOp(op, {qcQubit0, qcQubit1});
+
+    return success();
+  }
+};
 
 /**
  * @brief Converts qco.barrier to qc.barrier
@@ -945,18 +754,39 @@ protected:
 
     // Register operation conversion patterns
     // Note: No state tracking needed - OpAdaptors handle type conversion
-    patterns
-        .add<ConvertQCOAllocOp, ConvertQCODeallocOp, ConvertQCOStaticOp,
-             ConvertQCOMeasureOp, ConvertQCOResetOp, ConvertQCOGPhaseOp,
-             ConvertQCOIdOp, ConvertQCOXOp, ConvertQCOYOp, ConvertQCOZOp,
-             ConvertQCOHOp, ConvertQCOSOp, ConvertQCOSdgOp, ConvertQCOTOp,
-             ConvertQCOTdgOp, ConvertQCOSXOp, ConvertQCOSXdgOp, ConvertQCORXOp,
-             ConvertQCORYOp, ConvertQCORZOp, ConvertQCOPOp, ConvertQCOROp,
-             ConvertQCOU2Op, ConvertQCOUOp, ConvertQCOSWAPOp, ConvertQCOiSWAPOp,
-             ConvertQCODCXOp, ConvertQCOECROp, ConvertQCORXXOp, ConvertQCORYYOp,
-             ConvertQCORZXOp, ConvertQCORZZOp, ConvertQCOXXPlusYYOp,
-             ConvertQCOXXMinusYYOp, ConvertQCOBarrierOp, ConvertQCOCtrlOp,
-             ConvertQCOInvOp, ConvertQCOYieldOp>(typeConverter, context);
+    patterns.add<
+        ConvertQCOAllocOp, ConvertQCODeallocOp, ConvertQCOStaticOp,
+        ConvertQCOMeasureOp, ConvertQCOResetOp,
+        ConvertQCOZeroTargetOneParameterToQC<qco::GPhaseOp, qc::GPhaseOp>,
+        ConvertQCOOneTargetZeroParameterToQC<qco::XOp, qc::XOp>,
+        ConvertQCOOneTargetZeroParameterToQC<qco::YOp, qc::YOp>,
+        ConvertQCOOneTargetZeroParameterToQC<qco::ZOp, qc::ZOp>,
+        ConvertQCOOneTargetZeroParameterToQC<qco::HOp, qc::HOp>,
+        ConvertQCOOneTargetZeroParameterToQC<qco::SOp, qc::SOp>,
+        ConvertQCOOneTargetZeroParameterToQC<qco::SdgOp, qc::SdgOp>,
+        ConvertQCOOneTargetZeroParameterToQC<qco::TOp, qc::TOp>,
+        ConvertQCOOneTargetZeroParameterToQC<qco::TdgOp, qc::TdgOp>,
+        ConvertQCOOneTargetZeroParameterToQC<qco::SXOp, qc::SXOp>,
+        ConvertQCOOneTargetZeroParameterToQC<qco::SXdgOp, qc::SXdgOp>,
+        ConvertQCOOneTargetOneParameterToQC<qco::RXOp, qc::RXOp>,
+        ConvertQCOOneTargetOneParameterToQC<qco::RYOp, qc::RYOp>,
+        ConvertQCOOneTargetOneParameterToQC<qco::RZOp, qc::RZOp>,
+        ConvertQCOOneTargetOneParameterToQC<qco::POp, qc::POp>,
+        ConvertQCOOneTargetTwoParameterToQC<qco::ROp, qc::ROp>,
+        ConvertQCOOneTargetTwoParameterToQC<qco::U2Op, qc::U2Op>,
+        ConvertQCOOneTargetThreeParameterToQC<qco::UOp, qc::UOp>,
+        ConvertQCOTwoTargetZeroParameterToQC<qco::SWAPOp, qc::SWAPOp>,
+        ConvertQCOTwoTargetZeroParameterToQC<qco::iSWAPOp, qc::iSWAPOp>,
+        ConvertQCOTwoTargetZeroParameterToQC<qco::DCXOp, qc::DCXOp>,
+        ConvertQCOTwoTargetZeroParameterToQC<qco::ECROp, qc::ECROp>,
+        ConvertQCOTwoTargetOneParameterToQC<qco::RXXOp, qc::RXXOp>,
+        ConvertQCOTwoTargetOneParameterToQC<qco::RYYOp, qc::RYYOp>,
+        ConvertQCOTwoTargetOneParameterToQC<qco::RZXOp, qc::RZXOp>,
+        ConvertQCOTwoTargetOneParameterToQC<qco::RZZOp, qc::RZZOp>,
+        ConvertQCOTwoTargetTwoParameterToQC<qco::XXPlusYYOp, qc::XXPlusYYOp>,
+        ConvertQCOTwoTargetTwoParameterToQC<qco::XXMinusYYOp, qc::XXMinusYYOp>,
+        ConvertQCOBarrierOp, ConvertQCOCtrlOp, ConvertQCOInvOp,
+        ConvertQCOYieldOp>(typeConverter, context);
 
     // Conversion of qco types in func.func signatures
     // Note: This currently has limitations with signature changes
