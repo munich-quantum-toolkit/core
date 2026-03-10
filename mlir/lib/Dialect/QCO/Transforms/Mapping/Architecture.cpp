@@ -8,7 +8,7 @@
  * Licensed under the MIT License
  */
 
-#include "mlir/Passes/Mapping/Architecture.h"
+#include "mlir/Dialect/QCO/Transforms/Mapping/Architecture.h"
 
 #include <llvm/Support/ErrorHandling.h>
 #include <mlir/Support/LLVM.h>
