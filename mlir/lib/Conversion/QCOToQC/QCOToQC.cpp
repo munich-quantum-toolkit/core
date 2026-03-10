@@ -257,7 +257,7 @@ struct ConvertQCOZeroTargetOneParameterToQC final
   using OpConversionPattern<QCOOpType>::OpConversionPattern;
 
   LogicalResult
-  matchAndRewrite(QCOOpType op, typename QCOOpType::Adaptor adaptor,
+  matchAndRewrite(QCOOpType op, typename QCOOpType::Adaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
     QCOpType::create(rewriter, op.getLoc(), op.getParameter(0));
     rewriter.eraseOp(op);
