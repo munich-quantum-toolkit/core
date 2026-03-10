@@ -16,6 +16,7 @@
 #include <llvm/ADT/SmallBitVector.h>
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/Support/Casting.h>
+#include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Arith/Utils/Utils.h>
 #include <mlir/Dialect/Tensor/IR/Tensor.h>
 #include <mlir/Dialect/Utils/StaticValueUtils.h>
@@ -29,6 +30,7 @@
 #include <mlir/IR/OperationSupport.h>
 #include <mlir/IR/PatternMatch.h>
 #include <mlir/IR/TypeUtilities.h>
+#include <mlir/IR/ValueRange.h>
 #include <mlir/Interfaces/ViewLikeInterface.h>
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/LogicalResult.h>
@@ -145,9 +147,15 @@ void ExtractSliceOp::build(OpBuilder& b, OperationState& result,
   SmallVector<Value> dynamicOffsets;
   SmallVector<Value> dynamicSizes;
   SmallVector<Value> dynamicStrides;
+
   dispatchIndexOpFoldResults(offsets, dynamicOffsets, staticOffsets);
   dispatchIndexOpFoldResults(sizes, dynamicSizes, staticSizes);
-  dispatchIndexOpFoldResults(strides, dynamicStrides, staticStrides);
+  if (strides.empty()) {
+    staticStrides.resize(sizes.size(), 1);
+  } else {
+    dispatchIndexOpFoldResults(strides, dynamicStrides, staticStrides);
+  }
+
   auto sourceRankedTensorType = llvm::cast<RankedTensorType>(source.getType());
   // Structuring implementation this way avoids duplication between builders.
   if (!resultType) {
@@ -168,7 +176,11 @@ void ExtractSliceOp::build(OpBuilder& b, OperationState& result,
                            ArrayRef<OpFoldResult> strides,
                            ArrayRef<NamedAttribute> attrs) {
   build(b, result, resultType, cast<RankedTensorType>(source.getType()), source,
-        offsets, sizes, strides, attrs);
+        offsets, sizes,
+        strides.empty()
+            ? SmallVector<OpFoldResult>(sizes.size(), b.getIndexAttr(1))
+            : strides,
+        attrs);
 }
 
 /// Build an ExtractSliceOp with mixed static and dynamic entries and inferred
@@ -179,7 +191,11 @@ void ExtractSliceOp::build(OpBuilder& b, OperationState& result, Value source,
                            ArrayRef<OpFoldResult> strides,
                            ArrayRef<NamedAttribute> attrs) {
   build(b, result, RankedTensorType(), cast<RankedTensorType>(source.getType()),
-        source, offsets, sizes, strides, attrs);
+        source, offsets, sizes,
+        strides.empty()
+            ? SmallVector<OpFoldResult>(sizes.size(), b.getIndexAttr(1))
+            : strides,
+        attrs);
 }
 
 /// Build an ExtractSliceOp with mixed static and dynamic entries packed into
@@ -203,25 +219,47 @@ void ExtractSliceOp::build(OpBuilder& b, OperationState& result,
       llvm::map_range(offsets, [](Value v) -> OpFoldResult { return v; }));
   SmallVector<OpFoldResult> sizeValues = llvm::to_vector<4>(
       llvm::map_range(sizes, [](Value v) -> OpFoldResult { return v; }));
-  SmallVector<OpFoldResult> strideValues = llvm::to_vector<4>(
-      llvm::map_range(strides, [](Value v) -> OpFoldResult { return v; }));
+  SmallVector<OpFoldResult> strideValues =
+      strides.empty()
+          ? SmallVector<OpFoldResult>(sizes.size(), b.getIndexAttr(1))
+          : llvm::to_vector(llvm::map_range(
+                strides, [](Value v) -> OpFoldResult { return v; }));
   build(b, result, resultType, outSourceType, source, offsetValues, sizeValues,
         strideValues, attrs);
 }
+
 void ExtractSliceOp::build(OpBuilder& b, OperationState& result,
                            RankedTensorType resultType, Value source,
                            ValueRange offsets, ValueRange sizes,
                            ValueRange strides, ArrayRef<NamedAttribute> attrs) {
+
+  SmallVector<Value, 4> defaultStrides;
+
+  if (strides.empty()) {
+    auto one = b.create<arith::ConstantIndexOp>(result.location, 1);
+    defaultStrides.assign(sizes.size(), one);
+  }
+
   build(b, result, resultType, cast<RankedTensorType>(source.getType()), source,
-        offsets, sizes, strides, attrs);
+        offsets, sizes, strides.empty() ? ValueRange(defaultStrides) : strides,
+        attrs);
 }
 
 /// Build an ExtractSliceOp with dynamic entries and inferred result type.
 void ExtractSliceOp::build(OpBuilder& b, OperationState& result, Value source,
                            ValueRange offsets, ValueRange sizes,
                            ValueRange strides, ArrayRef<NamedAttribute> attrs) {
+
+  SmallVector<Value, 4> defaultStrides;
+
+  if (strides.empty()) {
+    auto one = b.create<arith::ConstantIndexOp>(result.location, 1);
+    defaultStrides.assign(sizes.size(), one);
+  }
+
   build(b, result, RankedTensorType(), cast<RankedTensorType>(source.getType()),
-        source, offsets, sizes, strides, attrs);
+        source, offsets, sizes,
+        strides.empty() ? ValueRange(defaultStrides) : strides, attrs);
 }
 
 /// Build an ExtractSliceOp with mixed static and dynamic sizes, inferred

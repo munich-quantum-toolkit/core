@@ -56,7 +56,12 @@ void InsertSliceOp::build(OpBuilder& b, OperationState& result, Value source,
   SmallVector<Value> dynamicStrides;
   dispatchIndexOpFoldResults(offsets, dynamicOffsets, staticOffsets);
   dispatchIndexOpFoldResults(sizes, dynamicSizes, staticSizes);
-  dispatchIndexOpFoldResults(strides, dynamicStrides, staticStrides);
+  if (strides.empty()) {
+    staticStrides.resize(sizes.size(), 1);
+  } else {
+    dispatchIndexOpFoldResults(strides, dynamicStrides, staticStrides);
+  }
+
   result.addAttributes(attrs);
   build(b, result, dest.getType(), source, dest, dynamicOffsets, dynamicSizes,
         dynamicStrides, b.getDenseI64ArrayAttr(staticOffsets),
@@ -81,8 +86,11 @@ void InsertSliceOp::build(OpBuilder& b, OperationState& result, Value source,
       llvm::map_range(offsets, [](Value v) -> OpFoldResult { return v; }));
   SmallVector<OpFoldResult> sizeValues = llvm::to_vector<4>(
       llvm::map_range(sizes, [](Value v) -> OpFoldResult { return v; }));
-  SmallVector<OpFoldResult> strideValues = llvm::to_vector<4>(
-      llvm::map_range(strides, [](Value v) -> OpFoldResult { return v; }));
+  SmallVector<OpFoldResult> strideValues =
+      strides.empty()
+          ? SmallVector<OpFoldResult>(sizes.size(), b.getIndexAttr(1))
+          : llvm::to_vector(llvm::map_range(
+                strides, [](Value v) -> OpFoldResult { return v; }));
   build(b, result, source, dest, offsetValues, sizeValues, strideValues, attrs);
 }
 

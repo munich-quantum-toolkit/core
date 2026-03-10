@@ -2087,16 +2087,16 @@ void dynamicInsertTensor(QCOProgramBuilder& b) {
 
 void extractSliceTensor(QCOProgramBuilder& b) {
   auto qtensor = b.allocTensor(3);
-  b.extractSlice(qtensor, 0, 2, 1);
+  b.extractSlice(qtensor, 0, 2);
 }
 
 void insertSliceTensor(QCOProgramBuilder& b) {
   auto qtensor = b.allocTensor(3);
-  auto [slicedTensor, extractSliceOutTensor] = b.extractSlice(qtensor, 0, 2, 1);
+  auto [slicedTensor, extractSliceOutTensor] = b.extractSlice(qtensor, 0, 2);
   auto [q0, extractOutTensor] = b.extract(slicedTensor, 0);
   auto q1 = b.h(q0);
   auto insertOutTensor = b.insert(q1, extractOutTensor, 0);
-  b.insertSlice(insertOutTensor, extractSliceOutTensor, 0, 2, 1);
+  b.insertSlice(insertOutTensor, extractSliceOutTensor, 0, 2);
 }
 
 void dynamicInsertSliceTensor(QCOProgramBuilder& b) {
@@ -2120,16 +2120,16 @@ void extractInsertTensor(QCOProgramBuilder& b) {
 
 void extractSliceInsertSliceTensor(QCOProgramBuilder& b) {
   auto qtensor = b.allocTensor(3);
-  auto [slicedTensor, extractSliceOutTensor] = b.extractSlice(qtensor, 0, 2, 1);
-  b.insertSlice(slicedTensor, extractSliceOutTensor, 0, 2, 1);
+  auto [slicedTensor, extractSliceOutTensor] = b.extractSlice(qtensor, 0, 2);
+  b.insertSlice(slicedTensor, extractSliceOutTensor, 0, 2);
 }
 
 void extractSliceExtractInsertInsertSliceTensor(QCOProgramBuilder& b) {
   auto qtensor = b.allocTensor(3);
-  auto [slicedTensor, extractSliceOutTensor] = b.extractSlice(qtensor, 0, 2, 1);
+  auto [slicedTensor, extractSliceOutTensor] = b.extractSlice(qtensor, 0, 2);
   auto [q0, extractOutTensor] = b.extract(slicedTensor, 0);
   auto insertOutTensor = b.insert(q0, extractOutTensor, 0);
-  b.insertSlice(insertOutTensor, extractSliceOutTensor, 0, 2, 1);
+  b.insertSlice(insertOutTensor, extractSliceOutTensor, 0, 2);
 }
 
 } // namespace mlir::qco

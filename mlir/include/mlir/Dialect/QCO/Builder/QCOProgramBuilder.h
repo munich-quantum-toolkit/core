@@ -274,12 +274,12 @@ public:
    * @param tensor Source tensor
    * @param offset The offset from where the slice is extracted
    * @param size The size of the extracted slice
-   * @param strides The strides from where the values are extracted
+   * @param strides The strides from where the values are extracted (default: 1)
    * @return Pair of (extractedSlice, outTensor)
    *
    * @par Example:
    * ```c++
-   * auto [extractedSlice, outTensor] = builder.extractSlice(tensor, 0, 2, 1);
+   * auto [extractedSlice, outTensor] = builder.extractSlice(tensor, 0, 2);
    * ```
    * ```mlir
    * %extractedSlice, %outTensor = qtensor.extract_slice %tensor[%c0][%c2][%c1]
@@ -289,7 +289,7 @@ public:
   std::pair<Value, Value>
   extractSlice(Value tensor, const std::variant<int64_t, Value>& offset,
                const std::variant<int64_t, Value>& sizes,
-               const std::variant<int64_t, Value>& strides);
+               const std::variant<int64_t, Value>& strides = 1);
 
   /**
    * @brief Insert a qubit into a tensor
@@ -315,12 +315,12 @@ public:
    * @param destTensor The tensor where the slice is inserted
    * @param offset The offset into where the slice is inserted
    * @param size The size of the inserted slice
-   * @param strides The strides of where the qubits are inserted
+   * @param strides The strides of where the qubits are inserted (default: 1)
    * @return The output tensor
    *
    * @par Example:
    * ```c++
-   * auto outTensor = builder.insertSlice(slicedTensor, tensor, 0, 2, 1);
+   * auto outTensor = builder.insertSlice(slicedTensor, tensor, 0, 2);
    * ```
    * ```mlir
    * %outTensor = qtensor.insert_slice %slicedTensor into %tensor[%c0][%c2][%c1]
@@ -330,7 +330,7 @@ public:
   Value insertSlice(Value sourceTensor, Value destTensor,
                     const std::variant<int64_t, Value>& offset,
                     const std::variant<int64_t, Value>& sizes,
-                    const std::variant<int64_t, Value>& strides);
+                    const std::variant<int64_t, Value>& strides = 1);
 
   /**
    * @brief Explicitly deallocate a tensor

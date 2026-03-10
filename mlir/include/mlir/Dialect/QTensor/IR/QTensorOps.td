@@ -190,7 +190,9 @@ def QTensor_ExtractSliceOp : QTensorOpWithOffsetSizesAndStrides<"extract_slice",
     let description = [{
         The `qtensor.extract_slice` operation is the modified version of the standard `tensor.extract_slice`
         operation of the tensor dialect. It reads a ranked tensor and returns the extracted tensor specified by the
-        offsets, sizes and strides arguments. In addition, it also returns the updated input tensor as result.
+        offsets, sizes and strides arguments. If the strides arguments are omitted, they are set to default values of 1.
+        In addition, it also returns the updated input tensor as result.
+
 
         The extract_slice operation supports the following arguments:
 
@@ -237,29 +239,29 @@ def QTensor_ExtractSliceOp : QTensorOpWithOffsetSizesAndStrides<"extract_slice",
         // Build an ExtractSliceOp with mixed static and dynamic entries and
         // inferred result type.
         OpBuilder<(ins "Value":$source, "ArrayRef<OpFoldResult>":$offsets,
-          "ArrayRef<OpFoldResult>":$sizes, "ArrayRef<OpFoldResult>":$strides,
+          "ArrayRef<OpFoldResult>":$sizes, CArg<"ArrayRef<OpFoldResult>", "{}">:$strides,
           CArg<"ArrayRef<NamedAttribute>", "{}">:$attrs)>,
         // Build an ExtractSliceOp with mixed static and dynamic entries and custom
         // result type. If the type passed is nullptr, it is inferred.
         OpBuilder<(ins "RankedTensorType":$resultType, "RankedTensorType":$outSourceType, "Value":$source,
           "ArrayRef<OpFoldResult>":$offsets, "ArrayRef<OpFoldResult>":$sizes,
-          "ArrayRef<OpFoldResult>":$strides,
+          CArg<"ArrayRef<OpFoldResult>", "{}">:$strides,
           CArg<"ArrayRef<NamedAttribute>", "{}">:$attrs)>,
         OpBuilder<(ins "RankedTensorType":$resultType, "Value":$source,
           "ArrayRef<OpFoldResult>":$offsets, "ArrayRef<OpFoldResult>":$sizes,
-          "ArrayRef<OpFoldResult>":$strides,
+          CArg<"ArrayRef<OpFoldResult>", "{}">:$strides,
           CArg<"ArrayRef<NamedAttribute>", "{}">:$attrs)>,
         // Build an ExtractSliceOp with dynamic entries and custom result type. If
         // the type passed is nullptr, it is inferred.
         OpBuilder<(ins "Value":$source, "ValueRange":$offsets,
-          "ValueRange":$sizes, "ValueRange":$strides,
+          "ValueRange":$sizes, CArg<"ValueRange", "{}">:$strides,
           CArg<"ArrayRef<NamedAttribute>", "{}">:$attrs)>,
         // Build an ExtractSliceOp with dynamic entries and inferred result type.
         OpBuilder<(ins "RankedTensorType":$resultType, "RankedTensorType":$outSourceType, "Value":$source,
-          "ValueRange":$offsets, "ValueRange":$sizes, "ValueRange":$strides,
+          "ValueRange":$offsets, "ValueRange":$sizes, CArg<"ValueRange", "{}">:$strides,
           CArg<"ArrayRef<NamedAttribute>", "{}">:$attrs)>,
         OpBuilder<(ins "RankedTensorType":$resultType, "Value":$source,
-          "ValueRange":$offsets, "ValueRange":$sizes, "ValueRange":$strides,
+          "ValueRange":$offsets, "ValueRange":$sizes, CArg<"ValueRange", "{}">:$strides,
           CArg<"ArrayRef<NamedAttribute>", "{}">:$attrs)>,
         // Build an ExtractSliceOp with mixed static and dynamic entries packed in
         // a Range vector.
@@ -269,7 +271,7 @@ def QTensor_ExtractSliceOp : QTensorOpWithOffsetSizesAndStrides<"extract_slice",
         // result type, offsets set to 0 and strides set to 1.
         OpBuilder<(ins "RankedTensorType":$resultType, "Value":$source,
           "ArrayRef<OpFoldResult>":$sizes,
-          CArg<"ArrayRef<NamedAttribute>", "{}">:$attrs)>,
+          CArg<"ArrayRef<NamedAttribute>", "{}">:$attrs)>
       ];
 
     let extraClassDeclaration = extraBaseClassDeclaration # [{
@@ -388,7 +390,7 @@ def QTensor_InsertSliceOp : QTensorOpWithOffsetSizesAndStrides<"insert_slice", [
     let description = [{
         The `qtensor.insert_slice` operation is a minimally adjusted version of the `tensor.insert_slice` operation
         of the tensor dialect. The operation inserts a tensor `source` into another tensor `dest` as specified by the
-        operation`s offset, sizes and strides arguments.
+        operation`s offset, sizes and strides arguments. If the strides arguments are omitted, they are set to default values of 1.
 
         The insert_slice operation supports the following arguments:
 
@@ -437,11 +439,11 @@ def QTensor_InsertSliceOp : QTensorOpWithOffsetSizesAndStrides<"insert_slice", [
         // result type.
         OpBuilder<(ins "Value":$source, "Value":$dest,
           "ArrayRef<OpFoldResult>":$offsets, "ArrayRef<OpFoldResult>":$sizes,
-          "ArrayRef<OpFoldResult>":$strides,
+          CArg<"ArrayRef<OpFoldResult>", "{}">:$strides,
           CArg<"ArrayRef<NamedAttribute>", "{}">:$attrs)>,
         // Build a InsertSliceOp with dynamic entries and inferred result type.
         OpBuilder<(ins "Value":$source, "Value":$dest,
-          "ValueRange":$offsets, "ValueRange":$sizes, "ValueRange":$strides,
+          "ValueRange":$offsets, "ValueRange":$sizes, CArg<"ValueRange", "{}">:$strides,
           CArg<"ArrayRef<NamedAttribute>", "{}">:$attrs)>,
         // Build an InsertSliceOp with mixed static and dynamic entries packed in
         // a Range vector and inferred result type.
