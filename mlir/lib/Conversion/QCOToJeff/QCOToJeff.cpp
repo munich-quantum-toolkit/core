@@ -436,7 +436,7 @@ struct ConvertQCOSXOpToJeff final : StatefulOpConversionPattern<qco::SXOp> {
   LogicalResult
   matchAndRewrite(qco::SXOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
-    auto& state = this->getState();
+    auto& state = getState();
 
     Value target;
     if (!state.inModifier()) {
@@ -563,7 +563,7 @@ struct ConvertQCOU2OpToJeff final : StatefulOpConversionPattern<qco::U2Op> {
   LogicalResult
   matchAndRewrite(qco::U2Op op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
-    auto& state = this->getState();
+    auto& state = getState();
 
     Value target;
     if (!state.inModifier()) {
@@ -614,7 +614,7 @@ struct ConvertQCOROpToJeff final : StatefulOpConversionPattern<qco::ROp> {
   LogicalResult
   matchAndRewrite(qco::ROp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
-    auto& state = this->getState();
+    auto& state = getState();
 
     Value target;
     if (!state.inModifier()) {
