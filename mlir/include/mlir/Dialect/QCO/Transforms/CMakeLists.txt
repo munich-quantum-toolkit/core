@@ -6,7 +6,7 @@
 #
 # Licensed under the MIT License
 
-add_subdirectory(Builder)
-add_subdirectory(IR)
-add_subdirectory(Transforms)
-add_subdirectory(Utils)
+set(LLVM_TARGET_DEFINITIONS Passes.td)
+mlir_tablegen(Passes.h.inc -gen-pass-decls -name QCO)
+add_public_tablegen_target(MLIRQCOTransformsIncGen)
+add_mlir_doc(Passes MLIRQCOTransforms Passes/ -gen-pass-doc)

@@ -6,7 +6,8 @@
 #
 # Licensed under the MIT License
 
-add_subdirectory(Builder)
-add_subdirectory(IR)
-add_subdirectory(Transforms)
-add_subdirectory(Utils)
+set(LLVM_TARGET_DEFINITIONS JeffToQCO.td)
+mlir_tablegen(JeffToQCO.h.inc -gen-pass-decls -name JeffToQCO)
+add_public_tablegen_target(JeffToQCOIncGen)
+
+add_mlir_doc(JeffToQCO MLIRJeffToQCO Conversions/ -gen-pass-doc)

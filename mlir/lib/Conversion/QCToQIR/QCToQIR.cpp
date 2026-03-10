@@ -45,7 +45,6 @@
 #include <mlir/Support/LogicalResult.h>
 #include <mlir/Transforms/DialectConversion.h>
 
-#include <cassert>
 #include <cstddef>
 #include <cstdint>
 #include <iterator>
