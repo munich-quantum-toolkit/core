@@ -9,3 +9,9 @@ tocdepth: 3
 ```{include} Dialects/MLIRQCOInterfaces.md
 :heading-offset: 1
 ```
+
+## Passes
+
+```{include} Passes/MLIRMQTOptPasses.md
+
+```
