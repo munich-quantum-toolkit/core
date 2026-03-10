@@ -10,7 +10,7 @@ This tutorial attempts to lower the barrier to contribute to our open-source qua
 
 If you haven't already, make sure to visit the [installation](https://mqt.readthedocs.io/projects/core/en/latest/installation.html) page which describes how to setup the project (including MLIR) correctly.
 
-## "Hello World"
+## Understanding And Writing Quantum IR
 
 The fundamental computational unit in quantum computing is the _qubit_. Consequently, at some point a quantum computation needs to allocate (and subsequently deallocate) qubits.
 
@@ -56,7 +56,11 @@ Moreover, some operations contain others. For example, the `module` operation co
 
 In the snippet above, the `module` operation has one region with exactly one block. Inside this block is the `func.func` op, which again has one region with a single block. Finally, this inner block contains the quantum operations.
 
-As of now, our quantum program doesn't compute anything. Let's change that.
+<hr style="color: #eeeeee;">
+
+As of now, our quantum program doesn't compute anything. Let's change that!
+
+The following snippet allocates a second qubit and constructs the first Bell state by applying a Hadamard and subsequent controlled-X gate. Finally, both qubits are measured and deallocated. The datatype that represents the measurement outcome is `i1` - the MLIR-equivalent of a boolean.
 
 ```mlir
 /// file: bell.mlir
@@ -81,9 +85,9 @@ module {
 }
 ```
 
-In the updated code snippet, we allocate a second qubit and construct the first Bell state by applying a Hadamard gate and a controlled NOT gate. Finally, we measure and deallocate both qubits.
+## Optimizing Quantum IR
 
-Sometimes (e.g. when writing unit tests) it can be useful to programmatically build programs. For that purpose, the `QCProgramBuilder` exists. The C++ snippet that follows constructs the above quantum computation programmatically.
+<!-- Sometimes (e.g. when writing unit tests) it can be useful to programmatically build programs. For that purpose, the `QCProgramBuilder` exists. The C++ snippet that follows constructs the above quantum computation programmatically.
 
 ```cpp
 #include "mlir/Dialect/QC/Builder/QCProgramBuilder.h"
@@ -107,8 +111,4 @@ void bell(MLIRContext* context) {
     // Automatically adds the module and entry point function.
     [[maybe_unused]] auto moduleOp = builder.finalize();
 }
-```
-
-## The Optimization Dialect
-
-## Advanced Concepts
+``` -->
