@@ -8,7 +8,7 @@
 
 file(GLOB CONVERSION_SOURCES *.cpp)
 
-add_mlir_library(
+add_mlir_conversion_library(
   QCOToJeff
   ${CONVERSION_SOURCES}
   DEPENDS
