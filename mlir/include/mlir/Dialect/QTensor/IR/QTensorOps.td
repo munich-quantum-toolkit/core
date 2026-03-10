@@ -32,11 +32,9 @@ def QTensorDialect : Dialect {
   let summary = "The QTensor dialect for tensors with linear typing.";
 
   let description = [{
-  The Qtensor dialect is an adjusted variant of the standard tensor dialect
-  of MLIR that supports linear typing for tensor types. The extract operations
-  of this dialect are modified so that they also return the updated input tensor
-  as return value. In addition, the alloc/dealloc operations are added to the dialect
-  to support the bulk allocation and deallocation of tensors with linear types.
+      The Qtensor dialect is an adjusted variant of the standard tensor dialect of MLIR that supports linear typing for tensor types.
+      The extract operations of this dialect are modified so that they also return the updated tensor.
+      In addition, alloc/dealloc operations are added to the dialect to support the bulk allocation and deallocation of tensors with linear types.
   }];
 
   let hasCanonicalizer = 1;
@@ -104,9 +102,9 @@ def QTensor_AllocOp : QTensorOp<"alloc", [
 def QTensor_DeallocOp : QTensorOp<"dealloc", [MemoryEffects<[MemFree]>]> {
     let summary = "Deallocate a tensor";
     let description = [{
-    This operation deallocates the tensor and the values it holds, releasing its resources.
+        This operation deallocates the tensor and the values it holds, releasing its resources.
 
-    Example:
+        Example:
         ```mlir
         qtensor.dealloc %tensor : <3x!qco.qubit>
         ```
@@ -128,7 +126,7 @@ def QTensor_FromElementsOp : QTensorOp<"from_elements", [
   ]> {
     let summary = "tensor from elements operation";
     let description = [{
-        The `qtensor.from_elements`is a wrapper operation for the `tensor.from_elements` operation
+        The `qtensor.from_elements` is a wrapper operation for the `tensor.from_elements` operation
         of the tensor dialect. This operation creates a tensor using the operands as its values.
         During the canonicalization this operation is converted into a `tensor.from_elements` operation.
 
@@ -358,13 +356,13 @@ def QTensor_InsertOp : QTensorOp<"insert", [
     let description = [{
         The `qtensor.insert` operation is a wrapper operation for the `tensor.insert` operation of the tensor dialect.
         This operation inserts a scalar into a ranked tensor as specified by the operation`s indices.
-        During the canonicalization this  operation is converted into a `tensor.insert` operation.
+        During the canonicalization, this operation is converted into a `tensor.insert` operation.
 
         Example:
 
-          ```mlir
-          %newTensor = qtensor.insert %q0 into %tensor[%c0] : tensor<3x!qco.qubit>
-          ```
+        ```mlir
+        %newTensor = qtensor.insert %q0 into %tensor[%c0] : tensor<3x!qco.qubit>
+        ```
     }];
 
     let arguments = (ins AnyType:$scalar,
@@ -411,9 +409,9 @@ def QTensor_InsertSliceOp : QTensorOpWithOffsetSizesAndStrides<"insert_slice", [
           a dynamic value.
 
           Example:
-        ```mlir
-        %outTensor = qtensor.insert_slice %slicedTensor into %tensor[%c0][%c2][%c1]
-        : tensor<2x!qco.qubit> into tensor<3x!qco.qubit>
+          ```mlir
+          %outTensor = qtensor.insert_slice %slicedTensor into %tensor[%c0][%c2][%c1]
+          : tensor<2x!qco.qubit> into tensor<3x!qco.qubit>
         ```
     }];
 

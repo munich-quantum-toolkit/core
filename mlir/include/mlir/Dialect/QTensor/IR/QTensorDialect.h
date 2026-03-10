@@ -50,5 +50,3 @@ foldIdentityOffsetSizeAndStrideOpInterface(OffsetSizeAndStrideOpInterface op,
 //===----------------------------------------------------------------------===//
 // QTensor Dialect Helpers
 //===----------------------------------------------------------------------===//
-
-namespace mlir::qtensor {} // namespace mlir::qtensor
