@@ -56,6 +56,8 @@ Moreover, some operations contain others. For example, the `module` operation co
 
 In the snippet above, the `module` operation has one region with exactly one block. Inside this block is the `func.func` op, which again has one region with a single block. Finally, this inner block contains the quantum operations.
 
+TODO: What's up with the func.return, better visualization (connect with IR above)
+
 <hr style="color: #eeeeee;">
 
 As of now, our quantum program doesn't compute anything. Let's change that!
