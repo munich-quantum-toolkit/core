@@ -15,8 +15,8 @@
 #include "mlir/Dialect/QC/IR/QCInterfaces.h"
 #include "mlir/Dialect/QC/IR/QCOps.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
-#include "mlir/Passes/Mapping/Architecture.h"
-#include "mlir/Passes/Passes.h"
+#include "mlir/Dialect/QCO/Transforms/Mapping/Architecture.h"
+#include "mlir/Dialect/QCO/Transforms/Passes.h"
 
 #include <gtest/gtest.h>
 #include <llvm/ADT/STLExtras.h>

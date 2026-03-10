@@ -11,9 +11,9 @@
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QCO/IR/QCOInterfaces.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
+#include "mlir/Dialect/QCO/Transforms/Mapping/Architecture.h"
+#include "mlir/Dialect/QCO/Transforms/Passes.h"
 #include "mlir/Dialect/QCO/Utils/WireIterator.h"
-#include "mlir/Passes/Mapping/Architecture.h"
-#include "mlir/Passes/Passes.h"
 
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/SmallVector.h>
@@ -49,7 +49,7 @@
 namespace mlir::qco {
 
 #define GEN_PASS_DEF_MAPPINGPASS
-#include "mlir/Passes/Passes.h.inc"
+#include "mlir/Dialect/QCO/Transforms/Passes.h.inc"
 
 struct MappingPass : impl::MappingPassBase<MappingPass> {
 private:
