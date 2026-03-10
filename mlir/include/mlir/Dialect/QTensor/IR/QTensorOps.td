@@ -484,4 +484,4 @@ def QTensor_InsertSliceOp : QTensorOpWithOffsetSizesAndStrides<"insert_slice", [
     let hasVerifier = 1;
 }
 
-#endif // TENSOR_OPS
+#endif // QTENSOROPS
