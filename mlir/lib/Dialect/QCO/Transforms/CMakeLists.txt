@@ -18,7 +18,7 @@ add_mlir_library(
   PRIVATE
   ${dialect_libs}
   DEPENDS
-  QcoPassesIncGen)
+  MLIRQCOTransformsIncGen)
 
 # collect header files
 file(GLOB_RECURSE PASSES_HEADERS_SOURCE
