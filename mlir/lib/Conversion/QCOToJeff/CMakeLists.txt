@@ -9,7 +9,7 @@
 file(GLOB CONVERSION_SOURCES *.cpp)
 
 add_mlir_conversion_library(
-  QCOToJeff
+  MLIRQCOToJeff
   ${CONVERSION_SOURCES}
   DEPENDS
   QCOToJeffIncGen
@@ -20,13 +20,13 @@ add_mlir_conversion_library(
   MLIRTransforms
   DISABLE_INSTALL)
 
-target_include_directories(QCOToJeff PRIVATE ${jeff-mlir_SOURCE_DIR}/include
-                                             ${jeff-mlir_BINARY_DIR}/include)
+target_include_directories(MLIRQCOToJeff PRIVATE ${jeff-mlir_SOURCE_DIR}/include
+                                                 ${jeff-mlir_BINARY_DIR}/include)
 
-if(TARGET QCOToJeff)
-  target_compile_definitions(QCOToJeff PRIVATE MQT_CORE_VERSION="${MQT_CORE_VERSION}")
+if(TARGET MLIRQCOToJeff)
+  target_compile_definitions(MLIRQCOToJeff PRIVATE MQT_CORE_VERSION="${MQT_CORE_VERSION}")
 endif()
 
-if(TARGET obj.QCOToJeff)
-  target_compile_definitions(obj.QCOToJeff PRIVATE MQT_CORE_VERSION="${MQT_CORE_VERSION}")
+if(TARGET obj.MLIRQCOToJeff)
+  target_compile_definitions(obj.MLIRQCOToJeff PRIVATE MQT_CORE_VERSION="${MQT_CORE_VERSION}")
 endif()

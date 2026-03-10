@@ -9,7 +9,7 @@
 file(GLOB CONVERSION_SOURCES *.cpp)
 
 add_mlir_conversion_library(
-  QCToQIR
+  MLIRQCToQIR
   ${CONVERSION_SOURCES}
   DEPENDS
   QCToQIRIncGen
