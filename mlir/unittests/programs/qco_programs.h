@@ -594,6 +594,9 @@ void canonicalizeUToRx(QCOProgramBuilder& b);
 /// Creates a circuit with a U gate that can be canonicalized to an RY gate.
 void canonicalizeUToRy(QCOProgramBuilder& b);
 
+/// Creates a circuit with a U gate that can be canonicalized to a U2 gate.
+void canonicalizeUToU2(QCOProgramBuilder& b);
+
 // --- SWAPOp --------------------------------------------------------------- //
 
 /// Creates a circuit with just a SWAP gate.

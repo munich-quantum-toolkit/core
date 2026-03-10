@@ -33,6 +33,16 @@ if(BUILD_MQT_CORE_MLIR)
       CACHE INTERNAL "Disable building Eigen tests")
   FetchContent_Declare(Eigen URL ${Eigen_URL} FIND_PACKAGE_ARGS ${Eigen_VERSION})
   list(APPEND FETCH_PACKAGES Eigen)
+
+  # Fetch jeff-mlir
+  set(BUILD_JEFF_MLIR_TRANSLATION
+      OFF
+      CACHE BOOL "Disable building the translation submodule of jeff-mlir")
+  FetchContent_Declare(
+    jeff-mlir
+    GIT_REPOSITORY https://github.com/PennyLaneAI/jeff-mlir.git
+    GIT_TAG 7960f4e83e9bbc48c6d6bf203ebe5250945d9de3)
+  list(APPEND FETCH_PACKAGES jeff-mlir)
 endif()
 
 set(JSON_VERSION
