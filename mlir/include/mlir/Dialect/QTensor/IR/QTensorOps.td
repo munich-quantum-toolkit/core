@@ -106,7 +106,7 @@ def QTensor_DeallocOp : QTensorOp<"dealloc", [MemoryEffects<[MemFree]>]> {
 
         Example:
         ```mlir
-        qtensor.dealloc %tensor : <3x!qco.qubit>
+        qtensor.dealloc %tensor : tensor<3x!qco.qubit>
         ```
     }];
 
@@ -210,8 +210,7 @@ def QTensor_ExtractSliceOp : QTensorOpWithOffsetSizesAndStrides<"extract_slice",
 
         Example:
         ```mlir
-        %extractedSlice, %outSourcetensor = qtensor.extract_slice %sourceTensor[%c0][%c2][%c1] :
-        : tensor<3x!qco.qubit> to tensor<2x!qco.qubit>
+        %extractedSlice, %outSourceTensor = qtensor.extract_slice %sourceTensor[%c0][%c2][%c1] : tensor<3x!qco.qubit> to tensor<2x!qco.qubit>
         ```
     }];
 
@@ -402,16 +401,15 @@ def QTensor_InsertSliceOp : QTensorOpWithOffsetSizesAndStrides<"insert_slice", [
           * strides: tensor-rank number of strides that specify subsampling in each
                     dimension.
 
-          The representation based on offsets, sizes and strides support a
-          partially-static specification via attributes specified through the
-          `static_offsets`, `static_sizes` and `static_strides` arguments. A special
-          sentinel value ShapedType::kDynamic encodes that the corresponding entry has
-          a dynamic value.
+        The representation based on offsets, sizes and strides support a
+        partially-static specification via attributes specified through the
+        `static_offsets`, `static_sizes` and `static_strides` arguments. A special
+        sentinel value ShapedType::kDynamic encodes that the corresponding entry has
+        a dynamic value.
 
-          Example:
-          ```mlir
-          %outTensor = qtensor.insert_slice %slicedTensor into %tensor[%c0][%c2][%c1]
-          : tensor<2x!qco.qubit> into tensor<3x!qco.qubit>
+        Example:
+        ```mlir
+        %outTensor = qtensor.insert_slice %slicedTensor into %tensor[%c0][%c2][%c1] : tensor<2x!qco.qubit> into tensor<3x!qco.qubit>
         ```
     }];
 
