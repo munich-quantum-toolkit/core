@@ -8,6 +8,8 @@
 
 add_mlir_library(
   MLIRSupportMQT
+  IRVerification.cpp
+  Passes.cpp
   PrettyPrinting.cpp
   ADDITIONAL_HEADER_DIRS
   ${MQT_MLIR_SOURCE_INCLUDE_DIR}/mlir/Support
@@ -15,7 +17,16 @@ add_mlir_library(
   PUBLIC
   MLIRSupport
   MLIRIR
+  MLIRPass
+  MLIRTransforms
+  MLIRControlFlowInterfaces
+  MLIRTransformUtils
+  MLIRLLVMDialect
+  MLIRFuncDialect
+  MLIRArithDialect
   DISABLE_INSTALL)
+
+mqt_mlir_target_use_project_options(MLIRSupportMQT)
 
 # add library alias
 add_library(MQT::MLIRSupport ALIAS MLIRSupportMQT)

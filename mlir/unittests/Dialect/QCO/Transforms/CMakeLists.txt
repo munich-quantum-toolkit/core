@@ -6,16 +6,5 @@
 #
 # Licensed under the MIT License
 
-add_executable(mqt-core-mlir-dialect-qco-transforms-test test_qco_quaternion_merge.cpp)
-
-target_link_libraries(
-  mqt-core-mlir-dialect-qco-transforms-test
-  PRIVATE GTest::gtest_main
-          MLIRQCOProgramBuilder
-          MLIRQCOTransforms
-          MLIRIR
-          MLIRPass
-          MLIRSupport
-          LLVMSupport)
-
-gtest_discover_tests(mqt-core-mlir-dialect-qco-transforms-test)
+add_subdirectory(Mapping)
+add_subdirectory(Optimizations)

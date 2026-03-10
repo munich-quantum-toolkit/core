@@ -11,16 +11,17 @@
 #include "ir/operations/CompoundOperation.hpp"
 #include "ir/operations/Operation.hpp"
 
+#include <nanobind/nanobind.h>
+#include <nanobind/stl/string.h>     // NOLINT(misc-include-cleaner)
+#include <nanobind/stl/unique_ptr.h> // NOLINT(misc-include-cleaner)
+#include <nanobind/stl/vector.h>     // NOLINT(misc-include-cleaner)
+
 #include <algorithm>
 #include <cassert>
 #include <cstddef>
 #include <cstdint>
 #include <functional>
 #include <memory>
-#include <nanobind/nanobind.h>
-#include <nanobind/stl/string.h>     // NOLINT(misc-include-cleaner)
-#include <nanobind/stl/unique_ptr.h> // NOLINT(misc-include-cleaner)
-#include <nanobind/stl/vector.h>     // NOLINT(misc-include-cleaner)
 #include <sstream>
 #include <stdexcept>
 #include <utility>

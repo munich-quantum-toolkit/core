@@ -22,8 +22,9 @@ add_mlir_library(
   QCToQIR
   MLIRQCOTransforms
   MQT::MLIRSupport
-  MQT::ProjectOptions
   DISABLE_INSTALL)
+
+mqt_mlir_target_use_project_options(MQTCompilerPipeline)
 
 # collect header files
 file(GLOB_RECURSE COMPILER_HEADERS_SOURCE "${MQT_MLIR_SOURCE_INCLUDE_DIR}/mlir/Compiler/*.h")

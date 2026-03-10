@@ -14,6 +14,7 @@ include "mlir/IR/BuiltinTypeInterfaces.td"
 include "mlir/IR/DialectBase.td"
 include "mlir/IR/EnumAttr.td"
 include "mlir/IR/OpBase.td"
+include "mlir/Interfaces/ControlFlowInterfaces.td"
 include "mlir/Interfaces/InferTypeOpInterface.td"
 include "mlir/Interfaces/SideEffectInterfaces.td"
 
@@ -1019,21 +1020,21 @@ def BarrierOp : QCOOp<"barrier", traits = [UnitaryOpInterface]> {
     let assemblyFormat = "$qubits_in attr-dict `:` type($qubits_in) `->` type($qubits_out)";
 
     let extraClassDeclaration = [{
-        size_t getNumQubits();
-        size_t getNumTargets();
-        static size_t getNumControls();
-        Value getInputQubit(size_t i);
-        OperandRange getInputQubits();
-        Value getOutputQubit(size_t i);
-        ResultRange getOutputQubits();
+        size_t getNumQubits() { return getNumTargets(); }
+        size_t getNumTargets() { return getQubitsIn().size(); }
+        static size_t getNumControls() { return 0; }
+        Value getInputQubit(size_t i) { return getInputTarget(i); }
+        OperandRange getInputQubits() { return getQubitsIn(); }
+        Value getOutputQubit(size_t i) { return getOutputTarget(i); }
+        ResultRange getOutputQubits() { return getQubitsOut(); }
         Value getInputTarget(size_t i);
         Value getOutputTarget(size_t i);
-        static Value getInputControl(size_t i);
-        static Value getOutputControl(size_t i);
+        static Value getInputControl(size_t i) { llvm::reportFatalUsageError("BarrierOp cannot be controlled"); }
+        static Value getOutputControl(size_t i) { llvm::reportFatalUsageError("BarrierOp cannot be controlled"); }
         Value getInputForOutput(Value output);
         Value getOutputForInput(Value input);
-        static size_t getNumParams();
-        static Value getParameter(size_t i);
+        static size_t getNumParams() { return 0; }
+        static Value getParameter(size_t i) { llvm::reportFatalUsageError("BarrierOp has no parameters"); }
         [[nodiscard]] static StringRef getBaseSymbol() { return "barrier"; }
     }];
 
@@ -1048,7 +1049,7 @@ def BarrierOp : QCOOp<"barrier", traits = [UnitaryOpInterface]> {
 // Modifiers
 //===----------------------------------------------------------------------===//
 
-def YieldOp : QCOOp<"yield", traits = [Terminator]> {
+def YieldOp : QCOOp<"yield", traits = [Terminator, ReturnLike]> {
     let summary = "Yield from a modifier region";
     let description = [{
         Terminates a modifier region, yielding the transformed target qubits back to the enclosing modifier operation.
@@ -1111,21 +1112,21 @@ def CtrlOp : QCOOp<"ctrl", traits =
 
     let extraClassDeclaration = [{
         UnitaryOpInterface getBodyUnitary();
-        size_t getNumQubits();
-        size_t getNumTargets();
-        size_t getNumControls();
+        size_t getNumQubits() { return getNumControls() + getNumTargets(); }
+        size_t getNumTargets() { return getTargetsIn().size(); }
+        size_t getNumControls() { return getControlsIn().size(); }
         Value getInputQubit(size_t i);
-        OperandRange getInputQubits();
+        OperandRange getInputQubits() { return getOperands(); }
         Value getOutputQubit(size_t i);
-        ResultRange getOutputQubits();
+        ResultRange getOutputQubits() { return getResults(); }
         Value getInputTarget(size_t i);
         Value getOutputTarget(size_t i);
         Value getInputControl(size_t i);
         Value getOutputControl(size_t i);
         Value getInputForOutput(Value output);
         Value getOutputForInput(Value input);
-        size_t getNumParams();
-        Value getParameter(size_t i);
+        size_t getNumParams() { return getBodyUnitary().getNumParams(); }
+        Value getParameter(size_t i) { return getBodyUnitary().getParameter(i); }
         [[nodiscard]] static StringRef getBaseSymbol() { return "ctrl"; }
         [[nodiscard]] std::optional<Eigen::MatrixXcd> getUnitaryMatrix();
     }];
@@ -1134,7 +1135,6 @@ def CtrlOp : QCOOp<"ctrl", traits =
         OpBuilder<(ins "ValueRange":$controls, "ValueRange":$targets), [{
            build($_builder, $_state, controls.getTypes(), targets.getTypes(), controls, targets);
         }]>,
-        OpBuilder<(ins "ValueRange":$controls, "ValueRange":$targets, "UnitaryOpInterface":$bodyUnitary)>,
         OpBuilder<(ins "ValueRange":$controls, "ValueRange":$targets, "llvm::function_ref<llvm::SmallVector<Value>(ValueRange)>":$bodyBuilder)>
     ];
 
@@ -1142,11 +1142,9 @@ def CtrlOp : QCOOp<"ctrl", traits =
     let hasVerifier = 1;
 }
 
-def InvOp : QCOOp<"inv", traits =
-            [
+def InvOp : QCOOp<"inv",
+            traits = [
                 UnitaryOpInterface,
-                SameOperandsAndResultType,
-                SameOperandsAndResultShape,
                 SingleBlockImplicitTerminator<"::mlir::qco::YieldOp">,
                 RecursiveMemoryEffects
             ]> {
@@ -1178,21 +1176,21 @@ def InvOp : QCOOp<"inv", traits =
 
     let extraClassDeclaration = [{
         UnitaryOpInterface getBodyUnitary();
-        size_t getNumQubits();
-        size_t getNumTargets();
-        static size_t getNumControls();
+        size_t getNumQubits() { return getNumTargets(); }
+        size_t getNumTargets() { return getQubitsIn().size(); }
+        static size_t getNumControls() { return 0; }
         Value getInputQubit(size_t i);
-        OperandRange getInputQubits();
+        OperandRange getInputQubits() { return getOperands(); }
         Value getOutputQubit(size_t i);
-        ResultRange getOutputQubits();
-        Value getInputTarget(size_t i);
-        Value getOutputTarget(size_t i);
-        static Value getInputControl(size_t i);
-        static Value getOutputControl(size_t i);
+        ResultRange getOutputQubits() { return getResults(); }
+        Value getInputTarget(size_t i) { return getInputQubit(i); }
+        Value getOutputTarget(size_t i) { return getOutputQubit(i); }
+        static Value getInputControl(size_t i) { llvm::reportFatalUsageError("Operation does not have controls"); }
+        static Value getOutputControl(size_t i) { llvm::reportFatalUsageError("Operation does not have controls"); }
         Value getInputForOutput(Value output);
         Value getOutputForInput(Value input);
-        size_t getNumParams();
-        Value getParameter(size_t i);
+        size_t getNumParams() { return getBodyUnitary().getNumParams(); }
+        Value getParameter(size_t i) { return getBodyUnitary().getParameter(i); }
         [[nodiscard]] static StringRef getBaseSymbol() { return "inv"; }
         [[nodiscard]] std::optional<Eigen::MatrixXcd> getUnitaryMatrix();
     }];
@@ -1201,9 +1199,87 @@ def InvOp : QCOOp<"inv", traits =
         OpBuilder<(ins "ValueRange":$qubits), [{
            build($_builder, $_state, qubits.getTypes(), qubits);
         }]>,
-        OpBuilder<(ins "ValueRange":$qubits, "UnitaryOpInterface":$bodyUnitary)>,
         OpBuilder<(ins "ValueRange":$qubits, "llvm::function_ref<llvm::SmallVector<Value>(ValueRange)>":$bodyBuilder)>
     ];
+
+    let hasCanonicalizer = 1;
+    let hasVerifier = 1;
+}
+
+//===----------------------------------------------------------------------===//
+// SCF operations
+//===----------------------------------------------------------------------===//
+
+def IfOp : QCOOp<"if", traits =
+            [
+                DeclareOpInterfaceMethods<RegionBranchOpInterface, [
+                "getNumRegionInvocations", "getRegionInvocationBounds",
+                "getEntrySuccessorRegions"]>,
+                SingleBlock,
+                SingleBlockImplicitTerminator<"::mlir::qco::YieldOp">,
+                RecursiveMemoryEffects
+            ]> {
+
+    let summary = "If-then-else operation for linear (qubit) types";
+    let description = [{
+        The `qco.if` operation is an if-then-else construct similar to the standard scf.if operation.
+        In addition to the condition, the operation takes a variadic number of qubits as inputs that are
+        required in the bodies of both branches. These qubits are passed down to the individual regions
+        as block arguments. The number of results and the type of the results must be equivalent to the
+        number and types of the input qubits.
+
+        Example:
+        ```mlir
+        %result = qco.if %condition qubits(%arg0 = %q0) {
+            %q1 = qco.h %arg0 : !qco.qubit -> !qco.qubit
+            qco.yield %q1
+         } else qubits(%arg0 = %q0) {
+            qco.yield %arg0
+        } : {i1, !qco.qubit} -> {!qco.qubit}
+        ```
+    }];
+
+    let arguments = (ins I1:$condition,  Variadic<QubitType>:$qubits);
+    let results = (outs Variadic<QubitType>:$results);
+    let regions = (region SizedRegion<1>:$thenRegion,
+                          SizedRegion<1>:$elseRegion);
+
+    let assemblyFormat = [{
+        $condition
+         custom<IfOpAliasing>($thenRegion, $elseRegion, $qubits)
+         attr-dict `:`
+        `{` type($condition) `,` type($qubits) `}`
+        `->`
+        `{` type($results) `}`
+    }];
+
+    let builders = [
+        OpBuilder<(ins "Value":$condition, "ValueRange":$qubits), [{
+           build($_builder, $_state, qubits.getTypes(), condition, qubits);
+        }]>,
+        OpBuilder<(ins "Value":$condition, "ValueRange":$qubits, "llvm::function_ref<llvm::SmallVector<Value>(ValueRange)>":$thenBuilder,
+        CArg<"llvm::function_ref<llvm::SmallVector<Value>(ValueRange)>","nullptr">:$elseBuilder)>
+    ];
+
+    let extraClassDeclaration = [{
+        Block *thenBlock() {
+           return &getThenRegion().back();
+        }
+        YieldOp thenYield();
+        Block* elseBlock() {
+           return &getElseRegion().back();
+        }
+        YieldOp elseYield();
+    }];
+
+    let extraClassDefinition = [{
+        YieldOp $cppClass::thenYield() {
+           return cast<YieldOp>(&thenBlock()->back());
+        }
+        YieldOp $cppClass::elseYield() {
+           return cast<YieldOp>(&elseBlock()->back());
+        }
+    }];
 
     let hasCanonicalizer = 1;
     let hasVerifier = 1;

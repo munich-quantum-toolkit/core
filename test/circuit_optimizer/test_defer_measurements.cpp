@@ -16,6 +16,7 @@
 #include "ir/operations/StandardOperation.hpp"
 
 #include <gtest/gtest.h>
+
 #include <iostream>
 #include <memory>
 #include <stdexcept>

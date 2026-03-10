@@ -13,10 +13,12 @@
 #include "dd/Package.hpp"
 #include "dd/Simulation.hpp"
 #include "dd/StateGeneration.hpp"
+#include "ir/QuantumComputation.hpp"
+
+#include <gtest/gtest.h>
 
 #include <cstddef>
 #include <cstdint>
-#include <gtest/gtest.h>
 #include <iostream>
 #include <memory>
 #include <sstream>

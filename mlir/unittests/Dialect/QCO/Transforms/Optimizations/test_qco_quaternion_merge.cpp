@@ -10,11 +10,9 @@
 
 #include "mlir/Dialect/QCO/Builder/QCOProgramBuilder.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
+#include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QCO/Transforms/Passes.h"
 
-#include <cassert>
-#include <cmath>
-#include <cstdint>
 #include <gtest/gtest.h>
 #include <llvm/ADT/StringRef.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
@@ -28,6 +26,10 @@
 #include <mlir/Pass/PassManager.h>
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/WalkResult.h>
+
+#include <cassert>
+#include <cmath>
+#include <cstdint>
 #include <numbers>
 #include <optional>
 #include <tuple>

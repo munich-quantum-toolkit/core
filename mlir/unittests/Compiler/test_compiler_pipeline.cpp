@@ -8,758 +8,123 @@
  * Licensed under the MIT License
  */
 
+#include "TestCaseUtils.h"
 #include "ir/QuantumComputation.hpp"
 #include "mlir/Compiler/CompilerPipeline.h"
 #include "mlir/Dialect/QC/Builder/QCProgramBuilder.h"
 #include "mlir/Dialect/QC/IR/QCDialect.h"
 #include "mlir/Dialect/QC/Translation/TranslateQuantumComputationToQC.h"
-#include "mlir/Dialect/QCO/Builder/QCOProgramBuilder.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QIR/Builder/QIRProgramBuilder.h"
-#include "mlir/Support/PrettyPrinting.h"
+#include "mlir/Support/IRVerification.h"
+#include "mlir/Support/Passes.h"
+#include "qc_programs.h"
+#include "qir_programs.h"
+#include "quantum_computation_programs.h"
 
-#include <cstddef>
-#include <functional>
 #include <gtest/gtest.h>
-#include <llvm/ADT/DenseMap.h>
-#include <llvm/ADT/DenseSet.h>
-#include <llvm/ADT/Hashing.h>
-#include <llvm/ADT/STLExtras.h>
-#include <llvm/ADT/SmallVector.h>
-#include <llvm/ADT/StringRef.h>
-#include <llvm/Support/Casting.h>
-#include <llvm/Support/raw_ostream.h>
-#include <memory>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/ControlFlow/IR/ControlFlow.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/LLVMIR/LLVMDialect.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
-#include <mlir/IR/Block.h>
 #include <mlir/IR/BuiltinOps.h>
+#include <mlir/IR/DialectRegistry.h>
 #include <mlir/IR/MLIRContext.h>
-#include <mlir/IR/OpDefinition.h>
-#include <mlir/IR/Operation.h>
-#include <mlir/IR/OperationSupport.h>
 #include <mlir/IR/OwningOpRef.h>
-#include <mlir/IR/Region.h>
-#include <mlir/IR/SymbolTable.h>
-#include <mlir/Interfaces/SideEffectInterfaces.h>
+#include <mlir/IR/Verifier.h>
 #include <mlir/Parser/Parser.h>
-#include <mlir/Pass/PassManager.h>
-#include <mlir/Support/LLVM.h>
-#include <mlir/Support/LogicalResult.h>
-#include <mlir/Transforms/Passes.h>
-#include <numbers>
-#include <sstream>
+
+#include <cstdlib>
+#include <iosfwd>
+#include <memory>
 #include <string>
-#include <tuple>
-#include <unordered_map>
-#include <utility>
-#include <vector>
 
-namespace {
+namespace mqt::test::compiler {
 
-using namespace mlir;
+using QCProgramBuilderFn = NamedBuilder<mlir::qc::QCProgramBuilder>;
+using QIRProgramBuilderFn = NamedBuilder<mlir::qir::QIRProgramBuilder>;
+using QuantumComputationBuilderFn = NamedBuilder<::qc::QuantumComputation>;
 
-//===----------------------------------------------------------------------===//
-// Stage Verification Utility
-//===----------------------------------------------------------------------===//
+struct CompilerPipelineTestCase {
+  std::string name;
+  QuantumComputationBuilderFn quantumComputationBuilder;
+  QCProgramBuilderFn qcProgramBuilder;
+  QCProgramBuilderFn qcReferenceBuilder;
+  QIRProgramBuilderFn qirReferenceBuilder;
+  bool startFromQuantumComputation = true;
+  bool convertToQIR = true;
 
-/// Compute a structural hash for an operation (excluding SSA value identities).
-/// This hash is based on operation name, types, and attributes only.
-struct OperationStructuralHash {
-  size_t operator()(Operation* op) const {
-    size_t hash = llvm::hash_value(op->getName().getStringRef());
-
-    // Hash result types
-    for (auto type : op->getResultTypes()) {
-      hash = llvm::hash_combine(hash, type.getAsOpaquePointer());
-    }
-
-    // Hash operand types (not values)
-    for (auto operand : op->getOperands()) {
-      hash = llvm::hash_combine(hash, operand.getType().getAsOpaquePointer());
-    }
-
-    // Hash attributes
-    // for (const auto& attr : op->getAttrDictionary()) {
-    //   hash = llvm::hash_combine(hash, attr.getName().str());
-    //   hash = llvm::hash_combine(hash, attr.getValue().getAsOpaquePointer());
-    // }
-
-    return hash;
-  }
-};
-
-/// Check if two operations are structurally equivalent (excluding SSA value
-/// identities).
-struct OperationStructuralEquality {
-  bool operator()(Operation* lhs, Operation* rhs) const {
-    // Check operation name
-    if (lhs->getName() != rhs->getName()) {
-      return false;
-    }
-
-    // Check result types
-    if (lhs->getResultTypes() != rhs->getResultTypes()) {
-      return false;
-    }
-
-    // Check operand types (not values)
-    auto lhsOperandTypes = lhs->getOperandTypes();
-    auto rhsOperandTypes = rhs->getOperandTypes();
-    return llvm::equal(lhsOperandTypes, rhsOperandTypes);
-
-    // Note: Attributes are intentionally not checked here to allow relaxed
-    // comparison. Attributes like function names, parameter names, etc. may
-    // differ while operations are still structurally equivalent.
-  }
-};
-
-/// Map to track value equivalence between two modules.
-using ValueEquivalenceMap = llvm::DenseMap<Value, Value>;
-
-} // namespace
-
-/// Compare two operations for structural equivalence.
-/// Updates valueMap to track corresponding SSA values.
-static bool areOperationsEquivalent(Operation* lhs, Operation* rhs,
-                                    ValueEquivalenceMap& valueMap) {
-  // Check operation name
-  if (lhs->getName() != rhs->getName()) {
-    return false;
-  }
-
-  // Check arith::ConstantOp
-  if (auto lhsConst = llvm::dyn_cast<arith::ConstantOp>(lhs)) {
-    auto rhsConst = llvm::dyn_cast<arith::ConstantOp>(rhs);
-    if (!rhsConst) {
-      return false;
-    }
-    // NOLINTNEXTLINE(cppcoreguidelines-slicing)
-    if (lhsConst.getValue() != rhsConst.getValue()) {
-      return false;
-    }
-  }
-
-  // Check LLVM::ConstantOp
-  if (auto lhsConst = llvm::dyn_cast<LLVM::ConstantOp>(lhs)) {
-    auto rhsConst = llvm::dyn_cast<LLVM::ConstantOp>(rhs);
-    if (!rhsConst) {
-      return false;
-    }
-    if (lhsConst.getValue() != rhsConst.getValue()) {
-      return false;
-    }
-  }
-
-  // Check LLVM::CallOp
-  if (auto lhsCall = llvm::dyn_cast<LLVM::CallOp>(lhs)) {
-    auto rhsCall = llvm::dyn_cast<LLVM::CallOp>(rhs);
-    if (!rhsCall) {
-      return false;
-    }
-    if (lhsCall.getCallee() != rhsCall.getCallee()) {
-      return false;
-    }
-  }
-
-  // Check number of operands and results
-  if (lhs->getNumOperands() != rhs->getNumOperands() ||
-      lhs->getNumResults() != rhs->getNumResults() ||
-      lhs->getNumRegions() != rhs->getNumRegions()) {
-    return false;
-  }
-
-  // Note: Attributes are intentionally not checked to allow relaxed comparison
-
-  // Check result types
-  if (lhs->getResultTypes() != rhs->getResultTypes()) {
-    return false;
-  }
-
-  // Check operands according to value mapping
-  for (auto [lhsOperand, rhsOperand] :
-       llvm::zip(lhs->getOperands(), rhs->getOperands())) {
-    if (auto it = valueMap.find(lhsOperand); it != valueMap.end()) {
-      // Value already mapped, must match
-      if (it->second != rhsOperand) {
-        return false;
-      }
+  friend std::ostream& operator<<(std::ostream& os,
+                                  const CompilerPipelineTestCase& info) {
+    os << "CompilerPipeline{" << info.name << ", original=";
+    if (info.startFromQuantumComputation) {
+      os << displayName(info.quantumComputationBuilder.name);
     } else {
-      // Establish new mapping
-      valueMap[lhsOperand] = rhsOperand;
+      os << displayName(info.qcProgramBuilder.name);
     }
-  }
-
-  // Update value mapping for results
-  for (auto [lhsResult, rhsResult] :
-       llvm::zip(lhs->getResults(), rhs->getResults())) {
-    valueMap[lhsResult] = rhsResult;
-  }
-
-  return true;
-}
-
-/// Forward declaration for mutual recursion.
-static bool areBlocksEquivalent(Block& lhs, Block& rhs,
-                                ValueEquivalenceMap& valueMap);
-
-/// Compare two regions for structural equivalence.
-static bool areRegionsEquivalent(Region& lhs, Region& rhs,
-                                 ValueEquivalenceMap& valueMap) {
-  if (lhs.getBlocks().size() != rhs.getBlocks().size()) {
-    return false;
-  }
-
-  for (auto [lhsBlock, rhsBlock] : llvm::zip(lhs, rhs)) {
-    if (!areBlocksEquivalent(lhsBlock, rhsBlock, valueMap)) {
-      return false;
+    os << ", qcReference=" << displayName(info.qcReferenceBuilder.name);
+    if (info.convertToQIR) {
+      os << ", qirReference=" << displayName(info.qirReferenceBuilder.name);
     }
+    return os << "}";
   }
-
-  return true;
-}
-
-/// Check if an operation has memory effects or control flow side effects
-/// that would prevent reordering.
-static bool hasOrderingConstraints(Operation* op) {
-  // Terminators must maintain their position
-  if (op->hasTrait<OpTrait::IsTerminator>()) {
-    return true;
-  }
-
-  // Symbol-defining operations (like function declarations) can be reordered
-  if (op->hasTrait<OpTrait::SymbolTable>() ||
-      llvm::isa<LLVM::LLVMFuncOp, func::FuncOp>(op)) {
-    return false;
-  }
-
-  // Check for memory effects that enforce ordering
-  if (auto memInterface = llvm::dyn_cast<MemoryEffectOpInterface>(op)) {
-    llvm::SmallVector<MemoryEffects::EffectInstance> effects;
-    memInterface.getEffects(effects);
-
-    bool hasNonAllocFreeEffects = false;
-    for (const auto& effect : effects) {
-      // Allow operations with no effects or pure allocation/free effects
-      if (!llvm::isa<MemoryEffects::Allocate, MemoryEffects::Free>(
-              effect.getEffect())) {
-        hasNonAllocFreeEffects = true;
-        break;
-      }
-    }
-
-    if (hasNonAllocFreeEffects) {
-      return true;
-    }
-  }
-
-  return false;
-}
-
-/// Build a dependence graph for operations.
-/// Returns a map from each operation to the set of operations it depends on.
-static llvm::DenseMap<Operation*, llvm::DenseSet<Operation*>>
-buildDependenceGraph(ArrayRef<Operation*> ops) {
-  llvm::DenseMap<Operation*, llvm::DenseSet<Operation*>> dependsOn;
-  llvm::DenseMap<Value, Operation*> valueProducers;
-
-  // Build value-to-producer map and dependence relationships
-  for (Operation* op : ops) {
-    dependsOn[op] = llvm::DenseSet<Operation*>();
-
-    // This operation depends on the producers of its operands
-    for (const auto operand : op->getOperands()) {
-      if (auto it = valueProducers.find(operand); it != valueProducers.end()) {
-        dependsOn[op].insert(it->second);
-      }
-    }
-
-    // Register this operation as the producer of its results
-    for (auto result : op->getResults()) {
-      valueProducers[result] = op;
-    }
-  }
-
-  return dependsOn;
-}
-
-/// Partition operations into groups that can be compared as multisets.
-/// Operations in the same group are independent and can be reordered.
-static std::vector<llvm::SmallVector<Operation*>>
-partitionIndependentGroups(ArrayRef<Operation*> ops) {
-  std::vector<llvm::SmallVector<Operation*>> groups;
-  if (ops.empty()) {
-    return groups;
-  }
-
-  auto dependsOn = buildDependenceGraph(ops);
-  const llvm::DenseSet<Operation*> processed;
-  llvm::SmallVector<Operation*> currentGroup;
-
-  for (auto* op : ops) {
-    bool dependsOnCurrent = false;
-
-    // Check if this operation depends on any operation in the current group
-    for (const auto* groupOp : currentGroup) {
-      if (dependsOn[op].contains(groupOp)) {
-        dependsOnCurrent = true;
-        break;
-      }
-    }
-
-    // Check if this operation has ordering constraints
-    const auto hasConstraints = hasOrderingConstraints(op);
-
-    // If it depends on current group or has ordering constraints,
-    // finalize the current group and start a new one
-    if (dependsOnCurrent || (hasConstraints && !currentGroup.empty())) {
-      if (!currentGroup.empty()) {
-        groups.push_back(std::move(currentGroup));
-        currentGroup = {};
-      }
-    }
-
-    currentGroup.push_back(op);
-
-    // If this operation has ordering constraints, finalize the group
-    if (hasConstraints) {
-      groups.push_back(std::move(currentGroup));
-      currentGroup = {};
-    }
-  }
-
-  // Add any remaining operations
-  if (!currentGroup.empty()) {
-    groups.push_back(std::move(currentGroup));
-  }
-
-  return groups;
-}
-
-/// Compare two groups of independent operations using multiset equivalence.
-static bool areIndependentGroupsEquivalent(ArrayRef<Operation*> lhsOps,
-                                           ArrayRef<Operation*> rhsOps) {
-  if (lhsOps.size() != rhsOps.size()) {
-    return false;
-  }
-
-  // Build frequency maps for both groups
-  std::unordered_map<Operation*, size_t, OperationStructuralHash,
-                     OperationStructuralEquality>
-      lhsFrequencyMap;
-  std::unordered_map<Operation*, size_t, OperationStructuralHash,
-                     OperationStructuralEquality>
-      rhsFrequencyMap;
-
-  for (auto* op : lhsOps) {
-    lhsFrequencyMap[op]++;
-  }
-
-  for (auto* op : rhsOps) {
-    rhsFrequencyMap[op]++;
-  }
-
-  // Check structural equivalence
-  if (lhsFrequencyMap.size() != rhsFrequencyMap.size()) {
-    return false;
-  }
-
-  // NOLINTNEXTLINE(bugprone-nondeterministic-pointer-iteration-order)
-  for (const auto& [lhsOp, lhsCount] : lhsFrequencyMap) {
-    auto it = rhsFrequencyMap.find(lhsOp);
-    if (it == rhsFrequencyMap.end() || it->second != lhsCount) {
-      return false;
-    }
-  }
-
-  return true;
-}
-
-/// Compare two blocks for structural equivalence, allowing permutations
-/// of independent operations.
-static bool areBlocksEquivalent(Block& lhs, Block& rhs,
-                                ValueEquivalenceMap& valueMap) {
-  // Check block arguments
-  if (lhs.getNumArguments() != rhs.getNumArguments()) {
-    return false;
-  }
-
-  for (auto [lhsArg, rhsArg] :
-       llvm::zip(lhs.getArguments(), rhs.getArguments())) {
-    if (lhsArg.getType() != rhsArg.getType()) {
-      return false;
-    }
-    valueMap[lhsArg] = rhsArg;
-  }
-
-  // Collect all operations
-  llvm::SmallVector<Operation*> lhsOps;
-  llvm::SmallVector<Operation*> rhsOps;
-
-  for (Operation& op : lhs) {
-    lhsOps.push_back(&op);
-  }
-
-  for (Operation& op : rhs) {
-    rhsOps.push_back(&op);
-  }
-
-  if (lhsOps.size() != rhsOps.size()) {
-    return false;
-  }
-
-  // Partition operations into independent groups
-  auto lhsGroups = partitionIndependentGroups(lhsOps);
-  auto rhsGroups = partitionIndependentGroups(rhsOps);
-
-  if (lhsGroups.size() != rhsGroups.size()) {
-    return false;
-  }
-
-  // Compare each group
-  for (size_t groupIdx = 0; groupIdx < lhsGroups.size(); ++groupIdx) {
-    auto& lhsGroup = lhsGroups[groupIdx];
-    auto& rhsGroup = rhsGroups[groupIdx];
-
-    if (!areIndependentGroupsEquivalent(lhsGroup, rhsGroup)) {
-      return false;
-    }
-
-    // Update value mappings for operations in this group
-    // We need to match operations and update the value map
-    // Since they are structurally equivalent, we can match them
-    // by trying all permutations (for small groups) or use a greedy approach
-
-    // Use a simple greedy matching
-    llvm::DenseSet<Operation*> matchedRhs;
-    for (Operation* lhsOp : lhsGroup) {
-      bool matched = false;
-      for (Operation* rhsOp : rhsGroup) {
-        if (matchedRhs.contains(rhsOp)) {
-          continue;
-        }
-
-        ValueEquivalenceMap tempMap = valueMap;
-        if (areOperationsEquivalent(lhsOp, rhsOp, tempMap)) {
-          valueMap = std::move(tempMap);
-          matchedRhs.insert(rhsOp);
-          matched = true;
-
-          // Recursively compare regions
-          for (auto [lhsRegion, rhsRegion] :
-               llvm::zip(lhsOp->getRegions(), rhsOp->getRegions())) {
-            if (!areRegionsEquivalent(lhsRegion, rhsRegion, valueMap)) {
-              return false;
-            }
-          }
-          break;
-        }
-      }
-
-      if (!matched) {
-        return false;
-      }
-    }
-  }
-
-  return true;
-}
-
-/// Compare two MLIR modules for structural equivalence, allowing permutations
-/// of speculatable operations.
-static bool areModulesEquivalentWithPermutations(ModuleOp lhs, ModuleOp rhs) {
-  ValueEquivalenceMap valueMap;
-  return areRegionsEquivalent(lhs.getBodyRegion(), rhs.getBodyRegion(),
-                              valueMap);
-}
-
-/**
- * @brief Verify a stage matches expected module
- *
- * @param stageName Human-readable stage name for error messages
- * @param actualIR String IR from CompilationRecord
- * @param expectedModule Expected module to compare against
- * @return True if modules match, false otherwise with diagnostic output
- */
-[[nodiscard]] static testing::AssertionResult
-verify(const std::string& stageName, const std::string& actualIR,
-       ModuleOp expectedModule) {
-  // Parse the actual IR string into a ModuleOp
-  const auto actualModule =
-      parseSourceString<ModuleOp>(actualIR, expectedModule.getContext());
-  if (!actualModule) {
-    return testing::AssertionFailure()
-           << stageName << " failed to parse actual IR";
-  }
-
-  if (!areModulesEquivalentWithPermutations(*actualModule, expectedModule)) {
-    std::ostringstream msg;
-    msg << stageName << " IR does not match expected structure\n\n";
-
-    std::string expectedStr;
-    llvm::raw_string_ostream expectedStream(expectedStr);
-    expectedModule.print(expectedStream);
-    expectedStream.flush();
-
-    msg << "=== EXPECTED IR ===\n" << expectedStr << "\n\n";
-    msg << "=== ACTUAL IR ===\n" << actualIR << "\n";
-
-    return testing::AssertionFailure() << msg.str();
-  }
-
-  return testing::AssertionSuccess();
-}
-
-namespace {
-
-//===----------------------------------------------------------------------===//
-// Stage Expectation Builder
-//===----------------------------------------------------------------------===//
-
-/**
- * @brief Helper to build expected IR for multiple stages at once
- *
- * @details
- * Reduces boilerplate by allowing specification of which stages should
- * match which expected IR.
- */
-struct StageExpectations {
-  ModuleOp qcImport;
-  ModuleOp qcoConversion;
-  ModuleOp optimization;
-  ModuleOp qcConversion;
-  ModuleOp qirConversion;
 };
 
-//===----------------------------------------------------------------------===//
-// Base Test Fixture
-//===----------------------------------------------------------------------===//
-
-/**
- * @brief Base test fixture for end-to-end compiler pipeline tests
- *
- * @details
- * Provides a configured MLIR context with all necessary dialects loaded
- * and utility methods for creating quantum circuits and running the
- * compilation pipeline.
- */
-class CompilerPipelineTest : public testing::Test {
+class CompilerPipelineTest
+    : public testing::TestWithParam<CompilerPipelineTestCase> {
 protected:
-  std::unique_ptr<MLIRContext> context;
-  QuantumCompilerConfig config;
-  CompilationRecord record;
-
-  OwningOpRef<ModuleOp> emptyQC;
-  OwningOpRef<ModuleOp> emptyQCO;
-  OwningOpRef<ModuleOp> emptyQIR;
+  std::unique_ptr<mlir::MLIRContext> context;
 
   void SetUp() override {
-    // Register all dialects needed for the full compilation pipeline
-    DialectRegistry registry;
-    registry.insert<mlir::qc::QCDialect, qco::QCODialect, arith::ArithDialect,
-                    cf::ControlFlowDialect, func::FuncDialect, scf::SCFDialect,
-                    LLVM::LLVMDialect>();
-
-    context = std::make_unique<MLIRContext>();
+    mlir::DialectRegistry registry;
+    registry.insert<mlir::qc::QCDialect, mlir::qco::QCODialect,
+                    mlir::arith::ArithDialect, mlir::cf::ControlFlowDialect,
+                    mlir::func::FuncDialect, mlir::scf::SCFDialect,
+                    mlir::LLVM::LLVMDialect>();
+    context = std::make_unique<mlir::MLIRContext>();
     context->appendDialectRegistry(registry);
     context->loadAllAvailableDialects();
+  }
 
-    // Enable QIR conversion and recording by default
-    config.convertToQIR = true;
+  [[nodiscard]] mlir::OwningOpRef<mlir::ModuleOp>
+  buildQCReference(const QCProgramBuilderFn builder) const {
+    auto module = mlir::qc::QCProgramBuilder::build(context.get(), builder.fn);
+    runCanonicalizationPasses(module.get());
+    return module;
+  }
+
+  [[nodiscard]] mlir::OwningOpRef<mlir::ModuleOp>
+  buildQIRReference(const QIRProgramBuilderFn builder) const {
+    auto module =
+        mlir::qir::QIRProgramBuilder::build(context.get(), builder.fn);
+    runCanonicalizationPasses(module.get());
+    return module;
+  }
+
+  [[nodiscard]] mlir::OwningOpRef<mlir::ModuleOp>
+  parseRecordedModule(const std::string& ir) const {
+    return mlir::parseSourceString<mlir::ModuleOp>(ir, context.get());
+  }
+
+  static void runPipeline(const mlir::ModuleOp module, const bool convertToQIR,
+                          mlir::CompilationRecord& record) {
+    mlir::QuantumCompilerConfig config;
+    config.convertToQIR = convertToQIR;
     config.recordIntermediates = true;
-    config.printIRAfterAllStages =
-        true; /// TODO: Change back after everything is running
+    config.printIRAfterAllStages = true;
 
-    emptyQC = buildQCIR([](mlir::qc::QCProgramBuilder&) {});
-    emptyQCO = buildQCOIR([](qco::QCOProgramBuilder&) {});
-    emptyQIR = buildQIR([](qir::QIRProgramBuilder&) {});
+    mlir::QuantumCompilerPipeline pipeline(config);
+    ASSERT_TRUE(pipeline.runPipeline(module, &record).succeeded());
   }
 
-  //===--------------------------------------------------------------------===//
-  // Quantum Circuit Construction and Import
-  //===--------------------------------------------------------------------===//
-
-  /**
-   * @brief Pretty print quantum computation with ASCII art borders
-   *
-   * @param qc The quantum computation to print
-   */
-  static void
-  prettyPrintQuantumComputation(const ::qc::QuantumComputation& comp) {
-    llvm::errs() << "\n";
-    printBoxTop();
-
-    // Print header
-    printBoxLine("Initial Quantum Computation");
-
-    printBoxMiddle();
-
-    // Print internal representation
-    printBoxLine("Internal Representation:");
-
-    // Capture the internal representation
-    std::ostringstream internalRepr;
-    internalRepr << comp;
-    const std::string internalStr = internalRepr.str();
-
-    // Print with line wrapping
-    printBoxText(internalStr);
-
-    printBoxMiddle();
-
-    // Print OpenQASM3 representation
-    printBoxLine("OpenQASM3 Representation:");
-    printBoxLine("");
-
-    const auto qasmStr = comp.toQASM();
-
-    // Print with line wrapping
-    printBoxText(qasmStr);
-
-    printBoxBottom();
-    llvm::errs().flush();
-  }
-
-  /**
-   * @brief Import a QuantumComputation into QC dialect
-   */
-  [[nodiscard]] OwningOpRef<ModuleOp>
-  importQuantumCircuit(const ::qc::QuantumComputation& qc) const {
-    if (config.printIRAfterAllStages) {
-      prettyPrintQuantumComputation(qc);
-    }
-    return translateQuantumComputationToQC(context.get(), qc);
-  }
-
-  /**
-   * @brief Run the compiler pipeline with the current configuration
-   */
-  [[nodiscard]] LogicalResult runPipeline(const ModuleOp module) {
-    const QuantumCompilerPipeline pipeline(config);
-    return pipeline.runPipeline(module, &record);
-  }
-
-  //===--------------------------------------------------------------------===//
-  // Expected IR Builder Methods
-  //===--------------------------------------------------------------------===//
-
-  /**
-   * @brief Run canonicalization
-   */
-  static void runCanonicalizationPasses(ModuleOp module) {
-    PassManager pm(module.getContext());
-    pm.addPass(createCanonicalizerPass());
-    pm.addPass(createRemoveDeadValuesPass());
-    if (pm.run(module).failed()) {
-      llvm::errs() << "Failed to run canonicalization passes.\n";
-    }
-  }
-
-  /**
-   * @brief Build expected QC IR programmatically and run canonicalization
-   */
-  [[nodiscard]] OwningOpRef<ModuleOp> buildQCIR(
-      const std::function<void(mlir::qc::QCProgramBuilder&)>& buildFunc) const {
-    mlir::qc::QCProgramBuilder builder(context.get());
-    builder.initialize();
-    buildFunc(builder);
-    auto module = builder.finalize();
-    runCanonicalizationPasses(module.get());
-    return module;
-  }
-
-  /**
-   * @brief Build expected QCO IR programmatically and run canonicalization
-   */
-  [[nodiscard]] OwningOpRef<ModuleOp> buildQCOIR(
-      const std::function<void(qco::QCOProgramBuilder&)>& buildFunc) const {
-    qco::QCOProgramBuilder builder(context.get());
-    builder.initialize();
-    buildFunc(builder);
-    auto module = builder.finalize();
-    runCanonicalizationPasses(module.get());
-    return module;
-  }
-
-  /**
-   * @brief Build expected QIR programmatically and run canonicalization
-   */
-  [[nodiscard]] OwningOpRef<ModuleOp> buildQIR(
-      const std::function<void(qir::QIRProgramBuilder&)>& buildFunc) const {
-    qir::QIRProgramBuilder builder(context.get());
-    builder.initialize();
-    buildFunc(builder);
-    auto module = builder.finalize();
-    runCanonicalizationPasses(module.get());
-    return module;
-  }
-
-  //===--------------------------------------------------------------------===//
-  // Stage Verification Methods
-  //===--------------------------------------------------------------------===//
-
-  /**
-   * @brief Verify all stages match their expected IR
-   *
-   * @details
-   * Simplifies test writing by checking all stages with one call.
-   * Stages without expectations are skipped.
-   */
-  void verifyAllStages(const StageExpectations& expectations) const {
-    if (expectations.qcImport != nullptr) {
-      EXPECT_TRUE(
-          verify("QC Import", record.afterInitialCanon, expectations.qcImport));
-    }
-
-    if (expectations.qcoConversion != nullptr) {
-      EXPECT_TRUE(verify("QCO Conversion", record.afterQCOCanon,
-                         expectations.qcoConversion));
-    }
-
-    if (expectations.optimization != nullptr) {
-      EXPECT_TRUE(verify("Optimization", record.afterOptimizationCanon,
-                         expectations.optimization));
-    }
-
-    if (expectations.qcConversion != nullptr) {
-      EXPECT_TRUE(verify("QC Conversion", record.afterQCCanon,
-                         expectations.qcConversion));
-    }
-
-    if (expectations.qirConversion != nullptr) {
-      EXPECT_TRUE(verify("QIR Conversion", record.afterQIRCanon,
-                         expectations.qirConversion));
-    }
-  }
-
-  void TearDown() override {
-    // Verify all stages were recorded (basic sanity check)
-    EXPECT_FALSE(record.afterQCImport.empty())
-        << "QC import stage was not recorded";
-    EXPECT_FALSE(record.afterInitialCanon.empty())
-        << "Initial canonicalization stage was not recorded";
-    EXPECT_FALSE(record.afterQCOConversion.empty())
-        << "QCO conversion stage was not recorded";
-    EXPECT_FALSE(record.afterQCOCanon.empty())
-        << "QCO canonicalization stage was not recorded";
-    EXPECT_FALSE(record.afterOptimization.empty())
-        << "Optimization stage was not recorded";
-    EXPECT_FALSE(record.afterOptimizationCanon.empty())
-        << "Optimization canonicalization stage was not recorded";
-    EXPECT_FALSE(record.afterQCConversion.empty())
-        << "QC conversion stage was not recorded";
-    EXPECT_FALSE(record.afterQCCanon.empty())
-        << "QC canonicalization stage was not recorded";
-
-    if (config.convertToQIR) {
-      EXPECT_FALSE(record.afterQIRConversion.empty())
-          << "QIR conversion stage was not recorded";
-      EXPECT_FALSE(record.afterQIRCanon.empty())
-          << "QIR canonicalization stage was not recorded";
-    }
+  void expectEquivalent(const std::string& stage, const std::string& ir,
+                        const mlir::ModuleOp expected) const {
+    auto actual = parseRecordedModule(ir);
+    ASSERT_TRUE(actual) << stage << " failed to parse";
+    EXPECT_TRUE(mlir::verify(*actual).succeeded());
+    EXPECT_TRUE(mlir::verify(expected).succeeded());
+    EXPECT_TRUE(areModulesEquivalentWithPermutations(actual.get(), expected));
   }
 };
 
@@ -3915,3 +3280,462 @@ TEST_F(CompilerPipelineTest, RotationGateMergingPass) {
   EXPECT_NE(withMerging, withoutMerging);
 }
 } // namespace
+TEST_P(CompilerPipelineTest, EndToEndPipeline) {
+  const auto& testCase = GetParam();
+  const auto name = " (" + testCase.name + ")";
+  DeferredPrinter printer;
+
+  mlir::OwningOpRef<mlir::ModuleOp> module;
+  if (testCase.startFromQuantumComputation) {
+    ASSERT_TRUE(testCase.quantumComputationBuilder);
+    ::qc::QuantumComputation comp;
+    testCase.quantumComputationBuilder.fn(comp);
+
+    module = mlir::translateQuantumComputationToQC(context.get(), comp);
+    ASSERT_TRUE(module);
+    printer.record(module.get(), "QC Import" + name);
+  } else {
+    ASSERT_TRUE(testCase.qcProgramBuilder);
+    module = mlir::qc::QCProgramBuilder::build(context.get(),
+                                               testCase.qcProgramBuilder.fn);
+    ASSERT_TRUE(module);
+    printer.record(module.get(), "QC Input" + name);
+  }
+  EXPECT_TRUE(mlir::verify(*module).succeeded());
+
+  mlir::CompilationRecord record;
+  runPipeline(module.get(), testCase.convertToQIR, record);
+
+  ASSERT_TRUE(testCase.qcReferenceBuilder);
+  auto qcReference = buildQCReference(testCase.qcReferenceBuilder);
+  ASSERT_TRUE(qcReference);
+  printer.record(qcReference.get(), "Reference QC IR" + name);
+
+  expectEquivalent("Final QC", record.afterQCCanon, qcReference.get());
+  auto finalQC = parseRecordedModule(record.afterQCCanon);
+  ASSERT_TRUE(finalQC);
+  printer.record(finalQC.get(), "Final QC IR" + name);
+
+  if (testCase.convertToQIR) {
+    ASSERT_TRUE(testCase.qirReferenceBuilder);
+
+    auto qirReference = buildQIRReference(testCase.qirReferenceBuilder);
+    ASSERT_TRUE(qirReference);
+    printer.record(qirReference.get(), "Reference QIR IR" + name);
+
+    expectEquivalent("Final QIR", record.afterQIRCanon, qirReference.get());
+    auto finalQIR = parseRecordedModule(record.afterQIRCanon);
+    ASSERT_TRUE(finalQIR);
+    printer.record(finalQIR.get(), "Final QIR IR" + name);
+  }
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    QuantumComputationPipelineProgramsTest, CompilerPipelineTest,
+    testing::Values(
+        CompilerPipelineTestCase{
+            "StaticQubits", nullptr, MQT_NAMED_BUILDER(mlir::qc::staticQubits),
+            MQT_NAMED_BUILDER(mlir::qc::staticQubits),
+            MQT_NAMED_BUILDER(mlir::qir::staticQubits), false},
+        CompilerPipelineTestCase{"AllocQubit",
+                                 MQT_NAMED_BUILDER(qc::allocQubit), nullptr,
+                                 MQT_NAMED_BUILDER(mlir::qc::allocQubit),
+                                 MQT_NAMED_BUILDER(mlir::qir::allocQubit)},
+        CompilerPipelineTestCase{
+            "AllocQubitRegister", MQT_NAMED_BUILDER(qc::allocQubitRegister),
+            nullptr, MQT_NAMED_BUILDER(mlir::qc::allocQubitRegister),
+            MQT_NAMED_BUILDER(mlir::qir::allocQubitRegister)},
+        CompilerPipelineTestCase{
+            "AllocMultipleQubitRegisters",
+            MQT_NAMED_BUILDER(qc::allocMultipleQubitRegisters), nullptr,
+            MQT_NAMED_BUILDER(mlir::qc::allocMultipleQubitRegisters),
+            MQT_NAMED_BUILDER(mlir::qir::allocMultipleQubitRegisters)},
+        CompilerPipelineTestCase{
+            "AllocLargeRegister", MQT_NAMED_BUILDER(qc::allocLargeRegister),
+            nullptr, MQT_NAMED_BUILDER(mlir::qc::allocLargeRegister),
+            MQT_NAMED_BUILDER(mlir::qir::allocLargeRegister)},
+        CompilerPipelineTestCase{
+            "SingleMeasurementToSingleBit",
+            MQT_NAMED_BUILDER(qc::singleMeasurementToSingleBit), nullptr,
+            MQT_NAMED_BUILDER(mlir::qc::singleMeasurementToSingleBit),
+            MQT_NAMED_BUILDER(mlir::qir::singleMeasurementToSingleBit)},
+        CompilerPipelineTestCase{
+            "RepeatedMeasurementToSameBit",
+            MQT_NAMED_BUILDER(qc::repeatedMeasurementToSameBit), nullptr,
+            MQT_NAMED_BUILDER(mlir::qc::repeatedMeasurementToSameBit),
+            MQT_NAMED_BUILDER(mlir::qir::repeatedMeasurementToSameBit)},
+        CompilerPipelineTestCase{
+            "RepeatedMeasurementToDifferentBits",
+            MQT_NAMED_BUILDER(qc::repeatedMeasurementToDifferentBits), nullptr,
+            MQT_NAMED_BUILDER(mlir::qc::repeatedMeasurementToDifferentBits),
+            MQT_NAMED_BUILDER(mlir::qir::repeatedMeasurementToDifferentBits)},
+        CompilerPipelineTestCase{
+            "MultipleClassicalRegistersAndMeasurements",
+            MQT_NAMED_BUILDER(qc::multipleClassicalRegistersAndMeasurements),
+            nullptr,
+            MQT_NAMED_BUILDER(
+                mlir::qc::multipleClassicalRegistersAndMeasurements),
+            MQT_NAMED_BUILDER(
+                mlir::qir::multipleClassicalRegistersAndMeasurements)},
+        CompilerPipelineTestCase{
+            "ResetQubitAfterSingleOp",
+            MQT_NAMED_BUILDER(qc::resetQubitAfterSingleOp), nullptr,
+            MQT_NAMED_BUILDER(mlir::qc::resetQubitAfterSingleOp),
+            MQT_NAMED_BUILDER(mlir::qir::resetQubitAfterSingleOp)},
+        CompilerPipelineTestCase{
+            "ResetMultipleQubitsAfterSingleOp",
+            MQT_NAMED_BUILDER(qc::resetMultipleQubitsAfterSingleOp), nullptr,
+            MQT_NAMED_BUILDER(mlir::qc::resetMultipleQubitsAfterSingleOp),
+            MQT_NAMED_BUILDER(mlir::qir::resetMultipleQubitsAfterSingleOp)},
+        CompilerPipelineTestCase{
+            "RepeatedResetAfterSingleOp",
+            MQT_NAMED_BUILDER(qc::repeatedResetAfterSingleOp), nullptr,
+            MQT_NAMED_BUILDER(mlir::qc::resetQubitAfterSingleOp),
+            MQT_NAMED_BUILDER(mlir::qir::resetQubitAfterSingleOp)},
+        CompilerPipelineTestCase{"GlobalPhase",
+                                 MQT_NAMED_BUILDER(qc::globalPhase), nullptr,
+                                 MQT_NAMED_BUILDER(mlir::qc::globalPhase),
+                                 MQT_NAMED_BUILDER(mlir::qir::globalPhase)},
+        CompilerPipelineTestCase{"Identity", MQT_NAMED_BUILDER(qc::identity),
+                                 nullptr, MQT_NAMED_BUILDER(mlir::qc::emptyQC),
+                                 MQT_NAMED_BUILDER(mlir::qir::emptyQIR)},
+        CompilerPipelineTestCase{
+            "SingleControlledIdentity",
+            MQT_NAMED_BUILDER(qc::singleControlledIdentity), nullptr,
+            MQT_NAMED_BUILDER(mlir::qc::emptyQC),
+            MQT_NAMED_BUILDER(mlir::qir::emptyQIR)},
+        CompilerPipelineTestCase{
+            "MultipleControlledIdentity",
+            MQT_NAMED_BUILDER(qc::multipleControlledIdentity), nullptr,
+            MQT_NAMED_BUILDER(mlir::qc::emptyQC),
+            MQT_NAMED_BUILDER(mlir::qir::emptyQIR)},
+        CompilerPipelineTestCase{"X", MQT_NAMED_BUILDER(qc::x), nullptr,
+                                 MQT_NAMED_BUILDER(mlir::qc::x),
+                                 MQT_NAMED_BUILDER(mlir::qir::x)},
+        CompilerPipelineTestCase{
+            "SingleControlledX", MQT_NAMED_BUILDER(qc::singleControlledX),
+            nullptr, MQT_NAMED_BUILDER(mlir::qc::singleControlledX),
+            MQT_NAMED_BUILDER(mlir::qir::singleControlledX)},
+        CompilerPipelineTestCase{
+            "MultipleControlledX", MQT_NAMED_BUILDER(qc::multipleControlledX),
+            nullptr, MQT_NAMED_BUILDER(mlir::qc::multipleControlledX),
+            MQT_NAMED_BUILDER(mlir::qir::multipleControlledX)},
+        CompilerPipelineTestCase{"Y", MQT_NAMED_BUILDER(qc::y), nullptr,
+                                 MQT_NAMED_BUILDER(mlir::qc::y),
+                                 MQT_NAMED_BUILDER(mlir::qir::y)},
+        CompilerPipelineTestCase{
+            "SingleControlledY", MQT_NAMED_BUILDER(qc::singleControlledY),
+            nullptr, MQT_NAMED_BUILDER(mlir::qc::singleControlledY),
+            MQT_NAMED_BUILDER(mlir::qir::singleControlledY)},
+        CompilerPipelineTestCase{
+            "MultipleControlledY", MQT_NAMED_BUILDER(qc::multipleControlledY),
+            nullptr, MQT_NAMED_BUILDER(mlir::qc::multipleControlledY),
+            MQT_NAMED_BUILDER(mlir::qir::multipleControlledY)},
+        CompilerPipelineTestCase{"Z", MQT_NAMED_BUILDER(qc::z), nullptr,
+                                 MQT_NAMED_BUILDER(mlir::qc::z),
+                                 MQT_NAMED_BUILDER(mlir::qir::z)},
+        CompilerPipelineTestCase{
+            "SingleControlledZ", MQT_NAMED_BUILDER(qc::singleControlledZ),
+            nullptr, MQT_NAMED_BUILDER(mlir::qc::singleControlledZ),
+            MQT_NAMED_BUILDER(mlir::qir::singleControlledZ)},
+        CompilerPipelineTestCase{
+            "MultipleControlledZ", MQT_NAMED_BUILDER(qc::multipleControlledZ),
+            nullptr, MQT_NAMED_BUILDER(mlir::qc::multipleControlledZ),
+            MQT_NAMED_BUILDER(mlir::qir::multipleControlledZ)},
+        CompilerPipelineTestCase{"H", MQT_NAMED_BUILDER(qc::h), nullptr,
+                                 MQT_NAMED_BUILDER(mlir::qc::h),
+                                 MQT_NAMED_BUILDER(mlir::qir::h)},
+        CompilerPipelineTestCase{
+            "SingleControlledH", MQT_NAMED_BUILDER(qc::singleControlledH),
+            nullptr, MQT_NAMED_BUILDER(mlir::qc::singleControlledH),
+            MQT_NAMED_BUILDER(mlir::qir::singleControlledH)},
+        CompilerPipelineTestCase{
+            "MultipleControlledH", MQT_NAMED_BUILDER(qc::multipleControlledH),
+            nullptr, MQT_NAMED_BUILDER(mlir::qc::multipleControlledH),
+            MQT_NAMED_BUILDER(mlir::qir::multipleControlledH)},
+        CompilerPipelineTestCase{"S", MQT_NAMED_BUILDER(qc::s), nullptr,
+                                 MQT_NAMED_BUILDER(mlir::qc::s),
+                                 MQT_NAMED_BUILDER(mlir::qir::s)},
+        CompilerPipelineTestCase{
+            "SingleControlledS", MQT_NAMED_BUILDER(qc::singleControlledS),
+            nullptr, MQT_NAMED_BUILDER(mlir::qc::singleControlledS),
+            MQT_NAMED_BUILDER(mlir::qir::singleControlledS)},
+        CompilerPipelineTestCase{
+            "MultipleControlledS", MQT_NAMED_BUILDER(qc::multipleControlledS),
+            nullptr, MQT_NAMED_BUILDER(mlir::qc::multipleControlledS),
+            MQT_NAMED_BUILDER(mlir::qir::multipleControlledS)},
+        CompilerPipelineTestCase{"Sdg", MQT_NAMED_BUILDER(qc::sdg), nullptr,
+                                 MQT_NAMED_BUILDER(mlir::qc::sdg),
+                                 MQT_NAMED_BUILDER(mlir::qir::sdg)},
+        CompilerPipelineTestCase{
+            "SingleControlledSdg", MQT_NAMED_BUILDER(qc::singleControlledSdg),
+            nullptr, MQT_NAMED_BUILDER(mlir::qc::singleControlledSdg),
+            MQT_NAMED_BUILDER(mlir::qir::singleControlledSdg)},
+        CompilerPipelineTestCase{
+            "MultipleControlledSdg",
+            MQT_NAMED_BUILDER(qc::multipleControlledSdg), nullptr,
+            MQT_NAMED_BUILDER(mlir::qc::multipleControlledSdg),
+            MQT_NAMED_BUILDER(mlir::qir::multipleControlledSdg)},
+        CompilerPipelineTestCase{"T", MQT_NAMED_BUILDER(qc::t_), nullptr,
+                                 MQT_NAMED_BUILDER(mlir::qc::t_),
+                                 MQT_NAMED_BUILDER(mlir::qir::t_)},
+        CompilerPipelineTestCase{
+            "SingleControlledT", MQT_NAMED_BUILDER(qc::singleControlledT),
+            nullptr, MQT_NAMED_BUILDER(mlir::qc::singleControlledT),
+            MQT_NAMED_BUILDER(mlir::qir::singleControlledT)},
+        CompilerPipelineTestCase{
+            "MultipleControlledT", MQT_NAMED_BUILDER(qc::multipleControlledT),
+            nullptr, MQT_NAMED_BUILDER(mlir::qc::multipleControlledT),
+            MQT_NAMED_BUILDER(mlir::qir::multipleControlledT)},
+        CompilerPipelineTestCase{"Tdg", MQT_NAMED_BUILDER(qc::tdg), nullptr,
+                                 MQT_NAMED_BUILDER(mlir::qc::tdg),
+                                 MQT_NAMED_BUILDER(mlir::qir::tdg)},
+        CompilerPipelineTestCase{
+            "SingleControlledTdg", MQT_NAMED_BUILDER(qc::singleControlledTdg),
+            nullptr, MQT_NAMED_BUILDER(mlir::qc::singleControlledTdg),
+            MQT_NAMED_BUILDER(mlir::qir::singleControlledTdg)},
+        CompilerPipelineTestCase{
+            "MultipleControlledTdg",
+            MQT_NAMED_BUILDER(qc::multipleControlledTdg), nullptr,
+            MQT_NAMED_BUILDER(mlir::qc::multipleControlledTdg),
+            MQT_NAMED_BUILDER(mlir::qir::multipleControlledTdg)},
+        CompilerPipelineTestCase{"SX", MQT_NAMED_BUILDER(qc::sx), nullptr,
+                                 MQT_NAMED_BUILDER(mlir::qc::sx),
+                                 MQT_NAMED_BUILDER(mlir::qir::sx)},
+        CompilerPipelineTestCase{
+            "SingleControlledSX", MQT_NAMED_BUILDER(qc::singleControlledSx),
+            nullptr, MQT_NAMED_BUILDER(mlir::qc::singleControlledSx),
+            MQT_NAMED_BUILDER(mlir::qir::singleControlledSx)},
+        CompilerPipelineTestCase{
+            "MultipleControlledSX", MQT_NAMED_BUILDER(qc::multipleControlledSx),
+            nullptr, MQT_NAMED_BUILDER(mlir::qc::multipleControlledSx),
+            MQT_NAMED_BUILDER(mlir::qir::multipleControlledSx)},
+        CompilerPipelineTestCase{"SXdg", MQT_NAMED_BUILDER(qc::sxdg), nullptr,
+                                 MQT_NAMED_BUILDER(mlir::qc::sxdg),
+                                 MQT_NAMED_BUILDER(mlir::qir::sxdg)},
+        CompilerPipelineTestCase{
+            "SingleControlledSXdg", MQT_NAMED_BUILDER(qc::singleControlledSxdg),
+            nullptr, MQT_NAMED_BUILDER(mlir::qc::singleControlledSxdg),
+            MQT_NAMED_BUILDER(mlir::qir::singleControlledSxdg)},
+        CompilerPipelineTestCase{
+            "MultipleControlledSXdg",
+            MQT_NAMED_BUILDER(qc::multipleControlledSxdg), nullptr,
+            MQT_NAMED_BUILDER(mlir::qc::multipleControlledSxdg),
+            MQT_NAMED_BUILDER(mlir::qir::multipleControlledSxdg)},
+        CompilerPipelineTestCase{"RX", MQT_NAMED_BUILDER(qc::rx), nullptr,
+                                 MQT_NAMED_BUILDER(mlir::qc::rx),
+                                 MQT_NAMED_BUILDER(mlir::qir::rx)},
+        CompilerPipelineTestCase{
+            "SingleControlledRX", MQT_NAMED_BUILDER(qc::singleControlledRx),
+            nullptr, MQT_NAMED_BUILDER(mlir::qc::singleControlledRx),
+            MQT_NAMED_BUILDER(mlir::qir::singleControlledRx)},
+        CompilerPipelineTestCase{
+            "MultipleControlledRX", MQT_NAMED_BUILDER(qc::multipleControlledRx),
+            nullptr, MQT_NAMED_BUILDER(mlir::qc::multipleControlledRx),
+            MQT_NAMED_BUILDER(mlir::qir::multipleControlledRx)},
+        CompilerPipelineTestCase{"RY", MQT_NAMED_BUILDER(qc::ry), nullptr,
+                                 MQT_NAMED_BUILDER(mlir::qc::ry),
+                                 MQT_NAMED_BUILDER(mlir::qir::ry)},
+        CompilerPipelineTestCase{
+            "SingleControlledRY", MQT_NAMED_BUILDER(qc::singleControlledRy),
+            nullptr, MQT_NAMED_BUILDER(mlir::qc::singleControlledRy),
+            MQT_NAMED_BUILDER(mlir::qir::singleControlledRy)},
+        CompilerPipelineTestCase{
+            "MultipleControlledRY", MQT_NAMED_BUILDER(qc::multipleControlledRy),
+            nullptr, MQT_NAMED_BUILDER(mlir::qc::multipleControlledRy),
+            MQT_NAMED_BUILDER(mlir::qir::multipleControlledRy)},
+        CompilerPipelineTestCase{"RZ", MQT_NAMED_BUILDER(qc::rz), nullptr,
+                                 MQT_NAMED_BUILDER(mlir::qc::rz),
+                                 MQT_NAMED_BUILDER(mlir::qir::rz)},
+        CompilerPipelineTestCase{
+            "SingleControlledRZ", MQT_NAMED_BUILDER(qc::singleControlledRz),
+            nullptr, MQT_NAMED_BUILDER(mlir::qc::singleControlledRz),
+            MQT_NAMED_BUILDER(mlir::qir::singleControlledRz)},
+        CompilerPipelineTestCase{
+            "MultipleControlledRZ", MQT_NAMED_BUILDER(qc::multipleControlledRz),
+            nullptr, MQT_NAMED_BUILDER(mlir::qc::multipleControlledRz),
+            MQT_NAMED_BUILDER(mlir::qir::multipleControlledRz)},
+        CompilerPipelineTestCase{"P", MQT_NAMED_BUILDER(qc::p), nullptr,
+                                 MQT_NAMED_BUILDER(mlir::qc::p),
+                                 MQT_NAMED_BUILDER(mlir::qir::p)},
+        CompilerPipelineTestCase{
+            "SingleControlledP", MQT_NAMED_BUILDER(qc::singleControlledP),
+            nullptr, MQT_NAMED_BUILDER(mlir::qc::singleControlledP),
+            MQT_NAMED_BUILDER(mlir::qir::singleControlledP)},
+        CompilerPipelineTestCase{
+            "MultipleControlledP", MQT_NAMED_BUILDER(qc::multipleControlledP),
+            nullptr, MQT_NAMED_BUILDER(mlir::qc::multipleControlledP),
+            MQT_NAMED_BUILDER(mlir::qir::multipleControlledP)},
+        CompilerPipelineTestCase{"R", MQT_NAMED_BUILDER(qc::r), nullptr,
+                                 MQT_NAMED_BUILDER(mlir::qc::r),
+                                 MQT_NAMED_BUILDER(mlir::qir::r)},
+        CompilerPipelineTestCase{
+            "SingleControlledR",
+            MQT_NAMED_BUILDER(qc::singleControlledR), nullptr,
+            MQT_NAMED_BUILDER(mlir::qc::singleControlledR),
+            MQT_NAMED_BUILDER(mlir::qir::singleControlledR)},
+        CompilerPipelineTestCase{
+            "MultipleControlledR", MQT_NAMED_BUILDER(qc::multipleControlledR),
+            nullptr, MQT_NAMED_BUILDER(mlir::qc::multipleControlledR),
+            MQT_NAMED_BUILDER(mlir::qir::multipleControlledR)},
+        CompilerPipelineTestCase{"U2", MQT_NAMED_BUILDER(qc::u2), nullptr,
+                                 MQT_NAMED_BUILDER(mlir::qc::u2),
+                                 MQT_NAMED_BUILDER(mlir::qir::u2)},
+        CompilerPipelineTestCase{
+            "SingleControlledU2", MQT_NAMED_BUILDER(qc::singleControlledU2),
+            nullptr, MQT_NAMED_BUILDER(mlir::qc::singleControlledU2),
+            MQT_NAMED_BUILDER(mlir::qir::singleControlledU2)},
+        CompilerPipelineTestCase{
+            "MultipleControlledU2", MQT_NAMED_BUILDER(qc::multipleControlledU2),
+            nullptr, MQT_NAMED_BUILDER(mlir::qc::multipleControlledU2),
+            MQT_NAMED_BUILDER(mlir::qir::multipleControlledU2)},
+        CompilerPipelineTestCase{"U", MQT_NAMED_BUILDER(qc::u), nullptr,
+                                 MQT_NAMED_BUILDER(mlir::qc::u),
+                                 MQT_NAMED_BUILDER(mlir::qir::u)},
+        CompilerPipelineTestCase{
+            "SingleControlledU",
+            MQT_NAMED_BUILDER(qc::singleControlledU), nullptr,
+            MQT_NAMED_BUILDER(mlir::qc::singleControlledU),
+            MQT_NAMED_BUILDER(mlir::qir::singleControlledU)},
+        CompilerPipelineTestCase{
+            "MultipleControlledU", MQT_NAMED_BUILDER(qc::multipleControlledU),
+            nullptr, MQT_NAMED_BUILDER(mlir::qc::multipleControlledU),
+            MQT_NAMED_BUILDER(mlir::qir::multipleControlledU)},
+        CompilerPipelineTestCase{"SWAP", MQT_NAMED_BUILDER(qc::swap), nullptr,
+                                 MQT_NAMED_BUILDER(mlir::qc::swap),
+                                 MQT_NAMED_BUILDER(mlir::qir::swap)},
+        CompilerPipelineTestCase{
+            "SingleControlledSWAP", MQT_NAMED_BUILDER(qc::singleControlledSwap),
+            nullptr, MQT_NAMED_BUILDER(mlir::qc::singleControlledSwap),
+            MQT_NAMED_BUILDER(mlir::qir::singleControlledSwap)},
+        CompilerPipelineTestCase{
+            "MultipleControlledSWAP",
+            MQT_NAMED_BUILDER(qc::multipleControlledSwap), nullptr,
+            MQT_NAMED_BUILDER(mlir::qc::multipleControlledSwap),
+            MQT_NAMED_BUILDER(mlir::qir::multipleControlledSwap)},
+        CompilerPipelineTestCase{"iSWAP", MQT_NAMED_BUILDER(qc::iswap), nullptr,
+                                 MQT_NAMED_BUILDER(mlir::qc::iswap),
+                                 MQT_NAMED_BUILDER(mlir::qir::iswap)},
+        CompilerPipelineTestCase{
+            "SingleControllediSWAP",
+            MQT_NAMED_BUILDER(qc::singleControlledIswap), nullptr,
+            MQT_NAMED_BUILDER(mlir::qc::singleControlledIswap),
+            MQT_NAMED_BUILDER(mlir::qir::singleControlledIswap)},
+        CompilerPipelineTestCase{
+            "MultipleControllediSWAP",
+            MQT_NAMED_BUILDER(qc::multipleControlledIswap), nullptr,
+            MQT_NAMED_BUILDER(mlir::qc::multipleControlledIswap),
+            MQT_NAMED_BUILDER(mlir::qir::multipleControlledIswap)},
+        CompilerPipelineTestCase{
+            "InverseISWAP", MQT_NAMED_BUILDER(qc::inverseIswap), nullptr,
+            MQT_NAMED_BUILDER(mlir::qc::inverseIswap), nullptr, true, false},
+        CompilerPipelineTestCase{
+            "InverseMultiControlledISWAP",
+            MQT_NAMED_BUILDER(qc::inverseMultipleControlledIswap), nullptr,
+            MQT_NAMED_BUILDER(mlir::qc::inverseMultipleControlledIswap),
+            nullptr, true, false},
+        CompilerPipelineTestCase{"DCX", MQT_NAMED_BUILDER(qc::dcx), nullptr,
+                                 MQT_NAMED_BUILDER(mlir::qc::dcx),
+                                 MQT_NAMED_BUILDER(mlir::qir::dcx)},
+        CompilerPipelineTestCase{
+            "SingleControlledDCX", MQT_NAMED_BUILDER(qc::singleControlledDcx),
+            nullptr, MQT_NAMED_BUILDER(mlir::qc::singleControlledDcx),
+            MQT_NAMED_BUILDER(mlir::qir::singleControlledDcx)},
+        CompilerPipelineTestCase{
+            "MultipleControlledDCX",
+            MQT_NAMED_BUILDER(qc::multipleControlledDcx), nullptr,
+            MQT_NAMED_BUILDER(mlir::qc::multipleControlledDcx),
+            MQT_NAMED_BUILDER(mlir::qir::multipleControlledDcx)},
+        CompilerPipelineTestCase{"ECR", MQT_NAMED_BUILDER(qc::ecr), nullptr,
+                                 MQT_NAMED_BUILDER(mlir::qc::ecr),
+                                 MQT_NAMED_BUILDER(mlir::qir::ecr)},
+        CompilerPipelineTestCase{
+            "SingleControlledECR", MQT_NAMED_BUILDER(qc::singleControlledEcr),
+            nullptr, MQT_NAMED_BUILDER(mlir::qc::singleControlledEcr),
+            MQT_NAMED_BUILDER(mlir::qir::singleControlledEcr)},
+        CompilerPipelineTestCase{
+            "MultipleControlledECR",
+            MQT_NAMED_BUILDER(qc::multipleControlledEcr), nullptr,
+            MQT_NAMED_BUILDER(mlir::qc::multipleControlledEcr),
+            MQT_NAMED_BUILDER(mlir::qir::multipleControlledEcr)},
+        CompilerPipelineTestCase{"RXX", MQT_NAMED_BUILDER(qc::rxx), nullptr,
+                                 MQT_NAMED_BUILDER(mlir::qc::rxx),
+                                 MQT_NAMED_BUILDER(mlir::qir::rxx)},
+        CompilerPipelineTestCase{
+            "SingleControlledRXX", MQT_NAMED_BUILDER(qc::singleControlledRxx),
+            nullptr, MQT_NAMED_BUILDER(mlir::qc::singleControlledRxx),
+            MQT_NAMED_BUILDER(mlir::qir::singleControlledRxx)},
+        CompilerPipelineTestCase{
+            "MultipleControlledRXX",
+            MQT_NAMED_BUILDER(qc::multipleControlledRxx), nullptr,
+            MQT_NAMED_BUILDER(mlir::qc::multipleControlledRxx),
+            MQT_NAMED_BUILDER(mlir::qir::multipleControlledRxx)},
+        CompilerPipelineTestCase{
+            "TripleControlledRXX", MQT_NAMED_BUILDER(qc::tripleControlledRxx),
+            nullptr, MQT_NAMED_BUILDER(mlir::qc::tripleControlledRxx),
+            MQT_NAMED_BUILDER(mlir::qir::tripleControlledRxx)},
+        CompilerPipelineTestCase{"RYY", MQT_NAMED_BUILDER(qc::ryy), nullptr,
+                                 MQT_NAMED_BUILDER(mlir::qc::ryy),
+                                 MQT_NAMED_BUILDER(mlir::qir::ryy)},
+        CompilerPipelineTestCase{
+            "SingleControlledRYY", MQT_NAMED_BUILDER(qc::singleControlledRyy),
+            nullptr, MQT_NAMED_BUILDER(mlir::qc::singleControlledRyy),
+            MQT_NAMED_BUILDER(mlir::qir::singleControlledRyy)},
+        CompilerPipelineTestCase{
+            "MultipleControlledRYY",
+            MQT_NAMED_BUILDER(qc::multipleControlledRyy), nullptr,
+            MQT_NAMED_BUILDER(mlir::qc::multipleControlledRyy),
+            MQT_NAMED_BUILDER(mlir::qir::multipleControlledRyy)},
+        CompilerPipelineTestCase{"RZX", MQT_NAMED_BUILDER(qc::rzx), nullptr,
+                                 MQT_NAMED_BUILDER(mlir::qc::rzx),
+                                 MQT_NAMED_BUILDER(mlir::qir::rzx)},
+        CompilerPipelineTestCase{
+            "SingleControlledRZX", MQT_NAMED_BUILDER(qc::singleControlledRzx),
+            nullptr, MQT_NAMED_BUILDER(mlir::qc::singleControlledRzx),
+            MQT_NAMED_BUILDER(mlir::qir::singleControlledRzx)},
+        CompilerPipelineTestCase{
+            "MultipleControlledRZX",
+            MQT_NAMED_BUILDER(qc::multipleControlledRzx), nullptr,
+            MQT_NAMED_BUILDER(mlir::qc::multipleControlledRzx),
+            MQT_NAMED_BUILDER(mlir::qir::multipleControlledRzx)},
+        CompilerPipelineTestCase{"RZZ", MQT_NAMED_BUILDER(qc::rzz), nullptr,
+                                 MQT_NAMED_BUILDER(mlir::qc::rzz),
+                                 MQT_NAMED_BUILDER(mlir::qir::rzz)},
+        CompilerPipelineTestCase{
+            "SingleControlledRZZ", MQT_NAMED_BUILDER(qc::singleControlledRzz),
+            nullptr, MQT_NAMED_BUILDER(mlir::qc::singleControlledRzz),
+            MQT_NAMED_BUILDER(mlir::qir::singleControlledRzz)},
+        CompilerPipelineTestCase{
+            "MultipleControlledRZZ",
+            MQT_NAMED_BUILDER(qc::multipleControlledRzz), nullptr,
+            MQT_NAMED_BUILDER(mlir::qc::multipleControlledRzz),
+            MQT_NAMED_BUILDER(mlir::qir::multipleControlledRzz)},
+        CompilerPipelineTestCase{"XXPlusYY", MQT_NAMED_BUILDER(qc::xxPlusYY),
+                                 nullptr, MQT_NAMED_BUILDER(mlir::qc::xxPlusYY),
+                                 MQT_NAMED_BUILDER(mlir::qir::xxPlusYY)},
+        CompilerPipelineTestCase{
+            "SingleControlledXXPlusYY",
+            MQT_NAMED_BUILDER(qc::singleControlledXxPlusYY), nullptr,
+            MQT_NAMED_BUILDER(mlir::qc::singleControlledXxPlusYY),
+            MQT_NAMED_BUILDER(mlir::qir::singleControlledXxPlusYY)},
+        CompilerPipelineTestCase{
+            "MultipleControlledXXPlusYY",
+            MQT_NAMED_BUILDER(qc::multipleControlledXxPlusYY), nullptr,
+            MQT_NAMED_BUILDER(mlir::qc::multipleControlledXxPlusYY),
+            MQT_NAMED_BUILDER(mlir::qir::multipleControlledXxPlusYY)},
+        CompilerPipelineTestCase{"XXMinusYY", MQT_NAMED_BUILDER(qc::xxMinusYY),
+                                 nullptr,
+                                 MQT_NAMED_BUILDER(mlir::qc::xxMinusYY),
+                                 MQT_NAMED_BUILDER(mlir::qir::xxMinusYY)},
+        CompilerPipelineTestCase{
+            "SingleControlledXXMinusYY",
+            MQT_NAMED_BUILDER(qc::singleControlledXxMinusYY), nullptr,
+            MQT_NAMED_BUILDER(mlir::qc::singleControlledXxMinusYY),
+            MQT_NAMED_BUILDER(mlir::qir::singleControlledXxMinusYY)},
+        CompilerPipelineTestCase{
+            "MultipleControlledXXMinusYY",
+            MQT_NAMED_BUILDER(qc::multipleControlledXxMinusYY), nullptr,
+            MQT_NAMED_BUILDER(mlir::qc::multipleControlledXxMinusYY),
+            MQT_NAMED_BUILDER(mlir::qir::multipleControlledXxMinusYY)}));
+
+} // namespace mqt::test::compiler

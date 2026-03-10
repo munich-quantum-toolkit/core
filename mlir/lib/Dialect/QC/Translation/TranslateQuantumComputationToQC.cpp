@@ -18,9 +18,6 @@
 #include "ir/operations/Operation.hpp"
 #include "mlir/Dialect/QC/Builder/QCProgramBuilder.h"
 
-#include <algorithm>
-#include <cstddef>
-#include <cstdint>
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/Support/ErrorHandling.h>
 #include <llvm/Support/raw_ostream.h>
@@ -31,6 +28,10 @@
 #include <mlir/IR/Value.h>
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/LogicalResult.h>
+
+#include <algorithm>
+#include <cstddef>
+#include <cstdint>
 #include <ranges>
 #include <utility>
 
@@ -566,6 +567,19 @@ translateOperations(QCProgramBuilder& builder,
       ADD_OP_CASE(XXplusYY)
       ADD_OP_CASE(XXminusYY)
       ADD_OP_CASE(Barrier)
+    case ::qc::OpType::iSWAPdg: {
+      const auto& target0 = qubits[operation->getTargets()[0]];
+      const auto& target1 = qubits[operation->getTargets()[1]];
+      if (const auto& controls = getControls(*operation, qubits);
+          controls.empty()) {
+        builder.inv([&] { builder.iswap(target0, target1); });
+      } else {
+        builder.ctrl(controls, [&] {
+          builder.inv([&] { builder.iswap(target0, target1); });
+        });
+      }
+      break;
+    }
     default:
       llvm::errs() << operation->getName() << " cannot be translated to QC\n";
       return failure();

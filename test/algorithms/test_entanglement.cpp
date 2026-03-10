@@ -15,8 +15,10 @@
 #include "dd/Simulation.hpp"
 #include "dd/StateGeneration.hpp"
 #include "ir/Definitions.hpp"
+#include "ir/QuantumComputation.hpp"
 
 #include <gtest/gtest.h>
+
 #include <memory>
 #include <sstream>
 #include <string>

@@ -21,9 +21,10 @@
 #include "zx/ZXDefinitions.hpp"
 #include "zx/ZXDiagram.hpp"
 
+#include <gtest/gtest.h>
+
 #include <array>
 #include <cstddef>
-#include <gtest/gtest.h>
 #include <memory>
 #include <sstream>
 #include <string>

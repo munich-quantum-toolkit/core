@@ -10,9 +10,10 @@
 
 #include "na/fomac/Device.hpp"
 
-#include "gtest/gtest.h"
-#include <fstream>
+#include <gtest/gtest.h>
 #include <nlohmann/json.hpp>
+
+#include <fstream>
 #include <utility>
 
 namespace na {

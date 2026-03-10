@@ -10,12 +10,18 @@
 
 #pragma once
 
-#include <mlir/Pass/Pass.h> // from @llvm-project
+#include "mlir/Dialect/QCO/IR/QCODialect.h"
+
+#include <mlir/Dialect/Arith/IR/Arith.h>
+#include <mlir/Pass/Pass.h>
+#include <mlir/Pass/PassRegistry.h>
 
 namespace mlir::qco {
+
 #define GEN_PASS_DECL
 #include "mlir/Dialect/QCO/Transforms/Passes.h.inc" // IWYU pragma: export
 
 #define GEN_PASS_REGISTRATION
 #include "mlir/Dialect/QCO/Transforms/Passes.h.inc" // IWYU pragma: export
+
 } // namespace mlir::qco

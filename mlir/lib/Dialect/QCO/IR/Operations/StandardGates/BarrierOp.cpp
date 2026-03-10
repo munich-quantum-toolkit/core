@@ -8,9 +8,8 @@
  * Licensed under the MIT License
  */
 
-#include "mlir/Dialect/QCO/IR/QCODialect.h"
+#include "mlir/Dialect/QCO/IR/QCOOps.h"
 
-#include <cstddef>
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/Support/Casting.h>
 #include <llvm/Support/ErrorHandling.h>
@@ -20,6 +19,8 @@
 #include <mlir/IR/PatternMatch.h>
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/LogicalResult.h>
+
+#include <cstddef>
 
 using namespace mlir;
 using namespace mlir::qco;
@@ -76,20 +77,6 @@ struct MergeSubsequentBarrier final : OpRewritePattern<BarrierOp> {
 
 } // namespace
 
-size_t BarrierOp::getNumQubits() { return getNumTargets(); }
-
-size_t BarrierOp::getNumTargets() { return getQubitsIn().size(); }
-
-size_t BarrierOp::getNumControls() { return 0; }
-
-Value BarrierOp::getInputQubit(const size_t i) { return getInputTarget(i); }
-
-OperandRange BarrierOp::getInputQubits() { return getQubitsIn(); }
-
-Value BarrierOp::getOutputQubit(const size_t i) { return getOutputTarget(i); }
-
-ResultRange BarrierOp::getOutputQubits() { return getQubitsOut(); }
-
 Value BarrierOp::getInputTarget(const size_t i) {
   if (i < getNumTargets()) {
     return getQubitsIn()[i];
@@ -102,14 +89,6 @@ Value BarrierOp::getOutputTarget(const size_t i) {
     return getQubitsOut()[i];
   }
   llvm::reportFatalUsageError("Invalid qubit index");
-}
-
-Value BarrierOp::getInputControl(const size_t /*i*/) {
-  llvm::reportFatalUsageError("BarrierOp cannot be controlled");
-}
-
-Value BarrierOp::getOutputControl(const size_t /*i*/) {
-  llvm::reportFatalUsageError("BarrierOp cannot be controlled");
 }
 
 Value BarrierOp::getInputForOutput(Value output) {
@@ -128,12 +107,6 @@ Value BarrierOp::getOutputForInput(Value input) {
     }
   }
   llvm::reportFatalUsageError("Given qubit is not an input of the operation");
-}
-
-size_t BarrierOp::getNumParams() { return 0; }
-
-Value BarrierOp::getParameter(const size_t /*i*/) {
-  llvm::reportFatalUsageError("BarrierOp has no parameters");
 }
 
 void BarrierOp::build(OpBuilder& odsBuilder, OperationState& odsState,
