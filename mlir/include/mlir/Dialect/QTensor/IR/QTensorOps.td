@@ -128,7 +128,6 @@ def QTensor_FromElementsOp : QTensorOp<"from_elements", [
     let description = [{
         The `qtensor.from_elements` is a wrapper operation for the `tensor.from_elements` operation
         of the tensor dialect. This operation creates a tensor using the operands as its values.
-        During the canonicalization this operation is converted into a `tensor.from_elements` operation.
 
         Example:
 
@@ -147,7 +146,6 @@ def QTensor_FromElementsOp : QTensorOp<"from_elements", [
     ];
 
     let hasVerifier = 1;
-    let hasCanonicalizer = 1;
 }
 
 def QTensor_ExtractOp : QTensorOp<"extract", [
@@ -346,6 +344,7 @@ def QTensor_ExtractSliceOp : QTensorOpWithOffsetSizesAndStrides<"extract_slice",
 }
 
 def QTensor_InsertOp : QTensorOp<"insert", [
+    DestinationStyleOpInterface,
     Pure,
     TypesMatchWith<"result type matches type of dest",
                    "dest", "result",
@@ -357,7 +356,6 @@ def QTensor_InsertOp : QTensorOp<"insert", [
     let description = [{
         The `qtensor.insert` operation is a wrapper operation for the `tensor.insert` operation of the tensor dialect.
         This operation inserts a scalar into a ranked tensor as specified by the operation`s indices.
-        During the canonicalization, this operation is converted into a `tensor.insert` operation.
 
         Example:
 
@@ -372,6 +370,10 @@ def QTensor_InsertOp : QTensorOp<"insert", [
     let results = (outs AnyRankedTensor:$result);
     let assemblyFormat = [{
         $scalar `into` $dest `[` $indices `]` attr-dict `:` type($dest)
+    }];
+
+    let extraClassDeclaration = [{
+        MutableOperandRange getDpsInitsMutable() { return getDestMutable(); }
     }];
 
     let hasVerifier = 1;

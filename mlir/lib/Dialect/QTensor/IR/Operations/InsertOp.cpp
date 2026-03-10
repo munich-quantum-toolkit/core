@@ -12,7 +12,6 @@
 #include "mlir/Dialect/QTensor/IR/QTensorOps.h"
 
 #include <llvm/Support/Casting.h>
-#include <mlir/Dialect/Tensor/IR/Tensor.h>
 #include <mlir/IR/BuiltinTypeInterfaces.h>
 #include <mlir/IR/PatternMatch.h>
 #include <mlir/Support/LLVM.h>
@@ -39,14 +38,28 @@ LogicalResult InsertOp::verify() {
 
 namespace {
 
-struct ConvertInsertOpToTensorOp : public OpRewritePattern<qtensor::InsertOp> {
+/**
+ * @brief If an InsertOp does not return a tensor with a static shape but the
+ * destination tensor has one, replace the InsertOp with a new one that has a
+ * static shape.
+ */
+struct ConvertInsertOpToStaticShape
+    : public OpRewritePattern<qtensor::InsertOp> {
   using OpRewritePattern<qtensor::InsertOp>::OpRewritePattern;
 
   LogicalResult matchAndRewrite(qtensor::InsertOp insertOp,
                                 PatternRewriter& rewriter) const final {
-    rewriter.replaceOpWithNewOp<tensor::InsertOp>(
-        insertOp, insertOp.getScalar(), insertOp.getDest(),
-        insertOp.getIndices());
+    if (insertOp.getResult().getType().hasStaticShape()) {
+      return failure();
+    }
+    if (!insertOp.getDest().getType().hasStaticShape()) {
+      return failure();
+    }
+
+    rewriter.replaceOpWithNewOp<InsertOp>(insertOp, insertOp.getScalar(),
+                                          insertOp.getDest(),
+                                          insertOp.getIndices());
+
     return success();
   }
 };
@@ -82,5 +95,5 @@ struct InsertFromExtractOp : public OpRewritePattern<InsertOp> {
 
 void InsertOp::getCanonicalizationPatterns(RewritePatternSet& results,
                                            MLIRContext* context) {
-  results.add<InsertFromExtractOp, ConvertInsertOpToTensorOp>(context);
+  results.add<InsertFromExtractOp, ConvertInsertOpToStaticShape>(context);
 }

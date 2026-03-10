@@ -12,12 +12,9 @@
 #include "mlir/Dialect/QTensor/IR/QTensorOps.h"
 
 #include <llvm/Support/Casting.h>
-#include <mlir/Dialect/Tensor/IR/Tensor.h>
 #include <mlir/IR/Builders.h>
-#include <mlir/IR/BuiltinTypeInterfaces.h>
 #include <mlir/IR/BuiltinTypes.h>
 #include <mlir/IR/OperationSupport.h>
-#include <mlir/IR/PatternMatch.h>
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/LogicalResult.h>
 
@@ -49,26 +46,4 @@ LogicalResult FromElementsOp::verify() {
     }
   }
   return success();
-}
-
-namespace {
-
-struct ConvertFromElementsOpToTensorOp
-    : public OpRewritePattern<qtensor::FromElementsOp> {
-  using OpRewritePattern<qtensor::FromElementsOp>::OpRewritePattern;
-
-  LogicalResult matchAndRewrite(qtensor::FromElementsOp fromElementsOp,
-                                PatternRewriter& rewriter) const final {
-    rewriter.replaceOpWithNewOp<tensor::FromElementsOp>(
-        fromElementsOp, fromElementsOp.getType(), fromElementsOp.getElements());
-
-    return success();
-  }
-};
-
-} // namespace
-
-void FromElementsOp::getCanonicalizationPatterns(RewritePatternSet& results,
-                                                 MLIRContext* context) {
-  results.add<ConvertFromElementsOpToTensorOp>(context);
 }

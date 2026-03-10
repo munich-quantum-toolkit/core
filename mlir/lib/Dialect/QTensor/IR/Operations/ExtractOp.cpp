@@ -67,7 +67,7 @@ struct ExtractFromTensorCast : public OpRewritePattern<ExtractOp> {
  * return the scalar from the InsertOp directly.
  */
 static Value foldExtractAfterInsert(ExtractOp extractOp) {
-  auto insertOp = extractOp.getTensor().getDefiningOp<tensor::InsertOp>();
+  auto insertOp = extractOp.getTensor().getDefiningOp<InsertOp>();
 
   auto isSame = [](Value a, Value b) {
     return getAsOpFoldResult(a) == getAsOpFoldResult(b);
