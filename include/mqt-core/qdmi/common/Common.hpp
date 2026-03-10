@@ -16,6 +16,7 @@
 
 #include <qdmi/client.h>
 #include <qdmi/constants.h>
+
 #include <string>
 
 namespace qdmi {

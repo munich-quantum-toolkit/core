@@ -17,14 +17,15 @@
 #include "qco_programs.h"
 
 #include <gtest/gtest.h>
-#include <iosfwd>
 #include <llvm/ADT/SmallVector.h>
-#include <memory>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/IR/DialectRegistry.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/Verifier.h>
+
+#include <iosfwd>
+#include <memory>
 #include <ostream>
 #include <string>
 
@@ -823,7 +824,9 @@ INSTANTIATE_TEST_SUITE_P(
         QCOTestCase{"CanonicalizeUToRx", MQT_NAMED_BUILDER(canonicalizeUToRx),
                     MQT_NAMED_BUILDER(rx)},
         QCOTestCase{"CanonicalizeUToRy", MQT_NAMED_BUILDER(canonicalizeUToRy),
-                    MQT_NAMED_BUILDER(ry)}));
+                    MQT_NAMED_BUILDER(ry)},
+        QCOTestCase{"CanonicalizeUToU2", MQT_NAMED_BUILDER(canonicalizeUToU2),
+                    MQT_NAMED_BUILDER(u2)}));
 /// @}
 
 /// \name QCO/Operations/StandardGates/XOp.cpp

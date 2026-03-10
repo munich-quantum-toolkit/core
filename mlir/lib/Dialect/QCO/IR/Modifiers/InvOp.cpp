@@ -12,7 +12,6 @@
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 
 #include <Eigen/Core>
-#include <cstddef>
 #include <llvm/ADT/STLFunctionalExtras.h>
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/ADT/TypeSwitch.h>
@@ -27,6 +26,8 @@
 #include <mlir/IR/PatternMatch.h>
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/LogicalResult.h>
+
+#include <cstddef>
 #include <numbers>
 #include <optional>
 

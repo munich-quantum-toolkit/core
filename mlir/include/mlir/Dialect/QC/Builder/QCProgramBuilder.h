@@ -10,7 +10,6 @@
 
 #pragma once
 
-#include <cstdint>
 #include <llvm/ADT/DenseSet.h>
 #include <llvm/ADT/STLFunctionalExtras.h>
 #include <llvm/ADT/SmallVector.h>
@@ -21,6 +20,8 @@
 #include <mlir/IR/OwningOpRef.h>
 #include <mlir/IR/Value.h>
 #include <mlir/IR/ValueRange.h>
+
+#include <cstdint>
 #include <string>
 #include <variant>
 

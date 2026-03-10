@@ -20,14 +20,15 @@
 #include "qco_programs.h"
 
 #include <Eigen/Core>
-#include <complex>
 #include <gtest/gtest.h>
-#include <iosfwd>
-#include <memory>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/IR/DialectRegistry.h>
 #include <mlir/IR/MLIRContext.h>
+
+#include <complex>
+#include <iosfwd>
+#include <memory>
 #include <string>
 
 using namespace mlir;

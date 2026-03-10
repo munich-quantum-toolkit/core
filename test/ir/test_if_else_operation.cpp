@@ -16,8 +16,9 @@
 #include "ir/operations/OpType.hpp"
 #include "ir/operations/StandardOperation.hpp"
 
-#include <functional>
 #include <gtest/gtest.h>
+
+#include <functional>
 #include <memory>
 #include <stdexcept>
 

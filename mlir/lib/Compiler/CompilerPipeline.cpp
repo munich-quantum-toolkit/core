@@ -13,7 +13,7 @@
 #include "mlir/Conversion/QCOToQC/QCOToQC.h"
 #include "mlir/Conversion/QCToQCO/QCToQCO.h"
 #include "mlir/Conversion/QCToQIR/QCToQIR.h"
-#include "mlir/Passes/Passes.h"
+#include "mlir/Dialect/QCO/Transforms/Passes.h"
 #include "mlir/Support/PrettyPrinting.h"
 
 #include <llvm/ADT/StringRef.h>
@@ -22,6 +22,7 @@
 #include <mlir/Pass/PassManager.h>
 #include <mlir/Support/LogicalResult.h>
 #include <mlir/Transforms/Passes.h>
+
 #include <string>
 
 namespace mlir {

@@ -25,6 +25,7 @@
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/LogicalResult.h>
 #include <mlir/Transforms/DialectConversion.h>
+
 #include <utility>
 
 namespace mlir {
@@ -722,8 +723,8 @@ DEFINE_TWO_TARGET_TWO_PARAMETER(XXMinusYYOp, xx_minus_yy, theta, beta)
  *
  * @par Example:
  * ```mlir
- * %q0_out, %q1_out = qco.barrier %q0_in, %q1_in : !qco.qubit, !qco.qubit ->
- * !qco.qubit, !qco.qubit
+ * %q_out:2 = qco.barrier %q0_in, %q1_in : !qco.qubit, !qco.qubit -> !qco.qubit,
+ * !qco.qubit
  * ```
  * is converted to
  * ```mlir
@@ -754,9 +755,9 @@ struct ConvertQCOBarrierOp final : OpConversionPattern<qco::BarrierOp> {
  *
  * @par Example:
  * ```mlir
- * %controls_out, %targets_out = qco.ctrl({%q0_in}, {%q1_in}) {
- *   %q1_res = qco.x %q1_in : !qco.qubit -> !qco.qubit
- *   qco.yield %q1_res
+ * %controls_out, %targets_out = qco.ctrl(%q0_in) targets(%a_in = %q1_in) {
+ *   %a_res = qco.x %a_in : !qco.qubit -> !qco.qubit
+ *   qco.yield %a_res
  * } : ({!qco.qubit}, {!qco.qubit}) -> ({!qco.qubit}, {!qco.qubit})
  * ```
  * is converted to
@@ -819,9 +820,9 @@ struct ConvertQCOCtrlOp final : OpConversionPattern<qco::CtrlOp> {
  *
  * @par Example:
  * ```mlir
- * %q0_out = qco.inv (%q0 = %q0_in) {
- *   %q0_res = qco.s %q0 : !qco.qubit -> !qco.qubit
- *   qco.yield %q0_res
+ * %q0_out = qco.inv (%a_in = %q0_in) {
+ *   %a_res = qco.s %a_in : !qco.qubit -> !qco.qubit
+ *   qco.yield %a_res
  * } : {!qco.qubit} -> {!qco.qubit}
  * ```
  * is converted to

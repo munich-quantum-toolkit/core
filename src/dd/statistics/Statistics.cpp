@@ -11,6 +11,7 @@
 #include "dd/statistics/Statistics.hpp"
 
 #include <nlohmann/json.hpp>
+
 #include <string>
 
 namespace dd {

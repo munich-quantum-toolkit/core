@@ -11,12 +11,13 @@
 #include "ir/Definitions.hpp"
 #include "ir/Register.hpp"
 
-#include <cstddef>
-#include <cstdint>
-#include <limits>
 #include <nanobind/nanobind.h>
 #include <nanobind/operators.h>
 #include <nanobind/stl/string.h> // NOLINT(misc-include-cleaner)
+
+#include <cstddef>
+#include <cstdint>
+#include <limits>
 #include <string>
 
 namespace mqt {
