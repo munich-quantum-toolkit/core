@@ -24,9 +24,11 @@ def JeffToQCO : Pass<"jeff-to-qco"> {
       - Only specific `PPROp`s are currently supported
       - `Qureg_Op`s are currently not supported
       - `SCF_Op`s are currently not supported
+      - Support for multiple functions is currently limited
    }];
 
   let dependentDialects = [
+     "mlir::arith::ArithDialect",
      "mlir::jeff::JeffDialect",
      "mlir::qco::QCODialect",
   ];
