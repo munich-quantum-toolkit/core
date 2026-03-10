@@ -30,9 +30,84 @@ The tiny snippet above already covers a lot of relevant MLIR concepts.
 
 One of the most important ones are _dialects_. A dialect groups operations (`alloc`, `dealloc`) and types (`qubit`) under a common namespace (`qc`). The example above combines built-in dialects with custom dialects. The [`builtin`](https://mlir.llvm.org/docs/Dialects/Builtin/) dialect provides the `module` operation (the `builtin.` is usually omitted) and the [`func`](https://mlir.llvm.org/docs/Dialects/Func/) dialect contains operations to define and call functions. The custom [`qc`](https://mqt.readthedocs.io/projects/core/en/latest/mlir/QC.html) (_"quantum circuit"_) dialect is defined in the MQT and extends the built-in ones with the necessary functionality for quantum computing.
 
-Operations can consume (_"operands"_) and produce (_"results"_) values. For instance, the `qc.alloc` operation produces the value `q0`, while the `qc.dealloc` operation consumes it. Furthermore, values in MLIR adhere to the static single-assignment (SSA) principle, where each variable is assigned exactly once and never reassigned.
+Operations can consume (_"operands"_) and produce (_"results"_) values. For instance, `qc.alloc` produces the value `q0`, while `qc.dealloc` consumes it. Furthermore, values in MLIR adhere to the static single-assignment (SSA) principle, where each variable is assigned exactly once and never reassigned.
 
-Moreover, purely from a visual perspective, one can notice that the snippet above contains nested structures. For example, the `module` operation contains the `func.func` operation.
+Moreover, some operations contain others. For example, the `module` operation contains the `func.func` operation. In MLIR these nested structures are represented by _regions_ and _blocks_. The following figure visualizes the connection between operations, regions, and blocks succinctly.
+
+```
+┌──────────────────────┐
+│ Operation            │
+├──────────────────────┤
+│┌────────────────────┐│
+││ Region             ││
+│├────────────────────┤│
+││ ┌─────────────────┐││
+││ │ Block           │││
+││ │┌───────────────┐│││
+││ ││Operation      ││││
+││ │└───────────────┘│││
+││ └─────────────────┘││
+││ ┌─────────────────┐││
+││ │ Block           │││
+││ └─────────────────┘││
+│└────────────────────┘│
+└──────────────────────┘
+```
+
+In the snippet above, the `module` operation has one region with exactly one block. Inside this block is the `func.func` op, which again has one region with a single block. Finally, this inner block contains the quantum operations.
+
+As of now, our quantum program doesn't compute anything. Let's change that.
+
+```mlir
+/// file: bell.mlir
+module {
+    func.func @main() {
+        %q0 = qc.alloc : !qc.qubit
+        %q1 = qc.alloc : !qc.qubit
+
+        qc.h %q0 : !qc.qubit
+        qc.ctrl(%q0) {
+            qc.x %q1 : !qc.qubit
+        } : !qc.qubit
+
+        %c0 = qc.measure %q0 : !qc.qubit -> i1
+        %c1 = qc.measure %q1 : !qc.qubit -> i1
+
+        qc.dealloc %q0 : !qc.qubit
+        qc.dealloc %q1 : !qc.qubit
+
+        func.return
+    }
+}
+```
+
+In the updated code snippet, we allocate a second qubit and construct the first Bell state by applying a Hadamard gate and a controlled NOT gate. Finally, we measure and deallocate both qubits.
+
+Sometimes (e.g. when writing unit tests) it can be useful to programmatically build programs. For that purpose, the `QCProgramBuilder` exists. The C++ snippet that follows constructs the above quantum computation programmatically.
+
+```cpp
+#include "mlir/Dialect/QC/Builder/QCProgramBuilder.h"
+
+void bell(MLIRContext* context) {
+    qc::QCProgramBuilder builder(context);
+    builder.initialize();
+
+    const auto q0 = builder.allocQubit();
+    const auto q1 = builder.allocQubit();
+
+    builder.h(q0);
+    builder.cx(q0, q1);
+
+    const auto c0 = builder.measure(q0);
+    const auto c1 = builder.measure(q1);
+
+    builder.dealloc(q0);
+    builder.dealloc(q1);
+
+    // Automatically adds the module and entry point function.
+    [[maybe_unused]] auto moduleOp = builder.finalize();
+}
+```
 
 ## The Optimization Dialect
 
