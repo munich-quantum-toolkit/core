@@ -17,7 +17,7 @@ target_link_libraries(
           MLIRQCOUtils
           QCToQCO
           QCOToQC
-          QcoPasses)
+          MLIRQCOTransforms)
 
 mqt_mlir_configure_unittest_target(${target_name})
 

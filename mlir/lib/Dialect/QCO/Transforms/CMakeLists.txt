@@ -11,7 +11,7 @@ file(GLOB_RECURSE PASSES_SOURCES *.cpp)
 get_property(dialect_libs GLOBAL PROPERTY MLIR_DIALECT_LIBS)
 
 add_mlir_library(
-  QcoPasses
+  MLIRQCOTransforms
   ${PASSES_SOURCES}
   LINK_LIBS
   PUBLIC
@@ -28,7 +28,7 @@ file(GLOB_RECURSE PASSES_HEADERS_BUILD
 
 # add public headers using file sets
 target_sources(
-  QcoPasses
+  MLIRQCOTransforms
   PUBLIC FILE_SET
          HEADERS
          BASE_DIRS
