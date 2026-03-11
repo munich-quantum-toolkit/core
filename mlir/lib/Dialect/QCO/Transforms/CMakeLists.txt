@@ -12,7 +12,6 @@ add_mlir_library(
   MLIRQCOTransforms
   ${PASSES_SOURCES}
   LINK_LIBS
-  PUBLIC
   PRIVATE
   MLIRQCODialect
   MLIRQCOUtils
