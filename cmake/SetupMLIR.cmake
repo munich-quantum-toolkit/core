@@ -36,7 +36,6 @@ include(HandleLLVMOptions)
 include_directories(SYSTEM ${LLVM_INCLUDE_DIRS} ${MLIR_INCLUDE_DIRS})
 include_directories(${MQT_MLIR_SOURCE_INCLUDE_DIR})
 include_directories(${MQT_MLIR_BUILD_INCLUDE_DIR})
-link_directories(${LLVM_BUILD_LIBRARY_DIR})
 add_definitions(${LLVM_DEFINITIONS})
 
 # set the binary directory for the build tree such that, e.g., docs can be generated in the build
