@@ -10,7 +10,7 @@ This tutorial attempts to lower the barrier to contribute to our open-source qua
 
 If you haven't already, make sure to visit the [installation](https://mqt.readthedocs.io/projects/core/en/latest/installation.html) page which describes how to setup the project (including MLIR) correctly.
 
-## Understanding And Writing Quantum IR
+## Understanding Quantum IR
 
 ### Dynamic and Static Allocation
 
@@ -42,39 +42,19 @@ module {
 }
 ```
 
-#### Interlude: MLIR Concepts
+### (Interlude: MLIR Concepts)
 
-The snippets above cover already a lot of relevant MLIR concepts.
-
-One of the most important ones are _dialects_. A dialect groups operations (`alloc`, `dealloc`) and types (`qubit`) under a common namespace (`qc`). The example above combines built-in dialects with custom dialects. The [`builtin`](https://mlir.llvm.org/docs/Dialects/Builtin/) dialect provides the `module` operation (the `builtin.` is usually omitted) and the [`func`](https://mlir.llvm.org/docs/Dialects/Func/) dialect contains operations to define and call functions. The custom [`qc`](https://mqt.readthedocs.io/projects/core/en/latest/mlir/QC.html) (_"quantum circuit"_) dialect is defined in the MQT and extends the built-in ones with the necessary functionality for quantum computing.
-
-Operations can consume (_"operands"_) and produce (_"results"_) values. For instance, `qc.alloc` produces the value `q0`, while `qc.dealloc` consumes it. Furthermore, values in MLIR adhere to the static single-assignment (SSA) principle, where each variable is assigned exactly once and never reassigned.
-
-Moreover, some operations contain others. For example, the `module` operation contains the `func.func` operation. In MLIR these nested structures are represented by _regions_ and _blocks_. The following figure visualizes the connection between operations, regions, and blocks succinctly.
-
-```
-┌──────────────────────┐
-│ Operation            │
-├──────────────────────┤
-│┌────────────────────┐│
-││ Region             ││
-│├────────────────────┤│
-││ ┌─────────────────┐││
-││ │ Block           │││
-││ │┌───────────────┐│││
-││ ││Operation      ││││
-││ │└───────────────┘│││
-││ └─────────────────┘││
-││ ┌─────────────────┐││
-││ │ Block           │││
-││ └─────────────────┘││
-│└────────────────────┘│
-└──────────────────────┘
+```{note}
+If you are already familiar with the fundamental concepts of MLIR, you may skip this section.
 ```
 
-In the snippet above, the `module` operation has one region with exactly one block. Inside this block is the `func.func` op, which again has one region with a single block. Finally, this inner block contains the quantum operations.
+The short snippets above contain many fundamental concepts of MLIR.
 
-TODO: What's up with the func.return, better visualization (connect with IR above)
+- **Dialects**: A dialect groups operations (`alloc`, `dealloc`) and types (`qubit`) under a common namespace (`qc`). The example above combines built-in dialects with custom dialects. The [`builtin`](https://mlir.llvm.org/docs/Dialects/Builtin/) dialect provides the `module` operation (the `builtin.` is usually omitted) and the [`func`](https://mlir.llvm.org/docs/Dialects/Func/) dialect contains operations to define and call functions. The custom [`qc`](https://mqt.readthedocs.io/projects/core/en/latest/mlir/QC.html) (_"quantum circuit"_) dialect is defined in the MQT and extends the built-in ones with the necessary functionality for quantum computing.
+- **SSA Values**: Operations can consume (_"operands"_) and produce (_"results"_) values. For instance, `qc.alloc` produces the value `q0`, while `qc.dealloc` consumes it. Furthermore, values in MLIR adhere to the static single-assignment (SSA) principle, where each variable is assigned exactly once and never reassigned.
+- **Regions and Blocks**: To represent hierarchical structures, operations may contain _"regions"_. A region consists of one to many _"blocks"_ which again contain operations. For instance, the `module` operation contains one region consisting of one block that contains the `func.func` operation. A block optionally requires a _"terminator"_ that defines the end of the current block. The `func.return` operation is such a terminator. The following figure visualizes the connection between operations, regions, and blocks succinctly.
+
+TODO
 
 ### Gates And Measurements
 
@@ -136,3 +116,19 @@ module {
 ```
 
 ## Optimizing Quantum IR
+
+By combining built-in dialects and the QC dialect we can implement quantum algorithms in MLIR. This section outlines how to use the MQT Compiler Driver to optimize quantum programs.
+
+### User Interface
+
+The following command executes the compiler and performs a series of optimizations on the given quantum program. Files using the OpenQASM format will automatically be translated into the QC dialect.
+
+```console
+$ mqt-cc [options] <input .mlir/.qasm file>
+```
+
+### Programming Interface
+
+## Emitting Low-Level Quantum IR
+
+## Summary
