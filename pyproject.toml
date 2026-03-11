@@ -272,7 +272,7 @@ archs = "auto64"
 test-groups = ["test"]
 test-sources = ["test/python", "json/na"]
 test-command = "pytest test/python"
-build-frontend = "uv"
+build-frontend = "build[uv]"
 enable = ["cpython-freethreading"]
 test-skip = [
   "cp3??t-*", # no freethreading qiskit wheels
