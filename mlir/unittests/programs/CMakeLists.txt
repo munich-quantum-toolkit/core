@@ -22,7 +22,7 @@ target_sources(MLIRQIRPrograms PUBLIC FILE_SET HEADERS BASE_DIRS ${CMAKE_CURRENT
                                       qir_programs.h)
 
 add_library(MLIRQuantumComputationPrograms quantum_computation_programs.cpp)
-target_link_libraries(MLIRQuantumComputationPrograms PUBLIC MQT::CoreIR)
+target_link_libraries(MLIRQuantumComputationPrograms PUBLIC MQT::CoreIR MQT::ProjectOptions)
 target_sources(
   MLIRQuantumComputationPrograms PUBLIC FILE_SET HEADERS BASE_DIRS ${CMAKE_CURRENT_SOURCE_DIR}
                                         FILES quantum_computation_programs.h)
