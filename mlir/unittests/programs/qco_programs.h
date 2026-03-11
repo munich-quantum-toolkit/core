@@ -671,7 +671,7 @@ void inverseDcx(QCOProgramBuilder& b);
 /// Creates a circuit with an inverse modifier applied to a controlled DCX gate.
 void inverseMultipleControlledDcx(QCOProgramBuilder& b);
 
-/// Creates a circuit with two DCX gates in a row without swapped targets.
+/// Creates a circuit with two DCX gates in a row with identical targets.
 void twoDcx(QCOProgramBuilder& b);
 
 /// Creates a circuit with two DCX gates in a row with swapped targets.
