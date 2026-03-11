@@ -73,6 +73,37 @@ removeInversePairTwoTargetZeroParameter(OpType op, PatternRewriter& rewriter) {
 }
 
 /**
+ * @brief Remove a pair of two-target, zero-parameter operations where
+ *        the second operation is the same gate with swapped targets.
+ *
+ * @tparam OpType The type of the (self-inverse) operation.
+ * @param op The operation instance.
+ * @param rewriter The pattern rewriter.
+ * @return LogicalResult Success or failure of the removal.
+ */
+template <typename OpType>
+mlir::LogicalResult
+removeTwoTargetZeroParameterPairWithSwappedTargets(OpType op,
+                                                   PatternRewriter& rewriter) {
+  // Check if the successor is the same operation
+  auto nextOp = llvm::dyn_cast<OpType>(*op.getOutputQubit(0).user_begin());
+  if (!nextOp) {
+    return failure();
+  }
+
+  // Confirm operations act on the same qubits but with swapped targets
+  if (op.getOutputQubit(0) != nextOp.getInputQubit(1) ||
+      op.getOutputQubit(1) != nextOp.getInputQubit(0)) {
+    return failure();
+  }
+
+  // Unlink both operations
+  rewriter.replaceAllUsesWith(nextOp->getResults(), op.getOperands());
+
+  return success();
+}
+
+/**
  * @brief Merge two compatible one-target, zero-parameter operations
  *
  * @details
