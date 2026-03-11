@@ -109,7 +109,7 @@ LLVM::LLVMFuncOp getOrCreateFunctionDeclaration(OpBuilder& builder,
     }
     builder.setInsertionPointToEnd(module.getBody());
 
-    fnDecl = builder.create<LLVM::LLVMFuncOp>(op->getLoc(), fnName, fnType);
+    fnDecl = LLVM::LLVMFuncOp::create(builder, op->getLoc(), fnName, fnType);
 
     // Add irreversible attribute to irreversible quantum operations
     if (fnName == QIR_MEASURE || fnName == QIR_RESET) {
@@ -145,8 +145,8 @@ LLVM::AddressOfOp createResultLabel(OpBuilder& builder, Operation* op,
     // Create the declaration at the start of the module
     builder.setInsertionPointToStart(module.getBody());
 
-    const auto globalOp = builder.create<LLVM::GlobalOp>(
-        op->getLoc(), llvmArrayType, /*isConstant=*/true,
+    const auto globalOp = LLVM::GlobalOp::create(
+        builder, op->getLoc(), llvmArrayType, /*isConstant=*/true,
         LLVM::Linkage::Internal, symbolName, stringInitializer);
     globalOp->setAttr("addr_space", builder.getI32IntegerAttr(0));
     globalOp->setAttr("dso_local", builder.getUnitAttr());
@@ -161,8 +161,8 @@ LLVM::AddressOfOp createResultLabel(OpBuilder& builder, Operation* op,
   auto& firstBlock = *(main.getBlocks().begin());
   builder.setInsertionPointToStart(&firstBlock);
 
-  const auto addressOfOp = builder.create<LLVM::AddressOfOp>(
-      op->getLoc(), LLVM::LLVMPointerType::get(builder.getContext()),
+  const auto addressOfOp = LLVM::AddressOfOp::create(
+      builder, op->getLoc(), LLVM::LLVMPointerType::get(builder.getContext()),
       symbolName);
 
   return addressOfOp;
@@ -171,9 +171,9 @@ LLVM::AddressOfOp createResultLabel(OpBuilder& builder, Operation* op,
 Value createPointerFromIndex(OpBuilder& builder, const Location loc,
                              const int64_t index) {
   auto constantOp =
-      builder.create<LLVM::ConstantOp>(loc, builder.getI64IntegerAttr(index));
-  auto intToPtrOp = builder.create<LLVM::IntToPtrOp>(
-      loc, LLVM::LLVMPointerType::get(builder.getContext()),
+      LLVM::ConstantOp::create(builder, loc, builder.getI64IntegerAttr(index));
+  auto intToPtrOp = LLVM::IntToPtrOp::create(
+      builder, loc, LLVM::LLVMPointerType::get(builder.getContext()),
       constantOp.getResult());
   return intToPtrOp.getResult();
 }
