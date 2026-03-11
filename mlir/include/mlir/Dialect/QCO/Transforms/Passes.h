@@ -19,7 +19,7 @@
 namespace mlir::qco {
 
 #define GEN_PASS_DECL
-#include "mlir/Passes/Passes.h.inc" // IWYU pragma: export
+#include "mlir/Dialect/QCO/Transforms/Passes.h.inc" // IWYU pragma: export
 
 //===----------------------------------------------------------------------===//
 // Registration
@@ -27,6 +27,6 @@ namespace mlir::qco {
 
 /// Generate the code for registering passes.
 #define GEN_PASS_REGISTRATION
-#include "mlir/Passes/Passes.h.inc" // IWYU pragma: export
+#include "mlir/Dialect/QCO/Transforms/Passes.h.inc" // IWYU pragma: export
 
 } // namespace mlir::qco
