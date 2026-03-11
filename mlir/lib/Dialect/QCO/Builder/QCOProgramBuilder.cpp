@@ -256,8 +256,7 @@ QCOProgramBuilder::extract(Value tensor,
 std::pair<Value, Value>
 QCOProgramBuilder::extractSlice(Value tensor,
                                 const std::variant<int64_t, Value>& offset,
-                                const std::variant<int64_t, Value>& sizes,
-                                const std::variant<int64_t, Value>& strides) {
+                                const std::variant<int64_t, Value>& sizes) {
   checkFinalized();
 
   auto tensorType = llvm::dyn_cast<RankedTensorType>(tensor.getType());
@@ -271,9 +270,8 @@ QCOProgramBuilder::extractSlice(Value tensor,
 
   auto offsetValue = utils::variantToValue(*this, getLoc(), offset);
   auto sizesValue = utils::variantToValue(*this, getLoc(), sizes);
-  auto stridesValue = utils::variantToValue(*this, getLoc(), strides);
-  auto extractSliceOp = qtensor::ExtractSliceOp::create(
-      *this, tensor, offsetValue, sizesValue, stridesValue);
+  auto extractSliceOp =
+      qtensor::ExtractSliceOp::create(*this, tensor, offsetValue, sizesValue);
   auto slicedTensor = extractSliceOp.getResult();
   auto outTensor = extractSliceOp.getOutSource();
 
@@ -309,8 +307,7 @@ Value QCOProgramBuilder::insert(Value scalar, Value tensor,
 
 Value QCOProgramBuilder::insertSlice(
     Value source, Value dest, const std::variant<int64_t, Value>& offset,
-    const std::variant<int64_t, Value>& sizes,
-    const std::variant<int64_t, Value>& strides) {
+    const std::variant<int64_t, Value>& sizes) {
   checkFinalized();
 
   auto sourceTensorType = llvm::dyn_cast<RankedTensorType>(source.getType());
@@ -333,9 +330,8 @@ Value QCOProgramBuilder::insertSlice(
 
   auto offsetValue = utils::variantToValue(*this, getLoc(), offset);
   auto sizesValue = utils::variantToValue(*this, getLoc(), sizes);
-  auto stridesValue = utils::variantToValue(*this, getLoc(), strides);
-  auto insertSliceOp = qtensor::InsertSliceOp::create(
-      *this, source, dest, offsetValue, sizesValue, stridesValue);
+  auto insertSliceOp = qtensor::InsertSliceOp::create(*this, source, dest,
+                                                      offsetValue, sizesValue);
 
   auto outTensor = insertSliceOp.getResult();
 

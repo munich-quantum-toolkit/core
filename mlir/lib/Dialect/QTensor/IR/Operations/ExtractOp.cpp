@@ -24,8 +24,6 @@
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/LogicalResult.h>
 
-#include <cstdint>
-
 using namespace mlir;
 using namespace mlir::qtensor;
 
@@ -33,13 +31,9 @@ using namespace mlir::qtensor;
 // https://github.com/llvm/llvm-project/blob/llvmorg-22.1.0/mlir/lib/Dialect/Tensor/IR/TensorOps.cpp
 
 LogicalResult ExtractOp::verify() {
-  // Verify the # indices match if we have a ranked type.
   auto tensorType = llvm::cast<RankedTensorType>(getTensor().getType());
   if (!llvm::isa<qco::QubitType>(tensorType.getElementType())) {
     return emitOpError("Elements of tensor must be of qubit type");
-  }
-  if (tensorType.getRank() != static_cast<int64_t>(getIndices().size())) {
-    return emitOpError("incorrect number of indices for extract_element");
   }
   return success();
 }
@@ -57,7 +51,7 @@ struct ExtractFromTensorCast : public OpRewritePattern<ExtractOp> {
       return failure();
     }
     rewriter.replaceOpWithNewOp<ExtractOp>(extract, tensorCast.getSource(),
-                                           extract.getIndices());
+                                           extract.getIndex());
     return success();
   }
 };
@@ -69,11 +63,8 @@ struct ExtractFromTensorCast : public OpRewritePattern<ExtractOp> {
 static InsertOp foldExtractAfterInsert(ExtractOp extractOp) {
   auto insertOp = extractOp.getTensor().getDefiningOp<InsertOp>();
 
-  auto isSame = [](Value a, Value b) {
-    return getAsOpFoldResult(a) == getAsOpFoldResult(b);
-  };
   if (insertOp && insertOp.getScalar().getType() == extractOp.getType(0) &&
-      llvm::equal(insertOp.getIndices(), extractOp.getIndices(), isSame)) {
+      insertOp.getIndex() == extractOp.getIndex()) {
     return insertOp;
   }
   return nullptr;

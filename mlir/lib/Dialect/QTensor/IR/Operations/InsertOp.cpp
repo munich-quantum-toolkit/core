@@ -17,8 +17,6 @@
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/LogicalResult.h>
 
-#include <cstdint>
-
 using namespace mlir;
 using namespace mlir::qtensor;
 
@@ -29,9 +27,6 @@ LogicalResult InsertOp::verify() {
   }
   if (!llvm::isa<qco::QubitType>(destType.getElementType())) {
     return emitOpError("Elements of dest tensor must be of qubit type");
-  }
-  if (destType.getRank() != static_cast<int64_t>(getIndices().size())) {
-    return emitOpError("incorrect number of indices for insert");
   }
   return success();
 }
@@ -58,7 +53,7 @@ struct ConvertInsertOpToStaticShape
 
     rewriter.replaceOpWithNewOp<InsertOp>(insertOp, insertOp.getScalar(),
                                           insertOp.getDest(),
-                                          insertOp.getIndices());
+                                          insertOp.getIndex());
 
     return success();
   }
@@ -81,7 +76,7 @@ struct InsertFromExtractOp : public OpRewritePattern<InsertOp> {
     if (insertOp.getDest() != extractOp.getOutTensor()) {
       return failure();
     }
-    if (insertOp.getIndices() != extractOp.getIndices()) {
+    if (insertOp.getIndex() != extractOp.getIndex()) {
       return failure();
     }
 
@@ -95,5 +90,5 @@ struct InsertFromExtractOp : public OpRewritePattern<InsertOp> {
 
 void InsertOp::getCanonicalizationPatterns(RewritePatternSet& results,
                                            MLIRContext* context) {
-  results.add<InsertFromExtractOp, ConvertInsertOpToStaticShape>(context);
+  results.add<InsertFromExtractOp>(context);
 }

@@ -124,11 +124,6 @@ foldIdentityOffsetSizeAndStrideOpInterface(OffsetSizeAndStrideOpInterface op,
       return failure();
     }
   }
-  for (OpFoldResult opFold : op.getMixedStrides()) {
-    if (getConstantIntValue(opFold) != static_cast<int64_t>(1)) {
-      return failure();
-    }
-  }
   return success();
 }
 } // namespace mlir::qtensor

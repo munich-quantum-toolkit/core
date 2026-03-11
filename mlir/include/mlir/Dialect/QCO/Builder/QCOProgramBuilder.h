@@ -274,7 +274,6 @@ public:
    * @param tensor Source tensor
    * @param offset The offset from where the slice is extracted
    * @param size The size of the extracted slice
-   * @param strides The strides from where the values are extracted (default: 1)
    * @return Pair of (extractedSlice, outTensor)
    *
    * @par Example:
@@ -282,14 +281,13 @@ public:
    * auto [extractedSlice, outTensor] = builder.extractSlice(tensor, 0, 2);
    * ```
    * ```mlir
-   * %extractedSlice, %outTensor = qtensor.extract_slice %tensor[%c0][%c2][%c1]
+   * %extractedSlice, %outTensor = qtensor.extract_slice %tensor[%c0][%c2]
    * : tensor<3x!qco.qubit> to tensor<2x!qco.qubit>
    * ```
    */
   std::pair<Value, Value>
   extractSlice(Value tensor, const std::variant<int64_t, Value>& offset,
-               const std::variant<int64_t, Value>& sizes,
-               const std::variant<int64_t, Value>& strides = 1);
+               const std::variant<int64_t, Value>& sizes);
 
   /**
    * @brief Insert a qubit into a tensor
@@ -315,7 +313,6 @@ public:
    * @param destTensor The tensor where the slice is inserted
    * @param offset The offset into where the slice is inserted
    * @param size The size of the inserted slice
-   * @param strides The strides of where the qubits are inserted (default: 1)
    * @return The output tensor
    *
    * @par Example:
@@ -323,14 +320,13 @@ public:
    * auto outTensor = builder.insertSlice(slicedTensor, tensor, 0, 2);
    * ```
    * ```mlir
-   * %outTensor = qtensor.insert_slice %slicedTensor into %tensor[%c0][%c2][%c1]
+   * %outTensor = qtensor.insert_slice %slicedTensor into %tensor[%c0][%c2]
    * : tensor<2x!qco.qubit> into tensor<3x!qco.qubit>
    * ```
    */
   Value insertSlice(Value sourceTensor, Value destTensor,
                     const std::variant<int64_t, Value>& offset,
-                    const std::variant<int64_t, Value>& sizes,
-                    const std::variant<int64_t, Value>& strides = 1);
+                    const std::variant<int64_t, Value>& sizes);
 
   /**
    * @brief Explicitly deallocate a tensor

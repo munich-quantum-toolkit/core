@@ -71,6 +71,25 @@ class QTensorOpWithOffsetSizesAndStrides<string mnemonic,
   }];
 }
 
+class QTensorOpWithOffsetSizesAndStridess<string mnemonic,
+                                         list<Trait> traits = []>
+    : QTensorOp<mnemonic, traits> {
+  code extraBaseClassDeclaration = [{
+    /// Return the type of the base tensor operand.
+    ::mlir::RankedTensorType getSourceType() {
+      return ::llvm::cast<RankedTensorType>(getSource().getType());
+    }
+
+    /// Return the type of the result tensor.
+    ::mlir::RankedTensorType getResultType() {
+      return ::llvm::cast<RankedTensorType>(getResult().getType());
+    }
+
+    /// Return the dynamic sizes for this subview operation if specified.
+    ::mlir::TypedValue<mlir::IndexType> getDynamicSizes() { return getSize(); }
+
+  }];
+}
 //===----------------------------------------------------------------------===//
 // Operations
 //===----------------------------------------------------------------------===//
@@ -165,19 +184,17 @@ def QTensor_ExtractOp : QTensorOp<"extract", [
         ```
     }];
 
-    let arguments = (ins AnyRankedTensor:$tensor, Variadic<Index>:$indices);
+    let arguments = (ins AnyRankedTensor:$tensor, Index:$index);
     let results = (outs AnyType:$result, AnyRankedTensor:$out_tensor);
-    let assemblyFormat = "$tensor `[` $indices `]` attr-dict `:` type($tensor)";
+    let assemblyFormat = "$tensor `[` $index `]` attr-dict `:` type($tensor)";
 
     let hasFolder = 1;
     let hasVerifier = 1;
     let hasCanonicalizer = 1;
 }
 
-def QTensor_ExtractSliceOp : QTensorOpWithOffsetSizesAndStrides<"extract_slice", [
-    AttrSizedOperandSegments,
+def QTensor_ExtractSliceOp : QTensorOpWithOffsetSizesAndStridess<"extract_slice", [
     Pure,
-    OffsetSizeAndStrideOpInterface,
     TypesMatchWith<"returned tensor type matches input tensor",
     "source", "out_source", "$_self">
   ]> {
@@ -213,59 +230,19 @@ def QTensor_ExtractSliceOp : QTensorOpWithOffsetSizesAndStrides<"extract_slice",
 
     let arguments = (ins
         AnyRankedTensor:$source,
-        Variadic<Index>:$offsets,
-        Variadic<Index>:$sizes,
-        Variadic<Index>:$strides,
-        DenseI64ArrayAttr:$static_offsets,
-        DenseI64ArrayAttr:$static_sizes,
-        DenseI64ArrayAttr:$static_strides
+        Index:$offset,
+        Index:$size
     );
     let results = (outs AnyRankedTensor:$result, AnyRankedTensor:$out_source);
 
     let assemblyFormat = [{
-        $source ``
-        custom<DynamicIndexList>($offsets, $static_offsets)
-        custom<DynamicIndexList>($sizes, $static_sizes)
-        custom<DynamicIndexList>($strides, $static_strides)
+        $source `[`$offset `]` `[`$size`]`
         attr-dict `:` type($source) `to` type($result)
     }];
 
     let builders = [
-        // Build an ExtractSliceOp with mixed static and dynamic entries and
-        // inferred result type.
-        OpBuilder<(ins "Value":$source, "ArrayRef<OpFoldResult>":$offsets,
-          "ArrayRef<OpFoldResult>":$sizes, CArg<"ArrayRef<OpFoldResult>", "{}">:$strides,
-          CArg<"ArrayRef<NamedAttribute>", "{}">:$attrs)>,
-        // Build an ExtractSliceOp with mixed static and dynamic entries and custom
-        // result type. If the type passed is nullptr, it is inferred.
-        OpBuilder<(ins "RankedTensorType":$resultType, "RankedTensorType":$outSourceType, "Value":$source,
-          "ArrayRef<OpFoldResult>":$offsets, "ArrayRef<OpFoldResult>":$sizes,
-          CArg<"ArrayRef<OpFoldResult>", "{}">:$strides,
-          CArg<"ArrayRef<NamedAttribute>", "{}">:$attrs)>,
-        OpBuilder<(ins "RankedTensorType":$resultType, "Value":$source,
-          "ArrayRef<OpFoldResult>":$offsets, "ArrayRef<OpFoldResult>":$sizes,
-          CArg<"ArrayRef<OpFoldResult>", "{}">:$strides,
-          CArg<"ArrayRef<NamedAttribute>", "{}">:$attrs)>,
-        // Build an ExtractSliceOp with dynamic entries and custom result type. If
-        // the type passed is nullptr, it is inferred.
-        OpBuilder<(ins "Value":$source, "ValueRange":$offsets,
-          "ValueRange":$sizes, CArg<"ValueRange", "{}">:$strides,
-          CArg<"ArrayRef<NamedAttribute>", "{}">:$attrs)>,
-        // Build an ExtractSliceOp with dynamic entries and inferred result type.
-        OpBuilder<(ins "RankedTensorType":$resultType, "RankedTensorType":$outSourceType, "Value":$source,
-          "ValueRange":$offsets, "ValueRange":$sizes, CArg<"ValueRange", "{}">:$strides,
-          CArg<"ArrayRef<NamedAttribute>", "{}">:$attrs)>,
-        OpBuilder<(ins "RankedTensorType":$resultType, "Value":$source,
-          "ValueRange":$offsets, "ValueRange":$sizes, CArg<"ValueRange", "{}">:$strides,
-          CArg<"ArrayRef<NamedAttribute>", "{}">:$attrs)>,
-        // Build an ExtractSliceOp with mixed static and dynamic entries packed in
-        // a Range vector.
-        OpBuilder<(ins "Value":$source, "ArrayRef<Range>":$ranges,
-            CArg<"ArrayRef<NamedAttribute>", "{}">:$attrs)>,
-        // Build an ExtractSliceOp with mixed static and dynamic sizes, inferred
-        // result type, offsets set to 0 and strides set to 1.
-        OpBuilder<(ins "RankedTensorType":$resultType, "Value":$source,
-          "ArrayRef<OpFoldResult>":$sizes,
+        OpBuilder<(ins "Value":$source, "Value":$offset,
+          "Value":$size,
           CArg<"ArrayRef<NamedAttribute>", "{}">:$attrs)>
       ];
 
@@ -352,7 +329,7 @@ def QTensor_InsertOp : QTensorOp<"insert", [
     let summary = "Insert element into tensor";
     let description = [{
         The `qtensor.insert` operation is a wrapper operation for the `tensor.insert` operation of the tensor dialect.
-        This operation inserts a scalar into a ranked tensor as specified by the operation`s indices.
+        This operation inserts a scalar into a ranked tensor as specified by the operation`s index.
 
         Example:
 
@@ -363,10 +340,10 @@ def QTensor_InsertOp : QTensorOp<"insert", [
 
     let arguments = (ins AnyType:$scalar,
                         AnyRankedTensor:$dest,
-                        Variadic<Index>:$indices);
+                        Index:$index);
     let results = (outs AnyRankedTensor:$result);
     let assemblyFormat = [{
-        $scalar `into` $dest `[` $indices `]` attr-dict `:` type($dest)
+        $scalar `into` $dest `[` $index `]` attr-dict `:` type($dest)
     }];
 
     let extraClassDeclaration = [{
@@ -377,11 +354,9 @@ def QTensor_InsertOp : QTensorOp<"insert", [
     let hasCanonicalizer = 1;
 }
 
-def QTensor_InsertSliceOp : QTensorOpWithOffsetSizesAndStrides<"insert_slice", [
-    AttrSizedOperandSegments,
+def QTensor_InsertSliceOp : QTensorOpWithOffsetSizesAndStridess<"insert_slice", [
     DestinationStyleOpInterface,
     Pure,
-    OffsetSizeAndStrideOpInterface,
     TypesMatchWith<"expected result type to match dest type",
                    "dest", "result", "$_self">
   ]> {
@@ -417,37 +392,18 @@ def QTensor_InsertSliceOp : QTensorOpWithOffsetSizesAndStrides<"insert_slice", [
     let arguments = (ins
         AnyRankedTensor:$source,
         AnyRankedTensor:$dest,
-        Variadic<Index>:$offsets,
-        Variadic<Index>:$sizes,
-        Variadic<Index>:$strides,
-        DenseI64ArrayAttr:$static_offsets,
-        DenseI64ArrayAttr:$static_sizes,
-        DenseI64ArrayAttr:$static_strides
+        Index:$offset,
+        Index:$size
     );
     let results = (outs AnyRankedTensor:$result);
     let assemblyFormat = [{
-        $source `into` $dest ``
-        custom<DynamicIndexList>($offsets, $static_offsets)
-        custom<DynamicIndexList>($sizes, $static_sizes)
-        custom<DynamicIndexList>($strides, $static_strides)
+        $source `into` $dest `[`$offset `]` `[`$size`]`
         attr-dict `:` type($source) `into` type($dest)
     }];
 
     let builders = [
-        // Build a InsertSliceOp with mixed static and dynamic entries and inferred
-        // result type.
-        OpBuilder<(ins "Value":$source, "Value":$dest,
-          "ArrayRef<OpFoldResult>":$offsets, "ArrayRef<OpFoldResult>":$sizes,
-          CArg<"ArrayRef<OpFoldResult>", "{}">:$strides,
-          CArg<"ArrayRef<NamedAttribute>", "{}">:$attrs)>,
-        // Build a InsertSliceOp with dynamic entries and inferred result type.
-        OpBuilder<(ins "Value":$source, "Value":$dest,
-          "ValueRange":$offsets, "ValueRange":$sizes, CArg<"ValueRange", "{}">:$strides,
-          CArg<"ArrayRef<NamedAttribute>", "{}">:$attrs)>,
-        // Build an InsertSliceOp with mixed static and dynamic entries packed in
-        // a Range vector and inferred result type.
-        OpBuilder<(ins "Value":$source, "Value":$dest,
-          "ArrayRef<Range>":$ranges,
+        OpBuilder<(ins "Value":$source,
+          "Value":$offset, "Value":$size,
           CArg<"ArrayRef<NamedAttribute>", "{}">:$attrs)>
     ];
 
