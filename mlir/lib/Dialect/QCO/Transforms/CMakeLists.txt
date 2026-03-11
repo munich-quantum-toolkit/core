@@ -8,8 +8,6 @@
 
 file(GLOB_RECURSE PASSES_SOURCES *.cpp)
 
-get_property(dialect_libs GLOBAL PROPERTY MLIR_DIALECT_LIBS)
-
 add_mlir_library(
   MLIRQCOTransforms
   ${PASSES_SOURCES}
