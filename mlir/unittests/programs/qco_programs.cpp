@@ -1368,6 +1368,12 @@ void inverseMultipleControlledDcx(QCOProgramBuilder& b) {
   });
 }
 
+void twoDcxSwappedTargets(QCOProgramBuilder& b) {
+  auto q = b.allocQubitRegister(2);
+  std::tie(q[0], q[1]) = b.dcx(q[0], q[1]);
+  std::tie(q[1], q[0]) = b.dcx(q[1], q[0]);
+}
+
 void ecr(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   b.ecr(q[0], q[1]);
