@@ -16,6 +16,8 @@ add_mlir_library(
   LINK_LIBS
   PUBLIC
   PRIVATE
+  MLIRQCODialect
+  MLIRQCOUtils
   ${dialect_libs}
   DEPENDS
   MLIRQCOTransformsIncGen)
