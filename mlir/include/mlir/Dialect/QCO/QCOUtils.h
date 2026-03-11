@@ -98,7 +98,9 @@ removeTwoTargetZeroParameterPairWithSwappedTargets(OpType op,
   }
 
   // Unlink both operations
-  rewriter.replaceAllUsesWith(nextOp->getResults(), op.getOperands());
+  llvm::SmallVector<mlir::Value, 2> replacements{op.getInputQubit(1),
+                                                 op.getInputQubit(0)};
+  rewriter.replaceAllUsesWith(nextOp->getResults(), replacements);
 
   return success();
 }
