@@ -22,27 +22,31 @@ using namespace mlir::qtensor;
 
 LogicalResult InsertOp::verify() {
   auto destType = getDest().getType();
+  auto dstDim = destType.getDimSize(0);
+  auto index = getConstantIntValue(getIndex());
+
   if (!llvm::isa<qco::QubitType>(getScalar().getType())) {
     return emitOpError("Scalar must be of qubit type");
   }
+
   if (!llvm::isa<qco::QubitType>(destType.getElementType())) {
     return emitOpError("Elements of dest tensor must be of qubit type");
   }
-  auto index = getConstantIntValue(getIndex());
-  auto size = destType.getDimSize(0);
+
   if (index) {
     if (index < 0) {
       return emitOpError("Index must be non-negative");
     }
-    if (index >= size) {
+    if (index >= dstDim) {
       return emitOpError("Index exceeds tensor dimension");
     }
   }
+
   return success();
 }
 
 /**
- * @brief If an InsertOp consumes an ExtractOp with identical indices,
+ * @brief If an InsertOp consumes an ExtractOp with the same index,
  * return the tensor from the extractOp directly.
  */
 static Value foldInsertAfterExtract(InsertOp insertOp) {
@@ -74,7 +78,10 @@ OpFoldResult InsertOp::fold(FoldAdaptor /*adaptor*/) {
 
 namespace {
 
-struct InsertAfterInsertOp : public OpRewritePattern<InsertOp> {
+/**
+ * @brief Combine subsequent insert operations with the same index.
+ */
+struct CombineSubsequentInsertOp : public OpRewritePattern<InsertOp> {
   using OpRewritePattern<InsertOp>::OpRewritePattern;
 
   LogicalResult matchAndRewrite(InsertOp insertOp,
@@ -96,9 +103,10 @@ struct InsertAfterInsertOp : public OpRewritePattern<InsertOp> {
     return success();
   }
 };
+
 } // namespace
 
 void InsertOp::getCanonicalizationPatterns(RewritePatternSet& results,
                                            MLIRContext* context) {
-  results.add<InsertAfterInsertOp>(context);
+  results.add<CombineSubsequentInsertOp>(context);
 }

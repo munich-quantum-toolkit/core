@@ -37,57 +37,53 @@
 using namespace mlir;
 using namespace mlir::qtensor;
 
-// Adjusted from
-// https://github.com/llvm/llvm-project/blob/llvmorg-22.1.0/mlir/lib/Dialect/Tensor/IR/TensorOps.cpp
-
-/// Verifier for InsertSliceOp.
 LogicalResult InsertSliceOp::verify() {
   auto sourceType = getSource().getType();
   auto destType = getDest().getType();
+  auto srcDim = sourceType.getDimSize(0);
+  auto dstDim = destType.getDimSize(0);
+  auto constOffset = getConstantIntValue(getOffset());
+  auto constSize = getConstantIntValue(getSize());
 
   if (!llvm::isa<qco::QubitType>(sourceType.getElementType())) {
-    return emitOpError("Elements of source tensor must be of qubit type");
+    return emitOpError("Elements of sourceTensor must be of qubit type");
   }
+
   if (!llvm::isa<qco::QubitType>(destType.getElementType())) {
-    return emitOpError("Elements of dest tensor must be of qubit type");
+    return emitOpError("Elements of destTensor must be of qubit type");
   }
 
-  auto dstDim = destType.getDimSize(0);
-  auto srcDim = sourceType.getDimSize(0);
+  if (constOffset && *constOffset < 0) {
+    return emitOpError("Offset must be non-negative");
+  }
 
-  if (auto constSize = getConstantIntValue(getSize())) {
-    if (*constSize < 0) {
-      return emitOpError("Size must be non-negative");
-    }
+  if (constSize && *constSize < 0) {
+    return emitOpError("Size must be non-negative");
+  }
 
-    // Check size fits in source
-    if (!ShapedType::isDynamic(srcDim) && *constSize > srcDim) {
-      return emitOpError("Size exceeds source dimension");
+  if (constSize && !ShapedType::isDynamic(srcDim)) {
+    if (*constSize != srcDim) {
+      return emitOpError("Size must match source dimension");
     }
+  }
 
-    if (auto constOffset = getConstantIntValue(getOffset())) {
-      if (*constOffset < 0) {
-        return emitOpError("Offset must be non-negative");
-      }
+  if (constOffset && constSize && !ShapedType::isDynamic(dstDim)) {
+    if (*constOffset + *constSize > dstDim) {
+      return emitOpError("Offset + Size exceeds destination dimension");
+    }
+  }
 
-      // Check slice fits in dest
-      if (!ShapedType::isDynamic(dstDim) &&
-          *constOffset + *constSize > dstDim) {
-        return emitOpError("Offset + Size exceeds destination dimension");
-      }
-    }
-  } else if (auto constOffset = getConstantIntValue(getOffset())) {
-    if (*constOffset < 0) {
-      return emitOpError("Offset must be non-negative");
-    }
-    if (!ShapedType::isDynamic(dstDim) && *constOffset >= dstDim) {
-      return emitOpError("Offset out of bounds");
-    }
+  if (getResult().getType() != destType) {
+    return emitOpError("Result type must match dest type");
   }
 
   return success();
 }
 
+/**
+ * @brief If an InsertSliceOp consumes an ExtractSliceOp with the same offset
+ * and size, return the sourceTensor from the extractSliceOp directly.
+ */
 static Value foldInsertAfterExtractSlice(InsertSliceOp insertSliceOp) {
   auto extractSliceOp =
       insertSliceOp.getSource().getDefiningOp<ExtractSliceOp>();
@@ -112,36 +108,12 @@ static Value foldInsertAfterExtractSlice(InsertSliceOp insertSliceOp) {
   return extractSliceOp.getSource();
 }
 
-static Value foldIdentity(InsertSliceOp insertSliceOp) {
-  auto offsetValue = getConstantIntValue(insertSliceOp.getOffset());
-  auto sizeValue = getConstantIntValue(insertSliceOp.getSize());
-  auto source = insertSliceOp.getSource();
-  auto dest = insertSliceOp.getDest();
-
-  if (source != dest) {
-    return nullptr;
-  }
-  if (!offsetValue || !sizeValue) {
-    return nullptr;
-  }
-  if (*offsetValue != 0) {
-    return nullptr;
-  }
-  if (*sizeValue != source.getType().getDimSize(0)) {
-    return nullptr;
-  }
-  return source;
-}
-
 OpFoldResult InsertSliceOp::fold(FoldAdaptor /*adaptor*/) {
-  if (auto result = foldIdentity(*this)) {
-    return result;
-  }
-
   if (auto result = foldInsertAfterExtractSlice(*this)) {
     return result;
   }
 
+  // Fold InsertSliceOp if size is 0
   if (auto constSize = getConstantIntValue(getSize())) {
     if (*constSize == 0) {
       return getDest();
@@ -150,9 +122,14 @@ OpFoldResult InsertSliceOp::fold(FoldAdaptor /*adaptor*/) {
 
   return {};
 }
+
 namespace {
 
-struct InsertSliceAfterInsertSlice final
+/**
+ * @brief Combine subsequent insertSlice operations with the same offset and
+ * size.
+ */
+struct CombineSubsequentInsertSliceOp final
     : public OpRewritePattern<InsertSliceOp> {
 
   using OpRewritePattern::OpRewritePattern;
@@ -191,5 +168,5 @@ struct InsertSliceAfterInsertSlice final
 
 void InsertSliceOp::getCanonicalizationPatterns(RewritePatternSet& results,
                                                 MLIRContext* context) {
-  results.add<InsertSliceAfterInsertSlice>(context);
+  results.add<CombineSubsequentInsertSliceOp>(context);
 }

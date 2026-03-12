@@ -27,21 +27,20 @@
 using namespace mlir;
 using namespace mlir::qtensor;
 
-// Adjusted from
-// https://github.com/llvm/llvm-project/blob/llvmorg-22.1.0/mlir/lib/Dialect/Tensor/IR/TensorOps.cpp
-
 LogicalResult ExtractOp::verify() {
-  auto tensorType = llvm::cast<RankedTensorType>(getTensor().getType());
+  auto tensorType = getTensor().getType();
+  auto tensorDim = getTensor().getType().getDimSize(0);
+  auto index = getConstantIntValue(getIndex());
+
   if (!llvm::isa<qco::QubitType>(tensorType.getElementType())) {
     return emitOpError("Elements of tensor must be of qubit type");
   }
-  auto index = getConstantIntValue(getIndex());
-  auto size = getTensor().getType().getDimSize(0);
+
   if (index) {
     if (index < 0) {
       return emitOpError("Index must be non-negative");
     }
-    if (index >= size) {
+    if (index >= tensorDim) {
       return emitOpError("Index exceeds tensor dimension");
     }
   }
@@ -49,8 +48,8 @@ LogicalResult ExtractOp::verify() {
 }
 
 /**
- * @brief If an ExtractOp consumes an InsertOp with identical indices,
- * return the scalar from the InsertOp directly.
+ * @brief If an ExtractOp consumes an InsertOp with the same index,
+ * return the scalar and the destTensor from the InsertOp directly.
  */
 static InsertOp foldExtractAfterInsert(ExtractOp extractOp) {
   auto insertOp = extractOp.getTensor().getDefiningOp<InsertOp>();
@@ -65,10 +64,10 @@ static InsertOp foldExtractAfterInsert(ExtractOp extractOp) {
   auto insertIndex = insertOp.getIndex();
   auto extractIndex = extractOp.getIndex();
 
-  if (isSameIndex(insertIndex, extractIndex)) {
-    return insertOp;
+  if (!isSameIndex(insertIndex, extractIndex)) {
+    return nullptr;
   }
-  return nullptr;
+  return insertOp;
 }
 
 LogicalResult ExtractOp::fold(FoldAdaptor /*adaptor*/,

@@ -35,6 +35,13 @@
 
 namespace mlir::qtensor {
 
+/**
+ * @brief Check if two values of IndexType identical.
+ *
+ * @param index1 The first IndexType value.
+ * @param index2 The second IndexType value.
+ * @return True if both values are equal.
+ */
 bool isSameIndex(TypedValue<IndexType> index1, TypedValue<IndexType> index2);
 
 } // namespace mlir::qtensor

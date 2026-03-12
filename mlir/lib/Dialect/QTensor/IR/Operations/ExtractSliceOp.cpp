@@ -52,55 +52,55 @@ void ExtractSliceOp::build(OpBuilder& b, OperationState& result, Value source,
   build(b, result, {resultType, source.getType()}, source, offset, size);
 }
 
-/// Verifier for ExtractSliceOp.
 LogicalResult ExtractSliceOp::verify() {
-  RankedTensorType sourceType = getSource().getType();
+  auto sourceType = getSource().getType();
+  auto resultType = getResult().getType();
+  auto outSourceType = getOutSource().getType();
+  auto srcDim = sourceType.getDimSize(0);
+  auto constOffset = getConstantIntValue(getOffset());
+  auto constSize = getConstantIntValue(getSize());
 
-  // Element type check
   if (!llvm::isa<qco::QubitType>(sourceType.getElementType())) {
     return emitOpError("Elements of source tensor must be of qubit type");
   }
 
-  auto srcDim = sourceType.getDimSize(0);
+  if (constOffset && *constOffset < 0) {
+    return emitOpError("Offset must be non-negative");
+  }
 
-  if (auto constSize = getConstantIntValue(getSize())) {
-    if (*constSize < 0) {
-      return emitOpError("Size must be non-negative");
-    }
+  if (constSize && *constSize < 0) {
+    return emitOpError("Size must be non-negative");
+  }
 
-    // Check size fits in source
-    if (!ShapedType::isDynamic(srcDim) && *constSize > srcDim) {
-      return emitOpError("Size exceeds source dimension");
-    }
-
-    if (auto constOffset = getConstantIntValue(getOffset())) {
-      if (*constOffset < 0) {
-        return emitOpError("Offset must be non-negative");
-      }
-
-      if (!ShapedType::isDynamic(srcDim) &&
-          *constOffset + *constSize > srcDim) {
-        return emitOpError("Offset + Size exceeds source dimension");
-      }
-    }
-  } else if (auto constOffset = getConstantIntValue(getOffset())) {
-    if (*constOffset < 0) {
-      return emitOpError("Offset must be non-negative");
-    }
-    if (!ShapedType::isDynamic(srcDim) && *constOffset >= srcDim) {
-      return emitOpError("Offset out of bounds");
+  if (constOffset && constSize && !ShapedType::isDynamic(srcDim)) {
+    if (*constOffset + *constSize > srcDim) {
+      return emitOpError("Offset + Size exceeds source dimension");
     }
   }
 
-  // Verify result slice type matches source element type
-  RankedTensorType resultType = getOutSource().getType(); // or getResult()
   if (resultType.getElementType() != sourceType.getElementType()) {
-    return emitOpError("result element type must match source element type");
+    return emitOpError("Result element type must match source element type");
+  }
+
+  if (outSourceType.getElementType() != sourceType.getElementType()) {
+    return emitOpError(
+        "OutSourceTensor element type must match source element type");
+  }
+
+  if (constSize && !ShapedType::isDynamic(resultType.getDimSize(0))) {
+    if (resultType.getDimSize(0) != *constSize) {
+      return emitOpError("Result tensor dimension must match size operand");
+    }
   }
 
   return success();
 }
 
+/**
+ * @brief If an ExtractSliceOp consumes an InsertSliceOp with the same offset
+ * and size, return the sourceTensor and the destTensor from the InsertSliceOp
+ * directly.
+ */
 static InsertSliceOp
 foldExtractAfterInsertSlice(ExtractSliceOp extractSliceOp) {
   auto insertSliceOp =
