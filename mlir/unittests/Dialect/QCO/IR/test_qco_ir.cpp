@@ -217,7 +217,12 @@ INSTANTIATE_TEST_SUITE_P(
                     MQT_NAMED_BUILDER(inverseDcx)},
         QCOTestCase{"InverseMultipleControlledDCX",
                     MQT_NAMED_BUILDER(inverseMultipleControlledDcx),
-                    MQT_NAMED_BUILDER(inverseMultipleControlledDcx)}));
+                    MQT_NAMED_BUILDER(inverseMultipleControlledDcx)},
+        QCOTestCase{"TwoDCX", MQT_NAMED_BUILDER(twoDcx),
+                    MQT_NAMED_BUILDER(twoDcx)},
+        QCOTestCase{"TwoDCXSwappedTargets",
+                    MQT_NAMED_BUILDER(twoDcxSwappedTargets),
+                    MQT_NAMED_BUILDER(emptyQCO)}));
 /// @}
 
 /// \name QCO/Operations/StandardGates/EcrOp.cpp

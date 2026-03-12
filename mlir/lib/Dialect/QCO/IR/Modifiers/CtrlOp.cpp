@@ -133,7 +133,7 @@ struct ReduceCtrl final : OpRewritePattern<CtrlOp> {
     const OpBuilder::InsertionGuard guard(rewriter);
     rewriter.setInsertionPoint(gPhaseOp);
     auto pOp =
-        rewriter.create<POp>(gPhaseOp.getLoc(), arg, gPhaseOp.getTheta());
+        POp::create(rewriter, gPhaseOp.getLoc(), arg, gPhaseOp.getTheta());
 
     // Add the results of the POp to the yield operation
     auto yieldOp = llvm::cast<YieldOp>(op.getBody()->back());

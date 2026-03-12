@@ -113,388 +113,6 @@ private:
 } // namespace
 
 /**
- * @brief Converts a zero-target, one-parameter QC operation to QCO
- *
- * @tparam QCOOpType The operation type of the QCO operation
- * @tparam QCOpType The operation type of the QC operation
- * @param op The QC operation instance to convert
- * @param rewriter The pattern rewriter
- * @param state The lowering state
- * @return LogicalResult Success or failure of the conversion
- */
-template <typename QCOOpType, typename QCOpType>
-static LogicalResult
-convertZeroTargetOneParameter(QCOpType& op, ConversionPatternRewriter& rewriter,
-                              LoweringState& state) {
-  const auto inNestedRegion = state.inNestedRegion;
-
-  rewriter.create<QCOOpType>(op.getLoc(), op.getParameter(0));
-
-  // Update the state
-  if (inNestedRegion != 0) {
-    state.targetsIn.erase(inNestedRegion);
-    const SmallVector<Value> targetsOut;
-    state.targetsOut.try_emplace(inNestedRegion, targetsOut);
-  }
-
-  rewriter.eraseOp(op);
-
-  return success();
-}
-
-/**
- * @brief Converts a one-target, zero-parameter QC operation to QCO
- *
- * @tparam QCOOpType The operation type of the QCO operation
- * @tparam QCOpType The operation type of the QC operation
- * @param op The QC operation instance to convert
- * @param rewriter The pattern rewriter
- * @param state The lowering state
- * @return LogicalResult Success or failure of the conversion
- */
-template <typename QCOOpType, typename QCOpType>
-static LogicalResult
-convertOneTargetZeroParameter(QCOpType& op, ConversionPatternRewriter& rewriter,
-                              LoweringState& state) {
-  auto& qubitMap = state.qubitMap;
-  const auto inNestedRegion = state.inNestedRegion;
-
-  // Get the latest QCO qubit
-  auto qcQubit = op.getQubitIn();
-  Value qcoQubit;
-  if (inNestedRegion == 0) {
-    assert(qubitMap.contains(qcQubit) && "QC qubit not found");
-    qcoQubit = qubitMap[qcQubit];
-  } else {
-    assert(state.targetsIn[inNestedRegion].size() == 1 &&
-           "Invalid number of input targets");
-    qcoQubit = state.targetsIn[inNestedRegion].front();
-  }
-
-  // Create the QCO operation (consumes input, produces output)
-  auto qcoOp = rewriter.create<QCOOpType>(op.getLoc(), qcoQubit);
-
-  // Update the state map
-  if (inNestedRegion == 0) {
-    qubitMap[qcQubit] = qcoOp.getQubitOut();
-  } else {
-    state.targetsIn.erase(inNestedRegion);
-    const SmallVector<Value> targetsOut({qcoOp.getQubitOut()});
-    state.targetsOut.try_emplace(inNestedRegion, targetsOut);
-  }
-
-  rewriter.eraseOp(op);
-
-  return success();
-}
-
-/**
- * @brief Converts a one-target, one-parameter QC operation to QCO
- *
- * @tparam QCOOpType The operation type of the QCO operation
- * @tparam QCOpType The operation type of the QC operation
- * @param op The QC operation instance to convert
- * @param rewriter The pattern rewriter
- * @param state The lowering state
- * @return LogicalResult Success or failure of the conversion
- */
-template <typename QCOOpType, typename QCOpType>
-static LogicalResult
-convertOneTargetOneParameter(QCOpType& op, ConversionPatternRewriter& rewriter,
-                             LoweringState& state) {
-  auto& qubitMap = state.qubitMap;
-  const auto inNestedRegion = state.inNestedRegion;
-
-  // Get the latest QCO qubit
-  auto qcQubit = op.getQubitIn();
-  Value qcoQubit;
-  if (inNestedRegion == 0) {
-    assert(qubitMap.contains(qcQubit) && "QC qubit not found");
-    qcoQubit = qubitMap[qcQubit];
-  } else {
-    assert(state.targetsIn[inNestedRegion].size() == 1 &&
-           "Invalid number of input targets");
-    qcoQubit = state.targetsIn[inNestedRegion].front();
-  }
-
-  // Create the QCO operation (consumes input, produces output)
-  auto qcoOp =
-      rewriter.create<QCOOpType>(op.getLoc(), qcoQubit, op.getParameter(0));
-
-  // Update the state map
-  if (inNestedRegion == 0) {
-    qubitMap[qcQubit] = qcoOp.getQubitOut();
-  } else {
-    state.targetsIn.erase(inNestedRegion);
-    const SmallVector<Value> targetsOut({qcoOp.getQubitOut()});
-    state.targetsOut.try_emplace(inNestedRegion, targetsOut);
-  }
-
-  rewriter.eraseOp(op);
-
-  return success();
-}
-
-/**
- * @brief Converts a one-target, two-parameter QC operation to QCO
- *
- * @tparam QCOOpType The operation type of the QCO operation
- * @tparam QCOpType The operation type of the QC operation
- * @param op The QC operation instance to convert
- * @param rewriter The pattern rewriter
- * @param state The lowering state
- * @return LogicalResult Success or failure of the conversion
- */
-template <typename QCOOpType, typename QCOpType>
-static LogicalResult
-convertOneTargetTwoParameter(QCOpType& op, ConversionPatternRewriter& rewriter,
-                             LoweringState& state) {
-  auto& qubitMap = state.qubitMap;
-  const auto inNestedRegion = state.inNestedRegion;
-
-  // Get the latest QCO qubit
-  auto qcQubit = op.getQubitIn();
-  Value qcoQubit;
-  if (inNestedRegion == 0) {
-    assert(qubitMap.contains(qcQubit) && "QC qubit not found");
-    qcoQubit = qubitMap[qcQubit];
-  } else {
-    assert(state.targetsIn[inNestedRegion].size() == 1 &&
-           "Invalid number of input targets");
-    qcoQubit = state.targetsIn[inNestedRegion].front();
-  }
-
-  // Create the QCO operation (consumes input, produces output)
-  auto qcoOp = rewriter.create<QCOOpType>(
-      op.getLoc(), qcoQubit, op.getParameter(0), op.getParameter(1));
-
-  // Update the state map
-  if (inNestedRegion == 0) {
-    qubitMap[qcQubit] = qcoOp.getQubitOut();
-  } else {
-    state.targetsIn.erase(inNestedRegion);
-    const SmallVector<Value> targetsOut({qcoOp.getQubitOut()});
-    state.targetsOut.try_emplace(inNestedRegion, targetsOut);
-  }
-
-  rewriter.eraseOp(op);
-
-  return success();
-}
-
-/**
- * @brief Converts a one-target, three-parameter QC operation to QCO
- *
- * @tparam QCOOpType The operation type of the QCO operation
- * @tparam QCOpType The operation type of the QC operation
- * @param op The QC operation instance to convert
- * @param rewriter The pattern rewriter
- * @param state The lowering state
- * @return LogicalResult Success or failure of the conversion
- */
-template <typename QCOOpType, typename QCOpType>
-static LogicalResult convertOneTargetThreeParameter(
-    QCOpType& op, ConversionPatternRewriter& rewriter, LoweringState& state) {
-  auto& qubitMap = state.qubitMap;
-  const auto inNestedRegion = state.inNestedRegion;
-
-  // Get the latest QCO qubit
-  auto qcQubit = op.getQubitIn();
-  Value qcoQubit;
-  if (inNestedRegion == 0) {
-    assert(qubitMap.contains(qcQubit) && "QC qubit not found");
-    qcoQubit = qubitMap[qcQubit];
-  } else {
-    assert(state.targetsIn[inNestedRegion].size() == 1 &&
-           "Invalid number of input targets");
-    qcoQubit = state.targetsIn[inNestedRegion].front();
-  }
-
-  // Create the QCO operation (consumes input, produces output)
-  auto qcoOp =
-      rewriter.create<QCOOpType>(op.getLoc(), qcoQubit, op.getParameter(0),
-                                 op.getParameter(1), op.getParameter(2));
-
-  // Update the state map
-  if (inNestedRegion == 0) {
-    qubitMap[qcQubit] = qcoOp.getQubitOut();
-  } else {
-    state.targetsIn.erase(inNestedRegion);
-    const SmallVector<Value> targetsOut({qcoOp.getQubitOut()});
-    state.targetsOut.try_emplace(inNestedRegion, targetsOut);
-  }
-
-  rewriter.eraseOp(op);
-
-  return success();
-}
-
-/**
- * @brief Converts a two-target, zero-parameter QC operation to QCO
- *
- * @tparam QCOOpType The operation type of the QCO operation
- * @tparam QCOpType The operation type of the QC operation
- * @param op The QC operation instance to convert
- * @param rewriter The pattern rewriter
- * @param state The lowering state
- * @return LogicalResult Success or failure of the conversion
- */
-template <typename QCOOpType, typename QCOpType>
-static LogicalResult
-convertTwoTargetZeroParameter(QCOpType& op, ConversionPatternRewriter& rewriter,
-                              LoweringState& state) {
-  auto& qubitMap = state.qubitMap;
-  const auto inNestedRegion = state.inNestedRegion;
-
-  // Get the latest QCO qubits
-  auto qcQubit0 = op.getQubit0In();
-  auto qcQubit1 = op.getQubit1In();
-  Value qcoQubit0;
-  Value qcoQubit1;
-  if (inNestedRegion == 0) {
-    assert(qubitMap.contains(qcQubit0) && "QC qubit not found");
-    assert(qubitMap.contains(qcQubit1) && "QC qubit not found");
-    qcoQubit0 = qubitMap[qcQubit0];
-    qcoQubit1 = qubitMap[qcQubit1];
-  } else {
-    assert(state.targetsIn[inNestedRegion].size() == 2 &&
-           "Invalid number of input targets");
-    const auto& targetsIn = state.targetsIn[inNestedRegion];
-    qcoQubit0 = targetsIn[0];
-    qcoQubit1 = targetsIn[1];
-  }
-
-  // Create the QCO operation (consumes input, produces output)
-  auto qcoOp = rewriter.create<QCOOpType>(op.getLoc(), qcoQubit0, qcoQubit1);
-
-  // Update the state map
-  if (inNestedRegion == 0) {
-    qubitMap[qcQubit0] = qcoOp.getQubit0Out();
-    qubitMap[qcQubit1] = qcoOp.getQubit1Out();
-  } else {
-    state.targetsIn.erase(inNestedRegion);
-    const SmallVector<Value> targetsOut(
-        {qcoOp.getQubit0Out(), qcoOp.getQubit1Out()});
-    state.targetsOut.try_emplace(inNestedRegion, targetsOut);
-  }
-
-  rewriter.eraseOp(op);
-
-  return success();
-}
-
-/**
- * @brief Converts a two-target, one-parameter QC operation to QCO
- *
- * @tparam QCOOpType The operation type of the QCO operation
- * @tparam QCOpType The operation type of the QC operation
- * @param op The QC operation instance to convert
- * @param rewriter The pattern rewriter
- * @param state The lowering state
- * @return LogicalResult Success or failure of the conversion
- */
-template <typename QCOOpType, typename QCOpType>
-static LogicalResult
-convertTwoTargetOneParameter(QCOpType& op, ConversionPatternRewriter& rewriter,
-                             LoweringState& state) {
-  auto& qubitMap = state.qubitMap;
-  const auto inNestedRegion = state.inNestedRegion;
-
-  // Get the latest QCO qubits
-  auto qcQubit0 = op.getQubit0In();
-  auto qcQubit1 = op.getQubit1In();
-  Value qcoQubit0;
-  Value qcoQubit1;
-  if (inNestedRegion == 0) {
-    assert(qubitMap.contains(qcQubit0) && "QC qubit not found");
-    assert(qubitMap.contains(qcQubit1) && "QC qubit not found");
-    qcoQubit0 = qubitMap[qcQubit0];
-    qcoQubit1 = qubitMap[qcQubit1];
-  } else {
-    assert(state.targetsIn[inNestedRegion].size() == 2 &&
-           "Invalid number of input targets");
-    const auto& targetsIn = state.targetsIn[inNestedRegion];
-    qcoQubit0 = targetsIn[0];
-    qcoQubit1 = targetsIn[1];
-  }
-
-  // Create the QCO operation (consumes input, produces output)
-  auto qcoOp = rewriter.create<QCOOpType>(op.getLoc(), qcoQubit0, qcoQubit1,
-                                          op.getParameter(0));
-
-  // Update the state map
-  if (inNestedRegion == 0) {
-    qubitMap[qcQubit0] = qcoOp.getQubit0Out();
-    qubitMap[qcQubit1] = qcoOp.getQubit1Out();
-  } else {
-    state.targetsIn.erase(inNestedRegion);
-    const SmallVector<Value> targetsOut(
-        {qcoOp.getQubit0Out(), qcoOp.getQubit1Out()});
-    state.targetsOut.try_emplace(inNestedRegion, targetsOut);
-  }
-
-  rewriter.eraseOp(op);
-
-  return success();
-}
-
-/**
- * @brief Converts a two-target, two-parameter QC operation to QCO
- *
- * @tparam QCOOpType The operation type of the QCO operation
- * @tparam QCOpType The operation type of the QC operation
- * @param op The QC operation instance to convert
- * @param rewriter The pattern rewriter
- * @param state The lowering state
- * @return LogicalResult Success or failure of the conversion
- */
-template <typename QCOOpType, typename QCOpType>
-static LogicalResult
-convertTwoTargetTwoParameter(QCOpType& op, ConversionPatternRewriter& rewriter,
-                             LoweringState& state) {
-  auto& qubitMap = state.qubitMap;
-  const auto inNestedRegion = state.inNestedRegion;
-
-  // Get the latest QCO qubits
-  auto qcQubit0 = op.getQubit0In();
-  auto qcQubit1 = op.getQubit1In();
-  Value qcoQubit0;
-  Value qcoQubit1;
-  if (inNestedRegion == 0) {
-    assert(qubitMap.contains(qcQubit0) && "QC qubit not found");
-    assert(qubitMap.contains(qcQubit1) && "QC qubit not found");
-    qcoQubit0 = qubitMap[qcQubit0];
-    qcoQubit1 = qubitMap[qcQubit1];
-  } else {
-    assert(state.targetsIn[inNestedRegion].size() == 2 &&
-           "Invalid number of input targets");
-    const auto& targetsIn = state.targetsIn[inNestedRegion];
-    qcoQubit0 = targetsIn[0];
-    qcoQubit1 = targetsIn[1];
-  }
-
-  // Create the QCO operation (consumes input, produces output)
-  auto qcoOp =
-      rewriter.create<QCOOpType>(op.getLoc(), qcoQubit0, qcoQubit1,
-                                 op.getParameter(0), op.getParameter(1));
-
-  // Update the state map
-  if (inNestedRegion == 0) {
-    qubitMap[qcQubit0] = qcoOp.getQubit0Out();
-    qubitMap[qcQubit1] = qcoOp.getQubit1Out();
-  } else {
-    state.targetsIn.erase(inNestedRegion);
-    const SmallVector<Value> targetsOut(
-        {qcoOp.getQubit0Out(), qcoOp.getQubit1Out()});
-    state.targetsOut.try_emplace(inNestedRegion, targetsOut);
-  }
-
-  rewriter.eraseOp(op);
-
-  return success();
-}
-
-/**
  * @brief Type converter for QC-to-QCO conversion
  *
  * @details
@@ -623,7 +241,7 @@ struct ConvertQCStaticOp final : StatefulOpConversionPattern<qc::StaticOp> {
     auto qcQubit = op.getQubit();
 
     // Create new qco.static operation with the same index
-    auto qcoOp = rewriter.create<qco::StaticOp>(op.getLoc(), op.getIndex());
+    auto qcoOp = qco::StaticOp::create(rewriter, op.getLoc(), op.getIndex());
 
     // Collect QCO qubit SSA value
     auto qcoQubit = qcoOp.getQubit();
@@ -675,8 +293,8 @@ struct ConvertQCMeasureOp final : StatefulOpConversionPattern<qc::MeasureOp> {
     auto qcoQubit = qubitMap[qcQubit];
 
     // Create qco.measure (returns both output qubit and bit result)
-    auto qcoOp = rewriter.create<qco::MeasureOp>(
-        op.getLoc(), qcoQubit, op.getRegisterNameAttr(),
+    auto qcoOp = qco::MeasureOp::create(
+        rewriter, op.getLoc(), qcoQubit, op.getRegisterNameAttr(),
         op.getRegisterSizeAttr(), op.getRegisterIndexAttr());
 
     auto outQcoQubit = qcoOp.getQubitOut();
@@ -726,7 +344,7 @@ struct ConvertQCResetOp final : StatefulOpConversionPattern<qc::ResetOp> {
     auto qcoQubit = qubitMap[qcQubit];
 
     // Create qco.reset (consumes input, produces output)
-    auto qcoOp = rewriter.create<qco::ResetOp>(op.getLoc(), qcoQubit);
+    auto qcoOp = qco::ResetOp::create(rewriter, op.getLoc(), qcoQubit);
 
     // Update mapping: the QC qubit now corresponds to the reset output
     qubitMap[qcQubit] = qcoOp.getQubitOut();
@@ -738,282 +356,478 @@ struct ConvertQCResetOp final : StatefulOpConversionPattern<qc::ResetOp> {
   }
 };
 
-// ZeroTargetOneParameter
+/**
+ * @brief Converts a zero-target, one-parameter QC gate to QCO
+ *
+ * @tparam QCOpType The operation type of the QC gate
+ * @tparam QCOOpType The operation type of the QCO gate
+ *
+ * @par Example:
+ * ```mlir
+ * qc.gphase(%theta)
+ * ```
+ * is converted to
+ * ```mlir
+ * qco.gphase(%theta)
+ * ```
+ */
+template <typename QCOpType, typename QCOOpType>
+struct ConvertQCZeroTargetOneParameterToQCO final
+    : StatefulOpConversionPattern<QCOpType> {
+  using StatefulOpConversionPattern<QCOpType>::StatefulOpConversionPattern;
 
-#define DEFINE_ZERO_TARGET_ONE_PARAMETER(OP_CLASS, OP_NAME, PARAM)             \
-  /**                                                                          \
-   * @brief Converts qc.OP_NAME to qco.OP_NAME                                 \
-   *                                                                           \
-   * @par Example:                                                             \
-   * ```mlir                                                                   \
-   * qc.OP_NAME(%PARAM)                                                        \
-   * ```                                                                       \
-   * is converted to                                                           \
-   * ```mlir                                                                   \
-   * qco.OP_NAME(%PARAM)                                                       \
-   * ```                                                                       \
-   */                                                                          \
-  struct ConvertQC##OP_CLASS final                                             \
-      : StatefulOpConversionPattern<qc::OP_CLASS> {                            \
-    using StatefulOpConversionPattern::StatefulOpConversionPattern;            \
-                                                                               \
-    LogicalResult                                                              \
-    matchAndRewrite(qc::OP_CLASS op, OpAdaptor /*adaptor*/,                    \
-                    ConversionPatternRewriter& rewriter) const override {      \
-      return convertZeroTargetOneParameter<qco::OP_CLASS>(op, rewriter,        \
-                                                          getState());         \
-    }                                                                          \
-  };
+  LogicalResult
+  matchAndRewrite(QCOpType op, typename QCOpType::Adaptor /*adaptor*/,
+                  ConversionPatternRewriter& rewriter) const override {
+    auto& state = this->getState();
+    const auto inNestedRegion = state.inNestedRegion;
 
-DEFINE_ZERO_TARGET_ONE_PARAMETER(GPhaseOp, gphase, theta)
+    QCOOpType::create(rewriter, op.getLoc(), op.getParameter(0));
 
-#undef DEFINE_ZERO_TARGET_ONE_PARAMETER
+    // Update the state
+    if (inNestedRegion != 0) {
+      state.targetsIn.erase(inNestedRegion);
+      const SmallVector<Value> targetsOut;
+      state.targetsOut.try_emplace(inNestedRegion, targetsOut);
+    }
 
-// OneTargetZeroParameter
+    rewriter.eraseOp(op);
 
-#define DEFINE_ONE_TARGET_ZERO_PARAMETER(OP_CLASS, OP_NAME)                    \
-  /**                                                                          \
-   * @brief Converts qc.OP_NAME to qco.OP_NAME                                 \
-   *                                                                           \
-   * @par Example:                                                             \
-   * ```mlir                                                                   \
-   * qc.OP_NAME %q : !qc.qubit                                                 \
-   * ```                                                                       \
-   * is converted to                                                           \
-   * ```mlir                                                                   \
-   * %q_out = qco.OP_NAME %q_in : !qco.qubit -> !qco.qubit                     \
-   * ```                                                                       \
-   */                                                                          \
-  struct ConvertQC##OP_CLASS final                                             \
-      : StatefulOpConversionPattern<qc::OP_CLASS> {                            \
-    using StatefulOpConversionPattern::StatefulOpConversionPattern;            \
-                                                                               \
-    LogicalResult                                                              \
-    matchAndRewrite(qc::OP_CLASS op, OpAdaptor /*adaptor*/,                    \
-                    ConversionPatternRewriter& rewriter) const override {      \
-      return convertOneTargetZeroParameter<qco::OP_CLASS>(op, rewriter,        \
-                                                          getState());         \
-    }                                                                          \
-  };
+    return success();
+  }
+};
 
-DEFINE_ONE_TARGET_ZERO_PARAMETER(IdOp, id)
-DEFINE_ONE_TARGET_ZERO_PARAMETER(XOp, x)
-DEFINE_ONE_TARGET_ZERO_PARAMETER(YOp, y)
-DEFINE_ONE_TARGET_ZERO_PARAMETER(ZOp, z)
-DEFINE_ONE_TARGET_ZERO_PARAMETER(HOp, h)
-DEFINE_ONE_TARGET_ZERO_PARAMETER(SOp, s)
-DEFINE_ONE_TARGET_ZERO_PARAMETER(SdgOp, sdg)
-DEFINE_ONE_TARGET_ZERO_PARAMETER(TOp, t)
-DEFINE_ONE_TARGET_ZERO_PARAMETER(TdgOp, tdg)
-DEFINE_ONE_TARGET_ZERO_PARAMETER(SXOp, sx)
-DEFINE_ONE_TARGET_ZERO_PARAMETER(SXdgOp, sxdg)
+/**
+ * @brief Converts a one-target, zero-parameter QC gate to QCO
+ *
+ * @tparam QCOpType The operation type of the QC gate
+ * @tparam QCOOpType The operation type of the QCO gate
+ *
+ * @par Example:
+ * ```mlir
+ * qc.x %q : !qc.qubit
+ * ```
+ * is converted to
+ * ```mlir
+ * %q_out = qco.x %q_in : !qco.qubit -> !qco.qubit
+ * ```
+ */
+template <typename QCOpType, typename QCOOpType>
+struct ConvertQCOneTargetZeroParameterToQCO final
+    : StatefulOpConversionPattern<QCOpType> {
+  using StatefulOpConversionPattern<QCOpType>::StatefulOpConversionPattern;
 
-#undef DEFINE_ONE_TARGET_ZERO_PARAMETER
+  LogicalResult
+  matchAndRewrite(QCOpType op, typename QCOpType::Adaptor /*adaptor*/,
+                  ConversionPatternRewriter& rewriter) const override {
+    auto& state = this->getState();
+    auto& qubitMap = state.qubitMap;
+    const auto inNestedRegion = state.inNestedRegion;
 
-// OneTargetOneParameter
+    // Get the latest QCO qubit
+    auto qcQubit = op.getQubitIn();
+    Value qcoQubit;
+    if (inNestedRegion == 0) {
+      assert(qubitMap.contains(qcQubit) && "QC qubit not found");
+      qcoQubit = qubitMap[qcQubit];
+    } else {
+      assert(state.targetsIn[inNestedRegion].size() == 1 &&
+             "Invalid number of input targets");
+      qcoQubit = state.targetsIn[inNestedRegion].front();
+    }
 
-#define DEFINE_ONE_TARGET_ONE_PARAMETER(OP_CLASS, OP_NAME, PARAM)              \
-  /**                                                                          \
-   * @brief Converts qc.OP_NAME to qco.OP_NAME                                 \
-   *                                                                           \
-   * @par Example:                                                             \
-   * ```mlir                                                                   \
-   * qc.OP_NAME(%PARAM) %q : !qc.qubit                                         \
-   * ```                                                                       \
-   * is converted to                                                           \
-   * ```mlir                                                                   \
-   * %q_out = qco.OP_NAME(%PARAM) %q_in : !qco.qubit -> !qco.qubit             \
-   * ```                                                                       \
-   */                                                                          \
-  struct ConvertQC##OP_CLASS final                                             \
-      : StatefulOpConversionPattern<qc::OP_CLASS> {                            \
-    using StatefulOpConversionPattern::StatefulOpConversionPattern;            \
-                                                                               \
-    LogicalResult                                                              \
-    matchAndRewrite(qc::OP_CLASS op, OpAdaptor /*adaptor*/,                    \
-                    ConversionPatternRewriter& rewriter) const override {      \
-      return convertOneTargetOneParameter<qco::OP_CLASS>(op, rewriter,         \
-                                                         getState());          \
-    }                                                                          \
-  };
+    // Create the QCO operation (consumes input, produces output)
+    auto qcoOp = QCOOpType::create(rewriter, op.getLoc(), qcoQubit);
 
-DEFINE_ONE_TARGET_ONE_PARAMETER(RXOp, rx, theta)
-DEFINE_ONE_TARGET_ONE_PARAMETER(RYOp, ry, theta)
-DEFINE_ONE_TARGET_ONE_PARAMETER(RZOp, rz, theta)
-DEFINE_ONE_TARGET_ONE_PARAMETER(POp, p, theta)
+    // Update the state map
+    if (inNestedRegion == 0) {
+      qubitMap[qcQubit] = qcoOp.getQubitOut();
+    } else {
+      state.targetsIn.erase(inNestedRegion);
+      const SmallVector<Value> targetsOut({qcoOp.getQubitOut()});
+      state.targetsOut.try_emplace(inNestedRegion, targetsOut);
+    }
 
-#undef DEFINE_ONE_TARGET_ONE_PARAMETER
+    rewriter.eraseOp(op);
 
-// OneTargetTwoParameter
+    return success();
+  }
+};
 
-#define DEFINE_ONE_TARGET_TWO_PARAMETER(OP_CLASS, OP_NAME, PARAM1, PARAM2)     \
-  /**                                                                          \
-   * @brief Converts qc.OP_NAME to qco.OP_NAME                                 \
-   *                                                                           \
-   * @par Example:                                                             \
-   * ```mlir                                                                   \
-   * qc.OP_NAME(%PARAM1, %PARAM2) %q : !qc.qubit                               \
-   * ```                                                                       \
-   * is converted to                                                           \
-   * ```mlir                                                                   \
-   * %q_out = qco.OP_NAME(%PARAM1, %PARAM2) %q_in : !qco.qubit ->              \
-   * !qco.qubit                                                                \
-   * ```                                                                       \
-   */                                                                          \
-  struct ConvertQC##OP_CLASS final                                             \
-      : StatefulOpConversionPattern<qc::OP_CLASS> {                            \
-    using StatefulOpConversionPattern::StatefulOpConversionPattern;            \
-                                                                               \
-    LogicalResult                                                              \
-    matchAndRewrite(qc::OP_CLASS op, OpAdaptor /*adaptor*/,                    \
-                    ConversionPatternRewriter& rewriter) const override {      \
-      return convertOneTargetTwoParameter<qco::OP_CLASS>(op, rewriter,         \
-                                                         getState());          \
-    }                                                                          \
-  };
+/**
+ * @brief Converts a one-target, one-parameter QC gate to QCO
+ *
+ * @tparam QCOpType The operation type of the QC gate
+ * @tparam QCOOpType The operation type of the QCO gate
+ *
+ * @par Example:
+ * ```mlir
+ * qc.rx(%theta) %q : !qc.qubit
+ * ```
+ * is converted to
+ * ```mlir
+ * %q_out = qco.rx(%theta) %q_in : !qco.qubit -> !qco.qubit
+ * ```
+ */
+template <typename QCOpType, typename QCOOpType>
+struct ConvertQCOneTargetOneParameterToQCO final
+    : StatefulOpConversionPattern<QCOpType> {
+  using StatefulOpConversionPattern<QCOpType>::StatefulOpConversionPattern;
 
-DEFINE_ONE_TARGET_TWO_PARAMETER(ROp, r, theta, phi)
-DEFINE_ONE_TARGET_TWO_PARAMETER(U2Op, u2, phi, lambda)
+  LogicalResult
+  matchAndRewrite(QCOpType op, typename QCOpType::Adaptor /*adaptor*/,
+                  ConversionPatternRewriter& rewriter) const override {
+    auto& state = this->getState();
+    auto& qubitMap = state.qubitMap;
+    const auto inNestedRegion = state.inNestedRegion;
 
-#undef DEFINE_ONE_TARGET_TWO_PARAMETER
+    // Get the latest QCO qubit
+    auto qcQubit = op.getQubitIn();
+    Value qcoQubit;
+    if (inNestedRegion == 0) {
+      assert(qubitMap.contains(qcQubit) && "QC qubit not found");
+      qcoQubit = qubitMap[qcQubit];
+    } else {
+      assert(state.targetsIn[inNestedRegion].size() == 1 &&
+             "Invalid number of input targets");
+      qcoQubit = state.targetsIn[inNestedRegion].front();
+    }
 
-// OneTargetThreeParameter
+    // Create the QCO operation (consumes input, produces output)
+    auto qcoOp =
+        QCOOpType::create(rewriter, op.getLoc(), qcoQubit, op.getParameter(0));
 
-#define DEFINE_ONE_TARGET_THREE_PARAMETER(OP_CLASS, OP_NAME, PARAM1, PARAM2,   \
-                                          PARAM3)                              \
-  /**                                                                          \
-   * @brief Converts qc.OP_NAME to qco.OP_NAME                                 \
-   *                                                                           \
-   * @par Example:                                                             \
-   * ```mlir                                                                   \
-   * qc.OP_NAME(%PARAM1, %PARAM2, %PARAM3) %q : !qc.qubit                      \
-   * ```                                                                       \
-   * is converted to                                                           \
-   * ```mlir                                                                   \
-   * %q_out = qco.OP_NAME(%PARAM1, %PARAM2, %PARAM3) %q_in : !qco.qubit        \
-   * -> !qco.qubit                                                             \
-   * ```                                                                       \
-   */                                                                          \
-  struct ConvertQC##OP_CLASS final                                             \
-      : StatefulOpConversionPattern<qc::OP_CLASS> {                            \
-    using StatefulOpConversionPattern::StatefulOpConversionPattern;            \
-                                                                               \
-    LogicalResult                                                              \
-    matchAndRewrite(qc::OP_CLASS op, OpAdaptor /*adaptor*/,                    \
-                    ConversionPatternRewriter& rewriter) const override {      \
-      return convertOneTargetThreeParameter<qco::OP_CLASS>(op, rewriter,       \
-                                                           getState());        \
-    }                                                                          \
-  };
+    // Update the state map
+    if (inNestedRegion == 0) {
+      qubitMap[qcQubit] = qcoOp.getQubitOut();
+    } else {
+      state.targetsIn.erase(inNestedRegion);
+      const SmallVector<Value> targetsOut({qcoOp.getQubitOut()});
+      state.targetsOut.try_emplace(inNestedRegion, targetsOut);
+    }
 
-DEFINE_ONE_TARGET_THREE_PARAMETER(UOp, u, theta, phi, lambda)
+    rewriter.eraseOp(op);
 
-#undef DEFINE_ONE_TARGET_THREE_PARAMETER
+    return success();
+  }
+};
 
-// TwoTargetZeroParameter
+/**
+ * @brief Converts a one-target, two-parameter QC gate to QCO
+ *
+ * @tparam QCOpType The operation type of the QC gate
+ * @tparam QCOOpType The operation type of the QCO gate
+ *
+ * @par Example:
+ * ```mlir
+ * qc.r(%theta, %phi) %q : !qc.qubit
+ * ```
+ * is converted to
+ * ```mlir
+ * %q_out = qco.r(%theta, %phi) %q_in : !qco.qubit -> !qco.qubit
+ * ```
+ */
+template <typename QCOpType, typename QCOOpType>
+struct ConvertQCOneTargetTwoParameterToQCO final
+    : StatefulOpConversionPattern<QCOpType> {
+  using StatefulOpConversionPattern<QCOpType>::StatefulOpConversionPattern;
 
-#define DEFINE_TWO_TARGET_ZERO_PARAMETER(OP_CLASS, OP_NAME)                    \
-  /**                                                                          \
-   * @brief Converts qc.OP_NAME to qco.OP_NAME                                 \
-   *                                                                           \
-   * @par Example:                                                             \
-   * ```mlir                                                                   \
-   * qc.OP_NAME %q0, %q1 : !qc.qubit, !qc.qubit                                \
-   * ```                                                                       \
-   * is converted to                                                           \
-   * ```mlir                                                                   \
-   * %q0_out, %q1_out = qco.OP_NAME %q0_in, %q1_in : !qco.qubit, !qco.qubit    \
-   * -> !qco.qubit, !qco.qubit                                                 \
-   * ```                                                                       \
-   */                                                                          \
-  struct ConvertQC##OP_CLASS final                                             \
-      : StatefulOpConversionPattern<qc::OP_CLASS> {                            \
-    using StatefulOpConversionPattern::StatefulOpConversionPattern;            \
-                                                                               \
-    LogicalResult                                                              \
-    matchAndRewrite(qc::OP_CLASS op, OpAdaptor /*adaptor*/,                    \
-                    ConversionPatternRewriter& rewriter) const override {      \
-      return convertTwoTargetZeroParameter<qco::OP_CLASS>(op, rewriter,        \
-                                                          getState());         \
-    }                                                                          \
-  };
+  LogicalResult
+  matchAndRewrite(QCOpType op, typename QCOpType::Adaptor /*adaptor*/,
+                  ConversionPatternRewriter& rewriter) const override {
+    auto& state = this->getState();
+    auto& qubitMap = state.qubitMap;
+    const auto inNestedRegion = state.inNestedRegion;
 
-DEFINE_TWO_TARGET_ZERO_PARAMETER(SWAPOp, swap)
-DEFINE_TWO_TARGET_ZERO_PARAMETER(iSWAPOp, iswap)
-DEFINE_TWO_TARGET_ZERO_PARAMETER(DCXOp, dcx)
-DEFINE_TWO_TARGET_ZERO_PARAMETER(ECROp, ecr)
+    // Get the latest QCO qubit
+    auto qcQubit = op.getQubitIn();
+    Value qcoQubit;
+    if (inNestedRegion == 0) {
+      assert(qubitMap.contains(qcQubit) && "QC qubit not found");
+      qcoQubit = qubitMap[qcQubit];
+    } else {
+      assert(state.targetsIn[inNestedRegion].size() == 1 &&
+             "Invalid number of input targets");
+      qcoQubit = state.targetsIn[inNestedRegion].front();
+    }
 
-#undef DEFINE_TWO_TARGET_ZERO_PARAMETER
+    // Create the QCO operation (consumes input, produces output)
+    auto qcoOp = QCOOpType::create(rewriter, op.getLoc(), qcoQubit,
+                                   op.getParameter(0), op.getParameter(1));
 
-// TwoTargetOneParameter
+    // Update the state map
+    if (inNestedRegion == 0) {
+      qubitMap[qcQubit] = qcoOp.getQubitOut();
+    } else {
+      state.targetsIn.erase(inNestedRegion);
+      const SmallVector<Value> targetsOut({qcoOp.getQubitOut()});
+      state.targetsOut.try_emplace(inNestedRegion, targetsOut);
+    }
 
-#define DEFINE_TWO_TARGET_ONE_PARAMETER(OP_CLASS, OP_NAME, PARAM)              \
-  /**                                                                          \
-   * @brief Converts qc.OP_NAME to qco.OP_NAME                                 \
-   *                                                                           \
-   * @par Example:                                                             \
-   * ```mlir                                                                   \
-   * qc.OP_NAME(%PARAM) %q0, %q1 : !qc.qubit, !qc.qubit                        \
-   * ```                                                                       \
-   * is converted to                                                           \
-   * ```mlir                                                                   \
-   * %q0_out, %q1_out = qco.OP_NAME(%PARAM) %q0_in, %q1_in : !qco.qubit,       \
-   * !qco.qubit -> !qco.qubit, !qco.qubit                                      \
-   * ```                                                                       \
-   */                                                                          \
-  struct ConvertQC##OP_CLASS final                                             \
-      : StatefulOpConversionPattern<qc::OP_CLASS> {                            \
-    using StatefulOpConversionPattern::StatefulOpConversionPattern;            \
-                                                                               \
-    LogicalResult                                                              \
-    matchAndRewrite(qc::OP_CLASS op, OpAdaptor /*adaptor*/,                    \
-                    ConversionPatternRewriter& rewriter) const override {      \
-      return convertTwoTargetOneParameter<qco::OP_CLASS>(op, rewriter,         \
-                                                         getState());          \
-    }                                                                          \
-  };
+    rewriter.eraseOp(op);
 
-DEFINE_TWO_TARGET_ONE_PARAMETER(RXXOp, rxx, theta)
-DEFINE_TWO_TARGET_ONE_PARAMETER(RYYOp, ryy, theta)
-DEFINE_TWO_TARGET_ONE_PARAMETER(RZXOp, rzx, theta)
-DEFINE_TWO_TARGET_ONE_PARAMETER(RZZOp, rzz, theta)
+    return success();
+  }
+};
 
-#undef DEFINE_TWO_TARGET_ONE_PARAMETER
+/**
+ * @brief Converts a one-target, three-parameter QC gate to QCO
+ *
+ * @tparam QCOpType The operation type of the QC gate
+ * @tparam QCOOpType The operation type of the QCO gate
+ *
+ * @par Example:
+ * ```mlir
+ * qc.u(%theta, %phi, %lambda) %q : !qc.qubit
+ * ```
+ * is converted to
+ * ```mlir
+ * %q_out = qco.u(%theta, %phi, %lambda) %q_in : !qco.qubit -> !qco.qubit
+ * ```
+ */
+template <typename QCOpType, typename QCOOpType>
+struct ConvertQCOneTargetThreeParameterToQCO final
+    : StatefulOpConversionPattern<QCOpType> {
+  using StatefulOpConversionPattern<QCOpType>::StatefulOpConversionPattern;
 
-// TwoTargetTwoParameter
+  LogicalResult
+  matchAndRewrite(QCOpType op, typename QCOpType::Adaptor /*adaptor*/,
+                  ConversionPatternRewriter& rewriter) const override {
+    auto& state = this->getState();
+    auto& qubitMap = state.qubitMap;
+    const auto inNestedRegion = state.inNestedRegion;
 
-#define DEFINE_TWO_TARGET_TWO_PARAMETER(OP_CLASS, OP_NAME, PARAM1, PARAM2)     \
-  /**                                                                          \
-   * @brief Converts qc.OP_NAME to qco.OP_NAME                                 \
-   *                                                                           \
-   * @par Example:                                                             \
-   * ```mlir                                                                   \
-   * qc.OP_NAME(%PARAM1, %PARAM2) %q0, %q1 : !qc.qubit, !qc.qubit              \
-   * ```                                                                       \
-   * is converted to                                                           \
-   * ```mlir                                                                   \
-   * %q0_out, %q1_out = qco.OP_NAME(%PARAM1, %PARAM2) %q0_in, %q1_in :         \
-   * !qco.qubit, !qco.qubit -> !qco.qubit, !qco.qubit                          \
-   * ```                                                                       \
-   */                                                                          \
-  struct ConvertQC##OP_CLASS final                                             \
-      : StatefulOpConversionPattern<qc::OP_CLASS> {                            \
-    using StatefulOpConversionPattern::StatefulOpConversionPattern;            \
-                                                                               \
-    LogicalResult                                                              \
-    matchAndRewrite(qc::OP_CLASS op, OpAdaptor /*adaptor*/,                    \
-                    ConversionPatternRewriter& rewriter) const override {      \
-      return convertTwoTargetTwoParameter<qco::OP_CLASS>(op, rewriter,         \
-                                                         getState());          \
-    }                                                                          \
-  };
+    // Get the latest QCO qubit
+    auto qcQubit = op.getQubitIn();
+    Value qcoQubit;
+    if (inNestedRegion == 0) {
+      assert(qubitMap.contains(qcQubit) && "QC qubit not found");
+      qcoQubit = qubitMap[qcQubit];
+    } else {
+      assert(state.targetsIn[inNestedRegion].size() == 1 &&
+             "Invalid number of input targets");
+      qcoQubit = state.targetsIn[inNestedRegion].front();
+    }
 
-DEFINE_TWO_TARGET_TWO_PARAMETER(XXPlusYYOp, xx_plus_yy, theta, beta)
-DEFINE_TWO_TARGET_TWO_PARAMETER(XXMinusYYOp, xx_minus_yy, theta, beta)
+    // Create the QCO operation (consumes input, produces output)
+    auto qcoOp =
+        QCOOpType::create(rewriter, op.getLoc(), qcoQubit, op.getParameter(0),
+                          op.getParameter(1), op.getParameter(2));
 
-#undef DEFINE_TWO_TARGET_TWO_PARAMETER
+    // Update the state map
+    if (inNestedRegion == 0) {
+      qubitMap[qcQubit] = qcoOp.getQubitOut();
+    } else {
+      state.targetsIn.erase(inNestedRegion);
+      const SmallVector<Value> targetsOut({qcoOp.getQubitOut()});
+      state.targetsOut.try_emplace(inNestedRegion, targetsOut);
+    }
 
-// BarrierOp
+    rewriter.eraseOp(op);
+
+    return success();
+  }
+};
+
+/**
+ * @brief Converts a two-target, zero-parameter QC gate to QCO
+ *
+ * @tparam QCOpType The operation type of the QC gate
+ * @tparam QCOOpType The operation type of the QCO gate
+ *
+ * @par Example:
+ * ```mlir
+ * qc.swap %q0, %q1 : !qc.qubit, !qc.qubit
+ * ```
+ * is converted to
+ * ```mlir
+ * %q0_out, %q1_out = qco.swap %q0_in, %q1_in : !qco.qubit, !qco.qubit ->
+ * !qco.qubit, !qco.qubit
+ * ```
+ */
+template <typename QCOpType, typename QCOOpType>
+struct ConvertQCTwoTargetZeroParameterToQCO final
+    : StatefulOpConversionPattern<QCOpType> {
+  using StatefulOpConversionPattern<QCOpType>::StatefulOpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(QCOpType op, typename QCOpType::Adaptor /*adaptor*/,
+                  ConversionPatternRewriter& rewriter) const override {
+    auto& state = this->getState();
+    auto& qubitMap = state.qubitMap;
+    const auto inNestedRegion = state.inNestedRegion;
+
+    // Get the latest QCO qubits
+    auto qcQubit0 = op.getQubit0In();
+    auto qcQubit1 = op.getQubit1In();
+    Value qcoQubit0;
+    Value qcoQubit1;
+    if (inNestedRegion == 0) {
+      assert(qubitMap.contains(qcQubit0) && "QC qubit not found");
+      assert(qubitMap.contains(qcQubit1) && "QC qubit not found");
+      qcoQubit0 = qubitMap[qcQubit0];
+      qcoQubit1 = qubitMap[qcQubit1];
+    } else {
+      assert(state.targetsIn[inNestedRegion].size() == 2 &&
+             "Invalid number of input targets");
+      const auto& targetsIn = state.targetsIn[inNestedRegion];
+      qcoQubit0 = targetsIn[0];
+      qcoQubit1 = targetsIn[1];
+    }
+
+    // Create the QCO operation (consumes input, produces output)
+    auto qcoOp = QCOOpType::create(rewriter, op.getLoc(), qcoQubit0, qcoQubit1);
+
+    // Update the state map
+    if (inNestedRegion == 0) {
+      qubitMap[qcQubit0] = qcoOp.getQubit0Out();
+      qubitMap[qcQubit1] = qcoOp.getQubit1Out();
+    } else {
+      state.targetsIn.erase(inNestedRegion);
+      const SmallVector<Value> targetsOut(
+          {qcoOp.getQubit0Out(), qcoOp.getQubit1Out()});
+      state.targetsOut.try_emplace(inNestedRegion, targetsOut);
+    }
+
+    rewriter.eraseOp(op);
+
+    return success();
+  }
+};
+
+/**
+ * @brief Converts a two-target, one-parameter QC gate to QCO
+ *
+ * @tparam QCOpType The operation type of the QC gate
+ * @tparam QCOOpType The operation type of the QCO gate
+ *
+ * @par Example:
+ * ```mlir
+ * qc.rxx(%theta) %q0, %q1 : !qc.qubit, !qc.qubit
+ * ```
+ * is converted to
+ * ```mlir
+ * %q0_out, %q1_out = qco.rxx(%theta) %q0_in, %q1_in : !qco.qubit, !qco.qubit ->
+ * !qco.qubit, !qco.qubit
+ * ```
+ */
+template <typename QCOpType, typename QCOOpType>
+struct ConvertQCTwoTargetOneParameterToQCO final
+    : StatefulOpConversionPattern<QCOpType> {
+  using StatefulOpConversionPattern<QCOpType>::StatefulOpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(QCOpType op, typename QCOpType::Adaptor /*adaptor*/,
+                  ConversionPatternRewriter& rewriter) const override {
+    auto& state = this->getState();
+    auto& qubitMap = state.qubitMap;
+    const auto inNestedRegion = state.inNestedRegion;
+
+    // Get the latest QCO qubits
+    auto qcQubit0 = op.getQubit0In();
+    auto qcQubit1 = op.getQubit1In();
+    Value qcoQubit0;
+    Value qcoQubit1;
+    if (inNestedRegion == 0) {
+      assert(qubitMap.contains(qcQubit0) && "QC qubit not found");
+      assert(qubitMap.contains(qcQubit1) && "QC qubit not found");
+      qcoQubit0 = qubitMap[qcQubit0];
+      qcoQubit1 = qubitMap[qcQubit1];
+    } else {
+      assert(state.targetsIn[inNestedRegion].size() == 2 &&
+             "Invalid number of input targets");
+      const auto& targetsIn = state.targetsIn[inNestedRegion];
+      qcoQubit0 = targetsIn[0];
+      qcoQubit1 = targetsIn[1];
+    }
+
+    // Create the QCO operation (consumes input, produces output)
+    auto qcoOp = QCOOpType::create(rewriter, op.getLoc(), qcoQubit0, qcoQubit1,
+                                   op.getParameter(0));
+
+    // Update the state map
+    if (inNestedRegion == 0) {
+      qubitMap[qcQubit0] = qcoOp.getQubit0Out();
+      qubitMap[qcQubit1] = qcoOp.getQubit1Out();
+    } else {
+      state.targetsIn.erase(inNestedRegion);
+      const SmallVector<Value> targetsOut(
+          {qcoOp.getQubit0Out(), qcoOp.getQubit1Out()});
+      state.targetsOut.try_emplace(inNestedRegion, targetsOut);
+    }
+
+    rewriter.eraseOp(op);
+
+    return success();
+  }
+};
+
+/**
+ * @brief Converts a two-target, two-parameter QC gate to QCO
+ *
+ * @tparam QCOpType The operation type of the QC gate
+ * @tparam QCOOpType The operation type of the QCO gate
+ *
+ * @par Example:
+ * ```mlir
+ * qc.xx_minus_yy(%theta, %beta) %q0, %q1 : !qc.qubit, !qc.qubit
+ * ```
+ * is converted to
+ * ```mlir
+ * %q0_out, %q1_out = qco.xx_minus_yy(%theta, %beta) %q0_in, %q1_in :
+ * !qco.qubit, !qco.qubit -> !qco.qubit, !qco.qubit
+ * ```
+ */
+template <typename QCOpType, typename QCOOpType>
+struct ConvertQCTwoTargetTwoParameterToQCO final
+    : StatefulOpConversionPattern<QCOpType> {
+  using StatefulOpConversionPattern<QCOpType>::StatefulOpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(QCOpType op, typename QCOpType::Adaptor /*adaptor*/,
+                  ConversionPatternRewriter& rewriter) const override {
+    auto& state = this->getState();
+    auto& qubitMap = state.qubitMap;
+    const auto inNestedRegion = state.inNestedRegion;
+
+    // Get the latest QCO qubits
+    auto qcQubit0 = op.getQubit0In();
+    auto qcQubit1 = op.getQubit1In();
+    Value qcoQubit0;
+    Value qcoQubit1;
+    if (inNestedRegion == 0) {
+      assert(qubitMap.contains(qcQubit0) && "QC qubit not found");
+      assert(qubitMap.contains(qcQubit1) && "QC qubit not found");
+      qcoQubit0 = qubitMap[qcQubit0];
+      qcoQubit1 = qubitMap[qcQubit1];
+    } else {
+      assert(state.targetsIn[inNestedRegion].size() == 2 &&
+             "Invalid number of input targets");
+      const auto& targetsIn = state.targetsIn[inNestedRegion];
+      qcoQubit0 = targetsIn[0];
+      qcoQubit1 = targetsIn[1];
+    }
+
+    // Create the QCO operation (consumes input, produces output)
+    auto qcoOp = QCOOpType::create(rewriter, op.getLoc(), qcoQubit0, qcoQubit1,
+                                   op.getParameter(0), op.getParameter(1));
+
+    // Update the state map
+    if (inNestedRegion == 0) {
+      qubitMap[qcQubit0] = qcoOp.getQubit0Out();
+      qubitMap[qcQubit1] = qcoOp.getQubit1Out();
+    } else {
+      state.targetsIn.erase(inNestedRegion);
+      const SmallVector<Value> targetsOut(
+          {qcoOp.getQubit0Out(), qcoOp.getQubit1Out()});
+      state.targetsOut.try_emplace(inNestedRegion, targetsOut);
+    }
+
+    rewriter.eraseOp(op);
+
+    return success();
+  }
+};
 
 /**
  * @brief Converts qc.barrier to qco.barrier
@@ -1047,7 +861,7 @@ struct ConvertQCBarrierOp final : StatefulOpConversionPattern<qc::BarrierOp> {
     }
 
     // Create qco.barrier
-    auto qcoOp = rewriter.create<qco::BarrierOp>(op.getLoc(), qcoQubits);
+    auto qcoOp = qco::BarrierOp::create(rewriter, op.getLoc(), qcoQubits);
 
     // Update the state map
     for (const auto& [qcQubit, qcoQubitOut] :
@@ -1300,18 +1114,40 @@ protected:
     target.addLegalDialect<QCODialect>();
 
     // Register operation conversion patterns with state tracking
-    patterns.add<ConvertQCAllocOp, ConvertQCDeallocOp, ConvertQCStaticOp,
-                 ConvertQCMeasureOp, ConvertQCResetOp, ConvertQCGPhaseOp,
-                 ConvertQCIdOp, ConvertQCXOp, ConvertQCYOp, ConvertQCZOp,
-                 ConvertQCHOp, ConvertQCSOp, ConvertQCSdgOp, ConvertQCTOp,
-                 ConvertQCTdgOp, ConvertQCSXOp, ConvertQCSXdgOp, ConvertQCRXOp,
-                 ConvertQCRYOp, ConvertQCRZOp, ConvertQCPOp, ConvertQCROp,
-                 ConvertQCU2Op, ConvertQCUOp, ConvertQCSWAPOp, ConvertQCiSWAPOp,
-                 ConvertQCDCXOp, ConvertQCECROp, ConvertQCRXXOp, ConvertQCRYYOp,
-                 ConvertQCRZXOp, ConvertQCRZZOp, ConvertQCXXPlusYYOp,
-                 ConvertQCXXMinusYYOp, ConvertQCBarrierOp, ConvertQCCtrlOp,
-                 ConvertQCInvOp, ConvertQCYieldOp>(typeConverter, context,
-                                                   &state);
+    patterns.add<
+        ConvertQCAllocOp, ConvertQCDeallocOp, ConvertQCStaticOp,
+        ConvertQCMeasureOp, ConvertQCResetOp,
+        ConvertQCZeroTargetOneParameterToQCO<qc::GPhaseOp, qco::GPhaseOp>,
+        ConvertQCOneTargetZeroParameterToQCO<qc::IdOp, qco::IdOp>,
+        ConvertQCOneTargetZeroParameterToQCO<qc::XOp, qco::XOp>,
+        ConvertQCOneTargetZeroParameterToQCO<qc::YOp, qco::YOp>,
+        ConvertQCOneTargetZeroParameterToQCO<qc::ZOp, qco::ZOp>,
+        ConvertQCOneTargetZeroParameterToQCO<qc::HOp, qco::HOp>,
+        ConvertQCOneTargetZeroParameterToQCO<qc::SOp, qco::SOp>,
+        ConvertQCOneTargetZeroParameterToQCO<qc::SdgOp, qco::SdgOp>,
+        ConvertQCOneTargetZeroParameterToQCO<qc::TOp, qco::TOp>,
+        ConvertQCOneTargetZeroParameterToQCO<qc::TdgOp, qco::TdgOp>,
+        ConvertQCOneTargetZeroParameterToQCO<qc::SXOp, qco::SXOp>,
+        ConvertQCOneTargetZeroParameterToQCO<qc::SXdgOp, qco::SXdgOp>,
+        ConvertQCOneTargetOneParameterToQCO<qc::RXOp, qco::RXOp>,
+        ConvertQCOneTargetOneParameterToQCO<qc::RYOp, qco::RYOp>,
+        ConvertQCOneTargetOneParameterToQCO<qc::RZOp, qco::RZOp>,
+        ConvertQCOneTargetOneParameterToQCO<qc::POp, qco::POp>,
+        ConvertQCOneTargetTwoParameterToQCO<qc::ROp, qco::ROp>,
+        ConvertQCOneTargetTwoParameterToQCO<qc::U2Op, qco::U2Op>,
+        ConvertQCOneTargetThreeParameterToQCO<qc::UOp, qco::UOp>,
+        ConvertQCTwoTargetZeroParameterToQCO<qc::SWAPOp, qco::SWAPOp>,
+        ConvertQCTwoTargetZeroParameterToQCO<qc::iSWAPOp, qco::iSWAPOp>,
+        ConvertQCTwoTargetZeroParameterToQCO<qc::DCXOp, qco::DCXOp>,
+        ConvertQCTwoTargetZeroParameterToQCO<qc::ECROp, qco::ECROp>,
+        ConvertQCTwoTargetOneParameterToQCO<qc::RXXOp, qco::RXXOp>,
+        ConvertQCTwoTargetOneParameterToQCO<qc::RYYOp, qco::RYYOp>,
+        ConvertQCTwoTargetOneParameterToQCO<qc::RZXOp, qco::RZXOp>,
+        ConvertQCTwoTargetOneParameterToQCO<qc::RZZOp, qco::RZZOp>,
+        ConvertQCTwoTargetTwoParameterToQCO<qc::XXPlusYYOp, qco::XXPlusYYOp>,
+        ConvertQCTwoTargetTwoParameterToQCO<qc::XXMinusYYOp, qco::XXMinusYYOp>,
+        ConvertQCBarrierOp, ConvertQCCtrlOp, ConvertQCInvOp, ConvertQCYieldOp>(
+        typeConverter, context, &state);
 
     // Conversion of qc types in func.func signatures
     // Note: This currently has limitations with signature changes

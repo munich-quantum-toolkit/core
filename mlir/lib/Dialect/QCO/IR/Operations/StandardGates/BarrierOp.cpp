@@ -58,7 +58,7 @@ struct MergeSubsequentBarrier final : OpRewritePattern<BarrierOp> {
       return failure();
     }
 
-    auto newBarrier = rewriter.create<BarrierOp>(op.getLoc(), newQubitsIn);
+    auto newBarrier = BarrierOp::create(rewriter, op.getLoc(), newQubitsIn);
 
     for (size_t i = 0; i < indicesToFill.size(); ++i) {
       newQubitsOutMap[indicesToFill[i]] = newBarrier.getQubitsOut()[i];

@@ -15,8 +15,8 @@ target_link_libraries(
           GTest::gtest_main
           MLIRQCProgramBuilder
           MLIRQCOUtils
-          QCToQCO
-          QCOToQC
+          MLIRQCToQCO
+          MLIRQCOToQC
           MLIRQCOTransforms)
 
 mqt_mlir_configure_unittest_target(${target_name})
