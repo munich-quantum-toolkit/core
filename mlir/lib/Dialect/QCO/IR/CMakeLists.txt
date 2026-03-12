@@ -24,11 +24,12 @@ add_mlir_dialect_library(
   MLIRQCOOpsIncGen
   MLIRQCOInterfacesIncGen
   LINK_LIBS
-  PUBLIC
+  PRIVATE
   MLIRIR
   MLIRArithDialect
   MLIRInferTypeOpInterface
   MLIRSideEffectInterfaces
+  PUBLIC
   Eigen3::Eigen
   DISABLE_INSTALL)
 

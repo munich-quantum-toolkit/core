@@ -8,17 +8,14 @@
 
 file(GLOB_RECURSE PASSES_SOURCES *.cpp)
 
-get_property(dialect_libs GLOBAL PROPERTY MLIR_DIALECT_LIBS)
-
 add_mlir_library(
   MLIRQCOTransforms
   ${PASSES_SOURCES}
   LINK_LIBS
-  PUBLIC
-  MQT::CoreIR
-  Eigen3::Eigen
   PRIVATE
-  ${dialect_libs}
+  MLIRQCODialect
+  MLIRQCOUtils
+  MQT::CoreIR
   DEPENDS
   MLIRQCOTransformsIncGen)
 

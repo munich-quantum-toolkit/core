@@ -11,14 +11,16 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 
 ### Added
 
-- ✨ Add conversions between Jeff and QCO ([#1479]) ([**@denialhaag**])
+- ✨ Add a `gate-decomposition` pass for optimizing sequences of single- and two-qubit gates ([#1206]) ([**@taminob**])
+- ✨ Add conversions between Jeff and QCO ([#1479], [#1548]) ([**@denialhaag**])
 - ✨ Add a `place-and-route` pass for mapping circuits to architectures with restricted topologies ([#1537], [#1547]) ([**@MatthiasReumann**])
 - ✨ Add initial infrastructure for new QC and QCO MLIR dialects
-  ([#1264], [#1206], [#1330], [#1402], [#1426], [#1428], [#1430], [#1436], [#1443], [#1446], [#1464], [#1465], [#1470], [#1471], [#1472], [#1474], [#1475], [#1506], [#1510], [#1513], [#1521])
-  ([**@burgholzer**], [**@denialhaag**], [**@taminob**], [**@DRovara**], [**@li-mingbao**], [**@Ectras**], [**@MatthiasReumann**])
+  ([#1264], [#1330], [#1402], [#1426], [#1428], [#1430], [#1436], [#1443], [#1446], [#1464], [#1465], [#1470], [#1471], [#1472], [#1474], [#1475], [#1506], [#1510], [#1513], [#1521], [#1548], [#1550])
+  ([**@burgholzer**], [**@denialhaag**], [**@taminob**], [**@DRovara**], [**@li-mingbao**], [**@Ectras**], [**@MatthiasReumann**], [**@simon1hofmann**])
 
 ### Changed
 
+- ⬆️ Require LLVM 22.1 for C++ library builds ([#1549]) ([**@burgholzer**], [**@denialhaag**])
 - 📦 Build MLIR by default for C++ library builds ([#1356]) ([**@burgholzer**], [**@denialhaag**])
 
 ### Removed
@@ -32,7 +34,7 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 
 - ⬆️ Update `nanobind` to version 2.11.0 ([#1481]) ([**@denialhaag**])
 - ⬆️ Update Boost to version 1.89.0 ([#1453]) ([**@burgholzer**])
-- ⬆️ Update QDMI to latest version from stable v1.2.x branch ([#1453]) ([**@burgholzer**])
+- ⬆️ Update QDMI to latest version from stable `v1.2.x` branch ([#1453]) ([**@burgholzer**])
 - ⬆️ Update `spdlog` to version 1.17.0 ([#1453]) ([**@burgholzer**])
 - ♻️ Use `llc` instead of random `clang` for compiling QIR test circuits to improve robustness and handle opaque pointers correctly across LLVM versions ([#1447]) ([**@burgholzer**])
 - ♻️ Extract singleton pattern into reusable template base class for QDMI devices and driver ([#1444]) ([**@ystade**], [**@burgholzer**])
@@ -329,6 +331,9 @@ _📚 Refer to the [GitHub Release Notes](https://github.com/munich-quantum-tool
 
 <!-- PR links -->
 
+[#1550]: https://github.com/munich-quantum-toolkit/core/pull/1550
+[#1549]: https://github.com/munich-quantum-toolkit/core/pull/1549
+[#1548]: https://github.com/munich-quantum-toolkit/core/pull/1548
 [#1547]: https://github.com/munich-quantum-toolkit/core/pull/1547
 [#1537]: https://github.com/munich-quantum-toolkit/core/pull/1537
 [#1521]: https://github.com/munich-quantum-toolkit/core/pull/1521
@@ -517,6 +522,7 @@ _📚 Refer to the [GitHub Release Notes](https://github.com/munich-quantum-tool
 [**@marcelwa**]: https://github.com/marcelwa
 [**@lirem101**]: https://github.com/lirem101
 [**@Ectras**]: https://github.com/Ectras
+[**@simon1hofmann**]: https://github.com/simon1hofmann
 
 <!-- General links -->
 

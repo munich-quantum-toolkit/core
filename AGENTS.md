@@ -1,8 +1,8 @@
 # MQT Core
 
-- Acts as the backbone of the [Munich Quantum Toolkit (MQT)](https://mqt.readthedocs.io/)
-- C++20 and Python library providing core data structures and algorithms for quantum computing design automation
-- Provides tools and methods for
+- Backbone of the [Munich Quantum Toolkit (MQT)](https://mqt.readthedocs.io/)
+- C++20/Python library for quantum design automation data structures and algorithms
+- Key capabilities
   - Intermediate representations (IR) of quantum computations
   - Decision diagrams (DD) for classical simulation and verification of quantum circuits
   - ZX-calculus for transforming and optimizing quantum circuits
@@ -18,70 +18,68 @@
 - C++20
 - CMake 3.24+
 - Python 3.10+ (free-threading supported with 3.14+; Stable ABI wheels built for 3.12+ via nanobind)
-- LLVM 21.1+ for building MLIR compiler infrastructure
+- LLVM 22.1+ for building MLIR compiler infrastructure
 - GoogleTest for C++ unit tests (located in `test/` and `mlir/unittests/`)
 - `pytest` for Python unit tests (located in `test/python/`)
-- `uv` is used for managing Python installations, Python packaging, and other tools
-- `ruff` is used for formatting and linting Python code
-- `ty` is used for type checking Python code
-- `scikit-build-core` is used as a build backend for the Python package
-- `nanobind` is used for generating Python bindings
-- `nox` is used for running tasks (e.g., tests, linting, docs, etc.)
-- `prek` is used for running pre-commit hooks
-- `sphinx` is used for generating documentation
-- `breathe` is used for integrating C++ API docs with Sphinx
-- C++ dependencies are managed via CMake's `FetchContent` (configured in @file:cmake/ExternalDependencies.cmake)
+- `uv` for Python installation, packaging, and tooling
+- `ruff` for Python formatting/linting (configured in `pyproject.toml` with `select = ["ALL"]` and a small disabled subset)
+- `ty` for Python type checking
+- `scikit-build-core` as Python build backend
+- `nanobind` for Python bindings
+- `nox` for task orchestration (tests, linting, docs)
+- `prek` for pre-commit hooks
+- `sphinx` for documentation
+- `breathe` for C++ API docs in Sphinx
+- C++ dependencies are managed via CMake's `FetchContent` (configured in cmake/ExternalDependencies.cmake)
 - C++ formatting and naming conventions are enforced by clang-format and clang-tidy (see `.clang-format` and `.clang-tidy`)
 
 ## C++
 
-- Configure CMake `cmake -S . -B build_cpp -DCMAKE_BUILD_TYPE=Release`
-- Build `cmake --build build_cpp --config Release`
-- Run tests `ctest --test-dir build_cpp -C Release`
-- Only run MLIR unittests `ctest --test-dir build_cpp -C Release -L mqt-mlir-unittests`
-- Run a specific test binary directly `./build_cpp/test/dd/mqt-core-dd-test`
-- Create a debug build by replacing `Release` with `Debug` in the above commands.
+- Configure: `cmake -S . -B build_cpp -DCMAKE_BUILD_TYPE=Release`
+- Build: `cmake --build build_cpp --config Release`
+- Test: `ctest --test-dir build_cpp -C Release`
+- MLIR unittests only: `ctest --test-dir build_cpp -C Release -L mqt-mlir-unittests`
+- Single test binary: `./build_cpp/test/dd/mqt-core-dd-test`
+- For debug builds, replace `Release` with `Debug` in the commands above.
 
 ## Python
 
-- Set up environment with build and test dependencies `uv sync --inexact --only-group build --only-group test`
-- Install the package without build isolation for fast rebuilds `uv sync --inexact --no-dev --no-build-isolation-package mqt-core`
-- Run the tests `uv run --no-sync pytest`
-- Shortcut for running tests `uvx nox -s tests`
-- Shortcut for running tests with minimal version dependency resolution `uvx nox -s minimums`
-- Shortcut for running against the upstream Qiskit package `uvx nox -s qiskit`
-- To target Python 3.14 specifically, use the `-3.14` variants instead: `uvx nox -s tests-3.14`, `uvx nox -s minimums-3.14`, `uvx nox -s qiskit-3.14`.
+- Setup build+test deps: `uv sync --inexact --only-group build --only-group test`
+- Install package without build isolation (fast rebuilds): `uv sync --inexact --no-dev --no-build-isolation-package mqt-core`
+- Run tests: `uv run --no-sync pytest`
+- Nox test shortcuts: `uvx nox -s tests`, `uvx nox -s minimums`, `uvx nox -s qiskit`
+- Python 3.14 variants: `uvx nox -s tests-3.14`, `uvx nox -s minimums-3.14`, `uvx nox -s qiskit-3.14`.
 
 ## Documentation
 
-- Source files are in `docs/`.
-- Documentation uses Sphinx with MyST (Markdown) and the furo theme.
-- Build MLIR docs via the `mlir-doc` target in the C++ build (`cmake --build build_cpp --target mlir-doc --config Release`)
-- Build docs locally via `uvx nox --non-interactive -s docs`
-- Check links via `uvx nox -s docs -- -b linkcheck`
+- Sources: `docs/`
+- Stack: Sphinx + MyST (Markdown) + furo theme
+- Build MLIR docs: `cmake --build build_cpp --target mlir-doc --config Release`
+- Build docs locally: `uvx nox --non-interactive -s docs`
+- Link check: `uvx nox -s docs -- -b linkcheck`
 
 ## Development Guidelines
 
-- Prioritize C++20 STL features over custom implementations.
-- Within the MLIR codebase (`mlir/`), prefer LLVM data structures and methods (`llvm::SmallVector`, `llvm::function_ref`, etc.) over the STL.
-- Use Google-style docstrings for Python and Doxygen comments for C++.
-- Use `#pragma once` for header guards in C++.
-- Run `uvx nox -s lint` after every batch of changes; all checks (ruff, typos, ty) must pass before submitting.
-- Add or update tests for every code change, even if not explicitly requested.
-- Prefer running targeted tests over the full test suite during development.
-- Prefer running a single Python version over the full test suite during development.
-- Follow the existing code style by checking neighboring files for patterns.
-- Update @file:CHANGELOG.md and @file:UPGRADING.md when changes are user-facing, breaking, or otherwise noteworthy.
-- Stub files (`.pyi`) in `python/mqt/core/` are **auto-generated** by nanobind's stubgen. NEVER edit `.pyi` files manually.
-- If C++ bindings are added or modified (files in `bindings/`), stubs need to be regenerated via `uvx nox -s stubs`.
-- Never modify files that start with "This file has been generated from an external template. Please do not modify it directly." These files are managed by [the MQT templates action](https://github.com/munich-quantum-toolkit/templates) and changes will be overwritten.
-- Prefer fixing reported warnings over suppressing them (e.g., with `# noqa` comments for ruff). Only add ignore rules when necessary and document why.
-- Prefer fixing typing issues reported by `ty` before adding suppression comments (`# ty: ignore[code]`). Suppressions are sometimes necessary for incompletely typed libraries (e.g., Qiskit).
-- Ruff is configured in `pyproject.toml` with `select = ["ALL"]`. All rules are enabled by default, with a small set selectively disabled.
+- MUST use Google-style docstrings for Python and Doxygen comments for C++.
+- MUST use `#pragma once` for header guards in C++.
+- MUST run `uvx nox -s lint` after every batch of changes; this runs the full `prek` hook set from `.pre-commit-config.yaml` (including `ruff`, `typos`, `ty`, formatting, and metadata checks), and all hooks must pass before submitting.
+- MUST add or update tests for every code change, even if not explicitly requested.
+- MUST follow existing code style by checking neighboring files for patterns.
+- MUST update CHANGELOG.md and UPGRADING.md when changes are user-facing, breaking, or otherwise noteworthy.
+- MUST regenerate stubs via `uvx nox -s stubs` when files in `bindings/` are added or modified.
+- MUST include a commit footer attribution in the form `Assisted-by: [Model Name] via [Tool Name]` (example: `Assisted-by: Claude Sonnet 4.6 via GitHub Copilot`), if AI tools are used to prepare a commit.
+- NEVER edit `.pyi` files in `python/mqt/core/` manually; they are auto-generated by nanobind stubgen.
+- NEVER modify files that start with "This file has been generated from an external template. Please do not modify it directly." These files are managed by [the MQT templates action](https://github.com/munich-quantum-toolkit/templates) and changes will be overwritten.
+- PREFER C++20 STL features over custom implementations.
+- PREFER LLVM data structures and methods in `mlir/` (`llvm::SmallVector`, `llvm::function_ref`, etc.) over the STL.
+- PREFER running targeted tests over the full test suite during development.
+- PREFER running a single Python version over the full test suite during development.
+- PREFER fixing reported warnings over suppressing them (e.g., with `# noqa` comments for ruff); only add ignore rules when necessary and document why.
+- PREFER fixing typing issues reported by `ty` before adding suppression comments (`# ty: ignore[code]`); suppressions are sometimes necessary for incompletely typed libraries (e.g., Qiskit).
 
 ## Self-Review Checklist
 
 - Did `uvx nox -s lint` pass without errors?
 - Are all changes covered by at least one automated test (Python or C++)?
 - Were Python stubs regenerated via `uvx nox -s stubs` if bindings were modified?
-- Are @file:CHANGELOG.md and @file:UPGRADING.md updated when changes are user-facing, breaking, or otherwise noteworthy?
+- Are CHANGELOG.md and UPGRADING.md updated when changes are user-facing, breaking, or otherwise noteworthy?
