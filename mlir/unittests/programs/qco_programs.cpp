@@ -2077,7 +2077,7 @@ void extractTensor(QCOProgramBuilder& b) {
 
 void insertTensor(QCOProgramBuilder& b) {
   auto qtensor = b.qtensorAlloc(3);
-  auto [q0, extractOutTensor] = b.qtensorExtract(qtensor, 0);
+  auto [extractOutTensor, q0] = b.qtensorExtract(qtensor, 0);
   auto q1 = b.h(q0);
   b.qtensorInsert(q1, extractOutTensor, 0);
 }
@@ -2089,9 +2089,9 @@ void extractSliceTensor(QCOProgramBuilder& b) {
 
 void insertSliceTensor(QCOProgramBuilder& b) {
   auto qtensor = b.qtensorAlloc(3);
-  auto [slicedTensor, extractSliceOutTensor] =
+  auto [extractSliceOutTensor, slicedTensor] =
       b.qtensorExtractSlice(qtensor, 0, 2);
-  auto [q0, extractOutTensor] = b.qtensorExtract(slicedTensor, 0);
+  auto [extractOutTensor, q0] = b.qtensorExtract(slicedTensor, 0);
   auto q1 = b.h(q0);
   auto insertOutTensor = b.qtensorInsert(q1, extractOutTensor, 0);
   b.qtensorInsertSlice(insertOutTensor, extractSliceOutTensor, 0, 2);
@@ -2099,22 +2099,22 @@ void insertSliceTensor(QCOProgramBuilder& b) {
 
 void extractInsertTensor(QCOProgramBuilder& b) {
   auto qtensor = b.qtensorAlloc(3);
-  auto [q0, extractOutTensor] = b.qtensorExtract(qtensor, 0);
+  auto [extractOutTensor, q0] = b.qtensorExtract(qtensor, 0);
   b.qtensorInsert(q0, extractOutTensor, 0);
 }
 
 void extractSliceInsertSliceTensor(QCOProgramBuilder& b) {
   auto qtensor = b.qtensorAlloc(3);
-  auto [slicedTensor, extractSliceOutTensor] =
+  auto [extractSliceOutTensor, slicedTensor] =
       b.qtensorExtractSlice(qtensor, 0, 2);
   b.qtensorInsertSlice(slicedTensor, extractSliceOutTensor, 0, 2);
 }
 
 void extractSliceExtractInsertInsertSliceTensor(QCOProgramBuilder& b) {
   auto qtensor = b.qtensorAlloc(3);
-  auto [slicedTensor, extractSliceOutTensor] =
+  auto [extractSliceOutTensor, slicedTensor] =
       b.qtensorExtractSlice(qtensor, 0, 2);
-  auto [q0, extractOutTensor] = b.qtensorExtract(slicedTensor, 0);
+  auto [extractOutTensor, q0] = b.qtensorExtract(slicedTensor, 0);
   auto insertOutTensor = b.qtensorInsert(q0, extractOutTensor, 0);
   b.qtensorInsertSlice(insertOutTensor, extractSliceOutTensor, 0, 2);
 }

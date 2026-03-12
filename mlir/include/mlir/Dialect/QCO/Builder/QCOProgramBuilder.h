@@ -256,14 +256,14 @@ public:
    * @brief Extract a qubit from a tensor
    * @param tensor Source tensor
    * @param index The index from where the qubit is extracted
-   * @return Pair of (extractedQubit, outTensor)
+   * @return Pair of (outTensor, extractedQubit)
    *
    * @par Example:
    * ```c++
-   * auto [q0, outTensor] = builder.extract(tensor, 0);
+   * auto [outTensor, q0] = builder.extract(tensor, 0);
    * ```
    * ```mlir
-   * %q0, %outTensor = qtensor.extract %tensor[%c0]: tensor<3x!qco.qubit>
+   * %outTensor, %q0 = qtensor.extract %tensor[%c0]: tensor<3x!qco.qubit>
    * ```
    */
   std::pair<Value, Value>
@@ -274,14 +274,14 @@ public:
    * @param tensor Source tensor
    * @param offset The offset from where the slice is extracted
    * @param size The size of the extracted slice
-   * @return Pair of (extractedSlice, outTensor)
+   * @return Pair of (outTensor, extractedSlice)
    *
    * @par Example:
    * ```c++
-   * auto [extractedSlice, outTensor] = builder.extractSlice(tensor, 0, 2);
+   * auto [outTensor, extractedSlice] = builder.extractSlice(tensor, 0, 2);
    * ```
    * ```mlir
-   * %extractedSlice, %outTensor = qtensor.extract_slice %tensor[%c0][%c2]
+   * %outTensor, %extractedSlice = qtensor.extract_slice %tensor[%c0][%c2]
    * : tensor<3x!qco.qubit> to tensor<2x!qco.qubit>
    * ```
    */

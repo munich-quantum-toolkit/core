@@ -139,12 +139,12 @@ def QTensor_ExtractOp : QTensorOp<"extract", [
 
         Example:
         ```mlir
-        %q0, %outTensor = qtensor.extract %tensor[%c0] : tensor<4x!qco.qubit>
+        %outTensor, %q0 = qtensor.extract %tensor[%c0] : tensor<4x!qco.qubit>
         ```
     }];
 
     let arguments = (ins AnyRankedTensor:$tensor, Index:$index);
-    let results = (outs AnyType:$result, AnyRankedTensor:$out_tensor);
+    let results = (outs AnyRankedTensor:$out_tensor, AnyType:$result);
     let assemblyFormat = "$tensor `[` $index `]` attr-dict `:` type($tensor)";
 
     let hasFolder = 1;
@@ -171,7 +171,7 @@ def QTensor_ExtractSliceOp : QTensorOp<"extract_slice", [
 
         Example:
         ```mlir
-        %extractedSlice, %outSourceTensor = qtensor.extract_slice %sourceTensor[%c0][%c2] : tensor<3x!qco.qubit> to tensor<2x!qco.qubit>
+        %outSourceTensor, %extractedSlice = qtensor.extract_slice %sourceTensor[%c0][%c2] : tensor<3x!qco.qubit> to tensor<2x!qco.qubit>
         ```
     }];
 
@@ -180,7 +180,7 @@ def QTensor_ExtractSliceOp : QTensorOp<"extract_slice", [
         Index:$offset,
         Index:$size
     );
-    let results = (outs AnyRankedTensor:$result, AnyRankedTensor:$out_source);
+    let results = (outs AnyRankedTensor:$out_source, AnyRankedTensor:$result);
 
     let assemblyFormat = [{
         $source `[`$offset `]` `[`$size`]`

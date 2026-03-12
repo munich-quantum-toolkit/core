@@ -250,7 +250,7 @@ QCOProgramBuilder::qtensorExtract(Value tensor,
   validQubits.insert(qubit);
   updateTensorTracking(tensor, outTensor);
 
-  return {qubit, outTensor};
+  return {outTensor, qubit};
 }
 
 std::pair<Value, Value> QCOProgramBuilder::qtensorExtractSlice(
@@ -277,7 +277,7 @@ std::pair<Value, Value> QCOProgramBuilder::qtensorExtractSlice(
   validTensors.insert(slicedTensor);
   updateTensorTracking(tensor, outTensor);
 
-  return {slicedTensor, outTensor};
+  return {outTensor, slicedTensor};
 }
 
 Value QCOProgramBuilder::qtensorInsert(

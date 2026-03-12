@@ -37,7 +37,7 @@ void ExtractSliceOp::build(OpBuilder& b, OperationState& result, Value source,
       cast<RankedTensorType>(source.getType()).getElementType());
 
   result.addAttributes(attrs);
-  build(b, result, {resultType, source.getType()}, source, offset, size);
+  build(b, result, {source.getType(), resultType}, source, offset, size);
 }
 
 LogicalResult ExtractSliceOp::verify() {
