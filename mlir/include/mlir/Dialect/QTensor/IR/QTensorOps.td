@@ -130,7 +130,7 @@ def QTensor_FromElementsOp : QTensorOp<"from_elements", [
         This operation creates a tensor using the operands as its values.
 
         Example:
-        
+
     }];
 
     let arguments = (ins Variadic<AnyType>:$elements);
