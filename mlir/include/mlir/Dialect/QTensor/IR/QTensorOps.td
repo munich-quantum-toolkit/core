@@ -89,8 +89,8 @@ def QTensor_DeallocOp : QTensorOp<"dealloc", [MemoryEffects<[MemFree]>]> {
     let arguments = (ins AnyRankedTensor:$tensor);
     let assemblyFormat = "$tensor attr-dict `:` type($tensor)";
 
-    let hasVerifier = 1;
     let hasCanonicalizer = 1;
+    let hasVerifier = 1;
 }
 
 def QTensor_FromElementsOp : QTensorOp<"from_elements", [
@@ -106,7 +106,9 @@ def QTensor_FromElementsOp : QTensorOp<"from_elements", [
         This operation creates a tensor using the operands as its values.
 
         Example:
-
+        ```mlir
+        %tensor = qtensor.from_elements %q0, %q1, %q2 : tensor<3x!qco.qubit>
+        ```
     }];
 
     let arguments = (ins Variadic<AnyType>:$elements);
@@ -132,8 +134,8 @@ def QTensor_ExtractOp : QTensorOp<"extract", [
     let description = [{
         The `qtensor.extract` operation is the modified version of the standard `tensor.extract`
         operation of the tensor dialect. It reads a ranked tensor and returns one element from the input tensor
-        at the given indices. In addition, it also returns the updated input tensor as a result.
-        The indices must be of `index` type.
+        at the given index. In addition, it also returns the updated input tensor as a result.
+        The index must be of `index` type.
 
         Example:
         ```mlir
@@ -209,7 +211,6 @@ def QTensor_InsertOp : QTensorOp<"insert", [
         This operation inserts a scalar into a ranked tensor as specified by the operation`s index.
 
         Example:
-
         ```mlir
         %newTensor = qtensor.insert %q0 into %tensor[%c0] : tensor<3x!qco.qubit>
         ```
@@ -223,9 +224,9 @@ def QTensor_InsertOp : QTensorOp<"insert", [
         $scalar `into` $dest `[` $index `]` attr-dict `:` type($dest)
     }];
 
-    let hasVerifier = 1;
-    let hasFolder = 1;
     let hasCanonicalizer = 1;
+    let hasFolder = 1;
+    let hasVerifier = 1;
 }
 
 def QTensor_InsertSliceOp : QTensorOp<"insert_slice", [
@@ -235,7 +236,7 @@ def QTensor_InsertSliceOp : QTensorOp<"insert_slice", [
   ]> {
     let summary = "Insert slice into tensor";
     let description = [{
-        The `qtensor.insert_slice` operation is a minimally adjusted version of the `tensor.insert_slice` operation
+        The `qtensor.insert_slice` operation is a modified version of the `tensor.insert_slice` operation
         of the tensor dialect. The operation inserts a tensor `source` into another tensor `dest` as specified by the
         operation`s offset and size argument.
 
