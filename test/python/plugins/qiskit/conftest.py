@@ -40,10 +40,15 @@ def _parse_num_clbits_from_qasm(program: str) -> int:
     count_qasm2 = sum(int(m) for m in matches_qasm2)
 
     # Look for "bit[<size>] <name>;" pattern in QASM3
-    matches_qasm3 = re.findall(r"\bbit\[(\d+)]", program)
-    count_qasm3 = sum(int(m) for m in matches_qasm3)
+    matches_qasm3_arrays = re.findall(r"\bbit\[(\d+)]\s+\w+\s*;", program)
+    count_qasm3_arrays = sum(int(m) for m in matches_qasm3_arrays)
 
-    return count_qasm2 + count_qasm3
+    # Look for scalar-bit declarations in QASM3, including declarations with
+    # optional initializer expressions.
+    matches_qasm3_scalars = re.findall(r"\bbit(?!\s*\[)\s+\w+\s*(?:=\s*[^;]+)?;", program)
+    count_qasm3_scalars = len(matches_qasm3_scalars)
+
+    return count_qasm2 + count_qasm3_arrays + count_qasm3_scalars
 
 
 class MockQDMIDevice:

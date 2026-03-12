@@ -18,18 +18,16 @@ from qiskit.primitives.containers import (
     BitArray,
     DataBin,
     PrimitiveResult,
+    make_data_bin,
 )
 
 try:
     # For Qiskit versions >= 1.1
-    from qiskit.primitives.containers import SamplerPubResult, make_data_bin
+    from qiskit.primitives.containers import SamplerPubResult
 except ImportError:
     # For Qiskit versions < 1.1
     from qiskit.primitives.containers import (
         PubResult as SamplerPubResult,
-    )
-    from qiskit.primitives.containers import (
-        make_data_bin,
     )
 
 from qiskit.primitives.containers.sampler_pub import SamplerPub
