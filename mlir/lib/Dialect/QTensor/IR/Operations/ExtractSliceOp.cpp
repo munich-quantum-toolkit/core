@@ -9,7 +9,6 @@
  */
 
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
-#include "mlir/Dialect/QTensor/IR/QTensorDialect.h"
 #include "mlir/Dialect/QTensor/IR/QTensorOps.h"
 
 #include <llvm/Support/Casting.h>

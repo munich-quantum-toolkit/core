@@ -12,14 +12,7 @@
 
 #include "mlir/Dialect/QTensor/IR/QTensorDialect.h" // IWYU pragma: associated
 
-#include <llvm/ADT/STLExtras.h>
-#include <llvm/ADT/SmallBitVector.h>
-#include <llvm/Support/Casting.h>
-#include <llvm/Support/ErrorHandling.h>
-#include <mlir/Dialect/Linalg/IR/RelayoutOpInterface.h>
-#include <mlir/Dialect/Tensor/IR/Tensor.h>
 #include <mlir/Dialect/Utils/StaticValueUtils.h>
-#include <mlir/Dialect/Utils/StructuredOpsUtils.h>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/BuiltinTypeInterfaces.h>
 #include <mlir/IR/BuiltinTypes.h>
