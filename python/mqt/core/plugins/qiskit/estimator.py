@@ -155,7 +155,7 @@ class QDMIEstimator(BaseEstimatorV2):
         result = job.result()
 
         # Process results
-        # result.get_counts returns list of dicts corresponding to total_circuits_to_run
+        # result.get_counts returns a list of dicts corresponding to total_circuits_to_run
         all_counts = result.get_counts()
         if isinstance(all_counts, dict):
             all_counts = [all_counts]

@@ -134,7 +134,6 @@ class QDMISampler(BaseSamplerV2):
         # Extract counts
         # result.get_counts() returns a list of dictionaries if multiple circuits
         # or a single dictionary if one circuit.
-        all_counts = []
         if len(bound_circuits_flat) == 1:
             all_counts = [result.get_counts()]
         else:
