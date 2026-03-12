@@ -1,12 +1,16 @@
 # Getting Started
 
-The Multi-Level Intermediate Representation (MLIR) project is an extensive framework to build compilers for heterogenous hardware. We, the maintainers of the Munich Quantum Toolkit (MQT), explore MLIR for quantum compilation. That is, given an intermediate representation (IR) - a description - of a quantum computation, transform this representation to one that is efficiently executable on a target architecture.
+The Multi-Level Intermediate Representation (MLIR) project is an extensive framework to build compilers for heterogenous hardware. The Munich Quantum Toolkit (MQT) utilizes MLIR for quantum compilation. That is, given an intermediate representation (IR) - a description - of a quantum computation, transform this representation to one that is efficiently executable on a target architecture.
+
+This tutorial teaches you how to understand, write, and optimize quantum IR in MLIR using the infrastructure built within the MQT. Getting started with MLIR is not an easy task. Thus, we attempt to also provide a soft introduction to the fundamental concepts of MLIR.
 
 **Installation**
 
 If you haven't already, make sure to visit the [installation](https://mqt.readthedocs.io/projects/core/en/latest/installation.html) page which describes how to setup the project (including MLIR) correctly.
 
 ## Understanding Quantum IR
+
+Before we can optimize quantum IR, we first need to understand how to write it. Hence, this section describes how to create quantum programs in MLIR using the MQT.
 
 ### Dynamic And Static Allocation
 
@@ -38,7 +42,7 @@ module {
 }
 ```
 
-### (Interlude: MLIR Concepts)
+### Interlude: MLIR Concepts
 
 ```{note}
 If you are already familiar with the fundamental concepts of MLIR, you may skip this section.
@@ -133,12 +137,12 @@ For example, running `mqt-cc` on the first code snippet of this tutorial yields 
 $ mqt-cc dynamic-allocation.mlir
 module {
   func.func @main() {
-    return
+    func.return
   }
 }
 ```
 
-What happened? Because there are no unitary operations between the allocation and deallocation of the qubit, the `RemoveAllocDeallocPair` canonicalization pattern matches and removes the unused qubit from the program. This one example of the many optimizations implemented in the quantum compiler driver. <!-- Technically this is a lie right now. But at some point it will be true.-->
+What happened? Because there are no unitary operations between the allocation and deallocation of the qubit, the `RemoveAllocDeallocPair` canonicalization pattern matches and removes the unused qubit from the program. This one example of the many optimizations implemented in the quantum compiler driver.
 
 ### Internal Interface
 
@@ -188,8 +192,6 @@ To print the quantum IR after each step in the compilation pipeline, you can sup
 $ mqt-cc --record-intermediates <input .mlir/.qasm file>
 ```
 
-## Emitting Low-Level Quantum IR
+## Summary
 
 TODO
-
-## Summary
