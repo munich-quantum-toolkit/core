@@ -73,6 +73,38 @@ removeInversePairTwoTargetZeroParameter(OpType op, PatternRewriter& rewriter) {
 }
 
 /**
+ * @brief Remove a pair of two-target, zero-parameter operations where
+ *        the second operation is the same gate with swapped targets.
+ *
+ * @tparam OpType The type of the (self-inverse) operation.
+ * @param op The operation instance.
+ * @param rewriter The pattern rewriter.
+ * @return LogicalResult Success or failure of the removal.
+ */
+template <typename OpType>
+mlir::LogicalResult
+removeTwoTargetZeroParameterPairWithSwappedTargets(OpType op,
+                                                   PatternRewriter& rewriter) {
+  // Check if the successor is the same operation
+  auto nextOp = llvm::dyn_cast<OpType>(*op.getOutputQubit(0).user_begin());
+  if (!nextOp) {
+    return failure();
+  }
+
+  // Confirm operations act on the same qubits but with swapped targets
+  if (op.getOutputQubit(0) != nextOp.getInputQubit(1) ||
+      op.getOutputQubit(1) != nextOp.getInputQubit(0)) {
+    return failure();
+  }
+
+  // Unlink both operations
+  rewriter.replaceAllUsesWith(nextOp->getResults(),
+                              {op.getInputQubit(1), op.getInputQubit(0)});
+
+  return success();
+}
+
+/**
  * @brief Merge two compatible one-target, zero-parameter operations
  *
  * @details
@@ -167,6 +199,46 @@ mlir::LogicalResult mergeTwoTargetOneParameter(OpType op,
 
   // Replace the second operation with the result of the first operation
   rewriter.replaceOp(nextOp, op.getResults());
+  return success();
+}
+
+/**
+ * @brief Merge two compatible two-target, one-parameter operations where the
+ *        second operation consumes the outputs with swapped targets.
+ *
+ * @details
+ * This is analogous to mergeTwoTargetOneParameter, but it additionally handles
+ * the case where the second operation swaps its target qubits. The new
+ * parameter is computed as the sum of the two original parameters.
+ *
+ * @tparam OpType The type of the operation to be merged.
+ * @param op The operation instance.
+ * @param rewriter The pattern rewriter.
+ * @return LogicalResult Success or failure of the merge.
+ */
+template <typename OpType>
+mlir::LogicalResult
+mergeTwoTargetOneParameterWithSwappedTargets(OpType op,
+                                             PatternRewriter& rewriter) {
+  // Check if the successor is the same operation
+  auto nextOp = llvm::dyn_cast<OpType>(*op.getOutputQubit(0).user_begin());
+  if (!nextOp) {
+    return failure();
+  }
+
+  // Confirm operations act on the same qubits but with swapped targets
+  if (op.getOutputQubit(0) != nextOp.getInputQubit(1) ||
+      op.getOutputQubit(1) != nextOp.getInputQubit(0)) {
+    return failure();
+  }
+
+  // Compute and set the new parameter on the first operation
+  auto newParameter = arith::AddFOp::create(
+      rewriter, op.getLoc(), op.getOperand(2), nextOp.getOperand(2));
+  op->setOperand(2, newParameter.getResult());
+
+  // nextOp results correspond to swapped operands, so swap replacements too
+  rewriter.replaceOp(nextOp, {op.getOutputQubit(1), op.getOutputQubit(0)});
   return success();
 }
 

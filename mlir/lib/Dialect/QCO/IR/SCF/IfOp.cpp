@@ -69,30 +69,44 @@ void IfOp::build(
 }
 
 // Adjusted from
-// https://github.com/llvm/llvm-project/blob/llvmorg-21.1.8/mlir/lib/Dialect/SCF/IR/SCF.cpp
+// https://github.com/llvm/llvm-project/blob/llvmorg-22.1.1/mlir/lib/Dialect/SCF/IR/SCF.cpp
 
 void IfOp::getSuccessorRegions(RegionBranchPoint point,
                                SmallVectorImpl<RegionSuccessor>& regions) {
-  // The `then` and the `else` region branch back to the parent operation.
+  // The `then` and the `else` region branch back to the parent operation or
+  // one of the recursive parent operations (early exit case).
   if (!point.isParent()) {
-    regions.push_back(RegionSuccessor(getResults()));
+    regions.push_back(RegionSuccessor(getOperation(), getResults()));
     return;
   }
 
   regions.push_back(RegionSuccessor(&getThenRegion()));
-  regions.push_back(RegionSuccessor(&getElseRegion()));
+
+  // If the else region is empty, execution continues after the parent op.
+  Region* elseRegion = &getElseRegion();
+  if (elseRegion->empty()) {
+    regions.push_back(
+        RegionSuccessor(getOperation(), getOperation()->getResults()));
+  } else {
+    regions.push_back(RegionSuccessor(elseRegion));
+  }
 }
 
 void IfOp::getEntrySuccessorRegions(ArrayRef<Attribute> operands,
                                     SmallVectorImpl<RegionSuccessor>& regions) {
   FoldAdaptor adaptor(operands, *this);
   auto boolAttr = dyn_cast_or_null<BoolAttr>(adaptor.getCondition());
-  if (!boolAttr) {
+  if (!boolAttr || boolAttr.getValue()) {
     regions.emplace_back(&getThenRegion());
-    regions.emplace_back(&getElseRegion());
-  } else {
-    regions.emplace_back(boolAttr.getValue() ? &getThenRegion()
-                                             : &getElseRegion());
+  }
+
+  // If the else region is empty, execution continues after the parent op.
+  if (!boolAttr || !boolAttr.getValue()) {
+    if (!getElseRegion().empty()) {
+      regions.emplace_back(&getElseRegion());
+    } else {
+      regions.emplace_back(getOperation(), getResults());
+    }
   }
 }
 // NOLINTNEXTLINE(readability-convert-member-functions-to-static)
@@ -232,6 +246,8 @@ struct ConditionPropagation : public OpRewritePattern<IfOp> {
 void IfOp::getCanonicalizationPatterns(RewritePatternSet& results,
                                        MLIRContext* context) {
   results.add<RemoveStaticCondition, ConditionPropagation>(context);
+  populateRegionBranchOpInterfaceCanonicalizationPatterns(
+      results, IfOp::getOperationName());
 }
 
 LogicalResult IfOp::verify() {

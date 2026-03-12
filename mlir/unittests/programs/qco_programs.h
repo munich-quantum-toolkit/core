@@ -624,6 +624,9 @@ void inverseMultipleControlledSwap(QCOProgramBuilder& b);
 /// Creates a circuit with two SWAP gates in a row.
 void twoSwap(QCOProgramBuilder& b);
 
+/// Creates a circuit with two SWAP gates in a row with swapped targets.
+void twoSwapSwappedTargets(QCOProgramBuilder& b);
+
 // --- iSWAPOp -------------------------------------------------------------- //
 
 /// Creates a circuit with just an iSWAP gate.
@@ -670,6 +673,12 @@ void inverseDcx(QCOProgramBuilder& b);
 
 /// Creates a circuit with an inverse modifier applied to a controlled DCX gate.
 void inverseMultipleControlledDcx(QCOProgramBuilder& b);
+
+/// Creates a circuit with two DCX gates in a row with identical targets.
+void twoDcx(QCOProgramBuilder& b);
+
+/// Creates a circuit with two DCX gates in a row with swapped targets.
+void twoDcxSwappedTargets(QCOProgramBuilder& b);
 
 // --- ECROp ---------------------------------------------------------------- //
 
@@ -726,8 +735,18 @@ void tripleControlledRxx(QCOProgramBuilder& b);
 /// Creates a circuit with a four-controlled RXX gate.
 void fourControlledRxx(QCOProgramBuilder& b);
 
+/// Creates a circuit with two RXX gates in a row.
+void twoRxx(QCOProgramBuilder& b);
+
+/// Creates a circuit with two RXX gates in a row with swapped targets.
+void twoRxxSwappedTargets(QCOProgramBuilder& b);
+
 /// Creates a circuit with two RXX gates in a row with opposite phases.
 void twoRxxOppositePhase(QCOProgramBuilder& b);
+
+/// Creates a circuit with two RXX gates in a row with opposite phases and
+/// swapped targets.
+void twoRxxOppositePhaseSwappedTargets(QCOProgramBuilder& b);
 
 // --- RYYOp ---------------------------------------------------------------- //
 
@@ -752,8 +771,18 @@ void inverseRyy(QCOProgramBuilder& b);
 /// Creates a circuit with an inverse modifier applied to a controlled RYY gate.
 void inverseMultipleControlledRyy(QCOProgramBuilder& b);
 
+/// Creates a circuit with two RYY gates in a row.
+void twoRyy(QCOProgramBuilder& b);
+
+/// Creates a circuit with two RYY gates in a row with swapped targets.
+void twoRyySwappedTargets(QCOProgramBuilder& b);
+
 /// Creates a circuit with two RYY gates in a row with opposite phases.
 void twoRyyOppositePhase(QCOProgramBuilder& b);
+
+/// Creates a circuit with two RYY gates in a row with opposite phases and
+/// swapped targets.
+void twoRyyOppositePhaseSwappedTargets(QCOProgramBuilder& b);
 
 // --- RZXOp ---------------------------------------------------------------- //
 
@@ -804,8 +833,18 @@ void inverseRzz(QCOProgramBuilder& b);
 /// Creates a circuit with an inverse modifier applied to a controlled RZZ gate.
 void inverseMultipleControlledRzz(QCOProgramBuilder& b);
 
+/// Creates a circuit with two RZZ gates in a row.
+void twoRzz(QCOProgramBuilder& b);
+
+/// Creates a circuit with two RZZ gates in a row with swapped targets.
+void twoRzzSwappedTargets(QCOProgramBuilder& b);
+
 /// Creates a circuit with two RZZ gates in a row with opposite phases.
 void twoRzzOppositePhase(QCOProgramBuilder& b);
+
+/// Creates a circuit with two RZZ gates in a row with opposite phases and
+/// swapped targets.
+void twoRzzOppositePhaseSwappedTargets(QCOProgramBuilder& b);
 
 // --- XXPlusYYOp ----------------------------------------------------------- //
 

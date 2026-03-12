@@ -802,6 +802,8 @@ def DCXOp : QCOOp<"dcx", traits = [UnitaryOpInterface, TwoTargetZeroParameter]> 
         [[nodiscard]] static StringRef getBaseSymbol() { return "dcx"; }
         [[nodiscard]] static Eigen::Matrix4cd getUnitaryMatrix();
     }];
+
+    let hasCanonicalizer = 1;
 }
 
 def ECROp : QCOOp<"ecr", traits = [UnitaryOpInterface, TwoTargetZeroParameter]> {

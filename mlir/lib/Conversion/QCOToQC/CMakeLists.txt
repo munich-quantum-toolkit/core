@@ -8,8 +8,8 @@
 
 file(GLOB CONVERSION_SOURCES *.cpp)
 
-add_mlir_library(
-  QCOToQC
+add_mlir_conversion_library(
+  MLIRQCOToQC
   ${CONVERSION_SOURCES}
   DEPENDS
   QCOToQCIncGen
@@ -23,4 +23,4 @@ add_mlir_library(
   MLIRFuncTransforms
   DISABLE_INSTALL)
 
-mqt_mlir_target_use_project_options(QCOToQC)
+mqt_mlir_target_use_project_options(MLIRQCOToQC)
