@@ -115,7 +115,7 @@ module {
 
 ## Optimizing Quantum IR
 
-By combining built-in dialects and the QC dialect we can implement quantum algorithms in MLIR. This section outlines how to use our compiler driver to optimize quantum programs.
+By combining built-in dialects and the QC dialect we can implement quantum algorithms in MLIR. This section outlines how to use the compiler driver to optimize your quantum programs.
 
 <!-- I think the idea of "external" and "internal" is good, but i don't like the wording with "interface"-->
 
@@ -138,7 +138,7 @@ module {
 }
 ```
 
-What happened? Because there are no unitary operations between the allocation and deallocation of the qubit, the `RemoveAllocDeallocPair` canonicalization pattern matches and removes the unused qubit from the program.
+What happened? Because there are no unitary operations between the allocation and deallocation of the qubit, the `RemoveAllocDeallocPair` canonicalization pattern matches and removes the unused qubit from the program. This one example of the many optimizations implemented in the quantum compiler driver. <!-- Technically this is a lie right now. But at some point it will be true.-->
 
 ### Internal Interface
 
@@ -178,7 +178,7 @@ The following figure illustrates the data-flow graph of the IR above. Thanks to 
 Quantum IR in the QCO dialect can be quite complex. Writing it by hand is certainly a errorprone task. Fortunately, you don't have to. The compiler driver's interface accepts and produces quantum IR in the QC dialect. Under the hood, it transforms it to the QCO dialect, performs the optimizations, and transforms it back to the QC dialect. That's also why we refer to the QC dialect as interface dialect. The following figure depicts the interplay between the two dialects illustratively.
 
 ```{image} ../_static/compilation-pipeline.svg
-:width: 35%
+:width: 50%
 :align: center
 ```
 
