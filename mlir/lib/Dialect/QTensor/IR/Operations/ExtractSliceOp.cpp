@@ -12,26 +12,14 @@
 #include "mlir/Dialect/QTensor/IR/QTensorDialect.h"
 #include "mlir/Dialect/QTensor/IR/QTensorOps.h"
 
-#include <llvm/ADT/STLExtras.h>
-#include <llvm/ADT/SmallBitVector.h>
-#include <llvm/ADT/SmallVector.h>
 #include <llvm/Support/Casting.h>
-#include <mlir/Dialect/Arith/IR/Arith.h>
-#include <mlir/Dialect/Arith/Utils/Utils.h>
-#include <mlir/Dialect/Tensor/IR/Tensor.h>
 #include <mlir/Dialect/Utils/StaticValueUtils.h>
 #include <mlir/IR/Attributes.h>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/BuiltinTypeInterfaces.h>
 #include <mlir/IR/BuiltinTypes.h>
-#include <mlir/IR/Location.h>
-#include <mlir/IR/Matchers.h>
 #include <mlir/IR/OpDefinition.h>
 #include <mlir/IR/OperationSupport.h>
-#include <mlir/IR/PatternMatch.h>
-#include <mlir/IR/TypeUtilities.h>
-#include <mlir/IR/ValueRange.h>
-#include <mlir/Interfaces/ViewLikeInterface.h>
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/LogicalResult.h>
 
@@ -84,7 +72,7 @@ LogicalResult ExtractSliceOp::verify() {
 
   if (outSourceType.getElementType() != sourceType.getElementType()) {
     return emitOpError(
-        "OutSourceTensor element type must match source element type");
+        "OutSource tensor element type must match source element type");
   }
 
   if (constSize && !ShapedType::isDynamic(resultType.getDimSize(0))) {

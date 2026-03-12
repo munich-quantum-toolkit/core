@@ -29,7 +29,7 @@ using namespace mlir::qtensor;
 
 void FromElementsOp::build(OpBuilder& builder, OperationState& result,
                            ValueRange elements) {
-  assert(!elements.empty() && "expected at least one element");
+  assert(!elements.empty() && "Expected at least one element");
   Type resultType = RankedTensorType::get(
       {static_cast<int64_t>(elements.size())}, elements.front().getType());
   build(builder, result, resultType, elements);
@@ -37,7 +37,7 @@ void FromElementsOp::build(OpBuilder& builder, OperationState& result,
 
 LogicalResult FromElementsOp::verify() {
   if (!llvm::isa<qco::QubitType>(getResult().getType().getElementType())) {
-    return emitOpError("result tensor must have qubit element type");
+    return emitOpError("Result tensor must have qubit element type");
   }
 
   for (auto type : getElements().getTypes()) {

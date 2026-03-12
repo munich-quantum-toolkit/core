@@ -12,23 +12,12 @@
 #include "mlir/Dialect/QTensor/IR/QTensorDialect.h"
 #include "mlir/Dialect/QTensor/IR/QTensorOps.h"
 
-#include <llvm/ADT/STLExtras.h>
-#include <llvm/ADT/SmallBitVector.h>
-#include <llvm/ADT/SmallVector.h>
 #include <llvm/Support/Casting.h>
-#include <mlir/Dialect/Arith/Utils/Utils.h>
-#include <mlir/Dialect/Tensor/IR/Tensor.h>
 #include <mlir/Dialect/Utils/StaticValueUtils.h>
-#include <mlir/IR/Attributes.h>
-#include <mlir/IR/Builders.h>
 #include <mlir/IR/BuiltinTypeInterfaces.h>
-#include <mlir/IR/BuiltinTypes.h>
-#include <mlir/IR/Matchers.h>
 #include <mlir/IR/OpDefinition.h>
 #include <mlir/IR/OperationSupport.h>
 #include <mlir/IR/PatternMatch.h>
-#include <mlir/IR/TypeUtilities.h>
-#include <mlir/Interfaces/ViewLikeInterface.h>
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/LogicalResult.h>
 
@@ -46,11 +35,11 @@ LogicalResult InsertSliceOp::verify() {
   auto constSize = getConstantIntValue(getSize());
 
   if (!llvm::isa<qco::QubitType>(sourceType.getElementType())) {
-    return emitOpError("Elements of sourceTensor must be of qubit type");
+    return emitOpError("Elements of source tensor must be of qubit type");
   }
 
   if (!llvm::isa<qco::QubitType>(destType.getElementType())) {
-    return emitOpError("Elements of destTensor must be of qubit type");
+    return emitOpError("Elements of dest tensor must be of qubit type");
   }
 
   if (constOffset && *constOffset < 0) {
