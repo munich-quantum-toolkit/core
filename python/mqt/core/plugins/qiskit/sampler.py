@@ -38,6 +38,7 @@ from qiskit.primitives.primitive_job import PrimitiveJob
 if TYPE_CHECKING:
     from collections.abc import Iterable
 
+    from qiskit.circuit import ClassicalRegister
     from qiskit.primitives.containers import SamplerPubLike
 
     from .backend import QDMIBackend
@@ -155,7 +156,11 @@ class QDMISampler(BaseSamplerV2):
         )
 
     @staticmethod
-    def _get_bit_arrays(cregs: list[Any], counts: list[dict[str, int]], shape: tuple[int, ...]) -> dict[str, BitArray]:
+    def _get_bit_arrays(
+        cregs: list[ClassicalRegister],
+        counts: list[dict[str, int]],
+        shape: tuple[int, ...],
+    ) -> dict[str, BitArray]:
         """Convert counts to BitArrays for each creg.
 
         Args:
