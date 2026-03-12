@@ -14,6 +14,8 @@
 #include "mlir/Dialect/QCO/Transforms/Passes.h"
 
 #include <gtest/gtest.h>
+#include <llvm/ADT/ArrayRef.h>
+#include <llvm/ADT/SmallVector.h>
 #include <llvm/ADT/StringRef.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
@@ -33,7 +35,6 @@
 #include <numbers>
 #include <optional>
 #include <tuple>
-#include <vector>
 
 namespace {
 
@@ -59,7 +60,7 @@ protected:
    */
   struct RotationGate {
     GateType type;
-    std::vector<double> angles;
+    llvm::SmallVector<double, 4> angles;
   };
 
   QCOQuaternionMergeTest() : builder(&context) {}
@@ -140,7 +141,7 @@ protected:
     EXPECT_NEAR(lambda, expectedLambda, tolerance);
   }
 
-  Value buildRotations(const std::vector<RotationGate>& rotations, Value& q) {
+  Value buildRotations(llvm::ArrayRef<RotationGate> rotations, Value& q) {
     Value qubit = q;
 
     for (const auto& gate : rotations) {
@@ -170,7 +171,7 @@ protected:
    * builder api to build a small quantum circuit, where a qubit is fed through
    * all rotations in the list.
    */
-  LogicalResult testGateMerge(const std::vector<RotationGate>& rotations) {
+  LogicalResult testGateMerge(llvm::ArrayRef<RotationGate> rotations) {
 
     auto q = builder.allocQubitRegister(1);
 

@@ -121,17 +121,17 @@ struct MergeRotationGatesPattern final
 
     // constant 0.0
     auto zeroAttr = rewriter.getFloatAttr(floatType, 0.0);
-    auto zero = rewriter.create<arith::ConstantOp>(loc, zeroAttr);
+    auto zero = arith::ConstantOp::create(rewriter, loc, zeroAttr);
 
     // constant 2.0
     auto twoAttr = rewriter.getFloatAttr(floatType, 2.0);
-    auto two = rewriter.create<arith::ConstantOp>(loc, twoAttr);
+    auto two = arith::ConstantOp::create(rewriter, loc, twoAttr);
 
-    auto half = rewriter.create<arith::DivFOp>(loc, angle, two);
+    auto half = arith::DivFOp::create(rewriter, loc, angle, two);
     // cos(angle/2)
-    auto cos = rewriter.create<math::CosOp>(loc, floatType, half);
+    auto cos = math::CosOp::create(rewriter, loc, floatType, half);
     // sin(angle/2)
-    auto sin = rewriter.create<math::SinOp>(loc, floatType, half);
+    auto sin = math::SinOp::create(rewriter, loc, floatType, half);
 
     switch (axis) {
     case RotationAxis::X:
@@ -190,40 +190,40 @@ struct MergeRotationGatesPattern final
     auto loc = op->getLoc();
 
     // wRes = w1w2 - x1x2 - y1y2 - z1z2
-    auto w1w2 = rewriter.create<arith::MulFOp>(loc, q1.w, q2.w);
-    auto x1x2 = rewriter.create<arith::MulFOp>(loc, q1.x, q2.x);
-    auto y1y2 = rewriter.create<arith::MulFOp>(loc, q1.y, q2.y);
-    auto z1z2 = rewriter.create<arith::MulFOp>(loc, q1.z, q2.z);
-    auto wTemp1 = rewriter.create<arith::SubFOp>(loc, w1w2, x1x2);
-    auto wTemp2 = rewriter.create<arith::SubFOp>(loc, wTemp1, y1y2);
-    auto wRes = rewriter.create<arith::SubFOp>(loc, wTemp2, z1z2);
+    auto w1w2 = arith::MulFOp::create(rewriter, loc, q1.w, q2.w);
+    auto x1x2 = arith::MulFOp::create(rewriter, loc, q1.x, q2.x);
+    auto y1y2 = arith::MulFOp::create(rewriter, loc, q1.y, q2.y);
+    auto z1z2 = arith::MulFOp::create(rewriter, loc, q1.z, q2.z);
+    auto wTemp1 = arith::SubFOp::create(rewriter, loc, w1w2, x1x2);
+    auto wTemp2 = arith::SubFOp::create(rewriter, loc, wTemp1, y1y2);
+    auto wRes = arith::SubFOp::create(rewriter, loc, wTemp2, z1z2);
 
     // xRes = w1x2 + x1w2 + y1z2 - z1y2
-    auto w1x2 = rewriter.create<arith::MulFOp>(loc, q1.w, q2.x);
-    auto x1w2 = rewriter.create<arith::MulFOp>(loc, q1.x, q2.w);
-    auto y1z2 = rewriter.create<arith::MulFOp>(loc, q1.y, q2.z);
-    auto z1y2 = rewriter.create<arith::MulFOp>(loc, q1.z, q2.y);
-    auto xTemp1 = rewriter.create<arith::AddFOp>(loc, w1x2, x1w2);
-    auto xTemp2 = rewriter.create<arith::AddFOp>(loc, xTemp1, y1z2);
-    auto xRes = rewriter.create<arith::SubFOp>(loc, xTemp2, z1y2);
+    auto w1x2 = arith::MulFOp::create(rewriter, loc, q1.w, q2.x);
+    auto x1w2 = arith::MulFOp::create(rewriter, loc, q1.x, q2.w);
+    auto y1z2 = arith::MulFOp::create(rewriter, loc, q1.y, q2.z);
+    auto z1y2 = arith::MulFOp::create(rewriter, loc, q1.z, q2.y);
+    auto xTemp1 = arith::AddFOp::create(rewriter, loc, w1x2, x1w2);
+    auto xTemp2 = arith::AddFOp::create(rewriter, loc, xTemp1, y1z2);
+    auto xRes = arith::SubFOp::create(rewriter, loc, xTemp2, z1y2);
 
     // yRes = w1y2 - x1z2 + y1w2 + z1x2
-    auto w1y2 = rewriter.create<arith::MulFOp>(loc, q1.w, q2.y);
-    auto x1z2 = rewriter.create<arith::MulFOp>(loc, q1.x, q2.z);
-    auto y1w2 = rewriter.create<arith::MulFOp>(loc, q1.y, q2.w);
-    auto z1x2 = rewriter.create<arith::MulFOp>(loc, q1.z, q2.x);
-    auto yTemp1 = rewriter.create<arith::SubFOp>(loc, w1y2, x1z2);
-    auto yTemp2 = rewriter.create<arith::AddFOp>(loc, yTemp1, y1w2);
-    auto yRes = rewriter.create<arith::AddFOp>(loc, yTemp2, z1x2);
+    auto w1y2 = arith::MulFOp::create(rewriter, loc, q1.w, q2.y);
+    auto x1z2 = arith::MulFOp::create(rewriter, loc, q1.x, q2.z);
+    auto y1w2 = arith::MulFOp::create(rewriter, loc, q1.y, q2.w);
+    auto z1x2 = arith::MulFOp::create(rewriter, loc, q1.z, q2.x);
+    auto yTemp1 = arith::SubFOp::create(rewriter, loc, w1y2, x1z2);
+    auto yTemp2 = arith::AddFOp::create(rewriter, loc, yTemp1, y1w2);
+    auto yRes = arith::AddFOp::create(rewriter, loc, yTemp2, z1x2);
 
     // zRes = w1z2 + x1y2 - y1x2 + z1w2
-    auto w1z2 = rewriter.create<arith::MulFOp>(loc, q1.w, q2.z);
-    auto x1y2 = rewriter.create<arith::MulFOp>(loc, q1.x, q2.y);
-    auto y1x2 = rewriter.create<arith::MulFOp>(loc, q1.y, q2.x);
-    auto z1w2 = rewriter.create<arith::MulFOp>(loc, q1.z, q2.w);
-    auto zTemp1 = rewriter.create<arith::AddFOp>(loc, w1z2, x1y2);
-    auto zTemp2 = rewriter.create<arith::SubFOp>(loc, zTemp1, y1x2);
-    auto zRes = rewriter.create<arith::AddFOp>(loc, zTemp2, z1w2);
+    auto w1z2 = arith::MulFOp::create(rewriter, loc, q1.w, q2.z);
+    auto x1y2 = arith::MulFOp::create(rewriter, loc, q1.x, q2.y);
+    auto y1x2 = arith::MulFOp::create(rewriter, loc, q1.y, q2.x);
+    auto z1w2 = arith::MulFOp::create(rewriter, loc, q1.z, q2.w);
+    auto zTemp1 = arith::AddFOp::create(rewriter, loc, w1z2, x1y2);
+    auto zTemp2 = arith::SubFOp::create(rewriter, loc, zTemp1, y1x2);
+    auto zRes = arith::AddFOp::create(rewriter, loc, zTemp2, z1w2);
 
     return {.w = wRes, .x = xRes, .y = yRes, .z = zRes};
   }
@@ -294,87 +294,89 @@ struct MergeRotationGatesPattern final
     auto floatType = op.getParameter(0).getType();
     // constant -1.0
     auto negOneAttr = rewriter.getFloatAttr(floatType, -1.0);
-    auto negOne = rewriter.create<arith::ConstantOp>(loc, negOneAttr);
+    auto negOne = arith::ConstantOp::create(rewriter, loc, negOneAttr);
     // constant 0.0
     auto zeroAttr = rewriter.getFloatAttr(floatType, 0.0);
-    auto zero = rewriter.create<arith::ConstantOp>(loc, zeroAttr);
+    auto zero = arith::ConstantOp::create(rewriter, loc, zeroAttr);
     // constant 1.0
     auto oneAttr = rewriter.getFloatAttr(floatType, 1.0);
-    auto one = rewriter.create<arith::ConstantOp>(loc, oneAttr);
+    auto one = arith::ConstantOp::create(rewriter, loc, oneAttr);
     // constant 2.0
     auto twoAttr = rewriter.getFloatAttr(floatType, 2.0);
-    auto two = rewriter.create<arith::ConstantOp>(loc, twoAttr);
+    auto two = arith::ConstantOp::create(rewriter, loc, twoAttr);
     // constant epsilon (boundary around gimbal lock positions)
     auto epsAttr = rewriter.getFloatAttr(floatType, 1e-7);
-    auto eps = rewriter.create<arith::ConstantOp>(loc, epsAttr);
+    auto eps = arith::ConstantOp::create(rewriter, loc, epsAttr);
     // constant PI
     auto piAttr = rewriter.getFloatAttr(floatType, std::numbers::pi);
-    auto pi = rewriter.create<arith::ConstantOp>(loc, piAttr);
+    auto pi = arith::ConstantOp::create(rewriter, loc, piAttr);
 
     // calculate angle beta (for y-rotation)
     // beta = acos(2 * (w^2 + z^2) - 1)
     // NOTE: the term (2 * (w^2 + z^2) - 1) is clamped to [-1, 1],
     // otherwise acos could produce NaN.
-    auto ww = rewriter.create<arith::MulFOp>(loc, q.w, q.w);
-    auto zz = rewriter.create<arith::MulFOp>(loc, q.z, q.z);
-    auto bTemp1 = rewriter.create<arith::AddFOp>(loc, ww, zz);
-    auto bTemp2 = rewriter.create<arith::MulFOp>(loc, two, bTemp1);
-    auto bTemp3 = rewriter.create<arith::SubFOp>(loc, bTemp2, one);
-    auto clampedLow = rewriter.create<arith::MaximumFOp>(loc, bTemp3, negOne);
-    auto clamped = rewriter.create<arith::MinimumFOp>(loc, clampedLow, one);
-    auto beta = rewriter.create<math::AcosOp>(loc, clamped);
+    auto ww = arith::MulFOp::create(rewriter, loc, q.w, q.w);
+    auto zz = arith::MulFOp::create(rewriter, loc, q.z, q.z);
+    auto bTemp1 = arith::AddFOp::create(rewriter, loc, ww, zz);
+    auto bTemp2 = arith::MulFOp::create(rewriter, loc, two, bTemp1);
+    auto bTemp3 = arith::SubFOp::create(rewriter, loc, bTemp2, one);
+    auto clampedLow = arith::MaximumFOp::create(rewriter, loc, bTemp3, negOne);
+    auto clamped = arith::MinimumFOp::create(rewriter, loc, clampedLow, one);
+    auto beta = math::AcosOp::create(rewriter, loc, clamped);
 
     // intermediates to check for gimbal lock (|beta| and |beta - PI|)
-    auto absBeta = rewriter.create<math::AbsFOp>(loc, beta);
-    auto betaMinusPi = rewriter.create<arith::SubFOp>(loc, beta, pi);
-    auto absBetaMinusPi = rewriter.create<math::AbsFOp>(loc, betaMinusPi);
+    auto absBeta = math::AbsFOp::create(rewriter, loc, beta);
+    auto betaMinusPi = arith::SubFOp::create(rewriter, loc, beta, pi);
+    auto absBetaMinusPi = math::AbsFOp::create(rewriter, loc, betaMinusPi);
 
     // safe1 = beta not within boundary eps around 0:
     // |beta| >= eps
-    auto safe1 = rewriter.create<arith::CmpFOp>(loc, arith::CmpFPredicate::OGE,
-                                                absBeta, eps);
+    auto safe1 = arith::CmpFOp::create(rewriter, loc, arith::CmpFPredicate::OGE,
+                                       absBeta, eps);
     // safe2 = beta not within boundary eps around PI: |beta-pi| >= eps
-    auto safe2 = rewriter.create<arith::CmpFOp>(loc, arith::CmpFPredicate::OGE,
-                                                absBetaMinusPi, eps);
+    auto safe2 = arith::CmpFOp::create(rewriter, loc, arith::CmpFPredicate::OGE,
+                                       absBetaMinusPi, eps);
     // is safe (not in gimbal lock) when both hold (safe1 AND safe2)
-    auto safe = rewriter.create<arith::AndIOp>(loc, safe1, safe2);
+    auto safe = arith::AndIOp::create(rewriter, loc, safe1, safe2);
 
     // intermediate angles for z-rotations alpha and gamma
     // theta+ = atan2(z, w)
     // theta- = atan2(-x, y)
-    auto xMinus = rewriter.create<arith::NegFOp>(loc, q.x);
-    auto thetaPlus = rewriter.create<math::Atan2Op>(loc, q.z, q.w);
-    auto thetaMinus = rewriter.create<math::Atan2Op>(loc, xMinus, q.y);
+    auto xMinus = arith::NegFOp::create(rewriter, loc, q.x);
+    auto thetaPlus = math::Atan2Op::create(rewriter, loc, q.z, q.w);
+    auto thetaMinus = math::Atan2Op::create(rewriter, loc, xMinus, q.y);
 
     // intermediate angles for gimbal lock cases
     // twoTheta+ = 2 * theta+
     // twoTheta- = 2 * theta-
-    auto twoThetaPlus = rewriter.create<arith::MulFOp>(loc, two, thetaPlus);
-    auto twoThetaMinus = rewriter.create<arith::MulFOp>(loc, two, thetaMinus);
+    auto twoThetaPlus = arith::MulFOp::create(rewriter, loc, two, thetaPlus);
+    auto twoThetaMinus = arith::MulFOp::create(rewriter, loc, two, thetaMinus);
 
     // Safe Case (no gimbal lock):
     // alphaSafe = theta+ + theta-
     // gammaSafe = theta+ - theta-
-    auto alphaSafe = rewriter.create<arith::AddFOp>(loc, thetaPlus, thetaMinus);
-    auto gammaSafe = rewriter.create<arith::SubFOp>(loc, thetaPlus, thetaMinus);
+    auto alphaSafe =
+        arith::AddFOp::create(rewriter, loc, thetaPlus, thetaMinus);
+    auto gammaSafe =
+        arith::SubFOp::create(rewriter, loc, thetaPlus, thetaMinus);
 
     // Unsafe Case (gimbal lock):
     // when b = 0  then alpha = 2 * (atan2(z,w))
     // when b = PI then alpha = 2 * (atan2(-x, y))
     // gamma is set to zero in both cases
-    auto alphaUnsafe = rewriter.create<arith::SelectOp>(
-        loc, safe1, twoThetaMinus, twoThetaPlus);
+    auto alphaUnsafe = arith::SelectOp::create(rewriter, loc, safe1,
+                                               twoThetaMinus, twoThetaPlus);
 
     // TODO: could add some normalization here for alpha and gamma otherwise
     // they can be outside of [-PI, PI].
 
     // choose correct alpha and gamma whether safe or not
     auto alpha =
-        rewriter.create<arith::SelectOp>(loc, safe, alphaSafe, alphaUnsafe);
-    auto gamma = rewriter.create<arith::SelectOp>(loc, safe, gammaSafe, zero);
+        arith::SelectOp::create(rewriter, loc, safe, alphaSafe, alphaUnsafe);
+    auto gamma = arith::SelectOp::create(rewriter, loc, safe, gammaSafe, zero);
 
-    return rewriter.create<UOp>(loc, op.getInputQubit(0), beta.getResult(),
-                                alpha.getResult(), gamma.getResult());
+    return UOp::create(rewriter, loc, op.getInputQubit(0), beta.getResult(),
+                       alpha.getResult(), gamma.getResult());
   }
 
   /**
