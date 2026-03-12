@@ -624,6 +624,9 @@ void inverseMultipleControlledSwap(QCOProgramBuilder& b);
 /// Creates a circuit with two SWAP gates in a row.
 void twoSwap(QCOProgramBuilder& b);
 
+/// Creates a circuit with two SWAP gates in a row with swapped targets.
+void twoSwapSwappedTargets(QCOProgramBuilder& b);
+
 // --- iSWAPOp -------------------------------------------------------------- //
 
 /// Creates a circuit with just an iSWAP gate.

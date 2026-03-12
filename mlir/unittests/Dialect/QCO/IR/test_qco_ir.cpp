@@ -663,6 +663,9 @@ INSTANTIATE_TEST_SUITE_P(
                     MQT_NAMED_BUILDER(inverseMultipleControlledSwap),
                     MQT_NAMED_BUILDER(multipleControlledSwap)},
         QCOTestCase{"TwoSWAP", MQT_NAMED_BUILDER(twoSwap),
+                    MQT_NAMED_BUILDER(emptyQCO)},
+        QCOTestCase{"TwoSWAPSwappedTargets",
+                    MQT_NAMED_BUILDER(twoSwapSwappedTargets),
                     MQT_NAMED_BUILDER(emptyQCO)}));
 /// @}
 

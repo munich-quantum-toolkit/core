@@ -1262,6 +1262,12 @@ void twoSwap(QCOProgramBuilder& b) {
   std::tie(q[0], q[1]) = b.swap(q[0], q[1]);
 }
 
+void twoSwapSwappedTargets(QCOProgramBuilder& b) {
+  auto q = b.allocQubitRegister(2);
+  std::tie(q[0], q[1]) = b.swap(q[0], q[1]);
+  std::tie(q[1], q[0]) = b.swap(q[1], q[0]);
+}
+
 void iswap(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   b.iswap(q[0], q[1]);
