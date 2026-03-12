@@ -14,13 +14,10 @@
 
 #include <mlir/Dialect/Utils/StaticValueUtils.h>
 #include <mlir/IR/Builders.h>
-#include <mlir/IR/BuiltinTypeInterfaces.h>
 #include <mlir/IR/BuiltinTypes.h>
 #include <mlir/IR/OpDefinition.h>
-#include <mlir/IR/Operation.h>
-#include <mlir/IR/PatternMatch.h>
 #include <mlir/IR/TypeUtilities.h>
-#include <mlir/Support/LLVM.h>
+#include <mlir/IR/Value.h>
 
 // The following headers are needed for some template instantiations.
 // IWYU pragma: begin_keep
