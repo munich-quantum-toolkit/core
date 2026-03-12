@@ -98,9 +98,8 @@ removeTwoTargetZeroParameterPairWithSwappedTargets(OpType op,
   }
 
   // Unlink both operations
-  llvm::SmallVector<mlir::Value, 2> replacements{op.getInputQubit(1),
-                                                 op.getInputQubit(0)};
-  rewriter.replaceAllUsesWith(nextOp->getResults(), replacements);
+  rewriter.replaceAllUsesWith(nextOp->getResults(),
+                              {op.getInputQubit(1), op.getInputQubit(0)});
 
   return success();
 }
@@ -239,9 +238,7 @@ mergeTwoTargetOneParameterWithSwappedTargets(OpType op,
   op->setOperand(2, newParameter.getResult());
 
   // nextOp results correspond to swapped operands, so swap replacements too
-  llvm::SmallVector<mlir::Value, 2> replacements{op.getOutputQubit(1),
-                                                 op.getOutputQubit(0)};
-  rewriter.replaceOp(nextOp, replacements);
+  rewriter.replaceOp(nextOp, {op.getOutputQubit(1), op.getOutputQubit(0)});
   return success();
 }
 
