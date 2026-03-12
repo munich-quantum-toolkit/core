@@ -97,7 +97,7 @@ foldExtractAfterInsertSlice(ExtractSliceOp extractSliceOp) {
   }
 
   // Source types must match
-  if (insertSliceOp.getSource().getType() != extractSliceOp.getType(0)) {
+  if (insertSliceOp.getSource().getType() != extractSliceOp.getType(1)) {
     return nullptr;
   }
 
@@ -117,8 +117,8 @@ foldExtractAfterInsertSlice(ExtractSliceOp extractSliceOp) {
 LogicalResult ExtractSliceOp::fold(FoldAdaptor /*adaptor*/,
                                    SmallVectorImpl<OpFoldResult>& results) {
   if (auto insertOp = foldExtractAfterInsertSlice(*this)) {
-    results.push_back(insertOp.getSource());
     results.push_back(insertOp.getDest());
+    results.push_back(insertOp.getSource());
     return success();
   }
 

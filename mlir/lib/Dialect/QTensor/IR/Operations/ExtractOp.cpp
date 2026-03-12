@@ -50,7 +50,7 @@ static InsertOp foldExtractAfterInsert(ExtractOp extractOp) {
     return nullptr;
   }
 
-  if (insertOp.getScalar().getType() != extractOp.getType(0)) {
+  if (insertOp.getScalar().getType() != extractOp.getType(1)) {
     return nullptr;
   }
 
@@ -66,8 +66,9 @@ static InsertOp foldExtractAfterInsert(ExtractOp extractOp) {
 LogicalResult ExtractOp::fold(FoldAdaptor /*adaptor*/,
                               SmallVectorImpl<OpFoldResult>& results) {
   if (auto insertOp = foldExtractAfterInsert(*this)) {
-    results.push_back(insertOp.getScalar());
     results.push_back(insertOp.getDest());
+    results.push_back(insertOp.getScalar());
+    return success();
   }
 
   return failure();
