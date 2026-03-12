@@ -88,74 +88,6 @@ LogicalResult InsertSliceOp::verify() {
   return success();
 }
 
-/**
- * @brief Folds consecutive InsertSliceOp operations writing to the same slice.
- *
- * @details
- * If two consecutive InsertSliceOp operations write to the same slice,
- * the destination of the second InsertSliceOp can be updated to the
- * destination of the first one, eliminating the intermediate operation.
- *
- * Example:
- *
- * ```mlir
- *   %0 = qtensor.insert_slice %slice0 into %input[%c0][%c2]
- *   %1 = qtensor.insert_slice %slice1 into %0[%c0][%c2]
- * ```
- *
- * This folds into:
- *
- * ```mlir
- *   %1 = qtensor.insert_slice %slice1 into %input[%c0][%c2]
- * ```
- */
-static LogicalResult foldInsertAfterInsertSlice(InsertSliceOp insertOp) {
-  // Check if the destination of current insert is another insert
-  auto prevInsertOp = insertOp.getDest().getDefiningOp<InsertSliceOp>();
-  if (!prevInsertOp) {
-    return failure();
-  }
-
-  // Check source types
-  if (prevInsertOp.getSource().getType() != insertOp.getSource().getType()) {
-    return failure();
-  }
-
-  // Check offset and size
-  auto prevOffsetOpt = getConstantIntValue(prevInsertOp.getOffset());
-  auto prevSizeOpt = getConstantIntValue(prevInsertOp.getSize());
-  auto curOffsetOpt = getConstantIntValue(insertOp.getOffset());
-  auto curSizeOpt = getConstantIntValue(insertOp.getSize());
-
-  // Only fold if offsets and sizes are constant and identical
-  if (!prevOffsetOpt || !prevSizeOpt || !curOffsetOpt || !curSizeOpt) {
-    return failure();
-  }
-  if (*prevOffsetOpt != *curOffsetOpt || *prevSizeOpt != *curSizeOpt) {
-    return failure();
-  }
-
-  return success();
-}
-
-/**
- * @brief Folds round-trip extract/insert slice operation pairs.
- *
- * @details
- * Detects patterns where a slice is extracted from a tensor and then
- * inserted back into the same tensor at the same offset and size.
- * In such cases, the pair of operations forms a no-op and can
- * be folded to the original tensor value.
- *
- * Example:
- *
- * ```mlir
- * %slicedTensor, outTensor = qtensor.extract_slice %tensor[%c0][%c2]
- * %newTensor = qtensor.insert_slice %slicedTensor into %outTensor[%c0][%c2]
- * ```
- *
- * This can be folded into `%tensor`.
- */
 static Value foldInsertAfterExtractSlice(InsertSliceOp insertSliceOp) {
   auto extractSliceOp =
       insertSliceOp.getSource().getDefiningOp<ExtractSliceOp>();
@@ -163,7 +95,6 @@ static Value foldInsertAfterExtractSlice(InsertSliceOp insertSliceOp) {
     return nullptr;
   }
 
-  // Ensure the insert destination is the original source tensor of extract
   if (extractSliceOp.getOutSource() != insertSliceOp.getDest()) {
     return nullptr;
   }
@@ -181,30 +112,36 @@ static Value foldInsertAfterExtractSlice(InsertSliceOp insertSliceOp) {
   return extractSliceOp.getSource();
 }
 
-OpFoldResult InsertSliceOp::fold(FoldAdaptor /*adaptor*/) {
-  // Identity fold: full overwrite
-  if (getSource() == getDest()) {
-    if (auto constOffset = getConstantIntValue(getOffset())) {
-      if (*constOffset == 0) {
-        if (auto constSize = getConstantIntValue(getSize())) {
-          if (*constSize == getSource().getType().getDimSize(0)) {
-            return getSource();
-          }
-        }
-      }
-    }
+static Value foldIdentity(InsertSliceOp insertSliceOp) {
+  auto offsetValue = getConstantIntValue(insertSliceOp.getOffset());
+  auto sizeValue = getConstantIntValue(insertSliceOp.getSize());
+  auto source = insertSliceOp.getSource();
+  auto dest = insertSliceOp.getDest();
+
+  if (source != dest) {
+    return nullptr;
   }
-  // Fold nested insert after insert
-  if (succeeded(foldInsertAfterInsertSlice(*this))) {
-    return getResult();
+  if (!offsetValue || !sizeValue) {
+    return nullptr;
+  }
+  if (*offsetValue != 0) {
+    return nullptr;
+  }
+  if (*sizeValue != source.getType().getDimSize(0)) {
+    return nullptr;
+  }
+  return source;
+}
+
+OpFoldResult InsertSliceOp::fold(FoldAdaptor /*adaptor*/) {
+  if (auto result = foldIdentity(*this)) {
+    return result;
   }
 
-  // Fold after extract_slice
   if (auto result = foldInsertAfterExtractSlice(*this)) {
     return result;
   }
 
-  // Zero-length insert
   if (auto constSize = getConstantIntValue(getSize())) {
     if (*constSize == 0) {
       return getDest();
@@ -247,7 +184,7 @@ struct InsertSliceAfterInsertSlice final
         curOffset, curSize);
     rewriter.eraseOp(prevInsertOp);
     return success();
-  };
+  }
 };
 
 } // namespace

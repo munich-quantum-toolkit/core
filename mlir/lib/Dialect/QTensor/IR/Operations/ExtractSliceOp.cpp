@@ -40,13 +40,12 @@
 using namespace mlir;
 using namespace mlir::qtensor;
 
-/// Build an ExtractSliceOp with dynamic entries and inferred result type.
 void ExtractSliceOp::build(OpBuilder& b, OperationState& result, Value source,
                            Value offset, Value size,
                            ArrayRef<NamedAttribute> attrs) {
-  auto optionalVal = getConstantIntValue(size);
+  auto sizeValue = getConstantIntValue(size);
   auto resultType = RankedTensorType::get(
-      {optionalVal ? *optionalVal : ShapedType::kDynamic},
+      {sizeValue ? *sizeValue : ShapedType::kDynamic},
       cast<RankedTensorType>(source.getType()).getElementType());
 
   result.addAttributes(attrs);

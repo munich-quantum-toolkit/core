@@ -57,19 +57,7 @@ static Value foldInsertAfterExtract(InsertOp insertOp) {
   auto insertIndex = insertOp.getIndex();
   auto extractIndex = extractOp.getIndex();
 
-  // Check if SSA values of the indices are the same
-  if (insertIndex == extractIndex) {
-    return extractOp.getTensor();
-  }
-
-  auto insertIndexValue = getConstantIntValue(insertIndex);
-  auto extractIndexValue = getConstantIntValue(extractIndex);
-
-  // Check if the indices are constant and equal
-  if (!insertIndexValue || !extractIndexValue) {
-    return nullptr;
-  }
-  if (*insertIndexValue != *extractIndexValue) {
+  if (!isSameIndex(insertIndex, extractIndex)) {
     return nullptr;
   }
 
