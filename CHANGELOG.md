@@ -11,7 +11,7 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 
 ### Added
 
-- ✨ Add a `merge-rotation-gates` pass for merging consecutive rotation gates using quarternions ([#1407]) ([**@J4MMlE**])
+- ✨ Add a `merge-rotation-gates` pass for merging consecutive rotation gates using quaternions ([#1407]) ([**@J4MMlE**])
 - ✨ Add conversions between Jeff and QCO ([#1479], [#1548]) ([**@denialhaag**])
 - ✨ Add a `place-and-route` pass for mapping circuits to architectures with restricted topologies ([#1537], [#1547]) ([**@MatthiasReumann**])
 - ✨ Add initial infrastructure for new QC and QCO MLIR dialects
