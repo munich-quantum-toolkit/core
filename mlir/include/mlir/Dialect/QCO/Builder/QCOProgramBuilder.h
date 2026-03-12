@@ -235,7 +235,7 @@ public:
    * %tensor = qtensor.alloc(3) : tensor<3x!qco.qubit>
    * ```
    */
-  Value allocTensor(int64_t size);
+  Value qtensorAlloc(int64_t size);
 
   /**
    * @brief Allocate a qubit tensor from a list of qubit values
@@ -250,7 +250,7 @@ public:
    * %tensor = qtensor.from_elements %q0, %q1, %q2 : tensor<3x!qco.qubit>
    * ```
    */
-  Value fromElements(ValueRange elements);
+  Value qtensorFromElements(ValueRange elements);
 
   /**
    * @brief Extract a qubit from a tensor
@@ -266,8 +266,8 @@ public:
    * %q0, %outTensor = qtensor.extract %tensor[%c0]: tensor<3x!qco.qubit>
    * ```
    */
-  std::pair<Value, Value> extract(Value tensor,
-                                  const std::variant<int64_t, Value>& index);
+  std::pair<Value, Value>
+  qtensorExtract(Value tensor, const std::variant<int64_t, Value>& index);
 
   /**
    * @brief Extract a qubit slice from a tensor
@@ -286,8 +286,8 @@ public:
    * ```
    */
   std::pair<Value, Value>
-  extractSlice(Value tensor, const std::variant<int64_t, Value>& offset,
-               const std::variant<int64_t, Value>& sizes);
+  qtensorExtractSlice(Value tensor, const std::variant<int64_t, Value>& offset,
+                      const std::variant<int64_t, Value>& sizes);
 
   /**
    * @brief Insert a qubit into a tensor
@@ -304,8 +304,8 @@ public:
    * %outTensor = qtensor.insert %q0 into %tensor[%c0] : tensor<3x!qco.qubit>
    * ```
    */
-  Value insert(Value scalar, Value tensor,
-               const std::variant<int64_t, Value>& index);
+  Value qtensorInsert(Value scalar, Value tensor,
+                      const std::variant<int64_t, Value>& index);
 
   /**
    * @brief Insert a qubit slice into a tensor
@@ -324,9 +324,9 @@ public:
    * : tensor<2x!qco.qubit> into tensor<3x!qco.qubit>
    * ```
    */
-  Value insertSlice(Value sourceTensor, Value destTensor,
-                    const std::variant<int64_t, Value>& offset,
-                    const std::variant<int64_t, Value>& sizes);
+  Value qtensorInsertSlice(Value sourceTensor, Value destTensor,
+                           const std::variant<int64_t, Value>& offset,
+                           const std::variant<int64_t, Value>& sizes);
 
   /**
    * @brief Explicitly deallocate a tensor
@@ -341,7 +341,7 @@ public:
    * qtensor.dealloc %tensor : tensor<3x!qco.qubit>
    * ```
    */
-  QCOProgramBuilder& deallocTensor(Value tensor);
+  QCOProgramBuilder& qtensorDealloc(Value tensor);
 
   //===--------------------------------------------------------------------===//
   // Measurement and Reset

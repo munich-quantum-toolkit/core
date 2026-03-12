@@ -194,7 +194,7 @@ void QCOProgramBuilder::updateTensorTracking(Value inputTensor,
 // QTensor Operations
 //===----------------------------------------------------------------------===//
 
-Value QCOProgramBuilder::allocTensor(int64_t size) {
+Value QCOProgramBuilder::qtensorAlloc(int64_t size) {
   checkFinalized();
 
   if (size <= 0) {
@@ -207,7 +207,7 @@ Value QCOProgramBuilder::allocTensor(int64_t size) {
   return result;
 }
 
-Value QCOProgramBuilder::fromElements(ValueRange elements) {
+Value QCOProgramBuilder::qtensorFromElements(ValueRange elements) {
   checkFinalized();
 
   if (elements.empty()) {
@@ -229,8 +229,8 @@ Value QCOProgramBuilder::fromElements(ValueRange elements) {
 }
 
 std::pair<Value, Value>
-QCOProgramBuilder::extract(Value tensor,
-                           const std::variant<int64_t, Value>& index) {
+QCOProgramBuilder::qtensorExtract(Value tensor,
+                                  const std::variant<int64_t, Value>& index) {
   checkFinalized();
 
   auto rankedTensorType = llvm::dyn_cast<RankedTensorType>(tensor.getType());
@@ -253,10 +253,9 @@ QCOProgramBuilder::extract(Value tensor,
   return {qubit, outTensor};
 }
 
-std::pair<Value, Value>
-QCOProgramBuilder::extractSlice(Value tensor,
-                                const std::variant<int64_t, Value>& offset,
-                                const std::variant<int64_t, Value>& sizes) {
+std::pair<Value, Value> QCOProgramBuilder::qtensorExtractSlice(
+    Value tensor, const std::variant<int64_t, Value>& offset,
+    const std::variant<int64_t, Value>& sizes) {
   checkFinalized();
 
   auto tensorType = llvm::dyn_cast<RankedTensorType>(tensor.getType());
@@ -281,8 +280,8 @@ QCOProgramBuilder::extractSlice(Value tensor,
   return {slicedTensor, outTensor};
 }
 
-Value QCOProgramBuilder::insert(Value scalar, Value tensor,
-                                const std::variant<int64_t, Value>& index) {
+Value QCOProgramBuilder::qtensorInsert(
+    Value scalar, Value tensor, const std::variant<int64_t, Value>& index) {
   checkFinalized();
 
   auto tensorType = llvm::dyn_cast<RankedTensorType>(tensor.getType());
@@ -305,7 +304,7 @@ Value QCOProgramBuilder::insert(Value scalar, Value tensor,
   return outTensor;
 }
 
-Value QCOProgramBuilder::insertSlice(
+Value QCOProgramBuilder::qtensorInsertSlice(
     Value source, Value dest, const std::variant<int64_t, Value>& offset,
     const std::variant<int64_t, Value>& sizes) {
   checkFinalized();
@@ -342,7 +341,7 @@ Value QCOProgramBuilder::insertSlice(
   return outTensor;
 }
 
-QCOProgramBuilder& QCOProgramBuilder::deallocTensor(Value tensor) {
+QCOProgramBuilder& QCOProgramBuilder::qtensorDealloc(Value tensor) {
   checkFinalized();
 
   auto tensorType = llvm::dyn_cast<RankedTensorType>(tensor.getType());
