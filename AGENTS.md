@@ -1,78 +1,93 @@
+<!--- This file has been generated from an external template. Please do not modify it directly. -->
+<!--- Changes should be contributed to https://github.com/munich-quantum-toolkit/templates. -->
+
 # MQT Core
-
-- Backbone of the [Munich Quantum Toolkit (MQT)](https://mqt.readthedocs.io/)
-- C++20/Python library for quantum design automation data structures and algorithms
-- Key capabilities
-  - Intermediate representations (IR) of quantum computations
-  - Decision diagrams (DD) for classical simulation and verification of quantum circuits
-  - ZX-calculus for transforming and optimizing quantum circuits
-  - OpenQASM 3.0 parser and exporter
-  - QIR runner and runtime (based on DDs)
-  - MLIR-based quantum compiler infrastructure (MQT Compiler Collection; mqt-cc)
-  - Example QDMI device implementations, C++ and Python bindings for QDMI
-  - Utilities for neutral atom (NA) quantum computing
-
-## Tech Stack
-
-- Targets Linux (glibc 2.28+), macOS (11.0+), and Windows on x86_64 and arm64 architectures
-- C++20
-- CMake 3.24+
-- Python 3.10+ (free-threading supported with 3.14+; Stable ABI wheels built for 3.12+ via nanobind)
-- LLVM 22.1+ for building MLIR compiler infrastructure
-- GoogleTest for C++ unit tests (located in `test/` and `mlir/unittests/`)
-- `pytest` for Python unit tests (located in `test/python/`)
-- `uv` for Python installation, packaging, and tooling
-- `ruff` for Python formatting/linting (configured in `pyproject.toml` with `select = ["ALL"]` and a small disabled subset)
-- `ty` for Python type checking
-- `scikit-build-core` as Python build backend
-- `nanobind` for Python bindings
-- `nox` for task orchestration (tests, linting, docs)
-- `prek` for pre-commit hooks
-- `sphinx` for documentation
-- `breathe` for C++ API docs in Sphinx
-- C++ dependencies are managed via CMake's `FetchContent` (configured in cmake/ExternalDependencies.cmake)
-- C++ formatting and naming conventions are enforced by clang-format and clang-tidy (see `.clang-format` and `.clang-tidy`)
 
 ## C++
 
 - Configure: `cmake -S . -B build_cpp -DCMAKE_BUILD_TYPE=Release`
 - Build: `cmake --build build_cpp --config Release`
 - Test: `ctest --test-dir build_cpp -C Release`
-- MLIR unittests only: `ctest --test-dir build_cpp -C Release -L mqt-mlir-unittests`
-- Single test binary: `./build_cpp/test/dd/mqt-core-dd-test`
-- For debug builds, replace `Release` with `Debug` in the commands above.
+- Single test binary: `./build_cpp/test/path/to/binary`
+- For debug builds, replace `Release` with `Debug`.
 
 ## Python
 
-- Setup build+test deps: `uv sync --inexact --only-group build --only-group test`
+- Set up build and test dependencies: `uv sync --inexact --only-group build --only-group test`
 - Install package without build isolation (fast rebuilds): `uv sync --inexact --no-dev --no-build-isolation-package mqt-core`
 - Run tests: `uv run --no-sync pytest`
-- Nox test shortcuts: `uvx nox -s tests`, `uvx nox -s minimums`, `uvx nox -s qiskit`
-- Python 3.14 variants: `uvx nox -s tests-3.14`, `uvx nox -s minimums-3.14`, `uvx nox -s qiskit-3.14`.
+- Nox test shortcuts: `uvx nox -s tests`, `uvx nox -s minimums`
+- Python 3.14 variants: `uvx nox -s tests-3.14`, `uvx nox -s minimums-3.14`
 
 ## Documentation
 
 - Sources: `docs/`
-- Stack: Sphinx + MyST (Markdown) + furo theme
 - Build MLIR docs: `cmake --build build_cpp --target mlir-doc --config Release`
 - Build docs locally: `uvx nox --non-interactive -s docs`
 - Link check: `uvx nox -s docs -- -b linkcheck`
 
+## Tech Stack
+
+### General
+
+- `prek` for pre-commit hooks
+
+### C++
+
+- Targets Linux (glibc 2.28+), macOS (11.0+), and Windows on x86_64 and arm64 architectures
+- C++20
+- CMake 3.24+
+- `FetchContent` for dependency management (configured in `cmake/ExternalDependencies.cmake`)
+- `clang-format` and `clang-tidy` for formatting/linting (see `.clang-format` and `.clang-tidy`)
+- LLVM 22.1+ for building MLIR code
+- GoogleTest for unit tests (located in `test/` and `mlir/unittests/`)
+
+### Python
+
+- Python 3.10+
+- Stable ABI wheels for 3.12+; free-threading support for 3.14+
+- `scikit-build-core` as build backend
+- `nanobind` for bindings
+- `uv` for installation, packaging, and tooling
+- `ruff` for formatting/linting (configured in `pyproject.toml`)
+- `ty` for type checking
+- `pytest` for unit tests (located in `test/python/`)
+- `nox` for task orchestration (tests, linting, docs)
+
+### Documentation
+
+- `sphinx`
+- MyST (Markdown)
+- Furo theme
+- `breathe` for C++ API docs
+
 ## Development Guidelines
 
-- MUST use Google-style docstrings for Python and Doxygen comments for C++.
-- MUST use `#pragma once` for header guards in C++.
-- MUST run `uvx nox -s lint` after every batch of changes; this runs the full `prek` hook set from `.pre-commit-config.yaml` (including `ruff`, `typos`, `ty`, formatting, and metadata checks), and all hooks must pass before submitting.
+### General
+
+- MUST run `uvx nox -s lint` after every batch of changes.
+  This runs the full `prek` hook set from `.pre-commit-config.yaml` (including `ruff`, `typos`, `ty`, formatting, and metadata checks).
+  All hooks must pass before submitting.
 - MUST add or update tests for every code change, even if not explicitly requested.
 - MUST follow existing code style by checking neighboring files for patterns.
-- MUST update CHANGELOG.md and UPGRADING.md when changes are user-facing, breaking, or otherwise noteworthy.
+- MUST update `CHANGELOG.md` and `UPGRADING.md` when changes are user-facing, breaking, or otherwise noteworthy.
+- MUST include a commit footer attribution in the form `Assisted-by: [Model Name] via [Tool Name]` (example: `Assisted-by: Claude Sonnet 4.6 via GitHub Copilot`) if AI tools are used to prepare a commit.
+- NEVER modify files that start with "This file has been generated from an external template. Please do not modify it directly."
+  These files are managed by [the MQT templates action](https://github.com/munich-quantum-toolkit/templates) and changes will be overwritten.
+- PREFER running targeted tests over the full test suite during development.
+
+### C++
+
+- MUST use Doxygen-style comments.
+- MUST use `#pragma once` for header guards.
 - MUST regenerate stubs via `uvx nox -s stubs` when files in `bindings/` are added or modified.
-- MUST include a commit footer attribution in the form `Assisted-by: [Model Name] via [Tool Name]` (example: `Assisted-by: Claude Sonnet 4.6 via GitHub Copilot`), if AI tools are used to prepare a commit.
 - NEVER edit `.pyi` files in `python/mqt/core/` manually; they are auto-generated by nanobind stubgen.
-- NEVER modify files that start with "This file has been generated from an external template. Please do not modify it directly." These files are managed by [the MQT templates action](https://github.com/munich-quantum-toolkit/templates) and changes will be overwritten.
 - PREFER C++20 STL features over custom implementations.
 - PREFER LLVM data structures and methods in `mlir/` (`llvm::SmallVector`, `llvm::function_ref`, etc.) over the STL.
-- PREFER running targeted tests over the full test suite during development.
+
+### Python
+
+- MUST use Google-style docstrings
 - PREFER running a single Python version over the full test suite during development.
 - PREFER fixing reported warnings over suppressing them (e.g., with `# noqa` comments for ruff); only add ignore rules when necessary and document why.
 - PREFER fixing typing issues reported by `ty` before adding suppression comments (`# ty: ignore[code]`); suppressions are sometimes necessary for incompletely typed libraries (e.g., Qiskit).
@@ -80,6 +95,6 @@
 ## Self-Review Checklist
 
 - Did `uvx nox -s lint` pass without errors?
-- Are all changes covered by at least one automated test (Python or C++)?
+- Are all changes covered by at least one automated test?
 - Were Python stubs regenerated via `uvx nox -s stubs` if bindings were modified?
-- Are CHANGELOG.md and UPGRADING.md updated when changes are user-facing, breaking, or otherwise noteworthy?
+- Are `CHANGELOG.md` and `UPGRADING.md` updated when changes are user-facing, breaking, or otherwise noteworthy?
