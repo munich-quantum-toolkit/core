@@ -6,18 +6,20 @@
 #
 # Licensed under the MIT License
 
-set(target_name mqt-core-mlir-unittest-mapping)
-add_executable(${target_name} test_mapping.cpp)
+set(target_name mqt-core-mlir-unittest-optimizations)
+add_executable(${target_name} test_qco_quaternion_merge.cpp)
 
 target_link_libraries(
   ${target_name}
   PRIVATE GTest::gtest_main
-          MLIRParser
-          MLIRQCProgramBuilder
+          MLIRQCOProgramBuilder
+          MLIRQCOTransforms
           MLIRQCOUtils
-          MLIRQCToQCO
-          MLIRQCOToQC
-          MLIRQCOTransforms)
+          MLIRParser
+          MLIRIR
+          MLIRPass
+          MLIRSupport
+          LLVMSupport)
 
 mqt_mlir_configure_unittest_target(${target_name})
 
