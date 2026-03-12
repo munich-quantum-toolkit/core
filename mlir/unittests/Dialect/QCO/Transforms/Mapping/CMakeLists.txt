@@ -12,12 +12,12 @@ add_executable(${target_name} test_mapping.cpp)
 target_link_libraries(
   ${target_name}
   PRIVATE GTest::gtest_main
-          MLIRQCProgramBuilder
-          MLIRQCOTransforms
-          MLIRQCOUtils
           MLIRParser
-          QCToQCO
-          QCOToQC)
+          MLIRQCProgramBuilder
+          MLIRQCOUtils
+          MLIRQCToQCO
+          MLIRQCOToQC
+          MLIRQCOTransforms)
 
 mqt_mlir_configure_unittest_target(${target_name})
 

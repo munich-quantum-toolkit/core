@@ -10,6 +10,16 @@
 
 ```
 
+## Jeff Conversions
+
+```{include} Conversions/MLIRQCOToJeff.md
+
+```
+
+```{include} Conversions/MLIRJeffToQCO.md
+
+```
+
 ## QIR Conversions
 
 ```{include} Conversions/MLIRQCToQIR.md

@@ -300,59 +300,6 @@ createTwoTargetTwoParameter(JeffOpType& op, ConversionPatternRewriter& rewriter,
 }
 
 /**
- * @brief Converts a one-target, zero-parameter Jeff operation to QCO
- *
- * @tparam QCOOpType The operation type of the QCO operation
- * @tparam JeffOpType The operation type of the Jeff operation
- * @tparam JeffOpAdaptorType The OpAdaptor type of the Jeff operation
- * @param op The Jeff operation instance to convert
- * @param adaptor The OpAdaptor of the Jeff operation
- * @param rewriter The pattern rewriter
- * @return LogicalResult Success or failure of the conversion
- */
-template <typename QCOOpType, typename JeffOpType, typename JeffOpAdaptorType>
-static LogicalResult
-convertOneTargetZeroParameter(JeffOpType& op, JeffOpAdaptorType& adaptor,
-                              ConversionPatternRewriter& rewriter) {
-  if (op.getPower() != 1) {
-    return rewriter.notifyMatchFailure(
-        op, "Operations with power != 1 are not yet supported");
-  }
-
-  createOneTargetZeroParameter<QCOOpType>(
-      op, rewriter, adaptor.getInCtrlQubits(), adaptor.getInQubit());
-
-  return success();
-}
-
-/**
- * @brief Converts a one-target, one-parameter Jeff operation to QCO
- *
- * @tparam QCOOpType The operation type of the QCO operation
- * @tparam JeffOpType The operation type of the Jeff operation
- * @tparam JeffOpAdaptorType The OpAdaptor type of the Jeff operation
- * @param op The Jeff operation instance to convert
- * @param adaptor The OpAdaptor of the Jeff operation
- * @param rewriter The pattern rewriter
- * @return LogicalResult Success or failure of the conversion
- */
-template <typename QCOOpType, typename JeffOpType, typename JeffOpAdaptorType>
-static LogicalResult
-convertOneTargetOneParameter(JeffOpType& op, JeffOpAdaptorType& adaptor,
-                             ConversionPatternRewriter& rewriter) {
-  if (op.getPower() != 1) {
-    return rewriter.notifyMatchFailure(
-        op, "Operations with power != 1 are not yet supported");
-  }
-
-  createOneTargetOneParameter<QCOOpType>(op, rewriter, op.getRotation(),
-                                         adaptor.getInCtrlQubits(),
-                                         adaptor.getInQubit());
-
-  return success();
-}
-
-/**
  * @brief Creates a qco.barrier operation from a jeff.custom operation
  *
  * @param op The jeff.custom operation instance to convert
@@ -618,52 +565,78 @@ struct ConvertJeffGPhaseOpToQCO final : OpConversionPattern<jeff::GPhaseOp> {
   }
 };
 
-// OneTargetZeroParameter
+/**
+ * @brief Converts one-target, zero-parameter Jeff gate to QCO
+ *
+ * @tparam QCOOpType The operation type of the QCO operation
+ * @tparam JeffOpType The operation type of the Jeff operation
+ *
+ * @par Example:
+ * ```mlir
+ * %q_out = jeff.x {is_adjoint = false, num_ctrls = 0 : i8, power = 1 : i8}
+ * %q_in : !jeff.qubit
+ * ```
+ * is converted to
+ * ```mlir
+ * %q_out = qco.x %q_in : !qco.qubit
+ * ```
+ */
+template <typename JeffOpType, typename QCOOpType>
+struct ConvertJeffOneTargetZeroParameterToQCO final
+    : OpConversionPattern<JeffOpType> {
+  using OpConversionPattern<JeffOpType>::OpConversionPattern;
 
-#define DEFINE_ONE_TARGET_ZERO_PARAMETER(OP_CLASS_JEFF, OP_CLASS_QCO)          \
-  struct ConvertJeff##OP_CLASS_JEFF##ToQCO final                               \
-      : OpConversionPattern<jeff::OP_CLASS_JEFF> {                             \
-    using OpConversionPattern::OpConversionPattern;                            \
-                                                                               \
-    LogicalResult                                                              \
-    matchAndRewrite(jeff::OP_CLASS_JEFF op, OpAdaptor adaptor,                 \
-                    ConversionPatternRewriter& rewriter) const override {      \
-      return convertOneTargetZeroParameter<qco::OP_CLASS_QCO>(op, adaptor,     \
-                                                              rewriter);       \
-    }                                                                          \
-  };
+  LogicalResult
+  matchAndRewrite(JeffOpType op, typename JeffOpType::Adaptor adaptor,
+                  ConversionPatternRewriter& rewriter) const override {
+    if (op.getPower() != 1) {
+      return rewriter.notifyMatchFailure(
+          op, "Operations with power != 1 are not yet supported");
+    }
 
-DEFINE_ONE_TARGET_ZERO_PARAMETER(IOp, IdOp)
-DEFINE_ONE_TARGET_ZERO_PARAMETER(XOp, XOp)
-DEFINE_ONE_TARGET_ZERO_PARAMETER(YOp, YOp)
-DEFINE_ONE_TARGET_ZERO_PARAMETER(ZOp, ZOp)
-DEFINE_ONE_TARGET_ZERO_PARAMETER(HOp, HOp)
-DEFINE_ONE_TARGET_ZERO_PARAMETER(SOp, SOp)
-DEFINE_ONE_TARGET_ZERO_PARAMETER(TOp, TOp)
+    createOneTargetZeroParameter<QCOOpType>(
+        op, rewriter, adaptor.getInCtrlQubits(), adaptor.getInQubit());
 
-#undef DEFINE_ONE_TARGET_ZERO_PARAMETER
+    return success();
+  }
+};
 
-// OneTargetOneParameter
+/**
+ * @brief Converts one-target, one-parameter Jeff gate to QCO
+ *
+ * @tparam QCOOpType The operation type of the QCO operation
+ * @tparam JeffOpType The operation type of the Jeff operation
+ *
+ * @par Example:
+ * ```mlir
+ * %q_out = jeff.rx(%theta) {is_adjoint = false, num_ctrls = 0 : i8, power = 1 :
+ * i8} %q_in : !jeff.qubit
+ * ```
+ * is converted to
+ * ```mlir
+ * %q_out = qco.rx(%theta) %q_in : !qco.qubit
+ * ```
+ */
+template <typename JeffOpType, typename QCOOpType>
+struct ConvertJeffOneTargetOneParameterToQCO final
+    : OpConversionPattern<JeffOpType> {
+  using OpConversionPattern<JeffOpType>::OpConversionPattern;
 
-#define DEFINE_ONE_TARGET_ONE_PARAMETER(OP_CLASS_JEFF, OP_CLASS_QCO)           \
-  struct ConvertJeff##OP_CLASS_JEFF##ToQCO final                               \
-      : OpConversionPattern<jeff::OP_CLASS_JEFF> {                             \
-    using OpConversionPattern::OpConversionPattern;                            \
-                                                                               \
-    LogicalResult                                                              \
-    matchAndRewrite(jeff::OP_CLASS_JEFF op, OpAdaptor adaptor,                 \
-                    ConversionPatternRewriter& rewriter) const override {      \
-      return convertOneTargetOneParameter<qco::OP_CLASS_QCO>(op, adaptor,      \
-                                                             rewriter);        \
-    }                                                                          \
-  };
+  LogicalResult
+  matchAndRewrite(JeffOpType op, typename JeffOpType::Adaptor adaptor,
+                  ConversionPatternRewriter& rewriter) const override {
+    if (op.getPower() != 1) {
+      return rewriter.notifyMatchFailure(
+          op, "Operations with power != 1 are not yet supported");
+    }
 
-DEFINE_ONE_TARGET_ONE_PARAMETER(RxOp, RXOp)
-DEFINE_ONE_TARGET_ONE_PARAMETER(RyOp, RYOp)
-DEFINE_ONE_TARGET_ONE_PARAMETER(RzOp, RZOp)
-DEFINE_ONE_TARGET_ONE_PARAMETER(R1Op, POp)
+    createOneTargetOneParameter<QCOOpType>(op, rewriter, op.getRotation(),
+                                           adaptor.getInCtrlQubits(),
+                                           adaptor.getInQubit());
 
-#undef DEFINE_ONE_TARGET_ONE_PARAMETER
+    return success();
+  }
+};
 
 /**
  * @brief Converts jeff.u to qco.u
@@ -1030,10 +1003,18 @@ protected:
         .add<ConvertJeffQubitAllocOpToQCO, ConvertJeffQubitFreeOpToQCO,
              ConvertJeffQubitFreeZeroOpToQCO, ConvertJeffQubitMeasureOpToQCO,
              ConvertJeffQubitMeasureNDOpToQCO, ConvertJeffQubitResetOpToQCO,
-             ConvertJeffGPhaseOpToQCO, ConvertJeffIOpToQCO, ConvertJeffXOpToQCO,
-             ConvertJeffYOpToQCO, ConvertJeffZOpToQCO, ConvertJeffHOpToQCO,
-             ConvertJeffSOpToQCO, ConvertJeffTOpToQCO, ConvertJeffRxOpToQCO,
-             ConvertJeffRyOpToQCO, ConvertJeffRzOpToQCO, ConvertJeffR1OpToQCO,
+             ConvertJeffGPhaseOpToQCO,
+             ConvertJeffOneTargetZeroParameterToQCO<jeff::IOp, qco::IdOp>,
+             ConvertJeffOneTargetZeroParameterToQCO<jeff::XOp, qco::XOp>,
+             ConvertJeffOneTargetZeroParameterToQCO<jeff::YOp, qco::YOp>,
+             ConvertJeffOneTargetZeroParameterToQCO<jeff::ZOp, qco::ZOp>,
+             ConvertJeffOneTargetZeroParameterToQCO<jeff::HOp, qco::HOp>,
+             ConvertJeffOneTargetZeroParameterToQCO<jeff::SOp, qco::SOp>,
+             ConvertJeffOneTargetZeroParameterToQCO<jeff::TOp, qco::TOp>,
+             ConvertJeffOneTargetOneParameterToQCO<jeff::RxOp, qco::RXOp>,
+             ConvertJeffOneTargetOneParameterToQCO<jeff::RyOp, qco::RYOp>,
+             ConvertJeffOneTargetOneParameterToQCO<jeff::RzOp, qco::RZOp>,
+             ConvertJeffOneTargetOneParameterToQCO<jeff::R1Op, qco::POp>,
              ConvertJeffUOpToQCO, ConvertJeffSwapOpToQCO,
              ConvertJeffCustomOpToQCO, ConvertJeffPPROpToQCO,
              ConvertJeffMainToQCO, ConvertJeffIntConst1OpToArith,

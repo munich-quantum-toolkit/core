@@ -17,9 +17,9 @@ add_mlir_library(
   MLIRPass
   MLIRTransforms
   MLIRTransformUtils
-  QCToQCO
-  QCOToQC
-  QCToQIR
+  MLIRQCToQCO
+  MLIRQCOToQC
+  MLIRQCToQIR
   MLIRQCOTransforms
   MQT::MLIRSupport
   DISABLE_INSTALL)

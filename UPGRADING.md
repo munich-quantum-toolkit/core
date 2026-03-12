@@ -8,7 +8,7 @@ This document describes breaking changes and how to upgrade. For a complete list
 
 The MLIR-based functionality within MQT Core has long been experimental and opt-in.
 Starting with this release, MLIR is enabled by default for C++ library builds.
-This means that LLVM (including MLIR) is now a required dependency for building MQT Core from source.
+This means that LLVM 22.1+ (including MLIR) is now a required dependency for building MQT Core from source.
 
 We offer pre-built distributions for all supported platforms as part of the `setup-mlir` project at [munich-quantum-software/setup-mlir](https://github.com/munich-quantum-software/setup-mlir).
 Please follow the instructions there to install the distribution for your platform.

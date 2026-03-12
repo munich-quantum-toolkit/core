@@ -6,8 +6,6 @@
 //
 // Licensed under the MIT License
 
-include "mlir/Pass/PassBase.td"
-
 #ifndef QCO_PASSES
 #define QCO_PASSES
 
