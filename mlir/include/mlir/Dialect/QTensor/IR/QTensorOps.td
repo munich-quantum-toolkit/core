@@ -49,47 +49,6 @@ def QTensorDialect : Dialect {
 class QTensorOp<string mnemonic, list<Trait> traits = []>
     : Op<QTensorDialect, mnemonic, traits>;
 
-// Base class for ops with static/dynamic offset, sizes and strides
-// attributes/arguments.
-class QTensorOpWithOffsetSizesAndStrides<string mnemonic,
-                                         list<Trait> traits = []>
-    : QTensorOp<mnemonic, traits> {
-  code extraBaseClassDeclaration = [{
-    /// Return the type of the base tensor operand.
-    ::mlir::RankedTensorType getSourceType() {
-      return ::llvm::cast<RankedTensorType>(getSource().getType());
-    }
-
-    /// Return the type of the result tensor.
-    ::mlir::RankedTensorType getResultType() {
-      return ::llvm::cast<RankedTensorType>(getResult().getType());
-    }
-
-    /// Return the dynamic sizes for this subview operation if specified.
-    ::mlir::Operation::operand_range getDynamicSizes() { return getSizes(); }
-
-  }];
-}
-
-class QTensorOpWithOffsetSizesAndStridess<string mnemonic,
-                                         list<Trait> traits = []>
-    : QTensorOp<mnemonic, traits> {
-  code extraBaseClassDeclaration = [{
-    /// Return the type of the base tensor operand.
-    ::mlir::RankedTensorType getSourceType() {
-      return ::llvm::cast<RankedTensorType>(getSource().getType());
-    }
-
-    /// Return the type of the result tensor.
-    ::mlir::RankedTensorType getResultType() {
-      return ::llvm::cast<RankedTensorType>(getResult().getType());
-    }
-
-    /// Return the dynamic sizes for this subview operation if specified.
-    ::mlir::TypedValue<mlir::IndexType> getDynamicSizes() { return getSize(); }
-
-  }];
-}
 //===----------------------------------------------------------------------===//
 // Operations
 //===----------------------------------------------------------------------===//
@@ -143,7 +102,7 @@ def QTensor_FromElementsOp : QTensorOp<"from_elements", [
                    "::llvm::cast<RankedTensorType>($_self).getNumElements(), "
                    "::llvm::cast<RankedTensorType>($_self).getElementType())">
   ]> {
-    let summary = "tensor from elements operation";
+    let summary = "Create a tensor from a range of values";
     let description = [{
         The `qtensor.from_elements` operation is a wrapper operation of the `tensor.from_elements` operation.
         This operation creates a tensor using the operands as its values.
@@ -193,7 +152,7 @@ def QTensor_ExtractOp : QTensorOp<"extract", [
     let hasCanonicalizer = 1;
 }
 
-def QTensor_ExtractSliceOp : QTensorOpWithOffsetSizesAndStridess<"extract_slice", [
+def QTensor_ExtractSliceOp : QTensorOp<"extract_slice", [
     Pure,
     TypesMatchWith<"returned tensor type matches input tensor",
     "source", "out_source", "$_self">
@@ -202,29 +161,18 @@ def QTensor_ExtractSliceOp : QTensorOpWithOffsetSizesAndStridess<"extract_slice"
     let description = [{
         The `qtensor.extract_slice` operation is the modified version of the standard `tensor.extract_slice`
         operation of the tensor dialect. It reads a ranked tensor and returns the extracted tensor specified by the
-        offsets, sizes and strides arguments. If the strides arguments are omitted, they are set to default values of 1.
-        In addition, it also returns the updated input tensor as result.
-
+        offset and size argument. In addition, it also returns the updated input tensor as result.
 
         The extract_slice operation supports the following arguments:
 
         * source: the "base" tensor from which to extract a slice.
-        * offsets: tensor-rank number of offsets into the "base" tensor from which
-                   to extract the slice.
-        * sizes: tensor-rank number of sizes which specify the sizes of the result
-                 tensor type.
-        * strides: tensor-rank number of strides specifying subsampling in each
-                   dimension.
-
-        The representation based on offsets, sizes and strides support a
-        partially-static specification via attributes specified through the
-        `static_offsets`, `static_sizes` and `static_strides` arguments. A special
-        sentinel value ShapedType::kDynamic encodes that the corresponding entry has
-        a dynamic value.
+        * offset: the starting position in the base tensor from which the slice is
+                  extracted.
+        * size: the length of the slice to extract from the base tensor.
 
         Example:
         ```mlir
-        %extractedSlice, %outSourceTensor = qtensor.extract_slice %sourceTensor[%c0][%c2][%c1] : tensor<3x!qco.qubit> to tensor<2x!qco.qubit>
+        %extractedSlice, %outSourceTensor = qtensor.extract_slice %sourceTensor[%c0][%c2] : tensor<3x!qco.qubit> to tensor<2x!qco.qubit>
         ```
     }];
 
@@ -246,71 +194,7 @@ def QTensor_ExtractSliceOp : QTensorOpWithOffsetSizesAndStridess<"extract_slice"
           CArg<"ArrayRef<NamedAttribute>", "{}">:$attrs)>
       ];
 
-    let extraClassDeclaration = extraBaseClassDeclaration # [{
-        /// The result of an extract_slice is always a tensor.
-        RankedTensorType getType() {
-          return getResultType();
-        }
 
-        /// Compute the rank-reduction mask that can be applied to map the source
-        /// tensor type to the result tensor type by dropping unit dims.
-        std::optional<llvm::SmallDenseSet<unsigned>>
-        computeRankReductionMask() {
-          return ::mlir::computeRankReductionMask(getSourceType().getShape(),
-                                                  getType().getShape());
-        };
-
-        /// An extract_slice result type can be inferred, when it is not
-        /// rank-reduced, from the source type and the static representation of
-        /// sizes. Special sentinels encode the dynamic case.
-        static RankedTensorType inferResultType(
-          RankedTensorType sourceTensorType,
-          ArrayRef<int64_t> staticSizes);
-        static RankedTensorType inferResultType(
-          RankedTensorType sourceTensorType,
-          ArrayRef<OpFoldResult> staticSizes);
-
-        /// If the rank is reduced (i.e. the desiredResultRank is smaller than the
-        /// number of sizes), drop as many size 1 as needed to produce an inferred type
-        /// with the desired rank.
-        ///
-        /// Note that there may be multiple ways to compute this rank-reduced type:
-        ///   e.g. 1x6x1 can rank-reduce to either 1x6 or 6x1 2-D tensors.
-        ///
-        /// To disambiguate, this function always drops the first 1 sizes occurrences.
-        static RankedTensorType inferCanonicalRankReducedResultType(
-          unsigned resultRank,
-          RankedTensorType sourceRankedTensorType,
-          ArrayRef<int64_t> staticSizes);
-        static RankedTensorType inferCanonicalRankReducedResultType(
-          unsigned resultRank,
-          RankedTensorType sourceRankedTensorType,
-          ArrayRef<OpFoldResult> staticSizes);
-
-        /// Return the expected rank of each of the`static_offsets`, `static_sizes`
-        /// and `static_strides` attributes.
-        std::array<unsigned, 3> getArrayAttrMaxRanks() {
-          unsigned rank = getSourceType().getRank();
-          return {rank, rank, rank};
-        }
-
-        /// Return the number of leading operands before the `offsets`, `sizes` and
-        /// and `strides` operands.
-        static unsigned getOffsetSizeAndStrideStartOperandIndex() { return 1; }
-
-        /// Return the dimensions of the source that are dropped in the
-        /// result when the result is rank-reduced.
-        llvm::SmallBitVector getDroppedDims();
-
-        /// Given a `value`, asserted to be of RankedTensorType, build an
-        /// ExtractSliceOp that results in a rank-reducing extract to the desired
-        /// tensor shape and return the new value created.
-        /// If the shape of `value` is already the `desiredShape`, just return
-        /// `value`.
-        /// If the shape of `value` cannot be rank-reduced to `desiredShape`, fail.
-        static FailureOr<Value> rankReduceIfNeeded(
-          OpBuilder &b, Location loc, Value value, ArrayRef<int64_t> desiredShape);
-    }];
 
     let hasCanonicalizer = 1;
     let hasFolder = 1;
@@ -354,7 +238,7 @@ def QTensor_InsertOp : QTensorOp<"insert", [
     let hasCanonicalizer = 1;
 }
 
-def QTensor_InsertSliceOp : QTensorOpWithOffsetSizesAndStridess<"insert_slice", [
+def QTensor_InsertSliceOp : QTensorOp<"insert_slice", [
     DestinationStyleOpInterface,
     Pure,
     TypesMatchWith<"expected result type to match dest type",
@@ -364,28 +248,19 @@ def QTensor_InsertSliceOp : QTensorOpWithOffsetSizesAndStridess<"insert_slice", 
     let description = [{
         The `qtensor.insert_slice` operation is a minimally adjusted version of the `tensor.insert_slice` operation
         of the tensor dialect. The operation inserts a tensor `source` into another tensor `dest` as specified by the
-        operation`s offset, sizes and strides arguments. If the strides arguments are omitted, they are set to default values of 1.
+        operation`s offset and size argument.
 
         The insert_slice operation supports the following arguments:
 
           * source: the tensor that is inserted.
           * dest: the tensor into which the source tensor is inserted.
-          * offsets: tensor-rank number of offsets into the `dest` tensor into which
-                    the slice is inserted.
-          * sizes: tensor-rank number of sizes which specify the sizes of the source
-                  tensor type.
-          * strides: tensor-rank number of strides that specify subsampling in each
-                    dimension.
-
-        The representation based on offsets, sizes and strides support a
-        partially-static specification via attributes specified through the
-        `static_offsets`, `static_sizes` and `static_strides` arguments. A special
-        sentinel value ShapedType::kDynamic encodes that the corresponding entry has
-        a dynamic value.
+          * offset: the starting index in the `dest` tensor where the slice is inserted.
+          * size: the number of elements in the slice, which must match the size of the
+                  source tensor type.
 
         Example:
         ```mlir
-        %outTensor = qtensor.insert_slice %slicedTensor into %tensor[%c0][%c2][%c1] : tensor<2x!qco.qubit> into tensor<3x!qco.qubit>
+        %outTensor = qtensor.insert_slice %slicedTensor into %tensor[%c0][%c2] : tensor<2x!qco.qubit> into tensor<3x!qco.qubit>
         ```
     }];
 
@@ -407,32 +282,7 @@ def QTensor_InsertSliceOp : QTensorOpWithOffsetSizesAndStridess<"insert_slice", 
           CArg<"ArrayRef<NamedAttribute>", "{}">:$attrs)>
     ];
 
-    let extraClassDeclaration = extraBaseClassDeclaration # [{
-        /// The result of a insert_slice is always a tensor.
-        RankedTensorType getType() {
-          return getResultType();
-        }
-
-        /// The `dest` type is the same as the result type.
-        RankedTensorType getDestType() {
-          return getResultType();
-        }
-
-        /// Return the expected rank of each of the`static_offsets`, `static_sizes`
-        /// and `static_strides` attributes.
-        std::array<unsigned, 3> getArrayAttrMaxRanks() {
-          unsigned rank = getResultType().getRank();
-          return {rank, rank, rank};
-        }
-
-        /// Return the dimensions of the dest that are omitted to insert a source
-        /// when the result is rank-extended.
-        llvm::SmallBitVector getDroppedDims();
-
-        /// Return the number of leading operands before the `offsets`, `sizes` and
-        /// and `strides` operands.
-        static unsigned getOffsetSizeAndStrideStartOperandIndex() { return 2; }
-
+    let extraClassDeclaration = [{
         MutableOperandRange getDpsInitsMutable() { return getDestMutable(); }
     }];
 

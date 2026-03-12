@@ -59,7 +59,7 @@ void ExtractSliceOp::build(OpBuilder& b, OperationState& result, Value source,
 
 /// Verifier for ExtractSliceOp.
 LogicalResult ExtractSliceOp::verify() {
-  RankedTensorType sourceType = getSourceType();
+  RankedTensorType sourceType = getSource().getType();
 
   // Element type check
   if (!llvm::isa<qco::QubitType>(sourceType.getElementType())) {
@@ -206,7 +206,8 @@ void ExtractSliceOp::getCanonicalizationPatterns(RewritePatternSet& results,
 static InsertSliceOp foldExtractAfterInsertSlice(ExtractSliceOp extractOp) {
   auto insertOp = extractOp.getSource().getDefiningOp<InsertSliceOp>();
 
-  if (insertOp && insertOp.getSource().getType() == extractOp.getType()) {
+  if (insertOp &&
+      insertOp.getSource().getType() == extractOp.getResult().getType()) {
     return insertOp;
   }
 

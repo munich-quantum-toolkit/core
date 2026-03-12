@@ -42,15 +42,18 @@ using namespace mlir::qtensor;
 
 /// Verifier for InsertSliceOp.
 LogicalResult InsertSliceOp::verify() {
-  if (!llvm::isa<qco::QubitType>(getSourceType().getElementType())) {
+  auto sourceType = getSource().getType();
+  auto destType = getDest().getType();
+
+  if (!llvm::isa<qco::QubitType>(sourceType.getElementType())) {
     return emitOpError("Elements of source tensor must be of qubit type");
   }
-  if (!llvm::isa<qco::QubitType>(getDestType().getElementType())) {
+  if (!llvm::isa<qco::QubitType>(destType.getElementType())) {
     return emitOpError("Elements of dest tensor must be of qubit type");
   }
 
-  auto dstDim = getDestType().getDimSize(0);
-  auto srcDim = getSourceType().getDimSize(0);
+  auto dstDim = destType.getDimSize(0);
+  auto srcDim = sourceType.getDimSize(0);
 
   if (auto constSize = getConstantIntValue(getSize())) {
     if (*constSize < 0) {
@@ -96,14 +99,14 @@ LogicalResult InsertSliceOp::verify() {
  * Example:
  *
  * ```mlir
- *   %0 = qtensor.insert_slice %slice0 into %input[0][2][1]
- *   %1 = qtensor.insert_slice %slice1 into %0[0][2][1]
+ *   %0 = qtensor.insert_slice %slice0 into %input[%c0][%c2]
+ *   %1 = qtensor.insert_slice %slice1 into %0[%c0][%c2]
  * ```
  *
  * This folds into:
  *
  * ```mlir
- *   %1 = qtensor.insert_slice %slice1 into %input[0][2][1]
+ *   %1 = qtensor.insert_slice %slice1 into %input[%c0][%c2]
  * ```
  */
 static LogicalResult foldInsertAfterInsertSlice(InsertSliceOp insertOp) {
@@ -118,13 +121,13 @@ static LogicalResult foldInsertAfterInsertSlice(InsertSliceOp insertOp) {
     return failure();
   }
 
-  // Check offset and size (only 1D now)
+  // Check offset and size
   auto prevOffsetOpt = getConstantIntValue(prevInsertOp.getOffset());
   auto prevSizeOpt = getConstantIntValue(prevInsertOp.getSize());
   auto curOffsetOpt = getConstantIntValue(insertOp.getOffset());
   auto curSizeOpt = getConstantIntValue(insertOp.getSize());
 
-  // Only fold if offsets and sizes are **statically known and identical**
+  // Only fold if offsets and sizes are constant and identical
   if (!prevOffsetOpt || !prevSizeOpt || !curOffsetOpt || !curSizeOpt) {
     return failure();
   }
@@ -181,7 +184,7 @@ OpFoldResult InsertSliceOp::fold(FoldAdaptor /*adaptor*/) {
     if (auto constOffset = getConstantIntValue(getOffset())) {
       if (*constOffset == 0) {
         if (auto constSize = getConstantIntValue(getSize())) {
-          if (*constSize == getSourceType().getDimSize(0)) {
+          if (*constSize == getSource().getType().getDimSize(0)) {
             return getSource();
           }
         }
