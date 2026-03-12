@@ -35,6 +35,16 @@ LogicalResult ExtractOp::verify() {
   if (!llvm::isa<qco::QubitType>(tensorType.getElementType())) {
     return emitOpError("Elements of tensor must be of qubit type");
   }
+  auto index = getConstantIntValue(getIndex());
+  auto size = getTensor().getType().getDimSize(0);
+  if (index) {
+    if (index < 0) {
+      return emitOpError("Index must be non-negative");
+    }
+    if (index >= size) {
+      return emitOpError("Index exceeds tensor dimension");
+    }
+  }
   return success();
 }
 
@@ -62,12 +72,34 @@ struct ExtractFromTensorCast : public OpRewritePattern<ExtractOp> {
  */
 static InsertOp foldExtractAfterInsert(ExtractOp extractOp) {
   auto insertOp = extractOp.getTensor().getDefiningOp<InsertOp>();
+  if (!insertOp) {
+    return nullptr;
+  }
 
-  if (insertOp && insertOp.getScalar().getType() == extractOp.getType(0) &&
-      insertOp.getIndex() == extractOp.getIndex()) {
+  if (insertOp.getScalar().getType() != extractOp.getType(0)) {
+    return nullptr;
+  }
+
+  auto insertIndex = insertOp.getIndex();
+  auto extractIndex = extractOp.getIndex();
+
+  // Check if SSA values of the indices are the same
+  if (insertIndex == extractIndex) {
     return insertOp;
   }
-  return nullptr;
+
+  auto insertIndexValue = getConstantIntValue(insertIndex);
+  auto extractIndexValue = getConstantIntValue(extractIndex);
+
+  // Check if the indices are constant and equal
+  if (!insertIndexValue || !extractIndexValue) {
+    return nullptr;
+  }
+  if (*insertIndexValue != *extractIndexValue) {
+    return nullptr;
+  }
+
+  return insertOp;
 }
 
 LogicalResult ExtractOp::fold(FoldAdaptor /*adaptor*/,

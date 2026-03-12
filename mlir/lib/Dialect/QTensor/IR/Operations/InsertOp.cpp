@@ -28,6 +28,16 @@ LogicalResult InsertOp::verify() {
   if (!llvm::isa<qco::QubitType>(destType.getElementType())) {
     return emitOpError("Elements of dest tensor must be of qubit type");
   }
+  auto index = getConstantIntValue(getIndex());
+  auto size = destType.getDimSize(0);
+  if (index) {
+    if (index < 0) {
+      return emitOpError("Index must be non-negative");
+    }
+    if (index >= size) {
+      return emitOpError("Index exceeds tensor dimension");
+    }
+  }
   return success();
 }
 
@@ -58,37 +68,48 @@ struct ConvertInsertOpToStaticShape
     return success();
   }
 };
+} // namespace
 
 /**
  * @brief If an InsertOp consumes an ExtractOp with identical indices,
  * return the tensor from the extractOp directly.
  */
-struct InsertFromExtractOp : public OpRewritePattern<InsertOp> {
-  using OpRewritePattern<InsertOp>::OpRewritePattern;
-
-  LogicalResult matchAndRewrite(InsertOp insertOp,
-                                PatternRewriter& rewriter) const final {
-    auto extractOp = insertOp.getScalar().getDefiningOp<ExtractOp>();
-    if (!extractOp) {
-      return failure();
-    }
-
-    if (insertOp.getDest() != extractOp.getOutTensor()) {
-      return failure();
-    }
-    if (insertOp.getIndex() != extractOp.getIndex()) {
-      return failure();
-    }
-
-    rewriter.replaceOp(insertOp, extractOp.getTensor());
-    rewriter.eraseOp(extractOp);
-    return success();
+static Value foldInsertAfterExtract(InsertOp insertOp) {
+  auto extractOp = insertOp.getScalar().getDefiningOp<ExtractOp>();
+  if (!extractOp) {
+    return nullptr;
   }
-};
+  if (insertOp.getDest() != extractOp.getOutTensor()) {
+    return nullptr;
+  }
 
-} // namespace
+  auto insertIndex = insertOp.getIndex();
+  auto extractIndex = extractOp.getIndex();
 
-void InsertOp::getCanonicalizationPatterns(RewritePatternSet& results,
-                                           MLIRContext* context) {
-  results.add<InsertFromExtractOp>(context);
+  // Check if SSA values of the indices are the same
+  if (insertIndex == extractIndex) {
+    return extractOp.getTensor();
+  }
+
+  auto insertIndexValue = getConstantIntValue(insertIndex);
+  auto extractIndexValue = getConstantIntValue(extractIndex);
+
+  // Check if the indices are constant and equal
+  if (!insertIndexValue || !extractIndexValue) {
+    return nullptr;
+  }
+  if (*insertIndexValue != *extractIndexValue) {
+    return nullptr;
+  }
+
+  return extractOp.getTensor();
+}
+
+OpFoldResult InsertOp::fold(FoldAdaptor /*adaptor*/) {
+  // Fold after extract_slice
+  if (auto result = foldInsertAfterExtract(*this)) {
+    return result;
+  }
+
+  return {};
 }

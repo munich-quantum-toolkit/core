@@ -145,37 +145,61 @@ static LogicalResult foldInsertAfterInsertSlice(InsertSliceOp insertOp) {
  *
  * @details
  * Detects patterns where a slice is extracted from a tensor and then
- * inserted back into the same tensor at the same offsets, sizes, and
- * strides. In such cases, the pair of operations forms a no-op and can
+ * inserted back into the same tensor at the same offset and size.
+ * In such cases, the pair of operations forms a no-op and can
  * be folded to the original tensor value.
  *
  * Example:
  *
  * ```mlir
- * %0 = qtensor.extract_slice %val[0][2][1]
- * %1 = qtensor.insert_slice %0 into %val[0][2][1]
+ * %slicedTensor, outTensor = qtensor.extract_slice %tensor[%c0][%c2]
+ * %newTensor = qtensor.insert_slice %slicedTensor into %outTensor[%c0][%c2]
  * ```
  *
- * This can be folded into `%val`.
+ * This can be folded into `%tensor`.
  */
-static Value foldInsertAfterExtractSlice(InsertSliceOp insertOp) {
-  auto extractOp = insertOp.getSource().getDefiningOp<ExtractSliceOp>();
-  if (!extractOp) {
+static Value foldInsertAfterExtractSlice(InsertSliceOp insertSliceOp) {
+  auto extractSliceOp =
+      insertSliceOp.getSource().getDefiningOp<ExtractSliceOp>();
+  if (!extractSliceOp) {
     return nullptr;
   }
 
   // Ensure the insert destination is the original source tensor of extract
-  if (extractOp.getOutSource() != insertOp.getDest()) {
+  if (extractSliceOp.getOutSource() != insertSliceOp.getDest()) {
     return nullptr;
   }
 
-  // Optionally check that the offset and size match exactly
-  if (extractOp.getOffset() != insertOp.getOffset() ||
-      extractOp.getSize() != insertOp.getSize()) {
+  auto insertOffset = insertSliceOp.getOffset();
+  auto extractOffset = extractSliceOp.getOffset();
+  auto insertSize = insertSliceOp.getSize();
+  auto extractSize = extractSliceOp.getSize();
+
+  // Check if SSA values of the offsets and the sizes are the same
+  if (insertOffset == extractOffset && insertSize == extractSize) {
+    return extractSliceOp.getSource();
+  }
+
+  auto insertOffsetValue = getConstantIntValue(insertOffset);
+  auto extractOffsetValue = getConstantIntValue(extractOffset);
+  auto insertSizeValue = getConstantIntValue(insertSize);
+  auto extractSizeValue = getConstantIntValue(extractSize);
+
+  // Check if then offsets and sizes are constant and equal
+  if (!insertOffsetValue || !extractOffsetValue) {
+    return nullptr;
+  }
+  if (!insertSizeValue || !extractSizeValue) {
+    return nullptr;
+  }
+  if (*insertOffsetValue != *extractOffsetValue) {
+    return nullptr;
+  }
+  if (*insertSizeValue != *extractSizeValue) {
     return nullptr;
   }
 
-  return extractOp.getSource();
+  return extractSliceOp.getSource();
 }
 
 OpFoldResult InsertSliceOp::fold(FoldAdaptor /*adaptor*/) {

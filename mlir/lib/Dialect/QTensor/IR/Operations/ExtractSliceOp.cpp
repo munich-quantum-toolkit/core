@@ -203,15 +203,49 @@ void ExtractSliceOp::getCanonicalizationPatterns(RewritePatternSet& results,
   results.add<ExtractSliceOpCastFolder>(context);
 }
 
-static InsertSliceOp foldExtractAfterInsertSlice(ExtractSliceOp extractOp) {
-  auto insertOp = extractOp.getSource().getDefiningOp<InsertSliceOp>();
-
-  if (insertOp &&
-      insertOp.getSource().getType() == extractOp.getResult().getType()) {
-    return insertOp;
+static InsertSliceOp
+foldExtractAfterInsertSlice(ExtractSliceOp extractSliceOp) {
+  auto insertSliceOp =
+      extractSliceOp.getSource().getDefiningOp<InsertSliceOp>();
+  if (!insertSliceOp) {
+    return nullptr;
   }
 
-  return nullptr;
+  // Source types must match
+  if (insertSliceOp.getSource().getType() != extractSliceOp.getType(0)) {
+    return nullptr;
+  }
+
+  auto insertOffset = insertSliceOp.getOffset();
+  auto extractOffset = extractSliceOp.getOffset();
+  auto insertSize = insertSliceOp.getSize();
+  auto extractSize = extractSliceOp.getSize();
+
+  // Check if SSA values of the offsets and the sizes are the same
+  if (insertOffset == extractOffset && insertSize == extractSize) {
+    return insertSliceOp;
+  }
+
+  auto insertOffsetValue = getConstantIntValue(insertOffset);
+  auto extractOffsetValue = getConstantIntValue(extractOffset);
+  auto insertSizeValue = getConstantIntValue(insertSize);
+  auto extractSizeValue = getConstantIntValue(extractSize);
+
+  // Check if then offsets and sizes are constant and equal
+  if (!insertOffsetValue || !extractOffsetValue) {
+    return nullptr;
+  }
+  if (!insertSizeValue || !extractSizeValue) {
+    return nullptr;
+  }
+  if (*insertOffsetValue != *extractOffsetValue) {
+    return nullptr;
+  }
+  if (*insertSizeValue != *extractSizeValue) {
+    return nullptr;
+  }
+
+  return insertSliceOp;
 }
 
 LogicalResult ExtractSliceOp::fold(FoldAdaptor /*adaptor*/,
