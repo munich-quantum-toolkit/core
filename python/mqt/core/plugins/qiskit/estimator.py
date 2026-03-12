@@ -196,7 +196,7 @@ class QDMIEstimator(BaseEstimatorV2):
             # Add term contribution
             temp_results[index]["ev"] += exp_val * coeff
             # Variance adds up as sum(coeff^2 * var_term) assuming independent measurements
-            temp_results[index]["var"] += (coeff.real**2) * term_var
+            temp_results[index]["var"] += (abs(coeff) ** 2) * term_var
 
         # Fill output arrays
         for index, res in temp_results.items():
