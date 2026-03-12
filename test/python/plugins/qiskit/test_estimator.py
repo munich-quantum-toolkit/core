@@ -10,7 +10,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING
 
 import numpy as np
 import pytest
@@ -24,6 +24,18 @@ from mqt.core.plugins.qiskit import QDMIEstimator
 
 if TYPE_CHECKING:
     from mqt.core.plugins.qiskit import QDMIBackend
+
+
+def _get_ndarray_field(data: object, field: str) -> np.ndarray:
+    """Extract an ndarray field from estimator pub result data.
+
+    Returns:
+        The requested ndarray field from estimator result data.
+    """
+    value = getattr(data, field, None)
+    assert isinstance(value, np.ndarray)
+    return value
+
 
 pytestmark = [
     pytest.mark.filterwarnings("ignore:.*Device operation.*cannot be mapped to a Qiskit gate.*:UserWarning"),
@@ -50,9 +62,10 @@ def test_estimator_run_simple_observable(backend_with_mock_jobs: QDMIBackend) ->
     pub_result = result[0]
 
     # Values are simulated by mock backend (random), so we just check structure
-    data = cast("Any", pub_result.data)
-    assert data.evs.shape == (2,)  # 2 observables
-    assert data.stds.shape == (2,)
+    evs = _get_ndarray_field(pub_result.data, "evs")
+    stds = _get_ndarray_field(pub_result.data, "stds")
+    assert evs.shape == (2,)  # 2 observables
+    assert stds.shape == (2,)
 
 
 def test_estimator_run_parameterized_observable(backend_with_mock_jobs: QDMIBackend) -> None:
@@ -70,8 +83,8 @@ def test_estimator_run_parameterized_observable(backend_with_mock_jobs: QDMIBack
     result = job.result()
 
     pub_result = result[0]
-    data = cast("Any", pub_result.data)
-    assert data.evs.shape == (2,)
+    evs = _get_ndarray_field(pub_result.data, "evs")
+    assert evs.shape == (2,)
 
 
 def test_estimator_precision_handling(backend_with_mock_jobs: QDMIBackend) -> None:
@@ -143,8 +156,8 @@ def test_estimator_observable_bases(backend_with_mock_jobs: QDMIBackend) -> None
     result = job.result()
 
     assert len(result) == 1
-    data = cast("Any", result[0].data)
-    assert data.evs.shape == (6,)
+    evs = _get_ndarray_field(result[0].data, "evs")
+    assert evs.shape == (6,)
 
     # Check that we can run without error.
     # Logic verification is hard with mock random results, but we verify it doesn't crash on basis changes.
@@ -171,10 +184,11 @@ def test_estimator_broadcasting(backend_with_mock_jobs: QDMIBackend) -> None:
     job = estimator.run([pub])
     result = job.result()
 
-    data = cast("Any", result[0].data)
+    evs = _get_ndarray_field(result[0].data, "evs")
+    stds = _get_ndarray_field(result[0].data, "stds")
     # Shape expectations: (2,) result from broadcasting
-    assert data.evs.shape == (2,)
-    assert data.stds.shape == (2,)
+    assert evs.shape == (2,)
+    assert stds.shape == (2,)
 
 
 def test_estimator_no_circuits(backend_with_mock_jobs: QDMIBackend) -> None:
@@ -218,7 +232,7 @@ def test_estimator_identity_observable_only(backend_with_mock_jobs: QDMIBackend)
     job = estimator.run([(qc, op)])
     result = job.result()
 
-    data = cast("Any", result[0].data)
+    evs = _get_ndarray_field(result[0].data, "evs")
     # Expectation of I is always 1
     # Result should be a scalar array 1.0
-    assert float(data.evs) == pytest.approx(1.0)
+    assert float(evs) == pytest.approx(1.0)

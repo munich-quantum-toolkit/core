@@ -11,19 +11,32 @@
 from __future__ import annotations
 
 from collections import Counter
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING
 
 import numpy as np
 import pytest
 from qiskit import QuantumCircuit
 from qiskit.circuit import ClassicalRegister, Parameter
 from qiskit.primitives import BaseSamplerV2
+from qiskit.primitives.containers import BitArray
 from qiskit.primitives.containers.sampler_pub import SamplerPub
 
 from mqt.core.plugins.qiskit import QDMISampler
 
 if TYPE_CHECKING:
     from mqt.core.plugins.qiskit import QDMIBackend
+
+
+def _get_bit_array(data: object, register: str) -> BitArray:
+    """Extract a classical-register BitArray from sampler pub result data.
+
+    Returns:
+        The extracted bit array for the requested classical register.
+    """
+    bit_array = getattr(data, register, None)
+    assert isinstance(bit_array, BitArray)
+    return bit_array
+
 
 pytestmark = [
     pytest.mark.filterwarnings("ignore:.*Device operation.*cannot be mapped to a Qiskit gate.*:UserWarning"),
@@ -53,9 +66,7 @@ def test_sampler_run_simple_circuit(backend_with_mock_jobs: QDMIBackend) -> None
     assert pub_result.metadata["shots"] == 100
 
     # Check data bin structure
-    data = cast("Any", pub_result.data)
-    assert hasattr(data, "meas")
-    bit_array = data.meas
+    bit_array = _get_bit_array(pub_result.data, "meas")
     assert bit_array.num_shots == 100
     assert bit_array.num_bits == 2
     assert bit_array.shape == ()
@@ -75,15 +86,14 @@ def test_sampler_run_parameterized_circuit(backend_with_mock_jobs: QDMIBackend) 
 
     # Run with two different parameter values using explicit SamplerPub via coerce
     pub = SamplerPub.coerce((qc, [[0.0], [np.pi]]))  # type: ignore[arg-type]
-    job = sampler.run(cast("Any", [pub]), shots=100)
+    job = sampler.run([pub], shots=100)  # type: ignore[arg-type]
     result = job.result()
 
     pub_result = result[0]
     assert pub_result.metadata["shots"] == 100
 
     # Shape should be (2,) because we provided 2 parameter sets
-    data = cast("Any", pub_result.data)
-    bit_array = data.meas
+    bit_array = _get_bit_array(pub_result.data, "meas")
     assert bit_array.shape == (2,)
     assert bit_array.num_shots == 100
     assert bit_array.num_bits == 1
@@ -122,13 +132,11 @@ def test_sampler_run_multiple_cregs(backend_with_mock_jobs: QDMIBackend) -> None
     result = job.result()
 
     pub_result = result[0]
-    data = cast("Any", pub_result.data)
+    c0_bits = _get_bit_array(pub_result.data, "c0")
+    c1_bits = _get_bit_array(pub_result.data, "c1")
 
-    assert hasattr(data, "c0")
-    assert hasattr(data, "c1")
-
-    assert data.c0.num_bits == 1
-    assert data.c1.num_bits == 1
+    assert c0_bits.num_bits == 1
+    assert c1_bits.num_bits == 1
 
 
 def test_sampler_options(backend_with_mock_jobs: QDMIBackend) -> None:
@@ -172,7 +180,6 @@ def test_sampler_broadcasting(backend_with_mock_jobs: QDMIBackend) -> None:
     result = job.result()
 
     pub_result = result[0]
-    data = cast("Any", pub_result.data)
-    bit_array = data.meas
+    bit_array = _get_bit_array(pub_result.data, "meas")
     assert bit_array.shape == (2, 2)
     assert bit_array.num_shots == 100
