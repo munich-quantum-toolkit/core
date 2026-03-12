@@ -976,34 +976,40 @@ void nestedTrueIf(QCOProgramBuilder& b);
 void nestedFalseIf(QCOProgramBuilder& b);
 
 /// Allocates a tensor of size `3`.
-void allocTensor(QCOProgramBuilder& b);
+void qtensorAlloc(QCOProgramBuilder& b);
 
 /// Allocates and explicitly deallocates a tensor.
-void allocDeallocTensor(QCOProgramBuilder& b);
+void qtensorDealloc(QCOProgramBuilder& b);
 
 /// Constructs a tensor with from_elements.
-void fromElements(QCOProgramBuilder& b);
+void qtensorFromElements(QCOProgramBuilder& b);
 
 /// Extracts a qubit from a tensor.
-void extractTensor(QCOProgramBuilder& b);
+void qtensorExtract(QCOProgramBuilder& b);
 
-/// Inserts a qubit in a tensor.
-void insertTensor(QCOProgramBuilder& b);
+/// Inserts a qubit into a tensor.
+void qtensorInsert(QCOProgramBuilder& b);
 
 /// Extracts a slice from a tensor.
-void extractSliceTensor(QCOProgramBuilder& b);
+void qtensorExtractSlice(QCOProgramBuilder& b);
 
-/// Inserts a slice from a tensor.
-void insertSliceTensor(QCOProgramBuilder& b);
+/// Inserts a slice into a tensor.
+void qtensorInsertSlice(QCOProgramBuilder& b);
 
 /// Extracts a qubit from a tensor and insert it immediately.
-void extractInsertTensor(QCOProgramBuilder& b);
+void qtensorExtractInsert(QCOProgramBuilder& b);
+
+/// Inserts a qubit into a tensor and extract it immediately.
+void qtensorInsertExtract(QCOProgramBuilder& b);
 
 /// Extracts a slice of qubits from a tensor and insert it immediately.
-void extractSliceInsertSliceTensor(QCOProgramBuilder& b);
+void qtensorExtractSliceInsertSlice(QCOProgramBuilder& b);
+
+/// Inserts a slice of qubits into a tensor and extract it immediately.
+void qtensorInsertSliceExtractSlice(QCOProgramBuilder& b);
 
 /// Extracts a slice of qubits, a qubit from the slice, insert the qubit back to
 /// the slice and the slice back to the tensor immediately.
-void extractSliceExtractInsertInsertSliceTensor(QCOProgramBuilder& b);
+void qtensorExtractSliceExtractInsertInsertSlice(QCOProgramBuilder& b);
 
 } // namespace mlir::qco
