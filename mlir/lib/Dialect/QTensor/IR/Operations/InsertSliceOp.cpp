@@ -135,8 +135,6 @@ static LogicalResult foldInsertAfterInsertSlice(InsertSliceOp insertOp) {
     return failure();
   }
 
-  // Fold: bypass previous insert
-  insertOp.getDestMutable().assign(prevInsertOp.getDest());
   return success();
 }
 
@@ -175,27 +173,8 @@ static Value foldInsertAfterExtractSlice(InsertSliceOp insertSliceOp) {
   auto insertSize = insertSliceOp.getSize();
   auto extractSize = extractSliceOp.getSize();
 
-  // Check if SSA values of the offsets and the sizes are the same
-  if (insertOffset == extractOffset && insertSize == extractSize) {
-    return extractSliceOp.getSource();
-  }
-
-  auto insertOffsetValue = getConstantIntValue(insertOffset);
-  auto extractOffsetValue = getConstantIntValue(extractOffset);
-  auto insertSizeValue = getConstantIntValue(insertSize);
-  auto extractSizeValue = getConstantIntValue(extractSize);
-
-  // Check if then offsets and sizes are constant and equal
-  if (!insertOffsetValue || !extractOffsetValue) {
-    return nullptr;
-  }
-  if (!insertSizeValue || !extractSizeValue) {
-    return nullptr;
-  }
-  if (*insertOffsetValue != *extractOffsetValue) {
-    return nullptr;
-  }
-  if (*insertSizeValue != *extractSizeValue) {
+  if (!isSameIndex(insertOffset, extractOffset) ||
+      !isSameIndex(insertSize, extractSize)) {
     return nullptr;
   }
 
@@ -236,61 +215,44 @@ OpFoldResult InsertSliceOp::fold(FoldAdaptor /*adaptor*/) {
 }
 namespace {
 
-/**
- * @brief Folds tensor.cast operations with insert_slice.
- *
- * @details
- * If the source or destination tensor of an insert_slice operation is
- * produced by a tensor.cast that removes static type information, the
- * cast can be folded into the insert_slice operation.
- *
- * Example:
- *
- * ```mlir
- *   %1 = tensor.cast %0 : tensor<3!qco.qubit> to tensor<?x!qco.qubit>
- *   %2 = qtensor.insert_slice %1 into ... : tensor<?x!qco.qubit> into ...
- * ```
- *
- * This folds into:
- *
- * ```mlir
- *   %2 = qtensor.insert_slice %0 into ... : tensor<3!qco.qubit> into ...
- * ```
- *
- * When folding a cast on the destination tensor, the result of the
- * insert_slice operation is cast to preserve the original result type.
- */
-struct InsertSliceOpCastFolder final : public OpRewritePattern<InsertSliceOp> {
+struct InsertSliceAfterInsertSlice final
+    : public OpRewritePattern<InsertSliceOp> {
 
   using OpRewritePattern::OpRewritePattern;
 
-  LogicalResult matchAndRewrite(InsertSliceOp op,
+  LogicalResult matchAndRewrite(InsertSliceOp insertSliceOp,
                                 PatternRewriter& rewriter) const override {
-
-    auto srcCast = op.getSource().getDefiningOp<tensor::CastOp>();
-    auto dstCast = op.getDest().getDefiningOp<tensor::CastOp>();
-
-    if (!srcCast && !dstCast) {
+    auto prevInsertOp = insertSliceOp.getDest().getDefiningOp<InsertSliceOp>();
+    if (!prevInsertOp) {
       return failure();
     }
 
-    Value newSrc =
-        srcCast ? srcCast.getSource() : static_cast<Value>(op.getSource());
-    Value newDst =
-        dstCast ? dstCast.getSource() : static_cast<Value>(op.getDest());
+    // Source types must match
+    if (prevInsertOp.getSource().getType() !=
+        insertSliceOp.getSource().getType()) {
+      return failure();
+    }
 
-    auto newOp =
-        rewriter.create<InsertSliceOp>(op.getLoc(), op.getType(), newSrc,
-                                       newDst, op.getOffset(), op.getSize());
+    auto prevOffset = prevInsertOp.getOffset();
+    auto curOffset = insertSliceOp.getOffset();
+    auto prevSize = prevInsertOp.getSize();
+    auto curSize = insertSliceOp.getSize();
 
-    rewriter.replaceOp(op, newOp->getResults());
+    if (!isSameIndex(prevOffset, curOffset) ||
+        !isSameIndex(prevSize, curSize)) {
+      return failure();
+    }
+    rewriter.replaceOpWithNewOp<InsertSliceOp>(
+        insertSliceOp, insertSliceOp.getSource(), prevInsertOp.getDest(),
+        curOffset, curSize);
+    rewriter.eraseOp(prevInsertOp);
     return success();
-  }
+  };
 };
 
 } // namespace
 
 void InsertSliceOp::getCanonicalizationPatterns(RewritePatternSet& results,
                                                 MLIRContext* context) {
-  results.add<InsertSliceOpCastFolder>(context);
+  results.add<InsertSliceAfterInsertSlice>(context);
 }

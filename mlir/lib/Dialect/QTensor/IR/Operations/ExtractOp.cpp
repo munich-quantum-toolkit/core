@@ -48,24 +48,6 @@ LogicalResult ExtractOp::verify() {
   return success();
 }
 
-struct ExtractFromTensorCast : public OpRewritePattern<ExtractOp> {
-  using OpRewritePattern<ExtractOp>::OpRewritePattern;
-
-  LogicalResult matchAndRewrite(ExtractOp extract,
-                                PatternRewriter& rewriter) const final {
-    auto tensorCast = extract.getTensor().getDefiningOp<tensor::CastOp>();
-    if (!tensorCast) {
-      return failure();
-    }
-    if (!llvm::isa<RankedTensorType>(tensorCast.getSource().getType())) {
-      return failure();
-    }
-    rewriter.replaceOpWithNewOp<ExtractOp>(extract, tensorCast.getSource(),
-                                           extract.getIndex());
-    return success();
-  }
-};
-
 /**
  * @brief If an ExtractOp consumes an InsertOp with identical indices,
  * return the scalar from the InsertOp directly.
@@ -83,23 +65,10 @@ static InsertOp foldExtractAfterInsert(ExtractOp extractOp) {
   auto insertIndex = insertOp.getIndex();
   auto extractIndex = extractOp.getIndex();
 
-  // Check if SSA values of the indices are the same
-  if (insertIndex == extractIndex) {
+  if (isSameIndex(insertIndex, extractIndex)) {
     return insertOp;
   }
-
-  auto insertIndexValue = getConstantIntValue(insertIndex);
-  auto extractIndexValue = getConstantIntValue(extractIndex);
-
-  // Check if the indices are constant and equal
-  if (!insertIndexValue || !extractIndexValue) {
-    return nullptr;
-  }
-  if (*insertIndexValue != *extractIndexValue) {
-    return nullptr;
-  }
-
-  return insertOp;
+  return nullptr;
 }
 
 LogicalResult ExtractOp::fold(FoldAdaptor /*adaptor*/,
@@ -110,9 +79,4 @@ LogicalResult ExtractOp::fold(FoldAdaptor /*adaptor*/,
   }
 
   return failure();
-}
-
-void ExtractOp::getCanonicalizationPatterns(RewritePatternSet& results,
-                                            MLIRContext* context) {
-  results.add<ExtractFromTensorCast>(context);
 }

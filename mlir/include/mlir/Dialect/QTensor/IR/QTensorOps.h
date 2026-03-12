@@ -12,6 +12,7 @@
 
 // Suppress warnings about ambiguous reversed operators in MLIR
 // (see https://github.com/llvm/llvm-project/issues/45853)
+#include <mlir/IR/OpDefinition.h>
 #ifdef __clang__
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wambiguous-reversed-operator"
@@ -31,3 +32,9 @@
 
 #define GET_OP_CLASSES
 #include "mlir/Dialect/QTensor/IR/QTensorOps.h.inc" // IWYU pragma: export
+
+namespace mlir::qtensor {
+
+bool isSameIndex(TypedValue<IndexType> index1, TypedValue<IndexType> index2);
+
+} // namespace mlir::qtensor

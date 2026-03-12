@@ -36,13 +36,9 @@
 #include <mlir/Support/LogicalResult.h>
 
 #include <cassert>
-#include <cstdint>
 
 using namespace mlir;
 using namespace mlir::qtensor;
-
-// Adjusted from
-// https://github.com/llvm/llvm-project/blob/llvmorg-22.1.0/mlir/lib/Dialect/Tensor/IR/TensorOps.cpp
 
 /// Build an ExtractSliceOp with dynamic entries and inferred result type.
 void ExtractSliceOp::build(OpBuilder& b, OperationState& result, Value source,
@@ -106,103 +102,6 @@ LogicalResult ExtractSliceOp::verify() {
   return success();
 }
 
-/**
- * @brief Rewrite pattern that pushes tensor.cast past tensor.extract_slice.
- *
- * @details
- * This pattern rewrites a `qtensor.extract_slice` operation whose source
- * operand is produced by a `tensor.cast`. When `canFoldIntoConsumerOp`
- * evaluates to true, the cast operation is moved after the slice operation.
- *
- * Conceptually, the slice is applied to the original tensor before the
- * cast, avoiding unnecessary intermediate casts.
- *
- * Example:
- *   %0 = tensor.cast %V : tensor<3x!qco.qubit> to tensor<?x!qco.qubit>
- *   %1, %2 = qtensor.extract_slice %0[0][2][1]
- *        : tensor<?x!qco.qubit> to tensor<2x!qco.qubit>
- *
- * is rewritten into:
- *
- *   %0, %1 = qtensor.extract_slice %V[0][2][1]
- *        : tensor<3x!qco.qubit> to tensor<2x!qco.qubit>
- *   %2 = tensor.cast %0 : tensor<2x!qco.qubit> to tensor<2x!qco.qubit>
- *
- * This effectively folds the cast into the consumer operation and enables
- * further canonicalization opportunities.
- */
-namespace {
-
-class ExtractSliceOpCastFolder final : public OpRewritePattern<ExtractSliceOp> {
-public:
-  using OpRewritePattern<ExtractSliceOp>::OpRewritePattern;
-
-  LogicalResult matchAndRewrite(ExtractSliceOp sliceOp,
-                                PatternRewriter& rewriter) const override {
-
-    // Let constant folding handle constant operands
-    if (matchPattern(sliceOp.getOffset(), matchConstantIndex()) ||
-        matchPattern(sliceOp.getSize(), matchConstantIndex())) {
-      return failure();
-    }
-
-    // Look for tensor.cast producer
-    auto castOp = sliceOp.getSource().getDefiningOp<tensor::CastOp>();
-    if (!castOp) {
-      return failure();
-    }
-
-    if (!canFoldIntoConsumerOp(castOp)) {
-      return failure();
-    }
-
-    // Verify bounds using the original tensor
-    auto srcType = cast<RankedTensorType>(castOp.getSource().getType());
-
-    int64_t dim = srcType.getShape()[0];
-
-    auto offsetVal = getConstantIntValue(sliceOp.getOffset());
-    auto sizeVal = getConstantIntValue(sliceOp.getSize());
-
-    if (offsetVal && sizeVal) {
-      if (*offsetVal + *sizeVal > dim) {
-        return failure();
-      }
-    }
-
-    Location loc = sliceOp.getLoc();
-
-    // Create new slice directly on the original tensor
-    auto newSlice = rewriter.create<ExtractSliceOp>(
-        loc, sliceOp.getResult().getType(), sliceOp.getOutSource().getType(),
-        castOp.getSource(), sliceOp.getOffset(), sliceOp.getSize());
-
-    Value newResult = newSlice.getResult();
-    Value newOutSource = newSlice.getOutSource();
-
-    // Preserve expected type of out_source
-    if (newOutSource.getType() != sliceOp.getOutSource().getType()) {
-      newOutSource = rewriter.create<tensor::CastOp>(
-          loc, sliceOp.getOutSource().getType(), newOutSource);
-    }
-
-    rewriter.replaceOp(sliceOp, {newResult, newOutSource});
-
-    if (castOp->use_empty()) {
-      rewriter.eraseOp(castOp);
-    }
-
-    return success();
-  }
-};
-
-} // namespace
-
-void ExtractSliceOp::getCanonicalizationPatterns(RewritePatternSet& results,
-                                                 MLIRContext* context) {
-  results.add<ExtractSliceOpCastFolder>(context);
-}
-
 static InsertSliceOp
 foldExtractAfterInsertSlice(ExtractSliceOp extractSliceOp) {
   auto insertSliceOp =
@@ -221,27 +120,8 @@ foldExtractAfterInsertSlice(ExtractSliceOp extractSliceOp) {
   auto insertSize = insertSliceOp.getSize();
   auto extractSize = extractSliceOp.getSize();
 
-  // Check if SSA values of the offsets and the sizes are the same
-  if (insertOffset == extractOffset && insertSize == extractSize) {
-    return insertSliceOp;
-  }
-
-  auto insertOffsetValue = getConstantIntValue(insertOffset);
-  auto extractOffsetValue = getConstantIntValue(extractOffset);
-  auto insertSizeValue = getConstantIntValue(insertSize);
-  auto extractSizeValue = getConstantIntValue(extractSize);
-
-  // Check if then offsets and sizes are constant and equal
-  if (!insertOffsetValue || !extractOffsetValue) {
-    return nullptr;
-  }
-  if (!insertSizeValue || !extractSizeValue) {
-    return nullptr;
-  }
-  if (*insertOffsetValue != *extractOffsetValue) {
-    return nullptr;
-  }
-  if (*insertSizeValue != *extractSizeValue) {
+  if (!isSameIndex(insertOffset, extractOffset) ||
+      !isSameIndex(insertSize, extractSize)) {
     return nullptr;
   }
 

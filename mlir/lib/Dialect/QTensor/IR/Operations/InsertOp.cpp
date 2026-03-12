@@ -41,35 +41,6 @@ LogicalResult InsertOp::verify() {
   return success();
 }
 
-namespace {
-
-/**
- * @brief If an InsertOp does not return a tensor with a static shape but the
- * destination tensor has one, replace the InsertOp with a new one that has a
- * static shape.
- */
-struct ConvertInsertOpToStaticShape
-    : public OpRewritePattern<qtensor::InsertOp> {
-  using OpRewritePattern<qtensor::InsertOp>::OpRewritePattern;
-
-  LogicalResult matchAndRewrite(qtensor::InsertOp insertOp,
-                                PatternRewriter& rewriter) const final {
-    if (insertOp.getResult().getType().hasStaticShape()) {
-      return failure();
-    }
-    if (!insertOp.getDest().getType().hasStaticShape()) {
-      return failure();
-    }
-
-    rewriter.replaceOpWithNewOp<InsertOp>(insertOp, insertOp.getScalar(),
-                                          insertOp.getDest(),
-                                          insertOp.getIndex());
-
-    return success();
-  }
-};
-} // namespace
-
 /**
  * @brief If an InsertOp consumes an ExtractOp with identical indices,
  * return the tensor from the extractOp directly.
@@ -106,10 +77,40 @@ static Value foldInsertAfterExtract(InsertOp insertOp) {
 }
 
 OpFoldResult InsertOp::fold(FoldAdaptor /*adaptor*/) {
-  // Fold after extract_slice
   if (auto result = foldInsertAfterExtract(*this)) {
     return result;
   }
 
   return {};
+}
+
+namespace {
+
+struct InsertAfterInsertOp : public OpRewritePattern<InsertOp> {
+  using OpRewritePattern<InsertOp>::OpRewritePattern;
+
+  LogicalResult matchAndRewrite(InsertOp insertOp,
+                                PatternRewriter& rewriter) const final {
+    auto prevInsertOp = insertOp.getDest().getDefiningOp<InsertOp>();
+    if (!prevInsertOp) {
+      return failure();
+    }
+    auto insertIndex = insertOp.getIndex();
+    auto prevInsertIndex = prevInsertOp.getIndex();
+
+    if (!isSameIndex(insertIndex, prevInsertIndex)) {
+      return failure();
+    }
+
+    rewriter.replaceOpWithNewOp<InsertOp>(insertOp, insertOp.getScalar(),
+                                          prevInsertOp.getDest(), insertIndex);
+    rewriter.eraseOp(prevInsertOp);
+    return success();
+  }
+};
+} // namespace
+
+void InsertOp::getCanonicalizationPatterns(RewritePatternSet& results,
+                                           MLIRContext* context) {
+  results.add<InsertAfterInsertOp>(context);
 }
