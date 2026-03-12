@@ -37,8 +37,6 @@ def QTensorDialect : Dialect {
       In addition, alloc/dealloc operations are added to the dialect to support the bulk allocation and deallocation of tensors with linear types.
   }];
 
-  let hasCanonicalizer = 1;
-
   let cppNamespace = "::mlir::qtensor";
 }
 
@@ -149,7 +147,6 @@ def QTensor_ExtractOp : QTensorOp<"extract", [
 
     let hasFolder = 1;
     let hasVerifier = 1;
-    let hasCanonicalizer = 1;
 }
 
 def QTensor_ExtractSliceOp : QTensorOp<"extract_slice", [
@@ -194,13 +191,11 @@ def QTensor_ExtractSliceOp : QTensorOp<"extract_slice", [
           CArg<"ArrayRef<NamedAttribute>", "{}">:$attrs)>
       ];
 
-    let hasCanonicalizer = 1;
     let hasFolder = 1;
     let hasVerifier = 1;
 }
 
 def QTensor_InsertOp : QTensorOp<"insert", [
-    DestinationStyleOpInterface,
     Pure,
     TypesMatchWith<"result type matches type of dest",
                    "dest", "result",
@@ -228,16 +223,12 @@ def QTensor_InsertOp : QTensorOp<"insert", [
         $scalar `into` $dest `[` $index `]` attr-dict `:` type($dest)
     }];
 
-    let extraClassDeclaration = [{
-        MutableOperandRange getDpsInitsMutable() { return getDestMutable(); }
-    }];
-
     let hasVerifier = 1;
     let hasFolder = 1;
+    let hasCanonicalizer = 1;
 }
 
 def QTensor_InsertSliceOp : QTensorOp<"insert_slice", [
-    DestinationStyleOpInterface,
     Pure,
     TypesMatchWith<"expected result type to match dest type",
                    "dest", "result", "$_self">
@@ -279,10 +270,6 @@ def QTensor_InsertSliceOp : QTensorOp<"insert_slice", [
           "Value":$offset, "Value":$size,
           CArg<"ArrayRef<NamedAttribute>", "{}">:$attrs)>
     ];
-
-    let extraClassDeclaration = [{
-        MutableOperandRange getDpsInitsMutable() { return getDestMutable(); }
-    }];
 
     let hasCanonicalizer = 1;
     let hasFolder = 1;

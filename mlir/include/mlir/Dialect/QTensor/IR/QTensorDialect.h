@@ -10,29 +10,10 @@
 
 #pragma once
 
-#include <mlir/Dialect/Tensor/IR/Tensor.h>
 #include <mlir/IR/Dialect.h>
 #include <mlir/IR/OpDefinition.h>
-#include <mlir/Interfaces/DestinationStyleOpInterface.h>
-#include <mlir/Interfaces/ViewLikeInterface.h>
 
 #define DIALECT_NAME_QTensor "qtensor"
-
-namespace mlir::qtensor {
-
-/// Compute the dropped dimensions of a rank-reducing tensor.extract_slice op or
-/// rank-extending tensor.insert_slice op.
-llvm::SmallBitVector getDroppedDims(ArrayRef<int64_t> reducedShape,
-                                    ArrayRef<OpFoldResult> mixedSizes);
-
-LogicalResult produceSliceErrorMsg(SliceVerificationResult result,
-                                   Operation* op,
-                                   RankedTensorType expectedType);
-
-LogicalResult
-foldIdentityOffsetSizeAndStrideOpInterface(OffsetSizeAndStrideOpInterface op,
-                                           ShapedType shapedType);
-} // namespace mlir::qtensor
 
 //===----------------------------------------------------------------------===//
 // QTensor Dialect
