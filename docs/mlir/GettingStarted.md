@@ -1,6 +1,6 @@
 # Getting Started
 
-The Multi-Level Intermediate Representation (MLIR) project is an extensive framework to build compilers for heterogenous hardware. The Munich Quantum Toolkit (MQT) utilizes MLIR for quantum compilation. That is, given an intermediate representation (IR) - a description - of a quantum computation, transform this representation to one that is efficiently executable on a target architecture.
+The Multi-Level Intermediate Representation (MLIR) project is an extensive framework to build compilers for heterogeneous hardware. The Munich Quantum Toolkit (MQT) utilizes MLIR for quantum compilation. That is, given an intermediate representation (IR) - a description - of a quantum computation, transform this representation to one that is efficiently executable on a target architecture.
 
 This tutorial teaches you how to understand, write, and optimize quantum IR in MLIR using the infrastructure built within the MQT. Getting started with MLIR is not an easy task. Thus, we attempt to also provide a soft introduction to the fundamental concepts of MLIR.
 
@@ -54,7 +54,10 @@ The short snippets above contain many fundamental concepts of MLIR.
 - **SSA Values**: Operations can consume (_"operands"_) and produce (_"results"_) values. For instance, `qc.alloc` produces the value `q0`, while `qc.dealloc` consumes it. Furthermore, values in MLIR adhere to the static single-assignment (SSA) principle, where each variable is assigned exactly once and never reassigned.
 - **Regions and Blocks**: To represent hierarchical structures, operations may contain _"regions"_. A region consists of one to many _"blocks"_ which again contain operations. For instance, the `module` operation contains one region consisting of one block that contains the `func.func` operation. A block optionally requires a _"terminator"_ that defines the end of the current block. The `func.return` operation is such a terminator. The following figure visualizes the connection between operations, regions, and blocks succinctly.
 
-TODO
+```{image} ../_static/mlir-regions-blocks-ops.svg
+:width: 45%
+:align: center
+```
 
 ### Gates And Measurements
 
@@ -115,15 +118,11 @@ module {
 }
 ```
 
-### Reusable Components
-
 ## Optimizing Quantum IR
 
 By combining built-in dialects and the QC dialect we can implement quantum algorithms in MLIR. This section outlines how to use the compiler driver to optimize your quantum programs.
 
-<!-- I think the idea of "external" and "internal" is good, but i don't like the wording with "interface"-->
-
-### External Interface
+### Using the Compiler
 
 The following command executes the compiler and performs a series of optimizations on the given quantum program. Files using the OpenQASM format will automatically be translated into the QC dialect.
 
@@ -144,7 +143,7 @@ module {
 
 What happened? Because there are no unitary operations between the allocation and deallocation of the qubit, the `RemoveAllocDeallocPair` canonicalization pattern matches and removes the unused qubit from the program. This one example of the many optimizations implemented in the quantum compiler driver.
 
-### Internal Interface
+### Inside the Compiler
 
 Internally, the optimizations are performed on the [`qco`](./QCO.md) (_"quantum circuit optimization"_) dialect. While the QC dialect is great for exchanging with other formats (such as OpenQASM), the QCO dialect is specifically designed for optimizations.
 
@@ -179,19 +178,19 @@ The following figure illustrates the data-flow graph of the IR above. Thanks to 
 :align: center
 ```
 
-Quantum IR in the QCO dialect can be quite complex. Writing it by hand is certainly a errorprone task. Fortunately, you don't have to. The compiler driver's interface accepts and produces quantum IR in the QC dialect. Under the hood, it transforms it to the QCO dialect, performs the optimizations, and transforms it back to the QC dialect. That's also why we refer to the QC dialect as interface dialect. The following figure depicts the interplay between the two dialects illustratively.
+Quantum IR in the QCO dialect can be quite complex. Writing it by hand is certainly an error-prone task. Fortunately, you don't have to. The compiler driver's interface accepts and produces quantum IR in the QC dialect. Under the hood, it transforms it to the QCO dialect, performs the optimizations, and transforms it back to the QC dialect. That's also why we refer to the QC dialect as interface dialect. The following figure depicts the interplay between the two dialects illustratively.
 
 ```{image} ../_static/compilation-pipeline.svg
 :width: 50%
 :align: center
 ```
 
-To print the quantum IR after each step in the compilation pipeline, you can supply the `--record-intermediates` option to the compiler driver.
+To print the quantum IR after each step in the compilation pipeline, we can supply the `--record-intermediates` option to the compiler driver.
 
 ```console
 $ mqt-cc --record-intermediates <input .mlir/.qasm file>
 ```
 
-## Summary
+## Conclusion
 
-TODO
+In this tutorial we've learned how to understand and write quantum programs in MLIR using the MQT's QC dialect. Moreover, we have seen how the compiler driver utilizes the more powerful QCO dialect to optimize our quantum programs and how we can achieve this via the CLI tool.
