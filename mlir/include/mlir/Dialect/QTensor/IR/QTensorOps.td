@@ -10,17 +10,11 @@
 #define QTENSOROPS
 
 include "mlir/IR/OpBase.td"
-include "mlir/Interfaces/CastInterfaces.td"
-include "mlir/Interfaces/ControlFlowInterfaces.td"
-include "mlir/Interfaces/DestinationStyleOpInterface.td"
 include "mlir/Interfaces/InferIntRangeInterface.td"
 include "mlir/Interfaces/InferTypeOpInterface.td"
-include "mlir/Interfaces/ParallelCombiningOpInterface.td"
 include "mlir/Interfaces/ShapedOpInterfaces.td"
 include "mlir/Interfaces/SideEffectInterfaces.td"
 include "mlir/Interfaces/TilingInterface.td"
-include "mlir/Interfaces/ViewLikeInterface.td"
-include "mlir/IR/OpAsmInterface.td"
 
 //===----------------------------------------------------------------------===//
 // Dialect
@@ -265,12 +259,6 @@ def QTensor_InsertSliceOp : QTensorOp<"insert_slice", [
         $source `into` $dest `[`$offset `]` `[`$size`]`
         attr-dict `:` type($source) `into` type($dest)
     }];
-
-    let builders = [
-        OpBuilder<(ins "Value":$source,
-          "Value":$offset, "Value":$size,
-          CArg<"ArrayRef<NamedAttribute>", "{}">:$attrs)>
-    ];
 
     let hasCanonicalizer = 1;
     let hasFolder = 1;
