@@ -181,7 +181,7 @@ TEST_P(CompilerPipelineTest, EndToEndPipeline) {
 }
 
 /**
- * @brief Test: Rotation merging pass is invoked during optimization stage
+ * @brief Test: Rotation merging pass is invoked during the optimization stage
  *
  * @details
  * The merged U gate parameters are computed via floating-point arithmetic
@@ -191,24 +191,19 @@ TEST_P(CompilerPipelineTest, EndToEndPipeline) {
  * Correctness of the pass is tested in a dedicated test.
  */
 TEST_F(CompilerPipelineTest, RotationGateMergingPass) {
-  ::qc::QuantumComputation comp;
-  comp.addQubitRegister(1, "q");
-  comp.rz(1.0, 0);
-  comp.rx(1.0, 0);
-
-  mlir::CompilationRecord recordWith;
-  mlir::CompilationRecord recordWithout;
-
-  auto module = mlir::translateQuantumComputationToQC(context.get(), comp);
+  auto module = mlir::qc::QCProgramBuilder::build(
+      context.get(), [&](mlir::qc::QCProgramBuilder& b) {
+        auto q = b.allocQubit();
+        b.rz(1.0, q);
+        b.rx(1.0, q);
+      });
   ASSERT_TRUE(module);
-  runPipeline(module.get(), false, true, recordWith);
 
-  module = mlir::translateQuantumComputationToQC(context.get(), comp);
-  ASSERT_TRUE(module);
-  runPipeline(module.get(), false, false, recordWithout);
+  mlir::CompilationRecord record;
+  runPipeline(module.get(), false, true, record);
 
   // The outputs must differ, proving the pass ran and transformed the IR
-  EXPECT_NE(recordWith.afterOptimization, recordWithout.afterOptimization);
+  EXPECT_NE(record.afterQCOCanon, record.afterOptimization);
 }
 
 INSTANTIATE_TEST_SUITE_P(
