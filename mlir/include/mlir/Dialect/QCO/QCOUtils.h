@@ -204,6 +204,48 @@ mlir::LogicalResult mergeTwoTargetOneParameter(OpType op,
 }
 
 /**
+ * @brief Merge two compatible two-target, one-parameter operations where the
+ *        second operation consumes the outputs with swapped targets.
+ *
+ * @details
+ * This is analogous to mergeTwoTargetOneParameter, but it additionally handles
+ * the case where the second operation swaps its target qubits. The new
+ * parameter is computed as the sum of the two original parameters.
+ *
+ * @tparam OpType The type of the operation to be merged.
+ * @param op The operation instance.
+ * @param rewriter The pattern rewriter.
+ * @return LogicalResult Success or failure of the merge.
+ */
+template <typename OpType>
+mlir::LogicalResult
+mergeTwoTargetOneParameterWithSwappedTargets(OpType op,
+                                             PatternRewriter& rewriter) {
+  // Check if the successor is the same operation
+  auto nextOp = llvm::dyn_cast<OpType>(*op.getOutputQubit(0).user_begin());
+  if (!nextOp) {
+    return failure();
+  }
+
+  // Confirm operations act on the same qubits but with swapped targets
+  if (op.getOutputQubit(0) != nextOp.getInputQubit(1) ||
+      op.getOutputQubit(1) != nextOp.getInputQubit(0)) {
+    return failure();
+  }
+
+  // Compute and set the new parameter on the first operation
+  auto newParameter = arith::AddFOp::create(
+      rewriter, op.getLoc(), op.getOperand(2), nextOp.getOperand(2));
+  op->setOperand(2, newParameter.getResult());
+
+  // nextOp results correspond to swapped operands, so swap replacements too
+  llvm::SmallVector<mlir::Value, 2> replacements{op.getOutputQubit(1),
+                                                 op.getOutputQubit(0)};
+  rewriter.replaceOp(nextOp, replacements);
+  return success();
+}
+
+/**
  * @brief Remove a trivial one-target, one-parameter operation
  *
  * @tparam OpType The type of the operation to be checked.

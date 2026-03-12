@@ -1508,10 +1508,30 @@ void fourControlledRxx(QCOProgramBuilder& b) {
   b.mcrxx(0.123, {q[0], q[1], q[2], q[3]}, q[4], q[5]);
 }
 
+void twoRxx(QCOProgramBuilder& b) {
+  auto q = b.allocQubitRegister(2);
+  // 0.045 + 0.078 = 0.123
+  std::tie(q[0], q[1]) = b.rxx(0.045, q[0], q[1]);
+  std::tie(q[0], q[1]) = b.rxx(0.078, q[0], q[1]);
+}
+
+void twoRxxSwappedTargets(QCOProgramBuilder& b) {
+  auto q = b.allocQubitRegister(2);
+  // 0.045 + 0.078 = 0.123
+  std::tie(q[0], q[1]) = b.rxx(0.045, q[0], q[1]);
+  std::tie(q[1], q[0]) = b.rxx(0.078, q[1], q[0]);
+}
+
 void twoRxxOppositePhase(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   std::tie(q[0], q[1]) = b.rxx(0.123, q[0], q[1]);
   std::tie(q[0], q[1]) = b.rxx(-0.123, q[0], q[1]);
+}
+
+void twoRxxOppositePhaseSwappedTargets(QCOProgramBuilder& b) {
+  auto q = b.allocQubitRegister(2);
+  std::tie(q[0], q[1]) = b.rxx(0.123, q[0], q[1]);
+  std::tie(q[1], q[0]) = b.rxx(-0.123, q[1], q[0]);
 }
 
 void ryy(QCOProgramBuilder& b) {
@@ -1567,10 +1587,30 @@ void inverseMultipleControlledRyy(QCOProgramBuilder& b) {
   });
 }
 
+void twoRyy(QCOProgramBuilder& b) {
+  auto q = b.allocQubitRegister(2);
+  // 0.045 + 0.078 = 0.123
+  std::tie(q[0], q[1]) = b.ryy(0.045, q[0], q[1]);
+  std::tie(q[0], q[1]) = b.ryy(0.078, q[0], q[1]);
+}
+
+void twoRyyOppositePhaseSwappedTargets(QCOProgramBuilder& b) {
+  auto q = b.allocQubitRegister(2);
+  std::tie(q[0], q[1]) = b.ryy(0.123, q[0], q[1]);
+  std::tie(q[1], q[0]) = b.ryy(-0.123, q[1], q[0]);
+}
+
 void twoRyyOppositePhase(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   std::tie(q[0], q[1]) = b.ryy(0.123, q[0], q[1]);
   std::tie(q[0], q[1]) = b.ryy(-0.123, q[0], q[1]);
+}
+
+void twoRyySwappedTargets(QCOProgramBuilder& b) {
+  auto q = b.allocQubitRegister(2);
+  // 0.045 + 0.078 = 0.123
+  std::tie(q[0], q[1]) = b.ryy(0.045, q[0], q[1]);
+  std::tie(q[1], q[0]) = b.ryy(0.078, q[1], q[0]);
 }
 
 void rzx(QCOProgramBuilder& b) {
@@ -1685,10 +1725,30 @@ void inverseMultipleControlledRzz(QCOProgramBuilder& b) {
   });
 }
 
+void twoRzz(QCOProgramBuilder& b) {
+  auto q = b.allocQubitRegister(2);
+  // 0.045 + 0.078 = 0.123
+  std::tie(q[0], q[1]) = b.rzz(0.045, q[0], q[1]);
+  std::tie(q[0], q[1]) = b.rzz(0.078, q[0], q[1]);
+}
+
+void twoRzzSwappedTargets(QCOProgramBuilder& b) {
+  auto q = b.allocQubitRegister(2);
+  // 0.045 + 0.078 = 0.123
+  std::tie(q[0], q[1]) = b.rzz(0.045, q[0], q[1]);
+  std::tie(q[1], q[0]) = b.rzz(0.078, q[1], q[0]);
+}
+
 void twoRzzOppositePhase(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   std::tie(q[0], q[1]) = b.rzz(0.123, q[0], q[1]);
   std::tie(q[0], q[1]) = b.rzz(-0.123, q[0], q[1]);
+}
+
+void twoRzzOppositePhaseSwappedTargets(QCOProgramBuilder& b) {
+  auto q = b.allocQubitRegister(2);
+  std::tie(q[0], q[1]) = b.rzz(0.123, q[0], q[1]);
+  std::tie(q[1], q[0]) = b.rzz(-0.123, q[1], q[0]);
 }
 
 void xxPlusYY(QCOProgramBuilder& b) {

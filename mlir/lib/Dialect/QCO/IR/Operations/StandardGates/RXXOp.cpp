@@ -44,6 +44,19 @@ struct MergeSubsequentRXX final : OpRewritePattern<RXXOp> {
 };
 
 /**
+ * @brief Merge subsequent RXX operations with swapped targets by adding their
+ * angles.
+ */
+struct MergeSwappedTargetsRXX final : OpRewritePattern<RXXOp> {
+  using OpRewritePattern::OpRewritePattern;
+
+  LogicalResult matchAndRewrite(RXXOp op,
+                                PatternRewriter& rewriter) const override {
+    return mergeTwoTargetOneParameterWithSwappedTargets(op, rewriter);
+  }
+};
+
+/**
  * @brief Remove trivial RXX operations.
  */
 struct RemoveTrivialRXX final : OpRewritePattern<RXXOp> {
@@ -67,7 +80,8 @@ void RXXOp::build(OpBuilder& odsBuilder, OperationState& odsState,
 
 void RXXOp::getCanonicalizationPatterns(RewritePatternSet& results,
                                         MLIRContext* context) {
-  results.add<MergeSubsequentRXX, RemoveTrivialRXX>(context);
+  results.add<MergeSubsequentRXX, MergeSwappedTargetsRXX, RemoveTrivialRXX>(
+      context);
 }
 
 std::optional<Eigen::Matrix4cd> RXXOp::getUnitaryMatrix() {

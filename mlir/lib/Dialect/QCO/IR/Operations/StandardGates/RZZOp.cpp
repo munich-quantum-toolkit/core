@@ -43,6 +43,19 @@ struct MergeSubsequentRZZ final : OpRewritePattern<RZZOp> {
 };
 
 /**
+ * @brief Merge subsequent RZZ operations with swapped targets by adding their
+ * angles.
+ */
+struct MergeSwappedTargetsRZZ final : OpRewritePattern<RZZOp> {
+  using OpRewritePattern::OpRewritePattern;
+
+  LogicalResult matchAndRewrite(RZZOp op,
+                                PatternRewriter& rewriter) const override {
+    return mergeTwoTargetOneParameterWithSwappedTargets(op, rewriter);
+  }
+};
+
+/**
  * @brief Remove trivial RZZ operations.
  */
 struct RemoveTrivialRZZ final : OpRewritePattern<RZZOp> {
@@ -66,7 +79,8 @@ void RZZOp::build(OpBuilder& odsBuilder, OperationState& odsState,
 
 void RZZOp::getCanonicalizationPatterns(RewritePatternSet& results,
                                         MLIRContext* context) {
-  results.add<MergeSubsequentRZZ, RemoveTrivialRZZ>(context);
+  results.add<MergeSubsequentRZZ, MergeSwappedTargetsRZZ, RemoveTrivialRZZ>(
+      context);
 }
 
 std::optional<Eigen::Matrix4cd> RZZOp::getUnitaryMatrix() {
