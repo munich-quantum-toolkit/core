@@ -15,10 +15,6 @@
 #include "mlir/Dialect/QIR/Utils/QIRMetadata.h"
 #include "mlir/Dialect/QIR/Utils/QIRUtils.h"
 
-#include <cassert>
-#include <cstddef>
-#include <cstdint>
-#include <iterator>
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/ADT/StringMap.h>
@@ -48,6 +44,10 @@
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/LogicalResult.h>
 #include <mlir/Transforms/DialectConversion.h>
+
+#include <cstddef>
+#include <cstdint>
+#include <iterator>
 #include <string>
 #include <utility>
 
@@ -419,8 +419,9 @@ struct ConvertQCMeasureQIR final : StatefulOpConversionPattern<MeasureOp> {
         // Allocate the entire register as static results
         for (int64_t i = 0; i < registerSize; ++i) {
           Value val{};
-          if (const auto it = ptrMap.find(numResults + i); it != ptrMap.end()) {
-            val = it->second;
+          if (const auto ptrIt = ptrMap.find(numResults + i);
+              ptrIt != ptrMap.end()) {
+            val = ptrIt->second;
           } else {
             val = createPointerFromIndex(rewriter, op.getLoc(), numResults + i);
             ptrMap[numResults + i] = val;
@@ -456,8 +457,8 @@ struct ConvertQCMeasureQIR final : StatefulOpConversionPattern<MeasureOp> {
         getOrCreateFunctionDeclaration(rewriter, op, QIR_MEASURE, fnSignature);
 
     // Create CallOp and replace qc.measure with result pointer
-    rewriter.create<LLVM::CallOp>(op.getLoc(), fnDecl,
-                                  ValueRange{adaptor.getQubit(), resultValue});
+    LLVM::CallOp::create(rewriter, op.getLoc(), fnDecl,
+                         ValueRange{adaptor.getQubit(), resultValue});
     rewriter.replaceOp(op, resultValue);
     return success();
   }
@@ -961,13 +962,13 @@ struct QCToQIR final : impl::QCToQIRBase<QCToQIR> {
 
     // Add unconditional jumps between blocks
     builder.setInsertionPointToEnd(entryBlock);
-    builder.create<LLVM::BrOp>(main->getLoc(), bodyBlock);
+    LLVM::BrOp::create(builder, main->getLoc(), bodyBlock);
 
     builder.setInsertionPointToEnd(bodyBlock);
-    builder.create<LLVM::BrOp>(main->getLoc(), measurementsBlock);
+    LLVM::BrOp::create(builder, main->getLoc(), measurementsBlock);
 
     builder.setInsertionPointToEnd(measurementsBlock);
-    builder.create<LLVM::BrOp>(main->getLoc(), outputBlock);
+    LLVM::BrOp::create(builder, main->getLoc(), outputBlock);
   }
 
   /**
@@ -989,8 +990,8 @@ struct QCToQIR final : impl::QCToQIRBase<QCToQIR> {
 
     // Create a zero (null) pointer for the initialize call
     builder.setInsertionPointToStart(&firstBlock);
-    auto zeroOp = builder.create<LLVM::ZeroOp>(main->getLoc(),
-                                               LLVM::LLVMPointerType::get(ctx));
+    auto zeroOp = LLVM::ZeroOp::create(builder, main->getLoc(),
+                                       LLVM::LLVMPointerType::get(ctx));
 
     // Insert the initialize call before the jump to main block
     const auto insertPoint = std::prev(firstBlock.getOperations().end(), 1);
@@ -1004,13 +1005,14 @@ struct QCToQIR final : impl::QCToQIRBase<QCToQIR> {
       builder.setInsertionPointToEnd(moduleOp.getBody());
       auto fnSignature = LLVM::LLVMFunctionType::get(
           LLVM::LLVMVoidType::get(ctx), LLVM::LLVMPointerType::get(ctx));
-      fnDecl = builder.create<LLVM::LLVMFuncOp>(main->getLoc(), QIR_INITIALIZE,
-                                                fnSignature);
+      fnDecl = LLVM::LLVMFuncOp::create(builder, main->getLoc(), QIR_INITIALIZE,
+                                        fnSignature);
     }
 
     // Create the initialization call
-    builder.create<LLVM::CallOp>(main->getLoc(), cast<LLVM::LLVMFuncOp>(fnDecl),
-                                 ValueRange{zeroOp->getResult(0)});
+    LLVM::CallOp::create(builder, main->getLoc(),
+                         cast<LLVM::LLVMFuncOp>(fnDecl),
+                         ValueRange{zeroOp->getResult(0)});
   }
 
   /**
@@ -1100,12 +1102,12 @@ struct QCToQIR final : impl::QCToQIRBase<QCToQIR> {
 
       const auto arraySize = measurements.size();
       auto arrayLabelOp = createResultLabel(builder, main, registerName);
-      auto arraySizeConst = builder.create<LLVM::ConstantOp>(
-          main->getLoc(),
+      auto arraySizeConst = LLVM::ConstantOp::create(
+          builder, main->getLoc(),
           builder.getI64IntegerAttr(static_cast<int64_t>(arraySize)));
 
-      builder.create<LLVM::CallOp>(
-          main->getLoc(), arrayRecordDecl,
+      LLVM::CallOp::create(
+          builder, main->getLoc(), arrayRecordDecl,
           ValueRange{arraySizeConst.getResult(), arrayLabelOp.getResult()});
 
       // Create result_record_output calls for each measurement
@@ -1115,9 +1117,8 @@ struct QCToQIR final : impl::QCToQIRBase<QCToQIR> {
             registerName.str() + std::to_string(regIdx) + "r";
         auto resultLabelOp = createResultLabel(builder, main, resultLabel);
 
-        builder.create<LLVM::CallOp>(
-            main->getLoc(), resultRecordDecl,
-            ValueRange{resultPtr, resultLabelOp.getResult()});
+        LLVM::CallOp::create(builder, main->getLoc(), resultRecordDecl,
+                             ValueRange{resultPtr, resultLabelOp.getResult()});
       }
     }
   }

@@ -15,8 +15,9 @@
 #include "ir/operations/OpType.hpp"
 #include "qasm3/Importer.hpp"
 
-#include <cstddef>
 #include <gtest/gtest.h>
+
+#include <cstddef>
 #include <iostream>
 #include <string>
 

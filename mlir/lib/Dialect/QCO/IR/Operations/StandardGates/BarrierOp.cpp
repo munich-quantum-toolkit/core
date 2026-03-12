@@ -10,7 +10,6 @@
 
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 
-#include <cstddef>
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/Support/Casting.h>
 #include <llvm/Support/ErrorHandling.h>
@@ -20,6 +19,8 @@
 #include <mlir/IR/PatternMatch.h>
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/LogicalResult.h>
+
+#include <cstddef>
 
 using namespace mlir;
 using namespace mlir::qco;
@@ -57,7 +58,7 @@ struct MergeSubsequentBarrier final : OpRewritePattern<BarrierOp> {
       return failure();
     }
 
-    auto newBarrier = rewriter.create<BarrierOp>(op.getLoc(), newQubitsIn);
+    auto newBarrier = BarrierOp::create(rewriter, op.getLoc(), newQubitsIn);
 
     for (size_t i = 0; i < indicesToFill.size(); ++i) {
       newQubitsOutMap[indicesToFill[i]] = newBarrier.getQubitsOut()[i];

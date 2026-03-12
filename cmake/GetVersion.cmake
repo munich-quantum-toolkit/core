@@ -19,9 +19,9 @@
 # * MQT_CORE_VERSION_FOUND (TRUE if version was found, FALSE otherwise)
 
 function(version_from_skbuild)
-  if(NOT MQT_CORE_MASTER_PROJECT)
+  if(NOT PROJECT_IS_TOP_LEVEL)
     message(VERBOSE
-            "Not the master project. Cannot determine project version from scikit-build-core.")
+            "Not the top-level project. Cannot determine project version from scikit-build-core.")
     return()
   endif()
 
@@ -205,7 +205,7 @@ function(get_mqt_core_version)
       FALSE
       CACHE INTERNAL "MQT_CORE_VERSION_FOUND")
 
-  if(MQT_CORE_MASTER_PROJECT)
+  if(PROJECT_IS_TOP_LEVEL)
     version_from_skbuild()
     if(MQT_CORE_VERSION_FOUND)
       message(

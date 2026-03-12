@@ -21,6 +21,7 @@
 #include <mlir/Pass/PassManager.h>
 #include <mlir/Support/LogicalResult.h>
 #include <mlir/Transforms/Passes.h>
+
 #include <string>
 
 namespace mlir {
@@ -73,10 +74,12 @@ QuantumCompilerPipeline::runPipeline(ModuleOp module,
     return failure();
   }
 
-  PassManager pm(module.getContext());
-
-  // Configure PassManager with diagnostic options
-  configurePassManager(pm);
+  auto runStage = [&](auto&& populatePasses) -> LogicalResult {
+    PassManager pm(module.getContext());
+    configurePassManager(pm);
+    populatePasses(pm);
+    return pm.run(module);
+  };
 
   // Determine total number of stages for progress indication
   // 1. QC import
@@ -104,8 +107,7 @@ QuantumCompilerPipeline::runPipeline(ModuleOp module,
   }
 
   // Stage 2: QC canonicalization
-  addCleanupPasses(pm);
-  if (pm.run(module).failed()) {
+  if (failed(runStage([&](PassManager& pm) { addCleanupPasses(pm); }))) {
     return failure();
   }
   if (record != nullptr && config_.recordIntermediates) {
@@ -115,11 +117,8 @@ QuantumCompilerPipeline::runPipeline(ModuleOp module,
                        totalStages);
     }
   }
-  pm.clear();
-
   // Stage 3: QC-to-QCO conversion
-  pm.addPass(createQCToQCO());
-  if (failed(pm.run(module))) {
+  if (failed(runStage([&](PassManager& pm) { pm.addPass(createQCToQCO()); }))) {
     return failure();
   }
   if (record != nullptr && config_.recordIntermediates) {
@@ -129,11 +128,8 @@ QuantumCompilerPipeline::runPipeline(ModuleOp module,
                        totalStages);
     }
   }
-  pm.clear();
-
   // Stage 4: QCO canonicalization
-  addCleanupPasses(pm);
-  if (failed(pm.run(module))) {
+  if (failed(runStage([&](PassManager& pm) { addCleanupPasses(pm); }))) {
     return failure();
   }
   if (record != nullptr && config_.recordIntermediates) {
@@ -143,12 +139,9 @@ QuantumCompilerPipeline::runPipeline(ModuleOp module,
                        totalStages);
     }
   }
-  pm.clear();
-
   // Stage 5: Optimization passes
   // TODO: Add optimization passes
-  addCleanupPasses(pm);
-  if (failed(pm.run(module))) {
+  if (failed(runStage([&](PassManager& pm) { addCleanupPasses(pm); }))) {
     return failure();
   }
   if (record != nullptr && config_.recordIntermediates) {
@@ -158,11 +151,8 @@ QuantumCompilerPipeline::runPipeline(ModuleOp module,
                        totalStages);
     }
   }
-  pm.clear();
-
   // Stage 6: QCO canonicalization
-  addCleanupPasses(pm);
-  if (failed(pm.run(module))) {
+  if (failed(runStage([&](PassManager& pm) { addCleanupPasses(pm); }))) {
     return failure();
   }
   if (record != nullptr && config_.recordIntermediates) {
@@ -172,11 +162,8 @@ QuantumCompilerPipeline::runPipeline(ModuleOp module,
                        totalStages);
     }
   }
-  pm.clear();
-
   // Stage 7: QCO-to-QC conversion
-  pm.addPass(createQCOToQC());
-  if (failed(pm.run(module))) {
+  if (failed(runStage([&](PassManager& pm) { pm.addPass(createQCOToQC()); }))) {
     return failure();
   }
   if (record != nullptr && config_.recordIntermediates) {
@@ -186,11 +173,8 @@ QuantumCompilerPipeline::runPipeline(ModuleOp module,
                        totalStages);
     }
   }
-  pm.clear();
-
   // Stage 8: QC canonicalization
-  addCleanupPasses(pm);
-  if (failed(pm.run(module))) {
+  if (failed(runStage([&](PassManager& pm) { addCleanupPasses(pm); }))) {
     return failure();
   }
   if (record != nullptr && config_.recordIntermediates) {
@@ -200,12 +184,10 @@ QuantumCompilerPipeline::runPipeline(ModuleOp module,
                        totalStages);
     }
   }
-  pm.clear();
-
   // Stage 9: QC-to-QIR conversion (optional)
   if (config_.convertToQIR) {
-    pm.addPass(createQCToQIR());
-    if (failed(pm.run(module))) {
+    if (failed(
+            runStage([&](PassManager& pm) { pm.addPass(createQCToQIR()); }))) {
       return failure();
     }
     if (record != nullptr && config_.recordIntermediates) {
@@ -215,11 +197,8 @@ QuantumCompilerPipeline::runPipeline(ModuleOp module,
                          totalStages);
       }
     }
-    pm.clear();
-
     // Stage 10: QIR canonicalization (optional)
-    addCleanupPasses(pm);
-    if (failed(pm.run(module))) {
+    if (failed(runStage([&](PassManager& pm) { addCleanupPasses(pm); }))) {
       return failure();
     }
     if (record != nullptr && config_.recordIntermediates) {

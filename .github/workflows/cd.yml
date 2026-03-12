@@ -12,11 +12,10 @@ permissions:
 jobs:
   build-sdist:
     name: 🐍 Packaging
-    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-python-packaging-sdist.yml@c54be38945ae206affae9925ecd9c346f54c71b7 # v1.17.12
+    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-python-packaging-sdist.yml@afe75175d32177a7291bbb7bd11b3276f60fc810 # v1.17.15
 
   # Builds wheels on all supported platforms using cibuildwheel.
-  # The wheels are uploaded as GitHub artifacts `dev-cibw-*` or `cibw-*`, depending on whether
-  # the workflow is triggered from a PR or a release, respectively.
+  # The wheels are uploaded as GitHub artifacts `dev-cibw-*` or `cibw-*`, depending on whether the workflow is triggered from a PR or a release.
   build-wheel:
     name: 🐍 Packaging
     strategy:
@@ -31,7 +30,7 @@ jobs:
             windows-2025,
             windows-11-arm,
           ]
-    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-python-packaging-wheel-cibuildwheel.yml@c54be38945ae206affae9925ecd9c346f54c71b7 # v1.17.12
+    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-python-packaging-wheel-cibuildwheel.yml@afe75175d32177a7291bbb7bd11b3276f60fc810 # v1.17.15
     with:
       runs-on: ${{ matrix.runs-on }}
 
@@ -45,13 +44,13 @@ jobs:
       url: https://pypi.org/p/mqt.core
     needs: [build-sdist, build-wheel]
     steps:
-      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+      - uses: actions/download-artifact@70fc10c6e5e1ce46ad2ea6f2b72d43f7d47b13c3 # v8.0.0
         with:
           pattern: cibw-*
           path: dist
           merge-multiple: true
       - name: Generate artifact attestation for sdist and wheel(s)
-        uses: actions/attest-build-provenance@96278af6caaf10aea03fd8d33a09a777ca52d62f # v3.2.0
+        uses: actions/attest@59d89421af93a897026c735860bf21b6eb4f7b26 # v4.1.0
         with:
           subject-path: dist/*
       - uses: pypa/gh-action-pypi-publish@ed0c53931b1dc9bd32cbe73a98c7f6766f8a527e # v1.13.0

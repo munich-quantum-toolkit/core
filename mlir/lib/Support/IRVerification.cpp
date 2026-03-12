@@ -10,8 +10,6 @@
 
 #include "mlir/Support/IRVerification.h"
 
-#include <cmath>
-#include <cstddef>
 #include <llvm/ADT/APFloat.h>
 #include <llvm/ADT/ArrayRef.h>
 #include <llvm/ADT/DenseMap.h>
@@ -34,6 +32,9 @@
 #include <mlir/IR/SymbolTable.h>
 #include <mlir/IR/Value.h>
 #include <mlir/Interfaces/SideEffectInterfaces.h>
+
+#include <cmath>
+#include <cstddef>
 #include <utility>
 
 using namespace mlir;

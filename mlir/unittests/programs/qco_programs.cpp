@@ -14,6 +14,7 @@
 
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/SmallVector.h>
+
 #include <numbers>
 #include <tuple>
 
@@ -1197,6 +1198,11 @@ void canonicalizeUToRy(QCOProgramBuilder& b) {
   b.u(0.456, 0., 0., q[0]);
 }
 
+void canonicalizeUToU2(QCOProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  b.u(std::numbers::pi / 2, 0.234, 0.567, q[0]);
+}
+
 void swap(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   b.swap(q[0], q[1]);
@@ -1360,6 +1366,18 @@ void inverseMultipleControlledDcx(QCOProgramBuilder& b) {
                                               targetsOut.second};
     return llvm::to_vector(llvm::concat<mlir::Value>(controlsOut, targets));
   });
+}
+
+void twoDcx(QCOProgramBuilder& b) {
+  auto q = b.allocQubitRegister(2);
+  std::tie(q[0], q[1]) = b.dcx(q[0], q[1]);
+  std::tie(q[0], q[1]) = b.dcx(q[0], q[1]);
+}
+
+void twoDcxSwappedTargets(QCOProgramBuilder& b) {
+  auto q = b.allocQubitRegister(2);
+  std::tie(q[0], q[1]) = b.dcx(q[0], q[1]);
+  std::tie(q[1], q[0]) = b.dcx(q[1], q[0]);
 }
 
 void ecr(QCOProgramBuilder& b) {
@@ -1919,10 +1937,10 @@ void tripleNestedInv(QCOProgramBuilder& b) {
     auto inner1 =
         b.inv({qubits[0], qubits[1]}, [&](mlir::ValueRange innerQubits) {
           auto inner2 = b.inv({innerQubits[0], innerQubits[1]},
-                              [&](mlir::ValueRange innerInnerQubbits) {
+                              [&](mlir::ValueRange innerInnerQubits) {
                                 auto [q0, q1] =
-                                    b.rxx(-0.123, innerInnerQubbits[0],
-                                          innerInnerQubbits[1]);
+                                    b.rxx(-0.123, innerInnerQubits[0],
+                                          innerInnerQubits[1]);
                                 return llvm::SmallVector<mlir::Value>{q0, q1};
                               });
           return llvm::SmallVector<mlir::Value>{inner2};

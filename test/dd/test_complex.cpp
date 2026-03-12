@@ -15,10 +15,11 @@
 #include "dd/RealNumber.hpp"
 #include "dd/RealNumberUniqueTable.hpp"
 
-#include <array>
-#include <cstddef>
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
+
+#include <array>
+#include <cstddef>
 #include <iomanip>
 #include <iostream>
 #include <limits>

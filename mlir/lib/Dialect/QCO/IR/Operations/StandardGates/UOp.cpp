@@ -12,13 +12,14 @@
 #include "mlir/Dialect/Utils/Utils.h"
 
 #include <Eigen/Core>
-#include <cmath>
-#include <complex>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OperationSupport.h>
 #include <mlir/IR/PatternMatch.h>
 #include <mlir/Support/LogicalResult.h>
+
+#include <cmath>
+#include <complex>
 #include <numbers>
 #include <optional>
 #include <variant>
@@ -86,6 +87,24 @@ struct ReplaceUWithRY final : OpRewritePattern<UOp> {
   }
 };
 
+/**
+ * @brief Replace U(pi / 2, phi, lambda) with U2(phi, lambda).
+ */
+struct ReplaceUWithU2 final : OpRewritePattern<UOp> {
+  using OpRewritePattern::OpRewritePattern;
+
+  LogicalResult matchAndRewrite(UOp op,
+                                PatternRewriter& rewriter) const override {
+    const auto theta = valueToDouble(op.getTheta());
+    if (!theta || std::abs(*theta - (std::numbers::pi / 2.0)) > TOLERANCE) {
+      return failure();
+    }
+    rewriter.replaceOpWithNewOp<U2Op>(op, op.getInputQubit(0), op.getPhi(),
+                                      op.getLambda());
+    return success();
+  }
+};
+
 } // namespace
 
 void UOp::build(OpBuilder& odsBuilder, OperationState& odsState, Value qubitIn,
@@ -102,7 +121,8 @@ void UOp::build(OpBuilder& odsBuilder, OperationState& odsState, Value qubitIn,
 
 void UOp::getCanonicalizationPatterns(RewritePatternSet& results,
                                       MLIRContext* context) {
-  results.add<ReplaceUWithP, ReplaceUWithRX, ReplaceUWithRY>(context);
+  results.add<ReplaceUWithP, ReplaceUWithRX, ReplaceUWithRY, ReplaceUWithU2>(
+      context);
 }
 
 std::optional<Eigen::Matrix2cd> UOp::getUnitaryMatrix() {

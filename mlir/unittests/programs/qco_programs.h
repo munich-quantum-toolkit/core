@@ -594,6 +594,9 @@ void canonicalizeUToRx(QCOProgramBuilder& b);
 /// Creates a circuit with a U gate that can be canonicalized to an RY gate.
 void canonicalizeUToRy(QCOProgramBuilder& b);
 
+/// Creates a circuit with a U gate that can be canonicalized to a U2 gate.
+void canonicalizeUToU2(QCOProgramBuilder& b);
+
 // --- SWAPOp --------------------------------------------------------------- //
 
 /// Creates a circuit with just a SWAP gate.
@@ -667,6 +670,12 @@ void inverseDcx(QCOProgramBuilder& b);
 
 /// Creates a circuit with an inverse modifier applied to a controlled DCX gate.
 void inverseMultipleControlledDcx(QCOProgramBuilder& b);
+
+/// Creates a circuit with two DCX gates in a row with identical targets.
+void twoDcx(QCOProgramBuilder& b);
+
+/// Creates a circuit with two DCX gates in a row with swapped targets.
+void twoDcxSwappedTargets(QCOProgramBuilder& b);
 
 // --- ECROp ---------------------------------------------------------------- //
 

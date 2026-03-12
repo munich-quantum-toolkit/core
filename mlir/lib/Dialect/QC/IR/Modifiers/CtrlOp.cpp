@@ -10,7 +10,6 @@
 
 #include "mlir/Dialect/QC/IR/QCOps.h"
 
-#include <cstddef>
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/STLFunctionalExtras.h>
 #include <llvm/Support/Casting.h>
@@ -22,6 +21,8 @@
 #include <mlir/IR/PatternMatch.h>
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/LogicalResult.h>
+
+#include <cstddef>
 
 using namespace mlir;
 using namespace mlir::qc;
@@ -140,7 +141,7 @@ void CtrlOp::build(OpBuilder& odsBuilder, OperationState& odsState,
 
   odsBuilder.setInsertionPointToStart(&block);
   bodyBuilder();
-  odsBuilder.create<YieldOp>(odsState.location);
+  YieldOp::create(odsBuilder, odsState.location);
 }
 
 LogicalResult CtrlOp::verify() {

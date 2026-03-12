@@ -17,12 +17,6 @@
 #include "ir/operations/Operation.hpp"
 #include "qasm3/Importer.hpp"
 
-#include <algorithm>
-#include <cassert>
-#include <cstddef>
-#include <cstdint>
-#include <functional>
-#include <memory>
 #include <nanobind/nanobind.h>
 #include <nanobind/stl/set.h>           // NOLINT(misc-include-cleaner)
 #include <nanobind/stl/string.h>        // NOLINT(misc-include-cleaner)
@@ -31,6 +25,13 @@
 #include <nanobind/stl/unordered_set.h> // NOLINT(misc-include-cleaner)
 #include <nanobind/stl/variant.h>       // NOLINT(misc-include-cleaner)
 #include <nanobind/stl/vector.h>        // NOLINT(misc-include-cleaner)
+
+#include <algorithm>
+#include <cassert>
+#include <cstddef>
+#include <cstdint>
+#include <functional>
+#include <memory>
 #include <stdexcept>
 #include <string>
 #include <utility>

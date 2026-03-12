@@ -11,13 +11,14 @@
 #pragma once
 
 #include <Eigen/Core>
-#include <complex>
-#include <cstddef>
 #include <llvm/ADT/StringRef.h>
 #include <llvm/Support/ErrorHandling.h>
 #include <mlir/IR/OpDefinition.h>
 #include <mlir/IR/Value.h>
 #include <mlir/IR/ValueRange.h>
+
+#include <complex>
+#include <cstddef>
 #include <optional>
 #include <type_traits>
 #include <utility>
