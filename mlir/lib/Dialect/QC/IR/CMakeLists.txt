@@ -22,7 +22,7 @@ add_mlir_dialect_library(
   MLIRQCOpsIncGen
   MLIRQCInterfacesIncGen
   LINK_LIBS
-  PUBLIC
+  PRIVATE
   MLIRIR
   MLIRInferTypeOpInterface
   MLIRSideEffectInterfaces

@@ -141,7 +141,7 @@ void CtrlOp::build(OpBuilder& odsBuilder, OperationState& odsState,
 
   odsBuilder.setInsertionPointToStart(&block);
   bodyBuilder();
-  odsBuilder.create<YieldOp>(odsState.location);
+  YieldOp::create(odsBuilder, odsState.location);
 }
 
 LogicalResult CtrlOp::verify() {

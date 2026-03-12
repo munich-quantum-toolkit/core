@@ -18,7 +18,7 @@
 - C++20
 - CMake 3.24+
 - Python 3.10+ (free-threading supported with 3.14+; Stable ABI wheels built for 3.12+ via nanobind)
-- LLVM 21.1+ for building MLIR compiler infrastructure
+- LLVM 22.1+ for building MLIR compiler infrastructure
 - GoogleTest for C++ unit tests (located in `test/` and `mlir/unittests/`)
 - `pytest` for Python unit tests (located in `test/python/`)
 - `uv` is used for managing Python installations, Python packaging, and other tools
