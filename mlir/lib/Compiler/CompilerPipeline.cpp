@@ -13,6 +13,7 @@
 #include "mlir/Conversion/QCOToQC/QCOToQC.h"
 #include "mlir/Conversion/QCToQCO/QCToQCO.h"
 #include "mlir/Conversion/QCToQIR/QCToQIR.h"
+#include "mlir/Dialect/QCO/Transforms/Passes.h"
 #include "mlir/Support/PrettyPrinting.h"
 
 #include <llvm/ADT/StringRef.h>
@@ -49,6 +50,11 @@ void QuantumCompilerPipeline::addCleanupPasses(PassManager& pm) {
   // Always run canonicalization and dead value removal
   pm.addPass(createCanonicalizerPass());
   pm.addPass(createRemoveDeadValuesPass());
+}
+
+void QuantumCompilerPipeline::addOptimizationPasses(PassManager& pm) {
+  // Always run all optimization passes for now
+  pm.addPass(qco::createGateDecompositionPass());
 }
 
 void QuantumCompilerPipeline::configurePassManager(PassManager& pm) const {
@@ -140,8 +146,7 @@ QuantumCompilerPipeline::runPipeline(ModuleOp module,
     }
   }
   // Stage 5: Optimization passes
-  // TODO: Add optimization passes
-  if (failed(runStage([&](PassManager& pm) { addCleanupPasses(pm); }))) {
+  if (failed(runStage([&](PassManager& pm) { addOptimizationPasses(pm); }))) {
     return failure();
   }
   if (record != nullptr && config_.recordIntermediates) {

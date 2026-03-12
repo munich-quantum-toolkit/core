@@ -15,7 +15,7 @@ add_mlir_library(
   PRIVATE
   MLIRQCODialect
   MLIRQCOUtils
-  ${dialect_libs}
+  MQT::CoreIR
   DEPENDS
   MLIRQCOTransformsIncGen)
 

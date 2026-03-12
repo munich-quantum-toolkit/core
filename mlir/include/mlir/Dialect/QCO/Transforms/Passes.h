@@ -16,10 +16,18 @@
 #include <mlir/Pass/Pass.h>
 #include <mlir/Pass/PassRegistry.h>
 
+namespace mlir {
+
+class RewritePatternSet;
+
+} // namespace mlir
+
 namespace mlir::qco {
 
 #define GEN_PASS_DECL
 #include "mlir/Dialect/QCO/Transforms/Passes.h.inc" // IWYU pragma: export
+
+void populateGateDecompositionPatterns(mlir::RewritePatternSet& patterns);
 
 //===----------------------------------------------------------------------===//
 // Registration
