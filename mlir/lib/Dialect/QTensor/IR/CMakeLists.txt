@@ -20,7 +20,6 @@ add_mlir_dialect_library(
   PUBLIC
   MLIRIR
   MLIRArithDialect
-  MLIRViewLikeInterface
   MLIRInferTypeOpInterface
   MLIRSideEffectInterfaces
   DISABLE_INSTALL)

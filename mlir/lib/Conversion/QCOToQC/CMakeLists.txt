@@ -20,7 +20,6 @@ add_mlir_library(
   MLIRArithDialect
   MLIRFuncDialect
   MLIRTransforms
-  MLIRViewLikeInterface
   MLIRFuncTransforms
   DISABLE_INSTALL)
 

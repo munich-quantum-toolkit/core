@@ -18,7 +18,6 @@
 #pragma clang diagnostic ignored "-Wambiguous-reversed-operator"
 #endif
 #include <mlir/Interfaces/InferTypeOpInterface.h>
-#include <mlir/Interfaces/ViewLikeInterface.h>
 #ifdef __clang__
 #pragma clang diagnostic pop
 #endif
