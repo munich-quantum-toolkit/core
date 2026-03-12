@@ -82,7 +82,7 @@ def QTensor_AllocOp : QTensorOp<"alloc", [
         Allocates a qubit tensor with the given size and returns the allocated tensor.
         The qubits are initialized to the |0> state.
 
-        Example :
+        Example:
         ```mlir
         %qtensor = qtensor.alloc(3) : tensor<3x!qco.qubit>
         ```
@@ -126,14 +126,11 @@ def QTensor_FromElementsOp : QTensorOp<"from_elements", [
   ]> {
     let summary = "tensor from elements operation";
     let description = [{
-        The `qtensor.from_elements` is a wrapper operation for the `tensor.from_elements` operation
-        of the tensor dialect. This operation creates a tensor using the operands as its values.
+        The `qtensor.from_elements` operation is a wrapper operation of the `tensor.from_elements` operation.
+        This operation creates a tensor using the operands as its values.
 
         Example:
-
-        ```mlir
-        %tensor = qtensor.from_elements %q0, %q1, %q2 :  tensor<3x!qco.qubit>
-        ```
+        
     }];
 
     let arguments = (ins Variadic<AnyType>:$elements);
