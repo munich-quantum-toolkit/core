@@ -40,15 +40,15 @@ namespace mlir::qco {
  * multiplication.
  */
 struct MergeRotationGatesPattern final
-    : mlir::OpInterfaceRewritePattern<UnitaryOpInterface> {
-  explicit MergeRotationGatesPattern(mlir::MLIRContext* context)
+    : OpInterfaceRewritePattern<UnitaryOpInterface> {
+  explicit MergeRotationGatesPattern(MLIRContext* context)
       : OpInterfaceRewritePattern(context) {}
 
   struct Quaternion {
-    mlir::Value w;
-    mlir::Value x;
-    mlir::Value y;
-    mlir::Value z;
+    Value w;
+    Value x;
+    Value y;
+    Value z;
   };
 
   enum class RotationAxis : std::uint8_t { X, Y, Z };
@@ -59,8 +59,8 @@ struct MergeRotationGatesPattern final
    * @param op The operation to check
    * @return True if mergeable, false otherwise
    */
-  static bool isMergeable(mlir::Operation* op) {
-    return mlir::isa<RXOp, RYOp, RZOp, UOp>(op);
+  static bool isMergeable(Operation* op) {
+    return isa<RXOp, RYOp, RZOp, UOp>(op);
   }
 
   /**
@@ -74,15 +74,13 @@ struct MergeRotationGatesPattern final
    * @param b The second gate
    * @return True if quaternion-based merging should be used, false otherwise
    */
-  [[nodiscard]] static bool areQuaternionMergeable(mlir::Operation& a,
-                                                   mlir::Operation& b) {
+  [[nodiscard]] static bool areQuaternionMergeable(Operation& a, Operation& b) {
     if (!isMergeable(&a) || !isMergeable(&b)) {
       return false;
     }
 
     // Different gate types OR both are U gates
-    return (a.getName() != b.getName()) ||
-           (mlir::isa<UOp>(a) && mlir::isa<UOp>(b));
+    return (a.getName() != b.getName()) || (isa<UOp>(a) && isa<UOp>(b));
   }
 
   /**
@@ -92,8 +90,8 @@ struct MergeRotationGatesPattern final
    * @return The rotation axis, or std::nullopt if the operation is not a
    *         single-axis rotation gate (RX, RY, RZ)
    */
-  static std::optional<RotationAxis> getRotationAxis(mlir::Operation* op) {
-    return llvm::TypeSwitch<mlir::Operation*, std::optional<RotationAxis>>(op)
+  static std::optional<RotationAxis> getRotationAxis(Operation* op) {
+    return llvm::TypeSwitch<Operation*, std::optional<RotationAxis>>(op)
         .Case<RXOp>([](auto) { return RotationAxis::X; })
         .Case<RYOp>([](auto) { return RotationAxis::Y; })
         .Case<RZOp>([](auto) { return RotationAxis::Z; })
@@ -116,24 +114,24 @@ struct MergeRotationGatesPattern final
    * @param rewriter Pattern rewriter for creating new operations
    * @return Quaternion representing the rotation
    */
-  static Quaternion createAxisQuaternion(mlir::Value angle, RotationAxis axis,
-                                         mlir::Location loc,
-                                         mlir::PatternRewriter& rewriter) {
+  static Quaternion createAxisQuaternion(Value angle, RotationAxis axis,
+                                         Location loc,
+                                         PatternRewriter& rewriter) {
     auto floatType = angle.getType();
 
     // constant 0.0
     auto zeroAttr = rewriter.getFloatAttr(floatType, 0.0);
-    auto zero = rewriter.create<mlir::arith::ConstantOp>(loc, zeroAttr);
+    auto zero = rewriter.create<arith::ConstantOp>(loc, zeroAttr);
 
     // constant 2.0
     auto twoAttr = rewriter.getFloatAttr(floatType, 2.0);
-    auto two = rewriter.create<mlir::arith::ConstantOp>(loc, twoAttr);
+    auto two = rewriter.create<arith::ConstantOp>(loc, twoAttr);
 
-    auto half = rewriter.create<mlir::arith::DivFOp>(loc, angle, two);
+    auto half = rewriter.create<arith::DivFOp>(loc, angle, two);
     // cos(angle/2)
-    auto cos = rewriter.create<mlir::math::CosOp>(loc, floatType, half);
+    auto cos = rewriter.create<math::CosOp>(loc, floatType, half);
     // sin(angle/2)
-    auto sin = rewriter.create<mlir::math::SinOp>(loc, floatType, half);
+    auto sin = rewriter.create<math::SinOp>(loc, floatType, half);
 
     switch (axis) {
     case RotationAxis::X:
@@ -156,8 +154,8 @@ struct MergeRotationGatesPattern final
    * @return Quaternion representing the rotation gate
    */
   static Quaternion quaternionFromRotation(UnitaryOpInterface op,
-                                           mlir::PatternRewriter& rewriter) {
-    if (mlir::isa<UOp>(op)) {
+                                           PatternRewriter& rewriter) {
+    if (isa<UOp>(op)) {
       return quaternionFromUGate(op, rewriter);
     }
 
@@ -188,44 +186,44 @@ struct MergeRotationGatesPattern final
    */
   static Quaternion hamiltonProduct(Quaternion q1, Quaternion q2,
                                     UnitaryOpInterface op,
-                                    mlir::PatternRewriter& rewriter) {
+                                    PatternRewriter& rewriter) {
     auto loc = op->getLoc();
 
     // wRes = w1w2 - x1x2 - y1y2 - z1z2
-    auto w1w2 = rewriter.create<mlir::arith::MulFOp>(loc, q1.w, q2.w);
-    auto x1x2 = rewriter.create<mlir::arith::MulFOp>(loc, q1.x, q2.x);
-    auto y1y2 = rewriter.create<mlir::arith::MulFOp>(loc, q1.y, q2.y);
-    auto z1z2 = rewriter.create<mlir::arith::MulFOp>(loc, q1.z, q2.z);
-    auto wTemp1 = rewriter.create<mlir::arith::SubFOp>(loc, w1w2, x1x2);
-    auto wTemp2 = rewriter.create<mlir::arith::SubFOp>(loc, wTemp1, y1y2);
-    auto wRes = rewriter.create<mlir::arith::SubFOp>(loc, wTemp2, z1z2);
+    auto w1w2 = rewriter.create<arith::MulFOp>(loc, q1.w, q2.w);
+    auto x1x2 = rewriter.create<arith::MulFOp>(loc, q1.x, q2.x);
+    auto y1y2 = rewriter.create<arith::MulFOp>(loc, q1.y, q2.y);
+    auto z1z2 = rewriter.create<arith::MulFOp>(loc, q1.z, q2.z);
+    auto wTemp1 = rewriter.create<arith::SubFOp>(loc, w1w2, x1x2);
+    auto wTemp2 = rewriter.create<arith::SubFOp>(loc, wTemp1, y1y2);
+    auto wRes = rewriter.create<arith::SubFOp>(loc, wTemp2, z1z2);
 
     // xRes = w1x2 + x1w2 + y1z2 - z1y2
-    auto w1x2 = rewriter.create<mlir::arith::MulFOp>(loc, q1.w, q2.x);
-    auto x1w2 = rewriter.create<mlir::arith::MulFOp>(loc, q1.x, q2.w);
-    auto y1z2 = rewriter.create<mlir::arith::MulFOp>(loc, q1.y, q2.z);
-    auto z1y2 = rewriter.create<mlir::arith::MulFOp>(loc, q1.z, q2.y);
-    auto xTemp1 = rewriter.create<mlir::arith::AddFOp>(loc, w1x2, x1w2);
-    auto xTemp2 = rewriter.create<mlir::arith::AddFOp>(loc, xTemp1, y1z2);
-    auto xRes = rewriter.create<mlir::arith::SubFOp>(loc, xTemp2, z1y2);
+    auto w1x2 = rewriter.create<arith::MulFOp>(loc, q1.w, q2.x);
+    auto x1w2 = rewriter.create<arith::MulFOp>(loc, q1.x, q2.w);
+    auto y1z2 = rewriter.create<arith::MulFOp>(loc, q1.y, q2.z);
+    auto z1y2 = rewriter.create<arith::MulFOp>(loc, q1.z, q2.y);
+    auto xTemp1 = rewriter.create<arith::AddFOp>(loc, w1x2, x1w2);
+    auto xTemp2 = rewriter.create<arith::AddFOp>(loc, xTemp1, y1z2);
+    auto xRes = rewriter.create<arith::SubFOp>(loc, xTemp2, z1y2);
 
     // yRes = w1y2 - x1z2 + y1w2 + z1x2
-    auto w1y2 = rewriter.create<mlir::arith::MulFOp>(loc, q1.w, q2.y);
-    auto x1z2 = rewriter.create<mlir::arith::MulFOp>(loc, q1.x, q2.z);
-    auto y1w2 = rewriter.create<mlir::arith::MulFOp>(loc, q1.y, q2.w);
-    auto z1x2 = rewriter.create<mlir::arith::MulFOp>(loc, q1.z, q2.x);
-    auto yTemp1 = rewriter.create<mlir::arith::SubFOp>(loc, w1y2, x1z2);
-    auto yTemp2 = rewriter.create<mlir::arith::AddFOp>(loc, yTemp1, y1w2);
-    auto yRes = rewriter.create<mlir::arith::AddFOp>(loc, yTemp2, z1x2);
+    auto w1y2 = rewriter.create<arith::MulFOp>(loc, q1.w, q2.y);
+    auto x1z2 = rewriter.create<arith::MulFOp>(loc, q1.x, q2.z);
+    auto y1w2 = rewriter.create<arith::MulFOp>(loc, q1.y, q2.w);
+    auto z1x2 = rewriter.create<arith::MulFOp>(loc, q1.z, q2.x);
+    auto yTemp1 = rewriter.create<arith::SubFOp>(loc, w1y2, x1z2);
+    auto yTemp2 = rewriter.create<arith::AddFOp>(loc, yTemp1, y1w2);
+    auto yRes = rewriter.create<arith::AddFOp>(loc, yTemp2, z1x2);
 
     // zRes = w1z2 + x1y2 - y1x2 + z1w2
-    auto w1z2 = rewriter.create<mlir::arith::MulFOp>(loc, q1.w, q2.z);
-    auto x1y2 = rewriter.create<mlir::arith::MulFOp>(loc, q1.x, q2.y);
-    auto y1x2 = rewriter.create<mlir::arith::MulFOp>(loc, q1.y, q2.x);
-    auto z1w2 = rewriter.create<mlir::arith::MulFOp>(loc, q1.z, q2.w);
-    auto zTemp1 = rewriter.create<mlir::arith::AddFOp>(loc, w1z2, x1y2);
-    auto zTemp2 = rewriter.create<mlir::arith::SubFOp>(loc, zTemp1, y1x2);
-    auto zRes = rewriter.create<mlir::arith::AddFOp>(loc, zTemp2, z1w2);
+    auto w1z2 = rewriter.create<arith::MulFOp>(loc, q1.w, q2.z);
+    auto x1y2 = rewriter.create<arith::MulFOp>(loc, q1.x, q2.y);
+    auto y1x2 = rewriter.create<arith::MulFOp>(loc, q1.y, q2.x);
+    auto z1w2 = rewriter.create<arith::MulFOp>(loc, q1.z, q2.w);
+    auto zTemp1 = rewriter.create<arith::AddFOp>(loc, w1z2, x1y2);
+    auto zTemp2 = rewriter.create<arith::SubFOp>(loc, zTemp1, y1x2);
+    auto zRes = rewriter.create<arith::AddFOp>(loc, zTemp2, z1w2);
 
     return {.w = wRes, .x = xRes, .y = yRes, .z = zRes};
   }
@@ -247,7 +245,7 @@ struct MergeRotationGatesPattern final
    * @return Quaternion representing the u-gate
    */
   static Quaternion quaternionFromUGate(UnitaryOpInterface op,
-                                        mlir::PatternRewriter& rewriter) {
+                                        PatternRewriter& rewriter) {
     auto loc = op->getLoc();
 
     // U gate uses ZYZ decomposition:
@@ -288,99 +286,92 @@ struct MergeRotationGatesPattern final
    * @param rewriter Pattern rewriter for creating new operations
    * @return U-gate equivalent to the quaternion rotation
    */
-  static UnitaryOpInterface
-  uGateFromQuaternion(Quaternion q, UnitaryOpInterface op,
-                      mlir::PatternRewriter& rewriter) {
+  static UnitaryOpInterface uGateFromQuaternion(Quaternion q,
+                                                UnitaryOpInterface op,
+                                                PatternRewriter& rewriter) {
     auto loc = op->getLoc();
 
     auto floatType = op.getParameter(0).getType();
     // constant -1.0
     auto negOneAttr = rewriter.getFloatAttr(floatType, -1.0);
-    auto negOne = rewriter.create<mlir::arith::ConstantOp>(loc, negOneAttr);
+    auto negOne = rewriter.create<arith::ConstantOp>(loc, negOneAttr);
     // constant 0.0
     auto zeroAttr = rewriter.getFloatAttr(floatType, 0.0);
-    auto zero = rewriter.create<mlir::arith::ConstantOp>(loc, zeroAttr);
+    auto zero = rewriter.create<arith::ConstantOp>(loc, zeroAttr);
     // constant 1.0
     auto oneAttr = rewriter.getFloatAttr(floatType, 1.0);
-    auto one = rewriter.create<mlir::arith::ConstantOp>(loc, oneAttr);
+    auto one = rewriter.create<arith::ConstantOp>(loc, oneAttr);
     // constant 2.0
     auto twoAttr = rewriter.getFloatAttr(floatType, 2.0);
-    auto two = rewriter.create<mlir::arith::ConstantOp>(loc, twoAttr);
+    auto two = rewriter.create<arith::ConstantOp>(loc, twoAttr);
     // constant epsilon (boundary around gimbal lock positions)
     auto epsAttr = rewriter.getFloatAttr(floatType, 1e-7);
-    auto eps = rewriter.create<mlir::arith::ConstantOp>(loc, epsAttr);
+    auto eps = rewriter.create<arith::ConstantOp>(loc, epsAttr);
     // constant PI
     auto piAttr = rewriter.getFloatAttr(floatType, std::numbers::pi);
-    auto pi = rewriter.create<mlir::arith::ConstantOp>(loc, piAttr);
+    auto pi = rewriter.create<arith::ConstantOp>(loc, piAttr);
 
     // calculate angle beta (for y-rotation)
     // beta = acos(2 * (w^2 + z^2) - 1)
     // NOTE: the term (2 * (w^2 + z^2) - 1) is clamped to [-1, 1],
     // otherwise acos could produce NaN.
-    auto ww = rewriter.create<mlir::arith::MulFOp>(loc, q.w, q.w);
-    auto zz = rewriter.create<mlir::arith::MulFOp>(loc, q.z, q.z);
-    auto bTemp1 = rewriter.create<mlir::arith::AddFOp>(loc, ww, zz);
-    auto bTemp2 = rewriter.create<mlir::arith::MulFOp>(loc, two, bTemp1);
-    auto bTemp3 = rewriter.create<mlir::arith::SubFOp>(loc, bTemp2, one);
-    auto clampedLow =
-        rewriter.create<mlir::arith::MaximumFOp>(loc, bTemp3, negOne);
-    auto clamped =
-        rewriter.create<mlir::arith::MinimumFOp>(loc, clampedLow, one);
-    auto beta = rewriter.create<mlir::math::AcosOp>(loc, clamped);
+    auto ww = rewriter.create<arith::MulFOp>(loc, q.w, q.w);
+    auto zz = rewriter.create<arith::MulFOp>(loc, q.z, q.z);
+    auto bTemp1 = rewriter.create<arith::AddFOp>(loc, ww, zz);
+    auto bTemp2 = rewriter.create<arith::MulFOp>(loc, two, bTemp1);
+    auto bTemp3 = rewriter.create<arith::SubFOp>(loc, bTemp2, one);
+    auto clampedLow = rewriter.create<arith::MaximumFOp>(loc, bTemp3, negOne);
+    auto clamped = rewriter.create<arith::MinimumFOp>(loc, clampedLow, one);
+    auto beta = rewriter.create<math::AcosOp>(loc, clamped);
 
     // intermediates to check for gimbal lock (|beta| and |beta - PI|)
-    auto absBeta = rewriter.create<mlir::math::AbsFOp>(loc, beta);
-    auto betaMinusPi = rewriter.create<mlir::arith::SubFOp>(loc, beta, pi);
-    auto absBetaMinusPi = rewriter.create<mlir::math::AbsFOp>(loc, betaMinusPi);
+    auto absBeta = rewriter.create<math::AbsFOp>(loc, beta);
+    auto betaMinusPi = rewriter.create<arith::SubFOp>(loc, beta, pi);
+    auto absBetaMinusPi = rewriter.create<math::AbsFOp>(loc, betaMinusPi);
 
     // safe1 = beta not within boundary eps around 0:
     // |beta| >= eps
-    auto safe1 = rewriter.create<mlir::arith::CmpFOp>(
-        loc, mlir::arith::CmpFPredicate::OGE, absBeta, eps);
+    auto safe1 = rewriter.create<arith::CmpFOp>(loc, arith::CmpFPredicate::OGE,
+                                                absBeta, eps);
     // safe2 = beta not within boundary eps around PI: |beta-pi| >= eps
-    auto safe2 = rewriter.create<mlir::arith::CmpFOp>(
-        loc, mlir::arith::CmpFPredicate::OGE, absBetaMinusPi, eps);
+    auto safe2 = rewriter.create<arith::CmpFOp>(loc, arith::CmpFPredicate::OGE,
+                                                absBetaMinusPi, eps);
     // is safe (not in gimbal lock) when both hold (safe1 AND safe2)
-    auto safe = rewriter.create<mlir::arith::AndIOp>(loc, safe1, safe2);
+    auto safe = rewriter.create<arith::AndIOp>(loc, safe1, safe2);
 
     // intermediate angles for z-rotations alpha and gamma
     // theta+ = atan2(z, w)
     // theta- = atan2(-x, y)
-    auto xMinus = rewriter.create<mlir::arith::NegFOp>(loc, q.x);
-    auto thetaPlus = rewriter.create<mlir::math::Atan2Op>(loc, q.z, q.w);
-    auto thetaMinus = rewriter.create<mlir::math::Atan2Op>(loc, xMinus, q.y);
+    auto xMinus = rewriter.create<arith::NegFOp>(loc, q.x);
+    auto thetaPlus = rewriter.create<math::Atan2Op>(loc, q.z, q.w);
+    auto thetaMinus = rewriter.create<math::Atan2Op>(loc, xMinus, q.y);
 
     // intermediate angles for gimbal lock cases
     // twoTheta+ = 2 * theta+
     // twoTheta- = 2 * theta-
-    auto twoThetaPlus =
-        rewriter.create<mlir::arith::MulFOp>(loc, two, thetaPlus);
-    auto twoThetaMinus =
-        rewriter.create<mlir::arith::MulFOp>(loc, two, thetaMinus);
+    auto twoThetaPlus = rewriter.create<arith::MulFOp>(loc, two, thetaPlus);
+    auto twoThetaMinus = rewriter.create<arith::MulFOp>(loc, two, thetaMinus);
 
     // Safe Case (no gimbal lock):
     // alphaSafe = theta+ + theta-
     // gammaSafe = theta+ - theta-
-    auto alphaSafe =
-        rewriter.create<mlir::arith::AddFOp>(loc, thetaPlus, thetaMinus);
-    auto gammaSafe =
-        rewriter.create<mlir::arith::SubFOp>(loc, thetaPlus, thetaMinus);
+    auto alphaSafe = rewriter.create<arith::AddFOp>(loc, thetaPlus, thetaMinus);
+    auto gammaSafe = rewriter.create<arith::SubFOp>(loc, thetaPlus, thetaMinus);
 
     // Unsafe Case (gimbal lock):
     // when b = 0  then alpha = 2 * (atan2(z,w))
     // when b = PI then alpha = 2 * (atan2(-x, y))
     // gamma is set to zero in both cases
-    auto alphaUnsafe = rewriter.create<mlir::arith::SelectOp>(
+    auto alphaUnsafe = rewriter.create<arith::SelectOp>(
         loc, safe1, twoThetaMinus, twoThetaPlus);
 
     // TODO: could add some normalization here for alpha and gamma otherwise
     // they can be outside of [-PI, PI].
 
     // choose correct alpha and gamma whether safe or not
-    auto alpha = rewriter.create<mlir::arith::SelectOp>(loc, safe, alphaSafe,
-                                                        alphaUnsafe);
-    auto gamma =
-        rewriter.create<mlir::arith::SelectOp>(loc, safe, gammaSafe, zero);
+    auto alpha =
+        rewriter.create<arith::SelectOp>(loc, safe, alphaSafe, alphaUnsafe);
+    auto gamma = rewriter.create<arith::SelectOp>(loc, safe, gammaSafe, zero);
 
     return rewriter.create<UOp>(loc, op.getInputQubit(0), beta.getResult(),
                                 alpha.getResult(), gamma.getResult());
@@ -399,7 +390,7 @@ struct MergeRotationGatesPattern final
    */
   static UnitaryOpInterface
   createOpQuaternionMergedAngle(UnitaryOpInterface op, UnitaryOpInterface user,
-                                mlir::PatternRewriter& rewriter) {
+                                PatternRewriter& rewriter) {
     auto q1 = quaternionFromRotation(op, rewriter);
     auto q2 = quaternionFromRotation(user, rewriter);
     auto qHam = hamiltonProduct(q2, q1, op, rewriter);
@@ -418,22 +409,21 @@ struct MergeRotationGatesPattern final
    * @param rewriter Pattern rewriter for applying transformations
    * @return success() if gates were merged, failure() otherwise
    */
-  mlir::LogicalResult
-  matchAndRewrite(UnitaryOpInterface op,
-                  mlir::PatternRewriter& rewriter) const override {
+  LogicalResult matchAndRewrite(UnitaryOpInterface op,
+                                PatternRewriter& rewriter) const override {
     // QCO operations cannot contain control qubits, so no need to check for
     // them
     if (!op->hasOneUse()) {
-      return mlir::failure();
+      return failure();
     }
 
     const auto& users = op->getUsers();
     auto* userOP = *users.begin();
 
     if (!areQuaternionMergeable(*op, *userOP)) {
-      return mlir::failure();
+      return failure();
     }
-    auto user = mlir::dyn_cast<UnitaryOpInterface>(userOP);
+    auto user = dyn_cast<UnitaryOpInterface>(userOP);
     assert(user && "Cannot cast to UnitaryOpInterface, mergeable gates must "
                    "implement UnitaryOpInterface");
 
@@ -446,7 +436,7 @@ struct MergeRotationGatesPattern final
 
     // Erase op
     rewriter.eraseOp(op);
-    return mlir::success();
+    return success();
   }
 };
 
@@ -455,8 +445,7 @@ struct MergeRotationGatesPattern final
  *
  * @param patterns The pattern set to populate
  */
-static void
-populateMergeRotationGatesPatterns(mlir::RewritePatternSet& patterns) {
+static void populateMergeRotationGatesPatterns(RewritePatternSet& patterns) {
   patterns.add<MergeRotationGatesPattern>(patterns.getContext());
 }
 
@@ -475,11 +464,11 @@ struct MergeRotationGates final
     auto* ctx = &getContext();
 
     // Define the set of patterns to use.
-    mlir::RewritePatternSet patterns(ctx);
+    RewritePatternSet patterns(ctx);
     populateMergeRotationGatesPatterns(patterns);
 
     // Apply patterns in an iterative and greedy manner.
-    if (mlir::failed(mlir::applyPatternsGreedily(op, std::move(patterns)))) {
+    if (failed(applyPatternsGreedily(op, std::move(patterns)))) {
       signalPassFailure();
     }
   }
