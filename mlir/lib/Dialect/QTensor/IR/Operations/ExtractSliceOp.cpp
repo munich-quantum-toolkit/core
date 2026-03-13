@@ -73,9 +73,8 @@ LogicalResult ExtractSliceOp::verify() {
     return emitOpError("Result element type must match source element type");
   }
 
-  if (outSourceType.getElementType() != sourceType.getElementType()) {
-    return emitOpError(
-        "OutSource tensor element type must match source element type");
+  if (outSourceType != sourceType) {
+    return emitOpError("Outsource tensor type must match source tensor type");
   }
 
   if (constSize && !ShapedType::isDynamic(resultType.getDimSize(0))) {

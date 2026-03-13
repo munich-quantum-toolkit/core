@@ -71,11 +71,6 @@ Value QCOProgramBuilder::intConstant(const int64_t value) {
   return arith::ConstantOp::create(*this, getI64IntegerAttr(value)).getResult();
 }
 
-Value QCOProgramBuilder::indexConstant(const int64_t value) {
-  checkFinalized();
-  return arith::ConstantOp::create(*this, getIndexAttr(value)).getResult();
-}
-
 Value QCOProgramBuilder::allocQubit() {
   checkFinalized();
 
