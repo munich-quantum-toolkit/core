@@ -80,9 +80,121 @@ Now that we've got all the fundamentals covered, we can move on and explore how 
 
 ## The MQT Compiler Collection
 
-### The QC and QCO Dialects
+The MQT Compiler Collection provides tools to optimize and transpile quantum programs. This section outlines how we utilize the MLIR framework as well as its compilation infrastructure to implement these tasks.
 
-The MQT Compiler Collection defines two dialects in MLIR, each with a distinctive purpose.
+### Quantum Dialects
+
+The MQT Compiler Collection defines two dialects in MLIR, each with a distinctive purpose. While the Quantum Circuit (QC) dialect is great for exchanging with other formats (such as OpenQASM), the Quantum Circuit Optimization (QCO) dialect is - as the name suggests - specifically designed for optimizations. Let's explore their differences.
+
+The following snippet allocates and subsequently deallocates one qubit using the `alloc` and `dealloc` operations, respectively.
+
+::::{grid} 2
+:::{grid-item}
+
+```{code-block} mlir
+//          QC
+%q0 = qc.alloc : !qc.qubit
+qc.dealloc %q0 : !qc.qubit
+```
+
+:::
+
+:::{grid-item}
+
+```mlir
+//            QCO
+%q0_0 = qco.alloc : !qco.qubit
+qco.dealloc %q0_0 : !qco.qubit
+```
+
+:::
+::::
+
+Alternatively, we can target specific hardware qubits by using the `static` operation.
+
+::::{grid} 2
+:::{grid-item}
+
+```{code-block} mlir
+//          QC
+%q0 = qc.static 1 : !qc.qubit
+qc.dealloc %q0 : !qc.qubit
+```
+
+:::
+
+:::{grid-item}
+
+```mlir
+//            QCO
+%q0_0 = qco.static 1 : !qco.qubit
+qco.dealloc %q0_0 : !qco.qubit
+```
+
+:::
+::::
+
+So far so good. No visible differences. Next, we want to apply the single-qubit Hadamard gate.
+
+::::{grid} 2
+:::{grid-item}
+
+```{code-block} mlir
+//          QC
+%q0 = qc.alloc : !qc.qubit
+qc.h %q0 : !qc.qubit
+qc.dealloc %q0 : !qc.qubit
+```
+
+:::
+
+:::{grid-item}
+
+```mlir
+//            QCO
+%q0_0 = qco.alloc : !qco.qubit
+%q0_1 = qco.h %q0_0 : !qco.qubit -> !qco.qubit
+qco.dealloc %q0_1 : !qco.qubit
+```
+
+:::
+::::
+
+Notice how the Hadamard operation in the QCO dialect consumes and produces SSA values, while the operation in the QC dialect simply references the targeted qubit. We say that the QC dialect uses _reference semantics_ whereas the QCO dialect uses _value semantics_.
+
+Instead of using the Hadamard directly, we can also apply the transformation in terms of X and Y rotations using parameterized gates.
+
+::::{grid} 2
+:::{grid-item}
+
+```{code-block} mlir
+//          QC
+%theta = arith.constant 1.570796 : f64
+%phi = arith.constant 3.141593 : f64
+
+%q0 = qc.alloc : !qc.qubit
+qc.ry(%theta) %q0 : !qc.qubit
+qc.rx(%phi) %q0 : !qc.qubit
+qc.dealloc %q0 : !qc.qubit
+```
+
+:::
+
+:::{grid-item}
+
+```mlir
+//            QCO
+%theta = arith.constant 1.570796 : f64
+%phi = arith.constant 3.141593 : f64
+
+%q0_0 = qco.alloc : !qco.qubit
+%q0_1 = qco.ry(%theta) %q0_0 : !qco.qubit -> !qco.qubit
+%q0_2 = qco.rx(%phi) %q0_1 : !qco.qubit -> !qco.qubit
+qco.dealloc %q0_2 : !qco.qubit
+```
+
+:::
+::::
 
 ### Compilation Flow
 
