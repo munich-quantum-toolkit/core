@@ -251,7 +251,7 @@ QCOProgramBuilder::qtensorExtract(Value tensor,
 
 std::pair<Value, Value> QCOProgramBuilder::qtensorExtractSlice(
     Value tensor, const std::variant<int64_t, Value>& offset,
-    const std::variant<int64_t, Value>& sizes) {
+    const std::variant<int64_t, Value>& size) {
   checkFinalized();
 
   auto tensorType = llvm::dyn_cast<RankedTensorType>(tensor.getType());
@@ -264,7 +264,7 @@ std::pair<Value, Value> QCOProgramBuilder::qtensorExtractSlice(
   }
 
   auto offsetValue = utils::variantToValue(*this, getLoc(), offset);
-  auto sizesValue = utils::variantToValue(*this, getLoc(), sizes);
+  auto sizesValue = utils::variantToValue(*this, getLoc(), size);
   auto extractSliceOp =
       qtensor::ExtractSliceOp::create(*this, tensor, offsetValue, sizesValue);
   auto slicedTensor = extractSliceOp.getResult();
@@ -302,7 +302,7 @@ Value QCOProgramBuilder::qtensorInsert(
 
 Value QCOProgramBuilder::qtensorInsertSlice(
     Value source, Value dest, const std::variant<int64_t, Value>& offset,
-    const std::variant<int64_t, Value>& sizes) {
+    const std::variant<int64_t, Value>& size) {
   checkFinalized();
 
   auto sourceTensorType = llvm::dyn_cast<RankedTensorType>(source.getType());
@@ -324,7 +324,7 @@ Value QCOProgramBuilder::qtensorInsertSlice(
   }
 
   auto offsetValue = utils::variantToValue(*this, getLoc(), offset);
-  auto sizesValue = utils::variantToValue(*this, getLoc(), sizes);
+  auto sizesValue = utils::variantToValue(*this, getLoc(), size);
   auto insertSliceOp = qtensor::InsertSliceOp::create(*this, source, dest,
                                                       offsetValue, sizesValue);
 

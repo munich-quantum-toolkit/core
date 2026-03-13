@@ -273,7 +273,7 @@ public:
    */
   std::pair<Value, Value>
   qtensorExtractSlice(Value tensor, const std::variant<int64_t, Value>& offset,
-                      const std::variant<int64_t, Value>& sizes);
+                      const std::variant<int64_t, Value>& size);
 
   /**
    * @brief Insert a qubit into a tensor
@@ -312,7 +312,7 @@ public:
    */
   Value qtensorInsertSlice(Value sourceTensor, Value destTensor,
                            const std::variant<int64_t, Value>& offset,
-                           const std::variant<int64_t, Value>& sizes);
+                           const std::variant<int64_t, Value>& size);
 
   /**
    * @brief Explicitly deallocate a tensor
