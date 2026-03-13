@@ -196,6 +196,81 @@ qco.dealloc %q0_2 : !qco.qubit
 :::
 ::::
 
+To measure qubits use the `measure` operation.
+
+::::{grid} 2
+:::{grid-item}
+
+```{code-block} mlir
+//          QC
+%q0 = qc.alloc : !qc.qubit
+qc.h %q0 : !qc.qubit
+%c0 = qc.measure %q0 : !qc.qubit -> i1
+qc.dealloc %q0 : !qc.qubit
+```
+
+:::
+
+:::{grid-item}
+
+```mlir
+//            QCO
+%q0_0 = qco.alloc : !qco.qubit
+%q0_1 = qco.h %q0_0 : !qco.qubit -> !qco.qubit
+%q0_2, %c0 = qco.measure %q0_1 : !qco.qubit
+qco.dealloc %q0_2 : !qco.qubit
+```
+
+:::
+::::
+
+The following snippets combine all of the above to create the first Bell state in the QC and QCO dialects.
+
+::::{grid} 2
+:::{grid-item}
+
+```{code-block} mlir
+//          QC
+%q0 = qc.alloc : !qc.qubit
+%q1 = qc.alloc : !qc.qubit
+
+qc.h %q0 : !qc.qubit
+qc.ctrl(%q0) {
+    qc.x %q1 : !qc.qubit
+} : !qc.qubit
+
+%c0 = qc.measure %q0 : !qc.qubit -> i1
+%c1 = qc.measure %q1 : !qc.qubit -> i1
+
+qc.dealloc %q0 : !qc.qubit
+qc.dealloc %q1 : !qc.qubit
+```
+
+:::
+
+:::{grid-item}
+
+```mlir
+//            QCO
+%q0_0 = qco.alloc : !qco.qubit
+%q1_0 = qco.alloc : !qco.qubit
+
+%q0_1 = qco.h %q0_0 : !qco.qubit -> !qco.qubit
+%q0_2, %q1_1 = qco.ctrl(%q0_1) targets (%arg0 = %q1_0) {
+    %q0_2 = qco.x %arg0 : !qco.qubit -> !qco.qubit
+    qco.yield %q0_2
+} : ({!qco.qubit}, {!qco.qubit}) -> ({!qco.qubit}, {!qco.qubit})
+
+%q0_3, %c0 = qco.measure %q0_2 : !qco.qubit
+%q1_2, %c1 = qco.measure %q1_1 : !qco.qubit
+
+qco.dealloc %q0_3 : !qco.qubit
+qco.dealloc %q1_2 : !qco.qubit
+```
+
+:::
+::::
+
 ### Compilation Flow
 
 ## Examples Using the MQT Compiler Collection Tool
