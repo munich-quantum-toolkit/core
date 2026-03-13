@@ -11,6 +11,7 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 
 ### Added
 
+- ✨ Add Sampler and Estimator Primitives to the QDMI-Qiskit Interface ([#1507]) ([**@marcelwa**])
 - ✨ Add conversions between Jeff and QCO ([#1479], [#1548]) ([**@denialhaag**])
 - ✨ Add a `place-and-route` pass for mapping circuits to architectures with restricted topologies ([#1537], [#1547]) ([**@MatthiasReumann**])
 - ✨ Add initial infrastructure for new QC and QCO MLIR dialects
@@ -339,6 +340,7 @@ _📚 Refer to the [GitHub Release Notes](https://github.com/munich-quantum-tool
 [#1521]: https://github.com/munich-quantum-toolkit/core/pull/1521
 [#1513]: https://github.com/munich-quantum-toolkit/core/pull/1513
 [#1510]: https://github.com/munich-quantum-toolkit/core/pull/1510
+[#1507]: https://github.com/munich-quantum-toolkit/core/pull/1507
 [#1506]: https://github.com/munich-quantum-toolkit/core/pull/1506
 [#1481]: https://github.com/munich-quantum-toolkit/core/pull/1481
 [#1479]: https://github.com/munich-quantum-toolkit/core/pull/1479

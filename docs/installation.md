@@ -334,7 +334,7 @@ For detailed guidelines and workflows, see {doc}`contributing`.
     $ prek install
     ```
 
-6.  If you plan to develop for MQT Core, you will also need to install MLIR.
+6.  If you plan to contribute to MQT Core, you will also need to install MLIR.
     The section below describes how to do this.
 
 (setting-up-mlir)=
