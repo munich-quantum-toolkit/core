@@ -23,6 +23,10 @@ using namespace mlir::qtensor;
 
 LogicalResult ExtractOp::verify() {
   auto tensorType = getTensor().getType();
+  if (tensorType.getRank() != 1) {
+    return emitOpError("Tensor must be 1-D");
+  }
+
   auto tensorDim = getTensor().getType().getDimSize(0);
   auto index = getConstantIntValue(getIndex());
 

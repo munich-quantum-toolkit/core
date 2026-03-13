@@ -28,10 +28,11 @@ using namespace mlir::qtensor;
 void ExtractSliceOp::build(OpBuilder& b, OperationState& result, Value source,
                            Value offset, Value size,
                            ArrayRef<NamedAttribute> attrs) {
+  auto sourceType = cast<RankedTensorType>(source.getType());
   auto sizeValue = getConstantIntValue(size);
   auto resultType = RankedTensorType::get(
       {sizeValue ? *sizeValue : ShapedType::kDynamic},
-      cast<RankedTensorType>(source.getType()).getElementType());
+      sourceType.getElementType(), sourceType.getEncoding());
 
   result.addAttributes(attrs);
   build(b, result, {source.getType(), resultType}, source, offset, size);
@@ -41,6 +42,11 @@ LogicalResult ExtractSliceOp::verify() {
   auto sourceType = getSource().getType();
   auto resultType = getResult().getType();
   auto outSourceType = getOutSource().getType();
+  if (sourceType.getRank() != 1 || resultType.getRank() != 1 ||
+      outSourceType.getRank() != 1) {
+    return emitOpError("Tensors must be 1-D");
+  }
+
   auto srcDim = sourceType.getDimSize(0);
   auto constOffset = getConstantIntValue(getOffset());
   auto constSize = getConstantIntValue(getSize());

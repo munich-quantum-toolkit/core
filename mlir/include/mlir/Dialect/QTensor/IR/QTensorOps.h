@@ -27,15 +27,13 @@
 #include <mlir/Bytecode/BytecodeOpInterface.h>
 #include <mlir/Interfaces/SideEffectInterfaces.h>
 
-#include <variant>
-
 #define GET_OP_CLASSES
 #include "mlir/Dialect/QTensor/IR/QTensorOps.h.inc" // IWYU pragma: export
 
 namespace mlir::qtensor {
 
 /**
- * @brief Check if two values of IndexType identical.
+ * @brief Check if two values of IndexType are identical.
  *
  * @param index1 The first IndexType value.
  * @param index2 The second IndexType value.

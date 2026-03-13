@@ -229,7 +229,7 @@ public:
    *
    * @par Example:
    * ```c++
-   * auto tensor = builder.allocTensor(3);
+   * auto tensor = builder.qtensorAlloc(3);
    * ```
    * ```mlir
    * %tensor = qtensor.alloc(3) : tensor<3x!qco.qubit>
@@ -244,7 +244,7 @@ public:
    *
    * @par Example:
    * ```c++
-   * auto tensor = builder.fromElements({q0, q1, q2});
+   * auto tensor = builder.qtensorFromElements({q0, q1, q2});
    * ```
    * ```mlir
    * %tensor = qtensor.from_elements %q0, %q1, %q2 : tensor<3x!qco.qubit>
@@ -260,7 +260,7 @@ public:
    *
    * @par Example:
    * ```c++
-   * auto [outTensor, q0] = builder.extract(tensor, 0);
+   * auto [outTensor, q0] = builder.qtensorExtract(tensor, 0);
    * ```
    * ```mlir
    * %outTensor, %q0 = qtensor.extract %tensor[%c0]: tensor<3x!qco.qubit>
@@ -278,7 +278,8 @@ public:
    *
    * @par Example:
    * ```c++
-   * auto [outTensor, extractedSlice] = builder.extractSlice(tensor, 0, 2);
+   * auto [outTensor, extractedSlice] = builder.qtensorExtractSlice(tensor, 0,
+   * 2);
    * ```
    * ```mlir
    * %outTensor, %extractedSlice = qtensor.extract_slice %tensor[%c0][%c2]
@@ -298,7 +299,7 @@ public:
    *
    * @par Example:
    * ```c++
-   * auto outTensor = builder.insert(q0, tensor, 0);
+   * auto outTensor = builder.qtensorInsert(q0, tensor, 0);
    * ```
    * ```mlir
    * %outTensor = qtensor.insert %q0 into %tensor[%c0] : tensor<3x!qco.qubit>
@@ -317,7 +318,7 @@ public:
    *
    * @par Example:
    * ```c++
-   * auto outTensor = builder.insertSlice(slicedTensor, tensor, 0, 2);
+   * auto outTensor = builder.qtensorInsertSlice(slicedTensor, tensor, 0, 2);
    * ```
    * ```mlir
    * %outTensor = qtensor.insert_slice %slicedTensor into %tensor[%c0][%c2]
@@ -335,7 +336,7 @@ public:
    *
    * @par Example:
    * ```c++
-   * builder.deallocTensor(tensor);
+   * builder.qtensorDealloc(tensor);
    * ```
    * ```mlir
    * qtensor.dealloc %tensor : tensor<3x!qco.qubit>

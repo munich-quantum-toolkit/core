@@ -24,6 +24,10 @@ using namespace mlir::qtensor;
 
 LogicalResult InsertOp::verify() {
   auto destType = getDest().getType();
+  if (destType.getRank() != 1) {
+    return emitOpError("Dest tensor must be 1-D");
+  }
+
   auto dstDim = destType.getDimSize(0);
   auto index = getConstantIntValue(getIndex());
 

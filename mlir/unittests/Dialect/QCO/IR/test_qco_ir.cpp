@@ -1089,7 +1089,7 @@ INSTANTIATE_TEST_SUITE_P(
         QCOTestCase{"QTensorExtractSliceInsertSlice",
                     MQT_NAMED_BUILDER(qtensorExtractSliceInsertSlice),
                     MQT_NAMED_BUILDER(qtensorAlloc)},
-        QCOTestCase{"IQTensornsertSliceExtractSlice",
+        QCOTestCase{"QTensorInsertSliceExtractSlice",
                     MQT_NAMED_BUILDER(qtensorInsertSliceExtractSlice),
                     MQT_NAMED_BUILDER(qtensorInsertSlice)},
         QCOTestCase{
