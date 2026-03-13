@@ -22,8 +22,6 @@
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/LogicalResult.h>
 
-#include <cassert>
-
 using namespace mlir;
 using namespace mlir::qtensor;
 
@@ -55,8 +53,8 @@ LogicalResult ExtractSliceOp::verify() {
     return emitOpError("Offset must be non-negative");
   }
 
-  if (constSize && *constSize < 0) {
-    return emitOpError("Size must be non-negative");
+  if (constSize && *constSize <= 0) {
+    return emitOpError("Size must be positive");
   }
 
   if (constOffset && constSize && !ShapedType::isDynamic(srcDim)) {

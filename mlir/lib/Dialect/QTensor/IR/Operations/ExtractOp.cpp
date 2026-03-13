@@ -13,6 +13,7 @@
 
 #include <llvm/Support/Casting.h>
 #include <mlir/Dialect/Utils/StaticValueUtils.h>
+#include <mlir/IR/BuiltinTypeInterfaces.h>
 #include <mlir/IR/OpDefinition.h>
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/LogicalResult.h>
@@ -33,7 +34,7 @@ LogicalResult ExtractOp::verify() {
     if (index < 0) {
       return emitOpError("Index must be non-negative");
     }
-    if (index >= tensorDim) {
+    if (!ShapedType::isDynamic(tensorDim) && index >= tensorDim) {
       return emitOpError("Index exceeds tensor dimension");
     }
   }

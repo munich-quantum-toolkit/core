@@ -20,8 +20,6 @@
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/LogicalResult.h>
 
-#include <optional>
-
 using namespace mlir;
 using namespace mlir::qtensor;
 
@@ -45,8 +43,8 @@ LogicalResult InsertSliceOp::verify() {
     return emitOpError("Offset must be non-negative");
   }
 
-  if (constSize && *constSize < 0) {
-    return emitOpError("Size must be non-negative");
+  if (constSize && *constSize <= 0) {
+    return emitOpError("Size must be positive");
   }
 
   if (constSize && !ShapedType::isDynamic(srcDim)) {
@@ -101,13 +99,6 @@ OpFoldResult InsertSliceOp::fold(FoldAdaptor /*adaptor*/) {
     return result;
   }
 
-  // Fold InsertSliceOp if size is 0
-  if (auto constSize = getConstantIntValue(getSize())) {
-    if (*constSize == 0) {
-      return getDest();
-    }
-  }
-
   return {};
 }
 
@@ -129,7 +120,6 @@ struct CombineSubsequentInsertSliceOp final
       return failure();
     }
 
-    // Source types must match
     if (prevInsertOp.getSource().getType() !=
         insertSliceOp.getSource().getType()) {
       return failure();

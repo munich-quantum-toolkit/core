@@ -36,10 +36,10 @@ LogicalResult InsertOp::verify() {
   }
 
   if (index) {
-    if (index < 0) {
+    if (*index < 0) {
       return emitOpError("Index must be non-negative");
     }
-    if (index >= dstDim) {
+    if (!ShapedType::isDynamic(dstDim) && *index >= dstDim) {
       return emitOpError("Index exceeds tensor dimension");
     }
   }
@@ -53,10 +53,14 @@ LogicalResult InsertOp::verify() {
  */
 static Value foldInsertAfterExtract(InsertOp insertOp) {
   auto extractOp = insertOp.getScalar().getDefiningOp<ExtractOp>();
+
   if (!extractOp) {
     return nullptr;
   }
   if (insertOp.getDest() != extractOp.getOutTensor()) {
+    return nullptr;
+  }
+  if (extractOp.getTensor().getType() != insertOp.getDest().getType()) {
     return nullptr;
   }
 
@@ -89,9 +93,11 @@ struct CombineSubsequentInsertOp : public OpRewritePattern<InsertOp> {
   LogicalResult matchAndRewrite(InsertOp insertOp,
                                 PatternRewriter& rewriter) const final {
     auto prevInsertOp = insertOp.getDest().getDefiningOp<InsertOp>();
+
     if (!prevInsertOp) {
       return failure();
     }
+
     auto insertIndex = insertOp.getIndex();
     auto prevInsertIndex = prevInsertOp.getIndex();
 

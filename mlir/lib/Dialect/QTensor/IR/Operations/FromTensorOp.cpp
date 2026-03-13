@@ -14,7 +14,6 @@
 #include <llvm/Support/Casting.h>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/BuiltinTypes.h>
-#include <mlir/IR/OperationSupport.h>
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/LogicalResult.h>
 
@@ -23,9 +22,6 @@
 
 using namespace mlir;
 using namespace mlir::qtensor;
-
-// Adjusted from
-// https://github.com/llvm/llvm-project/blob/llvmorg-22.1.0/mlir/lib/Dialect/Tensor/IR/TensorOps.cpp
 
 void FromElementsOp::build(OpBuilder& builder, OperationState& result,
                            ValueRange elements) {
