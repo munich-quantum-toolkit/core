@@ -16,10 +16,10 @@ So far, this comprises conversions between QC and QCO as well as from QC to QIR.
 ```{toctree}
 :maxdepth: 2
 
+GettingStarted
 QC
 QCO
 Conversions
-GettingStarted
 ```
 
 :::{note}

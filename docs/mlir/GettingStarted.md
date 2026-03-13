@@ -1,196 +1,164 @@
-# Getting Started
+# Getting Started With the MQT Compiler Collection
 
-The Multi-Level Intermediate Representation (MLIR) project is an extensive framework to build compilers for heterogeneous hardware. The Munich Quantum Toolkit (MQT) utilizes MLIR for quantum compilation. That is, given an intermediate representation (IR) - a description - of a quantum computation, transform this representation to one that is efficiently executable on a target architecture.
+## Installing And Building
 
-This tutorial teaches you how to understand, write, and optimize quantum IR in MLIR using the infrastructure built within the MQT. Getting started with MLIR is not an easy task. Thus, we attempt to also provide a soft introduction to the fundamental concepts of MLIR.
+Make sure to visit the [installation](../installation.md) page which describes how to download the project as well as install and setup MLIR correctly. Once you have done that you can build the project via your favourite IDE or using the following commands:
 
-**Installation**
+```console
+% cmake -Bbuild \
+    -DMLIR_DIR=<path to MLIR> \
+    -DLLVM_DIR=<path to LLVM> \
+    -DCMAKE_BUILD_TYPE:STRING=Release \
+    -DBUILD_MQT_CORE_MLIR=ON
+% cd build && cmake --build . --target mqt-cc
+```
 
-If you haven't already, make sure to visit the [installation](https://mqt.readthedocs.io/projects/core/en/latest/installation.html) page which describes how to setup the project (including MLIR) correctly.
+You can verify your build by running the following command. If everything worked correctly, it should print an usage message.
 
-## Understanding Quantum IR
+```console
+% ./mlir/tools/mqt-cc/mqt-cc --help
+```
 
-Before we can optimize quantum IR, we first need to understand how to write it. Hence, this section describes how to create quantum programs in MLIR using the MQT.
+## Fundamentals
 
-### Dynamic And Static Allocation
+This section covers the basics of quantum computing and provides a soft introduction to the Multi-Level Intermediate Representation (MLIR) framework. If you are familiar with both quantum computing and MLIR, you may skip this section.
 
-The fundamental computational unit in quantum computing is the _qubit_. Consequently, at some point a quantum computation needs to allocate (and subsequently deallocate) qubits.
+### Quantum Computing
+
+### Multi-Level Intermediate Representation (MLIR)
+
+The Multi-Level Intermediate Representation (MLIR) project is an extensive framework to build compilers for heterogeneous hardware. Key to its success is the ability to represent programs at multiple levels of abstraction, as well as the capacity to _lower_ them from higher to lower levels.
+
+The core concept in MLIR are _dialects_. A dialect groups operations, types, and attributes under a common namespace. A single program may combine multiple dialects, which facilitates code reuse. For example, the structured control flow (SCF) dialect provides functionality for control flow constructs, while the arith dialect defines integer and floating point operations. Another essential dialect is the Func dialect, which let's us define and call functions.
+
+The following snippet combines the three dialects into a single program which sums up the numbers from 0 to 100.
 
 ```mlir
-/// file: dynamic-allocation.mlir
-module {
-    func.func @main() {
-        %q0 = qc.alloc : !qc.qubit
-        qc.dealloc %q0 : !qc.qubit
+func.func @main() {
+    %lb = arith.constant 0 : index
+    %ub = arith.constant 100 : index
+    %step = arith.constant 1 : index
 
-        func.return
+    %sum_0 = arith.constant 0 : i32
+    %sum = scf.for %iv = %lb to %ub step %step iter_args(%sum_iter = %sum_0) -> (i32) {
+        %1 = arith.index_cast %iv : index to i32
+        %2 = arith.addi %sum_iter, %1 : i32
+        scf.yield %2 : i32
     }
+    return
 }
 ```
 
-An allocation and deallocation defines the start and end of a qubit's logical scope or availability within a program, respectively. The snippet above allocates a dynamic qubit. That is, a qubit without a specific hardware location. To target a specific hardware qubit, we use the `static` operation and provide the respective hardware location.
+- The `func.`, `arith.`, `scf.` specifies the dialect's name. For example, `arith.constant` represents the `constant` operation from the arith dialect.
+- The percentage symbol `%` prefixes static single-assignment (SSA) values - a principle, where each variable is assigned exactly once but never reassigned. For instance, the `arith.constant` operation produces the `%lb` SSA value.
+- The `: index` and `: i32` specifies the type, where `i32` represents an 32-bit integer while `index` is a special type for loop bounds. The `arith.index_cast` operation casts the `%iv` variable with the type `index` to `i32`.
+- To return the final values after loop termination, we define loop-carried variables via the `iter_args` construct and the return type with the `->` symbol. Inside the loop body, we specify the value for the next iteration via the `scf.yield` operation.
+
+Moving beyond, the function below returns either `%a` or `%b` depending on the conditional `%cond`.
 
 ```mlir
-/// file: static-allocation.mlir
-module {
-    func.func @main() {
-        %q0 = qc.static 42 : !qc.qubit
-        qc.dealloc %q0 : !qc.qubit
-
-        func.return
-    }
+func.func @select(i32, i32, i1) -> i32 {
+^entry(%a: i32, %b: i32, %cond: i1):
+    cf.cond_br %cond, ^exit(%a: i32), ^exit(%b: i32)
+^exit(%v : i32):
+    return %v : i32
 }
 ```
 
-### Interlude: MLIR Concepts
+- The `^entry` and `^exit` define a _block_, respectively. In MLIR, a block is a list of operations. Moreover, blocks take a list of arguments in an intuitive, function-like, way.
+- The _terminator_, the last operation inside the block, determines the control flow. For instance, the `cf.cond_br` terminator jumps to the exit block with variable `%a`, if the `%cond` is `1`. Otherwise, it uses variable `%b`. The `return` operation is another example of a terminator which returns the control flow to the caller of the function.
+- A _region_ combines multiple blocks and is indicated by curly brackets.
 
-```{note}
-If you are already familiar with the fundamental concepts of MLIR, you may skip this section.
-```
-
-The short snippets above contain many fundamental concepts of MLIR.
-
-- **Dialects**: A dialect groups operations (`alloc`, `dealloc`) and types (`qubit`) under a common namespace (`qc`). The example above combines built-in dialects with custom dialects. The [`builtin`](https://mlir.llvm.org/docs/Dialects/Builtin/) dialect provides the `module` operation (the `builtin.` is usually omitted) and the [`func`](https://mlir.llvm.org/docs/Dialects/Func/) dialect contains operations to define and call functions. The custom [`qc`](./QC.md) (_"quantum circuit"_) dialect is defined in the MQT and extends the built-in ones with the necessary functionality for quantum computing.
-- **SSA Values**: Operations can consume (_"operands"_) and produce (_"results"_) values. For instance, `qc.alloc` produces the value `q0`, while `qc.dealloc` consumes it. Furthermore, values in MLIR adhere to the static single-assignment (SSA) principle, where each variable is assigned exactly once and never reassigned.
-- **Regions and Blocks**: To represent hierarchical structures, operations may contain _"regions"_. A region consists of one to many _"blocks"_ which again contain operations. For instance, the `module` operation contains one region consisting of one block that contains the `func.func` operation. A block optionally requires a _"terminator"_ that defines the end of the current block. The `func.return` operation is such a terminator. The following figure visualizes the connection between operations, regions, and blocks succinctly.
+The following figure illustrates the interplay of operations, blocks, and regions graphically.
 
 ```{image} ../_static/mlir-regions-blocks-ops.svg
-:width: 45%
+:width: 70%
 :align: center
 ```
 
-### Gates And Measurements
+Now that we've got all the fundamentals covered, we can move on and explore how the MQT Compiler Collection works.
 
-Once the qubits are allocated, we can start applying gates to implement quantum algorithms. In the following snippet we construct the first Bell state by applying a Hadamard and controlled-X gate. Subsequently, we measure both qubits which produces two values of the datatype `i1` - the MLIR-equivalent of a boolean.
+## The MQT Compiler Collection
 
-```mlir
-/// file: bell.mlir
-module {
-    func.func @main() {
-        %q0 = qc.alloc : !qc.qubit
-        %q1 = qc.alloc : !qc.qubit
+### The QC and QCO Dialects
 
-        qc.h %q0 : !qc.qubit
-        qc.ctrl(%q0) {
-            qc.x %q1 : !qc.qubit
-        } : !qc.qubit
+The MQT Compiler Collection defines two dialects in MLIR, each with a distinctive purpose.
 
-        %c0 = qc.measure %q0 : !qc.qubit -> i1
-        %c1 = qc.measure %q1 : !qc.qubit -> i1
+### Compilation Flow
 
-        qc.dealloc %q0 : !qc.qubit
-        qc.dealloc %q1 : !qc.qubit
+## Examples Using the MQT Compiler Collection Tool
 
-        func.return
-    }
-}
+This section contains examples showing you how to use the MQT Compiler Collection Tool.
+
+### Optimizing an OpenQASM Program
+
+Let's say you want to optimize the following OpenQASM program. Create a `.qasm` file and name it `ghz.qasm`:
+
+```{code-block} OpenQASM
+:lineno-start: 0
+OPENQASM 2.0;
+include "qelib1.inc";
+
+qreg q[4];
+creg c[4];
+h q[0];
+cx q[0], q[1];
+cx q[1], q[2];
+measure q[0] -> c[0];
+measure q[1] -> c[1];
+measure q[2] -> c[2];
 ```
 
-The Hadamard and X gates are of course not the only ones supported. A list of all supported unitaries can be found in the [documentation](./QC.md#operations).
-
-### Modifiers
-
-Alongside operations representing unitary gates, the QC dialect also provides modifier operations. For instance, in the snippet above, the `qc.ctrl` operation is used to represent the controlled-X operation. Thanks to modifiers, we can represent arbitrary (multi-)controlled gates without having to explicitly define them.
-
-```mlir
-module {
-    func.func @main() {
-        // ... (IR above)
-        qc.ctrl(%q0, %q2) {
-            qc.s %q1 : !qc.qubit
-        } : !qc.qubit, !qc.qubit
-        // (IR below) ...
-    }
-}
-```
-
-Another example of a modifier is the `qc.inv` operation, which inverts (complex conjugate transpose) a unitary.
-
-```mlir
-module {
-    func.func @main() {
-        // ... (IR above)
-        qc.inv {
-            qc.s %q0 : !qc.qubit
-        }
-        // (IR below) ...
-    }
-}
-```
-
-## Optimizing Quantum IR
-
-By combining built-in dialects and the QC dialect we can implement quantum algorithms in MLIR. This section outlines how to use the compiler driver to optimize your quantum programs.
-
-### Using the Compiler
-
-The following command executes the compiler and performs a series of optimizations on the given quantum program. Files using the OpenQASM format will automatically be translated into the QC dialect.
+The program defines four qubits, but uses only three. Next, execute the MQT Compiler Collection Tool:
 
 ```console
-$ mqt-cc [options] <input .mlir/.qasm file>
+% mqt-cc ghz.qasm
 ```
 
-For example, running `mqt-cc` on the first code snippet of this tutorial yields the following IR.
+The MQT Compiler Collection Tool will output the following IR on stdout:
 
-```console
-$ mqt-cc dynamic-allocation.mlir
+```{code-block} mlir
+:lineno-start: 0
 module {
-  func.func @main() {
-    func.return
+  func.func @main() -> i64 attributes {passthrough = ["entry_point"]} {
+    %c0_i64 = arith.constant 0 : i64
+    %0 = qc.alloc("q", 4, 0) : !qc.qubit
+    %1 = qc.alloc("q", 4, 1) : !qc.qubit
+    %2 = qc.alloc("q", 4, 2) : !qc.qubit
+    qc.h %0 : !qc.qubit
+    qc.ctrl(%0) {
+      qc.x %1 : !qc.qubit
+    } : !qc.qubit
+    qc.ctrl(%1) {
+      qc.x %2 : !qc.qubit
+    } : !qc.qubit
+    %3 = qc.measure("c", 4, 0) %0 : !qc.qubit -> i1
+    %4 = qc.measure("c", 4, 1) %1 : !qc.qubit -> i1
+    %5 = qc.measure("c", 4, 2) %2 : !qc.qubit -> i1
+    qc.dealloc %0 : !qc.qubit
+    qc.dealloc %1 : !qc.qubit
+    qc.dealloc %2 : !qc.qubit
+    return %c0_i64 : i64
   }
 }
 ```
 
-What happened? Because there are no unitary operations between the allocation and deallocation of the qubit, the `RemoveAllocDeallocPair` canonicalization pattern matches and removes the unused qubit from the program. This one example of the many optimizations implemented in the quantum compiler driver.
+Note how in the IR only three instead of four qubits are allocated. Consequently, the optimizer has successfully removed the unused qubit.
 
-### Inside the Compiler
+### Emitting Quantum Intermediate Representation (QIR)
 
-Internally, the optimizations are performed on the [`qco`](./QCO.md) (_"quantum circuit optimization"_) dialect. While the QC dialect is great for exchanging with other formats (such as OpenQASM), the QCO dialect is specifically designed for optimizations.
-
-The following IR describes the construction of the first Bell state (and subsequent measurement) in the QCO dialect. Each unitary operation consumes and produces SSA values and each SSA value is used at most once (_"linear typing"_). Semantically, a qubit SSA value in the QCO dialect represents the state of the qubit (_"value semantics"_) whereas in the QC dialect a qubit SSA value references a qubit (_"reference semantics"_).
-
-```mlir
-/// file: bell-qco.mlir
-module {
-    func.func @main() {
-        %q0_0 = qco.alloc : !qco.qubit
-        %q1_0 = qco.alloc : !qco.qubit
-
-        %q0_1 = qco.h %q0_0 : !qco.qubit -> !qco.qubit
-        %q0_2, %q1_1 = qco.ctrl(%q0_1) targets (%arg0 = %q1_0) {
-            %q0_2 = qco.x %arg0 : !qco.qubit -> !qco.qubit
-            qco.yield %q0_2
-        } : ({!qco.qubit}, {!qco.qubit}) -> ({!qco.qubit}, {!qco.qubit})
-
-        %q0_3, %c0 = qco.measure %q0_2 : !qco.qubit
-        %q1_2, %c1 = qco.measure %q1_1 : !qco.qubit
-
-        qco.dealloc %q0_3 : !qco.qubit
-        qco.dealloc %q1_2 : !qco.qubit
-    }
-}
-```
-
-The following figure illustrates the data-flow graph of the IR above. Thanks to the QCO dialect, the dependencies between operations become immediately apparent. For example, the controlled-X gate depends on the Hadamard gate because it consumes the `q0_1` qubit SSA value. Moreover, MLIR provides the necessary functionality to efficiently traverse the data-flow graph and thus the circuit.
-
-```{image} ../_static/qco-dataflow.svg
-:width: 55%
-:align: center
-```
-
-Quantum IR in the QCO dialect can be quite complex. Writing it by hand is certainly an error-prone task. Fortunately, you don't have to. The compiler driver's interface accepts and produces quantum IR in the QC dialect. Under the hood, it transforms it to the QCO dialect, performs the optimizations, and transforms it back to the QC dialect. That's also why we refer to the QC dialect as interface dialect. The following figure depicts the interplay between the two dialects illustratively.
-
-```{image} ../_static/compilation-pipeline.svg
-:width: 50%
-:align: center
-```
-
-To print the quantum IR after each step in the compilation pipeline, we can supply the `--record-intermediates` option to the compiler driver.
+Now that your quantum program is optimized, you want to simulate it using a classical simulator via the MQT QIR Runtime. To transform the program to the QIR, you can supply the `--emit-qir` command-line option:
 
 ```console
-$ mqt-cc --record-intermediates <input .mlir/.qasm file>
+% mqt-cc ghz.qasm --emit-qir
 ```
 
-## Conclusion
+Using the `mlir-translate` tool, store the file as LLVM file (`.ll`) as follows.
 
-In this tutorial we've learned how to understand and write quantum programs in MLIR using the MQT's QC dialect. Moreover, we have seen how the compiler driver utilizes the more powerful QCO dialect to optimize our quantum programs and how we can achieve this via the CLI tool.
+```console
+% mqt-cc ghz.qasm --emit-qir | mlir-translate --mlir-to-llvmir > ghz.ll
+```
+
+Next, refer to the [QIR Runtime Guide](../qir/index.md) on how to run the program with a classical simulator.
+
+## Conclusion
