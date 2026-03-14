@@ -204,6 +204,132 @@ public:
   allocClassicalBitRegister(int64_t size, std::string name = "c") const;
 
   //===--------------------------------------------------------------------===//
+  // QTensor operations
+  //===--------------------------------------------------------------------===//
+
+  /**
+   * @brief Allocate a qubit tensor
+   * @param size Number of qubits (must be positive)
+   * @return The allocated tensor
+   *
+   * @par Example:
+   * ```c++
+   * auto tensor = builder.qtensorAlloc(3);
+   * ```
+   * ```mlir
+   * %tensor = qtensor.alloc(3) : tensor<3x!qco.qubit>
+   * ```
+   */
+  Value qtensorAlloc(int64_t size);
+
+  /**
+   * @brief Allocate a qubit tensor from a list of qubit values
+   * @param elements Inserted Qubits
+   * @return The allocated tensor
+   *
+   * @par Example:
+   * ```c++
+   * auto tensor = builder.qtensorFromElements({q0, q1, q2});
+   * ```
+   * ```mlir
+   * %tensor = qtensor.from_elements %q0, %q1, %q2 : tensor<3x!qco.qubit>
+   * ```
+   */
+  Value qtensorFromElements(ValueRange elements);
+
+  /**
+   * @brief Extract a qubit from a tensor
+   * @param tensor Source tensor
+   * @param index The index from where the qubit is extracted
+   * @return Pair of (outTensor, extractedQubit)
+   *
+   * @par Example:
+   * ```c++
+   * auto [outTensor, q0] = builder.qtensorExtract(tensor, 0);
+   * ```
+   * ```mlir
+   * %outTensor, %q0 = qtensor.extract %tensor[%c0]: tensor<3x!qco.qubit>
+   * ```
+   */
+  std::pair<Value, Value>
+  qtensorExtract(Value tensor, const std::variant<int64_t, Value>& index);
+
+  /**
+   * @brief Extract a qubit slice from a tensor
+   * @param tensor Source tensor
+   * @param offset The offset from where the slice is extracted
+   * @param size The size of the extracted slice
+   * @return Pair of (outTensor, extractedSlice)
+   *
+   * @par Example:
+   * ```c++
+   * auto [outTensor, extractedSlice] = builder.qtensorExtractSlice(tensor, 0,
+   * 2);
+   * ```
+   * ```mlir
+   * %outTensor, %extractedSlice = qtensor.extract_slice %tensor[%c0][%c2]
+   * : tensor<3x!qco.qubit> to tensor<2x!qco.qubit>
+   * ```
+   */
+  std::pair<Value, Value>
+  qtensorExtractSlice(Value tensor, const std::variant<int64_t, Value>& offset,
+                      const std::variant<int64_t, Value>& size);
+
+  /**
+   * @brief Insert a qubit into a tensor
+   * @param scalar The scalar qubit that is inserted
+   * @param tensor The tensor where the qubit is inserted
+   * @param index The index into where the qubit is inserted
+   * @return The output tensor
+   *
+   * @par Example:
+   * ```c++
+   * auto outTensor = builder.qtensorInsert(q0, tensor, 0);
+   * ```
+   * ```mlir
+   * %outTensor = qtensor.insert %q0 into %tensor[%c0] : tensor<3x!qco.qubit>
+   * ```
+   */
+  Value qtensorInsert(Value scalar, Value tensor,
+                      const std::variant<int64_t, Value>& index);
+
+  /**
+   * @brief Insert a qubit slice into a tensor
+   * @param sourceTensor The slice that is inserted
+   * @param destTensor The tensor where the slice is inserted
+   * @param offset The offset into where the slice is inserted
+   * @param size The size of the inserted slice
+   * @return The output tensor
+   *
+   * @par Example:
+   * ```c++
+   * auto outTensor = builder.qtensorInsertSlice(slicedTensor, tensor, 0, 2);
+   * ```
+   * ```mlir
+   * %outTensor = qtensor.insert_slice %slicedTensor into %tensor[%c0][%c2]
+   * : tensor<2x!qco.qubit> into tensor<3x!qco.qubit>
+   * ```
+   */
+  Value qtensorInsertSlice(Value sourceTensor, Value destTensor,
+                           const std::variant<int64_t, Value>& offset,
+                           const std::variant<int64_t, Value>& size);
+
+  /**
+   * @brief Explicitly deallocate a tensor
+   * @param tensor Tensor to deallocate (must be valid/unconsumed)
+   * @return Reference to this builder for method chaining
+   *
+   * @par Example:
+   * ```c++
+   * builder.qtensorDealloc(tensor);
+   * ```
+   * ```mlir
+   * qtensor.dealloc %tensor : tensor<3x!qco.qubit>
+   * ```
+   */
+  QCOProgramBuilder& qtensorDealloc(Value tensor);
+
+  //===--------------------------------------------------------------------===//
   // Measurement and Reset
   //===--------------------------------------------------------------------===//
 
@@ -1176,5 +1302,25 @@ private:
   /// When an operation consumes a qubit and produces a new one, the old value
   /// is removed and the new output is added.
   llvm::DenseSet<Value> validQubits;
+
+  /**
+   * @brief Validate that a tensor value is valid and unconsumed
+   * @param tensor Tensor value to validate
+   * @throws Aborts if tensor is not tracked (consumed or never created)
+   */
+  void validateTensorValue(Value tensor) const;
+
+  /**
+   * @brief Update tracking when an operation consumes and produces a tensor
+   * @param inputTensor Input tensor being consumed (must be valid)
+   * @param outputTensor New output tensor being produced
+   */
+  void updateTensorTracking(Value inputTensor, Value outputTensor);
+
+  /// Track valid (unconsumed) tensor SSA values for linear type enforcement.
+  /// Only values present in this set are valid for use in operations.
+  /// When an operation consumes a tensor and produces a new one, the old value
+  /// is removed and the new output is added.
+  llvm::DenseSet<Value> validTensors;
 };
 } // namespace mlir::qco

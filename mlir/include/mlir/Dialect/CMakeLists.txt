@@ -8,3 +8,4 @@
 
 add_subdirectory(QC)
 add_subdirectory(QCO)
+add_subdirectory(QTensor)

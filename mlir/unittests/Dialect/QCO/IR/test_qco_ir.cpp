@@ -12,6 +12,7 @@
 #include "mlir/Dialect/QCO/Builder/QCOProgramBuilder.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
+#include "mlir/Dialect/QTensor/IR/QTensorDialect.h"
 #include "mlir/Support/IRVerification.h"
 #include "mlir/Support/Passes.h"
 #include "qco_programs.h"
@@ -20,6 +21,7 @@
 #include <llvm/ADT/SmallVector.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
+#include <mlir/Dialect/Tensor/IR/Tensor.h>
 #include <mlir/IR/DialectRegistry.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/Verifier.h>
@@ -47,7 +49,8 @@ protected:
   void SetUp() override {
     // Register all necessary dialects
     DialectRegistry registry;
-    registry.insert<QCODialect, arith::ArithDialect, func::FuncDialect>();
+    registry.insert<QCODialect, arith::ArithDialect, func::FuncDialect,
+                    qtensor::QTensorDialect, tensor::TensorDialect>();
     context = std::make_unique<MLIRContext>();
     context->appendDialectRegistry(registry);
     context->loadAllAvailableDialects();
@@ -1054,4 +1057,43 @@ INSTANTIATE_TEST_SUITE_P(
                     MQT_NAMED_BUILDER(emptyQCO)},
         QCOTestCase{"AllocDeallocPair", MQT_NAMED_BUILDER(allocDeallocPair),
                     MQT_NAMED_BUILDER(emptyQCO)}));
+/// @}
+
+/// \name QTensor/QTensor.cpp
+/// @{
+INSTANTIATE_TEST_SUITE_P(
+    QTensorTest, QCOTest,
+    testing::Values(
+        QCOTestCase{"QTensorAlloc", MQT_NAMED_BUILDER(qtensorAlloc),
+                    MQT_NAMED_BUILDER(qtensorAlloc)},
+        QCOTestCase{"QTensorAllocDealloc", MQT_NAMED_BUILDER(qtensorDealloc),
+                    MQT_NAMED_BUILDER(qtensorAlloc)},
+        QCOTestCase{"QTensorFromElements",
+                    MQT_NAMED_BUILDER(qtensorFromElements),
+                    MQT_NAMED_BUILDER(qtensorFromElements)},
+        QCOTestCase{"QTensorExtract", MQT_NAMED_BUILDER(qtensorExtract),
+                    MQT_NAMED_BUILDER(qtensorExtract)},
+        QCOTestCase{"QTensorInsert", MQT_NAMED_BUILDER(qtensorInsert),
+                    MQT_NAMED_BUILDER(qtensorInsert)},
+        QCOTestCase{"QTensorExtractSlice",
+                    MQT_NAMED_BUILDER(qtensorExtractSlice),
+                    MQT_NAMED_BUILDER(qtensorExtractSlice)},
+        QCOTestCase{"QTensorInsertSlice", MQT_NAMED_BUILDER(qtensorInsertSlice),
+                    MQT_NAMED_BUILDER(qtensorInsertSlice)},
+        QCOTestCase{"QTensorExtractInsert",
+                    MQT_NAMED_BUILDER(qtensorExtractInsert),
+                    MQT_NAMED_BUILDER(qtensorAlloc)},
+        QCOTestCase{"QTensorInsertExtract",
+                    MQT_NAMED_BUILDER(qtensorInsertExtract),
+                    MQT_NAMED_BUILDER(qtensorInsert)},
+        QCOTestCase{"QTensorExtractSliceInsertSlice",
+                    MQT_NAMED_BUILDER(qtensorExtractSliceInsertSlice),
+                    MQT_NAMED_BUILDER(qtensorAlloc)},
+        QCOTestCase{"QTensorInsertSliceExtractSlice",
+                    MQT_NAMED_BUILDER(qtensorInsertSliceExtractSlice),
+                    MQT_NAMED_BUILDER(qtensorInsertSlice)},
+        QCOTestCase{
+            "QTensorExtractSliceExtractInsertInsertSlice",
+            MQT_NAMED_BUILDER(qtensorExtractSliceExtractInsertInsertSlice),
+            MQT_NAMED_BUILDER(qtensorAlloc)}));
 /// @}
