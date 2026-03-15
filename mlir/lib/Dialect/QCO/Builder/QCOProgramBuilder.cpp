@@ -268,7 +268,7 @@ std::pair<Value, Value> QCOProgramBuilder::qtensorExtractSlice(
   auto extractSliceOp =
       qtensor::ExtractSliceOp::create(*this, tensor, offsetValue, sizesValue);
   auto slicedTensor = extractSliceOp.getResult();
-  auto outTensor = extractSliceOp.getOutSource();
+  auto outTensor = extractSliceOp.getOutTensor();
 
   validTensors.insert(slicedTensor);
   updateTensorTracking(tensor, outTensor);

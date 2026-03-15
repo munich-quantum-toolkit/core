@@ -25,33 +25,28 @@
 using namespace mlir;
 using namespace mlir::qtensor;
 
-void ExtractSliceOp::build(OpBuilder& b, OperationState& result, Value source,
+void ExtractSliceOp::build(OpBuilder& b, OperationState& result, Value tensor,
                            Value offset, Value size,
                            ArrayRef<NamedAttribute> attrs) {
-  auto sourceType = cast<RankedTensorType>(source.getType());
+  auto tensorType = cast<RankedTensorType>(tensor.getType());
   auto sizeValue = getConstantIntValue(size);
   auto resultType = RankedTensorType::get(
       {sizeValue ? *sizeValue : ShapedType::kDynamic},
-      sourceType.getElementType(), sourceType.getEncoding());
+      tensorType.getElementType(), tensorType.getEncoding());
 
   result.addAttributes(attrs);
-  build(b, result, {source.getType(), resultType}, source, offset, size);
+  build(b, result, {tensor.getType(), resultType}, tensor, offset, size);
 }
 
 LogicalResult ExtractSliceOp::verify() {
-  auto sourceType = getSource().getType();
+  auto tensorType = getTensor().getType();
   auto resultType = getResult().getType();
-  auto outSourceType = getOutSource().getType();
-  if (sourceType.getRank() != 1 || resultType.getRank() != 1 ||
-      outSourceType.getRank() != 1) {
-    return emitOpError("Tensors must be 1-D");
-  }
 
-  auto srcDim = sourceType.getDimSize(0);
+  auto tensorDim = tensorType.getDimSize(0);
   auto constOffset = getConstantIntValue(getOffset());
   auto constSize = getConstantIntValue(getSize());
 
-  if (!llvm::isa<qco::QubitType>(sourceType.getElementType())) {
+  if (!llvm::isa<qco::QubitType>(tensorType.getElementType())) {
     return emitOpError("Elements of source tensor must be of qubit type");
   }
 
@@ -63,18 +58,15 @@ LogicalResult ExtractSliceOp::verify() {
     return emitOpError("Size must be positive");
   }
 
-  if (constOffset && constSize && !ShapedType::isDynamic(srcDim)) {
-    if (*constOffset + *constSize > srcDim) {
+  if (constOffset && constSize && !ShapedType::isDynamic(tensorDim)) {
+    if (*constOffset + *constSize > tensorDim) {
       return emitOpError("Offset + Size exceeds source dimension");
     }
   }
 
-  if (resultType.getElementType() != sourceType.getElementType()) {
-    return emitOpError("Result element type must match source element type");
-  }
-
-  if (outSourceType != sourceType) {
-    return emitOpError("Outsource tensor type must match source tensor type");
+  if (resultType.getElementType() != tensorType.getElementType()) {
+    return emitOpError(
+        "Result element type must match input tensor element type");
   }
 
   if (constSize && !ShapedType::isDynamic(resultType.getDimSize(0))) {
@@ -94,13 +86,13 @@ LogicalResult ExtractSliceOp::verify() {
 static InsertSliceOp
 foldExtractAfterInsertSlice(ExtractSliceOp extractSliceOp) {
   auto insertSliceOp =
-      extractSliceOp.getSource().getDefiningOp<InsertSliceOp>();
+      extractSliceOp.getTensor().getDefiningOp<InsertSliceOp>();
   if (!insertSliceOp) {
     return nullptr;
   }
 
-  // Source types must match
-  if (insertSliceOp.getSource().getType() != extractSliceOp.getType(1)) {
+  if (insertSliceOp.getSource().getType() !=
+      extractSliceOp.getResult().getType()) {
     return nullptr;
   }
 

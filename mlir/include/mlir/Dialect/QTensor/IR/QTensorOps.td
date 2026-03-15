@@ -59,7 +59,7 @@ def QTensor_AllocOp : QTensorOp<"alloc", [
     }];
 
     let arguments = (ins ConfinedAttr<I64Attr, [IntPositive]>:$size);
-    let results = (outs AnyStaticShapeTensor:$result);
+    let results = (outs 1DTensorOf<[AnyType]>:$result);
     let assemblyFormat = "`(`$size`)` attr-dict `:` type($result)";
 
     let builders = [
@@ -80,7 +80,7 @@ def QTensor_DeallocOp : QTensorOp<"dealloc", [MemoryEffects<[MemFree]>]> {
         ```
     }];
 
-    let arguments = (ins AnyRankedTensor:$tensor);
+    let arguments = (ins 1DTensorOf<[AnyType]>:$tensor);
     let assemblyFormat = "$tensor attr-dict `:` type($tensor)";
 
     let hasCanonicalizer = 1;
@@ -106,7 +106,7 @@ def QTensor_FromElementsOp : QTensorOp<"from_elements", [
     }];
 
     let arguments = (ins Variadic<AnyType>:$elements);
-    let results = (outs AnyStaticShapeTensor:$result);
+    let results = (outs 1DTensorOf<[AnyType]>:$result);
     let assemblyFormat = "$elements attr-dict `:` type($result)";
 
     let builders = [
@@ -137,8 +137,8 @@ def QTensor_ExtractOp : QTensorOp<"extract", [
         ```
     }];
 
-    let arguments = (ins AnyRankedTensor:$tensor, Index:$index);
-    let results = (outs AnyRankedTensor:$out_tensor, AnyType:$result);
+    let arguments = (ins 1DTensorOf<[AnyType]>:$tensor, Index:$index);
+    let results = (outs 1DTensorOf<[AnyType]>:$out_tensor, AnyType:$result);
     let assemblyFormat = "$tensor `[` $index `]` attr-dict `:` type($tensor)";
 
     let hasFolder = 1;
@@ -148,7 +148,7 @@ def QTensor_ExtractOp : QTensorOp<"extract", [
 def QTensor_ExtractSliceOp : QTensorOp<"extract_slice", [
     Pure,
     TypesMatchWith<"returned tensor type matches input tensor",
-    "source", "out_source", "$_self">
+    "tensor", "out_tensor", "$_self">
   ]> {
     let summary = "Extract slice from tensor";
     let description = [{
@@ -158,31 +158,31 @@ def QTensor_ExtractSliceOp : QTensorOp<"extract_slice", [
 
         The extract_slice operation supports the following arguments:
 
-        * source: the "base" tensor from which to extract a slice.
+        * tensor: the "base" tensor from which to extract a slice.
         * offset: the starting position in the base tensor from which the slice is
                   extracted.
         * size: the length of the slice to extract from the base tensor.
 
         Example:
         ```mlir
-        %outSourceTensor, %extractedSlice = qtensor.extract_slice %sourceTensor[%c0][%c2] : tensor<3x!qco.qubit> to tensor<2x!qco.qubit>
+        %outTensor, %extractedSlice = qtensor.extract_slice %tensor[%c0][%c2] : tensor<3x!qco.qubit> to tensor<2x!qco.qubit>
         ```
     }];
 
     let arguments = (ins
-        AnyRankedTensor:$source,
+        1DTensorOf<[AnyType]>:$tensor,
         Index:$offset,
         Index:$size
     );
-    let results = (outs AnyRankedTensor:$out_source, AnyRankedTensor:$result);
+    let results = (outs 1DTensorOf<[AnyType]>:$out_tensor, 1DTensorOf<[AnyType]>:$result);
 
     let assemblyFormat = [{
-        $source `[`$offset `]` `[`$size`]`
-        attr-dict `:` type($source) `to` type($result)
+        $tensor `[`$offset `]` `[`$size`]`
+        attr-dict `:` type($tensor) `to` type($result)
     }];
 
     let builders = [
-        OpBuilder<(ins "Value":$source, "Value":$offset,
+        OpBuilder<(ins "Value":$tensor, "Value":$offset,
           "Value":$size,
           CArg<"ArrayRef<NamedAttribute>", "{}">:$attrs)>
       ];
@@ -211,9 +211,9 @@ def QTensor_InsertOp : QTensorOp<"insert", [
     }];
 
     let arguments = (ins AnyType:$scalar,
-                        AnyRankedTensor:$dest,
+                        1DTensorOf<[AnyType]>:$dest,
                         Index:$index);
-    let results = (outs AnyRankedTensor:$result);
+    let results = (outs 1DTensorOf<[AnyType]>:$result);
     let assemblyFormat = [{
         $scalar `into` $dest `[` $index `]` attr-dict `:` type($dest)
     }];
@@ -249,12 +249,12 @@ def QTensor_InsertSliceOp : QTensorOp<"insert_slice", [
     }];
 
     let arguments = (ins
-        AnyRankedTensor:$source,
-        AnyRankedTensor:$dest,
+        1DTensorOf<[AnyType]>:$source,
+        1DTensorOf<[AnyType]>:$dest,
         Index:$offset,
         Index:$size
     );
-    let results = (outs AnyRankedTensor:$result);
+    let results = (outs 1DTensorOf<[AnyType]>:$result);
     let assemblyFormat = [{
         $source `into` $dest `[`$offset `]` `[`$size`]`
         attr-dict `:` type($source) `into` type($dest)

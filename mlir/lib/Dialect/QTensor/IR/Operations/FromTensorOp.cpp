@@ -27,7 +27,7 @@ using namespace mlir::qtensor;
 void FromElementsOp::build(OpBuilder& builder, OperationState& result,
                            ValueRange elements) {
   assert(!elements.empty() && "Expected at least one element");
-  Type resultType = RankedTensorType::get(
+  auto resultType = RankedTensorType::get(
       {static_cast<int64_t>(elements.size())}, elements.front().getType());
   build(builder, result, resultType, elements);
 }

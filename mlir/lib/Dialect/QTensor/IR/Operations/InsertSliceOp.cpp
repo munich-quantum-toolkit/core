@@ -26,9 +26,6 @@ using namespace mlir::qtensor;
 LogicalResult InsertSliceOp::verify() {
   auto sourceType = getSource().getType();
   auto destType = getDest().getType();
-  if (sourceType.getRank() != 1 || destType.getRank() != 1) {
-    return emitOpError("Tensors must be 1-D");
-  }
 
   auto srcDim = sourceType.getDimSize(0);
   auto dstDim = destType.getDimSize(0);
@@ -81,7 +78,7 @@ static Value foldInsertAfterExtractSlice(InsertSliceOp insertSliceOp) {
     return nullptr;
   }
 
-  if (extractSliceOp.getOutSource() != insertSliceOp.getDest()) {
+  if (extractSliceOp.getOutTensor() != insertSliceOp.getDest()) {
     return nullptr;
   }
 
@@ -95,7 +92,7 @@ static Value foldInsertAfterExtractSlice(InsertSliceOp insertSliceOp) {
     return nullptr;
   }
 
-  return extractSliceOp.getSource();
+  return extractSliceOp.getTensor();
 }
 
 OpFoldResult InsertSliceOp::fold(FoldAdaptor /*adaptor*/) {

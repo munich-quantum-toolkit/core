@@ -42,10 +42,6 @@ LogicalResult AllocOp::verify() {
 
   auto size = static_cast<int64_t>(getSize());
 
-  if (resultType.getRank() != 1) {
-    return emitOpError("Result must be a 1-D tensor");
-  }
-
   if (resultType.getShape()[0] != size) {
     return emitOpError("Tensor length must match size attribute (")
            << size << "), but got " << resultType.getShape()[0];

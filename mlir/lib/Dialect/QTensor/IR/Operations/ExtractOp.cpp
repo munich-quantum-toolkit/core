@@ -23,10 +23,6 @@ using namespace mlir::qtensor;
 
 LogicalResult ExtractOp::verify() {
   auto tensorType = getTensor().getType();
-  if (tensorType.getRank() != 1) {
-    return emitOpError("Tensor must be 1-D");
-  }
-
   auto tensorDim = getTensor().getType().getDimSize(0);
   auto index = getConstantIntValue(getIndex());
 
@@ -35,10 +31,10 @@ LogicalResult ExtractOp::verify() {
   }
 
   if (index) {
-    if (index < 0) {
+    if (*index < 0) {
       return emitOpError("Index must be non-negative");
     }
-    if (!ShapedType::isDynamic(tensorDim) && index >= tensorDim) {
+    if (!ShapedType::isDynamic(tensorDim) && *index >= tensorDim) {
       return emitOpError("Index exceeds tensor dimension");
     }
   }
@@ -55,7 +51,7 @@ static InsertOp foldExtractAfterInsert(ExtractOp extractOp) {
     return nullptr;
   }
 
-  if (insertOp.getScalar().getType() != extractOp.getType(1)) {
+  if (insertOp.getScalar().getType() != extractOp.getResult().getType()) {
     return nullptr;
   }
 
