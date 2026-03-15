@@ -8,10 +8,8 @@
  * Licensed under the MIT License
  */
 
-#include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QTensor/IR/QTensorOps.h"
 
-#include <llvm/Support/Casting.h>
 #include <mlir/Dialect/Utils/StaticValueUtils.h>
 #include <mlir/IR/Attributes.h>
 #include <mlir/IR/Builders.h>
@@ -39,16 +37,10 @@ void ExtractSliceOp::build(OpBuilder& b, OperationState& result, Value tensor,
 }
 
 LogicalResult ExtractSliceOp::verify() {
-  auto tensorType = getTensor().getType();
-  auto resultType = getResult().getType();
-
-  auto tensorDim = tensorType.getDimSize(0);
+  auto tensorDim = getTensor().getType().getDimSize(0);
+  auto resultDim = getResult().getType().getDimSize(0);
   auto constOffset = getConstantIntValue(getOffset());
   auto constSize = getConstantIntValue(getSize());
-
-  if (!llvm::isa<qco::QubitType>(tensorType.getElementType())) {
-    return emitOpError("Elements of source tensor must be of qubit type");
-  }
 
   if (constOffset && *constOffset < 0) {
     return emitOpError("Offset must be non-negative");
@@ -64,13 +56,8 @@ LogicalResult ExtractSliceOp::verify() {
     }
   }
 
-  if (resultType.getElementType() != tensorType.getElementType()) {
-    return emitOpError(
-        "Result element type must match input tensor element type");
-  }
-
-  if (constSize && !ShapedType::isDynamic(resultType.getDimSize(0))) {
-    if (resultType.getDimSize(0) != *constSize) {
+  if (constSize && !ShapedType::isDynamic(resultDim)) {
+    if (resultDim != *constSize) {
       return emitOpError("Result tensor dimension must match size operand");
     }
   }

@@ -8,23 +8,14 @@
  * Licensed under the MIT License
  */
 
-#include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QTensor/IR/QTensorOps.h"
 
-#include <llvm/Support/Casting.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/PatternMatch.h>
 #include <mlir/Support/LogicalResult.h>
 
 using namespace mlir;
 using namespace mlir::qtensor;
-
-LogicalResult DeallocOp::verify() {
-  if (!llvm::isa<qco::QubitType>(getTensor().getType().getElementType())) {
-    return emitOpError("Elements of tensor must be of qubit type");
-  }
-  return success();
-}
 
 namespace {
 

@@ -8,10 +8,8 @@
  * Licensed under the MIT License
  */
 
-#include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QTensor/IR/QTensorOps.h"
 
-#include <llvm/Support/Casting.h>
 #include <mlir/Dialect/Utils/StaticValueUtils.h>
 #include <mlir/IR/BuiltinTypeInterfaces.h>
 #include <mlir/IR/OpDefinition.h>
@@ -24,21 +22,10 @@ using namespace mlir;
 using namespace mlir::qtensor;
 
 LogicalResult InsertSliceOp::verify() {
-  auto sourceType = getSource().getType();
-  auto destType = getDest().getType();
-
-  auto srcDim = sourceType.getDimSize(0);
-  auto dstDim = destType.getDimSize(0);
+  auto srcDim = getSource().getType().getDimSize(0);
+  auto dstDim = getDest().getType().getDimSize(0);
   auto constOffset = getConstantIntValue(getOffset());
   auto constSize = getConstantIntValue(getSize());
-
-  if (!llvm::isa<qco::QubitType>(sourceType.getElementType())) {
-    return emitOpError("Elements of source tensor must be of qubit type");
-  }
-
-  if (!llvm::isa<qco::QubitType>(destType.getElementType())) {
-    return emitOpError("Elements of dest tensor must be of qubit type");
-  }
 
   if (constOffset && *constOffset < 0) {
     return emitOpError("Offset must be non-negative");
@@ -58,10 +45,6 @@ LogicalResult InsertSliceOp::verify() {
     if (*constOffset + *constSize > dstDim) {
       return emitOpError("Offset + Size exceeds destination dimension");
     }
-  }
-
-  if (getResult().getType() != destType) {
-    return emitOpError("Result type must match dest type");
   }
 
   return success();

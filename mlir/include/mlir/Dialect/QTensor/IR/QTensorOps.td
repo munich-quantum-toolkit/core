@@ -31,6 +31,8 @@ def QTensorDialect : Dialect {
       In addition, alloc/dealloc operations are added to the dialect to support the bulk allocation and deallocation of tensors with linear types.
   }];
 
+  let dependentDialects = ["::mlir::qco::QCODialect"];
+
   let cppNamespace = "::mlir::qtensor";
 }
 
@@ -40,6 +42,14 @@ def QTensorDialect : Dialect {
 
 class QTensorOp<string mnemonic, list<Trait> traits = []>
     : Op<QTensorDialect, mnemonic, traits>;
+
+//===----------------------------------------------------------------------===//
+// Type Constraints
+//===----------------------------------------------------------------------===//
+
+def QubitType :
+  Type<CPred<"llvm::isa<::mlir::qco::QubitType>($_self)">,
+       "Elements must be of qubit type">;
 
 //===----------------------------------------------------------------------===//
 // Operations
@@ -59,7 +69,7 @@ def QTensor_AllocOp : QTensorOp<"alloc", [
     }];
 
     let arguments = (ins ConfinedAttr<I64Attr, [IntPositive]>:$size);
-    let results = (outs 1DTensorOf<[AnyType]>:$result);
+    let results = (outs 1DTensorOf<[QubitType]>:$result);
     let assemblyFormat = "`(`$size`)` attr-dict `:` type($result)";
 
     let builders = [
@@ -80,11 +90,10 @@ def QTensor_DeallocOp : QTensorOp<"dealloc", [MemoryEffects<[MemFree]>]> {
         ```
     }];
 
-    let arguments = (ins 1DTensorOf<[AnyType]>:$tensor);
+    let arguments = (ins 1DTensorOf<[QubitType]>:$tensor);
     let assemblyFormat = "$tensor attr-dict `:` type($tensor)";
 
     let hasCanonicalizer = 1;
-    let hasVerifier = 1;
 }
 
 def QTensor_FromElementsOp : QTensorOp<"from_elements", [
@@ -105,16 +114,14 @@ def QTensor_FromElementsOp : QTensorOp<"from_elements", [
         ```
     }];
 
-    let arguments = (ins Variadic<AnyType>:$elements);
-    let results = (outs 1DTensorOf<[AnyType]>:$result);
+    let arguments = (ins Variadic<QubitType>:$elements);
+    let results = (outs 1DTensorOf<[QubitType]>:$result);
     let assemblyFormat = "$elements attr-dict `:` type($result)";
 
     let builders = [
         // Special case builder for when `elements` has size >=1.
         OpBuilder<(ins "ValueRange":$elements)>
     ];
-
-    let hasVerifier = 1;
 }
 
 def QTensor_ExtractOp : QTensorOp<"extract", [
@@ -137,8 +144,8 @@ def QTensor_ExtractOp : QTensorOp<"extract", [
         ```
     }];
 
-    let arguments = (ins 1DTensorOf<[AnyType]>:$tensor, Index:$index);
-    let results = (outs 1DTensorOf<[AnyType]>:$out_tensor, AnyType:$result);
+    let arguments = (ins 1DTensorOf<[QubitType]>:$tensor, Index:$index);
+    let results = (outs 1DTensorOf<[QubitType]>:$out_tensor, QubitType:$result);
     let assemblyFormat = "$tensor `[` $index `]` attr-dict `:` type($tensor)";
 
     let hasFolder = 1;
@@ -170,11 +177,11 @@ def QTensor_ExtractSliceOp : QTensorOp<"extract_slice", [
     }];
 
     let arguments = (ins
-        1DTensorOf<[AnyType]>:$tensor,
+        1DTensorOf<[QubitType]>:$tensor,
         Index:$offset,
         Index:$size
     );
-    let results = (outs 1DTensorOf<[AnyType]>:$out_tensor, 1DTensorOf<[AnyType]>:$result);
+    let results = (outs 1DTensorOf<[QubitType]>:$out_tensor, 1DTensorOf<[QubitType]>:$result);
 
     let assemblyFormat = [{
         $tensor `[`$offset `]` `[`$size`]`
@@ -210,10 +217,10 @@ def QTensor_InsertOp : QTensorOp<"insert", [
         ```
     }];
 
-    let arguments = (ins AnyType:$scalar,
-                        1DTensorOf<[AnyType]>:$dest,
+    let arguments = (ins QubitType:$scalar,
+                        1DTensorOf<[QubitType]>:$dest,
                         Index:$index);
-    let results = (outs 1DTensorOf<[AnyType]>:$result);
+    let results = (outs 1DTensorOf<[QubitType]>:$result);
     let assemblyFormat = [{
         $scalar `into` $dest `[` $index `]` attr-dict `:` type($dest)
     }];
@@ -249,12 +256,12 @@ def QTensor_InsertSliceOp : QTensorOp<"insert_slice", [
     }];
 
     let arguments = (ins
-        1DTensorOf<[AnyType]>:$source,
-        1DTensorOf<[AnyType]>:$dest,
+        1DTensorOf<[QubitType]>:$source,
+        1DTensorOf<[QubitType]>:$dest,
         Index:$offset,
         Index:$size
     );
-    let results = (outs 1DTensorOf<[AnyType]>:$result);
+    let results = (outs 1DTensorOf<[QubitType]>:$result);
     let assemblyFormat = [{
         $source `into` $dest `[`$offset `]` `[`$size`]`
         attr-dict `:` type($source) `into` type($dest)

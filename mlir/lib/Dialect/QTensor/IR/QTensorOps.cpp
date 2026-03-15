@@ -10,6 +10,7 @@
 
 #include "mlir/Dialect/QTensor/IR/QTensorOps.h"
 
+#include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QTensor/IR/QTensorDialect.h" // IWYU pragma: associated
 
 #include <mlir/Dialect/Utils/StaticValueUtils.h>

@@ -8,10 +8,8 @@
  * Licensed under the MIT License
  */
 
-#include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QTensor/IR/QTensorOps.h"
 
-#include <llvm/Support/Casting.h>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/BuiltinTypes.h>
 #include <mlir/IR/OperationSupport.h>
@@ -30,17 +28,4 @@ void FromElementsOp::build(OpBuilder& builder, OperationState& result,
   auto resultType = RankedTensorType::get(
       {static_cast<int64_t>(elements.size())}, elements.front().getType());
   build(builder, result, resultType, elements);
-}
-
-LogicalResult FromElementsOp::verify() {
-  if (!llvm::isa<qco::QubitType>(getResult().getType().getElementType())) {
-    return emitOpError("Result tensor must have qubit element type");
-  }
-
-  for (auto type : getElements().getTypes()) {
-    if (!llvm::isa<qco::QubitType>(type)) {
-      return emitOpError("Elements of ValueRange must be of qubit type");
-    }
-  }
-  return success();
 }

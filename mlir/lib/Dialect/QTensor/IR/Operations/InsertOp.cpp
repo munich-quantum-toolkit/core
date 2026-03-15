@@ -8,10 +8,8 @@
  * Licensed under the MIT License
  */
 
-#include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QTensor/IR/QTensorOps.h"
 
-#include <llvm/Support/Casting.h>
 #include <mlir/Dialect/Utils/StaticValueUtils.h>
 #include <mlir/IR/BuiltinTypeInterfaces.h>
 #include <mlir/IR/OpDefinition.h>
@@ -23,18 +21,8 @@ using namespace mlir;
 using namespace mlir::qtensor;
 
 LogicalResult InsertOp::verify() {
-  auto destType = getDest().getType();
-
-  auto dstDim = destType.getDimSize(0);
+  auto dstDim = getDest().getType().getDimSize(0);
   auto index = getConstantIntValue(getIndex());
-
-  if (!llvm::isa<qco::QubitType>(getScalar().getType())) {
-    return emitOpError("Scalar must be of qubit type");
-  }
-
-  if (!llvm::isa<qco::QubitType>(destType.getElementType())) {
-    return emitOpError("Elements of dest tensor must be of qubit type");
-  }
 
   if (index) {
     if (*index < 0) {

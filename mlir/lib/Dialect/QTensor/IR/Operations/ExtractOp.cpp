@@ -8,10 +8,8 @@
  * Licensed under the MIT License
  */
 
-#include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QTensor/IR/QTensorOps.h"
 
-#include <llvm/Support/Casting.h>
 #include <mlir/Dialect/Utils/StaticValueUtils.h>
 #include <mlir/IR/BuiltinTypeInterfaces.h>
 #include <mlir/IR/OpDefinition.h>
@@ -22,13 +20,8 @@ using namespace mlir;
 using namespace mlir::qtensor;
 
 LogicalResult ExtractOp::verify() {
-  auto tensorType = getTensor().getType();
   auto tensorDim = getTensor().getType().getDimSize(0);
   auto index = getConstantIntValue(getIndex());
-
-  if (!llvm::isa<qco::QubitType>(tensorType.getElementType())) {
-    return emitOpError("Elements of tensor must be of qubit type");
-  }
 
   if (index) {
     if (*index < 0) {
