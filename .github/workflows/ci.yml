@@ -160,9 +160,9 @@ jobs:
     uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-cpp-linter.yml@afe75175d32177a7291bbb7bd11b3276f60fc810 # v1.17.15
     with:
       cmake-args: -DBUILD_MQT_CORE_BENCHMARKS=ON -DBUILD_MQT_CORE_BINDINGS=ON
-      clang-version: 21
+      clang-version: 22
       build-project: true
-      files-changed-only: true
+      files-changed-only: false
       setup-python: true
       install-pkgs: "nanobind==2.11.0"
       cpp-linter-extra-args: "-std=c++20"
