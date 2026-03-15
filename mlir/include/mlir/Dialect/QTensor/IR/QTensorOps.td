@@ -202,7 +202,7 @@ def QTensor_InsertOp : QTensorOp<"insert", [
     let summary = "Insert element into tensor";
     let description = [{
         The `qtensor.insert` operation is a wrapper operation for the `tensor.insert` operation of the tensor dialect.
-        This operation inserts a scalar into a ranked tensor as specified by the operation`s index.
+        This operation inserts a scalar into a ranked tensor as specified by the operation's index.
 
         Example:
         ```mlir
@@ -232,7 +232,7 @@ def QTensor_InsertSliceOp : QTensorOp<"insert_slice", [
     let description = [{
         The `qtensor.insert_slice` operation is a modified version of the `tensor.insert_slice` operation
         of the tensor dialect. The operation inserts a tensor `source` into another tensor `dest` as specified by the
-        operation`s offset and size argument.
+        operation's offset and size arguments.
 
         The insert_slice operation supports the following arguments:
 
