@@ -16,6 +16,7 @@ add_mlir_conversion_library(
   LINK_LIBS
   MLIRDialect
   MLIRJeff
+  MLIRNativeToJeff
   MLIRQCODialect
   MLIRTransforms
   DISABLE_INSTALL)

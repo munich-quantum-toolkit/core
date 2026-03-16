@@ -15,6 +15,7 @@ add_mlir_conversion_library(
   JeffToQCOIncGen
   LINK_LIBS
   MLIRJeff
+  MLIRJeffToNative
   MLIRQCODialect
   MLIRTransforms
   DISABLE_INSTALL)
