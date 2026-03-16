@@ -19,6 +19,7 @@ add_mlir_dialect_library(
   LINK_LIBS
   PUBLIC
   MLIRIR
+  MLIRQCODialect
   MLIRArithDialect
   MLIRInferTypeOpInterface
   MLIRSideEffectInterfaces

@@ -118,10 +118,13 @@ struct CombineSubsequentInsertSliceOp final
         !isSameIndex(prevSize, curSize)) {
       return failure();
     }
+    DeallocOp::create(rewriter, prevInsertOp->getLoc(),
+                      prevInsertOp.getSource());
     rewriter.replaceOpWithNewOp<InsertSliceOp>(
         insertSliceOp, insertSliceOp.getSource(), prevInsertOp.getDest(),
         curOffset, curSize);
     rewriter.eraseOp(prevInsertOp);
+
     return success();
   }
 };

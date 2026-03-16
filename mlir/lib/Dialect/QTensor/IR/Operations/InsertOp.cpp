@@ -8,6 +8,7 @@
  * Licensed under the MIT License
  */
 
+#include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QTensor/IR/QTensorOps.h"
 
 #include <mlir/Dialect/Utils/StaticValueUtils.h>
@@ -94,6 +95,8 @@ struct CombineSubsequentInsertOp : public OpRewritePattern<InsertOp> {
       return failure();
     }
 
+    qco::DeallocOp::create(rewriter, prevInsertOp.getLoc(),
+                           prevInsertOp.getScalar());
     rewriter.replaceOpWithNewOp<InsertOp>(insertOp, insertOp.getScalar(),
                                           prevInsertOp.getDest(), insertIndex);
     rewriter.eraseOp(prevInsertOp);
