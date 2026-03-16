@@ -29,7 +29,7 @@ This section covers the basics of quantum computing and provides a soft introduc
 
 The Multi-Level Intermediate Representation (MLIR) project is an extensive framework to build compilers for heterogeneous hardware. Key to its success is the ability to represent programs at multiple levels of abstraction, as well as the capacity to _lower_ them from higher to lower levels.
 
-The core concept in MLIR are _dialects_. A dialect groups operations, types, and attributes under a common namespace. A single program may combine multiple dialects, which facilitates code reuse. For example, the structured control flow (SCF) dialect provides functionality for control flow constructs, while the arith dialect defines integer and floating point operations. Another essential dialect is the Func dialect, which let's us define and call functions.
+The core concept in MLIR is a _dialect_. A dialect groups operations, types, and attributes under a common namespace. A single program may combine multiple dialects, which facilitates code reuse. For example, the structured control flow (SCF) dialect provides functionality for control flow constructs, while the arith dialect defines integer and floating-point operations. Another essential dialect is the Func dialect, which lets us define and call functions.
 
 The following snippet combines the three dialects into a single program which sums up the numbers from 0 to 100.
 
@@ -50,7 +50,7 @@ func.func @main() {
 ```
 
 - The `func.`, `arith.`, `scf.` specifies the dialect's name. For example, `arith.constant` represents the `constant` operation from the arith dialect.
-- The percentage symbol `%` prefixes static single-assignment (SSA) values - a principle, where each variable is assigned exactly once but never reassigned. For instance, the `arith.constant` operation produces the `%lb` SSA value.
+- The percentage symbol `%` prefixes static single-assignment (SSA) values - a principle, where each variable is assigned exactly once but never reassigned. For instance, the first `arith.constant` operation produces the `%lb` SSA value.
 - The `: index` and `: i32` specifies the type, where `i32` represents an 32-bit integer while `index` is a special type for loop bounds. The `arith.index_cast` operation casts the `%iv` variable with the type `index` to `i32`.
 - To return the final values after loop termination, we define loop-carried variables via the `iter_args` construct and the return type with the `->` symbol. Inside the loop body, we specify the value for the next iteration via the `scf.yield` operation.
 
@@ -91,7 +91,7 @@ The following snippet allocates and subsequently deallocates one qubit using the
 ::::{grid} 2
 :::{grid-item}
 
-```{code-block} mlir
+```{code-block} mlir
 //          QC
 %q0 = qc.alloc : !qc.qubit
 qc.dealloc %q0 : !qc.qubit
@@ -115,7 +115,7 @@ Alternatively, we can target specific hardware qubits by using the `static` oper
 ::::{grid} 2
 :::{grid-item}
 
-```{code-block} mlir
+```{code-block} mlir
 //          QC
 %q0 = qc.static 1 : !qc.qubit
 qc.dealloc %q0 : !qc.qubit
@@ -139,7 +139,7 @@ So far so good. No visible differences. Next, we want to apply the single-qubit 
 ::::{grid} 2
 :::{grid-item}
 
-```{code-block} mlir
+```{code-block} mlir
 //          QC
 %q0 = qc.alloc : !qc.qubit
 qc.h %q0 : !qc.qubit
@@ -160,14 +160,14 @@ qco.dealloc %q0_1 : !qco.qubit
 :::
 ::::
 
-Notice how the Hadamard operation in the QCO dialect consumes and produces SSA values, while the operation in the QC dialect simply references the targeted qubit. We say that the QC dialect uses _reference semantics_ whereas the QCO dialect uses _value semantics_.
+Notice how the Hadamard operation in the QCO dialect consumes and produces SSA values, while the operation in the QC dialect simply references the targeted qubit. We say that the QC dialect uses _reference semantics_ whereas the QCO dialect uses _value semantics_. Semantically, the unitary operations in the QCO dialect return the new state after modifying it.
 
-Instead of using the Hadamard directly, we can also apply the transformation in terms of X and Y rotations using parameterized gates.
+Instead of using the Hadamard directly, we can also apply the transformation in terms of X and Y rotations with parameterized gates.
 
 ::::{grid} 2
 :::{grid-item}
 
-```{code-block} mlir
+```{code-block} mlir
 //          QC
 %theta = arith.constant 1.570796 : f64
 %phi = arith.constant 3.141593 : f64
@@ -196,7 +196,7 @@ qco.dealloc %q0_2 : !qco.qubit
 :::
 ::::
 
-To measure qubits use the `measure` operation.
+To measure qubits, use the `measure` operation. In the QCO dialect, the measurement operation returns not only the classical measurement outcome but also the state after measurement.
 
 ::::{grid} 2
 :::{grid-item}
@@ -224,7 +224,7 @@ qco.dealloc %q0_2 : !qco.qubit
 :::
 ::::
 
-The following snippets combine all of the above to create the first Bell state in the QC and QCO dialects.
+Moving on from one-qubit gates, let us apply a controlled-X operation. Towards that end, we allocate another qubit and subsequently use the `ctrl` _modifier_ operation of the respective dialect to implement the controlled-X. Thanks to modifiers, we can represent arbitrary (multi-)controlled gates without having to explicitly define them.
 
 ::::{grid} 2
 :::{grid-item}
@@ -237,6 +237,7 @@ The following snippets combine all of the above to create the first Bell state i
 qc.h %q0 : !qc.qubit
 qc.ctrl(%q0) {
     qc.x %q1 : !qc.qubit
+
 } : !qc.qubit
 
 %c0 = qc.measure %q0 : !qc.qubit -> i1
@@ -270,6 +271,19 @@ qco.dealloc %q1_2 : !qco.qubit
 
 :::
 ::::
+
+The `qco.ctrl` operation adds a bit of complexity:
+
+- The input target qubit must be explicitly specified and is aliased to the block argument `%arg0`.
+- The result of the `qco.x` operation needs to be passed to the outer block. Thus, similarly to the operations in the SCF dialect, we use `qco.yield`.
+- Analogously to the other unitary operations in the QCO dialect, the `qco.ctrl` modifier returns the modified state of the input qubits.
+
+Okay. What do we gain from the additional complexity of the QCO dialect?
+
+```{image} ../_static/qco-dataflow.svg
+:width: 75%
+:align: center
+```
 
 ### Compilation Flow
 
