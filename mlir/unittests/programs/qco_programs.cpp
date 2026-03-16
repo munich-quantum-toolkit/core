@@ -40,8 +40,7 @@ void staticQubits(QCOProgramBuilder& b) {
   q0 = b.h(q0);
   q1 = b.h(q1);
   b.ctrl({q0}, {q1}, [&](mlir::ValueRange targets) {
-    auto xOut = b.x(targets[0]);
-    return llvm::SmallVector<mlir::Value>{xOut};
+    return llvm::SmallVector<mlir::Value>{b.x(targets[0])};
   });
 }
 
