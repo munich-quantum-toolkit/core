@@ -51,6 +51,13 @@ def QubitType :
   Type<CPred<"llvm::isa<::mlir::qco::QubitType>($_self)">,
        "Elements must be of qubit type">;
 
+def Static1DQubitTensor : Type<
+  And<[
+    1DTensorOf<[QubitType]>.predicate,
+    HasStaticShapePred
+  ]>,
+  "Tensor must be statically shaped and elements must be of qubit type">;
+
 //===----------------------------------------------------------------------===//
 // Operations
 //===----------------------------------------------------------------------===//
@@ -69,7 +76,7 @@ def QTensor_AllocOp : QTensorOp<"alloc", [
     }];
 
     let arguments = (ins ConfinedAttr<I64Attr, [IntPositive]>:$size);
-    let results = (outs 1DTensorOf<[QubitType]>:$result);
+    let results = (outs Static1DQubitTensor:$result);
     let assemblyFormat = "`(`$size`)` attr-dict `:` type($result)";
 
     let builders = [
@@ -115,7 +122,7 @@ def QTensor_FromElementsOp : QTensorOp<"from_elements", [
     }];
 
     let arguments = (ins Variadic<QubitType>:$elements);
-    let results = (outs 1DTensorOf<[QubitType]>:$result);
+    let results = (outs Static1DQubitTensor:$result);
     let assemblyFormat = "$elements attr-dict `:` type($result)";
 
     let builders = [
