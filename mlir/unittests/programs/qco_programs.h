@@ -975,6 +975,8 @@ void nestedTrueIf(QCOProgramBuilder& b);
 /// the same condition.
 void nestedFalseIf(QCOProgramBuilder& b);
 
+// --- QTensor Operations -------------------------------------------------- //
+
 /// Allocates a tensor of size `3`.
 void qtensorAlloc(QCOProgramBuilder& b);
 
@@ -996,20 +998,21 @@ void qtensorExtractSlice(QCOProgramBuilder& b);
 /// Inserts a slice into a tensor.
 void qtensorInsertSlice(QCOProgramBuilder& b);
 
-/// Extracts a qubit from a tensor and insert it immediately.
+/// Extracts a qubit from a tensor and inserts it immediately.
 void qtensorExtractInsert(QCOProgramBuilder& b);
 
-/// Inserts a qubit into a tensor and extract it immediately.
+/// Inserts a qubit into a tensor and extracts it immediately.
 void qtensorInsertExtract(QCOProgramBuilder& b);
 
-/// Extracts a slice of qubits from a tensor and insert it immediately.
+/// Extracts a slice of qubits from a tensor and inserts it immediately.
 void qtensorExtractSliceInsertSlice(QCOProgramBuilder& b);
 
-/// Inserts a slice of qubits into a tensor and extract it immediately.
+/// Inserts a slice of qubits into a tensor and extracts it immediately.
 void qtensorInsertSliceExtractSlice(QCOProgramBuilder& b);
 
-/// Extracts a slice of qubits, a qubit from the slice, insert the qubit back to
-/// the slice and the slice back to the tensor immediately.
+/// Extracts a slice of qubits, extracts a qubit from the slice, inserts the
+/// qubit back into the slice, and inserts the slice back into the tensor
+/// immediately.
 void qtensorExtractSliceExtractInsertInsertSlice(QCOProgramBuilder& b);
 
 /// Inserts two qubits to the same index back to back.
