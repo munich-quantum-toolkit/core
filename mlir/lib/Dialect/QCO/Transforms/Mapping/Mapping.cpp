@@ -20,6 +20,8 @@
 #include <llvm/ADT/TypeSwitch.h>
 #include <llvm/Support/Debug.h>
 #include <llvm/Support/ErrorHandling.h>
+#include <llvm/Support/LogicalResult.h>
+#include <llvm/Support/Threading.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/IR/Block.h>
 #include <mlir/IR/BuiltinOps.h>
@@ -27,6 +29,7 @@
 #include <mlir/IR/Location.h>
 #include <mlir/IR/Operation.h>
 #include <mlir/IR/PatternMatch.h>
+#include <mlir/IR/Threading.h>
 #include <mlir/IR/Value.h>
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/WalkResult.h>
@@ -38,6 +41,7 @@
 #include <functional>
 #include <iterator>
 #include <queue>
+#include <random>
 #include <string>
 #include <string_view>
 #include <tuple>
@@ -85,6 +89,25 @@ private:
       for (std::size_t i = 0; i < nqubits; ++i) {
         layout.add(i, i);
       }
+      return layout;
+    }
+
+    /**
+     * @brief Constructs a random layout.
+     * @param nqubits The number of qubits.
+     * @param seed A seed for randomization.
+     * @return The random layout.
+     */
+    static Layout random(const std::size_t nqubits, const std::size_t seed) {
+      SmallVector<IndexType> mapping(nqubits);
+      std::iota(mapping.begin(), mapping.end(), IndexType{0});
+      std::ranges::shuffle(mapping, std::mt19937_64{seed});
+
+      Layout layout(nqubits);
+      for (const auto [prog, hw] : enumerate(mapping)) {
+        layout.add(prog, hw);
+      }
+
       return layout;
     }
 
@@ -320,27 +343,23 @@ public:
 
       const auto [ltr, rtl] = computeBidirectionalLayers(dyn);
 
-      // Use the SABRE Approach to improve the initial layout choice (here:
-      // identity): Traverse the layers from left-to-right-to-left and
-      // cold-route along the way. Repeat this procedure "niterations" times.
+      auto trials = generateTrials(arch);
+      parallelForEach(&getContext(), trials, [&, this](Trial& res) {
+        runMappingTrial(ltr, rtl, arch, params, res);
+      });
 
-      Layout layout = Layout::identity(arch.nqubits());
-      for (std::size_t r = 0; r < this->niterations; ++r) {
-        if (failed(routeCold(ltr, layout, arch, params))) {
-          signalPassFailure();
-          return;
-        }
-        if (failed(routeCold(rtl, layout, arch, params))) {
-          signalPassFailure();
-          return;
-        }
+      Trial* best = findBestTrial(trials);
+      if (best == nullptr) {
+        signalPassFailure();
+        return;
       }
 
       // Once the initial layout is found, replace the dynamic with static
       // qubits ("placement") and hot-route the circuit layer-by-layer.
 
-      const auto stat = place(dyn, layout, func.getFunctionBody(), rewriter);
-      if (failed(routeHot(ltr, layout, stat, arch, params, rewriter))) {
+      const auto stat =
+          place(dyn, best->layout, func.getFunctionBody(), rewriter);
+      if (failed(routeHot(ltr, best->layout, stat, arch, params, rewriter))) {
         signalPassFailure();
         return;
       };
@@ -348,6 +367,59 @@ public:
   }
 
 private:
+  struct Trial {
+    explicit Trial(Layout layout) : layout(std::move(layout)) {}
+    Layout layout;
+    std::size_t nswaps{};
+    bool valid{false};
+  };
+
+  [[nodiscard]] static SmallVector<Trial>
+  generateTrials(const Architecture& arch) {
+    constexpr std::size_t ntrials = 4; // TODO: Pass Option
+    SmallVector<Trial> trials;
+    trials.reserve(ntrials);
+    for (std::size_t i = 0; i < ntrials; ++i) {
+      trials.emplace_back(Layout::random(arch.nqubits(), 42));
+    }
+    return trials;
+  }
+
+  [[nodiscard]] static Trial* findBestTrial(MutableArrayRef<Trial> trials) {
+    Trial* best = nullptr;
+    for (auto& trial : trials) {
+      if (trial.valid) {
+        if (best == nullptr || best->nswaps > trial.nswaps) {
+          best = &trial;
+          continue;
+        }
+      }
+    }
+
+    return best;
+  }
+
+  /**
+   * @brief Run a mapping trial.
+   * @details Use the SABRE Approach to improve the initial layout choice:
+   * Traverse the layers from left-to-right-to-left and cold-route
+   * along the way. Repeat this procedure "niterations" times.
+   */
+  void runMappingTrial(ArrayRef<Layer> ltr, ArrayRef<Layer> rtl,
+                       const Architecture& arch, const Parameters& params,
+                       Trial& trial) {
+    for (std::size_t r = 0; r < this->niterations; ++r) {
+      if (failed(routeCold(ltr, arch, params, trial))) {
+        return;
+      }
+      if (failed(routeCold(rtl, arch, params, trial))) {
+        return;
+      }
+    }
+
+    trial.valid = true;
+  }
+
   /**
    * @brief Collect dynamic qubits contained in the given function body.
    * @returns a vector of SSA values produced by qco.alloc operations.
@@ -553,21 +625,22 @@ private:
    * @details Iterates over a sliding window of layers and uses the A* search
    * engine to find a sequence of SWAPs that makes that layer executable.
    * Instead of inserting these SWAPs into the IR, this function only updates
-   * the layout.
+   * (and hence modifies) the layout.
    * @returns failure() if A* search isn't able to find a solution.
    */
-  LogicalResult routeCold(ArrayRef<Layer> layers, Layout& layout,
-                          const Architecture& arch, const Parameters& params) {
+  LogicalResult routeCold(ArrayRef<Layer> layers, const Architecture& arch,
+                          const Parameters& params, Trial& trial) {
     for (std::size_t i = 0; i < layers.size(); ++i) {
       const std::size_t len = std::min(1 + nlookahead, layers.size() - i);
       const auto window = layers.slice(i, len);
-      const auto swaps = search(window, layout, arch, params);
+      const auto swaps = search(window, trial.layout, arch, params);
       if (failed(swaps)) {
         return failure();
       }
 
+      trial.nswaps += swaps->size();
       for (const auto& [hw0, hw1] : *swaps) {
-        layout.swap(hw0, hw1);
+        trial.layout.swap(hw0, hw1);
       }
     }
 
