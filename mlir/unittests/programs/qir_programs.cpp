@@ -39,6 +39,7 @@ void staticQubitsWithOps(QIRProgramBuilder& b) {
   auto q1 = b.staticQubit(1);
   b.h(q0);
   b.h(q1);
+  b.cx(q0, q1);
 }
 
 void staticQubitsWithParametricOps(QIRProgramBuilder& b) {
