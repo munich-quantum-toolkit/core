@@ -1051,7 +1051,7 @@ INSTANTIATE_TEST_SUITE_P(
         QCOTestCase{"AllocLargeRegister", MQT_NAMED_BUILDER(allocLargeRegister),
                     MQT_NAMED_BUILDER(emptyQCO)},
         QCOTestCase{"StaticQubits", MQT_NAMED_BUILDER(staticQubits),
-                    MQT_NAMED_BUILDER(emptyQCO)},
+                    MQT_NAMED_BUILDER(staticQubits)},
         QCOTestCase{"AllocDeallocPair", MQT_NAMED_BUILDER(allocDeallocPair),
                     MQT_NAMED_BUILDER(emptyQCO)}));
 /// @}

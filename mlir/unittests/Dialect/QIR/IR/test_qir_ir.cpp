@@ -529,5 +529,8 @@ INSTANTIATE_TEST_SUITE_P(
                                 MQT_NAMED_BUILDER(allocLargeRegister),
                                 MQT_NAMED_BUILDER(allocLargeRegister)},
                     QIRTestCase{"StaticQubits", MQT_NAMED_BUILDER(staticQubits),
+                                MQT_NAMED_BUILDER(staticQubits)},
+                    QIRTestCase{"StaticQubitsWithDuplicates",
+                                MQT_NAMED_BUILDER(staticQubitsWithDuplicates),
                                 MQT_NAMED_BUILDER(staticQubits)}));
 /// @}

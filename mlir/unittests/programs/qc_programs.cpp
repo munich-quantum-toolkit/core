@@ -30,8 +30,23 @@ void allocMultipleQubitRegisters(QCProgramBuilder& b) {
 void allocLargeRegister(QCProgramBuilder& b) { b.allocQubitRegister(100); }
 
 void staticQubits(QCProgramBuilder& b) {
-  b.staticQubit(0);
-  b.staticQubit(1);
+  const auto q0 = b.staticQubit(0);
+  const auto q1 = b.staticQubit(1);
+
+  b.h(q0);
+  b.h(q1);
+  b.ctrl(q0, [&] { b.x(q1); });
+}
+
+void staticQubitsWithDuplicates(QCProgramBuilder& b) {
+  const auto q0a = b.staticQubit(0);
+  const auto q1a = b.staticQubit(1);
+  const auto q0b = b.staticQubit(0);
+  const auto q1b = b.staticQubit(1);
+
+  b.h(q0a);
+  b.h(q1a);
+  b.ctrl(q0b, [&] { b.x(q1b); });
 }
 
 void allocDeallocPair(QCProgramBuilder& b) {

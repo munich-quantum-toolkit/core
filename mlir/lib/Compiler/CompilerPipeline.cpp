@@ -46,8 +46,10 @@ static void prettyPrintStage(ModuleOp module, const llvm::StringRef stageName,
 }
 
 void QuantumCompilerPipeline::addCleanupPasses(PassManager& pm) {
-  // Always run canonicalization and dead value removal
+  // Always run canonicalization, common sub-expression elimination, and dead
+  // value removal
   pm.addPass(createCanonicalizerPass());
+  pm.addPass(createCSEPass());
   pm.addPass(createRemoveDeadValuesPass());
 }
 
