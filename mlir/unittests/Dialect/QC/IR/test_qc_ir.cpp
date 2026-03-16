@@ -894,6 +894,9 @@ INSTANTIATE_TEST_SUITE_P(
                    MQT_NAMED_BUILDER(emptyQC)},
         QCTestCase{"StaticQubits", MQT_NAMED_BUILDER(staticQubits),
                    MQT_NAMED_BUILDER(emptyQC)},
+        QCTestCase{"StaticQubitsWithDuplicates",
+                   MQT_NAMED_BUILDER(staticQubitsWithDuplicates),
+                   MQT_NAMED_BUILDER(staticQubitsCanonical)},
         QCTestCase{"AllocDeallocPair", MQT_NAMED_BUILDER(allocDeallocPair),
                    MQT_NAMED_BUILDER(emptyQC)}));
 /// @}

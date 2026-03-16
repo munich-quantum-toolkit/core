@@ -33,6 +33,13 @@ void allocLargeRegister(QCProgramBuilder& b);
 /// Allocates two inline qubits.
 void staticQubits(QCProgramBuilder& b);
 
+/// Allocates duplicate static qubits for the same indices and applies gates.
+void staticQubitsWithDuplicates(QCProgramBuilder& b);
+
+/// Allocates canonical static qubits (one per index) and applies equivalent
+/// gates.
+void staticQubitsCanonical(QCProgramBuilder& b);
+
 /// Allocates and explicitly deallocates a single qubit.
 void allocDeallocPair(QCProgramBuilder& b);
 
