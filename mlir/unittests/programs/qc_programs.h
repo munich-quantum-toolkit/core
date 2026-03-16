@@ -36,6 +36,9 @@ void staticQubits(QCProgramBuilder& b);
 /// Allocates two static qubits and applies operations.
 void staticQubitsWithOps(QCProgramBuilder& b);
 
+/// Allocates duplicate static qubits for the same indices and applies gates.
+void staticQubitsWithDuplicates(QCProgramBuilder& b);
+
 /// Allocates two static qubits and applies parametric gates.
 void staticQubitsWithParametricOps(QCProgramBuilder& b);
 

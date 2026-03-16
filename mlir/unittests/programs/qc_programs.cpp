@@ -41,6 +41,16 @@ void staticQubitsWithOps(QCProgramBuilder& b) {
   b.h(q1);
 }
 
+void staticQubitsWithDuplicates(QCProgramBuilder& b) {
+  const auto q0a = b.staticQubit(0);
+  const auto q1a = b.staticQubit(1);
+  const auto q0b = b.staticQubit(0);
+  const auto q1b = b.staticQubit(1);
+
+  b.h(q0a);
+  b.h(q1a);
+}
+
 void staticQubitsWithParametricOps(QCProgramBuilder& b) {
   auto q0 = b.staticQubit(0);
   auto q1 = b.staticQubit(1);
