@@ -22,6 +22,7 @@
 #pragma clang diagnostic pop
 #endif
 
+#include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QTensor/IR/QTensorDialect.h"
 
 #include <mlir/Bytecode/BytecodeOpInterface.h>
