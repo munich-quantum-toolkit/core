@@ -42,8 +42,7 @@ void staticQubitsWithDuplicates(QCProgramBuilder& b) {
 
   b.h(q0a);
   b.h(q1a);
-  b.x(q0b);
-  b.x(q1b);
+  b.ctrl(q0b, [&] { b.x(q1b); });
 }
 
 void staticQubitsCanonical(QCProgramBuilder& b) {
@@ -52,8 +51,7 @@ void staticQubitsCanonical(QCProgramBuilder& b) {
 
   b.h(q0);
   b.h(q1);
-  b.x(q0);
-  b.x(q1);
+  b.ctrl(q0, [&] { b.x(q1); });
 }
 
 void allocDeallocPair(QCProgramBuilder& b) {

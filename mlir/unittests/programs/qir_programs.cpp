@@ -32,6 +32,14 @@ void staticQubits(QIRProgramBuilder& b) {
   b.staticQubit(1);
 }
 
+void staticQubitsCanonical(QIRProgramBuilder& b) {
+  auto q0 = b.staticQubit(0);
+  auto q1 = b.staticQubit(1);
+  b.h(q0);
+  b.h(q1);
+  b.cx(q0, q1);
+}
+
 void singleMeasurementToSingleBit(QIRProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   const auto c = b.allocClassicalBitRegister(1);

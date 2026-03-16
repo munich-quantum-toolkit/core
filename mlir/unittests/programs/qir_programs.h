@@ -33,6 +33,9 @@ void allocLargeRegister(QIRProgramBuilder& b);
 /// Allocates two inline qubits.
 void staticQubits(QIRProgramBuilder& b);
 
+/// Allocates two inline qubits with H on both and a controlled-X between them.
+void staticQubitsCanonical(QIRProgramBuilder& b);
+
 // --- MeasureOp ------------------------------------------------------------ //
 
 /// Measures a single qubit into a single classical bit.
