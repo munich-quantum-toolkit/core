@@ -189,10 +189,10 @@ TEST_P(CompilerPipelineTest, EndToEndPipeline) {
 INSTANTIATE_TEST_SUITE_P(
     QuantumComputationPipelineProgramsTest, CompilerPipelineTest,
     testing::Values(
-        CompilerPipelineTestCase{"StaticQubits", nullptr,
-                                 MQT_NAMED_BUILDER(mlir::qc::staticQubits),
-                                 MQT_NAMED_BUILDER(mlir::qc::emptyQC),
-                                 MQT_NAMED_BUILDER(mlir::qir::emptyQIR), false},
+        CompilerPipelineTestCase{
+            "StaticQubits", nullptr, MQT_NAMED_BUILDER(mlir::qc::staticQubits),
+            MQT_NAMED_BUILDER(mlir::qc::staticQubits),
+            MQT_NAMED_BUILDER(mlir::qir::staticQubits), false},
         CompilerPipelineTestCase{
             "StaticQubitsWithOps", nullptr,
             MQT_NAMED_BUILDER(mlir::qc::staticQubitsWithOps),

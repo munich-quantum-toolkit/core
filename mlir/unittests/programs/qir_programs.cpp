@@ -42,6 +42,16 @@ void staticQubitsWithOps(QIRProgramBuilder& b) {
   b.cx(q0, q1);
 }
 
+void staticQubitsWithDuplicates(QIRProgramBuilder& b) {
+  auto q0a = b.staticQubit(0);
+  auto q1a = b.staticQubit(1);
+  auto q0b = b.staticQubit(0);
+  auto q1b = b.staticQubit(1);
+  b.h(q0a);
+  b.h(q1a);
+  b.cx(q0b, q1b);
+}
+
 void staticQubitsWithParametricOps(QIRProgramBuilder& b) {
   auto q0 = b.staticQubit(0);
   auto q1 = b.staticQubit(1);
@@ -64,7 +74,6 @@ void staticQubitsWithCtrl(QIRProgramBuilder& b) {
 void staticQubitsWithInv(QIRProgramBuilder& b) {
   auto q0 = b.staticQubit(0);
   b.tdg(q0);
-}
 
 void singleMeasurementToSingleBit(QIRProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
