@@ -278,10 +278,8 @@ The `qco.ctrl` operation adds a bit of complexity:
 - The result of the `qco.x` operation needs to be passed to the outer block. Thus, similarly to the operations in the SCF dialect, we use `qco.yield`.
 - Analogously to the other unitary operations in the QCO dialect, the `qco.ctrl` modifier returns the modified state of the input qubits.
 
-Okay. What do we gain from the additional complexity of the QCO dialect?
-
 ```{image} ../_static/qco-dataflow.svg
-:width: 75%
+:width: 85%
 :align: center
 ```
 
