@@ -2226,7 +2226,7 @@ void qtensorInsertInsert(QCOProgramBuilder& b) {
   auto [extractOutTensor, q0] = b.qtensorExtract(qtensor, 0);
   auto insertTensorTemp = b.qtensorInsert(qTemp, extractOutTensor, 0);
   auto q1 = b.h(q0);
-  auto insertOutTensor = b.qtensorInsert(q1, insertTensorTemp, 0);
+  b.qtensorInsert(q1, insertTensorTemp, 0);
 }
 
 void qtensorInsertSliceInsertSlice(QCOProgramBuilder& b) {
