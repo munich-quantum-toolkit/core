@@ -30,11 +30,13 @@ void allocMultipleQubitRegisters(QIRProgramBuilder& b);
 /// Allocates a large qubit register.
 void allocLargeRegister(QIRProgramBuilder& b);
 
-/// Allocates two inline qubits.
+/// Allocates two inline qubits and applies H on both and a controlled-X between
+/// them.
 void staticQubits(QIRProgramBuilder& b);
 
-/// Allocates two inline qubits with H on both and a controlled-X between them.
-void staticQubitsCanonical(QIRProgramBuilder& b);
+/// Allocates duplicate static qubits and applies H on both and a controlled-X
+/// between them.
+void staticQubitsWithDuplicates(QIRProgramBuilder& b);
 
 // --- MeasureOp ------------------------------------------------------------ //
 

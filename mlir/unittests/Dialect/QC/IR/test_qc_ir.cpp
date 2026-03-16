@@ -893,10 +893,10 @@ INSTANTIATE_TEST_SUITE_P(
         QCTestCase{"AllocLargeRegister", MQT_NAMED_BUILDER(allocLargeRegister),
                    MQT_NAMED_BUILDER(emptyQC)},
         QCTestCase{"StaticQubits", MQT_NAMED_BUILDER(staticQubits),
-                   MQT_NAMED_BUILDER(emptyQC)},
+                   MQT_NAMED_BUILDER(staticQubits)},
         QCTestCase{"StaticQubitsWithDuplicates",
                    MQT_NAMED_BUILDER(staticQubitsWithDuplicates),
-                   MQT_NAMED_BUILDER(staticQubitsCanonical)},
+                   MQT_NAMED_BUILDER(staticQubits)},
         QCTestCase{"AllocDeallocPair", MQT_NAMED_BUILDER(allocDeallocPair),
                    MQT_NAMED_BUILDER(emptyQC)}));
 /// @}

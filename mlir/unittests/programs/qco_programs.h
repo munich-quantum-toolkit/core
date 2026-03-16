@@ -30,7 +30,8 @@ void allocMultipleQubitRegisters(QCOProgramBuilder& b);
 /// Allocates a large qubit register.
 void allocLargeRegister(QCOProgramBuilder& b);
 
-/// Allocates two inline qubits.
+/// Allocates two inline qubits and applies H on both and a controlled-X between
+/// them.
 void staticQubits(QCOProgramBuilder& b);
 
 /// Allocates and explicitly deallocates a single qubit.

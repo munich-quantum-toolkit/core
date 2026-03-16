@@ -618,7 +618,10 @@ INSTANTIATE_TEST_SUITE_P(
                         MQT_NAMED_BUILDER(qc::allocLargeRegister),
                         MQT_NAMED_BUILDER(qir::emptyQIR)},
         QCToQIRTestCase{"StaticQubits", MQT_NAMED_BUILDER(qc::staticQubits),
-                        MQT_NAMED_BUILDER(qir::emptyQIR)},
+                        MQT_NAMED_BUILDER(qir::staticQubits)},
+        QCToQIRTestCase{"StaticQubitsWithDuplicates",
+                        MQT_NAMED_BUILDER(qc::staticQubitsWithDuplicates),
+                        MQT_NAMED_BUILDER(qir::staticQubits)},
         QCToQIRTestCase{"AllocDeallocPair",
                         MQT_NAMED_BUILDER(qc::allocDeallocPair),
                         MQT_NAMED_BUILDER(qir::emptyQIR)}));
