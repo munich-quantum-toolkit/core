@@ -119,9 +119,9 @@ INSTANTIATE_TEST_SUITE_P(
     testing::Values(
         QCToQCOTestCase{"StaticQubits", MQT_NAMED_BUILDER(qc::staticQubits),
                         MQT_NAMED_BUILDER(qco::staticQubits)},
-        QCToQCOTestCase{"StaticQubitWithOp",
-                        MQT_NAMED_BUILDER(qc::staticQubitWithOp),
-                        MQT_NAMED_BUILDER(qco::staticQubitWithOp)}));
+        QCToQCOTestCase{"StaticQubitsWithOps",
+                        MQT_NAMED_BUILDER(qc::staticQubitsWithOps),
+                        MQT_NAMED_BUILDER(qco::staticQubitsWithOps)}));
 /// @}
 
 /// \name QCToQCO/Modifiers/InvOp.cpp

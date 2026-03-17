@@ -522,18 +522,20 @@ INSTANTIATE_TEST_SUITE_P(
 /// @{
 INSTANTIATE_TEST_SUITE_P(
     QIRQubitManagementTest, QIRTest,
-    testing::Values(
-        QIRTestCase{"AllocQubit", MQT_NAMED_BUILDER(allocQubit),
-                    MQT_NAMED_BUILDER(allocQubit)},
-        QIRTestCase{"AllocQubitRegister", MQT_NAMED_BUILDER(allocQubitRegister),
-                    MQT_NAMED_BUILDER(allocQubitRegister)},
-        QIRTestCase{"AllocMultipleQubitRegisters",
-                    MQT_NAMED_BUILDER(allocMultipleQubitRegisters),
-                    MQT_NAMED_BUILDER(allocMultipleQubitRegisters)},
-        QIRTestCase{"AllocLargeRegister", MQT_NAMED_BUILDER(allocLargeRegister),
-                    MQT_NAMED_BUILDER(allocLargeRegister)},
-        QIRTestCase{"StaticQubits", MQT_NAMED_BUILDER(staticQubits),
-                    MQT_NAMED_BUILDER(staticQubits)},
-        QIRTestCase{"StaticQubitWithOp", MQT_NAMED_BUILDER(staticQubitWithOp),
-                    MQT_NAMED_BUILDER(staticQubitWithOp)}));
+    testing::Values(QIRTestCase{"AllocQubit", MQT_NAMED_BUILDER(allocQubit),
+                                MQT_NAMED_BUILDER(allocQubit)},
+                    QIRTestCase{"AllocQubitRegister",
+                                MQT_NAMED_BUILDER(allocQubitRegister),
+                                MQT_NAMED_BUILDER(allocQubitRegister)},
+                    QIRTestCase{"AllocMultipleQubitRegisters",
+                                MQT_NAMED_BUILDER(allocMultipleQubitRegisters),
+                                MQT_NAMED_BUILDER(allocMultipleQubitRegisters)},
+                    QIRTestCase{"AllocLargeRegister",
+                                MQT_NAMED_BUILDER(allocLargeRegister),
+                                MQT_NAMED_BUILDER(allocLargeRegister)},
+                    QIRTestCase{"StaticQubits", MQT_NAMED_BUILDER(staticQubits),
+                                MQT_NAMED_BUILDER(staticQubits)},
+                    QIRTestCase{"StaticQubitsWithOps",
+                                MQT_NAMED_BUILDER(staticQubitsWithOps),
+                                MQT_NAMED_BUILDER(staticQubitsWithOps)}));
 /// @}

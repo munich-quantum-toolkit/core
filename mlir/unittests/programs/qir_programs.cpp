@@ -32,9 +32,11 @@ void staticQubits(QIRProgramBuilder& b) {
   b.staticQubit(1);
 }
 
-void staticQubitWithOp(QIRProgramBuilder& b) {
-  auto q = b.staticQubit(0);
-  b.h(q);
+void staticQubitsWithOps(QIRProgramBuilder& b) {
+  auto q0 = b.staticQubit(0);
+  auto q1 = b.staticQubit(1);
+  b.h(q0);
+  b.h(q1);
 }
 
 void singleMeasurementToSingleBit(QIRProgramBuilder& b) {

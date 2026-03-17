@@ -33,8 +33,8 @@ void allocLargeRegister(QIRProgramBuilder& b);
 /// Allocates two inline qubits.
 void staticQubits(QIRProgramBuilder& b);
 
-/// Allocates a static qubit and applies an operation.
-void staticQubitWithOp(QIRProgramBuilder& b);
+/// Allocates two static qubits and applies operations.
+void staticQubitsWithOps(QIRProgramBuilder& b);
 
 // --- MeasureOp ------------------------------------------------------------ //
 

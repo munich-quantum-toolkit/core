@@ -117,12 +117,12 @@ TEST_P(QCOToQCTest, ProgramEquivalence) {
 /// @{
 INSTANTIATE_TEST_SUITE_P(
     QCOQubitManagementTest, QCOToQCTest,
-    testing::Values(QCOToQCTestCase{"StaticQubits",
-                                    MQT_NAMED_BUILDER(qco::staticQubits),
-                                    MQT_NAMED_BUILDER(qc::staticQubits)},
-                    QCOToQCTestCase{"StaticQubitWithOp",
-                                    MQT_NAMED_BUILDER(qco::staticQubitWithOp),
-                                    MQT_NAMED_BUILDER(qc::staticQubitWithOp)}));
+    testing::Values(
+        QCOToQCTestCase{"StaticQubits", MQT_NAMED_BUILDER(qco::staticQubits),
+                        MQT_NAMED_BUILDER(qc::staticQubits)},
+        QCOToQCTestCase{"StaticQubitsWithOps",
+                        MQT_NAMED_BUILDER(qco::staticQubitsWithOps),
+                        MQT_NAMED_BUILDER(qc::staticQubitsWithOps)}));
 /// @}
 
 /// \name QCOToQC/Modifiers/InvOp.cpp
