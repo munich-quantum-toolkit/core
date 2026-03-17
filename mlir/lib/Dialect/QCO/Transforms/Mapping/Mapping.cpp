@@ -511,12 +511,14 @@ private:
   /**
    * @brief Perform A* search to find a sequence of SWAPs that makes the
    * two-qubit operations inside the first layer (the front) executable.
+   * @details The parameter @p maxIterations determines how many nodes will
+   * be explored until the current search is considered a failure.
    * @returns a vector of hardware-index pairs (each denoting a SWAP) or
    * failure() if A* fails.
    */
   [[nodiscard]] static FailureOr<SmallVector<IndexGate>>
   search(ArrayRef<Layer> layers, const Layout& layout, const Architecture& arch,
-         const Parameters& params) {
+         const Parameters& params, const std::size_t maxIterations = 50'000) {
 
     Node root(layout);
     if (root.isGoal(layers.front(), arch)) {
@@ -527,7 +529,8 @@ private:
     frontier.emplace(root);
     DenseSet<IndexGate> expansionSet;
 
-    while (!frontier.empty()) {
+    std::size_t i = 0;
+    while (!frontier.empty(), i < maxIterations) {
       Node curr = frontier.top();
       frontier.pop();
 
@@ -557,6 +560,8 @@ private:
           }
         }
       }
+
+      ++i;
     }
 
     return failure();
