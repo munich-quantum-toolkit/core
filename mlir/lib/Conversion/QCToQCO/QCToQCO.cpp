@@ -135,9 +135,14 @@ struct ConvertFuncReturnOp final : StatefulOpConversionPattern<func::ReturnOp> {
       llvm::SmallVector<Value> liveQubits;
       liveQubits.reserve(state.qubitMap.size());
 
+      llvm::DenseSet<Value> escapedQubits;
+      for (Value returned : adaptor.getOperands()) {
+        escapedQubits.insert(returned);
+      }
+
       llvm::DenseSet<Value> seen;
       for (const auto& [/*qcQubit*/ _, qcoQubit] : state.qubitMap) {
-        if (seen.insert(qcoQubit).second) {
+        if (!escapedQubits.contains(qcoQubit) && seen.insert(qcoQubit).second) {
           liveQubits.push_back(qcoQubit);
         }
       }
