@@ -154,7 +154,7 @@ TEST_F(CNTest, LookupInNeighbouringBuckets) {
   auto preHash = [fpMask](const fp val) { return val * fpMask; };
 
   // lower border of a bucket
-  const fp numBucketBorder = (0.25 * fpMask - 0.5) / (fpMask);
+  const fp numBucketBorder = ((0.25 * fpMask) - 0.5) / fpMask;
   const auto hashBucketBorder = RealNumberUniqueTable::hash(numBucketBorder);
   std::cout.flush();
   std::clog << "numBucketBorder          = "

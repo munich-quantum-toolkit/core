@@ -202,7 +202,7 @@ TEST_P(QPE, IQPETest) {
   } else {
     auto it = ordered.begin();
     std::advance(it, 1);
-    const auto& [secondMostLikelyResult, secondMostLikelyCount] = *(it);
+    const auto& [secondMostLikelyResult, secondMostLikelyCount] = *it;
     EXPECT_TRUE(
         (mostLikelyResult == expectedResultRepresentation &&
          secondMostLikelyResult == secondExpectedResultRepresentation) ||
