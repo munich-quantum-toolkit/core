@@ -177,7 +177,7 @@ mEdge Package::makeGateDD(const GateMatrix& mat, const qc::Controls& controls,
   if (controls.empty()) {
     // Single qubit operation
     const auto e = makeDDNode(static_cast<Qubit>(target), em);
-    return {e.p, cn.lookup(e.w)};
+    return {.p = e.p, .w = cn.lookup(e.w)};
   }
 
   auto it = controls.begin();
@@ -216,7 +216,7 @@ mEdge Package::makeGateDD(const GateMatrix& mat, const qc::Controls& controls,
       e = makeDDNode(static_cast<Qubit>(it->qubit), edges);
     }
   }
-  return {e.p, cn.lookup(e.w)};
+  return {.p = e.p, .w = cn.lookup(e.w)};
 }
 mEdge Package::makeTwoQubitGateDD(const TwoQubitGateMatrix& mat,
                                   const qc::Qubit target0,
@@ -339,7 +339,7 @@ mEdge Package::makeTwoQubitGateDD(const TwoQubitGateMatrix& mat,
     e = makeDDNode(static_cast<Qubit>(it->qubit), edges);
   }
 
-  return {e.p, cn.lookup(e.w)};
+  return {.p = e.p, .w = cn.lookup(e.w)};
 }
 mEdge Package::makeDDFromMatrix(const CMat& matrix) {
   if (matrix.empty()) {
@@ -362,7 +362,7 @@ mEdge Package::makeDDFromMatrix(const CMat& matrix) {
 
   const auto level = static_cast<Qubit>(std::log2(length) - 1);
   const auto matrixDD = makeDDFromMatrix(matrix, level, 0, length, 0, width);
-  return {matrixDD.p, cn.lookup(matrixDD.w)};
+  return {.p = matrixDD.p, .w = cn.lookup(matrixDD.w)};
 }
 mCachedEdge Package::makeDDFromMatrix(const CMat& matrix, const Qubit level,
                                       const std::size_t rowStart,
@@ -584,7 +584,7 @@ void Package::performCollapsingMeasurement(vEdge& rootEdge, const Qubit index,
 }
 vEdge Package::conjugate(const vEdge& a) {
   const auto r = conjugateRec(a);
-  return {r.p, cn.lookup(r.w)};
+  return {.p = r.p, .w = cn.lookup(r.w)};
 }
 vCachedEdge Package::conjugateRec(const vEdge& a) {
   if (a.isZeroTerminal()) {
@@ -609,7 +609,7 @@ vCachedEdge Package::conjugateRec(const vEdge& a) {
 }
 mEdge Package::conjugateTranspose(const mEdge& a) {
   const auto r = conjugateTransposeRec(a);
-  return {r.p, cn.lookup(r.w)};
+  return {.p = r.p, .w = cn.lookup(r.w)};
 }
 mCachedEdge Package::conjugateTransposeRec(const mEdge& a) {
   if (a.isTerminal()) { // terminal case
@@ -662,7 +662,7 @@ ComplexValue Package::innerProduct(const vEdge& x, const vEdge& y) {
   const auto w = std::max(x.p->v, y.p->v);
   // Overall normalization factor needs to be conjugated
   // before input into recursive private function
-  auto xCopy = vEdge{x.p, ComplexNumbers::conj(x.w)};
+  auto xCopy = vEdge{.p = x.p, .w = ComplexNumbers::conj(x.w)};
   return innerProduct(xCopy, y, w + 1U);
 }
 fp Package::fidelity(const vEdge& x, const vEdge& y) {
@@ -772,7 +772,7 @@ fp Package::expectationValue(const mEdge& x, const vEdge& y) {
 mEdge Package::partialTrace(const mEdge& a,
                             const std::vector<bool>& eliminate) {
   auto r = trace(a, eliminate, eliminate.size());
-  return {r.p, cn.lookup(r.w)};
+  return {.p = r.p, .w = cn.lookup(r.w)};
 }
 ComplexValue Package::trace(const mEdge& a, const std::size_t numQubits) {
   if (a.isIdentity()) {
@@ -971,7 +971,7 @@ mEdge Package::reduceAncillae(mEdge e, const std::vector<bool>& ancillary,
                                 mCachedEdge::zero()});
     }
   }
-  const auto res = mEdge{g.p, cn.lookup(g.w * e.w)};
+  const auto res = mEdge{.p = g.p, .w = cn.lookup(g.w * e.w)};
   incRef(res);
   decRef(e);
   return res;
@@ -1000,7 +1000,7 @@ vEdge Package::reduceGarbage(vEdge& e, const std::vector<bool>& garbage,
   if (normalizeWeights) {
     weight = weight.mag();
   }
-  const auto res = vEdge{f.p, cn.lookup(weight)};
+  const auto res = vEdge{.p = f.p, .w = cn.lookup(weight)};
   incRef(res);
   decRef(e);
   return res;
@@ -1064,7 +1064,7 @@ mEdge Package::reduceGarbage(const mEdge& e, const std::vector<bool>& garbage,
   if (normalizeWeights) {
     weight = weight.mag();
   }
-  const auto res = mEdge{g.p, cn.lookup(weight)};
+  const auto res = mEdge{.p = g.p, .w = cn.lookup(weight)};
 
   incRef(res);
   decRef(e);
