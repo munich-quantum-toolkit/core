@@ -38,6 +38,11 @@ void staticQubits(QCOProgramBuilder& b) {
   b.staticQubit(1);
 }
 
+void staticQubitWithOp(QCOProgramBuilder& b) {
+  auto q = b.staticQubit(0);
+  b.h(q);
+}
+
 void allocDeallocPair(QCOProgramBuilder& b) {
   auto q = b.allocQubit();
   b.dealloc(q);

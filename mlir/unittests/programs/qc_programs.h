@@ -33,6 +33,9 @@ void allocLargeRegister(QCProgramBuilder& b);
 /// Allocates two inline qubits.
 void staticQubits(QCProgramBuilder& b);
 
+/// Allocates a static qubit and applies an operation.
+void staticQubitWithOp(QCProgramBuilder& b);
+
 /// Allocates and explicitly deallocates a single qubit.
 void allocDeallocPair(QCProgramBuilder& b);
 
