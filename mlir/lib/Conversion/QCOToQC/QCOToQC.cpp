@@ -29,11 +29,14 @@
 #include <utility>
 
 namespace mlir {
+
 using namespace qco;
 using namespace qc;
 
 #define GEN_PASS_DEF_QCOTOQC
 #include "mlir/Conversion/QCOToQC/QCOToQC.h.inc"
+
+namespace {
 
 /**
  * @brief Type converter for QCO-to-QC conversion
@@ -816,5 +819,7 @@ protected:
     }
   }
 };
+
+} // namespace
 
 } // namespace mlir

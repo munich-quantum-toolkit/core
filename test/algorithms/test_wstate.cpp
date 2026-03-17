@@ -21,9 +21,10 @@
 #include <string>
 #include <vector>
 
+namespace {
+
 class WState : public testing::TestWithParam<qc::Qubit> {};
 
-namespace {
 std::vector<std::string> generateWStateStrings(const std::size_t length) {
   std::vector<std::string> result;
   result.reserve(length);
@@ -34,6 +35,7 @@ std::vector<std::string> generateWStateStrings(const std::size_t length) {
   }
   return result;
 }
+
 } // namespace
 
 INSTANTIATE_TEST_SUITE_P(

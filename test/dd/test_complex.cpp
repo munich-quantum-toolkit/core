@@ -28,12 +28,16 @@
 
 using namespace dd;
 
+namespace {
+
 class CNTest : public testing::Test {
 protected:
   MemoryManager mm{MemoryManager::create<RealNumber>()};
   RealNumberUniqueTable ut{mm};
   ComplexNumbers cn{ut};
 };
+
+} // namespace
 
 TEST_F(CNTest, ComplexNumberCreation) {
   EXPECT_TRUE(cn.lookup(Complex::zero()).exactlyZero());

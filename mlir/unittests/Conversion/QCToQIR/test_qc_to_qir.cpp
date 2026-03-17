@@ -35,6 +35,8 @@
 
 using namespace mlir;
 
+namespace {
+
 struct QCToQIRTestCase {
   std::string name;
   mqt::test::NamedBuilder<qc::QCProgramBuilder> programBuilder;
@@ -43,6 +45,14 @@ struct QCToQIRTestCase {
   friend std::ostream& operator<<(std::ostream& os,
                                   const QCToQIRTestCase& info);
 };
+
+// NOLINTNEXTLINE(llvm-prefer-static-over-anonymous-namespace)
+std::ostream& operator<<(std::ostream& os, const QCToQIRTestCase& info) {
+  return os << "QCToQIR{" << info.name
+            << ", original=" << mqt::test::displayName(info.programBuilder.name)
+            << ", reference="
+            << mqt::test::displayName(info.referenceBuilder.name) << "}";
+}
 
 class QCToQIRTest : public testing::TestWithParam<QCToQIRTestCase> {
 protected:
@@ -58,12 +68,7 @@ protected:
   }
 };
 
-std::ostream& operator<<(std::ostream& os, const QCToQIRTestCase& info) {
-  return os << "QCToQIR{" << info.name
-            << ", original=" << mqt::test::displayName(info.programBuilder.name)
-            << ", reference="
-            << mqt::test::displayName(info.referenceBuilder.name) << "}";
-}
+} // namespace
 
 static LogicalResult runQCToQIRConversion(ModuleOp module) {
   PassManager pm(module.getContext());

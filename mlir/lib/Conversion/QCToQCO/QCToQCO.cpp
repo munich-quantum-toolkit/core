@@ -34,6 +34,7 @@
 #include <utility>
 
 namespace mlir {
+
 using namespace qco;
 using namespace qc;
 
@@ -109,8 +110,6 @@ public:
 private:
   LoweringState* state_;
 };
-
-} // namespace
 
 /**
  * @brief Type converter for QC-to-QCO conversion
@@ -1177,5 +1176,7 @@ protected:
     }
   }
 };
+
+} // namespace
 
 } // namespace mlir

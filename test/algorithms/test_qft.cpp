@@ -31,6 +31,8 @@
 #include <memory>
 #include <sstream>
 
+namespace {
+
 class QFT : public testing::TestWithParam<qc::Qubit> {
 protected:
   void TearDown() override {}
@@ -46,6 +48,8 @@ protected:
   dd::VectorDD sim{};
   dd::MatrixDD func{};
 };
+
+} // namespace
 
 /// Findings from the QFT Benchmarks:
 /// The DDpackage has to be able to represent all 2^n different amplitudes in

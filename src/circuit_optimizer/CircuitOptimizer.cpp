@@ -1364,6 +1364,8 @@ void CircuitOptimizer::backpropagateOutputPermutation(QuantumComputation& qc) {
   qc.initialLayout = permutation;
 }
 
+namespace {
+
 /**
  * @brief Disjoint Set Union data structure for qubits
  *
@@ -1470,6 +1472,8 @@ struct DSU {
     }
   }
 };
+
+} // namespace
 
 void CircuitOptimizer::collectBlocks(QuantumComputation& qc,
                                      const std::size_t maxBlockSize) {
@@ -1625,6 +1629,8 @@ void CircuitOptimizer::collectBlocks(QuantumComputation& qc,
   removeIdentities(qc);
 }
 
+namespace {
+
 /**
  * @brief Block of Clifford operations
  * @details This structure is used to collect Clifford operations that can be
@@ -1752,6 +1758,8 @@ struct CliffordBlock {
     logicalStep = 0;
   }
 };
+
+} // namespace
 
 void CircuitOptimizer::collectCliffordBlocks(QuantumComputation& qc,
                                              const std::size_t maxBlockSize) {

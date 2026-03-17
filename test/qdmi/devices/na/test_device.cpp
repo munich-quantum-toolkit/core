@@ -47,6 +47,7 @@ MATCHER_P2(IsBetween, a, b,
 } // namespace testing
 
 namespace {
+
 /// Hash function for a pair
 struct PairHash {
   template <class T, class U>
@@ -94,7 +95,6 @@ struct PairHash {
   }
   return operations;
 }
-} // namespace
 
 class NaQDMISpecificationTest : public ::testing::Test {
 protected:
@@ -142,6 +142,8 @@ protected:
     NaQDMISpecificationTest::TearDown();
   }
 };
+
+} // namespace
 
 TEST_F(NaQDMISpecificationTest, SessionAlloc) {
   EXPECT_EQ(MQT_NA_QDMI_device_session_alloc(nullptr),
@@ -477,6 +479,8 @@ TEST_F(NaQDMISpecificationTest, QueryDeviceQubitNum) {
             QDMI_SUCCESS);
 }
 
+namespace {
+
 class NADeviceTest : public NaQDMISpecificationTest {
 protected:
   // NOLINTNEXTLINE(misc-include-cleaner)
@@ -500,6 +504,8 @@ protected:
 
   void TearDown() override { NaQDMISpecificationTest::TearDown(); }
 };
+
+} // namespace
 
 TEST_F(NADeviceTest, QuerySiteData) {
   std::vector<MQT_NA_QDMI_Site> sites;

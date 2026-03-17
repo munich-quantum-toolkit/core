@@ -34,15 +34,15 @@
 using namespace mlir;
 using namespace qco;
 
-struct QCOTestCase {
+namespace {
+
+struct QCOMatrixTestCase {
   std::string name;
   mqt::test::NamedBuilder<QCOProgramBuilder> programBuilder;
   mqt::test::NamedBuilder<QCOProgramBuilder> referenceBuilder;
-
-  friend std::ostream& operator<<(std::ostream& os, const QCOTestCase& info);
 };
 
-class QCOTest : public testing::TestWithParam<QCOTestCase> {
+class QCOMatrixTest : public testing::TestWithParam<QCOMatrixTestCase> {
 protected:
   std::unique_ptr<MLIRContext> context;
 
@@ -55,9 +55,11 @@ protected:
   }
 };
 
+} // namespace
+
 /// \name QCO/Modifiers/CtrlOp.cpp
 /// @{
-TEST_F(QCOTest, CXOpMatrix) {
+TEST_F(QCOMatrixTest, CXOpMatrix) {
   auto moduleOp = QCOProgramBuilder::build(context.get(), singleControlledX);
   ASSERT_TRUE(moduleOp);
 
@@ -87,7 +89,7 @@ TEST_F(QCOTest, CXOpMatrix) {
 
 /// \name QCO/Modifiers/InvOp.cpp
 /// @{
-TEST_F(QCOTest, InverseIswapOpMatrix) {
+TEST_F(QCOMatrixTest, InverseIswapOpMatrix) {
   auto moduleOp = QCOProgramBuilder::build(context.get(), inverseIswap);
   ASSERT_TRUE(moduleOp);
 
@@ -117,7 +119,7 @@ TEST_F(QCOTest, InverseIswapOpMatrix) {
 
 /// \name QCO/Operations/StandardGates/DcxOp.cpp
 /// @{
-TEST_F(QCOTest, DCXOpMatrix) {
+TEST_F(QCOMatrixTest, DCXOpMatrix) {
   // Get the (static) matrix from the operation
   const auto matrix = DCXOp::getUnitaryMatrix();
 
@@ -139,7 +141,7 @@ TEST_F(QCOTest, DCXOpMatrix) {
 
 /// \name QCO/Operations/StandardGates/EcrOp.cpp
 /// @{
-TEST_F(QCOTest, ECROpMatrix) {
+TEST_F(QCOMatrixTest, ECROpMatrix) {
   // Get the (static) matrix from the operation
   const auto matrix = ECROp::getUnitaryMatrix();
 
@@ -161,7 +163,7 @@ TEST_F(QCOTest, ECROpMatrix) {
 
 /// \name QCO/Operations/StandardGates/GphaseOp.cpp
 /// @{
-TEST_F(QCOTest, GPhaseOpMatrix) {
+TEST_F(QCOMatrixTest, GPhaseOpMatrix) {
   auto moduleOp = QCOProgramBuilder::build(context.get(), globalPhase);
   ASSERT_TRUE(moduleOp);
 
@@ -184,7 +186,7 @@ TEST_F(QCOTest, GPhaseOpMatrix) {
 
 /// \name QCO/Operations/StandardGates/HOp.cpp
 /// @{
-TEST_F(QCOTest, HOpMatrix) {
+TEST_F(QCOMatrixTest, HOpMatrix) {
   // Get the (static) matrix from the operation
   const auto matrix = HOp::getUnitaryMatrix();
 
@@ -202,7 +204,7 @@ TEST_F(QCOTest, HOpMatrix) {
 
 /// \name QCO/Operations/StandardGates/IdOp.cpp
 /// @{
-TEST_F(QCOTest, IdOpMatrix) {
+TEST_F(QCOMatrixTest, IdOpMatrix) {
   // Get the (static) matrix from the operation
   const auto matrix = IdOp::getUnitaryMatrix();
 
@@ -220,7 +222,7 @@ TEST_F(QCOTest, IdOpMatrix) {
 
 /// \name QCO/Operations/StandardGates/IswapOp.cpp
 /// @{
-TEST_F(QCOTest, iSWAPOpMatrix) {
+TEST_F(QCOMatrixTest, iSWAPOpMatrix) {
   // Get the (static) matrix from the operation
   const auto matrix = iSWAPOp::getUnitaryMatrix();
 
@@ -242,7 +244,7 @@ TEST_F(QCOTest, iSWAPOpMatrix) {
 
 /// \name QCO/Operations/StandardGates/POp.cpp
 /// @{
-TEST_F(QCOTest, POpMatrix) {
+TEST_F(QCOMatrixTest, POpMatrix) {
   auto moduleOp = QCOProgramBuilder::build(context.get(), p);
   ASSERT_TRUE(moduleOp);
 
@@ -265,7 +267,7 @@ TEST_F(QCOTest, POpMatrix) {
 
 /// \name QCO/Operations/StandardGates/ROp.cpp
 /// @{
-TEST_F(QCOTest, ROpMatrix) {
+TEST_F(QCOMatrixTest, ROpMatrix) {
   auto moduleOp = QCOProgramBuilder::build(context.get(), r);
   ASSERT_TRUE(moduleOp);
 
@@ -288,7 +290,7 @@ TEST_F(QCOTest, ROpMatrix) {
 
 /// \name QCO/Operations/StandardGates/RxOp.cpp
 /// @{
-TEST_F(QCOTest, RXOpMatrix) {
+TEST_F(QCOMatrixTest, RXOpMatrix) {
   auto moduleOp = QCOProgramBuilder::build(context.get(), rx);
   ASSERT_TRUE(moduleOp);
 
@@ -312,7 +314,7 @@ TEST_F(QCOTest, RXOpMatrix) {
 
 /// \name QCO/Operations/StandardGates/RxxOp.cpp
 /// @{
-TEST_F(QCOTest, RXXOpMatrix) {
+TEST_F(QCOMatrixTest, RXXOpMatrix) {
   auto moduleOp = QCOProgramBuilder::build(context.get(), rxx);
   ASSERT_TRUE(moduleOp);
 
@@ -339,7 +341,7 @@ TEST_F(QCOTest, RXXOpMatrix) {
 
 /// \name QCO/Operations/StandardGates/RyOp.cpp
 /// @{
-TEST_F(QCOTest, RYOpMatrix) {
+TEST_F(QCOMatrixTest, RYOpMatrix) {
   auto moduleOp = QCOProgramBuilder::build(context.get(), ry);
   ASSERT_TRUE(moduleOp);
 
@@ -363,7 +365,7 @@ TEST_F(QCOTest, RYOpMatrix) {
 
 /// \name QCO/Operations/StandardGates/RyyOp.cpp
 /// @{
-TEST_F(QCOTest, RYYOpMatrix) {
+TEST_F(QCOMatrixTest, RYYOpMatrix) {
   auto moduleOp = QCOProgramBuilder::build(context.get(), ryy);
   ASSERT_TRUE(moduleOp);
 
@@ -390,7 +392,7 @@ TEST_F(QCOTest, RYYOpMatrix) {
 
 /// \name QCO/Operations/StandardGates/RzOp.cpp
 /// @{
-TEST_F(QCOTest, RZOpMatrix) {
+TEST_F(QCOMatrixTest, RZOpMatrix) {
   auto moduleOp = QCOProgramBuilder::build(context.get(), rz);
   ASSERT_TRUE(moduleOp);
 
@@ -414,7 +416,7 @@ TEST_F(QCOTest, RZOpMatrix) {
 
 /// \name QCO/Operations/StandardGates/RzxOp.cpp
 /// @{
-TEST_F(QCOTest, RZXOpMatrix) {
+TEST_F(QCOMatrixTest, RZXOpMatrix) {
   auto moduleOp = QCOProgramBuilder::build(context.get(), rzx);
   ASSERT_TRUE(moduleOp);
 
@@ -441,7 +443,7 @@ TEST_F(QCOTest, RZXOpMatrix) {
 
 /// \name QCO/Operations/StandardGates/RzzOp.cpp
 /// @{
-TEST_F(QCOTest, RZZOpMatrix) {
+TEST_F(QCOMatrixTest, RZZOpMatrix) {
   auto moduleOp = QCOProgramBuilder::build(context.get(), rzz);
   ASSERT_TRUE(moduleOp);
 
@@ -468,7 +470,7 @@ TEST_F(QCOTest, RZZOpMatrix) {
 
 /// \name QCO/Operations/StandardGates/SOp.cpp
 /// @{
-TEST_F(QCOTest, SOpMatrix) {
+TEST_F(QCOMatrixTest, SOpMatrix) {
   // Get the (static) matrix from the operation
   const auto matrix = SOp::getUnitaryMatrix();
 
@@ -486,7 +488,7 @@ TEST_F(QCOTest, SOpMatrix) {
 
 /// \name QCO/Operations/StandardGates/SdgOp.cpp
 /// @{
-TEST_F(QCOTest, SdgOpMatrix) {
+TEST_F(QCOMatrixTest, SdgOpMatrix) {
   // Get the (static) matrix from the operation
   const auto matrix = SdgOp::getUnitaryMatrix();
 
@@ -504,7 +506,7 @@ TEST_F(QCOTest, SdgOpMatrix) {
 
 /// \name QCO/Operations/StandardGates/SwapOp.cpp
 /// @{
-TEST_F(QCOTest, SWAPOpMatrix) {
+TEST_F(QCOMatrixTest, SWAPOpMatrix) {
   // Get the (static) matrix from the operation
   const auto matrix = SWAPOp::getUnitaryMatrix();
 
@@ -526,7 +528,7 @@ TEST_F(QCOTest, SWAPOpMatrix) {
 
 /// \name QCO/Operations/StandardGates/SxOp.cpp
 /// @{
-TEST_F(QCOTest, SXOpMatrix) {
+TEST_F(QCOMatrixTest, SXOpMatrix) {
   // Get the (static) matrix from the operation
   const auto matrix = SXOp::getUnitaryMatrix();
 
@@ -544,7 +546,7 @@ TEST_F(QCOTest, SXOpMatrix) {
 
 /// \name QCO/Operations/StandardGates/SxdgOp.cpp
 /// @{
-TEST_F(QCOTest, SXdgOpMatrix) {
+TEST_F(QCOMatrixTest, SXdgOpMatrix) {
   // Get the (static) matrix from the operation
   const auto matrix = SXdgOp::getUnitaryMatrix();
 
@@ -562,7 +564,7 @@ TEST_F(QCOTest, SXdgOpMatrix) {
 
 /// \name QCO/Operations/StandardGates/TOp.cpp
 /// @{
-TEST_F(QCOTest, TOpMatrix) {
+TEST_F(QCOMatrixTest, TOpMatrix) {
   // Get the (static) matrix from the operation
   const auto matrix = TOp::getUnitaryMatrix();
 
@@ -580,7 +582,7 @@ TEST_F(QCOTest, TOpMatrix) {
 
 /// \name QCO/Operations/StandardGates/TdgOp.cpp
 /// @{
-TEST_F(QCOTest, TdgOpMatrix) {
+TEST_F(QCOMatrixTest, TdgOpMatrix) {
   // Get the (static) matrix from the operation
   const auto matrix = TdgOp::getUnitaryMatrix();
 
@@ -598,7 +600,7 @@ TEST_F(QCOTest, TdgOpMatrix) {
 
 /// \name QCO/Operations/StandardGates/U2Op.cpp
 /// @{
-TEST_F(QCOTest, U2OpMatrix) {
+TEST_F(QCOMatrixTest, U2OpMatrix) {
   auto moduleOp = QCOProgramBuilder::build(context.get(), u2);
   ASSERT_TRUE(moduleOp);
 
@@ -622,7 +624,7 @@ TEST_F(QCOTest, U2OpMatrix) {
 
 /// \name QCO/Operations/StandardGates/UOp.cpp
 /// @{
-TEST_F(QCOTest, UOpMatrix) {
+TEST_F(QCOMatrixTest, UOpMatrix) {
   auto moduleOp = QCOProgramBuilder::build(context.get(), u);
   ASSERT_TRUE(moduleOp);
 
@@ -646,7 +648,7 @@ TEST_F(QCOTest, UOpMatrix) {
 
 /// \name QCO/Operations/StandardGates/XOp.cpp
 /// @{
-TEST_F(QCOTest, XOpMatrix) {
+TEST_F(QCOMatrixTest, XOpMatrix) {
   // Get the (static) matrix from the operation
   const auto matrix = XOp::getUnitaryMatrix();
 
@@ -664,7 +666,7 @@ TEST_F(QCOTest, XOpMatrix) {
 
 /// \name QCO/Operations/StandardGates/XxMinusYyOp.cpp
 /// @{
-TEST_F(QCOTest, XXMinusYYOpMatrix) {
+TEST_F(QCOMatrixTest, XXMinusYYOpMatrix) {
   auto moduleOp = QCOProgramBuilder::build(context.get(), xxMinusYY);
   ASSERT_TRUE(moduleOp);
 
@@ -692,7 +694,7 @@ TEST_F(QCOTest, XXMinusYYOpMatrix) {
 
 /// \name QCO/Operations/StandardGates/XxPlusYyOp.cpp
 /// @{
-TEST_F(QCOTest, XXPlusYYOp) {
+TEST_F(QCOMatrixTest, XXPlusYYOp) {
   auto moduleOp = QCOProgramBuilder::build(context.get(), xxPlusYY);
   ASSERT_TRUE(moduleOp);
 
@@ -720,7 +722,7 @@ TEST_F(QCOTest, XXPlusYYOp) {
 
 /// \name QCO/Operations/StandardGates/YOp.cpp
 /// @{
-TEST_F(QCOTest, YOpMatrix) {
+TEST_F(QCOMatrixTest, YOpMatrix) {
   // Get the (static) matrix from the operation
   const auto matrix = YOp::getUnitaryMatrix();
 
@@ -738,7 +740,7 @@ TEST_F(QCOTest, YOpMatrix) {
 
 /// \name QCO/Operations/StandardGates/ZOp.cpp
 /// @{
-TEST_F(QCOTest, ZOpMatrix) {
+TEST_F(QCOMatrixTest, ZOpMatrix) {
   // Get the (static) matrix from the operation
   const auto matrix = ZOp::getUnitaryMatrix();
 

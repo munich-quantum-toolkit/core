@@ -39,6 +39,7 @@
 #include <utility>
 
 namespace mlir {
+
 using namespace qco;
 
 #define GEN_PASS_DEF_JEFFTOQCO
@@ -377,6 +378,8 @@ static LogicalResult cleanUp(Operation* op) {
 
   return success();
 }
+
+namespace {
 
 /**
  * @brief Converts jeff.qubit_alloc to qco.alloc
@@ -962,5 +965,7 @@ protected:
     }
   }
 };
+
+} // namespace
 
 } // namespace mlir

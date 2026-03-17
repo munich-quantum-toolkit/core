@@ -185,6 +185,8 @@ convertUnitaryToCallOp(QCOpType& op, QCOpAdaptorType& adaptor,
   return success();
 }
 
+namespace {
+
 /**
  * @brief Type converter for lowering QC dialect types to LLVM types
  *
@@ -201,8 +203,6 @@ struct QCToQIRTypeConverter final : LLVMTypeConverter {
         [ctx](QubitType /*type*/) { return LLVM::LLVMPointerType::get(ctx); });
   }
 };
-
-namespace {
 
 /**
  * @brief Converts qc.alloc operation to static QIR qubit allocations
@@ -873,8 +873,6 @@ struct ConvertQCYieldQIR final : StatefulOpConversionPattern<YieldOp> {
   }
 };
 
-} // namespace
-
 /**
  * @brief Pass for converting QC dialect operations to QIR
  *
@@ -1269,5 +1267,7 @@ struct QCToQIR final : impl::QCToQIRBase<QCToQIR> {
     }
   }
 };
+
+} // namespace
 
 } // namespace mlir

@@ -55,6 +55,8 @@ namespace mlir::qco {
 #define GEN_PASS_DEF_MAPPINGPASS
 #include "mlir/Dialect/QCO/Transforms/Passes.h.inc"
 
+namespace {
+
 struct MappingPass : impl::MappingPassBase<MappingPass> {
 private:
   using QubitValue = TypedValue<QubitType>;
@@ -775,4 +777,7 @@ private:
     }
   }
 };
+
+} // namespace
+
 } // namespace mlir::qco

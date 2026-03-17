@@ -32,6 +32,8 @@
 #include <string>
 #include <utility>
 
+namespace {
+
 class QPE : public testing::TestWithParam<std::pair<qc::fp, qc::Qubit>> {
 protected:
   qc::fp lambda{};
@@ -115,6 +117,8 @@ protected:
     }
   }
 };
+
+} // namespace
 
 INSTANTIATE_TEST_SUITE_P(
     QPE, QPE,

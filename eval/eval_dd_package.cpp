@@ -39,7 +39,10 @@
 #include <string>
 #include <utility>
 
+static constexpr std::size_t SEED = 42U;
+
 namespace dd {
+namespace {
 
 struct Experiment {
   std::unique_ptr<Package> dd;
@@ -73,7 +76,6 @@ struct FunctionalityConstructionExperiment final : Experiment {
   }
 };
 
-namespace {
 std::unique_ptr<SimulationExperiment>
 benchmarkSimulate(const qc::QuantumComputation& qc) {
   auto exp = std::make_unique<SimulationExperiment>();
@@ -191,9 +193,6 @@ benchmarkFunctionalityConstructionGrover(
   exp->stats = getStatistics(*exp->dd);
   return exp;
 }
-} // namespace
-
-static constexpr std::size_t SEED = 42U;
 
 class BenchmarkDDPackage {
 protected:
@@ -407,6 +406,7 @@ public:
   }
 };
 
+} // namespace
 } // namespace dd
 
 int main(const int argc, char** argv) {
