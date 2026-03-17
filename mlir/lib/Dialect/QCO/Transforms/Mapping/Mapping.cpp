@@ -374,15 +374,7 @@ public:
         return;
       }
 
-      // Once the initial layout is found, replace the dynamic with static
-      // qubits ("placement") and hot-route the circuit layer-by-layer.
-
-      const auto stat =
-          place(dyn, best->layout, func.getFunctionBody(), rewriter);
-      if (failed(commitTrial(*best, stat, rewriter))) {
-        signalPassFailure();
-        return;
-      };
+      commitTrial(*best, dyn, func.getFunctionBody(), rewriter);
     }
   }
 
@@ -692,15 +684,13 @@ private:
   }
 
   /**
-   * @brief "Hot" routing of the given layers.
-   * @details Iterates over a sliding window of layers and uses the A* search
-   * engine to find a sequence of SWAPs that makes that layer executable.
-   * This function inserts SWAP ops.
-   * @returns failure() if A* search isn't able to find a solution.
+   * @brief Performs placement and inserts SWAPs into the IR.
+   * @details Replace the dynamic with static qubits ("placement") and inserts
+   * the SWAPs of the trial result into the IR.
    */
-  static LogicalResult commitTrial(const TrialResult& result,
-                                   ArrayRef<QubitValue> statics,
-                                   IRRewriter& rewriter) {
+  static void commitTrial(const TrialResult& result,
+                          ArrayRef<QubitValue> dynQubits, Region& funcBody,
+                          IRRewriter& rewriter) {
     // Helper function that advances the iterator to the input qubit (the
     // operation producing it) of a deallocation or two-qubit op.
     const auto advFront = [](WireIterator& it) {
@@ -719,8 +709,9 @@ private:
       }
     };
 
+    auto wires = toWires(place(dynQubits, result.layout, funcBody, rewriter));
+
     DenseMap<Operation*, WireIterator*> seen;
-    auto wires = toWires(statics);
     for (const auto [i, swaps] : enumerate(result.swaps)) {
       // Advance all wires to the next front of one-qubit outputs
       // (the SSA values).
@@ -770,8 +761,6 @@ private:
 
       seen.clear(); // Prepare for next iteration.
     }
-
-    return success();
   }
 };
 } // namespace mlir::qco
