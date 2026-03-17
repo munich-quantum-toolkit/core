@@ -323,6 +323,9 @@ public:
   using MappingPassBase::MappingPassBase;
 
   void runOnOperation() override {
+    std::mt19937_64 rng{this->seed};
+    IRRewriter rewriter(&getContext());
+
     Parameters params(this->alpha, this->lambda, this->nlookahead);
     // TODO: Hardcoded architecture.
     Architecture arch("RigettiNovera", 9,
@@ -331,7 +334,6 @@ public:
                        {3, 4}, {4, 3}, {4, 7}, {7, 4}, {4, 5}, {5, 4},
                        {5, 8}, {8, 5}, {6, 7}, {7, 6}, {7, 8}, {8, 7}});
 
-    IRRewriter rewriter(&getContext());
     for (auto func : getOperation().getOps<func::FuncOp>()) {
       const auto dyn = collectDynamicQubits(func.getFunctionBody());
       if (dyn.size() > arch.nqubits()) {
@@ -343,12 +345,30 @@ public:
 
       const auto [ltr, rtl] = computeBidirectionalLayers(dyn);
 
-      auto trials = generateTrials(arch);
-      parallelForEach(&getContext(), trials, [&, this](Trial& res) {
-        runMappingTrial(ltr, rtl, arch, params, res);
-      });
+      // Create trials. Currently this includes the identity layout and
+      // `ntrials` many random layouts.
 
-      Trial* best = findBestTrial(trials);
+      SmallVector<Layout> trials;
+      trials.reserve(1 + this->ntrials);
+      trials.emplace_back(Layout::identity(arch.nqubits()));
+      for (std::size_t i = 0; i < this->ntrials; ++i) {
+        trials.emplace_back(Layout::random(arch.nqubits(), rng()));
+      }
+
+      // Execute each of the trials (possibly in parallel). Collect the results
+      // and find the one with the fewest SWAPs.
+
+      SmallVector<std::optional<TrialResult>> results(trials.size());
+      parallelForEach(
+          &getContext(), enumerate(trials), [&, this](auto indexedTrial) {
+            auto [idx, layout] = indexedTrial;
+            auto res = runMappingTrial(ltr, rtl, arch, params, layout);
+            if (succeeded(res)) {
+              results[idx] = std::move(*res);
+            }
+          });
+
+      TrialResult* best = findBestTrial(results);
       if (best == nullptr) {
         signalPassFailure();
         return;
@@ -359,7 +379,7 @@ public:
 
       const auto stat =
           place(dyn, best->layout, func.getFunctionBody(), rewriter);
-      if (failed(routeHot(ltr, best->layout, stat, arch, params, rewriter))) {
+      if (failed(commitTrial(*best, stat, rewriter))) {
         signalPassFailure();
         return;
       };
@@ -367,57 +387,70 @@ public:
   }
 
 private:
-  struct Trial {
-    explicit Trial(Layout layout) : layout(std::move(layout)) {}
+  struct [[nodiscard]] TrialResult {
+    explicit TrialResult(Layout layout) : layout(std::move(layout)) {}
+
+    /// @brief The computed initial layout.
     Layout layout;
+    /// @brief A vector of SWAPs for each layer.
+    SmallVector<SmallVector<IndexGate>> swaps;
+    /// @brief The number of inserted SWAPs.
     std::size_t nswaps{};
-    bool valid{false};
   };
 
-  [[nodiscard]] static SmallVector<Trial>
-  generateTrials(const Architecture& arch) {
-    constexpr std::size_t ntrials = 4; // TODO: Pass Option
-    SmallVector<Trial> trials;
-    trials.reserve(ntrials);
-    for (std::size_t i = 0; i < ntrials; ++i) {
-      trials.emplace_back(Layout::random(arch.nqubits(), 42));
-    }
-    return trials;
-  }
-
-  [[nodiscard]] static Trial* findBestTrial(MutableArrayRef<Trial> trials) {
-    Trial* best = nullptr;
-    for (auto& trial : trials) {
-      if (trial.valid) {
-        if (best == nullptr || best->nswaps > trial.nswaps) {
-          best = &trial;
-          continue;
+  /**
+   * @brief Find the best trial result in terms of the number of SWAPs.
+   * @returns the best trial result or nullptr if no result is valid.
+   */
+  [[nodiscard]] static TrialResult*
+  findBestTrial(MutableArrayRef<std::optional<TrialResult>> results) {
+    TrialResult* best = nullptr;
+    for (auto& opt : results) {
+      if (opt.has_value()) {
+        if (best == nullptr || best->nswaps > opt->nswaps) {
+          best = &opt.value();
         }
       }
     }
-
     return best;
   }
 
   /**
    * @brief Run a mapping trial.
-   * @details Use the SABRE Approach to improve the initial layout choice:
+   * @details Use the SABRE Approach to improve the initial layout:
    * Traverse the layers from left-to-right-to-left and cold-route
    * along the way. Repeat this procedure "niterations" times.
+   * @returns the trial result or failure() on failure.
    */
-  void runMappingTrial(ArrayRef<Layer> ltr, ArrayRef<Layer> rtl,
-                       const Architecture& arch, const Parameters& params,
-                       Trial& trial) {
-    for (std::size_t r = 0; r < this->niterations; ++r) {
-      if (failed(routeCold(ltr, arch, params, trial))) {
-        return;
+  FailureOr<TrialResult> runMappingTrial(ArrayRef<Layer> ltr,
+                                         ArrayRef<Layer> rtl,
+                                         const Architecture& arch,
+                                         const Parameters& params,
+                                         Layout& layout) {
+    // Perform forwards and backwards traversals.
+    for (std::size_t i = 0; i < this->niterations; ++i) {
+      if (failed(route(ltr, arch, params, layout, [](const auto&) {}))) {
+        return failure();
       }
-      if (failed(routeCold(rtl, arch, params, trial))) {
-        return;
+      if (failed(route(rtl, arch, params, layout, [](const auto&) {}))) {
+        return failure();
       }
     }
 
-    trial.valid = true;
+    TrialResult result(layout); // Copies the final initial layout.
+
+    // Helper function that adds the SWAPs to the trial result.
+    const auto collectSwaps = [&](ArrayRef<IndexGate> swaps) {
+      result.nswaps += swaps.size();
+      result.swaps.emplace_back(swaps);
+    };
+
+    // Perform final left-to-right traversal whilst collecting SWAPs.
+    if (failed(route(ltr, arch, params, layout, collectSwaps))) {
+      return failure();
+    }
+
+    return result;
   }
 
   /**
@@ -625,23 +658,27 @@ private:
    * @details Iterates over a sliding window of layers and uses the A* search
    * engine to find a sequence of SWAPs that makes that layer executable.
    * Instead of inserting these SWAPs into the IR, this function only updates
-   * (and hence modifies) the layout.
+   * (and hence modifies) the layout. The function calls the callback @p onSwaps
+   * for each layer with the found sequence of SWAPs.
    * @returns failure() if A* search isn't able to find a solution.
    */
-  LogicalResult routeCold(ArrayRef<Layer> layers, const Architecture& arch,
-                          const Parameters& params, Trial& trial) {
+  template <typename OnSwaps>
+  LogicalResult route(ArrayRef<Layer> layers, const Architecture& arch,
+                      const Parameters& params, Layout& layout,
+                      OnSwaps&& onSwaps) {
     for (std::size_t i = 0; i < layers.size(); ++i) {
       const std::size_t len = std::min(1 + nlookahead, layers.size() - i);
       const auto window = layers.slice(i, len);
-      const auto swaps = search(window, trial.layout, arch, params);
+      const auto swaps = search(window, layout, arch, params);
       if (failed(swaps)) {
         return failure();
       }
 
-      trial.nswaps += swaps->size();
       for (const auto& [hw0, hw1] : *swaps) {
-        trial.layout.swap(hw0, hw1);
+        layout.swap(hw0, hw1);
       }
+
+      std::forward<OnSwaps>(onSwaps)(*swaps);
     }
 
     return success();
@@ -654,9 +691,9 @@ private:
    * This function inserts SWAP ops.
    * @returns failure() if A* search isn't able to find a solution.
    */
-  LogicalResult routeHot(ArrayRef<Layer> ltr, Layout& layout,
-                         ArrayRef<QubitValue> statics, const Architecture& arch,
-                         const Parameters& params, IRRewriter& rewriter) {
+  static LogicalResult commitTrial(const TrialResult& result,
+                                   ArrayRef<QubitValue> statics,
+                                   IRRewriter& rewriter) {
     // Helper function that advances the iterator to the input qubit (the
     // operation producing it) of a deallocation or two-qubit op.
     const auto advFront = [](WireIterator& it) {
@@ -675,21 +712,15 @@ private:
       }
     };
 
+    DenseMap<Operation*, WireIterator*> seen;
     auto wires = toWires(statics);
-    for (const auto [i, layer] : enumerate(ltr)) {
-      // Advance all wires to the next front of one-qubit outputs (the SSA
-      // values).
+    for (const auto [i, swaps] : enumerate(result.swaps)) {
+      // Advance all wires to the next front of one-qubit outputs
+      // (the SSA values).
       for_each(wires, advFront);
 
-      // Collect window and use A* to find and insert a sequence of swaps.
-      const auto len = std::min(1 + this->nlookahead, ltr.size() - i);
-      const auto window = ltr.slice(i, len);
-      const auto swaps = search(window, layout, arch, params);
-      if (failed(swaps)) {
-        return failure();
-      }
-
-      for (const auto& [hw0, hw1] : *swaps) {
+      // Apply the sequence of SWAPs and rewire the qubit SSA values.
+      for (const auto& [hw0, hw1] : swaps) {
         Operation* op0 = wires[hw0].operation();
         Operation* op1 = wires[hw1].operation();
         const auto in0 = wires[hw0].qubit();
@@ -714,15 +745,23 @@ private:
         // Jump over the SWAPOp.
         std::ranges::advance(wires[hw0], 1);
         std::ranges::advance(wires[hw1], 1);
-
-        layout.swap(hw0, hw1);
       }
 
-      // Jump over two-qubit gates contained in the layer.
-      for (const auto& [prog0, prog1] : layer) {
-        std::ranges::advance(wires[layout.getHardwareIndex(prog0)], 1);
-        std::ranges::advance(wires[layout.getHardwareIndex(prog1)], 1);
+      // Jump over "ready" two-qubit gates.
+      for (auto& it : wires) {
+        auto op = dyn_cast<UnitaryOpInterface>(std::next(it).operation());
+        if (op && op.getNumQubits() > 1) {
+          if (seen.contains(op)) {
+            std::ranges::advance(it, 1);
+            std::ranges::advance(*seen[op], 1);
+            continue;
+          }
+
+          seen.try_emplace(op, &it);
+        }
       }
+
+      seen.clear(); // Prepare for next iteration.
     }
 
     return success();
