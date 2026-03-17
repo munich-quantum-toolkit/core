@@ -412,12 +412,6 @@ struct MergeRotationGatesPattern final
    */
   LogicalResult matchAndRewrite(UnitaryOpInterface op,
                                 PatternRewriter& rewriter) const override {
-    // QCO operations cannot contain control qubits, so no need to check for
-    // them
-    if (!op->hasOneUse()) {
-      return failure();
-    }
-
     auto* userOP = *op->getUsers.begin();
 
     if (!areQuaternionMergeable(*op, *userOP)) {
