@@ -324,6 +324,7 @@ private:
 public:
   using MappingPassBase::MappingPassBase;
 
+protected:
   void runOnOperation() override {
     std::mt19937_64 rng{this->seed};
     IRRewriter rewriter(&getContext());

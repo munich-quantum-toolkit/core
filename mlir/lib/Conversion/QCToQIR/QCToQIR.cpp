@@ -1121,6 +1121,7 @@ struct QCToQIR final : impl::QCToQIRBase<QCToQIR> {
     }
   }
 
+protected:
   /**
    * @brief Executes the QC to QIR conversion pass
    *
