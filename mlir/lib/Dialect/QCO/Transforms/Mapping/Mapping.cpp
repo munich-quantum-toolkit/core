@@ -20,8 +20,6 @@
 #include <llvm/ADT/TypeSwitch.h>
 #include <llvm/Support/Debug.h>
 #include <llvm/Support/ErrorHandling.h>
-#include <llvm/Support/LogicalResult.h>
-#include <llvm/Support/Threading.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/IR/Block.h>
 #include <mlir/IR/BuiltinOps.h>
@@ -40,6 +38,8 @@
 #include <cstdint>
 #include <functional>
 #include <iterator>
+#include <numeric>
+#include <optional>
 #include <queue>
 #include <random>
 #include <string>
@@ -666,6 +666,8 @@ private:
   LogicalResult route(ArrayRef<Layer> layers, const Architecture& arch,
                       const Parameters& params, Layout& layout,
                       OnSwaps&& onSwaps) {
+    auto&& callback = std::forward<OnSwaps>(onSwaps);
+
     for (std::size_t i = 0; i < layers.size(); ++i) {
       const std::size_t len = std::min(1 + nlookahead, layers.size() - i);
       const auto window = layers.slice(i, len);
@@ -678,7 +680,7 @@ private:
         layout.swap(hw0, hw1);
       }
 
-      std::forward<OnSwaps>(onSwaps)(*swaps);
+      std::invoke(callback, *swaps);
     }
 
     return success();
