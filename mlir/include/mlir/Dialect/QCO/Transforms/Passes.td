@@ -50,8 +50,8 @@ def MappingPass : Pass<"place-and-route", "mlir::ModuleOp"> {
     made during that traversal. By performing multiple traversals, the pass can iteratively refine the mapping and
     potentially find a more optimal solution. This is behavior is controlled by the `niterations` parameter.
 
-    The pass option `ntrials` determines how many random initial layouts the pass explores. If compiled with multi-threading
-    on, these trials will be executed in parallel.
+    The pass option `ntrials` determines how many random initial layouts the pass explores. Per default, the pass always
+    explores the identity layout. If compiled with multi-threading on, these trials will be executed in parallel.
   }];
   let options = [
     Option<"nlookahead", "nlookahead", "std::size_t", "1",
@@ -63,8 +63,8 @@ def MappingPass : Pass<"place-and-route", "mlir::ModuleOp"> {
     Option<"niterations", "niterations", "std::size_t", "2",
            "The number of forwards and backwards traversal to improve the initial layout.">,
     Option<"ntrials", "ntrials", "std::size_t", "4",
-           "The number of (possibly parallel) trials of the forwards and backwards mechanism.">,
-     Option<"seed", "seed", "std::size_t", "42",
+           "The number of (possibly parallel) random trials of the forwards and backwards mechanism.">,
+    Option<"seed", "seed", "std::size_t", "42",
            "A seed used for randomization.">
   ];
 }
