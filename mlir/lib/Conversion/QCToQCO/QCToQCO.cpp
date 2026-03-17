@@ -376,7 +376,7 @@ struct ConvertQCZeroTargetOneParameterToQCO final
   using StatefulOpConversionPattern<QCOpType>::StatefulOpConversionPattern;
 
   LogicalResult
-  matchAndRewrite(QCOpType op, typename QCOpType::Adaptor /*adaptor*/,
+  matchAndRewrite(QCOpType op, QCOpType::Adaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
     auto& state = this->getState();
     const auto inNestedRegion = state.inNestedRegion;
@@ -417,7 +417,7 @@ struct ConvertQCOneTargetZeroParameterToQCO final
   using StatefulOpConversionPattern<QCOpType>::StatefulOpConversionPattern;
 
   LogicalResult
-  matchAndRewrite(QCOpType op, typename QCOpType::Adaptor /*adaptor*/,
+  matchAndRewrite(QCOpType op, QCOpType::Adaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
     auto& state = this->getState();
     auto& qubitMap = state.qubitMap;
@@ -474,7 +474,7 @@ struct ConvertQCOneTargetOneParameterToQCO final
   using StatefulOpConversionPattern<QCOpType>::StatefulOpConversionPattern;
 
   LogicalResult
-  matchAndRewrite(QCOpType op, typename QCOpType::Adaptor /*adaptor*/,
+  matchAndRewrite(QCOpType op, QCOpType::Adaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
     auto& state = this->getState();
     auto& qubitMap = state.qubitMap;
@@ -532,7 +532,7 @@ struct ConvertQCOneTargetTwoParameterToQCO final
   using StatefulOpConversionPattern<QCOpType>::StatefulOpConversionPattern;
 
   LogicalResult
-  matchAndRewrite(QCOpType op, typename QCOpType::Adaptor /*adaptor*/,
+  matchAndRewrite(QCOpType op, QCOpType::Adaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
     auto& state = this->getState();
     auto& qubitMap = state.qubitMap;
@@ -590,7 +590,7 @@ struct ConvertQCOneTargetThreeParameterToQCO final
   using StatefulOpConversionPattern<QCOpType>::StatefulOpConversionPattern;
 
   LogicalResult
-  matchAndRewrite(QCOpType op, typename QCOpType::Adaptor /*adaptor*/,
+  matchAndRewrite(QCOpType op, QCOpType::Adaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
     auto& state = this->getState();
     auto& qubitMap = state.qubitMap;
@@ -650,7 +650,7 @@ struct ConvertQCTwoTargetZeroParameterToQCO final
   using StatefulOpConversionPattern<QCOpType>::StatefulOpConversionPattern;
 
   LogicalResult
-  matchAndRewrite(QCOpType op, typename QCOpType::Adaptor /*adaptor*/,
+  matchAndRewrite(QCOpType op, QCOpType::Adaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
     auto& state = this->getState();
     auto& qubitMap = state.qubitMap;
@@ -716,7 +716,7 @@ struct ConvertQCTwoTargetOneParameterToQCO final
   using StatefulOpConversionPattern<QCOpType>::StatefulOpConversionPattern;
 
   LogicalResult
-  matchAndRewrite(QCOpType op, typename QCOpType::Adaptor /*adaptor*/,
+  matchAndRewrite(QCOpType op, QCOpType::Adaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
     auto& state = this->getState();
     auto& qubitMap = state.qubitMap;
@@ -783,7 +783,7 @@ struct ConvertQCTwoTargetTwoParameterToQCO final
   using StatefulOpConversionPattern<QCOpType>::StatefulOpConversionPattern;
 
   LogicalResult
-  matchAndRewrite(QCOpType op, typename QCOpType::Adaptor /*adaptor*/,
+  matchAndRewrite(QCOpType op, QCOpType::Adaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
     auto& state = this->getState();
     auto& qubitMap = state.qubitMap;

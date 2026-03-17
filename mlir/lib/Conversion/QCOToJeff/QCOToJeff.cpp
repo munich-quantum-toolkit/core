@@ -403,7 +403,7 @@ struct ConvertQCOOneTargetZeroParameterToJeff final
   using StatefulOpConversionPattern<QCOOpType>::StatefulOpConversionPattern;
 
   LogicalResult
-  matchAndRewrite(QCOOpType op, typename QCOOpType::Adaptor adaptor,
+  matchAndRewrite(QCOOpType op, QCOOpType::Adaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
     auto& state = this->getState();
 
@@ -519,7 +519,7 @@ struct ConvertQCOOneTargetOneParameterToJeff final
   using StatefulOpConversionPattern<QCOOpType>::StatefulOpConversionPattern;
 
   LogicalResult
-  matchAndRewrite(QCOOpType op, typename QCOOpType::Adaptor adaptor,
+  matchAndRewrite(QCOOpType op, QCOOpType::Adaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
     auto& state = this->getState();
 
@@ -650,7 +650,7 @@ struct ConvertQCOOneTargetThreeParameterToJeff final
   using StatefulOpConversionPattern<QCOOpType>::StatefulOpConversionPattern;
 
   LogicalResult
-  matchAndRewrite(QCOOpType op, typename QCOOpType::Adaptor adaptor,
+  matchAndRewrite(QCOOpType op, QCOOpType::Adaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
     auto& state = this->getState();
 
@@ -701,7 +701,7 @@ struct ConvertQCOTwoTargetZeroParameterToJeff final
   using StatefulOpConversionPattern<QCOOpType>::StatefulOpConversionPattern;
 
   LogicalResult
-  matchAndRewrite(QCOOpType op, typename QCOOpType::Adaptor adaptor,
+  matchAndRewrite(QCOOpType op, QCOOpType::Adaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
     auto& state = this->getState();
 

@@ -593,7 +593,7 @@ struct ConvertJeffOneTargetZeroParameterToQCO final
   using OpConversionPattern<JeffOpType>::OpConversionPattern;
 
   LogicalResult
-  matchAndRewrite(JeffOpType op, typename JeffOpType::Adaptor adaptor,
+  matchAndRewrite(JeffOpType op, JeffOpType::Adaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
     if (op.getPower() != 1) {
       return rewriter.notifyMatchFailure(
@@ -629,7 +629,7 @@ struct ConvertJeffOneTargetOneParameterToQCO final
   using OpConversionPattern<JeffOpType>::OpConversionPattern;
 
   LogicalResult
-  matchAndRewrite(JeffOpType op, typename JeffOpType::Adaptor adaptor,
+  matchAndRewrite(JeffOpType op, JeffOpType::Adaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
     if (op.getPower() != 1) {
       return rewriter.notifyMatchFailure(
