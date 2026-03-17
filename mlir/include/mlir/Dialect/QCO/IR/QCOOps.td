@@ -94,7 +94,7 @@ def DeallocOp : QCOOp<"dealloc", [MemoryEffects<[MemFree]>]> {
     let hasCanonicalizer = 1;
 }
 
-def StaticOp : QCOOp<"static", [Pure]> {
+def StaticOp : QCOOp<"static", [MemoryEffects<[MemAlloc]>]> {
     let summary = "Retrieve a static qubit by index";
     let description = [{
         The `qco.static` operation produces an SSA value representing a qubit

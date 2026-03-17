@@ -96,7 +96,7 @@ struct ConvertQCOAllocOp final : OpConversionPattern<qco::AllocOp> {
 };
 
 /**
- * @brief Converts qco.dealloc to qc.dealloc
+ * @brief Converts qco.dealloc to qc.dealloc (except for static qubits).
  *
  * @details
  * Deallocates a qubit, releasing its resources. The OpAdaptor automatically
@@ -109,6 +109,9 @@ struct ConvertQCOAllocOp final : OpConversionPattern<qco::AllocOp> {
  * // becomes:
  * qc.dealloc %q_qc : !qc.qubit
  * ```
+ *
+ * For static qubits, we erase `qco.dealloc` because QC does
+ * not require explicit sinks for static qubit handles.
  */
 struct ConvertQCODeallocOp final : OpConversionPattern<qco::DeallocOp> {
   using OpConversionPattern::OpConversionPattern;
@@ -116,8 +119,13 @@ struct ConvertQCODeallocOp final : OpConversionPattern<qco::DeallocOp> {
   LogicalResult
   matchAndRewrite(qco::DeallocOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
-    // OpAdaptor provides the already type-converted qubit
-    rewriter.replaceOpWithNewOp<qc::DeallocOp>(op, adaptor.getQubit());
+    auto qcQubit = adaptor.getQubit();
+    if (llvm::isa_and_nonnull<qc::StaticOp>(qcQubit.getDefiningOp())) {
+      rewriter.eraseOp(op);
+      return success();
+    }
+
+    rewriter.replaceOpWithNewOp<qc::DeallocOp>(op, qcQubit);
     return success();
   }
 };

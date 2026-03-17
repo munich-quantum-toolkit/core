@@ -112,6 +112,59 @@ private:
 };
 
 /**
+ * @brief Converts func.return and sinks remaining live qubits.
+ *
+ * @details
+ * QC uses reference semantics and does not enforce linear typing for qubits.
+ * After conversion, QCO requires that every qubit SSA value is consumed
+ * exactly once. For allocations (including static qubits), the sink is
+ * `qco.dealloc`. This pattern inserts `qco.dealloc` operations for all
+ * still-live qubits tracked in the lowering state right before the return.
+ */
+struct ConvertFuncReturnOp final : StatefulOpConversionPattern<func::ReturnOp> {
+  using StatefulOpConversionPattern::StatefulOpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(func::ReturnOp op, OpAdaptor adaptor,
+                  ConversionPatternRewriter& rewriter) const override {
+    auto& state = getState();
+
+    // Only insert sinks at function exit (never inside nested modifier
+    // regions).
+    if (state.inNestedRegion == 0) {
+      llvm::SmallVector<Value> liveQubits;
+      liveQubits.reserve(state.qubitMap.size());
+
+      llvm::DenseSet<Value> seen;
+      for (const auto& [/*qcQubit*/ _, qcoQubit] : state.qubitMap) {
+        if (seen.insert(qcoQubit).second) {
+          liveQubits.push_back(qcoQubit);
+        }
+      }
+
+      // Sort deterministically (mirrors QCOProgramBuilder::finalize()).
+      llvm::sort(liveQubits, [](Value a, Value b) {
+        auto* opA = a.getDefiningOp();
+        auto* opB = b.getDefiningOp();
+        if (!opA || !opB || opA->getBlock() != opB->getBlock()) {
+          return a.getAsOpaquePointer() < b.getAsOpaquePointer();
+        }
+        return opA->isBeforeInBlock(opB);
+      });
+
+      for (auto qubit : liveQubits) {
+        rewriter.create<qco::DeallocOp>(op.getLoc(), qubit);
+      }
+
+      state.qubitMap.clear();
+    }
+
+    rewriter.replaceOpWithNewOp<func::ReturnOp>(op, adaptor.getOperands());
+    return success();
+  }
+};
+
+/**
  * @brief Type converter for QC-to-QCO conversion
  *
  * @details
@@ -1158,9 +1211,16 @@ protected:
     });
 
     // Conversion of qc types in func.return
+    //
+    // Note: `func.return` may already be type-legal even though we still need
+    // to insert `qco.dealloc` sinks for remaining live qubits. Therefore, we
+    // make it dynamically illegal unless the lowering state has no remaining
+    // qubits.
+    patterns.add<ConvertFuncReturnOp>(typeConverter, context, &state);
     populateReturnOpTypeConversionPattern(patterns, typeConverter);
-    target.addDynamicallyLegalOp<func::ReturnOp>(
-        [&](const func::ReturnOp op) { return typeConverter.isLegal(op); });
+    target.addDynamicallyLegalOp<func::ReturnOp>([&](const func::ReturnOp op) {
+      return typeConverter.isLegal(op) && state.qubitMap.empty();
+    });
 
     // Conversion of qc types in func.call
     populateCallOpTypeConversionPattern(patterns, typeConverter);
