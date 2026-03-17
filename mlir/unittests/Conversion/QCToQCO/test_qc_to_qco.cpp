@@ -112,6 +112,18 @@ TEST_P(QCToQCOTest, ProgramEquivalence) {
       areModulesEquivalentWithPermutations(program.get(), reference.get()));
 }
 
+/// \name QCToQCO/QubitManagement/StaticOp.cpp
+/// @{
+INSTANTIATE_TEST_SUITE_P(
+    QCStaticOpTest, QCToQCOTest,
+    testing::Values(
+        QCToQCOTestCase{"StaticQubits", MQT_NAMED_BUILDER(qc::staticQubits),
+                        MQT_NAMED_BUILDER(qco::staticQubits)},
+        QCToQCOTestCase{"StaticQubitWithOp",
+                        MQT_NAMED_BUILDER(qc::staticQubitWithOp),
+                        MQT_NAMED_BUILDER(qco::staticQubitWithOp)}));
+/// @}
+
 /// \name QCToQCO/Modifiers/InvOp.cpp
 /// @{
 INSTANTIATE_TEST_SUITE_P(
