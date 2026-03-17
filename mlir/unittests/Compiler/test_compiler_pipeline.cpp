@@ -108,11 +108,11 @@ protected:
   }
 
   static void runPipeline(const mlir::ModuleOp module, const bool convertToQIR,
-                          const bool mergeRotationGates,
+                          const bool mergeSingleQubitRotationGates,
                           mlir::CompilationRecord& record) {
     mlir::QuantumCompilerConfig config;
     config.convertToQIR = convertToQIR;
-    config.mergeRotationGates = mergeRotationGates;
+    config.mergeSingleQubitRotationGates = mergeSingleQubitRotationGates;
     config.recordIntermediates = true;
     config.printIRAfterAllStages = true;
 

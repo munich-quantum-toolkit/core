@@ -147,12 +147,15 @@ protected:
     for (const auto& gate : rotations) {
       switch (gate.type) {
       case GateType::RX:
+        assert(gate.angles.size() >= 1 && "RXOp requires 1 angle parameter");
         qubit = builder.rx(gate.angles[0], qubit);
         break;
       case GateType::RY:
+        assert(gate.angles.size() >= 1 && "RYOp requires 1 angle parameter");
         qubit = builder.ry(gate.angles[0], qubit);
         break;
       case GateType::RZ:
+        assert(gate.angles.size() >= 1 && "RZOp requires 1 angle parameter");
         qubit = builder.rz(gate.angles[0], qubit);
         break;
       case GateType::U:

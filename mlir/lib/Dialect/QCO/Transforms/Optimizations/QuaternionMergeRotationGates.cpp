@@ -54,7 +54,8 @@ struct MergeRotationGatesPattern final
   enum class RotationAxis : std::uint8_t { X, Y, Z };
 
   /**
-   * @brief Checks if an operation is a mergeable rotation gate (rx, ry, rz, u).
+   * @brief Checks if an operation is a mergeable rotation gate (RXOp, RYOp,
+   * RZOp, UOp).
    *
    * @param op The operation to check
    * @return True if mergeable, false otherwise
@@ -66,8 +67,8 @@ struct MergeRotationGatesPattern final
   /**
    * @brief Checks if two gates require quaternion-based merging.
    *
-   * Returns true for different gate types (e.g., RX+RY) or two U-gates.
-   * Same-axis rotations (e.g., RX+RX) use angle addition and aren't handled
+   * Returns true for different gate types (e.g., RXOp+RYOp) or two UOps.
+   * Same-axis rotations (e.g., RXOp+RXOp) use angle addition and aren't handled
    * here.
    *
    * @param a The first gate
@@ -79,16 +80,16 @@ struct MergeRotationGatesPattern final
       return false;
     }
 
-    // Different gate types OR both are U gates
+    // Different gate types OR both are UOps
     return (a.getName() != b.getName()) || (isa<UOp>(a) && isa<UOp>(b));
   }
 
   /**
-   * @brief Returns the rotation axis for a single-axis rotation gate.
+   * @brief Returns the rotation axis for an RXOp, RYOp, or RZOp.
    *
    * @param op The operation to query
-   * @return The rotation axis, or std::nullopt if the operation is not a
-   *         single-axis rotation gate (RX, RY, RZ)
+   * @return The rotation axis, or std::nullopt if the operation is not
+   *         RXOp, RYOp, or RZOp.
    */
   static std::optional<RotationAxis> getRotationAxis(Operation* op) {
     return llvm::TypeSwitch<Operation*, std::optional<RotationAxis>>(op)
@@ -146,17 +147,50 @@ struct MergeRotationGatesPattern final
   }
 
   /**
-   * @brief Converts a rotation gate (RX, RY, RZ, or U) to quaternion
-   * representation.
+   * @brief Converts a UOp to quaternion representation.
    *
-   * @param op The rotation gate to convert
+   * U(theta, phi, lambda) uses ZYZ decomposition: RZ(lambda) -> RY(theta) ->
+   * RZ(phi).
+   *
+   * When composing rotations, quaternion multiplication follows matrix
+   * multiplication order (right-to-left), which is the reverse of the
+   * application sequence:
+   *   Sequential application: RZ(lambda), then RY(theta), then RZ(phi)
+   *   Quaternion product:     qPhi * qTheta * qLambda
+   *
+   * @param op The UOp to convert
+   * @param rewriter Pattern rewriter for creating new operations
+   * @return Quaternion representing the UOp
+   */
+  static Quaternion quaternionFromUOp(UnitaryOpInterface op,
+                                      PatternRewriter& rewriter) {
+    auto loc = op->getLoc();
+
+    // U(theta, phi, lambda) uses ZYZ decomposition: RZ(lambda) -> RY(theta) ->
+    // RZ(phi)
+    auto qTheta = createAxisQuaternion(op.getParameter(0), RotationAxis::Y, loc,
+                                       rewriter);
+    auto qPhi = createAxisQuaternion(op.getParameter(1), RotationAxis::Z, loc,
+                                     rewriter);
+    auto qLambda = createAxisQuaternion(op.getParameter(2), RotationAxis::Z,
+                                        loc, rewriter);
+
+    // qPhi * qTheta * qLambda (multiplication in reverse order!)
+    auto temp = hamiltonProduct(qPhi, qTheta, op, rewriter);
+    return hamiltonProduct(temp, qLambda, op, rewriter);
+  }
+
+  /**
+   * @brief Converts a rotation gate to quaternion representation.
+   *
+   * @param op The rotation gate (RXOp, RYOp, RZOp, UOp) to convert
    * @param rewriter Pattern rewriter for creating new operations
    * @return Quaternion representing the rotation gate
    */
   static Quaternion quaternionFromRotation(UnitaryOpInterface op,
                                            PatternRewriter& rewriter) {
     if (isa<UOp>(op)) {
-      return quaternionFromUGate(op, rewriter);
+      return quaternionFromUOp(op, rewriter);
     }
 
     if (auto axis = getRotationAxis(op.getOperation())) {
@@ -178,11 +212,11 @@ struct MergeRotationGatesPattern final
    *         + (w1z2 + x1y2 - y1x2 + z1w2) * k
    *
    * @see https://en.wikipedia.org/wiki/Quaternion#Hamilton_product
-   * @param q1 First quaternion
-   * @param q2 Second quaternion
-   * @param op Current operation (used for location)
-   * @param rewriter Pattern rewriter for creating arithmetic operations
-   * @return The product quaternion
+   * @param q1 The first quaternion
+   * @param q2 The second quaternion
+   * @param op The current operation (used for location)
+   * @param rewriter Pattern rewriter for creating new operations
+   * @return Product quaternion
    */
   static Quaternion hamiltonProduct(Quaternion q1, Quaternion q2,
                                     UnitaryOpInterface op,
@@ -229,44 +263,9 @@ struct MergeRotationGatesPattern final
   }
 
   /**
-   * @brief Converts a u-gate to quaternion representation.
+   * @brief Converts a quaternion to a UOp using ZYZ Euler angle extraction.
    *
-   * U(theta, phi, lambda) uses ZYZ decomposition: RZ(lambda) -> RY(theta) ->
-   * RZ(phi).
-   *
-   * When composing rotations, quaternion multiplication follows matrix
-   * multiplication order (right-to-left), which is the reverse of the
-   * application sequence:
-   *   Sequential application: RZ(lambda), then RY(theta), then RZ(phi)
-   *   Quaternion product:     qPhi * qTheta * qLambda
-   *
-   * @param op The u-gate operation to convert
-   * @param rewriter Pattern rewriter for creating new operations
-   * @return Quaternion representing the u-gate
-   */
-  static Quaternion quaternionFromUGate(UnitaryOpInterface op,
-                                        PatternRewriter& rewriter) {
-    auto loc = op->getLoc();
-
-    // U gate uses ZYZ decomposition:
-    // U(theta, phi, lambda) uses ZYZ decomposition: RZ(lambda) -> RY(theta) ->
-    // RZ(phi)
-    auto qTheta = createAxisQuaternion(op.getParameter(0), RotationAxis::Y, loc,
-                                       rewriter);
-    auto qPhi = createAxisQuaternion(op.getParameter(1), RotationAxis::Z, loc,
-                                     rewriter);
-    auto qLambda = createAxisQuaternion(op.getParameter(2), RotationAxis::Z,
-                                        loc, rewriter);
-
-    // qPhi * qTheta * qLambda (multiplication in reverse order!)
-    auto temp = hamiltonProduct(qPhi, qTheta, op, rewriter);
-    return hamiltonProduct(temp, qLambda, op, rewriter);
-  }
-
-  /**
-   * @brief Converts a quaternion to a u-gate using ZYZ Euler angle extraction.
-   *
-   * For unit quaternion q = w + x*i + y*j + z*k, extracts u-gate parameters:
+   * For unit quaternion q = w + x*i + y*j + z*k, extracts UOp parameters:
    *   alpha = atan2(z, w) + atan2(-x, y)
    *   beta  = acos(2 * (w^2 + z^2) - 1)
    *   gamma = atan2(z, w) - atan2(-x, y)
@@ -284,11 +283,11 @@ struct MergeRotationGatesPattern final
    * @param q The quaternion to convert
    * @param op The current operation (used for location and type information)
    * @param rewriter Pattern rewriter for creating new operations
-   * @return U-gate equivalent to the quaternion rotation
+   * @return UOp equivalent to the quaternion rotation
    */
-  static UnitaryOpInterface uGateFromQuaternion(Quaternion q,
-                                                UnitaryOpInterface op,
-                                                PatternRewriter& rewriter) {
+  static UnitaryOpInterface uOpFromQuaternion(Quaternion q,
+                                              UnitaryOpInterface op,
+                                              PatternRewriter& rewriter) {
     auto loc = op->getLoc();
 
     auto floatType = op.getParameter(0).getType();
@@ -333,7 +332,7 @@ struct MergeRotationGatesPattern final
     // |beta| >= eps
     auto safe1 = arith::CmpFOp::create(rewriter, loc, arith::CmpFPredicate::OGE,
                                        absBeta, eps);
-    // safe2 = beta not within boundary eps around PI: |beta-pi| >= eps
+    // safe2 = beta not within boundary eps around PI: |beta - PI| >= eps
     auto safe2 = arith::CmpFOp::create(rewriter, loc, arith::CmpFPredicate::OGE,
                                        absBetaMinusPi, eps);
     // is safe (not in gimbal lock) when both hold (safe1 AND safe2)
@@ -361,8 +360,8 @@ struct MergeRotationGatesPattern final
         arith::SubFOp::create(rewriter, loc, thetaPlus, thetaMinus);
 
     // Unsafe Case (gimbal lock):
-    // when b = 0  then alpha = 2 * (atan2(z,w))
-    // when b = PI then alpha = 2 * (atan2(-x, y))
+    // when beta = 0  then alpha = 2 * (atan2(z, w))
+    // when beta = PI then alpha = 2 * (atan2(-x, y))
     // gamma is set to zero in both cases
     auto alphaUnsafe = arith::SelectOp::create(rewriter, loc, safe1,
                                                twoThetaMinus, twoThetaPlus);
@@ -380,15 +379,15 @@ struct MergeRotationGatesPattern final
   }
 
   /**
-   * @brief Creates a u-gate by merging two rotation gates.
+   * @brief Creates a UOp by merging two rotation gates.
    *
    * Converts both gates to quaternions, multiplies them using the Hamilton
-   * product (in reverse circuit order), and converts back to a u-gate.
+   * product (in reverse circuit order), and converts back to a UOp.
    *
    * @param op The first rotation gate
    * @param user The second rotation gate
    * @param rewriter Pattern rewriter for creating the merged gate
-   * @return A u-gate representing the merged rotation
+   * @return UOp representing the merged rotation
    */
   static UnitaryOpInterface
   createOpQuaternionMergedAngle(UnitaryOpInterface op, UnitaryOpInterface user,
@@ -396,7 +395,7 @@ struct MergeRotationGatesPattern final
     auto q1 = quaternionFromRotation(op, rewriter);
     auto q2 = quaternionFromRotation(user, rewriter);
     auto qHam = hamiltonProduct(q2, q1, op, rewriter);
-    auto newUser = uGateFromQuaternion(qHam, op, rewriter);
+    auto newUser = uOpFromQuaternion(qHam, op, rewriter);
 
     return newUser;
   }
@@ -405,7 +404,7 @@ struct MergeRotationGatesPattern final
    * @brief Matches and merges consecutive rotation gates on the same qubit.
    *
    * Merges two gates using quaternion multiplication when the first gate has
-   * exactly one use, replacing both with an equivalent u-gate.
+   * exactly one use, replacing both with an equivalent UOp.
    *
    * @param op The rotation gate to match
    * @param rewriter Pattern rewriter for applying transformations
@@ -419,8 +418,7 @@ struct MergeRotationGatesPattern final
       return failure();
     }
 
-    const auto& users = op->getUsers();
-    auto* userOP = *users.begin();
+    auto* userOP = *op->getUsers.begin();
 
     if (!areQuaternionMergeable(*op, *userOP)) {
       return failure();

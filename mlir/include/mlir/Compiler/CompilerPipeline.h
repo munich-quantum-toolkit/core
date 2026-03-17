@@ -42,7 +42,7 @@ struct QuantumCompilerConfig {
   bool printIRAfterAllStages = false;
 
   /// Enable quaternion-based rotation gate merging
-  bool mergeRotationGates = false;
+  bool mergeSingleQubitRotationGates = false;
 };
 
 /**
