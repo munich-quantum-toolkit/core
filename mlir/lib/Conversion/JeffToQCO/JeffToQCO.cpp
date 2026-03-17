@@ -919,6 +919,7 @@ protected:
       pm.addPass(createJeffToNative());
       if (pm.run(module).failed()) {
         signalPassFailure();
+        return;
       }
     }
 
