@@ -530,7 +530,7 @@ private:
     DenseSet<IndexGate> expansionSet;
 
     std::size_t i = 0;
-    while (!frontier.empty(), i < maxIterations) {
+    while (!frontier.empty() && i < maxIterations) {
       Node curr = frontier.top();
       frontier.pop();
 
