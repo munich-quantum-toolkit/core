@@ -10,9 +10,6 @@
 
 #pragma once
 
-#include <mlir/Dialect/Arith/IR/Arith.h>
-#include <mlir/Dialect/Math/IR/Math.h>
-#include <mlir/Dialect/Tensor/IR/Tensor.h>
 #include <mlir/Pass/Pass.h>
 
 namespace mlir {
