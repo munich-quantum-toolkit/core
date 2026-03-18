@@ -273,7 +273,7 @@ private:
      */
     [[nodiscard]] bool isGoal(const Layer& front,
                               const Architecture& arch) const {
-      return all_of(front, [&](const IndexGate gate) {
+      return all_of(front, [&](const IndexGate& gate) {
         return arch.areAdjacent(layout.getHardwareIndex(gate.first),
                                 layout.getHardwareIndex(gate.second));
       });
