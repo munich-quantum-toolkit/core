@@ -164,4 +164,4 @@ private:
 
 template <> struct std::hash<qc::IfElseOperation> {
   std::size_t operator()(qc::IfElseOperation const& op) const noexcept;
-}; // namespace std
+};
