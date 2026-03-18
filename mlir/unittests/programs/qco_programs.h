@@ -1015,11 +1015,4 @@ void qtensorInsertSliceExtractSlice(QCOProgramBuilder& b);
 /// immediately.
 void qtensorExtractSliceExtractInsertInsertSlice(QCOProgramBuilder& b);
 
-/// Inserts two qubits to the same index back to back.
-void qtensorInsertInsert(QCOProgramBuilder& b);
-
-/// Inserts two slices of qubits with the same size and offset into the same
-/// tensor back to back.
-void qtensorInsertSliceInsertSlice(QCOProgramBuilder& b);
-
 } // namespace mlir::qco

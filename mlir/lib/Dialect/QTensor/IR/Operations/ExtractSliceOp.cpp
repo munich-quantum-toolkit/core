@@ -78,18 +78,13 @@ foldExtractAfterInsertSlice(ExtractSliceOp extractSliceOp) {
     return nullptr;
   }
 
-  if (insertSliceOp.getSource().getType() !=
-      extractSliceOp.getResult().getType()) {
-    return nullptr;
-  }
-
   auto insertOffset = insertSliceOp.getOffset();
   auto extractOffset = extractSliceOp.getOffset();
   auto insertSize = insertSliceOp.getSize();
   auto extractSize = extractSliceOp.getSize();
 
-  if (!isSameIndex(insertOffset, extractOffset) ||
-      !isSameIndex(insertSize, extractSize)) {
+  if (getAsOpFoldResult(insertOffset) != getAsOpFoldResult(extractOffset) ||
+      getAsOpFoldResult(insertSize) != getAsOpFoldResult(extractSize)) {
     return nullptr;
   }
 

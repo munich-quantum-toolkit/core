@@ -50,14 +50,11 @@ static Value foldInsertAfterExtract(InsertOp insertOp) {
   if (insertOp.getDest() != extractOp.getOutTensor()) {
     return nullptr;
   }
-  if (extractOp.getTensor().getType() != insertOp.getDest().getType()) {
-    return nullptr;
-  }
 
   auto insertIndex = insertOp.getIndex();
   auto extractIndex = extractOp.getIndex();
 
-  if (!isSameIndex(insertIndex, extractIndex)) {
+  if (getAsOpFoldResult(insertIndex) != getAsOpFoldResult(extractIndex)) {
     return nullptr;
   }
 
@@ -70,43 +67,4 @@ OpFoldResult InsertOp::fold(FoldAdaptor /*adaptor*/) {
   }
 
   return {};
-}
-
-namespace {
-
-/**
- * @brief Combine subsequent insert operations with the same index.
- */
-struct CombineSubsequentInsertOp : public OpRewritePattern<InsertOp> {
-  using OpRewritePattern<InsertOp>::OpRewritePattern;
-
-  LogicalResult matchAndRewrite(InsertOp insertOp,
-                                PatternRewriter& rewriter) const final {
-    auto prevInsertOp = insertOp.getDest().getDefiningOp<InsertOp>();
-
-    if (!prevInsertOp) {
-      return failure();
-    }
-
-    auto insertIndex = insertOp.getIndex();
-    auto prevInsertIndex = prevInsertOp.getIndex();
-
-    if (!isSameIndex(insertIndex, prevInsertIndex)) {
-      return failure();
-    }
-
-    qco::DeallocOp::create(rewriter, prevInsertOp.getLoc(),
-                           prevInsertOp.getScalar());
-    rewriter.replaceOpWithNewOp<InsertOp>(insertOp, insertOp.getScalar(),
-                                          prevInsertOp.getDest(), insertIndex);
-    rewriter.eraseOp(prevInsertOp);
-    return success();
-  }
-};
-
-} // namespace
-
-void InsertOp::getCanonicalizationPatterns(RewritePatternSet& results,
-                                           MLIRContext* context) {
-  results.add<CombineSubsequentInsertOp>(context);
 }

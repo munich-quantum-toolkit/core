@@ -234,7 +234,6 @@ def QTensor_InsertOp : QTensorOp<"insert", [
         $scalar `into` $dest `[` $index `]` attr-dict `:` type($dest)
     }];
 
-    let hasCanonicalizer = 1;
     let hasFolder = 1;
     let hasVerifier = 1;
 }
@@ -276,7 +275,6 @@ def QTensor_InsertSliceOp : QTensorOp<"insert_slice", [
         attr-dict `:` type($source) `into` type($dest)
     }];
 
-    let hasCanonicalizer = 1;
     let hasFolder = 1;
     let hasVerifier = 1;
 }

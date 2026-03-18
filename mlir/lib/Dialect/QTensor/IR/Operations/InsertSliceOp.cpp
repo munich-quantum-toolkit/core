@@ -70,8 +70,8 @@ static Value foldInsertAfterExtractSlice(InsertSliceOp insertSliceOp) {
   auto insertSize = insertSliceOp.getSize();
   auto extractSize = extractSliceOp.getSize();
 
-  if (!isSameIndex(insertOffset, extractOffset) ||
-      !isSameIndex(insertSize, extractSize)) {
+  if (getAsOpFoldResult(insertOffset) != getAsOpFoldResult(extractOffset) ||
+      getAsOpFoldResult(insertSize) != getAsOpFoldResult(extractSize)) {
     return nullptr;
   }
 
@@ -84,54 +84,4 @@ OpFoldResult InsertSliceOp::fold(FoldAdaptor /*adaptor*/) {
   }
 
   return {};
-}
-
-namespace {
-
-/**
- * @brief Combine subsequent insertSlice operations with the same offset and
- * size.
- */
-struct CombineSubsequentInsertSliceOp final
-    : public OpRewritePattern<InsertSliceOp> {
-
-  using OpRewritePattern::OpRewritePattern;
-
-  LogicalResult matchAndRewrite(InsertSliceOp insertSliceOp,
-                                PatternRewriter& rewriter) const override {
-    auto prevInsertOp = insertSliceOp.getDest().getDefiningOp<InsertSliceOp>();
-    if (!prevInsertOp) {
-      return failure();
-    }
-
-    if (prevInsertOp.getSource().getType() !=
-        insertSliceOp.getSource().getType()) {
-      return failure();
-    }
-
-    auto prevOffset = prevInsertOp.getOffset();
-    auto curOffset = insertSliceOp.getOffset();
-    auto prevSize = prevInsertOp.getSize();
-    auto curSize = insertSliceOp.getSize();
-
-    if (!isSameIndex(prevOffset, curOffset) ||
-        !isSameIndex(prevSize, curSize)) {
-      return failure();
-    }
-    DeallocOp::create(rewriter, prevInsertOp->getLoc(),
-                      prevInsertOp.getSource());
-    rewriter.replaceOpWithNewOp<InsertSliceOp>(
-        insertSliceOp, insertSliceOp.getSource(), prevInsertOp.getDest(),
-        curOffset, curSize);
-    rewriter.eraseOp(prevInsertOp);
-
-    return success();
-  }
-};
-
-} // namespace
-
-void InsertSliceOp::getCanonicalizationPatterns(RewritePatternSet& results,
-                                                MLIRContext* context) {
-  results.add<CombineSubsequentInsertSliceOp>(context);
 }

@@ -21,7 +21,6 @@
 #include <llvm/ADT/SmallVector.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
-#include <mlir/Dialect/Tensor/IR/Tensor.h>
 #include <mlir/IR/DialectRegistry.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/Verifier.h>
@@ -50,7 +49,7 @@ protected:
     // Register all necessary dialects
     DialectRegistry registry;
     registry.insert<QCODialect, arith::ArithDialect, func::FuncDialect,
-                    qtensor::QTensorDialect, tensor::TensorDialect>();
+                    qtensor::QTensorDialect>();
     context = std::make_unique<MLIRContext>();
     context->appendDialectRegistry(registry);
     context->loadAllAvailableDialects();
@@ -1095,11 +1094,5 @@ INSTANTIATE_TEST_SUITE_P(
         QCOTestCase{
             "QTensorExtractSliceExtractInsertInsertSlice",
             MQT_NAMED_BUILDER(qtensorExtractSliceExtractInsertInsertSlice),
-            MQT_NAMED_BUILDER(qtensorAlloc)},
-        QCOTestCase{"QTensorInsertInsert",
-                    MQT_NAMED_BUILDER(qtensorInsertInsert),
-                    MQT_NAMED_BUILDER(qtensorInsert)},
-        QCOTestCase{"QTensorInsertSliceInsertSlice",
-                    MQT_NAMED_BUILDER(qtensorInsertSliceInsertSlice),
-                    MQT_NAMED_BUILDER(qtensorInsertSlice)}));
+            MQT_NAMED_BUILDER(qtensorAlloc)}));
 /// @}

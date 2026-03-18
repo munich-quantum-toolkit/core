@@ -44,16 +44,17 @@ static InsertOp foldExtractAfterInsert(ExtractOp extractOp) {
     return nullptr;
   }
 
-  if (insertOp.getScalar().getType() != extractOp.getResult().getType()) {
+  auto isSame = [](Value a, Value b) {
+    return getAsOpFoldResult(a) == getAsOpFoldResult(b);
+  };
+
+  Value insertIndex = insertOp.getIndex();
+  Value extractIndex = extractOp.getIndex();
+
+  if (getAsOpFoldResult(insertIndex) != getAsOpFoldResult(extractIndex)) {
     return nullptr;
   }
 
-  auto insertIndex = insertOp.getIndex();
-  auto extractIndex = extractOp.getIndex();
-
-  if (!isSameIndex(insertIndex, extractIndex)) {
-    return nullptr;
-  }
   return insertOp;
 }
 
