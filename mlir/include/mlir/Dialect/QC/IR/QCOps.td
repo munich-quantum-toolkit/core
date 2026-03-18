@@ -6,69 +6,18 @@
 //
 // Licensed under the MIT License
 
-#ifndef QC_OPS
-#define QC_OPS
+#ifndef MLIR_DIALECT_QC_IR_QCOPS_TD
+#define MLIR_DIALECT_QC_IR_QCOPS_TD
 
+include "mlir/Dialect/QC/IR/QCDialect.td"
 include "mlir/Dialect/QC/IR/QCInterfaces.td"
-include "mlir/IR/BuiltinTypeInterfaces.td"
-include "mlir/IR/DialectBase.td"
+include "mlir/Dialect/QC/IR/QCTypes.td"
+
 include "mlir/IR/EnumAttr.td"
 include "mlir/IR/OpBase.td"
 include "mlir/IR/RegionKindInterface.td"
 include "mlir/Interfaces/InferTypeOpInterface.td"
 include "mlir/Interfaces/SideEffectInterfaces.td"
-
-//===----------------------------------------------------------------------===//
-// QC Dialect Definition
-//===----------------------------------------------------------------------===//
-
-def QCDialect : Dialect {
-    let name = "qc";
-
-    let summary = "The QC (reference semantics) dialect for quantum computing.";
-
-    let description = [{
-        The QC dialect uses **reference semantics** where quantum operations
-        modify qubits in place, similar to how hardware physically transforms
-        quantum states. This model provides:
-
-        - Natural mapping to hardware execution models
-        - Intuitive representation for circuit descriptions
-        - Direct compatibility with imperative quantum programming languages
-        - Straightforward backend code generation
-
-        The name "QC" stands for "Quantum Circuit."
-
-        Example:
-        ```mlir
-        qc.h %q          // Applies Hadamard to qubit %q in place
-        qc.swap %q0, %q1 // Applies SWAP using %q0, %q1 as targets
-        ```
-    }];
-
-    let cppNamespace = "::mlir::qc";
-
-    let useDefaultTypePrinterParser = 1;
-}
-
-//===----------------------------------------------------------------------===//
-// QC Type Definitions
-//===----------------------------------------------------------------------===//
-
-class QCType<string name, string typeMnemonic, list<Trait> traits = []>
-        : TypeDef<QCDialect, name, traits> {
-    let mnemonic = typeMnemonic;
-}
-
-def QubitType : QCType<"Qubit", "qubit"> {
-    let summary = "QC qubit reference type";
-    let description = [{
-        The `!qc.qubit` type represents a reference to a quantum bit in the
-        QC dialect. Operations using this type modify qubits in place using
-        reference semantics, similar to how classical imperative languages handle
-        mutable references.
-    }];
-}
 
 //===----------------------------------------------------------------------===//
 // Base Operation Classes
@@ -1015,4 +964,4 @@ def InvOp : QCOp<"inv",
     let hasVerifier = 1;
 }
 
-#endif // QC_OPS
+#endif // MLIR_DIALECT_QC_IR_QCOPS_TD

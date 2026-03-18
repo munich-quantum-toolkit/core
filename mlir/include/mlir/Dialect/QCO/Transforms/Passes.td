@@ -6,8 +6,8 @@
 //
 // Licensed under the MIT License
 
-#ifndef QCO_PASSES
-#define QCO_PASSES
+#ifndef MLIR_DIALECT_QCO_TRANSFORMS_PASSES_TD
+#define MLIR_DIALECT_QCO_TRANSFORMS_PASSES_TD
 
 include "mlir/Pass/PassBase.td"
 
@@ -49,6 +49,9 @@ def MappingPass : Pass<"place-and-route", "mlir::ModuleOp"> {
     each traversal, the pass routes the circuit and updates the dynamic-to-static mapping based on the routing decisions
     made during that traversal. By performing multiple traversals, the pass can iteratively refine the mapping and
     potentially find a more optimal solution. This is behavior is controlled by the `niterations` parameter.
+
+    The pass option `ntrials` determines how many random initial layouts the pass explores. Per default, the pass always
+    explores the identity layout. If compiled with multi-threading on, these trials will be executed in parallel.
   }];
   let options = [
     Option<"nlookahead", "nlookahead", "std::size_t", "1",
@@ -58,8 +61,12 @@ def MappingPass : Pass<"place-and-route", "mlir::ModuleOp"> {
     Option<"lambda", "lambda", "float", "0.5F",
            "The lambda factor in the cost function.">,
     Option<"niterations", "niterations", "std::size_t", "2",
-           "The number of forwards and backwards traversal to improve the initial layout.">
+           "The number of forwards and backwards traversal to improve the initial layout.">,
+    Option<"ntrials", "ntrials", "std::size_t", "4",
+           "The number of (possibly parallel) random trials of the forwards and backwards mechanism.">,
+    Option<"seed", "seed", "std::size_t", "42",
+           "A seed used for randomization.">
   ];
 }
 
-#endif // QCO_PASSES
+#endif // MLIR_DIALECT_QCO_TRANSFORMS_PASSES_TD
