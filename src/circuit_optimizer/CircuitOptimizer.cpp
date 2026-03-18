@@ -1663,8 +1663,8 @@ struct CliffordBlock {
    * @param maxBlockSize Maximum allowed block size
    */
   [[nodiscard]] bool
-  checkExceedsMaxBlockSize(const std::set<Qubit>& used,
-                           const std::size_t maxBlockSize) const noexcept {
+  checkFitsWithinMaxBlockSize(const std::set<Qubit>& used,
+                              const std::size_t maxBlockSize) const noexcept {
     std::size_t extra = 0;
     for (const auto q : used) {
       if (!blockQubits.contains(q)) {
@@ -1817,7 +1817,7 @@ void CircuitOptimizer::collectCliffordBlocks(QuantumComputation& qc,
       if (!block.checkBlocked(used)) {
         continue;
       }
-      if (!block.checkExceedsMaxBlockSize(used, maxBlockSize)) {
+      if (!block.checkFitsWithinMaxBlockSize(used, maxBlockSize)) {
         continue;
       }
 

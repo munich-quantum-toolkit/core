@@ -39,10 +39,10 @@
 #include <string>
 #include <utility>
 
-static constexpr std::size_t SEED = 42U;
-
 namespace dd {
 namespace {
+
+constexpr std::size_t SEED = 42U;
 
 struct Experiment {
   std::unique_ptr<Package> dd;
