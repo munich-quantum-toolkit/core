@@ -6,76 +6,18 @@
 //
 // Licensed under the MIT License
 
-#ifndef QCOOPS
-#define QCOOPS
+#ifndef MLIR_DIALECT_QCO_IR_QCOOPS_TD
+#define MLIR_DIALECT_QCO_IR_QCOOPS_TD
 
+include "mlir/Dialect/QCO/IR/QCODialect.td"
 include "mlir/Dialect/QCO/IR/QCOInterfaces.td"
-include "mlir/IR/BuiltinTypeInterfaces.td"
-include "mlir/IR/DialectBase.td"
+include "mlir/Dialect/QCO/IR/QCOTypes.td"
+
 include "mlir/IR/EnumAttr.td"
 include "mlir/IR/OpBase.td"
 include "mlir/Interfaces/ControlFlowInterfaces.td"
 include "mlir/Interfaces/InferTypeOpInterface.td"
 include "mlir/Interfaces/SideEffectInterfaces.td"
-
-//===----------------------------------------------------------------------===//
-// Dialect
-//===----------------------------------------------------------------------===//
-
-def QCODialect : Dialect {
-    let name = "qco";
-
-    let summary = "The QCO (value semantics) dialect for quantum computing.";
-
-    let description = [{
-        The QCO dialect uses **value semantics** where quantum operations
-        consume input qubits and produce new output values, following the
-        functional programming and SSA paradigm. This model enables:
-
-        - Powerful compiler optimizations through clear dataflow
-        - Safe reordering and parallelization analysis
-        - Advanced transformation passes
-        - Explicit dependency tracking
-
-        The name "QCO" stands for "Quantum Circuit Optimization."
-
-        Example:
-        ```mlir
-        %q_out = qco.h %q_in                       // Consumes %q_in, produces %q_out
-        %q0_out, %q1_out = qco.swap %q0_in, %q1_in // Consumes inputs, produces outputs
-        ```
-    }];
-
-    let cppNamespace = "::mlir::qco";
-
-    let useDefaultTypePrinterParser = 1;
-}
-
-//===----------------------------------------------------------------------===//
-// QCO Type Definitions
-//===----------------------------------------------------------------------===//
-
-class QCOType<string name, string typeMnemonic, list<Trait> traits = []>
-        : TypeDef<QCODialect, name, traits> {
-    let mnemonic = typeMnemonic;
-}
-
-def QubitType : QCOType<"Qubit", "qubit"> {
-    let summary = "QCO qubit value type";
-    let description = [{
-        The `!qco.qubit` type represents an SSA value holding a quantum bit
-        in the QCO dialect. Operations using this type consume input qubits
-        and produce new output qubits following value semantics and the SSA
-        paradigm, enabling powerful dataflow analysis and optimization.
-
-        Example:
-        ```mlir
-        %q0 = qco.alloc : !qco.qubit
-        %q1 = qco.h %q0 : !qco.qubit -> !qco.qubit
-        %q2 = qco.x %q1 : !qco.qubit -> !qco.qubit
-        ```
-    }];
-}
 
 //===----------------------------------------------------------------------===//
 // Base Operation Classes
@@ -1287,4 +1229,4 @@ def IfOp : QCOOp<"if", traits =
     let hasVerifier = 1;
 }
 
-#endif // QCOOPS
+#endif // MLIR_DIALECT_QCO_IR_QCOOPS_TD

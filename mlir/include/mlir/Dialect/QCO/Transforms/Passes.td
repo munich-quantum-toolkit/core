@@ -6,8 +6,8 @@
 //
 // Licensed under the MIT License
 
-#ifndef QCO_PASSES
-#define QCO_PASSES
+#ifndef MLIR_DIALECT_QCO_TRANSFORMS_PASSES_TD
+#define MLIR_DIALECT_QCO_TRANSFORMS_PASSES_TD
 
 include "mlir/Pass/PassBase.td"
 
@@ -69,4 +69,4 @@ def MappingPass : Pass<"place-and-route", "mlir::ModuleOp"> {
   ];
 }
 
-#endif // QCO_PASSES
+#endif // MLIR_DIALECT_QCO_TRANSFORMS_PASSES_TD
