@@ -99,8 +99,8 @@ foldExtractAfterInsertSlice(ExtractSliceOp extractSliceOp) {
 LogicalResult ExtractSliceOp::fold(FoldAdaptor /*adaptor*/,
                                    SmallVectorImpl<OpFoldResult>& results) {
   if (auto insertOp = foldExtractAfterInsertSlice(*this)) {
-    results.push_back(insertOp.getDest());
-    results.push_back(insertOp.getSource());
+    results.emplace_back(insertOp.getDest());
+    results.emplace_back(insertOp.getSource());
     return success();
   }
 

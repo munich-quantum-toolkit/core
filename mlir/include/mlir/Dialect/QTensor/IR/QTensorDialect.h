@@ -27,7 +27,3 @@
 
 #define GET_TYPEDEF_CLASSES
 #include "mlir/Dialect/QTensor/IR/QTensorOpsTypes.h.inc" // IWYU pragma: export
-
-//===----------------------------------------------------------------------===//
-// QTensor Dialect Helpers
-//===----------------------------------------------------------------------===//

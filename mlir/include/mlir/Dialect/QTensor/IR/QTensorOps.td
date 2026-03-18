@@ -143,7 +143,6 @@ def QTensor_ExtractOp : QTensorOp<"extract", [
         The `qtensor.extract` operation is the modified version of the standard `tensor.extract`
         operation of the tensor dialect. It reads a ranked tensor and returns one element from the input tensor
         at the given index. In addition, it also returns the updated input tensor as a result.
-        The index must be of `index` type.
 
         Example:
         ```mlir
@@ -172,10 +171,10 @@ def QTensor_ExtractSliceOp : QTensorOp<"extract_slice", [
 
         The extract_slice operation supports the following arguments:
 
-        * tensor: the "base" tensor from which to extract a slice.
-        * offset: the starting position in the base tensor from which the slice is
+        - tensor: the "base" tensor from which to extract a slice.
+        - offset: the starting position in the base tensor from which the slice is
                   extracted.
-        * size: the length of the slice to extract from the base tensor.
+        - size: the length of the slice to extract from the base tensor.
 
         Example:
         ```mlir
@@ -250,10 +249,10 @@ def QTensor_InsertSliceOp : QTensorOp<"insert_slice", [
 
         The insert_slice operation supports the following arguments:
 
-          * source: the tensor that is inserted.
-          * dest: the tensor into which the source tensor is inserted.
-          * offset: the starting index in the `dest` tensor where the slice is inserted.
-          * size: the number of elements in the slice, which must match the size of the
+          - source: the tensor that is inserted.
+          - dest: the tensor into which the source tensor is inserted.
+          - offset: the starting index in the `dest` tensor where the slice is inserted.
+          - size: the number of elements in the slice, which must match the size of the
                   source tensor type.
 
         Example:

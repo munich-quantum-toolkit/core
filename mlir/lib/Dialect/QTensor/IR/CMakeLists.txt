@@ -13,7 +13,7 @@ add_mlir_dialect_library(
   QTensorOps.cpp
   ${OPERATIONS}
   ADDITIONAL_HEADER_DIRS
-  ${PROJECT_SOURCE_DIR}/mlir/include/mlir/Dialect/QTensor
+  ${MQT_MLIR_SOURCE_INCLUDE_DIR}/mlir/Dialect/QTensor
   DEPENDS
   MLIRQTensorOpsIncGen
   LINK_LIBS
