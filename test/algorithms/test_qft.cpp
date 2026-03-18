@@ -99,22 +99,20 @@ TEST_P(QFT, Functionality) {
   ASSERT_EQ(dd->cn.realCount(),
             1ULL << (std::max<std::size_t>(2UL, nqubits) - 2));
 
+  const auto expectedAmplitude =
+      static_cast<dd::fp>(std::pow(1.0 / std::sqrt(2.0), nqubits));
+
   // top edge weight should equal (1/sqrt(2))^n
-  EXPECT_NEAR(dd::RealNumber::val(func.w.r),
-              static_cast<dd::fp>(std::pow(1.0 / std::sqrt(2.0), nqubits)),
+  EXPECT_NEAR(dd::RealNumber::val(func.w.r), expectedAmplitude,
               dd::RealNumber::eps);
 
   // first row and first column should consist only of (1/sqrt(2))^n entries
   for (std::uint64_t i = 0; i < 1ULL << nqubits; ++i) {
     auto c = func.getValueByIndex(dd->qubits(), 0, i);
-    EXPECT_NEAR(c.real(),
-                static_cast<dd::fp>(std::pow(1.0 / std::sqrt(2.0), nqubits)),
-                dd::RealNumber::eps);
+    EXPECT_NEAR(c.real(), expectedAmplitude, dd::RealNumber::eps);
     EXPECT_NEAR(c.imag(), 0, dd::RealNumber::eps);
     c = func.getValueByIndex(dd->qubits(), i, 0);
-    EXPECT_NEAR(c.real(),
-                static_cast<dd::fp>(std::pow(1.0 / std::sqrt(2.0), nqubits)),
-                dd::RealNumber::eps);
+    EXPECT_NEAR(c.real(), expectedAmplitude, dd::RealNumber::eps);
     EXPECT_NEAR(c.imag(), 0, dd::RealNumber::eps);
   }
   dd->decRef(func);
@@ -144,22 +142,20 @@ TEST_P(QFT, FunctionalityRecursive) {
   ASSERT_EQ(dd->cn.realCount(),
             1ULL << (std::max<std::size_t>(2UL, nqubits) - 2));
 
+  const auto expectedAmplitude =
+      static_cast<dd::fp>(std::pow(1.0 / std::sqrt(2.0), nqubits));
+
   // top edge weight should equal (1/sqrt(2))^n
-  EXPECT_NEAR(dd::RealNumber::val(func.w.r),
-              static_cast<dd::fp>(std::pow(1.0 / std::sqrt(2.0), nqubits)),
+  EXPECT_NEAR(dd::RealNumber::val(func.w.r), expectedAmplitude,
               dd::RealNumber::eps);
 
   // first row and first column should consist only of (1/sqrt(2))^n entries
   for (std::uint64_t i = 0; i < 1ULL << nqubits; ++i) {
     auto c = func.getValueByIndex(dd->qubits(), 0, i);
-    EXPECT_NEAR(c.real(),
-                static_cast<dd::fp>(std::pow(1.0 / std::sqrt(2.0), nqubits)),
-                dd::RealNumber::eps);
+    EXPECT_NEAR(c.real(), expectedAmplitude, dd::RealNumber::eps);
     EXPECT_NEAR(c.imag(), 0, dd::RealNumber::eps);
     c = func.getValueByIndex(dd->qubits(), i, 0);
-    EXPECT_NEAR(c.real(),
-                static_cast<dd::fp>(std::pow(1.0 / std::sqrt(2.0), nqubits)),
-                dd::RealNumber::eps);
+    EXPECT_NEAR(c.real(), expectedAmplitude, dd::RealNumber::eps);
     EXPECT_NEAR(c.imag(), 0, dd::RealNumber::eps);
   }
   dd->decRef(func);
