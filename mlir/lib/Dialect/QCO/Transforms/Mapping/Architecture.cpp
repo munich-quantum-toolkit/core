@@ -72,3 +72,11 @@ void Architecture::collectNeighbours() {
     neighbours_[u].push_back(v);
   }
 }
+
+std::size_t Architecture::maxDegree() const {
+  std::size_t deg = 0;
+  for (const auto& nbrs : neighbours_) {
+    deg = std::max(deg, nbrs.size());
+  }
+  return deg;
+}

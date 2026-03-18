@@ -503,14 +503,26 @@ private:
   /**
    * @brief Perform A* search to find a sequence of SWAPs that makes the
    * two-qubit operations inside the first layer (the front) executable.
-   * @details The parameter @p maxIterations determines how many nodes will
-   * be explored until the current search is considered a failure.
+   * @details
+   * The iteration budget is then b^{3}, which corresponds to
+   * exhausting all paths of length up to b^{2} in a search tree with branching
+   * factor b. A hard cap prevents impractical runtimes on larger architectures.
+   *
+   * The branching factor b of the A* search is the product of the
+   * architecture's maximum qubit degree and the maximum number of two-qubit
+   * gates in any layer:
+   *
+   * b = maxDegree × ⌈N/2⌉
+   *
    * @returns a vector of hardware-index pairs (each denoting a SWAP) or
    * failure() if A* fails.
    */
   [[nodiscard]] static FailureOr<SmallVector<IndexGate>>
   search(ArrayRef<Layer> layers, const Layout& layout, const Architecture& arch,
-         const Parameters& params, const std::size_t maxIterations = 50'000) {
+         const Parameters& params) {
+    constexpr std::size_t cap = 25'000'000UL;
+    const std::size_t b = arch.maxDegree() * ((arch.nqubits() + 1) / 2);
+    const std::size_t budget = std::min(b * b * b, cap);
 
     Node root(layout);
     if (root.isGoal(layers.front(), arch)) {
@@ -522,7 +534,7 @@ private:
     DenseSet<IndexGate> expansionSet;
 
     std::size_t i = 0;
-    while (!frontier.empty() && i < maxIterations) {
+    while (!frontier.empty() && i < budget) {
       Node curr = frontier.top();
       frontier.pop();
 
