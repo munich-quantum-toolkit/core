@@ -6,8 +6,8 @@
 //
 // Licensed under the MIT License
 
-#ifndef QCOOPS
-#define QCOOPS
+#ifndef MLIR_DIALECT_QCO_IR_QCOOPS_TD
+#define MLIR_DIALECT_QCO_IR_QCOOPS_TD
 
 include "mlir/Dialect/QCO/IR/QCODialect.td"
 include "mlir/Dialect/QCO/IR/QCOInterfaces.td"
@@ -1229,4 +1229,4 @@ def IfOp : QCOOp<"if", traits =
     let hasVerifier = 1;
 }
 
-#endif // QCOOPS
+#endif // MLIR_DIALECT_QCO_IR_QCOOPS_TD

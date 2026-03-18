@@ -6,8 +6,8 @@
 //
 // Licensed under the MIT License
 
-#ifndef QCDIALECT
-#define QCDIALECT
+#ifndef MLIR_DIALECT_QC_IR_QCDIALECT_TD
+#define MLIR_DIALECT_QC_IR_QCDIALECT_TD
 
 include "mlir/IR/DialectBase.td"
 
@@ -40,4 +40,4 @@ def QCDialect : Dialect {
     let useDefaultTypePrinterParser = 1;
 }
 
-#endif // QCDIALECT
+#endif // MLIR_DIALECT_QC_IR_QCDIALECT_TD

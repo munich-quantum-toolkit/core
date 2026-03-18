@@ -6,8 +6,8 @@
 //
 // Licensed under the MIT License
 
-#ifndef QCOTYPES
-#define QCOTYPES
+#ifndef MLIR_DIALECT_QCO_IR_QCOTYPES_TD
+#define MLIR_DIALECT_QCO_IR_QCOTYPES_TD
 
 include "mlir/Dialect/QCO/IR/QCODialect.td"
 
@@ -35,4 +35,4 @@ def QubitType : QCOType<"Qubit", "qubit"> {
     }];
 }
 
-#endif // QCOTYPES
+#endif // MLIR_DIALECT_QCO_IR_QCOTYPES_TD

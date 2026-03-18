@@ -6,8 +6,8 @@
 //
 // Licensed under the MIT License
 
-#ifndef QC_OPS
-#define QC_OPS
+#ifndef MLIR_DIALECT_QC_IR_QCOPS_TD
+#define MLIR_DIALECT_QC_IR_QCOPS_TD
 
 include "mlir/Dialect/QC/IR/QCDialect.td"
 include "mlir/Dialect/QC/IR/QCInterfaces.td"
@@ -964,4 +964,4 @@ def InvOp : QCOp<"inv",
     let hasVerifier = 1;
 }
 
-#endif // QC_OPS
+#endif // MLIR_DIALECT_QC_IR_QCOPS_TD

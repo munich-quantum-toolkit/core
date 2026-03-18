@@ -6,8 +6,8 @@
 //
 // Licensed under the MIT License
 
-#ifndef QCTYPES
-#define QCTYPES
+#ifndef MLIR_DIALECT_QC_IR_QCTYPES_TD
+#define MLIR_DIALECT_QC_IR_QCTYPES_TD
 
 include "mlir/Dialect/QC/IR/QCDialect.td"
 
@@ -28,4 +28,4 @@ def QubitType : QCType<"Qubit", "qubit"> {
     }];
 }
 
-#endif // QCTYPES
+#endif // MLIR_DIALECT_QC_IR_QCTYPES_TD

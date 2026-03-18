@@ -6,8 +6,8 @@
 //
 // Licensed under the MIT License
 
-#ifndef QCO_INTERFACES
-#define QCO_INTERFACES
+#ifndef MLIR_DIALECT_QCO_IR_QCOINTERFACES_TD
+#define MLIR_DIALECT_QCO_IR_QCOINTERFACES_TD
 
 include "mlir/IR/OpBase.td"
 
@@ -240,4 +240,4 @@ def UnitaryOpInterface : OpInterface<"UnitaryOpInterface"> {
     }];
 }
 
-#endif // QCO_INTERFACES
+#endif // MLIR_DIALECT_QCO_IR_QCOINTERFACES_TD
