@@ -99,12 +99,12 @@ TEST_P(QFT, Functionality) {
   ASSERT_EQ(dd->cn.realCount(),
             1ULL << (std::max<std::size_t>(2UL, nqubits) - 2));
 
-  // top edge weight should equal sqrt(0.5)^n
+  // top edge weight should equal (1/sqrt(2))^n
   EXPECT_NEAR(dd::RealNumber::val(func.w.r),
               static_cast<dd::fp>(std::pow(1.0 / std::sqrt(2.0), nqubits)),
               dd::RealNumber::eps);
 
-  // first row and first column should consist only of (1/sqrt(2))**nqubits
+  // first row and first column should consist only of (1/sqrt(2))^n entries
   for (std::uint64_t i = 0; i < 1ULL << nqubits; ++i) {
     auto c = func.getValueByIndex(dd->qubits(), 0, i);
     EXPECT_NEAR(c.real(),
@@ -190,7 +190,7 @@ TEST_P(QFT, Simulation) {
   EXPECT_NEAR(dd::RealNumber::val(sim.w.r), 1, dd::RealNumber::eps);
   EXPECT_NEAR(dd::RealNumber::val(sim.w.i), 0, dd::RealNumber::eps);
 
-  // first column should consist only of sqrt(0.5)^n's
+  // first column should consist only of (1/sqrt(2))^n entries
   for (std::uint64_t i = 0; i < 1ULL << nqubits; ++i) {
     auto c = sim.getValueByIndex(i);
     EXPECT_NEAR(c.real(),
