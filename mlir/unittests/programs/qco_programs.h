@@ -998,21 +998,39 @@ void qtensorExtractSlice(QCOProgramBuilder& b);
 /// Inserts a slice into a tensor.
 void qtensorInsertSlice(QCOProgramBuilder& b);
 
-/// Extracts a qubit from a tensor and inserts it immediately.
-void qtensorExtractInsert(QCOProgramBuilder& b);
+/// Extracts a qubit from a tensor and inserts it immediately at a different
+/// index.
+void qtensorExtractInsertIndexMismatch(QCOProgramBuilder& b);
 
-/// Inserts a qubit into a tensor and extracts it immediately.
-void qtensorInsertExtract(QCOProgramBuilder& b);
+/// Extracts a qubit from a tensor and inserts it immediately at the same index.
+void qtensorExtractInsertSameIndex(QCOProgramBuilder& b);
 
-/// Extracts a slice of qubits from a tensor and inserts it immediately.
-void qtensorExtractSliceInsertSlice(QCOProgramBuilder& b);
+/// Inserts a qubit into a tensor and extracts it immediately at a different
+/// index.
+void qtensorInsertExtractIndexMismatch(QCOProgramBuilder& b);
 
-/// Inserts a slice of qubits into a tensor and extracts it immediately.
-void qtensorInsertSliceExtractSlice(QCOProgramBuilder& b);
+/// Inserts a qubit into a tensor and extracts it immediately at the same index.
+void qtensorInsertExtractSameIndex(QCOProgramBuilder& b);
+
+/// Extracts a slice of qubits from a tensor and inserts it immediately at a
+/// different offset.
+void qtensorExtractSliceInsertSliceOffsetMismatch(QCOProgramBuilder& b);
+
+/// Extracts a slice of qubits from a tensor and inserts it immediately at the
+/// same offset.
+void qtensorExtractSliceInsertSliceSameOffset(QCOProgramBuilder& b);
+
+/// Inserts a slice of qubits into a tensor and extracts it immediately at a
+/// different offset.
+void qtensorInsertSliceExtractSliceOffsetMismatch(QCOProgramBuilder& b);
+
+/// Inserts a slice of qubits into a tensor and extracts it immediately at the
+/// same offset.
+void qtensorInsertSliceExtractSliceSameOffset(QCOProgramBuilder& b);
 
 /// Extracts a slice of qubits, extracts a qubit from the slice, inserts the
 /// qubit back into the slice, and inserts the slice back into the tensor
-/// immediately.
+/// immediately at the same index and offset.
 void qtensorExtractSliceExtractInsertInsertSlice(QCOProgramBuilder& b);
 
 } // namespace mlir::qco
