@@ -41,7 +41,7 @@ if(BUILD_MQT_CORE_MLIR)
   FetchContent_Declare(
     jeff-mlir
     GIT_REPOSITORY https://github.com/PennyLaneAI/jeff-mlir.git
-    GIT_TAG 41d02b95ec509d586f4c9bd690b6f453a53918e6)
+    GIT_TAG c7e0d0340e470c9097a79a430b633b97dcd864e9)
   list(APPEND FETCH_PACKAGES jeff-mlir)
 endif()
 
