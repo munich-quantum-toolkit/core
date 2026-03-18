@@ -41,7 +41,7 @@ LogicalResult InsertSliceOp::verify() {
   }
 
   if (constOffset && constSize && !ShapedType::isDynamic(dstDim)) {
-    if (*constOffset + *constSize > dstDim) {
+    if (*constSize > dstDim || *constOffset > dstDim - *constSize) {
       return emitOpError("Offset + Size exceeds destination dimension");
     }
   }

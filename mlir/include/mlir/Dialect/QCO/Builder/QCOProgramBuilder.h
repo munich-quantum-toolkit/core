@@ -361,9 +361,10 @@ public:
    * @brief Explicitly deallocate a tensor
    *
    * @details
-   * Explicitly deallocates the given tensor and the value it holds. Qubits or
-   * tensors of qubits that were extracted from the tensor but not inserted back
-   * again need to be deallocated separately.
+   * Validates and removes the tensor from tracking. Qubits or tensors of qubits
+   * that were extracted from the tensor but not inserted back again need to be
+   * deallocated separately. Optional; `finalize()` automatically deallocates
+   * all remaining tensors.
    *
    * @param tensor Tensor to deallocate (must be valid/unconsumed)
    * @return Reference to this builder for method chaining
@@ -1230,7 +1231,7 @@ public:
    * @brief Explicitly deallocate a qubit
    *
    * @details
-   * Validates and removes the qubit from tracking. Optional, finalize()
+   * Validates and removes the qubit from tracking. Optional; `finalize()`
    * automatically deallocates all remaining qubits.
    *
    * @param qubit Qubit to deallocate (must be valid/unconsumed)
