@@ -12,13 +12,6 @@
 
 #include "mlir/Dialect/QTensor/IR/QTensorDialect.h" // IWYU pragma: associated
 
-#include <mlir/Dialect/Utils/StaticValueUtils.h>
-#include <mlir/IR/Builders.h>
-#include <mlir/IR/BuiltinTypes.h>
-#include <mlir/IR/OpDefinition.h>
-#include <mlir/IR/TypeUtilities.h>
-#include <mlir/IR/Value.h>
-
 // The following headers are needed for some template instantiations.
 // IWYU pragma: begin_keep
 #include <llvm/ADT/TypeSwitch.h>
@@ -27,20 +20,6 @@
 
 using namespace mlir;
 using namespace mlir::qtensor;
-
-namespace mlir::qtensor {
-
-bool isSameIndex(TypedValue<IndexType> index1, TypedValue<IndexType> index2) {
-  if (index1 == index2) {
-    return true;
-  }
-
-  auto val1 = getConstantIntValue(index1);
-  auto val2 = getConstantIntValue(index2);
-
-  return val1 && val2 && *val1 == *val2;
-}
-} // namespace mlir::qtensor
 
 //===----------------------------------------------------------------------===//
 // Dialect

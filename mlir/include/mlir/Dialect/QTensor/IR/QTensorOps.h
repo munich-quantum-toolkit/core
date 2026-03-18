@@ -30,16 +30,3 @@
 
 #define GET_OP_CLASSES
 #include "mlir/Dialect/QTensor/IR/QTensorOps.h.inc" // IWYU pragma: export
-
-namespace mlir::qtensor {
-
-/**
- * @brief Check if two values of IndexType are identical.
- *
- * @param index1 The first IndexType value.
- * @param index2 The second IndexType value.
- * @return True if both values are equal.
- */
-bool isSameIndex(TypedValue<IndexType> index1, TypedValue<IndexType> index2);
-
-} // namespace mlir::qtensor
