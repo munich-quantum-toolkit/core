@@ -521,5 +521,7 @@ auto std::hash<dd::Edge<Node>>::operator()(
   return qc::combineHash(h1, h2);
 }
 
+// NOLINTNEXTLINE(bugprone-std-namespace-modification)
 template struct std::hash<dd::Edge<dd::vNode>>;
+// NOLINTNEXTLINE(bugprone-std-namespace-modification)
 template struct std::hash<dd::Edge<dd::mNode>>;

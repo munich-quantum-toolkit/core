@@ -170,5 +170,7 @@ auto std::hash<dd::CachedEdge<Node>>::operator()(
   return qc::combineHash(h1, h2);
 }
 
+// NOLINTNEXTLINE(bugprone-std-namespace-modification)
 template struct std::hash<dd::CachedEdge<dd::vNode>>;
+// NOLINTNEXTLINE(bugprone-std-namespace-modification)
 template struct std::hash<dd::CachedEdge<dd::mNode>>;

@@ -32,6 +32,7 @@ namespace qc {
 
 // Overload pattern for std::visit
 namespace {
+// NOLINTNEXTLINE(misc-multiple-inheritance)
 template <typename... Ts> struct Overload : Ts... {
   using Ts::operator()...;
 };
