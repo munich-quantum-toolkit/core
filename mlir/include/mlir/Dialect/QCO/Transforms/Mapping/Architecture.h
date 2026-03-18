@@ -64,6 +64,12 @@ public:
   [[nodiscard]] mlir::SmallVector<std::size_t, 4>
   neighboursOf(std::size_t u) const;
 
+  /**
+   * @brief Return the maximum degree (connectivity) of any qubit in the
+   * architecture.
+   */
+  [[nodiscard]] std::size_t maxDegree() const;
+
 private:
   using Matrix = mlir::SmallVector<mlir::SmallVector<std::size_t, 0>, 0>;
 
