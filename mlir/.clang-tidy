@@ -9,6 +9,7 @@ Checks: |
   -cppcoreguidelines-avoid-non-const-global-variables,
   -cppcoreguidelines-pro-bounds-avoid-unchecked-container-access,
   -misc-use-anonymous-namespace,
+  -modernize-type-traits,
   -*-const-correctness,
 
 CheckOptions:
