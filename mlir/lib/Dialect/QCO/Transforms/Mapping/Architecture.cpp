@@ -13,6 +13,7 @@
 #include <llvm/Support/ErrorHandling.h>
 #include <mlir/Support/LLVM.h>
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <string_view>
