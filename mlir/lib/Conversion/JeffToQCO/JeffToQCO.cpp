@@ -13,6 +13,7 @@
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 
+#include <jeff/Conversion/JeffToNative/JeffToNative.h>
 #include <jeff/IR/JeffDialect.h>
 #include <jeff/IR/JeffOps.h>
 #include <llvm/ADT/STLFunctionalExtras.h>
@@ -20,6 +21,8 @@
 #include <llvm/Support/ErrorHandling.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
+#include <mlir/Dialect/Math/IR/Math.h>
+#include <mlir/Dialect/Tensor/IR/Tensor.h>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/BuiltinAttributes.h>
 #include <mlir/IR/BuiltinOps.h>
@@ -884,78 +887,6 @@ struct ConvertJeffMainToQCO final : OpConversionPattern<func::FuncOp> {
 };
 
 /**
- * @brief Converts jeff.int_const1 to arith.constant
- *
- * @par Example:
- * ```mlir
- * %0 = jeff.int_const1(true) : i1
- * ```
- * is converted to
- * ```mlir
- * %0 = arith.constant true : i1
- * ```
- */
-struct ConvertJeffIntConst1OpToArith final
-    : OpConversionPattern<jeff::IntConst1Op> {
-  using OpConversionPattern::OpConversionPattern;
-
-  LogicalResult
-  matchAndRewrite(jeff::IntConst1Op op, OpAdaptor /*adaptor*/,
-                  ConversionPatternRewriter& rewriter) const override {
-    rewriter.replaceOpWithNewOp<arith::ConstantOp>(op, op.getValAttr());
-    return success();
-  }
-};
-
-/**
- * @brief Converts jeff.int_const64 to arith.constant
- *
- * @par Example:
- * ```mlir
- * %0 = jeff.int_const64(3) : i64
- * ```
- * is converted to
- * ```mlir
- * %0 = arith.constant 3 : i64
- * ```
- */
-struct ConvertJeffIntConst64OpToArith final
-    : OpConversionPattern<jeff::IntConst64Op> {
-  using OpConversionPattern::OpConversionPattern;
-
-  LogicalResult
-  matchAndRewrite(jeff::IntConst64Op op, OpAdaptor /*adaptor*/,
-                  ConversionPatternRewriter& rewriter) const override {
-    rewriter.replaceOpWithNewOp<arith::ConstantOp>(op, op.getValAttr());
-    return success();
-  }
-};
-
-/**
- * @brief Converts jeff.float_const64 to arith.constant
- *
- * @par Example:
- * ```mlir
- * %0 = jeff.float_const64(0.3) : f64
- * ```
- * is converted to
- * ```mlir
- * %0 = arith.constant 0.3 : f64
- * ```
- */
-struct ConvertJeffFloatConst64OpToArith final
-    : OpConversionPattern<jeff::FloatConst64Op> {
-  using OpConversionPattern::OpConversionPattern;
-
-  LogicalResult
-  matchAndRewrite(jeff::FloatConst64Op op, OpAdaptor /*adaptor*/,
-                  ConversionPatternRewriter& rewriter) const override {
-    rewriter.replaceOpWithNewOp<arith::ConstantOp>(op, op.getValAttr());
-    return success();
-  }
-};
-
-/**
  * @brief Type converter for Jeff-to-QCO conversion
  *
  * @details
@@ -990,7 +921,8 @@ protected:
 
     // Configure conversion target
     target.addIllegalDialect<jeff::JeffDialect>();
-    target.addLegalDialect<QCODialect, arith::ArithDialect>();
+    target.addLegalDialect<QCODialect, arith::ArithDialect, math::MathDialect,
+                           tensor::TensorDialect>();
 
     target.addDynamicallyLegalOp<func::FuncOp>([&](func::FuncOp op) {
       return !(op.getSymName() == getEntryPointName(module) &&
@@ -999,27 +931,25 @@ protected:
     target.addLegalOp<func::ReturnOp>();
 
     // Register operation conversion patterns
-    patterns
-        .add<ConvertJeffQubitAllocOpToQCO, ConvertJeffQubitFreeOpToQCO,
-             ConvertJeffQubitFreeZeroOpToQCO, ConvertJeffQubitMeasureOpToQCO,
-             ConvertJeffQubitMeasureNDOpToQCO, ConvertJeffQubitResetOpToQCO,
-             ConvertJeffGPhaseOpToQCO,
-             ConvertJeffOneTargetZeroParameterToQCO<jeff::IOp, qco::IdOp>,
-             ConvertJeffOneTargetZeroParameterToQCO<jeff::XOp, qco::XOp>,
-             ConvertJeffOneTargetZeroParameterToQCO<jeff::YOp, qco::YOp>,
-             ConvertJeffOneTargetZeroParameterToQCO<jeff::ZOp, qco::ZOp>,
-             ConvertJeffOneTargetZeroParameterToQCO<jeff::HOp, qco::HOp>,
-             ConvertJeffOneTargetZeroParameterToQCO<jeff::SOp, qco::SOp>,
-             ConvertJeffOneTargetZeroParameterToQCO<jeff::TOp, qco::TOp>,
-             ConvertJeffOneTargetOneParameterToQCO<jeff::RxOp, qco::RXOp>,
-             ConvertJeffOneTargetOneParameterToQCO<jeff::RyOp, qco::RYOp>,
-             ConvertJeffOneTargetOneParameterToQCO<jeff::RzOp, qco::RZOp>,
-             ConvertJeffOneTargetOneParameterToQCO<jeff::R1Op, qco::POp>,
-             ConvertJeffUOpToQCO, ConvertJeffSwapOpToQCO,
-             ConvertJeffCustomOpToQCO, ConvertJeffPPROpToQCO,
-             ConvertJeffMainToQCO, ConvertJeffIntConst1OpToArith,
-             ConvertJeffIntConst64OpToArith, ConvertJeffFloatConst64OpToArith>(
-            typeConverter, context);
+    jeff::populateJeffToNativeConversionPatterns(patterns);
+    patterns.add<
+        ConvertJeffQubitAllocOpToQCO, ConvertJeffQubitFreeOpToQCO,
+        ConvertJeffQubitFreeZeroOpToQCO, ConvertJeffQubitMeasureOpToQCO,
+        ConvertJeffQubitMeasureNDOpToQCO, ConvertJeffQubitResetOpToQCO,
+        ConvertJeffGPhaseOpToQCO,
+        ConvertJeffOneTargetZeroParameterToQCO<jeff::IOp, qco::IdOp>,
+        ConvertJeffOneTargetZeroParameterToQCO<jeff::XOp, qco::XOp>,
+        ConvertJeffOneTargetZeroParameterToQCO<jeff::YOp, qco::YOp>,
+        ConvertJeffOneTargetZeroParameterToQCO<jeff::ZOp, qco::ZOp>,
+        ConvertJeffOneTargetZeroParameterToQCO<jeff::HOp, qco::HOp>,
+        ConvertJeffOneTargetZeroParameterToQCO<jeff::SOp, qco::SOp>,
+        ConvertJeffOneTargetZeroParameterToQCO<jeff::TOp, qco::TOp>,
+        ConvertJeffOneTargetOneParameterToQCO<jeff::RxOp, qco::RXOp>,
+        ConvertJeffOneTargetOneParameterToQCO<jeff::RyOp, qco::RYOp>,
+        ConvertJeffOneTargetOneParameterToQCO<jeff::RzOp, qco::RZOp>,
+        ConvertJeffOneTargetOneParameterToQCO<jeff::R1Op, qco::POp>,
+        ConvertJeffUOpToQCO, ConvertJeffSwapOpToQCO, ConvertJeffCustomOpToQCO,
+        ConvertJeffPPROpToQCO, ConvertJeffMainToQCO>(typeConverter, context);
 
     // Apply the conversion
     if (applyPartialConversion(module, target, std::move(patterns)).failed()) {
