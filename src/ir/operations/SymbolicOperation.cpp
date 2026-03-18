@@ -62,9 +62,9 @@ fp& SymbolicOperation::getNumber(SymbolOrNumber& param) {
 OpType SymbolicOperation::parseU3([[maybe_unused]] const Symbolic& theta,
                                   fp& phi, fp& lambda) {
   if (std::abs(lambda) < PARAMETER_TOLERANCE) {
-    lambda = 0.L;
+    lambda = 0.0;
     if (std::abs(phi) < PARAMETER_TOLERANCE) {
-      phi = 0.L;
+      phi = 0.0;
     }
   }
 
@@ -78,7 +78,7 @@ OpType SymbolicOperation::parseU3([[maybe_unused]] const Symbolic& theta,
   if (std::abs(lambda - PI) < PARAMETER_TOLERANCE) {
     lambda = PI;
     if (std::abs(phi) < PARAMETER_TOLERANCE) {
-      phi = 0.L;
+      phi = 0.0;
     }
   }
 
@@ -97,7 +97,7 @@ OpType SymbolicOperation::parseU3(fp& theta, const Symbolic& phi, fp& lambda) {
   }
 
   if (std::abs(lambda) < PARAMETER_TOLERANCE) {
-    lambda = 0.L;
+    lambda = 0.0;
   }
 
   if (std::abs(lambda - PI_2) < PARAMETER_TOLERANCE) {
@@ -120,8 +120,8 @@ OpType SymbolicOperation::parseU3(fp& theta, fp& phi,
                                   [[maybe_unused]] const Symbolic& lambda) {
   if (std::abs(theta) < PARAMETER_TOLERANCE &&
       std::abs(phi) < PARAMETER_TOLERANCE) {
-    phi = 0.L;
-    theta = 0.L;
+    phi = 0.0;
+    theta = 0.0;
     return SymbolicOperation::parseU1(lambda);
   }
 

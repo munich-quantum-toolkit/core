@@ -426,7 +426,7 @@ std::string Package::measureAll(vEdge& rootEdge, const bool collapse,
 
   std::string result(numberOfQubits, '0');
 
-  std::uniform_real_distribution<fp> dist(0.0, 1.0L);
+  std::uniform_real_distribution<fp> dist(0.0, 1.0);
 
   for (auto i = numberOfQubits; i > 0; --i) {
     fp p0 = ComplexNumbers::mag2(cur.p->e.at(0).w);

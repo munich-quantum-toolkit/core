@@ -38,9 +38,8 @@ using Qubit = std::uint16_t;
  * @note Adjusting the precision might lead to unexpected results.
  */
 using fp = double;
-static_assert(
-    std::is_floating_point_v<fp>,
-    "fp should be a floating point type (float, *double*, long double)");
+static_assert(std::is_floating_point_v<fp>,
+              "fp should be a floating point type (float or double)");
 
 // logic radix
 static constexpr std::uint8_t RADIX = 2;
