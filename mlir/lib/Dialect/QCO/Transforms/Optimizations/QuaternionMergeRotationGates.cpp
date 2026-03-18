@@ -53,6 +53,10 @@ struct MergeRotationGatesPattern final
 
   enum class RotationAxis : std::uint8_t { X, Y, Z };
 
+  struct Constants {
+    Value negOne, zero, one, two, eps, pi;
+  };
+
   /**
    * @brief Checks if an operation is a mergeable rotation gate (RXOp, RYOp,
    * RZOp, UOp).
@@ -99,6 +103,27 @@ struct MergeRotationGatesPattern final
         .Default([](auto) { return std::nullopt; });
   }
 
+  static Constants createConstants(Location loc, PatternRewriter& rewriter) {
+    auto f64 = rewriter.getF64Type();
+    return {
+        .negOne = arith::ConstantOp::create(rewriter, loc,
+                                            rewriter.getFloatAttr(f64, -1.0)),
+        .zero = arith::ConstantOp::create(rewriter, loc,
+                                          rewriter.getFloatAttr(f64, 0.0)),
+        .one = arith::ConstantOp::create(rewriter, loc,
+                                         rewriter.getFloatAttr(f64, 1.0)),
+        .two = arith::ConstantOp::create(rewriter, loc,
+                                         rewriter.getFloatAttr(f64, 2.0)),
+        // Tolerance for gimbal-lock detection in quaternion-to-Euler
+        // conversion. Value from reference implementation:
+        // https://github.com/evbernardes/quaternion_to_euler/blob/main/euler_from_quat.py
+        .eps = arith::ConstantOp::create(rewriter, loc,
+                                         rewriter.getFloatAttr(f64, 1e-12)),
+        .pi = arith::ConstantOp::create(
+            rewriter, loc, rewriter.getFloatAttr(f64, std::numbers::pi)),
+    };
+  }
+
   /**
    * @brief Converts a single-axis rotation to quaternion representation.
    *
@@ -112,35 +137,28 @@ struct MergeRotationGatesPattern final
    * @param angle The rotation angle
    * @param axis The rotation axis (X, Y, or Z)
    * @param loc Location in the IR
+   * @param constants Pre-created arithmetic constants
    * @param rewriter Pattern rewriter for creating new operations
    * @return Quaternion representing the rotation
    */
   static Quaternion createAxisQuaternion(Value angle, RotationAxis axis,
                                          Location loc,
+                                         const Constants& constants,
                                          PatternRewriter& rewriter) {
-    auto floatType = angle.getType();
-
-    // constant 0.0
-    auto zeroAttr = rewriter.getFloatAttr(floatType, 0.0);
-    auto zero = arith::ConstantOp::create(rewriter, loc, zeroAttr);
-
-    // constant 2.0
-    auto twoAttr = rewriter.getFloatAttr(floatType, 2.0);
-    auto two = arith::ConstantOp::create(rewriter, loc, twoAttr);
-
-    auto half = arith::DivFOp::create(rewriter, loc, angle, two);
+    auto f64 = rewriter.getF64Type();
+    auto half = arith::DivFOp::create(rewriter, loc, angle, constants.two);
     // cos(angle/2)
-    auto cos = math::CosOp::create(rewriter, loc, floatType, half);
+    auto cos = math::CosOp::create(rewriter, loc, f64, half);
     // sin(angle/2)
-    auto sin = math::SinOp::create(rewriter, loc, floatType, half);
+    auto sin = math::SinOp::create(rewriter, loc, f64, half);
 
     switch (axis) {
     case RotationAxis::X:
-      return {.w = cos, .x = sin, .y = zero, .z = zero};
+      return {.w = cos, .x = sin, .y = constants.zero, .z = constants.zero};
     case RotationAxis::Y:
-      return {.w = cos, .x = zero, .y = sin, .z = zero};
+      return {.w = cos, .x = constants.zero, .y = sin, .z = constants.zero};
     case RotationAxis::Z:
-      return {.w = cos, .x = zero, .y = zero, .z = sin};
+      return {.w = cos, .x = constants.zero, .y = constants.zero, .z = sin};
     } // NOLINT(bugprone-branch-clone): false positive, branches differ
 
     llvm_unreachable("Invalid rotation axis");
@@ -159,43 +177,47 @@ struct MergeRotationGatesPattern final
    *   Quaternion product:     qPhi * qTheta * qLambda
    *
    * @param op The UOp to convert
+   * @param constants Pre-created arithmetic constants
    * @param rewriter Pattern rewriter for creating new operations
    * @return Quaternion representing the UOp
    */
   static Quaternion quaternionFromUOp(UnitaryOpInterface op,
+                                      const Constants& constants,
                                       PatternRewriter& rewriter) {
     auto loc = op->getLoc();
 
     // U(theta, phi, lambda) uses ZYZ decomposition: RZ(lambda) -> RY(theta) ->
     // RZ(phi)
     auto qTheta = createAxisQuaternion(op.getParameter(0), RotationAxis::Y, loc,
-                                       rewriter);
+                                       constants, rewriter);
     auto qPhi = createAxisQuaternion(op.getParameter(1), RotationAxis::Z, loc,
-                                     rewriter);
+                                     constants, rewriter);
     auto qLambda = createAxisQuaternion(op.getParameter(2), RotationAxis::Z,
-                                        loc, rewriter);
+                                        loc, constants, rewriter);
 
     // qPhi * qTheta * qLambda (multiplication in reverse order!)
-    auto temp = hamiltonProduct(qPhi, qTheta, op, rewriter);
-    return hamiltonProduct(temp, qLambda, op, rewriter);
+    auto temp = hamiltonProduct(qPhi, qTheta, loc, rewriter);
+    return hamiltonProduct(temp, qLambda, loc, rewriter);
   }
 
   /**
    * @brief Converts a rotation gate to quaternion representation.
    *
    * @param op The rotation gate (RXOp, RYOp, RZOp, UOp) to convert
+   * @param constants Pre-created arithmetic constants
    * @param rewriter Pattern rewriter for creating new operations
    * @return Quaternion representing the rotation gate
    */
   static Quaternion quaternionFromRotation(UnitaryOpInterface op,
+                                           const Constants& constants,
                                            PatternRewriter& rewriter) {
     if (isa<UOp>(op)) {
-      return quaternionFromUOp(op, rewriter);
+      return quaternionFromUOp(op, constants, rewriter);
     }
 
     if (auto axis = getRotationAxis(op.getOperation())) {
       return createAxisQuaternion(op.getParameter(0), *axis, op->getLoc(),
-                                  rewriter);
+                                  constants, rewriter);
     }
 
     llvm_unreachable("Unsupported operation type");
@@ -214,15 +236,12 @@ struct MergeRotationGatesPattern final
    * @see https://en.wikipedia.org/wiki/Quaternion#Hamilton_product
    * @param q1 The first quaternion
    * @param q2 The second quaternion
-   * @param op The current operation (used for location)
+   * @param loc Location in the IR
    * @param rewriter Pattern rewriter for creating new operations
    * @return Product quaternion
    */
-  static Quaternion hamiltonProduct(Quaternion q1, Quaternion q2,
-                                    UnitaryOpInterface op,
+  static Quaternion hamiltonProduct(Quaternion q1, Quaternion q2, Location loc,
                                     PatternRewriter& rewriter) {
-    auto loc = op->getLoc();
-
     // wRes = w1w2 - x1x2 - y1y2 - z1z2
     auto w1w2 = arith::MulFOp::create(rewriter, loc, q1.w, q2.w);
     auto x1x2 = arith::MulFOp::create(rewriter, loc, q1.x, q2.x);
@@ -282,33 +301,15 @@ struct MergeRotationGatesPattern final
    * @note Floating-point errors may accumulate when merging many gates.
    * @param q The quaternion to convert
    * @param op The current operation (used for location and type information)
+   * @param constants Pre-created arithmetic constants
    * @param rewriter Pattern rewriter for creating new operations
    * @return UOp equivalent to the quaternion rotation
    */
   static UnitaryOpInterface uOpFromQuaternion(Quaternion q,
                                               UnitaryOpInterface op,
+                                              const Constants& constants,
                                               PatternRewriter& rewriter) {
     auto loc = op->getLoc();
-
-    auto floatType = op.getParameter(0).getType();
-    // constant -1.0
-    auto negOneAttr = rewriter.getFloatAttr(floatType, -1.0);
-    auto negOne = arith::ConstantOp::create(rewriter, loc, negOneAttr);
-    // constant 0.0
-    auto zeroAttr = rewriter.getFloatAttr(floatType, 0.0);
-    auto zero = arith::ConstantOp::create(rewriter, loc, zeroAttr);
-    // constant 1.0
-    auto oneAttr = rewriter.getFloatAttr(floatType, 1.0);
-    auto one = arith::ConstantOp::create(rewriter, loc, oneAttr);
-    // constant 2.0
-    auto twoAttr = rewriter.getFloatAttr(floatType, 2.0);
-    auto two = arith::ConstantOp::create(rewriter, loc, twoAttr);
-    // constant epsilon (boundary around gimbal lock positions)
-    auto epsAttr = rewriter.getFloatAttr(floatType, 1e-7);
-    auto eps = arith::ConstantOp::create(rewriter, loc, epsAttr);
-    // constant PI
-    auto piAttr = rewriter.getFloatAttr(floatType, std::numbers::pi);
-    auto pi = arith::ConstantOp::create(rewriter, loc, piAttr);
 
     // calculate angle beta (for y-rotation)
     // beta = acos(2 * (w^2 + z^2) - 1)
@@ -317,24 +318,26 @@ struct MergeRotationGatesPattern final
     auto ww = arith::MulFOp::create(rewriter, loc, q.w, q.w);
     auto zz = arith::MulFOp::create(rewriter, loc, q.z, q.z);
     auto bTemp1 = arith::AddFOp::create(rewriter, loc, ww, zz);
-    auto bTemp2 = arith::MulFOp::create(rewriter, loc, two, bTemp1);
-    auto bTemp3 = arith::SubFOp::create(rewriter, loc, bTemp2, one);
-    auto clampedLow = arith::MaximumFOp::create(rewriter, loc, bTemp3, negOne);
-    auto clamped = arith::MinimumFOp::create(rewriter, loc, clampedLow, one);
+    auto bTemp2 = arith::MulFOp::create(rewriter, loc, constants.two, bTemp1);
+    auto bTemp3 = arith::SubFOp::create(rewriter, loc, bTemp2, constants.one);
+    auto clampedLow =
+        arith::MaximumFOp::create(rewriter, loc, bTemp3, constants.negOne);
+    auto clamped =
+        arith::MinimumFOp::create(rewriter, loc, clampedLow, constants.one);
     auto beta = math::AcosOp::create(rewriter, loc, clamped);
 
     // intermediates to check for gimbal lock (|beta| and |beta - PI|)
     auto absBeta = math::AbsFOp::create(rewriter, loc, beta);
-    auto betaMinusPi = arith::SubFOp::create(rewriter, loc, beta, pi);
+    auto betaMinusPi = arith::SubFOp::create(rewriter, loc, beta, constants.pi);
     auto absBetaMinusPi = math::AbsFOp::create(rewriter, loc, betaMinusPi);
 
     // safe1 = beta not within boundary eps around 0:
     // |beta| >= eps
     auto safe1 = arith::CmpFOp::create(rewriter, loc, arith::CmpFPredicate::OGE,
-                                       absBeta, eps);
+                                       absBeta, constants.eps);
     // safe2 = beta not within boundary eps around PI: |beta - PI| >= eps
     auto safe2 = arith::CmpFOp::create(rewriter, loc, arith::CmpFPredicate::OGE,
-                                       absBetaMinusPi, eps);
+                                       absBetaMinusPi, constants.eps);
     // is safe (not in gimbal lock) when both hold (safe1 AND safe2)
     auto safe = arith::AndIOp::create(rewriter, loc, safe1, safe2);
 
@@ -348,8 +351,10 @@ struct MergeRotationGatesPattern final
     // intermediate angles for gimbal lock cases
     // twoTheta+ = 2 * theta+
     // twoTheta- = 2 * theta-
-    auto twoThetaPlus = arith::MulFOp::create(rewriter, loc, two, thetaPlus);
-    auto twoThetaMinus = arith::MulFOp::create(rewriter, loc, two, thetaMinus);
+    auto twoThetaPlus =
+        arith::MulFOp::create(rewriter, loc, constants.two, thetaPlus);
+    auto twoThetaMinus =
+        arith::MulFOp::create(rewriter, loc, constants.two, thetaMinus);
 
     // Safe Case (no gimbal lock):
     // alphaSafe = theta+ + theta-
@@ -372,7 +377,8 @@ struct MergeRotationGatesPattern final
     // choose correct alpha and gamma whether safe or not
     auto alpha =
         arith::SelectOp::create(rewriter, loc, safe, alphaSafe, alphaUnsafe);
-    auto gamma = arith::SelectOp::create(rewriter, loc, safe, gammaSafe, zero);
+    auto gamma =
+        arith::SelectOp::create(rewriter, loc, safe, gammaSafe, constants.zero);
 
     return UOp::create(rewriter, loc, op.getInputQubit(0), beta.getResult(),
                        alpha.getResult(), gamma.getResult());
@@ -393,10 +399,13 @@ struct MergeRotationGatesPattern final
   static void createOpQuaternionMergedAngle(UnitaryOpInterface op,
                                             UnitaryOpInterface user,
                                             PatternRewriter& rewriter) {
-    auto q1 = quaternionFromRotation(op, rewriter);
-    auto q2 = quaternionFromRotation(user, rewriter);
-    auto qHam = hamiltonProduct(q2, q1, op, rewriter);
-    auto newOp = uOpFromQuaternion(qHam, op, rewriter);
+    auto loc = op->getLoc();
+    auto constants = createConstants(loc, rewriter);
+
+    auto q1 = quaternionFromRotation(op, constants, rewriter);
+    auto q2 = quaternionFromRotation(user, constants, rewriter);
+    auto qHam = hamiltonProduct(q2, q1, loc, rewriter);
+    auto newOp = uOpFromQuaternion(qHam, op, constants, rewriter);
 
     rewriter.replaceOp(user, op->getResults());
     rewriter.replaceOp(op, newOp);
@@ -414,7 +423,7 @@ struct MergeRotationGatesPattern final
    */
   LogicalResult matchAndRewrite(UnitaryOpInterface op,
                                 PatternRewriter& rewriter) const override {
-    auto* userOP = *op->getUsers.begin();
+    auto* userOP = *op->getUsers().begin();
 
     if (!areQuaternionMergeable(*op, *userOP)) {
       return failure();
