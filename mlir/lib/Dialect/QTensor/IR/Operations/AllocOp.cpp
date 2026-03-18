@@ -13,6 +13,7 @@
 
 #include <mlir/Dialect/Utils/StaticValueUtils.h>
 #include <mlir/IR/Builders.h>
+#include <mlir/IR/BuiltinTypeInterfaces.h>
 #include <mlir/IR/BuiltinTypes.h>
 #include <mlir/IR/OpDefinition.h>
 #include <mlir/IR/OperationSupport.h>
@@ -20,7 +21,6 @@
 #include <mlir/Support/LogicalResult.h>
 
 #include <cassert>
-#include <optional>
 
 using namespace mlir;
 using namespace mlir::qtensor;
@@ -42,6 +42,9 @@ LogicalResult AllocOp::verify() {
   auto sizeValue = getConstantIntValue(getSize());
   auto resultSize = resultType.getShape()[0];
 
+  if (sizeValue && *sizeValue <= 0) {
+    return emitOpError("Constant size operand must be positive");
+  }
   if (sizeValue.has_value() == resultType.isDynamicDim(0)) {
     return emitOpError("Size operand and result type must both be static or "
                        "both be dynamic, but got ")

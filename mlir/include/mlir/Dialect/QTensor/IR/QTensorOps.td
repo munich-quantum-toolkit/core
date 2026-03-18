@@ -169,7 +169,7 @@ def QTensor_ExtractSliceOp : QTensorOp<"extract_slice", [
     let summary = "Extract slice from tensor";
     let description = [{
         The `qtensor.extract_slice` operation is the modified version of the standard `tensor.extract_slice`
-        operation of the tensor dialect. It reads a one-dimensional qubit and returns the extracted tensor of qubits specified by the
+        operation of the tensor dialect. It reads a one-dimensional qubit tensor and returns the extracted tensor of qubits specified by the
         offset and size argument. In addition, it also returns the updated input tensor as result.
 
         The extract_slice operation supports the following arguments:

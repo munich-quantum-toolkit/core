@@ -1353,7 +1353,9 @@ private:
   llvm::DenseSet<Value> validQubits;
 
   /**
-   * @brief Validate that a tensor value is valid and unconsumed
+   * @brief Validate that a tensor value is valid and unconsumed. This also
+   * checks if the tensor is one-dimensional and contains !qco.qubit as its
+   * values
    * @param tensor Tensor value to validate
    * @throws Aborts if tensor is not tracked (consumed or never created)
    */

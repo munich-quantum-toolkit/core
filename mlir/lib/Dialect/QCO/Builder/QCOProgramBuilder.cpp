@@ -172,6 +172,14 @@ void QCOProgramBuilder::validateTensorValue(Value tensor) const {
     llvm::reportFatalUsageError(
         "Invalid tensor value used (either consumed or not tracked)");
   }
+
+  auto tensorType = llvm::dyn_cast<RankedTensorType>(tensor.getType());
+  if (!tensorType || tensorType.getRank() != 1) {
+    llvm::reportFatalUsageError("Tensor must be of 1-D RankedTensorType!");
+  }
+  if (!llvm::isa<QubitType>(tensorType.getElementType())) {
+    llvm::reportFatalUsageError("Elements must be of QubitType!");
+  }
 }
 
 void QCOProgramBuilder::updateTensorTracking(Value inputTensor,
@@ -189,17 +197,6 @@ void QCOProgramBuilder::updateTensorTracking(Value inputTensor,
 //===----------------------------------------------------------------------===//
 // QTensor Operations
 //===----------------------------------------------------------------------===//
-
-Value QCOProgramBuilder::qtensorAlloc(
-    const std::variant<int64_t, Value>& size) {
-  checkFinalized();
-  auto sizeValue = utils::variantToValue(*this, getLoc(), size);
-
-  auto allocOp = qtensor::AllocOp::create(*this, sizeValue);
-  auto result = allocOp.getResult();
-  validTensors.insert(result);
-  return result;
-}
 
 Value QCOProgramBuilder::qtensorFromElements(ValueRange elements) {
   checkFinalized();
@@ -227,15 +224,6 @@ QCOProgramBuilder::qtensorExtract(Value tensor,
                                   const std::variant<int64_t, Value>& index) {
   checkFinalized();
 
-  auto tensorType = llvm::dyn_cast<RankedTensorType>(tensor.getType());
-
-  if (!tensorType || tensorType.getRank() != 1) {
-    llvm::reportFatalUsageError("Tensor must be of 1-D RankedTensorType!");
-  }
-  if (!llvm::isa<QubitType>(tensorType.getElementType())) {
-    llvm::reportFatalUsageError("Elements must be of QubitType!");
-  }
-
   auto indexValue = utils::variantToValue(*this, getLoc(), index);
   auto extractOp = qtensor::ExtractOp::create(*this, tensor, indexValue);
   auto qubit = extractOp.getResult();
@@ -251,15 +239,6 @@ std::pair<Value, Value> QCOProgramBuilder::qtensorExtractSlice(
     Value tensor, const std::variant<int64_t, Value>& offset,
     const std::variant<int64_t, Value>& size) {
   checkFinalized();
-
-  auto tensorType = llvm::dyn_cast<RankedTensorType>(tensor.getType());
-
-  if (!tensorType || tensorType.getRank() != 1) {
-    llvm::reportFatalUsageError("Tensor must be of 1-D RankedTensorType!");
-  }
-  if (!llvm::isa<QubitType>(tensorType.getElementType())) {
-    llvm::reportFatalUsageError("Elements must be of QubitType!");
-  }
 
   auto offsetValue = utils::variantToValue(*this, getLoc(), offset);
   auto sizesValue = utils::variantToValue(*this, getLoc(), size);
@@ -278,15 +257,6 @@ Value QCOProgramBuilder::qtensorInsert(
     Value scalar, Value tensor, const std::variant<int64_t, Value>& index) {
   checkFinalized();
 
-  auto tensorType = llvm::dyn_cast<RankedTensorType>(tensor.getType());
-
-  if (!tensorType || tensorType.getRank() != 1) {
-    llvm::reportFatalUsageError("Tensor must be of 1-D RankedTensorType!");
-  }
-  if (!llvm::isa<QubitType>(tensorType.getElementType())) {
-    llvm::reportFatalUsageError("Elements must be of QubitType!");
-  }
-
   auto indexValue = utils::variantToValue(*this, getLoc(), index);
   auto insertOp = qtensor::InsertOp::create(*this, scalar, tensor, indexValue);
 
@@ -302,25 +272,6 @@ Value QCOProgramBuilder::qtensorInsertSlice(
     Value source, Value dest, const std::variant<int64_t, Value>& offset,
     const std::variant<int64_t, Value>& size) {
   checkFinalized();
-
-  auto sourceTensorType = llvm::dyn_cast<RankedTensorType>(source.getType());
-
-  if (!sourceTensorType || sourceTensorType.getRank() != 1) {
-    llvm::reportFatalUsageError(
-        "Source tensor must be of 1-D RankedTensorType!");
-  }
-  if (!llvm::isa<QubitType>(sourceTensorType.getElementType())) {
-    llvm::reportFatalUsageError("Source elements must be of QubitType!");
-  }
-
-  auto destTensorType = llvm::dyn_cast<RankedTensorType>(dest.getType());
-
-  if (!destTensorType || destTensorType.getRank() != 1) {
-    llvm::reportFatalUsageError("Dest tensor must be of 1-D RankedTensorType!");
-  }
-  if (!llvm::isa<QubitType>(destTensorType.getElementType())) {
-    llvm::reportFatalUsageError("Dest elements must be of QubitType!");
-  }
 
   auto offsetValue = utils::variantToValue(*this, getLoc(), offset);
   auto sizeValue = utils::variantToValue(*this, getLoc(), size);
@@ -338,15 +289,6 @@ Value QCOProgramBuilder::qtensorInsertSlice(
 
 QCOProgramBuilder& QCOProgramBuilder::qtensorDealloc(Value tensor) {
   checkFinalized();
-
-  auto tensorType = llvm::dyn_cast<RankedTensorType>(tensor.getType());
-
-  if (!tensorType || tensorType.getRank() != 1) {
-    llvm::reportFatalUsageError("Tensor must be of 1-D RankedTensorType!");
-  }
-  if (!llvm::isa<QubitType>(tensorType.getElementType())) {
-    llvm::reportFatalUsageError("Elements must be of QubitType!");
-  }
 
   validateTensorValue(tensor);
   validTensors.erase(tensor);
