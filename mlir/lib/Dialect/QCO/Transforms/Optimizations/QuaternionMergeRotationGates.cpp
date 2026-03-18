@@ -379,25 +379,27 @@ struct MergeRotationGatesPattern final
   }
 
   /**
-   * @brief Creates a UOp by merging two rotation gates.
+   * @brief Merges two consecutive rotation gates into a single UOp, replacing
+   * both.
    *
    * Converts both gates to quaternions, multiplies them using the Hamilton
-   * product (in reverse circuit order), and converts back to a UOp.
+   * product (in reverse circuit order), converts back to a UOp, and replaces
+   * both original gates.
    *
    * @param op The first rotation gate
    * @param user The second rotation gate
    * @param rewriter Pattern rewriter for creating the merged gate
-   * @return UOp representing the merged rotation
    */
-  static UnitaryOpInterface
-  createOpQuaternionMergedAngle(UnitaryOpInterface op, UnitaryOpInterface user,
-                                PatternRewriter& rewriter) {
+  static void createOpQuaternionMergedAngle(UnitaryOpInterface op,
+                                            UnitaryOpInterface user,
+                                            PatternRewriter& rewriter) {
     auto q1 = quaternionFromRotation(op, rewriter);
     auto q2 = quaternionFromRotation(user, rewriter);
     auto qHam = hamiltonProduct(q2, q1, op, rewriter);
-    auto newUser = uOpFromQuaternion(qHam, op, rewriter);
+    auto newOp = uOpFromQuaternion(qHam, op, rewriter);
 
-    return newUser;
+    rewriter.replaceOp(user, op->getResults());
+    rewriter.replaceOp(op, newOp);
   }
 
   /**
@@ -421,15 +423,7 @@ struct MergeRotationGatesPattern final
     assert(user && "Cannot cast to UnitaryOpInterface, mergeable gates must "
                    "implement UnitaryOpInterface");
 
-    rewriter.setInsertionPoint(user);
-    const UnitaryOpInterface newUser =
-        createOpQuaternionMergedAngle(op, user, rewriter);
-
-    // Replace user with newUser
-    rewriter.replaceOp(user, newUser);
-
-    // Erase op
-    rewriter.eraseOp(op);
+    createOpQuaternionMergedAngle(op, user, rewriter);
     return success();
   }
 };
