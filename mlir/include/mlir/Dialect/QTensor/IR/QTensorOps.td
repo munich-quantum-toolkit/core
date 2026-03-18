@@ -23,12 +23,12 @@ include "mlir/Interfaces/TilingInterface.td"
 def QTensorDialect : Dialect {
   let name = "qtensor";
 
-  let summary = "The QTensor dialect for tensors with linear typing.";
+  let summary = "The QTensor dialect for one-dimensional tensors of qubits with linear typing.";
 
   let description = [{
-      The Qtensor dialect is an adjusted variant of the standard tensor dialect of MLIR that supports linear typing for tensor types.
-      The extract operations of this dialect are modified so that they also return the updated tensor.
-      In addition, alloc/dealloc operations are added to the dialect to support the bulk allocation and deallocation of tensors with linear types.
+      The Qtensor dialect is an adjusted variant of the standard tensor dialect of MLIR that supports linear typing for one-dimensional tensors of qubits.
+      In order to support linear typing, the extract operations of this dialect are modified so that they also return the updated tensor.
+      In addition, alloc/dealloc operations are added to the dialect to support the bulk allocation and deallocation of qubit tensors with linear types.
   }];
 
   let dependentDialects = ["::mlir::qco::QCODialect"];
@@ -90,6 +90,7 @@ def QTensor_DeallocOp : QTensorOp<"dealloc", [MemoryEffects<[MemFree]>]> {
     let summary = "Deallocate a tensor";
     let description = [{
         This operation deallocates the tensor and the values it holds, releasing its resources.
+        Qubits that were extracted but not inserted again need to be deallocated separately.
 
         Example:
         ```mlir
@@ -113,7 +114,8 @@ def QTensor_FromElementsOp : QTensorOp<"from_elements", [
     let summary = "Create a tensor from a range of values";
     let description = [{
         The `qtensor.from_elements` operation is a wrapper operation of the `tensor.from_elements` operation.
-        This operation creates a tensor using the operands as its values.
+        This operation creates a one-dimensional qubit tensor using the operands as its input. The also causes
+        the input qubits to be consumed.
 
         Example:
         ```mlir
@@ -141,7 +143,7 @@ def QTensor_ExtractOp : QTensorOp<"extract", [
     let summary = "Extract element from tensor";
     let description = [{
         The `qtensor.extract` operation is the modified version of the standard `tensor.extract`
-        operation of the tensor dialect. It reads a ranked tensor and returns one element from the input tensor
+        operation of the tensor dialect. It reads a ranked tensor and returns one qubit from the input tensor
         at the given index. In addition, it also returns the updated input tensor as a result.
 
         Example:
@@ -166,7 +168,7 @@ def QTensor_ExtractSliceOp : QTensorOp<"extract_slice", [
     let summary = "Extract slice from tensor";
     let description = [{
         The `qtensor.extract_slice` operation is the modified version of the standard `tensor.extract_slice`
-        operation of the tensor dialect. It reads a ranked tensor and returns the extracted tensor specified by the
+        operation of the tensor dialect. It reads a one-dimensional qubit and returns the extracted tensor of qubits specified by the
         offset and size argument. In addition, it also returns the updated input tensor as result.
 
         The extract_slice operation supports the following arguments:
@@ -215,7 +217,8 @@ def QTensor_InsertOp : QTensorOp<"insert", [
     let summary = "Insert element into tensor";
     let description = [{
         The `qtensor.insert` operation is a wrapper operation for the `tensor.insert` operation of the tensor dialect.
-        This operation inserts a scalar into a ranked tensor as specified by the operation's index.
+        This operation inserts a qubit scalar into a ranked tensor as specified by the operation's index. The insertion
+        consumes the input qubit.
 
         Example:
         ```mlir
@@ -245,11 +248,11 @@ def QTensor_InsertSliceOp : QTensorOp<"insert_slice", [
     let description = [{
         The `qtensor.insert_slice` operation is a modified version of the `tensor.insert_slice` operation
         of the tensor dialect. The operation inserts a tensor `source` into another tensor `dest` as specified by the
-        operation's offset and size arguments.
+        operation's offset and size arguments. This insertion consumes `source` tensor of qubits.
 
         The insert_slice operation supports the following arguments:
 
-          - source: the tensor that is inserted.
+          - source: the tensor that is inserted. The source is consumed after the insertion.
           - dest: the tensor into which the source tensor is inserted.
           - offset: the starting index in the `dest` tensor where the slice is inserted.
           - size: the number of elements in the slice, which must match the size of the

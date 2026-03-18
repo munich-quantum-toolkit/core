@@ -209,6 +209,12 @@ public:
 
   /**
    * @brief Allocate a qubit tensor
+   *
+   * @details
+   * Allocates an one-dimensional tensor of !qco.qubit types with the given size
+   * if the size is statically known, otherwise the tensor has dynamic size. The
+   * resulting tensor is added to the tracking.
+   *
    * @param size Number of qubits (must be positive)
    * @return The allocated tensor
    *
@@ -224,7 +230,14 @@ public:
 
   /**
    * @brief Allocate a qubit tensor from a list of qubit values
-   * @param elements Inserted Qubits
+   *
+   * @details
+   * Consumes the input qubits and creates an one-dimensional tensor of
+   * !qco.qubit types. The resulting tensor has a static size given by the
+   * number of input values. The consumed qubits are removed from the qubit
+   * tracking and the resulting tensor is added to the tracking.
+   *
+   * @param elements Inserted Qubits (must be valid/unconsumed)
    * @return The allocated tensor
    *
    * @par Example:
@@ -239,7 +252,14 @@ public:
 
   /**
    * @brief Extract a qubit from a tensor
-   * @param tensor Source tensor
+   *
+   * @details
+   * Extracts a qubit from a one-dimensional tensor of qubits at the given index
+   * and returns the updated tensor and the extracted qubit. The extracted qubit
+   * is added to the qubit tracking and the tracking of the source tensor is
+   * updated.
+   *
+   * @param tensor Source tensor (must be valid/unconsumed)
    * @param index The index from where the qubit is extracted
    * @return Pair of (outTensor, extractedQubit)
    *
@@ -256,7 +276,14 @@ public:
 
   /**
    * @brief Extract a qubit slice from a tensor
-   * @param tensor Source tensor
+   *
+   * @details
+   * Extracts a slice from a one-dimensional tensor of qubits at the given
+   * offset and size and returns the updated input tensor and the extracted
+   * tensor. The extracted tensor is added to the qubit tensor tracking and the
+   * tracking for the input tensor is updated.
+   *
+   * @param tensor Source tensor (must be valid/unconsumed)
    * @param offset The offset from where the slice is extracted
    * @param size The size of the extracted slice
    * @return Pair of (outTensor, extractedSlice)
@@ -277,8 +304,15 @@ public:
 
   /**
    * @brief Insert a qubit into a tensor
-   * @param scalar The scalar qubit that is inserted
-   * @param tensor The tensor where the qubit is inserted
+   *
+   * @details
+   * Inserts a scalar qubit into the one-dimensional tensor of qubits at the
+   * given index. The inserted qubit is consumed and removed from the qubit
+   * tracking while the tracking for the source tensor is updated.
+   *
+   * @param scalar The scalar qubit that is inserted (must be valid/unconsumed)
+   * @param tensor The tensor where the qubit is inserted (must be
+   * valid/unconsumed)
    * @param index The index into where the qubit is inserted
    * @return The output tensor
    *
@@ -295,8 +329,16 @@ public:
 
   /**
    * @brief Insert a qubit slice into a tensor
-   * @param sourceTensor The slice that is inserted
-   * @param destTensor The tensor where the slice is inserted
+   *
+   * @details
+   * Inserts a one-dimensional tensor of qubits into another one-dimensional
+   * tensor of qubits at the given offset and size. The inserted tensor slice is
+   * consumed and removed from the tracking, while the tracking for the
+   * destination tensor is updated.
+   *
+   * @param sourceTensor The slice that is inserted (must be valid/unconsumed)
+   * @param destTensor The tensor where the slice is inserted (must be
+   * valid/unconsumed)
    * @param offset The offset into where the slice is inserted
    * @param size The size of the inserted slice
    * @return The output tensor
@@ -316,6 +358,12 @@ public:
 
   /**
    * @brief Explicitly deallocate a tensor
+   *
+   * @details
+   * Explicitly deallocates the given tensor and the value it holds. Qubits or
+   * tensors of qubits that were extracted from the tensor but not inserted back
+   * again need to be deallocated separately.
+   *
    * @param tensor Tensor to deallocate (must be valid/unconsumed)
    * @return Reference to this builder for method chaining
    *
