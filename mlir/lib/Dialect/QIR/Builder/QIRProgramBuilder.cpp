@@ -495,6 +495,7 @@ DEFINE_ONE_TARGET_THREE_PARAMETER(U, u, theta, phi, lambda)
     return *this;                                                              \
   }
 
+// NOLINTNEXTLINE(bugprone-exception-escape)
 DEFINE_TWO_TARGET_ZERO_PARAMETER(SWAP, swap)
 DEFINE_TWO_TARGET_ZERO_PARAMETER(ISWAP, iswap)
 DEFINE_TWO_TARGET_ZERO_PARAMETER(DCX, dcx)
