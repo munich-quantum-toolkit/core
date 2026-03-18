@@ -34,11 +34,25 @@ struct RemoveSubsequentSWAP final : OpRewritePattern<SWAPOp> {
   }
 };
 
+/**
+ * @brief Remove a SWAP operation followed by a SWAP operation with swapped
+ *        targets.
+ */
+struct RemoveSwappedTargetsSWAP final : OpRewritePattern<SWAPOp> {
+  using OpRewritePattern::OpRewritePattern;
+
+  LogicalResult matchAndRewrite(SWAPOp op,
+                                PatternRewriter& rewriter) const override {
+    return removeTwoTargetZeroParameterPairWithSwappedTargets<SWAPOp>(op,
+                                                                      rewriter);
+  }
+};
+
 } // namespace
 
 void SWAPOp::getCanonicalizationPatterns(RewritePatternSet& results,
                                          MLIRContext* context) {
-  results.add<RemoveSubsequentSWAP>(context);
+  results.add<RemoveSubsequentSWAP, RemoveSwappedTargetsSWAP>(context);
 }
 
 Eigen::Matrix4cd SWAPOp::getUnitaryMatrix() {

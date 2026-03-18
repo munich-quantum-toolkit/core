@@ -27,6 +27,7 @@ __all__ = [
 if TYPE_CHECKING or HAS_QISKIT:  # noqa: RUF067 Used for handling optional plugin
     from .backend import QDMIBackend
     from .converters import qiskit_to_iqm_json
+    from .estimator import QDMIEstimator
     from .exceptions import (
         CircuitValidationError,
         JobSubmissionError,
@@ -39,14 +40,17 @@ if TYPE_CHECKING or HAS_QISKIT:  # noqa: RUF067 Used for handling optional plugi
     from .mqt_to_qiskit import mqt_to_qiskit
     from .provider import QDMIProvider
     from .qiskit_to_mqt import qiskit_to_mqt
+    from .sampler import QDMISampler
 
     __all__ += [
         "CircuitValidationError",
         "JobSubmissionError",
         "QDMIBackend",
+        "QDMIEstimator",
         "QDMIJob",
         "QDMIProvider",
         "QDMIQiskitError",
+        "QDMISampler",
         "TranslationError",
         "UnsupportedFormatError",
         "UnsupportedOperationError",
