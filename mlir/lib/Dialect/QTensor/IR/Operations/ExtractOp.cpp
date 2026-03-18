@@ -44,10 +44,6 @@ static InsertOp foldExtractAfterInsert(ExtractOp extractOp) {
     return nullptr;
   }
 
-  auto isSame = [](Value a, Value b) {
-    return getAsOpFoldResult(a) == getAsOpFoldResult(b);
-  };
-
   Value insertIndex = insertOp.getIndex();
   Value extractIndex = extractOp.getIndex();
 
