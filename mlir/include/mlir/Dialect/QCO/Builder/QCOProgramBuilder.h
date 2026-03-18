@@ -211,9 +211,10 @@ public:
    * @brief Allocate a qubit tensor
    *
    * @details
-   * Allocates an one-dimensional tensor of !qco.qubit types with the given size
-   * if the size is statically known, otherwise the tensor has dynamic size. The
-   * resulting tensor is added to the tracking.
+   * Allocates a one-dimensional tensor of !qco.qubit types with the given size
+   * if the size is a constant, otherwise the tensor has dynamic size. The
+   * qubits are initialized in the |0> state. The resulting tensor is added to
+   * the tracking.
    *
    * @param size Number of qubits (must be positive)
    * @return The allocated tensor
@@ -223,16 +224,16 @@ public:
    * auto tensor = builder.qtensorAlloc(3);
    * ```
    * ```mlir
-   * %tensor = qtensor.alloc(3) : tensor<3x!qco.qubit>
+   * %tensor = qtensor.alloc(%c3) : tensor<3x!qco.qubit>
    * ```
    */
-  Value qtensorAlloc(int64_t size);
+  Value qtensorAlloc(const std::variant<int64_t, Value>& size);
 
   /**
    * @brief Allocate a qubit tensor from a list of qubit values
    *
    * @details
-   * Consumes the input qubits and creates an one-dimensional tensor of
+   * Consumes the input qubits and creates a one-dimensional tensor of
    * !qco.qubit types. The resulting tensor has a static size given by the
    * number of input values. The consumed qubits are removed from the qubit
    * tracking and the resulting tensor is added to the tracking.

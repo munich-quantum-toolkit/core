@@ -11,6 +11,7 @@
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QTensor/IR/QTensorOps.h"
 
+#include <mlir/Dialect/Utils/StaticValueUtils.h>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/BuiltinTypes.h>
 #include <mlir/IR/OpDefinition.h>
@@ -19,27 +20,38 @@
 #include <mlir/Support/LogicalResult.h>
 
 #include <cassert>
-#include <cstdint>
+#include <optional>
 
 using namespace mlir;
 using namespace mlir::qtensor;
 
-void AllocOp::build(OpBuilder& builder, OperationState& result, int64_t size) {
-  assert(size > 0 && "qtensor.alloc size must be positive");
+void AllocOp::build(OpBuilder& builder, OperationState& result, Value size) {
+  auto sizeValue = getConstantIntValue(size);
+  if (sizeValue) {
+    assert(*sizeValue > 0 && "qtensor.alloc size must be positive");
+  }
 
   auto resultType =
-      RankedTensorType::get({size}, qco::QubitType::get(builder.getContext()));
-  build(builder, result, resultType,
-        IntegerAttr::get(builder.getIntegerType(64), size));
+      RankedTensorType::get({sizeValue ? *sizeValue : ShapedType::kDynamic},
+                            qco::QubitType::get(builder.getContext()));
+  build(builder, result, resultType, size);
 }
 
 LogicalResult AllocOp::verify() {
   auto resultType = cast<RankedTensorType>(getResult().getType());
-  auto size = static_cast<int64_t>(getSize());
+  auto sizeValue = getConstantIntValue(getSize());
+  auto resultSize = resultType.getShape()[0];
 
-  if (resultType.getShape()[0] != size) {
-    return emitOpError("Tensor length must match size attribute (")
-           << size << "), but got " << resultType.getShape()[0];
+  if (sizeValue.has_value() == resultType.isDynamicDim(0)) {
+    return emitOpError("Size operand and result type must both be static or "
+                       "both be dynamic, but got ")
+           << (sizeValue ? "static size with dynamic result"
+                         : "dynamic size with static result");
+  }
+  if (sizeValue && resultSize != *sizeValue) {
+    return emitOpError("Constant size operand (")
+           << *sizeValue << ") does not match static result size ("
+           << resultSize << ")";
   }
 
   return success();

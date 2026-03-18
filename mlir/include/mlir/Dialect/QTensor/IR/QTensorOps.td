@@ -66,21 +66,22 @@ def QTensor_AllocOp : QTensorOp<"alloc", [
     MemoryEffects<[MemAlloc]>]> {
     let summary = "Tensor alloc operation";
     let description = [{
-        Allocates a qubit tensor with the given size and returns the allocated tensor.
-        The qubits are initialized to the |0> state.
+        Allocates a one-dimensional qubit tensor with the given size and returns the allocated tensor.
+        The qubits are initialized to the |0> state. If the size is a constant the resulting tensor has a static size,
+        otherwise the tensor has a dynamic size.
 
         Example:
         ```mlir
-        %qtensor = qtensor.alloc(3) : tensor<3x!qco.qubit>
+        %qtensor = qtensor.alloc(%c3) : tensor<3x!qco.qubit>
         ```
     }];
 
-    let arguments = (ins ConfinedAttr<I64Attr, [IntPositive]>:$size);
-    let results = (outs Static1DQubitTensor:$result);
+    let arguments = (ins Index:$size);
+    let results = (outs 1DTensorOf<[QubitType]>:$result);
     let assemblyFormat = "`(`$size`)` attr-dict `:` type($result)";
 
     let builders = [
-        OpBuilder<(ins "int64_t":$size)>
+        OpBuilder<(ins "Value":$size)>
     ];
 
     let hasVerifier = 1;
@@ -247,7 +248,7 @@ def QTensor_InsertSliceOp : QTensorOp<"insert_slice", [
     let description = [{
         The `qtensor.insert_slice` operation is a modified version of the `tensor.insert_slice` operation
         of the tensor dialect. The operation inserts a tensor `source` into another tensor `dest` as specified by the
-        operation's offset and size arguments. This insertion consumes `source` tensor of qubits.
+        operation's offset and size arguments. This insertion consumes the `source` tensor of qubits.
 
         The insert_slice operation supports the following arguments:
 

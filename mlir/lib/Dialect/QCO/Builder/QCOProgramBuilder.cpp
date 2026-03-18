@@ -190,14 +190,12 @@ void QCOProgramBuilder::updateTensorTracking(Value inputTensor,
 // QTensor Operations
 //===----------------------------------------------------------------------===//
 
-Value QCOProgramBuilder::qtensorAlloc(int64_t size) {
+Value QCOProgramBuilder::qtensorAlloc(
+    const std::variant<int64_t, Value>& size) {
   checkFinalized();
+  auto sizeValue = utils::variantToValue(*this, getLoc(), size);
 
-  if (size <= 0) {
-    llvm::reportFatalUsageError("Size must be positive");
-  }
-
-  auto allocOp = qtensor::AllocOp::create(*this, size);
+  auto allocOp = qtensor::AllocOp::create(*this, sizeValue);
   auto result = allocOp.getResult();
   validTensors.insert(result);
   return result;
@@ -325,9 +323,9 @@ Value QCOProgramBuilder::qtensorInsertSlice(
   }
 
   auto offsetValue = utils::variantToValue(*this, getLoc(), offset);
-  auto sizesValue = utils::variantToValue(*this, getLoc(), size);
+  auto sizeValue = utils::variantToValue(*this, getLoc(), size);
   auto insertSliceOp = qtensor::InsertSliceOp::create(*this, source, dest,
-                                                      offsetValue, sizesValue);
+                                                      offsetValue, sizeValue);
 
   auto outTensor = insertSliceOp.getResult();
 
