@@ -70,9 +70,9 @@ void QuantumCompilerPipeline::addCleanupPasses(PassManager& pm,
     pm.addPass(createInlinerPass());
   }
 
+  pm.addPass(createSymbolDCEPass());
   pm.addPass(createCanonicalizerPass());
   pm.addPass(createRemoveDeadValuesPass());
-  pm.addPass(createSymbolDCEPass());
 }
 
 void QuantumCompilerPipeline::configurePassManager(PassManager& pm) const {
@@ -174,9 +174,10 @@ QuantumCompilerPipeline::runPipeline(ModuleOp module,
   // TODO: Add optimization passes
   if (config_.enableIpo) {
     pm.addPass(mlir::qco::createQuantumIPO());
-    if (failed(pm.run(module))) {
-      return failure();
-    }
+  }
+  pm.addPass(mlir::qco::createReuseQubitsPass());
+  if (failed(pm.run(module))) {
+    return failure();
   }
   pm.clear();
 
@@ -246,7 +247,8 @@ QuantumCompilerPipeline::runPipeline(ModuleOp module,
     pm.clear();
 
     // Stage 10: QIR canonicalization (optional)
-    addCleanupPasses(pm);
+    // TODO uncomment
+    // addCleanupPasses(pm);
     if (failed(pm.run(module))) {
       return failure();
     }

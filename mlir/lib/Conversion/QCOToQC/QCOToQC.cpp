@@ -12,9 +12,11 @@
 
 #include "mlir/Dialect/QC/IR/QCDialect.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
+#include "mlir/Dialect/SCF/Transforms/Patterns.h"
 
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/Func/Transforms/FuncConversions.h>
+#include <mlir/Dialect/Tensor/IR/Tensor.h>
 #include <mlir/IR/BuiltinTypeInterfaces.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OperationSupport.h>
@@ -266,6 +268,30 @@ public:
     // Convert QCO qubit values to QC qubit references
     addConversion([ctx](qco::QubitType /*type*/) -> Type {
       return qc::QubitType::get(ctx);
+    });
+
+    addConversion([&](RankedTensorType type) -> Type {
+      // Attempt to convert the element type recursively
+      const Type convertedElementType = convertType(type.getElementType());
+
+      // If the element type couldn't be converted, fail the conversion for the
+      // tensor
+      if (!convertedElementType) {
+        return nullptr;
+      }
+
+      // Return a new tensor type with the converted element type,
+      // preserving the original shape and encoding
+      return RankedTensorType::get(type.getShape(), convertedElementType,
+                                   type.getEncoding());
+    });
+
+    addConversion([&](UnrankedTensorType type) -> Type {
+      Type convertedElementType = convertType(type.getElementType());
+      if (!convertedElementType) {
+        return nullptr;
+      }
+      return UnrankedTensorType::get(convertedElementType);
     });
   }
 };
@@ -835,6 +861,73 @@ struct ConvertQCOYieldOp final : OpConversionPattern<qco::YieldOp> {
   }
 };
 
+class ConvertTensorFromElements
+    : public OpConversionPattern<tensor::FromElementsOp> {
+public:
+  using OpConversionPattern<tensor::FromElementsOp>::OpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(tensor::FromElementsOp op, OpAdaptor adaptor,
+                  ConversionPatternRewriter& rewriter) const override {
+    // 1. Ask the TypeConverter for the new tensor type
+    // (It will use our rules to return tensor<...x!qc.qubit>)
+    Type newResultType = typeConverter->convertType(op.getType());
+    if (!newResultType)
+      return failure();
+
+    // 2. Rebuild the operation using the CONVERTED operands from the adaptor.
+    // The adaptor holds your new !qc.qubit values, not the old !qco.qubit ones.
+    rewriter.replaceOpWithNewOp<tensor::FromElementsOp>(op, newResultType,
+                                                        adaptor.getElements());
+
+    return success();
+  }
+};
+
+// Pattern for tensor.extract
+class ConvertTensorExtract : public OpConversionPattern<tensor::ExtractOp> {
+public:
+  using OpConversionPattern<tensor::ExtractOp>::OpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(tensor::ExtractOp op, OpAdaptor adaptor,
+                  ConversionPatternRewriter& rewriter) const override {
+    // The result of extract is the scalar element (!qc.qubit)
+    Type newResultType = typeConverter->convertType(op.getType());
+    if (!newResultType)
+      return failure();
+
+    // Rebuild using the converted tensor and the indices
+    rewriter.replaceOpWithNewOp<tensor::ExtractOp>(
+        op, newResultType, adaptor.getTensor(), adaptor.getIndices());
+
+    return success();
+  }
+};
+
+// Pattern for tensor.insert
+class ConvertTensorInsert : public OpConversionPattern<tensor::InsertOp> {
+public:
+  using OpConversionPattern<tensor::InsertOp>::OpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(tensor::InsertOp op, OpAdaptor adaptor,
+                  ConversionPatternRewriter& rewriter) const override {
+    // The result of insert is the updated tensor (tensor<...x!qc.qubit>)
+    Type newResultType = typeConverter->convertType(op.getType());
+    if (!newResultType)
+      return failure();
+
+    // Rebuild using the converted scalar, converted destination tensor, and
+    // indices
+    rewriter.replaceOpWithNewOp<tensor::InsertOp>(
+        op, newResultType, adaptor.getScalar(), adaptor.getDest(),
+        adaptor.getIndices());
+
+    return success();
+  }
+};
+
 /**
  * @brief Pass implementation for QCO-to-QC conversion
  *
@@ -879,18 +972,19 @@ struct QCOToQC final : impl::QCOToQCBase<QCOToQC> {
 
     // Register operation conversion patterns
     // Note: No state tracking needed - OpAdaptors handle type conversion
-    patterns.add<ConvertQCOAllocOp, ConvertQCODeallocOp, ConvertQCOStaticOp,
-                 ConvertQCOMeasureOp, ConvertQCOResetOp, ConvertQCOGPhaseOp,
-                 ConvertQCOIdOp, ConvertQCOXOp, ConvertQCOYOp, ConvertQCOZOp,
-                 ConvertQCOHOp, ConvertQCOSOp, ConvertQCOSdgOp, ConvertQCOTOp,
-                 ConvertQCOTdgOp, ConvertQCOSXOp, ConvertQCOSXdgOp,
-                 ConvertQCORXOp, ConvertQCORYOp, ConvertQCORZOp, ConvertQCOPOp,
-                 ConvertQCOROp, ConvertQCOU2Op, ConvertQCOUOp, ConvertQCOSWAPOp,
-                 ConvertQCOiSWAPOp, ConvertQCODCXOp, ConvertQCOECROp,
-                 ConvertQCORXXOp, ConvertQCORYYOp, ConvertQCORZXOp,
-                 ConvertQCORZZOp, ConvertQCOXXPlusYYOp, ConvertQCOXXMinusYYOp,
-                 ConvertQCOBarrierOp, ConvertQCOCtrlOp, ConvertQCOYieldOp>(
-        typeConverter, context);
+    patterns
+        .add<ConvertQCOAllocOp, ConvertQCODeallocOp, ConvertQCOStaticOp,
+             ConvertQCOMeasureOp, ConvertQCOResetOp, ConvertQCOGPhaseOp,
+             ConvertQCOIdOp, ConvertQCOXOp, ConvertQCOYOp, ConvertQCOZOp,
+             ConvertQCOHOp, ConvertQCOSOp, ConvertQCOSdgOp, ConvertQCOTOp,
+             ConvertQCOTdgOp, ConvertQCOSXOp, ConvertQCOSXdgOp, ConvertQCORXOp,
+             ConvertQCORYOp, ConvertQCORZOp, ConvertQCOPOp, ConvertQCOROp,
+             ConvertQCOU2Op, ConvertQCOUOp, ConvertQCOSWAPOp, ConvertQCOiSWAPOp,
+             ConvertQCODCXOp, ConvertQCOECROp, ConvertQCORXXOp, ConvertQCORYYOp,
+             ConvertQCORZXOp, ConvertQCORZZOp, ConvertQCOXXPlusYYOp,
+             ConvertQCOXXMinusYYOp, ConvertQCOBarrierOp, ConvertQCOCtrlOp,
+             ConvertQCOYieldOp, ConvertTensorFromElements, ConvertTensorExtract,
+             ConvertTensorInsert>(typeConverter, context);
 
     // Conversion of qco types in func.func signatures
     // Note: This currently has limitations with signature changes
@@ -913,6 +1007,25 @@ struct QCOToQC final : impl::QCOToQCBase<QCOToQC> {
 
     // Conversion of qco types in control-flow ops (e.g., cf.br, cf.cond_br)
     populateBranchOpInterfaceTypeConversionPattern(patterns, typeConverter);
+
+    // Conversion of qco types in structured control-flow ops (e.g., cf.br,
+    // cf.cond_br)
+    scf::populateSCFStructuralTypeConversionsAndLegality(typeConverter,
+                                                         patterns, target);
+
+    // Conversion of qco types in tensor ops
+    target.addDynamicallyLegalOp<tensor::FromElementsOp>(
+        [&](tensor::FromElementsOp op) {
+          // It's only legal if its result type has been converted to use !qc
+          return typeConverter.isLegal(op.getType());
+        });
+
+    target.addDynamicallyLegalOp<tensor::ExtractOp, tensor::InsertOp>(
+        [&](Operation* op) {
+          // This checks if the operation's result types and operand types are
+          // all valid
+          return typeConverter.isLegal(op);
+        });
 
     // Apply the conversion
     if (failed(applyPartialConversion(module, target, std::move(patterns)))) {

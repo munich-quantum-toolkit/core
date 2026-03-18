@@ -10,6 +10,7 @@
 
 #include "mlir/Conversion/QCToQIR/QCToQIR.h"
 
+#include "mlir/Conversion/SCFToControlFlow/SCFToControlFlow.h"
 #include "mlir/Dialect/QC/IR/QCDialect.h"
 #include "mlir/Dialect/QIR/Utils/QIRUtils.h"
 
@@ -32,6 +33,8 @@
 #include <mlir/Dialect/Func/Transforms/FuncConversions.h>
 #include <mlir/Dialect/LLVMIR/LLVMDialect.h>
 #include <mlir/Dialect/LLVMIR/LLVMTypes.h>
+#include <mlir/Dialect/SCF/IR/SCF.h>
+#include <mlir/Dialect/Tensor/IR/Tensor.h>
 #include <mlir/IR/BuiltinAttributes.h>
 #include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/BuiltinTypes.h>
@@ -75,11 +78,11 @@ struct LoweringState : QIRMetadata {
   DenseMap<StringRef, int64_t> registerStartIndexMap;
 
   /// Map from index to pointer value for reuse
-  DenseMap<int64_t, Value> ptrMap;
+  DenseMap<std::pair<Operation*, int64_t>, Value> ptrMap;
 
   /// Map from (register_name, register_index) to result pointer
   /// This allows caching result pointers for measurements with register info
-  DenseMap<std::pair<StringRef, int64_t>, Value> registerResultMap;
+  DenseMap<std::tuple<Operation*, StringRef, int64_t>, Value> registerResultMap;
 
   /// Modifier information
   int64_t inCtrlOp = 0;
@@ -197,10 +200,155 @@ struct QCToQIRTypeConverter final : LLVMTypeConverter {
     // Convert QubitType to LLVM pointer (QIR uses opaque pointers for qubits)
     addConversion(
         [ctx](QubitType /*type*/) { return LLVM::LLVMPointerType::get(ctx); });
+
+    addConversion([this, ctx](RankedTensorType type) -> Type {
+      // First, ask the converter what the element type translates to
+      // (This will recursively call the rule above and give you !llvm.ptr)
+      Type convertedElementType = convertType(type.getElementType());
+      if (!convertedElementType)
+        return nullptr;
+
+      // ==========================================
+      // CHOOSE ONE OF THE FOLLOWING RETURN TARGETS
+      // ==========================================
+
+      // OPTION 1: The Standard QIR Array (%Array*)
+      // In the official QIR specification, arrays are dynamically managed
+      // opaque pointers, exactly like qubits.
+      // return LLVM::LLVMPointerType::get(ctx);
+
+      // OPTION 2: A Static LLVM Array (!llvm.array<5 x ptr>)
+      // If you are just doing simple stack-allocated C-style arrays
+      // and your tensors are strictly 1D and statically sized:
+      if (type.getRank() == 1 && !type.isDynamicDim(0)) {
+        return LLVM::LLVMArrayType::get(convertedElementType,
+                                        type.getShape()[0]);
+      }
+
+      return nullptr; // Fail if it's a shape we don't support
+    });
   }
 };
 
 namespace {
+
+class TensorFromElementsToLLVM
+    : public OpConversionPattern<tensor::FromElementsOp> {
+public:
+  using OpConversionPattern<tensor::FromElementsOp>::OpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(tensor::FromElementsOp op, OpAdaptor adaptor,
+                  ConversionPatternRewriter& rewriter) const override {
+    Location loc = op.getLoc();
+
+    // 1. Get the converted target type (!llvm.array<N x ptr>)
+    Type llvmArrayType = typeConverter->convertType(op.getType());
+    if (!llvmArrayType)
+      return failure();
+
+    // 2. Start with an uninitialized LLVM array
+    Value currentArray = rewriter.create<LLVM::UndefOp>(loc, llvmArrayType);
+
+    // 3. Loop through the converted operands (!llvm.ptr) and insert them
+    auto elements = adaptor.getElements();
+    for (auto it : llvm::enumerate(elements)) {
+      // The position must be an array of int64_t
+      ArrayRef<int64_t> position({static_cast<int64_t>(it.index())});
+
+      // Insert the value at the current index, which returns a NEW array value
+      currentArray = rewriter.create<LLVM::InsertValueOp>(loc, currentArray,
+                                                          it.value(), position);
+    }
+
+    // 4. Replace the original tensor op with the fully populated LLVM array
+    rewriter.replaceOp(op, currentArray);
+    return success();
+  }
+};
+
+class TensorInsertToLLVM : public OpConversionPattern<tensor::InsertOp> {
+public:
+  using OpConversionPattern<tensor::InsertOp>::OpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(tensor::InsertOp op, OpAdaptor adaptor,
+                  ConversionPatternRewriter& rewriter) const override {
+    // 1. Get the converted inputs from the adaptor
+    // adaptor.getDest() holds the !llvm.array we are inserting into
+    // adaptor.getScalar() holds the !llvm.ptr we are inserting
+    Value destArray = adaptor.getDest();
+    Value scalarToInsert = adaptor.getScalar();
+
+    // 2. Get the index. Assuming 1D tensors for your qubits.
+    Value indexValue = op.getIndices().front();
+
+    // 3. Just like extract, llvm.insertvalue strictly requires a static,
+    // compile-time constant for the array position.
+    auto constOp = indexValue.getDefiningOp<arith::ConstantIndexOp>();
+    if (!constOp) {
+      return op.emitError(
+          "Dynamic indexing into LLVM arrays is not supported in this pattern. "
+          "A static constant index is required.");
+    }
+
+    // 4. Extract the integer position
+    int64_t staticIndex = constOp.value();
+    ArrayRef<int64_t> position({staticIndex});
+
+    // 5. Build the llvm.insertvalue operation.
+    // This op returns the newly updated !llvm.array, so we can use it to
+    // replace the tensor op.
+    rewriter.replaceOpWithNewOp<LLVM::InsertValueOp>(
+        op,
+        destArray,      // The base array
+        scalarToInsert, // The new value to put inside it
+        position        // The static index
+    );
+
+    return success();
+  }
+};
+
+class TensorExtractToLLVM : public OpConversionPattern<tensor::ExtractOp> {
+public:
+  using OpConversionPattern<tensor::ExtractOp>::OpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(tensor::ExtractOp op, OpAdaptor adaptor,
+                  ConversionPatternRewriter& rewriter) const override {
+    Location loc = op.getLoc();
+
+    // 1. Get the converted array (!llvm.array) from the adaptor
+    Value llvmArray = adaptor.getTensor();
+
+    // 2. tensor.extract can have multiple indices for multi-dimensional
+    // tensors, but we assume 1D here for your 5x qubit tensor.
+    Value indexValue = op.getIndices().front();
+
+    // 3. We must prove the index is a constant because LLVM requires static
+    // positions
+    auto constOp = indexValue.getDefiningOp<arith::ConstantIndexOp>();
+    if (!constOp) {
+      // If the index is dynamic (calculated at runtime), this simple pattern
+      // fails. You would need to allocate memory (alloca) and use GEP/Load
+      // instead.
+      return op.emitError(
+          "Dynamic indexing into LLVM arrays is not supported in this pattern");
+    }
+
+    // 4. Create the LLVM extractvalue operation
+    int64_t staticIndex = constOp.value();
+    ArrayRef<int64_t> position({staticIndex});
+
+    rewriter.replaceOpWithNewOp<LLVM::ExtractValueOp>(
+        op,
+        typeConverter->convertType(op.getType()), // The result type (!llvm.ptr)
+        llvmArray, position);
+
+    return success();
+  }
+};
 
 /**
  * @brief Converts qc.alloc operation to static QIR qubit allocations
@@ -233,6 +381,7 @@ struct ConvertQCAllocQIR final : StatefulOpConversionPattern<AllocOp> {
     const auto numQubits = static_cast<int64_t>(state.numQubits);
     auto& ptrMap = state.ptrMap;
     auto& registerMap = state.registerStartIndexMap;
+    const auto parentOp = op->getParentOfType<LLVM::LLVMFuncOp>();
 
     // Get or create pointer value
     if (op.getRegisterName() && op.getRegisterSize() && op.getRegisterIndex()) {
@@ -247,10 +396,11 @@ struct ConvertQCAllocQIR final : StatefulOpConversionPattern<AllocOp> {
         // Register is already tracked
         // The pointer was created by the step below
         const auto globalIndex = it->second + registerIndex;
-        if (!ptrMap.contains(globalIndex)) {
+        const auto key = std::make_pair(parentOp, globalIndex);
+        if (!ptrMap.contains(key)) {
           return op.emitError("Pointer not found");
         }
-        rewriter.replaceOp(op, ptrMap.at(globalIndex));
+        rewriter.replaceOp(op, ptrMap.at(key));
         return success();
       }
 
@@ -260,11 +410,12 @@ struct ConvertQCAllocQIR final : StatefulOpConversionPattern<AllocOp> {
       pointers.reserve(registerSize);
       for (int64_t i = 0; i < registerSize; ++i) {
         Value val{};
-        if (const auto it = ptrMap.find(numQubits + i); it != ptrMap.end()) {
+        const auto key = std::make_pair(parentOp, numQubits + i);
+        if (const auto it = ptrMap.find(key); it != ptrMap.end()) {
           val = it->second;
         } else {
           val = createPointerFromIndex(rewriter, op.getLoc(), numQubits + i);
-          ptrMap[numQubits + i] = val;
+          ptrMap[key] = val;
         }
         pointers.push_back(val);
       }
@@ -275,11 +426,13 @@ struct ConvertQCAllocQIR final : StatefulOpConversionPattern<AllocOp> {
 
     // no register info, check if ptr has already been allocated (as a Result)
     Value val{};
-    if (const auto it = ptrMap.find(numQubits); it != ptrMap.end()) {
+
+    const auto key = std::make_pair(parentOp, numQubits);
+    if (const auto it = ptrMap.find(key); it != ptrMap.end()) {
       val = it->second;
     } else {
       val = createPointerFromIndex(rewriter, op.getLoc(), numQubits);
-      ptrMap[numQubits] = val;
+      ptrMap[key] = val;
     }
     rewriter.replaceOp(op, val);
     state.numQubits++;
@@ -341,15 +494,18 @@ struct ConvertQCStaticQIR final : StatefulOpConversionPattern<StaticOp> {
                   ConversionPatternRewriter& rewriter) const override {
     const auto index = static_cast<int64_t>(op.getIndex());
     auto& state = getState();
+    const auto parentOp = op->getParentOfType<LLVM::LLVMFuncOp>();
+
     // Get or create a pointer to the qubit
     Value val{};
-    if (const auto it = state.ptrMap.find(index); it != state.ptrMap.end()) {
+    const auto key = std::make_pair(parentOp, index);
+    if (const auto it = state.ptrMap.find(key); it != state.ptrMap.end()) {
       // Reuse existing pointer
       val = it->second;
     } else {
       // Create and cache for reuse
       val = createPointerFromIndex(rewriter, op.getLoc(), index);
-      state.ptrMap.try_emplace(index, val);
+      state.ptrMap.try_emplace(key, val);
     }
     rewriter.replaceOp(op, val);
 
@@ -399,6 +555,7 @@ struct ConvertQCMeasureQIR final : StatefulOpConversionPattern<MeasureOp> {
     const auto numResults = static_cast<int64_t>(state.numResults);
     auto& ptrMap = state.ptrMap;
     auto& registerResultMap = state.registerResultMap;
+    const auto parentOp = op->getParentOfType<LLVM::LLVMFuncOp>();
 
     // Get or create result pointer value
     Value resultValue;
@@ -408,7 +565,7 @@ struct ConvertQCMeasureQIR final : StatefulOpConversionPattern<MeasureOp> {
           static_cast<int64_t>(op.getRegisterSize().value());
       const auto registerIndex =
           static_cast<int64_t>(op.getRegisterIndex().value());
-      const auto key = std::make_pair(registerName, registerIndex);
+      const auto key = std::make_tuple(parentOp, registerName, registerIndex);
 
       if (const auto it = registerResultMap.find(key);
           it != registerResultMap.end()) {
@@ -417,13 +574,14 @@ struct ConvertQCMeasureQIR final : StatefulOpConversionPattern<MeasureOp> {
         // Allocate the entire register as static results
         for (int64_t i = 0; i < registerSize; ++i) {
           Value val{};
-          if (const auto it = ptrMap.find(numResults + i); it != ptrMap.end()) {
+          const auto keyInside = std::make_pair(parentOp, numResults + i);
+          if (const auto it = ptrMap.find(keyInside); it != ptrMap.end()) {
             val = it->second;
           } else {
             val = createPointerFromIndex(rewriter, op.getLoc(), numResults + i);
-            ptrMap[numResults + i] = val;
+            ptrMap[keyInside] = val;
           }
-          registerResultMap.try_emplace({registerName, i}, val);
+          registerResultMap.try_emplace({parentOp, registerName, i}, val);
         }
         state.numResults += registerSize;
         resultValue = registerResultMap.at(key);
@@ -432,18 +590,20 @@ struct ConvertQCMeasureQIR final : StatefulOpConversionPattern<MeasureOp> {
       // Choose a safe default register name
       StringRef defaultRegName = "c";
       if (llvm::any_of(registerResultMap, [](const auto& entry) {
-            return entry.first.first == "c";
+            return std::get<1>(entry.first) == "c";
           })) {
         defaultRegName = "__unnamed__";
       }
       // No register info, check if ptr has already been allocated (as a Qubit)
-      if (const auto it = ptrMap.find(numResults); it != ptrMap.end()) {
+      const auto keyInside = std::make_pair(parentOp, numResults);
+      if (const auto it = ptrMap.find(keyInside); it != ptrMap.end()) {
         resultValue = it->second;
       } else {
         resultValue = createPointerFromIndex(rewriter, op.getLoc(), numResults);
-        ptrMap[numResults] = resultValue;
+        ptrMap[keyInside] = resultValue;
       }
-      registerResultMap.insert({{defaultRegName, numResults}, resultValue});
+      registerResultMap.insert(
+          {{parentOp, defaultRegName, numResults}, resultValue});
       state.numResults++;
     }
 
@@ -1065,7 +1225,10 @@ struct QCToQIR final : impl::QCToQIRBase<QCToQIR> {
     // Group measurements by register
     llvm::StringMap<SmallVector<std::pair<int64_t, Value>>> registerGroups;
     for (const auto& [key, resultPtr] : state->registerResultMap) {
-      const auto& [registerName, registerIndex] = key;
+      const auto& [func, registerName, registerIndex] = key;
+      if (func != main) {
+        continue; // Only consider measurements from the current function
+      }
       registerGroups[registerName].emplace_back(registerIndex, resultPtr);
     }
 
@@ -1167,6 +1330,7 @@ struct QCToQIR final : impl::QCToQIRBase<QCToQIR> {
 
       if (applyPartialConversion(moduleOp, target, std::move(funcPatterns))
               .failed()) {
+        moduleOp->dump();
         signalPassFailure();
         return;
       }
@@ -1191,6 +1355,9 @@ struct QCToQIR final : impl::QCToQIRBase<QCToQIR> {
       target.addIllegalDialect<QCDialect>();
 
       // Add conversion patterns for QC operations
+      qcPatterns.add<TensorFromElementsToLLVM>(typeConverter, ctx);
+      qcPatterns.add<TensorExtractToLLVM>(typeConverter, ctx);
+      qcPatterns.add<TensorInsertToLLVM>(typeConverter, ctx);
       qcPatterns.add<ConvertQCAllocQIR>(typeConverter, ctx, &state);
       qcPatterns.add<ConvertQCDeallocQIR>(typeConverter, ctx);
       qcPatterns.add<ConvertQCStaticQIR>(typeConverter, ctx, &state);
@@ -1246,6 +1413,8 @@ struct QCToQIR final : impl::QCToQIRBase<QCToQIR> {
       RewritePatternSet stdPatterns(ctx);
       target.addIllegalDialect<arith::ArithDialect>();
       target.addIllegalDialect<cf::ControlFlowDialect>();
+
+      mlir::populateSCFToControlFlowConversionPatterns(stdPatterns);
 
       cf::populateControlFlowToLLVMConversionPatterns(typeConverter,
                                                       stdPatterns);

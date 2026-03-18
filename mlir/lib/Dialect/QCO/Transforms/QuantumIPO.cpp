@@ -114,6 +114,11 @@ struct ContextSensitiveSpecializationPattern final
     }
 
     auto* definingOp = argValue.getDefiningOp();
+
+    if (!definingOp) {
+      return false;
+    }
+
     if (argValue.getType() == qco::QubitType::get(rewriter.getContext())) {
       // CSS for qubit types.
       if (mlir::isa<qco::AllocOp>(definingOp) ||
@@ -161,15 +166,19 @@ struct ContextSensitiveSpecializationPattern final
     symbolTable.insert(newFunc);
 
     auto newParameter = newFunc.getArgument(operand);
-    while (newParameter.hasOneUse() &&
-           operationIsNopOnZero(*newParameter.getUsers().begin(), parameter)) {
+    while (
+        newParameter.hasOneUse() &&
+        operationIsNopOnZero(*newParameter.getUsers().begin(), newParameter)) {
       auto newUser = mlir::dyn_cast<qco::UnitaryOpInterface>(
           *newParameter.getUsers().begin());
       for (auto i = 0U; i < newUser.getNumQubits(); ++i) {
-        rewriter.replaceAllUsesWith(newUser.getOutputQubit(i),
-                                    newUser.getInputQubit(i));
+        // TODO-DAMIAN use getOutputQubit/Input again (at current version, this
+        // seems to use the output of the inner op)
+        rewriter.replaceAllUsesWith(newUser->getResult(i),
+                                    newUser->getOperand(i));
       }
       rewriter.eraseOp(newUser);
+      break;
     }
 
     updateSpecializedCall(callOp, newFunc, rewriter);

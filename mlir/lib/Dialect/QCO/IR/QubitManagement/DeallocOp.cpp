@@ -34,6 +34,9 @@ struct RemoveAllocDeallocPair final : OpRewritePattern<DeallocOp> {
     if (!allocOp) {
       return failure();
     }
+    if (allocOp.getResult().getNumUses() > 1) {
+      return failure();
+    }
 
     // Remove the AllocOp and the DeallocOp
     rewriter.eraseOp(op);

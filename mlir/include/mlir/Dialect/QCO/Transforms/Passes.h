@@ -26,5 +26,6 @@ void runQuantumArgumentPromotion(ModuleOp module, SymbolTable& symbolTable);
 void runAncillaHoisting(ModuleOp module, SymbolTable& symbolTable);
 void runQuantumFunctionBoundaryCommutation(ModuleOp module,
                                            SymbolTable& symbolTable);
+void populateReuseQubitsPatterns(mlir::RewritePatternSet& patterns);
 
 } // namespace mlir::qco

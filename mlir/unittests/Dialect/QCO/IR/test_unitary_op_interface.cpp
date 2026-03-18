@@ -318,3 +318,20 @@ TEST_F(QcoUnitaryOpInterfaceTest, getDynamicUnitaryMatrix) {
         << "Wrong matrix at gate " << i;
   }
 }
+
+TEST_F(QcoUnitaryOpInterfaceTest, ctrCtrlTest) {
+  auto moduleOp = buildQCOIR([](qco::QCOProgramBuilder& b) {
+    auto q = b.allocQubitRegister(3);
+    b.ctrl({q[0]}, {q[1], q[2]}, [&](mlir::ValueRange targets) {
+      const auto& [innerControlsOut, innerTargetsOut] = b.ctrl(
+          {targets[0]}, {targets[1]}, [&](mlir::ValueRange innerTargets) {
+            auto q0 = b.x(innerTargets[0]);
+            return llvm::SmallVector<mlir::Value>{q0};
+          });
+      return llvm::to_vector(
+          llvm::concat<mlir::Value>(innerControlsOut, innerTargetsOut));
+    });
+  });
+
+  moduleOp->dump();
+}

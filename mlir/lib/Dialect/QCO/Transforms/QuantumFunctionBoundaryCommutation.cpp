@@ -78,6 +78,9 @@ void tryBoundaryCommutation(func::CallOp call, SymbolTable& symbolTable,
   if (!argInside.hasOneUse()) {
     return;
   }
+  if (argOutside.getDefiningOp() == nullptr) {
+    return;
+  }
 
   auto lastOp = dyn_cast<qco::UnitaryOpInterface>(argOutside.getDefiningOp());
   auto nextOp =
