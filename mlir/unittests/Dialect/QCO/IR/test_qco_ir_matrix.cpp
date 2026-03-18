@@ -27,7 +27,6 @@
 #include <mlir/IR/MLIRContext.h>
 
 #include <complex>
-#include <iosfwd>
 #include <memory>
 #include <string>
 
