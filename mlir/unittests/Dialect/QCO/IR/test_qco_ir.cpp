@@ -33,6 +33,8 @@
 using namespace mlir;
 using namespace mlir::qco;
 
+namespace {
+
 struct QCOTestCase {
   std::string name;
   mqt::test::NamedBuilder<QCOProgramBuilder> programBuilder;
@@ -40,6 +42,14 @@ struct QCOTestCase {
 
   friend std::ostream& operator<<(std::ostream& os, const QCOTestCase& info);
 };
+
+// NOLINTNEXTLINE(llvm-prefer-static-over-anonymous-namespace)
+std::ostream& operator<<(std::ostream& os, const QCOTestCase& info) {
+  return os << "QCO{" << info.name
+            << ", original=" << mqt::test::displayName(info.programBuilder.name)
+            << ", reference="
+            << mqt::test::displayName(info.referenceBuilder.name) << "}";
+}
 
 class QCOTest : public testing::TestWithParam<QCOTestCase> {
 protected:
@@ -56,12 +66,7 @@ protected:
   }
 };
 
-std::ostream& operator<<(std::ostream& os, const QCOTestCase& info) {
-  return os << "QCO{" << info.name
-            << ", original=" << mqt::test::displayName(info.programBuilder.name)
-            << ", reference="
-            << mqt::test::displayName(info.referenceBuilder.name) << "}";
-}
+} // namespace
 
 TEST_P(QCOTest, ProgramEquivalence) {
   const auto& [_, programBuilder, referenceBuilder] = GetParam();

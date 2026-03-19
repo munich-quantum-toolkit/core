@@ -32,7 +32,11 @@
 
 using namespace qc;
 
+namespace {
+
 class Qasm3ParserTest : public testing::TestWithParam<std::size_t> {};
+
+} // namespace
 
 TEST_F(Qasm3ParserTest, ImportQasm3) {
   const std::string testfile = "OPENQASM 3.0;\n"

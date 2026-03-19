@@ -23,6 +23,9 @@
 #include <utility>
 
 namespace zx {
+
+namespace {
+
 class ZXDiagramTest : public ::testing::Test {
 public:
   ZXDiagram diag;
@@ -52,6 +55,8 @@ protected:
     diag.addEdge(6, 3);
   }
 };
+
+} // namespace
 
 TEST_F(ZXDiagramTest, createDiagram) {
   EXPECT_EQ(diag.getNVertices(), 7);

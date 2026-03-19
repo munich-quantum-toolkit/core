@@ -55,6 +55,8 @@ namespace mlir::qco {
 #define GEN_PASS_DEF_MAPPINGPASS
 #include "mlir/Dialect/QCO/Transforms/Passes.h.inc"
 
+namespace {
+
 struct MappingPass : impl::MappingPassBase<MappingPass> {
 private:
   using QubitValue = TypedValue<QubitType>;
@@ -271,7 +273,7 @@ private:
      */
     [[nodiscard]] bool isGoal(const Layer& front,
                               const Architecture& arch) const {
-      return all_of(front, [&](const IndexGate gate) {
+      return all_of(front, [&](const IndexGate& gate) {
         return arch.areAdjacent(layout.getHardwareIndex(gate.first),
                                 layout.getHardwareIndex(gate.second));
       });
@@ -322,6 +324,7 @@ private:
 public:
   using MappingPassBase::MappingPassBase;
 
+protected:
   void runOnOperation() override {
     std::mt19937_64 rng{this->seed};
     IRRewriter rewriter(&getContext());
@@ -775,4 +778,7 @@ private:
     }
   }
 };
+
+} // namespace
+
 } // namespace mlir::qco

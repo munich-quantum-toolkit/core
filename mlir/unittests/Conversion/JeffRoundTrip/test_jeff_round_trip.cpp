@@ -34,6 +34,8 @@
 
 using namespace mlir;
 
+namespace {
+
 struct JeffRoundTripTestCase {
   std::string name;
   mqt::test::NamedBuilder<qco::QCOProgramBuilder> programBuilder;
@@ -42,6 +44,14 @@ struct JeffRoundTripTestCase {
   friend std::ostream& operator<<(std::ostream& os,
                                   const JeffRoundTripTestCase& info);
 };
+
+// NOLINTNEXTLINE(llvm-prefer-static-over-anonymous-namespace)
+std::ostream& operator<<(std::ostream& os, const JeffRoundTripTestCase& info) {
+  return os << "JeffRoundTrip{" << info.name
+            << ", original=" << mqt::test::displayName(info.programBuilder.name)
+            << ", reference="
+            << mqt::test::displayName(info.referenceBuilder.name) << "}";
+}
 
 class JeffRoundTripTest : public testing::TestWithParam<JeffRoundTripTestCase> {
 protected:
@@ -58,12 +68,7 @@ protected:
   }
 };
 
-std::ostream& operator<<(std::ostream& os, const JeffRoundTripTestCase& info) {
-  return os << "JeffRoundTrip{" << info.name
-            << ", original=" << mqt::test::displayName(info.programBuilder.name)
-            << ", reference="
-            << mqt::test::displayName(info.referenceBuilder.name) << "}";
-}
+} // namespace
 
 static LogicalResult convertQCOToJeff(ModuleOp module) {
   PassManager pm(module.getContext());

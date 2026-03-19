@@ -2,6 +2,8 @@ FormatStyle: file
 
 Checks: |
   bugprone-*,
+  -bugprone-command-processor,
+  -bugprone-random-generator-seed,
   -bugprone-easily-swappable-parameters,
   -bugprone-unchecked-optional-access,
   clang-analyzer-*,
