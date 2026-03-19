@@ -93,8 +93,8 @@ def FromElementsOp : QTensorOp<"from_elements", [
     let summary = "Create a tensor from a range of values";
     let description = [{
         The `qtensor.from_elements` operation is a wrapper operation of the `tensor.from_elements` operation.
-        This operation creates a one-dimensional qubit tensor using the operands as its input. The also causes
-        the input qubits to be consumed.
+        This operation creates a one-dimensional qubit tensor using the operands as its input.
+        This also causes the input qubits to be consumed.
 
         Example:
         ```mlir

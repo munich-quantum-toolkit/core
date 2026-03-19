@@ -77,6 +77,7 @@ TEST_P(QCOTest, ProgramEquivalence) {
   ASSERT_TRUE(program);
   printer.record(program.get(), "Original QCO IR" + name);
   EXPECT_TRUE(verify(*program).succeeded());
+
   runCanonicalizationPasses(program.get());
   printer.record(program.get(), "Canonicalized QCO IR" + name);
   EXPECT_TRUE(verify(*program).succeeded());

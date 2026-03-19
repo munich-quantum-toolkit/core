@@ -1300,10 +1300,10 @@ public:
    * @brief Finalize the program and return the constructed module
    *
    * @details
-   * Automatically deallocates all remaining valid qubits, adds a return
-   * statement with exit code 0 (indicating successful execution), and
-   * transfers ownership of the module to the caller.
-   * The builder should not be used after calling this method.
+   * Automatically deallocates all remaining valid qubits and tensors of qubits,
+   * adds a return statement with exit code 0 (indicating successful execution),
+   * and transfers ownership of the module to the caller. The builder should not
+   * be used after calling this method.
    *
    * @return OwningOpRef containing the constructed quantum program module
    */
