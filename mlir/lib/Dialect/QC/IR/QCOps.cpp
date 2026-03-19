@@ -16,6 +16,8 @@
 // IWYU pragma: begin_keep
 #include <llvm/ADT/TypeSwitch.h>
 #include <mlir/IR/DialectImplementation.h>
+#include <mlir/IR/Types.h>
+#include <mlir/Support/LogicalResult.h>
 // IWYU pragma: end_keep
 
 using namespace mlir;

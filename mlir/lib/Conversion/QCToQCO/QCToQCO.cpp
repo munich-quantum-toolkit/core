@@ -311,7 +311,8 @@ struct ConvertQCStaticOp final : StatefulOpConversionPattern<qc::StaticOp> {
     auto qcQubit = op.getQubit();
 
     // Create new qco.static operation with the same index
-    auto qcoOp = qco::StaticOp::create(rewriter, op.getLoc(), op.getIndex());
+    auto qcoOp = qco::StaticOp::create(rewriter, op.getLoc(),
+                                       static_cast<int64_t>(op.getIndex()));
 
     // Collect QCO qubit SSA value
     auto qcoQubit = qcoOp.getQubit();

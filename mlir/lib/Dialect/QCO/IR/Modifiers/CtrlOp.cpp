@@ -242,8 +242,8 @@ void CtrlOp::build(
   build(odsBuilder, odsState, controls, targets);
   auto& block = odsState.regions.front()->emplaceBlock();
 
-  for (size_t i = 0; i < targets.size(); ++i) {
-    block.addArgument(targets[i].getType(), odsState.location);
+  for (auto target : targets) {
+    block.addArgument(target.getType(), odsState.location);
   }
 
   const OpBuilder::InsertionGuard guard(odsBuilder);

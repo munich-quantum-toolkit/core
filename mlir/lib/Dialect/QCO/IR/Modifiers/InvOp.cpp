@@ -8,7 +8,6 @@
  * Licensed under the MIT License
  */
 
-#include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 
 #include <Eigen/Core>
@@ -326,8 +325,8 @@ void InvOp::build(
   build(odsBuilder, odsState, qubits);
   auto& block = odsState.regions.front()->emplaceBlock();
 
-  for (size_t i = 0; i < qubits.size(); ++i) {
-    block.addArgument(qubits[i].getType(), odsState.location);
+  for (auto qubit : qubits) {
+    block.addArgument(qubit.getType(), odsState.location);
   }
 
   const OpBuilder::InsertionGuard guard(odsBuilder);
