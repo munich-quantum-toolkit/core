@@ -79,12 +79,14 @@ We can describe a quantum computation graphically using a quantum _circuit_.
 :align: center
 ```
 
-The above quantum circuit computes and measures the Bell state $|\Phi^{+}\rangle$, where the circuit is read from left to right:
+The above quantum circuit computes and measures the [Bell state](https://en.wikipedia.org/wiki/Bell_state) $|\Phi^{+}\rangle$, where the circuit is read from left to right:
 
 1. Initialize both qubits in the $|0\rangle$ state.
 2. Apply a Hadamard gate $H$ to the upper qubit. Consequently, this qubit is now in an equal superposition state.
 3. Apply a controlled-X gate to both qubits. The resulting two-qubit state is $|\Phi^{+}\rangle$.
 4. Measure both qubits and receive two classical output bits.
+
+With that, we've covered the fundamental building blocks of quantum computing: qubits, measurements, gates, and the circuits that combine them. In the next section, you will learn about the Multi-Level Intermediate Representation (MLIR) framework, bringing us one step closer to our goal of understanding and building a compiler for quantum computing.
 
 ### Multi-Level Intermediate Representation (MLIR)
 
@@ -137,7 +139,7 @@ The following figure illustrates the interplay of operations, blocks, and region
 :align: center
 ```
 
-Now that we've got all the fundamentals covered, we can move on and explore how the MQT Compiler Collection works.
+That's it! Now that we've also got all the fundamentals covered, we can move on and explore how the MQT Compiler Collection utilizes MLIR to build a compiler for quantum computing.
 
 ## The MQT Compiler Collection
 
@@ -358,7 +360,7 @@ The goal of any compiler is to take a (quantum) program and transform into a mor
 The figure below describes the compilation flow graphically.
 
 ```{image} ../_static/compilation-pipeline.svg
-:width: 50%
+:width: 55%
 :align: center
 ```
 
