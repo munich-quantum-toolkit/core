@@ -41,8 +41,7 @@ def Static1DQubitTensor : Type<
 // Operations
 //===----------------------------------------------------------------------===//
 
-def QTensor_AllocOp : QTensorOp<"alloc", [
-    MemoryEffects<[MemAlloc]>]> {
+def AllocOp : QTensorOp<"alloc", [MemoryEffects<[MemAlloc]>]> {
     let summary = "Tensor alloc operation";
     let description = [{
         Allocates a one-dimensional qubit tensor with the given size and returns the allocated tensor.
@@ -66,7 +65,7 @@ def QTensor_AllocOp : QTensorOp<"alloc", [
     let hasVerifier = 1;
 }
 
-def QTensor_DeallocOp : QTensorOp<"dealloc", [MemoryEffects<[MemFree]>]> {
+def DeallocOp : QTensorOp<"dealloc", [MemoryEffects<[MemFree]>]> {
     let summary = "Deallocate a tensor";
     let description = [{
         This operation deallocates the tensor and the values it holds, releasing its resources.
@@ -84,7 +83,7 @@ def QTensor_DeallocOp : QTensorOp<"dealloc", [MemoryEffects<[MemFree]>]> {
     let hasCanonicalizer = 1;
 }
 
-def QTensor_FromElementsOp : QTensorOp<"from_elements", [
+def FromElementsOp : QTensorOp<"from_elements", [
     Pure,
     TypesMatchWith<"operand types match result element type",
                    "result", "elements", "SmallVector<Type, 2>("
@@ -113,7 +112,7 @@ def QTensor_FromElementsOp : QTensorOp<"from_elements", [
     ];
 }
 
-def QTensor_ExtractOp : QTensorOp<"extract", [
+def ExtractOp : QTensorOp<"extract", [
     Pure,
     TypesMatchWith<"result type matches element type of tensor",
                    "tensor", "result",
@@ -140,7 +139,7 @@ def QTensor_ExtractOp : QTensorOp<"extract", [
     let hasVerifier = 1;
 }
 
-def QTensor_ExtractSliceOp : QTensorOp<"extract_slice", [
+def ExtractSliceOp : QTensorOp<"extract_slice", [
     Pure,
     TypesMatchWith<"returned tensor type matches input tensor",
     "tensor", "out_tensor", "$_self">
@@ -186,7 +185,7 @@ def QTensor_ExtractSliceOp : QTensorOp<"extract_slice", [
     let hasVerifier = 1;
 }
 
-def QTensor_InsertOp : QTensorOp<"insert", [
+def InsertOp : QTensorOp<"insert", [
     Pure,
     TypesMatchWith<"result type matches type of dest",
                    "dest", "result",
@@ -218,7 +217,7 @@ def QTensor_InsertOp : QTensorOp<"insert", [
     let hasVerifier = 1;
 }
 
-def QTensor_InsertSliceOp : QTensorOp<"insert_slice", [
+def InsertSliceOp : QTensorOp<"insert_slice", [
     Pure,
     TypesMatchWith<"expected result type to match dest type",
                    "dest", "result", "$_self">
