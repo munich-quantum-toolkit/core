@@ -21,6 +21,7 @@
 #include <gtest/gtest.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
+#include <mlir/Dialect/MemRef/IR/MemRef.h>
 #include <mlir/IR/DialectRegistry.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/Verifier.h>
@@ -58,7 +59,7 @@ protected:
   void SetUp() override {
     mlir::DialectRegistry registry;
     registry.insert<mlir::qc::QCDialect, mlir::arith::ArithDialect,
-                    mlir::func::FuncDialect>();
+                    mlir::func::FuncDialect, mlir::memref::MemRefDialect>();
     context = std::make_unique<mlir::MLIRContext>();
     context->appendDialectRegistry(registry);
     context->loadAllAvailableDialects();

@@ -14,11 +14,14 @@
 #include "mlir/Dialect/QC/IR/QCOps.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
+#include "mlir/Dialect/QTensor/IR/QTensorDialect.h"
+#include "mlir/Dialect/QTensor/IR/QTensorOps.h"
 
 #include <llvm/ADT/DenseMap.h>
 #include <llvm/ADT/STLExtras.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/Func/Transforms/FuncConversions.h>
+#include <mlir/Dialect/MemRef/IR/MemRef.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OperationSupport.h>
 #include <mlir/IR/PatternMatch.h>
@@ -74,6 +77,8 @@ namespace {
 struct LoweringState {
   /// Map from original QC qubit references to their latest QCO SSA values
   llvm::DenseMap<Value, Value> qubitMap;
+
+  llvm::DenseMap<Value, Value> qtensorMap;
 
   /// Modifier information
   int64_t inNestedRegion = 0;
@@ -132,6 +137,130 @@ public:
     addConversion([ctx](qc::QubitType /*type*/) -> Type {
       return qco::QubitType::get(ctx);
     });
+  }
+};
+
+struct ConvertMemRefAllocOp final
+    : StatefulOpConversionPattern<memref::AllocOp> {
+  using StatefulOpConversionPattern::StatefulOpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(memref::AllocOp op, OpAdaptor adaptor,
+                  ConversionPatternRewriter& rewriter) const override {
+    auto& qtensorMap = getState().qtensorMap;
+
+    auto shape = op.getType().getShape();
+    if (shape.size() != 1) {
+      return failure();
+    }
+
+    Value qtensor;
+    if (shape[0] == ShapedType::kDynamic) {
+      qtensor = rewriter.replaceOpWithNewOp<qtensor::AllocOp>(
+          op, adaptor.getDynamicSizes()[0]);
+    } else {
+      auto size = arith::ConstantOp::create(rewriter, op.getLoc(),
+                                            rewriter.getIndexAttr(shape[0]));
+      qtensor =
+          rewriter.replaceOpWithNewOp<qtensor::AllocOp>(op, size.getResult());
+    }
+
+    qtensorMap.try_emplace(op.getResult(), qtensor);
+
+    return success();
+  }
+};
+
+struct ConvertMemRefLoadOp final : StatefulOpConversionPattern<memref::LoadOp> {
+  using StatefulOpConversionPattern::StatefulOpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(memref::LoadOp op, OpAdaptor adaptor,
+                  ConversionPatternRewriter& rewriter) const override {
+    auto& qubitMap = getState().qubitMap;
+    auto& qtensorMap = getState().qtensorMap;
+
+    // Look up the latest QTensor value for this QC register
+    auto memref = op.getMemref();
+    assert(qtensorMap.contains(memref) && "QC register not found");
+    auto qtensor = qtensorMap[memref];
+
+    auto extract = qtensor::ExtractOp::create(rewriter, op.getLoc(), qtensor,
+                                              adaptor.getIndices()[0]);
+
+    qubitMap.try_emplace(op.getResult(), extract.getResult());
+    qtensorMap[memref] = extract.getOutTensor();
+
+    rewriter.eraseOp(op);
+
+    return success();
+  }
+};
+
+// struct ConvertMemRefStoreOp final
+//     : StatefulOpConversionPattern<memref::StoreOp> {
+//   using StatefulOpConversionPattern::StatefulOpConversionPattern;
+
+//   LogicalResult
+//   matchAndRewrite(memref::StoreOp op, OpAdaptor adaptor,
+//                   ConversionPatternRewriter& rewriter) const override {
+//     auto& qubitMap = getState().qubitMap;
+//     auto& qtensorMap = getState().qtensorMap;
+
+//     // Look up the latest QCO value for this QC qubit
+//     auto qcQubit = op.getValue();
+//     assert(qubitMap.contains(qcQubit) && "QC qubit not found");
+//     auto qcoQubit = qubitMap[qcQubit];
+
+//     // Look up the latest QTensor value for this QC register
+//     auto memref = op.getMemref();
+//     assert(qtensorMap.contains(memref) && "QC register not found");
+//     auto qtensor = qtensorMap[memref];
+
+//     auto store = qtensor::InsertOp::create(rewriter, op.getLoc(), qcoQubit,
+//                                            qtensor, adaptor.getIndices()[0]);
+
+//     qubitMap.erase(qcQubit);
+//     qtensorMap[memref] = store.getResult();
+
+//     rewriter.eraseOp(op);
+
+//     return success();
+//   }
+// };
+
+struct ConvertMemRefDeallocOp final
+    : StatefulOpConversionPattern<memref::DeallocOp> {
+  using StatefulOpConversionPattern::StatefulOpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(memref::DeallocOp op, OpAdaptor adaptor,
+                  ConversionPatternRewriter& rewriter) const override {
+    auto& qubitMap = getState().qubitMap;
+    auto& qtensorMap = getState().qtensorMap;
+
+    // Look up the latest QTensor value for this QC register
+    auto memref = op.getMemref();
+    assert(qtensorMap.contains(memref) && "QC register not found");
+    auto qtensor = qtensorMap[memref];
+
+    // Insert all qubits
+    // TODO: Use dedicated map
+    int64_t i = 0;
+    for (auto [_, qcoQubit] : qubitMap) {
+      auto index = arith::ConstantOp::create(rewriter, op.getLoc(),
+                                             rewriter.getIndexAttr(i));
+      auto insert = qtensor::InsertOp::create(rewriter, op.getLoc(), qcoQubit,
+                                              qtensor, index.getResult());
+      qtensor = insert.getResult();
+      ++i;
+    }
+
+    rewriter.replaceOpWithNewOp<qtensor::DeallocOp>(op, qtensor);
+
+    qtensorMap.erase(memref);
+
+    return success();
   }
 };
 
@@ -987,7 +1116,7 @@ struct ConvertQCInvOp final : StatefulOpConversionPattern<qc::InvOp> {
   LogicalResult
   matchAndRewrite(qc::InvOp op, OpAdaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
-    auto& [qubitMap, inNestedRegion, targetsIn, targetsOut] = getState();
+    auto& [qubitMap, _, inNestedRegion, targetsIn, targetsOut] = getState();
 
     // Get QCO targets from state map
     const auto numTargets = op.getNumTargets();
@@ -1108,12 +1237,15 @@ protected:
     RewritePatternSet patterns(context);
     QCToQCOTypeConverter typeConverter(context);
 
-    // Configure conversion target: QC illegal, QCO legal
-    target.addIllegalDialect<QCDialect>();
-    target.addLegalDialect<QCODialect>();
+    // Configure conversion target
+    // TODO: Do not blanket-illegalize memref
+    target.addIllegalDialect<QCDialect, memref::MemRefDialect>();
+    target.addLegalDialect<QCODialect, arith::ArithDialect,
+                           qtensor::QTensorDialect>();
 
     // Register operation conversion patterns with state tracking
     patterns.add<
+        ConvertMemRefAllocOp, ConvertMemRefLoadOp, ConvertMemRefDeallocOp,
         ConvertQCAllocOp, ConvertQCDeallocOp, ConvertQCStaticOp,
         ConvertQCMeasureOp, ConvertQCResetOp,
         ConvertQCZeroTargetOneParameterToQCO<qc::GPhaseOp, qco::GPhaseOp>,
