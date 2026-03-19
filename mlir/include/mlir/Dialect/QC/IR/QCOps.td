@@ -120,9 +120,8 @@ def StaticOp : QCOp<"static", [Pure]> {
     }];
 
     let arguments = (ins ConfinedAttr<I64Attr, [IntNonNegative]>:$index);
-    let results = (outs QubitType:$qubit);
+    let results = (outs StaticQubit:$qubit);
     let assemblyFormat = "$index attr-dict `:` type($qubit)";
-    let hasVerifier = 1;
 
     let builders = [
         OpBuilder<(ins "int64_t":$index), [{
