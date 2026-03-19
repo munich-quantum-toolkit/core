@@ -27,6 +27,20 @@ class QCOOp<string mnemonic, list<Trait> traits = []> :
     Op<QCODialect, mnemonic, traits>;
 
 //===----------------------------------------------------------------------===//
+// Type Constraints
+//===----------------------------------------------------------------------===//
+
+def DynamicQubit : Type<
+    And<[CPred<"::mlir::isa<::mlir::qco::QubitType>($_self)">,
+         CPred<"!::mlir::cast<::mlir::qco::QubitType>($_self).getIsStatic()">]>,
+    "dynamic qubit type (!qco.qubit)">;
+
+def StaticQubit : Type<
+    And<[CPred<"::mlir::isa<::mlir::qco::QubitType>($_self)">,
+         CPred<"::mlir::cast<::mlir::qco::QubitType>($_self).getIsStatic()">]>,
+    "static qubit type (!qco.qubit<static>)">;
+
+//===----------------------------------------------------------------------===//
 // Resource Operations
 //===----------------------------------------------------------------------===//
 
@@ -113,9 +127,8 @@ def StaticOp : QCOOp<"static", [MemoryEffects<[MemAlloc]>]> {
     }];
 
     let arguments = (ins ConfinedAttr<I64Attr, [IntNonNegative]>:$index);
-    let results = (outs QubitType:$qubit);
+    let results = (outs StaticQubit:$qubit);
     let assemblyFormat = "$index attr-dict `:` type($qubit)";
-    let hasVerifier = 1;
 
     let builders = [
         OpBuilder<(ins "int64_t":$index), [{

@@ -18,6 +18,7 @@
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/ADT/TypeSwitch.h>
+#include <llvm/Support/Casting.h>
 #include <llvm/Support/Debug.h>
 #include <llvm/Support/ErrorHandling.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
@@ -487,7 +488,7 @@ private:
       const auto hw = layout.getHardwareIndex(p);
       rewriter.setInsertionPoint(q.getDefiningOp());
       auto op = rewriter.replaceOpWithNewOp<StaticOp>(q.getDefiningOp(), hw);
-      statics[hw] = op.getQubit();
+      statics[hw] = llvm::cast<TypedValue<QubitType>>(op.getQubit());
     }
 
     // 2. Create static qubits for the remaining (unused) hardware indices.
@@ -497,7 +498,7 @@ private:
       auto op = StaticOp::create(rewriter, rewriter.getUnknownLoc(), hw);
       rewriter.setInsertionPoint(funcBody.back().getTerminator());
       DeallocOp::create(rewriter, rewriter.getUnknownLoc(), op.getQubit());
-      statics[hw] = op.getQubit();
+      statics[hw] = llvm::cast<TypedValue<QubitType>>(op.getQubit());
     }
 
     return statics;
