@@ -19,10 +19,6 @@ def QCOToJeff : Pass<"qco-to-jeff"> {
   }];
 
   let dependentDialects = [
-    "mlir::arith::ArithDialect",
-    "mlir::math::MathDialect",
-    "mlir::tensor::TensorDialect",
     "mlir::jeff::JeffDialect",
-    "mlir::qco::QCODialect",
   ];
 }
