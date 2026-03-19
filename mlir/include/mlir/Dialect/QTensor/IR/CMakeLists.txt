@@ -6,7 +6,6 @@
 #
 # Licensed under the MIT License
 
-add_subdirectory(QCO)
-add_subdirectory(QIR)
-add_subdirectory(QC)
-add_subdirectory(QTensor)
+add_mlir_dialect(QTensorOps qtensor)
+
+add_mlir_doc(QTensorOps QTensorDialect Dialects/ -gen-dialect-doc -dialect=qtensor)
