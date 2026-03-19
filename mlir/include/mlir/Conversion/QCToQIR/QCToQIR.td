@@ -9,7 +9,8 @@
 include "mlir/Pass/PassBase.td"
 
 def QCToQIR : Pass<"qc-to-qir"> {
-  let summary = "Lower the QC dialect to the LLVM dialect compliant with QIR 2.0";
+  let summary =
+      "Lower the QC dialect to the LLVM dialect compliant with QIR 2.0";
 
   let description = [{
     This pass lowers all operations from the QC dialect to their equivalent operations in the LLVM dialect, ensuring compliance with the QIR 2.0 standard.
@@ -44,8 +45,5 @@ def QCToQIR : Pass<"qc-to-qir"> {
       ```
   }];
 
-
-  let dependentDialects = [
-    "mlir::LLVM::LLVMDialect",
-  ];
+  let dependentDialects = ["mlir::LLVM::LLVMDialect"];
 }

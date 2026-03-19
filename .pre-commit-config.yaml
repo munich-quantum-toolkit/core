@@ -104,7 +104,7 @@ repos:
 
   # Priority 1: Second-pass fixers
 
-  ## Clang-format the C++ part of the code base automatically
+  ## Format C++ files with clang-format
   - repo: https://github.com/pre-commit/mirrors-clang-format
     rev: v22.1.0
     hooks:
@@ -112,7 +112,16 @@ repos:
         types_or: [c++, c, cuda]
         priority: 1
 
-  ## CMake format and lint the CMakeLists.txt files
+  ## Format TableGen files with clang-format
+  - repo: https://github.com/pre-commit/mirrors-clang-format
+    rev: v22.1.0
+    hooks:
+      - id: clang-format
+        types_or: [file]
+        files: \.td$
+        priority: 1
+
+  ## Format CMakeLists.txt files
   - repo: https://github.com/cheshirekow/cmake-format-precommit
     rev: v0.6.13
     hooks:
@@ -127,7 +136,7 @@ repos:
     rev: v3.8.1
     hooks:
       - id: prettier
-        types_or: [yaml, markdown, html, css, scss, javascript, json]
+        types_or: [yaml, markdown, html, css, scss, javascript, json, json5]
         priority: 1
 
   ## Python linting using ruff
