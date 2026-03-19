@@ -137,6 +137,24 @@ struct MergeRotationGatesPattern final
   }
 
   /**
+   * @brief Normalizes an angle to the range [-PI, PI].
+   *
+   * Uses the identity atan2(sin(a), cos(a)) which projects the angle onto the
+   * unit circle and recovers the canonical representative in [-PI, PI].
+   *
+   * @param angle The angle value to normalize
+   * @param loc Source location for the created operations
+   * @param rewriter Pattern rewriter for creating new operations
+   * @return The normalized angle value
+   */
+  static Value normalizeAngle(Value angle, Location loc,
+                              PatternRewriter& rewriter) {
+    auto sinA = math::SinOp::create(rewriter, loc, angle);
+    auto cosA = math::CosOp::create(rewriter, loc, angle);
+    return math::Atan2Op::create(rewriter, loc, sinA, cosA);
+  }
+
+  /**
    * @brief Converts a single-axis rotation to quaternion representation.
    *
    * Uses half-angle formulas:
@@ -461,17 +479,19 @@ struct MergeRotationGatesPattern final
     auto alphaUnsafe = arith::SelectOp::create(rewriter, loc, safe1,
                                                twoThetaMinus, twoThetaPlus);
 
-    // TODO: could add some normalization here for alpha and gamma otherwise
-    // they can be outside of [-PI, PI].
-
     // choose correct alpha and gamma whether safe or not
     auto alpha =
         arith::SelectOp::create(rewriter, loc, safe, alphaSafe, alphaUnsafe);
     auto gamma =
         arith::SelectOp::create(rewriter, loc, safe, gammaSafe, constants.zero);
 
+    // normalize alpha and gamma to [-PI, PI] since they are sums/differences
+    // of atan2 results and can exceed that range
+    auto alphaNorm = normalizeAngle(alpha, loc, rewriter);
+    auto gammaNorm = normalizeAngle(gamma, loc, rewriter);
+
     return UOp::create(rewriter, loc, op.getInputQubit(0), beta.getResult(),
-                       alpha.getResult(), gamma.getResult());
+                       alphaNorm, gammaNorm);
   }
 
   /**

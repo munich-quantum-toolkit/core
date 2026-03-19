@@ -131,7 +131,6 @@ protected:
    */
   void expectUGateParams(double expectedTheta, double expectedPhi,
                          double expectedLambda, double tolerance = 1e-8) {
-    // TODO: maybe check angle equality modulo 2*PI
     auto params = getUGateParams();
     ASSERT_TRUE(params.has_value());
 
@@ -726,7 +725,7 @@ TEST_F(QCOQuaternionMergeTest, numericalAccuracyRZRY) {
 
 /**
  * @brief Test: U(1,2,3)->U(4,5,6) should merge into
- *        U(2.03289042623884, 0.663830775701153, -5.43395386531173)
+ *        U(2.03289042623884, 0.663830775701153, 0.849231441867857)
  */
 TEST_F(QCOQuaternionMergeTest, numericalAccuracyUU) {
   ASSERT_TRUE(
@@ -734,7 +733,7 @@ TEST_F(QCOQuaternionMergeTest, numericalAccuracyUU) {
           .succeeded());
   EXPECT_EQ(countOps<UOp>(), 1);
 
-  expectUGateParams(2.03289042623884, 0.663830775701153, -5.43395386531173);
+  expectUGateParams(2.03289042623884, 0.663830775701153, 0.849231441867857);
 }
 
 /**
@@ -750,7 +749,7 @@ TEST_F(QCOQuaternionMergeTest, numericalRotationIdentity) {
   EXPECT_EQ(countOps<RYOp>(), 0);
   EXPECT_EQ(countOps<RZOp>(), 0);
 
-  expectUGateParams(0, TAU, 0.);
+  expectUGateParams(0, 0, 0.);
 }
 
 /**
@@ -820,7 +819,7 @@ TEST_F(QCOQuaternionMergeTest, numericalAccuracyPRX) {
 
 /**
  * @brief Test: R(1,2)->R(3,4) should merge into
- *        U(2.07770669385131, 1.36334275733332, -3.42348659369073)
+ *        U(2.07770669385131, 1.36334275733332, 2.85969871348886)
  */
 TEST_F(QCOQuaternionMergeTest, numericalAccuracyRR) {
   ASSERT_TRUE(testGateMerge({{.type = GateType::R, .angles = {1., 2.}},
@@ -829,7 +828,7 @@ TEST_F(QCOQuaternionMergeTest, numericalAccuracyRR) {
   EXPECT_EQ(countOps<UOp>(), 1);
   EXPECT_EQ(countOps<ROp>(), 0);
 
-  expectUGateParams(2.07770669385131, 1.36334275733332, -3.42348659369073);
+  expectUGateParams(2.07770669385131, 1.36334275733332, 2.85969871348886);
 }
 
 /**
@@ -848,7 +847,7 @@ TEST_F(QCOQuaternionMergeTest, numericalAccuracyRRSameAxis) {
 
 /**
  * @brief Test: U2(1,2)->U2(3,4) should merge into
- *        U(1.85840734641021, -4.85398163397448, 0.429203673205103)
+ *        U(1.85840734641021, 1.42920367320511, 0.429203673205103)
  *
  * @note U2 is not SU(2) (det = e^{i(phi+lambda)}), so the pass discards the
  *       global phase. This test verifies the SU(2) rotation part only. Once
@@ -862,7 +861,7 @@ TEST_F(QCOQuaternionMergeTest, numericalAccuracyU2U2) {
   EXPECT_EQ(countOps<UOp>(), 1);
   EXPECT_EQ(countOps<U2Op>(), 0);
 
-  expectUGateParams(1.85840734641021, -4.85398163397448, 0.429203673205103);
+  expectUGateParams(1.85840734641021, 1.42920367320511, 0.429203673205103);
 }
 
 /**
