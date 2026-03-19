@@ -8,7 +8,6 @@
  * Licensed under the MIT License
  */
 
-#include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 
 #include <llvm/ADT/STLExtras.h>
@@ -115,6 +114,10 @@ struct ReduceCtrl final : OpRewritePattern<CtrlOp> {
       return success();
     }
 
+    // Capture the promoted control's type before adjusting segments; after
+    // setAttr, getControlsIn().back() would point to a different control.
+    const auto promotedControlType = op.getControlsIn().back().getType();
+
     // Adjust the segment sizes of the control and target operands
     const auto opSegmentsAttrName = CtrlOp::getOperandSegmentSizeAttr();
     auto segmentsAttr =
@@ -127,7 +130,6 @@ struct ReduceCtrl final : OpRewritePattern<CtrlOp> {
 
     // Add a block argument for the promoted target qubit, preserving the
     // control's type (including isStatic)
-    auto promotedControlType = op.getControlsIn().back().getType();
     auto arg = op.getBody()->addArgument(promotedControlType, op.getLoc());
 
     // Replace the current GPhaseOp with a PhaseOp

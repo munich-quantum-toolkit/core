@@ -15,6 +15,7 @@
 // The following headers are needed for some template instantiations.
 // IWYU pragma: begin_keep
 #include <llvm/ADT/TypeSwitch.h>
+#include <llvm/Support/Casting.h>
 #include <mlir/IR/DialectImplementation.h>
 #include <mlir/IR/Types.h>
 #include <mlir/Support/LogicalResult.h>
@@ -84,7 +85,7 @@ Type QubitType::parse(AsmParser& parser) {
 
 LogicalResult StaticOp::verify() {
   auto qubitType = getQubit().getType();
-  if (auto qt = dyn_cast<QubitType>(qubitType); qt && !qt.getIsStatic()) {
+  if (auto qt = llvm::dyn_cast<QubitType>(qubitType); qt && !qt.getIsStatic()) {
     return emitOpError(
         "result must be a static qubit type (!qc.qubit<static>)");
   }
