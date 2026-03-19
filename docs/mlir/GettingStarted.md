@@ -25,6 +25,67 @@ This section covers the basics of quantum computing and provides a soft introduc
 
 ### Quantum Computing
 
+The computational unit of quantum computing is the _qubit_. Whereas a classical bit is either in the state $0$ or $1$, a qubit can exist in a superposition of both states. Mathematically, we denote a qubit as follows.
+
+```{math}
+:label: qubit_equation
+|\psi\rangle = \alpha|0\rangle + \beta|1\rangle
+```
+
+where $\alpha$ and $\beta$ are complex numbers such that $|\alpha|^2 + |\beta|^2 = 1$.
+
+These complex numbers determine the probabilities of the outcome of a _measurement_. A measurement collapses the qubit's state
+to $|0\rangle$ with probability $|\alpha|^2$ and to $|1\rangle$ with probability $|\beta|^2$ and returns the respective classical
+outcome ($0$ or $1$).
+
+Unitary matrices, so-called quantum _gates_, modify the qubit's state. For instance, the Hadamard gate $H$ creates an equal superposition state for which a measurement collapses the state to $|0\rangle$ or $|1\rangle$ with probability $0.5$.
+
+```{math}
+:label: hadamard_gate_ket0
+\begin{aligned}
+H|0\rangle &= \frac{1}{\sqrt{2}}|0\rangle + \frac{1}{\sqrt{2}}|1\rangle\\
+H|1\rangle &= \frac{1}{\sqrt{2}}|0\rangle - \frac{1}{\sqrt{2}}|1\rangle
+\end{aligned}
+```
+
+Another important one-qubit gate is the $X$ gate, which simply flips the qubit's state.
+
+```{math}
+:label: x_gate
+\begin{aligned}
+X|0\rangle &= |1\rangle\\
+X|1\rangle &= |0\rangle
+\end{aligned}
+```
+
+Multiple qubits can be targeted as well. For example, the controlled-X gate acts on two qubits and executes an X gate on the target qubit whenever the control qubit is in the $|1\rangle$ state:
+
+```{math}
+:label: cx_gate_action
+\begin{aligned}
+{CX}|00\rangle &= |00\rangle \\
+{CX}|01\rangle &= |01\rangle \\
+{CX}|10\rangle &= |11\rangle \\
+{CX}|11\rangle &= |10\rangle
+\end{aligned}
+```
+
+where the first qubit is the control.
+
+We can describe a quantum computation graphically using a quantum _circuit_.
+
+```{image} ../_static/bell-circuit.svg
+:width: 50%
+:align: center
+```
+
+The above quantum circuit computes and measures the Bell state $|\Phi^{+}\rangle$, where the circuit is read from left to right:
+
+1. Initialize both qubits in the $|0\rangle$ state.
+2. Apply a Hadamard gate $H$ to the upper qubit. Consequently, this qubit is now in an equal superposition state.
+3. Apply a controlled-X gate to both qubits. The resulting two-qubit state is $|\Phi^{+}\rangle$.
+4. Measure both qubits and receive two classical output bits.
+
 ### Multi-Level Intermediate Representation (MLIR)
 
 The Multi-Level Intermediate Representation (MLIR) project is an extensive framework to build compilers for heterogeneous hardware. Key to its success is the ability to represent programs at multiple levels of abstraction, as well as the capacity to _lower_ them from higher to lower levels.
@@ -110,7 +171,7 @@ qco.dealloc %q0_0 : !qco.qubit
 :::
 ::::
 
-Alternatively, we can target specific hardware qubits by using the `static` operation.
+Alternatively, we can target specific hardware qubits by using the `static` operation. In the QC dialect, static qubits don't require a deallocation.
 
 ::::{grid} 2
 :::{grid-item}
@@ -118,7 +179,6 @@ Alternatively, we can target specific hardware qubits by using the `static` oper
 ```{code-block} mlir
 //          QC
 %q0 = qc.static 1 : !qc.qubit
-qc.dealloc %q0 : !qc.qubit
 ```
 
 :::
@@ -160,7 +220,7 @@ qco.dealloc %q0_1 : !qco.qubit
 :::
 ::::
 
-Notice how the Hadamard operation in the QCO dialect consumes and produces SSA values, while the operation in the QC dialect simply references the targeted qubit. We say that the QC dialect uses _reference semantics_ whereas the QCO dialect uses _value semantics_. Semantically, the unitary operations in the QCO dialect return the new state after modifying it.
+Notice how the Hadamard operation in the QCO dialect consumes and produces SSA values, while the operation in the QC dialect simply references the targeted qubit. We say that the QC dialect uses _reference semantics_ whereas the QCO dialect uses _value semantics_. Semantically, the unitary operations in the QCO dialect return the new state after modifying it. Furthermore, the QCO dialect imposes _linear typing_: each SSA value is used _exactly_ once.
 
 Instead of using the Hadamard directly, we can also apply the transformation in terms of X and Y rotations with parameterized gates.
 
@@ -278,12 +338,29 @@ The `qco.ctrl` operation adds a bit of complexity:
 - The result of the `qco.x` operation needs to be passed to the outer block. Thus, similarly to the operations in the SCF dialect, we use `qco.yield`.
 - Analogously to the other unitary operations in the QCO dialect, the `qco.ctrl` modifier returns the modified state of the input qubits.
 
+The following figure describes the dataflow graph of the above quantum program in the QCO dialect.
+
 ```{image} ../_static/qco-dataflow.svg
 :width: 85%
 :align: center
 ```
 
+Because of the QCO dialect's value semantics, the dependencies between operations are naturally expressed in the dataflow graph. For instance, in the figure above, the controlled-X operation depends on the application of the Hadamard operation. This is, for example, very useful for gate cancellation: The dependency of one gate is the inverse of it? Cancel the two! Consequently, the expressive dataflow representation is what makes the QCO dialect so powerful for optimization and algorithms more generally.
+
 ### Compilation Flow
+
+The goal of any compiler is to take a (quantum) program and transform into a more efficient and executable one. The MQT Compiler Collection achieves this using the following compilation architecture.
+
+- First, a program in an input quantum language (e.g. OpenQASM) is translated to the QC dialect.
+- Next, the compiler transforms the program to QCO dialect. Subsequently, we apply optimizations, optionally perform transpilation for a target quantum computer, and finally transform the program back to the QC dialect.
+- Optionally, the optimized and transpiled program can be transformed into an exit dialect such as LLVM using the Quantum Intermediate Representation (QIR) extension.
+
+The figure below describes the compilation flow graphically.
+
+```{image} ../_static/compilation-pipeline.svg
+:width: 50%
+:align: center
+```
 
 ## Examples Using the MQT Compiler Collection Tool
 
@@ -291,7 +368,7 @@ This section contains examples showing you how to use the MQT Compiler Collectio
 
 ### Optimizing an OpenQASM Program
 
-Let's say you want to optimize the following OpenQASM program. Create a `.qasm` file and name it `ghz.qasm`:
+Lets say you want to optimize the following OpenQASM program. Create a `.qasm` file and name it `ghz.qasm`:
 
 ```{code-block} OpenQASM
 :lineno-start: 0
