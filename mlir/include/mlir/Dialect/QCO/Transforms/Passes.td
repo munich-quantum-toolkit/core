@@ -15,7 +15,7 @@ def MergeRotationGates : Pass<"merge-rotation-gates", "mlir::ModuleOp"> {
   let dependentDialects = ["mlir::qco::QCODialect", "::mlir::arith::ArithDialect", "::mlir::math::MathDialect"];
   let summary = "Merge rotation gates using quaternion-based fusion";
   let description = [{
-    Merges consecutive rotation gates of different types (rx, ry, rz, u)
+    Merges consecutive rotation gates of different types (rx, ry, rz, p, r, u2, u)
     using quaternion representation and the Hamilton product.
   }];
 }

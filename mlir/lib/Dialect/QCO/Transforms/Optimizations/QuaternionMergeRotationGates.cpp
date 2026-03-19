@@ -58,22 +58,21 @@ struct MergeRotationGatesPattern final
   };
 
   /**
-   * @brief Checks if an operation is a mergeable rotation gate (RXOp, RYOp,
-   * RZOp, UOp).
+   * @brief Checks if an operation is a mergeable rotation gate.
    *
    * @param op The operation to check
    * @return True if mergeable, false otherwise
    */
   static bool isMergeable(Operation* op) {
-    return isa<RXOp, RYOp, RZOp, UOp>(op);
+    return isa<RXOp, RYOp, RZOp, POp, ROp, U2Op, UOp>(op);
   }
 
   /**
    * @brief Checks if two gates require quaternion-based merging.
    *
-   * Returns true for different gate types (e.g., RXOp+RYOp) or two UOps.
-   * Same-axis rotations (e.g., RXOp+RXOp) use angle addition and aren't handled
-   * here.
+   * Returns true for different gate types (e.g., RXOp+RYOp) or same-type
+   * multi-parameter gates (UOp, U2Op, ROp). Same-type single-parameter gates
+   * (e.g., RXOp+RXOp, POp+POp) use angle addition and aren't handled here.
    *
    * @param a The first gate
    * @param b The second gate
@@ -84,8 +83,10 @@ struct MergeRotationGatesPattern final
       return false;
     }
 
-    // Different gate types OR both are UOps
-    return (a.getName() != b.getName()) || (isa<UOp>(a) && isa<UOp>(b));
+    // Different gate types always require quaternion merging.
+    // Same-type multi-parameter gates (UOp, U2Op, ROp) also require it,
+    // since they cannot be merged by simple angle addition.
+    return (a.getName() != b.getName()) || isa<UOp, U2Op, ROp>(a);
   }
 
   /**
@@ -99,10 +100,21 @@ struct MergeRotationGatesPattern final
     return llvm::TypeSwitch<Operation*, std::optional<RotationAxis>>(op)
         .Case<RXOp>([](auto) { return RotationAxis::X; })
         .Case<RYOp>([](auto) { return RotationAxis::Y; })
-        .Case<RZOp>([](auto) { return RotationAxis::Z; })
+        .Case<RZOp, POp>([](auto) { return RotationAxis::Z; })
         .Default([](auto) { return std::nullopt; });
   }
 
+  /**
+   * @brief Creates shared f64 arithmetic constants used throughout the pass.
+   *
+   * These constants are created once and reused across quaternion construction,
+   * Hamilton product, and Euler angle extraction to avoid redundant ops in the
+   * generated IR.
+   *
+   * @param loc Source location for the created operations
+   * @param rewriter Pattern rewriter for creating new operations
+   * @return A Constants struct with all pre-built constant ops
+   */
   static Constants createConstants(Location loc, PatternRewriter& rewriter) {
     auto f64 = rewriter.getF64Type();
     return {
@@ -165,7 +177,7 @@ struct MergeRotationGatesPattern final
   }
 
   /**
-   * @brief Converts a UOp to quaternion representation.
+   * @brief Converts a ZYZ Euler angle decomposition to quaternion.
    *
    * U(theta, phi, lambda) uses ZYZ decomposition: RZ(lambda) -> RY(theta) ->
    * RZ(phi).
@@ -176,6 +188,34 @@ struct MergeRotationGatesPattern final
    *   Sequential application: RZ(lambda), then RY(theta), then RZ(phi)
    *   Quaternion product:     qPhi * qTheta * qLambda
    *
+   * @param theta The Y-rotation angle
+   * @param phi The first Z-rotation angle
+   * @param lambda The second Z-rotation angle
+   * @param loc Location in the IR
+   * @param constants Pre-created arithmetic constants
+   * @param rewriter Pattern rewriter for creating new operations
+   * @return Quaternion representing the ZYZ rotation
+   */
+  static Quaternion quaternionFromZYZ(Value theta, Value phi, Value lambda,
+                                      Location loc, const Constants& constants,
+                                      PatternRewriter& rewriter) {
+    auto qTheta =
+        createAxisQuaternion(theta, RotationAxis::Y, loc, constants, rewriter);
+    auto qPhi =
+        createAxisQuaternion(phi, RotationAxis::Z, loc, constants, rewriter);
+    auto qLambda =
+        createAxisQuaternion(lambda, RotationAxis::Z, loc, constants, rewriter);
+
+    // qPhi * qTheta * qLambda (multiplication in reverse order!)
+    auto temp = hamiltonProduct(qPhi, qTheta, loc, rewriter);
+    return hamiltonProduct(temp, qLambda, loc, rewriter);
+  }
+
+  /**
+   * @brief Converts a UOp to quaternion representation.
+   *
+   * U(theta, phi, lambda) is decomposed via ZYZ Euler angles.
+   *
    * @param op The UOp to convert
    * @param constants Pre-created arithmetic constants
    * @param rewriter Pattern rewriter for creating new operations
@@ -184,26 +224,69 @@ struct MergeRotationGatesPattern final
   static Quaternion quaternionFromUOp(UnitaryOpInterface op,
                                       const Constants& constants,
                                       PatternRewriter& rewriter) {
+    return quaternionFromZYZ(op.getParameter(0), op.getParameter(1),
+                             op.getParameter(2), op->getLoc(), constants,
+                             rewriter);
+  }
+
+  /**
+   * @brief Converts a U2Op to quaternion representation.
+   *
+   * U2(phi, lambda) = U(pi/2, phi, lambda), using ZYZ decomposition with
+   * theta fixed to pi/2.
+   *
+   * @param op The U2Op to convert
+   * @param constants Pre-created arithmetic constants
+   * @param rewriter Pattern rewriter for creating new operations
+   * @return Quaternion representing the U2Op
+   */
+  static Quaternion quaternionFromU2Op(UnitaryOpInterface op,
+                                       const Constants& constants,
+                                       PatternRewriter& rewriter) {
     auto loc = op->getLoc();
+    auto piHalf =
+        arith::DivFOp::create(rewriter, loc, constants.pi, constants.two);
+    return quaternionFromZYZ(piHalf, op.getParameter(0), op.getParameter(1),
+                             loc, constants, rewriter);
+  }
 
-    // U(theta, phi, lambda) uses ZYZ decomposition: RZ(lambda) -> RY(theta) ->
-    // RZ(phi)
-    auto qTheta = createAxisQuaternion(op.getParameter(0), RotationAxis::Y, loc,
-                                       constants, rewriter);
-    auto qPhi = createAxisQuaternion(op.getParameter(1), RotationAxis::Z, loc,
-                                     constants, rewriter);
-    auto qLambda = createAxisQuaternion(op.getParameter(2), RotationAxis::Z,
-                                        loc, constants, rewriter);
+  /**
+   * @brief Converts an ROp to quaternion representation.
+   *
+   * R(theta, phi) represents a rotation by theta around axis
+   * (cos(phi), sin(phi), 0) in the XY plane:
+   * Q(cos(theta/2), sin(theta/2)*cos(phi), sin(theta/2)*sin(phi), 0)
+   *
+   * @param op The ROp to convert
+   * @param constants Pre-created arithmetic constants
+   * @param rewriter Pattern rewriter for creating new operations
+   * @return Quaternion representing the ROp
+   */
+  static Quaternion quaternionFromROp(UnitaryOpInterface op,
+                                      const Constants& constants,
+                                      PatternRewriter& rewriter) {
+    auto loc = op->getLoc();
+    auto f64 = rewriter.getF64Type();
+    auto theta = op.getParameter(0);
+    auto phi = op.getParameter(1);
 
-    // qPhi * qTheta * qLambda (multiplication in reverse order!)
-    auto temp = hamiltonProduct(qPhi, qTheta, loc, rewriter);
-    return hamiltonProduct(temp, qLambda, loc, rewriter);
+    auto halfTheta = arith::DivFOp::create(rewriter, loc, theta, constants.two);
+    auto cosHalf = math::CosOp::create(rewriter, loc, f64, halfTheta);
+    auto sinHalf = math::SinOp::create(rewriter, loc, f64, halfTheta);
+    auto cosPhi = math::CosOp::create(rewriter, loc, f64, phi);
+    auto sinPhi = math::SinOp::create(rewriter, loc, f64, phi);
+
+    auto x = arith::MulFOp::create(rewriter, loc, sinHalf, cosPhi);
+    auto y = arith::MulFOp::create(rewriter, loc, sinHalf, sinPhi);
+
+    return {.w = cosHalf, .x = x, .y = y, .z = constants.zero};
   }
 
   /**
    * @brief Converts a rotation gate to quaternion representation.
    *
-   * @param op The rotation gate (RXOp, RYOp, RZOp, UOp) to convert
+   * @param op The rotation gate to convert (RXOp, RYOp, RZOp, POp, ROp, U2Op,
+   *        UOp)
    * @param constants Pre-created arithmetic constants
    * @param rewriter Pattern rewriter for creating new operations
    * @return Quaternion representing the rotation gate
@@ -211,16 +294,23 @@ struct MergeRotationGatesPattern final
   static Quaternion quaternionFromRotation(UnitaryOpInterface op,
                                            const Constants& constants,
                                            PatternRewriter& rewriter) {
-    if (isa<UOp>(op)) {
-      return quaternionFromUOp(op, constants, rewriter);
-    }
-
+    // Single-axis rotations (RX, RY, RZ, P) share the same conversion pattern
     if (auto axis = getRotationAxis(op.getOperation())) {
       return createAxisQuaternion(op.getParameter(0), *axis, op->getLoc(),
                                   constants, rewriter);
     }
 
-    llvm_unreachable("Unsupported operation type");
+    // Multi-parameter gates each need their own conversion
+    return llvm::TypeSwitch<Operation*, Quaternion>(op.getOperation())
+        .Case<ROp>(
+            [&](auto) { return quaternionFromROp(op, constants, rewriter); })
+        .Case<U2Op>(
+            [&](auto) { return quaternionFromU2Op(op, constants, rewriter); })
+        .Case<UOp>(
+            [&](auto) { return quaternionFromUOp(op, constants, rewriter); })
+        .Default([](auto) -> Quaternion {
+          llvm_unreachable("Unsupported operation type");
+        });
   }
 
   /**
