@@ -57,5 +57,12 @@ LogicalResult AllocOp::verify() {
            << resultSize << ")";
   }
 
+  auto elementType = resultType.getElementType();
+  if (auto qubitType = dyn_cast<qco::QubitType>(elementType);
+      qubitType && qubitType.getIsStatic()) {
+    return emitOpError("qtensor.alloc cannot allocate static qubits; element "
+                       "type must be a dynamic qubit type (!qco.qubit)");
+  }
+
   return success();
 }

@@ -83,6 +83,11 @@ def DynamicQubit : Type<
          CPred<"!::mlir::cast<::mlir::qc::QubitType>($_self).getIsStatic()">]>,
     "dynamic qubit type (!qc.qubit)">;
 
+def StaticQubit : Type<
+    And<[CPred<"::mlir::isa<::mlir::qc::QubitType>($_self)">,
+         CPred<"::mlir::cast<::mlir::qc::QubitType>($_self).getIsStatic()">]>,
+    "static qubit type (!qc.qubit<static>)">;
+
 def DeallocOp : QCOp<"dealloc", [MemoryEffects<[MemFree]>]> {
     let summary = "Deallocate a dynamically allocated qubit";
     let description = [{
@@ -117,6 +122,7 @@ def StaticOp : QCOp<"static", [Pure]> {
     let arguments = (ins ConfinedAttr<I64Attr, [IntNonNegative]>:$index);
     let results = (outs QubitType:$qubit);
     let assemblyFormat = "$index attr-dict `:` type($qubit)";
+    let hasVerifier = 1;
 
     let builders = [
         OpBuilder<(ins "int64_t":$index), [{

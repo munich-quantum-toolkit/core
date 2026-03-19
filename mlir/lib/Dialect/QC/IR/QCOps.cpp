@@ -81,3 +81,12 @@ Type QubitType::parse(AsmParser& parser) {
 
 #define GET_OP_CLASSES
 #include "mlir/Dialect/QC/IR/QCOps.cpp.inc"
+
+LogicalResult StaticOp::verify() {
+  auto qubitType = getQubit().getType();
+  if (auto qt = dyn_cast<QubitType>(qubitType); qt && !qt.getIsStatic()) {
+    return emitOpError(
+        "result must be a static qubit type (!qc.qubit<static>)");
+  }
+  return success();
+}

@@ -125,9 +125,10 @@ struct ReduceCtrl final : OpRewritePattern<CtrlOp> {
     const auto opResultSegmentsAttrName = CtrlOp::getResultSegmentSizeAttr();
     op->setAttr(opResultSegmentsAttrName, newSegments);
 
-    // Add a block argument for the target qubit
-    auto arg = op.getBody()->addArgument(
-        QubitType::get(rewriter.getContext(), /*isStatic=*/false), op.getLoc());
+    // Add a block argument for the promoted target qubit, preserving the
+    // control's type (including isStatic)
+    auto promotedControlType = op.getControlsIn().back().getType();
+    auto arg = op.getBody()->addArgument(promotedControlType, op.getLoc());
 
     // Replace the current GPhaseOp with a PhaseOp
     const OpBuilder::InsertionGuard guard(rewriter);
