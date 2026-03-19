@@ -29,6 +29,7 @@
 #include <cstdint>
 #include <iostream>
 #include <memory>
+#include <numbers>
 #include <sstream>
 
 namespace {
@@ -100,7 +101,7 @@ TEST_P(QFT, Functionality) {
             1ULL << (std::max<std::size_t>(2UL, nqubits) - 2));
 
   const auto expectedAmplitude =
-      static_cast<dd::fp>(std::pow(1.0 / std::sqrt(2.0), nqubits));
+      static_cast<dd::fp>(std::pow(1.0 / std::numbers::sqrt2, nqubits));
 
   // top edge weight should equal (1/sqrt(2))^n
   EXPECT_NEAR(dd::RealNumber::val(func.w.r), expectedAmplitude,
@@ -143,7 +144,7 @@ TEST_P(QFT, FunctionalityRecursive) {
             1ULL << (std::max<std::size_t>(2UL, nqubits) - 2));
 
   const auto expectedAmplitude =
-      static_cast<dd::fp>(std::pow(1.0 / std::sqrt(2.0), nqubits));
+      static_cast<dd::fp>(std::pow(1.0 / std::numbers::sqrt2, nqubits));
 
   // top edge weight should equal (1/sqrt(2))^n
   EXPECT_NEAR(dd::RealNumber::val(func.w.r), expectedAmplitude,
@@ -189,9 +190,10 @@ TEST_P(QFT, Simulation) {
   // first column should consist only of (1/sqrt(2))^n entries
   for (std::uint64_t i = 0; i < 1ULL << nqubits; ++i) {
     auto c = sim.getValueByIndex(i);
-    EXPECT_NEAR(c.real(),
-                static_cast<dd::fp>(std::pow(1.0 / std::sqrt(2.0), nqubits)),
-                dd::RealNumber::eps);
+    EXPECT_NEAR(
+        c.real(),
+        static_cast<dd::fp>(std::pow(1.0 / std::numbers::sqrt2, nqubits)),
+        dd::RealNumber::eps);
     EXPECT_NEAR(c.imag(), 0, dd::RealNumber::eps);
   }
   dd->decRef(sim);
