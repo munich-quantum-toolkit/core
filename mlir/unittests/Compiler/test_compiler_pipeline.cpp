@@ -46,6 +46,8 @@ using QCProgramBuilderFn = NamedBuilder<mlir::qc::QCProgramBuilder>;
 using QIRProgramBuilderFn = NamedBuilder<mlir::qir::QIRProgramBuilder>;
 using QuantumComputationBuilderFn = NamedBuilder<::qc::QuantumComputation>;
 
+namespace {
+
 struct CompilerPipelineTestCase {
   std::string name;
   QuantumComputationBuilderFn quantumComputationBuilder;
@@ -56,20 +58,24 @@ struct CompilerPipelineTestCase {
   bool convertToQIR = true;
 
   friend std::ostream& operator<<(std::ostream& os,
-                                  const CompilerPipelineTestCase& info) {
-    os << "CompilerPipeline{" << info.name << ", original=";
-    if (info.startFromQuantumComputation) {
-      os << displayName(info.quantumComputationBuilder.name);
-    } else {
-      os << displayName(info.qcProgramBuilder.name);
-    }
-    os << ", qcReference=" << displayName(info.qcReferenceBuilder.name);
-    if (info.convertToQIR) {
-      os << ", qirReference=" << displayName(info.qirReferenceBuilder.name);
-    }
-    return os << "}";
-  }
+                                  const CompilerPipelineTestCase& info);
 };
+
+// NOLINTNEXTLINE(llvm-prefer-static-over-anonymous-namespace)
+std::ostream& operator<<(std::ostream& os,
+                         const CompilerPipelineTestCase& info) {
+  os << "CompilerPipeline{" << info.name << ", original=";
+  if (info.startFromQuantumComputation) {
+    os << displayName(info.quantumComputationBuilder.name);
+  } else {
+    os << displayName(info.qcProgramBuilder.name);
+  }
+  os << ", qcReference=" << displayName(info.qcReferenceBuilder.name);
+  if (info.convertToQIR) {
+    os << ", qirReference=" << displayName(info.qirReferenceBuilder.name);
+  }
+  return os << "}";
+}
 
 class CompilerPipelineTest
     : public testing::TestWithParam<CompilerPipelineTestCase> {
@@ -127,6 +133,8 @@ protected:
     EXPECT_TRUE(areModulesEquivalentWithPermutations(actual.get(), expected));
   }
 };
+
+} // namespace
 
 TEST_P(CompilerPipelineTest, EndToEndPipeline) {
   const auto& testCase = GetParam();

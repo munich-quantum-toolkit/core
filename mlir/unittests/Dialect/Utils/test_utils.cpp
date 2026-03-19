@@ -29,6 +29,8 @@
 
 using namespace mlir;
 
+namespace {
+
 class UtilsTest : public ::testing::Test {
 protected:
   MLIRContext context;
@@ -52,6 +54,8 @@ protected:
     return arith::AddFOp::create(*builder, firstOperand, secondOperand);
   }
 };
+
+} // namespace
 
 TEST_F(UtilsTest, valueToDouble) {
   constexpr double expectedValue = 1.234;

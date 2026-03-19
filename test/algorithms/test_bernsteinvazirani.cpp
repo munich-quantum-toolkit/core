@@ -23,11 +23,15 @@
 #include <memory>
 #include <sstream>
 
+namespace {
+
 class BernsteinVazirani : public testing::TestWithParam<std::uint64_t> {
 protected:
   void TearDown() override {}
   void SetUp() override {}
 };
+
+} // namespace
 
 INSTANTIATE_TEST_SUITE_P(
     BernsteinVazirani, BernsteinVazirani,

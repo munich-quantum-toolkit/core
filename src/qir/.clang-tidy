@@ -4,14 +4,11 @@ Checks: |
   llvm-prefer-isa-or-dyn-cast-in-conditionals,
   llvm-prefer-register-over-unsigned,
   llvm-prefer-static-over-anonymous-namespace,
-  llvm-twine-local,
   -bugprone-throwing-static-initialization,
   -cppcoreguidelines-avoid-non-const-global-variables,
   -cppcoreguidelines-pro-bounds-avoid-unchecked-container-access,
   -misc-use-anonymous-namespace,
-  -modernize-type-traits,
-  -*-const-correctness,
 
 CheckOptions:
-  - key: misc-include-cleaner.IgnoreHeaders
-    value: "Eigen/.*;unsupported/Eigen/.*"
+  - key: readability-identifier-naming.VariableCase
+    value: CamelCase

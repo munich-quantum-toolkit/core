@@ -23,11 +23,15 @@
 #include <memory>
 #include <sstream>
 
+namespace {
+
 class RandomClifford : public testing::TestWithParam<qc::Qubit> {
 protected:
   void TearDown() override {}
   void SetUp() override {}
 };
+
+} // namespace
 
 INSTANTIATE_TEST_SUITE_P(
     RandomClifford, RandomClifford, testing::Range<qc::Qubit>(1U, 9U),

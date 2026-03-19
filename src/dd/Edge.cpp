@@ -513,15 +513,15 @@ template struct Edge<mNode>;
 ///                         \n Hash related code \n
 ///-----------------------------------------------------------------------------
 
-namespace std {
 template <class Node>
-auto hash<dd::Edge<Node>>::operator()(const dd::Edge<Node>& e) const noexcept
-    -> std::size_t {
+auto std::hash<dd::Edge<Node>>::operator()(
+    const dd::Edge<Node>& e) const noexcept -> std::size_t {
   const auto h1 = dd::murmur64(reinterpret_cast<std::size_t>(e.p));
   const auto h2 = std::hash<dd::Complex>{}(e.w);
   return qc::combineHash(h1, h2);
 }
 
-template struct hash<dd::Edge<dd::vNode>>;
-template struct hash<dd::Edge<dd::mNode>>;
-} // namespace std
+// NOLINTNEXTLINE(bugprone-std-namespace-modification)
+template struct std::hash<dd::Edge<dd::vNode>>;
+// NOLINTNEXTLINE(bugprone-std-namespace-modification)
+template struct std::hash<dd::Edge<dd::mNode>>;

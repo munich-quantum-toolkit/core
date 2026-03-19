@@ -31,10 +31,15 @@
 #include <utility>
 
 namespace zx {
+
+namespace {
+
 class ZXFunctionalityTest : public ::testing::Test {
 public:
   qc::QuantumComputation qc;
 };
+
+} // namespace
 
 TEST_F(ZXFunctionalityTest, parseQasm) {
   const std::string testfile = "OPENQASM 2.0;"

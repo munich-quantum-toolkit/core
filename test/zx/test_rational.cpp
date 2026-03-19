@@ -14,7 +14,12 @@
 #include <gtest/gtest.h>
 
 namespace zx {
+
+namespace {
+
 class RationalTest : public ::testing::Test {};
+
+} // namespace
 
 TEST_F(RationalTest, normalize) {
   const PiRational r(-33, 16);
