@@ -7,4 +7,5 @@
 # Licensed under the MIT License
 
 add_mlir_dialect(QTensorOps qtensor)
-add_mlir_doc(QTensorOps MLIRQTensorDialect Dialects/ -gen-dialect-doc)
+
+add_mlir_doc(QTensorOps QTensorDialect Dialects/ -gen-dialect-doc)

@@ -2,7 +2,6 @@
 tocdepth: 3
 ---
 
-```{include} Dialects/MLIRQTensorDialect.md
-
+```{include} Dialects/QTensorDialect.md
 :heading-offset: 1
 ```

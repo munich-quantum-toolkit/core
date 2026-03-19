@@ -6,8 +6,11 @@
 //
 // Licensed under the MIT License
 
-#ifndef QTENSOROPS
-#define QTENSOROPS
+#ifndef MLIR_DIALECT_QTENSOR_IR_QTENSOROPS_TD
+#define MLIR_DIALECT_QTENSOR_IR_QTENSOROPS_TD
+
+include "mlir/Dialect/QCO/IR/QCOTypes.td"
+include "mlir/Dialect/QTensor/IR/QTensorDialect.td"
 
 include "mlir/IR/OpBase.td"
 include "mlir/Interfaces/InferIntRangeInterface.td"
@@ -15,26 +18,6 @@ include "mlir/Interfaces/InferTypeOpInterface.td"
 include "mlir/Interfaces/ShapedOpInterfaces.td"
 include "mlir/Interfaces/SideEffectInterfaces.td"
 include "mlir/Interfaces/TilingInterface.td"
-
-//===----------------------------------------------------------------------===//
-// Dialect
-//===----------------------------------------------------------------------===//
-
-def QTensorDialect : Dialect {
-  let name = "qtensor";
-
-  let summary = "The QTensor dialect for one-dimensional tensors of qubits with linear typing.";
-
-  let description = [{
-      The Qtensor dialect is an adjusted variant of the standard tensor dialect of MLIR that supports linear typing for one-dimensional tensors of qubits.
-      In order to support linear typing, the extract operations of this dialect are modified so that they also return the updated tensor.
-      In addition, alloc/dealloc operations are added to the dialect to support the bulk allocation and deallocation of qubit tensors with linear types.
-  }];
-
-  let dependentDialects = ["::mlir::qco::QCODialect"];
-
-  let cppNamespace = "::mlir::qtensor";
-}
 
 //===----------------------------------------------------------------------===//
 // Base Operation Classes
@@ -46,10 +29,6 @@ class QTensorOp<string mnemonic, list<Trait> traits = []>
 //===----------------------------------------------------------------------===//
 // Type Constraints
 //===----------------------------------------------------------------------===//
-
-def QubitType :
-  Type<CPred<"llvm::isa<::mlir::qco::QubitType>($_self)">,
-       "Elements must be of qubit type">;
 
 def Static1DQubitTensor : Type<
   And<[
@@ -280,4 +259,4 @@ def QTensor_InsertSliceOp : QTensorOp<"insert_slice", [
     let hasVerifier = 1;
 }
 
-#endif // QTENSOROPS
+#endif // MLIR_DIALECT_QTENSOR_IR_QTENSOROPS_TD
