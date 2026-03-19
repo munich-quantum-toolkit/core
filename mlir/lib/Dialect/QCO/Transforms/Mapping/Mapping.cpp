@@ -455,8 +455,10 @@ private:
    */
   [[nodiscard]] static SmallVector<QubitValue>
   collectDynamicQubits(Region& funcBody) {
-    return SmallVector<QubitValue>(map_range(
-        funcBody.getOps<AllocOp>(), [](AllocOp op) { return op.getResult(); }));
+    return SmallVector<QubitValue>(
+        map_range(funcBody.getOps<AllocOp>(), [](AllocOp op) {
+          return llvm::cast<TypedValue<QubitType>>(op.getResult());
+        }));
   }
 
   /**

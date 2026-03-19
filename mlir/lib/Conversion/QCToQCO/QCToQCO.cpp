@@ -129,11 +129,6 @@ struct ConvertFuncReturnOp final : StatefulOpConversionPattern<func::ReturnOp> {
                   ConversionPatternRewriter& rewriter) const override {
     auto& state = getState();
 
-    if (state.inNestedRegion != 0) {
-      rewriter.replaceOpWithNewOp<func::ReturnOp>(op, adaptor.getOperands());
-      return success();
-    }
-
     // Build return values from qubitMap (adaptor.getOperands() may carry stale
     // root values because gate patterns use eraseOp instead of replaceOp).
     llvm::SmallVector<Value> returnValues;
@@ -151,15 +146,13 @@ struct ConvertFuncReturnOp final : StatefulOpConversionPattern<func::ReturnOp> {
     }
 
     // Collect non-escaped live qubits for deallocation.
-    llvm::SmallVector<Value> liveQubits;
-    liveQubits.reserve(state.qubitMap.size());
-    llvm::DenseSet<Value> seen;
+    llvm::DenseSet<Value> liveQubitsSet;
     for (const auto& [qcQubit, qcoQubit] : state.qubitMap) {
-      if (escapedQubits.contains(qcoQubit) || !seen.insert(qcoQubit).second) {
-        continue;
-      }
-      liveQubits.emplace_back(qcoQubit);
+      if (!escapedQubits.contains(qcoQubit))
+        liveQubitsSet.insert(qcoQubit);
     }
+    llvm::SmallVector<Value> liveQubits(liveQubitsSet.begin(),
+                                        liveQubitsSet.end());
 
     // Sort deterministically (mirrors QCOProgramBuilder::finalize()).
     llvm::sort(liveQubits, [](Value a, Value b) {
