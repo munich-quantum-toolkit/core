@@ -109,20 +109,18 @@ QCOProgramBuilder::allocQubitRegister(const int64_t size,
     llvm::reportFatalUsageError("Size must be positive");
   }
 
-  llvm::SmallVector<Value> qubits;
-  qubits.reserve(static_cast<size_t>(size));
+  auto qtensor = qtensorAlloc(size);
 
-  auto nameAttr = getStringAttr(name);
-  auto sizeAttr = getI64IntegerAttr(size);
+  llvm::SmallVector<Value> qubits;
+  qubits.reserve(size);
 
   for (int64_t i = 0; i < size; ++i) {
-    const auto indexAttr = getI64IntegerAttr(i);
-    auto allocOp = AllocOp::create(*this, nameAttr, sizeAttr, indexAttr);
-    const auto& qubit = qubits.emplace_back(allocOp.getResult());
-    // Track the allocated qubit as valid
-    validQubits.insert(qubit);
+    auto [qtensorOut, qubit] = qtensorExtract(qtensor, i);
+    qtensor = qtensorOut;
+    qubits.emplace_back(qubit);
   }
 
+  // TODO: Return qtensor
   return qubits;
 }
 
@@ -201,11 +199,13 @@ void QCOProgramBuilder::updateTensorTracking(Value inputTensor,
 Value QCOProgramBuilder::qtensorAlloc(
     const std::variant<int64_t, Value>& size) {
   checkFinalized();
-  auto sizeValue = utils::variantToValue(*this, getLoc(), size);
 
+  auto sizeValue = utils::variantToValue(*this, getLoc(), size);
   auto allocOp = qtensor::AllocOp::create(*this, sizeValue);
+
   auto result = allocOp.getResult();
   validTensors.insert(result);
+
   return result;
 }
 
@@ -924,6 +924,8 @@ OwningOpRef<ModuleOp> QCOProgramBuilder::finalize() {
         "Insertion point is not in entry block of main function");
   }
 
+  // TODO: Determine "free" qubits?
+
   auto blockOrderComparator = [](Value a, Value b) {
     auto* opA = a.getDefiningOp();
     auto* opB = b.getDefiningOp();
@@ -942,6 +944,8 @@ OwningOpRef<ModuleOp> QCOProgramBuilder::finalize() {
     DeallocOp::create(*this, qubit);
   }
 
+  validQubits.clear();
+
   // Automatically deallocate all still-allocated tensors
   // Sort tensors for deterministic output
   llvm::SmallVector<Value> sortedTensors(validTensors.begin(),
@@ -952,7 +956,6 @@ OwningOpRef<ModuleOp> QCOProgramBuilder::finalize() {
     qtensor::DeallocOp::create(*this, tensor);
   }
 
-  validQubits.clear();
   validTensors.clear();
 
   // Create constant 0 for successful exit code
