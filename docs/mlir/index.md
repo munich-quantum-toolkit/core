@@ -8,7 +8,9 @@ We define multiple dialects, each with its dedicated purpose:
 
 - The {doc}`QCO dialect <QCO>` uses value semantics and is mainly designed for running optimizations.
 
-Both dialects define various canonicalization and transformations that enable the compilation of quantum programs to native quantum hardware.
+- The {doc}`QTensor dialect <QTensor>` adds support for one-dimensional tensors of qubits with linear typing and is used in the QCO dialect to represent collections of qubits such as registers.
+
+These dialects define various canonicalization and transformations that enable the compilation of quantum programs to native quantum hardware.
 
 For intercompatibility, we provide {doc}`conversions <Conversions>` between dialects.
 So far, this comprises conversions between QC and QCO as well as from QC to QIR.
@@ -18,6 +20,7 @@ So far, this comprises conversions between QC and QCO as well as from QC to QIR.
 
 QC
 QCO
+QTensor
 Conversions
 ```
 

@@ -16,6 +16,7 @@ add_mlir_conversion_library(
   LINK_LIBS
   MLIRQCDialect
   MLIRQCODialect
+  MLIRQTensorDialect
   MLIRArithDialect
   MLIRFuncDialect
   MLIRTransforms

@@ -44,6 +44,7 @@
 #include <utility>
 
 namespace mlir {
+
 using namespace qco;
 
 #define GEN_PASS_DEF_QCOTOJEFF
@@ -241,6 +242,8 @@ static LogicalResult cleanUp(Operation* op, LoweringState& state) {
   return success();
 }
 
+namespace {
+
 /**
  * @brief Converts qco.alloc to jeff.qubit_alloc
  *
@@ -400,7 +403,7 @@ struct ConvertQCOOneTargetZeroParameterToJeff final
   using StatefulOpConversionPattern<QCOOpType>::StatefulOpConversionPattern;
 
   LogicalResult
-  matchAndRewrite(QCOOpType op, typename QCOOpType::Adaptor adaptor,
+  matchAndRewrite(QCOOpType op, QCOOpType::Adaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
     auto& state = this->getState();
 
@@ -516,7 +519,7 @@ struct ConvertQCOOneTargetOneParameterToJeff final
   using StatefulOpConversionPattern<QCOOpType>::StatefulOpConversionPattern;
 
   LogicalResult
-  matchAndRewrite(QCOOpType op, typename QCOOpType::Adaptor adaptor,
+  matchAndRewrite(QCOOpType op, QCOOpType::Adaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
     auto& state = this->getState();
 
@@ -647,7 +650,7 @@ struct ConvertQCOOneTargetThreeParameterToJeff final
   using StatefulOpConversionPattern<QCOOpType>::StatefulOpConversionPattern;
 
   LogicalResult
-  matchAndRewrite(QCOOpType op, typename QCOOpType::Adaptor adaptor,
+  matchAndRewrite(QCOOpType op, QCOOpType::Adaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
     auto& state = this->getState();
 
@@ -698,7 +701,7 @@ struct ConvertQCOTwoTargetZeroParameterToJeff final
   using StatefulOpConversionPattern<QCOOpType>::StatefulOpConversionPattern;
 
   LogicalResult
-  matchAndRewrite(QCOOpType op, typename QCOOpType::Adaptor adaptor,
+  matchAndRewrite(QCOOpType op, QCOOpType::Adaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
     auto& state = this->getState();
 
@@ -1399,5 +1402,7 @@ protected:
     }
   }
 };
+
+} // namespace
 
 } // namespace mlir

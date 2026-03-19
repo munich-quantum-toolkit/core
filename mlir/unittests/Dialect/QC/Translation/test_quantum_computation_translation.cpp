@@ -29,6 +29,8 @@
 #include <ostream>
 #include <string>
 
+namespace {
+
 struct QuantumComputationTranslationTestCase {
   std::string name;
   mqt::test::NamedBuilder<::qc::QuantumComputation> programBuilder;
@@ -36,13 +38,17 @@ struct QuantumComputationTranslationTestCase {
 
   friend std::ostream&
   operator<<(std::ostream& os,
-             const QuantumComputationTranslationTestCase& test) {
-    return os << "QuantumComputationTranslation{" << test.name << ", original="
-              << mqt::test::displayName(test.programBuilder.name)
-              << ", reference="
-              << mqt::test::displayName(test.referenceBuilder.name) << "}";
-  }
+             const QuantumComputationTranslationTestCase& test);
 };
+
+// NOLINTNEXTLINE(llvm-prefer-static-over-anonymous-namespace)
+std::ostream& operator<<(std::ostream& os,
+                         const QuantumComputationTranslationTestCase& test) {
+  return os << "QuantumComputationTranslation{" << test.name
+            << ", original=" << mqt::test::displayName(test.programBuilder.name)
+            << ", reference="
+            << mqt::test::displayName(test.referenceBuilder.name) << "}";
+}
 
 class QuantumComputationTranslationTest
     : public testing::TestWithParam<QuantumComputationTranslationTestCase> {
@@ -58,6 +64,8 @@ protected:
     context->loadAllAvailableDialects();
   }
 };
+
+} // namespace
 
 TEST_P(QuantumComputationTranslationTest, ProgramEquivalence) {
   const auto& [_, programBuilder, referenceBuilder] = GetParam();
