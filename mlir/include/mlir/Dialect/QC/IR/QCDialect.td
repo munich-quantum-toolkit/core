@@ -12,11 +12,11 @@
 include "mlir/IR/DialectBase.td"
 
 def QCDialect : Dialect {
-    let name = "qc";
+  let name = "qc";
 
-    let summary = "The QC (reference semantics) dialect for quantum computing.";
+  let summary = "The QC (reference semantics) dialect for quantum computing.";
 
-    let description = [{
+  let description = [{
         The QC dialect uses **reference semantics** where quantum operations
         modify qubits in place, similar to how hardware physically transforms
         quantum states. This model provides:
@@ -35,9 +35,9 @@ def QCDialect : Dialect {
         ```
     }];
 
-    let cppNamespace = "::mlir::qc";
+  let cppNamespace = "::mlir::qc";
 
-    let useDefaultTypePrinterParser = 1;
+  let useDefaultTypePrinterParser = 1;
 }
 
 #endif // MLIR_DIALECT_QC_IR_QCDIALECT_TD

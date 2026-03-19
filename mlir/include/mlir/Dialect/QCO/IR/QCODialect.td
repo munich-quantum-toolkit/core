@@ -12,11 +12,11 @@
 include "mlir/IR/DialectBase.td"
 
 def QCODialect : Dialect {
-    let name = "qco";
+  let name = "qco";
 
-    let summary = "The QCO (value semantics) dialect for quantum computing.";
+  let summary = "The QCO (value semantics) dialect for quantum computing.";
 
-    let description = [{
+  let description = [{
         The QCO dialect uses **value semantics** where quantum operations
         consume input qubits and produce new output values, following the
         functional programming and SSA paradigm. This model enables:
@@ -35,9 +35,9 @@ def QCODialect : Dialect {
         ```
     }];
 
-    let cppNamespace = "::mlir::qco";
+  let cppNamespace = "::mlir::qco";
 
-    let useDefaultTypePrinterParser = 1;
+  let useDefaultTypePrinterParser = 1;
 }
 
 #endif // MLIR_DIALECT_QCO_IR_QCODIALECT_TD

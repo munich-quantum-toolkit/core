@@ -17,7 +17,8 @@ include "mlir/Pass/PassBase.td"
 
 def MappingPass : Pass<"place-and-route", "mlir::ModuleOp"> {
   let dependentDialects = ["mlir::qco::QCODialect"];
-  let summary = "This pass ensures that a program meets the connectivity constraints of a target architecture.";
+  let summary = "This pass ensures that a program meets the connectivity "
+                "constraints of a target architecture.";
   let description = [{
     This pass maps the dynamically allocated qubits in a quantum program to the static qubits of a target architecture.
     The pass performs both placement and routing of the qubits to ensure that all two-qubit operations in the program
@@ -34,16 +35,17 @@ def MappingPass : Pass<"place-and-route", "mlir::ModuleOp"> {
 
     The cost function of the A* search is defined as follows:
 
-    * `f(n) = g(n) + h(n)`
-    * `g(n) = alpha * depth(n)`
-    * `h(n) = sum(pow(lambda, i) * h(L, p) for [i, L] in enumerate(layers))`
+    - `f(n) = g(n) + h(n)`
+    - `g(n) = alpha * depth(n)`
+    - `h(n) = sum(pow(lambda, i) * h(L, p) for [i, L] in enumerate(layers))`
 
     Where:
-    * `p` is the dynamic-to-static mapping associated with search node `n`.
-    * `layers` is an array of layers with size `1 + nlookahead`.
-    * `depth(n)` returns the distance from the node `n` to the root node.
-    * `dist(i, j)` returns the distance between the qubits `i` and `j` on the target's coupling graph.
-    * `h(L, p) := sum(dist(p[gate.first], p[gate.second]) for gate in L)`
+
+    - `p` is the dynamic-to-static mapping associated with search node `n`.
+    - `layers` is an array of layers with size `1 + nlookahead`.
+    - `depth(n)` returns the distance from the node `n` to the root node.
+    - `dist(i, j)` returns the distance between the qubits `i` and `j` on the target's coupling graph.
+    - `h(L, p) := sum(dist(p[gate.first], p[gate.second]) for gate in L)`
 
     To iteratively refine the mapping, the pass performs multiple forward and backward traversals of the circuit. In
     each traversal, the pass routes the circuit and updates the dynamic-to-static mapping based on the routing decisions
@@ -53,20 +55,20 @@ def MappingPass : Pass<"place-and-route", "mlir::ModuleOp"> {
     The pass option `ntrials` determines how many random initial layouts the pass explores. Per default, the pass always
     explores the identity layout. If compiled with multi-threading on, these trials will be executed in parallel.
   }];
-  let options = [
-    Option<"nlookahead", "nlookahead", "std::size_t", "1",
-           "The number of lookahead steps.">,
-    Option<"alpha", "alpha", "float", "1.0F",
-           "The alpha factor in the cost function. Must be > 0.">,
-    Option<"lambda", "lambda", "float", "0.5F",
-           "The lambda factor in the cost function.">,
-    Option<"niterations", "niterations", "std::size_t", "2",
-           "The number of forwards and backwards traversal to improve the initial layout.">,
-    Option<"ntrials", "ntrials", "std::size_t", "4",
-           "The number of (possibly parallel) random trials of the forwards and backwards mechanism.">,
-    Option<"seed", "seed", "std::size_t", "42",
-           "A seed used for randomization.">
-  ];
+  let options = [Option<"nlookahead", "nlookahead", "std::size_t", "1",
+                        "The number of lookahead steps.">,
+                 Option<"alpha", "alpha", "float", "1.0F",
+                        "The alpha factor in the cost function. Must be > 0.">,
+                 Option<"lambda", "lambda", "float", "0.5F",
+                        "The lambda factor in the cost function.">,
+                 Option<"niterations", "niterations", "std::size_t", "2",
+                        "The number of forwards and backwards traversal to "
+                        "improve the initial layout.">,
+                 Option<"ntrials", "ntrials", "std::size_t", "4",
+                        "The number of (possibly parallel) random trials of "
+                        "the forwards and backwards mechanism.">,
+                 Option<"seed", "seed", "std::size_t", "42",
+                        "A seed used for randomization.">];
 }
 
 #endif // MLIR_DIALECT_QCO_TRANSFORMS_PASSES_TD

@@ -14,7 +14,8 @@ include "mlir/IR/DialectBase.td"
 def QTensorDialect : Dialect {
   let name = "qtensor";
 
-  let summary = "The QTensor dialect for one-dimensional tensors of qubits with linear typing.";
+  let summary = "The QTensor dialect for one-dimensional tensors of qubits "
+                "with linear typing.";
 
   let description = [{
     The QTensor dialect is an adjusted variant of the standard tensor dialect of MLIR that supports linear typing for one-dimensional tensors of qubits.

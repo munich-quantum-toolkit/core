@@ -14,13 +14,13 @@ include "mlir/Dialect/QCO/IR/QCODialect.td"
 include "mlir/IR/AttrTypeBase.td"
 
 class QCOType<string name, string typeMnemonic, list<Trait> traits = []>
-        : TypeDef<QCODialect, name, traits> {
-    let mnemonic = typeMnemonic;
+    : TypeDef<QCODialect, name, traits> {
+  let mnemonic = typeMnemonic;
 }
 
 def QubitType : QCOType<"Qubit", "qubit"> {
-    let summary = "QCO qubit value type";
-    let description = [{
+  let summary = "QCO qubit value type";
+  let description = [{
         The `!qco.qubit` type represents an SSA value holding a quantum bit
         in the QCO dialect. Operations using this type consume input qubits
         and produce new output qubits following value semantics and the SSA

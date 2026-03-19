@@ -18,7 +18,5 @@ def QCOToJeff : Pass<"qco-to-jeff"> {
     Note that this pass is still in development as QCO and Jeff do not have full feature parity yet.
   }];
 
-  let dependentDialects = [
-    "mlir::jeff::JeffDialect",
-  ];
+  let dependentDialects = ["mlir::jeff::JeffDialect"];
 }
