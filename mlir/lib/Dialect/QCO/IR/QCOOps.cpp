@@ -202,6 +202,24 @@ void QCODialect::initialize() {
 // Types
 //===----------------------------------------------------------------------===//
 
+/// Print `!qco.qubit` (dynamic, default) or `!qco.qubit<static>`.
+void QubitType::print(AsmPrinter& printer) const {
+  if (getIsStatic()) {
+    printer << "<static>";
+  }
+}
+
+/// Parse `!qco.qubit` or `!qco.qubit<static>`.
+Type QubitType::parse(AsmParser& parser) {
+  if (succeeded(parser.parseOptionalLess())) {
+    if (parser.parseKeyword("static") || parser.parseGreater()) {
+      return {};
+    }
+    return get(parser.getContext(), /*isStatic=*/true);
+  }
+  return get(parser.getContext(), /*isStatic=*/false);
+}
+
 #define GET_TYPEDEF_CLASSES
 #include "mlir/Dialect/QCO/IR/QCOOpsTypes.cpp.inc"
 

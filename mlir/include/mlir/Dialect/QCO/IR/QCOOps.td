@@ -81,7 +81,12 @@ def AllocOp : QCOOp<"alloc", [MemoryEffects<[MemAlloc]>]> {
 def DeallocOp : QCOOp<"dealloc", [MemoryEffects<[MemFree]>]> {
     let summary = "Deallocate a qubit";
     let description = [{
-        Deallocates a qubit, releasing its resources.
+        Deallocates a qubit.
+
+        In QCO's value/linear semantics, this operation also serves as the sink
+        that consumes the qubit SSA value (ensuring every qubit value is used
+        exactly once). When lowering back to QC (reference semantics), deallocs
+        corresponding to static qubits may be erased.
 
         Example:
         ```mlir
@@ -103,20 +108,29 @@ def StaticOp : QCOOp<"static", [MemoryEffects<[MemAlloc]>]> {
 
         Example:
         ```mlir
-        %q = qco.static 0 : !qco.qubit
+        %q = qco.static 0 : !qco.qubit<static>
         ```
     }];
 
     let arguments = (ins ConfinedAttr<I64Attr, [IntNonNegative]>:$index);
     let results = (outs QubitType:$qubit);
     let assemblyFormat = "$index attr-dict `:` type($qubit)";
+
+    let builders = [
+        OpBuilder<(ins "int64_t":$index), [{
+            build($_builder, $_state, QubitType::get($_builder.getContext(), /*isStatic=*/true),
+                  $_builder.getI64IntegerAttr(index));
+        }]>
+    ];
 }
 
 //===----------------------------------------------------------------------===//
 // Measurement and Reset Operations
 //===----------------------------------------------------------------------===//
 
-def MeasureOp : QCOOp<"measure"> {
+def MeasureOp : QCOOp<"measure",
+            [TypesMatchWith<"qubit output type matches input",
+                            "qubit_in", "qubit_out", "$_self">]> {
     let summary = "Measure a qubit in the computational basis";
     let description = [{
         Measures a qubit in the computational (Z) basis, collapsing the state
@@ -151,7 +165,7 @@ def MeasureOp : QCOOp<"measure"> {
 
     let builders = [
         OpBuilder<(ins "Value":$qubit_in), [{
-            build($_builder, $_state, QubitType::get($_builder.getContext()), $_builder.getI1Type(),
+            build($_builder, $_state, qubit_in.getType(), $_builder.getI1Type(),
                   qubit_in, nullptr, nullptr, nullptr);
         }]>
     ];
@@ -225,7 +239,8 @@ def GPhaseOp : QCOOp<"gphase", traits = [UnitaryOpInterface, ZeroTargetOneParame
     let hasCanonicalizer = 1;
 }
 
-def IdOp : QCOOp<"id", traits = [UnitaryOpInterface, OneTargetZeroParameter]> {
+def IdOp : QCOOp<"id", traits = [UnitaryOpInterface, OneTargetZeroParameter,
+        TypesMatchWith<"result type matches input", "qubit_in", "qubit_out", "$_self">]> {
     let summary = "Apply an Id gate to a qubit";
     let description = [{
         Applies an Id gate to a qubit and returns the transformed qubit.
@@ -248,7 +263,8 @@ def IdOp : QCOOp<"id", traits = [UnitaryOpInterface, OneTargetZeroParameter]> {
     let hasCanonicalizer = 1;
 }
 
-def XOp : QCOOp<"x", traits = [UnitaryOpInterface, OneTargetZeroParameter]> {
+def XOp : QCOOp<"x", traits = [UnitaryOpInterface, OneTargetZeroParameter,
+        TypesMatchWith<"result type matches input", "qubit_in", "qubit_out", "$_self">]> {
     let summary = "Apply an X gate to a qubit";
     let description = [{
         Applies an X gate to a qubit and returns the transformed qubit.
@@ -271,7 +287,8 @@ def XOp : QCOOp<"x", traits = [UnitaryOpInterface, OneTargetZeroParameter]> {
     let hasCanonicalizer = 1;
 }
 
-def YOp : QCOOp<"y", traits = [UnitaryOpInterface, OneTargetZeroParameter]> {
+def YOp : QCOOp<"y", traits = [UnitaryOpInterface, OneTargetZeroParameter,
+        TypesMatchWith<"result type matches input", "qubit_in", "qubit_out", "$_self">]> {
     let summary = "Apply a Y gate to a qubit";
     let description = [{
         Applies a Y gate to a qubit and returns the transformed qubit.
@@ -294,7 +311,8 @@ def YOp : QCOOp<"y", traits = [UnitaryOpInterface, OneTargetZeroParameter]> {
     let hasCanonicalizer = 1;
 }
 
-def ZOp : QCOOp<"z", traits = [UnitaryOpInterface, OneTargetZeroParameter]> {
+def ZOp : QCOOp<"z", traits = [UnitaryOpInterface, OneTargetZeroParameter,
+        TypesMatchWith<"result type matches input", "qubit_in", "qubit_out", "$_self">]> {
     let summary = "Apply a Z gate to a qubit";
     let description = [{
         Applies a Z gate to a qubit and returns the transformed qubit.
@@ -317,7 +335,8 @@ def ZOp : QCOOp<"z", traits = [UnitaryOpInterface, OneTargetZeroParameter]> {
     let hasCanonicalizer = 1;
 }
 
-def HOp : QCOOp<"h", traits = [UnitaryOpInterface, OneTargetZeroParameter]> {
+def HOp : QCOOp<"h", traits = [UnitaryOpInterface, OneTargetZeroParameter,
+        TypesMatchWith<"result type matches input", "qubit_in", "qubit_out", "$_self">]> {
     let summary = "Apply a H gate to a qubit";
     let description = [{
         Applies a H gate to a qubit and returns the transformed qubit.
@@ -340,7 +359,8 @@ def HOp : QCOOp<"h", traits = [UnitaryOpInterface, OneTargetZeroParameter]> {
     let hasCanonicalizer = 1;
 }
 
-def SOp : QCOOp<"s", traits = [UnitaryOpInterface, OneTargetZeroParameter]> {
+def SOp : QCOOp<"s", traits = [UnitaryOpInterface, OneTargetZeroParameter,
+        TypesMatchWith<"result type matches input", "qubit_in", "qubit_out", "$_self">]> {
     let summary = "Apply an S gate to a qubit";
     let description = [{
         Applies an S gate to a qubit and returns the transformed qubit.
@@ -363,7 +383,8 @@ def SOp : QCOOp<"s", traits = [UnitaryOpInterface, OneTargetZeroParameter]> {
     let hasCanonicalizer = 1;
 }
 
-def SdgOp : QCOOp<"sdg", traits = [UnitaryOpInterface, OneTargetZeroParameter]> {
+def SdgOp : QCOOp<"sdg", traits = [UnitaryOpInterface, OneTargetZeroParameter,
+        TypesMatchWith<"result type matches input", "qubit_in", "qubit_out", "$_self">]> {
     let summary = "Apply an Sdg gate to a qubit";
     let description = [{
         Applies an Sdg gate to a qubit and returns the transformed qubit.
@@ -386,7 +407,8 @@ def SdgOp : QCOOp<"sdg", traits = [UnitaryOpInterface, OneTargetZeroParameter]> 
     let hasCanonicalizer = 1;
 }
 
-def TOp : QCOOp<"t", traits = [UnitaryOpInterface, OneTargetZeroParameter]> {
+def TOp : QCOOp<"t", traits = [UnitaryOpInterface, OneTargetZeroParameter,
+        TypesMatchWith<"result type matches input", "qubit_in", "qubit_out", "$_self">]> {
     let summary = "Apply a T gate to a qubit";
     let description = [{
         Applies a T gate to a qubit and returns the transformed qubit.
@@ -409,7 +431,8 @@ def TOp : QCOOp<"t", traits = [UnitaryOpInterface, OneTargetZeroParameter]> {
     let hasCanonicalizer = 1;
 }
 
-def TdgOp : QCOOp<"tdg", traits = [UnitaryOpInterface, OneTargetZeroParameter]> {
+def TdgOp : QCOOp<"tdg", traits = [UnitaryOpInterface, OneTargetZeroParameter,
+        TypesMatchWith<"result type matches input", "qubit_in", "qubit_out", "$_self">]> {
     let summary = "Apply a Tdg gate to a qubit";
     let description = [{
         Applies a Tdg gate to a qubit and returns the transformed qubit.
@@ -432,7 +455,8 @@ def TdgOp : QCOOp<"tdg", traits = [UnitaryOpInterface, OneTargetZeroParameter]> 
     let hasCanonicalizer = 1;
 }
 
-def SXOp : QCOOp<"sx", traits = [UnitaryOpInterface, OneTargetZeroParameter]> {
+def SXOp : QCOOp<"sx", traits = [UnitaryOpInterface, OneTargetZeroParameter,
+        TypesMatchWith<"result type matches input", "qubit_in", "qubit_out", "$_self">]> {
     let summary = "Apply an SX gate to a qubit";
     let description = [{
         Applies an SX gate to a qubit and returns the transformed qubit.
@@ -455,7 +479,8 @@ def SXOp : QCOOp<"sx", traits = [UnitaryOpInterface, OneTargetZeroParameter]> {
     let hasCanonicalizer = 1;
 }
 
-def SXdgOp : QCOOp<"sxdg", traits = [UnitaryOpInterface, OneTargetZeroParameter]> {
+def SXdgOp : QCOOp<"sxdg", traits = [UnitaryOpInterface, OneTargetZeroParameter,
+        TypesMatchWith<"result type matches input", "qubit_in", "qubit_out", "$_self">]> {
     let summary = "Apply an SXdg gate to a qubit";
     let description = [{
         Applies an SXdg gate to a qubit and returns the transformed qubit.
@@ -478,7 +503,8 @@ def SXdgOp : QCOOp<"sxdg", traits = [UnitaryOpInterface, OneTargetZeroParameter]
     let hasCanonicalizer = 1;
 }
 
-def RXOp : QCOOp<"rx", traits = [UnitaryOpInterface, OneTargetOneParameter]> {
+def RXOp : QCOOp<"rx", traits = [UnitaryOpInterface, OneTargetOneParameter,
+        TypesMatchWith<"result type matches input", "qubit_in", "qubit_out", "$_self">]> {
     let summary = "Apply an RX gate to a qubit";
     let description = [{
         Applies an RX gate to a qubit and returns the transformed qubit.
@@ -506,7 +532,8 @@ def RXOp : QCOOp<"rx", traits = [UnitaryOpInterface, OneTargetOneParameter]> {
     let hasCanonicalizer = 1;
 }
 
-def RYOp : QCOOp<"ry", traits = [UnitaryOpInterface, OneTargetOneParameter]> {
+def RYOp : QCOOp<"ry", traits = [UnitaryOpInterface, OneTargetOneParameter,
+        TypesMatchWith<"result type matches input", "qubit_in", "qubit_out", "$_self">]> {
     let summary = "Apply an RY gate to a qubit";
     let description = [{
         Applies an RY gate to a qubit and returns the transformed qubit.
@@ -534,7 +561,8 @@ def RYOp : QCOOp<"ry", traits = [UnitaryOpInterface, OneTargetOneParameter]> {
     let hasCanonicalizer = 1;
 }
 
-def RZOp : QCOOp<"rz", traits = [UnitaryOpInterface, OneTargetOneParameter]> {
+def RZOp : QCOOp<"rz", traits = [UnitaryOpInterface, OneTargetOneParameter,
+        TypesMatchWith<"result type matches input", "qubit_in", "qubit_out", "$_self">]> {
     let summary = "Apply an RZ gate to a qubit";
     let description = [{
         Applies an RZ gate to a qubit and returns the transformed qubit.
@@ -562,7 +590,8 @@ def RZOp : QCOOp<"rz", traits = [UnitaryOpInterface, OneTargetOneParameter]> {
     let hasCanonicalizer = 1;
 }
 
-def POp : QCOOp<"p", traits = [UnitaryOpInterface, OneTargetOneParameter]> {
+def POp : QCOOp<"p", traits = [UnitaryOpInterface, OneTargetOneParameter,
+        TypesMatchWith<"result type matches input", "qubit_in", "qubit_out", "$_self">]> {
     let summary = "Apply a P gate to a qubit";
     let description = [{
         Applies a P gate to a qubit and returns the transformed qubit.
@@ -590,7 +619,8 @@ def POp : QCOOp<"p", traits = [UnitaryOpInterface, OneTargetOneParameter]> {
     let hasCanonicalizer = 1;
 }
 
-def ROp : QCOOp<"r", traits = [UnitaryOpInterface, OneTargetTwoParameter]> {
+def ROp : QCOOp<"r", traits = [UnitaryOpInterface, OneTargetTwoParameter,
+        TypesMatchWith<"result type matches input", "qubit_in", "qubit_out", "$_self">]> {
     let summary = "Apply an R gate to a qubit";
     let description = [{
         Applies an R gate to a qubit and returns the transformed qubit.
@@ -619,7 +649,8 @@ def ROp : QCOOp<"r", traits = [UnitaryOpInterface, OneTargetTwoParameter]> {
     let hasCanonicalizer = 1;
 }
 
-def U2Op : QCOOp<"u2", traits = [UnitaryOpInterface, OneTargetTwoParameter]> {
+def U2Op : QCOOp<"u2", traits = [UnitaryOpInterface, OneTargetTwoParameter,
+        TypesMatchWith<"result type matches input", "qubit_in", "qubit_out", "$_self">]> {
     let summary = "Apply a U2 gate to a qubit";
     let description = [{
         Applies a U2 gate to a qubit and returns the transformed qubit.
@@ -648,7 +679,8 @@ def U2Op : QCOOp<"u2", traits = [UnitaryOpInterface, OneTargetTwoParameter]> {
     let hasCanonicalizer = 1;
 }
 
-def UOp : QCOOp<"u", traits = [UnitaryOpInterface, OneTargetThreeParameter]> {
+def UOp : QCOOp<"u", traits = [UnitaryOpInterface, OneTargetThreeParameter,
+        TypesMatchWith<"result type matches input", "qubit_in", "qubit_out", "$_self">]> {
     let summary = "Apply a U gate to a qubit";
     let description = [{
         Applies a U gate to a qubit and returns the transformed qubit.
@@ -678,7 +710,9 @@ def UOp : QCOOp<"u", traits = [UnitaryOpInterface, OneTargetThreeParameter]> {
     let hasCanonicalizer = 1;
 }
 
-def SWAPOp : QCOOp<"swap", traits = [UnitaryOpInterface, TwoTargetZeroParameter]> {
+def SWAPOp : QCOOp<"swap", traits = [UnitaryOpInterface, TwoTargetZeroParameter,
+        TypesMatchWith<"result type matches input", "qubit0_in", "qubit0_out", "$_self">,
+        TypesMatchWith<"result type matches input", "qubit1_in", "qubit1_out", "$_self">]> {
     let summary = "Apply a SWAP gate to two qubits";
     let description = [{
         Applies a SWAP gate to two qubits and returns the transformed qubits.
@@ -702,7 +736,9 @@ def SWAPOp : QCOOp<"swap", traits = [UnitaryOpInterface, TwoTargetZeroParameter]
     let hasCanonicalizer = 1;
 }
 
-def iSWAPOp : QCOOp<"iswap", traits = [UnitaryOpInterface, TwoTargetZeroParameter]> {
+def iSWAPOp : QCOOp<"iswap", traits = [UnitaryOpInterface, TwoTargetZeroParameter,
+        TypesMatchWith<"result type matches input", "qubit0_in", "qubit0_out", "$_self">,
+        TypesMatchWith<"result type matches input", "qubit1_in", "qubit1_out", "$_self">]> {
     let summary = "Apply a iSWAP gate to two qubits";
     let description = [{
         Applies a iSWAP gate to two qubits and returns the transformed qubits.
@@ -724,7 +760,9 @@ def iSWAPOp : QCOOp<"iswap", traits = [UnitaryOpInterface, TwoTargetZeroParamete
     }];
 }
 
-def DCXOp : QCOOp<"dcx", traits = [UnitaryOpInterface, TwoTargetZeroParameter]> {
+def DCXOp : QCOOp<"dcx", traits = [UnitaryOpInterface, TwoTargetZeroParameter,
+        TypesMatchWith<"result type matches input", "qubit0_in", "qubit0_out", "$_self">,
+        TypesMatchWith<"result type matches input", "qubit1_in", "qubit1_out", "$_self">]> {
     let summary = "Apply a DCX gate to two qubits";
     let description = [{
         Applies a DCX gate to two qubits and returns the transformed qubits.
@@ -748,7 +786,9 @@ def DCXOp : QCOOp<"dcx", traits = [UnitaryOpInterface, TwoTargetZeroParameter]> 
     let hasCanonicalizer = 1;
 }
 
-def ECROp : QCOOp<"ecr", traits = [UnitaryOpInterface, TwoTargetZeroParameter]> {
+def ECROp : QCOOp<"ecr", traits = [UnitaryOpInterface, TwoTargetZeroParameter,
+        TypesMatchWith<"result type matches input", "qubit0_in", "qubit0_out", "$_self">,
+        TypesMatchWith<"result type matches input", "qubit1_in", "qubit1_out", "$_self">]> {
     let summary = "Apply an ECR gate to two qubits";
     let description = [{
         Applies an ECR gate to two qubits and returns the transformed qubits.
@@ -772,7 +812,9 @@ def ECROp : QCOOp<"ecr", traits = [UnitaryOpInterface, TwoTargetZeroParameter]> 
     let hasCanonicalizer = 1;
 }
 
-def RXXOp : QCOOp<"rxx", traits = [UnitaryOpInterface, TwoTargetOneParameter]> {
+def RXXOp : QCOOp<"rxx", traits = [UnitaryOpInterface, TwoTargetOneParameter,
+        TypesMatchWith<"result type matches input", "qubit0_in", "qubit0_out", "$_self">,
+        TypesMatchWith<"result type matches input", "qubit1_in", "qubit1_out", "$_self">]> {
     let summary = "Apply an RXX gate to two qubits";
     let description = [{
         Applies an RXX gate to two qubits and returns the transformed qubits.
@@ -801,7 +843,9 @@ def RXXOp : QCOOp<"rxx", traits = [UnitaryOpInterface, TwoTargetOneParameter]> {
     let hasCanonicalizer = 1;
 }
 
-def RYYOp : QCOOp<"ryy", traits = [UnitaryOpInterface, TwoTargetOneParameter]> {
+def RYYOp : QCOOp<"ryy", traits = [UnitaryOpInterface, TwoTargetOneParameter,
+        TypesMatchWith<"result type matches input", "qubit0_in", "qubit0_out", "$_self">,
+        TypesMatchWith<"result type matches input", "qubit1_in", "qubit1_out", "$_self">]> {
     let summary = "Apply an RYY gate to two qubits";
     let description = [{
         Applies an RYY gate to two qubits and returns the transformed qubits.
@@ -830,7 +874,9 @@ def RYYOp : QCOOp<"ryy", traits = [UnitaryOpInterface, TwoTargetOneParameter]> {
     let hasCanonicalizer = 1;
 }
 
-def RZXOp : QCOOp<"rzx", traits = [UnitaryOpInterface, TwoTargetOneParameter]> {
+def RZXOp : QCOOp<"rzx", traits = [UnitaryOpInterface, TwoTargetOneParameter,
+        TypesMatchWith<"result type matches input", "qubit0_in", "qubit0_out", "$_self">,
+        TypesMatchWith<"result type matches input", "qubit1_in", "qubit1_out", "$_self">]> {
     let summary = "Apply an RZX gate to two qubits";
     let description = [{
         Applies an RZX gate to two qubits and returns the transformed qubits.
@@ -859,7 +905,9 @@ def RZXOp : QCOOp<"rzx", traits = [UnitaryOpInterface, TwoTargetOneParameter]> {
     let hasCanonicalizer = 1;
 }
 
-def RZZOp : QCOOp<"rzz", traits = [UnitaryOpInterface, TwoTargetOneParameter]> {
+def RZZOp : QCOOp<"rzz", traits = [UnitaryOpInterface, TwoTargetOneParameter,
+        TypesMatchWith<"result type matches input", "qubit0_in", "qubit0_out", "$_self">,
+        TypesMatchWith<"result type matches input", "qubit1_in", "qubit1_out", "$_self">]> {
     let summary = "Apply an RZZ gate to two qubits";
     let description = [{
         Applies an RZZ gate to two qubits and returns the transformed qubits.
@@ -888,7 +936,9 @@ def RZZOp : QCOOp<"rzz", traits = [UnitaryOpInterface, TwoTargetOneParameter]> {
     let hasCanonicalizer = 1;
 }
 
-def XXPlusYYOp : QCOOp<"xx_plus_yy", traits = [UnitaryOpInterface, TwoTargetTwoParameter]> {
+def XXPlusYYOp : QCOOp<"xx_plus_yy", traits = [UnitaryOpInterface, TwoTargetTwoParameter,
+        TypesMatchWith<"result type matches input", "qubit0_in", "qubit0_out", "$_self">,
+        TypesMatchWith<"result type matches input", "qubit1_in", "qubit1_out", "$_self">]> {
     let summary = "Apply an XX+YY gate to two qubits";
     let description = [{
         Applies an XX+YY gate to two qubits and returns the transformed qubits.
@@ -918,7 +968,9 @@ def XXPlusYYOp : QCOOp<"xx_plus_yy", traits = [UnitaryOpInterface, TwoTargetTwoP
     let hasCanonicalizer = 1;
 }
 
-def XXMinusYYOp : QCOOp<"xx_minus_yy", traits = [UnitaryOpInterface, TwoTargetTwoParameter]> {
+def XXMinusYYOp : QCOOp<"xx_minus_yy", traits = [UnitaryOpInterface, TwoTargetTwoParameter,
+        TypesMatchWith<"result type matches input", "qubit0_in", "qubit0_out", "$_self">,
+        TypesMatchWith<"result type matches input", "qubit1_in", "qubit1_out", "$_self">]> {
     let summary = "Apply an XX-YY gate to two qubits";
     let description = [{
         Applies an XX-YY gate to two qubits and returns the transformed qubits.
@@ -1009,7 +1061,7 @@ def YieldOp : QCOOp<"yield", traits = [Terminator, ReturnLike]> {
     }];
 
     let arguments = (ins Variadic<QubitType>:$targets);
-    let assemblyFormat = "$targets attr-dict";
+    let assemblyFormat = "$targets attr-dict (`:` type($targets)^)?";
 }
 
 def CtrlOp : QCOOp<"ctrl", traits =

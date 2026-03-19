@@ -90,8 +90,7 @@ Value QCOProgramBuilder::staticQubit(const int64_t index) {
     llvm::reportFatalUsageError("Index must be non-negative");
   }
 
-  auto indexAttr = getI64IntegerAttr(index);
-  auto staticOp = StaticOp::create(*this, indexAttr);
+  auto staticOp = StaticOp::create(*this, index);
   const auto qubit = staticOp.getQubit();
 
   // Track the static qubit as valid
@@ -747,9 +746,8 @@ std::pair<ValueRange, ValueRange> QCOProgramBuilder::ctrl(
 
   auto ctrlOp = CtrlOp::create(*this, controls, targets);
   auto& block = ctrlOp.getBodyRegion().emplaceBlock();
-  const auto qubitType = QubitType::get(getContext());
   for (const auto target : targets) {
-    const auto arg = block.addArgument(qubitType, getLoc());
+    const auto arg = block.addArgument(target.getType(), getLoc());
     updateQubitTracking(target, arg);
   }
   const InsertionGuard guard(*this);
@@ -785,9 +783,8 @@ ValueRange QCOProgramBuilder::inv(
 
   // Add block arguments for all qubits
   auto& block = invOp.getBodyRegion().emplaceBlock();
-  const auto qubitType = QubitType::get(getContext());
   for (const auto qubit : qubits) {
-    const auto arg = block.addArgument(qubitType, getLoc());
+    const auto arg = block.addArgument(qubit.getType(), getLoc());
     updateQubitTracking(qubit, arg);
   }
 

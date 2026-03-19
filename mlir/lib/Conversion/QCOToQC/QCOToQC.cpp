@@ -56,9 +56,9 @@ public:
     // Identity conversion for all types by default
     addConversion([](Type type) { return type; });
 
-    // Convert QCO qubit values to QC qubit references
-    addConversion([ctx](qco::QubitType /*type*/) -> Type {
-      return qc::QubitType::get(ctx);
+    // Convert QCO qubit values to QC qubit references, preserving isStatic
+    addConversion([ctx](qco::QubitType type) -> Type {
+      return qc::QubitType::get(ctx, type.getIsStatic());
     });
   }
 };
@@ -97,22 +97,12 @@ struct ConvertQCOAllocOp final : OpConversionPattern<qco::AllocOp> {
 };
 
 /**
- * @brief Converts qco.dealloc to qc.dealloc (except for static qubits).
+ * @brief Converts qco.dealloc to qc.dealloc (dynamic) or erases it (static).
  *
  * @details
- * Deallocates a qubit, releasing its resources. The OpAdaptor automatically
- * provides the type-converted qubit operand (!qc.qubit instead of
- * !qco.qubit), so we simply pass it through to the new operation.
- *
- * Example transformation:
- * ```mlir
- * qco.dealloc %q_qco : !qco.qubit
- * // becomes:
- * qc.dealloc %q_qc : !qc.qubit
- * ```
- *
- * For static qubits, we erase `qco.dealloc` because QC does
- * not require explicit sinks for static qubit handles.
+ * For dynamic qubits (`!qco.qubit`), lowers to `qc.dealloc`.
+ * For static qubits (`!qco.qubit<static>`), erases the op since QC does not
+ * require explicit deallocation of static qubits.
  */
 struct ConvertQCODeallocOp final : OpConversionPattern<qco::DeallocOp> {
   using OpConversionPattern::OpConversionPattern;
@@ -120,13 +110,12 @@ struct ConvertQCODeallocOp final : OpConversionPattern<qco::DeallocOp> {
   LogicalResult
   matchAndRewrite(qco::DeallocOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
-    auto qcQubit = adaptor.getQubit();
-    if (llvm::isa_and_nonnull<qc::StaticOp>(qcQubit.getDefiningOp())) {
+    if (op.getQubit().getType().getIsStatic()) {
       rewriter.eraseOp(op);
       return success();
     }
 
-    rewriter.replaceOpWithNewOp<qc::DeallocOp>(op, qcQubit);
+    rewriter.replaceOpWithNewOp<qc::DeallocOp>(op, adaptor.getQubit());
     return success();
   }
 };

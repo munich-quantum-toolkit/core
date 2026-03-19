@@ -242,9 +242,8 @@ void CtrlOp::build(
   build(odsBuilder, odsState, controls, targets);
   auto& block = odsState.regions.front()->emplaceBlock();
 
-  const auto qubitType = QubitType::get(odsBuilder.getContext());
   for (size_t i = 0; i < targets.size(); ++i) {
-    block.addArgument(qubitType, odsState.location);
+    block.addArgument(targets[i].getType(), odsState.location);
   }
 
   const OpBuilder::InsertionGuard guard(odsBuilder);
@@ -263,9 +262,8 @@ LogicalResult CtrlOp::verify() {
     return emitOpError(
         "number of block arguments must match the number of targets");
   }
-  const auto qubitType = QubitType::get(getContext());
   for (size_t i = 0; i < numTargets; ++i) {
-    if (block.getArgument(i).getType() != qubitType) {
+    if (block.getArgument(i).getType() != getTargetsIn()[i].getType()) {
       return emitOpError("block argument type at index ")
              << i << " does not match target type";
     }

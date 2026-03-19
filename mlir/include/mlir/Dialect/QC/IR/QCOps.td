@@ -78,10 +78,16 @@ def AllocOp : QCOp<"alloc", [MemoryEffects<[MemAlloc]>]> {
     let hasVerifier = 1;
 }
 
+def DynamicQubit : Type<
+    And<[CPred<"::mlir::isa<::mlir::qc::QubitType>($_self)">,
+         CPred<"!::mlir::cast<::mlir::qc::QubitType>($_self).getIsStatic()">]>,
+    "dynamic qubit type (!qc.qubit)">;
+
 def DeallocOp : QCOp<"dealloc", [MemoryEffects<[MemFree]>]> {
-    let summary = "Deallocate a qubit";
+    let summary = "Deallocate a dynamically allocated qubit";
     let description = [{
-        Deallocates a qubit, releasing its resources.
+        Deallocates a dynamically allocated qubit, releasing its resources.
+        Static qubits (`!qc.qubit<static>`) cannot be deallocated.
 
         Example:
         ```mlir
@@ -89,7 +95,7 @@ def DeallocOp : QCOp<"dealloc", [MemoryEffects<[MemFree]>]> {
         ```
     }];
 
-    let arguments = (ins QubitType:$qubit);
+    let arguments = (ins DynamicQubit:$qubit);
     let assemblyFormat = "$qubit attr-dict `:` type($qubit)";
 
     let hasCanonicalizer = 1;
@@ -104,13 +110,20 @@ def StaticOp : QCOp<"static", [Pure]> {
 
         Example:
         ```mlir
-        %q = qc.static 0 : !qc.qubit
+        %q = qc.static 0 : !qc.qubit<static>
         ```
     }];
 
     let arguments = (ins ConfinedAttr<I64Attr, [IntNonNegative]>:$index);
     let results = (outs QubitType:$qubit);
     let assemblyFormat = "$index attr-dict `:` type($qubit)";
+
+    let builders = [
+        OpBuilder<(ins "int64_t":$index), [{
+            build($_builder, $_state, QubitType::get($_builder.getContext(), /*isStatic=*/true),
+                  $_builder.getI64IntegerAttr(index));
+        }]>
+    ];
 }
 
 //===----------------------------------------------------------------------===//

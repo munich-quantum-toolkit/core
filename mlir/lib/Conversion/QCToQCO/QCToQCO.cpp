@@ -129,42 +129,55 @@ struct ConvertFuncReturnOp final : StatefulOpConversionPattern<func::ReturnOp> {
                   ConversionPatternRewriter& rewriter) const override {
     auto& state = getState();
 
-    // Only insert sinks at function exit (never inside nested modifier
-    // regions).
-    if (state.inNestedRegion == 0) {
-      llvm::SmallVector<Value> liveQubits;
-      liveQubits.reserve(state.qubitMap.size());
-
-      llvm::DenseSet<Value> escapedQubits;
-      for (Value returned : adaptor.getOperands()) {
-        escapedQubits.insert(returned);
-      }
-
-      llvm::DenseSet<Value> seen;
-      for (const auto& [/*qcQubit*/ _, qcoQubit] : state.qubitMap) {
-        if (!escapedQubits.contains(qcoQubit) && seen.insert(qcoQubit).second) {
-          liveQubits.push_back(qcoQubit);
-        }
-      }
-
-      // Sort deterministically (mirrors QCOProgramBuilder::finalize()).
-      llvm::sort(liveQubits, [](Value a, Value b) {
-        auto* opA = a.getDefiningOp();
-        auto* opB = b.getDefiningOp();
-        if (!opA || !opB || opA->getBlock() != opB->getBlock()) {
-          return a.getAsOpaquePointer() < b.getAsOpaquePointer();
-        }
-        return opA->isBeforeInBlock(opB);
-      });
-
-      for (auto qubit : liveQubits) {
-        rewriter.create<qco::DeallocOp>(op.getLoc(), qubit);
-      }
-
-      state.qubitMap.clear();
+    if (state.inNestedRegion != 0) {
+      rewriter.replaceOpWithNewOp<func::ReturnOp>(op, adaptor.getOperands());
+      return success();
     }
 
-    rewriter.replaceOpWithNewOp<func::ReturnOp>(op, adaptor.getOperands());
+    // Build return values from qubitMap (adaptor.getOperands() may carry stale
+    // root values because gate patterns use eraseOp instead of replaceOp).
+    llvm::SmallVector<Value> returnValues;
+    llvm::DenseSet<Value> escapedQubits;
+    returnValues.reserve(op.getNumOperands());
+    for (auto [qcOperand, adaptorOperand] :
+         llvm::zip(op.getOperands(), adaptor.getOperands())) {
+      if (state.qubitMap.contains(qcOperand)) {
+        auto latest = state.qubitMap[qcOperand];
+        returnValues.push_back(latest);
+        escapedQubits.insert(latest);
+      } else {
+        returnValues.push_back(adaptorOperand);
+      }
+    }
+
+    // Collect non-escaped live qubits for deallocation.
+    llvm::SmallVector<Value> liveQubits;
+    liveQubits.reserve(state.qubitMap.size());
+    llvm::DenseSet<Value> seen;
+    for (const auto& [qcQubit, qcoQubit] : state.qubitMap) {
+      if (escapedQubits.contains(qcoQubit) || !seen.insert(qcoQubit).second) {
+        continue;
+      }
+      liveQubits.emplace_back(qcoQubit);
+    }
+
+    // Sort deterministically (mirrors QCOProgramBuilder::finalize()).
+    llvm::sort(liveQubits, [](Value a, Value b) {
+      auto* opA = a.getDefiningOp();
+      auto* opB = b.getDefiningOp();
+      if (!opA || !opB || opA->getBlock() != opB->getBlock()) {
+        return a.getAsOpaquePointer() < b.getAsOpaquePointer();
+      }
+      return opA->isBeforeInBlock(opB);
+    });
+
+    for (Value qubit : liveQubits) {
+      rewriter.create<qco::DeallocOp>(op.getLoc(), qubit);
+    }
+
+    state.qubitMap.clear();
+
+    rewriter.replaceOpWithNewOp<func::ReturnOp>(op, returnValues);
     return success();
   }
 };
@@ -186,9 +199,9 @@ public:
     // Identity conversion for all types by default
     addConversion([](Type type) { return type; });
 
-    // Convert QC qubit references to QCO qubit values
-    addConversion([ctx](qc::QubitType /*type*/) -> Type {
-      return qco::QubitType::get(ctx);
+    // Convert QC qubit references to QCO qubit values, preserving isStatic
+    addConversion([ctx](qc::QubitType type) -> Type {
+      return qco::QubitType::get(ctx, type.getIsStatic());
     });
   }
 };
@@ -1008,11 +1021,11 @@ struct ConvertQCCtrlOp final : StatefulOpConversionPattern<qc::CtrlOp> {
            "QC ctrl region unexpectedly has entry block arguments");
     SmallVector<Value> qcoTargetAliases;
     qcoTargetAliases.reserve(numTargets);
-    const auto qubitType = qco::QubitType::get(qcoOp.getContext());
     const auto opLoc = op.getLoc();
     rewriter.modifyOpInPlace(qcoOp, [&] {
       for (auto i = 0UL; i < numTargets; i++) {
-        qcoTargetAliases.emplace_back(entryBlock.addArgument(qubitType, opLoc));
+        qcoTargetAliases.emplace_back(
+            entryBlock.addArgument(qcoTargets[i].getType(), opLoc));
       }
     });
     state.targetsIn[state.inNestedRegion] = std::move(qcoTargetAliases);
@@ -1092,11 +1105,11 @@ struct ConvertQCInvOp final : StatefulOpConversionPattern<qc::InvOp> {
            "QC inv region unexpectedly has entry block arguments");
     SmallVector<Value> qcoTargetAliases;
     qcoTargetAliases.reserve(numTargets);
-    const auto qubitType = qco::QubitType::get(qcoOp.getContext());
     const auto opLoc = op.getLoc();
     rewriter.modifyOpInPlace(qcoOp, [&] {
       for (auto i = 0UL; i < numTargets; i++) {
-        qcoTargetAliases.emplace_back(entryBlock.addArgument(qubitType, opLoc));
+        qcoTargetAliases.emplace_back(
+            entryBlock.addArgument(qcoTargets[i].getType(), opLoc));
       }
     });
     targetsIn[inNestedRegion] = std::move(qcoTargetAliases);
@@ -1218,9 +1231,9 @@ protected:
     // Conversion of qc types in func.return
     //
     // Note: `func.return` may already be type-legal even though we still need
-    // to insert `qco.dealloc` sinks for remaining live qubits. Therefore, we
-    // make it dynamically illegal unless the lowering state has no remaining
-    // qubits.
+    // to insert sink operations (`qco.dealloc`) for remaining live
+    // qubits. Therefore, we make it dynamically illegal unless the lowering
+    // state has no remaining qubits.
     patterns.add<ConvertFuncReturnOp>(typeConverter, context, &state);
     populateReturnOpTypeConversionPattern(patterns, typeConverter);
     target.addDynamicallyLegalOp<func::ReturnOp>([&](const func::ReturnOp op) {

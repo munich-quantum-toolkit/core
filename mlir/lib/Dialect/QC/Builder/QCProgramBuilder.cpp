@@ -86,9 +86,7 @@ Value QCProgramBuilder::staticQubit(const int64_t index) {
     llvm::reportFatalUsageError("Index must be non-negative");
   }
 
-  // Create the StaticOp with the given index
-  auto indexAttr = getI64IntegerAttr(index);
-  auto staticOp = StaticOp::create(*this, indexAttr);
+  auto staticOp = StaticOp::create(*this, index);
   return staticOp.getQubit();
 }
 
