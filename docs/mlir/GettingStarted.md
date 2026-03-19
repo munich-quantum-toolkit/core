@@ -139,6 +139,34 @@ The following figure illustrates the interplay of operations, blocks, and region
 :align: center
 ```
 
+The control flow dialect (`cf`) is the lower-level equivalent of the structured control flow dialect (`scf`). For each IR that uses the SCF dialect there is an equivalent one in the CF dialect. For example, the IR below is semantically equivalent to the one above that sums up the numbers from 0 to 100. However, it uses the CF instead of the SCF dialect.
+
+```mlir
+func.func @main() {
+    %lb = arith.constant 0 : index
+    %ub = arith.constant 100 : index
+    %step = arith.constant 1 : index
+
+    %sum_0 = arith.constant 0 : i32
+
+    cf.br ^bb1(%lb, %sum_0 : index, i32)
+  ^bb1(%iv: index, %sum_iter: i32):  // 2 preds: ^bb0, ^bb2
+    %cond = arith.cmpi slt, %iv, %ub : index
+    cf.cond_br %cond, ^bb2, ^bb3
+  ^bb2:  // pred: ^bb1
+    %1 = arith.index_cast %iv : index to i32
+    %sum_next = arith.addi %sum_iter, %1 : i32
+    %iv_next = arith.addi %iv, %step : index
+    cf.br ^bb1(%iv_next, %sum_next : index, i32)
+  ^bb3:  // pred: ^bb1
+    return
+  }
+```
+
+Luckily, we don't have to perform this _conversion_ - the transformation from one dialect to another - per hand. The MLIR framework already implements this and many other conversions between the built-in dialects. Furthermore, we can develop custom conversions using the conversion framework which defines exactly how a transformation must look like and under what circumstances the resulting IR is considered valid.
+
+Conversions are a specific instance of transformation _passes_. More generally, a pass in MLIR traverses the IR and optionally modifies it. An example of a non-rewriting pass are analyses passes, which simply collect statistics of the IR. Moreover, multiple passes can be combined into a _pass pipeline_ which executes a series of passes sequentially.
+
 That's it! Now that we've also got all the fundamentals covered, we can move on and explore how the MQT Compiler Collection utilizes MLIR to build a compiler for quantum computing.
 
 ## The MQT Compiler Collection
