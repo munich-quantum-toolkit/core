@@ -31,7 +31,6 @@ def JeffToQCO : Pass<"jeff-to-qco"> {
     "mlir::arith::ArithDialect",
     "mlir::math::MathDialect",
     "mlir::tensor::TensorDialect",
-    "mlir::jeff::JeffDialect",
     "mlir::qco::QCODialect",
   ];
 }
