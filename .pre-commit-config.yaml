@@ -112,7 +112,7 @@ repos:
         types_or: [c++, c, cuda]
         priority: 1
       - id: clang-format
-        name: clang-format (Tablegen)
+        name: clang-format (TableGen)
         types_or: [file]
         files: \.td$
         priority: 1
