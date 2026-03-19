@@ -71,7 +71,8 @@ parseTargetAliasing(OpAsmParser& parser, Region& region,
       // Hard-code QubitType since targets in qco.ctrl are always qubits.
       // This avoids double-binding type($targets_in) in the assembly format
       // while keeping the parser simple and the assembly format clean.
-      newArg.type = QubitType::get(parser.getBuilder().getContext());
+      newArg.type =
+          QubitType::get(parser.getBuilder().getContext(), /*isStatic=*/false);
       blockArgs.push_back(newArg);
 
     } while (succeeded(parser.parseOptionalComma()));

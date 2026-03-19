@@ -31,9 +31,9 @@ void AllocOp::build(OpBuilder& builder, OperationState& result, Value size) {
     assert(*sizeValue > 0 && "qtensor.alloc size must be positive");
   }
 
-  auto resultType =
-      RankedTensorType::get({sizeValue ? *sizeValue : ShapedType::kDynamic},
-                            qco::QubitType::get(builder.getContext()));
+  auto resultType = RankedTensorType::get(
+      {sizeValue ? *sizeValue : ShapedType::kDynamic},
+      qco::QubitType::get(builder.getContext(), /*isStatic=*/false));
   build(builder, result, resultType, size);
 }
 

@@ -65,12 +65,12 @@ def AllocOp : QCOOp<"alloc", [MemoryEffects<[MemAlloc]>]> {
 
     let builders = [
         OpBuilder<(ins), [{
-            build($_builder, $_state, QubitType::get($_builder.getContext()), nullptr, nullptr, nullptr);
+            build($_builder, $_state, QubitType::get($_builder.getContext(), /*isStatic=*/false), nullptr, nullptr, nullptr);
         }]>,
         OpBuilder<(ins "::mlir::StringAttr":$register_name,
                        "::mlir::IntegerAttr":$register_size,
                        "::mlir::IntegerAttr":$register_index), [{
-            build($_builder, $_state, QubitType::get($_builder.getContext()),
+            build($_builder, $_state, QubitType::get($_builder.getContext(), /*isStatic=*/false),
                   register_name, register_size, register_index);
         }]>
     ];

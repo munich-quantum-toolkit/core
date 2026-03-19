@@ -126,8 +126,8 @@ struct ReduceCtrl final : OpRewritePattern<CtrlOp> {
     op->setAttr(opResultSegmentsAttrName, newSegments);
 
     // Add a block argument for the target qubit
-    auto arg = op.getBody()->addArgument(QubitType::get(rewriter.getContext()),
-                                         op.getLoc());
+    auto arg = op.getBody()->addArgument(
+        QubitType::get(rewriter.getContext(), /*isStatic=*/false), op.getLoc());
 
     // Replace the current GPhaseOp with a PhaseOp
     const OpBuilder::InsertionGuard guard(rewriter);
