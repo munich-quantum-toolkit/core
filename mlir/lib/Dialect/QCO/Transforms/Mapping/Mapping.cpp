@@ -489,7 +489,8 @@ private:
     for (const auto [p, q] : enumerate(dynQubits)) {
       const auto hw = layout.getHardwareIndex(p);
       rewriter.setInsertionPoint(q.getDefiningOp());
-      auto op = rewriter.replaceOpWithNewOp<StaticOp>(q.getDefiningOp(), hw);
+      auto op = rewriter.replaceOpWithNewOp<StaticOp>(q.getDefiningOp(),
+                                                      static_cast<int64_t>(hw));
       statics[hw] = llvm::cast<TypedValue<QubitType>>(op.getQubit());
     }
 
@@ -497,7 +498,8 @@ private:
     for (std::size_t p = dynQubits.size(); p < layout.nqubits(); ++p) {
       rewriter.setInsertionPointToStart(&funcBody.front());
       const auto hw = layout.getHardwareIndex(p);
-      auto op = StaticOp::create(rewriter, rewriter.getUnknownLoc(), hw);
+      auto op = StaticOp::create(rewriter, rewriter.getUnknownLoc(),
+                                 static_cast<int64_t>(hw));
       rewriter.setInsertionPoint(funcBody.back().getTerminator());
       DeallocOp::create(rewriter, rewriter.getUnknownLoc(), op.getQubit());
       statics[hw] = llvm::cast<TypedValue<QubitType>>(op.getQubit());

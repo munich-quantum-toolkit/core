@@ -1018,6 +1018,8 @@ def BarrierOp : QCOOp<"barrier", traits = [UnitaryOpInterface]> {
     let summary = "Apply a barrier gate to a set of qubits";
     let description = [{
         Applies a barrier gate to a set of qubits and returns the transformed qubits.
+        Each output qubit type must match its corresponding input type (pairwise
+        type preservation, e.g., disallows !qco.qubit<static> -> !qco.qubit).
 
         Example:
         ```mlir
@@ -1028,6 +1030,8 @@ def BarrierOp : QCOOp<"barrier", traits = [UnitaryOpInterface]> {
     let arguments = (ins Arg<Variadic<QubitType>, "the target qubits", [MemRead]>:$qubits_in);
     let results = (outs Variadic<QubitType>:$qubits_out);
     let assemblyFormat = "$qubits_in attr-dict `:` type($qubits_in) `->` type($qubits_out)";
+
+    let hasVerifier = 1;
 
     let extraClassDeclaration = [{
         size_t getNumQubits() { return getNumTargets(); }
@@ -1083,8 +1087,6 @@ def CtrlOp : QCOOp<"ctrl", traits =
                 UnitaryOpInterface,
                 AttrSizedOperandSegments,
                 AttrSizedResultSegments,
-                SameOperandsAndResultType,
-                SameOperandsAndResultShape,
                 SingleBlockImplicitTerminator<"::mlir::qco::YieldOp">,
                 RecursiveMemoryEffects
             ]> {

@@ -148,8 +148,9 @@ struct ConvertFuncReturnOp final : StatefulOpConversionPattern<func::ReturnOp> {
     // Collect non-escaped live qubits for deallocation.
     llvm::DenseSet<Value> liveQubitsSet;
     for (const auto& [qcQubit, qcoQubit] : state.qubitMap) {
-      if (!escapedQubits.contains(qcoQubit))
+      if (!escapedQubits.contains(qcoQubit)) {
         liveQubitsSet.insert(qcoQubit);
+      }
     }
     llvm::SmallVector<Value> liveQubits(liveQubitsSet.begin(),
                                         liveQubitsSet.end());
@@ -1229,7 +1230,6 @@ protected:
     // qubits. Therefore, we make it dynamically illegal unless the lowering
     // state has no remaining qubits.
     patterns.add<ConvertFuncReturnOp>(typeConverter, context, &state);
-    populateReturnOpTypeConversionPattern(patterns, typeConverter);
     target.addDynamicallyLegalOp<func::ReturnOp>([&](const func::ReturnOp op) {
       return typeConverter.isLegal(op) && state.qubitMap.empty();
     });
