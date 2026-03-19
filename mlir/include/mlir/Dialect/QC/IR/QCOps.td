@@ -27,6 +27,20 @@ class QCOp<string mnemonic, list<Trait> traits = []> :
     Op<QCDialect, mnemonic, traits>;
 
 //===----------------------------------------------------------------------===//
+// Type Constraints
+//===----------------------------------------------------------------------===//
+
+def DynamicQubit : Type<
+    And<[CPred<"::mlir::isa<::mlir::qc::QubitType>($_self)">,
+         CPred<"!::mlir::cast<::mlir::qc::QubitType>($_self).getIsStatic()">]>,
+    "dynamic qubit type (!qc.qubit)">;
+
+def StaticQubit : Type<
+    And<[CPred<"::mlir::isa<::mlir::qc::QubitType>($_self)">,
+         CPred<"::mlir::cast<::mlir::qc::QubitType>($_self).getIsStatic()">]>,
+    "static qubit type (!qc.qubit<static>)">;
+
+//===----------------------------------------------------------------------===//
 // Resource Operations
 //===----------------------------------------------------------------------===//
 
@@ -77,16 +91,6 @@ def AllocOp : QCOp<"alloc", [MemoryEffects<[MemAlloc]>]> {
 
     let hasVerifier = 1;
 }
-
-def DynamicQubit : Type<
-    And<[CPred<"::mlir::isa<::mlir::qc::QubitType>($_self)">,
-         CPred<"!::mlir::cast<::mlir::qc::QubitType>($_self).getIsStatic()">]>,
-    "dynamic qubit type (!qc.qubit)">;
-
-def StaticQubit : Type<
-    And<[CPred<"::mlir::isa<::mlir::qc::QubitType>($_self)">,
-         CPred<"::mlir::cast<::mlir::qc::QubitType>($_self).getIsStatic()">]>,
-    "static qubit type (!qc.qubit<static>)">;
 
 def DeallocOp : QCOp<"dealloc", [MemoryEffects<[MemFree]>]> {
     let summary = "Deallocate a dynamically allocated qubit";

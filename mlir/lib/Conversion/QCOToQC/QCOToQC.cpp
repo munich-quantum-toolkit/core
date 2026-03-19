@@ -99,9 +99,23 @@ struct ConvertQCOAllocOp final : OpConversionPattern<qco::AllocOp> {
  * @brief Converts qco.dealloc to qc.dealloc (dynamic) or erases it (static).
  *
  * @details
- * For dynamic qubits (`!qco.qubit`), lowers to `qc.dealloc`.
+ * For dynamic qubits (`!qco.qubit`), converts to `qc.dealloc`.
  * For static qubits (`!qco.qubit<static>`), erases the op since QC does not
  * require explicit deallocation of static qubits.
+ *
+ * Example transformation (dynamic):
+ * ```mlir
+ * qco.dealloc %q_qco : !qco.qubit
+ * // becomes:
+ * qc.dealloc %q_qc : !qc.qubit
+ * ```
+ *
+ * Example transformation (static):
+ * ```mlir
+ * qco.dealloc %q_qco : !qco.qubit<static>
+ * // becomes:
+ * (erased)
+ * ```
  */
 struct ConvertQCODeallocOp final : OpConversionPattern<qco::DeallocOp> {
   using OpConversionPattern::OpConversionPattern;
@@ -141,7 +155,8 @@ struct ConvertQCOStaticOp final : OpConversionPattern<qco::StaticOp> {
   matchAndRewrite(qco::StaticOp op, OpAdaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
     // Create qc.static with the same index
-    rewriter.replaceOpWithNewOp<qc::StaticOp>(op, op.getIndex());
+    rewriter.replaceOpWithNewOp<qc::StaticOp>(
+        op, static_cast<int64_t>(op.getIndex()));
     return success();
   }
 };

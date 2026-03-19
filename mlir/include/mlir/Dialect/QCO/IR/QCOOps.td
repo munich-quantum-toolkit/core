@@ -85,7 +85,7 @@ def DeallocOp : QCOOp<"dealloc", [MemoryEffects<[MemFree]>]> {
 
         In QCO's value/linear semantics, this operation also serves as the sink
         that consumes the qubit SSA value (ensuring every qubit value is used
-        exactly once). When lowering back to QC (reference semantics), deallocs
+        exactly once). When converting back to QC (reference semantics), deallocs
         corresponding to static qubits may be erased.
 
         Example:
