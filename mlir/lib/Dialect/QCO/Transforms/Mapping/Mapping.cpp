@@ -15,6 +15,7 @@
 #include "mlir/Dialect/QCO/Transforms/Passes.h"
 #include "mlir/Dialect/QCO/Utils/WireIterator.h"
 
+#include <llvm/ADT/DenseMapInfo.h>
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/ADT/TypeSwitch.h>
@@ -69,6 +70,8 @@ private:
    * @brief Specifies the layering direction.
    */
   enum class Direction : std::uint8_t { Forward, Backward };
+
+  struct LayoutInfo;
 
   /**
    * @brief A qubit layout that maps program and hardware indices without
@@ -191,18 +194,6 @@ private:
       return programToHardware_.size();
     }
 
-    void dump() {
-      llvm::dbgs() << "prog= ";
-      for (std::size_t i = 0; i < nqubits(); ++i) {
-        llvm::dbgs() << i << " ";
-      }
-      llvm::dbgs() << "\nhw=   ";
-      for (std::size_t i = 0; i < nqubits(); ++i) {
-        llvm::dbgs() << programToHardware_[i] << ' ';
-      }
-      llvm::dbgs() << '\n';
-    }
-
   protected:
     /**
      * @brief Maps a program qubit index to its hardware index.
@@ -215,8 +206,42 @@ private:
     SmallVector<IndexType> hardwareToProgram_;
 
   private:
+    friend struct MappingPass::LayoutInfo;
+
+    Layout() = default;
     explicit Layout(const std::size_t nqubits)
         : programToHardware_(nqubits), hardwareToProgram_(nqubits) {}
+  };
+
+  /**
+   * @brief Required to use Layout as a key for LLVM maps and sets.
+   */
+  class LayoutInfo {
+    using Info = DenseMapInfo<SmallVector<IndexType>>;
+
+  public:
+    static Layout getEmptyKey() {
+      Layout l;
+      l.programToHardware_ = Info::getEmptyKey();
+      l.hardwareToProgram_ = Info::getEmptyKey();
+      return l;
+    }
+
+    static Layout getTombstoneKey() {
+      Layout l;
+      l.programToHardware_ = Info::getTombstoneKey();
+      l.hardwareToProgram_ = Info::getTombstoneKey();
+      return l;
+    }
+
+    static unsigned getHashValue(const Layout& l) {
+      return Info::getHashValue(l.programToHardware_);
+    }
+
+    static bool isEqual(const Layout& a, const Layout& b) {
+      using Info = DenseMapInfo<decltype(a.programToHardware_)>;
+      return Info::isEqual(a.programToHardware_, b.programToHardware_);
+    }
   };
 
   /**
@@ -507,9 +532,9 @@ private:
    * @brief Perform A* search to find a sequence of SWAPs that makes the
    * two-qubit operations inside the first layer (the front) executable.
    * @details
-   * The iteration budget is then b^{3}, which corresponds to
-   * exhausting all paths of length up to b^{2} in a search tree with branching
-   * factor b. A hard cap prevents impractical runtimes on larger architectures.
+   * The iteration budget is b^{3}, which corresponds to exhausting all paths of
+   * length up to b^{2} in a search tree with branching factor b. A hard cap
+   * prevents impractical runtimes on larger architectures.
    *
    * The branching factor b of the A* search is the product of the
    * architecture's maximum qubit degree and the maximum number of two-qubit
@@ -534,6 +559,7 @@ private:
 
     MinQueue frontier{};
     frontier.emplace(root);
+    DenseSet<Layout, LayoutInfo> discovered{root.layout};
     DenseSet<IndexGate> expansionSet;
 
     std::size_t i = 0;
@@ -549,10 +575,6 @@ private:
       // two neighbouring hardware qubits.
 
       expansionSet.clear();
-      if (!curr.sequence.empty()) {
-        expansionSet.insert(curr.sequence.back());
-      }
-
       for (const IndexGate& gate : layers.front()) {
         for (const auto prog : {gate.first, gate.second}) {
           const auto hw0 = curr.layout.getHardwareIndex(prog);
@@ -563,7 +585,17 @@ private:
               continue;
             }
 
-            frontier.emplace(curr, swap, layers, arch, params);
+            Node child(curr, swap, layers, arch, params);
+
+            // Multiple sequences of SWAPs may lead to the same layout.
+            // The if below ensures that we don't visit the same layout twice.
+            // TODO: In the future, should fidelities be ever considered, the
+            // sequence of SWAPs matters - so this will become more difficult.
+            if (!discovered.insert(child.layout).second) {
+              continue;
+            }
+
+            frontier.emplace(std::move(child));
           }
         }
       }
