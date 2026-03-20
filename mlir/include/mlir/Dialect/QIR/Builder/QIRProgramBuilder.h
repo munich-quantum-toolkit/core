@@ -889,8 +889,14 @@ private:
   /// Cache static pointers for reuse
   llvm::DenseMap<int64_t, Value> ptrCache;
 
-  /// Map from (register_name, register_index) to result pointer
-  llvm::DenseMap<std::pair<llvm::StringRef, int64_t>, Value> registerResultMap;
+  /// Set of qubit-array pointers
+  llvm::DenseSet<Value> qubitArrays;
+
+  /// Map from register name to result-array pointer
+  llvm::StringMap<Value> resultArrays;
+
+  /// Map from result index to result pointer
+  llvm::DenseMap<int64_t, Value> resultPtrs;
 
   /// Track qubit and result counts for QIR metadata
   QIRMetadata metadata_;
