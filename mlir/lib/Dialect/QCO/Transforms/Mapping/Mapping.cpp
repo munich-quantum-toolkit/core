@@ -58,6 +58,60 @@ namespace mlir::qco {
 
 namespace {
 
+/**
+ * @brief Align declared qubit result types with operand types after placement.
+ *
+ * @details Replacing `qco.alloc` with `qco.static` reroutes SSA uses, so
+ * operand types become `!qco.qubit<static>` while many gates still declare
+ * `!qco.qubit` results from before placement. Ops with `TypesMatchWith` /
+ * same-type traits then fail verification until results are refreshed.
+ */
+void synchronizeMappedQubitTypes(Region& region) {
+  region.walk<WalkOrder::PreOrder>([](Operation* op) {
+    // Region entry arguments are fixed at build time; operand Value types
+    // update after alloc→static placement but block argument types do not.
+    if (auto ctrl = dyn_cast<CtrlOp>(op)) {
+      Block& body = *ctrl.getBody();
+      for (unsigned i = 0; i < ctrl.getNumTargets(); ++i) {
+        const Type expected = ctrl.getTargetsIn()[i].getType();
+        if (body.getArgument(i).getType() != expected) {
+          body.getArgument(i).setType(expected);
+        }
+      }
+    } else if (auto inv = dyn_cast<InvOp>(op)) {
+      Block& body = *inv.getBody();
+      for (unsigned i = 0; i < inv.getNumTargets(); ++i) {
+        const Type expected = inv.getQubitsIn()[i].getType();
+        if (body.getArgument(i).getType() != expected) {
+          body.getArgument(i).setType(expected);
+        }
+      }
+    }
+
+    const unsigned numOp = op->getNumOperands();
+    const unsigned numRes = op->getNumResults();
+    if (numOp == numRes) {
+      for (unsigned i = 0; i < numOp; ++i) {
+        const auto qIn = dyn_cast<QubitType>(op->getOperand(i).getType());
+        const auto qOut = dyn_cast<QubitType>(op->getResult(i).getType());
+        if (qIn && qOut && qIn != qOut) {
+          op->getResult(i).setType(qIn);
+        }
+      }
+      return WalkResult::advance();
+    }
+    // e.g. qco.measure: qubit in, (qubit_out, i1)
+    if (numOp >= 1 && numRes >= 1) {
+      const auto qIn = dyn_cast<QubitType>(op->getOperand(0).getType());
+      const auto qOut = dyn_cast<QubitType>(op->getResult(0).getType());
+      if (qIn && qOut && qIn != qOut) {
+        op->getResult(0).setType(qIn);
+      }
+    }
+    return WalkResult::advance();
+  });
+}
+
 struct MappingPass : impl::MappingPassBase<MappingPass> {
 private:
   using QubitValue = TypedValue<QubitType>;
@@ -379,6 +433,7 @@ protected:
       }
 
       commitTrial(*best, dyn, func.getFunctionBody(), rewriter);
+      synchronizeMappedQubitTypes(func.getFunctionBody());
     }
   }
 
