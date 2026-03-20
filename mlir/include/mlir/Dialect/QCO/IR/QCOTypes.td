@@ -36,13 +36,11 @@ def QubitType : QCOType<"Qubit", "qubit"> {
         %q2 = qco.x %q1 : !qco.qubit -> !qco.qubit
         ```
     }];
-    let parameters = (ins DefaultValuedParameter<"bool", "false">:$isStatic);
-    let builders = [
-        TypeBuilder<(ins), [{
+  let parameters = (ins DefaultValuedParameter<"bool", "false">:$isStatic);
+  let builders = [TypeBuilder<(ins), [{
             return $_get($_ctxt, /*isStatic=*/false);
-        }]>
-    ];
-    let hasCustomAssemblyFormat = 1;
+        }]>];
+  let hasCustomAssemblyFormat = 1;
 }
 
 #endif // MLIR_DIALECT_QCO_IR_QCOTYPES_TD

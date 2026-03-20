@@ -30,15 +30,16 @@ class QCOp<string mnemonic, list<Trait> traits = []>
 // Type Constraints
 //===----------------------------------------------------------------------===//
 
-def DynamicQubit : Type<
-    And<[CPred<"::mlir::isa<::mlir::qc::QubitType>($_self)">,
-         CPred<"!::mlir::cast<::mlir::qc::QubitType>($_self).getIsStatic()">]>,
-    "dynamic qubit type (!qc.qubit)">;
+def DynamicQubit
+    : Type<And<[CPred<"::mlir::isa<::mlir::qc::QubitType>($_self)">,
+                CPred<"!::mlir::cast<::mlir::qc::QubitType>($_self)."
+                      "getIsStatic()">]>,
+           "dynamic qubit type (!qc.qubit)">;
 
-def StaticQubit : Type<
-    And<[CPred<"::mlir::isa<::mlir::qc::QubitType>($_self)">,
-         CPred<"::mlir::cast<::mlir::qc::QubitType>($_self).getIsStatic()">]>,
-    "static qubit type (!qc.qubit<static>)">;
+def StaticQubit : Type<And<[CPred<"::mlir::isa<::mlir::qc::QubitType>($_self)">,
+                            CPred<"::mlir::cast<::mlir::qc::QubitType>($_self)."
+                                  "getIsStatic()">]>,
+                       "static qubit type (!qc.qubit<static>)">;
 
 //===----------------------------------------------------------------------===//
 // Resource Operations
@@ -82,7 +83,8 @@ def AllocOp : QCOp<"alloc", [MemoryEffects<[MemAlloc]>]> {
         }]>,
                   OpBuilder<(ins "::mlir::StringAttr":$register_name,
                                 "::mlir::IntegerAttr":$register_size,
-                                "::mlir::IntegerAttr":$register_index), [{
+                                "::mlir::IntegerAttr":$register_index),
+                            [{
             build($_builder, $_state, QubitType::get($_builder.getContext(), /*isStatic=*/false),
                   register_name, register_size, register_index);
         }]>];
@@ -128,8 +130,7 @@ def StaticOp : QCOp<"static", [Pure]> {
   let builders = [OpBuilder<(ins "int64_t":$index), [{
           build($_builder, $_state, QubitType::get($_builder.getContext(), /*isStatic=*/true),
                 $_builder.getI64IntegerAttr(index));
-      }]>
-  ];
+      }]>];
 }
 
 //===----------------------------------------------------------------------===//
