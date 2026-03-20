@@ -26,7 +26,6 @@
 #include <mlir/Support/LogicalResult.h>
 #include <mlir/Transforms/DialectConversion.h>
 
-#include <cstdint>
 #include <utility>
 
 namespace mlir {
@@ -156,7 +155,8 @@ struct ConvertQCOStaticOp final : OpConversionPattern<qco::StaticOp> {
   matchAndRewrite(qco::StaticOp op, OpAdaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
     // Create qc.static with the same index
-    rewriter.replaceOpWithNewOp<qc::StaticOp>(op, op.getIndex());
+    rewriter.replaceOpWithNewOp<qc::StaticOp>(
+        op, static_cast<int64_t>(op.getIndex()));
     return success();
   }
 };
