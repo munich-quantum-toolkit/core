@@ -12,6 +12,7 @@
 
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
+#include "mlir/Dialect/QCO/Utils/ValueOrdering.h"
 #include "mlir/Dialect/QTensor/IR/QTensorDialect.h"
 #include "mlir/Dialect/QTensor/IR/QTensorOps.h"
 #include "mlir/Dialect/Utils/Utils.h"
@@ -921,19 +922,10 @@ OwningOpRef<ModuleOp> QCOProgramBuilder::finalize() {
         "Insertion point is not in entry block of main function");
   }
 
-  auto blockOrderComparator = [](Value a, Value b) {
-    auto* opA = a.getDefiningOp();
-    auto* opB = b.getDefiningOp();
-    if (!opA || !opB || opA->getBlock() != opB->getBlock()) {
-      return a.getAsOpaquePointer() < b.getAsOpaquePointer();
-    }
-    return opA->isBeforeInBlock(opB);
-  };
-
   // Automatically deallocate all still-allocated qubits
   // Sort qubits for deterministic output
   llvm::SmallVector<Value> sortedQubits(validQubits.begin(), validQubits.end());
-  llvm::sort(sortedQubits, blockOrderComparator);
+  llvm::sort(sortedQubits, SSABeforeForDeallocOrder{});
 
   for (auto qubit : sortedQubits) {
     DeallocOp::create(*this, qubit);
@@ -943,7 +935,7 @@ OwningOpRef<ModuleOp> QCOProgramBuilder::finalize() {
   // Sort tensors for deterministic output
   llvm::SmallVector<Value> sortedTensors(validTensors.begin(),
                                          validTensors.end());
-  llvm::sort(sortedTensors, blockOrderComparator);
+  llvm::sort(sortedTensors, SSABeforeForDeallocOrder{});
 
   for (auto tensor : sortedTensors) {
     qtensor::DeallocOp::create(*this, tensor);

@@ -41,6 +41,38 @@ void staticQubitsWithOps(QCProgramBuilder& b) {
   b.h(q1);
 }
 
+void staticQubitsWithParametricOps(QCProgramBuilder& b) {
+  auto q0 = b.staticQubit(0);
+  auto q1 = b.staticQubit(1);
+  b.rx(std::numbers::pi / 4., q0);
+  b.p(std::numbers::pi / 2., q1);
+}
+
+void staticQubitsWithTwoTargetOps(QCProgramBuilder& b) {
+  auto q0 = b.staticQubit(0);
+  auto q1 = b.staticQubit(1);
+  b.swap(q0, q1);
+}
+
+void staticQubitsWithCtrl(QCProgramBuilder& b) {
+  auto q0 = b.staticQubit(0);
+  auto q1 = b.staticQubit(1);
+  b.cx(q0, q1);
+}
+
+void staticQubitsWithInv(QCProgramBuilder& b) {
+  auto q0 = b.staticQubit(0);
+  b.inv([&]() { b.t(q0); });
+}
+
+void mixedStaticDynamicQubits(QCProgramBuilder& b) {
+  auto q0 = b.staticQubit(0);
+  auto q1 = b.allocQubit();
+  b.swap(q0, q1);
+  b.h(q0);
+  b.h(q1);
+}
+
 void allocDeallocPair(QCProgramBuilder& b) {
   auto q = b.allocQubit();
   b.dealloc(q);

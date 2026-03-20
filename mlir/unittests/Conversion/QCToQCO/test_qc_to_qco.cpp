@@ -121,7 +121,22 @@ INSTANTIATE_TEST_SUITE_P(
                         MQT_NAMED_BUILDER(qco::staticQubits)},
         QCToQCOTestCase{"StaticQubitsWithOps",
                         MQT_NAMED_BUILDER(qc::staticQubitsWithOps),
-                        MQT_NAMED_BUILDER(qco::staticQubitsWithOps)}));
+                        MQT_NAMED_BUILDER(qco::staticQubitsWithOps)},
+        QCToQCOTestCase{"StaticQubitsWithParametricOps",
+                        MQT_NAMED_BUILDER(qc::staticQubitsWithParametricOps),
+                        MQT_NAMED_BUILDER(qco::staticQubitsWithParametricOps)},
+        QCToQCOTestCase{"StaticQubitsWithTwoTargetOps",
+                        MQT_NAMED_BUILDER(qc::staticQubitsWithTwoTargetOps),
+                        MQT_NAMED_BUILDER(qco::staticQubitsWithTwoTargetOps)},
+        QCToQCOTestCase{"StaticQubitsWithCtrl",
+                        MQT_NAMED_BUILDER(qc::staticQubitsWithCtrl),
+                        MQT_NAMED_BUILDER(qco::staticQubitsWithCtrl)},
+        QCToQCOTestCase{"StaticQubitsWithInv",
+                        MQT_NAMED_BUILDER(qc::staticQubitsWithInv),
+                        MQT_NAMED_BUILDER(qco::staticQubitsWithInv)},
+        QCToQCOTestCase{"MixedStaticDynamicQubits",
+                        MQT_NAMED_BUILDER(qc::mixedStaticDynamicQubits),
+                        MQT_NAMED_BUILDER(qco::mixedStaticDynamicQubits)}));
 /// @}
 
 /// \name QCToQCO/Modifiers/InvOp.cpp

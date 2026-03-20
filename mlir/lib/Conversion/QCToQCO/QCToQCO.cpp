@@ -14,6 +14,7 @@
 #include "mlir/Dialect/QC/IR/QCOps.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
+#include "mlir/Dialect/QCO/Utils/ValueOrdering.h"
 
 #include <llvm/ADT/DenseMap.h>
 #include <llvm/ADT/STLExtras.h>
@@ -147,25 +148,18 @@ struct ConvertFuncReturnOp final : StatefulOpConversionPattern<func::ReturnOp> {
 
     // Collect non-escaped live qubits for deallocation.
     llvm::DenseSet<Value> liveQubits;
-    for (const auto& [qcQubit, qcoQubit] : state.qubitMap) {
+    for (Value qcoQubit : llvm::make_second_range(state.qubitMap)) {
       if (!escapedQubits.contains(qcoQubit)) {
-        liveQubitsSet.insert(qcoQubit);
+        liveQubits.insert(qcoQubit);
       }
     }
-    llvm::SmallVector<Value> liveQubits(liveQubitsSet.begin(),
-                                        liveQubitsSet.end());
+    // Copy to a vector before sorting: DenseSet iterators are not
+    // random-access.
+    llvm::SmallVector<Value> liveQubitsSorted(liveQubits.begin(),
+                                              liveQubits.end());
+    llvm::sort(liveQubitsSorted, SSABeforeForDeallocOrder{});
 
-    // Sort deterministically (mirrors QCOProgramBuilder::finalize()).
-    llvm::sort(liveQubits, [](Value a, Value b) {
-      auto* opA = a.getDefiningOp();
-      auto* opB = b.getDefiningOp();
-      if (!opA || !opB || opA->getBlock() != opB->getBlock()) {
-        return a.getAsOpaquePointer() < b.getAsOpaquePointer();
-      }
-      return opA->isBeforeInBlock(opB);
-    });
-
-    for (Value qubit : liveQubits) {
+    for (Value qubit : liveQubitsSorted) {
       rewriter.create<qco::DeallocOp>(op.getLoc(), qubit);
     }
 
@@ -305,8 +299,7 @@ struct ConvertQCStaticOp final : StatefulOpConversionPattern<qc::StaticOp> {
     auto qcQubit = op.getQubit();
 
     // Create new qco.static operation with the same index
-    auto qcoOp = qco::StaticOp::create(rewriter, op.getLoc(),
-                                       static_cast<int64_t>(op.getIndex()));
+    auto qcoOp = qco::StaticOp::create(rewriter, op.getLoc(), op.getIndex());
 
     // Collect QCO qubit SSA value
     auto qcoQubit = qcoOp.getQubit();

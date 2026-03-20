@@ -12,6 +12,8 @@
 
 #include "mlir/Dialect/QIR/Builder/QIRProgramBuilder.h"
 
+#include <numbers>
+
 namespace mlir::qir {
 
 void emptyQIR([[maybe_unused]] QIRProgramBuilder& builder) {}
@@ -35,6 +37,39 @@ void staticQubits(QIRProgramBuilder& b) {
 void staticQubitsWithOps(QIRProgramBuilder& b) {
   auto q0 = b.staticQubit(0);
   auto q1 = b.staticQubit(1);
+  b.h(q0);
+  b.h(q1);
+}
+
+void staticQubitsWithParametricOps(QIRProgramBuilder& b) {
+  auto q0 = b.staticQubit(0);
+  auto q1 = b.staticQubit(1);
+  b.rx(std::numbers::pi / 4., q0);
+  b.p(std::numbers::pi / 2., q1);
+}
+
+void staticQubitsWithTwoTargetOps(QIRProgramBuilder& b) {
+  auto q0 = b.staticQubit(0);
+  auto q1 = b.staticQubit(1);
+  b.swap(q0, q1);
+}
+
+void staticQubitsWithCtrl(QIRProgramBuilder& b) {
+  auto q0 = b.staticQubit(0);
+  auto q1 = b.staticQubit(1);
+  b.cx(q0, q1);
+}
+
+void staticQubitsWithInv(QIRProgramBuilder& b) {
+  auto q0 = b.staticQubit(0);
+  b.tdg(q0);
+}
+
+void mixedStaticDynamicQubits(QIRProgramBuilder& b) {
+  auto q0 = b.staticQubit(0);
+  auto qDyn = b.allocQubitRegister(1);
+  auto q1 = qDyn[0];
+  b.swap(q0, q1);
   b.h(q0);
   b.h(q1);
 }

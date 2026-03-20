@@ -256,24 +256,15 @@ void CtrlOp::build(
 }
 
 LogicalResult CtrlOp::verify() {
-  // Pairwise input->output type equality for controls and targets separately
-  // (allows !qco.qubit and !qco.qubit<static> to differ between
-  // controls/targets)
-  for (size_t i = 0; i < getNumControls(); ++i) {
-    if (getControlsIn()[i].getType() != getControlsOut()[i].getType()) {
-      return emitOpError("qco.ctrl control ")
-             << i << " input type must match output type (got "
-             << getControlsIn()[i].getType() << " vs "
-             << getControlsOut()[i].getType() << ")";
-    }
+  // Allows !qco.qubit and !qco.qubit<static> to differ between controls and
+  // targets, but requires pairwise equality within each group.
+  if (!llvm::equal(getControlsIn().getTypes(), getControlsOut().getTypes())) {
+    return emitOpError("qco.ctrl control qubit input types must match output "
+                       "types pairwise");
   }
-  for (size_t i = 0; i < getNumTargets(); ++i) {
-    if (getTargetsIn()[i].getType() != getTargetsOut()[i].getType()) {
-      return emitOpError("qco.ctrl target ")
-             << i << " input type must match output type (got "
-             << getTargetsIn()[i].getType() << " vs "
-             << getTargetsOut()[i].getType() << ")";
-    }
+  if (!llvm::equal(getTargetsIn().getTypes(), getTargetsOut().getTypes())) {
+    return emitOpError("qco.ctrl target qubit input types must match output "
+                       "types pairwise");
   }
 
   auto& block = *getBody();

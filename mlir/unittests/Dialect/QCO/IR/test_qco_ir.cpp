@@ -127,61 +127,6 @@ TEST_F(QCOTest, DirectIfBuilder) {
                                                    refBuilder.get()));
 }
 
-TEST_F(QCOTest, StaticQubitTypePropagation) {
-  auto staticType = QubitType::get(context.get(), /*isStatic=*/true);
-  auto dynamicType = QubitType::get(context.get(), /*isStatic=*/false);
-
-  qco::QCOProgramBuilder builder(context.get());
-  builder.initialize();
-
-  auto sQ = StaticOp::create(builder, 0);
-  auto dQ = AllocOp::create(builder);
-
-  // One-target-zero-parameter: static in → static out
-  auto hStatic = HOp::create(builder, sQ.getQubit());
-  EXPECT_EQ(hStatic.getQubitOut().getType(), staticType);
-
-  // One-target-zero-parameter: dynamic in → dynamic out
-  auto hDynamic = HOp::create(builder, dQ.getResult());
-  EXPECT_EQ(hDynamic.getQubitOut().getType(), dynamicType);
-
-  // One-target-one-parameter: static in → static out
-  auto pStatic = POp::create(builder, hStatic.getQubitOut(), 0.5);
-  EXPECT_EQ(pStatic.getQubitOut().getType(), staticType);
-
-  // One-target-two-parameter: static in → static out
-  auto rStatic = ROp::create(builder, pStatic.getQubitOut(), 0.5, 0.3);
-  EXPECT_EQ(rStatic.getQubitOut().getType(), staticType);
-
-  // One-target-three-parameter: static in → static out
-  auto uStatic = UOp::create(builder, rStatic.getQubitOut(), 0.1, 0.2, 0.3);
-  EXPECT_EQ(uStatic.getQubitOut().getType(), staticType);
-
-  // Two-target-zero-parameter: preserves both types independently
-  auto swapOp =
-      SWAPOp::create(builder, uStatic.getQubitOut(), hDynamic.getQubitOut());
-  EXPECT_EQ(swapOp.getQubit0Out().getType(), staticType);
-  EXPECT_EQ(swapOp.getQubit1Out().getType(), dynamicType);
-
-  // Two-target-one-parameter: preserves both types independently
-  auto rxxOp =
-      RXXOp::create(builder, swapOp.getQubit0Out(), swapOp.getQubit1Out(), 0.5);
-  EXPECT_EQ(rxxOp.getQubit0Out().getType(), staticType);
-  EXPECT_EQ(rxxOp.getQubit1Out().getType(), dynamicType);
-
-  // Two-target-two-parameter: preserves both types independently
-  auto xxpyOp = XXPlusYYOp::create(builder, rxxOp.getQubit0Out(),
-                                   rxxOp.getQubit1Out(), 0.5, 0.3);
-  EXPECT_EQ(xxpyOp.getQubit0Out().getType(), staticType);
-  EXPECT_EQ(xxpyOp.getQubit1Out().getType(), dynamicType);
-
-  DeallocOp::create(builder, xxpyOp.getQubit0Out());
-  DeallocOp::create(builder, xxpyOp.getQubit1Out());
-  auto module = builder.finalize();
-  ASSERT_TRUE(module);
-  EXPECT_TRUE(verify(*module).succeeded());
-}
-
 /// \name QCO/SCF/IfOp.cpp
 /// @{
 INSTANTIATE_TEST_SUITE_P(

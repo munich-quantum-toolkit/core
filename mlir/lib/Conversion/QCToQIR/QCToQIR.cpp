@@ -341,7 +341,7 @@ struct ConvertQCStaticQIR final : StatefulOpConversionPattern<StaticOp> {
   LogicalResult
   matchAndRewrite(StaticOp op, OpAdaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
-    const auto index = static_cast<int64_t>(op.getIndex());
+    const auto index = op.getIndex();
     auto& state = getState();
     // Get or create a pointer to the qubit
     Value val{};
