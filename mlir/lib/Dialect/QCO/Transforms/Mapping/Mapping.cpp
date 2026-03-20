@@ -30,6 +30,7 @@
 #include <mlir/IR/PatternMatch.h>
 #include <mlir/IR/Threading.h>
 #include <mlir/IR/Value.h>
+#include <mlir/IR/Visitors.h>
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/WalkResult.h>
 
@@ -56,8 +57,6 @@ namespace mlir::qco {
 #define GEN_PASS_DEF_MAPPINGPASS
 #include "mlir/Dialect/QCO/Transforms/Passes.h.inc"
 
-namespace {
-
 /**
  * @brief Align declared qubit result types with operand types after placement.
  *
@@ -66,7 +65,7 @@ namespace {
  * `!qco.qubit` results from before placement. Ops with `TypesMatchWith` /
  * same-type traits then fail verification until results are refreshed.
  */
-void synchronizeMappedQubitTypes(Region& region) {
+static void synchronizeMappedQubitTypes(Region& region) {
   region.walk<WalkOrder::PreOrder>([](Operation* op) {
     // Region entry arguments are fixed at build time; operand Value types
     // update after alloc→static placement but block argument types do not.
@@ -111,6 +110,8 @@ void synchronizeMappedQubitTypes(Region& region) {
     return WalkResult::advance();
   });
 }
+
+namespace {
 
 struct MappingPass : impl::MappingPassBase<MappingPass> {
 private:
