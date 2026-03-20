@@ -168,7 +168,7 @@ struct ConvertFuncReturnOp final : StatefulOpConversionPattern<func::ReturnOp> {
     llvm::sort(liveQubitsSorted, SSAOrder{});
 
     for (Value qubit : liveQubitsSorted) {
-      rewriter.create<qco::DeallocOp>(op.getLoc(), qubit);
+      qco::DeallocOp::create(rewriter, op.getLoc(), qubit);
     }
 
     state.qubitMap.erase(funcRegion);
