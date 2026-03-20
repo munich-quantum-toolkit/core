@@ -19,6 +19,7 @@
 #include <llvm/ADT/DenseMap.h>
 #include <llvm/ADT/DenseSet.h>
 #include <llvm/ADT/STLExtras.h>
+#include <llvm/ADT/SmallVector.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/Func/Transforms/FuncConversions.h>
 #include <mlir/IR/MLIRContext.h>
@@ -43,7 +44,6 @@ using namespace qc;
 #include "mlir/Conversion/QCToQCO/QCToQCO.h.inc"
 
 namespace {
-
 /**
  * @brief State object for tracking qubit value flow during conversion
  *
@@ -123,6 +123,7 @@ public:
 private:
   LoweringState* state_;
 };
+} // namespace
 
 /**
  * @brief Helper function to look up the latest QCO qubit value for a given QC
@@ -134,27 +135,27 @@ private:
  * @return The latest QCO qubit value corresponding to the given QC qubit
  * reference
  */
-[[nodiscard]] Value lookupMappedQubit(llvm::DenseMap<Value, Value>& qubitMap,
-                                      Value qcQubit) {
+[[nodiscard]] static Value
+lookupMappedQubit(llvm::DenseMap<Value, Value>& qubitMap, Value qcQubit) {
   auto it = qubitMap.find(qcQubit);
   assert(it != qubitMap.end() && "QC qubit not found");
   return it->second;
 }
 
 /** @brief Returns whether lowering currently processes a modifier body. */
-[[nodiscard]] bool isInsideModifier(const LoweringState& state) {
+[[nodiscard]] static bool isInsideModifier(const LoweringState& state) {
   return !state.modifierFrames.empty();
 }
 
 /** @brief Returns the active modifier frame. */
-[[nodiscard]] LoweringState::ModifierFrame&
+[[nodiscard]] static LoweringState::ModifierFrame&
 currentModifierFrame(LoweringState& state) {
   assert(isInsideModifier(state) && "expected active modifier frame");
   return state.modifierFrames.back();
 }
 
 /** @brief Finds the nearest region-local qubit map containing @p qcQubit. */
-[[nodiscard]] llvm::DenseMap<Value, Value>*
+[[nodiscard]] static llvm::DenseMap<Value, Value>*
 findMappedQubitMap(LoweringState& state, Operation* anchor, Value qcQubit) {
   for (Region* current = anchor->getParentRegion(); current != nullptr;
        current = current->getParentRegion()) {
@@ -167,8 +168,8 @@ findMappedQubitMap(LoweringState& state, Operation* anchor, Value qcQubit) {
 }
 
 /** @brief Resolves the latest QCO SSA value for a QC qubit reference. */
-[[nodiscard]] Value lookupMappedQubit(LoweringState& state, Operation* anchor,
-                                      Value qcQubit) {
+[[nodiscard]] static Value lookupMappedQubit(LoweringState& state,
+                                             Operation* anchor, Value qcQubit) {
   if (isInsideModifier(state)) {
     auto& frame = currentModifierFrame(state);
     if (auto it = frame.currentQubits.find(qcQubit);
@@ -183,8 +184,8 @@ findMappedQubitMap(LoweringState& state, Operation* anchor, Value qcQubit) {
 }
 
 /** @brief Updates the latest QCO SSA value for a QC qubit reference. */
-void assignMappedQubit(LoweringState& state, Operation* anchor, Value qcQubit,
-                       Value qcoQubit) {
+static void assignMappedQubit(LoweringState& state, Operation* anchor,
+                              Value qcQubit, Value qcoQubit) {
   if (isInsideModifier(state)) {
     auto& frame = currentModifierFrame(state);
     if (auto it = frame.currentQubits.find(qcQubit);
@@ -204,9 +205,9 @@ void assignMappedQubit(LoweringState& state, Operation* anchor, Value qcQubit,
 
 /** @brief Resolves a range of QC qubits to their latest QCO values. */
 template <typename Range>
-[[nodiscard]] SmallVector<Value> resolveMappedQubits(LoweringState& state,
-                                                     Operation* anchor,
-                                                     const Range& qcQubits) {
+[[nodiscard]] static SmallVector<Value>
+resolveMappedQubits(LoweringState& state, Operation* anchor,
+                    const Range& qcQubits) {
   return llvm::to_vector(llvm::map_range(qcQubits, [&](Value qcQubit) {
     return lookupMappedQubit(state, anchor, qcQubit);
   }));
@@ -214,8 +215,9 @@ template <typename Range>
 
 /** @brief Updates mappings for matching QC and QCO qubit ranges. */
 template <typename QcRange, typename QcoRange>
-void assignMappedQubits(LoweringState& state, Operation* anchor,
-                        const QcRange& qcQubits, const QcoRange& qcoQubits) {
+static void assignMappedQubits(LoweringState& state, Operation* anchor,
+                               const QcRange& qcQubits,
+                               const QcoRange& qcoQubits) {
   for (auto [qcQubit, qcoQubit] : llvm::zip_equal(qcQubits, qcoQubits)) {
     assignMappedQubit(state, anchor, qcQubit, qcoQubit);
   }
@@ -223,7 +225,7 @@ void assignMappedQubits(LoweringState& state, Operation* anchor,
 
 /** @brief Collects the target qubits of a variadic QC unitary op. */
 template <typename OpType>
-[[nodiscard]] SmallVector<Value> collectTargets(OpType op) {
+[[nodiscard]] static SmallVector<Value> collectTargets(OpType op) {
   SmallVector<Value> targets;
   targets.reserve(op.getNumTargets());
   for (size_t i = 0; i < op.getNumTargets(); ++i) {
@@ -233,8 +235,8 @@ template <typename OpType>
 }
 
 /** @brief Pushes a new modifier frame seeded with aliased target values. */
-void pushModifierFrame(LoweringState& state, ValueRange qcTargets,
-                       ValueRange qcoTargets) {
+static void pushModifierFrame(LoweringState& state, ValueRange qcTargets,
+                              ValueRange qcoTargets) {
   auto& [yieldOrder, currentQubits] = state.modifierFrames.emplace_back();
   llvm::append_range(yieldOrder, qcTargets);
   for (auto [qcTarget, qcoTarget] : llvm::zip_equal(qcTargets, qcoTargets)) {
@@ -243,16 +245,16 @@ void pushModifierFrame(LoweringState& state, ValueRange qcTargets,
 }
 
 /** @brief Pops the active modifier frame after lowering its yield. */
-void popModifierFrame(LoweringState& state) {
+static void popModifierFrame(LoweringState& state) {
   assert(isInsideModifier(state) && "expected active modifier frame");
   state.modifierFrames.pop_back();
 }
 
 /** @brief Adds entry block aliases for modifier target values. */
 template <typename OpType>
-[[nodiscard]] SmallVector<Value> addModifierAliases(OpType op,
-                                                    ValueRange qcoTargets,
-                                                    PatternRewriter& rewriter) {
+[[nodiscard]] static SmallVector<Value>
+addModifierAliases(OpType op, ValueRange qcoTargets,
+                   PatternRewriter& rewriter) {
   auto& entryBlock = op.getRegion().front();
   SmallVector<Value> aliases;
   aliases.reserve(qcoTargets.size());
@@ -264,6 +266,8 @@ template <typename OpType>
   });
   return aliases;
 }
+
+namespace {
 
 /**
  * @brief Converts func.return and sinks remaining live qubits.
