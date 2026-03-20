@@ -237,7 +237,6 @@ private:
     }
 
     static bool isEqual(const Layout& a, const Layout& b) {
-      using Info = DenseMapInfo<decltype(a.programToHardware_)>;
       return Info::isEqual(a.programToHardware_, b.programToHardware_);
     }
   };
@@ -275,19 +274,23 @@ private:
 
     /**
      * @brief Construct a non-root node from its parent node. Apply the given
-     * swap to the layout of the parent node and evaluate the cost.
+     * swap to the layout of the parent node.
      */
-    Node(const Node& parent, IndexGate swap, ArrayRef<Layer> layers,
-         const Architecture& arch, const Parameters& params)
+    Node(const Node& parent, IndexGate swap)
         : sequence(parent.sequence), layout(parent.layout), f(0) {
       // Apply node-specific swap to given layout.
       layout.swap(swap.first, swap.second);
 
       // Add swap to sequence.
       sequence.emplace_back(swap);
+    }
 
-      // Evaluate cost function.
-      f = g(params.alpha) + h(layers, arch, params); // NOLINT
+    /**
+     * @brief Evaluate the cost function.
+     */
+    void evalCost(ArrayRef<Layer> layers, const Architecture& arch,
+                  const Parameters& params) {
+      f = g(params.alpha) + h(layers, arch, params);
     }
 
     /**
@@ -577,22 +580,24 @@ private:
         for (const auto prog : {gate.first, gate.second}) {
           const auto hw0 = curr.layout.getHardwareIndex(prog);
           for (const auto hw1 : arch.neighboursOf(hw0)) {
-            /// Ensure consistent hashing/comparison.
+            // Ensure consistent hashing/comparison.
             const IndexGate swap = std::minmax(hw0, hw1);
             if (!expansionSet.insert(swap).second) {
               continue;
             }
 
-            Node child(curr, swap, layers, arch, params);
-
             // Multiple sequences of SWAPs may lead to the same layout.
-            // The if below ensures that we don't visit the same layout twice.
+            // The discovered set ensures that we do not visit the same layout
+            // multiple times. Only after ensuring that the layout hasn't been
+            // discovered so far, we evaluate the "expensive" cost function.
             // TODO: In the future, should fidelities be ever considered, the
             // sequence of SWAPs matters - so this will become more difficult.
+
+            Node child(curr, swap);
             if (!discovered.insert(child.layout).second) {
               continue;
             }
-
+            child.evalCost(layers, arch, params);
             frontier.emplace(std::move(child));
           }
         }
