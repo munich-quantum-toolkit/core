@@ -530,9 +530,9 @@ private:
    * @brief Perform A* search to find a sequence of SWAPs that makes the
    * two-qubit operations inside the first layer (the front) executable.
    * @details
-   * The iteration budget is b^{3}, which corresponds to exhausting all paths of
-   * length up to b^{2} in a search tree with branching factor b. A hard cap
-   * prevents impractical runtimes on larger architectures.
+   * The iteration budget is b^{3} node expansions, i.e. roughly a depth-3
+   * search in a tree with branching factor b. A hard cap prevents impractical
+   * runtimes on larger architectures.
    *
    * The branching factor b of the A* search is the product of the
    * architecture's maximum qubit degree and the maximum number of two-qubit
