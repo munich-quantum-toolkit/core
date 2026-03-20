@@ -27,10 +27,9 @@ def JeffToQCO : Pass<"jeff-to-qco"> {
     - Support for multiple functions is currently limited
   }];
 
-  let dependentDialects = [
-    "mlir::arith::ArithDialect",
-    "mlir::math::MathDialect",
-    "mlir::tensor::TensorDialect",
-    "mlir::qco::QCODialect",
+  let dependentDialects = ["mlir::arith::ArithDialect",
+                           "mlir::math::MathDialect",
+                           "mlir::tensor::TensorDialect",
+                           "mlir::qco::QCODialect",
   ];
 }

@@ -16,7 +16,5 @@ def QCToQCO : Pass<"qc-to-qco"> {
     It handles the transformation of qubit references in QC to qubit values in QCO, ensuring that the semantics of quantum operations are preserved during the conversion process.
   }];
 
-  let dependentDialects = [
-    "mlir::qco::QCODialect",
-  ];
+  let dependentDialects = ["mlir::qco::QCODialect"];
 }
