@@ -23,6 +23,7 @@
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OperationSupport.h>
 #include <mlir/IR/PatternMatch.h>
+#include <mlir/IR/Region.h>
 #include <mlir/IR/Value.h>
 #include <mlir/IR/ValueRange.h>
 #include <mlir/Support/LLVM.h>
@@ -73,8 +74,13 @@ namespace {
  * - %q2 after the X gate
  */
 struct LoweringState {
-  /// Map from original QC qubit references to their latest QCO SSA values
-  llvm::DenseMap<Value, Value> qubitMap;
+  /// Per-region map from QC qubit references to latest QCO SSA values.
+  ///
+  /// @details Keys are `Operation::getParentRegion()` for ops being converted
+  /// (typically a `func.func` body, or a `qc.ctrl` / `qc.inv` region). This
+  /// avoids clearing state at the first `func.return` while later functions
+  /// still convert.
+  llvm::DenseMap<Region*, llvm::DenseMap<Value, Value>> qubitMap;
 
   /// Modifier information
   int64_t inNestedRegion = 0;
@@ -129,6 +135,8 @@ struct ConvertFuncReturnOp final : StatefulOpConversionPattern<func::ReturnOp> {
   matchAndRewrite(func::ReturnOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
     auto& state = getState();
+    Region* funcRegion = op->getParentRegion();
+    auto& map = state.qubitMap[funcRegion];
 
     // Build return values from qubitMap (adaptor.getOperands() may carry stale
     // root values because gate patterns use eraseOp instead of replaceOp).
@@ -137,8 +145,8 @@ struct ConvertFuncReturnOp final : StatefulOpConversionPattern<func::ReturnOp> {
     returnValues.reserve(op.getNumOperands());
     for (auto [qcOperand, adaptorOperand] :
          llvm::zip(op.getOperands(), adaptor.getOperands())) {
-      if (state.qubitMap.contains(qcOperand)) {
-        auto latest = state.qubitMap[qcOperand];
+      if (map.contains(qcOperand)) {
+        auto latest = map[qcOperand];
         returnValues.emplace_back(latest);
         escapedQubits.insert(latest);
       } else {
@@ -148,7 +156,7 @@ struct ConvertFuncReturnOp final : StatefulOpConversionPattern<func::ReturnOp> {
 
     // Collect non-escaped live qubits for deallocation.
     llvm::DenseSet<Value> liveQubits;
-    for (Value qcoQubit : llvm::make_second_range(state.qubitMap)) {
+    for (Value qcoQubit : llvm::make_second_range(map)) {
       if (!escapedQubits.contains(qcoQubit)) {
         liveQubits.insert(qcoQubit);
       }
@@ -163,7 +171,7 @@ struct ConvertFuncReturnOp final : StatefulOpConversionPattern<func::ReturnOp> {
       rewriter.create<qco::DeallocOp>(op.getLoc(), qubit);
     }
 
-    state.qubitMap.clear();
+    state.qubitMap.erase(funcRegion);
 
     rewriter.replaceOpWithNewOp<func::ReturnOp>(op, returnValues);
     return success();
@@ -218,7 +226,7 @@ struct ConvertQCAllocOp final : StatefulOpConversionPattern<qc::AllocOp> {
   LogicalResult
   matchAndRewrite(qc::AllocOp op, OpAdaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
-    auto& qubitMap = getState().qubitMap;
+    auto& qubitMap = getState().qubitMap[op->getParentRegion()];
     auto qcQubit = op.getResult();
 
     // Create the qco.alloc operation with preserved register metadata
@@ -257,7 +265,7 @@ struct ConvertQCDeallocOp final : StatefulOpConversionPattern<qc::DeallocOp> {
   LogicalResult
   matchAndRewrite(qc::DeallocOp op, OpAdaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
-    auto& qubitMap = getState().qubitMap;
+    auto& qubitMap = getState().qubitMap[op->getParentRegion()];
     auto qcQubit = op.getQubit();
 
     // Look up the latest QCO value for this QC qubit
@@ -295,7 +303,7 @@ struct ConvertQCStaticOp final : StatefulOpConversionPattern<qc::StaticOp> {
   LogicalResult
   matchAndRewrite(qc::StaticOp op, OpAdaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
-    auto& qubitMap = getState().qubitMap;
+    auto& qubitMap = getState().qubitMap[op->getParentRegion()];
     auto qcQubit = op.getQubit();
 
     // Create new qco.static operation with the same index
@@ -344,7 +352,7 @@ struct ConvertQCMeasureOp final : StatefulOpConversionPattern<qc::MeasureOp> {
   LogicalResult
   matchAndRewrite(qc::MeasureOp op, OpAdaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
-    auto& qubitMap = getState().qubitMap;
+    auto& qubitMap = getState().qubitMap[op->getParentRegion()];
     auto qcQubit = op.getQubit();
 
     // Get the latest QCO qubit value from the state map
@@ -395,7 +403,7 @@ struct ConvertQCResetOp final : StatefulOpConversionPattern<qc::ResetOp> {
   LogicalResult
   matchAndRewrite(qc::ResetOp op, OpAdaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
-    auto& qubitMap = getState().qubitMap;
+    auto& qubitMap = getState().qubitMap[op->getParentRegion()];
     auto qcQubit = op.getQubit();
 
     // Get the latest QCO qubit value from the state map
@@ -480,7 +488,7 @@ struct ConvertQCOneTargetZeroParameterToQCO final
   matchAndRewrite(QCOpType op, QCOpType::Adaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
     auto& state = this->getState();
-    auto& qubitMap = state.qubitMap;
+    auto& qubitMap = state.qubitMap[op->getParentRegion()];
     const auto inNestedRegion = state.inNestedRegion;
 
     // Get the latest QCO qubit
@@ -537,7 +545,7 @@ struct ConvertQCOneTargetOneParameterToQCO final
   matchAndRewrite(QCOpType op, QCOpType::Adaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
     auto& state = this->getState();
-    auto& qubitMap = state.qubitMap;
+    auto& qubitMap = state.qubitMap[op->getParentRegion()];
     const auto inNestedRegion = state.inNestedRegion;
 
     // Get the latest QCO qubit
@@ -595,7 +603,7 @@ struct ConvertQCOneTargetTwoParameterToQCO final
   matchAndRewrite(QCOpType op, QCOpType::Adaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
     auto& state = this->getState();
-    auto& qubitMap = state.qubitMap;
+    auto& qubitMap = state.qubitMap[op->getParentRegion()];
     const auto inNestedRegion = state.inNestedRegion;
 
     // Get the latest QCO qubit
@@ -653,7 +661,7 @@ struct ConvertQCOneTargetThreeParameterToQCO final
   matchAndRewrite(QCOpType op, QCOpType::Adaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
     auto& state = this->getState();
-    auto& qubitMap = state.qubitMap;
+    auto& qubitMap = state.qubitMap[op->getParentRegion()];
     const auto inNestedRegion = state.inNestedRegion;
 
     // Get the latest QCO qubit
@@ -713,7 +721,7 @@ struct ConvertQCTwoTargetZeroParameterToQCO final
   matchAndRewrite(QCOpType op, QCOpType::Adaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
     auto& state = this->getState();
-    auto& qubitMap = state.qubitMap;
+    auto& qubitMap = state.qubitMap[op->getParentRegion()];
     const auto inNestedRegion = state.inNestedRegion;
 
     // Get the latest QCO qubits
@@ -779,7 +787,7 @@ struct ConvertQCTwoTargetOneParameterToQCO final
   matchAndRewrite(QCOpType op, QCOpType::Adaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
     auto& state = this->getState();
-    auto& qubitMap = state.qubitMap;
+    auto& qubitMap = state.qubitMap[op->getParentRegion()];
     const auto inNestedRegion = state.inNestedRegion;
 
     // Get the latest QCO qubits
@@ -846,7 +854,7 @@ struct ConvertQCTwoTargetTwoParameterToQCO final
   matchAndRewrite(QCOpType op, QCOpType::Adaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
     auto& state = this->getState();
-    auto& qubitMap = state.qubitMap;
+    auto& qubitMap = state.qubitMap[op->getParentRegion()];
     const auto inNestedRegion = state.inNestedRegion;
 
     // Get the latest QCO qubits
@@ -908,7 +916,7 @@ struct ConvertQCBarrierOp final : StatefulOpConversionPattern<qc::BarrierOp> {
   matchAndRewrite(qc::BarrierOp op, OpAdaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
     auto& state = getState();
-    auto& qubitMap = state.qubitMap;
+    auto& qubitMap = state.qubitMap[op->getParentRegion()];
 
     // Get QCO qubits from state map
     auto qcQubits = op.getQubits();
@@ -957,7 +965,7 @@ struct ConvertQCCtrlOp final : StatefulOpConversionPattern<qc::CtrlOp> {
   matchAndRewrite(qc::CtrlOp op, OpAdaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
     auto& state = getState();
-    auto& qubitMap = state.qubitMap;
+    auto& qubitMap = state.qubitMap[op->getParentRegion()];
 
     // Get QCO controls from state map
     auto qcControls = op.getControls();
@@ -1047,7 +1055,11 @@ struct ConvertQCInvOp final : StatefulOpConversionPattern<qc::InvOp> {
   LogicalResult
   matchAndRewrite(qc::InvOp op, OpAdaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
-    auto& [qubitMap, inNestedRegion, targetsIn, targetsOut] = getState();
+    auto& state = getState();
+    auto& qubitMap = state.qubitMap[op->getParentRegion()];
+    auto& inNestedRegion = state.inNestedRegion;
+    auto& targetsIn = state.targetsIn;
+    auto& targetsOut = state.targetsOut;
 
     // Get QCO targets from state map
     const auto numTargets = op.getNumTargets();
@@ -1225,7 +1237,11 @@ protected:
     // state has no remaining qubits.
     patterns.add<ConvertFuncReturnOp>(typeConverter, context, &state);
     target.addDynamicallyLegalOp<func::ReturnOp>([&](const func::ReturnOp op) {
-      return typeConverter.isLegal(op) && state.qubitMap.empty();
+      if (!typeConverter.isLegal(op)) {
+        return false;
+      }
+      const auto it = state.qubitMap.find(op->getParentRegion());
+      return it == state.qubitMap.end() || it->second.empty();
     });
 
     // Conversion of qc types in func.call
