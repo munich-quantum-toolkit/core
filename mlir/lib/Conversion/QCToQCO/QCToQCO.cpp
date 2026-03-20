@@ -165,7 +165,7 @@ struct ConvertFuncReturnOp final : StatefulOpConversionPattern<func::ReturnOp> {
     // random-access.
     llvm::SmallVector<Value> liveQubitsSorted(liveQubits.begin(),
                                               liveQubits.end());
-    llvm::sort(liveQubitsSorted, SSABeforeForDeallocOrder{});
+    llvm::sort(liveQubitsSorted, SSAOrder{});
 
     for (Value qubit : liveQubitsSorted) {
       rewriter.create<qco::DeallocOp>(op.getLoc(), qubit);

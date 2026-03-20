@@ -16,13 +16,12 @@
 namespace mlir::qco {
 
 /**
- * @brief Strict weak ordering for sorting SSA values before inserting deallocs.
+ * @brief Deterministic order for SSA values.
  *
- * @details Matches QCOProgramBuilder::finalize(): use block order when both
- * defining ops are in the same block; otherwise fall back to opaque pointer
- * order for a deterministic total order.
+ * @details Uses block order when both defining ops are in the same block;
+ * otherwise fall back to opaque pointer order for a deterministic total order.
  */
-struct SSABeforeForDeallocOrder {
+struct SSAOrder {
   bool operator()(Value a, Value b) const {
     auto* opA = a.getDefiningOp();
     auto* opB = b.getDefiningOp();

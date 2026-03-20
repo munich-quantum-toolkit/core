@@ -925,7 +925,7 @@ OwningOpRef<ModuleOp> QCOProgramBuilder::finalize() {
   // Automatically deallocate all still-allocated qubits
   // Sort qubits for deterministic output
   llvm::SmallVector<Value> sortedQubits(validQubits.begin(), validQubits.end());
-  llvm::sort(sortedQubits, SSABeforeForDeallocOrder{});
+  llvm::sort(sortedQubits, SSAOrder{});
 
   for (auto qubit : sortedQubits) {
     DeallocOp::create(*this, qubit);
@@ -935,7 +935,7 @@ OwningOpRef<ModuleOp> QCOProgramBuilder::finalize() {
   // Sort tensors for deterministic output
   llvm::SmallVector<Value> sortedTensors(validTensors.begin(),
                                          validTensors.end());
-  llvm::sort(sortedTensors, SSABeforeForDeallocOrder{});
+  llvm::sort(sortedTensors, SSAOrder{});
 
   for (auto tensor : sortedTensors) {
     qtensor::DeallocOp::create(*this, tensor);
