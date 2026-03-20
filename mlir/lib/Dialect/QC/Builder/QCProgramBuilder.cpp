@@ -503,13 +503,12 @@ OwningOpRef<ModuleOp> QCProgramBuilder::finalize() {
         "Insertion point is not in entry block of main function");
   }
 
-  // llvm::SmallVector<Value> freeQubits;
-  // for (auto qubit : allocatedQubits) {
-  //   auto memref = qubit.getDefiningOp<memref::LoadOp>();
-  //   if (!memref) {
-  //     freeQubits.emplace_back(qubit);
-  //   }
-  // }
+  llvm::SmallVector<Value> freeQubits;
+  for (auto qubit : allocatedQubits) {
+    if (!llvm::isa<memref::LoadOp>(qubit.getDefiningOp())) {
+      freeQubits.emplace_back(qubit);
+    }
+  }
 
   auto blockOrderComparator = [](Value a, Value b) {
     auto* opA = a.getDefiningOp();
@@ -522,15 +521,12 @@ OwningOpRef<ModuleOp> QCProgramBuilder::finalize() {
 
   // Automatically deallocate all still-allocated qubits
   // Sort qubits for deterministic output
-  llvm::SmallVector<Value> sortedQubits(allocatedQubits.begin(),
-                                        allocatedQubits.end());
+  llvm::SmallVector<Value> sortedQubits(freeQubits.begin(), freeQubits.end());
   llvm::sort(sortedQubits, blockOrderComparator);
 
   for (auto qubit : sortedQubits) {
     DeallocOp::create(*this, qubit);
   }
-
-  allocatedQubits.clear();
 
   // Automatically deallocate all still-allocated memrefs
   // Sort memrefs for deterministic output
@@ -542,6 +538,7 @@ OwningOpRef<ModuleOp> QCProgramBuilder::finalize() {
     memref::DeallocOp::create(*this, memref);
   }
 
+  allocatedQubits.clear();
   allocatedMemrefs.clear();
 
   // Create constant 0 for successful exit code

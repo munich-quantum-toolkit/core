@@ -20,6 +20,7 @@
 #include <llvm/Support/ErrorHandling.h>
 #include <mlir/Dialect/LLVMIR/LLVMDialect.h>
 #include <mlir/Dialect/LLVMIR/LLVMTypes.h>
+#include <mlir/Dialect/MemRef/IR/MemRef.h>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/BuiltinTypes.h>
@@ -67,15 +68,9 @@ void QIRProgramBuilder::initialize() {
   measurementsBlock = mainFuncOp.addBlock();
   outputBlock = mainFuncOp.addBlock();
 
-  // Create exit code constant in entry block (where constants belong) and add
-  // QIR initialization call in entry block (after exit code constant)
+  // Create exit code constant in entry block
   setInsertionPointToStart(entryBlock);
-  auto zeroOp = LLVM::ZeroOp::create(*this, ptrType);
   exitCode = intConstant(0);
-  const auto initType = LLVM::LLVMFunctionType::get(voidType, ptrType);
-  auto initFunc =
-      getOrCreateFunctionDeclaration(*this, module, QIR_INITIALIZE, initType);
-  LLVM::CallOp::create(*this, initFunc, zeroOp.getResult());
 
   // Add unconditional branches between blocks
   setInsertionPointToEnd(entryBlock);
@@ -106,28 +101,8 @@ Value QIRProgramBuilder::doubleConstant(double value) {
 }
 
 Value QIRProgramBuilder::staticQubit(const int64_t index) {
-  checkFinalized();
-
-  if (index < 0) {
-    llvm::reportFatalUsageError("Index must be non-negative");
-  }
-
-  // Check cache
-  Value val{};
-  if (const auto it = ptrCache.find(index); it != ptrCache.end()) {
-    val = it->second;
-  } else {
-    val = createPointerFromIndex(*this, getLoc(), index);
-    // Cache for reuse
-    ptrCache[index] = val;
-  }
-
-  // Update qubit count
-  if (std::cmp_greater_equal(index, metadata_.numQubits)) {
-    metadata_.numQubits = static_cast<size_t>(index) + 1;
-  }
-
-  return val;
+  // TODO: Figure this out
+  llvm::reportFatalInternalError("Currently not implemented");
 }
 
 SmallVector<Value> QIRProgramBuilder::allocQubitRegister(const int64_t size) {
@@ -137,11 +112,34 @@ SmallVector<Value> QIRProgramBuilder::allocQubitRegister(const int64_t size) {
     llvm::reportFatalUsageError("Size must be positive");
   }
 
+  // Save current insertion point
+  const InsertionGuard guard(*this);
+
+  // Insert allocations and constants in entry block
+  setInsertionPoint(entryBlock->getTerminator());
+
   SmallVector<Value> qubits;
   qubits.reserve(size);
 
+  auto allocFnSignature = LLVM::LLVMFunctionType::get(
+      LLVM::LLVMVoidType::get(getContext()), {getI64Type(), ptrType, ptrType});
+  auto allocFnDecl = getOrCreateFunctionDeclaration(
+      *this, module, QIR_QUBIT_ARRAY_ALLOC, allocFnSignature);
+
+  auto array =
+      LLVM::AllocaOp::create(*this, ptrType, ptrType, intConstant(size));
+  auto zero = LLVM::ZeroOp::create(*this, ptrType);
+  auto alloc = LLVM::CallOp::create(
+      *this, allocFnDecl,
+      ValueRange{intConstant(size), array.getResult(), zero.getResult()});
+
+  qubitArrays.insert(array.getResult());
+
   for (int64_t i = 0; i < size; ++i) {
-    qubits.push_back(staticQubit(static_cast<int64_t>(metadata_.numQubits)));
+    auto gepOp = LLVM::GEPOp::create(*this, ptrType, ptrType, array.getResult(),
+                                     ValueRange{intConstant(i)});
+    auto loadOp = LLVM::LoadOp::create(*this, ptrType, gepOp.getResult());
+    qubits.push_back(loadOp.getResult());
   }
 
   return qubits;
@@ -159,22 +157,29 @@ QIRProgramBuilder::allocClassicalBitRegister(const int64_t size,
   // Save current insertion point
   const InsertionGuard guard(*this);
 
-  // Insert in measurements block (before branch)
-  setInsertionPoint(measurementsBlock->getTerminator());
+  // Insert allocations and constants in entry block
+  setInsertionPoint(entryBlock->getTerminator());
 
-  const auto numResults = static_cast<int64_t>(metadata_.numResults);
+  auto allocFnSignature = LLVM::LLVMFunctionType::get(
+      LLVM::LLVMVoidType::get(getContext()), {getI64Type(), ptrType, ptrType});
+  auto allocFnDecl = getOrCreateFunctionDeclaration(
+      *this, module, QIR_RESULT_ARRAY_ALLOC, allocFnSignature);
+
+  auto array =
+      LLVM::AllocaOp::create(*this, ptrType, ptrType, intConstant(size));
+  auto zero = LLVM::ZeroOp::create(*this, ptrType);
+  auto alloc = LLVM::CallOp::create(
+      *this, allocFnDecl,
+      ValueRange{intConstant(size), array.getResult(), zero.getResult()});
+
+  resultArrays.try_emplace(name, array.getResult());
+
   for (int64_t i = 0; i < size; ++i) {
-    Value val{};
-    if (const auto it = ptrCache.find(numResults + i); it != ptrCache.end()) {
-      val = it->second;
-    } else {
-      val = createPointerFromIndex(*this, getLoc(), numResults + i);
-      // Cache for reuse
-      ptrCache[numResults + i] = val;
-    }
-    registerResultMap.insert({{stringSaver.save(name), i}, val});
+    auto gep = LLVM::GEPOp::create(*this, ptrType, ptrType, array.getResult(),
+                                   ValueRange{intConstant(i)});
+    auto load = LLVM::LoadOp::create(*this, ptrType, gep.getResult());
   }
-  metadata_.numResults += size;
+
   return {.name = name, .size = size};
 }
 
@@ -185,50 +190,33 @@ Value QIRProgramBuilder::measure(Value qubit, const int64_t resultIndex) {
     llvm::reportFatalUsageError("Result index must be non-negative");
   }
 
-  // Choose a safe default register name
-  static constexpr llvm::StringLiteral DEFAULT_REG_NAME = "c";
-  StringRef regName{DEFAULT_REG_NAME};
-  if (llvm::any_of(registerResultMap, [](const auto& entry) {
-        return entry.first.first == DEFAULT_REG_NAME;
-      })) {
-    static constexpr llvm::StringLiteral FALLBACK_REG_NAME = "__unnamed__";
-    regName = FALLBACK_REG_NAME;
-  }
-
   // Save current insertion point
   const InsertionGuard guard(*this);
 
-  // Insert in measurements block (before branch)
+  // Insert allocations and constants in entry block
+  setInsertionPoint(entryBlock->getTerminator());
+
+  // Create result pointer
+  auto fnSig = LLVM::LLVMFunctionType::get(
+      LLVM::LLVMVoidType::get(getContext()), {ptrType});
+  auto fnDec =
+      getOrCreateFunctionDeclaration(*this, module, QIR_RESULT_ALLOC, fnSig);
+  auto zero = LLVM::ZeroOp::create(*this, ptrType);
+  auto result =
+      LLVM::CallOp::create(*this, fnDec, zero.getResult()).getResult();
+
+  resultPtrs.try_emplace(resultIndex, result);
+
+  // Switch to measurements block
   setInsertionPoint(measurementsBlock->getTerminator());
 
-  const auto key = std::make_pair(regName, resultIndex);
-  if (const auto it = registerResultMap.find(key);
-      it != registerResultMap.end()) {
-    return it->second;
-  }
+  // Create measure call
+  const auto mzSig = LLVM::LLVMFunctionType::get(voidType, {ptrType, ptrType});
+  auto mzDec =
+      getOrCreateFunctionDeclaration(*this, module, QIR_MEASURE, mzSig);
+  LLVM::CallOp::create(*this, mzDec, ValueRange{qubit, result});
 
-  Value resultValue{};
-  if (const auto it = ptrCache.find(resultIndex); it != ptrCache.end()) {
-    resultValue = it->second;
-  } else {
-    resultValue = createPointerFromIndex(*this, getLoc(), resultIndex);
-    ptrCache[resultIndex] = resultValue;
-    registerResultMap.try_emplace(key, resultValue);
-  }
-
-  // Update result count
-  if (std::cmp_greater_equal(resultIndex, metadata_.numResults)) {
-    metadata_.numResults = static_cast<size_t>(resultIndex) + 1;
-  }
-
-  // Create mz call
-  const auto mzSignature =
-      LLVM::LLVMFunctionType::get(voidType, {ptrType, ptrType});
-  auto mzDecl =
-      getOrCreateFunctionDeclaration(*this, module, QIR_MEASURE, mzSignature);
-  LLVM::CallOp::create(*this, mzDecl, ValueRange{qubit, resultValue});
-
-  return resultValue;
+  return result;
 }
 
 QIRProgramBuilder& QIRProgramBuilder::measure(Value qubit, const Bit& bit) {
@@ -237,24 +225,32 @@ QIRProgramBuilder& QIRProgramBuilder::measure(Value qubit, const Bit& bit) {
   // Save current insertion point
   const InsertionGuard guard(*this);
 
-  // Insert in measurements block (before branch)
-  setInsertionPoint(measurementsBlock->getTerminator());
+  // Insert allocations and constants in entry block
+  setInsertionPoint(entryBlock->getTerminator());
 
-  // Check if we already have a result pointer for this register slot
+  auto index = intConstant(bit.registerIndex);
+
+  // Get array pointer
   const auto& registerName = bit.registerName;
-  const auto registerIndex = bit.registerIndex;
-  const auto key = std::make_pair(registerName, registerIndex);
-  if (!registerResultMap.contains(key)) {
+  if (!resultArrays.contains(registerName)) {
     llvm::reportFatalInternalError("Result pointer not found");
   }
-  const auto resultValue = registerResultMap.at(key);
+  auto array = resultArrays.at(registerName);
 
-  // Create mz call
-  const auto mzSignature =
-      LLVM::LLVMFunctionType::get(voidType, {ptrType, ptrType});
-  auto mzDecl =
-      getOrCreateFunctionDeclaration(*this, module, QIR_MEASURE, mzSignature);
-  LLVM::CallOp::create(*this, mzDecl, ValueRange{qubit, resultValue});
+  // Get result pointer
+  auto gep =
+      LLVM::GEPOp::create(*this, ptrType, ptrType, array, ValueRange{index});
+  auto load = LLVM::LoadOp::create(*this, ptrType, gep.getResult());
+  auto result = load.getResult();
+
+  // Switch to measurements block
+  setInsertionPoint(measurementsBlock->getTerminator());
+
+  // Create measure call
+  const auto fnSig = LLVM::LLVMFunctionType::get(voidType, {ptrType, ptrType});
+  auto fnDec =
+      getOrCreateFunctionDeclaration(*this, module, QIR_MEASURE, fnSig);
+  LLVM::CallOp::create(*this, fnDec, ValueRange{qubit, result});
 
   return *this;
 }
@@ -265,7 +261,7 @@ QIRProgramBuilder& QIRProgramBuilder::reset(Value qubit) {
   // Save current insertion point
   const InsertionGuard guard(*this);
 
-  // Insert in measurements block (before branch)
+  // Switch to measurements block
   setInsertionPoint(measurementsBlock->getTerminator());
 
   // Create reset call
@@ -578,7 +574,7 @@ void QIRProgramBuilder::checkFinalized() const {
 }
 
 void QIRProgramBuilder::generateOutputRecording() {
-  if (registerResultMap.empty()) {
+  if (resultArrays.empty() && resultPtrs.empty()) {
     return; // No measurements to record
   }
 
@@ -588,61 +584,76 @@ void QIRProgramBuilder::generateOutputRecording() {
   // Insert in output block (before return)
   setInsertionPoint(outputBlock->getTerminator());
 
-  // Group measurements by register
-  llvm::StringMap<SmallVector<std::pair<int64_t, Value>>> registerGroups;
-  for (const auto& [key, resultPtr] : registerResultMap) {
-    const auto& [regName, regIdx] = key;
-    registerGroups[regName].emplace_back(regIdx, resultPtr);
+  if (!resultPtrs.empty()) {
+    // Sort result pointers for deterministic output
+    llvm::SmallVector<std::pair<int64_t, Value>> sortedPtrs;
+    for (const auto& [index, resultPtr] : resultPtrs) {
+      sortedPtrs.emplace_back(index, resultPtr);
+    }
+    llvm::sort(sortedPtrs,
+               [](const auto& a, const auto& b) { return a.first < b.first; });
+
+    // Create output recording for each result pointer
+    auto fnSig = LLVM::LLVMFunctionType::get(voidType, {ptrType, ptrType});
+    auto fnDec =
+        getOrCreateFunctionDeclaration(*this, module, QIR_RECORD_OUTPUT, fnSig);
+
+    for (const auto& [index, ptr] : sortedPtrs) {
+      auto label = createResultLabel(*this, module,
+                                     "__unnamed__" + std::to_string(index))
+                       .getResult();
+      LLVM::CallOp::create(*this, fnDec, ValueRange{ptr, label});
+    }
   }
 
-  // Sort registers by name for deterministic output
-  SmallVector<std::pair<std::string, SmallVector<std::pair<int64_t, Value>>>>
-      sortedRegisters;
-  for (auto& [name, measurements] : registerGroups) {
-    sortedRegisters.emplace_back(name, std::move(measurements));
-  }
-  sort(sortedRegisters,
-       [](const auto& a, const auto& b) { return a.first < b.first; });
+  if (!resultArrays.empty()) {
+    // Sort registers by name for deterministic output
+    SmallVector<std::pair<StringRef, Value>> sortedArrays;
+    for (auto& [name, results] : resultArrays) {
+      sortedArrays.emplace_back(name, std::move(results));
+    }
+    llvm::sort(sortedArrays,
+               [](const auto& a, const auto& b) { return a.first < b.first; });
 
-  // Create array_record_output call
-  const auto arrayRecordSig =
-      LLVM::LLVMFunctionType::get(voidType, {getI64Type(), ptrType});
-  const auto arrayRecordDecl = getOrCreateFunctionDeclaration(
-      *this, module, QIR_ARRAY_RECORD_OUTPUT, arrayRecordSig);
+    auto fnSig =
+        LLVM::LLVMFunctionType::get(voidType, {getI64Type(), ptrType, ptrType});
+    auto fnDec = getOrCreateFunctionDeclaration(*this, module,
+                                                QIR_ARRAY_RECORD_OUTPUT, fnSig);
 
-  // Create result_record_output calls for each measurement
-  const auto resultRecordSig =
-      LLVM::LLVMFunctionType::get(voidType, {ptrType, ptrType});
-  const auto resultRecordDecl = getOrCreateFunctionDeclaration(
-      *this, module, QIR_RECORD_OUTPUT, resultRecordSig);
+    // Create output recording for each register
+    for (auto& [name, results] : sortedArrays) {
+      auto size = results.getDefiningOp<LLVM::AllocaOp>().getArraySize();
+      auto label = createResultLabel(*this, module, name).getResult();
 
-  // Generate output recording for each register
-  for (auto& [registerName, measurements] : sortedRegisters) {
-    // Sort measurements by register index
-    sort(measurements,
-         [](const auto& a, const auto& b) { return a.first < b.first; });
-
-    const auto arraySize = measurements.size();
-    auto arrayLabelOp = createResultLabel(*this, module, registerName);
-    auto arraySizeConst = intConstant(static_cast<int64_t>(arraySize));
-
-    LLVM::CallOp::create(*this, arrayRecordDecl,
-                         ValueRange{arraySizeConst, arrayLabelOp.getResult()});
-
-    for (const auto& [regIdx, resultPtr] : measurements) {
-      // Create label for result: "{registerName}{regIdx}r"
-      const std::string resultLabel =
-          registerName + std::to_string(regIdx) + "r";
-      auto resultLabelOp = createResultLabel(*this, module, resultLabel);
-
-      LLVM::CallOp::create(*this, resultRecordDecl,
-                           ValueRange{resultPtr, resultLabelOp.getResult()});
+      LLVM::CallOp::create(*this, fnDec, ValueRange{size, results, label});
     }
   }
 }
 
 OwningOpRef<ModuleOp> QIRProgramBuilder::finalize() {
   checkFinalized();
+
+  const InsertionGuard guard(*this);
+
+  // Insert initialization at end of entry block
+  setInsertionPoint(entryBlock->getTerminator());
+
+  auto initSig = LLVM::LLVMFunctionType::get(voidType, ptrType);
+  auto initDec =
+      getOrCreateFunctionDeclaration(*this, module, QIR_INITIALIZE, initSig);
+  auto zero = LLVM::ZeroOp::create(*this, ptrType);
+  LLVM::CallOp::create(*this, initDec, zero.getResult());
+
+  // Insert in output block (before return)
+  setInsertionPoint(measurementsBlock->getTerminator());
+
+  for (auto array : qubitArrays) {
+    auto sig = LLVM::LLVMFunctionType::get(voidType, {getI64Type(), ptrType});
+    auto decl = getOrCreateFunctionDeclaration(*this, module,
+                                               QIR_QUBIT_ARRAY_RELEASE, sig);
+    auto size = array.getDefiningOp<LLVM::AllocaOp>().getArraySize();
+    LLVM::CallOp::create(*this, decl, ValueRange{size, array});
+  }
 
   // Generate output recording in the output block
   generateOutputRecording();

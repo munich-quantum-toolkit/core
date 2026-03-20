@@ -120,7 +120,7 @@ struct ConvertQTensorInsertOp final : OpConversionPattern<qtensor::InsertOp> {
   LogicalResult
   matchAndRewrite(qtensor::InsertOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
-    rewriter.eraseOp(op);
+    rewriter.replaceOp(op, adaptor.getDest());
     return success();
   }
 };
