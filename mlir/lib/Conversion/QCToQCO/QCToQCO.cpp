@@ -138,15 +138,15 @@ struct ConvertFuncReturnOp final : StatefulOpConversionPattern<func::ReturnOp> {
          llvm::zip(op.getOperands(), adaptor.getOperands())) {
       if (state.qubitMap.contains(qcOperand)) {
         auto latest = state.qubitMap[qcOperand];
-        returnValues.push_back(latest);
+        returnValues.emplace_back(latest);
         escapedQubits.insert(latest);
       } else {
-        returnValues.push_back(adaptorOperand);
+        returnValues.emplace_back(adaptorOperand);
       }
     }
 
     // Collect non-escaped live qubits for deallocation.
-    llvm::DenseSet<Value> liveQubitsSet;
+    llvm::DenseSet<Value> liveQubits;
     for (const auto& [qcQubit, qcoQubit] : state.qubitMap) {
       if (!escapedQubits.contains(qcoQubit)) {
         liveQubitsSet.insert(qcoQubit);

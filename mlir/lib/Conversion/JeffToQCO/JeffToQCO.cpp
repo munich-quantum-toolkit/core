@@ -902,7 +902,7 @@ public:
     addConversion([](Type type) { return type; });
 
     addConversion([ctx](jeff::QubitType /*type*/) -> Type {
-      return qco::QubitType::get(ctx, /*isStatic=*/false);
+      return qco::QubitType::get(ctx);
     });
   }
 };

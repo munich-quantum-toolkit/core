@@ -27,8 +27,7 @@ def QubitType : QCType<"Qubit", "qubit"> {
         mutable references.
 
         `!qc.qubit` (default) denotes a dynamically allocated qubit.
-        `!qc.qubit<static>` denotes a qubit that has been mapped to a fixed
-        hardware position.
+        `!qc.qubit<static>` denotes a qubit with a statically known identifier.
     }];
     let parameters = (ins DefaultValuedParameter<"bool", "false">:$isStatic);
     let builders = [

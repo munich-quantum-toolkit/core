@@ -27,8 +27,7 @@ def QubitType : QCOType<"Qubit", "qubit"> {
         paradigm, enabling powerful dataflow analysis and optimization.
 
         `!qco.qubit` (default) denotes a dynamically allocated qubit.
-        `!qco.qubit<static>` denotes a qubit that has been mapped to a fixed
-        hardware position.
+        `!qco.qubit<static>` denotes a qubit with a statically known identifier.
 
         Example:
         ```mlir
