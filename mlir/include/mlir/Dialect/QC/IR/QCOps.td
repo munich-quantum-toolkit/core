@@ -72,7 +72,7 @@ def AllocOp : QCOp<"alloc", [MemoryEffects<[MemAlloc]>]> {
   let arguments = (ins OptionalAttr<StrAttr>:$register_name,
       OptionalAttr<ConfinedAttr<I64Attr, [IntPositive]>>:$register_size,
       OptionalAttr<ConfinedAttr<I64Attr, [IntNonNegative]>>:$register_index);
-  let results = (outs QubitType:$result);
+  let results = (outs DynamicQubit:$result);
   let assemblyFormat = [{
         (`(` $register_name^ `,` $register_size `,` $register_index `)`)?
         attr-dict `:` type($result)
