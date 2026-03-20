@@ -84,12 +84,8 @@ Value QCOProgramBuilder::allocQubit() {
   return qubit;
 }
 
-Value QCOProgramBuilder::staticQubit(const int64_t index) {
+Value QCOProgramBuilder::staticQubit(const uint64_t index) {
   checkFinalized();
-
-  if (index < 0) {
-    llvm::reportFatalUsageError("Index must be non-negative");
-  }
 
   auto staticOp = StaticOp::create(*this, index);
   const auto qubit = staticOp.getQubit();

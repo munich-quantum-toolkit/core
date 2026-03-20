@@ -127,9 +127,8 @@ def StaticOp : QCOp<"static", [Pure]> {
   let results = (outs StaticQubit:$qubit);
   let assemblyFormat = "$index attr-dict `:` type($qubit)";
 
-  let builders = [OpBuilder<(ins "int64_t":$index), [{
-          build($_builder, $_state, QubitType::get($_builder.getContext(), /*isStatic=*/true),
-                $_builder.getI64IntegerAttr(index));
+  let builders = [OpBuilder<(ins "uint64_t":$index), [{
+          build($_builder, $_state, QubitType::get($_builder.getContext(), /*isStatic=*/true), index);
       }]>];
 }
 

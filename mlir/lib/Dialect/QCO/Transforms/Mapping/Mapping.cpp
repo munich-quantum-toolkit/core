@@ -118,7 +118,6 @@ private:
   using QubitValue = TypedValue<QubitType>;
   using IndexType = std::size_t;
   using IndexGate = std::pair<IndexType, IndexType>;
-  using IndexGateSet = DenseSet<IndexGate>;
   using Layer = DenseSet<IndexGate>;
 
   /**
@@ -545,8 +544,7 @@ private:
     for (const auto [p, q] : enumerate(dynQubits)) {
       const auto hw = layout.getHardwareIndex(p);
       rewriter.setInsertionPoint(q.getDefiningOp());
-      auto op = rewriter.replaceOpWithNewOp<StaticOp>(q.getDefiningOp(),
-                                                      static_cast<int64_t>(hw));
+      auto op = rewriter.replaceOpWithNewOp<StaticOp>(q.getDefiningOp(), hw);
       statics[hw] = llvm::cast<TypedValue<QubitType>>(op.getQubit());
     }
 
@@ -554,10 +552,9 @@ private:
     for (std::size_t p = dynQubits.size(); p < layout.nqubits(); ++p) {
       rewriter.setInsertionPointToStart(&funcBody.front());
       const auto hw = layout.getHardwareIndex(p);
-      auto op = StaticOp::create(rewriter, rewriter.getUnknownLoc(),
-                                 static_cast<int64_t>(hw));
+      auto op = StaticOp::create(rewriter, funcBody.getLoc(), hw);
       rewriter.setInsertionPoint(funcBody.back().getTerminator());
-      DeallocOp::create(rewriter, rewriter.getUnknownLoc(), op.getQubit());
+      DeallocOp::create(rewriter, funcBody.getLoc(), op.getQubit());
       statics[hw] = llvm::cast<TypedValue<QubitType>>(op.getQubit());
     }
 
