@@ -51,7 +51,7 @@ void staticQubitsWithParametricOps(QIRProgramBuilder& b) {
 void staticQubitsWithTwoTargetOps(QIRProgramBuilder& b) {
   auto q0 = b.staticQubit(0);
   auto q1 = b.staticQubit(1);
-  b.swap(q0, q1);
+  b.rzz(0.123, q0, q1);
 }
 
 void staticQubitsWithCtrl(QIRProgramBuilder& b) {
@@ -69,7 +69,7 @@ void mixedStaticDynamicQubits(QIRProgramBuilder& b) {
   auto q0 = b.staticQubit(0);
   auto qDyn = b.allocQubitRegister(1);
   auto q1 = qDyn[0];
-  b.swap(q0, q1);
+  b.rzz(0.123, q0, q1);
   b.h(q0);
   b.h(q1);
 }

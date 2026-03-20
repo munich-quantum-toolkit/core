@@ -55,7 +55,7 @@ void staticQubitsWithParametricOps(QCOProgramBuilder& b) {
 void staticQubitsWithTwoTargetOps(QCOProgramBuilder& b) {
   auto q0 = b.staticQubit(0);
   auto q1 = b.staticQubit(1);
-  std::tie(q0, q1) = b.swap(q0, q1);
+  std::tie(q0, q1) = b.rzz(0.123, q0, q1);
 }
 
 void staticQubitsWithCtrl(QCOProgramBuilder& b) {
@@ -74,7 +74,7 @@ void staticQubitsWithInv(QCOProgramBuilder& b) {
 void mixedStaticDynamicQubits(QCOProgramBuilder& b) {
   auto q0 = b.staticQubit(0);
   auto q1 = b.allocQubit();
-  std::tie(q0, q1) = b.swap(q0, q1);
+  std::tie(q0, q1) = b.rzz(0.123, q0, q1);
   q0 = b.h(q0);
   q1 = b.h(q1);
 }
