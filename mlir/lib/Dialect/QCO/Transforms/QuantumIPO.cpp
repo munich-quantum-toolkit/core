@@ -61,6 +61,13 @@ namespace mlir::qco {
 #define GEN_PASS_DEF_QUANTUMIPO
 #include "mlir/Dialect/QCO/Transforms/Passes.h.inc"
 
+struct PreviousSpecializations {
+  std::map<std::pair<std::string, uint32_t>, func::FuncOp> zeroSpecializations;
+  std::map<std::pair<std::string, uint32_t>, func::FuncOp> plusSpecializations;
+  std::map<std::tuple<std::string, uint32_t, double>, func::FuncOp>
+      rotationSpecializations;
+};
+
 /**
  * @brief This pattern attempts to perform context-sensitive specialization.
  */
@@ -68,6 +75,7 @@ struct ContextSensitiveSpecializationPattern final
     : mlir::OpRewritePattern<func::CallOp> {
 
   SymbolTable& symbolTable;
+  PreviousSpecializations& previousSpecializations;
 
   constexpr static const auto ANGLES_TO_SPECIALIZE =
       std::array<double, 5>{0.0, M_PI, M_PI_2, M_PI_2 + M_PI, 2 * M_PI};
@@ -87,8 +95,10 @@ struct ContextSensitiveSpecializationPattern final
   }
 
   explicit ContextSensitiveSpecializationPattern(mlir::MLIRContext* context,
-                                                 SymbolTable& symbolTable)
-      : OpRewritePattern(context), symbolTable(symbolTable) {}
+                                                 SymbolTable& symbolTable,
+                                                 PreviousSpecializations& prev)
+      : OpRewritePattern(context), symbolTable(symbolTable),
+        previousSpecializations(prev) {}
 
   mlir::LogicalResult
   matchAndRewrite(func::CallOp callOp,
@@ -141,7 +151,6 @@ struct ContextSensitiveSpecializationPattern final
             callOp, funcOp,
             mlir::cast<mlir::FloatAttr>(constOp.getValue()).getValueAsDouble(),
             operand, rewriter);
-        // TODO we still need a canonicalization for this(?)
       }
     }
 
@@ -159,11 +168,20 @@ struct ContextSensitiveSpecializationPattern final
       return false;
     }
 
+    auto key = std::make_pair(funcOp.getName().str(), operand);
+    if (previousSpecializations.zeroSpecializations.contains(key)) {
+      updateSpecializedCall(callOp,
+                            previousSpecializations.zeroSpecializations.at(key),
+                            rewriter);
+      return true;
+    }
+
     auto newFunc = copyFunction(funcOp,
                                 funcOp.getName().str() + "_spec_zero_arg_" +
                                     std::to_string(operand),
                                 rewriter);
     symbolTable.insert(newFunc);
+    previousSpecializations.zeroSpecializations.insert({key, newFunc});
 
     auto newParameter = newFunc.getArgument(operand);
     while (
@@ -196,11 +214,20 @@ struct ContextSensitiveSpecializationPattern final
       return false;
     }
 
+    auto key = std::make_pair(funcOp.getName().str(), operand);
+    if (previousSpecializations.plusSpecializations.contains(key)) {
+      updateSpecializedCall(callOp,
+                            previousSpecializations.plusSpecializations.at(key),
+                            rewriter);
+      return true;
+    }
+
     auto newFunc = copyFunction(funcOp,
                                 funcOp.getName().str() + "_spec_plus_arg_" +
                                     std::to_string(operand),
                                 rewriter);
     symbolTable.insert(newFunc);
+    previousSpecializations.plusSpecializations.insert({key, newFunc});
 
     auto newParameter = newFunc.getArgument(operand);
     while (newParameter.hasOneUse() &&
@@ -233,9 +260,18 @@ struct ContextSensitiveSpecializationPattern final
       return false;
     }
 
+    auto key = std::make_tuple(funcOp.getName().str(), operand, angle);
+    if (previousSpecializations.rotationSpecializations.contains(key)) {
+      updateSpecializedCall(
+          callOp, previousSpecializations.rotationSpecializations.at(key),
+          rewriter);
+      return true;
+    }
+
     auto newFunc =
         copyFunction(funcOp, funcOp.getName().str() + suffix, rewriter);
     symbolTable.insert(newFunc);
+    previousSpecializations.rotationSpecializations.insert({key, newFunc});
 
     auto newParameter = newFunc.getArgument(operand);
     rewriter.setInsertionPointToStart(&*newFunc.getBody().getBlocks().begin());
@@ -255,10 +291,12 @@ struct ContextSensitiveSpecializationPattern final
  *
  * @param patterns The pattern set to populate.
  */
-static void populateQuantumIPOPatterns(mlir::RewritePatternSet& patterns,
-                                       SymbolTable& symbolTable) {
-  patterns.add<ContextSensitiveSpecializationPattern>(patterns.getContext(),
-                                                      symbolTable);
+static void
+populateQuantumIPOPatterns(mlir::RewritePatternSet& patterns,
+                           SymbolTable& symbolTable,
+                           PreviousSpecializations& previousSpecializations) {
+  patterns.add<ContextSensitiveSpecializationPattern>(
+      patterns.getContext(), symbolTable, previousSpecializations);
 }
 
 /**
@@ -275,7 +313,8 @@ struct QuantumIPO final : impl::QuantumIPOBase<QuantumIPO> {
 
     // Define the set of patterns to use.
     mlir::RewritePatternSet patterns(ctx);
-    populateQuantumIPOPatterns(patterns, symbolTable);
+    PreviousSpecializations previousSpecializations;
+    populateQuantumIPOPatterns(patterns, symbolTable, previousSpecializations);
 
     // Apply patterns in an iterative and greedy manner.
     if (mlir::failed(mlir::applyPatternsGreedily(op, std::move(patterns)))) {

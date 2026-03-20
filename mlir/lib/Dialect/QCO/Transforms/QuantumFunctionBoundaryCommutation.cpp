@@ -63,8 +63,9 @@ bool doOpsCancel(qco::UnitaryOpInterface first,
   return false;
 }
 
-void tryBoundaryCommutation(func::CallOp call, SymbolTable& symbolTable,
-                            uint32_t parameter) {
+void tryBoundaryCommutation(
+    func::CallOp call, SymbolTable& symbolTable, uint32_t parameter,
+    std::unordered_map<std::string, func::FuncOp>& previousSpecializations) {
   auto calleeName = call.getCallee();
   auto funcOp = symbolTable.lookup<func::FuncOp>(calleeName);
 
@@ -96,6 +97,11 @@ void tryBoundaryCommutation(func::CallOp call, SymbolTable& symbolTable,
   argOutside.replaceAllUsesWith(lastOp.getInputQubit(0));
   lastOp.erase();
 
+  if (previousSpecializations.contains(funcOp.getName().str())) {
+    call.setCallee(previousSpecializations[funcOp.getName().str()].getName());
+    return;
+  }
+
   auto newFunc = copyFunction(funcOp, funcOp.getName().str() +
                                           "_spec_boundary_commutation");
   symbolTable.insert(newFunc);
@@ -108,6 +114,7 @@ void tryBoundaryCommutation(func::CallOp call, SymbolTable& symbolTable,
     newUser.getOutputQubit(i).replaceAllUsesWith(newUser.getInputQubit(i));
   }
   newUser.erase();
+  previousSpecializations[funcOp.getName().str()] = newFunc;
 
   call.setCallee(newFunc.getName());
 }
@@ -118,13 +125,14 @@ namespace mlir::qco {
 
 void runQuantumFunctionBoundaryCommutation(ModuleOp module,
                                            SymbolTable& symbolTable) {
+  std::unordered_map<std::string, func::FuncOp> previousSpecializations;
   module.walk([&](func::CallOp call) {
     for (uint32_t i = 0; i < call.getArgOperands().size(); ++i) {
       const auto arg = call.getArgOperands()[i];
       if (!isa<qco::QubitType>(arg.getType())) {
         continue;
       }
-      tryBoundaryCommutation(call, symbolTable, i);
+      tryBoundaryCommutation(call, symbolTable, i, previousSpecializations);
     }
   });
 }

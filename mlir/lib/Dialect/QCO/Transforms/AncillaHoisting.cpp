@@ -13,6 +13,7 @@
 //
 #include "mlir/Analysis/CallGraph.h" // <--- The specialization is defined here
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
+#include "mlir/Dialect/QCO/Transforms/Passes.h"
 
 #include "llvm/ADT/SCCIterator.h" // <--- The iterator is defined here
 
@@ -38,10 +39,41 @@ using namespace mlir;
 
 mlir::qco::DeallocOp findDeallocForAlloc(mlir::qco::AllocOp alloc) {
   Value currentValue = alloc.getResult();
+  uint32_t currentIndexInTensor = 0;
+  bool isInTensor = false;
   while (currentValue) {
     if (!currentValue.hasOneUse()) {
-      // Multiple users, should not happen.
-      return nullptr;
+      if (isInTensor) {
+        for (auto* user : currentValue.getUsers()) {
+          if (auto extractOp = dyn_cast<mlir::tensor::ExtractOp>(user)) {
+            const auto operands = extractOp.getIndices();
+            if (operands.size() != 1) {
+              // Not a 1D tensor, should not happen.
+              return nullptr;
+            }
+            const auto indexValue = operands[0];
+            if (auto constIndex = dyn_cast<arith::ConstantIndexOp>(
+                    indexValue.getDefiningOp())) {
+              if (constIndex.value() == currentIndexInTensor) {
+                // Index does not match, should not happen.
+                currentValue = extractOp.getResult();
+                isInTensor = false;
+                break;
+              }
+            }
+          } else {
+            return nullptr;
+          }
+        }
+        if (isInTensor) {
+          // No extract found, should not happen.
+          return nullptr;
+        }
+        continue;
+      } else {
+        // Multiple users, should not happen.
+        return nullptr;
+      }
     }
     auto* user = *currentValue.getUsers().begin();
     if (auto deallocOp = dyn_cast<mlir::qco::DeallocOp>(user)) {
@@ -53,6 +85,32 @@ mlir::qco::DeallocOp findDeallocForAlloc(mlir::qco::AllocOp alloc) {
     }
     if (auto measureOp = dyn_cast<mlir::qco::MeasureOp>(user)) {
       currentValue = measureOp.getQubitOut();
+      continue;
+    }
+    if (auto resetOp = dyn_cast<mlir::qco::ResetOp>(user)) {
+      currentValue = resetOp.getQubitOut();
+      continue;
+    }
+    if (auto callOp = dyn_cast<mlir::func::CallOp>(user)) {
+      // TODO-Damian this only works if the indices are the same. Implement a
+      // helper function to get the index
+      for (auto i = 0ULL; i < user->getNumOperands(); i++) {
+        if (user->getOperand(i) == currentValue) {
+          currentValue = user->getResult(i);
+          break;
+        }
+      }
+      continue;
+    }
+    if (auto fromElementsOp = dyn_cast<mlir::tensor::FromElementsOp>(user)) {
+      for (auto i = 0ULL; i < user->getNumOperands(); i++) {
+        if (user->getOperand(i) == currentValue) {
+          currentIndexInTensor = i;
+          isInTensor = true;
+          break;
+        }
+      }
+      currentValue = fromElementsOp.getResult();
       continue;
     }
     if (user->getNumResults() != 1) {
@@ -200,6 +258,13 @@ void runAncillaHoisting(ModuleOp module, SymbolTable& symbolTable) {
 
   for (auto& func : hoistingCandidates) {
     tryAncillaHoisting(func, symbolTable);
+
+    RewritePatternSet patterns(module.getContext());
+    populateReuseQubitsPatterns(patterns);
+    if (!applyPatternsGreedily(module, std::move(patterns)).succeeded()) {
+      throw std::runtime_error(
+          "Failed to apply reuse qubits patterns after ancilla hoisting.");
+    }
   }
 }
 

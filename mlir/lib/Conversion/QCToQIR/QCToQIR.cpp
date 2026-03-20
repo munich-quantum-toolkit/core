@@ -77,16 +77,14 @@ struct LoweringState : QIRMetadata {
   /// Map from register name to register start index
   DenseMap<StringRef, int64_t> registerStartIndexMap;
 
+  DenseMap<Operation*, SmallVector<Value>> controlMap;
+
   /// Map from index to pointer value for reuse
   DenseMap<std::pair<Operation*, int64_t>, Value> ptrMap;
 
   /// Map from (register_name, register_index) to result pointer
   /// This allows caching result pointers for measurements with register info
   DenseMap<std::tuple<Operation*, StringRef, int64_t>, Value> registerResultMap;
-
-  /// Modifier information
-  int64_t inCtrlOp = 0;
-  DenseMap<int64_t, SmallVector<Value>> posCtrls;
 };
 
 /**
@@ -117,6 +115,18 @@ private:
 
 } // namespace
 
+void collectCtrls(qc::CtrlOp op, LoweringState& state,
+                  SmallVector<Value> ctrls) {
+  ctrls.append(op.getControls().begin(), op.getControls().end());
+
+  for (auto& innerOp : op.getRegion().front()) {
+    state.controlMap[&innerOp] = ctrls;
+    if (auto nestedCtrl = dyn_cast<qc::CtrlOp>(innerOp)) {
+      collectCtrls(nestedCtrl, state, ctrls);
+    }
+  }
+}
+
 /**
  * @brief Helper to convert a QC operation to a LLVM CallOp
  *
@@ -139,9 +149,7 @@ convertUnitaryToCallOp(QCOpType& op, QCOpAdaptorType& adaptor,
                        LoweringState& state, StringRef fnName,
                        size_t numTargets, size_t numParams) {
   // Query state for modifier information
-  const auto inCtrlOp = state.inCtrlOp;
-  const SmallVector<Value> posCtrls =
-      inCtrlOp != 0 ? state.posCtrls[inCtrlOp] : SmallVector<Value>{};
+  const SmallVector<Value> posCtrls = state.controlMap.lookup(op);
   const size_t numCtrls = posCtrls.size();
 
   // Define argument types
@@ -172,14 +180,11 @@ convertUnitaryToCallOp(QCOpType& op, QCOpAdaptorType& adaptor,
 
   SmallVector<Value> operands;
   operands.reserve(numParams + numCtrls + numTargets);
-  operands.append(posCtrls.begin(), posCtrls.end());
-  operands.append(adaptor.getOperands().begin(), adaptor.getOperands().end());
-
-  // Clean up modifier information
-  if (inCtrlOp != 0) {
-    state.posCtrls.erase(inCtrlOp);
-    state.inCtrlOp--;
+  for (auto value : posCtrls) {
+    operands.push_back(rewriter.getRemappedValue(value));
   }
+  // operands.append(posCtrls.begin(), posCtrls.end());
+  operands.append(adaptor.getOperands().begin(), adaptor.getOperands().end());
 
   // Replace operation with CallOp
   rewriter.replaceOpWithNewOp<LLVM::CallOp>(op, fnDecl, operands);
@@ -377,6 +382,20 @@ struct ConvertQCAllocQIR final : StatefulOpConversionPattern<AllocOp> {
   LogicalResult
   matchAndRewrite(AllocOp op, OpAdaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
+    auto* ctx = op.getContext();
+    // auto& state = getState();
+    // auto& ptrMap = state.ptrMap;
+    const auto ptrType = LLVM::LLVMPointerType::get(ctx);
+    const auto fnSignature = LLVM::LLVMFunctionType::get(
+        LLVM::LLVMPointerType::get(op.getContext()), {});
+    const auto fnDecl =
+        getOrCreateFunctionDeclaration(rewriter, op, QIR_ALLOC, fnSignature);
+    auto allocCall =
+        rewriter.create<LLVM::CallOp>(op->getLoc(), fnDecl, ValueRange{});
+    // rewriter.replaceAllUsesWith(op->getResults(), allocCall.getResults());
+    // rewriter.eraseOp(op);
+    rewriter.replaceOp(op, allocCall->getResults());
+    return success();
     auto& state = getState();
     const auto numQubits = static_cast<int64_t>(state.numQubits);
     auto& ptrMap = state.ptrMap;
@@ -436,6 +455,7 @@ struct ConvertQCAllocQIR final : StatefulOpConversionPattern<AllocOp> {
     }
     rewriter.replaceOp(op, val);
     state.numQubits++;
+    op->getParentOp()->dump();
     return success();
   }
 };
@@ -679,7 +699,7 @@ struct ConvertQCGPhaseOpQIR final : StatefulOpConversionPattern<GPhaseOp> {
   matchAndRewrite(GPhaseOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
     auto& state = getState();
-    if (state.inCtrlOp != 0) {
+    if (state.controlMap.contains(op)) {
       return op.emitError("Controlled GPhaseOps cannot be converted to QIR");
     }
     return convertUnitaryToCallOp(op, adaptor, rewriter, getContext(), state,
@@ -711,9 +731,7 @@ struct ConvertQCGPhaseOpQIR final : StatefulOpConversionPattern<GPhaseOp> {
     matchAndRewrite(OP_CLASS op, OpAdaptor adaptor,                            \
                     ConversionPatternRewriter& rewriter) const override {      \
       auto& state = getState();                                                \
-      const auto inCtrlOp = state.inCtrlOp;                                    \
-      const size_t numCtrls =                                                  \
-          inCtrlOp != 0 ? state.posCtrls[inCtrlOp].size() : 0;                 \
+      const size_t numCtrls = state.controlMap.lookup(op).size();              \
       const auto fnName = getFnName##OP_NAME_BIG(numCtrls);                    \
       return convertUnitaryToCallOp(op, adaptor, rewriter, getContext(),       \
                                     state, fnName, 1, 0);                      \
@@ -759,9 +777,7 @@ DEFINE_ONE_TARGET_ZERO_PARAMETER(SXdgOp, SXDG, sxdg, sxdg)
     matchAndRewrite(OP_CLASS op, OpAdaptor adaptor,                            \
                     ConversionPatternRewriter& rewriter) const override {      \
       auto& state = getState();                                                \
-      const auto inCtrlOp = state.inCtrlOp;                                    \
-      const size_t numCtrls =                                                  \
-          inCtrlOp != 0 ? state.posCtrls[inCtrlOp].size() : 0;                 \
+      const size_t numCtrls = state.controlMap.lookup(op).size();              \
       const auto fnName = getFnName##OP_NAME_BIG(numCtrls);                    \
       return convertUnitaryToCallOp(op, adaptor, rewriter, getContext(),       \
                                     state, fnName, 1, 1);                      \
@@ -800,9 +816,7 @@ DEFINE_ONE_TARGET_ONE_PARAMETER(POp, P, p, p, theta)
     matchAndRewrite(OP_CLASS op, OpAdaptor adaptor,                            \
                     ConversionPatternRewriter& rewriter) const override {      \
       auto& state = getState();                                                \
-      const auto inCtrlOp = state.inCtrlOp;                                    \
-      const size_t numCtrls =                                                  \
-          inCtrlOp != 0 ? state.posCtrls[inCtrlOp].size() : 0;                 \
+      const size_t numCtrls = state.controlMap.lookup(op).size();              \
       const auto fnName = getFnName##OP_NAME_BIG(numCtrls);                    \
       return convertUnitaryToCallOp(op, adaptor, rewriter, getContext(),       \
                                     state, fnName, 1, 2);                      \
@@ -839,9 +853,7 @@ DEFINE_ONE_TARGET_TWO_PARAMETER(U2Op, U2, u2, u2, phi, lambda)
     matchAndRewrite(OP_CLASS op, OpAdaptor adaptor,                            \
                     ConversionPatternRewriter& rewriter) const override {      \
       auto& state = getState();                                                \
-      const auto inCtrlOp = state.inCtrlOp;                                    \
-      const size_t numCtrls =                                                  \
-          inCtrlOp != 0 ? state.posCtrls[inCtrlOp].size() : 0;                 \
+      const size_t numCtrls = state.controlMap.lookup(op).size();              \
       const auto fnName = getFnName##OP_NAME_BIG(numCtrls);                    \
       return convertUnitaryToCallOp<OP_CLASS>(                                 \
           op, adaptor, rewriter, getContext(), state, fnName, 1, 3);           \
@@ -877,9 +889,7 @@ DEFINE_ONE_TARGET_THREE_PARAMETER(UOp, U, u, u3)
     matchAndRewrite(OP_CLASS op, OpAdaptor adaptor,                            \
                     ConversionPatternRewriter& rewriter) const override {      \
       auto& state = getState();                                                \
-      const auto inCtrlOp = state.inCtrlOp;                                    \
-      const size_t numCtrls =                                                  \
-          inCtrlOp != 0 ? state.posCtrls[inCtrlOp].size() : 0;                 \
+      const size_t numCtrls = state.controlMap.lookup(op).size();              \
       const auto fnName = getFnName##OP_NAME_BIG(numCtrls);                    \
       return convertUnitaryToCallOp(op, adaptor, rewriter, getContext(),       \
                                     state, fnName, 2, 0);                      \
@@ -918,9 +928,7 @@ DEFINE_TWO_TARGET_ZERO_PARAMETER(ECROp, ECR, ecr, ecr)
     matchAndRewrite(OP_CLASS op, OpAdaptor adaptor,                            \
                     ConversionPatternRewriter& rewriter) const override {      \
       auto& state = getState();                                                \
-      const auto inCtrlOp = state.inCtrlOp;                                    \
-      const size_t numCtrls =                                                  \
-          inCtrlOp != 0 ? state.posCtrls[inCtrlOp].size() : 0;                 \
+      const size_t numCtrls = state.controlMap.lookup(op).size();              \
       const auto fnName = getFnName##OP_NAME_BIG(numCtrls);                    \
       return convertUnitaryToCallOp(op, adaptor, rewriter, getContext(),       \
                                     state, fnName, 2, 1);                      \
@@ -960,9 +968,7 @@ DEFINE_TWO_TARGET_ONE_PARAMETER(RZZOp, RZZ, rzz, rzz, theta)
     matchAndRewrite(OP_CLASS op, OpAdaptor adaptor,                            \
                     ConversionPatternRewriter& rewriter) const override {      \
       auto& state = getState();                                                \
-      const auto inCtrlOp = state.inCtrlOp;                                    \
-      const size_t numCtrls =                                                  \
-          inCtrlOp != 0 ? state.posCtrls[inCtrlOp].size() : 0;                 \
+      const size_t numCtrls = state.controlMap.lookup(op).size();              \
       const auto fnName = getFnName##OP_NAME_BIG(numCtrls);                    \
       return convertUnitaryToCallOp(op, adaptor, rewriter, getContext(),       \
                                     state, fnName, 2, 2);                      \
@@ -1003,10 +1009,6 @@ struct ConvertQCCtrlQIR final : StatefulOpConversionPattern<CtrlOp> {
                   ConversionPatternRewriter& rewriter) const override {
     // Update modifier information
     auto& state = getState();
-    state.inCtrlOp++;
-    const SmallVector<Value> posCtrls(adaptor.getControls().begin(),
-                                      adaptor.getControls().end());
-    state.posCtrls[state.inCtrlOp] = posCtrls;
 
     // Inline region and remove operation
     rewriter.inlineBlockBefore(&op.getRegion().front(), op->getBlock(),
@@ -1330,7 +1332,6 @@ struct QCToQIR final : impl::QCToQIRBase<QCToQIR> {
 
       if (applyPartialConversion(moduleOp, target, std::move(funcPatterns))
               .failed()) {
-        moduleOp->dump();
         signalPassFailure();
         return;
       }
@@ -1348,12 +1349,15 @@ struct QCToQIR final : impl::QCToQIRBase<QCToQIR> {
     addInitialize(main, ctx);
 
     LoweringState state;
+    moduleOp->walk([&](qc::CtrlOp op) {
+      if (!op->getParentOfType<qc::CtrlOp>()) {
+        collectCtrls(op, state, {});
+      }
+    });
 
     // Stage 3: Convert QC dialect to LLVM (QIR calls)
     {
       RewritePatternSet qcPatterns(ctx);
-      target.addIllegalDialect<QCDialect>();
-
       // Add conversion patterns for QC operations
       qcPatterns.add<TensorFromElementsToLLVM>(typeConverter, ctx);
       qcPatterns.add<TensorExtractToLLVM>(typeConverter, ctx);
@@ -1395,6 +1399,8 @@ struct QCToQIR final : impl::QCToQIRBase<QCToQIR> {
       qcPatterns.add<ConvertQCBarrierQIR>(typeConverter, ctx, &state);
       qcPatterns.add<ConvertQCCtrlQIR>(typeConverter, ctx, &state);
       qcPatterns.add<ConvertQCYieldQIR>(typeConverter, ctx, &state);
+
+      target.addIllegalDialect<QCDialect>();
 
       if (applyPartialConversion(moduleOp, target, std::move(qcPatterns))
               .failed()) {

@@ -21,6 +21,7 @@ namespace mlir::qir {
 // QIR function names
 
 inline constexpr auto QIR_INITIALIZE = "__quantum__rt__initialize";
+inline constexpr auto QIR_ALLOC = "__quantum__rt__qubit_allocate";
 inline constexpr auto QIR_MEASURE = "__quantum__qis__mz__body";
 inline constexpr auto QIR_RECORD_OUTPUT = "__quantum__rt__result_record_output";
 inline constexpr auto QIR_ARRAY_RECORD_OUTPUT =
