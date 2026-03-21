@@ -44,6 +44,19 @@ struct MergeSubsequentRYY final : OpRewritePattern<RYYOp> {
 };
 
 /**
+ * @brief Merge subsequent RYY operations with swapped targets by adding their
+ * angles.
+ */
+struct MergeSwappedTargetsRYY final : OpRewritePattern<RYYOp> {
+  using OpRewritePattern::OpRewritePattern;
+
+  LogicalResult matchAndRewrite(RYYOp op,
+                                PatternRewriter& rewriter) const override {
+    return mergeTwoTargetOneParameterWithSwappedTargets(op, rewriter);
+  }
+};
+
+/**
  * @brief Remove trivial RYY operations.
  */
 struct RemoveTrivialRYY final : OpRewritePattern<RYYOp> {
@@ -67,7 +80,8 @@ void RYYOp::build(OpBuilder& odsBuilder, OperationState& odsState,
 
 void RYYOp::getCanonicalizationPatterns(RewritePatternSet& results,
                                         MLIRContext* context) {
-  results.add<MergeSubsequentRYY, RemoveTrivialRYY>(context);
+  results.add<MergeSubsequentRYY, MergeSwappedTargetsRYY, RemoveTrivialRYY>(
+      context);
 }
 
 std::optional<Eigen::Matrix4cd> RYYOp::getUnitaryMatrix() {
