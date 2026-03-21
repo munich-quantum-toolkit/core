@@ -67,46 +67,46 @@ namespace mlir::qco {
  */
 static void synchronizeMappedQubitTypes(Region& region) {
   region.walk<WalkOrder::PreOrder>([](Operation* op) {
+    const auto synchronizeQubitTypes = [](Value input, Value output) {
+      const auto qIn = dyn_cast<QubitType>(input.getType());
+      const auto qOut = dyn_cast<QubitType>(output.getType());
+      if (qIn && qOut && qIn != qOut) {
+        output.setType(qIn);
+      }
+    };
+
     // Region entry arguments are fixed at build time; operand Value types
-    // update after alloc→static placement but block argument types do not.
+    // update after alloc→static placement, but block argument types do not.
     if (auto ctrl = dyn_cast<CtrlOp>(op)) {
       Block& body = *ctrl.getBody();
       for (unsigned i = 0; i < ctrl.getNumTargets(); ++i) {
-        const Type expected = ctrl.getTargetsIn()[i].getType();
-        if (body.getArgument(i).getType() != expected) {
-          body.getArgument(i).setType(expected);
-        }
+        body.getArgument(i).setType(ctrl.getTargetsIn()[i].getType());
       }
     } else if (auto inv = dyn_cast<InvOp>(op)) {
       Block& body = *inv.getBody();
       for (unsigned i = 0; i < inv.getNumTargets(); ++i) {
-        const Type expected = inv.getQubitsIn()[i].getType();
-        if (body.getArgument(i).getType() != expected) {
-          body.getArgument(i).setType(expected);
-        }
+        body.getArgument(i).setType(inv.getQubitsIn()[i].getType());
       }
     }
 
-    const unsigned numOp = op->getNumOperands();
-    const unsigned numRes = op->getNumResults();
-    if (numOp == numRes) {
-      for (unsigned i = 0; i < numOp; ++i) {
-        const auto qIn = dyn_cast<QubitType>(op->getOperand(i).getType());
-        const auto qOut = dyn_cast<QubitType>(op->getResult(i).getType());
-        if (qIn && qOut && qIn != qOut) {
-          op->getResult(i).setType(qIn);
-        }
+    if (auto unitary = dyn_cast<UnitaryOpInterface>(op)) {
+      for (auto [input, output] : llvm::zip_equal(unitary.getInputQubits(),
+                                                  unitary.getOutputQubits())) {
+        synchronizeQubitTypes(input, output);
       }
       return WalkResult::advance();
     }
-    // e.g. qco.measure: qubit in, (qubit_out, i1)
-    if (numOp >= 1 && numRes >= 1) {
-      const auto qIn = dyn_cast<QubitType>(op->getOperand(0).getType());
-      const auto qOut = dyn_cast<QubitType>(op->getResult(0).getType());
-      if (qIn && qOut && qIn != qOut) {
-        op->getResult(0).setType(qIn);
-      }
+
+    if (auto measure = dyn_cast<MeasureOp>(op)) {
+      synchronizeQubitTypes(measure.getQubitIn(), measure.getQubitOut());
+      return WalkResult::advance();
     }
+
+    if (auto reset = dyn_cast<ResetOp>(op)) {
+      synchronizeQubitTypes(reset.getQubitIn(), reset.getQubitOut());
+      return WalkResult::advance();
+    }
+
     return WalkResult::advance();
   });
 }
