@@ -509,11 +509,12 @@ TEST_F(QCOQuaternionMergeTest, dontMergeGatesFromDifferentQubits) {
   const Value qubit1 = q[0];
   const Value qubit2 = q[1];
   builder.rx(1.0, qubit1);
-  builder.rx(1.0, qubit2);
+  builder.ry(1.0, qubit2);
   module = builder.finalize();
 
   ASSERT_TRUE(runMergePass(module.get()).succeeded());
-  EXPECT_EQ(countOps<RXOp>(), 2);
+  EXPECT_EQ(countOps<RXOp>(), 1);
+  EXPECT_EQ(countOps<RYOp>(), 1);
 }
 
 /**

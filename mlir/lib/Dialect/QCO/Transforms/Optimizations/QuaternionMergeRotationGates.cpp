@@ -19,6 +19,7 @@
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/Operation.h>
 #include <mlir/IR/PatternMatch.h>
+#include <mlir/IR/Types.h>
 #include <mlir/IR/Value.h>
 #include <mlir/Support/LLVM.h>
 #include <mlir/Transforms/GreedyPatternRewriteDriver.h>
@@ -34,6 +35,8 @@ namespace mlir::qco {
 
 #define GEN_PASS_DEF_MERGEROTATIONGATES
 #include "mlir/Dialect/QCO/Transforms/Passes.h.inc"
+
+namespace {
 
 /**
  * @brief Pattern that merges consecutive rotation gates using quaternion
@@ -116,7 +119,7 @@ struct MergeRotationGatesPattern final
    * @return A Constants struct with all pre-built constant ops
    */
   static Constants createConstants(Location loc, PatternRewriter& rewriter) {
-    auto f64 = rewriter.getF64Type();
+    Type f64 = rewriter.getF64Type();
     return {
         .negOne = arith::ConstantOp::create(rewriter, loc,
                                             rewriter.getFloatAttr(f64, -1.0)),
@@ -175,7 +178,7 @@ struct MergeRotationGatesPattern final
                                          Location loc,
                                          const Constants& constants,
                                          PatternRewriter& rewriter) {
-    auto f64 = rewriter.getF64Type();
+    Type f64 = rewriter.getF64Type();
     auto half = arith::DivFOp::create(rewriter, loc, angle, constants.two);
     // cos(angle/2)
     auto cos = math::CosOp::create(rewriter, loc, f64, half);
@@ -284,7 +287,7 @@ struct MergeRotationGatesPattern final
                                       const Constants& constants,
                                       PatternRewriter& rewriter) {
     auto loc = op->getLoc();
-    auto f64 = rewriter.getF64Type();
+    Type f64 = rewriter.getF64Type();
     auto theta = op.getParameter(0);
     auto phi = op.getParameter(1);
 
@@ -368,9 +371,10 @@ struct MergeRotationGatesPattern final
   collectChain(UnitaryOpInterface start) {
     SmallVector<UnitaryOpInterface> chain = {start};
     auto current = start;
-    for (auto* userOp = *current->getUsers().begin();
-         areQuaternionMergeable(*current.getOperation(), *userOp);
-         userOp = *current->getUsers().begin()) {
+    while (!current->use_empty()) {
+      auto* userOp = *current->getUsers().begin();
+      if (!areQuaternionMergeable(*current.getOperation(), *userOp))
+        break;
       chain.push_back(cast<UnitaryOpInterface>(userOp));
       current = chain.back();
     }
@@ -612,6 +616,8 @@ struct MergeRotationGatesPattern final
     return success();
   }
 };
+
+} // namespace
 
 /**
  * @brief Populates the given pattern set with the `MergeRotationGatesPattern`.

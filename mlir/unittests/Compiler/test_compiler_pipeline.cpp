@@ -194,8 +194,9 @@ TEST_P(CompilerPipelineTest, EndToEndPipeline) {
  * @details
  * The merged U gate parameters are computed via floating-point arithmetic
  * that is not bit-identical across platforms, so we cannot use
- * verifyAllStages with hardcoded expected values. Instead, we compare
- * the optimization output with and without the pass enabled.
+ * verifyAllStages with hardcoded expected values. Instead, we run the
+ * pipeline once with the pass enabled and compare afterQCOCanon against
+ * afterOptimization to verify the pass transformed the IR.
  * Correctness of the pass is tested in a dedicated test.
  */
 TEST_F(CompilerPipelineTest, RotationGateMergingPass) {

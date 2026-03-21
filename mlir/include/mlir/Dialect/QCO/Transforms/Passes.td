@@ -12,7 +12,9 @@
 include "mlir/Pass/PassBase.td"
 
 def MergeRotationGates : Pass<"merge-rotation-gates", "mlir::ModuleOp"> {
-  let dependentDialects = ["mlir::qco::QCODialect", "::mlir::arith::ArithDialect", "::mlir::math::MathDialect"];
+  let dependentDialects = ["mlir::qco::QCODialect",
+                           "::mlir::arith::ArithDialect",
+                           "::mlir::math::MathDialect"];
   let summary = "Merge rotation gates using quaternion-based fusion";
   let description = [{
     Merges consecutive rotation gates of different types (rx, ry, rz, p, r, u2, u)
