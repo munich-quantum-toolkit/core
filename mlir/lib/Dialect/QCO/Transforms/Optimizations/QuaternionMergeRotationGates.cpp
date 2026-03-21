@@ -332,6 +332,52 @@ struct MergeRotationGatesPattern final
   }
 
   /**
+   * @brief Checks if this op is the start of a mergeable chain.
+   *
+   * A chain start is a mergeable op whose qubit input does NOT come from
+   * a chain-compatible predecessor. This ensures the greedy rewriter only
+   * triggers the rewrite at chain heads, building the maximal chain in one
+   * shot regardless of worklist order.
+   *
+   * @param op The operation to check
+   * @return True if this op is the start of a chain
+   */
+  static bool isChainStart(UnitaryOpInterface op) {
+    if (!isMergeable(op.getOperation())) {
+      return false;
+    }
+    auto input = op.getInputQubit(0);
+    auto* defOp = input.getDefiningOp();
+    if (defOp && areQuaternionMergeable(*defOp, *op.getOperation())) {
+      return false; // mid-chain, not a start
+    }
+    return true;
+  }
+
+  /**
+   * @brief Collects a chain of consecutive mergeable gates.
+   *
+   * Walks forward via single-use SSA edges. Breaks when the next operation is
+   * not mergeable or would form a same-type single-parameter pair with the
+   * current tail (leaving those for canonicalization).
+   *
+   * @param start The chain head (must satisfy isChainStart)
+   * @return The chain of operations in circuit order (first applied to last)
+   */
+  static SmallVector<UnitaryOpInterface>
+  collectChain(UnitaryOpInterface start) {
+    SmallVector<UnitaryOpInterface> chain = {start};
+    auto current = start;
+    for (auto* userOp = *current->getUsers().begin();
+         areQuaternionMergeable(*current.getOperation(), *userOp);
+         userOp = *current->getUsers().begin()) {
+      chain.push_back(cast<UnitaryOpInterface>(userOp));
+      current = chain.back();
+    }
+    return chain;
+  }
+
+  /**
    * @brief Computes the Hamilton product of two quaternions (q1 * q2).
    *
    * For q1 = w1 + x1*i + y1*j + z1*k and q2 = w2 + x2*i + y2*j + z2*k:
@@ -522,27 +568,47 @@ struct MergeRotationGatesPattern final
   }
 
   /**
-   * @brief Matches and merges consecutive rotation gates on the same qubit.
+   * @brief Matches and merges a chain of consecutive rotation gates.
    *
-   * Merges two gates using quaternion multiplication when the first gate has
-   * exactly one use, replacing both with an equivalent UOp.
+   * Detects the full chain of mergeable operations, folds their quaternions
+   * via Hamilton product, and emits a single UOp.
    *
-   * @param op The rotation gate to match
+   * @param op The operation to match (only chain heads trigger the rewrite)
    * @param rewriter Pattern rewriter for applying transformations
-   * @return success() if gates were merged, failure() otherwise
+   * @return success() if operations were merged, failure() otherwise
    */
   LogicalResult matchAndRewrite(UnitaryOpInterface op,
                                 PatternRewriter& rewriter) const override {
-    auto* userOP = *op->getUsers().begin();
-
-    if (!areQuaternionMergeable(*op, *userOP)) {
+    if (!isChainStart(op)) {
       return failure();
     }
-    auto user = dyn_cast<UnitaryOpInterface>(userOP);
-    assert(user && "Cannot cast to UnitaryOpInterface, mergeable gates must "
-                   "implement UnitaryOpInterface");
 
-    createOpQuaternionMergedAngle(op, user, rewriter);
+    auto chain = collectChain(op);
+    if (chain.size() < 2) {
+      return failure();
+    }
+
+    auto loc = op->getLoc();
+    auto constants = createConstants(loc, rewriter);
+
+    // Initialize quaternion accumulator from the first operation
+    auto qAccum = quaternionFromRotation(chain.front(), constants, rewriter);
+
+    // Fold remaining operations via Hamilton product
+    for (auto chainOp : llvm::drop_begin(chain)) {
+      auto qi = quaternionFromRotation(chainOp, constants, rewriter);
+      qAccum = hamiltonProduct(qi, qAccum, loc, rewriter);
+    }
+
+    // Convert merged quaternion back to UOp
+    auto newOp = uOpFromQuaternion(qAccum, op, constants, rewriter);
+
+    // Bypass and erase each tail op, then replace the head with the merged UOp
+    for (auto chainOp : llvm::drop_begin(chain)) {
+      rewriter.replaceOp(chainOp, chainOp.getInputQubit(0));
+    }
+    rewriter.replaceOp(chain.front(), newOp);
+
     return success();
   }
 };

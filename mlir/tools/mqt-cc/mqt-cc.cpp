@@ -73,7 +73,7 @@ const cl::opt<bool>
                               cl::desc("Print IR after each compiler stage"),
                               cl::init(false));
 
-const cl::opt<bool> MERGE_SINGLE_QUBIT_ROTATION_GATES(
+const cl::opt<bool> mergeSingleQubitRotationGates(
     "mlir-merge-single-qubit-rotation-gates",
     cl::desc("Enable quaternion-based single-qubit rotation gate merging"),
     cl::init(false));
@@ -174,7 +174,7 @@ int main(int argc, char** argv) {
   config.enableTiming = ENABLE_TIMING;
   config.enableStatistics = ENABLE_STATISTICS;
   config.printIRAfterAllStages = PRINT_IR_AFTER_ALL_STAGES;
-  config.mergeSingleQubitRotationGates = MERGE_SINGLE_QUBIT_ROTATION_GATES;
+  config.mergeSingleQubitRotationGates = mergeSingleQubitRotationGates;
 
   // Run the compilation pipeline
   CompilationRecord record;
