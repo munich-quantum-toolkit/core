@@ -12,15 +12,9 @@ def QCOToQC : Pass<"qco-to-qc"> {
   let summary = "Convert QCO dialect to QC dialect.";
 
   let description = [{
-      This pass converts all operations from the QCO dialect to their equivalent
-      operations in the QC dialect. It handles the transformation of qubit
-      values in QCO to qubit references in QC, ensuring that the semantics
-      of quantum operations are preserved during the conversion process.
-   }];
+    This pass converts all operations from the QCO dialect to their equivalent operations in the QC dialect.
+    It handles the transformation of qubit values in QCO to qubit references in QC, ensuring that the semantics of quantum operations are preserved during the conversion process.
+  }];
 
-  // Define dependent dialects
-  let dependentDialects = [
-    "mlir::qco::QCODialect",
-    "mlir::qc::QCDialect"
-  ];
+  let dependentDialects = ["mlir::qc::QCDialect"];
 }

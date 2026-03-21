@@ -46,7 +46,7 @@ OpType StandardOperation::parseU3(fp& theta, fp& phi, fp& lambda) {
   }
 
   if (std::abs(lambda) < PARAMETER_TOLERANCE) {
-    lambda = 0.L;
+    lambda = 0.0;
     if (std::abs(phi) < PARAMETER_TOLERANCE) {
       checkInteger(theta);
       checkFractionPi(theta);
@@ -85,7 +85,7 @@ OpType StandardOperation::parseU3(fp& theta, fp& phi, fp& lambda) {
   if (std::abs(lambda - PI) < PARAMETER_TOLERANCE) {
     lambda = PI;
     if (std::abs(phi) < PARAMETER_TOLERANCE) {
-      phi = 0.L;
+      phi = 0.0;
       if (std::abs(theta - PI) < PARAMETER_TOLERANCE) {
         parameter.clear();
         return X;
@@ -106,7 +106,7 @@ OpType StandardOperation::parseU3(fp& theta, fp& phi, fp& lambda) {
 
 OpType StandardOperation::parseU2(fp& phi, fp& lambda) {
   if (std::abs(phi) < PARAMETER_TOLERANCE) {
-    phi = 0.L;
+    phi = 0.0;
     if (std::abs(std::abs(lambda) - PI) < PARAMETER_TOLERANCE) {
       parameter.clear();
       return H;

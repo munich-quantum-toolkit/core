@@ -16,12 +16,10 @@ add_mlir_conversion_library(
   LINK_LIBS
   MLIRDialect
   MLIRJeff
+  MLIRNativeToJeff
   MLIRQCODialect
   MLIRTransforms
   DISABLE_INSTALL)
-
-target_include_directories(MLIRQCOToJeff PRIVATE ${jeff-mlir_SOURCE_DIR}/include
-                                                 ${jeff-mlir_BINARY_DIR}/include)
 
 if(TARGET MLIRQCOToJeff)
   target_compile_definitions(MLIRQCOToJeff PRIVATE MQT_CORE_VERSION="${MQT_CORE_VERSION}")

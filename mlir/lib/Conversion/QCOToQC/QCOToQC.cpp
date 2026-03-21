@@ -29,11 +29,14 @@
 #include <utility>
 
 namespace mlir {
+
 using namespace qco;
 using namespace qc;
 
 #define GEN_PASS_DEF_QCOTOQC
 #include "mlir/Conversion/QCOToQC/QCOToQC.h.inc"
+
+namespace {
 
 /**
  * @brief Type converter for QCO-to-QC conversion
@@ -257,7 +260,7 @@ struct ConvertQCOZeroTargetOneParameterToQC final
   using OpConversionPattern<QCOOpType>::OpConversionPattern;
 
   LogicalResult
-  matchAndRewrite(QCOOpType op, typename QCOOpType::Adaptor /*adaptor*/,
+  matchAndRewrite(QCOOpType op, QCOOpType::Adaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
     QCOpType::create(rewriter, op.getLoc(), op.getParameter(0));
     rewriter.eraseOp(op);
@@ -286,7 +289,7 @@ struct ConvertQCOOneTargetZeroParameterToQC final
   using OpConversionPattern<QCOOpType>::OpConversionPattern;
 
   LogicalResult
-  matchAndRewrite(QCOOpType op, typename QCOOpType::Adaptor adaptor,
+  matchAndRewrite(QCOOpType op, QCOOpType::Adaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
     // OpAdaptor provides the already type-converted input qubit
     auto qcQubit = adaptor.getQubitIn();
@@ -322,7 +325,7 @@ struct ConvertQCOOneTargetOneParameterToQC final
   using OpConversionPattern<QCOOpType>::OpConversionPattern;
 
   LogicalResult
-  matchAndRewrite(QCOOpType op, typename QCOOpType::Adaptor adaptor,
+  matchAndRewrite(QCOOpType op, QCOOpType::Adaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
     // OpAdaptor provides the already type-converted input qubit
     auto qcQubit = adaptor.getQubitIn();
@@ -358,7 +361,7 @@ struct ConvertQCOOneTargetTwoParameterToQC final
   using OpConversionPattern<QCOOpType>::OpConversionPattern;
 
   LogicalResult
-  matchAndRewrite(QCOOpType op, typename QCOOpType::Adaptor adaptor,
+  matchAndRewrite(QCOOpType op, QCOOpType::Adaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
     // OpAdaptor provides the already type-converted input qubit
     auto qcQubit = adaptor.getQubitIn();
@@ -395,7 +398,7 @@ struct ConvertQCOOneTargetThreeParameterToQC final
   using OpConversionPattern<QCOOpType>::OpConversionPattern;
 
   LogicalResult
-  matchAndRewrite(QCOOpType op, typename QCOOpType::Adaptor adaptor,
+  matchAndRewrite(QCOOpType op, QCOOpType::Adaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
     // OpAdaptor provides the already type-converted input qubit
     auto qcQubit = adaptor.getQubitIn();
@@ -433,7 +436,7 @@ struct ConvertQCOTwoTargetZeroParameterToQC final
   using OpConversionPattern<QCOOpType>::OpConversionPattern;
 
   LogicalResult
-  matchAndRewrite(QCOOpType op, typename QCOOpType::Adaptor adaptor,
+  matchAndRewrite(QCOOpType op, QCOOpType::Adaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
     // OpAdaptor provides the already type-converted input qubits
     auto qcQubit0 = adaptor.getQubit0In();
@@ -471,7 +474,7 @@ struct ConvertQCOTwoTargetOneParameterToQC final
   using OpConversionPattern<QCOOpType>::OpConversionPattern;
 
   LogicalResult
-  matchAndRewrite(QCOOpType op, typename QCOOpType::Adaptor adaptor,
+  matchAndRewrite(QCOOpType op, QCOOpType::Adaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
     // OpAdaptor provides the already type-converted input qubits
     auto qcQubit0 = adaptor.getQubit0In();
@@ -510,7 +513,7 @@ struct ConvertQCOTwoTargetTwoParameterToQC final
   using OpConversionPattern<QCOOpType>::OpConversionPattern;
 
   LogicalResult
-  matchAndRewrite(QCOOpType op, typename QCOOpType::Adaptor adaptor,
+  matchAndRewrite(QCOOpType op, QCOOpType::Adaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
     // OpAdaptor provides the already type-converted input qubits
     auto qcQubit0 = adaptor.getQubit0In();
@@ -816,5 +819,7 @@ protected:
     }
   }
 };
+
+} // namespace
 
 } // namespace mlir

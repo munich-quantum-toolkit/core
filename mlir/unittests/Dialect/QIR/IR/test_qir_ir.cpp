@@ -28,6 +28,8 @@
 using namespace mlir;
 using namespace qir;
 
+namespace {
+
 struct QIRTestCase {
   std::string name;
   mqt::test::NamedBuilder<QIRProgramBuilder> programBuilder;
@@ -35,6 +37,14 @@ struct QIRTestCase {
 
   friend std::ostream& operator<<(std::ostream& os, const QIRTestCase& info);
 };
+
+// NOLINTNEXTLINE(llvm-prefer-static-over-anonymous-namespace)
+std::ostream& operator<<(std::ostream& os, const QIRTestCase& info) {
+  return os << "QIR{" << info.name
+            << ", original=" << mqt::test::displayName(info.programBuilder.name)
+            << ", reference="
+            << mqt::test::displayName(info.referenceBuilder.name) << "}";
+}
 
 class QIRTest : public testing::TestWithParam<QIRTestCase> {
 protected:
@@ -49,12 +59,7 @@ protected:
   }
 };
 
-std::ostream& operator<<(std::ostream& os, const QIRTestCase& info) {
-  return os << "QIR{" << info.name
-            << ", original=" << mqt::test::displayName(info.programBuilder.name)
-            << ", reference="
-            << mqt::test::displayName(info.referenceBuilder.name) << "}";
-}
+} // namespace
 
 TEST_P(QIRTest, ProgramEquivalence) {
   const auto& [_, programBuilder, referenceBuilder] = GetParam();

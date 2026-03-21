@@ -18,11 +18,15 @@
 #include <gtest/gtest.h>
 #include <qdmi/constants.h>
 
+namespace {
+
 class ErrorHandling : public ::testing::Test {
 protected:
   static auto SetUpTestSuite() -> void { MQT_DDSIM_QDMI_device_initialize(); }
   static auto TearDownTestSuite() -> void { MQT_DDSIM_QDMI_device_finalize(); }
 };
+
+} // namespace
 
 TEST_F(ErrorHandling, NullptrArguments) {
   EXPECT_EQ(MQT_DDSIM_QDMI_device_session_alloc(nullptr),

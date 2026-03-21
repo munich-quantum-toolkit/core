@@ -40,45 +40,41 @@
 using namespace llvm;
 using namespace mlir;
 
-namespace {
-
 // Command-line options
-const cl::opt<std::string> INPUT_FILENAME(cl::Positional,
+static cl::opt<std::string> inputFilename(cl::Positional,
                                           cl::desc("<input .mlir/.qasm file>"),
                                           cl::init("-"));
 
-const cl::opt<std::string> OUTPUT_FILENAME("o", cl::desc("Output filename"),
+static cl::opt<std::string> outputFilename("o", cl::desc("Output filename"),
                                            cl::value_desc("filename"),
                                            cl::init("-"));
 
-const cl::opt<bool> CONVERT_TO_QIR("emit-qir",
-                                   cl::desc("Convert to QIR at the end"),
-                                   cl::init(false));
+static cl::opt<bool> convertToQIR("emit-qir",
+                                  cl::desc("Convert to QIR at the end"),
+                                  cl::init(false));
 
-const cl::opt<bool> RECORD_INTERMEDIATES(
+static cl::opt<bool> recordIntermediates(
     "record-intermediates",
     cl::desc("Record intermediate IR after each compiler stage"),
     cl::init(false));
 
-const cl::opt<bool> ENABLE_TIMING("mlir-timing",
+static cl::opt<bool> enableTiming("mlir-timing",
                                   cl::desc("Enable pass timing statistics"),
                                   cl::init(false));
 
-const cl::opt<bool> ENABLE_STATISTICS("mlir-statistics",
+static cl::opt<bool> enableStatistics("mlir-statistics",
                                       cl::desc("Enable pass statistics"),
                                       cl::init(false));
 
-const cl::opt<bool>
-    PRINT_IR_AFTER_ALL_STAGES("mlir-print-ir-after-all-stages",
-                              cl::desc("Print IR after each compiler stage"),
-                              cl::init(false));
+static cl::opt<bool>
+    printIRAfterAllStages("mlir-print-ir-after-all-stages",
+                          cl::desc("Print IR after each compiler stage"),
+                          cl::init(false));
 
-const cl::opt<bool> mergeSingleQubitRotationGates(
+static cl::opt<bool> mergeSingleQubitRotationGates(
     "mlir-merge-single-qubit-rotation-gates",
     cl::desc("Enable quaternion-based single-qubit rotation gate merging"),
     cl::init(false));
-
-} // namespace
 
 /**
  * @brief Load and parse a .qasm file
@@ -158,10 +154,10 @@ int main(int argc, char** argv) {
 
   // Load the input .mlir file
   OwningOpRef<ModuleOp> module;
-  if (INPUT_FILENAME.getValue().ends_with(".qasm")) {
-    module = loadQASMFile(INPUT_FILENAME, &context);
+  if (inputFilename.getValue().ends_with(".qasm")) {
+    module = loadQASMFile(inputFilename, &context);
   } else {
-    module = loadMLIRFile(INPUT_FILENAME, &context);
+    module = loadMLIRFile(inputFilename, &context);
   }
   if (!module) {
     return 1;
@@ -169,24 +165,24 @@ int main(int argc, char** argv) {
 
   // Configure the compiler pipeline
   QuantumCompilerConfig config;
-  config.convertToQIR = CONVERT_TO_QIR;
-  config.recordIntermediates = RECORD_INTERMEDIATES;
-  config.enableTiming = ENABLE_TIMING;
-  config.enableStatistics = ENABLE_STATISTICS;
-  config.printIRAfterAllStages = PRINT_IR_AFTER_ALL_STAGES;
+  config.convertToQIR = convertToQIR;
+  config.recordIntermediates = recordIntermediates;
+  config.enableTiming = enableTiming;
+  config.enableStatistics = enableStatistics;
+  config.printIRAfterAllStages = printIRAfterAllStages;
   config.mergeSingleQubitRotationGates = mergeSingleQubitRotationGates;
 
   // Run the compilation pipeline
   CompilationRecord record;
   if (const QuantumCompilerPipeline pipeline(config);
       pipeline
-          .runPipeline(module.get(), RECORD_INTERMEDIATES ? &record : nullptr)
+          .runPipeline(module.get(), recordIntermediates ? &record : nullptr)
           .failed()) {
     errs() << "Compilation pipeline failed\n";
     return 1;
   }
 
-  if (RECORD_INTERMEDIATES) {
+  if (recordIntermediates) {
     outs() << "=== Compilation Record ===\n";
     outs() << "After QC Import:\n" << record.afterQCImport << "\n";
     outs() << "After Initial QC Canonicalization:\n"
@@ -208,8 +204,8 @@ int main(int argc, char** argv) {
   }
 
   // Write the output
-  if (writeOutput(module.get(), OUTPUT_FILENAME).failed()) {
-    errs() << "Failed to write output file: " << OUTPUT_FILENAME << "\n";
+  if (writeOutput(module.get(), outputFilename).failed()) {
+    errs() << "Failed to write output file: " << outputFilename << "\n";
     return 1;
   }
 

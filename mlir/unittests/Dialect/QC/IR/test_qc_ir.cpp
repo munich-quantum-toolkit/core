@@ -30,6 +30,8 @@
 using namespace mlir;
 using namespace mlir::qc;
 
+namespace {
+
 struct QCTestCase {
   std::string name;
   mqt::test::NamedBuilder<QCProgramBuilder> programBuilder;
@@ -38,12 +40,22 @@ struct QCTestCase {
   friend std::ostream& operator<<(std::ostream& os, const QCTestCase& info);
 };
 
+// NOLINTNEXTLINE(llvm-prefer-static-over-anonymous-namespace)
+std::ostream& operator<<(std::ostream& os, const QCTestCase& info) {
+  return os << "QC{" << info.name
+            << ", original=" << mqt::test::displayName(info.programBuilder.name)
+            << ", reference="
+            << mqt::test::displayName(info.referenceBuilder.name) << "}";
+}
+
 class QCTest : public testing::TestWithParam<QCTestCase> {
 protected:
   std::unique_ptr<MLIRContext> context;
 
   void SetUp() override;
 };
+
+} // namespace
 
 void QCTest::SetUp() {
   // Register all necessary dialects
@@ -52,13 +64,6 @@ void QCTest::SetUp() {
   context = std::make_unique<MLIRContext>();
   context->appendDialectRegistry(registry);
   context->loadAllAvailableDialects();
-}
-
-std::ostream& operator<<(std::ostream& os, const QCTestCase& info) {
-  return os << "QC{" << info.name
-            << ", original=" << mqt::test::displayName(info.programBuilder.name)
-            << ", reference="
-            << mqt::test::displayName(info.referenceBuilder.name) << "}";
 }
 
 TEST_P(QCTest, ProgramEquivalence) {

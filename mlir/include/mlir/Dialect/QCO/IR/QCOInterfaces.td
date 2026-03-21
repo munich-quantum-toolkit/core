@@ -6,8 +6,8 @@
 //
 // Licensed under the MIT License
 
-#ifndef QCO_INTERFACES
-#define QCO_INTERFACES
+#ifndef MLIR_DIALECT_QCO_IR_QCOINTERFACES_TD
+#define MLIR_DIALECT_QCO_IR_QCOINTERFACES_TD
 
 include "mlir/IR/OpBase.td"
 
@@ -16,7 +16,7 @@ include "mlir/IR/OpBase.td"
 //===----------------------------------------------------------------------===//
 
 def UnitaryOpInterface : OpInterface<"UnitaryOpInterface"> {
-    let description = [{
+  let description = [{
         This interface provides a unified API for all operations that apply or
         produce a unitary transformation in the QCO dialect. This includes base
         gates, user-defined gates, modifier operations (control, inverse, power),
@@ -26,10 +26,10 @@ def UnitaryOpInterface : OpInterface<"UnitaryOpInterface"> {
         across all unitary operations with value semantics.
     }];
 
-    let cppNamespace = "::mlir::qco";
+  let cppNamespace = "::mlir::qco";
 
-    // Generic implementation body for getUnitaryMatrix methods
-    defvar unitaryMatrixMethodBody = [{
+  // Generic implementation body for getUnitaryMatrix methods
+  defvar unitaryMatrixMethodBody = [{
       auto process = [&]<typename MatrixType>(MatrixType&& m) -> bool {
           using TargetT = std::remove_cvref_t<decltype(out)>;
           using SourceT = std::remove_cvref_t<MatrixType>;
@@ -84,124 +84,82 @@ def UnitaryOpInterface : OpInterface<"UnitaryOpInterface"> {
       }
     }];
 
-    let methods = [
-        // Qubit accessors
-        InterfaceMethod<
-            "Returns the number of qubits acted on by the unitary operation.",
-            "size_t", "getNumQubits", (ins)
-        >,
-        InterfaceMethod<
-            "Returns the number of target qubits (excluding control qubits).",
-            "size_t", "getNumTargets", (ins)
-        >,
-        InterfaceMethod<
-            "Returns the number of control qubits (both positive and negative).",
-            "size_t", "getNumControls", (ins)
-        >,
-        InterfaceMethod<
-            "Returns the i-th input qubit (targets + controls combined).",
-            "Value", "getInputQubit", (ins "size_t":$i)
-        >,
-        InterfaceMethod<
-            "Returns a range of all input qubits (targets + controls combined).",
-            "OperandRange",
-            "getInputQubits", (ins)
-        >,
-        InterfaceMethod<
-            "Returns the i-th output qubit (targets + controls combined).",
-            "Value", "getOutputQubit", (ins "size_t":$i)
-        >,
-        InterfaceMethod<
-            "Returns a range of all output qubits (targets + controls combined).",
-            "ResultRange",
-            "getOutputQubits", (ins)
-        >,
-        InterfaceMethod<
-            "Returns the i-th target input qubit.",
-            "Value", "getInputTarget", (ins "size_t":$i)
-        >,
-        InterfaceMethod<
-            "Returns the i-th target output qubit.",
-            "Value", "getOutputTarget", (ins "size_t":$i)
-        >,
-        InterfaceMethod<
-            "Returns the i-th control input qubit.",
-            "Value", "getInputControl", (ins "size_t":$i)
-        >,
-        InterfaceMethod<
-            "Returns the i-th control output qubit.",
-            "Value", "getOutputControl", (ins "size_t":$i)
-        >,
-        InterfaceMethod<
-            "Returns the input qubit corresponding to the given output qubit.",
-            "Value", "getInputForOutput", (ins "Value":$output)
-        >,
-        InterfaceMethod<
-            "Returns the output qubit corresponding to the given input qubit.",
-            "Value", "getOutputForInput", (ins "Value":$input)
-        >,
+  let methods = [
+      // Qubit accessors
+      InterfaceMethod<
+          "Returns the number of qubits acted on by the unitary operation.",
+          "size_t", "getNumQubits", (ins)>,
+      InterfaceMethod<
+          "Returns the number of target qubits (excluding control qubits).",
+          "size_t", "getNumTargets", (ins)>,
+      InterfaceMethod<
+          "Returns the number of control qubits (both positive and negative).",
+          "size_t", "getNumControls", (ins)>,
+      InterfaceMethod<
+          "Returns the i-th input qubit (targets + controls combined).",
+          "Value", "getInputQubit", (ins "size_t":$i)>,
+      InterfaceMethod<
+          "Returns a range of all input qubits (targets + controls combined).",
+          "OperandRange", "getInputQubits", (ins)>,
+      InterfaceMethod<
+          "Returns the i-th output qubit (targets + controls combined).",
+          "Value", "getOutputQubit", (ins "size_t":$i)>,
+      InterfaceMethod<
+          "Returns a range of all output qubits (targets + controls combined).",
+          "ResultRange", "getOutputQubits", (ins)>,
+      InterfaceMethod<"Returns the i-th target input qubit.", "Value",
+                      "getInputTarget", (ins "size_t":$i)>,
+      InterfaceMethod<"Returns the i-th target output qubit.", "Value",
+                      "getOutputTarget", (ins "size_t":$i)>,
+      InterfaceMethod<"Returns the i-th control input qubit.", "Value",
+                      "getInputControl", (ins "size_t":$i)>,
+      InterfaceMethod<"Returns the i-th control output qubit.", "Value",
+                      "getOutputControl", (ins "size_t":$i)>,
+      InterfaceMethod<
+          "Returns the input qubit corresponding to the given output qubit.",
+          "Value", "getInputForOutput", (ins "Value":$output)>,
+      InterfaceMethod<
+          "Returns the output qubit corresponding to the given input qubit.",
+          "Value", "getOutputForInput", (ins "Value":$input)>,
 
-        // Parameter handling
-        InterfaceMethod<
-            "Returns the number of parameters.",
-            "size_t", "getNumParams", (ins)
-        >,
-        InterfaceMethod<
-            "Returns the i-th parameter.",
-            "Value", "getParameter", (ins "size_t":$i)
-        >,
+      // Parameter handling
+      InterfaceMethod<"Returns the number of parameters.", "size_t",
+                      "getNumParams", (ins)>,
+      InterfaceMethod<"Returns the i-th parameter.", "Value", "getParameter",
+                      (ins "size_t":$i)>,
 
-        // Convenience methods
-        InterfaceMethod<
-            "Returns true if the operation has any control qubits, otherwise false.",
-            "bool", "isControlled", (ins),
-            [{ return $_op.getNumControls() > 0; }]
-        >,
-        InterfaceMethod<
-            "Returns true if the operation only acts on a single qubit.",
-            "bool", "isSingleQubit", (ins),
-            [{ return $_op.getNumQubits() == 1; }]
-        >,
-        InterfaceMethod<
-            "Returns true if the operation acts on two qubits.",
-            "bool", "isTwoQubit", (ins),
-            [{ return $_op.getNumQubits() == 2; }]
-        >,
+      // Convenience methods
+      InterfaceMethod<"Returns true if the operation has any control qubits, "
+                      "otherwise false.",
+                      "bool", "isControlled", (ins),
+                      [{ return $_op.getNumControls() > 0; }]>,
+      InterfaceMethod<
+          "Returns true if the operation only acts on a single qubit.", "bool",
+          "isSingleQubit", (ins), [{ return $_op.getNumQubits() == 1; }]>,
+      InterfaceMethod<"Returns true if the operation acts on two qubits.",
+                      "bool", "isTwoQubit", (ins),
+                      [{ return $_op.getNumQubits() == 2; }]>,
 
-        // Identification
-        InterfaceMethod<
-            "Returns the base symbol/mnemonic of the operation.",
-            "StringRef", "getBaseSymbol", (ins)
-        >,
+      // Identification
+      InterfaceMethod<"Returns the base symbol/mnemonic of the operation.",
+                      "StringRef", "getBaseSymbol", (ins)>,
 
-        // Unitary matrix helpers
-        InterfaceMethod<
-            "Populates the given 1x1 unitary matrix if possible.",
-            "bool", "getUnitaryMatrix1x1",
-            (ins "Eigen::Matrix<std::complex<double>, 1, 1>&":$out),
-            unitaryMatrixMethodBody
-        >,
-        InterfaceMethod<
-            "Populates the given 2x2 unitary matrix if possible.",
-            "bool", "getUnitaryMatrix2x2",
-            (ins "Eigen::Matrix2cd&":$out),
-            unitaryMatrixMethodBody
-        >,
-        InterfaceMethod<
-            "Populates the given 4x4 unitary matrix if possible.",
-            "bool", "getUnitaryMatrix4x4",
-            (ins "Eigen::Matrix4cd&":$out),
-            unitaryMatrixMethodBody
-        >,
-        InterfaceMethod<
-            "Populates the given dynamic unitary matrix.",
-            "bool", "getUnitaryMatrixDynamic",
-            (ins "Eigen::MatrixXcd&":$out),
-            unitaryMatrixMethodBody
-        >
-    ];
+      // Unitary matrix helpers
+      InterfaceMethod<"Populates the given 1x1 unitary matrix if possible.",
+                      "bool", "getUnitaryMatrix1x1",
+                      (ins "Eigen::Matrix<std::complex<double>, 1, 1>&":$out),
+                      unitaryMatrixMethodBody>,
+      InterfaceMethod<"Populates the given 2x2 unitary matrix if possible.",
+                      "bool", "getUnitaryMatrix2x2",
+                      (ins "Eigen::Matrix2cd&":$out), unitaryMatrixMethodBody>,
+      InterfaceMethod<"Populates the given 4x4 unitary matrix if possible.",
+                      "bool", "getUnitaryMatrix4x4",
+                      (ins "Eigen::Matrix4cd&":$out), unitaryMatrixMethodBody>,
+      InterfaceMethod<"Populates the given dynamic unitary matrix.", "bool",
+                      "getUnitaryMatrixDynamic", (ins "Eigen::MatrixXcd&":$out),
+                      unitaryMatrixMethodBody>];
 
-    let extraClassDeclaration = [{
+  let extraClassDeclaration = [{
         template<typename MatrixType>
         std::optional<MatrixType> getUnitaryMatrix() {
           MatrixType out;
@@ -240,4 +198,4 @@ def UnitaryOpInterface : OpInterface<"UnitaryOpInterface"> {
     }];
 }
 
-#endif // QCO_INTERFACES
+#endif // MLIR_DIALECT_QCO_IR_QCOINTERFACES_TD

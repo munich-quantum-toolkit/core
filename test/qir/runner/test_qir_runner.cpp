@@ -15,7 +15,12 @@
 #include <sstream>
 
 namespace qir {
+
+namespace {
+
 class QIRRunnerTest : public testing::TestWithParam<std::filesystem::path> {};
+
+} // namespace
 
 // Instantiate the test suite with different parameters
 INSTANTIATE_TEST_SUITE_P(
