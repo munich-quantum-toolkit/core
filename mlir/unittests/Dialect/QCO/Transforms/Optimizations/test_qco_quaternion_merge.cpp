@@ -143,31 +143,31 @@ protected:
     for (const auto& gate : rotations) {
       switch (gate.type) {
       case GateType::RX:
-        assert(gate.angles.size() >= 1 && "RXOp requires 1 angle parameter");
+        assert(gate.angles.size() == 1 && "RXOp requires 1 angle parameter");
         qubit = builder.rx(gate.angles[0], qubit);
         break;
       case GateType::RY:
-        assert(gate.angles.size() >= 1 && "RYOp requires 1 angle parameter");
+        assert(gate.angles.size() == 1 && "RYOp requires 1 angle parameter");
         qubit = builder.ry(gate.angles[0], qubit);
         break;
       case GateType::RZ:
-        assert(gate.angles.size() >= 1 && "RZOp requires 1 angle parameter");
+        assert(gate.angles.size() == 1 && "RZOp requires 1 angle parameter");
         qubit = builder.rz(gate.angles[0], qubit);
         break;
       case GateType::P:
-        assert(gate.angles.size() >= 1 && "POp requires 1 angle parameter");
+        assert(gate.angles.size() == 1 && "POp requires 1 angle parameter");
         qubit = builder.p(gate.angles[0], qubit);
         break;
       case GateType::R:
-        assert(gate.angles.size() >= 2 && "ROp requires 2 angle parameters");
+        assert(gate.angles.size() == 2 && "ROp requires 2 angle parameters");
         qubit = builder.r(gate.angles[0], gate.angles[1], qubit);
         break;
       case GateType::U2:
-        assert(gate.angles.size() >= 2 && "U2Op requires 2 angle parameters");
+        assert(gate.angles.size() == 2 && "U2Op requires 2 angle parameters");
         qubit = builder.u2(gate.angles[0], gate.angles[1], qubit);
         break;
       case GateType::U:
-        assert(gate.angles.size() >= 3 && "UOp requires 3 angle parameters");
+        assert(gate.angles.size() == 3 && "UOp requires 3 angle parameters");
         qubit =
             builder.u(gate.angles[0], gate.angles[1], gate.angles[2], qubit);
         break;

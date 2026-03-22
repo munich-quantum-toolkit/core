@@ -17,6 +17,7 @@
 #include <llvm/Support/ErrorHandling.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Math/IR/Math.h>
+#include <mlir/IR/Builders.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/Operation.h>
 #include <mlir/IR/PatternMatch.h>
@@ -119,7 +120,10 @@ struct MergeRotationGatesPattern final
    * @return A Constants struct with all pre-built constant ops
    */
   static Constants createConstants(Location loc, PatternRewriter& rewriter) {
-    auto f64 = rewriter.getF64Type();
+    // MLIR types are pointer-sized wrappers;
+    // slicing FloatType to Type is safe and intentional.
+    // NOLINTNEXTLINE(cppcoreguidelines-slicing)
+    Type f64 = rewriter.getF64Type();
     return {
         .negOne = arith::ConstantOp::create(rewriter, loc,
                                             rewriter.getFloatAttr(f64, -1.0)),
@@ -178,7 +182,8 @@ struct MergeRotationGatesPattern final
                                          Location loc,
                                          const Constants& constants,
                                          PatternRewriter& rewriter) {
-    auto f64 = rewriter.getF64Type();
+    // NOLINTNEXTLINE(cppcoreguidelines-slicing)
+    Type f64 = rewriter.getF64Type();
     auto half = arith::DivFOp::create(rewriter, loc, angle, constants.two);
     // cos(angle/2)
     auto cos = math::CosOp::create(rewriter, loc, f64, half);
@@ -192,9 +197,7 @@ struct MergeRotationGatesPattern final
       return {.w = cos, .x = constants.zero, .y = sin, .z = constants.zero};
     case RotationAxis::Z:
       return {.w = cos, .x = constants.zero, .y = constants.zero, .z = sin};
-    } // NOLINT(bugprone-branch-clone): false positive, branches differ
-
-    llvm_unreachable("Invalid rotation axis");
+    }
   }
 
   /**
@@ -287,7 +290,8 @@ struct MergeRotationGatesPattern final
                                       const Constants& constants,
                                       PatternRewriter& rewriter) {
     auto loc = op->getLoc();
-    auto f64 = rewriter.getF64Type();
+    // NOLINTNEXTLINE(cppcoreguidelines-slicing)
+    Type f64 = rewriter.getF64Type();
     auto theta = op.getParameter(0);
     auto phi = op.getParameter(1);
 
@@ -563,6 +567,11 @@ struct MergeRotationGatesPattern final
     if (chain.size() < 2) {
       return failure();
     }
+
+    // Emit all helper ops at the chain tail so the merged UOp is placed
+    // adjacent to the last gate it replaces.
+    OpBuilder::InsertionGuard guard(rewriter);
+    rewriter.setInsertionPointAfter(chain.back().getOperation());
 
     auto loc = op->getLoc();
     auto constants = createConstants(loc, rewriter);
