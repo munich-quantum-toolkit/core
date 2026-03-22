@@ -12,6 +12,7 @@
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QCO/Transforms/Passes.h"
 
+#include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/TypeSwitch.h>
 #include <llvm/Support/ErrorHandling.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
@@ -25,7 +26,6 @@
 #include <mlir/Transforms/GreedyPatternRewriteDriver.h>
 
 #include <cassert>
-#include <cmath>
 #include <cstdint>
 #include <numbers>
 #include <optional>
@@ -119,7 +119,7 @@ struct MergeRotationGatesPattern final
    * @return A Constants struct with all pre-built constant ops
    */
   static Constants createConstants(Location loc, PatternRewriter& rewriter) {
-    Type f64 = rewriter.getF64Type();
+    auto f64 = rewriter.getF64Type();
     return {
         .negOne = arith::ConstantOp::create(rewriter, loc,
                                             rewriter.getFloatAttr(f64, -1.0)),
@@ -178,7 +178,7 @@ struct MergeRotationGatesPattern final
                                          Location loc,
                                          const Constants& constants,
                                          PatternRewriter& rewriter) {
-    Type f64 = rewriter.getF64Type();
+    auto f64 = rewriter.getF64Type();
     auto half = arith::DivFOp::create(rewriter, loc, angle, constants.two);
     // cos(angle/2)
     auto cos = math::CosOp::create(rewriter, loc, f64, half);
@@ -287,7 +287,7 @@ struct MergeRotationGatesPattern final
                                       const Constants& constants,
                                       PatternRewriter& rewriter) {
     auto loc = op->getLoc();
-    Type f64 = rewriter.getF64Type();
+    auto f64 = rewriter.getF64Type();
     auto theta = op.getParameter(0);
     auto phi = op.getParameter(1);
 
@@ -351,10 +351,8 @@ struct MergeRotationGatesPattern final
     }
     auto input = op.getInputQubit(0);
     auto* defOp = input.getDefiningOp();
-    if (defOp && areQuaternionMergeable(*defOp, *op.getOperation())) {
-      return false; // mid-chain, not a start
-    }
-    return true;
+    return defOp == nullptr ||
+           !areQuaternionMergeable(*defOp, *op.getOperation());
   }
 
   /**
@@ -373,8 +371,9 @@ struct MergeRotationGatesPattern final
     auto current = start;
     while (!current->use_empty()) {
       auto* userOp = *current->getUsers().begin();
-      if (!areQuaternionMergeable(*current.getOperation(), *userOp))
+      if (!areQuaternionMergeable(*current.getOperation(), *userOp)) {
         break;
+      }
       chain.push_back(cast<UnitaryOpInterface>(userOp));
       current = chain.back();
     }
@@ -590,17 +589,6 @@ struct MergeRotationGatesPattern final
   }
 };
 
-} // namespace
-
-/**
- * @brief Populates the given pattern set with the `MergeRotationGatesPattern`.
- *
- * @param patterns The pattern set to populate
- */
-static void populateMergeRotationGatesPatterns(RewritePatternSet& patterns) {
-  patterns.add<MergeRotationGatesPattern>(patterns.getContext());
-}
-
 /**
  * @brief Pass that merges consecutive rotation gates using quaternion
  * multiplication.
@@ -610,6 +598,7 @@ struct MergeRotationGates final
   using impl::MergeRotationGatesBase<
       MergeRotationGates>::MergeRotationGatesBase;
 
+protected:
   void runOnOperation() override {
     // Get the current operation being operated on.
     auto op = getOperation();
@@ -617,7 +606,7 @@ struct MergeRotationGates final
 
     // Define the set of patterns to use.
     RewritePatternSet patterns(ctx);
-    populateMergeRotationGatesPatterns(patterns);
+    patterns.add<MergeRotationGatesPattern>(patterns.getContext());
 
     // Apply patterns in an iterative and greedy manner.
     if (failed(applyPatternsGreedily(op, std::move(patterns)))) {
@@ -625,5 +614,7 @@ struct MergeRotationGates final
     }
   }
 };
+
+} // namespace
 
 } // namespace mlir::qco
