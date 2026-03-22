@@ -212,6 +212,12 @@ struct MergeRotationGatesPattern final
    *   Sequential application: RZ(lambda), then RY(theta), then RZ(phi)
    *   Quaternion product:     qPhi * qTheta * qLambda
    *
+   * @note U(theta,phi,lambda) is in U(2) but quaternions represent SU(2), so
+   * the global phase is intentionally discarded. In a ctrl modifier, the inner
+   * gate's global phase becomes an observable conditional phase; however, the
+   * dialect permits only one gate per ctrl modifier, so no mergeable chain can
+   * form there.
+   *
    * @param theta The Y-rotation angle
    * @param phi The first Z-rotation angle
    * @param lambda The second Z-rotation angle
@@ -240,6 +246,8 @@ struct MergeRotationGatesPattern final
    *
    * U(theta, phi, lambda) is decomposed via ZYZ Euler angles.
    *
+   * @note Global phase is discarded; see quaternionFromZYZ for details.
+   *
    * @param op The UOp to convert
    * @param constants Pre-created arithmetic constants
    * @param rewriter Pattern rewriter for creating new operations
@@ -258,6 +266,8 @@ struct MergeRotationGatesPattern final
    *
    * U2(phi, lambda) = U(pi/2, phi, lambda), using ZYZ decomposition with
    * theta fixed to pi/2.
+   *
+   * @note Global phase is discarded; see quaternionFromZYZ for details.
    *
    * @param op The U2Op to convert
    * @param constants Pre-created arithmetic constants
@@ -309,6 +319,8 @@ struct MergeRotationGatesPattern final
 
   /**
    * @brief Converts a rotation gate to quaternion representation.
+   *
+   * @note Global phase is discarded; see quaternionFromZYZ for details.
    *
    * @param op The rotation gate to convert (RXOp, RYOp, RZOp, POp, ROp, U2Op,
    *        UOp)
