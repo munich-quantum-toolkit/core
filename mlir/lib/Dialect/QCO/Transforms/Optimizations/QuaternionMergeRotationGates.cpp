@@ -545,33 +545,6 @@ struct MergeRotationGatesPattern final
   }
 
   /**
-   * @brief Merges two consecutive rotation gates into a single UOp, replacing
-   * both.
-   *
-   * Converts both gates to quaternions, multiplies them using the Hamilton
-   * product (in reverse circuit order), converts back to a UOp, and replaces
-   * both original gates.
-   *
-   * @param op The first rotation gate
-   * @param user The second rotation gate
-   * @param rewriter Pattern rewriter for creating the merged gate
-   */
-  static void createOpQuaternionMergedAngle(UnitaryOpInterface op,
-                                            UnitaryOpInterface user,
-                                            PatternRewriter& rewriter) {
-    auto loc = op->getLoc();
-    auto constants = createConstants(loc, rewriter);
-
-    auto q1 = quaternionFromRotation(op, constants, rewriter);
-    auto q2 = quaternionFromRotation(user, constants, rewriter);
-    auto qHam = hamiltonProduct(q2, q1, loc, rewriter);
-    auto newOp = uOpFromQuaternion(qHam, op, constants, rewriter);
-
-    rewriter.replaceOp(user, op->getResults());
-    rewriter.replaceOp(op, newOp);
-  }
-
-  /**
    * @brief Matches and merges a chain of consecutive rotation gates.
    *
    * Detects the full chain of mergeable operations, folds their quaternions
