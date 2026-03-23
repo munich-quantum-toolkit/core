@@ -108,7 +108,7 @@ protected:
                                                               .alpha = 1,
                                                               .lambda = 0.85,
                                                               .niterations = 2,
-                                                              .ntrials = 8,
+                                                              .ntrials = 16,
                                                               .seed = 1337}));
     pm.addPass(createQCOToQC());
     auto res = pm.run(*moduleOp);
