@@ -80,8 +80,14 @@ void identity(QIRProgramBuilder& b);
 /// Creates a controlled identity gate with a single control qubit.
 void singleControlledIdentity(QIRProgramBuilder& b);
 
+/// Converted version of `qc::singleControlledIdentity`.
+void singleControlledIdentityConverted(QIRProgramBuilder& b);
+
 /// Creates a multi-controlled identity gate with multiple control qubits.
 void multipleControlledIdentity(QIRProgramBuilder& b);
+
+/// Converted version of `qc::multipleControlledIdentity`.
+void multipleControlledIdentityConverted(QIRProgramBuilder& b);
 
 // --- XOp ------------------------------------------------------------------ //
 
@@ -382,5 +388,19 @@ void singleControlledXxMinusYY(QIRProgramBuilder& b);
 
 /// Creates a circuit with a multi-controlled XXMinusYY gate.
 void multipleControlledXxMinusYY(QIRProgramBuilder& b);
+
+// --- BarrierOp ------------------------------------------------------------ //
+
+/// Converted version of `qc::barrier`.
+void barrierConverted(QIRProgramBuilder& b);
+
+/// Converted version of `qc::barrierTwoQubits`.
+void barrierTwoQubitsConverted(QIRProgramBuilder& b);
+
+/// Converted version of `qc::barrierMultipleQubits`.
+void barrierMultipleQubitsConverted(QIRProgramBuilder& b);
+
+/// Converted version of `qc::singleControlledBarrier`.
+void singleControlledBarrierConverted(QIRProgramBuilder& b);
 
 } // namespace mlir::qir

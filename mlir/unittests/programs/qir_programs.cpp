@@ -115,9 +115,19 @@ void singleControlledIdentity(QIRProgramBuilder& b) {
   b.cid(q[0], q[1]);
 }
 
+void singleControlledIdentityConverted(QIRProgramBuilder& b) {
+  auto q = b.allocQubitRegister(2);
+  b.id(q[0]);
+}
+
 void multipleControlledIdentity(QIRProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
   b.mcid({q[0], q[1]}, q[2]);
+}
+
+void multipleControlledIdentityConverted(QIRProgramBuilder& b) {
+  auto q = b.allocQubitRegister(3);
+  b.id(q[0]);
 }
 
 void x(QIRProgramBuilder& b) {
@@ -528,6 +538,20 @@ void singleControlledXxMinusYY(QIRProgramBuilder& b) {
 void multipleControlledXxMinusYY(QIRProgramBuilder& b) {
   auto q = b.allocQubitRegister(4);
   b.mcxx_minus_yy(0.123, 0.456, {q[0], q[1]}, q[2], q[3]);
+}
+
+void barrierConverted(QIRProgramBuilder& b) { b.allocQubitRegister(1); }
+
+void barrierTwoQubitsConverted(QIRProgramBuilder& b) {
+  b.allocQubitRegister(2);
+}
+
+void barrierMultipleQubitsConverted(QIRProgramBuilder& b) {
+  b.allocQubitRegister(3);
+}
+
+void singleControlledBarrierConverted(QIRProgramBuilder& b) {
+  b.allocQubitRegister(2);
 }
 
 } // namespace mlir::qir
