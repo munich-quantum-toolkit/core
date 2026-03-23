@@ -71,8 +71,8 @@ void multipleClassicalRegistersAndMeasurements(QCProgramBuilder& b) {
 }
 
 void resetQubitWithoutOp(QCProgramBuilder& b) {
-  auto q = b.allocQubit();
-  b.reset(q);
+  auto q = b.allocQubitRegister(1);
+  b.reset(q[0]);
 }
 
 void resetMultipleQubitsWithoutOp(QCProgramBuilder& b) {
@@ -82,16 +82,16 @@ void resetMultipleQubitsWithoutOp(QCProgramBuilder& b) {
 }
 
 void repeatedResetWithoutOp(QCProgramBuilder& b) {
-  auto q = b.allocQubit();
-  b.reset(q);
-  b.reset(q);
-  b.reset(q);
+  auto q = b.allocQubitRegister(1);
+  b.reset(q[0]);
+  b.reset(q[0]);
+  b.reset(q[0]);
 }
 
 void resetQubitAfterSingleOp(QCProgramBuilder& b) {
-  auto q = b.allocQubit();
-  b.h(q);
-  b.reset(q);
+  auto q = b.allocQubitRegister(1);
+  b.h(q[0]);
+  b.reset(q[0]);
 }
 
 void resetMultipleQubitsAfterSingleOp(QCProgramBuilder& b) {
@@ -103,11 +103,11 @@ void resetMultipleQubitsAfterSingleOp(QCProgramBuilder& b) {
 }
 
 void repeatedResetAfterSingleOp(QCProgramBuilder& b) {
-  auto q = b.allocQubit();
-  b.h(q);
-  b.reset(q);
-  b.reset(q);
-  b.reset(q);
+  auto q = b.allocQubitRegister(1);
+  b.h(q[0]);
+  b.reset(q[0]);
+  b.reset(q[0]);
+  b.reset(q[0]);
 }
 
 void globalPhase(QCProgramBuilder& b) { b.gphase(0.123); }

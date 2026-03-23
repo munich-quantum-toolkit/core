@@ -93,9 +93,9 @@ void repeatedResetWithoutOp(QCOProgramBuilder& b) {
 }
 
 void resetQubitAfterSingleOp(QCOProgramBuilder& b) {
-  auto q = b.allocQubit();
-  q = b.h(q);
-  q = b.reset(q);
+  auto q = b.allocQubitRegister(1);
+  q[0] = b.h(q[0]);
+  q[0] = b.reset(q[0]);
 }
 
 void resetMultipleQubitsAfterSingleOp(QCOProgramBuilder& b) {
@@ -107,11 +107,11 @@ void resetMultipleQubitsAfterSingleOp(QCOProgramBuilder& b) {
 }
 
 void repeatedResetAfterSingleOp(QCOProgramBuilder& b) {
-  auto q = b.allocQubit();
-  q = b.h(q);
-  q = b.reset(q);
-  q = b.reset(q);
-  q = b.reset(q);
+  auto q = b.allocQubitRegister(1);
+  q[0] = b.h(q[0]);
+  q[0] = b.reset(q[0]);
+  q[0] = b.reset(q[0]);
+  q[0] = b.reset(q[0]);
 }
 
 void globalPhase(QCOProgramBuilder& b) { b.gphase(0.123); }
