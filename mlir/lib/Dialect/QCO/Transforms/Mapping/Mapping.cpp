@@ -25,8 +25,10 @@
 #include <mlir/IR/Block.h>
 #include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/Diagnostics.h>
+#include <mlir/IR/IRMapping.h>
 #include <mlir/IR/Location.h>
 #include <mlir/IR/Operation.h>
+#include <mlir/IR/OperationSupport.h>
 #include <mlir/IR/PatternMatch.h>
 #include <mlir/IR/Threading.h>
 #include <mlir/IR/Value.h>
@@ -57,56 +59,235 @@ namespace mlir::qco {
 #define GEN_PASS_DEF_MAPPINGPASS
 #include "mlir/Dialect/QCO/Transforms/Passes.h.inc"
 
+//===----------------------------------------------------------------------===//
+// After alloc→static placement, operand qubit types match the mapped static
+// type but many op results (and ctrl/inv region args) may still be typed as
+// plain !qco.qubit. IR is recreated with IRRewriter.
+//===----------------------------------------------------------------------===//
+
+/** True if any declared qubit result type disagrees with the paired operand. */
+[[nodiscard]] static bool
+qubitOperandAndResultTypesDiffer(UnitaryOpInterface unitary) {
+  for (auto [input, output] :
+       llvm::zip_equal(unitary.getInputQubits(), unitary.getOutputQubits())) {
+    const auto qIn = dyn_cast<QubitType>(input.getType());
+    const auto qOut = dyn_cast<QubitType>(output.getType());
+    if (qIn && qOut && qIn != qOut) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/** Region entry args vs target operands, for ctrl/inv verifier alignment. */
+[[nodiscard]] static bool
+modifierBodyArgsMismatchTargetOperands(Block& body,
+                                       OperandRange targetOperands) {
+  for (auto [arg, target] :
+       llvm::zip_equal(body.getArguments(), targetOperands)) {
+    if (arg.getType() != target.getType()) {
+      return true;
+    }
+  }
+  return false;
+}
+
+[[nodiscard]] static bool ctrlNeedsQubitTypeResync(CtrlOp ctrl) {
+  return modifierBodyArgsMismatchTargetOperands(*ctrl.getBody(),
+                                                ctrl.getTargetsIn()) ||
+         qubitOperandAndResultTypesDiffer(ctrl);
+}
+
+[[nodiscard]] static bool invNeedsQubitTypeResync(InvOp inv) {
+  return modifierBodyArgsMismatchTargetOperands(*inv.getBody(),
+                                                inv.getQubitsIn()) ||
+         qubitOperandAndResultTypesDiffer(inv);
+}
+
+/** @brief Copies op results into `SmallVector<Value>` (OpResult → Value). */
+[[nodiscard]] static llvm::SmallVector<Value> opResultsAsValues(Operation* op) {
+  llvm::SmallVector<Value> vals;
+  llvm::append_range(vals, op->getResults());
+  return vals;
+}
+
 /**
- * @brief Align declared qubit result types with operand types after placement.
- *
- * @details Replacing `qco.alloc` with `qco.static` reroutes SSA uses, so
- * operand types become `!qco.qubit<static>` while many gates still declare
- * `!qco.qubit` results from before placement. Ops with `TypesMatchWith` /
- * same-type traits then fail verification until results are refreshed.
+ * @brief Duplicate @p op with new result types; clone attached regions.
+ * @param rewriter Insertion point is set to @p op before create.
  */
-static void synchronizeMappedQubitTypes(Region& region) {
-  region.walk<WalkOrder::PreOrder>([](Operation* op) {
-    const auto synchronizeQubitTypes = [](Value input, Value output) {
-      const auto qIn = dyn_cast<QubitType>(input.getType());
-      const auto qOut = dyn_cast<QubitType>(output.getType());
-      if (qIn && qOut && qIn != qOut) {
-        output.setType(qIn);
-      }
-    };
+static Operation* cloneOpWithNewResultTypes(Operation* op,
+                                            ArrayRef<Type> newResultTypes,
+                                            IRRewriter& rewriter) {
+  assert(op->getNumResults() == newResultTypes.size() &&
+         "result type count must match the operation");
+  rewriter.setInsertionPoint(op);
+  OperationState state(op->getLoc(), op->getName());
+  state.addOperands(op->getOperands());
+  state.addTypes(newResultTypes);
+  state.addAttributes(op->getAttrs());
+  state.addSuccessors(op->getSuccessors());
+  for (Region& region : op->getRegions()) {
+    Region* newRegion = state.addRegion();
+    IRMapping mapper;
+    rewriter.cloneRegionBefore(region, *newRegion, newRegion->end(), mapper);
+  }
+  return rewriter.create(state);
+}
 
-    // Region entry arguments are fixed at build time; operand Value types
-    // update after alloc→static placement, but block argument types do not.
+[[nodiscard]] static llvm::SmallVector<Value>
+resyncClonedUnitaryAndGetResults(Operation* cloned, IRRewriter& rewriter);
+
+/**
+ * @brief Rebuild a leaf unitary so each qubit result type matches its operand.
+ *
+ * Skips ops with nested regions (handled via @ref
+ * resyncClonedUnitaryAndGetResults).
+ */
+[[nodiscard]] static llvm::SmallVector<Value>
+replaceLeafUnitaryWithAlignedQubitTypes(UnitaryOpInterface unitary,
+                                        IRRewriter& rewriter) {
+  Operation* op = unitary.getOperation();
+  if (op->getNumRegions() != 0 || !qubitOperandAndResultTypesDiffer(unitary)) {
+    return opResultsAsValues(op);
+  }
+  SmallVector<Type> newTypes(op->getResultTypes());
+  for (auto [input, output] :
+       llvm::zip_equal(unitary.getInputQubits(), unitary.getOutputQubits())) {
+    const auto qIn = dyn_cast<QubitType>(input.getType());
+    const auto qOut = dyn_cast<QubitType>(output.getType());
+    if (qIn && qOut && qIn != qOut) {
+      newTypes[llvm::cast<OpResult>(output).getResultNumber()] = qIn;
+    }
+  }
+  Operation* newOp = cloneOpWithNewResultTypes(op, newTypes, rewriter);
+  rewriter.replaceOp(op, newOp->getResults());
+  return opResultsAsValues(newOp);
+}
+
+/**
+ * @brief Clone all ops in the modifier body before `qco.yield`, then align the
+ *        body unitary’s qubit types.
+ *
+ * The body may contain `arith.constant` (or similar) before the single
+ * `UnitaryOpInterface`; cloning only that unitary would leave uses pointing at
+ * the old region, which is destroyed when the modifier is replaced.
+ */
+[[nodiscard]] static llvm::SmallVector<Value>
+cloneModifierBodyAndResyncUnitary(Block& oldBody, ValueRange newTargetArgs,
+                                  IRRewriter& rewriter) {
+  IRMapping mapping;
+  for (auto [oldArg, newArg] :
+       llvm::zip_equal(oldBody.getArguments(), newTargetArgs)) {
+    mapping.map(oldArg, newArg);
+  }
+  Operation* clonedUnitary = nullptr;
+  for (Operation& op : oldBody) {
+    if (llvm::isa<YieldOp>(op)) {
+      break;
+    }
+    Operation* cloned = rewriter.clone(op, mapping);
+    for (auto [oldRes, newRes] :
+         llvm::zip_equal(op.getResults(), cloned->getResults())) {
+      mapping.map(oldRes, newRes);
+    }
+    if (llvm::isa<UnitaryOpInterface>(cloned)) {
+      clonedUnitary = cloned;
+    }
+  }
+  assert(clonedUnitary != nullptr &&
+         "modifier body must contain a unitary before yield");
+  return resyncClonedUnitaryAndGetResults(clonedUnitary, rewriter);
+}
+
+[[nodiscard]] static CtrlOp replaceCtrlPreservingBody(CtrlOp ctrl,
+                                                      IRRewriter& rewriter) {
+  return rewriter.replaceOpWithNewOp<CtrlOp>(
+      ctrl, ctrl.getControlsIn(), ctrl.getTargetsIn(),
+      [&](ValueRange newArgs) -> llvm::SmallVector<Value> {
+        return cloneModifierBodyAndResyncUnitary(*ctrl.getBody(), newArgs,
+                                                 rewriter);
+      });
+}
+
+[[nodiscard]] static InvOp replaceInvPreservingBody(InvOp inv,
+                                                    IRRewriter& rewriter) {
+  rewriter.setInsertionPoint(inv);
+  InvOp newInv =
+      InvOp::create(rewriter, inv.getLoc(), inv.getQubitsIn(),
+                    [&](ValueRange newArgs) -> llvm::SmallVector<Value> {
+                      return cloneModifierBodyAndResyncUnitary(
+                          *inv.getBody(), newArgs, rewriter);
+                    });
+  rewriter.replaceOp(inv, newInv.getResults());
+  return newInv;
+}
+
+/**
+ * @brief If @p cloned is ctrl/inv, rebuild it when qubit types are stale; else
+ *        align a leaf unitary. Returns values that replace @p cloned's results.
+ */
+[[nodiscard]] static llvm::SmallVector<Value>
+resyncClonedUnitaryAndGetResults(Operation* cloned, IRRewriter& rewriter) {
+  if (auto ctrl = dyn_cast<CtrlOp>(cloned)) {
+    if (!ctrlNeedsQubitTypeResync(ctrl)) {
+      return opResultsAsValues(ctrl.getOperation());
+    }
+    return opResultsAsValues(
+        replaceCtrlPreservingBody(ctrl, rewriter).getOperation());
+  }
+  if (auto inv = dyn_cast<InvOp>(cloned)) {
+    if (!invNeedsQubitTypeResync(inv)) {
+      return opResultsAsValues(inv.getOperation());
+    }
+    return opResultsAsValues(
+        replaceInvPreservingBody(inv, rewriter).getOperation());
+  }
+  return replaceLeafUnitaryWithAlignedQubitTypes(
+      llvm::cast<UnitaryOpInterface>(cloned), rewriter);
+}
+
+/**
+ * @brief Walk the function body and fix qubit SSA types after mapping.
+ *
+ * @details Post-order allows erasing/replacing the visited op safely. Ctrl and
+ * Inv are handled before the generic `UnitaryOpInterface` case so nested
+ * modifiers are not double-processed as leaf unitaries.
+ */
+static void synchronizeMappedQubitTypes(Region& region, IRRewriter& rewriter) {
+  region.walk<WalkOrder::PostOrder>([&](Operation* op) {
+    rewriter.setInsertionPoint(op);
     if (auto ctrl = dyn_cast<CtrlOp>(op)) {
-      Block& body = *ctrl.getBody();
-      for (unsigned i = 0; i < ctrl.getNumTargets(); ++i) {
-        body.getArgument(i).setType(ctrl.getTargetsIn()[i].getType());
-      }
-    } else if (auto inv = dyn_cast<InvOp>(op)) {
-      Block& body = *inv.getBody();
-      for (unsigned i = 0; i < inv.getNumTargets(); ++i) {
-        body.getArgument(i).setType(inv.getQubitsIn()[i].getType());
-      }
-    }
-
-    if (auto unitary = dyn_cast<UnitaryOpInterface>(op)) {
-      for (auto [input, output] : llvm::zip_equal(unitary.getInputQubits(),
-                                                  unitary.getOutputQubits())) {
-        synchronizeQubitTypes(input, output);
+      if (ctrlNeedsQubitTypeResync(ctrl)) {
+        (void)replaceCtrlPreservingBody(ctrl, rewriter);
       }
       return WalkResult::advance();
     }
-
+    if (auto inv = dyn_cast<InvOp>(op)) {
+      if (invNeedsQubitTypeResync(inv)) {
+        (void)replaceInvPreservingBody(inv, rewriter);
+      }
+      return WalkResult::advance();
+    }
     if (auto measure = dyn_cast<MeasureOp>(op)) {
-      synchronizeQubitTypes(measure.getQubitIn(), measure.getQubitOut());
+      if (measure.getQubitOut().getType() != measure.getQubitIn().getType()) {
+        SmallVector<Type> newTypes(measure.getResultTypes());
+        newTypes[0] = measure.getQubitIn().getType();
+        Operation* newOp =
+            cloneOpWithNewResultTypes(measure, newTypes, rewriter);
+        rewriter.replaceOp(measure, newOp->getResults());
+      }
       return WalkResult::advance();
     }
-
     if (auto reset = dyn_cast<ResetOp>(op)) {
-      synchronizeQubitTypes(reset.getQubitIn(), reset.getQubitOut());
+      if (reset.getQubitOut().getType() != reset.getQubitIn().getType()) {
+        rewriter.replaceOpWithNewOp<ResetOp>(reset, reset.getQubitIn());
+      }
       return WalkResult::advance();
     }
-
+    if (auto unitary = dyn_cast<UnitaryOpInterface>(op)) {
+      (void)replaceLeafUnitaryWithAlignedQubitTypes(unitary, rewriter);
+      return WalkResult::advance();
+    }
     return WalkResult::advance();
   });
 }
@@ -433,7 +614,7 @@ protected:
       }
 
       commitTrial(*best, dyn, func.getFunctionBody(), rewriter);
-      synchronizeMappedQubitTypes(func.getFunctionBody());
+      synchronizeMappedQubitTypes(func.getFunctionBody(), rewriter);
     }
   }
 
