@@ -68,36 +68,59 @@ namespace mlir::qco {
 /** True if any declared qubit result type disagrees with the paired operand. */
 [[nodiscard]] static bool
 qubitOperandAndResultTypesDiffer(UnitaryOpInterface unitary) {
-  for (auto [input, output] :
-       llvm::zip_equal(unitary.getInputQubits(), unitary.getOutputQubits())) {
-    const auto qIn = dyn_cast<QubitType>(input.getType());
-    const auto qOut = dyn_cast<QubitType>(output.getType());
-    if (qIn && qOut && qIn != qOut) {
-      return true;
-    }
-  }
-  return false;
+  return llvm::any_of(
+      llvm::zip_equal(unitary.getInputQubits(), unitary.getOutputQubits()),
+      [](const auto& io) {
+        const auto& [input, output] = io;
+        const auto qIn = dyn_cast<QubitType>(input.getType());
+        const auto qOut = dyn_cast<QubitType>(output.getType());
+        return qIn && qOut && qIn != qOut;
+      });
 }
 
 /** Region entry args vs target operands, for ctrl/inv verifier alignment. */
 [[nodiscard]] static bool
 modifierBodyArgsMismatchTargetOperands(Block& body,
                                        OperandRange targetOperands) {
-  for (auto [arg, target] :
-       llvm::zip_equal(body.getArguments(), targetOperands)) {
-    if (arg.getType() != target.getType()) {
-      return true;
-    }
-  }
-  return false;
+  return llvm::any_of(llvm::zip_equal(body.getArguments(), targetOperands),
+                      [](const auto& pair) {
+                        const auto& [arg, target] = pair;
+                        return arg.getType() != target.getType();
+                      });
 }
 
+/**
+ * @brief True if @p ctrl must be rebuilt so qubit types match after placement.
+ *
+ * @param ctrl Operation examined: sole region (targets + body args), operands
+ *             (`getControlsIn()`, `getTargetsIn()`), and qubit results
+ *             (`getOutputQubits()`).
+ * @return True when either (1) a body block argument type differs from the
+ *         matching `getTargetsIn()` operand, or (2) any qubit result type
+ *         differs from the paired input qubit type (via
+ *         @ref modifierBodyArgsMismatchTargetOperands and
+ *         @ref qubitOperandAndResultTypesDiffer).
+ *
+ * @details Pure predicate: no IR changes. Callers use this to skip redundant
+ *          `replaceOpWithNewOp` work.
+ */
 [[nodiscard]] static bool ctrlNeedsQubitTypeResync(CtrlOp ctrl) {
   return modifierBodyArgsMismatchTargetOperands(*ctrl.getBody(),
                                                 ctrl.getTargetsIn()) ||
          qubitOperandAndResultTypesDiffer(ctrl);
 }
 
+/**
+ * @brief True if @p inv must be rebuilt so qubit types match after placement.
+ *
+ * @param inv Operation examined: sole region (`getBody()` args vs
+ *            `getQubitsIn()` operands) and paired qubit results.
+ * @return True when body argument types disagree with `getQubitsIn()`, or qubit
+ *         result types disagree with operands (same predicates as for @ref
+ *         ctrlNeedsQubitTypeResync).
+ *
+ * @details Pure predicate: no IR changes.
+ */
 [[nodiscard]] static bool invNeedsQubitTypeResync(InvOp inv) {
   return modifierBodyArgsMismatchTargetOperands(*inv.getBody(),
                                                 inv.getQubitsIn()) ||
@@ -199,6 +222,20 @@ cloneModifierBodyAndResyncUnitary(Block& oldBody, ValueRange newTargetArgs,
   return resyncClonedUnitaryAndGetResults(clonedUnitary, rewriter);
 }
 
+/**
+ * @brief Replace @p ctrl with a new `qco.ctrl` that keeps the same controls,
+ *        targets, and logical body (ops before `qco.yield` are cloned).
+ *
+ * @param ctrl Modifier to replace. Must satisfy the usual `qco.ctrl` verifier
+ *             (single unitary before yield, etc.).
+ * @param rewriter Drives insertion and erasure; insertion point is updated by
+ *                 `replaceOpWithNewOp`.
+ * @return The new `CtrlOp` whose region holds cloned ops and refreshed types.
+ *
+ * @note Side effects: erases @p ctrl and rewires uses to the new op's results;
+ *       runs @ref cloneModifierBodyAndResyncUnitary in the builder callback
+ *       (may recurse for nested ctrl/inv in the body).
+ */
 [[nodiscard]] static CtrlOp replaceCtrlPreservingBody(CtrlOp ctrl,
                                                       IRRewriter& rewriter) {
   return rewriter.replaceOpWithNewOp<CtrlOp>(
@@ -209,6 +246,18 @@ cloneModifierBodyAndResyncUnitary(Block& oldBody, ValueRange newTargetArgs,
       });
 }
 
+/**
+ * @brief Replace @p inv with a new `qco.inv` that preserves operands and body
+ *        structure (clone ops before `qco.yield`, then align qubit types).
+ *
+ * @param inv Modifier to replace; must verify as `qco.inv`.
+ * @param rewriter Drives insertion and erasure.
+ * @return The new `InvOp` after `replaceOp` has rewired uses away from @p inv.
+ *
+ * @note Side effects: erases @p inv; uses @ref
+ * cloneModifierBodyAndResyncUnitary in the body callback (may recurse for
+ * nested modifiers).
+ */
 [[nodiscard]] static InvOp replaceInvPreservingBody(InvOp inv,
                                                     IRRewriter& rewriter) {
   rewriter.setInsertionPoint(inv);
