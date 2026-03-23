@@ -18,6 +18,7 @@
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/ADT/TypeSwitch.h>
+#include <llvm/Support/Allocator.h>
 #include <llvm/Support/ErrorHandling.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/IR/Block.h>
@@ -37,6 +38,7 @@
 #include <cstdint>
 #include <functional>
 #include <iterator>
+#include <memory>
 #include <numeric>
 #include <optional>
 #include <queue>
@@ -262,27 +264,33 @@ private:
    * @brief Describes a node in the A* search graph.
    */
   struct Node {
-    SmallVector<IndexGate> sequence;
+    struct ComparePointer {
+      bool operator()(const Node* lhs, const Node* rhs) const {
+        return lhs->f > rhs->f;
+      }
+    };
+
     Layout layout;
+    IndexGate swap;
+    Node* parent;
+    std::size_t depth;
     float f;
 
     /**
      * @brief Construct a root node with the given layout. Initialize the
      * sequence with an empty vector and set the cost to zero.
      */
-    explicit Node(Layout layout) : layout(std::move(layout)), f(0) {}
+    explicit Node(Layout layout)
+        : layout(std::move(layout)), parent(nullptr), depth(0), f(0) {}
 
     /**
      * @brief Construct a non-root node from its parent node. Apply the given
      * swap to the layout of the parent node.
      */
-    Node(const Node& parent, IndexGate swap)
-        : sequence(parent.sequence), layout(parent.layout), f(0) {
-      // Apply node-specific swap to given layout.
+    Node(Node* parent, IndexGate swap)
+        : layout(parent->layout), swap(swap), parent(parent),
+          depth(parent->depth + 1), f(0) {
       layout.swap(swap.first, swap.second);
-
-      // Add swap to sequence.
-      sequence.emplace_back(swap);
     }
 
     /**
@@ -305,12 +313,6 @@ private:
       });
     }
 
-    /**
-     * @returns true iff. the costs of this node are higher than the one of @p
-     * rhs.
-     */
-    [[nodiscard]] bool operator>(const Node& rhs) const { return f > rhs.f; }
-
   private:
     /**
      * @brief Calculate the path cost for the A* search algorithm.
@@ -319,7 +321,7 @@ private:
      * SWAPs.
      */
     [[nodiscard]] float g(float alpha) const {
-      return alpha * static_cast<float>(sequence.size());
+      return alpha * static_cast<float>(depth);
     }
 
     /**
@@ -345,12 +347,20 @@ private:
     }
   };
 
-  using MinQueue = std::priority_queue<Node, std::vector<Node>, std::greater<>>;
+  struct [[nodiscard]] TrialResult {
+    explicit TrialResult(Layout layout) : layout(std::move(layout)) {}
+
+    /// @brief The computed initial layout.
+    Layout layout;
+    /// @brief A vector of SWAPs for each layer.
+    SmallVector<SmallVector<IndexGate>> swaps;
+    /// @brief The number of inserted SWAPs.
+    std::size_t nswaps{};
+  };
 
 public:
   using MappingPassBase::MappingPassBase;
 
-protected:
   void runOnOperation() override {
     std::mt19937_64 rng{this->seed};
     IRRewriter rewriter(&getContext());
@@ -408,17 +418,6 @@ protected:
   }
 
 private:
-  struct [[nodiscard]] TrialResult {
-    explicit TrialResult(Layout layout) : layout(std::move(layout)) {}
-
-    /// @brief The computed initial layout.
-    Layout layout;
-    /// @brief A vector of SWAPs for each layer.
-    SmallVector<SmallVector<IndexGate>> swaps;
-    /// @brief The number of inserted SWAPs.
-    std::size_t nswaps{};
-  };
-
   /**
    * @brief Find the best trial result in terms of the number of SWAPs.
    * @returns the best trial result or nullptr if no result is valid.
@@ -553,23 +552,28 @@ private:
     const std::size_t b = arch.maxDegree() * ((arch.nqubits() + 1) / 2);
     const std::size_t budget = std::min(b * b * b, cap);
 
-    Node root(layout);
-    if (root.isGoal(layers.front(), arch)) {
-      return SmallVector<IndexGate>{};
-    }
+    llvm::SpecificBumpPtrAllocator<Node> arena;
+    std::priority_queue<Node*, std::vector<Node*>, Node::ComparePointer>
+        frontier;
+    frontier.emplace(std::construct_at(arena.Allocate(), layout));
 
-    MinQueue frontier{};
-    frontier.emplace(root);
-    DenseSet<Layout, LayoutInfo> discovered{root.layout};
+    DenseSet<Layout, LayoutInfo> discovered{layout};
     DenseSet<IndexGate> expansionSet;
 
     std::size_t i = 0;
     while (!frontier.empty() && i < budget) {
-      Node curr = frontier.top();
+      Node* curr = frontier.top();
       frontier.pop();
 
-      if (curr.isGoal(layers.front(), arch)) {
-        return curr.sequence;
+      // If the currently visited node is a goal node, reconstruct the sequence
+      // of SWAPs from this node to the root.
+
+      if (curr->isGoal(layers.front(), arch)) {
+        SmallVector<IndexGate> seq;
+        for (Node* n = curr; n->parent != nullptr; n = n->parent) {
+          seq.push_back(n->swap);
+        }
+        return to_vector(reverse(seq));
       }
 
       // Given a layout, create child-nodes for each possible SWAP between
@@ -578,7 +582,7 @@ private:
       expansionSet.clear();
       for (const IndexGate& gate : layers.front()) {
         for (const auto prog : {gate.first, gate.second}) {
-          const auto hw0 = curr.layout.getHardwareIndex(prog);
+          const auto hw0 = curr->layout.getHardwareIndex(prog);
           for (const auto hw1 : arch.neighboursOf(hw0)) {
             // Ensure consistent hashing/comparison.
             const IndexGate swap = std::minmax(hw0, hw1);
@@ -598,7 +602,8 @@ private:
               continue;
             }
             child.evalCost(layers, arch, params);
-            frontier.emplace(std::move(child));
+            frontier.emplace(
+                std::construct_at(arena.Allocate(), std::move(child)));
           }
         }
       }
