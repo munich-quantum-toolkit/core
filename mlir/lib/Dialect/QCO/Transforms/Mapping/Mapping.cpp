@@ -287,18 +287,12 @@ private:
      * @brief Construct a non-root node from its parent node. Apply the given
      * swap to the layout of the parent node.
      */
-    Node(Node* parent, IndexGate swap)
+    Node(Node* parent, IndexGate swap, ArrayRef<Layer> layers,
+         const Architecture& arch, const Parameters& params)
         : layout(parent->layout), swap(swap), parent(parent),
           depth(parent->depth + 1), f(0) {
       layout.swap(swap.first, swap.second);
-    }
-
-    /**
-     * @brief Evaluate the cost function.
-     */
-    void evalCost(ArrayRef<Layer> layers, const Architecture& arch,
-                  const Parameters& params) {
-      f = g(params.alpha) + h(layers, arch, params);
+      f = g(params.alpha) + h(layers, arch, params); // NOLINT
     }
 
     /**
@@ -557,7 +551,10 @@ private:
         frontier;
     frontier.emplace(std::construct_at(arena.Allocate(), layout));
 
-    DenseSet<Layout, LayoutInfo> discovered{layout};
+    // The following maps discovered layouts to the lowest-depth parent
+    // pointers.
+    DenseMap<Layout, Node*, LayoutInfo> discovered;
+
     DenseSet<IndexGate> expansionSet;
 
     std::size_t i = 0;
@@ -574,6 +571,16 @@ private:
           seq.push_back(n->swap);
         }
         return to_vector(reverse(seq));
+      }
+
+      const auto [it, inserted] = discovered.try_emplace(curr->layout, curr);
+      if (!inserted) {
+        Node* other = it->getSecond();
+        if (curr->depth < other->depth) {
+          discovered[curr->layout] = curr;
+        }
+        ++i;
+        continue;
       }
 
       // Given a layout, create child-nodes for each possible SWAP between
@@ -597,13 +604,8 @@ private:
             // TODO: In the future, should fidelities be ever considered, the
             // sequence of SWAPs matters - so this will become more difficult.
 
-            Node child(curr, swap);
-            if (!discovered.insert(child.layout).second) {
-              continue;
-            }
-            child.evalCost(layers, arch, params);
-            frontier.emplace(
-                std::construct_at(arena.Allocate(), std::move(child)));
+            frontier.emplace(std::construct_at(arena.Allocate(), curr, swap,
+                                               layers, arch, params));
           }
         }
       }
