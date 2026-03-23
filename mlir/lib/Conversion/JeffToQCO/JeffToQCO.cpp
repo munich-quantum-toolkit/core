@@ -12,6 +12,8 @@
 
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
+#include "mlir/Dialect/QTensor/IR/QTensorDialect.h"
+#include "mlir/Dialect/QTensor/IR/QTensorOps.h"
 
 #include <jeff/Conversion/JeffToNative/JeffToNative.h>
 #include <jeff/IR/JeffDialect.h>
@@ -380,6 +382,64 @@ static LogicalResult cleanUp(Operation* op) {
 }
 
 namespace {
+
+struct ConvertJeffQuregAllocOpToQCO final
+    : OpConversionPattern<jeff::QuregAllocOp> {
+  using OpConversionPattern::OpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(jeff::QuregAllocOp op, OpAdaptor adaptor,
+                  ConversionPatternRewriter& rewriter) const override {
+    auto size = arith::IndexCastOp::create(
+        rewriter, op.getLoc(), rewriter.getIndexType(), adaptor.getNumQubits());
+    rewriter.replaceOpWithNewOp<qtensor::AllocOp>(op, size.getResult());
+    return success();
+  }
+};
+
+struct ConvertJeffQuregExtractIndexOpToQCO final
+    : OpConversionPattern<jeff::QuregExtractIndexOp> {
+  using OpConversionPattern::OpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(jeff::QuregExtractIndexOp op, OpAdaptor adaptor,
+                  ConversionPatternRewriter& rewriter) const override {
+    auto index = arith::IndexCastOp::create(
+        rewriter, op.getLoc(), rewriter.getIndexType(), adaptor.getIndex());
+    rewriter.replaceOpWithNewOp<qtensor::ExtractOp>(op, adaptor.getInQreg(),
+                                                    index.getResult());
+    return success();
+  }
+};
+
+struct ConvertJeffQuregInsertIndexOpToQCO final
+    : OpConversionPattern<jeff::QuregInsertIndexOp> {
+  using OpConversionPattern::OpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(jeff::QuregInsertIndexOp op, OpAdaptor adaptor,
+                  ConversionPatternRewriter& rewriter) const override {
+    auto index = arith::IndexCastOp::create(
+        rewriter, op.getLoc(), rewriter.getIndexType(), adaptor.getIndex());
+    rewriter.replaceOpWithNewOp<qtensor::InsertOp>(op, adaptor.getInQubit(),
+                                                   adaptor.getInQreg(),
+
+                                                   index.getResult());
+    return success();
+  }
+};
+
+struct ConvertJeffQuregFreeZeroOpToQCO final
+    : OpConversionPattern<jeff::QuregFreeZeroOp> {
+  using OpConversionPattern::OpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(jeff::QuregFreeZeroOp op, OpAdaptor adaptor,
+                  ConversionPatternRewriter& rewriter) const override {
+    rewriter.replaceOpWithNewOp<qtensor::DeallocOp>(op, adaptor.getQreg());
+    return success();
+  }
+};
 
 /**
  * @brief Converts jeff.qubit_alloc to qco.alloc
@@ -904,6 +964,11 @@ public:
     addConversion([ctx](jeff::QubitType /*type*/) -> Type {
       return qco::QubitType::get(ctx);
     });
+
+    addConversion([ctx](jeff::QuregType /*type*/) -> Type {
+      return RankedTensorType::get({ShapedType::kDynamic},
+                                   qco::QubitType::get(ctx));
+    });
   }
 };
 
@@ -924,7 +989,8 @@ protected:
 
     // Configure conversion target
     target.addIllegalDialect<jeff::JeffDialect>();
-    target.addLegalDialect<QCODialect, arith::ArithDialect, math::MathDialect,
+    target.addLegalDialect<QCODialect, qtensor::QTensorDialect,
+                           arith::ArithDialect, math::MathDialect,
                            tensor::TensorDialect>();
 
     target.addDynamicallyLegalOp<func::FuncOp>([&](func::FuncOp op) {
@@ -936,6 +1002,8 @@ protected:
     // Register operation conversion patterns
     jeff::populateJeffToNativeConversionPatterns(patterns);
     patterns.add<
+        ConvertJeffQuregAllocOpToQCO, ConvertJeffQuregExtractIndexOpToQCO,
+        ConvertJeffQuregInsertIndexOpToQCO, ConvertJeffQuregFreeZeroOpToQCO,
         ConvertJeffQubitAllocOpToQCO, ConvertJeffQubitFreeOpToQCO,
         ConvertJeffQubitFreeZeroOpToQCO, ConvertJeffQubitMeasureOpToQCO,
         ConvertJeffQubitMeasureNDOpToQCO, ConvertJeffQubitResetOpToQCO,
