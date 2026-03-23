@@ -8,16 +8,65 @@
  * Licensed under the MIT License
  */
 
+#include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QTensor/IR/QTensorOps.h"
 
 #include <mlir/Dialect/Utils/StaticValueUtils.h>
 #include <mlir/IR/BuiltinTypeInterfaces.h>
+#include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OpDefinition.h>
+#include <mlir/IR/PatternMatch.h>
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/LogicalResult.h>
 
 using namespace mlir;
 using namespace mlir::qtensor;
+
+static ExtractOp findExtractOp(InsertOp op) {
+
+  auto definingOp = op.getDest().getDefiningOp();
+  if (llvm::isa<ExtractOp>(definingOp)) {
+    return llvm::cast<ExtractOp>(definingOp);
+  } else if (llvm::isa<InsertOp>(definingOp)) {
+    auto nestedInsertOp = llvm::cast<InsertOp>(definingOp);
+    return findExtractOp(nestedInsertOp);
+  } else {
+    return nullptr;
+  }
+}
+
+namespace {
+
+struct RemoveExtractInsertPair final : OpRewritePattern<InsertOp> {
+  using OpRewritePattern::OpRewritePattern;
+
+  LogicalResult matchAndRewrite(InsertOp op,
+                                PatternRewriter& rewriter) const override {
+    auto extractOp = findExtractOp(op);
+    if (!extractOp) {
+      return failure();
+    }
+
+    if (op.getScalar() != extractOp.getResult()) {
+      return failure();
+    }
+
+    if (op.getIndex() != extractOp.getIndex()) {
+      return failure();
+    }
+
+    // TODO: Improve this
+    auto qubit = qco::AllocOp::create(rewriter, op.getLoc());
+    rewriter.replaceOp(extractOp, {extractOp.getTensor(), qubit.getResult()});
+    qco::DeallocOp::create(rewriter, op.getLoc(), qubit.getResult());
+
+    rewriter.replaceOp(op, op.getDest());
+
+    return success();
+  }
+};
+
+} // namespace
 
 LogicalResult InsertOp::verify() {
   auto dstDim = getDest().getType().getDimSize(0);
@@ -35,34 +84,7 @@ LogicalResult InsertOp::verify() {
   return success();
 }
 
-/**
- * @brief If an InsertOp consumes an ExtractOp with the same index,
- * return the tensor from the extractOp directly.
- */
-static Value foldInsertAfterExtract(InsertOp insertOp) {
-  auto extractOp = insertOp.getScalar().getDefiningOp<ExtractOp>();
-
-  if (!extractOp) {
-    return nullptr;
-  }
-  if (insertOp.getDest() != extractOp.getOutTensor()) {
-    return nullptr;
-  }
-
-  auto insertIndex = insertOp.getIndex();
-  auto extractIndex = extractOp.getIndex();
-
-  if (getAsOpFoldResult(insertIndex) != getAsOpFoldResult(extractIndex)) {
-    return nullptr;
-  }
-
-  return extractOp.getTensor();
-}
-
-OpFoldResult InsertOp::fold(FoldAdaptor /*adaptor*/) {
-  if (auto result = foldInsertAfterExtract(*this)) {
-    return result;
-  }
-
-  return {};
+void InsertOp::getCanonicalizationPatterns(RewritePatternSet& results,
+                                           MLIRContext* context) {
+  results.add<RemoveExtractInsertPair>(context);
 }

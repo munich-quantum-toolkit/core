@@ -914,6 +914,9 @@ void barrierMultipleQubits(QCOProgramBuilder& b);
 /// Creates a circuit with a single controlled barrier.
 void singleControlledBarrier(QCOProgramBuilder& b);
 
+/// Canonicalized version of `singleControlledBarrier`.
+void singleControlledBarrierCanonicalized(QCOProgramBuilder& b);
+
 /// Creates a circuit with an inverse modifier applied to a barrier.
 void inverseBarrier(QCOProgramBuilder& b);
 

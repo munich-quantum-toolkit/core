@@ -185,22 +185,21 @@ INSTANTIATE_TEST_SUITE_P(
 /// @{
 INSTANTIATE_TEST_SUITE_P(
     QCOBarrierOpTest, QCOTest,
-    testing::Values(QCOTestCase{"Barrier", MQT_NAMED_BUILDER(barrier),
-                                MQT_NAMED_BUILDER(barrier)},
-                    QCOTestCase{"BarrierTwoQubits",
-                                MQT_NAMED_BUILDER(barrierTwoQubits),
-                                MQT_NAMED_BUILDER(barrierTwoQubits)},
-                    QCOTestCase{"BarrierMultipleQubits",
-                                MQT_NAMED_BUILDER(barrierMultipleQubits),
-                                MQT_NAMED_BUILDER(barrierMultipleQubits)},
-                    QCOTestCase{"SingleControlledBarrier",
-                                MQT_NAMED_BUILDER(singleControlledBarrier),
-                                MQT_NAMED_BUILDER(barrier)},
-                    QCOTestCase{"InverseBarrier",
-                                MQT_NAMED_BUILDER(inverseBarrier),
-                                MQT_NAMED_BUILDER(barrier)},
-                    QCOTestCase{"TwoBarrier", MQT_NAMED_BUILDER(twoBarrier),
-                                MQT_NAMED_BUILDER(barrierTwoQubits)}));
+    testing::Values(
+        QCOTestCase{"Barrier", MQT_NAMED_BUILDER(barrier),
+                    MQT_NAMED_BUILDER(barrier)},
+        QCOTestCase{"BarrierTwoQubits", MQT_NAMED_BUILDER(barrierTwoQubits),
+                    MQT_NAMED_BUILDER(barrierTwoQubits)},
+        QCOTestCase{"BarrierMultipleQubits",
+                    MQT_NAMED_BUILDER(barrierMultipleQubits),
+                    MQT_NAMED_BUILDER(barrierMultipleQubits)},
+        QCOTestCase{"SingleControlledBarrier",
+                    MQT_NAMED_BUILDER(singleControlledBarrier),
+                    MQT_NAMED_BUILDER(singleControlledBarrierCanonicalized)},
+        QCOTestCase{"InverseBarrier", MQT_NAMED_BUILDER(inverseBarrier),
+                    MQT_NAMED_BUILDER(barrier)},
+        QCOTestCase{"TwoBarrier", MQT_NAMED_BUILDER(twoBarrier),
+                    MQT_NAMED_BUILDER(barrierTwoQubits)}));
 /// @}
 
 /// \name QCO/Operations/StandardGates/DcxOp.cpp

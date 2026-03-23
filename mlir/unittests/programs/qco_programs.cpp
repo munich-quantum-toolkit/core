@@ -1893,6 +1893,11 @@ void singleControlledBarrier(QCOProgramBuilder& b) {
   });
 }
 
+void singleControlledBarrierCanonicalized(QCOProgramBuilder& b) {
+  auto q = b.allocQubitRegister(2);
+  b.barrier(q[0]);
+}
+
 void inverseBarrier(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   b.inv({q[0]}, [&](mlir::ValueRange qubits) {
