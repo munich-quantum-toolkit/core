@@ -20,6 +20,7 @@
 #include <llvm/ADT/TypeSwitch.h>
 #include <llvm/Support/Allocator.h>
 #include <llvm/Support/ErrorHandling.h>
+#include <mlir/Analysis/TopologicalSortUtils.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/IR/Block.h>
 #include <mlir/IR/BuiltinOps.h>
@@ -628,11 +629,13 @@ private:
       // of SWAPs from this node to the root.
 
       if (curr->isGoal(layers.front(), arch)) {
-        SmallVector<IndexGate> seq;
+        SmallVector<IndexGate> seq(curr->depth);
+        std::size_t i = seq.size() - 1;
         for (Node* n = curr; n->parent != nullptr; n = n->parent) {
-          seq.push_back(n->swap);
+          seq[i] = n->swap;
+          --i;
         }
-        return to_vector(reverse(seq));
+        return seq;
       }
 
       // Given a layout, create child-nodes for each possible SWAP
@@ -795,9 +798,8 @@ private:
    * @details Replace the dynamic with static qubits ("placement") and inserts
    * the SWAPs of the trial result into the IR.
    */
-  static void commitTrial(const TrialResult& result,
-                          ArrayRef<QubitValue> dynQubits, Region& funcBody,
-                          IRRewriter& rewriter) {
+  void commitTrial(const TrialResult& result, ArrayRef<QubitValue> dynQubits,
+                   Region& funcBody, IRRewriter& rewriter) {
     // Helper function that advances the iterator to the input qubit (the
     // operation producing it) of a deallocation or two-qubit op.
     const auto advFront = [](WireIterator& it) {
@@ -836,15 +838,6 @@ private:
         const auto in0 = wires[hw0].qubit();
         const auto in1 = wires[hw1].qubit();
 
-        // Reorder to avoid SSA dominance issues.
-        assert(op0->getBlock()->isOpOrderValid() &&
-               "An invalid op order leads to a significant runtime overhead.");
-        if (op0->isBeforeInBlock(op1)) {
-          rewriter.setInsertionPointAfterValue(in1);
-        } else {
-          rewriter.setInsertionPointAfterValue(in0);
-        }
-
         auto op = SWAPOp::create(rewriter, rewriter.getUnknownLoc(), in0, in1);
         const auto out0 = op.getQubit0Out();
         const auto out1 = op.getQubit1Out();
@@ -881,7 +874,10 @@ private:
       }
 
       ready.clear(); // Prepare for next iteration.
+      this->numSwaps += swaps.size();
     }
+
+    for_each(funcBody.getBlocks(), [](Block& b) { sortTopologically(&b); });
   }
 };
 

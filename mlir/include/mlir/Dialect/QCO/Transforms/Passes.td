@@ -69,6 +69,8 @@ def MappingPass : Pass<"place-and-route", "mlir::ModuleOp"> {
                         "the forwards and backwards mechanism.">,
                  Option<"seed", "seed", "std::size_t", "42",
                         "A seed used for randomization.">];
+  let statistics = [Statistic<"numSwaps", "num-inserted-swaps",
+                              "The number of inserted SWAPs">];
 }
 
 #endif // MLIR_DIALECT_QCO_TRANSFORMS_PASSES_TD
