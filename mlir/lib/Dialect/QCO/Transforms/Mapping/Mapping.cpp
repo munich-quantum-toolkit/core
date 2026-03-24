@@ -370,8 +370,8 @@ private:
     /**
      * @brief Decrement ref count of op and potentially release its iterators.
      */
-    std::optional<SmallVector<WireIterator*, 0>> visit(Operation* op,
-                                                       WireIterator* it) {
+    std::optional<ArrayRef<WireIterator*>> visit(Operation* op,
+                                                 WireIterator* it) {
       assert(refCount.contains(op) && "expected sync map to contain op");
 
       // Add iterator for later release.
@@ -395,7 +395,7 @@ private:
 
   private:
     /// @brief Maps operations to to-be-released iterators.
-    DenseMap<Operation*, SmallVector<WireIterator*, 0>> onHold;
+    DenseMap<Operation*, SmallVector<WireIterator*, 2>> onHold;
     /// @brief Maps operations to ref counts.
     DenseMap<Operation*, std::size_t> refCount;
   };
@@ -599,16 +599,30 @@ private:
         frontier;
     frontier.emplace(std::construct_at(arena.Allocate(), layout));
 
-    // The following maps discovered layouts to the lowest-depth parent
-    // pointers.
-    DenseMap<Layout, Node*, LayoutInfo> discovered;
-
+    DenseMap<Layout, std::size_t, LayoutInfo> bestDepth;
     DenseSet<IndexGate> expansionSet;
 
     std::size_t i = 0;
     while (!frontier.empty() && i < budget) {
       Node* curr = frontier.top();
       frontier.pop();
+
+      // Multiple sequences of SWAPs can lead to the same layout and the same
+      // layout creates the same child-nodes. Thus, if we've seen a layout
+      // already at a lower depth don't reexpand the current node (and hence
+      // recreate the same child nodes).
+
+      const auto [it, inserted] =
+          bestDepth.try_emplace(curr->layout, curr->depth);
+      if (!inserted) {
+        const auto otherDepth = it->getSecond();
+        if (curr->depth >= otherDepth) {
+          ++i;
+          continue;
+        }
+
+        it->second = curr->depth;
+      }
 
       // If the currently visited node is a goal node, reconstruct the sequence
       // of SWAPs from this node to the root.
@@ -621,18 +635,8 @@ private:
         return to_vector(reverse(seq));
       }
 
-      const auto [it, inserted] = discovered.try_emplace(curr->layout, curr);
-      if (!inserted) {
-        Node* other = it->getSecond();
-        if (curr->depth < other->depth) {
-          discovered[curr->layout] = curr;
-        }
-        ++i;
-        continue;
-      }
-
-      // Given a layout, create child-nodes for each possible SWAP between
-      // two neighbouring hardware qubits.
+      // Given a layout, create child-nodes for each possible SWAP
+      // between two neighbouring hardware qubits.
 
       expansionSet.clear();
       for (const IndexGate& gate : layers.front()) {
@@ -644,13 +648,6 @@ private:
             if (!expansionSet.insert(swap).second) {
               continue;
             }
-
-            // Multiple sequences of SWAPs may lead to the same layout.
-            // The discovered set ensures that we do not visit the same layout
-            // multiple times. Only after ensuring that the layout hasn't been
-            // discovered so far, we evaluate the "expensive" cost function.
-            // TODO: In the future, should fidelities be ever considered, the
-            // sequence of SWAPs matters - so this will become more difficult.
 
             frontier.emplace(std::construct_at(arena.Allocate(), curr, swap,
                                                layers, arch, params));
