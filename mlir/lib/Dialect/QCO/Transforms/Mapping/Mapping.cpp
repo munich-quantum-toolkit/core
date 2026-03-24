@@ -400,7 +400,7 @@ private:
     DenseMap<Operation*, std::size_t> refCount;
   };
 
-public:
+protected:
   using MappingPassBase::MappingPassBase;
 
   void runOnOperation() override {
