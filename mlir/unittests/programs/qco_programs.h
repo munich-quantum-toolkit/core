@@ -33,6 +33,24 @@ void allocLargeRegister(QCOProgramBuilder& b);
 /// Allocates two inline qubits.
 void staticQubits(QCOProgramBuilder& b);
 
+/// Allocates two static qubits and applies operations.
+void staticQubitsWithOps(QCOProgramBuilder& b);
+
+/// Allocates two static qubits and applies parametric gates.
+void staticQubitsWithParametricOps(QCOProgramBuilder& b);
+
+/// Allocates two static qubits and applies a two-target gate.
+void staticQubitsWithTwoTargetOps(QCOProgramBuilder& b);
+
+/// Allocates two static qubits and applies a controlled gate.
+void staticQubitsWithCtrl(QCOProgramBuilder& b);
+
+/// Allocates a static qubit and applies an inverse modifier.
+void staticQubitsWithInv(QCOProgramBuilder& b);
+
+/// Allocates one static and one dynamic qubit and applies mixed operations.
+void mixedStaticDynamicQubits(QCOProgramBuilder& b);
+
 /// Allocates and explicitly deallocates a single qubit.
 void allocDeallocPair(QCOProgramBuilder& b);
 

@@ -8,7 +8,6 @@
  * Licensed under the MIT License
  */
 
-#include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 
 #include <Eigen/Core>
@@ -326,9 +325,8 @@ void InvOp::build(
   build(odsBuilder, odsState, qubits);
   auto& block = odsState.regions.front()->emplaceBlock();
 
-  const auto qubitType = QubitType::get(odsBuilder.getContext());
-  for (size_t i = 0; i < qubits.size(); ++i) {
-    block.addArgument(qubitType, odsState.location);
+  for (auto qubit : qubits) {
+    block.addArgument(qubit.getType(), odsState.location);
   }
 
   const OpBuilder::InsertionGuard guard(odsBuilder);
@@ -347,9 +345,8 @@ LogicalResult InvOp::verify() {
     return emitOpError(
         "number of block arguments must match the number of targets");
   }
-  const auto qubitType = QubitType::get(getContext());
   for (size_t i = 0; i < numTargets; ++i) {
-    if (block.getArgument(i).getType() != qubitType) {
+    if (block.getArgument(i).getType() != getQubitsIn()[i].getType()) {
       return emitOpError("block argument type at index ")
              << i << " does not match target type";
     }

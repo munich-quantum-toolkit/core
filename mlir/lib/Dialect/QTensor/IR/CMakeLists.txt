@@ -20,6 +20,7 @@ add_mlir_dialect_library(
   PRIVATE
   MLIRIR
   MLIRArithDialect
+  MLIRDialectUtils
   MLIRInferTypeOpInterface
   MLIRSideEffectInterfaces
   PUBLIC

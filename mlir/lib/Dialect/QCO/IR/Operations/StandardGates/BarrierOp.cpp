@@ -77,6 +77,14 @@ struct MergeSubsequentBarrier final : OpRewritePattern<BarrierOp> {
 
 } // namespace
 
+LogicalResult BarrierOp::verify() {
+  if (!llvm::equal(getQubitsIn().getTypes(), getQubitsOut().getTypes())) {
+    return emitOpError("qco.barrier qubit input types must match output types "
+                       "pairwise");
+  }
+  return success();
+}
+
 Value BarrierOp::getInputTarget(const size_t i) {
   if (i < getNumTargets()) {
     return getQubitsIn()[i];

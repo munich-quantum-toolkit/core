@@ -14,7 +14,9 @@
 #include "mlir/Dialect/QC/IR/QCDialect.h"
 #include "mlir/Dialect/QC/IR/QCInterfaces.h"
 #include "mlir/Dialect/QC/IR/QCOps.h"
+#include "mlir/Dialect/QCO/Builder/QCOProgramBuilder.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
+#include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QCO/Transforms/Mapping/Architecture.h"
 #include "mlir/Dialect/QCO/Transforms/Passes.h"
 
@@ -27,6 +29,7 @@
 #include <mlir/IR/DialectRegistry.h>
 #include <mlir/IR/OwningOpRef.h>
 #include <mlir/IR/Value.h>
+#include <mlir/IR/Verifier.h>
 #include <mlir/Pass/PassManager.h>
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/WalkResult.h>
@@ -45,8 +48,7 @@ struct ArchitectureParam {
   Architecture (*factory)();
 };
 
-class MappingPassTest : public testing::Test,
-                        public testing::WithParamInterface<ArchitectureParam> {
+class MappingPassTestBase : public testing::Test {
 public:
   /**
    * @brief Walks the IR and validates if each two-qubit op is executable on the
@@ -118,9 +120,150 @@ protected:
     ASSERT_TRUE(succeeded(res));
   }
 
+  static void runQCOMapping(OwningOpRef<ModuleOp>& moduleOp) {
+    PassManager pm(moduleOp->getContext());
+    pm.addPass(qco::createMappingPass(qco::MappingPassOptions{.nlookahead = 5,
+                                                              .alpha = 1,
+                                                              .lambda = 0.85,
+                                                              .niterations = 2,
+                                                              .ntrials = 8,
+                                                              .seed = 1337}));
+    auto res = pm.run(*moduleOp);
+    ASSERT_TRUE(succeeded(res));
+    ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  }
+
+  static void expectSameStaticQubitType(Value input, Value output) {
+    const auto qIn = dyn_cast<qco::QubitType>(input.getType());
+    const auto qOut = dyn_cast<qco::QubitType>(output.getType());
+    ASSERT_TRUE(qIn);
+    ASSERT_TRUE(qOut);
+    EXPECT_EQ(qIn, qOut);
+    EXPECT_TRUE(qOut.getIsStatic());
+  }
+
   std::unique_ptr<MLIRContext> context;
 };
+
+class MappingPassTest : public MappingPassTestBase,
+                        public testing::WithParamInterface<ArchitectureParam> {
+};
 }; // namespace
+
+TEST_F(MappingPassTestBase, SynchronizesParameterizedGateAndMeasureTypes) {
+  qco::QCOProgramBuilder builder(context.get());
+  builder.initialize();
+
+  auto q0 = builder.allocQubit();
+  auto q1 = builder.allocQubit();
+
+  q0 = builder.rx(0.25, q0);
+  std::tie(q0, q1) = builder.rxx(0.5, q0, q1);
+  std::tie(q0, q1) = builder.xx_plus_yy(0.75, 1.25, q0, q1);
+  const auto [measuredQubit, measuredBit] = builder.measure(q0);
+  (void)measuredBit;
+  q0 = measuredQubit;
+
+  builder.dealloc(q0);
+  builder.dealloc(q1);
+
+  auto moduleOp = builder.finalize();
+  runQCOMapping(moduleOp);
+
+  auto entry = *moduleOp->getOps<func::FuncOp>().begin();
+  qco::RXOp rxOp;
+  qco::RXXOp rxxOp;
+  qco::XXPlusYYOp xxPlusYYOp;
+  qco::MeasureOp measureOp;
+  entry.walk([&](Operation* op) {
+    if (auto rx = dyn_cast<qco::RXOp>(op)) {
+      rxOp = rx;
+    } else if (auto rxx = dyn_cast<qco::RXXOp>(op)) {
+      rxxOp = rxx;
+    } else if (auto xxPlusYY = dyn_cast<qco::XXPlusYYOp>(op)) {
+      xxPlusYYOp = xxPlusYY;
+    } else if (auto measure = dyn_cast<qco::MeasureOp>(op)) {
+      measureOp = measure;
+    }
+  });
+
+  ASSERT_TRUE(rxOp);
+  ASSERT_TRUE(rxxOp);
+  ASSERT_TRUE(xxPlusYYOp);
+  ASSERT_TRUE(measureOp);
+
+  expectSameStaticQubitType(rxOp.getQubitIn(), rxOp.getQubitOut());
+  expectSameStaticQubitType(rxxOp.getQubit0In(), rxxOp.getQubit0Out());
+  expectSameStaticQubitType(rxxOp.getQubit1In(), rxxOp.getQubit1Out());
+  expectSameStaticQubitType(xxPlusYYOp.getQubit0In(),
+                            xxPlusYYOp.getQubit0Out());
+  expectSameStaticQubitType(xxPlusYYOp.getQubit1In(),
+                            xxPlusYYOp.getQubit1Out());
+  expectSameStaticQubitType(measureOp.getQubitIn(), measureOp.getQubitOut());
+}
+
+TEST_F(MappingPassTestBase, SynchronizesModifierRegionArguments) {
+  qco::QCOProgramBuilder builder(context.get());
+  builder.initialize();
+
+  auto q0 = builder.allocQubit();
+  auto q1 = builder.allocQubit();
+
+  auto [controlsOut, targetsOut] = builder.ctrl(
+      {q0}, {q1}, [&](ValueRange targets) -> llvm::SmallVector<Value> {
+        return {builder.rx(0.5, targets[0])};
+      });
+  q0 = controlsOut.front();
+  q1 = targetsOut.front();
+
+  auto invOut =
+      builder.inv({q1}, [&](ValueRange qubits) -> llvm::SmallVector<Value> {
+        return {builder.rx(0.25, qubits[0])};
+      });
+  q1 = invOut.front();
+
+  builder.dealloc(q0);
+  builder.dealloc(q1);
+
+  auto moduleOp = builder.finalize();
+  runQCOMapping(moduleOp);
+
+  auto entry = *moduleOp->getOps<func::FuncOp>().begin();
+  qco::CtrlOp ctrlOp;
+  qco::InvOp invOp;
+  qco::RXOp ctrlBodyRxOp;
+  qco::RXOp invBodyRxOp;
+  entry.walk([&](Operation* op) {
+    if (auto ctrl = dyn_cast<qco::CtrlOp>(op)) {
+      ctrlOp = ctrl;
+    } else if (auto inv = dyn_cast<qco::InvOp>(op)) {
+      invOp = inv;
+    } else if (auto rx = dyn_cast<qco::RXOp>(op)) {
+      if (rx->getParentOfType<qco::CtrlOp>()) {
+        ctrlBodyRxOp = rx;
+      } else if (rx->getParentOfType<qco::InvOp>()) {
+        invBodyRxOp = rx;
+      }
+    }
+  });
+
+  ASSERT_TRUE(ctrlOp);
+  ASSERT_TRUE(invOp);
+  ASSERT_TRUE(ctrlBodyRxOp);
+  ASSERT_TRUE(invBodyRxOp);
+
+  ASSERT_EQ(ctrlOp.getBody()->getNumArguments(), ctrlOp.getNumTargets());
+  expectSameStaticQubitType(ctrlOp.getTargetsIn()[0],
+                            ctrlOp.getBody()->getArgument(0));
+  expectSameStaticQubitType(ctrlBodyRxOp.getQubitIn(),
+                            ctrlBodyRxOp.getQubitOut());
+
+  ASSERT_EQ(invOp.getBody()->getNumArguments(), invOp.getNumTargets());
+  expectSameStaticQubitType(invOp.getQubitsIn()[0],
+                            invOp.getBody()->getArgument(0));
+  expectSameStaticQubitType(invBodyRxOp.getQubitIn(),
+                            invBodyRxOp.getQubitOut());
+}
 
 TEST_P(MappingPassTest, GHZ) {
   auto arch = GetParam().factory();

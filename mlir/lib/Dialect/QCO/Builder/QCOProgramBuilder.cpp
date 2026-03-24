@@ -12,6 +12,7 @@
 
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
+#include "mlir/Dialect/QCO/Utils/ValueOrdering.h"
 #include "mlir/Dialect/QTensor/IR/QTensorDialect.h"
 #include "mlir/Dialect/QTensor/IR/QTensorOps.h"
 #include "mlir/Dialect/Utils/Utils.h"
@@ -83,15 +84,10 @@ Value QCOProgramBuilder::allocQubit() {
   return qubit;
 }
 
-Value QCOProgramBuilder::staticQubit(const int64_t index) {
+Value QCOProgramBuilder::staticQubit(const uint64_t index) {
   checkFinalized();
 
-  if (index < 0) {
-    llvm::reportFatalUsageError("Index must be non-negative");
-  }
-
-  auto indexAttr = getI64IntegerAttr(index);
-  auto staticOp = StaticOp::create(*this, indexAttr);
+  auto staticOp = StaticOp::create(*this, index);
   const auto qubit = staticOp.getQubit();
 
   // Track the static qubit as valid
@@ -747,9 +743,8 @@ std::pair<ValueRange, ValueRange> QCOProgramBuilder::ctrl(
 
   auto ctrlOp = CtrlOp::create(*this, controls, targets);
   auto& block = ctrlOp.getBodyRegion().emplaceBlock();
-  const auto qubitType = QubitType::get(getContext());
   for (const auto target : targets) {
-    const auto arg = block.addArgument(qubitType, getLoc());
+    const auto arg = block.addArgument(target.getType(), getLoc());
     updateQubitTracking(target, arg);
   }
   const InsertionGuard guard(*this);
@@ -785,9 +780,8 @@ ValueRange QCOProgramBuilder::inv(
 
   // Add block arguments for all qubits
   auto& block = invOp.getBodyRegion().emplaceBlock();
-  const auto qubitType = QubitType::get(getContext());
   for (const auto qubit : qubits) {
-    const auto arg = block.addArgument(qubitType, getLoc());
+    const auto arg = block.addArgument(qubit.getType(), getLoc());
     updateQubitTracking(qubit, arg);
   }
 
@@ -924,19 +918,10 @@ OwningOpRef<ModuleOp> QCOProgramBuilder::finalize() {
         "Insertion point is not in entry block of main function");
   }
 
-  auto blockOrderComparator = [](Value a, Value b) {
-    auto* opA = a.getDefiningOp();
-    auto* opB = b.getDefiningOp();
-    if (!opA || !opB || opA->getBlock() != opB->getBlock()) {
-      return a.getAsOpaquePointer() < b.getAsOpaquePointer();
-    }
-    return opA->isBeforeInBlock(opB);
-  };
-
   // Automatically deallocate all still-allocated qubits
   // Sort qubits for deterministic output
   llvm::SmallVector<Value> sortedQubits(validQubits.begin(), validQubits.end());
-  llvm::sort(sortedQubits, blockOrderComparator);
+  llvm::sort(sortedQubits, SSAOrder{});
 
   for (auto qubit : sortedQubits) {
     DeallocOp::create(*this, qubit);
@@ -946,7 +931,7 @@ OwningOpRef<ModuleOp> QCOProgramBuilder::finalize() {
   // Sort tensors for deterministic output
   llvm::SmallVector<Value> sortedTensors(validTensors.begin(),
                                          validTensors.end());
-  llvm::sort(sortedTensors, blockOrderComparator);
+  llvm::sort(sortedTensors, SSAOrder{});
 
   for (auto tensor : sortedTensors) {
     qtensor::DeallocOp::create(*this, tensor);

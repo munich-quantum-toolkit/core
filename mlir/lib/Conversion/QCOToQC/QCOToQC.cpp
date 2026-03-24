@@ -55,9 +55,9 @@ public:
     // Identity conversion for all types by default
     addConversion([](Type type) { return type; });
 
-    // Convert QCO qubit values to QC qubit references
-    addConversion([ctx](qco::QubitType /*type*/) -> Type {
-      return qc::QubitType::get(ctx);
+    // Convert QCO qubit values to QC qubit references, preserving isStatic
+    addConversion([ctx](qco::QubitType type) -> Type {
+      return qc::QubitType::get(ctx, type.getIsStatic());
     });
   }
 };
@@ -96,18 +96,25 @@ struct ConvertQCOAllocOp final : OpConversionPattern<qco::AllocOp> {
 };
 
 /**
- * @brief Converts qco.dealloc to qc.dealloc
+ * @brief Converts qco.dealloc to qc.dealloc (dynamic) or erases it (static).
  *
  * @details
- * Deallocates a qubit, releasing its resources. The OpAdaptor automatically
- * provides the type-converted qubit operand (!qc.qubit instead of
- * !qco.qubit), so we simply pass it through to the new operation.
+ * For dynamic qubits (`!qco.qubit`), converts to `qc.dealloc`.
+ * For static qubits (`!qco.qubit<static>`), erases the op since QC does not
+ * require explicit deallocation of static qubits.
  *
- * Example transformation:
+ * Example transformation (dynamic):
  * ```mlir
  * qco.dealloc %q_qco : !qco.qubit
  * // becomes:
  * qc.dealloc %q_qc : !qc.qubit
+ * ```
+ *
+ * Example transformation (static):
+ * ```mlir
+ * qco.dealloc %q_qco : !qco.qubit<static>
+ * // becomes:
+ * (erased)
  * ```
  */
 struct ConvertQCODeallocOp final : OpConversionPattern<qco::DeallocOp> {
@@ -116,7 +123,11 @@ struct ConvertQCODeallocOp final : OpConversionPattern<qco::DeallocOp> {
   LogicalResult
   matchAndRewrite(qco::DeallocOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
-    // OpAdaptor provides the already type-converted qubit
+    if (op.getQubit().getType().getIsStatic()) {
+      rewriter.eraseOp(op);
+      return success();
+    }
+
     rewriter.replaceOpWithNewOp<qc::DeallocOp>(op, adaptor.getQubit());
     return success();
   }
