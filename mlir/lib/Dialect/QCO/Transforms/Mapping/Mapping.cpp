@@ -833,8 +833,6 @@ private:
 
       // Apply the sequence of SWAPs and rewire the qubit SSA values.
       for (const auto& [hw0, hw1] : swaps) {
-        Operation* op0 = wires[hw0].operation();
-        Operation* op1 = wires[hw1].operation();
         const auto in0 = wires[hw0].qubit();
         const auto in1 = wires[hw1].qubit();
 
