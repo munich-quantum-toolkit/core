@@ -63,6 +63,9 @@ public:
 
     bool executable = true;
     std::ignore = moduleOp->walk([&](qc::UnitaryOpInterface op) {
+      if (isa<qc::BarrierOp>(op)) {
+        return WalkResult::advance();
+      }
       if (op.getNumQubits() > 1) {
         assert(op.getNumQubits() == 2 &&
                "Expected only 2-qubit gates after decomposition");
@@ -177,6 +180,14 @@ TEST_P(MappingPassTest, Sabre) {
   builder.cx(q3, q4);
 
   builder.cx(q3, q0);
+
+  builder.barrier({q0, q1, q2, q3, q4, q5});
+  builder.measure(q0);
+  builder.measure(q1);
+  builder.measure(q2);
+  builder.measure(q3);
+  builder.measure(q4);
+  builder.measure(q5);
 
   builder.dealloc(q0);
   builder.dealloc(q1);

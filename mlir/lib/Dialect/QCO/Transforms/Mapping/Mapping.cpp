@@ -352,6 +352,54 @@ private:
     std::size_t nswaps{};
   };
 
+  struct SynchronizationMap {
+    /**
+     * @returns true if the operation is contained in the map.
+     */
+    bool contains(Operation* op) const { return onHold.contains(op); }
+
+    /**
+     * @brief Add op with respective iterator and ref count to the map.
+     */
+    void add(Operation* op, WireIterator* it, const std::size_t cnt) {
+      onHold.try_emplace(op, SmallVector<WireIterator*>{it});
+      // Decrease the cnt by one because the op was visited when adding.
+      refCount.try_emplace(op, cnt - 1);
+    }
+
+    /**
+     * @brief Decrement ref count of op and potentially release its iterators.
+     */
+    std::optional<SmallVector<WireIterator*, 0>> visit(Operation* op,
+                                                       WireIterator* it) {
+      assert(refCount.contains(op) && "expected sync map to contain op");
+
+      // Add iterator for later release.
+      onHold[op].push_back(it);
+
+      // Release iterators whenever the ref count reaches zero.
+      if (--refCount[op] == 0) {
+        return onHold[op];
+      }
+
+      return std::nullopt;
+    }
+
+    /**
+     * @brief Clear the contents of the map.
+     */
+    void clear() {
+      onHold.clear();
+      refCount.clear();
+    }
+
+  private:
+    /// @brief Maps operations to to-be-released iterators.
+    DenseMap<Operation*, SmallVector<WireIterator*, 0>> onHold;
+    /// @brief Maps operations to ref counts.
+    DenseMap<Operation*, std::size_t> refCount;
+  };
+
 public:
   using MappingPassBase::MappingPassBase;
 
@@ -657,28 +705,33 @@ private:
         while (shouldContinue(it)) {
           const auto res =
               TypeSwitch<Operation*, WalkResult>(it.operation())
-                  .Case<UnitaryOpInterface>([&](UnitaryOpInterface op) {
-                    assert(op.getNumQubits() > 0 && op.getNumQubits() <= 2);
-
-                    if (op.getNumQubits() == 1) {
-                      std::ranges::advance(it, step);
-                      return WalkResult::advance();
-                    }
-
-                    if (visited.contains(op)) {
-                      const auto otherIndex = visited[op];
-                      layer.insert(std::make_pair(index, otherIndex));
-
-                      std::ranges::advance(wires[index], step);
-                      std::ranges::advance(wires[otherIndex], step);
-
-                      visited.erase(op);
-                    } else {
-                      visited.try_emplace(op, index);
-                    }
-
-                    return WalkResult::interrupt();
+                  .Case<BarrierOp>([&](auto) {
+                    std::ranges::advance(it, step);
+                    return WalkResult::advance();
                   })
+                  .template Case<UnitaryOpInterface>(
+                      [&](UnitaryOpInterface op) {
+                        assert(op.getNumQubits() > 0 && op.getNumQubits() <= 2);
+
+                        if (op.getNumQubits() == 1) {
+                          std::ranges::advance(it, step);
+                          return WalkResult::advance();
+                        }
+
+                        if (visited.contains(op)) {
+                          const auto otherIndex = visited[op];
+                          layer.insert(std::make_pair(index, otherIndex));
+
+                          std::ranges::advance(wires[index], step);
+                          std::ranges::advance(wires[otherIndex], step);
+
+                          visited.erase(op);
+                        } else {
+                          visited.try_emplace(op, index);
+                        }
+
+                        return WalkResult::interrupt();
+                      })
                   .template Case<AllocOp, StaticOp, ResetOp, MeasureOp,
                                  DeallocOp>([&](auto) {
                     std::ranges::advance(it, step);
@@ -751,9 +804,13 @@ private:
     // Helper function that advances the iterator to the input qubit (the
     // operation producing it) of a deallocation or two-qubit op.
     const auto advFront = [](WireIterator& it) {
+      auto next = std::next(it);
       while (true) {
-        const auto next = std::next(it);
         if (isa<DeallocOp>(next.operation())) {
+          break;
+        }
+
+        if (isa<BarrierOp>(next.operation())) {
           break;
         }
 
@@ -763,13 +820,14 @@ private:
         }
 
         std::ranges::advance(it, 1);
+        std::ranges::advance(next, 1);
       }
     };
 
     auto wires = toWires(place(dynQubits, result.layout, funcBody, rewriter));
 
-    DenseMap<Operation*, WireIterator*> seen;
-    for (const auto [i, swaps] : enumerate(result.swaps)) {
+    SynchronizationMap ready;
+    for (const auto& swaps : result.swaps) {
       // Advance all wires to the next front of one-qubit outputs
       // (the SSA values).
       for_each(wires, advFront);
@@ -802,21 +860,30 @@ private:
         std::ranges::advance(wires[hw1], 1);
       }
 
-      // Jump over "ready" two-qubit gates.
+      // Jump over "ready" gates.
       for (auto& it : wires) {
         auto op = dyn_cast<UnitaryOpInterface>(std::next(it).operation());
-        if (op && op.getNumQubits() > 1) {
-          if (seen.contains(op)) {
-            std::ranges::advance(it, 1);
-            std::ranges::advance(*seen[op], 1);
-            continue;
-          }
+        if (!op) {
+          continue;
+        }
 
-          seen.try_emplace(op, &it);
+        if (op.getNumQubits() < 2) {
+          continue;
+        }
+
+        if (!ready.contains(op)) {
+          ready.add(op, &it, op.getNumQubits());
+          continue;
+        }
+
+        if (auto opt = ready.visit(op, &it)) {
+          for (WireIterator* wire : *opt) {
+            std::ranges::advance(*wire, 1);
+          }
         }
       }
 
-      seen.clear(); // Prepare for next iteration.
+      ready.clear(); // Prepare for next iteration.
     }
   }
 };
