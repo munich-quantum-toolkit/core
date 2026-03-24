@@ -350,8 +350,8 @@ private:
     /**
      * @brief Decrement ref count of op and potentially release its iterators.
      */
-    std::optional<SmallVector<WireIterator*, 0>> visit(Operation* op,
-                                                       WireIterator* it) {
+    std::optional<ArrayRef<WireIterator*>> visit(Operation* op,
+                                                 WireIterator* it) {
       assert(refCount.contains(op) && "expected sync map to contain op");
 
       // Add iterator for later release.
@@ -375,7 +375,7 @@ private:
 
   private:
     /// @brief Maps operations to to-be-released iterators.
-    DenseMap<Operation*, SmallVector<WireIterator*, 0>> onHold;
+    DenseMap<Operation*, SmallVector<WireIterator*, 2>> onHold;
     /// @brief Maps operations to ref counts.
     DenseMap<Operation*, std::size_t> refCount;
   };
