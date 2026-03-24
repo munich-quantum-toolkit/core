@@ -400,65 +400,6 @@ private:
     DenseMap<Operation*, std::size_t> refCount;
   };
 
-  struct [[nodiscard]] TrialResult {
-    explicit TrialResult(Layout layout) : layout(std::move(layout)) {}
-
-    /// @brief The computed initial layout.
-    Layout layout;
-    /// @brief A vector of SWAPs for each layer.
-    SmallVector<SmallVector<IndexGate>> swaps;
-    /// @brief The number of inserted SWAPs.
-    std::size_t nswaps{};
-  };
-
-  struct SynchronizationMap {
-    /**
-     * @returns true if the operation is contained in the map.
-     */
-    bool contains(Operation* op) const { return onHold.contains(op); }
-
-    /**
-     * @brief Add op with respective iterator and ref count to the map.
-     */
-    void add(Operation* op, WireIterator* it, const std::size_t cnt) {
-      onHold.try_emplace(op, SmallVector<WireIterator*>{it});
-      // Decrease the cnt by one because the op was visited when adding.
-      refCount.try_emplace(op, cnt - 1);
-    }
-
-    /**
-     * @brief Decrement ref count of op and potentially release its iterators.
-     */
-    std::optional<ArrayRef<WireIterator*>> visit(Operation* op,
-                                                 WireIterator* it) {
-      assert(refCount.contains(op) && "expected sync map to contain op");
-
-      // Add iterator for later release.
-      onHold[op].push_back(it);
-
-      // Release iterators whenever the ref count reaches zero.
-      if (--refCount[op] == 0) {
-        return onHold[op];
-      }
-
-      return std::nullopt;
-    }
-
-    /**
-     * @brief Clear the contents of the map.
-     */
-    void clear() {
-      onHold.clear();
-      refCount.clear();
-    }
-
-  private:
-    /// @brief Maps operations to to-be-released iterators.
-    DenseMap<Operation*, SmallVector<WireIterator*, 2>> onHold;
-    /// @brief Maps operations to ref counts.
-    DenseMap<Operation*, std::size_t> refCount;
-  };
-
 public:
   using MappingPassBase::MappingPassBase;
 
