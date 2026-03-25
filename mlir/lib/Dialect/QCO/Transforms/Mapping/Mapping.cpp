@@ -598,7 +598,12 @@ private:
     llvm::SpecificBumpPtrAllocator<Node> arena;
     std::priority_queue<Node*, std::vector<Node*>, Node::ComparePointer>
         frontier;
-    frontier.emplace(std::construct_at(arena.Allocate(), layout));
+
+    Node* root = std::construct_at(arena.Allocate(), layout);
+    if (root->isGoal(layers.front(), arch)) {
+      return SmallVector<IndexGate>{};
+    }
+    frontier.emplace(root);
 
     DenseMap<Layout, std::size_t, LayoutInfo> bestDepth;
     DenseSet<IndexGate> expansionSet;
@@ -630,10 +635,10 @@ private:
 
       if (curr->isGoal(layers.front(), arch)) {
         SmallVector<IndexGate> seq(curr->depth);
-        std::size_t i = seq.size() - 1;
+        std::size_t j = seq.size() - 1;
         for (Node* n = curr; n->parent != nullptr; n = n->parent) {
-          seq[i] = n->swap;
-          --i;
+          seq[j] = n->swap;
+          --j;
         }
         return seq;
       }
