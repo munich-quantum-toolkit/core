@@ -38,6 +38,7 @@
 #include <tuple>
 
 using namespace mlir;
+using namespace mlir::qco;
 
 namespace {
 struct ArchitectureParam {

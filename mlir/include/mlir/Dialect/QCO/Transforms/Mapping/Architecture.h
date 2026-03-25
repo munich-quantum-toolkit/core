@@ -20,7 +20,7 @@
 #include <string>
 #include <utility>
 
-namespace mlir {
+namespace mlir::qco {
 
 /**
  * @brief A quantum accelerator's architecture.
@@ -98,4 +98,4 @@ private:
   Matrix prev_;
 };
 
-} // namespace mlir
+} // namespace mlir::qco
