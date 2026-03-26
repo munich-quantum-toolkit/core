@@ -14,7 +14,6 @@
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 
 #include <llvm/ADT/TypeSwitch.h>
-#include <llvm/Support/Debug.h>
 #include <mlir/IR/Region.h>
 #include <mlir/IR/Value.h>
 #include <mlir/Support/LLVM.h>
@@ -33,69 +32,32 @@ public:
   /**
    * @brief Add qubit with automatically assigned dynamic index.
    */
-  [[maybe_unused]] void add(TypedValue<QubitType> q) {
-    const auto index = programToValue_.size();
-    programToValue_.try_emplace(index, q);
-    valueToIndex_.try_emplace(q, std::make_pair(QubitLocation::Program, index));
-  }
+  [[maybe_unused]] void add(TypedValue<QubitType> q);
 
   /**
    * @brief Add qubit with static index.
    */
-  void add(TypedValue<QubitType> q, std::size_t hw) {
-    hardwareToValue_.try_emplace(hw, q);
-    valueToIndex_.try_emplace(q, std::make_pair(QubitLocation::Hardware, hw));
-  }
+  void add(TypedValue<QubitType> q, std::size_t hw);
 
   /**
    * @brief Remap the qubit value from prev to next.
    */
-  void remap(TypedValue<QubitType> prev, TypedValue<QubitType> next) {
-    const auto& [location, index] = valueToIndex_.lookup(prev);
-
-    valueToIndex_.erase(prev);
-    valueToIndex_.try_emplace(next, std::make_pair(location, index));
-
-    if (location == QubitLocation::Program) {
-      programToValue_[index] = next;
-      return;
-    }
-
-    hardwareToValue_[index] = next;
-  }
+  void remap(TypedValue<QubitType> prev, TypedValue<QubitType> next);
 
   /**
    * @brief Remove the qubit value.
    */
-  void remove(TypedValue<QubitType> q) {
-    assert(valueToIndex_.contains(q));
-    const auto& [location, index] = valueToIndex_.lookup(q);
-
-    valueToIndex_.erase(q);
-
-    if (location == QubitLocation::Program) {
-      programToValue_.erase(index);
-      return;
-    }
-
-    hardwareToValue_.erase(index);
-  }
+  void remove(TypedValue<QubitType> q);
 
   /**
    * @returns the qubit value assigned to a program index.
    */
-  [[maybe_unused]] TypedValue<QubitType> getProgramQubit(std::size_t index) {
-    assert(programToValue_.contains(index));
-    return programToValue_.lookup(index);
-  }
+  [[maybe_unused]] TypedValue<QubitType> getProgramQubit(std::size_t index);
 
   /**
    * @returns the qubit value assigned to a hardware index.
    */
-  TypedValue<QubitType> getHardwareQubit(std::size_t index) {
-    assert(hardwareToValue_.contains(index));
-    return hardwareToValue_.lookup(index);
-  }
+  TypedValue<QubitType> getHardwareQubit(std::size_t index);
 
 private:
   DenseMap<std::size_t, TypedValue<QubitType>> programToValue_;
@@ -104,7 +66,7 @@ private:
       valueToIndex_;
 };
 
-template <typename Fn> LogicalResult walkUnit(Region& region, Fn&& fn) {
+template <typename Fn> void walkUnit(Region& region, Fn&& fn) {
   const auto ffn = std::forward<Fn>(fn);
 
   Qubits qubits;
@@ -134,7 +96,5 @@ template <typename Fn> LogicalResult walkUnit(Region& region, Fn&& fn) {
         .template Case<DeallocOp>(
             [&](DeallocOp op) { qubits.remove(op.getQubit()); });
   }
-
-  return success();
 }
 } // namespace mlir::qco
