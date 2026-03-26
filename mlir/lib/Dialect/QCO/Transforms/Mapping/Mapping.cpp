@@ -13,6 +13,7 @@
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QCO/Transforms/Mapping/Architecture.h"
 #include "mlir/Dialect/QCO/Transforms/Passes.h"
+#include "mlir/Dialect/QCO/Utils/Drivers.h"
 #include "mlir/Dialect/QCO/Utils/WireIterator.h"
 
 #include <llvm/ADT/STLExtras.h>
@@ -377,15 +378,16 @@ protected:
                        {5, 8}, {8, 5}, {6, 7}, {7, 6}, {7, 8}, {8, 7}});
 
     for (auto func : getOperation().getOps<func::FuncOp>()) {
-      const auto dyn = collectDynamicQubits(func.getFunctionBody());
-      if (dyn.size() > arch.nqubits()) {
+      const auto dynQubits = collectDynamicQubits(func.getFunctionBody());
+      if (dynQubits.size() > arch.nqubits()) {
         func.emitError() << "the targeted architecture supports "
-                         << arch.nqubits() << " qubits, got " << dyn.size();
+                         << arch.nqubits() << " qubits, got "
+                         << dynQubits.size();
         signalPassFailure();
         return;
       }
 
-      const auto [ltr, rtl] = computeBidirectionalLayers(dyn);
+      const auto [ltr, rtl] = computeBidirectionalLayers(dynQubits);
 
       // Create trials. Currently this includes the identity layout and
       // `ntrials` many random layouts.
@@ -417,7 +419,8 @@ protected:
         return;
       }
 
-      commitTrial(*best, dyn, ltr.anchors, func.getFunctionBody(), rewriter);
+      place(dynQubits, best->layout, func.getFunctionBody(), rewriter);
+      commit(best->swaps, ltr.anchors, func.getFunctionBody(), rewriter);
     }
   }
 
@@ -497,39 +500,6 @@ private:
     const auto ltr = collectLayers<Direction::Forward>(wires);
     const auto rtl = collectLayers<Direction::Backward>(wires);
     return std::make_pair(ltr, rtl);
-  }
-
-  /**
-   * @brief Perform placement.
-   * @details Replaces dynamic with static qubits. Extends the computation with
-   * as many static qubits the architecture supports.
-   * @returns vector of SSA values produced by qco.static operations, ordered by
-   * the static index s.t. [i] = qco.static i.
-   */
-  [[nodiscard]] static SmallVector<QubitValue>
-  place(ArrayRef<QubitValue> dynQubits, const Layout& layout, Region& funcBody,
-        IRRewriter& rewriter) {
-    SmallVector<QubitValue> statics(layout.nqubits());
-
-    // 1. Replace existing dynamic allocations with mapped static ones.
-    for (const auto [p, q] : enumerate(dynQubits)) {
-      const auto hw = layout.getHardwareIndex(p);
-      rewriter.setInsertionPoint(q.getDefiningOp());
-      auto op = rewriter.replaceOpWithNewOp<StaticOp>(q.getDefiningOp(), hw);
-      statics[hw] = op.getQubit();
-    }
-
-    // 2. Create static qubits for the remaining (unused) hardware indices.
-    for (std::size_t p = dynQubits.size(); p < layout.nqubits(); ++p) {
-      rewriter.setInsertionPointToStart(&funcBody.front());
-      const auto hw = layout.getHardwareIndex(p);
-      auto op = StaticOp::create(rewriter, rewriter.getUnknownLoc(), hw);
-      rewriter.setInsertionPoint(funcBody.back().getTerminator());
-      DeallocOp::create(rewriter, rewriter.getUnknownLoc(), op.getQubit());
-      statics[hw] = op.getQubit();
-    }
-
-    return statics;
   }
 
   /**
@@ -767,88 +737,80 @@ private:
   }
 
   /**
-   * @brief Performs placement and inserts SWAPs into the IR.
-   * @details Replace the dynamic with static qubits ("placement") and inserts
-   * the SWAPs of the trial result into the IR.
+   * @brief Perform placement.
+   * @details Replaces dynamic with static qubits. Extends the computation with
+   * as many static qubits the architecture supports.
    */
-  void commitTrial(const TrialResult& result, ArrayRef<QubitValue> dynQubits,
-                   ArrayRef<Operation*> anchors, Region& funcBody,
-                   IRRewriter& rewriter) {
+  [[nodiscard]] static void place(ArrayRef<QubitValue> dynQubits,
+                                  const Layout& layout, Region& funcBody,
+                                  IRRewriter& rewriter) {
+    // 1. Replace existing dynamic allocations with mapped static ones.
+    for (const auto [p, q] : enumerate(dynQubits)) {
+      const auto hw = layout.getHardwareIndex(p);
+      rewriter.setInsertionPoint(q.getDefiningOp());
+      auto op = rewriter.replaceOpWithNewOp<StaticOp>(q.getDefiningOp(), hw);
+    }
 
-    auto hwQubits = place(dynQubits, result.layout, funcBody, rewriter);
-    DenseMap<Value, std::size_t> toHardwareIndex;
+    // 2. Create static qubits for the remaining (unused) hardware indices.
+    for (std::size_t p = dynQubits.size(); p < layout.nqubits(); ++p) {
+      rewriter.setInsertionPointToStart(&funcBody.front());
+      const auto hw = layout.getHardwareIndex(p);
+      auto op = StaticOp::create(rewriter, rewriter.getUnknownLoc(), hw);
+      rewriter.setInsertionPoint(funcBody.back().getTerminator());
+      DeallocOp::create(rewriter, rewriter.getUnknownLoc(), op.getQubit());
+    }
+  }
 
-    std::size_t currLayer = 0;
-    for (Operation& curr : funcBody.getOps()) {
-      if (currLayer > anchors.size() - 1) {
-        break;
+  /**
+   * @brief Inserts SWAPs into the IR.
+   */
+  void commit(ArrayRef<SmallVector<IndexGate>> swaps,
+              ArrayRef<Operation*> anchors, Region& funcBody,
+              IRRewriter& rewriter) {
+    ArrayRef<Operation*>::iterator anchorIt = anchors.begin();
+    ArrayRef<SmallVector<IndexGate>>::iterator swapIt = swaps.begin();
+
+    walkUnit(funcBody, [&](Operation* op, Qubits& qubits) {
+      // Early exit if we've processed all layers.
+      if (anchorIt == anchors.end()) {
+        return WalkResult::interrupt();
       }
 
-      llvm::TypeSwitch<Operation*>(&curr)
-          .Case<StaticOp>([&](StaticOp op) {
-            toHardwareIndex.try_emplace(op.getQubit(), op.getIndex());
-            hwQubits[op.getIndex()] = op.getQubit();
-          })
-          .Case<UnitaryOpInterface>([&](UnitaryOpInterface op) {
-            if (op == anchors[currLayer]) {
-              rewriter.setInsertionPoint(anchors[currLayer]);
+      if (op == *anchorIt) {
+        rewriter.setInsertionPoint(*anchorIt);
 
-              const auto& swaps = result.swaps[currLayer];
-              for (const auto& [hw0, hw1] : swaps) {
-                const auto in0 = hwQubits[hw0];
-                const auto in1 = hwQubits[hw1];
+        for (const auto& [hw0, hw1] : *swapIt) {
+          const auto in0 = qubits.getHardwareQubit(hw0);
+          const auto in1 = qubits.getHardwareQubit(hw1);
 
-                auto insertedOp = SWAPOp::create(
-                    rewriter, rewriter.getUnknownLoc(), in0, in1);
+          auto insertedOp =
+              SWAPOp::create(rewriter, rewriter.getUnknownLoc(), in0, in1);
 
-                const auto out0 = insertedOp.getQubit0Out();
-                const auto out1 = insertedOp.getQubit1Out();
+          const auto out0 = insertedOp.getQubit0Out();
+          const auto out1 = insertedOp.getQubit1Out();
 
-                rewriter.replaceAllUsesExcept(in0, out1, insertedOp);
-                rewriter.replaceAllUsesExcept(in1, out0, insertedOp);
+          rewriter.replaceAllUsesExcept(in0, out1, insertedOp);
+          rewriter.replaceAllUsesExcept(in1, out0, insertedOp);
 
-                toHardwareIndex[out0] = hw1;
-                hwQubits[hw1] = out0;
+          // Remove old qubit values.
+          qubits.remove(in0);
+          qubits.remove(in1);
 
-                toHardwareIndex[out1] = hw0;
-                hwQubits[hw0] = out1;
+          // Add permutated qubit value - hw index pair.
+          qubits.add(out0, hw1);
+          qubits.add(out1, hw0);
+        }
 
-                toHardwareIndex.erase(in0);
-                toHardwareIndex.erase(in1);
-              }
-              this->numSwaps += swaps.size();
+        // Collect statistics.
+        this->numSwaps += swapIt->size();
 
-              ++currLayer;
-            }
+        // Move to the next layer and the next anchor.
+        std::ranges::advance(swapIt, 1);
+        std::ranges::advance(anchorIt, 1);
+      }
 
-            for (const auto& [in, out] :
-                 llvm::zip(op.getInputQubits(), op.getOutputQubits())) {
-              const auto hw = toHardwareIndex[in];
-
-              hwQubits[hw] = cast<QubitValue>(out);
-              toHardwareIndex.try_emplace(out, hw);
-              toHardwareIndex.erase(in);
-            }
-          })
-          .Case<ResetOp>([&](ResetOp op) {
-            const auto hw = toHardwareIndex[op.getQubitIn()];
-
-            hwQubits[hw] = op.getQubitOut();
-            toHardwareIndex.try_emplace(op.getQubitOut(), hw);
-            toHardwareIndex.erase(op.getQubitIn());
-          })
-          .Case<MeasureOp>([&](MeasureOp op) {
-            const auto hw = toHardwareIndex[op.getQubitIn()];
-
-            hwQubits[hw] = op.getQubitOut();
-            toHardwareIndex.try_emplace(op.getQubitOut(), hw);
-            toHardwareIndex.erase(op.getQubitIn());
-          })
-          .Case<DeallocOp>([&](DeallocOp op) {
-            const auto hw = toHardwareIndex[op.getQubit()];
-            toHardwareIndex.erase(op.getQubit());
-          });
-    }
+      return WalkResult::advance();
+    });
   }
 };
 
