@@ -215,9 +215,17 @@ private:
   };
 
   /**
+   * @brief The layers of a circuit and the respective IR anchor for each.
+   */
+  struct [[nodiscard]] LayeringResult {
+    SmallVector<Layer> layers;
+    SmallVector<Operation*> anchors;
+  };
+
+  /**
    * @brief Required to use Layout as a key for LLVM maps and sets.
    */
-  class LayoutInfo {
+  class [[nodiscard]] LayoutInfo {
     using Info = DenseMapInfo<SmallVector<IndexType>>;
 
   public:
@@ -247,7 +255,7 @@ private:
   /**
    * @brief Parameters influencing the behavior of the A* search algorithm.
    */
-  struct Parameters {
+  struct [[nodiscard]] Parameters {
     Parameters(const float alpha, const float lambda,
                const std::size_t nlookahead)
         : alpha(alpha), decay(1 + nlookahead) {
@@ -264,7 +272,7 @@ private:
   /**
    * @brief Describes a node in the A* search graph.
    */
-  struct Node {
+  struct [[nodiscard]] Node {
     struct ComparePointer {
       bool operator()(const Node* lhs, const Node* rhs) const {
         return lhs->f > rhs->f;
@@ -353,54 +361,6 @@ private:
     std::size_t nswaps{};
   };
 
-  struct SynchronizationMap {
-    /**
-     * @returns true if the operation is contained in the map.
-     */
-    bool contains(Operation* op) const { return onHold.contains(op); }
-
-    /**
-     * @brief Add op with respective iterator and ref count to the map.
-     */
-    void add(Operation* op, WireIterator* it, const std::size_t cnt) {
-      onHold.try_emplace(op, SmallVector<WireIterator*>{it});
-      // Decrease the cnt by one because the op was visited when adding.
-      refCount.try_emplace(op, cnt - 1);
-    }
-
-    /**
-     * @brief Decrement ref count of op and potentially release its iterators.
-     */
-    std::optional<ArrayRef<WireIterator*>> visit(Operation* op,
-                                                 WireIterator* it) {
-      assert(refCount.contains(op) && "expected sync map to contain op");
-
-      // Add iterator for later release.
-      onHold[op].push_back(it);
-
-      // Release iterators whenever the ref count reaches zero.
-      if (--refCount[op] == 0) {
-        return onHold[op];
-      }
-
-      return std::nullopt;
-    }
-
-    /**
-     * @brief Clear the contents of the map.
-     */
-    void clear() {
-      onHold.clear();
-      refCount.clear();
-    }
-
-  private:
-    /// @brief Maps operations to to-be-released iterators.
-    DenseMap<Operation*, SmallVector<WireIterator*, 2>> onHold;
-    /// @brief Maps operations to ref counts.
-    DenseMap<Operation*, std::size_t> refCount;
-  };
-
 protected:
   using MappingPassBase::MappingPassBase;
 
@@ -444,7 +404,8 @@ protected:
       parallelForEach(
           &getContext(), enumerate(trials), [&, this](auto indexedTrial) {
             auto [idx, layout] = indexedTrial;
-            auto res = runMappingTrial(ltr, rtl, arch, params, layout);
+            auto res =
+                runMappingTrial(ltr.layers, rtl.layers, arch, params, layout);
             if (succeeded(res)) {
               results[idx] = std::move(*res);
             }
@@ -456,7 +417,7 @@ protected:
         return;
       }
 
-      commitTrial(*best, dyn, func.getFunctionBody(), rewriter);
+      commitTrial(*best, dyn, ltr.anchors, func.getFunctionBody(), rewriter);
     }
   }
 
@@ -530,7 +491,7 @@ private:
    * @brief Computes forwards and backwards layers.
    * @returns a pair of vectors of layers, where [0]=forward and [1]=backward.
    */
-  [[nodiscard]] static std::pair<SmallVector<Layer>, SmallVector<Layer>>
+  [[nodiscard]] static std::pair<LayeringResult, LayeringResult>
   computeBidirectionalLayers(ArrayRef<QubitValue> dyn) {
     auto wires = toWires(dyn);
     const auto ltr = collectLayers<Direction::Forward>(wires);
@@ -691,7 +652,7 @@ private:
    * @returns a vector of layers.
    */
   template <Direction d>
-  static SmallVector<Layer> collectLayers(MutableArrayRef<WireIterator> wires) {
+  static LayeringResult collectLayers(MutableArrayRef<WireIterator> wires) {
     constexpr auto step = d == Direction::Forward ? 1 : -1;
     const auto shouldContinue = [](const WireIterator& it) {
       if constexpr (d == Direction::Forward) {
@@ -701,11 +662,12 @@ private:
       }
     };
 
-    SmallVector<Layer> layers;
-    DenseMap<UnitaryOpInterface, std::size_t> visited;
+    LayeringResult result;
 
+    DenseMap<UnitaryOpInterface, std::size_t> visited;
     while (true) {
       Layer layer{};
+      Operation* anchor = nullptr;
       for (const auto [index, it] : enumerate(wires)) {
         while (shouldContinue(it)) {
           const auto res =
@@ -729,6 +691,11 @@ private:
 
                           std::ranges::advance(wires[index], step);
                           std::ranges::advance(wires[otherIndex], step);
+
+                          if (anchor == nullptr ||
+                              op->isBeforeInBlock(anchor)) {
+                            anchor = op;
+                          }
 
                           visited.erase(op);
                         } else {
@@ -758,11 +725,12 @@ private:
         break;
       }
 
-      layers.emplace_back(layer);
+      result.layers.emplace_back(layer);
+      result.anchors.emplace_back(anchor);
       visited.clear();
     }
 
-    return layers;
+    return result;
   }
 
   /**
@@ -804,83 +772,83 @@ private:
    * the SWAPs of the trial result into the IR.
    */
   void commitTrial(const TrialResult& result, ArrayRef<QubitValue> dynQubits,
-                   Region& funcBody, IRRewriter& rewriter) {
-    // Helper function that advances the iterator to the input qubit (the
-    // operation producing it) of a deallocation or two-qubit op.
-    const auto advFront = [](WireIterator& it) {
-      auto next = std::next(it);
-      while (true) {
-        if (isa<DeallocOp>(next.operation())) {
-          break;
-        }
+                   ArrayRef<Operation*> anchors, Region& funcBody,
+                   IRRewriter& rewriter) {
 
-        if (isa<BarrierOp>(next.operation())) {
-          break;
-        }
+    auto hwQubits = place(dynQubits, result.layout, funcBody, rewriter);
+    DenseMap<Value, std::size_t> toHardwareIndex;
 
-        auto op = dyn_cast<UnitaryOpInterface>(next.operation());
-        if (op && op.getNumQubits() > 1) {
-          break;
-        }
-
-        std::ranges::advance(it, 1);
-        std::ranges::advance(next, 1);
-      }
-    };
-
-    auto wires = toWires(place(dynQubits, result.layout, funcBody, rewriter));
-
-    SynchronizationMap ready;
-    for (const auto& swaps : result.swaps) {
-      // Advance all wires to the next front of one-qubit outputs
-      // (the SSA values).
-      for_each(wires, advFront);
-
-      // Apply the sequence of SWAPs and rewire the qubit SSA values.
-      for (const auto& [hw0, hw1] : swaps) {
-        const auto in0 = wires[hw0].qubit();
-        const auto in1 = wires[hw1].qubit();
-
-        auto op = SWAPOp::create(rewriter, rewriter.getUnknownLoc(), in0, in1);
-        const auto out0 = op.getQubit0Out();
-        const auto out1 = op.getQubit1Out();
-
-        rewriter.replaceAllUsesExcept(in0, out1, op);
-        rewriter.replaceAllUsesExcept(in1, out0, op);
-
-        // Jump over the SWAPOp.
-        std::ranges::advance(wires[hw0], 1);
-        std::ranges::advance(wires[hw1], 1);
+    std::size_t currLayer = 0;
+    for (Operation& curr : funcBody.getOps()) {
+      if (currLayer > anchors.size() - 1) {
+        break;
       }
 
-      // Jump over "ready" gates.
-      for (auto& it : wires) {
-        auto op = dyn_cast<UnitaryOpInterface>(std::next(it).operation());
-        if (!op) {
-          continue;
-        }
+      llvm::TypeSwitch<Operation*>(&curr)
+          .Case<StaticOp>([&](StaticOp op) {
+            toHardwareIndex.try_emplace(op.getQubit(), op.getIndex());
+            hwQubits[op.getIndex()] = op.getQubit();
+          })
+          .Case<UnitaryOpInterface>([&](UnitaryOpInterface op) {
+            if (op == anchors[currLayer]) {
+              rewriter.setInsertionPoint(anchors[currLayer]);
 
-        if (op.getNumQubits() < 2) {
-          continue;
-        }
+              const auto& swaps = result.swaps[currLayer];
+              for (const auto& [hw0, hw1] : swaps) {
+                const auto in0 = hwQubits[hw0];
+                const auto in1 = hwQubits[hw1];
 
-        if (!ready.contains(op)) {
-          ready.add(op, &it, op.getNumQubits());
-          continue;
-        }
+                auto insertedOp = SWAPOp::create(
+                    rewriter, rewriter.getUnknownLoc(), in0, in1);
 
-        if (auto opt = ready.visit(op, &it)) {
-          for (WireIterator* wire : *opt) {
-            std::ranges::advance(*wire, 1);
-          }
-        }
-      }
+                const auto out0 = insertedOp.getQubit0Out();
+                const auto out1 = insertedOp.getQubit1Out();
 
-      ready.clear(); // Prepare for next iteration.
-      this->numSwaps += swaps.size();
+                rewriter.replaceAllUsesExcept(in0, out1, insertedOp);
+                rewriter.replaceAllUsesExcept(in1, out0, insertedOp);
+
+                toHardwareIndex[out0] = hw1;
+                hwQubits[hw1] = out0;
+
+                toHardwareIndex[out1] = hw0;
+                hwQubits[hw0] = out1;
+
+                toHardwareIndex.erase(in0);
+                toHardwareIndex.erase(in1);
+              }
+              this->numSwaps += swaps.size();
+
+              ++currLayer;
+            }
+
+            for (const auto& [in, out] :
+                 llvm::zip(op.getInputQubits(), op.getOutputQubits())) {
+              const auto hw = toHardwareIndex[in];
+
+              hwQubits[hw] = cast<QubitValue>(out);
+              toHardwareIndex.try_emplace(out, hw);
+              toHardwareIndex.erase(in);
+            }
+          })
+          .Case<ResetOp>([&](ResetOp op) {
+            const auto hw = toHardwareIndex[op.getQubitIn()];
+
+            hwQubits[hw] = op.getQubitOut();
+            toHardwareIndex.try_emplace(op.getQubitOut(), hw);
+            toHardwareIndex.erase(op.getQubitIn());
+          })
+          .Case<MeasureOp>([&](MeasureOp op) {
+            const auto hw = toHardwareIndex[op.getQubitIn()];
+
+            hwQubits[hw] = op.getQubitOut();
+            toHardwareIndex.try_emplace(op.getQubitOut(), hw);
+            toHardwareIndex.erase(op.getQubitIn());
+          })
+          .Case<DeallocOp>([&](DeallocOp op) {
+            const auto hw = toHardwareIndex[op.getQubit()];
+            toHardwareIndex.erase(op.getQubit());
+          });
     }
-
-    for_each(funcBody.getBlocks(), [](Block& b) { sortTopologically(&b); });
   }
 };
 
