@@ -66,6 +66,15 @@ private:
       valueToIndex_;
 };
 
+/**
+ * @brief Perform top-down non-recursive walk of all operations within the a
+ * region and apply callback function.
+ * @details The signature of the callback function is:
+ *
+ *     (Operation*, Qubits& q) -> WalkResult
+ *
+ * where the Qubits object tracks the front of qubit SSA values.
+ */
 template <typename Fn> void walkUnit(Region& region, Fn&& fn) {
   const auto ffn = std::forward<Fn>(fn);
 
