@@ -13,11 +13,11 @@
 #include "mlir/Dialect/QCO/Utils/Drivers.h"
 
 #include <gtest/gtest.h>
-#include <llvm/Support/Debug.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/IR/DialectRegistry.h>
 #include <mlir/IR/MLIRContext.h>
+#include <mlir/IR/Operation.h>
 #include <mlir/Support/WalkResult.h>
 
 #include <memory>
