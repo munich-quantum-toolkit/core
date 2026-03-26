@@ -21,7 +21,6 @@
 #include <llvm/ADT/TypeSwitch.h>
 #include <llvm/Support/Allocator.h>
 #include <llvm/Support/ErrorHandling.h>
-#include <mlir/Analysis/TopologicalSortUtils.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/IR/Block.h>
 #include <mlir/IR/BuiltinOps.h>
@@ -748,7 +747,7 @@ private:
     for (const auto [p, q] : enumerate(dynQubits)) {
       const auto hw = layout.getHardwareIndex(p);
       rewriter.setInsertionPoint(q.getDefiningOp());
-      auto op = rewriter.replaceOpWithNewOp<StaticOp>(q.getDefiningOp(), hw);
+      rewriter.replaceOpWithNewOp<StaticOp>(q.getDefiningOp(), hw);
     }
 
     // 2. Create static qubits for the remaining (unused) hardware indices.

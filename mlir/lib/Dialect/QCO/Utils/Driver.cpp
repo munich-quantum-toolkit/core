@@ -13,6 +13,7 @@
 
 #include <mlir/IR/Value.h>
 
+#include <cassert>
 #include <cstddef>
 #include <utility>
 
@@ -56,8 +57,7 @@ void Qubits::remove(TypedValue<QubitType> q) {
   hardwareToValue_.erase(index);
 }
 
-[[maybe_unused]] TypedValue<QubitType>
-Qubits::getProgramQubit(std::size_t index) {
+TypedValue<QubitType> Qubits::getProgramQubit(std::size_t index) {
   assert(programToValue_.contains(index));
   return programToValue_.lookup(index);
 }
