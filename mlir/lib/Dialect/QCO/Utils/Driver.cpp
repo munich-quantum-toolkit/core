@@ -30,6 +30,7 @@ void Qubits::add(TypedValue<QubitType> q, std::size_t hw) {
 }
 
 void Qubits::remap(TypedValue<QubitType> prev, TypedValue<QubitType> next) {
+  assert(valueToIndex_.contains(prev));
   const auto& [location, index] = valueToIndex_.lookup(prev);
 
   valueToIndex_.erase(prev);
