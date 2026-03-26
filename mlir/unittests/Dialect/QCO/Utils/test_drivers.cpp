@@ -1,0 +1,88 @@
+/*
+ * Copyright (c) 2023 - 2026 Chair for Design Automation, TUM
+ * Copyright (c) 2025 - 2026 Munich Quantum Software Company GmbH
+ * All rights reserved.
+ *
+ * SPDX-License-Identifier: MIT
+ *
+ * Licensed under the MIT License
+ */
+
+#include "mlir/Dialect/QCO/Builder/QCOProgramBuilder.h"
+#include "mlir/Dialect/QCO/IR/QCODialect.h"
+#include "mlir/Dialect/QCO/Utils/Drivers.h"
+
+#include <gtest/gtest.h>
+#include <llvm/Support/Debug.h>
+#include <mlir/Dialect/Arith/IR/Arith.h>
+#include <mlir/Dialect/Func/IR/FuncOps.h>
+#include <mlir/IR/DialectRegistry.h>
+#include <mlir/IR/MLIRContext.h>
+#include <mlir/Support/WalkResult.h>
+
+#include <memory>
+
+using namespace mlir;
+
+namespace {
+class DriversTest : public testing::Test {
+protected:
+  void SetUp() override {
+    DialectRegistry registry;
+    registry.insert<qco::QCODialect, arith::ArithDialect, func::FuncDialect>();
+
+    context = std::make_unique<MLIRContext>();
+    context->appendDialectRegistry(registry);
+    context->loadAllAvailableDialects();
+  }
+
+  std::unique_ptr<MLIRContext> context;
+};
+} // namespace
+
+TEST_F(DriversTest, FullWalk) {
+  qco::QCOProgramBuilder builder(context.get());
+  builder.initialize();
+  const auto q00 = builder.allocQubit();
+  const auto q10 = builder.allocQubit();
+  const auto q20 = builder.staticQubit(0);
+  const auto q30 = builder.staticQubit(1);
+
+  const auto q01 = builder.h(q00);
+  const auto [q02, q11] = builder.cx(q01, q10);
+  const auto [q21, q31] = builder.cx(q20, q30);
+
+  const auto [q03, c0] = builder.measure(q02);
+  const auto [q12, c1] = builder.measure(q11);
+  const auto [q22, c2] = builder.measure(q21);
+  const auto [q32, c3] = builder.measure(q31);
+
+  builder.dealloc(q03);
+  builder.dealloc(q12);
+  builder.dealloc(q22);
+  builder.dealloc(q32);
+
+  auto module = builder.finalize();
+  auto func = *(module->getOps<mlir::func::FuncOp>().begin());
+
+  Value ex0 = nullptr;
+  Value ex1 = nullptr;
+  Value ex2 = nullptr;
+  Value ex3 = nullptr;
+
+  qco::walkUnit(func.getBody(), [&](Operation* op, qco::Qubits& qubits) {
+    if (op == q03.getDefiningOp()) {
+      ex0 = qubits.getProgramQubit(0);
+      ex1 = qubits.getProgramQubit(1);
+      ex2 = qubits.getHardwareQubit(0);
+      ex3 = qubits.getHardwareQubit(1);
+      return WalkResult::interrupt();
+    }
+    return WalkResult::advance();
+  });
+
+  ASSERT_EQ(ex0, q02);
+  ASSERT_EQ(ex1, q11);
+  ASSERT_EQ(ex2, q21);
+  ASSERT_EQ(ex3, q31);
+}
