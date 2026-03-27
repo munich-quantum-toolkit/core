@@ -16,6 +16,7 @@
 #include "mlir/Dialect/QTensor/IR/QTensorOps.h"
 #include "mlir/Dialect/Utils/Utils.h"
 
+#include <llvm/ADT/DenseMap.h>
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/STLFunctionalExtras.h>
 #include <llvm/ADT/SmallVector.h>
@@ -32,7 +33,6 @@
 #include <mlir/IR/Value.h>
 #include <mlir/IR/ValueRange.h>
 
-#include <cstddef>
 #include <cstdint>
 #include <string>
 #include <utility>
@@ -246,7 +246,8 @@ std::pair<Value, Value> QCOProgramBuilder::qtensorExtract(Value tensor,
   auto qubit = extractOp.getResult();
   auto outTensor = extractOp.getOutTensor();
 
-  validQubits.insert({qubit, {validTensors[tensor].regId, index}});
+  validQubits.insert(
+      {qubit, {.regId = validTensors[tensor].regId, .regIndex = index}});
   updateTensorTracking(tensor, outTensor);
 
   return {outTensor, qubit};
@@ -991,7 +992,7 @@ OwningOpRef<ModuleOp> QCOProgramBuilder::finalize() {
     llvm::sort(sortedTensors, blockOrderComparator1);
     for (auto& [tensor, tensorInfo] : sortedTensors) {
       // Filter out qubits belonging to this tensor
-      SmallVector<std::pair<Value, int64_t>> toInsert;
+      llvm::SmallVector<std::pair<Value, int64_t>> toInsert;
       for (auto& [qubit, qubitInfo] : registerQubits) {
         if (qubitInfo.regId != tensorInfo.regId) {
           continue;

@@ -129,7 +129,7 @@ SmallVector<Value> QIRProgramBuilder::allocQubitRegister(const int64_t size) {
   auto array =
       LLVM::AllocaOp::create(*this, ptrType, ptrType, intConstant(size));
   auto zero = LLVM::ZeroOp::create(*this, ptrType);
-  auto alloc = LLVM::CallOp::create(
+  LLVM::CallOp::create(
       *this, allocFnDecl,
       ValueRange{intConstant(size), array.getResult(), zero.getResult()});
 
@@ -168,17 +168,11 @@ QIRProgramBuilder::allocClassicalBitRegister(const int64_t size,
   auto array =
       LLVM::AllocaOp::create(*this, ptrType, ptrType, intConstant(size));
   auto zero = LLVM::ZeroOp::create(*this, ptrType);
-  auto alloc = LLVM::CallOp::create(
+  LLVM::CallOp::create(
       *this, allocFnDecl,
       ValueRange{intConstant(size), array.getResult(), zero.getResult()});
 
   resultArrays.try_emplace(name, array.getResult());
-
-  for (int64_t i = 0; i < size; ++i) {
-    auto gep = LLVM::GEPOp::create(*this, ptrType, ptrType, array.getResult(),
-                                   ValueRange{intConstant(i)});
-    auto load = LLVM::LoadOp::create(*this, ptrType, gep.getResult());
-  }
 
   return {.name = name, .size = size};
 }
@@ -610,7 +604,7 @@ void QIRProgramBuilder::generateOutputRecording() {
     // Sort registers by name for deterministic output
     SmallVector<std::pair<StringRef, Value>> sortedArrays;
     for (auto& [name, results] : resultArrays) {
-      sortedArrays.emplace_back(name, std::move(results));
+      sortedArrays.emplace_back(name, results);
     }
     llvm::sort(sortedArrays,
                [](const auto& a, const auto& b) { return a.first < b.first; });
