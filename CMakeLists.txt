@@ -14,6 +14,8 @@ project(
   LANGUAGES C CXX
   DESCRIPTION "MQT Core - The Backbone of the Munich Quantum Toolkit")
 
+list(APPEND CMAKE_PREFIX_PATH "/lib/llvm-22/lib/cmake/mlir" "/lib/llvm-22/lib/cmake/llvm")
+
 if(NOT DEFINED CMAKE_CXX_STANDARD OR CMAKE_CXX_STANDARD LESS 20)
   set(CMAKE_CXX_STANDARD
       20

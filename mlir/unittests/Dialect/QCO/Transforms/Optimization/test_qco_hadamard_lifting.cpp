@@ -11,7 +11,7 @@
 #include "mlir/Dialect/QCO/Builder/QCOProgramBuilder.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
-// #include "mlir/Dialect/QCO/Transforms/Passes.h"
+#include "mlir/Dialect/QCO/Transforms/Passes.h"
 #include "mlir/Support/IRVerification.h"
 
 #include <gtest/gtest.h>
@@ -26,9 +26,6 @@
 
 #include <cassert>
 #include <cmath>
-#include <cstdint>
-#include <optional>
-#include <tuple>
 
 namespace {
 
@@ -62,7 +59,7 @@ protected:
    */
   static LogicalResult runHadamardLiftingPass(ModuleOp module) {
     PassManager pm(module.getContext());
-    // pm.addPass(qco::createLiftHadamardGates());
+    pm.addPass(qco::createHadamardLifting());
     return pm.run(module);
   }
 };
@@ -70,7 +67,7 @@ protected:
 } // namespace
 
 // ##################################################
-// # Raise Hadamard over one Pauli gate Tests
+// # Raise Hadamard over uncontrolled Pauli gate Tests
 // ##################################################
 
 /**
@@ -208,6 +205,10 @@ TEST_F(QCOHadamardLiftingTest, liftHadamardOnlyOverPreceedingPauliGate) {
       areModulesEquivalentWithPermutations(module.get(), reference.get()));
 }
 
+// ##################################################
+// # Raise Hadamard over controlled Pauli gate Tests
+// ##################################################
+
 /**
  * @brief Test: Checks if hadamard gates are lifted if they are controlled by
  * the same qubit as the lifted gate is.
@@ -281,7 +282,7 @@ TEST_F(QCOHadamardLiftingTest, doNotLiftHadamardIfDifferentControls) {
 }
 
 /**
- * @brief Test: Checks that a hadamard gate is not lifted if there is another
+ * @brief Test: Checks that a Hadamard gate is not lifted if there is another
  * gate between the controls of the Pauli and the Hadamard gate.
  */
 TEST_F(QCOHadamardLiftingTest, doNotLiftHadamardIfGateBetweenControls) {
@@ -431,8 +432,12 @@ TEST_F(QCOHadamardLiftingTest, liftHadamardOverControlledPauliZ) {
       areModulesEquivalentWithPermutations(module.get(), reference.get()));
 }
 
+// ##################################################
+// # Raise Hadamard over CNOT gates Tests
+// ##################################################
+
 /**
- * @brief Test: Checks that a hadamard gate is lifted over a CNOT gate target if
+ * @brief Test: Checks that a Hadamard gate is lifted over a CNOT gate target if
  * a measurement is following directly after it.
  */
 TEST_F(QCOHadamardLiftingTest, liftHadamardOverCNOTGate) {
@@ -464,7 +469,7 @@ TEST_F(QCOHadamardLiftingTest, liftHadamardOverCNOTGate) {
 }
 
 /**
- * @brief Test: Checks that a hadamard gate is lifted over the target of a
+ * @brief Test: Checks that a Hadamard gate is lifted over the target of a
  * multiple controlled x gate if a measurement is following directly after it.
  */
 TEST_F(QCOHadamardLiftingTest, liftHadamardOverMultipleControlledXGate) {
@@ -500,7 +505,7 @@ TEST_F(QCOHadamardLiftingTest, liftHadamardOverMultipleControlledXGate) {
 }
 
 /**
- * @brief Test: Checks that a hadamard gate is not lifted over a CNOT gate
+ * @brief Test: Checks that a Hadamard gate is not lifted over a CNOT gate
  * target if a measurement is not following directly after it.
  */
 TEST_F(QCOHadamardLiftingTest, doNotLiftHadamardOverCNOTGate) {
