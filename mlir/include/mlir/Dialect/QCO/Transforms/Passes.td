@@ -73,4 +73,62 @@ def MappingPass : Pass<"place-and-route", "mlir::ModuleOp"> {
                               "The number of inserted SWAPs">];
 }
 
+//===----------------------------------------------------------------------===//
+// Optimization Passes
+//===----------------------------------------------------------------------===//
+
+def HadamardLifting : Pass<"hadamard-lifting", "mlir::ModuleOp"> {
+  let dependentDialects = ["mlir::qco::QCODialect"];
+  let summary = "This pass attempts to lift Hadamards as much as possible by flipping them with Pauli gates.";
+  let description = [{
+    This pass lifts hadamards away from the measurements in order to apply lift-measurements more effectively. It uses
+    the following commutation rules:
+         ┌───┐ ┌───┐      ┌───┐ ┌───┐
+        ─┤ X ├─┤ H ├─ => ─┤ H ├─┤ Z ├─
+         └───┘ └───┘      └───┘ └───┘
+         ┌───┐ ┌───┐      ┌───┐ ┌───┐
+        ─┤ Z ├─┤ H ├─ => ─┤ H ├─┤ X ├─
+         └───┘ └───┘      └───┘ └───┘
+         ┌───┐ ┌───┐      ┌───┐ ┌───┐
+        ─┤ Y ├─┤ H ├─ => ─┤ H ├─┤ Y ├─
+         └───┘ └───┘      └───┘ └───┘
+    Hadamard lifting is only applied to lift Hadamard gates further in front in the circuit, not the other way around.
+
+    If the Hadamard and Pauli gates are controlled, they are only lifted if both gates are controlled by exactly the
+    same qubits. One exception to this are the controlled Pauli Z gates. For these gates, controls and targets are
+    interchangable. Therefore, tranformation routines as follows are possible and applied:
+        ┌───┐
+        ┤ Z ├──■──    ──■────■──    ──■────■──
+        └─┬─┘┌─┴─┐ => ┌─┴─┐┌─┴─┐ => ┌─┴─┐┌─┴─┐
+        ──■──┤ H ├    ┤ Z ├┤ H ├    ┤ H ├┤ X ├
+             └───┘    └───┘└───┘    └───┘└───┘
+    The commutation of controlled gates is only done if there are no gates applied between the two controlled gates to
+    any of the qubits used on the controlled gates.
+
+    In order to minimize the reduce multi-qubit gates, a third transformation routine is applied. Using the commutation
+    rule
+                 ┌───┐┌───┐┌───┐
+        ──■──    ┤ H ├┤ X ├┤ H ├
+        ┌─┴─┐ => │───│└─┬─┘│───│
+        ┤ X ├    ┤ H ├──■──┤ H ├
+        └───┘    └───┘     └───┘
+    the following transformation is applied to circuits pattern, where a Hadamard gate follows a the target gate of a
+    CNOT, which is followed by a measurement:
+                              ┌───┐┌───┐┌───┐
+        ──■─────────────      ┤ H ├┤ X ├┤ H ├──
+        ┌─┴─┐┌───┐┌──────┐ => │───│└─┬─┘│───┘──┐
+        ┤ X ├┤ H ├┤ Meas │    ┤ H ├──■──┤ Meas │
+        └───┘└───┘└──────┘    └───┘     └──────┘
+
+     Afterwards, the measurement lifting routine could transform the CNOT into a classically controlled Pauli X.
+
+  }];
+  let statistics = [Statistic<"numPauliZTargetChange", "num-pauli-z-target-change",
+                              "The number of times the target qubit of controlled Pauli Z gates was changed.">,
+                    Statistic<"numHadamardLiftings", "num-hadamard-liftings",
+                              "The number of times Hadamard gates were lifted in front of Pauli gates.">,
+                    Statistic<"numMeasurementHadamardCNOTLiftings", "num-measurement-hadamard-cnot-liftings",
+                              "The number of times the target and controls of a CNOT were lifted to put a measurement directly after a control qubit.">];
+}
+
 #endif // MLIR_DIALECT_QCO_TRANSFORMS_PASSES_TD

@@ -14,8 +14,15 @@ target_link_libraries(
         PRIVATE GTest::gtest_main
         MLIRParser
         MLIRQCOProgramBuilder
+        MLIRQCOTransforms
         MLIRSupportMQT
-        MLIRQTensorDialect)
+        MLIRQTensorDialect
+        MLIRQCOUtils
+        MLIRParser
+        MLIRIR
+        MLIRPass
+        MLIRSupport
+        LLVMSupport)
 
 mqt_mlir_configure_unittest_target(${target_name})
 
