@@ -740,9 +740,8 @@ private:
    * @details Replaces dynamic with static qubits. Extends the computation with
    * as many static qubits as the architecture supports.
    */
-  [[nodiscard]] static void place(ArrayRef<QubitValue> dynQubits,
-                                  const Layout& layout, Region& funcBody,
-                                  IRRewriter& rewriter) {
+  static void place(ArrayRef<QubitValue> dynQubits, const Layout& layout,
+                    Region& funcBody, IRRewriter& rewriter) {
     // 1. Replace existing dynamic allocations with mapped static ones.
     for (const auto [p, q] : enumerate(dynQubits)) {
       const auto hw = layout.getHardwareIndex(p);
