@@ -13,6 +13,7 @@
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QTensor/IR/QTensorDialect.h"
+#include "mlir/Dialect/QTensor/IR/QTensorOps.h"
 #include "mlir/Support/IRVerification.h"
 #include "mlir/Support/Passes.h"
 #include "qco_programs.h"
@@ -99,8 +100,11 @@ TEST_F(QCOTest, DirectIfBuilder) {
   // Test If construction directly
   qco::QCOProgramBuilder builder(context.get());
   builder.initialize();
-  auto q0 = AllocOp::create(builder);
-  auto q1 = HOp::create(builder, q0);
+  auto c0 = arith::ConstantOp::create(builder, builder.getIndexAttr(0));
+  auto c1 = arith::ConstantOp::create(builder, builder.getIndexAttr(1));
+  auto r0 = qtensor::AllocOp::create(builder, c1);
+  auto extractOp = qtensor::ExtractOp::create(builder, r0, c0);
+  auto q1 = HOp::create(builder, extractOp.getResult());
   auto measureOp = MeasureOp::create(builder, q1);
   auto ifOp =
       IfOp::create(builder, measureOp.getResult(), measureOp.getQubitOut(),
@@ -108,7 +112,9 @@ TEST_F(QCOTest, DirectIfBuilder) {
                      auto innerQubit = XOp::create(builder, qubits[0]);
                      return llvm::SmallVector<mlir::Value>{innerQubit};
                    });
-  DeallocOp::create(builder, ifOp.getResult(0));
+  auto r2 = qtensor::InsertOp::create(builder, ifOp.getResult(0),
+                                      extractOp.getOutTensor(), c0);
+  qtensor::DeallocOp::create(builder, r2);
 
   auto directBuilder = builder.finalize();
   ASSERT_TRUE(directBuilder);
@@ -455,6 +461,7 @@ INSTANTIATE_TEST_SUITE_P(
                     MQT_NAMED_BUILDER(multipleControlledRxx)},
         QCOTestCase{"TwoRXX", MQT_NAMED_BUILDER(twoRxx),
                     MQT_NAMED_BUILDER(rxx)},
+        // FIXME: Test fails because of qtensor.insert location
         QCOTestCase{"TwoRXXSwappedTargets",
                     MQT_NAMED_BUILDER(twoRxxSwappedTargets),
                     MQT_NAMED_BUILDER(rxx)},
@@ -516,6 +523,7 @@ INSTANTIATE_TEST_SUITE_P(
                     MQT_NAMED_BUILDER(multipleControlledRyy)},
         QCOTestCase{"TwoRYY", MQT_NAMED_BUILDER(twoRyy),
                     MQT_NAMED_BUILDER(ryy)},
+        // FIXME: Test fails because of qtensor.insert location
         QCOTestCase{"TwoRYYSwappedTargets",
                     MQT_NAMED_BUILDER(twoRyySwappedTargets),
                     MQT_NAMED_BUILDER(ryy)},
@@ -605,6 +613,7 @@ INSTANTIATE_TEST_SUITE_P(
                     MQT_NAMED_BUILDER(multipleControlledRzz)},
         QCOTestCase{"TwoRZZ", MQT_NAMED_BUILDER(twoRzz),
                     MQT_NAMED_BUILDER(rzz)},
+        // FIXME: Test fails because of qtensor.insert location
         QCOTestCase{"TwoRZZSwappedTargets",
                     MQT_NAMED_BUILDER(twoRzzSwappedTargets),
                     MQT_NAMED_BUILDER(rzz)},
