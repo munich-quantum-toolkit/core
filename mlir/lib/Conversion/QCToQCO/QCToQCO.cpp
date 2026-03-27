@@ -19,12 +19,17 @@
 
 #include <llvm/ADT/DenseMap.h>
 #include <llvm/ADT/STLExtras.h>
+#include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/Func/Transforms/FuncConversions.h>
 #include <mlir/Dialect/MemRef/IR/MemRef.h>
+#include <mlir/IR/BuiltinTypeInterfaces.h>
+#include <mlir/IR/BuiltinTypes.h>
 #include <mlir/IR/MLIRContext.h>
+#include <mlir/IR/OpDefinition.h>
 #include <mlir/IR/OperationSupport.h>
 #include <mlir/IR/PatternMatch.h>
+#include <mlir/IR/Types.h>
 #include <mlir/IR/Value.h>
 #include <mlir/IR/ValueRange.h>
 #include <mlir/Support/LLVM.h>
@@ -199,7 +204,8 @@ struct ConvertMemRefLoadOp final : StatefulOpConversionPattern<memref::LoadOp> {
         qtensor::ExtractOp::create(rewriter, op.getLoc(), qtensor, index);
 
     qubitMap.try_emplace(op.getResult(), extract.getResult());
-    qubitInfos.try_emplace(op.getResult(), QubitInfo{memref, index});
+    qubitInfos.try_emplace(op.getResult(),
+                           QubitInfo{.reg = memref, .index = index});
     qtensorMap[memref] = extract.getOutTensor();
 
     rewriter.eraseOp(op);
@@ -245,7 +251,7 @@ struct ConvertMemRefDeallocOp final
   using StatefulOpConversionPattern::StatefulOpConversionPattern;
 
   LogicalResult
-  matchAndRewrite(memref::DeallocOp op, OpAdaptor adaptor,
+  matchAndRewrite(memref::DeallocOp op, OpAdaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
     auto& qubitMap = getState().qubitMap;
     auto& qubitInfos = getState().qubitInfos;

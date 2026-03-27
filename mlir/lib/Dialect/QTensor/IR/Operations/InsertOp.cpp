@@ -11,6 +11,7 @@
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QTensor/IR/QTensorOps.h"
 
+#include <llvm/Support/Casting.h>
 #include <mlir/Dialect/Utils/StaticValueUtils.h>
 #include <mlir/IR/BuiltinTypeInterfaces.h>
 #include <mlir/IR/MLIRContext.h>
@@ -24,15 +25,15 @@ using namespace mlir::qtensor;
 
 static ExtractOp findExtractOp(InsertOp op) {
 
-  auto definingOp = op.getDest().getDefiningOp();
+  auto* definingOp = op.getDest().getDefiningOp();
   if (llvm::isa<ExtractOp>(definingOp)) {
     return llvm::cast<ExtractOp>(definingOp);
-  } else if (llvm::isa<InsertOp>(definingOp)) {
+  }
+  if (llvm::isa<InsertOp>(definingOp)) {
     auto nestedInsertOp = llvm::cast<InsertOp>(definingOp);
     return findExtractOp(nestedInsertOp);
-  } else {
-    return nullptr;
   }
+  return nullptr;
 }
 
 namespace {

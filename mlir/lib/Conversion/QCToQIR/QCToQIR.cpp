@@ -33,6 +33,7 @@
 #include <mlir/Dialect/MemRef/IR/MemRef.h>
 #include <mlir/IR/BuiltinAttributes.h>
 #include <mlir/IR/BuiltinOps.h>
+#include <mlir/IR/BuiltinTypeInterfaces.h>
 #include <mlir/IR/BuiltinTypes.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OpDefinition.h>
@@ -88,8 +89,8 @@ struct LoweringState : QIRMetadata {
   DenseMap<int64_t, SmallVector<Value>> controls;
 
   // Block information
-  Block* entryBlock;
-  Block* measurementsBlock;
+  Block* entryBlock{};
+  Block* measurementsBlock{};
 };
 
 /**
@@ -300,8 +301,8 @@ struct ConvertMemRefDeallocOp final
 
     Value size;
     if (shape[0] == ShapedType::kDynamic) {
-      llvm::errs() << "I do not know yet\n";
-      return failure();
+      size =
+          op.getMemref().getDefiningOp<memref::AllocOp>().getDynamicSizes()[0];
     } else {
       size = LLVM::ConstantOp::create(
                  rewriter, op.getLoc(),
@@ -430,7 +431,7 @@ struct ConvertQCStaticOp final : StatefulOpConversionPattern<StaticOp> {
   using StatefulOpConversionPattern::StatefulOpConversionPattern;
 
   LogicalResult
-  matchAndRewrite(StaticOp op, OpAdaptor /*adaptor*/,
+  matchAndRewrite(StaticOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
     // TODO: Figure this out
     return failure();
@@ -493,7 +494,7 @@ struct ConvertQCMeasureOp final : StatefulOpConversionPattern<MeasureOp> {
           static_cast<int64_t>(op.getRegisterIndex().value());
 
       // Create result register if it does not exist yet
-      if (resultArrays.find(registerName) == resultArrays.end()) {
+      if (!resultArrays.contains(registerName)) {
         auto fnSig = LLVM::LLVMFunctionType::get(
             LLVM::LLVMVoidType::get(ctx),
             {rewriter.getI64Type(), ptrType, ptrType});
@@ -1181,7 +1182,7 @@ struct QCToQIR final : impl::QCToQIRBase<QCToQIR> {
       // Sort registers by name for deterministic output
       SmallVector<std::pair<StringRef, Value>> sortedRegisters;
       for (auto& [name, results] : resultArrays) {
-        sortedRegisters.emplace_back(name, std::move(results));
+        sortedRegisters.emplace_back(name, results);
       }
       llvm::sort(sortedRegisters, [](const auto& a, const auto& b) {
         return a.first < b.first;
