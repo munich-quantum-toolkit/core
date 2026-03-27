@@ -13,6 +13,7 @@
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QCO/Transforms/Mapping/Architecture.h"
 #include "mlir/Dialect/QCO/Transforms/Passes.h"
+#include "mlir/Dialect/QCO/Utils/Drivers.h"
 #include "mlir/Dialect/QCO/Utils/WireIterator.h"
 
 #include <llvm/ADT/STLExtras.h>
@@ -20,7 +21,6 @@
 #include <llvm/ADT/TypeSwitch.h>
 #include <llvm/Support/Allocator.h>
 #include <llvm/Support/ErrorHandling.h>
-#include <mlir/Analysis/TopologicalSortUtils.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/IR/Block.h>
 #include <mlir/IR/BuiltinOps.h>
@@ -215,9 +215,17 @@ private:
   };
 
   /**
+   * @brief The layers of a circuit and the respective IR anchor for each.
+   */
+  struct [[nodiscard]] LayeringResult {
+    SmallVector<Layer> layers;
+    SmallVector<Operation*> anchors;
+  };
+
+  /**
    * @brief Required to use Layout as a key for LLVM maps and sets.
    */
-  class LayoutInfo {
+  class [[nodiscard]] LayoutInfo {
     using Info = DenseMapInfo<SmallVector<IndexType>>;
 
   public:
@@ -247,7 +255,7 @@ private:
   /**
    * @brief Parameters influencing the behavior of the A* search algorithm.
    */
-  struct Parameters {
+  struct [[nodiscard]] Parameters {
     Parameters(const float alpha, const float lambda,
                const std::size_t nlookahead)
         : alpha(alpha), decay(1 + nlookahead) {
@@ -264,7 +272,7 @@ private:
   /**
    * @brief Describes a node in the A* search graph.
    */
-  struct Node {
+  struct [[nodiscard]] Node {
     struct ComparePointer {
       bool operator()(const Node* lhs, const Node* rhs) const {
         return lhs->f > rhs->f;
@@ -353,54 +361,6 @@ private:
     std::size_t nswaps{};
   };
 
-  struct SynchronizationMap {
-    /**
-     * @returns true if the operation is contained in the map.
-     */
-    bool contains(Operation* op) const { return onHold.contains(op); }
-
-    /**
-     * @brief Add op with respective iterator and ref count to the map.
-     */
-    void add(Operation* op, WireIterator* it, const std::size_t cnt) {
-      onHold.try_emplace(op, SmallVector<WireIterator*>{it});
-      // Decrease the cnt by one because the op was visited when adding.
-      refCount.try_emplace(op, cnt - 1);
-    }
-
-    /**
-     * @brief Decrement ref count of op and potentially release its iterators.
-     */
-    std::optional<ArrayRef<WireIterator*>> visit(Operation* op,
-                                                 WireIterator* it) {
-      assert(refCount.contains(op) && "expected sync map to contain op");
-
-      // Add iterator for later release.
-      onHold[op].push_back(it);
-
-      // Release iterators whenever the ref count reaches zero.
-      if (--refCount[op] == 0) {
-        return onHold[op];
-      }
-
-      return std::nullopt;
-    }
-
-    /**
-     * @brief Clear the contents of the map.
-     */
-    void clear() {
-      onHold.clear();
-      refCount.clear();
-    }
-
-  private:
-    /// @brief Maps operations to to-be-released iterators.
-    DenseMap<Operation*, SmallVector<WireIterator*, 2>> onHold;
-    /// @brief Maps operations to ref counts.
-    DenseMap<Operation*, std::size_t> refCount;
-  };
-
 protected:
   using MappingPassBase::MappingPassBase;
 
@@ -417,15 +377,16 @@ protected:
                        {5, 8}, {8, 5}, {6, 7}, {7, 6}, {7, 8}, {8, 7}});
 
     for (auto func : getOperation().getOps<func::FuncOp>()) {
-      const auto dyn = collectDynamicQubits(func.getFunctionBody());
-      if (dyn.size() > arch.nqubits()) {
+      const auto dynQubits = collectDynamicQubits(func.getFunctionBody());
+      if (dynQubits.size() > arch.nqubits()) {
         func.emitError() << "the targeted architecture supports "
-                         << arch.nqubits() << " qubits, got " << dyn.size();
+                         << arch.nqubits() << " qubits, got "
+                         << dynQubits.size();
         signalPassFailure();
         return;
       }
 
-      const auto [ltr, rtl] = computeBidirectionalLayers(dyn);
+      const auto [ltr, rtl] = computeBidirectionalLayers(dynQubits);
 
       // Create trials. Currently this includes the identity layout and
       // `ntrials` many random layouts.
@@ -444,7 +405,8 @@ protected:
       parallelForEach(
           &getContext(), enumerate(trials), [&, this](auto indexedTrial) {
             auto [idx, layout] = indexedTrial;
-            auto res = runMappingTrial(ltr, rtl, arch, params, layout);
+            auto res =
+                runMappingTrial(ltr.layers, rtl.layers, arch, params, layout);
             if (succeeded(res)) {
               results[idx] = std::move(*res);
             }
@@ -456,7 +418,8 @@ protected:
         return;
       }
 
-      commitTrial(*best, dyn, func.getFunctionBody(), rewriter);
+      place(dynQubits, best->layout, func.getFunctionBody(), rewriter);
+      commit(best->swaps, ltr.anchors, func.getFunctionBody(), rewriter);
     }
   }
 
@@ -530,45 +493,12 @@ private:
    * @brief Computes forwards and backwards layers.
    * @returns a pair of vectors of layers, where [0]=forward and [1]=backward.
    */
-  [[nodiscard]] static std::pair<SmallVector<Layer>, SmallVector<Layer>>
+  [[nodiscard]] static std::pair<LayeringResult, LayeringResult>
   computeBidirectionalLayers(ArrayRef<QubitValue> dyn) {
     auto wires = toWires(dyn);
     const auto ltr = collectLayers<Direction::Forward>(wires);
     const auto rtl = collectLayers<Direction::Backward>(wires);
     return std::make_pair(ltr, rtl);
-  }
-
-  /**
-   * @brief Perform placement.
-   * @details Replaces dynamic with static qubits. Extends the computation with
-   * as many static qubits the architecture supports.
-   * @returns vector of SSA values produced by qco.static operations, ordered by
-   * the static index s.t. [i] = qco.static i.
-   */
-  [[nodiscard]] static SmallVector<QubitValue>
-  place(ArrayRef<QubitValue> dynQubits, const Layout& layout, Region& funcBody,
-        IRRewriter& rewriter) {
-    SmallVector<QubitValue> statics(layout.nqubits());
-
-    // 1. Replace existing dynamic allocations with mapped static ones.
-    for (const auto [p, q] : enumerate(dynQubits)) {
-      const auto hw = layout.getHardwareIndex(p);
-      rewriter.setInsertionPoint(q.getDefiningOp());
-      auto op = rewriter.replaceOpWithNewOp<StaticOp>(q.getDefiningOp(), hw);
-      statics[hw] = op.getQubit();
-    }
-
-    // 2. Create static qubits for the remaining (unused) hardware indices.
-    for (std::size_t p = dynQubits.size(); p < layout.nqubits(); ++p) {
-      rewriter.setInsertionPointToStart(&funcBody.front());
-      const auto hw = layout.getHardwareIndex(p);
-      auto op = StaticOp::create(rewriter, rewriter.getUnknownLoc(), hw);
-      rewriter.setInsertionPoint(funcBody.back().getTerminator());
-      DeallocOp::create(rewriter, rewriter.getUnknownLoc(), op.getQubit());
-      statics[hw] = op.getQubit();
-    }
-
-    return statics;
   }
 
   /**
@@ -691,7 +621,7 @@ private:
    * @returns a vector of layers.
    */
   template <Direction d>
-  static SmallVector<Layer> collectLayers(MutableArrayRef<WireIterator> wires) {
+  static LayeringResult collectLayers(MutableArrayRef<WireIterator> wires) {
     constexpr auto step = d == Direction::Forward ? 1 : -1;
     const auto shouldContinue = [](const WireIterator& it) {
       if constexpr (d == Direction::Forward) {
@@ -701,11 +631,12 @@ private:
       }
     };
 
-    SmallVector<Layer> layers;
-    DenseMap<UnitaryOpInterface, std::size_t> visited;
+    LayeringResult result;
 
+    DenseMap<UnitaryOpInterface, std::size_t> visited;
     while (true) {
       Layer layer{};
+      Operation* anchor = nullptr;
       for (const auto [index, it] : enumerate(wires)) {
         while (shouldContinue(it)) {
           const auto res =
@@ -729,6 +660,11 @@ private:
 
                           std::ranges::advance(wires[index], step);
                           std::ranges::advance(wires[otherIndex], step);
+
+                          if (anchor == nullptr ||
+                              op->isBeforeInBlock(anchor)) {
+                            anchor = op;
+                          }
 
                           visited.erase(op);
                         } else {
@@ -758,11 +694,12 @@ private:
         break;
       }
 
-      layers.emplace_back(layer);
+      result.layers.emplace_back(layer);
+      result.anchors.emplace_back(anchor);
       visited.clear();
     }
 
-    return layers;
+    return result;
   }
 
   /**
@@ -799,88 +736,78 @@ private:
   }
 
   /**
-   * @brief Performs placement and inserts SWAPs into the IR.
-   * @details Replace the dynamic with static qubits ("placement") and inserts
-   * the SWAPs of the trial result into the IR.
+   * @brief Perform placement.
+   * @details Replaces dynamic with static qubits. Extends the computation with
+   * as many static qubits as the architecture supports.
    */
-  void commitTrial(const TrialResult& result, ArrayRef<QubitValue> dynQubits,
-                   Region& funcBody, IRRewriter& rewriter) {
-    // Helper function that advances the iterator to the input qubit (the
-    // operation producing it) of a deallocation or two-qubit op.
-    const auto advFront = [](WireIterator& it) {
-      auto next = std::next(it);
-      while (true) {
-        if (isa<DeallocOp>(next.operation())) {
-          break;
-        }
-
-        if (isa<BarrierOp>(next.operation())) {
-          break;
-        }
-
-        auto op = dyn_cast<UnitaryOpInterface>(next.operation());
-        if (op && op.getNumQubits() > 1) {
-          break;
-        }
-
-        std::ranges::advance(it, 1);
-        std::ranges::advance(next, 1);
-      }
-    };
-
-    auto wires = toWires(place(dynQubits, result.layout, funcBody, rewriter));
-
-    SynchronizationMap ready;
-    for (const auto& swaps : result.swaps) {
-      // Advance all wires to the next front of one-qubit outputs
-      // (the SSA values).
-      for_each(wires, advFront);
-
-      // Apply the sequence of SWAPs and rewire the qubit SSA values.
-      for (const auto& [hw0, hw1] : swaps) {
-        const auto in0 = wires[hw0].qubit();
-        const auto in1 = wires[hw1].qubit();
-
-        auto op = SWAPOp::create(rewriter, rewriter.getUnknownLoc(), in0, in1);
-        const auto out0 = op.getQubit0Out();
-        const auto out1 = op.getQubit1Out();
-
-        rewriter.replaceAllUsesExcept(in0, out1, op);
-        rewriter.replaceAllUsesExcept(in1, out0, op);
-
-        // Jump over the SWAPOp.
-        std::ranges::advance(wires[hw0], 1);
-        std::ranges::advance(wires[hw1], 1);
-      }
-
-      // Jump over "ready" gates.
-      for (auto& it : wires) {
-        auto op = dyn_cast<UnitaryOpInterface>(std::next(it).operation());
-        if (!op) {
-          continue;
-        }
-
-        if (op.getNumQubits() < 2) {
-          continue;
-        }
-
-        if (!ready.contains(op)) {
-          ready.add(op, &it, op.getNumQubits());
-          continue;
-        }
-
-        if (auto opt = ready.visit(op, &it)) {
-          for (WireIterator* wire : *opt) {
-            std::ranges::advance(*wire, 1);
-          }
-        }
-      }
-
-      ready.clear(); // Prepare for next iteration.
-      this->numSwaps += swaps.size();
+  static void place(ArrayRef<QubitValue> dynQubits, const Layout& layout,
+                    Region& funcBody, IRRewriter& rewriter) {
+    // 1. Replace existing dynamic allocations with mapped static ones.
+    for (const auto [p, q] : enumerate(dynQubits)) {
+      const auto hw = layout.getHardwareIndex(p);
+      rewriter.setInsertionPoint(q.getDefiningOp());
+      rewriter.replaceOpWithNewOp<StaticOp>(q.getDefiningOp(), hw);
     }
 
-    for_each(funcBody.getBlocks(), [](Block& b) { sortTopologically(&b); });
+    // 2. Create static qubits for the remaining (unused) hardware indices.
+    for (std::size_t p = dynQubits.size(); p < layout.nqubits(); ++p) {
+      rewriter.setInsertionPointToStart(&funcBody.front());
+      const auto hw = layout.getHardwareIndex(p);
+      auto op = StaticOp::create(rewriter, rewriter.getUnknownLoc(), hw);
+      rewriter.setInsertionPoint(funcBody.back().getTerminator());
+      DeallocOp::create(rewriter, rewriter.getUnknownLoc(), op.getQubit());
+    }
+  }
+
+  /**
+   * @brief Inserts SWAPs into the IR.
+   */
+  void commit(ArrayRef<SmallVector<IndexGate>> swaps,
+              ArrayRef<Operation*> anchors, Region& funcBody,
+              IRRewriter& rewriter) {
+    ArrayRef<Operation*>::iterator anchorIt = anchors.begin();
+    ArrayRef<SmallVector<IndexGate>>::iterator swapIt = swaps.begin();
+
+    walkUnit(funcBody, [&](Operation* op, Qubits& qubits) {
+      // Early exit if we've processed all layers.
+      if (anchorIt == anchors.end()) {
+        return WalkResult::interrupt();
+      }
+
+      if (op == *anchorIt) {
+        rewriter.setInsertionPoint(*anchorIt);
+
+        for (const auto& [hw0, hw1] : *swapIt) {
+          const auto in0 = qubits.getHardwareQubit(hw0);
+          const auto in1 = qubits.getHardwareQubit(hw1);
+
+          auto insertedOp = SWAPOp::create(rewriter, op->getLoc(), in0, in1);
+
+          const auto out0 = insertedOp.getQubit0Out();
+          const auto out1 = insertedOp.getQubit1Out();
+
+          rewriter.replaceAllUsesExcept(in0, out1, insertedOp);
+          rewriter.replaceAllUsesExcept(in1, out0, insertedOp);
+
+          // Remove old qubit values.
+          qubits.remove(in0);
+          qubits.remove(in1);
+
+          // Add permutated qubit value - hw index pair.
+          qubits.add(out0, hw1);
+          qubits.add(out1, hw0);
+        }
+
+        // Collect statistics.
+        this->numSwaps += swapIt->size();
+
+        // Move to the next layer and the next anchor.
+        std::ranges::advance(swapIt, 1);
+        std::ranges::advance(anchorIt, 1);
+      }
+
+      return WalkResult::advance();
+    });
   }
 };
 
