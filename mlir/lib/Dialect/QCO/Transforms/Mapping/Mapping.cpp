@@ -738,7 +738,7 @@ private:
   /**
    * @brief Perform placement.
    * @details Replaces dynamic with static qubits. Extends the computation with
-   * as many static qubits the architecture supports.
+   * as many static qubits as the architecture supports.
    */
   [[nodiscard]] static void place(ArrayRef<QubitValue> dynQubits,
                                   const Layout& layout, Region& funcBody,
@@ -782,8 +782,7 @@ private:
           const auto in0 = qubits.getHardwareQubit(hw0);
           const auto in1 = qubits.getHardwareQubit(hw1);
 
-          auto insertedOp =
-              SWAPOp::create(rewriter, rewriter.getUnknownLoc(), in0, in1);
+          auto insertedOp = SWAPOp::create(rewriter, op->getLoc(), in0, in1);
 
           const auto out0 = insertedOp.getQubit0Out();
           const auto out1 = insertedOp.getQubit1Out();

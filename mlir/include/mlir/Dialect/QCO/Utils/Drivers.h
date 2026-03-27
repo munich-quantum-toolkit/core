@@ -24,7 +24,7 @@
 namespace mlir::qco {
 class Qubits {
   /**
-   * @brief Specifies the qubit "location" (static or dynamic).
+   * @brief Specifies the qubit "location" (hardware or program).
    */
   enum class QubitLocation : std::uint8_t { Hardware, Program };
 
@@ -67,13 +67,15 @@ private:
 };
 
 /**
- * @brief Perform top-down non-recursive walk of all operations within the a
+ * @brief Perform top-down non-recursive walk of all operations within a
  * region and apply callback function.
  * @details The signature of the callback function is:
  *
  *     (Operation*, Qubits& q) -> WalkResult
  *
  * where the Qubits object tracks the front of qubit SSA values.
+ * @param region The targeted region.
+ * @param fn The callback function.
  */
 template <typename Fn> void walkUnit(Region& region, Fn&& fn) {
   const auto ffn = std::forward<Fn>(fn);
