@@ -93,9 +93,9 @@ void repeatedResetWithoutOp(QCOProgramBuilder& b) {
 }
 
 void resetQubitAfterSingleOp(QCOProgramBuilder& b) {
-  auto q = b.allocQubit();
-  q = b.h(q);
-  q = b.reset(q);
+  auto q = b.allocQubitRegister(1);
+  q[0] = b.h(q[0]);
+  q[0] = b.reset(q[0]);
 }
 
 void resetMultipleQubitsAfterSingleOp(QCOProgramBuilder& b) {
@@ -107,11 +107,11 @@ void resetMultipleQubitsAfterSingleOp(QCOProgramBuilder& b) {
 }
 
 void repeatedResetAfterSingleOp(QCOProgramBuilder& b) {
-  auto q = b.allocQubit();
-  q = b.h(q);
-  q = b.reset(q);
-  q = b.reset(q);
-  q = b.reset(q);
+  auto q = b.allocQubitRegister(1);
+  q[0] = b.h(q[0]);
+  q[0] = b.reset(q[0]);
+  q[0] = b.reset(q[0]);
+  q[0] = b.reset(q[0]);
 }
 
 void globalPhase(QCOProgramBuilder& b) { b.gphase(0.123); }
@@ -1891,6 +1891,11 @@ void singleControlledBarrier(QCOProgramBuilder& b) {
   b.ctrl({q[1]}, {q[0]}, [&](mlir::ValueRange targets) {
     return llvm::SmallVector<mlir::Value>{b.barrier(targets[0])};
   });
+}
+
+void singleControlledBarrierCanonicalized(QCOProgramBuilder& b) {
+  auto q = b.allocQubitRegister(2);
+  b.barrier(q[0]);
 }
 
 void inverseBarrier(QCOProgramBuilder& b) {

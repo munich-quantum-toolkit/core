@@ -13,7 +13,7 @@ add_mlir_library(
   PUBLIC
   MLIRArithDialect
   MLIRFuncDialect
-  MLIRSCFDialect
+  MLIRMemRefDialect
   MLIRQCDialect
   DISABLE_INSTALL)
 

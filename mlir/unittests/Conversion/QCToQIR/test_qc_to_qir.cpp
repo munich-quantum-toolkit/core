@@ -22,6 +22,7 @@
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/LLVMIR/LLVMDialect.h>
+#include <mlir/Dialect/MemRef/IR/MemRef.h>
 #include <mlir/IR/DialectRegistry.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/Verifier.h>
@@ -61,7 +62,7 @@ protected:
   void SetUp() override {
     DialectRegistry registry;
     registry.insert<qc::QCDialect, LLVM::LLVMDialect, arith::ArithDialect,
-                    func::FuncDialect>();
+                    func::FuncDialect, memref::MemRefDialect>();
     context = std::make_unique<MLIRContext>();
     context->appendDialectRegistry(registry);
     context->loadAllAvailableDialects();
@@ -118,16 +119,17 @@ INSTANTIATE_TEST_SUITE_P(
     QCToQIRBarrierOpTest, QCToQIRTest,
     testing::Values(
         QCToQIRTestCase{"Barrier", MQT_NAMED_BUILDER(qc::barrier),
-                        MQT_NAMED_BUILDER(qir::emptyQIR)},
+                        MQT_NAMED_BUILDER(qir::barrierConverted)},
         QCToQIRTestCase{"BarrierTwoQubits",
                         MQT_NAMED_BUILDER(qc::barrierTwoQubits),
-                        MQT_NAMED_BUILDER(qir::emptyQIR)},
+                        MQT_NAMED_BUILDER(qir::barrierTwoQubitsConverted)},
         QCToQIRTestCase{"BarrierMultipleQubits",
                         MQT_NAMED_BUILDER(qc::barrierMultipleQubits),
-                        MQT_NAMED_BUILDER(qir::emptyQIR)},
-        QCToQIRTestCase{"SingleControlledBarrier",
-                        MQT_NAMED_BUILDER(qc::singleControlledBarrier),
-                        MQT_NAMED_BUILDER(qir::emptyQIR)}));
+                        MQT_NAMED_BUILDER(qir::barrierMultipleQubitsConverted)},
+        QCToQIRTestCase{
+            "SingleControlledBarrier",
+            MQT_NAMED_BUILDER(qc::singleControlledBarrier),
+            MQT_NAMED_BUILDER(qir::singleControlledBarrierConverted)}));
 /// @}
 
 /// \name QCToQIR/Operations/StandardGates/DcxOp.cpp
@@ -190,12 +192,14 @@ INSTANTIATE_TEST_SUITE_P(
     testing::Values(
         QCToQIRTestCase{"Identity", MQT_NAMED_BUILDER(qc::identity),
                         MQT_NAMED_BUILDER(qir::identity)},
-        QCToQIRTestCase{"SingleControlledIdentity",
-                        MQT_NAMED_BUILDER(qc::singleControlledIdentity),
-                        MQT_NAMED_BUILDER(qir::identity)},
-        QCToQIRTestCase{"MultipleControlledIdentity",
-                        MQT_NAMED_BUILDER(qc::multipleControlledIdentity),
-                        MQT_NAMED_BUILDER(qir::identity)}));
+        QCToQIRTestCase{
+            "SingleControlledIdentity",
+            MQT_NAMED_BUILDER(qc::singleControlledIdentity),
+            MQT_NAMED_BUILDER(qir::singleControlledIdentityConverted)},
+        QCToQIRTestCase{
+            "MultipleControlledIdentity",
+            MQT_NAMED_BUILDER(qc::multipleControlledIdentity),
+            MQT_NAMED_BUILDER(qir::multipleControlledIdentityConverted)}));
 /// @}
 
 /// \name QCToQIR/Operations/StandardGates/IswapOp.cpp
@@ -573,6 +577,7 @@ INSTANTIATE_TEST_SUITE_P(
             "RepeatedMeasurementToDifferentBits",
             MQT_NAMED_BUILDER(qc::repeatedMeasurementToDifferentBits),
             MQT_NAMED_BUILDER(qir::repeatedMeasurementToDifferentBits)},
+        // FIXME: Test fails because of location of llvm.load
         QCToQIRTestCase{
             "MultipleClassicalRegistersAndMeasurements",
             MQT_NAMED_BUILDER(qc::multipleClassicalRegistersAndMeasurements),

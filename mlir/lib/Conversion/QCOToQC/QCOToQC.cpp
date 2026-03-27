@@ -14,13 +14,20 @@
 #include "mlir/Dialect/QC/IR/QCOps.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
+#include "mlir/Dialect/QTensor/IR/QTensorDialect.h"
+#include "mlir/Dialect/QTensor/IR/QTensorOps.h"
 
+#include <llvm/Support/Casting.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/Func/Transforms/FuncConversions.h>
+#include <mlir/Dialect/MemRef/IR/MemRef.h>
 #include <mlir/IR/BuiltinTypeInterfaces.h>
+#include <mlir/IR/BuiltinTypes.h>
 #include <mlir/IR/MLIRContext.h>
+#include <mlir/IR/OpDefinition.h>
 #include <mlir/IR/OperationSupport.h>
 #include <mlir/IR/PatternMatch.h>
+#include <mlir/IR/Types.h>
 #include <mlir/IR/ValueRange.h>
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/LogicalResult.h>
@@ -59,6 +66,77 @@ public:
     addConversion([ctx](qco::QubitType /*type*/) -> Type {
       return qc::QubitType::get(ctx);
     });
+
+    addConversion([ctx](RankedTensorType type) -> Type {
+      if (llvm::isa<qco::QubitType>(type.getElementType())) {
+        // TODO: Can we make it work with type.getShape()?
+        return MemRefType::get({ShapedType::kDynamic}, qc::QubitType::get(ctx));
+      }
+      return type;
+    });
+  }
+};
+
+struct ConvertQTensorAllocOp final : OpConversionPattern<qtensor::AllocOp> {
+  using OpConversionPattern::OpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(qtensor::AllocOp op, OpAdaptor /*adaptor*/,
+                  ConversionPatternRewriter& rewriter) const override {
+    auto qubitType = qc::QubitType::get(op.getContext());
+    auto memrefType = mlir::MemRefType::get({ShapedType::kDynamic}, qubitType);
+    rewriter.replaceOpWithNewOp<memref::AllocOp>(op, memrefType, op.getSize());
+    return success();
+  }
+};
+
+struct ConvertQTensorExtractOp final : OpConversionPattern<qtensor::ExtractOp> {
+  using OpConversionPattern::OpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(qtensor::ExtractOp op, OpAdaptor adaptor,
+                  ConversionPatternRewriter& rewriter) const override {
+    auto load = memref::LoadOp::create(rewriter, op.getLoc(),
+                                       adaptor.getTensor(), adaptor.getIndex());
+    rewriter.replaceOp(op, {adaptor.getTensor(), load.getResult()});
+    return success();
+  }
+};
+
+// struct ConvertQTensorInsertOp final : OpConversionPattern<qtensor::InsertOp>
+// {
+//   using OpConversionPattern::OpConversionPattern;
+
+//   LogicalResult
+//   matchAndRewrite(qtensor::InsertOp op, OpAdaptor adaptor,
+//                   ConversionPatternRewriter& rewriter) const override {
+//     auto store =
+//         memref::StoreOp::create(rewriter, op.getLoc(), adaptor.getScalar(),
+//                                 adaptor.getDest(), adaptor.getIndex());
+//     rewriter.replaceOp(op, adaptor.getDest());
+//     return success();
+//   }
+// };
+
+struct ConvertQTensorInsertOp final : OpConversionPattern<qtensor::InsertOp> {
+  using OpConversionPattern::OpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(qtensor::InsertOp op, OpAdaptor adaptor,
+                  ConversionPatternRewriter& rewriter) const override {
+    rewriter.replaceOp(op, adaptor.getDest());
+    return success();
+  }
+};
+
+struct ConvertQTensorDeallocOp final : OpConversionPattern<qtensor::DeallocOp> {
+  using OpConversionPattern::OpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(qtensor::DeallocOp op, OpAdaptor adaptor,
+                  ConversionPatternRewriter& rewriter) const override {
+    rewriter.replaceOpWithNewOp<memref::DeallocOp>(op, adaptor.getTensor());
+    return success();
   }
 };
 
@@ -751,15 +829,16 @@ protected:
     RewritePatternSet patterns(context);
     QCOToQCTypeConverter typeConverter(context);
 
-    // Configure conversion target: QCO illegal, QC legal
-    target.addIllegalDialect<QCODialect>();
-    target.addLegalDialect<QCDialect>();
+    // Configure conversion target
+    target.addIllegalDialect<QCODialect, qtensor::QTensorDialect>();
+    target.addLegalDialect<QCDialect, memref::MemRefDialect>();
 
     // Register operation conversion patterns
     // Note: No state tracking needed - OpAdaptors handle type conversion
     patterns.add<
-        ConvertQCOAllocOp, ConvertQCODeallocOp, ConvertQCOStaticOp,
-        ConvertQCOMeasureOp, ConvertQCOResetOp,
+        ConvertQTensorAllocOp, ConvertQTensorExtractOp, ConvertQTensorInsertOp,
+        ConvertQTensorDeallocOp, ConvertQCOAllocOp, ConvertQCODeallocOp,
+        ConvertQCOStaticOp, ConvertQCOMeasureOp, ConvertQCOResetOp,
         ConvertQCOZeroTargetOneParameterToQC<qco::GPhaseOp, qc::GPhaseOp>,
         ConvertQCOOneTargetZeroParameterToQC<qco::XOp, qc::XOp>,
         ConvertQCOOneTargetZeroParameterToQC<qco::YOp, qc::YOp>,

@@ -10,6 +10,7 @@
 
 #pragma once
 
+#include <llvm/ADT/DenseMap.h>
 #include <llvm/ADT/DenseSet.h>
 #include <llvm/ADT/STLFunctionalExtras.h>
 #include <llvm/ADT/SmallVector.h>
@@ -272,8 +273,7 @@ public:
    * %outTensor, %q0 = qtensor.extract %tensor[%c0]: tensor<3x!qco.qubit>
    * ```
    */
-  std::pair<Value, Value>
-  qtensorExtract(Value tensor, const std::variant<int64_t, Value>& index);
+  std::pair<Value, Value> qtensorExtract(Value tensor, const int64_t index);
 
   /**
    * @brief Extract a qubit slice from a tensor
@@ -1347,11 +1347,18 @@ private:
    */
   void updateQubitTracking(Value inputQubit, Value outputQubit);
 
+  int64_t tensorCounter = 0;
+
+  struct QubitInfo {
+    int64_t regId = -1;
+    int64_t regIndex = -1;
+  };
+
   /// Track valid (unconsumed) qubit SSA values for linear type enforcement.
   /// Only values present in this set are valid for use in operations.
   /// When an operation consumes a qubit and produces a new one, the old value
   /// is removed and the new output is added.
-  llvm::DenseSet<Value> validQubits;
+  llvm::DenseMap<Value, QubitInfo> validQubits;
 
   /**
    * @brief Validate that a tensor value is valid and unconsumed. This also
@@ -1369,10 +1376,14 @@ private:
    */
   void updateTensorTracking(Value inputTensor, Value outputTensor);
 
+  struct TensorInfo {
+    int64_t regId = -1;
+  };
+
   /// Track valid (unconsumed) tensor SSA values for linear type enforcement.
   /// Only values present in this set are valid for use in operations.
   /// When an operation consumes a tensor and produces a new one, the old value
   /// is removed and the new output is added.
-  llvm::DenseSet<Value> validTensors;
+  llvm::DenseMap<Value, TensorInfo> validTensors;
 };
 } // namespace mlir::qco

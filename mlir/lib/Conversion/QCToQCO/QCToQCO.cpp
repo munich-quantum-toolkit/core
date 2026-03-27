@@ -14,14 +14,22 @@
 #include "mlir/Dialect/QC/IR/QCOps.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
+#include "mlir/Dialect/QTensor/IR/QTensorDialect.h"
+#include "mlir/Dialect/QTensor/IR/QTensorOps.h"
 
 #include <llvm/ADT/DenseMap.h>
 #include <llvm/ADT/STLExtras.h>
+#include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/Func/Transforms/FuncConversions.h>
+#include <mlir/Dialect/MemRef/IR/MemRef.h>
+#include <mlir/IR/BuiltinTypeInterfaces.h>
+#include <mlir/IR/BuiltinTypes.h>
 #include <mlir/IR/MLIRContext.h>
+#include <mlir/IR/OpDefinition.h>
 #include <mlir/IR/OperationSupport.h>
 #include <mlir/IR/PatternMatch.h>
+#include <mlir/IR/Types.h>
 #include <mlir/IR/Value.h>
 #include <mlir/IR/ValueRange.h>
 #include <mlir/Support/LLVM.h>
@@ -42,6 +50,11 @@ using namespace qc;
 #include "mlir/Conversion/QCToQCO/QCToQCO.h.inc"
 
 namespace {
+
+struct QubitInfo {
+  Value reg;
+  Value index;
+};
 
 /**
  * @brief State object for tracking qubit value flow during conversion
@@ -74,6 +87,10 @@ namespace {
 struct LoweringState {
   /// Map from original QC qubit references to their latest QCO SSA values
   llvm::DenseMap<Value, Value> qubitMap;
+
+  llvm::DenseMap<Value, Value> qtensorMap;
+
+  llvm::DenseMap<Value, QubitInfo> qubitInfos;
 
   /// Modifier information
   int64_t inNestedRegion = 0;
@@ -132,6 +149,155 @@ public:
     addConversion([ctx](qc::QubitType /*type*/) -> Type {
       return qco::QubitType::get(ctx);
     });
+  }
+};
+
+struct ConvertMemRefAllocOp final
+    : StatefulOpConversionPattern<memref::AllocOp> {
+  using StatefulOpConversionPattern::StatefulOpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(memref::AllocOp op, OpAdaptor adaptor,
+                  ConversionPatternRewriter& rewriter) const override {
+    auto& qtensorMap = getState().qtensorMap;
+
+    auto shape = op.getType().getShape();
+    if (shape.size() != 1) {
+      return failure();
+    }
+
+    Value qtensor;
+    if (shape[0] == ShapedType::kDynamic) {
+      qtensor = rewriter.replaceOpWithNewOp<qtensor::AllocOp>(
+          op, adaptor.getDynamicSizes()[0]);
+    } else {
+      auto size = arith::ConstantOp::create(rewriter, op.getLoc(),
+                                            rewriter.getIndexAttr(shape[0]));
+      qtensor =
+          rewriter.replaceOpWithNewOp<qtensor::AllocOp>(op, size.getResult());
+    }
+
+    qtensorMap.try_emplace(op.getResult(), qtensor);
+
+    return success();
+  }
+};
+
+struct ConvertMemRefLoadOp final : StatefulOpConversionPattern<memref::LoadOp> {
+  using StatefulOpConversionPattern::StatefulOpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(memref::LoadOp op, OpAdaptor adaptor,
+                  ConversionPatternRewriter& rewriter) const override {
+    auto& qubitMap = getState().qubitMap;
+    auto& qubitInfos = getState().qubitInfos;
+    auto& qtensorMap = getState().qtensorMap;
+
+    // Look up latest QTensor value for this QC register
+    auto memref = op.getMemref();
+    assert(qtensorMap.contains(memref) && "QC register not found");
+    auto qtensor = qtensorMap[memref];
+
+    auto index = adaptor.getIndices()[0];
+
+    auto extract =
+        qtensor::ExtractOp::create(rewriter, op.getLoc(), qtensor, index);
+
+    qubitMap.try_emplace(op.getResult(), extract.getResult());
+    qubitInfos.try_emplace(op.getResult(),
+                           QubitInfo{.reg = memref, .index = index});
+    qtensorMap[memref] = extract.getOutTensor();
+
+    rewriter.eraseOp(op);
+
+    return success();
+  }
+};
+
+// struct ConvertMemRefStoreOp final
+//     : StatefulOpConversionPattern<memref::StoreOp> {
+//   using StatefulOpConversionPattern::StatefulOpConversionPattern;
+
+//   LogicalResult
+//   matchAndRewrite(memref::StoreOp op, OpAdaptor adaptor,
+//                   ConversionPatternRewriter& rewriter) const override {
+//     auto& qubitMap = getState().qubitMap;
+//     auto& qtensorMap = getState().qtensorMap;
+
+//     // Look up latest QCO value for this QC qubit
+//     auto qcQubit = op.getValue();
+//     assert(qubitMap.contains(qcQubit) && "QC qubit not found");
+//     auto qcoQubit = qubitMap[qcQubit];
+
+//     // Look up latest QTensor value for this QC register
+//     auto memref = op.getMemref();
+//     assert(qtensorMap.contains(memref) && "QC register not found");
+//     auto qtensor = qtensorMap[memref];
+
+//     auto store = qtensor::InsertOp::create(rewriter, op.getLoc(), qcoQubit,
+//                                            qtensor, adaptor.getIndices()[0]);
+
+//     qubitMap.erase(qcQubit);
+//     qtensorMap[memref] = store.getResult();
+
+//     rewriter.eraseOp(op);
+
+//     return success();
+//   }
+// };
+
+struct ConvertMemRefDeallocOp final
+    : StatefulOpConversionPattern<memref::DeallocOp> {
+  using StatefulOpConversionPattern::StatefulOpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(memref::DeallocOp op, OpAdaptor /*adaptor*/,
+                  ConversionPatternRewriter& rewriter) const override {
+    auto& qubitMap = getState().qubitMap;
+    auto& qubitInfos = getState().qubitInfos;
+    auto& qtensorMap = getState().qtensorMap;
+
+    // Look up latest QTensor value for this QC register
+    auto memref = op.getMemref();
+    assert(qtensorMap.contains(memref) && "QC register not found");
+    auto qtensor = qtensorMap[memref];
+
+    // Filter out qubits belonging to this tensor
+    llvm::SmallVector<std::pair<Value, Value>> toInsert;
+    toInsert.reserve(qubitMap.size());
+    for (auto [qcQubit, qcoQubit] : qubitMap) {
+      auto& info = qubitInfos[qcQubit];
+      if (info.reg != memref) {
+        continue;
+      }
+      toInsert.emplace_back(qcQubit, qcoQubit);
+    }
+
+    // Sort qubits for deterministic output
+    llvm::sort(toInsert, [](const auto& a, const auto& b) {
+      auto* opA = a.first.getDefiningOp();
+      auto* opB = b.first.getDefiningOp();
+      if (!opA || !opB || opA->getBlock() != opB->getBlock()) {
+        return a.first.getAsOpaquePointer() < b.first.getAsOpaquePointer();
+      }
+      return opA->isBeforeInBlock(opB);
+    });
+
+    // Insert qubits
+    for (auto [qcQubit, qcoQubit] : toInsert) {
+      auto& info = qubitInfos[qcQubit];
+      auto index = info.index;
+      auto insert = qtensor::InsertOp::create(rewriter, op.getLoc(), qcoQubit,
+                                              qtensor, index);
+      qtensor = insert.getResult();
+      qubitInfos.erase(qcQubit);
+    }
+
+    rewriter.replaceOpWithNewOp<qtensor::DeallocOp>(op, qtensor);
+
+    qtensorMap.erase(memref);
+
+    return success();
   }
 };
 
@@ -201,7 +367,7 @@ struct ConvertQCDeallocOp final : StatefulOpConversionPattern<qc::DeallocOp> {
     auto& qubitMap = getState().qubitMap;
     auto qcQubit = op.getQubit();
 
-    // Look up the latest QCO value for this QC qubit
+    // Look up latest QCO value for this QC qubit
     assert(qubitMap.contains(qcQubit) && "QC qubit not found");
     auto qcoQubit = qubitMap[qcQubit];
 
@@ -898,6 +1064,8 @@ struct ConvertQCCtrlOp final : StatefulOpConversionPattern<qc::CtrlOp> {
                   ConversionPatternRewriter& rewriter) const override {
     auto& state = getState();
     auto& qubitMap = state.qubitMap;
+    auto& inNestedRegion = state.inNestedRegion;
+    auto& targetsIn = state.targetsIn;
 
     // Get QCO controls from state map
     auto qcControls = op.getControls();
@@ -925,7 +1093,7 @@ struct ConvertQCCtrlOp final : StatefulOpConversionPattern<qc::CtrlOp> {
 
     // Update the state map if this is a top-level CtrlOp
     // Nested CtrlOps are managed via the targetsIn and targetsOut maps
-    if (state.inNestedRegion == 0) {
+    if (inNestedRegion == 0) {
       for (const auto& [qcControl, qcoControl] :
            llvm::zip(qcControls, qcoOp.getControlsOut())) {
         qubitMap[qcControl] = qcoControl;
@@ -938,7 +1106,7 @@ struct ConvertQCCtrlOp final : StatefulOpConversionPattern<qc::CtrlOp> {
     }
 
     // Update modifier information
-    state.inNestedRegion++;
+    inNestedRegion++;
 
     // Clone body region from QC to QCO
     auto& dstRegion = qcoOp.getRegion();
@@ -957,7 +1125,7 @@ struct ConvertQCCtrlOp final : StatefulOpConversionPattern<qc::CtrlOp> {
         qcoTargetAliases.emplace_back(entryBlock.addArgument(qubitType, opLoc));
       }
     });
-    state.targetsIn[state.inNestedRegion] = std::move(qcoTargetAliases);
+    targetsIn[inNestedRegion] = std::move(qcoTargetAliases);
 
     rewriter.eraseOp(op);
     return success();
@@ -987,7 +1155,11 @@ struct ConvertQCInvOp final : StatefulOpConversionPattern<qc::InvOp> {
   LogicalResult
   matchAndRewrite(qc::InvOp op, OpAdaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
-    auto& [qubitMap, inNestedRegion, targetsIn, targetsOut] = getState();
+    auto& state = getState();
+    auto& qubitMap = state.qubitMap;
+    auto& inNestedRegion = state.inNestedRegion;
+    auto& targetsIn = state.targetsIn;
+    auto& targetsOut = state.targetsOut;
 
     // Get QCO targets from state map
     const auto numTargets = op.getNumTargets();
@@ -1108,12 +1280,15 @@ protected:
     RewritePatternSet patterns(context);
     QCToQCOTypeConverter typeConverter(context);
 
-    // Configure conversion target: QC illegal, QCO legal
-    target.addIllegalDialect<QCDialect>();
-    target.addLegalDialect<QCODialect>();
+    // Configure conversion target
+    // TODO: Do not blanket-illegalize memref
+    target.addIllegalDialect<QCDialect, memref::MemRefDialect>();
+    target.addLegalDialect<QCODialect, arith::ArithDialect,
+                           qtensor::QTensorDialect>();
 
     // Register operation conversion patterns with state tracking
     patterns.add<
+        ConvertMemRefAllocOp, ConvertMemRefLoadOp, ConvertMemRefDeallocOp,
         ConvertQCAllocOp, ConvertQCDeallocOp, ConvertQCStaticOp,
         ConvertQCMeasureOp, ConvertQCResetOp,
         ConvertQCZeroTargetOneParameterToQCO<qc::GPhaseOp, qco::GPhaseOp>,

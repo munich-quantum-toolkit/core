@@ -16,6 +16,7 @@
 #include "mlir/Dialect/QC/Translation/TranslateQuantumComputationToQC.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QIR/Builder/QIRProgramBuilder.h"
+#include "mlir/Dialect/QTensor/IR/QTensorDialect.h"
 #include "mlir/Support/IRVerification.h"
 #include "mlir/Support/Passes.h"
 #include "qc_programs.h"
@@ -27,6 +28,7 @@
 #include <mlir/Dialect/ControlFlow/IR/ControlFlow.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/LLVMIR/LLVMDialect.h>
+#include <mlir/Dialect/MemRef/IR/MemRef.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
 #include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/DialectRegistry.h>
@@ -85,8 +87,9 @@ protected:
   void SetUp() override {
     mlir::DialectRegistry registry;
     registry.insert<mlir::qc::QCDialect, mlir::qco::QCODialect,
-                    mlir::arith::ArithDialect, mlir::cf::ControlFlowDialect,
-                    mlir::func::FuncDialect, mlir::scf::SCFDialect,
+                    mlir::qtensor::QTensorDialect, mlir::arith::ArithDialect,
+                    mlir::cf::ControlFlowDialect, mlir::func::FuncDialect,
+                    mlir::memref::MemRefDialect, mlir::scf::SCFDialect,
                     mlir::LLVM::LLVMDialect>();
     context = std::make_unique<mlir::MLIRContext>();
     context->appendDialectRegistry(registry);
@@ -189,27 +192,28 @@ TEST_P(CompilerPipelineTest, EndToEndPipeline) {
 INSTANTIATE_TEST_SUITE_P(
     QuantumComputationPipelineProgramsTest, CompilerPipelineTest,
     testing::Values(
+        // FIXME: Test fails because static qubits are currently not supported
         CompilerPipelineTestCase{
             "StaticQubits", nullptr, MQT_NAMED_BUILDER(mlir::qc::staticQubits),
             MQT_NAMED_BUILDER(mlir::qc::staticQubits),
             MQT_NAMED_BUILDER(mlir::qir::staticQubits), false},
         CompilerPipelineTestCase{"AllocQubit",
                                  MQT_NAMED_BUILDER(qc::allocQubit), nullptr,
-                                 MQT_NAMED_BUILDER(mlir::qc::allocQubit),
-                                 MQT_NAMED_BUILDER(mlir::qir::allocQubit)},
-        CompilerPipelineTestCase{
-            "AllocQubitRegister", MQT_NAMED_BUILDER(qc::allocQubitRegister),
-            nullptr, MQT_NAMED_BUILDER(mlir::qc::allocQubitRegister),
-            MQT_NAMED_BUILDER(mlir::qir::allocQubitRegister)},
+                                 MQT_NAMED_BUILDER(mlir::qc::emptyQC),
+                                 MQT_NAMED_BUILDER(mlir::qir::emptyQIR)},
+        CompilerPipelineTestCase{"AllocQubitRegister",
+                                 MQT_NAMED_BUILDER(qc::allocQubitRegister),
+                                 nullptr, MQT_NAMED_BUILDER(mlir::qc::emptyQC),
+                                 MQT_NAMED_BUILDER(mlir::qir::emptyQIR)},
         CompilerPipelineTestCase{
             "AllocMultipleQubitRegisters",
             MQT_NAMED_BUILDER(qc::allocMultipleQubitRegisters), nullptr,
-            MQT_NAMED_BUILDER(mlir::qc::allocMultipleQubitRegisters),
-            MQT_NAMED_BUILDER(mlir::qir::allocMultipleQubitRegisters)},
-        CompilerPipelineTestCase{
-            "AllocLargeRegister", MQT_NAMED_BUILDER(qc::allocLargeRegister),
-            nullptr, MQT_NAMED_BUILDER(mlir::qc::allocLargeRegister),
-            MQT_NAMED_BUILDER(mlir::qir::allocLargeRegister)},
+            MQT_NAMED_BUILDER(mlir::qc::emptyQC),
+            MQT_NAMED_BUILDER(mlir::qir::emptyQIR)},
+        CompilerPipelineTestCase{"AllocLargeRegister",
+                                 MQT_NAMED_BUILDER(qc::allocLargeRegister),
+                                 nullptr, MQT_NAMED_BUILDER(mlir::qc::emptyQC),
+                                 MQT_NAMED_BUILDER(mlir::qir::emptyQIR)},
         CompilerPipelineTestCase{
             "SingleMeasurementToSingleBit",
             MQT_NAMED_BUILDER(qc::singleMeasurementToSingleBit), nullptr,
@@ -225,6 +229,7 @@ INSTANTIATE_TEST_SUITE_P(
             MQT_NAMED_BUILDER(qc::repeatedMeasurementToDifferentBits), nullptr,
             MQT_NAMED_BUILDER(mlir::qc::repeatedMeasurementToDifferentBits),
             MQT_NAMED_BUILDER(mlir::qir::repeatedMeasurementToDifferentBits)},
+        // FIXME: Test fails because of location of llvm.load
         CompilerPipelineTestCase{
             "MultipleClassicalRegistersAndMeasurements",
             MQT_NAMED_BUILDER(qc::multipleClassicalRegistersAndMeasurements),
@@ -426,9 +431,8 @@ INSTANTIATE_TEST_SUITE_P(
                                  MQT_NAMED_BUILDER(mlir::qc::r),
                                  MQT_NAMED_BUILDER(mlir::qir::r)},
         CompilerPipelineTestCase{
-            "SingleControlledR",
-            MQT_NAMED_BUILDER(qc::singleControlledR), nullptr,
-            MQT_NAMED_BUILDER(mlir::qc::singleControlledR),
+            "SingleControlledR", MQT_NAMED_BUILDER(qc::singleControlledR),
+            nullptr, MQT_NAMED_BUILDER(mlir::qc::singleControlledR),
             MQT_NAMED_BUILDER(mlir::qir::singleControlledR)},
         CompilerPipelineTestCase{
             "MultipleControlledR", MQT_NAMED_BUILDER(qc::multipleControlledR),
@@ -449,9 +453,8 @@ INSTANTIATE_TEST_SUITE_P(
                                  MQT_NAMED_BUILDER(mlir::qc::u),
                                  MQT_NAMED_BUILDER(mlir::qir::u)},
         CompilerPipelineTestCase{
-            "SingleControlledU",
-            MQT_NAMED_BUILDER(qc::singleControlledU), nullptr,
-            MQT_NAMED_BUILDER(mlir::qc::singleControlledU),
+            "SingleControlledU", MQT_NAMED_BUILDER(qc::singleControlledU),
+            nullptr, MQT_NAMED_BUILDER(mlir::qc::singleControlledU),
             MQT_NAMED_BUILDER(mlir::qir::singleControlledU)},
         CompilerPipelineTestCase{
             "MultipleControlledU", MQT_NAMED_BUILDER(qc::multipleControlledU),

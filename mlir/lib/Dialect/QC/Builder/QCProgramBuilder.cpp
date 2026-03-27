@@ -17,9 +17,11 @@
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/STLFunctionalExtras.h>
 #include <llvm/ADT/SmallVector.h>
+#include <llvm/Support/Casting.h>
 #include <llvm/Support/ErrorHandling.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
+#include <mlir/Dialect/MemRef/IR/MemRef.h>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/Location.h>
@@ -101,20 +103,22 @@ QCProgramBuilder::allocQubitRegister(const int64_t size,
     llvm::reportFatalUsageError("Size must be positive");
   }
 
-  // Allocate a sequence of qubits with register metadata
+  auto qubitType = QubitType::get(ctx);
+  auto memrefType = mlir::MemRefType::get({size}, qubitType);
+  auto memref = memref::AllocOp::create(*this, memrefType);
+
   llvm::SmallVector<Value> qubits;
   qubits.reserve(size);
 
-  auto nameAttr = getStringAttr(name);
-  auto sizeAttr = getI64IntegerAttr(size);
-
   for (int64_t i = 0; i < size; ++i) {
-    auto indexAttr = getI64IntegerAttr(i);
-    auto allocOp = AllocOp::create(*this, nameAttr, sizeAttr, indexAttr);
-    const auto& qubit = qubits.emplace_back(allocOp.getResult());
+    auto index = arith::ConstantOp::create(*this, getIndexAttr(i));
+    auto load = memref::LoadOp::create(*this, memref, index.getResult());
+    const auto& qubit = qubits.emplace_back(load.getResult());
     // Track the allocated qubit for automatic deallocation
     allocatedQubits.insert(qubit);
   }
+
+  allocatedMemrefs.insert(memref);
 
   return qubits;
 }
@@ -500,24 +504,43 @@ OwningOpRef<ModuleOp> QCProgramBuilder::finalize() {
         "Insertion point is not in entry block of main function");
   }
 
-  // Automatically deallocate all still-allocated qubits
-  // Sort qubits for deterministic output
-  llvm::SmallVector<Value> sortedQubits(allocatedQubits.begin(),
-                                        allocatedQubits.end());
-  llvm::sort(sortedQubits, [](Value a, Value b) {
+  llvm::SmallVector<Value> freeQubits;
+  for (auto qubit : allocatedQubits) {
+    if (!llvm::isa<memref::LoadOp>(qubit.getDefiningOp())) {
+      freeQubits.emplace_back(qubit);
+    }
+  }
+
+  auto blockOrderComparator = [](Value a, Value b) {
     auto* opA = a.getDefiningOp();
     auto* opB = b.getDefiningOp();
     if (!opA || !opB || opA->getBlock() != opB->getBlock()) {
       return a.getAsOpaquePointer() < b.getAsOpaquePointer();
     }
     return opA->isBeforeInBlock(opB);
-  });
+  };
+
+  // Automatically deallocate all still-allocated qubits
+  // Sort qubits for deterministic output
+  llvm::SmallVector<Value> sortedQubits(freeQubits.begin(), freeQubits.end());
+  llvm::sort(sortedQubits, blockOrderComparator);
+
   for (auto qubit : sortedQubits) {
     DeallocOp::create(*this, qubit);
   }
 
-  // Clear the tracking set
+  // Automatically deallocate all still-allocated memrefs
+  // Sort memrefs for deterministic output
+  llvm::SmallVector<Value> sortedMemrefs(allocatedMemrefs.begin(),
+                                         allocatedMemrefs.end());
+  llvm::sort(sortedMemrefs, blockOrderComparator);
+
+  for (auto memref : sortedMemrefs) {
+    memref::DeallocOp::create(*this, memref);
+  }
+
   allocatedQubits.clear();
+  allocatedMemrefs.clear();
 
   // Create constant 0 for successful exit code
   auto exitCode = intConstant(0);

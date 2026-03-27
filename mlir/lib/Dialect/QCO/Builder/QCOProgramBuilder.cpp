@@ -16,6 +16,7 @@
 #include "mlir/Dialect/QTensor/IR/QTensorOps.h"
 #include "mlir/Dialect/Utils/Utils.h"
 
+#include <llvm/ADT/DenseMap.h>
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/STLFunctionalExtras.h>
 #include <llvm/ADT/SmallVector.h>
@@ -32,7 +33,6 @@
 #include <mlir/IR/Value.h>
 #include <mlir/IR/ValueRange.h>
 
-#include <cstddef>
 #include <cstdint>
 #include <string>
 #include <utility>
@@ -78,7 +78,7 @@ Value QCOProgramBuilder::allocQubit() {
   const auto qubit = allocOp.getResult();
 
   // Track the allocated qubit as valid
-  validQubits.insert(qubit);
+  validQubits.insert({qubit, {}});
 
   return qubit;
 }
@@ -95,7 +95,7 @@ Value QCOProgramBuilder::staticQubit(const int64_t index) {
   const auto qubit = staticOp.getQubit();
 
   // Track the static qubit as valid
-  validQubits.insert(qubit);
+  validQubits.insert({qubit, {}});
 
   return qubit;
 }
@@ -109,20 +109,18 @@ QCOProgramBuilder::allocQubitRegister(const int64_t size,
     llvm::reportFatalUsageError("Size must be positive");
   }
 
-  llvm::SmallVector<Value> qubits;
-  qubits.reserve(static_cast<size_t>(size));
+  auto qtensor = qtensorAlloc(size);
 
-  auto nameAttr = getStringAttr(name);
-  auto sizeAttr = getI64IntegerAttr(size);
+  llvm::SmallVector<Value> qubits;
+  qubits.reserve(size);
 
   for (int64_t i = 0; i < size; ++i) {
-    const auto indexAttr = getI64IntegerAttr(i);
-    auto allocOp = AllocOp::create(*this, nameAttr, sizeAttr, indexAttr);
-    const auto& qubit = qubits.emplace_back(allocOp.getResult());
-    // Track the allocated qubit as valid
-    validQubits.insert(qubit);
+    auto [qtensorOut, qubit] = qtensorExtract(qtensor, i);
+    qtensor = qtensorOut;
+    qubits.emplace_back(qubit);
   }
 
+  // TODO: Return qtensor
   return qubits;
 }
 
@@ -157,11 +155,14 @@ void QCOProgramBuilder::updateQubitTracking(Value inputQubit,
   // Validate the input qubit
   validateQubitValue(inputQubit);
 
+  auto it = validQubits.find(inputQubit);
+  auto info = it->second;
+
   // Remove the input (consumed) value from tracking
-  validQubits.erase(inputQubit);
+  validQubits.erase(it);
 
   // Add the output (new) value to tracking
-  validQubits.insert(outputQubit);
+  validQubits.insert({outputQubit, info});
 }
 
 void QCOProgramBuilder::validateTensorValue(Value tensor) const {
@@ -187,11 +188,14 @@ void QCOProgramBuilder::updateTensorTracking(Value inputTensor,
   // Validate the input tensor
   validateTensorValue(inputTensor);
 
+  auto it = validTensors.find(inputTensor);
+  auto info = it->second;
+
   // Remove the input (consumed) value from tracking
-  validTensors.erase(inputTensor);
+  validTensors.erase(it);
 
   // Add the output (new) value to tracking
-  validTensors.insert(outputTensor);
+  validTensors.insert({outputTensor, info});
 }
 
 //===----------------------------------------------------------------------===//
@@ -201,11 +205,13 @@ void QCOProgramBuilder::updateTensorTracking(Value inputTensor,
 Value QCOProgramBuilder::qtensorAlloc(
     const std::variant<int64_t, Value>& size) {
   checkFinalized();
-  auto sizeValue = utils::variantToValue(*this, getLoc(), size);
 
+  auto sizeValue = utils::variantToValue(*this, getLoc(), size);
   auto allocOp = qtensor::AllocOp::create(*this, sizeValue);
+
   auto result = allocOp.getResult();
-  validTensors.insert(result);
+  validTensors.insert({result, {tensorCounter++}});
+
   return result;
 }
 
@@ -226,21 +232,22 @@ Value QCOProgramBuilder::qtensorFromElements(ValueRange elements) {
 
   auto fromElementsOp = qtensor::FromElementsOp::create(*this, elements);
   auto result = fromElementsOp.getResult();
-  validTensors.insert(result);
+  validTensors.insert({result, {tensorCounter++}});
   return result;
 }
 
-std::pair<Value, Value>
-QCOProgramBuilder::qtensorExtract(Value tensor,
-                                  const std::variant<int64_t, Value>& index) {
+std::pair<Value, Value> QCOProgramBuilder::qtensorExtract(Value tensor,
+                                                          const int64_t index) {
   checkFinalized();
 
-  auto indexValue = utils::variantToValue(*this, getLoc(), index);
+  auto indexValue =
+      arith::ConstantOp::create(*this, getIndexAttr(index)).getResult();
   auto extractOp = qtensor::ExtractOp::create(*this, tensor, indexValue);
   auto qubit = extractOp.getResult();
   auto outTensor = extractOp.getOutTensor();
 
-  validQubits.insert(qubit);
+  validQubits.insert(
+      {qubit, {.regId = validTensors[tensor].regId, .regIndex = index}});
   updateTensorTracking(tensor, outTensor);
 
   return {outTensor, qubit};
@@ -258,7 +265,7 @@ std::pair<Value, Value> QCOProgramBuilder::qtensorExtractSlice(
   auto slicedTensor = extractSliceOp.getResult();
   auto outTensor = extractSliceOp.getOutTensor();
 
-  validTensors.insert(slicedTensor);
+  validTensors.insert({slicedTensor, {tensorCounter++}});
   updateTensorTracking(tensor, outTensor);
 
   return {outTensor, slicedTensor};
@@ -848,8 +855,8 @@ ValueRange QCOProgramBuilder::qcoIf(
   for (auto qubitType : qubits.getTypes()) {
     const auto thenArg = thenBlock.addArgument(qubitType, getLoc());
     const auto elseArg = elseBlock.addArgument(qubitType, getLoc());
-    validQubits.insert(thenArg);
-    validQubits.insert(elseArg);
+    validQubits.insert({thenArg, {}});
+    validQubits.insert({elseArg, {}});
   }
 
   // Construct the bodies of the regions
@@ -933,23 +940,73 @@ OwningOpRef<ModuleOp> QCOProgramBuilder::finalize() {
     return opA->isBeforeInBlock(opB);
   };
 
+  auto blockOrderComparator1 = [](const std::pair<Value, TensorInfo>& a,
+                                  const std::pair<Value, TensorInfo>& b) {
+    auto* opA = a.first.getDefiningOp();
+    auto* opB = b.first.getDefiningOp();
+    if (!opA || !opB || opA->getBlock() != opB->getBlock()) {
+      return a.first.getAsOpaquePointer() < b.first.getAsOpaquePointer();
+    }
+    return opA->isBeforeInBlock(opB);
+  };
+
+  auto blockOrderComparator2 = [](const std::pair<Value, int64_t>& a,
+                                  const std::pair<Value, int64_t>& b) {
+    auto* opA = a.first.getDefiningOp();
+    auto* opB = b.first.getDefiningOp();
+    if (!opA || !opB || opA->getBlock() != opB->getBlock()) {
+      return a.first.getAsOpaquePointer() < b.first.getAsOpaquePointer();
+    }
+    if (opA != opB) {
+      return opA->isBeforeInBlock(opB);
+    }
+    return llvm::cast<mlir::OpResult>(a.first).getResultNumber() <
+           llvm::cast<mlir::OpResult>(b.first).getResultNumber();
+  };
+
+  llvm::SmallVector<Value> freeQubits;
+  llvm::DenseMap<Value, QubitInfo> registerQubits;
+  for (auto [qubit, info] : validQubits) {
+    if (info.regId == -1) {
+      freeQubits.push_back(qubit);
+    } else {
+      registerQubits.insert({qubit, info});
+    }
+  }
+
   // Automatically deallocate all still-allocated qubits
   // Sort qubits for deterministic output
-  llvm::SmallVector<Value> sortedQubits(validQubits.begin(), validQubits.end());
-  llvm::sort(sortedQubits, blockOrderComparator);
+  llvm::SmallVector<Value> sortedFreeQubits(freeQubits.begin(),
+                                            freeQubits.end());
+  llvm::sort(sortedFreeQubits, blockOrderComparator);
 
-  for (auto qubit : sortedQubits) {
+  for (auto qubit : sortedFreeQubits) {
     DeallocOp::create(*this, qubit);
   }
 
   // Automatically deallocate all still-allocated tensors
-  // Sort tensors for deterministic output
-  llvm::SmallVector<Value> sortedTensors(validTensors.begin(),
-                                         validTensors.end());
-  llvm::sort(sortedTensors, blockOrderComparator);
-
-  for (auto tensor : sortedTensors) {
-    qtensor::DeallocOp::create(*this, tensor);
+  if (!validTensors.empty()) {
+    // Sort tensors for deterministic output
+    llvm::SmallVector<std::pair<Value, TensorInfo>> sortedTensors(
+        validTensors.begin(), validTensors.end());
+    llvm::sort(sortedTensors, blockOrderComparator1);
+    for (auto& [tensor, tensorInfo] : sortedTensors) {
+      // Filter out qubits belonging to this tensor
+      llvm::SmallVector<std::pair<Value, int64_t>> toInsert;
+      for (auto& [qubit, qubitInfo] : registerQubits) {
+        if (qubitInfo.regId != tensorInfo.regId) {
+          continue;
+        }
+        toInsert.push_back({qubit, qubitInfo.regIndex});
+      }
+      // Sort qubits for deterministic output
+      llvm::sort(toInsert, blockOrderComparator2);
+      // Insert qubits
+      for (auto& [qubit, index] : toInsert) {
+        tensor = qtensorInsert(qubit, tensor, index);
+      }
+      qtensor::DeallocOp::create(*this, tensor);
+    }
   }
 
   validQubits.clear();

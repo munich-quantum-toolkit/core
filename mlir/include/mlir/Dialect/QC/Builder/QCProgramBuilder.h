@@ -942,6 +942,8 @@ private:
   /// Track allocated qubits for automatic deallocation
   llvm::DenseSet<Value> allocatedQubits;
 
+  llvm::DenseSet<Value> allocatedMemrefs;
+
   /// Check if the builder has been finalized
   void checkFinalized() const;
 };

@@ -9,6 +9,7 @@
  */
 
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
+#include "mlir/Dialect/QTensor/IR/QTensorOps.h"
 
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OperationSupport.h>
@@ -21,7 +22,8 @@ using namespace mlir::qco;
 namespace {
 
 /**
- * @brief Remove reset operations that immediately follow an allocation.
+ * @brief Remove reset operations that immediately follow a `qco.alloc`
+ * operation.
  */
 struct RemoveResetAfterAlloc final : OpRewritePattern<ResetOp> {
   using OpRewritePattern::OpRewritePattern;
@@ -39,9 +41,30 @@ struct RemoveResetAfterAlloc final : OpRewritePattern<ResetOp> {
   }
 };
 
+/**
+ * @brief Remove reset operations that immediately follow a `qtensor.extract`
+ * operation.
+ */
+struct RemoveResetAfterExtract final : OpRewritePattern<ResetOp> {
+  using OpRewritePattern::OpRewritePattern;
+
+  LogicalResult matchAndRewrite(ResetOp op,
+                                PatternRewriter& rewriter) const override {
+    // Check if the predecessor is an ExtractOp
+    if (auto extractOp = op.getQubitIn().getDefiningOp<qtensor::ExtractOp>();
+        !extractOp) {
+      return failure();
+    }
+
+    // Remove the ResetOp
+    rewriter.replaceOp(op, op.getQubitIn());
+    return success();
+  }
+};
+
 } // namespace
 
 void ResetOp::getCanonicalizationPatterns(RewritePatternSet& results,
                                           MLIRContext* context) {
-  results.add<RemoveResetAfterAlloc>(context);
+  results.add<RemoveResetAfterAlloc, RemoveResetAfterExtract>(context);
 }

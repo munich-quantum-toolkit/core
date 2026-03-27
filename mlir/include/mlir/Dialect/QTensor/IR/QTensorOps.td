@@ -207,7 +207,7 @@ def InsertOp
         $scalar `into` $dest `[` $index `]` attr-dict `:` type($dest)
     }];
 
-  let hasFolder = 1;
+  let hasCanonicalizer = 1;
   let hasVerifier = 1;
 }
 
