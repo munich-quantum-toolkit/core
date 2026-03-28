@@ -20,6 +20,7 @@ add_mlir_library(
   MLIRQCToQCO
   MLIRQCOToQC
   MLIRQCToQIR
+  MLIRQCOTransforms
   MQT::MLIRSupport
   DISABLE_INSTALL)
 
