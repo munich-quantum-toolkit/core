@@ -72,7 +72,7 @@ private:
    */
   enum class Direction : std::uint8_t { Forward, Backward };
 
-  struct LayoutInfo;
+  class LayoutInfo;
 
   /**
    * @brief A qubit layout that maps program and hardware indices without
@@ -207,7 +207,7 @@ private:
     SmallVector<IndexType> hardwareToProgram_;
 
   private:
-    friend struct MappingPass::LayoutInfo;
+    friend class MappingPass::LayoutInfo;
 
     Layout() = default;
     explicit Layout(const std::size_t nqubits)
@@ -388,12 +388,10 @@ protected:
 
       const auto [ltr, rtl] = computeBidirectionalLayers(dynQubits);
 
-      // Create trials. Currently this includes the identity layout and
-      // `ntrials` many random layouts.
+      // Create trials. Currently this includes `ntrials` many random layouts.
 
       SmallVector<Layout> trials;
-      trials.reserve(1 + this->ntrials);
-      trials.emplace_back(Layout::identity(arch.nqubits()));
+      trials.reserve(this->ntrials);
       for (std::size_t i = 0; i < this->ntrials; ++i) {
         trials.emplace_back(Layout::random(arch.nqubits(), rng()));
       }
@@ -610,6 +608,52 @@ private:
   }
 
   /**
+   * @returns true if the wire iterator reached the end (Forward) or the
+   * start (Backward) of the wire.
+   */
+  template <Direction d> static bool proceedOnWire(const WireIterator& it) {
+    if constexpr (d == Direction::Forward) {
+      return it != std::default_sentinel;
+    } else {
+      return !isa<AllocOp>(it.operation());
+    }
+  }
+
+  /**
+   * @brief Skip the next two-qubit block of two wires.
+   * @details Advances each of the two wire iterators until a two-qubit op is
+   * found. If the ops match, repeat this process. Otherwise, stop.
+   */
+  template <Direction d>
+  static void skipTwoQubitBlock(WireIterator& first, WireIterator& second) {
+    constexpr auto step = d == Direction::Forward ? 1 : -1;
+
+    const auto advanceUntilTwoQubitOp = [&](WireIterator& it) {
+      while (proceedOnWire<d>(it)) {
+        if (auto op = dyn_cast<UnitaryOpInterface>(it.operation())) {
+          if (op.getNumQubits() > 1) {
+            break;
+          }
+        }
+
+        std::ranges::advance(it, step);
+      }
+    };
+
+    while (true) {
+      advanceUntilTwoQubitOp(first);
+      advanceUntilTwoQubitOp(second);
+
+      if (first.operation() != second.operation()) {
+        break;
+      }
+
+      std::ranges::advance(first, step);
+      std::ranges::advance(second, step);
+    }
+  }
+
+  /**
    * @brief Collect the layers of independently executable two-qubit gates of a
    * circuit.
    * @details Depending on the template parameter, the function collects the
@@ -623,22 +667,14 @@ private:
   template <Direction d>
   static LayeringResult collectLayers(MutableArrayRef<WireIterator> wires) {
     constexpr auto step = d == Direction::Forward ? 1 : -1;
-    const auto shouldContinue = [](const WireIterator& it) {
-      if constexpr (d == Direction::Forward) {
-        return it != std::default_sentinel;
-      } else {
-        return !isa<AllocOp>(it.operation());
-      }
-    };
 
     LayeringResult result;
-
     DenseMap<UnitaryOpInterface, std::size_t> visited;
     while (true) {
       Layer layer{};
       Operation* anchor = nullptr;
       for (const auto [index, it] : enumerate(wires)) {
-        while (shouldContinue(it)) {
+        while (proceedOnWire<d>(it)) {
           const auto res =
               TypeSwitch<Operation*, WalkResult>(it.operation())
                   .Case<BarrierOp>([&](auto) {
@@ -660,6 +696,8 @@ private:
 
                           std::ranges::advance(wires[index], step);
                           std::ranges::advance(wires[otherIndex], step);
+
+                          skipTwoQubitBlock<d>(wires[index], wires[otherIndex]);
 
                           if (anchor == nullptr ||
                               op->isBeforeInBlock(anchor)) {
