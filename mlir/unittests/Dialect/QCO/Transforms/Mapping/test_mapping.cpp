@@ -168,6 +168,11 @@ TEST_P(MappingPassTest, Sabre) {
   builder.cx(q4, q5);
 
   builder.cx(q0, q1);
+
+  builder.h(q0);
+  builder.y(q1);
+  builder.cx(q0, q1);
+
   builder.cx(q2, q3);
 
   builder.h(q2);
