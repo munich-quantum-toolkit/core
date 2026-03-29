@@ -644,6 +644,10 @@ private:
       advanceUntilTwoQubitOp(first);
       advanceUntilTwoQubitOp(second);
 
+      if (!proceedOnWire<d>(first) || !proceedOnWire<d>(second)) {
+        break;
+      }
+
       if (first.operation() != second.operation()) {
         break;
       }
