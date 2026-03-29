@@ -608,7 +608,7 @@ private:
   }
 
   /**
-   * @returns true if the wire iterator reached the end (Forward) or the
+   * @returns true if the wire iterator has not reached the end (Forward) or the
    * start (Backward) of the wire.
    */
   template <Direction d> static bool proceedOnWire(const WireIterator& it) {
