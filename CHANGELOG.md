@@ -13,6 +13,10 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 
 - ✨ Add Sampler and Estimator Primitives to the QDMI-Qiskit Interface ([#1507]) ([**@marcelwa**])
 
+### Changed
+
+- ⬆️ Update QDMI to latest version from stable `v1.2.x` branch ([#1593]) ([**@burgholzer**])
+
 ## [3.4.1] - 2026-02-01
 
 ### Changed
@@ -316,6 +320,7 @@ _📚 Refer to the [GitHub Release Notes](https://github.com/munich-quantum-tool
 
 <!-- PR links -->
 
+[#1593]: https://github.com/munich-quantum-toolkit/core/pull/1593
 [#1507]: https://github.com/munich-quantum-toolkit/core/pull/1507
 [#1481]: https://github.com/munich-quantum-toolkit/core/pull/1481
 [#1453]: https://github.com/munich-quantum-toolkit/core/pull/1453
