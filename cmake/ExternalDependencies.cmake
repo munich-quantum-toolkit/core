@@ -163,12 +163,31 @@ if(MQT_CORE_JSON_INSTALL AND TARGET nlohmann_json)
       "${CMAKE_CURRENT_BINARY_DIR}/nlohmann_jsonConfigVersion.cmake")
   set(MQT_CORE_JSON_PKGCONFIG_FILE "${CMAKE_CURRENT_BINARY_DIR}/nlohmann_json.pc")
 
+  # nlohmann_json's upstream templates expect these names.
+  set(_mqt_core_saved_project_name "${PROJECT_NAME}")
+  set(_mqt_core_saved_project_version "${PROJECT_VERSION}")
+  set(_mqt_core_saved_project_version_major "${PROJECT_VERSION_MAJOR}")
+  set(PROJECT_NAME "nlohmann_json")
+  set(PROJECT_VERSION "${JSON_VERSION}")
+  string(REGEX MATCH "^[0-9]+" PROJECT_VERSION_MAJOR "${JSON_VERSION}")
+  set(NLOHMANN_JSON_TARGET_NAME "nlohmann_json")
+  set(NLOHMANN_JSON_TARGETS_EXPORT_NAME "${MQT_CORE_JSON_TARGETS_EXPORT_NAME}")
+
   configure_file(${nlohmann_json_SOURCE_DIR}/cmake/config.cmake.in ${MQT_CORE_JSON_CONFIG_FILE}
                  @ONLY)
   configure_file(${nlohmann_json_SOURCE_DIR}/cmake/nlohmann_jsonConfigVersion.cmake.in
                  ${MQT_CORE_JSON_VERSION_CONFIG_FILE} @ONLY)
   configure_file(${nlohmann_json_SOURCE_DIR}/cmake/pkg-config.pc.in ${MQT_CORE_JSON_PKGCONFIG_FILE}
                  @ONLY)
+
+  set(PROJECT_NAME "${_mqt_core_saved_project_name}")
+  set(PROJECT_VERSION "${_mqt_core_saved_project_version}")
+  set(PROJECT_VERSION_MAJOR "${_mqt_core_saved_project_version_major}")
+  unset(_mqt_core_saved_project_name)
+  unset(_mqt_core_saved_project_version)
+  unset(_mqt_core_saved_project_version_major)
+  unset(NLOHMANN_JSON_TARGET_NAME)
+  unset(NLOHMANN_JSON_TARGETS_EXPORT_NAME)
 
   install(
     DIRECTORY ${nlohmann_json_SOURCE_DIR}/include/
