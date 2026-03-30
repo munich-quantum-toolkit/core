@@ -118,10 +118,7 @@ if(NOT TARGET ${TARGET_NAME})
            ${QDMI_HDRS})
 
   # add link libraries
-  target_link_libraries(
-    ${TARGET_NAME}
-    PUBLIC qdmi::qdmi
-    PRIVATE MQT::CoreQDMICommon spdlog::spdlog)
+  target_link_libraries(${TARGET_NAME} PRIVATE MQT::CoreQDMICommon spdlog::spdlog)
 
   # Always compile with position independent code such that the library can be used in shared
   # libraries
@@ -162,10 +159,8 @@ if(NOT TARGET ${TARGET_NAME})
              ${QDMI_HDRS})
     # add link libraries
     target_link_libraries(
-      ${DYN_TARGET_NAME}
-      PUBLIC qdmi::qdmi
-      PRIVATE ${TARGET_NAME} MQT::CoreQDMICommon MQT::ProjectOptions MQT::ProjectWarnings
-              spdlog::spdlog)
+      ${DYN_TARGET_NAME} PRIVATE ${TARGET_NAME} MQT::CoreQDMICommon MQT::ProjectOptions
+                                 MQT::ProjectWarnings spdlog::spdlog)
     # set c++ standard
     target_compile_features(${DYN_TARGET_NAME} PRIVATE cxx_std_20)
     # set versioning information

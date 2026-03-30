@@ -38,10 +38,8 @@ if(NOT TARGET ${TARGET_NAME})
            ${QDMI_HDRS})
 
   # Add link libraries
-  target_link_libraries(
-    ${TARGET_NAME}
-    PUBLIC qdmi::qdmi
-    PRIVATE MQT::CoreDD MQT::CoreQASM MQT::CoreCircuitOptimizer MQT::CoreQDMICommon spdlog::spdlog)
+  target_link_libraries(${TARGET_NAME} PRIVATE MQT::CoreDD MQT::CoreQASM MQT::CoreCircuitOptimizer
+                                               MQT::CoreQDMICommon spdlog::spdlog)
 
   # Always compile with position independent code such that the library can be used in shared
   # libraries
