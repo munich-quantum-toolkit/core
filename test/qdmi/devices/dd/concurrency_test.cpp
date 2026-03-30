@@ -21,10 +21,10 @@
 #include <gtest/gtest.h>
 #include <qdmi/constants.h>
 
-=======
+    =======
 #include <gtest/gtest.h>
 
->>>>>>> bd9f9cb4 (⬆️ Update QDMI to latest version from stable `v1.2.x` branch (#1593))
+    >>>>>>> bd9f9cb4 (⬆️ Update QDMI to latest version from stable `v1.2.x` branch (#1593))
 #include <atomic>
 #include <cstddef>
 #include <gtest/gtest.h>
@@ -33,7 +33,7 @@
 #include <thread>
 #include <vector>
 
-TEST(Concurrency, ConcurrentStatevectorReads) {
+    TEST(Concurrency, ConcurrentStatevectorReads) {
   const qdmi_test::SessionGuard s{};
   qdmi_test::JobGuard j{s.session};
   ASSERT_EQ(qdmi_test::setProgram(j.job, QDMI_PROGRAM_FORMAT_QASM3,

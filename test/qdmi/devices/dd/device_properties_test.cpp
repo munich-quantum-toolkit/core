@@ -20,18 +20,17 @@
 #include <gtest/gtest.h>
 <<<<<<< HEAD
 #include <qdmi/constants.h>
-||||||| parent of bd9f9cb4 (⬆️ Update QDMI to latest version from stable `v1.2.x` branch (#1593))
+    ||||||| parent of bd9f9cb4 (⬆️ Update QDMI to latest version from stable `v1.2.x` branch (#1593))
+#include <cstddef>
 #include <qdmi/constants.h>
+    =======
 
 #include <cstddef>
-=======
-
-#include <cstddef>
->>>>>>> bd9f9cb4 (⬆️ Update QDMI to latest version from stable `v1.2.x` branch (#1593))
+    >>>>>>> bd9f9cb4 (⬆️ Update QDMI to latest version from stable `v1.2.x` branch (#1593))
 #include <string>
 #include <vector>
 
-using testing::AnyOf;
+    using testing::AnyOf;
 
 TEST(DeviceProperties, BasicStringsAndSizes) {
   const qdmi_test::SessionGuard s{};

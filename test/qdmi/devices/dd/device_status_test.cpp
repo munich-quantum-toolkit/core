@@ -20,25 +20,24 @@
 #include <gtest/gtest.h>
 <<<<<<< HEAD
 #include <qdmi/constants.h>
-||||||| parent of bd9f9cb4 (⬆️ Update QDMI to latest version from stable `v1.2.x` branch (#1593))
+    ||||||| parent of bd9f9cb4 (⬆️ Update QDMI to latest version from stable `v1.2.x` branch (#1593))
+#include <atomic>
 #include <qdmi/constants.h>
+    =======
 
 #include <atomic>
-=======
-
-#include <atomic>
->>>>>>> bd9f9cb4 (⬆️ Update QDMI to latest version from stable `v1.2.x` branch (#1593))
+    >>>>>>> bd9f9cb4 (⬆️ Update QDMI to latest version from stable `v1.2.x` branch (#1593))
 #include <thread>
 
-namespace {
-QDMI_Device_Status queryStatus(MQT_DDSIM_QDMI_Device_Session session) {
-  QDMI_Device_Status st = QDMI_DEVICE_STATUS_OFFLINE;
-  const auto rc = MQT_DDSIM_QDMI_device_session_query_device_property(
-      session, QDMI_DEVICE_PROPERTY_STATUS, sizeof(QDMI_Device_Status), &st,
-      nullptr);
-  EXPECT_EQ(rc, QDMI_SUCCESS);
-  return st;
-}
+    namespace {
+  QDMI_Device_Status queryStatus(MQT_DDSIM_QDMI_Device_Session session) {
+    QDMI_Device_Status st = QDMI_DEVICE_STATUS_OFFLINE;
+    const auto rc = MQT_DDSIM_QDMI_device_session_query_device_property(
+        session, QDMI_DEVICE_PROPERTY_STATUS, sizeof(QDMI_Device_Status), &st,
+        nullptr);
+    EXPECT_EQ(rc, QDMI_SUCCESS);
+    return st;
+  }
 } // namespace
 
 TEST(DeviceStatus, TransitionsBusyThenIdleAfterJob) {

@@ -21,17 +21,17 @@
 #include <gtest/gtest.h>
 #include <qdmi/constants.h>
 
-=======
+    =======
 #include <gtest/gtest.h>
 
->>>>>>> bd9f9cb4 (⬆️ Update QDMI to latest version from stable `v1.2.x` branch (#1593))
+    >>>>>>> bd9f9cb4 (⬆️ Update QDMI to latest version from stable `v1.2.x` branch (#1593))
 #include <cstddef>
 #include <cstring>
 #include <gtest/gtest.h>
 #include <qdmi/constants.h>
 #include <string>
 
-TEST(JobParameters, SetAndQueryBasics) {
+    TEST(JobParameters, SetAndQueryBasics) {
   const qdmi_test::SessionGuard s{};
   const qdmi_test::JobGuard j{s.session};
 
