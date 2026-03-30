@@ -221,8 +221,7 @@ Value QIRProgramBuilder::measure(Value qubit, const int64_t resultIndex) {
   setInsertionPoint(entryBlock->getTerminator());
 
   // Create result pointer
-  auto fnSig = LLVM::LLVMFunctionType::get(
-      LLVM::LLVMVoidType::get(getContext()), {ptrType});
+  auto fnSig = LLVM::LLVMFunctionType::get(ptrType, {ptrType});
   auto fnDec =
       getOrCreateFunctionDeclaration(*this, module, QIR_RESULT_ALLOC, fnSig);
   auto zero = LLVM::ZeroOp::create(*this, ptrType);

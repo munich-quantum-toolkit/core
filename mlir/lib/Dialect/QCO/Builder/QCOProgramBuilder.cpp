@@ -75,7 +75,7 @@ Value QCOProgramBuilder::allocQubit() {
   checkFinalized();
 
   auto allocOp = AllocOp::create(*this);
-  const auto qubit = allocOp.getResult();
+  auto qubit = allocOp.getResult();
 
   // Track the allocated qubit as valid
   validQubits.insert({qubit, {}});
@@ -92,7 +92,7 @@ Value QCOProgramBuilder::staticQubit(const int64_t index) {
 
   auto indexAttr = getI64IntegerAttr(index);
   auto staticOp = StaticOp::create(*this, indexAttr);
-  const auto qubit = staticOp.getQubit();
+  auto qubit = staticOp.getQubit();
 
   // Track the static qubit as valid
   validQubits.insert({qubit, {}});
@@ -245,8 +245,10 @@ std::pair<Value, Value> QCOProgramBuilder::qtensorExtract(Value tensor,
   auto qubit = extractOp.getResult();
   auto outTensor = extractOp.getOutTensor();
 
-  validQubits.insert(
-      {qubit, {.regId = validTensors[tensor].regId, .regIndex = index}});
+  validateTensorValue(tensor);
+  const auto regId = validTensors[tensor].regId;
+
+  validQubits.insert({qubit, {.regId = regId, .regIndex = index}});
   updateTensorTracking(tensor, outTensor);
 
   return {outTensor, qubit};
@@ -282,6 +284,7 @@ Value QCOProgramBuilder::qtensorInsert(
   validateQubitValue(scalar);
   validQubits.erase(scalar);
   updateTensorTracking(tensor, outTensor);
+
   return outTensor;
 }
 
@@ -340,7 +343,7 @@ Value QCOProgramBuilder::measure(Value qubit, const Bit& bit) {
   auto indexAttr = getI64IntegerAttr(bit.registerIndex);
   auto measureOp =
       MeasureOp::create(*this, qubit, nameAttr, sizeAttr, indexAttr);
-  const auto qubitOut = measureOp.getQubitOut();
+  auto qubitOut = measureOp.getQubitOut();
 
   // Update tracking
   updateQubitTracking(qubit, qubitOut);
@@ -352,7 +355,7 @@ Value QCOProgramBuilder::reset(Value qubit) {
   checkFinalized();
 
   auto resetOp = ResetOp::create(*this, qubit);
-  const auto qubitOut = resetOp.getQubitOut();
+  auto qubitOut = resetOp.getQubitOut();
 
   // Update tracking
   updateQubitTracking(qubit, qubitOut);
@@ -408,7 +411,7 @@ DEFINE_ZERO_TARGET_ONE_PARAMETER(GPhaseOp, gphase, theta)
   Value QCOProgramBuilder::OP_NAME(Value qubit) {                              \
     checkFinalized();                                                          \
     auto op = OP_CLASS::create(*this, qubit);                                  \
-    const auto& qubitOut = op.getQubitOut();                                   \
+    auto qubitOut = op.getQubitOut();                                          \
     updateQubitTracking(qubit, qubitOut);                                      \
     return qubitOut;                                                           \
   }                                                                            \
@@ -453,7 +456,7 @@ DEFINE_ONE_TARGET_ZERO_PARAMETER(SXdgOp, sxdg)
                                    Value qubit) {                              \
     checkFinalized();                                                          \
     auto op = OP_CLASS::create(*this, qubit, PARAM);                           \
-    const auto& qubitOut = op.getQubitOut();                                   \
+    auto qubitOut = op.getQubitOut();                                          \
     updateQubitTracking(qubit, qubitOut);                                      \
     return qubitOut;                                                           \
   }                                                                            \
@@ -496,7 +499,7 @@ DEFINE_ONE_TARGET_ONE_PARAMETER(POp, p, phi)
                                    Value qubit) {                              \
     checkFinalized();                                                          \
     auto op = OP_CLASS::create(*this, qubit, PARAM1, PARAM2);                  \
-    const auto& qubitOut = op.getQubitOut();                                   \
+    auto qubitOut = op.getQubitOut();                                          \
     updateQubitTracking(qubit, qubitOut);                                      \
     return qubitOut;                                                           \
   }                                                                            \
@@ -543,7 +546,7 @@ DEFINE_ONE_TARGET_TWO_PARAMETER(U2Op, u2, phi, lambda)
                                    Value qubit) {                              \
     checkFinalized();                                                          \
     auto op = OP_CLASS::create(*this, qubit, PARAM1, PARAM2, PARAM3);          \
-    const auto& qubitOut = op.getQubitOut();                                   \
+    auto qubitOut = op.getQubitOut();                                          \
     updateQubitTracking(qubit, qubitOut);                                      \
     return qubitOut;                                                           \
   }                                                                            \
@@ -590,8 +593,8 @@ DEFINE_ONE_TARGET_THREE_PARAMETER(UOp, u, theta, phi, lambda)
                                                      Value qubit1) {           \
     checkFinalized();                                                          \
     auto op = OP_CLASS::create(*this, qubit0, qubit1);                         \
-    const auto& qubit0Out = op.getQubit0Out();                                 \
-    const auto& qubit1Out = op.getQubit1Out();                                 \
+    auto qubit0Out = op.getQubit0Out();                                        \
+    auto qubit1Out = op.getQubit1Out();                                        \
     updateQubitTracking(qubit0, qubit0Out);                                    \
     updateQubitTracking(qubit1, qubit1Out);                                    \
     return {qubit0Out, qubit1Out};                                             \
@@ -634,8 +637,8 @@ DEFINE_TWO_TARGET_ZERO_PARAMETER(ECROp, ecr)
       const std::variant<double, Value>&(PARAM), Value qubit0, Value qubit1) { \
     checkFinalized();                                                          \
     auto op = OP_CLASS::create(*this, qubit0, qubit1, PARAM);                  \
-    const auto& qubit0Out = op.getQubit0Out();                                 \
-    const auto& qubit1Out = op.getQubit1Out();                                 \
+    auto qubit0Out = op.getQubit0Out();                                        \
+    auto qubit1Out = op.getQubit1Out();                                        \
     updateQubitTracking(qubit0, qubit0Out);                                    \
     updateQubitTracking(qubit1, qubit1Out);                                    \
     return {qubit0Out, qubit1Out};                                             \
@@ -684,8 +687,8 @@ DEFINE_TWO_TARGET_ONE_PARAMETER(RZZOp, rzz, theta)
       Value qubit1) {                                                          \
     checkFinalized();                                                          \
     auto op = OP_CLASS::create(*this, qubit0, qubit1, PARAM1, PARAM2);         \
-    const auto& qubit0Out = op.getQubit0Out();                                 \
-    const auto& qubit1Out = op.getQubit1Out();                                 \
+    auto qubit0Out = op.getQubit0Out();                                        \
+    auto qubit1Out = op.getQubit1Out();                                        \
     updateQubitTracking(qubit0, qubit0Out);                                    \
     updateQubitTracking(qubit1, qubit1Out);                                    \
     return {qubit0Out, qubit1Out};                                             \
@@ -735,7 +738,7 @@ ValueRange QCOProgramBuilder::barrier(ValueRange qubits) {
   checkFinalized();
 
   auto op = BarrierOp::create(*this, qubits);
-  const auto& qubitsOut = op.getQubitsOut();
+  auto qubitsOut = op.getQubitsOut();
   for (const auto& [inputQubit, outputQubit] : llvm::zip(qubits, qubitsOut)) {
     updateQubitTracking(inputQubit, outputQubit);
   }
@@ -753,7 +756,7 @@ std::pair<ValueRange, ValueRange> QCOProgramBuilder::ctrl(
 
   auto ctrlOp = CtrlOp::create(*this, controls, targets);
   auto& block = ctrlOp.getBodyRegion().emplaceBlock();
-  const auto qubitType = QubitType::get(getContext());
+  auto qubitType = QubitType::get(getContext());
   for (const auto target : targets) {
     const auto arg = block.addArgument(qubitType, getLoc());
     updateQubitTracking(target, arg);
@@ -791,8 +794,8 @@ ValueRange QCOProgramBuilder::inv(
 
   // Add block arguments for all qubits
   auto& block = invOp.getBodyRegion().emplaceBlock();
-  const auto qubitType = QubitType::get(getContext());
-  for (const auto qubit : qubits) {
+  auto qubitType = QubitType::get(getContext());
+  for (auto qubit : qubits) {
     const auto arg = block.addArgument(qubitType, getLoc());
     updateQubitTracking(qubit, arg);
   }
@@ -962,10 +965,15 @@ OwningOpRef<ModuleOp> QCOProgramBuilder::finalize() {
     return a.second < b.second;
   };
 
+  llvm::DenseSet<int64_t> validTensorIds;
+  for (const auto& [tensor, info] : validTensors) {
+    validTensorIds.insert(info.regId);
+  }
+
   llvm::SmallVector<Value> freeQubits;
   llvm::DenseMap<Value, QubitInfo> registerQubits;
   for (auto [qubit, info] : validQubits) {
-    if (info.regId == -1) {
+    if (info.regId == -1 || !validTensorIds.contains(info.regId)) {
       freeQubits.push_back(qubit);
     } else {
       registerQubits.insert({qubit, info});

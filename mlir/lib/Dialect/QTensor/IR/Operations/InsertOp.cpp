@@ -22,27 +22,38 @@
 using namespace mlir;
 using namespace mlir::qtensor;
 
-static ExtractOp findExtractOp(InsertOp op) {
-
+/**
+ * @brief Find the `qtensor.extract` operation for a given `qtensor.insert`
+ * operation.
+ */
+static ExtractOp findExtractOp(InsertOp op, Value index) {
   auto* definingOp = op.getDest().getDefiningOp();
   if (llvm::isa<ExtractOp>(definingOp)) {
     return llvm::cast<ExtractOp>(definingOp);
   }
   if (llvm::isa<InsertOp>(definingOp)) {
     auto nestedInsertOp = llvm::cast<InsertOp>(definingOp);
-    return findExtractOp(nestedInsertOp);
+    if (nestedInsertOp.getIndex() == index) {
+      return nullptr;
+    }
+    return findExtractOp(nestedInsertOp, index);
   }
   return nullptr;
 }
 
 namespace {
 
+/**
+ * @brief Remove matching `qtensor.insert` and `qtensor.extract` pairs.
+ */
 struct RemoveExtractInsertPair final : OpRewritePattern<InsertOp> {
   using OpRewritePattern::OpRewritePattern;
 
   LogicalResult matchAndRewrite(InsertOp op,
                                 PatternRewriter& rewriter) const override {
-    auto extractOp = findExtractOp(op);
+    auto index = op.getIndex();
+
+    auto extractOp = findExtractOp(op, index);
     if (!extractOp) {
       return failure();
     }
@@ -51,7 +62,7 @@ struct RemoveExtractInsertPair final : OpRewritePattern<InsertOp> {
       return failure();
     }
 
-    if (op.getIndex() != extractOp.getIndex()) {
+    if (index != extractOp.getIndex()) {
       return failure();
     }
 

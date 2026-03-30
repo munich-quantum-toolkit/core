@@ -579,8 +579,7 @@ struct ConvertQCMeasureOp final : StatefulOpConversionPattern<MeasureOp> {
 
       result = loadedResults.at({registerName, registerIndex});
     } else {
-      auto fnSig =
-          LLVM::LLVMFunctionType::get(LLVM::LLVMVoidType::get(ctx), {ptrType});
+      auto fnSig = LLVM::LLVMFunctionType::get(ptrType, {ptrType});
       auto fnDec =
           getOrCreateFunctionDeclaration(rewriter, op, QIR_RESULT_ALLOC, fnSig);
 

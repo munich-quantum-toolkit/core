@@ -35,20 +35,20 @@ namespace mlir::qir {
 // QIR function names
 
 inline constexpr auto QIR_QUBIT_ARRAY_ALLOC =
-    "@__quantum__rt__qubit_array_allocate";
+    "__quantum__rt__qubit_array_allocate";
 inline constexpr auto QIR_QUBIT_ARRAY_RELEASE =
-    "@__quantum__rt__qubit_array_release";
+    "__quantum__rt__qubit_array_release";
 
-inline constexpr auto QIR_QUBIT_ALLOC = "@__quantum__rt__qubit_allocate";
-inline constexpr auto QIR_QUBIT_RELEASE = "@__quantum__rt__qubit_release";
+inline constexpr auto QIR_QUBIT_ALLOC = "__quantum__rt__qubit_allocate";
+inline constexpr auto QIR_QUBIT_RELEASE = "__quantum__rt__qubit_release";
 
 inline constexpr auto QIR_RESULT_ARRAY_ALLOC =
-    "@__quantum__rt__result_array_allocate";
+    "__quantum__rt__result_array_allocate";
 inline constexpr auto QIR_RESULT_ARRAY_RELEASE =
-    "@__quantum__rt__result_array_release";
+    "__quantum__rt__result_array_release";
 
-inline constexpr auto QIR_RESULT_ALLOC = "@__quantum__rt__result_allocate";
-inline constexpr auto QIR_RESULT_RELEASE = "@__quantum__rt__result_release";
+inline constexpr auto QIR_RESULT_ALLOC = "__quantum__rt__result_allocate";
+inline constexpr auto QIR_RESULT_RELEASE = "__quantum__rt__result_release";
 
 inline constexpr auto QIR_INITIALIZE = "__quantum__rt__initialize";
 inline constexpr auto QIR_MEASURE = "__quantum__qis__mz__body";

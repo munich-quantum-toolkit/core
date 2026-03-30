@@ -134,9 +134,9 @@ public:
    * ```
    * ```mlir
    * %memref = memref.alloc() : memref<3x!qc.qubit>
-   * %q0 = memref.load %alloc[%c0] : memref<3x!qc.qubit>
-   * %q1 = memref.load %alloc[%c1] : memref<3x!qc.qubit>
-   * %q2 = memref.load %alloc[%c2] : memref<3x!qc.qubit>
+   * %q0 = memref.load %memref[%c0] : memref<3x!qc.qubit>
+   * %q1 = memref.load %memref[%c1] : memref<3x!qc.qubit>
+   * %q2 = memref.load %memref[%c2] : memref<3x!qc.qubit>
    * ```
    */
   llvm::SmallVector<Value> allocQubitRegister(int64_t size);

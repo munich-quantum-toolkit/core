@@ -320,6 +320,7 @@ struct ConvertMemRefDeallocOp final
       auto insert = qtensor::InsertOp::create(rewriter, op.getLoc(), qcoQubit,
                                               qtensor, index);
       qtensor = insert.getResult();
+      qubitMap.erase(qcQubit);
       qubitInfos.erase(qcQubit);
     }
 

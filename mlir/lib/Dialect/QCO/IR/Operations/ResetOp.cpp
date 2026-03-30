@@ -11,6 +11,7 @@
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QTensor/IR/QTensorOps.h"
 
+#include <llvm/Support/Casting.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OperationSupport.h>
 #include <mlir/IR/PatternMatch.h>
@@ -42,6 +43,21 @@ struct RemoveResetAfterAlloc final : OpRewritePattern<ResetOp> {
 };
 
 /**
+ * @brief Check if a `qtensor.extract` operation ultimately originates from a
+ * `qtensor.alloc` operation.
+ */
+static bool originatesFromAlloc(qtensor::ExtractOp extractOp) {
+  auto* definingOp = extractOp.getTensor().getDefiningOp();
+  if (llvm::isa<qtensor::AllocOp>(definingOp)) {
+    return true;
+  }
+  if (llvm::isa<qtensor::ExtractOp>(definingOp)) {
+    return originatesFromAlloc(llvm::cast<qtensor::ExtractOp>(definingOp));
+  }
+  return false;
+}
+
+/**
  * @brief Remove reset operations that immediately follow a `qtensor.extract`
  * operation.
  */
@@ -51,8 +67,13 @@ struct RemoveResetAfterExtract final : OpRewritePattern<ResetOp> {
   LogicalResult matchAndRewrite(ResetOp op,
                                 PatternRewriter& rewriter) const override {
     // Check if the predecessor is an ExtractOp
-    if (auto extractOp = op.getQubitIn().getDefiningOp<qtensor::ExtractOp>();
-        !extractOp) {
+    auto extractOp = op.getQubitIn().getDefiningOp<qtensor::ExtractOp>();
+    if (!extractOp) {
+      return failure();
+    }
+
+    // Check if the tensor originates from an AllocOp
+    if (!originatesFromAlloc(extractOp)) {
       return failure();
     }
 
