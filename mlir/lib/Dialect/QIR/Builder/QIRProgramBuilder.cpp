@@ -101,8 +101,27 @@ Value QIRProgramBuilder::doubleConstant(double value) {
 }
 
 Value QIRProgramBuilder::staticQubit(const int64_t index) {
-  // TODO: Figure this out
-  llvm::reportFatalInternalError("Currently not implemented");
+  checkFinalized();
+
+  if (index < 0) {
+    llvm::reportFatalUsageError("Index must be non-negative");
+  }
+
+  Value qubit;
+  if (const auto it = ptrCache.find(index); it != ptrCache.end()) {
+    qubit = it->second;
+  } else {
+    qubit = createPointerFromIndex(*this, getLoc(), index);
+    // Cache for reuse
+    ptrCache[index] = qubit;
+  }
+
+  // Update qubit count
+  if (std::cmp_greater_equal(index, metadata_.numQubits)) {
+    metadata_.numQubits = static_cast<size_t>(index) + 1;
+  }
+
+  return qubit;
 }
 
 SmallVector<Value> QIRProgramBuilder::allocQubitRegister(const int64_t size) {
@@ -111,6 +130,8 @@ SmallVector<Value> QIRProgramBuilder::allocQubitRegister(const int64_t size) {
   if (size <= 0) {
     llvm::reportFatalUsageError("Size must be positive");
   }
+
+  metadata_.useDynamicQubit = true;
 
   // Save current insertion point
   const InsertionGuard guard(*this);
@@ -153,6 +174,8 @@ QIRProgramBuilder::allocClassicalBitRegister(const int64_t size,
   if (size <= 0) {
     llvm::reportFatalUsageError("Size must be positive");
   }
+
+  metadata_.useDynamicResult = true;
 
   // Save current insertion point
   const InsertionGuard guard(*this);

@@ -192,7 +192,6 @@ TEST_P(CompilerPipelineTest, EndToEndPipeline) {
 INSTANTIATE_TEST_SUITE_P(
     QuantumComputationPipelineProgramsTest, CompilerPipelineTest,
     testing::Values(
-        // FIXME: Test fails because static qubits are currently not supported
         CompilerPipelineTestCase{
             "StaticQubits", nullptr, MQT_NAMED_BUILDER(mlir::qc::staticQubits),
             MQT_NAMED_BUILDER(mlir::qc::staticQubits),
@@ -431,8 +430,9 @@ INSTANTIATE_TEST_SUITE_P(
                                  MQT_NAMED_BUILDER(mlir::qc::r),
                                  MQT_NAMED_BUILDER(mlir::qir::r)},
         CompilerPipelineTestCase{
-            "SingleControlledR", MQT_NAMED_BUILDER(qc::singleControlledR),
-            nullptr, MQT_NAMED_BUILDER(mlir::qc::singleControlledR),
+            "SingleControlledR",
+            MQT_NAMED_BUILDER(qc::singleControlledR), nullptr,
+            MQT_NAMED_BUILDER(mlir::qc::singleControlledR),
             MQT_NAMED_BUILDER(mlir::qir::singleControlledR)},
         CompilerPipelineTestCase{
             "MultipleControlledR", MQT_NAMED_BUILDER(qc::multipleControlledR),
@@ -453,8 +453,9 @@ INSTANTIATE_TEST_SUITE_P(
                                  MQT_NAMED_BUILDER(mlir::qc::u),
                                  MQT_NAMED_BUILDER(mlir::qir::u)},
         CompilerPipelineTestCase{
-            "SingleControlledU", MQT_NAMED_BUILDER(qc::singleControlledU),
-            nullptr, MQT_NAMED_BUILDER(mlir::qc::singleControlledU),
+            "SingleControlledU",
+            MQT_NAMED_BUILDER(qc::singleControlledU), nullptr,
+            MQT_NAMED_BUILDER(mlir::qc::singleControlledU),
             MQT_NAMED_BUILDER(mlir::qir::singleControlledU)},
         CompilerPipelineTestCase{
             "MultipleControlledU", MQT_NAMED_BUILDER(qc::multipleControlledU),

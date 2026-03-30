@@ -219,6 +219,9 @@ struct ConvertMemRefAllocOp final
   LogicalResult
   matchAndRewrite(memref::AllocOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
+    auto& state = getState();
+    state.useDynamicQubit = true;
+
     auto* ctx = getContext();
     auto ptrType = LLVM::LLVMPointerType::get(ctx);
 
@@ -351,6 +354,9 @@ struct ConvertQCAllocOp final : StatefulOpConversionPattern<AllocOp> {
   LogicalResult
   matchAndRewrite(AllocOp op, OpAdaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
+    auto& state = getState();
+    state.useDynamicQubit = true;
+
     auto* ctx = getContext();
     auto ptrType = LLVM::LLVMPointerType::get(ctx);
 
@@ -433,8 +439,27 @@ struct ConvertQCStaticOp final : StatefulOpConversionPattern<StaticOp> {
   LogicalResult
   matchAndRewrite(StaticOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
-    // TODO: Figure this out
-    return failure();
+    const auto index = static_cast<int64_t>(op.getIndex());
+    auto& state = getState();
+
+    // Get or create a pointer to the qubit
+    Value qubit;
+    if (const auto it = state.ptrMap.find(index); it != state.ptrMap.end()) {
+      // Reuse existing pointer
+      qubit = it->second;
+    } else {
+      // Create and cache for reuse
+      qubit = createPointerFromIndex(rewriter, op.getLoc(), index);
+      state.ptrMap.try_emplace(index, qubit);
+    }
+    rewriter.replaceOp(op, qubit);
+
+    // Track maximum qubit index
+    if (std::cmp_greater_equal(index, state.numQubits)) {
+      state.numQubits = index + 1;
+    }
+
+    return success();
   }
 };
 
@@ -472,6 +497,8 @@ struct ConvertQCMeasureOp final : StatefulOpConversionPattern<MeasureOp> {
   matchAndRewrite(MeasureOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
     auto& state = getState();
+    state.useDynamicResult = true;
+
     auto& resultArrays = state.resultArrays;
     auto& resultPtrs = state.resultPtrs;
 
