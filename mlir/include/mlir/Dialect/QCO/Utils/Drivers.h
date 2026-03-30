@@ -52,12 +52,18 @@ public:
   /**
    * @returns the qubit value assigned to a program index.
    */
-  [[maybe_unused]] TypedValue<QubitType> getProgramQubit(std::size_t index);
+  [[maybe_unused]] [[nodiscard]] TypedValue<QubitType>
+  getProgramQubit(std::size_t index) const;
 
   /**
    * @returns the qubit value assigned to a hardware index.
    */
-  TypedValue<QubitType> getHardwareQubit(std::size_t index);
+  [[nodiscard]] TypedValue<QubitType> getHardwareQubit(std::size_t index) const;
+
+  /**
+   * @returns the qubit value assigned to a hardware index.
+   */
+  [[nodiscard]] std::size_t getHardwareIndex(TypedValue<QubitType> q) const;
 
 private:
   DenseMap<std::size_t, TypedValue<QubitType>> programToValue_;

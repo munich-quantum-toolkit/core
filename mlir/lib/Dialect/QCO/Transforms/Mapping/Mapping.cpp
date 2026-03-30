@@ -22,6 +22,7 @@
 #include <llvm/Support/Allocator.h>
 #include <llvm/Support/Debug.h>
 #include <llvm/Support/ErrorHandling.h>
+#include <mlir/Analysis/TopologicalSortUtils.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/IR/Block.h>
 #include <mlir/IR/BuiltinOps.h>
@@ -58,6 +59,37 @@ namespace mlir::qco {
 #define GEN_PASS_DEF_MAPPINGPASS
 #include "mlir/Dialect/QCO/Transforms/Passes.h.inc"
 
+LogicalResult isExecutable(Region& region, const Architecture& arch) {
+  bool executable = true;
+  walkUnit(region, [&](Operation* op, Qubits& qubits) {
+    if (auto u = dyn_cast<UnitaryOpInterface>(op)) {
+      if (isa<BarrierOp>(u)) {
+        return WalkResult::advance();
+      }
+      if (u.getNumQubits() > 1) {
+        const auto q0 = cast<TypedValue<QubitType>>(u.getInputQubit(0));
+        const auto q1 = cast<TypedValue<QubitType>>(u.getInputQubit(1));
+        const auto i0 = qubits.getHardwareIndex(q0);
+        const auto i1 = qubits.getHardwareIndex(q1);
+        if (!arch.areAdjacent(i0, i1)) {
+          llvm::dbgs() << "not adjacent: " << i0 << " and " << i1 << '\n';
+          llvm::dbgs() << op->getLoc() << '\n';
+          executable = false;
+          return WalkResult::interrupt();
+        }
+      }
+    }
+
+    return WalkResult::advance();
+  });
+
+  if (executable) {
+    return success();
+  }
+
+  return failure();
+}
+
 namespace {
 
 struct MappingPass : impl::MappingPassBase<MappingPass> {
@@ -67,9 +99,72 @@ private:
   using IndexGate = std::pair<IndexType, IndexType>;
   using IndexGateSet = DenseSet<IndexGate>;
 
-  struct Layer {
-    SmallVector<Operation*> ops;
-    SmallVector<IndexGate> indices;
+  class LayerRef {
+  public:
+    LayerRef(ArrayRef<UnitaryOpInterface> ops, ArrayRef<IndexGate> indices)
+        : ops_(ops), indices_(indices) {}
+
+    /**
+     * @returns the operations of the two-qubit gates.
+     */
+    ArrayRef<UnitaryOpInterface> operations() const { return ops_; }
+
+    /**
+     * @returns the program indices of the two-qubit gates.
+     */
+    ArrayRef<IndexGate> indices() const { return indices_; }
+
+  private:
+    ArrayRef<UnitaryOpInterface> ops_;
+    ArrayRef<IndexGate> indices_;
+  };
+
+  class Layer {
+  public:
+    /**
+     * @returns the operations of the two-qubit gates.
+     */
+    ArrayRef<UnitaryOpInterface> operations() const { return ops_; }
+
+    /**
+     * @returns the program indices of the two-qubit gates.
+     */
+    ArrayRef<IndexGate> indices() const { return indices_; }
+
+    /**
+     * @brief Add a two-qubit gate to the layer.
+     */
+    void addGate(UnitaryOpInterface op, IndexGate indicesOfGate) {
+      ops_.emplace_back(op);
+      indices_.emplace_back(indicesOfGate);
+    }
+
+    /**
+     * @returns the amount of two-qubit gates.
+     */
+    [[nodiscard]] std::size_t size() const {
+      assert(ops_.size() == indices_.size());
+      return ops_.size();
+    }
+
+    /**
+     * @returns true if the amount of two-qubit gates is zero.
+     */
+    [[nodiscard]] bool empty() const {
+      assert(ops_.size() == indices_.size());
+      return ops_.empty();
+    }
+
+    /**
+     * @brief Chop off the first N layers, and keep M layers.
+     */
+    [[nodiscard]] LayerRef slice(std::size_t n, std::size_t m) const {
+      return {operations().slice(n, m), indices().slice(n, m)};
+    }
+
+  private:
+    SmallVector<UnitaryOpInterface> ops_;
+    SmallVector<IndexGate> indices_;
   };
 
   /**
@@ -220,14 +315,6 @@ private:
   };
 
   /**
-   * @brief The layers of a circuit and the respective IR anchor for each.
-   */
-  struct [[nodiscard]] LayeringResult {
-    SmallVector<Layer> layers;
-    SmallVector<Operation*> anchors;
-  };
-
-  /**
    * @brief Required to use Layout as a key for LLVM maps and sets.
    */
   class [[nodiscard]] LayoutInfo {
@@ -301,7 +388,7 @@ private:
      * @brief Construct a non-root node from its parent node. Apply the given
      * swap to the layout of the parent node.
      */
-    Node(Node* parent, IndexGate swap, ArrayRef<Layer> layers,
+    Node(Node* parent, IndexGate swap, ArrayRef<LayerRef> layers,
          const Architecture& arch, const Parameters& params)
         : layout(parent->layout), swap(swap), parent(parent),
           depth(parent->depth + 1), f(0) {
@@ -313,9 +400,9 @@ private:
      * @returns true if the current sequence of SWAPs makes all gates
      * executable.
      */
-    [[nodiscard]] bool isGoal(const Layer& front,
+    [[nodiscard]] bool isGoal(const LayerRef& front,
                               const Architecture& arch) const {
-      return all_of(front.indices, [&](const IndexGate& gate) {
+      return all_of(front.indices(), [&](const IndexGate& gate) {
         return arch.areAdjacent(layout.getHardwareIndex(gate.first),
                                 layout.getHardwareIndex(gate.second));
       });
@@ -341,11 +428,11 @@ private:
      * that a naive router would insert to route the layers (with a constant
      * layout).
      */
-    [[nodiscard]] float h(ArrayRef<Layer> layers, const Architecture& arch,
+    [[nodiscard]] float h(ArrayRef<LayerRef> layers, const Architecture& arch,
                           const Parameters& params) const {
       float costs{0};
       for (const auto& [decay, layer] : zip(params.decay, layers)) {
-        for (const auto& [prog0, prog1] : layer.indices) {
+        for (const auto& [prog0, prog1] : layer.indices()) {
           const auto [hw0, hw1] = layout.getHardwareIndices(prog0, prog1);
           const std::size_t nswaps = arch.distanceBetween(hw0, hw1) - 1;
           costs += decay * static_cast<float>(nswaps);
@@ -375,93 +462,24 @@ protected:
 
     Parameters params(this->alpha, this->lambda, this->nlookahead);
     // TODO: Hardcoded architecture.
-    Architecture arch(
-        "IBMNighthawk", 120,
-        {{0, 12},    {12, 0},    {0, 1},     {1, 0},     {1, 13},    {13, 1},
-         {1, 2},     {2, 1},     {2, 14},    {14, 2},    {2, 3},     {3, 2},
-         {3, 15},    {15, 3},    {3, 4},     {4, 3},     {4, 16},    {16, 4},
-         {4, 5},     {5, 4},     {5, 17},    {17, 5},    {5, 6},     {6, 5},
-         {6, 18},    {18, 6},    {6, 7},     {7, 6},     {7, 19},    {19, 7},
-         {7, 8},     {8, 7},     {8, 20},    {20, 8},    {8, 9},     {9, 8},
-         {9, 21},    {21, 9},    {9, 10},    {10, 9},    {10, 22},   {22, 10},
-         {10, 11},   {11, 10},   {11, 23},   {23, 11},   {12, 24},   {24, 12},
-         {12, 13},   {13, 12},   {13, 25},   {25, 13},   {13, 14},   {14, 13},
-         {14, 26},   {26, 14},   {14, 15},   {15, 14},   {15, 27},   {27, 15},
-         {15, 16},   {16, 15},   {16, 28},   {28, 16},   {16, 17},   {17, 16},
-         {17, 29},   {29, 17},   {17, 18},   {18, 17},   {18, 30},   {30, 18},
-         {18, 19},   {19, 18},   {19, 31},   {31, 19},   {19, 20},   {20, 19},
-         {20, 32},   {32, 20},   {20, 21},   {21, 20},   {21, 33},   {33, 21},
-         {21, 22},   {22, 21},   {22, 34},   {34, 22},   {22, 23},   {23, 22},
-         {23, 35},   {35, 23},   {24, 36},   {36, 24},   {24, 25},   {25, 24},
-         {25, 37},   {37, 25},   {25, 26},   {26, 25},   {26, 38},   {38, 26},
-         {26, 27},   {27, 26},   {27, 39},   {39, 27},   {27, 28},   {28, 27},
-         {28, 40},   {40, 28},   {28, 29},   {29, 28},   {29, 41},   {41, 29},
-         {29, 30},   {30, 29},   {30, 42},   {42, 30},   {30, 31},   {31, 30},
-         {31, 43},   {43, 31},   {31, 32},   {32, 31},   {32, 44},   {44, 32},
-         {32, 33},   {33, 32},   {33, 45},   {45, 33},   {33, 34},   {34, 33},
-         {34, 46},   {46, 34},   {34, 35},   {35, 34},   {35, 47},   {47, 35},
-         {36, 48},   {48, 36},   {36, 37},   {37, 36},   {37, 49},   {49, 37},
-         {37, 38},   {38, 37},   {38, 50},   {50, 38},   {38, 39},   {39, 38},
-         {39, 51},   {51, 39},   {39, 40},   {40, 39},   {40, 52},   {52, 40},
-         {40, 41},   {41, 40},   {41, 53},   {53, 41},   {41, 42},   {42, 41},
-         {42, 54},   {54, 42},   {42, 43},   {43, 42},   {43, 55},   {55, 43},
-         {43, 44},   {44, 43},   {44, 56},   {56, 44},   {44, 45},   {45, 44},
-         {45, 57},   {57, 45},   {45, 46},   {46, 45},   {46, 58},   {58, 46},
-         {46, 47},   {47, 46},   {47, 59},   {59, 47},   {48, 60},   {60, 48},
-         {48, 49},   {49, 48},   {49, 61},   {61, 49},   {49, 50},   {50, 49},
-         {50, 62},   {62, 50},   {50, 51},   {51, 50},   {51, 63},   {63, 51},
-         {51, 52},   {52, 51},   {52, 64},   {64, 52},   {52, 53},   {53, 52},
-         {53, 65},   {65, 53},   {53, 54},   {54, 53},   {54, 66},   {66, 54},
-         {54, 55},   {55, 54},   {55, 67},   {67, 55},   {55, 56},   {56, 55},
-         {56, 68},   {68, 56},   {56, 57},   {57, 56},   {57, 69},   {69, 57},
-         {57, 58},   {58, 57},   {58, 70},   {70, 58},   {58, 59},   {59, 58},
-         {59, 71},   {71, 59},   {60, 72},   {72, 60},   {60, 61},   {61, 60},
-         {61, 73},   {73, 61},   {61, 62},   {62, 61},   {62, 74},   {74, 62},
-         {62, 63},   {63, 62},   {63, 75},   {75, 63},   {63, 64},   {64, 63},
-         {64, 76},   {76, 64},   {64, 65},   {65, 64},   {65, 77},   {77, 65},
-         {65, 66},   {66, 65},   {66, 78},   {78, 66},   {66, 67},   {67, 66},
-         {67, 79},   {79, 67},   {67, 68},   {68, 67},   {68, 80},   {80, 68},
-         {68, 69},   {69, 68},   {69, 81},   {81, 69},   {69, 70},   {70, 69},
-         {70, 82},   {82, 70},   {70, 71},   {71, 70},   {71, 83},   {83, 71},
-         {72, 84},   {84, 72},   {72, 73},   {73, 72},   {73, 85},   {85, 73},
-         {73, 74},   {74, 73},   {74, 86},   {86, 74},   {74, 75},   {75, 74},
-         {75, 87},   {87, 75},   {75, 76},   {76, 75},   {76, 88},   {88, 76},
-         {76, 77},   {77, 76},   {77, 89},   {89, 77},   {77, 78},   {78, 77},
-         {78, 90},   {90, 78},   {78, 79},   {79, 78},   {79, 91},   {91, 79},
-         {79, 80},   {80, 79},   {80, 92},   {92, 80},   {80, 81},   {81, 80},
-         {81, 93},   {93, 81},   {81, 82},   {82, 81},   {82, 94},   {94, 82},
-         {82, 83},   {83, 82},   {83, 95},   {95, 83},   {84, 96},   {96, 84},
-         {84, 85},   {85, 84},   {85, 97},   {97, 85},   {85, 86},   {86, 85},
-         {86, 98},   {98, 86},   {86, 87},   {87, 86},   {87, 99},   {99, 87},
-         {87, 88},   {88, 87},   {88, 100},  {100, 88},  {88, 89},   {89, 88},
-         {89, 101},  {101, 89},  {89, 90},   {90, 89},   {90, 102},  {102, 90},
-         {90, 91},   {91, 90},   {91, 103},  {103, 91},  {91, 92},   {92, 91},
-         {92, 104},  {104, 92},  {92, 93},   {93, 92},   {93, 105},  {105, 93},
-         {93, 94},   {94, 93},   {94, 106},  {106, 94},  {94, 95},   {95, 94},
-         {95, 107},  {107, 95},  {96, 108},  {108, 96},  {96, 97},   {97, 96},
-         {97, 109},  {109, 97},  {97, 98},   {98, 97},   {98, 110},  {110, 98},
-         {98, 99},   {99, 98},   {99, 111},  {111, 99},  {99, 100},  {100, 99},
-         {100, 112}, {112, 100}, {100, 101}, {101, 100}, {101, 113}, {113, 101},
-         {101, 102}, {102, 101}, {102, 114}, {114, 102}, {102, 103}, {103, 102},
-         {103, 115}, {115, 103}, {103, 104}, {104, 103}, {104, 116}, {116, 104},
-         {104, 105}, {105, 104}, {105, 117}, {117, 105}, {105, 106}, {106, 105},
-         {106, 118}, {118, 106}, {106, 107}, {107, 106}, {107, 119}, {119, 107},
-         {108, 109}, {109, 108}, {109, 110}, {110, 109}, {110, 111}, {111, 110},
-         {111, 112}, {112, 111}, {112, 113}, {113, 112}, {113, 114}, {114, 113},
-         {114, 115}, {115, 114}, {115, 116}, {116, 115}, {116, 117}, {117, 116},
-         {117, 118}, {118, 117}, {118, 119}, {119, 118}});
+    Architecture arch("RigettiNovera", 9,
+                      {{0, 3}, {3, 0}, {0, 1}, {1, 0}, {1, 4}, {4, 1},
+                       {1, 2}, {2, 1}, {2, 5}, {5, 2}, {3, 6}, {6, 3},
+                       {3, 4}, {4, 3}, {4, 7}, {7, 4}, {4, 5}, {5, 4},
+                       {5, 8}, {8, 5}, {6, 7}, {7, 6}, {7, 8}, {8, 7}});
 
     for (auto func : getOperation().getOps<func::FuncOp>()) {
-      const auto dynQubits = collectDynamicQubits(func.getFunctionBody());
-      if (dynQubits.size() > arch.nqubits()) {
+      const auto qubits = collectDynamicQubits(func.getFunctionBody());
+      if (qubits.size() > arch.nqubits()) {
         func.emitError() << "the targeted architecture supports "
-                         << arch.nqubits() << " qubits, got "
-                         << dynQubits.size();
+                         << arch.nqubits() << " qubits, got " << qubits.size();
         signalPassFailure();
         return;
       }
 
-      const auto [ltr, rtl] = computeBidirectionalLayers(dynQubits);
+      const auto [ltr, rtl] = computeBidirectionalLayers(qubits);
+      const auto ltrRef = splitLayers(ltr, 4);
+      const auto rtlRef = splitLayers(rtl, 1);
 
       // Create trials. Currently this includes `ntrials` many random layouts.
 
@@ -478,8 +496,7 @@ protected:
       parallelForEach(
           &getContext(), enumerate(trials), [&, this](auto indexedTrial) {
             auto [idx, layout] = indexedTrial;
-            auto res =
-                runMappingTrial(ltr.layers, rtl.layers, arch, params, layout);
+            auto res = runMappingTrial(ltrRef, rtlRef, arch, params, layout);
             if (succeeded(res)) {
               results[idx] = std::move(*res);
             }
@@ -491,8 +508,10 @@ protected:
         return;
       }
 
-      place(dynQubits, best->layout, func.getFunctionBody(), rewriter);
-      commit(best->swaps, ltr.anchors, func.getFunctionBody(), rewriter);
+      place(qubits, best->layout, func.getFunctionBody(), rewriter);
+      commit(ltrRef, best->swaps, func.getFunctionBody(), arch, rewriter);
+
+      assert(isExecutable(func.getFunctionBody(), arch).succeeded());
     }
   }
 
@@ -521,8 +540,8 @@ private:
    * along the way. Repeat this procedure "niterations" times.
    * @returns the trial result or failure() on failure.
    */
-  FailureOr<TrialResult> runMappingTrial(ArrayRef<Layer> ltr,
-                                         ArrayRef<Layer> rtl,
+  FailureOr<TrialResult> runMappingTrial(ArrayRef<LayerRef> ltr,
+                                         ArrayRef<LayerRef> rtl,
                                          const Architecture& arch,
                                          const Parameters& params,
                                          Layout& layout) {
@@ -563,12 +582,25 @@ private:
   }
 
   /**
+   * @brief Collect static qubits contained in the given function body.
+   * @returns a vector of SSA values produced by qco.static operations.
+   */
+  [[nodiscard]] static SmallVector<QubitValue>
+  collectStaticQubits(Region& funcBody, const Architecture& arch) {
+    SmallVector<QubitValue> qubits(arch.nqubits());
+    for (StaticOp op : funcBody.getOps<StaticOp>()) {
+      qubits[op.getIndex()] = op;
+    }
+    return qubits;
+  }
+
+  /**
    * @brief Computes forwards and backwards layers.
    * @returns a pair of vectors of layers, where [0]=forward and [1]=backward.
    */
-  [[nodiscard]] static std::pair<LayeringResult, LayeringResult>
-  computeBidirectionalLayers(ArrayRef<QubitValue> dyn) {
-    auto wires = toWires(dyn);
+  [[nodiscard]] static std::pair<SmallVector<Layer>, SmallVector<Layer>>
+  computeBidirectionalLayers(ArrayRef<QubitValue> qubits) {
+    auto wires = toWires(qubits);
     const auto ltr = collectLayers<Direction::Forward>(wires);
     const auto rtl = collectLayers<Direction::Backward>(wires);
     return std::make_pair(ltr, rtl);
@@ -592,8 +624,8 @@ private:
    * failure() if A* fails.
    */
   [[nodiscard]] static FailureOr<SmallVector<IndexGate>>
-  search(ArrayRef<Layer> layers, const Layout& layout, const Architecture& arch,
-         const Parameters& params) {
+  search(ArrayRef<LayerRef> layers, const Layout& layout,
+         const Architecture& arch, const Parameters& params) {
     constexpr std::size_t cap = 25'000'000UL;
     const std::size_t b = arch.maxDegree() * ((arch.nqubits() + 1) / 2);
     const std::size_t budget = std::min(b * b * b, cap);
@@ -650,7 +682,7 @@ private:
       // between two neighbouring hardware qubits.
 
       expansionSet.clear();
-      for (const IndexGate& gate : layers.front().indices) {
+      for (const IndexGate& gate : layers.front().indices()) {
         for (const auto prog : {gate.first, gate.second}) {
           const auto hw0 = curr->layout.getHardwareIndex(prog);
           for (const auto hw1 : arch.neighboursOf(hw0)) {
@@ -692,6 +724,23 @@ private:
     } else {
       return !isa<AllocOp>(it.operation());
     }
+  }
+
+  /**
+   * @brief Split each layer into sub layers.
+   * @param layers The layers to split.
+   * @param sz The maximum size of the sub layers.
+   */
+  static SmallVector<LayerRef> splitLayers(ArrayRef<Layer> layers,
+                                           const std::size_t sz) {
+    SmallVector<LayerRef> refs;
+    for (const auto& layer : layers) {
+      for (std::size_t i = 0; i < layer.indices().size(); i += sz) {
+        const auto effSz = std::min(sz, layer.size() - i);
+        refs.emplace_back(layer.slice(i, effSz));
+      }
+    }
+    return refs;
   }
 
   /**
@@ -744,14 +793,14 @@ private:
    * @returns a vector of layers.
    */
   template <Direction d>
-  static LayeringResult collectLayers(MutableArrayRef<WireIterator> wires) {
+  static SmallVector<Layer> collectLayers(MutableArrayRef<WireIterator> wires) {
     constexpr auto step = d == Direction::Forward ? 1 : -1;
 
-    LayeringResult result;
+    SmallVector<Layer> layers;
     DenseMap<UnitaryOpInterface, std::size_t> visited;
+
     while (true) {
       Layer layer{};
-      Operation* anchor = nullptr;
       for (const auto [index, it] : enumerate(wires)) {
         while (proceedOnWire<d>(it)) {
           const auto res =
@@ -771,18 +820,10 @@ private:
 
                         if (visited.contains(op)) {
                           const auto otherIndex = visited[op];
-                          layer.ops.emplace_back(op);
-                          layer.indices.emplace_back(index, otherIndex);
 
-                          std::ranges::advance(wires[index], step);
-                          std::ranges::advance(wires[otherIndex], step);
+                          layer.addGate(op, std::make_pair(index, otherIndex));
 
                           skipTwoQubitBlock<d>(wires[index], wires[otherIndex]);
-
-                          if (anchor == nullptr ||
-                              op->isBeforeInBlock(anchor)) {
-                            anchor = op;
-                          }
 
                           visited.erase(op);
                         } else {
@@ -808,16 +849,15 @@ private:
         }
       }
 
-      if (layer.indices.empty()) {
+      if (layer.empty()) {
         break;
       }
 
-      result.layers.emplace_back(layer);
-      result.anchors.emplace_back(anchor);
+      layers.emplace_back(layer);
       visited.clear();
     }
 
-    return result;
+    return layers;
   }
 
   /**
@@ -830,7 +870,7 @@ private:
    * @returns failure() if A* search isn't able to find a solution.
    */
   template <typename OnSwaps>
-  LogicalResult route(ArrayRef<Layer> layers, const Architecture& arch,
+  LogicalResult route(ArrayRef<LayerRef> layers, const Architecture& arch,
                       const Parameters& params, Layout& layout,
                       OnSwaps&& onSwaps) {
     auto&& callback = std::forward<OnSwaps>(onSwaps);
@@ -880,52 +920,142 @@ private:
   /**
    * @brief Inserts SWAPs into the IR.
    */
-  void commit(ArrayRef<SmallVector<IndexGate>> swaps,
-              ArrayRef<Operation*> anchors, Region& funcBody,
-              IRRewriter& rewriter) {
-    ArrayRef<Operation*>::iterator anchorIt = anchors.begin();
-    ArrayRef<SmallVector<IndexGate>>::iterator swapIt = swaps.begin();
+  void commit(ArrayRef<LayerRef> layers,
+              ArrayRef<SmallVector<IndexGate>> swapsPerLayer, Region& funcBody,
+              const Architecture& arch, IRRewriter& rewriter) {
+    using DanglingMap =
+        DenseMap<UnitaryOpInterface, SmallVector<WireIterator*>>;
 
-    walkUnit(funcBody, [&](Operation* op, Qubits& qubits) {
-      // Early exit if we've processed all layers.
-      if (anchorIt == anchors.end()) {
-        return WalkResult::interrupt();
-      }
-
-      if (op == *anchorIt) {
-        rewriter.setInsertionPoint(*anchorIt);
-
-        for (const auto& [hw0, hw1] : *swapIt) {
-          const auto in0 = qubits.getHardwareQubit(hw0);
-          const auto in1 = qubits.getHardwareQubit(hw1);
-
-          auto insertedOp = SWAPOp::create(rewriter, op->getLoc(), in0, in1);
-
-          const auto out0 = insertedOp.getQubit0Out();
-          const auto out1 = insertedOp.getQubit1Out();
-
-          rewriter.replaceAllUsesExcept(in0, out1, insertedOp);
-          rewriter.replaceAllUsesExcept(in1, out0, insertedOp);
-
-          // Remove old qubit values.
-          qubits.remove(in0);
-          qubits.remove(in1);
-
-          // Add permutated qubit value - hw index pair.
-          qubits.add(out0, hw1);
-          qubits.add(out1, hw0);
+    // Helper function that absorbs one-qubit unitaries.
+    const auto advFront = [](WireIterator& it) {
+      auto next = std::next(it);
+      while (true) {
+        if (isa<DeallocOp>(next.operation()) ||
+            isa<MeasureOp>(next.operation()) ||
+            isa<BarrierOp>(next.operation())) {
+          break;
         }
 
-        // Collect statistics.
-        this->numSwaps += swapIt->size();
+        auto op = dyn_cast<UnitaryOpInterface>(next.operation());
+        if (op && op.getNumQubits() > 1) {
+          break;
+        }
 
-        // Move to the next layer and the next anchor.
-        std::ranges::advance(swapIt, 1);
-        std::ranges::advance(anchorIt, 1);
+        std::ranges::advance(it, 1);
+        std::ranges::advance(next, 1);
+      }
+    };
+
+    const auto advBlock = [&](WireIterator& first, WireIterator& second) {
+      while (true) {
+        std::ranges::advance(first, 1);
+        std::ranges::advance(second, 1);
+
+        advFront(first);
+        advFront(second);
+
+        // Is a >two-qubit unitary?
+        auto firstOp =
+            dyn_cast<UnitaryOpInterface>(std::next(first).operation());
+        if (!firstOp || firstOp.getNumQubits() < 2) {
+          break;
+        }
+
+        // Is a >two-qubit unitary?
+        auto secondOp =
+            dyn_cast<UnitaryOpInterface>(std::next(second).operation());
+        if (!secondOp || secondOp.getNumQubits() < 2) {
+          break;
+        }
+
+        // Both must be unitaries.
+        if (isa<BarrierOp>(firstOp) || isa<BarrierOp>(secondOp)) {
+          break;
+        }
+
+        // Not the same unitary, stop.
+        if (firstOp.getOperation() != secondOp.getOperation()) {
+          break;
+        }
+      }
+    };
+
+    const auto markReady = [](DanglingMap& map, UnitaryOpInterface op,
+                              WireIterator& wireIt, auto&& onReady) {
+      const auto [it, inserted] =
+          map.try_emplace(op, SmallVector<WireIterator*>{&wireIt});
+      if (!inserted) {
+        it->second.emplace_back(&wireIt);
       }
 
-      return WalkResult::advance();
-    });
+      if (it->first.getNumQubits() == it->second.size()) {
+        onReady(it->second);
+        map.erase(it);
+      }
+    };
+
+    DanglingMap map;
+    auto wires = toWires(collectStaticQubits(funcBody, arch));
+    for (const auto& [layer, swaps] : zip_equal(layers, swapsPerLayer)) {
+      // Advance all wires to the next front of one-qubit outputs
+      // (the SSA values).
+      for_each(wires, advFront);
+
+      DenseSet<Operation*> layerOps(layer.operations().begin(),
+                                    layer.operations().end());
+
+      // Apply the sequence of SWAPs and rewire the qubit SSA values.
+      for (const auto& [hw0, hw1] : swaps) {
+        const auto in0 = wires[hw0].qubit();
+        const auto in1 = wires[hw1].qubit();
+
+        auto op = SWAPOp::create(rewriter, rewriter.getUnknownLoc(), in0, in1);
+        const auto out0 = op.getQubit0Out();
+        const auto out1 = op.getQubit1Out();
+
+        rewriter.replaceAllUsesExcept(in0, out1, op);
+        rewriter.replaceAllUsesExcept(in1, out0, op);
+
+        // Jump over the SWAPOp.
+        std::ranges::advance(wires[hw0], 1);
+        std::ranges::advance(wires[hw1], 1);
+      }
+
+      // Jump over "ready" gates.
+      map.clear(); // Start with fresh map.
+      for (auto& it : wires) {
+        auto op = dyn_cast<UnitaryOpInterface>(std::next(it).operation());
+
+        if (!op) {
+          continue;
+        }
+
+        if (op.getNumQubits() < 2) {
+          continue;
+        }
+
+        if (isa<BarrierOp>(op)) {
+          markReady(map, op, it, [](MutableArrayRef<WireIterator*> ready) {
+            for (WireIterator* it : ready) {
+              std::ranges::advance(*it, 1);
+            }
+          });
+          continue;
+        }
+
+        if (!layerOps.contains(op.getOperation())) {
+          continue;
+        }
+
+        markReady(map, op, it, [&](MutableArrayRef<WireIterator*> it) {
+          advBlock(*it[0], *it[1]);
+        });
+      }
+
+      this->numSwaps += swaps.size();
+    }
+
+    for_each(funcBody.getBlocks(), [](Block& b) { sortTopologically(&b); });
   }
 };
 

@@ -58,13 +58,20 @@ void Qubits::remove(TypedValue<QubitType> q) {
   hardwareToValue_.erase(index);
 }
 
-TypedValue<QubitType> Qubits::getProgramQubit(std::size_t index) {
+TypedValue<QubitType> Qubits::getProgramQubit(std::size_t index) const {
   assert(programToValue_.contains(index));
   return programToValue_.lookup(index);
 }
 
-TypedValue<QubitType> Qubits::getHardwareQubit(std::size_t index) {
+TypedValue<QubitType> Qubits::getHardwareQubit(std::size_t index) const {
   assert(hardwareToValue_.contains(index));
   return hardwareToValue_.lookup(index);
+}
+
+std::size_t Qubits::getHardwareIndex(TypedValue<QubitType> q) const {
+  assert(valueToIndex_.contains(q));
+  const auto& [location, index] = valueToIndex_.lookup(q);
+  assert(location == QubitLocation::Hardware);
+  return index;
 }
 } // namespace mlir::qco

@@ -12,10 +12,9 @@
 #include "mlir/Conversion/QCToQCO/QCToQCO.h"
 #include "mlir/Dialect/QC/Builder/QCProgramBuilder.h"
 #include "mlir/Dialect/QC/IR/QCDialect.h"
-#include "mlir/Dialect/QC/IR/QCInterfaces.h"
-#include "mlir/Dialect/QC/IR/QCOps.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QCO/Transforms/Mapping/Architecture.h"
+#include "mlir/Dialect/QCO/Transforms/Mapping/Mapping.h"
 #include "mlir/Dialect/QCO/Transforms/Passes.h"
 
 #include <gtest/gtest.h>
@@ -49,42 +48,6 @@ struct ArchitectureParam {
 class MappingPassTest : public testing::Test,
                         public testing::WithParamInterface<ArchitectureParam> {
 public:
-  /**
-   * @brief Walks the IR and validates if each two-qubit op is executable on the
-   * given architecture.
-   * @returns true iff. all two-qubit gates are executable on the architecture.
-   */
-  static bool isExecutable(OwningOpRef<ModuleOp>& moduleOp,
-                           const Architecture& arch) {
-    auto entry = *(moduleOp->getOps<func::FuncOp>().begin());
-    DenseMap<Value, std::size_t> mappings;
-    for_each(entry.getOps<qc::StaticOp>(), [&](qc::StaticOp op) {
-      mappings.try_emplace(op.getQubit(), op.getIndex());
-    });
-
-    bool executable = true;
-    std::ignore = moduleOp->walk([&](qc::UnitaryOpInterface op) {
-      if (isa<qc::BarrierOp>(op)) {
-        return WalkResult::advance();
-      }
-      if (op.getNumQubits() > 1) {
-        assert(op.getNumQubits() == 2 &&
-               "Expected only 2-qubit gates after decomposition");
-        assert(mappings.contains(op.getQubit(0)) && "Qubit 0 not in mapping");
-        assert(mappings.contains(op.getQubit(1)) && "Qubit 1 not in mapping");
-        const auto i0 = mappings[op.getQubit(0)];
-        const auto i1 = mappings[op.getQubit(1)];
-        if (!arch.areAdjacent(i0, i1)) {
-          executable = false;
-          return WalkResult::interrupt();
-        }
-      }
-      return WalkResult::advance();
-    });
-
-    return executable;
-  }
-
   static Architecture getRigettiNovera() {
     // TODO: At some point this should be provided via QDMI.
     const static Architecture::CouplingSet COUPLING{
@@ -114,9 +77,8 @@ protected:
                                                               .niterations = 2,
                                                               .ntrials = 16,
                                                               .seed = 1337}));
-    pm.addPass(createQCOToQC());
     auto res = pm.run(*moduleOp);
-    ASSERT_TRUE(succeeded(res));
+    ASSERT_TRUE(res.succeeded());
   }
 
   std::unique_ptr<MLIRContext> context;
@@ -143,7 +105,7 @@ TEST_P(MappingPassTest, GHZ) {
 
   auto moduleOp = builder.finalize();
   runHeuristicMapping(moduleOp);
-  EXPECT_TRUE(isExecutable(moduleOp, arch));
+  EXPECT_TRUE(isExecutable(moduleOp->getBodyRegion(), arch).succeeded());
 }
 
 TEST_P(MappingPassTest, Sabre) {
@@ -204,7 +166,7 @@ TEST_P(MappingPassTest, Sabre) {
 
   auto moduleOp = builder.finalize();
   runHeuristicMapping(moduleOp);
-  EXPECT_TRUE(isExecutable(moduleOp, arch));
+  EXPECT_TRUE(isExecutable(moduleOp->getBodyRegion(), arch).succeeded());
 }
 
 INSTANTIATE_TEST_SUITE_P(
