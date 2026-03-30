@@ -845,10 +845,10 @@ public:
    * @brief Finalize the program and return the constructed module
    *
    * @details
-   * Automatically deallocates all remaining allocated qubits, generates output
-   * recording in the output block, ensures proper QIR metadata attributes are
-   * set, and transfers ownership of the module to the caller. The builder
-   * should not be used after calling this method.
+   * Automatically deallocates all remaining allocated qubits and result
+   * pointers, generates output recording in the output block, ensures proper
+   * QIR metadata attributes are set, and transfers ownership of the module to
+   * the caller. The builder should not be used after calling this method.
    *
    * @return OwningOpRef containing the constructed QIR program module
    */
@@ -890,7 +890,7 @@ private:
   /// Exit code constant (created in entry block, used in output block)
   Value exitCode;
 
-  /// Cache static pointers for reuse
+  /// Cache static qubit pointers for reuse
   llvm::DenseMap<int64_t, Value> staticQubits;
 
   /// Set of qubit-array pointers

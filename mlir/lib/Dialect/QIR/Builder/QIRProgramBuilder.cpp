@@ -220,15 +220,18 @@ Value QIRProgramBuilder::measure(Value qubit, const int64_t resultIndex) {
   // Insert allocations and constants in entry block
   setInsertionPoint(entryBlock->getTerminator());
 
-  // Create result pointer
-  auto fnSig = LLVM::LLVMFunctionType::get(ptrType, {ptrType});
-  auto fnDec =
-      getOrCreateFunctionDeclaration(*this, module, QIR_RESULT_ALLOC, fnSig);
-  auto zero = LLVM::ZeroOp::create(*this, ptrType);
-  auto result =
-      LLVM::CallOp::create(*this, fnDec, zero.getResult()).getResult();
-
-  resultPtrs.try_emplace(resultIndex, result);
+  // Get or create result pointer
+  Value result;
+  if (const auto it = resultPtrs.find(resultIndex); it != resultPtrs.end()) {
+    result = it->second;
+  } else {
+    auto fnSig = LLVM::LLVMFunctionType::get(ptrType, {ptrType});
+    auto fnDec =
+        getOrCreateFunctionDeclaration(*this, module, QIR_RESULT_ALLOC, fnSig);
+    auto zero = LLVM::ZeroOp::create(*this, ptrType);
+    result = LLVM::CallOp::create(*this, fnDec, zero.getResult()).getResult();
+    resultPtrs.try_emplace(resultIndex, result);
+  }
 
   // Switch to measurements block
   setInsertionPoint(measurementsBlock->getTerminator());
@@ -656,10 +659,25 @@ OwningOpRef<ModuleOp> QIRProgramBuilder::finalize() {
 
   for (auto array : qubitArrays) {
     auto sig = LLVM::LLVMFunctionType::get(voidType, {getI64Type(), ptrType});
-    auto decl = getOrCreateFunctionDeclaration(*this, module,
-                                               QIR_QUBIT_ARRAY_RELEASE, sig);
+    auto dec = getOrCreateFunctionDeclaration(*this, module,
+                                              QIR_QUBIT_ARRAY_RELEASE, sig);
     auto size = array.getDefiningOp<LLVM::AllocaOp>().getArraySize();
-    LLVM::CallOp::create(*this, decl, ValueRange{size, array});
+    LLVM::CallOp::create(*this, dec, ValueRange{size, array});
+  }
+
+  for (auto& [_, ptr] : resultPtrs) {
+    auto sig = LLVM::LLVMFunctionType::get(voidType, {ptrType});
+    auto dec =
+        getOrCreateFunctionDeclaration(*this, module, QIR_RESULT_RELEASE, sig);
+    LLVM::CallOp::create(*this, dec, ptr);
+  }
+
+  for (auto& [_, array] : resultArrays) {
+    auto sig = LLVM::LLVMFunctionType::get(voidType, {getI64Type(), ptrType});
+    auto dec = getOrCreateFunctionDeclaration(*this, module,
+                                              QIR_RESULT_ARRAY_RELEASE, sig);
+    auto size = array.getDefiningOp<LLVM::AllocaOp>().getArraySize();
+    LLVM::CallOp::create(*this, dec, ValueRange{size, array});
   }
 
   // Generate output recording in the output block

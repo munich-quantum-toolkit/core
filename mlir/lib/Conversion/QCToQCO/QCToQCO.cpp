@@ -1316,18 +1316,13 @@ protected:
     target.addLegalDialect<QCODialect, arith::ArithDialect,
                            qtensor::QTensorDialect>();
 
-    target.addDynamicallyLegalOp<memref::AllocOp>([&](memref::AllocOp op) {
-      return !llvm::isa<qc::QubitType>(op.getType().getElementType());
-    });
-
-    target.addDynamicallyLegalOp<memref::LoadOp>([&](memref::LoadOp op) {
-      return !llvm::isa<qc::QubitType>(
-          op.getMemref().getType().getElementType());
-    });
-
-    target.addDynamicallyLegalOp<memref::DeallocOp>([&](memref::DeallocOp op) {
-      return !llvm::isa<qc::QubitType>(
-          op.getMemref().getType().getElementType());
+    target.addDynamicallyLegalDialect<memref::MemRefDialect>([](Operation* op) {
+      auto isQubitMemref = [](Type t) {
+        auto mt = llvm::dyn_cast<MemRefType>(t);
+        return mt && llvm::isa<qc::QubitType>(mt.getElementType());
+      };
+      return llvm::none_of(op->getOperandTypes(), isQubitMemref) &&
+             llvm::none_of(op->getResultTypes(), isQubitMemref);
     });
 
     // Register operation conversion patterns with state tracking

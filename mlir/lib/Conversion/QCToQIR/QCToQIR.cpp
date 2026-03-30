@@ -67,8 +67,11 @@ namespace {
  * @brief State object for tracking lowering information during QIR conversion
  */
 struct LoweringState : QIRMetadata {
-  /// Map from index to qubit pointer
-  DenseMap<int64_t, Value> ptrMap;
+  /// Cache static qubit pointers for reuse
+  DenseMap<int64_t, Value> staticQubits;
+
+  /// Cache MemRef sizes for reuse
+  DenseMap<Value, Value> memrefSizes;
 
   /// Map from register name to result-array pointer
   llvm::StringMap<Value> resultArrays;
@@ -256,6 +259,7 @@ struct ConvertMemRefAllocOp final
                  rewriter.getI64IntegerAttr(static_cast<int64_t>(shape[0])))
                  .getResult();
     }
+    state.memrefSizes.try_emplace(op.getMemref(), size);
 
     auto array =
         LLVM::AllocaOp::create(rewriter, op.getLoc(), ptrType, ptrType, size);
@@ -339,21 +343,12 @@ struct ConvertMemRefDeallocOp final
     // Switch to measurements block
     rewriter.setInsertionPoint(getState().measurementsBlock->getTerminator());
 
-    Value size;
-    if (shape[0] == ShapedType::kDynamic) {
-      size =
-          op.getMemref().getDefiningOp<memref::AllocOp>().getDynamicSizes()[0];
-    } else {
-      size = LLVM::ConstantOp::create(
-                 rewriter, op.getLoc(),
-                 rewriter.getI64IntegerAttr(static_cast<int64_t>(shape[0])))
-                 .getResult();
-    }
-
     auto fnSig = LLVM::LLVMFunctionType::get(LLVM::LLVMVoidType::get(ctx),
                                              {i64Type, ptrType});
     auto fnDec = getOrCreateFunctionDeclaration(rewriter, op,
                                                 QIR_QUBIT_ARRAY_RELEASE, fnSig);
+
+    auto size = getState().memrefSizes.lookup(op.getMemref());
 
     // Create the release call
     LLVM::CallOp::create(rewriter, op.getLoc(), fnDec,
@@ -469,13 +464,14 @@ struct ConvertQCStaticOp final : StatefulOpConversionPattern<StaticOp> {
 
     // Get or create a pointer to the qubit
     Value qubit;
-    if (const auto it = state.ptrMap.find(index); it != state.ptrMap.end()) {
+    if (const auto it = state.staticQubits.find(index);
+        it != state.staticQubits.end()) {
       // Reuse existing pointer
       qubit = it->second;
     } else {
       // Create and cache for reuse
       qubit = createPointerFromIndex(rewriter, op.getLoc(), index);
-      state.ptrMap.try_emplace(index, qubit);
+      state.staticQubits.try_emplace(index, qubit);
     }
     rewriter.replaceOp(op, qubit);
 
@@ -1241,6 +1237,36 @@ struct QCToQIR final : impl::QCToQIRBase<QCToQIR> {
     }
   }
 
+  /**
+   * @brief Iterates through all result pointers and releases them
+   */
+  static void releaseResults(LLVM::LLVMFuncOp& main, MLIRContext* ctx,
+                             LoweringState* state) {
+    OpBuilder builder(ctx);
+    auto ptrType = LLVM::LLVMPointerType::get(ctx);
+    auto voidType = LLVM::LLVMVoidType::get(ctx);
+
+    // Switch to measurements block
+    builder.setInsertionPoint(state->measurementsBlock->getTerminator());
+
+    for (auto& [_, ptr] : state->resultPtrs) {
+      auto sig = LLVM::LLVMFunctionType::get(voidType, {ptrType});
+      auto dec = getOrCreateFunctionDeclaration(builder, main,
+                                                QIR_RESULT_RELEASE, sig);
+      LLVM::CallOp::create(builder, main->getLoc(), dec, ptr);
+    }
+
+    for (auto& [_, array] : state->resultArrays) {
+      auto sig = LLVM::LLVMFunctionType::get(voidType,
+                                             {builder.getI64Type(), ptrType});
+      auto dec = getOrCreateFunctionDeclaration(builder, main,
+                                                QIR_RESULT_ARRAY_RELEASE, sig);
+      auto size = array.getDefiningOp<LLVM::AllocaOp>().getArraySize();
+      LLVM::CallOp::create(builder, main->getLoc(), dec,
+                           ValueRange{size, array});
+    }
+  }
+
 protected:
   /**
    * @brief Executes the QC to QIR conversion pass
@@ -1333,6 +1359,8 @@ protected:
       }
 
       addOutputRecording(main, ctx, &state);
+
+      releaseResults(main, ctx, &state);
     }
 
     // Stage 4: Insert initialize call
