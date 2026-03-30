@@ -461,7 +461,6 @@ INSTANTIATE_TEST_SUITE_P(
                     MQT_NAMED_BUILDER(multipleControlledRxx)},
         QCOTestCase{"TwoRXX", MQT_NAMED_BUILDER(twoRxx),
                     MQT_NAMED_BUILDER(rxx)},
-        // FIXME: Test fails because of qtensor.insert location
         QCOTestCase{"TwoRXXSwappedTargets",
                     MQT_NAMED_BUILDER(twoRxxSwappedTargets),
                     MQT_NAMED_BUILDER(rxx)},
@@ -523,7 +522,6 @@ INSTANTIATE_TEST_SUITE_P(
                     MQT_NAMED_BUILDER(multipleControlledRyy)},
         QCOTestCase{"TwoRYY", MQT_NAMED_BUILDER(twoRyy),
                     MQT_NAMED_BUILDER(ryy)},
-        // FIXME: Test fails because of qtensor.insert location
         QCOTestCase{"TwoRYYSwappedTargets",
                     MQT_NAMED_BUILDER(twoRyySwappedTargets),
                     MQT_NAMED_BUILDER(ryy)},
@@ -613,7 +611,6 @@ INSTANTIATE_TEST_SUITE_P(
                     MQT_NAMED_BUILDER(multipleControlledRzz)},
         QCOTestCase{"TwoRZZ", MQT_NAMED_BUILDER(twoRzz),
                     MQT_NAMED_BUILDER(rzz)},
-        // FIXME: Test fails because of qtensor.insert location
         QCOTestCase{"TwoRZZSwappedTargets",
                     MQT_NAMED_BUILDER(twoRzzSwappedTargets),
                     MQT_NAMED_BUILDER(rzz)},

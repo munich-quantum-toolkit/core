@@ -940,8 +940,8 @@ OwningOpRef<ModuleOp> QCOProgramBuilder::finalize() {
     return opA->isBeforeInBlock(opB);
   };
 
-  auto blockOrderComparator1 = [](const std::pair<Value, TensorInfo>& a,
-                                  const std::pair<Value, TensorInfo>& b) {
+  auto blockOrderComparatorTensors = [](const std::pair<Value, TensorInfo>& a,
+                                        const std::pair<Value, TensorInfo>& b) {
     auto* opA = a.first.getDefiningOp();
     auto* opB = b.first.getDefiningOp();
     if (!opA || !opB || opA->getBlock() != opB->getBlock()) {
@@ -950,8 +950,8 @@ OwningOpRef<ModuleOp> QCOProgramBuilder::finalize() {
     return opA->isBeforeInBlock(opB);
   };
 
-  auto blockOrderComparator2 = [](const std::pair<Value, int64_t>& a,
-                                  const std::pair<Value, int64_t>& b) {
+  auto blockOrderComparatorToInsert = [](const std::pair<Value, int64_t>& a,
+                                         const std::pair<Value, int64_t>& b) {
     auto* opA = a.first.getDefiningOp();
     auto* opB = b.first.getDefiningOp();
     if (!opA || !opB || opA->getBlock() != opB->getBlock()) {
@@ -960,8 +960,7 @@ OwningOpRef<ModuleOp> QCOProgramBuilder::finalize() {
     if (opA != opB) {
       return opA->isBeforeInBlock(opB);
     }
-    return llvm::cast<mlir::OpResult>(a.first).getResultNumber() <
-           llvm::cast<mlir::OpResult>(b.first).getResultNumber();
+    return a.second < b.second;
   };
 
   llvm::SmallVector<Value> freeQubits;
@@ -989,7 +988,7 @@ OwningOpRef<ModuleOp> QCOProgramBuilder::finalize() {
     // Sort tensors for deterministic output
     llvm::SmallVector<std::pair<Value, TensorInfo>> sortedTensors(
         validTensors.begin(), validTensors.end());
-    llvm::sort(sortedTensors, blockOrderComparator1);
+    llvm::sort(sortedTensors, blockOrderComparatorTensors);
     for (auto& [tensor, tensorInfo] : sortedTensors) {
       // Filter out qubits belonging to this tensor
       llvm::SmallVector<std::pair<Value, int64_t>> toInsert;
@@ -1000,7 +999,7 @@ OwningOpRef<ModuleOp> QCOProgramBuilder::finalize() {
         toInsert.push_back({qubit, qubitInfo.regIndex});
       }
       // Sort qubits for deterministic output
-      llvm::sort(toInsert, blockOrderComparator2);
+      llvm::sort(toInsert, blockOrderComparatorToInsert);
       // Insert qubits
       for (auto& [qubit, index] : toInsert) {
         tensor = qtensorInsert(qubit, tensor, index);
