@@ -18,12 +18,13 @@
 #include "qasm3/Exception.hpp"
 #include "qasm3/Importer.hpp"
 
+#include <gtest/gtest.h>
+
 #include <cctype>
 #include <cmath>
 #include <cstddef>
 #include <filesystem>
 #include <fstream>
-#include <gtest/gtest.h>
 #include <iostream>
 #include <iterator>
 #include <memory>

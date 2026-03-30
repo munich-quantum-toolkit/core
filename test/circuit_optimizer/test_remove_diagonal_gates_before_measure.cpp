@@ -12,8 +12,9 @@
 #include "ir/QuantumComputation.hpp"
 #include "ir/operations/OpType.hpp"
 
-#include <cstddef>
 #include <gtest/gtest.h>
+
+#include <cstddef>
 #include <iostream>
 
 namespace qc {

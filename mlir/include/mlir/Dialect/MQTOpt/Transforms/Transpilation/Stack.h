@@ -10,10 +10,11 @@
 
 #pragma once
 
-#include <cstddef>
-#include <deque>
 #include <mlir/IR/Value.h>
 #include <mlir/Support/LLVM.h>
+
+#include <cstddef>
+#include <deque>
 
 namespace mqt::ir::opt {
 /**

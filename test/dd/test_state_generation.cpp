@@ -14,10 +14,11 @@
 #include "dd/RealNumber.hpp"
 #include "dd/StateGeneration.hpp"
 
+#include <gtest/gtest.h>
+
 #include <cmath>
 #include <complex>
 #include <cstddef>
-#include <gtest/gtest.h>
 #include <memory>
 #include <numbers>
 #include <numeric>

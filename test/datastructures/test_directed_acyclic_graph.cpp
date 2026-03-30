@@ -11,6 +11,7 @@
 #include "datastructures/DirectedAcyclicGraph.hpp"
 
 #include <gtest/gtest.h>
+
 #include <vector>
 
 namespace qc {

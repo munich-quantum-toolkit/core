@@ -12,13 +12,14 @@
 
 #include "mlir/Dialect/MQTOpt/IR/MQTOptDialect.h"
 
-#include <cstdint>
 #include <llvm/ADT/DenseMapInfo.h>
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/Support/Casting.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
 #include <mlir/IR/Value.h>
 #include <mlir/Support/LLVM.h>
+
+#include <cstdint>
 #include <utility>
 
 namespace mqt::ir::opt {

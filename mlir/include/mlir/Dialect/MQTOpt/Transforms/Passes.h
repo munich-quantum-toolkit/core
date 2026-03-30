@@ -12,9 +12,10 @@
 
 #include "mlir/Dialect/MQTOpt/IR/MQTOptDialect.h"
 
-#include <cstdint>
 #include <mlir/Dialect/SCF/IR/SCF.h>
 #include <mlir/Pass/Pass.h>
+
+#include <cstdint>
 
 namespace qc {
 class QuantumComputation;

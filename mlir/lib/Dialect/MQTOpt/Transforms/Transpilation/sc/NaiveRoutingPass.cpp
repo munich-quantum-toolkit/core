@@ -16,7 +16,6 @@
 #include "mlir/Dialect/MQTOpt/Transforms/Transpilation/Router.h"
 #include "mlir/Dialect/MQTOpt/Transforms/Transpilation/SequentialUnit.h"
 
-#include <cassert>
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/ADT/Statistic.h>
@@ -24,7 +23,6 @@
 #include <llvm/Support/Debug.h>
 #include <llvm/Support/ErrorHandling.h>
 #include <llvm/Support/Format.h>
-#include <memory>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
 #include <mlir/IR/Builders.h>
@@ -40,6 +38,9 @@
 #include <mlir/Rewrite/PatternApplicator.h>
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/WalkResult.h>
+
+#include <cassert>
+#include <memory>
 #include <queue>
 #include <utility>
 

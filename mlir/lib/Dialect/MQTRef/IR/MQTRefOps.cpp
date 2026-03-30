@@ -17,14 +17,16 @@
 #include <mlir/IR/OpImplementation.h>
 #include <mlir/IR/ValueRange.h>
 #include <mlir/Support/LogicalResult.h>
+
 #include <string>
 
 // The following headers are needed for some template instantiations.
 // IWYU pragma: begin_keep
-#include <algorithm>
 #include <llvm/ADT/TypeSwitch.h>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/DialectImplementation.h>
+
+#include <algorithm>
 // IWYU pragma: end_keep
 
 using namespace mqt::ir::common;

@@ -17,9 +17,10 @@
 #include "ir/operations/OpType.hpp"
 #include "ir/operations/StandardOperation.hpp"
 
+#include <gtest/gtest.h>
+
 #include <cmath>
 #include <cstddef>
-#include <gtest/gtest.h>
 #include <iomanip>
 #include <memory>
 #include <numbers>

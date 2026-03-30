@@ -14,9 +14,10 @@
 #include "mlir/Dialect/MQTOpt/Transforms/Transpilation/Common.h"
 #include "mlir/Dialect/MQTOpt/Transforms/Transpilation/Layout.h"
 
-#include <algorithm>
 #include <llvm/ADT/DenseSet.h>
 #include <mlir/Support/LLVM.h>
+
+#include <algorithm>
 #include <optional>
 #include <queue>
 #include <utility>

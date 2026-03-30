@@ -13,14 +13,15 @@
 #include "mlir/Dialect/MQTOpt/IR/MQTOptDialect.h"
 #include "mlir/Dialect/MQTOpt/Transforms/Transpilation/Layout.h"
 
-#include <concepts>
-#include <cstddef>
-#include <cstdint>
 #include <llvm/ADT/StringRef.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/IR/BuiltinAttributes.h>
 #include <mlir/IR/PatternMatch.h>
 #include <mlir/IR/Value.h>
+
+#include <concepts>
+#include <cstddef>
+#include <cstdint>
 #include <ranges>
 #include <utility>
 

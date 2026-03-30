@@ -10,13 +10,14 @@
 
 #include "qdmi/driver/Driver.hpp"
 
+#include <gmock/gmock-matchers.h>
+#include <gtest/gtest.h>
+#include <qdmi/client.h>
+
 #include <algorithm>
 #include <array>
 #include <cstddef>
 #include <cstdint>
-#include <gmock/gmock-matchers.h>
-#include <gtest/gtest.h>
-#include <qdmi/client.h>
 #include <random>
 #include <sstream>
 #include <stdexcept>

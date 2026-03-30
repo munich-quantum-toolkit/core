@@ -14,11 +14,12 @@
 #include "mlir/Dialect/MQTOpt/Transforms/Transpilation/Common.h"
 #include "mlir/Dialect/MQTOpt/Transforms/Transpilation/Layout.h"
 
+#include <llvm/ADT/SmallVector.h>
+#include <llvm/ADT/StringRef.h>
+
 #include <cassert>
 #include <cstddef>
 #include <cstdint>
-#include <llvm/ADT/SmallVector.h>
-#include <llvm/ADT/StringRef.h>
 #include <memory>
 #include <stdexcept>
 #include <string>

@@ -22,6 +22,7 @@
 #include <mlir/IR/Types.h>
 #include <mlir/IR/ValueRange.h>
 #include <mlir/Support/LogicalResult.h>
+
 #include <string>
 
 // The following headers are needed for some template instantiations.

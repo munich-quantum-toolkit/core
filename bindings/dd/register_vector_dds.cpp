@@ -13,16 +13,17 @@
 #include "dd/Export.hpp"
 #include "dd/Node.hpp"
 
-#include <algorithm>
-#include <cmath>
-#include <complex>
-#include <cstddef>
-#include <memory>
 #include <nanobind/nanobind.h>
 #include <nanobind/ndarray.h>
 #include <nanobind/stl/complex.h> // NOLINT(misc-include-cleaner)
 #include <nanobind/stl/string.h>  // NOLINT(misc-include-cleaner)
 #include <nanobind/stl/vector.h>  // NOLINT(misc-include-cleaner)
+
+#include <algorithm>
+#include <cmath>
+#include <complex>
+#include <cstddef>
+#include <memory>
 #include <sstream>
 #include <string>
 

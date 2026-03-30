@@ -10,10 +10,11 @@
 
 #pragma once
 
-#include <cstddef>
 #include <mlir/IR/OpDefinition.h>
 #include <mlir/IR/Operation.h>
 #include <mlir/Support/LLVM.h>
+
+#include <cstddef>
 
 namespace mqt::ir::common {
 template <size_t N> class TargetArityTrait {

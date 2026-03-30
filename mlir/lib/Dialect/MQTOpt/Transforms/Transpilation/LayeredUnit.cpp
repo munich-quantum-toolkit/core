@@ -16,10 +16,6 @@
 #include "mlir/Dialect/MQTOpt/Transforms/Transpilation/Layout.h"
 #include "mlir/Dialect/MQTOpt/Transforms/Transpilation/Unit.h"
 
-#include <cassert>
-#include <cstddef>
-#include <cstdint>
-#include <iterator>
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/Support/Casting.h>
@@ -32,6 +28,11 @@
 #include <mlir/IR/Region.h>
 #include <mlir/Interfaces/ControlFlowInterfaces.h>
 #include <mlir/Support/LLVM.h>
+
+#include <cassert>
+#include <cstddef>
+#include <cstdint>
+#include <iterator>
 #include <optional>
 #include <utility>
 

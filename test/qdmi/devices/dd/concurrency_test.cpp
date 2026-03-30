@@ -15,10 +15,11 @@
 #include "helpers/test_utils.hpp"
 #include "mqt_ddsim_qdmi/device.h"
 
-#include <atomic>
-#include <cstddef>
 #include <gtest/gtest.h>
 #include <qdmi/constants.h>
+
+#include <atomic>
+#include <cstddef>
 #include <string>
 #include <thread>
 #include <vector>

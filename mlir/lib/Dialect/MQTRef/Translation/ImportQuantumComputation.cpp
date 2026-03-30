@@ -20,10 +20,6 @@
 #include "ir/operations/Operation.hpp"
 #include "mlir/Dialect/MQTRef/IR/MQTRefDialect.h"
 
-#include <algorithm>
-#include <cassert>
-#include <cstddef>
-#include <cstdint>
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/Support/LogicalResult.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
@@ -39,6 +35,11 @@
 #include <mlir/IR/Value.h>
 #include <mlir/IR/ValueRange.h>
 #include <mlir/Support/LLVM.h>
+
+#include <algorithm>
+#include <cassert>
+#include <cstddef>
+#include <cstdint>
 #include <ranges>
 #include <utility>
 

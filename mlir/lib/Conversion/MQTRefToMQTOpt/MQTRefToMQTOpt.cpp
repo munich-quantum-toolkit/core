@@ -20,7 +20,6 @@
 #include "mlir/Dialect/MQTOpt/IR/MQTOptDialect.h"
 #include "mlir/Dialect/MQTRef/IR/MQTRefDialect.h"
 
-#include <cstddef>
 #include <llvm/ADT/DenseMap.h>
 #include <llvm/Support/Casting.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
@@ -36,6 +35,8 @@
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/LogicalResult.h>
 #include <mlir/Transforms/DialectConversion.h>
+
+#include <cstddef>
 #include <utility>
 #include <vector>
 

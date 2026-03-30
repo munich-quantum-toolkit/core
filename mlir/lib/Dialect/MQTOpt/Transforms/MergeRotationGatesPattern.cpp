@@ -12,8 +12,6 @@
 #include "mlir/Dialect/MQTOpt/Transforms/Passes.h"
 #include "mlir/IR/BuiltinAttributes.h"
 
-#include <cstddef>
-#include <iterator>
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/Support/ErrorHandling.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
@@ -24,6 +22,9 @@
 #include <mlir/IR/ValueRange.h>
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/LogicalResult.h>
+
+#include <cstddef>
+#include <iterator>
 #include <string>
 #include <unordered_set>
 

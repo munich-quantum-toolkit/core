@@ -17,9 +17,6 @@
 
 #include "mlir/Dialect/MQTRef/IR/MQTRefDialect.h"
 
-#include <cstddef>
-#include <cstdint>
-#include <iterator>
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/Support/Casting.h>
@@ -52,6 +49,10 @@
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/LogicalResult.h>
 #include <mlir/Transforms/DialectConversion.h>
+
+#include <cstddef>
+#include <cstdint>
+#include <iterator>
 #include <string>
 #include <utility>
 

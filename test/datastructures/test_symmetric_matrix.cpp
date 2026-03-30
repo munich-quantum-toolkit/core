@@ -10,8 +10,9 @@
 
 #include "datastructures/SymmetricMatrix.hpp"
 
-#include <cstddef>
 #include <gtest/gtest.h>
+
+#include <cstddef>
 #include <string>
 
 namespace qc {

@@ -14,8 +14,6 @@
 #include "mlir/Dialect/MQTOpt/Transforms/Transpilation/Layout.h"
 #include "mlir/Dialect/MQTOpt/Transforms/Transpilation/Unit.h"
 
-#include <cstddef>
-#include <iterator>
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/TypeSwitch.h>
 #include <llvm/Support/ErrorHandling.h>
@@ -25,6 +23,9 @@
 #include <mlir/IR/Region.h>
 #include <mlir/Interfaces/ControlFlowInterfaces.h>
 #include <mlir/Support/LLVM.h>
+
+#include <cstddef>
+#include <iterator>
 #include <utility>
 
 namespace mqt::ir::opt {
