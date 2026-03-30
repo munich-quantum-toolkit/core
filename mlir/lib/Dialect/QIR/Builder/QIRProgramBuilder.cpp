@@ -108,12 +108,12 @@ Value QIRProgramBuilder::staticQubit(const int64_t index) {
   }
 
   Value qubit;
-  if (const auto it = ptrCache.find(index); it != ptrCache.end()) {
+  if (const auto it = staticQubits.find(index); it != staticQubits.end()) {
     qubit = it->second;
   } else {
     qubit = createPointerFromIndex(*this, getLoc(), index);
     // Cache for reuse
-    ptrCache[index] = qubit;
+    staticQubits[index] = qubit;
   }
 
   // Update qubit count
@@ -157,10 +157,10 @@ SmallVector<Value> QIRProgramBuilder::allocQubitRegister(const int64_t size) {
   qubitArrays.insert(array.getResult());
 
   for (int64_t i = 0; i < size; ++i) {
-    auto gepOp = LLVM::GEPOp::create(*this, ptrType, ptrType, array.getResult(),
-                                     ValueRange{intConstant(i)});
-    auto loadOp = LLVM::LoadOp::create(*this, ptrType, gepOp.getResult());
-    qubits.push_back(loadOp.getResult());
+    auto gep = LLVM::GEPOp::create(*this, ptrType, ptrType, array.getResult(),
+                                   ValueRange{intConstant(i)});
+    auto load = LLVM::LoadOp::create(*this, ptrType, gep.getResult());
+    qubits.push_back(load.getResult());
   }
 
   return qubits;
@@ -196,6 +196,13 @@ QIRProgramBuilder::allocClassicalBitRegister(const int64_t size,
       ValueRange{intConstant(size), array.getResult(), zero.getResult()});
 
   resultArrays.try_emplace(name, array.getResult());
+
+  for (int64_t i = 0; i < size; ++i) {
+    auto gep = LLVM::GEPOp::create(*this, ptrType, ptrType, array.getResult(),
+                                   ValueRange{intConstant(i)});
+    auto load = LLVM::LoadOp::create(*this, ptrType, gep.getResult());
+    loadedResults.try_emplace({stringSaver.save(name), i}, load.getResult());
+  }
 
   return {.name = name, .size = size};
 }
@@ -242,26 +249,10 @@ QIRProgramBuilder& QIRProgramBuilder::measure(Value qubit, const Bit& bit) {
   // Save current insertion point
   const InsertionGuard guard(*this);
 
-  // Insert allocations and constants in entry block
-  setInsertionPoint(entryBlock->getTerminator());
-
-  auto index = intConstant(bit.registerIndex);
-
-  // Get array pointer
-  const auto& registerName = bit.registerName;
-  if (!resultArrays.contains(registerName)) {
-    llvm::reportFatalInternalError("Result pointer not found");
-  }
-  auto array = resultArrays.at(registerName);
-
-  // Get result pointer
-  auto gep =
-      LLVM::GEPOp::create(*this, ptrType, ptrType, array, ValueRange{index});
-  auto load = LLVM::LoadOp::create(*this, ptrType, gep.getResult());
-  auto result = load.getResult();
-
   // Switch to measurements block
   setInsertionPoint(measurementsBlock->getTerminator());
+
+  auto result = loadedResults.at({bit.registerName, bit.registerIndex});
 
   // Create measure call
   const auto fnSig = LLVM::LLVMFunctionType::get(voidType, {ptrType, ptrType});

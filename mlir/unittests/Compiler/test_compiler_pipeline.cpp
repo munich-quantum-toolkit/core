@@ -228,7 +228,6 @@ INSTANTIATE_TEST_SUITE_P(
             MQT_NAMED_BUILDER(qc::repeatedMeasurementToDifferentBits), nullptr,
             MQT_NAMED_BUILDER(mlir::qc::repeatedMeasurementToDifferentBits),
             MQT_NAMED_BUILDER(mlir::qir::repeatedMeasurementToDifferentBits)},
-        // FIXME: Test fails because of location of llvm.load
         CompilerPipelineTestCase{
             "MultipleClassicalRegistersAndMeasurements",
             MQT_NAMED_BUILDER(qc::multipleClassicalRegistersAndMeasurements),

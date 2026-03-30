@@ -81,7 +81,10 @@ struct LoweringState : QIRMetadata {
   /// Map from register name to result-array pointer
   llvm::StringMap<Value> resultArrays;
 
-  /// Map from index to result pointer
+  /// Map from (register name, index) to loaded result
+  llvm::DenseMap<std::pair<llvm::StringRef, int64_t>, Value> loadedResults;
+
+  /// Map from index to result pointer for non-register results
   DenseMap<int64_t, Value> resultPtrs;
 
   /// Modifier information
@@ -500,6 +503,7 @@ struct ConvertQCMeasureOp final : StatefulOpConversionPattern<MeasureOp> {
     state.useDynamicResult = true;
 
     auto& resultArrays = state.resultArrays;
+    auto& loadedResults = state.loadedResults;
     auto& resultPtrs = state.resultPtrs;
 
     auto* ctx = getContext();
@@ -539,18 +543,19 @@ struct ConvertQCMeasureOp final : StatefulOpConversionPattern<MeasureOp> {
             rewriter, op.getLoc(), fnDec,
             ValueRange{size, array.getResult(), zero.getResult()});
         resultArrays.try_emplace(registerName, array.getResult());
+
+        for (int64_t i = 0; i < registerSize; ++i) {
+          auto gep = LLVM::GEPOp::create(
+              rewriter, op.getLoc(), ptrType, ptrType, array.getResult(),
+              ValueRange{LLVM::ConstantOp::create(
+                  rewriter, op.getLoc(), rewriter.getI64IntegerAttr(i))});
+          auto load = LLVM::LoadOp::create(rewriter, op.getLoc(), ptrType,
+                                           gep.getResult());
+          loadedResults.try_emplace({registerName, i}, load.getResult());
+        }
       }
 
-      auto array = resultArrays[registerName];
-      auto index =
-          LLVM::ConstantOp::create(rewriter, op.getLoc(),
-                                   rewriter.getI64IntegerAttr(registerIndex))
-              .getResult();
-      auto gep = LLVM::GEPOp::create(rewriter, op.getLoc(), ptrType, ptrType,
-                                     array, index);
-      auto load =
-          LLVM::LoadOp::create(rewriter, op.getLoc(), ptrType, gep.getResult());
-      result = load.getResult();
+      result = loadedResults.at({registerName, registerIndex});
     } else {
       auto fnSig =
           LLVM::LLVMFunctionType::get(LLVM::LLVMVoidType::get(ctx), {ptrType});
