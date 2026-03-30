@@ -135,12 +135,11 @@ public:
   /**
    * @brief Allocate a qubit register
    * @param size Number of qubits (must be positive)
-   * @param name Register name (default: "q")
    * @return Vector of tracked, valid qubit SSA values
    *
    * @par Example:
    * ```c++
-   * auto q = builder.allocQubitRegister(3, "q");
+   * auto q = builder.allocQubitRegister(3);
    * ```
    * ```mlir
    * %q0 = qco.alloc("q", 3, 0) : !qco.qubit
@@ -148,8 +147,7 @@ public:
    * %q2 = qco.alloc("q", 3, 2) : !qco.qubit
    * ```
    */
-  llvm::SmallVector<Value> allocQubitRegister(int64_t size,
-                                              const std::string& name = "q");
+  llvm::SmallVector<Value> allocQubitRegister(int64_t size);
 
   /**
    * @brief A small structure representing a single classical bit within a

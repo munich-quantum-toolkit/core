@@ -440,7 +440,7 @@ struct ConvertQCStaticOp final : StatefulOpConversionPattern<StaticOp> {
   using StatefulOpConversionPattern::StatefulOpConversionPattern;
 
   LogicalResult
-  matchAndRewrite(StaticOp op, OpAdaptor adaptor,
+  matchAndRewrite(StaticOp op, OpAdaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
     const auto index = static_cast<int64_t>(op.getIndex());
     auto& state = getState();

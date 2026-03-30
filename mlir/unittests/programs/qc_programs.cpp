@@ -23,8 +23,8 @@ void allocQubit(QCProgramBuilder& b) { b.allocQubit(); }
 void allocQubitRegister(QCProgramBuilder& b) { b.allocQubitRegister(2); }
 
 void allocMultipleQubitRegisters(QCProgramBuilder& b) {
-  b.allocQubitRegister(2, "reg0");
-  b.allocQubitRegister(3, "reg1");
+  b.allocQubitRegister(2);
+  b.allocQubitRegister(3);
 }
 
 void allocLargeRegister(QCProgramBuilder& b) { b.allocQubitRegister(100); }

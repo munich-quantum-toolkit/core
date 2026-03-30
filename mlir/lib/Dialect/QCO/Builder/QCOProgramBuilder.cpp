@@ -101,8 +101,7 @@ Value QCOProgramBuilder::staticQubit(const int64_t index) {
 }
 
 llvm::SmallVector<Value>
-QCOProgramBuilder::allocQubitRegister(const int64_t size,
-                                      const std::string& name) {
+QCOProgramBuilder::allocQubitRegister(const int64_t size) {
   checkFinalized();
 
   if (size <= 0) {
