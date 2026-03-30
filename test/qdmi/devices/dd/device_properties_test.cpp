@@ -12,12 +12,22 @@
  * DDSIM QDMI Device - Device, Site, and Operation Properties
  */
 #include "helpers/test_utils.hpp"
+#include "mqt_ddsim_qdmi/constants.h"
 #include "mqt_ddsim_qdmi/device.h"
 
 #include <cstddef>
 #include <gmock/gmock-matchers.h>
 #include <gtest/gtest.h>
+<<<<<<< HEAD
 #include <qdmi/constants.h>
+||||||| parent of bd9f9cb4 (⬆️ Update QDMI to latest version from stable `v1.2.x` branch (#1593))
+#include <qdmi/constants.h>
+
+#include <cstddef>
+=======
+
+#include <cstddef>
+>>>>>>> bd9f9cb4 (⬆️ Update QDMI to latest version from stable `v1.2.x` branch (#1593))
 #include <string>
 #include <vector>
 

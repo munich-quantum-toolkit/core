@@ -12,6 +12,45 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 ### Added
 
 - ✨ Add Sampler and Estimator Primitives to the QDMI-Qiskit Interface ([#1507]) ([**@marcelwa**])
+<<<<<<< HEAD
+||||||| parent of bd9f9cb4 (⬆️ Update QDMI to latest version from stable `v1.2.x` branch (#1593))
+- ✨ Add conversions between Jeff and QCO ([#1479], [#1548], [#1565]) ([**@denialhaag**])
+- ✨ Add a `place-and-route` pass for mapping circuits to architectures with restricted topologies ([#1537], [#1547], [#1568], [#1581], [#1583], [#1588]) ([**@MatthiasReumann**])
+- ✨ Add initial infrastructure for new QC and QCO MLIR dialects
+  ([#1264], [#1330], [#1402], [#1428], [#1430], [#1436], [#1443], [#1446], [#1464], [#1465], [#1470], [#1471], [#1472], [#1474], [#1475], [#1506], [#1510], [#1513], [#1521], [#1542], [#1548], [#1550], [#1554], [#1570], [#1572], [#1573])
+  ([**@burgholzer**], [**@denialhaag**], [**@taminob**], [**@DRovara**], [**@li-mingbao**], [**@Ectras**], [**@MatthiasReumann**], [**@simon1hofmann**])
+
+### Changed
+
+- ⬆️ Update `clang-tidy` to version 22 ([#1564]) ([**@denialhaag**], [**@burgholzer**])
+- 👷 Build on `macos-26`/`macos-26-intel` by default and `macos-15`/`macos-15-intel` for extensive tests ([#1571]) ([**@denialhaag**])
+- ⬆️ Require LLVM 22.1 for C++ library builds ([#1549]) ([**@burgholzer**], [**@denialhaag**])
+- 📦 Build MLIR by default for C++ library builds ([#1356]) ([**@burgholzer**], [**@denialhaag**])
+
+### Removed
+
+- 🔥 Remove the density matrix support from the MQT Core DD package ([#1466]) ([**@burgholzer**])
+- 🔥 Remove `datastructures` (`ds`) (sub)library from MQT Core ([#1458]) ([**@burgholzer**])
+=======
+- ✨ Add conversions between Jeff and QCO ([#1479], [#1548], [#1565]) ([**@denialhaag**])
+- ✨ Add a `place-and-route` pass for mapping circuits to architectures with restricted topologies ([#1537], [#1547], [#1568], [#1581], [#1583], [#1588]) ([**@MatthiasReumann**])
+- ✨ Add initial infrastructure for new QC and QCO MLIR dialects
+  ([#1264], [#1330], [#1402], [#1428], [#1430], [#1436], [#1443], [#1446], [#1464], [#1465], [#1470], [#1471], [#1472], [#1474], [#1475], [#1506], [#1510], [#1513], [#1521], [#1542], [#1548], [#1550], [#1554], [#1570], [#1572], [#1573])
+  ([**@burgholzer**], [**@denialhaag**], [**@taminob**], [**@DRovara**], [**@li-mingbao**], [**@Ectras**], [**@MatthiasReumann**], [**@simon1hofmann**])
+
+### Changed
+
+- ⬆️ Update QDMI to latest version from stable `v1.2.x` branch ([#1593]) ([**@burgholzer**])
+- ⬆️ Update `clang-tidy` to version 22 ([#1564]) ([**@denialhaag**], [**@burgholzer**])
+- 👷 Build on `macos-26`/`macos-26-intel` by default and `macos-15`/`macos-15-intel` for extensive tests ([#1571]) ([**@denialhaag**])
+- ⬆️ Require LLVM 22.1 for C++ library builds ([#1549]) ([**@burgholzer**], [**@denialhaag**])
+- 📦 Build MLIR by default for C++ library builds ([#1356]) ([**@burgholzer**], [**@denialhaag**])
+
+### Removed
+
+- 🔥 Remove the density matrix support from the MQT Core DD package ([#1466]) ([**@burgholzer**])
+- 🔥 Remove `datastructures` (`ds`) (sub)library from MQT Core ([#1458]) ([**@burgholzer**])
+>>>>>>> bd9f9cb4 (⬆️ Update QDMI to latest version from stable `v1.2.x` branch (#1593))
 
 ## [3.4.1] - 2026-02-01
 
@@ -316,6 +355,51 @@ _📚 Refer to the [GitHub Release Notes](https://github.com/munich-quantum-tool
 
 <!-- PR links -->
 
+<<<<<<< HEAD
+||||||| parent of bd9f9cb4 (⬆️ Update QDMI to latest version from stable `v1.2.x` branch (#1593))
+[#1588]: https://github.com/munich-quantum-toolkit/core/pull/1588
+[#1583]: https://github.com/munich-quantum-toolkit/core/pull/1583
+[#1581]: https://github.com/munich-quantum-toolkit/core/pull/1581
+[#1573]: https://github.com/munich-quantum-toolkit/core/pull/1573
+[#1572]: https://github.com/munich-quantum-toolkit/core/pull/1572
+[#1571]: https://github.com/munich-quantum-toolkit/core/pull/1571
+[#1570]: https://github.com/munich-quantum-toolkit/core/pull/1570
+[#1568]: https://github.com/munich-quantum-toolkit/core/pull/1568
+[#1565]: https://github.com/munich-quantum-toolkit/core/pull/1565
+[#1564]: https://github.com/munich-quantum-toolkit/core/pull/1564
+[#1554]: https://github.com/munich-quantum-toolkit/core/pull/1554
+[#1550]: https://github.com/munich-quantum-toolkit/core/pull/1550
+[#1549]: https://github.com/munich-quantum-toolkit/core/pull/1549
+[#1548]: https://github.com/munich-quantum-toolkit/core/pull/1548
+[#1547]: https://github.com/munich-quantum-toolkit/core/pull/1547
+[#1542]: https://github.com/munich-quantum-toolkit/core/pull/1542
+[#1537]: https://github.com/munich-quantum-toolkit/core/pull/1537
+[#1521]: https://github.com/munich-quantum-toolkit/core/pull/1521
+[#1513]: https://github.com/munich-quantum-toolkit/core/pull/1513
+[#1510]: https://github.com/munich-quantum-toolkit/core/pull/1510
+=======
+[#1593]: https://github.com/munich-quantum-toolkit/core/pull/1593
+[#1588]: https://github.com/munich-quantum-toolkit/core/pull/1588
+[#1583]: https://github.com/munich-quantum-toolkit/core/pull/1583
+[#1581]: https://github.com/munich-quantum-toolkit/core/pull/1581
+[#1573]: https://github.com/munich-quantum-toolkit/core/pull/1573
+[#1572]: https://github.com/munich-quantum-toolkit/core/pull/1572
+[#1571]: https://github.com/munich-quantum-toolkit/core/pull/1571
+[#1570]: https://github.com/munich-quantum-toolkit/core/pull/1570
+[#1568]: https://github.com/munich-quantum-toolkit/core/pull/1568
+[#1565]: https://github.com/munich-quantum-toolkit/core/pull/1565
+[#1564]: https://github.com/munich-quantum-toolkit/core/pull/1564
+[#1554]: https://github.com/munich-quantum-toolkit/core/pull/1554
+[#1550]: https://github.com/munich-quantum-toolkit/core/pull/1550
+[#1549]: https://github.com/munich-quantum-toolkit/core/pull/1549
+[#1548]: https://github.com/munich-quantum-toolkit/core/pull/1548
+[#1547]: https://github.com/munich-quantum-toolkit/core/pull/1547
+[#1542]: https://github.com/munich-quantum-toolkit/core/pull/1542
+[#1537]: https://github.com/munich-quantum-toolkit/core/pull/1537
+[#1521]: https://github.com/munich-quantum-toolkit/core/pull/1521
+[#1513]: https://github.com/munich-quantum-toolkit/core/pull/1513
+[#1510]: https://github.com/munich-quantum-toolkit/core/pull/1510
+>>>>>>> bd9f9cb4 (⬆️ Update QDMI to latest version from stable `v1.2.x` branch (#1593))
 [#1507]: https://github.com/munich-quantum-toolkit/core/pull/1507
 [#1481]: https://github.com/munich-quantum-toolkit/core/pull/1481
 [#1453]: https://github.com/munich-quantum-toolkit/core/pull/1453

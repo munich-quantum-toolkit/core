@@ -15,7 +15,14 @@
 #pragma once
 
 #include <qdmi/client.h>
+<<<<<<< HEAD
 #include <qdmi/constants.h>
+||||||| parent of bd9f9cb4 (⬆️ Update QDMI to latest version from stable `v1.2.x` branch (#1593))
+#include <qdmi/constants.h>
+
+=======
+
+>>>>>>> bd9f9cb4 (⬆️ Update QDMI to latest version from stable `v1.2.x` branch (#1593))
 #include <string>
 
 namespace qdmi {

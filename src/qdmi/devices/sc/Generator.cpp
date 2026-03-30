@@ -8,7 +8,7 @@
  * Licensed under the MIT License
  */
 
-/** @file
+/** @file Generator.cpp
  * @brief The MQT QDMI device generator for superconducting devices.
  */
 

@@ -13,8 +13,18 @@
  */
 #include "helpers/circuits.hpp"
 #include "helpers/test_utils.hpp"
+#include "mqt_ddsim_qdmi/constants.h"
 #include "mqt_ddsim_qdmi/device.h"
 
+<<<<<<< HEAD
+||||||| parent of bd9f9cb4 (⬆️ Update QDMI to latest version from stable `v1.2.x` branch (#1593))
+#include <gtest/gtest.h>
+#include <qdmi/constants.h>
+
+=======
+#include <gtest/gtest.h>
+
+>>>>>>> bd9f9cb4 (⬆️ Update QDMI to latest version from stable `v1.2.x` branch (#1593))
 #include <cstddef>
 #include <cstring>
 #include <gtest/gtest.h>
