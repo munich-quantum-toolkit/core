@@ -48,8 +48,21 @@ if(NOT TARGET ${TARGET_NAME})
   # Add to list of MQT Core targets
   list(APPEND MQT_CORE_TARGETS ${TARGET_NAME})
 
-  # Make QDMI version available
-  target_compile_definitions(${TARGET_NAME} PRIVATE QDMI_VERSION="${QDMI_VERSION}")
+  # Make QDMI version available and ensure symbols are exported when building the library
+  target_compile_definitions(${TARGET_NAME} PRIVATE QDMI_VERSION="${QDMI_VERSION}"
+                                                    ${QDMI_PREFIX}_QDMI_device_EXPORTS)
+
+  # Define a preprocessor macro to indicate that the library is being built as a static library
+  if(NOT BUILD_MQT_CORE_SHARED_LIBS)
+    target_compile_definitions(${TARGET_NAME} PUBLIC ${QDMI_PREFIX}_QDMI_STATIC_DEFINE)
+  endif()
+
+  # Compile with hidden visibility by default to reduce the exported symbols to the public API
+  set_target_properties(
+    ${TARGET_NAME}
+    PROPERTIES C_VISIBILITY_PRESET hidden
+               CXX_VISIBILITY_PRESET hidden
+               VISIBILITY_INLINES_HIDDEN 1)
 
   # Generate additional alias for the target required for generate_device_defs_executable function
   # in the tests
