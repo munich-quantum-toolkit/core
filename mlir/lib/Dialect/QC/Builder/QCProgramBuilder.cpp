@@ -119,6 +119,7 @@ QCProgramBuilder::allocQubitRegister(const int64_t size) {
 
   allocatedMemrefs.insert(memref);
 
+  // TODO: Return register
   return qubits;
 }
 

@@ -119,7 +119,7 @@ QCOProgramBuilder::allocQubitRegister(const int64_t size) {
     qubits.emplace_back(qubit);
   }
 
-  // TODO: Return qtensor
+  // TODO: Return register
   return qubits;
 }
 

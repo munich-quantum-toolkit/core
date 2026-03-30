@@ -8,7 +8,6 @@
  * Licensed under the MIT License
  */
 
-#include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QTensor/IR/QTensorOps.h"
 
 #include <llvm/Support/Casting.h>
@@ -56,12 +55,8 @@ struct RemoveExtractInsertPair final : OpRewritePattern<InsertOp> {
       return failure();
     }
 
-    // TODO: Improve this
-    auto qubit = qco::AllocOp::create(rewriter, op.getLoc());
-    rewriter.replaceOp(extractOp, {extractOp.getTensor(), qubit.getResult()});
-    qco::DeallocOp::create(rewriter, op.getLoc(), qubit.getResult());
-
     rewriter.replaceOp(op, op.getDest());
+    rewriter.replaceOp(extractOp, {extractOp.getTensor(), nullptr});
 
     return success();
   }
