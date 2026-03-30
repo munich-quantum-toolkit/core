@@ -24,8 +24,7 @@ add_mlir_dialect_library(
   MLIRInferTypeOpInterface
   MLIRSideEffectInterfaces
   PUBLIC
-  MLIRQCODialect
-  DISABLE_INSTALL)
+  MLIRQCODialect)
 
 mqt_mlir_target_use_project_options(MLIRQTensorDialect)
 

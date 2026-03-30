@@ -23,8 +23,7 @@ add_mlir_library(
   MLIRTransformUtils
   MLIRLLVMDialect
   MLIRFuncDialect
-  MLIRArithDialect
-  DISABLE_INSTALL)
+  MLIRArithDialect)
 
 mqt_mlir_target_use_project_options(MLIRSupportMQT)
 
