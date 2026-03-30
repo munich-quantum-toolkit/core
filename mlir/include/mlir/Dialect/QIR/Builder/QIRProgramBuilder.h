@@ -233,10 +233,10 @@ public:
    * @brief Measure a qubit and record the result (simple version)
    *
    * @details
-   * Performs a Z-basis measurement using __quantum__qis__mz__body. The
-   * result is tracked for deferred output recording in the output block.
-   * This version does NOT include register information, so output will
-   * not be grouped by register.
+   * Performs a Z-basis measurement using `__quantum__qis__mz__body`.
+   *
+   * The output is recorded via `__quantum__rt__result_record_output` during
+   * `finalize()`.
    *
    * @param qubit The qubit to measure
    * @param resultIndex The classical bit index for result pointer
@@ -247,12 +247,17 @@ public:
    * auto result = builder.measure(q0, 0);
    * ```
    * ```mlir
+   * // In entry block:
+   * %zero = llvm.mlir.zero : !llvm.ptr
+   * %r = llvm.call @"@__quantum__rt__result_allocate"(%zero) : !llvm.ptr ->
+   * !llvm.ptr
+   *
    * // In measurements block:
-   * %c0 = llvm.mlir.constant(0 : i64) : i64
-   * %r = llvm.inttoptr %c0 : i64 to !llvm.ptr
    * llvm.call @__quantum__qis__mz__body(%q0, %r) : (!llvm.ptr, !llvm.ptr) -> ()
    *
-   * // Output recording deferred to output block
+   * // In output block:
+   * llvm.call @__quantum__rt__result_record_output(%r, %label) : (!llvm.ptr,
+   * !llvm.ptr) -> ()
    * ```
    */
   Value measure(Value qubit, int64_t resultIndex);
@@ -261,12 +266,10 @@ public:
    * @brief Measure a qubit into a classical register
    *
    * @details
-   * Performs a Z-basis measurement using __quantum__qis__mz__body and tracks
-   * the measurement with register information for array-based output recording.
-   * Output recording is deferred to the output block during finalize(), where
-   * measurements are grouped by register and recorded using:
-   * 1. __quantum__rt__array_record_output for each register
-   * 2. __quantum__rt__result_record_output for each measurement in the register
+   * Performs a Z-basis measurement using `__quantum__qis__mz__body`.
+   *
+   * The output is recorded via `__quantum__rt__result_array_record_output`
+   * during `finalize()`.
    *
    * @param qubit The qubit to measure
    * @param bit The classical bit to store the result
@@ -276,21 +279,21 @@ public:
    * ```c++
    * auto c = builder.allocClassicalBitRegister(2, "c");
    * builder.measure(q0, c[0]);
-   * builder.measure(q1, c[1]);
    * ```
    * ```mlir
-   * // In measurements block:
-   * llvm.call @__quantum__qis__mz__body(%q0, %r0) : (!llvm.ptr, !llvm.ptr) ->
-   * () llvm.call @__quantum__qis__mz__body(%q1, %r1) : (!llvm.ptr, !llvm.ptr)
-   * -> ()
+   * // In entry block:
+   * %zero = llvm.mlir.zero : !llvm.ptr
+   * %alloca = llvm.alloca %c2 x !llvm.ptr : (i64) -> !llvm.ptr
+   * llvm.call @"@__quantum__rt__result_array_allocate"(%c2, %alloca, %zero) :
+   * (i64, !llvm.ptr, !llvm.ptr) -> ()
+   * %r = llvm.load %alloca : !llvm.ptr -> !llvm.ptr
    *
-   * // In output block (generated during finalize):
-   * @0 = internal constant [3 x i8] c"c\00"
-   * @1 = internal constant [5 x i8] c"c0r\00"
-   * @2 = internal constant [5 x i8] c"c1r\00"
-   * llvm.call @__quantum__rt__array_record_output(i64 2, ptr @0)
-   * llvm.call @__quantum__rt__result_record_output(ptr %r0, ptr @1)
-   * llvm.call @__quantum__rt__result_record_output(ptr %r1, ptr @2)
+   * // In measurements block:
+   * llvm.call @__quantum__qis__mz__body(%q, %r) : (!llvm.ptr, !llvm.ptr) -> ()
+   *
+   * // In output block:
+   * llvm.call @__quantum__rt__result_array_record_output(%c2, %alloca, %label)
+   * : (i64, !llvm.ptr, !llvm.ptr) -> ()
    * ```
    */
   QIRProgramBuilder& measure(Value qubit, const Bit& bit);
@@ -309,7 +312,7 @@ public:
    * builder.reset(q);
    * ```
    * ```mlir
-   * llvm.call @__quantum__qis__reset__body(%q) : (!llvm.ptr) -> ()
+   * llvm.call @__quantum__qis__reset__body(%q) : !llvm.ptr -> ()
    * ```
    */
   QIRProgramBuilder& reset(Value qubit);
@@ -350,7 +353,7 @@ public:
    * builder.OP_NAME(q);                                                       \
    * ```                                                                       \
    * ```mlir                                                                   \
-   * llvm.call @__quantum__qis__##QIR_NAME##__body(%q) : (!llvm.ptr) -> ()     \
+   * llvm.call @__quantum__qis__##QIR_NAME##__body(%q) : !llvm.ptr -> ()       \
    * ```                                                                       \
    */                                                                          \
   QIRProgramBuilder& OP_NAME(Value qubit);                                     \
@@ -840,11 +843,10 @@ public:
    * @brief Finalize the program and return the constructed module
    *
    * @details
-   * Automatically deallocates all remaining allocated qubits, generates
-   * array-based output recording in the output block (grouped by register),
-   * ensures proper QIR metadata attributes are set, and transfers ownership
-   * of the module to the caller. The builder should not be used after calling
-   * this method.
+   * Automatically deallocates all remaining allocated qubits, generates output
+   * recording in the output block, ensures proper QIR metadata attributes are
+   * set, and transfers ownership of the module to the caller. The builder
+   * should not be used after calling this method.
    *
    * @return OwningOpRef containing the constructed QIR program module
    */
@@ -927,10 +929,8 @@ private:
    * @brief Generate array-based output recording in the output block
    *
    * @details
-   * Called by finalize() to generate output recording calls for all tracked
-   * measurements. Groups measurements by register and generates:
-   * 1. array_record_output for each register
-   * 2. result_record_output for each measurement in the register
+   * Called by `finalize()` to generate output recording calls for all tracked
+   * measurements.
    */
   void generateOutputRecording();
 

@@ -142,9 +142,10 @@ public:
    * auto q = builder.allocQubitRegister(3);
    * ```
    * ```mlir
-   * %q0 = qco.alloc("q", 3, 0) : !qco.qubit
-   * %q1 = qco.alloc("q", 3, 1) : !qco.qubit
-   * %q2 = qco.alloc("q", 3, 2) : !qco.qubit
+   * %t0 = qtensor.alloc(%c3) : tensor<3x!qco.qubit>
+   * %t1, %q0 = qtensor.extract %t0[%c0]: tensor<3x!qco.qubit>
+   * %t2, %q1 = qtensor.extract %t1[%c1]: tensor<3x!qco.qubit>
+   * %t3, %q2 = qtensor.extract %t2[%c2]: tensor<3x!qco.qubit>
    * ```
    */
   llvm::SmallVector<Value> allocQubitRegister(int64_t size);
@@ -1345,10 +1346,16 @@ private:
    */
   void updateQubitTracking(Value inputQubit, Value outputQubit);
 
+  /// Count unique tensors
   int64_t tensorCounter = 0;
 
+  /**
+   * @brief Information about a qubit
+   */
   struct QubitInfo {
+    /// ID of the register the qubit belongs to
     int64_t regId = -1;
+    /// Index of the qubit within its register
     int64_t regIndex = -1;
   };
 
@@ -1374,7 +1381,11 @@ private:
    */
   void updateTensorTracking(Value inputTensor, Value outputTensor);
 
+  /**
+   * @brief Information about a tensor
+   */
   struct TensorInfo {
+    /// ID of the register the tensor corresponds to
     int64_t regId = -1;
   };
 

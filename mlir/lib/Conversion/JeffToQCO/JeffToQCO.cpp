@@ -383,6 +383,18 @@ static LogicalResult cleanUp(Operation* op) {
 
 namespace {
 
+/**
+ * @brief Converts jeff.qureg_alloc to qtensor.alloc
+ *
+ * @par Example:
+ * ```mlir
+ * %qureg = jeff.qureg_alloc(%c3) : !jeff.qureg
+ * ```
+ * is converted to
+ * ```mlir
+ * %tensor = qtensor.alloc(%c3) : tensor<3x!qco.qubit>
+ * ```
+ */
 struct ConvertJeffQuregAllocOpToQCO final
     : OpConversionPattern<jeff::QuregAllocOp> {
   using OpConversionPattern::OpConversionPattern;
@@ -397,6 +409,19 @@ struct ConvertJeffQuregAllocOpToQCO final
   }
 };
 
+/**
+ * @brief Converts jeff.qureg_extract_index to qtensor.extract
+ *
+ * @par Example:
+ * ```mlir
+ * %qureg_out, %q = jeff.qureg_extract_index(%c0) %qureg_in : !jeff.qureg,
+ * !jeff.qubit
+ * ```
+ * is converted to
+ * ```mlir
+ * %tensor_out, %q = qtensor.extract %tensor_in[%c0]: tensor<3x!qco.qubit>
+ * ```
+ */
 struct ConvertJeffQuregExtractIndexOpToQCO final
     : OpConversionPattern<jeff::QuregExtractIndexOp> {
   using OpConversionPattern::OpConversionPattern;
@@ -412,6 +437,18 @@ struct ConvertJeffQuregExtractIndexOpToQCO final
   }
 };
 
+/**
+ * @brief Converts jeff.qureg_insert_index to qtensor.insert
+ *
+ * @par Example:
+ * ```mlir
+ * %qureg_out = jeff.qureg_insert_index(%c0) %qureg_in %q : !jeff.qureg
+ * ```
+ * is converted to
+ * ```mlir
+ * %tensor_out = qtensor.insert %q into %tensor_in[%c0] : tensor<3x!qco.qubit>
+ * ```
+ */
 struct ConvertJeffQuregInsertIndexOpToQCO final
     : OpConversionPattern<jeff::QuregInsertIndexOp> {
   using OpConversionPattern::OpConversionPattern;
@@ -429,6 +466,18 @@ struct ConvertJeffQuregInsertIndexOpToQCO final
   }
 };
 
+/**
+ * @brief Converts jeff.qureg_free_zero to qtensor.dealloc
+ *
+ * @par Example:
+ * ```mlir
+ * jeff.qureg_free_zero %qureg : !jeff.qureg
+ * ```
+ * is converted to
+ * ```mlir
+ * qtensor.dealloc %tensor : tensor<3x!qco.qubit>
+ * ```
+ */
 struct ConvertJeffQuregFreeZeroOpToQCO final
     : OpConversionPattern<jeff::QuregFreeZeroOp> {
   using OpConversionPattern::OpConversionPattern;
@@ -953,7 +1002,8 @@ struct ConvertJeffMainToQCO final : OpConversionPattern<func::FuncOp> {
  * @brief Type converter for Jeff-to-QCO conversion
  *
  * @details
- * Converts `!jeff.qubit` to `!qco.qubit`.
+ * Converts `!jeff.qubit` to `!qco.qubit` and `!jeff.qureg` to
+ * `!tensor<?x!qco.qubit>`.
  */
 class JeffToQCOTypeConverter final : public TypeConverter {
 public:

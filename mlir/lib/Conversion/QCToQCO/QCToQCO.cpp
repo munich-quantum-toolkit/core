@@ -51,8 +51,13 @@ using namespace qc;
 
 namespace {
 
+/**
+ * @brief Information about a qubit
+ */
 struct QubitInfo {
+  /// Register the qubit belongs to
   Value reg;
+  /// Index of the qubit within its register
   Value index;
 };
 
@@ -85,11 +90,13 @@ struct QubitInfo {
  * - %q2 after the X gate
  */
 struct LoweringState {
-  /// Map from original QC qubit references to their latest QCO SSA values
+  /// Map from original QC qubit reference to its latest QCO SSA value
   llvm::DenseMap<Value, Value> qubitMap;
 
+  /// Map from original MemRef to its latest QTensor SSA value
   llvm::DenseMap<Value, Value> qtensorMap;
 
+  /// Map from original QC qubit reference to its register information
   llvm::DenseMap<Value, QubitInfo> qubitInfos;
 
   /// Modifier information
@@ -152,6 +159,18 @@ public:
   }
 };
 
+/**
+ * @brief Converts memref.alloc to qtensor.alloc
+ *
+ * @par Example:
+ * ```mlir
+ * %memref = memref.alloc(%c3) : memref<3x!qc.qubit>
+ * ```
+ * is converted to
+ * ```mlir
+ * %tensor = qtensor.alloc(%c3) : tensor<3x!qco.qubit>
+ * ```
+ */
 struct ConvertMemRefAllocOp final
     : StatefulOpConversionPattern<memref::AllocOp> {
   using StatefulOpConversionPattern::StatefulOpConversionPattern;
@@ -187,6 +206,18 @@ struct ConvertMemRefAllocOp final
   }
 };
 
+/**
+ * @brief Converts memref.load to qtensor.extract
+ *
+ * @par Example:
+ * ```mlir
+ * %q = memref.load %memref[%c0] : memref<3x!qc.qubit>
+ * ```
+ * is converted to
+ * ```mlir
+ * %tensor_out, %q = qtensor.extract %tensor_in[%c0]: tensor<3x!qco.qubit>
+ * ```
+ */
 struct ConvertMemRefLoadOp final : StatefulOpConversionPattern<memref::LoadOp> {
   using StatefulOpConversionPattern::StatefulOpConversionPattern;
 
@@ -222,6 +253,25 @@ struct ConvertMemRefLoadOp final : StatefulOpConversionPattern<memref::LoadOp> {
   }
 };
 
+/**
+ * @brief Converts memref.dealloc to qtensor.dealloc
+ *
+ * @details
+ * Before deallocating the tensor, all qubits are inserted back into it at their
+ * original location.
+ *
+ * @par Example:
+ * ```mlir
+ * memref.dealloc %memref : memref<3x!qc.qubit>
+ * ```
+ * is converted to
+ * ```mlir
+ * %t1 = qtensor.insert %q0 into %t0[%c0] : tensor<3x!qco.qubit>
+ * %t2 = qtensor.insert %q1 into %t1[%c1] : tensor<3x!qco.qubit>
+ * %t3 = qtensor.insert %q2 into %t2[%c2] : tensor<3x!qco.qubit>
+ * qtensor.dealloc %t3 : tensor<3x!qco.qubit>
+ * ```
+ */
 struct ConvertMemRefDeallocOp final
     : StatefulOpConversionPattern<memref::DeallocOp> {
   using StatefulOpConversionPattern::StatefulOpConversionPattern;

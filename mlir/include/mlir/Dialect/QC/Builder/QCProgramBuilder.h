@@ -133,9 +133,10 @@ public:
    * auto q = builder.allocQubitRegister(3);
    * ```
    * ```mlir
-   * %q0 = qc.alloc("q", 3, 0) : !qc.qubit
-   * %q1 = qc.alloc("q", 3, 1) : !qc.qubit
-   * %q2 = qc.alloc("q", 3, 2) : !qc.qubit
+   * %memref = memref.alloc() : memref<3x!qc.qubit>
+   * %q0 = memref.load %alloc[%c0] : memref<3x!qc.qubit>
+   * %q1 = memref.load %alloc[%c1] : memref<3x!qc.qubit>
+   * %q2 = memref.load %alloc[%c2] : memref<3x!qc.qubit>
    * ```
    */
   llvm::SmallVector<Value> allocQubitRegister(int64_t size);
@@ -940,6 +941,7 @@ private:
   /// Track allocated qubits for automatic deallocation
   llvm::DenseSet<Value> allocatedQubits;
 
+  /// Track allocated MemRefs for automatic deallocation
   llvm::DenseSet<Value> allocatedMemrefs;
 
   /// Check if the builder has been finalized

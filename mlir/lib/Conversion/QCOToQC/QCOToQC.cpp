@@ -76,6 +76,18 @@ public:
   }
 };
 
+/**
+ * @brief Converts qtensor.alloc to memref.alloc
+ *
+ * @par Example:
+ * ```mlir
+ * %tensor = qtensor.alloc(%c3) : tensor<3x!qco.qubit>
+ * ```
+ * is converted to
+ * ```mlir
+ * %memref = memref.alloc(%c3) : memref<3x!qc.qubit>
+ * ```
+ */
 struct ConvertQTensorAllocOp final : OpConversionPattern<qtensor::AllocOp> {
   using OpConversionPattern::OpConversionPattern;
 
@@ -89,6 +101,18 @@ struct ConvertQTensorAllocOp final : OpConversionPattern<qtensor::AllocOp> {
   }
 };
 
+/**
+ * @brief Converts qtensor.extract to memref.load
+ *
+ * @par Example:
+ * ```mlir
+ * %tensor_out, %q = qtensor.extract %tensor_in[%c0]: tensor<3x!qco.qubit>
+ * ```
+ * is converted to
+ * ```mlir
+ * %q = memref.load %memref[%c0] : memref<3x!qc.qubit>
+ * ```
+ */
 struct ConvertQTensorExtractOp final : OpConversionPattern<qtensor::ExtractOp> {
   using OpConversionPattern::OpConversionPattern;
 
@@ -102,21 +126,9 @@ struct ConvertQTensorExtractOp final : OpConversionPattern<qtensor::ExtractOp> {
   }
 };
 
-// struct ConvertQTensorInsertOp final : OpConversionPattern<qtensor::InsertOp>
-// {
-//   using OpConversionPattern::OpConversionPattern;
-
-//   LogicalResult
-//   matchAndRewrite(qtensor::InsertOp op, OpAdaptor adaptor,
-//                   ConversionPatternRewriter& rewriter) const override {
-//     auto store =
-//         memref::StoreOp::create(rewriter, op.getLoc(), adaptor.getScalar(),
-//                                 adaptor.getDest(), adaptor.getIndex());
-//     rewriter.replaceOp(op, adaptor.getDest());
-//     return success();
-//   }
-// };
-
+/**
+ * @brief Removes qtensor.insert operations
+ */
 struct ConvertQTensorInsertOp final : OpConversionPattern<qtensor::InsertOp> {
   using OpConversionPattern::OpConversionPattern;
 
@@ -128,6 +140,18 @@ struct ConvertQTensorInsertOp final : OpConversionPattern<qtensor::InsertOp> {
   }
 };
 
+/**
+ * @brief Converts qtensor.dealloc to memref.dealloc
+ *
+ * @par Example:
+ * ```mlir
+ * qtensor.dealloc %tensor : tensor<3x!qco.qubit>
+ * ```
+ * is converted to
+ * ```mlir
+ * memref.dealloc %memref : memref<3x!qc.qubit>
+ * ```
+ */
 struct ConvertQTensorDeallocOp final : OpConversionPattern<qtensor::DeallocOp> {
   using OpConversionPattern::OpConversionPattern;
 

@@ -247,6 +247,18 @@ static LogicalResult cleanUp(Operation* op, LoweringState& state) {
 
 namespace {
 
+/**
+ * @brief Converts qtensor.alloc to jeff.qureg_alloc
+ *
+ * @par Example:
+ * ```mlir
+ * %tensor = qtensor.alloc(%c3) : tensor<3x!qco.qubit>
+ * ```
+ * is converted to
+ * ```mlir
+ * %qureg = jeff.qureg_alloc(%c3) : !jeff.qureg
+ * ```
+ */
 struct ConvertQTensorAllocOp final
     : StatefulOpConversionPattern<qtensor::AllocOp> {
   using StatefulOpConversionPattern::StatefulOpConversionPattern;
@@ -267,6 +279,19 @@ struct ConvertQTensorAllocOp final
   }
 };
 
+/**
+ * @brief Converts qtensor.extract to jeff.qureg_extract_index
+ *
+ * @par Example:
+ * ```mlir
+ * %tensor_out, %q = qtensor.extract %tensor_in[%c0]: tensor<3x!qco.qubit>
+ * ```
+ * is converted to
+ * ```mlir
+ * %qureg_out, %q = jeff.qureg_extract_index(%c0) %qureg_in : !jeff.qureg,
+ * !jeff.qubit
+ * ```
+ */
 struct ConvertQTensorExtractOp final
     : StatefulOpConversionPattern<qtensor::ExtractOp> {
   using StatefulOpConversionPattern::StatefulOpConversionPattern;
@@ -288,6 +313,18 @@ struct ConvertQTensorExtractOp final
   }
 };
 
+/**
+ * @brief Converts qtensor.insert to jeff.qureg_insert_index
+ *
+ * @par Example:
+ * ```mlir
+ * %tensor_out = qtensor.insert %q into %tensor_in[%c0] : tensor<3x!qco.qubit>
+ * ```
+ * is converted to
+ * ```mlir
+ * %qureg_out = jeff.qureg_insert_index(%c0) %qureg_in %q : !jeff.qureg
+ * ```
+ */
 struct ConvertQTensorInsertOp final
     : StatefulOpConversionPattern<qtensor::InsertOp> {
   using StatefulOpConversionPattern::StatefulOpConversionPattern;
@@ -309,6 +346,18 @@ struct ConvertQTensorInsertOp final
   }
 };
 
+/**
+ * @brief Converts qtensor.dealloc to jeff.qureg_free_zero
+ *
+ * @par Example:
+ * ```mlir
+ * qtensor.dealloc %tensor : tensor<3x!qco.qubit>
+ * ```
+ * is converted to
+ * ```mlir
+ * jeff.qureg_free_zero %qureg : !jeff.qureg
+ * ```
+ */
 struct ConvertQTensorDeallocOp final
     : StatefulOpConversionPattern<qtensor::DeallocOp> {
   using StatefulOpConversionPattern::StatefulOpConversionPattern;
@@ -1398,8 +1447,8 @@ struct ConvertQCOMainToJeff final : StatefulOpConversionPattern<func::FuncOp> {
  * @brief Type converter for QCO-to-Jeff conversion
  *
  * @details
- * Converts `!qco.qubit` to `!jeff.qubit` and tensor<?x!qco.qubit> to
- * tensor<?x!jeff.qubit>.
+ * Converts `!qco.qubit` to `!jeff.qubit` and `tensor<?x!qco.qubit>` to
+ * `!jeff.qureg`.
  */
 class QCOToJeffTypeConverter final : public TypeConverter {
 public:

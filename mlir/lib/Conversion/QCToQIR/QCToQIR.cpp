@@ -65,14 +65,6 @@ namespace {
 
 /**
  * @brief State object for tracking lowering information during QIR conversion
- *
- * @details
- * This struct maintains state during the conversion of QC dialect
- * operations to QIR (Quantum Intermediate Representation). It tracks:
- * - Qubit and result counts for QIR metadata
- * - Pointer value caching for reuse
- * - Whether dynamic memory management is needed
- * - Sequence of measurements for output recording
  */
 struct LoweringState : QIRMetadata {
   /// Map from index to qubit pointer
@@ -91,7 +83,7 @@ struct LoweringState : QIRMetadata {
   int64_t inCtrlOp = 0;
   DenseMap<int64_t, SmallVector<Value>> controls;
 
-  // Block information
+  /// Block information
   Block* entryBlock{};
   Block* measurementsBlock{};
 };
@@ -203,6 +195,7 @@ namespace {
  *
  * Type conversions:
  * - `!qc.qubit` -> `!llvm.ptr` (opaque pointer to qubit in QIR)
+ * - `memref<?x!qc.qubit>` -> `!llvm.ptr` (opaque pointer to array in QIR)
  */
 struct QCToQIRTypeConverter final : LLVMTypeConverter {
   explicit QCToQIRTypeConverter(MLIRContext* ctx) : LLVMTypeConverter(ctx) {
@@ -215,6 +208,21 @@ struct QCToQIRTypeConverter final : LLVMTypeConverter {
   }
 };
 
+/**
+ * @brief Converts memref.alloc to QIR qubit-array allocation
+ *
+ * @par Example:
+ * ```mlir
+ * %memref = memref.alloc() : memref<3x!qc.qubit>
+ * ```
+ * becomes:
+ * ```mlir
+ * %zero = llvm.mlir.zero : !llvm.ptr
+ * %alloca = llvm.alloca %c3 x !llvm.ptr : (i64) -> !llvm.ptr
+ * llvm.call @"@__quantum__rt__qubit_array_allocate"(%c3, %alloca, %zero) :
+ * (i64, !llvm.ptr, !llvm.ptr) -> ()
+ * ```
+ */
 struct ConvertMemRefAllocOp final
     : StatefulOpConversionPattern<memref::AllocOp> {
   using StatefulOpConversionPattern::StatefulOpConversionPattern;
@@ -261,6 +269,19 @@ struct ConvertMemRefAllocOp final
   }
 };
 
+/**
+ * @brief Converts memref.load to llvm.load
+ *
+ * @par Example:
+ * ```mlir
+ * %q = memref.load %memref[%c0] : memref<3x!qc.qubit>
+ * ```
+ * is converted to
+ * ```mlir
+ * %ptr = llvm.getelementptr %alloca[1] : !llvm.ptr -> !llvm.ptr, !llvm.ptr
+ * %q = llvm.load %ptr : !llvm.ptr -> !llvm.ptr
+ * ```
+ */
 struct ConvertMemRefLoadOp final : StatefulOpConversionPattern<memref::LoadOp> {
   using StatefulOpConversionPattern::StatefulOpConversionPattern;
 
@@ -283,6 +304,19 @@ struct ConvertMemRefLoadOp final : StatefulOpConversionPattern<memref::LoadOp> {
   }
 };
 
+/**
+ * @brief Converts memref.dealloc to QIR qubit-array release
+ *
+ * @par Example:
+ * ```mlir
+ * memref.dealloc %memref : memref<3x!qc.qubit>
+ * ```
+ * becomes:
+ * ```mlir
+ * llvm.call @"@__quantum__rt__qubit_array_release"(%c3, %alloca) : (i64,
+ * !llvm.ptr) -> ()
+ * ```
+ */
 struct ConvertMemRefDeallocOp final
     : StatefulOpConversionPattern<memref::DeallocOp> {
   using StatefulOpConversionPattern::StatefulOpConversionPattern;
@@ -331,15 +365,7 @@ struct ConvertMemRefDeallocOp final
 };
 
 /**
- * @brief Converts qc.alloc operation to static QIR qubit allocations
- *
- * @details
- * QIR 2.0 does not support dynamic qubit allocation. Therefore, qc.alloc
- * operations are converted to static qubit references using inttoptr with a
- * constant index.
- *
- * Register metadata (register_name, register_size, register_index) is used to
- * provide a reasonable guess for a static qubit index that is still free.
+ * @brief Converts qc.alloc to QIR qubit allocation
  *
  * @par Example:
  * ```mlir
@@ -347,8 +373,9 @@ struct ConvertMemRefDeallocOp final
  * ```
  * becomes:
  * ```mlir
- * %c0 = llvm.mlir.constant(0 : i64) : i64
- * %q0 = llvm.inttoptr %c0 : i64 to !llvm.ptr
+ * %zero = llvm.mlir.zero : !llvm.ptr
+ * %q = llvm.call @"@__quantum__rt__qubit_allocate"(%zero) : !llvm.ptr ->
+ * !llvm.ptr
  * ```
  */
 struct ConvertQCAllocOp final : StatefulOpConversionPattern<AllocOp> {
@@ -375,12 +402,7 @@ struct ConvertQCAllocOp final : StatefulOpConversionPattern<AllocOp> {
 };
 
 /**
- * @brief Erases qc.dealloc operations
- *
- * @details
- * Since QIR 2.0 does not support dynamic qubit allocation, dynamic
- * allocations are converted to static allocations. Therefore, deallocation
- * operations become no-ops and are simply removed from the IR.
+ * @brief Converts qc.dealloc to QIR qubit release
  *
  * @par Example:
  * ```mlir
@@ -388,7 +410,7 @@ struct ConvertQCAllocOp final : StatefulOpConversionPattern<AllocOp> {
  * ```
  * becomes:
  * ```mlir
- * // (removed)
+ * llvm.call @"@__quantum__rt__qubit_release"(%q) : !llvm.ptr -> ()
  * ```
  */
 struct ConvertQCDeallocOp final : StatefulOpConversionPattern<DeallocOp> {
@@ -419,7 +441,7 @@ struct ConvertQCDeallocOp final : StatefulOpConversionPattern<DeallocOp> {
 };
 
 /**
- * @brief Converts qc.static operation to QIR inttoptr
+ * @brief Converts qc.static to llvm.inttoptr
  *
  * @details
  * Converts a static qubit reference to an LLVM pointer by creating a constant
@@ -467,18 +489,14 @@ struct ConvertQCStaticOp final : StatefulOpConversionPattern<StaticOp> {
 };
 
 /**
- * @brief Converts qc.measure operation to QIR measurement
+ * @brief Converts qc.measure to QIR measurement
  *
  * @details
- * Converts qubit measurement to a QIR call to `__quantum__qis__mz__body`.
- * Unlike the previous implementation, this does NOT immediately record
- * output. Instead, it tracks measurements in the lowering state for deferred
- * output recording in a separate output block, as required by the QIR Base
- * Profile.
+ * For measurements with register information, a result array is allocated and
+ * all result pointers are loaded.
  *
- * For measurements with register information, the result pointer is mapped
- * to (register_name, register_index) for later retrieval. For measurements
- * without register information, a sequential result pointer is assigned.
+ * For measurements without register information, an individual result pointer
+ * is allocated.
  *
  * @par Example (with register):
  * ```mlir
@@ -486,11 +504,15 @@ struct ConvertQCStaticOp final : StatefulOpConversionPattern<StaticOp> {
  * ```
  * becomes:
  * ```mlir
- * %c0_i64 = llvm.mlir.constant(0 : i64) : i64
- * %result_ptr = llvm.inttoptr %c0_i64 : i64 to !llvm.ptr
- * llvm.call @__quantum__qis__mz__body(%q, %result_ptr) : (!llvm.ptr,
- * !llvm.ptr)
- * -> ()
+ * // In entry block:
+ * %zero = llvm.mlir.zero : !llvm.ptr
+ * %alloca = llvm.alloca %c2 x !llvm.ptr : (i64) -> !llvm.ptr
+ * llvm.call @"@__quantum__rt__result_array_allocate"(%c2, %alloca, %zero) :
+ * (i64, !llvm.ptr, !llvm.ptr) -> ()
+ * %r = llvm.load %alloca : !llvm.ptr -> !llvm.ptr
+ *
+ * // In measurements block:
+ * llvm.call @__quantum__qis__mz__body(%q, %r) : (!llvm.ptr, !llvm.ptr) -> ()
  * ```
  */
 struct ConvertQCMeasureOp final : StatefulOpConversionPattern<MeasureOp> {
@@ -601,7 +623,7 @@ struct ConvertQCMeasureOp final : StatefulOpConversionPattern<MeasureOp> {
  * ```
  * becomes:
  * ```mlir
- * llvm.call @__quantum__qis__reset__body(%q) : (!llvm.ptr) -> ()
+ * llvm.call @__quantum__qis__reset__body(%q) : !llvm.ptr -> ()
  * ```
  */
 struct ConvertQCResetOp final : StatefulOpConversionPattern<ResetOp> {
@@ -673,7 +695,7 @@ struct ConvertQCGPhaseOp final : StatefulOpConversionPattern<GPhaseOp> {
    * ```                                                                       \
    * is converted to                                                           \
    * ```mlir                                                                   \
-   * llvm.call @__quantum__qis__QIR_NAME__body(%q) : (!llvm.ptr) -> ()         \
+   * llvm.call @__quantum__qis__QIR_NAME__body(%q) : !llvm.ptr -> ()           \
    * ```                                                                       \
    */                                                                          \
   struct ConvertQC##OP_CLASS final : StatefulOpConversionPattern<OP_CLASS> {   \
@@ -1006,11 +1028,12 @@ struct ConvertQCYieldOp final : StatefulOpConversionPattern<YieldOp> {
  *
  * Conversion stages:
  * 1. Convert func dialect to LLVM
- * 2. Ensure proper block structure for QIR base profile and add initialization
+ * 2. Ensure proper block structure for QIR base profile
  * 3. Convert QC operations to QIR calls
- * 4. Set QIR metadata attributes
- * 5. Convert arith and cf dialects to LLVM
- * 6. Reconcile unrealized casts
+ * 4. Add QIR initialization call
+ * 5. Set QIR metadata attributes
+ * 6. Convert arith and cf dialects to LLVM
+ * 7. Reconcile unrealized casts
  *
  * @pre
  * The input entry function must consist of a single block. The pass will
@@ -1139,29 +1162,12 @@ struct QCToQIR final : impl::QCToQIRBase<QCToQIR> {
    * measurements tracked during conversion. Follows the QIR Base Profile
    * specification for labeled output schema.
    *
-   * For each classical register, creates:
-   * 1. An array_record_output call with the register size and label
-   * 2. Individual result_record_output calls for each measurement in the
-   * register
+   * Results that are part of registers are recorded via
+   * `__quantum__rt__result_array_record_output`.
    *
-   * Labels follow the format: "{registerName}{resultIndex}r"
-   * - registerName: Name of the classical register (e.g., "c")
-   * - resultIndex: Index within the array
-   * - 'r' suffix: Indicates this is a result record
-   *
-   * Example output:
-   * ```
-   * @0 = internal constant [3 x i8] c"c\00"
-   * @1 = internal constant [5 x i8] c"c0r\00"
-   * @2 = internal constant [5 x i8] c"c1r\00"
-   * call void @__quantum__rt__array_record_output(i64 2, ptr @0)
-   * call void @__quantum__rt__result_record_output(ptr %result0, ptr @1)
-   * call void @__quantum__rt__result_record_output(ptr %result1, ptr @2)
-   * ```
-   *
-   * Any output recording calls that are not part of registers (i.e.,
-   * measurements without register info) are grouped under a default label "c"
-   * and recorded similarly.
+   * Results that are not part of registers (i.e., measurements without register
+   * info) are grouped under a default `__unnamed__` label recorded via
+   * `__quantum__rt__result_record_output`.
    *
    * @param main The main LLVM function
    * @param ctx The MLIR context
@@ -1241,30 +1247,32 @@ protected:
    * @brief Executes the QC to QIR conversion pass
    *
    * @details
-   * Performs the conversion in six stages:
+   * Performs the conversion in seven stages:
    *
    * **Stage 1: Func to LLVM**
    * Convert func dialect operations (main function) to LLVM dialect
    * equivalents.
    *
-   * **Stage 2: Block structure and initialization**
+   * **Stage 2: Block structure**
    * Create proper 4-block structure for QIR base profile (entry, main,
-   * irreversible, output) and insert the `__quantum__rt__initialize` call in
-   * the entry block.
+   * irreversible, output).
    *
    * **Stage 3: QC to LLVM**
    * Convert QC dialect operations to QIR calls and add output recording to the
    * output block.
    *
-   * **Stage 4: QIR attributes**
+   * **Stage 4: Initialization**
+   * Insert the `__quantum__rt__initialize` call.
+   *
+   * **Stage 5: QIR attributes**
    * Add QIR base profile metadata to the main function, including qubit/result
    * counts and version information.
    *
-   * **Stage 5: Standard dialects to LLVM**
+   * **Stage 6: Standard dialects to LLVM**
    * Convert arith and control flow dialects to LLVM (for index arithmetic and
    * function control flow).
    *
-   * **Stage 6: Reconcile casts**
+   * **Stage 7: Reconcile casts**
    * Clean up any unrealized cast operations introduced during type conversion.
    */
   void runOnOperation() override {
@@ -1328,13 +1336,13 @@ protected:
       addOutputRecording(main, ctx, &state);
     }
 
-    // Stage ?: Insert initialize call
+    // Stage 4: Insert initialize call
     addInitialize(main, ctx);
 
-    // Stage 4: Set QIR metadata attributes
+    // Stage 5: Set QIR metadata attributes
     setQIRAttributes(main, state);
 
-    // Stage 5: Convert standard dialects to LLVM
+    // Stage 6: Convert standard dialects to LLVM
     {
       RewritePatternSet stdPatterns(ctx);
       target.addIllegalDialect<arith::ArithDialect>();
@@ -1351,7 +1359,7 @@ protected:
       }
     }
 
-    // Stage 6: Reconcile unrealized casts
+    // Stage 7: Reconcile unrealized casts
     PassManager passManager(ctx);
     passManager.addPass(createReconcileUnrealizedCastsPass());
     if (passManager.run(moduleOp).failed()) {
