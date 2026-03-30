@@ -67,6 +67,102 @@ struct LiftHadamardsAbovePauliGatesPattern final
       : OpInterfaceRewritePattern(context) {}
 
   /**
+   * @brief This method checks if two ranges contain of exactly the same
+   * elements.
+   *
+   * This method checks if two ranges contain of exactly the same elements.
+   *
+   * @param range1 The first range.
+   * @param range2 The second range.
+   */
+  static bool containRangesOfSameElements(const std::vector<Value>& range1,
+                                          const std::vector<Value>& range2) {
+    bool result = true;
+    result &= range1.size() == range2.size();
+    for (auto element : range1) {
+      result &=
+          std::find(range2.begin(), range2.end(), element) != range2.end();
+    }
+    return result;
+  }
+
+  /**
+   * @brief This method checks if two gates are connected by exactly the same
+   * target and ctrl qubits.
+   *
+   * This method checks if the output target/ctrl qubits of the first gate are
+   * exactly the input target/ctrl qubits of the second gate. There must be no
+   * qubit that is only used by one of the gates.
+   *
+   * @param firstGate The first unitary gate.
+   * @param secondGate The second unitary gate.
+   */
+  static bool
+  areGatesConnectedExactlyBySameQubits(UnitaryOpInterface firstGate,
+                                       UnitaryOpInterface secondGate) {
+    if (firstGate.getNumTargets() != secondGate.getNumTargets() ||
+        firstGate.getNumControls() != secondGate.getNumControls()) {
+      return false;
+    }
+    std::vector<Value> targetOutputsFirstGate;
+    std::vector<Value> controlOutputsFirstGate;
+    std::vector<Value> targetInputsSecondGate;
+    std::vector<Value> controlInputsSecondGate;
+    for (size_t i = 0; i < firstGate.getNumTargets(); i++) {
+      targetOutputsFirstGate.push_back(firstGate.getOutputTarget(i));
+      targetInputsSecondGate.push_back(secondGate.getInputTarget(i));
+    }
+    for (size_t i = 0; i < firstGate.getNumControls(); i++) {
+      targetOutputsFirstGate.push_back(firstGate.getOutputControl(i));
+      targetInputsSecondGate.push_back(secondGate.getInputControl(i));
+    }
+
+    bool result = true;
+    result &= containRangesOfSameElements(targetOutputsFirstGate,
+                                          targetInputsSecondGate);
+    result &= containRangesOfSameElements(controlOutputsFirstGate,
+                                          controlInputsSecondGate);
+    return result;
+  }
+
+  /**
+   * @brief This method swaps a gate with is succeeding hadamard gate, if
+   * applicable.
+   *
+   * This method swaps a gate with its suceeding hadamard gate. This is only
+   * done if there is a simple commutation rule to do so.
+   * Currently implemented:
+   * - X - H - = - H - Z -
+   * - Y - H - = - H - Y -
+   * - Z - H - = - H - X -
+   *
+   * @param gate The unitary gate.
+   * @param hadamardGate The hadamard gate.
+   * @param rewriter The used rewriter.
+   */
+  static mlir::LogicalResult
+  swapGateWithHadamard(UnitaryOpInterface gate, UnitaryOpInterface hadamardGate,
+                       mlir::PatternRewriter& rewriter) {
+    const auto gateName = gate->getName().stripDialect().str();
+
+    if (gateName == "x" || gateName == "y" || gateName == "z") {
+      // if (gateName == "x") {
+      //   rewriter.replaceOpWithNewOp<ZOp>(hadamardGate,
+      //   hadamardGate.getInputQubit(0));
+      // } else if (gateName == "z") {
+      //   rewriter.replaceOpWithNewOp<XOp>(hadamardGate,
+      //   hadamardGate.getInputQubit(0));
+      // } else {
+      //   rewriter.replaceOpWithNewOp<YOp>(hadamardGate,
+      //   hadamardGate.getInputQubit(0));
+      // }
+      rewriter.replaceOpWithNewOp<HOp>(gate, gate.getInputQubit(0));
+      return success();
+    }
+    return failure();
+  }
+
+  /**
    * @brief Lifts Hadamard gates in front of Pauli gates.
    *
    * @param op The operation to match (only Pauli gates trigger the rewrite)
@@ -75,7 +171,29 @@ struct LiftHadamardsAbovePauliGatesPattern final
    */
   LogicalResult matchAndRewrite(UnitaryOpInterface op,
                                 PatternRewriter& rewriter) const override {
-    return failure();
+    // op needs to be a Pauli gate
+    std::string opName = op->getName().stripDialect().str();
+    if (opName != "x" && opName != "y" && opName != "z") {
+      return failure();
+    }
+
+    // op needs to be in front of a hadamard gate
+    const auto& users = op->getUsers();
+    if (users.empty()) {
+      return failure();
+    }
+    auto user = *users.begin();
+    if (user->getName().stripDialect().str() != "h") {
+      return failure();
+    }
+
+    auto hadamardGate = mlir::dyn_cast<UnitaryOpInterface>(user);
+
+    if (!areGatesConnectedExactlyBySameQubits(op, hadamardGate)) {
+      return failure();
+    }
+
+    return swapGateWithHadamard(op, hadamardGate, rewriter);
   }
 };
 
