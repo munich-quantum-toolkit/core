@@ -209,7 +209,9 @@ if(TARGET spdlog)
 endif()
 
 # Install spdlog with explicit MQT components.
-if(MQT_CORE_SPDLOG_INSTALL AND TARGET spdlog)
+if(MQT_CORE_SPDLOG_INSTALL
+   AND TARGET spdlog
+   AND TARGET spdlog_header_only)
   include(CMakePackageConfigHelpers)
 
   set(MQT_CORE_SPDLOG_CONFIG_INSTALL_DIR "${CMAKE_INSTALL_DATADIR}/cmake/spdlog")
