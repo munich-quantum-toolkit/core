@@ -16,9 +16,6 @@
 #include "mlir/Dialect/MQTOpt/Transforms/Transpilation/Layout.h"
 #include "mlir/Dialect/MQTOpt/Transforms/Transpilation/Router.h"
 
-#include <algorithm>
-#include <cassert>
-#include <iterator>
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/ADT/Statistic.h>
@@ -26,7 +23,6 @@
 #include <llvm/Support/Debug.h>
 #include <llvm/Support/ErrorHandling.h>
 #include <llvm/Support/Format.h>
-#include <memory>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
 #include <mlir/IR/Builders.h>
@@ -42,6 +38,11 @@
 #include <mlir/Rewrite/PatternApplicator.h>
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/WalkResult.h>
+
+#include <algorithm>
+#include <cassert>
+#include <iterator>
+#include <memory>
 #include <queue>
 
 #define DEBUG_TYPE "route-astar-sc"

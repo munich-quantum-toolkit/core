@@ -14,10 +14,11 @@
 #include "mlir/Dialect/MQTOpt/Transforms/Transpilation/Layout.h"
 #include "mlir/Dialect/MQTOpt/Transforms/Transpilation/Unit.h"
 
-#include <cstddef>
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/Support/Debug.h>
 #include <mlir/Support/LLVM.h>
+
+#include <cstddef>
 
 namespace mqt::ir::opt {
 

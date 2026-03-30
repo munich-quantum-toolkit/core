@@ -18,11 +18,12 @@
 #include "ir/Definitions.hpp"
 #include "ir/QuantumComputation.hpp"
 
+#include <gtest/gtest.h>
+
 #include <bitset>
 #include <chrono>
 #include <cstdlib>
 #include <fstream>
-#include <gtest/gtest.h>
 #include <iostream>
 #include <memory>
 #include <sstream>

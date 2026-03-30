@@ -17,18 +17,12 @@
 #include "mlir/Dialect/MQTRef/Translation/ImportQuantumComputation.h"
 #include "qasm3/Importer.hpp"
 
-#include <cstddef>
-#include <functional>
 #include <gtest/gtest.h>
-#include <initializer_list>
-#include <iomanip>
-#include <ios>
 #include <llvm/ADT/SmallString.h>
 #include <llvm/ADT/StringRef.h>
 #include <llvm/FileCheck/FileCheck.h>
 #include <llvm/Support/SourceMgr.h>
 #include <llvm/Support/raw_ostream.h>
-#include <memory>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/MemRef/IR/MemRef.h>
@@ -38,6 +32,13 @@
 #include <mlir/IR/OwningOpRef.h>
 #include <mlir/Pass/PassManager.h>
 #include <mlir/Transforms/Passes.h>
+
+#include <cstddef>
+#include <functional>
+#include <initializer_list>
+#include <iomanip>
+#include <ios>
+#include <memory>
 #include <ostream>
 #include <sstream>
 #include <string>

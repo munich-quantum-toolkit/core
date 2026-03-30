@@ -13,14 +13,15 @@
 #include "mlir/Dialect/MQTOpt/IR/MQTOptDialect.h"
 #include "mlir/Dialect/MQTOpt/Transforms/Transpilation/Layout.h"
 
-#include <cstddef>
-#include <cstdint>
 #include <llvm/ADT/DenseMapInfo.h>
 #include <llvm/ADT/DenseSet.h>
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/ADT/StringRef.h>
-#include <memory>
 #include <mlir/Support/LLVM.h>
+
+#include <cstddef>
+#include <cstdint>
+#include <memory>
 #include <string>
 #include <string_view>
 #include <utility>

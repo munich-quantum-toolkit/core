@@ -17,12 +17,13 @@
 #include "ir/Definitions.hpp"
 #include "ir/QuantumComputation.hpp"
 
+#include <gtest/gtest.h>
+
 #include <bitset>
 #include <complex>
 #include <cstddef>
 #include <cstdint>
 #include <cstdlib>
-#include <gtest/gtest.h>
 #include <iostream>
 #include <iterator>
 #include <memory>

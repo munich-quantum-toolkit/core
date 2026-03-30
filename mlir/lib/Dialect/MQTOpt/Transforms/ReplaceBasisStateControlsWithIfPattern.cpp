@@ -13,7 +13,6 @@
 #include "mlir/IR/Attributes.h"
 #include "mlir/IR/OperationSupport.h"
 
-#include <cstdint>
 #include <llvm/ADT/STLExtras.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
 #include <mlir/IR/Block.h>
@@ -26,6 +25,8 @@
 #include <mlir/IR/ValueRange.h>
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/LogicalResult.h>
+
+#include <cstdint>
 #include <optional>
 #include <string>
 #include <unordered_set>

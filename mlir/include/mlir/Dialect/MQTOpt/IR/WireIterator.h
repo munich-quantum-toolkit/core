@@ -12,8 +12,6 @@
 
 #include "mlir/Dialect/MQTOpt/IR/MQTOptDialect.h"
 
-#include <cstddef>
-#include <iterator>
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/TypeSwitch.h>
 #include <llvm/Support/Debug.h>
@@ -23,6 +21,9 @@
 #include <mlir/IR/Operation.h>
 #include <mlir/IR/Value.h>
 #include <mlir/Support/LLVM.h>
+
+#include <cstddef>
+#include <iterator>
 
 namespace mqt::ir::opt {
 

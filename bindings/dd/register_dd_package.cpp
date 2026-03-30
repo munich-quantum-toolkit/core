@@ -20,10 +20,6 @@
 #include "ir/operations/NonUnitaryOperation.hpp"
 #include "ir/operations/Operation.hpp"
 
-#include <array>
-#include <cmath>
-#include <complex>
-#include <cstddef>
 #include <nanobind/nanobind.h>
 #include <nanobind/ndarray.h>
 #include <nanobind/stl/complex.h> // NOLINT(misc-include-cleaner)
@@ -31,6 +27,11 @@
 #include <nanobind/stl/set.h>     // NOLINT(misc-include-cleaner)
 #include <nanobind/stl/string.h>  // NOLINT(misc-include-cleaner)
 #include <nanobind/stl/vector.h>  // NOLINT(misc-include-cleaner)
+
+#include <array>
+#include <cmath>
+#include <complex>
+#include <cstddef>
 #include <random>
 #include <stdexcept>
 #include <utility>

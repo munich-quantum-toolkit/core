@@ -13,8 +13,6 @@
 #include "mlir/Dialect/MQTOpt/IR/MQTOptDialect.h"
 #include "mlir/Dialect/MQTOpt/Transforms/Passes.h"
 
-#include <cstddef>
-#include <cstdint>
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/Support/Casting.h>
@@ -30,6 +28,9 @@
 #include <mlir/IR/Value.h>
 #include <mlir/IR/ValueRange.h>
 #include <mlir/Support/LogicalResult.h>
+
+#include <cstddef>
+#include <cstdint>
 #include <stdexcept>
 #include <vector>
 

@@ -15,8 +15,9 @@
 #include "dd/StateGeneration.hpp"
 #include "ir/Definitions.hpp"
 
-#include <cstddef>
 #include <gtest/gtest.h>
+
+#include <cstddef>
 #include <iostream>
 #include <memory>
 #include <sstream>

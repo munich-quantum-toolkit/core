@@ -14,8 +14,9 @@
 
 #include "qdmi/common/Common.hpp"
 
-#include <iostream>
 #include <qdmi/constants.h>
+
+#include <iostream>
 #include <sstream>
 #include <stdexcept>
 #include <string>

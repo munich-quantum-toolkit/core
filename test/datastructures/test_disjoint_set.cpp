@@ -11,6 +11,7 @@
 #include "datastructures/DisjointSet.hpp"
 
 #include <gtest/gtest.h>
+
 #include <vector>
 
 namespace qc {

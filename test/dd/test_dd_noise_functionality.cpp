@@ -19,13 +19,14 @@
 #include "ir/operations/IfElseOperation.hpp"
 #include "ir/operations/OpType.hpp"
 
+#include <gtest/gtest.h>
+
 #include <algorithm>
 #include <bitset>
 #include <cmath>
 #include <complex>
 #include <cstddef>
 #include <functional>
-#include <gtest/gtest.h>
 #include <map>
 #include <memory>
 #include <stdexcept>

@@ -12,13 +12,11 @@
 #include "mlir/Dialect/MQTOpt/IR/WireIterator.h"
 
 #include <gtest/gtest.h>
-#include <iterator>
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/ADT/iterator_range.h>
 #include <llvm/Support/Debug.h>
 #include <llvm/Support/raw_ostream.h>
-#include <memory>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Index/IR/IndexDialect.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
@@ -28,6 +26,9 @@
 #include <mlir/IR/OwningOpRef.h>
 #include <mlir/Parser/Parser.h>
 #include <mlir/Support/LLVM.h>
+
+#include <iterator>
+#include <memory>
 #include <string>
 
 using namespace mlir;

@@ -19,6 +19,7 @@
 #include "dd/RealNumber.hpp"
 
 #include <nlohmann/json.hpp>
+
 #include <ostream>
 #include <string>
 
