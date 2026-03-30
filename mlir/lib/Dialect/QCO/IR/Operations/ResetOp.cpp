@@ -15,10 +15,26 @@
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OperationSupport.h>
 #include <mlir/IR/PatternMatch.h>
+#include <mlir/IR/Value.h>
 #include <mlir/Support/LogicalResult.h>
 
 using namespace mlir;
 using namespace mlir::qco;
+
+/**
+ * @brief Check if a `qtensor.extract` operation ultimately originates from a
+ * `qtensor.alloc` operation.
+ */
+static bool originatesFromAlloc(qtensor::ExtractOp extractOp) {
+  auto* definingOp = extractOp.getTensor().getDefiningOp();
+  if (llvm::isa<qtensor::AllocOp>(definingOp)) {
+    return true;
+  }
+  if (llvm::isa<qtensor::ExtractOp>(definingOp)) {
+    return originatesFromAlloc(llvm::cast<qtensor::ExtractOp>(definingOp));
+  }
+  return false;
+}
 
 namespace {
 
@@ -41,21 +57,6 @@ struct RemoveResetAfterAlloc final : OpRewritePattern<ResetOp> {
     return success();
   }
 };
-
-/**
- * @brief Check if a `qtensor.extract` operation ultimately originates from a
- * `qtensor.alloc` operation.
- */
-static bool originatesFromAlloc(qtensor::ExtractOp extractOp) {
-  auto* definingOp = extractOp.getTensor().getDefiningOp();
-  if (llvm::isa<qtensor::AllocOp>(definingOp)) {
-    return true;
-  }
-  if (llvm::isa<qtensor::ExtractOp>(definingOp)) {
-    return originatesFromAlloc(llvm::cast<qtensor::ExtractOp>(definingOp));
-  }
-  return false;
-}
 
 /**
  * @brief Remove reset operations that immediately follow a `qtensor.extract`
