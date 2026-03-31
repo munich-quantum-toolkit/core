@@ -20,8 +20,10 @@
 #include "qco_programs.h"
 
 #include <gtest/gtest.h>
+#include <llvm/Support/raw_ostream.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
+#include <mlir/IR/Diagnostics.h>
 #include <mlir/IR/DialectRegistry.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/Verifier.h>
@@ -89,7 +91,18 @@ TEST(QCToQCOMixedStaticDynamicQubitsTest, FailsConversion) {
   ASSERT_TRUE(program);
   EXPECT_TRUE(verify(*program).succeeded());
 
-  EXPECT_TRUE(failed(runQCToQCOConversion(program.get())));
+  std::string diagnostics;
+  ScopedDiagnosticHandler diagHandler(context.get(), [&](Diagnostic& diag) {
+    llvm::raw_string_ostream os(diagnostics);
+    diag.print(os);
+    os << '\n';
+    return success();
+  });
+
+  const auto result = runQCToQCOConversion(program.get());
+  EXPECT_TRUE(failed(result));
+  EXPECT_NE(diagnostics.find("mixing static and dynamic qubits"),
+            std::string::npos);
 }
 
 TEST_P(QCToQCOTest, ProgramEquivalence) {

@@ -34,8 +34,16 @@ namespace mlir {
 using namespace qco;
 using namespace qc;
 
+namespace {
+/**
+ * @brief Function-local qubit mode classification.
+ */
 enum class QubitMode : std::uint8_t { Unknown, StaticOnly, DynamicOnly, Mixed };
+} // namespace
 
+/**
+ * @brief Infer whether a function uses static, dynamic, or mixed qubits.
+ */
 [[nodiscard]] QubitMode inferQubitMode(func::FuncOp func) {
   bool sawStatic = false;
   bool sawAlloc = false;
