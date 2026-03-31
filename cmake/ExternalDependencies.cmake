@@ -161,7 +161,6 @@ if(MQT_CORE_JSON_INSTALL AND TARGET nlohmann_json)
   set(MQT_CORE_JSON_CONFIG_FILE "${CMAKE_CURRENT_BINARY_DIR}/nlohmann_jsonConfig.cmake")
   set(MQT_CORE_JSON_VERSION_CONFIG_FILE
       "${CMAKE_CURRENT_BINARY_DIR}/nlohmann_jsonConfigVersion.cmake")
-  set(MQT_CORE_JSON_PKGCONFIG_FILE "${CMAKE_CURRENT_BINARY_DIR}/nlohmann_json.pc")
 
   # nlohmann_json's upstream templates expect these names.
   set(_mqt_core_saved_project_name "${PROJECT_NAME}")
@@ -177,8 +176,6 @@ if(MQT_CORE_JSON_INSTALL AND TARGET nlohmann_json)
                  @ONLY)
   configure_file(${nlohmann_json_SOURCE_DIR}/cmake/nlohmann_jsonConfigVersion.cmake.in
                  ${MQT_CORE_JSON_VERSION_CONFIG_FILE} @ONLY)
-  configure_file(${nlohmann_json_SOURCE_DIR}/cmake/pkg-config.pc.in ${MQT_CORE_JSON_PKGCONFIG_FILE}
-                 @ONLY)
 
   set(PROJECT_NAME "${_mqt_core_saved_project_name}")
   set(PROJECT_VERSION "${_mqt_core_saved_project_version}")
@@ -210,11 +207,6 @@ if(MQT_CORE_JSON_INSTALL AND TARGET nlohmann_json)
   install(
     FILES ${MQT_CORE_JSON_CONFIG_FILE} ${MQT_CORE_JSON_VERSION_CONFIG_FILE}
     DESTINATION ${MQT_CORE_JSON_CONFIG_INSTALL_DIR}
-    COMPONENT ${MQT_CORE_TARGET_NAME}_Development)
-
-  install(
-    FILES ${MQT_CORE_JSON_PKGCONFIG_FILE}
-    DESTINATION ${CMAKE_INSTALL_DATADIR}/pkgconfig
     COMPONENT ${MQT_CORE_TARGET_NAME}_Development)
 endif()
 
