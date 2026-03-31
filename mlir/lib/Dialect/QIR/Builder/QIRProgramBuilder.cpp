@@ -218,6 +218,8 @@ Value QIRProgramBuilder::measure(Value qubit, const int64_t resultIndex) {
     llvm::reportFatalUsageError("Result index must be non-negative");
   }
 
+  metadata_.useDynamicResult = true;
+
   // Save current insertion point
   const InsertionGuard guard(*this);
 
@@ -658,11 +660,8 @@ OwningOpRef<ModuleOp> QIRProgramBuilder::finalize() {
   auto zero = LLVM::ZeroOp::create(*this, ptrType);
   LLVM::CallOp::create(*this, initDec, zero.getResult());
 
-  // Generate output recording in output block
-  generateOutputRecording();
-
-  // Switch to measurements block
-  setInsertionPoint(measurementsBlock->getTerminator());
+  // Release resources in output block
+  setInsertionPoint(outputBlock->getTerminator());
 
   for (auto array : qubitArrays) {
     auto sig = LLVM::LLVMFunctionType::get(voidType, {getI64Type(), ptrType});
@@ -671,6 +670,9 @@ OwningOpRef<ModuleOp> QIRProgramBuilder::finalize() {
     auto size = array.getDefiningOp<LLVM::AllocaOp>().getArraySize();
     LLVM::CallOp::create(*this, dec, ValueRange{size, array});
   }
+
+  // Generate output recording in output block
+  generateOutputRecording();
 
   for (auto& [_, ptr] : resultPtrs) {
     auto sig = LLVM::LLVMFunctionType::get(voidType, {ptrType});

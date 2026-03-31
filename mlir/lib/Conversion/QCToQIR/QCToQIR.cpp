@@ -89,6 +89,7 @@ struct LoweringState : QIRMetadata {
   /// Block information
   Block* entryBlock{};
   Block* measurementsBlock{};
+  Block* outputBlock{};
 };
 
 /**
@@ -328,6 +329,7 @@ struct ConvertMemRefDeallocOp final
   LogicalResult
   matchAndRewrite(memref::DeallocOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
+    auto& state = getState();
     auto* ctx = getContext();
     auto i64Type = rewriter.getI64Type();
     auto ptrType = LLVM::LLVMPointerType::get(ctx);
@@ -340,15 +342,15 @@ struct ConvertMemRefDeallocOp final
     // Save current insertion point
     const OpBuilder::InsertionGuard guard(rewriter);
 
-    // Switch to measurements block
-    rewriter.setInsertionPoint(getState().measurementsBlock->getTerminator());
+    // Release resources in output block
+    rewriter.setInsertionPoint(state.outputBlock->getTerminator());
 
     auto fnSig = LLVM::LLVMFunctionType::get(LLVM::LLVMVoidType::get(ctx),
                                              {i64Type, ptrType});
     auto fnDec = getOrCreateFunctionDeclaration(rewriter, op,
                                                 QIR_QUBIT_ARRAY_RELEASE, fnSig);
 
-    auto size = getState().memrefSizes.lookup(op.getMemref());
+    auto size = state.memrefSizes.lookup(op.getMemref());
 
     // Create the release call
     LLVM::CallOp::create(rewriter, op.getLoc(), fnDec,
@@ -414,14 +416,15 @@ struct ConvertQCDeallocOp final : StatefulOpConversionPattern<DeallocOp> {
   LogicalResult
   matchAndRewrite(DeallocOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
+    auto& state = getState();
     auto* ctx = getContext();
     auto ptrType = LLVM::LLVMPointerType::get(ctx);
 
     // Save current insertion point
     const OpBuilder::InsertionGuard guard(rewriter);
 
-    // Switch to measurements block
-    rewriter.setInsertionPoint(getState().measurementsBlock->getTerminator());
+    // Release resources in output block
+    rewriter.setInsertionPoint(state.outputBlock->getTerminator());
 
     auto fnSig =
         LLVM::LLVMFunctionType::get(LLVM::LLVMVoidType::get(ctx), {ptrType});
@@ -627,13 +630,14 @@ struct ConvertQCResetOp final : StatefulOpConversionPattern<ResetOp> {
   LogicalResult
   matchAndRewrite(ResetOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
+    auto& state = getState();
     auto* ctx = getContext();
 
     // Save current insertion point
     const OpBuilder::InsertionGuard guard(rewriter);
 
     // Switch to measurements block
-    rewriter.setInsertionPoint(getState().measurementsBlock->getTerminator());
+    rewriter.setInsertionPoint(state.measurementsBlock->getTerminator());
 
     // Declare QIR function
     const auto fnSignature = LLVM::LLVMFunctionType::get(
@@ -1045,8 +1049,8 @@ struct QCToQIR final : impl::QCToQIRBase<QCToQIR> {
    * The QIR base profile requires a specific 4-block structure:
    * 1. **Entry block**: Contains constant operations and initialization
    * 2. **Body block**: Contains reversible quantum operations (gates)
-   * 3. **Measurements block**: Contains irreversible operations (measure,
-   * reset, dealloc)
+   * 3. **Measurements block**: Contains irreversible operations (measure and
+   * reset)
    * 4. **Output block**: Contains output recording calls
    *
    * Blocks are connected with unconditional jumps (entry, body, measurements,
@@ -1076,6 +1080,7 @@ struct QCToQIR final : impl::QCToQIRBase<QCToQIR> {
 
     state.entryBlock = entryBlock;
     state.measurementsBlock = measurementsBlock;
+    state.outputBlock = outputBlock;
 
     auto& bodyBlockOps = bodyBlock->getOperations();
     auto& outputBlockOps = outputBlock->getOperations();
@@ -1246,8 +1251,8 @@ struct QCToQIR final : impl::QCToQIRBase<QCToQIR> {
     auto ptrType = LLVM::LLVMPointerType::get(ctx);
     auto voidType = LLVM::LLVMVoidType::get(ctx);
 
-    // Switch to measurements block
-    builder.setInsertionPoint(state->measurementsBlock->getTerminator());
+    // Release resources in output block
+    builder.setInsertionPoint(state->outputBlock->getTerminator());
 
     for (auto& [_, ptr] : state->resultPtrs) {
       auto sig = LLVM::LLVMFunctionType::get(voidType, {ptrType});
