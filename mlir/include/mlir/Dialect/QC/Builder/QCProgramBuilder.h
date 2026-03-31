@@ -881,6 +881,27 @@ public:
    */
   QCProgramBuilder& inv(const llvm::function_ref<void()>& body);
 
+  /**
+   * @brief Apply a power modifier to an operation.
+   *
+   * @param exponent The exponent to raise the operation to
+   * @param body Function that builds the body containing the operation to
+   * exponentiate
+   * @return Reference to this builder for method chaining
+   *
+   * @par Example:
+   * ```c++
+   * builder.pow(2.0, [&] { builder.s(q0); });
+   * ```
+   * ```mlir
+   * qc.pow(2.000000e+00) {
+   *   qc.s %q0 : !qc.qubit
+   * }
+   * ```
+   */
+  QCProgramBuilder& pow(double exponent,
+                        const llvm::function_ref<void()>& body);
+
   //===--------------------------------------------------------------------===//
   // Deallocation
   //===--------------------------------------------------------------------===//

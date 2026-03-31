@@ -1223,6 +1223,33 @@ public:
   ValueRange inv(ValueRange qubits,
                  llvm::function_ref<llvm::SmallVector<Value>(ValueRange)> body);
 
+  /**
+   * @brief Raise a unitary operation to a power
+   *
+   * @param qubits Input qubits (targets for the powered operation)
+   * @param exponent The power exponent (floating-point)
+   * @param body Function that builds the body containing the target operation
+   * @return Output qubits
+   *
+   * @par Example:
+   * ```c++
+   * qubits_out = builder.pow(q0_in, 2.0,
+   *   [&](ValueRange qubits) -> llvm::SmallVector<Value> {
+   *     return {builder.s(qubits[0])};
+   *   }
+   * );
+   * ```
+   * generates:
+   * ```mlir
+   * %q_out = qco.pow (2.000000e+00) (%q = %q_in) {
+   *   %q_res = qco.s %q : !qco.qubit -> !qco.qubit
+   *   qco.yield %q_res
+   * } : {!qco.qubit} -> {!qco.qubit}
+   * ```
+   */
+  ValueRange pow(ValueRange qubits, double exponent,
+                 llvm::function_ref<llvm::SmallVector<Value>(ValueRange)> body);
+
   //===--------------------------------------------------------------------===//
   // Deallocation
   //===--------------------------------------------------------------------===//
