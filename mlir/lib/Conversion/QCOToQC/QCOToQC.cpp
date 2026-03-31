@@ -34,6 +34,29 @@ namespace mlir {
 using namespace qco;
 using namespace qc;
 
+enum class QubitMode : std::uint8_t { Unknown, StaticOnly, DynamicOnly, Mixed };
+
+[[nodiscard]] QubitMode inferQubitMode(func::FuncOp func) {
+  bool sawStatic = false;
+  bool sawAlloc = false;
+
+  func.walk([&](Operation* op) {
+    sawStatic |= isa<qco::StaticOp>(op);
+    sawAlloc |= isa<qco::AllocOp>(op);
+  });
+
+  if (sawStatic && sawAlloc) {
+    return QubitMode::Mixed;
+  }
+  if (sawStatic) {
+    return QubitMode::StaticOnly;
+  }
+  if (sawAlloc) {
+    return QubitMode::DynamicOnly;
+  }
+  return QubitMode::Unknown;
+}
+
 #define GEN_PASS_DEF_QCOTOQC
 #include "mlir/Conversion/QCOToQC/QCOToQC.h.inc"
 
@@ -95,29 +118,6 @@ struct ConvertQCOAllocOp final : OpConversionPattern<qco::AllocOp> {
     return success();
   }
 };
-
-enum class QubitMode : std::uint8_t { Unknown, StaticOnly, DynamicOnly, Mixed };
-
-[[nodiscard]] static QubitMode inferQubitMode(func::FuncOp func) {
-  bool sawStatic = false;
-  bool sawAlloc = false;
-
-  func.walk([&](Operation* op) {
-    sawStatic |= isa<qco::StaticOp>(op);
-    sawAlloc |= isa<qco::AllocOp>(op);
-  });
-
-  if (sawStatic && sawAlloc) {
-    return QubitMode::Mixed;
-  }
-  if (sawStatic) {
-    return QubitMode::StaticOnly;
-  }
-  if (sawAlloc) {
-    return QubitMode::DynamicOnly;
-  }
-  return QubitMode::Unknown;
-}
 
 /**
  * @brief Converts qco.sink to qc.dealloc.
