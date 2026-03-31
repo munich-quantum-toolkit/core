@@ -41,6 +41,7 @@
 #include <tuple>
 
 using namespace mlir;
+using namespace mlir::qco;
 
 namespace {
 struct ArchitectureParam {
@@ -65,6 +66,9 @@ public:
 
     bool executable = true;
     std::ignore = moduleOp->walk([&](qc::UnitaryOpInterface op) {
+      if (isa<qc::BarrierOp>(op)) {
+        return WalkResult::advance();
+      }
       if (op.getNumQubits() > 1) {
         assert(op.getNumQubits() == 2 &&
                "Expected only 2-qubit gates after decomposition");
@@ -110,7 +114,7 @@ protected:
                                                               .alpha = 1,
                                                               .lambda = 0.85,
                                                               .niterations = 2,
-                                                              .ntrials = 8,
+                                                              .ntrials = 16,
                                                               .seed = 1337}));
     pm.addPass(createQCOToQC());
     auto res = pm.run(*moduleOp);
@@ -307,6 +311,11 @@ TEST_P(MappingPassTest, Sabre) {
   builder.cx(q4, q5);
 
   builder.cx(q0, q1);
+
+  builder.h(q0);
+  builder.y(q1);
+  builder.cx(q0, q1);
+
   builder.cx(q2, q3);
 
   builder.h(q2);
@@ -320,6 +329,14 @@ TEST_P(MappingPassTest, Sabre) {
   builder.cx(q3, q4);
 
   builder.cx(q3, q0);
+
+  builder.barrier({q0, q1, q2, q3, q4, q5});
+  builder.measure(q0);
+  builder.measure(q1);
+  builder.measure(q2);
+  builder.measure(q3);
+  builder.measure(q4);
+  builder.measure(q5);
 
   builder.dealloc(q0);
   builder.dealloc(q1);

@@ -21,7 +21,6 @@ add_mlir_conversion_library(
   MLIRTransforms
   MLIRFuncDialect
   MLIRFuncToLLVM
-  MLIRReconcileUnrealizedCasts
-  DISABLE_INSTALL)
+  MLIRReconcileUnrealizedCasts)
 
 mqt_mlir_target_use_project_options(MLIRQCToQIR)

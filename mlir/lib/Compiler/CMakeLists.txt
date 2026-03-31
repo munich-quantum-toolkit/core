@@ -20,8 +20,7 @@ add_mlir_library(
   MLIRQCToQCO
   MLIRQCOToQC
   MLIRQCToQIR
-  MQT::MLIRSupport
-  DISABLE_INSTALL)
+  MQT::MLIRSupport)
 
 mqt_mlir_target_use_project_options(MQTCompilerPipeline)
 

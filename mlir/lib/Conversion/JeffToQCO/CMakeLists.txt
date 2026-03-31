@@ -17,5 +17,4 @@ add_mlir_conversion_library(
   MLIRJeff
   MLIRJeffToNative
   MLIRQCODialect
-  MLIRTransforms
-  DISABLE_INSTALL)
+  MLIRTransforms)
