@@ -14,8 +14,7 @@ add_mlir_library(
   MLIRArithDialect
   MLIRFuncDialect
   MLIRMemRefDialect
-  MLIRQCDialect
-  DISABLE_INSTALL)
+  MLIRQCDialect)
 
 mqt_mlir_target_use_project_options(MLIRQCProgramBuilder)
 

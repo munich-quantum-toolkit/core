@@ -9,7 +9,8 @@
  */
 
 /**
- * @file This file is a thin wrapper around MQT's Superconducting QDMI Device
+ * @file DynDevice.cpp
+ * @brief This file is a thin wrapper around MQT's Superconducting QDMI Device
  * with another prefix.
  */
 
