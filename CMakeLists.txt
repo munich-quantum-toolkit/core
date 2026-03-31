@@ -63,36 +63,6 @@ option(MQT_CORE_INSTALL "Generate installation instructions for MQT Core"
 option(BUILD_MQT_CORE_TESTS "Build tests for the MQT Core project" ${MQT_CORE_MASTER_PROJECT})
 option(BUILD_MQT_CORE_SHARED_LIBS "Build MQT Core libraries as shared libraries"
        ${BUILD_SHARED_LIBS})
-
-# try to determine the project version
-include(GetVersion)
-get_mqt_core_version()
-
-project(
-  mqt-core
-  LANGUAGES C CXX
-  VERSION ${MQT_CORE_VERSION}
-  DESCRIPTION "MQT Core - The Backbone of the Munich Quantum Toolkit")
-
-include(cmake/ExternalDependencies.cmake)
-
-# set the include directory for the build tree
-set(MQT_CORE_INCLUDE_BUILD_DIR "${CMAKE_CURRENT_SOURCE_DIR}/include/mqt-core")
-
-if(MQT_CORE_INSTALL)
-  if(APPLE)
-    set(BASEPOINT @loader_path)
-  else()
-    set(BASEPOINT $ORIGIN)
-  endif()
-  set(CMAKE_INSTALL_RPATH ${BASEPOINT} ${BASEPOINT}/${CMAKE_INSTALL_LIBDIR}
-                          ${BASEPOINT}/../${CMAKE_INSTALL_LIBDIR})
-  set(CMAKE_INSTALL_RPATH_USE_LINK_PATH TRUE)
-  set(CMAKE_BUILD_WITH_INSTALL_RPATH TRUE)
-endif()
-
-set(MQT_CORE_TARGET_NAME "mqt-core")
-
 option(BUILD_MQT_CORE_MLIR "Build the MLIR submodule of the MQT Core project" OFF)
 if(APPLE AND CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
   set(BUILD_MQT_CORE_MLIR
@@ -116,9 +86,40 @@ if(APPLE AND CMAKE_CXX_COMPILER_ID STREQUAL "AppleClang")
         "Disabling MLIR build on macOS with Apple Clang < 17 due to missing complete C++20 support")
   endif()
 endif()
+
+# try to determine the project version
+include(GetVersion)
+get_mqt_core_version()
+
+project(
+  mqt-core
+  LANGUAGES C CXX
+  VERSION ${MQT_CORE_VERSION}
+  DESCRIPTION "MQT Core - The Backbone of the Munich Quantum Toolkit")
+
+set(MQT_CORE_TARGET_NAME "mqt-core")
+
 if(BUILD_MQT_CORE_MLIR)
   include(SetupMLIR)
 endif()
+
+include(cmake/ExternalDependencies.cmake)
+
+# set the include directory for the build tree
+set(MQT_CORE_INCLUDE_BUILD_DIR "${CMAKE_CURRENT_SOURCE_DIR}/include/mqt-core")
+
+if(MQT_CORE_INSTALL)
+  if(APPLE)
+    set(BASEPOINT @loader_path)
+  else()
+    set(BASEPOINT $ORIGIN)
+  endif()
+  set(CMAKE_INSTALL_RPATH ${BASEPOINT} ${BASEPOINT}/${CMAKE_INSTALL_LIBDIR}
+                          ${BASEPOINT}/../${CMAKE_INSTALL_LIBDIR})
+  set(CMAKE_INSTALL_RPATH_USE_LINK_PATH TRUE)
+  set(CMAKE_BUILD_WITH_INSTALL_RPATH TRUE)
+endif()
+
 cmake_dependent_option(BUILD_MQT_CORE_QIR_RUNNER "Build the QIR runner of the MQT Core project" ON
                        "BUILD_MQT_CORE_MLIR" OFF)
 

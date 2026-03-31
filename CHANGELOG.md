@@ -15,6 +15,7 @@ This project adheres to [Semantic Versioning], with the exception that minor rel
 
 ### Changed
 
+- 📦 Switch to component-based installation for the MQT Core Python package ([#1596]) ([**@burgholzer**])
 - ⬆️ Update QDMI to latest version from stable `v1.2.x` branch ([#1593]) ([**@burgholzer**])
 
 ## [3.4.1] - 2026-02-01
@@ -320,6 +321,7 @@ _📚 Refer to the [GitHub Release Notes](https://github.com/munich-quantum-tool
 
 <!-- PR links -->
 
+[#1596]: https://github.com/munich-quantum-toolkit/core/pull/1596
 [#1593]: https://github.com/munich-quantum-toolkit/core/pull/1593
 [#1507]: https://github.com/munich-quantum-toolkit/core/pull/1507
 [#1481]: https://github.com/munich-quantum-toolkit/core/pull/1481
