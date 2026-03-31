@@ -18,8 +18,7 @@ add_mlir_conversion_library(
   MLIRJeff
   MLIRNativeToJeff
   MLIRQCODialect
-  MLIRTransforms
-  DISABLE_INSTALL)
+  MLIRTransforms)
 
 if(TARGET MLIRQCOToJeff)
   target_compile_definitions(MLIRQCOToJeff PRIVATE MQT_CORE_VERSION="${MQT_CORE_VERSION}")

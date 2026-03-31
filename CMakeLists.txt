@@ -97,6 +97,8 @@ project(
   VERSION ${MQT_CORE_VERSION}
   DESCRIPTION "MQT Core - The Backbone of the Munich Quantum Toolkit")
 
+set(MQT_CORE_TARGET_NAME "mqt-core")
+
 if(BUILD_MQT_CORE_MLIR)
   include(SetupMLIR)
 endif()
@@ -117,8 +119,6 @@ if(MQT_CORE_INSTALL)
   set(CMAKE_INSTALL_RPATH_USE_LINK_PATH TRUE)
   set(CMAKE_BUILD_WITH_INSTALL_RPATH TRUE)
 endif()
-
-set(MQT_CORE_TARGET_NAME "mqt-core")
 
 cmake_dependent_option(BUILD_MQT_CORE_QIR_RUNNER "Build the QIR runner of the MQT Core project" ON
                        "BUILD_MQT_CORE_MLIR" OFF)
