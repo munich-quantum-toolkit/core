@@ -182,12 +182,13 @@ struct ConvertMemRefAllocOp final
       return success();
     }
 
-    auto& qtensorMap = getState().qtensorMap;
-
     auto shape = op.getType().getShape();
     if (shape.size() != 1) {
       return failure();
     }
+
+    auto& qtensorMap = getState().qtensorMap;
+    auto memref = op.getResult();
 
     Value qtensor;
     if (shape[0] == ShapedType::kDynamic) {
@@ -200,7 +201,7 @@ struct ConvertMemRefAllocOp final
           rewriter.replaceOpWithNewOp<qtensor::AllocOp>(op, size.getResult());
     }
 
-    qtensorMap.try_emplace(op.getResult(), qtensor);
+    qtensorMap.try_emplace(memref, qtensor);
 
     return success();
   }

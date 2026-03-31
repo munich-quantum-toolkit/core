@@ -175,6 +175,10 @@ QIRProgramBuilder::allocClassicalBitRegister(const int64_t size,
     llvm::reportFatalUsageError("Size must be positive");
   }
 
+  if (resultArrays.contains(name)) {
+    llvm::reportFatalUsageError("Classical register already exists");
+  }
+
   metadata_.useDynamicResult = true;
 
   // Save current insertion point
@@ -654,7 +658,10 @@ OwningOpRef<ModuleOp> QIRProgramBuilder::finalize() {
   auto zero = LLVM::ZeroOp::create(*this, ptrType);
   LLVM::CallOp::create(*this, initDec, zero.getResult());
 
-  // Insert in output block (before return)
+  // Generate output recording in output block
+  generateOutputRecording();
+
+  // Switch to measurements block
   setInsertionPoint(measurementsBlock->getTerminator());
 
   for (auto array : qubitArrays) {
@@ -679,9 +686,6 @@ OwningOpRef<ModuleOp> QIRProgramBuilder::finalize() {
     auto size = array.getDefiningOp<LLVM::AllocaOp>().getArraySize();
     LLVM::CallOp::create(*this, dec, ValueRange{size, array});
   }
-
-  // Generate output recording in the output block
-  generateOutputRecording();
 
   auto mainFuncOp = llvm::cast<LLVM::LLVMFuncOp>(mainFunc);
   setQIRAttributes(mainFuncOp, metadata_);
