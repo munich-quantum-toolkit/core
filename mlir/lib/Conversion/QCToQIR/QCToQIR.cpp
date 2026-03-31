@@ -1028,8 +1028,8 @@ struct ConvertQCYieldOp final : StatefulOpConversionPattern<YieldOp> {
  * Conversion stages:
  * 1. Convert func dialect to LLVM
  * 2. Ensure proper block structure for QIR base profile
- * 3. Convert QC operations to QIR calls
- * 4. Add QIR initialization call
+ * 3. Add QIR initialization call
+ * 4. Convert QC operations to QIR calls
  * 5. Set QIR metadata attributes
  * 6. Convert arith and cf dialects to LLVM
  * 7. Reconcile unrealized casts
@@ -1116,42 +1116,25 @@ struct QCToQIR final : impl::QCToQIRBase<QCToQIR> {
    * @brief Adds QIR initialization call to the entry block
    *
    * @details
-   * Inserts a call to `__quantum__rt__initialize` at the end of the entry block
-   * (before the jump to main block). This QIR runtime function initializes the
-   * quantum execution environment and takes a null pointer as argument.
+   * This QIR runtime function initializes the quantum execution environment.
    *
    * @param main The main LLVM function
    * @param ctx The MLIR context
+   * @param state The lowering state
    */
-  static void addInitialize(LLVM::LLVMFuncOp& main, MLIRContext* ctx) {
-    auto moduleOp = main->getParentOfType<ModuleOp>();
-    auto& firstBlock = *(main.getBlocks().begin());
-    OpBuilder builder(main.getBody());
+  static void addInitialize(LLVM::LLVMFuncOp& main, MLIRContext* ctx,
+                            LoweringState& state) {
+    OpBuilder builder(ctx);
+    auto ptrType = LLVM::LLVMPointerType::get(ctx);
+    auto voidType = LLVM::LLVMVoidType::get(ctx);
 
-    // Create a zero (null) pointer for the initialize call
-    builder.setInsertionPointToStart(&firstBlock);
-    auto zeroOp = LLVM::ZeroOp::create(builder, main->getLoc(),
-                                       LLVM::LLVMPointerType::get(ctx));
+    builder.setInsertionPointToStart(state.entryBlock);
 
-    // Insert the initialize call before the jump to main block
-    const auto insertPoint = std::prev(firstBlock.getOperations().end(), 1);
-    builder.setInsertionPoint(&*insertPoint);
-
-    // Get or create the initialize function declaration
-    auto* fnDecl = SymbolTable::lookupNearestSymbolFrom(
-        main, builder.getStringAttr(QIR_INITIALIZE));
-    if (fnDecl == nullptr) {
-      const PatternRewriter::InsertionGuard guard(builder);
-      builder.setInsertionPointToEnd(moduleOp.getBody());
-      auto fnSignature = LLVM::LLVMFunctionType::get(
-          LLVM::LLVMVoidType::get(ctx), LLVM::LLVMPointerType::get(ctx));
-      fnDecl = LLVM::LLVMFuncOp::create(builder, main->getLoc(), QIR_INITIALIZE,
-                                        fnSignature);
-    }
-
-    // Create the initialization call
-    LLVM::CallOp::create(builder, main->getLoc(),
-                         cast<LLVM::LLVMFuncOp>(fnDecl), zeroOp->getResult(0));
+    auto initSig = LLVM::LLVMFunctionType::get(voidType, ptrType);
+    auto initDec =
+        getOrCreateFunctionDeclaration(builder, main, QIR_INITIALIZE, initSig);
+    auto zero = LLVM::ZeroOp::create(builder, main->getLoc(), ptrType);
+    LLVM::CallOp::create(builder, main->getLoc(), initDec, zero.getResult());
   }
 
   /**
@@ -1287,12 +1270,12 @@ protected:
    * Create proper 4-block structure for QIR base profile (entry, main,
    * irreversible, output).
    *
-   * **Stage 3: QC to LLVM**
+   * **Stage 3: Initialization**
+   * Insert the `__quantum__rt__initialize` call.
+   *
+   * **Stage 4: QC to LLVM**
    * Convert QC dialect operations to QIR calls and add output recording to the
    * output block.
-   *
-   * **Stage 4: Initialization**
-   * Insert the `__quantum__rt__initialize` call.
    *
    * **Stage 5: QIR attributes**
    * Add QIR base profile metadata to the main function, including qubit/result
@@ -1338,7 +1321,10 @@ protected:
     // Stage 2: Create block structure
     ensureBlocks(main, state);
 
-    // Stage 3: Convert QC dialect to LLVM (QIR calls)
+    // Stage 3: Insert initialize call
+    addInitialize(main, ctx, state);
+
+    // Stage 4: Convert QC dialect to LLVM (QIR calls)
     {
       RewritePatternSet patterns(ctx);
       target.addIllegalDialect<QCDialect, memref::MemRefDialect>();
@@ -1367,9 +1353,6 @@ protected:
 
       releaseResults(main, ctx, &state);
     }
-
-    // Stage 4: Insert initialize call
-    addInitialize(main, ctx);
 
     // Stage 5: Set QIR metadata attributes
     setQIRAttributes(main, state);

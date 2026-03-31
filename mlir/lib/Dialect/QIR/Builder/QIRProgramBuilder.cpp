@@ -72,6 +72,12 @@ void QIRProgramBuilder::initialize() {
   setInsertionPointToStart(entryBlock);
   exitCode = intConstant(0);
 
+  auto initSig = LLVM::LLVMFunctionType::get(voidType, ptrType);
+  auto initDec =
+      getOrCreateFunctionDeclaration(*this, module, QIR_INITIALIZE, initSig);
+  auto zero = LLVM::ZeroOp::create(*this, ptrType);
+  LLVM::CallOp::create(*this, initDec, zero.getResult());
+
   // Add unconditional branches between blocks
   setInsertionPointToEnd(entryBlock);
   LLVM::BrOp::create(*this, bodyBlock);
@@ -649,16 +655,8 @@ void QIRProgramBuilder::generateOutputRecording() {
 OwningOpRef<ModuleOp> QIRProgramBuilder::finalize() {
   checkFinalized();
 
+  // Save current insertion point
   const InsertionGuard guard(*this);
-
-  // Insert initialization at end of entry block
-  setInsertionPoint(entryBlock->getTerminator());
-
-  auto initSig = LLVM::LLVMFunctionType::get(voidType, ptrType);
-  auto initDec =
-      getOrCreateFunctionDeclaration(*this, module, QIR_INITIALIZE, initSig);
-  auto zero = LLVM::ZeroOp::create(*this, ptrType);
-  LLVM::CallOp::create(*this, initDec, zero.getResult());
 
   // Release resources in output block
   setInsertionPoint(outputBlock->getTerminator());
