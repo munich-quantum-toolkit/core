@@ -31,9 +31,9 @@ void AllocOp::build(OpBuilder& builder, OperationState& result, Value size) {
     assert(*sizeValue > 0 && "qtensor.alloc size must be positive");
   }
 
-  auto resultType = RankedTensorType::get(
-      {sizeValue ? *sizeValue : ShapedType::kDynamic},
-      qco::QubitType::get(builder.getContext(), /*isStatic=*/false));
+  auto resultType =
+      RankedTensorType::get({sizeValue ? *sizeValue : ShapedType::kDynamic},
+                            qco::QubitType::get(builder.getContext()));
   build(builder, result, resultType, size);
 }
 
@@ -58,11 +58,7 @@ LogicalResult AllocOp::verify() {
   }
 
   auto elementType = resultType.getElementType();
-  if (auto qubitType = dyn_cast<qco::QubitType>(elementType);
-      qubitType && qubitType.getIsStatic()) {
-    return emitOpError("qtensor.alloc cannot allocate static qubits; element "
-                       "type must be a dynamic qubit type (!qco.qubit)");
-  }
+  (void)elementType;
 
   return success();
 }

@@ -218,11 +218,6 @@ INSTANTIATE_TEST_SUITE_P(
             MQT_NAMED_BUILDER(mlir::qc::staticQubitsWithInv),
             MQT_NAMED_BUILDER(mlir::qc::staticQubitsWithInv),
             MQT_NAMED_BUILDER(mlir::qir::staticQubitsWithInv), false},
-        CompilerPipelineTestCase{
-            "MixedStaticDynamicQubits", nullptr,
-            MQT_NAMED_BUILDER(mlir::qc::mixedStaticDynamicQubits),
-            MQT_NAMED_BUILDER(mlir::qc::mixedStaticDynamicQubits),
-            MQT_NAMED_BUILDER(mlir::qir::mixedStaticDynamicQubits), false},
         CompilerPipelineTestCase{"AllocQubit",
                                  MQT_NAMED_BUILDER(qc::allocQubit), nullptr,
                                  MQT_NAMED_BUILDER(mlir::qc::allocQubit),

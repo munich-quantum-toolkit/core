@@ -25,15 +25,7 @@ def QubitType : QCType<"Qubit", "qubit"> {
         QC dialect. Operations using this type modify qubits in place using
         reference semantics, similar to how classical imperative languages handle
         mutable references.
-
-        `!qc.qubit` (default) denotes a dynamically allocated qubit.
-        `!qc.qubit<static>` denotes a qubit with a statically known identifier.
     }];
-  let parameters = (ins DefaultValuedParameter<"bool", "false">:$isStatic);
-  let builders = [TypeBuilder<(ins), [{
-            return $_get($_ctxt, /*isStatic=*/false);
-        }]>];
-  let hasCustomAssemblyFormat = 1;
 }
 
 #endif // MLIR_DIALECT_QC_IR_QCTYPES_TD

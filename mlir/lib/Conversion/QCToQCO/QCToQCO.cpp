@@ -346,9 +346,9 @@ public:
     // Identity conversion for all types by default
     addConversion([](Type type) { return type; });
 
-    // Convert QC qubit references to QCO qubit values, preserving isStatic
-    addConversion([ctx](qc::QubitType type) -> Type {
-      return qco::QubitType::get(ctx, type.getIsStatic());
+    // Convert QC qubit references to QCO qubit values
+    addConversion([ctx](qc::QubitType /*type*/) -> Type {
+      return qco::QubitType::get(ctx);
     });
   }
 };
@@ -1070,6 +1070,22 @@ protected:
   void runOnOperation() override {
     MLIRContext* context = &getContext();
     auto* module = getOperation();
+
+    for (auto func : cast<ModuleOp>(module).getOps<func::FuncOp>()) {
+      bool sawStatic = false;
+      bool sawAlloc = false;
+      func.walk([&](Operation* op) {
+        sawStatic |= isa<qc::StaticOp>(op);
+        sawAlloc |= isa<qc::AllocOp>(op);
+      });
+      if (sawStatic && sawAlloc) {
+        func.emitError(
+            "mixing static and dynamic qubits is forbidden (saw both "
+            "qc.static and qc.alloc)");
+        signalPassFailure();
+        return;
+      }
+    }
 
     // Create state object to track qubit value flow
     LoweringState state;

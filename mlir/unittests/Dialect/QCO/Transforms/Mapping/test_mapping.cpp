@@ -140,7 +140,7 @@ protected:
     ASSERT_TRUE(qIn);
     ASSERT_TRUE(qOut);
     EXPECT_EQ(qIn, qOut);
-    EXPECT_TRUE(qOut.getIsStatic());
+    (void)qOut;
   }
 
   std::unique_ptr<MLIRContext> context;

@@ -76,6 +76,22 @@ static LogicalResult runQCToQCOConversion(ModuleOp module) {
   return pm.run(module);
 }
 
+TEST(QCToQCOMixedStaticDynamicQubitsTest, FailsConversion) {
+  DialectRegistry registry;
+  registry.insert<qc::QCDialect, qco::QCODialect, arith::ArithDialect,
+                  func::FuncDialect>();
+  auto context = std::make_unique<MLIRContext>();
+  context->appendDialectRegistry(registry);
+  context->loadAllAvailableDialects();
+
+  auto program = qc::QCProgramBuilder::build(
+      context.get(), MQT_NAMED_BUILDER(qc::mixedStaticDynamicQubits).fn);
+  ASSERT_TRUE(program);
+  EXPECT_TRUE(verify(*program).succeeded());
+
+  EXPECT_TRUE(failed(runQCToQCOConversion(program.get())));
+}
+
 TEST_P(QCToQCOTest, ProgramEquivalence) {
   const auto& [_, programBuilder, referenceBuilder] = GetParam();
   const auto name = " (" + GetParam().name + ")";
@@ -134,9 +150,9 @@ INSTANTIATE_TEST_SUITE_P(
         QCToQCOTestCase{"StaticQubitsWithInv",
                         MQT_NAMED_BUILDER(qc::staticQubitsWithInv),
                         MQT_NAMED_BUILDER(qco::staticQubitsWithInv)},
-        QCToQCOTestCase{"MixedStaticDynamicQubits",
-                        MQT_NAMED_BUILDER(qc::mixedStaticDynamicQubits),
-                        MQT_NAMED_BUILDER(qco::mixedStaticDynamicQubits)}));
+        QCToQCOTestCase{"AllocDeallocPair",
+                        MQT_NAMED_BUILDER(qc::allocDeallocPair),
+                        MQT_NAMED_BUILDER(qco::allocSinkPair)}));
 /// @}
 
 /// \name QCToQCO/Modifiers/InvOp.cpp

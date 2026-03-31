@@ -256,8 +256,8 @@ void CtrlOp::build(
 }
 
 LogicalResult CtrlOp::verify() {
-  // Allows !qco.qubit and !qco.qubit<static> to differ between controls and
-  // targets, but requires pairwise equality within each group.
+  // Controls and targets may differ in type (e.g., qubits vs tensors), but
+  // require pairwise equality within each group.
   if (!llvm::equal(getControlsIn().getTypes(), getControlsOut().getTypes())) {
     return emitOpError("qco.ctrl control qubit input types must match output "
                        "types pairwise");

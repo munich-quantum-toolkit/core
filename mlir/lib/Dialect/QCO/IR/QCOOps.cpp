@@ -70,17 +70,15 @@ parseTargetAliasing(OpAsmParser& parser, Region& region,
       }
       operands.push_back(oldOperand);
 
-      // Parse optional inline type to preserve isStatic; when absent, default
-      // to dynamic to avoid double-binding type($targets_in) in the assembly
-      // format.
+      // Parse optional inline type; when absent, use !qco.qubit to avoid
+      // double-binding type($targets_in) in the assembly format.
       Type operandType;
       if (succeeded(parser.parseOptionalColon())) {
         if (parser.parseType(operandType)) {
           return failure();
         }
       } else {
-        operandType = QubitType::get(parser.getBuilder().getContext(),
-                                     /*isStatic=*/false);
+        operandType = QubitType::get(parser.getBuilder().getContext());
       }
       newArg.type = operandType;
       blockArgs.push_back(newArg);
@@ -120,12 +118,6 @@ static void printTargetAliasing(OpAsmPrinter& printer, Operation* /*op*/,
     printer.printOperand(entryBlock.getArgument(i));
     printer << " = ";
     printer.printOperand(targetsIn[i]);
-    // Print inline type when static to preserve isStatic on round-trip
-    if (auto qubitType = llvm::dyn_cast<QubitType>(targetsIn[i].getType());
-        qubitType && qubitType.getIsStatic()) {
-      printer << " : ";
-      printer.printType(qubitType);
-    }
   }
   printer << ") ";
 
@@ -218,24 +210,6 @@ void QCODialect::initialize() {
 //===----------------------------------------------------------------------===//
 // Types
 //===----------------------------------------------------------------------===//
-
-/// Print `!qco.qubit` (dynamic, default) or `!qco.qubit<static>`.
-void QubitType::print(AsmPrinter& printer) const {
-  if (getIsStatic()) {
-    printer << "<static>";
-  }
-}
-
-/// Parse `!qco.qubit` or `!qco.qubit<static>`.
-Type QubitType::parse(AsmParser& parser) {
-  if (succeeded(parser.parseOptionalLess())) {
-    if (parser.parseKeyword("static") || parser.parseGreater()) {
-      return {};
-    }
-    return get(parser.getContext(), /*isStatic=*/true);
-  }
-  return get(parser.getContext(), /*isStatic=*/false);
-}
 
 #define GET_TYPEDEF_CLASSES
 #include "mlir/Dialect/QCO/IR/QCOOpsTypes.cpp.inc"

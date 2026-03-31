@@ -27,22 +27,6 @@ class QCOOp<string mnemonic, list<Trait> traits = []>
     : Op<QCODialect, mnemonic, traits>;
 
 //===----------------------------------------------------------------------===//
-// Type Constraints
-//===----------------------------------------------------------------------===//
-
-def DynamicQubit
-    : Type<And<[CPred<"::mlir::isa<::mlir::qco::QubitType>($_self)">,
-                CPred<"!::mlir::cast<::mlir::qco::QubitType>($_self)."
-                      "getIsStatic()">]>,
-           "dynamic qubit type (!qco.qubit)">;
-
-def StaticQubit
-    : Type<And<[CPred<"::mlir::isa<::mlir::qco::QubitType>($_self)">,
-                CPred<"::mlir::cast<::mlir::qco::QubitType>($_self)."
-                      "getIsStatic()">]>,
-           "static qubit type (!qco.qubit<static>)">;
-
-//===----------------------------------------------------------------------===//
 // Resource Operations
 //===----------------------------------------------------------------------===//
 
@@ -73,20 +57,20 @@ def AllocOp : QCOOp<"alloc", [MemoryEffects<[MemAlloc]>]> {
   let arguments = (ins OptionalAttr<StrAttr>:$register_name,
       OptionalAttr<ConfinedAttr<I64Attr, [IntPositive]>>:$register_size,
       OptionalAttr<ConfinedAttr<I64Attr, [IntNonNegative]>>:$register_index);
-  let results = (outs DynamicQubit:$result);
+  let results = (outs QubitType:$result);
   let assemblyFormat = [{
         (`(` $register_name^ `,` $register_size `,` $register_index `)`)?
         attr-dict `:` type($result)
     }];
 
   let builders = [OpBuilder<(ins), [{
-            build($_builder, $_state, QubitType::get($_builder.getContext(), /*isStatic=*/false), nullptr, nullptr, nullptr);
+            build($_builder, $_state, QubitType::get($_builder.getContext()), nullptr, nullptr, nullptr);
         }]>,
                   OpBuilder<(ins "::mlir::StringAttr":$register_name,
                                 "::mlir::IntegerAttr":$register_size,
                                 "::mlir::IntegerAttr":$register_index),
                             [{
-            build($_builder, $_state, QubitType::get($_builder.getContext(), /*isStatic=*/false),
+            build($_builder, $_state, QubitType::get($_builder.getContext()),
                   register_name, register_size, register_index);
         }]>];
 
@@ -124,16 +108,16 @@ def StaticOp : QCOOp<"static", [Pure]> {
 
         Example:
         ```mlir
-        %q = qco.static 0 : !qco.qubit<static>
+        %q = qco.static 0 : !qco.qubit
         ```
     }];
 
   let arguments = (ins ConfinedAttr<I64Attr, [IntNonNegative]>:$index);
-  let results = (outs StaticQubit:$qubit);
+  let results = (outs QubitType:$qubit);
   let assemblyFormat = "$index attr-dict `:` type($qubit)";
 
   let builders = [OpBuilder<(ins "uint64_t":$index), [{
-          build($_builder, $_state, QubitType::get($_builder.getContext(), /*isStatic=*/true), index);
+          build($_builder, $_state, QubitType::get($_builder.getContext()), index);
       }]>];
 }
 
@@ -1140,7 +1124,7 @@ def BarrierOp : QCOOp<"barrier", traits = [UnitaryOpInterface]> {
   let description = [{
         Applies a barrier gate to a set of qubits and returns the transformed qubits.
         Each output qubit type must match its corresponding input type (pairwise
-        type preservation, e.g., disallows !qco.qubit<static> -> !qco.qubit).
+        type preservation.
 
         Example:
         ```mlir

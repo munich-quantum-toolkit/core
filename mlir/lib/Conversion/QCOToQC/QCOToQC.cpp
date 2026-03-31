@@ -26,6 +26,7 @@
 #include <mlir/Support/LogicalResult.h>
 #include <mlir/Transforms/DialectConversion.h>
 
+#include <cstdint>
 #include <utility>
 
 namespace mlir {
@@ -55,9 +56,9 @@ public:
     // Identity conversion for all types by default
     addConversion([](Type type) { return type; });
 
-    // Convert QCO qubit values to QC qubit references, preserving isStatic
-    addConversion([ctx](qco::QubitType type) -> Type {
-      return qc::QubitType::get(ctx, type.getIsStatic());
+    // Convert QCO qubit values to QC qubit references
+    addConversion([ctx](qco::QubitType /*type*/) -> Type {
+      return qc::QubitType::get(ctx);
     });
   }
 };
@@ -95,42 +96,54 @@ struct ConvertQCOAllocOp final : OpConversionPattern<qco::AllocOp> {
   }
 };
 
+enum class QubitMode : std::uint8_t { Unknown, StaticOnly, DynamicOnly, Mixed };
+
+[[nodiscard]] static QubitMode inferQubitMode(func::FuncOp func) {
+  bool sawStatic = false;
+  bool sawAlloc = false;
+
+  func.walk([&](Operation* op) {
+    sawStatic |= isa<qco::StaticOp>(op);
+    sawAlloc |= isa<qco::AllocOp>(op);
+  });
+
+  if (sawStatic && sawAlloc) {
+    return QubitMode::Mixed;
+  }
+  if (sawStatic) {
+    return QubitMode::StaticOnly;
+  }
+  if (sawAlloc) {
+    return QubitMode::DynamicOnly;
+  }
+  return QubitMode::Unknown;
+}
+
 /**
- * @brief Converts qco.sink to qc.dealloc (dynamic) or erases it (static).
- *
- * @details
- * For dynamic qubits (`!qco.qubit`), converts to `qc.dealloc`.
- * For static qubits (`!qco.qubit<static>`), erases the op since QC does not
- * require explicit deallocation of static qubits.
- *
- * Example transformation (dynamic):
- * ```mlir
- * qco.sink %q_qco : !qco.qubit
- * // becomes:
- * qc.dealloc %q_qc : !qc.qubit
- * ```
- *
- * Example transformation (static):
- * ```mlir
- * qco.sink %q_qco : !qco.qubit<static>
- * // becomes:
- * (erased)
- * ```
+ * @brief Converts qco.sink to qc.dealloc.
  */
 struct ConvertQCOSinkOp final : OpConversionPattern<qco::SinkOp> {
-  using OpConversionPattern::OpConversionPattern;
+  explicit ConvertQCOSinkOp(TypeConverter& typeConverter, MLIRContext* context,
+                            const DenseMap<func::FuncOp, QubitMode>* modeMap)
+      : OpConversionPattern(typeConverter, context), modeMap(modeMap) {}
 
   LogicalResult
   matchAndRewrite(qco::SinkOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
-    if (op.getQubit().getType().getIsStatic()) {
+    auto func = op->getParentOfType<func::FuncOp>();
+    auto it = modeMap->find(func);
+    const auto mode = (it != modeMap->end()) ? it->second : QubitMode::Unknown;
+
+    if (mode == QubitMode::StaticOnly) {
       rewriter.eraseOp(op);
       return success();
     }
-
     rewriter.replaceOpWithNewOp<qc::DeallocOp>(op, adaptor.getQubit());
     return success();
   }
+
+private:
+  const DenseMap<func::FuncOp, QubitMode>* modeMap;
 };
 
 /**
@@ -762,6 +775,19 @@ protected:
     RewritePatternSet patterns(context);
     QCOToQCTypeConverter typeConverter(context);
 
+    DenseMap<func::FuncOp, QubitMode> modeMap;
+    for (auto func : cast<ModuleOp>(module).getOps<func::FuncOp>()) {
+      const auto mode = inferQubitMode(func);
+      if (mode == QubitMode::Mixed) {
+        func.emitError(
+            "mixing static and dynamic qubits is forbidden (saw both "
+            "qco.static and qco.alloc)");
+        signalPassFailure();
+        return;
+      }
+      modeMap.try_emplace(func, mode);
+    }
+
     // Configure conversion target: QCO illegal, QC legal
     target.addIllegalDialect<QCODialect>();
     target.addLegalDialect<QCDialect>();
@@ -769,8 +795,8 @@ protected:
     // Register operation conversion patterns
     // Note: No state tracking needed - OpAdaptors handle type conversion
     patterns.add<
-        ConvertQCOAllocOp, ConvertQCOSinkOp, ConvertQCOStaticOp,
-        ConvertQCOMeasureOp, ConvertQCOResetOp,
+        ConvertQCOAllocOp, ConvertQCOStaticOp, ConvertQCOMeasureOp,
+        ConvertQCOResetOp,
         ConvertQCOZeroTargetOneParameterToQC<qco::GPhaseOp, qc::GPhaseOp>,
         ConvertQCOOneTargetZeroParameterToQC<qco::XOp, qc::XOp>,
         ConvertQCOOneTargetZeroParameterToQC<qco::YOp, qc::YOp>,
@@ -801,6 +827,7 @@ protected:
         ConvertQCOTwoTargetTwoParameterToQC<qco::XXMinusYYOp, qc::XXMinusYYOp>,
         ConvertQCOBarrierOp, ConvertQCOCtrlOp, ConvertQCOInvOp,
         ConvertQCOYieldOp>(typeConverter, context);
+    patterns.add<ConvertQCOSinkOp>(typeConverter, context, &modeMap);
 
     // Conversion of qco types in func.func signatures
     // Note: This currently has limitations with signature changes
