@@ -19,5 +19,4 @@ add_mlir_library(
   MLIRTransforms
   MLIRLLVMDialect
   MLIRFuncToLLVM
-  MLIRReconcileUnrealizedCasts
-  DISABLE_INSTALL)
+  MLIRReconcileUnrealizedCasts)
