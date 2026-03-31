@@ -8,6 +8,7 @@
  * Licensed under the MIT License
  */
 
+#include "../../../../../../include/mqt-core/ir/operations/OpType.hpp"
 #include "mlir/Dialect/QCO/IR/QCOInterfaces.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 
@@ -146,17 +147,24 @@ struct LiftHadamardsAbovePauliGatesPattern final
     const auto gateName = gate->getName().stripDialect().str();
 
     if (gateName == "x" || gateName == "y" || gateName == "z") {
-      // if (gateName == "x") {
-      //   rewriter.replaceOpWithNewOp<ZOp>(hadamardGate,
-      //   hadamardGate.getInputQubit(0));
-      // } else if (gateName == "z") {
-      //   rewriter.replaceOpWithNewOp<XOp>(hadamardGate,
-      //   hadamardGate.getInputQubit(0));
-      // } else {
-      //   rewriter.replaceOpWithNewOp<YOp>(hadamardGate,
-      //   hadamardGate.getInputQubit(0));
-      // }
-      rewriter.replaceOpWithNewOp<HOp>(gate, gate.getInputQubit(0));
+      auto newHadamardGate = rewriter.replaceOpWithNewOp<HOp>(
+          gate, gate.getOutputQubit(0).getType(), gate.getInputQubit(0));
+      if (gateName == "x") {
+        auto newPauliGate = rewriter.replaceOpWithNewOp<ZOp>(
+            hadamardGate, hadamardGate.getOutputQubit(0).getType(),
+            hadamardGate.getInputQubit(0));
+        rewriter.moveOpBefore(newHadamardGate, newPauliGate);
+      } else if (gateName == "z") {
+        auto newPauliGate = rewriter.replaceOpWithNewOp<XOp>(
+            hadamardGate, hadamardGate.getOutputQubit(0).getType(),
+            hadamardGate.getInputQubit(0));
+        rewriter.moveOpBefore(newHadamardGate, newPauliGate);
+      } else {
+        auto newPauliGate = rewriter.replaceOpWithNewOp<YOp>(
+            hadamardGate, hadamardGate.getOutputQubit(0).getType(),
+            hadamardGate.getInputQubit(0));
+        rewriter.moveOpBefore(newHadamardGate, newPauliGate);
+      }
       return success();
     }
     return failure();
