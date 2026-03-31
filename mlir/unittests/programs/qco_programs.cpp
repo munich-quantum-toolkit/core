@@ -79,9 +79,9 @@ void mixedStaticDynamicQubits(QCOProgramBuilder& b) {
   q1 = b.h(q1);
 }
 
-void allocDeallocPair(QCOProgramBuilder& b) {
+void allocSinkPair(QCOProgramBuilder& b) {
   auto q = b.allocQubit();
-  b.dealloc(q);
+  b.sink(q);
 }
 
 void singleMeasurementToSingleBit(QCOProgramBuilder& b) {

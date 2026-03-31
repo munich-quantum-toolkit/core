@@ -276,7 +276,7 @@ namespace {
  * QC uses reference semantics and does not enforce linear typing for qubits.
  * After conversion, QCO requires that every qubit SSA value is consumed
  * exactly once. For allocations (including static qubits), the sink is
- * `qco.dealloc`. This pattern inserts `qco.dealloc` operations for all
+ * `qco.sink`. This pattern inserts `qco.sink` operations for all
  * still-live qubits tracked in the lowering state right before the return.
  */
 struct ConvertFuncReturnOp final : StatefulOpConversionPattern<func::ReturnOp> {
@@ -319,7 +319,7 @@ struct ConvertFuncReturnOp final : StatefulOpConversionPattern<func::ReturnOp> {
     llvm::sort(liveQubitsSorted, SSAOrder{});
 
     for (Value qubit : liveQubitsSorted) {
-      qco::DeallocOp::create(rewriter, op.getLoc(), qubit);
+      qco::SinkOp::create(rewriter, op.getLoc(), qubit);
     }
 
     state.qubitMap.erase(funcRegion);
@@ -397,18 +397,18 @@ struct ConvertQCAllocOp final : StatefulOpConversionPattern<qc::AllocOp> {
 };
 
 /**
- * @brief Converts qc.dealloc to qco.dealloc
+ * @brief Converts qc.dealloc to qco.sink
  *
  * @details
  * Deallocates a qubit by looking up its latest QCO value and creating
- * a corresponding qco.dealloc operation. The mapping is removed from
+ * a corresponding qco.sink operation. The mapping is removed from
  * the state as the qubit is no longer in use.
  *
  * Example transformation:
  * ```mlir
  * qc.dealloc %q : !qc.qubit
  * // becomes (where %q maps to %q_final):
- * qco.dealloc %q_final : !qco.qubit
+ * qco.sink %q_final : !qco.qubit
  * ```
  */
 struct ConvertQCDeallocOp final : StatefulOpConversionPattern<qc::DeallocOp> {
@@ -424,8 +424,8 @@ struct ConvertQCDeallocOp final : StatefulOpConversionPattern<qc::DeallocOp> {
     Value qcQubit = op.getQubit();
     Value qcoQubit = lookupMappedQubit(state, operation, qcQubit);
 
-    // Create the dealloc operation
-    rewriter.replaceOpWithNewOp<qco::DeallocOp>(op, qcoQubit);
+    // Create the sink operation
+    rewriter.replaceOpWithNewOp<qco::SinkOp>(op, qcoQubit);
 
     // Remove from state as qubit is no longer in use
     qubitMap.erase(qcQubit);
@@ -1130,7 +1130,7 @@ protected:
     // Conversion of qc types in func.return
     //
     // Note: `func.return` may already be type-legal even though we still need
-    // to insert sink operations (`qco.dealloc`) for remaining live
+    // to insert sink operations (`qco.sink`) for remaining live
     // qubits. Therefore, we make it dynamically illegal unless the lowering
     // state has no remaining qubits.
     patterns.add<ConvertFuncReturnOp>(typeConverter, context, &state);

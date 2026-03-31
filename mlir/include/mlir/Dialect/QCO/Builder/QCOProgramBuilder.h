@@ -1228,24 +1228,24 @@ public:
   //===--------------------------------------------------------------------===//
 
   /**
-   * @brief Explicitly deallocate a qubit
+   * @brief Consume a qubit value (end of lifetime)
    *
    * @details
    * Validates and removes the qubit from tracking. Optional; `finalize()`
-   * automatically deallocates all remaining qubits.
+   * automatically sinks all remaining qubits.
    *
-   * @param qubit Qubit to deallocate (must be valid/unconsumed)
+   * @param qubit Qubit to sink (must be valid/unconsumed)
    * @return Reference to this builder for method chaining
    *
    * @par Example:
    * ```c++
-   * builder.dealloc(q);
+   * builder.sink(q);
    * ```
    * ```mlir
-   * qco.dealloc %q : !qco.qubit
+   * qco.sink %q : !qco.qubit
    * ```
    */
-  QCOProgramBuilder& dealloc(Value qubit);
+  QCOProgramBuilder& sink(Value qubit);
 
   //===--------------------------------------------------------------------===//
   // SCF operations

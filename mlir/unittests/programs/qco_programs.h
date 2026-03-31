@@ -51,8 +51,8 @@ void staticQubitsWithInv(QCOProgramBuilder& b);
 /// Allocates one static and one dynamic qubit and applies mixed operations.
 void mixedStaticDynamicQubits(QCOProgramBuilder& b);
 
-/// Allocates and explicitly deallocates a single qubit.
-void allocDeallocPair(QCOProgramBuilder& b);
+/// Allocates and explicitly sinks a single qubit.
+void allocSinkPair(QCOProgramBuilder& b);
 
 // --- MeasureOp ------------------------------------------------------------ //
 

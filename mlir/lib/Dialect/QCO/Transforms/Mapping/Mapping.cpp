@@ -21,7 +21,6 @@
 #include <llvm/ADT/TypeSwitch.h>
 #include <llvm/Support/Allocator.h>
 #include <llvm/Support/Casting.h>
-#include <llvm/Support/Debug.h>
 #include <llvm/Support/ErrorHandling.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/IR/Block.h>
@@ -130,13 +129,6 @@ modifierBodyArgsMismatchTargetOperands(Block& body,
          qubitOperandAndResultTypesDiffer(inv);
 }
 
-/** @brief Copies op results into `SmallVector<Value>` (OpResult → Value). */
-[[nodiscard]] static llvm::SmallVector<Value> opResultsAsValues(Operation* op) {
-  llvm::SmallVector<Value> vals;
-  llvm::append_range(vals, op->getResults());
-  return vals;
-}
-
 /**
  * @brief Duplicate @p op with new result types; clone attached regions.
  * @param rewriter Insertion point is set to @p op before create.
@@ -174,7 +166,8 @@ replaceLeafUnitaryWithAlignedQubitTypes(UnitaryOpInterface unitary,
                                         IRRewriter& rewriter) {
   Operation* op = unitary.getOperation();
   if (op->getNumRegions() != 0 || !qubitOperandAndResultTypesDiffer(unitary)) {
-    return opResultsAsValues(op);
+    return llvm::to_vector(llvm::map_range(
+        op->getResults(), [](OpResult res) -> Value { return res; }));
   }
   SmallVector<Type> newTypes(op->getResultTypes());
   for (auto [input, output] :
@@ -187,7 +180,8 @@ replaceLeafUnitaryWithAlignedQubitTypes(UnitaryOpInterface unitary,
   }
   Operation* newOp = cloneOpWithNewResultTypes(op, newTypes, rewriter);
   rewriter.replaceOp(op, newOp->getResults());
-  return opResultsAsValues(newOp);
+  return llvm::to_vector(llvm::map_range(
+      newOp->getResults(), [](OpResult res) -> Value { return res; }));
 }
 
 /**
@@ -282,17 +276,21 @@ cloneModifierBodyAndResyncUnitary(Block& oldBody, ValueRange newTargetArgs,
 resyncClonedUnitaryAndGetResults(Operation* cloned, IRRewriter& rewriter) {
   if (auto ctrl = dyn_cast<CtrlOp>(cloned)) {
     if (!ctrlNeedsQubitTypeResync(ctrl)) {
-      return opResultsAsValues(ctrl.getOperation());
+      return llvm::to_vector(llvm::map_range(
+          ctrl->getResults(), [](OpResult res) -> Value { return res; }));
     }
-    return opResultsAsValues(
-        replaceCtrlPreservingBody(ctrl, rewriter).getOperation());
+    return llvm::to_vector(
+        llvm::map_range(replaceCtrlPreservingBody(ctrl, rewriter)->getResults(),
+                        [](OpResult res) -> Value { return res; }));
   }
   if (auto inv = dyn_cast<InvOp>(cloned)) {
     if (!invNeedsQubitTypeResync(inv)) {
-      return opResultsAsValues(inv.getOperation());
+      return llvm::to_vector(llvm::map_range(
+          inv->getResults(), [](OpResult res) -> Value { return res; }));
     }
-    return opResultsAsValues(
-        replaceInvPreservingBody(inv, rewriter).getOperation());
+    return llvm::to_vector(
+        llvm::map_range(replaceInvPreservingBody(inv, rewriter)->getResults(),
+                        [](OpResult res) -> Value { return res; }));
   }
   return replaceLeafUnitaryWithAlignedQubitTypes(
       llvm::cast<UnitaryOpInterface>(cloned), rewriter);
@@ -1004,11 +1002,11 @@ private:
 
                         return WalkResult::interrupt();
                       })
-                  .template Case<AllocOp, StaticOp, ResetOp, MeasureOp,
-                                 DeallocOp>([&](auto) {
-                    std::ranges::advance(it, step);
-                    return WalkResult::advance();
-                  })
+                  .template Case<AllocOp, StaticOp, ResetOp, MeasureOp, SinkOp>(
+                      [&](auto) {
+                        std::ranges::advance(it, step);
+                        return WalkResult::advance();
+                      })
                   .Default([&](Operation* op) {
                     report_fatal_error("unknown op in wireiterator use: " +
                                        op->getName().getStringRef());
@@ -1086,7 +1084,7 @@ private:
       const auto hw = layout.getHardwareIndex(p);
       auto op = StaticOp::create(rewriter, rewriter.getUnknownLoc(), hw);
       rewriter.setInsertionPoint(funcBody.back().getTerminator());
-      DeallocOp::create(rewriter, rewriter.getUnknownLoc(), op.getQubit());
+      SinkOp::create(rewriter, rewriter.getUnknownLoc(), op.getQubit());
     }
   }
 

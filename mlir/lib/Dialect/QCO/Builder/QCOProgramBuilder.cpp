@@ -810,13 +810,13 @@ ValueRange QCOProgramBuilder::inv(
 // Deallocation
 //===----------------------------------------------------------------------===//
 
-QCOProgramBuilder& QCOProgramBuilder::dealloc(Value qubit) {
+QCOProgramBuilder& QCOProgramBuilder::sink(Value qubit) {
   checkFinalized();
 
   validateQubitValue(qubit);
   validQubits.erase(qubit);
 
-  DeallocOp::create(*this, qubit);
+  SinkOp::create(*this, qubit);
 
   return *this;
 }
@@ -924,7 +924,7 @@ OwningOpRef<ModuleOp> QCOProgramBuilder::finalize() {
   llvm::sort(sortedQubits, SSAOrder{});
 
   for (auto qubit : sortedQubits) {
-    DeallocOp::create(*this, qubit);
+    SinkOp::create(*this, qubit);
   }
 
   // Automatically deallocate all still-allocated tensors

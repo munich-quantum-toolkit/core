@@ -96,7 +96,7 @@ struct ConvertQCOAllocOp final : OpConversionPattern<qco::AllocOp> {
 };
 
 /**
- * @brief Converts qco.dealloc to qc.dealloc (dynamic) or erases it (static).
+ * @brief Converts qco.sink to qc.dealloc (dynamic) or erases it (static).
  *
  * @details
  * For dynamic qubits (`!qco.qubit`), converts to `qc.dealloc`.
@@ -105,23 +105,23 @@ struct ConvertQCOAllocOp final : OpConversionPattern<qco::AllocOp> {
  *
  * Example transformation (dynamic):
  * ```mlir
- * qco.dealloc %q_qco : !qco.qubit
+ * qco.sink %q_qco : !qco.qubit
  * // becomes:
  * qc.dealloc %q_qc : !qc.qubit
  * ```
  *
  * Example transformation (static):
  * ```mlir
- * qco.dealloc %q_qco : !qco.qubit<static>
+ * qco.sink %q_qco : !qco.qubit<static>
  * // becomes:
  * (erased)
  * ```
  */
-struct ConvertQCODeallocOp final : OpConversionPattern<qco::DeallocOp> {
+struct ConvertQCOSinkOp final : OpConversionPattern<qco::SinkOp> {
   using OpConversionPattern::OpConversionPattern;
 
   LogicalResult
-  matchAndRewrite(qco::DeallocOp op, OpAdaptor adaptor,
+  matchAndRewrite(qco::SinkOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
     if (op.getQubit().getType().getIsStatic()) {
       rewriter.eraseOp(op);
@@ -769,7 +769,7 @@ protected:
     // Register operation conversion patterns
     // Note: No state tracking needed - OpAdaptors handle type conversion
     patterns.add<
-        ConvertQCOAllocOp, ConvertQCODeallocOp, ConvertQCOStaticOp,
+        ConvertQCOAllocOp, ConvertQCOSinkOp, ConvertQCOStaticOp,
         ConvertQCOMeasureOp, ConvertQCOResetOp,
         ConvertQCOZeroTargetOneParameterToQC<qco::GPhaseOp, qc::GPhaseOp>,
         ConvertQCOOneTargetZeroParameterToQC<qco::XOp, qc::XOp>,

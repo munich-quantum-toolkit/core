@@ -165,8 +165,8 @@ TEST_F(MappingPassTestBase, SynchronizesParameterizedGateAndMeasureTypes) {
   (void)measuredBit;
   q0 = measuredQubit;
 
-  builder.dealloc(q0);
-  builder.dealloc(q1);
+  builder.sink(q0);
+  builder.sink(q1);
 
   auto moduleOp = builder.finalize();
   runQCOMapping(moduleOp);
@@ -223,8 +223,8 @@ TEST_F(MappingPassTestBase, SynchronizesModifierRegionArguments) {
       });
   q1 = invOut.front();
 
-  builder.dealloc(q0);
-  builder.dealloc(q1);
+  builder.sink(q0);
+  builder.sink(q1);
 
   auto moduleOp = builder.finalize();
   runQCOMapping(moduleOp);
