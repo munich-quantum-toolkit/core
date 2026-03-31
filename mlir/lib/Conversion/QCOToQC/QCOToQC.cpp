@@ -44,7 +44,7 @@ enum class QubitMode : std::uint8_t { Unknown, StaticOnly, DynamicOnly, Mixed };
 /**
  * @brief Infer whether a function uses static, dynamic, or mixed qubits.
  */
-[[nodiscard]] QubitMode inferQubitMode(func::FuncOp func) {
+[[nodiscard]] static QubitMode inferQubitMode(func::FuncOp func) {
   bool sawStatic = false;
   bool sawAlloc = false;
 
