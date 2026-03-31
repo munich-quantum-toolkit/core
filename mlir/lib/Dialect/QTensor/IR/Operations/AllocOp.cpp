@@ -57,8 +57,5 @@ LogicalResult AllocOp::verify() {
            << resultSize << ")";
   }
 
-  auto elementType = resultType.getElementType();
-  (void)elementType;
-
   return success();
 }

@@ -20,20 +20,16 @@
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/ADT/TypeSwitch.h>
 #include <llvm/Support/Allocator.h>
-#include <llvm/Support/Casting.h>
 #include <llvm/Support/ErrorHandling.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/IR/Block.h>
 #include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/Diagnostics.h>
-#include <mlir/IR/IRMapping.h>
 #include <mlir/IR/Location.h>
 #include <mlir/IR/Operation.h>
-#include <mlir/IR/OperationSupport.h>
 #include <mlir/IR/PatternMatch.h>
 #include <mlir/IR/Threading.h>
 #include <mlir/IR/Value.h>
-#include <mlir/IR/Visitors.h>
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/WalkResult.h>
 
@@ -61,287 +57,6 @@ namespace mlir::qco {
 #define GEN_PASS_DEF_MAPPINGPASS
 #include "mlir/Dialect/QCO/Transforms/Passes.h.inc"
 
-//===----------------------------------------------------------------------===//
-// After alloc→static placement, operand qubit types match the mapped static
-// type but many op results (and ctrl/inv region args) may still be typed as
-// plain !qco.qubit. IR is recreated with IRRewriter.
-//===----------------------------------------------------------------------===//
-
-/** True if any declared qubit result type disagrees with the paired operand. */
-[[nodiscard]] static bool
-qubitOperandAndResultTypesDiffer(UnitaryOpInterface unitary) {
-  return llvm::any_of(
-      llvm::zip_equal(unitary.getInputQubits(), unitary.getOutputQubits()),
-      [](const auto& io) {
-        const auto& [input, output] = io;
-        const auto qIn = dyn_cast<QubitType>(input.getType());
-        const auto qOut = dyn_cast<QubitType>(output.getType());
-        return qIn && qOut && qIn != qOut;
-      });
-}
-
-/** Region entry args vs target operands, for ctrl/inv verifier alignment. */
-[[nodiscard]] static bool
-modifierBodyArgsMismatchTargetOperands(Block& body,
-                                       OperandRange targetOperands) {
-  return llvm::any_of(llvm::zip_equal(body.getArguments(), targetOperands),
-                      [](const auto& pair) {
-                        const auto& [arg, target] = pair;
-                        return arg.getType() != target.getType();
-                      });
-}
-
-/**
- * @brief True if @p ctrl must be rebuilt so qubit types match after placement.
- *
- * @param ctrl Operation examined: sole region (targets + body args), operands
- *             (`getControlsIn()`, `getTargetsIn()`), and qubit results
- *             (`getOutputQubits()`).
- * @return True when either (1) a body block argument type differs from the
- *         matching `getTargetsIn()` operand, or (2) any qubit result type
- *         differs from the paired input qubit type (via
- *         @ref modifierBodyArgsMismatchTargetOperands and
- *         @ref qubitOperandAndResultTypesDiffer).
- *
- * @details Pure predicate: no IR changes. Callers use this to skip redundant
- *          `replaceOpWithNewOp` work.
- */
-[[nodiscard]] static bool ctrlNeedsQubitTypeResync(CtrlOp ctrl) {
-  return modifierBodyArgsMismatchTargetOperands(*ctrl.getBody(),
-                                                ctrl.getTargetsIn()) ||
-         qubitOperandAndResultTypesDiffer(ctrl);
-}
-
-/**
- * @brief True if @p inv must be rebuilt so qubit types match after placement.
- *
- * @param inv Operation examined: sole region (`getBody()` args vs
- *            `getQubitsIn()` operands) and paired qubit results.
- * @return True when body argument types disagree with `getQubitsIn()`, or qubit
- *         result types disagree with operands (same predicates as for @ref
- *         ctrlNeedsQubitTypeResync).
- *
- * @details Pure predicate: no IR changes.
- */
-[[nodiscard]] static bool invNeedsQubitTypeResync(InvOp inv) {
-  return modifierBodyArgsMismatchTargetOperands(*inv.getBody(),
-                                                inv.getQubitsIn()) ||
-         qubitOperandAndResultTypesDiffer(inv);
-}
-
-/**
- * @brief Duplicate @p op with new result types; clone attached regions.
- * @param rewriter Insertion point is set to @p op before create.
- */
-static Operation* cloneOpWithNewResultTypes(Operation* op,
-                                            ArrayRef<Type> newResultTypes,
-                                            IRRewriter& rewriter) {
-  assert(op->getNumResults() == newResultTypes.size() &&
-         "result type count must match the operation");
-  rewriter.setInsertionPoint(op);
-  OperationState state(op->getLoc(), op->getName());
-  state.addOperands(op->getOperands());
-  state.addTypes(newResultTypes);
-  state.addAttributes(op->getAttrs());
-  state.addSuccessors(op->getSuccessors());
-  for (Region& region : op->getRegions()) {
-    Region* newRegion = state.addRegion();
-    IRMapping mapper;
-    rewriter.cloneRegionBefore(region, *newRegion, newRegion->end(), mapper);
-  }
-  return rewriter.create(state);
-}
-
-[[nodiscard]] static llvm::SmallVector<Value>
-resyncClonedUnitaryAndGetResults(Operation* cloned, IRRewriter& rewriter);
-
-/**
- * @brief Rebuild a leaf unitary so each qubit result type matches its operand.
- *
- * Skips ops with nested regions (handled via @ref
- * resyncClonedUnitaryAndGetResults).
- */
-[[nodiscard]] static llvm::SmallVector<Value>
-replaceLeafUnitaryWithAlignedQubitTypes(UnitaryOpInterface unitary,
-                                        IRRewriter& rewriter) {
-  Operation* op = unitary.getOperation();
-  if (op->getNumRegions() != 0 || !qubitOperandAndResultTypesDiffer(unitary)) {
-    return llvm::to_vector(llvm::map_range(
-        op->getResults(), [](OpResult res) -> Value { return res; }));
-  }
-  SmallVector<Type> newTypes(op->getResultTypes());
-  for (auto [input, output] :
-       llvm::zip_equal(unitary.getInputQubits(), unitary.getOutputQubits())) {
-    const auto qIn = dyn_cast<QubitType>(input.getType());
-    const auto qOut = dyn_cast<QubitType>(output.getType());
-    if (qIn && qOut && qIn != qOut) {
-      newTypes[llvm::cast<OpResult>(output).getResultNumber()] = qIn;
-    }
-  }
-  Operation* newOp = cloneOpWithNewResultTypes(op, newTypes, rewriter);
-  rewriter.replaceOp(op, newOp->getResults());
-  return llvm::to_vector(llvm::map_range(
-      newOp->getResults(), [](OpResult res) -> Value { return res; }));
-}
-
-/**
- * @brief Clone all ops in the modifier body before `qco.yield`, then align the
- *        body unitary’s qubit types.
- *
- * The body may contain `arith.constant` (or similar) before the single
- * `UnitaryOpInterface`; cloning only that unitary would leave uses pointing at
- * the old region, which is destroyed when the modifier is replaced.
- */
-[[nodiscard]] static llvm::SmallVector<Value>
-cloneModifierBodyAndResyncUnitary(Block& oldBody, ValueRange newTargetArgs,
-                                  IRRewriter& rewriter) {
-  IRMapping mapping;
-  for (auto [oldArg, newArg] :
-       llvm::zip_equal(oldBody.getArguments(), newTargetArgs)) {
-    mapping.map(oldArg, newArg);
-  }
-  Operation* clonedUnitary = nullptr;
-  for (Operation& op : oldBody) {
-    if (llvm::isa<YieldOp>(op)) {
-      break;
-    }
-    Operation* cloned = rewriter.clone(op, mapping);
-    for (auto [oldRes, newRes] :
-         llvm::zip_equal(op.getResults(), cloned->getResults())) {
-      mapping.map(oldRes, newRes);
-    }
-    if (llvm::isa<UnitaryOpInterface>(cloned)) {
-      clonedUnitary = cloned;
-    }
-  }
-  assert(clonedUnitary != nullptr &&
-         "modifier body must contain a unitary before yield");
-  return resyncClonedUnitaryAndGetResults(clonedUnitary, rewriter);
-}
-
-/**
- * @brief Replace @p ctrl with a new `qco.ctrl` that keeps the same controls,
- *        targets, and logical body (ops before `qco.yield` are cloned).
- *
- * @param ctrl Modifier to replace. Must satisfy the usual `qco.ctrl` verifier
- *             (single unitary before yield, etc.).
- * @param rewriter Drives insertion and erasure; insertion point is updated by
- *                 `replaceOpWithNewOp`.
- * @return The new `CtrlOp` whose region holds cloned ops and refreshed types.
- *
- * @note Side effects: erases @p ctrl and rewires uses to the new op's results;
- *       runs @ref cloneModifierBodyAndResyncUnitary in the builder callback
- *       (may recurse for nested ctrl/inv in the body).
- */
-[[nodiscard]] static CtrlOp replaceCtrlPreservingBody(CtrlOp ctrl,
-                                                      IRRewriter& rewriter) {
-  return rewriter.replaceOpWithNewOp<CtrlOp>(
-      ctrl, ctrl.getControlsIn(), ctrl.getTargetsIn(),
-      [&](ValueRange newArgs) -> llvm::SmallVector<Value> {
-        return cloneModifierBodyAndResyncUnitary(*ctrl.getBody(), newArgs,
-                                                 rewriter);
-      });
-}
-
-/**
- * @brief Replace @p inv with a new `qco.inv` that preserves operands and body
- *        structure (clone ops before `qco.yield`, then align qubit types).
- *
- * @param inv Modifier to replace; must verify as `qco.inv`.
- * @param rewriter Drives insertion and erasure.
- * @return The new `InvOp` after `replaceOp` has rewired uses away from @p inv.
- *
- * @note Side effects: erases @p inv; uses @ref
- * cloneModifierBodyAndResyncUnitary in the body callback (may recurse for
- * nested modifiers).
- */
-[[nodiscard]] static InvOp replaceInvPreservingBody(InvOp inv,
-                                                    IRRewriter& rewriter) {
-  rewriter.setInsertionPoint(inv);
-  InvOp newInv =
-      InvOp::create(rewriter, inv.getLoc(), inv.getQubitsIn(),
-                    [&](ValueRange newArgs) -> llvm::SmallVector<Value> {
-                      return cloneModifierBodyAndResyncUnitary(
-                          *inv.getBody(), newArgs, rewriter);
-                    });
-  rewriter.replaceOp(inv, newInv.getResults());
-  return newInv;
-}
-
-/**
- * @brief If @p cloned is ctrl/inv, rebuild it when qubit types are stale; else
- *        align a leaf unitary. Returns values that replace @p cloned's results.
- */
-[[nodiscard]] static llvm::SmallVector<Value>
-resyncClonedUnitaryAndGetResults(Operation* cloned, IRRewriter& rewriter) {
-  if (auto ctrl = dyn_cast<CtrlOp>(cloned)) {
-    if (!ctrlNeedsQubitTypeResync(ctrl)) {
-      return llvm::to_vector(llvm::map_range(
-          ctrl->getResults(), [](OpResult res) -> Value { return res; }));
-    }
-    return llvm::to_vector(
-        llvm::map_range(replaceCtrlPreservingBody(ctrl, rewriter)->getResults(),
-                        [](OpResult res) -> Value { return res; }));
-  }
-  if (auto inv = dyn_cast<InvOp>(cloned)) {
-    if (!invNeedsQubitTypeResync(inv)) {
-      return llvm::to_vector(llvm::map_range(
-          inv->getResults(), [](OpResult res) -> Value { return res; }));
-    }
-    return llvm::to_vector(
-        llvm::map_range(replaceInvPreservingBody(inv, rewriter)->getResults(),
-                        [](OpResult res) -> Value { return res; }));
-  }
-  return replaceLeafUnitaryWithAlignedQubitTypes(
-      llvm::cast<UnitaryOpInterface>(cloned), rewriter);
-}
-
-/**
- * @brief Walk the function body and fix qubit SSA types after mapping.
- *
- * @details Post-order allows erasing/replacing the visited op safely. Ctrl and
- * Inv are handled before the generic `UnitaryOpInterface` case so nested
- * modifiers are not double-processed as leaf unitaries.
- */
-static void synchronizeMappedQubitTypes(Region& region, IRRewriter& rewriter) {
-  region.walk<WalkOrder::PostOrder>([&](Operation* op) {
-    rewriter.setInsertionPoint(op);
-    if (auto ctrl = dyn_cast<CtrlOp>(op)) {
-      if (ctrlNeedsQubitTypeResync(ctrl)) {
-        (void)replaceCtrlPreservingBody(ctrl, rewriter);
-      }
-      return WalkResult::advance();
-    }
-    if (auto inv = dyn_cast<InvOp>(op)) {
-      if (invNeedsQubitTypeResync(inv)) {
-        (void)replaceInvPreservingBody(inv, rewriter);
-      }
-      return WalkResult::advance();
-    }
-    if (auto measure = dyn_cast<MeasureOp>(op)) {
-      if (measure.getQubitOut().getType() != measure.getQubitIn().getType()) {
-        SmallVector<Type> newTypes(measure.getResultTypes());
-        newTypes[0] = measure.getQubitIn().getType();
-        Operation* newOp =
-            cloneOpWithNewResultTypes(measure, newTypes, rewriter);
-        rewriter.replaceOp(measure, newOp->getResults());
-      }
-      return WalkResult::advance();
-    }
-    if (auto reset = dyn_cast<ResetOp>(op)) {
-      if (reset.getQubitOut().getType() != reset.getQubitIn().getType()) {
-        rewriter.replaceOpWithNewOp<ResetOp>(reset, reset.getQubitIn());
-      }
-      return WalkResult::advance();
-    }
-    if (auto unitary = dyn_cast<UnitaryOpInterface>(op)) {
-      (void)replaceLeafUnitaryWithAlignedQubitTypes(unitary, rewriter);
-      return WalkResult::advance();
-    }
-    return WalkResult::advance();
-  });
-}
-
 namespace {
 
 struct MappingPass : impl::MappingPassBase<MappingPass> {
@@ -349,6 +64,7 @@ private:
   using QubitValue = TypedValue<QubitType>;
   using IndexType = std::size_t;
   using IndexGate = std::pair<IndexType, IndexType>;
+  using IndexGateSet = DenseSet<IndexGate>;
   using Layer = DenseSet<IndexGate>;
 
   /**
@@ -702,7 +418,6 @@ protected:
 
       place(dynQubits, best->layout, func.getFunctionBody(), rewriter);
       commit(best->swaps, ltr.anchors, func.getFunctionBody(), rewriter);
-      synchronizeMappedQubitTypes(func.getFunctionBody(), rewriter);
     }
   }
 
@@ -768,10 +483,8 @@ private:
    */
   [[nodiscard]] static SmallVector<QubitValue>
   collectDynamicQubits(Region& funcBody) {
-    return SmallVector<QubitValue>(
-        map_range(funcBody.getOps<AllocOp>(), [](AllocOp op) {
-          return llvm::cast<TypedValue<QubitType>>(op.getResult());
-        }));
+    return SmallVector<QubitValue>(map_range(
+        funcBody.getOps<AllocOp>(), [](AllocOp op) { return op.getResult(); }));
   }
 
   /**

@@ -14,12 +14,10 @@
 
 #include <llvm/ADT/DenseSet.h>
 #include <llvm/ADT/STLExtras.h>
-#include <llvm/Support/Casting.h>
 #include <mlir/IR/Block.h>
 #include <mlir/IR/OpImplementation.h>
 #include <mlir/IR/Operation.h>
 #include <mlir/IR/Region.h>
-#include <mlir/IR/Types.h>
 #include <mlir/IR/ValueRange.h>
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/LogicalResult.h>
@@ -70,17 +68,10 @@ parseTargetAliasing(OpAsmParser& parser, Region& region,
       }
       operands.push_back(oldOperand);
 
-      // Parse optional inline type; when absent, use !qco.qubit to avoid
-      // double-binding type($targets_in) in the assembly format.
-      Type operandType;
-      if (succeeded(parser.parseOptionalColon())) {
-        if (parser.parseType(operandType)) {
-          return failure();
-        }
-      } else {
-        operandType = QubitType::get(parser.getBuilder().getContext());
-      }
-      newArg.type = operandType;
+      // Hard-code QubitType since targets in qco.ctrl are always qubits.
+      // This avoids double-binding type($targets_in) in the assembly format
+      // while keeping the parser simple and the assembly format clean.
+      newArg.type = QubitType::get(parser.getBuilder().getContext());
       blockArgs.push_back(newArg);
 
     } while (succeeded(parser.parseOptionalComma()));

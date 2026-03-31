@@ -8,6 +8,7 @@
  * Licensed under the MIT License
  */
 
+#include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 
 #include <llvm/ADT/STLExtras.h>
@@ -114,10 +115,6 @@ struct ReduceCtrl final : OpRewritePattern<CtrlOp> {
       return success();
     }
 
-    // Capture the promoted control's type before adjusting segments; after
-    // setAttr, getControlsIn().back() would point to a different control.
-    const auto promotedControlType = op.getControlsIn().back().getType();
-
     // Adjust the segment sizes of the control and target operands
     const auto opSegmentsAttrName = CtrlOp::getOperandSegmentSizeAttr();
     auto segmentsAttr =
@@ -128,9 +125,9 @@ struct ReduceCtrl final : OpRewritePattern<CtrlOp> {
     const auto opResultSegmentsAttrName = CtrlOp::getResultSegmentSizeAttr();
     op->setAttr(opResultSegmentsAttrName, newSegments);
 
-    // Add a block argument for the promoted target qubit, preserving the
-    // control's type (including isStatic)
-    auto arg = op.getBody()->addArgument(promotedControlType, op.getLoc());
+    // Add a block argument for the target qubit
+    auto arg = op.getBody()->addArgument(QubitType::get(rewriter.getContext()),
+                                         op.getLoc());
 
     // Replace the current GPhaseOp with a PhaseOp
     const OpBuilder::InsertionGuard guard(rewriter);
@@ -256,17 +253,6 @@ void CtrlOp::build(
 }
 
 LogicalResult CtrlOp::verify() {
-  // Controls and targets may differ in type (e.g., qubits vs tensors), but
-  // require pairwise equality within each group.
-  if (!llvm::equal(getControlsIn().getTypes(), getControlsOut().getTypes())) {
-    return emitOpError("qco.ctrl control qubit input types must match output "
-                       "types pairwise");
-  }
-  if (!llvm::equal(getTargetsIn().getTypes(), getTargetsOut().getTypes())) {
-    return emitOpError("qco.ctrl target qubit input types must match output "
-                       "types pairwise");
-  }
-
   auto& block = *getBody();
   if (block.getOperations().size() < 2) {
     return emitOpError("body region must have at least two operations");
