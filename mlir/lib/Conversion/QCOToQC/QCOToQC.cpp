@@ -129,6 +129,23 @@ struct ConvertQCOAllocOp final : OpConversionPattern<qco::AllocOp> {
 
 /**
  * @brief Converts qco.sink to qc.dealloc.
+ *
+ * @details
+ * In QCO, qubits have value/linear semantics and must be consumed explicitly
+ * (via `qco.sink`). In QC, qubits have reference semantics; for dynamic qubits
+ * we materialize this end-of-lifetime as `qc.dealloc`. For static-only
+ * functions, sinks are erased.
+ *
+ * The OpAdaptor automatically provides the type-converted qubit operand
+ * (`!qc.qubit` instead of `!qco.qubit`), so we simply pass it through to the
+ * new operation when needed.
+ *
+ * Example transformation:
+ * ```mlir
+ * qco.sink %q_qco : !qco.qubit
+ * // becomes:
+ * qc.dealloc %q_qc : !qc.qubit
+ * ```
  */
 struct ConvertQCOSinkOp final : OpConversionPattern<qco::SinkOp> {
   explicit ConvertQCOSinkOp(TypeConverter& typeConverter, MLIRContext* context,
