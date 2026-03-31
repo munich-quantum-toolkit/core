@@ -789,39 +789,6 @@ private:
   }
 
   /**
-   * @brief Perform placement.
-   * @details Replaces dynamic with static qubits. Extends the computation with
-   * as many static qubits the architecture supports.
-   * @returns vector of SSA values produced by qco.static operations, ordered by
-   * the static index s.t. [i] = qco.static i.
-   */
-  [[nodiscard]] static SmallVector<QubitValue>
-  place(ArrayRef<QubitValue> dynQubits, const Layout& layout, Region& funcBody,
-        IRRewriter& rewriter) {
-    SmallVector<QubitValue> statics(layout.nqubits());
-
-    // 1. Replace existing dynamic allocations with mapped static ones.
-    for (const auto [p, q] : enumerate(dynQubits)) {
-      const auto hw = layout.getHardwareIndex(p);
-      rewriter.setInsertionPoint(q.getDefiningOp());
-      auto op = rewriter.replaceOpWithNewOp<StaticOp>(q.getDefiningOp(), hw);
-      statics[hw] = llvm::cast<TypedValue<QubitType>>(op.getQubit());
-    }
-
-    // 2. Create static qubits for the remaining (unused) hardware indices.
-    for (std::size_t p = dynQubits.size(); p < layout.nqubits(); ++p) {
-      rewriter.setInsertionPointToStart(&funcBody.front());
-      const auto hw = layout.getHardwareIndex(p);
-      auto op = StaticOp::create(rewriter, funcBody.getLoc(), hw);
-      rewriter.setInsertionPoint(funcBody.back().getTerminator());
-      DeallocOp::create(rewriter, funcBody.getLoc(), op.getQubit());
-      statics[hw] = llvm::cast<TypedValue<QubitType>>(op.getQubit());
-    }
-
-    return statics;
-  }
-
-  /**
    * @brief Perform A* search to find a sequence of SWAPs that makes the
    * two-qubit operations inside the first layer (the front) executable.
    * @details

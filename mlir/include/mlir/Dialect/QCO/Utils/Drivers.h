@@ -87,9 +87,12 @@ template <typename Fn> void walkUnit(Region& region, Fn&& fn) {
     };
 
     TypeSwitch<Operation*>(&curr)
-        .template Case<StaticOp>(
-            [&](StaticOp op) { qubits.add(op.getQubit(), op.getIndex()); })
-        .template Case<AllocOp>([&](AllocOp op) { qubits.add(op.getResult()); })
+        .template Case<StaticOp>([&](StaticOp op) {
+          qubits.add(cast<TypedValue<QubitType>>(op.getQubit()), op.getIndex());
+        })
+        .template Case<AllocOp>([&](AllocOp op) {
+          qubits.add(cast<TypedValue<QubitType>>(op.getResult()));
+        })
         .template Case<UnitaryOpInterface>([&](UnitaryOpInterface op) {
           for (const auto& [prevV, nextV] :
                llvm::zip(op.getInputQubits(), op.getOutputQubits())) {
