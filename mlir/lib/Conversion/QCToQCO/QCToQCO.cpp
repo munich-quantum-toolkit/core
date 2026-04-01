@@ -100,19 +100,19 @@ struct LoweringState {
     llvm::DenseMap<Value, Value> currentQubits;
   };
 
+  /// Per-region map from QC qubit references to latest QCO SSA values.
+  ///
+  /// @details Keys are `Operation::getParentRegion()` for ops being converted
+  /// (typically a `func.func` body or a modifier region).
+  llvm::DenseMap<Region*, llvm::DenseMap<Value, Value>> qubitMap;
+
   /// Map from original MemRef to its latest QTensor SSA value
   llvm::DenseMap<Value, Value> qtensorMap;
 
   /// Map from original QC qubit reference to its register information
   llvm::DenseMap<Value, QubitInfo> qubitInfos;
 
-  /// Per-region map from QC qubit references to latest QCO SSA values.
-  ///
-  /// @details Keys are `Operation::getParentRegion()` for ops being converted
-  /// (typically a `func.func` body, or a `qc.ctrl` / `qc.inv` region).
-  llvm::DenseMap<Region*, llvm::DenseMap<Value, Value>> qubitMap;
-
-  /// Stack of active modifier regions (`qc.ctrl` / `qc.inv`).
+  /// Stack of active modifier regions
   SmallVector<ModifierFrame> modifierFrames;
 };
 
@@ -317,7 +317,7 @@ struct ConvertFuncReturnOp final : StatefulOpConversionPattern<func::ReturnOp> {
     }
 
     // Deallocate dead qubit values
-    for (Value qcoQubit : llvm::make_second_range(map)) {
+    for (auto qcoQubit : llvm::make_second_range(map)) {
       if (!liveQubits.contains(qcoQubit)) {
         SinkOp::create(rewriter, op.getLoc(), qcoQubit);
       }
@@ -373,7 +373,7 @@ struct ConvertMemRefAllocOp final
   matchAndRewrite(memref::AllocOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
     if (!llvm::isa<qc::QubitType>(op.getType().getElementType())) {
-      return success();
+      return failure();
     }
 
     auto shape = op.getType().getShape();
@@ -420,12 +420,13 @@ struct ConvertMemRefLoadOp final : StatefulOpConversionPattern<memref::LoadOp> {
   matchAndRewrite(memref::LoadOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
     if (!llvm::isa<qc::QubitType>(op.getMemref().getType().getElementType())) {
-      return success();
+      return failure();
     }
 
-    auto& qubitMap = getState().qubitMap;
-    auto& qubitInfos = getState().qubitInfos;
-    auto& qtensorMap = getState().qtensorMap;
+    auto& state = getState();
+    auto* operation = op.getOperation();
+    auto& qubitInfos = state.qubitInfos;
+    auto& qtensorMap = state.qtensorMap;
 
     // Look up latest QTensor value for this QC register
     auto memref = op.getMemref();
@@ -437,7 +438,7 @@ struct ConvertMemRefLoadOp final : StatefulOpConversionPattern<memref::LoadOp> {
     auto extract =
         qtensor::ExtractOp::create(rewriter, op.getLoc(), qtensor, index);
 
-    qubitMap.try_emplace(op.getResult(), extract.getResult());
+    assignMappedQubit(state, operation, op.getResult(), extract.getResult());
     qubitInfos.try_emplace(op.getResult(),
                            QubitInfo{.reg = memref, .index = index});
     qtensorMap[memref] = extract.getOutTensor();
@@ -475,12 +476,14 @@ struct ConvertMemRefDeallocOp final
   matchAndRewrite(memref::DeallocOp op, OpAdaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
     if (!llvm::isa<qc::QubitType>(op.getMemref().getType().getElementType())) {
-      return success();
+      return failure();
     }
 
-    auto& qubitMap = getState().qubitMap;
-    auto& qubitInfos = getState().qubitInfos;
-    auto& qtensorMap = getState().qtensorMap;
+    auto& state = getState();
+    auto* operation = op.getOperation();
+    auto& qubitMap = state.qubitMap[operation->getParentRegion()];
+    auto& qubitInfos = state.qubitInfos;
+    auto& qtensorMap = state.qtensorMap;
 
     // Look up latest QTensor value for this QC register
     auto memref = op.getMemref();
@@ -593,10 +596,9 @@ struct ConvertQCDeallocOp final : StatefulOpConversionPattern<qc::DeallocOp> {
                   ConversionPatternRewriter& rewriter) const override {
     auto& state = getState();
     auto* operation = op.getOperation();
-    auto* region = operation->getParentRegion();
-    auto& qubitMap = state.qubitMap[region];
-    Value qcQubit = op.getQubit();
-    Value qcoQubit = lookupMappedQubit(state, operation, qcQubit);
+    auto& qubitMap = state.qubitMap[operation->getParentRegion()];
+    auto qcQubit = op.getQubit();
+    auto qcoQubit = lookupMappedQubit(state, operation, qcQubit);
 
     // Create the sink operation
     rewriter.replaceOpWithNewOp<SinkOp>(op, qcoQubit);
@@ -631,7 +633,7 @@ struct ConvertQCStaticOp final : StatefulOpConversionPattern<qc::StaticOp> {
                   ConversionPatternRewriter& rewriter) const override {
     auto& state = getState();
     auto* operation = op.getOperation();
-    Value qcQubit = op.getQubit();
+    auto qcQubit = op.getQubit();
 
     auto qcoOp = rewriter.replaceOpWithNewOp<qco::StaticOp>(op, op.getIndex());
     assignMappedQubit(state, operation, qcQubit, qcoOp.getQubit());
@@ -671,8 +673,8 @@ struct ConvertQCMeasureOp final : StatefulOpConversionPattern<qc::MeasureOp> {
                   ConversionPatternRewriter& rewriter) const override {
     auto& state = getState();
     auto* operation = op.getOperation();
-    Value qcQubit = op.getQubit();
-    Value qcoQubit = lookupMappedQubit(state, operation, qcQubit);
+    auto qcQubit = op.getQubit();
+    auto qcoQubit = lookupMappedQubit(state, operation, qcQubit);
 
     // Create qco.measure (returns both output qubit and bit result)
     auto qcoOp = qco::MeasureOp::create(
@@ -717,8 +719,8 @@ struct ConvertQCResetOp final : StatefulOpConversionPattern<qc::ResetOp> {
                   ConversionPatternRewriter& rewriter) const override {
     auto& state = getState();
     auto* operation = op.getOperation();
-    Value qcQubit = op.getQubit();
-    Value qcoQubit = lookupMappedQubit(state, operation, qcQubit);
+    auto qcQubit = op.getQubit();
+    auto qcoQubit = lookupMappedQubit(state, operation, qcQubit);
 
     // Create qco.reset (consumes input, produces output)
     auto qcoOp = qco::ResetOp::create(rewriter, op.getLoc(), qcoQubit);
@@ -789,8 +791,8 @@ struct ConvertQCOneTargetZeroParameterToQCO final
                   ConversionPatternRewriter& rewriter) const override {
     auto& state = this->getState();
     auto* operation = op.getOperation();
-    Value qcQubit = op.getQubitIn();
-    Value qcoQubit = lookupMappedQubit(state, operation, qcQubit);
+    auto qcQubit = op.getQubitIn();
+    auto qcoQubit = lookupMappedQubit(state, operation, qcQubit);
 
     // Create the QCO operation (consumes input, produces output)
     auto qcoOp = QCOOpType::create(rewriter, op.getLoc(), qcoQubit);
@@ -828,8 +830,8 @@ struct ConvertQCOneTargetOneParameterToQCO final
                   ConversionPatternRewriter& rewriter) const override {
     auto& state = this->getState();
     auto* operation = op.getOperation();
-    Value qcQubit = op.getQubitIn();
-    Value qcoQubit = lookupMappedQubit(state, operation, qcQubit);
+    auto qcQubit = op.getQubitIn();
+    auto qcoQubit = lookupMappedQubit(state, operation, qcQubit);
 
     // Create the QCO operation (consumes input, produces output)
     auto qcoOp =
@@ -868,8 +870,8 @@ struct ConvertQCOneTargetTwoParameterToQCO final
                   ConversionPatternRewriter& rewriter) const override {
     auto& state = this->getState();
     auto* operation = op.getOperation();
-    Value qcQubit = op.getQubitIn();
-    Value qcoQubit = lookupMappedQubit(state, operation, qcQubit);
+    auto qcQubit = op.getQubitIn();
+    auto qcoQubit = lookupMappedQubit(state, operation, qcQubit);
 
     // Create the QCO operation (consumes input, produces output)
     auto qcoOp = QCOOpType::create(rewriter, op.getLoc(), qcoQubit,
@@ -908,8 +910,8 @@ struct ConvertQCOneTargetThreeParameterToQCO final
                   ConversionPatternRewriter& rewriter) const override {
     auto& state = this->getState();
     auto* operation = op.getOperation();
-    Value qcQubit = op.getQubitIn();
-    Value qcoQubit = lookupMappedQubit(state, operation, qcQubit);
+    auto qcQubit = op.getQubitIn();
+    auto qcoQubit = lookupMappedQubit(state, operation, qcQubit);
 
     // Create the QCO operation (consumes input, produces output)
     auto qcoOp =
@@ -950,10 +952,10 @@ struct ConvertQCTwoTargetZeroParameterToQCO final
                   ConversionPatternRewriter& rewriter) const override {
     auto& state = this->getState();
     auto* operation = op.getOperation();
-    Value qcQubit0 = op.getQubit0In();
-    Value qcQubit1 = op.getQubit1In();
-    Value qcoQubit0 = lookupMappedQubit(state, operation, qcQubit0);
-    Value qcoQubit1 = lookupMappedQubit(state, operation, qcQubit1);
+    auto qcQubit0 = op.getQubit0In();
+    auto qcQubit1 = op.getQubit1In();
+    auto qcoQubit0 = lookupMappedQubit(state, operation, qcQubit0);
+    auto qcoQubit1 = lookupMappedQubit(state, operation, qcQubit1);
 
     // Create the QCO operation (consumes input, produces output)
     auto qcoOp = QCOOpType::create(rewriter, op.getLoc(), qcoQubit0, qcoQubit1);
@@ -993,10 +995,10 @@ struct ConvertQCTwoTargetOneParameterToQCO final
                   ConversionPatternRewriter& rewriter) const override {
     auto& state = this->getState();
     auto* operation = op.getOperation();
-    Value qcQubit0 = op.getQubit0In();
-    Value qcQubit1 = op.getQubit1In();
-    Value qcoQubit0 = lookupMappedQubit(state, operation, qcQubit0);
-    Value qcoQubit1 = lookupMappedQubit(state, operation, qcQubit1);
+    auto qcQubit0 = op.getQubit0In();
+    auto qcQubit1 = op.getQubit1In();
+    auto qcoQubit0 = lookupMappedQubit(state, operation, qcQubit0);
+    auto qcoQubit1 = lookupMappedQubit(state, operation, qcQubit1);
 
     // Create the QCO operation (consumes input, produces output)
     auto qcoOp = QCOOpType::create(rewriter, op.getLoc(), qcoQubit0, qcoQubit1,
@@ -1037,10 +1039,10 @@ struct ConvertQCTwoTargetTwoParameterToQCO final
                   ConversionPatternRewriter& rewriter) const override {
     auto& state = this->getState();
     auto* operation = op.getOperation();
-    Value qcQubit0 = op.getQubit0In();
-    Value qcQubit1 = op.getQubit1In();
-    Value qcoQubit0 = lookupMappedQubit(state, operation, qcQubit0);
-    Value qcoQubit1 = lookupMappedQubit(state, operation, qcQubit1);
+    auto qcQubit0 = op.getQubit0In();
+    auto qcQubit1 = op.getQubit1In();
+    auto qcoQubit0 = lookupMappedQubit(state, operation, qcQubit0);
+    auto qcoQubit1 = lookupMappedQubit(state, operation, qcQubit1);
 
     // Create the QCO operation (consumes input, produces output)
     auto qcoOp = QCOOpType::create(rewriter, op.getLoc(), qcoQubit0, qcoQubit1,

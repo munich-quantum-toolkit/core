@@ -930,8 +930,8 @@ OwningOpRef<ModuleOp> QCOProgramBuilder::finalize() {
         "Insertion point is not in entry block of main function");
   }
 
-  auto blockOrderComparatorToInsert = [](const std::pair<Value, int64_t>& a,
-                                         const std::pair<Value, int64_t>& b) {
+  auto blockOrderComparator = [](const std::pair<Value, int64_t>& a,
+                                 const std::pair<Value, int64_t>& b) {
     auto* opA = a.first.getDefiningOp();
     auto* opB = b.first.getDefiningOp();
     if (!opA || !opB || opA->getBlock() != opB->getBlock()) {
@@ -965,7 +965,8 @@ OwningOpRef<ModuleOp> QCOProgramBuilder::finalize() {
 
   // Automatically deallocate all still-allocated tensors
   if (!validTensors.empty()) {
-    for (auto& [tensor, tensorInfo] : validTensors) {
+    for (auto& [tensor, tensorInfo] : llvm::to_vector(validTensors)) {
+      llvm::errs() << "Deallocating tensor\n";
       // Filter out qubits belonging to this tensor
       llvm::SmallVector<std::pair<Value, int64_t>> toInsert;
       for (auto& [qubit, qubitInfo] : registerQubits) {
@@ -975,11 +976,12 @@ OwningOpRef<ModuleOp> QCOProgramBuilder::finalize() {
         toInsert.push_back({qubit, qubitInfo.regIndex});
       }
       // Sort qubits for deterministic output
-      llvm::sort(toInsert, blockOrderComparatorToInsert);
+      llvm::sort(toInsert, blockOrderComparator);
       // Insert qubits
       for (auto& [qubit, index] : toInsert) {
         tensor = qtensorInsert(qubit, tensor, index);
       }
+      // Deallocate tensor
       qtensor::DeallocOp::create(*this, tensor);
     }
   }
