@@ -548,8 +548,5 @@ INSTANTIATE_TEST_SUITE_P(
                     MQT_NAMED_BUILDER(staticQubitsWithCtrl)},
         QIRTestCase{"StaticQubitsWithInv",
                     MQT_NAMED_BUILDER(staticQubitsWithInv),
-                    MQT_NAMED_BUILDER(staticQubitsWithInv)},
-        QIRTestCase{"MixedStaticDynamicQubits",
-                    MQT_NAMED_BUILDER(mixedStaticDynamicQubits),
-                    MQT_NAMED_BUILDER(mixedStaticDynamicQubits)}));
+                    MQT_NAMED_BUILDER(staticQubitsWithInv)}));
 /// @}

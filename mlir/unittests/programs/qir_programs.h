@@ -48,9 +48,6 @@ void staticQubitsWithCtrl(QIRProgramBuilder& b);
 /// Allocates a static qubit and applies the inverse of a T gate (Tdg).
 void staticQubitsWithInv(QIRProgramBuilder& b);
 
-/// Allocates one static and one dynamic qubit and applies mixed operations.
-void mixedStaticDynamicQubits(QIRProgramBuilder& b);
-
 // --- MeasureOp ------------------------------------------------------------ //
 
 /// Measures a single qubit into a single classical bit.

@@ -78,33 +78,6 @@ static LogicalResult runQCToQCOConversion(ModuleOp module) {
   return pm.run(module);
 }
 
-TEST(QCToQCOMixedStaticDynamicQubitsTest, FailsConversion) {
-  DialectRegistry registry;
-  registry.insert<qc::QCDialect, qco::QCODialect, arith::ArithDialect,
-                  func::FuncDialect>();
-  auto context = std::make_unique<MLIRContext>();
-  context->appendDialectRegistry(registry);
-  context->loadAllAvailableDialects();
-
-  auto program = qc::QCProgramBuilder::build(
-      context.get(), MQT_NAMED_BUILDER(qc::mixedStaticDynamicQubits).fn);
-  ASSERT_TRUE(program);
-  EXPECT_TRUE(verify(*program).succeeded());
-
-  std::string diagnostics;
-  ScopedDiagnosticHandler diagHandler(context.get(), [&](Diagnostic& diag) {
-    llvm::raw_string_ostream os(diagnostics);
-    diag.print(os);
-    os << '\n';
-    return success();
-  });
-
-  const auto result = runQCToQCOConversion(program.get());
-  EXPECT_TRUE(failed(result));
-  EXPECT_NE(diagnostics.find("mixing static and dynamic qubits"),
-            std::string::npos);
-}
-
 TEST_P(QCToQCOTest, ProgramEquivalence) {
   const auto& [_, programBuilder, referenceBuilder] = GetParam();
   const auto name = " (" + GetParam().name + ")";

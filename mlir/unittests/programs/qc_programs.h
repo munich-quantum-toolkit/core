@@ -48,9 +48,6 @@ void staticQubitsWithCtrl(QCProgramBuilder& b);
 /// Allocates a static qubit and applies an inverse modifier.
 void staticQubitsWithInv(QCProgramBuilder& b);
 
-/// Allocates one static and one dynamic qubit and applies mixed operations.
-void mixedStaticDynamicQubits(QCProgramBuilder& b);
-
 /// Allocates and explicitly deallocates a single qubit.
 void allocDeallocPair(QCProgramBuilder& b);
 

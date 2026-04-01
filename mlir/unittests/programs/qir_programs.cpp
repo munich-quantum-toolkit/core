@@ -65,15 +65,6 @@ void staticQubitsWithInv(QIRProgramBuilder& b) {
   b.tdg(q0);
 }
 
-void mixedStaticDynamicQubits(QIRProgramBuilder& b) {
-  auto q0 = b.staticQubit(0);
-  auto qDyn = b.allocQubitRegister(1);
-  auto q1 = qDyn[0];
-  b.rzz(0.123, q0, q1);
-  b.h(q0);
-  b.h(q1);
-}
-
 void singleMeasurementToSingleBit(QIRProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   const auto c = b.allocClassicalBitRegister(1);

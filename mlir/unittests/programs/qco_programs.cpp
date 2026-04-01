@@ -71,14 +71,6 @@ void staticQubitsWithInv(QCOProgramBuilder& b) {
   })[0];
 }
 
-void mixedStaticDynamicQubits(QCOProgramBuilder& b) {
-  auto q0 = b.staticQubit(0);
-  auto q1 = b.allocQubit();
-  std::tie(q0, q1) = b.rzz(0.123, q0, q1);
-  q0 = b.h(q0);
-  q1 = b.h(q1);
-}
-
 void allocSinkPair(QCOProgramBuilder& b) {
   auto q = b.allocQubit();
   b.sink(q);
