@@ -537,9 +537,6 @@ INSTANTIATE_TEST_SUITE_P(
         QIRTestCase{"StaticQubitsWithOps",
                     MQT_NAMED_BUILDER(staticQubitsWithOps),
                     MQT_NAMED_BUILDER(staticQubitsWithOps)},
-        QIRTestCase{"StaticQubitsWithDuplicates",
-                        MQT_NAMED_BUILDER(staticQubitsWithDuplicates),
-                        MQT_NAMED_BUILDER(staticQubitsWithOps)},
         QIRTestCase{"StaticQubitsWithParametricOps",
                     MQT_NAMED_BUILDER(staticQubitsWithParametricOps),
                     MQT_NAMED_BUILDER(staticQubitsWithParametricOps)},
@@ -551,5 +548,8 @@ INSTANTIATE_TEST_SUITE_P(
                     MQT_NAMED_BUILDER(staticQubitsWithCtrl)},
         QIRTestCase{"StaticQubitsWithInv",
                     MQT_NAMED_BUILDER(staticQubitsWithInv),
-                    MQT_NAMED_BUILDER(staticQubitsWithInv)}));
+                    MQT_NAMED_BUILDER(staticQubitsWithInv)},
+        QIRTestCase{"StaticQubitsWithDuplicates",
+                    MQT_NAMED_BUILDER(staticQubitsWithDuplicates),
+                    MQT_NAMED_BUILDER(staticQubitsCanonical)}));
 /// @}

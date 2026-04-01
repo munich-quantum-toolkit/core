@@ -30,8 +30,7 @@ void allocMultipleQubitRegisters(QCOProgramBuilder& b);
 /// Allocates a large qubit register.
 void allocLargeRegister(QCOProgramBuilder& b);
 
-/// Allocates two inline qubits and applies H on both and a controlled-X between
-/// them.
+/// Allocates two inline qubits.
 void staticQubits(QCOProgramBuilder& b);
 
 /// Allocates two static qubits and applies operations.
@@ -48,6 +47,9 @@ void staticQubitsWithCtrl(QCOProgramBuilder& b);
 
 /// Allocates a static qubit and applies an inverse modifier.
 void staticQubitsWithInv(QCOProgramBuilder& b);
+
+/// Same as `staticQubitsCanonical` in `qc_programs.cpp` and `qir_programs.cpp`.
+void staticQubitsCanonical(QCOProgramBuilder& b);
 
 /// Allocates and explicitly sinks a single qubit.
 void allocSinkPair(QCOProgramBuilder& b);

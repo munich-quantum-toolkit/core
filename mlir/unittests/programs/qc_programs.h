@@ -30,16 +30,11 @@ void allocMultipleQubitRegisters(QCProgramBuilder& b);
 /// Allocates a large qubit register.
 void allocLargeRegister(QCProgramBuilder& b);
 
-/// Allocates two inline qubits and applies H on both and a controlled-X between
-/// them.
+/// Allocates two inline qubits.
 void staticQubits(QCProgramBuilder& b);
 
 /// Allocates two static qubits and applies operations.
 void staticQubitsWithOps(QCProgramBuilder& b);
-
-/// Allocates duplicate static qubits and applies H on both and a controlled-X
-/// between them.
-void staticQubitsWithDuplicates(QCProgramBuilder& b);
 
 /// Allocates two static qubits and applies parametric gates.
 void staticQubitsWithParametricOps(QCProgramBuilder& b);
@@ -52,6 +47,14 @@ void staticQubitsWithCtrl(QCProgramBuilder& b);
 
 /// Allocates a static qubit and applies an inverse modifier.
 void staticQubitsWithInv(QCProgramBuilder& b);
+
+/// Allocates duplicate static qubits and applies operations on both.
+void staticQubitsWithDuplicates(QCProgramBuilder& b);
+
+/// Same as `staticQubitsWithDuplicates`, but with canonical static qubit
+/// retrievals.
+void staticQubitsCanonical(QCProgramBuilder& b);
+
 /// Allocates and explicitly deallocates a single qubit.
 void allocDeallocPair(QCProgramBuilder& b);
 

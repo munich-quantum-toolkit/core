@@ -30,16 +30,11 @@ void allocMultipleQubitRegisters(QIRProgramBuilder& b);
 /// Allocates a large qubit register.
 void allocLargeRegister(QIRProgramBuilder& b);
 
-/// Allocates two inline qubits and applies H on both and a controlled-X between
-/// them.
+/// Allocates two inline qubits.
 void staticQubits(QIRProgramBuilder& b);
 
 /// Allocates two static qubits and applies operations.
 void staticQubitsWithOps(QIRProgramBuilder& b);
-
-/// Allocates duplicate static qubits and applies H on both and a controlled-X
-/// between them.
-void staticQubitsWithDuplicates(QIRProgramBuilder& b);
 
 /// Allocates two static qubits and applies parametric gates.
 void staticQubitsWithParametricOps(QIRProgramBuilder& b);
@@ -52,6 +47,13 @@ void staticQubitsWithCtrl(QIRProgramBuilder& b);
 
 /// Allocates a static qubit and applies the inverse of a T gate (Tdg).
 void staticQubitsWithInv(QIRProgramBuilder& b);
+
+/// Allocates duplicate static qubits and applies operations on both.
+void staticQubitsWithDuplicates(QIRProgramBuilder& b);
+
+/// Same as `staticQubitsWithDuplicates`, but with canonical static qubit
+/// retrievals.
+void staticQubitsCanonical(QIRProgramBuilder& b);
 
 // --- MeasureOp ------------------------------------------------------------ //
 
