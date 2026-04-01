@@ -100,17 +100,19 @@ struct LoweringState {
     llvm::DenseMap<Value, Value> currentQubits;
   };
 
-  /// Per-region map from QC qubit references to latest QCO SSA values.
+  /// Per-region map from original QC qubit reference to its latest QCO SSA
+  /// value.
   ///
   /// @details Keys are `Operation::getParentRegion()` for ops being converted
   /// (typically a `func.func` body or a modifier region).
   llvm::DenseMap<Region*, llvm::DenseMap<Value, Value>> qubitMap;
 
-  /// Map from original MemRef to its latest QTensor SSA value
-  llvm::DenseMap<Value, Value> qtensorMap;
+  /// Per-region map from original QC register to its latest QTensor SSA value
+  llvm::DenseMap<Region*, llvm::DenseMap<Value, Value>> tensorMap;
 
-  /// Map from original QC qubit reference to its register information
-  llvm::DenseMap<Value, QubitInfo> qubitInfos;
+  /// Per-region map from original QC qubit reference to its register
+  /// information
+  llvm::DenseMap<Region*, llvm::DenseMap<Value, QubitInfo>> qubitInfoMap;
 
   /// Stack of active modifier regions
   SmallVector<ModifierFrame> modifierFrames;
@@ -147,23 +149,6 @@ private:
 };
 } // namespace
 
-/**
- * @brief Helper function to look up the latest QCO qubit value for a given QC
- * qubit reference
- *
- * @param qubitMap The mapping from QC qubits to QCO qubits for the current
- * region
- * @param qcQubit The QC qubit reference to look up
- * @return The latest QCO qubit value corresponding to the given QC qubit
- * reference
- */
-[[nodiscard]] static Value
-lookupMappedQubit(llvm::DenseMap<Value, Value>& qubitMap, Value qcQubit) {
-  auto it = qubitMap.find(qcQubit);
-  assert(it != qubitMap.end() && "QC qubit not found");
-  return it->second;
-}
-
 /** @brief Returns whether lowering currently processes a modifier body. */
 [[nodiscard]] static bool isInsideModifier(const LoweringState& state) {
   return !state.modifierFrames.empty();
@@ -176,14 +161,15 @@ currentModifierFrame(LoweringState& state) {
   return state.modifierFrames.back();
 }
 
-/** @brief Finds the nearest region-local qubit map containing @p qcQubit. */
+/** @brief Finds the nearest region-local map containing @p reference. */
 [[nodiscard]] static llvm::DenseMap<Value, Value>*
-findMappedQubitMap(LoweringState& state, Operation* anchor, Value qcQubit) {
-  for (Region* current = anchor->getParentRegion(); current != nullptr;
+findRegionLocalMap(llvm::DenseMap<Region*, llvm::DenseMap<Value, Value>>& map,
+                   Operation* anchor, Value reference) {
+  for (auto* current = anchor->getParentRegion(); current != nullptr;
        current = current->getParentRegion()) {
-    auto mapIt = state.qubitMap.find(current);
-    if (mapIt != state.qubitMap.end() && mapIt->second.contains(qcQubit)) {
-      return &mapIt->second;
+    auto it = map.find(current);
+    if (it != map.end() && it->second.contains(reference)) {
+      return &it->second;
     }
   }
   return nullptr;
@@ -200,9 +186,21 @@ findMappedQubitMap(LoweringState& state, Operation* anchor, Value qcQubit) {
     }
   }
 
-  auto* qubitMap = findMappedQubitMap(state, anchor, qcQubit);
+  auto* qubitMap = findRegionLocalMap(state.qubitMap, anchor, qcQubit);
   assert(qubitMap != nullptr && "QC qubit not found");
-  return lookupMappedQubit(*qubitMap, qcQubit);
+  auto it = qubitMap->find(qcQubit);
+  assert(it != qubitMap->end() && "QC qubit not found");
+  return it->second;
+}
+
+/** @brief Resolves the latest QTensor SSA value for a QC register. */
+[[nodiscard]] static Value lookupMappedTensor(LoweringState& state,
+                                              Operation* anchor, Value memref) {
+  auto* tensorMap = findRegionLocalMap(state.tensorMap, anchor, memref);
+  assert(tensorMap != nullptr && "QC register not found");
+  auto it = tensorMap->find(memref);
+  assert(it != tensorMap->end() && "QC register not found");
+  return it->second;
 }
 
 /** @brief Updates the latest QCO SSA value for a QC qubit reference. */
@@ -217,12 +215,23 @@ static void assignMappedQubit(LoweringState& state, Operation* anchor,
     }
   }
 
-  if (auto* qubitMap = findMappedQubitMap(state, anchor, qcQubit)) {
+  if (auto* qubitMap = findRegionLocalMap(state.qubitMap, anchor, qcQubit)) {
     (*qubitMap)[qcQubit] = qcoQubit;
     return;
   }
 
   state.qubitMap[anchor->getParentRegion()][qcQubit] = qcoQubit;
+}
+
+/** @brief Updates the latest QTensor SSA value for a QC register. */
+static void assignMappedTensor(LoweringState& state, Operation* anchor,
+                               Value memref, Value tensor) {
+  if (auto* tensorMap = findRegionLocalMap(state.tensorMap, anchor, memref)) {
+    (*tensorMap)[memref] = tensor;
+    return;
+  }
+
+  state.tensorMap[anchor->getParentRegion()][memref] = tensor;
 }
 
 /** @brief Resolves a range of QC qubits to their latest QCO values. */
@@ -296,7 +305,7 @@ struct ConvertFuncReturnOp final : StatefulOpConversionPattern<func::ReturnOp> {
   matchAndRewrite(func::ReturnOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
     auto& state = getState();
-    Region* funcRegion = op->getParentRegion();
+    auto* funcRegion = op->getParentRegion();
     auto& map = state.qubitMap[funcRegion];
 
     // Build return values from qubitMap and collect live qubit information.
@@ -381,7 +390,9 @@ struct ConvertMemRefAllocOp final
       return failure();
     }
 
-    auto& qtensorMap = getState().qtensorMap;
+    auto& state = getState();
+    auto* operation = op.getOperation();
+
     auto memref = op.getResult();
 
     Value qtensor;
@@ -395,7 +406,7 @@ struct ConvertMemRefAllocOp final
           rewriter.replaceOpWithNewOp<qtensor::AllocOp>(op, size.getResult());
     }
 
-    qtensorMap.try_emplace(memref, qtensor);
+    assignMappedTensor(state, op.getOperation(), memref, qtensor);
 
     return success();
   }
@@ -424,24 +435,30 @@ struct ConvertMemRefLoadOp final : StatefulOpConversionPattern<memref::LoadOp> {
     }
 
     auto& state = getState();
+    auto& qubitInfoMap = state.qubitInfoMap;
     auto* operation = op.getOperation();
-    auto& qubitInfos = state.qubitInfos;
-    auto& qtensorMap = state.qtensorMap;
 
     // Look up latest QTensor value for this QC register
     auto memref = op.getMemref();
-    assert(qtensorMap.contains(memref) && "QC register not found");
-    auto qtensor = qtensorMap[memref];
+    auto qtensor = lookupMappedTensor(state, operation, memref);
 
     auto index = adaptor.getIndices()[0];
-
     auto extract =
         qtensor::ExtractOp::create(rewriter, op.getLoc(), qtensor, index);
 
-    assignMappedQubit(state, operation, op.getResult(), extract.getResult());
-    qubitInfos.try_emplace(op.getResult(),
-                           QubitInfo{.reg = memref, .index = index});
-    qtensorMap[memref] = extract.getOutTensor();
+    auto qcQubit = op.getResult();
+    auto qcoQubit = extract.getResult();
+
+    assignMappedQubit(state, operation, qcQubit, qcoQubit);
+    assignMappedTensor(state, operation, memref, extract.getOutTensor());
+
+    QubitInfo info{.reg = memref, .index = index};
+    if (auto it = qubitInfoMap.find(operation->getParentRegion());
+        it != qubitInfoMap.end()) {
+      it->second[qcQubit] = info;
+    } else {
+      qubitInfoMap[operation->getParentRegion()][qcQubit] = info;
+    }
 
     rewriter.eraseOp(op);
 
@@ -480,21 +497,19 @@ struct ConvertMemRefDeallocOp final
     }
 
     auto& state = getState();
-    auto* operation = op.getOperation();
-    auto& qubitMap = state.qubitMap[operation->getParentRegion()];
-    auto& qubitInfos = state.qubitInfos;
-    auto& qtensorMap = state.qtensorMap;
+    auto& qubitMap = state.qubitMap[op->getParentRegion()];
+    auto& tensorMap = state.tensorMap[op->getParentRegion()];
+    auto& qubitInfoMap = state.qubitInfoMap[op->getParentRegion()];
 
     // Look up latest QTensor value for this QC register
     auto memref = op.getMemref();
-    assert(qtensorMap.contains(memref) && "QC register not found");
-    auto qtensor = qtensorMap[memref];
+    auto qtensor = lookupMappedTensor(state, op.getOperation(), memref);
 
     // Filter out qubits belonging to this tensor
     llvm::SmallVector<std::pair<Value, Value>> toInsert;
     toInsert.reserve(qubitMap.size());
     for (auto [qcQubit, qcoQubit] : qubitMap) {
-      auto& info = qubitInfos[qcQubit];
+      auto& info = qubitInfoMap[qcQubit];
       if (info.reg != memref) {
         continue;
       }
@@ -513,18 +528,18 @@ struct ConvertMemRefDeallocOp final
 
     // Insert qubits
     for (auto [qcQubit, qcoQubit] : toInsert) {
-      auto& info = qubitInfos[qcQubit];
+      auto& info = qubitInfoMap[qcQubit];
       auto index = info.index;
       auto insert = qtensor::InsertOp::create(rewriter, op.getLoc(), qcoQubit,
                                               qtensor, index);
       qtensor = insert.getResult();
       qubitMap.erase(qcQubit);
-      qubitInfos.erase(qcQubit);
+      qubitInfoMap.erase(qcQubit);
     }
 
     rewriter.replaceOpWithNewOp<qtensor::DeallocOp>(op, qtensor);
 
-    qtensorMap.erase(memref);
+    tensorMap.erase(memref);
 
     return success();
   }
@@ -595,8 +610,9 @@ struct ConvertQCDeallocOp final : StatefulOpConversionPattern<qc::DeallocOp> {
   matchAndRewrite(qc::DeallocOp op, OpAdaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
     auto& state = getState();
+    auto& qubitMap = state.qubitMap[op->getParentRegion()];
     auto* operation = op.getOperation();
-    auto& qubitMap = state.qubitMap[operation->getParentRegion()];
+
     auto qcQubit = op.getQubit();
     auto qcoQubit = lookupMappedQubit(state, operation, qcQubit);
 
