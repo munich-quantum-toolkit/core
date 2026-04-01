@@ -181,6 +181,10 @@ QIRProgramBuilder::allocClassicalBitRegister(const int64_t size,
     llvm::reportFatalUsageError("Size must be positive");
   }
 
+  if (name.starts_with("__unnamed__")) {
+    llvm::reportFatalUsageError(
+        "Classical register names starting with '__unnamed__' are reserved");
+  }
   if (resultArrays.contains(name)) {
     llvm::reportFatalUsageError("Classical register already exists");
   }
@@ -260,13 +264,18 @@ Value QIRProgramBuilder::measure(Value qubit, const int64_t resultIndex) {
 QIRProgramBuilder& QIRProgramBuilder::measure(Value qubit, const Bit& bit) {
   checkFinalized();
 
+  auto it = loadedResults.find({bit.registerName, bit.registerIndex});
+  if (it == loadedResults.end()) {
+    llvm::reportFatalUsageError(
+        "Bit does not belong to an allocated classical register");
+  }
+  auto result = it->second;
+
   // Save current insertion point
   const InsertionGuard guard(*this);
 
   // Switch to measurements block
   setInsertionPoint(measurementsBlock->getTerminator());
-
-  auto result = loadedResults.at({bit.registerName, bit.registerIndex});
 
   // Create measure call
   const auto fnSig = LLVM::LLVMFunctionType::get(voidType, {ptrType, ptrType});

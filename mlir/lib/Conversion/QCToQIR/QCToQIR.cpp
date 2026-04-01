@@ -18,7 +18,9 @@
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/ADT/StringMap.h>
+#include <llvm/Support/Allocator.h>
 #include <llvm/Support/ErrorHandling.h>
+#include <llvm/Support/StringSaver.h>
 #include <mlir/Conversion/ArithToLLVM/ArithToLLVM.h>
 #include <mlir/Conversion/ControlFlowToLLVM/ControlFlowToLLVM.h>
 #include <mlir/Conversion/FuncToLLVM/ConvertFuncToLLVM.h>
@@ -85,6 +87,10 @@ struct LoweringState : QIRMetadata {
   /// Modifier information
   int64_t inCtrlOp = 0;
   DenseMap<int64_t, SmallVector<Value>> controls;
+
+  /// Allocator and StringSaver for stable StringRefs
+  llvm::BumpPtrAllocator allocator;
+  llvm::StringSaver stringSaver{allocator};
 
   /// Block information
   Block* entryBlock{};
@@ -572,7 +578,8 @@ struct ConvertQCMeasureOp final : StatefulOpConversionPattern<MeasureOp> {
                   rewriter, op.getLoc(), rewriter.getI64IntegerAttr(i))});
           auto load = LLVM::LoadOp::create(rewriter, op.getLoc(), ptrType,
                                            gep.getResult());
-          loadedResults.try_emplace({registerName, i}, load.getResult());
+          loadedResults.try_emplace({state.stringSaver.save(registerName), i},
+                                    load.getResult());
         }
       }
 
