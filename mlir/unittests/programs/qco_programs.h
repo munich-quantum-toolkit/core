@@ -48,9 +48,6 @@ void staticQubitsWithCtrl(QCOProgramBuilder& b);
 /// Allocates a static qubit and applies an inverse modifier.
 void staticQubitsWithInv(QCOProgramBuilder& b);
 
-/// Same as `staticQubitsCanonical` in `qc_programs.cpp` and `qir_programs.cpp`.
-void staticQubitsCanonical(QCOProgramBuilder& b);
-
 /// Allocates and explicitly sinks a single qubit.
 void allocSinkPair(QCOProgramBuilder& b);
 

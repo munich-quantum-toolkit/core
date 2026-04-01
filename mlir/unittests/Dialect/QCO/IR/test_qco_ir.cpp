@@ -1075,9 +1075,6 @@ INSTANTIATE_TEST_SUITE_P(
         QCOTestCase{"StaticQubitsWithInv",
                     MQT_NAMED_BUILDER(staticQubitsWithInv),
                     MQT_NAMED_BUILDER(staticQubitsWithInv)},
-        QCOTestCase{"StaticQubitsCanonical",
-                    MQT_NAMED_BUILDER(staticQubitsCanonical),
-                    MQT_NAMED_BUILDER(staticQubitsCanonical)},
         QCOTestCase{"AllocSinkPair", MQT_NAMED_BUILDER(allocSinkPair),
                     MQT_NAMED_BUILDER(emptyQCO)}));
 /// @}

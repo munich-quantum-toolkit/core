@@ -71,19 +71,6 @@ void staticQubitsWithInv(QCOProgramBuilder& b) {
   })[0];
 }
 
-void staticQubitsCanonical(QCOProgramBuilder& b) {
-  auto q0 = b.staticQubit(0);
-  auto q1 = b.staticQubit(1);
-
-  q0 = b.rx(std::numbers::pi / 4., q0);
-  q1 = b.p(std::numbers::pi / 2., q1);
-  std::tie(q0, q1) = b.rzz(0.123, q0, q1);
-  std::tie(q0, q1) = b.cx(q0, q1);
-  q0 = b.inv({q0}, [&](auto targets) -> llvm::SmallVector<Value> {
-    return {b.t(targets[0])};
-  })[0];
-}
-
 void allocSinkPair(QCOProgramBuilder& b) {
   auto q = b.allocQubit();
   b.sink(q);
