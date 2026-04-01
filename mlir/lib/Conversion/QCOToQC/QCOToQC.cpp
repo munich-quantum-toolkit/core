@@ -921,8 +921,8 @@ protected:
         ConvertQCOTwoTargetOneParameterToQC<qco::RZZOp, qc::RZZOp>,
         ConvertQCOTwoTargetTwoParameterToQC<qco::XXPlusYYOp, qc::XXPlusYYOp>,
         ConvertQCOTwoTargetTwoParameterToQC<qco::XXMinusYYOp, qc::XXMinusYYOp>,
-        ConvertQCOBarrierOp, ConvertQCOCtrlOp, ConvertQCOInvOp,
-        ConvertQCOPowOp, ConvertQCOYieldOp>(typeConverter, context);
+        ConvertQCOBarrierOp, ConvertQCOCtrlOp, ConvertQCOInvOp, ConvertQCOPowOp,
+        ConvertQCOYieldOp>(typeConverter, context);
 
     // Register operation conversion patterns that need state tracking
     patterns.add<ConvertQCOAllocOp, ConvertQCOStaticOp, ConvertQCOSinkOp>(

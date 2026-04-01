@@ -983,7 +983,8 @@ void powRxx(QCOProgramBuilder& b);
 /// Creates a circuit with pow(-2.0) wrapping an S gate (negative exponent).
 void negPowS(QCOProgramBuilder& b);
 
-/// Creates a circuit with inv wrapping pow (should reorder to pow wrapping inv).
+/// Creates a circuit with inv wrapping pow (should reorder to pow wrapping
+/// inv).
 void invPowS(QCOProgramBuilder& b);
 
 /// Creates a circuit with pow(2.0) wrapping sdg (reference for invPowS).
