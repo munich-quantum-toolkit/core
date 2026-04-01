@@ -20,6 +20,7 @@ using namespace mlir;
 void runCanonicalizationPasses(ModuleOp module) {
   PassManager pm(module.getContext());
   pm.addPass(createCanonicalizerPass());
+  pm.addPass(createCSEPass());
   pm.addPass(createRemoveDeadValuesPass());
   if (pm.run(module).failed()) {
     llvm::errs() << "Failed to run canonicalization passes.\n";

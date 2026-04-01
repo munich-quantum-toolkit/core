@@ -612,7 +612,7 @@ def test_backend_qasm_conversion_no_supported_formats(mock_qdmi_device_factory: 
     qc.measure_all()
 
     device = mock_qdmi_device_factory(num_qubits=2, operations=["cz", "measure"])
-    backend = QDMIBackend(device)  # type: ignore[arg-type]
+    backend = QDMIBackend(device)  # ty: ignore[invalid-argument-type]
 
     with pytest.raises(UnsupportedFormatError, match="No supported program formats found"):
         backend._convert_circuit(qc, [])  # noqa: SLF001
@@ -626,7 +626,7 @@ def test_backend_qasm3_conversion_success(mock_qdmi_device_factory: type[MockQDM
     qc.measure_all()
 
     device = mock_qdmi_device_factory(num_qubits=2, operations=["h", "cx", "measure"])
-    backend = QDMIBackend(device)  # type: ignore[arg-type]
+    backend = QDMIBackend(device)  # ty: ignore[invalid-argument-type]
 
     program, fmt = backend._convert_circuit(qc, [fomac.ProgramFormat.QASM3])  # noqa: SLF001
 
@@ -644,7 +644,7 @@ def test_backend_qasm2_conversion_success(mock_qdmi_device_factory: type[MockQDM
     qc.measure_all()
 
     device = mock_qdmi_device_factory(num_qubits=2, operations=["h", "cx", "measure"])
-    backend = QDMIBackend(device)  # type: ignore[arg-type]
+    backend = QDMIBackend(device)  # ty: ignore[invalid-argument-type]
 
     program, fmt = backend._convert_circuit(qc, [fomac.ProgramFormat.QASM2])  # noqa: SLF001
 
@@ -661,7 +661,7 @@ def test_backend_qasm3_preferred_over_qasm2(mock_qdmi_device_factory: type[MockQ
     qc.measure_all()
 
     device = mock_qdmi_device_factory(num_qubits=2, operations=["h", "measure"])
-    backend = QDMIBackend(device)  # type: ignore[arg-type]
+    backend = QDMIBackend(device)  # ty: ignore[invalid-argument-type]
 
     # When both formats are available, QASM3 should be chosen
     program, fmt = backend._convert_circuit(qc, [fomac.ProgramFormat.QASM2, fomac.ProgramFormat.QASM3])  # noqa: SLF001
@@ -684,10 +684,10 @@ def test_backend_uses_iqm_json_when_supported(mock_qdmi_device_factory: type[Moc
         submitted_format = program_format
         return device.MockJob(num_clbits=2, shots=num_shots)
 
-    device.supported_program_formats = mock_supported_formats  # type: ignore[method-assign]
-    device.submit_job = mock_submit_job  # type: ignore[method-assign]
+    device.supported_program_formats = mock_supported_formats  # ty: ignore[invalid-assignment]
+    device.submit_job = mock_submit_job  # ty: ignore[invalid-assignment]
 
-    backend = QDMIBackend(device)  # type: ignore[arg-type]
+    backend = QDMIBackend(device)  # ty: ignore[invalid-argument-type]
     qc = QuantumCircuit(2, 2)
     qc.r(1.5708, 0.0, 0)
     qc.cz(0, 1)
@@ -712,10 +712,10 @@ def test_backend_iqm_json_preferred_over_qasm(mock_qdmi_device_factory: type[Moc
         submitted_format = program_format
         return device.MockJob(num_clbits=2, shots=num_shots)
 
-    device.supported_program_formats = mock_supported_formats  # type: ignore[method-assign]
-    device.submit_job = mock_submit_job  # type: ignore[method-assign]
+    device.supported_program_formats = mock_supported_formats  # ty: ignore[invalid-assignment]
+    device.submit_job = mock_submit_job  # ty: ignore[invalid-assignment]
 
-    backend = QDMIBackend(device)  # type: ignore[arg-type]
+    backend = QDMIBackend(device)  # ty: ignore[invalid-argument-type]
     qc = QuantumCircuit(2, 2)
     qc.r(1.5708, 0.0, 0)
     qc.cz(0, 1)
@@ -754,7 +754,7 @@ def test_backend_qasm_conversion_failure(
     qc.measure_all()
 
     device = mock_qdmi_device_factory(num_qubits=2, operations=["cz", "measure"])
-    backend = QDMIBackend(device)  # type: ignore[arg-type]
+    backend = QDMIBackend(device)  # ty: ignore[invalid-argument-type]
 
     with pytest.raises(TranslationError, match=f"Failed to convert circuit to {qasm_module_name.upper()}"):
         backend._convert_circuit(qc, [program_format])  # noqa: SLF001
@@ -767,7 +767,7 @@ def test_backend_unsupported_format_error(mock_qdmi_device_factory: type[MockQDM
     qc.measure_all()
 
     device = mock_qdmi_device_factory(num_qubits=2, operations=["cz", "measure"])
-    backend = QDMIBackend(device)  # type: ignore[arg-type]
+    backend = QDMIBackend(device)  # ty: ignore[invalid-argument-type]
 
     # Test with QPY format which is not supported for conversion from Qiskit
     with pytest.raises(
