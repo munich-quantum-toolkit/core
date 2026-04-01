@@ -68,15 +68,11 @@ protected:
     context->loadAllAvailableDialects();
   }
 
-  static void runHeuristicMapping(OwningOpRef<ModuleOp>& moduleOp) {
+  static void runHeuristicMapping(OwningOpRef<ModuleOp>& moduleOp,
+                                  const qco::MappingPassOptions& options) {
     PassManager pm(moduleOp->getContext());
     pm.addPass(createQCToQCO());
-    pm.addPass(qco::createMappingPass(qco::MappingPassOptions{.nlookahead = 5,
-                                                              .alpha = 1,
-                                                              .lambda = 0.85,
-                                                              .niterations = 2,
-                                                              .ntrials = 16,
-                                                              .seed = 1337}));
+    pm.addPass(qco::createMappingPass(options));
     auto res = pm.run(*moduleOp);
     ASSERT_TRUE(res.succeeded());
   }
@@ -104,7 +100,14 @@ TEST_P(MappingPassTest, GHZ) {
   builder.dealloc(q2);
 
   auto moduleOp = builder.finalize();
-  runHeuristicMapping(moduleOp);
+
+  const qco::MappingPassOptions options{.nlookahead = 5,
+                                        .alpha = 1,
+                                        .lambda = 0.85,
+                                        .niterations = 2,
+                                        .ntrials = 4,
+                                        .seed = 1337};
+  runHeuristicMapping(moduleOp, options);
   EXPECT_TRUE(isExecutable(moduleOp->getBodyRegion(), arch).succeeded());
 }
 
@@ -165,7 +168,14 @@ TEST_P(MappingPassTest, Sabre) {
   builder.dealloc(q5);
 
   auto moduleOp = builder.finalize();
-  runHeuristicMapping(moduleOp);
+  const qco::MappingPassOptions options{.nlookahead = 1,
+                                        .alpha = 1,
+                                        .lambda = 0.85,
+                                        .niterations = 2,
+                                        .ntrials = 4,
+                                        .fullLayers = true,
+                                        .seed = 42};
+  runHeuristicMapping(moduleOp, options);
   EXPECT_TRUE(isExecutable(moduleOp->getBodyRegion(), arch).succeeded());
 }
 
