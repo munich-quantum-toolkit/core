@@ -64,9 +64,9 @@ def MappingPass : Pass<"place-and-route", "mlir::ModuleOp"> {
        Option<"fullLayers", "full-layers", "bool", "false",
               "If true, don't partition layers.">,
        Option<"partitionSizeForward", "partition-size-forward", "std::size_t",
-              "1", "The forward layer partitioning size.">,
+              "1", "The forward layer partitioning size. Must be > 0.">,
        Option<"partitionSizeBackward", "partition-size-backward", "std::size_t",
-              "1", "The backward layer partitioning size.">,
+              "1", "The backward layer partitioning size. Must be > 0.">,
        Option<"niterations", "niterations", "std::size_t", "2",
               "The number of forwards and backwards traversal to "
               "improve the initial layout.">,
