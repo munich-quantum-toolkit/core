@@ -10,11 +10,14 @@
 
 #pragma once
 
-#include "mlir/Dialect/QCO/Transforms/Mapping/Architecture.h"
-
 #include <llvm/Support/LogicalResult.h>
 #include <mlir/IR/Region.h>
+
 namespace mlir::qco {
+
+// Forward declaration
+class Architecture;
+
 /**
  * @brief Verifies if all two-qubit gates within the region are executable on
  * the targeted architecture. Expects static qubits only.
