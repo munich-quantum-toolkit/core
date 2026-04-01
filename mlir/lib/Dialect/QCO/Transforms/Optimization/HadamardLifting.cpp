@@ -29,43 +29,21 @@ namespace mlir::qco {
 namespace {
 
 /**
- * @brief This pattern changes the target of a controlled Pauli Z gate if a
- * controlled hadamard gate is it successor.
- * If all out qubits of Pauli Z are equal to all in qubits of Hadamard, we can
- * commute the gates and change Pauli Z to X. This is only possible if Hadamard
- * and Pauli act on the same qubit as target. If the target of the Pauli gate is
- * a ctrl at the hadamard and vice versa, we can change the target of Pauli Z to
- * the Hadamard's. This is done in this pattern.
+ * @brief Lifts controlled Hadamard gates in front of controlled Pauli gates.
+ *
+ * This pattern lifts controlled Hadamard gates in front of controlled Pauli
+ * gates. This can be done if the output target of the Pauli gate is the input
+ * target of the Hadamard gate. Also, all control output qubits need to be the
+ * input control qubits of the Hadamard gates. If the Pauli gate is a Z gate,
+ * the target and control qubits can be changed upfront in order to be able to
+ * lift it.
  */
-struct AdaptCtrldPauliZToLiftingPattern final
-    : mlir::OpInterfaceRewritePattern<UnitaryOpInterface> {
+struct LiftCtrldHadamardsAboveCtrldPauliGatesPattern final
+    : mlir::OpRewritePattern<CtrlOp> {
 
-  explicit AdaptCtrldPauliZToLiftingPattern(mlir::MLIRContext* context)
-      : OpInterfaceRewritePattern(context) {}
-
-  /**
-   * @brief Changes the target of a controlled Pauli Z gate if a
-   * controlled hadamard gate is it successor.
-   *
-   * @param op The operation to match (only Pauli gates trigger the rewrite)
-   * @param rewriter Pattern rewriter for applying transformations
-   * @return success() if circuit was changed, failure() otherwise
-   */
-  mlir::LogicalResult
-  matchAndRewrite(UnitaryOpInterface op,
-                  mlir::PatternRewriter& rewriter) const override {
-    return failure();
-  }
-};
-
-/**
- * @brief This pattern is responsible for lifting Hadamard gates above Pauli
- * gates.
- */
-struct LiftHadamardsAbovePauliGatesPattern final
-    : OpInterfaceRewritePattern<UnitaryOpInterface> {
-  explicit LiftHadamardsAbovePauliGatesPattern(MLIRContext* context)
-      : OpInterfaceRewritePattern(context) {}
+  explicit LiftCtrldHadamardsAboveCtrldPauliGatesPattern(
+      mlir::MLIRContext* context)
+      : OpRewritePattern(context) {}
 
   /**
    * @brief This method checks if two ranges contain of exactly the same
@@ -88,51 +66,134 @@ struct LiftHadamardsAbovePauliGatesPattern final
   }
 
   /**
-   * @brief This method checks if two gates are connected by exactly the same
-   * target and ctrl qubits.
+   * @brief This method swaps a controlled gate with is succeeding controlled
+   * Hadamard gate, if applicable.
    *
-   * This method checks if the output target/ctrl qubits of the first gate are
-   * exactly the input target/ctrl qubits of the second gate. There must be no
-   * qubit that is only used by one of the gates.
+   * This method swaps a controlled gate with its succeeding controlled
+   * Hadamard gate. This is only done if there is a simple commutation rule to
+   * do so. Currently implemented:
+   * - X - H - = - H - Z -
+   * - Y - H - = - H - Y -
+   * - Z - H - = - H - X -
    *
-   * @param firstGate The first unitary gate.
-   * @param secondGate The second unitary gate.
+   * @param ctrlGate The controlled unitary gate.
+   * @param ctrlHadamardGate The controlled hadamard gate.
+   * @param rewriter The used rewriter.
+   * @return success() if circuit was changed, failure() otherwise
    */
-  static bool
-  areGatesConnectedExactlyBySameQubits(UnitaryOpInterface firstGate,
-                                       UnitaryOpInterface secondGate) {
-    if (firstGate.getNumTargets() != secondGate.getNumTargets() ||
-        firstGate.getNumControls() != secondGate.getNumControls()) {
-      return false;
-    }
-    std::vector<Value> targetOutputsFirstGate;
-    std::vector<Value> controlOutputsFirstGate;
-    std::vector<Value> targetInputsSecondGate;
-    std::vector<Value> controlInputsSecondGate;
-    for (size_t i = 0; i < firstGate.getNumTargets(); i++) {
-      targetOutputsFirstGate.push_back(firstGate.getOutputTarget(i));
-      targetInputsSecondGate.push_back(secondGate.getInputTarget(i));
-    }
-    for (size_t i = 0; i < firstGate.getNumControls(); i++) {
-      targetOutputsFirstGate.push_back(firstGate.getOutputControl(i));
-      targetInputsSecondGate.push_back(secondGate.getInputControl(i));
-    }
+  static mlir::LogicalResult
+  swapGateWithHadamardControlled(CtrlOp ctrlGate, CtrlOp ctrlHadamardGate,
+                                 mlir::PatternRewriter& rewriter) {
+    auto gate = ctrlGate.getBodyUnitary();
+    auto hadamardGate = ctrlHadamardGate.getBodyUnitary();
+    const auto gateName = gate->getName().stripDialect().str();
 
-    bool result = true;
-    result &= containRangesOfSameElements(targetOutputsFirstGate,
-                                          targetInputsSecondGate);
-    result &= containRangesOfSameElements(controlOutputsFirstGate,
-                                          controlInputsSecondGate);
-    return result;
+    if (gateName == "x" || gateName == "y" || gateName == "z") {
+      rewriter.setInsertionPoint(gate);
+      rewriter.replaceOpWithNewOp<HOp>(gate, gate.getInputQubit(0));
+      if (gateName == "x") {
+        rewriter.setInsertionPoint(hadamardGate);
+        rewriter.replaceOpWithNewOp<ZOp>(hadamardGate,
+                                         hadamardGate.getInputQubit(0));
+      } else if (gateName == "z") {
+        rewriter.setInsertionPoint(hadamardGate);
+        rewriter.replaceOpWithNewOp<XOp>(hadamardGate,
+                                         hadamardGate.getInputQubit(0));
+      } else {
+        rewriter.setInsertionPoint(hadamardGate);
+        rewriter.replaceOpWithNewOp<YOp>(hadamardGate,
+                                         hadamardGate.getInputQubit(0));
+      }
+      return success();
+    }
+    return failure();
   }
 
   /**
-   * @brief This method swaps a gate with is succeeding hadamard gate, if
+   * This method checks whether the first and second controls are controlled by
+   * the same qubits.
+   *
+   * @param firstCtrl The first (preceding) controlled gate.
+   * @param secondCtrl The second (succeeding) controlled gate.
+   * @return true if the controls are controlled by the same qubits.
+   */
+  static bool areControlsControlledBySameQubits(CtrlOp firstCtrl,
+                                                CtrlOp secondCtrl) {
+    std::vector<Value> controlOutputsFirstGate(
+        firstCtrl.getControlsOut().begin(), firstCtrl.getControlsOut().end());
+    std::vector<Value> controlInputsSecondGate(
+        secondCtrl.getControlsIn().begin(), secondCtrl.getControlsIn().end());
+    return containRangesOfSameElements(controlOutputsFirstGate,
+                                       controlInputsSecondGate);
+  }
+
+  /**
+   * @brief Lifts controlled Hadamard gates in front of controlled Pauli gates.
+   *
+   * This pattern lifts controlled Hadamard gates in front of controlled Pauli
+   * gates. This can be done if the output target of the Pauli gate is the input
+   * target of the Hadamard gate. Also, all control output qubits need to be the
+   * input control qubits of the Hadamard gates. If the Pauli gate is a Z gate,
+   * the target and control qubits can be changed upfront in order to be able to
+   * lift it.
+   *
+   * @param op The controlled operation to match (only controlled Pauli gates
+   * trigger the rewrite)
+   * @param rewriter Pattern rewriter for applying transformations
+   * @return success() if circuit was changed, failure() otherwise
+   */
+  mlir::LogicalResult
+  matchAndRewrite(CtrlOp op, mlir::PatternRewriter& rewriter) const override {
+    // op needs to be a controlled Pauli gate
+    std::string opName = op.getBodyUnitary()->getName().stripDialect().str();
+    if (opName != "x" && opName != "y" && opName != "z") {
+      return failure();
+    }
+
+    // op needs to be in front of a controlled Hadamard gate
+    const auto& users = op->getUsers();
+    if (users.empty()) {
+      return failure();
+    }
+    auto user = *users.begin();
+    auto userName = user->getName().stripDialect().str();
+    if (userName != "ctrl") {
+      return failure();
+    }
+    auto ctrldUser = mlir::dyn_cast<CtrlOp>(user);
+    if (ctrldUser.getBodyUnitary()->getName().stripDialect().str() != "h") {
+      return failure();
+    }
+
+    if (op.getNumTargets() != 1 || ctrldUser.getNumTargets() != 1 ||
+        op.getOutputTarget(0) != ctrldUser.getInputTarget(0)) {
+      return failure();
+    }
+
+    if (!areControlsControlledBySameQubits(op, ctrldUser)) {
+      return failure();
+    }
+
+    return swapGateWithHadamardControlled(op, ctrldUser, rewriter);
+  }
+};
+
+/**
+ * @brief This pattern is responsible for lifting uncontrolled Hadamard gates
+ * above uncontrolled Pauli gates.
+ */
+struct LiftHadamardsAbovePauliGatesPattern final
+    : OpInterfaceRewritePattern<UnitaryOpInterface> {
+  explicit LiftHadamardsAbovePauliGatesPattern(MLIRContext* context)
+      : OpInterfaceRewritePattern(context) {}
+
+  /**
+   * @brief This method swaps a gate with is succeeding Hadamard gate, if
    * applicable.
    *
-   * This method swaps a gate with its suceeding hadamard gate. This is only
-   * done if there is a simple commutation rule to do so.
-   * Currently implemented:
+   * This method swaps an uncontrolled gate with its succeeding uncontrolled
+   * Hadamard gate. This is only done if there is a simple commutation rule to
+   * do so. Currently implemented:
    * - X - H - = - H - Z -
    * - Y - H - = - H - Y -
    * - Z - H - = - H - X -
@@ -142,8 +203,9 @@ struct LiftHadamardsAbovePauliGatesPattern final
    * @param rewriter The used rewriter.
    */
   static mlir::LogicalResult
-  swapGateWithHadamard(UnitaryOpInterface gate, UnitaryOpInterface hadamardGate,
-                       mlir::PatternRewriter& rewriter) {
+  swapGateWithHadamardUncontrolled(UnitaryOpInterface gate,
+                                   UnitaryOpInterface hadamardGate,
+                                   mlir::PatternRewriter& rewriter) {
     const auto gateName = gate->getName().stripDialect().str();
 
     if (gateName == "x" || gateName == "y" || gateName == "z") {
@@ -171,7 +233,8 @@ struct LiftHadamardsAbovePauliGatesPattern final
   }
 
   /**
-   * @brief Lifts Hadamard gates in front of Pauli gates.
+   * @brief Lifts uncontrolled Hadamard gates in front of uncontrolled Pauli
+   * gates.
    *
    * @param op The operation to match (only Pauli gates trigger the rewrite)
    * @param rewriter Pattern rewriter for applying transformations
@@ -191,17 +254,20 @@ struct LiftHadamardsAbovePauliGatesPattern final
       return failure();
     }
     auto user = *users.begin();
-    if (user->getName().stripDialect().str() != "h") {
+    auto userName = user->getName().stripDialect().str();
+    if (userName != "h") {
       return failure();
     }
 
     auto hadamardGate = mlir::dyn_cast<UnitaryOpInterface>(user);
 
-    if (!areGatesConnectedExactlyBySameQubits(op, hadamardGate)) {
+    if (op.getNumControls() > 0 || hadamardGate.getNumControls() > 0 ||
+        op.getNumTargets() != 1 || hadamardGate.getNumTargets() != 1 ||
+        op.getOutputTarget(0) != hadamardGate.getInputTarget(0)) {
       return failure();
     }
 
-    return swapGateWithHadamard(op, hadamardGate, rewriter);
+    return swapGateWithHadamardUncontrolled(op, hadamardGate, rewriter);
   }
 };
 
@@ -250,7 +316,8 @@ protected:
 
     // Define the set of patterns to use.
     RewritePatternSet patterns(ctx);
-    patterns.add<AdaptCtrldPauliZToLiftingPattern>(patterns.getContext());
+    patterns.add<LiftCtrldHadamardsAboveCtrldPauliGatesPattern>(
+        patterns.getContext());
     patterns.add<LiftHadamardsAbovePauliGatesPattern>(patterns.getContext());
     patterns.add<LiftHadamardAboveCNOTPattern>(patterns.getContext());
 

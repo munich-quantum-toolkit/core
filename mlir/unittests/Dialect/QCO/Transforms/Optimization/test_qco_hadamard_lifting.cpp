@@ -8,6 +8,7 @@
  * Licensed under the MIT License
  */
 
+// #include "mlir/Compiler/CompilerPipeline.h"
 #include "mlir/Dialect/QCO/Builder/QCOProgramBuilder.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
@@ -211,7 +212,7 @@ TEST_F(QCOHadamardLiftingTest, liftHadamardOnlyOverPreceedingPauliGate) {
 // ##################################################
 
 /**
- * @brief Test: Checks if hadamard gates are lifted if they are controlled by
+ * @brief Test: Checks if Hadamard gates are lifted if they are controlled by
  * the same qubit as the lifted gate is.
  */
 TEST_F(QCOHadamardLiftingTest, liftHadamardOverPauliGateIfControlled) {
@@ -232,6 +233,11 @@ TEST_F(QCOHadamardLiftingTest, liftHadamardOverPauliGateIfControlled) {
   ASSERT_TRUE(runHadamardLiftingPass(module.get()).succeeded());
   runCanonicalizationPasses(reference.get());
   EXPECT_TRUE(verify(*reference).succeeded());
+
+  // auto qco = captureIR(module.get());
+  // std::cout << qco;
+  // qco = captureIR(reference.get());
+  // std::cout << qco;
 
   EXPECT_TRUE(
       areModulesEquivalentWithPermutations(module.get(), reference.get()));
