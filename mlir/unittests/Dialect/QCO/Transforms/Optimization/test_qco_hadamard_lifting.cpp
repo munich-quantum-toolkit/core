@@ -234,11 +234,6 @@ TEST_F(QCOHadamardLiftingTest, liftHadamardOverPauliGateIfControlled) {
   runCanonicalizationPasses(reference.get());
   EXPECT_TRUE(verify(*reference).succeeded());
 
-  // auto qco = captureIR(module.get());
-  // std::cout << qco;
-  // qco = captureIR(reference.get());
-  // std::cout << qco;
-
   EXPECT_TRUE(
       areModulesEquivalentWithPermutations(module.get(), reference.get()));
 }
@@ -330,17 +325,18 @@ TEST_F(QCOHadamardLiftingTest, doNotLiftHadamardIfSomeDifferentControls) {
  */
 TEST_F(QCOHadamardLiftingTest, liftHadamardOverControlledPauliZ) {
   auto q = programBuilder.allocQubitRegister(3);
+  q[0] = programBuilder.s(q[0]);
   auto qubitPairRange =
       programBuilder.ctrl({q[1], q[2]}, {q[0]}, [&](mlir::ValueRange target) {
         return llvm::SmallVector<mlir::Value>{programBuilder.z(target[0])};
       });
   qubitPairRange = programBuilder.ctrl(
-      {qubitPairRange.first[1], qubitPairRange.second[0]},
+      {qubitPairRange.second[0], qubitPairRange.first[1]},
       {qubitPairRange.first[0]}, [&](mlir::ValueRange target) {
         return llvm::SmallVector<mlir::Value>{programBuilder.h(target[0])};
       });
-  auto qubitPair =
-      programBuilder.cz(qubitPairRange.second[0], qubitPairRange.first[0]);
+  q[0] = programBuilder.s(qubitPairRange.first[0]);
+  auto qubitPair = programBuilder.cz(qubitPairRange.second[0], q[0]);
   qubitPairRange = programBuilder.ctrl(
       {qubitPairRange.first[1], qubitPair.second}, {qubitPair.first},
       [&](mlir::ValueRange target) {
@@ -355,8 +351,9 @@ TEST_F(QCOHadamardLiftingTest, liftHadamardOverControlledPauliZ) {
   module = programBuilder.finalize();
 
   auto qRef = referenceBuilder.allocQubitRegister(3);
+  qRef[0] = referenceBuilder.s(qRef[0]);
   auto qubitPairRangeRef = referenceBuilder.ctrl(
-      {qRef[2], qRef[0]}, {qRef[1]}, [&](mlir::ValueRange target) {
+      {qRef[0], qRef[2]}, {qRef[1]}, [&](mlir::ValueRange target) {
         return llvm::SmallVector<mlir::Value>{referenceBuilder.h(target[0])};
       });
   qubitPairRangeRef = referenceBuilder.ctrl(
@@ -364,8 +361,8 @@ TEST_F(QCOHadamardLiftingTest, liftHadamardOverControlledPauliZ) {
       [&](mlir::ValueRange target) {
         return llvm::SmallVector<mlir::Value>{referenceBuilder.x(target[0])};
       });
-  auto qubitPairRef = referenceBuilder.cz(qubitPairRangeRef.second[0],
-                                          qubitPairRangeRef.first[0]);
+  qRef[0] = referenceBuilder.s(qubitPairRangeRef.first[0]);
+  auto qubitPairRef = referenceBuilder.cz(qubitPairRangeRef.second[0], qRef[0]);
   qubitPairRangeRef = referenceBuilder.ctrl(
       {qubitPairRangeRef.first[1], qubitPairRef.second}, {qubitPairRef.first},
       [&](mlir::ValueRange target) {
@@ -382,6 +379,11 @@ TEST_F(QCOHadamardLiftingTest, liftHadamardOverControlledPauliZ) {
   ASSERT_TRUE(runHadamardLiftingPass(module.get()).succeeded());
   runCanonicalizationPasses(reference.get());
   EXPECT_TRUE(verify(*reference).succeeded());
+
+  // auto qco = captureIR(module.get());
+  // std::cout << qco;
+  // qco = captureIR(reference.get());
+  // std::cout << qco;
 
   EXPECT_TRUE(
       areModulesEquivalentWithPermutations(module.get(), reference.get()));

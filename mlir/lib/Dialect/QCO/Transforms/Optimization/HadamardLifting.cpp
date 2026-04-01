@@ -29,6 +29,25 @@ namespace mlir::qco {
 namespace {
 
 /**
+ * @brief This method checks if two ranges contain of exactly the same
+ * elements.
+ *
+ * This method checks if two ranges contain of exactly the same elements.
+ *
+ * @param range1 The first range.
+ * @param range2 The second range.
+ */
+bool containRangesOfSameElements(const std::vector<Value>& range1,
+                                 const std::vector<Value>& range2) {
+  bool result = true;
+  result &= range1.size() == range2.size();
+  for (auto element : range1) {
+    result &= std::find(range2.begin(), range2.end(), element) != range2.end();
+  }
+  return result;
+}
+
+/**
  * @brief This pattern changes the target of a controlled Pauli Z gate if a
  * controlled hadamard gate is it successor.
  * If all out qubits of Pauli Z are equal to all in qubits of Hadamard, we can
@@ -37,11 +56,90 @@ namespace {
  * a ctrl at the hadamard and vice versa, we can change the target of Pauli Z to
  * the Hadamard's. This is done in this pattern.
  */
-struct AdaptCtrldPauliZToLiftingPattern final
-    : mlir::OpInterfaceRewritePattern<UnitaryOpInterface> {
+struct AdaptCtrldPauliZToLiftingPattern final : mlir::OpRewritePattern<CtrlOp> {
 
   explicit AdaptCtrldPauliZToLiftingPattern(mlir::MLIRContext* context)
-      : OpInterfaceRewritePattern(context) {}
+      : OpRewritePattern(context) {}
+
+  /**
+   * @brief This method checks if two gates are connected by the same qubits.
+   *
+   * This method checks if the output qubits of the first gate are exactly the
+   * input qubits of the second gate. There must be no qubit that is only used
+   * by one of the gates. The qubits may have different tasks (e.g. bein target
+   * in the first gate but ctrl in the second).
+   *
+   * @param firstGate The first unitary gate.
+   * @param secondGate The second unitary gate.
+   */
+  static bool areGatesConnectedBySameQubits(UnitaryOpInterface firstGate,
+                                            UnitaryOpInterface secondGate) {
+    auto inQubits = secondGate.getInputQubits();
+    auto outQubits = firstGate.getOutputQubits();
+
+    bool result = true;
+    result &= inQubits.size() == outQubits.size();
+    for (auto element : inQubits) {
+      result &= std::find(outQubits.begin(), outQubits.end(), element) !=
+                outQubits.end();
+    }
+    return result;
+  }
+
+  /**
+   * @brief Checks if the target qubit of gate 1 is part of the ctrl qubits of
+   * gate 2 and vice versa.
+   *
+   * This method checks if the output target qubit of gate 1 is used as control
+   * qubit of gate 2. Additionally, it checks if the input target of gate 2 is
+   * an output control of gate 2. Returns true if that is the case.
+   * Must only be used on gates that have a single target qubit.
+   *
+   * @param gate1 First gate, predecessor of gate2.
+   * @param gate2 Second gate, successor of gate1.
+   * @return True if target qubit of gate1 is ctrl in gate2 and vice versa.
+   * False otherwise.
+   */
+  static bool areTargetsControlsAtTheOtherGates(CtrlOp gate1, CtrlOp gate2) {
+    Value targetQubitGate2 = gate2.getInputTarget(0);
+    Value targetQubitGate1 = gate1.getOutputTarget(0);
+    auto inCtrlGate2 = gate2.getControlsIn();
+    auto outCtrlGate1 = gate1.getControlsOut();
+
+    return std::find(inCtrlGate2.begin(), inCtrlGate2.end(),
+                     targetQubitGate1) != inCtrlGate2.end() &&
+           std::find(outCtrlGate1.begin(), outCtrlGate1.end(),
+                     targetQubitGate2) != outCtrlGate1.end();
+  }
+
+  /**
+   * @brief This method exchanges the position of two qubits acting on the same
+   * gate.
+   *
+   * This method exchanges two qubits acting on the same gate. E.g. if qubit 1
+   * is a target qubit and qubit 2 a control qubit, that is exchanged.
+   *
+   *
+   * @param gate The gate both qubit1 and qubit2 belong to.
+   * @param qubit1 First qubit, exchanged with second.
+   * @param qubit2 Second qubit, exchanged with first.
+   * @param temporary Qubit that is not used on the respective gate. Used as
+   * temporary variable.
+   * @param rewriter The rewriter.
+   */
+  static void exchangeTwoQubitsAtGate(UnitaryOpInterface gate, Value qubit1,
+                                      Value qubit2, Value temporary,
+                                      PatternRewriter& rewriter) {
+    rewriter.replaceUsesWithIf(
+        qubit1, temporary,
+        [&](mlir::OpOperand& operand) { return operand.getOwner() == gate; });
+    rewriter.replaceUsesWithIf(qubit2, qubit1, [&](mlir::OpOperand& operand) {
+      return operand.getOwner() == gate;
+    });
+    rewriter.replaceUsesWithIf(
+        temporary, qubit2,
+        [&](mlir::OpOperand& operand) { return operand.getOwner() == gate; });
+  }
 
   /**
    * @brief Changes the target of a controlled Pauli Z gate if a
@@ -51,10 +149,59 @@ struct AdaptCtrldPauliZToLiftingPattern final
    * @param rewriter Pattern rewriter for applying transformations
    * @return success() if circuit was changed, failure() otherwise
    */
-  mlir::LogicalResult
-  matchAndRewrite(UnitaryOpInterface op,
-                  mlir::PatternRewriter& rewriter) const override {
-    return failure();
+  LogicalResult matchAndRewrite(CtrlOp op,
+                                PatternRewriter& rewriter) const override {
+    // op needs to be a Pauli Z gate and controlled
+    std::string opName = op.getBodyUnitary()->getName().stripDialect().str();
+    if (op.getNumTargets() != 1 || opName != "z") {
+      return failure();
+    }
+
+    // op needs to be in front of a controlled hadamard gate
+    const auto& users = op->getUsers();
+    if (users.empty()) {
+      return failure();
+    }
+    auto user = *users.begin();
+    if (user->getName().stripDialect().str() != "ctrl") {
+      return failure();
+    }
+    auto hadamardGate = mlir::dyn_cast<CtrlOp>(user);
+    if (hadamardGate.getNumTargets() != 1 ||
+        hadamardGate.getBodyUnitary()->getName().stripDialect().str() != "h") {
+      return failure();
+    }
+
+    std::vector<Value> outputsOp(op.getOutputQubits().begin(),
+                                 op.getOutputQubits().end());
+    std::vector<Value> inputsH(hadamardGate.getInputQubits().begin(),
+                               hadamardGate.getInputQubits().end());
+    if (!containRangesOfSameElements(outputsOp, inputsH)) {
+      return failure();
+    }
+
+    // If the target qubit of H is a ctrl in Z and vice versa, we can move Z's
+    // target to H's target
+    if (!areTargetsControlsAtTheOtherGates(op, hadamardGate)) {
+      return failure();
+    }
+
+    // Put the Z target to the same qubit as the hadamard target is
+    Value originalTargetQubitZ = op.getInputTarget(0);
+    Value targetQubitHadamard = hadamardGate.getInputTarget(0);
+    Value newTargetQubitZ = op.getInputForOutput(targetQubitHadamard);
+    Value temporary = hadamardGate.getOutputTarget(0);
+
+    exchangeTwoQubitsAtGate(op, originalTargetQubitZ, newTargetQubitZ,
+                            temporary, rewriter);
+
+    Value newTargetQubitH = op.getOutputForInput(newTargetQubitZ);
+    temporary = op.getInputTarget(0);
+
+    exchangeTwoQubitsAtGate(hadamardGate, targetQubitHadamard, newTargetQubitH,
+                            temporary, rewriter);
+
+    return success();
   }
 };
 
@@ -74,26 +221,6 @@ struct LiftHadamardsAbovePauliGatesPattern final
     : OpInterfaceRewritePattern<UnitaryOpInterface> {
   explicit LiftHadamardsAbovePauliGatesPattern(MLIRContext* context)
       : OpInterfaceRewritePattern(context) {}
-
-  /**
-   * @brief This method checks if two ranges contain of exactly the same
-   * elements.
-   *
-   * This method checks if two ranges contain of exactly the same elements.
-   *
-   * @param range1 The first range.
-   * @param range2 The second range.
-   */
-  static bool containRangesOfSameElements(const std::vector<Value>& range1,
-                                          const std::vector<Value>& range2) {
-    bool result = true;
-    result &= range1.size() == range2.size();
-    for (auto element : range1) {
-      result &=
-          std::find(range2.begin(), range2.end(), element) != range2.end();
-    }
-    return result;
-  }
 
   /**
    * This method checks whether the first and second controls are controlled by
