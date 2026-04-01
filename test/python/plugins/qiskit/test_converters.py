@@ -37,7 +37,7 @@ def test_qiskit_to_iqm_json_simple_circuit(mock_qdmi_device_factory: type[MockQD
     qc.cz(0, 1)
     qc.measure_all()
 
-    json_str = qiskit_to_iqm_json(qc, device)  # type: ignore[arg-type]
+    json_str = qiskit_to_iqm_json(qc, device)  # ty: ignore[invalid-argument-type]
     program = json.loads(json_str)
 
     assert "name" in program
@@ -59,7 +59,7 @@ def test_qiskit_to_iqm_json_prx_parameters(mock_qdmi_device_factory: type[MockQD
     qc.r(angle, phase, 0)
     qc.measure_all()
 
-    json_str = qiskit_to_iqm_json(qc, device)  # type: ignore[arg-type]
+    json_str = qiskit_to_iqm_json(qc, device)  # ty: ignore[invalid-argument-type]
     program = json.loads(json_str)
 
     prx_instr = program["instructions"][0]
@@ -81,7 +81,7 @@ def test_qiskit_to_iqm_json_barrier(mock_qdmi_device_factory: type[MockQDMIDevic
     qc = QuantumCircuit(3)
     qc.barrier([0, 1, 2])
 
-    json_str = qiskit_to_iqm_json(qc, device)  # type: ignore[arg-type]
+    json_str = qiskit_to_iqm_json(qc, device)  # ty: ignore[invalid-argument-type]
     program = json.loads(json_str)
 
     barrier_instr = program["instructions"][0]
@@ -97,7 +97,7 @@ def test_qiskit_to_iqm_json_cz_gate(mock_qdmi_device_factory: type[MockQDMIDevic
     qc = QuantumCircuit(2)
     qc.cz(0, 1)
 
-    json_str = qiskit_to_iqm_json(qc, device)  # type: ignore[arg-type]
+    json_str = qiskit_to_iqm_json(qc, device)  # ty: ignore[invalid-argument-type]
     program = json.loads(json_str)
 
     cz_instr = program["instructions"][0]
@@ -113,7 +113,7 @@ def test_qiskit_to_iqm_json_measure_keys(mock_qdmi_device_factory: type[MockQDMI
     qc = QuantumCircuit(2, 2)
     qc.measure_all()
 
-    json_str = qiskit_to_iqm_json(qc, device)  # type: ignore[arg-type]
+    json_str = qiskit_to_iqm_json(qc, device)  # ty: ignore[invalid-argument-type]
     program = json.loads(json_str)
 
     barr = program["instructions"][0]
@@ -137,7 +137,7 @@ def test_qiskit_to_iqm_json_unsupported_operation(mock_qdmi_device_factory: type
     qc.h(0)
 
     with pytest.raises(UnsupportedOperationError, match="not supported in IQM JSON format"):
-        qiskit_to_iqm_json(qc, device)  # type: ignore[arg-type]
+        qiskit_to_iqm_json(qc, device)  # ty: ignore[invalid-argument-type]
 
 
 def test_qiskit_to_iqm_json_circuit_name(mock_qdmi_device_factory: type[MockQDMIDevice]) -> None:
@@ -147,7 +147,7 @@ def test_qiskit_to_iqm_json_circuit_name(mock_qdmi_device_factory: type[MockQDMI
     qc = QuantumCircuit(1, 1, name="my_test_circuit")
     qc.measure_all()
 
-    json_str = qiskit_to_iqm_json(qc, device)  # type: ignore[arg-type]
+    json_str = qiskit_to_iqm_json(qc, device)  # ty: ignore[invalid-argument-type]
     program = json.loads(json_str)
 
     assert program["name"] == "my_test_circuit"
@@ -167,7 +167,7 @@ def test_qiskit_to_iqm_json_unbound_parameters(mock_qdmi_device_factory: type[Mo
 
     # Should raise UnsupportedOperationError with clear message
     with pytest.raises(UnsupportedOperationError) as exc_info:
-        qiskit_to_iqm_json(qc, device)  # type: ignore[arg-type]
+        qiskit_to_iqm_json(qc, device)  # ty: ignore[invalid-argument-type]
 
     error_msg = str(exc_info.value)
     assert "unbound parameters" in error_msg.lower()
@@ -192,7 +192,7 @@ def test_qiskit_to_iqm_json_bound_parameters(mock_qdmi_device_factory: type[Mock
     qc_bound = qc.assign_parameters({theta: np.pi / 2, phi: 0.0})
 
     # Should convert successfully
-    json_str = qiskit_to_iqm_json(qc_bound, device)  # type: ignore[arg-type]
+    json_str = qiskit_to_iqm_json(qc_bound, device)  # ty: ignore[invalid-argument-type]
     program = json.loads(json_str)
 
     assert "instructions" in program
@@ -221,7 +221,7 @@ def test_qiskit_to_iqm_json_unregistered_classical_bit(mock_qdmi_device_factory:
 
     # Should raise TranslationError with clear message
     with pytest.raises(TranslationError) as exc_info:
-        qiskit_to_iqm_json(qc, device)  # type: ignore[arg-type]
+        qiskit_to_iqm_json(qc, device)  # ty: ignore[invalid-argument-type]
 
     error_msg = str(exc_info.value)
     assert "unregistered classical bit" in error_msg.lower()
@@ -239,7 +239,7 @@ def test_qiskit_to_iqm_json_registered_classical_bit(mock_qdmi_device_factory: t
     qc.measure(1, 1)
 
     # Should convert successfully
-    json_str = qiskit_to_iqm_json(qc, device)  # type: ignore[arg-type]
+    json_str = qiskit_to_iqm_json(qc, device)  # ty: ignore[invalid-argument-type]
     program = json.loads(json_str)
 
     assert "instructions" in program
