@@ -114,6 +114,24 @@ INSTANTIATE_TEST_SUITE_P(
                                MQT_NAMED_BUILDER(fourControlledRxx)}));
 /// @}
 
+/// \name QC/Modifiers/PowOp.cpp
+/// @{
+INSTANTIATE_TEST_SUITE_P(
+    QCPowOpTest, QCTest,
+    testing::Values(QCTestCase{"Pow1Inline", MQT_NAMED_BUILDER(pow1Inline),
+                               MQT_NAMED_BUILDER(s)},
+                    QCTestCase{"Pow0Erase", MQT_NAMED_BUILDER(pow0Erase),
+                               MQT_NAMED_BUILDER(emptyQC)},
+                    QCTestCase{"NestedPow", MQT_NAMED_BUILDER(nestedPow),
+                               MQT_NAMED_BUILDER(powSingleExponent)},
+                    QCTestCase{"PowRxx", MQT_NAMED_BUILDER(powRxx),
+                               MQT_NAMED_BUILDER(powRxx)},
+                    QCTestCase{"NegPowS", MQT_NAMED_BUILDER(negPowS),
+                               MQT_NAMED_BUILDER(powSdg)},
+                    QCTestCase{"InvPowS", MQT_NAMED_BUILDER(invPowS),
+                               MQT_NAMED_BUILDER(powSdg)}));
+/// @}
+
 /// \name QC/Modifiers/InvOp.cpp
 /// @{
 INSTANTIATE_TEST_SUITE_P(

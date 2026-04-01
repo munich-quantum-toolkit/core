@@ -1214,10 +1214,9 @@ def PowOp
         ```
     }];
 
-  let arguments =
-      (ins F64Attr:$exponent,
-           Arg<Variadic<QubitType>,
-               "the qubits involved in the operation", [MemRead]>:$qubits_in);
+  let arguments = (ins F64Attr:$exponent,
+      Arg<Variadic<QubitType>,
+          "the qubits involved in the operation", [MemRead]>:$qubits_in);
   let results = (outs Variadic<QubitType>:$qubits_out);
   let regions = (region SizedRegion<1>:$region);
   let assemblyFormat = [{

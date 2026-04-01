@@ -1270,4 +1270,46 @@ void invCtrlSandwich(QCProgramBuilder& b) {
   });
 }
 
+// --- PowOp ---------------------------------------------------------------- //
+
+void pow1Inline(QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  b.pow(1.0, [&] { b.s(q[0]); });
+}
+
+void pow0Erase(QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  b.pow(0.0, [&] { b.s(q[0]); });
+}
+
+void nestedPow(QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  b.pow(3.0, [&] { b.pow(2.0, [&] { b.s(q[0]); }); });
+}
+
+void powSingleExponent(QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  b.pow(6.0, [&] { b.s(q[0]); });
+}
+
+void powRxx(QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(2);
+  b.pow(2.0, [&] { b.rxx(0.123, q[0], q[1]); });
+}
+
+void negPowS(QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  b.pow(-2.0, [&] { b.s(q[0]); });
+}
+
+void invPowS(QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  b.inv([&] { b.pow(2.0, [&] { b.s(q[0]); }); });
+}
+
+void powSdg(QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  b.pow(2.0, [&] { b.sdg(q[0]); });
+}
+
 } // namespace mlir::qc

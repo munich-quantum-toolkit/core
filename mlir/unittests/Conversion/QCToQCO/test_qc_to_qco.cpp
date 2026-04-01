@@ -142,6 +142,24 @@ INSTANTIATE_TEST_SUITE_P(
                         MQT_NAMED_BUILDER(qco::allocSinkPair)}));
 /// @}
 
+/// \name QCToQCO/Modifiers/PowOp.cpp
+/// @{
+INSTANTIATE_TEST_SUITE_P(
+    QCPowOpTest, QCToQCOTest,
+    testing::Values(QCToQCOTestCase{"PowSingleExponent",
+                                    MQT_NAMED_BUILDER(qc::powSingleExponent),
+                                    MQT_NAMED_BUILDER(qco::powSingleExponent)},
+                    QCToQCOTestCase{"NestedPow",
+                                    MQT_NAMED_BUILDER(qc::nestedPow),
+                                    MQT_NAMED_BUILDER(qco::powSingleExponent)},
+                    QCToQCOTestCase{"PowRxx", MQT_NAMED_BUILDER(qc::powRxx),
+                                    MQT_NAMED_BUILDER(qco::powRxx)},
+                    QCToQCOTestCase{"NegPowS", MQT_NAMED_BUILDER(qc::negPowS),
+                                    MQT_NAMED_BUILDER(qco::negPowS)},
+                    QCToQCOTestCase{"InvPowS", MQT_NAMED_BUILDER(qc::invPowS),
+                                    MQT_NAMED_BUILDER(qco::powSdg)}));
+/// @}
+
 /// \name QCToQCO/Modifiers/InvOp.cpp
 /// @{
 INSTANTIATE_TEST_SUITE_P(
