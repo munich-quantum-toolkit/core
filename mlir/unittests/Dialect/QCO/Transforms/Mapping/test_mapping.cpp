@@ -8,7 +8,6 @@
  * Licensed under the MIT License
  */
 
-#include "mlir/Conversion/QCOToQC/QCOToQC.h"
 #include "mlir/Conversion/QCToQCO/QCToQCO.h"
 #include "mlir/Dialect/QC/Builder/QCProgramBuilder.h"
 #include "mlir/Dialect/QC/IR/QCDialect.h"
@@ -18,7 +17,6 @@
 #include "mlir/Dialect/QCO/Transforms/Passes.h"
 
 #include <gtest/gtest.h>
-#include <llvm/ADT/STLExtras.h>
 #include <llvm/Support/LogicalResult.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
@@ -31,10 +29,8 @@
 #include <mlir/Support/WalkResult.h>
 
 #include <cassert>
-#include <cstddef>
 #include <memory>
 #include <string>
-#include <tuple>
 
 using namespace mlir;
 using namespace mlir::qco;
@@ -171,9 +167,9 @@ TEST_P(MappingPassTest, Sabre) {
   const qco::MappingPassOptions options{.nlookahead = 1,
                                         .alpha = 1,
                                         .lambda = 0.85,
+                                        .fullLayers = true,
                                         .niterations = 2,
                                         .ntrials = 4,
-                                        .fullLayers = true,
                                         .seed = 42};
   runHeuristicMapping(moduleOp, options);
   EXPECT_TRUE(isExecutable(moduleOp->getBodyRegion(), arch).succeeded());
