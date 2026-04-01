@@ -62,31 +62,6 @@ struct AdaptCtrldPauliZToLiftingPattern final : mlir::OpRewritePattern<CtrlOp> {
       : OpRewritePattern(context) {}
 
   /**
-   * @brief This method checks if two gates are connected by the same qubits.
-   *
-   * This method checks if the output qubits of the first gate are exactly the
-   * input qubits of the second gate. There must be no qubit that is only used
-   * by one of the gates. The qubits may have different tasks (e.g. bein target
-   * in the first gate but ctrl in the second).
-   *
-   * @param firstGate The first unitary gate.
-   * @param secondGate The second unitary gate.
-   */
-  static bool areGatesConnectedBySameQubits(UnitaryOpInterface firstGate,
-                                            UnitaryOpInterface secondGate) {
-    auto inQubits = secondGate.getInputQubits();
-    auto outQubits = firstGate.getOutputQubits();
-
-    bool result = true;
-    result &= inQubits.size() == outQubits.size();
-    for (auto element : inQubits) {
-      result &= std::find(outQubits.begin(), outQubits.end(), element) !=
-                outQubits.end();
-    }
-    return result;
-  }
-
-  /**
    * @brief Checks if the target qubit of gate 1 is part of the ctrl qubits of
    * gate 2 and vice versa.
    *
@@ -123,13 +98,13 @@ struct AdaptCtrldPauliZToLiftingPattern final : mlir::OpRewritePattern<CtrlOp> {
    * @param gate The gate both qubit1 and qubit2 belong to.
    * @param qubit1 First qubit, exchanged with second.
    * @param qubit2 Second qubit, exchanged with first.
-   * @param temporary Qubit that is not used on the respective gate. Used as
-   * temporary variable.
    * @param rewriter The rewriter.
    */
   static void exchangeTwoQubitsAtGate(UnitaryOpInterface gate, Value qubit1,
-                                      Value qubit2, Value temporary,
-                                      PatternRewriter& rewriter) {
+                                      Value qubit2, PatternRewriter& rewriter) {
+    auto temporary =
+        rewriter.create<IdOp>(gate.getLoc(), gate.getInputTarget(0))
+            .getResult();
     rewriter.replaceUsesWithIf(
         qubit1, temporary,
         [&](mlir::OpOperand& operand) { return operand.getOwner() == gate; });
@@ -187,19 +162,17 @@ struct AdaptCtrldPauliZToLiftingPattern final : mlir::OpRewritePattern<CtrlOp> {
     }
 
     // Put the Z target to the same qubit as the hadamard target is
-    Value originalTargetQubitZ = op.getInputTarget(0);
-    Value targetQubitHadamard = hadamardGate.getInputTarget(0);
-    Value newTargetQubitZ = op.getInputForOutput(targetQubitHadamard);
-    Value temporary = hadamardGate.getOutputTarget(0);
+    Value originalInputTargetQubitZ = op.getInputTarget(0);
+    Value targetInputQubitHadamard = hadamardGate.getInputTarget(0);
+    Value newTargetInputQubitZ = op.getInputForOutput(targetInputQubitHadamard);
 
-    exchangeTwoQubitsAtGate(op, originalTargetQubitZ, newTargetQubitZ,
-                            temporary, rewriter);
+    exchangeTwoQubitsAtGate(op, originalInputTargetQubitZ, newTargetInputQubitZ,
+                            rewriter);
 
-    Value newTargetQubitH = op.getOutputForInput(newTargetQubitZ);
-    temporary = op.getInputTarget(0);
+    Value newTargetInputQubitH = op.getOutputForInput(newTargetInputQubitZ);
 
-    exchangeTwoQubitsAtGate(hadamardGate, targetQubitHadamard, newTargetQubitH,
-                            temporary, rewriter);
+    exchangeTwoQubitsAtGate(hadamardGate, targetInputQubitHadamard,
+                            newTargetInputQubitH, rewriter);
 
     return success();
   }
