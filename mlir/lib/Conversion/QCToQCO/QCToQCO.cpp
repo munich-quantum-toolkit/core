@@ -1078,7 +1078,7 @@ struct ConvertQCBarrierOp final : StatefulOpConversionPattern<qc::BarrierOp> {
                   ConversionPatternRewriter& rewriter) const override {
     auto& state = getState();
     auto* operation = op.getOperation();
-    const auto qcQubits = llvm::to_vector(op.getQubits());
+    auto qcQubits = op.getQubits();
     auto qcoQubits = resolveMappedQubits(state, operation, qcQubits);
 
     // Create qco.barrier
