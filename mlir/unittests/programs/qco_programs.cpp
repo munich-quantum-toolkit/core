@@ -34,8 +34,8 @@ void allocMultipleQubitRegisters(QCOProgramBuilder& b) {
 void allocLargeRegister(QCOProgramBuilder& b) { b.allocQubitRegister(100); }
 
 void staticQubits(QCOProgramBuilder& b) {
-  auto q0 = b.staticQubit(0);
-  auto q1 = b.staticQubit(1);
+  b.staticQubit(0);
+  b.staticQubit(1);
 }
 
 void staticQubitsWithOps(QCOProgramBuilder& b) {

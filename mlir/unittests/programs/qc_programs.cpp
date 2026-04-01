@@ -30,14 +30,13 @@ void allocMultipleQubitRegisters(QCProgramBuilder& b) {
 void allocLargeRegister(QCProgramBuilder& b) { b.allocQubitRegister(100); }
 
 void staticQubits(QCProgramBuilder& b) {
-  const auto q0 = b.staticQubit(0);
-  const auto q1 = b.staticQubit(1);
+  b.staticQubit(0);
+  b.staticQubit(1);
 }
 
 void staticQubitsWithOps(QCProgramBuilder& b) {
   auto q0 = b.staticQubit(0);
   auto q1 = b.staticQubit(1);
-
   b.h(q0);
   b.h(q1);
 }
