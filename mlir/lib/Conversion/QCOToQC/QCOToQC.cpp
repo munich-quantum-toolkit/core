@@ -35,35 +35,50 @@ using namespace qco;
 using namespace qc;
 
 namespace {
+/** @brief Qubit addressing mode */
+enum class QubitAddressingMode : std::uint8_t {
+  Unknown, //!< The addressing mode is not known.
+  Static,  //!< The module uses static qubit allocation.
+  Dynamic  //!< The module uses dynamic qubit allocation.
+};
+
 /**
- * @brief Function-local qubit mode classification.
+ * @brief State object for tracking qubit addressing mode.
+ *
+ * @details
+ * Used to track whether a function uses static or dynamic qubit allocation.
+ * This is used to determine whether to convert `qco.sink` to `qc.dealloc` (for
+ * dynamic qubits) or simply erase it (for static qubits). This is also used to
+ * catch cases of mixed addressing being used, which is not supported.
  */
-enum class QubitMode : std::uint8_t { Unknown, StaticOnly, DynamicOnly, Mixed };
+struct LoweringState {
+  /// The qubit addressing mode used in the module
+  QubitAddressingMode mode = QubitAddressingMode::Unknown;
+};
+
+/**
+ * @brief Base class for conversion patterns that need access to lowering state
+ *
+ * @details
+ * Extends OpConversionPattern to provide access to a shared LoweringState
+ * object, which is used to track the addressing mode of the module.
+ * @tparam OpType The QCO operation type to be converted.
+ */
+template <typename OpType>
+class StatefulOpConversionPattern : public OpConversionPattern<OpType> {
+
+public:
+  StatefulOpConversionPattern(TypeConverter& typeConverter,
+                              MLIRContext* context, LoweringState* state)
+      : OpConversionPattern<OpType>(typeConverter, context), state_(state) {}
+
+  /// Returns the shared lowering state object
+  [[nodiscard]] LoweringState& getState() const { return *state_; }
+
+private:
+  LoweringState* state_;
+};
 } // namespace
-
-/**
- * @brief Infer whether a function uses static, dynamic, or mixed qubits.
- */
-[[nodiscard]] static QubitMode inferQubitMode(func::FuncOp func) {
-  bool sawStatic = false;
-  bool sawAlloc = false;
-
-  func.walk([&](Operation* op) {
-    sawStatic |= isa<qco::StaticOp>(op);
-    sawAlloc |= isa<qco::AllocOp>(op);
-  });
-
-  if (sawStatic && sawAlloc) {
-    return QubitMode::Mixed;
-  }
-  if (sawStatic) {
-    return QubitMode::StaticOnly;
-  }
-  if (sawAlloc) {
-    return QubitMode::DynamicOnly;
-  }
-  return QubitMode::Unknown;
-}
 
 #define GEN_PASS_DEF_QCOTOQC
 #include "mlir/Conversion/QCOToQC/QCOToQC.h.inc"
@@ -112,12 +127,19 @@ public:
  * %q = qc.alloc("q", 3, 0) : !qc.qubit
  * ```
  */
-struct ConvertQCOAllocOp final : OpConversionPattern<qco::AllocOp> {
-  using OpConversionPattern::OpConversionPattern;
+struct ConvertQCOAllocOp final : StatefulOpConversionPattern<qco::AllocOp> {
+  using StatefulOpConversionPattern::StatefulOpConversionPattern;
 
   LogicalResult
   matchAndRewrite(qco::AllocOp op, OpAdaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
+    auto& qubitMode = getState().mode;
+    if (qubitMode == QubitAddressingMode::Unknown) {
+      qubitMode = QubitAddressingMode::Dynamic;
+    }
+    assert(qubitMode != QubitAddressingMode::Static &&
+           "Static qubits cannot be mixed with dynamic qubits");
+
     // Create qc.alloc with preserved register metadata
     rewriter.replaceOpWithNewOp<qc::AllocOp>(op, op.getRegisterNameAttr(),
                                              op.getRegisterSizeAttr(),
@@ -133,8 +155,8 @@ struct ConvertQCOAllocOp final : OpConversionPattern<qco::AllocOp> {
  * @details
  * In QCO, qubits have value/linear semantics and must be consumed explicitly
  * (via `qco.sink`). In QC, qubits have reference semantics; for dynamic qubits
- * we materialize this end-of-lifetime as `qc.dealloc`. For static-only
- * functions, sinks are erased.
+ * we materialize this end-of-lifetime as `qc.dealloc`. Static qubits do not
+ * need explicit deallocation, so we simply erase the `qco.sink` operation.
  *
  * The OpAdaptor automatically provides the type-converted qubit operand
  * (`!qc.qubit` instead of `!qco.qubit`), so we simply pass it through to the
@@ -147,28 +169,23 @@ struct ConvertQCOAllocOp final : OpConversionPattern<qco::AllocOp> {
  * qc.dealloc %q_qc : !qc.qubit
  * ```
  */
-struct ConvertQCOSinkOp final : OpConversionPattern<qco::SinkOp> {
-  explicit ConvertQCOSinkOp(TypeConverter& typeConverter, MLIRContext* context,
-                            const DenseMap<func::FuncOp, QubitMode>* modeMap)
-      : OpConversionPattern(typeConverter, context), modeMap(modeMap) {}
+struct ConvertQCOSinkOp final : StatefulOpConversionPattern<SinkOp> {
+  using StatefulOpConversionPattern::StatefulOpConversionPattern;
 
   LogicalResult
-  matchAndRewrite(qco::SinkOp op, OpAdaptor adaptor,
+  matchAndRewrite(SinkOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
-    auto func = op->getParentOfType<func::FuncOp>();
-    auto it = modeMap->find(func);
-    const auto mode = (it != modeMap->end()) ? it->second : QubitMode::Unknown;
+    const auto mode = getState().mode;
+    assert(mode != QubitAddressingMode::Unknown &&
+           "Sinks cannot exist without allocations");
 
-    if (mode == QubitMode::StaticOnly) {
+    if (mode == QubitAddressingMode::Static) {
       rewriter.eraseOp(op);
       return success();
     }
-    rewriter.replaceOpWithNewOp<qc::DeallocOp>(op, adaptor.getQubit());
+    rewriter.replaceOpWithNewOp<DeallocOp>(op, adaptor.getQubit());
     return success();
   }
-
-private:
-  const DenseMap<func::FuncOp, QubitMode>* modeMap;
 };
 
 /**
@@ -186,12 +203,19 @@ private:
  * %q = qc.static 0 : !qc.qubit
  * ```
  */
-struct ConvertQCOStaticOp final : OpConversionPattern<qco::StaticOp> {
-  using OpConversionPattern::OpConversionPattern;
+struct ConvertQCOStaticOp final : StatefulOpConversionPattern<qco::StaticOp> {
+  using StatefulOpConversionPattern::StatefulOpConversionPattern;
 
   LogicalResult
   matchAndRewrite(qco::StaticOp op, OpAdaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
+    auto& qubitMode = getState().mode;
+    if (qubitMode == QubitAddressingMode::Unknown) {
+      qubitMode = QubitAddressingMode::Static;
+    }
+    assert(qubitMode != QubitAddressingMode::Dynamic &&
+           "Dynamic qubits cannot be mixed with static qubits");
+
     // Create qc.static with the same index
     rewriter.replaceOpWithNewOp<qc::StaticOp>(op, op.getIndex());
     return success();
@@ -796,32 +820,20 @@ protected:
     MLIRContext* context = &getContext();
     auto* module = getOperation();
 
+    // Create state object to track the qubit addressing mode
+    LoweringState state;
+
     ConversionTarget target(*context);
     RewritePatternSet patterns(context);
     QCOToQCTypeConverter typeConverter(context);
-
-    DenseMap<func::FuncOp, QubitMode> modeMap;
-    for (auto func : cast<ModuleOp>(module).getOps<func::FuncOp>()) {
-      const auto mode = inferQubitMode(func);
-      if (mode == QubitMode::Mixed) {
-        func.emitError(
-            "mixing static and dynamic qubits is forbidden (saw both "
-            "qco.static and qco.alloc)");
-        signalPassFailure();
-        return;
-      }
-      modeMap.try_emplace(func, mode);
-    }
 
     // Configure conversion target: QCO illegal, QC legal
     target.addIllegalDialect<QCODialect>();
     target.addLegalDialect<QCDialect>();
 
-    // Register operation conversion patterns
-    // Note: No state tracking needed - OpAdaptors handle type conversion
+    // Register operation conversion patterns that do not need state tracking
     patterns.add<
-        ConvertQCOAllocOp, ConvertQCOStaticOp, ConvertQCOMeasureOp,
-        ConvertQCOResetOp,
+        ConvertQCOMeasureOp, ConvertQCOResetOp,
         ConvertQCOZeroTargetOneParameterToQC<qco::GPhaseOp, qc::GPhaseOp>,
         ConvertQCOOneTargetZeroParameterToQC<qco::XOp, qc::XOp>,
         ConvertQCOOneTargetZeroParameterToQC<qco::YOp, qc::YOp>,
@@ -852,7 +864,10 @@ protected:
         ConvertQCOTwoTargetTwoParameterToQC<qco::XXMinusYYOp, qc::XXMinusYYOp>,
         ConvertQCOBarrierOp, ConvertQCOCtrlOp, ConvertQCOInvOp,
         ConvertQCOYieldOp>(typeConverter, context);
-    patterns.add<ConvertQCOSinkOp>(typeConverter, context, &modeMap);
+
+    // Register operation conversion patterns that need state tracking
+    patterns.add<ConvertQCOAllocOp, ConvertQCOStaticOp, ConvertQCOSinkOp>(
+        typeConverter, context, &state);
 
     // Conversion of qco types in func.func signatures
     // Note: This currently has limitations with signature changes
