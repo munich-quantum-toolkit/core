@@ -742,8 +742,9 @@ std::pair<ValueRange, ValueRange> QCOProgramBuilder::ctrl(
 
   auto ctrlOp = CtrlOp::create(*this, controls, targets);
   auto& block = ctrlOp.getBodyRegion().emplaceBlock();
+  const auto qubitType = QubitType::get(getContext());
   for (const auto target : targets) {
-    const auto arg = block.addArgument(target.getType(), getLoc());
+    const auto arg = block.addArgument(qubitType, getLoc());
     updateQubitTracking(target, arg);
   }
   const InsertionGuard guard(*this);
@@ -758,12 +759,13 @@ std::pair<ValueRange, ValueRange> QCOProgramBuilder::ctrl(
 
   // Update tracking
   const auto& controlsOut = ctrlOp.getControlsOut();
-  for (const auto& [control, controlOut] : llvm::zip(controls, controlsOut)) {
+  for (const auto& [control, controlOut] :
+       llvm::zip_equal(controls, controlsOut)) {
     updateQubitTracking(control, controlOut);
   }
   const auto& targetsOut = ctrlOp.getTargetsOut();
   for (const auto& [target, targetOut] :
-       llvm::zip(innerTargetsOut, targetsOut)) {
+       llvm::zip_equal(innerTargetsOut, targetsOut)) {
     updateQubitTracking(target, targetOut);
   }
 
@@ -779,8 +781,9 @@ ValueRange QCOProgramBuilder::inv(
 
   // Add block arguments for all qubits
   auto& block = invOp.getBodyRegion().emplaceBlock();
+  const auto qubitType = QubitType::get(getContext());
   for (const auto qubit : qubits) {
-    const auto arg = block.addArgument(qubit.getType(), getLoc());
+    const auto arg = block.addArgument(qubitType, getLoc());
     updateQubitTracking(qubit, arg);
   }
 
@@ -798,7 +801,7 @@ ValueRange QCOProgramBuilder::inv(
   // Update tracking
   const auto& targetsOut = invOp.getQubitsOut();
   for (const auto& [target, targetOut] :
-       llvm::zip(innerTargetsOut, targetsOut)) {
+       llvm::zip_equal(innerTargetsOut, targetsOut)) {
     updateQubitTracking(target, targetOut);
   }
 
