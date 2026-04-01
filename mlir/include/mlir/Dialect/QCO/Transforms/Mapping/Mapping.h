@@ -17,7 +17,7 @@
 namespace mlir::qco {
 /**
  * @brief Verifies if all two-qubit gates within the region are executable on
- * the targeted architecture.
+ * the targeted architecture. Expects static qubits only.
  * @returns llvm::success() if executable, llvm::failure() otherwise.
  */
 LogicalResult isExecutable(Region& region, const Architecture& arch);
