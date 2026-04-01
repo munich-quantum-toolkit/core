@@ -977,11 +977,11 @@ private:
 
                         return WalkResult::interrupt();
                       })
-                  .template Case<AllocOp, StaticOp, ResetOp, MeasureOp,
-                                 DeallocOp>([&](auto) {
-                    std::ranges::advance(it, step);
-                    return WalkResult::advance();
-                  })
+                  .template Case<AllocOp, StaticOp, ResetOp, MeasureOp, SinkOp>(
+                      [&](auto) {
+                        std::ranges::advance(it, step);
+                        return WalkResult::advance();
+                      })
                   .Default([&](Operation* op) {
                     report_fatal_error("unknown op in wireiterator use: " +
                                        op->getName().getStringRef());
@@ -1058,7 +1058,7 @@ private:
       const auto hw = layout.getHardwareIndex(p);
       auto op = StaticOp::create(rewriter, rewriter.getUnknownLoc(), hw);
       rewriter.setInsertionPoint(funcBody.back().getTerminator());
-      DeallocOp::create(rewriter, rewriter.getUnknownLoc(), op.getQubit());
+      SinkOp::create(rewriter, rewriter.getUnknownLoc(), op.getQubit());
     }
   }
 

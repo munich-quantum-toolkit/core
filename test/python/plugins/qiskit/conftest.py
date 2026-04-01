@@ -543,4 +543,4 @@ def backend_with_mock_jobs(primary_test_device: fomac.Device) -> QDMIBackend:
         QDMIBackend instance with mocked job execution.
     """
     wrapped_device = _DeviceWithMockedJobs(primary_test_device)
-    return QDMIBackend(device=wrapped_device)  # type: ignore[arg-type]
+    return QDMIBackend(device=wrapped_device)  # ty: ignore[invalid-argument-type]

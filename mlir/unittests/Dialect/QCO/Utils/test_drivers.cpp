@@ -57,10 +57,10 @@ TEST_F(DriversTest, FullWalk) {
   const auto [q22, c2] = builder.measure(q21);
   const auto [q32, c3] = builder.measure(q31);
 
-  builder.dealloc(q03);
-  builder.dealloc(q12);
-  builder.dealloc(q22);
-  builder.dealloc(q32);
+  builder.sink(q03);
+  builder.sink(q12);
+  builder.sink(q22);
+  builder.sink(q32);
 
   auto module = builder.finalize();
   auto func = *(module->getOps<mlir::func::FuncOp>().begin());

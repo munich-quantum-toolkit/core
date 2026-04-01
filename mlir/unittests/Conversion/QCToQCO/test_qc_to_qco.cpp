@@ -112,6 +112,33 @@ TEST_P(QCToQCOTest, ProgramEquivalence) {
       areModulesEquivalentWithPermutations(program.get(), reference.get()));
 }
 
+/// \name QCToQCO/QubitManagement/StaticOp.cpp
+/// @{
+INSTANTIATE_TEST_SUITE_P(
+    QCStaticOpTest, QCToQCOTest,
+    testing::Values(
+        QCToQCOTestCase{"StaticQubits", MQT_NAMED_BUILDER(qc::staticQubits),
+                        MQT_NAMED_BUILDER(qco::staticQubits)},
+        QCToQCOTestCase{"StaticQubitsWithOps",
+                        MQT_NAMED_BUILDER(qc::staticQubitsWithOps),
+                        MQT_NAMED_BUILDER(qco::staticQubitsWithOps)},
+        QCToQCOTestCase{"StaticQubitsWithParametricOps",
+                        MQT_NAMED_BUILDER(qc::staticQubitsWithParametricOps),
+                        MQT_NAMED_BUILDER(qco::staticQubitsWithParametricOps)},
+        QCToQCOTestCase{"StaticQubitsWithTwoTargetOps",
+                        MQT_NAMED_BUILDER(qc::staticQubitsWithTwoTargetOps),
+                        MQT_NAMED_BUILDER(qco::staticQubitsWithTwoTargetOps)},
+        QCToQCOTestCase{"StaticQubitsWithCtrl",
+                        MQT_NAMED_BUILDER(qc::staticQubitsWithCtrl),
+                        MQT_NAMED_BUILDER(qco::staticQubitsWithCtrl)},
+        QCToQCOTestCase{"StaticQubitsWithInv",
+                        MQT_NAMED_BUILDER(qc::staticQubitsWithInv),
+                        MQT_NAMED_BUILDER(qco::staticQubitsWithInv)},
+        QCToQCOTestCase{"AllocDeallocPair",
+                        MQT_NAMED_BUILDER(qc::allocDeallocPair),
+                        MQT_NAMED_BUILDER(qco::allocSinkPair)}));
+/// @}
+
 /// \name QCToQCO/Modifiers/InvOp.cpp
 /// @{
 INSTANTIATE_TEST_SUITE_P(
