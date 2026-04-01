@@ -14,7 +14,6 @@
 #include "mlir/Dialect/QC/IR/QCOps.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
-#include "mlir/Dialect/QCO/Utils/ValueOrdering.h"
 
 #include <llvm/ADT/DenseMap.h>
 #include <llvm/ADT/DenseSet.h>
@@ -85,9 +84,7 @@ struct LoweringState {
   /// Per-region map from QC qubit references to latest QCO SSA values.
   ///
   /// @details Keys are `Operation::getParentRegion()` for ops being converted
-  /// (typically a `func.func` body, or a `qc.ctrl` / `qc.inv` region). This
-  /// avoids clearing state at the first `func.return` while later functions
-  /// still convert.
+  /// (typically a `func.func` body, or a `qc.ctrl` / `qc.inv` region).
   llvm::DenseMap<Region*, llvm::DenseMap<Value, Value>> qubitMap;
 
   /// Stack of active modifier regions (`qc.ctrl` / `qc.inv`).
@@ -223,17 +220,6 @@ static void assignMappedQubits(LoweringState& state, Operation* anchor,
   }
 }
 
-/** @brief Collects the target qubits of a variadic QC unitary op. */
-template <typename OpType>
-[[nodiscard]] static SmallVector<Value> collectTargets(OpType op) {
-  SmallVector<Value> targets;
-  targets.reserve(op.getNumTargets());
-  for (size_t i = 0; i < op.getNumTargets(); ++i) {
-    targets.emplace_back(op.getTarget(i));
-  }
-  return targets;
-}
-
 /** @brief Pushes a new modifier frame seeded with aliased target values. */
 static void pushModifierFrame(LoweringState& state, ValueRange qcTargets,
                               ValueRange qcoTargets) {
@@ -252,19 +238,18 @@ static void popModifierFrame(LoweringState& state) {
 
 /** @brief Adds entry block aliases for modifier target values. */
 template <typename OpType>
-[[nodiscard]] static SmallVector<Value>
-addModifierAliases(OpType op, ValueRange qcoTargets,
-                   PatternRewriter& rewriter) {
+[[nodiscard]] static ValueRange addModifierAliases(OpType op,
+                                                   const size_t numTargets,
+                                                   PatternRewriter& rewriter) {
   auto& entryBlock = op.getRegion().front();
-  SmallVector<Value> aliases;
-  aliases.reserve(qcoTargets.size());
   const auto opLoc = op.getLoc();
+  const auto qubitType = qco::QubitType::get(op.getContext());
   rewriter.modifyOpInPlace(op, [&] {
-    for (Value qcoTarget : qcoTargets) {
-      aliases.emplace_back(entryBlock.addArgument(qcoTarget.getType(), opLoc));
+    for (size_t i = 0; i < numTargets; ++i) {
+      entryBlock.addArgument(qubitType, opLoc);
     }
   });
-  return aliases;
+  return entryBlock.getArguments().take_back(numTargets);
 }
 
 namespace {
@@ -289,39 +274,29 @@ struct ConvertFuncReturnOp final : StatefulOpConversionPattern<func::ReturnOp> {
     Region* funcRegion = op->getParentRegion();
     auto& map = state.qubitMap[funcRegion];
 
-    // Build return values from qubitMap (adaptor.getOperands() may carry stale
-    // root values because gate patterns use eraseOp instead of replaceOp).
+    // Build return values from qubitMap and collect live qubit information.
+    // A qubit from the current scope is considered alive if it is returned from
+    // the function. Otherwise, it is considered dead.
     llvm::SmallVector<Value> returnValues;
-    llvm::DenseSet<Value> escapedQubits;
     returnValues.reserve(op.getNumOperands());
+    llvm::DenseSet<Value> liveQubits;
     for (auto [qcOperand, adaptorOperand] :
          llvm::zip_equal(op.getOperands(), adaptor.getOperands())) {
-      if (map.contains(qcOperand)) {
-        auto latest = map[qcOperand];
+      if (auto it = map.find(qcOperand); it != map.end()) {
+        auto latest = it->second;
         returnValues.emplace_back(latest);
-        escapedQubits.insert(latest);
+        liveQubits.insert(latest);
       } else {
         returnValues.emplace_back(adaptorOperand);
       }
     }
 
-    // Collect non-escaped live qubits for deallocation.
-    llvm::DenseSet<Value> liveQubits;
+    // Deallocate dead qubit values
     for (Value qcoQubit : llvm::make_second_range(map)) {
-      if (!escapedQubits.contains(qcoQubit)) {
-        liveQubits.insert(qcoQubit);
+      if (!liveQubits.contains(qcoQubit)) {
+        SinkOp::create(rewriter, op.getLoc(), qcoQubit);
       }
     }
-    // Copy to a vector before sorting: DenseSet iterators are not
-    // random-access.
-    llvm::SmallVector<Value> liveQubitsSorted(liveQubits.begin(),
-                                              liveQubits.end());
-    llvm::sort(liveQubitsSorted, SSAOrder{});
-
-    for (Value qubit : liveQubitsSorted) {
-      qco::SinkOp::create(rewriter, op.getLoc(), qubit);
-    }
-
     state.qubitMap.erase(funcRegion);
 
     rewriter.replaceOpWithNewOp<func::ReturnOp>(op, returnValues);
@@ -940,8 +915,9 @@ struct ConvertQCCtrlOp final : StatefulOpConversionPattern<qc::CtrlOp> {
                   ConversionPatternRewriter& rewriter) const override {
     auto& state = getState();
     auto* operation = op.getOperation();
-    const auto qcControls = llvm::to_vector(op.getControls());
-    const auto qcTargets = collectTargets(op);
+    const auto numTargets = op.getNumTargets();
+    const auto qcControls = op.getControls();
+    const auto qcTargets = op.getTargets();
     auto qcoControls = resolveMappedQubits(state, operation, qcControls);
     auto qcoTargets = resolveMappedQubits(state, operation, qcTargets);
 
@@ -960,8 +936,8 @@ struct ConvertQCCtrlOp final : StatefulOpConversionPattern<qc::CtrlOp> {
     auto& entryBlock = dstRegion.front();
     assert(entryBlock.getNumArguments() == 0 &&
            "QC ctrl region unexpectedly has entry block arguments");
-    auto qcoTargetAliases = addModifierAliases(qcoOp, qcoTargets, rewriter);
-    pushModifierFrame(state, qcTargets, qcoTargetAliases);
+    pushModifierFrame(state, qcTargets,
+                      addModifierAliases(qcoOp, numTargets, rewriter));
 
     rewriter.eraseOp(op);
     return success();
@@ -993,7 +969,8 @@ struct ConvertQCInvOp final : StatefulOpConversionPattern<qc::InvOp> {
                   ConversionPatternRewriter& rewriter) const override {
     auto& state = getState();
     auto* operation = op.getOperation();
-    const auto qcTargets = collectTargets(op);
+    const auto numTargets = op.getNumTargets();
+    const auto qcTargets = op.getTargets();
     auto qcoTargets = resolveMappedQubits(state, operation, qcTargets);
 
     // Create qco.inv
@@ -1009,8 +986,8 @@ struct ConvertQCInvOp final : StatefulOpConversionPattern<qc::InvOp> {
     auto& entryBlock = dstRegion.front();
     assert(entryBlock.getNumArguments() == 0 &&
            "QC inv region unexpectedly has entry block arguments");
-    auto qcoTargetAliases = addModifierAliases(qcoOp, qcoTargets, rewriter);
-    pushModifierFrame(state, qcTargets, qcoTargetAliases);
+    pushModifierFrame(state, qcTargets,
+                      addModifierAliases(qcoOp, numTargets, rewriter));
 
     rewriter.eraseOp(op);
     return success();
@@ -1071,22 +1048,6 @@ protected:
     MLIRContext* context = &getContext();
     auto* module = getOperation();
 
-    for (auto func : cast<ModuleOp>(module).getOps<func::FuncOp>()) {
-      bool sawStatic = false;
-      bool sawAlloc = false;
-      func.walk([&](Operation* op) {
-        sawStatic |= isa<qc::StaticOp>(op);
-        sawAlloc |= isa<qc::AllocOp>(op);
-      });
-      if (sawStatic && sawAlloc) {
-        func.emitError(
-            "mixing static and dynamic qubits is forbidden (saw both "
-            "qc.static and qc.alloc)");
-        signalPassFailure();
-        return;
-      }
-    }
-
     // Create state object to track qubit value flow
     LoweringState state;
 
@@ -1146,9 +1107,8 @@ protected:
     // Conversion of qc types in func.return
     //
     // Note: `func.return` may already be type-legal even though we still need
-    // to insert sink operations (`qco.sink`) for remaining live
-    // qubits. Therefore, we make it dynamically illegal unless the lowering
-    // state has no remaining qubits.
+    // to insert sink operations (`qco.sink`) for dead qubit values. Therefore,
+    // we mark it illegal as long as the qubit map of the region is not empty.
     patterns.add<ConvertFuncReturnOp>(typeConverter, context, &state);
     target.addDynamicallyLegalOp<func::ReturnOp>([&](const func::ReturnOp op) {
       if (!typeConverter.isLegal(op)) {

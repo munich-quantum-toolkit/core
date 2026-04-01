@@ -12,7 +12,6 @@
 
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
-#include "mlir/Dialect/QCO/Utils/ValueOrdering.h"
 #include "mlir/Dialect/QTensor/IR/QTensorDialect.h"
 #include "mlir/Dialect/QTensor/IR/QTensorOps.h"
 #include "mlir/Dialect/Utils/Utils.h"
@@ -919,25 +918,14 @@ OwningOpRef<ModuleOp> QCOProgramBuilder::finalize() {
   }
 
   // Automatically deallocate all still-allocated qubits
-  // Sort qubits for deterministic output
-  llvm::SmallVector<Value> sortedQubits(validQubits.begin(), validQubits.end());
-  llvm::sort(sortedQubits, SSAOrder{});
-
-  for (auto qubit : sortedQubits) {
+  for (auto qubit : validQubits) {
     SinkOp::create(*this, qubit);
   }
+  validQubits.clear();
 
-  // Automatically deallocate all still-allocated tensors
-  // Sort tensors for deterministic output
-  llvm::SmallVector<Value> sortedTensors(validTensors.begin(),
-                                         validTensors.end());
-  llvm::sort(sortedTensors, SSAOrder{});
-
-  for (auto tensor : sortedTensors) {
+  for (auto tensor : validTensors) {
     qtensor::DeallocOp::create(*this, tensor);
   }
-
-  validQubits.clear();
   validTensors.clear();
 
   // Create constant 0 for successful exit code
