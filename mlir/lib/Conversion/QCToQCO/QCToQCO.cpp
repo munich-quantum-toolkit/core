@@ -406,7 +406,7 @@ struct ConvertMemRefAllocOp final
           rewriter.replaceOpWithNewOp<qtensor::AllocOp>(op, size.getResult());
     }
 
-    assignMappedTensor(state, op.getOperation(), memref, qtensor);
+    assignMappedTensor(state, operation, memref, qtensor);
 
     return success();
   }
