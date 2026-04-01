@@ -914,8 +914,10 @@ def BarrierOp : QCOp<"barrier", traits = [UnitaryOpInterface]> {
         size_t getNumQubits() { return getNumTargets(); }
         size_t getNumTargets() { return getQubits().size(); }
         static size_t getNumControls() { return 0; }
+        static ValueRange getControls() { return {}; }
         Value getQubit(size_t i) { return getTarget(i); }
         Value getTarget(size_t i);
+        ValueRange getTargets() { return getQubits(); }
         static Value getControl(size_t i) { llvm::reportFatalUsageError("BarrierOp cannot be controlled"); }
         static size_t getNumParams() { return 0; }
         static Value getParameter(size_t i) { llvm::reportFatalUsageError("BarrierOp does not have parameters"); }
@@ -973,6 +975,7 @@ def CtrlOp
         size_t getNumControls() { return getControls().size(); }
         Value getQubit(size_t i);
         Value getTarget(size_t i) { return getBodyUnitary().getTarget(i); }
+        ValueRange getTargets() { return getBodyUnitary().getTargets(); }
         Value getControl(size_t i);
         size_t getNumParams() { return getBodyUnitary().getNumParams(); }
         Value getParameter(size_t i) { return getBodyUnitary().getParameter(i); }
@@ -1011,8 +1014,10 @@ def InvOp : QCOp<"inv",
         size_t getNumQubits() { return getBodyUnitary().getNumQubits(); }
         size_t getNumTargets() { return getNumQubits(); }
         static size_t getNumControls() { return 0; }
+        static ValueRange getControls() { return {}; }
         Value getQubit(size_t i) { return getBodyUnitary().getQubit(i); }
         Value getTarget(size_t i) { return getQubit(i); }
+        ValueRange getTargets() { return getBodyUnitary().getTargets(); }
         static Value getControl(size_t i) { llvm::reportFatalUsageError("Operation does not have controls"); }
         size_t getNumParams() { return getBodyUnitary().getNumParams(); }
         Value getParameter(size_t i) { return getBodyUnitary().getParameter(i); }
