@@ -2084,6 +2084,80 @@ void invCtrlSandwich(QCOProgramBuilder& b) {
   });
 }
 
+// --- PowOp --------------------------------------------------------------- //
+
+void pow1Inline(QCOProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  b.pow({q[0]}, 1.0, [&](mlir::ValueRange qubits) {
+    auto q0 = b.s(qubits[0]);
+    return llvm::SmallVector<mlir::Value>{q0};
+  });
+}
+
+void pow0Erase(QCOProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  b.pow({q[0]}, 0.0, [&](mlir::ValueRange qubits) {
+    auto q0 = b.s(qubits[0]);
+    return llvm::SmallVector<mlir::Value>{q0};
+  });
+}
+
+void nestedPow(QCOProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  b.pow({q[0]}, 3.0, [&](mlir::ValueRange qubits) {
+    auto inner = b.pow({qubits[0]}, 2.0, [&](mlir::ValueRange innerQubits) {
+      auto q0 = b.s(innerQubits[0]);
+      return llvm::SmallVector<mlir::Value>{q0};
+    });
+    return llvm::SmallVector<mlir::Value>{inner};
+  });
+}
+
+void powSingleExponent(QCOProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  b.pow({q[0]}, 6.0, [&](mlir::ValueRange qubits) {
+    auto q0 = b.s(qubits[0]);
+    return llvm::SmallVector<mlir::Value>{q0};
+  });
+}
+
+void powRxx(QCOProgramBuilder& b) {
+  auto q = b.allocQubitRegister(2);
+  b.pow({q[0], q[1]}, 2.0, [&](mlir::ValueRange qubits) {
+    auto [q0, q1] = b.rxx(0.123, qubits[0], qubits[1]);
+    return llvm::SmallVector<mlir::Value>{q0, q1};
+  });
+}
+
+void negPowS(QCOProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  b.pow({q[0]}, -2.0, [&](mlir::ValueRange qubits) {
+    auto q0 = b.s(qubits[0]);
+    return llvm::SmallVector<mlir::Value>{q0};
+  });
+}
+
+void invPowS(QCOProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  b.inv({q[0]}, [&](mlir::ValueRange invArgs) {
+    auto inner = b.pow({invArgs[0]}, 2.0, [&](mlir::ValueRange powArgs) {
+      auto q0 = b.s(powArgs[0]);
+      return llvm::SmallVector<mlir::Value>{q0};
+    });
+    return llvm::SmallVector<mlir::Value>{inner};
+  });
+}
+
+void powSdg(QCOProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  b.pow({q[0]}, 2.0, [&](mlir::ValueRange qubits) {
+    auto q0 = b.sdg(qubits[0]);
+    return llvm::SmallVector<mlir::Value>{q0};
+  });
+}
+
+// --- IfOp ---------------------------------------------------------------- //
+
 void simpleIf(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   auto q0 = b.h(q[0]);

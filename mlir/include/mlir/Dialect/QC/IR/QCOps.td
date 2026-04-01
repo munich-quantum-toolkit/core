@@ -1010,13 +1010,11 @@ def InvOp : QCOp<"inv",
 }
 
 def PowOp : QCOp<"pow",
-              traits = [
-                  UnitaryOpInterface,
-                  SingleBlockImplicitTerminator<"::mlir::qc::YieldOp">,
-                  RecursiveMemoryEffects
-              ]> {
-      let summary = "Apply a gate power modifier";
-      let description = [{
+                 traits = [UnitaryOpInterface,
+                           SingleBlockImplicitTerminator<"::mlir::qc::YieldOp">,
+                           RecursiveMemoryEffects]> {
+  let summary = "Apply a gate power modifier";
+  let description = [{
           A modifier operation that raises the unitary operation defined in its
           body region to a given power (exponent can be integer or fractional).
 
@@ -1032,11 +1030,11 @@ def PowOp : QCOp<"pow",
           ```
       }];
 
-      let arguments = (ins F64Attr:$exponent);
-      let regions = (region SizedRegion<1>:$region);
-      let assemblyFormat = "`(` $exponent `)` $region attr-dict";
+  let arguments = (ins F64Attr:$exponent);
+  let regions = (region SizedRegion<1>:$region);
+  let assemblyFormat = "`(` $exponent `)` $region attr-dict";
 
-      let extraClassDeclaration = [{
+  let extraClassDeclaration = [{
           [[nodiscard]] UnitaryOpInterface getBodyUnitary();
           size_t getNumQubits() { return getBodyUnitary().getNumQubits(); }
           size_t getNumTargets() { return getNumQubits(); }
@@ -1053,12 +1051,11 @@ def PowOp : QCOp<"pow",
           static StringRef getBaseSymbol() { return "pow"; }
       }];
 
-      let builders = [
-          OpBuilder<(ins "double":$exponent, "const llvm::function_ref<void()>&":$bodyBuilder)>
-      ];
+  let builders = [OpBuilder<(ins "double":$exponent,
+      "const llvm::function_ref<void()>&":$bodyBuilder)>];
 
-      let hasCanonicalizer = 1;
-      let hasVerifier = 1;
-  }
+  let hasCanonicalizer = 1;
+  let hasVerifier = 1;
+}
 
 #endif // MLIR_DIALECT_QC_IR_QCOPS_TD

@@ -204,6 +204,24 @@ INSTANTIATE_TEST_SUITE_P(
                                 MQT_NAMED_BUILDER(singleControlledRxx)}));
 /// @}
 
+/// \name QCO/Modifiers/PowOp.cpp
+/// @{
+INSTANTIATE_TEST_SUITE_P(
+    QCOPowOpTest, QCOTest,
+    testing::Values(QCOTestCase{"Pow1Inline", MQT_NAMED_BUILDER(pow1Inline),
+                                MQT_NAMED_BUILDER(s)},
+                    QCOTestCase{"Pow0Erase", MQT_NAMED_BUILDER(pow0Erase),
+                                MQT_NAMED_BUILDER(emptyQCO)},
+                    QCOTestCase{"NestedPow", MQT_NAMED_BUILDER(nestedPow),
+                                MQT_NAMED_BUILDER(powSingleExponent)},
+                    QCOTestCase{"PowRxx", MQT_NAMED_BUILDER(powRxx),
+                                MQT_NAMED_BUILDER(powRxx)},
+                    QCOTestCase{"NegPowS", MQT_NAMED_BUILDER(negPowS),
+                                MQT_NAMED_BUILDER(powSdg)},
+                    QCOTestCase{"InvPowS", MQT_NAMED_BUILDER(invPowS),
+                                MQT_NAMED_BUILDER(powSdg)}));
+/// @}
+
 /// \name QCO/Operations/StandardGates/BarrierOp.cpp
 /// @{
 INSTANTIATE_TEST_SUITE_P(

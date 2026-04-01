@@ -833,4 +833,32 @@ void tripleNestedInv(QCProgramBuilder& b);
 
 /// Creates a circuit with inverse modifiers interleaved by a control modifier.
 void invCtrlSandwich(QCProgramBuilder& b);
+
+// --- PowOp ---------------------------------------------------------------- //
+
+/// Creates a circuit with pow(1.0) modifier (should inline to just the gate).
+void pow1Inline(QCProgramBuilder& b);
+
+/// Creates a circuit with pow(0.0) modifier (should erase to identity).
+void pow0Erase(QCProgramBuilder& b);
+
+/// Creates a circuit with nested pow modifiers (should merge exponents).
+void nestedPow(QCProgramBuilder& b);
+
+/// Creates a circuit with pow(6.0) as the merged reference for nestedPow.
+void powSingleExponent(QCProgramBuilder& b);
+
+/// Creates a circuit with pow(2.0) wrapping a two-qubit RXX gate.
+void powRxx(QCProgramBuilder& b);
+
+/// Creates a circuit with pow(-2.0) wrapping an S gate (negative exponent).
+void negPowS(QCProgramBuilder& b);
+
+/// Creates a circuit with inv wrapping pow (should reorder to pow wrapping
+/// inv).
+void invPowS(QCProgramBuilder& b);
+
+/// Creates a circuit with pow(2.0) wrapping sdg (reference for invPowS).
+void powSdg(QCProgramBuilder& b);
+
 } // namespace mlir::qc
