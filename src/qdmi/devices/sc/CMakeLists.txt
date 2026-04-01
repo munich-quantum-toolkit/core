@@ -118,10 +118,7 @@ if(NOT TARGET ${TARGET_NAME})
            ${QDMI_HDRS})
 
   # add link libraries
-  target_link_libraries(
-    ${TARGET_NAME}
-    PUBLIC qdmi::qdmi
-    PRIVATE MQT::CoreQDMICommon spdlog::spdlog)
+  target_link_libraries(${TARGET_NAME} PRIVATE MQT::CoreQDMICommon spdlog::spdlog)
 
   # Always compile with position independent code such that the library can be used in shared
   # libraries
@@ -130,8 +127,21 @@ if(NOT TARGET ${TARGET_NAME})
   # add to list of MQT core targets
   list(APPEND MQT_CORE_TARGETS ${TARGET_NAME})
 
-  # Make QDMI version available
-  target_compile_definitions(${TARGET_NAME} PRIVATE QDMI_VERSION="${QDMI_VERSION}")
+  # Make QDMI version available and ensure symbols are properly exported when building the library
+  target_compile_definitions(${TARGET_NAME} PRIVATE QDMI_VERSION="${QDMI_VERSION}"
+                                                    ${QDMI_PREFIX}_QDMI_device_EXPORTS)
+
+  # Define a preprocessor macro to indicate that the library is being built as a static library
+  if(NOT BUILD_MQT_CORE_SHARED_LIBS)
+    target_compile_definitions(${TARGET_NAME} PUBLIC ${QDMI_PREFIX}_QDMI_STATIC_DEFINE)
+  endif()
+
+  # Compile with hidden visibility by default to reduce the exported symbols to the public API
+  set_target_properties(
+    ${TARGET_NAME}
+    PROPERTIES C_VISIBILITY_PRESET hidden
+               CXX_VISIBILITY_PRESET hidden
+               VISIBILITY_INLINES_HIDDEN 1)
 
   # Generate additional alias for the target required for generate_device_defs_executable function
   # in the tests
@@ -162,10 +172,8 @@ if(NOT TARGET ${TARGET_NAME})
              ${QDMI_HDRS})
     # add link libraries
     target_link_libraries(
-      ${DYN_TARGET_NAME}
-      PUBLIC qdmi::qdmi
-      PRIVATE ${TARGET_NAME} MQT::CoreQDMICommon MQT::ProjectOptions MQT::ProjectWarnings
-              spdlog::spdlog)
+      ${DYN_TARGET_NAME} PRIVATE ${TARGET_NAME} MQT::CoreQDMICommon MQT::ProjectOptions
+                                 MQT::ProjectWarnings spdlog::spdlog)
     # set c++ standard
     target_compile_features(${DYN_TARGET_NAME} PRIVATE cxx_std_20)
     # set versioning information
@@ -180,6 +188,17 @@ if(NOT TARGET ${TARGET_NAME})
       set_target_properties(${DYN_TARGET_NAME} PROPERTIES INTERPROCEDURAL_OPTIMIZATION FALSE)
       target_link_options(${DYN_TARGET_NAME} PRIVATE /LTCG:OFF)
     endif()
+
+    # Ensure that symbols are properly exported when building the library
+    target_compile_definitions(${DYN_TARGET_NAME} PRIVATE ${QDMI_PREFIX}_QDMI_device_EXPORTS)
+
+    # Compile with hidden visibility by default to reduce the exported symbols to the public API
+    set_target_properties(
+      ${DYN_TARGET_NAME}
+      PROPERTIES C_VISIBILITY_PRESET hidden
+                 CXX_VISIBILITY_PRESET hidden
+                 VISIBILITY_INLINES_HIDDEN 1)
+
     add_library(MQT::CoreQDMIScDeviceDyn ALIAS ${DYN_TARGET_NAME})
     list(APPEND MQT_CORE_TARGETS ${DYN_TARGET_NAME})
   endif()
