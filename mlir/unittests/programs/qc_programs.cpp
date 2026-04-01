@@ -65,6 +65,30 @@ void staticQubitsWithInv(QCProgramBuilder& b) {
   b.inv([&]() { b.t(q0); });
 }
 
+void staticQubitsWithDuplicates(QCProgramBuilder& b) {
+  const auto q0a = b.staticQubit(0);
+  const auto q1a = b.staticQubit(1);
+  const auto q0b = b.staticQubit(0);
+  const auto q1b = b.staticQubit(1);
+
+  b.rx(std::numbers::pi / 4., q0a);
+  b.p(std::numbers::pi / 2., q1a);
+  b.rzz(0.123, q0b, q1b);
+  b.cx(q0b, q1b);
+  b.inv([&]() { b.t(q0a); });
+}
+
+void staticQubitsCanonical(QCProgramBuilder& b) {
+  const auto q0 = b.staticQubit(0);
+  const auto q1 = b.staticQubit(1);
+
+  b.rx(std::numbers::pi / 4., q0);
+  b.p(std::numbers::pi / 2., q1);
+  b.rzz(0.123, q0, q1);
+  b.cx(q0, q1);
+  b.inv([&]() { b.t(q0); });
+}
+
 void allocDeallocPair(QCProgramBuilder& b) {
   auto q = b.allocQubit();
   b.dealloc(q);
