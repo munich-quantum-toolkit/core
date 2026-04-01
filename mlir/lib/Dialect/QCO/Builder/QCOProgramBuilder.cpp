@@ -966,7 +966,6 @@ OwningOpRef<ModuleOp> QCOProgramBuilder::finalize() {
   // Automatically deallocate all still-allocated tensors
   if (!validTensors.empty()) {
     for (auto& [tensor, tensorInfo] : llvm::to_vector(validTensors)) {
-      llvm::errs() << "Deallocating tensor\n";
       // Filter out qubits belonging to this tensor
       llvm::SmallVector<std::pair<Value, int64_t>> toInsert;
       for (auto& [qubit, qubitInfo] : registerQubits) {

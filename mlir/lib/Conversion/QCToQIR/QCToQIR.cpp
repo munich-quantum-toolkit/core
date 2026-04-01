@@ -243,6 +243,12 @@ struct ConvertMemRefAllocOp final
   LogicalResult
   matchAndRewrite(memref::AllocOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
+    auto shape = op.getType().getShape();
+    if (shape.size() != 1) {
+      return rewriter.notifyMatchFailure(
+          op, "Only one-dimensional registers are supported");
+    }
+
     auto& state = getState();
     state.useDynamicQubit = true;
 
@@ -254,12 +260,6 @@ struct ConvertMemRefAllocOp final
                                     {rewriter.getI64Type(), ptrType, ptrType});
     auto fnDec = getOrCreateFunctionDeclaration(rewriter, op,
                                                 QIR_QUBIT_ARRAY_ALLOC, fnSig);
-
-    auto shape = op.getType().getShape();
-    if (shape.size() != 1) {
-      return rewriter.notifyMatchFailure(
-          op, "Only one-dimensional registers are supported");
-    }
 
     Value size;
     if (shape[0] == ShapedType::kDynamic) {
@@ -303,6 +303,12 @@ struct ConvertMemRefLoadOp final : StatefulOpConversionPattern<memref::LoadOp> {
   LogicalResult
   matchAndRewrite(memref::LoadOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
+    auto shape = op.getMemref().getType().getShape();
+    if (shape.size() != 1) {
+      return rewriter.notifyMatchFailure(
+          op, "Only one-dimensional registers are supported");
+    }
+
     auto* ctx = getContext();
     auto ptrType = LLVM::LLVMPointerType::get(ctx);
 
@@ -339,16 +345,16 @@ struct ConvertMemRefDeallocOp final
   LogicalResult
   matchAndRewrite(memref::DeallocOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
-    auto& state = getState();
-    auto* ctx = getContext();
-    auto i64Type = rewriter.getI64Type();
-    auto ptrType = LLVM::LLVMPointerType::get(ctx);
-
     auto shape = op.getMemref().getType().getShape();
     if (shape.size() != 1) {
       return rewriter.notifyMatchFailure(
           op, "Only one-dimensional registers are supported");
     }
+
+    auto& state = getState();
+    auto* ctx = getContext();
+    auto i64Type = rewriter.getI64Type();
+    auto ptrType = LLVM::LLVMPointerType::get(ctx);
 
     // Save current insertion point
     const OpBuilder::InsertionGuard guard(rewriter);
@@ -1069,14 +1075,12 @@ struct QCToQIR final : impl::QCToQIRBase<QCToQIR> {
    * Blocks are connected with unconditional jumps (entry, body, measurements,
    * output). This structure ensures proper QIR Base Profile semantics.
    *
-   * If the function already has multiple blocks, this function does nothing.
-   *
    * @param main The main LLVM function to restructure
    */
   static void ensureBlocks(LLVM::LLVMFuncOp& main, LoweringState& state) {
-    // Return if there are already multiple blocks
     if (main.getBlocks().size() > 1) {
-      return;
+      llvm::reportFatalInternalError(
+          "Modules with multiple blocks are not supported yet");
     }
 
     // Get the existing block

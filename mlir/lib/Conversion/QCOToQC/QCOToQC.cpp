@@ -116,7 +116,6 @@ public:
 
     addConversion([ctx](RankedTensorType type) -> Type {
       if (llvm::isa<qco::QubitType>(type.getElementType())) {
-        // TODO: Can we make it work with type.getShape()?
         return MemRefType::get({ShapedType::kDynamic}, qc::QubitType::get(ctx));
       }
       return type;
