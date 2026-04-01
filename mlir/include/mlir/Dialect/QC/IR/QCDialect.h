@@ -88,6 +88,10 @@ public:
       }
       return this->getOperation()->getOperand(T + i);
     }
+
+    ValueRange getParameters() {
+      return this->getOperation()->getOperands().slice(T, P);
+    }
   };
 };
 

@@ -921,6 +921,7 @@ def BarrierOp : QCOp<"barrier", traits = [UnitaryOpInterface]> {
         static Value getControl(size_t i) { llvm::reportFatalUsageError("BarrierOp cannot be controlled"); }
         static size_t getNumParams() { return 0; }
         static Value getParameter(size_t i) { llvm::reportFatalUsageError("BarrierOp does not have parameters"); }
+        static ValueRange getParameters() { return {}; }
         static StringRef getBaseSymbol() { return "barrier"; }
     }];
 }
@@ -979,6 +980,7 @@ def CtrlOp
         Value getControl(size_t i);
         size_t getNumParams() { return getBodyUnitary().getNumParams(); }
         Value getParameter(size_t i) { return getBodyUnitary().getParameter(i); }
+        ValueRange getParameters() { return getBodyUnitary().getParameters(); }
         static StringRef getBaseSymbol() { return "ctrl"; }
     }];
 
@@ -1021,6 +1023,7 @@ def InvOp : QCOp<"inv",
         static Value getControl(size_t i) { llvm::reportFatalUsageError("Operation does not have controls"); }
         size_t getNumParams() { return getBodyUnitary().getNumParams(); }
         Value getParameter(size_t i) { return getBodyUnitary().getParameter(i); }
+        ValueRange getParameters() { return getBodyUnitary().getParameters(); }
         static StringRef getBaseSymbol() { return "inv"; }
     }];
 
