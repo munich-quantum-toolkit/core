@@ -97,7 +97,6 @@ private:
   using QubitValue = TypedValue<QubitType>;
   using IndexType = std::size_t;
   using IndexGate = std::pair<IndexType, IndexType>;
-  using IndexGateSet = DenseSet<IndexGate>;
 
   class LayerRef {
   public:
@@ -140,7 +139,7 @@ private:
     }
 
     /**
-     * @returns the amount of two-qubit gates.
+     * @returns the number of two-qubit gates.
      */
     [[nodiscard]] std::size_t size() const {
       assert(ops_.size() == indices_.size());
@@ -148,7 +147,7 @@ private:
     }
 
     /**
-     * @returns true if the amount of two-qubit gates is zero.
+     * @returns true if the number of two-qubit gates is zero.
      */
     [[nodiscard]] bool empty() const {
       assert(ops_.size() == indices_.size());
@@ -156,7 +155,7 @@ private:
     }
 
     /**
-     * @brief Chop off the first N layers, and keep M layers.
+     * @brief Chop off the first @p n layers and keep @p m layers.
      */
     [[nodiscard]] LayerRef slice(std::size_t n, std::size_t m) const {
       return {operations().slice(n, m), indices().slice(n, m)};
@@ -276,22 +275,21 @@ private:
         return hw;
       };
 
-      const auto getRandomNeighbour =
+      const auto getRandomNeighbor =
           [&](const IndexType hw) -> std::optional<IndexType> {
-        SmallVector<IndexType> neighbours;
+        SmallVector<IndexType> neighbors;
         for (const auto hwN : arch.neighboursOf(hw)) {
           if (freeHardware.contains(hwN)) {
-            neighbours.emplace_back(hwN);
+            neighbors.emplace_back(hwN);
           }
         }
 
-        if (neighbours.empty()) {
+        if (neighbors.empty()) {
           return std::nullopt;
         }
 
-        std::uniform_int_distribution<IndexType> distr(0,
-                                                       neighbours.size() - 1);
-        const auto hwN = neighbours[distr(gen)];
+        std::uniform_int_distribution<IndexType> distr(0, neighbors.size() - 1);
+        const auto hwN = neighbors[distr(gen)];
         freeHardware.remove(hwN);
         return hwN;
       };
@@ -300,11 +298,11 @@ private:
                                  const std::size_t progB) {
         const auto hwA = layout.getHardwareIndex(progA);
 
-        // Get random neighbour.
-        if (const auto opt = getRandomNeighbour(hwA)) {
+        // Get random neighbor.
+        if (const auto opt = getRandomNeighbor(hwA)) {
           layout.add(progB, *opt);
         } else {
-          // If no random neighbour is available, draw nearest.
+          // If no random neighbor is available, draw nearest.
           layout.add(progB, drawClosestHardwareIndex(hwA));
         }
         freeProgram.remove(progB);
@@ -317,14 +315,14 @@ private:
             layout.add(prog0, hw0);
             freeProgram.remove(prog0);
 
-            // Get random neighbour.
-            if (const auto opt = getRandomNeighbour(hw0)) {
+            // Get random neighbor.
+            if (const auto opt = getRandomNeighbor(hw0)) {
               layout.add(prog1, *opt);
               freeProgram.remove(prog1);
               continue;
             }
 
-            // If no random neighbour is available, draw nearest.
+            // If no random neighbor is available, draw nearest.
             layout.add(prog1, drawClosestHardwareIndex(hw0));
             freeProgram.remove(prog1);
           } else if (freeProgram.contains(prog0) &&
@@ -517,7 +515,7 @@ private:
      * @brief Construct a non-root node from its parent node. Apply the given
      * swap to the layout of the parent node.
      */
-    Node(Node* parent, IndexGate swap, ArrayRef<LayerRef> layers,
+    Node(Node* parent, const IndexGate& swap, ArrayRef<LayerRef> layers,
          const Architecture& arch, const Parameters& params)
         : layout(parent->layout), swap(swap), parent(parent),
           depth(parent->depth + 1), f(0) {
@@ -544,7 +542,7 @@ private:
      * The path cost function is the weighted sum of the currently required
      * SWAPs.
      */
-    [[nodiscard]] float g(float alpha) const {
+    [[nodiscard]] float g(const float alpha) const {
       return alpha * static_cast<float>(depth);
     }
 
@@ -810,10 +808,10 @@ private:
       // between two neighbouring hardware qubits.
 
       expansionSet.clear();
-      for (const IndexGate& gate : layers.front().indices()) {
-        for (const auto prog : {gate.first, gate.second}) {
-          const auto hw0 = curr->layout.getHardwareIndex(prog);
-          for (const auto hw1 : arch.neighboursOf(hw0)) {
+      for (const auto& [q0, q1] : layers.front().indices()) {
+        for (const auto prog : {q0, q1}) {
+          for (const auto hw0 = curr->layout.getHardwareIndex(prog);
+               const auto hw1 : arch.neighboursOf(hw0)) {
             // Ensure consistent hashing/comparison.
             const IndexGate swap = std::minmax(hw0, hw1);
             if (!expansionSet.insert(swap).second) {
@@ -863,7 +861,7 @@ private:
                                                const std::size_t sz) {
     SmallVector<LayerRef> refs;
     for (const auto& layer : layers) {
-      for (std::size_t i = 0; i < layer.indices().size(); i += sz) {
+      for (std::size_t i = 0; i < layer.size(); i += sz) {
         const auto effSz = std::min(sz, layer.size() - i);
         refs.emplace_back(layer.slice(i, effSz));
       }
@@ -878,14 +876,14 @@ private:
    */
   [[nodiscard]] std::pair<SmallVector<LayerRef>, SmallVector<LayerRef>>
   partitionBidirectionalLayers(ArrayRef<Layer> ltr, ArrayRef<Layer> rtl) {
-    if (this->fullLayers) {
+    if (fullLayers) {
       return {
           SmallVector<LayerRef>(ltr.begin(), ltr.end()),
           SmallVector<LayerRef>(rtl.begin(), rtl.end()),
       };
     }
-    return {partitionLayers(ltr, this->partitionSizeForward),
-            partitionLayers(rtl, this->partitionSizeBackward)};
+    return {partitionLayers(ltr, partitionSizeForward),
+            partitionLayers(rtl, partitionSizeBackward)};
   }
 
   /**
@@ -966,7 +964,7 @@ private:
                         if (visited.contains(op)) {
                           const auto otherIndex = visited[op];
 
-                          layer.addGate(op, std::make_pair(index, otherIndex));
+                          layer.addGate(op, {index, otherIndex});
 
                           skipTwoQubitBlock<d>(wires[index], wires[otherIndex]);
 
@@ -1127,8 +1125,7 @@ private:
 
     const auto markReady = [](DanglingMap& map, UnitaryOpInterface op,
                               WireIterator& wireIt, auto&& onReady) {
-      const auto [it, inserted] =
-          map.try_emplace(op, SmallVector<WireIterator*>{&wireIt});
+      const auto [it, inserted] = map.try_emplace(op, SmallVector{&wireIt});
       if (!inserted) {
         it->second.emplace_back(&wireIt);
       }
