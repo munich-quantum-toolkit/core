@@ -400,7 +400,7 @@ struct ConvertQCDeallocOp final : StatefulOpConversionPattern<qc::DeallocOp> {
     Value qcoQubit = lookupMappedQubit(state, operation, qcQubit);
 
     // Create the sink operation
-    rewriter.replaceOpWithNewOp<qco::SinkOp>(op, qcoQubit);
+    rewriter.replaceOpWithNewOp<SinkOp>(op, qcoQubit);
 
     // Remove from state as qubit is no longer in use
     qubitMap.erase(qcQubit);
