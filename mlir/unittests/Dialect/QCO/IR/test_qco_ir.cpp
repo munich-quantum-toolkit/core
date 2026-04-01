@@ -99,10 +99,7 @@ TEST_F(QCOTest, DirectIfBuilder) {
   // Test If construction directly
   qco::QCOProgramBuilder builder(context.get());
   builder.initialize();
-  // Match `allocQubitRegister(1)` defaults ("q", size=1, index=0).
-  auto q0 = AllocOp::create(builder, builder.getStringAttr("q"),
-                            builder.getI64IntegerAttr(1),
-                            builder.getI64IntegerAttr(0));
+  auto q0 = AllocOp::create(builder);
   auto q1 = HOp::create(builder, q0);
   auto measureOp = MeasureOp::create(builder, q1);
   auto ifOp =
