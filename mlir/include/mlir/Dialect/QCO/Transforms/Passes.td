@@ -54,20 +54,27 @@ def MappingPass : Pass<"place-and-route", "mlir::ModuleOp"> {
 
     The pass option `ntrials` determines how many random initial layouts the pass explores. If compiled with multi-threading on, these trials will be executed in parallel.
   }];
-  let options = [Option<"nlookahead", "nlookahead", "std::size_t", "1",
-                        "The number of lookahead steps.">,
-                 Option<"alpha", "alpha", "float", "1.0F",
-                        "The alpha factor in the cost function. Must be > 0.">,
-                 Option<"lambda", "lambda", "float", "0.5F",
-                        "The lambda factor in the cost function.">,
-                 Option<"niterations", "niterations", "std::size_t", "2",
-                        "The number of forwards and backwards traversal to "
-                        "improve the initial layout.">,
-                 Option<"ntrials", "ntrials", "std::size_t", "4",
-                        "The number of (possibly parallel) random trials of "
-                        "the forwards and backwards mechanism. Must be > 0.">,
-                 Option<"seed", "seed", "std::size_t", "42",
-                        "A seed used for randomization.">];
+  let options =
+      [Option<"nlookahead", "nlookahead", "std::size_t", "1",
+              "The number of lookahead steps.">,
+       Option<"alpha", "alpha", "float", "1.0F",
+              "The alpha factor in the cost function. Must be > 0.">,
+       Option<"lambda", "lambda", "float", "0.5F",
+              "The lambda factor in the cost function.">,
+       Option<"fullLayers", "full-layers", "bool", "false",
+              "If true, don't partition layers.">,
+       Option<"partitionSizeForward", "partition-size-forward", "std::size_t",
+              "1", "The forward layer partitioning size.">,
+       Option<"partitionSizeBackward", "partition-size-backward", "std::size_t",
+              "1", "The forward layer partitioning size.">,
+       Option<"niterations", "niterations", "std::size_t", "2",
+              "The number of forwards and backwards traversal to "
+              "improve the initial layout.">,
+       Option<"ntrials", "ntrials", "std::size_t", "4",
+              "The number of (possibly parallel) random trials of "
+              "the forwards and backwards mechanism. Must be > 0.">,
+       Option<"seed", "seed", "std::size_t", "42",
+              "A seed used for randomization.">];
   let statistics = [Statistic<"numSwaps", "num-inserted-swaps",
                               "The number of inserted SWAPs">];
 }
