@@ -103,7 +103,8 @@ TEST_P(MappingPassTest, GHZ) {
                                         .ntrials = 4,
                                         .seed = 1337};
   runHeuristicMapping(moduleOp, options);
-  EXPECT_TRUE(isExecutable(moduleOp->getBodyRegion(), arch).succeeded());
+  auto entry = *(moduleOp->getOps<func::FuncOp>().begin());
+  EXPECT_TRUE(isExecutable(entry.getFunctionBody(), arch).succeeded());
 }
 
 TEST_P(MappingPassTest, Sabre) {
@@ -171,7 +172,8 @@ TEST_P(MappingPassTest, Sabre) {
                                         .ntrials = 4,
                                         .seed = 42};
   runHeuristicMapping(moduleOp, options);
-  EXPECT_TRUE(isExecutable(moduleOp->getBodyRegion(), arch).succeeded());
+  auto entry = *(moduleOp->getOps<func::FuncOp>().begin());
+  EXPECT_TRUE(isExecutable(entry.getFunctionBody(), arch).succeeded());
 }
 
 INSTANTIATE_TEST_SUITE_P(
