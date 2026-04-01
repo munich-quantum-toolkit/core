@@ -19,7 +19,6 @@ from qiskit import QuantumCircuit
 from qiskit.circuit import ClassicalRegister, Parameter
 from qiskit.primitives import BaseSamplerV2
 from qiskit.primitives.containers import BitArray
-from qiskit.primitives.containers.sampler_pub import SamplerPub
 
 from mqt.core.plugins.qiskit import QDMISampler
 
@@ -84,9 +83,9 @@ def test_sampler_run_parameterized_circuit(backend_with_mock_jobs: QDMIBackend) 
     qc.ry(theta, 0)
     qc.measure_all()
 
-    # Run with two different parameter values using explicit SamplerPub via coerce
-    pub = SamplerPub.coerce((qc, [[0.0], [np.pi]]))  # type: ignore[arg-type]
-    job = sampler.run([pub], shots=100)  # type: ignore[arg-type]
+    # Run with two different parameter values
+    params = {theta: [[0], [np.pi]]}
+    job = sampler.run([(qc, params)], shots=100)
     result = job.result()
 
     pub_result = result[0]
@@ -173,10 +172,8 @@ def test_sampler_broadcasting(backend_with_mock_jobs: QDMIBackend) -> None:
     qc.measure_all()
 
     # Broadcast parameters
-    params = np.zeros((2, 2))
-
-    pub = SamplerPub.coerce((qc, params))  # type: ignore[arg-type]
-    job = sampler.run([pub], shots=100)  # type: ignore[arg-type]
+    params = {theta: np.zeros((2, 2))}
+    job = sampler.run([(qc, params)], shots=100)
     result = job.result()
 
     pub_result = result[0]
