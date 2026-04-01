@@ -47,6 +47,7 @@
 #include <mlir/Support/LogicalResult.h>
 #include <mlir/Transforms/DialectConversion.h>
 
+#include <cassert>
 #include <cstddef>
 #include <cstdint>
 #include <string>
@@ -210,8 +211,12 @@ struct QCToQIRTypeConverter final : LLVMTypeConverter {
     addConversion(
         [ctx](QubitType /*type*/) { return LLVM::LLVMPointerType::get(ctx); });
 
-    addConversion(
-        [ctx](MemRefType /*type*/) { return LLVM::LLVMPointerType::get(ctx); });
+    addConversion([ctx](MemRefType type) -> Type {
+      if (llvm::isa<QubitType>(type.getElementType())) {
+        return LLVM::LLVMPointerType::get(ctx);
+      }
+      return type;
+    });
   }
 };
 
@@ -251,7 +256,8 @@ struct ConvertMemRefAllocOp final
 
     auto shape = op.getType().getShape();
     if (shape.size() != 1) {
-      return failure();
+      return rewriter.notifyMatchFailure(
+          op, "Only one-dimensional registers are supported");
     }
 
     Value size;
@@ -339,7 +345,8 @@ struct ConvertMemRefDeallocOp final
 
     auto shape = op.getMemref().getType().getShape();
     if (shape.size() != 1) {
-      return failure();
+      return rewriter.notifyMatchFailure(
+          op, "Only one-dimensional registers are supported");
     }
 
     // Save current insertion point
@@ -354,6 +361,7 @@ struct ConvertMemRefDeallocOp final
                                                 QIR_QUBIT_ARRAY_RELEASE, fnSig);
 
     auto size = state.memrefSizes.lookup(op.getMemref());
+    assert(size != nullptr && "Size not found");
 
     // Create the release call
     LLVM::CallOp::create(rewriter, op.getLoc(), fnDec,
